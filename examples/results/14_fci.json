@@ -1,0 +1,15 @@
+{
+  "example": "14_fci",
+  "system": "H2",
+  "basis": "STO-3G",
+  "geometry": {"bond_length_A": 0.7414},
+  "atomiverse": {
+    "E_RHF_Ha": -1.11668439,
+    "E_FCI_Ha": -1.13727017,
+    "E_corr_Ha": -0.02058579
+  },
+  "reference": {
+    "source": "Full CI in the STO-3G space is exact within the basis",
+    "note": "FCI recovers the correlation energy missing from RHF in the same AO space."
+  }
+}

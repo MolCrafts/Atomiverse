@@ -1,0 +1,16 @@
+{
+  "example": "12_delta_scf",
+  "method": "ΔSCF = E(cation UHF) − E(neutral RHF)",
+  "rows": [
+    {"system": "He",  "basis": "STO-3G", "IP_koopmans_eV": 23.8381, "IP_delta_eV": 23.8381, "relax_eV": 0.0000, "S2": 0.7500},
+    {"system": "He",  "basis": "6-31G",  "IP_koopmans_eV": 24.8747, "IP_delta_eV": 23.4438, "relax_eV": 1.4309, "S2": 0.7500},
+    {"system": "H2",  "basis": "STO-3G", "IP_koopmans_eV": 15.7275, "IP_delta_eV": 15.7275, "relax_eV": 0.0000, "S2": 0.7500},
+    {"system": "H2",  "basis": "6-31G",  "IP_koopmans_eV": 16.2015, "IP_delta_eV": 15.5057, "relax_eV": 0.6958, "S2": 0.7500},
+    {"system": "H2O", "basis": "STO-3G", "IP_koopmans_eV": 10.6461, "IP_delta_eV":  8.3573, "relax_eV": 2.2888, "S2": 0.7552},
+    {"system": "H2O", "basis": "6-31G",  "IP_koopmans_eV": 13.6429, "IP_delta_eV": 10.9778, "relax_eV": 2.6652, "S2": 0.7553},
+    {"system": "NH3", "basis": "STO-3G", "IP_koopmans_eV":  9.5839, "IP_delta_eV":  7.6519, "relax_eV": 1.9321, "S2": 0.7574},
+    {"system": "NH3", "basis": "6-31G",  "IP_koopmans_eV": 11.2852, "IP_delta_eV":  9.1446, "relax_eV": 2.1407, "S2": 0.7572},
+    {"system": "CH4", "basis": "STO-3G", "IP_koopmans_eV": 14.1194, "IP_delta_eV": 13.3888, "relax_eV": 0.7305, "S2": 0.7557},
+    {"system": "CH4", "basis": "6-31G",  "IP_koopmans_eV": 14.7964, "IP_delta_eV": 13.4193, "relax_eV": 1.3771, "S2": 0.7552}
+  ]
+}

@@ -23,8 +23,7 @@ Every component has to answer one question clearly: at what stage of the run
 should it execute?
 
 Some components declare `default_bindings()` because their natural phase is
-obvious. `VelocityVerlet`, `ConvergenceCheck`, and `RHFDensity` fall into this
-category.
+obvious. `VelocityVerlet`, `LBFGS`, and `CG` fall into this category.
 
 Other components deliberately return no default bindings because they are
 cross-driver tools. `NeighborList`, `Thermo`, `Recorder`, and `RDF` are examples.

@@ -1,0 +1,3 @@
+[submodule "molrs"]
+	path = molrs
+	url = https://github.com/MolCrafts/molrs.git

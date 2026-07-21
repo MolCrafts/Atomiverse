@@ -1,139 +1,60 @@
 name: CI
 
+# Intentionally NOT on push/PR. Local pre-commit / pre-push is the gate:
+#   pre-commit  → format / hygiene
+#   pre-push    → tools/ci_cpu_unit.sh  (cmake + unit ctest)
+# Multi-backend (CUDA etc.) is machine-local (login node / GPU job), not
+# GitHub-hosted. Manual re-run only when you want a second opinion:
+#   gh workflow run CI.yml
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── CPU build + test (no CUDA) ─────────────────────────────────────────────
-  cpu-build:
-    name: CPU (${{ matrix.real }})
+  pre-commit:
+    name: pre-commit
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        real: [float, double]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Checkout molrs
-        uses: actions/checkout@v4
         with:
-          repository: MolCrafts/molrs
-          path: molrs
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pre-commit
+        run: pip install pre-commit
+      - name: Run pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+  cpu:
+    name: CPU unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    needs: pre-commit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Install system dependencies
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y libblas-dev liblapack-dev
 
-      - name: Cache CMake build
-        uses: actions/cache@v4
-        with:
-          path: build
-          key: cpu-${{ matrix.real }}-${{ hashFiles('CMakeLists.txt', 'molrs/Cargo.lock') }}
-
-      - name: Configure
+      - name: Report molrs submodule pin
         run: |
-          cmake -B build \
-            -DATV_BUILD_CUDA=OFF \
-            -DATV_BUILD_TESTS=ON \
-            -DATV_BUILD_EXAMPLES=ON \
-            -DATV_REAL=${{ matrix.real }} \
-            -DATV_MOLRS_PATH=${{ github.workspace }}/molrs
+          echo "molrs submodule:"
+          git -C molrs rev-parse HEAD
+          git -C molrs describe --tags --always
+          cat molrs/molrs-cxxapi/CXX_API_VERSION
 
-      - name: Build
-        run: cmake --build build -j$(nproc)
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-
-  # ── CUDA build + test ──────────────────────────────────────────────────────
-  cuda-build:
-    name: CUDA (${{ matrix.real }})
-    runs-on: self-hosted
-    strategy:
-      matrix:
-        real: [float, double]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Checkout molrs
-        uses: actions/checkout@v4
-        with:
-          repository: MolCrafts/molrs
-          path: molrs
-
-      - name: Configure
-        run: |
-          cmake -B build \
-            -DATV_BUILD_CUDA=ON \
-            -DATV_BUILD_TESTS=ON \
-            -DATV_BUILD_BENCHMARKS=ON \
-            -DATV_BUILD_EXAMPLES=ON \
-            -DATV_BUILD_RHF=ON \
-            -DATV_REAL=${{ matrix.real }} \
-            -DATV_MOLRS_PATH=${{ github.workspace }}/molrs
-
-      - name: Build
-        run: cmake --build build -j$(nproc)
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-
-  # ── Format check ───────────────────────────────────────────────────────────
-  fmt:
-    name: Format
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Checkout molrs
-        uses: actions/checkout@v4
-        with:
-          repository: MolCrafts/molrs
-          path: molrs
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Check Rust format (molrs-cxxapi)
-        run: cargo fmt --check --manifest-path molrs/molrs-cxxapi/Cargo.toml
-
-      - name: Check C++ format
-        uses: jidicula/clang-format-action@v4.13.0
-        with:
-          clang-format-version: '17'
-          check-path: 'include src'
-          fallback-style: 'LLVM'
-
-  # ── Documentation build ────────────────────────────────────────────────────
-  docs:
-    name: Docs
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Doxygen
-        run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
-
-      - name: Build docs
-        run: |
-          cmake -B build/docs -DATV_DOCS_ONLY=ON
-          cmake --build build/docs --target docs
-
-      - name: Upload docs
-        uses: actions/upload-artifact@v4
-        with:
-          name: doxygen-docs
-          path: docs/html/
-          retention-days: 7
+      - name: CPU unit (same script as local pre-push)
+        env:
+          # Default CMake path is ./molrs (submodule); keep explicit for clarity.
+          ATV_MOLRS_PATH: ${{ github.workspace }}/molrs
+          ATV_CI_BUILD_DIR: build
+        run: bash tools/ci_cpu_unit.sh

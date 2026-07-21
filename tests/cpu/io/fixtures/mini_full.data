@@ -1,0 +1,27 @@
+LAMMPS data file mini full
+
+2 atoms
+1 bonds
+0 angles
+0 dihedrals
+
+2 atom types
+1 bond types
+
+0.0 10.0 xlo xhi
+0.0 10.0 ylo yhi
+0.0 10.0 zlo zhi
+
+Masses
+
+1 12.01
+2 1.008
+
+Atoms
+
+1 1 1 -0.25 1.0 2.0 3.0
+2 1 2  0.25 1.5 2.0 3.0
+
+Bonds
+
+1 1 1 2

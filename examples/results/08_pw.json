@@ -1,0 +1,26 @@
+{
+  "example": "08_pw",
+  "system": "Si diamond (2-atom fcc primitive cell)",
+  "method": "plane-wave LDA",
+  "settings": {
+    "a_A": 5.43,
+    "ecut_ry": 15.0,
+    "k_mesh": 2,
+    "tol": 1e-6,
+    "upf": "benchmarks/pw/si/validation/reference/Si_lda_nc.upf",
+    "note": "Tutorial settings (fast). Production Si uses ~30 Ry and denser k-mesh — see benchmarks/pw/si."
+  },
+  "atomiverse": {
+    "converged": true,
+    "iterations": 5,
+    "E_total_Ry": -15.670898,
+    "E_total_Ha": -7.835449,
+    "E_total_eV": -213.213424
+  },
+  "reference": {
+    "source": "PseudoDojo ONCVPSP LDA Si (Si_lda_nc.upf); ABINIT deltafactor E_min at a0≈5.47 Å is −230.158 eV/cell (−16.916 Ry) for converged EOS — not the same ecut/k-mesh as this tutorial.",
+    "ABINIT_E_min_eV_per_cell_converged": -230.158,
+    "ABINIT_E_min_Ry_converged": -16.916,
+    "note": "Absolute PW energies depend strongly on ecut and k-mesh. This JSON records the live tutorial binary; EOS/a0/B0 parity lives in benchmarks/pw/si."
+  }
+}

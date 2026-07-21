@@ -1,0 +1,15 @@
+# Atomiverse C++ house style. Pinned so `clang-format` is reproducible
+# across contributor machines and CI. Chosen to match the existing tree
+# (4-space indent, attached braces, left-aligned pointers, operators at
+# the start of a wrapped line); comment reflow is disabled so the Doxygen
+# blocks are left exactly as authored.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ContinuationIndentWidth: 4
+ColumnLimit: 80
+PointerAlignment: Left
+ReferenceAlignment: Left
+BreakBeforeBinaryOperators: NonAssignment
+ReflowComments: false
+AlwaysBreakTemplateDeclarations: Yes
+SpaceAfterTemplateKeyword: true

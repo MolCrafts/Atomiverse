@@ -1,12 +1,19 @@
 /// @file minimizer/sd.cu
-/// @brief SteepestDescentStep kernel: x += alpha * f / m * kFtm2v.
+/// @brief cuda::minimizer::SteepestDescent kernel: x += alpha * f / m * kFtm2v.
 
-#include "atomiverse/cuda/minimizer/sd.cuh"
-#include "atomiverse/cuda/launch.cuh"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/launch.cuh"
+#include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/types.cuh"
+#include "atomiverse/cuda/minimizer/sd.cuh"
 #include <cuda_runtime.h>
 
 namespace ATV {
+
+using cuda::real_t;
+using cuda::work_t;
+
+namespace cuda {
 namespace minimizer {
 
 namespace {
@@ -18,41 +25,78 @@ namespace {
 ///
 /// Same unit conversion as VelocityVerlet. At step 0, forces are zero
 /// (from initialization), so positions remain unchanged.
-__global__ void sd_step(
-    Real* __restrict__ x, Real* __restrict__ y, Real* __restrict__ z,
-    const Real* __restrict__ fx, const Real* __restrict__ fy,
-    const Real* __restrict__ fz, const Real* __restrict__ mass,
-    const Real* __restrict__ box,
-    Real alpha, Int n) {
+__global__ void sd_step(real_t* __restrict__ x, real_t* __restrict__ y,
+                        real_t* __restrict__ z, const real_t* __restrict__ fx,
+                        const real_t* __restrict__ fy,
+                        const real_t* __restrict__ fz,
+                        const real_t* __restrict__ mass, cuda::Box box,
+                        work_t alpha, int n) {
 
-    Int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n) return;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n)
+        return;
 
-    Real inv_m = Real(1) / mass[i];
-    x[i] += alpha * fx[i] * inv_m * kFtm2v;
-    y[i] += alpha * fy[i] * inv_m * kFtm2v;
-    z[i] += alpha * fz[i] * inv_m * kFtm2v;
-    // PBC wrapping
-    Real Lx = box[0], Ly = box[4], Lz = box[8];
-    Real inv_Lx = Real(1) / Lx, inv_Ly = Real(1) / Ly, inv_Lz = Real(1) / Lz;
-    x[i] -= Lx * floor(x[i] * inv_Lx);
-    y[i] -= Ly * floor(y[i] * inv_Ly);
-    z[i] -= Lz * floor(z[i] * inv_Lz);
+    work_t inv_m = work_t(1) / static_cast<work_t>(mass[i]);
+    x[i] = static_cast<real_t>(static_cast<work_t>(x[i])
+                               + alpha * static_cast<work_t>(fx[i]) * inv_m
+                                     * kFtm2v);
+    y[i] = static_cast<real_t>(static_cast<work_t>(y[i])
+                               + alpha * static_cast<work_t>(fy[i]) * inv_m
+                                     * kFtm2v);
+    z[i] = static_cast<real_t>(static_cast<work_t>(z[i])
+                               + alpha * static_cast<work_t>(fz[i]) * inv_m
+                                     * kFtm2v);
+    // PBC wrap via cached inv_l on the by-value Box — same form as the
+    // MD integrators (cuda-md-review-cleanup-04-box-by-value-pbc).
+    work_t Lx = work_t(box.cell[0]), Ly = work_t(box.cell[4]),
+           Lz = work_t(box.cell[8]);
+    work_t inv_Lx = work_t(box.inv_l[0]), inv_Ly = work_t(box.inv_l[1]),
+           inv_Lz = work_t(box.inv_l[2]);
+    work_t x_w = static_cast<work_t>(x[i]);
+    work_t y_w = static_cast<work_t>(y[i]);
+    work_t z_w = static_cast<work_t>(z[i]);
+    x[i] = static_cast<real_t>(x_w - Lx * floor(x_w * inv_Lx));
+    y[i] = static_cast<real_t>(y_w - Ly * floor(y_w * inv_Ly));
+    z[i] = static_cast<real_t>(z_w - Lz * floor(z_w * inv_Lz));
 }
 
 } // anonymous namespace
 
-void SteepestDescentStep::launch(const LaunchContext& ctx) {
+void SteepestDescent::build(const BuildContext& ctx) {
+    step_ = 0;
+    trace_.clear();
+    conv_.build(ctx.frame.n_atoms());
+}
+
+void SteepestDescent::launch(const LaunchContext& ctx) {
+    // ── Convergence-metric publish phase ─────────────────────────────
+    //
+    // No previous geometry is kept (the step is applied in place), so no displacement
+    // is measured: `x_prev = nullptr` tells ConvCheck to publish
+    // `has_displacement = false`, and the handler leaves the displacement criteria out
+    // of its test rather than judging a zero it was never given.
+    if (ctx.at(ATV::minimizer::Phase::convergence_check)) {
+        conv_.measure(ctx, /*x_prev=*/nullptr, step_, trace_);
+        return;
+    }
+
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
-    Int n = ctx.frame.n_atoms();
+    int n = ctx.frame.n_atoms();
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(static_cast<int>(n));
     sd_step<<<grid, block, 0, stream>>>(
-        frame.x, frame.y, frame.z,
-        frame.fx, frame.fy, frame.fz, frame.mass,
-        frame.box, alpha_, n);
+        frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.fx,
+        frame.atoms.fy, frame.atoms.fz, frame.atoms.mass, ctx.runtime.host_box,
+        alpha_, n);
+    ++step_;
+}
+
+void SteepestDescent::destroy(const DestroyContext& ctx) {
+    (void)ctx;
+    conv_.destroy();
 }
 
 } // namespace minimizer
+} // namespace cuda
 } // namespace ATV

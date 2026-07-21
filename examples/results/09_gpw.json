@@ -1,0 +1,23 @@
+{
+  "example": "09_gpw",
+  "system": "H2O isolated (Martyna–Tuckerman)",
+  "method": "GPW PBE / DZVP-MOLOPT-GTH + GTH-PBE",
+  "settings": {
+    "cutoff_ry": 400.0,
+    "xc": "PBE",
+    "nonperiodic": true,
+    "box_A": 10.0
+  },
+  "atomiverse": {
+    "converged": true,
+    "iterations": 9,
+    "E_total_Ha": -17.21275807,
+    "E_total_eV": -468.38300809
+  },
+  "reference": {
+    "source": "CP2K Quickstep getting-started h2o.inp (same GTH/MOLOPT family)",
+    "E_total_Ha": -17.21233714,
+    "abs_delta_Ha": 0.00042092,
+    "note": "Agreement to ~0.4 mHa on this minimal isolated-water setup."
+  }
+}

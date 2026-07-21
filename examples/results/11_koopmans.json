@@ -1,0 +1,19 @@
+{
+  "example": "11_koopmans",
+  "method": "RHF Koopmans IP = −ε_HOMO",
+  "rows": [
+    {"system": "He",  "basis": "STO-3G", "IP_koopmans_eV": 23.838, "IP_exp_eV": 24.587, "exp_kind": "vertical"},
+    {"system": "He",  "basis": "6-31G",  "IP_koopmans_eV": 24.875, "IP_exp_eV": 24.587, "exp_kind": "vertical"},
+    {"system": "H2",  "basis": "STO-3G", "IP_koopmans_eV": 15.727, "IP_exp_eV": 15.426, "exp_kind": "adiabatic"},
+    {"system": "H2",  "basis": "6-31G",  "IP_koopmans_eV": 16.201, "IP_exp_eV": 15.426, "exp_kind": "adiabatic"},
+    {"system": "H2O", "basis": "STO-3G", "IP_koopmans_eV": 10.646, "IP_exp_eV": 12.620, "exp_kind": "vertical"},
+    {"system": "H2O", "basis": "6-31G",  "IP_koopmans_eV": 13.643, "IP_exp_eV": 12.620, "exp_kind": "vertical"},
+    {"system": "NH3", "basis": "STO-3G", "IP_koopmans_eV":  9.593, "IP_exp_eV": 10.800, "exp_kind": "vertical"},
+    {"system": "NH3", "basis": "6-31G",  "IP_koopmans_eV": 11.294, "IP_exp_eV": 10.800, "exp_kind": "vertical"},
+    {"system": "CH4", "basis": "STO-3G", "IP_koopmans_eV": 14.131, "IP_exp_eV": 13.600, "exp_kind": "vertical (Jahn-Teller)"},
+    {"system": "CH4", "basis": "6-31G",  "IP_koopmans_eV": 14.804, "IP_exp_eV": 13.600, "exp_kind": "vertical (Jahn-Teller)"}
+  ],
+  "reference": {
+    "note": "Experimental IPs are NIST/CRC values used as a qualitative guide. Koopmans neglects orbital relaxation and correlation."
+  }
+}

@@ -11,8 +11,12 @@ namespace ATV {
 /// - **blocking** -- main stream (serialized with other blocking ops)
 /// - **deferrable** -- secondary stream (may overlap with main stream work)
 enum class Scheduling {
-    blocking,   ///< Execute on main stream (serialized).
-    deferrable  ///< Execute on secondary stream (may overlap).
+    blocking,  ///< Execute on main stream (serialized).
+    deferrable ///< Execute on secondary stream (may overlap).
 };
+
+// Forward type declarations (actual types defined in their respective headers)
+class Mat3;
+class Vec3;
 
 } // namespace ATV

@@ -1,0 +1,24 @@
+{
+  "example": "07_md_lj",
+  "system": "FCC argon",
+  "n_atoms": 216,
+  "potential": "PairLJCut",
+  "ensemble": "NVE",
+  "steps": 1000,
+  "thermo": {
+    "step": [0, 200, 400, 600, 800, 1000],
+    "E_pot_eV": [-10.0450881, -9.81868897, -9.87337281, -9.91450787, -10.0050086, -10.2620186],
+    "E_kin_eV": [0.422603966, 0.196208369, 0.250891111, 0.292027420, 0.382527977, 0.639537414],
+    "E_total_eV": [-9.62248411, -9.62248060, -9.62248169, -9.62248044, -9.62248065, -9.62248118]
+  },
+  "atomiverse": {
+    "E_total_start_eV": -9.622484,
+    "E_total_end_eV": -9.622481,
+    "drift_eV": 2.93e-06,
+    "relative_drift": 3.04e-07
+  },
+  "reference": {
+    "criterion": "NVE total-energy conservation",
+    "note": "Relative drift ≲ 1e-6 over 1000 steps is expected for VelocityVerlet + LJ cut."
+  }
+}

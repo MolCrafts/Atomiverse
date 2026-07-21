@@ -10,15 +10,15 @@
 
 #ifdef ATV_HAS_TORCH
 
-#include "atomiverse/torch/frame.cuh"
+#include "atomiverse/torch/frame/frame.cuh"
 
 namespace ATV {
 namespace torch {
 
 /// @brief Compute differentiable harmonic bond energy and forces.
 ///
-/// Accumulates energy into frame.energy and forces into frame.fx/fy/fz.
-/// Supports autograd w.r.t. positions (frame.x/y/z), K, and r0.
+/// Accumulates energy into frame.energy and forces into frame.atoms.fx/fy/fz.
+/// Supports autograd w.r.t. positions (frame.atoms.x/y/z), K, and r0.
 ///
 /// @param frame  torch::Frame with positions, box, and bond topology.
 /// @param K      Spring constants per bond type [n_types]. May require grad.

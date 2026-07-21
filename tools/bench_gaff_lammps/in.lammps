@@ -1,0 +1,27 @@
+# Matched GAFF PEO timing bench — same knobs as ATV run_atv_gaff.
+# Default data: packmol_n100_r2 melt (paper flexible / packmol arm).
+units real
+atom_style full
+boundary p p p
+special_bonds amber
+
+variable data index melt.data
+read_data ${data}
+include melt.ff
+pair_modify mix arithmetic tail no
+kspace_style pppm 1.0e-4
+neighbor 2.0 bin
+neigh_modify delay 0 every 1 check yes
+
+thermo 100
+thermo_style custom step temp pe ke etotal press density
+thermo_modify flush yes
+
+velocity all create 400.0 4928 dist gaussian mom yes rot yes
+timestep 1.0
+fix nvt all nvt temp 400.0 400.0 100.0
+
+variable nsteps index 500
+run ${nsteps}
+
+print "BENCH_DONE"

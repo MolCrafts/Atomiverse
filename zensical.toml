@@ -1,0 +1,169 @@
+[project]
+site_name = "Atomiverse"
+site_description = "Unified molecular simulation engine. Different methods live in one engine and share the same way of building and running a calculation."
+site_author = "MolCrafts"
+site_url = "https://molcrafts.github.io/Atomiverse/"
+copyright = "Copyright &copy; 2026 MolCrafts"
+docs_dir = "docs"
+site_dir = "site"
+repo_url = "https://github.com/MolCrafts/Atomiverse"
+repo_name = "MolCrafts/Atomiverse"
+edit_uri = "edit/dev/docs/"
+
+# MolVis + MolPlot share one model (see molcrafts-zensical-theme README):
+#   build-time fence → theme formatters (no molvis/molplot Python packages)
+#   run-time element  → npm CDN below (or staged node_modules)
+# MolVis: load the staged monorepo bundle (docs/assets/molvis-core/). The
+# published npm package (@molcrafts/molvis-core@0.0.10) does not ship
+# dist/elements.js yet — jsDelivr returns 404 for that path. MolPlot is fine
+# on the CDN.
+extra_javascript = [
+  { path = "assets/javascripts/molvis-elements.js", type = "module" },
+  { path = "https://cdn.jsdelivr.net/npm/@molcrafts/molplot@latest/dist/elements.js", type = "module" },
+  "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
+]
+
+nav = [
+  { "Home" = "index.md" },
+  { "User Guide" = [
+    "user-guide/index.md",
+    "user-guide/getting-started.md",
+    "user-guide/concepts.md",
+    "user-guide/methods.md",
+    "user-guide/backend-switching.md",
+    "user-guide/libtorch-backend.md",
+    "user-guide/launcher.md",
+    "user-guide/scf-roadmap.md",
+  ] },
+  { "Tutorial" = [
+    "tutorial/index.md",
+    { "I · Foundations" = [
+      "tutorial/ch00-architecture.md",
+      "tutorial/ch01-foundations.md",
+    ] },
+    { "II · Localized-basis SCF" = [
+      "tutorial/ch02-rhf.md",
+      "tutorial/ch03-open-shell.md",
+      "tutorial/ch04-basis-sets.md",
+    ] },
+    { "III · DFT" = [
+      "tutorial/ch05-kohn-sham-dft.md",
+      "tutorial/ch06-hybrid-dft.md",
+    ] },
+    { "IV · Correlation" = [
+      "tutorial/ch07-correlation.md",
+    ] },
+    { "V · Periodic ES" = [
+      "tutorial/ch08-plane-wave.md",
+      "tutorial/ch09-gpw.md",
+    ] },
+    { "VI · Classical simulation" = [
+      "tutorial/ch10-classical-md.md",
+      "tutorial/ch11-ensembles.md",
+      "tutorial/ch12-geometry-optimization.md",
+    ] },
+    { "VII · Analysis & response" = [
+      "tutorial/ch13-observables.md",
+      "tutorial/ch14-vibrations.md",
+      "tutorial/ch15-cross-method.md",
+    ] },
+    { "VIII · Beyond pairs" = [
+      "tutorial/ch16-many-body-potentials.md",
+    ] },
+    { "IX · Semiempirical" = [
+      "tutorial/ch17-semiempirical-am1.md",
+    ] },
+  ] },
+  { "Roadmap" = [
+    "roadmap/index.md",
+    "roadmap/hartree-fock.md",
+    "roadmap/dft.md",
+    "roadmap/post-hf.md",
+    "roadmap/excited-states.md",
+    "roadmap/semiempirical.md",
+    "roadmap/force-fields.md",
+    "roadmap/molecular-dynamics.md",
+    "roadmap/optimization.md",
+    "roadmap/sampling.md",
+    "roadmap/multiscale.md",
+  ] },
+  { "Developer" = [
+    "developer/index.md",
+    "developer/architecture.md",
+    "developer/cpu-internals.md",
+    "developer/md-execution-model.md",
+    "developer/extending-components.md",
+    "developer/extending-cpu-subsystems.md",
+    "developer/kspace-long-range.md",
+  ] },
+  { "Reference" = [
+    "api/index.md",
+  ] },
+]
+
+# Declaring markdown_extensions replaces Zensical defaults — keep the standard
+# set alongside the molplot / molvis custom fences.
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions.pymdownx]
+betterem = {}
+caret = {}
+details = {}
+inlinehilite = {}
+keys = {}
+magiclink = {}
+mark = {}
+smartsymbols = {}
+tilde = {}
+arithmatex = { generic = true }
+emoji = { emoji_generator = "zensical.extensions.emoji.to_svg", emoji_index = "zensical.extensions.emoji.twemoji" }
+highlight = { anchor_linenums = true, line_spans = "__span", pygments_lang_class = true }
+tabbed = { alternate_style = true, combine_header_slug = true }
+tasklist = { custom_checkbox = true }
+
+[project.markdown_extensions.pymdownx.superfences]
+custom_fences = [
+  { name = "mermaid", class = "mermaid" },
+  { name = "molvis", class = "molvis", format = "molcrafts_zensical_theme.formatters.molvis_fence" },
+  { name = "molvis-gallery", class = "molvis-gallery", format = "molcrafts_zensical_theme.formatters.molvis_gallery_fence" },
+  { name = "molplot", class = "molplot", format = "molcrafts_zensical_theme.formatters.molplot_fence", validator = "molcrafts_zensical_theme.formatters.molplot_validator" },
+]
+
+[project.theme]
+name = "molcrafts"
+
+[project.extra.molcrafts]
+product = "atomiverse"
+accent = "#7c3aed"
+accent_soft = "rgba(124, 58, 237, 0.14)"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/MolCrafts/Atomiverse"
+
+[project.plugins.search]
+
+[project.plugins.mkdocstrings]
+default_handler = "cpp"
+
+[project.plugins.mkdocstrings.handlers.cpp]
+input = ["include"]
+file_patterns = ["*.h", "*.hpp", "*.cuh"]
+build_dir = ".cache/mkdocstrings-cpp"
+
+[project.plugins.mkdocstrings.handlers.cpp.options]
+show_root_heading = true
+show_root_full_path = false
+members_order = "source"
+show_template_parameters = true
+show_enum_values = true
+separate_signature = true

@@ -3,6 +3,10 @@
 #pragma once
 
 namespace ATV {
-namespace cpu  { struct device_tag {}; }
-namespace cuda { struct device_tag {}; }
+namespace cpu {
+struct device_tag {};
+} // namespace cpu
+namespace cuda {
+struct device_tag {};
+} // namespace cuda
 } // namespace ATV

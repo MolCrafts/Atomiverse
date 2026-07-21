@@ -1,0 +1,23 @@
+{
+  "example": "15_am1",
+  "system": "H2O",
+  "method": "AM1",
+  "atomiverse": {
+    "E_total_eV": -348.295963,
+    "heat_of_formation_kcal_mol": -53.093,
+    "q_O_e": -0.3943,
+    "max_force_initial_eV_A": 3.3135,
+    "minimize": {
+      "E_initial_eV": -348.295963,
+      "E_final_eV": -348.562886,
+      "max_force_final_eV_A": 0.1513,
+      "converged": true,
+      "reason": "force_converged"
+    }
+  },
+  "reference": {
+    "source": "MOPAC / openmopac AM1 experimental ΔHf for water",
+    "heat_of_formation_kcal_mol": -57.8,
+    "note": "AM1 is parametrized to heats of formation; ~5 kcal/mol error on water is typical for the model, not a bug."
+  }
+}

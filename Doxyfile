@@ -5,14 +5,14 @@ PROJECT_BRIEF          = "Unified Molecular Simulation Platform — MD / DFT / M
 PROJECT_NUMBER         = "0.1.0-poc"
 
 # Input
-INPUT                  = include docs
+INPUT                  = include docs/mainpage.dox
 FILE_PATTERNS          = *.h *.cuh *.dox *.md
 RECURSIVE              = YES
 STRIP_FROM_PATH        = include
 EXCLUDE_PATTERNS       = docs/html/* docs/latex/*
 
 # Output
-OUTPUT_DIRECTORY       = docs/html
+OUTPUT_DIRECTORY       = build/doxygen
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
 HTML_OUTPUT            = .

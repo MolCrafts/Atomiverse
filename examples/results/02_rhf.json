@@ -1,0 +1,27 @@
+{
+  "example": "02_rhf",
+  "system": "H2",
+  "basis": "STO-3G",
+  "method": "RHF",
+  "geometry": {
+    "bond_length_A": 0.74,
+    "comment": "H-H distance [Å]"
+  },
+  "atomiverse": {
+    "converged": true,
+    "iterations": 3,
+    "n_basis": 2,
+    "n_electrons": 2,
+    "V_nuc_Ha": 0.7151043391,
+    "E_electronic_Ha": -1.8318636465,
+    "E_total_Ha": -1.1167593074,
+    "orbital_energies_Ha": [-0.578554, 0.671143],
+    "trace_PS": 2.0
+  },
+  "reference": {
+    "source": "Szabo & Ostlund, Modern Quantum Chemistry, Table 3.7",
+    "E_total_Ha": -1.1168,
+    "note": "Textbook RHF/STO-3G at ~0.74 Å"
+  },
+  "delta_Ha": 4.06926e-05
+}

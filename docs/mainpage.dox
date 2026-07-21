@@ -37,10 +37,14 @@ different kind of question.
 If you are new to Atomiverse, read these pages first:
 
 1. [Getting Started](user-guide/getting-started.md)
-2. [SCF Deep-Dive Tutorials](tutorial/index.md)
+2. [Chapter 0: A Tour of the CPU Backend](tutorial/ch00-architecture.md)
+3. [Tutorials Index](tutorial/index.md)
 
-The tutorial track is deliberately progressive. It starts with the toy SCF loop,
-then adds RHF, UHF, and UKS one layer at a time.
+The tutorial track is organised in two arcs. The SCF arc (Chapters 1-4,
+6, 8) starts with the toy SCF loop and adds RHF, UHF, UKS, AIMD, and
+geometry optimization one layer at a time. The classical-MD arc
+(Chapter 7) walks through pair potentials, bonded force fields,
+neighbor lists, and ensemble thermostats on the CPU.
 
 @section arch Architecture At A Glance
 
@@ -65,28 +69,54 @@ Two design rules matter more than anything else:
 
 For the full explanation, read [Architecture](developer/architecture.md).
 For contribution guidance, read [Extending Components](developer/extending-components.md).
+The CPU-specific deep-dive is in [CPU Backend Internals](developer/cpu-internals.md),
+and worked extension recipes for MD, the minimizer, and SCF inner-step
+helpers are in [Extending CPU Subsystems](developer/extending-cpu-subsystems.md).
+[MD Execution Model](developer/md-execution-model.md) explains one molecular-dynamics
+timestep as a fixed sequence of named phases — the LAMMPS *Developer flow* analogue.
 
 @section workflows Workflow Families
 
-Atomiverse currently exposes three workflow families.
+Atomiverse currently exposes four workflow families.
 
 @subsection workflows_md Molecular Dynamics
 
 `md::MD` executes a LAMMPS-style phase sequence. Typical components include
-`VelocityVerlet`, `NeighborList`, `LJ`, `NoseHoover`, `Thermo`, and `Recorder`.
+`VelocityVerlet`, `NeighborList`, `PairLJCut`, `NoseHoover`, `Thermo`, and `Recorder`.
+The full phase sequence and the `(phase, order)` binding model are documented in
+[MD Execution Model](developer/md-execution-model.md).
 
 @subsection workflows_min Minimization
 
-`minimizer::SD` and related minimizer drivers reuse the staged execution model
-with a phase order centered on force evaluation and convergence checks.
+The CPU side uses the `cpu::minimizer::Minimize` preset, which takes
+any `Optimizer`-role component (`LBFGS`, `CG`, …) plus an `Evaluator`
+at the force phase, and attaches a `cpu::ForceConverged` termination
+criterion in its constructor. The same wiring drives classical relaxation
+(`PairLJCut` at force) and *ab initio* geometry optimization
+(`SCFEvaluator` at force). The CUDA side mirrors this exactly:
+`cuda::minimizer::Minimize` takes `SteepestDescent`, `CG`, or `LBFGS`
+Optimizer components. Both are presets over the one loop node
+(`cpu::CPUDriver<P>` / `cuda::CUDADriver<P>`) — there is no category
+base class between them. Ask the driver for the verdict
+(`opt.converged()`, `opt.stop_reason()`), never the optimizer.
+
+@subsection workflows_mc Monte Carlo Sampling
+
+The CPU side adds the `cpu::mc::MC` preset: a Mover component
+(`TranslateMove`) proposes a trial move each sweep, the MD force
+pipeline recomputes the trial energy, and the loop's `OutcomePolicy` —
+`cpu::Metropolis`, attached by `MC`'s constructor — answers `Commit` or
+`Rollback`. Accept/reject is not a termination, so it is a policy slot
+of its own: a GCMC or REMD acceptance rule is a `set_outcome()` call,
+not a new driver class.
 
 @subsection workflows_scf Electronic Structure
 
 Electronic-structure code exists in two complementary forms:
 
-- CPU reference solvers such as `rhf_solve`, `uhf_solve`, and `uks_solve`
-- staged CUDA SCF components such as `Hamiltonian`, `EigenSolver`,
-  `DensityBuilder`, `RHFFock`, `RHFDensity`, and `ConvergenceCheck`
+- the CPU `cpu::scf::SCFSolver`, configured for RHF, UHF, RKS, or UKS
+- a device-resident CUDA inner solver `cuda::scf::SCFSolver`, wrapped by the
+  `cuda::scf::SCFEvaluator` component and driven by `cuda::Evaluate`
 
 The user guide explains when to choose each path. The developer manual explains
 why both layers exist.
@@ -95,11 +125,18 @@ why both layers exist.
 
 Representative entry points:
 
-- `examples/toy-scf.cpp` -- explicit CPU toy SCF example
-- `examples/scf.cu` -- staged CUDA toy SCF example
-- `examples/h2-rhf.cpp` -- CPU RHF example
-- `examples/h2_rhf.cu` -- CPU and CUDA RHF comparison
-- `examples/lj.cu` -- minimization + MD + thermo + trajectory + RDF
+- `examples/01_scf.cpp` -- explicit SCF introduction example
+- `examples/02_rhf.cpp` -- CPU RHF tutorial example
+- `examples/02_rhf.cu` -- CUDA translation of the same RHF lesson
+- `examples/03_uhf.cpp` -- UHF bond breaking and spin contamination
+- `examples/04_uks.cpp` -- UKS / LSDA examples
+- `examples/05_geom_opt.cpp` -- L-BFGS aspirin geometry optimization
+- `examples/06_aimd.cpp` -- ab initio molecular dynamics on H2 (NVT)
+- `examples/07_md_lj.cpp` -- classical Lennard-Jones MD (CPU, argon)
+- `examples/07_md_lj.cu` -- CUDA twin of the same classical-MD lesson
+- `examples/08_pw.cpp` -- plane-wave DFT for a periodic solid
+- `examples/09_gpw.cpp` -- GPW DFT single point (water)
+- `examples/10_gpw_znoedl.cpp` -- GPW DFT for a 1214-atom ZnO EDL slab
 
 @section docsbuild Building The Docs
 

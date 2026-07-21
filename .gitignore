@@ -35,6 +35,161 @@
 # Documentation
 docs/html/
 docs/latex/
+# Staged MolVis web-component bundle (built from molvis/core/dist; ~40MB).
+# Stage with: rsync -a --delete ../molvis/core/dist/ docs/assets/molvis-core/
+docs/assets/molvis-core/
 
 # CMake build directory
 build/
+
+### Python ###
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ruff
+.ruff_cache/
+
+# LSP config files
+pyrightconfig.json
+
+# example outputs
+*.cube
+*.png
+*.xyz
+# …except the checked-in benchmark starting geometries
+!benchmarks/qc/rhf/validation/molecules/*.xyz
+# …and the checked-in MSU-PE reference plots (Phase 5 acceptance artifacts)
+!benchmarks/md/reference/polyethylene/*.png
+# …and literature-facing tutorial results (docs embed these)
+!examples/results/**
+!docs/assets/structures/**
+
+
+# Claude agent
+.claude/worktrees/**
+.claude/projects/
+.claude/scheduled_tasks.lock
+
+# Extra build trees (build/ already listed above)
+build_*/
+build-*/
+
+# Debug / run artifacts for debug_amorphous LAMMPS-comparison harness
+tools/debug_amorphous/*.data
+tools/debug_amorphous/*.dat
+tools/debug_amorphous/restart.*
+tools/debug_amorphous/log.*
+
+# Ad-hoc SCF debug dumps
+tools/*.npy
+tools/dump_*.txt
+# LAMMPS run artifacts (regenerable — see benchmarks/.../SOURCES.md)
+log.lammps
+**/log.lammps
+jobs/
+
+# SLURM job logs
+slurm-*.out

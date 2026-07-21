@@ -1,10 +1,10 @@
-# SCF Learning Path
+# SCF Reading Map
 
-This page explains how to study the SCF part of Atomiverse without getting lost
-in either chemistry jargon or internal implementation details.
+A short map into the **Tutorial** electronic-structure arc — not a methods
+manual. Install and concepts stay in [Getting started](getting-started.md)
+and [Core concepts](concepts.md).
 
-The key idea is that all four SCF tutorials describe the same computational
-pattern:
+All SCF tutorials share the same computational pattern:
 
 1. start from a density guess
 2. build an effective matrix from that guess
@@ -13,44 +13,50 @@ pattern:
 5. stop when the density stops changing
 
 What changes from chapter to chapter is not the loop itself, but what the
-matrix means physically and which Atomiverse APIs are responsible for building
-it.
+matrix means physically.
 
 ## Recommended Reading Order
 
 Read these chapters in order:
 
-1. [Tutorial 1: Toy SCF from First Principles](../tutorial/01-scf.md)
-2. [Tutorial 2: Restricted Hartree-Fock (RHF)](../tutorial/02-rhf.md)
-3. [Tutorial 3: Unrestricted Hartree-Fock (UHF)](../tutorial/03-uhf.md)
-4. [Tutorial 4: Unrestricted Kohn-Sham DFT (UKS)](../tutorial/04-uks.md)
+1. [Chapter 2: Atomic Orbitals to Single-Point RHF](../tutorial/ch02-rhf.md)
+2. [Chapter 3: Unrestricted Hartree-Fock (UHF)](../tutorial/ch03-open-shell.md)
+3. [Chapter 5: Unrestricted Kohn-Sham DFT (UKS)](../tutorial/ch05-kohn-sham-dft.md)
+4. [Chapter 8: Plane-Wave DFT for Periodic Systems](../tutorial/ch08-plane-wave.md)
 
 Each chapter adds exactly one new idea.
 
-Tutorial 1 teaches feedback and convergence with a matrix model that has almost
+Chapter 2 teaches feedback and convergence with a matrix model that has almost
 no chemistry in it.
 
-Tutorial 2 replaces the toy matrix with real molecular integrals and introduces
+Chapter 2 replaces the toy matrix with real molecular integrals and introduces
 the RHF closed-shell approximation.
 
-Tutorial 3 removes the “same spatial orbital for both spins” restriction and
+Chapter 3 removes the "same spatial orbital for both spins" restriction and
 shows how open-shell systems require separate alpha and beta channels.
 
-Tutorial 4 keeps the spin-resolved structure of UHF but replaces explicit
+Chapter 5 keeps the spin-resolved structure of UHF but replaces explicit
 Hartree-Fock exchange with exchange-correlation functionals evaluated on a grid.
+
+Chapter 8 moves from molecules to periodic solids, replacing atom-centered
+Gaussian basis sets with plane waves and introducing pseudopotentials, FFT
+acceleration, k-point sampling, and Ewald summation.
 
 ## Which Example Matches Which Tutorial?
 
-| Tutorial | Primary example or API | Why it matters |
+| Tutorial | Primary example | Why it matters |
 |---|---|---|
-| Toy SCF | `examples/toy-scf.cpp`, `examples/scf.cu`, `cpu::scf::solve` | Learn the loop before learning chemistry |
-| RHF | `examples/h2-rhf.cpp`, `examples/h2_rhf.cu`, `cpu::scf::rhf_solve` | First physically meaningful calculation |
-| UHF | `cpu::scf::uhf_solve` | Open-shell systems and spin contamination |
-| UKS | `cpu::scf::uks_solve` | DFT, grids, and exchange-correlation potentials |
+| SCF introduction | `examples/01_scf.cpp` | Learn the loop before learning chemistry |
+| RHF | `examples/02_rhf.cpp` | First physically meaningful calculation |
+| UHF | `examples/03_uhf.cpp` | Open-shell systems and spin contamination |
+| UKS | `examples/04_uks.cpp` | DFT, grids, and exchange-correlation potentials |
+| Plane-Wave DFT | `examples/08_pw.cpp` | Periodic systems, pseudopotentials, FFT acceleration |
 
-The examples and solver APIs are intentionally paired. The example shows how to
-assemble a complete calculation. The solver header shows the exact input and
-output structures you need to understand.
+Note: tutorial numbers and example numbers do **not** line up. The example
+files are numbered in their own pedagogical order (so plane-wave DFT, which
+comes last among the example programs, is `examples/08_pw.cpp` even though it is
+Chapter 8). Always follow the "Primary example" column above rather than
+assuming the numbers match. Read the theory and the matching code side by side.
 
 ## When To Use CPU Solvers Versus CUDA SCF Components
 
@@ -68,12 +74,13 @@ by one or more components.
 
 Pair each tutorial with one code-reading target:
 
-- after Tutorial 1, read [`cpu::scf::solve`](../../include/atomiverse/cpu/scf/solve.h)
-- after Tutorial 2, read [`IntegralPack`](../../include/atomiverse/cpu/scf/integrals.h) and [`rhf_solve`](../../include/atomiverse/cpu/scf/rhf_solve.h)
-- after Tutorial 3, read [`uhf_solve`](../../include/atomiverse/cpu/scf/uhf_solve.h)
-- after Tutorial 4, read [`uks_solve`](../../include/atomiverse/cpu/scf/uks_solve.h) and [`xc_functional.h`](../../include/atomiverse/cpu/scf/xc_functional.h)
+- after Chapter 2, read [`cpu::scf::solve`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/solve.h)
+- after Chapter 2, read [`IntegralPack`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/integrals.h), [`SCFSolver`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/scf_solver.h), and [`scf_types.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/scf_types.h)
+- after Chapter 3, revisit `SCFSolver` with `uhf_config`
+- after Chapter 5, revisit `SCFSolver` with `uks_config` and read [`xc_functional.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)
+- after Chapter 8, read [`pw_solver.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/pw/pw_solver.h) and [`internal/pw_workspace.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/pw/internal/pw_workspace.h)
 
 If you want to understand how the same ideas map onto the runtime system, then
-read the [Developer Manual](../developer/index.md) after finishing Tutorial 2.
+read the [Developer Manual](../developer/index.md) after finishing Chapter 2.
 That is usually the point where `Driver`, `Plan`, and `Component` start to make
 sense instead of feeling abstract.

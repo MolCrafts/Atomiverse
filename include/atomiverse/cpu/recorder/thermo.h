@@ -1,17 +1,36 @@
 /// @file cpu/recorder/thermo.h
-/// @brief CPU-side thermodynamic output (LAMMPS thermo_style one).
+/// @brief CPU thermodynamic output: Thermo component + thermo_print free function.
 ///
-/// Called by cuda::Thermo after async D2H of pe/ke scalars.
-/// The CUDA component owns no formatting or temperature logic — it is here.
+/// `Thermo` is the per-step recorder component; `thermo_print` is the
+/// low-level formatted-print helper called by `cuda::Thermo` after async D2H.
 #pragma once
 
 #include <fstream>
+#include <string>
 
-#include "atomiverse/core/int.h"
-#include "atomiverse/core/real.h"
+#include "atomiverse/cpu/component/recorder.h"
 
 namespace ATV {
 namespace cpu {
+
+/// @brief Thermodynamic output recorder component (CPU backend).
+///
+/// Prints step, PE, KE, temperature, total energy, and the
+/// integrator's conserved quantity (`frame.conserved` — the extended
+/// Hamiltonian for Nosé-Hoover NVT/NPT) at the given frequency.
+/// MPI-aware: only rank 0 prints.
+class Thermo : public cpu::Recorder {
+  public:
+    explicit Thermo(int freq);
+
+    std::string name() const override { return "thermo"; }
+    /* role via Recorder base */
+    int frequency() const override { return freq_; }
+    void launch(const cpu::LaunchContext& ctx) override;
+
+  private:
+    int freq_;
+};
 
 /// @brief Print one thermodynamic output line.
 ///
@@ -24,7 +43,7 @@ namespace cpu {
 /// @param n_atoms        Number of atoms (used to compute degrees of freedom).
 /// @param header_printed Guard flag; set to true after the first call.
 /// @param file           Optional open output stream (may be a closed fstream).
-void thermo_print(int step, Real pe, Real ke, Int n_atoms,
+void thermo_print(int step, double pe, double ke, int n_dof,
                   bool& header_printed, std::ofstream& file);
 
 } // namespace cpu

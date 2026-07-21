@@ -1,0 +1,108 @@
+[build-system]
+# Default delivery is a pure-Python wheel (wheel.cmake = false below).
+# nanobind is only needed when CMake actually builds the extension
+# (optional-dependencies.native, or an install that forces cmake on).
+requires = ["scikit-build-core>=0.10"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "atomiverse"
+version = "0.1.0"
+description = "Molecular simulation compute backend (CPU + optional CUDA)"
+requires-python = ">=3.9"
+dependencies = ["numpy", "molcrafts-molrs==0.7.0", "typer>=0.12"]
+
+[project.optional-dependencies]
+molpy    = ["molcrafts-molpy==0.7.0"]
+torch    = ["torch"]
+dev      = ["pytest", "pytest-cov", "numpy"]
+# Native extension build (nanobind). Not required for the pure wheel.
+native   = ["nanobind>=2.4"]
+# Docs: only the theme (+ zensical). MolVis and MolPlot fences both live in
+# molcrafts-zensical-theme; browser bundles load from the npm CDN in
+# zensical.toml. Do NOT add molcrafts-molplot here — that is for paper
+# charting in the `examples` extra, not for documentation builds.
+docs     = [
+  "zensical>=0.0.45",
+  "molcrafts-zensical-theme>=0.2.2",
+]
+# Python examples (pw_qe_compare, …): paper plots via molplot; systems via molpy.
+# Do not add matplotlib or ASE here — use the MolCrafts stack only.
+examples = [
+  "molcrafts-molplot>=0.1.2",
+  "molcrafts-molpy==0.7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/atomiverse"]
+
+# ── scikit-build-core ──────────────────────────────────────────────────────────
+
+[tool.scikit-build]
+# Pin behavior to this release's defaults even when upgrading the tool
+minimum-version = "build-system.requires"
+
+# CMakeLists.txt lives at the repo root, one level above python/
+cmake.source-dir = ".."
+cmake.build-type = "Release"
+
+# Separate build tree for wheel builds (avoids collisions with dev builds in build/)
+build-dir = "build/skbuild/{wheel_tag}"
+
+# Python package source tree (src-layout)
+wheel.packages = ["src/atomiverse"]
+
+# Default: pure-Python wheel — no CMake / no C++ compile at pip install time.
+# On-demand native build is `python -m atomiverse install` (phase 03) or an
+# override that re-enables cmake (e.g. -C wheel.cmake=true for dev wheels).
+wheel.cmake = false
+
+# Editable installs: redirect mode injects a finder that delegates to both
+# the CMake install tree and the Python source tree
+editable.mode = "redirect"
+editable.rebuild = false
+editable.verbose = true
+
+# sdist: exclude generated and build artefacts
+sdist.exclude = [
+    "build/**",
+    "docs/html/**",
+    ".claude/**",
+    "**/__pycache__/**",
+]
+
+# ── CMake defines (use cmake.define, not cmake.args, so they can be overridden
+#    from the command line:  pip install -C cmake.define.ATV_BUILD_CUDA=ON .)
+# ──────────────────────────────────────────────────────────────────────────────
+
+[tool.scikit-build.cmake.define]
+ATV_BUILD_PYTHON     = "ON"
+ATV_BUILD_TESTS      = "OFF"
+ATV_BUILD_BENCHMARKS = "OFF"
+ATV_BUILD_EXAMPLES   = "OFF"
+ATV_BUILD_PW         = {env = "ATV_BUILD_PW",  default = "OFF"}
+ATV_BUILD_HF        = {env = "ATV_BUILD_HF", default = "ON"}
+
+# Optional backends: driven by environment variable with a safe default
+# Override: ATV_BUILD_CUDA=ON pip install .
+ATV_BUILD_CUDA  = {env = "ATV_BUILD_CUDA",  default = "OFF"}
+# MPI launcher executable in the wheel (opt-in: an MPI + libpython-linked
+# binary is environment-bound, never manylinux-distributable):
+#   ATV_BUILD_LAUNCHER=ON pip install .
+ATV_BUILD_LAUNCHER = {env = "ATV_BUILD_LAUNCHER", default = "OFF"}
+ATV_BUILD_TORCH = {env = "ATV_BUILD_TORCH", default = "OFF"}
+ATV_USE_LIBXC   = {env = "ATV_USE_LIBXC",  default = "OFF"}
+
+# Precision: float (default) or double
+ATV_REAL = {env = "ATV_REAL", default = "float"}
+
+# ── Environment-specific overrides ────────────────────────────────────────────
+
+# CI wheel builds: enable full rebuild logging
+[[tool.scikit-build.overrides]]
+if.env.CIBUILDWHEEL = true
+cmake.build-type = "Release"

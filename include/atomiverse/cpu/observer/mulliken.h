@@ -2,70 +2,53 @@
 /// @brief Mulliken population analysis — pure observer (compute only, no I/O).
 ///
 /// Computes Mulliken gross populations by projecting a density matrix onto
-/// the atom-centred basis.  The algorithm is:
+/// the atom-centred basis:
 ///
-///   N_A = Tr_A(P S)  =  sum_{mu in A} (PS)_{mu mu}
+///   N_A     = sum_{mu in A} (P S)_{mu, mu}          (gross population on atom A)
+///   q_A     = Z_A - N_A                              (Mulliken net charge)
+///   sigma_A = sum_{mu in A} ((P^alpha - P^beta) S)_{mu, mu}   (Mulliken spin density)
 ///
-/// Charge: q_A = Z_A - N_A
-/// Spin:   sigma_A = Tr_A((P^alpha - P^beta) S)
+/// Functions are stateless and side-effect free: given an IntegralPack and
+/// density matrices, they return per-atom vectors. The AO -> atom mapping
+/// is derived from shell centers inside the observer; IntegralPack itself
+/// only carries fundamental physical quantities (atoms, shells, S, T, V, ...)
+/// and never precomputed indices.
 ///
-/// The functions are stateless and side-effect free: they take the density
-/// matrices and overlap matrix and return per-atom vectors.  Analysis is
-/// delegated to molrs via the CXX bridge.
+/// Pure C++/xtensor implementation; no FFI.
 ///
-/// @see cpu::scf::IntegralPack for the S matrix
+/// @see cpu::scf::IntegralPack for the S matrix and shell/atom tables
 #pragma once
 
 #include <vector>
 
-#include <xtensor/xtensor.hpp>
-
-#include "atomiverse/core/real.h"
-#include "atomiverse/cpu/frame.h"
+#include <xtensor/containers/xtensor.hpp>
 
 namespace ATV {
 namespace cpu {
+namespace scf {
+struct IntegralPack; // defined in cpu/scf/internal/integrals.h
+} // namespace scf
 
-/// @brief Compute Mulliken net charges: q_A = Z_A - Tr_A(P S).
+/// @brief Mulliken net charges q_A = Z_A - Tr_A(P S).
 ///
-/// Delegates to molrs::mulliken_charge via CXX bridge.
+/// The returned vector is indexed by atom order (matches pack.atoms).
 ///
-/// @param frame   CPU Frame supplying type_id[] and n_atoms().
-/// @param P_flat  Density matrix as flat row-major array [n_basis * n_basis].
-/// @param S_flat  Overlap matrix as flat row-major array [n_basis * n_basis].
-/// @param n_basis Number of basis functions.
-/// @return Per-atom Mulliken net charges [e], size == frame.n_atoms().
-std::vector<Real> mulliken_charge(const cpu::Frame& frame,
-                                  const Real* P_flat,
-                                  const Real* S_flat,
-                                  int n_basis);
+/// @param pack Integral pack carrying atoms, shells, and the overlap S.
+/// @param P    Density matrix [n_basis, n_basis]. For RHF use total density
+///             P_total = 2 * P_occ; for UHF / UKS use P_alpha + P_beta.
+/// @return Per-atom Mulliken net charges [e], size == pack.atoms.size().
+std::vector<double> mulliken_charge(const cpu::scf::IntegralPack& pack,
+                                    const xt::xtensor<double, 2>& P);
 
-/// @brief Compute Mulliken spin densities: sigma_A = Tr_A((P^alpha - P^beta) S).
+/// @brief Mulliken spin densities sigma_A = Tr_A((P^alpha - P^beta) S).
 ///
-/// @param frame     CPU Frame supplying type_id[] and n_atoms().
-/// @param Pa_flat   Alpha density matrix as flat row-major array.
-/// @param Pb_flat   Beta  density matrix as flat row-major array.
-/// @param S_flat    Overlap matrix as flat row-major array.
-/// @param n_basis   Number of basis functions.
-/// @return Per-atom Mulliken spin densities [e], size == frame.n_atoms().
-std::vector<Real> mulliken_spin(const cpu::Frame& frame,
-                                const Real* Pa_flat,
-                                const Real* Pb_flat,
-                                const Real* S_flat,
-                                int n_basis);
-
-// ── Overloads accepting xtensor matrices (for CPU-side callers) ──────────────
-
-/// @brief Convenience overload taking xtensor density and overlap matrices.
-std::vector<Real> mulliken_charge(const cpu::Frame& frame,
-                                  const xt::xtensor<Real, 2>& P,
-                                  const xt::xtensor<Real, 2>& S);
-
-/// @brief Convenience overload taking xtensor alpha/beta density matrices.
-std::vector<Real> mulliken_spin(const cpu::Frame& frame,
-                                const xt::xtensor<Real, 2>& P_alpha,
-                                const xt::xtensor<Real, 2>& P_beta,
-                                const xt::xtensor<Real, 2>& S);
+/// @param pack    Integral pack carrying atoms, shells, and the overlap S.
+/// @param P_alpha Alpha spin density matrix [n_basis, n_basis].
+/// @param P_beta  Beta  spin density matrix [n_basis, n_basis].
+/// @return Per-atom Mulliken spin densities [e], size == pack.atoms.size().
+std::vector<double> mulliken_spin(const cpu::scf::IntegralPack& pack,
+                                  const xt::xtensor<double, 2>& P_alpha,
+                                  const xt::xtensor<double, 2>& P_beta);
 
 } // namespace cpu
 } // namespace ATV

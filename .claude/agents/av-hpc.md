@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash, Write, Edit
 model: inherit
 ---
 
-Read CLAUDE.md for dual-backend design, CPU data residency rules, and component lifecycle, and .claude/NOTES.md for recent decisions, before starting any work.
+Read CLAUDE.md for dual-backend design, CPU data residency rules, and component lifecycle, and .claude/notes/notes.md for recent decisions, before starting any work.
 
 ## Role
 
@@ -22,12 +22,40 @@ You are a high-performance computing engineer specializing in CPU parallelism. Y
 - **Critical sections:** avoid in hot loops. Prefer reduction clauses or thread-local accumulation
 
 ### SIMD / vectorization
-- **xtensor + xsimd:** xtensor can auto-vectorize through xsimd backend. Prefer xtensor vectorized ops over manual loops
-- **SoA layout is SIMD-friendly:** `cpu::Frame` already uses SoA (x[], y[], z[] separate arrays) — contiguous access enables auto-vectorization
-- **Compiler hints:** `#pragma omp simd` for loops the compiler fails to vectorize; `__restrict__` on pointer parameters to enable aliasing optimization
-- **Alignment:** ensure xtensor arrays are aligned to 32/64 bytes for AVX/AVX-512. Use `xt::aligned_allocator`
-- **Avoid scalar conditionals in SIMD loops:** use blending/masking (`xt::where`) instead of `if` inside vectorized loops
-- **Intrinsics as last resort:** prefer xtensor ops > `#pragma omp simd` > compiler builtins > raw intrinsics
+- **xsimd 11.2.0** is linked directly to `atomiverse`. Use `#include <xsimd/xsimd.hpp>` in hot .cpp files.
+  - **Do NOT** set `XTENSOR_USE_XSIMD` as a compile definition globally: enabling it activates SIMD-backed xtensor storage that breaks `reshape_view` on expression types (error in `xc_grid_engine.h`). Use xsimd only directly.
+  - **Incompatibility**: xsimd 13.x breaks xtensor 0.25.0. Use xsimd 11.2.0 (the version xtensor 0.25.0 was tested with).
+- **xsimd batch API:** `xsimd::batch<double>` (W=2 NEON on ARM64, 4 on AVX2, 8 on AVX-512).
+  - Load: `batch_t::load_unaligned(ptr)` / `batch_t::load_aligned(ptr)`
+  - **Horizontal reduce** (portable): store to array, then scalar sum:
+    ```cpp
+    double arr[16]; acc_v.store_unaligned(arr); double s = 0; for(int i=0;i<W;i++) s += arr[i];
+    ```
+    (`xsimd::hadd` is not present in xsimd 11.2.0 as a free function)
+  - Math: `xsimd::erf(v)`, `xsimd::sqrt(v)`, `xsimd::exp(v)`
+  - Branch-free select: `xsimd::select(mask, a, b)` — never use scalar `if` inside SIMD loops
+- **Boys function SIMD:** `boys_f0(T) = 0.5*sqrt(pi/T)*erf(sqrt(T))`. Vectorize as:
+  ```cpp
+  auto small  = T_v < batch_t(1e-12);
+  auto safe_T = xsimd::select(small, batch_t(1.0), T_v);
+  auto F0_v   = xsimd::select(small, batch_t(1.0),
+                    batch_t(0.5)*xsimd::sqrt(batch_t(PI)/safe_T)*xsimd::erf(xsimd::sqrt(safe_T)));
+  ```
+- **CMake native tuning (required for CPU SCF):**
+  ```cmake
+  target_compile_options(atomiverse PRIVATE
+      $<$<COMPILE_LANGUAGE:CXX>:-march=native>)  # language guard prevents NVCC poisoning
+  # xsimd linked directly; NOT as XTENSOR_USE_XSIMD global define
+  target_link_libraries(atomiverse PUBLIC xsimd)
+  ```
+- **ERI shell-block dispatch (`eri_block()` in `native_integrals.cpp`):**
+  - `(ss|ss)` (all four shells l=0) → `eri_blk_ss_ss`: a dedicated xsimd ket-loop kernel. It precomputes ket geometry (K_CD, Q, γ₂) once before the bra loop, then vectorizes `acc += pref * boys_f0(T)` over the ket-primitive loop with `xsimd::batch<double>`. Beats Rys by ~1.5× for pure s-shells (a 1-root Rys quadrature with buffer alloc is slower than a direct F₀(T) sum).
+  - **All other quartets (any l up to 2, s/p/d)** → `rys_eri_block` (`rys_eri.cpp`): a native Rys-quadrature engine — same 2D-VRR + HRR algebra as libcint's `CINTg0_2e` / `CINTg0_2e_2d` / `CINTg0_ik2d_4d`. It handles d-shells (cc-pVDZ, 6 Cartesian functions/shell); `kRysMaxL = 2`. d-shell ERIs are verified against libcint to machine precision (`tests/cpu/scf/test_rys_eri.cpp`).
+  - **Boys-SIMD only applies to the (ss\|ss) kernel.** Higher-l accuracy comes from Rys roots + `-march=native -O3` auto-vectorizing the 2D-VRR recurrences.
+  - The old `eri_blk_ltot<LTOT>` / `eri_blk_general` McMurchie-Davidson templates in `native_integrals.cpp` are superseded by the Rys engine and are no longer on the `eri_block()` dispatch path. Do NOT add a new MD-BLAS angular-contraction path for l≥2: the Rys engine already is the libcint-equivalent d-shell path. See spec `.claude/specs/eri-hpc-opt.md`.
+- **SoA layout is SIMD-friendly:** `cpu::Frame` SoA (x[], y[], z[] separate) enables contiguous vectorization.
+- **Compiler hints:** `#pragma omp simd` for loops the compiler fails to vectorize; `__restrict__` on pointer params.
+- **Intrinsics hierarchy:** xtensor ops > xsimd batch > `#pragma omp simd` > compiler builtins > raw intrinsics.
 
 ### MPI patterns for molecular simulation
 - **Domain decomposition:** partition simulation box into MPI ranks, each rank owns a spatial region
@@ -88,9 +116,12 @@ When asked to implement or optimize CPU backend code:
    - Use thread-local buffers for accumulation, reduce at the end
    - Test with `OMP_NUM_THREADS=1` (correctness) and `OMP_NUM_THREADS=N` (scaling)
 4. **Vectorize:**
-   - Prefer xtensor vectorized expressions
-   - Add `#pragma omp simd` where auto-vectorization fails
-   - Verify with compiler vectorization report
+   - Prefer xtensor vectorized expressions (XTENSOR_USE_XSIMD must be defined)
+   - Use `xsimd::batch<double>` for manual SIMD on primitive loops (see xsimd batch API above)
+   - For ERI `eri_block()`: use shell-type dispatch + xsimd ket-loop pattern per `eri-hpc-opt.md` spec
+   - Always add `-march=native` per-target when writing new CPU SCF code
+   - Add `#pragma omp simd` where xsimd is not applied
+   - Verify with `-fopt-info-vec-missed` compiler report
 5. **Validate:**
    - Numerical results must match serial version within floating-point tolerance
    - Run existing tests: `ctest --test-dir build --output-on-failure`

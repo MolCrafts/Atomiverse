@@ -12,9 +12,7 @@
 
 #include <deque>
 #include <vector>
-#include <xtensor/xtensor.hpp>
-
-#include "atomiverse/core/real.h"
+#include <xtensor/containers/xtensor.hpp>
 
 namespace ATV {
 namespace cpu {
@@ -26,7 +24,7 @@ namespace scf {
 /// @code{.cpp}
 /// ASPCPredictor pred(3);  // order K=3
 /// for (int step = 0; step < n_steps; ++step) {
-///     xt::xtensor<Real, 2> P_guess;
+///     xt::xtensor<double, 2> P_guess;
 ///     if (pred.predict(P_guess)) {
 ///         // Use P_guess as SCF initial guess
 ///         auto result = rhf_solve_with_guess(integrals, P_guess, tol, max_iter);
@@ -34,25 +32,25 @@ namespace scf {
 ///         pred.record(P_corrected);
 ///     } else {
 ///         // Not enough history, do full SCF
-///         auto result = rhf_solve(integrals, tol, max_iter);
+///         auto result = SCFSolver(integrals, tol, max_iter);
 ///         pred.record(result.P);
 ///     }
 /// }
 /// @endcode
 class ASPCPredictor {
-public:
+  public:
     /// @brief Construct with extrapolation order.
     /// @param order Lagrange extrapolation order K (default 3). Uses K+1 history points.
     explicit ASPCPredictor(int order = 3);
 
     /// @brief Record a converged density matrix into history.
     /// @param P_scf Converged density matrix from SCF.
-    void record(const xt::xtensor<Real, 2>& P_scf);
+    void record(const xt::xtensor<double, 2>& P_scf);
 
     /// @brief Predict density for the next step via Lagrange extrapolation.
     /// @param[out] P_predicted Extrapolated density matrix.
     /// @return True if prediction was made (sufficient history), false otherwise.
-    bool predict(xt::xtensor<Real, 2>& P_predicted) const;
+    bool predict(xt::xtensor<double, 2>& P_predicted) const;
 
     /// @brief Blend corrector result with predictor for time-reversibility.
     ///
@@ -61,11 +59,9 @@ public:
     /// @param P_scf       SCF-converged density at current step.
     /// @param P_predicted Predictor output (from predict()).
     /// @param[out] P_corrected Blended density to record.
-    void correct(
-        const xt::xtensor<Real, 2>& P_scf,
-        const xt::xtensor<Real, 2>& P_predicted,
-        xt::xtensor<Real, 2>& P_corrected
-    ) const;
+    void correct(const xt::xtensor<double, 2>& P_scf,
+                 const xt::xtensor<double, 2>& P_predicted,
+                 xt::xtensor<double, 2>& P_corrected) const;
 
     /// @brief Reset history (e.g., after geometry discontinuity or restart).
     void reset();
@@ -78,10 +74,11 @@ public:
     /// @return Lagrange extrapolation order.
     int order() const { return K_; }
 
-private:
-    int K_;                                        ///< Extrapolation order.
-    std::deque<xt::xtensor<Real, 2>> history_;    ///< Stored density matrices (newest last).
-    std::vector<Real> omega_;                      ///< Lagrange extrapolation coefficients.
+  private:
+    int K_; ///< Extrapolation order.
+    std::deque<xt::xtensor<double, 2>>
+        history_;               ///< Stored density matrices (newest last).
+    std::vector<double> omega_; ///< Lagrange extrapolation coefficients.
 
     /// @brief Compute Lagrange extrapolation coefficients for order K.
     void compute_coefficients();

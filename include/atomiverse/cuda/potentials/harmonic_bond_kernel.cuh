@@ -6,8 +6,7 @@
 /// Single source of truth for harmonic bond force+energy computation.
 #pragma once
 
-#include "atomiverse/core/int.h"
-#include "atomiverse/core/real.h"
+#include "atomiverse/cuda/frame/types.cuh"
 
 namespace ATV {
 namespace cuda {
@@ -28,12 +27,14 @@ namespace kernels {
 /// @param box             Simulation cell 3x3 row-major [9, device].
 /// @param n_bonds         Number of bonds.
 __global__ void harmonic_bond_k(
-    const Real* __restrict__ x, const Real* __restrict__ y, const Real* __restrict__ z,
-    Real* __restrict__ fx, Real* __restrict__ fy, Real* __restrict__ fz,
-    Real* __restrict__ energy,
-    const Int* __restrict__ bi, const Int* __restrict__ bj, const Int* __restrict__ bt,
-    const Real* __restrict__ K, const Real* __restrict__ r0,
-    const Real* __restrict__ box, Int n_bonds);
+    const cuda::real_t* __restrict__ x, const cuda::real_t* __restrict__ y,
+    const cuda::real_t* __restrict__ z, cuda::real_t* __restrict__ fx,
+    cuda::real_t* __restrict__ fy, cuda::real_t* __restrict__ fz,
+    cuda::prec_t* __restrict__ energy, cuda::prec_t* __restrict__ stress,
+    const int* __restrict__ bi, const int* __restrict__ bj,
+    const int* __restrict__ bt, const cuda::work_t* __restrict__ K,
+    const cuda::work_t* __restrict__ r0, const cuda::prec_t* __restrict__ box,
+    int n_bonds);
 
 } // namespace kernels
 } // namespace cuda

@@ -1,85 +1,92 @@
 /// @file cpu/observer/mulliken.cpp
-/// @brief Mulliken population analysis — delegates to molrs via CXX bridge.
+/// @brief Mulliken population analysis — pure C++/xtensor implementation.
 
 #include "atomiverse/cpu/observer/mulliken.h"
-#include "atomiverse/molrs.hpp"
 
-#include <cstddef>
+#include "atomiverse/cpu/scf/internal/integrals.h"
+
+#include <stdexcept>
+
+#include <xtensor-blas/xlinalg.hpp>
+#include <xtensor/containers/xtensor.hpp>
 
 namespace ATV {
 namespace cpu {
 
-// ── Core API (raw pointer, callable from .cu via .cpp helper) ────────────────
+namespace {
 
-std::vector<Real> mulliken_charge(const cpu::Frame& frame,
-                                  const Real* P_flat,
-                                  const Real* S_flat,
-                                  int n_basis)
-{
-    const int n  = frame.n_atoms();
-    const int n2 = n_basis * n_basis;
+/// @brief Derive AO index -> atom index by matching shell center to atom pos.
+///
+/// Both native::Shell.center and native::Atom.pos are populated from the
+/// same Frame positions converted to Bohr, so bit-exact equality holds
+/// within a single IntegralPack. The observer derives the mapping itself
+/// rather than caching it on IntegralPack: hot-path data structures carry
+/// only fundamental physical quantities.
+std::vector<int> derive_basis_to_atom(const scf::IntegralPack& pack) {
+    const int n_basis = pack.n_basis;
+    const int natm = static_cast<int>(pack.atoms.size());
 
-    // Build type_id slice for molrs (Int -> i32 conversion)
-    std::vector<int32_t> type_id_i32(n);
-    for (int i = 0; i < n; ++i)
-        type_id_i32[i] = static_cast<int32_t>(frame.type_id[i]);
+    std::vector<int> b2a(static_cast<std::size_t>(n_basis), -1);
+    for (int mu = 0; mu < n_basis; ++mu) {
+        const double* c = pack.shells[static_cast<std::size_t>(mu)].center;
+        for (int A = 0; A < natm; ++A) {
+            const double* p = pack.atoms[static_cast<std::size_t>(A)].pos;
+            if (c[0] == p[0] && c[1] == p[1] && c[2] == p[2]) {
+                b2a[static_cast<std::size_t>(mu)] = A;
+                break;
+            }
+        }
+        if (b2a[static_cast<std::size_t>(mu)] < 0) {
+            throw std::runtime_error("cpu::mulliken: shell center at AO "
+                                     + std::to_string(mu)
+                                     + " matches no atom in IntegralPack");
+        }
+    }
+    return b2a;
+}
 
-    rust::Slice<const int32_t> tid(type_id_i32.data(), type_id_i32.size());
-    rust::Slice<const double>  p(reinterpret_cast<const double*>(P_flat), n2);
-    rust::Slice<const double>  s(reinterpret_cast<const double*>(S_flat), n2);
+/// @brief Scatter the diagonal of (D S) per atom using the AO->atom map.
+std::vector<double>
+accumulate_diag_ds_per_atom(const xt::xtensor<double, 2>& D,
+                            const xt::xtensor<double, 2>& S,
+                            const std::vector<int>& basis_to_atom, int natm) {
+    const xt::xtensor<double, 2> DS = xt::linalg::dot(D, S);
 
-    auto result = molrs::mulliken_charge(tid, p, s, n_basis);
-
-    // Convert rust::Vec<f64> → std::vector<Real>
-    std::vector<Real> out(result.size());
-    for (std::size_t i = 0; i < result.size(); ++i)
-        out[i] = static_cast<Real>(result[i]);
+    std::vector<double> out(static_cast<std::size_t>(natm), 0.0);
+    const int n_basis = static_cast<int>(basis_to_atom.size());
+    for (int mu = 0; mu < n_basis; ++mu) {
+        const int A = basis_to_atom[static_cast<std::size_t>(mu)];
+        out[static_cast<std::size_t>(A)] += DS(mu, mu);
+    }
     return out;
 }
 
-std::vector<Real> mulliken_spin(const cpu::Frame& frame,
-                                const Real* Pa_flat,
-                                const Real* Pb_flat,
-                                const Real* S_flat,
-                                int n_basis)
-{
-    const int n  = frame.n_atoms();
-    const int n2 = n_basis * n_basis;
+} // namespace
 
-    std::vector<int32_t> type_id_i32(n);
-    for (int i = 0; i < n; ++i)
-        type_id_i32[i] = static_cast<int32_t>(frame.type_id[i]);
+std::vector<double> mulliken_charge(const scf::IntegralPack& pack,
+                                    const xt::xtensor<double, 2>& P) {
+    const int natm = static_cast<int>(pack.atoms.size());
+    const auto b2a = derive_basis_to_atom(pack);
 
-    rust::Slice<const int32_t> tid(type_id_i32.data(), type_id_i32.size());
-    rust::Slice<const double>  pa(reinterpret_cast<const double*>(Pa_flat), n2);
-    rust::Slice<const double>  pb(reinterpret_cast<const double*>(Pb_flat), n2);
-    rust::Slice<const double>  s(reinterpret_cast<const double*>(S_flat), n2);
+    auto population = accumulate_diag_ds_per_atom(P, pack.S, b2a, natm);
 
-    auto result = molrs::mulliken_spin(tid, pa, pb, s, n_basis);
-
-    std::vector<Real> out(result.size());
-    for (std::size_t i = 0; i < result.size(); ++i)
-        out[i] = static_cast<Real>(result[i]);
-    return out;
+    std::vector<double> q(static_cast<std::size_t>(natm));
+    for (int A = 0; A < natm; ++A) {
+        const int Z = pack.atoms[static_cast<std::size_t>(A)].Z;
+        q[static_cast<std::size_t>(A)] =
+            static_cast<double>(Z) - population[static_cast<std::size_t>(A)];
+    }
+    return q;
 }
 
-// ── xtensor overloads (for CPU-side callers like examples) ───────────────────
+std::vector<double> mulliken_spin(const scf::IntegralPack& pack,
+                                  const xt::xtensor<double, 2>& P_alpha,
+                                  const xt::xtensor<double, 2>& P_beta) {
+    const int natm = static_cast<int>(pack.atoms.size());
+    const auto b2a = derive_basis_to_atom(pack);
 
-std::vector<Real> mulliken_charge(const cpu::Frame& frame,
-                                  const xt::xtensor<Real, 2>& P,
-                                  const xt::xtensor<Real, 2>& S)
-{
-    const int n_basis = static_cast<int>(P.shape(0));
-    return mulliken_charge(frame, P.data(), S.data(), n_basis);
-}
-
-std::vector<Real> mulliken_spin(const cpu::Frame& frame,
-                                const xt::xtensor<Real, 2>& P_alpha,
-                                const xt::xtensor<Real, 2>& P_beta,
-                                const xt::xtensor<Real, 2>& S)
-{
-    const int n_basis = static_cast<int>(P_alpha.shape(0));
-    return mulliken_spin(frame, P_alpha.data(), P_beta.data(), S.data(), n_basis);
+    const xt::xtensor<double, 2> P_diff = P_alpha - P_beta;
+    return accumulate_diag_ds_per_atom(P_diff, pack.S, b2a, natm);
 }
 
 } // namespace cpu

@@ -1,0 +1,49 @@
+{
+  "example": "05_geom_opt",
+  "system": "aspirin C9H8O4 (21 atoms)",
+  "method": "Minimize + LBFGS + RHF/STO-3G",
+  "settings": {
+    "max_steps": 25,
+    "ForceConverged": {
+      "ftol_eV_A": 0.05,
+      "rms_ftol_eV_A": 0.03,
+      "max_dtol_A": 0.05,
+      "rms_dtol_A": 0.02,
+      "etol_eV": 0.001
+    },
+    "note": "Tutorial budget is 25 steps — force threshold not fully met; energy drops monotonically."
+  },
+  "atomiverse": {
+    "n_basis": 73,
+    "n_electrons": 94,
+    "E_initial_eV": -16988.935735,
+    "E_final_eV": -17320.369991,
+    "delta_E_eV": -331.434256,
+    "max_force_initial_eV_A": 1723.872678,
+    "max_force_final_eV_A": 0.433748,
+    "steps_run": 25,
+    "force_converged": false,
+    "stop_reason": "step budget"
+  },
+  "trajectory": {
+    "step": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+    "E_eV": [
+      -16988.935735, -17230.586376, -17250.156525, -17277.800851, -17293.962733,
+      -17303.797728, -17309.770852, -17313.867492, -17316.340183, -17316.730707,
+      -17317.704153, -17318.092554, -17318.510204, -17318.907980, -17319.181311,
+      -17319.476447, -17319.681471, -17319.969066, -17320.013984, -17320.199968,
+      -17320.237999, -17320.292230, -17320.323798, -17320.350470, -17320.369991
+    ],
+    "max_force_eV_A": [
+      1723.872678, 350.918560, 238.495813, 105.157183, 47.594038,
+      19.577356, 9.375919, 6.500908, 5.545668, 7.949108,
+      2.937034, 1.881390, 2.373041, 3.027338, 3.360691,
+      1.468474, 1.545190, 1.883213, 3.038033, 0.772007,
+      0.652616, 0.795654, 1.294154, 0.545379, 0.433748
+    ]
+  },
+  "reference": {
+    "criterion": "energy decreases and max|F| drops by orders of magnitude under L-BFGS",
+    "note": "No single experimental energy for RHF/STO-3G aspirin; acceptance is monotonic descent + force reduction. Raise max_steps for ForceConverged."
+  }
+}

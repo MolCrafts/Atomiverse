@@ -1,95 +1,129 @@
 # Getting Started
 
-Atomiverse is a C++/CUDA molecular simulation codebase. The same repository
-contains three kinds of workflows: molecular dynamics, minimization, and
-electronic-structure calculations. You do not need to learn all three at once.
-The easiest way to start is to build one example, run it, and then read the
-matching tutorial.
+From a clean checkout to a built library and a first runnable example.
+This page is **install and run** only. For Driver / Component vocabulary see
+[Core concepts](concepts.md); for theory and literature numbers see the
+[Tutorial](../tutorial/).
 
-All build recipes and examples in this repository assume **C++17 or later**.
-The CUDA side is also compiled in C++17 mode.
+Requires **C++17** and **CMake ≥ 3.18**.
 
-## What You Need
+## 1. Dependencies
 
-At minimum, you need CMake and a C++17-capable compiler. Some workflows also
-need BLAS and LAPACK because the CPU reference solvers use dense linear algebra.
-CUDA workflows additionally need the CUDA toolkit.
+| Need | Why |
+|---|---|
+| C++17 compiler + CMake ≥ 3.18 | build |
+| BLAS/LAPACK (OpenBLAS) | dense linear algebra in SCF |
+| Rust toolchain | molrs (I/O) is built via corrosion |
+| FFTW3 *(optional)* | plane-wave DFT / k-space (`ATV_BUILD_PW`) |
+| CUDA toolkit + GPU *(optional)* | CUDA backend (`ATV_BUILD_CUDA`) |
 
-Important CMake options:
+### CMake options you will use
 
-- `ATV_BUILD_CUDA`: build the CUDA backend
-- `ATV_BUILD_RHF`: enable RHF, UHF, and UKS electronic-structure code
-- `ATV_BUILD_EXAMPLES`: build the example programs
-- `ATV_BUILD_TESTS`: build the test suite
-- `ATV_USE_MATPLOT`: enable plot generation in selected examples
+| Option | Turns on |
+|---|---|
+| `ATV_BUILD_HF` | Gaussian SCF (RHF / UHF / UKS) |
+| `ATV_BUILD_PW` | Plane-wave DFT (needs FFTW3) |
+| `ATV_BUILD_GPW` | GPW DFT (needs RHF + PW) |
+| `ATV_BUILD_CUDA` | CUDA backend |
+| `ATV_BUILD_EXAMPLES` | example programs under `examples/` |
+| `ATV_BUILD_TESTS` | unit test suite |
 
-## Recommended Build Profiles
+## 2. Toolchain notes (HPC / Lmod)
 
-If you want the smallest CPU-only starting point, build the toy SCF example:
+On a generic Linux box with `gcc`, OpenBLAS and CMake already on `PATH`, skip
+to step 3.
 
-```bash
-cmake -B build -DATV_BUILD_CUDA=OFF -DATV_BUILD_EXAMPLES=ON
-cmake --build build --target toy-scf
-```
-
-If you want the CPU Hartree-Fock examples as well:
-
-```bash
-cmake -B build -DATV_BUILD_CUDA=OFF -DATV_BUILD_RHF=ON -DATV_BUILD_EXAMPLES=ON
-cmake --build build --target h2-rhf
-```
-
-If you want the CUDA workflows:
+On clusters that use **Lmod**, load modules in a **login shell** and mirror
+link-time paths into the runtime path — otherwise binaries fail with
+`libopenblas.so.0` / missing `GLIBCXX_*`:
 
 ```bash
-cmake -B build -DATV_BUILD_CUDA=ON -DATV_BUILD_RHF=ON -DATV_BUILD_EXAMPLES=ON
-cmake --build build
+module load buildenv-gcc/2026.03-mpich      # example: GCC 14 + OpenBLAS + FFTW
+export OPENBLAS_ROOT="$OPENBLASDIR"
+export LD_LIBRARY_PATH="$LIBRARY_PATH:$LD_LIBRARY_PATH"
+# x86_64 login node only, if default rustup is wrongly aarch64:
+export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu
 ```
 
-If you only want the documentation:
+## 3. Configure and build
+
+Smallest useful start — Gaussian SCF + examples, CPU only:
 
 ```bash
-cmake -B build/docs -DATV_DOCS_ONLY=ON
-cmake --build build/docs --target docs
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
+      -DATV_BUILD_CUDA=OFF -DATV_BUILD_HF=ON -DATV_BUILD_EXAMPLES=ON \
+      -DBLA_VENDOR=OpenBLAS
+cmake --build build --target 02_rhf -j
 ```
 
-## Which Example Should You Run First?
+Add `-DATV_BUILD_PW=ON` for plane-wave, `-DATV_BUILD_TESTS=ON` for tests.
 
-Choose the example that matches the question you are trying to answer.
+> **molrs path:** default is `../molrs`. In a git worktree or non-standard
+> layout, pass an absolute path:
+> `-DATV_MOLRS_PATH=/abs/path/to/molrs`.
 
-| Program | When to use it | What you learn |
+## 4. Run a first example
+
+```bash
+./build/examples/02_rhf
+```
+
+H₂ / STO-3G restricted Hartree–Fock. You should see a converged total energy
+and a small iteration count. That proves the build chain works.
+
+```molvis {format="xyz" representation="ball-and-stick" controls="view" height="260px"}
+2
+name=H2 Connct="[0,1]"
+H  0.0000  0.0000  0.0000
+H  0.7400  0.0000  0.0000
+```
+
+Theory, literature comparison, and a line-by-line walk-through:
+[Chapter 2 — Restricted Hartree-Fock](../tutorial/ch02-rhf.md).
+
+Build any other example the same way:
+
+```bash
+cmake --build build --target <name> -j
+./build/examples/<name>
+```
+
+| Program | Topic | Flag |
 |---|---|---|
-| `toy-scf.cpp` | You are completely new to SCF | The feedback loop without chemistry details |
-| `scf.cu` | You want to see the staged CUDA driver model | How SCF is expressed as `Driver + Component` |
-| `h2-rhf.cpp` | You want the first real chemistry result | How integrals and the CPU RHF solver fit together |
-| `h2_rhf.cu` | You want CPU and CUDA RHF in one program | How the same `cpu::Frame` feeds both backends |
-| `lj.cu` | You want a full molecular simulation workflow | Minimization, MD, thermo output, trajectory, and RDF |
+| `01_scf` | bare SCF loop (no chemistry) | — |
+| `02_rhf` | RHF single point | `ATV_BUILD_HF` |
+| `03_uhf` | open shell / bond breaking | `ATV_BUILD_HF` |
+| `04_uks` | Kohn–Sham DFT | `ATV_BUILD_HF` |
+| `05_geom_opt` | L-BFGS + SCF | `ATV_BUILD_HF` |
+| `06_aimd` | ab-initio MD | `ATV_BUILD_HF` |
+| `07_md_lj` | classical LJ MD | always |
+| `08_pw` | plane-wave crystal | `ATV_BUILD_PW` |
+| `09_gpw` | GPW DFT | `ATV_BUILD_GPW` |
+| `15_am1` | AM1 + Minimize | — |
 
-## The One Data Structure To Remember
+Full catalog and scientific context: [Tutorial index](../tutorial/).
 
-Most beginner confusion comes from trying to track too many types at once. Start
-with one rule instead: the user-facing system description lives in
-[`cpu::Frame`](../../include/atomiverse/cpu/frame.h).
+## 5. Minimal user code shape
 
-You fill that frame with atom positions, masses, atom types, and optionally
-topology such as bonds or angles. CPU workflows operate on it directly. CUDA
-workflows copy it to a device-side frame internally and copy results back when
-the run finishes.
+Every calculation looks like this — fill a **Frame**, pick a **preset**,
+attach **components**, `build` + `run`:
 
-That means you do not have to manually manage GPU memory just to run a standard
-simulation.
+```cpp
+cpu::md::MD sim;
+sim.add_potential(cpu::PairLJCut{0.0104, 3.4, 6.8});
+sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
+sim.set_integrator(cpu::md::VelocityVerlet{0.01});
+sim.build();
+sim.run(frame, 1000);
+```
 
-## A Good Reading Order For New Users
+Read energy from `frame.meta.get(kEnergy)` (eV). Details:
+[Core concepts](concepts.md) · [Methods](methods.md).
 
-Read the documentation in this order if you are starting from zero:
+## 6. Recommended path
 
-1. This page
-2. [SCF Learning Path](scf-roadmap.md)
-3. [`docs/tutorial/01-scf.md`](../tutorial/01-scf.md)
-4. [`docs/tutorial/02-rhf.md`](../tutorial/02-rhf.md)
-5. [`docs/tutorial/03-uhf.md`](../tutorial/03-uhf.md)
-6. [`docs/tutorial/04-uks.md`](../tutorial/04-uks.md)
-
-The four tutorial chapters are intentionally progressive. The first chapter
-teaches the SCF loop as a matrix feedback problem. The later chapters keep the
-same loop and add physically meaningful ingredients one at a time.
+1. This page — build and run something.
+2. [Core concepts](concepts.md) — Driver / Component / Frame / Criterion.
+3. [Methods](methods.md) — which preset for your job.
+4. [Tutorial](../tutorial/) — the method you care about (MD, SCF, PW, …).
+5. [Developer](../developer/) — only when you need internals or extensions.

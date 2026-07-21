@@ -2,8 +2,13 @@
 /// @brief CPU VelocityVerlet implementation with OpenMP.
 
 #include "atomiverse/cpu/md/velocity_verlet.h"
-#include "atomiverse/core/units.h"
+
+#include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/core/units.h"
+#include "atomiverse/cpu/comm/domain.h"
+#include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/md/pbc.h"
 #include "atomiverse/facade/stage.h"
 
 #include <cmath>
@@ -12,53 +17,52 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
-// ── PBC wrapping (orthorhombic) ──────────────────────────────────
-
-static void wrap_pbc(cpu::Frame& f) {
-    Int n = f.n_atoms();
-    Real lx = f.box(0, 0), ly = f.box(1, 1), lz = f.box(2, 2);
-
-    #pragma omp parallel for schedule(static)
-    for (Int i = 0; i < n; ++i) {
-        f.x[i] -= lx * std::floor(f.x[i] / lx);
-        f.y[i] -= ly * std::floor(f.y[i] / ly);
-        f.z[i] -= lz * std::floor(f.z[i] / lz);
-    }
-}
-
 // ── VelocityVerlet ───────────────────────────────────────────────
 
-VelocityVerlet::VelocityVerlet(Real dt) : dt_(dt) {}
+VelocityVerlet::VelocityVerlet(double dt) : dt_(dt) {}
 
 void VelocityVerlet::launch(const cpu::LaunchContext& ctx) {
     auto& f = ctx.frame;
-    Int n = f.n_atoms();
+    const int n = owned_count(ctx);
 
-    if (ctx.stage == static_cast<int>(ATV::md::Phase::initial_integrate)) {
-        const Real dtf = Real(0.5) * dt_ * kFtm2v;
+    // Hoisted once for both branches (initial_integrate uses all seven;
+    // final_integrate uses only mass/v/f) -- the launch-boundary rule.
+    const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
+    StorageReal* __restrict sp_vx = f.span(kAtom_vx);
+    StorageReal* __restrict sp_vy = f.span(kAtom_vy);
+    StorageReal* __restrict sp_vz = f.span(kAtom_vz);
+    const AccReal* __restrict sp_fx = f.span(kAtom_fx);
+    const AccReal* __restrict sp_fy = f.span(kAtom_fy);
+    const AccReal* __restrict sp_fz = f.span(kAtom_fz);
+    StorageReal* __restrict sp_x = f.span(kAtom_x);
+    StorageReal* __restrict sp_y = f.span(kAtom_y);
+    StorageReal* __restrict sp_z = f.span(kAtom_z);
 
-        #pragma omp parallel for schedule(static)
-        for (Int i = 0; i < n; ++i) {
-            Real dtfm = dtf / f.mass[i];
-            f.vx[i] += dtfm * f.fx[i];
-            f.vy[i] += dtfm * f.fy[i];
-            f.vz[i] += dtfm * f.fz[i];
-            f.x[i] += dt_ * f.vx[i];
-            f.y[i] += dt_ * f.vy[i];
-            f.z[i] += dt_ * f.vz[i];
+    if (ctx.at(ATV::md::Phase::initial_integrate)) {
+        const double dtf = double(0.5) * dt_ * units::force_to_accel;
+
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < n; ++i) {
+            double dtfm = dtf / sp_mass[i];
+            sp_vx[i] += dtfm * sp_fx[i];
+            sp_vy[i] += dtfm * sp_fy[i];
+            sp_vz[i] += dtfm * sp_fz[i];
+            sp_x[i] += dt_ * sp_vx[i];
+            sp_y[i] += dt_ * sp_vy[i];
+            sp_z[i] += dt_ * sp_vz[i];
         }
 
-        wrap_pbc(f);
+        wrap_orthorhombic(f, n);
 
-    } else if (ctx.stage == static_cast<int>(ATV::md::Phase::final_integrate)) {
-        const Real dtf = Real(0.5) * dt_ * kFtm2v;
+    } else if (ctx.at(ATV::md::Phase::final_integrate)) {
+        const double dtf = double(0.5) * dt_ * units::force_to_accel;
 
-        #pragma omp parallel for schedule(static)
-        for (Int i = 0; i < n; ++i) {
-            Real dtfm = dtf / f.mass[i];
-            f.vx[i] += dtfm * f.fx[i];
-            f.vy[i] += dtfm * f.fy[i];
-            f.vz[i] += dtfm * f.fz[i];
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < n; ++i) {
+            double dtfm = dtf / sp_mass[i];
+            sp_vx[i] += dtfm * sp_fx[i];
+            sp_vy[i] += dtfm * sp_fy[i];
+            sp_vz[i] += dtfm * sp_fz[i];
         }
     }
 }

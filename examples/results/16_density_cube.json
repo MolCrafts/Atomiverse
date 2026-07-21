@@ -1,0 +1,29 @@
+{
+  "example": "16_density_cube",
+  "system": "H2",
+  "basis": "STO-3G",
+  "method": "RHF + DensityCubeWriter + OrbitalCubeWriter",
+  "geometry": {"bond_length_A": 0.74},
+  "atomiverse": {
+    "converged": true,
+    "iterations": 3,
+    "E_total_Ha": -1.1167593074,
+    "E_total_eV": -30.38856886,
+    "homo_index": 0,
+    "cube_grid": {
+      "padding_bohr": 4.0,
+      "spacing_bohr": 0.30,
+      "dims": [33, 28, 28],
+      "integrated_density": 1.99945269,
+      "n_electrons_expected": 2.0
+    },
+    "files": {
+      "density": "h2_density.cube",
+      "homo": "h2_homo.cube"
+    }
+  },
+  "reference": {
+    "criterion": "grid-integrated ρ ≈ N_e within ~1% on a 0.3 Bohr mesh",
+    "note": "Same H2 energy as examples/results/02_rhf.json (Szabo & Ostlund −1.1168 Ha)."
+  }
+}

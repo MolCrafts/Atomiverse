@@ -1,59 +1,55 @@
 /// @file cpu/observer/rdf.cpp
-/// @brief CPU RDF accumulation and file output.
+/// @brief CPU async RDF observer — streams each snapshot into the molrs
+/// g(r) accumulator (bounded memory; all binning + normalization in molrs).
 
 #include "atomiverse/cpu/observer/rdf.h"
-#include "atomiverse/core/constants.h"
 
-#include <cmath>
-#include <cstdio>
-#include <fstream>
+#include <array>
+
+#include "atomiverse/core/log.h"
+#include "atomiverse/cpu/observer/rdf_curve.h"
 
 namespace ATV {
-namespace cpu {
 
-void rdf_accumulate(std::vector<long long>& histogram,
-                    const Real* h_dist, int n_pairs,
-                    Real bin_width, int n_bins)
-{
-    for (int k = 0; k < n_pairs; ++k) {
-        int bin = static_cast<int>(h_dist[k] / bin_width);
-        if (bin >= 0 && bin < n_bins)
-            histogram[bin]++;
-    }
+RDF::RDF(double r_max, int n_bins, int freq, std::string output_file)
+    : r_max_(r_max), n_bins_(n_bins), freq_(freq),
+      output_file_(std::move(output_file)),
+      bin_width_(r_max / static_cast<double>(n_bins)),
+      acc_(n_bins, r_max, /*r_min=*/0.0) {}
+
+void RDF::on_snapshot(const cpu::FrameSnapshot& snap) {
+    const int n = snap.n_owned;
+    if (n < 2)
+        return;
+    if (!gate_.admit(n)) // constant atom count required (single-rank MVP)
+        return;
+
+    cpu::pack_blocked(scratch_, snap.x, snap.y, snap.z, n);
+
+    std::array<double, 9> cell{};
+    const auto& c = snap.box.cell();
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            cell[static_cast<std::size_t>(i * 3 + j)] =
+                static_cast<double>(c(i, j));
+
+    if (acc_.accumulate(scratch_, cell))
+        ++n_frames_;
 }
 
-void rdf_write(const std::string& filename,
-               const std::vector<long long>& histogram,
-               int n_samples, int n_atoms,
-               Real box_vol, Real r_max, int n_bins)
-{
-    if (n_samples <= 0 || n_atoms <= 0 || box_vol <= Real(0)) return;
+void RDF::finalize() {
+    if (gate_.dropped() > 0)
+        ATV_WARN("[rdf] dropped {} snapshot(s) with changed atom count "
+                 "(constant count required)",
+                 gate_.dropped());
+    if (n_frames_ == 0)
+        return;
 
-    Real bin_width = r_max / Real(n_bins);
-    Real rho = Real(n_atoms) / box_vol;
-    constexpr Real pi = Real(kPI);
-
-    std::ofstream out(filename);
-    out << "# r [Angstrom]   g(r)\n";
-
-    for (int i = 0; i < n_bins; ++i) {
-        Real r    = (Real(i) + Real(0.5)) * bin_width;
-        Real r_lo = Real(i) * bin_width;
-        Real r_hi = r_lo + bin_width;
-        Real shell_vol = (Real(4) / Real(3)) * pi *
-                         (r_hi * r_hi * r_hi - r_lo * r_lo * r_lo);
-        Real ideal = Real(n_atoms) * rho * shell_vol;
-
-        Real gr = (ideal > Real(0))
-            ? Real(2) * Real(histogram[i]) / (Real(n_samples) * ideal)
-            : Real(0);
-
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "%.6f  %.6f\n",
-                      static_cast<double>(r), static_cast<double>(gr));
-        out << buf;
-    }
+    // All binning + shell-volume normalization happened in molrs.
+    gr_ = acc_.finalize();
+    if (gr_.empty())
+        return;
+    cpu::rdf_write_curve(output_file_, gr_, /*r_min=*/0.0, bin_width_, n_bins_);
 }
 
-} // namespace cpu
 } // namespace ATV

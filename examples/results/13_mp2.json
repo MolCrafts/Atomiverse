@@ -1,0 +1,14 @@
+{
+  "example": "13_mp2",
+  "system": "H2O",
+  "basis": "STO-3G",
+  "geometry": "equilibrium water",
+  "atomiverse": {
+    "E_HF_Ha": -74.96302314,
+    "E_corr_MP2_Ha": -0.03554565,
+    "E_MP2_Ha": -74.99856879
+  },
+  "reference": {
+    "note": "E_corr ≤ 0 by construction for closed-shell MP2; magnitude grows with basis quality."
+  }
+}
