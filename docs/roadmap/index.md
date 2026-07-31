@@ -239,12 +239,13 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   `reg_periodic-wannier-uks`), **Berry** (`reg_berry-polarization` + spin
   `reg_berry-spin-si`), **DFPT** Γ / finite-q / incommensurate /
   **GGA kernel** / **collinear spin** / **joint spin×GGA** /
-  **finite-q×GGA** /
+  **finite-q×GGA** / **finite-q×spin×GGA** /
   **metallic smear** / spin-incommensurate / **finite-q+smear** /
   **spin+smear**
   (`reg_dfpt-phonon-si` / `reg_dfpt-finite-q-si` /
   `reg_dfpt-incommensurate-si` / `reg_dfpt-gga-si` / `reg_dfpt-spin-si` /
   `reg_dfpt-gga-spin-si` / `reg_dfpt-gga-finite-q-si` /
+  `reg_dfpt-gga-spin-finite-q-si` /
   `reg_dfpt-metallic-si` / `reg_dfpt-spin-incommensurate` /
   `reg_dfpt-finite-q-smearing` / `reg_dfpt-spin-smearing`). CUDA PW remains
   LDA / spin-unpolarized.

@@ -64,7 +64,8 @@ the regression checks against both parents' pins.
 | Response | `response_tol` \(10^{-5}\), `mix_beta` 0.7, CG tol \(10^{-9}\) |
 | \(\mathbf{q}\) | Γ (`q_frac = {0,0,0}`) |
 
-**Key exclusions:** finite-q GGA (queued `dfpt-gga-finite-q-si`), hybrids,
+**Key exclusions:** finite-q GGA is shipped as `dfpt-gga-finite-q-si`; the
+joint finite-q × spin × GGA product is `dfpt-gga-spin-finite-q-si`. Hybrids,
 \(M\neq0\) cells, CUDA, live CP2K in ctest.
 
 ## Implementation

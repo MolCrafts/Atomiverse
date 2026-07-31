@@ -1,0 +1,71 @@
+! CP2K offline oracle twin — dfpt-gga-spin-finite-q-si
+! Vibrational frequencies of the diamond-Si 2×1×1 supercell (4 atoms,
+! a = 5.43 Å) with collinear spin (UKS/LSD, multiplicity 1) AND pure GGA
+! (PBE) — the joint spin × GGA × finite-q response physics anchor. The
+! supercell Γ FD spectrum folds primitive Γ ∪ X, so its X-branch values
+! anchor the finite-q = X window of the ATV PW DFPT commensurate path
+! (CP2K has no PW-DFPT; VIBRATIONAL_ANALYSIS is FD of analytic UKS
+! k-point forces on the same spin×GGA Hamiltonian class — GPW GTH/MOLOPT
+! twin of the ATV NC-UPF PW twin). 1×2×2 MP on the supercell ≡ 2×2×2 MP
+! on the primitive. Run offline only (serial for the fair wall):
+!   OMP_NUM_THREADS=1 cp2k -i si4_uks_pbe_vib.inp -o si4_uks_pbe_vib.out
+&GLOBAL
+  PROJECT si4_uks_pbe_vib
+  RUN_TYPE VIBRATIONAL_ANALYSIS
+  PRINT_LEVEL LOW
+&END GLOBAL
+&VIBRATIONAL_ANALYSIS
+  DX 0.01
+  FULLY_PERIODIC T
+  NPROC_REP 1
+&END VIBRATIONAL_ANALYSIS
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 1
+    &QS
+      EPS_DEFAULT 1.0E-12
+    &END QS
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 60
+    &END MGRID
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 2 2
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-8
+      MAX_SCF 60
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      A 0.000 5.430 5.430
+      B 2.715 0.000 2.715
+      C 2.715 2.715 0.000
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Si 0.0000 0.0000 0.0000
+      Si 1.3575 1.3575 1.3575
+      Si 0.0000 2.7150 2.7150
+      Si 1.3575 4.0725 4.0725
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
