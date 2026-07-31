@@ -321,6 +321,9 @@ if(ATV_BUILD_GPW)
     # Nonlocal vdW-DF on the REL_CUTOFF multigrid product path
     # (offline CP2K 2026.1 NGRIDS 4 pin — gpw-vdw-multigrid).
     atv_add_regression(gpw gpw-vdw-multigrid THREADS 8)
+    # Nonlocal vdW-DF on the multi-k RKS path (Γ-limit identity + offline
+    # CP2K 2026.1 KPOINTS + NON_LOCAL DRSLL pin — gpw-vdw-kpoints).
+    atv_add_regression(gpw gpw-vdw-kpoints THREADS 8)
     atv_add_regression(gpw gpw-optb88-vdw THREADS 8)
     atv_add_regression(gpw gpw-mbd-hirshfeld THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-kpoints THREADS 8)

@@ -295,12 +295,38 @@ TEST(GpwSolverClass, BuildRejectsKpointMultigridUks) {
     EXPECT_THROW(solver.build(atoms), std::invalid_argument);
 }
 
-// k-gate: nonlocal vdW is not wired on the k path (the Γ runner owns the SCF
-// potential and post-SCF E_c^nl) — rejected instead of silently dropping it.
-TEST(GpwSolverClass, BuildRejectsKpointNonlocalVdw) {
+// k-gate: nonlocal vdW is wired on the closed-shell multi-k RKS path (SCF
+// V_nl in build_k_energy + post-SCF E_c^nl in fold_dispersion_k) — the
+// gpw-vdw-kpoints capability.
+TEST(GpwSolverClass, BuildAcceptsKpointNonlocalVdw) {
     const auto atoms = small_h2();
     GpwDft solver = small_cfg();
     solver.k_mesh[0] = 2;
+    solver.vdw_df = true;
+    EXPECT_NO_THROW(solver.build(atoms));
+}
+
+// k-gate: nonlocal vdW composes with REL_CUTOFF multigrid on the k path (V_nl
+// on the finest grid before the per-level restriction, same as Γ).
+TEST(GpwSolverClass, BuildAcceptsKpointMultigridNonlocalVdw) {
+    const auto atoms = small_h2();
+    GpwDft solver = small_cfg();
+    solver.k_mesh[0] = 2;
+    solver.rvv10 = true;
+    solver.ngrids = 4;
+    solver.rel_cutoff = 40.0;
+    EXPECT_NO_THROW(solver.build(atoms));
+}
+
+// k-gate: multi-k UKS + nonlocal vdW stays rejected fail-fast (E_c^nl fold is
+// closed-shell RKS only; UKS vdW is a separate queue pick).
+TEST(GpwSolverClass, BuildRejectsKpointUksNonlocalVdw) {
+    const auto atoms = small_h2();
+    GpwDft solver = small_cfg();
+    solver.k_mesh[0] = 2;
+    solver.n_occ = 0;
+    solver.n_alpha = 1;
+    solver.n_beta = 1;
     solver.vdw_df = true;
     EXPECT_THROW(solver.build(atoms), std::invalid_argument);
 }
