@@ -976,6 +976,27 @@ nonlocal-vdW runner with the `gpw-vdw-multigrid` pick; newest census),
 `gpw_evaluator.cpp:242/251`; newest census). **Pending residual after
 assign = 3** (not queue exhausted).
 
+**Harness wave 2 (shift) 2026-07-31 (parent `dev` @ `8b2fda00`):** 8 of 10
+staffed slugs merged → `## done` (`gpw-d3-stress` resume finished,
+`dfpt-gga-finite-q-si`, `xl-bomd-linearized-kpoints`, `gpw-vdw-multigrid`,
+`cpmd-uks-kpoints`, `second-gen-cpmd-ot-kpoints`, `gpw-d3-atm-stress`,
+`gpw-d4-atm-stress`) — eight `--no-ff` merges `aa897bb2`..`8b2fda00`; merge
+gate green at close (scoped rebuild +
+`ctest -R '^test_cpu_(gpw|pw|scf|xc)_|^test_xc_'` 57/57 on merged `dev`). Specs
+deleted on close (seven dirs here; the `gpw-d4-atm-stress` spec was already
+deleted on its branch, `a2c85a6b`). **Pending residual = 3** (held wave-2
+list unchanged — **not** queue exhausted; GapCensus owns next discovery).
+**in_progress = 2** unlanded staff `[~]` (`gpw-ts-stress` / `gpw-xdm-stress`
+— branch tips still at the assign parent `197468ac`, all WIP uncommitted in
+their isolation worktrees: spec + regression + oracle-input scaffolds; do
+not demote, do not remove the two worktrees). Roadmap: **no ○/✓ table
+flips** (capability rows already ✓); the §8/§10/§12 + MD AIMD residual
+prose for all eight ships landed **with the worker merges**; harness fixed
+the stale `index.md` GPW ships/residual line (vdW multigrid + multi-k SGCP
+OT + D3/D4 ATM stress missing from ships, still listed pending). **Blocked
+= 6** unchanged. Clearup already ran (merged `wf/*` pruned; the two dirty
+WIP worktrees kept deliberately). No push.
+
 ## pending
 
 - [ ] `gpw-uks-multigrid-kpoints` | Multi-k UKS REL_CUTOFF multigrid product collocation (k-path rejects "multigrid (ngrids > 1) with UKS — closed-shell RKS only" at `gpw_solver.cpp:5246`) | gpw | twin: CP2K 2026.1 UKS NGRIDS 4 / REL_CUTOFF + MP k-mesh (extend `gpw-multigrid-kpoints` × `gpw-uks-multigrid`) | GapCensus wave 2 (shift) 2026-07-31 | held assign wave 2 (shift) — shares `gpw_solver.cpp` multigrid gates with staffed `gpw-vdw-multigrid`
@@ -984,10 +1005,10 @@ assign = 3** (not queue exhausted).
 
 ## in_progress
 
-- [~] `gpw-ts-stress` | Analytic fixed-P cell stress with free-atom TS (energy folds; dedicated pin missing) | gpw | twin: libMBD E_disp under strain + `gpw_stress_fd` dual-gate (extend `gpw-ts-forces`) | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; coordinate with in-flight `gpw-d3-stress` on `gpw_stress.cpp`) | assigned wave 2 (shift) 2026-07-31
-- [~] `gpw-xdm-stress` | Analytic fixed-P cell stress with XDM (energy folds; dedicated pin missing) | gpw | twin: extend `gpw-xdm-forces` pin + `gpw_stress_fd` dual-gate | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; coordinate with in-flight `gpw-d3-stress`) | assigned wave 2 (shift) 2026-07-31
+- [~] `gpw-ts-stress` | Analytic fixed-P cell stress with free-atom TS (energy folds; dedicated pin missing) | gpw | twin: libMBD E_disp under strain + `gpw_stress_fd` dual-gate (extend `gpw-ts-forces`) | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; `gpw-d3-stress` merged wave 2, `gpw_stress.cpp` free) | assigned wave 2 (shift) 2026-07-31; WIP worktree kept (uncommitted spec+reg scaffold)
+- [~] `gpw-xdm-stress` | Analytic fixed-P cell stress with XDM (energy folds; dedicated pin missing) | gpw | twin: extend `gpw-xdm-forces` pin + `gpw_stress_fd` dual-gate | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; `gpw-d3-stress` merged wave 2) | assigned wave 2 (shift) 2026-07-31; WIP worktree kept (uncommitted spec+reg scaffold)
 
-## done (harness wave 2 2026-07-31)
+## done (harness wave 2 (shift) 2026-07-31)
 
 - [x] `gpw-d4-atm-stress` | Analytic fixed-P cell stress with DFT-D4 three-body ATM (\(s_9\)) — the s9 fold in the strained-cell rebuild now has its dedicated pin | gpw | `regressions/gpw/gpw-d4-atm-stress` (dftd4 3.7.0 strained-cell energy pins ±2e-3 × 3 axes × {s9=1, 2b}: parity 6.3e-11 Ha; derived σ^ATM parity 3.7e-16 Ha/Bohr³ vs signal ~7.5e-10; `gpw_stress_fd` dual gate 7.4e-7; product ATM-fold wiring 7.0e-11) | ratio **perf_exempt** (no CP2K DFTD4 build — same policy as `gpw-d4-atm-forces`; wall ~36 s) | done wave 2 2026-07-31 on `wf/gpw-d4-atm-stress`
 - [x] `gpw-d3-atm-stress` | Analytic fixed-P cell stress with DFT-D3 three-body ATM (C9) folded; adds configurable `d3_rcut_bohr` (CP2K `R_CUTOFF`, doubled convention) on `GpwDft`/`GPWEvaluator` so the product folds the oracle's exact functional | gpw | `regressions/gpw/gpw-d3-atm-stress` (CP2K 2026.1 `STRESS_TENSOR NUMERICAL` C9 on−off difference pins: Δσ parity 1.1e−13 Ha/Bohr³ at CP2K's `DX 0.001` step — the hard-gated triple sum is step-locked, unlike the smooth two-body fold; E_disp 2.8e−10; analytic vs multi-SCF FD 2.4e−7) | ratio **0.75** (ATV product 40.8 s / CP2K 54.5 s) | 2026-07-31

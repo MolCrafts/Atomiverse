@@ -26,11 +26,18 @@ merge gate green (scoped rebuild + `ctest -R '^test_cpu_(gpw|pw|scf|xc)_|^test_x
 
 Do not re-create closed slugs without superseding intent.
 
-## Live — cp2k-method-loop worker wave 2 (2026-07-31)
+## Closed — CP2K harness wave 2 (shift) (2026-07-31)
 
-| Spec | One-line |
-| ---- | -------- |
-| gpw-d3-atm-stress | D3 ATM (C9) cell-stress pin: CP2K NUMERICAL-stress difference (C9 on−off) + `d3_rcut_bohr` member; delete on merge-close |
+Merged into `dev` (eight `--no-ff` merges `aa897bb2`..`8b2fda00`); merge gate
+green (scoped rebuild + `ctest -R '^test_cpu_(gpw|pw|scf|xc)_|^test_xc_'` 57/57).
+Specs deleted (seven here; `gpw-d4-atm-stress` already deleted on its branch,
+`a2c85a6b`); history is the git log.
+
+| Queue | Specs (deleted; see git) | Shipped highlights |
+| ----- | ------------------------ | ------------------ |
+| cp2k-method-loop harness wave 2 (shift) | gpw-d3-stress, dfpt-gga-finite-q-si, xl-bomd-linearized-kpoints, gpw-vdw-multigrid, cpmd-uks-kpoints, second-gen-cpmd-ot-kpoints, gpw-d3-atm-stress, gpw-d4-atm-stress | D3-zero analytic cell stress (CP2K NUMERICAL difference pin); finite-q DFPT with pure PBE kernel; multi-k RKS/UKS zero-SCF linearized XL-BOMD; nonlocal vdW on the REL_CUTOFF multigrid; multi-k UKS CPMD (dual-spin Bloch \(C_k^\sigma\)); multi-k SGCP + OT partial-SCF corrector; D3 ATM (C9) + D4 ATM (\(s_9\)) cell-stress pins |
+
+Do not re-create closed slugs without superseding intent.
 
 ## Live — esmm campaign: ES × MM connection layer (2026-07-26, 16 specs)
 
@@ -440,9 +447,9 @@ to green. Specs deleted on close; history in git (commits f9a6443a..HEAD).
 | [rsh-eri-cam-b3lyp](rsh-eri-cam-b3lyp/) | pyscf / RSH | open (deferred) |
 
 Open CP2K specs on `dev` = **0**. Stock VV10 is **blocked**. Incomplete
-`[~]` = **0** after close of `gpw-fd-phonon-si` (2026-07-26; reg registered
-with 1D-curvature dual-gate + UKS density warm-start). Pending residual
-**12** (GapCensus wave 13/14 list); **not** queue exhausted.
+`[~]` = **2** (`gpw-ts-stress` / `gpw-xdm-stress` — uncommitted WIP in their
+isolation worktrees at the assign parent `197468ac`; do not demote). Pending
+residual **3** (held assign wave 2 (shift) list); **not** queue exhausted.
 
 ## Closed — CP2K harness wave 12 (2026-07-26)
 
