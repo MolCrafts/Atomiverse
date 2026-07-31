@@ -4735,6 +4735,22 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             }
             e_locgrid *= gw;
 
+            // Self-consistent nonlocal vdW (DRSLL / LMKLL / rVV10) on the
+            // TOTAL density: V_nl = δE_c^nl/δρ is spin-independent, so it is
+            // added identically to both spin potentials (CP2K
+            // qs_dispersion_nonloc). e_d3 tracks the SC E_c^nl so
+            // fold_dispersion reports it on e_disp at every UKS exit.
+            if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+                NonlocalVdwOnGrid nl =
+                    nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
+                                         cfg.rvv10, /*potential=*/true);
+                for (std::size_t g = 0; g < rho.size(); ++g) {
+                    veff_a[g] += nl.v_r[g];
+                    veff_b[g] += nl.v_r[g];
+                }
+                e_d3 = nl.energy;
+            }
+
             RealMatrix Ha = H0 + integrate_V(veff_a);
             RealMatrix Hb = H0 + integrate_V(veff_b);
 
@@ -4856,7 +4872,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                                               nb_spin, nb);
                     res.mulliken_spin = internal::mulliken_spin_populations(
                         Pa, Pb, S, ao_tags, static_cast<int>(atoms.size()));
-                    res.e_total += e_d3;
+                    // Fold like every other UKS exit (e_disp + deferred
+                    // Hirshfeld); a bare `e_total += e_d3` left e_disp = 0.
+                    fold_dispersion(res, Pa + Pb);
                     return res;
                 }
                 // DFT+U: accept an energy plateau after a few OT steps even if
@@ -5380,15 +5398,11 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
             throw std::invalid_argument(
                 "GpwDft::build: UKS supports XcKind::PADE, PBE, PBEsol, "
                 "RevPBE, RPBE, BLYP, or OptB88VdW");
-        // Nonlocal vdW is wired only in the closed-shell RKS runners (Γ and
-        // multi-k: SCF V_nl + post-SCF E_c^nl); accepting it here would
-        // silently drop the nonlocal term (e_disp stays 0 while the run
-        // "succeeds"). UKS vdW is a separate queue pick.
-        if (vdw_df || vdw_df2 || rvv10)
-            throw std::invalid_argument(
-                "GpwDft::build: nonlocal vdW (vdw_df / vdw_df2 / rvv10) is "
-                "not supported with UKS (E_c^nl would be silently dropped) — "
-                "use closed-shell RKS (n_occ) or clear the vdW flag");
+        // Nonlocal vdW (vdw_df / vdw_df2 / rvv10) is wired for Γ UKS: V_nl on
+        // the total density lands in both spin potentials each SCF iteration
+        // (build_uks_H) and E_c^nl is folded onto e_disp at every UKS exit.
+        // Multi-k UKS + nonlocal still rejects fail-fast below (k-RKS
+        // nonlocal is product via gpw-vdw-kpoints).
     } else if (n_occ < 1) {
         throw std::invalid_argument(
             "GpwDft::build: n_occ must be >= 1 for closed-shell RKS (got "

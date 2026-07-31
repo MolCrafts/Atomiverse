@@ -300,17 +300,19 @@ class GpwDft {
     ///        \(E_{\mathrm{disp}}\) on the final SC density. CP2K
     ///        `VDW_POTENTIAL NON_LOCAL TYPE DRSLL`. Mutually exclusive with
     ///        `d3` / `d3bj` / `d4` / `ts` / `mbd` / `vdw_df2` / `rvv10`.
-    ///        Periodic, closed-shell RKS — Γ and Monkhorst-Pack k-point
-    ///        sampling alike (single-grid or REL_CUTOFF multigrid
-    ///        `ngrids > 1`); UKS rejects fail-fast.
+    ///        Periodic closed-shell RKS (Γ and Monkhorst-Pack k-point;
+    ///        single-grid or REL_CUTOFF multigrid) and Γ collinear UKS
+    ///        (UKS applies \(V_{\mathrm{nl}}[\rho]\) of the total density
+    ///        \(\rho=\rho_\alpha+\rho_\beta\) to both spin potentials).
+    ///        Multi-k UKS rejects fail-fast.
     bool vdw_df = false; ///< vdW-DF (DRSLL) nonlocal correlation.
     /// @brief Nonlocal vdW-DF2 (LMKLL / DF2). Same SC product path as `vdw_df`;
-    ///        Z_ab = −1.887. CP2K `NON_LOCAL TYPE LMKLL`. Same RKS scope
-    ///        (Γ / k-point, single-grid or multigrid) as `vdw_df`.
+    ///        Z_ab = −1.887. CP2K `NON_LOCAL TYPE LMKLL`. Same RKS (Γ/k) +
+    ///        Γ-UKS scope (single-grid or multigrid) as `vdw_df`.
     bool vdw_df2 = false; ///< vdW-DF2 (LMKLL) nonlocal correlation.
     /// @brief Nonlocal rVV10 (Sabatini et al.). SC product path; CP2K
-    ///        `NON_LOCAL TYPE RVV10` (b=6.3, C=0.0093). Same RKS scope
-    ///        (Γ / k-point, single-grid or multigrid) as `vdw_df`.
+    ///        `NON_LOCAL TYPE RVV10` (b=6.3, C=0.0093). Same RKS (Γ/k) +
+    ///        Γ-UKS scope (single-grid or multigrid) as `vdw_df`.
     bool rvv10 = false; ///< rVV10 nonlocal correlation.
     /// @brief Scale TS/MBD free-atom parameters by Hirshfeld \(V/V_{\mathrm{free}}\)
     ///        from the final SCF total valence density (post-SCF,
