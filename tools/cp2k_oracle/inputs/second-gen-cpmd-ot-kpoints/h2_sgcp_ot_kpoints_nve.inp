@@ -1,0 +1,91 @@
+# CP2K twin sketch for regressions/dynamics/second-gen-cpmd-ot-kpoints
+# (offline oracle — never run at ctest/regression time).
+#
+# *** UNEXECUTABLE BY DESIGN: CP2K's OT is Gamma-point-only. Combining &OT
+# *** with &KPOINTS is refused by CP2K's Quickstep SCF input validation
+# *** ("OT and k-points are not compatible"). This sketch documents the
+# *** method twin shape; no CP2K version can produce the number. The
+# *** decisive gates for this slug are the internal corrector A/B identity
+# *** (multi-k OT vs multi-k diagonalization, |dE| <= 1e-4 Ha — see
+# *** regressions/gpw/ot-kpoints) plus the literature SGCP NVE-drift
+# *** envelope (Kuhne PRL 98, 066401 (2007); Kolafa JCC 25, 335 (2004)).
+# *** The executable CP2K k-path twin (diagonalization corrector) lives at
+# *** tools/cp2k_oracle/inputs/second-gen-cpmd-kpoints/.
+&GLOBAL
+  PROJECT h2_sgcp_ot_kpoints_nve
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 8
+    TIMESTEP 0.5
+    TEMPERATURE 10.0
+  &END MD
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 100
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+      # Second-generation CP: ASPC predictor-corrector (Kolafa 2004).
+      EXTRAPOLATION ASPC
+      EXTRAPOLATION_ORDER 1
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-5
+      # Limited corrector budget — the SGCP signature vs full BOMD MAX_SCF.
+      MAX_SCF 5
+      # OT corrector — THIS BLOCK IS WHAT CP2K REFUSES TOGETHER WITH
+      # &KPOINTS below (OT is Gamma-only in CP2K).
+      &OT
+        PRECONDITIONER FULL_SINGLE_INVERSE
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 1
+        EPS_SCF 1.0E-5
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+      FULL_GRID .TRUE.
+    &END KPOINTS
+    &POISSON
+      PERIODIC XYZ
+      PSOLVER PERIODIC
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 6.350145 6.350145 6.350145
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      H  2.9105  3.1751  3.1751
+      H  3.4396  3.1751  3.1751
+    &END COORD
+    &KIND H
+      BASIS_SET DZV-GTH-PADE
+      POTENTIAL GTH-PADE-q1
+    &END KIND
+    &VELOCITY
+      H -0.0010  0.0000  0.0000
+      H  0.0010  0.0000  0.0000
+    &END VELOCITY
+  &END SUBSYS
+&END FORCE_EVAL

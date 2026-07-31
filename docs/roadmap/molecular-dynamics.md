@@ -286,9 +286,10 @@ GPW via `GPWEvaluator::{second_gen_cp, second_gen_cp_k, second_gen_cp_max_iter}`
 **RKS OT corrector** is product (`use_ot=true` with ASPC natural-orbital
 warm-start; `reg_second-gen-cpmd-ot`) **and Γ-UKS OT + SGCP**
 (`reg_second-gen-cpmd-uks-ot`) **and multi-k SGCP** (ASPC on complex
-\(P_k\); `reg_second-gen-cpmd-kpoints`). Multi-k SGCP with the **OT
-corrector** remains ○ (evaluator throws; queued
-`second-gen-cpmd-ot-kpoints`).
+\(P_k\); `reg_second-gen-cpmd-kpoints`) **and multi-k SGCP + OT corrector**
+(per-k OT manifold warm-started from natural orbitals of the predicted
+\(P_k\); `reg_second-gen-cpmd-ot-kpoints`). Multi-k **UKS** SGCP + OT
+remains ○ (build-time throw — dual-spin k-OT warm start not productized).
 
 ## 8. Nuclear Quantum Dynamics
 

@@ -339,8 +339,10 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
     // Second-generation CP (Kühne PRL 2007): ASPC + partial SCF corrector.
     // Γ RKS: one total-P real ASPC (DIIS or OT corrector).
     // Γ UKS: dual α/β real ASPC (DIIS or OT).
-    // multi-k RKS: one complex ASPC per k (DIIS only — OT + P_k throws).
-    // multi-k UKS: dual complex ASPC per k.
+    // multi-k RKS: one complex ASPC per k (DIIS or OT — the k-OT manifold
+    //   warm-starts from natural orbitals of the predicted P_k).
+    // multi-k UKS: dual complex ASPC per k (DIIS only — dual-spin k-OT
+    //   warm start is not productized; OT + P_k^σ throws).
     if (second_gen_cp) {
         if (!(second_gen_cp_k >= 0))
             throw std::invalid_argument(
@@ -354,11 +356,12 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
                 "GPWEvaluator: second_gen_cp requires compute_forces=true "
                 "(forces at the post-corrector density)");
         if (multi_k) {
-            if (cfg.use_ot)
+            if (cfg.use_ot && n_alpha + n_beta > 0)
                 throw std::invalid_argument(
-                    "GPWEvaluator: multi-k second_gen_cp requires the "
-                    "diagonalization SCF path (use_ot + P_k density guess is "
-                    "not productized)");
+                    "GPWEvaluator: multi-k UKS second_gen_cp requires the "
+                    "diagonalization SCF path (dual-spin k-OT warm start "
+                    "from P_k^sigma is not productized; use multi-k RKS + "
+                    "use_ot, or the diagonalization corrector)");
             // Validate K early; k-histories sized after the first multi-k SCF
             // (n_kpts known).
             (void)electronic::ASPCPredictorCplx(second_gen_cp_k);

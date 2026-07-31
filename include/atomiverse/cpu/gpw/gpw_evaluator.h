@@ -272,8 +272,11 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     ///        - **multi-k UKS:** dual complex ASPC per \(k\) (\(P_k^\alpha,
     ///          P_k^\beta\))
     ///        **OT corrector** is product at Γ when `use_ot=true` (RKS:
-    ///        `second-gen-cpmd-ot`; UKS: `second-gen-cpmd-uks-ot`). Multi-k +
-    ///        `use_ot` throws (solver has no \(P_k\) OT warm-start).
+    ///        `second-gen-cpmd-ot`; UKS: `second-gen-cpmd-uks-ot`) and on
+    ///        the multi-k **RKS** path (`second-gen-cpmd-ot-kpoints` — the
+    ///        per-k OT manifold warm-starts from natural orbitals of the
+    ///        ASPC-predicted \(P_k\)). Multi-k **UKS** + `use_ot` throws
+    ///        (dual-spin k-OT warm start is not productized).
     ///        Mutually exclusive with `cpmd` / `xl_bomd`. Requires
     ///        `compute_forces=true`.
     bool second_gen_cp = false;

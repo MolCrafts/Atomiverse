@@ -410,7 +410,10 @@ class GpwDft {
     /// @param guess_P_k Optional multi-k initial densities (one complex
     ///        Hermitian matrix per sampled k, size == `n_kpts` after mesh /
     ///        TR fold). RKS: total \(P_k\). UKS: α-spin \(P_k^\alpha\)
-    ///        (requires matching `guess_P_k_beta`). Real `guess_P` with a
+    ///        (requires matching `guess_P_k_beta`). On the RKS **OT** path
+    ///        each \(P_k\) is purified to natural orbitals that seed the
+    ///        per-k OT manifold (complex mirror of the Γ `guess_P` warm
+    ///        start — multi-k SGCP OT corrector). Real `guess_P` with a
     ///        multi-k mesh throws (no silent Γ guess on the k path).
     /// @param guess_P_k_beta Optional multi-k UKS β densities \(P_k^\beta\)
     ///        (size == `n_kpts`; UKS-only — RKS + non-null throws).

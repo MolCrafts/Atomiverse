@@ -1,7 +1,7 @@
 /// @file tests/cpu/gpw/test_gpw_second_gen_cpmd.cpp
 /// @brief Unit tests: GPWEvaluator second-generation CP (ASPC + partial SCF)
-///        build() guards only. No multi-step MD here (e2e is
-///        regressions/dynamics/second-gen-cpmd-water and second-gen-cpmd-uks).
+///        build() guards only. No multi-step MD here (e2e is the
+///        regressions/dynamics/second-gen-cpmd-* family).
 
 #include <stdexcept>
 
@@ -136,11 +136,34 @@ TEST(GpwEvaluatorSecondGenCp, BuildAcceptsMultiK) {
     EXPECT_NO_THROW(eval.build(bc));
 }
 
-TEST(GpwEvaluatorSecondGenCp, BuildRejectsMultiKWithOt) {
+TEST(GpwEvaluatorSecondGenCp, BuildAcceptsMultiKWithOt) {
+    // Multi-k RKS OT partial-SCF corrector is product — the per-k OT
+    // manifold warm-starts from natural orbitals of the ASPC-predicted
+    // P_k (second-gen-cpmd-ot-kpoints).
     auto frame = water_frame();
     frame.box = ATV::cpu::Box::cubic(10.0);
     auto base = water_eval();
     base.nonperiodic = false;
+    base.use_ot = true;
+    SecondGenCp eval{std::move(base), 3, 5};
+    eval.method().k_mesh[0] = 1;
+    eval.method().k_mesh[1] = 1;
+    eval.method().k_mesh[2] = 2;
+    eval.method().k_time_reversal = false;
+    ATV::cpu::Context rt;
+    ATV::cpu::BuildContext bc{rt, frame};
+    EXPECT_NO_THROW(eval.build(bc));
+}
+
+TEST(GpwEvaluatorSecondGenCp, BuildRejectsMultiKUksWithOt) {
+    // Dual-spin k-OT warm start is not productized — multi-k UKS SGCP
+    // stays on the diagonalization corrector.
+    auto frame = water_frame();
+    frame.box = ATV::cpu::Box::cubic(10.0);
+    auto base = water_eval();
+    base.nonperiodic = false;
+    base.n_alpha = 5;
+    base.n_beta = 3;
     base.use_ot = true;
     SecondGenCp eval{std::move(base), 3, 5};
     eval.method().k_mesh[0] = 1;

@@ -1276,8 +1276,14 @@ static GpwResult run_gpw_scf_kpoints(
     double last_n_elec = 0.0;
     double last_entropy = 0.0;
     // Cold start: fixed integer fill (smear path re-fills after first diag).
-    // XL multi-k warm start: replace P_k with the propagated auxiliary density
-    // when guess_P_k is provided (still build Cocc_k from H0 for the OT path).
+    // XL / SGCP multi-k warm start: replace P_k with the propagated /
+    // predicted density when guess_P_k is provided. OT + guess: purify each
+    // predicted P_k to natural orbitals so the per-k OT manifold starts on
+    // the predicted density (complex mirror of the Γ warm start; not a
+    // silent ignore of the guess, and not the cold H0 manifold — a
+    // budget-capped SGCP corrector from H0 would give garbage forces). The
+    // smear path re-expands Cocc_k from H0 below, but the evaluator exposes
+    // no smearing, so the SGCP corrector never reaches it.
     for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
         const CplxMatrix H0k = T_k[static_cast<std::size_t>(ik)]
                                + Vnl_k[static_cast<std::size_t>(ik)];
@@ -1294,6 +1300,31 @@ static GpwResult run_gpw_scf_kpoints(
         if (guess_P_k != nullptr) {
             P_k[static_cast<std::size_t>(ik)] =
                 CplxMatrix((*guess_P_k)[static_cast<std::size_t>(ik)]);
+            if (cfg.use_ot) {
+                // Natural orbitals of the guess density: eigenvalues of
+                // X† P X ascend, so the largest occupations sit in the LAST
+                // columns (same convention as the Γ diagonalize_fock path).
+                auto [n_occ_vals, Cnat] = internal::diagonalize_k(
+                    P_k[static_cast<std::size_t>(ik)],
+                    orth[static_cast<std::size_t>(ik)]);
+                (void)n_occ_vals;
+                const int m = static_cast<int>(Cnat.shape(1));
+                if (m < cfg.n_occ)
+                    throw std::runtime_error(
+                        "GPW kpoints OT: natural-orbital warm start needs at "
+                        "least n_occ kept orthogonal directions (m="
+                        + std::to_string(m)
+                        + ", n_occ=" + std::to_string(cfg.n_occ) + ")");
+                CplxMatrix Cw = xt::zeros<Cplx>({nb, cfg.n_occ});
+                for (int i = 0; i < cfg.n_occ; ++i) {
+                    const int src = m - cfg.n_occ + i;
+                    for (int mu = 0; mu < nb; ++mu)
+                        Cw(mu, i) = Cnat(mu, src);
+                }
+                Cocc_k[static_cast<std::size_t>(ik)] =
+                    linalg::lowdin_orthonormalize_k(
+                        Cw, S_k[static_cast<std::size_t>(ik)]);
+            }
         } else {
             P_k[static_cast<std::size_t>(ik)] =
                 density_from_fixed(C0k, cfg.n_occ);
@@ -5348,10 +5379,16 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             // handled above. Keep the branch explicit for RKS null P.
         }
     }
-    if ((guess_P_k != nullptr || guess_P_k_beta != nullptr) && use_ot)
+    // Multi-k RKS density guess + OT is product: each predicted P_k is
+    // purified to natural orbitals that seed the per-k OT manifold (complex
+    // mirror of the Γ guess_P warm start — SGCP OT corrector,
+    // second-gen-cpmd-ot-kpoints). The dual-spin k-OT warm start is not
+    // productized, so multi-k UKS + OT + guess still refuses.
+    if (guess_P_k_beta != nullptr && use_ot)
         throw std::invalid_argument(
-            "GpwDft::run: multi-k XL density guess with use_ot is not "
-            "productized (OT parameterizes orbitals, not P_k)");
+            "GpwDft::run: multi-k UKS density guess with use_ot is not "
+            "productized (dual-spin k-OT natural-orbital warm start "
+            "missing; use the diagonalization path or multi-k RKS)");
     if (!is_uks() && guess_P_k_beta != nullptr)
         throw std::invalid_argument(
             "GpwDft::run: guess_P_k_beta is multi-k UKS-only "

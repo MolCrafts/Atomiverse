@@ -256,6 +256,7 @@ and `tools/cp2k_oracle/`. Narrative chapters: [Ch. 8 PW](ch08-plane-wave.md),
 | AO-basis CPMD on the SCF methods (RHF / RKS / UHF) | [cpmd-rhf-h2](methods/cpmd-rhf-h2.md) | `regressions/dynamics/cpmd-{rhf-h2,rks-water,uhf-o2}` |
 | XL-BOMD on the Gaussian SCF methods (RHF H₂O NVE) | [xl-bomd-rhf-water](methods/xl-bomd-rhf-water.md) | `regressions/dynamics/xl-bomd-rhf-water` |
 | Multi-k second-gen CP (ASPC on \(P_k\)) H₂ NVE | [second-gen-cpmd-kpoints](methods/second-gen-cpmd-kpoints.md) | `regressions/dynamics/second-gen-cpmd-kpoints` |
+| Multi-k second-gen CP + OT corrector H₂ NVE | [second-gen-cpmd-ot-kpoints](methods/second-gen-cpmd-ot-kpoints.md) | `regressions/dynamics/second-gen-cpmd-ot-kpoints` |
 | Multi-k Car–Parrinello MD on Bloch \(C_k\) H₂ NVE | [cpmd-kpoints](methods/cpmd-kpoints.md) | `regressions/dynamics/cpmd-kpoints` |
 | PW Nielsen–Martin analytic stress Si | [pw-analytic-stress-si](methods/pw-analytic-stress-si.md) | `regressions/pw/pw-analytic-stress-si` |
 | FD supercell phonons diamond Si (Γ) | [fd-phonon-supercell](methods/fd-phonon-supercell.md) | `regressions/pw/fd-phonon-supercell` |

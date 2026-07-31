@@ -275,6 +275,7 @@ queue exhausted).
 | ------ | ---- | ---------- | --------------------------------------------- |
 | Zero-SCF linearized XL-BOMD forces H₂O NVE | [xl-bomd-linearized-forces](xl-bomd-linearized-forces.md) | `regressions/dynamics/xl-bomd-linearized-forces` | **perf_exempt** |
 | Multi-k second-gen CP (ASPC on \(P_k\)) H₂ NVE | [second-gen-cpmd-kpoints](second-gen-cpmd-kpoints.md) | `regressions/dynamics/second-gen-cpmd-kpoints` | **perf_exempt** |
+| Multi-k second-gen CP + OT corrector H₂ NVE | [second-gen-cpmd-ot-kpoints](second-gen-cpmd-ot-kpoints.md) | `regressions/dynamics/second-gen-cpmd-ot-kpoints` | **perf_exempt** |
 | GPW PBE-D3 + ATM (C9) isolated water dimer | [gpw-d3-atm](gpw-d3-atm.md) | `regressions/gpw/gpw-d3-atm` | **perf_exempt** |
 | GPW PBE-D4 + ATM (\(s_9=1\)) periodic water dimer | [gpw-d4-atm](gpw-d4-atm.md) | `regressions/gpw/gpw-d4-atm` | **perf_exempt** |
 | PW collinear-spin + metallic-occupation bands Si | [bands-spin-metallic-si](bands-spin-metallic-si.md) | `regressions/pw/bands-spin-metallic-si` | **perf_exempt** |
