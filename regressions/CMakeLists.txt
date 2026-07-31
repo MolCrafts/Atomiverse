@@ -406,6 +406,9 @@ if(ATV_BUILD_GPW)
         # Multi-k second-generation CP with OT partial-SCF corrector
         # (natural-orbital warm start of the per-k OT manifold).
         atv_add_regression(dynamics second-gen-cpmd-ot-kpoints THREADS 8)
+        # Multi-k UKS second-generation CP with OT corrector (dual-spin
+        # per-(k, σ) natural-orbital warm start from P_k^σ).
+        atv_add_regression(dynamics second-gen-cpmd-ot-uks-kpoints THREADS 8)
     endif()
     atv_add_regression(gpw gpw-pbesol-si THREADS 8)
     atv_add_regression(gpw gpw-revpbe-si THREADS 8)

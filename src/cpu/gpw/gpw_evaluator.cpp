@@ -339,8 +339,9 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
     // Γ UKS: dual α/β real ASPC (DIIS or OT).
     // multi-k RKS: one complex ASPC per k (DIIS or OT — the k-OT manifold
     //   warm-starts from natural orbitals of the predicted P_k).
-    // multi-k UKS: dual complex ASPC per k (DIIS only — dual-spin k-OT
-    //   warm start is not productized; OT + P_k^σ throws).
+    // multi-k UKS: dual complex ASPC per (k, σ) (DIIS or OT — dual-spin
+    //   per-k OT manifolds warm-start from natural orbitals of the
+    //   predicted P_k^σ).
     if (second_gen_cp) {
         if (!(second_gen_cp_k >= 0))
             throw std::invalid_argument(
@@ -354,12 +355,6 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
                 "GPWEvaluator: second_gen_cp requires compute_forces=true "
                 "(forces at the post-corrector density)");
         if (multi_k) {
-            if (cfg.use_ot && n_alpha + n_beta > 0)
-                throw std::invalid_argument(
-                    "GPWEvaluator: multi-k UKS second_gen_cp requires the "
-                    "diagonalization SCF path (dual-spin k-OT warm start "
-                    "from P_k^sigma is not productized; use multi-k RKS + "
-                    "use_ot, or the diagonalization corrector)");
             // Validate K early; k-histories sized after the first multi-k SCF
             // (n_kpts known).
             (void)electronic::ASPCPredictorCplx(second_gen_cp_k);
