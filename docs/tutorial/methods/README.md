@@ -318,6 +318,25 @@ the Response / phonons table below.
 | Multi-k GPW RKS REL_CUTOFF multigrid (diamond Si) | [gpw-multigrid-kpoints](gpw-multigrid-kpoints.md) | `regressions/gpw/gpw-multigrid-kpoints` | **≈ 1.6** |
 | Zero-SCF linearized XL-BOMD on Γ-UKS (O₂ NVE) | [xl-bomd-linearized-uks](xl-bomd-linearized-uks.md) | `regressions/dynamics/xl-bomd-linearized-uks` | **perf_exempt** |
 
+## Index — CP2K capability wave 2 (shift) (2026-07-31)
+
+Offline CP2K 2026.1 pins only — see
+[cp2k-method-queue](../../developer/cp2k-method-queue.md) wave 2 (shift) and
+`tools/cp2k_oracle/`. Fair walls from each page's Performance section /
+`REFERENCE.md` (`ratio` or `perf_exempt`). Eight slugs merged; three of them
+([gpw-d3-stress](gpw-d3-stress.md) **0.55**,
+[gpw-d3-atm-stress](gpw-d3-atm-stress.md) **0.75**,
+[second-gen-cpmd-ot-kpoints](second-gen-cpmd-ot-kpoints.md) **perf_exempt**)
+already carry index rows in the sections above and are not repeated here.
+
+| Method | Page | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
+| ------ | ---- | ---------- | --------------------------------------------- |
+| Finite-\(q\) DFPT phonons at X, pure GGA kernel (diamond Si) | [dfpt-gga-finite-q-si](dfpt-gga-finite-q-si.md) | `regressions/response/dfpt-gga-finite-q-si` | **0.17** |
+| Zero-SCF linearized XL-BOMD on the k path (periodic H₂ NVE) | [xl-bomd-linearized-kpoints](xl-bomd-linearized-kpoints.md) | `regressions/dynamics/xl-bomd-linearized-kpoints` | **1.3** |
+| GPW nonlocal vdW on the REL_CUTOFF multigrid (NGRIDS 4) | [gpw-vdw-multigrid](gpw-vdw-multigrid.md) | `regressions/gpw/gpw-vdw-multigrid` | **≈ 0.83** |
+| Multi-k UKS Car–Parrinello MD on dual-spin Bloch \(C_k^\sigma\) (H₂ NVE) | [cpmd-uks-kpoints](cpmd-uks-kpoints.md) | `regressions/dynamics/cpmd-uks-kpoints` | **perf_exempt** |
+| GPW DFT-D4 three-body ATM (\(s_9=1\)) analytic cell stress | [gpw-d4-atm-stress](gpw-d4-atm-stress.md) | `regressions/gpw/gpw-d4-atm-stress` | **perf_exempt** |
+
 ## Index — restored capability pages (indexed 2026-07-28)
 
 These pages were written by the Tutorial phase of earlier
