@@ -92,7 +92,8 @@ the shipped `gpw-xdm-ice` periodic pin (−2.1148157612879029×10⁻³ Ha).
 
 | Check | Tol |
 | ----- | --- |
-| A/B \(\lvert E_{\mathrm{disp}} - \mathrm{pin}\rvert\) (unstrained + 6 strained) | 1×10⁻¹² Ha (deterministic geometry-only sum) |
+| B \(\lvert E_{\mathrm{disp}} - \mathrm{pin}\rvert\) (6 strained cells, direct `xdm_pbe` + pin Å→Bohr) | 1×10⁻¹² Ha (deterministic geometry-only sum) |
+| A \(\lvert E_{\mathrm{disp}} - \mathrm{pin}\rvert\) (product SCF via Frame) | 1×10⁻⁸ Ha (sibling `gpw-xdm-ice` / `gpw-xdm-forces` tier) |
 | C \(\sigma_{\mathrm{diag}}\) analytic vs multi-SCF FD | 2×10⁻⁵ Ha/Bohr³ (Γ dispersion-stress reg tier) |
 | C \(\lvert\sigma\rvert\) nonzero | > 1×10⁻¹⁰ |
 | D \(\lvert(\sigma_{\mathrm{xdm}}-\sigma_{\mathrm{plain}}) - \sigma^{\mathrm{XDM}}_{\mathrm{dual\text{-}py}}\rvert\) | 1×10⁻⁸ Ha/Bohr³ |
@@ -102,9 +103,15 @@ the shipped `gpw-xdm-ice` periodic pin (−2.1148157612879029×10⁻³ Ha).
 
 ## Tolerance justification
 
-- **A/B 1e−12 Ha:** the product kernel and the dual pure-Python sum are two
-  implementations of the same deterministic geometry-only formula on shared
-  cited data; the shipped `gpw-xdm-ice` dual matched to ~1e−16.
+- **B 1e−12 Ha:** the in-tree `xdm_pbe` kernel and the dual pure-Python sum
+  are two implementations of the same deterministic geometry-only formula on
+  shared cited data, evaluated at the pin Å→Bohr constant
+  (`1/0.52917720859`); measured residual ~1e−18.
+- **A 1e−8 Ha:** product path converts Frame Å geometry with
+  `units::kAngstromInBohr` (CODATA 2006), which differs from the pin constant
+  at ~4e−9 relative — enough to move \(E_{\mathrm{disp}}\) by ~1e−11 Ha.
+  Same product-path tier as `gpw-xdm-ice` / `gpw-xdm-forces` (1e−8 Ha); the
+  decisive kernel identity is gate B.
 - **C 2e−5 Ha/Bohr³:** analytic fixed-\(P\) vs multi-SCF FD differ by the
   frozen density-matrix approximation plus SCF residual at `tol = 1e-6`, not
   by the dispersion treatment — same tier as `gpw-d4-stress` /
@@ -112,7 +119,8 @@ the shipped `gpw-xdm-ice` periodic pin (−2.1148157612879029×10⁻³ Ha).
 - **D 1e−8 Ha/Bohr³:** both sides are central FDs at the same \(h\) of the
   same dispersion energy (XDM does not enter the Fock operator, so the
   electronic parts cancel); the gate only has to exclude "silently not
-  folded" (σ_XDM_xx ≈ 1.6e−7) and a wrong strained-cell rebuild.
+  folded" (σ_XDM_xx ≈ 1.6e−7) and a wrong strained-cell rebuild. Residual
+  also absorbs the Frame vs pin Å→Bohr constant difference on the pin side.
 
 ## Dual gate
 
@@ -126,15 +134,20 @@ the shipped `gpw-xdm-ice` periodic pin (−2.1148157612879029×10⁻³ Ha).
 
 ## Measured results (2026-07-31, first green)
 
+`reg_gpw-xdm-stress` (OMP 8, epyc login node), 11 SCF iters:
+
 | Gate | Tol | Measured |
 | ---- | --- | -------- |
-| B \(E_{\mathrm{disp}}\) under strain vs dual-py (6 cells) | 1e−12 Ha | TBD |
-| A \(E_{\mathrm{disp}}\) product vs pin | 1e−12 Ha | TBD |
-| C \(\sigma_{\mathrm{diag}}\) analytic vs multi-SCF FD | 2e−5 Ha/Bohr³ | TBD |
-| D shift vs dual-py FD term | 1e−8 Ha/Bohr³ | TBD |
-| E off-diagonals | exactly 0 | TBD |
-| E `kStress` conversion | 1e−9 | TBD |
-| Product wall | ≤ 60 s | TBD |
+| B \(E_{\mathrm{disp}}\) under strain vs dual-py (6 cells) | 1e−12 Ha | **8.67e−19** |
+| A \(E_{\mathrm{disp}}\) product vs pin | 1e−8 Ha | **8.62e−12** |
+| C \(\sigma_{\mathrm{diag}}\) analytic vs multi-SCF FD | 2e−5 Ha/Bohr³ | **7.39e−07** (xx; yy 2.46e−8, zz 1.22e−9) |
+| D shift vs dual-py FD term | 1e−8 Ha/Bohr³ | **1.25e−10** (xx; yy 1.39e−11, zz 5.68e−12) |
+| E off-diagonals | exactly 0 | ~0 (pass) |
+| E `kStress` conversion | 1e−9 | pass |
+| Product wall | ≤ 60 s | **22.1 s** (FD twin 32.3 s, not product budget) |
+
+Product analytic diagonals [Ha/Bohr³]: xx −2.18425974×10⁻⁵,
+yy +2.00715789×10⁻⁵, zz +5.82582894×10⁻⁵.
 
 ## Notes
 

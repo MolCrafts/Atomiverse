@@ -1,6 +1,6 @@
 ---
 slug: gpw-xdm-stress
-status: approved
+status: done
 created: 2026-07-31
 revised: 2026-07-31
 domain: gpw / cell stress / dispersion
@@ -77,8 +77,8 @@ geometry), PBE, DZVP-MOLOPT-SR-GTH, GTH-PBE-q1/q6, Γ, `xdm = true`,
 
 | Gate | Oracle | Tol |
 | --- | --- | --- |
-| A. \(E_{\mathrm{disp}}\) unstrained (product SCF payload) | dual pure-Python pin (≡ shipped `gpw-xdm-ice` pin) | 1e-12 Ha |
-| B. \(E_{\mathrm{disp}}\) **under strain** (±h per axis, fixed fractional coords, rcut 50 Å) | fresh dual pure-Python pins at each of the 6 strained cells | 1e-12 Ha |
+| A. \(E_{\mathrm{disp}}\) unstrained (product SCF payload via Frame) | dual pure-Python pin (≡ shipped `gpw-xdm-ice` pin) | 1e-8 Ha (Frame Å→Bohr vs pin constant; sibling ice/forces tier) |
+| B. \(E_{\mathrm{disp}}\) **under strain** (±h per axis, fixed fractional coords, rcut 50 Å) | fresh dual pure-Python pins at each of the 6 strained cells | 1e-12 Ha (direct `xdm_pbe` + pin Å→Bohr) |
 | C. analytic fixed-\(P\) σ vs multi-SCF strain-FD (`gpw_stress_fd_impl`) | internal dual gate | 2e-5 Ha/Bohr³ (Γ dispersion-stress reg tier) |
 | D. \(\sigma(\mathrm{xdm}) − \sigma(\mathrm{plain})\) per axis equals the pinned XDM strain-FD term \(-\Delta E_{\mathrm{disp}}/(2h\Omega_0)\) | pins from gate B | 1e-8 Ha/Bohr³ |
 | E. off-diagonals exactly 0; `kStress` unit conversion 1e-9; wall ≤ 60 s | structural | — |
