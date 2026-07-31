@@ -394,3 +394,151 @@ TEST(CpmdCplx, AdvanceBeforeSeedThrows) {
     CplxMatrix S = eye_c(2);
     EXPECT_THROW(cp.advance(H, S, 0.1), std::logic_error);
 }
+
+// ── Nosé–Hoover electronic thermostat (complex channel) ─────────────────
+
+TEST(CpmdCplx, ThermostatInvalidParamsThrowOnAdvance) {
+    CpmdCplx cp(400.0);
+    CplxMatrix C = xt::zeros<Cplx>({2, 1});
+    C(0, 0) = Cplx(1.0, 0.0);
+    cp.seed(C);
+    cp.thermostat = true;
+    cp.ekin_target_ha = 0.0;
+    cp.tau_e_fs = 10.0;
+    CplxMatrix H = eye_c(2);
+    CplxMatrix S = eye_c(2);
+    EXPECT_THROW(cp.advance(H, S, 0.1), std::invalid_argument);
+    cp.ekin_target_ha = 1e-4;
+    cp.tau_e_fs = -1.0;
+    EXPECT_THROW(cp.advance(H, S, 0.1), std::invalid_argument);
+}
+
+TEST(CpmdCplx, ThermostatOffKeepsZeroThermostatEnergy) {
+    CpmdCplx cp(400.0);
+    CplxMatrix C = xt::zeros<Cplx>({2, 1});
+    C(0, 0) = Cplx(1.0, 0.0);
+    cp.seed(C);
+    EXPECT_FALSE(cp.thermostat);
+    EXPECT_NEAR(cp.thermostat_energy_ha(), 0.0, 1e-15);
+    CplxMatrix H = eye_c(2);
+    H(0, 0) = Cplx(-0.5, 0.0);
+    CplxMatrix S = eye_c(2);
+    cp.advance(H, S, 0.1);
+    EXPECT_NEAR(cp.thermostat_energy_ha(), 0.0, 1e-15);
+    EXPECT_NEAR(cp.xi(), 0.0, 1e-15);
+    EXPECT_NEAR(cp.eta(), 0.0, 1e-15);
+}
+
+TEST(CpmdCplx, ThermostatRegulatesHotElectronicKe) {
+    // Hot complex seed Te ≫ K0; NH pulls Te down while RATTLE holds the
+    // Hermitian constraint — the per-(k,σ) control the multi-k GPW consumer
+    // relies on (cpmd-thermostat-kpoints).
+    CpmdCplx cp(400.0);
+    cp.thermostat = true;
+    cp.ekin_target_ha = 1e-6;
+    cp.tau_e_fs = 5.0;
+    CplxMatrix C = xt::zeros<Cplx>({3, 2});
+    C(0, 0) = Cplx(1.0, 0.0);
+    C(1, 1) = Cplx(0.0, 1.0); // complex phase on the second column
+    CplxMatrix Cdot = xt::zeros<Cplx>({3, 2});
+    Cdot(2, 0) = Cplx(0.05, 0.02);
+    Cdot(2, 1) = Cplx(-0.04, 0.01);
+    cp.seed(C, Cdot);
+    const double te0 = cp.kinetic_ha();
+    ASSERT_GT(te0, 10.0 * cp.ekin_target_ha);
+
+    CplxMatrix S = eye_c(3);
+    CplxMatrix H = xt::zeros<Cplx>({3, 3});
+    H(0, 0) = Cplx(-1.0, 0.0);
+    H(1, 1) = Cplx(-0.5, 0.0);
+    H(2, 2) = Cplx(0.1, 0.0);
+
+    for (int i = 0; i < 40; ++i)
+        cp.advance(H, S, 0.05);
+
+    const double tef = cp.kinetic_ha();
+    EXPECT_TRUE(std::isfinite(tef));
+    EXPECT_GE(tef, 0.0);
+    EXPECT_LT(tef, te0);
+    EXPECT_LE(tef, 50.0 * cp.ekin_target_ha + 0.1 * te0);
+    EXPECT_TRUE(std::isfinite(cp.thermostat_energy_ha()));
+    EXPECT_LE(cp.last_constraint_residual(), 1e-9);
+
+    const CplxMatrix G = c_dagger_mul_test(cp.C(), c_mul_test(S, cp.C()));
+    EXPECT_LE(max_abs_cmat(G - eye_c(2)), 1e-9);
+    const CplxMatrix W = c_dagger_mul_test(cp.C(), c_mul_test(S, cp.Cdot()));
+    CplxMatrix Wherm = xt::zeros<Cplx>(W.shape());
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            Wherm(i, j) = 0.5 * (W(i, j) + std::conj(W(j, i)));
+    EXPECT_LE(max_abs_cmat(Wherm), 1e-9);
+}
+
+TEST(CpmdCplx, ThermostatGammaLimitMatchesRealCpmd) {
+    // Γ-limit solver identity (cpmd-thermostat-kpoints): on purely real
+    // inputs the thermostatted complex propagator IS the shipped real Γ
+    // thermostat product — C, Ċ, T_e, E_therm, ξ, η track Cpmd to 1e-12
+    // over several NH + RATTLE steps, and no imaginary part appears.
+    const double mu = 400.0;
+    const double k0 = 1e-4;
+    const double tau = 10.0;
+
+    Cpmd re(mu);
+    re.thermostat = true;
+    re.ekin_target_ha = k0;
+    re.tau_e_fs = tau;
+    CpmdCplx cx(mu);
+    cx.thermostat = true;
+    cx.ekin_target_ha = k0;
+    cx.tau_e_fs = tau;
+
+    RealMatrix C = xt::zeros<double>({3, 2});
+    C(0, 0) = 1.0;
+    C(1, 1) = 1.0;
+    RealMatrix Cdot = xt::zeros<double>({3, 2});
+    Cdot(2, 0) = 0.03;
+    Cdot(2, 1) = -0.02;
+    CplxMatrix Cc = xt::zeros<Cplx>({3, 2});
+    CplxMatrix Cdotc = xt::zeros<Cplx>({3, 2});
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 2; ++j) {
+            Cc(i, j) = Cplx(C(i, j), 0.0);
+            Cdotc(i, j) = Cplx(Cdot(i, j), 0.0);
+        }
+    re.seed(C, Cdot);
+    cx.seed(Cc, Cdotc);
+    ASSERT_NEAR(cx.kinetic_ha(), re.kinetic_ha(), 1e-15);
+
+    RealMatrix S = eye_n(3);
+    RealMatrix H = xt::zeros<double>({3, 3});
+    H(0, 0) = -1.0;
+    H(1, 1) = -0.5;
+    H(2, 2) = 0.2;
+    H(0, 2) = H(2, 0) = 0.15;
+    CplxMatrix Sc = eye_c(3);
+    CplxMatrix Hc = xt::zeros<Cplx>({3, 3});
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            Hc(i, j) = Cplx(H(i, j), 0.0);
+
+    for (int step = 0; step < 5; ++step) {
+        re.advance(H, S, 0.05);
+        cx.advance(Hc, Sc, 0.05);
+    }
+
+    EXPECT_NEAR(cx.kinetic_ha(), re.kinetic_ha(), 1e-12);
+    EXPECT_NEAR(cx.thermostat_energy_ha(), re.thermostat_energy_ha(), 1e-12);
+    EXPECT_NEAR(cx.xi(), re.xi(), 1e-12);
+    EXPECT_NEAR(cx.eta(), re.eta(), 1e-12);
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 2; ++j) {
+            EXPECT_NEAR(cx.C()(i, j).real(), re.C()(i, j), 1e-12)
+                << "C i=" << i << " j=" << j;
+            EXPECT_NEAR(cx.C()(i, j).imag(), 0.0, 1e-13)
+                << "C i=" << i << " j=" << j;
+            EXPECT_NEAR(cx.Cdot()(i, j).real(), re.Cdot()(i, j), 1e-12)
+                << "Cdot i=" << i << " j=" << j;
+            EXPECT_NEAR(cx.Cdot()(i, j).imag(), 0.0, 1e-13)
+                << "Cdot i=" << i << " j=" << j;
+        }
+}

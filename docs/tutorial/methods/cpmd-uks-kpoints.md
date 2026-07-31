@@ -30,8 +30,10 @@ propagated \(\{P_k^\alpha, P_k^\beta\}\), exported through the new
 `GpwResult::H_ks_k` / `H_ks_k_beta` payload; `iters == 0` on every
 production step). Electronic kinetic energy is
 \(T_e = \sum_k w_k \sum_\sigma \tfrac12 \mu \lVert \dot C_k^\sigma
-\rVert_F^2\). The multi-k electronic thermostat remains refused (NVE
-electrons on the k path; queued `cpmd-thermostat-kpoints`).
+\rVert_F^2\). The multi-k **electronic thermostat** (one NH per (k, σ)
+channel, k-weighted totals) ships as `cpmd-thermostat-kpoints`
+(`regressions/dynamics/cpmd-thermostat-kpoints/`); this pin is NVE
+electrons.
 
 ## System
 

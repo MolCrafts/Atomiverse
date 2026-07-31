@@ -35,14 +35,14 @@ closes D3-zero **stress** (`reg_gpw-d3-stress`) and ships finite-q DFPT
 collinear UKS, CP2K-anchored (`reg_xl-bomd-linearized-kpoints`),
 multi-k UKS **CPMD** (`reg_cpmd-uks-kpoints`), multi-k SGCP **OT**
 (`reg_second-gen-cpmd-ot-kpoints`), and D3/D4 ATM **stress**
-(`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`); wave 3 ships the
-dedicated **XDM stress** pin (`reg_gpw-xdm-stress`); open
+(`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`); open
 residuals after
-that wave (GapCensus wave 3 re-verified + expanded): **TS stress**
-pin (in-flight `[~]`), nonlocal **vdW × k-points**, Γ-UKS nonlocal
-**vdW**, multi-k **UKS multigrid**,
-multi-k CPMD **electronic thermostat**, multi-k UKS **SGCP OT**,
+that wave (GapCensus wave 3 re-verified + expanded): **TS/XDM stress**
+pins (in-flight `[~]`), nonlocal **vdW × k-points**, Γ-UKS nonlocal
+**vdW**, multi-k **UKS multigrid**, multi-k UKS **SGCP OT**,
 linearized-XL **stress**, finite-q **spin-GGA DFPT** pin;
+multi-k CPMD **electronic thermostat** ships
+(`reg_cpmd-thermostat-kpoints`);
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -295,10 +295,8 @@ analytic \(s_9\) gradient (triple derivatives + C9→neutral-C6→CN chain;
 `reg_gpw-d4-atm-forces`, dftd4 3.7.0 `--grad` pin at 1e−9 Ha/Bohr).
 **MBD stress** ships at **Γ** (`reg_gpw-mbd-stress`) **and multi-k**
 (`reg_gpw-mbd-kpoint-stress`; k-summed fixed-\(P_k\) Lagrangian folds
-periodic MBD, strained-cell pymbd pins). **XDM stress** carries its
-dedicated pin at Γ (`reg_gpw-xdm-stress`; dual pure-Python strained-cell
-pins + multi-SCF strain-FD dual gate). The dedicated **TS stress** pin is
-in-flight (`gpw-ts-stress`; energy folds are
+periodic MBD, strained-cell pymbd pins). Dedicated **TS / XDM stress**
+pins are queued (`gpw-ts-stress` / `gpw-xdm-stress`; energy folds are
 product). The **D3 ATM stress** pin is product
 (`reg_gpw-d3-atm-stress`: CP2K 2026.1 `STRESS_TENSOR NUMERICAL`
 difference C9 on−off isolates the pure ATM stress, Δσ parity 1.1e−13
@@ -399,14 +397,13 @@ Two periodic DFT engines exist, with disjoint strengths:
   XL — RKS + collinear UKS with the new k-UKS fixed-density eval,
   CP2K-anchored (`reg_xl-bomd-linearized-kpoints`), multi-k UKS
   CPMD (`reg_cpmd-uks-kpoints`), multi-k SGCP OT
-  (`reg_second-gen-cpmd-ot-kpoints`), D3/D4 ATM stress
-  (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`), and the dedicated
-  Γ XDM stress pin (`reg_gpw-xdm-stress`). Stock VV10 is
+  (`reg_second-gen-cpmd-ot-kpoints`), and D3/D4 ATM stress
+  (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`). Stock VV10 is
   **blocked** (no CP2K twin). Open residuals (GapCensus wave 3):
-  TS stress (in-flight `[~]`), nonlocal vdW ×
-  k-points, Γ-UKS nonlocal vdW, multi-k UKS multigrid, multi-k CPMD
-  electronic thermostat, multi-k UKS SGCP OT, linearized-XL stress,
-  finite-q spin-GGA DFPT pin. Hybrids / meta-GGA /
+  TS/XDM stress (in-flight `[~]`), nonlocal vdW ×
+  k-points, Γ-UKS nonlocal vdW, multi-k UKS multigrid, multi-k UKS SGCP
+  OT, linearized-XL stress, finite-q spin-GGA DFPT pin. Multi-k CPMD
+  electronic thermostat ships (`reg_cpmd-thermostat-kpoints`). Hybrids / meta-GGA /
   GAPW / PAW remain blocked (queue not exhausted — see
   `cp2k-method-queue.md`). CPU only.
 
