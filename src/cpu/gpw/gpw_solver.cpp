@@ -1370,11 +1370,24 @@ static GpwResult run_gpw_scf_kpoints(
         return rho;
     };
 
-    // Fold free-atom e_d3, or Hirshfeld-scaled TS/MBD from the final k-summed
-    // density (post-SCF). Mirrors Γ `fold_dispersion` (incl. its multigrid
-    // product density via `collocate_rho_k`).
+    // Fold nonlocal vdW (DRSLL/LMKLL/rVV10), free-atom e_d3, or
+    // Hirshfeld-scaled TS/MBD from the final k-summed density (post-SCF).
+    // Mirrors Γ `fold_dispersion` (incl. multigrid product density via
+    // `collocate_rho_k`).
     auto fold_dispersion_k = [&](GpwResult& out,
                                  const std::vector<CplxMatrix>& Pk) {
+        // Final nonlocal E_c^nl on the (self-consistent) k-summed total
+        // density. V_nl was already applied every SCF iteration inside
+        // build_k_energy; this mirrors the Γ runner's post-SCF evaluation.
+        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+            const std::vector<double> rho = collocate_rho_k(Pk);
+            out.e_disp = nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df,
+                                              cfg.vdw_df2, cfg.rvv10,
+                                              /*potential=*/false)
+                             .energy;
+            out.e_total += out.e_disp;
+            return;
+        }
         if (cfg.hirshfeld && (cfg.ts || cfg.mbd)) {
             const std::vector<double> rho = collocate_rho_k(Pk);
             std::vector<int> Z(atoms.size());
@@ -1519,6 +1532,20 @@ static GpwResult run_gpw_scf_kpoints(
             e_locgrid += rho[g] * v_locsr[g];
         }
         e_locgrid *= gw;
+        // Self-consistent nonlocal vdW (DRSLL / LMKLL / rVV10): V_nl = δE/δρ
+        // on the finest-grid k-summed density, added before last_veff and the
+        // multigrid restriction — the integrated KS matrix (single-grid
+        // integrate_potential_k and the V_t stack alike) stays the exact
+        // gradient of the collocated E_H + E_xc + E_c^nl (variational SCF;
+        // same placement as the Γ runner). E_c^nl is reported via e_disp
+        // (fold_dispersion_k), never added to the SCF convergence energy.
+        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+            const NonlocalVdwOnGrid nl =
+                nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
+                                     cfg.rvv10, /*potential=*/true);
+            for (std::size_t g = 0; g < rho.size(); ++g)
+                veff[g] += nl.v_r[g];
+        }
         last_veff = veff;
 
         std::vector<std::vector<double>> Vt;
@@ -5181,9 +5208,10 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
             throw std::invalid_argument(
                 "GpwDft::build: UKS supports XcKind::PADE, PBE, PBEsol, "
                 "RevPBE, RPBE, BLYP, or OptB88VdW");
-        // Nonlocal vdW is wired only in the Γ closed-shell RKS runner (SCF
-        // V_nl + post-SCF E_c^nl); accepting it here would silently drop the
-        // nonlocal term (e_disp stays 0 while the run "succeeds").
+        // Nonlocal vdW is wired only in the closed-shell RKS runners (Γ and
+        // multi-k: SCF V_nl + post-SCF E_c^nl); accepting it here would
+        // silently drop the nonlocal term (e_disp stays 0 while the run
+        // "succeeds"). UKS vdW is a separate queue pick.
         if (vdw_df || vdw_df2 || rvv10)
             throw std::invalid_argument(
                 "GpwDft::build: nonlocal vdW (vdw_df / vdw_df2 / rvv10) is "
@@ -5317,13 +5345,11 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
             reject("the analytic per-pair local PP (local_pp_on_grid=false)");
         if (level_shift != 0.0)
             reject("level shifting");
-        // Nonlocal vdW is not wired on the k path at all: the semilocal part
-        // (e.g. optB88 exchange) would run, but the SCF potential and the
-        // post-SCF E_c^nl fold live only in the Γ runner — accepting these
-        // flags here silently dropped the nonlocal term (found while opening
-        // the k multigrid gate; fail fast instead).
-        if (vdw_df || vdw_df2 || rvv10)
-            reject("nonlocal vdW (vdw_df / vdw_df2 / rvv10)");
+        // Nonlocal vdW (vdw_df / vdw_df2 / rvv10) is wired on the closed-shell
+        // multi-k RKS path: SCF V_nl in build_k_energy + post-SCF E_c^nl in
+        // fold_dispersion_k (single-grid and REL_CUTOFF multigrid alike;
+        // gpw-vdw-kpoints). UKS + vdW is rejected in the is_uks() branch
+        // above, Γ and k alike.
         if (is_uks() && xc != XcKind::PADE && xc != XcKind::PBE
             && xc != XcKind::PBEsol && xc != XcKind::RevPBE
             && xc != XcKind::RPBE && xc != XcKind::BLYP
