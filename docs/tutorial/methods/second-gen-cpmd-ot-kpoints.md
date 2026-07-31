@@ -27,9 +27,9 @@ forces are taken at the post-corrector density.
 
 This closes the last SGCP corrector×sampling cell for RKS: Γ-DIIS
 (`second-gen-cpmd-water`), Γ-OT (`second-gen-cpmd-ot`), multi-k
-diagonalization (`second-gen-cpmd-kpoints`), and now multi-k OT. Multi-k
-**UKS** + OT stays refused with a precise throw (dual-spin k-OT warm start
-is not productized).
+diagonalization (`second-gen-cpmd-kpoints`), and multi-k OT. Multi-k
+**UKS** + OT is the sibling product `second-gen-cpmd-ot-uks-kpoints`
+(dual-spin per-(k, σ) natural-orbital warm start).
 
 ## Usage
 
@@ -68,6 +68,7 @@ No CP2K number can exist for this method — CP2K's OT implementation is
 
 ## Honest scope
 
-- Closed-shell multi-k RKS only; multi-k UKS + OT refused.
+- Closed-shell multi-k RKS only; multi-k UKS + OT is
+  `second-gen-cpmd-ot-uks-kpoints`.
 - No metallic smearing / +U pinned under the SGCP corrector.
 - `perf_exempt`: no oracle wall twin can exist (see above).

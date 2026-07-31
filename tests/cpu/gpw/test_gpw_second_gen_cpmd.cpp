@@ -155,9 +155,10 @@ TEST(GpwEvaluatorSecondGenCp, BuildAcceptsMultiKWithOt) {
     EXPECT_NO_THROW(eval.build(bc));
 }
 
-TEST(GpwEvaluatorSecondGenCp, BuildRejectsMultiKUksWithOt) {
-    // Dual-spin k-OT warm start is not productized — multi-k UKS SGCP
-    // stays on the diagonalization corrector.
+TEST(GpwEvaluatorSecondGenCp, BuildAcceptsMultiKUksWithOt) {
+    // Multi-k UKS OT partial-SCF corrector is product — dual-spin per-k OT
+    // manifolds warm-start from natural orbitals of the ASPC-predicted
+    // P_k^sigma (second-gen-cpmd-ot-uks-kpoints).
     auto frame = water_frame();
     frame.box = ATV::cpu::Box::cubic(10.0);
     auto base = water_eval();
@@ -169,9 +170,10 @@ TEST(GpwEvaluatorSecondGenCp, BuildRejectsMultiKUksWithOt) {
     eval.method().k_mesh[0] = 1;
     eval.method().k_mesh[1] = 1;
     eval.method().k_mesh[2] = 2;
+    eval.method().k_time_reversal = false;
     ATV::cpu::Context rt;
     ATV::cpu::BuildContext bc{rt, frame};
-    EXPECT_THROW(eval.build(bc), std::invalid_argument);
+    EXPECT_NO_THROW(eval.build(bc));
 }
 
 TEST(GpwEvaluatorSecondGenCp, BuildAcceptsMultiKUks) {

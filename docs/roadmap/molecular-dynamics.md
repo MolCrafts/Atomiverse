@@ -288,9 +288,9 @@ warm-start; `reg_second-gen-cpmd-ot`) **and Γ-UKS OT + SGCP**
 (`reg_second-gen-cpmd-uks-ot`) **and multi-k SGCP** (ASPC on complex
 \(P_k\); `reg_second-gen-cpmd-kpoints`) **and multi-k SGCP + OT corrector**
 (per-k OT manifold warm-started from natural orbitals of the predicted
-\(P_k\); `reg_second-gen-cpmd-ot-kpoints`). Multi-k **UKS** SGCP + OT
-remains ○ (build-time throw — dual-spin k-OT warm start not productized;
-queued `second-gen-cpmd-ot-uks-kpoints`).
+\(P_k\); `reg_second-gen-cpmd-ot-kpoints`) **and multi-k UKS SGCP + OT**
+(dual-spin per-(k, σ) OT manifolds warm-started from natural orbitals of
+the predicted \(P_k^\sigma\); `reg_second-gen-cpmd-ot-uks-kpoints`).
 
 ## 8. Nuclear Quantum Dynamics
 

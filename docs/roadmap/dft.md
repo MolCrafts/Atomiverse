@@ -40,8 +40,11 @@ residuals after
 that wave (GapCensus wave 3 re-verified + expanded): **TS/XDM stress**
 pins (in-flight `[~]`), nonlocal **vdW × k-points**, Γ-UKS nonlocal
 **vdW**, multi-k **UKS multigrid**,
-multi-k CPMD **electronic thermostat**, multi-k UKS **SGCP OT**,
-linearized-XL **stress**, finite-q **spin-GGA DFPT** pin;
+multi-k CPMD **electronic thermostat**,
+linearized-XL **stress**, finite-q **spin-GGA DFPT** pin; **wave 3
+(shift, 2026-07-31)** ships multi-k UKS SGCP **OT**
+(`reg_second-gen-cpmd-ot-uks-kpoints` — dual-spin per-k OT corrector
+warm-started from natural orbitals of the predicted \(P_k^\sigma\));
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -397,11 +400,13 @@ Two periodic DFT engines exist, with disjoint strengths:
   CP2K-anchored (`reg_xl-bomd-linearized-kpoints`), multi-k UKS
   CPMD (`reg_cpmd-uks-kpoints`), multi-k SGCP OT
   (`reg_second-gen-cpmd-ot-kpoints`), and D3/D4 ATM stress
-  (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`). Stock VV10 is
+  (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`); wave 3 (shift)
+  ships multi-k UKS SGCP OT (`reg_second-gen-cpmd-ot-uks-kpoints`).
+  Stock VV10 is
   **blocked** (no CP2K twin). Open residuals (GapCensus wave 3):
   TS/XDM stress (in-flight `[~]`), nonlocal vdW ×
   k-points, Γ-UKS nonlocal vdW, multi-k UKS multigrid, multi-k CPMD
-  electronic thermostat, multi-k UKS SGCP OT, linearized-XL stress,
+  electronic thermostat, linearized-XL stress,
   finite-q spin-GGA DFPT pin. Hybrids / meta-GGA /
   GAPW / PAW remain blocked (queue not exhausted — see
   `cp2k-method-queue.md`). CPU only.

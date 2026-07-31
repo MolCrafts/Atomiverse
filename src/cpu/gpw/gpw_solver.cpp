@@ -2803,7 +2803,51 @@ static GpwResult run_gpw_scf_kpoints_uks(
                 o.assign(static_cast<std::size_t>(std::max(n_act_b, 0)), 1.0);
         }
 
+        // Dual-spin natural-orbital warm start (SGCP OT corrector): purify
+        // each predicted P_k^σ to natural orbitals — eigenvalues of
+        // X† P^σ X ascend, so the largest occupations sit in the LAST
+        // columns (same convention as the multi-k RKS warm start in the
+        // run_gpw_scf_kpoints init loop and the Γ-UKS guess purification).
+        // Integer-occupation path only: under metallic smearing the OT
+        // manifold is the full AO spectrum and the RKS precedent discards
+        // the guess (cold H0 expand); the evaluator exposes no smearing,
+        // so the SGCP corrector never reaches it.
+        auto warm_from_guess = [&](const CplxMatrix& Pg, int n_occ_s, int ik) {
+            if (n_occ_s < 1)
+                return CplxMatrix(xt::zeros<Cplx>({nb, 0}));
+            auto [n_occ_vals, Cnat] = internal::diagonalize_k(
+                Pg, orth[static_cast<std::size_t>(ik)]);
+            (void)n_occ_vals;
+            const int m = static_cast<int>(Cnat.shape(1));
+            if (m < n_occ_s)
+                throw std::runtime_error(
+                    "GPW k-UKS OT: natural-orbital warm start needs at "
+                    "least n_occ kept orthogonal directions (m="
+                    + std::to_string(m) + ", n_occ=" + std::to_string(n_occ_s)
+                    + ")");
+            CplxMatrix Cw = xt::zeros<Cplx>({nb, n_occ_s});
+            for (int i = 0; i < n_occ_s; ++i) {
+                const int src = m - n_occ_s + i;
+                for (int mu = 0; mu < nb; ++mu)
+                    Cw(mu, i) = Cnat(mu, src);
+            }
+            return linalg::lowdin_orthonormalize_k(
+                Cw, S_k[static_cast<std::size_t>(ik)]);
+        };
+        const bool warm_ot_uks = (guess_Pa_k != nullptr) && !use_smear;
+
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+            if (warm_ot_uks) {
+                Pa_k[static_cast<std::size_t>(ik)] =
+                    CplxMatrix((*guess_Pa_k)[static_cast<std::size_t>(ik)]);
+                Pb_k[static_cast<std::size_t>(ik)] =
+                    CplxMatrix((*guess_Pb_k)[static_cast<std::size_t>(ik)]);
+                Cocc_a_k[static_cast<std::size_t>(ik)] = warm_from_guess(
+                    Pa_k[static_cast<std::size_t>(ik)], n_act_a, ik);
+                Cocc_b_k[static_cast<std::size_t>(ik)] = warm_from_guess(
+                    Pb_k[static_cast<std::size_t>(ik)], n_act_b, ik);
+                continue;
+            }
             const CplxMatrix H0k = T_k[static_cast<std::size_t>(ik)]
                                    + Vnl_k[static_cast<std::size_t>(ik)];
             auto [eps0, C0k] = internal::diagonalize_k(
@@ -5379,16 +5423,11 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             // handled above. Keep the branch explicit for RKS null P.
         }
     }
-    // Multi-k RKS density guess + OT is product: each predicted P_k is
-    // purified to natural orbitals that seed the per-k OT manifold (complex
-    // mirror of the Γ guess_P warm start — SGCP OT corrector,
-    // second-gen-cpmd-ot-kpoints). The dual-spin k-OT warm start is not
-    // productized, so multi-k UKS + OT + guess still refuses.
-    if (guess_P_k_beta != nullptr && use_ot)
-        throw std::invalid_argument(
-            "GpwDft::run: multi-k UKS density guess with use_ot is not "
-            "productized (dual-spin k-OT natural-orbital warm start "
-            "missing; use the diagonalization path or multi-k RKS)");
+    // Multi-k density guess + OT is product: each predicted P_k (RKS total)
+    // or P_k^σ (UKS dual-spin) is purified to natural orbitals that seed the
+    // per-k OT manifold(s) — the complex mirror of the Γ guess_P warm start
+    // (SGCP OT corrector: second-gen-cpmd-ot-kpoints RKS,
+    // second-gen-cpmd-ot-uks-kpoints UKS).
     if (!is_uks() && guess_P_k_beta != nullptr)
         throw std::invalid_argument(
             "GpwDft::run: guess_P_k_beta is multi-k UKS-only "

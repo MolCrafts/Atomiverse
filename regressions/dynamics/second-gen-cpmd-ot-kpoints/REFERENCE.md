@@ -107,7 +107,7 @@ Additional gates:
 
 ## Honest scope
 
-- Closed-shell multi-k RKS product pin; multi-k **UKS** SGCP + OT stays
-  refused (dual-spin k-OT warm start not productized)
+- Closed-shell multi-k RKS product pin; multi-k **UKS** SGCP + OT is the
+  sibling `second-gen-cpmd-ot-uks-kpoints` (dual-spin k-OT warm start)
 - No metallic smearing / +U under the SGCP corrector here
 - Soft drift tol vs full BO for partial-SCF heat on short traj

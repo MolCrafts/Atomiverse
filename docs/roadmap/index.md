@@ -283,12 +283,13 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   RKS + UKS, CP2K-anchored (`reg_xl-bomd-linearized-kpoints`),
   multi-k UKS CPMD (`reg_cpmd-uks-kpoints`), multi-k SGCP OT
   (`reg_second-gen-cpmd-ot-kpoints`), and D3/D4 ATM stress
-  (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`);
+  (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`); **wave 3
+  (shift, 2026-07-31)** ships multi-k UKS SGCP OT
+  (`reg_second-gen-cpmd-ot-uks-kpoints`);
   residual pending (GapCensus wave 3): TS/XDM stress pins (in-flight
   `[~]`), vdW on the k path, Γ-UKS nonlocal vdW, multi-k UKS multigrid,
-  multi-k CPMD electronic thermostat, multi-k UKS SGCP OT,
-  linearized-XL stress, finite-q spin-GGA DFPT pin; stock VV10
-  remains **blocked** (no CP2K twin);
+  multi-k CPMD electronic thermostat, linearized-XL stress, finite-q
+  spin-GGA DFPT pin; stock VV10 remains **blocked** (no CP2K twin);
   hybrids / meta-GGA / GAPW blocked — see `cp2k-method-queue.md` (queue
   not exhausted — GapCensus owns next discovery).
 - Concrete method `GpwDft` (parameters as members; no public Config bag).
