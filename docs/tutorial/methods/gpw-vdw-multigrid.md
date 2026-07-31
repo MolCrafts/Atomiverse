@@ -85,4 +85,32 @@ const cpu::gpw::GpwResult& r = gpw.run(atoms);
 CP2K's own NGRIDS 4 ↔ 1 gap is 6.0e-7 Ha — the multigrid is a cost
 optimization, not a physics change; the regression pins the same statement on
 the ATV side (single-grid ↔ multigrid internal consistency) plus the CP2K
-E_disp / E_tot parity. Measured gates: `regressions/gpw/gpw-vdw-multigrid/REFERENCE.md`.
+E_disp / E_tot parity.
+
+## Accuracy (measured 2026-07-31, OMP=8)
+
+ATV: E_tot sg = −34.178411658610 Ha, mg = −34.178407380745 Ha;
+E_disp sg = +0.151895580634 Ha, mg = +0.151895426360 Ha.
+
+| Gate | Measured | Tolerance |
+|------|----------|-----------|
+| \|E_tot(mg) − E_tot(sg)\| (ATV internal consistency) | 4.28e-6 Ha | 2e-5 Ha |
+| \|E_disp(mg) − CP2K NGRIDS 4\| | 4.02e-5 Ha | 1e-4 Ha |
+| \|E_tot(mg) − CP2K NGRIDS 4\| | 7.93e-3 Ha | 1e-2 Ha |
+
+The absolute E_tot offset is the pre-existing systematic of this Γ dimer twin
+family: identical on both grid paths (Δ_sg = 7.922e-3 vs Δ_mg = 7.926e-3 Ha),
+and `eps_default = 1e-10` moves E_tot by < 1e-8 Ha, so it is not tail
+screening. The capability statements are rows 1–2.
+
+## Speed (same host, OMP=8)
+
+| Run | Wall |
+|-----|------|
+| CP2K 2026.1 NGRIDS 4 (30 SCF steps) | 24.7 s |
+| CP2K 2026.1 NGRIDS 1 (context) | 24.2 s |
+| ATV regression — **both** solves (sg + mg) | 20.6 s |
+
+Fair ratio \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx 0.83\), charging
+both ATV solves against CP2K's single NGRIDS 4 run (≤ 10×; no perf exemption
+needed). Measured gates: `regressions/gpw/gpw-vdw-multigrid/REFERENCE.md`.

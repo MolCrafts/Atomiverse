@@ -288,6 +288,7 @@ domain, alphabetical by slug.
 |--------|------|------------|
 | GPW Γ-RKS BLYP, isolated H₂O (MT) | [gpw-blyp-water](methods/gpw-blyp-water.md) | `regressions/gpw/gpw-blyp-water` |
 | GPW PBE-D3 (zero damping) analytic cell stress | [gpw-d3-stress](methods/gpw-d3-stress.md) | `regressions/gpw/gpw-d3-stress` |
+| GPW DFT-D4 three-body ATM (\(s_9=1\)) analytic cell stress | [gpw-d4-atm-stress](methods/gpw-d4-atm-stress.md) | `regressions/gpw/gpw-d4-atm-stress` |
 | GPW PBE-D3(BJ) analytic cell stress | [gpw-d3bj-stress](methods/gpw-d3bj-stress.md) | `regressions/gpw/gpw-d3bj-stress` |
 | GPW PBE-D4 analytic ionic forces | [gpw-d4-forces](methods/gpw-d4-forces.md) | `regressions/gpw/gpw-d4-forces` |
 | GPW PBE-D4 analytic cell stress | [gpw-d4-stress](methods/gpw-d4-stress.md) | `regressions/gpw/gpw-d4-stress` |

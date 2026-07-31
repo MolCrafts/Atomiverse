@@ -133,13 +133,42 @@ Relevant sources:
 
 ## Validation and performance
 
-Source: `regressions/dynamics/xl-bomd-linearized-kpoints/REFERENCE.md` —
-CP2K 2026.1 `.ener` per-step Pot trace pin (offline; EasyBuild
-`2026.1-gmpflf-2026.03` on the Arrhenius epyc login node), per-step shadow
-\(E_{\mathrm{pot}}\) band, A/B trace band, C/B spin-degeneracy identity,
-NVE drift envelope, and the measured fair-wall ratio. The Table-I
-coefficients and the shadow fixed-point identities (Γ real, dual-spin, and
-k-weighted complex) are unit-pinned in `test_cpu_gpw_xl_bomd`.
+Source: `regressions/dynamics/xl-bomd-linearized-kpoints/REFERENCE.md`.
+Oracle: **CP2K 2026.1** (`cp2k.psmp`, EasyBuild `2026.1-gmpflf-2026.03`,
+Arrhenius epyc login node, 2026-07-31) converged-SCF k-point NVE `.ener`
+trace of the identical twin input — offline pin, never run at ctest time.
+The Table-I coefficients and the shadow fixed-point identities (Γ real,
+dual-spin, and k-weighted complex) are unit-pinned in
+`test_cpu_gpw_xl_bomd`.
+
+### Accuracy (per-step Pot [Ha], measured 2026-07-31)
+
+| Step | CP2K 2026.1 | A (SCF-XL) | B (linearized) | C (UKS lin.) |
+| ---- | ----------- | ---------- | -------------- | ------------ |
+| 0 | −1.074050184 | −1.074456793 | −1.074456793 | −1.074456793 |
+| 1 | −1.097682104 | −1.097482136 | −1.097521796 | −1.097521784 |
+| 2 | −1.125544577 | −1.125333978 | −1.125443925 | −1.125443902 |
+| 3 | −1.130531455 | −1.130595564 | −1.130587128 | −1.130587132 |
+| 4 | −1.121507812 | −1.121740443 | −1.121722124 | −1.121722125 |
+
+| Gate | Band | Measured worst |
+| ---- | ---- | -------------- |
+| B shadow \(E_{\mathrm{pot}}\) vs CP2K Pot | ± 2e-3 Ha | **4.066e-4 Ha** (≈ the documented 4.07e-4 Ha lattice-sum/PP-tail model band; production rows 0.6–2.1e-4) |
+| A/B trace (linearized vs SCF-XL) | ± 1e-3 Ha | **1.099e-4 Ha** |
+| C/B spin-degeneracy identity | ± 1e-4 Ha | **2.31e-8 Ha** |
+| NVE drift envelope | ≤ 0.05 | B 4.056e-3, C 4.056e-3 (A 4.253e-3; CP2K itself 4.4e-3) |
+| Warm steps | `iters == 0`, converged, `n_kpts == 2` | ✓ |
+| Cold seed | full SCF, `iters > 0` | A/B 8 iters, C 7 |
+
+### Speed (fair wall, same host, OMP=8, single rank)
+
+| Metric | Value |
+| ------ | ----- |
+| \(T_{\mathrm{cp2k}}\) (4-step converged-BOMD k twin, CUTOFF 300) | **1.49 s** (CP2K-internal 1.045 s, quiet node) |
+| \(T_{\mathrm{atv}}\) (leg B: 1 seed single point + 4 linearized steps) | **1.96 s** |
+| ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) | **1.3** |
+| within_10x | true |
+| Regression wall (all three legs) | 7.7 s (≤ 60 s budget) |
 
 ## References
 
