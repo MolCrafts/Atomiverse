@@ -37,10 +37,11 @@ multi-k UKS **CPMD** (`reg_cpmd-uks-kpoints`), multi-k SGCP **OT**
 (`reg_second-gen-cpmd-ot-kpoints`), and D3/D4 ATM **stress**
 (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`); open
 residuals after
-that wave (GapCensus wave 2 re-verified + expanded): **TS/XDM stress**
-pins, nonlocal **vdW × k-points**,
-multi-k **UKS multigrid**,
-multi-k CPMD **electronic thermostat**;
+that wave (GapCensus wave 3 re-verified + expanded): **TS/XDM stress**
+pins (in-flight `[~]`), nonlocal **vdW × k-points**, Γ-UKS nonlocal
+**vdW**, multi-k **UKS multigrid**,
+multi-k CPMD **electronic thermostat**, multi-k UKS **SGCP OT**,
+linearized-XL **stress**, finite-q **spin-GGA DFPT** pin;
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -308,7 +309,8 @@ Nonlocal vdW × REL_CUTOFF multigrid (`ngrids>1`) is
 product at Γ RKS (`reg_gpw-vdw-multigrid`; SC V_nl on the finest grid
 before per-level restriction). Nonlocal vdW on the **k-point path** is
 not wired at all (fail-fast reject; queued `gpw-vdw-kpoints`), and Γ UKS
-+ nonlocal vdW rejects fail-fast (was a silent E_c^nl drop).
++ nonlocal vdW rejects fail-fast (was a silent E_c^nl drop; queued
+`gpw-vdw-uks`).
 
 ## 9. Composite DFT Methods
 
@@ -396,10 +398,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   CPMD (`reg_cpmd-uks-kpoints`), multi-k SGCP OT
   (`reg_second-gen-cpmd-ot-kpoints`), and D3/D4 ATM stress
   (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`). Stock VV10 is
-  **blocked** (no CP2K twin). Open residuals (GapCensus wave 2):
-  TS/XDM stress, nonlocal vdW ×
-  k-points, multi-k UKS multigrid, multi-k CPMD electronic
-  thermostat. Hybrids / meta-GGA /
+  **blocked** (no CP2K twin). Open residuals (GapCensus wave 3):
+  TS/XDM stress (in-flight `[~]`), nonlocal vdW ×
+  k-points, Γ-UKS nonlocal vdW, multi-k UKS multigrid, multi-k CPMD
+  electronic thermostat, multi-k UKS SGCP OT, linearized-XL stress,
+  finite-q spin-GGA DFPT pin. Hybrids / meta-GGA /
   GAPW / PAW remain blocked (queue not exhausted — see
   `cp2k-method-queue.md`). CPU only.
 
@@ -549,7 +552,9 @@ Which engine backs which ✓:
   metallic-smear Sternheimer paths (Γ / commensurate / direct finite-\(q\);
   collinear spin × smear at Γ and finite-\(q\)) productized; the GGA kernel
   is now pinned at Γ (restricted + spin) and finite \(q\) (restricted);
-  spin × GGA × finite-q stays a census-held joint row.
+  the spin × GGA × finite-q joint pin is queued
+  (`dfpt-gga-spin-finite-q-si` — the q-path spin-GGA kernel is accepted
+  but unpinned).
 - **Berry-phase polarization**: King-Smith–Vanderbilt (KSV) electronic
   polarization on the PW method (`cpu::pw::BerryPolarization`; string-averaged
   Berry phases over occupied Bloch manifolds; symmetry-exact Si pins,

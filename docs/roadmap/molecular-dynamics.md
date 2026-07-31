@@ -259,7 +259,7 @@ multi-k path** — RKS and collinear UKS, k-weighted complex shadow
 \(D_k^\sigma\) with the new k-UKS fixed-density eval
 (`reg_xl-bomd-linearized-kpoints`, CP2K-anchored per-step trace);
 linearized XL + `compute_stress` now refuses at `build()` (was a silent
-warm-step drop).
+warm-step drop; queued `xl-bomd-linearized-stress`).
 
 **Car–Parrinello MD** (fictitious electronic DOF) ships as `cpu::electronic::Cpmd` +
 `GPWEvaluator::{cpmd, cpmd_mu}` (the nuclear dt is pushed in from the MD
@@ -289,7 +289,8 @@ warm-start; `reg_second-gen-cpmd-ot`) **and Γ-UKS OT + SGCP**
 \(P_k\); `reg_second-gen-cpmd-kpoints`) **and multi-k SGCP + OT corrector**
 (per-k OT manifold warm-started from natural orbitals of the predicted
 \(P_k\); `reg_second-gen-cpmd-ot-kpoints`). Multi-k **UKS** SGCP + OT
-remains ○ (build-time throw — dual-spin k-OT warm start not productized).
+remains ○ (build-time throw — dual-spin k-OT warm start not productized;
+queued `second-gen-cpmd-ot-uks-kpoints`).
 
 ## 8. Nuclear Quantum Dynamics
 
