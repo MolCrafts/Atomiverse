@@ -254,10 +254,28 @@ TEST(GpwEvaluatorCpmd, BuildAcceptsMultiKRksCpmd) {
     EXPECT_NO_THROW(eval.build(bc));
 }
 
-TEST(GpwEvaluatorCpmd, BuildRejectsMultiKUksCpmd) {
+TEST(GpwEvaluatorCpmd, BuildAcceptsMultiKUksCpmd) {
+    // Multi-k UKS CPMD is product (dual-spin Bloch C_k^σ, one CpmdCplx per
+    // (k, spin)); the old build() refusal is deleted (cpmd-uks-kpoints).
     auto frame = water_frame();
     auto base = water_eval();
     base.n_alpha = 5;
+    base.n_beta = 3;
+    CarParrinello eval{std::move(base), 400.0};
+    eval.set_timestep(kDtFs);
+    eval.method().k_mesh[2] = 2;
+    eval.method().k_time_reversal = false;
+    eval.method().nonperiodic = false;
+    ATV::cpu::Context rt;
+    ATV::cpu::BuildContext bc{rt, frame};
+    EXPECT_NO_THROW(eval.build(bc));
+}
+
+TEST(GpwEvaluatorCpmd, BuildRejectsMultiKUksCpmdWithZeroAlpha) {
+    // The alpha channel stays primary on the k path too.
+    auto frame = water_frame();
+    auto base = water_eval();
+    base.n_alpha = 0;
     base.n_beta = 3;
     CarParrinello eval{std::move(base), 400.0};
     eval.set_timestep(kDtFs);
@@ -484,6 +502,152 @@ TEST(GpwSolverFixedDensityK, MultiKFixedDensityWithoutGuessThrows) {
     fix.max_iter = 0;
     fix.build(atoms);
     EXPECT_THROW(fix.run(atoms), std::invalid_argument);
+}
+
+// ── Multi-k UKS fixed-density (dual-spin Bloch CPMD payload) ────────────
+
+namespace {
+
+/// The `small_cfg_cp` fixture on the collinear UKS path with closed-shell
+/// fillings (n_alpha = n_beta = 1): both spin channels non-empty, and the
+/// RKS total density is exactly Pα + Pβ, so the spin machinery is exercised
+/// without changing the physics of the tiny H2 fixture.
+ATV::cpu::gpw::GpwDft small_cfg_cp_uks(double box = 8.0) {
+    ATV::cpu::gpw::GpwDft cfg = small_cfg_cp(box);
+    cfg.n_occ = 0;
+    cfg.n_alpha = 1;
+    cfg.n_beta = 1;
+    return cfg;
+}
+
+} // namespace
+
+TEST(GpwSolverFixedDensityKUks, DualSpinFixedDensityExportsHkSkBothSpins) {
+    const auto atoms = small_h2_cp(/*box=*/8.0);
+    ATV::cpu::gpw::GpwDft cold = small_cfg_cp_uks(/*box=*/8.0);
+    cold.k_mesh[0] = 1;
+    cold.k_mesh[1] = 1;
+    cold.k_mesh[2] = 2;
+    cold.k_time_reversal = false;
+    cold.nonperiodic = false;
+    cold.build(atoms);
+    const auto ref = cold.run(atoms);
+    ASSERT_TRUE(ref.converged);
+    ASSERT_GE(ref.n_kpts, 2);
+    ASSERT_EQ(static_cast<int>(ref.P_k.size()), ref.n_kpts);
+    ASSERT_EQ(static_cast<int>(ref.P_k_beta.size()), ref.n_kpts);
+
+    ATV::cpu::gpw::GpwDft fix = small_cfg_cp_uks(/*box=*/8.0);
+    fix.k_mesh[0] = 1;
+    fix.k_mesh[1] = 1;
+    fix.k_mesh[2] = 2;
+    fix.k_time_reversal = false;
+    fix.nonperiodic = false;
+    fix.max_iter = 0;
+    fix.build(atoms);
+    const auto& r = fix.run(atoms, /*guess_C=*/nullptr, /*guess_P=*/nullptr,
+                            /*guess_P_beta=*/nullptr, &ref.P_k,
+                            &ref.P_k_beta);
+    EXPECT_TRUE(r.converged);
+    EXPECT_EQ(r.iters, 0);
+    EXPECT_TRUE(std::isfinite(r.e_total));
+    EXPECT_EQ(static_cast<int>(r.H_ks_k.size()), r.n_kpts);
+    EXPECT_EQ(static_cast<int>(r.H_ks_k_beta.size()), r.n_kpts);
+    EXPECT_EQ(static_cast<int>(r.S_k.size()), r.n_kpts);
+    EXPECT_EQ(static_cast<int>(r.P_k.size()), r.n_kpts);
+    EXPECT_EQ(static_cast<int>(r.P_k_beta.size()), r.n_kpts);
+    // Energy near the cold SCF (same dual-spin density).
+    EXPECT_NEAR(r.e_total, ref.e_total, 1e-6);
+}
+
+TEST(GpwSolverFixedDensityKUks, DualSpinFixedDensityWithoutBetaGuessThrows) {
+    const auto atoms = small_h2_cp(/*box=*/8.0);
+    ATV::cpu::gpw::GpwDft cold = small_cfg_cp_uks(/*box=*/8.0);
+    cold.k_mesh[2] = 2;
+    cold.k_time_reversal = false;
+    cold.nonperiodic = false;
+    cold.build(atoms);
+    const auto ref = cold.run(atoms);
+    ASSERT_TRUE(ref.converged);
+
+    ATV::cpu::gpw::GpwDft fix = small_cfg_cp_uks(/*box=*/8.0);
+    fix.k_mesh[2] = 2;
+    fix.k_time_reversal = false;
+    fix.nonperiodic = false;
+    fix.max_iter = 0;
+    fix.build(atoms);
+    // α-only guess: the UKS k path refuses a partial spin guess.
+    EXPECT_THROW(fix.run(atoms, /*guess_C=*/nullptr, /*guess_P=*/nullptr,
+                         /*guess_P_beta=*/nullptr, &ref.P_k),
+                 std::invalid_argument);
+}
+
+TEST(GpwSolverFixedDensityKUks, GammaLimitMatchesGammaUksFixedDensity) {
+    // A3: one explicit Γ point on the k path must reproduce the shipped
+    // Γ dual-spin fixed-density eval (energy and per-spin KS matrices) —
+    // the Γ-limit identity anchoring multi-k UKS CPMD to the cpmd-uks
+    // product surface.
+    const auto atoms = small_h2_cp(/*box=*/8.0);
+
+    // Γ-UKS cold SCF supplies the dual densities.
+    ATV::cpu::gpw::GpwDft cold = small_cfg_cp_uks(/*box=*/8.0);
+    cold.nonperiodic = false;
+    cold.build(atoms);
+    const auto ref = cold.run(atoms);
+    ASSERT_TRUE(ref.converged);
+    ASSERT_GT(ref.P.size(), 0u);
+    ASSERT_GT(ref.P_beta.size(), 0u);
+
+    // Γ dual-spin fixed-density eval (the cpmd-uks product path).
+    ATV::cpu::gpw::GpwDft fix_g = small_cfg_cp_uks(/*box=*/8.0);
+    fix_g.nonperiodic = false;
+    fix_g.max_iter = 0;
+    fix_g.build(atoms);
+    const auto rg = fix_g.run(atoms, /*guess_C=*/nullptr, &ref.P, &ref.P_beta);
+    ASSERT_TRUE(rg.converged);
+    ASSERT_EQ(rg.iters, 0);
+    ASSERT_GT(rg.H_ks.size(), 0u);
+    ASSERT_GT(rg.H_ks_beta.size(), 0u);
+
+    // Same densities, complexified, on the k path at one explicit Γ point.
+    std::vector<ATV::cpu::linalg::CplxMatrix> Pa_k(1), Pb_k(1);
+    const auto nbs = ref.P.shape(0);
+    Pa_k[0] = ATV::cpu::linalg::CplxMatrix(
+        xt::zeros<std::complex<double>>({nbs, nbs}));
+    Pb_k[0] = ATV::cpu::linalg::CplxMatrix(
+        xt::zeros<std::complex<double>>({nbs, nbs}));
+    for (std::size_t i = 0; i < nbs; ++i)
+        for (std::size_t j = 0; j < nbs; ++j) {
+            Pa_k[0](i, j) = ref.P(i, j);
+            Pb_k[0](i, j) = ref.P_beta(i, j);
+        }
+    ATV::cpu::gpw::GpwDft fix_k = small_cfg_cp_uks(/*box=*/8.0);
+    fix_k.nonperiodic = false;
+    fix_k.k_points = {{0.0, 0.0, 0.0}};
+    fix_k.k_point_weights = {1.0};
+    fix_k.max_iter = 0;
+    fix_k.build(atoms);
+    const auto rk = fix_k.run(atoms, /*guess_C=*/nullptr, /*guess_P=*/nullptr,
+                              /*guess_P_beta=*/nullptr, &Pa_k, &Pb_k);
+    ASSERT_TRUE(rk.converged);
+    ASSERT_EQ(rk.iters, 0);
+    ASSERT_EQ(rk.n_kpts, 1);
+    ASSERT_EQ(static_cast<int>(rk.H_ks_k.size()), 1);
+    ASSERT_EQ(static_cast<int>(rk.H_ks_k_beta.size()), 1);
+
+    EXPECT_NEAR(rk.e_total, rg.e_total, 1e-7);
+    for (std::size_t i = 0; i < nbs; ++i)
+        for (std::size_t j = 0; j < nbs; ++j) {
+            EXPECT_NEAR(rk.H_ks_k[0](i, j).real(), rg.H_ks(i, j), 1e-7)
+                << "alpha i=" << i << " j=" << j;
+            EXPECT_NEAR(rk.H_ks_k[0](i, j).imag(), 0.0, 1e-9)
+                << "alpha i=" << i << " j=" << j;
+            EXPECT_NEAR(rk.H_ks_k_beta[0](i, j).real(), rg.H_ks_beta(i, j),
+                        1e-7)
+                << "beta i=" << i << " j=" << j;
+            EXPECT_NEAR(rk.H_ks_k_beta[0](i, j).imag(), 0.0, 1e-9)
+                << "beta i=" << i << " j=" << j;
+        }
 }
 
 // ── Standalone overlap parity (esmm-cpmd-06-single-eval, ac-001) ────────

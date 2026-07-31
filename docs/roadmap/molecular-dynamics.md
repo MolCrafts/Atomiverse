@@ -253,9 +253,13 @@ multi-k UKS** dual-spin \(P_k^\sigma\) (`reg_xl-bomd-uks-kpoints`). ASPC
 remains a separate density *predictor* (warm start); OT+XL stays
 architecturally excluded (OT parameterizes orbitals, not density);
 **zero-SCF linearized-functional forces** productize on **Γ RKS**
-(`xl_bomd_linearized`; `reg_xl-bomd-linearized-forces`) **and Γ-UKS**
-dual-spin shadow densities (`reg_xl-bomd-linearized-uks`); **multi-k**
-linearized XL remains open (queued `xl-bomd-linearized-kpoints`).
+(`xl_bomd_linearized`; `reg_xl-bomd-linearized-forces`), **Γ-UKS**
+dual-spin shadow densities (`reg_xl-bomd-linearized-uks`), **and the
+multi-k path** — RKS and collinear UKS, k-weighted complex shadow
+\(D_k^\sigma\) with the new k-UKS fixed-density eval
+(`reg_xl-bomd-linearized-kpoints`, CP2K-anchored per-step trace);
+linearized XL + `compute_stress` now refuses at `build()` (was a silent
+warm-step drop; queued `xl-bomd-linearized-stress`).
 
 **Car–Parrinello MD** (fictitious electronic DOF) ships as `cpu::electronic::Cpmd` +
 `GPWEvaluator::{cpmd, cpmd_mu}` (the nuclear dt is pushed in from the MD
@@ -270,8 +274,10 @@ electronic DOF) productizes (`reg_cpmd-electronic-thermostat`) at Γ; the
 k path runs NVE electrons only (build-time throw; queued
 `cpmd-thermostat-kpoints`). **Multi-k
 CPMD** (Bloch \(C_k\), one `cpu::electronic::CpmdCplx` per sampled k) ships
-for RKS (`reg_cpmd-kpoints`); multi-k **UKS** CPMD remains ○ (build-time
-throw; queued `cpmd-uks-kpoints`).
+for RKS (`reg_cpmd-kpoints`) **and collinear UKS** (dual-spin Bloch
+\(C_k^\sigma\), one propagator per (k, spin) with occ-1 spin-diagonal EOM
+on \(H_k^\sigma\) from the dual-spin fixed-density multi-k eval;
+`reg_cpmd-uks-kpoints`).
 
 **Second-generation Car–Parrinello MD** (Kühne et al. 2007; ASPC predictor +
 partial-SCF corrector, no fictitious electronic mass) ships on closed-shell Γ
@@ -280,9 +286,11 @@ GPW via `GPWEvaluator::{second_gen_cp, second_gen_cp_k, second_gen_cp_max_iter}`
 **RKS OT corrector** is product (`use_ot=true` with ASPC natural-orbital
 warm-start; `reg_second-gen-cpmd-ot`) **and Γ-UKS OT + SGCP**
 (`reg_second-gen-cpmd-uks-ot`) **and multi-k SGCP** (ASPC on complex
-\(P_k\); `reg_second-gen-cpmd-kpoints`). Multi-k SGCP with the **OT
-corrector** remains ○ (evaluator throws; queued
-`second-gen-cpmd-ot-kpoints`).
+\(P_k\); `reg_second-gen-cpmd-kpoints`) **and multi-k SGCP + OT corrector**
+(per-k OT manifold warm-started from natural orbitals of the predicted
+\(P_k\); `reg_second-gen-cpmd-ot-kpoints`). Multi-k **UKS** SGCP + OT
+remains ○ (build-time throw — dual-spin k-OT warm start not productized;
+queued `second-gen-cpmd-ot-uks-kpoints`).
 
 ## 8. Nuclear Quantum Dynamics
 

@@ -275,6 +275,7 @@ queue exhausted).
 | ------ | ---- | ---------- | --------------------------------------------- |
 | Zero-SCF linearized XL-BOMD forces H₂O NVE | [xl-bomd-linearized-forces](xl-bomd-linearized-forces.md) | `regressions/dynamics/xl-bomd-linearized-forces` | **perf_exempt** |
 | Multi-k second-gen CP (ASPC on \(P_k\)) H₂ NVE | [second-gen-cpmd-kpoints](second-gen-cpmd-kpoints.md) | `regressions/dynamics/second-gen-cpmd-kpoints` | **perf_exempt** |
+| Multi-k second-gen CP + OT corrector H₂ NVE | [second-gen-cpmd-ot-kpoints](second-gen-cpmd-ot-kpoints.md) | `regressions/dynamics/second-gen-cpmd-ot-kpoints` | **perf_exempt** |
 | GPW PBE-D3 + ATM (C9) isolated water dimer | [gpw-d3-atm](gpw-d3-atm.md) | `regressions/gpw/gpw-d3-atm` | **perf_exempt** |
 | GPW PBE-D4 + ATM (\(s_9=1\)) periodic water dimer | [gpw-d4-atm](gpw-d4-atm.md) | `regressions/gpw/gpw-d4-atm` | **perf_exempt** |
 | PW collinear-spin + metallic-occupation bands Si | [bands-spin-metallic-si](bands-spin-metallic-si.md) | `regressions/pw/bands-spin-metallic-si` | **perf_exempt** |
@@ -306,14 +307,35 @@ the Response / phonons table below.
 
 | Method | Page | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
 | ------ | ---- | ---------- | --------------------------------------------- |
+| GPW PBE-D3 zero-damping analytic cell stress (periodic dimer) | [gpw-d3-stress](gpw-d3-stress.md) | `regressions/gpw/gpw-d3-stress` | **0.55** |
 | GPW PBE-D3(BJ) analytic cell stress (periodic dimer) | [gpw-d3bj-stress](gpw-d3bj-stress.md) | `regressions/gpw/gpw-d3bj-stress` | **0.37** |
 | Multi-k analytic cell stress + periodic MBD@rsSCS | [gpw-mbd-kpoint-stress](gpw-mbd-kpoint-stress.md) | `regressions/gpw/gpw-mbd-kpoint-stress` | **perf_exempt** |
 | GPW DFT-D3 three-body ATM (C9) analytic ionic forces | [gpw-d3-atm-forces](gpw-d3-atm-forces.md) | `regressions/gpw/gpw-d3-atm-forces` | **3.3** |
+| GPW DFT-D3 three-body ATM (C9) analytic cell stress | [gpw-d3-atm-stress](gpw-d3-atm-stress.md) | `regressions/gpw/gpw-d3-atm-stress` | **0.75** |
 | GPW DFT-D4 three-body ATM (\(s_9=1\)) analytic ionic forces | [gpw-d4-atm-forces](gpw-d4-atm-forces.md) | `regressions/gpw/gpw-d4-atm-forces` | **perf_exempt** |
 | Multi-k Dudarev DFT+U analytic ionic forces (H₂ + NiO Γ) | [gpw-dftu-kpoint-forces](gpw-dftu-kpoint-forces.md) | `regressions/gpw/gpw-dftu-kpoint-forces` | **≈ 1.0** |
 | Plain multi-k BOMD on GPW (periodic H₂ NVE) | [gpw-bomd-kpoints](gpw-bomd-kpoints.md) | `regressions/gpw/gpw-bomd-kpoints` | **0.064** |
 | Multi-k GPW RKS REL_CUTOFF multigrid (diamond Si) | [gpw-multigrid-kpoints](gpw-multigrid-kpoints.md) | `regressions/gpw/gpw-multigrid-kpoints` | **≈ 1.6** |
 | Zero-SCF linearized XL-BOMD on Γ-UKS (O₂ NVE) | [xl-bomd-linearized-uks](xl-bomd-linearized-uks.md) | `regressions/dynamics/xl-bomd-linearized-uks` | **perf_exempt** |
+
+## Index — CP2K capability wave 2 (shift) (2026-07-31)
+
+Offline CP2K 2026.1 pins only — see
+[cp2k-method-queue](../../developer/cp2k-method-queue.md) wave 2 (shift) and
+`tools/cp2k_oracle/`. Fair walls from each page's Performance section /
+`REFERENCE.md` (`ratio` or `perf_exempt`). Eight slugs merged; three of them
+([gpw-d3-stress](gpw-d3-stress.md) **0.55**,
+[gpw-d3-atm-stress](gpw-d3-atm-stress.md) **0.75**,
+[second-gen-cpmd-ot-kpoints](second-gen-cpmd-ot-kpoints.md) **perf_exempt**)
+already carry index rows in the sections above and are not repeated here.
+
+| Method | Page | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
+| ------ | ---- | ---------- | --------------------------------------------- |
+| Finite-\(q\) DFPT phonons at X, pure GGA kernel (diamond Si) | [dfpt-gga-finite-q-si](dfpt-gga-finite-q-si.md) | `regressions/response/dfpt-gga-finite-q-si` | **0.17** |
+| Zero-SCF linearized XL-BOMD on the k path (periodic H₂ NVE) | [xl-bomd-linearized-kpoints](xl-bomd-linearized-kpoints.md) | `regressions/dynamics/xl-bomd-linearized-kpoints` | **1.3** |
+| GPW nonlocal vdW on the REL_CUTOFF multigrid (NGRIDS 4) | [gpw-vdw-multigrid](gpw-vdw-multigrid.md) | `regressions/gpw/gpw-vdw-multigrid` | **≈ 0.83** |
+| Multi-k UKS Car–Parrinello MD on dual-spin Bloch \(C_k^\sigma\) (H₂ NVE) | [cpmd-uks-kpoints](cpmd-uks-kpoints.md) | `regressions/dynamics/cpmd-uks-kpoints` | **perf_exempt** |
+| GPW DFT-D4 three-body ATM (\(s_9=1\)) analytic cell stress | [gpw-d4-atm-stress](gpw-d4-atm-stress.md) | `regressions/gpw/gpw-d4-atm-stress` | **perf_exempt** |
 
 ## Index — restored capability pages (indexed 2026-07-28)
 
@@ -370,6 +392,7 @@ grouped by regression domain, alphabetical by slug.
 | GPW PBE + vdW-DF (DRSLL), periodic dimer | [gpw-vdw-df-ice](gpw-vdw-df-ice.md) | `regressions/gpw/gpw-vdw-df-ice` |
 | GPW PBE + vdW-DF2 (LMKLL), periodic dimer | [gpw-vdw-df2-ice](gpw-vdw-df2-ice.md) | `regressions/gpw/gpw-vdw-df2-ice` |
 | GPW nonlocal vdW: self-consistent \(V_{\mathrm{nl}}\) + forces | [gpw-vdw-scf-potential](gpw-vdw-scf-potential.md) | `regressions/gpw/gpw-vdw-scf-potential` |
+| GPW nonlocal vdW on the REL_CUTOFF multigrid (NGRIDS 4) | [gpw-vdw-multigrid](gpw-vdw-multigrid.md) | `regressions/gpw/gpw-vdw-multigrid` |
 | GPW free-atom XDM (periodic water dimer) | [gpw-xdm-ice](gpw-xdm-ice.md) | `regressions/gpw/gpw-xdm-ice` |
 | MPI GPW k-point scaling (4-rank gate) | [mpi-gpw-scaling-4rank](mpi-gpw-scaling-4rank.md) | `regressions/gpw/mpi-gpw-scaling-4rank` |
 | OT + Dudarev DFT+U, Γ-UKS GPW (NiO) | [ot-dftu](ot-dftu.md) | `regressions/gpw/ot-dftu` |
@@ -418,6 +441,7 @@ grouped by regression domain, alphabetical by slug.
 | ------ | ---- | ---------- |
 | Finite-\(q\) DFPT phonons at X (diamond Si) | [dfpt-finite-q-si](dfpt-finite-q-si.md) | `regressions/response/dfpt-finite-q-si` |
 | Finite-\(q\) DFPT phonons + metallic smearing (Si at X) | [dfpt-finite-q-smearing](dfpt-finite-q-smearing.md) | `regressions/response/dfpt-finite-q-smearing` |
+| Finite-\(q\) DFPT phonons at X, pure GGA kernel (diamond Si) | [dfpt-gga-finite-q-si](dfpt-gga-finite-q-si.md) | `regressions/response/dfpt-gga-finite-q-si` |
 | DFPT phonons at Γ, pure GGA kernel (diamond Si) | [dfpt-gga-si](dfpt-gga-si.md) | `regressions/response/dfpt-gga-si` |
 | DFPT phonons at Γ, joint collinear spin × pure GGA (diamond Si) | [dfpt-gga-spin-si](dfpt-gga-spin-si.md) | `regressions/response/dfpt-gga-spin-si` |
 | Incommensurate-\(q\) DFPT phonons (diamond Si) | [dfpt-incommensurate-si](dfpt-incommensurate-si.md) | `regressions/response/dfpt-incommensurate-si` |

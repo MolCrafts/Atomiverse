@@ -68,6 +68,29 @@ args: { "mode":"exhaust", "staff_count":10, "max_waves":20, "target_branch":"dev
 
 (autonomous harness appends lines here)
 
+- **2026-07-31 harness wave 2 (shift; parent `dev` @ `8b2fda00`):** 8 of 10
+  staffed merged → done: `gpw-d3-stress` (resume finished — CP2K NUMERICAL
+  stress-difference pin, Δσ parity 2.3e-10 Ha/Bohr³, ratio 0.55),
+  `dfpt-gga-finite-q-si` (finite-q × pure PBE kernel, CP2K supercell vib
+  twin, ratio 0.17), `xl-bomd-linearized-kpoints` (k-weighted complex shadow
+  \(D_k^\sigma\) RKS/UKS, CP2K `.ener`-anchored trace),
+  `gpw-vdw-multigrid` (nonlocal vdW on the REL_CUTOFF multigrid, CP2K
+  NGRIDS 4 pin 4.0e-5 Ha, ratio 0.83; found+fixed Γ-UKS vdW silent E_c^nl
+  drop → fail-fast), `cpmd-uks-kpoints` (dual-spin Bloch \(C_k^\sigma\) CP,
+  oracle family lock — CP2K has no CP propagator),
+  `second-gen-cpmd-ot-kpoints` (per-k OT corrector warm-started from ASPC
+  natural orbitals; CP2K refuses `&OT`+`&KPOINTS`, A/B identity 3.0e-12 Ha),
+  `gpw-d3-atm-stress` (C9 fold, CP2K NUMERICAL C9 on−off Δσ parity 1.1e-13,
+  ratio 0.75; adds `d3_rcut_bohr`), `gpw-d4-atm-stress` (s9 strained-cell
+  pins, dftd4 3.7.0, σ^ATM parity 3.7e-16 Ha/Bohr³). `gpw-ts-stress` /
+  `gpw-xdm-stress` stay `[~]` (uncommitted WIP in their isolation worktrees
+  at `197468ac`; do not demote). Specs closed (seven deleted here;
+  `gpw-d4-atm-stress` closed on its branch `a2c85a6b`). Merge gate green on
+  merged `dev` (scoped rebuild + loop-domain ctest 57/57). Roadmap: **no ○/✓
+  table flips**; workers landed the residual prose with their merges;
+  harness fixed the stale index GPW ships/residual line. Pending **3**;
+  incomplete **2**; blocked **6**. Clearup already ran. Queue **not**
+  exhausted. No push.
 - **2026-07-31 harness wave 1 (shift; parent `dev` @ `8a9584f4`):** 9 of 10
   staffed merged → done: `gpw-d3bj-stress` (CP2K NUMERICAL-stress difference
   pin, ratio 0.37), `gpw-mbd-kpoint-stress` (k-summed fixed-\(P_k\) MBD fold,

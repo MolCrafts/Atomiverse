@@ -149,10 +149,13 @@ Additional gates (`reg_xl-bomd-linearized-forces`):
 
 - Not SCF-converged XL only (`xl-bomd-water`, `xl-bomd-uks`, multi-k XL) —
   those keep iterative SCF to `tol`
-- Not UKS linearized XL, multi-k linearized XL (follow-ons; `build()` throws)
+- Not UKS linearized XL ([xl-bomd-linearized-uks](xl-bomd-linearized-uks.md))
+  or multi-k linearized XL
+  ([xl-bomd-linearized-kpoints](xl-bomd-linearized-kpoints.md)) — shipped
+  as follow-ons; this page stays the Γ-RKS foothold
 - Not OT + XL, CPMD, or second-gen CP simultaneous with XL (mutually exclusive)
 - Not ASPC predictor as a substitute for Niklasson XL
-- Not hybrid / meta-GGA XC; not periodic multi-k shadow forces
+- Not hybrid / meta-GGA XC
 - Not a measured fair-wall twin vs CP2K AIMD (see Performance)
 - Not molecular post-HF (PySCF loop) or classical electrochem MD (MetalWalls)
 
@@ -210,7 +213,7 @@ sim.run(frame, 1);   // cold seed: full SCF, iters > 0
 | Condition | Reason |
 | --------- | ------ |
 | UKS (`n_alpha + n_beta > 0`) | Γ RKS foothold only |
-| multi-k mesh | Γ-point only |
+| multi-k mesh | shipped follow-on ([xl-bomd-linearized-kpoints](xl-bomd-linearized-kpoints.md)) |
 | `use_ot`, or a `CarParrinello` / `SecondGenCp` wrapper | Mutually exclusive electronic dynamics |
 
 Two older failure modes are now unreachable from the public surface: the
@@ -326,7 +329,7 @@ value; it is not claimed as a measured fair-bench ratio here.
 - **Envelope, not absolute energy.** Broken XL recursion or wrong shadow
   formula destroys zero-iter / drift gates; a correct path is not a
   high-precision total-energy twin of CP2K Quickstep.
-- **Γ RKS foothold only.** UKS and multi-k linearized shadow forces are
+- **Γ RKS foothold.** UKS and multi-k linearized shadow forces were
   refused at `build()`; productize as separate queue rows if needed.
 - **Looser drift window.** \(\delta \le 0.10\) vs SCF-XL \(0.05\) reflects
   one-shot residual heat; do not tighten without re-pinning literature/CP2K.

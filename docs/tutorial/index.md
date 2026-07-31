@@ -256,6 +256,7 @@ and `tools/cp2k_oracle/`. Narrative chapters: [Ch. 8 PW](ch08-plane-wave.md),
 | AO-basis CPMD on the SCF methods (RHF / RKS / UHF) | [cpmd-rhf-h2](methods/cpmd-rhf-h2.md) | `regressions/dynamics/cpmd-{rhf-h2,rks-water,uhf-o2}` |
 | XL-BOMD on the Gaussian SCF methods (RHF H₂O NVE) | [xl-bomd-rhf-water](methods/xl-bomd-rhf-water.md) | `regressions/dynamics/xl-bomd-rhf-water` |
 | Multi-k second-gen CP (ASPC on \(P_k\)) H₂ NVE | [second-gen-cpmd-kpoints](methods/second-gen-cpmd-kpoints.md) | `regressions/dynamics/second-gen-cpmd-kpoints` |
+| Multi-k second-gen CP + OT corrector H₂ NVE | [second-gen-cpmd-ot-kpoints](methods/second-gen-cpmd-ot-kpoints.md) | `regressions/dynamics/second-gen-cpmd-ot-kpoints` |
 | Multi-k Car–Parrinello MD on Bloch \(C_k\) H₂ NVE | [cpmd-kpoints](methods/cpmd-kpoints.md) | `regressions/dynamics/cpmd-kpoints` |
 | PW Nielsen–Martin analytic stress Si | [pw-analytic-stress-si](methods/pw-analytic-stress-si.md) | `regressions/pw/pw-analytic-stress-si` |
 | FD supercell phonons diamond Si (Γ) | [fd-phonon-supercell](methods/fd-phonon-supercell.md) | `regressions/pw/fd-phonon-supercell` |
@@ -285,6 +286,7 @@ domain, alphabetical by slug.
 | Method | Page | Regression |
 |--------|------|------------|
 | GPW Γ-RKS BLYP, isolated H₂O (MT) | [gpw-blyp-water](methods/gpw-blyp-water.md) | `regressions/gpw/gpw-blyp-water` |
+| GPW PBE-D3 (zero damping) analytic cell stress | [gpw-d3-stress](methods/gpw-d3-stress.md) | `regressions/gpw/gpw-d3-stress` |
 | GPW PBE-D3(BJ) analytic cell stress | [gpw-d3bj-stress](methods/gpw-d3bj-stress.md) | `regressions/gpw/gpw-d3bj-stress` |
 | GPW PBE-D4 analytic ionic forces | [gpw-d4-forces](methods/gpw-d4-forces.md) | `regressions/gpw/gpw-d4-forces` |
 | GPW PBE-D4 analytic cell stress | [gpw-d4-stress](methods/gpw-d4-stress.md) | `regressions/gpw/gpw-d4-stress` |
@@ -321,6 +323,7 @@ domain, alphabetical by slug.
 | GPW PBE + vdW-DF (DRSLL) | [gpw-vdw-df-ice](methods/gpw-vdw-df-ice.md) | `regressions/gpw/gpw-vdw-df-ice` |
 | GPW PBE + vdW-DF2 (LMKLL) | [gpw-vdw-df2-ice](methods/gpw-vdw-df2-ice.md) | `regressions/gpw/gpw-vdw-df2-ice` |
 | GPW nonlocal vdW: SC \(V_{\mathrm{nl}}\) + forces | [gpw-vdw-scf-potential](methods/gpw-vdw-scf-potential.md) | `regressions/gpw/gpw-vdw-scf-potential` |
+| GPW nonlocal vdW on the REL_CUTOFF multigrid | [gpw-vdw-multigrid](methods/gpw-vdw-multigrid.md) | `regressions/gpw/gpw-vdw-multigrid` |
 | GPW free-atom XDM (periodic water dimer) | [gpw-xdm-ice](methods/gpw-xdm-ice.md) | `regressions/gpw/gpw-xdm-ice` |
 | OT + Dudarev DFT+U, Γ-UKS GPW (NiO) | [ot-dftu](methods/ot-dftu.md) | `regressions/gpw/ot-dftu` |
 | Multi-k OT + Dudarev DFT+U (H₂) | [ot-dftu-kpoints](methods/ot-dftu-kpoints.md) | `regressions/gpw/ot-dftu-kpoints` |
@@ -358,6 +361,7 @@ domain, alphabetical by slug.
 | PW isotropic variable-cell relax (diamond Si) | [pw-variable-cell-si](methods/pw-variable-cell-si.md) | `regressions/pw/pw-variable-cell-si` |
 | Finite-\(q\) DFPT phonons at X (diamond Si) | [dfpt-finite-q-si](methods/dfpt-finite-q-si.md) | `regressions/response/dfpt-finite-q-si` |
 | Finite-\(q\) DFPT + metallic smearing (Si at X) | [dfpt-finite-q-smearing](methods/dfpt-finite-q-smearing.md) | `regressions/response/dfpt-finite-q-smearing` |
+| Finite-\(q\) DFPT phonons at X, pure GGA kernel (Si) | [dfpt-gga-finite-q-si](methods/dfpt-gga-finite-q-si.md) | `regressions/response/dfpt-gga-finite-q-si` |
 | DFPT phonons at Γ, pure GGA kernel (Si) | [dfpt-gga-si](methods/dfpt-gga-si.md) | `regressions/response/dfpt-gga-si` |
 | DFPT phonons at Γ, joint spin × GGA (Si) | [dfpt-gga-spin-si](methods/dfpt-gga-spin-si.md) | `regressions/response/dfpt-gga-spin-si` |
 | Incommensurate-\(q\) DFPT phonons (Si) | [dfpt-incommensurate-si](methods/dfpt-incommensurate-si.md) | `regressions/response/dfpt-incommensurate-si` |
@@ -368,6 +372,7 @@ domain, alphabetical by slug.
 | DFPT: collinear spin + metallic smearing (Si) | [dfpt-spin-smearing](methods/dfpt-spin-smearing.md) | `regressions/response/dfpt-spin-smearing` |
 | Phonon dispersion \(\omega(q)\) (diamond Si) | [phonon-dispersion-si](methods/phonon-dispersion-si.md) | `regressions/response/phonon-dispersion-si` |
 | Car–Parrinello MD on Γ-UKS (O₂ triplet NVE) | [cpmd-uks](methods/cpmd-uks.md) | `regressions/dynamics/cpmd-uks` |
+| Multi-k UKS CPMD on dual-spin Bloch \(C_k^\sigma\) (H₂ NVE) | [cpmd-uks-kpoints](methods/cpmd-uks-kpoints.md) | `regressions/dynamics/cpmd-uks-kpoints` |
 | Second-generation CP with OT corrector (H₂O) | [second-gen-cpmd-ot](methods/second-gen-cpmd-ot.md) | `regressions/dynamics/second-gen-cpmd-ot` |
 | Second-generation CP on Γ-UKS (O₂ triplet) | [second-gen-cpmd-uks](methods/second-gen-cpmd-uks.md) | `regressions/dynamics/second-gen-cpmd-uks` |
 | Second-generation CP + OT on Γ-UKS (O₂) | [second-gen-cpmd-uks-ot](methods/second-gen-cpmd-uks-ot.md) | `regressions/dynamics/second-gen-cpmd-uks-ot` |

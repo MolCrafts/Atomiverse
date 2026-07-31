@@ -7,6 +7,7 @@
 #include <complex>
 #include <cstdlib>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <xtensor/containers/xtensor.hpp>
@@ -16,6 +17,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 #include "atomiverse/cpu/gpw/internal/gpw_stress.h"
+#include "atomiverse/cpu/gpw/internal/kpoints.h"
 #include "atomiverse/cpu/linalg/density.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/linalg/matrix.h"
@@ -77,6 +79,44 @@ void publish_electronic_energies(cpu::Frame& frame, double te_ev,
     else
         frame.meta.set(kEnergyElectronThermostat, etherm_ev);
 }
+
+/// Complex Bloch density from occupied coefficients:
+/// \(P = f\,C_{\mathrm{occ}} C_{\mathrm{occ}}^\dagger\) (occupancy f per
+/// orbital: 2 for closed-shell RKS, 1 per spin channel). Shared by the
+/// multi-k CPMD fixed-density step and the multi-k linearized-XL warm step.
+/// @param C Bloch coefficients (nb × m, columns = orbitals). @param n_occ
+/// Occupied column count (≤ m). @param occ Occupancy f (dimensionless).
+/// @return Hermitian nb × nb density (dimensionless).
+linalg::CplxMatrix density_from_cocc(const linalg::CplxMatrix& C, int n_occ,
+                                     double occ) {
+    using Cplx = std::complex<double>;
+    const int nb = static_cast<int>(C.shape(0));
+    linalg::CplxMatrix P = xt::zeros<Cplx>(
+        {static_cast<std::size_t>(nb), static_cast<std::size_t>(nb)});
+    for (int o = 0; o < n_occ; ++o)
+        for (int mu = 0; mu < nb; ++mu) {
+            const Cplx cmu = occ * C(mu, o);
+            for (int nu = 0; nu < nb; ++nu)
+                P(mu, nu) += cmu * std::conj(C(nu, o));
+        }
+    return P;
+}
+
+/// Row-major flat occupied block (the `GpwResult::C_occ_k` layout the k-path
+/// force/stress assembly consumes).
+/// @param C Bloch coefficients (nb × m). @param n_occ Occupied columns.
+/// @return Flat nb × n_occ complex block, row-major.
+std::vector<std::complex<double>> flatten_occ(const linalg::CplxMatrix& C,
+                                              int n_occ) {
+    const int nb = static_cast<int>(C.shape(0));
+    std::vector<std::complex<double>> flat(
+        static_cast<std::size_t>(nb) * static_cast<std::size_t>(n_occ));
+    for (int mu = 0; mu < nb; ++mu)
+        for (int o = 0; o < n_occ; ++o)
+            flat[static_cast<std::size_t>(mu) * static_cast<std::size_t>(n_occ)
+                 + static_cast<std::size_t>(o)] = C(mu, o);
+    return flat;
+}
 } // namespace
 
 void GPWEvaluator::set_timestep(double dt_fs) {
@@ -123,6 +163,7 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
     cfg.d3 = d3;
     cfg.d3bj = d3bj;
     cfg.d3_atm = d3_atm;
+    cfg.d3_rcut_bohr = d3_rcut_bohr;
     cfg.d4 = d4;
     cfg.d4_atm = d4_atm;
     cfg.ts = ts;
@@ -170,16 +211,18 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
                 "exclusive (XL = Niklasson aux density; SGCP = ASPC + "
                 "partial SCF corrector)");
         if (xl_bomd_linearized) {
-            // Zero-SCF linearized forces: Γ diagonalization path (RKS
-            // total-P, or collinear UKS dual P_α/P_β).
+            // Zero-SCF linearized forces on the diagonalization path:
+            // Γ RKS (total P), Γ UKS (dual P_α/P_β), multi-k RKS (complex
+            // P_k per k), multi-k UKS (dual P_k^α/P_k^β per k).
             if (!compute_forces)
                 throw std::invalid_argument(
                     "GPWEvaluator: xl_bomd_linearized requires "
                     "compute_forces=true (shadow forces are the product)");
-            if (multi_k)
+            if (compute_stress)
                 throw std::invalid_argument(
-                    "GPWEvaluator: xl_bomd_linearized is Γ-point only "
-                    "(multi-k linearized XL is a follow-on)");
+                    "GPWEvaluator: xl_bomd_linearized stress path is not "
+                    "productized (the shadow warm step returns before the "
+                    "stress block; variable-cell linearized XL is deferred)");
         }
         // Validates xl_bomd_k ∈ [3, 9] via the real constructor even when
         // multi-k uses XlBomdCplx (same Table I).
@@ -205,7 +248,8 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
         xl_k_beta_.clear();
     }
 
-    // Car–Parrinello guards: RKS Γ, collinear Γ-UKS, or multi-k RKS.
+    // Car–Parrinello guards: RKS Γ, collinear Γ-UKS, multi-k RKS, or
+    // multi-k collinear UKS (dual-spin Bloch C_k^σ).
     if (cpmd) {
         if (cfg.use_ot)
             throw std::invalid_argument(
@@ -236,11 +280,6 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
             throw std::runtime_error(
                 "GPWEvaluator: CPMD stress path is not productized; "
                 "variable-cell CP is deferred");
-        // Multi-k UKS CPMD is a residual (dual-spin Bloch C_k^σ).
-        if (multi_k && (n_alpha + n_beta > 0))
-            throw std::invalid_argument(
-                "GPWEvaluator: multi-k UKS + cpmd is not productized "
-                "(use Γ-UKS CPMD or multi-k RKS CPMD)");
         // UKS CPMD: alpha is the primary channel (mirrors XL dual setup).
         if (n_alpha + n_beta > 0 && n_alpha < 1)
             throw std::invalid_argument(
@@ -261,10 +300,12 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
                     "finite and > 0 (fs)");
         }
         if (multi_k) {
-            // Complex propagators sized after the first multi-k SCF (n_kpts).
+            // Complex propagators sized after the first multi-k SCF (n_kpts):
+            // RKS one per k; collinear UKS one per (k, spin).
             cpmd_.reset();
             cpmd_beta_.reset();
             cpmd_k_.clear();
+            cpmd_k_beta_.clear();
             (void)electronic::CpmdCplx(cpmd_mu); // early mu validation
         } else {
             cpmd_.emplace(cpmd_mu);
@@ -280,6 +321,7 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
                 cpmd_beta_.reset();
             }
             cpmd_k_.clear();
+            cpmd_k_beta_.clear();
         }
         last_te_ev_ = 0.0;
         last_etherm_ev_ = 0.0;
@@ -290,6 +332,7 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
         cpmd_.reset();
         cpmd_beta_.reset();
         cpmd_k_.clear();
+        cpmd_k_beta_.clear();
         last_te_ev_ = 0.0;
         last_etherm_ev_ = 0.0;
     }
@@ -297,8 +340,10 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
     // Second-generation CP (Kühne PRL 2007): ASPC + partial SCF corrector.
     // Γ RKS: one total-P real ASPC (DIIS or OT corrector).
     // Γ UKS: dual α/β real ASPC (DIIS or OT).
-    // multi-k RKS: one complex ASPC per k (DIIS only — OT + P_k throws).
-    // multi-k UKS: dual complex ASPC per k.
+    // multi-k RKS: one complex ASPC per k (DIIS or OT — the k-OT manifold
+    //   warm-starts from natural orbitals of the predicted P_k).
+    // multi-k UKS: dual complex ASPC per k (DIIS only — dual-spin k-OT
+    //   warm start is not productized; OT + P_k^σ throws).
     if (second_gen_cp) {
         if (!(second_gen_cp_k >= 0))
             throw std::invalid_argument(
@@ -312,11 +357,12 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
                 "GPWEvaluator: second_gen_cp requires compute_forces=true "
                 "(forces at the post-corrector density)");
         if (multi_k) {
-            if (cfg.use_ot)
+            if (cfg.use_ot && n_alpha + n_beta > 0)
                 throw std::invalid_argument(
-                    "GPWEvaluator: multi-k second_gen_cp requires the "
-                    "diagonalization SCF path (use_ot + P_k density guess is "
-                    "not productized)");
+                    "GPWEvaluator: multi-k UKS second_gen_cp requires the "
+                    "diagonalization SCF path (dual-spin k-OT warm start "
+                    "from P_k^sigma is not productized; use multi-k RKS + "
+                    "use_ot, or the diagonalization corrector)");
             // Validate K early; k-histories sized after the first multi-k SCF
             // (n_kpts known).
             (void)electronic::ASPCPredictorCplx(second_gen_cp_k);
@@ -369,13 +415,22 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
     // on frame.meta[kEnergyElectronKinetic] (and last_electronic_ke_ev())
     // for cpu::md::CpmdConserved to assemble the CP conserved energy.
     // RKS Γ: one real propagator (occ=2). UKS Γ: dual α/β (occ=1 each).
-    // Multi-k RKS: one CpmdCplx per sampled k (occ=2).
+    // Multi-k RKS: one CpmdCplx per sampled k (occ=2). Multi-k UKS: one
+    // CpmdCplx per (k, spin), occ=1 each (β set empty when n_beta == 0).
+    const bool cpmd_uks_k = (n_alpha + n_beta > 0);
     const bool cpmd_multi_k =
         !cpmd_k_.empty() && cpmd_k_[0].ready()
         && [&]() {
                for (const auto& ch : cpmd_k_)
                    if (!ch.ready())
                        return false;
+               if (cpmd_uks_k && n_beta > 0) {
+                   if (cpmd_k_beta_.size() != cpmd_k_.size())
+                       return false;
+                   for (const auto& ch : cpmd_k_beta_)
+                       if (!ch.ready())
+                           return false;
+               }
                return true;
            }();
     const bool cpmd_uks = cpmd_ && (n_alpha + n_beta > 0);
@@ -388,35 +443,41 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                            || (cpmd_beta_ && cpmd_beta_->ready())))
                     : cpmd_->ready()));
     if (cpmd_ready && cpmd_multi_k) {
-        // Multi-k RKS CPMD: fixed-density {P_k} → forces → electronic VV.
+        // Multi-k CPMD: fixed-density {P_k} (RKS, occ 2) or {P_k^α, P_k^β}
+        // (collinear UKS, occ 1 per spin) → forces → per-(k, σ) electronic VV.
         using Cplx = std::complex<double>;
         const int nk = static_cast<int>(cpmd_k_.size());
-        auto density_from_cocc = [](const linalg::CplxMatrix& C,
-                                    int n_occ) -> linalg::CplxMatrix {
-            const int nb = static_cast<int>(C.shape(0));
-            linalg::CplxMatrix P = xt::zeros<Cplx>(
-                {static_cast<std::size_t>(nb), static_cast<std::size_t>(nb)});
-            for (int o = 0; o < n_occ; ++o)
-                for (int mu = 0; mu < nb; ++mu) {
-                    const Cplx cmu = C(mu, o);
-                    for (int nu = 0; nu < nb; ++nu)
-                        P(mu, nu) += 2.0 * cmu * std::conj(C(nu, o));
-                }
-            return P;
-        };
+        const bool have_beta_k = cpmd_uks_k && !cpmd_k_beta_.empty();
         auto fixed_density_eval_k = [&]() {
-            const int n_occ = solver_->n_occ;
             cpmd_guess_p_k_.resize(static_cast<std::size_t>(nk));
-            for (int ik = 0; ik < nk; ++ik)
-                cpmd_guess_p_k_[static_cast<std::size_t>(ik)] =
-                    density_from_cocc(cpmd_k_[static_cast<std::size_t>(ik)].C(),
-                                      n_occ);
+            if (cpmd_uks_k)
+                cpmd_guess_p_k_beta_.resize(static_cast<std::size_t>(nk));
+            for (int ik = 0; ik < nk; ++ik) {
+                const auto& Ca = cpmd_k_[static_cast<std::size_t>(ik)].C();
+                if (cpmd_uks_k) {
+                    cpmd_guess_p_k_[static_cast<std::size_t>(ik)] =
+                        density_from_cocc(Ca, n_alpha, /*occ=*/1.0);
+                    // Half-metal edge (n_beta == 0): zero β density.
+                    cpmd_guess_p_k_beta_[static_cast<std::size_t>(ik)] =
+                        have_beta_k
+                            ? density_from_cocc(
+                                  cpmd_k_beta_[static_cast<std::size_t>(ik)]
+                                      .C(),
+                                  n_beta, /*occ=*/1.0)
+                            : linalg::CplxMatrix(
+                                  xt::zeros<Cplx>({Ca.shape(0), Ca.shape(0)}));
+                } else {
+                    cpmd_guess_p_k_[static_cast<std::size_t>(ik)] =
+                        density_from_cocc(Ca, solver_->n_occ, /*occ=*/2.0);
+                }
+            }
             const int saved_max = solver_->max_iter;
             solver_->max_iter = 0;
             try {
-                last_ = solver_->run(atoms, /*guess_C=*/nullptr,
-                                     /*guess_P=*/nullptr,
-                                     /*guess_P_beta=*/nullptr, &cpmd_guess_p_k_);
+                last_ = solver_->run(
+                    atoms, /*guess_C=*/nullptr, /*guess_P=*/nullptr,
+                    /*guess_P_beta=*/nullptr, &cpmd_guess_p_k_,
+                    cpmd_uks_k ? &cpmd_guess_p_k_beta_ : nullptr);
             } catch (...) {
                 solver_->max_iter = saved_max;
                 throw;
@@ -432,36 +493,36 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         if (static_cast<int>(S_k.size()) != nk)
             throw std::runtime_error(
                 "GPWEvaluator: multi-k CPMD standalone overlap_k size != nk");
-        for (int ik = 0; ik < nk; ++ik)
+        for (int ik = 0; ik < nk; ++ik) {
             cpmd_k_[static_cast<std::size_t>(ik)].align_to_overlap(
                 S_k[static_cast<std::size_t>(ik)]);
+            if (have_beta_k)
+                cpmd_k_beta_[static_cast<std::size_t>(ik)].align_to_overlap(
+                    S_k[static_cast<std::size_t>(ik)]);
+        }
         fixed_density_eval_k();
         if (static_cast<int>(last_.H_ks_k.size()) != nk)
             throw std::runtime_error(
                 "GPWEvaluator: multi-k CPMD fixed-density missing H_ks_k");
+        if (cpmd_uks_k
+            && static_cast<int>(last_.H_ks_k_beta.size()) != nk)
+            throw std::runtime_error(
+                "GPWEvaluator: multi-k UKS CPMD fixed-density missing "
+                "H_ks_k_beta");
 
         frame.meta.get(kEnergy) += last_.e_total * ATV::units::kHartreeInEv;
         frame.meta.get(kEnergyElectronic) +=
             last_.e_total * ATV::units::kHartreeInEv;
 
         if (compute_forces) {
-            // Populate C_occ_k + eps_k = diag(C† H C) for k-summed forces.
-            const int n_occ = solver_->n_occ;
-            last_.C_occ_k.resize(static_cast<std::size_t>(nk));
-            last_.eps_k.resize(static_cast<std::size_t>(nk));
-            for (int ik = 0; ik < nk; ++ik) {
-                const auto& C =
-                    cpmd_k_[static_cast<std::size_t>(ik)].C();
-                const auto& H = last_.H_ks_k[static_cast<std::size_t>(ik)];
+            // Populate C_occ_k(_beta) + eps_k(_beta) = diag(C† H^σ C) for
+            // the k-summed force assembly (occ 2 RKS; occ 1 per spin UKS).
+            auto fill_channel = [&](const linalg::CplxMatrix& C,
+                                    const linalg::CplxMatrix& H, int n_occ,
+                                    std::vector<Cplx>& flat_out,
+                                    std::vector<double>& eps_out) {
                 const int nb = static_cast<int>(C.shape(0));
-                std::vector<Cplx> flat(
-                    static_cast<std::size_t>(nb)
-                    * static_cast<std::size_t>(n_occ));
-                for (int mu = 0; mu < nb; ++mu)
-                    for (int o = 0; o < n_occ; ++o)
-                        flat[static_cast<std::size_t>(mu) * n_occ
-                             + static_cast<std::size_t>(o)] = C(mu, o);
-                last_.C_occ_k[static_cast<std::size_t>(ik)] = std::move(flat);
+                flat_out = flatten_occ(C, n_occ);
                 // ε_i ≈ Re (C† H C)_ii  (BO surface → exact eigenvalues).
                 std::vector<double> eps(static_cast<std::size_t>(n_occ), 0.0);
                 for (int o = 0; o < n_occ; ++o) {
@@ -474,7 +535,35 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                     }
                     eps[static_cast<std::size_t>(o)] = s.real();
                 }
-                last_.eps_k[static_cast<std::size_t>(ik)] = std::move(eps);
+                eps_out = std::move(eps);
+            };
+            last_.C_occ_k.resize(static_cast<std::size_t>(nk));
+            last_.eps_k.resize(static_cast<std::size_t>(nk));
+            if (cpmd_uks_k) {
+                last_.C_occ_k_beta.resize(static_cast<std::size_t>(nk));
+                last_.eps_k_beta.resize(static_cast<std::size_t>(nk));
+            }
+            for (int ik = 0; ik < nk; ++ik) {
+                fill_channel(cpmd_k_[static_cast<std::size_t>(ik)].C(),
+                             last_.H_ks_k[static_cast<std::size_t>(ik)],
+                             cpmd_uks_k ? n_alpha : solver_->n_occ,
+                             last_.C_occ_k[static_cast<std::size_t>(ik)],
+                             last_.eps_k[static_cast<std::size_t>(ik)]);
+                if (cpmd_uks_k) {
+                    if (have_beta_k) {
+                        fill_channel(
+                            cpmd_k_beta_[static_cast<std::size_t>(ik)].C(),
+                            last_.H_ks_k_beta[static_cast<std::size_t>(ik)],
+                            n_beta,
+                            last_.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                            last_.eps_k_beta[static_cast<std::size_t>(ik)]);
+                    } else {
+                        last_.C_occ_k_beta[static_cast<std::size_t>(ik)]
+                            .clear();
+                        last_.eps_k_beta[static_cast<std::size_t>(ik)]
+                            .clear();
+                    }
+                }
             }
             last_.converged = true;
             const auto F = gpw_forces_from_scf(atoms, *solver_, last_);
@@ -491,18 +580,28 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             }
         }
 
-        // Electronic steps: T_e = Σ_k w_k T_e^{(k)}.
+        // Electronic steps: T_e = Σ_k w_k Σ_σ T_e^{(k,σ)}.
         double te_ha = 0.0;
         for (int ik = 0; ik < nk; ++ik) {
-            cpmd_k_[static_cast<std::size_t>(ik)].advance(
-                last_.H_ks_k[static_cast<std::size_t>(ik)],
-                S_k[static_cast<std::size_t>(ik)], cpmd_dt_fs_,
-                /*occ=*/2.0);
             const double wk =
                 (ik < static_cast<int>(last_.k_weights.size()))
                     ? last_.k_weights[static_cast<std::size_t>(ik)]
                     : (1.0 / static_cast<double>(nk));
-            te_ha += wk * cpmd_k_[static_cast<std::size_t>(ik)].kinetic_ha();
+            cpmd_k_[static_cast<std::size_t>(ik)].advance(
+                last_.H_ks_k[static_cast<std::size_t>(ik)],
+                S_k[static_cast<std::size_t>(ik)], cpmd_dt_fs_,
+                /*occ=*/cpmd_uks_k ? 1.0 : 2.0);
+            double te_k =
+                cpmd_k_[static_cast<std::size_t>(ik)].kinetic_ha();
+            if (have_beta_k) {
+                cpmd_k_beta_[static_cast<std::size_t>(ik)].advance(
+                    last_.H_ks_k_beta[static_cast<std::size_t>(ik)],
+                    S_k[static_cast<std::size_t>(ik)], cpmd_dt_fs_,
+                    /*occ=*/1.0);
+                te_k +=
+                    cpmd_k_beta_[static_cast<std::size_t>(ik)].kinetic_ha();
+            }
+            te_ha += wk * te_k;
         }
         last_te_ev_ = te_ha * ATV::units::kHartreeInEv;
         last_etherm_ev_ = 0.0;
@@ -1192,6 +1291,175 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         return;
     }
 
+    // ── Multi-k zero-SCF linearized XL-BOMD (shadow forces on the k path) ──
+    // After the cold multi-k SCF seed (one complex XL history per sampled k,
+    // dual per spin for UKS): one KS build at the auxiliary densities {n_k}
+    // (fixed-density, max_iter = 0), one generalized diagonalization per
+    // (k, σ) → D_k^σ = q[n], k-weighted shadow energy
+    //   E = Σ_k w_k Σ_σ Re Tr[H_k^σ[n] (D_k^σ − n_k^σ)] + E_KS[n],
+    // and forces from the (D_k, ε_k, C_k^occ) payload on the k-path
+    // assembly. No iterative SCF (iters = 0). The cold seed falls through
+    // to the SCF-XL path below (its first advance seeds each per-k history
+    // with P_k^σ_scf).
+    const bool lin_k_ready = [&]() {
+        if (!xl_bomd_linearized || xl_k_.empty())
+            return false;
+        for (const auto& x : xl_k_)
+            if (!x.ready())
+                return false;
+        if (lin_uks) {
+            if (xl_k_beta_.size() != xl_k_.size())
+                return false;
+            for (const auto& x : xl_k_beta_)
+                if (!x.ready())
+                    return false;
+        }
+        return true;
+    }();
+    if (lin_k_ready) {
+        const int nk = static_cast<int>(xl_k_.size());
+        xl_guess_p_k_.resize(static_cast<std::size_t>(nk));
+        for (int ik = 0; ik < nk; ++ik)
+            xl_guess_p_k_[static_cast<std::size_t>(ik)] =
+                xl_k_[static_cast<std::size_t>(ik)].aux();
+        if (lin_uks) {
+            xl_guess_p_k_beta_.resize(static_cast<std::size_t>(nk));
+            for (int ik = 0; ik < nk; ++ik)
+                xl_guess_p_k_beta_[static_cast<std::size_t>(ik)] =
+                    xl_k_beta_[static_cast<std::size_t>(ik)].aux();
+        }
+        const int saved_max = solver_->max_iter;
+        solver_->max_iter = 0;
+        try {
+            last_ = solver_->run(atoms, /*guess_C=*/nullptr,
+                                 /*guess_P=*/nullptr, /*guess_P_beta=*/nullptr,
+                                 &xl_guess_p_k_,
+                                 lin_uks ? &xl_guess_p_k_beta_ : nullptr);
+        } catch (...) {
+            solver_->max_iter = saved_max;
+            throw;
+        }
+        solver_->max_iter = saved_max;
+
+        if (last_.n_kpts != nk
+            || static_cast<int>(last_.H_ks_k.size()) != nk
+            || static_cast<int>(last_.S_k.size()) != nk
+            || static_cast<int>(last_.k_weights.size()) != nk
+            || (lin_uks
+                && static_cast<int>(last_.H_ks_k_beta.size()) != nk))
+            throw std::runtime_error(
+                "GPWEvaluator: multi-k xl_bomd_linearized fixed-density step "
+                "needs H_ks_k (+H_ks_k_beta for UKS), S_k and k_weights from "
+                "max_iter=0");
+
+        const double e_ks_n = last_.e_total;
+        // Re Tr(H M) over one complex Bloch pair (shadow trace term).
+        auto tr_HM = [](const linalg::CplxMatrix& H,
+                        const linalg::CplxMatrix& M) {
+            const int m = static_cast<int>(H.shape(0));
+            double t = 0.0;
+            for (int i = 0; i < m; ++i)
+                for (int j = 0; j < m; ++j)
+                    t += (H(static_cast<std::size_t>(i),
+                            static_cast<std::size_t>(j))
+                          * M(static_cast<std::size_t>(j),
+                              static_cast<std::size_t>(i)))
+                             .real();
+            return t;
+        };
+
+        const int n_occ_a = lin_uks ? n_alpha : solver_->n_occ;
+        const int n_occ_b = lin_uks ? n_beta : 0;
+        if (n_occ_a < 1)
+            throw std::runtime_error(
+                lin_uks
+                    ? "GPWEvaluator: multi-k UKS xl_bomd_linearized needs "
+                      "n_alpha >= 1"
+                    : "GPWEvaluator: multi-k xl_bomd_linearized needs "
+                      "n_occ >= 1");
+
+        last_.eps_k.assign(static_cast<std::size_t>(nk), {});
+        last_.C_occ_k.assign(static_cast<std::size_t>(nk), {});
+        last_.P_k.assign(static_cast<std::size_t>(nk), linalg::CplxMatrix{});
+        if (lin_uks) {
+            last_.eps_k_beta.assign(static_cast<std::size_t>(nk), {});
+            last_.C_occ_k_beta.assign(static_cast<std::size_t>(nk), {});
+            last_.P_k_beta.assign(static_cast<std::size_t>(nk),
+                                  linalg::CplxMatrix{});
+        }
+
+        double shadow = 0.0;
+        for (int ik = 0; ik < nk; ++ik) {
+            const std::size_t k = static_cast<std::size_t>(ik);
+            const double wk = last_.k_weights[k];
+            const internal::KOrth orth(last_.S_k[k],
+                                       solver_->lindep_threshold);
+            auto [eps_a, Ca] = internal::diagonalize_k(last_.H_ks_k[k], orth);
+            if (static_cast<int>(Ca.shape(1)) < n_occ_a)
+                throw std::runtime_error(
+                    "GPWEvaluator: multi-k xl_bomd_linearized: occupied "
+                    "count exceeds the independent basis directions at a "
+                    "k-point");
+            const linalg::CplxMatrix Da =
+                density_from_cocc(Ca, n_occ_a, lin_uks ? 1.0 : 2.0);
+            shadow += wk
+                      * (tr_HM(last_.H_ks_k[k], Da)
+                         - tr_HM(last_.H_ks_k[k], xl_guess_p_k_[k]));
+            last_.eps_k[k] = std::move(eps_a);
+            last_.C_occ_k[k] = flatten_occ(Ca, n_occ_a);
+            last_.P_k[k] = Da;
+            if (lin_uks) {
+                auto [eps_b, Cb] =
+                    internal::diagonalize_k(last_.H_ks_k_beta[k], orth);
+                if (static_cast<int>(Cb.shape(1)) < n_occ_b)
+                    throw std::runtime_error(
+                        "GPWEvaluator: multi-k UKS xl_bomd_linearized: "
+                        "occupied beta count exceeds the independent basis "
+                        "directions at a k-point");
+                const linalg::CplxMatrix Db =
+                    density_from_cocc(Cb, n_occ_b, 1.0);
+                shadow += wk
+                          * (tr_HM(last_.H_ks_k_beta[k], Db)
+                             - tr_HM(last_.H_ks_k_beta[k],
+                                     xl_guess_p_k_beta_[k]));
+                last_.eps_k_beta[k] = std::move(eps_b);
+                last_.C_occ_k_beta[k] = flatten_occ(Cb, n_occ_b);
+                last_.P_k_beta[k] = Db;
+            }
+            // XL advance(D) per k (per spin): the aux for the next step.
+            xl_k_[k].advance(last_.P_k[k]);
+            if (lin_uks)
+                xl_k_beta_[k].advance(last_.P_k_beta[k]);
+        }
+        last_.e_total = e_ks_n + shadow;
+        last_.converged = true; // stationary for the shadow functional
+        last_.iters = 0;        // zero iterative SCF
+
+        frame.meta.get(kEnergy) += last_.e_total * ATV::units::kHartreeInEv;
+        frame.meta.get(kEnergyElectronic) +=
+            last_.e_total * ATV::units::kHartreeInEv;
+
+        if (compute_forces) {
+            // Forces of U(R,{n_k}) at fixed n: the k-path assembly at the
+            // (D_k, ε_k, C_k^occ) payload — since C_k are exact
+            // eigenvectors of H_k[n], W = C (C†HC) C† (the Γ product's
+            // off-BO energy-weighted density) reduces to Σ f ε C C†.
+            const auto F = gpw_forces_from_scf(atoms, *solver_, last_);
+            AccReal* __restrict sp_fx = frame.span(kAtom_fx);
+            AccReal* __restrict sp_fy = frame.span(kAtom_fy);
+            AccReal* __restrict sp_fz = frame.span(kAtom_fz);
+            for (int i = 0; i < n; ++i) {
+                sp_fx[i] += F[static_cast<std::size_t>(i)][0]
+                            * ATV::units::kHartreePerBohrInEvPerAngstrom;
+                sp_fy[i] += F[static_cast<std::size_t>(i)][1]
+                            * ATV::units::kHartreePerBohrInEvPerAngstrom;
+                sp_fz[i] += F[static_cast<std::size_t>(i)][2]
+                            * ATV::units::kHartreePerBohrInEvPerAngstrom;
+            }
+        }
+        return;
+    }
+
     // BOMD / FD-phonon warm-start: reuse previous MOs and spin densities.
     // GpwDft::run accepts optional guess_C; empty last_.C → core guess.
     // Multi-k has no real C warm-start (Bloch C_k live on the k path).
@@ -1357,6 +1625,8 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
 
     // CPMD cold seed after the first full SCF + BO forces.
     // Multi-k RKS: seed one CpmdCplx per sampled k from Bloch C_k / C_occ_k.
+    // Multi-k UKS: one per (k, spin) — α from C_k / C_occ_k (n_alpha
+    // columns), β from C_k_beta / C_occ_k_beta (n_beta columns).
     if (cpmd && cpmd_k_.empty()
         && (k_mesh[0] != 1 || k_mesh[1] != 1 || k_mesh[2] != 1)) {
         if (!last_.converged || last_.n_kpts < 1)
@@ -1364,57 +1634,84 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                 "GPWEvaluator: multi-k cpmd seed requires a converged multi-k "
                 "SCF");
         const int nk = last_.n_kpts;
-        const int n_occ = solver_->n_occ;
-        if (n_occ < 1)
+        const bool seed_uks = (n_alpha + n_beta > 0);
+        const int n_occ_a = seed_uks ? n_alpha : solver_->n_occ;
+        if (n_occ_a < 1)
             throw std::runtime_error(
-                "GPWEvaluator: multi-k RKS CPMD seed requires n_occ >= 1");
-        // Prefer full C_k; fall back to flat C_occ_k.
-        const bool have_C_k =
-            static_cast<int>(last_.C_k.size()) == nk
-            && last_.C_k[0].size() > 0;
-        const bool have_C_occ =
-            static_cast<int>(last_.C_occ_k.size()) == nk
-            && !last_.C_occ_k[0].empty();
-        if (!have_C_k && !have_C_occ)
-            throw std::runtime_error(
-                "GPWEvaluator: multi-k cpmd seed missing C_k / C_occ_k");
-        cpmd_k_.clear();
-        cpmd_k_.reserve(static_cast<std::size_t>(nk));
-        for (int ik = 0; ik < nk; ++ik) {
-            linalg::CplxMatrix C_occ;
-            if (have_C_k) {
-                const auto& Cfull = last_.C_k[static_cast<std::size_t>(ik)];
-                const int nb = static_cast<int>(Cfull.shape(0));
-                if (static_cast<int>(Cfull.shape(1)) < n_occ)
+                seed_uks
+                    ? "GPWEvaluator: multi-k UKS CPMD seed requires "
+                      "n_alpha >= 1"
+                    : "GPWEvaluator: multi-k RKS CPMD seed requires "
+                      "n_occ >= 1");
+        // One channel of per-k propagators from full C_k (preferred) or the
+        // flat occupied block; `tag` names the channel in error messages.
+        auto seed_channel =
+            [&](const std::vector<linalg::CplxMatrix>& C_k_full,
+                const std::vector<std::vector<std::complex<double>>>& C_occ_k,
+                int n_occ, const char* tag) {
+                const bool have_C_k =
+                    static_cast<int>(C_k_full.size()) == nk
+                    && C_k_full[0].size() > 0;
+                const bool have_C_occ =
+                    static_cast<int>(C_occ_k.size()) == nk
+                    && !C_occ_k[0].empty();
+                if (!have_C_k && !have_C_occ)
                     throw std::runtime_error(
-                        "GPWEvaluator: multi-k cpmd seed: C_k columns < n_occ");
-                C_occ = xt::zeros<std::complex<double>>(
-                    {static_cast<std::size_t>(nb),
-                     static_cast<std::size_t>(n_occ)});
-                for (int mu = 0; mu < nb; ++mu)
-                    for (int o = 0; o < n_occ; ++o)
-                        C_occ(mu, o) = Cfull(mu, o);
-            } else {
-                const auto& flat = last_.C_occ_k[static_cast<std::size_t>(ik)];
-                // Infer nb from flat size / n_occ.
-                if (static_cast<int>(flat.size()) % n_occ != 0)
-                    throw std::runtime_error(
-                        "GPWEvaluator: multi-k cpmd seed: C_occ_k size not "
-                        "divisible by n_occ");
-                const int nb = static_cast<int>(flat.size()) / n_occ;
-                C_occ = xt::zeros<std::complex<double>>(
-                    {static_cast<std::size_t>(nb),
-                     static_cast<std::size_t>(n_occ)});
-                for (int mu = 0; mu < nb; ++mu)
-                    for (int o = 0; o < n_occ; ++o)
-                        C_occ(mu, o) =
-                            flat[static_cast<std::size_t>(mu) * n_occ
-                                 + static_cast<std::size_t>(o)];
-            }
-            electronic::CpmdCplx ch(cpmd_mu);
-            ch.seed(C_occ);
-            cpmd_k_.push_back(std::move(ch));
-        }
+                        std::string("GPWEvaluator: multi-k cpmd seed missing ")
+                        + tag);
+                std::vector<electronic::CpmdCplx> out;
+                out.reserve(static_cast<std::size_t>(nk));
+                for (int ik = 0; ik < nk; ++ik) {
+                    linalg::CplxMatrix C_occ;
+                    if (have_C_k) {
+                        const auto& Cfull =
+                            C_k_full[static_cast<std::size_t>(ik)];
+                        const int nb = static_cast<int>(Cfull.shape(0));
+                        if (static_cast<int>(Cfull.shape(1)) < n_occ)
+                            throw std::runtime_error(
+                                std::string("GPWEvaluator: multi-k cpmd "
+                                            "seed: ")
+                                + tag + " columns < occupied count");
+                        C_occ = xt::zeros<std::complex<double>>(
+                            {static_cast<std::size_t>(nb),
+                             static_cast<std::size_t>(n_occ)});
+                        for (int mu = 0; mu < nb; ++mu)
+                            for (int o = 0; o < n_occ; ++o)
+                                C_occ(mu, o) = Cfull(mu, o);
+                    } else {
+                        const auto& flat =
+                            C_occ_k[static_cast<std::size_t>(ik)];
+                        // Infer nb from flat size / n_occ.
+                        if (static_cast<int>(flat.size()) % n_occ != 0)
+                            throw std::runtime_error(
+                                std::string("GPWEvaluator: multi-k cpmd "
+                                            "seed: ")
+                                + tag + " size not divisible by the occupied "
+                                        "count");
+                        const int nb = static_cast<int>(flat.size()) / n_occ;
+                        C_occ = xt::zeros<std::complex<double>>(
+                            {static_cast<std::size_t>(nb),
+                             static_cast<std::size_t>(n_occ)});
+                        for (int mu = 0; mu < nb; ++mu)
+                            for (int o = 0; o < n_occ; ++o)
+                                C_occ(mu, o) =
+                                    flat[static_cast<std::size_t>(mu) * n_occ
+                                         + static_cast<std::size_t>(o)];
+                    }
+                    electronic::CpmdCplx ch(cpmd_mu);
+                    ch.seed(C_occ);
+                    out.push_back(std::move(ch));
+                }
+                return out;
+            };
+        cpmd_k_ = seed_channel(last_.C_k, last_.C_occ_k, n_occ_a,
+                               seed_uks ? "C_k / C_occ_k (alpha)"
+                                        : "C_k / C_occ_k");
+        cpmd_k_beta_.clear();
+        if (seed_uks && n_beta > 0)
+            cpmd_k_beta_ = seed_channel(last_.C_k_beta, last_.C_occ_k_beta,
+                                        n_beta,
+                                        "C_k_beta / C_occ_k_beta (beta)");
         // Seed step: the electronic coefficients have not been propagated, so
         // both electronic energies are exactly 0 (a re-`build()` after a warm
         // run must reset the thermostat readback too, not leave it stale).

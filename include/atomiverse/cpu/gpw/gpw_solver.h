@@ -33,6 +33,7 @@
 #include "atomiverse/cpu/gpw/gaussian_basis.h" // GaussianBasis
 #include "atomiverse/cpu/gpw/gth_potential.h" // GthPotential, GthNonlocalChannel
 #include "atomiverse/cpu/gpw/internal/collocate.h"
+#include "atomiverse/cpu/gpw/internal/dftd3.h" // kD3Cp2kPairCutoffBohr
 #include "atomiverse/cpu/gpw/g0w0.h"      // G0W0Result
 #include "atomiverse/cpu/gpw/mp2.h"       // Mp2Result
 #include "atomiverse/cpu/gpw/rpa.h"       // RpaResult
@@ -194,19 +195,26 @@ struct GpwResult {
     linalg::RealMatrix P_beta;    ///< UKS β density (empty for RKS).
     std::vector<double> eps_beta; ///< UKS β orbital energies (empty for RKS).
     /// @}
-    /// @name Fixed-density KS evaluation payload (Car–Parrinello path)
+    /// @name Fixed-density KS evaluation payload (Car–Parrinello / linearized-XL path)
     /// Populated when `GpwDft::run` is called with `max_iter == 0` and a
     /// density guess — one collocate→Poisson→XC→integrate, no SCF. Empty
     /// after a normal multi-iteration SCF. RKS: `H_ks` only. UKS: `H_ks` is
     /// \(H_\alpha\), `H_ks_beta` is \(H_\beta\). Multi-k RKS fixed-density
-    /// fills `H_ks_k` / `S_k` (size == `n_kpts`) instead of the Γ fields.
+    /// fills `H_ks_k` / `S_k` (size == `n_kpts`) instead of the Γ fields;
+    /// multi-k UKS additionally fills `H_ks_k_beta`.
     /// @{
     linalg::RealMatrix H_ks; ///< KS matrix H[P] / \(H_\alpha\) [Hartree] (nb × nb).
     linalg::RealMatrix H_ks_beta; ///< UKS \(H_\beta\) [Hartree] (empty for RKS).
     linalg::RealMatrix S;    ///< Overlap matrix at this geometry (nb × nb).
     /// @brief Multi-k fixed-density KS matrices \(H_k\) [Hartree] (empty for Γ
     ///        / multi-iteration SCF). One Hermitian nb×nb per sampled k.
+    ///        RKS: total. Multi-k UKS fixed-density: the α channel
+    ///        \(H_k^\alpha\), paired with `H_ks_k_beta`.
     std::vector<linalg::CplxMatrix> H_ks_k;
+    /// @brief Multi-k UKS β fixed-density KS matrices \(H_k^\beta\) [Hartree]
+    ///        (empty for RKS / Γ / multi-iteration SCF). Size == `n_kpts`,
+    ///        paired with `H_ks_k` — the dual-spin Bloch XL-BOMD/CPMD payload.
+    std::vector<linalg::CplxMatrix> H_ks_k_beta;
     /// @brief Multi-k overlaps \(S_k\) at the evaluation geometry (empty for Γ
     ///        / multi-iteration SCF). Size == `n_kpts` with `H_ks_k`.
     std::vector<linalg::CplxMatrix> S_k;
@@ -255,6 +263,12 @@ class GpwDft {
     /// @brief Three-body ATM / C9 on top of `d3` or `d3bj` (CP2K
     ///        `CALCULATE_C9_TERM`). Ignored when neither D3 flag is set.
     bool d3_atm = false; ///< DFT-D3 Axilrod–Teller–Muto (C9).
+    /// @brief DFT-D3 pair / ABC hard cutoff [Bohr], **doubled** convention:
+    ///        CP2K `&PAIR_POTENTIAL R_CUTOFF x` (Å) sums to 2·x (it prints the
+    ///        half). Default = CP2K default `R_CUTOFF 20.0` → 75.59 Bohr
+    ///        (`kD3Cp2kPairCutoffBohr`). Energy, forces and stress all fold
+    ///        the same value. Applies to `d3` / `d3bj` only.
+    double d3_rcut_bohr = kD3Cp2kPairCutoffBohr;
     /// @brief Grimme DFT-D4 BJ damping (PBE params; periodic EEQ).
     /// Mutually exclusive with `d3` / `d3bj` / `ts` / `mbd` / `xdm`.
     /// Two-body only unless `d4_atm` is also set.
@@ -286,13 +300,16 @@ class GpwDft {
     ///        \(E_{\mathrm{disp}}\) on the final SC density. CP2K
     ///        `VDW_POTENTIAL NON_LOCAL TYPE DRSLL`. Mutually exclusive with
     ///        `d3` / `d3bj` / `d4` / `ts` / `mbd` / `vdw_df2` / `rvv10`.
-    ///        Periodic single-grid only.
+    ///        Periodic, Γ closed-shell RKS (single-grid or REL_CUTOFF
+    ///        multigrid `ngrids > 1`); k path / UKS reject fail-fast.
     bool vdw_df = false; ///< vdW-DF (DRSLL) nonlocal correlation.
     /// @brief Nonlocal vdW-DF2 (LMKLL / DF2). Same SC product path as `vdw_df`;
-    ///        Z_ab = −1.887. CP2K `NON_LOCAL TYPE LMKLL`. Periodic single-grid.
+    ///        Z_ab = −1.887. CP2K `NON_LOCAL TYPE LMKLL`. Same Γ RKS scope
+    ///        (single-grid or multigrid) as `vdw_df`.
     bool vdw_df2 = false; ///< vdW-DF2 (LMKLL) nonlocal correlation.
     /// @brief Nonlocal rVV10 (Sabatini et al.). SC product path; CP2K
-    ///        `NON_LOCAL TYPE RVV10` (b=6.3, C=0.0093). Periodic single-grid.
+    ///        `NON_LOCAL TYPE RVV10` (b=6.3, C=0.0093). Same Γ RKS scope
+    ///        (single-grid or multigrid) as `vdw_df`.
     bool rvv10 = false; ///< rVV10 nonlocal correlation.
     /// @brief Scale TS/MBD free-atom parameters by Hirshfeld \(V/V_{\mathrm{free}}\)
     ///        from the final SCF total valence density (post-SCF,
@@ -400,7 +417,10 @@ class GpwDft {
     /// @param guess_P_k Optional multi-k initial densities (one complex
     ///        Hermitian matrix per sampled k, size == `n_kpts` after mesh /
     ///        TR fold). RKS: total \(P_k\). UKS: α-spin \(P_k^\alpha\)
-    ///        (requires matching `guess_P_k_beta`). Real `guess_P` with a
+    ///        (requires matching `guess_P_k_beta`). On the RKS **OT** path
+    ///        each \(P_k\) is purified to natural orbitals that seed the
+    ///        per-k OT manifold (complex mirror of the Γ `guess_P` warm
+    ///        start — multi-k SGCP OT corrector). Real `guess_P` with a
     ///        multi-k mesh throws (no silent Γ guess on the k path).
     /// @param guess_P_k_beta Optional multi-k UKS β densities \(P_k^\beta\)
     ///        (size == `n_kpts`; UKS-only — RKS + non-null throws).
