@@ -2297,9 +2297,6 @@ static GpwResult run_gpw_scf_kpoints_uks(
                      "(full AO spectrum used)\n",
                      m_min, n_need, cfg.extra_bands);
 
-    const internal::KpointBasisGrid kbg =
-        internal::build_kpoint_basis_grid(grid, basis, kpts, cfg.eps_default);
-
     // Spin density from spinor occupations f_b ∈ [0, 1] (factor 1, not 2).
     auto density_from_occ = [&](const CplxMatrix& C,
                                 const std::vector<double>& occ) {
@@ -2327,6 +2324,152 @@ static GpwResult run_gpw_scf_kpoints_uks(
     for (int ik = 0; ik < nk; ++ik)
         weights[static_cast<std::size_t>(ik)] =
             kpts[static_cast<std::size_t>(ik)].weight;
+
+    // CP2K REL_CUTOFF multigrid on the multi-k UKS path (gated
+    // ngrids>1 && rel_cutoff>0): same geometry-fixed product list as the RKS
+    // multi-k multigrid, applied once per spin. Per spin σ the Bloch-phased
+    // real-space density stack
+    //   D^σ(t) = Σ_k w_k Re[P^{σ,k} e^{−2πi κ·t}]
+    // weighs the per-level product collocation; ρ^σ_l prolongs to the fine
+    // grid (ρ = ρα + ρβ feeds Poisson; (ρα, ρβ) feed spin XC); each V_eff^σ
+    // restricts back and integrates into V^σ_t; phase-summed
+    // V^{σ,k} = Σ_t e^{+2πi κ·t} V^σ_t (Hermitian, exact transpose of the
+    // density assembly — SCF stays variational per spin).
+    const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
+    MultiGrid mg;
+    ProductSet products;
+    if (use_mg) {
+        mg = make_multigrid(cfg.cell, cfg.cutoff_ry, cfg.ngrids,
+                            cfg.rel_cutoff);
+        if (mg.levels[0].n[0] != grid.n[0] || mg.levels[0].n[1] != grid.n[1]
+            || mg.levels[0].n[2] != grid.n[2])
+            throw std::logic_error(
+                "GPW k-UKS: multigrid finest level n[] != SCF grid n[]");
+        products = build_products(mg, basis, cfg.cell, cfg.rel_cutoff,
+                                  cfg.eps_default, /*periodic=*/true);
+    }
+    const std::size_t n_tcells = products.cells.size();
+    std::vector<std::vector<Cplx>> tcell_phase(static_cast<std::size_t>(nk));
+    if (use_mg) {
+        constexpr double kTwoPi = 6.283185307179586476925286766559;
+        for (int ik = 0; ik < nk; ++ik) {
+            auto& row = tcell_phase[static_cast<std::size_t>(ik)];
+            row.resize(n_tcells);
+            for (std::size_t c = 0; c < n_tcells; ++c) {
+                const auto& t = products.cells[c];
+                const double arg =
+                    -kTwoPi
+                    * (kpts[static_cast<std::size_t>(ik)].frac[0] * t[0]
+                       + kpts[static_cast<std::size_t>(ik)].frac[1] * t[1]
+                       + kpts[static_cast<std::size_t>(ik)].frac[2] * t[2]);
+                row[c] = Cplx(std::cos(arg), std::sin(arg));
+            }
+        }
+    }
+    auto mg_density_stack = [&](const std::vector<CplxMatrix>& Pk) {
+        std::vector<std::vector<double>> D(
+            n_tcells,
+            std::vector<double>(static_cast<std::size_t>(nb) * nb, 0.0));
+        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+            const double wk = weights[static_cast<std::size_t>(ik)];
+            const auto& P = Pk[static_cast<std::size_t>(ik)];
+            for (std::size_t c = 0; c < n_tcells; ++c) {
+                const Cplx ph = tcell_phase[static_cast<std::size_t>(ik)][c];
+                double* Dc = D[c].data();
+                const Cplx* Pd = P.data();
+                const std::size_t nn = static_cast<std::size_t>(nb) * nb;
+                for (std::size_t e = 0; e < nn; ++e)
+                    Dc[e] += wk
+                             * (Pd[e].real() * ph.real()
+                                - Pd[e].imag() * ph.imag());
+            }
+        }
+#ifdef ATV_HAS_MPI
+        if (layout.active)
+            for (auto& Dc : D)
+                MPI_Allreduce(MPI_IN_PLACE, Dc.data(),
+                              static_cast<int>(Dc.size()), MPI_DOUBLE, MPI_SUM,
+                              MPI_COMM_WORLD);
+#endif
+        return D;
+    };
+    auto mg_density = [&](const std::vector<CplxMatrix>& Pk) {
+        const auto D = mg_density_stack(Pk);
+        std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
+        for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+            std::vector<double> rho_l = collocate_products_cells(
+                mg.levels[l], products.by_level[l], products.prims,
+                products.contribs, nb, D, cfg.eps_default);
+            if (l == 0) {
+                rho = std::move(rho_l);
+            } else {
+                const std::vector<double> up =
+                    prolong_fft(mg.levels[l], mg.levels[0], rho_l,
+                                /*spectral*/ true);
+                for (std::size_t g = 0; g < rho.size(); ++g)
+                    rho[g] += up[g];
+            }
+        }
+        return rho;
+    };
+    auto mg_vt_stack = [&](const std::vector<double>& veff) {
+        std::vector<std::vector<double>> Vt(
+            n_tcells,
+            std::vector<double>(static_cast<std::size_t>(nb) * nb, 0.0));
+        for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+            std::vector<double> V_l;
+            if (l == 0) {
+                V_l = veff;
+            } else {
+                V_l = restrict_fft(mg.levels[0], mg.levels[l], veff,
+                                   /*spectral*/ true);
+            }
+            const auto Vt_l = integrate_products_cells(
+                mg.levels[l], products.by_level[l], products.prims,
+                products.contribs, nb, V_l, n_tcells, cfg.eps_default);
+            for (std::size_t c = 0; c < n_tcells; ++c)
+                for (std::size_t e = 0; e < Vt[c].size(); ++e)
+                    Vt[c][e] += Vt_l[c][e];
+        }
+        return Vt;
+    };
+    auto mg_phase_V = [&](const std::vector<std::vector<double>>& Vt, int ik) {
+        CplxMatrix V = xt::zeros<Cplx>({nb, nb});
+        const std::size_t nn = static_cast<std::size_t>(nb) * nb;
+        for (std::size_t c = 0; c < n_tcells; ++c) {
+            const Cplx ph =
+                std::conj(tcell_phase[static_cast<std::size_t>(ik)][c]);
+            const double* Vc = Vt[c].data();
+            Cplx* out = V.data();
+            for (std::size_t e = 0; e < nn; ++e)
+                out[e] += ph * Vc[e];
+        }
+        return V;
+    };
+    // Dense χ^k path only when multigrid is off — products replace it.
+    const internal::KpointBasisGrid kbg =
+        use_mg ? internal::KpointBasisGrid{}
+               : internal::build_kpoint_basis_grid(grid, basis, kpts,
+                                                   cfg.eps_default);
+    // k-summed spin density ρ^σ on the fine grid from {P^σ_k}.
+    auto collocate_rho_spin_k = [&](const std::vector<CplxMatrix>& Pk) {
+        if (use_mg)
+            return mg_density(Pk);
+        std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
+        for (int ik = layout.rank; ik < nk; ik += layout.nprocs)
+            internal::collocate_density_k(kbg, ik,
+                                          Pk[static_cast<std::size_t>(ik)],
+                                          weights[static_cast<std::size_t>(ik)],
+                                          rho);
+#ifdef ATV_HAS_MPI
+        if (layout.active) {
+            MPI_Allreduce(MPI_IN_PLACE, rho.data(),
+                          static_cast<int>(rho.size()), MPI_DOUBLE, MPI_SUM,
+                          MPI_COMM_WORLD);
+        }
+#endif
+        return rho;
+    };
 
     // Shared μ over α+β (spin_degen=1). Returns {occ_a_k, occ_b_k}.
     auto fill_metallic_uks =
@@ -2468,11 +2611,21 @@ static GpwResult run_gpw_scf_kpoints_uks(
             vb[static_cast<std::size_t>(g)] =
                 veff_spin[static_cast<std::size_t>(g + ng)];
         }
+        // Multigrid: one V_t stack per spin (k-independent), phase-summed.
+        std::vector<std::vector<double>> Vt_a, Vt_b;
+        if (use_mg) {
+            Vt_a = mg_vt_stack(va);
+            Vt_b = mg_vt_stack(vb);
+        }
         std::vector<CplxMatrix> Ha(static_cast<std::size_t>(nk));
         std::vector<CplxMatrix> Hb(static_cast<std::size_t>(nk));
         for (int ik = 0; ik < nk; ++ik) {
-            const CplxMatrix Va = internal::integrate_potential_k(kbg, ik, va);
-            const CplxMatrix Vb = internal::integrate_potential_k(kbg, ik, vb);
+            const CplxMatrix Va =
+                use_mg ? mg_phase_V(Vt_a, ik)
+                       : internal::integrate_potential_k(kbg, ik, va);
+            const CplxMatrix Vb =
+                use_mg ? mg_phase_V(Vt_b, ik)
+                       : internal::integrate_potential_k(kbg, ik, vb);
             const CplxMatrix H0 = T_k[static_cast<std::size_t>(ik)]
                                   + Vnl_k[static_cast<std::size_t>(ik)];
             Ha[static_cast<std::size_t>(ik)] = H0 + Va;
@@ -2546,25 +2699,16 @@ static GpwResult run_gpw_scf_kpoints_uks(
     };
 
     // Fold free-atom e_d3, or Hirshfeld-scaled TS/MBD from k-summed total
-    // density ρ = ρα + ρβ (post-SCF). Mirrors RKS `fold_dispersion_k`.
+    // density ρ = ρα + ρβ (post-SCF). Mirrors RKS `fold_dispersion_k`
+    // (multigrid product density via collocate_rho_spin_k).
     const bool periodic_cell_uks = !cfg.nonperiodic;
     auto fold_dispersion_k_uks = [&](GpwResult& out) {
         if (cfg.hirshfeld && (cfg.ts || cfg.mbd)) {
-            std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
-            for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                const double wk = weights[static_cast<std::size_t>(ik)];
-                internal::collocate_density_k(
-                    kbg, ik, Pa_k[static_cast<std::size_t>(ik)], wk, rho);
-                internal::collocate_density_k(
-                    kbg, ik, Pb_k[static_cast<std::size_t>(ik)], wk, rho);
-            }
-#ifdef ATV_HAS_MPI
-            if (layout.active) {
-                MPI_Allreduce(MPI_IN_PLACE, rho.data(),
-                              static_cast<int>(rho.size()), MPI_DOUBLE, MPI_SUM,
-                              MPI_COMM_WORLD);
-            }
-#endif
+            const std::vector<double> ra = collocate_rho_spin_k(Pa_k);
+            const std::vector<double> rb = collocate_rho_spin_k(Pb_k);
+            std::vector<double> rho(ra.size());
+            for (std::size_t g = 0; g < rho.size(); ++g)
+                rho[g] = ra[g] + rb[g];
             std::vector<int> Z(atoms.size());
             std::vector<std::array<double, 3>> pos(Z.size());
             for (std::size_t i = 0; i < Z.size(); ++i) {
@@ -2606,29 +2750,14 @@ static GpwResult run_gpw_scf_kpoints_uks(
     // One dual-spin KS build at (Pa_k, Pb_k): collocate ρ^σ → Poisson → spin
     // XC → V_eff^σ → local H^σ_k + energy terms. Shared by the OT minimizer
     // and the fixed-density (max_iter == 0) eval below; the DIIS loop keeps
-    // its historical inline copy (byte-identical assembly).
+    // its historical inline copy (byte-identical assembly). Multigrid and
+    // single-grid paths share this chokepoint via collocate_rho_spin_k /
+    // mg_vt_stack + mg_phase_V.
     auto build_uks_k_energy = [&](const std::vector<CplxMatrix>& Pak,
                                   const std::vector<CplxMatrix>& Pbk)
         -> double {
-        std::vector<double> rho_a(static_cast<std::size_t>(grid.npts()), 0.0);
-        std::vector<double> rho_b(static_cast<std::size_t>(grid.npts()), 0.0);
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            const double wk = weights[static_cast<std::size_t>(ik)];
-            internal::collocate_density_k(
-                kbg, ik, Pak[static_cast<std::size_t>(ik)], wk, rho_a);
-            internal::collocate_density_k(
-                kbg, ik, Pbk[static_cast<std::size_t>(ik)], wk, rho_b);
-        }
-#ifdef ATV_HAS_MPI
-        if (layout.active) {
-            MPI_Allreduce(MPI_IN_PLACE, rho_a.data(),
-                          static_cast<int>(rho_a.size()), MPI_DOUBLE, MPI_SUM,
-                          MPI_COMM_WORLD);
-            MPI_Allreduce(MPI_IN_PLACE, rho_b.data(),
-                          static_cast<int>(rho_b.size()), MPI_DOUBLE, MPI_SUM,
-                          MPI_COMM_WORLD);
-        }
-#endif
+        const std::vector<double> rho_a = collocate_rho_spin_k(Pak);
+        const std::vector<double> rho_b = collocate_rho_spin_k(Pbk);
         std::vector<double> rho(rho_a.size());
         for (std::size_t g = 0; g < rho.size(); ++g)
             rho[g] = rho_a[g] + rho_b[g];
@@ -2652,13 +2781,20 @@ static GpwResult run_gpw_scf_kpoints_uks(
             last_veff_ab[g] = veff_a[g];
             last_veff_ab[g + rho.size()] = veff_b[g];
         }
+        std::vector<std::vector<double>> Vt_a, Vt_b;
+        if (use_mg) {
+            Vt_a = mg_vt_stack(veff_a);
+            Vt_b = mg_vt_stack(veff_b);
+        }
         double e_kin = 0.0, e_nl = 0.0;
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
             const double wk = weights[static_cast<std::size_t>(ik)];
             const CplxMatrix Va =
-                internal::integrate_potential_k(kbg, ik, veff_a);
+                use_mg ? mg_phase_V(Vt_a, ik)
+                       : internal::integrate_potential_k(kbg, ik, veff_a);
             const CplxMatrix Vb =
-                internal::integrate_potential_k(kbg, ik, veff_b);
+                use_mg ? mg_phase_V(Vt_b, ik)
+                       : internal::integrate_potential_k(kbg, ik, veff_b);
             const CplxMatrix H0 = T_k[static_cast<std::size_t>(ik)]
                                   + Vnl_k[static_cast<std::size_t>(ik)];
             Ha_k[static_cast<std::size_t>(ik)] = H0 + Va;
@@ -3426,25 +3562,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
     }
 
     for (int iter = 0; iter < cfg.max_iter; ++iter) {
-        std::vector<double> rho_a(static_cast<std::size_t>(grid.npts()), 0.0);
-        std::vector<double> rho_b(static_cast<std::size_t>(grid.npts()), 0.0);
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            const double wk = weights[static_cast<std::size_t>(ik)];
-            internal::collocate_density_k(
-                kbg, ik, Pa_k[static_cast<std::size_t>(ik)], wk, rho_a);
-            internal::collocate_density_k(
-                kbg, ik, Pb_k[static_cast<std::size_t>(ik)], wk, rho_b);
-        }
-#ifdef ATV_HAS_MPI
-        if (layout.active) {
-            MPI_Allreduce(MPI_IN_PLACE, rho_a.data(),
-                          static_cast<int>(rho_a.size()), MPI_DOUBLE, MPI_SUM,
-                          MPI_COMM_WORLD);
-            MPI_Allreduce(MPI_IN_PLACE, rho_b.data(),
-                          static_cast<int>(rho_b.size()), MPI_DOUBLE, MPI_SUM,
-                          MPI_COMM_WORLD);
-        }
-#endif
+        // DIIS inline twin of build_uks_k_energy (kept historical; multigrid
+        // and single-grid share collocate_rho_spin_k / mg_vt_stack).
+        const std::vector<double> rho_a = collocate_rho_spin_k(Pa_k);
+        const std::vector<double> rho_b = collocate_rho_spin_k(Pb_k);
         std::vector<double> rho(rho_a.size());
         for (std::size_t g = 0; g < rho.size(); ++g)
             rho[g] = rho_a[g] + rho_b[g];
@@ -3471,13 +3592,20 @@ static GpwResult run_gpw_scf_kpoints_uks(
             last_veff_ab[g + rho.size()] = veff_b[g];
         }
 
+        std::vector<std::vector<double>> Vt_a, Vt_b;
+        if (use_mg) {
+            Vt_a = mg_vt_stack(veff_a);
+            Vt_b = mg_vt_stack(veff_b);
+        }
         double e_kin = 0.0, e_nl = 0.0;
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
             const double wk = weights[static_cast<std::size_t>(ik)];
             const CplxMatrix Va =
-                internal::integrate_potential_k(kbg, ik, veff_a);
+                use_mg ? mg_phase_V(Vt_a, ik)
+                       : internal::integrate_potential_k(kbg, ik, veff_a);
             const CplxMatrix Vb =
-                internal::integrate_potential_k(kbg, ik, veff_b);
+                use_mg ? mg_phase_V(Vt_b, ik)
+                       : internal::integrate_potential_k(kbg, ik, veff_b);
             const CplxMatrix H0 = T_k[static_cast<std::size_t>(ik)]
                                   + Vnl_k[static_cast<std::size_t>(ik)];
             Ha_k[static_cast<std::size_t>(ik)] = H0 + Va;
@@ -5303,11 +5431,8 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
         // analytic stress, and for analytic ionic forces (occupation-matrix
         // W-fold in gpw_forces.cpp). REL_CUTOFF multigrid product
         // collocation (ngrids > 1 && rel_cutoff > 0) is supported for
-        // closed-shell multi-k RKS (gpw-multigrid-kpoints); the multi-k UKS
-        // runner is still single-grid.
-        if (ngrids > 1 && is_uks())
-            reject("multigrid (ngrids > 1) with UKS (multi-k multigrid is "
-                   "closed-shell RKS only; set ngrids = 1)");
+        // closed-shell multi-k RKS (gpw-multigrid-kpoints) and collinear
+        // multi-k UKS (gpw-uks-multigrid-kpoints; per-spin Bloch D/V stacks).
         if (ngrids > 1 && !(rel_cutoff > 0.0))
             reject("multigrid (ngrids > 1) without a positive rel_cutoff "
                    "(set rel_cutoff [Ry], the CP2K REL_CUTOFF)");

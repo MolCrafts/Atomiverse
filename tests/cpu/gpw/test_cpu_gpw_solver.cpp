@@ -282,8 +282,9 @@ TEST(GpwSolverClass, BuildRejectsKpointMultigridWithoutRelCutoff) {
     EXPECT_THROW(solver.build(atoms), std::invalid_argument);
 }
 
-// k-gate: multi-k UKS multigrid is out of scope — rejected fail-fast.
-TEST(GpwSolverClass, BuildRejectsKpointMultigridUks) {
+// k-gate: multi-k collinear UKS accepts REL_CUTOFF multigrid (ngrids>1 with a
+// positive rel_cutoff) — the gpw-uks-multigrid-kpoints capability.
+TEST(GpwSolverClass, BuildAcceptsKpointMultigridUks) {
     const auto atoms = small_h2();
     GpwDft solver = small_cfg();
     solver.k_mesh[0] = 2;
@@ -292,7 +293,7 @@ TEST(GpwSolverClass, BuildRejectsKpointMultigridUks) {
     solver.n_beta = 1;
     solver.ngrids = 4;
     solver.rel_cutoff = 60.0;
-    EXPECT_THROW(solver.build(atoms), std::invalid_argument);
+    EXPECT_NO_THROW(solver.build(atoms));
 }
 
 // k-gate: nonlocal vdW is not wired on the k path (the Γ runner owns the SCF
