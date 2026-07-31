@@ -118,6 +118,23 @@ std::vector<std::complex<double>> flatten_occ(const linalg::CplxMatrix& C,
                  + static_cast<std::size_t>(o)] = C(mu, o);
     return flat;
 }
+
+/// Accumulate a Voigt stress [Hartree/Bohr³] onto the frame's `kStress`
+/// [eV/Å³]. Shared by the converged-SCF stress block and the linearized-XL
+/// shadow-density stress on both warm branches (Γ and multi-k).
+/// @param frame Frame to write. @param sigma_ha Voigt σ [Hartree/Bohr³].
+void add_stress_to_frame(cpu::Frame& frame,
+                         const std::array<double, 6>& sigma_ha) {
+    // 1 Ha/Bohr³ = kHartreeInEv / (kBohrInAngstrom)³ eV/Å³
+    const double ha_bohr3_to_ev_a3 =
+        ATV::units::kHartreeInEv
+        / (ATV::units::kBohrInAngstrom * ATV::units::kBohrInAngstrom
+           * ATV::units::kBohrInAngstrom);
+    auto& st = frame.meta.get(kStress);
+    for (int k = 0; k < 6; ++k)
+        st[static_cast<std::size_t>(k)] +=
+            sigma_ha[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3;
+}
 } // namespace
 
 void GPWEvaluator::set_timestep(double dt_fs) {
@@ -219,11 +236,19 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
                 throw std::invalid_argument(
                     "GPWEvaluator: xl_bomd_linearized requires "
                     "compute_forces=true (shadow forces are the product)");
-            if (compute_stress)
+            // compute_stress is product: each warm branch evaluates the
+            // analytic fixed-P stress at the shadow payload (P = D = q[n],
+            // W from the H[n] eigenpairs) — zero-SCF preserved. Only the
+            // multi-SCF strain-FD oracle is refused: it re-converges the
+            // SCF at every strained cell, which is the Born–Oppenheimer
+            // stress, not the shadow functional.
+            if (compute_stress && stress_use_fd)
                 throw std::invalid_argument(
-                    "GPWEvaluator: xl_bomd_linearized stress path is not "
-                    "productized (the shadow warm step returns before the "
-                    "stress block; variable-cell linearized XL is deferred)");
+                    "GPWEvaluator: xl_bomd_linearized refuses stress_use_fd "
+                    "(the multi-SCF strain-FD oracle re-converges the SCF "
+                    "under strain — Born–Oppenheimer stress, not the "
+                    "zero-SCF shadow functional; use the analytic fixed-P "
+                    "path, stress_use_fd=false)");
         }
         // Validates xl_bomd_k ∈ [3, 9] via the real constructor even when
         // multi-k uses XlBomdCplx (same Table I).
@@ -1290,6 +1315,16 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                             * ATV::units::kHartreePerBohrInEvPerAngstrom;
             }
         }
+
+        if (compute_stress) {
+            // Shadow-density stress: analytic fixed-P Lagrangian at the warm
+            // payload (P = D = q[n], W from the H[n] eigenpairs) — the cell
+            // analogue of gpw_forces_at_density. No reference SCF (zero-SCF
+            // preserved); stress_use_fd is refused at build().
+            last_stress_ha_ = gpw_stress(atoms, *solver_, last_,
+                                         stress_strain_h, stress_axes);
+            add_stress_to_frame(frame, last_stress_ha_);
+        }
         return;
     }
 
@@ -1458,6 +1493,15 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                 sp_fz[i] += F[static_cast<std::size_t>(i)][2]
                             * ATV::units::kHartreePerBohrInEvPerAngstrom;
             }
+        }
+
+        if (compute_stress) {
+            // Shadow-density stress on the k path: k-summed fixed-{P_k,W_k}
+            // Lagrangian at the warm payload (C_occ_k / eps_k just built) —
+            // no reference SCF, zero-SCF preserved.
+            last_stress_ha_ = gpw_stress(atoms, *solver_, last_,
+                                         stress_strain_h, stress_axes);
+            add_stress_to_frame(frame, last_stress_ha_);
         }
         return;
     }
@@ -1796,16 +1840,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                                               stress_axes, stress_guess)
                               : gpw_stress(atoms, *solver_, stress_strain_h,
                                            stress_axes, stress_guess);
-        // 1 Ha/Bohr³ = kHartreeInEv / (kBohrInAngstrom)³ eV/Å³
-        const double ha_bohr3_to_ev_a3 =
-            ATV::units::kHartreeInEv
-            / (ATV::units::kBohrInAngstrom * ATV::units::kBohrInAngstrom
-               * ATV::units::kBohrInAngstrom);
-        auto& st = frame.meta.get(kStress);
-        for (int k = 0; k < 6; ++k)
-            st[static_cast<std::size_t>(k)] +=
-                last_stress_ha_[static_cast<std::size_t>(k)]
-                * ha_bohr3_to_ev_a3;
+        add_stress_to_frame(frame, last_stress_ha_);
     }
 }
 

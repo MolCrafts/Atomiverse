@@ -630,6 +630,33 @@ std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
                                                                     true},
                                  const linalg::RealMatrix* guess_C = nullptr);
 
+/// @brief Analytic cell stress σ [Hartree/Bohr³] at a **supplied** state —
+///        no reference SCF.
+///
+/// Same fixed-\(P\) Hellmann–Feynman central FD as `gpw_stress`, but the
+/// density payload is handed in instead of re-converged: Γ needs
+/// `state.P` / `state.C` / `state.eps` (+ β fields for UKS); multi-k needs
+/// `state.C_occ_k` / `state.eps_k` (+ β for UKS). `state.converged` must be
+/// true (a stationary payload — a converged SCF result, or the zero-SCF
+/// linearized XL-BOMD shadow payload, whose warm step marks the shadow
+/// functional stationary). This is the cell analogue of
+/// `gpw_forces_at_density`: the stress of the energy surface at the density
+/// you already have, used by `GPWEvaluator` for the shadow-density stress
+/// on linearized XL warm steps.
+///
+/// @param atoms Geometry [Bohr] + basis/PP (as for `GpwDft::run`).
+/// @param method SCF configuration; `cell` must match the atom box [Bohr].
+/// @param state Stationary payload (see above); `converged` must be true.
+/// @param h Dimensionless strain step for the fixed-\(P\) energy FD (default 2e-3).
+/// @param axes Per-axis mask (x,y,z); a masked axis skips samples and reports
+///        exactly 0.
+/// @return Voigt stress [Hartree/Bohr³], order xx,yy,zz,xy,xz,yz.
+std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
+                                 const GpwDft& method, const GpwResult& state,
+                                 double h = 2e-3,
+                                 const std::array<bool, 3>& axes = {true, true,
+                                                                    true});
+
 /// @brief Multi-SCF strain-FD cell stress σ [Hartree/Bohr³] (oracle / twin).
 ///
 /// Fully re-converges the SCF at each strained cell (±h per diagonal axis).

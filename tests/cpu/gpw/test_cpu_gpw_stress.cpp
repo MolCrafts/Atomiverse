@@ -156,6 +156,40 @@ TEST(GpwStress, AxesMaskSkipsFrozenAxesAnalyticAndFd) {
                  std::invalid_argument);
 }
 
+// State overload (xl-bomd-linearized-stress): the analytic fixed-P stress at
+// a supplied stationary payload equals the classic path — same payload
+// extraction + FD loop, minus the internal reference SCF. Residual is the
+// SCF-tolerance difference between the two independently converged densities.
+TEST(GpwStress, StateOverloadMatchesClassicAnalytic) {
+    const auto atoms = toy_h2_atoms();
+    const double h = 3e-3;
+    // GpwDft is move-only: build+run a throwaway solver for the payload, then
+    // hand fresh configs into the free-function overloads (each copies fields
+    // internally via the move-from-return-value pattern of toy_h2_cfg()).
+    GpwDft solver = toy_h2_cfg();
+    solver.build(atoms);
+    const GpwResult state = solver.run(atoms);
+    ASSERT_TRUE(state.converged);
+    const auto s_state = gpw_stress(atoms, toy_h2_cfg(), state, h);
+    const auto s_classic = gpw_stress(atoms, toy_h2_cfg(), h);
+    for (int a = 0; a < 3; ++a)
+        EXPECT_NEAR(s_state[static_cast<std::size_t>(a)],
+                    s_classic[static_cast<std::size_t>(a)], 1e-8)
+            << a;
+    EXPECT_DOUBLE_EQ(s_state[3], 0.0);
+    EXPECT_DOUBLE_EQ(s_state[4], 0.0);
+    EXPECT_DOUBLE_EQ(s_state[5], 0.0);
+}
+
+// State overload: a non-stationary payload (converged=false) is refused —
+// no silent stress at an arbitrary density.
+TEST(GpwStress, StateOverloadRejectsUnconvergedState) {
+    const auto atoms = toy_h2_atoms();
+    const auto cfg = toy_h2_cfg();
+    GpwResult state; // default: converged = false, empty payload
+    EXPECT_THROW(gpw_stress(atoms, cfg, state, 3e-3), std::invalid_argument);
+}
+
 TEST(GpwStress, EvaluatorWritesKStressAnalyticDefault) {
     cpu::Frame frame(2);
     frame.span(kAtom_type)[0] = 1;

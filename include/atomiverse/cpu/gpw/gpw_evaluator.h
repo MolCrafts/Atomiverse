@@ -81,9 +81,13 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     bool compute_forces = false;
     /// @brief Compute cell stress (default: analytic fixed-\(P\) path).
     ///        Writes Frame `kStress` [eV/Å³] Voigt; also `last_stress_ha_bohr3()`.
+    ///        With `xl_bomd_linearized`, each warm step uses the state-overload
+    ///        shadow-density stress (no reference SCF); cold seed stays classic.
     bool compute_stress = false;
     /// @brief When true, use multi-SCF strain-FD (`gpw_stress_fd`) instead of
     ///        the product analytic path (`gpw_stress`). Default false.
+    ///        Refused with `xl_bomd_linearized` at `build()` (BO stress, not
+    ///        the zero-SCF shadow functional).
     bool stress_use_fd = false;
     /// @brief Dimensionless strain step for analytic fixed-\(P\) FD and for
     ///        multi-SCF FD when `stress_use_fd` (default 2e-3).
@@ -237,8 +241,13 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     ///        \(\mathcal{E}=\sum_k w_k\sum_\sigma\mathrm{Re}\,
     ///        \mathrm{Tr}[H^\sigma_k(D^\sigma_k-n^\sigma_k)]
     ///        +E_{\mathrm{KS}}[n]\) — `build()` throws for `use_ot`,
-    ///        `cpmd`, `second_gen_cp`, or `compute_stress` (the warm
-    ///        shadow step returns before the stress block).
+    ///        `cpmd`, or `second_gen_cp`. `compute_stress` is product:
+    ///        each warm branch evaluates the analytic fixed-\(P\)
+    ///        **shadow-density stress** (`gpw_stress` at the warm payload
+    ///        \(P = D = q[n]\), \(W\) from the \(H[n]\) eigenpairs) with
+    ///        no reference SCF; `stress_use_fd` is refused (the multi-SCF
+    ///        strain-FD oracle re-converges the SCF — Born–Oppenheimer
+    ///        stress, not the shadow functional).
     bool xl_bomd_linearized = false;
     /// @brief Car–Parrinello MD: propagate occupied MO coefficients with a
     ///        fictitious mass and electronic RATTLE (not BOMD, not XL-BOMD).
