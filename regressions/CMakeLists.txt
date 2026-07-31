@@ -415,6 +415,9 @@ if(ATV_BUILD_GPW)
     # Multi-k RKS with CP2K REL_CUTOFF multigrid product collocation
     # (offline CP2K 2026.1 pin — gpw-multigrid-kpoints).
     atv_add_regression(gpw gpw-multigrid-kpoints THREADS 8)
+    # Multi-k collinear UKS with the same REL_CUTOFF multigrid product path
+    # (per-spin Bloch D/V stacks — gpw-uks-multigrid-kpoints).
+    atv_add_regression(gpw gpw-uks-multigrid-kpoints THREADS 8)
     atv_add_regression(gpw periodic-wannier-gpw THREADS 8)
     # Dispersion ionic forces vs offline CP2K Quickstep D3 twins.
     atv_add_regression(gpw gpw-d3-forces THREADS 8)
