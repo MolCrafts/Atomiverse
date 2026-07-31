@@ -988,6 +988,23 @@ std::array<double, 6> gpw_stress_analytic_impl(
     const GpwResult scf = solver.run(atoms, guess_C);
     if (!scf.converged)
         throw std::runtime_error("gpw_stress: reference SCF did not converge");
+    return gpw_stress_at_state_impl(atoms, method, scf, h, axes);
+}
+
+std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms,
+                                               const GpwDft& method,
+                                               const GpwResult& scf, double h,
+                                               const std::array<bool, 3>& axes) {
+    validate_stress_args(atoms, h, axes, "gpw_stress");
+
+    const double vol = method.cell[0] * method.cell[1] * method.cell[2];
+    if (!(vol > 0.0))
+        throw std::invalid_argument("gpw_stress: non-positive cell volume");
+    if (!scf.converged)
+        throw std::invalid_argument(
+            "gpw_stress: supplied state is not a stationary payload "
+            "(converged=false) — hand a converged SCF result or the "
+            "linearized-XL shadow payload");
 
     const bool kpath = uses_kpath(method);
     const bool uks = method.is_uks();
@@ -1221,6 +1238,12 @@ std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
                                  const std::array<bool, 3>& axes,
                                  const linalg::RealMatrix* guess_C) {
     return internal::gpw_stress_analytic_impl(atoms, method, h, axes, guess_C);
+}
+
+std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
+                                 const GpwDft& method, const GpwResult& state,
+                                 double h, const std::array<bool, 3>& axes) {
+    return internal::gpw_stress_at_state_impl(atoms, method, state, h, axes);
 }
 
 std::array<double, 6> gpw_stress_fd(const std::vector<GpwAtom>& atoms,

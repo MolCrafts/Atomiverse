@@ -373,6 +373,10 @@ if(ATV_BUILD_GPW)
         # H2 NVE 1x1x2, SCF-XL vs linearized A/B + UKS degeneracy leg,
         # anchored to the CP2K 2026.1 converged-BOMD .ener trace.
         atv_add_regression(dynamics xl-bomd-linearized-kpoints THREADS 8)
+        # Zero-SCF linearized XL-BOMD + analytic fixed-P shadow stress
+        # (variable-cell/NPT-facing product path) — H2 NVE Γ + multi-k,
+        # CP2K-anchored BO stress trace + dual gate + A/B shadow envelope.
+        atv_add_regression(dynamics xl-bomd-linearized-stress THREADS 8)
         # Car–Parrinello MD (dynamics domain): fictitious electronic DOF on
         # the same H2O NVE twin family — not BOMD, not XL-BOMD.
         atv_add_regression(dynamics cpmd-water THREADS 8)

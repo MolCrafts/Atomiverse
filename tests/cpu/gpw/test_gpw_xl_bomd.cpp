@@ -515,14 +515,31 @@ TEST(GpwEvaluatorXlBomdLinearized, BuildAcceptsLinearizedMultiK) {
     EXPECT_NO_THROW(eval.build(bc));
 }
 
-// A2: linearized + compute_stress refused at build() — the warm shadow
-// branches (Γ and multi-k) return before the stress block, so a stress
-// request would otherwise be silently dropped on every warm step.
-TEST(GpwEvaluatorXlBomdLinearized, BuildRejectsLinearizedWithStress) {
+// A2 (xl-bomd-linearized-stress): linearized + compute_stress builds — the
+// warm shadow branches (Γ and multi-k) evaluate the analytic fixed-P
+// shadow-density stress via the gpw_stress state overload (old throw gone).
+TEST(GpwEvaluatorXlBomdLinearized, BuildAcceptsLinearizedWithStress) {
     auto frame = water_frame();
     auto base = water_eval();
     base.compute_forces = true;
     base.compute_stress = true;
+    base.nonperiodic = true;
+    XlBomdForce eval{std::move(base), 5, XlBomdLinearized{}};
+    ATV::cpu::Context rt;
+    ATV::cpu::BuildContext bc{rt, frame};
+    EXPECT_NO_THROW(eval.build(bc));
+}
+
+// A2 (xl-bomd-linearized-stress): linearized + stress_use_fd refused at
+// build() — the multi-SCF strain-FD oracle re-converges the SCF at every
+// strained cell (Born–Oppenheimer stress, not the zero-SCF shadow
+// functional), so it would silently break the zero-SCF contract.
+TEST(GpwEvaluatorXlBomdLinearized, BuildRejectsLinearizedWithFdStress) {
+    auto frame = water_frame();
+    auto base = water_eval();
+    base.compute_forces = true;
+    base.compute_stress = true;
+    base.stress_use_fd = true;
     base.nonperiodic = true;
     XlBomdForce eval{std::move(base), 5, XlBomdLinearized{}};
     ATV::cpu::Context rt;
