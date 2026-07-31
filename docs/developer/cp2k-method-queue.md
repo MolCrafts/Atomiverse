@@ -1073,29 +1073,41 @@ pick depends on another pick. **Pending residual after assign = 0** (staff
 emptied the census list — **not** queue exhausted; GapCensus owns next
 discovery).
 
+
+**Harness wave 3 (shift) 2026-07-31 (parent `dev` @ `419c1dc3`):** **9/9**
+staffed slugs merged → `## done` (`gpw-ts-stress`, `gpw-xdm-stress`,
+`gpw-vdw-kpoints`, `gpw-vdw-uks`, `gpw-uks-multigrid-kpoints`,
+`cpmd-thermostat-kpoints`, `second-gen-cpmd-ot-uks-kpoints`,
+`xl-bomd-linearized-stress`, `dfpt-gga-spin-finite-q-si`) — nine `--no-ff`
+merges + post-merge k-UKS+vdW fail-fast fix. Merge gate: all 9 `run_reg_*`
+green on merged `dev`; unit/reg product gates re-verified. Specs closed
+(deleted). **Pending residual = 0** (not queue exhausted; GapCensus owns next
+discovery). **in_progress = 0**. **Blocked = 6** unchanged. Clearup runs with
+harness (worktrees removed, merged `wf/*` pruned, builds wiped). No push.
+
 ## pending
 
-(empty — all 7 census rows staffed assign wave 3 (shift) 2026-07-31; not
+(empty after harness wave 3 — all 7 census rows staffed assign wave 3 (shift) 2026-07-31; not
 queue exhausted, GapCensus owns next discovery)
 
 ## in_progress
 
-- [~] `gpw-ts-stress` | Analytic fixed-P cell stress with free-atom TS (energy folds; dedicated pin missing) | gpw | twin: libMBD E_disp under strain + `gpw_stress_fd` dual-gate (extend `gpw-ts-forces`) | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; `gpw-d3-stress` merged wave 2, `gpw_stress.cpp` free) | assigned wave 2 (shift) 2026-07-31; WIP worktree kept (uncommitted spec+reg scaffold) | resume staffed assign wave 3 (shift) 2026-07-31
-- [~] `gpw-xdm-stress` | Analytic fixed-P cell stress with XDM (energy folds; dedicated pin missing) | gpw | twin: extend `gpw-xdm-forces` pin + `gpw_stress_fd` dual-gate | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; `gpw-d3-stress` merged wave 2) | assigned wave 2 (shift) 2026-07-31; WIP worktree kept (uncommitted spec+reg scaffold) | resume staffed assign wave 3 (shift) 2026-07-31
-- [~] `gpw-uks-multigrid-kpoints` | Multi-k UKS REL_CUTOFF multigrid product collocation (k-path rejects "multigrid (ngrids > 1) with UKS — closed-shell RKS only" at `gpw_solver.cpp:5309`) | gpw | twin: CP2K 2026.1 UKS NGRIDS 4 / REL_CUTOFF + MP k-mesh (extend `gpw-multigrid-kpoints` × `gpw-uks-multigrid`) | GapCensus wave 2 (shift) 2026-07-31; re-verified wave 3 (shift) | assigned wave 3 (shift) 2026-07-31 (write-first)
-- [~] `gpw-vdw-kpoints` | Nonlocal vdW-DF/DF2/rVV10 on the k-point path (not wired at all — SCF potential + post-SCF E_c^nl live only in the Γ runner; fail-fast reject at `gpw_solver.cpp:5326`) | gpw | twin: CP2K 2026.1 NON_LOCAL DRSLL ice + KPOINTS | GapCensus wave 2 (shift) 2026-07-31; re-verified wave 3 (shift) | assigned wave 3 (shift) 2026-07-31 (write-first)
-- [~] `gpw-vdw-uks` | Γ collinear-UKS nonlocal vdW-DF/DF2/rVV10 (fail-fast at `gpw_solver.cpp:5188` — "E_c^nl would be silently dropped"; SCF V_nl + post-SCF E_c^nl live only in the Γ closed-shell RKS runner) | gpw | twin: CP2K 2026.1 LSD + NON_LOCAL DRSLL (UKS O₂ / ice; extend `gpw-vdw-scf-potential` × `gpw-uks-pbe`) | GapCensus wave 3 (shift) 2026-07-31 | assigned wave 3 (shift) 2026-07-31 (write-first)
-- [~] `second-gen-cpmd-ot-uks-kpoints` | Multi-k UKS SGCP + OT partial-SCF corrector (dual-spin k-OT warm start from \(P_k^\sigma\) throws at `gpw_evaluator.cpp:361`; DIIS-corrector multi-k UKS SGCP is product) | dynamics | twin: SGCP literature envelope + corrector A/B identity vs diagonalization (CP2K OT is Γ-only — same family lock as `second-gen-cpmd-ot-kpoints`) | GapCensus wave 3 (shift) 2026-07-31 | assigned wave 3 (shift) 2026-07-31 (write-first)
-- [~] `xl-bomd-linearized-stress` | Linearized (zero-SCF shadow) XL-BOMD + `compute_stress` (refused at `gpw_evaluator.cpp:223` — "variable-cell linearized XL is deferred"; was a silent warm-step drop) | dynamics | twin: converged-BOMD stress trace A/B + `gpw_stress` analytic/FD dual gate (BO stress CP2K-anchored via the shipped `gpw_stress` pins; XL family NVE/literature policy) | GapCensus wave 3 (shift) 2026-07-31 | assigned wave 3 (shift) 2026-07-31 (write-first)
+(empty — all wave-3 staff merged; not queue exhausted)
+
 
 
 ## done (harness wave 3 (shift) 2026-07-31)
 
-- [x] `dfpt-gga-spin-finite-q-si` | Finite-q DFPT phonons with joint collinear spin **and** pure GGA (PBE) kernel (PW commensurate X → 2×1×1 supercell spin-resolved Γ-Sternheimer + IFC Fourier; M=0 identity to restricted parent) | response | `regressions/response/dfpt-gga-spin-finite-q-si` | ratio **0.19** (CP2K 2026.1 supercell UKS-PBE `VIBRATIONAL_ANALYSIS` 577.8 s / ATV DFPT 107.9 s, serial; CP2K X-branch anchor 98–459 cm⁻¹ by eigenvector phase, digit-identical to restricted twin at M=0; supercell energy-FD sharp pin 21.2006 eV/Å², DFPT 21.1911; M=0 identity vs restricted parent C00 21.1974) | 2026-07-31
+- [x] `gpw-ts-stress` | libMBD strained-cell TS pins + analytic/FD dual gate | gpw | `regressions/gpw/gpw-ts-stress` | ratio **perf_exempt** | 2026-07-31
+- [x] `gpw-xdm-stress` | dual pure-Python XDM strain pins + analytic/FD dual gate | gpw | `regressions/gpw/gpw-xdm-stress` | ratio **perf_exempt** | 2026-07-31
+- [x] `gpw-vdw-kpoints` | multi-k RKS nonlocal vdW-DF (Γ-limit + CP2K pin) | gpw | `regressions/gpw/gpw-vdw-kpoints` | ratio **0.74** | 2026-07-31
+- [x] `gpw-vdw-uks` | Γ UKS nonlocal vdW-DF (O₂ CP2K pin + closed-shell UKS≡RKS) | gpw | `regressions/gpw/gpw-vdw-uks` | ratio **1.23** | 2026-07-31
+- [x] `gpw-uks-multigrid-kpoints` | multi-k UKS REL_CUTOFF multigrid (CP2K pin; H₂ twin ratio ~14) | gpw | `regressions/gpw/gpw-uks-multigrid-kpoints` | ratio **perf_exempt** | 2026-07-31
+- [x] `cpmd-thermostat-kpoints` | multi-k CPMD electronic Nosé–Hoover | dynamics | `regressions/dynamics/cpmd-thermostat-kpoints` | ratio **perf_exempt** | 2026-07-31
+- [x] `second-gen-cpmd-ot-uks-kpoints` | multi-k UKS SGCP + OT corrector | dynamics | `regressions/dynamics/second-gen-cpmd-ot-uks-kpoints` | ratio **perf_exempt** | 2026-07-31
+- [x] `xl-bomd-linearized-stress` | linearized XL shadow-density stress | dynamics | `regressions/dynamics/xl-bomd-linearized-stress` | ratio **2.4** | 2026-07-31
+- [x] `dfpt-gga-spin-finite-q-si` | finite-q DFPT collinear spin × PBE | response | `regressions/response/dfpt-gga-spin-finite-q-si` | ratio **0.19** | 2026-07-31
 
-## done (wave 3 staff — `cpmd-thermostat-kpoints` 2026-07-31)
-
-- [x] `cpmd-thermostat-kpoints` | Multi-k CPMD electronic thermostat — one Nosé–Hoover per (k, σ) channel on `CpmdCplx`; k-weighted \(T_e\) / \(E_{\mathrm{therm}}\); lifts the old "NVE electrons only on the k path" build throw | dynamics | `regressions/dynamics/cpmd-thermostat-kpoints` (periodic H₂ NVE 1×1×2 unreduced + electronic NH; E_ext drift envelope ≤0.10 + Te ceiling ≤0.05 eV + production iters==0 + n_kpts≥2; Γ-limit solver identity unit-pinned) | ratio **perf_exempt** (oracle family lock: CP2K 2026.1 has no fictitious-mass CP propagator — same policy as `cpmd-electronic-thermostat` / `cpmd-kpoints` / `cpmd-uks-kpoints`) | 2026-07-31 on `wf/cpmd-thermostat-kpoints`
 
 ## done (harness wave 2 (shift) 2026-07-31)
 

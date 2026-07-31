@@ -1,5 +1,43 @@
 # CP2K capability loop — handoff
 
+## Harness wave 3 (shift) 2026-07-31 (parent `dev` @ `419c1dc3`)
+
+| Field | Value |
+| ----- | ----- |
+| Branch | `dev` (ahead of `origin/dev`) |
+| Incomplete / `in_progress` | **0** |
+| Open CP2K specs on `dev` | **0** (PySCF deferred only: `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp`) |
+| Specs closed this harness | **9** (wave-3 staff batch) |
+| Unmerged staff `wf/*` | **0** after clearup prune |
+| Isolation worktrees | **0** after clearup |
+| Leftover builds | wiped |
+| Pending gaps | **0 residual** (not capability-closed — GapCensus owns discovery) |
+| Blocked | **6** |
+| Done this wave | **9** landings |
+| Merge gate | all 9 `run_reg_*` green on merged `dev` |
+| Oracle | `tools/cp2k_oracle/` offline pins only |
+| Loop docs | queue / loop / handoff / specs INDEX **synced** |
+
+### Wave staff → done
+
+| Slug | Domain | Regression | ratio |
+| ---- | ------ | ---------- | ----- |
+| `gpw-ts-stress` | gpw | `reg_gpw-ts-stress` | **perf_exempt** (libMBD; no CP2K free-atom TS) |
+| `gpw-xdm-stress` | gpw | `reg_gpw-xdm-stress` | **perf_exempt** (dual pure-Python; no CP2K XDM) |
+| `gpw-vdw-kpoints` | gpw | `reg_gpw-vdw-kpoints` | **0.74** |
+| `gpw-vdw-uks` | gpw | `reg_gpw-vdw-uks` | **~1.23** |
+| `gpw-uks-multigrid-kpoints` | gpw | `reg_gpw-uks-multigrid-kpoints` | **perf_exempt** (H₂ twin ratio ~14) |
+| `cpmd-thermostat-kpoints` | dynamics | `reg_cpmd-thermostat-kpoints` | **perf_exempt** (no CP fictitious-mass twin) |
+| `second-gen-cpmd-ot-uks-kpoints` | dynamics | `reg_second-gen-cpmd-ot-uks-kpoints` | **perf_exempt** (CP2K OT Γ-only) |
+| `xl-bomd-linearized-stress` | dynamics | `reg_xl-bomd-linearized-stress` | **2.4** |
+| `dfpt-gga-spin-finite-q-si` | response | `reg_dfpt-gga-spin-finite-q-si` | **0.19** |
+
+### Next
+
+GapCensus on `dev` — do not invent methods; refill `## pending` from roadmap ○ with offline CP2K twins. Recover first if any `[~]` reappears.
+
+---
+
 ## Harness wave 2 (shift) 2026-07-31 (parent `dev` @ `8b2fda00`)
 
 | Field | Value |

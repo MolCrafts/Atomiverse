@@ -66,6 +66,14 @@ args: { "mode":"exhaust", "staff_count":10, "max_waves":20, "target_branch":"dev
 
 ## Run log
 
+- **2026-07-31 harness wave 3 (shift) (parent `dev` @ `419c1dc3`):** 9/9
+  staffed slugs merged → done (TS/XDM stress pins; multi-k RKS + Γ-UKS
+  nonlocal vdW; multi-k UKS multigrid; multi-k CPMD eNH; multi-k UKS SGCP OT;
+  linearized XL stress; finite-q spin×GGA DFPT). Post-merge fix: multi-k UKS
+  + nonlocal vdW fail-fast after Γ-UKS accept. Merge gate: 9/9 `run_reg_*`
+  green. Specs closed. Clearup: worktrees removed, merged `wf/*` pruned,
+  builds wiped. **Queue not exhausted** — next GapCensus. No push.
+
 (autonomous harness appends lines here)
 
 - **2026-07-31 harness wave 2 (shift; parent `dev` @ `8b2fda00`):** 8 of 10

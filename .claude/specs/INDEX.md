@@ -26,6 +26,18 @@ merge gate green (scoped rebuild + `ctest -R '^test_cpu_(gpw|pw|scf|xc)_|^test_x
 
 Do not re-create closed slugs without superseding intent.
 
+## Closed — CP2K harness wave 3 (shift) (2026-07-31)
+
+Merged into `dev` (nine `--no-ff` merges + k-UKS+vdW fail-fast fix; HEAD
+`419c1dc3`); merge gate: all nine `run_reg_*` green. Specs deleted; history
+is the git log.
+
+| Queue | Specs (deleted; see git) | Shipped highlights |
+| ----- | ------------------------ | ------------------ |
+| cp2k-method-loop harness wave 3 (shift) | gpw-ts-stress, gpw-xdm-stress, gpw-vdw-kpoints, gpw-vdw-uks, gpw-uks-multigrid-kpoints, cpmd-thermostat-kpoints, second-gen-cpmd-ot-uks-kpoints, xl-bomd-linearized-stress, dfpt-gga-spin-finite-q-si | TS/XDM dedicated stress pins; multi-k RKS + Γ-UKS nonlocal vdW; multi-k UKS multigrid; multi-k CPMD eNH thermostat; multi-k UKS SGCP OT; linearized XL stress; finite-q spin×GGA DFPT |
+
+Do not re-create closed slugs without superseding intent.
+
 ## Closed — CP2K harness wave 2 (shift) (2026-07-31)
 
 Merged into `dev` (eight `--no-ff` merges `aa897bb2`..`8b2fda00`); merge gate
