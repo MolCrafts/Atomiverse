@@ -381,6 +381,9 @@ if(ATV_BUILD_GPW)
         atv_add_regression(dynamics cpmd-rattle-water THREADS 8)
         # CPMD + Nosé–Hoover electronic thermostat on fictitious Ċ (H2O).
         atv_add_regression(dynamics cpmd-electronic-thermostat THREADS 8)
+        # Multi-k CPMD + electronic NH per k channel (k-weighted Te/Eth) —
+        # periodic H2 NVE 1x1x2, lift of the "NVE electrons only" k throw.
+        atv_add_regression(dynamics cpmd-thermostat-kpoints THREADS 8)
         # CPMD on Γ-UKS (dual α/β fictitious electronic DOF) — O2 triplet NVE.
         atv_add_regression(dynamics cpmd-uks THREADS 8)
         # Multi-k UKS CPMD (dual-spin Bloch C_k^σ, one CpmdCplx per (k, spin))

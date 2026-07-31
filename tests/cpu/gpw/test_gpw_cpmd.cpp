@@ -286,16 +286,36 @@ TEST(GpwEvaluatorCpmd, BuildRejectsMultiKUksCpmdWithZeroAlpha) {
     EXPECT_THROW(eval.build(bc), std::invalid_argument);
 }
 
-TEST(GpwEvaluatorCpmd, BuildRejectsMultiKCpmdThermostat) {
+TEST(GpwEvaluatorCpmd, BuildAcceptsMultiKCpmdThermostat) {
+    // Multi-k CPMD + electronic NH is product (cpmd-thermostat-kpoints):
+    // one thermostatted CpmdCplx per (k, sigma) channel — the old
+    // "NVE electrons only on the k path" refusal is deleted.
     auto frame = water_frame();
     auto base = water_eval();
     CarParrinello eval{std::move(base), 400.0, ElectronicThermostat{1e-5, 50.0}};
     eval.set_timestep(kDtFs);
     eval.method().k_mesh[2] = 2;
+    eval.method().k_time_reversal = false;
     eval.method().nonperiodic = false;
     ATV::cpu::Context rt;
     ATV::cpu::BuildContext bc{rt, frame};
-    EXPECT_THROW(eval.build(bc), std::invalid_argument);
+    EXPECT_NO_THROW(eval.build(bc));
+}
+
+TEST(GpwEvaluatorCpmd, BuildAcceptsMultiKUksCpmdThermostat) {
+    // The dual-spin k path thermostats every (k, sigma) channel too.
+    auto frame = water_frame();
+    auto base = water_eval();
+    base.n_alpha = 5;
+    base.n_beta = 3;
+    CarParrinello eval{std::move(base), 400.0, ElectronicThermostat{1e-5, 50.0}};
+    eval.set_timestep(kDtFs);
+    eval.method().k_mesh[2] = 2;
+    eval.method().k_time_reversal = false;
+    eval.method().nonperiodic = false;
+    ATV::cpu::Context rt;
+    ATV::cpu::BuildContext bc{rt, frame};
+    EXPECT_NO_THROW(eval.build(bc));
 }
 
 // ── Electronic energy publication (esmm-cpmd-03 ac-001) ─────────────────

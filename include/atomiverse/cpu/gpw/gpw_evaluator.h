@@ -249,9 +249,9 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     ///        collinear UKS (dual-spin Bloch \(C_k^\sigma\): one `CpmdCplx`
     ///        per \(k\) and spin, occ 1). `build()` throws with `use_ot`,
     ///        `xl_bomd`, `second_gen_cp`, or `compute_stress` (the CPMD
-    ///        stress/variable-cell path is not yet productized); the
-    ///        electronic thermostat stays Γ-only (NVE electrons on the k
-    ///        path).
+    ///        stress/variable-cell path is not yet productized). The
+    ///        electronic thermostat is available on every branch, Γ and
+    ///        multi-k alike (`cpmd_thermostat`).
     bool cpmd = false;
     /// @brief Fictitious electron mass \(\mu\) [a.u. electron mass]. Typical
     ///        CPMD values \(10^2\)–\(10^3\). Default 400.
@@ -259,6 +259,10 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     /// @brief Nosé–Hoover electronic thermostat on fictitious \(\dot C\)
     ///        (requires `cpmd = true`). Regulates \(T_e\) toward
     ///        `cpmd_ekin_target_ha` with coupling time `cpmd_tau_e`.
+    ///        Γ: one NH per spin channel. Multi-k: one NH per (k, σ)
+    ///        channel, each targeting the full \(K_0\); the published
+    ///        totals are k-weighted (\(T_e = \sum_k w_k \sum_\sigma
+    ///        T_e^{(k,\sigma)}\), same for \(E_{\mathrm{therm}}\)).
     ///        Default false (NVE electrons / pure CP).
     bool cpmd_thermostat = false;
     /// @brief Target fictitious electronic kinetic energy \(K_0\) [Hartree].

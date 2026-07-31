@@ -62,17 +62,17 @@
 /// and drag energy out of the nuclei (Blöchl & Parrinello,
 /// Phys. Rev. B 45, 9413 (1992); textbook treatment in Marx & Hutter,
 /// *Ab initio Molecular Dynamics*, CUP 2009). Both classes implement the same
-/// half-steps and honour `thermostat`; only real-Γ `Cpmd` is
-/// regression-pinned (`regressions/dynamics/cpmd-electronic-thermostat`),
-/// because the GPW consumer rejects multi-k + thermostat at `build()` — its
-/// multi-k electrons therefore run at constant energy (NVE: fixed particle
-/// number, volume and energy).
+/// half-steps and honour `thermostat`: real-Γ `Cpmd` is regression-pinned by
+/// `regressions/dynamics/cpmd-electronic-thermostat`, and the multi-k GPW
+/// consumer thermostats one `CpmdCplx` per (k, σ) channel
+/// (`regressions/dynamics/cpmd-thermostat-kpoints`), k-weighting the
+/// published \(T_e\) and \(E_{\mathrm{therm}}\) totals.
 ///
 /// Method-agnostic electronic-DOF propagation on `cpu/linalg` matrices: the
 /// only inputs are the KS matrix \(H\), the overlap \(S\) and the occupied
 /// coefficients, so any mean-field method can drive it. Consumed today by
-/// `cpu::gpw::GPWEvaluator` (`cpmd = true`): Γ RKS/UKS via `Cpmd`; multi-k RKS
-/// via a vector of `CpmdCplx` (multi-k UKS + CPMD throws at `build()`).
+/// `cpu::gpw::GPWEvaluator` (`cpmd = true`): Γ RKS/UKS via `Cpmd`; multi-k
+/// RKS/UKS via a vector of `CpmdCplx`, one per (k, σ) channel.
 #pragma once
 
 #include "atomiverse/cpu/linalg/matrix.h"
@@ -259,9 +259,10 @@ class Cpmd {
 /// at this k-point has been built at the current density.
 ///
 /// The thermostat members are honoured exactly as in `Cpmd` (same Nosé–Hoover
-/// half-steps), but the GPW consumer rejects multi-k + thermostat at `build()`,
-/// so the product multi-k path runs NVE electrons (`thermostat = false`) and
-/// multi-k Nosé–Hoover is not regression-pinned.
+/// half-steps); with real-valued inputs the complex propagator reproduces
+/// `Cpmd` exactly (Γ-limit solver identity, unit-pinned). The GPW consumer
+/// engages one thermostatted instance per (k, σ) channel
+/// (`regressions/dynamics/cpmd-thermostat-kpoints`).
 class CpmdCplx {
   public:
     /// @brief Construct with the fictitious electronic mass.
@@ -279,7 +280,7 @@ class CpmdCplx {
     bool ready() const { return ready_; }
 
     /// @brief Enable Nosé–Hoover control of the fictitious \(T_e\) at this
-    ///        k-point (default false; see the class note above).
+    ///        (k, σ) channel (default false; see the class note above).
     bool thermostat = false;
     /// @brief Target electronic kinetic energy \(K_0\) [Hartree]. Must be
     ///        finite and > 0 when `thermostat` is true.

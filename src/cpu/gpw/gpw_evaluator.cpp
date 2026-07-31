@@ -61,8 +61,9 @@ std::vector<GpwAtom> assemble_atoms(const cpu::Frame& frame,
 /// Publish the two CPMD electronic energies [eV] on the frame, so Observers,
 /// Thermo and `cpu::md::CpmdConserved` see the adiabaticity signal that used
 /// to be reachable only through `last_electronic_ke_ev()`. Called from every
-/// CPMD branch (Γ RKS, Γ UKS, multi-k RKS) plus the cold seed, which
-/// publishes zeros — the electronic degrees of freedom have not moved yet.
+/// CPMD branch (Γ and multi-k, RKS and collinear UKS) plus the cold seed,
+/// which publishes zeros — the electronic degrees of freedom have not moved
+/// yet.
 /// The keys are open-schema (not pre-inserted by `Frame(int)`), so the first
 /// launch inserts and later launches overwrite (the `kDipole` pattern).
 /// @param frame Frame to write.
@@ -285,10 +286,6 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
             throw std::invalid_argument(
                 "GPWEvaluator: cpmd UKS requires n_alpha >= 1");
         if (cpmd_thermostat) {
-            if (multi_k)
-                throw std::invalid_argument(
-                    "GPWEvaluator: multi-k CPMD electronic thermostat is not "
-                    "productized (NVE electrons only on the k path)");
             if (!(cpmd_ekin_target_ha > 0.0)
                 || !std::isfinite(cpmd_ekin_target_ha))
                 throw std::invalid_argument(
@@ -580,8 +577,13 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             }
         }
 
-        // Electronic steps: T_e = Σ_k w_k Σ_σ T_e^{(k,σ)}.
+        // Electronic steps: T_e = Σ_k w_k Σ_σ T_e^{(k,σ)}. With the
+        // electronic Nose-Hoover engaged, each (k, σ) channel carries its
+        // own NH variable and E_therm = Σ_k w_k Σ_σ E_therm^{(k,σ)} — the
+        // same w_k the Lagrangian gives the fictitious KE and the band
+        // energy, so the extended conserved energy stays consistent.
         double te_ha = 0.0;
+        double eth_ha = 0.0;
         for (int ik = 0; ik < nk; ++ik) {
             const double wk =
                 (ik < static_cast<int>(last_.k_weights.size()))
@@ -593,6 +595,8 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                 /*occ=*/cpmd_uks_k ? 1.0 : 2.0);
             double te_k =
                 cpmd_k_[static_cast<std::size_t>(ik)].kinetic_ha();
+            double eth_k = cpmd_k_[static_cast<std::size_t>(ik)]
+                               .thermostat_energy_ha();
             if (have_beta_k) {
                 cpmd_k_beta_[static_cast<std::size_t>(ik)].advance(
                     last_.H_ks_k_beta[static_cast<std::size_t>(ik)],
@@ -600,11 +604,14 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                     /*occ=*/1.0);
                 te_k +=
                     cpmd_k_beta_[static_cast<std::size_t>(ik)].kinetic_ha();
+                eth_k += cpmd_k_beta_[static_cast<std::size_t>(ik)]
+                             .thermostat_energy_ha();
             }
             te_ha += wk * te_k;
+            eth_ha += wk * eth_k;
         }
         last_te_ev_ = te_ha * ATV::units::kHartreeInEv;
-        last_etherm_ev_ = 0.0;
+        last_etherm_ev_ = eth_ha * ATV::units::kHartreeInEv;
         publish_electronic_energies(frame, last_te_ev_, last_etherm_ev_);
         return;
     }
@@ -1699,6 +1706,12 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                                          + static_cast<std::size_t>(o)];
                     }
                     electronic::CpmdCplx ch(cpmd_mu);
+                    // Electronic Nose-Hoover per (k, sigma) channel — each
+                    // regulates its own T_e toward the full K0 (the Γ-UKS
+                    // convention; published totals stay k-weighted).
+                    ch.thermostat = cpmd_thermostat;
+                    ch.ekin_target_ha = cpmd_ekin_target_ha;
+                    ch.tau_e_fs = cpmd_tau_e;
                     ch.seed(C_occ);
                     out.push_back(std::move(ch));
                 }
