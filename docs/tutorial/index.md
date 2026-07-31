@@ -363,6 +363,7 @@ domain, alphabetical by slug.
 | Finite-\(q\) DFPT + metallic smearing (Si at X) | [dfpt-finite-q-smearing](methods/dfpt-finite-q-smearing.md) | `regressions/response/dfpt-finite-q-smearing` |
 | Finite-\(q\) DFPT phonons at X, pure GGA kernel (Si) | [dfpt-gga-finite-q-si](methods/dfpt-gga-finite-q-si.md) | `regressions/response/dfpt-gga-finite-q-si` |
 | DFPT phonons at Γ, pure GGA kernel (Si) | [dfpt-gga-si](methods/dfpt-gga-si.md) | `regressions/response/dfpt-gga-si` |
+| Finite-\(q\) DFPT at X, joint spin × GGA (Si) | [dfpt-gga-spin-finite-q-si](methods/dfpt-gga-spin-finite-q-si.md) | `regressions/response/dfpt-gga-spin-finite-q-si` |
 | DFPT phonons at Γ, joint spin × GGA (Si) | [dfpt-gga-spin-si](methods/dfpt-gga-spin-si.md) | `regressions/response/dfpt-gga-spin-si` |
 | Incommensurate-\(q\) DFPT phonons (Si) | [dfpt-incommensurate-si](methods/dfpt-incommensurate-si.md) | `regressions/response/dfpt-incommensurate-si` |
 | DFPT phonons + metallic smearing (Si) | [dfpt-metallic-si](methods/dfpt-metallic-si.md) | `regressions/response/dfpt-metallic-si` |

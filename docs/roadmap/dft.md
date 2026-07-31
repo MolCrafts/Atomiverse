@@ -41,7 +41,7 @@ that wave (GapCensus wave 3 re-verified + expanded): **TS/XDM stress**
 pins (in-flight `[~]`), nonlocal **vdW × k-points**, Γ-UKS nonlocal
 **vdW**, multi-k **UKS multigrid**,
 multi-k CPMD **electronic thermostat**, multi-k UKS **SGCP OT**,
-linearized-XL **stress**, finite-q **spin-GGA DFPT** pin;
+linearized-XL **stress**;
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -551,10 +551,12 @@ Which engine backs which ✓:
   X-branch anchor, fair wall ratio 0.17). NC-UPF; fixed-occupation and
   metallic-smear Sternheimer paths (Γ / commensurate / direct finite-\(q\);
   collinear spin × smear at Γ and finite-\(q\)) productized; the GGA kernel
-  is now pinned at Γ (restricted + spin) and finite \(q\) (restricted);
-  the spin × GGA × finite-q joint pin is queued
-  (`dfpt-gga-spin-finite-q-si` — the q-path spin-GGA kernel is accepted
-  but unpinned).
+  is now pinned at Γ (restricted + spin) and finite \(q\) (restricted +
+  **joint spin × GGA** `reg_dfpt-gga-spin-finite-q-si` — X supercell
+  spin-resolved Sternheimer + spin-GGA FD kernel, dual-gated by a supercell
+  energy-second-difference pin (21.2006 vs DFPT 21.1911 eV/Å²) **and** a
+  CP2K 2026.1 supercell UKS-PBE `VIBRATIONAL_ANALYSIS` X-branch anchor,
+  fair wall ratio 0.19; M=0 identity to the restricted finite-q GGA parent).
 - **Berry-phase polarization**: King-Smith–Vanderbilt (KSV) electronic
   polarization on the PW method (`cpu::pw::BerryPolarization`; string-averaged
   Berry phases over occupied Bloch manifolds; symmetry-exact Si pins,

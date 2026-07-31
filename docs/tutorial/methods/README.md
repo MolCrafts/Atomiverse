@@ -337,6 +337,17 @@ already carry index rows in the sections above and are not repeated here.
 | Multi-k UKS Car–Parrinello MD on dual-spin Bloch \(C_k^\sigma\) (H₂ NVE) | [cpmd-uks-kpoints](cpmd-uks-kpoints.md) | `regressions/dynamics/cpmd-uks-kpoints` | **perf_exempt** |
 | GPW DFT-D4 three-body ATM (\(s_9=1\)) analytic cell stress | [gpw-d4-atm-stress](gpw-d4-atm-stress.md) | `regressions/gpw/gpw-d4-atm-stress` | **perf_exempt** |
 
+## Index — CP2K capability wave 3 (shift) (2026-07-31)
+
+Offline CP2K 2026.1 pins only — see
+[cp2k-method-queue](../../developer/cp2k-method-queue.md) wave 3 (shift) and
+`tools/cp2k_oracle/`. Fair walls from each page's Performance section /
+`REFERENCE.md`.
+
+| Method | Page | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
+| ------ | ---- | ---------- | --------------------------------------------- |
+| Finite-\(q\) DFPT at X, joint collinear spin × pure GGA (diamond Si) | [dfpt-gga-spin-finite-q-si](dfpt-gga-spin-finite-q-si.md) | `regressions/response/dfpt-gga-spin-finite-q-si` | **0.19** |
+
 ## Index — restored capability pages (indexed 2026-07-28)
 
 These pages were written by the Tutorial phase of earlier
@@ -443,6 +454,7 @@ grouped by regression domain, alphabetical by slug.
 | Finite-\(q\) DFPT phonons + metallic smearing (Si at X) | [dfpt-finite-q-smearing](dfpt-finite-q-smearing.md) | `regressions/response/dfpt-finite-q-smearing` |
 | Finite-\(q\) DFPT phonons at X, pure GGA kernel (diamond Si) | [dfpt-gga-finite-q-si](dfpt-gga-finite-q-si.md) | `regressions/response/dfpt-gga-finite-q-si` |
 | DFPT phonons at Γ, pure GGA kernel (diamond Si) | [dfpt-gga-si](dfpt-gga-si.md) | `regressions/response/dfpt-gga-si` |
+| Finite-\(q\) DFPT at X, joint collinear spin × pure GGA (diamond Si) | [dfpt-gga-spin-finite-q-si](dfpt-gga-spin-finite-q-si.md) | `regressions/response/dfpt-gga-spin-finite-q-si` |
 | DFPT phonons at Γ, joint collinear spin × pure GGA (diamond Si) | [dfpt-gga-spin-si](dfpt-gga-spin-si.md) | `regressions/response/dfpt-gga-spin-si` |
 | Incommensurate-\(q\) DFPT phonons (diamond Si) | [dfpt-incommensurate-si](dfpt-incommensurate-si.md) | `regressions/response/dfpt-incommensurate-si` |
 | DFPT phonons + metallic smearing (diamond Si) | [dfpt-metallic-si](dfpt-metallic-si.md) | `regressions/response/dfpt-metallic-si` |

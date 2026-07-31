@@ -64,9 +64,9 @@ carries the X modes. Hybrids are rejected.
 | SCF | density L2 tol \(10^{-8}\) |
 | Response | `response_tol` \(10^{-4}\), `mix_beta` 0.25, CG tol \(10^{-8}\), max_iter 120 |
 
-**Key exclusions:** joint spin × GGA × finite-q (census-held), dedicated
-incommensurate-q GGA pin (shared code; separate census decision), hybrids,
-CUDA, live CP2K in ctest.
+**Key exclusions:** joint spin × GGA × finite-q is shipped as
+`dfpt-gga-spin-finite-q-si`; dedicated incommensurate-q GGA pin (shared code;
+separate census decision), hybrids, CUDA, live CP2K in ctest.
 
 ## Implementation
 
