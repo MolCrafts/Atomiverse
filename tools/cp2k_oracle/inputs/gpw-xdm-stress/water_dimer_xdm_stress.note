@@ -1,0 +1,46 @@
+# gpw-xdm-stress — offline oracle note
+
+## CP2K status
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` accepts only
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4`. There is **no** stock `TYPE XDM`, so no CP2K
+stress twin exists for an XDM run (same status as `gpw-xdm-ice` /
+`gpw-xdm-forces`). Full density-dependent XDM oracles: postg, critic2,
+Quantum ESPRESSO `xdm_dispersion` — out of scope for the free-atom foothold.
+
+## Oracle
+
+Dual pure-Python free-atom XDM lattice sum, `pin_xdm_strain.py` (this
+directory): independent implementation (combination rules, BJ damping,
+50 Å real-space lattice sum, strain application) sharing only the cited
+free-atom data inputs (CRC 88th Ed. α; homoatomic C6/C8/C10 from
+Yan et al. PRA 54, 2824 and Chu & Dalgarno JCP 121, 4083). Run offline at
+pin time (python3, stdlib only), never at ctest.
+
+## Geometry (Å)
+
+Water dimer, cubic 12 Å cell, PERIODIC XYZ — same as `gpw-xdm-ice`.
+Strained cells: axis scale 1 ± h (h = 2e-3), fixed fractional coordinates,
+rcut fixed 50 Å.
+
+## Offline pins (2026-07-31)
+
+Free-atom XDM, QE NC-PBE a1=0.4283, a2=2.4690 Å, rcut 50 Å:
+
+```
+E_disp unstrained            = -2.1148157612879029e-03 Ha
+E_disp x +h              = -2.1110849131940963e-03 Ha
+E_disp x -h              = -2.1185431863446984e-03 Ha
+sigma_XDM_xx (FD, dual-py)  = -1.5989612853e-07 Ha/Bohr3
+E_disp y +h              = -2.1147774136190569e-03 Ha
+E_disp y -h              = -2.1148546246483736e-03 Ha
+sigma_XDM_yy (FD, dual-py)  = -1.6553087314e-09 Ha/Bohr3
+E_disp z +h              = -2.1146664855098696e-03 Ha
+E_disp z -h              = -2.1149651549478578e-03 Ha
+sigma_XDM_zz (FD, dual-py)  = -6.4031024180e-09 Ha/Bohr3
+```
+
+Provenance cross-check at pin time: the unstrained value bit-reproduces the
+shipped `gpw-xdm-ice` periodic pin (−2.1148157612879029e-03 Ha).
+
+See `regressions/gpw/gpw-xdm-stress/REFERENCE.md`.

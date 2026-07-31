@@ -741,6 +741,55 @@ TEST(GpwStress, MbdChangesGammaDiagonal) {
     EXPECT_GT(max_shift, 1e-12) << "MBD is not entering the stress Lagrangian";
 }
 
+// ── Γ RKS + free-atom XDM analytic stress ─────────────────────────────────
+// Geometry-only XDM folded into the fixed-P Lagrangian; dual-gate vs
+// multi-SCF FD on cheap MT H₂. Residual unit-tier loose; e2e dual-python
+// strain pins are reg_gpw-xdm-stress.
+TEST(GpwStress, AnalyticMatchesFdWithXdm) {
+    const auto atoms = cheap_h2_atoms();
+    GpwDft cfg = cheap_h2_cfg();
+    cfg.xdm = true;
+    const double h = 3e-3;
+    EXPECT_NO_THROW({
+        const auto san = gpw_stress(atoms, cfg, h);
+        const auto sfd = gpw_stress_fd(atoms, cfg, h);
+        double max_err = 0.0;
+        for (int a = 0; a < 3; ++a) {
+            const double err = std::abs(san[static_cast<std::size_t>(a)]
+                                        - sfd[static_cast<std::size_t>(a)]);
+            max_err = std::max(max_err, err);
+            std::printf("  XDM axis %d  an=%.6e  fd=%.6e  |d|=%.3e\n", a,
+                        san[static_cast<std::size_t>(a)],
+                        sfd[static_cast<std::size_t>(a)], err);
+            EXPECT_TRUE(std::isfinite(san[static_cast<std::size_t>(a)]));
+            EXPECT_TRUE(std::isfinite(sfd[static_cast<std::size_t>(a)]));
+        }
+        EXPECT_DOUBLE_EQ(san[3], 0.0);
+        EXPECT_DOUBLE_EQ(san[4], 0.0);
+        EXPECT_DOUBLE_EQ(san[5], 0.0);
+        EXPECT_LT(max_err, 5e-5) << "Γ RKS + XDM analytic vs multi-SCF FD";
+    });
+}
+
+// XDM must actually reach the stress, not be silently ignored: switching it
+// on has to move the diagonal (same guard shape as MbdChangesGammaDiagonal).
+TEST(GpwStress, XdmChangesGammaDiagonal) {
+    const auto atoms = cheap_h2_atoms();
+    GpwDft plain = cheap_h2_cfg();
+    GpwDft with_xdm = cheap_h2_cfg();
+    with_xdm.xdm = true;
+    const auto s0 = gpw_stress(atoms, plain, 3e-3);
+    const auto s1 = gpw_stress(atoms, with_xdm, 3e-3);
+    double max_shift = 0.0;
+    for (int a = 0; a < 3; ++a)
+        max_shift = std::max(max_shift,
+                             std::abs(s1[static_cast<std::size_t>(a)]
+                                      - s0[static_cast<std::size_t>(a)]));
+    std::printf("[GPW stress XDM] max|sigma(xdm)-sigma(plain)|=%.3e Ha/Bohr3\n",
+                max_shift);
+    EXPECT_GT(max_shift, 1e-12) << "XDM is not entering the stress Lagrangian";
+}
+
 // Multi-k + MBD: the k-summed fixed-P_k Lagrangian folds E_disp^MBD (rebuilt
 // at each strained cell) — dual-gate analytic vs multi-SCF strain-FD on the
 // same periodic H2 mesh-1x1x2 fixture as KpointAnalyticMatchesFdDiagonal.
