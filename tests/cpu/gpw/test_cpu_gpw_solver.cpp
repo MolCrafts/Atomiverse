@@ -316,16 +316,16 @@ TEST(GpwSolverClass, BuildAcceptsGammaMultigridNonlocalVdw) {
     EXPECT_NO_THROW(solver.build(atoms));
 }
 
-// Γ gate: UKS has no nonlocal-vdW fold (SCF V_nl and post-SCF E_c^nl live in
-// the closed-shell RKS runner) — rejected instead of silently dropping E_c^nl.
-TEST(GpwSolverClass, BuildRejectsUksNonlocalVdw) {
+// Γ gate: UKS carries the nonlocal-vdW fold (V_nl on the total density in
+// both spin potentials, E_c^nl on e_disp) — build() accepts the combination.
+TEST(GpwSolverClass, BuildAcceptsGammaUksNonlocalVdw) {
     const auto atoms = small_h2();
     GpwDft solver = small_cfg();
     solver.n_occ = 0;
     solver.n_alpha = 1;
     solver.n_beta = 1;
     solver.rvv10 = true;
-    EXPECT_THROW(solver.build(atoms), std::invalid_argument);
+    EXPECT_NO_THROW(solver.build(atoms));
 }
 
 // Edge case: build() rejects an empty atom list (Design §2: atoms/basis

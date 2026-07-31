@@ -320,6 +320,9 @@ if(ATV_BUILD_GPW)
     # Nonlocal vdW-DF on the REL_CUTOFF multigrid product path
     # (offline CP2K 2026.1 NGRIDS 4 pin — gpw-vdw-multigrid).
     atv_add_regression(gpw gpw-vdw-multigrid THREADS 8)
+    # Γ collinear-UKS nonlocal vdW: V_nl on the total density in both spin
+    # potentials + E_c^nl on e_disp (offline CP2K 2026.1 LSD DRSLL pin).
+    atv_add_regression(gpw gpw-vdw-uks THREADS 8)
     atv_add_regression(gpw gpw-optb88-vdw THREADS 8)
     atv_add_regression(gpw gpw-mbd-hirshfeld THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-kpoints THREADS 8)
