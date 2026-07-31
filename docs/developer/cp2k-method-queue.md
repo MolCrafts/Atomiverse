@@ -1045,20 +1045,50 @@ merged since harness wave 2); §8 Γ-UKS vdW reject + §12 open-residual list
 + MD roadmap SGCP-UKS-OT / linearized-XL-stress prose annotated with the
 four new queue slugs. **Pending = 7**; **in_progress = 2**; **blocked = 6**.
 
+**Assign wave 3 (shift) 2026-07-31 (parent `dev` @ `4a2f966b`):** recover —
+incomplete_count=**2** (`[~] gpw-ts-stress` / `[~] gpw-xdm-stress`: branch
+tips still at the wave-2 assign parent `197468ac`, WIP uncommitted in their
+two kept isolation worktrees — spec + regression + oracle-input scaffolds;
+resumes staffed first, incomplete ≫ pending). Open CP2K/GPW/PW specs=**0**
+(PySCF deferred only: `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`); all 7
+pending re-verified write-first (no spec on `dev` / no `wf/*` tip beyond
+parent / no regression dir). Staffed **9**: 2 resumes (`gpw-ts-stress` /
+`gpw-xdm-stress` — merge the `197468ac`-based tips onto `dev`, commit the
+scaffolds, finish pins + acceptance; both fold into `gpw_stress.cpp` +
+`regressions/CMakeLists.txt` — serialize or split patches carefully, wave-2
+precedent: shipped D3/D3-ATM/D4-ATM stress trio) + all **7** pending by
+census age: `gpw-uks-multigrid-kpoints`, `gpw-vdw-kpoints`,
+`cpmd-thermostat-kpoints` (w2-shift), `gpw-vdw-uks`,
+`second-gen-cpmd-ot-uks-kpoints`, `xl-bomd-linearized-stress`,
+`dfpt-gga-spin-finite-q-si` (w3-shift). Surface notes for workers:
+`gpw-uks-multigrid-kpoints` ∥ `gpw-vdw-kpoints` ∥ `gpw-vdw-uks` touch
+distinct `gpw_solver.cpp` gates (5309 / 5326 / 5188) — same file,
+coordinate at merge; `cpmd-thermostat-kpoints` ∥
+`second-gen-cpmd-ot-uks-kpoints` ∥ `xl-bomd-linearized-stress` touch
+distinct `gpw_evaluator.cpp` throw sites (291 / 361 / 223) — same file,
+coordinate; `xl-bomd-linearized-stress` also reads `gpw_stress` — the two
+stress resumes own the `gpw_stress.cpp` fold region, XL only calls it;
+`dfpt-gga-spin-finite-q-si` is PW response (`dfpt.cpp`) — free of all. No
+pick depends on another pick. **Pending residual after assign = 0** (staff
+emptied the census list — **not** queue exhausted; GapCensus owns next
+discovery).
+
 ## pending
 
-- [ ] `gpw-uks-multigrid-kpoints` | Multi-k UKS REL_CUTOFF multigrid product collocation (k-path rejects "multigrid (ngrids > 1) with UKS — closed-shell RKS only" at `gpw_solver.cpp:5309`) | gpw | twin: CP2K 2026.1 UKS NGRIDS 4 / REL_CUTOFF + MP k-mesh (extend `gpw-multigrid-kpoints` × `gpw-uks-multigrid`) | GapCensus wave 2 (shift) 2026-07-31; re-verified wave 3 (shift) | held assign wave 2 (shift) — shared `gpw_solver.cpp` multigrid gates now free (`gpw-vdw-multigrid` merged)
-- [ ] `gpw-vdw-kpoints` | Nonlocal vdW-DF/DF2/rVV10 on the k-point path (not wired at all — SCF potential + post-SCF E_c^nl live only in the Γ runner; fail-fast reject at `gpw_solver.cpp:5326`) | gpw | twin: CP2K 2026.1 NON_LOCAL DRSLL ice + KPOINTS | GapCensus wave 2 (shift) 2026-07-31; re-verified wave 3 (shift) | held assign wave 2 (shift) — nonlocal-vdW runner now free (`gpw-vdw-multigrid` merged)
-- [ ] `cpmd-thermostat-kpoints` | Multi-k CPMD electronic thermostat ("NVE electrons only on the k path" throw at `gpw_evaluator.cpp:291`) | dynamics | twin: extend `cpmd-electronic-thermostat` × `cpmd-kpoints`; thermostat + NVE envelope (same literature policy as the Γ product) | GapCensus wave 2 (shift) 2026-07-31; re-verified wave 3 (shift) | held assign wave 2 (shift) — multi-k CPMD base landed (`cpmd-uks-kpoints` merged; adjacent throw sites free)
-- [ ] `gpw-vdw-uks` | Γ collinear-UKS nonlocal vdW-DF/DF2/rVV10 (fail-fast at `gpw_solver.cpp:5188` — "E_c^nl would be silently dropped"; SCF V_nl + post-SCF E_c^nl live only in the Γ closed-shell RKS runner) | gpw | twin: CP2K 2026.1 LSD + NON_LOCAL DRSLL (UKS O₂ / ice; extend `gpw-vdw-scf-potential` × `gpw-uks-pbe`) | GapCensus wave 3 (shift) 2026-07-31 | declared by the `gpw-vdw-multigrid` found-rot fail-fast
-- [ ] `second-gen-cpmd-ot-uks-kpoints` | Multi-k UKS SGCP + OT partial-SCF corrector (dual-spin k-OT warm start from \(P_k^\sigma\) throws at `gpw_evaluator.cpp:361`; DIIS-corrector multi-k UKS SGCP is product) | dynamics | twin: SGCP literature envelope + corrector A/B identity vs diagonalization (CP2K OT is Γ-only — same family lock as `second-gen-cpmd-ot-kpoints`) | GapCensus wave 3 (shift) 2026-07-31 | declared by the `second-gen-cpmd-ot-kpoints` merge
-- [ ] `xl-bomd-linearized-stress` | Linearized (zero-SCF shadow) XL-BOMD + `compute_stress` (refused at `gpw_evaluator.cpp:223` — "variable-cell linearized XL is deferred"; was a silent warm-step drop) | dynamics | twin: converged-BOMD stress trace A/B + `gpw_stress` analytic/FD dual gate (BO stress CP2K-anchored via the shipped `gpw_stress` pins; XL family NVE/literature policy) | GapCensus wave 3 (shift) 2026-07-31 | declared by the `xl-bomd-linearized-kpoints` merge
-- [ ] `dfpt-gga-spin-finite-q-si` | Finite-q DFPT phonons with joint collinear spin **and** pure GGA (PBE) kernel (q-path Sternheimer already applies the spin-GGA FD kernel at `dfpt.cpp:3303` — accepted, **no offline pin**) | response | twin: CP2K 2026.1 supercell UKS-PBE `VIBRATIONAL_ANALYSIS` + spin-PBE energy-FD sharp pin (extend `dfpt-gga-spin-si` × `dfpt-gga-finite-q-si`) | GapCensus wave 3 (shift) 2026-07-31 | wave-2 hold cleared (both parent pins shipped)
+(empty — all 7 census rows staffed assign wave 3 (shift) 2026-07-31; not
+queue exhausted, GapCensus owns next discovery)
 
 ## in_progress
 
-- [~] `gpw-ts-stress` | Analytic fixed-P cell stress with free-atom TS (energy folds; dedicated pin missing) | gpw | twin: libMBD E_disp under strain + `gpw_stress_fd` dual-gate (extend `gpw-ts-forces`) | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; `gpw-d3-stress` merged wave 2, `gpw_stress.cpp` free) | assigned wave 2 (shift) 2026-07-31; WIP worktree kept (uncommitted spec+reg scaffold)
-- [~] `gpw-xdm-stress` | Analytic fixed-P cell stress with XDM (energy folds; dedicated pin missing) | gpw | twin: extend `gpw-xdm-forces` pin + `gpw_stress_fd` dual-gate | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; `gpw-d3-stress` merged wave 2) | assigned wave 2 (shift) 2026-07-31; WIP worktree kept (uncommitted spec+reg scaffold)
+- [~] `gpw-ts-stress` | Analytic fixed-P cell stress with free-atom TS (energy folds; dedicated pin missing) | gpw | twin: libMBD E_disp under strain + `gpw_stress_fd` dual-gate (extend `gpw-ts-forces`) | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; `gpw-d3-stress` merged wave 2, `gpw_stress.cpp` free) | assigned wave 2 (shift) 2026-07-31; WIP worktree kept (uncommitted spec+reg scaffold) | resume staffed assign wave 3 (shift) 2026-07-31
+- [~] `gpw-xdm-stress` | Analytic fixed-P cell stress with XDM (energy folds; dedicated pin missing) | gpw | twin: extend `gpw-xdm-forces` pin + `gpw_stress_fd` dual-gate | GapCensus wave 15; re-verified wave 2 (shift); held wave 1 (stress workers merged — free now; `gpw-d3-stress` merged wave 2) | assigned wave 2 (shift) 2026-07-31; WIP worktree kept (uncommitted spec+reg scaffold) | resume staffed assign wave 3 (shift) 2026-07-31
+- [~] `gpw-uks-multigrid-kpoints` | Multi-k UKS REL_CUTOFF multigrid product collocation (k-path rejects "multigrid (ngrids > 1) with UKS — closed-shell RKS only" at `gpw_solver.cpp:5309`) | gpw | twin: CP2K 2026.1 UKS NGRIDS 4 / REL_CUTOFF + MP k-mesh (extend `gpw-multigrid-kpoints` × `gpw-uks-multigrid`) | GapCensus wave 2 (shift) 2026-07-31; re-verified wave 3 (shift) | assigned wave 3 (shift) 2026-07-31 (write-first)
+- [~] `gpw-vdw-kpoints` | Nonlocal vdW-DF/DF2/rVV10 on the k-point path (not wired at all — SCF potential + post-SCF E_c^nl live only in the Γ runner; fail-fast reject at `gpw_solver.cpp:5326`) | gpw | twin: CP2K 2026.1 NON_LOCAL DRSLL ice + KPOINTS | GapCensus wave 2 (shift) 2026-07-31; re-verified wave 3 (shift) | assigned wave 3 (shift) 2026-07-31 (write-first)
+- [~] `cpmd-thermostat-kpoints` | Multi-k CPMD electronic thermostat ("NVE electrons only on the k path" throw at `gpw_evaluator.cpp:291`) | dynamics | twin: extend `cpmd-electronic-thermostat` × `cpmd-kpoints`; thermostat + NVE envelope (same literature policy as the Γ product) | GapCensus wave 2 (shift) 2026-07-31; re-verified wave 3 (shift) | assigned wave 3 (shift) 2026-07-31 (write-first)
+- [~] `gpw-vdw-uks` | Γ collinear-UKS nonlocal vdW-DF/DF2/rVV10 (fail-fast at `gpw_solver.cpp:5188` — "E_c^nl would be silently dropped"; SCF V_nl + post-SCF E_c^nl live only in the Γ closed-shell RKS runner) | gpw | twin: CP2K 2026.1 LSD + NON_LOCAL DRSLL (UKS O₂ / ice; extend `gpw-vdw-scf-potential` × `gpw-uks-pbe`) | GapCensus wave 3 (shift) 2026-07-31 | assigned wave 3 (shift) 2026-07-31 (write-first)
+- [~] `second-gen-cpmd-ot-uks-kpoints` | Multi-k UKS SGCP + OT partial-SCF corrector (dual-spin k-OT warm start from \(P_k^\sigma\) throws at `gpw_evaluator.cpp:361`; DIIS-corrector multi-k UKS SGCP is product) | dynamics | twin: SGCP literature envelope + corrector A/B identity vs diagonalization (CP2K OT is Γ-only — same family lock as `second-gen-cpmd-ot-kpoints`) | GapCensus wave 3 (shift) 2026-07-31 | assigned wave 3 (shift) 2026-07-31 (write-first)
+- [~] `xl-bomd-linearized-stress` | Linearized (zero-SCF shadow) XL-BOMD + `compute_stress` (refused at `gpw_evaluator.cpp:223` — "variable-cell linearized XL is deferred"; was a silent warm-step drop) | dynamics | twin: converged-BOMD stress trace A/B + `gpw_stress` analytic/FD dual gate (BO stress CP2K-anchored via the shipped `gpw_stress` pins; XL family NVE/literature policy) | GapCensus wave 3 (shift) 2026-07-31 | assigned wave 3 (shift) 2026-07-31 (write-first)
+- [~] `dfpt-gga-spin-finite-q-si` | Finite-q DFPT phonons with joint collinear spin **and** pure GGA (PBE) kernel (q-path Sternheimer already applies the spin-GGA FD kernel at `dfpt.cpp:3303` — accepted, **no offline pin**) | response | twin: CP2K 2026.1 supercell UKS-PBE `VIBRATIONAL_ANALYSIS` + spin-PBE energy-FD sharp pin (extend `dfpt-gga-spin-si` × `dfpt-gga-finite-q-si`) | GapCensus wave 3 (shift) 2026-07-31 | assigned wave 3 (shift) 2026-07-31 (write-first)
 
 ## done (harness wave 2 (shift) 2026-07-31)
 
