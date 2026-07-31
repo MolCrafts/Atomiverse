@@ -34,12 +34,11 @@ closes D3-zero **stress** (`reg_gpw-d3-stress`) and ships finite-q DFPT
 (`reg_gpw-vdw-multigrid`), multi-k linearized **XL** — RKS +
 collinear UKS, CP2K-anchored (`reg_xl-bomd-linearized-kpoints`),
 multi-k UKS **CPMD** (`reg_cpmd-uks-kpoints`), multi-k SGCP **OT**
-(`reg_second-gen-cpmd-ot-kpoints`), and D3 ATM **stress**
-(`reg_gpw-d3-atm-stress`); open
+(`reg_second-gen-cpmd-ot-kpoints`), and D3/D4 ATM **stress**
+(`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`); open
 residuals after
-that wave (GapCensus wave 2 re-verified + expanded): **TS/XDM stress**,
-**D4 ATM stress**
-pin, nonlocal **vdW × k-points**,
+that wave (GapCensus wave 2 re-verified + expanded): **TS/XDM stress**
+pins, nonlocal **vdW × k-points**,
 multi-k **UKS multigrid**,
 multi-k CPMD **electronic thermostat**;
 product after
@@ -302,8 +301,10 @@ difference C9 on−off isolates the pure ATM stress, Δσ parity 1.1e−13
 Ha/Bohr³ at CP2K's own `DX 0.001` FD step — the hard-gated triple sum is
 step-sensitive, unlike the smooth-cutoff two-body fold — plus the
 configurable `d3_rcut_bohr` member mirroring CP2K `R_CUTOFF`); the **D4
-ATM stress** pin stays queued (`gpw-d4-atm-stress`; ATM energy folds at
-the strained cell). Nonlocal vdW × REL_CUTOFF multigrid (`ngrids>1`) is
+ATM stress** pin shipped too (`reg_gpw-d4-atm-stress`:
+dftd4 3.7.0 strained-cell energies gate the s9 fold — σ^ATM parity
+3.7e-16 Ha/Bohr³ vs the ~7.5e-10 signal, plus `gpw_stress_fd` dual gate).
+Nonlocal vdW × REL_CUTOFF multigrid (`ngrids>1`) is
 product at Γ RKS (`reg_gpw-vdw-multigrid`; SC V_nl on the finest grid
 before per-level restriction). Nonlocal vdW on the **k-point path** is
 not wired at all (fail-fast reject; queued `gpw-vdw-kpoints`), and Γ UKS
@@ -391,11 +392,12 @@ Two periodic DFT engines exist, with disjoint strengths:
   (`reg_dfpt-gga-finite-q-si`), D3-zero **stress** (`reg_gpw-d3-stress`),
   vdW-DF **multigrid** (`reg_gpw-vdw-multigrid`), multi-k linearized
   XL — RKS + collinear UKS with the new k-UKS fixed-density eval,
-  CP2K-anchored (`reg_xl-bomd-linearized-kpoints`), and multi-k UKS
-  CPMD (`reg_cpmd-uks-kpoints`), and multi-k SGCP OT
-  (`reg_second-gen-cpmd-ot-kpoints`). Stock VV10 is
+  CP2K-anchored (`reg_xl-bomd-linearized-kpoints`), multi-k UKS
+  CPMD (`reg_cpmd-uks-kpoints`), multi-k SGCP OT
+  (`reg_second-gen-cpmd-ot-kpoints`), and D3/D4 ATM stress
+  (`reg_gpw-d3-atm-stress` / `reg_gpw-d4-atm-stress`). Stock VV10 is
   **blocked** (no CP2K twin). Open residuals (GapCensus wave 2):
-  TS/XDM stress, D3/D4 ATM stress pins, nonlocal vdW ×
+  TS/XDM stress, nonlocal vdW ×
   k-points, multi-k UKS multigrid, multi-k CPMD electronic
   thermostat. Hybrids / meta-GGA /
   GAPW / PAW remain blocked (queue not exhausted — see
