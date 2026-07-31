@@ -10,6 +10,10 @@ Isolated libMBD check (build libmbd, link OpenBLAS):
 Dispersion energy (isolated): -5.9764872295816794e-04 Eh
 ```
 
-Periodic pure-RS (rcut 50 Å): -6.099626368528631e-04 Ha.
+Periodic pure-RS (rcut 50 Å): -6.0996307733860822e-04 Ha — libMBD Fortran
+`get_ts_energy` no-Ewald branch (`ewald_on = false`, `dipole_cutoff = 50 Å`);
+driver + build line: `tools/cp2k_oracle/inputs/gpw-ts-stress/`. (An earlier
+revision of this note recorded -6.099626368528631e-04 from a pre-shell-fix
+lattice sum — 4.4e-9 off the pinned value; superseded.)
 
 Geometry: same water dimer / 12 Å cell as `gpw-pbe-d3bj-ice`.

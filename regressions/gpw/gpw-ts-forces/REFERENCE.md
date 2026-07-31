@@ -28,7 +28,7 @@ Pair cutoff (periodic): **50 Å**.
 | Quantity | Source | Value |
 | -------- | ------ | ----- |
 | **E_disp isolated** | libMBD Fortran `cmbd_ts_energy` (git `88069c6`, ATV Å→Bohr) | **−5.9764872295816794×10⁻⁴ Ha** |
-| **E_disp periodic** | pure-RS rcut 50 Å / ATV `ts_pbe` (`gpw-ts-ice`) | **−6.099630773386013×10⁻⁴ Ha** |
+| **E_disp periodic** | libMBD Fortran `get_ts_energy` pure-RS (`ewald_on = false`, rcut 50 Å; `gpw-ts-stress` pin driver) | **−6.0996307733860822×10⁻⁴ Ha** (= `gpw-ts-ice` pin to 7×10⁻¹⁸) |
 | **Force dual-gate** | product \(F\) vs independent central FD \(h=10^{-5}\) Bohr of \(E_{\mathrm{disp}}\) | max\|ΔF\| ≤ **1×10⁻⁶** Ha/Bohr |
 | Translation | \(\|\sum_A F_A\|\) | ≤ **1×10⁻⁸** Ha/Bohr |
 | Wiring | \(F(\mathrm{ts})-F(\mathrm{plain})\) vs standalone | max\|Δ\| ≤ **1×10⁻⁷** Ha/Bohr |

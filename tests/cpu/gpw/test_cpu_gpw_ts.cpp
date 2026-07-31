@@ -56,8 +56,9 @@ TEST(GpwTs, WaterDimerIsolatedMatchesLibMbd) {
     EXPECT_NEAR(r.energy, libmbd, 1e-12);
 }
 
-// Periodic pure real-space rcut = 50 Å (default) pin from dual offline formula
-// (matches Python reference lattice sum; see REFERENCE.md).
+// Periodic pure real-space rcut = 50 Å pin from libMBD Fortran get_ts_energy
+// on its no-Ewald branch (ewald_on=false, dipole_cutoff=50 Å; libmbd 88069c6,
+// pin driver tools/cp2k_oracle/inputs/gpw-ts-stress/pin_ts_strain.f90).
 TEST(GpwTs, WaterDimerPeriodicEnergy) {
     const auto pos = water_dimer_bohr();
     const double L = 12.0 * kAngToBohr;
@@ -65,11 +66,41 @@ TEST(GpwTs, WaterDimerPeriodicEnergy) {
     constexpr double kRcut = 50.0 * kAngToBohr;
     const TsResult r = ts_pbe(kZ, pos, cell, /*periodic=*/true, kRcut);
 
-    // Pure-RS pin with ATV pair_image_counts (one extra shell vs naive ceil).
-    const double pin = -6.099630773386013e-04;
+    const double pin = -6.0996307733860822e-04; // libMBD pure-RS
     std::printf("[TS] periodic E=%.16e  pin=%.16e  diff=%.2e Ha\n", r.energy,
                 pin, r.energy - pin);
     EXPECT_NEAR(r.energy, pin, 1e-12);
+}
+
+// Strained-cell energies vs libMBD pure-RS pins (gpw-ts-stress family): one
+// axis scaled by 1±h at fixed fractional coordinates, h = 2e-3 — the exact
+// geometry the fixed-P stress Lagrangian rebuilds.
+TEST(GpwTs, StrainedCellEnergiesMatchLibMbd) {
+    const double kPins[3][2] = {
+        {-6.1278297256613687e-04, -6.0709134569744607e-04}, // x {+h, −h}
+        {-6.0992605267944588e-04, -6.1000059619617259e-04}, // y
+        {-6.0996696060335368e-04, -6.0995897233070745e-04}, // z
+    };
+    constexpr double kH = 2.0e-3;
+    const double L = 12.0 * kAngToBohr;
+    constexpr double kRcut = 50.0 * kAngToBohr;
+
+    double max_err = 0.0;
+    for (int a = 0; a < 3; ++a) {
+        for (int s = 0; s < 2; ++s) {
+            const double scale = 1.0 + (s == 0 ? kH : -kH);
+            auto pos = water_dimer_bohr();
+            double cell[3] = {L, L, L};
+            cell[a] *= scale;
+            for (auto& p : pos)
+                p[static_cast<std::size_t>(a)] *= scale;
+            const double e = ts_pbe(kZ, pos, cell, /*periodic=*/true, kRcut)
+                                 .energy;
+            max_err = std::max(max_err, std::abs(e - kPins[a][s]));
+        }
+    }
+    std::printf("[TS] strained max|E - libMBD| = %.2e Ha\n", max_err);
+    EXPECT_LT(max_err, 1e-12);
 }
 
 // Analytic forces must match central FD of the same energy (isolated).
@@ -136,7 +167,7 @@ TEST(GpwTs, GpwDftReportsEDisp) {
 
     gpw.build(atoms);
     const auto& res = gpw.run(atoms);
-    const double pin = -6.099630773386013e-04;
+    const double pin = -6.0996307733860822e-04; // libMBD pure-RS
     EXPECT_NEAR(res.e_disp, pin, 1e-12);
     EXPECT_LT(res.e_disp, 0.0);
     EXPECT_TRUE(std::isfinite(res.e_total));

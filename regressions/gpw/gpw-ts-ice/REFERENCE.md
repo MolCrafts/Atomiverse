@@ -52,13 +52,16 @@ Cross-checks (offline — never in ctest):
 | ------ | -------- | ----------- |
 | **libMBD** C API `cmbd_ts_energy` (git `88069c6`, built 2026-07-25) | isolated | **−5.9764872295816794×10⁻⁴** |
 | Dual pure-Python lattice sum (same formula/tables) | isolated | −5.9764872295816815×10⁻⁴ |
-| Atomiverse `ts_pbe` (pair_image_counts shell) | periodic 12 Å, rcut 50 Å | **−6.099630773386013×10⁻⁴** |
+| **libMBD** Fortran `get_ts_energy`, pure-RS branch (`ewald_on = false`, `dipole_cutoff = 50 Å`; driver `tools/cp2k_oracle/inputs/gpw-ts-stress/pin_ts_strain.f90`, 2026-07-31) | periodic 12 Å, rcut 50 Å | **−6.0996307733860822×10⁻⁴** |
+| Atomiverse `ts_pbe` (pair_image_counts shell) | periodic 12 Å, rcut 50 Å | −6.099630773386013×10⁻⁴ |
 | libMBD with Ewald (`ewald_cutoff_scaling=2.5`) | periodic 12 Å | −6.100334450881942×10⁻⁴ |
 
 Isolated libMBD matches Atomiverse to \({\sim}10^{-19}\) Ha (unit-test hard pin).
-Periodic pure-RS and libMBD Ewald differ by \({\sim}7\times10^{-8}\) Ha (long-range
-\(1/R^6\) tail + Ewald vs hard cutoff) — documented; regression hard gate is the
-pure-RS value above.
+The periodic pure-RS pin is anchored by the genuine libMBD no-Ewald run
+(agreement 7×10⁻¹⁸ Ha, `gpw-ts-stress` pin driver). Periodic pure-RS and
+libMBD Ewald differ by \({\sim}7\times10^{-8}\) Ha (long-range \(1/R^6\) tail +
+Ewald vs hard cutoff) — documented; regression hard gate is the pure-RS value
+above.
 
 ### Why not CP2K QS?
 
