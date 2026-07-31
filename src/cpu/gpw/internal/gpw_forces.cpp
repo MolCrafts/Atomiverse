@@ -68,6 +68,7 @@ GpwDft copy_gpw(const GpwDft& m) {
     p.d3 = m.d3;
     p.d3bj = m.d3bj;
     p.d3_atm = m.d3_atm;
+    p.d3_rcut_bohr = m.d3_rcut_bohr;
     p.d4 = m.d4;
     p.d4_atm = m.d4_atm;
     p.ts = m.ts;
@@ -688,10 +689,10 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         } else {
             const D3Result d3 =
                 cfg.d3 ? dftd3_pbe(Z, pos, cfg.cell, periodic, D3Params{},
-                                   kD3Cp2kPairCutoffBohr,
+                                   cfg.d3_rcut_bohr,
                                    cfg.d3_atm)
                        : dftd3_pbe_bj(Z, pos, cfg.cell, periodic, D3Params{},
-                                      kD3Cp2kPairCutoffBohr, 1.0, 0.7875,
+                                      cfg.d3_rcut_bohr, 1.0, 0.7875,
                                       0.4289, 4.4407,
                                       /*cp2k_cn=*/true, cfg.d3_atm);
             for (int i = 0; i < na; ++i)
@@ -1359,10 +1360,10 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                 const D3Result d3 =
                     cfg.d3
                         ? dftd3_pbe(Z, pos, cfg.cell, periodic, D3Params{},
-                                   kD3Cp2kPairCutoffBohr,
+                                    cfg.d3_rcut_bohr,
                                     cfg.d3_atm)
                         : dftd3_pbe_bj(Z, pos, cfg.cell, periodic, D3Params{},
-                                       kD3Cp2kPairCutoffBohr, 1.0, 0.7875,
+                                       cfg.d3_rcut_bohr, 1.0, 0.7875,
                                        0.4289, 4.4407,
                                        /*cp2k_cn=*/true, cfg.d3_atm);
                 for (int i = 0; i < na; ++i)

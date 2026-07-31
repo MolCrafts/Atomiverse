@@ -206,6 +206,12 @@ if(ATV_BUILD_PW)
         target_compile_definitions(reg_dfpt-gga-spin-si PRIVATE
             ATV_PW_UPF_PATH="${_atv_si_upf}")
     endif()
+    # Finite-q DFPT at X with pure GGA (PBE) kernel (response).
+    atv_add_regression(response dfpt-gga-finite-q-si)
+    if(TARGET reg_dfpt-gga-finite-q-si)
+        target_compile_definitions(reg_dfpt-gga-finite-q-si PRIVATE
+            ATV_PW_UPF_PATH="${_atv_si_upf}")
+    endif()
     # Γ DFPT with metallic occupation smearing (FD, restricted Si twin).
     atv_add_regression(response dfpt-metallic-si)
     if(TARGET reg_dfpt-metallic-si)
@@ -293,10 +299,12 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)
     atv_add_regression(gpw gpw-d4-water THREADS 8)
     atv_add_regression(gpw gpw-d4-atm THREADS 8)
+    atv_add_regression(gpw gpw-d3-stress THREADS 8)
     atv_add_regression(gpw gpw-d3bj-stress THREADS 8)
     atv_add_regression(gpw gpw-d4-stress THREADS 8)
     atv_add_regression(gpw gpw-d4-forces THREADS 8)
     atv_add_regression(gpw gpw-d4-atm-forces THREADS 8)
+    atv_add_regression(gpw gpw-d4-atm-stress THREADS 8)
     atv_add_regression(gpw gpw-ts-ice THREADS 8)
     atv_add_regression(gpw gpw-ts-forces THREADS 8)
     atv_add_regression(gpw gpw-xdm-ice THREADS 8)
@@ -309,6 +317,9 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-vdw-df2-ice THREADS 8)
     atv_add_regression(gpw gpw-rvv10-ice THREADS 8)
     atv_add_regression(gpw gpw-vdw-scf-potential THREADS 8)
+    # Nonlocal vdW-DF on the REL_CUTOFF multigrid product path
+    # (offline CP2K 2026.1 NGRIDS 4 pin — gpw-vdw-multigrid).
+    atv_add_regression(gpw gpw-vdw-multigrid THREADS 8)
     atv_add_regression(gpw gpw-optb88-vdw THREADS 8)
     atv_add_regression(gpw gpw-mbd-hirshfeld THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-kpoints THREADS 8)
@@ -358,6 +369,10 @@ if(ATV_BUILD_GPW)
         # Zero-SCF linearized XL-BOMD on Γ-UKS (dual-spin shadow forces) —
         # O2 triplet NVE (identical twin of xl-bomd-uks + linearized tag).
         atv_add_regression(dynamics xl-bomd-linearized-uks THREADS 8)
+        # Zero-SCF linearized XL-BOMD on the k path (complex shadow D_k) —
+        # H2 NVE 1x1x2, SCF-XL vs linearized A/B + UKS degeneracy leg,
+        # anchored to the CP2K 2026.1 converged-BOMD .ener trace.
+        atv_add_regression(dynamics xl-bomd-linearized-kpoints THREADS 8)
         # Car–Parrinello MD (dynamics domain): fictitious electronic DOF on
         # the same H2O NVE twin family — not BOMD, not XL-BOMD.
         atv_add_regression(dynamics cpmd-water THREADS 8)
@@ -368,6 +383,9 @@ if(ATV_BUILD_GPW)
         atv_add_regression(dynamics cpmd-electronic-thermostat THREADS 8)
         # CPMD on Γ-UKS (dual α/β fictitious electronic DOF) — O2 triplet NVE.
         atv_add_regression(dynamics cpmd-uks THREADS 8)
+        # Multi-k UKS CPMD (dual-spin Bloch C_k^σ, one CpmdCplx per (k, spin))
+        # — periodic H2 NVE, closed-shell fillings on the UKS path.
+        atv_add_regression(dynamics cpmd-uks-kpoints THREADS 8)
         # Second-generation CP (Kühne ASPC + partial SCF corrector).
         atv_add_regression(dynamics second-gen-cpmd-water THREADS 8)
         # Second-generation CP on Γ-UKS (dual ASPC α/β + partial SCF).
@@ -378,6 +396,9 @@ if(ATV_BUILD_GPW)
         atv_add_regression(dynamics second-gen-cpmd-uks-ot THREADS 8)
         # Multi-k second-generation CP (ASPC on complex P_k + partial SCF).
         atv_add_regression(dynamics second-gen-cpmd-kpoints THREADS 8)
+        # Multi-k second-generation CP with OT partial-SCF corrector
+        # (natural-orbital warm start of the per-k OT manifold).
+        atv_add_regression(dynamics second-gen-cpmd-ot-kpoints THREADS 8)
     endif()
     atv_add_regression(gpw gpw-pbesol-si THREADS 8)
     atv_add_regression(gpw gpw-revpbe-si THREADS 8)
@@ -396,6 +417,8 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-d3bj-forces THREADS 8)
     # D3 three-body ATM (C9) force pin, isolated + periodic image triples.
     atv_add_regression(gpw gpw-d3-atm-forces THREADS 8)
+    # D3 ATM (C9) cell-stress pin: CP2K numerical-stress difference (C9 on-off).
+    atv_add_regression(gpw gpw-d3-atm-stress THREADS 8)
     # Gamma analytic cell stress folding periodic MBD@rsSCS.
     atv_add_regression(gpw gpw-mbd-stress THREADS 8)
     # Multi-k analytic cell stress folding periodic MBD@rsSCS.

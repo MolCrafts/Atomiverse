@@ -42,8 +42,9 @@ Conserved-quantity **envelope**: relative \(E_{\mathrm{cons}}\) drift
 production SCF iterations exactly 0, bounded potential energy, finite
 coordinates, and a soft bond window. Unit gates cover the `CpmdCplx` seed and
 advance invariants (\(C^\dagger S C = I\), Hermitian velocity constraint), the
-multi-k fixed-density path, and the rejected combinations (multi-k UKS + CPMD,
-OT + CPMD, XL + CPMD).
+multi-k fixed-density path, and the rejected combinations (OT + CPMD,
+XL + CPMD). Multi-k **UKS** CPMD ships separately
+([cpmd-uks-kpoints](cpmd-uks-kpoints.md)).
 
 Ratio: **perf_exempt** — the gate is an NVE drift envelope, not a wall twin
 (same policy as `cpmd-water` and `xl-bomd-kpoints`).

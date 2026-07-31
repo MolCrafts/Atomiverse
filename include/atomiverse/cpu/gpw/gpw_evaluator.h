@@ -100,6 +100,10 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     bool d3bj = false;
     /// @brief Three-body ATM / C9 when `d3` or `d3bj` (CP2K CALCULATE_C9_TERM).
     bool d3_atm = false;
+    /// @brief DFT-D3 pair / ABC hard cutoff [Bohr], doubled convention
+    ///        (CP2K `R_CUTOFF x` Å sums to 2·x). Default = CP2K default
+    ///        `R_CUTOFF 20.0` → 75.59 Bohr. Applies to `d3` / `d3bj` only.
+    double d3_rcut_bohr = kD3Cp2kPairCutoffBohr;
     /// @brief Grimme DFT-D4 (PBE BJ). Exclusive vs other disp.
     ///        Two-body only unless `d4_atm`.
     bool d4 = false;
@@ -223,23 +227,31 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     ///        diagonalizes once to \(D = q[n]\), writes the shadow energy
     ///        \(\mathcal{E}=\mathrm{Tr}(H D)-\mathrm{Tr}(H n)+E_{\mathrm{KS}}[n]\)
     ///        and assembles forces at \((D,H[n])\) with **no iterative
-    ///        SCF** (`last_result().iters == 0`). Γ diagonalization path:
-    ///        RKS (one total-P propagator, occ 2) or collinear UKS (dual
+    ///        SCF** (`last_result().iters == 0`). Diagonalization paths:
+    ///        Γ RKS (one total-P propagator, occ 2), Γ collinear UKS (dual
     ///        \(n^\alpha/n^\beta\), one diagonalization per spin, occ 1,
     ///        \(\mathcal{E}=\sum_\sigma[\mathrm{Tr}(H^\sigma D^\sigma)
-    ///        -\mathrm{Tr}(H^\sigma n^\sigma)]+E_{\mathrm{KS}}[n]\)) —
-    ///        `build()` throws for multi-k, `use_ot`, `cpmd`, or
-    ///        `second_gen_cp`.
+    ///        -\mathrm{Tr}(H^\sigma n^\sigma)]+E_{\mathrm{KS}}[n]\)),
+    ///        multi-k RKS (one complex \(n_k\) per sampled k), and multi-k
+    ///        UKS (dual \(n^\sigma_k\)) with the k-weighted shadow energy
+    ///        \(\mathcal{E}=\sum_k w_k\sum_\sigma\mathrm{Re}\,
+    ///        \mathrm{Tr}[H^\sigma_k(D^\sigma_k-n^\sigma_k)]
+    ///        +E_{\mathrm{KS}}[n]\) — `build()` throws for `use_ot`,
+    ///        `cpmd`, `second_gen_cp`, or `compute_stress` (the warm
+    ///        shadow step returns before the stress block).
     bool xl_bomd_linearized = false;
     /// @brief Car–Parrinello MD: propagate occupied MO coefficients with a
     ///        fictitious mass and electronic RATTLE (not BOMD, not XL-BOMD).
     ///        After one cold SCF seed, each force step is a fixed-density KS
     ///        eval + electronic VV/RATTLE + analytic forces at that density.
-    ///        Closed-shell RKS Γ, collinear Γ-UKS (dual α/β), or multi-k RKS
-    ///        (one `CpmdCplx` per sampled \(k\); Bloch \(C_k\)). Multi-k UKS
-    ///        + CPMD throws at `build()`. Also throws with `use_ot`,
+    ///        Closed-shell RKS Γ, collinear Γ-UKS (dual α/β), multi-k RKS
+    ///        (one `CpmdCplx` per sampled \(k\); Bloch \(C_k\)), or multi-k
+    ///        collinear UKS (dual-spin Bloch \(C_k^\sigma\): one `CpmdCplx`
+    ///        per \(k\) and spin, occ 1). `build()` throws with `use_ot`,
     ///        `xl_bomd`, `second_gen_cp`, or `compute_stress` (the CPMD
-    ///        stress/variable-cell path is not yet productized).
+    ///        stress/variable-cell path is not yet productized); the
+    ///        electronic thermostat stays Γ-only (NVE electrons on the k
+    ///        path).
     bool cpmd = false;
     /// @brief Fictitious electron mass \(\mu\) [a.u. electron mass]. Typical
     ///        CPMD values \(10^2\)–\(10^3\). Default 400.
@@ -264,8 +276,11 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     ///        - **multi-k UKS:** dual complex ASPC per \(k\) (\(P_k^\alpha,
     ///          P_k^\beta\))
     ///        **OT corrector** is product at Γ when `use_ot=true` (RKS:
-    ///        `second-gen-cpmd-ot`; UKS: `second-gen-cpmd-uks-ot`). Multi-k +
-    ///        `use_ot` throws (solver has no \(P_k\) OT warm-start).
+    ///        `second-gen-cpmd-ot`; UKS: `second-gen-cpmd-uks-ot`) and on
+    ///        the multi-k **RKS** path (`second-gen-cpmd-ot-kpoints` — the
+    ///        per-k OT manifold warm-starts from natural orbitals of the
+    ///        ASPC-predicted \(P_k\)). Multi-k **UKS** + `use_ot` throws
+    ///        (dual-spin k-OT warm start is not productized).
     ///        Mutually exclusive with `cpmd` / `xl_bomd`. Requires
     ///        `compute_forces=true`.
     bool second_gen_cp = false;
@@ -300,10 +315,17 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     std::optional<electronic::Cpmd> cpmd_;
     /// CPMD β-spin propagator (Γ-UKS only; empty for RKS / multi-k).
     std::optional<electronic::Cpmd> cpmd_beta_;
-    /// Multi-k CPMD: one complex propagator per sampled k (empty on Γ).
+    /// Multi-k CPMD α (or RKS total): one complex propagator per sampled k
+    /// (empty on Γ).
     std::vector<electronic::CpmdCplx> cpmd_k_;
-    /// Scratch multi-k densities for fixed-density CPMD eval.
+    /// Multi-k UKS CPMD β: one complex propagator per k (empty for RKS / Γ /
+    /// the `n_beta == 0` half-metal edge).
+    std::vector<electronic::CpmdCplx> cpmd_k_beta_;
+    /// Scratch multi-k densities for fixed-density CPMD eval (RKS total, or
+    /// UKS α with occ 1).
     std::vector<linalg::CplxMatrix> cpmd_guess_p_k_;
+    /// Scratch multi-k UKS β densities for the dual-spin fixed-density eval.
+    std::vector<linalg::CplxMatrix> cpmd_guess_p_k_beta_;
     double last_te_ev_ = 0.0;     ///< last electronic KE [eV]
     double last_etherm_ev_ = 0.0; ///< last electronic NH energy [eV]
     /// Second-gen CP ASPC density history (engaged when `second_gen_cp` on Γ).

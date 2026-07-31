@@ -235,6 +235,29 @@ TEST(GpwDftD4, WaterDimerPeriodicAtmMatchesDftd4) {
     EXPECT_GT(std::abs(e - e0), 1e-10);
 }
 
+// Strained cell (x scaled by 1+2e-3, fixed fractional coordinates — the
+// gpw_stress scale_axis convention), s9=1: dftd4 3.7.0 -f pbe on the strained
+// POSCAR (tools/cp2k_oracle/inputs/gpw-d4-atm/pin_strain_x_plus_atm.json).
+// This is the unit-level pin behind the gpw-d4-atm-stress regression.
+TEST(GpwDftD4, WaterDimerPeriodicStrainedAtmMatchesDftd4) {
+    auto pos = water_dimer_bohr();
+    constexpr double kH = 2e-3;
+    for (auto& p : pos)
+        p[0] *= 1.0 + kH;
+    const double L = 12.0 * kAngToBohr;
+    const double cell[3] = {L * (1.0 + kH), L, L};
+    const double e = dftd4_energy(kZ, pos, cell, /*periodic=*/true,
+                                  /*s6=*/1.0, /*s8=*/0.95948085,
+                                  /*a1=*/0.38574991, /*a2=*/4.80688534,
+                                  /*ga=*/3.0, /*gc=*/2.0, /*wf=*/6.0,
+                                  /*charge=*/0.0, /*cn_cut=*/30.0,
+                                  /*disp2_cut=*/60.0, /*s9=*/1.0);
+    const double pin = -9.9375767649976510e-04;
+    std::printf("[D4 per ATM strained] E=%.14e  pin=%.14e  diff=%.2e Ha\n", e,
+                pin, e - pin);
+    EXPECT_NEAR(e, pin, 1e-9);
+}
+
 // Analytic s9=1 forces vs dftd4 3.7.0 --grad (isolated). The 1e-9 gate is
 // deliberate: the ATM force increment is ~1e-7 Ha/Bohr on this dimer, so a
 // 1e-7 gate would pass with the ATM gradient dropped entirely.

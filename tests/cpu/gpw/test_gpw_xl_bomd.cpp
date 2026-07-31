@@ -486,8 +486,9 @@ TEST(GpwEvaluatorXlBomdLinearized, BuildAcceptsLinearizedGammaUks) {
     EXPECT_NO_THROW(eval.build(bc));
 }
 
-// A2 (xl-bomd-linearized-uks): linearized + UKS + multi-k still refused.
-TEST(GpwEvaluatorXlBomdLinearized, BuildRejectsLinearizedUksMultiK) {
+// A2 (xl-bomd-linearized-kpoints): linearized + UKS + multi-k builds (the
+// dual-spin zero-SCF shadow path is product on the k path; old throw gone).
+TEST(GpwEvaluatorXlBomdLinearized, BuildAcceptsLinearizedUksMultiK) {
     auto frame = water_frame();
     auto base = water_eval();
     base.compute_forces = true;
@@ -498,17 +499,32 @@ TEST(GpwEvaluatorXlBomdLinearized, BuildRejectsLinearizedUksMultiK) {
     eval.method().nonperiodic = false;
     ATV::cpu::Context rt;
     ATV::cpu::BuildContext bc{rt, frame};
-    EXPECT_THROW(eval.build(bc), std::invalid_argument);
+    EXPECT_NO_THROW(eval.build(bc));
 }
 
-// A2: linearized + multi-k refused.
-TEST(GpwEvaluatorXlBomdLinearized, BuildRejectsLinearizedMultiK) {
+// A2 (xl-bomd-linearized-kpoints): linearized + multi-k RKS builds.
+TEST(GpwEvaluatorXlBomdLinearized, BuildAcceptsLinearizedMultiK) {
     auto frame = water_frame();
     auto base = water_eval();
     base.compute_forces = true;
     XlBomdForce eval{std::move(base), 5, XlBomdLinearized{}};
     eval.method().k_mesh[2] = 2;
     eval.method().nonperiodic = false;
+    ATV::cpu::Context rt;
+    ATV::cpu::BuildContext bc{rt, frame};
+    EXPECT_NO_THROW(eval.build(bc));
+}
+
+// A2: linearized + compute_stress refused at build() — the warm shadow
+// branches (Γ and multi-k) return before the stress block, so a stress
+// request would otherwise be silently dropped on every warm step.
+TEST(GpwEvaluatorXlBomdLinearized, BuildRejectsLinearizedWithStress) {
+    auto frame = water_frame();
+    auto base = water_eval();
+    base.compute_forces = true;
+    base.compute_stress = true;
+    base.nonperiodic = true;
+    XlBomdForce eval{std::move(base), 5, XlBomdLinearized{}};
     ATV::cpu::Context rt;
     ATV::cpu::BuildContext bc{rt, frame};
     EXPECT_THROW(eval.build(bc), std::invalid_argument);
@@ -635,4 +651,122 @@ TEST(XlBomdLinearized, DualSpinShadowEnergyRecoversAtFixedPoint) {
     const double e_lin2 = (tr(Ha, na) - tr(Ha, na))
                           + (tr(Hb, Db) - tr(Hb, nbm)) + e_ks_n;
     EXPECT_NEAR(e_lin2 - e_ks_n, delta_b, 1e-15);
+}
+
+// ── Multi-k linearized XL (xl-bomd-linearized-kpoints) ──────────────────
+
+// A3: k-weighted complex shadow energy recovers E_KS at the per-k fixed
+// point D_k = n_k, and the residual is the k-weighted sum of the per-k
+// Re Tr[H_k (D_k − n_k)] terms (spin-diagonal generalization identical).
+TEST(XlBomdLinearizedKpoints, KWeightedShadowEnergyRecoversAtFixedPoint) {
+    constexpr int n = 3;
+    const double w[2] = {0.25, 0.75}; // Σ w_k = 1
+    std::vector<CplxMatrix> H(2), dens(2);
+    for (int ik = 0; ik < 2; ++ik) {
+        H[static_cast<std::size_t>(ik)] =
+            constant_cplx(n, Cplx(-0.4 - 0.1 * ik, 0.02 * (ik + 1)));
+        dens[static_cast<std::size_t>(ik)] =
+            constant_cplx(n, Cplx(0.2 + 0.03 * ik, -0.01 * (ik + 1)));
+    }
+    auto tr = [n](const CplxMatrix& A, const CplxMatrix& B) {
+        double t = 0.0;
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j)
+                t += (A(i, j) * B(j, i)).real();
+        return t;
+    };
+    const double e_ks_n = -3.14159;
+    // Fixed point: D_k = n_k at every k.
+    double e_lin = e_ks_n;
+    for (int ik = 0; ik < 2; ++ik)
+        e_lin += w[ik]
+                 * (tr(H[static_cast<std::size_t>(ik)],
+                       dens[static_cast<std::size_t>(ik)])
+                    - tr(H[static_cast<std::size_t>(ik)],
+                         dens[static_cast<std::size_t>(ik)]));
+    EXPECT_DOUBLE_EQ(e_lin, e_ks_n);
+
+    // Perturb only k = 1: the residual is w_1 · Re Tr[H_1 (D_1 − n_1)].
+    CplxMatrix D1 = dens[1];
+    D1(0, 0) += Cplx(0.05, 0.0);
+    D1(2, 2) -= Cplx(0.03, 0.0);
+    const double delta_1 = w[1] * (tr(H[1], D1) - tr(H[1], dens[1]));
+    const double e_lin2 =
+        e_ks_n + w[0] * (tr(H[0], dens[0]) - tr(H[0], dens[0]))
+        + w[1] * (tr(H[1], D1) - tr(H[1], dens[1]));
+    EXPECT_NEAR(e_lin2 - e_ks_n, delta_1, 1e-15);
+}
+
+// A4: multi-k UKS fixed-density eval (max_iter = 0 + dual guesses) fills
+// the dual payload H_ks_k / H_ks_k_beta / S_k / P_k / P_k_beta with
+// iters == 0, and reproduces the converged SCF total energy when handed
+// the converged dual densities (stationarity of E_KS[P] at the SCF fixed
+// point — first-order density error cancels).
+TEST(GpwSolverGuessPk, MultiKUksFixedDensityEvalFillsDualPayload) {
+    pin_single_thread();
+    const auto atoms = small_h2(/*box=*/8.0);
+
+    GpwDft cold = small_cfg(/*box=*/8.0);
+    cold.n_occ = 0;
+    cold.n_alpha = 1;
+    cold.n_beta = 1;
+    cold.k_mesh[2] = 2;
+    cold.k_time_reversal = false;
+    cold.nonperiodic = false;
+    cold.build(atoms);
+    const GpwResult ref = cold.run(atoms);
+    ASSERT_TRUE(ref.converged);
+    ASSERT_GE(ref.n_kpts, 2);
+    ASSERT_EQ(static_cast<int>(ref.P_k.size()), ref.n_kpts);
+    ASSERT_EQ(static_cast<int>(ref.P_k_beta.size()), ref.n_kpts);
+
+    GpwDft fixed = small_cfg(/*box=*/8.0);
+    fixed.n_occ = 0;
+    fixed.n_alpha = 1;
+    fixed.n_beta = 1;
+    fixed.k_mesh[2] = 2;
+    fixed.k_time_reversal = false;
+    fixed.nonperiodic = false;
+    fixed.max_iter = 0;
+    fixed.build(atoms);
+    const GpwResult& r =
+        fixed.run(atoms, nullptr, nullptr, nullptr, &ref.P_k, &ref.P_k_beta);
+    EXPECT_TRUE(r.converged);
+    EXPECT_EQ(r.iters, 0);
+    ASSERT_EQ(r.n_kpts, ref.n_kpts);
+    ASSERT_EQ(static_cast<int>(r.H_ks_k.size()), r.n_kpts);
+    ASSERT_EQ(static_cast<int>(r.H_ks_k_beta.size()), r.n_kpts);
+    ASSERT_EQ(static_cast<int>(r.S_k.size()), r.n_kpts);
+    ASSERT_EQ(static_cast<int>(r.P_k.size()), r.n_kpts);
+    ASSERT_EQ(static_cast<int>(r.P_k_beta.size()), r.n_kpts);
+    ASSERT_EQ(static_cast<int>(r.k_weights.size()), r.n_kpts);
+    EXPECT_TRUE(std::isfinite(r.e_total));
+    EXPECT_NEAR(r.e_total, ref.e_total, 1e-6);
+    // Payload passthrough: the eval density IS the supplied guess.
+    for (int ik = 0; ik < r.n_kpts; ++ik) {
+        const auto& Pin = ref.P_k[static_cast<std::size_t>(ik)];
+        const auto& Pout = r.P_k[static_cast<std::size_t>(ik)];
+        double maxd = 0.0;
+        for (std::size_t i = 0; i < Pin.shape(0); ++i)
+            for (std::size_t j = 0; j < Pin.shape(1); ++j)
+                maxd = std::max(maxd, std::abs(Pout(i, j) - Pin(i, j)));
+        EXPECT_LT(maxd, 1e-14);
+    }
+}
+
+// A4: multi-k UKS fixed-density eval without the dual density guess throws
+// (no silent cold start behind max_iter = 0).
+TEST(GpwSolverGuessPk, MultiKUksFixedDensityWithoutGuessThrows) {
+    pin_single_thread();
+    const auto atoms = small_h2();
+    GpwDft fixed = small_cfg();
+    fixed.n_occ = 0;
+    fixed.n_alpha = 1;
+    fixed.n_beta = 1;
+    fixed.k_mesh[2] = 2;
+    fixed.k_time_reversal = false;
+    fixed.nonperiodic = false;
+    fixed.max_iter = 0;
+    fixed.build(atoms);
+    EXPECT_THROW(fixed.run(atoms), std::invalid_argument);
 }

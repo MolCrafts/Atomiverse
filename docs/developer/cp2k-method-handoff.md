@@ -1,6 +1,66 @@
 # CP2K capability loop — handoff
 
-## Harness wave 1 (shift) 2026-07-31 (parent `dev` @ `8a9584f4`)
+## Harness wave 2 (shift) 2026-07-31 (parent `dev` @ `8b2fda00`)
+
+| Field | Value |
+| ----- | ----- |
+| Branch | `dev` (tracks `origin/dev`, ahead of origin by merges) |
+| Incomplete / `in_progress` | **2** (`[~] gpw-ts-stress`, `[~] gpw-xdm-stress` — uncommitted WIP in their isolation worktrees at the assign parent `197468ac`; no `wf/*` commits ahead) |
+| Open CP2K specs on `dev` | **0** (PySCF deferred only: `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp`) |
+| Specs closed this harness | **8** (seven deleted here; `gpw-d4-atm-stress` deleted on its branch, `a2c85a6b`) |
+| Unmerged staff `wf/*` | **2** incomplete kept (`wf/gpw-ts-stress`, `wf/gpw-xdm-stress` — branch tips at the assign parent; the WIP is uncommitted in their worktrees) |
+| Isolation worktrees | **2** kept for the incomplete staff (dirty WIP — do not remove) |
+| Leftover builds | merge-gate `build/` wiped at exit |
+| Pending gaps | **3** (held assign wave-2 list — not exhausted) |
+| Blocked | **6** (VV10 + hybrid / GAPW / PAW / CUDA-GPW / meta-GGA) |
+| Done this wave | **8** landings (eight `--no-ff` merges `aa897bb2`..`8b2fda00`) |
+| Merge gate | scoped rebuild + `ctest -R '^test_cpu_(gpw\|pw\|scf\|xc)_\|^test_xc_'` **57/57** green on merged `dev` |
+| Oracle | `tools/cp2k_oracle/` offline pins only |
+| Loop docs | queue / loop / handoff / roadmap residual prose **synced** |
+
+### Wave staff → done
+
+| Slug | Domain | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
+| ---- | ------ | ---------- | --------------------------------------------- |
+| `gpw-d3-stress` (resume) | gpw | `reg_gpw-d3-stress` | **0.55** (ATV 18.5 s / CP2K NUMERICAL twin 33.6 s) |
+| `dfpt-gga-finite-q-si` | response | `reg_dfpt-gga-finite-q-si` | **0.17** (CP2K 288.7 s / ATV 49.8 s) |
+| `xl-bomd-linearized-kpoints` | dynamics | `reg_xl-bomd-linearized-kpoints` | **perf_exempt** (NVE envelope; CP2K `.ener`-anchored trace) |
+| `gpw-vdw-multigrid` | gpw | `reg_gpw-vdw-multigrid` | **0.83** (ATV 20.6 s / CP2K NGRIDS 4 24.7 s) |
+| `cpmd-uks-kpoints` | dynamics | `reg_cpmd-uks-kpoints` | **perf_exempt** (CP2K has no fictitious-mass CP propagator) |
+| `second-gen-cpmd-ot-kpoints` | dynamics | `reg_second-gen-cpmd-ot-kpoints` | **perf_exempt** (CP2K refuses `&OT` + `&KPOINTS`) |
+| `gpw-d3-atm-stress` | gpw | `reg_gpw-d3-atm-stress` | **0.75** (ATV 40.8 s / CP2K 54.5 s) |
+| `gpw-d4-atm-stress` | gpw | `reg_gpw-d4-atm-stress` | **perf_exempt** (no CP2K DFTD4 build) |
+
+### Incomplete kept `[~]` (do not demote)
+
+| Slug | Branch | Tip | Note |
+| ---- | ------ | --- | ---- |
+| `gpw-ts-stress` | `wf/gpw-ts-stress` | `197468ac` (= assign parent) | uncommitted WIP in worktree `wf_b2c72c75-58a-34`: spec + `regressions/gpw/gpw-ts-stress` + oracle inputs scaffolded, TS force-pin files touched; acceptance unfinished |
+| `gpw-xdm-stress` | `wf/gpw-xdm-stress` | `197468ac` (= assign parent) | uncommitted WIP in worktree `wf_b2c72c75-58a-35`: spec + `regressions/gpw/gpw-xdm-stress` + oracle inputs scaffolded; acceptance unfinished |
+
+### Roadmap ○→✓ this harness
+
+| Row | Doc | Note |
+| --- | --- | ---- |
+| *(none)* | — | capability table rows already ✓ (dispersion / DFPT / AIMD / multigrid) |
+| Residual prose | `dft.md` §8/§10/§12 + `molecular-dynamics.md` AIMD | landed **with the worker merges**: D3-zero stress, finite-q DFPT GGA, multi-k linearized XL, vdW multigrid, multi-k UKS CPMD, multi-k SGCP OT, D3/D4 ATM stress |
+| Index GPW line | `index.md` | harness fixed the stale ships/residual line (vdW multigrid + multi-k SGCP OT + D3/D4 ATM stress were missing from ships and still listed pending) |
+| Still open incomplete | TS/XDM stress pins | `[~]` WIP worktrees; stock VV10 stays ○ (blocked) |
+| Still open pending | vdW × k-points; multi-k UKS multigrid; multi-k CPMD electronic thermostat | held wave-2 list |
+
+### Pending residual
+
+**Pending = 3** (held wave-2 list). **Incomplete = 2** (`gpw-ts-stress`,
+`gpw-xdm-stress` — dirty WIP worktrees). Next wave starts with **Recover
+incomplete** (finish/commit the two WIP worktrees on their `wf/*` branches)
+then GapCensus. Blocked = 6 unchanged.
+
+Do **not** staff PySCF deferred specs. No push from parent.
+**Queue not exhausted** — GapCensus owns discovery; incomplete ≫ pending.
+
+---
+
+## Harness wave 1 (shift) 2026-07-31 (parent `dev` @ `8a9584f4`) — historical
 
 | Field | Value |
 | ----- | ----- |

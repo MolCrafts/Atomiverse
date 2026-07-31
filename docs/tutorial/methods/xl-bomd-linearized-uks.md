@@ -145,7 +145,8 @@ pins the same dual-spin linearized-XL physics.
 
 - Not SCF-converged XL (`xl-bomd-uks` keeps iterative SCF to `tol`)
 - Not closed-shell linearized XL (`xl-bomd-linearized-forces`)
-- Not multi-k linearized XL (Γ-point only; `build()` throws)
+- Not multi-k linearized XL (shipped follow-on:
+  [xl-bomd-linearized-kpoints](xl-bomd-linearized-kpoints.md))
 - Not OT + XL, CPMD, or second-gen CP simultaneous with XL (mutually exclusive)
 - Not hybrid / meta-GGA XC; not thermostatted / multi-ps production AIMD
 - Not a measured fair-wall twin vs CP2K AIMD (see Performance)
@@ -307,8 +308,9 @@ measured fair-bench ratio.
   history, channel swap, or a wrong shadow formula destroys the zero-iter /
   drift / ⟨S²⟩ gates; a passing path is not a high-precision total-energy
   twin of CP2K Quickstep.
-- **Γ-UKS diagonalization only.** Multi-k linearized shadow forces, OT+XL,
-  hybrid / GAPW remain refused at `build()`; separate rows if productized.
+- **Γ-UKS diagonalization here.** Multi-k linearized shadow forces shipped
+  as [xl-bomd-linearized-kpoints](xl-bomd-linearized-kpoints.md); OT+XL,
+  hybrid / GAPW remain refused at `build()`.
 - **Looser drift window** (\(\delta \le 0.10\)) than SCF-XL; do not tighten
   without re-pinning literature/CP2K.
 - **Cold seed still pays full dual-spin SCF** (~23 DIIS iterations here).
