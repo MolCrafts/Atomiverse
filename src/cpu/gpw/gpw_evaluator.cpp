@@ -163,6 +163,7 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
     cfg.d3 = d3;
     cfg.d3bj = d3bj;
     cfg.d3_atm = d3_atm;
+    cfg.d3_rcut_bohr = d3_rcut_bohr;
     cfg.d4 = d4;
     cfg.d4_atm = d4_atm;
     cfg.ts = ts;

@@ -26,6 +26,12 @@ merge gate green (scoped rebuild + `ctest -R '^test_cpu_(gpw|pw|scf|xc)_|^test_x
 
 Do not re-create closed slugs without superseding intent.
 
+## Live — cp2k-method-loop worker wave 2 (2026-07-31)
+
+| Spec | One-line |
+| ---- | -------- |
+| gpw-d3-atm-stress | D3 ATM (C9) cell-stress pin: CP2K NUMERICAL-stress difference (C9 on−off) + `d3_rcut_bohr` member; delete on merge-close |
+
 ## Live — esmm campaign: ES × MM connection layer (2026-07-26, 16 specs)
 
 Operator-approved three-wave campaign (plan-mode design review + Q&A 2026-07-26):

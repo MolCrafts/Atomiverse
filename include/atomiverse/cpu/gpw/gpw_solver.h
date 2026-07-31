@@ -33,6 +33,7 @@
 #include "atomiverse/cpu/gpw/gaussian_basis.h" // GaussianBasis
 #include "atomiverse/cpu/gpw/gth_potential.h" // GthPotential, GthNonlocalChannel
 #include "atomiverse/cpu/gpw/internal/collocate.h"
+#include "atomiverse/cpu/gpw/internal/dftd3.h" // kD3Cp2kPairCutoffBohr
 #include "atomiverse/cpu/gpw/g0w0.h"      // G0W0Result
 #include "atomiverse/cpu/gpw/mp2.h"       // Mp2Result
 #include "atomiverse/cpu/gpw/rpa.h"       // RpaResult
@@ -262,6 +263,12 @@ class GpwDft {
     /// @brief Three-body ATM / C9 on top of `d3` or `d3bj` (CP2K
     ///        `CALCULATE_C9_TERM`). Ignored when neither D3 flag is set.
     bool d3_atm = false; ///< DFT-D3 Axilrod–Teller–Muto (C9).
+    /// @brief DFT-D3 pair / ABC hard cutoff [Bohr], **doubled** convention:
+    ///        CP2K `&PAIR_POTENTIAL R_CUTOFF x` (Å) sums to 2·x (it prints the
+    ///        half). Default = CP2K default `R_CUTOFF 20.0` → 75.59 Bohr
+    ///        (`kD3Cp2kPairCutoffBohr`). Energy, forces and stress all fold
+    ///        the same value. Applies to `d3` / `d3bj` only.
+    double d3_rcut_bohr = kD3Cp2kPairCutoffBohr;
     /// @brief Grimme DFT-D4 BJ damping (PBE params; periodic EEQ).
     /// Mutually exclusive with `d3` / `d3bj` / `ts` / `mbd` / `xdm`.
     /// Two-body only unless `d4_atm` is also set.

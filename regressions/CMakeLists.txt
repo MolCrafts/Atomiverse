@@ -416,6 +416,8 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-d3bj-forces THREADS 8)
     # D3 three-body ATM (C9) force pin, isolated + periodic image triples.
     atv_add_regression(gpw gpw-d3-atm-forces THREADS 8)
+    # D3 ATM (C9) cell-stress pin: CP2K numerical-stress difference (C9 on-off).
+    atv_add_regression(gpw gpw-d3-atm-stress THREADS 8)
     # Gamma analytic cell stress folding periodic MBD@rsSCS.
     atv_add_regression(gpw gpw-mbd-stress THREADS 8)
     # Multi-k analytic cell stress folding periodic MBD@rsSCS.

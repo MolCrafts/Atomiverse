@@ -100,6 +100,10 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     bool d3bj = false;
     /// @brief Three-body ATM / C9 when `d3` or `d3bj` (CP2K CALCULATE_C9_TERM).
     bool d3_atm = false;
+    /// @brief DFT-D3 pair / ABC hard cutoff [Bohr], doubled convention
+    ///        (CP2K `R_CUTOFF x` Å sums to 2·x). Default = CP2K default
+    ///        `R_CUTOFF 20.0` → 75.59 Bohr. Applies to `d3` / `d3bj` only.
+    double d3_rcut_bohr = kD3Cp2kPairCutoffBohr;
     /// @brief Grimme DFT-D4 (PBE BJ). Exclusive vs other disp.
     ///        Two-body only unless `d4_atm`.
     bool d4 = false;

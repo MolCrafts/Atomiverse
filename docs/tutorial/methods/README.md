@@ -311,6 +311,7 @@ the Response / phonons table below.
 | GPW PBE-D3(BJ) analytic cell stress (periodic dimer) | [gpw-d3bj-stress](gpw-d3bj-stress.md) | `regressions/gpw/gpw-d3bj-stress` | **0.37** |
 | Multi-k analytic cell stress + periodic MBD@rsSCS | [gpw-mbd-kpoint-stress](gpw-mbd-kpoint-stress.md) | `regressions/gpw/gpw-mbd-kpoint-stress` | **perf_exempt** |
 | GPW DFT-D3 three-body ATM (C9) analytic ionic forces | [gpw-d3-atm-forces](gpw-d3-atm-forces.md) | `regressions/gpw/gpw-d3-atm-forces` | **3.3** |
+| GPW DFT-D3 three-body ATM (C9) analytic cell stress | [gpw-d3-atm-stress](gpw-d3-atm-stress.md) | `regressions/gpw/gpw-d3-atm-stress` | **0.75** |
 | GPW DFT-D4 three-body ATM (\(s_9=1\)) analytic ionic forces | [gpw-d4-atm-forces](gpw-d4-atm-forces.md) | `regressions/gpw/gpw-d4-atm-forces` | **perf_exempt** |
 | Multi-k Dudarev DFT+U analytic ionic forces (H₂ + NiO Γ) | [gpw-dftu-kpoint-forces](gpw-dftu-kpoint-forces.md) | `regressions/gpw/gpw-dftu-kpoint-forces` | **≈ 1.0** |
 | Plain multi-k BOMD on GPW (periodic H₂ NVE) | [gpw-bomd-kpoints](gpw-bomd-kpoints.md) | `regressions/gpw/gpw-bomd-kpoints` | **0.064** |
