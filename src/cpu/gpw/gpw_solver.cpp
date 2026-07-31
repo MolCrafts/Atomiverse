@@ -5528,11 +5528,15 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
             reject("the analytic per-pair local PP (local_pp_on_grid=false)");
         if (level_shift != 0.0)
             reject("level shifting");
-        // Nonlocal vdW (vdw_df / vdw_df2 / rvv10) is wired on the closed-shell
-        // multi-k RKS path: SCF V_nl in build_k_energy + post-SCF E_c^nl in
-        // fold_dispersion_k (single-grid and REL_CUTOFF multigrid alike;
-        // gpw-vdw-kpoints). UKS + vdW is rejected in the is_uks() branch
-        // above, Γ and k alike.
+        // Nonlocal vdW (vdw_df / vdw_df2 / rvv10) is product on closed-shell
+        // multi-k RKS (SCF V_nl in build_k_energy + post-SCF E_c^nl in
+        // fold_dispersion_k; single-grid and REL_CUTOFF multigrid —
+        // gpw-vdw-kpoints). Multi-k UKS has no dual-spin nonlocal fold yet
+        // (Γ UKS is product via gpw-vdw-uks) — fail-fast instead of
+        // silently dropping E_c^nl.
+        if (is_uks() && (vdw_df || vdw_df2 || rvv10))
+            reject("nonlocal vdW (vdw_df / vdw_df2 / rvv10) with multi-k UKS "
+                   "(use Γ UKS or closed-shell multi-k RKS)");
         if (is_uks() && xc != XcKind::PADE && xc != XcKind::PBE
             && xc != XcKind::PBEsol && xc != XcKind::RevPBE
             && xc != XcKind::RPBE && xc != XcKind::BLYP
