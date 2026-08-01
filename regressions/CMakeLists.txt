@@ -494,6 +494,8 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-d3-kpoint-stress THREADS 8)
     # Multi-k analytic cell stress folding DFT-D4 (two-body BJ).
     atv_add_regression(gpw gpw-d4-kpoint-stress THREADS 8)
+    # Multi-k analytic cell stress folding DFT-D4 three-body ATM (s9=1).
+    atv_add_regression(gpw gpw-d4-atm-kpoint-stress THREADS 8)
     # Gamma analytic cell stress folding free-atom XDM (dual-python strain pins).
     atv_add_regression(gpw gpw-xdm-stress THREADS 8)
     # Multi-k analytic cell stress folding free-atom XDM (dual-python strain pins).
