@@ -48,11 +48,12 @@ ships multi-k UKS nonlocal **vdW** (`reg_gpw-vdw-uks-kpoints`), multi-k
 **D3/D3(BJ)/ATM stress** pins, multi-k UKS **BOMD**
 (`reg_gpw-bomd-uks-kpoints`), and Γ-UKS vdW **multigrid**
 (`reg_gpw-vdw-uks-multigrid`); open residuals: multi-k **D4/TS/XDM stress**
-dedicated pins (staff `[~]` unmerged), multi-k UKS **Hirshfeld** (`[~]`),
+dedicated pins (staff `[~]` unmerged),
 multi-k UKS CPMD **eNH** combo pin, GPW spin **MLWF**, SCS-**MP2** scale
 pin, Γ-UKS **optB88-vdW**, multi-k UKS **vdW×multigrid** triple combo,
 multi-k RKS **optB88-vdW**, multi-k D3/D4 **ATM forces** dedicated pins
-(GapCensus wave 2 2026-08-01);
+(GapCensus wave 2 2026-08-01); multi-k UKS **Hirshfeld** product
+(`reg_gpw-hirshfeld-uks-kpoints`);
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -263,7 +264,9 @@ tables; `reg_gpw-ts-ice`). **MBD@rsSCS** free-atom (volume-ratio = 1) many-body
 dispersion ships on GPW (`GpwDft::mbd` / `GPWEvaluator::mbd`; libMBD Fortran
 pin; `reg_gpw-mbd-ice`). **Hirshfeld density volumes** (density-scaled
 TS/MBD via `GpwDft::hirshfeld`) ship on GPW at **Γ RKS**
-(`reg_gpw-mbd-hirshfeld`) **and multi-k RKS** (`reg_gpw-hirshfeld-kpoints`).
+(`reg_gpw-mbd-hirshfeld`), **multi-k RKS** (`reg_gpw-hirshfeld-kpoints`),
+**Γ-UKS** (`reg_gpw-hirshfeld-uks`), and **multi-k UKS**
+(`reg_gpw-hirshfeld-uks-kpoints`).
 **vdW-DF** (DRSLL nonlocal correlation; `GpwDft::vdw_df`) ships on GPW
 (`reg_gpw-vdw-df-ice`). **vdW-DF2 (LMKLL)** (`GpwDft::vdw_df2`;
 `reg_gpw-vdw-df2-ice`) and **rVV10** (`GpwDft::rvv10`; `reg_gpw-rvv10-ice`)
@@ -275,8 +278,10 @@ back-propagation) productize for vdW-DF/DF2/rVV10
 productizes free-atom / Hirshfeld MBD for periodic cells
 (`reg_gpw-mbd-periodic`). **XDM** free-atom pairwise dispersion ships on
 GPW (`GpwDft::xdm` / `GPWEvaluator::xdm`; `reg_gpw-xdm-ice`). **Hirshfeld**
-volumes productize for **closed-shell RKS** (Γ + multi-k) **and Γ-UKS**
-(`reg_gpw-hirshfeld-uks`). **optB88-vdW** (optB88 exchange + DRSLL nonlocal)
+volumes productize for **closed-shell RKS** (Γ + multi-k), **Γ-UKS**
+(`reg_gpw-hirshfeld-uks`), **and multi-k UKS**
+(`reg_gpw-hirshfeld-uks-kpoints`; `fold_dispersion_k_uks`). **optB88-vdW**
+(optB88 exchange + DRSLL nonlocal)
 ships on GPW (`reg_gpw-optb88-vdw`). Stock **VV10** (distinct from rVV10;
 CP2K 2026.1 has no `TYPE VV10`) is **blocked** in the CP2K queue
 (`gpw-vv10-ice` — no offline twin; product VV-family remains rVV10).
@@ -428,8 +433,9 @@ Two periodic DFT engines exist, with disjoint strengths:
   **blocked** (no CP2K twin). Product after green merge: multi-k UKS
   nonlocal vdW (`reg_gpw-vdw-uks-kpoints`), multi-k D3/D3(BJ)/ATM stress,
   multi-k UKS BOMD (`reg_gpw-bomd-uks-kpoints`), Γ-UKS vdW multigrid
-  (`reg_gpw-vdw-uks-multigrid`). Open residuals: multi-k D4/TS/XDM stress
-  dedicated pins (`[~]`), multi-k UKS Hirshfeld (`[~]`), multi-k UKS CPMD
+  (`reg_gpw-vdw-uks-multigrid`), multi-k UKS Hirshfeld
+  (`reg_gpw-hirshfeld-uks-kpoints`). Open residuals: multi-k D4/TS/XDM stress
+  dedicated pins (`[~]`), multi-k UKS CPMD
   eNH combo pin, GPW spin MLWF, SCS-MP2 scale pin, Γ-UKS optB88-vdW,
   multi-k UKS vdW×multigrid, multi-k RKS optB88-vdW, multi-k D3/D4 ATM
   force pins (see `cp2k-method-queue.md` GapCensus wave 2).
@@ -494,7 +500,8 @@ Which engine backs which ✓:
   (`reg_gpw-mbd-ice`) **+ ionic forces** (Γ `reg_gpw-mbd-forces` + multi-k
   `reg_gpw-mbd-kpoint-forces`),
   **Hirshfeld-scaled MBD** (Γ `reg_gpw-mbd-hirshfeld` + multi-k
-  `reg_gpw-hirshfeld-kpoints` + **Γ-UKS** `reg_gpw-hirshfeld-uks`),
+  `reg_gpw-hirshfeld-kpoints` + **Γ-UKS** `reg_gpw-hirshfeld-uks` +
+  **multi-k UKS** `reg_gpw-hirshfeld-uks-kpoints`),
   **periodic Ewald MBD** (`reg_gpw-mbd-periodic`), **XDM**
   (`reg_gpw-xdm-ice`), **vdW-DF DRSLL** (`reg_gpw-vdw-df-ice`), **vdW-DF2
   LMKLL** (`reg_gpw-vdw-df2-ice`), **rVV10** (`reg_gpw-rvv10-ice`),
