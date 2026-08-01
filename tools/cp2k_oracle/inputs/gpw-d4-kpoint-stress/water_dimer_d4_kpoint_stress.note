@@ -1,0 +1,58 @@
+# Offline CP2K multi-k PBE-D4 NUMERICAL stress pin (gpw-d4-kpoint-stress)
+
+## Binary
+
+| Item | Value |
+| --- | --- |
+| Engine | CP2K 2026.1 `cp2k.psmp` git:5e54ba2 |
+| Flags | `omp libint fftw3 libxc elpa parallel scalapack mpi_f08 spglib libdftd4` |
+| Build | private Arrhenius rebuild with `-DCP2K_USE_DFTD4=ON` |
+| Prefix | `/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install` |
+| libdftd4 | EasyBuild `dftd4/3.7.0-gfbf-2025b` (+ mctc-lib, multicharge, mstore) |
+| Data | `CP2K_DATA_DIR=/nobackup/.../cp2k/src/data` |
+
+Stock source install (`…/cp2k/install`, no `libdftd4` in `cp2kflags`) aborts
+`TYPE DFTD4` — do **not** use it for this twin.
+
+## Reproduce (offline only — never ctest)
+
+```bash
+export PATH=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install/bin:$PATH
+export LD_LIBRARY_PATH=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install/lib64:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/dftd4/3.7.0-gfbf-2025b/lib64:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/mctc-lib/0.5.1-GCC-14.3.0/lib:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/multicharge/0.3.1-gfbf-2025b/lib:\
+${LD_LIBRARY_PATH:-}
+export CP2K_DATA_DIR=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/src/data
+export OMP_NUM_THREADS=8
+cd /tmp && mkdir -p atv-cp2k-d4-kpt && cd atv-cp2k-d4-kpt
+ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS} .
+# copy both .inp files from tools/cp2k_oracle/inputs/gpw-d4-kpoint-stress/
+mpirun -np 1 cp2k.psmp -i water_dimer_d4_kpoint_stress.inp -o water_dimer_d4_kpoint_stress.out
+mpirun -np 1 cp2k.psmp -i water_dimer_plain_kpoint_stress.inp -o water_dimer_plain_kpoint_stress.out
+```
+
+## D4 input requirements
+
+- `D4_CUTOFF` (2-body) must be **≥** `R_CUTOFF` (3-body slot); equal defaults
+  abort with "Three-body cutoff should be smaller than two-body cutoff" when
+  units land such that 3-body > 2-body. Twin uses `D4_CUTOFF 30`, `R_CUTOFF 20`.
+- Two-body only: `CALCULATE_C9_TERM .FALSE.` + `FACTOR_S9_TERM 0.0`.
+- K-points: `DIAGONALIZATION` (not OT); `EPS_SCF 1e-8`.
+
+## Pinned numbers (2026-08-01)
+
+```
+E_disp printed (D4 twin)     = -0.00099470623400 Ha
+E_total (D4)                 = -34.339246684320038 Ha
+E_total (plain)              = -34.338251978086049 Ha
+T_cp2k internal (D4 twin)    = 94.525 s   (1 MPI × 8 OMP)
+sigma_disp [Ha/Bohr3] xx/yy/zz =
+  -7.61267484462925e-08
+  -1.13641449922510e-09
+  +2.00931506270126e-09
+```
+
+Cross-check E_disp vs offline dftd4 3.7.0 unstrained pin
+(−9.9458842745846774e−04 Ha): |Δ| ≈ 1.18e−07 Ha under these cutoffs.
+ATV product path pins E_disp to dftd4; Δσ to CP2K multi-k difference.
