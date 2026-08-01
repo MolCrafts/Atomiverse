@@ -3,6 +3,18 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Closed — CP2K harness wave 5 (shift) (2026-08-01)
+
+Merged / landed on `dev` (HEAD `350fe453` at harness close); specs deleted;
+history is the git log. Incomplete staff kept `[~]` on unmerged
+`wf/gpw-ts-kpoint-stress` and `wf/gpw-ts-kpoint-forces`.
+
+| Queue | Specs (deleted; see git) | Shipped highlights |
+| ----- | ------------------------ | ------------------ |
+| cp2k-method-loop harness wave 5 (shift) | gpw-uks-pbesol, gpw-hirshfeld-kpoint-forces, gpw-dftu-forces (+ gpw-xdm-kpoint-forces / periodic-scs-ump2-kpoints / dfpt-gga-spin-finite-q-smearing product without live specs on parent) | multi-k free-atom XDM forces; Γ-UKS PBEsol; multi-k SCS-UMP2; four-way finite-q×spin×GGA×smear DFPT; multi-k Hirshfeld TS/MBD forces; Γ DFT+U forces |
+
+Do not re-create closed slugs without superseding intent.
+
 ## Closed — CP2K harness wave 4 (shift) (2026-08-01)
 
 Merged / landed on `dev` (HEAD `6f1218b3` at harness close); specs deleted;

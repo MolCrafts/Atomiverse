@@ -1502,23 +1502,38 @@ GPW force/stress surface. No pick depends on another pick. **Held pending
 (0):** staff emptied the census list. **Pending residual after assign = 0**
 (not queue exhausted; GapCensus owns next discovery after harness).
 
+**Harness wave 5 (shift) 2026-08-01 (parent `dev` @ `350fe453`):** **6/8**
+staffed slugs on `dev` → `## done` (`gpw-xdm-kpoint-forces`,
+`gpw-uks-pbesol`, `periodic-scs-ump2-kpoints`,
+`dfpt-gga-spin-finite-q-smearing`, `gpw-hirshfeld-kpoint-forces`,
+`gpw-dftu-forces` — feat merges `c8d29f73`..`350fe453`; specs closed ×3).
+**Incomplete kept `[~]` ×2** (do not demote): `gpw-ts-kpoint-stress`
+(`wf/gpw-ts-kpoint-stress` @ `f86aec1a` — feat tip + reg on branch only),
+`gpw-ts-kpoint-forces` (`wf/gpw-ts-kpoint-forces` @ `3eb2a6ee` — feat tip +
+reg on branch only). **Pending residual = 0** (census list emptied by
+assign — **not** queue exhausted; GapCensus owns next discovery).
+**in_progress = 2**; **blocked = 6** unchanged. Clearup already ran (no
+isolation worktrees; merged `wf/*` pruned; incomplete `wf/*` kept). No
+push.
+
 ## pending
 
-_(empty — Assign wave 5 staffed all census residuals)_
+_(empty — Assign wave 5 staffed all census residuals; harness closed 6;
+GapCensus owns next discovery)_
 
 ## in_progress
 
-- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `2d0977c8` (feat tip + reg on branch only; resume: rebase onto `dev`, dual-gate, merge)
-- [~] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | twin: libMBD / literature (CP2K has no stock TS — same policy as `gpw-ts-forces`) | deps: gpw-ts-forces ✓, gpw-ts-stress ✓ | write-first
-- [~] `gpw-xdm-kpoint-forces` | Multi-k analytic ionic forces with free-atom XDM (dedicated pin) | gpw | twin: pure-Python XDM grad (same policy as `gpw-xdm-forces`) | deps: gpw-xdm-forces ✓, gpw-xdm-kpoint-stress ✓ | write-first
-- [~] `gpw-uks-pbesol` | Γ-UKS PBEsol GGA (spin XC product; dedicated energy pin) | gpw | twin: CP2K 2026.1 UKS + PBEsol / GGA_X_PBE_SOL | deps: gpw-pbesol-si ✓, gpw-uks-pbe ✓ | write-first
-- [~] `dfpt-gga-spin-finite-q-smearing` | DFPT phonons with joint finite-q × collinear spin × pure GGA (PBE) × metallic smear (PW Sternheimer) | response | twin: CP2K 2026.1 UKS-PBE+SMEAR supercell `VIBRATIONAL_ANALYSIS` + free-energy FD dual | deps: dfpt-gga-spin-smearing ✓, dfpt-gga-spin-finite-q-si ✓, dfpt-finite-q-spin-smearing ✓ | write-first
-- [~] `gpw-hirshfeld-kpoint-forces` | Multi-k analytic ionic forces with Hirshfeld-scaled TS/MBD volumes (dedicated pin) | gpw | twin: libMBD volume-scaled gradient dual (same policy as `gpw-hirshfeld-forces`) | deps: gpw-hirshfeld-forces ✓, gpw-hirshfeld-kpoints ✓ / gpw-hirshfeld-uks-kpoints ✓ | write-first
-- [~] `gpw-dftu-forces` | Γ-UKS analytic ionic forces with Dudarev DFT+U (dedicated pin) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + PLUS_U (NiO-class) | deps: gpw-dftu-nio ✓, gpw-dftu-stress ✓, gpw-dftu-kpoint-forces ✓ | write-first
+- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `f86aec1a` (feat tip + reg on branch only; resume: rebase onto `dev`, dual-gate, merge)
+- [~] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | twin: libMBD / literature (CP2K has no stock TS — same policy as `gpw-ts-forces`) | deps: gpw-ts-forces ✓, gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-forces` @ `3eb2a6ee` (feat tip + reg on branch only; do not demote)
 
 ## done (harness wave 5 2026-08-01)
 
+- [x] `gpw-xdm-kpoint-forces` | Multi-k analytic ionic forces with free-atom XDM (dedicated pin) | gpw | `regressions/gpw/gpw-xdm-kpoint-forces` (dual pure-Python energy/force dual-gate + multi-k product wiring; CP2K has no stock XDM) | ratio **perf_exempt** (no fair CP2K twin) | 2026-08-01
+- [x] `gpw-uks-pbesol` | Γ-UKS PBEsol GGA (spin XC product; dedicated energy pin) | gpw | `regressions/gpw/gpw-uks-pbesol` (CP2K 2026.1 UKS + PBEsol O₂; \|ΔE\| 3.38e-5 Ha) | ratio **3.37** (62.33 / 18.52) | 2026-08-01
 - [x] `periodic-scs-ump2-kpoints` | Multi-k SCS scales on RI-GPW UMP2@UKS (`mp2_os_scale`/`mp2_ss_scale`) | gpw | `regressions/gpw/periodic-scs-ump2-kpoints` (Grimme algebraic dual on product multi-k UMP2; CP2K offline twin aborts MP2_GPW under DFT KPOINTS — `oracle: literature`) | ratio **perf_exempt** (no multi-k MP2_GPW in CP2K 2026.1) | 2026-08-01
+- [x] `dfpt-gga-spin-finite-q-smearing` | DFPT phonons with joint finite-q × collinear spin × pure GGA (PBE) × metallic smear (PW Sternheimer) | response | `regressions/response/dfpt-gga-spin-finite-q-smearing` (CP2K 2026.1 UKS-PBE+SMEAR supercell `VIBRATIONAL_ANALYSIS` + free-energy FD dual) | ratio **0.25** (148.1 / 585.9) | 2026-08-01
+- [x] `gpw-hirshfeld-kpoint-forces` | Multi-k analytic ionic forces with Hirshfeld-scaled TS/MBD volumes (dedicated pin) | gpw | `regressions/gpw/gpw-hirshfeld-kpoint-forces` (fixed-\(v\) dual-gate + multi-k product wiring; no CP2K stock TS/MBD) | ratio **perf_exempt** (no fair CP2K twin) | 2026-08-01
+- [x] `gpw-dftu-forces` | Γ-UKS analytic ionic forces with Dudarev DFT+U (dedicated pin) | gpw | `regressions/gpw/gpw-dftu-forces` (full-6N FD dual-gate + CP2K ENERGY_FORCE + PLUS_U NiO energy pin) | ratio **2.483** (NiO SCF+force vs CP2K 13.24 s) | 2026-08-01
 
 ## done (harness wave 4 (shift) 2026-08-01)
 

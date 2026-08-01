@@ -66,6 +66,22 @@ args: { "mode":"exhaust", "staff_count":10, "max_waves":20, "target_branch":"dev
 
 ## Run log
 
+- **2026-08-01 harness wave 5 (shift) (parent `dev` @ `350fe453`):** 6 of 8
+  staffed on `dev` → done: `gpw-xdm-kpoint-forces` (multi-k free-atom XDM
+  force dual-gate + wiring; **perf_exempt**), `gpw-uks-pbesol` (Γ-UKS
+  PBEsol O₂, ratio **3.37**), `periodic-scs-ump2-kpoints` (Grimme dual on
+  multi-k UMP2; **perf_exempt** / `oracle: literature`),
+  `dfpt-gga-spin-finite-q-smearing` (four-way finite-q×spin×GGA×smear DFPT,
+  ratio **0.25**), `gpw-hirshfeld-kpoint-forces` (multi-k fixed-\(v\)
+  Hirshfeld TS/MBD force dual-gate; **perf_exempt**), `gpw-dftu-forces`
+  (Γ Dudarev +U force dual-gate + NiO ENERGY_FORCE, ratio **2.483**).
+  Two staff stay `[~]`: `gpw-ts-kpoint-stress` @ `f86aec1a`,
+  `gpw-ts-kpoint-forces` @ `3eb2a6ee` (feat tips + regs on branch only; do
+  not demote). Specs closed (3 deleted). Residual pending **0** (census
+  list emptied by assign — **not** queue exhausted). Roadmap: **no ○/✓
+  table flips**; residual prose → multi-k TS stress + multi-k TS forces
+  (`[~]` only). Clearup already ran. Queue **not** exhausted. No push.
+
 - **2026-08-01 harness wave 4 (shift) (parent `dev` @ `6f1218b3`):** 9 of 9
   staffed on `dev` → done: `gpw-d3-atm-kpoint-forces` (CP2K multi-k
   ENERGY_FORCE C9 ΔF, ratio **9.22**), `gpw-hirshfeld-forces` (fixed-\(v\)

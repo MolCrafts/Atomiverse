@@ -66,14 +66,16 @@ D3/D3(BJ)/D4 **force** pins, multi-k D4 **ATM stress**
 (`reg_gpw-d4-atm-kpoint-stress`), GPW Berry **UKS**
 (`reg_periodic-berry-gpw-uks`), Γ SCS-**UMP2** (`reg_periodic-scs-ump2-si`),
 and joint DFPT GGA×spin×smear (`reg_dfpt-gga-spin-smearing`); **harness
-wave 5 (2026-08-01)** ships multi-k SCS-**UMP2**
-(`reg_periodic-scs-ump2-kpoints`; Grimme dual — CP2K aborts multi-k
-MP2_GPW); open residuals (**incomplete `[~]`**): multi-k **TS stress**
-(`gpw-ts-kpoint-stress`); **pending** (GapCensus wave 5 residual): multi-k
-TS/XDM **force** pins, Γ-UKS **PBEsol**, finite-q DFPT spin×GGA×smear,
-multi-k **Hirshfeld** forces, Γ DFT+U **forces**;
-queue not exhausted —
-GapCensus owns discovery;
+wave 5 (shift, 2026-08-01)** ships multi-k free-atom **XDM forces**
+(`reg_gpw-xdm-kpoint-forces`), Γ-UKS **PBEsol** (`reg_gpw-uks-pbesol`),
+multi-k SCS-**UMP2** (`reg_periodic-scs-ump2-kpoints`; Grimme dual —
+CP2K aborts multi-k MP2_GPW), four-way finite-q DFPT spin×GGA×smear
+(`reg_dfpt-gga-spin-finite-q-smearing`), multi-k **Hirshfeld** TS/MBD
+forces (`reg_gpw-hirshfeld-kpoint-forces`), and Γ DFT+U **forces**
+(`reg_gpw-dftu-forces`); open residuals (**incomplete `[~]`**): multi-k
+**TS stress** (`gpw-ts-kpoint-stress`) + multi-k **TS forces**
+(`gpw-ts-kpoint-forces`); pending residual **0** after assign (not queue
+exhausted — GapCensus owns discovery);
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -166,8 +168,8 @@ XC on the device in the Gaussian path.
 ships as `XcKind::BLYP` (`reg_gpw-blyp-water`; dual-gate vs PBE). **PBEsol**
 (Perdew et al. 2008; solid-state μ/β) shares `evaluate_xc` and ships on the
 molecular Gaussian path and **GPW** RKS (`XcKind::PBEsol`;
-`reg_gpw-pbesol-si`); **Γ-UKS PBEsol** spin XC is product-shaped
-(`xc_grid_pbesol_spin`) but unpinned — queued as `gpw-uks-pbesol`.
+`reg_gpw-pbesol-si`) **and Γ-UKS** (`reg_gpw-uks-pbesol`; offline CP2K O₂
+twin / `xc_grid_pbesol_spin`).
 **revPBE** (Zhang–Yang κ=1.245; `XCType::RevPBE` / `XcKind::RevPBE`) ships on
 the molecular path and **GPW** RKS (`reg_gpw-revpbe-si`) **and Γ-UKS**
 (`reg_gpw-uks-revpbe`; dual-gate vs PBE UKS / offline CP2K O₂).
@@ -314,7 +316,9 @@ gradient pin + product wiring) and **MBD@rsSCS analytic ionic forces**
 productize at **Γ** (`reg_gpw-mbd-forces`; free-atom / periodic path)
 **and multi-k** (`reg_gpw-mbd-kpoint-forces`; k-path force assembly).
 Force assembly folds free-atom **TS** / **XDM** on Γ + multi-k with
-dedicated offline force pins (`reg_gpw-ts-forces` / `reg_gpw-xdm-forces`).
+dedicated offline force pins (`reg_gpw-ts-forces` / `reg_gpw-xdm-forces`
++ multi-k XDM `reg_gpw-xdm-kpoint-forces`; multi-k free-atom **TS force**
+pin remains incomplete `[~] gpw-ts-kpoint-forces`).
 **Three-body ATM** energy productizes on GPW: D3 C9 (`GpwDft::d3_atm`;
 `reg_gpw-d3-atm`) and D4 \(s_9=1\) (`GpwDft::d4_atm`; `reg_gpw-d4-atm`).
 Two-body D3/D3(BJ) **energy and analytic ionic forces** are product
@@ -373,11 +377,12 @@ product (`reg_gpw-hirshfeld-forces`; fixed-\(v\) dual-gate + product
 wiring; energy and force/stress both use post-SCF volumes). Multi-k
 dedicated **two-body D3 / D3(BJ) / D4 force** pins are product
 (`reg_gpw-d3-kpoint-forces` / `reg_gpw-d3bj-kpoint-forces` /
-`reg_gpw-d4-kpoint-forces`). Multi-k free-atom **TS/XDM force** pins
-remain **pending** (k-path assembly product; Γ force + multi-k stress
-gates already shipped — GapCensus wave 5). Multi-k **Hirshfeld-scaled
-TS/MBD forces** remain **pending** (k-path `ts_mbd_vol_ratio` product;
-Γ `reg_gpw-hirshfeld-forces`). Multi-k **D4 ATM stress** is product
+`reg_gpw-d4-kpoint-forces`). Multi-k free-atom **XDM forces** are
+product (`reg_gpw-xdm-kpoint-forces`; dual pure-Python / FD dual-gate).
+Multi-k **Hirshfeld-scaled TS/MBD forces** are product
+(`reg_gpw-hirshfeld-kpoint-forces`; fixed-\(v\) dual-gate + multi-k
+wiring). Multi-k free-atom **TS force** pin stays incomplete
+(`[~] gpw-ts-kpoint-forces`). Multi-k **D4 ATM stress** is product
 (`reg_gpw-d4-atm-kpoint-stress`; CP2K libdftd4 multi-k NUMERICAL ATM−2b
 Δσ). Multi-k free-atom **TS stress** stays incomplete
 (`[~] gpw-ts-kpoint-stress`).
@@ -492,12 +497,17 @@ Two periodic DFT engines exist, with disjoint strengths:
   / `reg_gpw-hirshfeld-forces` / `reg_gpw-d3-kpoint-forces` /
   `reg_gpw-d3bj-kpoint-forces` / `reg_gpw-d4-kpoint-forces` /
   `reg_gpw-d4-atm-kpoint-stress` / `reg_periodic-berry-gpw-uks` /
-  `reg_periodic-scs-ump2-si` / `reg_dfpt-gga-spin-smearing`). Open
-  residuals (**incomplete `[~]`**): multi-k TS stress; **pending**
-  (GapCensus wave 5): multi-k TS/XDM force pins, Γ-UKS PBEsol, multi-k
-  SCS-UMP2, finite-q DFPT spin×GGA×smear, multi-k Hirshfeld forces, Γ
-  DFT+U forces (see `cp2k-method-queue.md`; queue not exhausted).
-  Hybrids / meta-GGA / GAPW / PAW remain blocked. CPU only.
+  `reg_periodic-scs-ump2-si` / `reg_dfpt-gga-spin-smearing`); **harness
+  wave 5 (shift, 2026-08-01)** ships multi-k free-atom XDM forces, Γ-UKS
+  PBEsol, multi-k SCS-UMP2, four-way finite-q DFPT spin×GGA×smear,
+  multi-k Hirshfeld TS/MBD forces, and Γ DFT+U forces
+  (`reg_gpw-xdm-kpoint-forces` / `reg_gpw-uks-pbesol` /
+  `reg_periodic-scs-ump2-kpoints` / `reg_dfpt-gga-spin-finite-q-smearing` /
+  `reg_gpw-hirshfeld-kpoint-forces` / `reg_gpw-dftu-forces`). Open
+  residuals (**incomplete `[~]`**): multi-k TS stress + multi-k TS
+  forces (see `cp2k-method-queue.md`; pending residual 0 after assign —
+  queue not exhausted; GapCensus owns discovery). Hybrids / meta-GGA /
+  GAPW / PAW remain blocked. CPU only.
 
 | Method                           | CPU | CUDA | Kokkos |
 | -------------------------------- | :-: | :--: | :---: |
@@ -533,22 +543,25 @@ Which engine backs which ✓:
   (`reg_pw-uks-fe-smearing`) **and** GPW collinear multi-k UKS
   (`reg_gpw-kpoints-uks`). **Γ UKS PBE-GGA** on GPW: `reg_gpw-uks-pbe`
   (forces: `reg_gpw-uks-forces`); **Γ-UKS BLYP**: `reg_gpw-uks-blyp`;
-  **Γ-UKS revPBE**: `reg_gpw-uks-revpbe`; **Γ-UKS RPBE**: `reg_gpw-uks-rpbe`.
+  **Γ-UKS revPBE**: `reg_gpw-uks-revpbe`; **Γ-UKS RPBE**: `reg_gpw-uks-rpbe`;
+  **Γ-UKS PBEsol**: `reg_gpw-uks-pbesol`.
 - **Periodic LDA** is provided twice: Padé-LDA in GPW, and Slater + PW92 on the
   plane-wave grid (the latter is the CUDA ✓; CPU PW also has LDA). **Periodic
-  GGA** is GPW PBE / **PBEsol** (`reg_gpw-pbesol-si`) / **revPBE**
+  GGA** is GPW PBE / **PBEsol** (`reg_gpw-pbesol-si` + UKS
+  `reg_gpw-uks-pbesol`) / **revPBE**
   (`reg_gpw-revpbe-si` + UKS `reg_gpw-uks-revpbe`) / **RPBE**
   (`reg_gpw-rpbe-water` + UKS `reg_gpw-uks-rpbe`) / **BLYP**
   (`reg_gpw-blyp-water`) **and** CPU PW true PBE (`reg_pw-pbe-gga-si`) +
   **true collinear spin-GGA** (`reg_pw-spin-gga`).
 - **Periodic DFT+U** is GPW Dudarev PLUS_U energy (`reg_gpw-dftu-nio`) **and
-  analytic stress** (`reg_gpw-dftu-stress`) on the **Γ** path **and multi-k
-  SCF** (`reg_gpw-dftu-kpoints`) **and multi-k analytic stress**
-  (`reg_gpw-dftu-kpoint-stress`) **and multi-k ionic forces**
-  (`reg_gpw-dftu-kpoint-forces`; variational ½(V̂S+SV̂) +U scatter,
-  full-6N FD dual gate on the k path). Multi-k **multigrid**
-  (`ngrids>1`) is product (`reg_gpw-multigrid-kpoints`), and nonlocal
-  vdW × multigrid is product at Γ RKS (`reg_gpw-vdw-multigrid`).
+  analytic stress** (`reg_gpw-dftu-stress`) **and ionic forces**
+  (`reg_gpw-dftu-forces`; full-6N FD dual-gate + CP2K ENERGY_FORCE energy
+  pin) on the **Γ** path **and multi-k SCF** (`reg_gpw-dftu-kpoints`)
+  **and multi-k analytic stress** (`reg_gpw-dftu-kpoint-stress`) **and
+  multi-k ionic forces** (`reg_gpw-dftu-kpoint-forces`; variational
+  ½(V̂S+SV̂) +U scatter, full-6N FD dual gate on the k path). Multi-k
+  **multigrid** (`ngrids>1`) is product (`reg_gpw-multigrid-kpoints`), and
+  nonlocal vdW × multigrid is product at Γ RKS (`reg_gpw-vdw-multigrid`).
   Molecular Gaussian DFT+U remains ○.
 - **Periodic dispersion-corrected DFT** is GPW + DFT-D3 zero damping,
   **D3(BJ)** (§8; `reg_gpw-pbe-d3bj-ice`), **D4** energy (`reg_gpw-d4-water`)
@@ -556,11 +569,14 @@ Which engine backs which ✓:
   (`reg_gpw-d4-forces`), **TS** (`reg_gpw-ts-ice`), free-atom **MBD@rsSCS**
   (`reg_gpw-mbd-ice`) **+ ionic forces** (Γ `reg_gpw-mbd-forces` + multi-k
   `reg_gpw-mbd-kpoint-forces`),
-  **Hirshfeld-scaled MBD** (Γ `reg_gpw-mbd-hirshfeld` + multi-k
+  **Hirshfeld-scaled MBD** (Γ `reg_gpw-mbd-hirshfeld` + multi-k energy
   `reg_gpw-hirshfeld-kpoints` + **Γ-UKS** `reg_gpw-hirshfeld-uks` +
-  **multi-k UKS** `reg_gpw-hirshfeld-uks-kpoints`),
+  **multi-k UKS** `reg_gpw-hirshfeld-uks-kpoints` + Γ forces
+  `reg_gpw-hirshfeld-forces` + multi-k forces
+  `reg_gpw-hirshfeld-kpoint-forces`),
   **periodic Ewald MBD** (`reg_gpw-mbd-periodic`), **XDM**
-  (`reg_gpw-xdm-ice`), **vdW-DF DRSLL** (`reg_gpw-vdw-df-ice`), **vdW-DF2
+  (`reg_gpw-xdm-ice` + multi-k forces `reg_gpw-xdm-kpoint-forces`),
+  **vdW-DF DRSLL** (`reg_gpw-vdw-df-ice`), **vdW-DF2
   LMKLL** (`reg_gpw-vdw-df2-ice`), **rVV10** (`reg_gpw-rvv10-ice`),
   **optB88-vdW** (`reg_gpw-optb88-vdw`), and **nonlocal SCF
   potential/forces** (`reg_gpw-vdw-scf-potential`).
@@ -663,7 +679,13 @@ Which engine backs which ✓:
   kernel + FD occupation weights, dual-gated by a free-energy second-difference
   pin (17.3454 vs DFPT 17.3711 eV/Å²) **and** a CP2K 2026.1 UKS-PBE+SMEAR
   k-point `VIBRATIONAL_ANALYSIS` physics anchor, fair wall ratio 0.21;
-  M=0 gapped-FD identity to the fixed-occ spin×GGA parent).
+  M=0 gapped-FD identity to the fixed-occ spin×GGA parent; **four-way
+  finite-q × collinear spin × pure GGA × metallic smear**
+  `reg_dfpt-gga-spin-finite-q-smearing` — X supercell spin-resolved
+  Sternheimer + spin-GGA FD kernel + FD smear weights, dual-gated by a
+  free-energy second-difference pin **and** a CP2K 2026.1 UKS-PBE+SMEAR
+  supercell `VIBRATIONAL_ANALYSIS` physics anchor, fair wall ratio 0.25;
+  M=0 gapped-FD identity to the fixed-occ finite-q spin×GGA parent).
 - **Berry-phase polarization**: King-Smith–Vanderbilt (KSV) electronic
   polarization on the PW method (`cpu::pw::BerryPolarization`; string-averaged
   Berry phases over occupied Bloch manifolds; symmetry-exact Si pins,

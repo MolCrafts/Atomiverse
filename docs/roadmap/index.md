@@ -241,11 +241,12 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   **GGA kernel** / **collinear spin** / **joint spin×GGA** /
   **finite-q×GGA** / **finite-q×spin×GGA** /
   **metallic smear** / spin-incommensurate / **finite-q+smear** /
-  **spin+smear**
+  **spin+smear** / **finite-q×spin×GGA×smear**
   (`reg_dfpt-phonon-si` / `reg_dfpt-finite-q-si` /
   `reg_dfpt-incommensurate-si` / `reg_dfpt-gga-si` / `reg_dfpt-spin-si` /
   `reg_dfpt-gga-spin-si` / `reg_dfpt-gga-spin-smearing` /
   `reg_dfpt-gga-finite-q-si` / `reg_dfpt-gga-spin-finite-q-si` /
+  `reg_dfpt-gga-spin-finite-q-smearing` /
   `reg_dfpt-metallic-si` / `reg_dfpt-spin-incommensurate` /
   `reg_dfpt-finite-q-smearing` / `reg_dfpt-spin-smearing`). CUDA PW remains
   LDA / spin-unpolarized.
@@ -305,13 +306,13 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   **harness wave 4 (shift, 2026-08-01)** ships multi-k D3 ATM forces,
   Hirshfeld-scaled TS/MBD forces, multi-k D3/D3(BJ)/D4 force pins,
   multi-k D4 ATM stress, GPW Berry UKS, Γ SCS-UMP2, joint DFPT
-  spin×GGA×smear; residual incomplete (`[~]`): multi-k TS stress;
-  **pending** (GapCensus wave 5): multi-k TS/XDM force pins, Γ-UKS
-  PBEsol, multi-k SCS-UMP2, finite-q DFPT spin×GGA×smear, multi-k
-  Hirshfeld forces, Γ DFT+U forces; stock VV10 remains **blocked**
-  (no CP2K twin); hybrids / meta-GGA / GAPW blocked — see
-  `cp2k-method-queue.md` (queue not exhausted — GapCensus owns next
-  discovery).
+  spin×GGA×smear; **harness wave 5 (shift, 2026-08-01)** ships multi-k
+  free-atom XDM forces, Γ-UKS PBEsol, multi-k SCS-UMP2, four-way
+  finite-q DFPT spin×GGA×smear, multi-k Hirshfeld TS/MBD forces, Γ
+  DFT+U forces; residual incomplete (`[~]`): multi-k TS stress + multi-k
+  TS forces; stock VV10 remains **blocked** (no CP2K twin); hybrids /
+  meta-GGA / GAPW blocked — see `cp2k-method-queue.md` (queue not
+  exhausted — GapCensus owns next discovery).
 - Concrete method `GpwDft` (parameters as members; no public Config bag).
   Analytic Γ forces → AIMD (`reg_gpw-bomd-water`); keep member
   `local_pp_on_grid` consistent between energy and gradient
@@ -322,12 +323,14 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   UKS OT+smear `reg_ot-uks-smearing` + multi-k UKS OT+U
   `reg_ot-uks-dftu` + OT+U+smear `reg_ot-dftu-smearing` + multi-k UKS
   OT+U+smear `reg_ot-uks-dftu-smearing`). **UKS multigrid**
-  (`reg_gpw-uks-multigrid`). **PBEsol** (`reg_gpw-pbesol-si`); **revPBE**
+  (`reg_gpw-uks-multigrid`). **PBEsol** RKS + UKS (`reg_gpw-pbesol-si` /
+  `reg_gpw-uks-pbesol`); **revPBE**
   RKS + UKS (`reg_gpw-revpbe-si` / `reg_gpw-uks-revpbe`); **RPBE** RKS +
   UKS (`reg_gpw-rpbe-water` / `reg_gpw-uks-rpbe`); **BLYP**
-  (`reg_gpw-blyp-water`); **Dudarev DFT+U** (Γ energy/stress + multi-k
-  SCF/stress: `reg_gpw-dftu-nio` / `reg_gpw-dftu-stress` /
-  `reg_gpw-dftu-kpoints` / `reg_gpw-dftu-kpoint-stress`); **GPW metallic
+  (`reg_gpw-blyp-water`); **Dudarev DFT+U** (Γ energy/stress/forces + multi-k
+  SCF/stress/forces: `reg_gpw-dftu-nio` / `reg_gpw-dftu-stress` /
+  `reg_gpw-dftu-forces` / `reg_gpw-dftu-kpoints` /
+  `reg_gpw-dftu-kpoint-stress` / `reg_gpw-dftu-kpoint-forces`); **GPW metallic
   smear** RKS + UKS (`reg_gpw-metallic-smearing` / `reg_gpw-uks-smearing`).
   Γ + multi-k **RI-GPW MP2** + **UMP2@UKS** (Γ + multi-k:
   `reg_periodic-ri-mp2-si` / `reg_periodic-mp2-kpoints` /

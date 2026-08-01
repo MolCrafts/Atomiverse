@@ -1,6 +1,60 @@
 # CP2K capability loop — handoff
 
-## Harness wave 4 (shift) 2026-08-01 (parent `dev` @ `6f1218b3`)
+## Harness wave 5 (shift) 2026-08-01 (parent `dev` @ `350fe453`)
+
+| Field | Value |
+| ----- | ----- |
+| Branch | `dev` (ahead of `origin/dev`; **no push**) |
+| Incomplete / `in_progress` | **2** (`[~] gpw-ts-kpoint-stress`, `[~] gpw-ts-kpoint-forces`) |
+| Open CP2K specs on `dev` | **0** (PySCF deferred only: `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp`) |
+| Specs closed this harness | **3** (deleted: `gpw-uks-pbesol`, `gpw-hirshfeld-kpoint-forces`, `gpw-dftu-forces`; remaining landings had no live specs on parent) |
+| Unmerged staff `wf/*` | **2** incomplete kept (`wf/gpw-ts-kpoint-stress` @ `f86aec1a`, `wf/gpw-ts-kpoint-forces` @ `3eb2a6ee`; do not prune) |
+| Isolation worktrees | **0** (clearup already ran) |
+| Leftover builds | none in loop scope |
+| Pending gaps | **0** residual (not exhausted — GapCensus owns discovery) |
+| Blocked | **6** (VV10 + hybrid / GAPW / PAW / CUDA-GPW / meta-GGA) |
+| Done this wave | **6** landings |
+| Oracle | CP2K 2026.1 source build `…/cp2k/install` (`git:5e54ba2`); offline pins only; multi-k SCS-UMP2 `oracle: literature` (CP2K aborts MP2_GPW@k); XDM / Hirshfeld TS/MBD force pins **perf_exempt** (no stock CP2K twin) |
+| Loop docs | queue / loop / handoff / specs INDEX / residual prose **synced** |
+
+### Wave staff → done
+
+| Slug | Domain | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
+| ---- | ------ | ---------- | --------------------------------------------- |
+| `gpw-xdm-kpoint-forces` | gpw | `reg_gpw-xdm-kpoint-forces` | **perf_exempt** (no CP2K stock XDM) |
+| `gpw-uks-pbesol` | gpw | `reg_gpw-uks-pbesol` | **3.37** (62.33 / 18.52) |
+| `periodic-scs-ump2-kpoints` | gpw | `reg_periodic-scs-ump2-kpoints` | **perf_exempt** (CP2K no multi-k MP2_GPW) |
+| `dfpt-gga-spin-finite-q-smearing` | response | `reg_dfpt-gga-spin-finite-q-smearing` | **0.25** (148.1 / 585.9 serial) |
+| `gpw-hirshfeld-kpoint-forces` | gpw | `reg_gpw-hirshfeld-kpoint-forces` | **perf_exempt** (no CP2K stock TS/MBD) |
+| `gpw-dftu-forces` | gpw | `reg_gpw-dftu-forces` | **2.483** (NiO SCF+force vs CP2K 13.24 s) |
+
+### Incomplete kept `[~]` (do not demote)
+
+| Slug | Branch | Tip | Note |
+| ---- | ------ | --- | ---- |
+| `gpw-ts-kpoint-stress` | `wf/gpw-ts-kpoint-stress` | `f86aec1a` | feat tip + reg on branch only |
+| `gpw-ts-kpoint-forces` | `wf/gpw-ts-kpoint-forces` | `3eb2a6ee` | feat tip + reg on branch only |
+
+### Roadmap ○→✓ this harness
+
+| Row | Doc | Note |
+| --- | --- | ---- |
+| *(none)* | — | capability table rows already ✓ (PBEsol / DFT+U / dispersion / DFPT / MP2) |
+| Residual prose | `dft.md` intro + §3/§8/§10/§11 + `index.md` GPW | open residuals → multi-k **TS stress** + multi-k **TS forces** only (`[~]`) |
+
+### Pending residual
+
+**Pending = 0** (assign emptied the census list; **not** queue exhausted).
+**Incomplete = 2** (unmerged multi-k free-atom TS stress/forces `wf/*`). Next
+wave starts with **Recover incomplete** (merge or finish the two `[~]` tips)
+then GapCensus. Blocked = 6 unchanged.
+
+Do **not** staff PySCF deferred specs. No push from parent.
+**Queue not exhausted** — GapCensus owns discovery; incomplete ≫ pending.
+
+---
+
+## Harness wave 4 (shift) 2026-08-01 (parent `dev` @ `6f1218b3`) — historical
 
 | Field | Value |
 | ----- | ----- |
