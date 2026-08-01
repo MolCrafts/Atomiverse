@@ -1662,17 +1662,28 @@ DOS UKS/metallic, nonlocal vdW stress, UKS metallic stress, metallic BOMD).
 
 ## pending
 
-- [ ] `gpw-bomd-smearing` | Multi-k Born–Oppenheimer MD with metallic occupation smearing (free-energy / Mermin trajectory) | dynamics | twin: CP2K 2026.1 Quickstep AIMD + SMEAR k-mesh | deps: gpw-bomd-kpoints ✓, gpw-metallic-smearing ✓, gpw-metallic-forces ✓
-- [ ] `gpw-bands-uks` | Collinear UKS band structure NSCF on frozen Veff (GPW Bloch path) | gpw | twin: CP2K 2026.1 Quickstep UKS `&PRINT &BAND_STRUCTURE` GTH-GPW | deps: gpw-bands-si ✓, gpw-kpoints-uks ✓
-- [ ] `gpw-bands-metallic` | Band structure under metallic FD/MP occupation smearing (GPW) | gpw | twin: CP2K 2026.1 SMEAR + `&PRINT &BAND_STRUCTURE` GTH-GPW metal | deps: gpw-bands-si ✓, gpw-metallic-smearing ✓
-- [ ] `gpw-dos-uks` | Density of states on GPW multi-k mesh with collinear UKS (dedicated pin) | gpw | twin: CP2K 2026.1 Quickstep UKS DOS | deps: gpw-dos-si ✓, gpw-kpoints-uks ✓
-- [ ] `gpw-vdw-stress` | Analytic fixed-\(P\) cell stress with nonlocal vdW-DF/DF2/rVV10 \(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain | gpw | twin: CP2K 2026.1 `STRESS_TENSOR` + `NON_LOCAL` (DRSLL/LMKLL/RVV10) | deps: gpw-vdw-scf-potential ✓, gpw-analytic-stress ✓
-- [ ] `gpw-uks-metallic-stress` | Multi-k UKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 UKS `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-stress (incomplete), gpw-uks-metallic-forces ✓, gpw-kpoint-uks-stress ✓
+Wave-7 workers cancelled mid-flight (no unique commits on tips). Live specs under
+`.claude/specs/<slug>/` — implement from those, not from empty `wf/*` bases.
+
+- [ ] `gpw-bomd-smearing` | Multi-k Born–Oppenheimer MD with metallic occupation smearing (free-energy / Mermin trajectory) | dynamics | twin: CP2K 2026.1 Quickstep AIMD + SMEAR k-mesh | deps: gpw-bomd-kpoints ✓, gpw-metallic-smearing ✓, gpw-metallic-forces ✓ | spec: `.claude/specs/gpw-bomd-smearing/`
+- [ ] `gpw-bands-uks` | Collinear UKS band structure NSCF on frozen Veff (GPW Bloch path) | gpw | twin: CP2K 2026.1 Quickstep UKS `&PRINT &BAND_STRUCTURE` GTH-GPW | deps: gpw-bands-si ✓, gpw-kpoints-uks ✓ | spec: `.claude/specs/gpw-bands-uks/`
+- [ ] `gpw-bands-metallic` | Band structure under metallic FD/MP occupation smearing (GPW) | gpw | twin: CP2K 2026.1 SMEAR + `&PRINT &BAND_STRUCTURE` GTH-GPW metal | deps: gpw-bands-si ✓, gpw-metallic-smearing ✓ | spec: `.claude/specs/gpw-bands-metallic/`
+- [ ] `gpw-vdw-stress` | Analytic fixed-\(P\) cell stress with nonlocal vdW-DF/DF2/rVV10 \(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain | gpw | twin: CP2K 2026.1 `STRESS_TENSOR` + `NON_LOCAL` (DRSLL/LMKLL/RVV10) | deps: gpw-vdw-scf-potential ✓, gpw-analytic-stress ✓ | spec: `.claude/specs/gpw-vdw-stress/`
+- [ ] `gpw-uks-metallic-stress` | Multi-k UKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 UKS `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-stress ✓, gpw-uks-metallic-forces ✓, gpw-kpoint-uks-stress ✓ | spec: `.claude/specs/gpw-uks-metallic-stress/`
 
 ## in_progress
 
-- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `d6cab501` (feat tip + reg on branch only; ~18 behind `dev` — do not demote; resume: rebase onto `dev`, dual-gate green on parent / merge)
-- [~] `gpw-metallic-stress` | Multi-k RKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-smearing ✓, gpw-kpoint-stress ✓, gpw-metallic-forces ✓ | `wf/gpw-metallic-stress` @ `d697f63d` (feat + reg + Na BCC SMEAR oracle inputs on branch only; ~18 behind `dev` — promoted from pending this census; do not demote; resume: rebase onto `dev`, dual-gate green / merge)
+(empty — wave-7 cancelled after partial land; incomplete work is **pending** + live specs, not half `wf/*` tips)
+
+## done (wave 7 partial land 2026-08-01 — loop cancelled before harness)
+
+Green workers merged to `dev` before cancel (merge commits on parent); remaining
+staff killed with **no unique commits**. Specs for landed slugs closed.
+
+- [x] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | `regressions/gpw/gpw-ts-kpoint-stress` (libMBD strain dual-gate; max\|an−FD\| 1.36e-9; no stock CP2K TS) | ratio **perf_exempt** (no fair CP2K twin) | 2026-08-01
+- [x] `gpw-metallic-stress` | Multi-k RKS free-energy analytic cell stress under FD smear | gpw | `regressions/gpw/gpw-metallic-stress` (analytic vs multi-SCF FD 2.4e-8; CP2K NUMERICAL+SMEAR class; fair ENERGY wall) | ratio **~0.16** (0.15 / 0.92) | 2026-08-01
+- [x] `gpw-dos-uks` | Multi-k collinear UKS DOS dedicated pin | gpw | `regressions/gpw/gpw-dos-uks` (CP2K 2026.1 LSD+DOS Si BCT; \|ΔE\| 2.23e-5 Ha) | ratio **2.64** (13.65 / 5.16) | 2026-08-01
+- [x] `gpw-dos-metallic` | Multi-k metallic FD DOS dedicated pin (re-pin / merge on wave-7 tips) | gpw | `regressions/gpw/gpw-dos-metallic` (CP2K 2026.1 SMEAR+DOS BCC Na; \(E_F\) 1.35e-3 Ha) | ratio **5.48** (2.74 / 0.50) | 2026-08-01
 
 ## done (harness wave 6 (shift) 2026-08-01)
 

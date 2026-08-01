@@ -3,6 +3,32 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Live — after wave-7 cancel (2026-08-01)
+
+Incomplete CP2K-loop staff (workers cancelled; **no unique commits**). Implement
+from these specs; queue `docs/developer/cp2k-method-queue.md` ## pending.
+
+| Spec | Twin class | Deps landed |
+| ---- | ---------- | ----------- |
+| `gpw-bomd-smearing` | CP2K AIMD+SMEAR+k | bomd-kpoints, metallic-smearing, metallic-forces |
+| `gpw-bands-uks` | CP2K UKS BAND_STRUCTURE GTH-GPW | bands-si, kpoints-uks |
+| `gpw-bands-metallic` | CP2K SMEAR+BAND_STRUCTURE GTH-GPW | bands-si, metallic-smearing |
+| `gpw-vdw-stress` | CP2K STRESS+NON_LOCAL | vdw product, analytic stress |
+| `gpw-uks-metallic-stress` | CP2K UKS STRESS+SMEAR | metallic-stress, uks-metallic-forces |
+
+Out of CP2K loop (unchanged): `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp` (PySCF queue).
+
+## Closed — wave 7 partial land (2026-08-01)
+
+Merged to `dev` before loop cancel; specs deleted.
+
+| Landed | Notes |
+| ------ | ----- |
+| `gpw-ts-kpoint-stress` | libMBD dual-gate; perf_exempt (no stock CP2K TS) |
+| `gpw-metallic-stress` | free-energy multi-k RKS stress; fair ENERGY wall ~0.16 |
+| `gpw-dos-uks` | multi-k UKS DOS; ratio ~2.64 |
+| `gpw-dos-metallic` | multi-k FD DOS; ratio ~5.48 (also listed under wave-6 harness) |
+
 ## Closed — CP2K harness wave 6 (shift) (2026-08-01)
 
 Merged / landed on `dev` (HEAD `8474914d` at harness close); specs deleted;
