@@ -343,6 +343,10 @@ if(ATV_BUILD_GPW)
     # offline CP2K 2026.1 NGRIDS+DRSLL+UKS twin (gpw-vdw-uks-multigrid).
     atv_add_regression(gpw gpw-vdw-uks-multigrid THREADS 8)
     atv_add_regression(gpw gpw-optb88-vdw THREADS 8)
+    # Γ collinear-UKS optB88-vdW (OptB88 + DRSLL) product pin — offline
+    # CP2K 2026.1 LSD GGA_X_OPTB88_VDW + PW92 + NON_LOCAL DRSLL twin
+    # (gpw-optb88-uks).
+    atv_add_regression(gpw gpw-optb88-uks THREADS 8)
     atv_add_regression(gpw gpw-mbd-hirshfeld THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-kpoints THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-uks THREADS 8)
