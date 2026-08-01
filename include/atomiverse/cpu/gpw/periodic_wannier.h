@@ -1,7 +1,7 @@
 /// @file cpu/gpw/periodic_wannier.h
 /// @brief Periodic multi-k maximally localized Wannier functions (CPU GPW).
 ///
-/// Marzari–Vanderbilt construction on the occupied manifold of a GPW RKS SCF
+/// Marzari–Vanderbilt construction on the occupied manifold of a GPW SCF
 /// (Marzari & Vanderbilt, Phys. Rev. B 56, 12847 (1997); Marzari et al.,
 /// Rev. Mod. Phys. 84, 1419 (2012)). After multi-k SCF, neighbor AO overlaps
 /// \(M^{(\mathbf k,\mathbf b)}\) feed a projection initialization
@@ -10,8 +10,13 @@
 /// \(\mathbf r_n = -N_k^{-1}\sum_{\mathbf k,\mathbf b} w_b\,\mathbf b\,
 /// \operatorname{Im}\ln M_{nn}\).
 ///
-/// Foothold: closed-shell insulator (integer `n_occ`), orthorhombic cell,
-/// no metallic smearing / UKS / disentanglement. Parameters are members of
+/// **Collinear spin:** when `GpwDft::is_uks()` (`n_alpha`/`n_beta`), α and β
+/// occupied manifolds are localized independently from `C_occ_k` /
+/// `C_occ_k_beta` (fixed occupations; insulator only). Centers are
+/// concatenated α then β; see `PeriodicWannierResult::spin`.
+///
+/// Product: closed-shell insulator or collinear UKS insulator, orthorhombic
+/// cell, no metallic smearing / disentanglement. Parameters are members of
 /// `PeriodicWannier` — no public `*Config` bag, no factories.
 ///
 /// @code
@@ -19,13 +24,14 @@
 ///   dft.cell[0] = dft.cell[1] = a / std::sqrt(2.0); // BCT Si [Bohr]
 ///   dft.cell[2] = a;
 ///   dft.cutoff_ry = 100.0;
-///   dft.n_occ = 8;
+///   dft.n_alpha = 8;   // collinear UKS (M = 0): 8↑ + 8↓
+///   dft.n_beta  = 8;
 ///   dft.xc = cpu::gpw::XcKind::PADE;
 ///   dft.build(atoms);
 ///
 ///   cpu::gpw::PeriodicWannier mlwf;   // members: k_mesh, max_iter, …
 ///   auto r = mlwf.compute(dft, atoms);
-///   // r.centers[i] [Å], r.spreads[i] [Å²]
+///   // r.centers[i] [Å], r.spreads[i] [Å²], r.n_wann_up / r.n_wann_dn
 /// @endcode
 #pragma once
 
@@ -42,32 +48,42 @@ namespace gpw {
 /// @brief Result of a periodic multi-k MLWF calculation on GPW.
 struct PeriodicWannierResult {
     /// Wannier centroids \(\langle\mathbf r\rangle_n\) [Å].
+    /// Collinear spin: α manifold first, then β.
     std::vector<std::array<double, 3>> centers;
     /// Orbital spreads \(\Omega_n=\langle r^2\rangle_n-|\langle\mathbf r\rangle_n|^2\)
     /// [Å²] (SMV discretization).
     std::vector<double> spreads;
-    /// \(\sum_n\Omega_n\) after localization [Å²].
+    /// Spin index per center: 0 = ↑, 1 = ↓. Empty when restricted (RKS).
+    std::vector<int> spin;
+    /// \(\sum_n\Omega_n\) after localization [Å²] (all channels).
     double total_spread = 0.0;
     /// \(\sum_n\Omega_n\) of the unrotated (identity-gauge) manifold [Å²].
     double total_spread_initial = 0.0;
-    /// MV steepest-descent iterations executed.
+    /// MV steepest-descent iterations executed (max over spin channels).
     int iterations = 0;
-    /// Whether the SD loop stopped with \(\|\mathrm{G}\|_\infty < \texttt{tol}\)
-    /// (or `max_iter == 0`).
+    /// Whether every spin channel's SD loop stopped with
+    /// \(\|\mathrm{G}\|_\infty < \texttt{tol}\) (or `max_iter == 0`).
     bool converged = false;
     /// Whether the preceding SCF converged.
     bool scf_converged = false;
     /// SCF total energy [Hartree].
     double energy_ha = 0.0;
-    /// Number of Wannier functions (= occupied bands for RKS).
+    /// Number of Wannier functions (RKS: occupied bands; UKS:
+    /// \(n_\alpha+n_\beta\)).
     int n_wann = 0;
+    /// Occupied α count when collinear UKS; 0 when restricted (RKS).
+    int n_wann_up = 0;
+    /// Occupied β count when collinear UKS; 0 when restricted (RKS).
+    int n_wann_dn = 0;
 };
 
 /// @brief Multi-k Marzari–Vanderbilt MLWF on the GPW method (AO basis).
 ///
 /// Occupied-only manifold; projection initialization onto `n_wann` real-space
 /// Gaussians at caller-supplied or auto BCT diamond bond midpoints when the
-/// system is 4 identical Si-like atoms with 8 occupied orbitals.
+/// system is 4 identical Si-like atoms with 8 occupied orbitals **per channel**.
+/// Collinear UKS localizes each spin channel separately (see
+/// `PeriodicWannierResult`).
 class PeriodicWannier {
   public:
     /// @brief Monkhorst–Pack mesh per dimension for the MLWF k-grid
@@ -88,21 +104,22 @@ class PeriodicWannier {
     ///        bond-centered Gaussians. If false, start from identity.
     bool use_projection = true;
     /// @brief Optional explicit trial centers [Å] (length must equal n_wann
-    ///        when non-empty). Empty → auto BCT diamond midpoints for 4-atom
-    ///        Si-like cells with 8 WFs, else crystal origin replicates.
+    ///        **per spin channel** when non-empty — same trials for both spins
+    ///        under UKS). Empty → auto BCT diamond midpoints for 4-atom
+    ///        Si-like cells with 8 WFs/channel, else crystal origin replicates.
     std::vector<std::array<double, 3>> trial_centers;
 
     /// @brief Multi-k SCF + MLWF for the geometry in `atoms`.
     ///
     /// Configures `method.k_mesh = {k_mesh,k_mesh,k_mesh}`, disables time
     /// reversal, runs `method.run(atoms)`, then localizes the occupied Bloch
-    /// manifold from `last_result()`.
+    /// manifold from `last_result()` (RKS: one channel; UKS: α then β).
     ///
     /// @param method GPW DFT method (members + `build()` already done; k-mesh
     ///               and TR flag are overwritten for the MLWF SCF).
     /// @param atoms  Atom set at the current geometry [Bohr] (same as `build`).
     /// @return Owned `PeriodicWannierResult` (centers [Å], spreads [Å²]).
-    /// @throws std::invalid_argument on metallic smearing, UKS, non-positive
+    /// @throws std::invalid_argument on metallic smearing, non-positive
     ///         mesh / step / tol, empty occupied manifold, or `!built`.
     /// @throws std::logic_error when `method` was not `build()`'d.
     PeriodicWannierResult compute(GpwDft& method,

@@ -453,6 +453,8 @@ if(ATV_BUILD_GPW)
     # (per-spin Bloch D/V stacks — gpw-uks-multigrid-kpoints).
     atv_add_regression(gpw gpw-uks-multigrid-kpoints THREADS 8)
     atv_add_regression(gpw periodic-wannier-gpw THREADS 8)
+    # Collinear UKS multi-k Marzari–Vanderbilt MLWF (per-spin bond midpoints).
+    atv_add_regression(gpw periodic-wannier-gpw-uks THREADS 8)
     # Dispersion ionic forces vs offline CP2K Quickstep D3 twins.
     atv_add_regression(gpw gpw-d3-forces THREADS 8)
     atv_add_regression(gpw gpw-d3bj-forces THREADS 8)

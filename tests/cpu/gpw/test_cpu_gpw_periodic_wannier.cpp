@@ -122,14 +122,34 @@ TEST(GpwPeriodicWannierMath, InvalidArgumentsOnCompute) {
     method.degauss = 0.01;
     EXPECT_THROW(mlwf.compute(method, atoms), std::invalid_argument);
     method.smearing = Smearing::none;
-    method.n_alpha = 1;
-    method.n_beta = 0;
-    method.n_occ = 0;
-    // rebuild for UKS
+}
+
+TEST(GpwPeriodicWannierMath, UksNoLongerFootholdThrow) {
+    // Collinear UKS is product: the foothold message is gone. Invalid k_mesh
+    // still fails before SCF; metallic smearing still rejected.
+    PeriodicWannier mlwf;
+    mlwf.k_mesh = 0;
     GpwDft uks;
     uks.n_alpha = 1;
     uks.n_beta = 0;
     uks.cell[0] = uks.cell[1] = uks.cell[2] = 10.0;
+    const GaussianBasis bH(molrs::Element::H, "DZV-GTH-PADE");
+    const GthPotential pH(molrs::Element::H, "GTH-PADE-q1");
+    const double pos[3] = {5.0, 5.0, 5.0};
+    std::vector<GpwAtom> atoms;
+    atoms.emplace_back(pos, bH, pH, 1);
     uks.build(atoms);
+    try {
+        mlwf.compute(uks, atoms);
+        FAIL() << "expected invalid_argument for k_mesh=0";
+    } catch (const std::invalid_argument& e) {
+        const std::string msg = e.what();
+        EXPECT_EQ(msg.find("UKS / spin MLWF not in this foothold"),
+                  std::string::npos);
+        EXPECT_NE(msg.find("k_mesh"), std::string::npos);
+    }
+    mlwf.k_mesh = 2;
+    uks.smearing = Smearing::fermi_dirac;
+    uks.degauss = 0.01;
     EXPECT_THROW(mlwf.compute(uks, atoms), std::invalid_argument);
 }
