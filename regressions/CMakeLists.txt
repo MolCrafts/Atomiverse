@@ -470,6 +470,8 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-d4-kpoint-stress THREADS 8)
     # Gamma analytic cell stress folding free-atom XDM (dual-python strain pins).
     atv_add_regression(gpw gpw-xdm-stress THREADS 8)
+    # Multi-k analytic cell stress folding free-atom XDM (dual-python strain pins).
+    atv_add_regression(gpw gpw-xdm-kpoint-stress THREADS 8)
     atv_add_regression(gpw gpw-metallic-smearing THREADS 8)
     atv_add_regression(gpw gpw-uks-smearing THREADS 8)
     atv_add_regression(gpw gpw-kpoint-forces THREADS 8)
