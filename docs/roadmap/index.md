@@ -300,11 +300,12 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   (`reg_gpw-vdw-uks-multigrid`); **harness wave 2 (shift, 2026-08-01)**
   ships multi-k D4/XDM stress, multi-k UKS Hirshfeld, multi-k UKS CPMD
   eNH, GPW UKS MLWF, SCS-MP2, Γ-UKS + multi-k RKS optB88-vdW, multi-k
-  UKS vdW×multigrid; residual pending / incomplete: multi-k TS stress
-  dedicated pin (staff `[~]`), multi-k D3/D4 ATM force pins;
-  stock VV10 remains **blocked** (no CP2K twin); hybrids / meta-GGA /
-  GAPW blocked — see `cp2k-method-queue.md` (queue not exhausted —
-  GapCensus owns next discovery).
+  UKS vdW×multigrid; residual pending / incomplete (**GapCensus wave 3
+  2026-08-01**): multi-k TS stress (`[~]`), multi-k D3/D4 ATM forces,
+  multi-k UKS optB88-vdW, multi-k SCS-MP2, GPW Berry, Hirshfeld TS/MBD
+  forces; stock VV10 remains **blocked** (no CP2K twin); hybrids /
+  meta-GGA / GAPW blocked — see `cp2k-method-queue.md` (queue not
+  exhausted — GapCensus owns next discovery).
 - Concrete method `GpwDft` (parameters as members; no public Config bag).
   Analytic Γ forces → AIMD (`reg_gpw-bomd-water`); keep member
   `local_pp_on_grid` consistent between energy and gradient
