@@ -636,3 +636,75 @@ TEST(GpwForces, KpointProductForcesFoldXdm) {
         << "multi-k assemble must add geometry-only XDM forces";
     EXPECT_GT(std::abs(geom.forces[0][0]), 1e-10);
 }
+
+// Γ-UKS + Dudarev DFT+U: occupation-matrix Pulay fold (W ← W − M) is the
+// gradient of E_U[n(P,S)]. U−J = 2 eV keeps the DZV s-shell gross-Mulliken
+// occupation in a single SCF branch (at 4 eV the toy is multi-branch; see
+// .claude/notes/gpw-dftu-projector-divergence.md). Product e2e pin:
+// reg_gpw-dftu-forces.
+TEST(GpwForces, DftUUksGammaAnalyticMatchesFd) {
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    // Symmetric compressed bond along x (same as reg_gpw-dftu-forces A).
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.5, 6.0, 6.0};
+    std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
+                                  GpwAtom(rB, basis, pot, 1)};
+
+    GpwDft cfg;
+    cfg.cell[0] = cfg.cell[1] = cfg.cell[2] = 12.0;
+    cfg.cutoff_ry = 100.0;
+    cfg.n_alpha = 2;
+    cfg.n_beta = 0;
+    cfg.tol = 1e-8;
+    cfg.max_iter = 120;
+    cfg.mix = 0.35;
+    cfg.nonperiodic = false;
+    cfg.local_pp_on_grid = true;
+    cfg.xc = XcKind::PADE;
+    cfg.eps_default = 1e-8;
+    cfg.plus_u.push_back(PlusU{molrs::Element::H, /*l=*/0, /*u_ev=*/2.0});
+
+    const auto Fa = gpw_forces_analytic(atoms, cfg);
+    const auto Ffd = gpw_forces_fd(atoms, cfg, /*h=*/1e-3);
+    ASSERT_EQ(Fa.size(), 2u);
+    ASSERT_EQ(Ffd.size(), 2u);
+
+    double max_err = 0.0;
+    for (int a = 0; a < 2; ++a) {
+        for (int k = 0; k < 3; ++k) {
+            max_err = std::max(max_err,
+                               std::abs(Fa[static_cast<std::size_t>(a)][k]
+                                        - Ffd[static_cast<std::size_t>(a)][k]));
+            std::printf(
+                "[GPW DFT+U Γ F] atom %d axis %d  an=% .8f  fd=% .8f  d=% .2e\n",
+                a, k, Fa[static_cast<std::size_t>(a)][k],
+                Ffd[static_cast<std::size_t>(a)][k],
+                Fa[static_cast<std::size_t>(a)][k]
+                    - Ffd[static_cast<std::size_t>(a)][k]);
+        }
+    }
+    std::printf("[GPW DFT+U Γ F] max|dF|=%.3e Ha/Bohr\n", max_err);
+    EXPECT_LT(max_err, 5e-5) << "Γ-UKS + DFT+U analytic vs multi-SCF FD";
+
+    // U term live: forces move when U is switched on (GpwDft is non-copyable).
+    GpwDft plain;
+    plain.cell[0] = plain.cell[1] = plain.cell[2] = 12.0;
+    plain.cutoff_ry = 100.0;
+    plain.n_alpha = 2;
+    plain.n_beta = 0;
+    plain.tol = 1e-8;
+    plain.max_iter = 120;
+    plain.mix = 0.35;
+    plain.nonperiodic = false;
+    plain.local_pp_on_grid = true;
+    plain.xc = XcKind::PADE;
+    plain.eps_default = 1e-8;
+    const auto F0 = gpw_forces_analytic(atoms, plain);
+    double dU = 0.0;
+    for (int a = 0; a < 2; ++a)
+        for (int k = 0; k < 3; ++k)
+            dU = std::max(dU, std::abs(Fa[static_cast<std::size_t>(a)][k]
+                                       - F0[static_cast<std::size_t>(a)][k]));
+    EXPECT_GT(dU, 1e-4) << "U activation floor on Γ forces";
+}
