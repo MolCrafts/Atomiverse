@@ -1407,28 +1407,45 @@ table flips** (nothing capability-shaped merged; incompletes unmerged);
 residual prose in `dft.md` §8/§10 + `index.md` GPW refreshed for wave-4
 queue. **Pending = 9**; **in_progress = 3**; **blocked = 6**.
 
+**Harness wave 4 (shift) 2026-08-01 (parent `dev` @ `6f1218b3`):** **9/9**
+staffed slugs on `dev` → `## done` (`gpw-d3-atm-kpoint-forces`,
+`gpw-hirshfeld-forces`, `gpw-d3-kpoint-forces`, `gpw-d3bj-kpoint-forces`,
+`gpw-d4-kpoint-forces`, `gpw-d4-atm-kpoint-stress`, `periodic-berry-gpw-uks`,
+`periodic-scs-ump2-si`, `dfpt-gga-spin-smearing` — feat merges
+`e52e4396`..`6f1218b3`; specs closed). **Incomplete kept `[~]` ×1** (do
+not demote): `gpw-ts-kpoint-stress` (`wf/gpw-ts-kpoint-stress` @
+`2d0977c8` — feat tip; no reg dir on parent). **Pending residual = 2**
+(`gpw-ts-kpoint-forces`, `gpw-xdm-kpoint-forces` — not staffed this wave;
+**not** queue exhausted; GapCensus owns next discovery). **in_progress =
+1**; **blocked = 6** unchanged. Clearup already ran (no isolation
+worktrees; merged `wf/*` pruned; incomplete `wf/*` kept). No push.
+
 ## pending
 
-- [ ] `gpw-d3-kpoint-forces` | Multi-k analytic ionic forces with DFT-D3 zero damping (dedicated pin) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh (D3 on−off ΔF) | deps: gpw-d3-forces ✓, gpw-d3-kpoint-stress ✓
-- [ ] `gpw-d3bj-kpoint-forces` | Multi-k analytic ionic forces with DFT-D3(BJ) (dedicated pin) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh + BJ | deps: gpw-d3bj-forces ✓, gpw-d3bj-kpoint-stress ✓
-- [ ] `gpw-d4-kpoint-forces` | Multi-k analytic ionic forces with DFT-D4 two-body BJ (dedicated pin; ATM multi-k already `reg_gpw-d4-atm-kpoint-forces`) | gpw | twin: dftd4 3.7.0 `--grad` / CP2K libdftd4 ENERGY_FORCE + k | deps: gpw-d4-forces ✓, gpw-d4-kpoint-stress ✓
 - [ ] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | twin: libMBD / literature (CP2K has no stock TS — same policy as `gpw-ts-forces`) | deps: gpw-ts-forces ✓, gpw-ts-stress ✓
 - [ ] `gpw-xdm-kpoint-forces` | Multi-k analytic ionic forces with free-atom XDM (dedicated pin) | gpw | twin: pure-Python XDM strain/grad (same policy as `gpw-xdm-forces`) | deps: gpw-xdm-forces ✓, gpw-xdm-kpoint-stress ✓
-- [ ] `periodic-berry-gpw-uks` | King–Smith–Vanderbilt Berry-phase polarization on GPW collinear UKS (dual-channel string phases) | response | twin: CP2K 2026.1 Quickstep `&MOMENTS PERIODIC` UKS | deps: periodic-berry-gpw ✓, berry-spin-si ✓
-- [ ] `periodic-scs-ump2-si` | Γ SCS-MP2 scales on RI-GPW UMP2@UKS (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 UKS SCALE_S/SCALE_T (or algebraic dual on product UMP2) | deps: periodic-ump2-si ✓, periodic-scs-mp2-si ✓
 
 ## in_progress
 
-- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `4afc4185` (feat tip; no reg dir on parent — resume/rebase/merge next)
-- [~] `gpw-d3-atm-kpoint-forces` | Multi-k analytic ionic forces with D3 three-body ATM (C9) dedicated pin | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh + ATM | deps: gpw-d3-atm-forces ✓, gpw-d3-atm-kpoint-stress ✓ | `wf/gpw-d3-atm-kpoint-forces` @ `a4168475` (feat tip; no reg dir on parent — resume/rebase/merge next)
-- [~] `gpw-hirshfeld-forces` | Analytic ionic forces (and stress fold) with Hirshfeld-scaled TS/MBD volumes — force/stress currently free-atom only while energy uses ratios | gpw | twin: libMBD volume-scaled grad / CP2K TS ENERGY_FORCE | deps: gpw-mbd-hirshfeld ✓, gpw-ts-forces ✓, gpw-mbd-forces ✓ | `wf/gpw-hirshfeld-forces` @ `4f3a62c6` (feat tip; no reg dir on parent — resume/rebase/merge next)
+- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `2d0977c8` (feat tip; no reg dir on parent — resume/rebase/merge next)
+
+## done (harness wave 4 (shift) 2026-08-01)
+
+- [x] `gpw-d3-atm-kpoint-forces` | Multi-k analytic ionic forces with D3 three-body ATM (C9) dedicated pin | gpw | `regressions/gpw/gpw-d3-atm-kpoint-forces` (CP2K 2026.1 multi-k ENERGY_FORCE C9 on−off ΔF; max\|dF_ATM−CP2K\| 2.62e-10 Ha/Bohr) | ratio **9.22** (13.28 / 1.44) | 2026-08-01
+- [x] `gpw-hirshfeld-forces` | Analytic ionic forces (and stress fold) with Hirshfeld-scaled TS/MBD volumes | gpw | `regressions/gpw/gpw-hirshfeld-forces` (fixed-\(v\) force dual-gate + product wiring; found rot: energy used ratios while force/stress called free-atom kernels) | ratio **perf_exempt** (no CP2K stock TS/MBD) | 2026-08-01
+- [x] `gpw-d3-kpoint-forces` | Multi-k analytic ionic forces with DFT-D3 zero damping (dedicated pin) | gpw | `regressions/gpw/gpw-d3-kpoint-forces` (CP2K 2026.1 multi-k ENERGY_FORCE D3 on−off ΔF; max\|ΔF\| 7.86e-7 Ha/Bohr) | ratio **4.353** (16.284 / 3.741) | 2026-08-01
+- [x] `gpw-d3bj-kpoint-forces` | Multi-k analytic ionic forces with DFT-D3(BJ) (dedicated pin) | gpw | `regressions/gpw/gpw-d3bj-kpoint-forces` (CP2K 2026.1 multi-k ENERGY_FORCE BJ ΔF) | ratio **3.544** (13.933 / 3.931) | 2026-08-01
+- [x] `gpw-d4-kpoint-forces` | Multi-k analytic ionic forces with DFT-D4 two-body BJ (dedicated pin) | gpw | `regressions/gpw/gpw-d4-kpoint-forces` (CP2K 2026.1 libdftd4 multi-k ENERGY_FORCE D4 ΔF) | ratio **2.426** (9.987 / 4.117) | 2026-08-01
+- [x] `gpw-d4-atm-kpoint-stress` | Multi-k analytic cell stress with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | `regressions/gpw/gpw-d4-atm-kpoint-stress` (CP2K 2026.1 libdftd4 multi-k NUMERICAL ATM−2b Δσ + dftd4 3.7.0 strained-cell; max\|σ_ATM-cp2k\| 2.0e-11; dual gate 1.4e-9; wiring 4.0e-12) | ratio **0.077** (10.58 / 137.945) | 2026-08-01
+- [x] `periodic-berry-gpw-uks` | King–Smith–Vanderbilt Berry-phase polarization on GPW collinear UKS (dual-channel string phases) | response | `regressions/gpw/periodic-berry-gpw-uks` (CP2K 2026.1 Quickstep `&MOMENTS PERIODIC` UKS fair twin) | ratio **0.214** (21.09 / 98.68) | 2026-08-01
+- [x] `periodic-scs-ump2-si` | Γ SCS-MP2 scales on RI-GPW UMP2@UKS (`mp2_os_scale`/`mp2_ss_scale`) | gpw | `regressions/gpw/periodic-scs-ump2-si` (algebraic dual on product UMP2 + CP2K UKS SCALE wall twin) | ratio **4.12** (15.79 / 3.83) | 2026-08-01
+- [x] `dfpt-gga-spin-smearing` | DFPT phonons with joint collinear spin × pure GGA (PBE) × metallic occupation smearing (PW Γ Sternheimer) | response | `regressions/response/dfpt-gga-spin-smearing` | ratio **0.21** (CP2K 2026.1 UKS-PBE+SMEAR k-point `VIBRATIONAL_ANALYSIS` 232.5 s / ATV DFPT 48.3 s, serial; CP2K optical anchor 464–535 cm⁻¹, free-energy FD pin 17.3454 eV/Å², DFPT 17.3711) | 2026-08-01
 
 ## done (harness wave 3 (shift) 2026-08-01)
 
-- [x] `dfpt-gga-spin-smearing` | DFPT phonons with joint collinear spin × pure GGA (PBE) × metallic occupation smearing (PW Γ Sternheimer) | response | `regressions/response/dfpt-gga-spin-smearing` | ratio **0.21** (CP2K 2026.1 UKS-PBE+SMEAR k-point `VIBRATIONAL_ANALYSIS` 232.5 s / ATV DFPT 48.3 s, serial; CP2K optical anchor 464–535 cm⁻¹, free-energy FD pin 17.3454 eV/Å², DFPT 17.3711) | 2026-08-01 worker wave 4
 - [x] `gpw-d4-atm-kpoint-forces` | Multi-k analytic ionic forces with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | `regressions/gpw/gpw-d4-atm-kpoint-forces` (CP2K 2026.1 libdftd4 multi-k ENERGY_FORCE ATM ΔF + dftd4 3.7.0 dual; max\|dF_ATM−CP2K\| 1.4e-8 Ha/Bohr) | ratio **0.613** (9.682 / 15.806) | 2026-08-01
 - [x] `gpw-optb88-uks-kpoints` | Multi-k UKS optB88-vdW (OptB88 + DRSLL on k-UKS path) dedicated pin | gpw | `regressions/gpw/gpw-optb88-uks-kpoints` (CP2K 2026.1 KPOINTS + UKS + GGA_X_OPTB88_VDW + DRSLL; E_disp parity 3.77e-5 Ha; multi-k UKS≡RKS) | ratio **0.73** (G2 9.8 s / CP2K 13.29 s OMP=8) | 2026-08-01
-- [x] `periodic-scs-mp2-kpoints` | Multi-k SCS-MP2 scales on RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | `regressions/gpw/periodic-scs-mp2-kpoints` (Grimme algebraic dual on product multi-k RI-GPW; CP2K offline twin aborts MP2_GPW@k — `oracle: literature`) | ratio **perf_exempt** (no multi-k MP2_GPW in CP2K 2026.1) | 2026-08-01
+- [x] `periodic-scs-mp2-kpoints` | Multi-k SCS-MP2 scales on RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | `regressions/gpw/periodic-scs-mp2-kpoints` (Grimme algebraic dual on product multi-k RI-GPW; CP2K offline twin aborts MP2_GPW under DFT KPOINTS — `oracle: literature`) | ratio **perf_exempt** (no multi-k MP2_GPW in CP2K 2026.1) | 2026-08-01
 - [x] `periodic-berry-gpw` | King–Smith–Vanderbilt Berry-phase polarization on GPW (GpwDft Bloch) | response | `regressions/gpw/periodic-berry-gpw` (symmetry-exact Si formal-polarization + Born-charge pins; CP2K Quickstep `&MOMENTS PERIODIC` fair twin) | ratio **9.6** (11.3 / 1.18) | 2026-08-01
 
 ## done (harness wave 2 (shift) 2026-08-01)
@@ -1451,10 +1468,6 @@ queue. **Pending = 9**; **in_progress = 3**; **blocked = 6**.
 - [x] `gpw-d3-atm-kpoint-stress` | Multi-k analytic cell stress with D3 three-body ATM (C9) | gpw | `regressions/gpw/gpw-d3-atm-kpoint-stress` (CP2K NUMERICAL C9 on−off; Δσ parity 8.1e-14 Ha/Bohr³) | ratio **0.285** (5.34 / 18.74) | 2026-08-01
 - [x] `gpw-bomd-uks-kpoints` | Multi-k UKS plain BOMD (previous-step dual P_k^σ warm start) | dynamics | `regressions/gpw/gpw-bomd-uks-kpoints` (CP2K Quickstep UKS AIMD k-mesh pin) | ratio **1.18** | 2026-08-01
 - [x] `gpw-vdw-uks-multigrid` | Γ-UKS nonlocal vdW on REL_CUTOFF multigrid | gpw | `regressions/gpw/gpw-vdw-uks-multigrid` (CP2K NGRIDS 4 + DRSLL + UKS; E_disp 1.3e-5 Ha) | ratio **4.44** (within_10x; SC RPS FFT cost) | 2026-08-01
-
-## done (harness wave 4 worker 2026-08-01)
-
-- [x] `gpw-d4-atm-kpoint-stress` | Multi-k analytic cell stress with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | `regressions/gpw/gpw-d4-atm-kpoint-stress` (CP2K 2026.1 libdftd4 multi-k NUMERICAL ATM−2b Δσ + dftd4 3.7.0 strained-cell; max\|σ_ATM-cp2k\| 2.0e-11; dual gate 1.4e-9; wiring 4.0e-12) | ratio **0.077** (10.58 / 137.945) | 2026-08-01
 
 ## done (harness wave 3 (shift) 2026-07-31)
 

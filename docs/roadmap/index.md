@@ -302,10 +302,11 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   eNH, GPW UKS MLWF, SCS-MP2, Γ-UKS + multi-k RKS optB88-vdW, multi-k
   UKS vdW×multigrid; **harness wave 3 (shift, 2026-08-01)** ships multi-k
   D4 ATM forces, multi-k UKS optB88-vdW, multi-k SCS-MP2, GPW Berry;
-  residual incomplete (`[~]`): multi-k TS stress, multi-k D3 ATM forces,
-  Hirshfeld-scaled TS/MBD forces; **pending** (GapCensus wave 4): multi-k
-  D3/D3(BJ)/D4 force pins, multi-k D4 ATM stress, multi-k TS/XDM forces,
-  GPW Berry UKS, Γ SCS-UMP2; stock VV10 remains
+  **harness wave 4 (shift, 2026-08-01)** ships multi-k D3 ATM forces,
+  Hirshfeld-scaled TS/MBD forces, multi-k D3/D3(BJ)/D4 force pins,
+  multi-k D4 ATM stress, GPW Berry UKS, Γ SCS-UMP2, joint DFPT
+  spin×GGA×smear; residual incomplete (`[~]`): multi-k TS stress;
+  **pending**: multi-k TS/XDM force pins; stock VV10 remains
   **blocked** (no CP2K twin); hybrids / meta-GGA / GAPW blocked — see
   `cp2k-method-queue.md` (queue not exhausted — GapCensus owns next
   discovery).
