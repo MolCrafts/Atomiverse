@@ -459,9 +459,9 @@ to green. Specs deleted on close; history in git (commits f9a6443a..HEAD).
 | [rsh-eri-cam-b3lyp](rsh-eri-cam-b3lyp/) | pyscf / RSH | open (deferred) |
 
 Open CP2K specs on `dev` = **0**. Stock VV10 is **blocked**. Incomplete
-`[~]` = **2** (`gpw-ts-stress` / `gpw-xdm-stress` — uncommitted WIP in their
-isolation worktrees at the assign parent `197468ac`; do not demote). Pending
-residual **3** (held assign wave 2 (shift) list); **not** queue exhausted.
+`[~]` = **0** (harness wave 3 closed `gpw-ts-stress` / `gpw-xdm-stress` and the
+rest of the wave-3 staff; Recover 2026-08-01). Pending residual **14**
+(GapCensus wave 5 refill: 11 re-verified + 3 new); **not** queue exhausted.
 
 ## Closed — CP2K harness wave 12 (2026-07-26)
 

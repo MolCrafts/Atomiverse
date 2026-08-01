@@ -44,10 +44,11 @@ UKS **multigrid** (`reg_gpw-uks-multigrid-kpoints`), multi-k CPMD
 **SGCP OT** (`reg_second-gen-cpmd-ot-uks-kpoints`), linearized-XL
 **stress** (`reg_xl-bomd-linearized-stress`), and finite-q spin×GGA
 DFPT (`reg_dfpt-gga-spin-finite-q-si`); open residuals after that wave
-(GapCensus wave 4): multi-k UKS nonlocal **vdW**, multi-k
+(GapCensus wave 5): multi-k UKS nonlocal **vdW**, multi-k
 **D3/D3(BJ)/ATM/D4/TS/XDM stress** dedicated pins, multi-k UKS **BOMD**,
 Γ-UKS vdW **multigrid**, multi-k UKS **Hirshfeld**, multi-k UKS CPMD
-**eNH** combo pin;
+**eNH** combo pin, GPW spin **MLWF**, SCS-**MP2** scale pin, Γ-UKS
+**optB88-vdW**;
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -319,7 +320,8 @@ before per-level restriction). Nonlocal vdW on the **k-point path** is product f
 RKS (`reg_gpw-vdw-kpoints`; single-grid and multigrid) and at **Γ UKS**
 (`reg_gpw-vdw-uks`). Multi-k **UKS** + nonlocal still fails fast
 (queued `gpw-vdw-uks-kpoints`); Γ-UKS + multigrid + nonlocal is unpinned
-(queued `gpw-vdw-uks-multigrid`).
+(queued `gpw-vdw-uks-multigrid`); Γ-UKS **optB88-vdW** spin path is
+product-shaped but unpinned (queued `gpw-optb88-uks`).
 
 ## 9. Composite DFT Methods
 
@@ -410,10 +412,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   ships TS/XDM stress, multi-k + Γ-UKS nonlocal vdW, multi-k UKS
   multigrid, multi-k CPMD eNH, multi-k UKS SGCP OT, linearized-XL
   stress, and finite-q spin×GGA DFPT. Stock VV10 is
-  **blocked** (no CP2K twin). Open residuals (GapCensus wave 4): multi-k
+  **blocked** (no CP2K twin). Open residuals (GapCensus wave 5): multi-k
   UKS nonlocal vdW (fail-fast), multi-k D3/D3(BJ)/ATM/D4/TS/XDM stress
   dedicated pins (k-path folds product), multi-k UKS BOMD, Γ-UKS vdW
-  multigrid, multi-k UKS Hirshfeld, multi-k UKS CPMD eNH combo pin.
+  multigrid, multi-k UKS Hirshfeld, multi-k UKS CPMD eNH combo pin,
+  GPW spin MLWF, SCS-MP2 scale pin, Γ-UKS optB88-vdW.
   Hybrids / meta-GGA / GAPW / PAW remain blocked (queue not exhausted —
   see `cp2k-method-queue.md`). CPU only.
 
@@ -486,7 +489,9 @@ Which engine backs which ✓:
   `reg_periodic-ri-mp2-si` vs CP2K 2026.1; Poisson foothold
   `reg_periodic-mp2-si`) **and multi-k RI-GPW** (`reg_periodic-mp2-kpoints`)
   **and Γ UMP2@UKS** (`reg_periodic-ump2-si`) **and multi-k UMP2**
-  (`reg_periodic-ump2-kpoints`).
+  (`reg_periodic-ump2-kpoints`). SCS scales (`mp2_os_scale` /
+  `mp2_ss_scale`) are product-shaped but unpinned (queued
+  `periodic-scs-mp2-si`).
   **Periodic RPA** is **Γ-point dRPA@KS** product (`GpwDft::direct_rpa`;
   plasmon formula; `reg_periodic-rpa-si`), **multi-k k-diagonal dRPA**
   (`reg_periodic-rpa-kpoints`), **finite-q inter-k dRPA**
@@ -580,7 +585,8 @@ Which engine backs which ✓:
   pin; `reg_periodic-wannier-si`) **and collinear-spin**
   (`reg_periodic-wannier-uks`) **and GPW-grid MLWF** (multi-k
   Marzari–Vanderbilt on the Gaussian-basis path;
-  `reg_periodic-wannier-gpw`).
+  `reg_periodic-wannier-gpw`; collinear UKS still throws —
+  queued `periodic-wannier-gpw-uks`).
 
 ## 12. Periodic infrastructure
 

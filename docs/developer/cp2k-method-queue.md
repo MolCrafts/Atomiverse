@@ -1132,6 +1132,53 @@ after `reg_ot-uks-dftu-smearing` landed. Roadmap: **no ○/✓ table flips**
 `index.md` GPW + MD AIMD refreshed for wave-3 ships + wave-4 queue.
 **Pending = 11**; **in_progress = 0**; **blocked = 6**.
 
+**Recover 2026-08-01 (parent `dev` @ `446a0a3d`):** reconfirmed clean —
+incomplete_count=**0**; `## in_progress` empty (no `[~]`); open CP2K/GPW/PW
+specs=**0** (PySCF deferred only: `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`);
+unmerged `wf/*`=**0** local+remote; isolation worktrees=**0**; half-regs=**0**
+(no regression/spec dir for any of the 11 pending; all 9 harness wave-3 done
+slug dirs present); leftover loop `build*`=**none** on parent. Stock VV10 stays
+**blocked**. Do **not** invent methods / do not promote pending into staff here —
+next is Assign (or GapCensus if tree drifted) from **pending**.
+
+**GapCensus wave 5 (shift) 2026-08-01 (parent `dev` @ `446a0a3d`):** recover
+clean — incomplete_count=**0**; `## in_progress` empty; open CP2K/GPW/PW
+specs=**0** (PySCF deferred only); unmerged `wf/*`=**0**; isolation
+worktrees=**0**; leftover loop builds=**none**; wave-3 done-slug regs 9/9
+present; CP2K source build OK (`cp2k.psmp` 2026.1 `git:5e54ba2`). No capability
+merges into `dev` since GapCensus wave 4 (`446a0a3d` = HEAD). Tree re-diff vs
+`docs/roadmap/dft.md` §3/§8/§10–12 + MD AIMD + `tools/cp2k_oracle` +
+`include/atomiverse/cpu/{gpw,planewave}`: **all 11 prior pending re-verified as
+true gaps** — `GpwDft::build` still rejects multi-k UKS + nonlocal vdW
+(`gpw_solver.cpp` reject “with multi-k UKS”); k-path `gpw_stress` still folds
+d3/d3bj/d3_atm/d4/ts/xdm with no dedicated multi-k pin/reg; multi-k UKS BOMD
+warm-start product (`guess_P_k`+`P_k_beta`) unpinned; Γ-UKS + vdW + multigrid
+code path unpinned; `fold_dispersion_k_uks` Hirshfeld unpinned; multi-k UKS
+CPMD eNH combo unpinned. **Added 3** tree-declared residuals with offline
+CP2K / literature twins (exclude done / blocked / in_progress):
+`periodic-wannier-gpw-uks` (`PeriodicWannier::compute(GpwDft&)` throws
+“UKS / spin MLWF not in this foothold” after RKS GPW MLWF ✓ and PW spin MLWF
+✓ — CP2K Quickstep UKS MLWF twin), `periodic-scs-mp2-si` (`mp2_os_scale` /
+`mp2_ss_scale` product-shaped on Γ/multi-k RI-GPW MP2; no dedicated pin —
+wave-15 hold “behind dispersion stress depth” cleared when D3/ATM/TS/XDM
+stress pins shipped; CP2K SCS-MP2 twin), `gpw-optb88-uks` (Γ-UKS
+`xc_grid_optb88_vdw_spin` + OptB88VdW in UKS XcKind allow-list product;
+only RKS `reg_gpw-optb88-vdw` pin — same UKS-GGA expand pattern as
+revPBE/RPBE/BLYP; CP2K UKS optB88-vdW twin). **Not added:** k-UKS
+fixed-density + metallic smear (throw remains; hold — fractional fixed-density
+path for XL/CPMD metals); multi-k UKS + vdW multigrid triple combo (hold
+behind `gpw-vdw-uks-kpoints`); multi-k ATM force dedicated pins (geometry-only
+ATM fold identical to Γ — thin after Γ ATM force pins); CPMD stress /
+variable-cell CP (deliberate refusal); OT+XL (architectural exclusion); GPW
+Berry (hold — larger surface than pin-only, after GPW MLWF UKS); BP86/B97/
+OLYP/HCTH (molecular PySCF path); stock VV10 (**blocked**); shear/off-diagonal
+stress (orthorhombic design); GAPW/PAW/periodic hybrid/meta-GGA (blocked);
+molecular post-HF / classical MW / CUDA ports (other loops). Roadmap: **no
+○/✓ table flips** (nothing capability-shaped merged); residual prose in
+`dft.md` §8/§10/§11 + `index.md` GPW refreshed for wave-5 queue (SCS-MP2 +
+GPW spin MLWF + OptB88 UKS). **Pending = 14**; **in_progress = 0**;
+**blocked = 6**.
+
 ## pending
 
 - [ ] `gpw-vdw-uks-kpoints` | Multi-k UKS nonlocal vdW-DF/DF2/rVV10 (dual-spin V_nl fold) | gpw | twin: CP2K 2026.1 NON_LOCAL + UKS + k-mesh | deps: gpw-vdw-uks ✓, gpw-vdw-kpoints ✓ | write-first
@@ -1145,10 +1192,13 @@ after `reg_ot-uks-dftu-smearing` landed. Roadmap: **no ○/✓ table flips**
 - [ ] `gpw-vdw-uks-multigrid` | Γ-UKS nonlocal vdW on REL_CUTOFF multigrid | gpw | twin: CP2K 2026.1 NGRIDS + DRSLL + UKS | deps: gpw-vdw-uks ✓, gpw-vdw-multigrid ✓ | write-first
 - [ ] `gpw-hirshfeld-uks-kpoints` | Multi-k UKS Hirshfeld volume ratios for TS/MBD | gpw | twin: libMBD / literature V/V_free | deps: gpw-hirshfeld-uks ✓, gpw-hirshfeld-kpoints ✓ | write-first
 - [ ] `cpmd-uks-thermostat-kpoints` | Multi-k UKS CPMD electronic Nosé–Hoover (combo pin) | dynamics | twin: literature NVE/thermostat envelope (no CP fictitious twin) | deps: cpmd-thermostat-kpoints ✓, cpmd-uks-kpoints ✓ | write-first
+- [ ] `periodic-wannier-gpw-uks` | GPW-grid Marzari–Vanderbilt MLWF on collinear UKS | response | twin: CP2K 2026.1 Quickstep UKS MLWF | deps: periodic-wannier-gpw ✓, periodic-wannier-uks ✓ | write-first
+- [ ] `periodic-scs-mp2-si` | SCS-MP2 scales on Γ RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 SCS-MP2 | deps: periodic-ri-mp2-si ✓ | write-first
+- [ ] `gpw-optb88-uks` | Γ-UKS optB88-vdW (OptB88 exchange + DRSLL nonlocal) | gpw | twin: CP2K 2026.1 UKS optB88-vdW | deps: gpw-optb88-vdw ✓, gpw-vdw-uks ✓ | write-first
 
 ## in_progress
 
-(empty — recover clean after harness wave 3; not queue exhausted)
+(empty — recover clean after harness wave 3; GapCensus wave 5 refill; not queue exhausted)
 
 
 
