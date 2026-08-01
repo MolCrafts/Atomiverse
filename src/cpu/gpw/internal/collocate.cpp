@@ -265,6 +265,25 @@ std::vector<double> collocate_density(const CompactBasisGrid& cbg, int nbasis,
     return rho;
 }
 
+namespace {
+// Grow-only flat chunk pool for integrate_potential (CSR + dense-phi paths).
+// Levels / SCF iters reuse capacity; only the active nc·nn prefix is zeroed.
+// Entry points are not nested concurrent (one integrate at a time per process).
+struct IntegratePartPool {
+    std::vector<double> data;
+    double* ensure(long nc, std::size_t nn) {
+        const std::size_t need = static_cast<std::size_t>(nc) * nn;
+        if (data.size() < need)
+            data.resize(need);
+        std::fill(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(need),
+                  0.0);
+        return data.data();
+    }
+};
+IntegratePartPool g_cbg_integrate_part;
+IntegratePartPool g_dense_integrate_part;
+} // namespace
+
 std::vector<double> integrate_potential(const CompactBasisGrid& cbg, int nbasis,
                                         const std::vector<double>& V_r) {
     const std::size_t nn = static_cast<std::size_t>(nbasis) * nbasis;
@@ -280,7 +299,7 @@ std::vector<double> integrate_potential(const CompactBasisGrid& cbg, int nbasis,
     const device::ChunkedRange range(
         na, device::block_reduce_chunks(nn * sizeof(double)));
     const long nc = range.chunks();
-    std::vector<double> part(static_cast<std::size_t>(nc) * nn, 0.0);
+    double* part = g_cbg_integrate_part.ensure(nc, nn);
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < nc; ++c) {
         double* Vloc = &part[static_cast<std::size_t>(c) * nn];
@@ -386,10 +405,11 @@ std::vector<double> integrate_potential(const UniformGrid& grid,
     std::vector<double> V(nn, 0.0);
     // Fixed-partition partial KS blocks, folded in ascending chunk order — the
     // reproducible form of the shared reduction (see cpu/device/chunked_range.h).
+    // Grow-only pool: kill per-call nc·nb² heap across SCF iterations.
     const device::ChunkedRange range(
         na, device::block_reduce_chunks(nn * sizeof(double)));
     const long nc = range.chunks();
-    std::vector<double> part(static_cast<std::size_t>(nc) * nn, 0.0);
+    double* part = g_dense_integrate_part.ensure(nc, nn);
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < nc; ++c) {
         double* Vloc = &part[static_cast<std::size_t>(c) * nn];

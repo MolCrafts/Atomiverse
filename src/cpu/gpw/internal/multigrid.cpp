@@ -600,6 +600,24 @@ ProductSet build_products(const MultiGrid& mg,
 }
 
 namespace {
+// Grow-only per-OpenMP-thread 1D-axis scratch for collocate_one. Product
+// collocate/integrate call this once per product per SCF rebuild — millions of
+// tiny heap allocs of fbuf/ebuf/wbuf. File-scope thread_local (not inside the
+// template) shares one buffer set across all lambda instantiations; capacity
+// only grows. Only the prefix [0,total) is written each call.
+thread_local std::vector<double> g_colloc_fbuf;
+thread_local std::vector<double> g_colloc_ebuf;
+thread_local std::vector<long> g_colloc_wbuf;
+
+inline void ensure_colloc_axis(int total) {
+    const std::size_t n = static_cast<std::size_t>(total);
+    if (g_colloc_fbuf.size() < n) {
+        g_colloc_fbuf.resize(n);
+        g_colloc_ebuf.resize(n);
+        g_colloc_wbuf.resize(n);
+    }
+}
+
 // Accumulate one product over an unwrapped window into a per-point sink `sink`,
 // matching build_compact_basis_grid: window [ic-ih, ic+ih] in grid cells around
 // the product center, evaluate at the UNWRAPPED real position (image offset in r,
@@ -632,28 +650,24 @@ inline void collocate_one(const UniformGrid& grid, const GridProduct& prod,
     }
     // Per-axis 1D factor F_d[t] (t = index − lo[d]) = exp(-p (r−Pc)²) (r−ra)^la (r−rb)^lb,
     // the squared distance E2_d[t] = (r−Pc)² (for the sphere cull), and the wrapped
-    // storage index w_d[t]. Small scratch (window widths).
+    // storage index w_d[t]. Grow-only thread_local scratch (no per-call heap).
     const int la[3] = {prod.la[0], prod.la[1], prod.la[2]};
     const int lb[3] = {prod.lb[0], prod.lb[1], prod.lb[2]};
     double* F[3];
     double* E2[3];
     long* W[3];
     int len[3];
-    std::vector<double> fbuf, ebuf;
-    std::vector<long> wbuf;
     int total = 0;
     for (int d = 0; d < 3; ++d) {
         len[d] = static_cast<int>(hi[d] - lo[d] + 1);
         total += len[d];
     }
-    fbuf.resize(static_cast<std::size_t>(total));
-    ebuf.resize(static_cast<std::size_t>(total));
-    wbuf.resize(static_cast<std::size_t>(total));
+    ensure_colloc_axis(total);
     int off = 0;
     for (int d = 0; d < 3; ++d) {
-        F[d] = &fbuf[static_cast<std::size_t>(off)];
-        E2[d] = &ebuf[static_cast<std::size_t>(off)];
-        W[d] = &wbuf[static_cast<std::size_t>(off)];
+        F[d] = g_colloc_fbuf.data() + off;
+        E2[d] = g_colloc_ebuf.data() + off;
+        W[d] = g_colloc_wbuf.data() + off;
         off += len[d];
         // Gaussian via exp recurrence (CP2K), propagated OUTWARD from the centre so
         // it stays bounded (starting at an edge would overflow B=exp(-2p e dx) for
@@ -748,6 +762,26 @@ inline void collocate_one(const UniformGrid& grid, const GridProduct& prod,
 /// footprint matches what an 8-thread run already paid for per-thread buffers.
 constexpr long kMinScatterChunks = 8;
 
+// Grow-only flat fixed-chunk scatter pools (levels sequential). Layout
+// chunk c starts at c*stride. Capacity grows across SCF iters; workers zero the
+// active prefix. Avoids per-call allocate/free of nc full-grid / nb² buffers.
+struct FlatChunkPool {
+    std::vector<double> data;
+    std::size_t stride = 0;
+    void prepare(long nc, std::size_t n) {
+        const std::size_t need = static_cast<std::size_t>(nc) * n;
+        if (data.size() < need)
+            data.resize(need);
+        stride = n;
+    }
+    double* chunk(long c) {
+        return data.data() + static_cast<std::size_t>(c) * stride;
+    }
+};
+FlatChunkPool g_rho_scatter;
+FlatChunkPool g_ks_scatter;
+FlatChunkPool g_ks_cell_scatter;
+
 } // namespace
 
 std::vector<double> collocate_products(const UniformGrid& grid,
@@ -776,15 +810,16 @@ std::vector<double> collocate_products(const UniformGrid& grid,
     // Chunk count is a function of the grid size alone; the floor keeps the
     // kernel parallel on grids too large for the accumulator budget, at the
     // memory a run of that width already paid for per-thread buffers.
+    // Grow-only flat pool reuses capacity across SCF iters/levels.
     const device::ChunkedRange range(
         np, std::max<long>(kMinScatterChunks,
                            device::block_reduce_chunks(npts * sizeof(double))));
     const long nc = range.chunks();
-    std::vector<std::vector<double>> tl(static_cast<std::size_t>(nc));
+    g_rho_scatter.prepare(nc, npts);
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < nc; ++c) {
-        std::vector<double>& loc = tl[static_cast<std::size_t>(c)];
-        loc.assign(npts, 0.0); // first-touch on whichever thread runs the chunk
+        double* loc = g_rho_scatter.chunk(c);
+        std::fill_n(loc, npts, 0.0);
         const long iplo = range.begin(c), iphi = range.end(c);
         for (long ip = iplo; ip < iphi; ++ip) {
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
@@ -818,7 +853,7 @@ std::vector<double> collocate_products(const UniformGrid& grid,
     for (long g = 0; g < static_cast<long>(npts); ++g) {
         double s = 0.0;
         for (long c = 0; c < nc; ++c)
-            s += tl[static_cast<std::size_t>(c)][static_cast<std::size_t>(g)];
+            s += g_rho_scatter.chunk(c)[static_cast<std::size_t>(g)];
         rho[static_cast<std::size_t>(g)] = s;
     }
     return rho;
@@ -835,15 +870,15 @@ std::vector<double> integrate_products(
     const long np = static_cast<long>(prods.size());
     // Fixed product partition, one nb² accumulator per chunk, folded in
     // ascending chunk order — the reproducible form of the per-thread buffer
-    // this replaces (see cpu/device/chunked_range.h).
+    // this replaces (see cpu/device/chunked_range.h). Grow-only flat pool.
     const device::ChunkedRange range(
         np, device::block_reduce_chunks(nn * sizeof(double)));
     const long nc = range.chunks();
-    std::vector<std::vector<double>> tl(static_cast<std::size_t>(nc));
+    g_ks_scatter.prepare(nc, nn);
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < nc; ++c) {
-        std::vector<double>& Vloc = tl[static_cast<std::size_t>(c)];
-        Vloc.assign(nn, 0.0);
+        double* Vloc = g_ks_scatter.chunk(c);
+        std::fill_n(Vloc, nn, 0.0);
         const long iplo = range.begin(c), iphi = range.end(c);
         for (long ip = iplo; ip < iphi; ++ip) {
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
@@ -876,7 +911,7 @@ std::vector<double> integrate_products(
     for (long kk = 0; kk < static_cast<long>(nn); ++kk) {
         double s = 0.0;
         for (long c = 0; c < nc; ++c)
-            s += tl[static_cast<std::size_t>(c)][static_cast<std::size_t>(kk)];
+            s += g_ks_scatter.chunk(c)[static_cast<std::size_t>(kk)];
         V[static_cast<std::size_t>(kk)] = s;
     }
     return V;
@@ -897,11 +932,11 @@ std::vector<double> collocate_products_cells(
         np, std::max<long>(kMinScatterChunks,
                            device::block_reduce_chunks(npts * sizeof(double))));
     const long nc = range.chunks();
-    std::vector<std::vector<double>> tl(static_cast<std::size_t>(nc));
+    g_rho_scatter.prepare(nc, npts);
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < nc; ++c) {
-        std::vector<double>& loc = tl[static_cast<std::size_t>(c)];
-        loc.assign(npts, 0.0);
+        double* loc = g_rho_scatter.chunk(c);
+        std::fill_n(loc, npts, 0.0);
         const long iplo = range.begin(c), iphi = range.end(c);
         for (long ip = iplo; ip < iphi; ++ip) {
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
@@ -935,7 +970,7 @@ std::vector<double> collocate_products_cells(
     for (long g = 0; g < static_cast<long>(npts); ++g) {
         double s = 0.0;
         for (long c = 0; c < nc; ++c)
-            s += tl[static_cast<std::size_t>(c)][static_cast<std::size_t>(g)];
+            s += g_rho_scatter.chunk(c)[static_cast<std::size_t>(g)];
         rho[static_cast<std::size_t>(g)] = s;
     }
     return rho;
@@ -959,11 +994,11 @@ std::vector<std::vector<double>> integrate_products_cells(
     const device::ChunkedRange range(
         np, device::block_reduce_chunks(nnall * sizeof(double)));
     const long nc = range.chunks();
-    std::vector<std::vector<double>> tl(static_cast<std::size_t>(nc));
+    g_ks_cell_scatter.prepare(nc, nnall);
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < nc; ++c) {
-        std::vector<double>& Vloc = tl[static_cast<std::size_t>(c)];
-        Vloc.assign(nnall, 0.0);
+        double* Vloc = g_ks_cell_scatter.chunk(c);
+        std::fill_n(Vloc, nnall, 0.0);
         const long iplo = range.begin(c), iphi = range.end(c);
         for (long ip = iplo; ip < iphi; ++ip) {
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
@@ -976,7 +1011,7 @@ std::vector<std::vector<double>> integrate_products_cells(
                           });
             const double sw = prod.k * w * acc;
             double* Vcell =
-                Vloc.data() + static_cast<std::size_t>(prod.tcell) * nn;
+                Vloc + static_cast<std::size_t>(prod.tcell) * nn;
             for (int i = 0; i < A.cn; ++i) {
                 const PrimContrib& ca =
                     contribs[static_cast<std::size_t>(A.cbeg + i)];
@@ -995,7 +1030,7 @@ std::vector<std::vector<double>> integrate_products_cells(
     for (long kk = 0; kk < static_cast<long>(nnall); ++kk) {
         double s = 0.0;
         for (long c = 0; c < nc; ++c)
-            s += tl[static_cast<std::size_t>(c)][static_cast<std::size_t>(kk)];
+            s += g_ks_cell_scatter.chunk(c)[static_cast<std::size_t>(kk)];
         V[static_cast<std::size_t>(kk) / nn]
          [static_cast<std::size_t>(kk) % nn] = s;
     }
