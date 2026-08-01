@@ -62,3 +62,16 @@ cmake --build build -j$(nproc) --target atomiverse <tests> <regs>
 ```
 
 Then **wipe build** before leaving the worktree.
+
+## Run log
+
+(autonomous harness appends lines here)
+
+- **2026-08-01 harness wave 1 (parent `dev` @ `924cf858`):** 1 of staffed
+  → done [x]: `p0-profile-baseline` (fair-wall + `ATV_GPW_PROF` table in
+  `.claude/notes/gpw-perf-baseline.md`; thin k/uks prof marks; four twins
+  PASS; unit `test_cpu_(gpw|xc)_` 12/12). One staff stays `[~]`:
+  `p0-fft-plan-cache` on unmerged `wf/perf-p0-fft-plan-cache` @ `af9e8c82`
+  (FFTW plan/buffer cache tip; do not demote). Residual pending **10**
+  (P0×3 + P1×4 + P2×3). Blocked **1** (`global-xtensor-xsimd`). Clearup
+  already ran. Queue **not** exhausted (census pending still open). No push.

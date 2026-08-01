@@ -30,7 +30,6 @@ Order: P0 (measure + cheap wins) → P1 (structure) → P2 (SIMD / reuse / MPI).
 
 ### P0 — profile + thrash / double work
 
-- [ ] `p0-fft-plan-cache` | Cache FFTW plans + r/c buffers by grid shape; create once per geometry (mirror `cpu::pw::internal::FFTPlan3D` / `FFTWBuffer`). Today every call `fftw_plan_*` + `fftw_destroy_plan` + malloc: `solve_poisson` / `solve_poisson_q`, GGA `gradient`/`divergence`, MG `fwd_dft`/`inv_dft_real` (prolong/restrict), also `mt_poisson` / `vdw_df` / `rvv10` thrash | phase P0 | files: `poisson_fft.cpp`, `grid_fft.cpp`, `multigrid.cpp`, optionally `mt_poisson.cpp` | gate: twins green; FFT-heavy step wall ↓; no public API |
 - [ ] `p0-collocate-buffers` | Preallocate product/collocate/integrate scratch: kill per-call `std::vector` in `collocate_one` (fbuf/ebuf/wbuf); reuse fixed-chunk full-grid scatter partials across SCF iters (today `collocate_products` reallocs `tl[nc]` every call); same for integrate chunk nb² accums | phase P0 | files: `multigrid.cpp` (`collocate_one`, `collocate_products*`, `integrate_products*`), `collocate.cpp` | gate: twins green; MG/product path wall ↓ |
 - [ ] `p0-k-zgemm` | Replace hand complex matmul with BLAS zgemm (or thin OpenBLAS wrappers). Sites: `kpoints.cpp` anonymous `mul`/`dagger_mul` (diag + DIIS error path) **and** `linalg::c_mul` / `c_dagger_mul` in `orbital_tangent.cpp` (OT band_gradient / s_tangent / param — every OT step) | phase P0 | files: `kpoints.cpp`, `orbital_tangent.cpp` (+ header if needed) | gate: multi-k + OT regs green; no tol soften |
 - [ ] `p0-ot-double-energy` | Multi-k OT outer loop rebuilds KS **twice** per iter: RKS `(void)build_k_energy` then `build_k_energy` after `refresh_occupations` (~L1883/1888); UKS twin `build_uks_k_energy` ×2 (~L3364/3374). Collapse to one ρ→H rebuild when dens/occ update is fused (or skip first when occupations frozen / integer) | phase P0 | files: `gpw_solver.cpp` multi-k OT RKS + UKS | gate: OT regs green (`ot-kpoints`, `ot-uks-kpoints`, `ot-minimizer-water`); fewer energy builds / wall ↓ |
@@ -50,7 +49,7 @@ Order: P0 (measure + cheap wins) → P1 (structure) → P2 (SIMD / reuse / MPI).
 
 ## in_progress
 
-(empty)
+- [~] `p0-fft-plan-cache` | Cache FFTW plans + r/c buffers by grid shape; create once per geometry (mirror `cpu::pw::internal::FFTPlan3D` / `FFTWBuffer`). Sites: `solve_poisson` / `solve_poisson_q`, GGA `gradient`/`divergence`, MG `fwd_dft`/`inv_dft_real`, `mt_poisson` / `vdw_df` / `rvv10` thrash | phase P0 | files: `poisson_fft.cpp`, `grid_fft.cpp`, `multigrid.cpp`, `mt_poisson.cpp`, new `internal/fft_cache.{h,cpp}` | gate: twins green; FFT-heavy step wall ↓; no public API | resume `wf/perf-p0-fft-plan-cache` @ `af9e8c82` (feat tip; not merged — do not demote) |
 
 ## blocked
 
