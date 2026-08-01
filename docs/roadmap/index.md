@@ -297,9 +297,9 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   product after green wave-5 merges: multi-k UKS nonlocal vdW
   (`reg_gpw-vdw-uks-kpoints`), multi-k D3/D3(BJ)/ATM stress pins,
   multi-k UKS BOMD (`reg_gpw-bomd-uks-kpoints`), Γ-UKS vdW multigrid
-  (`reg_gpw-vdw-uks-multigrid`); residual pending / incomplete: multi-k
-  D4/TS/XDM stress dedicated pins (staff `[~]`), multi-k UKS Hirshfeld
-  (`[~]`), multi-k UKS CPMD eNH combo pin, GPW spin MLWF, SCS-MP2 scale
+  (`reg_gpw-vdw-uks-multigrid`), multi-k UKS Hirshfeld
+  (`reg_gpw-hirshfeld-uks-kpoints`); residual pending / incomplete: multi-k
+  D4/TS/XDM stress dedicated pins (staff `[~]`), multi-k UKS CPMD eNH combo pin, GPW spin MLWF, SCS-MP2 scale
   pin, Γ-UKS optB88-vdW, multi-k UKS vdW×multigrid, multi-k RKS
   optB88-vdW, multi-k D3/D4 ATM force pins (GapCensus wave 2);
   stock VV10 remains **blocked** (no CP2K twin); hybrids / meta-GGA /
@@ -335,16 +335,18 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   `reg_ugw-uks-rpbe`).
 - DFT-D3 zero-damping, **D3(BJ)**, **D4** (+ analytic stress + ionic
   forces), **TS**, free-atom **MBD** (+ Γ and multi-k ionic forces),
-  **Hirshfeld-scaled MBD** (Γ + multi-k RKS + Γ-UKS), **periodic Ewald
-  MBD**, **XDM**, **vdW-DF DRSLL**, **vdW-DF2 LMKLL**, **rVV10**,
-  **optB88-vdW**, and **nonlocal SCF vdW pot/forces** on GPW (PBE params;
-  `reg_gpw-pbe-d3bj-ice`, `reg_gpw-d4-water`, `reg_gpw-d4-stress`,
-  `reg_gpw-d4-forces`, `reg_gpw-ts-ice`, `reg_gpw-ts-forces`,
-  `reg_gpw-mbd-ice`, `reg_gpw-mbd-forces`, `reg_gpw-mbd-kpoint-forces`,
-  `reg_gpw-mbd-hirshfeld`, `reg_gpw-hirshfeld-kpoints`,
-  `reg_gpw-hirshfeld-uks`, `reg_gpw-mbd-periodic`, `reg_gpw-xdm-ice`,
-  `reg_gpw-xdm-forces`, `reg_gpw-vdw-df-ice`, `reg_gpw-vdw-df2-ice`,
-  `reg_gpw-rvv10-ice`, `reg_gpw-optb88-vdw`, `reg_gpw-vdw-scf-potential`).
+  **Hirshfeld-scaled MBD** (Γ + multi-k RKS + Γ-UKS + multi-k UKS),
+  **periodic Ewald MBD**, **XDM**, **vdW-DF DRSLL**, **vdW-DF2 LMKLL**,
+  **rVV10**, **optB88-vdW**, and **nonlocal SCF vdW pot/forces** on GPW
+  (PBE params; `reg_gpw-pbe-d3bj-ice`, `reg_gpw-d4-water`,
+  `reg_gpw-d4-stress`, `reg_gpw-d4-forces`, `reg_gpw-ts-ice`,
+  `reg_gpw-ts-forces`, `reg_gpw-mbd-ice`, `reg_gpw-mbd-forces`,
+  `reg_gpw-mbd-kpoint-forces`, `reg_gpw-mbd-hirshfeld`,
+  `reg_gpw-hirshfeld-kpoints`, `reg_gpw-hirshfeld-uks`,
+  `reg_gpw-hirshfeld-uks-kpoints`, `reg_gpw-mbd-periodic`,
+  `reg_gpw-xdm-ice`, `reg_gpw-xdm-forces`, `reg_gpw-vdw-df-ice`,
+  `reg_gpw-vdw-df2-ice`, `reg_gpw-rvv10-ice`, `reg_gpw-optb88-vdw`,
+  `reg_gpw-vdw-scf-potential`).
   Molecular Gaussian path also has **DFT-D3(BJ)** / **D4**.
 
 ### Semiempirical
