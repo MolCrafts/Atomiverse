@@ -5,8 +5,8 @@
 /// analogue of molecular `RHF::mp2` / `UHF::mp2` (`cpu/scf/mp2.h`).
 ///
 /// - **RKS:** Γ (real) or multi-k (complex Bloch + momentum conservation).
-/// - **UKS:** Γ unrestricted MP2 (UMP2) on α/β orbitals; multi-k UMP2 is a
-///   follow-on.
+/// - **UKS:** Γ unrestricted MP2 (UMP2) on α/β orbitals **and multi-k UMP2**
+///   (`reg_periodic-ump2-si` / `reg_periodic-ump2-kpoints`).
 ///
 /// Product default (`mp2_ri = true`) is the RI-GPW plane-wave
 /// resolution-of-identity assembly of \((ia|jb)\) (Del Ben, Hutter,

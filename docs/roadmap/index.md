@@ -300,7 +300,8 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   (`reg_gpw-vdw-uks-multigrid`); residual pending / incomplete: multi-k
   D4/TS/XDM stress dedicated pins (staff `[~]`), multi-k UKS Hirshfeld
   (`[~]`), multi-k UKS CPMD eNH combo pin, GPW spin MLWF, SCS-MP2 scale
-  pin, Γ-UKS optB88-vdW;
+  pin, Γ-UKS optB88-vdW, multi-k UKS vdW×multigrid, multi-k RKS
+  optB88-vdW, multi-k D3/D4 ATM force pins (GapCensus wave 2);
   stock VV10 remains **blocked** (no CP2K twin); hybrids / meta-GGA /
   GAPW blocked — see `cp2k-method-queue.md` (queue not exhausted —
   GapCensus owns next discovery).

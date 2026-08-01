@@ -1197,12 +1197,66 @@ owns next discovery). **in_progress = 4**; **blocked = 6** unchanged.
 Clearup already ran (no isolation worktrees; incomplete `wf/*` kept). No
 push.
 
+**GapCensus wave 2 (shift) 2026-08-01 (parent `dev` @ `d32a7e40`):** recover —
+incomplete_count=**4** (`[~]` multi-k D4/TS/XDM stress + multi-k UKS
+Hirshfeld on unmerged `wf/*` tips; do not demote; no isolation worktrees —
+tips only). Open CP2K/GPW/PW specs on `dev`=**0** (PySCF deferred only:
+`periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`); unmerged feature `wf/*`=**4**
+(incomplete only); half-regs on `dev`=**0** (no reg dir for any pending or
+incomplete slug); leftover loop builds=**none**; concurrent uncommitted
+tutorial docs left untouched. CP2K source build OK (`cp2k.psmp` 2026.1
+`git:5e54ba2`). No capability merges into `dev` since harness close
+(`d32a7e40` = HEAD staff-close on top of `424d6989`). Tree re-diff vs
+`docs/roadmap/dft.md` §3/§8/§10–12 + MD AIMD + `tools/cp2k_oracle` +
+`include/atomiverse/cpu/{gpw,planewave}`: **all 4 prior pending re-verified
+as true gaps** — multi-k UKS CPMD eNH combo unpinned; GPW
+`PeriodicWannier::compute` still throws UKS
+(`periodic_wannier.cpp:818`); SCS scales product-shaped but unpinned
+(`mp2_os_scale`/`mp2_ss_scale`); Γ-UKS `xc_grid_optb88_vdw_spin` +
+`XcKind::OptB88VdW` allow-list product, only RKS `reg_gpw-optb88-vdw` pin.
+**Added 4** tree-declared residuals with offline CP2K / literature twins
+(exclude done / blocked / in_progress):
+`gpw-vdw-uks-kpoint-multigrid` (multi-k UKS × nonlocal vdW × REL_CUTOFF
+multigrid triple combo unpinned — each axis pair product after wave-1
+`gpw-vdw-uks-kpoints` + `gpw-vdw-uks-multigrid` + multi-k UKS multigrid;
+wave-5 hold “behind multi-k UKS vdW” cleared; CP2K NGRIDS×DRSLL×UKS×MP
+twin), `gpw-optb88-kpoints` (multi-k RKS optB88-vdW product-shaped on the
+k allow-list / `xc_grid_optb88_vdw`; only Γ RKS pin — same multi-k expand
+pattern as vdW-DF k; CP2K KPOINTS + optB88-vdW twin),
+`gpw-d3-atm-kpoint-forces` (multi-k force assembly already folds
+`d3_atm` identically to Γ; dedicated offline multi-k ATM force pin after
+Γ ATM forces ✓ + multi-k ATM stress ✓ — CP2K ENERGY_FORCE + k-mesh +
+ATM C9), `gpw-d4-atm-kpoint-forces` (same multi-k ATM fold for
+`d4_atm`; dftd4 3.7.0 `--grad` multi-k geometry twin — same no-DFTD4
+CP2K policy as Γ `gpw-d4-atm-forces`). **Not added:** multi-k UKS
+fixed-density + metallic smear (throw at `gpw_solver.cpp` k-UKS
+`max_iter==0` path — real residual, but no fair CP2K twin for ATV’s
+fixed-density electronic step; hold / literature-only later);
+multi-k UKS optB88 (hold behind pending `gpw-optb88-uks`); multi-k
+SCS-MP2 (hold behind Γ `periodic-scs-mp2-si`); GPW Berry (hold behind
+`periodic-wannier-gpw-uks`); CPMD stress / variable-cell CP (deliberate
+refusal); OT+XL (architectural exclusion); stock VV10 (**blocked**);
+BP86/B97/OLYP/HCTH (molecular PySCF path); shear/off-diagonal stress
+(orthorhombic design); GAPW/PAW/periodic hybrid/meta-GGA (blocked);
+GTH↔NC-UPF cross-representation windows; molecular post-HF / classical
+MW / CUDA ports (other loops). **Found rot fixed:** stale
+`include/atomiverse/cpu/gpw/mp2.h` claimed multi-k UMP2 “follow-on”
+after `reg_periodic-ump2-kpoints` product. Roadmap: **no ○/✓ table
+flips** (nothing capability-shaped merged to `dev`); residual prose in
+`dft.md` §8/§10 + `index.md` GPW refreshed for wave-2 queue (vdW×k×UKS×mg
++ multi-k optB88 + multi-k ATM force pins). **Pending = 8**;
+**in_progress = 4**; **blocked = 6**.
+
 ## pending
 
 - [ ] `cpmd-uks-thermostat-kpoints` | Multi-k UKS CPMD electronic Nosé–Hoover (combo pin) | dynamics | twin: literature NVE/thermostat envelope (no CP fictitious twin) | deps: cpmd-thermostat-kpoints ✓, cpmd-uks-kpoints ✓ | write-first
 - [ ] `periodic-wannier-gpw-uks` | GPW-grid Marzari–Vanderbilt MLWF on collinear UKS | response | twin: CP2K 2026.1 Quickstep UKS MLWF | deps: periodic-wannier-gpw ✓, periodic-wannier-uks ✓ | write-first
 - [ ] `periodic-scs-mp2-si` | SCS-MP2 scales on Γ RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 SCS-MP2 | deps: periodic-ri-mp2-si ✓ | write-first
 - [ ] `gpw-optb88-uks` | Γ-UKS optB88-vdW (OptB88 exchange + DRSLL nonlocal) | gpw | twin: CP2K 2026.1 UKS optB88-vdW | deps: gpw-optb88-vdw ✓, gpw-vdw-uks ✓ | write-first
+- [ ] `gpw-vdw-uks-kpoint-multigrid` | Multi-k UKS nonlocal vdW on REL_CUTOFF multigrid (triple combo pin) | gpw | twin: CP2K 2026.1 NGRIDS + DRSLL + UKS + MP | deps: gpw-vdw-uks-kpoints ✓, gpw-vdw-uks-multigrid ✓, gpw-uks-multigrid-kpoints ✓ | write-first
+- [ ] `gpw-optb88-kpoints` | Multi-k RKS optB88-vdW (OptB88 + DRSLL on k path) | gpw | twin: CP2K 2026.1 KPOINTS + optB88-vdW | deps: gpw-optb88-vdw ✓, gpw-vdw-kpoints ✓ | write-first
+- [ ] `gpw-d3-atm-kpoint-forces` | Multi-k analytic ionic forces with D3 three-body ATM (C9) dedicated pin | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh + ATM | deps: gpw-d3-atm-forces ✓, gpw-d3-atm-kpoint-stress ✓ | write-first
+- [ ] `gpw-d4-atm-kpoint-forces` | Multi-k analytic ionic forces with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | twin: dftd4 3.7.0 `--grad` (no CP2K DFTD4) | deps: gpw-d4-atm-forces ✓ | write-first
 
 ## in_progress
 
