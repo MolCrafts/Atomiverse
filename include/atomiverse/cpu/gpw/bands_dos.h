@@ -119,9 +119,10 @@ struct DosResult {
 ///
 /// Fixed occupations (`method.smearing == none`): integer-fill SCF;
 /// occupied integral is to VBM. Metallic smearing: free-energy SCF;
-/// integral is to SCF \(E_F\).
+/// integral is to SCF \(E_F\) (product pin: `reg_gpw-dos-metallic`).
 ///
-/// **Scope (this product):** closed-shell RKS multi-k. UKS multi-k is
+/// **Scope (this product):** closed-shell RKS multi-k (fixed-occ pin
+/// `reg_gpw-dos-si`; metallic pin `reg_gpw-dos-metallic`). UKS multi-k is
 /// accepted when `method.is_uks()` and fills per-spin channels (g=1).
 class Dos {
   public:

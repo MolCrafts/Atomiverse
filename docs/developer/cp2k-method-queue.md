@@ -1666,7 +1666,6 @@ DOS UKS/metallic, nonlocal vdW stress, UKS metallic stress, metallic BOMD).
 - [ ] `gpw-bands-uks` | Collinear UKS band structure NSCF on frozen Veff (GPW Bloch path) | gpw | twin: CP2K 2026.1 Quickstep UKS `&PRINT &BAND_STRUCTURE` GTH-GPW | deps: gpw-bands-si ✓, gpw-kpoints-uks ✓
 - [ ] `gpw-bands-metallic` | Band structure under metallic FD/MP occupation smearing (GPW) | gpw | twin: CP2K 2026.1 SMEAR + `&PRINT &BAND_STRUCTURE` GTH-GPW metal | deps: gpw-bands-si ✓, gpw-metallic-smearing ✓
 - [ ] `gpw-dos-uks` | Density of states on GPW multi-k mesh with collinear UKS (dedicated pin) | gpw | twin: CP2K 2026.1 Quickstep UKS DOS | deps: gpw-dos-si ✓, gpw-kpoints-uks ✓
-- [ ] `gpw-dos-metallic` | Density of states under metallic FD/MP smearing on GPW multi-k mesh (dedicated pin) | gpw | twin: CP2K 2026.1 SMEAR + DOS GTH-GPW metal | deps: gpw-dos-si ✓, gpw-metallic-smearing ✓
 - [ ] `gpw-vdw-stress` | Analytic fixed-\(P\) cell stress with nonlocal vdW-DF/DF2/rVV10 \(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain | gpw | twin: CP2K 2026.1 `STRESS_TENSOR` + `NON_LOCAL` (DRSLL/LMKLL/RVV10) | deps: gpw-vdw-scf-potential ✓, gpw-analytic-stress ✓
 - [ ] `gpw-uks-metallic-stress` | Multi-k UKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 UKS `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-stress (incomplete), gpw-uks-metallic-forces ✓, gpw-kpoint-uks-stress ✓
 
@@ -1676,6 +1675,8 @@ DOS UKS/metallic, nonlocal vdW stress, UKS metallic stress, metallic BOMD).
 - [~] `gpw-metallic-stress` | Multi-k RKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-smearing ✓, gpw-kpoint-stress ✓, gpw-metallic-forces ✓ | `wf/gpw-metallic-stress` @ `d697f63d` (feat + reg + Na BCC SMEAR oracle inputs on branch only; ~18 behind `dev` — promoted from pending this census; do not demote; resume: rebase onto `dev`, dual-gate green / merge)
 
 ## done (harness wave 6 (shift) 2026-08-01)
+
+- [x] `gpw-dos-metallic` | Density of states under metallic FD/MP smearing on GPW multi-k mesh (dedicated pin) | gpw | `regressions/gpw/gpw-dos-metallic` (CP2K 2026.1 SMEAR+DOS BCC Na; \(E_F\) 1.35e-3 Ha; \(n_e\) 17.999) | ratio **5.48** (2.736 / 0.499) | 2026-08-01
 
 - [x] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | `regressions/gpw/gpw-ts-kpoint-forces` (libMBD / free-atom dual-gate + multi-k product wiring; CP2K has no stock TS) | ratio **perf_exempt** (no fair CP2K twin) | 2026-08-01
 - [x] `gpw-metallic-forces` | Multi-k RKS free-energy analytic ionic forces under FD/MP metallic smearing | gpw | `regressions/gpw/gpw-metallic-forces` (CP2K 2026.1 ENERGY_FORCE + SMEAR H₂ twin; fractional \(P_k/W_k\) payload) | ratio **0.077** (ATV ~0.11 s / CP2K 1.43 s) | 2026-08-01
