@@ -13,30 +13,28 @@ ATM off) into \(\sigma\). The k-path fold is already productized in
 1. **E_disp** from multi-k SCF equals the offline **dftd4 3.7.0** unstrained
    pin (tol 1e-8 Ha) — same value as Γ `gpw-d4-water` (geometry-only; k-mesh
    independent).
-2. **Strained-cell E_disp** (±h per axis, fixed fractional coordinates)
-   matches fresh offline dftd4 pins; derived \(\sigma^{\mathrm{D4}}\) FD
-   terms feed the wiring gate.
+2. **CP2K multi-k \(\Delta\sigma\):** product
+   \(\sigma(\mathrm{d4})-\sigma(\mathrm{plain})\) matches the offline CP2K
+   2026.1 NUMERICAL stress-difference pin (tol 2e-9 Ha/Bohr³) from a
+   **libdftd4-linked** binary.
 3. **Internal dual gate:** analytic fixed-\(P_k\) vs multi-SCF strain-FD on
    the same multi-k `d4=true` method (tol 2e-5 Ha/Bohr³).
-4. **Wiring:** \(\sigma(\mathrm{d4})-\sigma(\mathrm{plain})\) equals the
-   dftd4 strain-FD dispersion term per axis (tol 2e-9 Ha/Bohr³).
-5. Multi-k payload present (`n_kpts ≥ 1`, `C_occ_k` non-empty); orthorhombic
+4. Multi-k payload present (`n_kpts ≥ 1`, `C_occ_k` non-empty); orthorhombic
    off-diagonals ~0; Frame `kStress` unit conversion.
-6. Product wall ≤ 60 s. **Perf:** host CP2K 2026.1 source build
-   (`cp2kflags` has no `dftd4`) cannot run `TYPE DFTD4` — same
-   **perf_exempt** policy as `gpw-d4-stress` / `gpw-d4-water`. Hard gates
-   are dftd4 pins + dual gate.
+5. Product wall ≤ 60 s. **Fair wall:** \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\le 10\)
+   on the **same** CP2K D4 multi-k NUMERICAL-stress twin (1 MPI × fixed OMP).
+   Not `perf_exempt`.
 
 ## Twin
 
 - Geometry: periodic water dimer 12 Å cube (same as `gpw-d4-water` /
   `gpw-d4-stress`).
-- Method: GPW PBE + DFT-D4 BJ, ATM off (`--mbdscale 0`), electronic mesh
-  Monkhorst–Pack **1×1×2**.
-- Hard E_disp oracle: **dftd4 3.7.0** strained-cell POSCAR pins
-  (`tools/cp2k_oracle/inputs/gpw-d4-kpoint-stress/`).
-- Optional CP2K `.inp` retained for hosts with libdftd4 (not runnable on
-  this host's source binary).
+- Method: GPW PBE + DFT-D4 BJ, ATM off, electronic mesh Monkhorst–Pack **1×1×2**.
+- Hard \(\Delta\sigma\) oracle: **CP2K 2026.1 + libdftd4** twin pair
+  (`water_dimer_d4_kpoint_stress.inp` / `water_dimer_plain_kpoint_stress.inp`).
+- Hard E_disp oracle: **dftd4 3.7.0** (ATV backend; CP2K printed E_disp is
+  recorded in REFERENCE for provenance).
+- Fair wall: CP2K D4 multi-k NUMERICAL-stress job only.
 
 ## Non-goals
 

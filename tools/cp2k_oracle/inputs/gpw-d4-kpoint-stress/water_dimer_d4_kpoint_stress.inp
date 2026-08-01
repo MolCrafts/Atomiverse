@@ -1,7 +1,20 @@
-! Optional CP2K twin for hosts with libdftd4 linked into Quickstep.
-! Host source build (git:5e54ba2, no dftd4 in cp2kflags) aborts TYPE DFTD4 —
-! do NOT use for fair wall on that binary. Hard pins: dftd4 3.7.0 POSCAR
-! strain (pin_d4_strain.py). Offline only; never ctest.
+! Offline CP2K twin for regressions/gpw/gpw-d4-kpoint-stress/
+! Never launched by ctest. Water-dimer GPW PBE-D4 + MONKHORST-PACK 1 1 2
+! + STRESS_TENSOR NUMERICAL. Pin = this run minus the plain k-mesh twin:
+! D4 is geometry-only (two-body BJ, ATM off via default s9=0), so electronic
+! stress cancels in the difference. K-points need DIAGONALIZATION (not OT).
+! EPS_SCF 1e-8 for FD-diff floor.
+!
+! Requires cp2k built with -DCP2K_USE_DFTD4=ON (cp2kflags includes dftd4).
+! Private Arrhenius rebuild: /nobackup/.../cp2k-dftd4/install (git:5e54ba2).
+!
+! Fair wall (offline only):
+!   export PATH=.../cp2k-dftd4/install/bin:$PATH
+!   export LD_LIBRARY_PATH=.../dftd4/3.7.0.../lib64:$LD_LIBRARY_PATH
+!   export CP2K_DATA_DIR=.../cp2k/src/data
+!   export OMP_NUM_THREADS=8
+!   mpirun -np 1 cp2k.psmp -i water_dimer_d4_kpoint_stress.inp \
+!          -o water_dimer_d4_kpoint_stress.out
 &GLOBAL
   PROJECT water_dimer_d4_kpoint_stress
   RUN_TYPE ENERGY_FORCE
@@ -14,20 +27,23 @@
     BASIS_SET_FILE_NAME BASIS_MOLOPT
     POTENTIAL_FILE_NAME GTH_POTENTIALS
     &MGRID
-      CUTOFF 120
-      NGRIDS 1
+      CUTOFF 300
+      REL_CUTOFF 40
+      NGRIDS 4
     &END MGRID
     &QS
       METHOD GPW
-      EPS_DEFAULT 1.0E-7
+      EPS_DEFAULT 1.0E-10
     &END QS
     &KPOINTS
       SCHEME MONKHORST-PACK 1 1 2
+      FULL_GRID .FALSE.
+      SYMMETRY .FALSE.
     &END KPOINTS
     &SCF
       SCF_GUESS ATOMIC
-      EPS_SCF 1.0E-6
-      MAX_SCF 120
+      MAX_SCF 80
+      EPS_SCF 1.0E-8
       &DIAGONALIZATION
         ALGORITHM STANDARD
       &END DIAGONALIZATION
@@ -44,12 +60,20 @@
         &PAIR_POTENTIAL
           TYPE DFTD4
           REFERENCE_FUNCTIONAL PBE
+          ! 2-body cutoff (D4_CUTOFF) must be >= 3-body (R_CUTOFF) in a.u. terms.
+          D4_CUTOFF 30.0
           R_CUTOFF 20.0
+          CALCULATE_C9_TERM .FALSE.
+          FACTOR_S9_TERM 0.0
           VERBOSE_OUTPUT .TRUE.
         &END PAIR_POTENTIAL
       &END VDW_POTENTIAL
     &END XC
   &END DFT
+  &PRINT
+    &STRESS_TENSOR ON
+    &END STRESS_TENSOR
+  &END PRINT
   &SUBSYS
     &CELL
       ABC 12.0 12.0 12.0
@@ -72,8 +96,4 @@
       POTENTIAL GTH-PBE-q6
     &END KIND
   &END SUBSYS
-  &PRINT
-    &STRESS_TENSOR
-    &END STRESS_TENSOR
-  &END PRINT
 &END FORCE_EVAL

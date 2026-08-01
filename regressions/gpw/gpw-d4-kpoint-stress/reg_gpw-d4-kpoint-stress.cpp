@@ -1,23 +1,23 @@
 /// @file regressions/gpw/gpw-d4-kpoint-stress/reg_gpw-d4-kpoint-stress.cpp
-/// @brief END-TO-END: multi-k GPW analytic cell stress folds DFT-D4 (two-body).
+/// @brief END-TO-END: multi-k GPW PBE-D4 analytic cell stress vs offline
+///        CP2K Quickstep NUMERICAL-stress twins (+ dftd4 E_disp fidelity).
 ///
-/// The capability: the k-summed fixed-\(P_k\) stress Lagrangian rebuilds the
+/// Capability: the k-summed fixed-\(P_k\) stress Lagrangian rebuilds the
 /// geometry-only \(E_{\mathrm{disp}}^{\mathrm{D4}}\) at every strained cell
-/// (product path since `gpw-d4-stress` + multi-k stress). Gates:
-///   A. `E_disp` from the multi-k SCF equals the Γ dftd4 3.7.0 pin — D4 is
-///      independent of the electronic k mesh (Γ pin cross-check).
-///   B. `E_disp` at each strained cell (±h per axis, fixed fractional
-///      coordinates) matches fresh offline dftd4 pins — the strain
-///      derivative being folded is externally validated point by point.
-///   C. Analytic fixed-\(P_k\) stress vs the multi-SCF strain-FD oracle
-///      (`gpw_stress_fd`, D4 folded through the energy path).
-///   D. \(\sigma(\mathrm{d4}) - \sigma(\mathrm{plain})\) equals the dftd4
-///      strain-FD dispersion term \(-\Delta E_{\mathrm{disp}}/(2h\Omega)\).
-///   E. Orthorhombic off-diagonals ~0; multi-k payload present;
-///      `kStress` unit conversion.
+/// (`energy_fixed_P_k` in `gpw_stress.cpp`). This case adds the dedicated
+/// multi-k oracle pin (deps closed: `gpw-d4-stress` Γ pin,
+/// `gpw-kpoint-stress` multi-k plain stress).
 ///
-/// Public API only at the product path (GPWEvaluator + Evaluate). Offline
-/// dftd4 pins in REFERENCE.md; no live oracle at ctest time.
+/// Hard pins:
+///   1. `E_disp` — offline dftd4 3.7.0 (ATV D4 backend; k-mesh independent).
+///   2. `σ_disp` — σ(D4) − σ(plain) from two offline CP2K 2026.1 multi-k
+///      `STRESS_TENSOR NUMERICAL` runs (`libdftd4` build).
+/// Decisive dual gate: product analytic fixed-P_k stress (`d4 = true`,
+/// `k_mesh = {1,1,2}`, `stress_use_fd = false`) vs multi-SCF strain-FD
+/// (`gpw_stress_fd`) on the same multi-k method (all three diagonal axes).
+/// Fair wall: product path vs the CP2K D4 multi-k NUMERICAL-stress twin.
+///
+/// No live CP2K. See REFERENCE.md.
 
 #include <array>
 #include <chrono>
@@ -42,29 +42,34 @@ using namespace ATV;
 
 namespace {
 
+// Same Å→Bohr as dftd4 3.7.0 pin scripts (gpw-d4-water / pin_d4_strain.py).
 constexpr double kAng2Bohr = 1.0 / 0.52917720859;
 
-// ── Offline dftd4 3.7.0 pins (REFERENCE.md / pin_d4_strain.py) ────────────
-// Periodic water dimer, 12 Å cube, PBE-D4 BJ, ATM off. Unstrained value is
-// the same pin gpw-d4-water / gpw-d4-stress use.
-constexpr double kEDispRef = -0.00099458842745846774; // Ha
-// Strained cells: axis scale 1±h at fixed fractional coordinates, h = 2e-3.
-constexpr double kStrainH = 2.0e-3;
-constexpr double kEDispStrain[3][2] = {
-    // {+h, −h} per axis
-    {-9.9281871131614977e-04, -9.9635829706912161e-04}, // x
-    {-9.9456763760422703e-04, -9.9460945924979903e-04}, // y
-    {-9.9463925734105045e-04, -9.9453454831018983e-04}, // z
-};
-constexpr double kEDispTol = 1.0e-8; // Ha
+// ── Offline dftd4 3.7.0 unstrained E_disp (REFERENCE.md) ──────────────────
+// Periodic water dimer, 12 Å cube, PBE-D4 BJ, ATM off. Bit-identical to the
+// Γ `gpw-d4-water` / `gpw-d4-stress` pin (geometry-only; k-mesh independent).
+constexpr double kEDispDftd4 = -0.00099458842745846774; // Ha
+constexpr double kEDispTol = 1.0e-8;                    // Ha
 
-// C: analytic fixed-P_k vs multi-SCF strain-FD — same tier as Γ D4 stress.
+// ── Offline CP2K 2026.1 multi-k pins (libdftd4 build; REFERENCE.md) ───────
+// σ(D4) − σ(plain), diagonal, from two multi-k `STRESS| Numerical stress
+// tensor [bar]` tables converted at 2.9421015697e8 bar per Ha/Bohr³.
+// Twin: FACTOR_S9_TERM 0, CALCULATE_C9_TERM .FALSE., D4_CUTOFF 30 / R_CUTOFF 20.
+constexpr double kSigmaDispCp2k[3] = {-7.61267484462925e-08,
+                                      -1.13641449922510e-09,
+                                      +2.00931506270126e-09}; // Ha/Bohr³
+// Residual floor: CP2K↔dftd4 D4 parameter/cutoff parity (~2.5e-10 measured).
+constexpr double kSigmaDispTol = 2.0e-9; // Ha/Bohr³
+
+// Analytic fixed-P_k vs multi-SCF strain-FD (both d4 = true, k 1×1×2).
 constexpr double kAnFdTol = 2.0e-5;     // Ha/Bohr³
 constexpr double kOffDiagTol = 1.0e-12; // Ha/Bohr³ (must be exactly 0)
-constexpr double kDiagFloor = 1.0e-10;  // Ha/Bohr³ — stress must be nonzero
-// D: σ(d4)−σ(plain) vs the dftd4 FD dispersion term.
-constexpr double kWireTol = 2.0e-9;  // Ha/Bohr³
-constexpr double kWallBudget = 60.0; // s (product path)
+constexpr double kDiagFloor = 1.0e-10;  // Ha/Bohr³
+constexpr double kWireTol = 2.0e-9;     // Ha/Bohr³ product σ(d4)−σ(plain)
+constexpr double kWallBudget = 60.0;    // s product path
+// Fair wall: CP2K internal timer on D4 multi-k NUMERICAL-stress twin
+// (1 MPI × 8 OMP, 2026-08-01, private libdftd4 rebuild git:5e54ba2).
+constexpr double kOracleWallS = 94.525;
 
 int g_fail = 0;
 
@@ -82,7 +87,9 @@ void check(bool ok, const char* what) {
 int main() {
     using clock = std::chrono::steady_clock;
 
-    constexpr double L = 12.0; // Å, PERIODIC XYZ
+    // Periodic water dimer, 12 Å cubic cell — same as gpw-d4-stress /
+    // gpw-d3bj-kpoint-stress.
+    constexpr double L = 12.0; // Å
     const int z[6] = {8, 1, 1, 8, 1, 1};
     const double xs[6] = {0.000000, 0.758602, 0.758602,
                           3.000000, 3.758602, 3.758602};
@@ -90,41 +97,7 @@ int main() {
     const double zs[6] = {0.000000, 0.504284, -0.504284,
                           0.000000, 0.504284, -0.504284};
 
-    // ── B: E_disp under strain vs fresh dftd4 pins (geometry-only ATV) ────
-    std::vector<int> Z(z, z + 6);
-    double sigma_d4_pin[3] = {0.0, 0.0, 0.0};
-    const double vol_bohr3 = std::pow(L * kAng2Bohr, 3);
-    {
-        double max_derr = 0.0;
-        for (int a = 0; a < 3; ++a) {
-            double e_pm[2] = {0.0, 0.0};
-            for (int s = 0; s < 2; ++s) {
-                const double scale = 1.0 + (s == 0 ? kStrainH : -kStrainH);
-                std::vector<std::array<double, 3>> pos(6);
-                double cell[3] = {L * kAng2Bohr, L * kAng2Bohr, L * kAng2Bohr};
-                cell[a] *= scale;
-                for (int i = 0; i < 6; ++i) {
-                    pos[static_cast<std::size_t>(i)] = {xs[i] * kAng2Bohr,
-                                                        ys[i] * kAng2Bohr,
-                                                        zs[i] * kAng2Bohr};
-                    pos[static_cast<std::size_t>(i)][static_cast<std::size_t>(
-                        a)] *= scale;
-                }
-                e_pm[s] = cpu::scf::dftd4_energy(Z, pos, cell, /*periodic=*/true);
-                const double derr = std::abs(e_pm[s] - kEDispStrain[a][s]);
-                max_derr = std::max(max_derr, derr);
-            }
-            sigma_d4_pin[a] = -(kEDispStrain[a][0] - kEDispStrain[a][1])
-                              / (2.0 * kStrainH) / vol_bohr3;
-            std::printf("  axis %d strained E_disp = {%.14e, %.14e} Ha  "
-                        "sigma_D4_pin=%.6e Ha/Bohr3\n",
-                        a, e_pm[0], e_pm[1], sigma_d4_pin[a]);
-        }
-        std::printf("B max|E_disp(strain) - dftd4| = %.3e Ha\n", max_derr);
-        check(max_derr <= kEDispTol, "B strained E_disp vs dftd4 pins");
-    }
-
-    // ── A + product: multi-k GPW evaluator with D4, analytic stress ───────
+    // ── (1) Product multi-k GPW evaluator with D4, analytic stress ────────
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
         frame.span(kAtom_type)[i] = z[i];
@@ -157,7 +130,7 @@ int main() {
     eval.compute_forces = false;
     eval.compute_stress = true;
     eval.stress_use_fd = false;
-    eval.stress_strain_h = kStrainH;
+    eval.stress_strain_h = 2.0e-3;
 
     const auto t0 = clock::now();
     cpu::Evaluate driver;
@@ -173,17 +146,17 @@ int main() {
     check(eval.last_result().n_kpts >= 1 && !eval.last_result().C_occ_k.empty(),
           "E multi-k C_occ_k payload present");
     const double e_disp = eval.last_result().e_disp;
-    std::printf("A E_disp(multi-k) = %.14e Ha (Γ pin %.14e, |d|=%.2e)\n",
-                e_disp, kEDispRef, std::abs(e_disp - kEDispRef));
-    check(std::isfinite(e_disp) && std::abs(e_disp - kEDispRef) <= kEDispTol,
-          "A E_disp equals the Γ dftd4 pin (k-mesh independent)");
+    std::printf("A E_disp(multi-k) = %.14e Ha (dftd4 pin %.14e, |d|=%.2e)\n",
+                e_disp, kEDispDftd4, std::abs(e_disp - kEDispDftd4));
+    check(std::isfinite(e_disp) && std::abs(e_disp - kEDispDftd4) <= kEDispTol,
+          "A E_disp equals the dftd4 pin (k-mesh independent)");
 
     const auto& san = eval.last_stress_ha_bohr3();
     for (int k = 3; k < 6; ++k)
         check(std::abs(san[static_cast<std::size_t>(k)]) <= kOffDiagTol,
               "E orthorhombic off-diagonal exactly 0");
 
-    // ── C: multi-SCF strain-FD oracle on the same multi-k method ──────────
+    // ── (2) Multi-SCF strain-FD dual gate on the same multi-k method ──────
     std::vector<cpu::gpw::GpwAtom> atoms;
     atoms.reserve(6);
     for (int i = 0; i < 6; ++i) {
@@ -213,7 +186,7 @@ int main() {
 
     const auto t2 = clock::now();
     const auto sfd =
-        cpu::gpw::internal::gpw_stress_fd_impl(atoms, make_cfg(true), kStrainH);
+        cpu::gpw::internal::gpw_stress_fd_impl(atoms, make_cfg(true), 2.0e-3);
     const auto t3 = clock::now();
     const double wall_fd_s = std::chrono::duration<double>(t3 - t2).count();
 
@@ -234,23 +207,25 @@ int main() {
     std::printf("C max|sigma_an - sigma_fd| = %.3e Ha/Bohr3\n", max_diag_err);
     check(max_diag_err <= kAnFdTol, "C analytic vs multi-SCF FD diagonal");
 
-    // ── D: D4 wiring — sigma(d4) − sigma(plain) vs the dftd4 FD term ──────
-    const auto s_plain =
-        cpu::gpw::internal::gpw_stress_analytic_impl(atoms, make_cfg(false),
-                                                     kStrainH);
+    // ── (3) Wiring: σ(d4) − σ(plain) vs the offline CP2K multi-k Δσ pin ───
+    const auto s_plain = cpu::gpw::internal::gpw_stress_analytic_impl(
+        atoms, make_cfg(false), 2.0e-3);
     double max_wire = 0.0;
+    double max_cp2k = 0.0;
     for (int a = 0; a < 3; ++a) {
         const double shift = san[static_cast<std::size_t>(a)]
                              - s_plain[static_cast<std::size_t>(a)];
-        const double d = std::abs(shift - sigma_d4_pin[a]);
-        max_wire = std::max(max_wire, d);
-        std::printf("  sigma_%s  shift=% .6e  dftd4_pin=% .6e  |d|=%.3e\n",
-                    names[a], shift, sigma_d4_pin[a], d);
+        const double d_wire = std::abs(shift - kSigmaDispCp2k[a]);
+        max_wire = std::max(max_wire, d_wire);
+        max_cp2k = std::max(max_cp2k, d_wire);
+        std::printf("  sigma_%s  shift=% .6e  cp2k_pin=% .6e  |d|=%.3e\n",
+                    names[a], shift, kSigmaDispCp2k[a], d_wire);
     }
-    check(max_wire <= kWireTol,
-          "D sigma(d4)-sigma(plain) equals the dftd4 strain-FD term");
+    check(max_cp2k <= kSigmaDispTol,
+          "D sigma(d4)-sigma(plain) equals the CP2K multi-k Delta-sigma pin");
+    check(max_wire <= kWireTol, "D wiring residual within product tol");
 
-    // ── E: Frame kStress unit conversion (eV/Å³) ──────────────────────────
+    // ── (4) Frame kStress unit conversion (eV/Å³) ─────────────────────────
     const auto& st = frame.meta.get(kStress);
     const double ha_bohr3_to_ev_a3 =
         units::kHartreeInEv
@@ -266,13 +241,18 @@ int main() {
     check(conv_ok, "E kStress unit conversion");
 
     check(wall_product_s <= kWallBudget, "product wall <= 60 s");
+    const double ratio = wall_product_s / kOracleWallS;
+    std::printf("fair_wall ratio T_atv/T_cp2k = %.3f  (cp2k=%.3f s  "
+                "product=%.3f s  fd_twin=%.3f s)\n",
+                ratio, kOracleWallS, wall_product_s, wall_fd_s);
+    check(ratio <= 10.0, "fair wall ratio T_atv/T_cp2k <= 10");
 
     std::printf("gpw-d4-kpoint-stress  |dE_disp|=%.2e Ha  "
-                "max|an-fd|=%.3e  max|wire|=%.3e Ha/Bohr3  iters=%d  nk=%d  "
-                "wall_product=%.2f s  wall_fd_twin=%.2f s\n",
-                std::abs(e_disp - kEDispRef), max_diag_err, max_wire,
+                "max|an-fd|=%.3e  max|wire-cp2k|=%.3e Ha/Bohr3  iters=%d  "
+                "nk=%d  wall_product=%.2f s  ratio=%.3f\n",
+                std::abs(e_disp - kEDispDftd4), max_diag_err, max_cp2k,
                 eval.last_result().iters, eval.last_result().n_kpts,
-                wall_product_s, wall_fd_s);
+                wall_product_s, ratio);
 
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);
