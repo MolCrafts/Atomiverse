@@ -25,12 +25,11 @@ Wall = **same single twin SCF job**, not multi-gate reg wall.
 ## pending
 
 Wave-1 PERF-CENSUS (2026-08-01 on `dev`): re-diffed `cpu/gpw` hotspots.
-Architecture ranks still hold; **done is empty** — no slug closed yet.
+Architecture ranks still hold. Baseline table landed (`p0-profile-baseline`).
 Order: P0 (measure + cheap wins) → P1 (structure) → P2 (SIMD / reuse / MPI).
 
 ### P0 — profile + thrash / double work
 
-- [ ] `p0-profile-baseline` | Commit ATV_GPW_PROF / fair-wall table for the four twins (1 MPI × OMP=4): collocate / Poisson / XC / integrate / eigensolve / OT-rebuild counts. Hook exists on Γ (`[gpw prof]`) + MG coll print + `ATV_GPW_OT_PROF`; multi-k RKS/UKS still sparse. **Do first** so later walls are comparable | phase P0 | files: notes handoff / queue note; optional thin prof marks in `gpw_solver.cpp` k-path only | gate: profile table in notes or queue; no pin change |
 - [ ] `p0-fft-plan-cache` | Cache FFTW plans + r/c buffers by grid shape; create once per geometry (mirror `cpu::pw::internal::FFTPlan3D` / `FFTWBuffer`). Today every call `fftw_plan_*` + `fftw_destroy_plan` + malloc: `solve_poisson` / `solve_poisson_q`, GGA `gradient`/`divergence`, MG `fwd_dft`/`inv_dft_real` (prolong/restrict), also `mt_poisson` / `vdw_df` / `rvv10` thrash | phase P0 | files: `poisson_fft.cpp`, `grid_fft.cpp`, `multigrid.cpp`, optionally `mt_poisson.cpp` | gate: twins green; FFT-heavy step wall ↓; no public API |
 - [ ] `p0-collocate-buffers` | Preallocate product/collocate/integrate scratch: kill per-call `std::vector` in `collocate_one` (fbuf/ebuf/wbuf); reuse fixed-chunk full-grid scatter partials across SCF iters (today `collocate_products` reallocs `tl[nc]` every call); same for integrate chunk nb² accums | phase P0 | files: `multigrid.cpp` (`collocate_one`, `collocate_products*`, `integrate_products*`), `collocate.cpp` | gate: twins green; MG/product path wall ↓ |
 - [ ] `p0-k-zgemm` | Replace hand complex matmul with BLAS zgemm (or thin OpenBLAS wrappers). Sites: `kpoints.cpp` anonymous `mul`/`dagger_mul` (diag + DIIS error path) **and** `linalg::c_mul` / `c_dagger_mul` in `orbital_tangent.cpp` (OT band_gradient / s_tangent / param — every OT step) | phase P0 | files: `kpoints.cpp`, `orbital_tangent.cpp` (+ header if needed) | gate: multi-k + OT regs green; no tol soften |
@@ -59,4 +58,4 @@ Order: P0 (measure + cheap wins) → P1 (structure) → P2 (SIMD / reuse / MPI).
 
 ## done
 
-(empty — harness moves rows here)
+- [x] `p0-profile-baseline` | 2026-08-01 | fair-wall + ATV_GPW_PROF table in `.claude/notes/gpw-perf-baseline.md`; thin k/uks prof marks; four twins PASS; unit `test_cpu_(gpw|xc)_` 12/12 |
