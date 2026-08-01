@@ -24,21 +24,12 @@ Wall = **same single twin SCF job**, not multi-gate reg wall.
 
 ## pending
 
-Wave-2 PERF-CENSUS re-diff (2026-08-01 on `dev` @ `7d2b0a2b`): re-read
-`cpu/gpw` solver / collocate / multigrid / kpoints / poisson / OT (+
-`linalg/orbital_tangent`, `gpw_forces`) against `.claude/notes/gpw-perf-baseline.md`.
-No GPW algorithm landings since profile-baseline — only queue chore. Architecture
-bottleneck table still holds; measured wall order unchanged:
-**MG product integrate ≫ Γ UKS integrate/collocate ≫ dense χ^k ≫ OT rebuild
-multiplicity ≫ Poisson/FFT on current twins**. `p0-profile-baseline` done;
-`p0-fft-plan-cache` stays `[~]` (unmerged; tip rebased to `7cb7cc51` on this
-parent — do not demote). No capability slugs. No new thrash classes. Order:
-P0 thrash/double-work by measured impact → P1 structure → P2.
+Post wave-2 land (2026-08-02): FFT cache + collocate buffers + multi-k OT
+double-energy on `dev`. Remaining P0: zgemm. Then P1 structure / products-k /
+OT Armijo economics.
 
 ### P0 — thrash / double work (measured first)
 
-- [ ] `p0-collocate-buffers` | **#1 measured wall** (`gpw-multigrid-kpoints` integrate ~7.1 s/KS = 87% of rebuild). Preallocate product/collocate/integrate scratch: kill per-call `std::vector` in `collocate_one` (`multigrid.cpp` ~L653–662 `fbuf`/`ebuf`/`wbuf`); reuse fixed-chunk full-grid scatter partials across SCF iters (`collocate_products` reallocs `tl[nc]` every call ~L794–798; `integrate_products` ~L853–856; `*_cells` twins ~L911/L973); Γ CSR + dense-phi integrate both allocate `part[nc*nn]` every call (`collocate.cpp` ~L283 CSR, ~L392 dense-phi) | phase P0 | files: `multigrid.cpp` (`collocate_one`, `collocate_products*`, `integrate_products*`), `collocate.cpp` | gate: twins green; MG twin MAIN wall ↓ vs 65.6 s baseline |
-- [ ] `p0-ot-double-energy` | Multi-k OT outer loop still rebuilds KS **twice** per iter: RKS `(void)build_k_energy` then `build_k_energy` after `refresh_occupations` (`gpw_solver.cpp` ~L1926/1931); UKS twin `build_uks_k_energy` ×2 (~L3407/3417). Γ OT water path is single outer `build_H_and_energy` + Armijo rebuilds (baseline ~2.3 full KS / outer = 59 rebuilds / 25 iters). Collapse multi-k double ρ→H when dens/occ fused (or skip first when occupations frozen / integer) | phase P0 | files: `gpw_solver.cpp` multi-k OT RKS + UKS | gate: OT regs green (`ot-kpoints`, `ot-uks-kpoints`, `ot-minimizer-water`); fewer energy builds / wall ↓ |
 - [ ] `p0-k-zgemm` | Hand complex matmul still O(n³) triple loops (no zgemm on dev): `kpoints.cpp` anonymous `mul`/`dagger_mul` (~L638–672; `diagonalize_k` + `k_diis_error`) **and** `linalg::c_mul` / `c_dagger_mul` in `src/cpu/linalg/orbital_tangent.cpp` (~L51–82; OT `band_gradient_k` / `s_tangent_k` / param — every OT step). Replace with BLAS zgemm (or thin OpenBLAS wrappers; row-major care) | phase P0 | files: `kpoints.cpp`, `orbital_tangent.cpp` (+ header if needed) | gate: multi-k + OT regs green; no tol soften |
 
 ### P1 — one pipeline + products path + OT economics
@@ -56,7 +47,7 @@ P0 thrash/double-work by measured impact → P1 structure → P2.
 
 ## in_progress
 
-- [~] `p0-fft-plan-cache` | Cache FFTW plans + r/c buffers by grid shape; create once per geometry (mirror `cpu::pw::internal::FFTPlan3D` / `FFTWBuffer`). Sites: `solve_poisson` / `solve_poisson_q`, GGA `gradient`/`divergence`, MG `fwd_dft`/`inv_dft_real`, `mt_poisson` / `vdw_df` / `rvv10` thrash | phase P0 | files: `poisson_fft.cpp`, `grid_fft.cpp`, `multigrid.cpp`, `mt_poisson.cpp`, new `internal/fft_cache.{h,cpp}` | gate: twins green; FFT-heavy step wall ↓; no public API | resume `wf/perf-p0-fft-plan-cache` @ `af9e8c82` (feat tip; not merged — do not demote) |
+(empty)
 
 ## blocked
 
@@ -65,3 +56,6 @@ P0 thrash/double-work by measured impact → P1 structure → P2.
 ## done
 
 - [x] `p0-profile-baseline` | 2026-08-01 | fair-wall + ATV_GPW_PROF table in `.claude/notes/gpw-perf-baseline.md`; thin k/uks prof marks; four twins PASS; unit `test_cpu_(gpw|xc)_` 12/12 |
+- [x] `p0-fft-plan-cache` | 2026-08-02 | FFTW plan+buffer cache by grid shape; UKS fair wall ~18.2→18.0 s (noise); micro/Poisson ~5–10% | merged `dc885a96` |
+- [x] `p0-collocate-buffers` | 2026-08-02 | prealloc collocate_one + product scatter/integrate pools; **gpw-multigrid-kpoints MAIN 91.8→65.1 s** (OMP=4) | merged `2c476da2` |
+- [x] `p0-ot-double-energy` | 2026-08-02 | multi-k OT single KS rebuild/outer; ATV_GPW_PROF builds **115→79** on ot-kpoints class | merged `419ad172` |

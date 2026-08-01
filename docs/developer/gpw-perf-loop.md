@@ -91,3 +91,11 @@ Then **wipe build** before leaving the worktree.
   still `[~]` — tip rebased to `7cb7cc51` on current parent (queue
   `in_progress` line may still show older SHA; do not demote). Blocked **1**.
   No builds left. No push.
+- **2026-08-01 ASSIGN wave 2 (parent `dev` @ `c59dc18b`):** staff **3**
+  P0 real-wall items → `[~]`: (1) resume `p0-fft-plan-cache` @ `7cb7cc51`
+  (rebase onto `dev`, measure, merge-ready); (2) `p0-collocate-buffers`
+  (#1 MG integrate wall); (3) `p0-ot-double-energy` (multi-k OT double
+  ρ→H; sole `gpw_solver.cpp` worker). Deferred `p0-k-zgemm` to next wave
+  (file-disjoint but lower measured rank). Soft multigrid overlap
+  fft∩collocate — fft finishes first. Pending **8** (P0×1 + P1×4 + P2×3),
+  blocked **1**, done **1**. No worktrees this step; no builds; no push.

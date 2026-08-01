@@ -343,7 +343,8 @@ while wave < max_waves {
         let r = results[ri];
         if r != () && r.success && r.output != () {
             if r.output.slug != () { wave_slugs.push(r.output.slug); }
-            if r.output.status == "green" {
+            // accept status green OR done (workers often emit done)
+            if r.output.status == "green" || r.output.status == "done" {
                 let ok = r.output.acceptance_met == true;
                 if ok && r.output.builds_wiped != true { ok = false; }
                 if ok && r.output.correctness_green == false { ok = false; }
