@@ -1,0 +1,40 @@
+# Offline DFT-D4 strained-cell pin notes (gpw-d4-kpoint-stress)
+
+Host CP2K 2026.1 source build (`…/cp2k/install`, git:5e54ba2) has
+`cp2kflags: omp libint fftw3 libxc elpa parallel scalapack mpi_f08 spglib`
+— **no dftd4**. `TYPE DFTD4` is not a fair twin on this binary (same policy
+as Γ `gpw-d4-water` / `gpw-d4-stress`). Hard pins are **dftd4 3.7.0**
+(`/software/.../dftd4/3.7.0-gfbf-2025b`).
+
+Geometry: periodic water dimer, lattice diag(12 Å), same POSCAR family as
+`gpw-d4-water`. Strained cells: one Cartesian axis scaled by \(1\pm h\) at
+fixed fractional coordinates (Cartesian positions scale with that axis),
+\(h = 2\times10^{-3}\). Functional: PBE-D4 BJ, ATM off (`--mbdscale 0`).
+
+Reproduce (offline only — never ctest):
+
+```bash
+export PATH=/software/sse2/el9_epyc9005/easybuild/prefix/software/dftd4/3.7.0-gfbf-2025b/bin:$PATH
+# unstrained (must match gpw-d4-water pin)
+dftd4 -f pbe --mbdscale 0.0 --json unstrained.json POSCAR
+# per-axis 1±h POSCARs written by pin_d4_strain.py
+python3 pin_d4_strain.py
+```
+
+Pinned output (2026-08-01, dftd4 3.7.0):
+
+```
+E_disp unstrained            = -9.9458842745846774e-04 Ha
+E_disp x +h              = -9.9281871131614977e-04 Ha
+E_disp x -h              = -9.9635829706912161e-04 Ha
+sigma_D4_xx (FD, dftd4)    = -7.5884329667e-08 Ha/Bohr3
+E_disp y +h              = -9.9456763760422703e-04 Ha
+E_disp y -h              = -9.9460945924979903e-04 Ha
+sigma_D4_yy (FD, dftd4)    = -8.9660422470e-10 Ha/Bohr3
+E_disp z +h              = -9.9463925734105045e-04 Ha
+E_disp z -h              = -9.9453454831018983e-04 Ha
+sigma_D4_zz (FD, dftd4)    = 2.2448317886e-09 Ha/Bohr3
+```
+
+Unstrained value is bit-identical to the `gpw-d4-water` hard pin
+(provenance cross-checked at pin time). Å→Bohr = 1/0.52917720859.
