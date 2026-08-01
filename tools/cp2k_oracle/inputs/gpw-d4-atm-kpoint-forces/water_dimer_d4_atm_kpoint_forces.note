@@ -1,0 +1,80 @@
+# Offline CP2K multi-k PBE-D4+ATM ENERGY_FORCE pin (gpw-d4-atm-kpoint-forces)
+
+## Binary
+
+| Item | Value |
+| --- | --- |
+| Engine | CP2K 2026.1 `cp2k.psmp` git:5e54ba2 |
+| Flags | `omp libint fftw3 libxc elpa parallel scalapack mpi_f08 spglib libdftd4` |
+| Build | private Arrhenius rebuild with `-DCP2K_USE_DFTD4=ON` |
+| Prefix | `/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install` |
+| libdftd4 | EasyBuild `dftd4/3.7.0-gfbf-2025b` (+ mctc-lib, multicharge, mstore) |
+| Data | `CP2K_DATA_DIR=/nobackup/.../cp2k/src/data` |
+
+Stock source install (`…/cp2k/install`, no `libdftd4` in `cp2kflags`) aborts
+`TYPE DFTD4` — do **not** use it for this twin.
+
+## Reproduce (offline only — never ctest)
+
+```bash
+export PATH=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install/bin:$PATH
+export LD_LIBRARY_PATH=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install/lib64:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/dftd4/3.7.0-gfbf-2025b/lib64:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/mctc-lib/0.5.1-GCC-14.3.0/lib:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/multicharge/0.3.1-gfbf-2025b/lib:\
+${LD_LIBRARY_PATH:-}
+export CP2K_DATA_DIR=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/src/data
+export OMP_NUM_THREADS=8
+cd /tmp && mkdir -p atv-cp2k-d4-atm-kpt-forces && cd atv-cp2k-d4-atm-kpt-forces
+ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS} .
+# copy both .inp files from tools/cp2k_oracle/inputs/gpw-d4-atm-kpoint-forces/
+mpirun -np 1 cp2k.psmp -i water_dimer_d4_atm_kpoint_forces.inp \
+       -o water_dimer_d4_atm_kpoint_forces.out
+mpirun -np 1 cp2k.psmp -i water_dimer_d4_2b_kpoint_forces.inp \
+       -o water_dimer_d4_2b_kpoint_forces.out
+```
+
+## D4+ATM input requirements
+
+- `D4_CUTOFF` (2-body) ≥ `R_CUTOFF` (3-body slot); twin uses 30 / 20 Å.
+- ATM on: `CALCULATE_C9_TERM .TRUE.` + `FACTOR_S9_TERM 1.0`.
+- Two-body only: `CALCULATE_C9_TERM .FALSE.` + `FACTOR_S9_TERM 0.0`.
+- K-points: `DIAGONALIZATION` (not OT); `EPS_SCF 1e-8`; `MONKHORST-PACK 1 1 2`.
+
+## Pinned numbers (2026-08-01)
+
+```
+E_disp (ATM twin)            = -0.00099567884677 Ha
+E_disp (2b twin)             = -0.00099470623400 Ha
+E_total (ATM)                = -34.339247656932827 Ha
+E_total (2b)                 = -34.339246684320052 Ha
+T_cp2k internal (ATM twin)   = 15.806 s   (1 MPI × 8 OMP)
+```
+
+### FORCES| [Ha/Bohr] (atom order O H H O H H)
+
+ATM run:
+
+```
+1  -8.18691364E-02   4.01492223E-10   3.72640992E-10
+2   4.08819664E-02   1.13134752E-11   1.31274694E-01
+3   4.08819664E-02   1.06383708E-11  -1.31274694E-01
+4  -8.05598266E-02   3.58188976E-10   3.28438682E-10
+5   3.76156487E-02   1.35480264E-11   1.35141903E-01
+6   3.76156487E-02   1.32675014E-11  -1.35141903E-01
+```
+
+2b run:
+
+```
+1  -8.18690169E-02   4.01485923E-10   3.72642731E-10
+2   4.08820655E-02   1.13132431E-11   1.31275113E-01
+3   4.08820655E-02   1.06386298E-11  -1.31275113E-01
+4  -8.05598482E-02   3.58191241E-10   3.28445276E-10
+5   3.76155006E-02   1.35476165E-11   1.35142294E-01
+6   3.76155006E-02   1.32678094E-11  -1.35142294E-01
+```
+
+ΔF = F(ATM) − F(2b) max component ≈ 4.19e−7 Ha/Bohr.
+Cross-check vs dftd4 3.7.0 ATM force increment: max |Δ| ≈ 2.4e−8 Ha/Bohr
+(the known periodic ATM gradient defect / cutoff parity floor).
