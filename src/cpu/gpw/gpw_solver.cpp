@@ -1472,8 +1472,15 @@ static GpwResult run_gpw_scf_kpoints(
         res.C_occ_k.clear();
         res.C_occ_k.resize(static_cast<std::size_t>(nk));
         res.C_occ_k_beta.clear();
+        res.f_occ_k.clear();
+        res.f_occ_k_beta.clear();
         res.P_k.clear();
         res.P_k.resize(static_cast<std::size_t>(nk));
+        // Diagonalize every k first so metallic occupations can share μ over
+        // the full final spectrum (free-energy P_k/W_k payload).
+        std::vector<std::vector<double>> evals_store(
+            static_cast<std::size_t>(nk));
+        std::vector<CplxMatrix> C_store(static_cast<std::size_t>(nk));
         for (int ik = 0; ik < nk; ++ik) {
             const auto& kp = kpts[static_cast<std::size_t>(ik)];
             res.k_frac.push_back({kp.frac[0], kp.frac[1], kp.frac[2]});
@@ -1481,21 +1488,49 @@ static GpwResult run_gpw_scf_kpoints(
             auto [eps, C] =
                 internal::diagonalize_k(H_full[static_cast<std::size_t>(ik)],
                                         orth[static_cast<std::size_t>(ik)]);
-            res.eps_k.push_back(std::move(eps));
+            evals_store[static_cast<std::size_t>(ik)] = std::move(eps);
+            C_store[static_cast<std::size_t>(ik)] = std::move(C);
+        }
+        std::vector<std::vector<double>> occ_store;
+        if (use_smear) {
+            double mu_tmp = 0.0, n_tmp = 0.0, s_tmp = 0.0;
+            occ_store = fill_metallic(evals_store, mu_tmp, n_tmp, s_tmp);
+            res.f_occ_k.resize(static_cast<std::size_t>(nk));
+        }
+        for (int ik = 0; ik < nk; ++ik) {
+            res.eps_k.push_back(evals_store[static_cast<std::size_t>(ik)]);
             // Full Bloch C_k for multi-k mp2(); occupied block for force/stress.
-            res.C_k.push_back(linalg::CplxMatrix(C));
-            std::vector<Cplx> occ(static_cast<std::size_t>(nb)
-                                  * static_cast<std::size_t>(cfg.n_occ));
-            for (int mu = 0; mu < nb; ++mu)
-                for (int o = 0; o < cfg.n_occ; ++o)
-                    occ[static_cast<std::size_t>(mu) * cfg.n_occ
-                        + static_cast<std::size_t>(o)] = C(mu, o);
-            res.C_occ_k[static_cast<std::size_t>(ik)] = std::move(occ);
-            // XL-BOMD payload: P_k rebuilt from the final MOs (occ = 2)
-            // so the auxiliary advance tracks the SCF fixed point, not a
-            // mixed DIIS density. Every rank can rebuild every k from C_k.
-            res.P_k[static_cast<std::size_t>(ik)] = density_from_fixed(
-                res.C_k[static_cast<std::size_t>(ik)], cfg.n_occ);
+            res.C_k.push_back(
+                linalg::CplxMatrix(C_store[static_cast<std::size_t>(ik)]));
+            const auto& C = res.C_k[static_cast<std::size_t>(ik)];
+            if (use_smear) {
+                // Fractional free-energy payload: all bands × f_b ∈ [0, 2].
+                const auto& f = occ_store[static_cast<std::size_t>(ik)];
+                const int m = static_cast<int>(f.size());
+                std::vector<Cplx> occ(static_cast<std::size_t>(nb)
+                                      * static_cast<std::size_t>(m));
+                for (int mu = 0; mu < nb; ++mu)
+                    for (int o = 0; o < m; ++o)
+                        occ[static_cast<std::size_t>(mu) * m
+                            + static_cast<std::size_t>(o)] = C(mu, o);
+                res.C_occ_k[static_cast<std::size_t>(ik)] = std::move(occ);
+                res.f_occ_k[static_cast<std::size_t>(ik)] = f;
+                res.P_k[static_cast<std::size_t>(ik)] =
+                    density_from_occ(C, f);
+            } else {
+                std::vector<Cplx> occ(static_cast<std::size_t>(nb)
+                                      * static_cast<std::size_t>(cfg.n_occ));
+                for (int mu = 0; mu < nb; ++mu)
+                    for (int o = 0; o < cfg.n_occ; ++o)
+                        occ[static_cast<std::size_t>(mu) * cfg.n_occ
+                            + static_cast<std::size_t>(o)] = C(mu, o);
+                res.C_occ_k[static_cast<std::size_t>(ik)] = std::move(occ);
+                // XL-BOMD payload: P_k rebuilt from the final MOs (occ = 2)
+                // so the auxiliary advance tracks the SCF fixed point, not a
+                // mixed DIIS density. Every rank can rebuild every k from C_k.
+                res.P_k[static_cast<std::size_t>(ik)] =
+                    density_from_fixed(C, cfg.n_occ);
+            }
         }
     };
 
@@ -2683,10 +2718,20 @@ static GpwResult run_gpw_scf_kpoints_uks(
         res.C_occ_k.resize(static_cast<std::size_t>(nk));
         res.C_occ_k_beta.clear();
         res.C_occ_k_beta.resize(static_cast<std::size_t>(nk));
+        res.f_occ_k.clear();
+        res.f_occ_k_beta.clear();
         res.P_k.clear();
         res.P_k.resize(static_cast<std::size_t>(nk));
         res.P_k_beta.clear();
         res.P_k_beta.resize(static_cast<std::size_t>(nk));
+        // Diagonalize every k first so metallic occupations share μ over
+        // α+β on the final spectrum (free-energy dual-spin \(P_k/W_k\)).
+        std::vector<std::vector<double>> evals_a_store(
+            static_cast<std::size_t>(nk));
+        std::vector<std::vector<double>> evals_b_store(
+            static_cast<std::size_t>(nk));
+        std::vector<CplxMatrix> Ca_store(static_cast<std::size_t>(nk));
+        std::vector<CplxMatrix> Cb_store(static_cast<std::size_t>(nk));
         for (int ik = 0; ik < nk; ++ik) {
             const auto& kp = kpts[static_cast<std::size_t>(ik)];
             res.k_frac.push_back({kp.frac[0], kp.frac[1], kp.frac[2]});
@@ -2697,31 +2742,81 @@ static GpwResult run_gpw_scf_kpoints_uks(
             auto [epsb, Cb] =
                 internal::diagonalize_k(Hb_full[static_cast<std::size_t>(ik)],
                                         orth[static_cast<std::size_t>(ik)]);
-            res.eps_k.push_back(std::move(epsa));
-            res.eps_k_beta.push_back(std::move(epsb));
+            evals_a_store[static_cast<std::size_t>(ik)] = std::move(epsa);
+            evals_b_store[static_cast<std::size_t>(ik)] = std::move(epsb);
+            Ca_store[static_cast<std::size_t>(ik)] = std::move(Ca);
+            Cb_store[static_cast<std::size_t>(ik)] = std::move(Cb);
+        }
+        std::vector<std::vector<double>> occ_a_store, occ_b_store;
+        if (use_smear) {
+            double mu_tmp = 0.0, n_tmp = 0.0, s_tmp = 0.0;
+            auto filled = fill_metallic_uks(evals_a_store, evals_b_store,
+                                            mu_tmp, n_tmp, s_tmp);
+            occ_a_store = std::move(filled.first);
+            occ_b_store = std::move(filled.second);
+            res.f_occ_k.resize(static_cast<std::size_t>(nk));
+            res.f_occ_k_beta.resize(static_cast<std::size_t>(nk));
+        }
+        for (int ik = 0; ik < nk; ++ik) {
+            res.eps_k.push_back(evals_a_store[static_cast<std::size_t>(ik)]);
+            res.eps_k_beta.push_back(
+                evals_b_store[static_cast<std::size_t>(ik)]);
             // Full Bloch C_k / C_k_beta for multi-k UMP2; occupied blocks
             // for force/stress rebuild of P_k^σ / W_k^σ.
-            res.C_k.push_back(linalg::CplxMatrix(Ca));
-            res.C_k_beta.push_back(linalg::CplxMatrix(Cb));
-            std::vector<Cplx> occ_a(static_cast<std::size_t>(nb)
-                                    * static_cast<std::size_t>(n_a));
-            for (int mu = 0; mu < nb; ++mu)
-                for (int o = 0; o < n_a; ++o)
-                    occ_a[static_cast<std::size_t>(mu) * n_a
-                          + static_cast<std::size_t>(o)] = Ca(mu, o);
-            res.C_occ_k[static_cast<std::size_t>(ik)] = std::move(occ_a);
-            std::vector<Cplx> occ_b(static_cast<std::size_t>(nb)
-                                    * static_cast<std::size_t>(n_b));
-            for (int mu = 0; mu < nb; ++mu)
-                for (int o = 0; o < n_b; ++o)
-                    occ_b[static_cast<std::size_t>(mu) * n_b
-                          + static_cast<std::size_t>(o)] = Cb(mu, o);
-            res.C_occ_k_beta[static_cast<std::size_t>(ik)] = std::move(occ_b);
-            // XL-BOMD dual-spin payload: P_k^σ from final MOs (occ = 1).
-            res.P_k[static_cast<std::size_t>(ik)] =
-                density_spin(res.C_k[static_cast<std::size_t>(ik)], n_a);
-            res.P_k_beta[static_cast<std::size_t>(ik)] =
-                density_spin(res.C_k_beta[static_cast<std::size_t>(ik)], n_b);
+            res.C_k.push_back(
+                linalg::CplxMatrix(Ca_store[static_cast<std::size_t>(ik)]));
+            res.C_k_beta.push_back(
+                linalg::CplxMatrix(Cb_store[static_cast<std::size_t>(ik)]));
+            const auto& Ca = res.C_k[static_cast<std::size_t>(ik)];
+            const auto& Cb = res.C_k_beta[static_cast<std::size_t>(ik)];
+            if (use_smear) {
+                // Fractional free-energy payload: all spin-orbitals × f ∈ [0,1].
+                const auto& fa = occ_a_store[static_cast<std::size_t>(ik)];
+                const auto& fb = occ_b_store[static_cast<std::size_t>(ik)];
+                const int ma = static_cast<int>(fa.size());
+                const int mb = static_cast<int>(fb.size());
+                std::vector<Cplx> occ_a(static_cast<std::size_t>(nb)
+                                        * static_cast<std::size_t>(ma));
+                for (int mu = 0; mu < nb; ++mu)
+                    for (int o = 0; o < ma; ++o)
+                        occ_a[static_cast<std::size_t>(mu) * ma
+                              + static_cast<std::size_t>(o)] = Ca(mu, o);
+                res.C_occ_k[static_cast<std::size_t>(ik)] = std::move(occ_a);
+                res.f_occ_k[static_cast<std::size_t>(ik)] = fa;
+                std::vector<Cplx> occ_b(static_cast<std::size_t>(nb)
+                                        * static_cast<std::size_t>(mb));
+                for (int mu = 0; mu < nb; ++mu)
+                    for (int o = 0; o < mb; ++o)
+                        occ_b[static_cast<std::size_t>(mu) * mb
+                              + static_cast<std::size_t>(o)] = Cb(mu, o);
+                res.C_occ_k_beta[static_cast<std::size_t>(ik)] =
+                    std::move(occ_b);
+                res.f_occ_k_beta[static_cast<std::size_t>(ik)] = fb;
+                res.P_k[static_cast<std::size_t>(ik)] =
+                    density_from_occ(Ca, fa);
+                res.P_k_beta[static_cast<std::size_t>(ik)] =
+                    density_from_occ(Cb, fb);
+            } else {
+                std::vector<Cplx> occ_a(static_cast<std::size_t>(nb)
+                                        * static_cast<std::size_t>(n_a));
+                for (int mu = 0; mu < nb; ++mu)
+                    for (int o = 0; o < n_a; ++o)
+                        occ_a[static_cast<std::size_t>(mu) * n_a
+                              + static_cast<std::size_t>(o)] = Ca(mu, o);
+                res.C_occ_k[static_cast<std::size_t>(ik)] = std::move(occ_a);
+                std::vector<Cplx> occ_b(static_cast<std::size_t>(nb)
+                                        * static_cast<std::size_t>(n_b));
+                for (int mu = 0; mu < nb; ++mu)
+                    for (int o = 0; o < n_b; ++o)
+                        occ_b[static_cast<std::size_t>(mu) * n_b
+                              + static_cast<std::size_t>(o)] = Cb(mu, o);
+                res.C_occ_k_beta[static_cast<std::size_t>(ik)] =
+                    std::move(occ_b);
+                // XL-BOMD dual-spin payload: P_k^σ from final MOs (occ = 1).
+                res.P_k[static_cast<std::size_t>(ik)] = density_spin(Ca, n_a);
+                res.P_k_beta[static_cast<std::size_t>(ik)] =
+                    density_spin(Cb, n_b);
+            }
         }
     };
 

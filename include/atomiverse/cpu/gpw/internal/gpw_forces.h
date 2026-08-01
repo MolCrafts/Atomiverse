@@ -24,7 +24,9 @@
 /// On a Monkhorst–Pack / explicit k mesh the assembly is k-summed with
 /// Bloch-phased complex matrices and complex χ^k (see `internal/kpoints.h`);
 /// `GpwResult::C_occ_k` (RKS / UKS α) and `C_occ_k_beta` (UKS β) supply the
-/// occupied MOs used to rebuild \(P_k^\sigma\) / \(W_k^\sigma\).
+/// occupied MOs used to rebuild \(P_k^\sigma\) / \(W_k^\sigma\). Under metallic
+/// FD/MP smear, `f_occ_k` / `f_occ_k_beta` carry fractional occupations for the
+/// free-energy Hellmann–Feynman rebuild (empty ⇒ fixed integer fill).
 ///
 /// Dudarev DFT+U (`cfg.plus_u`): the Mulliken occupation depends on geometry
 /// through the overlap, so the +U energy contributes an occupation-matrix

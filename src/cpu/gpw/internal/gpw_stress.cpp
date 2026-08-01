@@ -102,6 +102,12 @@ GpwDft copy_gpw(const GpwDft& m) {
     p.k_time_reversal = m.k_time_reversal;
     p.k_points = m.k_points;
     p.k_point_weights = m.k_point_weights;
+    // Metallic free-energy path (FD/MP) must survive the stress-side copy;
+    // otherwise a smear SCF silently degrades to integer occupations.
+    p.smearing = m.smearing;
+    p.degauss = m.degauss;
+    p.mp_order = m.mp_order;
+    p.extra_bands = m.extra_bands;
     return p;
 }
 
@@ -212,8 +218,9 @@ double core_self_energy(const GpwAtom& a) {
 }
 
 bool uses_kpath(const GpwDft& cfg) {
+    // Match SCF dispatch: metallic smear always uses the Bloch path.
     return !cfg.k_points.empty() || cfg.k_mesh[0] != 1 || cfg.k_mesh[1] != 1
-           || cfg.k_mesh[2] != 1;
+           || cfg.k_mesh[2] != 1 || cfg.smearing != Smearing::none;
 }
 
 constexpr double kBuildScreen = 1e-12;
@@ -273,6 +280,68 @@ CplxMatrix energy_weighted_from_occ(const std::vector<Cplx>& C_occ,
                 W(i, j) +=
                     ci
                     * std::conj(C_occ[static_cast<std::size_t>(j) * n_occ
+                                      + static_cast<std::size_t>(o)]);
+        }
+    }
+    return W;
+}
+
+/// Density from fractional band occupations (metallic free-energy path).
+CplxMatrix density_from_frac(const std::vector<Cplx>& C_occ, int nb,
+                             const std::vector<double>& f_occ) {
+    const int n_bands = static_cast<int>(f_occ.size());
+    CplxMatrix P = xt::zeros<Cplx>({nb, nb});
+    if (n_bands <= 0)
+        return P;
+    if (static_cast<int>(C_occ.size()) != nb * n_bands)
+        throw std::runtime_error(
+            "gpw_stress analytic k: C_occ shape mismatch (nb*n_bands frac)");
+    for (int o = 0; o < n_bands; ++o) {
+        const double fo = f_occ[static_cast<std::size_t>(o)];
+        if (!(std::abs(fo) > 1e-14))
+            continue;
+        for (int i = 0; i < nb; ++i) {
+            const Cplx ci =
+                fo * C_occ[static_cast<std::size_t>(i) * n_bands
+                           + static_cast<std::size_t>(o)];
+            for (int j = 0; j < nb; ++j)
+                P(i, j) +=
+                    ci
+                    * std::conj(C_occ[static_cast<std::size_t>(j) * n_bands
+                                      + static_cast<std::size_t>(o)]);
+        }
+    }
+    return P;
+}
+
+/// Energy-weighted density from fractional occupations
+/// \(W=\sum_b f_b\varepsilon_b c_b c_b^\dagger\).
+CplxMatrix energy_weighted_from_frac(const std::vector<Cplx>& C_occ,
+                                     const std::vector<double>& eps, int nb,
+                                     const std::vector<double>& f_occ) {
+    const int n_bands = static_cast<int>(f_occ.size());
+    CplxMatrix W = xt::zeros<Cplx>({nb, nb});
+    if (n_bands <= 0)
+        return W;
+    if (static_cast<int>(C_occ.size()) != nb * n_bands)
+        throw std::runtime_error(
+            "gpw_stress analytic k: C_occ shape mismatch (nb*n_bands frac W)");
+    if (static_cast<int>(eps.size()) < n_bands)
+        throw std::runtime_error(
+            "gpw_stress analytic k: eps shorter than n_bands (frac)");
+    for (int o = 0; o < n_bands; ++o) {
+        const double fo = f_occ[static_cast<std::size_t>(o)];
+        if (!(std::abs(fo) > 1e-14))
+            continue;
+        const double w = fo * eps[static_cast<std::size_t>(o)];
+        for (int i = 0; i < nb; ++i) {
+            const Cplx ci =
+                w * C_occ[static_cast<std::size_t>(i) * n_bands
+                          + static_cast<std::size_t>(o)];
+            for (int j = 0; j < nb; ++j)
+                W(i, j) +=
+                    ci
+                    * std::conj(C_occ[static_cast<std::size_t>(j) * n_bands
                                       + static_cast<std::size_t>(o)]);
         }
     }
@@ -1070,10 +1139,29 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
         const int nk = static_cast<int>(kpts.size());
         const int n_occ_a = uks ? method.n_alpha : n_occ;
         const int n_occ_b = uks ? method.n_beta : 0;
-        // Rebuild nb from occupied payload (row-major nb * n_occ_a).
+        const bool frac =
+            !scf.f_occ_k.empty() && static_cast<int>(scf.f_occ_k.size()) == nk;
+        if (frac && uks
+            && (scf.f_occ_k_beta.empty()
+                || static_cast<int>(scf.f_occ_k_beta.size()) != nk))
+            throw std::runtime_error(
+                "gpw_stress analytic k: missing f_occ_k_beta for UKS smear");
+        // Rebuild nb from occupied payload (row-major nb * n_bands).
+        // Fixed-occ: n_bands = n_occ / n_alpha. Smear: n_bands = f_occ size.
         // When n_alpha==0 (edge), fall back to β payload or total basis.
         int nb = 0;
-        if (n_occ_a > 0) {
+        if (frac) {
+            const int n_bands =
+                static_cast<int>(scf.f_occ_k[0].size());
+            if (n_bands < 1)
+                throw std::runtime_error(
+                    "gpw_stress analytic k: empty f_occ_k under smear");
+            nb = static_cast<int>(scf.C_occ_k[0].size()) / n_bands;
+            if (nb * n_bands != static_cast<int>(scf.C_occ_k[0].size())
+                || nb < 1)
+                throw std::runtime_error(
+                    "gpw_stress analytic k: C_occ_k shape is not nb * n_bands");
+        } else if (n_occ_a > 0) {
             nb = static_cast<int>(scf.C_occ_k[0].size()) / n_occ_a;
             if (nb * n_occ_a != static_cast<int>(scf.C_occ_k[0].size()) || nb < 1)
                 throw std::runtime_error(
@@ -1102,42 +1190,79 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
         }
         for (int ik = 0; ik < nk; ++ik) {
             if (uks) {
-                if (static_cast<int>(
-                        scf.eps_k[static_cast<std::size_t>(ik)].size())
-                    < n_occ_a)
-                    throw std::runtime_error(
-                        "gpw_stress analytic k: eps_k shorter than n_alpha");
-                if (n_occ_b > 0
-                    && static_cast<int>(
-                           scf.eps_k_beta[static_cast<std::size_t>(ik)].size())
-                           < n_occ_b)
-                    throw std::runtime_error(
-                        "gpw_stress analytic k: eps_k_beta shorter than n_beta");
-                // Factor-1 per spin (matches gpw_forces multi-k UKS).
-                Pa_k[static_cast<std::size_t>(ik)] = density_from_occ(
-                    scf.C_occ_k[static_cast<std::size_t>(ik)], nb, n_occ_a,
-                    /*occ=*/1.0);
-                CplxMatrix Wa = energy_weighted_from_occ(
+                if (frac) {
+                    const auto& fa = scf.f_occ_k[static_cast<std::size_t>(ik)];
+                    const auto& fb =
+                        scf.f_occ_k_beta[static_cast<std::size_t>(ik)];
+                    Pa_k[static_cast<std::size_t>(ik)] = density_from_frac(
+                        scf.C_occ_k[static_cast<std::size_t>(ik)], nb, fa);
+                    CplxMatrix Wa = energy_weighted_from_frac(
+                        scf.C_occ_k[static_cast<std::size_t>(ik)],
+                        scf.eps_k[static_cast<std::size_t>(ik)], nb, fa);
+                    Pb_k[static_cast<std::size_t>(ik)] =
+                        fb.empty()
+                            ? CplxMatrix(xt::zeros<Cplx>({nb, nb}))
+                            : density_from_frac(
+                                  scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                                  nb, fb);
+                    CplxMatrix Wb =
+                        fb.empty()
+                            ? CplxMatrix(xt::zeros<Cplx>({nb, nb}))
+                            : energy_weighted_from_frac(
+                                  scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                                  scf.eps_k_beta[static_cast<std::size_t>(ik)],
+                                  nb, fb);
+                    P_k[static_cast<std::size_t>(ik)] =
+                        Pa_k[static_cast<std::size_t>(ik)]
+                        + Pb_k[static_cast<std::size_t>(ik)];
+                    W_k[static_cast<std::size_t>(ik)] = Wa + Wb;
+                } else {
+                    if (static_cast<int>(
+                            scf.eps_k[static_cast<std::size_t>(ik)].size())
+                        < n_occ_a)
+                        throw std::runtime_error(
+                            "gpw_stress analytic k: eps_k shorter than n_alpha");
+                    if (n_occ_b > 0
+                        && static_cast<int>(
+                               scf.eps_k_beta[static_cast<std::size_t>(ik)]
+                                   .size())
+                               < n_occ_b)
+                        throw std::runtime_error(
+                            "gpw_stress analytic k: eps_k_beta shorter than "
+                            "n_beta");
+                    // Factor-1 per spin (matches gpw_forces multi-k UKS).
+                    Pa_k[static_cast<std::size_t>(ik)] = density_from_occ(
+                        scf.C_occ_k[static_cast<std::size_t>(ik)], nb, n_occ_a,
+                        /*occ=*/1.0);
+                    CplxMatrix Wa = energy_weighted_from_occ(
+                        scf.C_occ_k[static_cast<std::size_t>(ik)],
+                        scf.eps_k[static_cast<std::size_t>(ik)], nb, n_occ_a,
+                        /*occ=*/1.0);
+                    Pb_k[static_cast<std::size_t>(ik)] =
+                        n_occ_b > 0
+                            ? density_from_occ(
+                                  scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                                  nb, n_occ_b, /*occ=*/1.0)
+                            : CplxMatrix(xt::zeros<Cplx>({nb, nb}));
+                    CplxMatrix Wb =
+                        n_occ_b > 0
+                            ? energy_weighted_from_occ(
+                                  scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                                  scf.eps_k_beta[static_cast<std::size_t>(ik)],
+                                  nb, n_occ_b, /*occ=*/1.0)
+                            : CplxMatrix(xt::zeros<Cplx>({nb, nb}));
+                    P_k[static_cast<std::size_t>(ik)] =
+                        Pa_k[static_cast<std::size_t>(ik)]
+                        + Pb_k[static_cast<std::size_t>(ik)];
+                    W_k[static_cast<std::size_t>(ik)] = Wa + Wb;
+                }
+            } else if (frac) {
+                const auto& f = scf.f_occ_k[static_cast<std::size_t>(ik)];
+                P_k[static_cast<std::size_t>(ik)] = density_from_frac(
+                    scf.C_occ_k[static_cast<std::size_t>(ik)], nb, f);
+                W_k[static_cast<std::size_t>(ik)] = energy_weighted_from_frac(
                     scf.C_occ_k[static_cast<std::size_t>(ik)],
-                    scf.eps_k[static_cast<std::size_t>(ik)], nb, n_occ_a,
-                    /*occ=*/1.0);
-                Pb_k[static_cast<std::size_t>(ik)] =
-                    n_occ_b > 0
-                        ? density_from_occ(
-                              scf.C_occ_k_beta[static_cast<std::size_t>(ik)], nb,
-                              n_occ_b, /*occ=*/1.0)
-                        : CplxMatrix(xt::zeros<Cplx>({nb, nb}));
-                CplxMatrix Wb =
-                    n_occ_b > 0
-                        ? energy_weighted_from_occ(
-                              scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
-                              scf.eps_k_beta[static_cast<std::size_t>(ik)], nb,
-                              n_occ_b, /*occ=*/1.0)
-                        : CplxMatrix(xt::zeros<Cplx>({nb, nb}));
-                P_k[static_cast<std::size_t>(ik)] =
-                    Pa_k[static_cast<std::size_t>(ik)]
-                    + Pb_k[static_cast<std::size_t>(ik)];
-                W_k[static_cast<std::size_t>(ik)] = Wa + Wb;
+                    scf.eps_k[static_cast<std::size_t>(ik)], nb, f);
             } else {
                 if (static_cast<int>(
                         scf.eps_k[static_cast<std::size_t>(ik)].size())

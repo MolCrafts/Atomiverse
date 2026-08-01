@@ -162,17 +162,33 @@ struct GpwResult {
     ///        MPI is inactive or `nprocs == 1`.
     int n_kpts_local = 0;
     /// @brief Occupied MO coefficients per k (k-path only): each entry is a
-    ///        row-major complex matrix of shape `nb × n_occ` (RKS) or
-    ///        `nb × n_alpha` (UKS α). Empty for pure Γ. Used by
-    ///        `gpw_forces_analytic` / `gpw_stress` to rebuild \(P_k\) / \(W_k\).
+    ///        row-major complex matrix of shape `nb × n_bands`. Fixed integer
+    ///        occupations use `n_bands = n_occ` (RKS) or `n_alpha` (UKS α).
+    ///        With metallic FD/MP smearing, `n_bands` is the full AO spectrum
+    ///        at that k and columns pair with `f_occ_k`. Empty for pure Γ.
+    ///        Used by `gpw_forces_analytic` / `gpw_stress` to rebuild
+    ///        \(P_k\) / \(W_k\).
     std::vector<std::vector<std::complex<double>>> C_occ_k;
-    /// @brief Multi-k UKS β occupied MOs per k: row-major `nb × n_beta`
-    ///        (empty for RKS / Γ). Paired with `eps_k_beta`.
+    /// @brief Multi-k UKS β occupied MOs per k: row-major `nb × n_bands`
+    ///        (empty for RKS / Γ). Integer path: `n_bands = n_beta`. Smear
+    ///        path: full spectrum paired with `f_occ_k_beta`.
     std::vector<std::vector<std::complex<double>>> C_occ_k_beta;
+    /// @brief Per-k band occupations for columns of `C_occ_k` when metallic
+    ///        smearing is on (RKS: \(f\in[0,2]\); UKS α: \(f\in[0,1]\)).
+    ///        Empty ⇒ fixed integer fill (`n_occ` / `n_alpha` with uniform
+    ///        occupancy 2 / 1). Length matches `C_occ_k`; each vector length
+    ///        is `n_bands` for that k. Free-energy forces/stress rebuild
+    ///        \(P=\sum_b f_b c_b c_b^\dagger\), \(W=\sum_b f_b\varepsilon_b
+    ///        c_b c_b^\dagger\).
+    std::vector<std::vector<double>> f_occ_k;
+    /// @brief Multi-k UKS β band occupations for `C_occ_k_beta` under smear
+    ///        (\(f\in[0,1]\); empty for RKS / fixed-occ / Γ).
+    std::vector<std::vector<double>> f_occ_k_beta;
     /// @brief Multi-k complex densities \(P_k\) (nb × nb Hermitian) after a
     ///        converged k-path SCF — the XL-BOMD advance payload. RKS: total
-    ///        closed-shell \(P_k\) (occ = 2). UKS: α-spin \(P_k^\alpha\)
-    ///        (occ = 1). Empty for pure Γ runs.
+    ///        closed-shell \(P_k\) (occ = 2, or fractional under smear).
+    ///        UKS: α-spin \(P_k^\alpha\) (occ = 1, or fractional under smear).
+    ///        Empty for pure Γ runs.
     std::vector<linalg::CplxMatrix> P_k;
     /// @brief Multi-k UKS β-spin densities \(P_k^\beta\) (nb × nb Hermitian;
     ///        empty for RKS / Γ). Paired with `P_k` for dual-spin XL-BOMD.

@@ -92,12 +92,20 @@ GpwDft copy_gpw(const GpwDft& m) {
     p.atom_spin_guess = m.atom_spin_guess;
     p.n_alpha = m.n_alpha;
     p.n_beta = m.n_beta;
+    // Metallic free-energy forces: must copy smear into the SCF that builds
+    // the fractional C_occ_k / f_occ_k payload (integer default is wrong).
+    p.smearing = m.smearing;
+    p.degauss = m.degauss;
+    p.mp_order = m.mp_order;
+    p.extra_bands = m.extra_bands;
     return p;
 }
 
 bool uses_kpath(const GpwDft& cfg) {
+    // Match GpwDft multi-k dispatch: metallic smear always rides the k path
+    // (even on a 1×1×1 mesh) because occupations live on Bloch bands.
     return !cfg.k_points.empty() || cfg.k_mesh[0] != 1 || cfg.k_mesh[1] != 1
-           || cfg.k_mesh[2] != 1;
+           || cfg.k_mesh[2] != 1 || cfg.smearing != Smearing::none;
 }
 
 
@@ -874,7 +882,7 @@ void pair_Vnl_k(const GridBasisFunction& a, const GridBasisFunction& b,
             }
 }
 
-/// Build spin-channel P/W from occupied Bloch MOs (occupancy `occ`).
+/// Build spin-channel P/W from occupied Bloch MOs (uniform occupancy `occ`).
 void add_occ_PW(const std::vector<Cplx>& Cflat, const std::vector<double>& eps,
                 int nb, int n_occ, double occ, CplxMatrix& P, CplxMatrix& W) {
     if (static_cast<int>(Cflat.size()) != nb * n_occ)
@@ -900,10 +908,46 @@ void add_occ_PW(const std::vector<Cplx>& Cflat, const std::vector<double>& eps,
     }
 }
 
+/// Build spin-channel P/W from fractional band occupations \(f_b\) (metallic
+/// free-energy path). `Cflat` is row-major `nb × n_bands`; `f_occ[b]` is the
+/// band occupation (RKS \(f\in[0,2]\); UKS \(f\in[0,1]\)).
+void add_frac_PW(const std::vector<Cplx>& Cflat, const std::vector<double>& eps,
+                 const std::vector<double>& f_occ, int nb, int n_bands,
+                 CplxMatrix& P, CplxMatrix& W) {
+    if (n_bands < 0)
+        throw std::runtime_error("gpw_forces kpoints: negative n_bands");
+    if (static_cast<int>(Cflat.size()) != nb * n_bands)
+        throw std::runtime_error(
+            "gpw_forces kpoints: C_occ shape mismatch (nb*n_bands frac)");
+    if (static_cast<int>(eps.size()) < n_bands
+        || static_cast<int>(f_occ.size()) < n_bands)
+        throw std::runtime_error(
+            "gpw_forces kpoints: eps/f_occ shorter than n_bands");
+    for (int o = 0; o < n_bands; ++o) {
+        const double fo = f_occ[static_cast<std::size_t>(o)];
+        if (!(std::abs(fo) > 1e-14))
+            continue;
+        const double weps = fo * eps[static_cast<std::size_t>(o)];
+        for (int mu = 0; mu < nb; ++mu) {
+            const Cplx cmu =
+                Cflat[static_cast<std::size_t>(mu) * n_bands
+                      + static_cast<std::size_t>(o)];
+            for (int nu = 0; nu < nb; ++nu) {
+                const Cplx cnu =
+                    Cflat[static_cast<std::size_t>(nu) * n_bands
+                          + static_cast<std::size_t>(o)];
+                P(mu, nu) += fo * cmu * std::conj(cnu);
+                W(mu, nu) += weps * cmu * std::conj(cnu);
+            }
+        }
+    }
+}
+
 /// Analytic ionic forces after a converged k-point RKS or collinear UKS SCF.
-/// RKS: `C_occ_k` / `eps_k` with occupancy 2. UKS: α from `C_occ_k`/`eps_k`
-/// and β from `C_occ_k_beta`/`eps_k_beta` with occupancy 1; grid uses
-/// spin-resolved \(V_\mathrm{eff}^{\alpha/\beta}\).
+/// RKS: `C_occ_k` / `eps_k` with occupancy 2 (or fractional `f_occ_k` under
+/// metallic smear). UKS: α from `C_occ_k`/`eps_k` and β from
+/// `C_occ_k_beta`/`eps_k_beta` with occupancy 1 (or `f_occ_k` /
+/// `f_occ_k_beta`); grid uses spin-resolved \(V_\mathrm{eff}^{\alpha/\beta}\).
 std::vector<std::array<double, 3>>
 assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                             const GpwDft& cfg, const GpwResult& scf) {
@@ -924,6 +968,14 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
             || static_cast<int>(scf.eps_k_beta.size()) != nk))
         throw std::runtime_error(
             "gpw_forces kpoints: missing C_occ_k_beta / eps_k_beta for UKS");
+    // Metallic free-energy path: fractional occupations on the full spectrum.
+    const bool frac =
+        !scf.f_occ_k.empty() && static_cast<int>(scf.f_occ_k.size()) == nk;
+    if (frac && uks
+        && (scf.f_occ_k_beta.empty()
+            || static_cast<int>(scf.f_occ_k_beta.size()) != nk))
+        throw std::runtime_error(
+            "gpw_forces kpoints: missing f_occ_k_beta for UKS metallic smear");
     if (cfg.nonperiodic)
         throw std::runtime_error(
             "gpw_forces kpoints: nonperiodic not supported on k-path");
@@ -952,7 +1004,7 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
     }
 
     // P_tot^k / W^k (and spin Pa^k / Pb^k for UKS grid).
-    // RKS: occ=2. UKS: P_tot = Pa+Pb, W = Wa+Wb with occ=1 per spin.
+    // RKS: occ=2 (or f_occ). UKS: P_tot = Pa+Pb, W = Wa+Wb (occ=1 or f_occ).
     std::vector<CplxMatrix> P_k(static_cast<std::size_t>(nk));
     std::vector<CplxMatrix> W_k(static_cast<std::size_t>(nk));
     std::vector<CplxMatrix> Pa_k, Pb_k;
@@ -968,17 +1020,35 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
             CplxMatrix Wa = xt::zeros<Cplx>({nb, nb});
             CplxMatrix Pb = xt::zeros<Cplx>({nb, nb});
             CplxMatrix Wb = xt::zeros<Cplx>({nb, nb});
-            add_occ_PW(scf.C_occ_k[static_cast<std::size_t>(ik)],
-                       scf.eps_k[static_cast<std::size_t>(ik)], nb, n_occ_a, 1.0,
-                       Pa, Wa);
-            if (n_occ_b > 0)
-                add_occ_PW(scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
-                           scf.eps_k_beta[static_cast<std::size_t>(ik)], nb,
-                           n_occ_b, 1.0, Pb, Wb);
+            if (frac) {
+                const auto& fa = scf.f_occ_k[static_cast<std::size_t>(ik)];
+                const auto& fb =
+                    scf.f_occ_k_beta[static_cast<std::size_t>(ik)];
+                add_frac_PW(scf.C_occ_k[static_cast<std::size_t>(ik)],
+                            scf.eps_k[static_cast<std::size_t>(ik)], fa, nb,
+                            static_cast<int>(fa.size()), Pa, Wa);
+                if (!fb.empty())
+                    add_frac_PW(scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                                scf.eps_k_beta[static_cast<std::size_t>(ik)],
+                                fb, nb, static_cast<int>(fb.size()), Pb, Wb);
+            } else {
+                add_occ_PW(scf.C_occ_k[static_cast<std::size_t>(ik)],
+                           scf.eps_k[static_cast<std::size_t>(ik)], nb, n_occ_a,
+                           1.0, Pa, Wa);
+                if (n_occ_b > 0)
+                    add_occ_PW(scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                               scf.eps_k_beta[static_cast<std::size_t>(ik)], nb,
+                               n_occ_b, 1.0, Pb, Wb);
+            }
             P = Pa + Pb;
             W = Wa + Wb;
             Pa_k[static_cast<std::size_t>(ik)] = std::move(Pa);
             Pb_k[static_cast<std::size_t>(ik)] = std::move(Pb);
+        } else if (frac) {
+            const auto& f = scf.f_occ_k[static_cast<std::size_t>(ik)];
+            add_frac_PW(scf.C_occ_k[static_cast<std::size_t>(ik)],
+                        scf.eps_k[static_cast<std::size_t>(ik)], f, nb,
+                        static_cast<int>(f.size()), P, W);
         } else {
             add_occ_PW(scf.C_occ_k[static_cast<std::size_t>(ik)],
                        scf.eps_k[static_cast<std::size_t>(ik)], nb, n_occ_a, 2.0,

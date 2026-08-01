@@ -1,0 +1,76 @@
+! High-spin H2 UKS + FERMI_DIRAC ENERGY_FORCE — fair wall twin for
+! gpw-uks-metallic-forces (matched algorithm class: multi-k UKS free-energy
+! forces under FD smear). ATV product basis is DZV-GTH-PADE (in-tree);
+! CP2K BASIS_MOLOPT uses SZV-MOLOPT-GTH (same GTH-q1 / PADE class).
+! Offline only; never at ctest time.
+!
+! Fair wall: 1 MPI × OMP=4, single ENERGY_FORCE job.
+
+&GLOBAL
+  PROJECT h2_uks_fd_forces
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    ! Closed-shell seed (collapses under smear); DZVP gives ADDED_MOS room.
+    MULTIPLICITY 1
+    CHARGE 0
+    &MGRID
+      CUTOFF 100
+      REL_CUTOFF 30
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-8
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+    &END KPOINTS
+    &SCF
+      MAX_SCF 80
+      EPS_SCF 1.0E-7
+      SCF_GUESS ATOMIC
+      &SMEAR ON
+        METHOD FERMI_DIRAC
+        ELECTRONIC_TEMPERATURE [K] 3157.75
+      &END SMEAR
+      ADDED_MOS 4
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC [bohr] 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      UNIT bohr
+      H  5.5  6.0  6.0
+      H  6.5  6.0  6.0
+    &END COORD
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PADE-q1
+    &END KIND
+  &END SUBSYS
+  &PRINT
+    &FORCES ON
+    &END FORCES
+  &END PRINT
+&END FORCE_EVAL
