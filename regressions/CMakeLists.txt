@@ -481,6 +481,9 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw periodic-wannier-gpw-uks THREADS 8)
     # Dispersion ionic forces vs offline CP2K Quickstep D3 twins.
     atv_add_regression(gpw gpw-d3-forces THREADS 8)
+    # Multi-k analytic ionic forces with DFT-D3 zero damping (CP2K ENERGY_FORCE
+    # FORCE-difference twin — dedicated pin after Γ gpw-d3-forces).
+    atv_add_regression(gpw gpw-d3-kpoint-forces THREADS 8)
     atv_add_regression(gpw gpw-d3bj-forces THREADS 8)
     # D3 three-body ATM (C9) force pin, isolated + periodic image triples.
     atv_add_regression(gpw gpw-d3-atm-forces THREADS 8)

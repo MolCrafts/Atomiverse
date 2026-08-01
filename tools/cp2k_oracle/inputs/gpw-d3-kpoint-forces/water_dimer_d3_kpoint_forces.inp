@@ -1,0 +1,94 @@
+! Offline CP2K twin for regressions/gpw/gpw-d3-kpoint-forces/
+! Never launched by ctest. Periodic water-dimer GPW PBE + DFT-D3 zero
+! damping + MONKHORST-PACK 1 1 2 + ENERGY_FORCE.
+! Pair with water_dimer_plain_kpoint_forces.inp: D3 is geometry-only, so
+! F(D3) − F(plain) isolates F_disp = −∇E_disp. K-points need DIAGONALIZATION
+! (not OT). Same geometry / D3 settings as gpw-d3-kpoint-stress.
+!
+! Fair wall (offline only):
+!   source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+!   OMP_NUM_THREADS=8 mpirun -np 1 cp2k.psmp \
+!       -i water_dimer_d3_kpoint_forces.inp -o water_dimer_d3_kpoint_forces.out
+! Record: Dispersion energy; FORCES| Atomic forces; CP2K wall (CP2K timer).
+&GLOBAL
+  PROJECT water_dimer_d3_kpoint_forces
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+      FULL_GRID .FALSE.
+      SYMMETRY .FALSE.
+      VERBOSE .FALSE.
+      PARALLEL_GROUP_SIZE -1
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      MAX_SCF 80
+      EPS_SCF 1.0E-7
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+      &VDW_POTENTIAL
+        DISPERSION_FUNCTIONAL PAIR_POTENTIAL
+        &PAIR_POTENTIAL
+          TYPE DFTD3
+          PARAMETER_FILE_NAME dftd3.dat
+          REFERENCE_FUNCTIONAL PBE
+          R_CUTOFF 20.0
+          LONG_RANGE_CORRECTION .FALSE.
+          CALCULATE_C9_TERM .FALSE.
+          VERBOSE_OUTPUT .TRUE.
+        &END PAIR_POTENTIAL
+      &END VDW_POTENTIAL
+    &END XC
+  &END DFT
+  &PRINT
+    &FORCES ON
+    &END FORCES
+  &END PRINT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      O  0.000000  0.000000  0.000000
+      H  0.758602  0.000000  0.504284
+      H  0.758602  0.000000 -0.504284
+      O  3.000000  0.000000  0.000000
+      H  3.758602  0.000000  0.504284
+      H  3.758602  0.000000 -0.504284
+    &END COORD
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
