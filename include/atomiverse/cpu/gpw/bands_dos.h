@@ -121,8 +121,9 @@ struct DosResult {
 /// occupied integral is to VBM. Metallic smearing: free-energy SCF;
 /// integral is to SCF \(E_F\).
 ///
-/// **Scope (this product):** closed-shell RKS multi-k. UKS multi-k is
-/// accepted when `method.is_uks()` and fills per-spin channels (g=1).
+/// **Scope:** closed-shell RKS multi-k (`reg_gpw-dos-si`) and collinear UKS
+/// multi-k when `method.is_uks()` fills per-spin channels (g=1;
+/// `reg_gpw-dos-uks`).
 class Dos {
   public:
     /// @brief DOS / SCF k-mesh per dimension (MP \(k_\mathrm{mesh}^3\)).
