@@ -1,0 +1,92 @@
+! Offline CP2K twin for regressions/gpw/periodic-wannier-gpw-uks
+! (NOT run by ctest — human/agent pin host only).
+!
+! Diamond Si BCT 4-atom orthorhombic cell, collinear LSD (UKS, multiplicity 1)
+! + LOCALIZE / print Wannier centers. GTH-PBE-q4 + DZVP-MOLOPT-GTH matches
+! Atomiverse GPW tables (same twin class as periodic-wannier-gpw RKS).
+! Shared pin content: SCF total energy (numerical CP2K pin). Bond-midpoint
+! geometry of the eight valence MLWFs **per spin** at M=0 is literature
+! (Marzari & Vanderbilt, PRB 56, 12847 (1997)) — CP2K LOCALIZE is not
+! implemented for k-points (qs_scf_post_gpw.F warning) so centers are not
+! printed; keep &LOCALIZE as the intended twin request.
+!
+! Recorded pin (2026-08-01, cp2k.psmp 2026.1 git:5e54ba2, 1×8 OMP):
+!   ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]  -15.769956662772422
+!   CP2K timer wall ≈ 19.13 s
+!
+! Run (1 MPI × 8 OMP — fair wall twin):
+!   source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+!   cd <pin_dir> && ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS} .
+!   OMP_NUM_THREADS=8 mpirun -np 1 cp2k.psmp -i si_uks_wannier_bct.inp -o si_uks_wannier_bct.out
+
+&GLOBAL
+  PROJECT si_uks_wannier_bct
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 1
+    &MGRID
+      CUTOFF 100
+      NGRIDS 1
+    &END MGRID
+    &QS
+      EPS_DEFAULT 1.0E-7
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 60
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+      FULL_GRID .TRUE.
+    &END KPOINTS
+    &LOCALIZE
+      METHOD JACOBI
+      MAX_ITER 300
+      EPS_LOCALIZATION 1.0E-8
+      &PRINT
+        &WANNIER_CENTERS
+          IONS+CENTERS .TRUE.
+        &END WANNIER_CENTERS
+        &WANNIER_SPREADS
+        &END WANNIER_SPREADS
+      &END PRINT
+    &END LOCALIZE
+  &END DFT
+  &SUBSYS
+    &CELL
+      ! bct setting of diamond: (a/sqrt(2), a/sqrt(2), a), a = 5.43 A
+      ABC 3.83959 3.83959 5.43000
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      SCALED
+      Si 0.00 0.00 0.00
+      Si 0.50 0.50 0.50
+      Si 0.50 0.00 0.25
+      Si 0.00 0.50 0.75
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

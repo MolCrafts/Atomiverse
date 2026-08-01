@@ -587,15 +587,24 @@ void projection_U(const std::vector<Cdouble>& A, int n,
         }
 }
 
+double cubic_a_ang_from_bct(const double cell_bohr[3]);
+Cdouble gaussian_ao_overlap_k(const GridBasisFunction& bf,
+                              const double tau_bohr[3], double alpha_B,
+                              const double L[3], const int m[3],
+                              const std::array<double, 3>& k_frac);
+
 /// Flatten occupied C_k (nb × n_wann) from GpwResult payload.
+/// @param spin 0 = RKS / UKS α (`C_occ_k` / `C_k`); 1 = UKS β
+///             (`C_occ_k_beta` / `C_k_beta`).
 std::vector<Cdouble> flatten_C_occ(const GpwResult& res, int ik, int nbas,
-                                   int n_wann) {
+                                   int n_wann, int spin = 0) {
     std::vector<Cdouble> C(static_cast<std::size_t>(nbas * n_wann),
                            Cdouble{0, 0});
-    if (!res.C_occ_k.empty()
-        && static_cast<int>(res.C_occ_k.size()) > ik
-        && !res.C_occ_k[static_cast<std::size_t>(ik)].empty()) {
-        const auto& raw = res.C_occ_k[static_cast<std::size_t>(ik)];
+    const auto& occ_stack = (spin == 0) ? res.C_occ_k : res.C_occ_k_beta;
+    const auto& full_stack = (spin == 0) ? res.C_k : res.C_k_beta;
+    if (!occ_stack.empty() && static_cast<int>(occ_stack.size()) > ik
+        && !occ_stack[static_cast<std::size_t>(ik)].empty()) {
+        const auto& raw = occ_stack[static_cast<std::size_t>(ik)];
         const int ncol =
             static_cast<int>(raw.size()) / std::max(nbas, 1);
         const int nuse = std::min(n_wann, ncol);
@@ -605,10 +614,12 @@ std::vector<Cdouble> flatten_C_occ(const GpwResult& res, int ik, int nbas,
                     raw[static_cast<std::size_t>(mu * ncol + o)];
         return C;
     }
-    // Fallback: full C_k columns 0..n_wann-1
-    if (static_cast<int>(res.C_k.size()) <= ik)
-        throw std::runtime_error("PeriodicWannier: missing C_k at k-point");
-    const auto& Ck = res.C_k[static_cast<std::size_t>(ik)];
+    // Fallback: full C_k / C_k_beta columns 0..n_wann-1
+    if (static_cast<int>(full_stack.size()) <= ik)
+        throw std::runtime_error(
+            spin == 0 ? "PeriodicWannier: missing C_k at k-point"
+                      : "PeriodicWannier: missing C_k_beta at k-point");
+    const auto& Ck = full_stack[static_cast<std::size_t>(ik)];
     const int nb0 = static_cast<int>(Ck.shape(0));
     const int nmo = static_cast<int>(Ck.shape(1));
     if (nb0 != nbas)
@@ -618,6 +629,211 @@ std::vector<Cdouble> flatten_C_occ(const GpwResult& res, int ik, int nbas,
         for (int o = 0; o < nuse; ++o)
             C[static_cast<std::size_t>(mu * n_wann + o)] = Ck(mu, o);
     return C;
+}
+
+/// Per-channel localization result (one spin / RKS manifold).
+struct ChannelLoc {
+    std::vector<std::array<double, 3>> centers;
+    std::vector<double> spreads;
+    double total_spread = 0.0;
+    double total_spread_initial = 0.0;
+    int iterations = 0;
+    bool converged = false;
+};
+
+/// Marzari–Vanderbilt SD on one occupied manifold (shared geometry, own C).
+ChannelLoc localize_channel(
+    const std::vector<std::vector<Cdouble>>& C, int n_wann, int nk,
+    const std::vector<std::array<double, 3>>& k_frac,
+    const std::vector<std::vector<Neighbor>>& nb,
+    const std::vector<GridBasisFunction>& basis,
+    const std::vector<double>& radii, const double cell[3], const int mimg[3],
+    double screen, const std::vector<std::array<double, 3>>& trials,
+    bool use_projection, double proj_alpha_ang, double a0, int max_iter,
+    double tol, double step) {
+    const int nbas = static_cast<int>(basis.size());
+    ChannelLoc ch;
+    if (n_wann < 1)
+        return ch;
+
+    // Bare M0(k,b) = C†(k) S_cross C(k+b)
+    std::vector<std::vector<std::vector<Cdouble>>> M0(
+        static_cast<std::size_t>(nk));
+    for (int ik = 0; ik < nk; ++ik) {
+        const auto& neigh = nb[static_cast<std::size_t>(ik)];
+        M0[static_cast<std::size_t>(ik)].resize(neigh.size());
+        for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
+            const auto& e = neigh[ib];
+            const auto& kfn = k_frac[static_cast<std::size_t>(e.ik_nb)];
+            std::vector<Cdouble> S;
+            const double bb[3] = {e.b_bohr[0], e.b_bohr[1], e.b_bohr[2]};
+            build_S_cross(basis, radii, cell, mimg, screen, kfn, bb, nbas, S);
+            mo_overlap(C[static_cast<std::size_t>(ik)],
+                       C[static_cast<std::size_t>(e.ik_nb)], S, nbas, n_wann,
+                       M0[static_cast<std::size_t>(ik)][ib]);
+        }
+    }
+
+    // Unitary gauge U(k)
+    std::vector<std::vector<Cdouble>> U(static_cast<std::size_t>(nk));
+    for (int ik = 0; ik < nk; ++ik) {
+        U[static_cast<std::size_t>(ik)].assign(
+            static_cast<std::size_t>(n_wann * n_wann), Cdouble{0, 0});
+        for (int i = 0; i < n_wann; ++i)
+            U[static_cast<std::size_t>(ik)]
+             [static_cast<std::size_t>(i * n_wann + i)] = Cdouble{1, 0};
+    }
+
+    if (static_cast<int>(trials.size()) != n_wann)
+        throw std::invalid_argument(
+            "PeriodicWannier: trial_centers size must equal n_wann per channel");
+
+    if (use_projection) {
+        const double alpha_B =
+            proj_alpha_ang * a0 * a0; // α_Å |r_Å|² = α_B |r_B|²
+        int mproj[3];
+        pair_image_counts(cell, true, 10.0, mproj);
+        for (int ik = 0; ik < nk; ++ik) {
+            std::vector<Cdouble> A(static_cast<std::size_t>(n_wann * n_wann),
+                                   Cdouble{0, 0});
+            const auto& Ck = C[static_cast<std::size_t>(ik)];
+            const auto& kf = k_frac[static_cast<std::size_t>(ik)];
+            for (int n = 0; n < n_wann; ++n) {
+                const double tau_B[3] = {
+                    trials[static_cast<std::size_t>(n)][0] / a0,
+                    trials[static_cast<std::size_t>(n)][1] / a0,
+                    trials[static_cast<std::size_t>(n)][2] / a0};
+                std::vector<Cdouble> gproj(static_cast<std::size_t>(nbas));
+                for (int mu = 0; mu < nbas; ++mu)
+                    gproj[static_cast<std::size_t>(mu)] = gaussian_ao_overlap_k(
+                        basis[static_cast<std::size_t>(mu)], tau_B, alpha_B,
+                        cell, mproj, kf);
+                for (int j = 0; j < n_wann; ++j) {
+                    Cdouble s{0, 0};
+                    for (int mu = 0; mu < nbas; ++mu)
+                        s += std::conj(
+                                 Ck[static_cast<std::size_t>(mu * n_wann + j)])
+                             * gproj[static_cast<std::size_t>(mu)];
+                    A[static_cast<std::size_t>(j * n_wann + n)] = s;
+                }
+            }
+            projection_U(A, n_wann, U[static_cast<std::size_t>(ik)]);
+        }
+    }
+
+    auto rebuild_M =
+        [&](std::vector<std::vector<std::vector<Cdouble>>>& M_kb) {
+            M_kb.assign(static_cast<std::size_t>(nk), {});
+            for (int ik = 0; ik < nk; ++ik) {
+                const auto& neigh = nb[static_cast<std::size_t>(ik)];
+                M_kb[static_cast<std::size_t>(ik)].resize(neigh.size());
+                for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
+                    const int ikb = neigh[ib].ik_nb;
+                    rotate_M(M0[static_cast<std::size_t>(ik)][ib],
+                             U[static_cast<std::size_t>(ik)],
+                             U[static_cast<std::size_t>(ikb)], n_wann,
+                             M_kb[static_cast<std::size_t>(ik)][ib]);
+                }
+            }
+        };
+
+    std::vector<std::vector<std::vector<Cdouble>>> M_kb;
+    {
+        auto U_save = U;
+        for (int ik = 0; ik < nk; ++ik) {
+            U[static_cast<std::size_t>(ik)].assign(
+                static_cast<std::size_t>(n_wann * n_wann), Cdouble{0, 0});
+            for (int i = 0; i < n_wann; ++i)
+                U[static_cast<std::size_t>(ik)]
+                 [static_cast<std::size_t>(i * n_wann + i)] = Cdouble{1, 0};
+        }
+        rebuild_M(M_kb);
+        ch.total_spread_initial = total_spread_from_M(M_kb, nb, n_wann);
+        U = std::move(U_save);
+    }
+    rebuild_M(M_kb);
+
+    bool conv = (max_iter == 0);
+    int iters = 0;
+    double omega_prev = total_spread_from_M(M_kb, nb, n_wann);
+    auto U_best = U;
+    auto M_best = M_kb;
+    double omega_best = omega_prev;
+
+    for (int it = 0; it < max_iter; ++it) {
+        ++iters;
+        std::vector<std::vector<Cdouble>> G_k;
+        mv_gradient(M_kb, nb, n_wann, G_k);
+        const double gmax = max_abs_G(G_k);
+        ATV_DEBUG_CAT("gpw", "mlwf iter={} |G|_max={:.3e} Omega={:.6f}", it,
+                      gmax, omega_prev);
+        if (it > 0 && (!(gmax > 0.0) || gmax < tol || !std::isfinite(gmax))) {
+            conv = std::isfinite(gmax) && gmax < tol;
+            break;
+        }
+        double alpha = step;
+        bool accepted = false;
+        for (int attempt = 0; attempt < 12; ++attempt) {
+            auto U_try = U;
+            for (int ik = 0; ik < nk; ++ik) {
+                std::vector<Cdouble> expG;
+                expm_antihermitian(G_k[static_cast<std::size_t>(ik)], n_wann,
+                                   alpha, expG);
+                right_mul(U_try[static_cast<std::size_t>(ik)], expG, n_wann);
+            }
+            auto U_save = U;
+            U = U_try;
+            rebuild_M(M_kb);
+            const double omega_new = total_spread_from_M(M_kb, nb, n_wann);
+            if (std::isfinite(omega_new) && omega_new <= omega_prev + 1e-6) {
+                accepted = true;
+                omega_prev = omega_new;
+                if (omega_new < omega_best) {
+                    omega_best = omega_new;
+                    U_best = U;
+                    M_best = M_kb;
+                }
+                break;
+            }
+            U = std::move(U_save);
+            rebuild_M(M_kb);
+            alpha *= 0.5;
+        }
+        if (!accepted)
+            break;
+    }
+    if (max_iter == 0)
+        conv = true;
+
+    PeriodicWannierResult tmp;
+    fill_centers_spreads(M_best, nb, n_wann, tmp);
+    ch.centers = std::move(tmp.centers);
+    ch.spreads = std::move(tmp.spreads);
+    ch.total_spread = tmp.total_spread;
+    ch.iterations = iters;
+    ch.converged = conv && std::isfinite(ch.total_spread);
+    return ch;
+}
+
+/// Default trial centers for one channel of size n_wann.
+std::vector<std::array<double, 3>>
+default_trials(int n_wann, const std::vector<GpwAtom>& atoms,
+               const double cell[3],
+               const std::vector<std::array<double, 3>>& trial_centers) {
+    if (!trial_centers.empty()) {
+        if (static_cast<int>(trial_centers.size()) != n_wann)
+            throw std::invalid_argument(
+                "PeriodicWannier::compute: trial_centers size must equal "
+                "n_wann per spin channel");
+        return trial_centers;
+    }
+    if (n_wann == 8 && static_cast<int>(atoms.size()) == 4) {
+        const double a_ang = cubic_a_ang_from_bct(cell);
+        const auto mids = diamond_bct_bond_midpoints(a_ang);
+        return std::vector<std::array<double, 3>>(mids.begin(), mids.end());
+    }
+    return std::vector<std::array<double, 3>>(
+        static_cast<std::size_t>(n_wann), std::array<double, 3>{0, 0, 0});
 }
 
 /// Bloch-phased AO–Gaussian overlap
@@ -813,16 +1029,17 @@ std::array<double, 3> center_from_diagonal_phases(
 PeriodicWannierResult
 PeriodicWannier::compute(GpwDft& method,
                          const std::vector<GpwAtom>& atoms) const {
-    if (method.is_uks())
-        throw std::invalid_argument(
-            "PeriodicWannier::compute: UKS / spin MLWF not in this foothold");
     if (method.smearing != Smearing::none)
         throw std::invalid_argument(
             "PeriodicWannier::compute: requires an insulator (no metallic "
             "smearing)");
-    if (method.n_occ < 1)
+    const bool uks = method.is_uks();
+    if (!uks && method.n_occ < 1)
         throw std::invalid_argument(
             "PeriodicWannier::compute: n_occ must be >= 1");
+    if (uks && method.n_alpha + method.n_beta < 1)
+        throw std::invalid_argument(
+            "PeriodicWannier::compute: n_alpha + n_beta must be >= 1");
     if (k_mesh < 1)
         throw std::invalid_argument(
             "PeriodicWannier::compute: k_mesh must be >= 1");
@@ -854,7 +1071,6 @@ PeriodicWannier::compute(GpwDft& method,
     PeriodicWannierResult out;
     out.scf_converged = res.converged;
     out.energy_ha = res.e_total;
-    out.n_wann = method.n_occ;
     if (!res.converged) {
         ATV_WARN("PeriodicWannier: SCF did not converge; continuing with "
                  "last orbitals");
@@ -868,12 +1084,19 @@ PeriodicWannier::compute(GpwDft& method,
             "PeriodicWannier::compute: expected N³ k-points with TR off, got "
             + std::to_string(res.n_kpts));
 
-    const int n_wann = method.n_occ;
+    const int n_up = uks ? method.n_alpha : method.n_occ;
+    const int n_dn = uks ? method.n_beta : 0;
+    const int n_total = n_up + n_dn;
+    if (n_total < 1)
+        throw std::invalid_argument(
+            "PeriodicWannier::compute: empty occupied manifold");
+
     const auto basis = flatten_basis(atoms);
     const int nbas = static_cast<int>(basis.size());
-    if (nbas < n_wann)
+    const int n_max_ch = std::max(n_up, std::max(n_dn, 1));
+    if (nbas < n_max_ch)
         throw std::runtime_error(
-            "PeriodicWannier::compute: basis smaller than n_occ");
+            "PeriodicWannier::compute: basis smaller than occupied count");
 
     std::vector<double> radii(static_cast<std::size_t>(nbas));
     double rmax = 0.0;
@@ -894,182 +1117,50 @@ PeriodicWannier::compute(GpwDft& method,
     const auto nb = build_neighbors(res.k_frac, N, L_ang);
     const int nk = res.n_kpts;
 
-    // Flatten occupied coefficients per k.
-    std::vector<std::vector<Cdouble>> C(static_cast<std::size_t>(nk));
-    for (int ik = 0; ik < nk; ++ik)
-        C[static_cast<std::size_t>(ik)] = flatten_C_occ(res, ik, nbas, n_wann);
+    out.centers.clear();
+    out.spreads.clear();
+    out.spin.clear();
+    out.total_spread = 0.0;
+    out.total_spread_initial = 0.0;
+    out.iterations = 0;
+    out.converged = true;
+    out.n_wann_up = uks ? n_up : 0;
+    out.n_wann_dn = uks ? n_dn : 0;
+    out.n_wann = n_total;
 
-    // Bare M0(k,b) = C†(k) S_cross C(k+b)
-    std::vector<std::vector<std::vector<Cdouble>>> M0(
-        static_cast<std::size_t>(nk));
-    for (int ik = 0; ik < nk; ++ik) {
-        const auto& neigh = nb[static_cast<std::size_t>(ik)];
-        M0[static_cast<std::size_t>(ik)].resize(neigh.size());
-        for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
-            const auto& e = neigh[ib];
-            const auto& kfn = res.k_frac[static_cast<std::size_t>(e.ik_nb)];
-            std::vector<Cdouble> S;
-            const double bb[3] = {e.b_bohr[0], e.b_bohr[1], e.b_bohr[2]};
-            build_S_cross(basis, radii, method.cell, mimg, screen, kfn, bb,
-                          nbas, S);
-            mo_overlap(C[static_cast<std::size_t>(ik)],
-                       C[static_cast<std::size_t>(e.ik_nb)], S, nbas, n_wann,
-                       M0[static_cast<std::size_t>(ik)][ib]);
+    const int n_spin = uks ? 2 : 1;
+    for (int s = 0; s < n_spin; ++s) {
+        const int n_ch = (s == 0) ? n_up : n_dn;
+        if (n_ch < 1)
+            continue;
+
+        std::vector<std::vector<Cdouble>> C(static_cast<std::size_t>(nk));
+        for (int ik = 0; ik < nk; ++ik)
+            C[static_cast<std::size_t>(ik)] =
+                flatten_C_occ(res, ik, nbas, n_ch, /*spin=*/s);
+
+        const auto trials =
+            default_trials(n_ch, atoms, method.cell, trial_centers);
+        ChannelLoc ch = localize_channel(
+            C, n_ch, nk, res.k_frac, nb, basis, radii, method.cell, mimg,
+            screen, trials, use_projection, proj_alpha_ang, a0, max_iter, tol,
+            step);
+
+        for (std::size_t i = 0; i < ch.centers.size(); ++i) {
+            out.centers.push_back(ch.centers[i]);
+            out.spreads.push_back(ch.spreads[i]);
+            if (uks)
+                out.spin.push_back(s);
         }
+        out.total_spread += ch.total_spread;
+        out.total_spread_initial += ch.total_spread_initial;
+        out.iterations = std::max(out.iterations, ch.iterations);
+        out.converged = out.converged && ch.converged;
     }
 
-    // Unitary gauge U(k)
-    std::vector<std::vector<Cdouble>> U(static_cast<std::size_t>(nk));
-    for (int ik = 0; ik < nk; ++ik) {
-        U[static_cast<std::size_t>(ik)].assign(
-            static_cast<std::size_t>(n_wann * n_wann), Cdouble{0, 0});
-        for (int i = 0; i < n_wann; ++i)
-            U[static_cast<std::size_t>(ik)]
-             [static_cast<std::size_t>(i * n_wann + i)] = Cdouble{1, 0};
-    }
-
-    // Trial centers
-    std::vector<std::array<double, 3>> trials = trial_centers;
-    if (trials.empty()) {
-        if (n_wann == 8 && static_cast<int>(atoms.size()) == 4) {
-            const double a_ang = cubic_a_ang_from_bct(method.cell);
-            const auto mids = diamond_bct_bond_midpoints(a_ang);
-            trials.assign(mids.begin(), mids.end());
-        } else {
-            trials.assign(static_cast<std::size_t>(n_wann),
-                          std::array<double, 3>{0, 0, 0});
-        }
-    }
-    if (static_cast<int>(trials.size()) != n_wann)
-        throw std::invalid_argument(
-            "PeriodicWannier::compute: trial_centers size must equal n_wann");
-
-    if (use_projection) {
-        const double alpha_B =
-            proj_alpha_ang * a0 * a0; // α_Å |r_Å|² = α_B |r_B|²
-        int mproj[3];
-        pair_image_counts(method.cell, true, 10.0, mproj);
-        for (int ik = 0; ik < nk; ++ik) {
-            // A_jn(k) = Σ_μ C*_μj(k) ⟨φ_μ^k | g_n⟩  (Bloch-phased projectors)
-            std::vector<Cdouble> A(static_cast<std::size_t>(n_wann * n_wann),
-                                   Cdouble{0, 0});
-            const auto& Ck = C[static_cast<std::size_t>(ik)];
-            const auto& kf = res.k_frac[static_cast<std::size_t>(ik)];
-            for (int n = 0; n < n_wann; ++n) {
-                const double tau_B[3] = {
-                    trials[static_cast<std::size_t>(n)][0] / a0,
-                    trials[static_cast<std::size_t>(n)][1] / a0,
-                    trials[static_cast<std::size_t>(n)][2] / a0};
-                std::vector<Cdouble> gproj(static_cast<std::size_t>(nbas));
-                for (int mu = 0; mu < nbas; ++mu)
-                    gproj[static_cast<std::size_t>(mu)] = gaussian_ao_overlap_k(
-                        basis[static_cast<std::size_t>(mu)], tau_B, alpha_B,
-                        method.cell, mproj, kf);
-                for (int j = 0; j < n_wann; ++j) {
-                    Cdouble s{0, 0};
-                    for (int mu = 0; mu < nbas; ++mu)
-                        s += std::conj(
-                                 Ck[static_cast<std::size_t>(mu * n_wann + j)])
-                             * gproj[static_cast<std::size_t>(mu)];
-                    A[static_cast<std::size_t>(j * n_wann + n)] = s;
-                }
-            }
-            projection_U(A, n_wann, U[static_cast<std::size_t>(ik)]);
-        }
-    }
-
-    auto rebuild_M =
-        [&](std::vector<std::vector<std::vector<Cdouble>>>& M_kb) {
-            M_kb.assign(static_cast<std::size_t>(nk), {});
-            for (int ik = 0; ik < nk; ++ik) {
-                const auto& neigh = nb[static_cast<std::size_t>(ik)];
-                M_kb[static_cast<std::size_t>(ik)].resize(neigh.size());
-                for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
-                    const int ikb = neigh[ib].ik_nb;
-                    rotate_M(M0[static_cast<std::size_t>(ik)][ib],
-                             U[static_cast<std::size_t>(ik)],
-                             U[static_cast<std::size_t>(ikb)], n_wann,
-                             M_kb[static_cast<std::size_t>(ik)][ib]);
-                }
-            }
-        };
-
-    std::vector<std::vector<std::vector<Cdouble>>> M_kb;
-    {
-        auto U_save = U;
-        for (int ik = 0; ik < nk; ++ik) {
-            U[static_cast<std::size_t>(ik)].assign(
-                static_cast<std::size_t>(n_wann * n_wann), Cdouble{0, 0});
-            for (int i = 0; i < n_wann; ++i)
-                U[static_cast<std::size_t>(ik)]
-                 [static_cast<std::size_t>(i * n_wann + i)] = Cdouble{1, 0};
-        }
-        rebuild_M(M_kb);
-        out.total_spread_initial = total_spread_from_M(M_kb, nb, n_wann);
-        U = std::move(U_save);
-    }
-    rebuild_M(M_kb);
-
-    bool conv = (max_iter == 0);
-    int iters = 0;
-    double omega_prev = total_spread_from_M(M_kb, nb, n_wann);
-    auto U_best = U;
-    auto M_best = M_kb;
-    double omega_best = omega_prev;
-
-    for (int it = 0; it < max_iter; ++it) {
-        ++iters;
-        std::vector<std::vector<Cdouble>> G_k;
-        mv_gradient(M_kb, nb, n_wann, G_k);
-        const double gmax = max_abs_G(G_k);
-        ATV_DEBUG_CAT("gpw", "mlwf iter={} |G|_max={:.3e} Omega={:.6f}", it,
-                      gmax, omega_prev);
-        if (it > 0 && (!(gmax > 0.0) || gmax < tol || !std::isfinite(gmax))) {
-            conv = std::isfinite(gmax) && gmax < tol;
-            break;
-        }
-        double alpha = step;
-        bool accepted = false;
-        for (int attempt = 0; attempt < 12; ++attempt) {
-            auto U_try = U;
-            for (int ik = 0; ik < nk; ++ik) {
-                std::vector<Cdouble> expG;
-                expm_antihermitian(G_k[static_cast<std::size_t>(ik)], n_wann,
-                                   alpha, expG);
-                right_mul(U_try[static_cast<std::size_t>(ik)], expG, n_wann);
-            }
-            auto U_save = U;
-            U = U_try;
-            rebuild_M(M_kb);
-            const double omega_new = total_spread_from_M(M_kb, nb, n_wann);
-            if (std::isfinite(omega_new) && omega_new <= omega_prev + 1e-6) {
-                accepted = true;
-                omega_prev = omega_new;
-                if (omega_new < omega_best) {
-                    omega_best = omega_new;
-                    U_best = U;
-                    M_best = M_kb;
-                }
-                break;
-            }
-            U = std::move(U_save);
-            rebuild_M(M_kb);
-            alpha *= 0.5;
-        }
-        if (!accepted) {
-            // No further descent from this gradient — keep best gauge so far.
-            break;
-        }
-    }
-    if (max_iter == 0)
-        conv = true;
-
-    U = std::move(U_best);
-    M_kb = std::move(M_best);
-    fill_centers_spreads(M_kb, nb, n_wann, out);
-    out.iterations = iters;
-    out.converged = conv && std::isfinite(out.total_spread);
-    out.n_wann = n_wann;
+    if (static_cast<int>(out.centers.size()) != n_total)
+        throw std::runtime_error(
+            "PeriodicWannier::compute: center count mismatch after localization");
     return out;
 }
 
