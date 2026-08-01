@@ -390,6 +390,9 @@ if(ATV_BUILD_GPW)
     # Analytic ionic forces with Hirshfeld-scaled TS/MBD volumes
     # (fix found rot: energy folded ratios, force/stress free-atom only).
     atv_add_regression(gpw gpw-hirshfeld-forces THREADS 8)
+    # Multi-k analytic forces with Hirshfeld-scaled TS/MBD volumes
+    # (product path folds scf.volume_ratios; dedicated dual-gate pin).
+    atv_add_regression(gpw gpw-hirshfeld-kpoint-forces THREADS 8)
     atv_add_regression(gpw ot-minimizer-water THREADS 8)
     atv_add_regression(gpw ot-uks-o2 THREADS 8)
     atv_add_regression(gpw ot-kpoints THREADS 8)

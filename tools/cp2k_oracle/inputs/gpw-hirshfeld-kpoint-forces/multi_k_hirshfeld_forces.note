@@ -1,0 +1,45 @@
+# Offline pin notes — gpw-hirshfeld-kpoint-forces
+
+## Method
+
+Multi-k GPW analytic ionic forces with **Hirshfeld** \(V/V_{\mathrm{free}}\)
+from the multi-k SCF density scaling free-atom **TS** / **MBD@rsSCS**
+parameters. Forces hold \(v_A\) fixed at the SCF density (density-chain
+\(\partial v/\partial R\) out of scope) — same product definition as
+`gpw-hirshfeld-forces`, on the k-path assembly
+`assemble_gpw_forces_kpoints` → `ts_mbd_vol_ratio`.
+
+## Why not stock CP2K QS?
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` is only DFTD2|DFTD3|DFTD3(BJ)|DFTD4 — no
+stock TS/MBD (verified host binary):
+
+```bash
+source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+cp2k.psmp --version
+# CP2K version 2026.1 (git:5e54ba2)
+# qs_dispersion_* implements D2/D3/D4 + nonlocal vdW only — no TS/MBD pair type.
+# Confirmed 2026-08-01: no fair multi-k ENERGY_FORCE twin for wall ratio.
+```
+
+Hard pin:
+
+1. Product-kernel force dual-gate vs independent central FD of the same
+   fixed-\(v\) energy (water-dimer isolated TS + MBD@rsSCS).
+2. Multi-k product wiring on H₂ (`k_mesh={1,1,2}`):
+   `gpw_forces_from_scf` with `ts+hirshfeld` / `mbd+hirshfeld` adds
+   geometry forces at `scf.volume_ratios`, not free-atom.
+3. E_disp isolated MBD with fixed dual volumes
+   `{0.7403,0.6529,0.6529,0.7153,0.5784,0.5784}` =
+   **−1.1479717148086300×10⁻³ Ha** (same dual table as `gpw-hirshfeld-forces`).
+
+## Pin summary
+
+```
+E_disp (MBD@rsSCS, fixed v dual table) = -1.1479717148086300e-03 Ha
+force dual-gate max|F-F_fd| ≤ 1e-6 Ha/Bohr (TS + MBD)
+multi-k H2 TS+hirsh wiring max|Δ| ≤ 1e-7 Ha/Bohr
+multi-k H2 MBD+hirsh wiring max|Δ| ≤ 1e-7 Ha/Bohr
+oracle: literature / libMBD
+perf_exempt: true (no CP2K stock TS/MBD)
+```
