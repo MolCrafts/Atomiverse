@@ -66,6 +66,21 @@ args: { "mode":"exhaust", "staff_count":10, "max_waves":20, "target_branch":"dev
 
 ## Run log
 
+- **2026-08-01 harness wave 1 (shift) (parent `dev` @ `424d6989`):** 6 of 10
+  staffed merged → done: `gpw-vdw-uks-kpoints` (dual-spin multi-k nonlocal
+  vdW-DF, CP2K NON_LOCAL+UKS+k pin, ratio **0.35**), `gpw-d3-kpoint-stress`
+  (CP2K NUMERICAL Δσ multi-k, ratio **0.185**), `gpw-d3bj-kpoint-stress`
+  (ratio **0.382**), `gpw-d3-atm-kpoint-stress` (C9 on−off multi-k, ratio
+  **0.285**), `gpw-bomd-uks-kpoints` (dual \(P_k^\sigma\) warm start, ratio
+  **1.18**), `gpw-vdw-uks-multigrid` (Γ-UKS NGRIDS+DRSLL, ratio **4.44**
+  within_10x). Four staff stay `[~]` unmerged: `gpw-d4-kpoint-stress` /
+  `gpw-ts-kpoint-stress` / `gpw-xdm-kpoint-stress` /
+  `gpw-hirshfeld-uks-kpoints` (feat tips kept; do not demote). Specs closed
+  (6 deleted). Residual pending **4** (eNH combo, GPW UKS MLWF, SCS-MP2,
+  optB88 UKS). Roadmap: **no ○/✓ table flips**; residual prose already
+  product for the six landings. Clearup already ran. Queue **not**
+  exhausted. No push.
+
 - **2026-08-01 bootstrap + GapCensus wave 4 (shift) (parent `dev` @
   `87ae7924`):** recover clean (incomplete=0, specs=0, wf/*=0, worktrees=0;
   wiped leftover `build/`). Prior pending residual 0 after harness wave 3 —

@@ -237,7 +237,8 @@ AIMD works by binding a force-providing method/component to `md::Phase::force`
   BOMD** is product (`reg_gpw-bomd-kpoints`; previous-step \(P_k\) SCF
   warm start mirroring CP2K EXTRAPOLATION USE_PREV_P; CP2K Quickstep
   AIMD k-mesh pin, fair wall ratio 0.064; multi-k XL is product too;
-  multi-k UKS BOMD pin still queued as `gpw-bomd-uks-kpoints`).
+  multi-k UKS BOMD is product too — dual-spin previous-step
+  \(P_k^\sigma\) warm start, `reg_gpw-bomd-uks-kpoints`).
 - `cpu::pw::PWEvaluator` with `with_gradient(true)` → **plane-wave BOMD**
   (analytic local + Ewald + KB forces; default is energy-only); foothold
   `reg_pw-bomd-h`.

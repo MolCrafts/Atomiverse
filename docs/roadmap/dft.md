@@ -43,12 +43,14 @@ UKS **multigrid** (`reg_gpw-uks-multigrid-kpoints`), multi-k CPMD
 **electronic thermostat** (`reg_cpmd-thermostat-kpoints`), multi-k UKS
 **SGCP OT** (`reg_second-gen-cpmd-ot-uks-kpoints`), linearized-XL
 **stress** (`reg_xl-bomd-linearized-stress`), and finite-q spin×GGA
-DFPT (`reg_dfpt-gga-spin-finite-q-si`); open residuals after that wave
-(post-merge of green wave-5 pins): multi-k UKS nonlocal **vdW**, multi-k
-**D3/D3(BJ)/ATM stress**, multi-k UKS **BOMD**, and Γ-UKS vdW **multigrid**
-are product; open residuals: multi-k **D4/TS/XDM stress** dedicated pins,
-multi-k UKS **Hirshfeld**, multi-k UKS CPMD **eNH** combo pin, GPW spin
-**MLWF**, SCS-**MP2** scale pin, Γ-UKS **optB88-vdW**;
+DFPT (`reg_dfpt-gga-spin-finite-q-si`); **harness wave 1 (shift, 2026-08-01)**
+ships multi-k UKS nonlocal **vdW** (`reg_gpw-vdw-uks-kpoints`), multi-k
+**D3/D3(BJ)/ATM stress** pins, multi-k UKS **BOMD**
+(`reg_gpw-bomd-uks-kpoints`), and Γ-UKS vdW **multigrid**
+(`reg_gpw-vdw-uks-multigrid`); open residuals: multi-k **D4/TS/XDM stress**
+dedicated pins (staff `[~]` unmerged), multi-k UKS **Hirshfeld** (`[~]`),
+multi-k UKS CPMD **eNH** combo pin, GPW spin **MLWF**, SCS-**MP2** scale
+pin, Γ-UKS **optB88-vdW**;
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD

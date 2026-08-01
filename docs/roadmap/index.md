@@ -294,10 +294,13 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   `reg_second-gen-cpmd-ot-uks-kpoints` /
   `reg_xl-bomd-linearized-stress` /
   `reg_dfpt-gga-spin-finite-q-si`);
-  residual pending (GapCensus wave 5): multi-k UKS nonlocal vdW,
-  multi-k D3/D3(BJ)/ATM/D4/TS/XDM stress dedicated pins, multi-k UKS
-  BOMD, Γ-UKS vdW multigrid, multi-k UKS Hirshfeld, multi-k UKS CPMD
-  eNH combo pin, GPW spin MLWF, SCS-MP2 scale pin, Γ-UKS optB88-vdW;
+  product after green wave-5 merges: multi-k UKS nonlocal vdW
+  (`reg_gpw-vdw-uks-kpoints`), multi-k D3/D3(BJ)/ATM stress pins,
+  multi-k UKS BOMD (`reg_gpw-bomd-uks-kpoints`), Γ-UKS vdW multigrid
+  (`reg_gpw-vdw-uks-multigrid`); residual pending / incomplete: multi-k
+  D4/TS/XDM stress dedicated pins (staff `[~]`), multi-k UKS Hirshfeld
+  (`[~]`), multi-k UKS CPMD eNH combo pin, GPW spin MLWF, SCS-MP2 scale
+  pin, Γ-UKS optB88-vdW;
   stock VV10 remains **blocked** (no CP2K twin); hybrids / meta-GGA /
   GAPW blocked — see `cp2k-method-queue.md` (queue not exhausted —
   GapCensus owns next discovery).

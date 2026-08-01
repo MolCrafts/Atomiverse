@@ -1179,18 +1179,26 @@ molecular post-HF / classical MW / CUDA ports (other loops). Roadmap: **no
 GPW spin MLWF + OptB88 UKS). **Pending = 14**; **in_progress = 0**;
 **blocked = 6**.
 
+**Harness wave 1 (shift) 2026-08-01 (parent `dev` @ `424d6989`):** **6/10**
+staffed slugs merged → `## done` (`gpw-vdw-uks-kpoints`,
+`gpw-d3-kpoint-stress`, `gpw-d3bj-kpoint-stress`,
+`gpw-d3-atm-kpoint-stress`, `gpw-bomd-uks-kpoints`,
+`gpw-vdw-uks-multigrid`) — six `--no-ff` merges + post-merge roadmap
+residual refresh (`424d6989`). Specs closed (deleted). **Incomplete kept
+`[~]` ×4** (unmerged staff tips; do not demote): `gpw-d4-kpoint-stress`
+(`wf/gpw-d4-kpoint-stress` @ `95a51e49`), `gpw-ts-kpoint-stress`
+(`wf/gpw-ts-kpoint-stress` @ `1a4a5311`), `gpw-xdm-kpoint-stress`
+(`wf/gpw-xdm-kpoint-stress` @ `e73e18d7`), `gpw-hirshfeld-uks-kpoints`
+(`wf/gpw-hirshfeld-uks-kpoints` @ `bc981d93`) — feat + reg + REFERENCE on
+tips; not merged this harness. **Pending residual = 4**
+(`cpmd-uks-thermostat-kpoints`, `periodic-wannier-gpw-uks`,
+`periodic-scs-mp2-si`, `gpw-optb88-uks` — not queue exhausted; GapCensus
+owns next discovery). **in_progress = 4**; **blocked = 6** unchanged.
+Clearup already ran (no isolation worktrees; incomplete `wf/*` kept). No
+push.
+
 ## pending
 
-- [ ] `gpw-vdw-uks-kpoints` | Multi-k UKS nonlocal vdW-DF/DF2/rVV10 (dual-spin V_nl fold) | gpw | twin: CP2K 2026.1 NON_LOCAL + UKS + k-mesh | deps: gpw-vdw-uks ✓, gpw-vdw-kpoints ✓ | write-first
-- [ ] `gpw-d3-kpoint-stress` | Multi-k analytic cell stress with DFT-D3 zero damping (dedicated pin) | gpw | twin: CP2K 2026.1 NUMERICAL stress-difference + k-mesh | deps: gpw-d3-stress ✓, gpw-kpoint-stress ✓ | write-first
-- [ ] `gpw-d3bj-kpoint-stress` | Multi-k analytic cell stress with DFT-D3(BJ) (dedicated pin) | gpw | twin: CP2K 2026.1 NUMERICAL BJ stress-difference + k-mesh | deps: gpw-d3bj-stress ✓ | write-first
-- [ ] `gpw-d3-atm-kpoint-stress` | Multi-k analytic cell stress with D3 three-body ATM (C9) | gpw | twin: CP2K 2026.1 NUMERICAL C9 on−off + k-mesh | deps: gpw-d3-atm-stress ✓ | write-first
-- [ ] `gpw-d4-kpoint-stress` | Multi-k analytic cell stress with DFT-D4 | gpw | twin: dftd4 3.7.0 strained-cell (no CP2K DFTD4) | deps: gpw-d4-stress ✓ | write-first
-- [ ] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | write-first
-- [ ] `gpw-xdm-kpoint-stress` | Multi-k analytic cell stress with free-atom XDM | gpw | twin: pure-Python XDM strain | deps: gpw-xdm-stress ✓ | write-first
-- [ ] `gpw-bomd-uks-kpoints` | Multi-k UKS plain BOMD (previous-step dual P_k^σ warm start) | dynamics | twin: CP2K 2026.1 Quickstep UKS AIMD k-mesh | deps: gpw-bomd-kpoints ✓, gpw-kpoint-uks-forces ✓ | write-first
-- [ ] `gpw-vdw-uks-multigrid` | Γ-UKS nonlocal vdW on REL_CUTOFF multigrid | gpw | twin: CP2K 2026.1 NGRIDS + DRSLL + UKS | deps: gpw-vdw-uks ✓, gpw-vdw-multigrid ✓ | write-first
-- [ ] `gpw-hirshfeld-uks-kpoints` | Multi-k UKS Hirshfeld volume ratios for TS/MBD | gpw | twin: libMBD / literature V/V_free | deps: gpw-hirshfeld-uks ✓, gpw-hirshfeld-kpoints ✓ | write-first
 - [ ] `cpmd-uks-thermostat-kpoints` | Multi-k UKS CPMD electronic Nosé–Hoover (combo pin) | dynamics | twin: literature NVE/thermostat envelope (no CP fictitious twin) | deps: cpmd-thermostat-kpoints ✓, cpmd-uks-kpoints ✓ | write-first
 - [ ] `periodic-wannier-gpw-uks` | GPW-grid Marzari–Vanderbilt MLWF on collinear UKS | response | twin: CP2K 2026.1 Quickstep UKS MLWF | deps: periodic-wannier-gpw ✓, periodic-wannier-uks ✓ | write-first
 - [ ] `periodic-scs-mp2-si` | SCS-MP2 scales on Γ RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 SCS-MP2 | deps: periodic-ri-mp2-si ✓ | write-first
@@ -1198,9 +1206,19 @@ GPW spin MLWF + OptB88 UKS). **Pending = 14**; **in_progress = 0**;
 
 ## in_progress
 
-(empty — recover clean after harness wave 3; GapCensus wave 5 refill; not queue exhausted)
+- [~] `gpw-d4-kpoint-stress` | Multi-k analytic cell stress with DFT-D4 | gpw | twin: dftd4 3.7.0 strained-cell (no CP2K DFTD4) | deps: gpw-d4-stress ✓ | `wf/gpw-d4-kpoint-stress` @ `95a51e49` (feat + reg + REFERENCE; unmerged — resume/merge next)
+- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `1a4a5311` (feat + reg + REFERENCE; unmerged — resume/merge next)
+- [~] `gpw-xdm-kpoint-stress` | Multi-k analytic cell stress with free-atom XDM | gpw | twin: pure-Python XDM strain | deps: gpw-xdm-stress ✓ | `wf/gpw-xdm-kpoint-stress` @ `e73e18d7` (feat + reg + REFERENCE; unmerged — resume/merge next)
+- [~] `gpw-hirshfeld-uks-kpoints` | Multi-k UKS Hirshfeld volume ratios for TS/MBD | gpw | twin: libMBD / literature V/V_free | deps: gpw-hirshfeld-uks ✓, gpw-hirshfeld-kpoints ✓ | `wf/gpw-hirshfeld-uks-kpoints` @ `bc981d93` (feat + reg + REFERENCE; unmerged — resume/merge next)
 
+## done (harness wave 1 (shift) 2026-08-01)
 
+- [x] `gpw-vdw-uks-kpoints` | Multi-k UKS nonlocal vdW-DF/DF2/rVV10 (dual-spin V_nl fold) | gpw | `regressions/gpw/gpw-vdw-uks-kpoints` (CP2K 2026.1 NON_LOCAL + UKS + MP 2×1×1; E_disp parity 4.0e-5 Ha) | ratio **0.35** (G2 twin vs CP2K 60.2 s OMP=8) | 2026-08-01
+- [x] `gpw-d3-kpoint-stress` | Multi-k analytic cell stress with DFT-D3 zero damping (dedicated pin) | gpw | `regressions/gpw/gpw-d3-kpoint-stress` (CP2K NUMERICAL stress-difference; Δσ parity 7.5e-11 Ha/Bohr³) | ratio **0.185** (21.84 / 118.34) | 2026-08-01
+- [x] `gpw-d3bj-kpoint-stress` | Multi-k analytic cell stress with DFT-D3(BJ) (dedicated pin) | gpw | `regressions/gpw/gpw-d3bj-kpoint-stress` (CP2K NUMERICAL BJ stress-difference) | ratio **0.382** (23.0 / 60.111) | 2026-08-01
+- [x] `gpw-d3-atm-kpoint-stress` | Multi-k analytic cell stress with D3 three-body ATM (C9) | gpw | `regressions/gpw/gpw-d3-atm-kpoint-stress` (CP2K NUMERICAL C9 on−off; Δσ parity 8.1e-14 Ha/Bohr³) | ratio **0.285** (5.34 / 18.74) | 2026-08-01
+- [x] `gpw-bomd-uks-kpoints` | Multi-k UKS plain BOMD (previous-step dual P_k^σ warm start) | dynamics | `regressions/gpw/gpw-bomd-uks-kpoints` (CP2K Quickstep UKS AIMD k-mesh pin) | ratio **1.18** | 2026-08-01
+- [x] `gpw-vdw-uks-multigrid` | Γ-UKS nonlocal vdW on REL_CUTOFF multigrid | gpw | `regressions/gpw/gpw-vdw-uks-multigrid` (CP2K NGRIDS 4 + DRSLL + UKS; E_disp 1.3e-5 Ha) | ratio **4.44** (within_10x; SC RPS FFT cost) | 2026-08-01
 
 ## done (harness wave 3 (shift) 2026-07-31)
 

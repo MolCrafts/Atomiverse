@@ -3,6 +3,18 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Closed — CP2K harness wave 1 (shift) (2026-08-01)
+
+Merged into `dev` (six `--no-ff` feature merges + roadmap residual refresh
+HEAD `424d6989`); specs deleted; history is the git log. Incomplete staff
+kept `[~]` on unmerged `wf/*` (D4/TS/XDM k-stress + multi-k UKS Hirshfeld).
+
+| Queue | Specs (deleted; see git) | Shipped highlights |
+| ----- | ------------------------ | ------------------ |
+| cp2k-method-loop harness wave 1 (shift) | gpw-vdw-uks-kpoints, gpw-d3-kpoint-stress, gpw-d3bj-kpoint-stress, gpw-d3-atm-kpoint-stress, gpw-bomd-uks-kpoints, gpw-vdw-uks-multigrid | multi-k UKS nonlocal vdW-DF; multi-k D3/D3(BJ)/ATM stress pins; multi-k UKS BOMD dual \(P_k^\sigma\); Γ-UKS vdW multigrid |
+
+Do not re-create closed slugs without superseding intent.
+
 ## Closed — driver registration + AIMD wrappers (2026-07-29)
 
 Shipped earlier on `dev` (`5e688676` / `17f52238` / merge `601ac445`); specs
@@ -459,9 +471,11 @@ to green. Specs deleted on close; history in git (commits f9a6443a..HEAD).
 | [rsh-eri-cam-b3lyp](rsh-eri-cam-b3lyp/) | pyscf / RSH | open (deferred) |
 
 Open CP2K specs on `dev` = **0**. Stock VV10 is **blocked**. Incomplete
-`[~]` = **0** (harness wave 3 closed `gpw-ts-stress` / `gpw-xdm-stress` and the
-rest of the wave-3 staff; Recover 2026-08-01). Pending residual **14**
-(GapCensus wave 5 refill: 11 re-verified + 3 new); **not** queue exhausted.
+`[~]` = **4** (`gpw-d4-kpoint-stress`, `gpw-ts-kpoint-stress`,
+`gpw-xdm-kpoint-stress`, `gpw-hirshfeld-uks-kpoints` — unmerged `wf/*` after
+harness wave 1 2026-08-01). Pending residual **4**
+(`cpmd-uks-thermostat-kpoints`, `periodic-wannier-gpw-uks`,
+`periodic-scs-mp2-si`, `gpw-optb88-uks`); **not** queue exhausted.
 
 ## Closed — CP2K harness wave 12 (2026-07-26)
 
