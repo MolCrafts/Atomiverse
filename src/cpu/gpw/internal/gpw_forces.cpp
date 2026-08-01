@@ -19,6 +19,10 @@
 #include <stdexcept>
 #include <vector>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/dft_plus_u.h"
@@ -1137,63 +1141,68 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
     std::vector<std::array<double, 3>> forces(na, {0.0, 0.0, 0.0});
 
     // ── AO Pulay: Σ_k w_k 2 Re[ W_μν* ⟨dμφ|ν⟩_k − P_μν* ⟨dμφ|T+Vnl|ν⟩_k ] ──
-    std::vector<Cplx> s_k, t_k, v_k, vA_k;
-    for (int A = 0; A < na; ++A) {
-        for (int k = 0; k < 3; ++k) {
-            double f = 0.0;
-            std::vector<const GpwAtom*> all(static_cast<std::size_t>(na));
-            for (int a = 0; a < na; ++a)
-                all[static_cast<std::size_t>(a)] = &atoms[a];
+    // Parallel over atoms: each A writes only forces[A][*].
+    std::vector<const GpwAtom*> all(static_cast<std::size_t>(na));
+    for (int a = 0; a < na; ++a)
+        all[static_cast<std::size_t>(a)] = &atoms[a];
+#pragma omp parallel
+    {
+        std::vector<Cplx> s_k, t_k, v_k, vA_k;
+#pragma omp for schedule(dynamic)
+        for (int A = 0; A < na; ++A) {
             const std::vector<const GpwAtom*> onlyA = {&atoms[A]};
-
-            for (int mu = atom_off[A]; mu < atom_off[A + 1]; ++mu) {
-                const GridBasisFunction& dmu = dphi[mu][k];
-                const double rdmu = drad[mu][k];
-                for (int nu = 0; nu < nb; ++nu) {
-                    const double reach =
-                        rdmu + radii[static_cast<std::size_t>(nu)];
-                    pair_ST_k(dmu, basis[nu], cfg.cell, mimg, reach, kpts, s_k,
-                              t_k);
-                    pair_Vnl_k(dmu, basis[nu], all, cfg.cell, mimg, reach, kpts,
-                               v_k);
-                    for (int ik = 0; ik < nk; ++ik) {
-                        const double wk =
-                            kpts[static_cast<std::size_t>(ik)].weight;
-                        const Cplx Wmn =
-                            W_k[static_cast<std::size_t>(ik)](mu, nu);
-                        const Cplx Pmn =
-                            P_k[static_cast<std::size_t>(ik)](mu, nu);
-                        const Cplx s = s_k[static_cast<std::size_t>(ik)];
-                        const Cplx t = t_k[static_cast<std::size_t>(ik)];
-                        const Cplx v = v_k[static_cast<std::size_t>(ik)];
-                        // 2 Re(W† s) with Hermitian W → 2 Re(conj(W)*s)
-                        f += 2.0 * wk * std::real(std::conj(Wmn) * s);
-                        f -= 2.0 * wk * std::real(std::conj(Pmn) * t);
-                        f -= 2.0 * wk * std::real(std::conj(Pmn) * v);
+            for (int k = 0; k < 3; ++k) {
+                double f = 0.0;
+                for (int mu = atom_off[A]; mu < atom_off[A + 1]; ++mu) {
+                    const GridBasisFunction& dmu = dphi[mu][k];
+                    const double rdmu = drad[mu][k];
+                    for (int nu = 0; nu < nb; ++nu) {
+                        const double reach =
+                            rdmu + radii[static_cast<std::size_t>(nu)];
+                        pair_ST_k(dmu, basis[nu], cfg.cell, mimg, reach, kpts,
+                                  s_k, t_k);
+                        pair_Vnl_k(dmu, basis[nu], all, cfg.cell, mimg, reach,
+                                   kpts, v_k);
+                        for (int ik = 0; ik < nk; ++ik) {
+                            const double wk =
+                                kpts[static_cast<std::size_t>(ik)].weight;
+                            const Cplx Wmn =
+                                W_k[static_cast<std::size_t>(ik)](mu, nu);
+                            const Cplx Pmn =
+                                P_k[static_cast<std::size_t>(ik)](mu, nu);
+                            const Cplx s = s_k[static_cast<std::size_t>(ik)];
+                            const Cplx t = t_k[static_cast<std::size_t>(ik)];
+                            const Cplx v = v_k[static_cast<std::size_t>(ik)];
+                            // 2 Re(W† s) with Hermitian W → 2 Re(conj(W)*s)
+                            f += 2.0 * wk * std::real(std::conj(Wmn) * s);
+                            f -= 2.0 * wk * std::real(std::conj(Pmn) * t);
+                            f -= 2.0 * wk * std::real(std::conj(Pmn) * v);
+                        }
                     }
                 }
-            }
-            // Operator-center TI for nonlocal on A: +2 Re P† ⟨dμφ|V_A|ν⟩
-            for (int mu = 0; mu < nb; ++mu) {
-                const GridBasisFunction& dmu = dphi[mu][k];
-                const double rdmu = drad[mu][k];
-                for (int nu = 0; nu < nb; ++nu) {
-                    const double reach =
-                        rdmu + radii[static_cast<std::size_t>(nu)];
-                    pair_Vnl_k(dmu, basis[nu], onlyA, cfg.cell, mimg, reach,
-                               kpts, vA_k);
-                    for (int ik = 0; ik < nk; ++ik) {
-                        const double wk =
-                            kpts[static_cast<std::size_t>(ik)].weight;
-                        const Cplx Pmn =
-                            P_k[static_cast<std::size_t>(ik)](mu, nu);
-                        f += 2.0 * wk
-                             * std::real(std::conj(Pmn)
-                                         * vA_k[static_cast<std::size_t>(ik)]);
+                // Operator-center TI for nonlocal on A: +2 Re P† ⟨dμφ|V_A|ν⟩
+                for (int mu = 0; mu < nb; ++mu) {
+                    const GridBasisFunction& dmu = dphi[mu][k];
+                    const double rdmu = drad[mu][k];
+                    for (int nu = 0; nu < nb; ++nu) {
+                        const double reach =
+                            rdmu + radii[static_cast<std::size_t>(nu)];
+                        pair_Vnl_k(dmu, basis[nu], onlyA, cfg.cell, mimg, reach,
+                                   kpts, vA_k);
+                        for (int ik = 0; ik < nk; ++ik) {
+                            const double wk =
+                                kpts[static_cast<std::size_t>(ik)].weight;
+                            const Cplx Pmn =
+                                P_k[static_cast<std::size_t>(ik)](mu, nu);
+                            f += 2.0 * wk
+                                 * std::real(std::conj(Pmn)
+                                             * vA_k[static_cast<std::size_t>(
+                                                 ik)]);
+                        }
                     }
                 }
+                forces[A][k] = f;
             }
-            forces[A][k] = f;
         }
     }
 
@@ -1201,61 +1210,85 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
     // RKS: −2 Σ_k w_k Σ_g w Veff Re[ (∂χ_μ) (P χ†)_μ ]
     // UKS: −2 Σ_k w_k Σ_g w [Veff^α Re(∂χ y_α) + Veff^β Re(∂χ y_β)]
     // kbgd.chi[ik][g * (nb*3) + (u*3+k)] = ∂χ_u^k / ∂R_k at g.
+    // Parallel over grid points with thread-private force scratch.
     const int nbd = nb * 3;
     for (int ik = 0; ik < nk; ++ik) {
         const double wk = kpts[static_cast<std::size_t>(ik)].weight;
         const auto& chi = kbg.chi[static_cast<std::size_t>(ik)];
         const auto& dchi = kbgd.chi[static_cast<std::size_t>(ik)];
-        for (long g = 0; g < ng; ++g) {
-            const Cplx* v = chi.data() + static_cast<std::size_t>(g) * nb;
-            const Cplx* dv =
-                dchi.data() + static_cast<std::size_t>(g) * nbd;
+#pragma omp parallel
+        {
+            std::vector<std::array<double, 3>> f_loc(na, {0.0, 0.0, 0.0});
+            std::vector<Cplx> y(static_cast<std::size_t>(nb));
+            std::vector<Cplx> ya, yb;
             if (uks) {
-                const CplxMatrix& Pak = Pa_k[static_cast<std::size_t>(ik)];
-                const CplxMatrix& Pbk = Pb_k[static_cast<std::size_t>(ik)];
-                std::vector<Cplx> ya(static_cast<std::size_t>(nb));
-                std::vector<Cplx> yb(static_cast<std::size_t>(nb));
-                for (int mu = 0; mu < nb; ++mu) {
-                    Cplx sa(0, 0), sb(0, 0);
-                    for (int nu = 0; nu < nb; ++nu) {
-                        sa += Pak(mu, nu) * std::conj(v[nu]);
-                        sb += Pbk(mu, nu) * std::conj(v[nu]);
+                ya.resize(static_cast<std::size_t>(nb));
+                yb.resize(static_cast<std::size_t>(nb));
+            }
+#pragma omp for schedule(static)
+            for (long g = 0; g < ng; ++g) {
+                const Cplx* v = chi.data() + static_cast<std::size_t>(g) * nb;
+                const Cplx* dv =
+                    dchi.data() + static_cast<std::size_t>(g) * nbd;
+                if (uks) {
+                    const CplxMatrix& Pak = Pa_k[static_cast<std::size_t>(ik)];
+                    const CplxMatrix& Pbk = Pb_k[static_cast<std::size_t>(ik)];
+                    for (int mu = 0; mu < nb; ++mu) {
+                        Cplx sa(0, 0), sb(0, 0);
+                        for (int nu = 0; nu < nb; ++nu) {
+                            sa += Pak(mu, nu) * std::conj(v[nu]);
+                            sb += Pbk(mu, nu) * std::conj(v[nu]);
+                        }
+                        ya[static_cast<std::size_t>(mu)] = sa;
+                        yb[static_cast<std::size_t>(mu)] = sb;
                     }
-                    ya[static_cast<std::size_t>(mu)] = sa;
-                    yb[static_cast<std::size_t>(mu)] = sb;
+                    const double va = veff_a[static_cast<std::size_t>(g)] * wgt;
+                    const double vb = veff_b[static_cast<std::size_t>(g)] * wgt;
+                    for (int u = 0; u < nb; ++u)
+                        for (int k = 0; k < 3; ++k) {
+                            const Cplx dval =
+                                dv[static_cast<std::size_t>(u) * 3
+                                   + static_cast<std::size_t>(k)];
+                            f_loc[owner[u]][k] -=
+                                2.0 * wk
+                                * (va
+                                       * std::real(
+                                           dval
+                                           * ya[static_cast<std::size_t>(u)])
+                                   + vb
+                                         * std::real(
+                                             dval
+                                             * yb[static_cast<std::size_t>(
+                                                 u)]));
+                        }
+                } else {
+                    const double vw = veff[static_cast<std::size_t>(g)] * wgt;
+                    if (vw == 0.0)
+                        continue;
+                    const CplxMatrix& Pk = P_k[static_cast<std::size_t>(ik)];
+                    for (int mu = 0; mu < nb; ++mu) {
+                        Cplx s(0, 0);
+                        for (int nu = 0; nu < nb; ++nu)
+                            s += Pk(mu, nu) * std::conj(v[nu]);
+                        y[static_cast<std::size_t>(mu)] = s;
+                    }
+                    for (int u = 0; u < nb; ++u)
+                        for (int k = 0; k < 3; ++k) {
+                            const Cplx dval =
+                                dv[static_cast<std::size_t>(u) * 3
+                                   + static_cast<std::size_t>(k)];
+                            f_loc[owner[u]][k] -=
+                                2.0 * wk * vw
+                                * std::real(dval
+                                            * y[static_cast<std::size_t>(u)]);
+                        }
                 }
-                const double va = veff_a[static_cast<std::size_t>(g)] * wgt;
-                const double vb = veff_b[static_cast<std::size_t>(g)] * wgt;
-                for (int u = 0; u < nb; ++u)
-                    for (int k = 0; k < 3; ++k) {
-                        const Cplx dval = dv[static_cast<std::size_t>(u) * 3
-                                             + static_cast<std::size_t>(k)];
-                        forces[owner[u]][k] -=
-                            2.0 * wk
-                            * (va * std::real(dval * ya[static_cast<std::size_t>(u)])
-                               + vb * std::real(
-                                          dval * yb[static_cast<std::size_t>(u)]));
-                    }
-            } else {
-                const double vw = veff[static_cast<std::size_t>(g)] * wgt;
-                if (vw == 0.0)
-                    continue;
-                const CplxMatrix& Pk = P_k[static_cast<std::size_t>(ik)];
-                std::vector<Cplx> y(static_cast<std::size_t>(nb));
-                for (int mu = 0; mu < nb; ++mu) {
-                    Cplx s(0, 0);
-                    for (int nu = 0; nu < nb; ++nu)
-                        s += Pk(mu, nu) * std::conj(v[nu]);
-                    y[static_cast<std::size_t>(mu)] = s;
-                }
-                for (int u = 0; u < nb; ++u)
-                    for (int k = 0; k < 3; ++k) {
-                        const Cplx dval = dv[static_cast<std::size_t>(u) * 3
-                                             + static_cast<std::size_t>(k)];
-                        forces[owner[u]][k] -=
-                            2.0 * wk * vw
-                            * std::real(dval * y[static_cast<std::size_t>(u)]);
-                    }
+            }
+#pragma omp critical
+            {
+                for (int a = 0; a < na; ++a)
+                    for (int k = 0; k < 3; ++k)
+                        forces[a][k] += f_loc[a][k];
             }
         }
     }
