@@ -164,15 +164,27 @@ struct GpwResult {
     /// @brief Occupied MO coefficients per k (k-path only): each entry is a
     ///        row-major complex matrix of shape `nb × n_occ` (RKS) or
     ///        `nb × n_alpha` (UKS α). Empty for pure Γ. Used by
-    ///        `gpw_forces_analytic` / `gpw_stress` to rebuild \(P_k\) / \(W_k\).
+    ///        `gpw_forces_analytic` / `gpw_stress` to rebuild \(P_k\) / \(W_k\)
+    ///        on the **fixed-integer** path. Under metallic smearing the free-
+    ///        energy force path uses full `C_k` + `f_k` instead.
     std::vector<std::vector<std::complex<double>>> C_occ_k;
     /// @brief Multi-k UKS β occupied MOs per k: row-major `nb × n_beta`
     ///        (empty for RKS / Γ). Paired with `eps_k_beta`.
     std::vector<std::vector<std::complex<double>>> C_occ_k_beta;
+    /// @brief Per-k band occupations after a metallic-smear SCF (empty when
+    ///        `smearing == none`). RKS: \(f_b\in[0,2]\) band form, length =
+    ///        `eps_k[ik].size()`. Multi-k UKS α: \(f_b\in[0,1]\) spinor form;
+    ///        β lives in `f_k_beta`. Free-energy forces rebuild
+    ///        \(P_k=\sum_b f_b\,c_b c_b^\dagger\),
+    ///        \(W_k=\sum_b f_b\varepsilon_b\,c_b c_b^\dagger\).
+    std::vector<std::vector<double>> f_k;
+    /// @brief Multi-k UKS β band occupations per k (empty for RKS / fixed occ).
+    std::vector<std::vector<double>> f_k_beta;
     /// @brief Multi-k complex densities \(P_k\) (nb × nb Hermitian) after a
     ///        converged k-path SCF — the XL-BOMD advance payload. RKS: total
-    ///        closed-shell \(P_k\) (occ = 2). UKS: α-spin \(P_k^\alpha\)
-    ///        (occ = 1). Empty for pure Γ runs.
+    ///        closed-shell \(P_k\) (occ = 2 fixed, or fractional when smear).
+    ///        UKS: α-spin \(P_k^\alpha\) (occ = 1 or fractional). Empty for
+    ///        pure Γ runs.
     std::vector<linalg::CplxMatrix> P_k;
     /// @brief Multi-k UKS β-spin densities \(P_k^\beta\) (nb × nb Hermitian;
     ///        empty for RKS / Γ). Paired with `P_k` for dual-spin XL-BOMD.

@@ -10,21 +10,23 @@
 ///         + ∫ V_es(r) ∂n_c^A(r)/∂R_A dr,
 ///
 /// with the energy-weighted density matrix
-/// \(W = \sum_i 2 \varepsilon_i c_{\mu i} c_{\nu i}\) (closed shell) or
-/// \(W = W_\alpha + W_\beta\) with occupancy-1 spin channels for UKS. All
-/// AO-derivative terms use the Gaussian center-derivative identity
-/// ∂φ_a/∂A_x = 2α φ_{a+1_x} − a_x φ_{a−1_x}, so they reuse the existing overlap
-/// / kinetic / GTH / collocation kernels with raised/lowered Cartesian powers.
-/// The GTH operator-center derivative is obtained from the basis derivatives via
-/// translational invariance (∂_C = −(∂_μ + ∂_ν)). The grid term holds the
-/// converged effective potential V_eff fixed (Hellmann–Feynman for the density);
-/// UKS uses spin-resolved \(V_\mathrm{eff}^{\alpha/\beta}\) matching the SCF.
-/// V_es held fixed likewise for the moving Gaussian ionic core n_c^A.
+/// \(W = \sum_i f_i \varepsilon_i c_{\mu i} c_{\nu i}^*\) (closed shell
+/// \(f_i=2\) fixed, or fractional under metallic smear; UKS \(f_i=1\) fixed or
+/// fractional spinor occupations). All AO-derivative terms use the Gaussian
+/// center-derivative identity ∂φ_a/∂A_x = 2α φ_{a+1_x} − a_x φ_{a−1_x}, so they
+/// reuse the existing overlap / kinetic / GTH / collocation kernels with
+/// raised/lowered Cartesian powers. The GTH operator-center derivative is
+/// obtained from the basis derivatives via translational invariance
+/// (∂_C = −(∂_μ + ∂_ν)). The grid term holds the converged effective potential
+/// V_eff fixed (Hellmann–Feynman for the density); UKS uses spin-resolved
+/// \(V_\mathrm{eff}^{\alpha/\beta}\) matching the SCF. V_es held fixed likewise
+/// for the moving Gaussian ionic core n_c^A.
 ///
 /// On a Monkhorst–Pack / explicit k mesh the assembly is k-summed with
 /// Bloch-phased complex matrices and complex χ^k (see `internal/kpoints.h`);
-/// `GpwResult::C_occ_k` (RKS / UKS α) and `C_occ_k_beta` (UKS β) supply the
-/// occupied MOs used to rebuild \(P_k^\sigma\) / \(W_k^\sigma\).
+/// fixed occupations rebuild \(P_k^\sigma\) / \(W_k^\sigma\) from
+/// `GpwResult::C_occ_k` (and β); metallic free-energy forces use full
+/// `C_k` + fractional `f_k` (and β) so \(P,W\) match the Mermin SCF.
 ///
 /// Dudarev DFT+U (`cfg.plus_u`): the Mulliken occupation depends on geometry
 /// through the overlap, so the +U energy contributes an occupation-matrix
@@ -51,10 +53,13 @@ namespace gpw {
 /// Runs `GpwDft`, then assembles the Pulay (W·dS), core-Hamiltonian (P·dT,
 /// P·dV_pp), grid (P·dV_grid against the converged V_eff) and ionic-core
 /// Hellmann–Feynman (∫V_es ∂n_c) terms analytically. Supports closed-shell RKS,
-/// Γ-point UKS, and multi-k collinear UKS (`cfg.n_alpha`/`n_beta` + k mesh).
+/// Γ-point UKS, multi-k collinear UKS (`cfg.n_alpha`/`n_beta` + k mesh), and
+/// multi-k RKS/UKS **free-energy** forces under metallic FD/MP smearing
+/// (\(F=-\partial F_{\mathrm{Mermin}}/\partial R\) via fractional \(P_k,W_k\)).
 ///
 /// @param atoms GPW atoms (basis + GTH PP), as for `GpwDft::run`.
-/// @param cfg   SCF configuration (grid, XC, electrostatics, UKS occupations).
+/// @param cfg   SCF configuration (grid, XC, electrostatics, UKS occupations,
+///        optional `smearing`/`degauss`/`extra_bands`).
 /// @param guess_C Optional warm-start MO coefficients for the internal SCF
 ///        (e.g. the energy pass just converged at this geometry — XL-BOMD
 ///        path). Default nullptr keeps the cold solve bit-for-bit. UKS ignores
