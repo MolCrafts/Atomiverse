@@ -356,6 +356,9 @@ if(ATV_BUILD_GPW)
     # Nonlocal vdW-DF on the multi-k RKS path (Γ-limit identity + offline
     # CP2K 2026.1 KPOINTS + NON_LOCAL DRSLL pin — gpw-vdw-kpoints).
     atv_add_regression(gpw gpw-vdw-kpoints THREADS 8)
+    # Multi-k RKS nonlocal vdW analytic ionic forces (SC V_nl on k-path force
+    # assembly; offline CP2K 2026.1 ENERGY_FORCE + NON_LOCAL DRSLL + KPOINTS).
+    atv_add_regression(gpw gpw-vdw-kpoint-forces THREADS 8)
     # Γ collinear-UKS nonlocal vdW: V_nl on the total density in both spin
     # potentials + E_c^nl on e_disp (offline CP2K 2026.1 LSD DRSLL pin).
     atv_add_regression(gpw gpw-vdw-uks THREADS 8)
