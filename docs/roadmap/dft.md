@@ -59,11 +59,14 @@ ships multi-k **D4/XDM stress** (`reg_gpw-d4-kpoint-stress` /
 ships multi-k D4 **ATM forces** (`reg_gpw-d4-atm-kpoint-forces`), multi-k
 UKS **optB88-vdW** (`reg_gpw-optb88-uks-kpoints`), multi-k **SCS-MP2**
 (`reg_periodic-scs-mp2-kpoints`), and GPW **Berry**
-(`reg_periodic-berry-gpw`); open residuals (**incomplete `[~]` only**):
-multi-k **TS stress** (`gpw-ts-kpoint-stress`), multi-k D3 **ATM forces**
+(`reg_periodic-berry-gpw`); open residuals (**incomplete `[~]`**): multi-k
+**TS stress** (`gpw-ts-kpoint-stress`), multi-k D3 **ATM forces**
 (`gpw-d3-atm-kpoint-forces`), Hirshfeld-scaled TS/MBD **forces**
 (`gpw-hirshfeld-forces` — energy folds volumes; force/stress fold still
-unmerged); queue not exhausted — GapCensus owns discovery;
+unmerged); **pending (GapCensus wave 4)**: multi-k D3/D3(BJ)/D4 **force**
+pins, multi-k D4 **ATM stress**, multi-k TS/XDM **forces**, GPW Berry
+**UKS**, Γ SCS-**UMP2**, DFPT GGA×spin×smear; queue not exhausted —
+GapCensus owns discovery;
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -357,7 +360,12 @@ Multi-k **D4 ATM forces** are product (`reg_gpw-d4-atm-kpoint-forces`;
 CP2K libdftd4 multi-k ENERGY_FORCE); multi-k **D3 ATM forces** stay
 incomplete (`[~] gpw-d3-atm-kpoint-forces`). **Hirshfeld-scaled TS/MBD
 forces** remain incomplete (`[~] gpw-hirshfeld-forces`: energy folds
-volume ratios; force/stress fold unmerged on `wf/*`).
+volume ratios; force/stress fold unmerged on `wf/*`). Multi-k dedicated
+**two-body D3 / D3(BJ) / D4 force** pins and multi-k free-atom **TS/XDM
+force** pins remain **pending** (k-path assembly product; Γ force +
+multi-k stress gates already shipped). Multi-k **D4 ATM stress** is
+pending (k-path \(s_9\) fold product; Γ ATM stress + multi-k D4
+two-body stress ✓).
 
 ## 9. Composite DFT Methods
 
@@ -462,11 +470,12 @@ Two periodic DFT engines exist, with disjoint strengths:
   ships multi-k D4 ATM forces, multi-k UKS optB88-vdW, multi-k SCS-MP2,
   GPW Berry (`reg_gpw-d4-atm-kpoint-forces` /
   `reg_gpw-optb88-uks-kpoints` / `reg_periodic-scs-mp2-kpoints` /
-  `reg_periodic-berry-gpw`). Open residuals (**incomplete `[~]` only**):
-  multi-k TS stress, multi-k D3 ATM forces, Hirshfeld-scaled TS/MBD
-  forces (see `cp2k-method-queue.md`; queue not exhausted). Hybrids /
-  meta-GGA / GAPW / PAW remain blocked (queue not exhausted — see
-  `cp2k-method-queue.md`). CPU only.
+  `reg_periodic-berry-gpw`). Open residuals (**incomplete `[~]`**): multi-k
+  TS stress, multi-k D3 ATM forces, Hirshfeld-scaled TS/MBD forces;
+  **pending**: multi-k D3/D3(BJ)/D4 force pins, multi-k D4 ATM stress,
+  multi-k TS/XDM forces, GPW Berry UKS, Γ SCS-UMP2, DFPT GGA×spin×smear
+  (see `cp2k-method-queue.md`; queue not exhausted). Hybrids / meta-GGA /
+  GAPW / PAW remain blocked. CPU only.
 
 | Method                           | CPU | CUDA | Kokkos |
 | -------------------------------- | :-: | :--: | :---: |
@@ -623,12 +632,18 @@ Which engine backs which ✓:
   energy-second-difference pin (21.2006 vs DFPT 21.1911 eV/Å²) **and** a
   CP2K 2026.1 supercell UKS-PBE `VIBRATIONAL_ANALYSIS` X-branch anchor,
   fair wall ratio 0.19; M=0 identity to the restricted finite-q GGA parent).
+  Joint **Γ collinear spin × pure GGA × metallic smear** remains a **pending**
+  offline pin (`dfpt-gga-spin-smearing` — product path accepts the combo;
+  no dedicated gate yet).
 - **Berry-phase polarization**: King-Smith–Vanderbilt (KSV) electronic
   polarization on the PW method (`cpu::pw::BerryPolarization`; string-averaged
   Berry phases over occupied Bloch manifolds; symmetry-exact Si pins,
   `regressions/pw/berry-polarization`) **and collinear spin**
   (`reg_berry-spin-si`) **and GPW-grid KSV** (`reg_periodic-berry-gpw`;
   symmetry-exact Si pins + CP2K Quickstep `&MOMENTS PERIODIC` fair twin).
+  GPW **UKS** dual-channel Berry is product-shaped in
+  `BerryPolarization::compute(GpwDft&)` but unpinned
+  (`periodic-berry-gpw-uks` pending).
 - **Maximally localized Wannier functions**: molecular **Foster–Boys** on
   closed-shell Gaussian RHF/RKS (`cpu::scf::WannierCenters`;
   `regressions/scf/wannier-centers`) **and** periodic multi-k
