@@ -300,3 +300,31 @@ TEST(GpwXcGGA, OptB88VdWDiffersFromPBEOnGaussian) {
     EXPECT_GT(std::abs(opt.e_xc - pbe.e_xc), 1e-6)
         << "OptB88VdW inactive? |dE|=" << std::abs(opt.e_xc - pbe.e_xc);
 }
+
+// Spin-resolved OptB88VdW collapses to closed-shell; differs from spin-PBE.
+TEST(GpwXcGGA, OptB88VdWSpinCollapseAndDiffersFromPBE) {
+    using ATV::cpu::gpw::xc_grid_optb88_vdw;
+    using ATV::cpu::gpw::xc_grid_optb88_vdw_spin;
+    using ATV::cpu::gpw::xc_grid_pbe_spin;
+    const double cell[3] = {10.0, 10.0, 10.0};
+    UniformGrid grid = make_uniform_grid(cell, 200.0);
+    const double c[3] = {5.0, 5.0, 5.0};
+    std::vector<double> rho = gaussian_density(grid, c, 0.8, 1.0);
+    std::vector<double> ra(rho.size()), rb(rho.size());
+    for (std::size_t g = 0; g < rho.size(); ++g) {
+        ra[g] = 0.55 * rho[g];
+        rb[g] = 0.45 * rho[g];
+    }
+    auto opt = xc_grid_optb88_vdw_spin(grid, ra, rb);
+    auto pbe = xc_grid_pbe_spin(grid, ra, rb);
+    EXPECT_TRUE(std::isfinite(opt.e_xc));
+    EXPECT_GT(std::abs(opt.e_xc - pbe.e_xc), 1e-6)
+        << "OptB88VdW spin inactive? |dE|=" << std::abs(opt.e_xc - pbe.e_xc);
+    for (std::size_t g = 0; g < rho.size(); ++g) {
+        ra[g] = 0.5 * rho[g];
+        rb[g] = 0.5 * rho[g];
+    }
+    auto uni = xc_grid_optb88_vdw(grid, rho);
+    auto spin = xc_grid_optb88_vdw_spin(grid, ra, rb);
+    EXPECT_NEAR(uni.e_xc, spin.e_xc, 1e-9 * std::max(1.0, std::abs(uni.e_xc)));
+}
