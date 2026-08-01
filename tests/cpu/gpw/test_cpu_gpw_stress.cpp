@@ -903,6 +903,54 @@ TEST(GpwStress, AnalyticMatchesFdWithD3Atm) {
     EXPECT_LT(max_err, 5e-5) << "Γ RKS + D3 + ATM analytic vs multi-SCF FD";
 }
 
+// Multi-k + D3 zero + ATM (C9): the k-summed fixed-P_k Lagrangian folds
+// E_disp^{D3+ATM} rebuilt at each strained cell — dual-gate analytic vs
+// multi-SCF FD on the same periodic H2 mesh-1x1x2 fixture used by the MBD
+// multi-k unit twin. e2e CP2K pin is reg_gpw-d3-atm-kpoint-stress.
+TEST(GpwStress, D3AtmMultiKAnalyticMatchesFd) {
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.7, 6.1, 5.9};
+    const std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
+                                        GpwAtom(rB, basis, pot, 1)};
+
+    GpwDft cfg;
+    cfg.cell[0] = cfg.cell[1] = cfg.cell[2] = 12.0; // Bohr
+    cfg.cutoff_ry = 80.0;
+    cfg.n_occ = 1;
+    cfg.tol = 1e-8;
+    cfg.max_iter = 80;
+    cfg.nonperiodic = false;
+    cfg.local_pp_on_grid = true;
+    cfg.xc = XcKind::PADE;
+    cfg.k_mesh[0] = 1;
+    cfg.k_mesh[1] = 1;
+    cfg.k_mesh[2] = 2;
+    cfg.d3 = true;
+    cfg.d3_atm = true;
+    cfg.d3_rcut_bohr = 18.0; // Bohr — ±2 image window keeps triples cheap
+
+    const double h = 3e-3;
+    const auto san = gpw_stress(atoms, cfg, h);
+    const auto sfd = gpw_stress_fd(atoms, cfg, h);
+    double max_err = 0.0;
+    for (int a = 0; a < 3; ++a) {
+        const double err = std::abs(san[static_cast<std::size_t>(a)]
+                                    - sfd[static_cast<std::size_t>(a)]);
+        max_err = std::max(max_err, err);
+        std::printf("  D3+ATM k-mesh axis %d  an=%.6e  fd=%.6e  |d|=%.3e\n", a,
+                    san[static_cast<std::size_t>(a)],
+                    sfd[static_cast<std::size_t>(a)], err);
+        EXPECT_TRUE(std::isfinite(san[static_cast<std::size_t>(a)]));
+        EXPECT_TRUE(std::isfinite(sfd[static_cast<std::size_t>(a)]));
+    }
+    EXPECT_DOUBLE_EQ(san[3], 0.0);
+    EXPECT_DOUBLE_EQ(san[4], 0.0);
+    EXPECT_DOUBLE_EQ(san[5], 0.0);
+    EXPECT_LT(max_err, 5e-5) << "multi-k + D3 + ATM analytic vs multi-SCF FD";
+}
+
 // ── Γ RKS + MBD@rsSCS analytic stress ─────────────────────────────────────
 // Free-atom (isolated) MBD is geometry-only, so it enters the fixed-P
 // Lagrangian exactly like D3/D4: analytic must track the multi-SCF strain-FD.
