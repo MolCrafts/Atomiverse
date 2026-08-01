@@ -46,6 +46,11 @@ let extra_law = "";
 extra_law += "THIS LOOP = CP2K capability (GPW/PW/periodic). Do not implement molecular post-HF (pyscf) or classical MW MD (metalwalls). ";
 extra_law += "Internal Ha/Ry OK when cited; public energy still eV on Frame. ";
 extra_law += "Pins via tools/cp2k_oracle; temps /tmp/atv-* /tmp/cp2k_oracle_*. ";
+extra_law += "STRICT PIN LAW (CLAUDE + .claude/notes/oracle-pin-provenance.md): ACTUALLY RUN CP2K offline for correctness AND fair wall on a MATCHED algorithm twin. ";
+extra_law += "CP2K SOURCE BUILD (host): source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh → cp2k.psmp 2026.1 git:5e54ba2; CP2K_DATA_DIR set; notes tools/cp2k_oracle/pin_notes.md. ";
+extra_law += "FAIR TWIN ONLY: same method class as ATV (GPW↔GPW GTH/MOLOPT; not GTH-GPW vs NC-UPF PW). Same spin/k/XC class; comparable cutoff/basis/PP. Wall = same single twin job (1 MPI × fixed OMP), not multi-gate reg wall. ";
+extra_law += "FORBIDDEN: cross-representation physics windows; perf_exempt for missing binary/unrun .inp/model mismatch; self-golden ATV-FD as sole cp2k pin. ";
+extra_law += "If CP2K has no such algorithm: oracle:literature + real citation only (never fake oracle:cp2k). Capability first — implement the matched path, then pin. ";
 extra_law += "Prefer specs under " + specs_root + " for GPW/PW gaps; close on merge when acceptance met. ";
 let default_staff_count = 10;
 let default_do_perf = true;
@@ -300,6 +305,8 @@ while wave < max_waves {
     let census_p = law;
     census_p += "GAP-CENSUS wave " + wn + " on `" + target_branch + "`. ";
     census_p += "Diff " + oracle_name + " + " + map_path + " + " + gap_sources + " vs ATV on branch. ";
+    census_p += "Only queue landable gaps with a REAL CP2K offline twin (matched algorithm). Do NOT queue GTH↔NC-UPF windows or unpinnable PW as oracle:cp2k. ";
+    census_p += "Prefer unfinished GPW/QS product surface (forces/stress/k/UKS/vdW/OT/AIMD/response with Quickstep twin). ";
     census_p += "Rewrite " + queue_path + " ## pending (keep done/blocked/in_progress). Update roadmap ○/✓. ";
     census_p += "scope_out never pending. Optional commit chore(queue). No push. ";
     census_p += "JSON: status=ok|empty, pending_count, gaps_remaining, new_slugs_added, roadmap_updated, summary. empty only if gaps_remaining=0.";
@@ -359,13 +366,18 @@ while wave < max_waves {
         let slug = it.slug;
         let wp = law;
         wp += "WORKER wave " + wn + " isolation. slug=" + slug + " method=" + it.method + ". Branch wf/" + slug + ". ";
-        wp += "Spec → offline " + oracle_name + " pin → " + regression_hint + " REFERENCE.md → impl → dual gate → commit. ";
-        wp += "Pin via tools/cp2k_oracle; put regression under regressions/gpw|pw|scf as appropriate. ";
+        wp += "Order: (1) implement the matched algorithm path in ATV (capability first) (2) write tools/cp2k_oracle twin .inp (3) RUN real CP2K for pin+wall (4) REFERENCE.md (5) regression dual gate (6) commit. ";
+        wp += "CP2K: source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh; mpirun -np 1 cp2k.psmp; record binary+version+input+output line. ";
+        wp += "FAIR: same algorithm class as ATV claim; wall on the SAME twin SCF job only (report T_atv_scf not multi-gate reg wall). ";
+        wp += "Put regression under regressions/gpw|pw|scf|dynamics|response as appropriate. ";
         wp += "SCOPED build+test only: --target atomiverse <your test_*> reg_" + slug + "; ctest -R your tests + run_reg_" + slug + ". ";
         if skip_implement { wp += "skip_implement: verify only. "; }
         if do_perf {
-            wp += "Perf: T_atv/T_oracle ≤ " + max_ratio.to_string() + " or perf_exempt. ";
-            if require_perf { wp += "green needs within_10x or perf_exempt. "; }
+            wp += "Perf: MUST run fair wall vs real CP2K on the matched twin; T_atv/T_oracle ≤ " + max_ratio.to_string() + ". ";
+            if require_perf {
+                wp += "green needs within_10x from a real CP2K run (not perf_exempt for missing binary/mismatch). ";
+                wp += "literature-only escape only when CP2K has no such algorithm — then oracle:literature, never fake oracle:cp2k. ";
+            }
         }
         wp += "Exit clean: wipe build*; no nested subagents. Output worker schema.";
         jobs.push(#{
@@ -389,8 +401,13 @@ while wave < max_waves {
             if r.output.slug != () { wave_slugs.push(r.output.slug); }
             if r.output.status == "green" {
                 let ok = r.output.acceptance_met == true;
+                // Strict CP2K law: real fair wall (within_10x), OR honest literature pin.
+                // perf_exempt alone (missing binary / GTH↔NC-UPF window) is NOT green.
                 if ok && require_perf {
-                    if r.output.within_10x != true && r.output.perf_exempt != true { ok = false; }
+                    let wall_ok = r.output.within_10x == true;
+                    let o = r.output.oracle;
+                    let lit_ok = (o == "literature" || o == "Literature" || o == "oracle: literature");
+                    if !wall_ok && !lit_ok { ok = false; }
                 }
                 if ok { greens.push(r.output); }
             }

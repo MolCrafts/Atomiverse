@@ -1,60 +1,76 @@
 <!-- mol:note:topic:oracle-pin-provenance -->
-## [2026-07-29] A pin must come from the other code — self-golden pins are forbidden
+## Oracle pin provenance (binding)
 
-**Why this exists.** The `metalwalls-method-loop` shipped 36 slugs across waves
-1–5 with `oracle: metalwalls` in their `REFERENCE.md`. No MetalWalls binary was
-installed at the time. When MW was finally built (`c8ad175d`) and the first ten
-of those pins were re-checked against it, **four had never verified anything**:
+**Why this exists.** Agents that want a green will invent pins: numpy rewrites
+of ATV, self-golden `expected := what_we_got()`, literature windows labelled
+`oracle: cp2k`, and **cross-representation** "twins" (e.g. GTH-GPW energies
+used as if they validated NC-UPF plane-wave). Those never fail and never
+measure the implementation.
 
-| Slug | What the "oracle: metalwalls" pin actually was | Error vs real MW |
-| --- | --- | --- |
-| `thomas-fermi-electrode` | `pin_gold_cap.py`, whose own docstring said "Mirrors Atomiverse `cpu::md::ConstPotBO` matrix algebra" — a numpy transcription of the code under test | **+6.13 %** |
-| `piston-electrode-pz` | target pressure set to `P_target := probe.last_P_z()` — the value ATV itself had just measured | tautology; unfalsifiable |
-| `dipole-electrode-joint` | `pin_joint.py`, a Python transcription of ATV's own C++ kernels | 9 % (Q), 16 % (μ) |
-| `pim-induced-dipole-bulk` | a Thole-damped (a = 0.39) number attributed to MetalWalls — **MW implements no Thole damping in any released version** (`grep -ri thole` on c8ad175d: zero hits) | attribution fabricated |
+### All oracle loops (pyscf / cp2k / metalwalls / tb)
 
-Each was green for months. A pin computed from the implementation it is
-supposed to check agrees with it to ~1e-12 **by construction** and can never
-fail. That is not a weak test; it is a test of nothing wearing a citation.
+1. **A pin is a number the other code printed.** Provenance = binary path +
+   version/sha + input file + output line (or log excerpt). Re-runnable.
+2. **`tools/*_oracle/` may only parse oracle output** — never reimplement the
+   ATV algorithm, never seed from ATV's own measurement.
+3. **`oracle:` names the code that produced the number**, not the paper you
+   read. A formula from a paper is `oracle: literature` and only if the
+   formula is from the paper, not from our header.
+4. **No external number ⇒** `oracle: literature` with a real citation, or the
+   slug is **not landable**. Never invent `oracle: <engine>`.
+5. **Self-golden is forbidden.** Ask: if our implementation were wrong, would
+   this number change? If no, it is not a pin.
 
-**Rule (binding, all oracle loops — pyscf / cp2k / metalwalls / tb):**
+**Historical failure (metalwalls):** four `oracle: metalwalls` pins were
+numpy/ATV self-checks while MW was uninstalled; real MW later disagreed by
+6–16%. Same pattern applies to CP2K "windows" and unrun `.inp` sketches.
 
-1. **A pin is a number the other code printed.** Its provenance is a command
-   you can re-run: which binary, which version/sha, which input file, which
-   output line. If the "oracle" is a script in `tools/*_oracle/`, that script
-   must *parse oracle output* — it must never *reimplement the ATV algorithm*.
-2. **`oracle:` in `REFERENCE.md` names the code that produced the number**, not
-   the code whose paper you read. Reproducing a published formula in numpy is
-   `oracle: literature` **and only if the formula came from the paper, not from
-   our header**. Getting this wrong is falsifying provenance.
-3. **A pin may not be seeded from ATV's own measurement.** `expected := what_we_got()`
-   in any form (including "record the current value as the golden") is banned.
-   If no external number exists, the honest states are `oracle: literature` with
-   a real citation, or the slug is **not landable**.
-4. **`literature` requires the binary to be genuinely unavailable or the
-   quantity genuinely uncomputable by it** — not merely unbuilt. Both LAMMPS
-   and MetalWalls build on this machine; see
-   `tools/metalwalls_oracle/build_metalwalls.sh`. "No binary" is no longer a
-   valid reason for `perf_exempt` either.
-5. **Model mismatch is a finding, not a fallback.** When ATV and the oracle
-   compute different physics (ATV minimum-image vs MW Ewald-only, MW's refusal
-   of `external_field` + non-neutral), say so with the specific technical reason
-   and decompose the discrepancy. `not_expressible` must be earned by
-   demonstration — e.g. `dipole-electrode-joint` and
-   `maze-symplectic-charge-dynamics` only qualified after the ATV kernel was run
-   under a matched lattice sum and reproduced MW to 1.2e-8 / 1.1e-6.
+### CP2K method loop — strict twin (supersedes soft practice)
 
-**Failure mode to watch for.** All four bad pins were written by agents that
-*wanted a green*. The generator script is the tell: if writing the "oracle" felt
-like re-deriving our own math, it is self-golden. Ask "what would this number be
-if our implementation were wrong?" — if the answer is "the same", it is not a pin.
+**Rule:** for every landable `cp2k-method-loop` slug:
 
-**Also surfaced by the same sweep** (real defect, since fixed):
-`ChargeASPC::compute_coefficients_` computed Lagrange extrapolation weights
-`{1,-3,3}` while its header cited Kolafa ASPC (J. Comput. Chem. 25, 335 (2004));
-real MW uses Kolafa K=5 `{22/7, -55/14, 55/21, -22/21, 5/21, -1/42}`. Its
-`correct()` already used genuine Kolafa weights — half an implementation under
-another's name. Only a real oracle could distinguish them, which is the point.
+| Gate | Requirement |
+| --- | --- |
+| Install | **Install / use a real CP2K binary** on the pin host. "Module empty" /
+  "not on PATH" is an action item (`tools/cp2k_oracle/` + local/source build),
+  not a reason to skip. |
+| Algorithm match | The offline twin uses **CP2K's algorithm for the same method
+  class ATV is claiming** — same representation family (GPW↔GPW GTH/MOLOPT,
+  etc.), same spin/k/XC class, comparable cutoff/basis/PP. ATV must be
+  exercised on that matched path for the pin. |
+| Correctness | Record numbers CP2K actually printed; regression asserts ATV vs
+  those pins within stated tol. |
+| Perf | **Must run** a fair wall on the same twin job:
+  \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) written in `REFERENCE.md` (and
+  `within_10x` / ratio gate when the loop requires it). |
+| Literature escape | Only when the quantity is **not a CP2K algorithm** (e.g.
+  a propagator CP2K does not implement) **or** a published number is the
+  scientific standard: then `oracle: literature` + citation. **Not** a
+  substitute for "we did not install CP2K". |
 
-Related: [[metalwalls-capability-map]], `docs/developer/oracle-capability-loop.md`,
-`tools/metalwalls_oracle/README.md`.
+**Forbidden (no comparison value — do not land as CP2K pins):**
+
+- GTH-GPW (or any Quickstep GTH) numbers used to "anchor" **NC-UPF / pure PW**
+  ATV (or the reverse): unequal Hamiltonians are **not** twins.
+- Any cross-PP, cross-basis-class, or cross-method "physics window" labelled
+  `oracle: cp2k` while absolute or even relative digit gates pretend parity.
+- `perf_exempt` because binary missing, inconvenient, or twin not run.
+- `.inp` sketches never executed; "offline pin" without output lines.
+- Self-FD of ATV total energy as the sole correctness gate while claiming
+  `oracle: cp2k` (FD may be an extra consistency check only).
+
+**If ATV's production path is representation-unequal to CP2K** for that
+capability: either (a) land a **matched** ATV path that CP2K can twin (same
+algorithm class), (b) pin to **literature**, or (c) leave the row **blocked /
+not landable** — never a mismatched window.
+
+**ctest** still never launches CP2K; pins are frozen offline. The obligation
+is that those pins were produced by a real offline CP2K run (or real
+literature), not that CI installs CP2K.
+
+### Related
+
+- CLAUDE.md § Oracle capability loops (thin router)
+- `tools/cp2k_oracle/README.md`, `tools/metalwalls_oracle/`
+- `docs/developer/oracle-capability-loop.md` (pattern; if it still says speed
+  is optional or allows mismatch windows, **this note + CLAUDE win**)

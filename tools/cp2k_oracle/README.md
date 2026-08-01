@@ -1,33 +1,45 @@
 # CP2K offline oracle (CP2K capability loop)
 
 Mirrors `tools/pyscf_oracle/`: produce **hard-coded pins** for regressions.
-**ctest never launches CP2K.**
+**ctest never launches CP2K.** Binding law:
+[`.claude/notes/oracle-pin-provenance.md`](../../.claude/notes/oracle-pin-provenance.md)
+and CLAUDE.md § Oracle capability loops.
 
-## Contract
+## Contract (strict)
 
-1. Human or agent runs CP2K **offline** (login/interactive/batch) with a fixed input.
-2. Record energy / forces / stress / frequencies into `REFERENCE.md` under the
-   regression (cite CP2K version, functional, cutoff, basis/PP, cell, k-mesh).
-3. Regression binary asserts Atomiverse vs those numbers within stated tol.
-4. Optional fair wall: same geometry, comparable settings; write
-   \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) into REFERENCE (not ctest).
+1. **Install CP2K** on the pin host (module, local prefix, or source build).
+   Missing binary is an install task, not an excuse for literature / exempt.
+2. Human or agent runs CP2K **offline** with a fixed input that matches the
+   **same algorithm / representation class** ATV is claiming (GPW↔GPW GTH,
+   etc.). **Forbidden:** unequal Hamiltonians as twins (e.g. GTH-GPW numbers
+   anchoring NC-UPF plane-wave ATV) — those have **no comparison value**.
+3. Record energy / forces / stress / frequencies / walls into
+   `regressions/.../REFERENCE.md`: binary path, version/sha, input path,
+   key output lines, date.
+4. Regression asserts Atomiverse vs those numbers within stated tol.
+5. **Perf is mandatory** for `oracle: cp2k` pins: fair wall on the same twin
+   job; write \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) (gate typically ≤ 10).
+   `perf_exempt` is not a green path for "no binary" or mismatched models.
+6. If CP2K does not implement the algorithm (or the scientific standard is a
+   published number): `oracle: literature` + real citation — never a fake
+   `oracle: cp2k` window.
 
-## Suggested layout (grow as needed)
+## Suggested layout
 
 ```text
 tools/cp2k_oracle/
   README.md          ← this file
-  inputs/            ← minimal CP2K .inp twins (optional, not required at ctest)
-  pin_notes.md       ← how pins were taken
-  fair_bench.py      ← optional wall twin (later)
+  inputs/            ← CP2K .inp twins (committed with the pin)
+  pin_notes.md       ← optional host install notes
+  fair_bench.py      ← optional wall twin helper
 ```
 
 ## Version pin
 
-Prefer a single CP2K release string in REFERENCE (e.g. `CP2K 2024.1` or module
-version on Arrhenius). Do not mix versions across a regression without noting it.
+Prefer a single CP2K release string in REFERENCE (e.g. `CP2K 2026.1` + git
+sha). Do not mix versions across a regression without noting it.
 
 ## Relation to tutorials
 
-- GPW narrative: `docs/tutorial/ch09-gpw.md` (Quickstep parity story).
-- Loop product pages: `docs/tutorial/methods/<slug>.md` from `cp2k-method-loop`.
+- GPW narrative: `docs/tutorial/ch09-gpw.md`
+- Loop product pages: `docs/tutorial/methods/<slug>.md` from `cp2k-method-loop`

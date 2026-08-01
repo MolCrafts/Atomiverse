@@ -30,7 +30,7 @@ History is git's job — superseded designs are deleted, not archived here.
 
 | Loop | State notes |
 | --- | --- |
-| cp2k-method-loop | queue `docs/developer/cp2k-method-queue.md` (12 pending) |
+| cp2k-method-loop | queue `docs/developer/cp2k-method-queue.md`; pin law [oracle-pin-provenance.md](oracle-pin-provenance.md) (**strict**: real CP2K run + matched algorithm + perf; no GTH↔NC-UPF windows) |
 | tb-method-loop | [tb-blocked-capabilities.md](tb-blocked-capabilities.md), [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md) |
 | metalwalls-method-loop | [metalwalls-capability-map.md](metalwalls-capability-map.md), [oracle-pin-provenance.md](oracle-pin-provenance.md) |
 | cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–5 done; owns `cuda::scf::SCFSolver` debt) |

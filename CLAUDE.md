@@ -582,8 +582,17 @@ Instances: `pyscf-method-loop`, `cp2k-method-loop`, `metalwalls-method-loop`,
   as binary + version + input + output line. A `tools/*_oracle/` script may
   parse oracle output; it must **never** reimplement the ATV algorithm, and a
   pin must never be seeded from ATV's own measurement. `oracle:` names the code
-  that produced the number, not the paper. "No binary" is not a reason for
-  `literature` or `perf_exempt` — LAMMPS and MetalWalls both build here.
+  that produced the number, not the paper. Detail:
+  [`.claude/notes/oracle-pin-provenance.md`](.claude/notes/oracle-pin-provenance.md).
+- **CP2K loop (strict)** — install and **actually run** CP2K offline for every
+  landable slug: correctness pin **and** fair wall
+  (\(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\)), same algorithm/settings class as the
+  ATV path under test. **Forbidden:** cross-representation "physics windows"
+  (e.g. GTH-GPW numbers anchoring NC-UPF PW, or any unequal Hamiltonian treated
+  as a twin). No CP2K → build/install it; if the quantity is genuinely not a
+  CP2K algorithm, the only honest pin is **`oracle: literature`** with a real
+  citation (not a fake `oracle: cp2k`). `perf_exempt` / "no binary" /
+  model-mismatch windows are **not** a green path for this loop.
 - **Blocked ≠ pending** — a row is blocked because a *stated gate* holds. A wave
   short of work does not license promoting one, switching oracle families, or
   downgrading to `oracle: literature`.
