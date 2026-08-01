@@ -1,0 +1,72 @@
+# Offline pin notes — gpw-ts-kpoint-forces
+
+## Policy
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` is only
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4` (`input_cp2k_xc.F` usage string) — **no**
+`TYPE TS`. Binary checked offline (2026-08-01):
+
+```text
+cp2k.psmp  version 2026.1  Source code revision git:5e54ba2
+  via /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+```
+
+Oracle is **libMBD** free-atom TS energy + **force dual-gate** + **multi-k
+product wiring** (same policy as `gpw-ts-forces` / `gpw-ts-ice` /
+`gpw-mbd-kpoint-forces`).
+
+**Never** invent a CP2K `.inp` that claims stock TS, and never label pins
+`oracle: cp2k`. Never launch libMBD or CP2K from ctest — pins are hard-coded in
+`regressions/gpw/gpw-ts-kpoint-forces/REFERENCE.md`.
+
+## Capability closed
+
+`assemble_gpw_forces_kpoints` folds free-atom TS via `ts_pbe` (periodic
+pure-RS, rcut 50 Å, optional Hirshfeld volume ratios) when `GpwDft::ts` is set
+— matching Γ `assemble_gpw_forces`. This slug is the dedicated multi-k
+**force** pin (stress: `gpw-ts-kpoint-stress`).
+
+## Pins
+
+### Water dimer — free-atom TS isolated (s_R=0.94, d=20)
+
+Geometry (Å):
+
+```
+O  0.000000  0.000000  0.000000
+H  0.758602  0.000000  0.504284
+H  0.758602  0.000000 -0.504284
+O  3.000000  0.000000  0.000000
+H  3.758602  0.000000  0.504284
+H  3.758602  0.000000 -0.504284
+```
+
+Å→Bohr: `1/0.52917720859` (ATV).
+
+E_disp = −5.9764872295816794e-04 Ha (libMBD `cmbd_ts_energy`, git 88069c6).
+
+Force dual-gate (never live in ctest):
+
+```text
+max |F_product − F_fd(h=1e-5)| ≤ 1e-6 Ha/Bohr
+|sum F| ≤ 1e-8 Ha/Bohr
+```
+
+Reproduce libMBD energy offline: see sibling
+`tools/cp2k_oracle/inputs/gpw-ts-stress/pin_ts_strain.f90` +
+`water_dimer_ts_stress.note` (isolated line of that pin driver).
+
+### H₂ multi-k wiring
+
+- Cell 12³ Bohr, k-mesh 1×1×2, PADE + DZV-GTH-PADE, bond 1.0 Bohr.
+- `ts=true`, free-atom volumes (no Hirshfeld).
+- Product geom twin: periodic pure-RS `ts_pbe` (rcut 50 Å) — same as Γ force
+  assembly when `nonperiodic=false`.
+- Gate: \(F^{k+\mathrm{TS}}-F^{k}\approx F_{\mathrm{TS}}^{\mathrm{geom}}\) to
+  1e-8 Ha/Bohr.
+
+## Perf
+
+**perf_exempt**: no fair CP2K twin for free-atom TS (algorithm absent in stock
+QS pair-potential types). Wall ratio vs CP2K would be a model mismatch, not a
+fair twin.

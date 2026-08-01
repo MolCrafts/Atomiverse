@@ -277,3 +277,82 @@ TEST(GpwTs, ProductForcesFoldTs) {
         << "Γ assemble must add geometry-only TS forces";
     EXPECT_GT(std::abs(geom.forces[0][0]), 1e-8);
 }
+
+// Multi-k force assembly must fold geometry-only free-atom TS (product path
+// for gpw-ts-kpoint-forces). H2 1×1×2: one SCF, two assemblies vs geometry
+// kernel (periodic pure-RS, same as Γ when nonperiodic=false).
+TEST(GpwTs, KpointProductForcesFoldTs) {
+    using ATV::cpu::gpw::GaussianBasis;
+    using ATV::cpu::gpw::GpwAtom;
+    using ATV::cpu::gpw::GpwDft;
+    using ATV::cpu::gpw::GthPotential;
+    using ATV::cpu::gpw::XcKind;
+    using ATV::cpu::gpw::gpw_forces_from_scf;
+
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.5, 6.0, 6.0};
+    std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
+                                  GpwAtom(rB, basis, pot, 1)};
+
+    auto make_cfg = [](bool with_ts) {
+        GpwDft m;
+        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+        m.cutoff_ry = 100.0;
+        m.n_occ = 1;
+        m.tol = 1e-8;
+        m.max_iter = 60;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.xc = XcKind::PADE;
+        m.eps_default = 1e-8;
+        m.k_mesh[0] = 1;
+        m.k_mesh[1] = 1;
+        m.k_mesh[2] = 2;
+        m.ts = with_ts;
+        return m;
+    };
+
+    GpwDft cfg = make_cfg(true);
+    cfg.build(atoms);
+    const auto& scf = cfg.run(atoms);
+    ASSERT_TRUE(scf.converged);
+    // 1×1×2 + time-reversal often yields n_kpts==1 irreducible point, but the
+    // SCF still uses the multi-k path (C_occ_k payload; Γ has n_kpts==0).
+    EXPECT_GE(scf.n_kpts, 1);
+    EXPECT_FALSE(scf.C_occ_k.empty());
+    EXPECT_TRUE(std::isfinite(scf.e_disp));
+    EXPECT_LT(scf.e_disp, 0.0);
+
+    // Force assembly only reads public flags + cell from cfg (GpwDft non-copyable).
+    const auto F_ts = gpw_forces_from_scf(atoms, cfg, scf);
+    GpwDft plain = make_cfg(false);
+    const auto F_plain = gpw_forces_from_scf(atoms, plain, scf);
+    ASSERT_EQ(F_ts.size(), 2u);
+    ASSERT_EQ(F_plain.size(), 2u);
+
+    std::vector<int> Z = {1, 1};
+    std::vector<std::array<double, 3>> pos = {
+        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    const double cell[3] = {12.0, 12.0, 12.0};
+    constexpr double kRcut = 50.0 * kAngToBohr;
+    const TsResult geom = ts_pbe(Z, pos, cell, /*periodic=*/true, kRcut);
+
+    double max_d = 0.0;
+    for (int a = 0; a < 2; ++a) {
+        for (int k = 0; k < 3; ++k) {
+            const double d =
+                (F_ts[static_cast<std::size_t>(a)][k]
+                 - F_plain[static_cast<std::size_t>(a)][k])
+                - geom.forces[static_cast<std::size_t>(a)][k];
+            max_d = std::max(max_d, std::abs(d));
+        }
+    }
+    std::printf("[TS k-forces] e_disp=%.6e  max|F_ts-F_plain-F_geom|=%.2e\n",
+                scf.e_disp, max_d);
+    EXPECT_LT(max_d, 1e-8)
+        << "multi-k assemble must add geometry-only TS forces";
+    // Non-trivial TS contribution on the compressed H–H bond.
+    EXPECT_GT(std::abs(geom.forces[0][0]), 1e-8);
+}
