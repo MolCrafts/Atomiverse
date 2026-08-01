@@ -368,6 +368,7 @@ domain, alphabetical by slug.
 | DFPT phonons at Γ, pure GGA kernel (Si) | [dfpt-gga-si](methods/dfpt-gga-si.md) | `regressions/response/dfpt-gga-si` |
 | Finite-\(q\) DFPT at X, joint spin × GGA (Si) | [dfpt-gga-spin-finite-q-si](methods/dfpt-gga-spin-finite-q-si.md) | `regressions/response/dfpt-gga-spin-finite-q-si` |
 | DFPT phonons at Γ, joint spin × GGA (Si) | [dfpt-gga-spin-si](methods/dfpt-gga-spin-si.md) | `regressions/response/dfpt-gga-spin-si` |
+| DFPT phonons at Γ, joint spin × GGA × smear (Si) | [dfpt-gga-spin-smearing](methods/dfpt-gga-spin-smearing.md) | `regressions/response/dfpt-gga-spin-smearing` |
 | Incommensurate-\(q\) DFPT phonons (Si) | [dfpt-incommensurate-si](methods/dfpt-incommensurate-si.md) | `regressions/response/dfpt-incommensurate-si` |
 | DFPT phonons + metallic smearing (Si) | [dfpt-metallic-si](methods/dfpt-metallic-si.md) | `regressions/response/dfpt-metallic-si` |
 | DFPT phonons at Γ (diamond Si, PW LSDA) | [dfpt-phonon-si](methods/dfpt-phonon-si.md) | `regressions/response/dfpt-phonon-si` |

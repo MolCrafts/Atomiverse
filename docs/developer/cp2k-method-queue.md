@@ -1417,7 +1417,6 @@ queue. **Pending = 9**; **in_progress = 3**; **blocked = 6**.
 - [ ] `gpw-xdm-kpoint-forces` | Multi-k analytic ionic forces with free-atom XDM (dedicated pin) | gpw | twin: pure-Python XDM strain/grad (same policy as `gpw-xdm-forces`) | deps: gpw-xdm-forces ✓, gpw-xdm-kpoint-stress ✓
 - [ ] `periodic-berry-gpw-uks` | King–Smith–Vanderbilt Berry-phase polarization on GPW collinear UKS (dual-channel string phases) | response | twin: CP2K 2026.1 Quickstep `&MOMENTS PERIODIC` UKS | deps: periodic-berry-gpw ✓, berry-spin-si ✓
 - [ ] `periodic-scs-ump2-si` | Γ SCS-MP2 scales on RI-GPW UMP2@UKS (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 UKS SCALE_S/SCALE_T (or algebraic dual on product UMP2) | deps: periodic-ump2-si ✓, periodic-scs-mp2-si ✓
-- [ ] `dfpt-gga-spin-smearing` | DFPT phonons with joint collinear spin × pure GGA (PBE) × metallic occupation smearing (PW Γ Sternheimer) | response | twin: CP2K 2026.1 UKS-PBE + smear `VIBRATIONAL_ANALYSIS` | deps: dfpt-gga-spin-si ✓, dfpt-spin-smearing ✓, dfpt-gga-si ✓
 
 ## in_progress
 
@@ -1427,6 +1426,7 @@ queue. **Pending = 9**; **in_progress = 3**; **blocked = 6**.
 
 ## done (harness wave 3 (shift) 2026-08-01)
 
+- [x] `dfpt-gga-spin-smearing` | DFPT phonons with joint collinear spin × pure GGA (PBE) × metallic occupation smearing (PW Γ Sternheimer) | response | `regressions/response/dfpt-gga-spin-smearing` | ratio **0.21** (CP2K 2026.1 UKS-PBE+SMEAR k-point `VIBRATIONAL_ANALYSIS` 232.5 s / ATV DFPT 48.3 s, serial; CP2K optical anchor 464–535 cm⁻¹, free-energy FD pin 17.3454 eV/Å², DFPT 17.3711) | 2026-08-01 worker wave 4
 - [x] `gpw-d4-atm-kpoint-forces` | Multi-k analytic ionic forces with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | `regressions/gpw/gpw-d4-atm-kpoint-forces` (CP2K 2026.1 libdftd4 multi-k ENERGY_FORCE ATM ΔF + dftd4 3.7.0 dual; max\|dF_ATM−CP2K\| 1.4e-8 Ha/Bohr) | ratio **0.613** (9.682 / 15.806) | 2026-08-01
 - [x] `gpw-optb88-uks-kpoints` | Multi-k UKS optB88-vdW (OptB88 + DRSLL on k-UKS path) dedicated pin | gpw | `regressions/gpw/gpw-optb88-uks-kpoints` (CP2K 2026.1 KPOINTS + UKS + GGA_X_OPTB88_VDW + DRSLL; E_disp parity 3.77e-5 Ha; multi-k UKS≡RKS) | ratio **0.73** (G2 9.8 s / CP2K 13.29 s OMP=8) | 2026-08-01
 - [x] `periodic-scs-mp2-kpoints` | Multi-k SCS-MP2 scales on RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | `regressions/gpw/periodic-scs-mp2-kpoints` (Grimme algebraic dual on product multi-k RI-GPW; CP2K offline twin aborts MP2_GPW@k — `oracle: literature`) | ratio **perf_exempt** (no multi-k MP2_GPW in CP2K 2026.1) | 2026-08-01

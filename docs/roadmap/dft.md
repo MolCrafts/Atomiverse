@@ -65,7 +65,8 @@ UKS **optB88-vdW** (`reg_gpw-optb88-uks-kpoints`), multi-k **SCS-MP2**
 (`gpw-hirshfeld-forces` — energy folds volumes; force/stress fold still
 unmerged); **pending (GapCensus wave 4)**: multi-k D3/D3(BJ)/D4 **force**
 pins, multi-k D4 **ATM stress**, multi-k TS/XDM **forces**, GPW Berry
-**UKS**, Γ SCS-**UMP2**, DFPT GGA×spin×smear; queue not exhausted —
+**UKS**, Γ SCS-**UMP2**; DFPT GGA×spin×smear ✓ (`reg_dfpt-gga-spin-smearing`);
+queue not exhausted —
 GapCensus owns discovery;
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
@@ -473,7 +474,7 @@ Two periodic DFT engines exist, with disjoint strengths:
   `reg_periodic-berry-gpw`). Open residuals (**incomplete `[~]`**): multi-k
   TS stress, multi-k D3 ATM forces, Hirshfeld-scaled TS/MBD forces;
   **pending**: multi-k D3/D3(BJ)/D4 force pins, multi-k D4 ATM stress,
-  multi-k TS/XDM forces, GPW Berry UKS, Γ SCS-UMP2, DFPT GGA×spin×smear
+  multi-k TS/XDM forces, GPW Berry UKS, Γ SCS-UMP2; DFPT GGA×spin×smear ✓
   (see `cp2k-method-queue.md`; queue not exhausted). Hybrids / meta-GGA /
   GAPW / PAW remain blocked. CPU only.
 
@@ -632,9 +633,12 @@ Which engine backs which ✓:
   energy-second-difference pin (21.2006 vs DFPT 21.1911 eV/Å²) **and** a
   CP2K 2026.1 supercell UKS-PBE `VIBRATIONAL_ANALYSIS` X-branch anchor,
   fair wall ratio 0.19; M=0 identity to the restricted finite-q GGA parent).
-  Joint **Γ collinear spin × pure GGA × metallic smear** remains a **pending**
-  offline pin (`dfpt-gga-spin-smearing` — product path accepts the combo;
-  no dedicated gate yet).
+  **Joint Γ collinear spin × pure GGA × metallic smear**
+  `reg_dfpt-gga-spin-smearing` — spin-resolved Sternheimer with spin-GGA FD
+  kernel + FD occupation weights, dual-gated by a free-energy second-difference
+  pin (17.3454 vs DFPT 17.3711 eV/Å²) **and** a CP2K 2026.1 UKS-PBE+SMEAR
+  k-point `VIBRATIONAL_ANALYSIS` physics anchor, fair wall ratio 0.21;
+  M=0 gapped-FD identity to the fixed-occ spin×GGA parent).
 - **Berry-phase polarization**: King-Smith–Vanderbilt (KSV) electronic
   polarization on the PW method (`cpu::pw::BerryPolarization`; string-averaged
   Berry phases over occupied Bloch manifolds; symmetry-exact Si pins,
