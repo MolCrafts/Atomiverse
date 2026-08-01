@@ -315,6 +315,9 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-d4-stress THREADS 8)
     atv_add_regression(gpw gpw-d4-forces THREADS 8)
     atv_add_regression(gpw gpw-d4-atm-forces THREADS 8)
+    # Multi-k analytic ionic forces with DFT-D4 two-body BJ (s9=0); offline
+    # CP2K 2026.1 libdftd4 ENERGY_FORCE FORCE Δ (D4−plain) + dftd4 E_disp pin.
+    atv_add_regression(gpw gpw-d4-kpoint-forces THREADS 8)
     # Multi-k analytic ionic forces with D4 three-body ATM (s9); offline
     # CP2K 2026.1 libdftd4 ENERGY_FORCE FORCE Δ + dftd4 E_disp pin.
     atv_add_regression(gpw gpw-d4-atm-kpoint-forces THREADS 8)
