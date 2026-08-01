@@ -337,6 +337,9 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-ts-ice THREADS 8)
     atv_add_regression(gpw gpw-ts-forces THREADS 8)
     atv_add_regression(gpw gpw-ts-stress THREADS 8)
+    # Multi-k analytic ionic forces with free-atom TS (libMBD energy +
+    # dual-gate + wiring; no stock CP2K TYPE TS — gpw-ts-kpoint-forces).
+    atv_add_regression(gpw gpw-ts-kpoint-forces THREADS 8)
     atv_add_regression(gpw gpw-xdm-ice THREADS 8)
     atv_add_regression(gpw gpw-xdm-forces THREADS 8)
     # Multi-k analytic ionic forces with free-atom XDM (dual pure-Python
