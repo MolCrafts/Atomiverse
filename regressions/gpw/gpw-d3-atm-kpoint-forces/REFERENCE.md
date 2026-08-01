@@ -68,8 +68,8 @@ dispersion functional.
 | Fair wall job | `mpirun -np 1`, `OMP_NUM_THREADS=8` |
 | Inputs | `tools/cp2k_oracle/inputs/gpw-d3-atm-kpoint-forces/water_dimer_d3_atm_k_forces.inp` (C9 T) and `water_dimer_d3_k_forces.inp` (C9 F) |
 | Output lines | final `Dispersion energy:` + `FORCES\| Atomic forces [hartree/bohr]` table |
-| Wall (C9, fair cold) | **1.51 s** (`/usr/bin/time` wall_sec; TIMING TOTAL ~1.17 s; 1 MPI × 8 OMP) |
-| Wall (2b) | ~1.3 s (companion; not used for ratio) |
+| Wall (C9, fair cold) | **1.44 s** (`/usr/bin/time` wall_sec; 1 MPI × 8 OMP; re-run 2026-08-01) |
+| Wall (2b) | **1.55 s** (companion; not used for ratio) |
 | Date | 2026-08-01 |
 
 ### Energies [Hartree]
@@ -126,16 +126,16 @@ largest component **6.90e−7** Ha/Bohr (O1 x). Residual vs Γ periodic ATM
 | Wall (e2e reg) | **≤ 60 s** | e2e tier (H₂ wiring + standalone ATM) |
 | Fair ratio | **≤ 10** | \(T_{\mathrm{atv,fair}} / T_{\mathrm{cp2k,C9}}\) on water-dimer product |
 
-## Measured results (2026-08-01, first green)
+## Measured results (2026-08-01, rebased dual-gate green)
 
 | Gate | Tol | Measured |
 | ---- | --- | -------- |
 | E_disp (C9) vs CP2K | 1e−9 Ha | **2.79e−10** |
 | ATM force vs CP2K multi-k Δ | 1e−8 Ha/Bohr | **2.62e−10** (signal 6.90e−7) |
-| Product multi-k H₂ wiring | 1e−7 Ha/Bohr | **6.1e−18** |
-| Fair product wall (water dimer multi-k SCF+force, 150 Ry, OMP 8) | — | **14.97 s** |
-| CP2K C9 ENERGY_FORCE wall (1×8, cold) | — | **1.51 s** |
-| Fair ratio | ≤ 10 | **9.91** (14.97 / 1.51) |
+| Product multi-k H₂ wiring | 1e−7 Ha/Bohr | **1.2e−16** |
+| Fair product wall (water dimer multi-k SCF+force, 150 Ry, OMP 8) | — | **13.28 s** |
+| CP2K C9 ENERGY_FORCE wall (1×8, cold) | — | **1.44 s** |
+| Fair ratio | ≤ 10 | **9.22** (13.28 / 1.44) |
 | e2e reg wall | ≤ 60 s | **~0.2 s** |
 
 ## Dual gate
@@ -153,9 +153,9 @@ largest component **6.90e−7** Ha/Bohr (O1 x). Residual vs Γ periodic ATM
 ## Performance note (multi-k force OpenMP)
 
 Serial multi-k AO-Pulay + grid assembly on this twin was ~35 s (force alone
-~34 s; SCF ~1 s). OpenMP over atoms (Pulay) and grid points (Veff term) in
-`gpw_forces.cpp` k-path brings the product wall to **~15 s** (≈ 2.3×),
-inside the 10× fair gate vs CP2K 1.51 s.
+~34 s; SCF ~1 s). OpenMP over basis functions (Pulay), grid points (Veff),
+and atoms (ionic HF) in `gpw_forces.cpp` k-path brings the product wall to
+**~13.3 s** (≈ 2.6× vs serial), inside the 10× fair gate vs CP2K 1.44 s.
 
 ## Notes
 

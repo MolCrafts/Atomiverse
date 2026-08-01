@@ -1141,46 +1141,56 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
     std::vector<std::array<double, 3>> forces(na, {0.0, 0.0, 0.0});
 
     // ── AO Pulay: Σ_k w_k 2 Re[ W_μν* ⟨dμφ|ν⟩_k − P_μν* ⟨dμφ|T+Vnl|ν⟩_k ] ──
-    // Parallel over atoms: each A writes only forces[A][*].
+    // Parallel over basis functions (better load balance than atoms — O has
+    // far more AOs than H). Each thread accumulates into a private force
+    // scratch and merges once; the operator-center Vnl TI is parallel over
+    // (A, μ) with the same scratch.
     std::vector<const GpwAtom*> all(static_cast<std::size_t>(na));
     for (int a = 0; a < na; ++a)
         all[static_cast<std::size_t>(a)] = &atoms[a];
+    for (int k = 0; k < 3; ++k) {
 #pragma omp parallel
-    {
-        std::vector<Cplx> s_k, t_k, v_k, vA_k;
-#pragma omp for schedule(dynamic)
-        for (int A = 0; A < na; ++A) {
-            const std::vector<const GpwAtom*> onlyA = {&atoms[A]};
-            for (int k = 0; k < 3; ++k) {
+        {
+            std::vector<Cplx> s_k, t_k, v_k, vA_k;
+            std::vector<double> f_loc(static_cast<std::size_t>(na), 0.0);
+            // Bra-center Pulay: ∂/∂R_A on basis functions owned by A.
+#pragma omp for schedule(dynamic) nowait
+            for (int mu = 0; mu < nb; ++mu) {
+                const int A = owner[static_cast<std::size_t>(mu)];
+                const GridBasisFunction& dmu = dphi[mu][k];
+                const double rdmu = drad[mu][k];
                 double f = 0.0;
-                for (int mu = atom_off[A]; mu < atom_off[A + 1]; ++mu) {
-                    const GridBasisFunction& dmu = dphi[mu][k];
-                    const double rdmu = drad[mu][k];
-                    for (int nu = 0; nu < nb; ++nu) {
-                        const double reach =
-                            rdmu + radii[static_cast<std::size_t>(nu)];
-                        pair_ST_k(dmu, basis[nu], cfg.cell, mimg, reach, kpts,
-                                  s_k, t_k);
-                        pair_Vnl_k(dmu, basis[nu], all, cfg.cell, mimg, reach,
-                                   kpts, v_k);
-                        for (int ik = 0; ik < nk; ++ik) {
-                            const double wk =
-                                kpts[static_cast<std::size_t>(ik)].weight;
-                            const Cplx Wmn =
-                                W_k[static_cast<std::size_t>(ik)](mu, nu);
-                            const Cplx Pmn =
-                                P_k[static_cast<std::size_t>(ik)](mu, nu);
-                            const Cplx s = s_k[static_cast<std::size_t>(ik)];
-                            const Cplx t = t_k[static_cast<std::size_t>(ik)];
-                            const Cplx v = v_k[static_cast<std::size_t>(ik)];
-                            // 2 Re(W† s) with Hermitian W → 2 Re(conj(W)*s)
-                            f += 2.0 * wk * std::real(std::conj(Wmn) * s);
-                            f -= 2.0 * wk * std::real(std::conj(Pmn) * t);
-                            f -= 2.0 * wk * std::real(std::conj(Pmn) * v);
-                        }
+                for (int nu = 0; nu < nb; ++nu) {
+                    const double reach =
+                        rdmu + radii[static_cast<std::size_t>(nu)];
+                    pair_ST_k(dmu, basis[nu], cfg.cell, mimg, reach, kpts, s_k,
+                              t_k);
+                    pair_Vnl_k(dmu, basis[nu], all, cfg.cell, mimg, reach, kpts,
+                               v_k);
+                    for (int ik = 0; ik < nk; ++ik) {
+                        const double wk =
+                            kpts[static_cast<std::size_t>(ik)].weight;
+                        const Cplx Wmn =
+                            W_k[static_cast<std::size_t>(ik)](mu, nu);
+                        const Cplx Pmn =
+                            P_k[static_cast<std::size_t>(ik)](mu, nu);
+                        const Cplx s = s_k[static_cast<std::size_t>(ik)];
+                        const Cplx t = t_k[static_cast<std::size_t>(ik)];
+                        const Cplx v = v_k[static_cast<std::size_t>(ik)];
+                        // 2 Re(W† s) with Hermitian W → 2 Re(conj(W)*s)
+                        f += 2.0 * wk * std::real(std::conj(Wmn) * s);
+                        f -= 2.0 * wk * std::real(std::conj(Pmn) * t);
+                        f -= 2.0 * wk * std::real(std::conj(Pmn) * v);
                     }
                 }
-                // Operator-center TI for nonlocal on A: +2 Re P† ⟨dμφ|V_A|ν⟩
+                f_loc[static_cast<std::size_t>(A)] += f;
+            }
+            // Operator-center TI for nonlocal on A: +2 Re P† ⟨dμφ|V_A|ν⟩.
+            // Flatten over A so all atoms share the μ-loop work pool.
+#pragma omp for schedule(dynamic) nowait
+            for (int A = 0; A < na; ++A) {
+                const std::vector<const GpwAtom*> onlyA = {&atoms[A]};
+                double f = 0.0;
                 for (int mu = 0; mu < nb; ++mu) {
                     const GridBasisFunction& dmu = dphi[mu][k];
                     const double rdmu = drad[mu][k];
@@ -1201,7 +1211,12 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                         }
                     }
                 }
-                forces[A][k] = f;
+                f_loc[static_cast<std::size_t>(A)] += f;
+            }
+#pragma omp critical
+            {
+                for (int a = 0; a < na; ++a)
+                    forces[a][k] += f_loc[static_cast<std::size_t>(a)];
             }
         }
     }
@@ -1225,7 +1240,7 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                 ya.resize(static_cast<std::size_t>(nb));
                 yb.resize(static_cast<std::size_t>(nb));
             }
-#pragma omp for schedule(static)
+#pragma omp for schedule(static) nowait
             for (long g = 0; g < ng; ++g) {
                 const Cplx* v = chi.data() + static_cast<std::size_t>(g) * nb;
                 const Cplx* dv =
@@ -1245,11 +1260,11 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                     const double va = veff_a[static_cast<std::size_t>(g)] * wgt;
                     const double vb = veff_b[static_cast<std::size_t>(g)] * wgt;
                     for (int u = 0; u < nb; ++u)
-                        for (int k = 0; k < 3; ++k) {
+                        for (int kk = 0; kk < 3; ++kk) {
                             const Cplx dval =
                                 dv[static_cast<std::size_t>(u) * 3
-                                   + static_cast<std::size_t>(k)];
-                            f_loc[owner[u]][k] -=
+                                   + static_cast<std::size_t>(kk)];
+                            f_loc[owner[u]][kk] -=
                                 2.0 * wk
                                 * (va
                                        * std::real(
@@ -1273,11 +1288,11 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                         y[static_cast<std::size_t>(mu)] = s;
                     }
                     for (int u = 0; u < nb; ++u)
-                        for (int k = 0; k < 3; ++k) {
+                        for (int kk = 0; kk < 3; ++kk) {
                             const Cplx dval =
                                 dv[static_cast<std::size_t>(u) * 3
-                                   + static_cast<std::size_t>(k)];
-                            f_loc[owner[u]][k] -=
+                                   + static_cast<std::size_t>(kk)];
+                            f_loc[owner[u]][kk] -=
                                 2.0 * wk * vw
                                 * std::real(dval
                                             * y[static_cast<std::size_t>(u)]);
@@ -1287,13 +1302,15 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
 #pragma omp critical
             {
                 for (int a = 0; a < na; ++a)
-                    for (int k = 0; k < 3; ++k)
-                        forces[a][k] += f_loc[a][k];
+                    for (int kk = 0; kk < 3; ++kk)
+                        forces[a][kk] += f_loc[a][kk];
             }
         }
     }
 
     // ── Ionic Hellmann–Feynman ────────────────────────────────────────────
+    // Parallel over atoms (each A writes only forces[A][*]).
+#pragma omp parallel for schedule(static) if (na > 1)
     for (int A = 0; A < na; ++A) {
         const GpwAtom& Aatom = atoms[A];
         const double s2 = Aatom.rloc * Aatom.rloc;
@@ -1304,18 +1321,18 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
             grid.point(g, r);
             double d[3] = {r[0] - Aatom.pos[0], r[1] - Aatom.pos[1],
                            r[2] - Aatom.pos[2]};
-            for (int k = 0; k < 3; ++k)
-                d[k] -= grid.L[k] * std::nearbyint(d[k] / grid.L[k]);
+            for (int kk = 0; kk < 3; ++kk)
+                d[kk] -= grid.L[kk] * std::nearbyint(d[kk] / grid.L[kk]);
             const double gauss =
                 norm
                 * std::exp(-(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
                            / (2.0 * s2));
             const double vg = v_es[static_cast<std::size_t>(g)] * gauss / s2;
-            for (int k = 0; k < 3; ++k)
-                acc[k] += vg * d[k];
+            for (int kk = 0; kk < 3; ++kk)
+                acc[kk] += vg * d[kk];
         }
-        for (int k = 0; k < 3; ++k)
-            forces[A][k] += wgt * acc[k];
+        for (int kk = 0; kk < 3; ++kk)
+            forces[A][kk] += wgt * acc[kk];
     }
 
     // Local-PP HF (grid route).

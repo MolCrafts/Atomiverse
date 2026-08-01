@@ -76,8 +76,8 @@ constexpr double kWallBudget = 60.0;  // s
 // Fair wall (REFERENCE.md): offline product multi-k water-dimer ENERGY_FORCE
 // twin (same geometry/method class as the CP2K pin), not the cheap H2 wiring
 // gate below. Recorded T_atv / T_cp2k fill the PASS line for provenance.
-constexpr double kTAtvFairSec = 14.97; // s — product SCF+force, OMP 8, 150 Ry
-constexpr double kTCp2kSec = 1.51;     // s — CP2K cold ENERGY_FORCE, 1×8
+constexpr double kTAtvFairSec = 13.28; // s — product SCF+force, OMP 8, 150 Ry
+constexpr double kTCp2kSec = 1.44;     // s — CP2K cold ENERGY_FORCE, 1×8
 
 void atm_diff_errors(const std::vector<std::array<double, 3>>& f_on,
                      const std::vector<std::array<double, 3>>& f_off,
