@@ -1,0 +1,69 @@
+# Offline pin — multi-k GPW PBE-D3(BJ) ENERGY_FORCE (water dimer)
+
+## Binary
+
+| Field | Value |
+| ----- | ----- |
+| Engine | CP2K 2026.1 (`cp2k.psmp`) |
+| Source revision | git:5e54ba2 |
+| Install | `/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install` |
+| env | `source .../cp2k/install/env.sh` → `CP2K_DATA_DIR` set |
+| Host | Arrhenius epyc login |
+| Fair wall recipe | `OMP_NUM_THREADS=8 mpirun -np 1 cp2k.psmp -i water_dimer_d3bj_kpoint_forces.inp` |
+| Date | 2026-08-01 |
+
+## Inputs
+
+- `water_dimer_d3bj_kpoint_forces.inp` — D3(BJ) + MP 1×1×2 + ENERGY_FORCE
+- `water_dimer_plain_kpoint_forces.inp` — identical without `&VDW_POTENTIAL`
+
+## Printed energies [Hartree]
+
+| Run | Total energy | Dispersion energy |
+| --- | ------------ | ----------------- |
+| D3BJ | −34.33962825578086 | **−0.00137627769481** |
+| plain | −34.33825197808605 | — |
+
+Dispersion matches the Γ pin (`gpw-d3bj-forces`) bit-for-bit: geometry-only.
+
+## FORCES| tables [Ha/Bohr] (atom order O H H O H H)
+
+### D3BJ
+
+```
+FORCES|      1 -8.18231441E-02  4.01492980E-10  3.72641618E-10
+FORCES|      2  4.08872726E-02  1.13134904E-11  1.31270241E-01
+FORCES|      3  4.08872726E-02  1.06384740E-11 -1.31270241E-01
+FORCES|      4 -8.05124309E-02  3.58188268E-10  3.28458012E-10
+FORCES|      5  3.75636484E-02  1.35480669E-11  1.35137199E-01
+FORCES|      6  3.75636484E-02  1.32671690E-11 -1.35137199E-01
+FORCES| Sum    -5.43373292E-03  8.08448449E-10  7.07570780E-10
+```
+
+### plain
+
+```
+FORCES|      1 -8.19227599E-02  4.01489128E-10  3.72641307E-10
+FORCES|      2  4.08225174E-02  1.13134323E-11  1.31264301E-01
+FORCES|      3  4.08225174E-02  1.06385551E-11 -1.31264301E-01
+FORCES|      4 -8.04237542E-02  3.58191250E-10  3.28453339E-10
+FORCES|      5  3.76338733E-02  1.35482542E-11  1.35133744E-01
+FORCES|      6  3.76338733E-02  1.32675516E-11 -1.35133744E-01
+FORCES| Sum    -5.43373292E-03  8.08448171E-10  7.07564923E-10
+```
+
+### ΔF = F(D3BJ) − F(plain) (dispersion only)
+
+max component **9.96158e−05** Ha/Bohr (O0 Fx). Matches Γ ΔF to ~1e−10
+(geometry-only; k-mesh does not enter D3).
+
+## Fair wall
+
+| Item | Value |
+| ---- | ----- |
+| CP2K internal timer (`CP2K` total) | **3.931 s** (D3BJ multi-k ENERGY_FORCE) |
+| `/usr/bin/time` real | 4.39 s (includes startup) |
+| Parallelism | 1 MPI × 8 OMP |
+
+Use the internal timer for \(T_{\mathrm{cp2k}}\) (same policy as
+`gpw-d4-atm-kpoint-forces`).

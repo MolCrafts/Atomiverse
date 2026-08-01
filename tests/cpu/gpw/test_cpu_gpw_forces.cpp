@@ -15,6 +15,8 @@
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
+#include "atomiverse/cpu/gpw/internal/dftd3.h"
+#include "atomiverse/cpu/gpw/internal/dftd3_params.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 
 using namespace ATV::cpu::gpw;
@@ -405,9 +407,78 @@ TEST(GpwForces, AnalyticMatchesFdWithD3Bj) {
     EXPECT_LT(max_err, 5e-5) << "Γ RKS + D3(BJ) analytic vs multi-SCF FD";
 }
 
-// Γ RKS + DFT-D4: product analytic forces must match multi-SCF energy FD
-// (geometry-only D4 is folded into both paths). Residual unit-tier loose;
-// e2e pin is reg_gpw-d4-forces.
+// Multi-k force assembly must fold geometry-only D3(BJ) (product path
+// used by reg_gpw-d3bj-kpoint-forces). H2 1×1×2: one SCF, two assemblies vs
+// standalone dftd3_pbe_bj.
+TEST(GpwForces, KpointProductForcesFoldD3Bj) {
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.5, 6.0, 6.0};
+    std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
+                                  GpwAtom(rB, basis, pot, 1)};
+
+    auto make_cfg = [](bool d3bj) {
+        GpwDft m;
+        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+        m.cutoff_ry = 100.0;
+        m.n_occ = 1;
+        m.tol = 1e-8;
+        m.max_iter = 60;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.xc = XcKind::PADE;
+        m.eps_default = 1e-8;
+        m.k_mesh[0] = 1;
+        m.k_mesh[1] = 1;
+        m.k_mesh[2] = 2;
+        m.d3bj = d3bj;
+        return m;
+    };
+
+    GpwDft cfg = make_cfg(true);
+    cfg.build(atoms);
+    const auto& scf = cfg.run(atoms);
+    ASSERT_TRUE(scf.converged);
+    EXPECT_GE(scf.n_kpts, 1);
+    EXPECT_FALSE(scf.C_occ_k.empty());
+    EXPECT_TRUE(std::isfinite(scf.e_disp));
+    EXPECT_LT(scf.e_disp, 0.0);
+
+    const auto F_on = gpw_forces_from_scf(atoms, cfg, scf);
+    GpwDft plain = make_cfg(false);
+    const auto F_plain = gpw_forces_from_scf(atoms, plain, scf);
+    ASSERT_EQ(F_on.size(), 2u);
+    ASSERT_EQ(F_plain.size(), 2u);
+
+    std::vector<int> Z = {1, 1};
+    std::vector<std::array<double, 3>> pos = {
+        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    const double cell[3] = {12.0, 12.0, 12.0};
+    const D3Result geom =
+        dftd3_pbe_bj(Z, pos, cell, /*periodic=*/true, D3Params{},
+                     kD3Cp2kPairCutoffBohr, /*s6=*/1.0, /*s8=*/0.7875,
+                     /*a1=*/0.4289, /*a2=*/4.4407, /*cp2k_cn=*/true,
+                     /*calculate_c9=*/false);
+
+    double max_d = 0.0;
+    for (int a = 0; a < 2; ++a) {
+        for (int k = 0; k < 3; ++k) {
+            const double d =
+                (F_on[static_cast<std::size_t>(a)][k]
+                 - F_plain[static_cast<std::size_t>(a)][k])
+                - geom.forces[static_cast<std::size_t>(a)][k];
+            max_d = std::max(max_d, std::abs(d));
+        }
+    }
+    std::printf(
+        "[D3BJ k-forces] e_disp=%.6e  max|F_on-F_plain-F_geom|=%.2e\n",
+        scf.e_disp, max_d);
+    EXPECT_LT(max_d, 1e-8)
+        << "multi-k assemble must add geometry-only D3(BJ) forces";
+    EXPECT_GT(std::abs(geom.forces[0][0]), 1e-10);
+}
+
 TEST(GpwForces, AnalyticMatchesFdWithD4) {
     const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
     const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
