@@ -348,6 +348,7 @@ Offline CP2K 2026.1 pins only — see
 | Method | Page | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
 | ------ | ---- | ---------- | --------------------------------------------- |
 | Finite-\(q\) DFPT at X, joint collinear spin × pure GGA (diamond Si) | [dfpt-gga-spin-finite-q-si](dfpt-gga-spin-finite-q-si.md) | `regressions/response/dfpt-gga-spin-finite-q-si` | **0.19** |
+| Finite-\(q\) DFPT at X, joint collinear spin × pure GGA × metallic smear (diamond Si) | [dfpt-gga-spin-finite-q-smearing](dfpt-gga-spin-finite-q-smearing.md) | `regressions/response/dfpt-gga-spin-finite-q-smearing` | **0.25** |
 
 ## Index — restored capability pages (indexed 2026-07-28)
 
@@ -457,6 +458,7 @@ grouped by regression domain, alphabetical by slug.
 | Finite-\(q\) DFPT phonons at X, pure GGA kernel (diamond Si) | [dfpt-gga-finite-q-si](dfpt-gga-finite-q-si.md) | `regressions/response/dfpt-gga-finite-q-si` |
 | DFPT phonons at Γ, pure GGA kernel (diamond Si) | [dfpt-gga-si](dfpt-gga-si.md) | `regressions/response/dfpt-gga-si` |
 | Finite-\(q\) DFPT at X, joint collinear spin × pure GGA (diamond Si) | [dfpt-gga-spin-finite-q-si](dfpt-gga-spin-finite-q-si.md) | `regressions/response/dfpt-gga-spin-finite-q-si` |
+| Finite-\(q\) DFPT at X, joint collinear spin × pure GGA × metallic smear (diamond Si) | [dfpt-gga-spin-finite-q-smearing](dfpt-gga-spin-finite-q-smearing.md) | `regressions/response/dfpt-gga-spin-finite-q-smearing` |
 | DFPT phonons at Γ, joint collinear spin × pure GGA (diamond Si) | [dfpt-gga-spin-si](dfpt-gga-spin-si.md) | `regressions/response/dfpt-gga-spin-si` |
 | DFPT phonons at Γ, joint collinear spin × pure GGA × metallic smear (diamond Si) | [dfpt-gga-spin-smearing](dfpt-gga-spin-smearing.md) | `regressions/response/dfpt-gga-spin-smearing` |
 | Incommensurate-\(q\) DFPT phonons (diamond Si) | [dfpt-incommensurate-si](dfpt-incommensurate-si.md) | `regressions/response/dfpt-incommensurate-si` |
