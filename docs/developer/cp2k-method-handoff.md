@@ -1,6 +1,59 @@
 # CP2K capability loop — handoff
 
-## Harness wave 2 (shift) 2026-08-01 (parent `dev` @ `79bcfa14`)
+## Harness wave 3 (shift) 2026-08-01 (parent `dev` @ `9bd134e0`)
+
+| Field | Value |
+| ----- | ----- |
+| Branch | `dev` (ahead of `origin/dev`; **no push**) |
+| Incomplete / `in_progress` | **3** (`[~] gpw-ts-kpoint-stress`, `[~] gpw-d3-atm-kpoint-forces`, `[~] gpw-hirshfeld-forces`) |
+| Open CP2K specs on `dev` | **0** (PySCF deferred only: `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp`) |
+| Specs closed this harness | **2** (deleted: `periodic-berry-gpw`, `periodic-scs-mp2-kpoints`; d4-atm-k / optb88-uks-k had no live specs on parent) |
+| Unmerged staff `wf/*` | **3** incomplete kept (tips ahead of `dev`; do not prune) |
+| Isolation worktrees | **0** (clearup already ran) |
+| Leftover builds | none in loop scope |
+| Pending gaps | **0** residual (not exhausted — GapCensus owns discovery) |
+| Blocked | **6** (VV10 + hybrid / GAPW / PAW / CUDA-GPW / meta-GGA) |
+| Done this wave | **4** landings |
+| Oracle | CP2K 2026.1 source build `…/cp2k/install` (`git:5e54ba2`); offline pins only; D4 multi-k ATM uses private libdftd4 rebuild; multi-k SCS-MP2 is `oracle: literature` (CP2K aborts MP2_GPW@k) |
+| Loop docs | queue / loop / handoff / specs INDEX / residual prose **synced** |
+
+### Wave staff → done
+
+| Slug | Domain | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
+| ---- | ------ | ---------- | --------------------------------------------- |
+| `gpw-d4-atm-kpoint-forces` | gpw | `reg_gpw-d4-atm-kpoint-forces` | **0.613** (9.682 / 15.806; CP2K libdftd4 multi-k ENERGY_FORCE) |
+| `gpw-optb88-uks-kpoints` | gpw | `reg_gpw-optb88-uks-kpoints` | **0.73** (G2 9.8 / CP2K 13.29 OMP=8) |
+| `periodic-scs-mp2-kpoints` | gpw | `reg_periodic-scs-mp2-kpoints` | **perf_exempt** (CP2K no multi-k MP2_GPW; algebraic Grimme dual) |
+| `periodic-berry-gpw` | response | `reg_periodic-berry-gpw` | **9.6** (11.3 / 1.18; within_10x) |
+
+### Incomplete kept `[~]` (do not demote)
+
+| Slug | Branch | Tip | Note |
+| ---- | ------ | --- | ---- |
+| `gpw-ts-kpoint-stress` | `wf/gpw-ts-kpoint-stress` | `4afc4185` | feat tip; no reg dir on parent |
+| `gpw-d3-atm-kpoint-forces` | `wf/gpw-d3-atm-kpoint-forces` | `a4168475` | feat tip + OpenMP k-forces; no reg dir on parent |
+| `gpw-hirshfeld-forces` | `wf/gpw-hirshfeld-forces` | `4f3a62c6` | feat tip (volume-scaled force/stress fold); no reg dir on parent |
+
+### Roadmap ○→✓ this harness
+
+| Row | Doc | Note |
+| --- | --- | ---- |
+| *(none)* | — | capability table rows already ✓ (optB88 / SCS-MP2 / Berry / ATM forces) |
+| Residual prose | `dft.md` intro + §8/§10/§11 + `index.md` GPW | open residuals → multi-k **TS stress** + multi-k D3 **ATM forces** + Hirshfeld-scaled TS/MBD **forces** (`[~]` only) |
+
+### Pending residual
+
+**Pending = 0** (assign emptied the census list; **not** queue exhausted).
+**Incomplete = 3** (unmerged `wf/*`). Next wave starts with **Recover
+incomplete** (merge or finish the three `[~]` tips) then GapCensus. Blocked
+= 6 unchanged.
+
+Do **not** staff PySCF deferred specs. No push from parent.
+**Queue not exhausted** — GapCensus owns discovery; incomplete ≫ pending.
+
+---
+
+## Harness wave 2 (shift) 2026-08-01 (parent `dev` @ `79bcfa14`) — historical
 
 | Field | Value |
 | ----- | ----- |

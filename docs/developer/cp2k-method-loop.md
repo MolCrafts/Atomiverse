@@ -66,6 +66,22 @@ args: { "mode":"exhaust", "staff_count":10, "max_waves":20, "target_branch":"dev
 
 ## Run log
 
+- **2026-08-01 harness wave 3 (shift) (parent `dev` @ `9bd134e0`):** 4 of 7
+  staffed on `dev` → done: `gpw-d4-atm-kpoint-forces` (CP2K libdftd4 multi-k
+  ENERGY_FORCE ATM ΔF, ratio **0.613**), `gpw-optb88-uks-kpoints` (multi-k
+  UKS OptB88+DRSLL, E_disp parity 3.77e-5 Ha, ratio **0.73**),
+  `periodic-scs-mp2-kpoints` (Grimme algebraic dual on multi-k RI-GPW;
+  CP2K offline aborts MP2_GPW@k — **perf_exempt** / `oracle: literature`),
+  `periodic-berry-gpw` (GPW KSV Berry; Si symmetry pins; fair twin ratio
+  **9.6**). Three staff stay `[~]`: `gpw-ts-kpoint-stress` @ `4afc4185`,
+  `gpw-d3-atm-kpoint-forces` @ `a4168475`, `gpw-hirshfeld-forces` @
+  `4f3a62c6` (feat tips; no reg on parent; do not demote). Specs closed
+  (`periodic-berry-gpw`, `periodic-scs-mp2-kpoints` deleted). Residual
+  pending **0** (census list emptied by assign — **not** queue exhausted).
+  Roadmap: **no ○/✓ table flips**; residual prose → multi-k TS stress +
+  multi-k D3 ATM forces + Hirshfeld-scaled forces (`[~]` only). Clearup
+  already ran. Queue **not** exhausted. No push.
+
 - **2026-08-01 harness wave 2 (shift) (parent `dev` @ `79bcfa14`):** 8 of 9
   staffed on `dev` → done: `gpw-d4-kpoint-stress` (CP2K libdftd4 multi-k
   NUMERICAL Δσ, ratio **0.139**), `gpw-xdm-kpoint-stress` (dual pure-Python

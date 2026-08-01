@@ -55,13 +55,15 @@ ships multi-k **D4/XDM stress** (`reg_gpw-d4-kpoint-stress` /
 (`reg_periodic-wannier-gpw-uks`), SCS-**MP2** (`reg_periodic-scs-mp2-si`),
 Γ-UKS + multi-k RKS **optB88-vdW** (`reg_gpw-optb88-uks` /
 `reg_gpw-optb88-kpoints`), multi-k UKS **vdW×multigrid**
-(`reg_gpw-vdw-uks-kpoint-multigrid`); open residuals (**GapCensus wave 3
-shift 2026-08-01**): multi-k **TS stress** dedicated pin (`[~]`
-`gpw-ts-kpoint-stress`), multi-k D3/D4 **ATM forces** dedicated pins,
-multi-k UKS **optB88-vdW** pin, multi-k **SCS-MP2**, GPW **Berry**
-polarization, Hirshfeld-scaled TS/MBD **forces** (energy folds volumes;
-force/stress still free-atom — found residual); queue not exhausted —
-GapCensus owns discovery;
+(`reg_gpw-vdw-uks-kpoint-multigrid`); **harness wave 3 (shift, 2026-08-01)**
+ships multi-k D4 **ATM forces** (`reg_gpw-d4-atm-kpoint-forces`), multi-k
+UKS **optB88-vdW** (`reg_gpw-optb88-uks-kpoints`), multi-k **SCS-MP2**
+(`reg_periodic-scs-mp2-kpoints`), and GPW **Berry**
+(`reg_periodic-berry-gpw`); open residuals (**incomplete `[~]` only**):
+multi-k **TS stress** (`gpw-ts-kpoint-stress`), multi-k D3 **ATM forces**
+(`gpw-d3-atm-kpoint-forces`), Hirshfeld-scaled TS/MBD **forces**
+(`gpw-hirshfeld-forces` — energy folds volumes; force/stress fold still
+unmerged); queue not exhausted — GapCensus owns discovery;
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -349,13 +351,13 @@ REL_CUTOFF multigrid is product (`reg_gpw-vdw-uks-kpoint-multigrid`;
 matched CP2K NGRIDS 4 / DRSLL / UKS / MP twin + multi-k UKS sg↔mg
 consistency). Γ-UKS **optB88-vdW** is product (`reg_gpw-optb88-uks`; CP2K
 UKS OptB88+DRSLL twin); multi-k RKS optB88-vdW is product
-(`reg_gpw-optb88-kpoints`); multi-k UKS optB88-vdW is **queued**
-(`gpw-optb88-uks-kpoints` — product-shaped allow-list / spin XC / DRSLL
-fold, dedicated pin only). Multi-k **ATM forces** (geometry-only fold
-product; dedicated pins queued `gpw-d3-atm-kpoint-forces` /
-`gpw-d4-atm-kpoint-forces`). **Hirshfeld-scaled TS/MBD forces** are
-queued (`gpw-hirshfeld-forces`: energy folds volume ratios; force/stress
-assembly still free-atom).
+(`reg_gpw-optb88-kpoints`); multi-k UKS optB88-vdW is product
+(`reg_gpw-optb88-uks-kpoints`; CP2K KPOINTS + UKS + OptB88+DRSLL twin).
+Multi-k **D4 ATM forces** are product (`reg_gpw-d4-atm-kpoint-forces`;
+CP2K libdftd4 multi-k ENERGY_FORCE); multi-k **D3 ATM forces** stay
+incomplete (`[~] gpw-d3-atm-kpoint-forces`). **Hirshfeld-scaled TS/MBD
+forces** remain incomplete (`[~] gpw-hirshfeld-forces`: energy folds
+volume ratios; force/stress fold unmerged on `wf/*`).
 
 ## 9. Composite DFT Methods
 
@@ -456,12 +458,15 @@ Two periodic DFT engines exist, with disjoint strengths:
   / `reg_gpw-hirshfeld-uks-kpoints` / `reg_cpmd-uks-thermostat-kpoints` /
   `reg_periodic-wannier-gpw-uks` / `reg_periodic-scs-mp2-si` /
   `reg_gpw-optb88-uks` / `reg_gpw-optb88-kpoints` /
-  `reg_gpw-vdw-uks-kpoint-multigrid`). Open residuals (**GapCensus wave 3
-  shift 2026-08-01**): multi-k TS stress (`[~]`), multi-k D3/D4 ATM force
-  pins, multi-k UKS optB88-vdW, multi-k SCS-MP2, GPW Berry, Hirshfeld
-  TS/MBD forces (see `cp2k-method-queue.md`; queue not exhausted).
-  Hybrids / meta-GGA / GAPW / PAW remain blocked (queue not exhausted —
-  see `cp2k-method-queue.md`). CPU only.
+  `reg_gpw-vdw-uks-kpoint-multigrid`); **harness wave 3 (shift, 2026-08-01)**
+  ships multi-k D4 ATM forces, multi-k UKS optB88-vdW, multi-k SCS-MP2,
+  GPW Berry (`reg_gpw-d4-atm-kpoint-forces` /
+  `reg_gpw-optb88-uks-kpoints` / `reg_periodic-scs-mp2-kpoints` /
+  `reg_periodic-berry-gpw`). Open residuals (**incomplete `[~]` only**):
+  multi-k TS stress, multi-k D3 ATM forces, Hirshfeld-scaled TS/MBD
+  forces (see `cp2k-method-queue.md`; queue not exhausted). Hybrids /
+  meta-GGA / GAPW / PAW remain blocked (queue not exhausted — see
+  `cp2k-method-queue.md`). CPU only.
 
 | Method                           | CPU | CUDA | Kokkos |
 | -------------------------------- | :-: | :--: | :---: |
@@ -534,7 +539,9 @@ Which engine backs which ✓:
   `reg_periodic-mp2-si`) **and multi-k RI-GPW** (`reg_periodic-mp2-kpoints`)
   **and Γ UMP2@UKS** (`reg_periodic-ump2-si`) **and multi-k UMP2**
   (`reg_periodic-ump2-kpoints`) **and Γ SCS-MP2** (`mp2_os_scale` /
-  `mp2_ss_scale`; `reg_periodic-scs-mp2-si` vs CP2K SCALE_S/SCALE_T).
+  `mp2_ss_scale`; `reg_periodic-scs-mp2-si` vs CP2K SCALE_S/SCALE_T)
+  **and multi-k SCS-MP2** (`reg_periodic-scs-mp2-kpoints`; Grimme algebraic
+  dual — CP2K 2026.1 aborts MP2_GPW under DFT KPOINTS).
   **Periodic RPA** is **Γ-point dRPA@KS** product (`GpwDft::direct_rpa`;
   plasmon formula; `reg_periodic-rpa-si`), **multi-k k-diagonal dRPA**
   (`reg_periodic-rpa-kpoints`), **finite-q inter-k dRPA**
@@ -620,8 +627,8 @@ Which engine backs which ✓:
   polarization on the PW method (`cpu::pw::BerryPolarization`; string-averaged
   Berry phases over occupied Bloch manifolds; symmetry-exact Si pins,
   `regressions/pw/berry-polarization`) **and collinear spin**
-  (`reg_berry-spin-si`). **GPW Berry** (Quickstep-class twin) is queued
-  (`periodic-berry-gpw` — PW-only today after GPW MLWF product).
+  (`reg_berry-spin-si`) **and GPW-grid KSV** (`reg_periodic-berry-gpw`;
+  symmetry-exact Si pins + CP2K Quickstep `&MOMENTS PERIODIC` fair twin).
 - **Maximally localized Wannier functions**: molecular **Foster–Boys** on
   closed-shell Gaussian RHF/RKS (`cpu::scf::WannierCenters`;
   `regressions/scf/wannier-centers`) **and** periodic multi-k
