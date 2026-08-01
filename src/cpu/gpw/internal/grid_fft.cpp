@@ -10,7 +10,7 @@
 
 #include <cmath>
 
-#include <fftw3.h>
+#include "atomiverse/cpu/gpw/internal/fft_cache.h"
 
 namespace ATV {
 namespace cpu {
@@ -67,20 +67,15 @@ inline double gcomp(const GInfo& g, long idx, int d) {
 std::array<std::vector<double>, 3> gradient(const UniformGrid& grid,
                                             const std::vector<double>& f) {
     const GInfo g = make_ginfo(grid);
-    double* rbuf = static_cast<double*>(fftw_malloc(sizeof(double) * g.ntot));
-    fftw_complex* fhat =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * g.ncplx));
-    fftw_complex* cwork =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * g.ncplx));
-    double* rout = static_cast<double*>(fftw_malloc(sizeof(double) * g.ntot));
+    R2cFft& fft = R2cFft::for_shape(g.n0, g.n1, g.n2);
+    double* rbuf = fft.r();
+    fftw_complex* fhat = fft.c();
+    fftw_complex* cwork = fft.c2();
+    double* rout = fft.r2();
 
     for (long i = 0; i < g.ntot; ++i)
-        rbuf[i] = f[i];
-    fftw_plan fwd =
-        fftw_plan_dft_r2c_3d(g.n0, g.n1, g.n2, rbuf, fhat, FFTW_ESTIMATE);
-    fftw_plan bwd =
-        fftw_plan_dft_c2r_3d(g.n0, g.n1, g.n2, cwork, rout, FFTW_ESTIMATE);
-    fftw_execute(fwd);
+        rbuf[i] = f[static_cast<std::size_t>(i)];
+    fft.execute_r2c(); // rbuf -> fhat
 
     std::array<std::vector<double>, 3> out;
     const double inv_n = 1.0 / static_cast<double>(g.ntot);
@@ -91,45 +86,33 @@ std::array<std::vector<double>, 3> gradient(const UniformGrid& grid,
             cwork[idx][0] = -gd * fhat[idx][1];
             cwork[idx][1] = gd * fhat[idx][0];
         }
-        fftw_execute(bwd); // cwork -> rout (= N * d f / d x_d)
+        fft.execute_c2r_alt(); // cwork -> rout (= N * d f / d x_d)
         out[d].resize(static_cast<std::size_t>(g.ntot));
         for (long i = 0; i < g.ntot; ++i)
-            out[d][i] = rout[i] * inv_n;
+            out[d][static_cast<std::size_t>(i)] = rout[i] * inv_n;
     }
 
-    fftw_destroy_plan(fwd);
-    fftw_destroy_plan(bwd);
-    fftw_free(rbuf);
-    fftw_free(fhat);
-    fftw_free(cwork);
-    fftw_free(rout);
     return out;
 }
 
 std::vector<double> divergence(const UniformGrid& grid,
                                const std::array<std::vector<double>, 3>& v) {
     const GInfo g = make_ginfo(grid);
-    double* rbuf = static_cast<double*>(fftw_malloc(sizeof(double) * g.ntot));
-    fftw_complex* fhat =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * g.ncplx));
-    fftw_complex* acc =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * g.ncplx));
-    double* rout = static_cast<double*>(fftw_malloc(sizeof(double) * g.ntot));
+    R2cFft& fft = R2cFft::for_shape(g.n0, g.n1, g.n2);
+    double* rbuf = fft.r();
+    fftw_complex* fhat = fft.c();
+    fftw_complex* acc = fft.c2();
+    double* rout = fft.r2();
 
     for (long idx = 0; idx < g.ncplx; ++idx) {
         acc[idx][0] = 0.0;
         acc[idx][1] = 0.0;
     }
 
-    fftw_plan fwd =
-        fftw_plan_dft_r2c_3d(g.n0, g.n1, g.n2, rbuf, fhat, FFTW_ESTIMATE);
-    fftw_plan bwd =
-        fftw_plan_dft_c2r_3d(g.n0, g.n1, g.n2, acc, rout, FFTW_ESTIMATE);
-
     for (int d = 0; d < 3; ++d) {
         for (long i = 0; i < g.ntot; ++i)
-            rbuf[i] = v[d][i];
-        fftw_execute(fwd); // rbuf -> fhat
+            rbuf[i] = v[d][static_cast<std::size_t>(i)];
+        fft.execute_r2c(); // rbuf -> fhat
         for (long idx = 0; idx < g.ncplx; ++idx) {
             const double gd = gcomp(g, idx, d);
             // accumulate i*gd * fhat
@@ -137,19 +120,13 @@ std::vector<double> divergence(const UniformGrid& grid,
             acc[idx][1] += gd * fhat[idx][0];
         }
     }
-    fftw_execute(bwd); // acc -> rout (= N * div v)
+    fft.execute_c2r_alt(); // acc -> rout (= N * div v)
 
     std::vector<double> out(static_cast<std::size_t>(g.ntot));
     const double inv_n = 1.0 / static_cast<double>(g.ntot);
     for (long i = 0; i < g.ntot; ++i)
-        out[i] = rout[i] * inv_n;
+        out[static_cast<std::size_t>(i)] = rout[i] * inv_n;
 
-    fftw_destroy_plan(fwd);
-    fftw_destroy_plan(bwd);
-    fftw_free(rbuf);
-    fftw_free(fhat);
-    fftw_free(acc);
-    fftw_free(rout);
     return out;
 }
 

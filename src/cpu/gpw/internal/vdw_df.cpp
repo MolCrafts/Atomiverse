@@ -14,6 +14,7 @@
 
 #include <fftw3.h>
 
+#include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
 #include "atomiverse/cpu/gpw/internal/rvv10.h"
 #include "atomiverse/cpu/gpw/internal/vdw_df_kernel_data.h"
@@ -194,13 +195,11 @@ VdwDfResult vdw_df_rps(const UniformGrid& grid, const std::vector<double>& rho,
             rbuf[a * ntot + g] = rg * ptmp[static_cast<std::size_t>(a)];
     }
 
+    R2cFft& fft = R2cFft::for_shape(n0, n1, n2);
     for (int a = 0; a < nalpha; ++a) {
         double* rin = rbuf + a * ntot;
         fftw_complex* cout = cbuf + a * ncplx;
-        fftw_plan fwd =
-            fftw_plan_dft_r2c_3d(n0, n1, n2, rin, cout, FFTW_ESTIMATE);
-        fftw_execute(fwd);
-        fftw_destroy_plan(fwd);
+        fft.execute_r2c(rin, cout);
     }
 
     const double two_pi = 2.0 * kPi;
@@ -272,10 +271,7 @@ VdwDfResult vdw_df_rps(const UniformGrid& grid, const std::vector<double>& rho,
     for (int a = 0; a < nalpha; ++a) {
         fftw_complex* cin = cbuf + a * ncplx;
         double* rout = rbuf + a * ntot;
-        fftw_plan bwd =
-            fftw_plan_dft_c2r_3d(n0, n1, n2, cin, rout, FFTW_ESTIMATE);
-        fftw_execute(bwd);
-        fftw_destroy_plan(bwd);
+        fft.execute_c2r(cin, rout);
         const double invN = 1.0 / static_cast<double>(ntot);
         for (long g = 0; g < ntot; ++g)
             rout[g] *= invN;

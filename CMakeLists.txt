@@ -754,6 +754,7 @@ if(NOT ATV_DOCS_ONLY)
         # is linked into atomiverse there, so the fftw3.h include propagates).
         if(ATV_BUILD_PW)
             target_sources(atomiverse PRIVATE
+                src/cpu/gpw/internal/fft_cache.cpp
                 src/cpu/gpw/internal/poisson_fft.cpp
                 src/cpu/gpw/internal/hartree_grid.cpp
                 src/cpu/gpw/internal/grid_fft.cpp
