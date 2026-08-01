@@ -17,7 +17,8 @@
 /// Ionic forces \(F_A = -\partial E_{\mathrm{MBD}}/\partial R_A\) are the
 /// negative gradient of this geometry-only energy (product path uses high-order
 /// central finite differences of the same kernel that matches libMBD; free-atom
-/// and fixed volume-ratio paths only — density-chain Hirshfeld is out of scope).
+/// and fixed volume-ratio paths only — density-chain \(\partial v/\partial R\)
+/// Hirshfeld is out of scope; `GpwDft::hirshfeld` holds \(v\) at the SCF density).
 #pragma once
 
 #include <array>

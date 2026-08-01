@@ -408,3 +408,7 @@ TEST(GpwHirshfeld, ClosedShellUksMatchesRksHirshfeldEDisp) {
     // Loose gate: SCF residual + DIIS path differences at light cutoff.
     EXPECT_NEAR(uks.e_disp, rks.e_disp, 5e-6);
 }
+
+
+// Force dual-gates + product fold live in test_cpu_gpw_vol_forces.cpp
+// (unit-test class: geometry FD + light H₂ wiring; ≤10 s hard cap).
