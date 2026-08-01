@@ -354,6 +354,9 @@ if(ATV_BUILD_GPW)
     atv_add_cpp_test(test_cpu_gpw_vdw_df        cpu/gpw/test_cpu_gpw_vdw_df.cpp)
     atv_add_cpp_test(test_cpu_gpw_rvv10         cpu/gpw/test_cpu_gpw_rvv10.cpp)
     atv_add_cpp_test(test_cpu_gpw_hirshfeld     cpu/gpw/test_cpu_gpw_hirshfeld.cpp)
+    # Fixed-v TS/MBD force dual-gates (geometry FD + light H2 product fold).
+    # Name avoids the gpw_hirshfeld heavy regex — suite is unit-test class.
+    atv_add_cpp_test(test_cpu_gpw_vol_forces    cpu/gpw/test_cpu_gpw_vol_forces.cpp)
     # These four were registered inside the ATV_BUILD_PW block, so a build with
     # PW=ON and GPW=OFF — the copy-pasteable CPU build in AGENTS.md/CLAUDE.md —
     # failed to link them against a library with no GPW sources compiled in.

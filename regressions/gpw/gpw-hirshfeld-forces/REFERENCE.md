@@ -43,7 +43,7 @@ Scaling of free-atom \(\alpha_0\) / \(C_6\) / \(R_{\mathrm{vdW}}\):
 | **Translation** | \(\|\sum_A F_A\|\) (MBD) | ≤ **1×10⁻⁸** Ha/Bohr |
 | **Product wiring** | \(F(\mathrm{ts}+\mathrm{hirsh})-F(\mathrm{plain})\) vs `ts_pbe(…, scf.volume_ratios)` | max\|Δ\| ≤ **1×10⁻⁷** Ha/Bohr |
 | **Not free-atom** | max\|F_hirsh − F_free\| and wiring residual vs free-atom | must exceed noise |
-| **Stress fold** | analytic \(\sigma(\mathrm{ts}+\mathrm{hirsh})\) vs \(\sigma(\mathrm{ts})\) free-atom | max\|Δσ\| > 1×10⁻¹² Ha/Bohr³ |
+| **Stress fold** | analytic \(\sigma_{xx}(\mathrm{ts}+\mathrm{hirsh})\) vs free-atom TS at same SCF state | \|Δσ\| > 1×10⁻¹² Ha/Bohr³ |
 
 Representative fixed volumes (order O,H,H,O,H,H), matching
 `reg_gpw-mbd-hirshfeld`:
@@ -76,10 +76,11 @@ Cell (product SCF): **ABC 12.0 12.0 12.0 Å**, **PERIODIC XYZ**.
 Isolated dual-gates use the same nuclear coordinates without lattice images.
 
 Basis / PP: `DZVP-MOLOPT-SR-GTH` + `GTH-PBE-q1` (H) / `GTH-PBE-q6` (O).  
-CUTOFF **200 Ry**, n_occ 8, tol 1e-6, mix 0.4, PBE.
+CUTOFF **120 Ry** (product wiring + at-state stress), n_occ 8, tol 1e-6, mix 0.4, PBE.
 
 ## Perf gate
 
 **perf_exempt = true** — primary deliverable is fixed-\(v\) force dual-gate +
 product wiring parity. CP2K has no matched TS/MBD ENERGY_FORCE twin for a fair
-wall ratio. Product path wall budget ≤ 60 s on the regression host.
+wall ratio. Product path wall budget ≤ 60 s on the regression host (one SCF +
+at-state stress, not multi-SCF strain-FD).

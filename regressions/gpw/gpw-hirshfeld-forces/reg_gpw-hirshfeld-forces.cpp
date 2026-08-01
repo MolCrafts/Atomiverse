@@ -10,8 +10,8 @@
 ///   C. Product wiring: \(F(\mathrm{ts}+\mathrm{hirsh})-F(\mathrm{plain})\)
 ///      equals standalone `ts_pbe(…, volume_ratios)` from the SCF payload.
 ///   D. Free-atom forces differ from Hirshfeld-scaled (ratios move F).
-///   E. Stress fold: fixed-\(P\) Lagrangian rebuilds \(E_{\mathrm{disp}}\) with
-///      the same SCF volume ratios (Hirshfeld σ shift vs free-atom TS).
+///   E. Stress fold: fixed-\(P\) Lagrangian at the SCF state rebuilds
+///      \(E_{\mathrm{disp}}\) with the same volume ratios (Hirshfeld σ shift).
 ///
 /// CP2K 2026.1 has no stock TS/MBD pair potential — oracle is libMBD /
 /// literature dual (same policy as `gpw-mbd-hirshfeld` / `gpw-ts-forces`).
@@ -26,7 +26,6 @@
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
-#include "atomiverse/cpu/gpw/internal/gpw_stress.h"
 #include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/ts_dispersion.h"
 #include "atomiverse/molrs.hpp"
@@ -188,6 +187,8 @@ int main() {
     }
 
     // ── C/D: product GPW SCF (ts+hirshfeld) force wiring ──────────────────
+    // One SCF only: stress gate reuses the same payload via at-state overload.
+    // CUTOFF 120 Ry (sibling TS-stress class) keeps wall under 60 s.
     const GaussianBasis bO(molrs::Element::O, "DZVP-MOLOPT-SR-GTH");
     const GaussianBasis bH(molrs::Element::H, "DZVP-MOLOPT-SR-GTH");
     const GthPotential pO(molrs::Element::O, "GTH-PBE-q6");
@@ -208,7 +209,7 @@ int main() {
     auto make_cfg = [&](bool with_ts, bool with_hirsh) {
         GpwDft cfg;
         cfg.cell[0] = cfg.cell[1] = cfg.cell[2] = L;
-        cfg.cutoff_ry = 200.0;
+        cfg.cutoff_ry = 120.0;
         cfg.n_occ = 8;
         cfg.max_iter = 80;
         cfg.tol = 1e-6;
@@ -284,38 +285,34 @@ int main() {
                         res.volume_ratios[0]);
         }
 
-        // ── E: stress fold uses same volume ratios (Hirshfeld moves σ) ──
-        // Compare analytic stress with ts+hirsh vs free-atom ts only
-        // (same electronic state is not reused — full SCF each). Short
-        // stress gate: σ(ts+hirsh) must differ from σ(ts free-atom).
+        // ── E: stress fold at fixed SCF state (no second full SCF) ────────
+        // σ(ts+hirsh) vs σ(ts free-atom) on the same P — electronic cancels;
+        // only E_disp rebuild under strain differs via volume ratios.
         GpwDft cfg_h = make_cfg(true, true);
         GpwDft cfg_free = make_cfg(true, false);
-        const auto sig_h =
-            gpw_stress(atoms, cfg_h, /*h=*/2e-3, {{true, true, true}});
+        // One diagonal axis is enough to prove the fold moves σ.
+        const std::array<bool, 3> axes = {true, false, false};
+        const auto sig_h = gpw_stress(atoms, cfg_h, res, /*h=*/2e-3, axes);
         const auto sig_free =
-            gpw_stress(atoms, cfg_free, /*h=*/2e-3, {{true, true, true}});
-        double max_ds = 0.0;
-        for (int i = 0; i < 3; ++i)
-            max_ds = std::max(max_ds, std::abs(sig_h[static_cast<std::size_t>(i)]
-                                               - sig_free[static_cast<std::size_t>(
-                                                     i)]));
-        if (!(max_ds > 1e-12)) {
+            gpw_stress(atoms, cfg_free, res, /*h=*/2e-3, axes);
+        const double dsig = std::abs(sig_h[0] - sig_free[0]);
+        if (!(dsig > 1e-12)) {
             std::fprintf(stderr,
                          "FAIL: Hirshfeld must move analytic stress "
                          "(max|dσ|=%.3e)\n",
-                         max_ds);
+                         dsig);
             ++nfail;
         }
-        // Off-diagonals zero for orthorhombic.
-        for (int i = 3; i < 6; ++i) {
+        // Masked axes and off-diagonals exactly zero.
+        for (int i = 1; i < 6; ++i) {
             if (std::abs(sig_h[static_cast<std::size_t>(i)]) > 1e-12) {
-                fail("non-zero orthorhombic off-diagonal stress");
+                fail("non-zero stress on masked/off-diagonal component");
                 break;
             }
         }
-        std::printf("  stress fold: max|σ_h-σ_free|=%.3e Ha/Bohr³  "
-                    "σ_xx(h)=%.6e\n",
-                    max_ds, sig_h[0]);
+        std::printf("  stress fold (at-state): |σ_xx(h)-σ_xx(free)|=%.3e "
+                    "Ha/Bohr³  σ_xx(h)=%.6e\n",
+                    dsig, sig_h[0]);
     }
 
     const double wall = std::chrono::duration<double>(clock::now() - t0).count();

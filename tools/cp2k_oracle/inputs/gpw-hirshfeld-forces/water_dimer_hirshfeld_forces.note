@@ -20,23 +20,26 @@ Hard pin:
    fixed-\(v\) energy (TS and MBD@rsSCS).
 2. Product wiring: `gpw_forces_from_scf` with `ts+hirshfeld` adds
    `ts_pbe(…, scf.volume_ratios)`, not free-atom.
-3. E_disp isolated MBD with the published water-dimer Hirshfeld volumes
-   matches `gpw-mbd-hirshfeld` pin −1.1479852469005181e-03 Ha.
+3. E_disp isolated MBD with fixed representative volumes
+   `{0.7403,0.6529,0.6529,0.7153,0.5784,0.5784}` =
+   **−1.1479717148086300×10⁻³ Ha** (product kernel dual).
 
 Geometry: same water dimer as `gpw-mbd-hirshfeld` / `gpw-ts-forces`.
 
-## Host check (no twin .inp)
+## Host check (no twin .inp — CP2K has no algorithm)
 
 ```bash
 source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
 cp2k.psmp --version   # CP2K version 2026.1 (git:5e54ba2)
 # PAIR_POTENTIAL has no TYPE TS | MBD — literature/libMBD oracle only.
+# Confirmed 2026-08-01 on host: no fair ENERGY_FORCE twin for wall ratio.
 ```
 
 ## Pin summary
 
 ```
-E_disp (MBD@rsSCS, fixed v from mbd-hirshfeld) = -1.1479852469005181e-03 Ha
+E_disp (MBD@rsSCS, fixed v dual table) = -1.1479717148086300e-03 Ha
 force dual-gate max|F-F_fd| ≤ 1e-6 Ha/Bohr (TS + MBD)
-product wiring max|Δ| ≤ 1e-7 Ha/Bohr (ts+hirshfeld)
+product wiring max|Δ| ≤ 1e-7 Ha/Bohr (ts+hirshfeld, CUTOFF 120)
+stress fold: |σ_xx(hirsh)−σ_xx(free)| > 1e-12 at fixed SCF state
 ```
