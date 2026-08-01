@@ -1412,7 +1412,6 @@ queue. **Pending = 9**; **in_progress = 3**; **blocked = 6**.
 - [ ] `gpw-d3-kpoint-forces` | Multi-k analytic ionic forces with DFT-D3 zero damping (dedicated pin) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh (D3 on−off ΔF) | deps: gpw-d3-forces ✓, gpw-d3-kpoint-stress ✓
 - [ ] `gpw-d3bj-kpoint-forces` | Multi-k analytic ionic forces with DFT-D3(BJ) (dedicated pin) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh + BJ | deps: gpw-d3bj-forces ✓, gpw-d3bj-kpoint-stress ✓
 - [ ] `gpw-d4-kpoint-forces` | Multi-k analytic ionic forces with DFT-D4 two-body BJ (dedicated pin; ATM multi-k already `reg_gpw-d4-atm-kpoint-forces`) | gpw | twin: dftd4 3.7.0 `--grad` / CP2K libdftd4 ENERGY_FORCE + k | deps: gpw-d4-forces ✓, gpw-d4-kpoint-stress ✓
-- [ ] `gpw-d4-atm-kpoint-stress` | Multi-k analytic cell stress with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | twin: dftd4 3.7.0 strained-cell (s9 on−off) / CP2K libdftd4 NUMERICAL Δσ | deps: gpw-d4-atm-stress ✓, gpw-d4-kpoint-stress ✓
 - [ ] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | twin: libMBD / literature (CP2K has no stock TS — same policy as `gpw-ts-forces`) | deps: gpw-ts-forces ✓, gpw-ts-stress ✓
 - [ ] `gpw-xdm-kpoint-forces` | Multi-k analytic ionic forces with free-atom XDM (dedicated pin) | gpw | twin: pure-Python XDM strain/grad (same policy as `gpw-xdm-forces`) | deps: gpw-xdm-forces ✓, gpw-xdm-kpoint-stress ✓
 - [ ] `periodic-berry-gpw-uks` | King–Smith–Vanderbilt Berry-phase polarization on GPW collinear UKS (dual-channel string phases) | response | twin: CP2K 2026.1 Quickstep `&MOMENTS PERIODIC` UKS | deps: periodic-berry-gpw ✓, berry-spin-si ✓
@@ -1452,6 +1451,10 @@ queue. **Pending = 9**; **in_progress = 3**; **blocked = 6**.
 - [x] `gpw-d3-atm-kpoint-stress` | Multi-k analytic cell stress with D3 three-body ATM (C9) | gpw | `regressions/gpw/gpw-d3-atm-kpoint-stress` (CP2K NUMERICAL C9 on−off; Δσ parity 8.1e-14 Ha/Bohr³) | ratio **0.285** (5.34 / 18.74) | 2026-08-01
 - [x] `gpw-bomd-uks-kpoints` | Multi-k UKS plain BOMD (previous-step dual P_k^σ warm start) | dynamics | `regressions/gpw/gpw-bomd-uks-kpoints` (CP2K Quickstep UKS AIMD k-mesh pin) | ratio **1.18** | 2026-08-01
 - [x] `gpw-vdw-uks-multigrid` | Γ-UKS nonlocal vdW on REL_CUTOFF multigrid | gpw | `regressions/gpw/gpw-vdw-uks-multigrid` (CP2K NGRIDS 4 + DRSLL + UKS; E_disp 1.3e-5 Ha) | ratio **4.44** (within_10x; SC RPS FFT cost) | 2026-08-01
+
+## done (harness wave 4 worker 2026-08-01)
+
+- [x] `gpw-d4-atm-kpoint-stress` | Multi-k analytic cell stress with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | `regressions/gpw/gpw-d4-atm-kpoint-stress` (CP2K 2026.1 libdftd4 multi-k NUMERICAL ATM−2b Δσ + dftd4 3.7.0 strained-cell; max\|σ_ATM-cp2k\| 2.0e-11; dual gate 1.4e-9; wiring 4.0e-12) | ratio **0.077** (10.58 / 137.945) | 2026-08-01
 
 ## done (harness wave 3 (shift) 2026-07-31)
 
