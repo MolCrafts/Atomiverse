@@ -1,0 +1,17 @@
+# Offline pin note — gpw-bands-si
+#
+# Binary:   /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/bin/cp2k.psmp
+# Version:  CP2K 2026.1  Source code revision git:5e54ba2
+# Env:      source .../cp2k/install/env.sh ; CP2K_DATA_DIR set
+# Input:    tools/cp2k_oracle/inputs/gpw-bands-si.inp
+# Command:  OMP_NUM_THREADS=8 mpirun -np 1 cp2k.psmp -i gpw-bands-si.inp -o gpw-bands-si.out
+# Date:     2026-08-01
+#
+# Output lines:
+#   ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]            -15.802416412655166
+#   SCF run converged in    13 steps
+#   Band file si_gpw_bands: Γ band 8 = 5.17273324 eV (occ), band 9 = 6.06624926 eV
+#   Path gap (n_occ=8): 0.893516 eV (VBM=CBM at Γ)
+#
+# Fair wall (1 MPI × OMP 8, warm): CP2K 1.90 s ; ATV reg 6.66 s ; ratio 3.51
+# Consumed by: regressions/gpw/gpw-bands-si/REFERENCE.md
