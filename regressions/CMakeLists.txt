@@ -387,6 +387,10 @@ if(ATV_BUILD_GPW)
     # offline CP2K 2026.1 LSD + KPOINTS + GGA_X_OPTB88_VDW + DRSLL pin —
     # gpw-optb88-uks-kpoints).
     atv_add_regression(gpw gpw-optb88-uks-kpoints THREADS 8)
+    # Γ RKS OptB88+DRSLL analytic ionic forces — offline CP2K 2026.1
+    # ENERGY_FORCE twin (GGA_X_OPTB88_VDW + PW92 + DRSLL; dedicated pin
+    # after energy product gpw-optb88-vdw + SC force path).
+    atv_add_regression(gpw gpw-optb88-forces THREADS 8)
     atv_add_regression(gpw gpw-mbd-hirshfeld THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-kpoints THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-uks THREADS 8)

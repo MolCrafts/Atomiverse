@@ -1,0 +1,80 @@
+! Offline CP2K ENERGY_FORCE twin for gpw-optb88-forces (not run by ctest).
+! XC: CP2K 2026.1 libxc-named subsections (data/xc_section/vdW-DF-optB88.sec):
+!     GGA_X_OPTB88_VDW + PW92 + NON_LOCAL TYPE DRSLL.
+! Geometry matches regressions/gpw/gpw-optb88-vdw water dimer (12 Å cell).
+&GLOBAL
+  PROJECT water_dimer_optb88_vdw_force
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 200
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-12
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 40
+      &OT
+        PRECONDITIONER FULL_SINGLE_INVERSE
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 10
+        EPS_SCF 1.0E-7
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL
+        &GGA_X_OPTB88_VDW
+        &END GGA_X_OPTB88_VDW
+        &PW92
+        &END PW92
+      &END XC_FUNCTIONAL
+      &VDW_POTENTIAL
+        POTENTIAL_TYPE NON_LOCAL
+        &NON_LOCAL
+          TYPE DRSLL
+          KERNEL_FILE_NAME vdW_kernel_table.dat
+          SCALE 1.0
+        &END NON_LOCAL
+      &END VDW_POTENTIAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      O  0.000000  0.000000  0.000000
+      H  0.758602  0.000000  0.504284
+      H  0.758602  0.000000 -0.504284
+      O  3.000000  0.000000  0.000000
+      H  3.758602  0.000000  0.504284
+      H  3.758602  0.000000 -0.504284
+    &END COORD
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+  &END SUBSYS
+  &PRINT
+    &FORCES ON
+    &END FORCES
+  &END PRINT
+&END FORCE_EVAL
