@@ -36,14 +36,14 @@ fields `GpwResult::f_k` + full `C_k` under smear.
 | SCF | DIIS 6, `tol = 1e-6` Ha, `EPS_DEFAULT = 1e-7` |
 | Stress \(h\) | \(2\times 10^{-3}\) (dimensionless strain) |
 
-### Product pins (first green 2026-08-01)
+### Product pins (first green 2026-08-01; re-verify after rebase onto `dev` 2026-08-01)
 
 | Observable | Pin | Tol |
 | ---------- | --- | --- |
 | Free energy \(F\) | **−92.1263306084 Ha** | \(10^{-3}\) Ha |
 | \(N_{\mathrm{occ}}=\sum w f\) | **18.0** | \(10^{-5}\) |
 | \(E_F\) | **0.055826 Ha** (finite) | \(\lvert E_F\rvert < 10^3\) |
-| \(\max_{\mathrm{diag}}\lvert\sigma^{\mathrm{an}}-\sigma^{\mathrm{FD}}\rvert\) | **2.4×10⁻⁸ Ha/Bohr³** | \(2\times 10^{-4}\) |
+| \(\max_{\mathrm{diag}}\lvert\sigma^{\mathrm{an}}-\sigma^{\mathrm{FD}}\rvert\) | **2.378×10⁻⁸ Ha/Bohr³** | \(2\times 10^{-4}\) |
 | mean \(\sigma_{\mathrm{diag}}\) analytic | **−1.91772220×10⁻² Ha/Bohr³** | \(5\times 10^{-4}\) |
 | Off-diagonal product | 0 | soft 1e-8 |
 
@@ -55,22 +55,24 @@ fixed-\(f\) Hellmann–Feynman matches reconverged \(F\) under strain.
 | Item | Value |
 | ---- | ----- |
 | Code | **CP2K 2026.1** (`cp2k.psmp`, source `git:5e54ba2`) |
-| Env | `source …/cp2k/install/env.sh` |
-| Host | arrhenius1, 2026-08-01 |
+| Env | `source …/cp2k/install/env.sh` (`CP2K_DATA_DIR` set) |
+| Host | arrhenius1, 2026-08-01 (re-run this wave) |
+| Binary | `/nobackup/…/cp2k/install/bin/cp2k.psmp` |
+| Command | `mpirun -np 1 cp2k.psmp <input>` with `OMP_NUM_THREADS=4` |
 | Input (stress) | `tools/cp2k_oracle/inputs/gpw-metallic-stress/na_bcc_fermi_dirac_stress.inp` |
-| Input (fair ENERGY wall) | same system as energy twin / stress without `STRESS_TENSOR` (see run note) |
+| Input (fair ENERGY wall) | `tools/cp2k_oracle/inputs/gpw-metallic-stress/na_bcc_fermi_dirac_energy.inp` |
 | Method | Quickstep GPW, PADE, `GTH-PBE-q9` + `DZVP-MOLOPT-SR-GTH` |
 | Cell | BCC conventional \(a=4.225\) Å, 2 Na |
 | SMEAR | FERMI_DIRAC, \(T_e = 3157.75\) K (≈ 0.02 Ry \(k_B T\)), ADDED_MOS 4 |
 | k-points | Monkhorst–Pack \(2\times2\times2\) |
 | CUTOFF / REL_CUTOFF | 150 / 40 Ry, NGRIDS 4 |
 | `STRESS_TENSOR` | **NUMERICAL** |
-| Output energy line | `Total energy: -92.76593904071184` Ha |
+| Output energy line | `ENERGY\| Total FORCE_EVAL ( QS ) energy [hartree] -92.765939040711800` |
 | Fermi energy | `0.05448910718283` Ha |
 | Stress lines | `STRESS\| Numerical stress tensor [bar]` |
-| | `STRESS\| x -5.01677864643E+06 …` (diag ≈ −5.01677865e6 bar) |
-| \(\sigma_{\mathrm{xx}}\) (a.u.) | **−1.7051×10⁻² Ha/Bohr³** (= −5.01677865e6 bar / 2.942101e8) |
-| Soft class check | \(\lvert\sigma_{\mathrm{ATV}}-\sigma_{\mathrm{CP2K}}\rvert \le 5\times 10^{-3}\) Ha/Bohr³ |
+| | `STRESS\| x -5.01677864643E+06 …` (1/3 Trace −5.01677864609e6 bar) |
+| \(\sigma_{\mathrm{xx}}\) (a.u.) | **−1.7051×10⁻² Ha/Bohr³** (= −5.01677865e6 bar / 2.94210107994716e8) |
+| Soft class check | \(\lvert\sigma_{\mathrm{ATV}}-\sigma_{\mathrm{CP2K}}\rvert \le 5\times 10^{-3}\) Ha/Bohr³ (obs. ~2.1×10⁻³) |
 
 Absolute free energy and absolute stress differ from CP2K by grid /
 `EPS_DEFAULT` / multigrid residual (~0.64 Ha on \(F\), ~0.002 Ha/Bohr³ on
@@ -85,14 +87,14 @@ Same system / basis / PP / smear / k-mesh as the ENERGY twin job (1 MPI ×
 
 | Engine | Wall |
 | ------ | ---- |
-| Atomiverse SCF (`T_atv_scf`, re-verify green) | **0.723 s** |
-| CP2K ENERGY twin (`/usr/bin/time`, 1 MPI × 4 OMP) | **0.70 s** |
+| Atomiverse SCF (`T_atv_scf` from `reg_gpw-metallic-stress`) | **0.993 s** |
+| CP2K ENERGY twin (`/usr/bin/time`, 1 MPI × 4 OMP) | **0.92 s** |
 
 \[
-r = T_{\mathrm{atv,scf}} / T_{\mathrm{cp2k}} \approx 1.03 \ll 10
+r = T_{\mathrm{atv,scf}} / T_{\mathrm{cp2k}} \approx 1.08 \ll 10
 \]
 
-`within_10x = true`. Multi-SCF NUMERICAL stress wall was ~18 s (reference only;
+`within_10x = true`. Multi-SCF NUMERICAL stress wall was ~25 s (reference only;
 not the fair ratio denominator).
 
 ## Gates summary
@@ -104,4 +106,5 @@ not the fair ratio denominator).
 | Cubic symmetry / magnitude floor | PASS |
 | Absolute mean \(\sigma\) pin | PASS |
 | CP2K soft stress class | PASS |
-| Fair wall ≤ 10× | PASS (1.53) |
+| Fair wall ≤ 10× | PASS (1.08) |
+| Unit `GpwStress.MetallicSmearAnalyticMatchesFdDiagonal` | PASS (~5.7e-11) |
