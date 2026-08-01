@@ -1420,10 +1420,68 @@ not demote): `gpw-ts-kpoint-stress` (`wf/gpw-ts-kpoint-stress` @
 1**; **blocked = 6** unchanged. Clearup already ran (no isolation
 worktrees; merged `wf/*` pruned; incomplete `wf/*` kept). No push.
 
+**GapCensus wave 5 (shift) 2026-08-01 (parent `dev` @ `d6d4d02a`):** recover —
+incomplete_count=**1** (`[~] gpw-ts-kpoint-stress` on
+`wf/gpw-ts-kpoint-stress` @ `2d0977c8`, 1 ahead / many behind `dev`; feat tip
++ `reg_gpw-ts-kpoint-stress` + libMBD strain notes on branch only; do **not**
+demote). Open CP2K/GPW/PW specs on `dev`=**0** (PySCF deferred only:
+`periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`); isolation worktrees=**0**;
+leftover loop builds=**none**; unmerged feature `wf/*`=**1** (incomplete
+only); half-regs on `dev`=**0** for any pending slug (no `gpw-ts-kpoint-*` /
+`gpw-xdm-kpoint-forces` dir on parent); concurrent uncommitted tutorial docs
+left untouched. CP2K source build OK (`cp2k.psmp` 2026.1 `git:5e54ba2` via
+`…/cp2k/install/env.sh`). No capability merges into `dev` since harness wave 4
+(`d6d4d02a` = HEAD `chore(harness)`). Tree re-diff vs `docs/roadmap/dft.md`
+§3/§8/§10–12 + MD AIMD + `tools/cp2k_oracle` +
+`include/atomiverse/cpu/{gpw,planewave}`: **both prior pending re-verified as
+true gaps** — multi-k force assembly already folds free-atom **TS** / **XDM**
+identically to Γ (`gpw_forces.cpp` k-path ~1378–1459) but no dedicated multi-k
+force reg/pin exists (Γ force + multi-k stress product; incomplete multi-k TS
+stress tip separate). **Added 5** tree-declared residuals with offline CP2K /
+literature twins (exclude done / blocked / in_progress):
+`gpw-uks-pbesol` (Γ/k UKS XcKind allow-list + `xc_grid_pbesol_spin` product
+on energy/forces/stress; only RKS `reg_gpw-pbesol-si` — same UKS-GGA expand
+pattern as revPBE/RPBE/BLYP; CP2K UKS PBEsol twin),
+`periodic-scs-ump2-kpoints` (`mp2_os_scale`/`mp2_ss_scale` already applied on
+multi-k UMP2 path `mp2.cpp`; only Γ `reg_periodic-scs-ump2-si` — wave-4 hold
+“behind Γ SCS-UMP2” cleared; CP2K 2026.1 aborts MP2_GPW under DFT KPOINTS —
+algebraic dual + literature family as `periodic-scs-mp2-kpoints`),
+`dfpt-gga-spin-finite-q-smearing` (PW finite-q collinear spin Sternheimer
+already supports pure GGA FD kernel + metallic smear jointly in
+`dfpt_q_spin_impl`; Γ joint `reg_dfpt-gga-spin-smearing` + finite-q joints
+without the full four-way pin — CP2K UKS-PBE+SMEAR supercell
+`VIBRATIONAL_ANALYSIS` twin),
+`gpw-hirshfeld-kpoint-forces` (multi-k force assembly already folds
+`ts_mbd_vol_ratio` / SCF `volume_ratios` into TS/MBD; only Γ
+`reg_gpw-hirshfeld-forces` + multi-k energy Hirshfeld — libMBD volume-scaled
+gradient dual),
+`gpw-dftu-forces` (Γ UKS DFT+U energy + stress product; multi-k U forces
+`reg_gpw-dftu-kpoint-forces`; Γ force assembly already packs `plus_u` into
+the W-correction path — dedicated Γ ENERGY_FORCE + PLUS_U pin missing; CP2K
+twin class as `gpw-dftu-nio` + forces).
+**Not added:** multi-k UKS fixed-density + metallic smear (throw at
+`gpw_solver.cpp` k-UKS `max_iter==0` — real residual, no fair CP2K twin for
+ATV fixed-density electronic step); CPMD stress / variable-cell CP
+(deliberate refusal, esmm-cpmd-02); OT+XL (architectural exclusion); XL /
+CPMD + metallic fixed-density (same fixed-density+smear family); stock VV10
+(**blocked**); BP86/B97/OLYP/HCTH (molecular PySCF path); shear/off-diagonal
+stress (orthorhombic design); GAPW/PAW/periodic hybrid/meta-GGA (blocked);
+GTH↔NC-UPF cross-representation windows; molecular post-HF / classical MW /
+CUDA ports (other loops); items already `[~]` (`gpw-ts-kpoint-stress`).
+Roadmap: **no ○/✓ table flips** (nothing capability-shaped merged;
+incompletes unmerged); residual prose in `dft.md` intro/§8/§10 + `index.md`
+GPW refreshed for wave-5 queue. **Pending = 7**; **in_progress = 1**;
+**blocked = 6**.
+
 ## pending
 
 - [ ] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | twin: libMBD / literature (CP2K has no stock TS — same policy as `gpw-ts-forces`) | deps: gpw-ts-forces ✓, gpw-ts-stress ✓
-- [ ] `gpw-xdm-kpoint-forces` | Multi-k analytic ionic forces with free-atom XDM (dedicated pin) | gpw | twin: pure-Python XDM strain/grad (same policy as `gpw-xdm-forces`) | deps: gpw-xdm-forces ✓, gpw-xdm-kpoint-stress ✓
+- [ ] `gpw-xdm-kpoint-forces` | Multi-k analytic ionic forces with free-atom XDM (dedicated pin) | gpw | twin: pure-Python XDM grad (same policy as `gpw-xdm-forces`) | deps: gpw-xdm-forces ✓, gpw-xdm-kpoint-stress ✓
+- [ ] `gpw-uks-pbesol` | Γ-UKS PBEsol GGA (spin XC product; dedicated energy pin) | gpw | twin: CP2K 2026.1 UKS + PBEsol / GGA_X_PBE_SOL | deps: gpw-pbesol-si ✓, gpw-uks-pbe ✓
+- [ ] `periodic-scs-ump2-kpoints` | Multi-k SCS scales on RI-GPW UMP2@UKS (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: algebraic dual on product multi-k UMP2 + literature family (CP2K aborts MP2_GPW under DFT KPOINTS — same as `periodic-scs-mp2-kpoints`) | deps: periodic-scs-ump2-si ✓, periodic-ump2-kpoints ✓
+- [ ] `dfpt-gga-spin-finite-q-smearing` | DFPT phonons with joint finite-q × collinear spin × pure GGA (PBE) × metallic smear (PW Sternheimer) | response | twin: CP2K 2026.1 UKS-PBE+SMEAR supercell `VIBRATIONAL_ANALYSIS` + free-energy FD dual | deps: dfpt-gga-spin-smearing ✓, dfpt-gga-spin-finite-q-si ✓, dfpt-finite-q-spin-smearing ✓
+- [ ] `gpw-hirshfeld-kpoint-forces` | Multi-k analytic ionic forces with Hirshfeld-scaled TS/MBD volumes (dedicated pin) | gpw | twin: libMBD volume-scaled gradient dual (same policy as `gpw-hirshfeld-forces`) | deps: gpw-hirshfeld-forces ✓, gpw-hirshfeld-kpoints ✓ / gpw-hirshfeld-uks-kpoints ✓
+- [ ] `gpw-dftu-forces` | Γ-UKS analytic ionic forces with Dudarev DFT+U (dedicated pin) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + PLUS_U (NiO-class) | deps: gpw-dftu-nio ✓, gpw-dftu-stress ✓, gpw-dftu-kpoint-forces ✓
 
 ## in_progress
 

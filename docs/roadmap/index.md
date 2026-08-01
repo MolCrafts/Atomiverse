@@ -306,8 +306,10 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   Hirshfeld-scaled TS/MBD forces, multi-k D3/D3(BJ)/D4 force pins,
   multi-k D4 ATM stress, GPW Berry UKS, Γ SCS-UMP2, joint DFPT
   spin×GGA×smear; residual incomplete (`[~]`): multi-k TS stress;
-  **pending**: multi-k TS/XDM force pins; stock VV10 remains
-  **blocked** (no CP2K twin); hybrids / meta-GGA / GAPW blocked — see
+  **pending** (GapCensus wave 5): multi-k TS/XDM force pins, Γ-UKS
+  PBEsol, multi-k SCS-UMP2, finite-q DFPT spin×GGA×smear, multi-k
+  Hirshfeld forces, Γ DFT+U forces; stock VV10 remains **blocked**
+  (no CP2K twin); hybrids / meta-GGA / GAPW blocked — see
   `cp2k-method-queue.md` (queue not exhausted — GapCensus owns next
   discovery).
 - Concrete method `GpwDft` (parameters as members; no public Config bag).

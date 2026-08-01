@@ -67,7 +67,9 @@ D3/D3(BJ)/D4 **force** pins, multi-k D4 **ATM stress**
 (`reg_periodic-berry-gpw-uks`), Γ SCS-**UMP2** (`reg_periodic-scs-ump2-si`),
 and joint DFPT GGA×spin×smear (`reg_dfpt-gga-spin-smearing`); open
 residuals (**incomplete `[~]`**): multi-k **TS stress**
-(`gpw-ts-kpoint-stress`); **pending**: multi-k TS/XDM **force** pins;
+(`gpw-ts-kpoint-stress`); **pending** (GapCensus wave 5): multi-k
+TS/XDM **force** pins, Γ-UKS **PBEsol**, multi-k SCS-**UMP2**, finite-q
+DFPT spin×GGA×smear, multi-k **Hirshfeld** forces, Γ DFT+U **forces**;
 queue not exhausted —
 GapCensus owns discovery;
 product after
@@ -161,7 +163,9 @@ XC on the device in the Gaussian path.
 `reg_blyp-water-sto3g` pins H2O/STO-3G vs PySCF xc=blyp. **BLYP on GPW**
 ships as `XcKind::BLYP` (`reg_gpw-blyp-water`; dual-gate vs PBE). **PBEsol**
 (Perdew et al. 2008; solid-state μ/β) shares `evaluate_xc` and ships on the
-molecular Gaussian path and **GPW** (`XcKind::PBEsol`; `reg_gpw-pbesol-si`).
+molecular Gaussian path and **GPW** RKS (`XcKind::PBEsol`;
+`reg_gpw-pbesol-si`); **Γ-UKS PBEsol** spin XC is product-shaped
+(`xc_grid_pbesol_spin`) but unpinned — queued as `gpw-uks-pbesol`.
 **revPBE** (Zhang–Yang κ=1.245; `XCType::RevPBE` / `XcKind::RevPBE`) ships on
 the molecular path and **GPW** RKS (`reg_gpw-revpbe-si`) **and Γ-UKS**
 (`reg_gpw-uks-revpbe`; dual-gate vs PBE UKS / offline CP2K O₂).
@@ -369,7 +373,9 @@ dedicated **two-body D3 / D3(BJ) / D4 force** pins are product
 (`reg_gpw-d3-kpoint-forces` / `reg_gpw-d3bj-kpoint-forces` /
 `reg_gpw-d4-kpoint-forces`). Multi-k free-atom **TS/XDM force** pins
 remain **pending** (k-path assembly product; Γ force + multi-k stress
-gates already shipped). Multi-k **D4 ATM stress** is product
+gates already shipped — GapCensus wave 5). Multi-k **Hirshfeld-scaled
+TS/MBD forces** remain **pending** (k-path `ts_mbd_vol_ratio` product;
+Γ `reg_gpw-hirshfeld-forces`). Multi-k **D4 ATM stress** is product
 (`reg_gpw-d4-atm-kpoint-stress`; CP2K libdftd4 multi-k NUMERICAL ATM−2b
 Δσ). Multi-k free-atom **TS stress** stays incomplete
 (`[~] gpw-ts-kpoint-stress`).
@@ -485,9 +491,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   `reg_gpw-d3bj-kpoint-forces` / `reg_gpw-d4-kpoint-forces` /
   `reg_gpw-d4-atm-kpoint-stress` / `reg_periodic-berry-gpw-uks` /
   `reg_periodic-scs-ump2-si` / `reg_dfpt-gga-spin-smearing`). Open
-  residuals (**incomplete `[~]`**): multi-k TS stress; **pending**:
-  multi-k TS/XDM force pins (see `cp2k-method-queue.md`; queue not
-  exhausted). Hybrids / meta-GGA / GAPW / PAW remain blocked. CPU only.
+  residuals (**incomplete `[~]`**): multi-k TS stress; **pending**
+  (GapCensus wave 5): multi-k TS/XDM force pins, Γ-UKS PBEsol, multi-k
+  SCS-UMP2, finite-q DFPT spin×GGA×smear, multi-k Hirshfeld forces, Γ
+  DFT+U forces (see `cp2k-method-queue.md`; queue not exhausted).
+  Hybrids / meta-GGA / GAPW / PAW remain blocked. CPU only.
 
 | Method                           | CPU | CUDA | Kokkos |
 | -------------------------------- | :-: | :--: | :---: |
