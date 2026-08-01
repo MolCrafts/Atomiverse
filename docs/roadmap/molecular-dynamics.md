@@ -276,8 +276,8 @@ on the closed-shell path. **Electronic thermostat** (Nosé–Hoover on fictitiou
 electronic DOF) productizes at Γ (`reg_cpmd-electronic-thermostat`) **and on
 the multi-k path** (one thermostatted `CpmdCplx` per (k, σ) channel;
 k-weighted \(T_e\) / \(E_{\mathrm{therm}}\`;
-`reg_cpmd-thermostat-kpoints`; multi-k **UKS** eNH combo pin still
-queued as `cpmd-uks-thermostat-kpoints`). **Multi-k
+`reg_cpmd-thermostat-kpoints`) **and multi-k UKS** (dual-spin eNH combo
+pin; `reg_cpmd-uks-thermostat-kpoints`). **Multi-k
 CPMD** (Bloch \(C_k\), one `cpu::electronic::CpmdCplx` per sampled k) ships
 for RKS (`reg_cpmd-kpoints`) **and collinear UKS** (dual-spin Bloch
 \(C_k^\sigma\), one propagator per (k, spin) with occ-1 spin-diagonal EOM

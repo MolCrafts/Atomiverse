@@ -32,7 +32,9 @@ production step). Electronic kinetic energy is
 \(T_e = \sum_k w_k \sum_\sigma \tfrac12 \mu \lVert \dot C_k^\sigma
 \rVert_F^2\). The multi-k **electronic thermostat** (one NH per (k, σ)
 channel, k-weighted totals) ships as `cpmd-thermostat-kpoints`
-(`regressions/dynamics/cpmd-thermostat-kpoints/`); this pin is NVE
+(RKS; `regressions/dynamics/cpmd-thermostat-kpoints/`) **and** the
+multi-k UKS eNH combo pin `cpmd-uks-thermostat-kpoints`
+(`regressions/dynamics/cpmd-uks-thermostat-kpoints/`); this pin is NVE
 electrons.
 
 ## System

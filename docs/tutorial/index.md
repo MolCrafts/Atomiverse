@@ -377,6 +377,7 @@ domain, alphabetical by slug.
 | Phonon dispersion \(\omega(q)\) (diamond Si) | [phonon-dispersion-si](methods/phonon-dispersion-si.md) | `regressions/response/phonon-dispersion-si` |
 | Car–Parrinello MD on Γ-UKS (O₂ triplet NVE) | [cpmd-uks](methods/cpmd-uks.md) | `regressions/dynamics/cpmd-uks` |
 | Multi-k UKS CPMD on dual-spin Bloch \(C_k^\sigma\) (H₂ NVE) | [cpmd-uks-kpoints](methods/cpmd-uks-kpoints.md) | `regressions/dynamics/cpmd-uks-kpoints` |
+| Multi-k UKS CPMD + electronic Nosé–Hoover per (k, σ) (H₂ NVE) | [cpmd-uks-thermostat-kpoints](methods/cpmd-uks-thermostat-kpoints.md) | `regressions/dynamics/cpmd-uks-thermostat-kpoints` |
 | Second-generation CP with OT corrector (H₂O) | [second-gen-cpmd-ot](methods/second-gen-cpmd-ot.md) | `regressions/dynamics/second-gen-cpmd-ot` |
 | Second-generation CP on Γ-UKS (O₂ triplet) | [second-gen-cpmd-uks](methods/second-gen-cpmd-uks.md) | `regressions/dynamics/second-gen-cpmd-uks` |
 | Second-generation CP + OT on Γ-UKS (O₂) | [second-gen-cpmd-uks-ot](methods/second-gen-cpmd-uks-ot.md) | `regressions/dynamics/second-gen-cpmd-uks-ot` |

@@ -47,13 +47,14 @@ DFPT (`reg_dfpt-gga-spin-finite-q-si`); **harness wave 1 (shift, 2026-08-01)**
 ships multi-k UKS nonlocal **vdW** (`reg_gpw-vdw-uks-kpoints`), multi-k
 **D3/D3(BJ)/ATM stress** pins, multi-k UKS **BOMD**
 (`reg_gpw-bomd-uks-kpoints`), and Γ-UKS vdW **multigrid**
-(`reg_gpw-vdw-uks-multigrid`); open residuals: multi-k **D4/TS/XDM stress**
-dedicated pins (staff `[~]` unmerged),
-multi-k UKS CPMD **eNH** combo pin, GPW spin **MLWF**, SCS-**MP2** scale
-pin, Γ-UKS **optB88-vdW**, multi-k UKS **vdW×multigrid** triple combo,
-multi-k RKS **optB88-vdW**, multi-k D3/D4 **ATM forces** dedicated pins
-(GapCensus wave 2 2026-08-01); multi-k UKS **Hirshfeld** product
-(`reg_gpw-hirshfeld-uks-kpoints`);
+(`reg_gpw-vdw-uks-multigrid`); multi-k UKS **Hirshfeld** product
+(`reg_gpw-hirshfeld-uks-kpoints`); **worker wave 2 (2026-08-01)** ships multi-k
+UKS CPMD **eNH** combo pin (`reg_cpmd-uks-thermostat-kpoints`), multi-k
+**D4/XDM stress**, GPW spin **MLWF**, SCS-**MP2** scale pin, Γ-UKS
+**optB88-vdW**; open residuals: multi-k **TS stress** dedicated pin,
+multi-k UKS **vdW×multigrid** triple combo, multi-k RKS **optB88-vdW**,
+multi-k D3/D4 **ATM forces** dedicated pins
+(GapCensus wave 2 2026-08-01);
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -434,11 +435,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   nonlocal vdW (`reg_gpw-vdw-uks-kpoints`), multi-k D3/D3(BJ)/ATM stress,
   multi-k UKS BOMD (`reg_gpw-bomd-uks-kpoints`), Γ-UKS vdW multigrid
   (`reg_gpw-vdw-uks-multigrid`), multi-k UKS Hirshfeld
-  (`reg_gpw-hirshfeld-uks-kpoints`). Open residuals: multi-k D4/TS/XDM stress
-  dedicated pins (`[~]`), multi-k UKS CPMD
-  eNH combo pin, GPW spin MLWF, SCS-MP2 scale pin, Γ-UKS optB88-vdW,
-  multi-k UKS vdW×multigrid, multi-k RKS optB88-vdW, multi-k D3/D4 ATM
-  force pins (see `cp2k-method-queue.md` GapCensus wave 2).
+  (`reg_gpw-hirshfeld-uks-kpoints`), multi-k UKS CPMD eNH combo
+  (`reg_cpmd-uks-thermostat-kpoints`). Open residuals: multi-k TS stress
+  dedicated pin (`[~]`), multi-k UKS vdW×multigrid, multi-k RKS
+  optB88-vdW, multi-k D3/D4 ATM force pins (see `cp2k-method-queue.md`
+  GapCensus wave 2).
   Hybrids / meta-GGA / GAPW / PAW remain blocked (queue not exhausted —
   see `cp2k-method-queue.md`). CPU only.
 
