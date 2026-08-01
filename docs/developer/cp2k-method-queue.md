@@ -1253,7 +1253,6 @@ flips** (nothing capability-shaped merged to `dev`); residual prose in
 - [ ] `periodic-wannier-gpw-uks` | GPW-grid Marzari–Vanderbilt MLWF on collinear UKS | response | twin: CP2K 2026.1 Quickstep UKS MLWF | deps: periodic-wannier-gpw ✓, periodic-wannier-uks ✓ | write-first
 - [ ] `periodic-scs-mp2-si` | SCS-MP2 scales on Γ RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 SCS-MP2 | deps: periodic-ri-mp2-si ✓ | write-first
 - [ ] `gpw-optb88-uks` | Γ-UKS optB88-vdW (OptB88 exchange + DRSLL nonlocal) | gpw | twin: CP2K 2026.1 UKS optB88-vdW | deps: gpw-optb88-vdw ✓, gpw-vdw-uks ✓ | write-first
-- [ ] `gpw-vdw-uks-kpoint-multigrid` | Multi-k UKS nonlocal vdW on REL_CUTOFF multigrid (triple combo pin) | gpw | twin: CP2K 2026.1 NGRIDS + DRSLL + UKS + MP | deps: gpw-vdw-uks-kpoints ✓, gpw-vdw-uks-multigrid ✓, gpw-uks-multigrid-kpoints ✓ | write-first
 - [ ] `gpw-optb88-kpoints` | Multi-k RKS optB88-vdW (OptB88 + DRSLL on k path) | gpw | twin: CP2K 2026.1 KPOINTS + optB88-vdW | deps: gpw-optb88-vdw ✓, gpw-vdw-kpoints ✓ | write-first
 - [ ] `gpw-d3-atm-kpoint-forces` | Multi-k analytic ionic forces with D3 three-body ATM (C9) dedicated pin | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh + ATM | deps: gpw-d3-atm-forces ✓, gpw-d3-atm-kpoint-stress ✓ | write-first
 - [ ] `gpw-d4-atm-kpoint-forces` | Multi-k analytic ionic forces with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | twin: dftd4 3.7.0 `--grad` (no CP2K DFTD4) | deps: gpw-d4-atm-forces ✓ | write-first
@@ -1264,6 +1263,10 @@ flips** (nothing capability-shaped merged to `dev`); residual prose in
 - [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `1a4a5311` (feat + reg + REFERENCE; unmerged — resume/merge next)
 - [~] `gpw-xdm-kpoint-stress` | Multi-k analytic cell stress with free-atom XDM | gpw | twin: pure-Python XDM strain | deps: gpw-xdm-stress ✓ | `wf/gpw-xdm-kpoint-stress` @ `e73e18d7` (feat + reg + REFERENCE; unmerged — resume/merge next)
 - [~] `gpw-hirshfeld-uks-kpoints` | Multi-k UKS Hirshfeld volume ratios for TS/MBD | gpw | twin: libMBD / literature V/V_free | deps: gpw-hirshfeld-uks ✓, gpw-hirshfeld-kpoints ✓ | `wf/gpw-hirshfeld-uks-kpoints` @ `bc981d93` (feat + reg + REFERENCE; unmerged — resume/merge next)
+
+## done (harness wave 2 staff 2026-08-01)
+
+- [x] `gpw-vdw-uks-kpoint-multigrid` | Multi-k UKS nonlocal vdW on REL_CUTOFF multigrid (triple combo pin) | gpw | `regressions/gpw/gpw-vdw-uks-kpoint-multigrid` (CP2K 2026.1 NGRIDS 4 + DRSLL + UKS + MP 2×1×1; E_disp parity 4.0e-5 Ha; multi-k UKS sg↔mg 4.3e-6 Ha) | ratio **0.85** (G2 11.6 s / CP2K 13.703 s OMP=8) | 2026-08-01
 
 ## done (harness wave 1 (shift) 2026-08-01)
 
