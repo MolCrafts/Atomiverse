@@ -38,7 +38,8 @@ criteria:
       states CP2K has no stock TS (oracle:literature/libMBD, not fake cp2k).
     status: met
 acceptance_met: true
-measured_2026_08_01: |
+measured_2026_08_01_wave7: |
   B max|E_disp strain|=9.98e-18 Ha; A |dE_disp|=6.19e-12 Ha;
   C max|an-fd|=1.36e-09 Ha/Bohr3; D max|wire|=4.01e-12 Ha/Bohr3;
-  wall_product=10.03 s; wall_fd_twin=48.42 s; SCF 11 iters; nk=1 (1×1×2 TR).
+  wall_product=28.54 s; wall_fd_twin=127.03 s (host load); SCF 11 iters;
+  nk=1 (1×1×2 TR). Dual-gate green after rebase onto wave-7 dev.
