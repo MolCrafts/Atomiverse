@@ -553,6 +553,9 @@ if(ATV_BUILD_GPW)
     # CP2K 2026.1 multi-k SCALE_S/SCALE_T pin (periodic-scs-mp2-kpoints).
     atv_add_regression(gpw periodic-scs-mp2-kpoints THREADS 8)
     atv_add_regression(gpw periodic-ump2-kpoints THREADS 8)
+    # Multi-k RI-GPW SCS-UMP2 (Grimme scales on UKS nα=nβ MP 2×1×1) —
+    # CP2K 2026.1 aborts MP2_GPW under DFT KPOINTS (periodic-scs-ump2-kpoints).
+    atv_add_regression(gpw periodic-scs-ump2-kpoints THREADS 8)
     atv_add_regression(gpw periodic-rpa-si THREADS 8)
     atv_add_regression(gpw periodic-rpa-kpoints THREADS 8)
     atv_add_regression(gpw periodic-rpa-finite-q THREADS 8)

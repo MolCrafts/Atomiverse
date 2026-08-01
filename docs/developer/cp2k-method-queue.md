@@ -1512,10 +1512,13 @@ _(empty — Assign wave 5 staffed all census residuals)_
 - [~] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | twin: libMBD / literature (CP2K has no stock TS — same policy as `gpw-ts-forces`) | deps: gpw-ts-forces ✓, gpw-ts-stress ✓ | write-first
 - [~] `gpw-xdm-kpoint-forces` | Multi-k analytic ionic forces with free-atom XDM (dedicated pin) | gpw | twin: pure-Python XDM grad (same policy as `gpw-xdm-forces`) | deps: gpw-xdm-forces ✓, gpw-xdm-kpoint-stress ✓ | write-first
 - [~] `gpw-uks-pbesol` | Γ-UKS PBEsol GGA (spin XC product; dedicated energy pin) | gpw | twin: CP2K 2026.1 UKS + PBEsol / GGA_X_PBE_SOL | deps: gpw-pbesol-si ✓, gpw-uks-pbe ✓ | write-first
-- [~] `periodic-scs-ump2-kpoints` | Multi-k SCS scales on RI-GPW UMP2@UKS (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: algebraic dual on product multi-k UMP2 + literature family (CP2K aborts MP2_GPW under DFT KPOINTS — same as `periodic-scs-mp2-kpoints`) | deps: periodic-scs-ump2-si ✓, periodic-ump2-kpoints ✓ | write-first
 - [~] `dfpt-gga-spin-finite-q-smearing` | DFPT phonons with joint finite-q × collinear spin × pure GGA (PBE) × metallic smear (PW Sternheimer) | response | twin: CP2K 2026.1 UKS-PBE+SMEAR supercell `VIBRATIONAL_ANALYSIS` + free-energy FD dual | deps: dfpt-gga-spin-smearing ✓, dfpt-gga-spin-finite-q-si ✓, dfpt-finite-q-spin-smearing ✓ | write-first
 - [~] `gpw-hirshfeld-kpoint-forces` | Multi-k analytic ionic forces with Hirshfeld-scaled TS/MBD volumes (dedicated pin) | gpw | twin: libMBD volume-scaled gradient dual (same policy as `gpw-hirshfeld-forces`) | deps: gpw-hirshfeld-forces ✓, gpw-hirshfeld-kpoints ✓ / gpw-hirshfeld-uks-kpoints ✓ | write-first
 - [~] `gpw-dftu-forces` | Γ-UKS analytic ionic forces with Dudarev DFT+U (dedicated pin) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + PLUS_U (NiO-class) | deps: gpw-dftu-nio ✓, gpw-dftu-stress ✓, gpw-dftu-kpoint-forces ✓ | write-first
+
+## done (harness wave 5 2026-08-01)
+
+- [x] `periodic-scs-ump2-kpoints` | Multi-k SCS scales on RI-GPW UMP2@UKS (`mp2_os_scale`/`mp2_ss_scale`) | gpw | `regressions/gpw/periodic-scs-ump2-kpoints` (Grimme algebraic dual on product multi-k UMP2; CP2K offline twin aborts MP2_GPW under DFT KPOINTS — `oracle: literature`) | ratio **perf_exempt** (no multi-k MP2_GPW in CP2K 2026.1) | 2026-08-01
 
 ## done (harness wave 4 (shift) 2026-08-01)
 
