@@ -1516,10 +1516,85 @@ assign — **not** queue exhausted; GapCensus owns next discovery).
 isolation worktrees; merged `wf/*` pruned; incomplete `wf/*` kept). No
 push.
 
+**GapCensus wave 6 (shift) 2026-08-01 (parent `dev` @ `de9cda3a`):** recover —
+incomplete_count=**2** (`[~] gpw-ts-kpoint-stress` @ `f86aec1a`, 1 ahead /
+~131 behind `dev`; `[~] gpw-ts-kpoint-forces` @ `3eb2a6ee` — feat tips +
+regs on branch only; do **not** demote). Open CP2K/GPW/PW specs on
+`dev`=**0** (PySCF deferred only: `periodic-rhf-gamma` /
+`rsh-eri-cam-b3lyp`); isolation worktrees=**0**; leftover loop builds=**none**;
+unmerged feature `wf/*`=**2** (incomplete only); half-regs on `dev`=**0** for
+any pending slug; concurrent uncommitted tutorial docs left untouched. CP2K
+source build OK (`cp2k.psmp` 2026.1 `git:5e54ba2` via
+`…/cp2k/install/env.sh`). No capability merges into `dev` since harness wave 5
+(`de9cda3a` = HEAD `chore(harness)`). Tree re-diff vs `docs/roadmap/dft.md`
+§3/§8/§10–12 + MD AIMD + `tools/cp2k_oracle` +
+`include/atomiverse/cpu/{gpw,planewave}`: prior pending residual **0**
+(harness emptied list — **not** capability-closed). **True residuals
+re-opened (9)** with offline CP2K / literature twins (exclude done /
+blocked / in_progress):
+`gpw-metallic-forces` (multi-k RKS FD/MP energy product; force assembly
+rebuilds \(P_k/W_k\) from integer \(n_{\mathrm{occ}}\) `C_{\mathrm{occ},k}` —
+`store_k_payload` always uses fixed-occ density; free-energy Hellmann–Feynman
++ Pulay under fractional occupations unpinned; CP2K ENERGY_FORCE + SMEAR twin
+on Na-class metallic cell),
+`gpw-metallic-stress` (same integer-payload residual on multi-k analytic
+stress; free-energy fixed-\(P_k\) stress under smear unpinned; CP2K
+`STRESS_TENSOR NUMERICAL` + SMEAR twin),
+`gpw-uks-metallic-forces` (multi-k UKS FD/MP energy product
+`reg_gpw-uks-smearing`; force assembly same integer \(n_\alpha/n_\beta\)
+rebuild; CP2K UKS ENERGY_FORCE + SMEAR twin),
+`gpw-vdw-kpoint-forces` (multi-k RKS nonlocal vdW energy product
+`reg_gpw-vdw-kpoints`; force path already adds \(V_{\mathrm{nl}}\) into k-path
+`veff` in `gpw_forces.cpp` — dedicated multi-k ENERGY_FORCE pin missing after
+Γ `reg_gpw-vdw-scf-potential`; CP2K NON_LOCAL + KPOINTS ENERGY_FORCE twin),
+`gpw-optb88-forces` (OptB88+DRSLL energy product Γ/multi-k/UKS; SC nonlocal
+forces product via `vdw_df` + `assemble_gpw_forces` — only energy pins; CP2K
+OptB88 + DRSLL ENERGY_FORCE twin),
+`gpw-hirshfeld-kpoint-stress` (multi-k stress fold already honors
+`hirshfeld` + SCF `volume_ratios`; Γ stress gate inside
+`reg_gpw-hirshfeld-forces`; dedicated multi-k fixed-\(v\) stress pin missing
+after multi-k Hirshfeld forces ✓ — libMBD / product dual; no CP2K stock
+TS/MBD),
+`gpw-bands-si` (PW `cpu::pw::Bands` product; **no** GPW-grid band-structure
+post-process on Bloch \(C_k/\varepsilon_k\); CP2K Quickstep
+`&PRINT &BAND_STRUCTURE` twin on GTH-GPW Si),
+`gpw-dos-si` (PW `cpu::pw::Dos` product; **no** GPW DOS on the multi-k mesh;
+CP2K Quickstep DOS / PDOS twin class),
+`gpw-bomd-smearing` (plain multi-k BOMD product fixed-occ RKS/UKS; metallic
+smear BOMD / free-energy trajectory unpinned; CP2K Quickstep AIMD + SMEAR
+twin).
+**Not added:** multi-k UKS fixed-density + metallic smear (throw at
+`gpw_solver.cpp` k-UKS `max_iter==0` — real residual, **no fair CP2K twin**
+for ATV fixed-density electronic step); CPMD stress / variable-cell CP
+(deliberate refusal, esmm-cpmd-02); OT+XL (architectural exclusion); stock
+VV10 (**blocked**); BP86/B97/OLYP/HCTH (molecular PySCF path);
+shear/off-diagonal stress (orthorhombic design); GAPW/PAW/periodic
+hybrid/meta-GGA (blocked); GTH↔NC-UPF cross-representation windows;
+molecular post-HF / classical MW / CUDA ports (other loops); items already
+`[~]` (`gpw-ts-kpoint-stress`, `gpw-ts-kpoint-forces`); Γ closed-shell RKS
+DFT+U (design reject — UKS or k-path only); periodic hybrid / meta-GGA
+(blocked, no EXX / no τ); multi-k UKS metallic stress (hold behind RKS
+metallic stress + UKS metallic forces depth this wave); GPW DFPT (large
+new Sternheimer surface — hold behind metallic free-energy forces depth);
+NPT AIMD composition (MD barostat + product stress — not a method-domain
+gap). Roadmap: **no ○/✓ table flips** (nothing capability-shaped merged;
+incompletes unmerged); residual prose in `dft.md` intro/§8/§10/§12 +
+`index.md` GPW refreshed for wave-6 queue (metallic free-energy
+forces/stress, multi-k vdW forces, optB88 forces, multi-k Hirshfeld
+stress, GPW bands/DOS, metallic BOMD). **Pending = 9**; **in_progress =
+2**; **blocked = 6**.
+
 ## pending
 
-_(empty — Assign wave 5 staffed all census residuals; harness closed 6;
-GapCensus owns next discovery)_
+- [ ] `gpw-metallic-forces` | Multi-k RKS free-energy analytic ionic forces under FD/MP metallic smearing (fractional \(P_k/W_k\); fix integer `store_k_payload` / force rebuild) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + SMEAR (Na-class / same family as `gpw-metallic-smearing`) | deps: gpw-metallic-smearing ✓, gpw-kpoint-forces ✓
+- [ ] `gpw-metallic-stress` | Multi-k RKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-smearing ✓, gpw-kpoint-stress ✓
+- [ ] `gpw-uks-metallic-forces` | Multi-k UKS free-energy analytic ionic forces under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 UKS ENERGY_FORCE + SMEAR | deps: gpw-uks-smearing ✓, gpw-metallic-forces (same payload fix)
+- [ ] `gpw-vdw-kpoint-forces` | Multi-k analytic ionic forces with nonlocal vdW-DF/DF2/rVV10 (SC \(V_{\mathrm{nl}}\) on k-path force assembly; dedicated pin) | gpw | twin: CP2K 2026.1 NON_LOCAL + KPOINTS ENERGY_FORCE | deps: gpw-vdw-kpoints ✓, gpw-vdw-scf-potential ✓
+- [ ] `gpw-optb88-forces` | Analytic ionic forces with OptB88 exchange + DRSLL nonlocal (dedicated ENERGY_FORCE pin) | gpw | twin: CP2K 2026.1 OptB88 + DRSLL ENERGY_FORCE | deps: gpw-optb88-vdw ✓, gpw-vdw-scf-potential ✓
+- [ ] `gpw-hirshfeld-kpoint-stress` | Multi-k analytic cell stress with Hirshfeld-scaled TS/MBD volumes (dedicated fixed-\(v\) pin) | gpw | twin: libMBD / product dual (no CP2K stock TS/MBD — same policy as `gpw-hirshfeld-forces`) | deps: gpw-hirshfeld-kpoint-forces ✓, gpw-mbd-kpoint-stress ✓
+- [ ] `gpw-bands-si` | Band structure post-process on GPW Bloch path (high-symmetry path from multi-k \(C_k/\varepsilon_k\)) | gpw | twin: CP2K 2026.1 Quickstep `&PRINT &BAND_STRUCTURE` on GTH-GPW Si | deps: gpw-kpoints-si ✓, bands-dos-si ✓ (PW pattern)
+- [ ] `gpw-dos-si` | Density of states on GPW multi-k mesh (Gaussian / Methfessel-style smear of \(\varepsilon_{nk}\)) | gpw | twin: CP2K 2026.1 Quickstep DOS / PDOS class on GTH-GPW Si | deps: gpw-kpoints-si ✓, bands-dos-si ✓ (PW pattern)
+- [ ] `gpw-bomd-smearing` | Multi-k Born–Oppenheimer MD with metallic occupation smearing (free-energy / Mermin trajectory) | dynamics | twin: CP2K 2026.1 Quickstep AIMD + SMEAR k-mesh | deps: gpw-bomd-kpoints ✓, gpw-metallic-smearing ✓, gpw-metallic-forces (force correctness under smear)
 
 ## in_progress
 

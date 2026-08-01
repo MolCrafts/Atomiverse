@@ -310,9 +310,12 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   free-atom XDM forces, Γ-UKS PBEsol, multi-k SCS-UMP2, four-way
   finite-q DFPT spin×GGA×smear, multi-k Hirshfeld TS/MBD forces, Γ
   DFT+U forces; residual incomplete (`[~]`): multi-k TS stress + multi-k
-  TS forces; stock VV10 remains **blocked** (no CP2K twin); hybrids /
-  meta-GGA / GAPW blocked — see `cp2k-method-queue.md` (queue not
-  exhausted — GapCensus owns next discovery).
+  TS forces; **GapCensus wave 6 pending**: free-energy metallic
+  forces/stress under smear, multi-k nonlocal vdW forces, optB88
+  forces, multi-k Hirshfeld stress, GPW bands/DOS, metallic BOMD; stock
+  VV10 remains **blocked** (no CP2K twin); hybrids / meta-GGA / GAPW
+  blocked — see `cp2k-method-queue.md` (queue not exhausted — GapCensus
+  owns next discovery).
 - Concrete method `GpwDft` (parameters as members; no public Config bag).
   Analytic Γ forces → AIMD (`reg_gpw-bomd-water`); keep member
   `local_pp_on_grid` consistent between energy and gradient
