@@ -1599,14 +1599,81 @@ multi-k Hirshfeld stress, GPW bands/DOS; open → multi-k free-atom **TS
 stress** (`[~]`) + multi-k free-energy **metallic stress** + metallic
 **BOMD**. **Blocked = 6** unchanged. Clearup already ran. No push.
 
+**GapCensus wave 7 (shift) 2026-08-01 (parent `dev` @ `cf23bbb1`):** recover —
+incomplete_count=**2** after promote: `[~] gpw-ts-kpoint-stress` on
+`wf/gpw-ts-kpoint-stress` @ `d6cab501` (1 ahead / ~18 behind `dev`; feat tip +
+reg on branch only; do **not** demote); **`[~] gpw-metallic-stress` promoted
+from pending** — unmerged `wf/gpw-metallic-stress` @ `d697f63d` (feat + reg +
+CP2K Na BCC SMEAR stress inputs + dual-gate REFERENCE; 1 ahead / ~18 behind;
+incomplete ≫ pending; do **not** demote / do not leave half-landed `wf/*` as
+pending). Open CP2K/GPW/PW specs on `dev`=**0** (PySCF deferred only:
+`periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`); isolation worktrees=**0**; leftover
+loop builds=**none**; unmerged feature `wf/*`=**2** (incomplete only); half-regs
+on `dev`=**0** for any pending slug. CP2K source build available (`cp2k.psmp`
+2026.1 `git:5e54ba2` via `…/cp2k/install/env.sh`). HEAD is harness wave-6
+close (`cf23bbb1`); no further capability merges into `dev` after wave-6 ships.
+Tree re-diff vs `docs/roadmap/dft.md` §3/§8/§10–12 + MD AIMD +
+`tools/cp2k_oracle` + `include/atomiverse/cpu/{gpw,planewave}`: prior pending
+**2** re-verified — metallic free-energy stress remains unpinned on parent
+(fractional \(P_k/W_k\) force path product; dedicated stress pin only on
+`wf/gpw-metallic-stress`); metallic **BOMD** still unpinned (fixed-occ multi-k
+RKS/UKS BOMD product). **True residuals re-opened / added (7)** with offline
+CP2K twins (exclude done / blocked / in_progress):
+`gpw-bomd-smearing` (prior residual — multi-k free-energy / Mermin AIMD under
+FD/MP smear; CP2K Quickstep AIMD + SMEAR k-mesh),
+`gpw-bands-uks` (`gpw::Bands` throws collinear UKS — “not product yet”; RKS
+`reg_gpw-bands-si` ✓ + PW spin bands ✓; CP2K Quickstep UKS
+`&PRINT &BAND_STRUCTURE` twin),
+`gpw-bands-metallic` (`gpw::Bands` throws metallic smear — “not product yet”;
+PW `reg_bands-metallic-si` pattern; CP2K SMEAR + BAND_STRUCTURE twin on
+GTH-GPW metal),
+`gpw-dos-uks` (`Dos::compute` already dual-spin on multi-k UKS payload; only
+RKS `reg_gpw-dos-si` pin — dedicated UKS DOS pin after foothold; CP2K UKS DOS
+twin class),
+`gpw-dos-metallic` (`Dos::compute` already uses \(E_{\mathrm{F}}\) under smear
+for RKS integrate; dedicated metallic DOS pin missing after PW
+`reg_dos-metallic-si` / RKS GPW DOS foothold; CP2K SMEAR + DOS twin),
+`gpw-vdw-stress` (analytic fixed-\(P\) stress Lagrangian folds semi-local XC +
+geometry D3/D4/TS/XDM/MBD but **omits nonlocal** \(E_{\mathrm{c}}^{\mathrm{nl}}\)
+vdW-DF/DF2/rVV10 under strain — forces already fold \(V_{\mathrm{nl}}\); CP2K
+`STRESS_TENSOR` + `NON_LOCAL` twin),
+`gpw-uks-metallic-stress` (multi-k UKS free-energy stress under FD/MP after
+UKS metallic forces ✓; dedicated UKS stress pin; CP2K UKS
+`STRESS_TENSOR NUMERICAL` + SMEAR — dep incomplete RKS
+`gpw-metallic-stress`).
+**Not added:** multi-k UKS fixed-density + metallic smear (throw at
+`gpw_solver.cpp` k-UKS `max_iter==0` — real residual, **no fair CP2K twin**
+for ATV fixed-density electronic step); CPMD stress / variable-cell CP
+(deliberate refusal, esmm-cpmd-02); OT+XL (architectural exclusion); stock
+VV10 (**blocked**); BP86/B97/OLYP/HCTH (molecular PySCF path);
+shear/off-diagonal stress (orthorhombic design); GAPW/PAW/periodic
+hybrid/meta-GGA (**blocked**); GTH↔NC-UPF cross-representation windows;
+molecular post-HF / classical MW / CUDA ports (other loops); Bands multigrid
+/ DFT+U / dispersion path flags (thin hold behind UKS + metallic band pins);
+joint spin×metallic GPW bands (hold behind `gpw-bands-uks` +
+`gpw-bands-metallic`); optB88 dedicated stress pin (semi-local OptB88 already
+in stress XC; nonlocal fold is `gpw-vdw-stress`); items already `[~]`
+(`gpw-ts-kpoint-stress`, `gpw-metallic-stress`). Roadmap: **no ○/✓ table
+flips** (nothing capability-shaped merged; incompletes unmerged); residual
+prose in `dft.md` intro/§10/§12 + `index.md` GPW + MD AIMD refreshed for
+wave-7 queue (promote metallic stress → incomplete; open bands UKS/metallic,
+DOS UKS/metallic, nonlocal vdW stress, UKS metallic stress, metallic BOMD).
+**Pending = 7**; **in_progress = 2**; **blocked = 6**.
+
 ## pending
 
-- [ ] `gpw-metallic-stress` | Multi-k RKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-smearing ✓, gpw-kpoint-stress ✓, gpw-metallic-forces ✓
 - [ ] `gpw-bomd-smearing` | Multi-k Born–Oppenheimer MD with metallic occupation smearing (free-energy / Mermin trajectory) | dynamics | twin: CP2K 2026.1 Quickstep AIMD + SMEAR k-mesh | deps: gpw-bomd-kpoints ✓, gpw-metallic-smearing ✓, gpw-metallic-forces ✓
+- [ ] `gpw-bands-uks` | Collinear UKS band structure NSCF on frozen Veff (GPW Bloch path) | gpw | twin: CP2K 2026.1 Quickstep UKS `&PRINT &BAND_STRUCTURE` GTH-GPW | deps: gpw-bands-si ✓, gpw-kpoints-uks ✓
+- [ ] `gpw-bands-metallic` | Band structure under metallic FD/MP occupation smearing (GPW) | gpw | twin: CP2K 2026.1 SMEAR + `&PRINT &BAND_STRUCTURE` GTH-GPW metal | deps: gpw-bands-si ✓, gpw-metallic-smearing ✓
+- [ ] `gpw-dos-uks` | Density of states on GPW multi-k mesh with collinear UKS (dedicated pin) | gpw | twin: CP2K 2026.1 Quickstep UKS DOS | deps: gpw-dos-si ✓, gpw-kpoints-uks ✓
+- [ ] `gpw-dos-metallic` | Density of states under metallic FD/MP smearing on GPW multi-k mesh (dedicated pin) | gpw | twin: CP2K 2026.1 SMEAR + DOS GTH-GPW metal | deps: gpw-dos-si ✓, gpw-metallic-smearing ✓
+- [ ] `gpw-vdw-stress` | Analytic fixed-\(P\) cell stress with nonlocal vdW-DF/DF2/rVV10 \(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain | gpw | twin: CP2K 2026.1 `STRESS_TENSOR` + `NON_LOCAL` (DRSLL/LMKLL/RVV10) | deps: gpw-vdw-scf-potential ✓, gpw-analytic-stress ✓
+- [ ] `gpw-uks-metallic-stress` | Multi-k UKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 UKS `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-stress (incomplete), gpw-uks-metallic-forces ✓, gpw-kpoint-uks-stress ✓
 
 ## in_progress
 
-- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `d6cab501` (feat tip rebased + dual-gate accept docs; reg on branch only — do not demote; resume: dual-gate green on parent / merge)
+- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `d6cab501` (feat tip + reg on branch only; ~18 behind `dev` — do not demote; resume: rebase onto `dev`, dual-gate green on parent / merge)
+- [~] `gpw-metallic-stress` | Multi-k RKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-smearing ✓, gpw-kpoint-stress ✓, gpw-metallic-forces ✓ | `wf/gpw-metallic-stress` @ `d697f63d` (feat + reg + Na BCC SMEAR oracle inputs on branch only; ~18 behind `dev` — promoted from pending this census; do not demote; resume: rebase onto `dev`, dual-gate green / merge)
 
 ## done (harness wave 6 (shift) 2026-08-01)
 

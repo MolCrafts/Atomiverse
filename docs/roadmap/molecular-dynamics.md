@@ -240,8 +240,10 @@ AIMD works by binding a force-providing method/component to `md::Phase::force`
   multi-k UKS BOMD is product too — dual-spin previous-step
   \(P_k^\sigma\) warm start, `reg_gpw-bomd-uks-kpoints`). Multi-k free-energy
   **forces under smear** are product (`reg_gpw-metallic-forces` /
-  `reg_gpw-uks-metallic-forces`). Metallic occupation-smear BOMD
-  (free-energy / Mermin trajectory) remains queued as `gpw-bomd-smearing`.
+  `reg_gpw-uks-metallic-forces`). Multi-k free-energy **stress under
+  smear** is incomplete on `wf/gpw-metallic-stress` (`[~]`); metallic
+  occupation-smear BOMD (free-energy / Mermin trajectory) remains queued
+  as `gpw-bomd-smearing`.
 - `cpu::pw::PWEvaluator` with `with_gradient(true)` → **plane-wave BOMD**
   (analytic local + Ewald + KB forces; default is energy-only); foothold
   `reg_pw-bomd-h`.
