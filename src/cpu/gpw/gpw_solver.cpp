@@ -1916,19 +1916,36 @@ static GpwResult run_gpw_scf_kpoints(
         std::vector<CplxMatrix> pz_prev_k(static_cast<std::size_t>(nk));
         double denom_prev = 1.0;
         bool have_prev = false;
+        // After an accepted Armijo trial, H_k already matches dens(C,f). Skip
+        // the pre-refresh ρ→H on the next outer when true (metallic only).
+        bool h_matches_manifold = false;
 
         for (int iter = 0; iter < cfg.max_iter; ++iter) {
-            // Rebuild H from current P, then subspace-fill occupations so F
-            // and g see a consistent (C, f, H) triple.
+            // One ρ→H when occupations are frozen (integer). Metallic needs
+            // H → fill f → rebuild P → H so F and g see a consistent triple;
+            // the first of those two builds is skipped when H already matches
+            // dens(C,f_old) from the previous Armijo accept.
             for (int ik = layout.rank; ik < nk; ik += layout.nprocs)
                 P_k[static_cast<std::size_t>(ik)] =
                     dens_from_cocc(Cocc_k[static_cast<std::size_t>(ik)], ik);
-            (void)build_k_energy(P_k);
-            refresh_occupations();
-            for (int ik = layout.rank; ik < nk; ik += layout.nprocs)
-                P_k[static_cast<std::size_t>(ik)] =
-                    dens_from_cocc(Cocc_k[static_cast<std::size_t>(ik)], ik);
-            const double e_total = build_k_energy(P_k);
+            double e_total = 0.0;
+            if (use_smear) {
+                if (!h_matches_manifold)
+                    (void)build_k_energy(P_k);
+                refresh_occupations();
+                for (int ik = layout.rank; ik < nk; ik += layout.nprocs)
+                    P_k[static_cast<std::size_t>(ik)] =
+                        dens_from_cocc(Cocc_k[static_cast<std::size_t>(ik)],
+                                       ik);
+                e_total = build_k_energy(P_k);
+            } else {
+                // Integer: P is invariant under occupied-subspace unitary
+                // rotations, so a single KS rebuild is enough; subspace-canon
+                // C after H for a better-conditioned OT gradient.
+                e_total = build_k_energy(P_k);
+                refresh_occupations();
+            }
+            h_matches_manifold = true;
             res.iters = iter + 1;
             res.e_total = e_total;
 
@@ -3392,10 +3409,13 @@ static GpwResult run_gpw_scf_kpoints_uks(
         double denom_prev = 1.0;
         bool have_prev = false;
         double e_prev_ot = 0.0;
+        // After an accepted Armijo trial, Ha/Hb already match dens(C,f).
+        bool h_matches_manifold = false;
 
         for (int iter = 0; iter < cfg.max_iter; ++iter) {
-            // Rebuild H from current P, then subspace-fill occupations so F
-            // and g see a consistent (C, f, H) triple under smear.
+            // Integer: one ρ→H (refresh_occupations_uks is a no-op without
+            // smear). Metallic: H → fill f → rebuild P → H; skip the first
+            // when H already matches dens(C,f_old) from the previous accept.
             for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
                 Pa_k[static_cast<std::size_t>(ik)] =
                     dens_from_cocc(Cocc_a_k[static_cast<std::size_t>(ik)], n_a,
@@ -3404,17 +3424,24 @@ static GpwResult run_gpw_scf_kpoints_uks(
                     dens_from_cocc(Cocc_b_k[static_cast<std::size_t>(ik)], n_b,
                                    occ_b_k[static_cast<std::size_t>(ik)]);
             }
-            (void)build_uks_k_energy(Pa_k, Pb_k);
-            refresh_occupations_uks();
-            for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                Pa_k[static_cast<std::size_t>(ik)] =
-                    dens_from_cocc(Cocc_a_k[static_cast<std::size_t>(ik)], n_a,
-                                   occ_a_k[static_cast<std::size_t>(ik)]);
-                Pb_k[static_cast<std::size_t>(ik)] =
-                    dens_from_cocc(Cocc_b_k[static_cast<std::size_t>(ik)], n_b,
-                                   occ_b_k[static_cast<std::size_t>(ik)]);
+            double e_total = 0.0;
+            if (use_smear) {
+                if (!h_matches_manifold)
+                    (void)build_uks_k_energy(Pa_k, Pb_k);
+                refresh_occupations_uks();
+                for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                    Pa_k[static_cast<std::size_t>(ik)] = dens_from_cocc(
+                        Cocc_a_k[static_cast<std::size_t>(ik)], n_a,
+                        occ_a_k[static_cast<std::size_t>(ik)]);
+                    Pb_k[static_cast<std::size_t>(ik)] = dens_from_cocc(
+                        Cocc_b_k[static_cast<std::size_t>(ik)], n_b,
+                        occ_b_k[static_cast<std::size_t>(ik)]);
+                }
+                e_total = build_uks_k_energy(Pa_k, Pb_k);
+            } else {
+                e_total = build_uks_k_energy(Pa_k, Pb_k);
             }
-            const double e_total = build_uks_k_energy(Pa_k, Pb_k);
+            h_matches_manifold = true;
             res.iters = iter + 1;
             res.e_total = e_total;
 
