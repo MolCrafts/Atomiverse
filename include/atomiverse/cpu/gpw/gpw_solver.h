@@ -166,7 +166,7 @@ struct GpwResult {
     ///        `nb × n_alpha` (UKS α). Empty for pure Γ. Used by
     ///        `gpw_forces_analytic` / `gpw_stress` to rebuild \(P_k\) / \(W_k\)
     ///        on the **fixed-integer** path. Under metallic smearing the free-
-    ///        energy force path uses full `C_k` + `f_k` instead.
+    ///        energy force/stress path uses full `C_k` + `f_k` instead.
     std::vector<std::vector<std::complex<double>>> C_occ_k;
     /// @brief Multi-k UKS β occupied MOs per k: row-major `nb × n_beta`
     ///        (empty for RKS / Γ). Paired with `eps_k_beta`.
@@ -174,7 +174,7 @@ struct GpwResult {
     /// @brief Per-k band occupations after a metallic-smear SCF (empty when
     ///        `smearing == none`). RKS: \(f_b\in[0,2]\) band form, length =
     ///        `eps_k[ik].size()`. Multi-k UKS α: \(f_b\in[0,1]\) spinor form;
-    ///        β lives in `f_k_beta`. Free-energy forces rebuild
+    ///        β lives in `f_k_beta`. Free-energy forces/stress rebuild
     ///        \(P_k=\sum_b f_b\,c_b c_b^\dagger\),
     ///        \(W_k=\sum_b f_b\varepsilon_b\,c_b c_b^\dagger\).
     std::vector<std::vector<double>> f_k;
@@ -630,10 +630,11 @@ gpw_forces_fd(const std::vector<GpwAtom>& atoms, const GpwDft& method,
 /// Gamma RKS, Gamma UKS (spin-resolved fixed-\(P_\sigma\)), Dudarev DFT+U
 /// on Γ and multi-k (`plus_u`, \(E_U\) / BZ-averaged \(E_U\) on the fixed-\(P\)
 /// Lagrangian), closed-shell multi-k RKS (k-summed fixed-\(P_k\)), multi-k
-/// collinear UKS (fixed \(\{P_k^\sigma,W_k^\sigma\}\) + spin XC), and
-/// geometry-only dispersion (`d3` / `d3bj` / `d4` / `ts` / `xdm` / `mbd`)
-/// rebuilt under strain. Off-diagonal shear is 0 (orthorhombic cell only).
-/// Multi-SCF oracle: `gpw_stress_fd`.
+/// collinear UKS (fixed \(\{P_k^\sigma,W_k^\sigma\}\) + spin XC), multi-k
+/// free-energy stress under FD/MP metallic smearing (fractional \(P_k/W_k\)
+/// from `C_k`+`f_k`), and geometry-only dispersion (`d3` / `d3bj` / `d4` /
+/// `ts` / `xdm` / `mbd`) rebuilt under strain. Off-diagonal shear is 0
+/// (orthorhombic cell only). Multi-SCF oracle: `gpw_stress_fd`.
 ///
 /// @param atoms Geometry [Bohr] + basis/PP (as for `GpwDft::run`).
 /// @param method SCF configuration; `cell` must match the atom box [Bohr].
@@ -653,11 +654,12 @@ std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
 ///
 /// Same fixed-\(P\) Hellmann–Feynman central FD as `gpw_stress`, but the
 /// density payload is handed in instead of re-converged: Γ needs
-/// `state.P` / `state.C` / `state.eps` (+ β fields for UKS); multi-k needs
-/// `state.C_occ_k` / `state.eps_k` (+ β for UKS). `state.converged` must be
-/// true (a stationary payload — a converged SCF result, or the zero-SCF
-/// linearized XL-BOMD shadow payload, whose warm step marks the shadow
-/// functional stationary). This is the cell analogue of
+/// `state.P` / `state.C` / `state.eps` (+ β fields for UKS); multi-k fixed
+/// occupations need `state.C_occ_k` / `state.eps_k` (+ β for UKS); multi-k
+/// metallic smear needs `state.C_k` / `state.eps_k` (+ `f_k` or
+/// `e_fermi`+method smear knobs). `state.converged` must be true (a
+/// stationary payload — a converged SCF result, or the zero-SCF linearized
+/// XL-BOMD shadow payload). This is the cell analogue of
 /// `gpw_forces_at_density`: the stress of the energy surface at the density
 /// you already have, used by `GPWEvaluator` for the shadow-density stress
 /// on linearized XL warm steps.
