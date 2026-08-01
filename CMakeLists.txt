@@ -762,6 +762,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cpu/gpw/internal/kpoints.cpp
                 src/cpu/gpw/gpw_solver.cpp
                 src/cpu/gpw/periodic_wannier.cpp
+                src/cpu/gpw/berry_polarization.cpp
                 src/cpu/gpw/internal/gpw_forces.cpp
                 src/cpu/gpw/internal/gpw_stress.cpp
                 src/cpu/gpw/internal/mp2_kernels.cpp
