@@ -626,3 +626,42 @@ TEST(GpwMp2, MultiKUmp2Nk1MatchesRealUmp2) {
     EXPECT_TRUE(std::isfinite(e_os_r));
     EXPECT_TRUE(std::isfinite(e_ss_r));
 }
+
+// Grimme SCS composition on unscaled OS/SS channels (product formula used by
+// GpwDft::mp2 via mp2_os_scale / mp2_ss_scale). Kernel returns unscaled
+// pieces; scales are pure linear reweight — no SCF.
+TEST(GpwMp2, ScsScaleCompositionIsLinear) {
+    const int no = 2, nv = 2, nov = no * nv;
+    std::vector<double> eps_occ = {-0.9, -0.5};
+    std::vector<double> eps_virt = {0.2, 0.7};
+    std::vector<double> v(static_cast<std::size_t>(nov) * nov, 0.0);
+    auto idx = [&](int i, int a, int j, int b) {
+        return static_cast<std::size_t>((i * nv + a) * nov + j * nv + b);
+    };
+    for (int i = 0; i < no; ++i)
+        for (int a = 0; a < nv; ++a)
+            for (int j = 0; j < no; ++j)
+                for (int b = 0; b < nv; ++b) {
+                    const double x =
+                        0.03 * static_cast<double>(1 + i + 2 * a + 3 * j
+                                                   + 4 * b);
+                    v[idx(i, a, j, b)] = x;
+                    v[idx(j, b, i, a)] = x;
+                }
+    double e_os = 0.0, e_ss = 0.0;
+    mp2_rhf_energy(v, eps_occ, eps_virt, e_os, e_ss);
+    ASSERT_LT(e_os + e_ss, 0.0);
+    // Default scales 1/1 recover plain MP2.
+    EXPECT_NEAR(e_os + e_ss, 1.0 * e_os + 1.0 * e_ss, 1e-15);
+    // Grimme SCS-MP2 (JCP 118, 9095 (2003)).
+    const double e_scs = 1.2 * e_os + (1.0 / 3.0) * e_ss;
+    EXPECT_TRUE(std::isfinite(e_scs));
+    EXPECT_NE(e_scs, e_os + e_ss);
+    // Product defaults on the method object.
+    GpwDft m;
+    EXPECT_DOUBLE_EQ(m.mp2_os_scale, 1.0);
+    EXPECT_DOUBLE_EQ(m.mp2_ss_scale, 1.0);
+    m.mp2_os_scale = 1.2;
+    m.mp2_ss_scale = 1.0 / 3.0;
+    EXPECT_NEAR(m.mp2_os_scale * e_os + m.mp2_ss_scale * e_ss, e_scs, 1e-15);
+}
