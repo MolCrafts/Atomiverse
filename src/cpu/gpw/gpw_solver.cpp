@@ -1008,6 +1008,19 @@ static GpwResult run_gpw_scf_kpoints(
 
     // Phased analytic matrices: S_k, T_k in one image sweep; nonlocal KB.
     // Replicated on every rank for this foothold (setup not parallelized).
+    // ATV_GPW_PROF: [gpw setup k] for STVnl / products / kbg (matches Γ setup).
+    const bool k_setup_prof_early = std::getenv("ATV_GPW_PROF") != nullptr;
+    auto k_setup_clk_early = std::chrono::steady_clock::now();
+    auto k_setup_mark_early = [&](const char* what) {
+        if (!k_setup_prof_early || layout.rank != 0)
+            return;
+        auto now = std::chrono::steady_clock::now();
+        std::fprintf(
+            stderr, "[gpw setup k] %-14s %.0f ms\n", what,
+            std::chrono::duration<double, std::milli>(now - k_setup_clk_early)
+                .count());
+        k_setup_clk_early = now;
+    };
     std::vector<CplxMatrix> S_k, T_k;
     internal::build_overlap_kinetic_k(basis, radii, cfg.cell, mimg,
                                       kBuildScreen, kpts, S_k, T_k);
@@ -1015,6 +1028,7 @@ static GpwResult run_gpw_scf_kpoints(
                                   CplxMatrix(xt::zeros<Cplx>({nb, nb})));
     internal::add_nonlocal_kb_k(Vnl_k, basis, atoms, radii, cfg.cell, mimg,
                                 kBuildScreen, kpts);
+    k_setup_mark_early("STVnl_k");
 
     // Canonical orthogonalization per k (drops near-null Bloch directions).
     std::vector<internal::KOrth> orth;
@@ -1035,6 +1049,7 @@ static GpwResult run_gpw_scf_kpoints(
                 + " independent basis directions at k #" + std::to_string(ik)
                 + " (no-fallback rule)");
     }
+    k_setup_mark_early("orth_k");
 
     // Metallic smearing (FD / MP) — shared μ over all k, Mermin free energy.
     // Occupation math is `cpu::pw::internal` (unit-tested); units: Ha inside.
@@ -1077,6 +1092,7 @@ static GpwResult run_gpw_scf_kpoints(
     MultiGrid mg;
     ProductSet products;
     if (use_mg) {
+        k_setup_clk_early = std::chrono::steady_clock::now();
         mg = make_multigrid(cfg.cell, cfg.cutoff_ry, cfg.ngrids,
                             cfg.rel_cutoff);
         if (mg.levels[0].n[0] != grid.n[0] || mg.levels[0].n[1] != grid.n[1]
@@ -1085,6 +1101,7 @@ static GpwResult run_gpw_scf_kpoints(
                 "GPW kpoints: multigrid finest level n[] != SCF grid n[]");
         products = build_products(mg, basis, cfg.cell, cfg.rel_cutoff,
                                   cfg.eps_default, /*periodic=*/true);
+        k_setup_mark_early("products_mg");
     }
     const std::size_t n_tcells = products.cells.size();
     // Bloch phase per (k, image cell): e^{−2πi κ·t} matches the χ^k grid
@@ -1200,10 +1217,14 @@ static GpwResult run_gpw_scf_kpoints(
     // folded once; per-iteration cost is O(npts * nb^2) per k). Skipped under
     // multigrid — the product path replaces it (dense χ^k on the fine grid is
     // exactly the cost multigrid exists to avoid).
+    if (!use_mg)
+        k_setup_clk_early = std::chrono::steady_clock::now();
     const internal::KpointBasisGrid kbg =
         use_mg ? internal::KpointBasisGrid{}
                : internal::build_kpoint_basis_grid(grid, basis, kpts,
                                                    cfg.eps_default);
+    if (!use_mg)
+        k_setup_mark_early("kbg_build");
 
     // Density from band occupations f_b ∈ [0, 2] (closed-shell band form).
     auto density_from_occ = [&](const CplxMatrix& C,
@@ -1531,12 +1552,24 @@ static GpwResult run_gpw_scf_kpoints(
     std::vector<double> last_veff;
 
     // Shared H/energy rebuild from {P_k} (used by DIIS and OT).
+    // ATV_GPW_PROF: per-call [gpw prof k] timings (collocate / Poisson / XC /
+    // integrate) so multi-k twins match the Γ [gpw prof] shape.
+    const bool kprof = std::getenv("ATV_GPW_PROF") != nullptr;
+    using KProfClk = std::chrono::steady_clock;
+    auto k_pms = [](KProfClk::time_point a, KProfClk::time_point b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+    };
+    int k_energy_builds = 0;
     auto build_k_energy = [&](const std::vector<CplxMatrix>& Pk) {
+        ++k_energy_builds;
+        auto t0p = KProfClk::now();
         const std::vector<double> rho = collocate_rho_k(Pk);
+        auto t1p = KProfClk::now();
         std::vector<double> n_tot(rho.size());
         for (std::size_t g = 0; g < rho.size(); ++g)
             n_tot[g] = rho[g] - n_ion[g];
         const PoissonResult es = solve_poisson(grid, n_tot);
+        auto t2p = KProfClk::now();
         const XcOnGrid xc =
             cfg.xc == XcKind::PBE
                 ? xc_grid_pbe(grid, rho)
@@ -1553,6 +1586,7 @@ static GpwResult run_gpw_scf_kpoints(
                                                                         rho)
                                                    : xc_grid_pade(grid,
                                                                   rho))))));
+        auto t3p = KProfClk::now();
         std::vector<double> veff(rho.size());
         double e_locgrid = 0.0;
         for (std::size_t g = 0; g < rho.size(); ++g) {
@@ -1595,6 +1629,15 @@ static GpwResult run_gpw_scf_kpoints(
                     * ctrace(Pk[static_cast<std::size_t>(ik)],
                              Vnl_k[static_cast<std::size_t>(ik)]);
         }
+        auto t4p = KProfClk::now();
+        if (kprof)
+            std::fprintf(stderr,
+                         "[gpw prof k] collocate=%.0f poisson=%.0f xc=%.0f "
+                         "integrate=%.0f ms "
+                         "(ngrid=%ld nk=%d mg=%d build=%d)\n",
+                         k_pms(t0p, t1p), k_pms(t1p, t2p), k_pms(t2p, t3p),
+                         k_pms(t3p, t4p), grid.npts(), nk, use_mg ? 1 : 0,
+                         k_energy_builds);
         double e_dftu = 0.0;
         if (do_dftu) {
             std::vector<CplxMatrix> Pspin_k(static_cast<std::size_t>(nk));
@@ -4785,10 +4828,20 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         };
 
         // Build dual KS + total energy (and fill res energy channels) from Pa/Pb.
+        // ATV_GPW_PROF: Γ-UKS [gpw prof uks] matches RKS [gpw prof] shape.
+        const bool uks_prof = std::getenv("ATV_GPW_PROF") != nullptr;
+        using UksProfClk = std::chrono::steady_clock;
+        auto uks_pms = [](UksProfClk::time_point a, UksProfClk::time_point b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        int uks_energy_builds = 0;
         auto build_uks_H = [&](const RealMatrix& Pa_in, const RealMatrix& Pb_in)
             -> std::tuple<RealMatrix, RealMatrix, double> {
+            ++uks_energy_builds;
+            auto t0p = UksProfClk::now();
             std::vector<double> rho_a = collocate_P(Pa_in);
             std::vector<double> rho_b = collocate_P(Pb_in);
+            auto t1p = UksProfClk::now();
             std::vector<double> rho(rho_a.size());
             for (std::size_t g = 0; g < rho.size(); ++g)
                 rho[g] = rho_a[g] + rho_b[g];
@@ -4826,7 +4879,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             const PoissonResult es = cfg.nonperiodic
                                          ? solve_poisson_mt(grid, n_tot)
                                          : solve_poisson(grid, n_tot);
+            auto t2p = UksProfClk::now();
             const XcOnGridSpin xc = xc_spin(rho_a, rho_b);
+            auto t3p = UksProfClk::now();
 
             std::vector<double> veff_a(rho.size()), veff_b(rho.size());
             double e_locgrid = 0.0;
@@ -4860,6 +4915,15 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 
             RealMatrix Ha = H0 + integrate_V(veff_a);
             RealMatrix Hb = H0 + integrate_V(veff_b);
+            auto t4p = UksProfClk::now();
+            if (uks_prof)
+                std::fprintf(stderr,
+                             "[gpw prof uks] collocate=%.0f poisson=%.0f "
+                             "xc=%.0f integrate=%.0f ms "
+                             "(ngrid=%ld build=%d)\n",
+                             uks_pms(t0p, t1p), uks_pms(t1p, t2p),
+                             uks_pms(t2p, t3p), uks_pms(t3p, t4p),
+                             grid.npts(), uks_energy_builds);
 
             double e_dftu = 0.0;
             if (do_dftu) {
