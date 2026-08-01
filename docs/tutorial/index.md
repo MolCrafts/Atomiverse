@@ -314,6 +314,7 @@ domain, alphabetical by slug.
 | GPW Γ-RKS RPBE, isolated H₂O (MT) | [gpw-rpbe-water](methods/gpw-rpbe-water.md) | `regressions/gpw/gpw-rpbe-water` |
 | GPW PBE + rVV10 (periodic water dimer) | [gpw-rvv10-ice](methods/gpw-rvv10-ice.md) | `regressions/gpw/gpw-rvv10-ice` |
 | GPW PBE-TS (periodic water dimer) | [gpw-ts-ice](methods/gpw-ts-ice.md) | `regressions/gpw/gpw-ts-ice` |
+| Multi-k free-atom TS analytic ionic forces (H₂) | [gpw-ts-kpoint-forces](methods/gpw-ts-kpoint-forces.md) | `regressions/gpw/gpw-ts-kpoint-forces` |
 | Γ-UKS GPW BLYP (O₂) | [gpw-uks-blyp](methods/gpw-uks-blyp.md) | `regressions/gpw/gpw-uks-blyp` |
 | Γ-UKS GPW analytic forces (O₂ / PBE) | [gpw-uks-forces](methods/gpw-uks-forces.md) | `regressions/gpw/gpw-uks-forces` |
 | Γ-UKS GPW multigrid (O₂ / PADE) | [gpw-uks-multigrid](methods/gpw-uks-multigrid.md) | `regressions/gpw/gpw-uks-multigrid` |

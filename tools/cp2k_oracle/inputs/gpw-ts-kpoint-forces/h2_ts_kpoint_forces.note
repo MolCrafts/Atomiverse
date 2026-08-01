@@ -2,10 +2,18 @@
 
 ## Policy
 
-CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` has **no TS** (only DFTD2 / DFTD3 /
-DFTD3(BJ) / DFTD4). Oracle is **libMBD** free-atom TS energy + **force
-dual-gate** + **multi-k product wiring** (same policy as `gpw-ts-forces` /
-`gpw-ts-ice` / `gpw-mbd-kpoint-forces`).
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` is only
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4` (`input_cp2k_xc.F` usage string) — **no**
+`TYPE TS`. Binary checked offline (2026-08-01):
+
+```text
+cp2k.psmp  version 2026.1  Source code revision git:5e54ba2
+  via /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+```
+
+Oracle is **libMBD** free-atom TS energy + **force dual-gate** + **multi-k
+product wiring** (same policy as `gpw-ts-forces` / `gpw-ts-ice` /
+`gpw-mbd-kpoint-forces`).
 
 **Never** invent a CP2K `.inp` that claims stock TS, and never label pins
 `oracle: cp2k`. Never launch libMBD or CP2K from ctest — pins are hard-coded in

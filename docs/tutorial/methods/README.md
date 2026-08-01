@@ -256,6 +256,7 @@ emptied — not queue exhausted).
 | ------ | ---- | ---------- | --------------------------------------------- |
 | Γ-UGW@UKS with RPBE spin XC (sc-Si₂) | [ugw-uks-rpbe](ugw-uks-rpbe.md) | `regressions/gpw/ugw-uks-rpbe` | **perf_exempt** |
 | Free-atom TS analytic ionic forces (water dimer) | [gpw-ts-forces](gpw-ts-forces.md) | `regressions/gpw/gpw-ts-forces` | **perf_exempt** |
+| Multi-k free-atom TS analytic ionic forces (H₂) | [gpw-ts-kpoint-forces](gpw-ts-kpoint-forces.md) | `regressions/gpw/gpw-ts-kpoint-forces` | **perf_exempt** |
 | Free-atom XDM analytic ionic forces (water dimer) | [gpw-xdm-forces](gpw-xdm-forces.md) | `regressions/gpw/gpw-xdm-forces` | **perf_exempt** |
 | Multi-k UKS analytic stress RevPBE/RPBE/BLYP | [gpw-kpoint-uks-stress-gga](gpw-kpoint-uks-stress-gga.md) | `regressions/gpw/gpw-kpoint-uks-stress-gga` | **perf_exempt** |
 | CPMD + Nosé–Hoover electronic thermostat (H₂O GPW) | [cpmd-electronic-thermostat](cpmd-electronic-thermostat.md) | `regressions/dynamics/cpmd-electronic-thermostat` | **perf_exempt** |
@@ -394,6 +395,7 @@ grouped by regression domain, alphabetical by slug.
 | GPW Γ-RKS RPBE, isolated H₂O (MT) | [gpw-rpbe-water](gpw-rpbe-water.md) | `regressions/gpw/gpw-rpbe-water` |
 | GPW PBE + rVV10 (periodic water dimer) | [gpw-rvv10-ice](gpw-rvv10-ice.md) | `regressions/gpw/gpw-rvv10-ice` |
 | GPW PBE-TS (periodic water dimer) | [gpw-ts-ice](gpw-ts-ice.md) | `regressions/gpw/gpw-ts-ice` |
+| Multi-k free-atom TS analytic ionic forces (H₂) | [gpw-ts-kpoint-forces](gpw-ts-kpoint-forces.md) | `regressions/gpw/gpw-ts-kpoint-forces` |
 | Γ-UKS GPW BLYP (O₂) | [gpw-uks-blyp](gpw-uks-blyp.md) | `regressions/gpw/gpw-uks-blyp` |
 | Γ-UKS GPW analytic forces (O₂ / PBE, MT) | [gpw-uks-forces](gpw-uks-forces.md) | `regressions/gpw/gpw-uks-forces` |
 | Γ-UKS GPW multigrid (O₂ / PADE) | [gpw-uks-multigrid](gpw-uks-multigrid.md) | `regressions/gpw/gpw-uks-multigrid` |
