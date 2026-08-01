@@ -367,8 +367,8 @@ class GpwDft {
     std::vector<double> atom_spin_guess;
     /// @brief Metallic occupation smearing (default: fixed integer fillings).
     ///        Product path: multi-k RKS (DIIS **and** OT, with or without
-    ///        `plus_u`) and multi-k collinear UKS (DIIS **and** OT). Multi-k
-    ///        UKS OT + DFT+U + smear remains a residual.
+    ///        `plus_u`) and multi-k collinear UKS (DIIS **and** OT), including
+    ///        multi-k UKS OT + DFT+U + smear (`reg_ot-uks-dftu-smearing`).
     Smearing smearing = Smearing::none;
     /// @brief Smearing width [Ry] (QE `degauss` / CP2K \(k_B T_e\)). Required
     ///        `> 0` when `smearing != none`. Converted to Ha inside the SCF.

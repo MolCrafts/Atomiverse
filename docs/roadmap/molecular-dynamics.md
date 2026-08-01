@@ -236,7 +236,8 @@ AIMD works by binding a force-providing method/component to `md::Phase::force`
   closed-shell); NVE energy-drift pin `reg_gpw-bomd-water`. **Multi-k
   BOMD** is product (`reg_gpw-bomd-kpoints`; previous-step \(P_k\) SCF
   warm start mirroring CP2K EXTRAPOLATION USE_PREV_P; CP2K Quickstep
-  AIMD k-mesh pin, fair wall ratio 0.064; multi-k XL is product too).
+  AIMD k-mesh pin, fair wall ratio 0.064; multi-k XL is product too;
+  multi-k UKS BOMD pin still queued as `gpw-bomd-uks-kpoints`).
 - `cpu::pw::PWEvaluator` with `with_gradient(true)` → **plane-wave BOMD**
   (analytic local + Ewald + KB forces; default is energy-only); foothold
   `reg_pw-bomd-h`.
@@ -258,8 +259,9 @@ dual-spin shadow densities (`reg_xl-bomd-linearized-uks`), **and the
 multi-k path** — RKS and collinear UKS, k-weighted complex shadow
 \(D_k^\sigma\) with the new k-UKS fixed-density eval
 (`reg_xl-bomd-linearized-kpoints`, CP2K-anchored per-step trace);
-linearized XL + `compute_stress` now refuses at `build()` (was a silent
-warm-step drop; queued `xl-bomd-linearized-stress`).
+linearized XL + analytic fixed-\(P\) **stress** productizes
+(`reg_xl-bomd-linearized-stress`; multi-SCF strain-FD oracle still
+refused — BO stress, not the zero-SCF shadow functional).
 
 **Car–Parrinello MD** (fictitious electronic DOF) ships as `cpu::electronic::Cpmd` +
 `GPWEvaluator::{cpmd, cpmd_mu}` (the nuclear dt is pushed in from the MD
@@ -273,7 +275,8 @@ on the closed-shell path. **Electronic thermostat** (Nosé–Hoover on fictitiou
 electronic DOF) productizes at Γ (`reg_cpmd-electronic-thermostat`) **and on
 the multi-k path** (one thermostatted `CpmdCplx` per (k, σ) channel;
 k-weighted \(T_e\) / \(E_{\mathrm{therm}}\`;
-`reg_cpmd-thermostat-kpoints`). **Multi-k
+`reg_cpmd-thermostat-kpoints`; multi-k **UKS** eNH combo pin still
+queued as `cpmd-uks-thermostat-kpoints`). **Multi-k
 CPMD** (Bloch \(C_k\), one `cpu::electronic::CpmdCplx` per sampled k) ships
 for RKS (`reg_cpmd-kpoints`) **and collinear UKS** (dual-spin Bloch
 \(C_k^\sigma\), one propagator per (k, spin) with occ-1 spin-diagonal EOM

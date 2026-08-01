@@ -1,5 +1,62 @@
 # CP2K capability loop — handoff
 
+## Bootstrap + GapCensus wave 4 (shift) 2026-08-01 (parent `dev` @ `87ae7924`)
+
+| Field | Value |
+| ----- | ----- |
+| Branch | `dev` (ahead of `origin/dev` by harness/docs commits; **no push**) |
+| Incomplete / `in_progress` | **0** |
+| Open CP2K specs on `dev` | **0** (PySCF deferred only: `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp`) |
+| Unmerged staff `wf/*` | **0** |
+| Isolation worktrees | **0** |
+| Leftover builds | wiped (`build/` ~10 G) |
+| Pending gaps | **11** (GapCensus wave 4 refill — not exhausted) |
+| Blocked | **6** (VV10 + hybrid / GAPW / PAW / CUDA-GPW / meta-GGA) |
+| Oracle | CP2K 2026.1 source build `…/cp2k/install` (`git:5e54ba2`); offline pins only |
+| Loop docs | queue / loop / handoff / roadmap residual prose **synced** |
+
+### Recover
+
+Clean. Wave-3 staff (9) all merged and reg dirs present. No open GPW/PW
+specs, no `wf/*`, no isolation worktrees. Strict fair-twin pin law + source
+build notes already on `dev` (`87ae7924`).
+
+### GapCensus (pending refill)
+
+Tree-declared residuals after harness wave 3 emptied the list (foothold ≠
+closed):
+
+| Slug | Kind | Twin |
+| ---- | ---- | ---- |
+| `gpw-vdw-uks-kpoints` | **impl** (fail-fast) | CP2K NON_LOCAL + UKS + k |
+| `gpw-d3-kpoint-stress` | pin (fold product) | CP2K NUMERICAL Δσ + k |
+| `gpw-d3bj-kpoint-stress` | pin | CP2K NUMERICAL BJ + k |
+| `gpw-d3-atm-kpoint-stress` | pin | CP2K C9 on−off + k |
+| `gpw-d4-kpoint-stress` | pin | dftd4 strained-cell |
+| `gpw-ts-kpoint-stress` | pin | libMBD strain |
+| `gpw-xdm-kpoint-stress` | pin | pure-Python XDM strain |
+| `gpw-bomd-uks-kpoints` | product pin | CP2K UKS AIMD k |
+| `gpw-vdw-uks-multigrid` | product pin | CP2K NGRIDS+DRSLL+UKS |
+| `gpw-hirshfeld-uks-kpoints` | product pin | libMBD / literature |
+| `cpmd-uks-thermostat-kpoints` | product pin | literature eNH envelope |
+
+**Not staffed yet** — next step is **Assign** (prefer surface-disjoint:
+one multi-k stress pin family vs `gpw-vdw-uks-kpoints` impl; BOMD UKS free
+of stress trees). Incomplete ≫ pending if any `[~]` reappears.
+
+### Found / fixed
+
+- Stale `gpw_solver.h` claim that multi-k UKS OT+DFT+U+smear was still a
+  residual (product: `reg_ot-uks-dftu-smearing`) — header comment fixed.
+- Roadmap residual prose still listed wave-3 open items — refreshed.
+
+### Next
+
+**Assign wave** from the 11 pending (staff ≤10; no PySCF deferred specs).
+No invent methods. No push.
+
+---
+
 ## Harness wave 3 (shift) 2026-07-31 (parent `dev` @ `419c1dc3`)
 
 | Field | Value |

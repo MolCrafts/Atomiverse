@@ -66,6 +66,15 @@ args: { "mode":"exhaust", "staff_count":10, "max_waves":20, "target_branch":"dev
 
 ## Run log
 
+- **2026-08-01 bootstrap + GapCensus wave 4 (shift) (parent `dev` @
+  `87ae7924`):** recover clean (incomplete=0, specs=0, wf/*=0, worktrees=0;
+  wiped leftover `build/`). Prior pending residual 0 after harness wave 3 —
+  refilled **11** tree residuals (multi-k UKS nonlocal vdW **impl**; multi-k
+  D3/D3BJ/D3-ATM/D4/TS/XDM stress pins; multi-k UKS BOMD; Γ-UKS vdW multigrid;
+  multi-k UKS Hirshfeld; multi-k UKS CPMD eNH pin). Blocked=6 unchanged. Fixed
+  stale OT+U+smear residual header + roadmap residual prose. **Queue not
+  exhausted** — Assign next. No push.
+
 - **2026-07-31 harness wave 3 (shift) (parent `dev` @ `419c1dc3`):** 9/9
   staffed slugs merged → done (TS/XDM stress pins; multi-k RKS + Γ-UKS
   nonlocal vdW; multi-k UKS multigrid; multi-k CPMD eNH; multi-k UKS SGCP OT;

@@ -1085,14 +1085,70 @@ green on merged `dev`; unit/reg product gates re-verified. Specs closed
 discovery). **in_progress = 0**. **Blocked = 6** unchanged. Clearup runs with
 harness (worktrees removed, merged `wf/*` pruned, builds wiped). No push.
 
+
+**Bootstrap + GapCensus wave 4 (shift) 2026-08-01 (parent `dev` @ `87ae7924`):**
+recover clean — incomplete_count=**0**; `## in_progress` empty; open
+CP2K/GPW/PW specs=**0** (PySCF deferred only: `periodic-rhf-gamma` /
+`rsh-eri-cam-b3lyp`); unmerged `wf/*`=**0**; isolation worktrees=**0**;
+leftover `build/` (**~10 G**) wiped this census; wave-3 done-slug regression
+dirs all present (9/9). CP2K source build OK (`cp2k.psmp` 2026.1
+`git:5e54ba2` via `…/cp2k/install/env.sh`). Tree re-diff vs
+`docs/roadmap/dft.md` §3/§8/§10–12 + MD AIMD + `tools/cp2k_oracle` +
+`include/atomiverse/cpu/{gpw,planewave}`: prior pending residual **0**
+(harness wave 3 emptied list — **not** capability-closed). **True residuals
+re-opened (11)** with offline CP2K / literature twins:
+`gpw-vdw-uks-kpoints` (multi-k UKS + nonlocal vdW-DF/DF2/rVV10 still
+fail-fast at `gpw_solver.cpp` build reject — "no dual-spin nonlocal fold";
+Γ UKS + multi-k RKS product after wave 3), `gpw-d3-kpoint-stress` /
+`gpw-d3bj-kpoint-stress` / `gpw-d3-atm-kpoint-stress` (geometry-only
+D3/D3(BJ)/C9 fold already in k Lagrangian `gpw_stress.cpp`; dedicated
+multi-k stress pins held behind Γ D3/TS/XDM pins — now free; CP2K
+NUMERICAL stress-difference twins), `gpw-d4-kpoint-stress` (k-path D4
+fold product; dftd4 strained-cell pin — same no-DFTD4 CP2K policy as Γ
+`gpw-d4-stress`), `gpw-ts-kpoint-stress` / `gpw-xdm-kpoint-stress`
+(k-path TS/XDM fold product; libMBD / pure-Python strained-cell pins as
+Γ), `gpw-bomd-uks-kpoints` (multi-k UKS plain BOMD unpinned — RKS only
+`reg_gpw-bomd-kpoints`; CP2K Quickstep UKS AIMD twin),
+`gpw-vdw-uks-multigrid` (Γ UKS + nonlocal vdW + REL_CUTOFF multigrid
+combo unpinned — each axis product alone; CP2K NGRIDS×DRSLL×UKS twin),
+`gpw-hirshfeld-uks-kpoints` (multi-k UKS Hirshfeld TS/MBD fold exists in
+`fold_dispersion_k_uks`; no dedicated pin — Γ UKS + multi-k RKS pins
+only), `cpmd-uks-thermostat-kpoints` (multi-k UKS electronic Nosé–Hoover
+wired on per-(k,σ) `CpmdCplx` after `cpmd-thermostat-kpoints` /
+`cpmd-uks-kpoints`; no combo pin; CP2K has no fictitious-mass twin —
+literature envelope). **Not added:** variable-cell CPMD stress (deliberate
+NVE-family refusal; no fair CP2K CP twin); XL-BOMD + metallic smear /
+k-UKS fixed-density+smear (hold — fractional fixed-density path);
+GPW NPT AIMD composition (MD barostat + product stress — not a method
+domain gap); density-dependent XDM Hirshfeld moments (header out-of-scope);
+Γ RKS DFT+U (design reject — UKS or k-path); SCS-MP2 thin scale pins;
+stock VV10 (blocked); BP86/B97/OLYP/HCTH (molecular PySCF path);
+shear/off-diagonal stress (orthorhombic design); OT+XL (architectural
+exclusion); GAPW/PAW/periodic hybrid/meta-GGA (blocked); molecular
+post-HF / classical MW / CUDA ports (other loops). **Found rot fixed:**
+stale `gpw_solver.h` comment claimed multi-k UKS OT+DFT+U+smear residual
+after `reg_ot-uks-dftu-smearing` landed. Roadmap: **no ○/✓ table flips**
+(capability rows already ✓); residual prose in `dft.md` §8/§10/§12 +
+`index.md` GPW + MD AIMD refreshed for wave-3 ships + wave-4 queue.
+**Pending = 11**; **in_progress = 0**; **blocked = 6**.
+
 ## pending
 
-(empty after harness wave 3 — all 7 census rows staffed assign wave 3 (shift) 2026-07-31; not
-queue exhausted, GapCensus owns next discovery)
+- [ ] `gpw-vdw-uks-kpoints` | Multi-k UKS nonlocal vdW-DF/DF2/rVV10 (dual-spin V_nl fold) | gpw | twin: CP2K 2026.1 NON_LOCAL + UKS + k-mesh | deps: gpw-vdw-uks ✓, gpw-vdw-kpoints ✓ | write-first
+- [ ] `gpw-d3-kpoint-stress` | Multi-k analytic cell stress with DFT-D3 zero damping (dedicated pin) | gpw | twin: CP2K 2026.1 NUMERICAL stress-difference + k-mesh | deps: gpw-d3-stress ✓, gpw-kpoint-stress ✓ | write-first
+- [ ] `gpw-d3bj-kpoint-stress` | Multi-k analytic cell stress with DFT-D3(BJ) (dedicated pin) | gpw | twin: CP2K 2026.1 NUMERICAL BJ stress-difference + k-mesh | deps: gpw-d3bj-stress ✓ | write-first
+- [ ] `gpw-d3-atm-kpoint-stress` | Multi-k analytic cell stress with D3 three-body ATM (C9) | gpw | twin: CP2K 2026.1 NUMERICAL C9 on−off + k-mesh | deps: gpw-d3-atm-stress ✓ | write-first
+- [ ] `gpw-d4-kpoint-stress` | Multi-k analytic cell stress with DFT-D4 | gpw | twin: dftd4 3.7.0 strained-cell (no CP2K DFTD4) | deps: gpw-d4-stress ✓ | write-first
+- [ ] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | write-first
+- [ ] `gpw-xdm-kpoint-stress` | Multi-k analytic cell stress with free-atom XDM | gpw | twin: pure-Python XDM strain | deps: gpw-xdm-stress ✓ | write-first
+- [ ] `gpw-bomd-uks-kpoints` | Multi-k UKS plain BOMD (previous-step dual P_k^σ warm start) | dynamics | twin: CP2K 2026.1 Quickstep UKS AIMD k-mesh | deps: gpw-bomd-kpoints ✓, gpw-kpoint-uks-forces ✓ | write-first
+- [ ] `gpw-vdw-uks-multigrid` | Γ-UKS nonlocal vdW on REL_CUTOFF multigrid | gpw | twin: CP2K 2026.1 NGRIDS + DRSLL + UKS | deps: gpw-vdw-uks ✓, gpw-vdw-multigrid ✓ | write-first
+- [ ] `gpw-hirshfeld-uks-kpoints` | Multi-k UKS Hirshfeld volume ratios for TS/MBD | gpw | twin: libMBD / literature V/V_free | deps: gpw-hirshfeld-uks ✓, gpw-hirshfeld-kpoints ✓ | write-first
+- [ ] `cpmd-uks-thermostat-kpoints` | Multi-k UKS CPMD electronic Nosé–Hoover (combo pin) | dynamics | twin: literature NVE/thermostat envelope (no CP fictitious twin) | deps: cpmd-thermostat-kpoints ✓, cpmd-uks-kpoints ✓ | write-first
 
 ## in_progress
 
-(empty — all wave-3 staff merged; not queue exhausted)
+(empty — recover clean after harness wave 3; not queue exhausted)
 
 
 
