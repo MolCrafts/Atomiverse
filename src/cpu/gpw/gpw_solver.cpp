@@ -2725,11 +2725,29 @@ static GpwResult run_gpw_scf_kpoints_uks(
         }
     };
 
-    // Fold free-atom e_d3, or Hirshfeld-scaled TS/MBD from k-summed total
-    // density ρ = ρα + ρβ (post-SCF). Mirrors RKS `fold_dispersion_k`
-    // (multigrid product density via collocate_rho_spin_k).
+    // Fold nonlocal vdW (DRSLL/LMKLL/rVV10), free-atom e_d3, or
+    // Hirshfeld-scaled TS/MBD from k-summed total density ρ = ρα + ρβ
+    // (post-SCF). Mirrors RKS `fold_dispersion_k` (multigrid product density
+    // via collocate_rho_spin_k) and Γ UKS `fold_dispersion`.
     const bool periodic_cell_uks = !cfg.nonperiodic;
     auto fold_dispersion_k_uks = [&](GpwResult& out) {
+        // Final nonlocal E_c^nl on the (self-consistent) k-summed total
+        // density. V_nl was already applied every SCF iteration inside
+        // build_uks_k_energy / the DIIS twin; this mirrors the multi-k RKS
+        // post-SCF evaluation (gpw-vdw-kpoints) and Γ UKS e_disp fold.
+        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+            const std::vector<double> ra = collocate_rho_spin_k(Pa_k);
+            const std::vector<double> rb = collocate_rho_spin_k(Pb_k);
+            std::vector<double> rho(ra.size());
+            for (std::size_t g = 0; g < rho.size(); ++g)
+                rho[g] = ra[g] + rb[g];
+            out.e_disp = nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df,
+                                              cfg.vdw_df2, cfg.rvv10,
+                                              /*potential=*/false)
+                             .energy;
+            out.e_total += out.e_disp;
+            return;
+        }
         if (cfg.hirshfeld && (cfg.ts || cfg.mbd)) {
             const std::vector<double> ra = collocate_rho_spin_k(Pa_k);
             const std::vector<double> rb = collocate_rho_spin_k(Pb_k);
@@ -2803,6 +2821,22 @@ static GpwResult run_gpw_scf_kpoints_uks(
             veff_b[g] = es.v_r[g] + xc.vxc_b[g] + vloc;
         }
         e_locgrid *= gw;
+        // Self-consistent nonlocal vdW (DRSLL / LMKLL / rVV10) on the TOTAL
+        // density: V_nl = δE_c^nl/δρ is spin-independent, so it is added
+        // identically to both spin potentials before last_veff_ab and the
+        // multigrid restriction (CP2K qs_dispersion_nonloc; same placement
+        // as Γ UKS build_uks_H and multi-k RKS build_k_energy). E_c^nl is
+        // reported via e_disp (fold_dispersion_k_uks), never added to the
+        // SCF convergence energy.
+        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+            const NonlocalVdwOnGrid nl =
+                nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
+                                     cfg.rvv10, /*potential=*/true);
+            for (std::size_t g = 0; g < rho.size(); ++g) {
+                veff_a[g] += nl.v_r[g];
+                veff_b[g] += nl.v_r[g];
+            }
+        }
         last_veff_ab.resize(2 * rho.size());
         for (std::size_t g = 0; g < rho.size(); ++g) {
             last_veff_ab[g] = veff_a[g];
@@ -3657,6 +3691,17 @@ static GpwResult run_gpw_scf_kpoints_uks(
             veff_b[g] = es.v_r[g] + xc.vxc_b[g] + vloc;
         }
         e_locgrid *= gw;
+        // Self-consistent nonlocal vdW: V_nl on total density, both spins
+        // (byte-identical placement with build_uks_k_energy above).
+        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+            const NonlocalVdwOnGrid nl =
+                nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
+                                     cfg.rvv10, /*potential=*/true);
+            for (std::size_t g = 0; g < rho.size(); ++g) {
+                veff_a[g] += nl.v_r[g];
+                veff_b[g] += nl.v_r[g];
+            }
+        }
         last_veff_ab.resize(2 * rho.size());
         for (std::size_t g = 0; g < rho.size(); ++g) {
             last_veff_ab[g] = veff_a[g];
@@ -5398,11 +5443,12 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
             throw std::invalid_argument(
                 "GpwDft::build: UKS supports XcKind::PADE, PBE, PBEsol, "
                 "RevPBE, RPBE, BLYP, or OptB88VdW");
-        // Nonlocal vdW (vdw_df / vdw_df2 / rvv10) is wired for Γ UKS: V_nl on
-        // the total density lands in both spin potentials each SCF iteration
-        // (build_uks_H) and E_c^nl is folded onto e_disp at every UKS exit.
-        // Multi-k UKS + nonlocal still rejects fail-fast below (k-RKS
-        // nonlocal is product via gpw-vdw-kpoints).
+        // Nonlocal vdW (vdw_df / vdw_df2 / rvv10) is wired for Γ UKS and
+        // multi-k UKS: V_nl on the total density lands in both spin
+        // potentials each SCF iteration (build_uks_H / build_uks_k_energy)
+        // and E_c^nl is folded onto e_disp at every UKS exit
+        // (fold_dispersion / fold_dispersion_k_uks). Closed-shell multi-k
+        // RKS nonlocal is product via gpw-vdw-kpoints.
     } else if (n_occ < 1) {
         throw std::invalid_argument(
             "GpwDft::build: n_occ must be >= 1 for closed-shell RKS (got "
@@ -5531,12 +5577,10 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
         // Nonlocal vdW (vdw_df / vdw_df2 / rvv10) is product on closed-shell
         // multi-k RKS (SCF V_nl in build_k_energy + post-SCF E_c^nl in
         // fold_dispersion_k; single-grid and REL_CUTOFF multigrid —
-        // gpw-vdw-kpoints). Multi-k UKS has no dual-spin nonlocal fold yet
-        // (Γ UKS is product via gpw-vdw-uks) — fail-fast instead of
-        // silently dropping E_c^nl.
-        if (is_uks() && (vdw_df || vdw_df2 || rvv10))
-            reject("nonlocal vdW (vdw_df / vdw_df2 / rvv10) with multi-k UKS "
-                   "(use Γ UKS or closed-shell multi-k RKS)");
+        // gpw-vdw-kpoints) and collinear multi-k UKS (V_nl of the total
+        // density added to both spin potentials in build_uks_k_energy /
+        // DIIS twin + post-SCF E_c^nl in fold_dispersion_k_uks —
+        // gpw-vdw-uks-kpoints; Γ UKS product via gpw-vdw-uks).
         if (is_uks() && xc != XcKind::PADE && xc != XcKind::PBE
             && xc != XcKind::PBEsol && xc != XcKind::RevPBE
             && xc != XcKind::RPBE && xc != XcKind::BLYP
