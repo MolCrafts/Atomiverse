@@ -6,7 +6,9 @@
 ///
 /// - **RKS:** Γ (real) or multi-k (complex Bloch + momentum conservation).
 /// - **UKS:** Γ unrestricted MP2 (UMP2) on α/β orbitals **and multi-k UMP2**
-///   (`reg_periodic-ump2-si` / `reg_periodic-ump2-kpoints`).
+///   (`reg_periodic-ump2-si` / `reg_periodic-ump2-kpoints`), with optional
+///   Grimme SCS scales (`reg_periodic-scs-ump2-si` /
+///   `reg_periodic-scs-ump2-kpoints`).
 ///
 /// Product default (`mp2_ri = true`) is the RI-GPW plane-wave
 /// resolution-of-identity assembly of \((ia|jb)\) (Del Ben, Hutter,
@@ -23,7 +25,7 @@ namespace ATV {
 namespace cpu {
 namespace gpw {
 
-/// @brief GPW MP2 correlation energy (RKS Γ/multi-k or UKS Γ UMP2).
+/// @brief GPW MP2 correlation energy (RKS/UKS Γ or multi-k; optional SCS).
 ///
 /// Spin-component channels `e_corr_os` / `e_corr_ss` are the **unscaled**
 /// opposite-spin and same-spin pieces of the doubles sum (same convention as

@@ -65,11 +65,13 @@ Hirshfeld-scaled TS/MBD **forces** (`reg_gpw-hirshfeld-forces`), multi-k
 D3/D3(BJ)/D4 **force** pins, multi-k D4 **ATM stress**
 (`reg_gpw-d4-atm-kpoint-stress`), GPW Berry **UKS**
 (`reg_periodic-berry-gpw-uks`), Γ SCS-**UMP2** (`reg_periodic-scs-ump2-si`),
-and joint DFPT GGA×spin×smear (`reg_dfpt-gga-spin-smearing`); open
-residuals (**incomplete `[~]`**): multi-k **TS stress**
-(`gpw-ts-kpoint-stress`); **pending** (GapCensus wave 5): multi-k
-TS/XDM **force** pins, Γ-UKS **PBEsol**, multi-k SCS-**UMP2**, finite-q
-DFPT spin×GGA×smear, multi-k **Hirshfeld** forces, Γ DFT+U **forces**;
+and joint DFPT GGA×spin×smear (`reg_dfpt-gga-spin-smearing`); **harness
+wave 5 (2026-08-01)** ships multi-k SCS-**UMP2**
+(`reg_periodic-scs-ump2-kpoints`; Grimme dual — CP2K aborts multi-k
+MP2_GPW); open residuals (**incomplete `[~]`**): multi-k **TS stress**
+(`gpw-ts-kpoint-stress`); **pending** (GapCensus wave 5 residual): multi-k
+TS/XDM **force** pins, Γ-UKS **PBEsol**, finite-q DFPT spin×GGA×smear,
+multi-k **Hirshfeld** forces, Γ DFT+U **forces**;
 queue not exhausted —
 GapCensus owns discovery;
 product after
@@ -572,7 +574,9 @@ Which engine backs which ✓:
   **and multi-k SCS-MP2** (`reg_periodic-scs-mp2-kpoints`; Grimme algebraic
   dual — CP2K 2026.1 aborts MP2_GPW under DFT KPOINTS) **and Γ SCS-UMP2@UKS**
   (`reg_periodic-scs-ump2-si`; `mp2_os_scale`/`mp2_ss_scale` on product UMP2
-  + CP2K UKS SCALE wall twin).
+  + CP2K UKS SCALE wall twin) **and multi-k SCS-UMP2**
+  (`reg_periodic-scs-ump2-kpoints`; Grimme algebraic dual — same CP2K
+  multi-k MP2_GPW abort as RKS SCS multi-k).
   **Periodic RPA** is **Γ-point dRPA@KS** product (`GpwDft::direct_rpa`;
   plasmon formula; `reg_periodic-rpa-si`), **multi-k k-diagonal dRPA**
   (`reg_periodic-rpa-kpoints`), **finite-q inter-k dRPA**
