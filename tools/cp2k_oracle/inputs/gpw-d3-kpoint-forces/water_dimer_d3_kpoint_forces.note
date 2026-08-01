@@ -1,0 +1,58 @@
+# Offline CP2K pin — gpw-d3-kpoint-forces
+#
+# Binary:  /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/bin/cp2k.psmp
+# Version: CP2K 2026.1  Source code revision git:5e54ba2
+# Env:     source .../cp2k/install/env.sh
+# Host:    arrhenius1.hpc.arrhenius.naiss  2026-08-01
+# Parallelism: mpirun -np 1, OMP_NUM_THREADS=8
+#
+# Inputs:
+#   water_dimer_d3_kpoint_forces.inp   (DFTD3 zero, CALCULATE_C9_TERM F)
+#   water_dimer_plain_kpoint_forces.inp (identical, no &VDW_POTENTIAL)
+#
+# System: water dimer 6 atoms O H H O H H, cell 12 Å cubic PERIODIC XYZ
+# Method: GPW PBE, DZVP-MOLOPT-SR-GTH, GTH-PBE, CUTOFF 300 REL 40 NGRIDS 4
+# KPOINTS: MONKHORST-PACK 1 1 2, FULL_GRID F
+# SCF: DIAGONALIZATION + DIRECT_P_MIXING ALPHA 0.4, EPS_SCF 1e-7
+#
+# Re-run:
+#   source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+#   cd tools/cp2k_oracle/inputs/gpw-d3-kpoint-forces
+#   export OMP_NUM_THREADS=8
+#   mpirun -np 1 cp2k.psmp -i water_dimer_d3_kpoint_forces.inp \
+#       -o water_dimer_d3_kpoint_forces.out
+#   mpirun -np 1 cp2k.psmp -i water_dimer_plain_kpoint_forces.inp \
+#       -o water_dimer_plain_kpoint_forces.out
+#
+# Recorded lines (D3 run):
+#   Dispersion energy:                         -0.00082089467662
+#   ENERGY| Total FORCE_EVAL ...               -34.339072872762657
+#   FORCES| Atomic forces [hartree/bohr]:
+#     1  -8.18063746E-02  4.01494971E-10  3.72648379E-10
+#     2   4.07355091E-02  1.13136310E-11  1.31298079E-01
+#     3   4.07355091E-02  1.06384166E-11 -1.31298079E-01
+#     4  -8.01907903E-02  3.58191574E-10  3.28465632E-10
+#     5   3.75462068E-02  1.35483328E-11  1.35127326E-01
+#     6   3.75462068E-02  1.32676062E-11 -1.35127326E-01
+#   CP2K timer TOTAL TIME maximum: 3.741 s
+#
+# Plain run:
+#   ENERGY| Total FORCE_EVAL ...               -34.338251978086042
+#   FORCES|:
+#     1  -8.19227603E-02  4.01487087E-10  3.72642534E-10
+#     2   4.08225175E-02  1.13134271E-11  1.31264301E-01
+#     3   4.08225175E-02  1.06385615E-11 -1.31264301E-01
+#     4  -8.04237550E-02  3.58190301E-10  3.28468534E-10
+#     5   3.76338737E-02  1.35481357E-11  1.35133744E-01
+#     6   3.76338737E-02  1.32675490E-11 -1.35133744E-01
+#   CP2K timer TOTAL TIME maximum: ~3.7 s (elapsed_wall 3.95 s)
+#
+# Derived F_disp = F(D3) − F(plain) [Ha/Bohr], max|F_disp| = 2.329647e-04 (O1 x):
+#     1   1.163857e-04   7.884e-15   5.845e-15
+#     2  -8.700840e-05   2.039e-16   3.377800e-05
+#     3  -8.700840e-05  -1.449e-16  -3.377800e-05
+#     4   2.329647e-04   1.273e-15  -2.902e-15
+#     5  -8.766690e-05   1.971e-16  -6.418000e-06
+#     6  -8.766690e-05   5.720e-17   6.418000e-06
+#
+# Fair wall twin: the D3 multi-k ENERGY_FORCE job only (T_cp2k = 3.741 s).
