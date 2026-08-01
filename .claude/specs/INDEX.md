@@ -3,6 +3,12 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Live — CP2K worker wave 2 (2026-08-01)
+
+| Spec | Status | One-line |
+| ---- | ------ | -------- |
+| [cpmd-uks-thermostat-kpoints](cpmd-uks-thermostat-kpoints/spec.md) | staffed `wf/cpmd-uks-thermostat-kpoints` | Multi-k UKS CPMD + electronic Nosé–Hoover combo pin |
+
 ## Closed — CP2K harness wave 1 (shift) (2026-08-01)
 
 Merged into `dev` (six `--no-ff` feature merges + roadmap residual refresh

@@ -418,6 +418,9 @@ if(ATV_BUILD_GPW)
         # Multi-k UKS CPMD (dual-spin Bloch C_k^σ, one CpmdCplx per (k, spin))
         # — periodic H2 NVE, closed-shell fillings on the UKS path.
         atv_add_regression(dynamics cpmd-uks-kpoints THREADS 8)
+        # Multi-k UKS CPMD + electronic NH per (k, σ) channel (k-weighted
+        # Te/Eth) — combo pin of cpmd-uks-kpoints × cpmd-thermostat-kpoints.
+        atv_add_regression(dynamics cpmd-uks-thermostat-kpoints THREADS 8)
         # Second-generation CP (Kühne ASPC + partial SCF corrector).
         atv_add_regression(dynamics second-gen-cpmd-water THREADS 8)
         # Second-generation CP on Γ-UKS (dual ASPC α/β + partial SCF).

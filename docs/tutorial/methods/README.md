@@ -335,6 +335,7 @@ already carry index rows in the sections above and are not repeated here.
 | Zero-SCF linearized XL-BOMD on the k path (periodic H₂ NVE) | [xl-bomd-linearized-kpoints](xl-bomd-linearized-kpoints.md) | `regressions/dynamics/xl-bomd-linearized-kpoints` | **1.3** |
 | GPW nonlocal vdW on the REL_CUTOFF multigrid (NGRIDS 4) | [gpw-vdw-multigrid](gpw-vdw-multigrid.md) | `regressions/gpw/gpw-vdw-multigrid` | **≈ 0.83** |
 | Multi-k UKS Car–Parrinello MD on dual-spin Bloch \(C_k^\sigma\) (H₂ NVE) | [cpmd-uks-kpoints](cpmd-uks-kpoints.md) | `regressions/dynamics/cpmd-uks-kpoints` | **perf_exempt** |
+| Multi-k UKS CPMD + electronic Nosé–Hoover per (k, σ) (H₂ NVE) | [cpmd-uks-thermostat-kpoints](cpmd-uks-thermostat-kpoints.md) | `regressions/dynamics/cpmd-uks-thermostat-kpoints` | **perf_exempt** |
 | GPW DFT-D4 three-body ATM (\(s_9=1\)) analytic cell stress | [gpw-d4-atm-stress](gpw-d4-atm-stress.md) | `regressions/gpw/gpw-d4-atm-stress` | **perf_exempt** |
 
 ## Index — CP2K capability wave 3 (shift) (2026-07-31)

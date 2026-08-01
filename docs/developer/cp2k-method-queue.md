@@ -1249,7 +1249,6 @@ flips** (nothing capability-shaped merged to `dev`); residual prose in
 
 ## pending
 
-- [ ] `cpmd-uks-thermostat-kpoints` | Multi-k UKS CPMD electronic Nosé–Hoover (combo pin) | dynamics | twin: literature NVE/thermostat envelope (no CP fictitious twin) | deps: cpmd-thermostat-kpoints ✓, cpmd-uks-kpoints ✓ | write-first
 - [ ] `periodic-wannier-gpw-uks` | GPW-grid Marzari–Vanderbilt MLWF on collinear UKS | response | twin: CP2K 2026.1 Quickstep UKS MLWF | deps: periodic-wannier-gpw ✓, periodic-wannier-uks ✓ | write-first
 - [ ] `periodic-scs-mp2-si` | SCS-MP2 scales on Γ RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 SCS-MP2 | deps: periodic-ri-mp2-si ✓ | write-first
 - [ ] `gpw-optb88-uks` | Γ-UKS optB88-vdW (OptB88 exchange + DRSLL nonlocal) | gpw | twin: CP2K 2026.1 UKS optB88-vdW | deps: gpw-optb88-vdw ✓, gpw-vdw-uks ✓ | write-first
@@ -1264,6 +1263,10 @@ flips** (nothing capability-shaped merged to `dev`); residual prose in
 - [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `1a4a5311` (feat + reg + REFERENCE; unmerged — resume/merge next)
 - [~] `gpw-xdm-kpoint-stress` | Multi-k analytic cell stress with free-atom XDM | gpw | twin: pure-Python XDM strain | deps: gpw-xdm-stress ✓ | `wf/gpw-xdm-kpoint-stress` @ `e73e18d7` (feat + reg + REFERENCE; unmerged — resume/merge next)
 - [~] `gpw-hirshfeld-uks-kpoints` | Multi-k UKS Hirshfeld volume ratios for TS/MBD | gpw | twin: libMBD / literature V/V_free | deps: gpw-hirshfeld-uks ✓, gpw-hirshfeld-kpoints ✓ | `wf/gpw-hirshfeld-uks-kpoints` @ `bc981d93` (feat + reg + REFERENCE; unmerged — resume/merge next)
+
+## done (worker wave 2 2026-08-01)
+
+- [x] `cpmd-uks-thermostat-kpoints` | Multi-k UKS CPMD electronic Nosé–Hoover (combo pin: one thermostatted `CpmdCplx` per (k, σ); k-weighted Te/Eth; E_ext envelope) | dynamics | `regressions/dynamics/cpmd-uks-thermostat-kpoints` (periodic H₂ NVE 1×1×2 unreduced, n_α=n_β=1, K0=1e-5 Ha, τ_e=50 fs; E_ext drift ≤0.10 + Te ceiling 0.05 eV + UKS-vs-RKS closed-shell identity ≤3e-4 eV) | ratio **perf_exempt** (oracle family lock: CP2K 2026.1 has no fictitious-mass CP propagator) | 2026-08-01
 
 ## done (harness wave 1 (shift) 2026-08-01)
 
