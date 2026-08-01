@@ -3,7 +3,8 @@
 ///
 /// One method surface only — public MD + VelocityVerlet + GPWEvaluator.
 /// Full NVE energy-drift pin lives in regressions/gpw/gpw-bomd-water (e2e);
-/// the multi-k twin is regressions/gpw/gpw-bomd-kpoints.
+/// the multi-k RKS twin is regressions/gpw/gpw-bomd-kpoints; multi-k UKS
+/// dual P_k^σ is regressions/gpw/gpw-bomd-uks-kpoints.
 
 #include <gtest/gtest.h>
 
