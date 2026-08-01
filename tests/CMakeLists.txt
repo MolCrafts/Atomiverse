@@ -307,6 +307,9 @@ if(ATV_BUILD_GPW)
         atv_add_cpp_test(test_cpu_gpw_method       cpu/gpw/test_gpw_method.cpp)
         atv_add_cpp_test(test_cpu_gpw_solver       cpu/gpw/test_cpu_gpw_solver.cpp)
         atv_add_cpp_test(test_cpu_gpw_kpoints      cpu/gpw/test_cpu_gpw_kpoints.cpp)
+        # Gaussian DOS free math + multi-k mesh guards (no full SCF e2e).
+        # Name avoids HEAVY_REGEX substring "pw_bands" (would match gpw_bands_*).
+        atv_add_cpp_test(test_cpu_gpw_dos          cpu/gpw/test_cpu_gpw_dos.cpp)
         # Bitwise-identical grid kernels at 1/2/4/8/16 OpenMP threads. Guards the
         # reduction-order defect that made the OT minimizer take 30-200 SCF
         # iterations for the same input on the same binary.

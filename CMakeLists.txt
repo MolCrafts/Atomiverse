@@ -761,6 +761,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cpu/gpw/internal/mt_poisson.cpp
                 src/cpu/gpw/internal/kpoints.cpp
                 src/cpu/gpw/gpw_solver.cpp
+                src/cpu/gpw/bands_dos.cpp
                 src/cpu/gpw/periodic_wannier.cpp
                 src/cpu/gpw/berry_polarization.cpp
                 src/cpu/gpw/internal/gpw_forces.cpp
