@@ -114,6 +114,9 @@ TEST(GpwForces, H2KmeshForcesBasic) {
     EXPECT_LT(sum_mag, 2e-3);
 }
 
+// Multi-k RKS free-energy FD identity (full 6N SCF × k-path + smear) lives in
+// regressions/gpw/gpw-metallic-forces/ — beyond the unit 10 s hard cap.
+
 TEST(GpwForces, UksH2AnalyticVsFiniteDifference) {
     const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
     const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");

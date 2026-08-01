@@ -138,3 +138,11 @@ TEST(GpwSmearing, MethfesselPaxtonMemberAccepted) {
     std::vector<GpwAtom> atoms{a};
     EXPECT_NO_THROW(m.build(atoms));
 }
+
+TEST(GpwSmearing, ResultHasFractionalPayloadFields) {
+    GpwResult r;
+    EXPECT_TRUE(r.f_k.empty());
+    EXPECT_TRUE(r.f_k_beta.empty());
+    r.f_k.push_back({2.0, 1.5, 0.1});
+    EXPECT_EQ(r.f_k[0].size(), 3u);
+}

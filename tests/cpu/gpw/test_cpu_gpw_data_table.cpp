@@ -19,6 +19,7 @@
 #include "atomiverse/cpu/gpw/basis_data/gpw_tables.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
+#include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/gpw/internal/dftd3_params.h"
 
@@ -162,4 +163,19 @@ TEST(GpwDataTable, D3CoversSupportedElementsOnly) {
     EXPECT_GT(p.rcov[30], 0.0);
     EXPECT_GT(p.r2r4[30], 0.0);
     EXPECT_GT(p.r0ab[30][8], 0.0);
+}
+
+// Metallic free-energy force payload: result fields + public smear members
+// (no SCF — full FD identity lives in regressions/gpw/gpw-metallic-forces).
+TEST(GpwDataTable, MetallicForcePayloadMembersExist) {
+    GpwDft m;
+    m.smearing = Smearing::fermi_dirac;
+    m.degauss = 0.02;
+    m.extra_bands = 4;
+    EXPECT_EQ(m.smearing, Smearing::fermi_dirac);
+    GpwResult r;
+    EXPECT_TRUE(r.f_k.empty());
+    EXPECT_TRUE(r.f_k_beta.empty());
+    r.f_k.push_back({2.0, 0.5});
+    EXPECT_EQ(r.f_k[0].size(), 2u);
 }
