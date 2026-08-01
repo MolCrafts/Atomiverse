@@ -766,6 +766,96 @@ TEST(GpwStress, AnalyticMatchesFdWithD3Bj) {
 }
 
 // ── Γ RKS + DFT-D3 zero damping + three-body ATM (C9) analytic stress ─────
+
+// Multi-k + D3(BJ): k-summed fixed-P_k Lagrangian folds E_disp^D3(BJ)
+// (rebuilt at each strained cell) — dual-gate analytic vs multi-SCF FD.
+// e2e CP2K pin: reg_gpw-d3bj-kpoint-stress.
+TEST(GpwStress, D3BjMultiKAnalyticMatchesFd) {
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.5, 6.0, 6.0};
+    const std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
+                                        GpwAtom(rB, basis, pot, 1)};
+
+    GpwDft cfg;
+    cfg.cell[0] = cfg.cell[1] = cfg.cell[2] = 12.0;
+    cfg.cutoff_ry = 100.0;
+    cfg.n_occ = 1;
+    cfg.tol = 1e-8;
+    cfg.max_iter = 60;
+    cfg.nonperiodic = false;
+    cfg.local_pp_on_grid = true;
+    cfg.xc = XcKind::PADE;
+    cfg.eps_default = 1e-8;
+    cfg.k_mesh[0] = 1;
+    cfg.k_mesh[1] = 1;
+    cfg.k_mesh[2] = 2;
+    cfg.d3bj = true;
+
+    const double h = 3e-3;
+    const auto san = gpw_stress(atoms, cfg, h);
+    const auto sfd = gpw_stress_fd(atoms, cfg, h);
+    double max_err = 0.0;
+    for (int a = 0; a < 3; ++a) {
+        const double err = std::abs(san[static_cast<std::size_t>(a)]
+                                    - sfd[static_cast<std::size_t>(a)]);
+        max_err = std::max(max_err, err);
+        std::printf("  D3BJ k-mesh axis %d  an=%.6e  fd=%.6e  |d|=%.3e\n", a,
+                    san[static_cast<std::size_t>(a)],
+                    sfd[static_cast<std::size_t>(a)], err);
+        EXPECT_TRUE(std::isfinite(san[static_cast<std::size_t>(a)]));
+        EXPECT_TRUE(std::isfinite(sfd[static_cast<std::size_t>(a)]));
+    }
+    EXPECT_DOUBLE_EQ(san[3], 0.0);
+    EXPECT_DOUBLE_EQ(san[4], 0.0);
+    EXPECT_DOUBLE_EQ(san[5], 0.0);
+    EXPECT_LT(max_err, 5e-5) << "multi-k + D3(BJ) analytic vs multi-SCF FD";
+}
+
+// D3(BJ) must actually reach the multi-k stress Lagrangian.
+TEST(GpwStress, D3BjMultiKChangesDiagonal) {
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.5, 6.0, 6.0};
+    const std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
+                                        GpwAtom(rB, basis, pot, 1)};
+
+    auto mk = []() {
+        GpwDft cfg;
+        cfg.cell[0] = cfg.cell[1] = cfg.cell[2] = 12.0;
+        cfg.cutoff_ry = 100.0;
+        cfg.n_occ = 1;
+        cfg.tol = 1e-8;
+        cfg.max_iter = 60;
+        cfg.nonperiodic = false;
+        cfg.local_pp_on_grid = true;
+        cfg.xc = XcKind::PADE;
+        cfg.eps_default = 1e-8;
+        cfg.k_mesh[0] = 1;
+        cfg.k_mesh[1] = 1;
+        cfg.k_mesh[2] = 2;
+        return cfg;
+    };
+    GpwDft plain = mk();
+    GpwDft with = mk();
+    with.d3bj = true;
+
+    const auto s0 = gpw_stress(atoms, plain, 3e-3);
+    const auto s1 = gpw_stress(atoms, with, 3e-3);
+    double max_shift = 0.0;
+    for (int a = 0; a < 3; ++a)
+        max_shift = std::max(max_shift,
+                             std::abs(s1[static_cast<std::size_t>(a)]
+                                      - s0[static_cast<std::size_t>(a)]));
+    std::printf(
+        "[GPW stress D3BJ multi-k] max|sigma(d3bj)-sigma(plain)|=%.3e Ha/Bohr3\n",
+        max_shift);
+    EXPECT_GT(max_shift, 1e-12)
+        << "D3(BJ) is not entering the multi-k stress Lagrangian";
+}
+
 TEST(GpwStress, AnalyticMatchesFdWithD3Atm) {
     // Geometry-only D3 + ATM folded into the fixed-P Lagrangian; dual-gate vs
     // multi-SCF FD on a cheap *periodic* H₂ so lattice-image triples (CP2K
