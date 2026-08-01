@@ -23,6 +23,7 @@
 #include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
 #include "atomiverse/cpu/gpw/internal/dftd3_params.h"
+#include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 
 using ATV::cpu::gpw::D3Params;
 using ATV::cpu::gpw::D3Result;
@@ -413,6 +414,78 @@ TEST(GpwDftD3Atm, IntegratedIntoGpwScf) {
                 ed3);
     EXPECT_NEAR(r.e_disp, ed3, 1e-9);
     EXPECT_NEAR(r.e_disp, -0.00081414118193, 1e-9);
+}
+
+// Multi-k force assembly folds d3_atm identically to Γ: F(on) − F(off) on
+// one multi-k density equals the standalone ATM-only gradient. Cheap unit
+// twin for regressions/gpw/gpw-d3-atm-kpoint-forces (product wiring gate).
+TEST(GpwDftD3Atm, MultiKProductForcesFoldAtm) {
+    using namespace ATV::cpu::gpw;
+
+    const GaussianBasis bH(molrs::Element::H, "DZV-GTH-PADE");
+    const GthPotential pH(molrs::Element::H, "GTH-PADE-q1");
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.5, 6.0, 6.0};
+    std::vector<GpwAtom> atoms = {GpwAtom(rA, bH, pH, 1),
+                                  GpwAtom(rB, bH, pH, 1)};
+
+    auto make_cfg = [](bool atm) {
+        GpwDft m;
+        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+        m.cutoff_ry = 100.0;
+        m.n_occ = 1;
+        m.tol = 1e-8;
+        m.max_iter = 60;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.xc = XcKind::PADE;
+        m.eps_default = 1e-8;
+        m.k_mesh[0] = 1;
+        m.k_mesh[1] = 1;
+        m.k_mesh[2] = 2;
+        m.d3 = true;
+        m.d3_atm = atm;
+        // Short cutoff: unit tier must stay cheap; ATM still engages.
+        m.d3_rcut_bohr = 20.0;
+        return m;
+    };
+
+    GpwDft cfg = make_cfg(true);
+    cfg.build(atoms);
+    const auto& scf = cfg.run(atoms);
+    ASSERT_TRUE(scf.converged);
+    ASSERT_GE(scf.n_kpts, 1);
+    ASSERT_FALSE(scf.C_occ_k.empty());
+
+    const auto F_on = gpw_forces_from_scf(atoms, cfg, scf);
+    GpwDft plain = make_cfg(false);
+    plain.build(atoms);
+    const auto F_off = gpw_forces_from_scf(atoms, plain, scf);
+
+    std::vector<int> Zh = {1, 1};
+    std::vector<std::array<double, 3>> posh = {
+        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    const double cell0[3] = {12.0, 12.0, 12.0};
+    const D3Result on =
+        dftd3_pbe(Zh, posh, cell0, /*periodic=*/true, D3Params{}, 20.0, true);
+    const D3Result off =
+        dftd3_pbe(Zh, posh, cell0, /*periodic=*/true, D3Params{}, 20.0, false);
+
+    double max_wire = 0.0;
+    for (int a = 0; a < 2; ++a) {
+        for (int k = 0; k < 3; ++k) {
+            const double d =
+                (F_on[static_cast<std::size_t>(a)][k]
+                 - F_off[static_cast<std::size_t>(a)][k])
+                - (on.forces[static_cast<std::size_t>(a)][k]
+                   - off.forces[static_cast<std::size_t>(a)][k]);
+            max_wire = std::max(max_wire, std::abs(d));
+        }
+    }
+    std::printf("[D3-ATM multi-k forces] wiring max|dF|=%.3e Ha/Bohr  "
+                "e_disp=%.6e\n",
+                max_wire, scf.e_disp);
+    EXPECT_LT(max_wire, 1e-8);
 }
 
 TEST(GpwDftD3BJ, MutualExclusionWithZeroDamping) {
