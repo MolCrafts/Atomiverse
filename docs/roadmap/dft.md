@@ -44,11 +44,11 @@ UKS **multigrid** (`reg_gpw-uks-multigrid-kpoints`), multi-k CPMD
 **SGCP OT** (`reg_second-gen-cpmd-ot-uks-kpoints`), linearized-XL
 **stress** (`reg_xl-bomd-linearized-stress`), and finite-q spin×GGA
 DFPT (`reg_dfpt-gga-spin-finite-q-si`); open residuals after that wave
-(GapCensus wave 5): multi-k UKS nonlocal **vdW**, multi-k
-**D3/D3(BJ)/ATM/D4/TS/XDM stress** dedicated pins, multi-k UKS **BOMD**,
-Γ-UKS vdW **multigrid**, multi-k UKS **Hirshfeld**, multi-k UKS CPMD
-**eNH** combo pin, GPW spin **MLWF**, SCS-**MP2** scale pin, Γ-UKS
-**optB88-vdW**;
+(post-merge of green wave-5 pins): multi-k UKS nonlocal **vdW**, multi-k
+**D3/D3(BJ)/ATM stress**, multi-k UKS **BOMD**, and Γ-UKS vdW **multigrid**
+are product; open residuals: multi-k **D4/TS/XDM stress** dedicated pins,
+multi-k UKS **Hirshfeld**, multi-k UKS CPMD **eNH** combo pin, GPW spin
+**MLWF**, SCS-**MP2** scale pin, Γ-UKS **optB88-vdW**;
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -303,9 +303,12 @@ analytic \(s_9\) gradient (triple derivatives + C9→neutral-C6→CN chain;
 (`reg_gpw-mbd-kpoint-stress`; k-summed fixed-\(P_k\) Lagrangian folds
 periodic MBD, strained-cell pymbd pins). Dedicated **TS / XDM stress** pins are product
 (`reg_gpw-ts-stress` / `reg_gpw-xdm-stress`; energy folds product).
-Multi-k dedicated stress pins for D3/D3(BJ)/ATM/D4/TS/XDM remain
-queued (`gpw-*-kpoint-stress`; k-path geometry-only folds already
-product). The **D3 ATM stress** pin is product
+Multi-k dedicated stress pins for **D3 / D3(BJ) / D3 ATM (C9)** are product
+(`reg_gpw-d3-kpoint-stress` / `reg_gpw-d3bj-kpoint-stress` /
+`reg_gpw-d3-atm-kpoint-stress`; CP2K 2026.1 NUMERICAL stress-difference
+twins on MP meshes). Multi-k **D4 / TS / XDM** stress pins remain queued
+(`gpw-d4-kpoint-stress` / `gpw-ts-kpoint-stress` / `gpw-xdm-kpoint-stress`;
+k-path geometry-only folds already product). The **D3 ATM stress** pin is product
 (`reg_gpw-d3-atm-stress`: CP2K 2026.1 `STRESS_TENSOR NUMERICAL`
 difference C9 on−off isolates the pure ATM stress, Δσ parity 1.1e−13
 Ha/Bohr³ at CP2K's own `DX 0.001` FD step — the hard-gated triple sum is
@@ -413,10 +416,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   ships TS/XDM stress, multi-k + Γ-UKS nonlocal vdW, multi-k UKS
   multigrid, multi-k CPMD eNH, multi-k UKS SGCP OT, linearized-XL
   stress, and finite-q spin×GGA DFPT. Stock VV10 is
-  **blocked** (no CP2K twin). Open residuals (GapCensus wave 5): multi-k
-  UKS nonlocal vdW (fail-fast), multi-k D3/D3(BJ)/ATM/D4/TS/XDM stress
-  dedicated pins (k-path folds product), multi-k UKS BOMD, Γ-UKS vdW
-  multigrid, multi-k UKS Hirshfeld, multi-k UKS CPMD eNH combo pin,
+  **blocked** (no CP2K twin). Product after green merge: multi-k UKS
+  nonlocal vdW (`reg_gpw-vdw-uks-kpoints`), multi-k D3/D3(BJ)/ATM stress,
+  multi-k UKS BOMD (`reg_gpw-bomd-uks-kpoints`), Γ-UKS vdW multigrid
+  (`reg_gpw-vdw-uks-multigrid`). Open residuals: multi-k D4/TS/XDM stress
+  dedicated pins, multi-k UKS Hirshfeld, multi-k UKS CPMD eNH combo pin,
   GPW spin MLWF, SCS-MP2 scale pin, Γ-UKS optB88-vdW.
   Hybrids / meta-GGA / GAPW / PAW remain blocked (queue not exhausted —
   see `cp2k-method-queue.md`). CPU only.
