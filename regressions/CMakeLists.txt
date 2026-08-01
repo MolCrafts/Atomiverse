@@ -307,6 +307,8 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-d4-atm THREADS 8)
     atv_add_regression(gpw gpw-d3-stress THREADS 8)
     atv_add_regression(gpw gpw-d3bj-stress THREADS 8)
+    # Multi-k analytic cell stress with DFT-D3(BJ) (CP2K NUMERICAL Δσ + k-mesh).
+    atv_add_regression(gpw gpw-d3bj-kpoint-stress THREADS 8)
     atv_add_regression(gpw gpw-d4-stress THREADS 8)
     atv_add_regression(gpw gpw-d4-forces THREADS 8)
     atv_add_regression(gpw gpw-d4-atm-forces THREADS 8)
