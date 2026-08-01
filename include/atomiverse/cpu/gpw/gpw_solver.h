@@ -303,8 +303,10 @@ class GpwDft {
     ///        Periodic closed-shell RKS (Γ and Monkhorst-Pack k-point;
     ///        single-grid or REL_CUTOFF multigrid) and Γ collinear UKS
     ///        (UKS applies \(V_{\mathrm{nl}}[\rho]\) of the total density
-    ///        \(\rho=\rho_\alpha+\rho_\beta\) to both spin potentials).
-    ///        Multi-k UKS rejects fail-fast.
+    ///        \(\rho=\rho_\alpha+\rho_\beta\) to both spin potentials on
+    ///        the fine grid before per-level restriction — single-grid
+    ///        or REL_CUTOFF multigrid; product pin
+    ///        `reg_gpw-vdw-uks-multigrid`). Multi-k UKS rejects fail-fast.
     bool vdw_df = false; ///< vdW-DF (DRSLL) nonlocal correlation.
     /// @brief Nonlocal vdW-DF2 (LMKLL / DF2). Same SC product path as `vdw_df`;
     ///        Z_ab = −1.887. CP2K `NON_LOCAL TYPE LMKLL`. Same RKS (Γ/k) +
