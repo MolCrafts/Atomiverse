@@ -1,0 +1,71 @@
+# CP2K twin (offline oracle) — Berry-phase dipole of bulk Si (GPW class)
+# Pairs with regressions/gpw/periodic-berry-gpw/REFERENCE.md.
+# Never executed at ctest/regression time (offline pin only).
+#
+# Matched algorithm twin of ATV cpu::gpw::BerryPolarization (KSV / modern
+# theory of polarization). CP2K evaluates the same observable via
+# &MOMENTS PERIODIC T (Resta Γ-limit / Berry-phase dipole) on Quickstep
+# GPW: GTH + Gaussian MOLOPT basis, PADE LDA, orthorhombic BCT diamond Si.
+# Absolute phases may differ by a quantum; the symmetry pins
+# (half-quantum lattice membership for the centrosymmetric cell, ASR
+# Z* = 0 under sublattice displacement) are basis-independent and are
+# the scientific content of the regression.
+#
+# Wall twin: time this single ENERGY job (1 MPI × fixed OMP) — same SCF
+# class as the ATV string-mesh SCF that feeds Berry.
+
+&GLOBAL
+  PROJECT si_periodic_berry_gpw
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &QS
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &MGRID
+      CUTOFF 80
+      REL_CUTOFF 40
+    &END MGRID
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 60
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+    &PRINT
+      &MOMENTS
+        PERIODIC T
+        REFERENCE COM
+      &END MOMENTS
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      # BCT diamond Si orthorhombic: a/√2, a/√2, a with a = 5.43 Å
+      ABC 3.83959 3.83959 5.43
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Si  0.00000  0.00000  0.00000
+      Si  1.91980  1.91980  2.71500
+      Si  1.91980  0.00000  1.35750
+      Si  0.00000  1.91980  4.07250
+      # displaced twin: move atom 2 by +0.02 * C = (0, 0, 0.1086)
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PADE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
