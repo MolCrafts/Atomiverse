@@ -333,6 +333,10 @@ if(ATV_BUILD_GPW)
     # Γ collinear-UKS nonlocal vdW: V_nl on the total density in both spin
     # potentials + E_c^nl on e_disp (offline CP2K 2026.1 LSD DRSLL pin).
     atv_add_regression(gpw gpw-vdw-uks THREADS 8)
+    # Multi-k collinear-UKS nonlocal vdW: dual-spin V_nl fold on the k path
+    # + E_c^nl on e_disp (offline CP2K 2026.1 LSD + KPOINTS + DRSLL pin —
+    # gpw-vdw-uks-kpoints).
+    atv_add_regression(gpw gpw-vdw-uks-kpoints THREADS 8)
     atv_add_regression(gpw gpw-optb88-vdw THREADS 8)
     atv_add_regression(gpw gpw-mbd-hirshfeld THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-kpoints THREADS 8)
