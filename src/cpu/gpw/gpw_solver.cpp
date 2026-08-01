@@ -5580,7 +5580,9 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
         // gpw-vdw-kpoints) and collinear multi-k UKS (V_nl of the total
         // density added to both spin potentials in build_uks_k_energy /
         // DIIS twin + post-SCF E_c^nl in fold_dispersion_k_uks —
-        // gpw-vdw-uks-kpoints; Γ UKS product via gpw-vdw-uks).
+        // single-grid gpw-vdw-uks-kpoints; REL_CUTOFF multigrid product
+        // gpw-vdw-uks-kpoint-multigrid; Γ UKS product via gpw-vdw-uks /
+        // gpw-vdw-uks-multigrid).
         if (is_uks() && xc != XcKind::PADE && xc != XcKind::PBE
             && xc != XcKind::PBEsol && xc != XcKind::RevPBE
             && xc != XcKind::RPBE && xc != XcKind::BLYP

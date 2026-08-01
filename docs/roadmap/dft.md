@@ -48,12 +48,13 @@ ships multi-k UKS nonlocal **vdW** (`reg_gpw-vdw-uks-kpoints`), multi-k
 **D3/D3(BJ)/ATM stress** pins, multi-k UKS **BOMD**
 (`reg_gpw-bomd-uks-kpoints`), and Γ-UKS vdW **multigrid**
 (`reg_gpw-vdw-uks-multigrid`); multi-k UKS **Hirshfeld** product
-(`reg_gpw-hirshfeld-uks-kpoints`); **worker wave 2 (2026-08-01)** ships multi-k
-UKS CPMD **eNH** combo pin (`reg_cpmd-uks-thermostat-kpoints`), multi-k
-**D4/XDM stress**, GPW spin **MLWF**, SCS-**MP2** scale pin, Γ-UKS
-**optB88-vdW**; open residuals: multi-k **TS stress** dedicated pin,
-multi-k UKS **vdW×multigrid** triple combo, multi-k RKS **optB88-vdW**,
-multi-k D3/D4 **ATM forces** dedicated pins
+(`reg_gpw-hirshfeld-uks-kpoints`); multi-k UKS **vdW×multigrid** triple
+combo product (`reg_gpw-vdw-uks-kpoint-multigrid`); **worker wave 2
+(2026-08-01)** ships multi-k UKS CPMD **eNH** combo pin
+(`reg_cpmd-uks-thermostat-kpoints`), multi-k **D4/XDM stress**, GPW spin
+**MLWF**, SCS-**MP2** scale pin, Γ-UKS **optB88-vdW**; open residuals:
+multi-k **TS stress** dedicated pin, multi-k RKS **optB88-vdW**, multi-k
+D3/D4 **ATM forces** dedicated pins
 (GapCensus wave 2 2026-08-01);
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
@@ -335,8 +336,9 @@ RKS (`reg_gpw-vdw-kpoints`; single-grid and multigrid) and at **Γ UKS**
 (`reg_gpw-vdw-uks-multigrid`; matched CP2K NGRIDS 4 / DRSLL / UKS twin).
 Multi-k **UKS** + nonlocal is product (`reg_gpw-vdw-uks-kpoints`; dual-spin
 \(V_{\mathrm{nl}}[\rho]\) fold on the k path). Multi-k UKS × nonlocal ×
-REL_CUTOFF multigrid is product-shaped but unpinned (queued
-`gpw-vdw-uks-kpoint-multigrid`). Γ-UKS **optB88-vdW** spin path is
+REL_CUTOFF multigrid is product (`reg_gpw-vdw-uks-kpoint-multigrid`;
+matched CP2K NGRIDS 4 / DRSLL / UKS / MP twin + multi-k UKS sg↔mg
+consistency). Γ-UKS **optB88-vdW** spin path is
 product-shaped but unpinned (queued `gpw-optb88-uks`); multi-k RKS
 optB88-vdW likewise (queued `gpw-optb88-kpoints`). Multi-k **ATM forces**
 (geometry-only fold product; dedicated pins queued
