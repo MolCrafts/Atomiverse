@@ -1,0 +1,57 @@
+# gpw-xdm-kpoint-stress — offline oracle note
+
+## CP2K status
+
+CP2K 2026.1 (`cp2k.psmp` Source code revision git:5e54ba2 via
+`/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh`)
+stock `PAIR_POTENTIAL TYPE` accepts only
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4`. There is **no** stock `TYPE XDM`, so no CP2K
+multi-k stress twin exists for an XDM run (same status as `gpw-xdm-ice` /
+`gpw-xdm-forces` / `gpw-xdm-stress`). Fair wall is therefore **perf_exempt**
+— never fake `oracle: cp2k`. Full density-dependent XDM oracles (postg,
+critic2, QE `xdm_dispersion`) are out of scope for the free-atom foothold.
+
+## Oracle
+
+Dual pure-Python free-atom XDM lattice sum, `pin_xdm_strain.py` (this
+directory): independent implementation (combination rules, BJ damping,
+50 Å real-space lattice sum, strain application) sharing only the cited
+free-atom data inputs (CRC 88th Ed. α; homoatomic C6/C8/C10 from
+Yan et al. PRA 54, 2824 and Chu & Dalgarno JCP 121, 4083). Run offline at
+pin time (python3, stdlib only), never at ctest.
+
+XDM is **geometry-only** — independent of the electronic Monkhorst–Pack
+mesh — so the unstrained / strained pins are bit-identical to
+`gpw-xdm-stress`. The multi-k product path must still reproduce them
+because the k-summed Lagrangian rebuilds \(E_{\mathrm{disp}}\) at each
+strained cell.
+
+## Geometry (Å)
+
+Water dimer, cubic 12 Å cell, PERIODIC XYZ — same as `gpw-xdm-ice`.
+Electronic k-mesh for the product stress path: MONKHORST-PACK **1×1×2**
+(time-reversal folded). Strained cells: axis scale 1 ± h (h = 2e-3),
+fixed fractional coordinates, rcut fixed 50 Å.
+
+## Offline pins (re-run 2026-08-01; match 2026-07-31 Γ set)
+
+Free-atom XDM, QE NC-PBE a1=0.4283, a2=2.4690 Å, rcut 50 Å:
+
+```
+E_disp unstrained            = -2.1148157612879029e-03 Ha
+E_disp x +h              = -2.1110849131940963e-03 Ha
+E_disp x -h              = -2.1185431863446984e-03 Ha
+sigma_XDM_xx (FD, dual-py)  = -1.5989612853e-07 Ha/Bohr3
+E_disp y +h              = -2.1147774136190569e-03 Ha
+E_disp y -h              = -2.1148546246483736e-03 Ha
+sigma_XDM_yy (FD, dual-py)  = -1.6553087314e-09 Ha/Bohr3
+E_disp z +h              = -2.1146664855098696e-03 Ha
+E_disp z -h              = -2.1149651549478578e-03 Ha
+sigma_XDM_zz (FD, dual-py)  = -6.4031024180e-09 Ha/Bohr3
+```
+
+Provenance cross-check at pin time: the unstrained value **bit-reproduces**
+the shipped `gpw-xdm-ice` / `gpw-xdm-stress` periodic pin
+(−2.1148157612879029e-03 Ha).
+
+See `regressions/gpw/gpw-xdm-kpoint-stress/REFERENCE.md`.
