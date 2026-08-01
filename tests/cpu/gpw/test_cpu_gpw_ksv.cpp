@@ -1,7 +1,7 @@
 /// @file test_cpu_gpw_ksv.cpp
 /// @brief Unit tests for GPW Berry-phase string geometry, link-det phase
 ///        math and quantum wrapping. No SCF e2e (that lives in
-///        regressions/gpw/periodic-berry-gpw).
+///        regressions/gpw/periodic-berry-gpw and periodic-berry-gpw-uks).
 
 #include <array>
 #include <cmath>
@@ -150,4 +150,11 @@ TEST(GpwBerryComputeGates, MetallicAndEmptyThrow) {
     method.n_occ = 0;
     // rebuild validation for empty occ is on compute, not build if already built
     EXPECT_THROW(berry.compute(method, atoms), std::invalid_argument);
+
+    // Collinear UKS empty manifold (n_alpha + n_beta == 0) is also rejected.
+    method.n_alpha = 0;
+    method.n_beta = 0;
+    method.n_occ = 0;
+    EXPECT_THROW(berry.compute(method, atoms), std::invalid_argument);
+    EXPECT_FALSE(method.is_uks());
 }
