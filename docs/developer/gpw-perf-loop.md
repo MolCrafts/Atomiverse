@@ -75,3 +75,19 @@ Then **wipe build** before leaving the worktree.
   (FFTW plan/buffer cache tip; do not demote). Residual pending **10**
   (P0×3 + P1×4 + P2×3). Blocked **1** (`global-xtensor-xsimd`). Clearup
   already ran. Queue **not** exhausted (census pending still open). No push.
+- **2026-08-01 recover (parent `dev` @ `3de007ef`):** incomplete_count=**1**.
+  Open `wf/perf-*` unmerged: only `wf/perf-p0-fft-plan-cache` @ `af9e8c82`
+  (1 commit ahead of merge-base `1054b08e`; dev +3 post-base including
+  profile-baseline — resume needs merge/rebase onto current `dev`). Queue
+  `## in_progress` already normalized; no demote; no pending promoted;
+  no invented slugs. Staffed pick ≤3 → **1**: `p0-fft-plan-cache`. Pending
+  **10**, blocked **1**, done **1**. No worktrees; no leftover `build*`.
+  No push.
+- **2026-08-01 PERF-CENSUS wave 2 (parent `dev` @ `1498080d`):** re-diff
+  `cpu/gpw` hotspots (solver/collocate/multigrid/kpoints/poisson/OT/forces)
+  + baseline table. Architecture ranks + measured wall order **unchanged**.
+  Rewrote `## pending` only (still P0×3 + P1×4 + P2×3 = **10**); no new
+  capability slugs; `new_slugs_added=0`. In_progress: `p0-fft-plan-cache`
+  still `[~]` — tip rebased to `7cb7cc51` on current parent (queue
+  `in_progress` line may still show older SHA; do not demote). Blocked **1**.
+  No builds left. No push.
