@@ -44,3 +44,12 @@ O2 triplet Nα=7/Nβ=5, periodic 10 Å, max_iter 80, tol 1e-6, mix 0.45
 - **ATV branch tip:** `wf/gpw-hirshfeld-uks-kpoints` (see commit)
 - **Oracle family:** libMBD free-atom tables + in-tree Hirshfeld volumes
   (`oracle: literature` / libMBD — not `oracle: cp2k`)
+
+## Resume reconfirm (2026-08-01)
+
+Rebased onto `dev` @ current parent; dual-gate re-run PASS (E_disp pin exact).
+CP2K 2026.1 `git:5e54ba2` stock pair-potential enum remains
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4` only (`input_cp2k_xc.F` TYPE keyword) — still
+**no TS/MBD**, so `oracle: literature` / libMBD free-atom tables + in-tree
+Hirshfeld volumes (not `oracle: cp2k`). Fair wall twin N/A; perf_exempt.
+

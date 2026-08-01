@@ -98,4 +98,4 @@ volumes + attractive E_disp (`test_cpu_gpw_hirshfeld`).
 **perf_exempt = true** — primary deliverable is multi-k UKS E_disp +
 volume-ratio parity. Stock CP2K has **no TS/MBD** algorithm twin (same policy
 as `gpw-hirshfeld-uks` / `gpw-hirshfeld-kpoints` / `gpw-mbd-hirshfeld`).
-Regression wall class ~**13 s** (OMP=8, Release) for the single product SCF.
+Regression wall class ~**31 s** (OMP=8, Release, measured 2026-08-01 after rebase onto `dev`) for the single product SCF; still ≤ 60 s class.

@@ -375,6 +375,7 @@ grouped by regression domain, alphabetical by slug.
 | GPW analytic cell stress + Dudarev DFT+U (NiO) | [gpw-dftu-stress](gpw-dftu-stress.md) | `regressions/gpw/gpw-dftu-stress` |
 | GPW multi-k Hirshfeld volumes (water dimer) | [gpw-hirshfeld-kpoints](gpw-hirshfeld-kpoints.md) | `regressions/gpw/gpw-hirshfeld-kpoints` |
 | Γ-UKS Hirshfeld-scaled MBD@rsSCS (O₂) | [gpw-hirshfeld-uks](gpw-hirshfeld-uks.md) | `regressions/gpw/gpw-hirshfeld-uks` |
+| Multi-k UKS Hirshfeld-scaled MBD@rsSCS (O₂) | [gpw-hirshfeld-uks-kpoints](gpw-hirshfeld-uks-kpoints.md) | `regressions/gpw/gpw-hirshfeld-uks-kpoints` |
 | GPW analytic forces at k-points (H₂) | [gpw-kpoint-forces](gpw-kpoint-forces.md) | `regressions/gpw/gpw-kpoint-forces` |
 | GPW analytic cell stress at k-points (diamond Si) | [gpw-kpoint-stress](gpw-kpoint-stress.md) | `regressions/gpw/gpw-kpoint-stress` |
 | Multi-k UKS GPW analytic forces (high-spin H₂) | [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) | `regressions/gpw/gpw-kpoint-uks-forces` |
