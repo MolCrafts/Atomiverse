@@ -1,0 +1,41 @@
+# Offline ENERGY_FORCE pin notes — gpw-optb88-forces
+
+## Functional
+
+CP2K 2026.1 libxc-named subsections (`data/xc_section/vdW-DF-optB88.sec`):
+
+```
+&XC_FUNCTIONAL
+  &GGA_X_OPTB88_VDW
+  &END GGA_X_OPTB88_VDW
+  &PW92
+  &END PW92
+&END XC_FUNCTIONAL
+&VDW_POTENTIAL
+  POTENTIAL_TYPE NON_LOCAL
+  &NON_LOCAL
+    TYPE DRSLL
+    KERNEL_FILE_NAME vdW_kernel_table.dat
+  &END NON_LOCAL
+&END VDW_POTENTIAL
+```
+
+ATV: `XcKind::OptB88VdW` + `vdw_df = true` + `compute_forces` /
+`gpw_forces_from_scf` (SC \(V_{\mathrm{nl}}\) in `assemble_gpw_forces`).
+
+## Geometry
+
+Same water dimer as `gpw-optb88-vdw` (12 Å cubic, DZVP-MOLOPT-SR-GTH,
+GTH-PBE, CUTOFF 200 Ry / REL_CUTOFF 40 / NGRIDS 4, PERIODIC XYZ).
+
+## Run (offline only)
+
+```bash
+source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+export OMP_NUM_THREADS=8
+cd /tmp/atv-gpw-optb88-forces
+ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS,vdW_kernel_table.dat} .
+mpirun -np 1 cp2k.psmp -i water_dimer_optb88_vdw_force.inp -o water_dimer_optb88_vdw_force.out
+```
+
+Pins filled in `regressions/gpw/gpw-optb88-forces/REFERENCE.md` after the twin run.
