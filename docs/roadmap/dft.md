@@ -72,16 +72,18 @@ multi-k SCS-**UMP2** (`reg_periodic-scs-ump2-kpoints`; Grimme dual —
 CP2K aborts multi-k MP2_GPW), four-way finite-q DFPT spin×GGA×smear
 (`reg_dfpt-gga-spin-finite-q-smearing`), multi-k **Hirshfeld** TS/MBD
 forces (`reg_gpw-hirshfeld-kpoint-forces`), and Γ DFT+U **forces**
-(`reg_gpw-dftu-forces`); open residuals (**incomplete `[~]`**): multi-k
-**TS stress** (`gpw-ts-kpoint-stress`) + multi-k **TS forces**
-(`gpw-ts-kpoint-forces`); **GapCensus wave 6 (shift)** pending (9):
-multi-k free-energy **metallic forces/stress** under smear
-(`gpw-metallic-forces` / `gpw-metallic-stress` / `gpw-uks-metallic-forces`),
-multi-k nonlocal **vdW forces** (`gpw-vdw-kpoint-forces`), **optB88 forces**
-(`gpw-optb88-forces`), multi-k **Hirshfeld stress**
-(`gpw-hirshfeld-kpoint-stress`), **GPW bands/DOS** (`gpw-bands-si` /
-`gpw-dos-si`), metallic **BOMD** (`gpw-bomd-smearing`); not queue
-exhausted — GapCensus owns discovery);
+(`reg_gpw-dftu-forces`); **harness wave 6 (shift, 2026-08-01)** ships
+multi-k free-atom **TS forces** (`reg_gpw-ts-kpoint-forces`), multi-k
+RKS/UKS free-energy **metallic forces** under smear
+(`reg_gpw-metallic-forces` / `reg_gpw-uks-metallic-forces`), multi-k
+nonlocal **vdW forces** (`reg_gpw-vdw-kpoint-forces`), **optB88**
+ENERGY_FORCE (`reg_gpw-optb88-forces`), multi-k **Hirshfeld stress**
+(`reg_gpw-hirshfeld-kpoint-stress`), and **GPW bands/DOS**
+(`reg_gpw-bands-si` / `reg_gpw-dos-si`); open residuals (**incomplete
+`[~]`**): multi-k free-atom **TS stress** (`gpw-ts-kpoint-stress`);
+**pending residual**: multi-k free-energy **metallic stress**
+(`gpw-metallic-stress`) + metallic **BOMD** (`gpw-bomd-smearing`); not
+queue exhausted — GapCensus owns discovery);
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -323,8 +325,8 @@ productize at **Γ** (`reg_gpw-mbd-forces`; free-atom / periodic path)
 **and multi-k** (`reg_gpw-mbd-kpoint-forces`; k-path force assembly).
 Force assembly folds free-atom **TS** / **XDM** on Γ + multi-k with
 dedicated offline force pins (`reg_gpw-ts-forces` / `reg_gpw-xdm-forces`
-+ multi-k XDM `reg_gpw-xdm-kpoint-forces`; multi-k free-atom **TS force**
-pin remains incomplete `[~] gpw-ts-kpoint-forces`).
++ multi-k XDM `reg_gpw-xdm-kpoint-forces` + multi-k free-atom **TS forces**
+`reg_gpw-ts-kpoint-forces`).
 **Three-body ATM** energy productizes on GPW: D3 C9 (`GpwDft::d3_atm`;
 `reg_gpw-d3-atm`) and D4 \(s_9=1\) (`GpwDft::d4_atm`; `reg_gpw-d4-atm`).
 Two-body D3/D3(BJ) **energy and analytic ionic forces** are product
@@ -387,15 +389,14 @@ dedicated **two-body D3 / D3(BJ) / D4 force** pins are product
 product (`reg_gpw-xdm-kpoint-forces`; dual pure-Python / FD dual-gate).
 Multi-k **Hirshfeld-scaled TS/MBD forces** are product
 (`reg_gpw-hirshfeld-kpoint-forces`; fixed-\(v\) dual-gate + multi-k
-wiring). Multi-k free-atom **TS force** pin stays incomplete
-(`[~] gpw-ts-kpoint-forces`). Multi-k **D4 ATM stress** is product
+wiring). Multi-k free-atom **TS forces** are product
+(`reg_gpw-ts-kpoint-forces`). Multi-k **D4 ATM stress** is product
 (`reg_gpw-d4-atm-kpoint-stress`; CP2K libdftd4 multi-k NUMERICAL ATM−2b
 Δσ). Multi-k free-atom **TS stress** stays incomplete
-(`[~] gpw-ts-kpoint-stress`). Multi-k **Hirshfeld-scaled stress** pin is
-queued (`gpw-hirshfeld-kpoint-stress`; Γ stress fold already product inside
-`reg_gpw-hirshfeld-forces`). Multi-k **nonlocal vdW forces** and **optB88
-ENERGY_FORCE** pins are queued (`gpw-vdw-kpoint-forces` /
-`gpw-optb88-forces`; Γ SC nonlocal forces product).
+(`[~] gpw-ts-kpoint-stress`). Multi-k **Hirshfeld-scaled stress** is
+product (`reg_gpw-hirshfeld-kpoint-stress`; fixed-\(v\) dual-gate). Multi-k
+**nonlocal vdW forces** and **optB88 ENERGY_FORCE** pins are product
+(`reg_gpw-vdw-kpoint-forces` / `reg_gpw-optb88-forces`).
 
 ## 9. Composite DFT Methods
 
@@ -513,11 +514,16 @@ Two periodic DFT engines exist, with disjoint strengths:
   multi-k Hirshfeld TS/MBD forces, and Γ DFT+U forces
   (`reg_gpw-xdm-kpoint-forces` / `reg_gpw-uks-pbesol` /
   `reg_periodic-scs-ump2-kpoints` / `reg_dfpt-gga-spin-finite-q-smearing` /
-  `reg_gpw-hirshfeld-kpoint-forces` / `reg_gpw-dftu-forces`). Open
-  residuals (**incomplete `[~]`**): multi-k TS stress + multi-k TS
-  forces; **GapCensus wave 6 pending**: free-energy metallic
-  forces/stress under smear, multi-k nonlocal vdW forces, optB88
-  forces, multi-k Hirshfeld stress, GPW bands/DOS, metallic BOMD (see
+  `reg_gpw-hirshfeld-kpoint-forces` / `reg_gpw-dftu-forces`); **harness
+  wave 6 (shift, 2026-08-01)** ships multi-k free-atom TS forces, multi-k
+  RKS/UKS free-energy metallic forces, multi-k nonlocal vdW forces,
+  optB88 ENERGY_FORCE, multi-k Hirshfeld stress, GPW bands/DOS
+  (`reg_gpw-ts-kpoint-forces` / `reg_gpw-metallic-forces` /
+  `reg_gpw-uks-metallic-forces` / `reg_gpw-vdw-kpoint-forces` /
+  `reg_gpw-optb88-forces` / `reg_gpw-hirshfeld-kpoint-stress` /
+  `reg_gpw-bands-si` / `reg_gpw-dos-si`). Open residuals (**incomplete
+  `[~]`**): multi-k free-atom **TS stress**; **pending residual**: multi-k
+  free-energy **metallic stress** + metallic **BOMD** (see
   `cp2k-method-queue.md`; queue not exhausted; GapCensus owns discovery).
   Hybrids / meta-GGA / GAPW / PAW remain blocked. CPU only.
 
@@ -737,11 +743,11 @@ Which engine backs which ✓:
 **Smearing for metals** on CPU PW: `PW::smearing` (Fermi–Dirac / Methfessel–Paxton)
 + `degauss` [Ry] + `extra_bands` (`reg_pw-smearing-al`) **and GPW** multi-k RKS
 FD/MP (`reg_gpw-metallic-smearing`) **and multi-k UKS** (`reg_gpw-uks-smearing`).
-GPW free-energy **analytic forces / stress under smear** and metallic
-**BOMD** remain queued (`gpw-metallic-forces` / `gpw-metallic-stress` /
-`gpw-uks-metallic-forces` / `gpw-bomd-smearing` — force assembly still
-rebuilds integer \(n_{\mathrm{occ}}\) payloads after a fractional-occupation
-SCF). OT on GPW is a product member (`use_ot`; RKS `reg_ot-minimizer-water` +
+GPW free-energy **analytic ionic forces under smear** are product for multi-k
+RKS and UKS (`reg_gpw-metallic-forces` / `reg_gpw-uks-metallic-forces`;
+fractional \(P_k/W_k\) payload). Multi-k free-energy **stress under smear**
+and metallic **BOMD** remain queued (`gpw-metallic-stress` /
+`gpw-bomd-smearing`). OT on GPW is a product member (`use_ot`; RKS `reg_ot-minimizer-water` +
 **Γ-UKS** `reg_ot-uks-o2` + **multi-k RKS** `reg_ot-kpoints` + **multi-k
 UKS** `reg_ot-uks-kpoints` + **Γ OT+DFT+U** `reg_ot-dftu` + **multi-k
 OT+DFT+U** `reg_ot-dftu-kpoints` + **OT+smear** RKS `reg_ot-smearing` +
@@ -760,7 +766,8 @@ occupation bands** (`reg_bands-metallic-si`) **and collinear-spin DOS**
 (`reg_dos-spin-si`) **and collinear spin + metallic smear bands**
 (`reg_bands-spin-metallic-si`) **and collinear spin + metallic smear DOS**
 (`reg_dos-spin-metallic-si`). **GPW-grid bands/DOS** (Bloch
-\(C_k/\varepsilon_k\) path) are queued (`gpw-bands-si` / `gpw-dos-si`).
+\(C_k/\varepsilon_k\) path) are product (`reg_gpw-bands-si` /
+`reg_gpw-dos-si`; CP2K Quickstep BAND_STRUCTURE / DOS twins).
 
 On CUDA the plane-wave hot path (Davidson H·ψ, cuFFT, Poisson, V_eff, LDA,
 density accumulation) is device-resident; Rayleigh–Ritz subspace bookkeeping and

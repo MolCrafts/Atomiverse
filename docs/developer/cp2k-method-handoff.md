@@ -1,56 +1,74 @@
 # CP2K capability loop — handoff
 
-## Harness wave 5 (shift) 2026-08-01 (parent `dev` @ `350fe453`)
+## Harness wave 6 (shift) 2026-08-01 (parent `dev` @ `8474914d`)
 
 | Field | Value |
 | ----- | ----- |
 | Branch | `dev` (ahead of `origin/dev`; **no push**) |
-| Incomplete / `in_progress` | **2** (`[~] gpw-ts-kpoint-stress`, `[~] gpw-ts-kpoint-forces`) |
+| Incomplete / `in_progress` | **1** (`[~] gpw-ts-kpoint-stress`) |
 | Open CP2K specs on `dev` | **0** (PySCF deferred only: `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp`) |
-| Specs closed this harness | **3** (deleted: `gpw-uks-pbesol`, `gpw-hirshfeld-kpoint-forces`, `gpw-dftu-forces`; remaining landings had no live specs on parent) |
-| Unmerged staff `wf/*` | **2** incomplete kept (`wf/gpw-ts-kpoint-stress` @ `f86aec1a`, `wf/gpw-ts-kpoint-forces` @ `3eb2a6ee`; do not prune) |
+| Specs closed this harness | **8** (deleted: full wave-6 staff batch) |
+| Unmerged staff `wf/*` | **1** incomplete kept (`wf/gpw-ts-kpoint-stress` @ `d6cab501`; do not prune). Side tip `wf/gpw-metallic-stress` @ `d697f63d` exists for a **pending** slug (not staffed incomplete this wave) |
 | Isolation worktrees | **0** (clearup already ran) |
 | Leftover builds | none in loop scope |
-| Pending gaps | **0** residual (not exhausted — GapCensus owns discovery) |
+| Pending gaps | **2** residual (not exhausted — GapCensus owns discovery) |
 | Blocked | **6** (VV10 + hybrid / GAPW / PAW / CUDA-GPW / meta-GGA) |
-| Done this wave | **6** landings |
-| Oracle | CP2K 2026.1 source build `…/cp2k/install` (`git:5e54ba2`); offline pins only; multi-k SCS-UMP2 `oracle: literature` (CP2K aborts MP2_GPW@k); XDM / Hirshfeld TS/MBD force pins **perf_exempt** (no stock CP2K twin) |
+| Done this wave | **8** landings |
+| Oracle | CP2K 2026.1 source build `…/cp2k/install` (`git:5e54ba2`); offline pins only; free-atom TS forces + Hirshfeld stress **perf_exempt** (no stock CP2K twin) |
 | Loop docs | queue / loop / handoff / specs INDEX / residual prose **synced** |
 
 ### Wave staff → done
 
 | Slug | Domain | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
 | ---- | ------ | ---------- | --------------------------------------------- |
-| `gpw-xdm-kpoint-forces` | gpw | `reg_gpw-xdm-kpoint-forces` | **perf_exempt** (no CP2K stock XDM) |
-| `gpw-uks-pbesol` | gpw | `reg_gpw-uks-pbesol` | **3.37** (62.33 / 18.52) |
-| `periodic-scs-ump2-kpoints` | gpw | `reg_periodic-scs-ump2-kpoints` | **perf_exempt** (CP2K no multi-k MP2_GPW) |
-| `dfpt-gga-spin-finite-q-smearing` | response | `reg_dfpt-gga-spin-finite-q-smearing` | **0.25** (148.1 / 585.9 serial) |
-| `gpw-hirshfeld-kpoint-forces` | gpw | `reg_gpw-hirshfeld-kpoint-forces` | **perf_exempt** (no CP2K stock TS/MBD) |
-| `gpw-dftu-forces` | gpw | `reg_gpw-dftu-forces` | **2.483** (NiO SCF+force vs CP2K 13.24 s) |
+| `gpw-ts-kpoint-forces` | gpw | `reg_gpw-ts-kpoint-forces` | **perf_exempt** (no CP2K stock TS) |
+| `gpw-metallic-forces` | gpw | `reg_gpw-metallic-forces` | **0.077** (~0.11 / 1.43) |
+| `gpw-uks-metallic-forces` | gpw | `reg_gpw-uks-metallic-forces` | **0.049** (0.097 / 2.00) |
+| `gpw-vdw-kpoint-forces` | gpw | `reg_gpw-vdw-kpoint-forces` | **1.6–3.3** (host-load band; ≤ 10) |
+| `gpw-optb88-forces` | gpw | `reg_gpw-optb88-forces` | **1.108** (19.403 / 17.509) |
+| `gpw-hirshfeld-kpoint-stress` | gpw | `reg_gpw-hirshfeld-kpoint-stress` | **perf_exempt** (no CP2K stock TS/MBD) |
+| `gpw-bands-si` | gpw | `reg_gpw-bands-si` | **3.51** (6.66 / 1.90) |
+| `gpw-dos-si` | gpw | `reg_gpw-dos-si` | **1.62** (4.209 / 2.595) |
 
 ### Incomplete kept `[~]` (do not demote)
 
 | Slug | Branch | Tip | Note |
 | ---- | ------ | --- | ---- |
-| `gpw-ts-kpoint-stress` | `wf/gpw-ts-kpoint-stress` | `f86aec1a` | feat tip + reg on branch only |
-| `gpw-ts-kpoint-forces` | `wf/gpw-ts-kpoint-forces` | `3eb2a6ee` | feat tip + reg on branch only |
+| `gpw-ts-kpoint-stress` | `wf/gpw-ts-kpoint-stress` | `d6cab501` | feat tip rebased + dual-gate accept docs; reg on branch only |
 
 ### Roadmap ○→✓ this harness
 
 | Row | Doc | Note |
 | --- | --- | ---- |
-| *(none)* | — | capability table rows already ✓ (PBEsol / DFT+U / dispersion / DFPT / MP2) |
-| Residual prose | `dft.md` intro + §3/§8/§10/§11 + `index.md` GPW | open residuals → multi-k **TS stress** + multi-k **TS forces** only (`[~]`) |
+| *(none)* | — | capability table rows already ✓ (smearing / dispersion / bands-DOS / optB88) |
+| Residual prose | `dft.md` intro + §8/§10/§12 + `index.md` GPW + MD AIMD | open residuals → multi-k free-atom **TS stress** (`[~]`) + multi-k free-energy **metallic stress** + metallic **BOMD** |
 
 ### Pending residual
 
-**Pending = 0** (assign emptied the census list; **not** queue exhausted).
-**Incomplete = 2** (unmerged multi-k free-atom TS stress/forces `wf/*`). Next
-wave starts with **Recover incomplete** (merge or finish the two `[~]` tips)
+**Pending = 2** (`gpw-metallic-stress`, `gpw-bomd-smearing`).
+**Incomplete = 1** (unmerged multi-k free-atom TS stress `wf/*`). Next wave
+starts with **Recover incomplete** (merge or finish `gpw-ts-kpoint-stress`)
 then GapCensus. Blocked = 6 unchanged.
 
 Do **not** staff PySCF deferred specs. No push from parent.
 **Queue not exhausted** — GapCensus owns discovery; incomplete ≫ pending.
+
+---
+
+## Harness wave 5 (shift) 2026-08-01 (parent `dev` @ `350fe453`) — historical
+
+| Field | Value |
+| ----- | ----- |
+| Branch | `dev` (ahead of `origin/dev`; **no push**) |
+| Incomplete / `in_progress` | **2** (`[~] gpw-ts-kpoint-stress`, `[~] gpw-ts-kpoint-forces`) |
+| Open CP2K specs on `dev` | **0** (PySCF deferred only) |
+| Specs closed this harness | **3** |
+| Pending residual | **0** then refilled by GapCensus wave 6 |
+| Done this wave | **6** landings |
+
+### Wave staff → done (historical)
+
+| `gpw-xdm-kpoint-forces` | `gpw-uks-pbesol` | `periodic-scs-ump2-kpoints` | `dfpt-gga-spin-finite-q-smearing` | `gpw-hirshfeld-kpoint-forces` | `gpw-dftu-forces` |
 
 ---
 

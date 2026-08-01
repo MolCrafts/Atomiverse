@@ -66,6 +66,24 @@ args: { "mode":"exhaust", "staff_count":10, "max_waves":20, "target_branch":"dev
 
 ## Run log
 
+- **2026-08-01 harness wave 6 (shift) (parent `dev` @ `8474914d`):** 8 of 9
+  staffed/incomplete on `dev` → done: `gpw-ts-kpoint-forces` (multi-k
+  free-atom TS force dual-gate; **perf_exempt**), `gpw-metallic-forces`
+  (multi-k RKS free-energy forces under FD/MP, ratio **0.077**),
+  `gpw-uks-metallic-forces` (multi-k UKS free-energy forces, ratio
+  **0.049**), `gpw-vdw-kpoint-forces` (multi-k nonlocal vdW-DF ENERGY_FORCE,
+  ratio **1.6–3.3**), `gpw-optb88-forces` (OptB88+DRSLL ENERGY_FORCE, ratio
+  **1.108**), `gpw-hirshfeld-kpoint-stress` (multi-k fixed-\(v\) Hirshfeld
+  TS/MBD stress dual-gate; **perf_exempt**), `gpw-bands-si` (GPW NSCF bands
+  on frozen Veff, ratio **3.51**), `gpw-dos-si` (GPW multi-k DOS, ratio
+  **1.62**). One staff stays `[~]`: `gpw-ts-kpoint-stress` @ `d6cab501`
+  (feat tip rebased; reg on branch only; do not demote). Specs closed (8
+  deleted). Residual pending **2** (`gpw-metallic-stress`,
+  `gpw-bomd-smearing` — **not** queue exhausted). Roadmap: **no ○/✓ table
+  flips**; residual prose → multi-k free-atom **TS stress** (`[~]`) +
+  multi-k free-energy **metallic stress** + metallic **BOMD**. Clearup
+  already ran. Queue **not** exhausted. No push.
+
 - **2026-08-01 harness wave 5 (shift) (parent `dev` @ `350fe453`):** 6 of 8
   staffed on `dev` → done: `gpw-xdm-kpoint-forces` (multi-k free-atom XDM
   force dual-gate + wiring; **perf_exempt**), `gpw-uks-pbesol` (Γ-UKS

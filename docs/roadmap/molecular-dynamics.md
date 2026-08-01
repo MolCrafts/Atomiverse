@@ -238,10 +238,10 @@ AIMD works by binding a force-providing method/component to `md::Phase::force`
   warm start mirroring CP2K EXTRAPOLATION USE_PREV_P; CP2K Quickstep
   AIMD k-mesh pin, fair wall ratio 0.064; multi-k XL is product too;
   multi-k UKS BOMD is product too — dual-spin previous-step
-  \(P_k^\sigma\) warm start, `reg_gpw-bomd-uks-kpoints`). Metallic
-  occupation-smear BOMD (free-energy / Mermin trajectory) is queued as
-  `gpw-bomd-smearing` (needs free-energy forces under smear —
-  `gpw-metallic-forces`).
+  \(P_k^\sigma\) warm start, `reg_gpw-bomd-uks-kpoints`). Multi-k free-energy
+  **forces under smear** are product (`reg_gpw-metallic-forces` /
+  `reg_gpw-uks-metallic-forces`). Metallic occupation-smear BOMD
+  (free-energy / Mermin trajectory) remains queued as `gpw-bomd-smearing`.
 - `cpu::pw::PWEvaluator` with `with_gradient(true)` → **plane-wave BOMD**
   (analytic local + Ewald + KB forces; default is energy-only); foothold
   `reg_pw-bomd-h`.

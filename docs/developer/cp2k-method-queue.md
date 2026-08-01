@@ -1584,22 +1584,40 @@ forces/stress, multi-k vdW forces, optB88 forces, multi-k Hirshfeld
 stress, GPW bands/DOS, metallic BOMD). **Pending = 9**; **in_progress =
 2**; **blocked = 6**.
 
+**Harness wave 6 (shift) 2026-08-01 (parent `dev` @ `8474914d`):** 8 of 9
+wave-6 staff / incompletes on `dev` → `## done` (`gpw-ts-kpoint-forces`,
+`gpw-metallic-forces`, `gpw-uks-metallic-forces`, `gpw-vdw-kpoint-forces`,
+`gpw-optb88-forces`, `gpw-hirshfeld-kpoint-stress`, `gpw-bands-si`,
+`gpw-dos-si`). Specs deleted on close. **Pending residual = 2**
+(`gpw-metallic-stress`, `gpw-bomd-smearing` — **not** queue exhausted;
+GapCensus owns discovery). **in_progress = 1** unmerged staff `[~]`
+(`gpw-ts-kpoint-stress` on `wf/gpw-ts-kpoint-stress` @ `d6cab501` — do not
+demote). Roadmap: **no ○/✓ table flips** (capability rows already ✓);
+residual prose closed multi-k free-atom TS forces, multi-k RKS/UKS free-
+energy metallic forces, multi-k nonlocal vdW forces, optB88 ENERGY_FORCE,
+multi-k Hirshfeld stress, GPW bands/DOS; open → multi-k free-atom **TS
+stress** (`[~]`) + multi-k free-energy **metallic stress** + metallic
+**BOMD**. **Blocked = 6** unchanged. Clearup already ran. No push.
+
 ## pending
 
-- [ ] `gpw-metallic-forces` | Multi-k RKS free-energy analytic ionic forces under FD/MP metallic smearing (fractional \(P_k/W_k\); fix integer `store_k_payload` / force rebuild) | gpw | twin: CP2K 2026.1 ENERGY_FORCE + SMEAR (Na-class / same family as `gpw-metallic-smearing`) | deps: gpw-metallic-smearing ✓, gpw-kpoint-forces ✓
-- [ ] `gpw-metallic-stress` | Multi-k RKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-smearing ✓, gpw-kpoint-stress ✓
-- [ ] `gpw-uks-metallic-forces` | Multi-k UKS free-energy analytic ionic forces under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 UKS ENERGY_FORCE + SMEAR | deps: gpw-uks-smearing ✓, gpw-metallic-forces (same payload fix)
-- [ ] `gpw-vdw-kpoint-forces` | Multi-k analytic ionic forces with nonlocal vdW-DF/DF2/rVV10 (SC \(V_{\mathrm{nl}}\) on k-path force assembly; dedicated pin) | gpw | twin: CP2K 2026.1 NON_LOCAL + KPOINTS ENERGY_FORCE | deps: gpw-vdw-kpoints ✓, gpw-vdw-scf-potential ✓
-- [ ] `gpw-optb88-forces` | Analytic ionic forces with OptB88 exchange + DRSLL nonlocal (dedicated ENERGY_FORCE pin) | gpw | twin: CP2K 2026.1 OptB88 + DRSLL ENERGY_FORCE | deps: gpw-optb88-vdw ✓, gpw-vdw-scf-potential ✓
-- [ ] `gpw-hirshfeld-kpoint-stress` | Multi-k analytic cell stress with Hirshfeld-scaled TS/MBD volumes (dedicated fixed-\(v\) pin) | gpw | twin: libMBD / product dual (no CP2K stock TS/MBD — same policy as `gpw-hirshfeld-forces`) | deps: gpw-hirshfeld-kpoint-forces ✓, gpw-mbd-kpoint-stress ✓
-- [ ] `gpw-bands-si` | Band structure post-process on GPW Bloch path (high-symmetry path from multi-k \(C_k/\varepsilon_k\)) | gpw | twin: CP2K 2026.1 Quickstep `&PRINT &BAND_STRUCTURE` on GTH-GPW Si | deps: gpw-kpoints-si ✓, bands-dos-si ✓ (PW pattern)
-- [ ] `gpw-dos-si` | Density of states on GPW multi-k mesh (Gaussian / Methfessel-style smear of \(\varepsilon_{nk}\)) | gpw | twin: CP2K 2026.1 Quickstep DOS / PDOS class on GTH-GPW Si | deps: gpw-kpoints-si ✓, bands-dos-si ✓ (PW pattern)
-- [ ] `gpw-bomd-smearing` | Multi-k Born–Oppenheimer MD with metallic occupation smearing (free-energy / Mermin trajectory) | dynamics | twin: CP2K 2026.1 Quickstep AIMD + SMEAR k-mesh | deps: gpw-bomd-kpoints ✓, gpw-metallic-smearing ✓, gpw-metallic-forces (force correctness under smear)
+- [ ] `gpw-metallic-stress` | Multi-k RKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-smearing ✓, gpw-kpoint-stress ✓, gpw-metallic-forces ✓
+- [ ] `gpw-bomd-smearing` | Multi-k Born–Oppenheimer MD with metallic occupation smearing (free-energy / Mermin trajectory) | dynamics | twin: CP2K 2026.1 Quickstep AIMD + SMEAR k-mesh | deps: gpw-bomd-kpoints ✓, gpw-metallic-smearing ✓, gpw-metallic-forces ✓
 
 ## in_progress
 
-- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `f86aec1a` (feat tip + reg on branch only; resume: rebase onto `dev`, dual-gate, merge)
-- [~] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | twin: libMBD / literature (CP2K has no stock TS — same policy as `gpw-ts-forces`) | deps: gpw-ts-forces ✓, gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-forces` @ `3eb2a6ee` (feat tip + reg on branch only; do not demote)
+- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `d6cab501` (feat tip rebased + dual-gate accept docs; reg on branch only — do not demote; resume: dual-gate green on parent / merge)
+
+## done (harness wave 6 (shift) 2026-08-01)
+
+- [x] `gpw-ts-kpoint-forces` | Multi-k analytic ionic forces with free-atom TS (dedicated pin) | gpw | `regressions/gpw/gpw-ts-kpoint-forces` (libMBD / free-atom dual-gate + multi-k product wiring; CP2K has no stock TS) | ratio **perf_exempt** (no fair CP2K twin) | 2026-08-01
+- [x] `gpw-metallic-forces` | Multi-k RKS free-energy analytic ionic forces under FD/MP metallic smearing | gpw | `regressions/gpw/gpw-metallic-forces` (CP2K 2026.1 ENERGY_FORCE + SMEAR H₂ twin; fractional \(P_k/W_k\) payload) | ratio **0.077** (ATV ~0.11 s / CP2K 1.43 s) | 2026-08-01
+- [x] `gpw-uks-metallic-forces` | Multi-k UKS free-energy analytic ionic forces under FD/MP metallic smearing | gpw | `regressions/gpw/gpw-uks-metallic-forces` (CP2K 2026.1 UKS ENERGY_FORCE + SMEAR H₂ twin) | ratio **0.049** (0.097 / 2.00) | 2026-08-01
+- [x] `gpw-vdw-kpoint-forces` | Multi-k analytic ionic forces with nonlocal vdW-DF (SC \(V_{\mathrm{nl}}\) on k-path) | gpw | `regressions/gpw/gpw-vdw-kpoint-forces` (CP2K 2026.1 NON_LOCAL + KPOINTS ENERGY_FORCE water dimer) | ratio **1.6–3.3** (host-load band; ≤ 10) | 2026-08-01
+- [x] `gpw-optb88-forces` | Analytic ionic forces with OptB88 exchange + DRSLL nonlocal | gpw | `regressions/gpw/gpw-optb88-forces` (CP2K 2026.1 OptB88 + DRSLL ENERGY_FORCE; E_disp 3.77e-5 Ha) | ratio **1.108** (19.403 / 17.509) | 2026-08-01
+- [x] `gpw-hirshfeld-kpoint-stress` | Multi-k analytic cell stress with Hirshfeld-scaled TS/MBD volumes | gpw | `regressions/gpw/gpw-hirshfeld-kpoint-stress` (fixed-\(v\) dual-gate + multi-k product wiring; no CP2K stock TS/MBD) | ratio **perf_exempt** (no fair CP2K twin) | 2026-08-01
+- [x] `gpw-bands-si` | Band structure NSCF on frozen Veff (GPW Bloch path) | gpw | `regressions/gpw/gpw-bands-si` (CP2K 2026.1 Quickstep `&PRINT &BAND_STRUCTURE` GTH-GPW Si) | ratio **3.51** (6.66 / 1.90) | 2026-08-01
+- [x] `gpw-dos-si` | Density of states on GPW multi-k mesh | gpw | `regressions/gpw/gpw-dos-si` (CP2K 2026.1 Quickstep DOS on GTH-GPW Si; \|ΔE\| 2.23e-5 Ha) | ratio **1.62** (4.209 / 2.595) | 2026-08-01
 
 ## done (harness wave 5 2026-08-01)
 
