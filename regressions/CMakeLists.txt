@@ -521,6 +521,9 @@ if(ATV_BUILD_GPW)
     # 2026.1 SCALE_S/SCALE_T pin (periodic-scs-mp2-si).
     atv_add_regression(gpw periodic-scs-mp2-si THREADS 8)
     atv_add_regression(gpw periodic-mp2-kpoints THREADS 8)
+    # Multi-k RI-GPW SCS-MP2 (same scales on MP 2×1×1 diamond Si) — offline
+    # CP2K 2026.1 multi-k SCALE_S/SCALE_T pin (periodic-scs-mp2-kpoints).
+    atv_add_regression(gpw periodic-scs-mp2-kpoints THREADS 8)
     atv_add_regression(gpw periodic-ump2-kpoints THREADS 8)
     atv_add_regression(gpw periodic-rpa-si THREADS 8)
     atv_add_regression(gpw periodic-rpa-kpoints THREADS 8)
