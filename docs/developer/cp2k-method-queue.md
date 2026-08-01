@@ -1314,18 +1314,46 @@ molecular post-HF / classical MW / CUDA ports (other loops). Roadmap: **no
 refreshed for wave-3 queue. **Pending = 6**; **in_progress = 1**;
 **blocked = 6**.
 
+**Assign wave 3 (shift) 2026-08-01 (parent `dev` @ `98ab480d`):** recover —
+incomplete_count=**1** (`[~] gpw-ts-kpoint-stress` unmerged
+`wf/gpw-ts-kpoint-stress` @ `65aa0e6d`, 1 ahead / 23 behind `dev` — resume
+staffed first, incomplete ≫ pending). Open CP2K/GPW/PW specs=**0** (PySCF
+deferred only: `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`); isolation
+worktrees=**0**; all 6 pending re-verified write-first (no
+`.claude/specs/<slug>/`, no `wf/<slug>` tip, no regression dir). Staffed
+**7** (≤10): 1 resume + all **6** pending → `## in_progress`. New
+promotions: `gpw-d3-atm-kpoint-forces`, `gpw-d4-atm-kpoint-forces`,
+`gpw-optb88-uks-kpoints`, `periodic-scs-mp2-kpoints`, `periodic-berry-gpw`,
+`gpw-hirshfeld-forces`. Surface notes for workers: `gpw-d3-atm-kpoint-forces`
+∥ `gpw-d4-atm-kpoint-forces` share multi-k force-assembly ATM folds —
+reuse Γ ATM F2+FD / EEQ-adjoint machinery, serialize carefully;
+`gpw-hirshfeld-forces` also edits `gpw_forces` / `gpw_stress` dispersion
+grad (volume-scaled TS/MBD vs free-atom) — coordinate with ATM force
+workers on those files; resume `gpw-ts-kpoint-stress` owns multi-k
+`gpw_stress` TS pin (rebase tip onto `dev` then dual-gate) — free of
+Hirshfeld force volume fix if stress only asserts free-atom TS fold;
+`gpw-optb88-uks-kpoints` is pin-only on product k-UKS optB88 path
+(allow-list + spin XC + DRSLL) — free of force/stress; `periodic-scs-mp2-kpoints`
+is pin-only multi-k SCS scales on RI-GPW MP2 — free of all;
+`periodic-berry-gpw` is new GPW Berry surface (PW-only today) — free of
+force/stress/ATM/optB88. No pick depends on another pick. **Held
+pending (0):** staff emptied the census list. **Pending residual after
+assign = 0** (not queue exhausted; GapCensus owns next discovery after
+harness).
+
 ## pending
 
-- [ ] `gpw-d3-atm-kpoint-forces` | Multi-k analytic ionic forces with D3 three-body ATM (C9) dedicated pin | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh + ATM | deps: gpw-d3-atm-forces ✓, gpw-d3-atm-kpoint-stress ✓ | write-first
-- [ ] `gpw-d4-atm-kpoint-forces` | Multi-k analytic ionic forces with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | twin: dftd4 3.7.0 `--grad` (no CP2K DFTD4) | deps: gpw-d4-atm-forces ✓ | write-first
-- [ ] `gpw-optb88-uks-kpoints` | Multi-k UKS optB88-vdW (OptB88 + DRSLL on k-UKS path) dedicated pin | gpw | twin: CP2K 2026.1 KPOINTS + UKS + GGA_X_OPTB88_VDW + DRSLL | deps: gpw-optb88-uks ✓, gpw-optb88-kpoints ✓, gpw-vdw-uks-kpoints ✓ | write-first
-- [ ] `periodic-scs-mp2-kpoints` | Multi-k SCS-MP2 scales on RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 multi-k SCALE_S/SCALE_T after periodic-mp2-kpoints ✓ | deps: periodic-scs-mp2-si ✓, periodic-mp2-kpoints ✓ | write-first
-- [ ] `periodic-berry-gpw` | King–Smith–Vanderbilt Berry-phase polarization on GPW (GpwDft Bloch; PW-only today) | response | twin: CP2K 2026.1 Quickstep `&MOMENTS PERIODIC` (si_berry class) | deps: periodic-wannier-gpw ✓, berry-polarization ✓ | write-first
-- [ ] `gpw-hirshfeld-forces` | Analytic ionic forces (and stress fold) with Hirshfeld-scaled TS/MBD volumes — force/stress currently free-atom only while energy uses ratios | gpw | twin: libMBD volume-scaled grad / CP2K TS ENERGY_FORCE | deps: gpw-mbd-hirshfeld ✓, gpw-ts-forces ✓, gpw-mbd-forces ✓ | write-first
+_(empty — assign wave 3 staffed all 6 census pending; GapCensus owns next refill)_
 
 ## in_progress
 
-- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `65aa0e6d` (1 ahead / 22 behind `dev`; feat tip; no reg dir on parent — resume/merge next)
+- [~] `gpw-ts-kpoint-stress` | Multi-k analytic cell stress with free-atom TS | gpw | twin: libMBD strained-cell | deps: gpw-ts-stress ✓ | `wf/gpw-ts-kpoint-stress` @ `65aa0e6d` (1 ahead / 23 behind `dev`; feat tip; no reg dir on parent — resume/rebase/merge next)
+- [~] `gpw-d3-atm-kpoint-forces` | Multi-k analytic ionic forces with D3 three-body ATM (C9) dedicated pin | gpw | twin: CP2K 2026.1 ENERGY_FORCE + k-mesh + ATM | deps: gpw-d3-atm-forces ✓, gpw-d3-atm-kpoint-stress ✓ | write-first
+- [~] `gpw-d4-atm-kpoint-forces` | Multi-k analytic ionic forces with D4 three-body ATM (\(s_9\)) dedicated pin | gpw | twin: dftd4 3.7.0 `--grad` (no CP2K DFTD4) | deps: gpw-d4-atm-forces ✓ | write-first
+- [~] `gpw-optb88-uks-kpoints` | Multi-k UKS optB88-vdW (OptB88 + DRSLL on k-UKS path) dedicated pin | gpw | twin: CP2K 2026.1 KPOINTS + UKS + GGA_X_OPTB88_VDW + DRSLL | deps: gpw-optb88-uks ✓, gpw-optb88-kpoints ✓, gpw-vdw-uks-kpoints ✓ | write-first
+- [~] `periodic-scs-mp2-kpoints` | Multi-k SCS-MP2 scales on RI-GPW MP2 (`mp2_os_scale`/`mp2_ss_scale`) | gpw | twin: CP2K 2026.1 multi-k SCALE_S/SCALE_T after periodic-mp2-kpoints ✓ | deps: periodic-scs-mp2-si ✓, periodic-mp2-kpoints ✓ | write-first
+- [~] `periodic-berry-gpw` | King–Smith–Vanderbilt Berry-phase polarization on GPW (GpwDft Bloch; PW-only today) | response | twin: CP2K 2026.1 Quickstep `&MOMENTS PERIODIC` (si_berry class) | deps: periodic-wannier-gpw ✓, berry-polarization ✓ | write-first
+- [~] `gpw-hirshfeld-forces` | Analytic ionic forces (and stress fold) with Hirshfeld-scaled TS/MBD volumes — force/stress currently free-atom only while energy uses ratios | gpw | twin: libMBD volume-scaled grad / CP2K TS ENERGY_FORCE | deps: gpw-mbd-hirshfeld ✓, gpw-ts-forces ✓, gpw-mbd-forces ✓ | write-first
 
 ## done (harness wave 2 (shift) 2026-08-01)
 
