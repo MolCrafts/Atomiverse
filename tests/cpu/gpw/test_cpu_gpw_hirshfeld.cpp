@@ -290,6 +290,62 @@ TEST(GpwHirshfeld, UksMbdHirshfeldReportsVolumesAndEDisp) {
     EXPECT_LT(res.volume_ratios[0], 2.0);
 }
 
+// Multi-k UKS + mbd + hirshfeld: k-summed ρ=ρα+ρβ → volumes + E_disp
+// (fold_dispersion_k_uks product path; pin-first slug gpw-hirshfeld-uks-kpoints).
+TEST(GpwHirshfeld, MultiKUksMbdHirshfeldReportsVolumesAndEDisp) {
+    using ATV::cpu::gpw::GaussianBasis;
+    using ATV::cpu::gpw::GpwAtom;
+    using ATV::cpu::gpw::GpwDft;
+    using ATV::cpu::gpw::GthPotential;
+    using ATV::cpu::gpw::XcKind;
+
+    // High-spin O₂ fragment (2 O, open shell) on a small periodic cell.
+    const GaussianBasis bO(molrs::Element::O, "DZVP-MOLOPT-SR-GTH");
+    const GthPotential pO(molrs::Element::O, "GTH-PBE-q6");
+    const double L = 8.0 * kAngToBohr;
+    constexpr double R_ang = 1.2075;
+    const double z0 = 0.5 * L - 0.5 * R_ang * kAngToBohr;
+    const double z1 = 0.5 * L + 0.5 * R_ang * kAngToBohr;
+    std::vector<GpwAtom> atoms;
+    const double p0[3] = {0.5 * L, 0.5 * L, z0};
+    const double p1[3] = {0.5 * L, 0.5 * L, z1};
+    atoms.emplace_back(p0, bO, pO, 8);
+    atoms.emplace_back(p1, bO, pO, 8);
+
+    GpwDft gpw;
+    gpw.cell[0] = gpw.cell[1] = gpw.cell[2] = L;
+    gpw.cutoff_ry = 120.0;
+    gpw.n_alpha = 7;
+    gpw.n_beta = 5;
+    gpw.max_iter = 12;
+    gpw.tol = 1e-5;
+    gpw.mix = 0.4;
+    gpw.xc = XcKind::PBE;
+    gpw.mbd = true;
+    gpw.hirshfeld = true;
+    gpw.k_mesh[0] = gpw.k_mesh[1] = gpw.k_mesh[2] = 2;
+    gpw.k_time_reversal = true;
+
+    gpw.build(atoms);
+    const auto& res = gpw.run(atoms);
+    std::printf(
+        "[Hirshfeld multi-k UKS] E_disp=%.16e  n_vol=%zu  n_kpts=%d  s2=%.4f  "
+        "iters=%d\n",
+        res.e_disp, res.volume_ratios.size(), res.n_kpts, res.s2, res.iters);
+    for (std::size_t i = 0; i < res.volume_ratios.size(); ++i)
+        std::printf("  v[%zu]=%.6f\n", i, res.volume_ratios[i]);
+
+    ASSERT_EQ(res.volume_ratios.size(), 2u);
+    EXPECT_GT(res.n_kpts, 1);
+    EXPECT_TRUE(std::isfinite(res.e_disp));
+    EXPECT_LT(res.e_disp, 0.0);
+    EXPECT_LT(std::abs(res.e_disp), 1e-2);
+    for (double v : res.volume_ratios) {
+        EXPECT_GT(v, 0.2);
+        EXPECT_LT(v, 2.0);
+    }
+}
+
 // Closed-shell water UKS (Nα=Nβ) + hirshfeld-MBD ≈ RKS hirshfeld-MBD (same ρ).
 TEST(GpwHirshfeld, ClosedShellUksMatchesRksHirshfeldEDisp) {
     using ATV::cpu::gpw::GaussianBasis;

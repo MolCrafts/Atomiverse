@@ -1,0 +1,55 @@
+# Offline pin notes — gpw-hirshfeld-uks-kpoints
+
+## Method
+
+Hirshfeld \(V/V_{\mathrm{free}}\) from the **multi-k collinear UKS** GPW PBE
+total valence density \(\rho=\sum_k w_k(\rho_k^\alpha+\rho_k^\beta)\) (in-tree
+exponential free-atom model, `hirshfeld_tables.h`) → MBD@rsSCS with scaled
+α/C6/R (same libMBD free-atom tables as `gpw-mbd-ice` / `gpw-hirshfeld-uks` /
+`gpw-hirshfeld-kpoints`). Product path: `fold_dispersion_k_uks` in
+`gpw_solver.cpp`.
+
+## Why not stock CP2K QS?
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` is only DFTD2|DFTD3|DFTD3(BJ)|DFTD4 — no
+stock TS/MBD. Hard pin is the ATV product under fixed multi-k UKS settings
+(CUTOFF 120 Ry, DZVP-MOLOPT-SR-GTH, GTH-PBE-q6, O₂ triplet Nα=7/Nβ=5,
+periodic 10 Å, Monkhorst–Pack 2×2×1 + TR), cross-checked vs free-atom MBD on
+the same geometry and the dual in-tree Hirshfeld kernel.
+
+**Binary checked (host, not a twin):** `source
+/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh` →
+`cp2k.psmp` **2026.1** `git:5e54ba2` (capability confirmation only — no
+TS/MBD output line to pin against).
+
+## Geometry
+
+Centered O₂ R = 1.2075 Å in 10 Å cubic periodic cell (same bond length as
+`gpw-uks-pbe` / `gpw-hirshfeld-uks`; smaller cell than Γ-UKS MT for multi-k
+wall).
+
+## Pin (product settings)
+
+```
+E_disp = -1.0427466367435301e-04 Ha
+free-atom MBD dual (v=1, same geom) = -1.1699749375715385e-04 Ha
+volumes (O O) ≈ 0.6823 0.6823
+CUTOFF 120 Ry, k-mesh 2×2×1 TR (n_kpts=2), DZVP-MOLOPT-SR-GTH, GTH-PBE-q6
+O2 triplet Nα=7/Nβ=5, periodic 10 Å, max_iter 80, tol 1e-6, mix 0.45
+```
+
+## Date / provenance
+
+- **Date:** 2026-08-01
+- **ATV branch tip:** `wf/gpw-hirshfeld-uks-kpoints` (see commit)
+- **Oracle family:** libMBD free-atom tables + in-tree Hirshfeld volumes
+  (`oracle: literature` / libMBD — not `oracle: cp2k`)
+
+## Resume reconfirm (2026-08-01)
+
+Rebased onto `dev` @ current parent; dual-gate re-run PASS (E_disp pin exact).
+CP2K 2026.1 `git:5e54ba2` stock pair-potential enum remains
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4` only (`input_cp2k_xc.F` TYPE keyword) — still
+**no TS/MBD**, so `oracle: literature` / libMBD free-atom tables + in-tree
+Hirshfeld volumes (not `oracle: cp2k`). Fair wall twin N/A; perf_exempt.
+

@@ -297,6 +297,7 @@ domain, alphabetical by slug.
 | GPW analytic cell stress + DFT+U (NiO) | [gpw-dftu-stress](methods/gpw-dftu-stress.md) | `regressions/gpw/gpw-dftu-stress` |
 | GPW multi-k Hirshfeld volumes | [gpw-hirshfeld-kpoints](methods/gpw-hirshfeld-kpoints.md) | `regressions/gpw/gpw-hirshfeld-kpoints` |
 | Γ-UKS Hirshfeld-scaled MBD@rsSCS (O₂) | [gpw-hirshfeld-uks](methods/gpw-hirshfeld-uks.md) | `regressions/gpw/gpw-hirshfeld-uks` |
+| Multi-k UKS Hirshfeld-scaled MBD@rsSCS (O₂) | [gpw-hirshfeld-uks-kpoints](methods/gpw-hirshfeld-uks-kpoints.md) | `regressions/gpw/gpw-hirshfeld-uks-kpoints` |
 | GPW analytic forces at k-points (H₂) | [gpw-kpoint-forces](methods/gpw-kpoint-forces.md) | `regressions/gpw/gpw-kpoint-forces` |
 | GPW analytic cell stress at k-points (Si) | [gpw-kpoint-stress](methods/gpw-kpoint-stress.md) | `regressions/gpw/gpw-kpoint-stress` |
 | Multi-k UKS GPW analytic forces | [gpw-kpoint-uks-forces](methods/gpw-kpoint-uks-forces.md) | `regressions/gpw/gpw-kpoint-uks-forces` |
