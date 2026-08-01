@@ -339,6 +339,9 @@ if(ATV_BUILD_GPW)
     # + E_c^nl on e_disp (offline CP2K 2026.1 LSD + KPOINTS + DRSLL pin —
     # gpw-vdw-uks-kpoints).
     atv_add_regression(gpw gpw-vdw-uks-kpoints THREADS 8)
+    # Γ UKS × DRSLL × REL_CUTOFF multigrid (NGRIDS 4) product pin — matched
+    # offline CP2K 2026.1 NGRIDS+DRSLL+UKS twin (gpw-vdw-uks-multigrid).
+    atv_add_regression(gpw gpw-vdw-uks-multigrid THREADS 8)
     atv_add_regression(gpw gpw-optb88-vdw THREADS 8)
     atv_add_regression(gpw gpw-mbd-hirshfeld THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-kpoints THREADS 8)

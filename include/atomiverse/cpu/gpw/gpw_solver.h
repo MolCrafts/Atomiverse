@@ -304,8 +304,11 @@ class GpwDft {
     ///        single-grid or REL_CUTOFF multigrid) and collinear UKS at Γ
     ///        and multi-k (UKS applies \(V_{\mathrm{nl}}[\rho]\) of the total
     ///        density \(\rho=\rho_\alpha+\rho_\beta\) to both spin
-    ///        potentials; multi-k via `build_uks_k_energy` /
-    ///        `fold_dispersion_k_uks`).
+    ///        potentials on the fine grid before per-level restriction —
+    ///        single-grid or REL_CUTOFF multigrid, product pins
+    ///        `reg_gpw-vdw-uks` / `reg_gpw-vdw-uks-multigrid`; multi-k via
+    ///        `build_uks_k_energy` / `fold_dispersion_k_uks`, product pin
+    ///        `reg_gpw-vdw-uks-kpoints`).
     bool vdw_df = false; ///< vdW-DF (DRSLL) nonlocal correlation.
     /// @brief Nonlocal vdW-DF2 (LMKLL / DF2). Same SC product path as `vdw_df`;
     ///        Z_ab = −1.887. CP2K `NON_LOCAL TYPE LMKLL`. Same RKS (Γ/k) +
