@@ -1,0 +1,47 @@
+# Offline pin notes — gpw-hirshfeld-kpoint-stress
+
+## Method
+
+Multi-k GPW analytic **cell stress** with **Hirshfeld** \(V/V_{\mathrm{free}}\)
+from the multi-k SCF density scaling free-atom **TS** / **MBD@rsSCS**
+parameters. Product definition holds \(v_A\) fixed at the SCF density under
+orthorhombic strain (density-chain \(\partial v/\partial\varepsilon\) out of
+scope) — same fixed-\(v\) policy as `gpw-hirshfeld-forces` /
+`gpw-hirshfeld-kpoint-forces`, on the k-summed stress Lagrangian
+`energy_fixed_P_k` → `ts_pbe` / `mbd_rsscs_pbe` with `scf.volume_ratios`.
+
+## Why not stock CP2K QS?
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` is only DFTD2|DFTD3|DFTD3(BJ)|DFTD4 — no
+stock TS/MBD (verified host binary):
+
+```bash
+source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+cp2k.psmp --version
+# CP2K version 2026.1 (git:5e54ba2)
+# qs_dispersion_* implements D2/D3/D4 + nonlocal vdW only — no TS/MBD pair type.
+# Confirmed 2026-08-01: no fair multi-k STRESS_TENSOR twin for wall ratio.
+```
+
+Hard pin:
+
+1. Product-kernel energy dual under strain (fixed dual volume table on the
+   water dimer) — \(\sigma_{\mathrm{disp}} = -\Delta E_{\mathrm{disp}}/(2h\Omega)\).
+2. Multi-k product wiring on H₂ (`k_mesh={1,1,2}`):
+   `gpw_stress(atoms, cfg, scf)` with `ts+hirshfeld` / `mbd+hirshfeld` shifts
+   diagonal stress by geometry-only FD of \(E_{\mathrm{disp}}\) at
+   `scf.volume_ratios`, not free-atom.
+3. E_disp isolated MBD with fixed dual volumes
+   `{0.7403,0.6529,0.6529,0.7153,0.5784,0.5784}` =
+   **−1.1479717148086300×10⁻³ Ha** (same dual table as `gpw-hirshfeld-forces`).
+
+## Pin summary
+
+```
+E_disp (MBD@rsSCS, fixed v dual table) = -1.1479717148086300e-03 Ha
+geometry stress dual (TS + MBD fixed-v) — product kernel FD
+multi-k H2 TS+hirsh stress wiring max|Δ| ≤ 1e-8 Ha/Bohr3
+multi-k H2 MBD+hirsh stress wiring max|Δ| ≤ 1e-8 Ha/Bohr3
+oracle: literature / libMBD
+perf_exempt: true (no CP2K stock TS/MBD)
+```
