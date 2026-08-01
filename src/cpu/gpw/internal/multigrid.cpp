@@ -17,7 +17,7 @@
 #include <unordered_map>
 
 #ifdef ATV_GPW_HAS_FFT
-#include <fftw3.h>
+#include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #endif
 
 #ifdef _OPENMP
@@ -177,27 +177,22 @@ std::vector<double> restrict_transpose(const UniformGrid& fine,
 namespace {
 
 // Forward complex DFT (FFTW c2c, FFTW_FORWARD: F(m) = Σ_r f(r) e^{-iG·r}) of a
-// real field laid out as nx*ny*nz row-major (z fastest).
+// real field laid out as nx*ny*nz row-major (z fastest). Plans + scratch are
+// cached by grid shape (see fft_cache.h).
 std::vector<std::complex<double>> fwd_dft(const std::vector<double>& f,
                                           const int n[3]) {
-    const long ntot = static_cast<long>(n[0]) * n[1] * n[2];
-    fftw_complex* in =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * ntot));
-    fftw_complex* out =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * ntot));
+    C2cFft& fft = C2cFft::for_shape(n[0], n[1], n[2]);
+    const long ntot = fft.ntot();
+    fftw_complex* in = fft.in();
+    fftw_complex* out = fft.out();
     for (long i = 0; i < ntot; ++i) {
         in[i][0] = f[static_cast<std::size_t>(i)];
         in[i][1] = 0.0;
     }
-    fftw_plan p = fftw_plan_dft_3d(n[0], n[1], n[2], in, out, FFTW_FORWARD,
-                                   FFTW_ESTIMATE);
-    fftw_execute(p);
+    fft.execute_fwd();
     std::vector<std::complex<double>> F(static_cast<std::size_t>(ntot));
     for (long i = 0; i < ntot; ++i)
         F[static_cast<std::size_t>(i)] = {out[i][0], out[i][1]};
-    fftw_destroy_plan(p);
-    fftw_free(in);
-    fftw_free(out);
     return F;
 }
 
@@ -206,24 +201,18 @@ std::vector<std::complex<double>> fwd_dft(const std::vector<double>& f,
 // Returns the real part (the spectra here are Hermitian by construction).
 std::vector<double> inv_dft_real(const std::vector<std::complex<double>>& F,
                                  const int n[3]) {
-    const long ntot = static_cast<long>(n[0]) * n[1] * n[2];
-    fftw_complex* in =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * ntot));
-    fftw_complex* out =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * ntot));
+    C2cFft& fft = C2cFft::for_shape(n[0], n[1], n[2]);
+    const long ntot = fft.ntot();
+    fftw_complex* in = fft.in();
+    fftw_complex* out = fft.out();
     for (long i = 0; i < ntot; ++i) {
         in[i][0] = F[static_cast<std::size_t>(i)].real();
         in[i][1] = F[static_cast<std::size_t>(i)].imag();
     }
-    fftw_plan p = fftw_plan_dft_3d(n[0], n[1], n[2], in, out, FFTW_BACKWARD,
-                                   FFTW_ESTIMATE);
-    fftw_execute(p);
+    fft.execute_bwd();
     std::vector<double> g(static_cast<std::size_t>(ntot));
     for (long i = 0; i < ntot; ++i)
         g[static_cast<std::size_t>(i)] = out[i][0];
-    fftw_destroy_plan(p);
-    fftw_free(in);
-    fftw_free(out);
     return g;
 }
 

@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include <fftw3.h>
+#include "atomiverse/cpu/gpw/internal/fft_cache.h"
 
 namespace ATV {
 namespace cpu {
@@ -26,7 +26,6 @@ PoissonResult solve_poisson_mt(const UniformGrid& grid,
     const int n2 = grid.n[2];
     const long ntot = static_cast<long>(n0) * n1 * n2;
     const int n2c = n2 / 2 + 1;
-    const long ncplx = static_cast<long>(n0) * n1 * n2c;
 
     const double two_pi = 2.0 * M_PI;
     const double gx_unit = two_pi / grid.L[0];
@@ -38,17 +37,14 @@ PoissonResult solve_poisson_mt(const UniformGrid& grid,
     const double rc = 0.5 * std::min({grid.L[0], grid.L[1], grid.L[2]});
     const double v_g0 = two_pi * rc * rc; // truncated-Coulomb G=0 kernel
 
-    double* rbuf = static_cast<double*>(fftw_malloc(sizeof(double) * ntot));
-    fftw_complex* cbuf =
-        static_cast<fftw_complex*>(fftw_malloc(sizeof(fftw_complex) * ncplx));
+    R2cFft& fft = R2cFft::for_shape(n0, n1, n2);
+    double* rbuf = fft.r();
+    fftw_complex* cbuf = fft.c();
 
     for (long i = 0; i < ntot; ++i)
-        rbuf[i] = rho_r[i];
+        rbuf[i] = rho_r[static_cast<std::size_t>(i)];
 
-    fftw_plan fwd = fftw_plan_dft_r2c_3d(n0, n1, n2, rbuf, cbuf, FFTW_ESTIMATE);
-    fftw_plan bwd = fftw_plan_dft_c2r_3d(n0, n1, n2, cbuf, rbuf, FFTW_ESTIMATE);
-
-    fftw_execute(fwd); // rbuf -> cbuf (= rho_hat)
+    fft.execute_r2c(); // rbuf -> cbuf (= rho_hat)
 
     for (int i0 = 0; i0 < n0; ++i0) {
         const int m0 = (i0 <= n0 / 2) ? i0 : i0 - n0;
@@ -73,24 +69,20 @@ PoissonResult solve_poisson_mt(const UniformGrid& grid,
         }
     }
 
-    fftw_execute(bwd); // cbuf -> rbuf (= N * V(r))
+    fft.execute_c2r(); // cbuf -> rbuf (= N * V(r))
 
     PoissonResult out;
     out.v_r.resize(static_cast<std::size_t>(ntot));
     const double inv_n = 1.0 / static_cast<double>(ntot);
     for (long i = 0; i < ntot; ++i)
-        out.v_r[i] = rbuf[i] * inv_n;
+        out.v_r[static_cast<std::size_t>(i)] = rbuf[i] * inv_n;
 
     const double w = grid.weight();
     double e = 0.0;
     for (long i = 0; i < ntot; ++i)
-        e += rho_r[i] * out.v_r[i];
+        e += rho_r[static_cast<std::size_t>(i)] * out.v_r[static_cast<std::size_t>(i)];
     out.e_hartree = 0.5 * w * e;
 
-    fftw_destroy_plan(fwd);
-    fftw_destroy_plan(bwd);
-    fftw_free(rbuf);
-    fftw_free(cbuf);
     return out;
 }
 
