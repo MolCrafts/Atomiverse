@@ -711,3 +711,131 @@ TEST(GpwForces, DftUUksGammaAnalyticMatchesFd) {
                                        - F0[static_cast<std::size_t>(a)][k]));
     EXPECT_GT(dU, 1e-4) << "U activation floor on Γ forces";
 }
+
+// Multi-k collinear UKS + Fermi–Dirac free-energy forces: fractional f_k
+// payload, closed-shell identity vs RKS+smear, analytic vs multi-SCF FD of F.
+// Product pin (Na) lives in regressions/gpw/gpw-uks-metallic-forces/.
+TEST(GpwForces, UkSMetallicSmearKmeshAnalyticVsFd) {
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+
+    // Off-symmetry compressed bond so every Cartesian is nonzero.
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.6, 6.15, 5.85};
+    std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
+                                  GpwAtom(rB, basis, pot, 1)};
+
+    auto make_uks = []() {
+        GpwDft m;
+        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+        m.cutoff_ry = 100.0;
+        m.n_alpha = 1;
+        m.n_beta = 1;
+        m.tol = 1e-8;
+        m.max_iter = 80;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.xc = XcKind::PADE;
+        m.eps_default = 1e-8;
+        m.k_mesh[0] = 1;
+        m.k_mesh[1] = 1;
+        m.k_mesh[2] = 2;
+        m.smearing = Smearing::fermi_dirac;
+        m.degauss = 0.02; // Ry
+        return m;
+    };
+
+    // Payload: fractional occupations after multi-k UKS + smear SCF.
+    {
+        GpwDft cfg = make_uks();
+        cfg.build(atoms);
+        const auto scf = cfg.run(atoms);
+        ASSERT_TRUE(scf.converged);
+        ASSERT_EQ(static_cast<int>(scf.f_k.size()), scf.n_kpts);
+        ASSERT_EQ(static_cast<int>(scf.f_k_beta.size()), scf.n_kpts);
+        ASSERT_FALSE(scf.f_k.empty());
+        double nsum = 0.0;
+        for (int ik = 0; ik < scf.n_kpts; ++ik) {
+            const double wk = scf.k_weights[static_cast<std::size_t>(ik)];
+            for (double f : scf.f_k[static_cast<std::size_t>(ik)])
+                nsum += wk * f;
+            for (double f : scf.f_k_beta[static_cast<std::size_t>(ik)])
+                nsum += wk * f;
+        }
+        EXPECT_NEAR(nsum, 2.0, 1e-5) << "UKS+smear Ne from f_k";
+        EXPECT_TRUE(std::isfinite(scf.e_fermi));
+        EXPECT_TRUE(std::isfinite(scf.e_entropy));
+    }
+
+    // Closed-shell multi-k UKS+smear ≡ RKS+smear forces.
+    {
+        GpwDft uks = make_uks();
+        GpwDft rks;
+        rks.cell[0] = rks.cell[1] = rks.cell[2] = 12.0;
+        rks.cutoff_ry = 100.0;
+        rks.n_occ = 1;
+        rks.tol = 1e-8;
+        rks.max_iter = 80;
+        rks.nonperiodic = false;
+        rks.local_pp_on_grid = true;
+        rks.xc = XcKind::PADE;
+        rks.eps_default = 1e-8;
+        rks.k_mesh[0] = 1;
+        rks.k_mesh[1] = 1;
+        rks.k_mesh[2] = 2;
+        rks.smearing = Smearing::fermi_dirac;
+        rks.degauss = 0.02;
+
+        const auto Fu = gpw_forces_analytic(atoms, uks);
+        const auto Fr = gpw_forces_analytic(atoms, rks);
+        double max_d = 0.0;
+        for (int a = 0; a < 2; ++a)
+            for (int k = 0; k < 3; ++k)
+                max_d = std::max(
+                    max_d, std::abs(Fu[static_cast<std::size_t>(a)][k]
+                                    - Fr[static_cast<std::size_t>(a)][k]));
+        std::printf("[GPW UKS-smear F] closed-shell max|dF|=%.3e Ha/Bohr\n",
+                    max_d);
+        EXPECT_LT(max_d, 5e-4) << "closed-shell UKS+smear vs RKS+smear forces";
+    }
+
+    // Analytic free-energy forces vs multi-SCF FD of F (same smear).
+    {
+        GpwDft cfg = make_uks();
+        const auto Fa = gpw_forces_analytic(atoms, cfg);
+        const auto Ffd = gpw_forces_fd(atoms, cfg, /*h=*/1e-3);
+        ASSERT_EQ(Fa.size(), 2u);
+        ASSERT_EQ(Ffd.size(), 2u);
+        double max_err = 0.0;
+        for (int a = 0; a < 2; ++a) {
+            for (int k = 0; k < 3; ++k) {
+                max_err = std::max(
+                    max_err, std::abs(Fa[static_cast<std::size_t>(a)][k]
+                                      - Ffd[static_cast<std::size_t>(a)][k]));
+                std::printf(
+                    "[GPW UKS-smear F] atom %d axis %d  an=% .8f  fd=% .8f  "
+                    "d=% .2e\n",
+                    a, k, Fa[static_cast<std::size_t>(a)][k],
+                    Ffd[static_cast<std::size_t>(a)][k],
+                    Fa[static_cast<std::size_t>(a)][k]
+                        - Ffd[static_cast<std::size_t>(a)][k]);
+            }
+        }
+        std::printf("[GPW UKS-smear F] max|dF|=%.3e Ha/Bohr\n", max_err);
+        EXPECT_LT(max_err, 5e-4)
+            << "UKS+smear free-energy analytic vs multi-SCF FD";
+
+        // Analytic and multi-SCF FD share the same residual under this coarse
+        // multi-k / grid setup (absolute-position grid aliasing). The product
+        // gate is component-wise agreement with FD of F; Na BCC regression
+        // checks |sum F| at a high-symmetry metallic pin.
+        double sum_an[3] = {Fa[0][0] + Fa[1][0], Fa[0][1] + Fa[1][1],
+                            Fa[0][2] + Fa[1][2]};
+        double sum_fd[3] = {Ffd[0][0] + Ffd[1][0], Ffd[0][1] + Ffd[1][1],
+                            Ffd[0][2] + Ffd[1][2]};
+        double dsum = 0.0;
+        for (int k = 0; k < 3; ++k)
+            dsum = std::max(dsum, std::abs(sum_an[k] - sum_fd[k]));
+        EXPECT_LT(dsum, 5e-4) << "analytic vs FD |sum F| residual match";
+    }
+}

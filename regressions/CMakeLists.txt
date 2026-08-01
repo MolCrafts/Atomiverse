@@ -555,6 +555,7 @@ if(ATV_BUILD_GPW)
     # Multi-k RKS free-energy analytic forces under FD metallic smear (BCC Na).
     atv_add_regression(gpw gpw-metallic-forces THREADS 8)
     atv_add_regression(gpw gpw-uks-smearing THREADS 8)
+    atv_add_regression(gpw gpw-uks-metallic-forces THREADS 8)
     atv_add_regression(gpw gpw-kpoint-forces THREADS 8)
     atv_add_regression(gpw gpw-kpoint-uks-forces THREADS 8)
     atv_add_regression(gpw gpw-kpoint-stress THREADS 8)

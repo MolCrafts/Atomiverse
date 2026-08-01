@@ -100,8 +100,10 @@ GpwDft copy_gpw(const GpwDft& m) {
 }
 
 bool uses_kpath(const GpwDft& cfg) {
+    // Match SCF dispatch: metallic smear always rides the Bloch path
+    // (including effective Γ via k_mesh = {1,1,1}).
     return !cfg.k_points.empty() || cfg.k_mesh[0] != 1 || cfg.k_mesh[1] != 1
-           || cfg.k_mesh[2] != 1;
+           || cfg.k_mesh[2] != 1 || cfg.smearing != Smearing::none;
 }
 
 
