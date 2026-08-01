@@ -373,6 +373,9 @@ if(ATV_BUILD_GPW)
         # Plain multi-k BOMD (full SCF each step, previous-step P_k warm
         # start) — H2 NVE pinned vs CP2K 2026.1 Quickstep AIMD + KPOINTS.
         atv_add_regression(gpw gpw-bomd-kpoints THREADS 8)
+        # Plain multi-k collinear UKS BOMD (dual P_k^σ warm start) — H2 NVE
+        # pinned vs CP2K 2026.1 Quickstep UKS AIMD + KPOINTS.
+        atv_add_regression(gpw gpw-bomd-uks-kpoints THREADS 8)
         # Extended-Lagrangian BOMD (dynamics domain): XL auxiliary-density
         # propagation on the same H2O NVE twin.
         atv_add_regression(dynamics xl-bomd-water THREADS 8)
