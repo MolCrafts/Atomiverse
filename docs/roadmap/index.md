@@ -244,8 +244,8 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   **spin+smear**
   (`reg_dfpt-phonon-si` / `reg_dfpt-finite-q-si` /
   `reg_dfpt-incommensurate-si` / `reg_dfpt-gga-si` / `reg_dfpt-spin-si` /
-  `reg_dfpt-gga-spin-si` / `reg_dfpt-gga-finite-q-si` /
-  `reg_dfpt-gga-spin-finite-q-si` /
+  `reg_dfpt-gga-spin-si` / `reg_dfpt-gga-spin-smearing` /
+  `reg_dfpt-gga-finite-q-si` / `reg_dfpt-gga-spin-finite-q-si` /
   `reg_dfpt-metallic-si` / `reg_dfpt-spin-incommensurate` /
   `reg_dfpt-finite-q-smearing` / `reg_dfpt-spin-smearing`). CUDA PW remains
   LDA / spin-unpolarized.
@@ -305,7 +305,7 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   residual incomplete (`[~]`): multi-k TS stress, multi-k D3 ATM forces,
   Hirshfeld-scaled TS/MBD forces; **pending** (GapCensus wave 4): multi-k
   D3/D3(BJ)/D4 force pins, multi-k D4 ATM stress, multi-k TS/XDM forces,
-  GPW Berry UKS, Γ SCS-UMP2, DFPT GGA×spin×smear; stock VV10 remains
+  GPW Berry UKS, Γ SCS-UMP2; stock VV10 remains
   **blocked** (no CP2K twin); hybrids / meta-GGA / GAPW blocked — see
   `cp2k-method-queue.md` (queue not exhausted — GapCensus owns next
   discovery).

@@ -206,6 +206,12 @@ if(ATV_BUILD_PW)
         target_compile_definitions(reg_dfpt-gga-spin-si PRIVATE
             ATV_PW_UPF_PATH="${_atv_si_upf}")
     endif()
+    # Γ DFPT joint collinear spin × pure GGA (PBE) × metallic smear (response).
+    atv_add_regression(response dfpt-gga-spin-smearing)
+    if(TARGET reg_dfpt-gga-spin-smearing)
+        target_compile_definitions(reg_dfpt-gga-spin-smearing PRIVATE
+            ATV_PW_UPF_PATH="${_atv_si_upf}")
+    endif()
     # Finite-q DFPT at X with pure GGA (PBE) kernel (response).
     atv_add_regression(response dfpt-gga-finite-q-si)
     if(TARGET reg_dfpt-gga-finite-q-si)
