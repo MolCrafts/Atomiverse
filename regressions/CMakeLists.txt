@@ -480,6 +480,8 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-dftu-kpoints THREADS 8)
     atv_add_regression(gpw gpw-dftu-kpoint-stress THREADS 8)
     atv_add_regression(gpw gpw-dftu-kpoint-forces THREADS 8)
+    # Γ-UKS analytic ionic forces with Dudarev DFT+U (dedicated ENERGY_FORCE pin).
+    atv_add_regression(gpw gpw-dftu-forces THREADS 8)
     atv_add_regression(gpw gpw-kpoints-si THREADS 8)
     # Multi-k RKS with CP2K REL_CUTOFF multigrid product collocation
     # (offline CP2K 2026.1 pin — gpw-multigrid-kpoints).
