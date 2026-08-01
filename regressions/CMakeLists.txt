@@ -488,6 +488,9 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw periodic-mp2-si THREADS 8)
     atv_add_regression(gpw periodic-ump2-si THREADS 8)
     atv_add_regression(gpw periodic-ri-mp2-si THREADS 8)
+    # Γ RI-GPW SCS-MP2 (Grimme c_OS=1.2 / c_SS=1/3) on sc-Si2 — offline CP2K
+    # 2026.1 SCALE_S/SCALE_T pin (periodic-scs-mp2-si).
+    atv_add_regression(gpw periodic-scs-mp2-si THREADS 8)
     atv_add_regression(gpw periodic-mp2-kpoints THREADS 8)
     atv_add_regression(gpw periodic-ump2-kpoints THREADS 8)
     atv_add_regression(gpw periodic-rpa-si THREADS 8)
