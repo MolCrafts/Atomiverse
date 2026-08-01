@@ -1,0 +1,80 @@
+# Offline pin notes — gpw-xdm-kpoint-forces
+
+## Policy
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` is only
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4` (`input_cp2k_xc.F` usage string) — **no**
+`TYPE XDM`. Binary checked offline:
+
+```text
+cp2k.psmp  version 2026.1  Source code revision git:5e54ba2
+  via /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+```
+
+Canonical density-dependent XDM oracles are postg / critic2 / QE
+`xdm_dispersion`. Atomiverse ships the **free-atom** foothold (geometry-only
+multipole moments + CRC α) with dual pure-Python lattice sum + analytic
+gradient. Fair wall is therefore **perf_exempt** — never fake
+`oracle: cp2k`. Same policy as `gpw-xdm-forces` / `gpw-xdm-kpoint-stress` /
+`gpw-xdm-ice`.
+
+## Residual closed
+
+Dedicated multi-k ionic-force pin for free-atom XDM. Product multi-k
+`assemble_gpw_forces_kpoints` already folds `xdm` (same geometry-only
+`xdm_pbe` call as Γ); this slug hard-gates dual pure-Python energy/force
+pins + multi-k product wiring (H₂ 1×1×2).
+
+## Pins
+
+### Water dimer — free-atom XDM (QE NC-PBE a1/a2, rcut 50 Å)
+
+Geometry (Å):
+
+```
+O  0.000000  0.000000  0.000000
+H  0.758602  0.000000  0.504284
+H  0.758602  0.000000 -0.504284
+O  3.000000  0.000000  0.000000
+H  3.758602  0.000000  0.504284
+H  3.758602  0.000000 -0.504284
+```
+
+Å→Bohr: `1/0.52917720859` (ATV).
+
+- Isolated: E_disp = −2.1020435998516220×10⁻³ Ha
+- Periodic: E_disp = −2.1148157612879029×10⁻³ Ha
+
+Force dual-gate (never live in ctest):
+
+```text
+max |F_product − F_fd(h=1e-5)| ≤ 1e-6 Ha/Bohr
+|sum F| ≤ 1e-8 Ha/Bohr
+```
+
+Isolated free-atom sample F [Ha/Bohr] (ATV order O H H O H H) — bit-class
+match to dual pure-Python (same numbers as `gpw-xdm-forces`):
+
+| Atom | Fx | Fy | Fz |
+| ---- | -- | -- | -- |
+| O0 | +1.6875829936003448e-04 | 0 | 0 |
+| H0 | +6.9736686381575340e-05 | 0 | −1.3172272218329521e-05 |
+| H1 | +6.9736686381575340e-05 | 0 | +1.3172272218329521e-05 |
+| O1 | −1.1378113807647229e-04 | 0 | 0 |
+| H2 | −9.7225267023356434e-05 | 0 | −1.5448899346549854e-05 |
+| H3 | −9.7225267023356434e-05 | 0 | +1.5448899346549854e-05 |
+
+Provenance: XDM is geometry-only — independent of the electronic
+Monkhorst–Pack mesh — so the unstrained energy/force pins are bit-identical
+to `gpw-xdm-forces` / `gpw-xdm-ice`. The multi-k product path must still
+reproduce the wiring gate because `assemble_gpw_forces_kpoints` rebuilds
+\(F_{\mathrm{XDM}}\) after the k-summed electronic assembly.
+
+### H₂ multi-k wiring
+
+- Cell 12³ Bohr, k-mesh 1×1×2, PADE + DZV-GTH-PADE, bond 1.0 Bohr.
+- `xdm=true`, periodic free-atom lattice sum (rcut 50 Å).
+- Gate: \(F^{k+\mathrm{XDM}}-F^{k}\approx F_{\mathrm{XDM}}^{\mathrm{geom}}\)
+  to 1e-8 Ha/Bohr.
+
+See `regressions/gpw/gpw-xdm-kpoint-forces/REFERENCE.md`.
