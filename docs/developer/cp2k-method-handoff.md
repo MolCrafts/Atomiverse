@@ -1,5 +1,61 @@
 # CP2K capability loop — handoff
 
+## Harness wave 2 (shift) 2026-08-01 (parent `dev` @ `79bcfa14`)
+
+| Field | Value |
+| ----- | ----- |
+| Branch | `dev` (ahead of `origin/dev`; **no push**) |
+| Incomplete / `in_progress` | **1** (`[~] gpw-ts-kpoint-stress`) |
+| Open CP2K specs on `dev` | **0** (PySCF deferred only: `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp`) |
+| Specs closed this harness | **7** (deleted: wave-2 staff batch; optB88-kpoints / hirshfeld had no live specs) |
+| Unmerged staff `wf/*` | **1** incomplete kept (`wf/gpw-ts-kpoint-stress` @ `65aa0e6d`; do not prune) |
+| Isolation worktrees | **0** (clearup already ran) |
+| Leftover builds | none in loop scope |
+| Pending gaps | **2** residual (not exhausted — GapCensus owns discovery) |
+| Blocked | **6** (VV10 + hybrid / GAPW / PAW / CUDA-GPW / meta-GGA) |
+| Done this wave | **9** landings (staff list; 8 new rows under harness wave 2 + prior worker-wave 2 pair folded in) |
+| Oracle | CP2K 2026.1 source build `…/cp2k/install` (`git:5e54ba2`); offline pins only; D4 twin uses private libdftd4 rebuild |
+| Loop docs | queue / loop / handoff / specs INDEX / residual prose **synced** |
+
+### Wave staff → done
+
+| Slug | Domain | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
+| ---- | ------ | ---------- | --------------------------------------------- |
+| `gpw-d4-kpoint-stress` | gpw | `reg_gpw-d4-kpoint-stress` | **0.139** (13.11 / 94.525; CP2K libdftd4 NUMERICAL Δσ) |
+| `gpw-xdm-kpoint-stress` | gpw | `reg_gpw-xdm-kpoint-stress` | **perf_exempt** (no CP2K XDM) |
+| `gpw-hirshfeld-uks-kpoints` | gpw | `reg_gpw-hirshfeld-uks-kpoints` | **perf_exempt** (no CP2K TS/MBD) |
+| `cpmd-uks-thermostat-kpoints` | dynamics | `reg_cpmd-uks-thermostat-kpoints` | **perf_exempt** (no CP fictitious-mass twin) |
+| `periodic-wannier-gpw-uks` | response | `reg_periodic-wannier-gpw-uks` | **9.57** (within_10x) |
+| `periodic-scs-mp2-si` | gpw | `reg_periodic-scs-mp2-si` | **0.424** |
+| `gpw-optb88-uks` | gpw | `reg_gpw-optb88-uks` | **3.35** |
+| `gpw-vdw-uks-kpoint-multigrid` | gpw | `reg_gpw-vdw-uks-kpoint-multigrid` | **0.85** |
+| `gpw-optb88-kpoints` | gpw | `reg_gpw-optb88-kpoints` | **0.67** |
+
+### Incomplete kept `[~]` (do not demote)
+
+| Slug | Branch | Tip | Note |
+| ---- | ------ | --- | ---- |
+| `gpw-ts-kpoint-stress` | `wf/gpw-ts-kpoint-stress` | `65aa0e6d` | feat tip ahead of `dev`; no `regressions/gpw/gpw-ts-kpoint-stress` on parent |
+
+### Roadmap ○→✓ this harness
+
+| Row | Doc | Note |
+| --- | --- | ---- |
+| *(none)* | — | capability table rows already ✓ (dispersion / vdW / AIMD / MLWF / MP2 / optB88) |
+| Residual prose | `dft.md` intro + §8/§10/§11 + `index.md` GPW | refresh open residuals → multi-k **TS stress** `[~]` + multi-k D3/D4 **ATM forces** pending only |
+
+### Pending residual
+
+**Pending = 2** (`gpw-d3-atm-kpoint-forces`, `gpw-d4-atm-kpoint-forces`).
+**Incomplete = 1** (multi-k free-atom TS stress — unmerged `wf/*`). Next wave
+starts with **Recover incomplete** (merge or finish `gpw-ts-kpoint-stress`)
+then GapCensus. Blocked = 6 unchanged.
+
+Do **not** staff PySCF deferred specs. No push from parent.
+**Queue not exhausted** — GapCensus owns discovery; incomplete ≫ pending.
+
+---
+
 ## Harness wave 1 (shift) 2026-08-01 (parent `dev` @ `424d6989`)
 
 | Field | Value |

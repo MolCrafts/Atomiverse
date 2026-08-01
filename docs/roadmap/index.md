@@ -297,12 +297,11 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   product after green wave-5 merges: multi-k UKS nonlocal vdW
   (`reg_gpw-vdw-uks-kpoints`), multi-k D3/D3(BJ)/ATM stress pins,
   multi-k UKS BOMD (`reg_gpw-bomd-uks-kpoints`), Γ-UKS vdW multigrid
-  (`reg_gpw-vdw-uks-multigrid`), multi-k UKS Hirshfeld
-  (`reg_gpw-hirshfeld-uks-kpoints`); ships multi-k UKS CPMD eNH combo
-  (`reg_cpmd-uks-thermostat-kpoints`); residual pending / incomplete:
-  multi-k TS stress dedicated pin (staff `[~]`), multi-k UKS
-  vdW×multigrid, multi-k RKS
-  optB88-vdW, multi-k D3/D4 ATM force pins (GapCensus wave 2);
+  (`reg_gpw-vdw-uks-multigrid`); **harness wave 2 (shift, 2026-08-01)**
+  ships multi-k D4/XDM stress, multi-k UKS Hirshfeld, multi-k UKS CPMD
+  eNH, GPW UKS MLWF, SCS-MP2, Γ-UKS + multi-k RKS optB88-vdW, multi-k
+  UKS vdW×multigrid; residual pending / incomplete: multi-k TS stress
+  dedicated pin (staff `[~]`), multi-k D3/D4 ATM force pins;
   stock VV10 remains **blocked** (no CP2K twin); hybrids / meta-GGA /
   GAPW blocked — see `cp2k-method-queue.md` (queue not exhausted —
   GapCensus owns next discovery).

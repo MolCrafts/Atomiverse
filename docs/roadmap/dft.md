@@ -47,15 +47,17 @@ DFPT (`reg_dfpt-gga-spin-finite-q-si`); **harness wave 1 (shift, 2026-08-01)**
 ships multi-k UKS nonlocal **vdW** (`reg_gpw-vdw-uks-kpoints`), multi-k
 **D3/D3(BJ)/ATM stress** pins, multi-k UKS **BOMD**
 (`reg_gpw-bomd-uks-kpoints`), and Γ-UKS vdW **multigrid**
-(`reg_gpw-vdw-uks-multigrid`); multi-k UKS **Hirshfeld** product
-(`reg_gpw-hirshfeld-uks-kpoints`); multi-k UKS **vdW×multigrid** triple
-combo product (`reg_gpw-vdw-uks-kpoint-multigrid`); **worker wave 2
-(2026-08-01)** ships multi-k UKS CPMD **eNH** combo pin
-(`reg_cpmd-uks-thermostat-kpoints`), multi-k **D4/XDM stress**, GPW spin
-**MLWF**, SCS-**MP2** scale pin, Γ-UKS **optB88-vdW**; open residuals:
-multi-k **TS stress** dedicated pin, multi-k RKS **optB88-vdW**, multi-k
-D3/D4 **ATM forces** dedicated pins
-(GapCensus wave 2 2026-08-01);
+(`reg_gpw-vdw-uks-multigrid`); **harness wave 2 (shift, 2026-08-01)**
+ships multi-k **D4/XDM stress** (`reg_gpw-d4-kpoint-stress` /
+`reg_gpw-xdm-kpoint-stress`), multi-k UKS **Hirshfeld**
+(`reg_gpw-hirshfeld-uks-kpoints`), multi-k UKS CPMD **eNH**
+(`reg_cpmd-uks-thermostat-kpoints`), GPW spin **MLWF**
+(`reg_periodic-wannier-gpw-uks`), SCS-**MP2** (`reg_periodic-scs-mp2-si`),
+Γ-UKS + multi-k RKS **optB88-vdW** (`reg_gpw-optb88-uks` /
+`reg_gpw-optb88-kpoints`), multi-k UKS **vdW×multigrid**
+(`reg_gpw-vdw-uks-kpoint-multigrid`); open residuals: multi-k **TS stress**
+dedicated pin (`[~]`), multi-k D3/D4 **ATM forces** dedicated pins
+(not queue exhausted — GapCensus owns discovery);
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -284,7 +286,8 @@ volumes productize for **closed-shell RKS** (Γ + multi-k), **Γ-UKS**
 (`reg_gpw-hirshfeld-uks`), **and multi-k UKS**
 (`reg_gpw-hirshfeld-uks-kpoints`; `fold_dispersion_k_uks`). **optB88-vdW**
 (optB88 exchange + DRSLL nonlocal)
-ships on GPW (`reg_gpw-optb88-vdw`). Stock **VV10** (distinct from rVV10;
+ships on GPW Γ RKS (`reg_gpw-optb88-vdw`), **Γ-UKS** (`reg_gpw-optb88-uks`),
+**and multi-k RKS** (`reg_gpw-optb88-kpoints`). Stock **VV10** (distinct from rVV10;
 CP2K 2026.1 has no `TYPE VV10`) is **blocked** in the CP2K queue
 (`gpw-vv10-ice` — no offline twin; product VV-family remains rVV10).
 **DFT-D4 analytic fixed-\(P\) stress** productizes (`reg_gpw-d4-stress`);
@@ -317,9 +320,11 @@ periodic MBD, strained-cell pymbd pins). Dedicated **TS / XDM stress** pins are 
 Multi-k dedicated stress pins for **D3 / D3(BJ) / D3 ATM (C9)** are product
 (`reg_gpw-d3-kpoint-stress` / `reg_gpw-d3bj-kpoint-stress` /
 `reg_gpw-d3-atm-kpoint-stress`; CP2K 2026.1 NUMERICAL stress-difference
-twins on MP meshes). Multi-k **D4 / TS / XDM** stress pins remain queued
-(`gpw-d4-kpoint-stress` / `gpw-ts-kpoint-stress` / `gpw-xdm-kpoint-stress`;
-k-path geometry-only folds already product). The **D3 ATM stress** pin is product
+twins on MP meshes). Multi-k **D4** and **XDM** stress pins are product
+(`reg_gpw-d4-kpoint-stress` CP2K libdftd4 NUMERICAL Δσ;
+`reg_gpw-xdm-kpoint-stress` dual pure-Python strain); multi-k free-atom
+**TS** stress remains incomplete (`[~] gpw-ts-kpoint-stress` on unmerged
+`wf/*`). The **D3 ATM stress** pin is product
 (`reg_gpw-d3-atm-stress`: CP2K 2026.1 `STRESS_TENSOR NUMERICAL`
 difference C9 on−off isolates the pure ATM stress, Δσ parity 1.1e−13
 Ha/Bohr³ at CP2K's own `DX 0.001` FD step — the hard-gated triple sum is
@@ -338,11 +343,11 @@ Multi-k **UKS** + nonlocal is product (`reg_gpw-vdw-uks-kpoints`; dual-spin
 \(V_{\mathrm{nl}}[\rho]\) fold on the k path). Multi-k UKS × nonlocal ×
 REL_CUTOFF multigrid is product (`reg_gpw-vdw-uks-kpoint-multigrid`;
 matched CP2K NGRIDS 4 / DRSLL / UKS / MP twin + multi-k UKS sg↔mg
-consistency). Γ-UKS **optB88-vdW** spin path is
-product-shaped but unpinned (queued `gpw-optb88-uks`); multi-k RKS
-optB88-vdW likewise (queued `gpw-optb88-kpoints`). Multi-k **ATM forces**
-(geometry-only fold product; dedicated pins queued
-`gpw-d3-atm-kpoint-forces` / `gpw-d4-atm-kpoint-forces`).
+consistency). Γ-UKS **optB88-vdW** is product (`reg_gpw-optb88-uks`; CP2K
+UKS OptB88+DRSLL twin); multi-k RKS optB88-vdW is product
+(`reg_gpw-optb88-kpoints`). Multi-k **ATM forces** (geometry-only fold
+product; dedicated pins queued `gpw-d3-atm-kpoint-forces` /
+`gpw-d4-atm-kpoint-forces`).
 
 ## 9. Composite DFT Methods
 
@@ -436,12 +441,16 @@ Two periodic DFT engines exist, with disjoint strengths:
   **blocked** (no CP2K twin). Product after green merge: multi-k UKS
   nonlocal vdW (`reg_gpw-vdw-uks-kpoints`), multi-k D3/D3(BJ)/ATM stress,
   multi-k UKS BOMD (`reg_gpw-bomd-uks-kpoints`), Γ-UKS vdW multigrid
-  (`reg_gpw-vdw-uks-multigrid`), multi-k UKS Hirshfeld
-  (`reg_gpw-hirshfeld-uks-kpoints`), multi-k UKS CPMD eNH combo
-  (`reg_cpmd-uks-thermostat-kpoints`). Open residuals: multi-k TS stress
-  dedicated pin (`[~]`), multi-k UKS vdW×multigrid, multi-k RKS
-  optB88-vdW, multi-k D3/D4 ATM force pins (see `cp2k-method-queue.md`
-  GapCensus wave 2).
+  (`reg_gpw-vdw-uks-multigrid`); **harness wave 2 (shift, 2026-08-01)**
+  ships multi-k D4/XDM stress, multi-k UKS Hirshfeld, multi-k UKS CPMD
+  eNH, GPW UKS MLWF, SCS-MP2, Γ-UKS + multi-k RKS optB88-vdW, multi-k UKS
+  vdW×multigrid (`reg_gpw-d4-kpoint-stress` / `reg_gpw-xdm-kpoint-stress`
+  / `reg_gpw-hirshfeld-uks-kpoints` / `reg_cpmd-uks-thermostat-kpoints` /
+  `reg_periodic-wannier-gpw-uks` / `reg_periodic-scs-mp2-si` /
+  `reg_gpw-optb88-uks` / `reg_gpw-optb88-kpoints` /
+  `reg_gpw-vdw-uks-kpoint-multigrid`). Open residuals: multi-k TS stress
+  dedicated pin (`[~]`), multi-k D3/D4 ATM force pins (see
+  `cp2k-method-queue.md`; queue not exhausted).
   Hybrids / meta-GGA / GAPW / PAW remain blocked (queue not exhausted —
   see `cp2k-method-queue.md`). CPU only.
 
@@ -515,9 +524,8 @@ Which engine backs which ✓:
   `reg_periodic-ri-mp2-si` vs CP2K 2026.1; Poisson foothold
   `reg_periodic-mp2-si`) **and multi-k RI-GPW** (`reg_periodic-mp2-kpoints`)
   **and Γ UMP2@UKS** (`reg_periodic-ump2-si`) **and multi-k UMP2**
-  (`reg_periodic-ump2-kpoints`). SCS scales (`mp2_os_scale` /
-  `mp2_ss_scale`) are product-shaped but unpinned (queued
-  `periodic-scs-mp2-si`).
+  (`reg_periodic-ump2-kpoints`) **and Γ SCS-MP2** (`mp2_os_scale` /
+  `mp2_ss_scale`; `reg_periodic-scs-mp2-si` vs CP2K SCALE_S/SCALE_T).
   **Periodic RPA** is **Γ-point dRPA@KS** product (`GpwDft::direct_rpa`;
   plasmon formula; `reg_periodic-rpa-si`), **multi-k k-diagonal dRPA**
   (`reg_periodic-rpa-kpoints`), **finite-q inter-k dRPA**
@@ -611,8 +619,8 @@ Which engine backs which ✓:
   pin; `reg_periodic-wannier-si`) **and collinear-spin**
   (`reg_periodic-wannier-uks`) **and GPW-grid MLWF** (multi-k
   Marzari–Vanderbilt on the Gaussian-basis path;
-  `reg_periodic-wannier-gpw`; collinear UKS still throws —
-  queued `periodic-wannier-gpw-uks`).
+  `reg_periodic-wannier-gpw`) **and collinear UKS GPW MLWF**
+  (`reg_periodic-wannier-gpw-uks`).
 
 ## 12. Periodic infrastructure
 

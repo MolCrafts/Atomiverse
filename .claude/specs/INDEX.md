@@ -3,17 +3,24 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
-## Live — CP2K worker wave 2 (2026-08-01)
+## Closed — CP2K harness wave 2 (shift) (2026-08-01)
 
-| Spec | Status | One-line |
-| ---- | ------ | -------- |
-| [cpmd-uks-thermostat-kpoints](cpmd-uks-thermostat-kpoints/spec.md) | staffed `wf/cpmd-uks-thermostat-kpoints` | Multi-k UKS CPMD + electronic Nosé–Hoover combo pin |
+Merged / landed on `dev` (HEAD `79bcfa14` at harness close); specs deleted;
+history is the git log. Incomplete staff kept `[~]` on unmerged
+`wf/gpw-ts-kpoint-stress` only.
+
+| Queue | Specs (deleted; see git) | Shipped highlights |
+| ----- | ------------------------ | ------------------ |
+| cp2k-method-loop harness wave 2 (shift) | gpw-d4-kpoint-stress, gpw-xdm-kpoint-stress, cpmd-uks-thermostat-kpoints, periodic-wannier-gpw-uks, periodic-scs-mp2-si, gpw-optb88-uks, gpw-vdw-uks-kpoint-multigrid (+ hirshfeld / optb88-kpoints product without live specs) | multi-k D4/XDM stress; multi-k UKS Hirshfeld MBD; multi-k UKS CPMD eNH; GPW UKS MLWF; Γ SCS-MP2; Γ-UKS + multi-k RKS optB88-vdW; multi-k UKS vdW×multigrid |
+
+Do not re-create closed slugs without superseding intent.
 
 ## Closed — CP2K harness wave 1 (shift) (2026-08-01)
 
 Merged into `dev` (six `--no-ff` feature merges + roadmap residual refresh
 HEAD `424d6989`); specs deleted; history is the git log. Incomplete staff
-kept `[~]` on unmerged `wf/*` (D4/TS/XDM k-stress + multi-k UKS Hirshfeld).
+kept `[~]` on unmerged `wf/*` (D4/TS/XDM k-stress + multi-k UKS Hirshfeld)
+— recovered in harness wave 2 except TS k-stress.
 
 | Queue | Specs (deleted; see git) | Shipped highlights |
 | ----- | ------------------------ | ------------------ |
@@ -477,11 +484,9 @@ to green. Specs deleted on close; history in git (commits f9a6443a..HEAD).
 | [rsh-eri-cam-b3lyp](rsh-eri-cam-b3lyp/) | pyscf / RSH | open (deferred) |
 
 Open CP2K specs on `dev` = **0**. Stock VV10 is **blocked**. Incomplete
-`[~]` = **4** (`gpw-d4-kpoint-stress`, `gpw-ts-kpoint-stress`,
-`gpw-xdm-kpoint-stress`, `gpw-hirshfeld-uks-kpoints` — unmerged `wf/*` after
-harness wave 1 2026-08-01). Pending residual **4**
-(`cpmd-uks-thermostat-kpoints`, `periodic-wannier-gpw-uks`,
-`periodic-scs-mp2-si`, `gpw-optb88-uks`); **not** queue exhausted.
+`[~]` = **1** (`gpw-ts-kpoint-stress` — unmerged `wf/*` after harness wave 2
+2026-08-01). Pending residual **2** (`gpw-d3-atm-kpoint-forces`,
+`gpw-d4-atm-kpoint-forces`); **not** queue exhausted.
 
 ## Closed — CP2K harness wave 12 (2026-07-26)
 

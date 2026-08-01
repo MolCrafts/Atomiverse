@@ -66,6 +66,22 @@ args: { "mode":"exhaust", "staff_count":10, "max_waves":20, "target_branch":"dev
 
 ## Run log
 
+- **2026-08-01 harness wave 2 (shift) (parent `dev` @ `79bcfa14`):** 8 of 9
+  staffed on `dev` → done: `gpw-d4-kpoint-stress` (CP2K libdftd4 multi-k
+  NUMERICAL Δσ, ratio **0.139**), `gpw-xdm-kpoint-stress` (dual pure-Python
+  strain + FD dual, **perf_exempt**), `gpw-hirshfeld-uks-kpoints` (multi-k
+  UKS MBD@rsSCS E_disp, **perf_exempt**), `cpmd-uks-thermostat-kpoints`
+  (multi-k UKS eNH combo, **perf_exempt**), `periodic-wannier-gpw-uks`
+  (GPW UKS MLWF, ratio **9.57**), `periodic-scs-mp2-si` (Γ RI-GPW SCS
+  scales, ratio **0.424**), `gpw-optb88-uks` (Γ-UKS OptB88+DRSLL, ratio
+  **3.35**), `gpw-vdw-uks-kpoint-multigrid` (triple combo, ratio **0.85**),
+  `gpw-optb88-kpoints` (multi-k RKS OptB88+DRSLL, ratio **0.67**). One
+  staff stays `[~]`: `gpw-ts-kpoint-stress` (`wf/*` @ `65aa0e6d`; do not
+  demote). Specs closed (7 deleted). Residual pending **2** (multi-k D3/D4
+  ATM force pins). Roadmap: **no ○/✓ table flips**; residual prose → TS
+  k-stress + ATM k-forces only. Clearup already ran. Queue **not**
+  exhausted. No push.
+
 - **2026-08-01 harness wave 1 (shift) (parent `dev` @ `424d6989`):** 6 of 10
   staffed merged → done: `gpw-vdw-uks-kpoints` (dual-spin multi-k nonlocal
   vdW-DF, CP2K NON_LOCAL+UKS+k pin, ratio **0.35**), `gpw-d3-kpoint-stress`
