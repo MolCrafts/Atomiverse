@@ -23,6 +23,7 @@
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/dft_plus_u.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
+#include "atomiverse/cpu/gpw/internal/hirshfeld_volumes.h"
 #include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/ts_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/vdw_df.h"
@@ -76,6 +77,7 @@ GpwDft copy_gpw(const GpwDft& m) {
     p.mbd = m.mbd;
     for (int d = 0; d < 3; ++d)
         p.mbd_k_mesh[d] = m.mbd_k_mesh[d];
+    p.hirshfeld = m.hirshfeld;
     p.use_ot = m.use_ot;
     for (int d = 0; d < 3; ++d)
         p.k_mesh[d] = m.k_mesh[d];
@@ -92,6 +94,32 @@ GpwDft copy_gpw(const GpwDft& m) {
 bool uses_kpath(const GpwDft& cfg) {
     return !cfg.k_points.empty() || cfg.k_mesh[0] != 1 || cfg.k_mesh[1] != 1
            || cfg.k_mesh[2] != 1;
+}
+
+
+/// Volume ratios for TS/MBD force fold. Empty ⇒ free-atom (v=1). When
+/// `cfg.hirshfeld`, ratios come from the SCF payload if present, else from the
+/// density already assembled for Hellmann–Feynman (same ρ as energy fold).
+/// Density-chain ∂v/∂R is out of scope — forces hold v fixed at this geometry.
+std::vector<double> ts_mbd_vol_ratio(const GpwDft& cfg,
+                                     const UniformGrid& grid,
+                                     const std::vector<double>& rho,
+                                     const std::vector<int>& Z,
+                                     const std::vector<std::array<double, 3>>& pos,
+                                     bool periodic,
+                                     const std::vector<double>* scf_ratios) {
+    if (!cfg.hirshfeld || !(cfg.ts || cfg.mbd))
+        return {};
+    if (scf_ratios != nullptr && !scf_ratios->empty()) {
+        if (scf_ratios->size() != Z.size())
+            throw std::runtime_error(
+                "GPW forces: volume_ratios size mismatch vs atoms");
+        return *scf_ratios;
+    }
+    if (rho.empty())
+        throw std::runtime_error(
+            "GPW forces: hirshfeld requires density or SCF volume_ratios");
+    return hirshfeld_volume_ratios(grid, rho, Z, pos, cfg.cell, periodic);
 }
 
 // Solver-side (Z, ℓ, U_ha) tables + per-AO shell tags for cfg.plus_u.
@@ -258,7 +286,8 @@ namespace {
 std::vector<std::array<double, 3>>
 assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     const RealMatrix& P, const RealMatrix& W,
-                    const RealMatrix* P_beta = nullptr) {
+                    const RealMatrix* P_beta = nullptr,
+                    const std::vector<double>* scf_vol_ratios = nullptr) {
     const std::vector<GridBasisFunction> basis = global_basis(atoms);
     const int nb = static_cast<int>(basis.size());
     const int na = static_cast<int>(atoms.size());
@@ -649,6 +678,10 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 atoms[static_cast<std::size_t>(i)].pos[2]};
         }
         constexpr double kAng2Bohr = 1.0 / 0.52917720859;
+        // Hirshfeld-scaled TS/MBD: fixed volume ratios from SCF density (or
+        // recompute from rho if scf_vol_ratio_ not threaded — assemble uses rho).
+        const std::vector<double> vol_ratio =
+            ts_mbd_vol_ratio(cfg, grid, rho, Z, pos, periodic, scf_vol_ratios);
         if (cfg.mbd) {
             // Same isolated / periodic switch as fold_dispersion (mbd_k_mesh).
             const bool mbd_per = cfg.mbd_k_mesh[0] > 0 || cfg.mbd_k_mesh[1] > 0
@@ -657,7 +690,7 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 throw std::runtime_error(
                     "GPW forces MBD: mbd_k_mesh requires a periodic cell");
             const MbdResult mbd =
-                mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0, {},
+                mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0, vol_ratio,
                               mbd_per ? cfg.mbd_k_mesh : nullptr);
             for (int i = 0; i < na; ++i)
                 for (int k = 0; k < 3; ++k)
@@ -671,7 +704,9 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     forces[i][k] += xdm.forces[static_cast<std::size_t>(i)][k];
         } else if (cfg.ts) {
             constexpr double kRcutTs = 50.0 * kAng2Bohr;
-            const TsResult ts = ts_pbe(Z, pos, cfg.cell, periodic, kRcutTs);
+            const TsResult ts =
+                ts_pbe(Z, pos, cfg.cell, periodic, kRcutTs, 0.94, 20.0,
+                       vol_ratio);
             for (int i = 0; i < na; ++i)
                 for (int k = 0; k < 3; ++k)
                     forces[i][k] += ts.forces[static_cast<std::size_t>(i)][k];
@@ -1314,6 +1349,10 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                     atoms[static_cast<std::size_t>(i)].pos[2]};
             }
             constexpr double kAng2Bohr = 1.0 / 0.52917720859;
+            // Prefer SCF volume_ratios (energy fold); fall back to k-summed rho.
+            const std::vector<double> vol_ratio =
+                ts_mbd_vol_ratio(cfg, grid, rho, Z, pos, periodic,
+                                 &scf.volume_ratios);
             if (cfg.mbd) {
                 // Same isolated / periodic switch as Γ + fold_dispersion.
                 const bool mbd_per = cfg.mbd_k_mesh[0] > 0
@@ -1323,7 +1362,8 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                     throw std::runtime_error(
                         "GPW k-forces MBD: mbd_k_mesh requires a periodic cell");
                 const MbdResult mbd =
-                    mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0, {},
+                    mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0,
+                                  vol_ratio,
                                   mbd_per ? cfg.mbd_k_mesh : nullptr);
                 for (int i = 0; i < na; ++i)
                     for (int k = 0; k < 3; ++k)
@@ -1340,7 +1380,8 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
             } else if (cfg.ts) {
                 constexpr double kRcutTs = 50.0 * kAng2Bohr;
                 const TsResult ts =
-                    ts_pbe(Z, pos, cfg.cell, periodic, kRcutTs);
+                    ts_pbe(Z, pos, cfg.cell, periodic, kRcutTs, 0.94, 20.0,
+                           vol_ratio);
                 for (int i = 0; i < na; ++i)
                     for (int k = 0; k < 3; ++k)
                         forces[i][k] +=
@@ -1405,14 +1446,16 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     "gpw_forces_from_scf: UKS result missing β orbitals/density");
             W += energy_weighted(scf.C_beta, scf.eps_beta, cfg.n_beta, 1.0);
         }
-        return assemble_gpw_forces(atoms, cfg, scf.P, W, &scf.P_beta);
+        return assemble_gpw_forces(atoms, cfg, scf.P, W, &scf.P_beta,
+                                       &scf.volume_ratios);
     }
 
     // Closed-shell RKS: W_μν = Σ_i 2 ε_i C_μi C_νi (occupied).
     const int n_occ = cfg.n_occ > 0 ? cfg.n_occ
                                     : static_cast<int>(scf.eps.size());
     RealMatrix W = energy_weighted(scf.C, scf.eps, n_occ, 2.0);
-    return assemble_gpw_forces(atoms, cfg, scf.P, W);
+    return assemble_gpw_forces(atoms, cfg, scf.P, W, nullptr,
+                               &scf.volume_ratios);
 }
 
 std::vector<std::array<double, 3>>

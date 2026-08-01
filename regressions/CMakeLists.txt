@@ -366,6 +366,9 @@ if(ATV_BUILD_GPW)
     # Multi-k collinear UKS Hirshfeld volumes for TS/MBD (fold_dispersion_k_uks;
     # offline libMBD / literature pin — no stock CP2K TS/MBD).
     atv_add_regression(gpw gpw-hirshfeld-uks-kpoints THREADS 8)
+    # Analytic ionic forces with Hirshfeld-scaled TS/MBD volumes
+    # (fix found rot: energy folded ratios, force/stress free-atom only).
+    atv_add_regression(gpw gpw-hirshfeld-forces THREADS 8)
     atv_add_regression(gpw ot-minimizer-water THREADS 8)
     atv_add_regression(gpw ot-uks-o2 THREADS 8)
     atv_add_regression(gpw ot-kpoints THREADS 8)

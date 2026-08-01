@@ -11,7 +11,7 @@
 /// Optional per-atom volume ratios scale free-atom α, C6, R as in TS:
 /// α ← α_free · v, C6 ← C6_free · v², R ← R_free · v^{1/3} (v = V/V_free).
 /// Default empty ratios ⇒ free-atom limit (all v = 1). Hirshfeld volumes from
-/// the GPW density are a follow-on (not required for the free-atom pin).
+/// the GPW density (`GpwDft::hirshfeld`) feed energy, forces, and stress.
 ///
 /// Periodic lattice sums are pure real-space (orthorhombic) out to `rcut_bohr`;
 /// three-body / MBD is out of scope (see `gpw-mbd-ice`).

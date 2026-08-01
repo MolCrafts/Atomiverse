@@ -1,0 +1,42 @@
+# Offline pin notes — gpw-hirshfeld-forces
+
+## Method
+
+Hirshfeld \(V/V_{\mathrm{free}}\) from the GPW PBE valence density
+(`hirshfeld_tables.h`) → TS / MBD@rsSCS with scaled α/C6/R. Analytic ionic
+forces hold \(v_A\) fixed at the SCF density (density-chain out of scope).
+Analytic fixed-\(P\) stress rebuilds \(E_{\mathrm{disp}}\) with the same
+reference volume ratios under orthorhombic strain.
+
+## Why not stock CP2K QS?
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` is only DFTD2|DFTD3|DFTD3(BJ)|DFTD4 — no
+stock TS/MBD (verified host binary `cp2k.psmp` 2026.1 git:5e54ba2 under
+`/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install`).
+
+Hard pin:
+
+1. Product kernel force dual-gate vs independent central FD of the same
+   fixed-\(v\) energy (TS and MBD@rsSCS).
+2. Product wiring: `gpw_forces_from_scf` with `ts+hirshfeld` adds
+   `ts_pbe(…, scf.volume_ratios)`, not free-atom.
+3. E_disp isolated MBD with the published water-dimer Hirshfeld volumes
+   matches `gpw-mbd-hirshfeld` pin −1.1479852469005181e-03 Ha.
+
+Geometry: same water dimer as `gpw-mbd-hirshfeld` / `gpw-ts-forces`.
+
+## Host check (no twin .inp)
+
+```bash
+source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+cp2k.psmp --version   # CP2K version 2026.1 (git:5e54ba2)
+# PAIR_POTENTIAL has no TYPE TS | MBD — literature/libMBD oracle only.
+```
+
+## Pin summary
+
+```
+E_disp (MBD@rsSCS, fixed v from mbd-hirshfeld) = -1.1479852469005181e-03 Ha
+force dual-gate max|F-F_fd| ≤ 1e-6 Ha/Bohr (TS + MBD)
+product wiring max|Δ| ≤ 1e-7 Ha/Bohr (ts+hirshfeld)
+```

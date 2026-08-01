@@ -93,6 +93,7 @@ GpwDft copy_gpw(const GpwDft& m) {
     p.vdw_df = m.vdw_df;
     p.vdw_df2 = m.vdw_df2;
     p.rvv10 = m.rvv10;
+    p.hirshfeld = m.hirshfeld;
     p.use_ot = m.use_ot;
     p.plus_u = m.plus_u;
     p.atom_spin_guess = m.atom_spin_guess;
@@ -315,7 +316,8 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                         const std::vector<CplxMatrix>& W_k,
                         const std::vector<KPoint>& kpts,
                         const std::vector<CplxMatrix>* Pa_k = nullptr,
-                        const std::vector<CplxMatrix>* Pb_k = nullptr) {
+                        const std::vector<CplxMatrix>* Pb_k = nullptr,
+                        const std::vector<double>* vol_ratio = nullptr) {
     const bool uks = Pa_k != nullptr;
     if (uks && Pb_k == nullptr)
         throw std::invalid_argument(
@@ -515,7 +517,15 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             // the Ewald + MBD k-mesh lattice sum.
             const bool mbd_per = cfg.mbd_k_mesh[0] > 0 || cfg.mbd_k_mesh[1] > 0
                                  || cfg.mbd_k_mesh[2] > 0;
-            e_disp = mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0, {},
+            // Fixed Hirshfeld volumes from the reference SCF (density-chain
+            // out of scope — same policy as ionic forces).
+            const std::vector<double> empty;
+            const std::vector<double>& vr =
+                (vol_ratio != nullptr) ? *vol_ratio : empty;
+            if (cfg.hirshfeld && vr.empty())
+                throw std::runtime_error(
+                    "gpw_stress MBD: hirshfeld requires SCF volume_ratios");
+            e_disp = mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0, vr,
                                    mbd_per ? cfg.mbd_k_mesh : nullptr)
                          .energy;
         } else if (cfg.xdm) {
@@ -524,7 +534,15 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 xdm_pbe(Z, pos, cfg.cell, /*periodic=*/true, kRcutXdm).energy;
         } else if (cfg.ts) {
             constexpr double kRcutTs = 50.0 * kAng2Bohr;
-            e_disp = ts_pbe(Z, pos, cfg.cell, /*periodic=*/true, kRcutTs).energy;
+            const std::vector<double> empty;
+            const std::vector<double>& vr =
+                (vol_ratio != nullptr) ? *vol_ratio : empty;
+            if (cfg.hirshfeld && vr.empty())
+                throw std::runtime_error(
+                    "gpw_stress TS: hirshfeld requires SCF volume_ratios");
+            e_disp = ts_pbe(Z, pos, cfg.cell, /*periodic=*/true, kRcutTs, 0.94,
+                            20.0, vr)
+                         .energy;
         } else if (cfg.d4) {
             const double s9 = cfg.d4_atm ? 1.0 : 0.0;
             e_disp = cpu::scf::dftd4_energy(
@@ -635,7 +653,8 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                       const RealMatrix& P, const RealMatrix& W,
                       const RealMatrix* P_beta = nullptr,
-                      const RealMatrix* W_beta = nullptr) {
+                      const RealMatrix* W_beta = nullptr,
+                      const std::vector<double>* vol_ratio = nullptr) {
     const int n_disp = (cfg.d3 ? 1 : 0) + (cfg.d3bj ? 1 : 0) + (cfg.d4 ? 1 : 0)
                        + (cfg.ts ? 1 : 0) + (cfg.mbd ? 1 : 0)
                        + (cfg.xdm ? 1 : 0);
@@ -858,7 +877,13 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             if (mbd_per && cfg.nonperiodic)
                 throw std::runtime_error(
                     "gpw_stress MBD: mbd_k_mesh requires a periodic cell");
-            e_disp = mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0, {},
+            const std::vector<double> empty;
+            const std::vector<double>& vr =
+                (vol_ratio != nullptr) ? *vol_ratio : empty;
+            if (cfg.hirshfeld && vr.empty())
+                throw std::runtime_error(
+                    "gpw_stress MBD: hirshfeld requires SCF volume_ratios");
+            e_disp = mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0, vr,
                                   mbd_per ? cfg.mbd_k_mesh : nullptr)
                          .energy;
         } else if (cfg.xdm) {
@@ -866,7 +891,15 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             e_disp = xdm_pbe(Z, pos, cfg.cell, periodic, kRcutXdm).energy;
         } else if (cfg.ts) {
             constexpr double kRcutTs = 50.0 * kAng2Bohr;
-            e_disp = ts_pbe(Z, pos, cfg.cell, periodic, kRcutTs).energy;
+            const std::vector<double> empty;
+            const std::vector<double>& vr =
+                (vol_ratio != nullptr) ? *vol_ratio : empty;
+            if (cfg.hirshfeld && vr.empty())
+                throw std::runtime_error(
+                    "gpw_stress TS: hirshfeld requires SCF volume_ratios");
+            e_disp =
+                ts_pbe(Z, pos, cfg.cell, periodic, kRcutTs, 0.94, 20.0, vr)
+                    .energy;
         } else if (cfg.d4) {
             const double s9 = cfg.d4_atm ? 1.0 : 0.0;
             e_disp = cpu::scf::dftd4_energy(
@@ -1180,16 +1213,27 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
         mp.cell[a] = method.cell[a] * sp;
         mm.cell[a] = method.cell[a] * sm;
 
+        // Fixed-v Hirshfeld ratios from the reference SCF (empty ⇒ free-atom).
+        const std::vector<double>* vr_ptr =
+            (method.hirshfeld && (method.ts || method.mbd)
+             && !scf.volume_ratios.empty())
+                ? &scf.volume_ratios
+                : nullptr;
+        if (method.hirshfeld && (method.ts || method.mbd) && vr_ptr == nullptr)
+            throw std::runtime_error(
+                "gpw_stress: hirshfeld set but SCF volume_ratios empty");
+
         double ep = 0.0, em = 0.0;
         if (kpath) {
-            ep = energy_fixed_P_k(plus, mp, P_k, W_k, kpts, Pa_k_ptr, Pb_k_ptr);
-            em =
-                energy_fixed_P_k(minus, mm, P_k, W_k, kpts, Pa_k_ptr, Pb_k_ptr);
+            ep = energy_fixed_P_k(plus, mp, P_k, W_k, kpts, Pa_k_ptr, Pb_k_ptr,
+                                  vr_ptr);
+            em = energy_fixed_P_k(minus, mm, P_k, W_k, kpts, Pa_k_ptr, Pb_k_ptr,
+                                  vr_ptr);
         } else {
             ep = energy_fixed_P(plus, mp, P_gamma, W_gamma, P_beta_ptr,
-                                W_beta_ptr);
+                                W_beta_ptr, vr_ptr);
             em = energy_fixed_P(minus, mm, P_gamma, W_gamma, P_beta_ptr,
-                                W_beta_ptr);
+                                W_beta_ptr, vr_ptr);
         }
         // σ_aa = −(1/Ω) ∂E/∂ε_aa  (CP2K STRESS_TENSOR convention).
         stress[static_cast<std::size_t>(a)] = -(ep - em) / (2.0 * h) / vol;
