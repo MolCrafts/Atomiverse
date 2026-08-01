@@ -1,0 +1,7 @@
+Offline pin 2026-08-01 — CP2K 2026.1 cp2k.psmp git:5e54ba2
+1 MPI × OMP=8, ENERGY_FORCE + NON_LOCAL DRSLL + MP 2×1×1
+E_tot = -34.186333514352626 Ha
+E_disp = 0.15193559149613 Ha
+CP2K wall TOTAL TIME = 13.216 s
+FORCES| O0 Fx = -8.35844769E-02 Ha/Bohr (full table in REFERENCE.md)
+Never launched by ctest.
