@@ -1232,3 +1232,82 @@ TEST(GpwStress, XdmChangesMultiKDiagonal) {
     EXPECT_GT(max_shift, 1e-12)
         << "XDM is not entering the multi-k stress Lagrangian";
 }
+
+// ── Multi-k free-energy stress under metallic smear ───────────────────────
+
+TEST(GpwStress, MetallicSmearAnalyticMatchesFdDiagonal) {
+    // Periodic H2 on mesh 1×1×2 with Fermi–Dirac smear. Insulator limit of the
+    // free-energy path: fractional f_k payload + fixed-f Hellmann–Feynman
+    // stress must match multi-SCF strain-FD of F (Mermin free energy).
+    // Full BCC Na metal pin is regressions/gpw/gpw-metallic-stress.
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.5, 6.0, 6.0};
+    const std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
+                                        GpwAtom(rB, basis, pot, 1)};
+
+    GpwDft cfg;
+    cfg.cell[0] = cfg.cell[1] = cfg.cell[2] = 12.0;
+    cfg.cutoff_ry = 100.0;
+    cfg.n_occ = 1;
+    cfg.tol = 1e-8;
+    cfg.max_iter = 60;
+    cfg.nonperiodic = false;
+    cfg.local_pp_on_grid = true;
+    cfg.xc = XcKind::PADE;
+    cfg.eps_default = 1e-8;
+    cfg.k_mesh[0] = 1;
+    cfg.k_mesh[1] = 1;
+    cfg.k_mesh[2] = 2;
+    cfg.smearing = Smearing::fermi_dirac;
+    cfg.degauss = 0.02; // Ry
+    cfg.extra_bands = 2;
+
+    // Payload: SCF must expose f_k under smear (move-only GpwDft).
+    {
+        GpwDft sol;
+        sol.cell[0] = sol.cell[1] = sol.cell[2] = 12.0;
+        sol.cutoff_ry = 100.0;
+        sol.n_occ = 1;
+        sol.tol = 1e-8;
+        sol.max_iter = 60;
+        sol.nonperiodic = false;
+        sol.local_pp_on_grid = true;
+        sol.xc = XcKind::PADE;
+        sol.eps_default = 1e-8;
+        sol.k_mesh[0] = 1;
+        sol.k_mesh[1] = 1;
+        sol.k_mesh[2] = 2;
+        sol.smearing = Smearing::fermi_dirac;
+        sol.degauss = 0.02;
+        sol.extra_bands = 2;
+        sol.build(atoms);
+        const auto& scf = sol.run(atoms);
+        ASSERT_TRUE(scf.converged);
+        ASSERT_FALSE(scf.f_k.empty());
+        ASSERT_EQ(static_cast<int>(scf.f_k.size()), scf.n_kpts);
+        ASSERT_FALSE(scf.C_k.empty());
+        EXPECT_NEAR(scf.n_elec_occ, 2.0, 1e-4);
+    }
+
+    const double h = 3e-3;
+    const auto san = gpw_stress(atoms, cfg, h);
+    const auto sfd = gpw_stress_fd(atoms, cfg, h);
+    double max_err = 0.0;
+    for (int a = 0; a < 3; ++a) {
+        const double err = std::abs(san[static_cast<std::size_t>(a)]
+                                    - sfd[static_cast<std::size_t>(a)]);
+        max_err = std::max(max_err, err);
+        std::printf("  smear axis %d  an=%.6e  fd=%.6e  |d|=%.3e\n", a,
+                    san[static_cast<std::size_t>(a)],
+                    sfd[static_cast<std::size_t>(a)], err);
+        EXPECT_TRUE(std::isfinite(san[static_cast<std::size_t>(a)]));
+        EXPECT_TRUE(std::isfinite(sfd[static_cast<std::size_t>(a)]));
+    }
+    EXPECT_DOUBLE_EQ(san[3], 0.0);
+    EXPECT_DOUBLE_EQ(san[4], 0.0);
+    EXPECT_DOUBLE_EQ(san[5], 0.0);
+    EXPECT_LT(max_err, 5e-5)
+        << "metallic-smear free-energy analytic vs multi-SCF FD diagonal";
+}
