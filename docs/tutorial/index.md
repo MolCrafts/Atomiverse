@@ -367,6 +367,7 @@ domain, alphabetical by slug.
 | Finite-\(q\) DFPT phonons at X, pure GGA kernel (Si) | [dfpt-gga-finite-q-si](methods/dfpt-gga-finite-q-si.md) | `regressions/response/dfpt-gga-finite-q-si` |
 | DFPT phonons at Γ, pure GGA kernel (Si) | [dfpt-gga-si](methods/dfpt-gga-si.md) | `regressions/response/dfpt-gga-si` |
 | Finite-\(q\) DFPT at X, joint spin × GGA (Si) | [dfpt-gga-spin-finite-q-si](methods/dfpt-gga-spin-finite-q-si.md) | `regressions/response/dfpt-gga-spin-finite-q-si` |
+| Finite-\(q\) DFPT at X, joint spin × GGA × smear (Si) | [dfpt-gga-spin-finite-q-smearing](methods/dfpt-gga-spin-finite-q-smearing.md) | `regressions/response/dfpt-gga-spin-finite-q-smearing` |
 | DFPT phonons at Γ, joint spin × GGA (Si) | [dfpt-gga-spin-si](methods/dfpt-gga-spin-si.md) | `regressions/response/dfpt-gga-spin-si` |
 | DFPT phonons at Γ, joint spin × GGA × smear (Si) | [dfpt-gga-spin-smearing](methods/dfpt-gga-spin-smearing.md) | `regressions/response/dfpt-gga-spin-smearing` |
 | Incommensurate-\(q\) DFPT phonons (Si) | [dfpt-incommensurate-si](methods/dfpt-incommensurate-si.md) | `regressions/response/dfpt-incommensurate-si` |
