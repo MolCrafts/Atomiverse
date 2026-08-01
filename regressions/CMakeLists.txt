@@ -515,6 +515,8 @@ if(ATV_BUILD_GPW)
     # Multi-k GPW DOS on BCT Si (Gaussian smear of ε_nk; CP2K &PRINT &DOS twin).
     atv_add_regression(gpw gpw-dos-si THREADS 8)
     atv_add_regression(gpw gpw-dos-uks THREADS 8)
+    # Multi-k GPW DOS under metallic FD smear (BCC Na; CP2K SMEAR + &PRINT &DOS).
+    atv_add_regression(gpw gpw-dos-metallic THREADS 8)
     # Multi-k RKS with CP2K REL_CUTOFF multigrid product collocation
     # (offline CP2K 2026.1 pin — gpw-multigrid-kpoints).
     atv_add_regression(gpw gpw-multigrid-kpoints THREADS 8)
