@@ -356,6 +356,10 @@ if(ATV_BUILD_GPW)
     # Multi-k RKS optB88-vdW (OptB88 + DRSLL on k path; offline CP2K
     # 2026.1 KPOINTS + GGA_X_OPTB88_VDW + DRSLL pin — gpw-optb88-kpoints).
     atv_add_regression(gpw gpw-optb88-kpoints THREADS 8)
+    # Multi-k collinear-UKS optB88-vdW (OptB88 + DRSLL on k-UKS path;
+    # offline CP2K 2026.1 LSD + KPOINTS + GGA_X_OPTB88_VDW + DRSLL pin —
+    # gpw-optb88-uks-kpoints).
+    atv_add_regression(gpw gpw-optb88-uks-kpoints THREADS 8)
     atv_add_regression(gpw gpw-mbd-hirshfeld THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-kpoints THREADS 8)
     atv_add_regression(gpw gpw-hirshfeld-uks THREADS 8)

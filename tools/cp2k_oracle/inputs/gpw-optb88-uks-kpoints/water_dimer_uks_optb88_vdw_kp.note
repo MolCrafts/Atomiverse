@@ -1,0 +1,7 @@
+Twin for gpw-optb88-uks-kpoints: water dimer LSD MULT 1, OptB88+PW92+DRSLL,
+MP 2×1×1, NGRIDS 4 / REL_CUTOFF 40, DZVP-MOLOPT-SR-GTH + GTH-PBE.
+CP2K 2026.1 cp2k.psmp git:5e54ba2 (OMP=8, 1 MPI), 2026-08-01 arrhenius1:
+E_tot=-34.487914403936173 Ha, E_disp=+0.15206184094414 Ha, wall 13.29 s
+(/usr/bin/time; CP2K timer 12.867 s). SCF converged 15 steps.
+Log: /tmp/atv-cp2k-gpw-optb88-uks-kpoints/. Spin-degenerate with multi-k RKS
+twin gpw-optb88-kpoints (E_tot identical to printed digits; E_disp Δ~1e-10).
