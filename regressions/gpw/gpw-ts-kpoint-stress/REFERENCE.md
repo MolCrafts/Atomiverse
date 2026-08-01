@@ -103,17 +103,17 @@ CP2K 2026.1 stock has no free-atom TS pair potential, so no fair oracle wall
 exists for a multi-k TS stress run: **`perf_exempt`** — same policy as
 `gpw-ts-stress` / `gpw-ts-forces` / `gpw-mbd-kpoint-stress`.
 
-## Measured results (2026-08-01, first green)
+## Measured results (2026-08-01, rebased on `dev` + dual-gate green)
 
 | Gate | Tol | Measured |
 | ---- | --- | -------- |
-| B \(E_{\mathrm{disp}}\) under strain vs libMBD (6 cells) | 1e−8 Ha | **1.00e−17** |
+| B \(E_{\mathrm{disp}}\) under strain vs libMBD (6 cells) | 1e−8 Ha | **9.98e−18** |
 | A \(E_{\mathrm{disp}}\) multi-k vs Γ pin | 1e−8 Ha | **6.19e−12** |
 | C \(\sigma_{\mathrm{diag}}\) analytic vs multi-SCF FD | 2e−5 Ha/Bohr³ | **1.36e−09** |
 | D wiring vs libMBD FD term | 2e−9 Ha/Bohr³ | **4.01e−12** |
 | E off-diagonals | exactly 0 | **0** |
 | E `kStress` conversion | 1e−9 | exact |
-| Product wall | ≤ 60 s | **10.5 s** (FD twin 48.3 s; SCF 11 iters, nk = 1) |
+| Product wall | ≤ 60 s | **10.03 s** (FD twin 48.42 s; SCF 11 iters, nk = 1 TR-folded 1×1×2) |
 
 σ_diag (ts, analytic, 120 Ry, MP 1×1×2): xx −3.593e−05, yy −8.570e−05,
 zz −3.083e−06 Ha/Bohr³; TS shifts: xx +1.2203e−07, yy −1.596e−09,
