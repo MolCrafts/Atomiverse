@@ -1,0 +1,6 @@
+Twin for gpw-optb88-kpoints: water dimer, OptB88+PW92+DRSLL, MP 2×1×1,
+CUTOFF 200 / NGRIDS 4 / REL_CUTOFF 40, DIAGONALIZATION + DIRECT_P_MIXING.
+Binary: source-built CP2K 2026.1 git:5e54ba2 with libxc 7.0.0
+(source …/cp2k/install/env.sh). Modern XC: &GGA_X_OPTB88_VDW (not legacy &LIBXC).
+Pin 2026-08-01 (1 MPI × OMP=8): E_tot=-34.487914403936173 Ha,
+E_disp=+0.15206184081319 Ha, wall 12.59 s. Log: /tmp/atv-cp2k-gpw-optb88-kpoints/.

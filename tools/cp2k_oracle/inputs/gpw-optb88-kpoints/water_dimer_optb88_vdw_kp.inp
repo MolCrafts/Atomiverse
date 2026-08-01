@@ -1,0 +1,81 @@
+! CP2K twin for regressions/gpw/gpw-optb88-kpoints — multi-k RKS optB88-vdW
+! (OptB88 exchange + PW92 local c + DRSLL nonlocal) on Monkhorst-Pack mesh.
+! Geometry: water dimer family (gpw-optb88-vdw / gpw-vdw-kpoints), 12 Å cell.
+! CP2K 2026.1 libxc: functionals are direct XC_FUNCTIONAL subsections
+! (e.g. &GGA_X_OPTB88_VDW), not the legacy &LIBXC wrapper.
+! KPOINTS requires diagonalization SCF (no OT), same as gpw-vdw-kpoints.
+! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
+! Pins: ENERGY| Total and Dispersion energy [Ha] -> REFERENCE.md.
+&GLOBAL
+  PROJECT water_dimer_optb88_vdw_kp
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 200
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 1 1
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      MAX_SCF 60
+      EPS_SCF 1.0E-7
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL
+        &GGA_X_OPTB88_VDW
+        &END GGA_X_OPTB88_VDW
+        &PW92
+        &END PW92
+      &END XC_FUNCTIONAL
+      &VDW_POTENTIAL
+        POTENTIAL_TYPE NON_LOCAL
+        &NON_LOCAL
+          TYPE DRSLL
+          KERNEL_FILE_NAME vdW_kernel_table.dat
+          SCALE 1.0
+        &END NON_LOCAL
+      &END VDW_POTENTIAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      O  0.000000  0.000000  0.000000
+      H  0.758602  0.000000  0.504284
+      H  0.758602  0.000000 -0.504284
+      O  3.000000  0.000000  0.000000
+      H  3.758602  0.000000  0.504284
+      H  3.758602  0.000000 -0.504284
+    &END COORD
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
