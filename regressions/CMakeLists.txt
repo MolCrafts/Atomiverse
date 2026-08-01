@@ -340,6 +340,8 @@ if(ATV_BUILD_GPW)
     # Multi-k analytic ionic forces with free-atom TS (libMBD energy +
     # dual-gate + wiring; no stock CP2K TYPE TS — gpw-ts-kpoint-forces).
     atv_add_regression(gpw gpw-ts-kpoint-forces THREADS 8)
+    # Multi-k analytic cell stress folding free-atom TS (libMBD strain pins).
+    atv_add_regression(gpw gpw-ts-kpoint-stress THREADS 8)
     atv_add_regression(gpw gpw-xdm-ice THREADS 8)
     atv_add_regression(gpw gpw-xdm-forces THREADS 8)
     # Multi-k analytic ionic forces with free-atom XDM (dual pure-Python
