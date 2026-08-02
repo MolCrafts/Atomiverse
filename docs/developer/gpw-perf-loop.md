@@ -123,3 +123,19 @@ Then **wipe build** before leaving the worktree.
   reg-wall; MAIN-only class ~1.1). Baseline note fair-wall table re-dated
   2026-08-02 wave2. Pending **6** (P1×3 + P2×3), blocked **1**, done **6**.
   Builds wiped. No push.
+- **2026-08-02 cp2k-perf simd-retry (parent `dev` @ `d79727e5`):** merged
+  `wf/perf-p2-product-simd` @ `cc6068ad` → dev `327a7ca8` (xsimd z-axis
+  stride-1 runs for the product collocate/integrate point-fill in
+  `multigrid.cpp`: `collocate_one` emits contiguous z-runs split only at the
+  periodic wrap; the four product kernels consume runs via portable
+  `axis_dot`/`axis_axpy` `batch<double>` helpers; no per-arch intrinsics, no
+  global `XTENSOR_USE_XSIMD`, no API change). Worker walls (OMP=4, min of 3,
+  loadavg ~11–33): **MG MAIN 65.1 → 45.0 s (−30.9%)**, ratio vs CP2K
+  REFERENCE 23.6 s pin 2.76 → **1.91**; uks-o2-gamma 19.25→19.28 s (no
+  regression, AFTER under loadavg spike). Merge gate on dev:
+  `^test_cpu_(gpw|pw|scf|xc)_|^test_xc_` **60/60** green; regs forces-water
+  (max|dF|=3.4e-4) / uks-forces (2.7e-3) / kpoint-forces /
+  kpoint-uks-forces / metallic-forces / multigrid-kpoints / uks-o2-gamma
+  all PASS, tolerances unchanged; MG energy pin exact (−15.8024168854 Ha,
+  iters=7). Not bit-exact (deterministic batch-width sum reorder). Pending
+  **5** (P1×3 + P2×2), blocked **1**, done **7**. Builds wiped. No push.

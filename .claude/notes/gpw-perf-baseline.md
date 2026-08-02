@@ -44,7 +44,7 @@ loadavg ~10–16 during runs (contended; uks drift vs earlier 17.6 s is load).
 | --- | ---: | --- | ---: | ---: |
 | `gpw-uks-o2-gamma` | **19.1** | reg internal `wall=` (26 DIIS iters); 17.6 on the quieter 08-01 node | 21.3 | **0.90** |
 | `gpw-kpoints-si` | **~3.7** (est.) | reg prints **no** MAIN wall; MAIN MP 2×2×2 150 Ry: setup STVnl≈1.25 + kbg≈1.37 + 6×KS≈1.04 | ≈3.3 | **~1.1** (whole-reg 19.07/3.3 = 5.78, inflated by A1–A7 gates) |
-| `gpw-multigrid-kpoints` | **65.1** | reg `MAIN: wall` (7 DIIS iters, NGRIDS 4) | 23.6 | **2.76** |
+| `gpw-multigrid-kpoints` | **45.0** | reg `MAIN: wall` (7 DIIS iters, NGRIDS 4); 65.1 pre `p2-product-simd` (merged `327a7ca8`, −30.9%) | 23.6 | **1.91** |
 | `ot-minimizer-water` | **8.87** (whole reg, OT + DIIS gates) | WALL_SEC; was 13.97 pre `p1-ot-convergence` (−36.5%) | (see REFERENCE ~2.7 OT) | OT class ~3.3 (reg-wall over-counts: incl. DIIS gate + setup) |
 
 Multi-gate **regression** walls (all gates in one binary; do **not** use for speed gates):
