@@ -16,6 +16,8 @@
 #include <map>
 #include <unordered_map>
 
+#include <xsimd/xsimd.hpp>
+
 #ifdef ATV_GPW_HAS_FFT
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #endif
@@ -618,11 +620,52 @@ inline void ensure_colloc_axis(int total) {
     }
 }
 
+// xsimd kernels for the contiguous z-axis runs collocate_one emits (portable
+// batch<double>, unaligned loads, scalar tail — same idiom as the ss|ss ket
+// loop in scf/native_integrals.cpp). z is the stride-1 grid axis, so both the
+// density scatter (axpy) and the KS gather (dot) run vector-wide along it.
+// Vector accumulation reorders the FP sums vs. the scalar loop; results stay
+// within the regression tolerances and remain run-to-run deterministic (the
+// order is fixed by the batch width, not the schedule).
+inline double axis_dot(const double* v, const double* f, long cnt) {
+    using batch_t = xsimd::batch<double>;
+    constexpr long W = static_cast<long>(batch_t::size);
+    batch_t acc_v(0.0);
+    long t = 0;
+    for (; t + W <= cnt; t += W)
+        acc_v += batch_t::load_unaligned(v + t) * batch_t::load_unaligned(f + t);
+    double acc_arr[16]; // W ≤ 16 (AVX-512 = 8 doubles)
+    acc_v.store_unaligned(acc_arr);
+    double s = 0.0;
+    for (long i = 0; i < W; ++i)
+        s += acc_arr[i];
+    for (; t < cnt; ++t)
+        s += v[t] * f[t];
+    return s;
+}
+
+inline void axis_axpy(double a, const double* f, double* out, long cnt) {
+    using batch_t = xsimd::batch<double>;
+    constexpr long W = static_cast<long>(batch_t::size);
+    const batch_t a_v(a);
+    long t = 0;
+    for (; t + W <= cnt; t += W) {
+        batch_t r = batch_t::load_unaligned(out + t);
+        r += a_v * batch_t::load_unaligned(f + t);
+        r.store_unaligned(out + t);
+    }
+    for (; t < cnt; ++t)
+        out[t] += a * f[t];
+}
+
 // Accumulate one product over an unwrapped window into a per-point sink `sink`,
 // matching build_compact_basis_grid: window [ic-ih, ic+ih] in grid cells around
 // the product center, evaluate at the UNWRAPPED real position (image offset in r,
-// no min-image), wrap the storage index, accumulate. `add(g, value)` receives the
-// wrapped linear index and the product value (poly·exp) at that point.
+// no min-image), wrap the storage index, accumulate. `add(g0, fz, cnt, fxy)`
+// receives one CONTIGUOUS stride-1 z-run: wrapped linear start index g0, the
+// per-point z factors fz[0..cnt), and the column prefactor fxy — the point
+// value at g0+t is fxy·fz[t]. Runs split only at the periodic z wrap, so the
+// sink can process them vector-wide (xsimd axpy / dot along the fast axis).
 // SEPARABLE collocation: the product Gaussian factorizes as
 //   exp(-p|r-P|²)·(r-ra)^la·(r-rb)^lb = Fx(x)·Fy(y)·Fz(z),
 // so the per-axis factor (Gaussian × 1D polynomial) is precomputed ONCE over the
@@ -748,10 +791,16 @@ inline void collocate_one(const UniformGrid& grid, const GridProduct& prod,
                 khi = len[2] - 1;
             const double* Fz = F[2];
             const long* Wz = W[2];
-            for (long tk = klo; tk <= khi; ++tk) {
-                const double v = fxy * Fz[tk];
-                if (v != 0.0)
-                    add(base + Wz[tk], v);
+            // Emit contiguous stride-1 runs: the wrapped z index advances by 1
+            // and only resets to 0 at the periodic boundary, so each run is
+            // capped at n[2] − z0. Zero-valued tail points ride along — adding
+            // fxy·0 is a no-op and the branch cost per point exceeded it.
+            long tk = klo;
+            while (tk <= khi) {
+                const long z0 = Wz[tk];
+                const long run = std::min(khi - tk + 1, n[2] - z0);
+                add(base + z0, Fz + tk, run, fxy);
+                tk += run;
             }
         }
     }
@@ -844,9 +893,11 @@ std::vector<double> collocate_products(const UniformGrid& grid,
             const double aw = std::abs(w);
             if (aw < eps)
                 continue; // net per-iter contribution below threshold
-            collocate_one(grid, prod, aw, eps, [&](long g, double v) {
-                loc[static_cast<std::size_t>(g)] += w * v;
-            });
+            collocate_one(grid, prod, aw, eps,
+                          [&](long g, const double* fz, long cnt, double fxy) {
+                              axis_axpy(w * fxy, fz,
+                                        loc + static_cast<std::size_t>(g), cnt);
+                          });
         }
     }
 #pragma omp parallel for schedule(static)
@@ -888,8 +939,11 @@ std::vector<double> integrate_products(
             // sized by the run's largest geometric magnitude max|coeff|·K.
             double acc = 0.0;
             collocate_one(grid, prod, A.maxc * B.maxc * prod.k, eps,
-                          [&](long g, double v) {
-                              acc += V_level[static_cast<std::size_t>(g)] * v;
+                          [&](long g, const double* fz, long cnt, double fxy) {
+                              acc += fxy
+                                     * axis_dot(V_level.data()
+                                                    + static_cast<std::size_t>(g),
+                                                fz, cnt);
                           });
             // Scatter K·∫ to every (μ,ν) contributor pair's KS element.
             const double sw = prod.k * w * acc;
@@ -961,9 +1015,11 @@ std::vector<double> collocate_products_cells(
             const double aw = std::abs(w);
             if (aw < eps)
                 continue;
-            collocate_one(grid, prod, aw, eps, [&](long g, double v) {
-                loc[static_cast<std::size_t>(g)] += w * v;
-            });
+            collocate_one(grid, prod, aw, eps,
+                          [&](long g, const double* fz, long cnt, double fxy) {
+                              axis_axpy(w * fxy, fz,
+                                        loc + static_cast<std::size_t>(g), cnt);
+                          });
         }
     }
 #pragma omp parallel for schedule(static)
@@ -1006,8 +1062,11 @@ std::vector<std::vector<double>> integrate_products_cells(
             const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
             double acc = 0.0;
             collocate_one(grid, prod, A.maxc * B.maxc * prod.k, eps,
-                          [&](long g, double v) {
-                              acc += V_level[static_cast<std::size_t>(g)] * v;
+                          [&](long g, const double* fz, long cnt, double fxy) {
+                              acc += fxy
+                                     * axis_dot(V_level.data()
+                                                    + static_cast<std::size_t>(g),
+                                                fz, cnt);
                           });
             const double sw = prod.k * w * acc;
             double* Vcell =
