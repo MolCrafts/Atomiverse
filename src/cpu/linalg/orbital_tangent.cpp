@@ -13,6 +13,19 @@
 #include <xtensor/containers/xtensor.hpp>
 #include <xtensor/core/xmath.hpp>
 
+extern "C" {
+// Direct Fortran BLAS binding for the complex matrix product, used by the
+// Bloch (complex) twins below. The COMPLEX*16 arrays are spelled `double*`
+// (interleaved re/im doubles — Fortran COMPLEX*16 storage, layout-compatible
+// with std::complex<double>), the same vocabulary as the zheevd_/dsygvd_
+// bindings in cpu/linalg/eigensolve.h; xtensor-blas's bundled cxxblas does not
+// declare `zgemm_` at all, so no conflicting declaration can arise.
+void zgemm_(const char* transa, const char* transb, const int* m, const int* n,
+            const int* k, const double* alpha, const double* a, const int* lda,
+            const double* b, const int* ldb, const double* beta, double* c,
+            const int* ldc);
+}
+
 namespace ATV {
 namespace cpu {
 namespace linalg {
@@ -47,20 +60,24 @@ RealMatrix lowdin_orthonormalize(const RealMatrix& C, const RealMatrix& S) {
 
 // ── Complex (Bloch) twins ──────────────────────────────────────────────────
 
-// Row-major complex products (same shape as kpoints.cpp; no xtensor-blas).
+// Row-major complex products via BLAS zgemm. A row-major matrix X [r x c] is
+// bitwise the column-major X^T [c x r], so both products are evaluated
+// transposed (C^T = op(B)^T op(A)^T) with no copies and no layout flags.
 CplxMatrix c_mul(const CplxMatrix& A, const CplxMatrix& B) {
     const int n = static_cast<int>(A.shape(0));
     const int m = static_cast<int>(A.shape(1));
     const int p = static_cast<int>(B.shape(1));
     CplxMatrix C = xt::zeros<Cplx>({n, p});
-    for (int i = 0; i < n; ++i)
-        for (int k = 0; k < m; ++k) {
-            const Cplx a = A(i, k);
-            if (a == Cplx(0, 0))
-                continue;
-            for (int j = 0; j < p; ++j)
-                C(i, j) += a * B(k, j);
-        }
+    if (n == 0 || m == 0 || p == 0)
+        return C;
+    const Cplx alpha(1.0, 0.0);
+    const Cplx beta(0.0, 0.0);
+    // Column-major view: C^T [p x n] = B^T [p x m] · A^T [m x n].
+    zgemm_("N", "N", &p, &n, &m, reinterpret_cast<const double*>(&alpha),
+           reinterpret_cast<const double*>(B.data()), &p,
+           reinterpret_cast<const double*>(A.data()), &m,
+           reinterpret_cast<const double*>(&beta),
+           reinterpret_cast<double*>(C.data()), &p);
     return C;
 }
 
@@ -70,14 +87,17 @@ CplxMatrix c_dagger_mul(const CplxMatrix& A, const CplxMatrix& B) {
     const int m = static_cast<int>(A.shape(1));
     const int p = static_cast<int>(B.shape(1));
     CplxMatrix C = xt::zeros<Cplx>({m, p});
-    for (int i = 0; i < m; ++i)
-        for (int k = 0; k < n; ++k) {
-            const Cplx a = std::conj(A(k, i));
-            if (a == Cplx(0, 0))
-                continue;
-            for (int j = 0; j < p; ++j)
-                C(i, j) += a * B(k, j);
-        }
+    if (n == 0 || m == 0 || p == 0)
+        return C;
+    const Cplx alpha(1.0, 0.0);
+    const Cplx beta(0.0, 0.0);
+    // Column-major view: C^T [p x m] = B^T [p x n] · conj(A) [n x m], where
+    // conj(A) = (A^T)^H is exactly op('C') on the column-major image of A.
+    zgemm_("N", "C", &p, &m, &n, reinterpret_cast<const double*>(&alpha),
+           reinterpret_cast<const double*>(B.data()), &p,
+           reinterpret_cast<const double*>(A.data()), &m,
+           reinterpret_cast<const double*>(&beta),
+           reinterpret_cast<double*>(C.data()), &p);
     return C;
 }
 
