@@ -5342,11 +5342,12 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     }
 
     // ── OT (orbital transformation) path ────────────────────────────────────
-    // Diagonalization-free SCF: each outer step rebuilds H, then takes one
-    // preconditioned-CG step on the OT manifold (gradient O(nb²·n_occ), no
-    // O(nb³) eigensolve). Converges to the same gapped ground state as the
-    // diagonalization path. The line search uses the frozen-H band energy
-    // 2 Tr(CᵀHC) (matrix-only); self-consistency comes from the H rebuild.
+    // Diagonalization-free SCF: each outer step takes one preconditioned-CG
+    // step on the OT manifold (gradient O(nb²·n_occ), no O(nb³) eigensolve).
+    // Converges to the same gapped ground state as the diagonalization path.
+    // The KS build of the accepted line-search trial is carried into the next
+    // iteration, so one OT step costs ~1 KS build (frozen-H band parabola
+    // seeds alpha; true-energy quadratic interpolation handles retries).
     if (cfg.use_ot) {
         RealMatrix Cocc = linalg::lowdin_orthonormalize(
             RealMatrix(xt::view(C0, xt::all(), xt::range(0, cfg.n_occ))), S);
@@ -5361,11 +5362,21 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         auto ms = [](Clk::time_point a, Clk::time_point b) {
             return std::chrono::duration<double, std::milli>(b - a).count();
         };
+        // KS state (H, E) carried across iterations: the accepted line-search
+        // trial already built H at the new density, so E(0) is never
+        // re-evaluated at the top of an iteration (CP2K-style OT economics —
+        // ~1 KS build per OT step). Only iter 0 builds from scratch.
+        RealMatrix H;
+        double e_total = 0.0;
         for (int iter = 0; iter < cfg.max_iter; ++iter) {
             auto tA = Clk::now();
-            P = linalg::build_density_matrix(Cocc, cfg.n_occ, nb,
-                                             2.0); // 2 Cocc Coccᵀ
-            auto [H, e_total] = build_H_and_energy(P);
+            if (iter == 0) {
+                P = linalg::build_density_matrix(Cocc, cfg.n_occ, nb,
+                                                 2.0); // 2 Cocc Coccᵀ
+                auto he0 = build_H_and_energy(P);
+                H = std::move(he0.first);
+                e_total = he0.second;
+            }
             auto tB = Clk::now();
             res.iters = iter + 1;
             res.e_total = e_total;
@@ -5412,13 +5423,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             // Monotonic line search on the SCF TOTAL energy E[rho(C)]. The
             // frozen-H band energy 2 Tr(CᵀHC) is only the local quadratic model;
             // minimizing *it* overshoots the self-consistent E and let OT wander
-            // (descend then drift up). Armijo backtracking on the rebuilt-H total
+            // (descend then drift up). Armijo acceptance on the rebuilt-H total
             // energy enforces monotonic descent — every accepted step lowers E.
-            auto etot = [&](const RealMatrix& C) {
-                return build_H_and_energy(
-                           linalg::build_density_matrix(C, cfg.n_occ, nb, 2.0))
-                    .second;
-            };
             double slope = frob(g, d);
             if (slope
                 >= 0.0) { // not a descent direction -> restart to (precond) SD
@@ -5441,15 +5447,31 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             alpha = std::min(alpha, 2.0);
             constexpr double c1 = 1e-4;
             // Löwdin-clean every Armijo trial (multi-k parity): without it
-            // trial etot sees drifted metric and accept-only clean leaves a
-            // residual floor that thrashing cannot leave.
+            // trial energies see drifted metric and accept-only clean leaves
+            // a residual floor that thrashing cannot leave.
             RealMatrix Cnew = internal::ot_parameterize(Cocc, alpha * d, S);
             Cnew = linalg::lowdin_orthonormalize(Cnew, S);
+            // Each trial's KS build yields (H_t, E_t); the accepted trial's
+            // pair becomes the next iteration's carried state, so acceptance
+            // costs exactly one KS build. On an Armijo failure the retry
+            // alpha is the minimizer of the quadratic through (0, E0, slope)
+            // and (alpha, E_t) on the TRUE SCF energy, safeguarded to
+            // [0.1, 0.5]·alpha (Nocedal–Wright); plain halving only when the
+            // interpolation degenerates (non-convex model).
             for (int bt = 0; bt < 50; ++bt) {
                 ++ls_rebuilds;
-                if (etot(Cnew) <= e_total + c1 * alpha * slope)
+                auto trial = build_H_and_energy(
+                    linalg::build_density_matrix(Cnew, cfg.n_occ, nb, 2.0));
+                if (trial.second <= e_total + c1 * alpha * slope || bt == 49) {
+                    H = std::move(trial.first);
+                    e_total = trial.second;
                     break;
-                alpha *= 0.5;
+                }
+                const double denom = trial.second - e_total - slope * alpha;
+                const double a_q = (denom > 1e-300)
+                                       ? -slope * alpha * alpha / (2.0 * denom)
+                                       : 0.5 * alpha;
+                alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
                 Cnew = internal::ot_parameterize(Cocc, alpha * d, S);
                 Cnew = linalg::lowdin_orthonormalize(Cnew, S);
             }
@@ -5476,12 +5498,12 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             const RealMatrix P_final =
                 linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
             res.P = P_final;
-            // Rebuild H once at the final density when not already stored
-            // (budget-exhausted path); converged path set H_ks on exit.
+            // Budget-exhausted path: the accepted line-search trial already
+            // built H at this final density — reuse the carried state instead
+            // of a fresh KS build (converged path set H_ks on exit).
             if (res.H_ks.size() == 0) {
-                auto [H_final, e_final] = build_H_and_energy(P_final);
-                res.H_ks = std::move(H_final);
-                res.e_total = e_final;
+                res.H_ks = std::move(H);
+                res.e_total = e_total;
                 // Virtuals/eps for gpw_forces_from_scf consumers.
                 if (res.eps.empty())
                     store_converged_state(res, res.H_ks, orth().X, cfg.n_occ,
