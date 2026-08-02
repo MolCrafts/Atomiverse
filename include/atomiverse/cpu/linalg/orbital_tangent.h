@@ -116,9 +116,9 @@ inline CplxMatrix herm_function(const CplxMatrix& G, F f) {
     return out;
 }
 
-/// @brief Row-major complex matrix product `A B`, written out explicitly rather
-///        than through xtensor-blas (these blocks are small, and the explicit
-///        loop skips zero entries).
+/// @brief Row-major complex matrix product `A B`, computed by BLAS `zgemm`
+///        (a row-major matrix is bitwise its column-major transpose, so the
+///        product is evaluated as `C^T = B^T A^T` with no copies).
 /// @param A Left factor [n x m] (matrix-dependent units).
 /// @param B Right factor [m x p] (matrix-dependent units).
 /// @return `A B` [n x p], units of the product.

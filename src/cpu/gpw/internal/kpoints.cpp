@@ -15,6 +15,7 @@
 #include "atomiverse/cpu/device/chunked_range.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h" // Prim, gth_projector_overlap
 #include "atomiverse/cpu/gpw/internal/one_electron.h" // prim_overlap, prim_kinetic
+#include "atomiverse/cpu/linalg/orbital_tangent.h" // c_mul, c_dagger_mul (zgemm)
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -632,59 +633,22 @@ KOrth::KOrth(const CplxMatrix& S_k, double tau) {
     }
 }
 
-namespace {
-// C = A^dagger B (nb x m)^dagger (nb x nb) ... small dense products, explicit
-// loops (row-major; no reliance on xtensor-blas complex dispatch).
-CplxMatrix dagger_mul(const CplxMatrix& A, const CplxMatrix& B) {
-    const int n = static_cast<int>(A.shape(0));
-    const int m = static_cast<int>(A.shape(1));
-    const int p = static_cast<int>(B.shape(1));
-    CplxMatrix C = xt::zeros<Cplx>({m, p});
-    for (int i = 0; i < m; ++i)
-        for (int k = 0; k < n; ++k) {
-            const Cplx a = std::conj(A(k, i));
-            if (a == Cplx(0, 0))
-                continue;
-            const Cplx* Bk = &B(k, 0);
-            Cplx* Ci = &C(i, 0);
-            for (int j = 0; j < p; ++j)
-                Ci[j] += a * Bk[j];
-        }
-    return C;
-}
-
-CplxMatrix mul(const CplxMatrix& A, const CplxMatrix& B) {
-    const int n = static_cast<int>(A.shape(0));
-    const int m = static_cast<int>(A.shape(1));
-    const int p = static_cast<int>(B.shape(1));
-    CplxMatrix C = xt::zeros<Cplx>({n, p});
-    for (int i = 0; i < n; ++i)
-        for (int k = 0; k < m; ++k) {
-            const Cplx a = A(i, k);
-            if (a == Cplx(0, 0))
-                continue;
-            const Cplx* Bk = &B(k, 0);
-            Cplx* Ci = &C(i, 0);
-            for (int j = 0; j < p; ++j)
-                Ci[j] += a * Bk[j];
-        }
-    return C;
-}
-} // namespace
-
 std::pair<std::vector<double>, CplxMatrix> diagonalize_k(const CplxMatrix& H_k,
                                                          const KOrth& orth) {
-    const CplxMatrix Hp = dagger_mul(orth.X, mul(H_k, orth.X));
+    // Dense complex products go through BLAS zgemm (linalg::c_mul /
+    // linalg::c_dagger_mul, same row-major CplxMatrix type).
+    const CplxMatrix Hp = linalg::c_dagger_mul(orth.X, linalg::c_mul(H_k, orth.X));
     std::vector<double> eps;
     CplxMatrix Cp;
     linalg::eigh_hermitian(Hp, eps, Cp);
-    return {std::move(eps), mul(orth.X, Cp)};
+    return {std::move(eps), linalg::c_mul(orth.X, Cp)};
 }
 
 CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
                         const CplxMatrix& S, const CplxMatrix& X) {
-    const CplxMatrix comm = mul(H, mul(P, S)) - mul(S, mul(P, H));
-    return dagger_mul(X, mul(comm, X));
+    const CplxMatrix comm = linalg::c_mul(H, linalg::c_mul(P, S))
+                            - linalg::c_mul(S, linalg::c_mul(P, H));
+    return linalg::c_dagger_mul(X, linalg::c_mul(comm, X));
 }
 
 std::vector<CplxMatrix> KDiis::step(const std::vector<CplxMatrix>& H,
