@@ -24,13 +24,13 @@ Wall = **same single twin SCF job**, not multi-gate reg wall.
 
 ## pending
 
-Post wave-2 land (2026-08-02): FFT cache + collocate buffers + multi-k OT
-double-energy on `dev`. Remaining P0: zgemm. Then P1 structure / products-k /
-OT Armijo economics.
+Post wave-2 land + zgemm (2026-08-02): FFT cache + collocate buffers + multi-k
+OT double-energy + BLAS zgemm all on `dev`. P0 exhausted. Next: P1 structure /
+products-k / OT Armijo economics.
 
 ### P0 — thrash / double work (measured first)
 
-- [ ] `p0-k-zgemm` | Hand complex matmul still O(n³) triple loops (no zgemm on dev): `kpoints.cpp` anonymous `mul`/`dagger_mul` (~L638–672; `diagonalize_k` + `k_diis_error`) **and** `linalg::c_mul` / `c_dagger_mul` in `src/cpu/linalg/orbital_tangent.cpp` (~L51–82; OT `band_gradient_k` / `s_tangent_k` / param — every OT step). Replace with BLAS zgemm (or thin OpenBLAS wrappers; row-major care) | phase P0 | files: `kpoints.cpp`, `orbital_tangent.cpp` (+ header if needed) | gate: multi-k + OT regs green; no tol soften |
+(empty — all P0 items done)
 
 ### P1 — one pipeline + products path + OT economics
 
@@ -59,3 +59,4 @@ OT Armijo economics.
 - [x] `p0-fft-plan-cache` | 2026-08-02 | FFTW plan+buffer cache by grid shape; UKS fair wall ~18.2→18.0 s (noise); micro/Poisson ~5–10% | merged `dc885a96` |
 - [x] `p0-collocate-buffers` | 2026-08-02 | prealloc collocate_one + product scatter/integrate pools; **gpw-multigrid-kpoints MAIN 91.8→65.1 s** (OMP=4) | merged `2c476da2` |
 - [x] `p0-ot-double-energy` | 2026-08-02 | multi-k OT single KS rebuild/outer; ATV_GPW_PROF builds **115→79** on ot-kpoints class | merged `419ad172` |
+- [x] `p0-k-zgemm` | 2026-08-02 | BLAS zgemm (Fortran `zgemm_` binding in `linalg::c_mul`/`c_dagger_mul`; `kpoints.cpp` duplicate mul/dagger_mul deleted, forwards to linalg pair) replaces O(n³) scalar complex matmul on multi-k + OT. Walls (OMP=4, min of 2): `gpw-kpoints-si` reg 19.17→19.00 s (ratio vs CP2K MAIN pin 3.3 s: 5.81→5.76; reg wall inflated vs MAIN-only), `ot-minimizer-water` 14.00→13.97 s, `gpw-multigrid-kpoints` MAIN 65.1→65.1 s — parity within noise on small-nb twins (nb 45–173); removes the scalar scaling ceiling. Regs green, no tol soften; not bit-exact (zgemm FP reorder) | merged `c2fb3324` |

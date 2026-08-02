@@ -99,3 +99,14 @@ Then **wipe build** before leaving the worktree.
   (file-disjoint but lower measured rank). Soft multigrid overlap
   fft∩collocate — fft finishes first. Pending **8** (P0×1 + P1×4 + P2×3),
   blocked **1**, done **1**. No worktrees this step; no builds; no push.
+- **2026-08-02 cp2k-perf-loop trial wave (parent `dev` @ `1bee3462`):** merged
+  `wf/perf-p0-k-zgemm` @ `980157ed` → dev `c2fb3324` (BLAS `zgemm_` in
+  `linalg::c_mul`/`c_dagger_mul`; `kpoints.cpp` duplicate matmuls deleted —
+  one zgemm pair serves multi-k SCF + every OT step). Merge gate: unit
+  `^test_cpu_(gpw|pw|scf|xc)_|^test_xc_` **60/60** green post-merge; worker
+  regs kpoints-si / ot-water / multigrid-kpoints PASS, tolerances unchanged.
+  Walls (OMP=4, min of 2): kpoints-si reg 19.17→19.00 s (ratio 5.81→5.76 vs
+  CP2K MAIN pin 3.3 s; reg wall inflated vs MAIN-only ~1.1), ot-water
+  14.00→13.97 s, MG MAIN 65.1→65.1 s — parity within noise on small-nb
+  twins; scalar O(n³) ceiling removed. P0 now empty; pending **7**
+  (P1×4 + P2×3), blocked **1**, done **5**. Builds wiped. No push.
