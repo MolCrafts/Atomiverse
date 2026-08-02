@@ -110,3 +110,16 @@ Then **wipe build** before leaving the worktree.
   14.00→13.97 s, MG MAIN 65.1→65.1 s — parity within noise on small-nb
   twins; scalar O(n³) ceiling removed. P0 now empty; pending **7**
   (P1×4 + P2×3), blocked **1**, done **5**. Builds wiped. No push.
+- **2026-08-02 cp2k-perf wave 2 bench+harness (parent `dev` @ `97de6c19`):**
+  merged `wf/perf-p1-ot-convergence` @ `a2facc8e` → dev `97de6c19` (Γ RKS OT
+  line-search economics: carry accepted KS build as next E(0), quadratic
+  retry α; KS builds/OT iter 2.32→1.11). Official post-merge walls (OMP=4,
+  min of 3, contended loadavg ~10–16, four twins PASS unchanged tols):
+  **ot-water 13.97→8.87 s (−36.5%)**; kpoints-si reg 19.07 s (prints no MAIN
+  wall; MAIN-only est ~3.7 s → ratio ~1.1, reg-wall ratio 5.78 vs pin 3.3 s);
+  MG MAIN 65.1 s (reg 91.30; ratio 2.76 vs 23.6 s); uks `wall=` 19.11 s
+  (ratio 0.90 vs 21.3 s; 17.6 s on quieter node — load drift, path
+  untouched). worst_ratio (MAIN walls where defined) **5.78** (kpoints-si
+  reg-wall; MAIN-only class ~1.1). Baseline note fair-wall table re-dated
+  2026-08-02 wave2. Pending **6** (P1×3 + P2×3), blocked **1**, done **6**.
+  Builds wiped. No push.
