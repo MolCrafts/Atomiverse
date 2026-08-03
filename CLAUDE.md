@@ -548,11 +548,16 @@ accumulator; the one g(r) emitter is `cpu::rdf_write_curve`.
 - **Precision:** state it or state the integer role — the catch-all `Real` and
   `Int` names do not exist.
 - **libxc:** when enabled, native XC must match libxc to 1e-12.
-- **ERI performance:** xsimd 11.2.0 is linked directly to `atomiverse` for
-  `native_integrals.cpp`. Do **not** set `XTENSOR_USE_XSIMD` globally — it
-  activates SIMD-backed xtensor storage which breaks `reshape_view` in
-  `xc_grid_engine.h`. `eri_block()` dispatches by Ltot to a compile-time-Ltot
-  template; ss|ss uses an xsimd ket-loop.
+- **SIMD is a first-class optimization lane** — via **portable xsimd only**
+  (11.2.0, linked directly to `atomiverse`): single source, raw
+  pointers/spans, scalar tail; the compiler emits AVX2/AVX-512 or NEON per
+  arch. Arch intrinsics (`_mm512_*`/NEON), per-arch kernel + dispatch, and
+  global `XTENSOR_USE_XSIMD` (breaks `reshape_view` in `xc_grid_engine.h`)
+  stay banned. Reference idioms: `native_integrals.cpp` (ERI ss|ss ket-loop;
+  `eri_block()` dispatches by compile-time Ltot), `multigrid.cpp`
+  `axis_dot`/`axis_axpy` (GPW point-fill z-runs). A vectorized reduction is
+  not bit-exact: it lands only with a stated tolerance vs the pins, and any
+  energy-path change re-runs the force regressions.
 - **Doxygen:** every public symbol needs `@brief`, `@param` (with units),
   `@return`.
 
