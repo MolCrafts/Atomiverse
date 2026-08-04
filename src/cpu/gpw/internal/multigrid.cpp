@@ -1221,54 +1221,93 @@ std::vector<double> collocate_products_cells(
                 ++printed_c;
         }
     }
-    // Geometry-sorted at build — no per-SCF re-sort.
-    const device::ChunkedRange range(
-        np, std::max<long>(kMinScatterChunks,
-                           device::block_reduce_chunks(npts * sizeof(double))));
-    const long nc = range.chunks();
-    g_rho_scatter.prepare(nc, npts);
-#pragma omp parallel for schedule(dynamic, 1)
-    for (long c = 0; c < nc; ++c) {
-        double* loc = g_rho_scatter.chunk(c);
-        std::fill_n(loc, npts, 0.0);
-        const long iplo = range.begin(c), iphi = range.end(c);
-        std::vector<GridProduct> gprods;
-        std::vector<double> gweights;
-        gprods.reserve(64);
-        gweights.reserve(64);
-        auto flush_group = [&]() {
-            if (gprods.empty())
+    // Geometry-sorted at build. Precompute weights → form groups → collocate
+    // group-parallel into per-thread private grids (index lists, no copies).
+    std::vector<double> wts(static_cast<std::size_t>(np), 0.0);
+#pragma omp parallel for schedule(dynamic, 64)
+    for (long ip = 0; ip < np; ++ip) {
+        const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+        wts[static_cast<std::size_t>(ip)] = product_density_weight(
+            prod, prims, contribs, nb,
+            D[static_cast<std::size_t>(prod.tcell)]);
+    }
+    struct GRange {
+        int beg = 0, end = 0;
+        double mag = 0.0;
+    };
+    std::vector<GRange> groups;
+    std::vector<int> all_idx;
+    std::vector<double> all_w;
+    groups.reserve(static_cast<std::size_t>(np / 32 + 8));
+    all_idx.reserve(static_cast<std::size_t>(np));
+    all_w.reserve(static_cast<std::size_t>(np));
+    {
+        std::vector<int> idx;
+        std::vector<double> gw;
+        idx.reserve(64);
+        gw.reserve(64);
+        auto flush = [&]() {
+            if (idx.empty())
                 return;
             double mag = 0.0;
-            for (double ww : gweights)
-                mag = std::max(mag, std::abs(ww));
-            if (mag >= eps_drop)
-                internal::collint_collocate_group(
-                    grid, gprods.data(), gweights.data(),
-                    static_cast<int>(gprods.size()), mag, eps_win, loc);
-            gprods.clear();
-            gweights.clear();
+            for (double w : gw)
+                mag = std::max(mag, std::abs(w));
+            if (mag >= eps_drop) {
+                GRange gr;
+                gr.beg = static_cast<int>(all_idx.size());
+                for (std::size_t k = 0; k < idx.size(); ++k) {
+                    all_idx.push_back(idx[k]);
+                    all_w.push_back(gw[k]);
+                }
+                gr.end = static_cast<int>(all_idx.size());
+                gr.mag = mag;
+                groups.push_back(gr);
+            }
+            idx.clear();
+            gw.clear();
         };
-        for (long ip = iplo; ip < iphi; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            const double ww = product_density_weight(
-                prod, prims, contribs, nb,
-                D[static_cast<std::size_t>(prod.tcell)]);
+        for (long ip = 0; ip < np; ++ip) {
+            const double ww = wts[static_cast<std::size_t>(ip)];
             if (std::abs(ww) < eps_drop)
                 continue;
-            if (!gprods.empty()
-                && !internal::collint_same_geometry(gprods.back(), prod))
-                flush_group();
-            gprods.push_back(prod);
-            gweights.push_back(ww);
+            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+            if (!idx.empty()
+                && !internal::collint_same_geometry(
+                       prods[static_cast<std::size_t>(idx.back())], prod))
+                flush();
+            idx.push_back(static_cast<int>(ip));
+            gw.push_back(ww);
         }
-        flush_group();
+        flush();
+    }
+    const long ng = static_cast<long>(groups.size());
+    int nthreads = 1;
+#ifdef _OPENMP
+    nthreads = omp_get_max_threads();
+#endif
+    g_rho_scatter.prepare(nthreads, npts);
+    for (int t = 0; t < nthreads; ++t)
+        std::fill_n(g_rho_scatter.chunk(t), npts, 0.0);
+#pragma omp parallel
+    {
+        int tid = 0;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+#endif
+        double* loc = g_rho_scatter.chunk(tid);
+#pragma omp for schedule(dynamic, 1)
+        for (long g = 0; g < ng; ++g) {
+            const GRange& gr = groups[static_cast<std::size_t>(g)];
+            internal::collint_collocate_group_idx(
+                grid, prods.data(), all_idx.data() + gr.beg,
+                all_w.data() + gr.beg, gr.end - gr.beg, gr.mag, eps_win, loc);
+        }
     }
 #pragma omp parallel for schedule(static)
     for (long g = 0; g < static_cast<long>(npts); ++g) {
         double s = 0.0;
-        for (long c = 0; c < nc; ++c)
-            s += g_rho_scatter.chunk(c)[static_cast<std::size_t>(g)];
+        for (int t = 0; t < nthreads; ++t)
+            s += g_rho_scatter.chunk(t)[static_cast<std::size_t>(g)];
         rho[static_cast<std::size_t>(g)] = s;
     }
     return rho;

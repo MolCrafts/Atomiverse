@@ -35,8 +35,7 @@ the top MG-kernel + OT-extension rows (in_progress below).
 
 ### P1 — kernel constant + OT + structure
 
-- [ ] `p2-stvnl-setup` | STVnl_k setup ~1.3 s dominates remaining MAIN gap after collint ≤2× | phase P2 | files: k-path STVnl | gate: setup microbench ↓; MAIN further ↓; pins hold |
-- [ ] `p2-collint-polish` | Residual collint (cab-level PGF tasks, more lp paths) after ≤2× land | phase P2 | files: `product_collint.cpp` | gate: optional further ↓ |
+- [ ] `p2-collint-polish` | Residual collint / setup after ~1.6× | phase P2 | files: `product_collint.cpp`, k-path | gate: optional further ↓ |
 - [ ] `p2-simd-2center-setup` | xsimd the analytic 2-center S/T primitive loops (setup STVpp ~99 s at slabw scale after KB/grid-PP fixes; invisible on small twins) | phase P2 | files: overlap/kinetic internals | gate: setup microbench ↓ on a slab-class fragment; four twins no regression |
 - [ ] `p1-products-default-k` | **RE-GATED:** flip is a large regression until product engine is closer to CP2K. Revisit after collint polish with a fresh same-binary A/B. Dense χ^k transitional / opt-out only. Do **not** add a 5th collocation layout without deleting dense χ^k | phase P2 | files: `kpoints.cpp`, solver k-path | gate: fresh A/B shows products ≤ dense on the k twin; pins hold |
 
@@ -69,14 +68,15 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p1-integrate-windows` | 2026-08-04 | integrate windows sized by local \|V(pc)\|·geom (floor 0.05), not global max\|V\| (that inflated every product) and not bare maxc·maxc·K; `integrate_products` + `_cells`. MG MAIN **45.0→42.9 s** (OMP=4, one shot); E pin within 5e-7; uks-o2-gamma + ot-water PASS; not bit-exact |
 - [x] `p2-simd-pointfill-2` | 2026-08-04 | xsimd 1D poly/E2 fill (`fill_axis_poly_e2_w`); `axis_dot` via `reduce_add`; hoist sphere z-bound constants. Exp recurrence stays scalar (sequential). Multi-monomial blocking **not** done (no shared-window product batch). MG MAIN best **41.7 s** (OMP=4 bind); pins hold. CP2K same-host twin **0.885 s** → ratio ~**47×** (see note below) |
 - [x] `p2-cxyz-collint` | 2026-08-04 | CP2K ortho collint + geom batch + reflection + max\|w\| | MAIN mid-wave ~8 s |
-- [x] `p2-collint-lp-sphere` | 2026-08-04 | geometry pre-sort at `build_products`; process-wide sphere-bounds cache; `lp_z` 0..6 specialized collocate; zero-skip monoms; no per-SCF re-sort. MG MAIN **~2.6 s** (~**2.0×** CP2K quiet 1.28 s). collocate/integrate ~70–100 ms/iter. Energy pin |dE|~7e-6 |
+- [x] `p2-collint-lp-sphere` | 2026-08-04 | geom pre-sort + sphere cache + lp-spec | MAIN ~2.6 s / ~2.0× |
+- [x] `p2-stvnl-collint` | 2026-08-04 | Hermite memo + `prim_ST` fuse (STVnl ~1500→600 ms); group-idx parallel collocate. MAIN **~2.0 s** (~**1.6×** CP2K 1.28 s). unit `test_cpu_gpw_one_electron` PASS |
 
-### Fair wall vs CP2K (2026-08-04 post lp/sphere, arrhenius1, OMP=4 bind)
+### Fair wall vs CP2K (2026-08-04 post STVnl, arrhenius1, OMP=4 bind)
 
 `gpw-multigrid-kpoints` MAIN only (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV quiet MAIN | **~2.6** | two-shot; was ~42 pre-collint / ~8 mid |
+| ATV quiet MAIN | **~2.0** | two-shot; was ~42 / ~8 / ~2.6 |
 | CP2K 2026.1 quiet | **~1.28** | `si_kpoints_mg.inp` |
-| **ratio ATV/CP2K** | **~2.0** | ≤2× gate met; STVnl setup still ~1.3 s once |
+| **ratio ATV/CP2K** | **~1.6** | STVnl ~0.6 s; coll/int ~70–90 ms/iter |

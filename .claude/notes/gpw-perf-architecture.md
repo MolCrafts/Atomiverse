@@ -23,14 +23,13 @@ Twin `gpw-multigrid-kpoints` MAIN (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV best MAIN | **~2.6** | two-shot OMP=4 bind |
+| ATV best MAIN | **~2.0** | two-shot OMP=4 bind |
 | CP2K 2026.1 same host | **~1.28** quiet | re-run 2026-08-04 |
-| **ratio ATV/CP2K** | **~2.0×** | ≤2× gate met on quiet runs |
+| **ratio ATV/CP2K** | **~1.6×** | ≤2× gate; STVnl+collint polish |
 
-Landed: geometry pre-sort at `build_products`; process-wide sphere-bounds
-cache; `lp_z` 0..6 specialized collocate; zero-skip monoms; max\|w\| window;
-reflection + z xsimd. Per-iter collocate/integrate ~70–100 ms (was ~550/600).
-Remaining headroom: STVnl_k setup ~1.3 s (once), further kernel polish.
+Landed: collint stack (geom pre-sort, sphere cache, lp-spec, group-parallel
+idx collocate); STVnl Hermite memoization + fused `prim_ST` (~1500→600 ms).
+Per-iter collocate/integrate ~70–100 ms. Remaining: residual setup/kernel.
 
 ### Product collint (landed)
 
@@ -61,9 +60,9 @@ Landed: z-run axpy/dot; 1D poly/E2 (legacy collocate_one); collint z-contract;
 
 | Rank | Issue | Where |
 | --- | --- | --- |
-| **1** | STVnl_k setup ~1.3 s (dominates remaining MAIN gap vs CP2K) | k-path setup |
-| 2 | Product collint still ~2× overall (kernel polish / cab-level) | `product_collint.cpp` |
-| 3 | Multi-k dense χ^k O(npts·nb²·nk) until products default | `kpoints.cpp` |
+| **1** | Residual setup (STVnl ~0.6 s, products_mg ~0.3 s, kbg ~0.2 s) | k-path |
+| 2 | Collint residual (~1.6× overall) | `product_collint.cpp` |
+| 3 | Multi-k dense χ^k until products default | `kpoints.cpp` |
 | 4 | Force path rebuilds grids | `gpw_forces.cpp` |
 
 **Done (do not re-open as primary):** GpwWorkspace; `ks_grid_build_*`; OT

@@ -801,8 +801,10 @@ void pair_ST_k(const GridBasisFunction& a, const GridBasisFunction& b,
                         q.center[0] += T[0];
                         q.center[1] += T[1];
                         q.center[2] += T[2];
-                        s_im += prim_overlap(pa, q);
-                        t_im += prim_kinetic(pa, q);
+                        double s_p = 0.0, t_p = 0.0;
+                        prim_ST(pa, q, s_p, t_p);
+                        s_im += s_p;
+                        t_im += t_p;
                     }
                 for (int ik = 0; ik < nk; ++ik) {
                     const auto& kp = kpts[static_cast<std::size_t>(ik)];

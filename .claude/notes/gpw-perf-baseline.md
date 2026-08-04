@@ -7,7 +7,7 @@ do not trust older REFERENCE.md wall numbers when the node or module differs.
 
 | | |
 | --- | --- |
-| Date | 2026-08-04 (lp-spec + sphere cache + geom pre-sort) |
+| Date | 2026-08-04 (STVnl memo + collint group-parallel) |
 | Host | `arrhenius1` — AMD EPYC 9255 ×2, OMP=4, `OMP_PROC_BIND=close` |
 | Build | Release, HF+PW+GPW, CUDA OFF, OpenBLAS |
 | Env | `ATV_GPW_PROF=1` |
@@ -28,7 +28,7 @@ export CP2K_DATA_DIR=$EBROOTCP2K/share/cp2k/data
 
 | Twin | ATV [s] | CP2K [s] | ratio | Notes |
 | --- | ---: | ---: | ---: | --- |
-| `gpw-multigrid-kpoints` MAIN | **~2.6** quiet (two-shot) | **~1.28** quiet | **~2.0** | pin OK; collocate/integrate ~70–90 ms/iter |
+| `gpw-multigrid-kpoints` MAIN | **~2.0** quiet (two-shot) | **~1.28** quiet | **~1.6** | pin OK; STVnl ~0.6 s; coll/int ~70–90 ms |
 | `gpw-uks-o2-gamma` | ~19–24 | ~21 (older pin) | ~1 | DIIS path; not product MG |
 | `gpw-kpoints-si` MAIN | ~few s KS after setup | ~3.3 (older) | ~1 | dense χ^k, not MG products |
 | `ot-minimizer-water` | ~9–11 reg wall | OT class ~2.7 (older) | ~3–4 | includes DIIS gate in reg |
@@ -44,7 +44,7 @@ perf wave.
 | collocate | **~65–85** |
 | integrate | **~85–100** |
 | Poisson + XC | ~5–10 |
-| setup STVnl_k (once) | ~1300 |
+| setup STVnl_k (once) | **~600** (was ~1500; Hermite memo + prim_ST) |
 
 CP2K same twin: `grid_collocate` ~0.018 s/iter, `grid_integrate` ~0.019 s/iter.
 

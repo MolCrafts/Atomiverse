@@ -38,10 +38,17 @@ double collint_integrate_product(const UniformGrid& grid,
 /// @param prods   Contiguous products sharing p, ra, rb, pc (la/lb may differ).
 /// @param weights Per-product density weight (length n); 0-skips allowed.
 /// @param n       Group size.
-/// @param mag     Window magnitude for the whole group (e.g. Σ|w|).
+/// @param mag     Window magnitude for the whole group (e.g. max|w|).
 void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
                              const double* weights, int n, double mag,
                              double eps, double* rho);
+
+/// @brief Same as collint_collocate_group but products selected by index list
+///        (avoids copying GridProduct into a temp buffer).
+void collint_collocate_group_idx(const UniformGrid& grid,
+                                const GridProduct* prods_base,
+                                const int* idx, const double* weights, int n,
+                                double mag, double eps, double* rho);
 
 /// @brief Integrate a geometry-matched product group: one monom table.
 /// @param out_acc Per-product ∫ V·shape (length n); zero when screened.

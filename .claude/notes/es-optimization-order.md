@@ -19,13 +19,12 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    RKS/UKS integer paths (carried E/H, quadratic Armijo retry, budget reuse).
 4. ~~`p1-integrate-windows` / `p2-simd-pointfill-2`~~ **landed** — local \|V\|
    windows + 1D poly xsimd.
-5. ~~`p2-cxyz-collint` + lp-spec + sphere cache~~ **landed** — CP2K ortho
-   collint + geometry pre-sort at build + process-wide sphere cache +
-   `lp_z` 0..6 specialized collocate. MG MAIN **~2.6 s** (~**2.0×** CP2K
-   quiet ~1.28 s; was ~42 s). Energy pins green. **≤2× gate met.**
+5. ~~`p2-cxyz-collint` + lp-spec + sphere cache~~ **landed**
+6. ~~`p2-stvnl-setup` + collint group-parallel~~ **landed** — Hermite
+   memoization + fused `prim_ST` (STVnl ~1500→600 ms); group-idx collocate.
+   MG MAIN **~2.0 s** (~**1.6×** CP2K quiet ~1.28 s; was ~42 s). Pins green.
 
-**Active next:** STVnl_k setup (~1.3 s once) and residual kernel polish;
-products-default-k re-gate when setup+collint both quiet.
+**Active next:** residual setup/kernel; products-default-k re-gate.
 
 **Out of this wave:** Gaussian/PW cross-method DIIS·LA extraction; CUDA ES
 coverage freeze still holds.

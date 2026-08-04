@@ -197,6 +197,7 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                         if (dx * dx + dy * dy + dz * dz > reach2)
                             continue;
                         // Per-image REAL integrals, reused by every k.
+                        // Fused prim_ST shares Hermite tables for S and T.
                         double s_im = 0.0, t_im = 0.0;
                         for (const auto& pa : a)
                             for (const auto& pb : b) {
@@ -204,8 +205,10 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                                 q.center[0] += T[0];
                                 q.center[1] += T[1];
                                 q.center[2] += T[2];
-                                s_im += prim_overlap(pa, q);
-                                t_im += prim_kinetic(pa, q);
+                                double s_p = 0.0, t_p = 0.0;
+                                prim_ST(pa, q, s_p, t_p);
+                                s_im += s_p;
+                                t_im += t_p;
                             }
                         for (int ik = 0; ik < nk; ++ik) {
                             const Cplx phase =

@@ -21,6 +21,10 @@ double prim_overlap(const GridPrimitive& a, const GridPrimitive& b);
 /// @brief Kinetic-energy integral ⟨a|-½∇²|b⟩ of two primitive Gaussians.
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b);
 
+/// @brief Fused ⟨a|b⟩ and ⟨a|-½∇²|b⟩ sharing the Hermite tables (hot STVnl path).
+void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
+             double& t_out);
+
 /// @brief Overlap of two contracted basis functions (sum over primitive pairs).
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b);
 

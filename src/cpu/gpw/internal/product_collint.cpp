@@ -716,6 +716,40 @@ void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
                              lpz, cxyz, rho);
 }
 
+void collint_collocate_group_idx(const UniformGrid& grid,
+                                 const GridProduct* prods_base, const int* idx,
+                                 const double* weights, int n, double mag,
+                                 double eps, double* rho) {
+    if (n <= 0 || !(mag > 0.0))
+        return;
+    // Angular max + cxyz from indexed monoms (no GridProduct copy).
+    int lpx = 0, lpy = 0, lpz = 0, Ltot = 0;
+    for (int i = 0; i < n; ++i) {
+        const auto& p = prods_base[idx[i]];
+        lpx = std::max(lpx, p.la[0] + p.lb[0]);
+        lpy = std::max(lpy, p.la[1] + p.lb[1]);
+        lpz = std::max(lpz, p.la[2] + p.lb[2]);
+        Ltot = std::max(Ltot, p.la[0] + p.la[1] + p.la[2] + p.lb[0] + p.lb[1]
+                                  + p.lb[2]);
+    }
+    if (lpx > kMaxL || lpy > kMaxL || lpz > kMaxL)
+        return;
+    const GridProduct& g0 = prods_base[idx[0]];
+    const double radius = shape_radius(mag, g0.p, Ltot, eps);
+    if (!(radius > 0.0))
+        return;
+    const int sy = lpy + 1, sz = lpz + 1;
+    const int cxyz_n = (lpx + 1) * sy * sz;
+    ensure_I(static_cast<std::size_t>(cxyz_n));
+    double* cxyz = g_I.data();
+    std::fill(cxyz, cxyz + cxyz_n, 0.0);
+    for (int i = 0; i < n; ++i)
+        add_product_to_cxyz(prods_base[idx[i]], weights[i], lpx, lpy, lpz,
+                            cxyz);
+    ortho_cxyz_to_grid<true>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, cxyz,
+                             rho);
+}
+
 void collint_integrate_group(const UniformGrid& grid, const GridProduct* prods,
                              int n, double mag, double eps, const double* V,
                              double* out_acc) {
