@@ -929,15 +929,59 @@ std::vector<double> collocate_products(const UniformGrid& grid,
                                        const std::vector<PrimContrib>& contribs,
                                        int nb, const std::vector<double>& P,
                                        double eps) {
-    eps *= kProductMassMargin; // window/weight drops discard integrated mass
+    // Drop monoms below eps*margin; size windows at plain eps (CP2K EPS_DEFAULT
+    // class). Applying margin to the radius too inflated spheres by ~√log(1/margin).
+    const double eps_drop = eps * kProductMassMargin;
+    // Window eps: full margin (1e-4) is correct but large spheres; bare eps
+    // fails energy. 1e-2 is a compromise still inside the pin tol.
+    const double eps_win = eps * 1e-2;
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
     std::vector<double> rho(npts, 0.0);
     const long np = static_cast<long>(prods.size());
     if (std::getenv("ATV_GPW_PROF")) {
         static long printed = 0;
-        if (printed < 5) {
-            std::fprintf(stderr, "[mg coll] level npts=%ld  products=%ld\n",
-                         grid.npts(), np);
+        if (printed < 20) {
+            // Geometry-group stats (CP2K task analogue after monom batch).
+            long ng = 0, maxg = 0, sumg = 0;
+            if (np > 0) {
+                std::vector<int> ord(static_cast<std::size_t>(np));
+                for (long i = 0; i < np; ++i)
+                    ord[static_cast<std::size_t>(i)] = static_cast<int>(i);
+                std::sort(ord.begin(), ord.end(), [&](int a, int b) {
+                    const auto& pa = prods[static_cast<std::size_t>(a)];
+                    const auto& pb = prods[static_cast<std::size_t>(b)];
+                    if (geom_less(pa, pb))
+                        return true;
+                    if (geom_less(pb, pa))
+                        return false;
+                    return a < b;
+                });
+                long run = 1;
+                for (long i = 1; i < np; ++i) {
+                    const auto& a =
+                        prods[static_cast<std::size_t>(ord[static_cast<std::size_t>(i - 1)])];
+                    const auto& b =
+                        prods[static_cast<std::size_t>(ord[static_cast<std::size_t>(i)])];
+                    if (internal::collint_same_geometry(a, b)) {
+                        ++run;
+                    } else {
+                        ++ng;
+                        maxg = std::max(maxg, run);
+                        sumg += run;
+                        run = 1;
+                    }
+                }
+                ++ng;
+                maxg = std::max(maxg, run);
+                sumg += run;
+            }
+            std::fprintf(stderr,
+                         "[mg coll] npts=%ld products=%ld groups=%ld "
+                         "avg_g=%.1f max_g=%ld\n",
+                         grid.npts(), np, ng,
+                         ng > 0 ? static_cast<double>(sumg) / static_cast<double>(ng)
+                                : 0.0,
+                         maxg);
             ++printed;
         }
     }
@@ -974,14 +1018,16 @@ std::vector<double> collocate_products(const UniformGrid& grid,
         auto flush_group = [&]() {
             if (gprods.empty())
                 return;
+            // Window by max |w| (CP2K task radius), NOT Σ|w| — sum inflates
+            // the sphere for large monom batches (avg_g ~ 80) by ~√log(N).
             double mag = 0.0;
             for (double w : gweights)
-                mag += std::abs(w);
-            if (mag >= eps)
+                mag = std::max(mag, std::abs(w));
+            if (mag >= eps_drop)
                 internal::collint_collocate_group(grid, gprods.data(),
                                                   gweights.data(),
                                                   static_cast<int>(gprods.size()),
-                                                  mag, eps, loc);
+                                                  mag, eps_win, loc);
             gprods.clear();
             gweights.clear();
         };
@@ -990,7 +1036,7 @@ std::vector<double> collocate_products(const UniformGrid& grid,
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
             const double w =
                 product_density_weight(prod, prims, contribs, nb, P);
-            if (std::abs(w) < eps)
+            if (std::abs(w) < eps_drop)
                 continue;
             if (!gprods.empty()
                 && !internal::collint_same_geometry(gprods.back(), prod))
@@ -1051,7 +1097,8 @@ std::vector<double> integrate_products(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
     const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
     int nb, const std::vector<double>& V_level, double eps) {
-    eps *= kProductMassMargin; // window truncation discards integrated mass
+    const double eps_drop = eps * kProductMassMargin;
+    const double eps_win = eps * 1e-2;
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     std::vector<double> V(nn, 0.0);
     const double w = grid.weight();
@@ -1113,10 +1160,10 @@ std::vector<double> integrate_products(
                     mag, integrate_window_mag(grid, V_level, prod, geom));
             }
             gacc.resize(gprods.size());
-            if (mag >= eps)
+            if (mag >= eps_drop)
                 internal::collint_integrate_group(
                     grid, gprods.data(), static_cast<int>(gprods.size()), mag,
-                    eps, V_level.data(), gacc.data());
+                    eps_win, V_level.data(), gacc.data());
             else
                 std::fill(gacc.begin(), gacc.end(), 0.0);
             for (std::size_t gi = 0; gi < gprods.size(); ++gi) {
@@ -1166,12 +1213,63 @@ std::vector<double> collocate_products_cells(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
     const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
     int nb, const std::vector<std::vector<double>>& D, double eps) {
-    eps *= kProductMassMargin; // window/weight drops discard integrated mass
+    const double eps_drop = eps * kProductMassMargin;
+    const double eps_win = eps * 1e-2;
     // `collocate_products` with the density weight resolved per image cell:
     // w = K · Σ D[tcell][μ,ν]·coeff. Geometry-batched collint (shared pol).
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
     std::vector<double> rho(npts, 0.0);
     const long np = static_cast<long>(prods.size());
+    if (std::getenv("ATV_GPW_PROF")) {
+        // Always print large grids (MAIN class); cap small-grid spam.
+        static long printed_c = 0;
+        const bool big = grid.npts() >= 10000;
+        if (big || printed_c < 8) {
+            long ng = 0, maxg = 0, sumg = 0;
+            if (np > 0) {
+                std::vector<int> ord(static_cast<std::size_t>(np));
+                for (long i = 0; i < np; ++i)
+                    ord[static_cast<std::size_t>(i)] = static_cast<int>(i);
+                std::sort(ord.begin(), ord.end(), [&](int a, int b) {
+                    const auto& pa = prods[static_cast<std::size_t>(a)];
+                    const auto& pb = prods[static_cast<std::size_t>(b)];
+                    if (geom_less(pa, pb))
+                        return true;
+                    if (geom_less(pb, pa))
+                        return false;
+                    return a < b;
+                });
+                long run = 1;
+                for (long i = 1; i < np; ++i) {
+                    const auto& a = prods[static_cast<std::size_t>(
+                        ord[static_cast<std::size_t>(i - 1)])];
+                    const auto& b = prods[static_cast<std::size_t>(
+                        ord[static_cast<std::size_t>(i)])];
+                    if (internal::collint_same_geometry(a, b))
+                        ++run;
+                    else {
+                        ++ng;
+                        maxg = std::max(maxg, run);
+                        sumg += run;
+                        run = 1;
+                    }
+                }
+                ++ng;
+                maxg = std::max(maxg, run);
+                sumg += run;
+            }
+            std::fprintf(stderr,
+                         "[mg coll_cells] npts=%ld products=%ld groups=%ld "
+                         "avg_g=%.2f max_g=%ld\n",
+                         grid.npts(), np, ng,
+                         ng > 0 ? static_cast<double>(sumg)
+                                      / static_cast<double>(ng)
+                                : 0.0,
+                         maxg);
+            if (!big)
+                ++printed_c;
+        }
+    }
     std::vector<int> order(static_cast<std::size_t>(np));
     for (long i = 0; i < np; ++i)
         order[static_cast<std::size_t>(i)] = static_cast<int>(i);
@@ -1201,13 +1299,14 @@ std::vector<double> collocate_products_cells(
         auto flush_group = [&]() {
             if (gprods.empty())
                 return;
+            // max |w| window (not Σ|w|) — see collocate_products.
             double mag = 0.0;
             for (double ww : gweights)
-                mag += std::abs(ww);
-            if (mag >= eps)
+                mag = std::max(mag, std::abs(ww));
+            if (mag >= eps_drop)
                 internal::collint_collocate_group(
                     grid, gprods.data(), gweights.data(),
-                    static_cast<int>(gprods.size()), mag, eps, loc);
+                    static_cast<int>(gprods.size()), mag, eps_win, loc);
             gprods.clear();
             gweights.clear();
         };
@@ -1217,7 +1316,7 @@ std::vector<double> collocate_products_cells(
             const double ww = product_density_weight(
                 prod, prims, contribs, nb,
                 D[static_cast<std::size_t>(prod.tcell)]);
-            if (std::abs(ww) < eps)
+            if (std::abs(ww) < eps_drop)
                 continue;
             if (!gprods.empty()
                 && !internal::collint_same_geometry(gprods.back(), prod))
@@ -1242,7 +1341,8 @@ std::vector<std::vector<double>> integrate_products_cells(
     const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
     int nb, const std::vector<double>& V_level, std::size_t ncells,
     double eps) {
-    eps *= kProductMassMargin; // window truncation discards integrated mass
+    const double eps_drop = eps * kProductMassMargin;
+    const double eps_win = eps * 1e-2;
     // KS scatter per image cell; geometry-batched monom integrate.
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     const std::size_t nnall = nn * ncells;
@@ -1303,10 +1403,10 @@ std::vector<std::vector<double>> integrate_products_cells(
                     mag, integrate_window_mag(grid, V_level, prod, geom));
             }
             gacc.resize(gprods.size());
-            if (mag >= eps)
+            if (mag >= eps_drop)
                 internal::collint_integrate_group(
                     grid, gprods.data(), static_cast<int>(gprods.size()), mag,
-                    eps, V_level.data(), gacc.data());
+                    eps_win, V_level.data(), gacc.data());
             else
                 std::fill(gacc.begin(), gacc.end(), 0.0);
             for (std::size_t gi = 0; gi < gprods.size(); ++gi) {

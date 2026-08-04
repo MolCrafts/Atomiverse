@@ -7,7 +7,7 @@ do not trust older REFERENCE.md wall numbers when the node or module differs.
 
 | | |
 | --- | --- |
-| Date | 2026-08-04 (post collint + sphere-only Fz) |
+| Date | 2026-08-04 (post collint reflection + max\|w\| window) |
 | Host | `arrhenius1` — AMD EPYC 9255 ×2, OMP=4, `OMP_PROC_BIND=close` |
 | Build | Release, HF+PW+GPW, CUDA OFF, OpenBLAS |
 | Env | `ATV_GPW_PROF=1` |
@@ -28,7 +28,7 @@ export CP2K_DATA_DIR=$EBROOTCP2K/share/cp2k/data
 
 | Twin | ATV [s] | CP2K [s] | ratio | Notes |
 | --- | ---: | ---: | ---: | --- |
-| `gpw-multigrid-kpoints` MAIN | **~9.8** quiet (two-shot stable) | **0.885** (re-run 2026-08-04) | **~11** | pin −15.8024164 Ha; collint + sphere Fz |
+| `gpw-multigrid-kpoints` MAIN | **~8.0** quiet (two-shot) | **~1.28** quiet / 0.885 earlier | **~6** | pin OK; reflection collint; task count ~CP2K |
 | `gpw-uks-o2-gamma` | ~19–24 | ~21 (older pin) | ~1 | DIIS path; not product MG |
 | `gpw-kpoints-si` MAIN | ~few s KS after setup | ~3.3 (older) | ~1 | dense χ^k, not MG products |
 | `ot-minimizer-water` | ~9–11 reg wall | OT class ~2.7 (older) | ~3–4 | includes DIIS gate in reg |

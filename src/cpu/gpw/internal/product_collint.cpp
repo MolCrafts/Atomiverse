@@ -1,9 +1,16 @@
 /// @file src/cpu/gpw/internal/product_collint.cpp
-/// @brief CP2K collint-style product collocate/integrate (see product_collint.h).
+/// @brief CP2K ortho collint product collocate/integrate (see product_collint.h).
 ///
-/// Structure and recurrence follow CP2K grid_cpu_collint.h (BSD-3-Clause).
-/// SIMD uses portable xsimd (project law — no arch intrinsics).
-/// Grow-only thread_local scratch: product loops fire millions of times/SCF.
+/// Near-literal port of CP2K `src/grid/cpu/grid_cpu_collint.h` ortho path
+/// (BSD-3-Clause, Ole Schuett et al.):
+///   - even cube + reflection pairs (k,1−k) / (j,1−j) → 4 grid points / i
+///   - sphere-bounds iterator (no per-column sqrt in the hot nest)
+///   - pol[dir][l][ig] via exp recurrence
+///   - cxyz → cxy → cx → grid (collocate) / transpose (integrate)
+///
+/// Axis map onto ATV z-fast layout `g[(ix*ny+iy)*nz+iz]`:
+///   CP2K i (fast) ↔ ATV z,  j ↔ y,  k ↔ x.
+/// Portable xsimd on contiguous z-runs (project law — no AVX2 intrinsics).
 
 #include "atomiverse/cpu/gpw/internal/product_collint.h"
 
@@ -20,34 +27,32 @@ namespace gpw {
 namespace internal {
 namespace {
 
-constexpr int kMaxL = 12; // per-axis la+lb headroom (DZVP stays well below)
+constexpr int kMaxL = 12;
+constexpr int kMaxCmax = 128; // half-cube; ~25 Bohr / 0.1 Å is still well under
 
-// Grow-only per-thread scratch (mirrors multigrid collocate_one pools).
-thread_local std::vector<double> g_pol;   // pol packs + cxyz + cyz + cz + Fz
-thread_local std::vector<long> g_wrap;    // wrap indices per axis
-thread_local std::vector<double> g_e2;    // E2 per axis for sphere cull
-thread_local std::vector<double> g_I;     // monom table (integrate)
-thread_local std::vector<double> g_gaus;  // temp gaussian 1D
+// Grow-only thread_local scratch.
+thread_local std::vector<double> g_buf;  // pol + cxyz + cxy + cx + gaus
+thread_local std::vector<int> g_imap;    // map[3][2*cmax+1] + sections + sphere
+thread_local std::vector<double> g_I;    // monom table (integrate)
 
-inline void ensure_d(std::size_t n) {
-    if (g_pol.size() < n)
-        g_pol.resize(n);
+inline void ensure_buf(std::size_t n) {
+    if (g_buf.size() < n)
+        g_buf.resize(n);
 }
-inline void ensure_w(std::size_t n) {
-    if (g_wrap.size() < n)
-        g_wrap.resize(n);
-}
-inline void ensure_e2(std::size_t n) {
-    if (g_e2.size() < n)
-        g_e2.resize(n);
+inline void ensure_imap(std::size_t n) {
+    if (g_imap.size() < n)
+        g_imap.resize(n);
 }
 inline void ensure_I(std::size_t n) {
     if (g_I.size() < n)
         g_I.resize(n);
 }
-inline void ensure_gaus(std::size_t n) {
-    if (g_gaus.size() < n)
-        g_gaus.resize(n);
+
+inline int imax(int a, int b) { return a > b ? a : b; }
+inline int imin(int a, int b) { return a < b ? a : b; }
+inline int modulo(int a, int n) {
+    // positive mod (CP2K)
+    return ((a % n) + n) % n;
 }
 
 inline int binom(int n, int k) {
@@ -98,339 +103,38 @@ inline double shape_radius(double mag, double p, int Ltot, double eps) {
     return std::sqrt(std::max(r2, 0.0));
 }
 
-struct AxisGeom {
-    long lo[3];
-    int len[3];
-    int lpx, lpy, lpz;
-    int pol_off[3];
-    int wrap_off[3];
-    int e2_off[3];
-    int pol_total;
-    int wrap_total;
-    int e2_total;
-    double rc2;
-    double p;
-    double pc[3];
-    double origin[3];
-    double L[3];
-    long n[3];
-};
-
-/// Build window + pol + wrap + E2 for max angular orders. Returns false if empty.
-bool prepare_pol(const UniformGrid& grid, const GridProduct& geom, int lpx,
-                 int lpy, int lpz, double mag, int Ltot, double eps,
-                 AxisGeom& ag) {
-    if (lpx > kMaxL || lpy > kMaxL || lpz > kMaxL)
-        return false;
-    const double rc = shape_radius(mag, geom.p, Ltot, eps);
-    if (!(rc > 0.0))
-        return false;
-
-    ag.p = geom.p;
-    ag.rc2 = rc * rc;
-    for (int d = 0; d < 3; ++d) {
-        ag.n[d] = grid.n[d];
-        ag.L[d] = grid.L[d];
-        ag.origin[d] = grid.origin[d];
-        ag.pc[d] = geom.pc[d];
-        const double dx = grid.L[d] / static_cast<double>(grid.n[d]);
-        const long ih = static_cast<long>(std::ceil(rc / dx));
-        const long ic = static_cast<long>(std::floor(geom.pc[d] / dx));
-        ag.lo[d] = ic - ih;
-        ag.len[d] = static_cast<int>(2 * ih + 1);
-        if (ag.len[d] <= 0)
-            return false;
-    }
-    ag.lpx = lpx;
-    ag.lpy = lpy;
-    ag.lpz = lpz;
-
-    int po = 0, wo = 0, eo = 0;
-    const int lp[3] = {lpx, lpy, lpz};
-    for (int d = 0; d < 3; ++d) {
-        ag.pol_off[d] = po;
-        ag.wrap_off[d] = wo;
-        ag.e2_off[d] = eo;
-        po += (lp[d] + 1) * ag.len[d];
-        wo += ag.len[d];
-        eo += ag.len[d];
-    }
-    ag.pol_total = po;
-    ag.wrap_total = wo;
-    ag.e2_total = eo;
-    // Scratch: pol pack + cxyz + cyz + cz + Fz (reuse tail of g_pol)
-    const int sx = lpx + 1, sy = lpy + 1, sz = lpz + 1;
-    const int extra = sx * sy * sz + sy * sz + sz + ag.len[2];
-    ensure_d(static_cast<std::size_t>(po + extra));
-    ensure_w(static_cast<std::size_t>(wo));
-    ensure_e2(static_cast<std::size_t>(eo));
-    ensure_gaus(static_cast<std::size_t>(
-        std::max({ag.len[0], ag.len[1], ag.len[2]})));
-
-    double* pol_base = g_pol.data();
-    long* wrap_base = g_wrap.data();
-    double* e2_base = g_e2.data();
-    double* gaus = g_gaus.data();
-
-    for (int d = 0; d < 3; ++d) {
-        const int lpd = lp[d];
-        double* pol = pol_base + ag.pol_off[d];
-        long* W = wrap_base + ag.wrap_off[d];
-        double* E2 = e2_base + ag.e2_off[d];
-        const double dxd = ag.L[d] / static_cast<double>(ag.n[d]);
-        const double A = std::exp(-ag.p * dxd * dxd);
-        const double A2 = A * A;
-        const int tc = (ag.len[d] - 1) / 2;
-        const double rc_ =
-            ag.origin[d]
-            + ag.L[d] * static_cast<double>(ag.lo[d] + tc)
-                  / static_cast<double>(ag.n[d]);
-        const double ec = rc_ - ag.pc[d];
-        // CP2K outward exp recurrence from centre.
-        gaus[static_cast<std::size_t>(tc)] = std::exp(-ag.p * ec * ec);
-        {
-            double g = gaus[static_cast<std::size_t>(tc)];
-            double B = std::exp(-2.0 * ag.p * ec * dxd);
-            for (int t = tc + 1; t < ag.len[d]; ++t) {
-                g *= B * A;
-                gaus[static_cast<std::size_t>(t)] = g;
-                B *= A2;
-            }
-        }
-        {
-            double g = gaus[static_cast<std::size_t>(tc)];
-            double C = std::exp(2.0 * ag.p * ec * dxd);
-            for (int t = tc - 1; t >= 0; --t) {
-                g *= C * A;
-                gaus[static_cast<std::size_t>(t)] = g;
-                C *= A2;
-            }
-        }
-        for (int t = 0; t < ag.len[d]; ++t) {
-            const long idx = ag.lo[d] + t;
-            const double r =
-                ag.origin[d]
-                + ag.L[d] * static_cast<double>(idx)
-                      / static_cast<double>(ag.n[d]);
-            const double e = r - ag.pc[d];
-            E2[t] = e * e;
-            double pg = gaus[static_cast<std::size_t>(t)];
-            for (int l = 0; l <= lpd; ++l) {
-                pol[l * ag.len[d] + t] = pg;
-                pg *= e;
-            }
-            W[t] = ((idx % ag.n[d]) + ag.n[d]) % ag.n[d];
+/// CP2K single_sphere_bounds: stream kgmin; for each kg≤0: jgmin; for each jg≤0: igmin.
+/// (i,j,k) axes use spacing (di,dj,dk). Returns count of ints written (or needed).
+int single_sphere_bounds(double disr_radius, double di, double dj, double dk,
+                         int* bounds) {
+    const double di_inv = 1.0 / di, dj_inv = 1.0 / dj, dk_inv = 1.0 / dk;
+    int ibound = 0;
+    const int kgmin =
+        static_cast<int>(std::ceil(-1e-8 - disr_radius * dk_inv));
+    if (bounds)
+        bounds[ibound] = kgmin;
+    ++ibound;
+    for (int kg = kgmin; kg <= 0; ++kg) {
+        const int kd = (2 * kg - 1) / 2;
+        const double kr = kd * dk;
+        const double kremain = disr_radius * disr_radius - kr * kr;
+        const int jgmin = static_cast<int>(
+            std::ceil(-1e-8 - std::sqrt(std::max(0.0, kremain)) * dj_inv));
+        if (bounds)
+            bounds[ibound] = jgmin;
+        ++ibound;
+        for (int jg = jgmin; jg <= 0; ++jg) {
+            const int jd = (2 * jg - 1) / 2;
+            const double jr = jd * dj;
+            const double jremain = kremain - jr * jr;
+            const int igmin = static_cast<int>(
+                std::ceil(-1e-8 - std::sqrt(std::max(0.0, jremain)) * di_inv));
+            if (bounds)
+                bounds[ibound] = igmin;
+            ++ibound;
         }
     }
-    return true;
-}
-
-inline double* cxyz_buf(const AxisGeom& ag) {
-    return g_pol.data() + ag.pol_total;
-}
-inline double* cyz_buf(const AxisGeom& ag) {
-    const int sx = ag.lpx + 1, sy = ag.lpy + 1, sz = ag.lpz + 1;
-    return g_pol.data() + ag.pol_total + sx * sy * sz;
-}
-inline double* cz_buf(const AxisGeom& ag) {
-    const int sx = ag.lpx + 1, sy = ag.lpy + 1, sz = ag.lpz + 1;
-    return g_pol.data() + ag.pol_total + sx * sy * sz + sy * sz;
-}
-inline double* Fz_buf(const AxisGeom& ag) {
-    const int sx = ag.lpx + 1, sy = ag.lpy + 1, sz = ag.lpz + 1;
-    return g_pol.data() + ag.pol_total + sx * sy * sz + sy * sz + sz;
-}
-
-/// Contract cxyz → grid (collocate) or accumulate monoms from V (integrate).
-template <bool Collocate>
-double contract_cxyz(const AxisGeom& ag, double* cxyz, double* rho,
-                     const double* V) {
-    const int lpx = ag.lpx, lpy = ag.lpy, lpz = ag.lpz;
-    const int sx = lpx + 1, sy = lpy + 1, sz = lpz + 1;
-    const double* polx = g_pol.data() + ag.pol_off[0];
-    const double* poly = g_pol.data() + ag.pol_off[1];
-    const double* polz = g_pol.data() + ag.pol_off[2];
-    const long* Wx = g_wrap.data() + ag.wrap_off[0];
-    const long* Wy = g_wrap.data() + ag.wrap_off[1];
-    const long* Wz = g_wrap.data() + ag.wrap_off[2];
-    const double* E2x = g_e2.data() + ag.e2_off[0];
-    const double* E2y = g_e2.data() + ag.e2_off[1];
-    double* cyz = cyz_buf(ag);
-    double* cz = cz_buf(ag);
-    double* Fz = Fz_buf(ag);
-
-    const double rc2 = ag.rc2;
-    const double invdz =
-        static_cast<double>(ag.n[2]) / ag.L[2];
-    const double pc_z = ag.pc[2];
-    const double origin_z = ag.origin[2];
-    const long lo_z = ag.lo[2];
-    const long n_z = ag.n[2];
-    const int len_z = ag.len[2];
-    const long n1 = ag.n[1];
-
-    // Integrate monoms: accumulate into cxyz as I[lz,ly,lx]
-    if constexpr (!Collocate)
-        std::fill(cxyz, cxyz + sx * sy * sz, 0.0);
-
-    double acc = 0.0;
-    using batch_t = xsimd::batch<double>;
-    constexpr long Wd = static_cast<long>(batch_t::size);
-
-    for (int ti = 0; ti < ag.len[0]; ++ti) {
-        if (E2x[ti] > rc2)
-            continue;
-        // cyz[lz,ly] = Σ_lx cxyz · polx  (collocate) / reverse (integrate)
-        if constexpr (Collocate) {
-            for (int lz = 0; lz <= lpz; ++lz)
-                for (int ly = 0; ly <= lpy; ++ly) {
-                    double s = 0.0;
-                    for (int lx = 0; lx <= lpx; ++lx)
-                        s += cxyz[(lz * sy + ly) * sx + lx]
-                             * polx[lx * ag.len[0] + ti];
-                    cyz[lz * sy + ly] = s;
-                }
-        } else {
-            std::fill(cyz, cyz + sy * sz, 0.0);
-        }
-        const long ix = Wx[ti];
-        for (int tj = 0; tj < ag.len[1]; ++tj) {
-            const double r2xy = E2x[ti] + E2y[tj];
-            if (r2xy > rc2)
-                continue;
-            if constexpr (Collocate) {
-                for (int lz = 0; lz <= lpz; ++lz) {
-                    double s = 0.0;
-                    for (int ly = 0; ly <= lpy; ++ly)
-                        s += cyz[lz * sy + ly] * poly[ly * ag.len[1] + tj];
-                    cz[lz] = s;
-                }
-            } else {
-                std::fill(cz, cz + sz, 0.0);
-            }
-
-            const long base = (ix * n1 + Wy[tj]) * n_z;
-            const double zr = std::sqrt(std::max(rc2 - r2xy, 0.0));
-            long klo =
-                static_cast<long>(std::ceil((pc_z - zr - origin_z) * invdz))
-                - lo_z;
-            long khi =
-                static_cast<long>(std::floor((pc_z + zr - origin_z) * invdz))
-                - lo_z;
-            if (klo < 0)
-                klo = 0;
-            if (khi > len_z - 1)
-                khi = len_z - 1;
-            if (klo > khi)
-                continue;
-
-            if constexpr (Collocate) {
-                // Only the sphere z-range contributes — skip cube corners.
-                for (int tk = static_cast<int>(klo); tk <= static_cast<int>(khi);
-                     ++tk) {
-                    double s = 0.0;
-                    for (int lz = 0; lz <= lpz; ++lz)
-                        s += cz[lz] * polz[lz * len_z + tk];
-                    Fz[tk] = s;
-                }
-                long tk = klo;
-                while (tk <= khi) {
-                    const long z0 = Wz[tk];
-                    const long run = std::min(khi - tk + 1, n_z - z0);
-                    const long g0 = base + z0;
-                    long t = 0;
-                    for (; t + Wd <= run; t += Wd) {
-                        batch_t r = batch_t::load_unaligned(rho + g0 + t);
-                        r += batch_t::load_unaligned(Fz + tk + t);
-                        r.store_unaligned(rho + g0 + t);
-                    }
-                    for (; t < run; ++t)
-                        rho[g0 + t] += Fz[tk + t];
-                    tk += run;
-                }
-            } else {
-                // Build Fz from V (z-run), then reverse-contract into monoms.
-                std::fill(Fz, Fz + len_z, 0.0);
-                long tk = klo;
-                while (tk <= khi) {
-                    const long z0 = Wz[tk];
-                    const long run = std::min(khi - tk + 1, n_z - z0);
-                    const long g0 = base + z0;
-                    for (long t = 0; t < run; ++t)
-                        Fz[tk + t] = V[g0 + t];
-                    tk += run;
-                }
-                // cz[lz] = Σ_tk Fz[tk] * polz[lz,tk]
-                for (int lz = 0; lz <= lpz; ++lz) {
-                    double s = 0.0;
-                    for (int tk = klo; tk <= khi; ++tk)
-                        s += Fz[tk] * polz[lz * len_z + tk];
-                    cz[lz] = s;
-                }
-                // cyz[lz,ly] += cz[lz] * poly[ly,tj]
-                for (int lz = 0; lz <= lpz; ++lz)
-                    for (int ly = 0; ly <= lpy; ++ly)
-                        cyz[lz * sy + ly] += cz[lz] * poly[ly * ag.len[1] + tj];
-            }
-        }
-        if constexpr (!Collocate) {
-            // cxyz[lz,ly,lx] += cyz[lz,ly] * polx[lx,ti]
-            for (int lz = 0; lz <= lpz; ++lz)
-                for (int ly = 0; ly <= lpy; ++ly) {
-                    const double cy = cyz[lz * sy + ly];
-                    if (cy == 0.0)
-                        continue;
-                    for (int lx = 0; lx <= lpx; ++lx)
-                        cxyz[(lz * sy + ly) * sx + lx] +=
-                            cy * polx[lx * ag.len[0] + ti];
-                }
-        }
-    }
-    (void)acc;
-    return 0.0;
-}
-
-void add_product_to_cxyz(const GridProduct& prod, double weight, int lpx,
-                         int lpy, int lpz, double* cxyz) {
-    if (weight == 0.0)
-        return;
-    double ax[kMaxL + 1], ay[kMaxL + 1], az[kMaxL + 1];
-    const int lpx_p =
-        expand_axis(prod.la[0], prod.lb[0], prod.pc[0], prod.ra[0], prod.rb[0],
-                    ax);
-    const int lpy_p =
-        expand_axis(prod.la[1], prod.lb[1], prod.pc[1], prod.ra[1], prod.rb[1],
-                    ay);
-    const int lpz_p =
-        expand_axis(prod.la[2], prod.lb[2], prod.pc[2], prod.ra[2], prod.rb[2],
-                    az);
-    const int sx = lpx + 1, sy = lpy + 1;
-    for (int lz = 0; lz <= lpz_p; ++lz)
-        for (int ly = 0; ly <= lpy_p; ++ly)
-            for (int lx = 0; lx <= lpx_p; ++lx)
-                cxyz[(lz * sy + ly) * sx + lx] +=
-                    weight * ax[lx] * ay[ly] * az[lz];
-}
-
-double contract_product_from_I(const GridProduct& prod, int lpx, int lpy,
-                               int lpz, const double* I) {
-    double ax[kMaxL + 1], ay[kMaxL + 1], az[kMaxL + 1];
-    const int lpx_p =
-        expand_axis(prod.la[0], prod.lb[0], prod.pc[0], prod.ra[0], prod.rb[0],
-                    ax);
-    const int lpy_p =
-        expand_axis(prod.la[1], prod.lb[1], prod.pc[1], prod.ra[1], prod.rb[1],
-                    ay);
-    const int lpz_p =
-        expand_axis(prod.la[2], prod.lb[2], prod.pc[2], prod.ra[2], prod.rb[2],
-                    az);
-    const int sx = lpx + 1, sy = lpy + 1;
-    double s = 0.0;
-    for (int lz = 0; lz <= lpz_p; ++lz)
-        for (int ly = 0; ly <= lpy_p; ++ly)
-            for (int lx = 0; lx <= lpx_p; ++lx)
-                s += I[(lz * sy + ly) * sx + lx] * ax[lx] * ay[ly] * az[lz];
-    return s;
+    return ibound;
 }
 
 void group_angular_max(const GridProduct* prods, int n, int& lpx, int& lpy,
@@ -443,6 +147,366 @@ void group_angular_max(const GridProduct* prods, int n, int& lpx, int& lpy,
         lpz = std::max(lpz, p.la[2] + p.lb[2]);
         Ltot = std::max(Ltot, p.la[0] + p.la[1] + p.la[2] + p.lb[0] + p.lb[1]
                                   + p.lb[2]);
+    }
+}
+
+void add_product_to_cxyz(const GridProduct& prod, double weight, int lpx,
+                         int lpy, int lpz, double* cxyz) {
+    if (weight == 0.0)
+        return;
+    double ax[kMaxL + 1], ay[kMaxL + 1], az[kMaxL + 1];
+    const int lpx_p = expand_axis(prod.la[0], prod.lb[0], prod.pc[0],
+                                  prod.ra[0], prod.rb[0], ax);
+    const int lpy_p = expand_axis(prod.la[1], prod.lb[1], prod.pc[1],
+                                  prod.ra[1], prod.rb[1], ay);
+    const int lpz_p = expand_axis(prod.la[2], prod.lb[2], prod.pc[2],
+                                  prod.ra[2], prod.rb[2], az);
+    // Layout [lx][ly][lz] with lz fastest (CP2K lxp along i = our z).
+    const int sy = lpy + 1, sz = lpz + 1;
+    for (int lx = 0; lx <= lpx_p; ++lx)
+        for (int ly = 0; ly <= lpy_p; ++ly)
+            for (int lz = 0; lz <= lpz_p; ++lz)
+                cxyz[(lx * sy + ly) * sz + lz] +=
+                    weight * ax[lx] * ay[ly] * az[lz];
+}
+
+double contract_product_from_I(const GridProduct& prod, int lpx, int lpy,
+                               int lpz, const double* I) {
+    double ax[kMaxL + 1], ay[kMaxL + 1], az[kMaxL + 1];
+    const int lpx_p = expand_axis(prod.la[0], prod.lb[0], prod.pc[0],
+                                  prod.ra[0], prod.rb[0], ax);
+    const int lpy_p = expand_axis(prod.la[1], prod.lb[1], prod.pc[1],
+                                  prod.ra[1], prod.rb[1], ay);
+    const int lpz_p = expand_axis(prod.la[2], prod.lb[2], prod.pc[2],
+                                  prod.ra[2], prod.rb[2], az);
+    const int sy = lpy + 1, sz = lpz + 1;
+    double s = 0.0;
+    for (int lx = 0; lx <= lpx_p; ++lx)
+        for (int ly = 0; ly <= lpy_p; ++ly)
+            for (int lz = 0; lz <= lpz_p; ++lz)
+                s += I[(lx * sy + ly) * sz + lz] * ax[lx] * ay[ly] * az[lz];
+    return s;
+}
+
+/// CP2K ortho cxyz↔grid with reflection. Axes (i,j,k)=(z,y,x) on ATV packing.
+template <bool Collocate>
+void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
+                        double zetp, double radius, int lpx, int lpy, int lpz,
+                        double* cxyz, double* grid_io) {
+    // Spacings along (i,j,k) = (z,y,x).
+    const double di = grid.L[2] / static_cast<double>(grid.n[2]);
+    const double dj = grid.L[1] / static_cast<double>(grid.n[1]);
+    const double dk = grid.L[0] / static_cast<double>(grid.n[0]);
+    if (!(radius > 0.0) || 2.0 * radius < std::max({di, dj, dk}))
+        return;
+
+    // Cubecenter in (i,j,k) from absolute pc − origin.
+    const double rp[3] = {pc[2] - grid.origin[2], pc[1] - grid.origin[1],
+                          pc[0] - grid.origin[0]};
+    int cubecenter[3];
+    cubecenter[0] = static_cast<int>(std::floor(rp[0] / di)); // i ← z
+    cubecenter[1] = static_cast<int>(std::floor(rp[1] / dj)); // j ← y
+    cubecenter[2] = static_cast<int>(std::floor(rp[2] / dk)); // k ← x
+    const double roffset[3] = {rp[0] - cubecenter[0] * di,
+                               rp[1] - cubecenter[1] * dj,
+                               rp[2] - cubecenter[2] * dk};
+    const double dr[3] = {di, dj, dk};
+
+    // Sphere bounds (CP2K stream). Discretize radius to integer grid steps.
+    const double drmin = std::min({di, dj, dk});
+    const int imr = std::max(1, static_cast<int>(std::ceil(radius / drmin)));
+    const double disr_radius = drmin * static_cast<double>(imr);
+
+    const int nbounds = single_sphere_bounds(disr_radius, di, dj, dk, nullptr);
+    // Cube half-width from discretized radius.
+    int lb_cube[3], ub_cube[3];
+    lb_cube[0] = static_cast<int>(std::ceil(-1e-8 - disr_radius / di));
+    lb_cube[1] = static_cast<int>(std::ceil(-1e-8 - disr_radius / dj));
+    lb_cube[2] = static_cast<int>(std::ceil(-1e-8 - disr_radius / dk));
+    for (int d = 0; d < 3; ++d)
+        ub_cube[d] = 1 - lb_cube[d];
+    const int cmax = imax(imax(ub_cube[0], ub_cube[1]), ub_cube[2]);
+    if (cmax <= 0 || cmax > kMaxCmax)
+        return;
+
+    const int lp_x = lpx, lp_y = lpy, lp_z = lpz; // monoms along x,y,z
+    // pol layout: pol_off[d] + l * (2*cmax+1) + (ig+cmax)
+    // d: 0=i=z (lp_z), 1=j=y (lp_y), 2=k=x (lp_x)
+    const int pol_len = 2 * cmax + 1;
+    const int pol_lp[3] = {lp_z, lp_y, lp_x};
+    int pol_off[3];
+    int po = 0;
+    for (int d = 0; d < 3; ++d) {
+        pol_off[d] = po;
+        po += (pol_lp[d] + 1) * pol_len;
+    }
+    const int sy = lpy + 1, sz = lpz + 1;
+    const int cxyz_n = (lpx + 1) * sy * sz;
+    const int cxy_n = sy * sz * 2;
+    const int cx_n = sz * 4;
+    ensure_buf(static_cast<std::size_t>(po + cxy_n + cx_n + pol_len));
+    ensure_imap(static_cast<std::size_t>(3 * pol_len * 2 + nbounds + 8));
+
+    double* pol_base = g_buf.data();
+    double* cxy = g_buf.data() + po;
+    double* cx = cxy + cxy_n;
+    // Build pol — CP2K exp recurrence (even cube, ig and 1−ig pairs).
+    for (int idir = 0; idir < 3; ++idir) {
+        const double dri = dr[idir];
+        const double ro = roffset[idir];
+        const int lp = pol_lp[idir];
+        double* pol = pol_base + pol_off[idir];
+        const double t_exp_1 = std::exp(-zetp * dri * dri);
+        const double t_exp_2 = t_exp_1 * t_exp_1;
+        // Negative / zero side (ig = 0, −1, −2, … → lb)
+        double t_exp_min_1 = std::exp(-zetp * (dri - ro) * (dri - ro));
+        double t_exp_min_2 = std::exp(-2.0 * zetp * (dri - ro) * (-dri));
+        for (int ig = 0; ig >= lb_cube[idir]; --ig) {
+            const double rpg = static_cast<double>(ig) * dri - ro;
+            t_exp_min_1 *= t_exp_min_2 * t_exp_1;
+            t_exp_min_2 *= t_exp_2;
+            double pg = t_exp_min_1;
+            for (int l = 0; l <= lp; ++l) {
+                pol[l * pol_len + (ig + cmax)] = pg;
+                pg *= rpg;
+            }
+        }
+        // Positive side (grid indices 1,2,3,…)
+        double t_exp_plus_1 = std::exp(-zetp * (-ro) * (-ro));
+        double t_exp_plus_2 = std::exp(-2.0 * zetp * (-ro) * dri);
+        for (int ig = 0; ig >= lb_cube[idir]; --ig) {
+            const double rpg = static_cast<double>(1 - ig) * dri - ro;
+            t_exp_plus_1 *= t_exp_plus_2 * t_exp_1;
+            t_exp_plus_2 *= t_exp_2;
+            double pg = t_exp_plus_1;
+            for (int l = 0; l <= lp; ++l) {
+                pol[l * pol_len + ((1 - ig) + cmax)] = pg;
+                pg *= rpg;
+            }
+        }
+    }
+
+    // map[d][ig+cmax] → wrapped grid index along ATV axis.
+    // d=0 → z (n[2]), d=1 → y (n[1]), d=2 → x (n[0])
+    const int n_atv[3] = {grid.n[2], grid.n[1], grid.n[0]};
+    int* map0 = g_imap.data();
+    int* map1 = map0 + pol_len;
+    int* map2 = map1 + pol_len;
+    int* sec0 = map2 + pol_len;
+    int* sec1 = sec0 + pol_len;
+    int* sec2 = sec1 + pol_len;
+    int* sphere = sec2 + pol_len;
+    int* maps[3] = {map0, map1, map2};
+    int* secs[3] = {sec0, sec1, sec2};
+    for (int d = 0; d < 3; ++d) {
+        for (int k = -cmax; k <= cmax; ++k)
+            maps[d][k + cmax] =
+                modulo(cubecenter[d] + k, n_atv[d]);
+        for (int kg = 2 * cmax; kg >= 0; --kg) {
+            if (kg == 2 * cmax
+                || maps[d][kg] != maps[d][kg + 1] - 1)
+                secs[d][kg] = 0;
+            else
+                secs[d][kg] = secs[d][kg + 1] + 1;
+        }
+    }
+    single_sphere_bounds(disr_radius, di, dj, dk, sphere);
+
+    const double* pol_i = pol_base + pol_off[0]; // z
+    const double* pol_j = pol_base + pol_off[1]; // y
+    const double* pol_k = pol_base + pol_off[2]; // x
+
+    const long nx = grid.n[0], ny = grid.n[1], nz = grid.n[2];
+    int* sb = sphere;
+    const int kstart = *sb++;
+
+    for (int k1 = kstart; k1 <= 0; ++k1) {
+        const int k2 = 1 - k1;
+        const int kg1 = map2[k1 + cmax]; // ix
+        const int kg2 = map2[k2 + cmax];
+        std::fill(cxy, cxy + cxy_n, 0.0);
+
+        if constexpr (Collocate) {
+            // cxyz → cxy : contract lx with pol_k
+            for (int lx = 0; lx <= lp_x; ++lx) {
+                const double p1 = pol_k[lx * pol_len + (k1 + cmax)];
+                const double p2 = pol_k[lx * pol_len + (k2 + cmax)];
+                for (int ly = 0; ly <= lp_y; ++ly)
+                    for (int lz = 0; lz <= lp_z; ++lz) {
+                        const double c =
+                            cxyz[(lx * sy + ly) * sz + lz];
+                        const int cxy_i = (ly * sz + lz) * 2;
+                        cxy[cxy_i + 0] += c * p1;
+                        cxy[cxy_i + 1] += c * p2;
+                    }
+            }
+        }
+
+        const int jstart = *sb++;
+        for (int j1 = jstart; j1 <= 0; ++j1) {
+            const int j2 = 1 - j1;
+            const int jg1 = map1[j1 + cmax]; // iy
+            const int jg2 = map1[j2 + cmax];
+            std::fill(cx, cx + cx_n, 0.0);
+
+            if constexpr (Collocate) {
+                // cxy → cx : contract ly with pol_j
+                for (int ly = 0; ly <= lp_y; ++ly) {
+                    const double p1 = pol_j[ly * pol_len + (j1 + cmax)];
+                    const double p2 = pol_j[ly * pol_len + (j2 + cmax)];
+                    for (int lz = 0; lz <= lp_z; ++lz) {
+                        const int cxy_i = (ly * sz + lz) * 2;
+                        cx[lz * 4 + 0] += cxy[cxy_i + 0] * p1;
+                        cx[lz * 4 + 1] += cxy[cxy_i + 1] * p1;
+                        cx[lz * 4 + 2] += cxy[cxy_i + 0] * p2;
+                        cx[lz * 4 + 3] += cxy[cxy_i + 1] * p2;
+                    }
+                }
+            }
+
+            // Sphere i-bounds for this (k,j) column pair.
+            const int lb = *sb++;
+            const int ub = 1 - lb;
+
+            // Base linear indices for the 4 reflected (ix,iy) pairs; +iz later.
+            const long base0 = (static_cast<long>(kg1) * ny + jg1) * nz;
+            const long base1 = (static_cast<long>(kg2) * ny + jg1) * nz;
+            const long base2 = (static_cast<long>(kg1) * ny + jg2) * nz;
+            const long base3 = (static_cast<long>(kg2) * ny + jg2) * nz;
+
+            if constexpr (Collocate) {
+                using batch_t = xsimd::batch<double>;
+                constexpr int Wd = static_cast<int>(batch_t::size);
+                for (int istart = lb; istart <= ub;) {
+                    const int istop =
+                        imin(ub, istart + sec0[istart + cmax]);
+                    const int cube2grid = map0[istart + cmax] - istart;
+                    // Contiguous z-run: vectorize over successive i when the
+                    // map is homogeneous (section) and ig increases by 1.
+                    int i = istart;
+                    // Vector path only when grid indices are contiguous.
+                    if (cube2grid + istart >= 0) {
+                        for (; i + Wd - 1 <= istop; i += Wd) {
+                            const int ig = i + cube2grid;
+                            batch_t r0(0.0), r1(0.0), r2(0.0), r3(0.0);
+                            for (int lz = 0; lz <= lp_z; ++lz) {
+                                // pol along i is contiguous in i for fixed lz.
+                                const batch_t p = batch_t::load_unaligned(
+                                    pol_i + lz * pol_len + (i + cmax));
+                                r0 += p * batch_t(cx[lz * 4 + 0]);
+                                r1 += p * batch_t(cx[lz * 4 + 1]);
+                                r2 += p * batch_t(cx[lz * 4 + 2]);
+                                r3 += p * batch_t(cx[lz * 4 + 3]);
+                            }
+                            batch_t g0 =
+                                batch_t::load_unaligned(grid_io + base0 + ig);
+                            batch_t g1 =
+                                batch_t::load_unaligned(grid_io + base1 + ig);
+                            batch_t g2 =
+                                batch_t::load_unaligned(grid_io + base2 + ig);
+                            batch_t g3 =
+                                batch_t::load_unaligned(grid_io + base3 + ig);
+                            (g0 + r0).store_unaligned(grid_io + base0 + ig);
+                            (g1 + r1).store_unaligned(grid_io + base1 + ig);
+                            (g2 + r2).store_unaligned(grid_io + base2 + ig);
+                            (g3 + r3).store_unaligned(grid_io + base3 + ig);
+                        }
+                    }
+                    for (; i <= istop; ++i) {
+                        const int ig = i + cube2grid;
+                        double reg0 = 0.0, reg1 = 0.0, reg2 = 0.0,
+                               reg3 = 0.0;
+                        for (int lz = 0; lz <= lp_z; ++lz) {
+                            const double p =
+                                pol_i[lz * pol_len + (i + cmax)];
+                            reg0 += cx[lz * 4 + 0] * p;
+                            reg1 += cx[lz * 4 + 1] * p;
+                            reg2 += cx[lz * 4 + 2] * p;
+                            reg3 += cx[lz * 4 + 3] * p;
+                        }
+                        grid_io[base0 + ig] += reg0;
+                        grid_io[base1 + ig] += reg1;
+                        grid_io[base2 + ig] += reg2;
+                        grid_io[base3 + ig] += reg3;
+                    }
+                    istart = istop + 1;
+                }
+            } else {
+                // Integrate: gather V into cx, then reverse-contract.
+                using batch_t = xsimd::batch<double>;
+                constexpr int Wd = static_cast<int>(batch_t::size);
+                for (int istart = lb; istart <= ub;) {
+                    const int istop =
+                        imin(ub, istart + sec0[istart + cmax]);
+                    const int cube2grid = map0[istart + cmax] - istart;
+                    int i = istart;
+                    if (cube2grid + istart >= 0) {
+                        for (; i + Wd - 1 <= istop; i += Wd) {
+                            const int ig = i + cube2grid;
+                            const batch_t v0 =
+                                batch_t::load_unaligned(grid_io + base0 + ig);
+                            const batch_t v1 =
+                                batch_t::load_unaligned(grid_io + base1 + ig);
+                            const batch_t v2 =
+                                batch_t::load_unaligned(grid_io + base2 + ig);
+                            const batch_t v3 =
+                                batch_t::load_unaligned(grid_io + base3 + ig);
+                            for (int lz = 0; lz <= lp_z; ++lz) {
+                                const batch_t p = batch_t::load_unaligned(
+                                    pol_i + lz * pol_len + (i + cmax));
+                                // Horizontal add into scalar cx slots.
+                                cx[lz * 4 + 0] += xsimd::reduce_add(v0 * p);
+                                cx[lz * 4 + 1] += xsimd::reduce_add(v1 * p);
+                                cx[lz * 4 + 2] += xsimd::reduce_add(v2 * p);
+                                cx[lz * 4 + 3] += xsimd::reduce_add(v3 * p);
+                            }
+                        }
+                    }
+                    for (; i <= istop; ++i) {
+                        const int ig = i + cube2grid;
+                        const double v0 = grid_io[base0 + ig];
+                        const double v1 = grid_io[base1 + ig];
+                        const double v2 = grid_io[base2 + ig];
+                        const double v3 = grid_io[base3 + ig];
+                        for (int lz = 0; lz <= lp_z; ++lz) {
+                            const double p =
+                                pol_i[lz * pol_len + (i + cmax)];
+                            cx[lz * 4 + 0] += v0 * p;
+                            cx[lz * 4 + 1] += v1 * p;
+                            cx[lz * 4 + 2] += v2 * p;
+                            cx[lz * 4 + 3] += v3 * p;
+                        }
+                    }
+                    istart = istop + 1;
+                }
+                // cx → cxy
+                for (int ly = 0; ly <= lp_y; ++ly) {
+                    const double p1 = pol_j[ly * pol_len + (j1 + cmax)];
+                    const double p2 = pol_j[ly * pol_len + (j2 + cmax)];
+                    for (int lz = 0; lz <= lp_z; ++lz) {
+                        const int cxy_i = (ly * sz + lz) * 2;
+                        cxy[cxy_i + 0] += cx[lz * 4 + 0] * p1;
+                        cxy[cxy_i + 1] += cx[lz * 4 + 1] * p1;
+                        cxy[cxy_i + 0] += cx[lz * 4 + 2] * p2;
+                        cxy[cxy_i + 1] += cx[lz * 4 + 3] * p2;
+                    }
+                }
+            }
+        }
+
+        if constexpr (!Collocate) {
+            // cxy → cxyz
+            for (int lx = 0; lx <= lp_x; ++lx) {
+                const double p1 = pol_k[lx * pol_len + (k1 + cmax)];
+                const double p2 = pol_k[lx * pol_len + (k2 + cmax)];
+                for (int ly = 0; ly <= lp_y; ++ly)
+                    for (int lz = 0; lz <= lp_z; ++lz) {
+                        const int cxy_i = (ly * sz + lz) * 2;
+                        cxyz[(lx * sy + ly) * sz + lz] +=
+                            cxy[cxy_i + 0] * p1 + cxy[cxy_i + 1] * p2;
+                    }
+            }
+        }
     }
 }
 
@@ -470,15 +534,20 @@ void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
         return;
     int lpx, lpy, lpz, Ltot;
     group_angular_max(prods, n, lpx, lpy, lpz, Ltot);
-    AxisGeom ag;
-    if (!prepare_pol(grid, prods[0], lpx, lpy, lpz, mag, Ltot, eps, ag))
+    if (lpx > kMaxL || lpy > kMaxL || lpz > kMaxL)
         return;
-    const int sx = lpx + 1, sy = lpy + 1, sz = lpz + 1;
-    double* cxyz = cxyz_buf(ag);
-    std::fill(cxyz, cxyz + sx * sy * sz, 0.0);
+    const double radius = shape_radius(mag, prods[0].p, Ltot, eps);
+    if (!(radius > 0.0))
+        return;
+    const int sy = lpy + 1, sz = lpz + 1;
+    const int cxyz_n = (lpx + 1) * sy * sz;
+    ensure_I(static_cast<std::size_t>(cxyz_n)); // reuse g_I as cxyz scratch
+    double* cxyz = g_I.data();
+    std::fill(cxyz, cxyz + cxyz_n, 0.0);
     for (int i = 0; i < n; ++i)
         add_product_to_cxyz(prods[i], weights[i], lpx, lpy, lpz, cxyz);
-    (void)contract_cxyz<true>(ag, cxyz, rho, nullptr);
+    ortho_cxyz_to_grid<true>(grid, prods[0].pc, prods[0].p, radius, lpx, lpy,
+                             lpz, cxyz, rho);
 }
 
 void collint_integrate_group(const UniformGrid& grid, const GridProduct* prods,
@@ -490,13 +559,20 @@ void collint_integrate_group(const UniformGrid& grid, const GridProduct* prods,
         return;
     int lpx, lpy, lpz, Ltot;
     group_angular_max(prods, n, lpx, lpy, lpz, Ltot);
-    AxisGeom ag;
-    if (!prepare_pol(grid, prods[0], lpx, lpy, lpz, mag, Ltot, eps, ag))
+    if (lpx > kMaxL || lpy > kMaxL || lpz > kMaxL)
         return;
-    const int sx = lpx + 1, sy = lpy + 1, sz = lpz + 1;
-    ensure_I(static_cast<std::size_t>(sx * sy * sz));
+    const double radius = shape_radius(mag, prods[0].p, Ltot, eps);
+    if (!(radius > 0.0))
+        return;
+    const int sy = lpy + 1, sz = lpz + 1;
+    const int cxyz_n = (lpx + 1) * sy * sz;
+    ensure_I(static_cast<std::size_t>(cxyz_n));
     double* I = g_I.data();
-    (void)contract_cxyz<false>(ag, I, nullptr, V);
+    std::fill(I, I + cxyz_n, 0.0);
+    // const_cast: integrate only reads V; signature uses double* for shared
+    // collocate/integrate template (grid_io is V when integrating).
+    ortho_cxyz_to_grid<false>(grid, prods[0].pc, prods[0].p, radius, lpx, lpy,
+                              lpz, I, const_cast<double*>(V));
     for (int i = 0; i < n; ++i)
         out_acc[i] = contract_product_from_I(prods[i], lpx, lpy, lpz, I);
 }

@@ -23,12 +23,14 @@ Twin `gpw-multigrid-kpoints` MAIN (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV best MAIN | **~9.8** | two-shot stable OMP=4 bind |
-| CP2K 2026.1 same host | **0.885** | `tools/cp2k_oracle/inputs/gpw-multigrid-kpoints/si_kpoints_mg.inp` |
-| **ratio ATV/CP2K** | **~11×** | was ~47× pre-collint, ~30× mid-batch |
+| ATV best MAIN | **~8.0** | two-shot OMP=4 bind |
+| CP2K 2026.1 same host | **~1.28** quiet (0.885 earlier load) | re-run 2026-08-04 evening |
+| **ratio ATV/CP2K** | **~6×** | target ≤2× still open |
 
-Collint + geometry monom batch + sphere-only Fz contract. CP2K grid_collocate /
-grid_integrate ~0.018–0.019 s/iter. Stale: pre-collint ~42 s / 47×.
+**Task parity:** MAIN ~5500 geometry groups / density ≈ CP2K ~5000 ortho
+tasks. Gap is **per-task kernel throughput** (~15–20×), not product count.
+Collint: CP2K reflection pairs + sphere bounds + monom batch + max\|w\|
+window + z xsimd. Bare `eps` windows fail energy (need margin class).
 
 ### Product collint (landed)
 
@@ -59,7 +61,7 @@ Landed: z-run axpy/dot; 1D poly/E2 (legacy collocate_one); collint z-contract;
 
 | Rank | Issue | Where |
 | --- | --- | --- |
-| **1** | Product collint still ~11× vs CP2K (reflection / sphere cache / tasks) | `product_collint.cpp` |
+| **1** | Product collint per-task ~15–20× slower than CP2K (overall ~6× MAIN) | `product_collint.cpp` |
 | 2 | Multi-k dense χ^k O(npts·nb²·nk) until product engine wins fully | `kpoints.cpp` |
 | 3 | Force path rebuilds grids (geometry-fixed reuse incomplete) | `gpw_forces.cpp` |
 | 4 | Forked SCF control flow (structure only; KS build shared) | `gpw_solver.cpp` |

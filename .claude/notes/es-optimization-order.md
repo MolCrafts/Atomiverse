@@ -19,13 +19,14 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    RKS/UKS integer paths (carried E/H, quadratic Armijo retry, budget reuse).
 4. ~~`p1-integrate-windows` / `p2-simd-pointfill-2`~~ **landed** — local \|V\|
    windows + 1D poly xsimd.
-5. ~~`p2-cxyz-collint` (geometry batch + sphere Fz)~~ **landed** —
-   `product_collint.{h,cpp}` (CP2K collint, BSD-3): cxyz + pol + monom
-   integrate + geometry group batch + sphere-only Fz. MG MAIN **~9.8 s**
-   (~11× CP2K 0.885 s; was ~42 s / ~47×). Energy pins green.
+5. ~~`p2-cxyz-collint`~~ **landed** — CP2K ortho collint (reflection, sphere
+   bounds, monom geometry batch, max\|w\| window, z xsimd). MG MAIN **~8 s**
+   (~6× CP2K quiet ~1.28 s; was ~42 s). Task count ~CP2K (~5500 groups).
+   Energy pins green. **Not yet ≤2×.**
 
-**Active:** collint polish — reflection pairs, sphere-bounds cache, tighter
-task locality (still ~11× vs CP2K). Fair wall law: re-measure CP2K on this host.
+**Active:** per-task kernel throughput (still ~15–20×/task vs CP2K) — lp
+unroll, sphere-bounds cache, cab-level PGF tasks, setup STVnl. Fair wall:
+re-measure CP2K on this host (quiet ~1.28 s).
 
 **Out of this wave:** Gaussian/PW cross-method DIIS·LA extraction; CUDA ES
 coverage freeze still holds.
