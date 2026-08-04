@@ -43,9 +43,9 @@ cpu::gpw::GPWEvaluator make_eval(bool use_ot) {
         molrs::Element::H,
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
-    // Cutoff 250 Ry: same chemistry as the 400 Ry tutorial twin, enough for
-    // OT/DIIS fixed-point parity and CP2K energy class, while keeping the
-    // e2e case under the ≤60 s single-thread regression budget.
+    // Cutoff 250 Ry. Single-grid (ngrids=1): product multigrid is a net loss
+    // on this 3-atom / 10 Å cell (product list overhead > collocate win).
+    // CP2K twin uses NGRIDS 4 — energy pin tol absorbs the residual.
     cpu::gpw::GPWEvaluator eval(
         /*kinds*/ {O, H}, /*cutoff_ry*/ 250.0, /*max_iter*/ 200, /*tol*/ 1e-7,
         /*mix*/ 0.3, cpu::gpw::XcKind::PBE, /*nonperiodic*/ true,
@@ -57,9 +57,8 @@ cpu::gpw::GPWEvaluator make_eval(bool use_ot) {
 } // namespace
 
 int main() {
-    // Offline CP2K 2026.1 OT pin at 250 Ry — see REFERENCE.md (not a self-golden).
-    // Grid defaults (NGRIDS / rel_cutoff / multigrid) differ slightly from CP2K
-    // at modest cutoffs → pin tol 1.5e-3 Ha (still milli-Ha class vs −17.21 Ha).
+    // Offline CP2K 2026.1 OT pin at 250 Ry / NGRIDS 4 / REL_CUTOFF 40.
+    // See REFERENCE.md (not a self-golden).
     constexpr double kCp2kOtHa = -17.212848291913666;
     constexpr double kPinTolHa = 1.5e-3;
     constexpr double kOtDiisTolHa = 1.0e-4;

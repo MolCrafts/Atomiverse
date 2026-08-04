@@ -9,6 +9,10 @@
 #include <tuple>
 #include <utility>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace ATV {
 namespace cpu {
 namespace gpw {
@@ -19,6 +23,29 @@ namespace {
 std::mutex& fftw_plan_mutex() {
     static std::mutex m;
     return m;
+}
+
+/// One-time: multi-threaded FFTW for large 3D GGA gradient / Poisson transforms
+/// (linked with libfftw3_omp when `ATV_GPW_FFTW_THREADS`). Plans created after
+/// this use all OMP threads during `fftw_execute`. KS builds are serial; do not
+/// call FFT from nested OpenMP workers concurrently.
+void ensure_fftw_threads() {
+#ifdef ATV_GPW_FFTW_THREADS
+    static std::once_flag once;
+    std::call_once(once, [] {
+        if (fftw_init_threads() == 0)
+            return; // fall back to single-thread plans
+        int n = 1;
+#ifdef _OPENMP
+        n = omp_get_max_threads();
+        if (n < 1)
+            n = 1;
+#endif
+        fftw_plan_with_nthreads(n);
+    });
+#else
+    (void)0;
+#endif
 }
 
 using ShapeKey = std::tuple<int, int, int>;
@@ -36,6 +63,7 @@ R2cFft::R2cFft(int n0, int n1, int n2)
     r_.resize(static_cast<std::size_t>(ntot_));
     c_.resize(static_cast<std::size_t>(ncplx_));
     std::lock_guard<std::mutex> lock(fftw_plan_mutex());
+    ensure_fftw_threads();
     fwd_ = fftw_plan_dft_r2c_3d(n0_, n1_, n2_, r(), c(), FFTW_ESTIMATE);
     bwd_ = fftw_plan_dft_c2r_3d(n0_, n1_, n2_, c(), r(), FFTW_ESTIMATE);
     if (!fwd_ || !bwd_) {
@@ -98,6 +126,7 @@ C2cFft::C2cFft(int n0, int n1, int n2)
     in_.resize(static_cast<std::size_t>(ntot_));
     out_.resize(static_cast<std::size_t>(ntot_));
     std::lock_guard<std::mutex> lock(fftw_plan_mutex());
+    ensure_fftw_threads();
     fwd_ = fftw_plan_dft_3d(n0_, n1_, n2_, in(), out(), FFTW_FORWARD,
                             FFTW_ESTIMATE);
     bwd_ = fftw_plan_dft_3d(n0_, n1_, n2_, in(), out(), FFTW_BACKWARD,

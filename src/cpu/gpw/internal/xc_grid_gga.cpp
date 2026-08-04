@@ -83,6 +83,7 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
     out.e_xc = e;
 
     const std::vector<double> divflux = divergence(grid, flux);
+#pragma omp parallel for schedule(static)
     for (long g = 0; g < ng; ++g)
         out.vxc_r[g] -= divflux[g];
 
@@ -190,6 +191,7 @@ XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
 
     const std::vector<double> div_a = divergence(grid, flux_a);
     const std::vector<double> div_b = divergence(grid, flux_b);
+#pragma omp parallel for schedule(static)
     for (long g = 0; g < ng; ++g) {
         out.vxc_a[static_cast<std::size_t>(g)] -= div_a[g];
         out.vxc_b[static_cast<std::size_t>(g)] -= div_b[g];

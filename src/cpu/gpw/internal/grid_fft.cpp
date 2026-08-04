@@ -12,6 +12,10 @@
 
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace ATV {
 namespace cpu {
 namespace gpw {
@@ -73,6 +77,7 @@ std::array<std::vector<double>, 3> gradient(const UniformGrid& grid,
     fftw_complex* cwork = fft.c2();
     double* rout = fft.r2();
 
+#pragma omp parallel for schedule(static)
     for (long i = 0; i < g.ntot; ++i)
         rbuf[i] = f[static_cast<std::size_t>(i)];
     fft.execute_r2c(); // rbuf -> fhat
@@ -80,6 +85,7 @@ std::array<std::vector<double>, 3> gradient(const UniformGrid& grid,
     std::array<std::vector<double>, 3> out;
     const double inv_n = 1.0 / static_cast<double>(g.ntot);
     for (int d = 0; d < 3; ++d) {
+#pragma omp parallel for schedule(static)
         for (long idx = 0; idx < g.ncplx; ++idx) {
             const double gd = gcomp(g, idx, d);
             // i*gd * (re + i*im) = -gd*im + i*gd*re
@@ -88,6 +94,7 @@ std::array<std::vector<double>, 3> gradient(const UniformGrid& grid,
         }
         fft.execute_c2r_alt(); // cwork -> rout (= N * d f / d x_d)
         out[d].resize(static_cast<std::size_t>(g.ntot));
+#pragma omp parallel for schedule(static)
         for (long i = 0; i < g.ntot; ++i)
             out[d][static_cast<std::size_t>(i)] = rout[i] * inv_n;
     }
@@ -104,15 +111,18 @@ std::vector<double> divergence(const UniformGrid& grid,
     fftw_complex* acc = fft.c2();
     double* rout = fft.r2();
 
+#pragma omp parallel for schedule(static)
     for (long idx = 0; idx < g.ncplx; ++idx) {
         acc[idx][0] = 0.0;
         acc[idx][1] = 0.0;
     }
 
     for (int d = 0; d < 3; ++d) {
+#pragma omp parallel for schedule(static)
         for (long i = 0; i < g.ntot; ++i)
             rbuf[i] = v[d][static_cast<std::size_t>(i)];
         fft.execute_r2c(); // rbuf -> fhat
+#pragma omp parallel for schedule(static)
         for (long idx = 0; idx < g.ncplx; ++idx) {
             const double gd = gcomp(g, idx, d);
             // accumulate i*gd * fhat
@@ -124,6 +134,7 @@ std::vector<double> divergence(const UniformGrid& grid,
 
     std::vector<double> out(static_cast<std::size_t>(g.ntot));
     const double inv_n = 1.0 / static_cast<double>(g.ntot);
+#pragma omp parallel for schedule(static)
     for (long i = 0; i < g.ntot; ++i)
         out[static_cast<std::size_t>(i)] = rout[i] * inv_n;
 

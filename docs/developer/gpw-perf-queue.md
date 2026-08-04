@@ -37,6 +37,8 @@ the top MG-kernel + OT-extension rows (in_progress below).
 
 - [ ] `p2-simd-2center-setup` | xsimd the analytic 2-center S/T primitive loops (setup STVpp ~99 s at slabw scale after KB/grid-PP fixes; invisible on small twins) | phase P2 | files: overlap/kinetic internals | gate: setup microbench ↓ on a slab-class fragment; four twins no regression |
 - [ ] `p1-products-default-k` | **RE-GATED:** flip is a large regression until product engine is closer to CP2K. Revisit after collint polish with a fresh same-binary A/B. Dense χ^k transitional / opt-out only. Do **not** add a 5th collocation layout without deleting dense χ^k | phase P2 | files: `kpoints.cpp`, solver k-path | gate: fresh A/B shows products ≤ dense on the k twin; pins hold |
+- [ ] `p2-ot-outer-diis` | OT wall: Γ path still ~28 full-SC Armijo steps (reg dual ~9.6 s vs CP2K OT ~4.3 s). OUTER_SCF without density mixing **oscillates** (tried, reverted). Need OT-DIIS or mixed outer. Files: `gpw_solver.cpp` OT block, `ot.cpp` | gate: `ot-minimizer-water` PASS + OT-only wall ↓ |
+- [ ] `p2-xc-spectral-fft` | GGA KS ~180 ms with ~110 ms in spectral gradient/div on 884k pts; FFTW threads on + OMP copies landed. Further: fused multi-out FFT / MEASURE plans | phase P2 | files: `grid_fft.cpp`, `xc_grid_gga.cpp` | gate: OT/DIIS KS ms ↓ no energy drift |
 
 
 ### P2 — SIMD, force reuse, MPI grids
@@ -72,6 +74,7 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p2-collint-polish` | 2026-08-04 | Hermite gen-stamp + s–s fast path (STVnl ~600→520 ms); integrate group-idx + segment SIMD accumulate. MAIN best-of-4 **~2.1 s** (~**1.6×** CP2K 1.28 s). pins green; unit one_electron 6/6 |
 - [x] `p2-force-grid-reuse` | 2026-08-04 | SCF payload carries `veff`/`veff_a`/`veff_b`/`v_es`; force assembly skips Poisson+XC rebuild at fixed density (Γ + multi-k). Force regs: water / UKS / kpoint PASS |
 - [x] `p2-force-kbg-reuse` | 2026-08-04 | SCF hands off geometry-fixed `scf_cbg` / `scf_kbg` (shared_ptr χ^k); force path lazy-caches `force_cbgd` / `force_kbgd`. MG product SCF leaves grids empty (force still builds). Force regs PASS |
+- [x] `p2-fftw-threads-plan` | 2026-08-04 | `ensure_fftw_threads` before plan create (`ATV_GPW_FFTW_THREADS`); OMP static copies in spectral gradient/divergence; XC div epilogue OMP. OT reg dual wall ~9.6 s (was ~9–15) |
 
 ### Fair wall vs CP2K (2026-08-04 post polish, arrhenius1, OMP=4 bind)
 

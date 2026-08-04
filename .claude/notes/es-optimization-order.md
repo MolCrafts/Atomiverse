@@ -26,8 +26,10 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    fast path (STVnl ~1500→520 ms); integrate group-idx + segment SIMD.
    MG MAIN **~2.1 s** (~**1.6×** CP2K quiet ~1.28 s; was ~42 s). Pins green.
 
-**Active next:** optional ~1× chase; products-default-k re-gate; OT wall
-(~9× class). Force path: V_eff + cbg/kbg reuse landed.
+**Active next:** products-default-k re-gate; OT-DIIS / mixed OUTER
+(`p2-ot-outer-diis` — naive OUTER oscillates); XC spectral FFT polish.
+Force path: V_eff + cbg/kbg reuse landed. FFTW threads + OMP grid copies
+landed (OT dual reg ~9.6 s vs CP2K OT 4.3 s).
 
 **Out of this wave:** Gaussian/PW cross-method DIIS·LA extraction; CUDA ES
 coverage freeze still holds.
