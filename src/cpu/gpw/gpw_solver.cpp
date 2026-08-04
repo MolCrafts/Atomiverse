@@ -31,6 +31,7 @@
 #include "atomiverse/cpu/gpw/internal/dft_plus_u.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
 #include "atomiverse/cpu/gpw/internal/diis.h"
+#include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/hartree_grid.h"
@@ -1089,8 +1090,11 @@ static GpwResult run_gpw_scf_kpoints(
     // local-k partials; the product sweep itself is replicated — foothold,
     // same replication class as the analytic S_k/T_k setup).
     const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
-    MultiGrid mg;
-    ProductSet products;
+    // Solver-private bags (products / kbg / last_veff); grid is the caller's.
+    internal::GpwWorkspace ws;
+    ws.grid = grid;
+    MultiGrid& mg = ws.mg;
+    ProductSet& products = ws.products;
     if (use_mg) {
         k_setup_clk_early = std::chrono::steady_clock::now();
         mg = make_multigrid(cfg.cell, cfg.cutoff_ry, cfg.ngrids,
@@ -1219,10 +1223,10 @@ static GpwResult run_gpw_scf_kpoints(
     // exactly the cost multigrid exists to avoid).
     if (!use_mg)
         k_setup_clk_early = std::chrono::steady_clock::now();
-    const internal::KpointBasisGrid kbg =
-        use_mg ? internal::KpointBasisGrid{}
-               : internal::build_kpoint_basis_grid(grid, basis, kpts,
+    if (!use_mg)
+        ws.kbg = internal::build_kpoint_basis_grid(grid, basis, kpts,
                                                    cfg.eps_default);
+    const internal::KpointBasisGrid& kbg = ws.kbg;
     if (!use_mg)
         k_setup_mark_early("kbg_build");
 
@@ -1549,7 +1553,7 @@ static GpwResult run_gpw_scf_kpoints(
     };
 
     std::vector<CplxMatrix> H_k(static_cast<std::size_t>(nk));
-    std::vector<double> last_veff;
+    std::vector<double>& last_veff = ws.last_veff;
 
     // Shared H/energy rebuild from {P_k} (used by DIIS and OT).
     // ATV_GPW_PROF: per-call [gpw prof k] timings (collocate / Poisson / XC /
@@ -2451,8 +2455,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
     // V^{σ,k} = Σ_t e^{+2πi κ·t} V^σ_t (Hermitian, exact transpose of the
     // density assembly — SCF stays variational per spin).
     const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
-    MultiGrid mg;
-    ProductSet products;
+    internal::GpwWorkspace ws;
+    ws.grid = grid;
+    MultiGrid& mg = ws.mg;
+    ProductSet& products = ws.products;
     if (use_mg) {
         mg = make_multigrid(cfg.cell, cfg.cutoff_ry, cfg.ngrids,
                             cfg.rel_cutoff);
@@ -2562,10 +2568,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
         return V;
     };
     // Dense χ^k path only when multigrid is off — products replace it.
-    const internal::KpointBasisGrid kbg =
-        use_mg ? internal::KpointBasisGrid{}
-               : internal::build_kpoint_basis_grid(grid, basis, kpts,
+    if (!use_mg)
+        ws.kbg = internal::build_kpoint_basis_grid(grid, basis, kpts,
                                                    cfg.eps_default);
+    const internal::KpointBasisGrid& kbg = ws.kbg;
     // k-summed spin density ρ^σ on the fine grid from {P^σ_k}.
     auto collocate_rho_spin_k = [&](const std::vector<CplxMatrix>& Pk) {
         if (use_mg)
@@ -2912,7 +2918,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
 
     std::vector<CplxMatrix> Ha_k(static_cast<std::size_t>(nk));
     std::vector<CplxMatrix> Hb_k(static_cast<std::size_t>(nk));
-    std::vector<double> last_veff_ab; // α then β, length 2*npts
+    // Packed α||β on the workspace bag (same layout as before).
+    std::vector<double>& last_veff_ab = ws.last_veff;
 
     // One dual-spin KS build at (Pa_k, Pb_k): collocate ρ^σ → Poisson → spin
     // XC → V_eff^σ → local H^σ_k + energy terms. Shared by the OT minimizer
@@ -4120,7 +4127,12 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     std::vector<internal::PlusUHa> plus_u_slots;
     pack_plus_u(cfg.plus_u, plus_u_z, plus_u_slots);
     const bool do_dftu = !plus_u_slots.empty();
-    UniformGrid grid = make_uniform_grid(cfg.cell, cfg.cutoff_ry);
+    // Solver-private workspace for this run (Γ path owns bags; k runners
+    // build their own). Grid is filled here so Γ aliases and k call sites
+    // share one make_uniform_grid.
+    internal::GpwWorkspace ws;
+    ws.grid = make_uniform_grid(cfg.cell, cfg.cutoff_ry);
+    const UniformGrid& grid = ws.grid;
 
     // k-point RKS branch selector.
     // (Configuration conflicts are rejected fail-fast in GpwDft::build.)
@@ -4515,9 +4527,10 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     // products instead. Building cbg on the fine grid is prohibitive at production
     // cutoff (CUTOFF 320 → ~8M points × diffuse functions = >100 GB of triples), so
     // skip it entirely under multigrid.
-    const CompactBasisGrid cbg =
-        use_prod ? CompactBasisGrid{}
-                 : build_compact_basis_grid(grid, basis, periodic, eps_default);
+    if (!use_prod)
+        ws.cbg =
+            build_compact_basis_grid(grid, basis, periodic, eps_default);
+    const CompactBasisGrid& cbg = ws.cbg;
     smark("cbg_build");
 
     // CP2K-style REL_CUTOFF multigrid (gated on ngrids>1 && rel_cutoff>0). Each
@@ -4528,8 +4541,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     // restricted back to each level to integrate the KS matrix. ngrids==1 leaves
     // the single-grid path above untouched (bit-identical). The product list is
     // geometry-fixed (excludes P); P is applied per SCF iteration.
-    MultiGrid mg;
-    ProductSet products;
+    MultiGrid& mg = ws.mg;
+    ProductSet& products = ws.products;
     // Inter-level transfer is spectral (band-limited FFT interpolation): a diffuse
     // density collocated on a coarse level is embedded into the fine grid's Fourier
     // spectrum at the same physical frequencies and zero-padded above the coarse

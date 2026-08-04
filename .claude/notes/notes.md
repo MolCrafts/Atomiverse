@@ -6,6 +6,10 @@ History is git's job — superseded designs are deleted, not archived here.
 
 ## Open engineering leads
 
+- **ES optimization order (binding in CLAUDE.md).** Wave state:
+  [es-optimization-order.md](es-optimization-order.md). `p1-gpw-workspace`
+  landed; next `p1-ks-grid-build`. CUDA ES coverage frozen this wave;
+  classical MD CUDA independent.
 - **e2e-in-tests migration (queued campaign).** ~102 registered "unit" tests
   are full method solves hidden behind `ATV_TEST_HEAVY=OFF` (ccsd/fci/mp2,
   gpw_*/pw_* solves, bomd/cpmd/xl_bomd, dftb, am1 thermochemistry runs), plus
@@ -31,11 +35,11 @@ History is git's job — superseded designs are deleted, not archived here.
 | Loop | State notes |
 | --- | --- |
 | cp2k-method-loop | queue `docs/developer/cp2k-method-queue.md`; pin law [oracle-pin-provenance.md](oracle-pin-provenance.md) (**strict**: real CP2K run + matched algorithm + perf; no GTH↔NC-UPF windows) |
-| gpw-perf-loop | queue [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md); arch [gpw-perf-architecture.md](gpw-perf-architecture.md); **always wipe builds** |
-| tb-method-loop | [tb-blocked-capabilities.md](tb-blocked-capabilities.md), [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md) |
+| gpw-perf-loop | queue [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md); arch [gpw-perf-architecture.md](gpw-perf-architecture.md); **always wipe builds**; first structural cut `p1-gpw-workspace` → `p1-ks-grid-build` ([es-optimization-order.md](es-optimization-order.md)) |
+| tb-method-loop | [tb-blocked-capabilities.md](tb-blocked-capabilities.md), [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md), [gfn2-xtb-chon.md](gfn2-xtb-chon.md) |
 | metalwalls-method-loop | [metalwalls-capability-map.md](metalwalls-capability-map.md), [oracle-pin-provenance.md](oracle-pin-provenance.md) |
-| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–5 done; owns `cuda::scf::SCFSolver` debt) |
-| CUDA MD perf | [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) (A/B methodology + precision mode map vs LAMMPS Kokkos) |
+| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–5 done; owns `cuda::scf::SCFSolver` debt); **this wave: no new ES coverage** — foothold green only ([es-optimization-order.md](es-optimization-order.md)) |
+| CUDA MD perf | [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) (A/B methodology + precision mode map vs LAMMPS Kokkos); **not** blocked by ES CPU priority |
 
 ## Build-shape conclusions
 

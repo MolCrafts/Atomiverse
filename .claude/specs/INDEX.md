@@ -3,6 +3,30 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Closed — GPW structure (ES policy first cut)
+
+| Spec | Shipped |
+| ---- | ------- |
+| `p1-gpw-workspace` | private `GpwWorkspace`; Γ / k RKS / k UKS bags owned |
+
+Next: `p1-ks-grid-build` (not yet spec'd).
+
+## Live — GFN2-xTB CHON (tb-method-loop Phase C, 2026-08-04)
+
+Operator priority: production **GFN2** for common small molecules vs **xtb
+6.7.1**. Wave 0 oracle twins landed under `tools/tb_oracle/inputs/xtb/`.
+Ordered chain (merge each checkpoint green):
+
+| Spec | Status | Unblocks | Summary |
+| ---- | ------ | -------- | ------- |
+| [gfn2-xtb-chon-01-params](gfn2-xtb-chon-01-params/spec.md) | code-complete | 02-energy | static CHON params + `GFN2` shell + basis map |
+| [gfn2-xtb-chon-02-energy](gfn2-xtb-chon-02-energy/spec.md) | code-complete | 03, 04 | H₂O energy via libxtb kernel; `reg_gfn2-xtb-water` green |
+| [gfn2-xtb-chon-03-chon](gfn2-xtb-chon-03-chon/spec.md) | code-complete | 05 | CH₄ / NH₃ / CH₃OH energy regs green |
+| [gfn2-xtb-chon-04-forces](gfn2-xtb-chon-04-forces/spec.md) | code-complete | 05 | off-eq H₂O forces (gfortran pin); `reg_gfn2-xtb-water-forces` |
+| [gfn2-xtb-chon-05-props](gfn2-xtb-chon-05-props/spec.md) | code-complete | — | QmEngine; toy GFN0 deleted; TB pause |
+
+Note: `.claude/notes/gfn2-xtb-chon.md`.
+
 ## Closed — wave 8 residual (2026-08-04)
 
 Wave-7 cancel residual staff closed on `dev`. Specs deleted; history is git.

@@ -571,6 +571,33 @@ CPU may stay LAMMPS-like; that does not license per-atom Verlet as the CUDA MD
 force architecture. Forbidden: a `NonbondedStyle` dual architecture, force
 defaulting to per-atom Verlet, production `memset` all-ones masks.
 
+## Electronic structure optimization order
+
+ES work (Gaussian SCF, PW, GPW, SE) follows this order — architecture and
+shared algorithm shape before micro-perf; CPU before CUDA ES expansion:
+
+1. **CPU architecture** — Driver/stage semantics, kill forked SCF copies, extract
+   only at a second real call site (Gaussian / PW / GPW share DIIS, density,
+   ρ→V_eff-class pipelines, LA helpers when reuse is real).
+2. **CPU performance** — xsimd hot paths, OT economics, grid constants, MPI;
+   fair wall vs the method's external twin when one exists (CP2K for GPW, …).
+3. **CUDA ES by method slice** — rewrite hot paths in CUDA programming style
+   (device-only, tiling, minimal H2D); use **same-settings CPU results as the
+   correctness oracle** (plus external pins under the oracle law). Do **not**
+   maintain one giant dual-backend source for kernels.
+4. **Large-system CUDA perf** — only after the slice is correct; small molecules
+   are correctness-only, never the "CUDA wins" story.
+
+**CUDA ES open gate** (all required for a method slice): CPU regressions green
+and external oracle pins green when that quantity has a twin; public
+`run`/`forces` shape stable (no in-flight structural rewrite of that method);
+CUDA↔CPU energy/forces/residual tolerances stated; perf claims only on large
+systems. Wave-local freezes and first-cut queue items live in `.claude/notes/`,
+not here.
+
+**Classical MD CUDA is a separate track** — OpenMM engine work is not blocked
+by ES CPU priority, and ES CUDA freezes do not freeze MD CUDA.
+
 ## Oracle capability loops
 
 Instances: `pyscf-method-loop`, `cp2k-method-loop`, `metalwalls-method-loop`,
