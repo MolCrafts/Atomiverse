@@ -214,6 +214,18 @@ struct GpwResult {
     linalg::RealMatrix C_beta;    ///< UKS β MO coefficients (empty for RKS).
     linalg::RealMatrix P_beta;    ///< UKS β density (empty for RKS).
     std::vector<double> eps_beta; ///< UKS β orbital energies (empty for RKS).
+    /// @brief Fine-grid effective potential from the last KS build [Hartree].
+    ///        Length `npts`. RKS / multi-k RKS only; empty for UKS (see
+    ///        `veff_a` / `veff_b`). Force assembly reuses this to skip a
+    ///        second Poisson+XC rebuild at fixed density (p2-force-grid-reuse).
+    std::vector<double> veff;
+    /// @brief UKS α fine-grid V_eff [Hartree] (empty for RKS).
+    std::vector<double> veff_a;
+    /// @brief UKS β fine-grid V_eff [Hartree] (empty for RKS).
+    std::vector<double> veff_b;
+    /// @brief Poisson electrostatic potential of \(n=\rho-n_{\mathrm{ion}}\)
+    ///        [Hartree] from the last KS build (ionic HF forces).
+    std::vector<double> v_es;
     /// @}
     /// @name Fixed-density KS evaluation payload (Car–Parrinello / linearized-XL path)
     /// Populated when `GpwDft::run` is called with `max_iter == 0` and a

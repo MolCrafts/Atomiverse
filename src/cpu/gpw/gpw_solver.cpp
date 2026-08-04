@@ -1578,6 +1578,8 @@ static GpwResult run_gpw_scf_kpoints(
         (void)t2p;
         const double e_locgrid = ks.e_locgrid;
         last_veff = ks.veff;
+        res.veff = last_veff; // force assembly reuses SCF V_eff
+        res.v_es = ks.v_es;
         const std::vector<double>& veff = last_veff;
 
         std::vector<std::vector<double>> Vt;
@@ -2901,6 +2903,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
             last_veff_ab[g] = veff_a[g];
             last_veff_ab[g + veff_a.size()] = veff_b[g];
         }
+        // Force assembly reuses dual V_eff + V_es (same functional as the SCF).
+        res.veff_a = veff_a;
+        res.veff_b = veff_b;
+        res.v_es = ks.v_es;
         std::vector<std::vector<double>> Vt_a, Vt_b;
         if (use_mg) {
             Vt_a = mg_vt_stack(veff_a);
@@ -3760,6 +3766,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
             last_veff_ab[g] = veff_a[g];
             last_veff_ab[g + veff_a.size()] = veff_b[g];
         }
+        // Force assembly reuses dual V_eff + V_es (same functional as the SCF).
+        res.veff_a = veff_a;
+        res.veff_b = veff_b;
+        res.v_es = ks.v_es;
 
         std::vector<std::vector<double>> Vt_a, Vt_b;
         if (use_mg) {
@@ -4596,7 +4606,10 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         (void)t2p;
         if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10)
             e_d3 = ks.e_nl_vdw; // fold_dispersion reports SC E_c^nl
-        const std::vector<double>& veff = ks.veff;
+        // Force path reuses this V_eff / V_es (same functional as the SCF).
+        res.veff = ks.veff;
+        res.v_es = ks.v_es;
+        const std::vector<double>& veff = res.veff;
         const double e_locgrid = ks.e_locgrid;
         // KS grid matrix. Single-grid: integrate veff directly. Multigrid:
         // restrict the fine potential to each level (the transpose of prolong) and
@@ -4760,9 +4773,13 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             (void)t2p;
             if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10)
                 e_d3 = ks.e_nl_vdw;
+            // Force path reuses dual V_eff + V_es.
+            res.veff_a = ks.veff_a;
+            res.veff_b = ks.veff_b;
+            res.v_es = ks.v_es;
 
-            RealMatrix Ha = H0 + integrate_V(ks.veff_a);
-            RealMatrix Hb = H0 + integrate_V(ks.veff_b);
+            RealMatrix Ha = H0 + integrate_V(res.veff_a);
+            RealMatrix Hb = H0 + integrate_V(res.veff_b);
             auto t4p = UksProfClk::now();
             if (uks_prof)
                 std::fprintf(stderr,

@@ -96,6 +96,7 @@ KsGridRks ks_grid_build_rks(const UniformGrid& grid,
     KsGridRks out;
     out.e_xc = xcg.e_xc;
     out.e_hartree = es.e_hartree;
+    out.v_es = es.v_r;
     out.veff.resize(rho.size());
     const bool have_loc = !v_locsr.empty();
     if (have_loc && v_locsr.size() != rho.size())
@@ -103,7 +104,7 @@ KsGridRks ks_grid_build_rks(const UniformGrid& grid,
             "GPW ks_grid_build_rks: v_locsr size does not match density grid");
     for (std::size_t g = 0; g < rho.size(); ++g) {
         const double vloc = have_loc ? v_locsr[g] : 0.0;
-        out.veff[g] = es.v_r[g] + xcg.vxc_r[g] + vloc;
+        out.veff[g] = out.v_es[g] + xcg.vxc_r[g] + vloc;
         if (have_loc)
             out.e_locgrid += rho[g] * vloc;
     }
@@ -143,6 +144,7 @@ KsGridUks ks_grid_build_uks(const UniformGrid& grid,
     KsGridUks out;
     out.e_xc = xcg.e_xc;
     out.e_hartree = es.e_hartree;
+    out.v_es = es.v_r;
     out.veff_a.resize(rho.size());
     out.veff_b.resize(rho.size());
     const bool have_loc = !v_locsr.empty();
@@ -153,8 +155,8 @@ KsGridUks ks_grid_build_uks(const UniformGrid& grid,
         const double vloc = have_loc ? v_locsr[g] : 0.0;
         if (have_loc)
             out.e_locgrid += rho[g] * vloc;
-        out.veff_a[g] = es.v_r[g] + xcg.vxc_a[g] + vloc;
-        out.veff_b[g] = es.v_r[g] + xcg.vxc_b[g] + vloc;
+        out.veff_a[g] = out.v_es[g] + xcg.vxc_a[g] + vloc;
+        out.veff_b[g] = out.v_es[g] + xcg.vxc_b[g] + vloc;
     }
     out.e_locgrid *= grid.weight();
 

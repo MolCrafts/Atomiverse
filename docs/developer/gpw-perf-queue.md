@@ -41,7 +41,7 @@ the top MG-kernel + OT-extension rows (in_progress below).
 
 ### P2 — SIMD, force reuse, MPI grids
 
-- [ ] `p2-force-grid-reuse` | Forces rebuild full `kbg` + `kbgd` (and Γ `cbg`/`cbgd`) + Poisson/XC every call (`gpw_forces.cpp` ~L1129–1244); reuse SCF products/cbg/V_eff / last density path where geometry-fixed | phase P2 | files: `gpw_forces.cpp`, solver result/workspace handoff | gate: force regs green + force wall ↓ |
+- [ ] `p2-force-kbg-reuse` | Forces still rebuild full `kbg`/`kbgd` (and Γ `cbg`/`cbgd`) every call; V_eff/V_es reuse landed (`p2-force-grid-reuse`). Cache geometry-fixed basis-on-grid when density-fixed | phase P2 | files: `gpw_forces.cpp`, workspace handoff | gate: force regs green + force wall ↓ |
 - [ ] `p2-mpi-product-grid` | Architecture P2: product/grid distribute. Today only k RR + Allreduce density/traces; setup STVpp, products, grids, Poisson replicated on every rank (foothold comments ~L969–1010). Split product scatter / grid FFT across ranks without changing Frame API | phase P2 | files: `gpw_solver.cpp`, `multigrid.cpp`, MPI layout | gate: `mpi-gpw-scaling-4rank` + multi-k regs; scaling wall ↓ |
 
 ## in_progress
@@ -70,6 +70,7 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p2-collint-lp-sphere` | 2026-08-04 | geom pre-sort + sphere cache + lp-spec | MAIN ~2.6 s / ~2.0× |
 - [x] `p2-stvnl-collint` | 2026-08-04 | Hermite memo + `prim_ST` fuse (STVnl ~1500→600 ms); group-idx parallel collocate. MAIN **~2.0 s** (~**1.6×** CP2K 1.28 s). unit `test_cpu_gpw_one_electron` PASS |
 - [x] `p2-collint-polish` | 2026-08-04 | Hermite gen-stamp + s–s fast path (STVnl ~600→520 ms); integrate group-idx + segment SIMD accumulate. MAIN best-of-4 **~2.1 s** (~**1.6×** CP2K 1.28 s). pins green; unit one_electron 6/6 |
+- [x] `p2-force-grid-reuse` | 2026-08-04 | SCF payload carries `veff`/`veff_a`/`veff_b`/`v_es`; force assembly skips Poisson+XC rebuild at fixed density (Γ + multi-k). Force regs: water / UKS / kpoint PASS |
 
 ### Fair wall vs CP2K (2026-08-04 post polish, arrhenius1, OMP=4 bind)
 

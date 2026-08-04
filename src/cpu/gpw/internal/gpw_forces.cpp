@@ -297,7 +297,11 @@ std::vector<std::array<double, 3>>
 assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     const RealMatrix& P, const RealMatrix& W,
                     const RealMatrix* P_beta = nullptr,
-                    const std::vector<double>* scf_vol_ratios = nullptr) {
+                    const std::vector<double>* scf_vol_ratios = nullptr,
+                    const std::vector<double>* scf_veff = nullptr,
+                    const std::vector<double>* scf_veff_a = nullptr,
+                    const std::vector<double>* scf_veff_b = nullptr,
+                    const std::vector<double>* scf_v_es = nullptr) {
     const std::vector<GridBasisFunction> basis = global_basis(atoms);
     const int nb = static_cast<int>(basis.size());
     const int na = static_cast<int>(atoms.size());
@@ -397,27 +401,6 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const CompactBasisGrid cbg =
         build_compact_basis_grid(grid, basis, periodic, eps);
 
-    // Ionic core density n_c(r) (min-image; narrow cores, matches the SCF).
-    std::vector<double> n_ion(static_cast<std::size_t>(ng), 0.0);
-    for (long g = 0; g < ng; ++g) {
-        double r[3];
-        grid.point(g, r);
-        double s = 0.0;
-        for (const auto& a : atoms) {
-            const double s2 = a.rloc * a.rloc;
-            const double norm = a.z_val * std::pow(2.0 * M_PI * s2, -1.5);
-            double dx = r[0] - a.pos[0], dy = r[1] - a.pos[1],
-                   dz = r[2] - a.pos[2];
-            if (periodic) {
-                dx -= grid.L[0] * std::nearbyint(dx / grid.L[0]);
-                dy -= grid.L[1] * std::nearbyint(dy / grid.L[1]);
-                dz -= grid.L[2] * std::nearbyint(dz / grid.L[2]);
-            }
-            s += norm * std::exp(-(dx * dx + dy * dy + dz * dz) / (2.0 * s2));
-        }
-        n_ion[static_cast<std::size_t>(g)] = s;
-    }
-
     auto mat_to_vec = [&](const RealMatrix& M) {
         std::vector<double> v(static_cast<std::size_t>(nb) * nb);
         for (int i = 0; i < nb; ++i)
@@ -439,96 +422,142 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     } else {
         rho = collocate_density(cbg, nb, Ptot_vec);
     }
-    std::vector<double> n_tot(rho.size());
-    for (std::size_t g = 0; g < rho.size(); ++g)
-        n_tot[g] = rho[g] - n_ion[g];
 
-    const PoissonResult es = cfg.nonperiodic ? solve_poisson_mt(grid, n_tot)
-                                             : solve_poisson(grid, n_tot);
-    const std::vector<double>& v_es = es.v_r;
-    // V_eff must be the SAME one the SCF converged against. When the local
-    // short-range PP was collocated on the grid (the default), it is part of
-    // V_eff — and then the analytic per-pair route must be OFF in the Pulay terms
-    // (see internal/local_pp.h). Differentiating a different functional than the
-    // SCF converged was a real bug: ZnO analytic-vs-FD 0.53 Ha/Bohr.
+    // V_eff must be the SAME one the SCF converged against. Prefer the
+    // converged SCF payload (p2-force-grid-reuse) so Poisson+XC is not rebuilt
+    // at fixed density; fall back to a full rebuild when missing.
+    // Differentiating a different functional than the SCF converged was a
+    // real bug: ZnO analytic-vs-FD 0.53 Ha/Bohr.
     const bool analytic_loc = !cfg.local_pp_on_grid;
-    const std::vector<double> v_locsr =
-        analytic_loc ? std::vector<double>()
-                     : local_pp_grid(grid, atoms, periodic);
+    const bool reuse_uks =
+        uks && scf_veff_a && scf_veff_b && scf_v_es
+        && scf_veff_a->size() == static_cast<std::size_t>(ng)
+        && scf_veff_b->size() == static_cast<std::size_t>(ng)
+        && scf_v_es->size() == static_cast<std::size_t>(ng);
+    const bool reuse_rks =
+        !uks && scf_veff && scf_v_es
+        && scf_veff->size() == static_cast<std::size_t>(ng)
+        && scf_v_es->size() == static_cast<std::size_t>(ng);
 
-    // Spin-unpolarized V_eff (RKS) or dual V_eff^σ (UKS).
-    std::vector<double> veff, veff_a, veff_b;
-    if (uks) {
-        if (cfg.xc != XcKind::PADE && cfg.xc != XcKind::PBE
-            && cfg.xc != XcKind::PBEsol && cfg.xc != XcKind::RevPBE
-            && cfg.xc != XcKind::RPBE && cfg.xc != XcKind::BLYP
-            && cfg.xc != XcKind::OptB88VdW)
-            throw std::runtime_error(
-                "GPW UKS forces: XcKind must be PADE, PBE, PBEsol, RevPBE, "
-                "RPBE, BLYP, or OptB88VdW");
-        const XcOnGridSpin xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe_spin(grid, rho_a, rho_b)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol_spin(grid, rho_a, rho_b)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe_spin(grid, rho_a, rho_b)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe_spin(grid, rho_a, rho_b)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp_spin(grid, rho_a,
-                                                                rho_b)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw_spin(
-                                                         grid, rho_a, rho_b)
-                                                   : xc_grid_pade_lsd(
-                                                         grid, rho_a,
-                                                         rho_b))))));
-        veff_a.resize(rho.size());
-        veff_b.resize(rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g) {
-            double vloc = v_locsr.empty() ? 0.0 : v_locsr[g];
-            veff_a[g] = es.v_r[g] + xc.vxc_a[g] + vloc;
-            veff_b[g] = es.v_r[g] + xc.vxc_b[g] + vloc;
-        }
+    std::vector<double> veff, veff_a, veff_b, v_es_store;
+    const std::vector<double>* v_es_ptr = nullptr;
+    if (reuse_uks) {
+        veff_a = *scf_veff_a;
+        veff_b = *scf_veff_b;
+        v_es_ptr = scf_v_es;
+    } else if (reuse_rks) {
+        veff = *scf_veff;
+        v_es_ptr = scf_v_es;
     } else {
-        const XcOnGrid xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe(grid, rho)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol(grid, rho)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe(grid, rho)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe(grid, rho)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp(grid, rho)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw(
-                                                         grid, rho)
-                                                   : xc_grid_pade(grid,
-                                                                  rho))))));
-        veff.resize(rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g) {
-            veff[g] = es.v_r[g] + xc.vxc_r[g];
-            if (!v_locsr.empty())
-                veff[g] += v_locsr[g];
+        // Ionic core density n_c(r) (min-image; narrow cores, matches SCF).
+        std::vector<double> n_ion(static_cast<std::size_t>(ng), 0.0);
+        for (long g = 0; g < ng; ++g) {
+            double r[3];
+            grid.point(g, r);
+            double s = 0.0;
+            for (const auto& a : atoms) {
+                const double s2 = a.rloc * a.rloc;
+                const double norm =
+                    a.z_val * std::pow(2.0 * M_PI * s2, -1.5);
+                double dx = r[0] - a.pos[0], dy = r[1] - a.pos[1],
+                       dz = r[2] - a.pos[2];
+                if (periodic) {
+                    dx -= grid.L[0] * std::nearbyint(dx / grid.L[0]);
+                    dy -= grid.L[1] * std::nearbyint(dy / grid.L[1]);
+                    dz -= grid.L[2] * std::nearbyint(dz / grid.L[2]);
+                }
+                s += norm
+                     * std::exp(-(dx * dx + dy * dy + dz * dz) / (2.0 * s2));
+            }
+            n_ion[static_cast<std::size_t>(g)] = s;
         }
-    }
-    // SC nonlocal vdW potential on total density (both spins share V_nl).
-    if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
-        NonlocalVdwOnGrid nl = nonlocal_vdw_on_grid(
-            grid, rho, cfg.vdw_df, cfg.vdw_df2, cfg.rvv10, /*potential=*/true);
+        std::vector<double> n_tot(rho.size());
+        for (std::size_t g = 0; g < rho.size(); ++g)
+            n_tot[g] = rho[g] - n_ion[g];
+
+        const PoissonResult es = cfg.nonperiodic
+                                     ? solve_poisson_mt(grid, n_tot)
+                                     : solve_poisson(grid, n_tot);
+        const std::vector<double> v_locsr =
+            analytic_loc ? std::vector<double>()
+                         : local_pp_grid(grid, atoms, periodic);
+
         if (uks) {
+            if (cfg.xc != XcKind::PADE && cfg.xc != XcKind::PBE
+                && cfg.xc != XcKind::PBEsol && cfg.xc != XcKind::RevPBE
+                && cfg.xc != XcKind::RPBE && cfg.xc != XcKind::BLYP
+                && cfg.xc != XcKind::OptB88VdW)
+                throw std::runtime_error(
+                    "GPW UKS forces: XcKind must be PADE, PBE, PBEsol, RevPBE, "
+                    "RPBE, BLYP, or OptB88VdW");
+            const XcOnGridSpin xc =
+                cfg.xc == XcKind::PBE
+                    ? xc_grid_pbe_spin(grid, rho_a, rho_b)
+                    : (cfg.xc == XcKind::PBEsol
+                           ? xc_grid_pbesol_spin(grid, rho_a, rho_b)
+                           : (cfg.xc == XcKind::RevPBE
+                                  ? xc_grid_revpbe_spin(grid, rho_a, rho_b)
+                                  : (cfg.xc == XcKind::RPBE
+                                         ? xc_grid_rpbe_spin(grid, rho_a, rho_b)
+                                         : (cfg.xc == XcKind::BLYP
+                                                ? xc_grid_blyp_spin(
+                                                      grid, rho_a, rho_b)
+                                                : (cfg.xc == XcKind::OptB88VdW
+                                                       ? xc_grid_optb88_vdw_spin(
+                                                             grid, rho_a, rho_b)
+                                                       : xc_grid_pade_lsd(
+                                                             grid, rho_a,
+                                                             rho_b))))));
+            veff_a.resize(rho.size());
+            veff_b.resize(rho.size());
             for (std::size_t g = 0; g < rho.size(); ++g) {
-                veff_a[g] += nl.v_r[g];
-                veff_b[g] += nl.v_r[g];
+                double vloc = v_locsr.empty() ? 0.0 : v_locsr[g];
+                veff_a[g] = es.v_r[g] + xc.vxc_a[g] + vloc;
+                veff_b[g] = es.v_r[g] + xc.vxc_b[g] + vloc;
             }
         } else {
-            for (std::size_t g = 0; g < rho.size(); ++g)
-                veff[g] += nl.v_r[g];
+            const XcOnGrid xc =
+                cfg.xc == XcKind::PBE
+                    ? xc_grid_pbe(grid, rho)
+                    : (cfg.xc == XcKind::PBEsol
+                           ? xc_grid_pbesol(grid, rho)
+                           : (cfg.xc == XcKind::RevPBE
+                                  ? xc_grid_revpbe(grid, rho)
+                                  : (cfg.xc == XcKind::RPBE
+                                         ? xc_grid_rpbe(grid, rho)
+                                         : (cfg.xc == XcKind::BLYP
+                                                ? xc_grid_blyp(grid, rho)
+                                                : (cfg.xc == XcKind::OptB88VdW
+                                                       ? xc_grid_optb88_vdw(
+                                                             grid, rho)
+                                                       : xc_grid_pade(
+                                                             grid, rho))))));
+            veff.resize(rho.size());
+            for (std::size_t g = 0; g < rho.size(); ++g) {
+                veff[g] = es.v_r[g] + xc.vxc_r[g];
+                if (!v_locsr.empty())
+                    veff[g] += v_locsr[g];
+            }
         }
+        // SC nonlocal vdW potential on total density (both spins share V_nl).
+        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+            NonlocalVdwOnGrid nl =
+                nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
+                                     cfg.rvv10, /*potential=*/true);
+            if (uks) {
+                for (std::size_t g = 0; g < rho.size(); ++g) {
+                    veff_a[g] += nl.v_r[g];
+                    veff_b[g] += nl.v_r[g];
+                }
+            } else {
+                for (std::size_t g = 0; g < rho.size(); ++g)
+                    veff[g] += nl.v_r[g];
+            }
+        }
+        v_es_store = es.v_r;
+        v_es_ptr = &v_es_store;
     }
+    const std::vector<double>& v_es = *v_es_ptr;
 
     // g -> active index into cbg (for the grid term's Pχ lookup).
     std::vector<long> g2a(static_cast<std::size_t>(ng), -1);
@@ -1131,25 +1160,8 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
     const internal::KpointBasisGrid kbg =
         internal::build_kpoint_basis_grid(grid, basis, kpts, eps);
 
-    // Ionic cores + density + V_eff (same functional as the SCF).
-    std::vector<double> n_ion(static_cast<std::size_t>(ng), 0.0);
-    for (long g = 0; g < ng; ++g) {
-        double r[3];
-        grid.point(g, r);
-        double s = 0.0;
-        for (const auto& a : atoms) {
-            const double s2 = a.rloc * a.rloc;
-            const double norm = a.z_val * std::pow(2.0 * M_PI * s2, -1.5);
-            double dx = r[0] - a.pos[0], dy = r[1] - a.pos[1],
-                   dz = r[2] - a.pos[2];
-            dx -= grid.L[0] * std::nearbyint(dx / grid.L[0]);
-            dy -= grid.L[1] * std::nearbyint(dy / grid.L[1]);
-            dz -= grid.L[2] * std::nearbyint(dz / grid.L[2]);
-            s += norm * std::exp(-(dx * dx + dy * dy + dz * dz) / (2.0 * s2));
-        }
-        n_ion[static_cast<std::size_t>(g)] = s;
-    }
-
+    // Density collocate (needed for local-PP HF / Hirshfeld). Prefer SCF V_eff
+    // / V_es to skip Poisson+XC rebuild at fixed density.
     std::vector<double> rho(static_cast<std::size_t>(ng), 0.0);
     std::vector<double> rho_a, rho_b;
     if (uks) {
@@ -1170,72 +1182,113 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                 kbg, ik, P_k[static_cast<std::size_t>(ik)],
                 kpts[static_cast<std::size_t>(ik)].weight, rho);
     }
-    std::vector<double> n_tot(rho.size());
-    for (std::size_t g = 0; g < rho.size(); ++g)
-        n_tot[g] = rho[g] - n_ion[g];
-    const PoissonResult es = solve_poisson(grid, n_tot);
-    const std::vector<double> v_locsr = local_pp_grid(grid, atoms, true);
-    std::vector<double> veff, veff_a, veff_b;
-    if (uks) {
-        const XcOnGridSpin xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe_spin(grid, rho_a, rho_b)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol_spin(grid, rho_a, rho_b)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe_spin(grid, rho_a, rho_b)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe_spin(grid, rho_a, rho_b)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp_spin(grid, rho_a,
-                                                                rho_b)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw_spin(
-                                                         grid, rho_a, rho_b)
-                                                   : xc_grid_pade_lsd(
-                                                         grid, rho_a,
-                                                         rho_b))))));
-        veff_a.resize(rho.size());
-        veff_b.resize(rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g) {
-            veff_a[g] = es.v_r[g] + xc.vxc_a[g] + v_locsr[g];
-            veff_b[g] = es.v_r[g] + xc.vxc_b[g] + v_locsr[g];
-        }
+
+    const bool reuse_uks =
+        uks && scf.veff_a.size() == static_cast<std::size_t>(ng)
+        && scf.veff_b.size() == static_cast<std::size_t>(ng)
+        && scf.v_es.size() == static_cast<std::size_t>(ng);
+    const bool reuse_rks =
+        !uks && scf.veff.size() == static_cast<std::size_t>(ng)
+        && scf.v_es.size() == static_cast<std::size_t>(ng);
+
+    std::vector<double> veff, veff_a, veff_b, v_es_store;
+    const std::vector<double>* v_es_ptr = nullptr;
+    if (reuse_uks) {
+        veff_a = scf.veff_a;
+        veff_b = scf.veff_b;
+        v_es_ptr = &scf.v_es;
+    } else if (reuse_rks) {
+        veff = scf.veff;
+        v_es_ptr = &scf.v_es;
     } else {
-        const XcOnGrid xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe(grid, rho)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol(grid, rho)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe(grid, rho)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe(grid, rho)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp(grid, rho)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw(
-                                                         grid, rho)
-                                                   : xc_grid_pade(
-                                                         grid, rho))))));
-        veff.resize(rho.size());
+        std::vector<double> n_ion(static_cast<std::size_t>(ng), 0.0);
+        for (long g = 0; g < ng; ++g) {
+            double r[3];
+            grid.point(g, r);
+            double s = 0.0;
+            for (const auto& a : atoms) {
+                const double s2 = a.rloc * a.rloc;
+                const double norm =
+                    a.z_val * std::pow(2.0 * M_PI * s2, -1.5);
+                double dx = r[0] - a.pos[0], dy = r[1] - a.pos[1],
+                       dz = r[2] - a.pos[2];
+                dx -= grid.L[0] * std::nearbyint(dx / grid.L[0]);
+                dy -= grid.L[1] * std::nearbyint(dy / grid.L[1]);
+                dz -= grid.L[2] * std::nearbyint(dz / grid.L[2]);
+                s += norm
+                     * std::exp(-(dx * dx + dy * dy + dz * dz) / (2.0 * s2));
+            }
+            n_ion[static_cast<std::size_t>(g)] = s;
+        }
+        std::vector<double> n_tot(rho.size());
         for (std::size_t g = 0; g < rho.size(); ++g)
-            veff[g] = es.v_r[g] + xc.vxc_r[g] + v_locsr[g];
-    }
-    if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
-        NonlocalVdwOnGrid nl = nonlocal_vdw_on_grid(
-            grid, rho, cfg.vdw_df, cfg.vdw_df2, cfg.rvv10, /*potential=*/true);
+            n_tot[g] = rho[g] - n_ion[g];
+        const PoissonResult es = solve_poisson(grid, n_tot);
+        const std::vector<double> v_locsr = local_pp_grid(grid, atoms, true);
         if (uks) {
+            const XcOnGridSpin xc =
+                cfg.xc == XcKind::PBE
+                    ? xc_grid_pbe_spin(grid, rho_a, rho_b)
+                    : (cfg.xc == XcKind::PBEsol
+                           ? xc_grid_pbesol_spin(grid, rho_a, rho_b)
+                           : (cfg.xc == XcKind::RevPBE
+                                  ? xc_grid_revpbe_spin(grid, rho_a, rho_b)
+                                  : (cfg.xc == XcKind::RPBE
+                                         ? xc_grid_rpbe_spin(grid, rho_a, rho_b)
+                                         : (cfg.xc == XcKind::BLYP
+                                                ? xc_grid_blyp_spin(
+                                                      grid, rho_a, rho_b)
+                                                : (cfg.xc == XcKind::OptB88VdW
+                                                       ? xc_grid_optb88_vdw_spin(
+                                                             grid, rho_a, rho_b)
+                                                       : xc_grid_pade_lsd(
+                                                             grid, rho_a,
+                                                             rho_b))))));
+            veff_a.resize(rho.size());
+            veff_b.resize(rho.size());
             for (std::size_t g = 0; g < rho.size(); ++g) {
-                veff_a[g] += nl.v_r[g];
-                veff_b[g] += nl.v_r[g];
+                veff_a[g] = es.v_r[g] + xc.vxc_a[g] + v_locsr[g];
+                veff_b[g] = es.v_r[g] + xc.vxc_b[g] + v_locsr[g];
             }
         } else {
+            const XcOnGrid xc =
+                cfg.xc == XcKind::PBE
+                    ? xc_grid_pbe(grid, rho)
+                    : (cfg.xc == XcKind::PBEsol
+                           ? xc_grid_pbesol(grid, rho)
+                           : (cfg.xc == XcKind::RevPBE
+                                  ? xc_grid_revpbe(grid, rho)
+                                  : (cfg.xc == XcKind::RPBE
+                                         ? xc_grid_rpbe(grid, rho)
+                                         : (cfg.xc == XcKind::BLYP
+                                                ? xc_grid_blyp(grid, rho)
+                                                : (cfg.xc == XcKind::OptB88VdW
+                                                       ? xc_grid_optb88_vdw(
+                                                             grid, rho)
+                                                       : xc_grid_pade(
+                                                             grid, rho))))));
+            veff.resize(rho.size());
             for (std::size_t g = 0; g < rho.size(); ++g)
-                veff[g] += nl.v_r[g];
+                veff[g] = es.v_r[g] + xc.vxc_r[g] + v_locsr[g];
         }
+        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+            NonlocalVdwOnGrid nl =
+                nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
+                                     cfg.rvv10, /*potential=*/true);
+            if (uks) {
+                for (std::size_t g = 0; g < rho.size(); ++g) {
+                    veff_a[g] += nl.v_r[g];
+                    veff_b[g] += nl.v_r[g];
+                }
+            } else {
+                for (std::size_t g = 0; g < rho.size(); ++g)
+                    veff[g] += nl.v_r[g];
+            }
+        }
+        v_es_store = es.v_r;
+        v_es_ptr = &v_es_store;
     }
-    const std::vector<double>& v_es = es.v_r;
+    const std::vector<double>& v_es = *v_es_ptr;
 
     // Derivative basis on grid (flat u*3+k).
     std::vector<GridBasisFunction> dflat(static_cast<std::size_t>(nb) * 3);
@@ -1569,7 +1622,8 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             W += energy_weighted(scf.C_beta, scf.eps_beta, cfg.n_beta, 1.0);
         }
         return assemble_gpw_forces(atoms, cfg, scf.P, W, &scf.P_beta,
-                                       &scf.volume_ratios);
+                                   &scf.volume_ratios, nullptr, &scf.veff_a,
+                                   &scf.veff_b, &scf.v_es);
     }
 
     // Closed-shell RKS: W_μν = Σ_i 2 ε_i C_μi C_νi (occupied).
@@ -1577,7 +1631,8 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                                     : static_cast<int>(scf.eps.size());
     RealMatrix W = energy_weighted(scf.C, scf.eps, n_occ, 2.0);
     return assemble_gpw_forces(atoms, cfg, scf.P, W, nullptr,
-                               &scf.volume_ratios);
+                               &scf.volume_ratios, &scf.veff, nullptr, nullptr,
+                               &scf.v_es);
 }
 
 std::vector<std::array<double, 3>>
