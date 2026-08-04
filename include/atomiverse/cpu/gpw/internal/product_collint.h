@@ -56,6 +56,12 @@ void collint_integrate_group(const UniformGrid& grid, const GridProduct* prods,
                              int n, double mag, double eps, const double* V,
                              double* out_acc);
 
+/// @brief Integrate group by product index list (no GridProduct copies).
+void collint_integrate_group_idx(const UniformGrid& grid,
+                                 const GridProduct* prods_base, const int* idx,
+                                 int n, double mag, double eps, const double* V,
+                                 double* out_acc);
+
 /// @brief True if a and b share collint geometry (same pol table).
 inline bool collint_same_geometry(const GridProduct& a, const GridProduct& b) {
     return a.p == b.p && a.pc[0] == b.pc[0] && a.pc[1] == b.pc[1]

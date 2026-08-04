@@ -35,7 +35,6 @@ the top MG-kernel + OT-extension rows (in_progress below).
 
 ### P1 — kernel constant + OT + structure
 
-- [ ] `p2-collint-polish` | Residual collint / setup after ~1.6× | phase P2 | files: `product_collint.cpp`, k-path | gate: optional further ↓ |
 - [ ] `p2-simd-2center-setup` | xsimd the analytic 2-center S/T primitive loops (setup STVpp ~99 s at slabw scale after KB/grid-PP fixes; invisible on small twins) | phase P2 | files: overlap/kinetic internals | gate: setup microbench ↓ on a slab-class fragment; four twins no regression |
 - [ ] `p1-products-default-k` | **RE-GATED:** flip is a large regression until product engine is closer to CP2K. Revisit after collint polish with a fresh same-binary A/B. Dense χ^k transitional / opt-out only. Do **not** add a 5th collocation layout without deleting dense χ^k | phase P2 | files: `kpoints.cpp`, solver k-path | gate: fresh A/B shows products ≤ dense on the k twin; pins hold |
 
@@ -70,13 +69,14 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p2-cxyz-collint` | 2026-08-04 | CP2K ortho collint + geom batch + reflection + max\|w\| | MAIN mid-wave ~8 s |
 - [x] `p2-collint-lp-sphere` | 2026-08-04 | geom pre-sort + sphere cache + lp-spec | MAIN ~2.6 s / ~2.0× |
 - [x] `p2-stvnl-collint` | 2026-08-04 | Hermite memo + `prim_ST` fuse (STVnl ~1500→600 ms); group-idx parallel collocate. MAIN **~2.0 s** (~**1.6×** CP2K 1.28 s). unit `test_cpu_gpw_one_electron` PASS |
+- [x] `p2-collint-polish` | 2026-08-04 | Hermite gen-stamp + s–s fast path (STVnl ~600→520 ms); integrate group-idx + segment SIMD accumulate. MAIN best-of-4 **~2.1 s** (~**1.6×** CP2K 1.28 s). pins green; unit one_electron 6/6 |
 
-### Fair wall vs CP2K (2026-08-04 post STVnl, arrhenius1, OMP=4 bind)
+### Fair wall vs CP2K (2026-08-04 post polish, arrhenius1, OMP=4 bind)
 
 `gpw-multigrid-kpoints` MAIN only (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV quiet MAIN | **~2.0** | two-shot; was ~42 / ~8 / ~2.6 |
+| ATV quiet MAIN | **~2.1** | best-of-4; was ~42 / ~8 / ~2.6 / ~2.0 |
 | CP2K 2026.1 quiet | **~1.28** | `si_kpoints_mg.inp` |
-| **ratio ATV/CP2K** | **~1.6** | STVnl ~0.6 s; coll/int ~70–90 ms/iter |
+| **ratio ATV/CP2K** | **~1.6** | STVnl ~0.52 s; coll/int ~80–90 ms/iter |

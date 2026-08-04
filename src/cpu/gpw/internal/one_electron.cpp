@@ -19,11 +19,13 @@ namespace {
 constexpr int kMaxAng = 8;
 
 /// Memoized Hermite E_t^{i,j} for one axis (Helgaker 9.5.6–7).
+/// Generation stamp avoids memset of the whole table on every prim pair
+/// (thread_local reuse in prim_ST / prim_overlap / prim_kinetic).
 struct HermiteTab {
-    double p = 0, mu = 0, xab = 0, xpa = 0, xpb = 0;
-    // memo[i][j][t] for t=0..i+j; valid bit.
+    double p = 0, mu = 0, xab = 0, xpa = 0, xpb = 0, sqrt_pi_p = 0;
     double memo[kMaxAng + 1][kMaxAng + 1][2 * kMaxAng + 1];
-    unsigned char valid[kMaxAng + 1][kMaxAng + 1][2 * kMaxAng + 1];
+    unsigned stamp[kMaxAng + 1][kMaxAng + 1][2 * kMaxAng + 1] = {};
+    unsigned gen = 0;
 
     void init(double a, double b, double Ax, double Bx) {
         p = a + b;
@@ -32,7 +34,12 @@ struct HermiteTab {
         const double Px = (a * Ax + b * Bx) / p;
         xpa = Px - Ax;
         xpb = Px - Bx;
-        std::memset(valid, 0, sizeof(valid));
+        sqrt_pi_p = std::sqrt(M_PI / p);
+        ++gen;
+        if (gen == 0) {
+            std::memset(stamp, 0, sizeof(stamp));
+            gen = 1;
+        }
     }
 
     double E(int i, int j, int t) {
@@ -40,7 +47,7 @@ struct HermiteTab {
             return 0.0;
         if (i > kMaxAng || j > kMaxAng)
             return 0.0; // refuse — caller should not hit this for GPW
-        if (valid[i][j][t])
+        if (stamp[i][j][t] == gen)
             return memo[i][j][t];
         double v;
         if (i == 0 && j == 0) {
@@ -55,7 +62,7 @@ struct HermiteTab {
                     + static_cast<double>(t + 1) * E(i, j - 1, t + 1);
             }
         }
-        valid[i][j][t] = 1;
+        stamp[i][j][t] = gen;
         memo[i][j][t] = v;
         return v;
     }
@@ -63,13 +70,7 @@ struct HermiteTab {
     double S1d(int i, int j) {
         if (i < 0 || j < 0)
             return 0.0;
-        return E(i, j, 0) * std::sqrt(M_PI / p);
-    }
-
-    double T1d(int i, int j) {
-        // T_ij = -2 b² S_{i,j+2} + b(2j+1) S_{i,j} - ½ j(j-1) S_{i,j-2}
-        // b is stored via p, mu: we need b separately — pass as member.
-        return 0.0; // filled by caller with b
+        return E(i, j, 0) * sqrt_pi_p;
     }
 };
 
@@ -85,7 +86,7 @@ inline double kinetic_1d_tab(HermiteTab& h, int i, int j, double b) {
 } // namespace
 
 double prim_overlap(const GridPrimitive& a, const GridPrimitive& b) {
-    HermiteTab hx, hy, hz;
+    thread_local HermiteTab hx, hy, hz;
     hx.init(a.alpha, b.alpha, a.center[0], b.center[0]);
     hy.init(a.alpha, b.alpha, a.center[1], b.center[1]);
     hz.init(a.alpha, b.alpha, a.center[2], b.center[2]);
@@ -94,7 +95,7 @@ double prim_overlap(const GridPrimitive& a, const GridPrimitive& b) {
 }
 
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b) {
-    HermiteTab hx, hy, hz;
+    thread_local HermiteTab hx, hy, hz;
     hx.init(a.alpha, b.alpha, a.center[0], b.center[0]);
     hy.init(a.alpha, b.alpha, a.center[1], b.center[1]);
     hz.init(a.alpha, b.alpha, a.center[2], b.center[2]);
@@ -109,7 +110,23 @@ double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b) {
 
 void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
              double& t_out) {
-    HermiteTab hx, hy, hz;
+    // s–s fast path: no Hermite table.
+    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0
+        && b.l[1] == 0 && b.l[2] == 0) {
+        const double p = a.alpha + b.alpha;
+        const double mu = a.alpha * b.alpha / p;
+        const double dx = a.center[0] - b.center[0];
+        const double dy = a.center[1] - b.center[1];
+        const double dz = a.center[2] - b.center[2];
+        const double r2 = dx * dx + dy * dy + dz * dz;
+        const double S =
+            a.coeff * b.coeff * std::pow(M_PI / p, 1.5) * std::exp(-mu * r2);
+        s_out = S;
+        // ⟨a|−½∇²|b⟩ for s–s = μ(3 − 2μ r²) S  (same as 3-axis kinetic_1d).
+        t_out = mu * (3.0 - 2.0 * mu * r2) * S;
+        return;
+    }
+    thread_local HermiteTab hx, hy, hz;
     hx.init(a.alpha, b.alpha, a.center[0], b.center[0]);
     hy.init(a.alpha, b.alpha, a.center[1], b.center[1]);
     hz.init(a.alpha, b.alpha, a.center[2], b.center[2]);

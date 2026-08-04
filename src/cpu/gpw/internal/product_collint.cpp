@@ -429,6 +429,158 @@ inline void dispatch_collocate_cx(int lp_z, int lb, int ub, int cmax,
     }
 }
 
+// ─── lp_z-specialized grid → cx (integrate): SIMD lane accumulate, one
+// horizontal reduce per (lz, segment) instead of per vector chunk.
+template <int LpZ>
+inline void integrate_cx_from_grid_lp(int lb, int ub, int cmax, int pol_len,
+                                      const double* pol_i, double* cx,
+                                      const int* map0, const int* sec0,
+                                      long base0, long base1, long base2,
+                                      long base3, const double* grid_io) {
+    using batch_t = xsimd::batch<double>;
+    constexpr int Wd = static_cast<int>(batch_t::size);
+    for (int istart = lb; istart <= ub;) {
+        const int istop = imin(ub, istart + sec0[istart + cmax]);
+        const int cube2grid = map0[istart + cmax] - istart;
+        int i = istart;
+        batch_t a0[LpZ + 1], a1[LpZ + 1], a2[LpZ + 1], a3[LpZ + 1];
+#pragma GCC unroll 8
+        for (int lz = 0; lz <= LpZ; ++lz) {
+            a0[lz] = batch_t(0.0);
+            a1[lz] = batch_t(0.0);
+            a2[lz] = batch_t(0.0);
+            a3[lz] = batch_t(0.0);
+        }
+        for (; i + Wd - 1 <= istop; i += Wd) {
+            const int ig = i + cube2grid;
+            const batch_t v0 = batch_t::load_unaligned(grid_io + base0 + ig);
+            const batch_t v1 = batch_t::load_unaligned(grid_io + base1 + ig);
+            const batch_t v2 = batch_t::load_unaligned(grid_io + base2 + ig);
+            const batch_t v3 = batch_t::load_unaligned(grid_io + base3 + ig);
+#pragma GCC unroll 8
+            for (int lz = 0; lz <= LpZ; ++lz) {
+                const batch_t p =
+                    batch_t::load_unaligned(pol_i + lz * pol_len + (i + cmax));
+                a0[lz] += v0 * p;
+                a1[lz] += v1 * p;
+                a2[lz] += v2 * p;
+                a3[lz] += v3 * p;
+            }
+        }
+#pragma GCC unroll 8
+        for (int lz = 0; lz <= LpZ; ++lz) {
+            cx[lz * 4 + 0] += xsimd::reduce_add(a0[lz]);
+            cx[lz * 4 + 1] += xsimd::reduce_add(a1[lz]);
+            cx[lz * 4 + 2] += xsimd::reduce_add(a2[lz]);
+            cx[lz * 4 + 3] += xsimd::reduce_add(a3[lz]);
+        }
+        for (; i <= istop; ++i) {
+            const int ig = i + cube2grid;
+            const double v0 = grid_io[base0 + ig];
+            const double v1 = grid_io[base1 + ig];
+            const double v2 = grid_io[base2 + ig];
+            const double v3 = grid_io[base3 + ig];
+#pragma GCC unroll 8
+            for (int lz = 0; lz <= LpZ; ++lz) {
+                const double p = pol_i[lz * pol_len + (i + cmax)];
+                cx[lz * 4 + 0] += v0 * p;
+                cx[lz * 4 + 1] += v1 * p;
+                cx[lz * 4 + 2] += v2 * p;
+                cx[lz * 4 + 3] += v3 * p;
+            }
+        }
+        istart = istop + 1;
+    }
+}
+
+inline void integrate_cx_from_grid_dyn(int lp_z, int lb, int ub, int cmax,
+                                       int pol_len, const double* pol_i,
+                                       double* cx, const int* map0,
+                                       const int* sec0, long base0, long base1,
+                                       long base2, long base3,
+                                       const double* grid_io) {
+    using batch_t = xsimd::batch<double>;
+    constexpr int Wd = static_cast<int>(batch_t::size);
+    for (int istart = lb; istart <= ub;) {
+        const int istop = imin(ub, istart + sec0[istart + cmax]);
+        const int cube2grid = map0[istart + cmax] - istart;
+        int i = istart;
+        for (; i + Wd - 1 <= istop; i += Wd) {
+            const int ig = i + cube2grid;
+            const batch_t v0 = batch_t::load_unaligned(grid_io + base0 + ig);
+            const batch_t v1 = batch_t::load_unaligned(grid_io + base1 + ig);
+            const batch_t v2 = batch_t::load_unaligned(grid_io + base2 + ig);
+            const batch_t v3 = batch_t::load_unaligned(grid_io + base3 + ig);
+            for (int lz = 0; lz <= lp_z; ++lz) {
+                const batch_t p =
+                    batch_t::load_unaligned(pol_i + lz * pol_len + (i + cmax));
+                // Accumulate lane products then one horizontal reduce (still
+                // one reduce per lz; better than four reduce_add of v*p).
+                cx[lz * 4 + 0] += xsimd::reduce_add(v0 * p);
+                cx[lz * 4 + 1] += xsimd::reduce_add(v1 * p);
+                cx[lz * 4 + 2] += xsimd::reduce_add(v2 * p);
+                cx[lz * 4 + 3] += xsimd::reduce_add(v3 * p);
+            }
+        }
+        for (; i <= istop; ++i) {
+            const int ig = i + cube2grid;
+            const double v0 = grid_io[base0 + ig];
+            const double v1 = grid_io[base1 + ig];
+            const double v2 = grid_io[base2 + ig];
+            const double v3 = grid_io[base3 + ig];
+            for (int lz = 0; lz <= lp_z; ++lz) {
+                const double p = pol_i[lz * pol_len + (i + cmax)];
+                cx[lz * 4 + 0] += v0 * p;
+                cx[lz * 4 + 1] += v1 * p;
+                cx[lz * 4 + 2] += v2 * p;
+                cx[lz * 4 + 3] += v3 * p;
+            }
+        }
+        istart = istop + 1;
+    }
+}
+
+inline void dispatch_integrate_cx(int lp_z, int lb, int ub, int cmax,
+                                  int pol_len, const double* pol_i, double* cx,
+                                  const int* map0, const int* sec0, long base0,
+                                  long base1, long base2, long base3,
+                                  const double* grid_io) {
+    switch (lp_z) {
+    case 0:
+        integrate_cx_from_grid_lp<0>(lb, ub, cmax, pol_len, pol_i, cx, map0,
+                                     sec0, base0, base1, base2, base3, grid_io);
+        break;
+    case 1:
+        integrate_cx_from_grid_lp<1>(lb, ub, cmax, pol_len, pol_i, cx, map0,
+                                     sec0, base0, base1, base2, base3, grid_io);
+        break;
+    case 2:
+        integrate_cx_from_grid_lp<2>(lb, ub, cmax, pol_len, pol_i, cx, map0,
+                                     sec0, base0, base1, base2, base3, grid_io);
+        break;
+    case 3:
+        integrate_cx_from_grid_lp<3>(lb, ub, cmax, pol_len, pol_i, cx, map0,
+                                     sec0, base0, base1, base2, base3, grid_io);
+        break;
+    case 4:
+        integrate_cx_from_grid_lp<4>(lb, ub, cmax, pol_len, pol_i, cx, map0,
+                                     sec0, base0, base1, base2, base3, grid_io);
+        break;
+    case 5:
+        integrate_cx_from_grid_lp<5>(lb, ub, cmax, pol_len, pol_i, cx, map0,
+                                     sec0, base0, base1, base2, base3, grid_io);
+        break;
+    case 6:
+        integrate_cx_from_grid_lp<6>(lb, ub, cmax, pol_len, pol_i, cx, map0,
+                                     sec0, base0, base1, base2, base3, grid_io);
+        break;
+    default:
+        integrate_cx_from_grid_dyn(lp_z, lb, ub, cmax, pol_len, pol_i, cx, map0,
+                                   sec0, base0, base1, base2, base3, grid_io);
+        break;
+    }
+}
+
 template <bool Collocate>
 void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
                         double zetp, double radius, int lpx, int lpy, int lpz,
@@ -606,47 +758,9 @@ void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
                                       map0, sec0, base0, base1, base2, base3,
                                       grid_io);
             } else {
-                using batch_t = xsimd::batch<double>;
-                constexpr int Wd = static_cast<int>(batch_t::size);
-                for (int istart = lb; istart <= ub;) {
-                    const int istop = imin(ub, istart + sec0[istart + cmax]);
-                    const int cube2grid = map0[istart + cmax] - istart;
-                    int i = istart;
-                    for (; i + Wd - 1 <= istop; i += Wd) {
-                        const int ig = i + cube2grid;
-                        const batch_t v0 =
-                            batch_t::load_unaligned(grid_io + base0 + ig);
-                        const batch_t v1 =
-                            batch_t::load_unaligned(grid_io + base1 + ig);
-                        const batch_t v2 =
-                            batch_t::load_unaligned(grid_io + base2 + ig);
-                        const batch_t v3 =
-                            batch_t::load_unaligned(grid_io + base3 + ig);
-                        for (int lz = 0; lz <= lp_z; ++lz) {
-                            const batch_t p = batch_t::load_unaligned(
-                                pol_i + lz * pol_len + (i + cmax));
-                            cx[lz * 4 + 0] += xsimd::reduce_add(v0 * p);
-                            cx[lz * 4 + 1] += xsimd::reduce_add(v1 * p);
-                            cx[lz * 4 + 2] += xsimd::reduce_add(v2 * p);
-                            cx[lz * 4 + 3] += xsimd::reduce_add(v3 * p);
-                        }
-                    }
-                    for (; i <= istop; ++i) {
-                        const int ig = i + cube2grid;
-                        const double v0 = grid_io[base0 + ig];
-                        const double v1 = grid_io[base1 + ig];
-                        const double v2 = grid_io[base2 + ig];
-                        const double v3 = grid_io[base3 + ig];
-                        for (int lz = 0; lz <= lp_z; ++lz) {
-                            const double p = pol_i[lz * pol_len + (i + cmax)];
-                            cx[lz * 4 + 0] += v0 * p;
-                            cx[lz * 4 + 1] += v1 * p;
-                            cx[lz * 4 + 2] += v2 * p;
-                            cx[lz * 4 + 3] += v3 * p;
-                        }
-                    }
-                    istart = istop + 1;
-                }
+                dispatch_integrate_cx(lp_z, lb, ub, cmax, pol_len, pol_i, cx,
+                                      map0, sec0, base0, base1, base2, base3,
+                                      grid_io);
                 for (int ly = 0; ly <= lp_y; ++ly) {
                     const double p1 = pol_j[ly * pol_len + (j1 + cmax)];
                     const double p2 = pol_j[ly * pol_len + (j2 + cmax)];
@@ -773,6 +887,41 @@ void collint_integrate_group(const UniformGrid& grid, const GridProduct* prods,
                               lpz, I, const_cast<double*>(V));
     for (int i = 0; i < n; ++i)
         out_acc[i] = contract_product_from_I(prods[i], lpx, lpy, lpz, I);
+}
+
+void collint_integrate_group_idx(const UniformGrid& grid,
+                                 const GridProduct* prods_base, const int* idx,
+                                 int n, double mag, double eps, const double* V,
+                                 double* out_acc) {
+    for (int i = 0; i < n; ++i)
+        out_acc[i] = 0.0;
+    if (n <= 0 || !(mag > 0.0))
+        return;
+    int lpx = 0, lpy = 0, lpz = 0, Ltot = 0;
+    for (int i = 0; i < n; ++i) {
+        const auto& p = prods_base[idx[i]];
+        lpx = std::max(lpx, p.la[0] + p.lb[0]);
+        lpy = std::max(lpy, p.la[1] + p.lb[1]);
+        lpz = std::max(lpz, p.la[2] + p.lb[2]);
+        Ltot = std::max(Ltot, p.la[0] + p.la[1] + p.la[2] + p.lb[0] + p.lb[1]
+                                  + p.lb[2]);
+    }
+    if (lpx > kMaxL || lpy > kMaxL || lpz > kMaxL)
+        return;
+    const GridProduct& g0 = prods_base[idx[0]];
+    const double radius = shape_radius(mag, g0.p, Ltot, eps);
+    if (!(radius > 0.0))
+        return;
+    const int sy = lpy + 1, sz = lpz + 1;
+    const int cxyz_n = (lpx + 1) * sy * sz;
+    ensure_I(static_cast<std::size_t>(cxyz_n));
+    double* I = g_I.data();
+    std::fill(I, I + cxyz_n, 0.0);
+    ortho_cxyz_to_grid<false>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, I,
+                              const_cast<double*>(V));
+    for (int i = 0; i < n; ++i)
+        out_acc[i] =
+            contract_product_from_I(prods_base[idx[i]], lpx, lpy, lpz, I);
 }
 
 } // namespace internal

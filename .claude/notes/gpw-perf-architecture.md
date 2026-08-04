@@ -23,13 +23,13 @@ Twin `gpw-multigrid-kpoints` MAIN (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV best MAIN | **~2.0** | two-shot OMP=4 bind |
+| ATV best MAIN | **~2.1** | best-of-4 OMP=4 bind |
 | CP2K 2026.1 same host | **~1.28** quiet | re-run 2026-08-04 |
-| **ratio ATV/CP2K** | **~1.6×** | ≤2× gate; STVnl+collint polish |
+| **ratio ATV/CP2K** | **~1.6×** | ≤2× gate closed |
 
-Landed: collint stack (geom pre-sort, sphere cache, lp-spec, group-parallel
-idx collocate); STVnl Hermite memoization + fused `prim_ST` (~1500→600 ms).
-Per-iter collocate/integrate ~70–100 ms. Remaining: residual setup/kernel.
+Landed: collint stack; STVnl gen-stamp Hermite + s–s + fused `prim_ST`
+(~1500→520 ms); integrate group-idx + segment SIMD accumulate. Per-iter
+coll/int ~80–90 ms. Residual is optional polish toward ~1×.
 
 ### Product collint (landed)
 
@@ -43,8 +43,9 @@ Files: `internal/product_collint.{h,cpp}` + wire in `multigrid.cpp`.
 | grow-only thread_local scratch (no per-product heap) | landed |
 | geometry sort + group batch (shared pol / monom I) | landed |
 | sphere-only Fz contract (skip cube corners) | landed |
-| reflection pairs `(k,1−k)` | **open** |
-| CP2K sphere-bounds cache | **open** |
+| reflection pairs `(k,1−k)` | landed |
+| CP2K sphere-bounds cache | landed |
+| integrate group-idx + segment SIMD | landed |
 | shell-level task list beyond cartesian-prim groups | **open** |
 
 Algorithm after CP2K `src/grid/cpu/grid_cpu_collint.h` (BSD-3, Ole Schuett).
@@ -60,8 +61,8 @@ Landed: z-run axpy/dot; 1D poly/E2 (legacy collocate_one); collint z-contract;
 
 | Rank | Issue | Where |
 | --- | --- | --- |
-| **1** | Residual setup (STVnl ~0.6 s, products_mg ~0.3 s, kbg ~0.2 s) | k-path |
-| 2 | Collint residual (~1.6× overall) | `product_collint.cpp` |
+| **1** | Residual setup (STVnl ~0.52 s, products_mg ~0.3 s, kbg ~0.2 s) | k-path |
+| 2 | Collint residual (~4× CP2K per-iter; ~1.6× overall) | `product_collint.cpp` |
 | 3 | Multi-k dense χ^k until products default | `kpoints.cpp` |
 | 4 | Force path rebuilds grids | `gpw_forces.cpp` |
 

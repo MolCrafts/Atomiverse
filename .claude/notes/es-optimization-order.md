@@ -21,10 +21,12 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    windows + 1D poly xsimd.
 5. ~~`p2-cxyz-collint` + lp-spec + sphere cache~~ **landed**
 6. ~~`p2-stvnl-setup` + collint group-parallel~~ **landed** — Hermite
-   memoization + fused `prim_ST` (STVnl ~1500→600 ms); group-idx collocate.
-   MG MAIN **~2.0 s** (~**1.6×** CP2K quiet ~1.28 s; was ~42 s). Pins green.
+   memoization + fused `prim_ST`; group-idx collocate.
+7. ~~`p2-collint-polish` (residual)~~ **landed** — Hermite gen-stamp + s–s
+   fast path (STVnl ~1500→520 ms); integrate group-idx + segment SIMD.
+   MG MAIN **~2.1 s** (~**1.6×** CP2K quiet ~1.28 s; was ~42 s). Pins green.
 
-**Active next:** residual setup/kernel; products-default-k re-gate.
+**Active next:** optional ~1× chase; products-default-k re-gate; force reuse.
 
 **Out of this wave:** Gaussian/PW cross-method DIIS·LA extraction; CUDA ES
 coverage freeze still holds.

@@ -1088,43 +1088,88 @@ std::vector<double> integrate_products(
     std::vector<double> V(nn, 0.0);
     const double w = grid.weight();
     const long np = static_cast<long>(prods.size());
-    // Geometry-sorted at build — linear group scan.
-    const device::ChunkedRange range(
-        np, device::block_reduce_chunks(nn * sizeof(double)));
-    const long nc = range.chunks();
-    g_ks_scatter.prepare(nc, nn);
-#pragma omp parallel for schedule(dynamic, 1)
-    for (long c = 0; c < nc; ++c) {
-        double* Vloc = g_ks_scatter.chunk(c);
-        std::fill_n(Vloc, nn, 0.0);
-        const long iplo = range.begin(c), iphi = range.end(c);
-        std::vector<GridProduct> gprods;
-        std::vector<double> gacc;
-        gprods.reserve(64);
-        gacc.reserve(64);
-        auto flush_group = [&]() {
-            if (gprods.empty())
+    // Geometry-sorted at build: parallel per-product window mag → form groups
+    // → group-parallel integrate into per-thread KS bags.
+    std::vector<double> pmags(static_cast<std::size_t>(np), 0.0);
+#pragma omp parallel for schedule(dynamic, 64)
+    for (long ip = 0; ip < np; ++ip) {
+        const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+        const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+        const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+        const double geom = A.maxc * B.maxc * std::abs(prod.k);
+        pmags[static_cast<std::size_t>(ip)] =
+            integrate_window_mag(grid, V_level, prod, geom);
+    }
+    struct GRange {
+        int beg = 0, end = 0;
+        double mag = 0.0;
+    };
+    std::vector<GRange> groups;
+    std::vector<int> all_idx;
+    groups.reserve(static_cast<std::size_t>(np / 32 + 8));
+    all_idx.reserve(static_cast<std::size_t>(np));
+    {
+        std::vector<int> idx;
+        idx.reserve(64);
+        auto flush = [&]() {
+            if (idx.empty())
                 return;
             double mag = 0.0;
-            for (const auto& prod : gprods) {
-                const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
-                const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-                const double geom = A.maxc * B.maxc * std::abs(prod.k);
-                mag = std::max(
-                    mag, integrate_window_mag(grid, V_level, prod, geom));
+            for (int ip : idx)
+                mag = std::max(mag, pmags[static_cast<std::size_t>(ip)]);
+            if (mag >= eps_drop) {
+                GRange gr;
+                gr.beg = static_cast<int>(all_idx.size());
+                for (int ip : idx)
+                    all_idx.push_back(ip);
+                gr.end = static_cast<int>(all_idx.size());
+                gr.mag = mag;
+                groups.push_back(gr);
             }
-            gacc.resize(gprods.size());
-            if (mag >= eps_drop)
-                internal::collint_integrate_group(
-                    grid, gprods.data(), static_cast<int>(gprods.size()), mag,
-                    eps_win, V_level.data(), gacc.data());
-            else
-                std::fill(gacc.begin(), gacc.end(), 0.0);
-            for (std::size_t gi = 0; gi < gprods.size(); ++gi) {
-                const GridProduct& prod = gprods[gi];
+            idx.clear();
+        };
+        for (long ip = 0; ip < np; ++ip) {
+            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+            if (!idx.empty()
+                && !internal::collint_same_geometry(
+                       prods[static_cast<std::size_t>(idx.back())], prod))
+                flush();
+            idx.push_back(static_cast<int>(ip));
+        }
+        flush();
+    }
+    const long ng = static_cast<long>(groups.size());
+    int nthreads = 1;
+#ifdef _OPENMP
+    nthreads = omp_get_max_threads();
+#endif
+    g_ks_scatter.prepare(nthreads, nn);
+    for (int t = 0; t < nthreads; ++t)
+        std::fill_n(g_ks_scatter.chunk(t), nn, 0.0);
+#pragma omp parallel
+    {
+        int tid = 0;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+#endif
+        double* Vloc = g_ks_scatter.chunk(tid);
+        std::vector<double> gacc;
+        gacc.reserve(64);
+#pragma omp for schedule(dynamic, 1)
+        for (long g = 0; g < ng; ++g) {
+            const GRange& gr = groups[static_cast<std::size_t>(g)];
+            const int n = gr.end - gr.beg;
+            gacc.resize(static_cast<std::size_t>(n));
+            internal::collint_integrate_group_idx(
+                grid, prods.data(), all_idx.data() + gr.beg, n, gr.mag, eps_win,
+                V_level.data(), gacc.data());
+            for (int gi = 0; gi < n; ++gi) {
+                const GridProduct& prod = prods[static_cast<std::size_t>(
+                    all_idx[static_cast<std::size_t>(gr.beg + gi)])];
                 const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
                 const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-                const double sw = prod.k * w * gacc[gi];
+                const double sw =
+                    prod.k * w * gacc[static_cast<std::size_t>(gi)];
                 for (int i = 0; i < A.cn; ++i) {
                     const PrimContrib& ca =
                         contribs[static_cast<std::size_t>(A.cbeg + i)];
@@ -1139,22 +1184,13 @@ std::vector<double> integrate_products(
                     }
                 }
             }
-            gprods.clear();
-        };
-        for (long ip = iplo; ip < iphi; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            if (!gprods.empty()
-                && !internal::collint_same_geometry(gprods.back(), prod))
-                flush_group();
-            gprods.push_back(prod);
         }
-        flush_group();
     }
 #pragma omp parallel for schedule(static)
     for (long kk = 0; kk < static_cast<long>(nn); ++kk) {
         double s = 0.0;
-        for (long c = 0; c < nc; ++c)
-            s += g_ks_scatter.chunk(c)[static_cast<std::size_t>(kk)];
+        for (int t = 0; t < nthreads; ++t)
+            s += g_ks_scatter.chunk(t)[static_cast<std::size_t>(kk)];
         V[static_cast<std::size_t>(kk)] = s;
     }
     return V;
@@ -1327,43 +1363,87 @@ std::vector<std::vector<double>> integrate_products_cells(
         ncells, std::vector<double>(nn, 0.0));
     const double w = grid.weight();
     const long np = static_cast<long>(prods.size());
-    // Geometry-sorted at build — linear group scan.
-    const device::ChunkedRange range(
-        np, device::block_reduce_chunks(nnall * sizeof(double)));
-    const long nc = range.chunks();
-    g_ks_cell_scatter.prepare(nc, nnall);
-#pragma omp parallel for schedule(dynamic, 1)
-    for (long c = 0; c < nc; ++c) {
-        double* Vloc = g_ks_cell_scatter.chunk(c);
-        std::fill_n(Vloc, nnall, 0.0);
-        const long iplo = range.begin(c), iphi = range.end(c);
-        std::vector<GridProduct> gprods;
-        std::vector<double> gacc;
-        gprods.reserve(64);
-        gacc.reserve(64);
-        auto flush_group = [&]() {
-            if (gprods.empty())
+    // Geometry-sorted at build: parallel window mag → groups → group-parallel.
+    std::vector<double> pmags(static_cast<std::size_t>(np), 0.0);
+#pragma omp parallel for schedule(dynamic, 64)
+    for (long ip = 0; ip < np; ++ip) {
+        const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+        const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+        const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+        const double geom = A.maxc * B.maxc * std::abs(prod.k);
+        pmags[static_cast<std::size_t>(ip)] =
+            integrate_window_mag(grid, V_level, prod, geom);
+    }
+    struct GRange {
+        int beg = 0, end = 0;
+        double mag = 0.0;
+    };
+    std::vector<GRange> groups;
+    std::vector<int> all_idx;
+    groups.reserve(static_cast<std::size_t>(np / 32 + 8));
+    all_idx.reserve(static_cast<std::size_t>(np));
+    {
+        std::vector<int> idx;
+        idx.reserve(64);
+        auto flush = [&]() {
+            if (idx.empty())
                 return;
             double mag = 0.0;
-            for (const auto& prod : gprods) {
-                const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
-                const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-                const double geom = A.maxc * B.maxc * std::abs(prod.k);
-                mag = std::max(
-                    mag, integrate_window_mag(grid, V_level, prod, geom));
+            for (int ip : idx)
+                mag = std::max(mag, pmags[static_cast<std::size_t>(ip)]);
+            if (mag >= eps_drop) {
+                GRange gr;
+                gr.beg = static_cast<int>(all_idx.size());
+                for (int ip : idx)
+                    all_idx.push_back(ip);
+                gr.end = static_cast<int>(all_idx.size());
+                gr.mag = mag;
+                groups.push_back(gr);
             }
-            gacc.resize(gprods.size());
-            if (mag >= eps_drop)
-                internal::collint_integrate_group(
-                    grid, gprods.data(), static_cast<int>(gprods.size()), mag,
-                    eps_win, V_level.data(), gacc.data());
-            else
-                std::fill(gacc.begin(), gacc.end(), 0.0);
-            for (std::size_t gi = 0; gi < gprods.size(); ++gi) {
-                const GridProduct& prod = gprods[gi];
+            idx.clear();
+        };
+        for (long ip = 0; ip < np; ++ip) {
+            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+            if (!idx.empty()
+                && !internal::collint_same_geometry(
+                       prods[static_cast<std::size_t>(idx.back())], prod))
+                flush();
+            idx.push_back(static_cast<int>(ip));
+        }
+        flush();
+    }
+    const long ng = static_cast<long>(groups.size());
+    int nthreads = 1;
+#ifdef _OPENMP
+    nthreads = omp_get_max_threads();
+#endif
+    g_ks_cell_scatter.prepare(nthreads, nnall);
+    for (int t = 0; t < nthreads; ++t)
+        std::fill_n(g_ks_cell_scatter.chunk(t), nnall, 0.0);
+#pragma omp parallel
+    {
+        int tid = 0;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+#endif
+        double* Vloc = g_ks_cell_scatter.chunk(tid);
+        std::vector<double> gacc;
+        gacc.reserve(64);
+#pragma omp for schedule(dynamic, 1)
+        for (long g = 0; g < ng; ++g) {
+            const GRange& gr = groups[static_cast<std::size_t>(g)];
+            const int n = gr.end - gr.beg;
+            gacc.resize(static_cast<std::size_t>(n));
+            internal::collint_integrate_group_idx(
+                grid, prods.data(), all_idx.data() + gr.beg, n, gr.mag, eps_win,
+                V_level.data(), gacc.data());
+            for (int gi = 0; gi < n; ++gi) {
+                const GridProduct& prod = prods[static_cast<std::size_t>(
+                    all_idx[static_cast<std::size_t>(gr.beg + gi)])];
                 const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
                 const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-                const double sw = prod.k * w * gacc[gi];
+                const double sw =
+                    prod.k * w * gacc[static_cast<std::size_t>(gi)];
                 double* Vcell =
                     Vloc + static_cast<std::size_t>(prod.tcell) * nn;
                 for (int i = 0; i < A.cn; ++i) {
@@ -1380,22 +1460,13 @@ std::vector<std::vector<double>> integrate_products_cells(
                     }
                 }
             }
-            gprods.clear();
-        };
-        for (long ip = iplo; ip < iphi; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            if (!gprods.empty()
-                && !internal::collint_same_geometry(gprods.back(), prod))
-                flush_group();
-            gprods.push_back(prod);
         }
-        flush_group();
     }
 #pragma omp parallel for schedule(static)
     for (long kk = 0; kk < static_cast<long>(nnall); ++kk) {
         double s = 0.0;
-        for (long c = 0; c < nc; ++c)
-            s += g_ks_cell_scatter.chunk(c)[static_cast<std::size_t>(kk)];
+        for (int t = 0; t < nthreads; ++t)
+            s += g_ks_cell_scatter.chunk(t)[static_cast<std::size_t>(kk)];
         V[static_cast<std::size_t>(kk) / nn]
          [static_cast<std::size_t>(kk) % nn] = s;
     }

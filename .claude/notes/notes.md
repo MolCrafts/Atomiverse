@@ -8,7 +8,7 @@ History is git's job — superseded designs are deleted, not archived here.
 
 - **ES optimization order (binding in CLAUDE.md).** Wave state:
   [es-optimization-order.md](es-optimization-order.md). Structure + OT +
-  windows + collint + STVnl polish (MG MAIN **~2.0 s ≈ 1.6×** CP2K quiet
+  windows + collint + STVnl polish (MG MAIN **~2.1 s ≈ 1.6×** CP2K quiet
   ~1.28 s). Fair walls in [gpw-perf-baseline.md](gpw-perf-baseline.md).
   CUDA ES freeze this wave; classical MD CUDA independent.
 - **e2e-in-tests migration (queued campaign).** ~102 registered "unit" tests
