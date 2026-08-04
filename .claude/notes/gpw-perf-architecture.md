@@ -1,10 +1,9 @@
 <!-- mol:note:topic:gpw-perf-architecture -->
 ## GPW performance architecture (binding conclusions)
 
-Capability-first waves left **four nearly complete SCF copies** (Γ/k × RKS/UKS)
-in `src/cpu/gpw/gpw_solver.cpp` (~5.9k). Physics pipeline is one algorithm;
-control flow is forked. Correctness is good; the remaining wall is the grid
-kernel constant + OT economics on the not-yet-converted paths + structure.
+Physics pipeline is one algorithm; SCF control flow is still forked (Γ/k ×
+RKS/UKS) but **workspace + shared fine-grid KS build are landed**. The wall
+that remains is the **product collocate/integrate constant** vs CP2K collint.
 
 ### One pipeline
 
@@ -13,59 +12,72 @@ P / {P_k} → collocate ρ → Poisson → XC → integrate V → H → DIIS|OT 
 ```
 
 Geometry-fixed once per `run()`: S/T/Vpp or S_k/T_k/Vnl_k, n_ion, v_locsr,
-cbg / ProductSet / KpointBasisGrid.
+cbg / ProductSet / KpointBasisGrid. Iteration bags live on
+`internal::GpwWorkspace`; fine-grid ρ→V_eff is `ks_grid_build_rks/uks`.
 
-### SIMD policy (2026-08-03, user decision: all levers on)
+### Fair wall vs CP2K (2026-08-04, arrhenius1, OMP=4 bind)
 
-SIMD is a **first-class lane**, implemented with **portable xsimd only** —
-one source, per-arch codegen. Arch intrinsics stay banned. Evidence for the
-choice: CP2K's `grid_cpu_collint.h` hand-writes an **AVX2+FMA-only** kernel
-with a `#pragma omp simd` scalar fallback — on aarch64 CP2K itself runs the
-scalar path, so single-source xsimd matches its x86 weapon and beats its
-aarch64 story. First cash-in: z-run `axis_dot`/`axis_axpy` point-fill
-(−30.9% on the MG twin, `327a7ca8`). Every vectorized reduction lands under
-the tolerance + FD-force laws (not bit-exact, deterministic).
+Twin `gpw-multigrid-kpoints` MAIN (MP 2×2×2, 150 Ry, NGRIDS 4):
 
-### Critical bottlenecks (re-ranked post 2026-08-02 waves)
+| Side | Wall [s] | Notes |
+| --- | ---: | --- |
+| ATV best MAIN | **~42** | load-sensitive (contended node 100+ s) |
+| CP2K 2026.1 same host | **0.885** | `tools/cp2k_oracle/inputs/gpw-multigrid-kpoints/si_kpoints_mg.inp` |
+| **ratio ATV/CP2K** | **~47×** | use this, not the stale 1.9× table |
+
+Per-iter (ATV `ATV_GPW_PROF` MAIN): collocate ~0.9 s, **integrate ~4.2–4.5 s**,
+Poisson+XC ~10 ms. CP2K `grid_integrate_task_list` ~0.019 s/iter. **Gap is
+collint-class product engine, not 1D poly fill.**
+
+Stale: wave2 CP2K wall 23.6 s / ratio 1.9 — superseded by re-measurement above.
+
+### SIMD policy
+
+Portable **xsimd only** (no arch intrinsics, no global `XTENSOR_USE_XSIMD`).
+Landed: z-run `axis_dot`/`axis_axpy`; 1D poly/E2 fill; `reduce_add` on dots.
+Exp recurrence stays scalar (sequential). Multi-monomial product batching
+still open.
+
+### Critical bottlenecks (re-ranked 2026-08-04)
 
 | Rank | Issue | Where |
 | --- | --- | --- |
-| 1 | Remaining point-fill constant vs CP2K (1D pol/exp fills scalar; one run per monomial; sphere bounds sqrt per column) | `multigrid.cpp` |
-| 2 | Integrate windows sized density-independent worst-case (`A.maxc·B.maxc·prod.k`, `kProductMassMargin=1e-4` ⇒ eps ~1e-11 whole-cell sweeps for diffuse pairs) | `multigrid.cpp` |
-| 3 | OT line-search economics only fixed on Γ RKS; UKS Γ + multi-k OT still rebuild per Armijo step | `gpw_solver.cpp` |
-| 4 | Multi-k dense χ^k O(npts·nb²·nk) — but products flip is **refuted** until the product engine is fixed (see `wf/perf-p1-products-default-k` @ `3ce71310` A/B) | `kpoints.cpp` |
-| 5 | Four forked SCF copies (workspace / KsGridBuild extraction) | `gpw_solver.cpp` |
+| **1** | Product collocate/integrate vs CP2K collint (~47×) | `multigrid.cpp` |
+| 2 | Multi-k dense χ^k O(npts·nb²·nk) until product engine wins | `kpoints.cpp` |
+| 3 | Force path rebuilds grids (geometry-fixed reuse incomplete) | `gpw_forces.cpp` |
+| 4 | Forked SCF control flow (structure only; KS build shared) | `gpw_solver.cpp` |
 
-### Extract first
+**Done (do not re-open as primary):** GpwWorkspace; `ks_grid_build_*`; OT
+economics Γ RKS/UKS + multi-k integer; |V(pc)| integrate windows; 1D poly SIMD.
 
-1. `GpwWorkspace` — plans, grids, DIIS, scratch (like `PWWorkspace`)
-2. `KsGridBuild` — one ρ→Poisson→XC→V_eff
-3. Unified product collocate/integrate
-4. Parameterized OT step
+### Extract / rewrite order
 
-**ES policy first cut:** items 1–2 **landed** (`GpwWorkspace` + shared
-`ks_grid_build_*`). Wave state:
-[es-optimization-order.md](es-optimization-order.md). Items 3–4 and deeper
-SIMD stay on the normal perf queue.
+1. ~~`GpwWorkspace`~~ landed  
+2. ~~`KsGridBuild`~~ landed  
+3. **CP2K collint product path** (cxyz + reflection + Horner) — **active**  
+4. Force grid reuse; MPI product/grid distribute; products-default-k after (3)
 
-### Phases (SIMD promoted; all levers authorized)
+### Collint strategy (user: may copy CP2K algorithm)
 
-| Phase | Work |
-| --- | --- |
-| **done** | Profile; FFT plan cache; buffer reuse; zgemm; k-OT double energy; z-run point-fill SIMD; Γ RKS OT economics |
-| **P1** | Deeper point-fill SIMD (1D fills, multi-monomial register blocking); |V|/P-aware integrate windows; OT economics → UKS Γ + multi-k; Workspace + KsGridBuild |
-| **P2** | cxyz+reflection+Horner collocation rewrite (CP2K collint structure, dedicated wave); 2-center S/T setup SIMD; force grid reuse; MPI product/grid distribute; products-default-k (re-gated on engine fixes) |
+Reference: CP2K `src/grid/cpu/grid_cpu_collint.h` (BSD-3, Ole Schuett). Ortho path:
+
+1. Expand `(r−ra)^{la}(r−rb)^{lb}` → coefficients of `(r−rp)^{l}` (per axis binomial).  
+2. Form `cxyz[lz][ly][lx]`.  
+3. Precompute `pol[dir][l][i] = (r−rp)^{l} exp(−p(r−rp)²)` with exp recurrence.  
+4. Contract `cxyz → cxy → cx → grid` (Horner); process reflection pairs
+   `(k,1−k)` / `(j,1−j)`.  
+5. Inner x-loop: xsimd (not AVX2 intrinsics) for portable SIMD.
+
+Integrate is the transpose of collocate. Keep public API and Frame laws.
 
 ### Forbidden
 
 Public `*Config`; e2e/timing in `tests/`; global `XTENSOR_USE_XSIMD`; arch
-intrinsics / per-arch dispatch; weakening SCF tol; 5th collocation layout
-without deleting dense χ^k; file-split without shared KS build.
+intrinsics; weakening SCF tol; 5th collocation layout without deleting dense
+χ^k; file-split without shared KS build.
 
 ### Disk
 
-The perf loops **always** wipe builds after worker/merge/clearup.
+Perf loops **always** wipe builds after worker/merge/clearup.
 
-Queue: `docs/developer/gpw-perf-queue.md`. Workflows:
-`.grok/workflows/cp2k-perf-loop.rhai` (CP2K-anchored rewrite, primary) and
-`.grok/workflows/gpw-perf-loop.rhai` (superseded in spirit; same queue).
+Queue: `docs/developer/gpw-perf-queue.md`.

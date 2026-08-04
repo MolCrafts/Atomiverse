@@ -7,9 +7,10 @@ History is git's job — superseded designs are deleted, not archived here.
 ## Open engineering leads
 
 - **ES optimization order (binding in CLAUDE.md).** Wave state:
-  [es-optimization-order.md](es-optimization-order.md). Structural first cut
-  done (`GpwWorkspace` + `ks_grid_build_*`). CUDA ES coverage frozen this
-  wave; classical MD CUDA independent.
+  [es-optimization-order.md](es-optimization-order.md). Structure + OT +
+  window/1D-SIMD landed; **active gap is product collint vs CP2K (~47× on
+  MG MAIN)** — fair walls in [gpw-perf-baseline.md](gpw-perf-baseline.md).
+  CUDA ES freeze this wave; classical MD CUDA independent.
 - **e2e-in-tests migration (queued campaign).** ~102 registered "unit" tests
   are full method solves hidden behind `ATV_TEST_HEAVY=OFF` (ccsd/fci/mp2,
   gpw_*/pw_* solves, bomd/cpmd/xl_bomd, dftb, am1 thermochemistry runs), plus

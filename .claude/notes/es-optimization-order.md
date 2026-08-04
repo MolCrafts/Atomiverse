@@ -17,12 +17,15 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    multi-k RKS, multi-k UKS (OT + DIIS). Collocate / H-integrate stay path-local.
 3. ~~`p1-ot-uks-k`~~ **landed** — OT line-search economics on Γ UKS + multi-k
    RKS/UKS integer paths (carried E/H, quadratic Armijo retry, budget reuse).
+4. ~~`p1-integrate-windows` / `p2-simd-pointfill-2`~~ **landed** — local \|V\|
+   windows + 1D poly xsimd; **not** enough vs CP2K (~47× on MG MAIN).
+
+**Active:** CP2K collint-style product collocate/integrate (`p2-cxyz-reflection`)
+— user authorized copying CP2K `grid_cpu_collint.h` algorithm (BSD-3). Fair
+wall law: re-measure CP2K on this host; do not use stale 23.6 s.
 
 **Out of this wave:** Gaussian/PW cross-method DIIS·LA extraction; CUDA ES
-coverage expansion; collocation rewrite (`p2-cxyz-reflection`).
-
-**Next perf (queue):** `p1-integrate-windows` / `p2-simd-pointfill-2` on
-`multigrid.cpp` (wave-3 workers).
+coverage freeze still holds.
 
 Architecture detail: [gpw-perf-architecture.md](gpw-perf-architecture.md).
 Queue: [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md).
