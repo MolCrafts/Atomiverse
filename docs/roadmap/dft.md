@@ -82,10 +82,10 @@ ENERGY_FORCE (`reg_gpw-optb88-forces`), multi-k **Hirshfeld stress**
 (`reg_gpw-bands-si` / `reg_gpw-dos-si`); open residuals (**incomplete
 `[~]`**): multi-k free-atom **TS stress** (`gpw-ts-kpoint-stress`) +
 multi-k free-energy **metallic stress** (`gpw-metallic-stress`);
-**pending residual**: metallic **BOMD** (`gpw-bomd-smearing`), GPW
-**UKS / metallic bands** + **UKS / metallic DOS**, nonlocal **vdW
-stress**, multi-k UKS free-energy **metallic stress**; not queue
-exhausted — GapCensus owns discovery);
+wave-8 residual closed 2026-08-04: metallic **BOMD**, GPW **UKS /
+metallic bands**, nonlocal **vdW stress**, multi-k UKS free-energy
+**metallic stress**, UKS/metallic **DOS** (latter wave-7); pending
+residual empty for this staff — GapCensus owns discovery);
 product after
 harness wave 11 also ships UGW@UKS-RPBE,
 dedicated TS/XDM force pins, multi-k UKS stress GGA expand, CPMD
@@ -752,12 +752,15 @@ FD/MP (`reg_gpw-metallic-smearing`) **and multi-k UKS** (`reg_gpw-uks-smearing`)
 GPW free-energy **analytic ionic forces under smear** are product for multi-k
 RKS and UKS (`reg_gpw-metallic-forces` / `reg_gpw-uks-metallic-forces`;
 fractional \(P_k/W_k\) payload). Multi-k free-energy **stress under smear**
-is incomplete on unmerged tips (`[~] gpw-metallic-stress` RKS; pending
-UKS expand `gpw-uks-metallic-stress`); metallic **BOMD** remains queued
-(`gpw-bomd-smearing`). GPW **bands/DOS** footholds are closed-shell
-fixed-occ only (`reg_gpw-bands-si` / `reg_gpw-dos-si`); UKS and metallic
-band/DOS expansions are queued. Analytic stress still omits nonlocal
-\(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain (`gpw-vdw-stress`). OT on
+is product for RKS and UKS (`reg_gpw-metallic-stress` /
+`reg_gpw-uks-metallic-stress`). Metallic **BOMD** under FD/MP smear is
+product (`reg_gpw-bomd-smearing`; fractional \(P_k\) warm start). GPW
+**bands/DOS** product covers closed-shell fixed-occ (`reg_gpw-bands-si` /
+`reg_gpw-dos-si`), collinear **UKS** bands/DOS (`reg_gpw-bands-uks` /
+`reg_gpw-dos-uks`), and **metallic** FD bands/DOS
+(`reg_gpw-bands-metallic` / `reg_gpw-dos-metallic`). Analytic stress folds
+nonlocal \(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain
+(`reg_gpw-vdw-stress`). OT on
 GPW is a product member (`use_ot`; RKS `reg_ot-minimizer-water` +
 **Γ-UKS** `reg_ot-uks-o2` + **multi-k RKS** `reg_ot-kpoints` + **multi-k
 UKS** `reg_ot-uks-kpoints` + **Γ OT+DFT+U** `reg_ot-dftu` + **multi-k
@@ -779,9 +782,9 @@ occupation bands** (`reg_bands-metallic-si`) **and collinear-spin DOS**
 (`reg_dos-spin-metallic-si`). **GPW-grid bands/DOS** (Bloch
 \(C_k/\varepsilon_k\) path) are product for closed-shell fixed-occ
 (`reg_gpw-bands-si` / `reg_gpw-dos-si`; CP2K Quickstep BAND_STRUCTURE /
-DOS twins). Collinear **UKS** and **metallic-smear** GPW bands/DOS remain
-queued (`gpw-bands-uks` / `gpw-bands-metallic` / `gpw-dos-uks` /
-`gpw-dos-metallic`).
+DOS twins) **plus collinear UKS bands/DOS** (`reg_gpw-bands-uks` /
+`reg_gpw-dos-uks`) **and metallic FD bands/DOS**
+(`reg_gpw-bands-metallic` / `reg_gpw-dos-metallic`).
 
 On CUDA the plane-wave hot path (Davidson H·ψ, cuFFT, Poisson, V_eff, LDA,
 density accumulation) is device-resident; Rayleigh–Ritz subspace bookkeeping and

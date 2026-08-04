@@ -1,0 +1,74 @@
+! CP2K twin for regressions/gpw/gpw-bands-metallic —
+! multi-k RKS SMEAR + BAND_STRUCTURE on BCC Na (GTH-GPW).
+! Run OFFLINE only; never at ctest time.
+
+&GLOBAL
+  PROJECT na_bcc_smear_bands
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 150
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-7
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 80
+      &SMEAR ON
+        METHOD FERMI_DIRAC
+        ELECTRONIC_TEMPERATURE [K] 3157.75
+      &END SMEAR
+      ADDED_MOS 4
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &PRINT
+      &BAND_STRUCTURE
+        ADDED_MOS 4
+        FILE_NAME na_bcc_smear_bands
+        &KPOINT_SET
+          NPOINTS 3
+          SPECIAL_POINT GAMMA 0.0 0.0 0.0
+          SPECIAL_POINT X 0.5 0.0 0.5
+          SPECIAL_POINT W 0.5 0.25 0.75
+          SPECIAL_POINT L 0.5 0.5 0.5
+          SPECIAL_POINT GAMMA 0.0 0.0 0.0
+          SPECIAL_POINT K 0.375 0.375 0.75
+        &END KPOINT_SET
+      &END BAND_STRUCTURE
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 4.225 4.225 4.225
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Na 0.0 0.0 0.0
+      Na 2.1125 2.1125 2.1125
+    &END COORD
+    &KIND Na
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q9
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

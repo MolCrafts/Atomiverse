@@ -12,11 +12,13 @@
 ///   2. Central FD of the *non-self-consistent* total energy E[P; ε] under
 ///      orthorhombic diagonal strain at fixed fractional coordinates. Geometry-
 ///      dependent T, V_pp / S_k,T_k,V_nl^k, grid, Poisson, XC (and optional
-///      D3/D4/TS/XDM/MBD geometry-only dispersion) are rebuilt; the SCF is
-///      *not* re-converged. This is the GPW form of the
-///      Hellmann–Feynman cell theorem used for plane-wave Nielsen–Martin in
-///      this tree (Nielsen & Martin, PRB 32, 3780 (1985); Quickstep energy
-///      surface). Multi-k sums the fixed-P Lagrangian over sampled k.
+///      D3/D4/TS/XDM/MBD geometry-only dispersion and density-dependent
+///      nonlocal vdW-DF/DF2/rVV10 \(E_{\mathrm{c}}^{\mathrm{nl}}\) at fixed
+///      \(\rho_P\)) are rebuilt; the SCF is *not* re-converged. This is the
+///      GPW form of the Hellmann–Feynman cell theorem used for plane-wave
+///      Nielsen–Martin in this tree (Nielsen & Martin, PRB 32, 3780 (1985);
+///      Quickstep energy surface). Multi-k sums the fixed-P Lagrangian over
+///      sampled k.
 ///
 /// Oracle path (gpw_stress_fd / gpw_stress_fd_impl): full multi-SCF strain-FD
 /// of E_tot (2 SCFs per diagonal axis).
@@ -47,6 +49,7 @@
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 #include "atomiverse/cpu/gpw/internal/periodic.h"
 #include "atomiverse/cpu/gpw/internal/poisson_fft.h"
+#include "atomiverse/cpu/gpw/internal/vdw_df.h"
 #include "atomiverse/cpu/gpw/internal/xc_grid.h"
 #include "atomiverse/cpu/gpw/internal/xc_grid_gga.h"
 #include "atomiverse/cpu/linalg/matrix.h"
@@ -548,7 +551,13 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const double e_es = es.e_hartree - e_self;
 
     double e_disp = 0.0;
-    if (cfg.d3 || cfg.d3bj || cfg.d4 || cfg.ts || cfg.xdm || cfg.mbd) {
+    if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+        // Density-dependent nonlocal correlation at fixed ρ_P on the strained
+        // cell (Hellmann–Feynman fixed-P; matches multi-SCF FD of E_nl).
+        e_disp = nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
+                                      cfg.rvv10, /*potential=*/false)
+                     .energy;
+    } else if (cfg.d3 || cfg.d3bj || cfg.d4 || cfg.ts || cfg.xdm || cfg.mbd) {
         const int na = static_cast<int>(atoms.size());
         std::vector<int> Z(static_cast<std::size_t>(na));
         std::vector<std::array<double, 3>> pos(static_cast<std::size_t>(na));
@@ -910,7 +919,11 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const double e_es = es.e_hartree - e_self;
 
     double e_disp = 0.0;
-    if (cfg.d3 || cfg.d3bj || cfg.d4 || cfg.ts || cfg.xdm || cfg.mbd) {
+    if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
+        e_disp = nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
+                                      cfg.rvv10, /*potential=*/false)
+                     .energy;
+    } else if (cfg.d3 || cfg.d3bj || cfg.d4 || cfg.ts || cfg.xdm || cfg.mbd) {
         const int na = static_cast<int>(atoms.size());
         std::vector<int> Z(static_cast<std::size_t>(na));
         std::vector<std::array<double, 3>> pos(static_cast<std::size_t>(na));

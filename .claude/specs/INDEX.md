@@ -3,18 +3,17 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
-## Live — after wave-7 cancel (2026-08-01)
+## Closed — wave 8 residual (2026-08-04)
 
-Incomplete CP2K-loop staff (workers cancelled; **no unique commits**). Implement
-from these specs; queue `docs/developer/cp2k-method-queue.md` ## pending.
+Wave-7 cancel residual staff closed on `dev`. Specs deleted; history is git.
 
-| Spec | Twin class | Deps landed |
-| ---- | ---------- | ----------- |
-| `gpw-bomd-smearing` | CP2K AIMD+SMEAR+k | bomd-kpoints, metallic-smearing, metallic-forces |
-| `gpw-bands-uks` | CP2K UKS BAND_STRUCTURE GTH-GPW | bands-si, kpoints-uks |
-| `gpw-bands-metallic` | CP2K SMEAR+BAND_STRUCTURE GTH-GPW | bands-si, metallic-smearing |
-| `gpw-vdw-stress` | CP2K STRESS+NON_LOCAL | vdw product, analytic stress |
-| `gpw-uks-metallic-stress` | CP2K UKS STRESS+SMEAR | metallic-stress, uks-metallic-forces |
+| Spec | Shipped |
+| ---- | ------- |
+| `gpw-bands-uks` | UKS NSCF dual \(V_{\mathrm{eff}}^\sigma\); `reg_gpw-bands-uks` |
+| `gpw-bands-metallic` | metallic FD + band path; `reg_gpw-bands-metallic` |
+| `gpw-vdw-stress` | nonlocal \(E_{\mathrm{c}}^{\mathrm{nl}}\) in fixed-\(P\) stress |
+| `gpw-uks-metallic-stress` | multi-k UKS free-energy stress; dual-gate |
+| `gpw-bomd-smearing` | multi-k BOMD under FD smear + fractional \(P_k\) |
 
 Out of CP2K loop (unchanged): `periodic-rhf-gamma`, `rsh-eri-cam-b3lyp` (PySCF queue).
 
@@ -558,10 +557,9 @@ to green. Specs deleted on close; history in git (commits f9a6443a..HEAD).
 | [periodic-rhf-gamma](periodic-rhf-gamma/) | pyscf / HF periodic | open (deferred) |
 | [rsh-eri-cam-b3lyp](rsh-eri-cam-b3lyp/) | pyscf / RSH | open (deferred) |
 
-Open CP2K specs on `dev` = **0**. Stock VV10 is **blocked**. Incomplete
-`[~]` = **1** (`gpw-ts-kpoint-stress` — unmerged `wf/*` after harness wave 6
-2026-08-01). Pending residual **2** (`gpw-metallic-stress`,
-`gpw-bomd-smearing`; **not** queue exhausted).
+Open CP2K specs on `dev` = **0** (wave-8 residual closed 2026-08-04). Stock
+VV10 is **blocked**. Pending residual for wave-7/8 staff = **0**; GapCensus
+owns next discovery.
 
 ## Closed — CP2K harness wave 12 (2026-07-26)
 

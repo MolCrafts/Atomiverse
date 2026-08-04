@@ -1,4 +1,4 @@
-/// @file test_cpu_gpw_bands.cpp
+/// @file test_cpu_gpw_bandpath.cpp
 /// @brief Unit tests for GPW band-path geometry and gap finder.
 ///        No full SCF e2e (that lives in regressions/gpw/gpw-bands-si).
 
@@ -62,7 +62,7 @@ TEST(GpwGapFromSpectrum, SyntheticIndirectGap) {
     EXPECT_EQ(cb, 2);
 }
 
-TEST(GpwBandsGuards, RejectsUksAndSmear) {
+TEST(GpwBandsGuards, RejectsDispersionOnPath) {
     const double L = 8.0;
     const GaussianBasis bH(molrs::Element::H, "DZV-GTH-PADE");
     const GthPotential pH(molrs::Element::H, "GTH-PADE-q1");
@@ -72,38 +72,31 @@ TEST(GpwBandsGuards, RejectsUksAndSmear) {
     h2.emplace_back(r0, bH, pH, 1);
     h2.emplace_back(r1, bH, pH, 1);
 
-    GpwDft uks;
-    uks.cell[0] = uks.cell[1] = uks.cell[2] = L;
-    uks.cutoff_ry = 80.0;
-    uks.n_alpha = 1;
-    uks.n_beta = 1;
-    uks.max_iter = 1;
-    uks.k_mesh[0] = uks.k_mesh[1] = uks.k_mesh[2] = 1;
-    uks.xc = XcKind::PADE;
-    uks.build(h2);
+    // Multigrid / DFT+U / dispersion throw in Bands before SCF; d3 is the
+    // lightest product-illegal flag that still builds on the k path.
+    GpwDft disp;
+    disp.cell[0] = disp.cell[1] = disp.cell[2] = L;
+    disp.cutoff_ry = 80.0;
+    disp.n_occ = 1;
+    disp.max_iter = 1;
+    disp.k_mesh[0] = disp.k_mesh[1] = disp.k_mesh[2] = 2;
+    disp.d3 = true;
+    disp.xc = XcKind::PADE;
+    disp.local_pp_on_grid = true;
+    disp.build(h2);
 
     Bands bands;
     bands.n_bands = 2;
     bands.set_diamond_path(2);
-    EXPECT_THROW(bands.compute(uks, h2), std::invalid_argument);
-
-    GpwDft smear;
-    smear.cell[0] = smear.cell[1] = smear.cell[2] = L;
-    smear.cutoff_ry = 80.0;
-    smear.n_occ = 1;
-    smear.max_iter = 1;
-    smear.k_mesh[0] = smear.k_mesh[1] = smear.k_mesh[2] = 2;
-    smear.smearing = Smearing::fermi_dirac;
-    smear.degauss = 0.02;
-    smear.xc = XcKind::PADE;
-    smear.build(h2);
-    EXPECT_THROW(bands.compute(smear, h2), std::invalid_argument);
+    EXPECT_THROW(bands.compute(disp, h2), std::invalid_argument);
 }
 
 TEST(GpwBandsResult, DefaultIsRestricted) {
     BandsResult br;
     EXPECT_EQ(br.nspin, 1);
     EXPECT_TRUE(br.eigenvalues_ha.empty());
+    EXPECT_TRUE(br.eigenvalues_beta_ha.empty());
     EXPECT_NEAR(br.gap_ha, 0.0, 1e-15);
+    EXPECT_NEAR(br.e_fermi_ha, 0.0, 1e-15);
     EXPECT_FALSE(br.scf_converged);
 }

@@ -1662,18 +1662,22 @@ DOS UKS/metallic, nonlocal vdW stress, UKS metallic stress, metallic BOMD).
 
 ## pending
 
-Wave-7 workers cancelled mid-flight (no unique commits on tips). Live specs under
-`.claude/specs/<slug>/` — implement from those, not from empty `wf/*` bases.
-
-- [ ] `gpw-bomd-smearing` | Multi-k Born–Oppenheimer MD with metallic occupation smearing (free-energy / Mermin trajectory) | dynamics | twin: CP2K 2026.1 Quickstep AIMD + SMEAR k-mesh | deps: gpw-bomd-kpoints ✓, gpw-metallic-smearing ✓, gpw-metallic-forces ✓ | spec: `.claude/specs/gpw-bomd-smearing/`
-- [ ] `gpw-bands-uks` | Collinear UKS band structure NSCF on frozen Veff (GPW Bloch path) | gpw | twin: CP2K 2026.1 Quickstep UKS `&PRINT &BAND_STRUCTURE` GTH-GPW | deps: gpw-bands-si ✓, gpw-kpoints-uks ✓ | spec: `.claude/specs/gpw-bands-uks/`
-- [ ] `gpw-bands-metallic` | Band structure under metallic FD/MP occupation smearing (GPW) | gpw | twin: CP2K 2026.1 SMEAR + `&PRINT &BAND_STRUCTURE` GTH-GPW metal | deps: gpw-bands-si ✓, gpw-metallic-smearing ✓ | spec: `.claude/specs/gpw-bands-metallic/`
-- [ ] `gpw-vdw-stress` | Analytic fixed-\(P\) cell stress with nonlocal vdW-DF/DF2/rVV10 \(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain | gpw | twin: CP2K 2026.1 `STRESS_TENSOR` + `NON_LOCAL` (DRSLL/LMKLL/RVV10) | deps: gpw-vdw-scf-potential ✓, gpw-analytic-stress ✓ | spec: `.claude/specs/gpw-vdw-stress/`
-- [ ] `gpw-uks-metallic-stress` | Multi-k UKS free-energy analytic cell stress under FD/MP metallic smearing | gpw | twin: CP2K 2026.1 UKS `STRESS_TENSOR NUMERICAL` + SMEAR | deps: gpw-metallic-stress ✓, gpw-uks-metallic-forces ✓, gpw-kpoint-uks-stress ✓ | spec: `.claude/specs/gpw-uks-metallic-stress/`
+(empty — wave-8 closed the residual staff from wave-7 cancel; GapCensus owns next discovery)
 
 ## in_progress
 
-(empty — wave-7 cancelled after partial land; incomplete work is **pending** + live specs, not half `wf/*` tips)
+(empty)
+
+## done (wave 8 residual close 2026-08-04 — post wave-7 cancel)
+
+Implemented from live specs left after wave-7 cancel; dual-gate regs + oracle
+inputs under `tools/cp2k_oracle/inputs/<slug>/`. Specs deleted on close.
+
+- [x] `gpw-bands-uks` | Collinear UKS band structure NSCF on frozen dual \(V_{\mathrm{eff}}^\sigma\) | gpw | `regressions/gpw/gpw-bands-uks` (CP2K UKS BAND_STRUCTURE class; α≡β; gap 0.89 eV; wall ~7.6 s) | ratio **TBD offline** (ATV 7.56 s) | 2026-08-04
+- [x] `gpw-bands-metallic` | Multi-k RKS metallic FD SCF + NSCF band path | gpw | `regressions/gpw/gpw-bands-metallic` (BCC Na; \(E_F\) class; spectrum straddles \(E_F\); wall ~1.8 s) | ratio **TBD offline** | 2026-08-04
+- [x] `gpw-vdw-stress` | Analytic fixed-\(P\) stress folds nonlocal vdW-DF \(E_{\mathrm{c}}^{\mathrm{nl}}\) | gpw | `regressions/gpw/gpw-vdw-stress` (water dimer DRSLL; max\|an−FD\| 7.2e-7; bare diff 1.5e-6) | ratio **TBD offline** (ATV SCF 10.5 s) | 2026-08-04
+- [x] `gpw-uks-metallic-stress` | Multi-k UKS free-energy analytic cell stress under FD | gpw | `regressions/gpw/gpw-uks-metallic-stress` (max\|an−FD\| 2.4e-8; UKS≡RKS 3e-14; mean σ pin) | ratio **~0.16 class** (ATV SCF 0.78 s) | 2026-08-04
+- [x] `gpw-bomd-smearing` | Multi-k BOMD under FD smear with fractional \(P_k\) warm start | dynamics | `regressions/gpw/gpw-bomd-smearing` (H₂ NVE; \(f_k\) each step; drift 4.3e-3 ≤ 0.10) | ratio **TBD offline** | 2026-08-04
 
 ## done (wave 7 partial land 2026-08-01 — loop cancelled before harness)
 

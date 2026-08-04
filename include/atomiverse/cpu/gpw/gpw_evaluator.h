@@ -146,6 +146,19 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     /// @brief Fold ±k pairs by time reversal (default true; set false for
     ///        an explicit unreduced mesh, e.g. multi-k XL regression).
     bool k_time_reversal = true;
+    /// @brief Metallic occupation smearing (default: fixed integer fillings).
+    ///        Product multi-k BOMD under FD/MP uses free-energy SCF + fractional
+    ///        \(P_k\) warm start (`reg_gpw-bomd-smearing`).
+    Smearing smearing = Smearing::none;
+    /// @brief Smearing width [Ry] (QE `degauss` / CP2K \(k_B T_e\)). Required
+    ///        `> 0` when `smearing != none`.
+    double degauss = 0.02;
+    /// @brief Methfessel–Paxton order \(N\) (used when
+    ///        `smearing == methfessel_paxton`).
+    int mp_order = 1;
+    /// @brief Extra virtual bands kept for metallic fillings (CP2K
+    ///        `ADDED_MOS` class).
+    int extra_bands = 0;
     /// @brief Dudarev DFT+U (PLUS_U); empty disables. U−J in eV per entry.
     std::vector<PlusU> plus_u;
     /// @brief Per-atom initial spin seed for UKS AFM/FM (0 or n_atoms).

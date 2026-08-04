@@ -439,6 +439,9 @@ if(ATV_BUILD_GPW)
         # Plain multi-k BOMD (full SCF each step, previous-step P_k warm
         # start) — H2 NVE pinned vs CP2K 2026.1 Quickstep AIMD + KPOINTS.
         atv_add_regression(gpw gpw-bomd-kpoints THREADS 8)
+        # Multi-k free-energy BOMD under FD metallic smear (fractional P_k
+        # warm start) — H2 NVE vs CP2K AIMD + SMEAR + KPOINTS.
+        atv_add_regression(gpw gpw-bomd-smearing THREADS 8)
         # Plain multi-k collinear UKS BOMD (dual P_k^σ warm start) — H2 NVE
         # pinned vs CP2K 2026.1 Quickstep UKS AIMD + KPOINTS.
         atv_add_regression(gpw gpw-bomd-uks-kpoints THREADS 8)
@@ -512,6 +515,10 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-dftu-forces THREADS 8)
     atv_add_regression(gpw gpw-kpoints-si THREADS 8)
     atv_add_regression(gpw gpw-bands-si THREADS 8)
+    # Collinear UKS NSCF band path on frozen dual V_eff^σ (CP2K UKS BAND_STRUCTURE).
+    atv_add_regression(gpw gpw-bands-uks THREADS 8)
+    # Metallic FD SCF + band path (CP2K SMEAR + BAND_STRUCTURE GTH-GPW Na).
+    atv_add_regression(gpw gpw-bands-metallic THREADS 8)
     # Multi-k GPW DOS on BCT Si (Gaussian smear of ε_nk; CP2K &PRINT &DOS twin).
     atv_add_regression(gpw gpw-dos-si THREADS 8)
     atv_add_regression(gpw gpw-dos-uks THREADS 8)
@@ -563,8 +570,12 @@ if(ATV_BUILD_GPW)
     atv_add_regression(gpw gpw-metallic-forces THREADS 8)
     # Multi-k free-energy analytic cell stress under FD metallic smear.
     atv_add_regression(gpw gpw-metallic-stress THREADS 8)
+    # Multi-k UKS free-energy analytic cell stress under FD metallic smear.
+    atv_add_regression(gpw gpw-uks-metallic-stress THREADS 8)
     atv_add_regression(gpw gpw-uks-smearing THREADS 8)
     atv_add_regression(gpw gpw-uks-metallic-forces THREADS 8)
+    # Analytic fixed-P stress with nonlocal vdW-DF (DRSLL) under strain.
+    atv_add_regression(gpw gpw-vdw-stress THREADS 8)
     atv_add_regression(gpw gpw-kpoint-forces THREADS 8)
     atv_add_regression(gpw gpw-kpoint-uks-forces THREADS 8)
     atv_add_regression(gpw gpw-kpoint-stress THREADS 8)

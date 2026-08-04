@@ -28,34 +28,45 @@ struct BandsResult {
     /// Fractional k-points used for the path (same order as eigenvalues).
     std::vector<std::array<double, 3>> kfrac;
     /// Eigenvalues \(\varepsilon_n(\mathbf{k})\) [Hartree], layout `[ik][ib]`.
-    /// Restricted closed-shell channel only (product of this slug).
+    /// RKS: closed-shell channel. UKS: α channel (β in `eigenvalues_beta_ha`).
     std::vector<std::vector<double>> eigenvalues_ha;
-    /// 1 = restricted (closed-shell). Spin product is a follow-on.
+    /// UKS β eigenvalues [Hartree], layout `[ik][ib]` (empty for RKS).
+    std::vector<std::vector<double>> eigenvalues_beta_ha;
+    /// 1 = restricted (RKS); 2 = collinear spin-polarized (UKS).
     int nspin = 1;
-    double e_vbm_ha = 0;   ///< Valence-band maximum [Hartree].
-    double e_cbm_ha = 0;   ///< Conduction-band minimum [Hartree].
-    double gap_ha = 0;     ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Hartree].
+    double e_vbm_ha = 0;   ///< Valence-band maximum [Hartree] (fixed-occ).
+    double e_cbm_ha = 0;   ///< Conduction-band minimum [Hartree] (fixed-occ).
+    double gap_ha = 0;     ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Hartree] (0 if metallic).
     int vbm_k = 0;         ///< k-index of VBM on the path.
     int cbm_k = 0;         ///< k-index of CBM on the path.
     int vbm_band = 0;      ///< Band index of VBM (0-based).
     int cbm_band = 0;      ///< Band index of CBM (0-based).
+    /// @brief SCF Fermi level [Hartree] when metallic smear is on (0 if fixed occ).
+    double e_fermi_ha = 0;
     bool scf_converged = false; ///< Whether the preceding SCF converged.
-    double energy_ha = 0;  ///< SCF total energy [Hartree].
+    /// @brief SCF free energy \(F\) (smear) or total energy [Hartree].
+    double energy_ha = 0;
 };
 
 /// @brief High-symmetry-path band structure (NSCF on frozen GPW \(V_\mathrm{eff}\)).
 ///
 /// SCF uses `method` members (`cutoff_ry`, `k_mesh` / `k_points`, `xc`,
-/// `n_occ`, …). Path k-points are `kfrac` (filled by `set_diamond_path` when
-/// empty at `compute` time). Product path: closed-shell RKS, fixed integer
-/// occupations, single-grid periodic orthorhombic with local PP on the grid.
+/// `n_occ` / UKS `n_alpha`/`n_beta`, optional `smearing`). Path k-points are
+/// `kfrac` (filled by `set_diamond_path` when empty at `compute` time).
 ///
-/// Collinear spin, metallic smear, multigrid, nonperiodic, DFT+U, and
-/// dispersion flags throw with a how-to (no silent degradation).
+/// Product paths:
+/// - closed-shell RKS, fixed integer occupations (`reg_gpw-bands-si`)
+/// - collinear UKS multi-k, frozen dual \(V_{\mathrm{eff}}^\sigma\)
+///   (`reg_gpw-bands-uks`)
+/// - metallic FD/MP smear, frozen \(V_{\mathrm{eff}}\) + report \(E_F\)
+///   (`reg_gpw-bands-metallic`)
+///
+/// Multigrid, nonperiodic, DFT+U, and dispersion flags throw with a how-to
+/// (no silent degradation).
 class Bands {
   public:
     /// @brief Number of bands to report per path k (lowest eigenvalues).
-    ///        Must be \(\ge n_\mathrm{occ}\) so the gap is defined. GPW
+    ///        Must cover occupied spectrum so the gap / path is defined. GPW
     ///        diagonalizes the full AO spectrum; this only caps the report.
     int n_bands = 12;
     /// @brief Fractional (crystal) k-list. Empty → `set_diamond_path(4)`.
@@ -72,10 +83,10 @@ class Bands {
     /// @param method GPW DFT method (`build()` already done; k-mesh / list
     ///               used for the SCF density; not mutated).
     /// @param atoms  Atom set at the current geometry [Bohr] (same as `build`).
-    /// @return Owned `BandsResult` with eigenvalues [Hartree] and gap.
+    /// @return Owned `BandsResult` with eigenvalues [Hartree] and gap / \(E_F\).
     /// @throws std::logic_error when `method` was not `build()`'d.
-    /// @throws std::invalid_argument on UKS / smear / multigrid / nonperiodic /
-    ///         analytic local PP / DFT+U / dispersion / empty path / n_bands.
+    /// @throws std::invalid_argument on multigrid / nonperiodic / analytic local
+    ///         PP / DFT+U / dispersion / empty path / insufficient n_bands.
     BandsResult compute(GpwDft& method, const std::vector<GpwAtom>& atoms) const;
 };
 

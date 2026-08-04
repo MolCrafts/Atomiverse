@@ -120,14 +120,6 @@ XcOnGrid eval_xc(XcKind xc, const UniformGrid& grid,
 }
 
 void reject_unsupported(const GpwDft& m) {
-    if (m.is_uks())
-        throw std::invalid_argument(
-            "gpw::Bands: collinear UKS band structure is not product yet "
-            "(closed-shell RKS only; use n_occ, not n_alpha/n_beta)");
-    if (m.smearing != Smearing::none)
-        throw std::invalid_argument(
-            "gpw::Bands: metallic smearing is not product yet "
-            "(fixed integer occupations only)");
     if (m.nonperiodic)
         throw std::invalid_argument(
             "gpw::Bands: nonperiodic (MT) cells are not supported "
@@ -149,6 +141,28 @@ void reject_unsupported(const GpwDft& m) {
         throw std::invalid_argument(
             "gpw::Bands: dispersion on the band path is not product yet "
             "(clear d3/d3bj/d4/ts/xdm/mbd/vdw_df/vdw_df2/rvv10)");
+}
+
+XcOnGridSpin eval_xc_spin(XcKind xc, const UniformGrid& grid,
+                          const std::vector<double>& rho_a,
+                          const std::vector<double>& rho_b) {
+    switch (xc) {
+    case XcKind::PBE:
+        return xc_grid_pbe_spin(grid, rho_a, rho_b);
+    case XcKind::PBEsol:
+        return xc_grid_pbesol_spin(grid, rho_a, rho_b);
+    case XcKind::RevPBE:
+        return xc_grid_revpbe_spin(grid, rho_a, rho_b);
+    case XcKind::RPBE:
+        return xc_grid_rpbe_spin(grid, rho_a, rho_b);
+    case XcKind::BLYP:
+        return xc_grid_blyp_spin(grid, rho_a, rho_b);
+    case XcKind::OptB88VdW:
+        return xc_grid_optb88_vdw_spin(grid, rho_a, rho_b);
+    case XcKind::PADE:
+    default:
+        return xc_grid_pade_lsd(grid, rho_a, rho_b);
+    }
 }
 
 } // namespace
@@ -226,12 +240,26 @@ BandsResult Bands::compute(GpwDft& method,
                            const std::vector<GpwAtom>& atoms) const {
     if (n_bands < 2)
         throw std::invalid_argument("gpw::Bands::compute: n_bands must be >= 2");
-    if (method.n_occ < 1)
-        throw std::invalid_argument(
-            "gpw::Bands::compute: method.n_occ must be >= 1 (closed-shell RKS)");
-    if (n_bands < method.n_occ)
-        throw std::invalid_argument(
-            "gpw::Bands::compute: n_bands must be >= n_occ so the gap is defined");
+    const bool uks = method.is_uks();
+    const bool use_smear = (method.smearing != Smearing::none);
+    if (!uks) {
+        if (method.n_occ < 1)
+            throw std::invalid_argument(
+                "gpw::Bands::compute: method.n_occ must be >= 1 "
+                "(closed-shell RKS)");
+        if (n_bands < method.n_occ)
+            throw std::invalid_argument(
+                "gpw::Bands::compute: n_bands must be >= n_occ so the gap is "
+                "defined");
+    } else {
+        if (method.n_alpha < 1 || method.n_beta < 1)
+            throw std::invalid_argument(
+                "gpw::Bands::compute: UKS requires n_alpha, n_beta >= 1");
+        const int n_need = std::max(method.n_alpha, method.n_beta);
+        if (n_bands < n_need)
+            throw std::invalid_argument(
+                "gpw::Bands::compute: n_bands must cover max(n_alpha, n_beta)");
+    }
     reject_unsupported(method);
 
     std::vector<std::array<double, 3>> path = kfrac;
@@ -270,8 +298,13 @@ BandsResult Bands::compute(GpwDft& method,
         throw std::runtime_error(
             "gpw::Bands::compute: SCF did not populate multi-k P_k "
             "(need k_mesh / k_points on the method for the density)");
+    if (uks
+        && (scf.P_k_beta.empty()
+            || static_cast<int>(scf.P_k_beta.size()) != scf.n_kpts))
+        throw std::runtime_error(
+            "gpw::Bands::compute: UKS SCF did not populate multi-k P_k_beta");
 
-    // ── 2. Geometry + freeze V_eff from SCF {P_k} ───────────────────────
+    // ── 2. Geometry + freeze V_eff (RKS) or dual V_eff^σ (UKS) ─────────
     const auto basis = flatten_basis(atoms);
     const int nb = static_cast<int>(basis.size());
     if (nb < 1)
@@ -302,22 +335,48 @@ BandsResult Bands::compute(GpwDft& method,
                                           method.eps_default);
 
     std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
-    for (int ik = 0; ik < nk_scf; ++ik) {
-        internal::collocate_density_k(kbg_scf, ik,
-                                      scf.P_k[static_cast<std::size_t>(ik)],
-                                      scf_kpts[static_cast<std::size_t>(ik)].weight,
-                                      rho);
+    std::vector<double> rho_a, rho_b;
+    if (uks) {
+        rho_a.assign(static_cast<std::size_t>(grid.npts()), 0.0);
+        rho_b.assign(static_cast<std::size_t>(grid.npts()), 0.0);
+        for (int ik = 0; ik < nk_scf; ++ik) {
+            const double wk = scf_kpts[static_cast<std::size_t>(ik)].weight;
+            internal::collocate_density_k(
+                kbg_scf, ik, scf.P_k[static_cast<std::size_t>(ik)], wk, rho_a);
+            internal::collocate_density_k(
+                kbg_scf, ik, scf.P_k_beta[static_cast<std::size_t>(ik)], wk,
+                rho_b);
+        }
+        for (std::size_t g = 0; g < rho.size(); ++g)
+            rho[g] = rho_a[g] + rho_b[g];
+    } else {
+        for (int ik = 0; ik < nk_scf; ++ik) {
+            internal::collocate_density_k(
+                kbg_scf, ik, scf.P_k[static_cast<std::size_t>(ik)],
+                scf_kpts[static_cast<std::size_t>(ik)].weight, rho);
+        }
     }
 
     std::vector<double> n_tot(rho.size());
     for (std::size_t g = 0; g < rho.size(); ++g)
         n_tot[g] = rho[g] - n_ion[g];
     const PoissonResult es = solve_poisson(grid, n_tot);
-    const XcOnGrid xc = eval_xc(method.xc, grid, rho);
 
-    std::vector<double> veff(rho.size());
-    for (std::size_t g = 0; g < rho.size(); ++g)
-        veff[g] = es.v_r[g] + xc.vxc_r[g] + v_locsr[g];
+    std::vector<double> veff, veff_a, veff_b;
+    if (uks) {
+        const XcOnGridSpin xc = eval_xc_spin(method.xc, grid, rho_a, rho_b);
+        veff_a.resize(rho.size());
+        veff_b.resize(rho.size());
+        for (std::size_t g = 0; g < rho.size(); ++g) {
+            veff_a[g] = es.v_r[g] + xc.vxc_a[g] + v_locsr[g];
+            veff_b[g] = es.v_r[g] + xc.vxc_b[g] + v_locsr[g];
+        }
+    } else {
+        const XcOnGrid xc = eval_xc(method.xc, grid, rho);
+        veff.resize(rho.size());
+        for (std::size_t g = 0; g < rho.size(); ++g)
+            veff[g] = es.v_r[g] + xc.vxc_r[g] + v_locsr[g];
+    }
 
     // ── 3. NSCF diagonalization on the path ─────────────────────────────
     std::vector<double> path_w(path.size(), 1.0 / static_cast<double>(path.size()));
@@ -338,36 +397,98 @@ BandsResult Bands::compute(GpwDft& method,
 
     BandsResult out;
     out.kfrac = path;
-    out.nspin = 1;
+    out.nspin = uks ? 2 : 1;
     out.scf_converged = scf.converged;
     out.energy_ha = scf.e_total;
+    out.e_fermi_ha = use_smear ? scf.e_fermi : 0.0;
     out.eigenvalues_ha.resize(static_cast<std::size_t>(nk));
+    if (uks)
+        out.eigenvalues_beta_ha.resize(static_cast<std::size_t>(nk));
+
+    const int n_occ_min = uks ? std::max(method.n_alpha, method.n_beta)
+                              : method.n_occ;
 
     for (int ik = 0; ik < nk; ++ik) {
         internal::KOrth orth(S_k[static_cast<std::size_t>(ik)],
                              method.lindep_threshold);
-        const CplxMatrix Vg =
-            internal::integrate_potential_k(kbg_path, ik, veff);
-        const CplxMatrix H = T_k[static_cast<std::size_t>(ik)]
-                             + Vnl_k[static_cast<std::size_t>(ik)] + Vg;
-        auto [eps, C] = internal::diagonalize_k(H, orth);
-        (void)C;
-        const int m = static_cast<int>(eps.size());
-        const int nrep = std::min(n_bands, m);
-        if (nrep < method.n_occ)
-            throw std::runtime_error(
-                "gpw::Bands::compute: only " + std::to_string(m)
-                + " independent directions at path k #" + std::to_string(ik)
-                + " but n_occ=" + std::to_string(method.n_occ));
-        out.eigenvalues_ha[static_cast<std::size_t>(ik)].assign(
-            eps.begin(), eps.begin() + nrep);
+        auto diag_channel = [&](const std::vector<double>& v_eff,
+                                std::vector<double>& row) {
+            const CplxMatrix Vg =
+                internal::integrate_potential_k(kbg_path, ik, v_eff);
+            const CplxMatrix H = T_k[static_cast<std::size_t>(ik)]
+                                 + Vnl_k[static_cast<std::size_t>(ik)] + Vg;
+            auto [eps, C] = internal::diagonalize_k(H, orth);
+            (void)C;
+            const int m = static_cast<int>(eps.size());
+            const int nrep = std::min(n_bands, m);
+            if (nrep < n_occ_min)
+                throw std::runtime_error(
+                    "gpw::Bands::compute: only " + std::to_string(m)
+                    + " independent directions at path k #"
+                    + std::to_string(ik) + " but need >= "
+                    + std::to_string(n_occ_min));
+            row.assign(eps.begin(), eps.begin() + nrep);
+        };
+
+        if (uks) {
+            diag_channel(veff_a, out.eigenvalues_ha[static_cast<std::size_t>(ik)]);
+            diag_channel(veff_b,
+                         out.eigenvalues_beta_ha[static_cast<std::size_t>(ik)]);
+        } else {
+            diag_channel(veff, out.eigenvalues_ha[static_cast<std::size_t>(ik)]);
+        }
     }
 
-    if (n_bands > method.n_occ) {
-        out.gap_ha =
-            gap_from_spectrum(out.eigenvalues_ha, method.n_occ, out.e_vbm_ha,
-                              out.e_cbm_ha, out.vbm_k, out.cbm_k, out.vbm_band,
-                              out.cbm_band);
+    // Gap character for fixed-occupation paths only (metallic: E_F is the pin).
+    if (!use_smear) {
+        if (!uks && n_bands > method.n_occ) {
+            out.gap_ha = gap_from_spectrum(
+                out.eigenvalues_ha, method.n_occ, out.e_vbm_ha, out.e_cbm_ha,
+                out.vbm_k, out.cbm_k, out.vbm_band, out.cbm_band);
+        } else if (uks) {
+            // Joint α/β VBM–CBM (integer-fill seed), same policy as Dos.
+            double e_vbm = -1e300;
+            double e_cbm = 1e300;
+            bool have_vbm = false;
+            bool have_cbm = false;
+            int vk = 0, ck = 0, vb = 0, cb = 0;
+            auto scan = [&](const std::vector<std::vector<double>>& ev,
+                            int n_occ) {
+                for (std::size_t ik = 0; ik < ev.size(); ++ik) {
+                    const auto& row = ev[ik];
+                    if (n_occ > 0 && static_cast<int>(row.size()) >= n_occ) {
+                        const double v =
+                            row[static_cast<std::size_t>(n_occ - 1)];
+                        if (!have_vbm || v > e_vbm) {
+                            e_vbm = v;
+                            vk = static_cast<int>(ik);
+                            vb = n_occ - 1;
+                            have_vbm = true;
+                        }
+                    }
+                    if (static_cast<int>(row.size()) > n_occ) {
+                        const double c = row[static_cast<std::size_t>(n_occ)];
+                        if (!have_cbm || c < e_cbm) {
+                            e_cbm = c;
+                            ck = static_cast<int>(ik);
+                            cb = n_occ;
+                            have_cbm = true;
+                        }
+                    }
+                }
+            };
+            scan(out.eigenvalues_ha, method.n_alpha);
+            scan(out.eigenvalues_beta_ha, method.n_beta);
+            if (have_vbm && have_cbm) {
+                out.e_vbm_ha = e_vbm;
+                out.e_cbm_ha = e_cbm;
+                out.gap_ha = e_cbm - e_vbm;
+                out.vbm_k = vk;
+                out.cbm_k = ck;
+                out.vbm_band = vb;
+                out.cbm_band = cb;
+            }
+        }
     }
     return out;
 }

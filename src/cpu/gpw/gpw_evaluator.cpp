@@ -199,6 +199,10 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
     for (int d = 0; d < 3; ++d)
         cfg.k_mesh[d] = k_mesh[d];
     cfg.k_time_reversal = k_time_reversal;
+    cfg.smearing = smearing;
+    cfg.degauss = degauss;
+    cfg.mp_order = mp_order;
+    cfg.extra_bands = extra_bands;
 
     const bool multi_k =
         (k_mesh[0] != 1 || k_mesh[1] != 1 || k_mesh[2] != 1);
