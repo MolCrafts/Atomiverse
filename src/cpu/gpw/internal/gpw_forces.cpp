@@ -301,7 +301,8 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     const std::vector<double>* scf_veff = nullptr,
                     const std::vector<double>* scf_veff_a = nullptr,
                     const std::vector<double>* scf_veff_b = nullptr,
-                    const std::vector<double>* scf_v_es = nullptr) {
+                    const std::vector<double>* scf_v_es = nullptr,
+                    const GpwResult* scf_grids = nullptr) {
     const std::vector<GridBasisFunction> basis = global_basis(atoms);
     const int nb = static_cast<int>(basis.size());
     const int na = static_cast<int>(atoms.size());
@@ -398,8 +399,17 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     UniformGrid grid = make_uniform_grid(cfg.cell, cfg.cutoff_ry);
     const long ng = grid.npts();
     const double wgt = grid.weight();
-    const CompactBasisGrid cbg =
-        build_compact_basis_grid(grid, basis, periodic, eps);
+    // Reuse SCF cbg when single-grid SCF filled it (p2-force-kbg-reuse).
+    CompactBasisGrid cbg_local;
+    const CompactBasisGrid* cbg_ptr = nullptr;
+    if (scf_grids && scf_grids->scf_cbg_valid
+        && scf_grids->scf_cbg.npts == ng) {
+        cbg_ptr = &scf_grids->scf_cbg;
+    } else {
+        cbg_local = build_compact_basis_grid(grid, basis, periodic, eps);
+        cbg_ptr = &cbg_local;
+    }
+    const CompactBasisGrid& cbg = *cbg_ptr;
 
     auto mat_to_vec = [&](const RealMatrix& M) {
         std::vector<double> v(static_cast<std::size_t>(nb) * nb);
@@ -566,12 +576,26 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 
     // Multi-image collocation of every center-derivative function dφ_u/dR_u,k
     // (flat index f = u*3 + k), so the grid term's ∂χ_u is image-consistent.
+    // Lazy-cache on GpwResult when available (first force after SCF).
     std::vector<GridBasisFunction> dflat(static_cast<std::size_t>(nb) * 3);
     for (int u = 0; u < nb; ++u)
         for (int k = 0; k < 3; ++k)
             dflat[static_cast<std::size_t>(u) * 3 + k] = dphi[u][k];
-    const CompactBasisGrid cbgd =
-        build_compact_basis_grid(grid, dflat, periodic, eps);
+    CompactBasisGrid cbgd_local;
+    const CompactBasisGrid* cbgd_ptr = nullptr;
+    if (scf_grids && scf_grids->force_cbgd_valid
+        && scf_grids->force_cbgd.npts == ng) {
+        cbgd_ptr = &scf_grids->force_cbgd;
+    } else if (scf_grids) {
+        scf_grids->force_cbgd =
+            build_compact_basis_grid(grid, dflat, periodic, eps);
+        scf_grids->force_cbgd_valid = true;
+        cbgd_ptr = &scf_grids->force_cbgd;
+    } else {
+        cbgd_local = build_compact_basis_grid(grid, dflat, periodic, eps);
+        cbgd_ptr = &cbgd_local;
+    }
+    const CompactBasisGrid& cbgd = *cbgd_ptr;
 
     std::vector<std::array<double, 3>> forces(na, {0.0, 0.0, 0.0});
 
@@ -1157,8 +1181,18 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
     UniformGrid grid = make_uniform_grid(cfg.cell, cfg.cutoff_ry);
     const long ng = grid.npts();
     const double wgt = grid.weight();
-    const internal::KpointBasisGrid kbg =
-        internal::build_kpoint_basis_grid(grid, basis, kpts, eps);
+    // Reuse SCF χ^k when single-grid multi-k SCF filled it.
+    internal::KpointBasisGrid kbg_local;
+    const internal::KpointBasisGrid* kbg_ptr = nullptr;
+    if (scf.scf_kbg && scf.scf_kbg->npts == ng && scf.scf_kbg->nb == nb
+        && static_cast<int>(scf.scf_kbg->chi.size()) == nk) {
+        kbg_ptr = scf.scf_kbg.get();
+    } else {
+        kbg_local =
+            internal::build_kpoint_basis_grid(grid, basis, kpts, eps);
+        kbg_ptr = &kbg_local;
+    }
+    const internal::KpointBasisGrid& kbg = *kbg_ptr;
 
     // Density collocate (needed for local-PP HF / Hirshfeld). Prefer SCF V_eff
     // / V_es to skip Poisson+XC rebuild at fixed density.
@@ -1290,13 +1324,22 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
     }
     const std::vector<double>& v_es = *v_es_ptr;
 
-    // Derivative basis on grid (flat u*3+k).
+    // Derivative basis on grid (flat u*3+k); lazy-cache on scf.
     std::vector<GridBasisFunction> dflat(static_cast<std::size_t>(nb) * 3);
     for (int u = 0; u < nb; ++u)
         for (int k = 0; k < 3; ++k)
             dflat[static_cast<std::size_t>(u) * 3 + k] = dphi[u][k];
-    const internal::KpointBasisGrid kbgd =
-        internal::build_kpoint_basis_grid(grid, dflat, kpts, eps);
+    const internal::KpointBasisGrid* kbgd_ptr = nullptr;
+    if (scf.force_kbgd && scf.force_kbgd->npts == ng
+        && scf.force_kbgd->nb == nb * 3
+        && static_cast<int>(scf.force_kbgd->chi.size()) == nk) {
+        kbgd_ptr = scf.force_kbgd.get();
+    } else {
+        scf.force_kbgd = std::make_shared<internal::KpointBasisGrid>(
+            internal::build_kpoint_basis_grid(grid, dflat, kpts, eps));
+        kbgd_ptr = scf.force_kbgd.get();
+    }
+    const internal::KpointBasisGrid& kbgd = *kbgd_ptr;
 
     std::vector<std::array<double, 3>> forces(na, {0.0, 0.0, 0.0});
 
@@ -1623,7 +1666,7 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         }
         return assemble_gpw_forces(atoms, cfg, scf.P, W, &scf.P_beta,
                                    &scf.volume_ratios, nullptr, &scf.veff_a,
-                                   &scf.veff_b, &scf.v_es);
+                                   &scf.veff_b, &scf.v_es, &scf);
     }
 
     // Closed-shell RKS: W_μν = Σ_i 2 ε_i C_μi C_νi (occupied).
@@ -1632,7 +1675,7 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     RealMatrix W = energy_weighted(scf.C, scf.eps, n_occ, 2.0);
     return assemble_gpw_forces(atoms, cfg, scf.P, W, nullptr,
                                &scf.volume_ratios, &scf.veff, nullptr, nullptr,
-                               &scf.v_es);
+                               &scf.v_es, &scf);
 }
 
 std::vector<std::array<double, 3>>

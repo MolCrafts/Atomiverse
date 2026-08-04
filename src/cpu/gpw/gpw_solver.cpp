@@ -1368,6 +1368,9 @@ static GpwResult run_gpw_scf_kpoints(
     GpwResult res;
     res.n_kpts = nk;
     res.n_kpts_local = n_kpts_local;
+    // Force path reuses geometry-fixed χ^k (single-grid only; MG has no kbg).
+    if (!use_mg)
+        res.scf_kbg = std::make_shared<internal::KpointBasisGrid>(ws.kbg);
     const bool use_diis = cfg.diis_depth > 0;
     internal::KDiis diis(use_diis ? cfg.diis_depth : 1, weights);
     constexpr double kDiisErrTolK = 1e-5; // same gate as the Γ DIIS path
@@ -2663,6 +2666,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
     GpwResult res;
     res.n_kpts = nk;
     res.n_kpts_local = n_kpts_local;
+    // Force path reuses geometry-fixed χ^k (single-grid only; MG has no kbg).
+    if (!use_mg)
+        res.scf_kbg = std::make_shared<internal::KpointBasisGrid>(ws.kbg);
     const bool use_diis = cfg.diis_depth > 0;
     internal::KDiis diis_a(use_diis ? cfg.diis_depth : 1, weights);
     internal::KDiis diis_b(use_diis ? cfg.diis_depth : 1, weights);
@@ -4550,6 +4556,11 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     };
 
     GpwResult res;
+    // Force path reuses geometry-fixed Γ cbg (single-grid only; MG has no cbg).
+    if (!use_prod) {
+        res.scf_cbg = ws.cbg;
+        res.scf_cbg_valid = true;
+    }
     double e_prev = 0.0;
 
     // Convergence acceleration. With diis_depth > 0 we run Pulay DIIS on the KS

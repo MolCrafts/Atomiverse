@@ -40,9 +40,17 @@
 #include "atomiverse/cpu/linalg/matrix.h" // RealMatrix
 #include "atomiverse/molrs.hpp"
 
+#include <memory>
+
 namespace ATV {
 namespace cpu {
 namespace gpw {
+
+namespace internal {
+/// Forward only — full type in `internal/kpoints.h` (avoids circular include
+/// with this header). Held by `shared_ptr` on `GpwResult` for force reuse.
+struct KpointBasisGrid;
+} // namespace internal
 
 /// @brief Dudarev DFT+U (CP2K PLUS_U) on one element / angular-momentum shell.
 ///
@@ -226,6 +234,20 @@ struct GpwResult {
     /// @brief Poisson electrostatic potential of \(n=\rho-n_{\mathrm{ion}}\)
     ///        [Hartree] from the last KS build (ionic HF forces).
     std::vector<double> v_es;
+    /// @brief Geometry-fixed Γ single-grid basis-on-grid from SCF for force
+    ///        reuse (`p2-force-kbg-reuse`). Empty under multigrid products
+    ///        (SCF never built `cbg`) or multi-k.
+    CompactBasisGrid scf_cbg{};
+    bool scf_cbg_valid = false;
+    /// @brief Geometry-fixed multi-k single-grid χ^k from SCF for force reuse.
+    ///        Null under multigrid products or pure Γ. Shared so `GpwResult`
+    ///        stays movable without deep-copying the dense χ table.
+    std::shared_ptr<internal::KpointBasisGrid> scf_kbg{};
+    /// @brief Lazy force-path caches of center-derivative basis-on-grid
+    ///        (filled on first `gpw_forces_from_scf` at this density).
+    mutable CompactBasisGrid force_cbgd{};
+    mutable bool force_cbgd_valid = false;
+    mutable std::shared_ptr<internal::KpointBasisGrid> force_kbgd{};
     /// @}
     /// @name Fixed-density KS evaluation payload (Car–Parrinello / linearized-XL path)
     /// Populated when `GpwDft::run` is called with `max_iter == 0` and a
