@@ -6,6 +6,7 @@
 #include "atomiverse/cpu/gpw/internal/multigrid.h"
 
 #include "atomiverse/cpu/device/chunked_range.h"
+#include "atomiverse/cpu/gpw/internal/product_collint.h"
 
 #include <algorithm>
 #include <array>
@@ -880,6 +881,48 @@ FlatChunkPool g_ks_cell_scatter;
 
 } // namespace
 
+namespace {
+/// Geometry key for collint batching (same p/ra/rb/pc ⇒ shared pol table).
+/// Stable total order so chunk partitions of a sorted product list are
+/// reproducible across thread counts.
+inline bool geom_less(const GridProduct& a, const GridProduct& b) {
+    if (a.p != b.p)
+        return a.p < b.p;
+    for (int d = 0; d < 3; ++d)
+        if (a.pc[d] != b.pc[d])
+            return a.pc[d] < b.pc[d];
+    for (int d = 0; d < 3; ++d)
+        if (a.ra[d] != b.ra[d])
+            return a.ra[d] < b.ra[d];
+    for (int d = 0; d < 3; ++d)
+        if (a.rb[d] != b.rb[d])
+            return a.rb[d] < b.rb[d];
+    return false;
+}
+
+/// Density weight w = K · Σ P[μ,ν] coeff_μ coeff_ν for one product shape.
+inline double product_density_weight(const GridProduct& prod,
+                                     const std::vector<PrimRef>& prims,
+                                     const std::vector<PrimContrib>& contribs,
+                                     int nb, const std::vector<double>& P) {
+    const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+    const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+    double s = 0.0;
+    for (int i = 0; i < A.cn; ++i) {
+        const PrimContrib& ca = contribs[static_cast<std::size_t>(A.cbeg + i)];
+        const std::size_t row = static_cast<std::size_t>(ca.mu) * nb;
+        double rs = 0.0;
+        for (int j = 0; j < B.cn; ++j) {
+            const PrimContrib& cb =
+                contribs[static_cast<std::size_t>(B.cbeg + j)];
+            rs += P[row + static_cast<std::size_t>(cb.mu)] * cb.coeff;
+        }
+        s += ca.coeff * rs;
+    }
+    return s * prod.k;
+}
+} // namespace
+
 std::vector<double> collocate_products(const UniformGrid& grid,
                                        const std::vector<GridProduct>& prods,
                                        const std::vector<PrimRef>& prims,
@@ -898,15 +941,21 @@ std::vector<double> collocate_products(const UniformGrid& grid,
             ++printed;
         }
     }
-    // Scatter buffers indexed by a FIXED product partition, then a parallel
-    // reduction over grid points in ascending buffer order. Indexing the buffers
-    // by thread (as this did) made the split of the product list — and so each
-    // buffer's partial sum — a property of the dynamic schedule, i.e. different
-    // between two runs of the same binary and again between thread counts.
-    // Chunk count is a function of the grid size alone; the floor keeps the
-    // kernel parallel on grids too large for the accumulator budget, at the
-    // memory a run of that width already paid for per-thread buffers.
-    // Grow-only flat pool reuses capacity across SCF iters/levels.
+    // Geometry order: products that share p/ra/rb/pc (cartesian monoms of one
+    // shell pair) become consecutive so collint_collocate_group shares one pol.
+    std::vector<int> order(static_cast<std::size_t>(np));
+    for (long i = 0; i < np; ++i)
+        order[static_cast<std::size_t>(i)] = static_cast<int>(i);
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        const auto& pa = prods[static_cast<std::size_t>(a)];
+        const auto& pb = prods[static_cast<std::size_t>(b)];
+        if (geom_less(pa, pb))
+            return true;
+        if (geom_less(pb, pa))
+            return false;
+        return a < b;
+    });
+    // Scatter buffers indexed by a FIXED product partition of the sorted order.
     const device::ChunkedRange range(
         np, std::max<long>(kMinScatterChunks,
                            device::block_reduce_chunks(npts * sizeof(double))));
@@ -917,35 +966,39 @@ std::vector<double> collocate_products(const UniformGrid& grid,
         double* loc = g_rho_scatter.chunk(c);
         std::fill_n(loc, npts, 0.0);
         const long iplo = range.begin(c), iphi = range.end(c);
-        for (long ip = iplo; ip < iphi; ++ip) {
+        // Thread-local group buffers (grow-only via vector).
+        std::vector<GridProduct> gprods;
+        std::vector<double> gweights;
+        gprods.reserve(32);
+        gweights.reserve(32);
+        auto flush_group = [&]() {
+            if (gprods.empty())
+                return;
+            double mag = 0.0;
+            for (double w : gweights)
+                mag += std::abs(w);
+            if (mag >= eps)
+                internal::collint_collocate_group(grid, gprods.data(),
+                                                  gweights.data(),
+                                                  static_cast<int>(gprods.size()),
+                                                  mag, eps, loc);
+            gprods.clear();
+            gweights.clear();
+        };
+        for (long ii = iplo; ii < iphi; ++ii) {
+            const int ip = order[static_cast<std::size_t>(ii)];
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            // Net density weight over all (μ,ν) spherical pairs sharing this shape:
-            // w = K · Σ_{μ∈A} Σ_{ν∈B} P[μ,ν]·coeff_μ·coeff_ν.
-            const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
-            const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-            double s = 0.0;
-            for (int i = 0; i < A.cn; ++i) {
-                const PrimContrib& ca =
-                    contribs[static_cast<std::size_t>(A.cbeg + i)];
-                const std::size_t row = static_cast<std::size_t>(ca.mu) * nb;
-                double rs = 0.0;
-                for (int j = 0; j < B.cn; ++j) {
-                    const PrimContrib& cb =
-                        contribs[static_cast<std::size_t>(B.cbeg + j)];
-                    rs += P[row + static_cast<std::size_t>(cb.mu)] * cb.coeff;
-                }
-                s += ca.coeff * rs;
-            }
-            const double w = s * prod.k;
-            const double aw = std::abs(w);
-            if (aw < eps)
-                continue; // net per-iter contribution below threshold
-            collocate_one(grid, prod, aw, eps,
-                          [&](long g, const double* fz, long cnt, double fxy) {
-                              axis_axpy(w * fxy, fz,
-                                        loc + static_cast<std::size_t>(g), cnt);
-                          });
+            const double w =
+                product_density_weight(prod, prims, contribs, nb, P);
+            if (std::abs(w) < eps)
+                continue;
+            if (!gprods.empty()
+                && !internal::collint_same_geometry(gprods.back(), prod))
+                flush_group();
+            gprods.push_back(prod);
+            gweights.push_back(w);
         }
+        flush_group();
     }
 #pragma omp parallel for schedule(static)
     for (long g = 0; g < static_cast<long>(npts); ++g) {
@@ -1003,9 +1056,36 @@ std::vector<double> integrate_products(
     std::vector<double> V(nn, 0.0);
     const double w = grid.weight();
     const long np = static_cast<long>(prods.size());
-    // Fixed product partition, one nb² accumulator per chunk, folded in
-    // ascending chunk order — the reproducible form of the per-thread buffer
-    // this replaces (see cpu/device/chunked_range.h). Grow-only flat pool.
+    // Geometry order first (shared monom table), then spatial cell as tie-break
+    // for V-cache locality across different centres.
+    std::vector<int> order(static_cast<std::size_t>(np));
+    for (long i = 0; i < np; ++i)
+        order[static_cast<std::size_t>(i)] = static_cast<int>(i);
+    {
+        const double invdx = grid.n[0] / grid.L[0];
+        const double invdy = grid.n[1] / grid.L[1];
+        const double invdz = grid.n[2] / grid.L[2];
+        const long n1 = grid.n[1], n2 = grid.n[2];
+        auto cell_key = [&](int ip) {
+            const auto& p = prods[static_cast<std::size_t>(ip)];
+            const long ix = static_cast<long>(std::floor(p.pc[0] * invdx));
+            const long iy = static_cast<long>(std::floor(p.pc[1] * invdy));
+            const long iz = static_cast<long>(std::floor(p.pc[2] * invdz));
+            return (ix * n1 + iy) * n2 + iz;
+        };
+        std::sort(order.begin(), order.end(), [&](int a, int b) {
+            const auto& pa = prods[static_cast<std::size_t>(a)];
+            const auto& pb = prods[static_cast<std::size_t>(b)];
+            if (geom_less(pa, pb))
+                return true;
+            if (geom_less(pb, pa))
+                return false;
+            const long ca = cell_key(a), cb = cell_key(b);
+            if (ca != cb)
+                return ca < cb;
+            return a < b;
+        });
+    }
     const device::ChunkedRange range(
         np, device::block_reduce_chunks(nn * sizeof(double)));
     const long nc = range.chunks();
@@ -1015,39 +1095,62 @@ std::vector<double> integrate_products(
         double* Vloc = g_ks_scatter.chunk(c);
         std::fill_n(Vloc, nn, 0.0);
         const long iplo = range.begin(c), iphi = range.end(c);
-        for (long ip = iplo; ip < iphi; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
-            const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-            // Integrate the shape ONCE; window sized by local |V(pc)|·geom
-            // (collocate uses |P|-weighted mag; integrate dual is |V|).
-            const double geom = A.maxc * B.maxc * std::abs(prod.k);
-            const double mag = integrate_window_mag(grid, V_level, prod, geom);
-            if (mag < eps)
-                continue;
-            double acc = 0.0;
-            collocate_one(grid, prod, mag, eps,
-                          [&](long g, const double* fz, long cnt, double fxy) {
-                              acc += fxy
-                                     * axis_dot(V_level.data()
-                                                    + static_cast<std::size_t>(g),
-                                                fz, cnt);
-                          });
-            // Scatter K·∫ to every (μ,ν) contributor pair's KS element.
-            const double sw = prod.k * w * acc;
-            for (int i = 0; i < A.cn; ++i) {
-                const PrimContrib& ca =
-                    contribs[static_cast<std::size_t>(A.cbeg + i)];
-                const std::size_t row = static_cast<std::size_t>(ca.mu) * nb;
-                const double cas = ca.coeff * sw;
-                for (int j = 0; j < B.cn; ++j) {
-                    const PrimContrib& cb =
-                        contribs[static_cast<std::size_t>(B.cbeg + j)];
-                    Vloc[row + static_cast<std::size_t>(cb.mu)] +=
-                        cas * cb.coeff;
+        std::vector<GridProduct> gprods;
+        std::vector<int> gidx; // index into prods for scatter
+        std::vector<double> gacc;
+        gprods.reserve(32);
+        gidx.reserve(32);
+        gacc.reserve(32);
+        auto flush_group = [&]() {
+            if (gprods.empty())
+                return;
+            double mag = 0.0;
+            for (const auto& prod : gprods) {
+                const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+                const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+                const double geom = A.maxc * B.maxc * std::abs(prod.k);
+                mag = std::max(
+                    mag, integrate_window_mag(grid, V_level, prod, geom));
+            }
+            gacc.resize(gprods.size());
+            if (mag >= eps)
+                internal::collint_integrate_group(
+                    grid, gprods.data(), static_cast<int>(gprods.size()), mag,
+                    eps, V_level.data(), gacc.data());
+            else
+                std::fill(gacc.begin(), gacc.end(), 0.0);
+            for (std::size_t gi = 0; gi < gprods.size(); ++gi) {
+                const GridProduct& prod = gprods[gi];
+                const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+                const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+                const double sw = prod.k * w * gacc[gi];
+                for (int i = 0; i < A.cn; ++i) {
+                    const PrimContrib& ca =
+                        contribs[static_cast<std::size_t>(A.cbeg + i)];
+                    const std::size_t row =
+                        static_cast<std::size_t>(ca.mu) * nb;
+                    const double cas = ca.coeff * sw;
+                    for (int j = 0; j < B.cn; ++j) {
+                        const PrimContrib& cb =
+                            contribs[static_cast<std::size_t>(B.cbeg + j)];
+                        Vloc[row + static_cast<std::size_t>(cb.mu)] +=
+                            cas * cb.coeff;
+                    }
                 }
             }
+            gprods.clear();
+            gidx.clear();
+        };
+        for (long ii = iplo; ii < iphi; ++ii) {
+            const int ip = order[static_cast<std::size_t>(ii)];
+            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+            if (!gprods.empty()
+                && !internal::collint_same_geometry(gprods.back(), prod))
+                flush_group();
+            gprods.push_back(prod);
+            gidx.push_back(ip);
         }
+        flush_group();
     }
 #pragma omp parallel for schedule(static)
     for (long kk = 0; kk < static_cast<long>(nn); ++kk) {
@@ -1065,11 +1168,22 @@ std::vector<double> collocate_products_cells(
     int nb, const std::vector<std::vector<double>>& D, double eps) {
     eps *= kProductMassMargin; // window/weight drops discard integrated mass
     // `collocate_products` with the density weight resolved per image cell:
-    // w = K · Σ_{μ∈A} Σ_{ν∈B} D[tcell][μ,ν]·coeff_μ·coeff_ν. Same fixed-chunk
-    // reproducible scatter; identical arithmetic when every D[c] is the same P.
+    // w = K · Σ D[tcell][μ,ν]·coeff. Geometry-batched collint (shared pol).
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
     std::vector<double> rho(npts, 0.0);
     const long np = static_cast<long>(prods.size());
+    std::vector<int> order(static_cast<std::size_t>(np));
+    for (long i = 0; i < np; ++i)
+        order[static_cast<std::size_t>(i)] = static_cast<int>(i);
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        const auto& pa = prods[static_cast<std::size_t>(a)];
+        const auto& pb = prods[static_cast<std::size_t>(b)];
+        if (geom_less(pa, pb))
+            return true;
+        if (geom_less(pb, pa))
+            return false;
+        return a < b;
+    });
     const device::ChunkedRange range(
         np, std::max<long>(kMinScatterChunks,
                            device::block_reduce_chunks(npts * sizeof(double))));
@@ -1080,35 +1194,38 @@ std::vector<double> collocate_products_cells(
         double* loc = g_rho_scatter.chunk(c);
         std::fill_n(loc, npts, 0.0);
         const long iplo = range.begin(c), iphi = range.end(c);
-        for (long ip = iplo; ip < iphi; ++ip) {
+        std::vector<GridProduct> gprods;
+        std::vector<double> gweights;
+        gprods.reserve(32);
+        gweights.reserve(32);
+        auto flush_group = [&]() {
+            if (gprods.empty())
+                return;
+            double mag = 0.0;
+            for (double ww : gweights)
+                mag += std::abs(ww);
+            if (mag >= eps)
+                internal::collint_collocate_group(
+                    grid, gprods.data(), gweights.data(),
+                    static_cast<int>(gprods.size()), mag, eps, loc);
+            gprods.clear();
+            gweights.clear();
+        };
+        for (long ii = iplo; ii < iphi; ++ii) {
+            const int ip = order[static_cast<std::size_t>(ii)];
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
-            const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-            const std::vector<double>& P =
-                D[static_cast<std::size_t>(prod.tcell)];
-            double s = 0.0;
-            for (int i = 0; i < A.cn; ++i) {
-                const PrimContrib& ca =
-                    contribs[static_cast<std::size_t>(A.cbeg + i)];
-                const std::size_t row = static_cast<std::size_t>(ca.mu) * nb;
-                double rs = 0.0;
-                for (int j = 0; j < B.cn; ++j) {
-                    const PrimContrib& cb =
-                        contribs[static_cast<std::size_t>(B.cbeg + j)];
-                    rs += P[row + static_cast<std::size_t>(cb.mu)] * cb.coeff;
-                }
-                s += ca.coeff * rs;
-            }
-            const double w = s * prod.k;
-            const double aw = std::abs(w);
-            if (aw < eps)
+            const double ww = product_density_weight(
+                prod, prims, contribs, nb,
+                D[static_cast<std::size_t>(prod.tcell)]);
+            if (std::abs(ww) < eps)
                 continue;
-            collocate_one(grid, prod, aw, eps,
-                          [&](long g, const double* fz, long cnt, double fxy) {
-                              axis_axpy(w * fxy, fz,
-                                        loc + static_cast<std::size_t>(g), cnt);
-                          });
+            if (!gprods.empty()
+                && !internal::collint_same_geometry(gprods.back(), prod))
+                flush_group();
+            gprods.push_back(prod);
+            gweights.push_back(ww);
         }
+        flush_group();
     }
 #pragma omp parallel for schedule(static)
     for (long g = 0; g < static_cast<long>(npts); ++g) {
@@ -1126,15 +1243,41 @@ std::vector<std::vector<double>> integrate_products_cells(
     int nb, const std::vector<double>& V_level, std::size_t ncells,
     double eps) {
     eps *= kProductMassMargin; // window truncation discards integrated mass
-    // `integrate_products` with the KS scatter resolved per image cell: each
-    // product's K·w·∫V·shape lands in V_t[tcell] — the real-space stack the
-    // caller phase-sums into per-k Hermitian grid KS matrices.
+    // KS scatter per image cell; geometry-batched monom integrate.
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     const std::size_t nnall = nn * ncells;
     std::vector<std::vector<double>> V(
         ncells, std::vector<double>(nn, 0.0));
     const double w = grid.weight();
     const long np = static_cast<long>(prods.size());
+    std::vector<int> order(static_cast<std::size_t>(np));
+    for (long i = 0; i < np; ++i)
+        order[static_cast<std::size_t>(i)] = static_cast<int>(i);
+    {
+        const double invdx = grid.n[0] / grid.L[0];
+        const double invdy = grid.n[1] / grid.L[1];
+        const double invdz = grid.n[2] / grid.L[2];
+        const long n1 = grid.n[1], n2 = grid.n[2];
+        auto cell_key = [&](int ip) {
+            const auto& p = prods[static_cast<std::size_t>(ip)];
+            const long ix = static_cast<long>(std::floor(p.pc[0] * invdx));
+            const long iy = static_cast<long>(std::floor(p.pc[1] * invdy));
+            const long iz = static_cast<long>(std::floor(p.pc[2] * invdz));
+            return (ix * n1 + iy) * n2 + iz;
+        };
+        std::sort(order.begin(), order.end(), [&](int a, int b) {
+            const auto& pa = prods[static_cast<std::size_t>(a)];
+            const auto& pb = prods[static_cast<std::size_t>(b)];
+            if (geom_less(pa, pb))
+                return true;
+            if (geom_less(pb, pa))
+                return false;
+            const long ca = cell_key(a), cb = cell_key(b);
+            if (ca != cb)
+                return ca < cb;
+            return a < b;
+        });
+    }
     const device::ChunkedRange range(
         np, device::block_reduce_chunks(nnall * sizeof(double)));
     const long nc = range.chunks();
@@ -1144,38 +1287,60 @@ std::vector<std::vector<double>> integrate_products_cells(
         double* Vloc = g_ks_cell_scatter.chunk(c);
         std::fill_n(Vloc, nnall, 0.0);
         const long iplo = range.begin(c), iphi = range.end(c);
-        for (long ip = iplo; ip < iphi; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
-            const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-            const double geom = A.maxc * B.maxc * std::abs(prod.k);
-            const double mag = integrate_window_mag(grid, V_level, prod, geom);
-            if (mag < eps)
-                continue;
-            double acc = 0.0;
-            collocate_one(grid, prod, mag, eps,
-                          [&](long g, const double* fz, long cnt, double fxy) {
-                              acc += fxy
-                                     * axis_dot(V_level.data()
-                                                    + static_cast<std::size_t>(g),
-                                                fz, cnt);
-                          });
-            const double sw = prod.k * w * acc;
-            double* Vcell =
-                Vloc + static_cast<std::size_t>(prod.tcell) * nn;
-            for (int i = 0; i < A.cn; ++i) {
-                const PrimContrib& ca =
-                    contribs[static_cast<std::size_t>(A.cbeg + i)];
-                const std::size_t row = static_cast<std::size_t>(ca.mu) * nb;
-                const double cas = ca.coeff * sw;
-                for (int j = 0; j < B.cn; ++j) {
-                    const PrimContrib& cb =
-                        contribs[static_cast<std::size_t>(B.cbeg + j)];
-                    Vcell[row + static_cast<std::size_t>(cb.mu)] +=
-                        cas * cb.coeff;
+        std::vector<GridProduct> gprods;
+        std::vector<double> gacc;
+        gprods.reserve(32);
+        gacc.reserve(32);
+        auto flush_group = [&]() {
+            if (gprods.empty())
+                return;
+            double mag = 0.0;
+            for (const auto& prod : gprods) {
+                const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+                const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+                const double geom = A.maxc * B.maxc * std::abs(prod.k);
+                mag = std::max(
+                    mag, integrate_window_mag(grid, V_level, prod, geom));
+            }
+            gacc.resize(gprods.size());
+            if (mag >= eps)
+                internal::collint_integrate_group(
+                    grid, gprods.data(), static_cast<int>(gprods.size()), mag,
+                    eps, V_level.data(), gacc.data());
+            else
+                std::fill(gacc.begin(), gacc.end(), 0.0);
+            for (std::size_t gi = 0; gi < gprods.size(); ++gi) {
+                const GridProduct& prod = gprods[gi];
+                const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+                const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+                const double sw = prod.k * w * gacc[gi];
+                double* Vcell =
+                    Vloc + static_cast<std::size_t>(prod.tcell) * nn;
+                for (int i = 0; i < A.cn; ++i) {
+                    const PrimContrib& ca =
+                        contribs[static_cast<std::size_t>(A.cbeg + i)];
+                    const std::size_t row =
+                        static_cast<std::size_t>(ca.mu) * nb;
+                    const double cas = ca.coeff * sw;
+                    for (int j = 0; j < B.cn; ++j) {
+                        const PrimContrib& cb =
+                            contribs[static_cast<std::size_t>(B.cbeg + j)];
+                        Vcell[row + static_cast<std::size_t>(cb.mu)] +=
+                            cas * cb.coeff;
+                    }
                 }
             }
+            gprods.clear();
+        };
+        for (long ii = iplo; ii < iphi; ++ii) {
+            const int ip = order[static_cast<std::size_t>(ii)];
+            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+            if (!gprods.empty()
+                && !internal::collint_same_geometry(gprods.back(), prod))
+                flush_group();
+            gprods.push_back(prod);
         }
+        flush_group();
     }
 #pragma omp parallel for schedule(static)
     for (long kk = 0; kk < static_cast<long>(nnall); ++kk) {

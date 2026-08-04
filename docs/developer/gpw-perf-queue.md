@@ -35,9 +35,9 @@ the top MG-kernel + OT-extension rows (in_progress below).
 
 ### P1 — kernel constant + OT + structure
 
-- [ ] `p2-cxyz-reflection` | The big coupled collocation rewrite (CP2K collint structure): fold the polynomial `(r-ra)^la·(r-rb)^lb` into cxyz coefficients, exploit Gaussian reflection symmetry about pc (4/8-fold), Horner cxyz→cxy→cx contraction. Substantial + parity-risk — **dedicated wave, single worker, full FD-force battery** | phase P2 | files: `multigrid.cpp` (major) | gate: MG MAIN large ↓; all energy+force pins unchanged tols |
+- [ ] `p2-collint-reflection` | Remaining CP2K collint polish after geometry-batch land: Gaussian reflection pairs `(k,1−k)` / `(j,1−j)`, sphere-bounds cache, tighter task locality. Energy pins already green on collint path | phase P2 | files: `product_collint.cpp` | gate: MG MAIN further ↓ toward CP2K; pins unchanged tols |
 - [ ] `p2-simd-2center-setup` | xsimd the analytic 2-center S/T primitive loops (setup STVpp ~99 s at slabw scale after KB/grid-PP fixes; invisible on small twins) | phase P2 | files: overlap/kinetic internals | gate: setup microbench ↓ on a slab-class fragment; four twins no regression |
-- [ ] `p1-products-default-k` | **RE-GATED (2026-08-02 A/B, branch `wf/perf-p1-products-default-k` @ `3ce71310`): flip is a ~70–100× regression until the product engine is fixed** (per-iter primitive re-eval, worst-case integrate windows, `kProductMassMargin`). Revisit only after `p1-integrate-windows` + deeper SIMD land, with a fresh same-binary A/B. Original goal: production multi-k collocation via products/MG; dense χ^k (`KpointBasisGrid`, O(npts·nb²·nk)) transitional / opt-out only. Do **not** add a 5th collocation layout without deleting dense χ^k | phase P2 | files: `kpoints.cpp`, solver k-path | gate: fresh A/B shows products ≤ dense on the k twin; pins hold |
+- [ ] `p1-products-default-k` | **RE-GATED:** flip is a large regression until product engine is closer to CP2K. Revisit after collint polish with a fresh same-binary A/B. Dense χ^k transitional / opt-out only. Do **not** add a 5th collocation layout without deleting dense χ^k | phase P2 | files: `kpoints.cpp`, solver k-path | gate: fresh A/B shows products ≤ dense on the k twin; pins hold |
 
 
 ### P2 — SIMD, force reuse, MPI grids
@@ -67,15 +67,16 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p1-ot-uks-k` | 2026-08-04 | Γ UKS OT carried (Ha,Hb,E) + quadratic Armijo retry + budget-exhaust reuse; multi-k RKS/UKS integer path skips KS rebuild after accept + quadratic retry | four twins + `ot-uks-o2` PASS |
 - [x] `p1-integrate-windows` | 2026-08-04 | integrate windows sized by local \|V(pc)\|·geom (floor 0.05), not global max\|V\| (that inflated every product) and not bare maxc·maxc·K; `integrate_products` + `_cells`. MG MAIN **45.0→42.9 s** (OMP=4, one shot); E pin within 5e-7; uks-o2-gamma + ot-water PASS; not bit-exact |
 - [x] `p2-simd-pointfill-2` | 2026-08-04 | xsimd 1D poly/E2 fill (`fill_axis_poly_e2_w`); `axis_dot` via `reduce_add`; hoist sphere z-bound constants. Exp recurrence stays scalar (sequential). Multi-monomial blocking **not** done (no shared-window product batch). MG MAIN best **41.7 s** (OMP=4 bind); pins hold. CP2K same-host twin **0.885 s** → ratio ~**47×** (see note below) |
+- [x] `p2-cxyz-collint` | 2026-08-04 | CP2K-style `product_collint.{h,cpp}`: cab→cxyz, pol+exp recurrence, monom integrate, geometry sort+group batch (shared pol/I), thread_local scratch, z-fast xsimd. Wired into collocate/integrate × Γ/`_cells`. MG MAIN quiet **~27 s** (was ~42); integrate **~0.75 s/iter** (was ~4.3); ratio vs CP2K **~30×**. Energy pin |dE|~8e-7; uks-o2 PASS. Reflection/sphere-cache deferred to `p2-collint-reflection` |
 
-### Fair wall vs CP2K (2026-08-04, arrhenius1, OMP=4 bind)
+### Fair wall vs CP2K (2026-08-04 post-collint, arrhenius1, OMP=4 bind)
 
 `gpw-multigrid-kpoints` MAIN only (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV (best of 2, contended node) | **41.7** | MAIN line; run1 101.7 under load |
+| ATV quiet MAIN | **~27** | load can push 45+; pre-collint best was ~42 |
 | CP2K 2026.1 `cp2k.psmp` np=1 | **0.885** | `si_kpoints_mg.inp`; energy −15.802416412503838 Ha |
-| **ratio ATV/CP2K** | **~47** | integrate ~4.3 s/iter ATV vs CP2K `grid_integrate` ~0.019 s/iter |
+| **ratio ATV/CP2K** | **~30** | integrate ~0.75 s/iter ATV vs CP2K ~0.019 s/iter |
 
-Older baseline (wave2) listed CP2K 23.6 s / ATV 45.0 → 1.9×; re-measured CP2K on this host is ~25× faster than that table — use **today's** numbers for planning. Remaining gap is the product collocate/integrate constant (CP2K collint), not the 1D factor fill.
+Older baseline (wave2) listed CP2K 23.6 s; pre-collint ATV/CP2K ~47× — superseded.

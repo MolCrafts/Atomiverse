@@ -2,8 +2,10 @@
 ## GPW performance architecture (binding conclusions)
 
 Physics pipeline is one algorithm; SCF control flow is still forked (Γ/k ×
-RKS/UKS) but **workspace + shared fine-grid KS build are landed**. The wall
-that remains is the **product collocate/integrate constant** vs CP2K collint.
+RKS/UKS) but **workspace + shared fine-grid KS build are landed**. Product
+collocate/integrate now uses a **CP2K-style collint engine** with geometry
+batching; the remaining wall vs CP2K is still large (~30×) but no longer the
+old separable-per-product loop.
 
 ### One pipeline
 
@@ -21,54 +23,60 @@ Twin `gpw-multigrid-kpoints` MAIN (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV best MAIN | **~42** | load-sensitive (contended node 100+ s) |
+| ATV best MAIN | **~27** | load-sensitive (contended 45+ s) |
 | CP2K 2026.1 same host | **0.885** | `tools/cp2k_oracle/inputs/gpw-multigrid-kpoints/si_kpoints_mg.inp` |
-| **ratio ATV/CP2K** | **~47×** | use this, not the stale 1.9× table |
+| **ratio ATV/CP2K** | **~30×** | was ~47× pre-collint |
 
-Per-iter (ATV `ATV_GPW_PROF` MAIN): collocate ~0.9 s, **integrate ~4.2–4.5 s**,
-Poisson+XC ~10 ms. CP2K `grid_integrate_task_list` ~0.019 s/iter. **Gap is
-collint-class product engine, not 1D poly fill.**
+Per-iter quiet MAIN (`ATV_GPW_PROF`): collocate ~0.55–0.76 s, integrate
+**~0.74–0.80 s** (was ~4.3 s), Poisson+XC ~10 ms. CP2K grid_collocate /
+grid_integrate ~0.018–0.019 s/iter. Integrate improved ~5–6× from monom-table
+geometry batch; collocate ~1.3×.
 
-Stale: wave2 CP2K wall 23.6 s / ratio 1.9 — superseded by re-measurement above.
+Stale: wave2 CP2K wall 23.6 s; pre-collint ATV MAIN ~42 s / 47×.
+
+### Product collint (landed)
+
+Files: `internal/product_collint.{h,cpp}` + wire in `multigrid.cpp`.
+
+| Piece | Status |
+| --- | --- |
+| cab→cxyz expand (per-axis binomial about pc) | landed |
+| pol[dir][l][i] + exp recurrence | landed |
+| z-fast contract + portable xsimd | landed |
+| grow-only thread_local scratch (no per-product heap) | landed |
+| geometry sort + group batch (shared pol / monom I) | landed |
+| reflection pairs `(k,1−k)` | **open** |
+| CP2K sphere-bounds cache | **open** |
+| shell-level task list beyond cartesian-prim groups | **open** |
+
+Algorithm after CP2K `src/grid/cpu/grid_cpu_collint.h` (BSD-3, Ole Schuett).
+Public API / Frame laws unchanged. SIMD: portable **xsimd only**.
 
 ### SIMD policy
 
 Portable **xsimd only** (no arch intrinsics, no global `XTENSOR_USE_XSIMD`).
-Landed: z-run `axis_dot`/`axis_axpy`; 1D poly/E2 fill; `reduce_add` on dots.
-Exp recurrence stays scalar (sequential). Multi-monomial product batching
-still open.
+Landed: z-run axpy/dot; 1D poly/E2 (legacy collocate_one); collint z-contract;
+`reduce_add` on dots. Exp recurrence stays scalar.
 
-### Critical bottlenecks (re-ranked 2026-08-04)
+### Critical bottlenecks (re-ranked post-collint)
 
 | Rank | Issue | Where |
 | --- | --- | --- |
-| **1** | Product collocate/integrate vs CP2K collint (~47×) | `multigrid.cpp` |
-| 2 | Multi-k dense χ^k O(npts·nb²·nk) until product engine wins | `kpoints.cpp` |
+| **1** | Product collint still ~30× vs CP2K (reflection / sphere / tasks) | `product_collint.cpp` |
+| 2 | Multi-k dense χ^k O(npts·nb²·nk) until product engine wins fully | `kpoints.cpp` |
 | 3 | Force path rebuilds grids (geometry-fixed reuse incomplete) | `gpw_forces.cpp` |
 | 4 | Forked SCF control flow (structure only; KS build shared) | `gpw_solver.cpp` |
 
 **Done (do not re-open as primary):** GpwWorkspace; `ks_grid_build_*`; OT
-economics Γ RKS/UKS + multi-k integer; |V(pc)| integrate windows; 1D poly SIMD.
+economics; |V(pc)| windows; 1D poly SIMD; **first collint + geometry batch**.
 
 ### Extract / rewrite order
 
 1. ~~`GpwWorkspace`~~ landed  
 2. ~~`KsGridBuild`~~ landed  
-3. **CP2K collint product path** (cxyz + reflection + Horner) — **active**  
-4. Force grid reuse; MPI product/grid distribute; products-default-k after (3)
-
-### Collint strategy (user: may copy CP2K algorithm)
-
-Reference: CP2K `src/grid/cpu/grid_cpu_collint.h` (BSD-3, Ole Schuett). Ortho path:
-
-1. Expand `(r−ra)^{la}(r−rb)^{lb}` → coefficients of `(r−rp)^{l}` (per axis binomial).  
-2. Form `cxyz[lz][ly][lx]`.  
-3. Precompute `pol[dir][l][i] = (r−rp)^{l} exp(−p(r−rp)²)` with exp recurrence.  
-4. Contract `cxyz → cxy → cx → grid` (Horner); process reflection pairs
-   `(k,1−k)` / `(j,1−j)`.  
-5. Inner x-loop: xsimd (not AVX2 intrinsics) for portable SIMD.
-
-Integrate is the transpose of collocate. Keep public API and Frame laws.
+3. ~~CP2K collint product path (cxyz + pol + geometry batch)~~ **landed**  
+4. **Active:** reflection pairs + sphere cache + tighter task locality  
+5. Force grid reuse; MPI product/grid distribute; products-default-k after (4)
 
 ### Forbidden
 
@@ -77,7 +85,3 @@ intrinsics; weakening SCF tol; 5th collocation layout without deleting dense
 χ^k; file-split without shared KS build.
 
 ### Disk
-
-Perf loops **always** wipe builds after worker/merge/clearup.
-
-Queue: `docs/developer/gpw-perf-queue.md`.

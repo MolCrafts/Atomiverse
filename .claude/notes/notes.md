@@ -8,9 +8,10 @@ History is git's job — superseded designs are deleted, not archived here.
 
 - **ES optimization order (binding in CLAUDE.md).** Wave state:
   [es-optimization-order.md](es-optimization-order.md). Structure + OT +
-  window/1D-SIMD landed; **active gap is product collint vs CP2K (~47× on
-  MG MAIN)** — fair walls in [gpw-perf-baseline.md](gpw-perf-baseline.md).
-  CUDA ES freeze this wave; classical MD CUDA independent.
+  windows + **collint geometry-batch landed** (MG MAIN ~27 s, ~30× CP2K);
+  active polish is reflection/sphere/task-list — fair walls in
+  [gpw-perf-baseline.md](gpw-perf-baseline.md). CUDA ES freeze this wave;
+  classical MD CUDA independent.
 - **e2e-in-tests migration (queued campaign).** ~102 registered "unit" tests
   are full method solves hidden behind `ATV_TEST_HEAVY=OFF` (ccsd/fci/mp2,
   gpw_*/pw_* solves, bomd/cpmd/xl_bomd, dftb, am1 thermochemistry runs), plus
