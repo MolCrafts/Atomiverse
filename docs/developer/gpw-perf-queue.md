@@ -67,7 +67,7 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p1-ot-uks-k` | 2026-08-04 | Γ UKS OT carried (Ha,Hb,E) + quadratic Armijo retry + budget-exhaust reuse; multi-k RKS/UKS integer path skips KS rebuild after accept + quadratic retry | four twins + `ot-uks-o2` PASS |
 - [x] `p1-integrate-windows` | 2026-08-04 | integrate windows sized by local \|V(pc)\|·geom (floor 0.05), not global max\|V\| (that inflated every product) and not bare maxc·maxc·K; `integrate_products` + `_cells`. MG MAIN **45.0→42.9 s** (OMP=4, one shot); E pin within 5e-7; uks-o2-gamma + ot-water PASS; not bit-exact |
 - [x] `p2-simd-pointfill-2` | 2026-08-04 | xsimd 1D poly/E2 fill (`fill_axis_poly_e2_w`); `axis_dot` via `reduce_add`; hoist sphere z-bound constants. Exp recurrence stays scalar (sequential). Multi-monomial blocking **not** done (no shared-window product batch). MG MAIN best **41.7 s** (OMP=4 bind); pins hold. CP2K same-host twin **0.885 s** → ratio ~**47×** (see note below) |
-- [x] `p2-cxyz-collint` | 2026-08-04 | CP2K-style `product_collint.{h,cpp}`: cab→cxyz, pol+exp recurrence, monom integrate, geometry sort+group batch (shared pol/I), thread_local scratch, z-fast xsimd. Wired into collocate/integrate × Γ/`_cells`. MG MAIN quiet **~27 s** (was ~42); integrate **~0.75 s/iter** (was ~4.3); ratio vs CP2K **~30×**. Energy pin |dE|~8e-7; uks-o2 PASS. Reflection/sphere-cache deferred to `p2-collint-reflection` |
+- [x] `p2-cxyz-collint` | 2026-08-04 | CP2K-style `product_collint.{h,cpp}`: cab→cxyz, pol+exp recurrence, monom integrate, geometry sort+group batch (shared pol/I), thread_local scratch, z-fast xsimd, **sphere-only Fz** (no full-cube Fz fill). Wired into collocate/integrate × Γ/`_cells`. MG MAIN **~9.8 s** (was ~42); ratio vs CP2K **~11×**. Energy pin |dE|~8e-7. Reflection/sphere-cache deferred to `p2-collint-reflection` |
 
 ### Fair wall vs CP2K (2026-08-04 post-collint, arrhenius1, OMP=4 bind)
 
@@ -75,8 +75,8 @@ the top MG-kernel + OT-extension rows (in_progress below).
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV quiet MAIN | **~27** | load can push 45+; pre-collint best was ~42 |
+| ATV quiet MAIN | **~9.8** | two-shot stable; pre-collint best was ~42 |
 | CP2K 2026.1 `cp2k.psmp` np=1 | **0.885** | `si_kpoints_mg.inp`; energy −15.802416412503838 Ha |
-| **ratio ATV/CP2K** | **~30** | integrate ~0.75 s/iter ATV vs CP2K ~0.019 s/iter |
+| **ratio ATV/CP2K** | **~11** | remaining: reflection / sphere cache / task list |
 
 Older baseline (wave2) listed CP2K 23.6 s; pre-collint ATV/CP2K ~47× — superseded.

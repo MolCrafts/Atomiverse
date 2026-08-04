@@ -23,16 +23,12 @@ Twin `gpw-multigrid-kpoints` MAIN (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV best MAIN | **~27** | load-sensitive (contended 45+ s) |
+| ATV best MAIN | **~9.8** | two-shot stable OMP=4 bind |
 | CP2K 2026.1 same host | **0.885** | `tools/cp2k_oracle/inputs/gpw-multigrid-kpoints/si_kpoints_mg.inp` |
-| **ratio ATV/CP2K** | **~30×** | was ~47× pre-collint |
+| **ratio ATV/CP2K** | **~11×** | was ~47× pre-collint, ~30× mid-batch |
 
-Per-iter quiet MAIN (`ATV_GPW_PROF`): collocate ~0.55–0.76 s, integrate
-**~0.74–0.80 s** (was ~4.3 s), Poisson+XC ~10 ms. CP2K grid_collocate /
-grid_integrate ~0.018–0.019 s/iter. Integrate improved ~5–6× from monom-table
-geometry batch; collocate ~1.3×.
-
-Stale: wave2 CP2K wall 23.6 s; pre-collint ATV MAIN ~42 s / 47×.
+Collint + geometry monom batch + sphere-only Fz contract. CP2K grid_collocate /
+grid_integrate ~0.018–0.019 s/iter. Stale: pre-collint ~42 s / 47×.
 
 ### Product collint (landed)
 
@@ -45,6 +41,7 @@ Files: `internal/product_collint.{h,cpp}` + wire in `multigrid.cpp`.
 | z-fast contract + portable xsimd | landed |
 | grow-only thread_local scratch (no per-product heap) | landed |
 | geometry sort + group batch (shared pol / monom I) | landed |
+| sphere-only Fz contract (skip cube corners) | landed |
 | reflection pairs `(k,1−k)` | **open** |
 | CP2K sphere-bounds cache | **open** |
 | shell-level task list beyond cartesian-prim groups | **open** |
@@ -62,7 +59,7 @@ Landed: z-run axpy/dot; 1D poly/E2 (legacy collocate_one); collint z-contract;
 
 | Rank | Issue | Where |
 | --- | --- | --- |
-| **1** | Product collint still ~30× vs CP2K (reflection / sphere / tasks) | `product_collint.cpp` |
+| **1** | Product collint still ~11× vs CP2K (reflection / sphere cache / tasks) | `product_collint.cpp` |
 | 2 | Multi-k dense χ^k O(npts·nb²·nk) until product engine wins fully | `kpoints.cpp` |
 | 3 | Force path rebuilds grids (geometry-fixed reuse incomplete) | `gpw_forces.cpp` |
 | 4 | Forked SCF control flow (structure only; KS build shared) | `gpw_solver.cpp` |

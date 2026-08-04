@@ -305,12 +305,6 @@ double contract_cxyz(const AxisGeom& ag, double* cxyz, double* rho,
                         s += cyz[lz * sy + ly] * poly[ly * ag.len[1] + tj];
                     cz[lz] = s;
                 }
-                for (int tk = 0; tk < len_z; ++tk) {
-                    double s = 0.0;
-                    for (int lz = 0; lz <= lpz; ++lz)
-                        s += cz[lz] * polz[lz * len_z + tk];
-                    Fz[tk] = s;
-                }
             } else {
                 std::fill(cz, cz + sz, 0.0);
             }
@@ -327,8 +321,18 @@ double contract_cxyz(const AxisGeom& ag, double* cxyz, double* rho,
                 klo = 0;
             if (khi > len_z - 1)
                 khi = len_z - 1;
+            if (klo > khi)
+                continue;
 
             if constexpr (Collocate) {
+                // Only the sphere z-range contributes — skip cube corners.
+                for (int tk = static_cast<int>(klo); tk <= static_cast<int>(khi);
+                     ++tk) {
+                    double s = 0.0;
+                    for (int lz = 0; lz <= lpz; ++lz)
+                        s += cz[lz] * polz[lz * len_z + tk];
+                    Fz[tk] = s;
+                }
                 long tk = klo;
                 while (tk <= khi) {
                     const long z0 = Wz[tk];

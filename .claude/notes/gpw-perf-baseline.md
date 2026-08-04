@@ -7,7 +7,7 @@ do not trust older REFERENCE.md wall numbers when the node or module differs.
 
 | | |
 | --- | --- |
-| Date | 2026-08-04 (post product_collint geometry-batch) |
+| Date | 2026-08-04 (post collint + sphere-only Fz) |
 | Host | `arrhenius1` — AMD EPYC 9255 ×2, OMP=4, `OMP_PROC_BIND=close` |
 | Build | Release, HF+PW+GPW, CUDA OFF, OpenBLAS |
 | Env | `ATV_GPW_PROF=1` |
@@ -28,20 +28,21 @@ export CP2K_DATA_DIR=$EBROOTCP2K/share/cp2k/data
 
 | Twin | ATV [s] | CP2K [s] | ratio | Notes |
 | --- | ---: | ---: | ---: | --- |
-| `gpw-multigrid-kpoints` MAIN | **~27** quiet (load can push 45+) | **0.885** (re-run 2026-08-04) | **~30** | pin −15.8024164 Ha; post collint batch |
+| `gpw-multigrid-kpoints` MAIN | **~9.8** quiet (two-shot stable) | **0.885** (re-run 2026-08-04) | **~11** | pin −15.8024164 Ha; collint + sphere Fz |
 | `gpw-uks-o2-gamma` | ~19–24 | ~21 (older pin) | ~1 | DIIS path; not product MG |
 | `gpw-kpoints-si` MAIN | ~few s KS after setup | ~3.3 (older) | ~1 | dense χ^k, not MG products |
 | `ot-minimizer-water` | ~9–11 reg wall | OT class ~2.7 (older) | ~3–4 | includes DIIS gate in reg |
 
-**Supersedes** pre-collint MAIN **~42 s / ~47×** (1D SIMD only) and the
-stale wave2 CP2K wall 23.6 s. Keep energy pins; refresh walls every perf wave.
+**Supersedes** pre-collint MAIN **~42 s / ~47×**, mid-collint **~27 s / ~30×**,
+and the stale wave2 CP2K wall 23.6 s. Keep energy pins; refresh walls every
+perf wave.
 
 ### Per-step KS (MG MAIN class, ATV quiet builds)
 
 | stage | ms / rebuild (order of) |
 | --- | ---: |
-| collocate | ~550–760 |
-| integrate | **~740–800** (was ~4200–4500) |
+| collocate | ~200–400 (order; sphere-only Fz) |
+| integrate | **~300–500** (was ~4200–4500 pre-collint) |
 | Poisson + XC | ~10 |
 
 CP2K same twin: `grid_collocate` ~0.018 s/iter, `grid_integrate` ~0.019 s/iter.
