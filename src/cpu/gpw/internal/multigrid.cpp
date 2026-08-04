@@ -910,6 +910,43 @@ std::vector<double> collocate_products(const UniformGrid& grid,
     return rho;
 }
 
+namespace {
+
+/// @brief |V| at the product Gaussian centre (wrapped grid index).
+///
+/// Used to |V|-scale integrate windows: point value is shape·V, so a product
+/// far from nuclei (small |V|) gets a smaller window than the density-
+/// independent worst case max|coeff|·K (implicit |V|≡1). Floor avoids
+/// over-shrinking in near-zero V pockets. O(1) per product.
+inline double v_at_product_center(const UniformGrid& grid,
+                                  const std::vector<double>& V_level,
+                                  const GridProduct& prod) {
+    const long n0 = grid.n[0], n1 = grid.n[1], n2 = grid.n[2];
+    auto wrap = [](long i, long n) { return ((i % n) + n) % n; };
+    long ix = wrap(static_cast<long>(std::floor(prod.pc[0] / (grid.L[0] / n0))),
+                   n0);
+    long iy = wrap(static_cast<long>(std::floor(prod.pc[1] / (grid.L[1] / n1))),
+                   n1);
+    long iz = wrap(static_cast<long>(std::floor(prod.pc[2] / (grid.L[2] / n2))),
+                   n2);
+    const std::size_t g = static_cast<std::size_t>((ix * n1 + iy) * n2 + iz);
+    return std::abs(V_level[g]);
+}
+
+/// @brief Window magnitude for integrate: geom · max(|V(pc)|, floor).
+/// Floor 0.05 keeps a safety margin vs pure local |V| without reverting to
+/// whole-cell sweeps when |V| is large only near nuclei (global max|V| would
+/// inflate every product).
+inline double integrate_window_mag(const UniformGrid& grid,
+                                   const std::vector<double>& V_level,
+                                   const GridProduct& prod, double geom) {
+    constexpr double kVFloor = 0.05;
+    const double vsc = std::max(v_at_product_center(grid, V_level, prod), kVFloor);
+    return geom * vsc;
+}
+
+} // namespace
+
 std::vector<double> integrate_products(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
     const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
@@ -935,10 +972,14 @@ std::vector<double> integrate_products(
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
             const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
             const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-            // Integrate the shape ONCE (density-independent KS build); the window is
-            // sized by the run's largest geometric magnitude max|coeff|·K.
+            // Integrate the shape ONCE; window sized by local |V(pc)|·geom
+            // (collocate uses |P|-weighted mag; integrate dual is |V|).
+            const double geom = A.maxc * B.maxc * std::abs(prod.k);
+            const double mag = integrate_window_mag(grid, V_level, prod, geom);
+            if (mag < eps)
+                continue;
             double acc = 0.0;
-            collocate_one(grid, prod, A.maxc * B.maxc * prod.k, eps,
+            collocate_one(grid, prod, mag, eps,
                           [&](long g, const double* fz, long cnt, double fxy) {
                               acc += fxy
                                      * axis_dot(V_level.data()
@@ -1060,8 +1101,12 @@ std::vector<std::vector<double>> integrate_products_cells(
             const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
             const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
             const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+            const double geom = A.maxc * B.maxc * std::abs(prod.k);
+            const double mag = integrate_window_mag(grid, V_level, prod, geom);
+            if (mag < eps)
+                continue;
             double acc = 0.0;
-            collocate_one(grid, prod, A.maxc * B.maxc * prod.k, eps,
+            collocate_one(grid, prod, mag, eps,
                           [&](long g, const double* fz, long cnt, double fxy) {
                               acc += fxy
                                      * axis_dot(V_level.data()
