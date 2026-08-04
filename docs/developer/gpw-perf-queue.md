@@ -47,9 +47,7 @@ the top MG-kernel + OT-extension rows (in_progress below).
 
 ## in_progress
 
-- [~] `p2-simd-pointfill-2` | Deeper point-fill SIMD in `multigrid.cpp`: vectorize the 1D pol/exp-recurrence factor fills; process multiple monomials per window pass (register blocking à la CP2K's 4-wide FMA loop body); batch the sphere-bound column sqrt. Portable xsimd only | gate: MG MAIN 45.0 s ↓ >10%; uks no regression; force regs green; tolerance statement | wave-3 worker A (shares `multigrid.cpp` with `p1-integrate-windows`) |
-- [~] `p1-integrate-windows` | Integrate windows sized by actual |V_eff|/|P| magnitudes instead of density-independent worst case (`A.maxc·B.maxc·prod.k`); re-examine `kProductMassMargin=1e-4` (⇒ eps ~1e-11 whole-cell sweeps for diffuse pairs). Mirror of the landed collocate density screen | gate: MG MAIN ↓; energy pins + FD force regs unchanged tols | wave-3 worker A |
-
+- [~] `p2-simd-pointfill-2` | Deeper point-fill SIMD in `multigrid.cpp`: vectorize the 1D pol/exp-recurrence factor fills; process multiple monomials per window pass (register blocking à la CP2K's 4-wide FMA loop body); batch the sphere-bound column sqrt. Portable xsimd only | gate: MG MAIN 42.9 s ↓ >10%; uks no regression; force regs green; tolerance statement |
 
 ## blocked
 
