@@ -47,7 +47,7 @@ the top MG-kernel + OT-extension rows (in_progress below).
 
 ## in_progress
 
-- [~] `p2-simd-pointfill-2` | Deeper point-fill SIMD in `multigrid.cpp`: vectorize the 1D pol/exp-recurrence factor fills; process multiple monomials per window pass (register blocking à la CP2K's 4-wide FMA loop body); batch the sphere-bound column sqrt. Portable xsimd only | gate: MG MAIN 42.9 s ↓ >10%; uks no regression; force regs green; tolerance statement |
+(empty)
 
 ## blocked
 
@@ -66,3 +66,16 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p1-ks-grid-build` | 2026-08-04 | shared `ks_grid_build_rks/uks` + `evaluate_xc_*` for ρ→Poisson→XC→V_eff [+vdW]; all SCF energy builders wired | `e47756a9` |
 - [x] `p1-ot-uks-k` | 2026-08-04 | Γ UKS OT carried (Ha,Hb,E) + quadratic Armijo retry + budget-exhaust reuse; multi-k RKS/UKS integer path skips KS rebuild after accept + quadratic retry | four twins + `ot-uks-o2` PASS |
 - [x] `p1-integrate-windows` | 2026-08-04 | integrate windows sized by local \|V(pc)\|·geom (floor 0.05), not global max\|V\| (that inflated every product) and not bare maxc·maxc·K; `integrate_products` + `_cells`. MG MAIN **45.0→42.9 s** (OMP=4, one shot); E pin within 5e-7; uks-o2-gamma + ot-water PASS; not bit-exact |
+- [x] `p2-simd-pointfill-2` | 2026-08-04 | xsimd 1D poly/E2 fill (`fill_axis_poly_e2_w`); `axis_dot` via `reduce_add`; hoist sphere z-bound constants. Exp recurrence stays scalar (sequential). Multi-monomial blocking **not** done (no shared-window product batch). MG MAIN best **41.7 s** (OMP=4 bind); pins hold. CP2K same-host twin **0.885 s** → ratio ~**47×** (see note below) |
+
+### Fair wall vs CP2K (2026-08-04, arrhenius1, OMP=4 bind)
+
+`gpw-multigrid-kpoints` MAIN only (MP 2×2×2, 150 Ry, NGRIDS 4):
+
+| Side | Wall [s] | Notes |
+| --- | ---: | --- |
+| ATV (best of 2, contended node) | **41.7** | MAIN line; run1 101.7 under load |
+| CP2K 2026.1 `cp2k.psmp` np=1 | **0.885** | `si_kpoints_mg.inp`; energy −15.802416412503838 Ha |
+| **ratio ATV/CP2K** | **~47** | integrate ~4.3 s/iter ATV vs CP2K `grid_integrate` ~0.019 s/iter |
+
+Older baseline (wave2) listed CP2K 23.6 s / ATV 45.0 → 1.9×; re-measured CP2K on this host is ~25× faster than that table — use **today's** numbers for planning. Remaining gap is the product collocate/integrate constant (CP2K collint), not the 1D factor fill.

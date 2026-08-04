@@ -634,11 +634,8 @@ inline double axis_dot(const double* v, const double* f, long cnt) {
     long t = 0;
     for (; t + W <= cnt; t += W)
         acc_v += batch_t::load_unaligned(v + t) * batch_t::load_unaligned(f + t);
-    double acc_arr[16]; // W ≤ 16 (AVX-512 = 8 doubles)
-    acc_v.store_unaligned(acc_arr);
-    double s = 0.0;
-    for (long i = 0; i < W; ++i)
-        s += acc_arr[i];
+    // Horizontal reduce (portable xsimd); scalar tail for remainder.
+    double s = xsimd::reduce_add(acc_v);
     for (; t < cnt; ++t)
         s += v[t] * f[t];
     return s;
@@ -656,6 +653,61 @@ inline void axis_axpy(double a, const double* f, double* out, long cnt) {
     }
     for (; t < cnt; ++t)
         out[t] += a * f[t];
+}
+
+/// @brief Fill F[t] *= (r−ra)^la (r−rb)^lb, E2[t]=(r−Pc)², W[t]=wrap(lo+t)
+///        over a 1D product window. Gaussian part of F is already written.
+///        Portable xsimd on the poly/E2 path; wrap stays scalar (integer mod).
+inline void fill_axis_poly_e2_w(double* F, double* E2, long* W, int len,
+                                long lo, long n_d, double origin, double L_d,
+                                double pc, double ra, double rb, int la,
+                                int lb) {
+    using batch_t = xsimd::batch<double>;
+    constexpr int Wd = static_cast<int>(batch_t::size);
+    const double scale = L_d / static_cast<double>(n_d);
+    const batch_t v_origin(origin), v_scale(scale), v_pc(pc), v_ra(ra),
+        v_rb(rb);
+    // Sequential indices for the first lane; broadcast + offset per lane.
+    alignas(64) double lane_off[16];
+    for (int k = 0; k < Wd; ++k)
+        lane_off[k] = static_cast<double>(k);
+    const batch_t v_lane = batch_t::load_unaligned(lane_off);
+    int t = 0;
+    for (; t + Wd <= len; t += Wd) {
+        const batch_t v_idx =
+            batch_t(static_cast<double>(lo + t)) + v_lane;
+        const batch_t r = v_origin + v_scale * v_idx;
+        const batch_t e = r - v_pc;
+        batch_t v = batch_t::load_unaligned(F + t);
+        const batch_t a = r - v_ra;
+        const batch_t b = r - v_rb;
+        for (int q = 0; q < la; ++q)
+            v *= a;
+        for (int q = 0; q < lb; ++q)
+            v *= b;
+        v.store_unaligned(F + t);
+        (e * e).store_unaligned(E2 + t);
+    }
+    for (; t < len; ++t) {
+        const long idx = lo + t;
+        const double r =
+            origin + L_d * static_cast<double>(idx) / static_cast<double>(n_d);
+        const double e = r - pc;
+        double v = F[t];
+        const double a = r - ra, b = r - rb;
+        for (int q = 0; q < la; ++q)
+            v *= a;
+        for (int q = 0; q < lb; ++q)
+            v *= b;
+        F[t] = v;
+        E2[t] = e * e;
+    }
+    // Wrapped storage index (positive mod). Scalar: cheap vs poly, and
+    // integer batch mod is awkward without a native long batch path.
+    for (int u = 0; u < len; ++u) {
+        long idx = lo + u;
+        W[u] = ((idx % n_d) + n_d) % n_d;
+    }
 }
 
 // Accumulate one product over an unwrapped window into a per-point sink `sink`,
@@ -742,21 +794,10 @@ inline void collocate_one(const UniformGrid& grid, const GridProduct& prod,
                 C *= A2;
             }
         }
-        for (int t = 0; t < len[d]; ++t) { // polynomial, |r-Pc|², wrapped index
-            const long idx = lo[d] + t;
-            const double r =
-                grid.origin[d] + grid.L[d] * static_cast<double>(idx) / n[d];
-            const double e = r - prod.pc[d];
-            double v = F[d][t];
-            const double a = r - prod.ra[d], b = r - prod.rb[d];
-            for (int q = 0; q < la[d]; ++q)
-                v *= a;
-            for (int q = 0; q < lb[d]; ++q)
-                v *= b;
-            F[d][t] = v;
-            E2[d][t] = e * e;
-            W[d][t] = ((idx % n[d]) + n[d]) % n[d];
-        }
+        // Poly · Gaussian, |r−Pc|², wrap — xsimd on the float path.
+        fill_axis_poly_e2_w(F[d], E2[d], W[d], len[d], lo[d], n[d],
+                            grid.origin[d], grid.L[d], prod.pc[d], prod.ra[d],
+                            prod.rb[d], la[d], lb[d]);
     }
     // SPHERE-screened outer-product fill (CP2K-style): the product Gaussian is
     // negligible outside radius rc, so skip the cube corners — for each (i,j)
@@ -765,11 +806,21 @@ inline void collocate_one(const UniformGrid& grid, const GridProduct& prod,
     const double rc2 = rc * rc;
     const double invdz =
         static_cast<double>(n[2]) / grid.L[2]; // grid-index per Bohr, z
+    // Precompute z-sphere half-width scale: klo/khi = round(pc_z ± sqrt(rc2−r2xy)).
+    // Hoist origin/pc/lo constants out of the (i,j) hot nest.
+    const double pc_z = prod.pc[2];
+    const double origin_z = grid.origin[2];
+    const long lo_z = lo[2];
+    const long n_z = n[2];
+    const int len_z = len[2];
+    const double* Fz = F[2];
+    const long* Wz = W[2];
     for (int ti = 0; ti < len[0]; ++ti) {
         const double fx = F[0][ti], ex2 = E2[0][ti];
         if (fx == 0.0 || ex2 > rc2)
             continue;
         const long ii = W[0][ti];
+        const long base_i = ii * n[1];
         for (int tj = 0; tj < len[1]; ++tj) {
             const double r2xy = ex2 + E2[1][tj];
             if (r2xy > rc2)
@@ -777,28 +828,24 @@ inline void collocate_one(const UniformGrid& grid, const GridProduct& prod,
             const double fxy = fx * F[1][tj];
             if (fxy == 0.0)
                 continue;
-            const long base = (ii * n[1] + W[1][tj]) * n[2];
+            const long base = (base_i + W[1][tj]) * n_z;
+            // Sphere z-bounds; one sqrt per surviving (i,j) column.
             const double zr = std::sqrt(rc2 - r2xy);
-            long klo = static_cast<long>(std::ceil(
-                           (prod.pc[2] - zr - grid.origin[2]) * invdz))
-                       - lo[2];
-            long khi = static_cast<long>(std::floor(
-                           (prod.pc[2] + zr - grid.origin[2]) * invdz))
-                       - lo[2];
+            long klo = static_cast<long>(
+                          std::ceil((pc_z - zr - origin_z) * invdz))
+                      - lo_z;
+            long khi = static_cast<long>(
+                           std::floor((pc_z + zr - origin_z) * invdz))
+                       - lo_z;
             if (klo < 0)
                 klo = 0;
-            if (khi > static_cast<long>(len[2]) - 1)
-                khi = len[2] - 1;
-            const double* Fz = F[2];
-            const long* Wz = W[2];
-            // Emit contiguous stride-1 runs: the wrapped z index advances by 1
-            // and only resets to 0 at the periodic boundary, so each run is
-            // capped at n[2] − z0. Zero-valued tail points ride along — adding
-            // fxy·0 is a no-op and the branch cost per point exceeded it.
+            if (khi > static_cast<long>(len_z) - 1)
+                khi = len_z - 1;
+            // Emit contiguous stride-1 runs (split only at periodic z wrap).
             long tk = klo;
             while (tk <= khi) {
                 const long z0 = Wz[tk];
-                const long run = std::min(khi - tk + 1, n[2] - z0);
+                const long run = std::min(khi - tk + 1, n_z - z0);
                 add(base + z0, Fz + tk, run, fxy);
                 tk += run;
             }
