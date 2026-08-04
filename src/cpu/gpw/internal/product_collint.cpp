@@ -168,9 +168,21 @@ void rebuild_sphere_entry(SphereEntry& e, int max_imr) {
     }
 }
 
-/// Lookup discretized sphere bounds. Returns pointer into cache storage.
+/// Lookup discretized sphere bounds into thread_local buffer.
+/// Hot path: per-thread last (di,dj,dk,imr) hit — no lock, no shared pointer.
 const int* sphere_bounds_lookup(double radius, double di, double dj, double dk,
                                 double* disr_radius_out) {
+    thread_local std::vector<int> local;
+    thread_local double t_di = -1, t_dj = -1, t_dk = -1, t_drmin = 0;
+    thread_local int t_imr = -1;
+
+    const double drmin = std::min({di, dj, dk});
+    const int imr = std::max(1, static_cast<int>(std::ceil(radius / drmin)));
+    *disr_radius_out = drmin * static_cast<double>(imr);
+    if (t_di == di && t_dj == dj && t_dk == dk && t_imr == imr
+        && !local.empty())
+        return local.data();
+
     SphereCache& cache = sphere_cache();
     std::lock_guard<std::mutex> lock(cache.mu);
     SphereEntry* ent = nullptr;
@@ -195,19 +207,31 @@ const int* sphere_bounds_lookup(double radius, double di, double dj, double dk,
         e.di = di;
         e.dj = dj;
         e.dk = dk;
-        e.drmin = std::min({di, dj, dk});
+        e.drmin = drmin;
         e.max_imr = 0;
         cache.entries.push_back(std::move(e));
         cache.prev = static_cast<int>(cache.entries.size() - 1);
         ent = &cache.entries.back();
     }
-    const int imr =
-        std::max(1, static_cast<int>(std::ceil(radius / ent->drmin)));
-    *disr_radius_out = ent->drmin * static_cast<double>(imr);
     if (ent->max_imr < imr)
         rebuild_sphere_entry(*ent, imr);
     const int off = ent->offsets[static_cast<std::size_t>(imr - 1)];
-    return ent->storage.data() + off;
+    int n = 0;
+    if (imr < ent->max_imr)
+        n = ent->offsets[static_cast<std::size_t>(imr)] - off;
+    else
+        n = static_cast<int>(ent->storage.size()) - off;
+    if (n < 1)
+        n = 1;
+    local.resize(static_cast<std::size_t>(n));
+    std::memcpy(local.data(), ent->storage.data() + off,
+                static_cast<std::size_t>(n) * sizeof(int));
+    t_di = di;
+    t_dj = dj;
+    t_dk = dk;
+    t_drmin = drmin;
+    t_imr = imr;
+    return local.data();
 }
 
 void group_angular_max(const GridProduct* prods, int n, int& lpx, int& lpy,
