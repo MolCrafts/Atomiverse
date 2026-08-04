@@ -57,6 +57,22 @@ inline bool collint_same_geometry(const GridProduct& a, const GridProduct& b) {
            && a.rb[2] == b.rb[2];
 }
 
+/// @brief Stable total order for geometry batching (build_products sorts by this).
+inline bool collint_geom_less(const GridProduct& a, const GridProduct& b) {
+    if (a.p != b.p)
+        return a.p < b.p;
+    for (int d = 0; d < 3; ++d)
+        if (a.pc[d] != b.pc[d])
+            return a.pc[d] < b.pc[d];
+    for (int d = 0; d < 3; ++d)
+        if (a.ra[d] != b.ra[d])
+            return a.ra[d] < b.ra[d];
+    for (int d = 0; d < 3; ++d)
+        if (a.rb[d] != b.rb[d])
+            return a.rb[d] < b.rb[d];
+    return false;
+}
+
 } // namespace internal
 } // namespace gpw
 } // namespace cpu

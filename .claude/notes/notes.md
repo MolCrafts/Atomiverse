@@ -8,10 +8,10 @@ History is git's job — superseded designs are deleted, not archived here.
 
 - **ES optimization order (binding in CLAUDE.md).** Wave state:
   [es-optimization-order.md](es-optimization-order.md). Structure + OT +
-  windows + collint reflection/batch landed (MG MAIN ~8 s, **~6×** CP2K quiet
-  ~1.28 s; target ≤2× open — gap is per-task kernel not task count). Fair
-  walls in [gpw-perf-baseline.md](gpw-perf-baseline.md). CUDA ES freeze this
-  wave; classical MD CUDA independent.
+  windows + collint stack landed (MG MAIN **~2.6 s ≈ 2.0×** CP2K quiet
+  ~1.28 s; ≤2× gate met). Next: STVnl setup. Fair walls in
+  [gpw-perf-baseline.md](gpw-perf-baseline.md). CUDA ES freeze this wave;
+  classical MD CUDA independent.
 - **e2e-in-tests migration (queued campaign).** ~102 registered "unit" tests
   are full method solves hidden behind `ATV_TEST_HEAVY=OFF` (ccsd/fci/mp2,
   gpw_*/pw_* solves, bomd/cpmd/xl_bomd, dftb, am1 thermochemistry runs), plus

@@ -23,14 +23,14 @@ Twin `gpw-multigrid-kpoints` MAIN (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV best MAIN | **~8.0** | two-shot OMP=4 bind |
-| CP2K 2026.1 same host | **~1.28** quiet (0.885 earlier load) | re-run 2026-08-04 evening |
-| **ratio ATV/CP2K** | **~6×** | target ≤2× still open |
+| ATV best MAIN | **~2.6** | two-shot OMP=4 bind |
+| CP2K 2026.1 same host | **~1.28** quiet | re-run 2026-08-04 |
+| **ratio ATV/CP2K** | **~2.0×** | ≤2× gate met on quiet runs |
 
-**Task parity:** MAIN ~5500 geometry groups / density ≈ CP2K ~5000 ortho
-tasks. Gap is **per-task kernel throughput** (~15–20×), not product count.
-Collint: CP2K reflection pairs + sphere bounds + monom batch + max\|w\|
-window + z xsimd. Bare `eps` windows fail energy (need margin class).
+Landed: geometry pre-sort at `build_products`; process-wide sphere-bounds
+cache; `lp_z` 0..6 specialized collocate; zero-skip monoms; max\|w\| window;
+reflection + z xsimd. Per-iter collocate/integrate ~70–100 ms (was ~550/600).
+Remaining headroom: STVnl_k setup ~1.3 s (once), further kernel polish.
 
 ### Product collint (landed)
 
@@ -61,10 +61,10 @@ Landed: z-run axpy/dot; 1D poly/E2 (legacy collocate_one); collint z-contract;
 
 | Rank | Issue | Where |
 | --- | --- | --- |
-| **1** | Product collint per-task ~15–20× slower than CP2K (overall ~6× MAIN) | `product_collint.cpp` |
-| 2 | Multi-k dense χ^k O(npts·nb²·nk) until product engine wins fully | `kpoints.cpp` |
-| 3 | Force path rebuilds grids (geometry-fixed reuse incomplete) | `gpw_forces.cpp` |
-| 4 | Forked SCF control flow (structure only; KS build shared) | `gpw_solver.cpp` |
+| **1** | STVnl_k setup ~1.3 s (dominates remaining MAIN gap vs CP2K) | k-path setup |
+| 2 | Product collint still ~2× overall (kernel polish / cab-level) | `product_collint.cpp` |
+| 3 | Multi-k dense χ^k O(npts·nb²·nk) until products default | `kpoints.cpp` |
+| 4 | Force path rebuilds grids | `gpw_forces.cpp` |
 
 **Done (do not re-open as primary):** GpwWorkspace; `ks_grid_build_*`; OT
 economics; |V(pc)| windows; 1D poly SIMD; **first collint + geometry batch**.
