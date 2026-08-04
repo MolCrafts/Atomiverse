@@ -15,13 +15,14 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 2. ~~`p1-ks-grid-build`~~ **landed** — `internal::ks_grid_build_rks/uks` +
    `evaluate_xc_*` share ρ→Poisson→XC→V_eff [+ nonlocal vdW] for Γ RKS/UKS,
    multi-k RKS, multi-k UKS (OT + DIIS). Collocate / H-integrate stay path-local.
+3. ~~`p1-ot-uks-k`~~ **landed** — OT line-search economics on Γ UKS + multi-k
+   RKS/UKS integer paths (carried E/H, quadratic Armijo retry, budget reuse).
 
 **Out of this wave:** Gaussian/PW cross-method DIIS·LA extraction; CUDA ES
 coverage expansion; collocation rewrite (`p2-cxyz-reflection`).
 
-**Serial with solver structure:** `p1-ot-uks-k` and other `gpw_solver.cpp`
-control-flow edits should not fight KsGridBuild ownership of that file.
-`multigrid.cpp` SIMD rows may run in parallel (different main battlefield).
+**Next perf (queue):** `p1-integrate-windows` / `p2-simd-pointfill-2` on
+`multigrid.cpp` (wave-3 workers).
 
 Architecture detail: [gpw-perf-architecture.md](gpw-perf-architecture.md).
 Queue: [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md).

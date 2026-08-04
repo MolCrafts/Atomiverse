@@ -1908,11 +1908,13 @@ static GpwResult run_gpw_scf_kpoints(
                         dens_from_cocc(Cocc_k[static_cast<std::size_t>(ik)],
                                        ik);
                 e_total = build_k_energy(P_k);
-            } else {
-                // Integer: P is invariant under occupied-subspace unitary
-                // rotations, so a single KS rebuild is enough; subspace-canon
-                // C after H for a better-conditioned OT gradient.
+            } else if (!h_matches_manifold) {
+                // Integer: one KS rebuild unless the previous Armijo accept
+                // already left H_k matching dens(C) (Γ RKS OT economics).
                 e_total = build_k_energy(P_k);
+                refresh_occupations();
+            } else {
+                e_total = res.e_total; // carried from accepted trial
                 refresh_occupations();
             }
             h_matches_manifold = true;
@@ -2114,11 +2116,18 @@ static GpwResult run_gpw_scf_kpoints(
 
             for (int bt = 0; bt < 50; ++bt) {
                 const double et = trial_energy(alpha);
-                if (et <= e_total + c1 * alpha * slope_dot)
+                if (et <= e_total + c1 * alpha * slope_dot || bt == 49) {
+                    e_total = et;
+                    res.e_total = et;
                     break;
-                alpha *= 0.5;
+                }
+                const double denom = et - e_total - slope_dot * alpha;
+                const double a_q =
+                    (denom > 1e-300) ? -slope_dot * alpha * alpha / (2.0 * denom)
+                                     : 0.5 * alpha;
+                alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
             }
-            // Accept step (occupations re-filled at the top of next iter).
+            // Accept step: C/P from accepted alpha; H_k already from last trial.
             for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
                 const auto& S = S_k[static_cast<std::size_t>(ik)];
                 auto& C = Cocc_k[static_cast<std::size_t>(ik)];
@@ -2127,8 +2136,9 @@ static GpwResult run_gpw_scf_kpoints(
                     internal::ot_parameterize_k(C, alpha * d, S), S);
                 P_k[static_cast<std::size_t>(ik)] = dens_from_cocc(C, ik);
             }
+            h_matches_manifold = true; // next outer skips integer KS rebuild
         }
-        // Budget exhausted.
+        // Budget exhausted: last_veff from final trial (or last outer build).
         if (!last_veff.empty())
             store_k_payload(rebuild_all_H(last_veff));
         fold_dispersion_k(res, P_k);
@@ -3365,8 +3375,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
                         occ_b_k[static_cast<std::size_t>(ik)]);
                 }
                 e_total = build_uks_k_energy(Pa_k, Pb_k);
-            } else {
+            } else if (!h_matches_manifold) {
                 e_total = build_uks_k_energy(Pa_k, Pb_k);
+            } else {
+                e_total = res.e_total; // carried from accepted Armijo trial
             }
             h_matches_manifold = true;
             res.iters = iter + 1;
@@ -3683,9 +3695,16 @@ static GpwResult run_gpw_scf_kpoints_uks(
 
             for (int bt = 0; bt < 50; ++bt) {
                 const double et = trial_energy(alpha);
-                if (et <= e_total + c1 * alpha * slope_dot)
+                if (et <= e_total + c1 * alpha * slope_dot || bt == 49) {
+                    e_total = et;
+                    res.e_total = et;
                     break;
-                alpha *= 0.5;
+                }
+                const double denom = et - e_total - slope_dot * alpha;
+                const double a_q =
+                    (denom > 1e-300) ? -slope_dot * alpha * alpha / (2.0 * denom)
+                                     : 0.5 * alpha;
+                alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
             }
             for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
                 const auto& S = S_k[static_cast<std::size_t>(ik)];
@@ -3708,8 +3727,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
                         Cb, n_b, occ_b_k[static_cast<std::size_t>(ik)]);
                 }
             }
+            h_matches_manifold = true; // next outer skips integer KS rebuild
         }
-        // Budget exhausted.
+        // Budget exhausted: last_veff_ab from final trial.
         if (!last_veff_ab.empty()) {
             auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
             store_k_payload(Ha_full, Hb_full);
@@ -4830,17 +4850,27 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             RealMatrix d_a, d_b, pz_a_prev, pz_b_prev;
             double denom_prev = 1.0;
             bool have_prev = false;
-            RealMatrix Ha_last, Hb_last;
+            // Carried KS state (Γ RKS OT economics): accepted Armijo trial's
+            // (Ha,Hb,E) becomes E(0) of the next outer — ~1 KS build / OT step.
+            RealMatrix Ha, Hb;
+            double e_total = 0.0;
+            bool have_carried = false;
 
             for (int iter = 0; iter < cfg.max_iter; ++iter) {
-                Pa = na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
-                            : RealMatrix(xt::zeros<double>({nb, nb}));
-                Pb = nb_spin > 0 ? linalg::build_density_matrix(Cocc_b, nb_spin,
-                                                                nb, 1.0)
-                                 : RealMatrix(xt::zeros<double>({nb, nb}));
-                auto [Ha, Hb, e_total] = build_uks_H(Pa, Pb);
-                Ha_last = Ha;
-                Hb_last = Hb;
+                if (!have_carried) {
+                    Pa = na > 0
+                             ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
+                             : RealMatrix(xt::zeros<double>({nb, nb}));
+                    Pb = nb_spin > 0
+                             ? linalg::build_density_matrix(Cocc_b, nb_spin, nb,
+                                                            1.0)
+                             : RealMatrix(xt::zeros<double>({nb, nb}));
+                    auto he0 = build_uks_H(Pa, Pb);
+                    Ha = std::move(std::get<0>(he0));
+                    Hb = std::move(std::get<1>(he0));
+                    e_total = std::get<2>(he0);
+                    have_carried = true;
+                }
                 res.iters = iter + 1;
                 res.e_total = e_total;
 
@@ -4870,24 +4900,22 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     store_converged_state_uks(res, Ha, Hb, orth().X, S, na,
                                               nb_spin, nb);
                     res.mulliken_spin = internal::mulliken_spin_populations(
-                        Pa, Pb, S, ao_tags, static_cast<int>(atoms.size()));
-                    // Fold like every other UKS exit (e_disp + deferred
-                    // Hirshfeld); a bare `e_total += e_d3` left e_disp = 0.
-                    fold_dispersion(res, Pa + Pb);
+                        res.P, res.P_beta, S, ao_tags,
+                        static_cast<int>(atoms.size()));
+                    fold_dispersion(res, res.P + res.P_beta);
                     return res;
                 }
                 // DFT+U: accept an energy plateau after a few OT steps even if
-                // the projected gradient sits just above the soft floor (line
-                // search alpha → 0; same fixed-point class as DIIS+U).
+                // the projected gradient sits just above the soft floor.
                 if (do_dftu && iter >= 5
                     && std::abs(e_total - e_prev) < cfg.tol) {
                     res.converged = true;
                     store_converged_state_uks(res, Ha, Hb, orth().X, S, na,
                                               nb_spin, nb);
                     res.mulliken_spin = internal::mulliken_spin_populations(
-                        Pa, Pb, S, ao_tags, static_cast<int>(atoms.size()));
-                    // Hirshfeld uses total density ρ=ρα+ρβ (Pα+Pβ).
-                    fold_dispersion(res, Pa + Pb);
+                        res.P, res.P_beta, S, ao_tags,
+                        static_cast<int>(atoms.size()));
+                    fold_dispersion(res, res.P + res.P_beta);
                     return res;
                 }
                 e_prev = e_total;
@@ -4937,18 +4965,6 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     denom_prev = 1.0;
                 have_prev = true;
 
-                auto etot = [&](const RealMatrix& Ca_try,
-                                const RealMatrix& Cb_try) {
-                    const RealMatrix Pa_t =
-                        na > 0
-                            ? linalg::build_density_matrix(Ca_try, na, nb, 1.0)
-                            : RealMatrix(xt::zeros<double>({nb, nb}));
-                    const RealMatrix Pb_t =
-                        nb_spin > 0 ? linalg::build_density_matrix(
-                                          Cb_try, nb_spin, nb, 1.0)
-                                    : RealMatrix(xt::zeros<double>({nb, nb}));
-                    return std::get<2>(build_uks_H(Pa_t, Pb_t));
-                };
                 double slope = 0.0;
                 if (na > 0)
                     slope += frob(g_a, d_a);
@@ -4988,9 +5004,6 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     alpha = 1.0;
                 alpha = std::min(alpha, 2.0);
                 constexpr double c1 = 1e-4;
-                // Löwdin-clean every Armijo trial (multi-k parity): without it
-                // trial etot sees drifted metric and accept-only clean leaves a
-                // residual floor that thrashing cannot leave.
                 RealMatrix Cnew_a =
                     na > 0 ? internal::ot_parameterize(Cocc_a, alpha * d_a, S)
                            : Cocc_a;
@@ -5002,10 +5015,31 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     Cnew_a = linalg::lowdin_orthonormalize(Cnew_a, S);
                 if (nb_spin > 0)
                     Cnew_b = linalg::lowdin_orthonormalize(Cnew_b, S);
+                // Each trial builds full (Ha,Hb,E); accepted pair is carried.
+                // Retry alpha = true-energy quadratic through (0,E0,slope) and
+                // (α,E_t), clamped to [0.1,0.5]·α (Γ RKS OT parity).
                 for (int bt = 0; bt < 50; ++bt) {
-                    if (etot(Cnew_a, Cnew_b) <= e_total + c1 * alpha * slope)
+                    const RealMatrix Pa_t =
+                        na > 0
+                            ? linalg::build_density_matrix(Cnew_a, na, nb, 1.0)
+                            : RealMatrix(xt::zeros<double>({nb, nb}));
+                    const RealMatrix Pb_t =
+                        nb_spin > 0 ? linalg::build_density_matrix(
+                                          Cnew_b, nb_spin, nb, 1.0)
+                                    : RealMatrix(xt::zeros<double>({nb, nb}));
+                    auto trial = build_uks_H(Pa_t, Pb_t);
+                    const double et = std::get<2>(trial);
+                    if (et <= e_total + c1 * alpha * slope || bt == 49) {
+                        Ha = std::move(std::get<0>(trial));
+                        Hb = std::move(std::get<1>(trial));
+                        e_total = et;
                         break;
-                    alpha *= 0.5;
+                    }
+                    const double denom = et - e_total - slope * alpha;
+                    const double a_q = (denom > 1e-300)
+                                           ? -slope * alpha * alpha / (2.0 * denom)
+                                           : 0.5 * alpha;
+                    alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
                     if (na > 0) {
                         Cnew_a =
                             internal::ot_parameterize(Cocc_a, alpha * d_a, S);
@@ -5018,29 +5052,20 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     }
                 }
                 if (na > 0)
-                    Cocc_a = Cnew_a; // already Löwdin-clean
+                    Cocc_a = Cnew_a;
                 if (nb_spin > 0)
                     Cocc_b = Cnew_b;
+                // Densities for next gradient are implicit in carried H
+                // (built from accepted C); keep Pa/Pb in sync for exits.
+                Pa = na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
+                            : RealMatrix(xt::zeros<double>({nb, nb}));
+                Pb = nb_spin > 0
+                         ? linalg::build_density_matrix(Cocc_b, nb_spin, nb, 1.0)
+                         : RealMatrix(xt::zeros<double>({nb, nb}));
             }
-            // Budget exhausted: export full orbital state (P/C/eps + ⟨S²⟩) at
-            // the final OT densities so partial-SCF / SGCP UKS-OT force
-            // consumers (gpw_forces_from_scf) work. Matches RKS OT + DIIS
-            // UKS budget-exhaust: store_converged_state_uks fills eps;
-            // converged stays false.
-            Pa = na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
-                        : RealMatrix(xt::zeros<double>({nb, nb}));
-            Pb = nb_spin > 0
-                     ? linalg::build_density_matrix(Cocc_b, nb_spin, nb, 1.0)
-                     : RealMatrix(xt::zeros<double>({nb, nb}));
-            (void)Ha_last;
-            (void)Hb_last;
-            {
-                const auto rebuilt = build_uks_H(Pa, Pb);
-                res.e_total = std::get<2>(rebuilt);
-                store_converged_state_uks(res, std::get<0>(rebuilt),
-                                          std::get<1>(rebuilt), orth().X, S, na,
-                                          nb_spin, nb);
-            }
+            // Budget exhausted: reuse carried (Ha,Hb,E) — no extra KS build.
+            res.e_total = e_total;
+            store_converged_state_uks(res, Ha, Hb, orth().X, S, na, nb_spin, nb);
             res.mulliken_spin = internal::mulliken_spin_populations(
                 res.P, res.P_beta, S, ao_tags, static_cast<int>(atoms.size()));
             fold_dispersion(res, res.P + res.P_beta);
