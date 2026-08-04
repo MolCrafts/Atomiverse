@@ -351,7 +351,9 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/semiempirical/dftb3_scc.cpp
             src/cpu/semiempirical/mio_sk_block.cpp
             src/cpu/semiempirical/scc_mixer.cpp
-            src/cpu/semiempirical/xtb_gfn0.cpp
+            src/cpu/semiempirical/gfn2.cpp
+            src/cpu/semiempirical/gfn2_xtb_kernel.cpp
+
             src/cpu/multiscale/qmmm_mechanical.cpp
             src/cpu/multiscale/qmmm_oniom.cpp
             src/cpu/multiscale/internal/classical_nonbonded.cpp
@@ -761,6 +763,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cpu/gpw/internal/xc_grid_gga.cpp
                 src/cpu/gpw/internal/mt_poisson.cpp
                 src/cpu/gpw/internal/kpoints.cpp
+                src/cpu/gpw/internal/ks_grid_build.cpp
                 src/cpu/gpw/gpw_solver.cpp
                 src/cpu/gpw/bands_dos.cpp
                 src/cpu/gpw/periodic_wannier.cpp
@@ -975,6 +978,35 @@ if(NOT ATV_DOCS_ONLY)
     endif()
     target_include_directories(atomiverse PUBLIC include)
     target_link_libraries(atomiverse PUBLIC xtensor xtensor-blas xsimd spdlog::spdlog ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+
+    # ── GFN2 private kernel: gfortran-built libxtb (C API) ─────────────
+    # Wave-02 energy path. Prefer ATV_XTB_ROOT / env; default to the local
+    # gfortran install next to the prebuilt Intel binary (which cannot link).
+    # Not a black-box subprocess: linked library, Frame I/O stays on ATV.
+    if(ATV_BUILD_SEMIEMPIRICAL)
+        set(_ATV_XTB_DEFAULT
+            "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/software/xtb-6.7.1-gfortran")
+        if(DEFINED ENV{ATV_XTB_ROOT} AND NOT "$ENV{ATV_XTB_ROOT}" STREQUAL "")
+            set(_ATV_XTB_DEFAULT "$ENV{ATV_XTB_ROOT}")
+        endif()
+        set(ATV_XTB_ROOT "${_ATV_XTB_DEFAULT}" CACHE PATH
+            "Root of gfortran-built xtb (include/ + lib64/libxtb.so)")
+        find_path(ATV_XTB_INCLUDE_DIR xtb.h
+            HINTS "${ATV_XTB_ROOT}/include" NO_DEFAULT_PATH)
+        find_library(ATV_XTB_LIBRARY NAMES xtb
+            HINTS "${ATV_XTB_ROOT}/lib64" "${ATV_XTB_ROOT}/lib" NO_DEFAULT_PATH)
+        if(ATV_XTB_INCLUDE_DIR AND ATV_XTB_LIBRARY)
+            target_include_directories(atomiverse PRIVATE "${ATV_XTB_INCLUDE_DIR}")
+            target_link_libraries(atomiverse PUBLIC "${ATV_XTB_LIBRARY}" gfortran gomp)
+            target_compile_definitions(atomiverse PUBLIC ATV_HAS_XTB_KERNEL)
+            message(STATUS "GFN2 xtb kernel: ${ATV_XTB_LIBRARY}")
+        else()
+            message(STATUS
+                "GFN2 xtb kernel: NOT FOUND under ATV_XTB_ROOT=${ATV_XTB_ROOT} "
+                "(GFN2::launch will throw until a gfortran libxtb is installed)")
+        endif()
+    endif()
+
     # xsimd is linked for direct use in native_integrals.cpp ERI hot loops.
     # XTENSOR_USE_XSIMD is NOT set globally. Precise reason (traced 2026-07-26,
     # reported upstream as xtensor-stack/xtensor#2929): it is a hard COMPILE

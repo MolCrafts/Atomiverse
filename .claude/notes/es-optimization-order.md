@@ -12,8 +12,9 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    products / cbg / kbg / `last_veff` on Γ + multi-k RKS/UKS runners
    (`internal/gpw_workspace.h`). DIIS objects still stack-local. Lambda aliases
    keep control flow unchanged.
-2. `p1-ks-grid-build` — **next** — one internal `KsGridBuild` (ρ→Poisson→XC→V_eff)
-   for Γ/k × RKS/UKS DIIS+OT on top of workspace.
+2. ~~`p1-ks-grid-build`~~ **landed** — `internal::ks_grid_build_rks/uks` +
+   `evaluate_xc_*` share ρ→Poisson→XC→V_eff [+ nonlocal vdW] for Γ RKS/UKS,
+   multi-k RKS, multi-k UKS (OT + DIIS). Collocate / H-integrate stay path-local.
 
 **Out of this wave:** Gaussian/PW cross-method DIIS·LA extraction; CUDA ES
 coverage expansion; collocation rewrite (`p2-cxyz-reflection`).

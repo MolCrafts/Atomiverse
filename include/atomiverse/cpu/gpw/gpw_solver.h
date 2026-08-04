@@ -99,7 +99,15 @@ struct GpwAtom {
 /// `OptB88VdW` — pure GGA (OptB88VdW = optB88-x + PW92-c; pair with `vdw_df`)
 /// (shared `evaluate_xc`). RKS and Γ-UKS support all six (spin-GGA via
 /// `xc_grid_*_spin`; closed-shell via `xc_grid_*`).
-enum class XcKind { PADE, PBE, PBEsol, RevPBE, RPBE, BLYP, OptB88VdW };
+enum class XcKind : int {
+    PADE,
+    PBE,
+    PBEsol,
+    RevPBE,
+    RPBE,
+    BLYP,
+    OptB88VdW
+};
 
 /// @brief Metallic occupation smearing kind (product path: multi-k RKS/UKS).
 ///

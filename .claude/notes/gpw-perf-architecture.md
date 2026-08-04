@@ -43,10 +43,10 @@ the tolerance + FD-force laws (not bit-exact, deterministic).
 3. Unified product collocate/integrate
 4. Parameterized OT step
 
-**ES policy first cut:** item 1 (`GpwWorkspace`) **landed**; next is item 2
-`p1-ks-grid-build`. Wave state:
+**ES policy first cut:** items 1–2 **landed** (`GpwWorkspace` + shared
+`ks_grid_build_*`). Wave state:
 [es-optimization-order.md](es-optimization-order.md). Items 3–4 and deeper
-SIMD stay on the normal perf queue after the structural cut.
+SIMD stay on the normal perf queue.
 
 ### Phases (SIMD promoted; all levers authorized)
 

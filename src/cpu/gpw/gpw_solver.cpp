@@ -33,6 +33,7 @@
 #include "atomiverse/cpu/gpw/internal/diis.h"
 #include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
+#include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/hartree_grid.h"
 #include "atomiverse/cpu/gpw/internal/hirshfeld_volumes.h"
@@ -1371,7 +1372,6 @@ static GpwResult run_gpw_scf_kpoints(
     internal::KDiis diis(use_diis ? cfg.diis_depth : 1, weights);
     constexpr double kDiisErrTolK = 1e-5; // same gate as the Γ DIIS path
     double e_prev = 0.0;
-    const double gw = grid.weight();
     const bool periodic_cell = !cfg.nonperiodic;
 
     // k-summed real density on the fine grid from {P_k}: multigrid products or
@@ -1569,50 +1569,16 @@ static GpwResult run_gpw_scf_kpoints(
         auto t0p = KProfClk::now();
         const std::vector<double> rho = collocate_rho_k(Pk);
         auto t1p = KProfClk::now();
-        std::vector<double> n_tot(rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g)
-            n_tot[g] = rho[g] - n_ion[g];
-        const PoissonResult es = solve_poisson(grid, n_tot);
-        auto t2p = KProfClk::now();
-        const XcOnGrid xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe(grid, rho)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol(grid, rho)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe(grid, rho)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe(grid, rho)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp(grid, rho)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw(grid,
-                                                                        rho)
-                                                   : xc_grid_pade(grid,
-                                                                  rho))))));
+        // Shared ρ→Poisson→XC→V_eff (k path is always periodic Poisson).
+        const internal::KsGridRks ks = internal::ks_grid_build_rks(
+            grid, rho, n_ion, v_locsr, cfg.xc, /*nonperiodic=*/false,
+            cfg.vdw_df, cfg.vdw_df2, cfg.rvv10);
         auto t3p = KProfClk::now();
-        std::vector<double> veff(rho.size());
-        double e_locgrid = 0.0;
-        for (std::size_t g = 0; g < rho.size(); ++g) {
-            veff[g] = es.v_r[g] + xc.vxc_r[g] + v_locsr[g];
-            e_locgrid += rho[g] * v_locsr[g];
-        }
-        e_locgrid *= gw;
-        // Self-consistent nonlocal vdW (DRSLL / LMKLL / rVV10): V_nl = δE/δρ
-        // on the finest-grid k-summed density, added before last_veff and the
-        // multigrid restriction — the integrated KS matrix (single-grid
-        // integrate_potential_k and the V_t stack alike) stays the exact
-        // gradient of the collocated E_H + E_xc + E_c^nl (variational SCF;
-        // same placement as the Γ runner). E_c^nl is reported via e_disp
-        // (fold_dispersion_k), never added to the SCF convergence energy.
-        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
-            const NonlocalVdwOnGrid nl =
-                nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
-                                     cfg.rvv10, /*potential=*/true);
-            for (std::size_t g = 0; g < rho.size(); ++g)
-                veff[g] += nl.v_r[g];
-        }
-        last_veff = veff;
+        auto t2p = t1p; // poisson+xc folded into ks_grid_build (prof bucket)
+        (void)t2p;
+        const double e_locgrid = ks.e_locgrid;
+        last_veff = ks.veff;
+        const std::vector<double>& veff = last_veff;
 
         std::vector<std::vector<double>> Vt;
         if (use_mg)
@@ -1667,8 +1633,8 @@ static GpwResult run_gpw_scf_kpoints(
         res.e_kinetic = e_kin;
         res.e_nonlocal = 0.0;
         res.e_loc_sr = e_nl + e_locgrid;
-        res.e_es = es.e_hartree - e_self;
-        res.e_xc = xc.e_xc;
+        res.e_es = ks.e_hartree - e_self;
+        res.e_xc = ks.e_xc;
         const double e_ks =
             res.e_kinetic + res.e_loc_sr + res.e_es + res.e_xc + e_dftu;
         const double e_ent = use_smear ? (-degauss_ha * last_entropy) : 0.0;
@@ -2682,23 +2648,6 @@ static GpwResult run_gpw_scf_kpoints_uks(
         return s;
     };
 
-    auto xc_spin = [&](const std::vector<double>& ra,
-                       const std::vector<double>& rb) -> XcOnGridSpin {
-        if (cfg.xc == XcKind::PBE)
-            return xc_grid_pbe_spin(grid, ra, rb);
-        if (cfg.xc == XcKind::PBEsol)
-            return xc_grid_pbesol_spin(grid, ra, rb);
-        if (cfg.xc == XcKind::RevPBE)
-            return xc_grid_revpbe_spin(grid, ra, rb);
-        if (cfg.xc == XcKind::RPBE)
-            return xc_grid_rpbe_spin(grid, ra, rb);
-        if (cfg.xc == XcKind::BLYP)
-            return xc_grid_blyp_spin(grid, ra, rb);
-        if (cfg.xc == XcKind::OptB88VdW)
-            return xc_grid_optb88_vdw_spin(grid, ra, rb);
-        return xc_grid_pade_lsd(grid, ra, rb);
-    };
-
     GpwResult res;
     res.n_kpts = nk;
     res.n_kpts_local = n_kpts_local;
@@ -2707,7 +2656,6 @@ static GpwResult run_gpw_scf_kpoints_uks(
     internal::KDiis diis_b(use_diis ? cfg.diis_depth : 1, weights);
     constexpr double kDiisErrTolK = 1e-5;
     double e_prev = 0.0;
-    const double gw = grid.weight();
 
     // Dudarev multi-k setup (empty plus_u → no-op).
     std::vector<int> plus_u_z;
@@ -2932,44 +2880,16 @@ static GpwResult run_gpw_scf_kpoints_uks(
         -> double {
         const std::vector<double> rho_a = collocate_rho_spin_k(Pak);
         const std::vector<double> rho_b = collocate_rho_spin_k(Pbk);
-        std::vector<double> rho(rho_a.size());
-        for (std::size_t g = 0; g < rho.size(); ++g)
-            rho[g] = rho_a[g] + rho_b[g];
-        std::vector<double> n_tot(rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g)
-            n_tot[g] = rho[g] - n_ion[g];
-        const PoissonResult es = solve_poisson(grid, n_tot);
-        const XcOnGridSpin xc = xc_spin(rho_a, rho_b);
-        std::vector<double> veff_a(rho.size()), veff_b(rho.size());
-        double e_locgrid = 0.0;
-        for (std::size_t g = 0; g < rho.size(); ++g) {
-            double vloc = v_locsr.empty() ? 0.0 : v_locsr[g];
-            if (!v_locsr.empty())
-                e_locgrid += rho[g] * vloc;
-            veff_a[g] = es.v_r[g] + xc.vxc_a[g] + vloc;
-            veff_b[g] = es.v_r[g] + xc.vxc_b[g] + vloc;
-        }
-        e_locgrid *= gw;
-        // Self-consistent nonlocal vdW (DRSLL / LMKLL / rVV10) on the TOTAL
-        // density: V_nl = δE_c^nl/δρ is spin-independent, so it is added
-        // identically to both spin potentials before last_veff_ab and the
-        // multigrid restriction (CP2K qs_dispersion_nonloc; same placement
-        // as Γ UKS build_uks_H and multi-k RKS build_k_energy). E_c^nl is
-        // reported via e_disp (fold_dispersion_k_uks), never added to the
-        // SCF convergence energy.
-        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
-            const NonlocalVdwOnGrid nl =
-                nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
-                                     cfg.rvv10, /*potential=*/true);
-            for (std::size_t g = 0; g < rho.size(); ++g) {
-                veff_a[g] += nl.v_r[g];
-                veff_b[g] += nl.v_r[g];
-            }
-        }
-        last_veff_ab.resize(2 * rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g) {
+        const internal::KsGridUks ks = internal::ks_grid_build_uks(
+            grid, rho_a, rho_b, n_ion, v_locsr, cfg.xc, /*nonperiodic=*/false,
+            cfg.vdw_df, cfg.vdw_df2, cfg.rvv10);
+        const double e_locgrid = ks.e_locgrid;
+        const std::vector<double>& veff_a = ks.veff_a;
+        const std::vector<double>& veff_b = ks.veff_b;
+        last_veff_ab.resize(veff_a.size() + veff_b.size());
+        for (std::size_t g = 0; g < veff_a.size(); ++g) {
             last_veff_ab[g] = veff_a[g];
-            last_veff_ab[g + rho.size()] = veff_b[g];
+            last_veff_ab[g + veff_a.size()] = veff_b[g];
         }
         std::vector<std::vector<double>> Vt_a, Vt_b;
         if (use_mg) {
@@ -3018,8 +2938,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
         res.e_kinetic = e_kin;
         res.e_nonlocal = 0.0;
         res.e_loc_sr = e_nl + e_locgrid;
-        res.e_es = es.e_hartree - e_self;
-        res.e_xc = xc.e_xc;
+        res.e_es = ks.e_hartree - e_self;
+        res.e_xc = ks.e_xc;
         const double e_ks =
             res.e_kinetic + res.e_loc_sr + res.e_es + res.e_xc + e_dftu;
         const double e_ent = use_smear ? (-degauss_ha * last_entropy) : 0.0;
@@ -3806,45 +3726,19 @@ static GpwResult run_gpw_scf_kpoints_uks(
     }
 
     for (int iter = 0; iter < cfg.max_iter; ++iter) {
-        // DIIS inline twin of build_uks_k_energy (kept historical; multigrid
-        // and single-grid share collocate_rho_spin_k / mg_vt_stack).
+        // DIIS path: same shared fine-grid KS build as build_uks_k_energy.
         const std::vector<double> rho_a = collocate_rho_spin_k(Pa_k);
         const std::vector<double> rho_b = collocate_rho_spin_k(Pb_k);
-        std::vector<double> rho(rho_a.size());
-        for (std::size_t g = 0; g < rho.size(); ++g)
-            rho[g] = rho_a[g] + rho_b[g];
-
-        std::vector<double> n_tot(rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g)
-            n_tot[g] = rho[g] - n_ion[g];
-        const PoissonResult es = solve_poisson(grid, n_tot);
-        const XcOnGridSpin xc = xc_spin(rho_a, rho_b);
-
-        std::vector<double> veff_a(rho.size()), veff_b(rho.size());
-        double e_locgrid = 0.0;
-        for (std::size_t g = 0; g < rho.size(); ++g) {
-            double vloc = v_locsr.empty() ? 0.0 : v_locsr[g];
-            if (!v_locsr.empty())
-                e_locgrid += rho[g] * vloc;
-            veff_a[g] = es.v_r[g] + xc.vxc_a[g] + vloc;
-            veff_b[g] = es.v_r[g] + xc.vxc_b[g] + vloc;
-        }
-        e_locgrid *= gw;
-        // Self-consistent nonlocal vdW: V_nl on total density, both spins
-        // (byte-identical placement with build_uks_k_energy above).
-        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
-            const NonlocalVdwOnGrid nl =
-                nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
-                                     cfg.rvv10, /*potential=*/true);
-            for (std::size_t g = 0; g < rho.size(); ++g) {
-                veff_a[g] += nl.v_r[g];
-                veff_b[g] += nl.v_r[g];
-            }
-        }
-        last_veff_ab.resize(2 * rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g) {
+        const internal::KsGridUks ks = internal::ks_grid_build_uks(
+            grid, rho_a, rho_b, n_ion, v_locsr, cfg.xc, /*nonperiodic=*/false,
+            cfg.vdw_df, cfg.vdw_df2, cfg.rvv10);
+        const double e_locgrid = ks.e_locgrid;
+        const std::vector<double>& veff_a = ks.veff_a;
+        const std::vector<double>& veff_b = ks.veff_b;
+        last_veff_ab.resize(veff_a.size() + veff_b.size());
+        for (std::size_t g = 0; g < veff_a.size(); ++g) {
             last_veff_ab[g] = veff_a[g];
-            last_veff_ab[g + rho.size()] = veff_b[g];
+            last_veff_ab[g + veff_a.size()] = veff_b[g];
         }
 
         std::vector<std::vector<double>> Vt_a, Vt_b;
@@ -3894,8 +3788,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
         res.e_kinetic = e_kin;
         res.e_nonlocal = 0.0;
         res.e_loc_sr = e_nl + e_locgrid;
-        res.e_es = es.e_hartree - e_self;
-        res.e_xc = xc.e_xc;
+        res.e_es = ks.e_hartree - e_self;
+        res.e_xc = ks.e_xc;
         // Mermin free energy when smearing: F = E_KS − σ S (+ DFT+U if on).
         const double e_ks =
             res.e_kinetic + res.e_loc_sr + res.e_es + res.e_xc + e_dftu;
@@ -4674,58 +4568,16 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             std::fprintf(stderr,
                          "[gpw mg] int rho_fine = %.10f (Tr(P S) check)\n", qe);
         }
-        std::vector<double> n_tot(rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g)
-            n_tot[g] = rho[g] - n_ion[g];
-        const PoissonResult es = cfg.nonperiodic ? solve_poisson_mt(grid, n_tot)
-                                                 : solve_poisson(grid, n_tot);
-        auto t2p = ProfClk::now();
-        const XcOnGrid xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe(grid, rho)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol(grid, rho)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe(grid, rho)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe(grid, rho)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp(grid, rho)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw(grid,
-                                                                        rho)
-                                                   : xc_grid_pade(grid,
-                                                                  rho))))));
+        const internal::KsGridRks ks = internal::ks_grid_build_rks(
+            grid, rho, n_ion, v_locsr, cfg.xc, cfg.nonperiodic, cfg.vdw_df,
+            cfg.vdw_df2, cfg.rvv10);
         auto t3p = ProfClk::now();
-        std::vector<double> veff(rho.size());
-        for (std::size_t g = 0; g < rho.size(); ++g)
-            veff[g] = es.v_r[g] + xc.vxc_r[g];
-        // Self-consistent nonlocal vdW (DRSLL / LMKLL / rVV10): V_nl = δE/δρ
-        // added every SCF iteration. `rho` is the finest-grid density on both
-        // paths, and V_nl lands in `veff` before the per-level restriction, so
-        // under multigrid the integrated KS matrix stays the exact gradient of
-        // the collocated E_H + E_xc + E_c^nl (variational SCF).
-        double e_nl = 0.0;
-        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
-            NonlocalVdwOnGrid nl = nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df,
-                                                        cfg.vdw_df2, cfg.rvv10,
-                                                        /*potential=*/true);
-            e_nl = nl.energy;
-            for (std::size_t g = 0; g < rho.size(); ++g)
-                veff[g] += nl.v_r[g];
-            e_d3 = e_nl; // keep outer e_d3 in sync for fold_dispersion
-        }
-        // Add the geometry-fixed local short-range PP and its energy ∫ρ·V_loc^SR
-        // (the grid form of the analytic Tr(P·V_loc^SR)).
-        double e_locgrid = 0.0;
-        if (!v_locsr.empty()) {
-            const double gw = grid.weight();
-            for (std::size_t g = 0; g < rho.size(); ++g) {
-                veff[g] += v_locsr[g];
-                e_locgrid += rho[g] * v_locsr[g];
-            }
-            e_locgrid *= gw;
-        }
+        auto t2p = t1p;
+        (void)t2p;
+        if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10)
+            e_d3 = ks.e_nl_vdw; // fold_dispersion reports SC E_c^nl
+        const std::vector<double>& veff = ks.veff;
+        const double e_locgrid = ks.e_locgrid;
         // KS grid matrix. Single-grid: integrate veff directly. Multigrid:
         // restrict the fine potential to each level (the transpose of prolong) and
         // integrate each level's products — the adjoint of the density assembly,
@@ -4771,10 +4623,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         // (zero when analytic) is the ∫ρ·V_loc^SR that Tr(P·Vpp) would otherwise
         // carry — together they total the full short-range PP energy.
         res.e_loc_sr = trace_product(Pin, Vpp, nb) + e_locgrid;
-        res.e_es = es.e_hartree - e_self;
-        res.e_xc = xc.e_xc;
-        // E_nl is reported via e_disp (fold_dispersion); do not double-add here.
-        (void)e_nl;
+        res.e_es = ks.e_hartree - e_self;
+        res.e_xc = ks.e_xc;
         return {H, res.e_kinetic + res.e_loc_sr + res.e_es + res.e_xc};
     };
 
@@ -4850,22 +4700,6 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             }
             return vec_to_mat(integrate_potential(cbg, nb, veff), nb);
         };
-        auto xc_spin = [&](const std::vector<double>& ra,
-                           const std::vector<double>& rb) -> XcOnGridSpin {
-            if (cfg.xc == XcKind::PBE)
-                return xc_grid_pbe_spin(grid, ra, rb);
-            if (cfg.xc == XcKind::PBEsol)
-                return xc_grid_pbesol_spin(grid, ra, rb);
-            if (cfg.xc == XcKind::RevPBE)
-                return xc_grid_revpbe_spin(grid, ra, rb);
-            if (cfg.xc == XcKind::RPBE)
-                return xc_grid_rpbe_spin(grid, ra, rb);
-            if (cfg.xc == XcKind::BLYP)
-                return xc_grid_blyp_spin(grid, ra, rb);
-            if (cfg.xc == XcKind::OptB88VdW)
-                return xc_grid_optb88_vdw_spin(grid, ra, rb);
-            return xc_grid_pade_lsd(grid, ra, rb);
-        };
 
         // Build dual KS + total energy (and fill res energy channels) from Pa/Pb.
         // ATV_GPW_PROF: Γ-UKS [gpw prof uks] matches RKS [gpw prof] shape.
@@ -4882,79 +4716,33 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             std::vector<double> rho_a = collocate_P(Pa_in);
             std::vector<double> rho_b = collocate_P(Pb_in);
             auto t1p = UksProfClk::now();
-            std::vector<double> rho(rho_a.size());
-            for (std::size_t g = 0; g < rho.size(); ++g)
-                rho[g] = rho_a[g] + rho_b[g];
-
-            // Multigrid fine level must match the SCF `grid` (n_ion / Poisson /
-            // v_locsr live on `grid`). Mismatched npts would silently corrupt
-            // Hartree — fail loud (no-fallback).
-            if (static_cast<long>(rho.size()) != grid.npts()
-                || static_cast<long>(n_ion.size()) != grid.npts())
-                throw std::runtime_error(
-                    "GPW UKS: density grid size mismatch (rho="
-                    + std::to_string(rho.size())
-                    + " n_ion=" + std::to_string(n_ion.size())
-                    + " grid.npts=" + std::to_string(grid.npts()) + ")");
             if (use_prod && use_mg
                 && (mg.levels[0].n[0] != grid.n[0]
                     || mg.levels[0].n[1] != grid.n[1]
                     || mg.levels[0].n[2] != grid.n[2]))
                 throw std::runtime_error(
                     "GPW UKS: multigrid finest level n[] != SCF grid n[]");
-
-            std::vector<double> n_tot(rho.size());
-            for (std::size_t g = 0; g < rho.size(); ++g)
-                n_tot[g] = rho[g] - n_ion[g];
             if (use_prod && std::getenv("ATV_GPW_MG_TRACE")) {
                 double qe = 0.0;
-                for (double v : rho)
-                    qe += v;
+                for (std::size_t g = 0; g < rho_a.size(); ++g)
+                    qe += rho_a[g] + rho_b[g];
                 qe *= grid.weight();
                 std::fprintf(stderr,
                              "[gpw uks mg] int rho_fine = %.10f "
                              "(expect ~%d valence e)\n",
                              qe, cfg.n_alpha + cfg.n_beta);
             }
-            const PoissonResult es = cfg.nonperiodic
-                                         ? solve_poisson_mt(grid, n_tot)
-                                         : solve_poisson(grid, n_tot);
-            auto t2p = UksProfClk::now();
-            const XcOnGridSpin xc = xc_spin(rho_a, rho_b);
+            const internal::KsGridUks ks = internal::ks_grid_build_uks(
+                grid, rho_a, rho_b, n_ion, v_locsr, cfg.xc, cfg.nonperiodic,
+                cfg.vdw_df, cfg.vdw_df2, cfg.rvv10);
             auto t3p = UksProfClk::now();
+            auto t2p = t1p;
+            (void)t2p;
+            if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10)
+                e_d3 = ks.e_nl_vdw;
 
-            std::vector<double> veff_a(rho.size()), veff_b(rho.size());
-            double e_locgrid = 0.0;
-            const double gw = grid.weight();
-            for (std::size_t g = 0; g < rho.size(); ++g) {
-                double vloc = 0.0;
-                if (!v_locsr.empty()) {
-                    vloc = v_locsr[g];
-                    e_locgrid += rho[g] * vloc;
-                }
-                veff_a[g] = es.v_r[g] + xc.vxc_a[g] + vloc;
-                veff_b[g] = es.v_r[g] + xc.vxc_b[g] + vloc;
-            }
-            e_locgrid *= gw;
-
-            // Self-consistent nonlocal vdW (DRSLL / LMKLL / rVV10) on the
-            // TOTAL density: V_nl = δE_c^nl/δρ is spin-independent, so it is
-            // added identically to both spin potentials (CP2K
-            // qs_dispersion_nonloc). e_d3 tracks the SC E_c^nl so
-            // fold_dispersion reports it on e_disp at every UKS exit.
-            if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
-                NonlocalVdwOnGrid nl =
-                    nonlocal_vdw_on_grid(grid, rho, cfg.vdw_df, cfg.vdw_df2,
-                                         cfg.rvv10, /*potential=*/true);
-                for (std::size_t g = 0; g < rho.size(); ++g) {
-                    veff_a[g] += nl.v_r[g];
-                    veff_b[g] += nl.v_r[g];
-                }
-                e_d3 = nl.energy;
-            }
-
-            RealMatrix Ha = H0 + integrate_V(veff_a);
-            RealMatrix Hb = H0 + integrate_V(veff_b);
+            RealMatrix Ha = H0 + integrate_V(ks.veff_a);
+            RealMatrix Hb = H0 + integrate_V(ks.veff_b);
             auto t4p = UksProfClk::now();
             if (uks_prof)
                 std::fprintf(stderr,
@@ -4977,9 +4765,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             const RealMatrix Ptot = Pa_in + Pb_in;
             res.e_kinetic = trace_product(Ptot, T, nb);
             res.e_nonlocal = 0.0;
-            res.e_loc_sr = trace_product(Ptot, Vpp, nb) + e_locgrid;
-            res.e_es = es.e_hartree - e_self;
-            res.e_xc = xc.e_xc;
+            res.e_loc_sr = trace_product(Ptot, Vpp, nb) + ks.e_locgrid;
+            res.e_es = ks.e_hartree - e_self;
+            res.e_xc = ks.e_xc;
             const double e_total =
                 res.e_kinetic + res.e_loc_sr + res.e_es + res.e_xc + e_dftu;
             return {std::move(Ha), std::move(Hb), e_total};

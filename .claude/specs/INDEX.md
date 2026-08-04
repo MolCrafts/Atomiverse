@@ -8,8 +8,7 @@ the git log. Method census: `docs/roadmap/`.
 | Spec | Shipped |
 | ---- | ------- |
 | `p1-gpw-workspace` | private `GpwWorkspace`; Γ / k RKS / k UKS bags owned |
-
-Next: `p1-ks-grid-build` (not yet spec'd).
+| `p1-ks-grid-build` | shared `ks_grid_build_rks/uks` (ρ→V_eff) on all SCF paths |
 
 ## Live — GFN2-xTB CHON (tb-method-loop Phase C, 2026-08-04)
 
