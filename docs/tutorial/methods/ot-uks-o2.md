@@ -255,9 +255,9 @@ Comparable settings: cutoff 250 Ry, PADE LSD, MT, single rank,
 | Full regression binary (OT+DIIS) | ≈ 54 | — | — | **not** ratioed against CP2K OT alone |
 
 **Caveats.** (1) Report the **OT-only** ratio; the regression binary runs both
-OT and DIIS and must not be ratioed against CP2K OT alone. (2) Remaining
-gap is per-iter KS (~340 ms), not SCF outer count. (3) `within_10x=true`; no
-optimize pass required for
+OT and DIIS and must not be ratioed against CP2K OT alone. (2) Remaining gap
+is OT outer count (84 vs CP2K 30; product uses CG+Armijo vs CP2K MINIMIZER
+DIIS) plus per-iter KS. (3) `within_10x=true`; no optimize pass required for
 this foothold.
 
 ## Limitations
