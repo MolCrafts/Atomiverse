@@ -241,7 +241,7 @@ mpirun -np 1 cp2k.psmp -i o2_uks_ot_pade.inp -o o2_uks_ot_pade.out
 
 Source: fair wall table in
 `regressions/gpw/ot-uks-o2/REFERENCE.md` (2026-08-05). Queue / handoff record:
-ratio **~4.6** (fair energy-OT, OMP=4; CP2K-aligned algorithm).
+ratio **~7.1** (fair energy-OT, OMP=4; CP2K-aligned algorithm).
 Gate \(r\le 10\) unless `perf_exempt`.
 
 Comparable settings: cutoff 250 Ry, PADE LSD, MT, single rank,
@@ -250,13 +250,13 @@ Comparable settings: cutoff 250 Ry, PADE LSD, MT, single rank,
 | Twin | Wall [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | -------: | ----------------------------------------: | ---- | ------ |
 | CP2K OT (`cp2k.psmp`, 1 MPI × 4 OMP) | **8.68** | — | — | primary twin (`CP2K` timer MAXIMUM) |
-| Atomiverse OT only | **~40** | **≈ 4.6** | ✓ | 84 energy-OT iters; FULL_SINGLE precond + CG+Armijo |
-| Atomiverse DIIS (parity check) | **~14** | — | — | 30 DIIS iters; **not** the fair twin |
-| Full regression binary (OT+DIIS) | ≈ 54 | — | — | **not** ratioed against CP2K OT alone |
+| Atomiverse OT only | **~62** | **≈ 7.1** | ✓ | 180 DIIS+Armijo iters; FULL_SINGLE precond + DIIS+Armijo |
+| Atomiverse DIIS (parity check) | **~11** | — | — | 30 DIIS iters; **not** the fair twin |
+| Full regression binary (OT+DIIS) | ≈ 73 | — | — | **not** ratioed against CP2K OT alone |
 
 **Caveats.** (1) Report the **OT-only** ratio; the regression binary runs both
 OT and DIIS and must not be ratioed against CP2K OT alone. (2) Remaining gap
-is OT outer count (84 vs CP2K 30; product uses CG+Armijo vs CP2K MINIMIZER
+is OT outer count (84 vs CP2K 30; product uses DIIS+Armijo vs CP2K MINIMIZER
 DIIS) plus per-iter KS. (3) `within_10x=true`; no optimize pass required for
 this foothold.
 

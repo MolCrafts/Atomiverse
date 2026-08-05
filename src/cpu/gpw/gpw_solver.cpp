@@ -4847,11 +4847,10 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             return res;
         }
 
-        // ── UKS OT: CP2K energy OT (FULL_SINGLE_INVERSE + CG + Armijo)
-        // Energy-functional OT on dual spin manifolds. Preconditioner is
-        // CP2K FULL_SINGLE_INVERSE; MINIMIZER is PR+ CG with Armijo on the
-        // total energy (CP2K's MINIMIZER DIIS without line search is not
-        // robust on this micro-case). KS rebuild on Armijo accept.
+        // ── UKS OT: MINIMIZER DIIS (dir) with CG fallback + Armijo ────────
+        // Dual-spin energy OT. Prefer OtOrbitalDiis directions; if energy
+        // rejects thrice in a row, fall back to PR+ CG until the next OUTER
+        // precond refresh (dual-spin DIIS alone plateaus ~1e-4 on O₂).
         if (cfg.use_ot) {
             const int na = cfg.n_alpha;
             const int nb_spin = cfg.n_beta;
@@ -4873,11 +4872,16 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             RealMatrix d_a, d_b, pz_a_prev, pz_b_prev;
             double denom_prev = 1.0;
             bool have_prev = false;
+            int reject_streak = 0;
+            bool use_cg = false;
             RealMatrix Ha, Hb;
             double e_total = 0.0;
             bool have_carried = false;
             constexpr double kEnergyGap = 1.0;
-            constexpr int kOuterPeriod = 1; // rebuild precond each step
+            constexpr int kDiisM = 7;
+            constexpr int kOuterPeriod = 20;
+            internal::OtOrbitalDiis diis_a(kDiisM, 0.15);
+            internal::OtOrbitalDiis diis_b(kDiisM, 0.15);
             std::optional<internal::OtPrecondSingleInverse> prec_a, prec_b;
             const bool ot_prof = std::getenv("ATV_GPW_OT_PROF") != nullptr;
             using Clk = std::chrono::steady_clock;
@@ -4901,14 +4905,16 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     e_total = std::get<2>(he0);
                     have_carried = true;
                 }
-                // OUTER_SCF: refresh FULL_SINGLE_INVERSE (CP2K).
                 if (iter % kOuterPeriod == 0) {
                     if (na > 0)
                         prec_a.emplace(Ha, S, Cocc_a, kEnergyGap);
                     if (nb_spin > 0)
                         prec_b.emplace(Hb, S, Cocc_b, kEnergyGap);
-                    if (kOuterPeriod > 1)
-                        have_prev = false;
+                    diis_a.reset();
+                    diis_b.reset();
+                    use_cg = false;
+                    have_prev = false;
+                    reject_streak = 0;
                 }
                 auto tB = Clk::now();
                 res.iters = iter + 1;
@@ -4929,9 +4935,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 if (std::getenv("ATV_GPW_TRACE"))
                     std::fprintf(stderr,
                                  "[gpw UKS OT %2d] E=%.8f dE=%.2e gnorm=%.2e "
-                                 "U=%.4f\n",
+                                 "mode=%s\n",
                                  iter, e_total, std::abs(e_total - e_prev),
-                                 gnorm, res.e_dftu);
+                                 gnorm, use_cg ? "CG" : "DIIS");
 
                 if (iter > 0 && gnorm < ot_grad_tol
                     && std::abs(e_total - e_prev) < cfg.tol) {
@@ -4965,28 +4971,41 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     nb_spin > 0 && prec_b
                         ? linalg::s_tangent(Cocc_b, S, prec_b->apply(g_b))
                         : RealMatrix(xt::zeros<double>({nb, 0}));
-                if (!have_prev) {
-                    d_a = -pz_a;
-                    d_b = -pz_b;
+
+                if (!use_cg) {
+                    // DIIS direction
+                    if (na > 0)
+                        d_a = linalg::s_tangent(
+                            Cocc_a, S, diis_a.direction(g_a, pz_a));
+                    if (nb_spin > 0)
+                        d_b = linalg::s_tangent(
+                            Cocc_b, S, diis_b.direction(g_b, pz_b));
                 } else {
-                    const double num =
-                        (na > 0 ? frob(g_a, pz_a - pz_a_prev) : 0.0)
-                        + (nb_spin > 0 ? frob(g_b, pz_b - pz_b_prev) : 0.0);
-                    const double beta = std::max(0.0, num / denom_prev);
-                    d_a = na > 0
-                              ? linalg::s_tangent(Cocc_a, S, -pz_a + beta * d_a)
-                              : d_a;
-                    d_b = nb_spin > 0
-                              ? linalg::s_tangent(Cocc_b, S, -pz_b + beta * d_b)
-                              : d_b;
+                    // PR+ CG fallback
+                    if (!have_prev) {
+                        d_a = -pz_a;
+                        d_b = -pz_b;
+                    } else {
+                        const double num =
+                            (na > 0 ? frob(g_a, pz_a - pz_a_prev) : 0.0)
+                            + (nb_spin > 0 ? frob(g_b, pz_b - pz_b_prev)
+                                           : 0.0);
+                        const double beta = std::max(0.0, num / denom_prev);
+                        d_a = na > 0 ? linalg::s_tangent(
+                                           Cocc_a, S, -pz_a + beta * d_a)
+                                     : d_a;
+                        d_b = nb_spin > 0 ? linalg::s_tangent(
+                                                Cocc_b, S, -pz_b + beta * d_b)
+                                          : d_b;
+                    }
+                    pz_a_prev = pz_a;
+                    pz_b_prev = pz_b;
+                    denom_prev = (na > 0 ? frob(g_a, pz_a) : 0.0)
+                                 + (nb_spin > 0 ? frob(g_b, pz_b) : 0.0);
+                    if (denom_prev < 1e-300)
+                        denom_prev = 1.0;
+                    have_prev = true;
                 }
-                pz_a_prev = pz_a;
-                pz_b_prev = pz_b;
-                denom_prev = (na > 0 ? frob(g_a, pz_a) : 0.0)
-                             + (nb_spin > 0 ? frob(g_b, pz_b) : 0.0);
-                if (denom_prev < 1e-300)
-                    denom_prev = 1.0;
-                have_prev = true;
 
                 double slope = (na > 0 ? frob(g_a, d_a) : 0.0)
                                + (nb_spin > 0 ? frob(g_b, d_b) : 0.0);
@@ -4996,7 +5015,7 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     slope = (na > 0 ? frob(g_a, d_a) : 0.0)
                             + (nb_spin > 0 ? frob(g_b, d_b) : 0.0);
                 }
-                // Frozen-H band parabola for initial alpha.
+
                 auto band = [&](const RealMatrix& Ca, const RealMatrix& Cb) {
                     double e = 0.0;
                     if (na > 0)
@@ -5031,7 +5050,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                               internal::ot_parameterize(Cocc_b, alpha * d_b, S),
                               S)
                         : Cocc_b;
+                int bt_used = 0;
                 for (int bt = 0; bt < 50; ++bt) {
+                    bt_used = bt;
                     RealMatrix Pa_t =
                         na > 0 ? linalg::build_density_matrix(Ca_new, na, nb,
                                                               1.0)
@@ -5069,12 +5090,25 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 }
                 Cocc_a = Ca_new;
                 Cocc_b = Cb_new;
+                // Many Armijo backtracks ⇒ DIIS subspace is bad → switch to CG
+                if (!use_cg && bt_used >= 3) {
+                    ++reject_streak;
+                    if (reject_streak >= 2) {
+                        use_cg = true;
+                        have_prev = false;
+                        diis_a.reset();
+                        diis_b.reset();
+                    }
+                } else {
+                    reject_streak = 0;
+                }
                 if (ot_prof) {
                     auto tC = Clk::now();
                     std::fprintf(stderr,
-                                 "[UKS OT %2d] KS=%.0fms gnorm=%.2e | "
-                                 "total=%.0fms\n",
-                                 iter, ms(tA, tB), gnorm, ms(tA, tC));
+                                 "[UKS OT %2d] KS=%.0fms gnorm=%.2e mode=%s "
+                                 "bt=%d | total=%.0fms\n",
+                                 iter, ms(tA, tB), gnorm,
+                                 use_cg ? "CG" : "DIIS", bt_used, ms(tA, tC));
                 }
             }
             {
@@ -5190,21 +5224,20 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     }
 
     // ── OT (orbital transformation) path ────────────────────────────────────
-    // CP2K-aligned energy OT: FULL_SINGLE_INVERSE preconditioner + PR+ CG
-    // + Armijo on total energy. Oracle twin uses MINIMIZER DIIS; product
-    // uses CG+Armijo on the same OT manifold / precond (fixed-stepsize
-    // DIIS diverges on these micro-cases). KS: ~1 build per accept.
+    // MINIMIZER DIIS: OtOrbitalDiis directions (SAFE) + Armijo on total energy.
+    // FULL_SINGLE-style H-aware precond, rebuilt every OUTER period.
+    // Fixed-stepsize pure DIIS (CP2K default) diverges on this micro-case;
+    // DIIS subspace + line search is the product twin. KS: ~1 per accept.
     if (cfg.use_ot) {
         RealMatrix Cocc = linalg::lowdin_orthonormalize(
             RealMatrix(xt::view(C0, xt::all(), xt::range(0, cfg.n_occ))), S);
         auto frob = [](const RealMatrix& a, const RealMatrix& b) {
             return xt::sum(a * b)();
         };
-        RealMatrix d, pz_prev;
-        double denom_prev = 1.0;
-        bool have_prev = false;
         constexpr double kEnergyGap = 1.0;
-        constexpr int kOuterPeriod = 1; // rebuild precond each step
+        constexpr int kDiisM = 7;
+        constexpr int kOuterPeriod = 20;
+        internal::OtOrbitalDiis ot_diis(kDiisM, 0.15);
         std::optional<internal::OtPrecondSingleInverse> prec;
         const bool ot_prof = std::getenv("ATV_GPW_OT_PROF") != nullptr;
         using Clk = std::chrono::steady_clock;
@@ -5223,8 +5256,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             }
             if (iter % kOuterPeriod == 0) {
                 prec.emplace(H, S, Cocc, kEnergyGap);
-                if (kOuterPeriod > 1)
-                    have_prev = false;
+                if (iter > 0)
+                    ot_diis.reset();
             }
             auto tB = Clk::now();
             res.iters = iter + 1;
@@ -5236,8 +5269,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 gnorm = std::max(gnorm, std::abs(v));
             if (std::getenv("ATV_GPW_TRACE"))
                 std::fprintf(stderr,
-                             "[gpw OT %2d] E=%.8f dE=%.2e gnorm=%.2e\n", iter,
-                             e_total, std::abs(e_total - e_prev), gnorm);
+                             "[gpw OT-DIIS %2d] E=%.8f dE=%.2e gnorm=%.2e\n",
+                             iter, e_total, std::abs(e_total - e_prev), gnorm);
             if (iter > 0 && gnorm < ot_grad_tol
                 && std::abs(e_total - e_prev) < cfg.tol) {
                 res.converged = true;
@@ -5248,25 +5281,14 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             }
             e_prev = e_total;
 
-            const RealMatrix pz =
+            const RealMatrix pg =
                 linalg::s_tangent(Cocc, S, prec->apply(g));
             auto tC = Clk::now();
-            if (!have_prev) {
-                d = -pz;
-            } else {
-                const double beta =
-                    std::max(0.0, frob(g, pz - pz_prev) / denom_prev);
-                d = linalg::s_tangent(Cocc, S, -pz + beta * d);
-            }
-            pz_prev = pz;
-            denom_prev = frob(g, pz);
-            if (denom_prev < 1e-300)
-                denom_prev = 1.0;
-            have_prev = true;
-
+            RealMatrix d =
+                linalg::s_tangent(Cocc, S, ot_diis.direction(g, pg));
             double slope = frob(g, d);
             if (slope >= 0.0) {
-                d = linalg::s_tangent(Cocc, S, -pz);
+                d = -pg;
                 slope = frob(g, d);
             }
             auto band = [&](const RealMatrix& C) {
@@ -5304,10 +5326,11 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             if (ot_prof) {
                 auto tD = Clk::now();
                 std::fprintf(stderr,
-                             "[OT %2d] H=%.0fms precond_cg=%.0fms ls=%.0fms "
-                             "(%d rebuilds) gnorm=%.2e | total=%.0fms\n",
+                             "[OT-DIIS %2d] H=%.0fms dir=%.0fms ls=%.0fms "
+                             "(%d) gnorm=%.2e hist=%d | total=%.0fms\n",
                              iter, ms(tA, tB), ms(tB, tC), ms(tC, tD),
-                             ls_rebuilds, gnorm, ms(tA, tD));
+                             ls_rebuilds, gnorm, ot_diis.n_hist(),
+                             ms(tA, tD));
             }
         }
         if (static_cast<int>(res.C.shape(0)) != nb) {

@@ -2,10 +2,11 @@
 /// @brief Orbital Transformation (OT) for GPW SCF — CP2K-aligned.
 ///
 /// **Internal GPW helper.** Does NOT inherit `cpu::Component`. Product Γ path
-/// matches CP2K defaults used by the oracle twins:
-///   - MINIMIZER DIIS (SAFE_DIIS)
-///   - PRECONDITIONER FULL_SINGLE_INVERSE
-///   - OUTER_SCF (refresh precond + re-anchor C0, reset DIIS)
+/// Product Γ OT (oracle twin class):
+///   - MINIMIZER DIIS directions (SAFE) + Armijo line search on total E
+///     (fixed-STEPSIZE pure DIIS diverges on product micro-cases)
+///   - PRECONDITIONER FULL_SINGLE-style H-aware dense inverse
+///   - OUTER_SCF period rebuilds precond and may reset DIIS
 ///
 /// Parameterization (orthonormality-preserving for any S-tangent `x`,
 /// `C0^T S x = 0`):
@@ -43,16 +44,12 @@ class OtPrecond {
     RealMatrix m_inv_;
 };
 
-/// @brief CP2K FULL_SINGLE_INVERSE preconditioner.
+/// @brief H-aware OT preconditioner (CP2K FULL_SINGLE family).
 ///
-/// Builds
-///   `M = H − 2 (S C)(Cᵀ H C − ½ I)(S C)ᵀ + σ S`
-/// and stores a dense SPD inverse (via symmetric eigendecomposition).
-/// The occupied-block shift follows CP2K `make_full_single_inverse`
-/// (revision post-14616). `σ` places the virtual region at least
-/// `energy_gap` above zero (default 0.08 Ha — CP2K ENERGY_GAP default).
-///
-/// Built once per OUTER_SCF; applied every OT micro-step.
+/// Product form: `M = H + (−ε_HOMO + energy_gap) S` with dense SPD inverse.
+/// `ε_HOMO` is the max eigenvalue of the small `Cᵀ H C` block. Built once per
+/// OUTER_SCF; applied every OT micro-step. Default `energy_gap = 1` Ha for
+/// dense CG/DIIS stability (CP2K's sparse FULL_SINGLE_INVERSE uses 0.08).
 class OtPrecondSingleInverse {
   public:
     /// @param H KS matrix [nb×nb] [Ha]

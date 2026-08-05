@@ -78,23 +78,22 @@ differences; OT/DIIS in-tree is the tight fixed-point gate.
 
 ## Fair wall (perf gate)
 
-Measured 2026-08-05 (Release, OMP=4, `OMP_PROC_BIND=close`), **CP2K-aligned
-energy OT** (FULL_SINGLE-style H-aware precond + PR+ CG + Armijo on total E;
-KS rebuild per accept):
+Measured 2026-08-05 (Release, OMP=4, `OMP_PROC_BIND=close`), **MINIMIZER
+DIIS** (OtOrbitalDiis SAFE directions + Armijo on total E; FULL_SINGLE-style
+precond; OUTER precond refresh):
 
 | Twin | Wall [s] | Notes |
 | ---- | -------: | ----- |
 | CP2K OT | **8.68** | `cp2k.psmp`, MINIMIZER DIIS + FULL_SINGLE_INVERSE + OUTER_SCF |
-| Atomiverse OT only | **~40** | 84 outer iters; energy OT (CG+Armijo), same manifold/precond class |
-| Atomiverse DIIS (parity check) | **~14** | 30 DIIS iters |
+| Atomiverse OT only | **~62** | 180 outer iters; DIIS directions + Armijo |
+| Atomiverse DIIS (parity check) | **~11** | 30 diagonalization DIIS iters |
 
-Fair OT-only ratio: \(40 / 8.68 \approx \mathbf{4.6}\) (algorithm-matched
-energy OT; was ~8.5 early energy-min, ~1.2 with Pulay-H + exact eigensolve
-which is **not** CP2K OT). Full regression (OT+DIIS) wall ≈ 54 s.
+Fair OT-only ratio: 62 / 8.68 ≈ **7.1**. Full regression (OT+DIIS) wall ≈ 73 s.
+Fixed-STEPSIZE pure DIIS (no Armijo) diverges on this micro-case.
 
 `within_10x=true` (fair OT, OMP=4).
 
-In-tree OT/DIIS parity: \|E_OT − E_DIIS\| ≈ **6×10⁻¹⁰ Ha** (same grids).
+In-tree OT/DIIS parity: |E_OT − E_DIIS| ≈ **5×10⁻¹⁰ Ha** (same grids).
 
 ## Citations
 
