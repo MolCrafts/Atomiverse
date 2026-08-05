@@ -27,7 +27,7 @@ constructors `GaussianBasis` / `GthPotential`), set members, run
 `cpu::single_point(frame, eval)`. Energy on `frame.meta` is **eV**; Hartree and
 \(\langle S^2\rangle\) via `last_energy_hartree()` / `last_s2()`. Product gate:
 `reg_ot-uks-o2`. Fair OT-only wall ratio
-\(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx 8.50\) (OMP=4, ≤10×).
+\(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx 4.6\) (OMP=4, energy OT, ≤10×).
 
 Closed-shell OT twin: [ot-minimizer-water](ot-minimizer-water.md). DIIS-only
 UKS energy at 400 Ry: [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md). Related
@@ -241,7 +241,7 @@ mpirun -np 1 cp2k.psmp -i o2_uks_ot_pade.inp -o o2_uks_ot_pade.out
 
 Source: fair wall table in
 `regressions/gpw/ot-uks-o2/REFERENCE.md` (2026-08-05). Queue / handoff record:
-ratio **~1.22** (fair OT-only, OMP=4; was ~8.50 with naive OT energy-min).
+ratio **~4.6** (fair energy-OT, OMP=4; CP2K-aligned algorithm).
 Gate \(r\le 10\) unless `perf_exempt`.
 
 Comparable settings: cutoff 250 Ry, PADE LSD, MT, single rank,
@@ -250,9 +250,9 @@ Comparable settings: cutoff 250 Ry, PADE LSD, MT, single rank,
 | Twin | Wall [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | -------: | ----------------------------------------: | ---- | ------ |
 | CP2K OT (`cp2k.psmp`, 1 MPI × 4 OMP) | **8.68** | — | — | primary twin (`CP2K` timer MAXIMUM) |
-| Atomiverse OT only | **~10.6** | **≈ 1.22** | ✓ | 25 outer iters; DIIS outer + exact fixed-H eigenspace |
-| Atomiverse DIIS (parity check) | **~12.3** | — | — | 30 DIIS iters; **not** the fair twin |
-| Full regression binary (OT+DIIS) | ≈ 23 | — | — | **not** ratioed against CP2K OT alone |
+| Atomiverse OT only | **~40** | **≈ 4.6** | ✓ | 84 energy-OT iters; FULL_SINGLE precond + CG+Armijo |
+| Atomiverse DIIS (parity check) | **~14** | — | — | 30 DIIS iters; **not** the fair twin |
+| Full regression binary (OT+DIIS) | ≈ 54 | — | — | **not** ratioed against CP2K OT alone |
 
 **Caveats.** (1) Report the **OT-only** ratio; the regression binary runs both
 OT and DIIS and must not be ratioed against CP2K OT alone. (2) Remaining
