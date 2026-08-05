@@ -43,23 +43,31 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
     const long ng = grid.npts();
     const double w = grid.weight();
 
+    // Spectral grad (fused multi-out FFT). grad holds three length-ng vectors.
     const std::array<std::vector<double>, 3> grad = gradient(grid, rho_r);
 
     XcOnGrid out;
-    out.vxc_r.assign(static_cast<std::size_t>(ng), 0.0);
-    std::array<std::vector<double>, 3>
-        flux; // (vsigma_aa + 1/2 vsigma_ab) grad rho
+    out.vxc_r.resize(static_cast<std::size_t>(ng));
+    // flux = (vsigma_aa + 1/2 vsigma_ab) grad rho — filled without zero pass.
+    std::array<std::vector<double>, 3> flux;
     for (int d = 0; d < 3; ++d)
-        flux[d].assign(static_cast<std::size_t>(ng), 0.0);
+        flux[d].resize(static_cast<std::size_t>(ng));
 
     const device::ChunkedRange range(ng, kXcChunks);
     std::vector<double> part(static_cast<std::size_t>(range.chunks()), 0.0);
+    const double* gx_p = grad[0].data();
+    const double* gy_p = grad[1].data();
+    const double* gz_p = grad[2].data();
+    double* fx_p = flux[0].data();
+    double* fy_p = flux[1].data();
+    double* fz_p = flux[2].data();
+    double* vxc_p = out.vxc_r.data();
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < range.chunks(); ++c) {
         double acc = 0.0;
         for (long g = range.begin(c); g < range.end(c); ++g) {
-            const double rho = rho_r[g];
-            const double gx = grad[0][g], gy = grad[1][g], gz = grad[2][g];
+            const double rho = rho_r[static_cast<std::size_t>(g)];
+            const double gx = gx_p[g], gy = gy_p[g], gz = gz_p[g];
             const double sigma = gx * gx + gy * gy + gz * gz;
             // Spin-unpolarized: rho_a=rho_b=rho/2, grad rho_a=grad rho/2 =>
             // sigma_aa = sigma_ab = sigma_bb = sigma/4.
@@ -68,12 +76,12 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
             const ATV::cpu::scf::XCOutput xco =
                 ATV::cpu::scf::evaluate_xc(xc, ra, rb, s, s, s);
             acc += w * rho * xco.exc;
-            out.vxc_r[g] =
+            vxc_p[g] =
                 xco.vrho_alpha; // local part; divergence term added below
             const double vsig_eff = xco.vsigma_aa + 0.5 * xco.vsigma_ab;
-            flux[0][g] = vsig_eff * gx;
-            flux[1][g] = vsig_eff * gy;
-            flux[2][g] = vsig_eff * gz;
+            fx_p[g] = vsig_eff * gx;
+            fy_p[g] = vsig_eff * gy;
+            fz_p[g] = vsig_eff * gz;
         }
         part[static_cast<std::size_t>(c)] = acc;
     }
@@ -83,9 +91,10 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
     out.e_xc = e;
 
     const std::vector<double> divflux = divergence(grid, flux);
+    const double* div_p = divflux.data();
 #pragma omp parallel for schedule(static)
     for (long g = 0; g < ng; ++g)
-        out.vxc_r[g] -= divflux[g];
+        vxc_p[g] -= div_p[g];
 
     return out;
 }

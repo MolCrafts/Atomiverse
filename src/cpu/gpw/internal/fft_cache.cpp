@@ -19,7 +19,7 @@ namespace gpw {
 namespace {
 
 // FFTW planner is process-global and not thread-safe. Guard create/destroy only;
-// execute of ESTIMATE plans is fine concurrently (and under OpenMP FFTW threads).
+// execute of MEASURE plans is fine concurrently (and under OpenMP FFTW threads).
 std::mutex& fftw_plan_mutex() {
     static std::mutex m;
     return m;
@@ -50,6 +50,11 @@ void ensure_fftw_threads() {
 
 using ShapeKey = std::tuple<int, int, int>;
 
+// Prefer MEASURE (timed once per shape) over ESTIMATE for production SCF grids.
+// MEASURE overwrites the planning buffers — only call after buffers exist and
+// before any physics content is written.
+constexpr unsigned kPlanFlags = FFTW_MEASURE;
+
 } // namespace
 
 // ── R2cFft ──────────────────────────────────────────────────────────────────
@@ -62,16 +67,34 @@ R2cFft::R2cFft(int n0, int n1, int n2)
         throw std::invalid_argument("R2cFft: non-positive grid shape");
     r_.resize(static_cast<std::size_t>(ntot_));
     c_.resize(static_cast<std::size_t>(ncplx_));
+    // Multi-out buffers sized before MEASURE so howmany plans can time them.
+    r_many_.resize(static_cast<std::size_t>(3 * ntot_));
+    c_many_.resize(static_cast<std::size_t>(3 * ncplx_));
     std::lock_guard<std::mutex> lock(fftw_plan_mutex());
     ensure_fftw_threads();
-    fwd_ = fftw_plan_dft_r2c_3d(n0_, n1_, n2_, r(), c(), FFTW_ESTIMATE);
-    bwd_ = fftw_plan_dft_c2r_3d(n0_, n1_, n2_, c(), r(), FFTW_ESTIMATE);
-    if (!fwd_ || !bwd_) {
+    fwd_ = fftw_plan_dft_r2c_3d(n0_, n1_, n2_, r(), c(), kPlanFlags);
+    bwd_ = fftw_plan_dft_c2r_3d(n0_, n1_, n2_, c(), r(), kPlanFlags);
+    const int n[3] = {n0_, n1_, n2_};
+    many_fwd_ = fftw_plan_many_dft_r2c(
+        /*rank=*/3, n, /*howmany=*/3, r_many(), /*inembed=*/nullptr,
+        /*istride=*/1, /*idist=*/static_cast<int>(ntot_), c_many(),
+        /*onembed=*/nullptr, /*ostride=*/1, /*odist=*/static_cast<int>(ncplx_),
+        kPlanFlags);
+    many_bwd_ = fftw_plan_many_dft_c2r(
+        /*rank=*/3, n, /*howmany=*/3, c_many(), /*inembed=*/nullptr,
+        /*istride=*/1, /*idist=*/static_cast<int>(ncplx_), r_many(),
+        /*onembed=*/nullptr, /*ostride=*/1, /*odist=*/static_cast<int>(ntot_),
+        kPlanFlags);
+    if (!fwd_ || !bwd_ || !many_fwd_ || !many_bwd_) {
         if (fwd_)
             fftw_destroy_plan(fwd_);
         if (bwd_)
             fftw_destroy_plan(bwd_);
-        fwd_ = bwd_ = nullptr;
+        if (many_fwd_)
+            fftw_destroy_plan(many_fwd_);
+        if (many_bwd_)
+            fftw_destroy_plan(many_bwd_);
+        fwd_ = bwd_ = many_fwd_ = many_bwd_ = nullptr;
         throw std::runtime_error("R2cFft: fftw_plan_dft_* failed");
     }
 }
@@ -82,7 +105,11 @@ R2cFft::~R2cFft() {
         fftw_destroy_plan(fwd_);
     if (bwd_)
         fftw_destroy_plan(bwd_);
-    fwd_ = bwd_ = nullptr;
+    if (many_fwd_)
+        fftw_destroy_plan(many_fwd_);
+    if (many_bwd_)
+        fftw_destroy_plan(many_bwd_);
+    fwd_ = bwd_ = many_fwd_ = many_bwd_ = nullptr;
 }
 
 double* R2cFft::r2() {
@@ -97,13 +124,25 @@ fftw_complex* R2cFft::c2() {
     return c2_.data();
 }
 
+double* R2cFft::r_many() { return r_many_.data(); }
+
+fftw_complex* R2cFft::c_many() { return c_many_.data(); }
+
 void R2cFft::execute_c2r_alt() {
     fftw_execute_dft_c2r(bwd_, c2(), r2());
 }
 
+void R2cFft::execute_many_r2c() {
+    fftw_execute_dft_r2c(many_fwd_, r_many(), c_many());
+}
+
+void R2cFft::execute_many_c2r() {
+    fftw_execute_dft_c2r(many_bwd_, c_many(), r_many());
+}
+
 R2cFft& R2cFft::for_shape(int n0, int n1, int n2) {
     // Thread-local map: each OpenMP thread owns its plans + scratch (no
-    // buffer races). First touch of a shape pays plan cost once.
+    // buffer races). First touch of a shape pays MEASURE plan cost once.
     thread_local std::map<ShapeKey, R2cFft*> cache;
     const ShapeKey key{n0, n1, n2};
     auto it = cache.find(key);
@@ -128,9 +167,9 @@ C2cFft::C2cFft(int n0, int n1, int n2)
     std::lock_guard<std::mutex> lock(fftw_plan_mutex());
     ensure_fftw_threads();
     fwd_ = fftw_plan_dft_3d(n0_, n1_, n2_, in(), out(), FFTW_FORWARD,
-                            FFTW_ESTIMATE);
+                            kPlanFlags);
     bwd_ = fftw_plan_dft_3d(n0_, n1_, n2_, in(), out(), FFTW_BACKWARD,
-                            FFTW_ESTIMATE);
+                            kPlanFlags);
     if (!fwd_ || !bwd_) {
         if (fwd_)
             fftw_destroy_plan(fwd_);
