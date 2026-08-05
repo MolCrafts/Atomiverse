@@ -141,6 +141,11 @@ OtFixedResult ot_minimize_fixed(const RealMatrix& H, const RealMatrix& S,
 }
 
 // ── OT orbital DIIS (CP2K ot_diis_step, SAFE_DIIS) ─────────────────────────
+//
+// DIIS B matrix uses CP2K's default g·e metric (qs_ot_minimizer.F):
+//   when adding history index j, B_ij = −s ⟨g_j, e_i⟩ for i ≤ j, then
+//   B_ji = B_ij. The e·e Pulay form is available in CP2K but is the slower
+//   of the two options there; product path matches the default.
 
 OtOrbitalDiis::OtOrbitalDiis(int depth, double stepsize)
     : depth_(std::max(1, depth)), stepsize_(stepsize) {}
@@ -148,7 +153,27 @@ OtOrbitalDiis::OtOrbitalDiis(int depth, double stepsize)
 void OtOrbitalDiis::reset() {
     hist_x_.clear();
     hist_e_.clear();
+    hist_g_.clear();
 }
+
+namespace {
+
+/// Rebuild B from a sliding window with CP2K column-j g·e fills.
+void fill_diis_B_ge(RealMatrix& B, const std::vector<RealMatrix>& hist_g,
+                    const std::vector<RealMatrix>& hist_e, double s, int m) {
+    for (int j = 0; j < m; ++j) {
+        for (int i = 0; i <= j; ++i) {
+            // B_ij = −s ⟨g_j, e_i⟩  (CP2K ot_diis_step default branch)
+            const double bij =
+                -s * frob(hist_g[static_cast<std::size_t>(j)],
+                          hist_e[static_cast<std::size_t>(i)]);
+            B(i, j) = bij;
+            B(j, i) = bij;
+        }
+    }
+}
+
+} // namespace
 
 RealMatrix OtOrbitalDiis::step(const RealMatrix& x, const RealMatrix& g,
                                const RealMatrix& precond_g) {
@@ -157,9 +182,11 @@ RealMatrix OtOrbitalDiis::step(const RealMatrix& x, const RealMatrix& g,
 
     hist_x_.push_back(x);
     hist_e_.push_back(e);
+    hist_g_.push_back(g);
     if (static_cast<int>(hist_x_.size()) > depth_) {
         hist_x_.erase(hist_x_.begin());
         hist_e_.erase(hist_e_.begin());
+        hist_g_.erase(hist_g_.begin());
     }
     const int m = static_cast<int>(hist_x_.size());
 
@@ -169,20 +196,13 @@ RealMatrix OtOrbitalDiis::step(const RealMatrix& x, const RealMatrix& g,
     if (m == 1)
         return sd();
 
-    // DIIS B_ij = e_i · e_j  (error-vector metric; standard Pulay form).
-    // CP2K also supports a g·e metric; e·e is stable and matches common
-    // orbital-DIIS practice. Solve  [B  1] [c] = [0]
-    //                               [1ᵀ 0] [λ]   [1]
+    // Solve  [B  1] [c] = [0]  with CP2K g·e B
+    //        [1ᵀ 0] [λ]   [1]
     const int nsys = m + 1;
     RealMatrix B = xt::zeros<double>({nsys, nsys});
     RealMatrix rhs = xt::zeros<double>({nsys, 1});
+    fill_diis_B_ge(B, hist_g_, hist_e_, stepsize_, m);
     for (int i = 0; i < m; ++i) {
-        for (int j = 0; j <= i; ++j) {
-            const double bij = frob(hist_e_[static_cast<std::size_t>(i)],
-                                    hist_e_[static_cast<std::size_t>(j)]);
-            B(i, j) = bij;
-            B(j, i) = bij;
-        }
         B(i, m) = 1.0;
         B(m, i) = 1.0;
     }
@@ -224,13 +244,16 @@ RealMatrix OtOrbitalDiis::step(const RealMatrix& x, const RealMatrix& g,
 RealMatrix OtOrbitalDiis::direction(const RealMatrix& g,
                                     const RealMatrix& precond_g) {
     // Error = −P⁻¹ g (unit-scale; Armijo chooses the actual step length).
+    // Metric uses s=1 so B_ij = −⟨g_j, e_i⟩ = ⟨g_j, P⁻¹ g_i⟩.
     RealMatrix e = -precond_g;
     hist_e_.push_back(e);
+    hist_g_.push_back(g);
     // Keep x-history as zeros so step() and direction() share the same
     // ring buffer length discipline.
     hist_x_.push_back(xt::zeros<double>(g.shape()));
     if (static_cast<int>(hist_e_.size()) > depth_) {
         hist_e_.erase(hist_e_.begin());
+        hist_g_.erase(hist_g_.begin());
         hist_x_.erase(hist_x_.begin());
     }
     const int m = static_cast<int>(hist_e_.size());
@@ -241,13 +264,8 @@ RealMatrix OtOrbitalDiis::direction(const RealMatrix& g,
     const int nsys = m + 1;
     RealMatrix B = xt::zeros<double>({nsys, nsys});
     RealMatrix rhs = xt::zeros<double>({nsys, 1});
+    fill_diis_B_ge(B, hist_g_, hist_e_, /*s=*/1.0, m);
     for (int i = 0; i < m; ++i) {
-        for (int j = 0; j <= i; ++j) {
-            const double bij = frob(hist_e_[static_cast<std::size_t>(i)],
-                                    hist_e_[static_cast<std::size_t>(j)]);
-            B(i, j) = bij;
-            B(j, i) = bij;
-        }
         B(i, m) = 1.0;
         B(m, i) = 1.0;
     }

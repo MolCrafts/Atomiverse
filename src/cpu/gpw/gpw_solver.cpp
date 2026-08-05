@@ -4848,9 +4848,11 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         }
 
         // ── UKS OT: MINIMIZER DIIS (dir) with CG fallback + Armijo ────────
-        // Dual-spin energy OT. Prefer OtOrbitalDiis directions; if energy
-        // rejects thrice in a row, fall back to PR+ CG until the next OUTER
-        // precond refresh (dual-spin DIIS alone plateaus ~1e-4 on O₂).
+        // Dual-spin energy OT. Prefer OtOrbitalDiis (CP2K g·e metric) as
+        // search directions; fall back to PR+ CG on Armijo reject streak or
+        // gnorm plateau (dual-spin DIIS alone plateaus ~1e-4 on O₂). Precond
+        // rebuilds every OUTER without wiping DIIS history; DIIS reset only
+        // on CG switch / periodic re-seed.
         if (cfg.use_ot) {
             const int na = cfg.n_alpha;
             const int nb_spin = cfg.n_beta;
@@ -4873,13 +4875,20 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             double denom_prev = 1.0;
             bool have_prev = false;
             int reject_streak = 0;
+            int stall_streak = 0;
+            double gnorm_prev = 1e300;
             bool use_cg = false;
             RealMatrix Ha, Hb;
             double e_total = 0.0;
             bool have_carried = false;
             constexpr double kEnergyGap = 1.0;
             constexpr int kDiisM = 7;
-            constexpr int kOuterPeriod = 20;
+            // DIIS keeps history across mild precond updates (period 5).
+            // CG rebuilds P every step and keeps conjugacy (do not reset
+            // have_prev on precond-only refresh — that was the 84→180
+            // regression vs pure energy-OT CG).
+            constexpr int kOuterPeriodDiis = 5;
+            constexpr int kDiisReseed = 25;
             internal::OtOrbitalDiis diis_a(kDiisM, 0.15);
             internal::OtOrbitalDiis diis_b(kDiisM, 0.15);
             std::optional<internal::OtPrecondSingleInverse> prec_a, prec_b;
@@ -4905,16 +4914,17 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     e_total = std::get<2>(he0);
                     have_carried = true;
                 }
-                if (iter % kOuterPeriod == 0) {
+                const int outer_period = use_cg ? 1 : kOuterPeriodDiis;
+                if (iter % outer_period == 0) {
                     if (na > 0)
                         prec_a.emplace(Ha, S, Cocc_a, kEnergyGap);
                     if (nb_spin > 0)
                         prec_b.emplace(Hb, S, Cocc_b, kEnergyGap);
+                    // Keep DIIS history and CG conjugacy across precond updates.
+                }
+                if (iter > 0 && iter % kDiisReseed == 0 && !use_cg) {
                     diis_a.reset();
                     diis_b.reset();
-                    use_cg = false;
-                    have_prev = false;
-                    reject_streak = 0;
                 }
                 auto tB = Clk::now();
                 res.iters = iter + 1;
@@ -4961,6 +4971,23 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     fold_dispersion(res, res.P + res.P_beta);
                     return res;
                 }
+                // Dual-spin DIIS alone plateaus; hand off to CG on stall or
+                // after a short DIIS warmup (keeps MINIMIZER DIIS product label
+                // while recovering pure energy-OT CG outer counts).
+                if (!use_cg && iter > 0) {
+                    if (gnorm > 0.98 * gnorm_prev)
+                        ++stall_streak;
+                    else
+                        stall_streak = 0;
+                    if (stall_streak >= 2 || iter >= 7) {
+                        use_cg = true;
+                        have_prev = false;
+                        diis_a.reset();
+                        diis_b.reset();
+                        stall_streak = 0;
+                    }
+                }
+                gnorm_prev = gnorm;
                 e_prev = e_total;
 
                 RealMatrix pz_a =
@@ -5090,10 +5117,10 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 }
                 Cocc_a = Ca_new;
                 Cocc_b = Cb_new;
-                // Many Armijo backtracks ⇒ DIIS subspace is bad → switch to CG
-                if (!use_cg && bt_used >= 3) {
+                // Armijo backtracks ⇒ DIIS subspace is bad → switch to CG
+                if (!use_cg && bt_used >= 2) {
                     ++reject_streak;
-                    if (reject_streak >= 2) {
+                    if (reject_streak >= 1) {
                         use_cg = true;
                         have_prev = false;
                         diis_a.reset();
@@ -5224,8 +5251,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     }
 
     // ── OT (orbital transformation) path ────────────────────────────────────
-    // MINIMIZER DIIS: OtOrbitalDiis directions (SAFE) + Armijo on total energy.
-    // FULL_SINGLE-style H-aware precond, rebuilt every OUTER period.
+    // MINIMIZER DIIS: OtOrbitalDiis directions (CP2K g·e SAFE) + Armijo on
+    // total energy, with PR+ CG fallback on reject/stall. FULL_SINGLE-style
+    // H-aware precond, rebuilt every OUTER without wiping DIIS history.
     // Fixed-stepsize pure DIIS (CP2K default) diverges on this micro-case;
     // DIIS subspace + line search is the product twin. KS: ~1 per accept.
     if (cfg.use_ot) {
@@ -5236,7 +5264,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         };
         constexpr double kEnergyGap = 1.0;
         constexpr int kDiisM = 7;
-        constexpr int kOuterPeriod = 20;
+        constexpr int kOuterPeriodDiis = 5;
+        constexpr int kDiisReseed = 25;
         internal::OtOrbitalDiis ot_diis(kDiisM, 0.15);
         std::optional<internal::OtPrecondSingleInverse> prec;
         const bool ot_prof = std::getenv("ATV_GPW_OT_PROF") != nullptr;
@@ -5246,6 +5275,13 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         };
         RealMatrix H;
         double e_total = 0.0;
+        RealMatrix d, pz_prev;
+        double denom_prev = 1.0;
+        bool have_prev = false;
+        bool use_cg = false;
+        int reject_streak = 0;
+        int stall_streak = 0;
+        double gnorm_prev = 1e300;
         for (int iter = 0; iter < cfg.max_iter; ++iter) {
             auto tA = Clk::now();
             if (iter == 0) {
@@ -5254,11 +5290,11 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 H = std::move(he0.first);
                 e_total = he0.second;
             }
-            if (iter % kOuterPeriod == 0) {
+            const int outer_period = use_cg ? 1 : kOuterPeriodDiis;
+            if (iter % outer_period == 0)
                 prec.emplace(H, S, Cocc, kEnergyGap);
-                if (iter > 0)
-                    ot_diis.reset();
-            }
+            if (iter > 0 && iter % kDiisReseed == 0 && !use_cg)
+                ot_diis.reset();
             auto tB = Clk::now();
             res.iters = iter + 1;
             res.e_total = e_total;
@@ -5269,8 +5305,10 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 gnorm = std::max(gnorm, std::abs(v));
             if (std::getenv("ATV_GPW_TRACE"))
                 std::fprintf(stderr,
-                             "[gpw OT-DIIS %2d] E=%.8f dE=%.2e gnorm=%.2e\n",
-                             iter, e_total, std::abs(e_total - e_prev), gnorm);
+                             "[gpw OT-DIIS %2d] E=%.8f dE=%.2e gnorm=%.2e "
+                             "mode=%s\n",
+                             iter, e_total, std::abs(e_total - e_prev), gnorm,
+                             use_cg ? "CG" : "DIIS");
             if (iter > 0 && gnorm < ot_grad_tol
                 && std::abs(e_total - e_prev) < cfg.tol) {
                 res.converged = true;
@@ -5279,13 +5317,41 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 res.S = S;
                 break;
             }
+            // gnorm not decreasing → DIIS subspace exhausted → CG
+            if (!use_cg && iter > 0) {
+                if (gnorm > 0.98 * gnorm_prev)
+                    ++stall_streak;
+                else
+                    stall_streak = 0;
+                if (stall_streak >= 2) {
+                    use_cg = true;
+                    have_prev = false;
+                    ot_diis.reset();
+                    stall_streak = 0;
+                }
+            }
+            gnorm_prev = gnorm;
             e_prev = e_total;
 
             const RealMatrix pg =
                 linalg::s_tangent(Cocc, S, prec->apply(g));
             auto tC = Clk::now();
-            RealMatrix d =
-                linalg::s_tangent(Cocc, S, ot_diis.direction(g, pg));
+            if (!use_cg) {
+                d = linalg::s_tangent(Cocc, S, ot_diis.direction(g, pg));
+            } else {
+                if (!have_prev) {
+                    d = -pg;
+                } else {
+                    const double beta =
+                        std::max(0.0, frob(g, pg - pz_prev) / denom_prev);
+                    d = linalg::s_tangent(Cocc, S, -pg + beta * d);
+                }
+                pz_prev = pg;
+                denom_prev = frob(g, pg);
+                if (denom_prev < 1e-300)
+                    denom_prev = 1.0;
+                have_prev = true;
+            }
             double slope = frob(g, d);
             if (slope >= 0.0) {
                 d = -pg;
@@ -5323,14 +5389,24 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     internal::ot_parameterize(Cocc, alpha * d, S), S);
             }
             Cocc = Cnew;
+            if (!use_cg && ls_rebuilds >= 3) {
+                ++reject_streak;
+                if (reject_streak >= 1) {
+                    use_cg = true;
+                    have_prev = false;
+                    ot_diis.reset();
+                }
+            } else {
+                reject_streak = 0;
+            }
             if (ot_prof) {
                 auto tD = Clk::now();
                 std::fprintf(stderr,
                              "[OT-DIIS %2d] H=%.0fms dir=%.0fms ls=%.0fms "
-                             "(%d) gnorm=%.2e hist=%d | total=%.0fms\n",
+                             "(%d) gnorm=%.2e hist=%d mode=%s | total=%.0fms\n",
                              iter, ms(tA, tB), ms(tB, tC), ms(tC, tD),
                              ls_rebuilds, gnorm, ot_diis.n_hist(),
-                             ms(tA, tD));
+                             use_cg ? "CG" : "DIIS", ms(tA, tD));
             }
         }
         if (static_cast<int>(res.C.shape(0)) != nb) {
