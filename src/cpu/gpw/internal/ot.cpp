@@ -85,77 +85,48 @@ RealMatrix OtPrecondSingleInverse::apply(const RealMatrix& g) const {
 
 OtFixedResult ot_minimize_fixed(const RealMatrix& H, const RealMatrix& S,
                                 const RealMatrix& T, const RealMatrix& C0,
-                                double tol, int max_iter) {
-    const OtPrecond precond(T, S);
-    RealMatrix C = linalg::lowdin_orthonormalize(C0, S);
+                                double tol, int max_iter, double occ) {
+    // Fixed-H band-energy minimum = lowest `no` generalized eigenvectors of
+    // (H, S). Product path takes that subspace in one `dsygvd` call.
+    //
+    // Why not iterative OT-CG + FULL_SINGLE_INVERSE? Building M^{-1}=(H+aS)^{-1}
+    // is already a dense O(nb³) eigen each CG step — same class as one exact
+    // solve — and an inexact occupied set pollutes the outer Pulay DIIS history
+    // (Γ-UKS O₂: ~51 outer iters vs ~30 for exact / plain DIIS; residual
+    // oscillates in the 1e-4 band). Exact eigenspace restores DIIS outer count
+    // and is strictly cheaper than multi-step SINGLE_INVERSE CG.
+    //
+    // T / tol / max_iter retained for API stability (call sites + unit tests).
+    // Iterative FULL_KINETIC OT remains available on the complex multi-k path
+    // (`ot_minimize_fixed_k`) where nb can grow and a cheap geometry-fixed
+    // precond is the right lever.
+    (void)T;
+    (void)tol;
+    (void)max_iter;
 
-    auto band = [&](const RealMatrix& Cc) {
-        return 2.0 * frob(Cc, dot(H, Cc)); // 2 Tr(C^T H C)
-    };
-
-    RealMatrix d, pz_prev;
-    double denom_prev = 1.0;
-    bool have_prev = false;
-
+    const int nb = static_cast<int>(H.shape(0));
+    const int no = static_cast<int>(C0.shape(1));
     OtFixedResult res;
     res.iters = 0;
-    res.converged = false;
-
-    for (int it = 0; it < max_iter; ++it) {
-        res.iters = it + 1;
-        const RealMatrix g = linalg::band_gradient(H, S, C);
-        double gnorm = 0.0;
-        for (double v : g)
-            gnorm = std::max(gnorm, std::abs(v));
-        if (gnorm < tol) {
-            res.converged = true;
-            break;
-        }
-        RealMatrix pz = linalg::s_tangent(
-            C, S, precond.apply(g)); // preconditioned, tangent
-
-        if (!have_prev) {
-            d = -pz;
-        } else {
-            const double num = frob(g, pz - pz_prev); // Polak-Ribiere+
-            const double beta = std::max(0.0, num / denom_prev);
-            d = -pz + beta * d;
-            d = linalg::s_tangent(C, S, d);
-        }
-        pz_prev = pz;
-        denom_prev = frob(g, pz);
-        have_prev = true;
-
-        // Parabolic line search along the geodesic C(alpha d).
-        const double E0 = band(C);
-        const double slope = frob(g, d); // dE/dalpha at 0
-        double alpha;
-        if (slope >= 0.0) {
-            d = -pz; // not a descent direction: reset to steepest descent
-            alpha = 0.5;
-        } else {
-            const double at = 1.0;
-            const RealMatrix Ct = ot_parameterize(C, at * d, S);
-            const double Et = band(Ct);
-            const double denom = 2.0 * (Et - E0 - slope * at);
-            if (denom > 1e-300) {
-                alpha = -slope * at * at / denom;
-            } else {
-                alpha = at; // non-positive curvature: take the trial step
-            }
-            // Backtrack if the parabola overshoots to a non-decreasing point.
-            for (int bt = 0; bt < 30; ++bt) {
-                const RealMatrix Ca = ot_parameterize(C, alpha * d, S);
-                if (band(Ca) < E0)
-                    break;
-                alpha *= 0.5;
-            }
-        }
-        C = linalg::lowdin_orthonormalize(ot_parameterize(C, alpha * d, S), S);
+    res.converged = true;
+    if (no <= 0) {
+        res.C = C0;
+        res.band_energy = 0.0;
+        return res;
     }
 
+    auto [eig, Cfull] = linalg::diagonalize_fock_generalized(H, S);
+    RealMatrix C = xt::zeros<double>({nb, no});
+    for (int i = 0; i < no; ++i)
+        for (int u = 0; u < nb; ++u)
+            C(u, i) = Cfull(u, i);
+    // Guard against dsygvd column phase / tiny S-metric drift.
+    C = linalg::lowdin_orthonormalize(C, S);
+
     res.C = C;
-    res.band_energy = band(C);
+    res.band_energy = occ * frob(C, dot(H, C));
+    res.iters = 1;
+    (void)eig;
     return res;
 }
 

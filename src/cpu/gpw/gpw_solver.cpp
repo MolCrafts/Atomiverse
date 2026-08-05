@@ -4847,18 +4847,12 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             return res;
         }
 
-        // ── UKS OT (orbital transformation) ────────────────────────────────
-        // Independent S-orthonormal occupied manifolds per spin; joint CG
-        // step with Armijo line search on the rebuilt total energy. Gradient
-        // uses open-shell occupation (occ=1). Same fixed point as DIIS UKS.
-        // Dudarev DFT+U is included: build_uks_H applies PLUS_U to Ha/Hb and
-        // folds e_dftu into the total energy used by Armijo (product path).
+        // ── UKS OT: DIIS outer + fixed-H OT eigensolve (mirror Γ RKS) ─────
+        // Per-spin Pulay DIIS on Ha/Hb; occupied subspaces from
+        // `ot_minimize_fixed(..., occ=1)`. Same SC fixed point as DIIS UKS.
         if (cfg.use_ot) {
             const int na = cfg.n_alpha;
             const int nb_spin = cfg.n_beta;
-            // Seed from Ca_prev/Cb_prev so dual-spin natural-orbital warm-start
-            // (ASPC density guess) can differ per spin; cold path sets both
-            // equal to C0 (core-guess) so this is bit-equivalent to reading C0.
             RealMatrix Cocc_a =
                 na > 0 ? linalg::lowdin_orthonormalize(
                              RealMatrix(xt::view(Ca_prev, xt::all(),
@@ -4871,59 +4865,52 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                                                       xt::range(0, nb_spin))),
                                   S)
                             : RealMatrix(xt::zeros<double>({nb, 0}));
+            Pa = na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
+                        : RealMatrix(xt::zeros<double>({nb, nb}));
+            Pb = nb_spin > 0
+                     ? linalg::build_density_matrix(Cocc_b, nb_spin, nb, 1.0)
+                     : RealMatrix(xt::zeros<double>({nb, nb}));
 
-            auto frob = [](const RealMatrix& a, const RealMatrix& b) {
-                return xt::sum(a * b)();
+            internal::GpwDiis diis_a_ot(use_diis ? cfg.diis_depth : 1);
+            internal::GpwDiis diis_b_ot(use_diis ? cfg.diis_depth : 1);
+            constexpr double kInnerTol = 1e-6;
+            constexpr int kInnerMax = 80;
+            const bool ot_prof = std::getenv("ATV_GPW_OT_PROF") != nullptr;
+            using Clk = std::chrono::steady_clock;
+            auto ms = [](Clk::time_point a, Clk::time_point b) {
+                return std::chrono::duration<double, std::milli>(b - a).count();
             };
-            RealMatrix d_a, d_b, pz_a_prev, pz_b_prev;
-            double denom_prev = 1.0;
-            bool have_prev = false;
-            // Carried KS state (Γ RKS OT economics): accepted Armijo trial's
-            // (Ha,Hb,E) becomes E(0) of the next outer — ~1 KS build / OT step.
             RealMatrix Ha, Hb;
-            double e_total = 0.0;
-            bool have_carried = false;
-
             for (int iter = 0; iter < cfg.max_iter; ++iter) {
-                if (!have_carried) {
-                    Pa = na > 0
-                             ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
-                             : RealMatrix(xt::zeros<double>({nb, nb}));
-                    Pb = nb_spin > 0
-                             ? linalg::build_density_matrix(Cocc_b, nb_spin, nb,
-                                                            1.0)
-                             : RealMatrix(xt::zeros<double>({nb, nb}));
-                    auto he0 = build_uks_H(Pa, Pb);
-                    Ha = std::move(std::get<0>(he0));
-                    Hb = std::move(std::get<1>(he0));
-                    e_total = std::get<2>(he0);
-                    have_carried = true;
-                }
+                auto tA = Clk::now();
+                auto he = build_uks_H(Pa, Pb);
+                Ha = std::move(std::get<0>(he));
+                Hb = std::move(std::get<1>(he));
+                const double e_total = std::get<2>(he);
+                auto tB = Clk::now();
                 res.iters = iter + 1;
                 res.e_total = e_total;
 
-                RealMatrix g_a = na > 0
-                                     ? linalg::band_gradient(Ha, S, Cocc_a, 1.0)
-                                     : RealMatrix(xt::zeros<double>({nb, 0}));
-                RealMatrix g_b = nb_spin > 0
-                                     ? linalg::band_gradient(Hb, S, Cocc_b, 1.0)
-                                     : RealMatrix(xt::zeros<double>({nb, 0}));
-                double gnorm = 0.0;
-                for (double v : g_a)
-                    gnorm = std::max(gnorm, std::abs(v));
-                for (double v : g_b)
-                    gnorm = std::max(gnorm, std::abs(v));
+                const RealMatrix err_a =
+                    internal::gpw_diis_error(Ha, Pa, S, orth().X);
+                const RealMatrix err_b =
+                    internal::gpw_diis_error(Hb, Pb, S, orth().X);
+                double err_norm = 0.0;
+                for (const double v : err_a)
+                    err_norm = std::max(err_norm, std::abs(v));
+                for (const double v : err_b)
+                    err_norm = std::max(err_norm, std::abs(v));
 
                 if (std::getenv("ATV_GPW_TRACE"))
-                    std::fprintf(stderr,
-                                 "[gpw UKS OT %2d] E=%.8f  T=%.4f loc=%.4f "
-                                 "es=%.4f xc=%.4f U=%.4f  dE=%.2e gnorm=%.2e\n",
-                                 iter, e_total, res.e_kinetic, res.e_loc_sr,
-                                 res.e_es, res.e_xc, res.e_dftu,
-                                 std::abs(e_total - e_prev), gnorm);
+                    std::fprintf(
+                        stderr,
+                        "[gpw UKS OT-DIIS %2d] E=%.8f dE=%.2e err=%.2e U=%.4f\n",
+                        iter, e_total, std::abs(e_total - e_prev), err_norm,
+                        res.e_dftu);
 
-                if (iter > 0 && gnorm < ot_grad_tol
-                    && std::abs(e_total - e_prev) < cfg.tol) {
+                const double err_gate = do_dftu ? 5e-3 : kDiisErrTol;
+                if (iter > 0 && std::abs(e_total - e_prev) < cfg.tol
+                    && err_norm < err_gate) {
                     res.converged = true;
                     store_converged_state_uks(res, Ha, Hb, orth().X, S, na,
                                               nb_spin, nb);
@@ -4933,8 +4920,7 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     fold_dispersion(res, res.P + res.P_beta);
                     return res;
                 }
-                // DFT+U: accept an energy plateau after a few OT steps even if
-                // the projected gradient sits just above the soft floor.
+                // DFT+U soft plateau (same as prior UKS OT / DIIS gates).
                 if (do_dftu && iter >= 5
                     && std::abs(e_total - e_prev) < cfg.tol) {
                     res.converged = true;
@@ -4948,152 +4934,65 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 }
                 e_prev = e_total;
 
-                // Per-spin FULL_SINGLE_INVERSE preconditioner + PR+ CG.
-                RealMatrix pz_a, pz_b;
+                RealMatrix Ha_use = Ha;
+                RealMatrix Hb_use = Hb;
+                if (use_diis) {
+                    Ha_use = diis_a_ot.step(Ha, err_a);
+                    Hb_use = diis_b_ot.step(Hb, err_b);
+                }
+
+                int inner_a = 0, inner_b = 0;
                 if (na > 0) {
-                    const internal::OtPrecondSingleInverse pre_a(Ha, S, Cocc_a);
-                    pz_a = linalg::s_tangent(Cocc_a, S, pre_a.apply(g_a));
-                } else {
-                    pz_a = RealMatrix(xt::zeros<double>({nb, 0}));
+                    const auto ot_a = internal::ot_minimize_fixed(
+                        Ha_use, S, T, Cocc_a, kInnerTol, kInnerMax, 1.0);
+                    Cocc_a = ot_a.C;
+                    inner_a = ot_a.iters;
                 }
                 if (nb_spin > 0) {
-                    const internal::OtPrecondSingleInverse pre_b(Hb, S, Cocc_b);
-                    pz_b = linalg::s_tangent(Cocc_b, S, pre_b.apply(g_b));
-                } else {
-                    pz_b = RealMatrix(xt::zeros<double>({nb, 0}));
+                    const auto ot_b = internal::ot_minimize_fixed(
+                        Hb_use, S, T, Cocc_b, kInnerTol, kInnerMax, 1.0);
+                    Cocc_b = ot_b.C;
+                    inner_b = ot_b.iters;
                 }
 
-                if (!have_prev) {
-                    if (na > 0)
-                        d_a = RealMatrix(-pz_a);
-                    if (nb_spin > 0)
-                        d_b = RealMatrix(-pz_b);
-                } else {
-                    double num = 0.0;
-                    if (na > 0)
-                        num += frob(g_a, RealMatrix(pz_a - pz_a_prev));
-                    if (nb_spin > 0)
-                        num += frob(g_b, RealMatrix(pz_b - pz_b_prev));
-                    const double beta = std::max(0.0, num / denom_prev);
-                    if (na > 0)
-                        d_a = linalg::s_tangent(Cocc_a, S,
-                                                RealMatrix(-pz_a + beta * d_a));
-                    if (nb_spin > 0)
-                        d_b = linalg::s_tangent(Cocc_b, S,
-                                                RealMatrix(-pz_b + beta * d_b));
-                }
-                pz_a_prev = pz_a;
-                pz_b_prev = pz_b;
-                denom_prev = 0.0;
-                if (na > 0)
-                    denom_prev += frob(g_a, pz_a);
-                if (nb_spin > 0)
-                    denom_prev += frob(g_b, pz_b);
-                if (!(denom_prev > 1e-300))
-                    denom_prev = 1.0;
-                have_prev = true;
-
-                double slope = 0.0;
-                if (na > 0)
-                    slope += frob(g_a, d_a);
-                if (nb_spin > 0)
-                    slope += frob(g_b, d_b);
-                if (slope >= 0.0) {
-                    if (na > 0)
-                        d_a = linalg::s_tangent(Cocc_a, S, -pz_a);
-                    if (nb_spin > 0)
-                        d_b = linalg::s_tangent(Cocc_b, S, -pz_b);
-                    slope = 0.0;
-                    if (na > 0)
-                        slope += frob(g_a, d_a);
-                    if (nb_spin > 0)
-                        slope += frob(g_b, d_b);
-                }
-                // Frozen-H band parabola for initial alpha (occ=1 → Tr(CᵀHC)).
-                auto band = [&](const RealMatrix& Ca_b,
-                                const RealMatrix& Cb_b) {
-                    double e = 0.0;
-                    if (na > 0)
-                        e += frob(Ca_b, xt::linalg::dot(Ha, Ca_b));
-                    if (nb_spin > 0)
-                        e += frob(Cb_b, xt::linalg::dot(Hb, Cb_b));
-                    return e;
-                };
-                const double Eb0 = band(Cocc_a, Cocc_b);
-                const RealMatrix Ca_t1 =
-                    na > 0 ? internal::ot_parameterize(Cocc_a, d_a, S) : Cocc_a;
-                const RealMatrix Cb_t1 =
-                    nb_spin > 0 ? internal::ot_parameterize(Cocc_b, d_b, S)
-                                : Cocc_b;
-                const double Ebt = band(Ca_t1, Cb_t1);
-                const double curv = 2.0 * (Ebt - Eb0 - slope);
-                double alpha = (curv > 1e-300) ? -slope / curv : 1.0;
-                if (!(alpha > 0.0))
-                    alpha = 1.0;
-                alpha = std::min(alpha, 2.0);
-                constexpr double c1 = 1e-4;
-                RealMatrix Cnew_a =
-                    na > 0 ? internal::ot_parameterize(Cocc_a, alpha * d_a, S)
-                           : Cocc_a;
-                RealMatrix Cnew_b =
+                RealMatrix Pa_new =
+                    na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
+                           : RealMatrix(xt::zeros<double>({nb, nb}));
+                RealMatrix Pb_new =
                     nb_spin > 0
-                        ? internal::ot_parameterize(Cocc_b, alpha * d_b, S)
-                        : Cocc_b;
-                if (na > 0)
-                    Cnew_a = linalg::lowdin_orthonormalize(Cnew_a, S);
-                if (nb_spin > 0)
-                    Cnew_b = linalg::lowdin_orthonormalize(Cnew_b, S);
-                // Each trial builds full (Ha,Hb,E); accepted pair is carried.
-                // Retry alpha = true-energy quadratic through (0,E0,slope) and
-                // (α,E_t), clamped to [0.1,0.5]·α (Γ RKS OT parity).
-                for (int bt = 0; bt < 50; ++bt) {
-                    const RealMatrix Pa_t =
-                        na > 0
-                            ? linalg::build_density_matrix(Cnew_a, na, nb, 1.0)
-                            : RealMatrix(xt::zeros<double>({nb, nb}));
-                    const RealMatrix Pb_t =
-                        nb_spin > 0 ? linalg::build_density_matrix(
-                                          Cnew_b, nb_spin, nb, 1.0)
-                                    : RealMatrix(xt::zeros<double>({nb, nb}));
-                    auto trial = build_uks_H(Pa_t, Pb_t);
-                    const double et = std::get<2>(trial);
-                    if (et <= e_total + c1 * alpha * slope || bt == 49) {
-                        Ha = std::move(std::get<0>(trial));
-                        Hb = std::move(std::get<1>(trial));
-                        e_total = et;
-                        break;
+                        ? linalg::build_density_matrix(Cocc_b, nb_spin, nb, 1.0)
+                        : RealMatrix(xt::zeros<double>({nb, nb}));
+                if (use_diis) {
+                    if (do_dftu) {
+                        const double a =
+                            std::min(std::max(cfg.mix, 0.15), 0.6);
+                        Pa = (1.0 - a) * Pa + a * Pa_new;
+                        Pb = (1.0 - a) * Pb + a * Pb_new;
+                    } else {
+                        Pa = std::move(Pa_new);
+                        Pb = std::move(Pb_new);
                     }
-                    const double denom = et - e_total - slope * alpha;
-                    const double a_q = (denom > 1e-300)
-                                           ? -slope * alpha * alpha / (2.0 * denom)
-                                           : 0.5 * alpha;
-                    alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
-                    if (na > 0) {
-                        Cnew_a =
-                            internal::ot_parameterize(Cocc_a, alpha * d_a, S);
-                        Cnew_a = linalg::lowdin_orthonormalize(Cnew_a, S);
-                    }
-                    if (nb_spin > 0) {
-                        Cnew_b =
-                            internal::ot_parameterize(Cocc_b, alpha * d_b, S);
-                        Cnew_b = linalg::lowdin_orthonormalize(Cnew_b, S);
-                    }
+                } else {
+                    Pa = (1.0 - cfg.mix) * Pa + cfg.mix * Pa_new;
+                    Pb = (1.0 - cfg.mix) * Pb + cfg.mix * Pb_new;
                 }
-                if (na > 0)
-                    Cocc_a = Cnew_a;
-                if (nb_spin > 0)
-                    Cocc_b = Cnew_b;
-                // Densities for next gradient are implicit in carried H
-                // (built from accepted C); keep Pa/Pb in sync for exits.
-                Pa = na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
-                            : RealMatrix(xt::zeros<double>({nb, nb}));
-                Pb = nb_spin > 0
-                         ? linalg::build_density_matrix(Cocc_b, nb_spin, nb, 1.0)
-                         : RealMatrix(xt::zeros<double>({nb, nb}));
+                if (ot_prof) {
+                    auto tC = Clk::now();
+                    std::fprintf(stderr,
+                                 "[UKS OT-DIIS %2d] KS=%.0fms inner_a=%d "
+                                 "inner_b=%d err=%.2e | total=%.0fms\n",
+                                 iter, ms(tA, tB), inner_a, inner_b, err_norm,
+                                 ms(tA, tC));
+                }
             }
-            // Budget exhausted: reuse carried (Ha,Hb,E) — no extra KS build.
-            res.e_total = e_total;
-            store_converged_state_uks(res, Ha, Hb, orth().X, S, na, nb_spin, nb);
+            // Budget exhausted: export last densities.
+            {
+                const auto rebuilt = build_uks_H(Pa, Pb);
+                store_converged_state_uks(res, std::get<0>(rebuilt),
+                                          std::get<1>(rebuilt), orth().X, S, na,
+                                          nb_spin, nb);
+                res.e_total = std::get<2>(rebuilt);
+            }
             res.mulliken_spin = internal::mulliken_spin_populations(
                 res.P, res.P_beta, S, ao_tags, static_cast<int>(atoms.size()));
             fold_dispersion(res, res.P + res.P_beta);
@@ -5252,7 +5151,7 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             if (use_diis)
                 H_use = diis.step(H, err);
 
-            // Fixed-H OT → occupied subspace of H_use (FULL_KINETIC precond).
+            // Fixed-H OT → occupied eigenspace of H_use (exact band-energy min).
             const auto ot = internal::ot_minimize_fixed(
                 H_use, S, T, Cocc, kInnerTol, kInnerMax);
             Cocc = ot.C;

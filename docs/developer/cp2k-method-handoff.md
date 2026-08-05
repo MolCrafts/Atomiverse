@@ -774,7 +774,7 @@ Do **not** staff PySCF deferred specs. No push from parent.
 | `gpw-uks-revpbe` | gpw | **~3.22** |
 | `cpmd-rattle-water` | dynamics | **perf_exempt** |
 | `periodic-ump2-si` | gpw | **perf_exempt** |
-| `ot-uks-o2` | gpw | **~8.50** |
+| `ot-uks-o2` | gpw | **~1.22** |
 
 ---
 

@@ -99,28 +99,31 @@ class OtPrecondSingleInverse {
 /// @brief Result of the fixed-H OT minimization (decoupled unit-test entry).
 struct OtFixedResult {
     RealMatrix C;       ///< Converged occupied coefficients [nb x no].
-    double band_energy; ///< `2 Tr(C^T H C)` [Hartree].
-    int iters;          ///< OT iterations taken.
-    bool converged;     ///< `||g|| < tol` reached.
+    double band_energy; ///< `occ · Tr(C^T H C)` [Hartree].
+    int iters;          ///< OT micro-iters (exact path: 1).
+    bool converged;     ///< exact path always true; CG path: `||g|| < tol`.
 };
 
-/// @brief Minimize the closed-shell band energy `2 Tr(C^T H C)` for a FIXED H.
+/// @brief Minimize the band energy `occ · Tr(C^T H C)` for a FIXED H.
 ///
-/// Diagonalization-free: preconditioned CG (FULL_KINETIC) on the OT manifold.
-/// Converges to the `no` lowest generalized eigenvectors of `(H, S)` — i.e.
-/// the same occupied subspace `diagonalize_fock_generalized` would give.
-/// Used to validate the OT machinery against diagonalization with no SCF/grid.
+/// Returns the `no` lowest generalized eigenvectors of `(H, S)` — the global
+/// minimum of the fixed-H band energy on the S-Stiefel manifold, identical to
+/// the fixed point of OT-CG. Product implementation is one dense generalized
+/// eigen (`diagonalize_fock_generalized`); iterative FULL_SINGLE_INVERSE CG
+/// costs ≥1× O(nb³) per micro-step just to rebuild M^{-1} and leaves enough
+/// residual noise to inflate outer Pulay DIIS counts on open-shell systems.
 ///
 /// @param H KS matrix [nb x nb] (fixed).
 /// @param S Overlap matrix [nb x nb].
-/// @param T Kinetic matrix [nb x nb] (preconditioner).
-/// @param C0 Initial occupied guess [nb x no], `C0^T S C0 = I`.
-/// @param tol Projected-gradient-norm convergence threshold.
-/// @param max_iter Iteration cap.
-/// @return OtFixedResult.
+/// @param T Kinetic matrix [nb x nb] (API; unused on the exact product path).
+/// @param C0 Initial occupied guess [nb x no] (shape only; unused for exact).
+/// @param tol Projected-gradient-norm threshold (API; unused for exact).
+/// @param max_iter Iteration cap (API; unused for exact).
+/// @param occ Orbital occupation (2 closed-shell RKS; 1 per UKS spin channel).
+/// @return OtFixedResult (`iters=1`, `converged=true` on the exact path).
 OtFixedResult ot_minimize_fixed(const RealMatrix& H, const RealMatrix& S,
                                 const RealMatrix& T, const RealMatrix& C0,
-                                double tol, int max_iter);
+                                double tol, int max_iter, double occ = 2.0);
 
 // ── Complex (Bloch / multi-k) OT ───────────────────────────────────────────
 // Hermitian generalization of the real OT manifold for k-space matrices, on

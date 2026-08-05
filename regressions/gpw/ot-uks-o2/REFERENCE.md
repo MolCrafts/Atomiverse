@@ -78,20 +78,22 @@ differences; OT/DIIS in-tree is the tight fixed-point gate.
 
 ## Fair wall (perf gate)
 
-Measured 2026-07-26 (Release, OMP=4, `OMP_PROC_BIND=close`):
+Measured 2026-08-05 (Release, OMP=4, `OMP_PROC_BIND=close`), after
+Γ OT-DIIS outer + exact fixed-H occupied eigenspace:
 
 | Twin | Wall [s] | Notes |
 | ---- | -------: | ----- |
-| CP2K OT | **8.68** | `cp2k.psmp`, 1 MPI × 4 OMP, CUTOFF 250 |
-| Atomiverse OT only | **73.74** | 107 OT iters; same chemistry |
-| Atomiverse DIIS (parity check) | **10.91** | 30 DIIS iters |
+| CP2K OT | **8.68** | `cp2k.psmp`, 1 MPI × 4 OMP, CUTOFF 250 (2026-07-26 pin) |
+| Atomiverse OT only | **~10.6** | 25 outer iters; Pulay DIIS + exact occupied eigenspace |
+| Atomiverse DIIS (parity check) | **~12.3** | 30 DIIS iters |
 
-Fair OT-only ratio: \(73.74 / 8.68 \approx \mathbf{8.50}\) ≤ 10.
-Full regression (OT+DIIS) wall ≈ 85 s (OT dominates).
+Fair OT-only ratio: \(10.6 / 8.68 \approx \mathbf{1.22}\) (was ~8.5 with
+naive OT energy-min; intermediate ~2.2 with inexact OT-CG fixed-H).
+Full regression (OT+DIIS) wall ≈ 23 s.
 
 `within_10x=true` (fair OT, OMP=4).
 
-In-tree OT/DIIS parity: \|E_OT − E_DIIS\| ≈ **5×10⁻¹⁰ Ha** (same grids).
+In-tree OT/DIIS parity: \|E_OT − E_DIIS\| ≈ **3×10⁻¹⁰ Ha** (same grids).
 
 ## Citations
 

@@ -1900,7 +1900,7 @@ Defects found and fixed while gating these (each named in its commit):
 - [x] `gpw-uks-revpbe` | Γ-UKS revPBE spin-GGA (`XcKind::RevPBE`) | gpw | `regressions/gpw/gpw-uks-revpbe` | ratio **~3.22** | 2026-07-26
 - [x] `cpmd-rattle-water` | CPMD electronic RATTLE (constraint-preserving) | dynamics | `regressions/dynamics/cpmd-rattle-water` | ratio **perf_exempt** | 2026-07-26
 - [x] `periodic-ump2-si` | Unrestricted GPW MP2 (UKS reference) | gpw | `regressions/gpw/periodic-ump2-si` | ratio **perf_exempt** | 2026-07-26
-- [x] `ot-uks-o2` | OT orbital minimizer for Γ-UKS | gpw | `regressions/gpw/ot-uks-o2` | ratio **~8.50** | 2026-07-26
+- [x] `ot-uks-o2` | OT orbital minimizer for Γ-UKS | gpw | `regressions/gpw/ot-uks-o2` | ratio **~1.22** | 2026-08-05 (was ~8.50)
 
 ## done (harness wave 4 2026-07-26)
 

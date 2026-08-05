@@ -76,6 +76,7 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p2-force-kbg-reuse` | 2026-08-04 | SCF hands off geometry-fixed `scf_cbg` / `scf_kbg` (shared_ptr χ^k); force path lazy-caches `force_cbgd` / `force_kbgd`. MG product SCF leaves grids empty (force still builds). Force regs PASS |
 - [x] `p2-fftw-threads-plan` | 2026-08-04 | `ensure_fftw_threads` before plan create (`ATV_GPW_FFTW_THREADS`); OMP static copies in spectral gradient/divergence; XC div epilogue OMP. OT reg dual wall ~9.6 s (was ~9–15) |
 - [x] `p2-ot-outer-diis` | 2026-08-05 | Γ RKS OT = Pulay DIIS outer + `ot_minimize_fixed` eigensolve (no per-step Armijo KS). Water: **28→9** outer iters; dual OT+DIIS wall **~9.6→~4.5 s**; \|E_OT−E_DIIS\| ~1e-12. Pin PASS |
+- [x] `p2-ot-exact-fixed-h` | 2026-08-05 | Fixed-H product path = one generalized eigen (global band-energy min), not iterative FULL_SINGLE_INVERSE CG (rebuilds M⁻¹ = O(nb³)/step and polluted outer DIIS). Γ-UKS O₂: **51→25** outer, OT wall **~19→~10.6 s** (vs DIIS 30/~12 s; vs CP2K OT 8.68 s → **~1.22×**). Water still 9=9. Pins PASS |
 
 ### Fair wall vs CP2K (2026-08-04 post polish, arrhenius1, OMP=4 bind)
 
