@@ -78,16 +78,17 @@ from CP2K (NGRIDS/REL_CUTOFF/collocation). OT vs DIIS in-tree is near machine
 parity on the same grids. Product path stays **single-grid** on this twin:
 product multigrid is a net loss for 3-atom / 10 Å at 250 Ry.
 
-### Fair wall (2026-08-04, OMP=4 bind, arrhenius1)
+### Fair wall (2026-08-05, OMP=4 bind, arrhenius1)
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV reg (OT + DIIS dual) | **~9.6** | 28 OT + 9 DIIS KS builds |
-| ATV OT-only (prof) | **~5.5–6** | setup ~0.7 + 28×~0.18 s |
+| ATV reg (OT + DIIS dual) | **~4.5** | **9 OT + 9 DIIS** KS builds (`p2-ot-outer-diis`) |
+| ATV OT-only (prof) | **~1.6–2** | setup ~0.7 + 9×~0.18 s |
 | CP2K OT quiet | **~4.3** | 19 OT steps, NGRIDS 4 |
 
-Dominant KS cost: GGA spectral `gradient`/`divergence` FFT (~60% of KS).
-Next levers: OT-DIIS / OUTER with mixing (cut outer KS count), faster XC FFT.
+Γ OT is Pulay DIIS on H with fixed-H `ot_minimize_fixed` (no Armijo grid
+rebuild per micro-step). \|E_OT−E_DIIS\| ~1e-12 on this twin. Residual KS cost
+is still GGA spectral FFT; next lever `p2-xc-spectral-fft`.
 
 Measured (2026-07-23): \(\|E_{\mathrm{OT}}-E_{\mathrm{CP2K}}\|=9.90\times10^{-4}\) Ha;
 \(\|E_{\mathrm{OT}}-E_{\mathrm{DIIS}}\|\approx 4\times10^{-11}\) Ha.

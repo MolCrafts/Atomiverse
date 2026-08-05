@@ -5196,59 +5196,50 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     }
 
     // ── OT (orbital transformation) path ────────────────────────────────────
-    // Diagonalization-free SCF: each outer step takes one preconditioned-CG
-    // step on the OT manifold (gradient O(nb²·n_occ), no O(nb³) eigensolve).
-    // Converges to the same gapped ground state as the diagonalization path.
-    // The KS build of the accepted line-search trial is carried into the next
-    // iteration, so one OT step costs ~1 KS build (frozen-H band parabola
-    // seeds alpha; true-energy quadratic interpolation handles retries).
+    // p2-ot-outer-diis: same outer loop as Pulay DIIS / density mixing, but the
+    // occupied eigenspace of H is obtained by fixed-H OT (`ot_minimize_fixed`)
+    // instead of O(nb³) diagonalization. KS builds ≈ DIIS outer count (~10),
+    // not one full rebuild per OT micro-step (~28 on water). Naive OUTER without
+    // DIIS/mix oscillates — DIIS on H is required for a stable fixed point.
     if (cfg.use_ot) {
         RealMatrix Cocc = linalg::lowdin_orthonormalize(
             RealMatrix(xt::view(C0, xt::all(), xt::range(0, cfg.n_occ))), S);
-        auto frob = [](const RealMatrix& a, const RealMatrix& b) {
-            return xt::sum(a * b)();
-        };
-        RealMatrix d, pz_prev;
-        double denom_prev = 1.0;
-        bool have_prev = false;
-        const bool prof = std::getenv("ATV_GPW_OT_PROF") != nullptr;
+        P = linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
+        const bool ot_prof = std::getenv("ATV_GPW_OT_PROF") != nullptr;
         using Clk = std::chrono::steady_clock;
         auto ms = [](Clk::time_point a, Clk::time_point b) {
             return std::chrono::duration<double, std::milli>(b - a).count();
         };
-        // KS state (H, E) carried across iterations: the accepted line-search
-        // trial already built H at the new density, so E(0) is never
-        // re-evaluated at the top of an iteration (CP2K-style OT economics —
-        // ~1 KS build per OT step). Only iter 0 builds from scratch.
+        // Inner OT tol: looser than outer DIIS residual so fixed-H band OT
+        // finishes quickly; outer SC is judged by [H,P] + ΔE.
+        constexpr double kInnerTol = 1e-6;
+        constexpr int kInnerMax = 80;
         RealMatrix H;
-        double e_total = 0.0;
         for (int iter = 0; iter < cfg.max_iter; ++iter) {
             auto tA = Clk::now();
-            if (iter == 0) {
-                P = linalg::build_density_matrix(Cocc, cfg.n_occ, nb,
-                                                 2.0); // 2 Cocc Coccᵀ
-                auto he0 = build_H_and_energy(P);
-                H = std::move(he0.first);
-                e_total = he0.second;
-            }
+            auto he = build_H_and_energy(P);
+            H = std::move(he.first);
+            const double e_total = he.second;
             auto tB = Clk::now();
             res.iters = iter + 1;
             res.e_total = e_total;
-            int ls_rebuilds = 0;
 
-            const RealMatrix g = linalg::band_gradient(H, S, Cocc);
-            double gnorm = 0.0;
-            for (double v : g)
-                gnorm = std::max(gnorm, std::abs(v));
+            const RealMatrix err =
+                internal::gpw_diis_error(H, P, S, orth().X);
+            double err_norm = 0.0;
+            for (const double v : err)
+                err_norm = std::max(err_norm, std::abs(v));
+
             if (std::getenv("ATV_GPW_TRACE"))
                 std::fprintf(
                     stderr,
-                    "[gpw OT %2d] E=%.8f  T=%.4f loc=%.4f es=%.4f xc=%.4f  "
-                    "dE=%.2e gnorm=%.2e\n",
-                    iter, e_total, res.e_kinetic, res.e_loc_sr, res.e_es,
-                    res.e_xc, std::abs(e_total - e_prev), gnorm);
-            if (iter > 0 && gnorm < kOtGradTol
-                && std::abs(e_total - e_prev) < cfg.tol) {
+                    "[gpw OT-DIIS %2d] E=%.8f  dE=%.2e err=%.2e\n", iter,
+                    e_total, std::abs(e_total - e_prev), err_norm);
+
+            const double err_gate = do_dftu ? 5e-3 : kDiisErrTol;
+            const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
+            if (!no_stop && iter > 0 && std::abs(e_total - e_prev) < cfg.tol
+                && err_norm < err_gate) {
                 res.converged = true;
                 store_converged_state(res, H, orth().X, cfg.n_occ, nb);
                 res.H_ks = H;
@@ -5257,91 +5248,36 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             }
             e_prev = e_total;
 
-            // FULL_SINGLE_INVERSE preconditioner: H-aware, rebuilt each step
-            // (CP2K's default for gapped systems; FULL_KINETIC T+S was too weak
-            // and OT crawled). M = H + a S with a below the spectrum -> SPD.
-            const internal::OtPrecondSingleInverse precond(H, S, Cocc);
-            const RealMatrix pz = linalg::s_tangent(Cocc, S, precond.apply(g));
-            auto tC = Clk::now();
-            if (!have_prev) {
-                d = -pz;
-            } else {
-                const double beta =
-                    std::max(0.0, frob(g, pz - pz_prev) / denom_prev);
-                d = linalg::s_tangent(Cocc, S, -pz + beta * d);
-            }
-            pz_prev = pz;
-            denom_prev = frob(g, pz);
-            have_prev = true;
+            RealMatrix H_use = H;
+            if (use_diis)
+                H_use = diis.step(H, err);
 
-            // Monotonic line search on the SCF TOTAL energy E[rho(C)]. The
-            // frozen-H band energy 2 Tr(CᵀHC) is only the local quadratic model;
-            // minimizing *it* overshoots the self-consistent E and let OT wander
-            // (descend then drift up). Armijo acceptance on the rebuilt-H total
-            // energy enforces monotonic descent — every accepted step lowers E.
-            double slope = frob(g, d);
-            if (slope
-                >= 0.0) { // not a descent direction -> restart to (precond) SD
-                d = linalg::s_tangent(Cocc, S, -pz);
-                slope = frob(g, d);
-            }
-            // Curvature-aware initial step from the frozen-H band energy (cheap,
-            // no grid), then Armijo-backtrack on the rebuilt-H total energy. The
-            // band parabola gives a near-optimal first alpha so backtracking
-            // (each trial = a full grid build) is rare.
-            auto band = [&](const RealMatrix& C) {
-                return 2.0 * frob(C, xt::linalg::dot(H, C));
-            };
-            const double Eb0 = band(Cocc);
-            const double Ebt = band(internal::ot_parameterize(Cocc, d, S));
-            const double curv = 2.0 * (Ebt - Eb0 - slope); // parabola curvature
-            double alpha = (curv > 1e-300) ? -slope / curv : 1.0; // vertex
-            if (!(alpha > 0.0))
-                alpha = 1.0;
-            alpha = std::min(alpha, 2.0);
-            constexpr double c1 = 1e-4;
-            // Löwdin-clean every Armijo trial (multi-k parity): without it
-            // trial energies see drifted metric and accept-only clean leaves
-            // a residual floor that thrashing cannot leave.
-            RealMatrix Cnew = internal::ot_parameterize(Cocc, alpha * d, S);
-            Cnew = linalg::lowdin_orthonormalize(Cnew, S);
-            // Each trial's KS build yields (H_t, E_t); the accepted trial's
-            // pair becomes the next iteration's carried state, so acceptance
-            // costs exactly one KS build. On an Armijo failure the retry
-            // alpha is the minimizer of the quadratic through (0, E0, slope)
-            // and (alpha, E_t) on the TRUE SCF energy, safeguarded to
-            // [0.1, 0.5]·alpha (Nocedal–Wright); plain halving only when the
-            // interpolation degenerates (non-convex model).
-            for (int bt = 0; bt < 50; ++bt) {
-                ++ls_rebuilds;
-                auto trial = build_H_and_energy(
-                    linalg::build_density_matrix(Cnew, cfg.n_occ, nb, 2.0));
-                if (trial.second <= e_total + c1 * alpha * slope || bt == 49) {
-                    H = std::move(trial.first);
-                    e_total = trial.second;
-                    break;
+            // Fixed-H OT → occupied subspace of H_use (FULL_KINETIC precond).
+            const auto ot = internal::ot_minimize_fixed(
+                H_use, S, T, Cocc, kInnerTol, kInnerMax);
+            Cocc = ot.C;
+            RealMatrix P_new =
+                linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
+            if (use_diis) {
+                if (do_dftu) {
+                    const double a = std::min(std::max(cfg.mix, 0.15), 0.6);
+                    P = (1.0 - a) * P + a * P_new;
+                } else {
+                    P = std::move(P_new);
                 }
-                const double denom = trial.second - e_total - slope * alpha;
-                const double a_q = (denom > 1e-300)
-                                       ? -slope * alpha * alpha / (2.0 * denom)
-                                       : 0.5 * alpha;
-                alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
-                Cnew = internal::ot_parameterize(Cocc, alpha * d, S);
-                Cnew = linalg::lowdin_orthonormalize(Cnew, S);
+            } else {
+                P = (1.0 - cfg.mix) * P + cfg.mix * P_new;
             }
-            Cocc = Cnew; // already Löwdin-clean
-            if (prof) {
-                auto tD = Clk::now();
+            if (ot_prof) {
+                auto tC = Clk::now();
                 std::fprintf(stderr,
-                             "[OT prof %2d] H_grad=%.0fms precond=%.0fms "
-                             "linesearch=%.0fms (%d rebuilds) | total=%.0fms\n",
-                             iter, ms(tA, tB), ms(tB, tC), ms(tC, tD),
-                             ls_rebuilds, ms(tA, tD));
+                             "[OT-DIIS %2d] KS=%.0fms inner=%.0fms "
+                             "(%d it, conv=%d) err=%.2e | total=%.0fms\n",
+                             iter, ms(tA, tB), ms(tB, tC), ot.iters,
+                             ot.converged ? 1 : 0, err_norm, ms(tA, tC));
             }
         }
-        // Always expose final occupied orbitals, density, and KS matrix so
-        // partial-SCF consumers (SGCP OT corrector, force-at-density) work
-        // even when the solve plateaued short of the tolerance.
+        // Always expose final state (partial-SCF / force consumers).
         if (static_cast<int>(res.C.shape(0)) != nb) {
             res.C = xt::zeros<double>({nb, nb});
             for (int u = 0; u < nb; ++u)
@@ -5350,21 +5286,24 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         }
         {
             const RealMatrix P_final =
-                linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
-            res.P = P_final;
-            // Budget-exhausted path: the accepted line-search trial already
-            // built H at this final density — reuse the carried state instead
-            // of a fresh KS build (converged path set H_ks on exit).
+                (res.P.size() > 0) ? res.P
+                                   : linalg::build_density_matrix(
+                                         Cocc, cfg.n_occ, nb, 2.0);
+            if (res.P.size() == 0)
+                res.P = P_final;
             if (res.H_ks.size() == 0) {
+                if (H.size() == 0) {
+                    auto he = build_H_and_energy(P);
+                    H = std::move(he.first);
+                    res.e_total = he.second;
+                }
                 res.H_ks = std::move(H);
-                res.e_total = e_total;
-                // Virtuals/eps for gpw_forces_from_scf consumers.
                 if (res.eps.empty())
                     store_converged_state(res, res.H_ks, orth().X, cfg.n_occ,
                                           nb);
             }
             res.S = S;
-            fold_dispersion(res, P_final);
+            fold_dispersion(res, (res.P.size() > 0) ? res.P : P_final);
         }
         return res;
     }
