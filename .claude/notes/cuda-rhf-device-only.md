@@ -1,11 +1,11 @@
-# CUDA RHF — device-only HF energy + pure-s forces (2026-07-30)
+# CUDA RHF — device-only HF energy + s/p forces (2026-08-06)
 
 ## Goal
 
 After the public **shape** (`cuda::scf::RHF{basis}.run(frame)`), the energy
 path for systems the device kernels cover must be **CUDA-only**: integrals +
-SCF loop on device, no host ERI materialization. Wave 5 adds pure-s analytic
-forces on device and removes needless mid-path stream fences.
+SCF loop on device, no host ERI materialization. Wave 6 adds **s/p** analytic
+forces on device (ends host force fallback for STO-3G H…O / H₂O).
 
 ## Current wiring (`cuda::scf::RHF::launch`)
 
@@ -15,7 +15,8 @@ forces on device and removes needless mid-path stream fences.
 | STO-3G s/p (l ≤ 1; H…O, H₂O) + `compute_force` | **Device forces**: `launch_build_W_rhf` + `launch_rhf_forces_sp` → `frame.fx/y/z` [eV/Å] |
 | Higher L / other bases | Host fill S/Hcore/ERI → upload → device SCF; host forces |
 
-`level_shift != 0` is refused on the device s/p energy path (not wired).
+`level_shift != 0` is refused on the device s/p energy path (not wired) —
+falls back to host-fill SCF path rather than silent wrong answer.
 
 **DRY:** never retype STO-3G numbers — `basis_data/accessors.h` over `sto3g.h`.
 
@@ -45,6 +46,7 @@ Grok CUDA skills (not ad-hoc style):
 | **4** | **done** | p-shell device integrals (l≤1 MD/OS); H₂O energy cuda-only |
 | **5** | **done** | Pure-s device analytic forces; async density energy write; no mid-build fence before integrals; `forces()` via `run()` |
 | **6** | **done** | s/p device analytic forces (`launch_rhf_forces_sp`); ends host force fallback for l≤1 |
+| **7** | **next** | Device-only polish (residual mid-path H2D/D2H; ERI occupancy) — queue `cuda-rhf-device-only-polish` |
 
 ## Wave 6 layout
 
@@ -57,7 +59,7 @@ Grok CUDA skills (not ad-hoc style):
 | Phase | Traffic |
 |---|---|
 | **Setup** (before SCF) | type[] D2H once (path select + shell table); H2D of α/c/L |
-| **SCF + pure-s forces** | **No** `cudaMemcpy` Device→Host of P, C, ERI, residual, energy, V_nuc |
+| **SCF + s/p forces** | **No** `cudaMemcpy` Device→Host of P, C, ERI, residual, energy, V_nuc |
 | Residual | cuBLAS `nrm2` → `d_residual`; converge flag via **mapped** host page |
 | Energy | cuBLAS `dot` device pointer mode + kernel → `frame.scalars->energy` |
 | V_nuc | stays on `d_V_nuc` for the whole SCF |
@@ -65,12 +67,19 @@ Grok CUDA skills (not ad-hoc style):
 
 ## Host still
 
-- type[] D2H for path select (setup only)  
-- post-calc energy_ha_ / residual mirrors  
-- p-shell forces; host-integral path for non-s/p bases  
+- type[] D2H for path select (setup only)
+- post-calc energy_ha_ / residual mirrors
+- host-integral + host-force path for non-s/p bases (higher L)
+- level_shift ≠ 0 → host-fill SCF path (not device s/p energy)
 
 ## Validation
 
-- GH200: `tests/cuda/scf/test_rhf.cu` — `CUDAForcesMatchCPU_H2_STO3G`,
-  `CUDAForcesMatchFD_H2_STO3G`; pure-s must not call host RHF for forces.
-- H₂ textbook energy ≈ −1.1167 Ha; forces match CPU to ~1e-5 eV/Å.
+- GH200 (merge log `.claude/merge-cuda-rhf-913053.out`, tip `8337251b`):
+  `test_cuda_scf_rhf` + `test_cuda_scf_device_integrals` **100% PASS**.
+- `tests/cuda/scf/test_rhf.cu`:
+  - `CUDAForcesMatchCPU_H2_STO3G` — |ΔF| **1e-5** eV/Å; energy **ha_to_ev(1e-6)**
+  - `CUDAForcesMatchFD_H2_STO3G` — FD bar **5e-2** eV/Å
+  - `CUDAForcesMatchCPU_H2O_STO3G` — |ΔF| **1e-4** eV/Å; `last_force_on_device()`
+  - `CUDAForcesMatchFD_H2O_STO3G` — O-z FD spot **1e-1** eV/Å
+- H₂ textbook energy ≈ −1.1167 Ha; pure-s / s/p must not call host RHF for
+  forces when l≤1.

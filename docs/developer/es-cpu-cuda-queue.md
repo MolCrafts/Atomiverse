@@ -30,8 +30,8 @@ CUDA RHF `.claude/notes/cuda-rhf-device-only.md`.
 
 | Twin | Role |
 | --- | --- |
-| `tests/cuda/scf/test_rhf.cu` | device energy s/p + pure-s forces |
-| H₂O STO-3G RHF | CPU oracle for CUDA energy (same settings) |
+| `tests/cuda/scf/test_rhf.cu` | device energy + s/p forces (H₂ pure-s + H₂O s/p) |
+| H₂O STO-3G RHF | CPU oracle for CUDA energy/forces (same settings) |
 
 ## pending
 
@@ -39,17 +39,18 @@ Wave-1 census on `dev` (2026-08-05): rank by (cpu) worst \(T_{\mathrm{atv}}/T_{\
 
 ### CPU — wall vs CP2K (worst ratio first)
 
-Measured anchors (1 MPI × OMP=4; product MINIMIZER DIIS path on `dev` after `p2-ot-minimizer-diis`):
+Measured anchors on **`dev`** after wave-1 land (`cpu-xc-spectral-fft` + prior OT DIIS path; 1 MPI × OMP=4). OT outer-count still the wall; spectral FFT is per-iter polish only.
 
 | Twin | ATV evidence | CP2K twin | ratio class |
 | --- | --- | --- | --- |
-| `ot-uks-o2` | **180** OT it / **~62 s** (`.uksdiis_out`) | **8.68 s** (OT-only pin) | **~7.1×** worst |
-| `ot-minimizer-water` | **93** OT it (`.otdiis_out`; was ~69) | ~2.7 s older OT class | outer-count dominated |
+| `ot-uks-o2` | **180** OT it / **~62 s** (`.uksdiis_out` on pre-outer tip) | **8.68 s** (OT-only pin) | **~7.1×** worst on `dev` |
+| `ot-minimizer-water` | **93** OT it (`.otdiis_out`); quiet wall ~**16.2 s** post-spectral | ~2.7 s older OT class | outer-count dominated (~**6.0×** quiet) |
 | `gpw-multigrid-kpoints` | MAIN **~2.1 s** | **~1.28 s** quiet | **~1.6×** (≤2× closed) |
 | `gpw-uks-o2-gamma` | DIIS ~19–24 s | ~21 s older | **~1×** |
 
-- [ ] `cpu-ot-diis-outer` | **P0** Tighten Γ OT MINIMIZER DIIS outer count toward CP2K (~30 class): OS projection / derivative quality / SAFE_DIIS + Armijo polish; water **93** it and UKS O₂ **180** it / ~7.1× are the wall. Do **not** restore Pulay-H + exact fixed-H wall hack | track cpu | twin: `ot-uks-o2` then `ot-minimizer-water` | files: `src/cpu/gpw/internal/ot.cpp`, `gpw_solver.cpp` | gate: pins PASS; outer it ↓; \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) ↓; no tol soften; energy-path change ⇒ FD force re-run |
-- [ ] `cpu-xc-spectral-fft` | **P1** GGA KS spectral gradient/div residual (~110 ms of ~180–400 ms KS on OT class): fused multi-out FFT / MEASURE plans / less OMP copy — promoted from gpw-perf `p2-xc-spectral-fft` | track cpu | twin: `ot-minimizer-water` (also helps UKS OT per-iter) | files: `grid_fft.cpp`, `xc_grid_gga.cpp` | gate: KS ms ↓; energy pin stable; four twins no regression |
+*Branch note (not on `dev`):* `wf/escuda-cpu-ot-diis-outer` @ `59d31079` claims water **32** it / UKS O₂ **94** it / ~**3.9×** — merge gate still open (not wave-1 harness done).
+
+- [~] `cpu-ot-diis-outer` | **P0** Tighten Γ OT MINIMIZER DIIS outer count toward CP2K (~30 class): OS projection / derivative quality / SAFE_DIIS + Armijo polish; water **93** it and UKS O₂ **180** it / ~7.1× are the wall on `dev`. Do **not** restore Pulay-H + exact fixed-H wall hack | track cpu | twin: `ot-uks-o2` then `ot-minimizer-water` | files: `src/cpu/gpw/internal/ot.cpp`, `gpw_solver.cpp` | gate: pins PASS; outer it ↓; \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) ↓; no tol soften; energy-path change ⇒ FD force re-run |
 - [ ] `cpu-stvnl-residual` | **P2** Residual STVnl / setup vs CP2K (~0.52 s of ~2.1 s MAIN on MG twin; coll/int already ~80–90 ms/iter) — Hermite / s–s / collint polish landed; chase only **measured** hotspots | track cpu | twin: `gpw-multigrid-kpoints` | files: collint / one_electron / STVnl setup | gate: MAIN wall ↓ or flat; pins hold; no layout fork |
 - [ ] `cpu-simd-2center-setup` | **P3** xsimd analytic 2-center S/T if still hot on slab-class (invisible on small four twins) — promoted from gpw-perf `p2-simd-2center-setup` | track cpu | twin: slab fragment microbench | files: overlap/kinetic internals | gate: setup ↓; four twins no regression |
 
@@ -57,16 +58,17 @@ Measured anchors (1 MPI × OMP=4; product MINIMIZER DIIS path on `dev` after `p2
 
 ### CUDA — corresponding ES (user value / open-gate)
 
-Landed CUDA ES surface: `cuda::scf::RHF` device s/p energy + pure-s forces (`src/cuda/scf/`, wave 5); **no** `cuda/gpw/`. Open gate for a slice: CPU regs green + public `run`/`forces` stable + CUDA↔CPU tols stated. Build/run only via `sbatch -p gpu` (login has no toolkit).
+Landed CUDA ES surface: `cuda::scf::RHF` device s/p energy + **device s/p forces** (`src/cuda/scf/`, wave 6); **no** `cuda/gpw/`. Open gate for a slice: CPU regs green + public `run`/`forces` stable + CUDA↔CPU tols stated. Build/run only via `sbatch -p gpu` (login has no toolkit).
 
-- [ ] `cuda-rhf-pshell-forces` | **P0** Device analytic forces for l≤1 (today pure-s only; any p shell → host `cpu::scf::RHF::forces`) | track cuda | twin: H₂O STO-3G forces CUDA↔CPU + `tests/cuda/scf/test_rhf.cu` | files: `device_integrals.cu`, `rhf.cu`, force kernels | gate: unit green; CUDA↔CPU force tol stated; no host RHF for covered shells; device-only kernels |
-- [ ] `cuda-rhf-device-only-polish` | **P1** Kill residual mid-path H2D/D2H on s/p energy; occupancy / coalescing on ERI launch; load CUDA skills | track cuda | twin: `test_rhf.cu` | files: device integrals + RHF loop | gate: parity green; optional large-system note only (no false "CUDA wins" on H₂O) |
+- [ ] `cuda-rhf-device-only-polish` | **P1** Kill residual mid-path H2D/D2H on s/p energy; occupancy / coalescing on ERI launch; load CUDA skills | track cuda | twin: `test_rhf.cu` | files: device integrals + RHF loop | gate: parity green; optional large-system note only (no false "CUDA wins" on H₂O) | *unblocked: pshell forces landed*
 - [ ] `cuda-rhf-level-shift` | **P2** Wire `level_shift` on device s/p path (currently refused in `rhf.cu`) **or** document permanent host fallback | track cuda | twin: shifted SCF if any reg | files: `rhf.cu` / mixer | gate: no silent refuse; pins green |
 - [ ] `cuda-gpw-foothold` | **P3 / open-gate only** Thin Γ-point GPW device slice (collocate **or** Poisson/FFT) with same-settings CPU oracle — **not** full method product; staff only if CPU OT water + MG pins still green and public GPW `run`/`forces` frozen | track cuda | twin: water Γ energy CPU oracle | files: new `cuda/gpw/` | gate: energy match tol; Frame-only API; `ATV_BUILD_GPW`+CUDA gated; no hybrid/GAPW |
 
 ## in_progress
 
-(empty)
+Wave 1 residual (not yet on `dev`):
+
+- [~] `cpu-ot-diis-outer` | track cpu | twin: `ot-uks-o2` then `ot-minimizer-water` | files: `src/cpu/gpw/internal/ot.cpp`, `src/cpu/gpw/gpw_solver.cpp` | branch: `wf/escuda-cpu-ot-diis-outer` @ `59d31079` (g·e B-matrix + CG fallback; claimed 93→32 / 180→94 it; **merge pending**)
 
 ## blocked
 
@@ -75,4 +77,7 @@ Landed CUDA ES surface: `cuda::scf::RHF` device s/p energy + pure-s forces (`src
 
 ## done
 
-(empty — this queue starts with the 8h dual-track wave)
+Wave 1 land 2026-08-06 (`dev` @ `8337251b`):
+
+- [x] `cpu-xc-spectral-fft` | **P1** GGA KS spectral gradient/div: fused multi-out FFT + FFTW_MEASURE plans | track cpu | twin: `ot-minimizer-water` | files: `grid_fft.cpp`, `xc_grid_gga.cpp`, `fft_cache.{h,cpp}` | merge: `977710fb` / feat `db132bb8` | evidence: XC ~108→**95** ms/iter; quiet wall ~16.5→**16.2 s** (ratio ~6.11→**~5.99** vs CP2K 2.7 s note); energy pin stable; FD `gpw-forces-water` PASS; non-bit-exact MEASURE FP with stated tol |
+- [x] `cuda-rhf-pshell-forces` | **P0** Device analytic forces for l≤1 s/p | track cuda | twin: H₂O STO-3G CUDA↔CPU + `tests/cuda/scf/test_rhf.cu` | files: `device_integrals.cu`, `rhf.cu`, force kernels | merge: `8337251b` / feat `e6f984d8` | GH200 job log `.claude/merge-cuda-rhf-913053.out`: `test_cuda_scf_rhf` + `test_cuda_scf_device_integrals` **100% PASS**; tols: H₂ |ΔF| **1e-5** eV/Å, H₂O |ΔF| **1e-4** eV/Å, energy **ha_to_ev(1e-6)**; `last_force_on_device()` fail-closed; no host RHF for covered shells |
