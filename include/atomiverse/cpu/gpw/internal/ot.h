@@ -3,10 +3,11 @@
 ///
 /// **Internal GPW helper.** Does NOT inherit `cpu::Component`. Product Γ path
 /// Product Γ OT (oracle twin class):
-///   - MINIMIZER DIIS directions (SAFE) + Armijo line search on total E
-///     (fixed-STEPSIZE pure DIIS diverges on product micro-cases)
+///   - MINIMIZER DIIS directions (CP2K g·e SAFE metric) + Armijo on total E,
+///     with PR+ CG fallback on stall/reject (fixed-STEPSIZE pure DIIS diverges
+///     on product micro-cases; dual-spin DIIS alone plateaus ~1e-4 on O₂)
 ///   - PRECONDITIONER FULL_SINGLE-style H-aware dense inverse
-///   - OUTER_SCF period rebuilds precond and may reset DIIS
+///   - OUTER period rebuilds precond without wiping DIIS history
 ///
 /// Parameterization (orthonormality-preserving for any S-tangent `x`,
 /// `C0^T S x = 0`):
@@ -121,6 +122,7 @@ class OtOrbitalDiis {
     double stepsize_;
     std::vector<RealMatrix> hist_x_;
     std::vector<RealMatrix> hist_e_;
+    std::vector<RealMatrix> hist_g_; ///< gradients for CP2K g·e DIIS metric
 };
 
 // ── Complex (Bloch / multi-k) OT ───────────────────────────────────────────
