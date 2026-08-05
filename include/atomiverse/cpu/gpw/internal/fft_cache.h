@@ -9,6 +9,10 @@
 /// aligned scratch. Plan creation is mutex-guarded (FFTW planner is not
 /// thread-safe); execute uses new-array FFTW APIs so multi-alpha callers can
 /// point at their own buffers.
+///
+/// Plans use FFTW_MEASURE (timed once at first shape touch). GGA gradient /
+/// divergence also keep howmany=3 multi-out plans so three Cartesian
+/// components share one execute instead of three serial transforms.
 #pragma once
 
 #include <cstddef>
@@ -71,7 +75,8 @@ class FftwBuffer {
 ///
 /// Layout matches existing GPW callers: `fftw_plan_dft_r2c_3d(n0,n1,n2,…)` with
 /// real length `n0*n1*n2` and Hermitian length `n0*n1*(n2/2+1)`. Extra `r2`/`c2`
-/// slots support the GGA gradient path (separate work arrays).
+/// slots support the GGA gradient path (separate work arrays). Multi-out
+/// (`howmany=3`) buffers/plans fuse Cartesian gradient/divergence FFTs.
 class R2cFft {
   public:
     /// @brief Thread-local instance for this shape (created on first use).
@@ -91,6 +96,13 @@ class R2cFft {
     /// @brief Second complex buffer (lazy); used as spectral work in gradient.
     fftw_complex* c2();
 
+    /// @brief Contiguous howmany=3 real batch: layout `[d][i]` with
+    ///        `idist = ntot`. Allocated on first multi-out use.
+    double* r_many();
+    /// @brief Contiguous howmany=3 complex batch: layout `[d][k]` with
+    ///        `odist = ncplx`.
+    fftw_complex* c_many();
+
     /// @brief Forward r2c on the primary buffers: `r` → `c`.
     void execute_r2c() { fftw_execute_dft_r2c(fwd_, r(), c()); }
     /// @brief Backward c2r on the primary buffers: `c` → `r`.
@@ -105,6 +117,10 @@ class R2cFft {
     void execute_c2r(fftw_complex* in, double* out) {
         fftw_execute_dft_c2r(bwd_, in, out);
     }
+    /// @brief howmany=3 forward: `r_many` → `c_many` (divergence inputs).
+    void execute_many_r2c();
+    /// @brief howmany=3 backward: `c_many` → `r_many` (gradient outputs).
+    void execute_many_c2r();
 
   private:
     R2cFft(int n0, int n1, int n2);
@@ -116,10 +132,14 @@ class R2cFft {
     long ntot_ = 0, ncplx_ = 0;
     fftw_plan fwd_ = nullptr;
     fftw_plan bwd_ = nullptr;
+    fftw_plan many_fwd_ = nullptr;
+    fftw_plan many_bwd_ = nullptr;
     FftwBuffer<double> r_;
     FftwBuffer<fftw_complex> c_;
     FftwBuffer<double> r2_;
     FftwBuffer<fftw_complex> c2_;
+    FftwBuffer<double> r_many_;
+    FftwBuffer<fftw_complex> c_many_;
 };
 
 /// @brief Cached out-of-place c2c forward/backward plans for multigrid DFT.
