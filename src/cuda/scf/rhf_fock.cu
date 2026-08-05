@@ -535,29 +535,26 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaMalloc(&scf.d_atom_Z, natm * sizeof(int));
     cudaMalloc(&scf.d_atom_pos, natm * 3 * sizeof(prec_t));
 
-    int* d_L = nullptr;
     int* d_ao_start = nullptr;
-    int* d_ao_shell = nullptr;
-    int* d_ao_cart = nullptr;
-    cudaMalloc(&d_L, n_shells * sizeof(int));
+    cudaMalloc(&scf.d_shell_L, n_shells * sizeof(int));
     cudaMalloc(&d_ao_start, n_shells * sizeof(int));
     cudaMalloc(&scf.d_shell_atom, n_shells * sizeof(int));
-    cudaMalloc(&d_ao_shell, n * sizeof(int));
-    cudaMalloc(&d_ao_cart, n * sizeof(int));
+    cudaMalloc(&scf.d_ao_shell, n * sizeof(int));
+    cudaMalloc(&scf.d_ao_cart, n * sizeof(int));
 
     cudaMemcpyAsync(scf.d_shell_alpha, h_alpha.data(), nflat * sizeof(prec_t),
                     cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(scf.d_shell_coeff, h_coeff.data(), nflat * sizeof(prec_t),
                     cudaMemcpyHostToDevice, stream);
-    cudaMemcpyAsync(d_L, h_L.data(), n_shells * sizeof(int),
+    cudaMemcpyAsync(scf.d_shell_L, h_L.data(), n_shells * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(d_ao_start, h_ao_start.data(), n_shells * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(scf.d_shell_atom, h_atom_of.data(), n_shells * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
-    cudaMemcpyAsync(d_ao_shell, h_ao_shell.data(), n * sizeof(int),
+    cudaMemcpyAsync(scf.d_ao_shell, h_ao_shell.data(), n * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
-    cudaMemcpyAsync(d_ao_cart, h_ao_cart.data(), n * sizeof(int),
+    cudaMemcpyAsync(scf.d_ao_cart, h_ao_cart.data(), n * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
 
     cudaMemcpyAsync(scf.d_atom_Z, ctx.frame.atoms.type,
@@ -623,8 +620,9 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
         cudaHostGetDevicePointer(&d_ptr, scf.h_converged_mapped, 0);
         scf.d_converged = static_cast<int*>(d_ptr);
     }
-    if (scf.pure_s_shells)
-        cudaMalloc(&scf.d_W, nn * sizeof(prec_t));
+    // Device forces (pure-s and mixed s/p) need W after SCF.
+    scf.device_sp_shells = true;
+    cudaMalloc(&scf.d_W, nn * sizeof(prec_t));
 
     cudaMemsetAsync(scf.P, 0, nn * sizeof(prec_t), stream);
     cudaMemsetAsync(scf.P_old, 0, nn * sizeof(prec_t), stream);
@@ -634,11 +632,13 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     // one contraction (avoids dual-kernel norm/layout drift).
     ATV::cuda::scf::launch_1e_integrals_sp(
         d_S_, d_T_, d_V_, scf.d_shell_alpha, scf.d_shell_coeff,
-        scf.d_shell_center, d_L, d_ao_start, d_ao_shell, d_ao_cart,
-        scf.d_atom_Z, scf.d_atom_pos, n_shells, n, n_prim_, natm, stream);
+        scf.d_shell_center, scf.d_shell_L, d_ao_start, scf.d_ao_shell,
+        scf.d_ao_cart, scf.d_atom_Z, scf.d_atom_pos, n_shells, n, n_prim_,
+        natm, stream);
     ATV::cuda::scf::launch_eri_sp(
-        scf.ERI, scf.d_shell_alpha, scf.d_shell_coeff, scf.d_shell_center, d_L,
-        d_ao_start, d_ao_shell, d_ao_cart, n_shells, n, n_prim_, stream);
+        scf.ERI, scf.d_shell_alpha, scf.d_shell_coeff, scf.d_shell_center,
+        scf.d_shell_L, d_ao_start, scf.d_ao_shell, scf.d_ao_cart, n_shells, n,
+        n_prim_, stream);
 
     // ── 4. Hcore = T + V ──────────────────────────────────────────────
     cublasHandle_t handle;
@@ -700,12 +700,9 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaFree(d_work_solver);
     cudaFree(d_info);
 
-    // Integral-map buffers (L / AO maps) — not needed after integrals/Löwdin.
-    // d_shell_atom stays live for pure-s forces.
-    cudaFree(d_L);
+    // AO-start is only needed for integral launch; L / ao maps stay live
+    // for device s/p forces after SCF.
     cudaFree(d_ao_start);
-    cudaFree(d_ao_shell);
-    cudaFree(d_ao_cart);
 
     // Setup-only: host V_nuc from device positions (Bohr) + Z. Reliable even
     // if the GPU atomic reduction is wrong; keeps energy path free of mid-SCF

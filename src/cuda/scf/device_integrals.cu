@@ -109,7 +109,7 @@ __device__ work_t overlap_prim_3d_device(const int a_ang[3], const int b_ang[3],
         const work_t S00 = sqrt_pi_g * exp(-mu * dd * dd);
         const int imax = a_ang[d];
         const int jmax = b_ang[d];
-        // (1+1)*(1+1)=4 cells max for l≤1 overlap
+        // Force raise: imax,jmax ≤2 → (3)*(3)=9 cells
         work_t S[16];
         for (int k = 0; k < 16; ++k)
             S[k] = work_t(0);
@@ -138,8 +138,8 @@ __device__ work_t kinetic_prim_3d_device(const int a_ang[3], const int b_ang[3],
     const int im = imax_all;       // ≤ 1 for l≤1
     const int jm = jmax_base + 2;  // ≤ 3
     const int jstride = jm + 1;    // ≤ 4
-    // (1+1)*(3+1) = 8 cells per direction
-    work_t Sd[3][16];
+    // Force raise of p → d: im≤2, jm≤ jmax+2 ≤4 → (3)*(5)=15 cells
+    work_t Sd[3][32];
     work_t S1d[3];
     for (int d = 0; d < 3; ++d) {
         const work_t dd = A[d] - B[d];
@@ -147,7 +147,7 @@ __device__ work_t kinetic_prim_3d_device(const int a_ang[3], const int b_ang[3],
         const work_t PA = Pd - A[d];
         const work_t PB = Pd - B[d];
         const work_t S00 = sqrt_pi_g * exp(-mu * dd * dd);
-        for (int k = 0; k < 16; ++k)
+        for (int k = 0; k < 32; ++k)
             Sd[d][k] = work_t(0);
         os_overlap_1d_device(PA, PB, inv2g, S00, im, jm, Sd[d]);
         S1d[d] = Sd[d][a_ang[d] * jstride + b_ang[d]];
@@ -176,23 +176,63 @@ __device__ work_t kinetic_prim_3d_device(const int a_ang[3], const int b_ang[3],
     return prim_kin;
 }
 
-/// MD E coeffs for ai,bj ∈ {0,1} (hand tables, same as CPU eri_prim_md).
+// Force raise of p (L=1) needs ai/bj ≤ 2. Sized like CPU kDerivL for Lorb=1.
+static constexpr int kDeviceDerivL = 2;          // max L after +1 raise
+static constexpr int kDeviceMDEDim = 2 * kDeviceDerivL + 1; // 5
+static constexpr int kDeviceMDEIDim = kDeviceDerivL + 2;    // 4
+static constexpr int kDeviceRNuc = 2 * kDeviceDerivL + 1;   // 5 (nuclear Ltot≤3)
+static constexpr int kDeviceREri = 2 * kDeviceDerivL + 2;   // 6 (ERI Ltot≤5)
+
+/// MD E coeffs — CPU twin md_e_coeffs; ai,bj ≤ kDeviceDerivL.
+__device__ void md_e_coeffs_device(int ai, int bj, work_t PA, work_t PB,
+                                   work_t inv2g, work_t E[kDeviceMDEDim]) {
+    for (int t = 0; t < kDeviceMDEDim; ++t)
+        E[t] = work_t(0);
+    work_t E_buf[kDeviceMDEIDim][kDeviceMDEDim];
+    for (int i = 0; i < kDeviceMDEIDim; ++i)
+        for (int t = 0; t < kDeviceMDEDim; ++t)
+            E_buf[i][t] = work_t(0);
+    E_buf[0][0] = work_t(1);
+    for (int i = 0; i < ai; ++i) {
+        const int tmax = i + 1;
+        for (int t = 0; t <= tmax && t < kDeviceMDEDim; ++t) {
+            const work_t etm1 = (t > 0) ? E_buf[i][t - 1] : work_t(0);
+            const work_t et = E_buf[i][t];
+            const work_t etp1 =
+                (t + 1 < kDeviceMDEDim) ? E_buf[i][t + 1] : work_t(0);
+            E_buf[i + 1][t] = inv2g * etm1 + PA * et + work_t(t + 1) * etp1;
+        }
+    }
+    work_t W[2][kDeviceMDEDim];
+    int cur = 0;
+    for (int t = 0; t < kDeviceMDEDim; ++t)
+        W[cur][t] = E_buf[ai][t];
+    for (int jj = 0; jj < bj; ++jj) {
+        const int nxt = 1 - cur;
+        for (int t = 0; t < kDeviceMDEDim; ++t)
+            W[nxt][t] = work_t(0);
+        const int tmax = ai + jj + 1;
+        for (int t = 0; t <= tmax && t < kDeviceMDEDim; ++t) {
+            const work_t etm1 = (t > 0) ? W[cur][t - 1] : work_t(0);
+            const work_t et = W[cur][t];
+            const work_t etp1 =
+                (t + 1 < kDeviceMDEDim) ? W[cur][t + 1] : work_t(0);
+            W[nxt][t] = inv2g * etm1 + PB * et + work_t(t + 1) * etp1;
+        }
+        cur = nxt;
+    }
+    for (int t = 0; t <= ai + bj && t < kDeviceMDEDim; ++t)
+        E[t] = W[cur][t];
+}
+
+/// Thin l≤1 wrapper used by energy kernels (E[0..2] only).
 __device__ __forceinline__ void md_e_l1(int ai, int bj, work_t PA, work_t PB,
                                         work_t inv2g, work_t E[3]) {
-    E[0] = E[1] = E[2] = work_t(0);
-    if (ai == 0 && bj == 0) {
-        E[0] = work_t(1);
-    } else if (ai == 1 && bj == 0) {
-        E[0] = PA;
-        E[1] = inv2g;
-    } else if (ai == 0 && bj == 1) {
-        E[0] = PB;
-        E[1] = inv2g;
-    } else { // 1,1
-        E[0] = PA * PB + inv2g;
-        E[1] = inv2g * (PA + PB);
-        E[2] = inv2g * inv2g;
-    }
+    work_t full[kDeviceMDEDim];
+    md_e_coeffs_device(ai, bj, PA, PB, inv2g, full);
+    E[0] = full[0];
+    E[1] = full[1];
+    E[2] = full[2];
 }
 
 __device__ work_t nuclear_prim_device(const int a_ang[3], const int b_ang[3],
@@ -208,23 +248,22 @@ __device__ work_t nuclear_prim_device(const int a_ang[3], const int b_ang[3],
     const int Lx = a_ang[0] + b_ang[0];
     const int Ly = a_ang[1] + b_ang[1];
     const int Lz = a_ang[2] + b_ang[2];
-    const int Ltot = Lx + Ly + Lz; // ≤ 2 for l≤1
+    const int Ltot = Lx + Ly + Lz; // ≤3 with force raise of p
 
-    work_t Fm[5];
-    for (int m = 0; m <= Ltot; ++m)
+    work_t Fm[kDeviceRNuc];
+    for (int m = 0; m <= Ltot && m < kDeviceRNuc; ++m)
         Fm[m] = boys_fn_device(m, T);
 
-    work_t E[3][3];
+    work_t E[3][kDeviceMDEDim];
     for (int d = 0; d < 3; ++d)
-        md_e_l1(a_ang[d], b_ang[d], PA[d], PB[d], inv2g, E[d]);
+        md_e_coeffs_device(a_ang[d], b_ang[d], PA[d], PB[d], inv2g, E[d]);
 
-    // R_tab[m][t][u][v], dims 0..2 sufficient for Ltot≤2
-    work_t R_tab[3][3][3][3];
-#pragma unroll
-    for (int m = 0; m < 3; ++m)
-        for (int t = 0; t < 3; ++t)
-            for (int u = 0; u < 3; ++u)
-                for (int v = 0; v < 3; ++v)
+    // R_tab sized for force raise (Ltot≤3 → indices 0..3)
+    work_t R_tab[kDeviceRNuc][kDeviceRNuc][kDeviceRNuc][kDeviceRNuc];
+    for (int m = 0; m < kDeviceRNuc; ++m)
+        for (int t = 0; t < kDeviceRNuc; ++t)
+            for (int u = 0; u < kDeviceRNuc; ++u)
+                for (int v = 0; v < kDeviceRNuc; ++v)
                     R_tab[m][t][u][v] = work_t(0);
 
     work_t neg2g = -work_t(2) * gamma;
@@ -317,27 +356,27 @@ __device__ work_t eri_prim_md_device(const int a_ang[3], const int b_ang[3],
     const int Lx2 = c_ang[0] + d_ang[0];
     const int Ly2 = c_ang[1] + d_ang[1];
     const int Lz2 = c_ang[2] + d_ang[2];
-    const int Ltot = Lx1 + Ly1 + Lz1 + Lx2 + Ly2 + Lz2; // ≤ 4
+    const int Ltot = Lx1 + Ly1 + Lz1 + Lx2 + Ly2 + Lz2; // ≤5 with force raise
 
-    work_t Fm[5];
-    for (int m = 0; m <= Ltot; ++m)
+    work_t Fm[kDeviceREri];
+    for (int m = 0; m <= Ltot && m < kDeviceREri; ++m)
         Fm[m] = boys_fn_device(m, Tval);
 
-    work_t E1[3][3], E2[3][3];
+    work_t E1[3][kDeviceMDEDim], E2[3][kDeviceMDEDim];
     for (int d = 0; d < 3; ++d) {
-        md_e_l1(a_ang[d], b_ang[d], PA[d], PB[d], inv2g1, E1[d]);
-        md_e_l1(c_ang[d], d_ang[d], QC[d], QD[d], inv2g2, E2[d]);
+        md_e_coeffs_device(a_ang[d], b_ang[d], PA[d], PB[d], inv2g1, E1[d]);
+        md_e_coeffs_device(c_ang[d], d_ang[d], QC[d], QD[d], inv2g2, E2[d]);
     }
 
     const int Rx_max = Lx1 + Lx2;
     const int Ry_max = Ly1 + Ly2;
     const int Rz_max = Lz1 + Lz2;
 
-    work_t R_tab[5][5][5][5];
-    for (int m = 0; m < 5; ++m)
-        for (int t = 0; t < 5; ++t)
-            for (int u = 0; u < 5; ++u)
-                for (int v = 0; v < 5; ++v)
+    work_t R_tab[kDeviceREri][kDeviceREri][kDeviceREri][kDeviceREri];
+    for (int m = 0; m < kDeviceREri; ++m)
+        for (int t = 0; t < kDeviceREri; ++t)
+            for (int u = 0; u < kDeviceREri; ++u)
+                for (int v = 0; v < kDeviceREri; ++v)
                     R_tab[m][t][u][v] = work_t(0);
 
     work_t neg2rho = -work_t(2) * rho;
@@ -1221,6 +1260,416 @@ void launch_rhf_forces_pure_s(double* fx, double* fy, double* fz,
             n_ao, n_prim);
     }
     // 5) unit conversion
+    rhf_forces_scale_kernel<<<cuda::grid_size(natm, threads), threads, 0, s>>>(
+        fx, fy, fz, natm);
+}
+
+// ── Wave 6: s+p (l≤1) analytic RHF forces ─────────────────────────────
+// Angular-momentum raise/lower (Obara–Saika / Helgaker):
+//   d/dA_d I(a,b) = 2 α_a I(a+e_d,b) − a_d I(a−e_d,b)
+// Pure-s is the a_d=0 special case. Nuclear-operator ∂/∂R_C via TI:
+//   dV_C/dC = −(dV_C/dA + dV_C/dB) on the primitive without −Z.
+
+__device__ void sp_1e_deriv_center(
+    int which, // 0 = d/dA, 1 = d/dB
+    const int a_ang[3], const int b_ang[3],
+    const prec_t* alpha_i, const prec_t* coeff_i, const work_t Ai[3],
+    const prec_t* alpha_j, const prec_t* coeff_j, const work_t Bj[3],
+    int n_prim, const int* atom_Z, const prec_t* atom_pos, int natm,
+    work_t dS[3], work_t dT[3], work_t dV[3]) {
+    for (int d = 0; d < 3; ++d)
+        dS[d] = dT[d] = dV[d] = work_t(0);
+    for (int p = 0; p < n_prim; ++p) {
+        work_t ap = static_cast<work_t>(alpha_i[p]);
+        work_t cp = static_cast<work_t>(coeff_i[p]);
+        for (int q = 0; q < n_prim; ++q) {
+            work_t aq = static_cast<work_t>(alpha_j[q]);
+            work_t cq = static_cast<work_t>(coeff_j[q]);
+            work_t cpq = cp * cq;
+            const work_t alpha_raise = (which == 0) ? ap : aq;
+            const int* ang_ref = (which == 0) ? a_ang : b_ang;
+            for (int d = 0; d < 3; ++d) {
+                int aa[3] = {a_ang[0], a_ang[1], a_ang[2]};
+                int bb[3] = {b_ang[0], b_ang[1], b_ang[2]};
+                if (which == 0)
+                    aa[d] += 1;
+                else
+                    bb[d] += 1;
+                work_t Sp =
+                    overlap_prim_3d_device(aa, bb, ap, Ai, aq, Bj);
+                work_t Tp =
+                    kinetic_prim_3d_device(aa, bb, ap, Ai, aq, Bj);
+                work_t s_val = work_t(2) * alpha_raise * Sp;
+                work_t t_val = work_t(2) * alpha_raise * Tp;
+                if (ang_ref[d] > 0) {
+                    int aa_m[3] = {a_ang[0], a_ang[1], a_ang[2]};
+                    int bb_m[3] = {b_ang[0], b_ang[1], b_ang[2]};
+                    if (which == 0)
+                        aa_m[d] -= 1;
+                    else
+                        bb_m[d] -= 1;
+                    s_val -= work_t(ang_ref[d])
+                             * overlap_prim_3d_device(aa_m, bb_m, ap, Ai, aq,
+                                                      Bj);
+                    t_val -= work_t(ang_ref[d])
+                             * kinetic_prim_3d_device(aa_m, bb_m, ap, Ai, aq,
+                                                      Bj);
+                }
+                dS[d] += cpq * s_val;
+                dT[d] += cpq * t_val;
+
+                work_t gamma = ap + aq;
+                work_t mu_ab = ap * aq / gamma;
+                work_t R2 = dist2_device(Ai[0], Ai[1], Ai[2], Bj[0], Bj[1],
+                                         Bj[2]);
+                work_t K_AB = exp(-mu_ab * R2);
+                work_t inv_g = work_t(1) / gamma;
+                work_t PA[3], PB[3], P[3];
+                for (int e = 0; e < 3; ++e) {
+                    P[e] = (ap * Ai[e] + aq * Bj[e]) * inv_g;
+                    PA[e] = P[e] - Ai[e];
+                    PB[e] = P[e] - Bj[e];
+                }
+                work_t Vsum = work_t(0);
+                for (int a = 0; a < natm; ++a) {
+                    work_t Cpos[3] = {
+                        static_cast<work_t>(atom_pos[a * 3 + 0]),
+                        static_cast<work_t>(atom_pos[a * 3 + 1]),
+                        static_cast<work_t>(atom_pos[a * 3 + 2])};
+                    work_t PC[3] = {P[0] - Cpos[0], P[1] - Cpos[1],
+                                    P[2] - Cpos[2]};
+                    work_t Vprim =
+                        nuclear_prim_device(aa, bb, gamma, PA, PB, PC, K_AB);
+                    work_t v_val = work_t(2) * alpha_raise * Vprim;
+                    if (ang_ref[d] > 0) {
+                        int aa_m[3] = {a_ang[0], a_ang[1], a_ang[2]};
+                        int bb_m[3] = {b_ang[0], b_ang[1], b_ang[2]};
+                        if (which == 0)
+                            aa_m[d] -= 1;
+                        else
+                            bb_m[d] -= 1;
+                        v_val -= work_t(ang_ref[d])
+                                 * nuclear_prim_device(aa_m, bb_m, gamma, PA,
+                                                       PB, PC, K_AB);
+                    }
+                    Vsum += work_t(-atom_Z[a]) * v_val;
+                }
+                dV[d] += cpq * Vsum;
+            }
+        }
+    }
+}
+
+// dV/dC for one nucleus (includes −Z) via translational invariance on V_C.
+__device__ void sp_nuclear_operator_deriv(
+    const int a_ang[3], const int b_ang[3], const prec_t* alpha_i,
+    const prec_t* coeff_i, const work_t Ai[3], const prec_t* alpha_j,
+    const prec_t* coeff_j, const work_t Bj[3], int n_prim, int C_atom,
+    const prec_t* atom_pos, int Zc, work_t dV_dC[3]) {
+    for (int d = 0; d < 3; ++d)
+        dV_dC[d] = work_t(0);
+    if (Zc == 0)
+        return;
+    work_t Cpos[3] = {static_cast<work_t>(atom_pos[C_atom * 3 + 0]),
+                      static_cast<work_t>(atom_pos[C_atom * 3 + 1]),
+                      static_cast<work_t>(atom_pos[C_atom * 3 + 2])};
+    for (int p = 0; p < n_prim; ++p) {
+        work_t ap = static_cast<work_t>(alpha_i[p]);
+        work_t cp = static_cast<work_t>(coeff_i[p]);
+        for (int q = 0; q < n_prim; ++q) {
+            work_t aq = static_cast<work_t>(alpha_j[q]);
+            work_t cq = static_cast<work_t>(coeff_j[q]);
+            work_t cpq = cp * cq;
+            work_t gamma = ap + aq;
+            work_t mu_ab = ap * aq / gamma;
+            work_t R2 =
+                dist2_device(Ai[0], Ai[1], Ai[2], Bj[0], Bj[1], Bj[2]);
+            work_t K_AB = exp(-mu_ab * R2);
+            work_t inv_g = work_t(1) / gamma;
+            work_t PA[3], PB[3], P[3];
+            for (int e = 0; e < 3; ++e) {
+                P[e] = (ap * Ai[e] + aq * Bj[e]) * inv_g;
+                PA[e] = P[e] - Ai[e];
+                PB[e] = P[e] - Bj[e];
+            }
+            work_t PC[3] = {P[0] - Cpos[0], P[1] - Cpos[1], P[2] - Cpos[2]};
+            // d(np)/dA and d(np)/dB (np = nuclear_prim, no −Z)
+            work_t dA[3], dB[3];
+            for (int d = 0; d < 3; ++d) {
+                int aa[3] = {a_ang[0], a_ang[1], a_ang[2]};
+                aa[d] += 1;
+                work_t va =
+                    work_t(2) * ap
+                    * nuclear_prim_device(aa, b_ang, gamma, PA, PB, PC, K_AB);
+                if (a_ang[d] > 0) {
+                    int aa_m[3] = {a_ang[0], a_ang[1], a_ang[2]};
+                    aa_m[d] -= 1;
+                    va -= work_t(a_ang[d])
+                          * nuclear_prim_device(aa_m, b_ang, gamma, PA, PB, PC,
+                                                K_AB);
+                }
+                dA[d] = va;
+
+                int bb[3] = {b_ang[0], b_ang[1], b_ang[2]};
+                bb[d] += 1;
+                work_t vb =
+                    work_t(2) * aq
+                    * nuclear_prim_device(a_ang, bb, gamma, PA, PB, PC, K_AB);
+                if (b_ang[d] > 0) {
+                    int bb_m[3] = {b_ang[0], b_ang[1], b_ang[2]};
+                    bb_m[d] -= 1;
+                    vb -= work_t(b_ang[d])
+                          * nuclear_prim_device(a_ang, bb_m, gamma, PA, PB, PC,
+                                                K_AB);
+                }
+                dB[d] = vb;
+            }
+            // V = −Z * np; dV/dC = −Z * d(np)/dC = −Z * (−(dA+dB))
+            for (int d = 0; d < 3; ++d)
+                dV_dC[d] +=
+                    cpq * work_t(-Zc) * (-(dA[d] + dB[d]));
+        }
+    }
+}
+
+__device__ void sp_eri_deriv_center(
+    int which, // 0..3 = A,B,C,D
+    const int a_ang[3], const int b_ang[3], const int c_ang[3],
+    const int d_ang[3], const prec_t* aA, const prec_t* cA, const work_t A[3],
+    const prec_t* aB, const prec_t* cB, const work_t B[3], const prec_t* aC,
+    const prec_t* cC, const work_t C[3], const prec_t* aD, const prec_t* cD,
+    const work_t D[3], int n_prim, work_t dERI[3]) {
+    for (int d = 0; d < 3; ++d)
+        dERI[d] = work_t(0);
+    for (int p = 0; p < n_prim; ++p) {
+        work_t ap = static_cast<work_t>(aA[p]);
+        work_t cp = static_cast<work_t>(cA[p]);
+        for (int q = 0; q < n_prim; ++q) {
+            work_t aq = static_cast<work_t>(aB[q]);
+            work_t cq = static_cast<work_t>(cB[q]);
+            for (int r = 0; r < n_prim; ++r) {
+                work_t ar = static_cast<work_t>(aC[r]);
+                work_t cr = static_cast<work_t>(cC[r]);
+                for (int s = 0; s < n_prim; ++s) {
+                    work_t as = static_cast<work_t>(aD[s]);
+                    work_t cs = static_cast<work_t>(cD[s]);
+                    work_t c4 = cp * cq * cr * cs;
+                    work_t alpha_raise = ap;
+                    const int* ang_ref = a_ang;
+                    if (which == 1) {
+                        alpha_raise = aq;
+                        ang_ref = b_ang;
+                    } else if (which == 2) {
+                        alpha_raise = ar;
+                        ang_ref = c_ang;
+                    } else if (which == 3) {
+                        alpha_raise = as;
+                        ang_ref = d_ang;
+                    }
+                    for (int d = 0; d < 3; ++d) {
+                        int aa[3] = {a_ang[0], a_ang[1], a_ang[2]};
+                        int bb[3] = {b_ang[0], b_ang[1], b_ang[2]};
+                        int cc[3] = {c_ang[0], c_ang[1], c_ang[2]};
+                        int dd[3] = {d_ang[0], d_ang[1], d_ang[2]};
+                        if (which == 0)
+                            aa[d] += 1;
+                        else if (which == 1)
+                            bb[d] += 1;
+                        else if (which == 2)
+                            cc[d] += 1;
+                        else
+                            dd[d] += 1;
+                        work_t ep = eri_prim_md_device(aa, bb, cc, dd, ap, A,
+                                                       aq, B, ar, C, as, D);
+                        work_t val = work_t(2) * alpha_raise * ep;
+                        if (ang_ref[d] > 0) {
+                            int aa_m[3] = {a_ang[0], a_ang[1], a_ang[2]};
+                            int bb_m[3] = {b_ang[0], b_ang[1], b_ang[2]};
+                            int cc_m[3] = {c_ang[0], c_ang[1], c_ang[2]};
+                            int dd_m[3] = {d_ang[0], d_ang[1], d_ang[2]};
+                            if (which == 0)
+                                aa_m[d] -= 1;
+                            else if (which == 1)
+                                bb_m[d] -= 1;
+                            else if (which == 2)
+                                cc_m[d] -= 1;
+                            else
+                                dd_m[d] -= 1;
+                            val -= work_t(ang_ref[d])
+                                   * eri_prim_md_device(aa_m, bb_m, cc_m, dd_m,
+                                                        ap, A, aq, B, ar, C,
+                                                        as, D);
+                        }
+                        dERI[d] += c4 * val;
+                    }
+                }
+            }
+        }
+    }
+}
+
+__global__ void rhf_forces_1e_sp_kernel(
+    real_t* __restrict__ fx, real_t* __restrict__ fy, real_t* __restrict__ fz,
+    const prec_t* __restrict__ P, const prec_t* __restrict__ W,
+    const prec_t* __restrict__ shell_alpha, const prec_t* __restrict__ shell_coeff,
+    const prec_t* __restrict__ shell_centers, const int* __restrict__ shell_atom,
+    const int* __restrict__ shell_L, const int* __restrict__ ao_shell,
+    const int* __restrict__ ao_cart, const int* __restrict__ atom_Z,
+    const prec_t* __restrict__ atom_pos, int n, int n_prim, int natm) {
+    const int nn = n * n;
+    const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    if (idx >= nn)
+        return;
+    const int mu = idx % n;
+    const int nu = idx / n;
+    const work_t Pmn = static_cast<work_t>(P[mu + nu * n]);
+    const work_t Wmn = static_cast<work_t>(W[mu + nu * n]);
+    const int si = ao_shell[mu];
+    const int sj = ao_shell[nu];
+    int a_ang[3], b_ang[3];
+    cart_ang_device(shell_L[si], ao_cart[mu], a_ang);
+    cart_ang_device(shell_L[sj], ao_cart[nu], b_ang);
+    work_t Ai[3] = {static_cast<work_t>(shell_centers[si * 3 + 0]),
+                    static_cast<work_t>(shell_centers[si * 3 + 1]),
+                    static_cast<work_t>(shell_centers[si * 3 + 2])};
+    work_t Bj[3] = {static_cast<work_t>(shell_centers[sj * 3 + 0]),
+                    static_cast<work_t>(shell_centers[sj * 3 + 1]),
+                    static_cast<work_t>(shell_centers[sj * 3 + 2])};
+    const prec_t* a_i = shell_alpha + si * n_prim;
+    const prec_t* c_i = shell_coeff + si * n_prim;
+    const prec_t* a_j = shell_alpha + sj * n_prim;
+    const prec_t* c_j = shell_coeff + sj * n_prim;
+    const int Amu = shell_atom[si];
+    const int Anu = shell_atom[sj];
+
+    {
+        work_t dS[3], dT[3], dV[3];
+        sp_1e_deriv_center(0, a_ang, b_ang, a_i, c_i, Ai, a_j, c_j, Bj, n_prim,
+                           atom_Z, atom_pos, natm, dS, dT, dV);
+        atomic_add_grad3(fx, fy, fz, Amu, Pmn * (dT[0] + dV[0]) - Wmn * dS[0],
+                         Pmn * (dT[1] + dV[1]) - Wmn * dS[1],
+                         Pmn * (dT[2] + dV[2]) - Wmn * dS[2]);
+    }
+    {
+        work_t dS[3], dT[3], dV[3];
+        sp_1e_deriv_center(1, a_ang, b_ang, a_i, c_i, Ai, a_j, c_j, Bj, n_prim,
+                           atom_Z, atom_pos, natm, dS, dT, dV);
+        atomic_add_grad3(fx, fy, fz, Anu, Pmn * (dT[0] + dV[0]) - Wmn * dS[0],
+                         Pmn * (dT[1] + dV[1]) - Wmn * dS[1],
+                         Pmn * (dT[2] + dV[2]) - Wmn * dS[2]);
+    }
+    for (int C = 0; C < natm; ++C) {
+        work_t dVc[3];
+        sp_nuclear_operator_deriv(a_ang, b_ang, a_i, c_i, Ai, a_j, c_j, Bj,
+                                  n_prim, C, atom_pos, atom_Z[C], dVc);
+        atomic_add_grad3(fx, fy, fz, C, Pmn * dVc[0], Pmn * dVc[1],
+                         Pmn * dVc[2]);
+    }
+}
+
+__global__ void rhf_forces_2e_sp_kernel(
+    real_t* __restrict__ fx, real_t* __restrict__ fy, real_t* __restrict__ fz,
+    const prec_t* __restrict__ P, const prec_t* __restrict__ shell_alpha,
+    const prec_t* __restrict__ shell_coeff,
+    const prec_t* __restrict__ shell_centers, const int* __restrict__ shell_atom,
+    const int* __restrict__ shell_L, const int* __restrict__ ao_shell,
+    const int* __restrict__ ao_cart, int n, int n_prim) {
+    const int n2 = n * n;
+    const int n3 = n2 * n;
+    const int n4 = n3 * n;
+    const int tid = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    const int stride = static_cast<int>(blockDim.x * gridDim.x);
+    for (int t = tid; t < n4; t += stride) {
+        const int i = t % n;
+        const int j = (t / n) % n;
+        const int k = (t / n2) % n;
+        const int l = t / n3;
+        const work_t Pij = static_cast<work_t>(P[i + j * n]);
+        const work_t Pkl = static_cast<work_t>(P[k + l * n]);
+        const work_t Pik = static_cast<work_t>(P[i + k * n]);
+        const work_t Pjl = static_cast<work_t>(P[j + l * n]);
+        const work_t factor =
+            work_t(0.5) * Pij * Pkl - work_t(0.25) * Pik * Pjl;
+        if (fabs(factor) < work_t(1e-18))
+            continue;
+
+        const int sa = ao_shell[i], sb = ao_shell[j];
+        const int sc = ao_shell[k], sd = ao_shell[l];
+        int aa[3], bb[3], cc[3], dd[3];
+        cart_ang_device(shell_L[sa], ao_cart[i], aa);
+        cart_ang_device(shell_L[sb], ao_cart[j], bb);
+        cart_ang_device(shell_L[sc], ao_cart[k], cc);
+        cart_ang_device(shell_L[sd], ao_cart[l], dd);
+
+        work_t Apos[3] = {static_cast<work_t>(shell_centers[sa * 3 + 0]),
+                          static_cast<work_t>(shell_centers[sa * 3 + 1]),
+                          static_cast<work_t>(shell_centers[sa * 3 + 2])};
+        work_t Bpos[3] = {static_cast<work_t>(shell_centers[sb * 3 + 0]),
+                          static_cast<work_t>(shell_centers[sb * 3 + 1]),
+                          static_cast<work_t>(shell_centers[sb * 3 + 2])};
+        work_t Cpos[3] = {static_cast<work_t>(shell_centers[sc * 3 + 0]),
+                          static_cast<work_t>(shell_centers[sc * 3 + 1]),
+                          static_cast<work_t>(shell_centers[sc * 3 + 2])};
+        work_t Dpos[3] = {static_cast<work_t>(shell_centers[sd * 3 + 0]),
+                          static_cast<work_t>(shell_centers[sd * 3 + 1]),
+                          static_cast<work_t>(shell_centers[sd * 3 + 2])};
+        const prec_t* aA = shell_alpha + sa * n_prim;
+        const prec_t* cA = shell_coeff + sa * n_prim;
+        const prec_t* aB = shell_alpha + sb * n_prim;
+        const prec_t* cB = shell_coeff + sb * n_prim;
+        const prec_t* aC = shell_alpha + sc * n_prim;
+        const prec_t* cC = shell_coeff + sc * n_prim;
+        const prec_t* aD = shell_alpha + sd * n_prim;
+        const prec_t* cD = shell_coeff + sd * n_prim;
+
+#pragma unroll
+        for (int which = 0; which < 4; ++which) {
+            work_t dE[3];
+            sp_eri_deriv_center(which, aa, bb, cc, dd, aA, cA, Apos, aB, cB,
+                                Bpos, aC, cC, Cpos, aD, cD, Dpos, n_prim, dE);
+            const int atom = (which == 0)   ? shell_atom[sa]
+                             : (which == 1) ? shell_atom[sb]
+                             : (which == 2) ? shell_atom[sc]
+                                            : shell_atom[sd];
+            atomic_add_grad3(fx, fy, fz, atom, factor * dE[0], factor * dE[1],
+                             factor * dE[2]);
+        }
+    }
+}
+
+void launch_rhf_forces_sp(double* fx, double* fy, double* fz, const double* P,
+                          const double* W, const double* shell_alpha,
+                          const double* shell_coeff, const double* shell_centers,
+                          const int* shell_atom, const int* shell_L,
+                          const int* ao_shell, const int* ao_cart,
+                          const int* atom_Z, const double* atom_pos, int n_ao,
+                          int n_prim, int natm, void* stream) {
+    auto s = static_cast<cudaStream_t>(stream);
+    const int threads = cuda::kDefaultBlock;
+    zero_forces_kernel<<<cuda::grid_size(natm, threads), threads, 0, s>>>(
+        fx, fy, fz, natm);
+    if (natm >= 2) {
+        const int npair = natm * (natm - 1) / 2;
+        rhf_forces_nuc_kernel<<<cuda::grid_size(npair, threads), threads, 0,
+                                s>>>(fx, fy, fz, atom_Z, atom_pos, natm);
+    }
+    {
+        const int nn = n_ao * n_ao;
+        rhf_forces_1e_sp_kernel<<<cuda::grid_size(nn, threads), threads, 0,
+                                  s>>>(fx, fy, fz, P, W, shell_alpha,
+                                       shell_coeff, shell_centers, shell_atom,
+                                       shell_L, ao_shell, ao_cart, atom_Z,
+                                       atom_pos, n_ao, n_prim, natm);
+    }
+    {
+        const int n4 = n_ao * n_ao * n_ao * n_ao;
+        int blocks = cuda::grid_size(n4, threads);
+        if (blocks > 1024)
+            blocks = 1024;
+        rhf_forces_2e_sp_kernel<<<blocks, threads, 0, s>>>(
+            fx, fy, fz, P, shell_alpha, shell_coeff, shell_centers, shell_atom,
+            shell_L, ao_shell, ao_cart, n_ao, n_prim);
+    }
     rhf_forces_scale_kernel<<<cuda::grid_size(natm, threads), threads, 0, s>>>(
         fx, fy, fz, natm);
 }

@@ -66,7 +66,7 @@ struct SCFWorkspace {
     /// cudaMemcpy DeviceToHost of residual matrices or energy mid-loop.
     int* h_converged_mapped = nullptr;
     prec_t* d_scalar_scratch = nullptr; ///< cuBLAS device-pointer results.
-    prec_t* d_W = nullptr; ///< Energy-weighted density for pure-s forces [n×n].
+    prec_t* d_W = nullptr; ///< Energy-weighted density for device forces [n×n].
 
     // -- Basis data for GPU-native integral kernels --
     prec_t* d_shell_alpha = nullptr; ///< Exponents [device, n_shells * n_prim].
@@ -75,13 +75,18 @@ struct SCFWorkspace {
     prec_t* d_shell_center =
         nullptr;             ///< Shell centers [device, n_shells * 3] (Bohr).
     int* d_shell_atom = nullptr; ///< Atom owning each shell [device, n_shells].
+    int* d_shell_L = nullptr;    ///< Angular momentum per shell [device, n_shells].
+    int* d_ao_shell = nullptr;   ///< Shell index of each AO [device, n_ao].
+    int* d_ao_cart = nullptr;    ///< Cart component within shell [device, n_ao].
     int* d_atom_Z = nullptr; ///< Nuclear charges [device, natm].
     prec_t* d_atom_pos = nullptr; ///< Atom positions [device, natm * 3] (Bohr).
     int n_prim = 0;               ///< Primitives per shell (host-cached).
     int n_shells = 0;             ///< Number of shells (host-cached).
     int natm = 0;                 ///< Number of atoms (host-cached).
-    /// True when every shell is s (l=0) so Wave-5 device forces apply.
+    /// True when every shell is s (l=0) — pure-s force kernel is valid.
     bool pure_s_shells = false;
+    /// True when device s/p integral path owns shell SoA + AO maps.
+    bool device_sp_shells = false;
 };
 
 } // namespace scf

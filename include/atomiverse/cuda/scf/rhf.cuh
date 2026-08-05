@@ -7,8 +7,8 @@
 /// max_iter). No freestanding integral bag; no `rhf.basis = …`.
 ///
 /// **Energy (CUDA-only HF for STO-3G s/p):** device integral kernels + SCF
-/// (`launch_*_sp`) — no host ERI. **Forces:** pure-s device analytic
-/// (`launch_rhf_forces_pure_s`); p shells still host until Wave 5+.
+/// (`launch_*_sp`) — no host ERI. **Forces:** s/p device analytic
+/// (`launch_rhf_forces_sp`); higher L still host.
 ///
 /// Multi-step BOMD: `cuda::md::MD` + `set_evaluator(RHF{…})` + VelocityVerlet.
 ///
@@ -123,6 +123,10 @@ class RHF : public cuda::Component, public cuda::HF {
     /// @brief SCF iterations of the most recent solve.
     int iterations() const { return iterations_; }
 
+    /// @brief True when the most recent force assembly used device kernels
+    ///        (s/p STO-3G path). False for host fallback or energy-only.
+    bool last_force_on_device() const { return last_force_device_; }
+
     /// @brief Device SCF workspace after a successful `launch()` / `run()`.
     const SCFWorkspace& workspace() const;
 
@@ -141,6 +145,7 @@ class RHF : public cuda::Component, public cuda::HF {
     bool converged_ = false;
     int iterations_ = 0;
     bool built_ = false;
+    bool last_force_device_ = false;
 };
 
 } // namespace scf
