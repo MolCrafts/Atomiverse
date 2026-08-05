@@ -95,8 +95,8 @@ void launch_boys_f0_test(const double* d_x, double* d_out, int n, void* stream);
 /// with angular-momentum raising on s primitives (raises to p; uses the same
 /// MD/OS device primitives as Wave 4). Output forces are **−∂E/∂R** in eV/Å.
 ///
-/// Scope: every shell must be s (l = 0); `n_ao == n_shells`. H₂ STO-3G is the
-/// unit pin; p-bearing systems keep the host gradient path.
+/// Scope: every shell must be s (l = 0); `n_ao == n_shells`. Prefer
+/// `launch_rhf_forces_sp` for mixed s/p (and pure-s when AO maps are live).
 ///
 /// @param fx,fy,fz Force columns [natm], device, eV/Å (overwritten).
 /// @param P Density [n_ao×n_ao, col-major], device (RHF factor-2 total).
@@ -117,6 +117,23 @@ void launch_rhf_forces_pure_s(double* fx, double* fy, double* fz,
                               const double* shell_centers, const int* shell_atom,
                               const int* atom_Z, const double* atom_pos,
                               int n_ao, int n_prim, int natm, void* stream);
+
+/// @brief s+p (l ≤ 1) RHF analytic nuclear forces on device (Wave 6).
+///
+/// Same energy assembly as pure-s, with full raise/lower on Cartesian
+/// components (p → d raise). Ends the host force fallback for STO-3G H…O.
+/// Output forces are **−∂E/∂R** in eV/Å.
+///
+/// @param shell_L Angular momentum per shell (0 or 1) [n_shells].
+/// @param ao_shell Shell index for each AO [n_ao].
+/// @param ao_cart Cartesian component within shell [n_ao].
+void launch_rhf_forces_sp(double* fx, double* fy, double* fz, const double* P,
+                          const double* W, const double* shell_alpha,
+                          const double* shell_coeff, const double* shell_centers,
+                          const int* shell_atom, const int* shell_L,
+                          const int* ao_shell, const int* ao_cart,
+                          const int* atom_Z, const double* atom_pos, int n_ao,
+                          int n_prim, int natm, void* stream);
 
 /// @brief Build W = 2 Σ_i ε_i C[:,i] C[:,i]ᵀ for i < n_occ (col-major).
 void launch_build_W_rhf(double* W, const double* C, const double* eig,

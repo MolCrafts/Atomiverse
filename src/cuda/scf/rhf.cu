@@ -6,8 +6,8 @@
 /// **CUDA-only HF**, no host ERI tensor. Other bases temporarily fill S /
 /// Hcore / ERI on host then upload.
 ///
-/// **Forces path (Wave 5):** pure-s STO-3G (H₂, He…) analytic on device
-/// (`launch_rhf_forces_pure_s`). Any p shell still uses host
+/// **Forces path (Wave 6):** STO-3G s/p (l ≤ 1, H…O, e.g. H₂O) analytic on
+/// device (`launch_rhf_forces_sp`). Higher L / other bases still use host
 /// `cpu::scf::RHF::forces`. Use `with_gradient(false)` for energy-only.
 
 #ifdef ATV_HAS_HF
@@ -247,11 +247,13 @@ RHF::RHF(RHF&& other) noexcept
       max_iter(other.max_iter), level_shift(other.level_shift),
       compute_force(other.compute_force), solver_(std::move(other.solver_)),
       energy_ha_(other.energy_ha_), converged_(other.converged_),
-      iterations_(other.iterations_), built_(other.built_) {
+      iterations_(other.iterations_), built_(other.built_),
+      last_force_device_(other.last_force_device_) {
     other.energy_ha_ = 0.0;
     other.converged_ = false;
     other.iterations_ = 0;
     other.built_ = false;
+    other.last_force_device_ = false;
 }
 
 void RHF::run(cpu::Frame& frame) {
@@ -264,7 +266,7 @@ void RHF::run(cpu::Frame& frame) {
 }
 
 cpu::scf::GradientResult RHF::forces(cpu::Frame& frame) {
-    // Wave 5: pure-s device path via run()+launch; p shells fall back to host
+    // Wave 6: s/p device path via run()+launch; higher L falls back to host
     // inside launch(). Always enable force assembly for this call.
     const bool prev = compute_force;
     compute_force = true;
@@ -339,13 +341,10 @@ void RHF::launch(const LaunchContext& ctx) {
     // ── Energy: CUDA-only HF when device s/p kernels cover the molecule ─
     // STO-3G with l≤1 (H…O, mixed Z OK): device S/T/V + ERI + SCF (no host
     // ERI). Higher L or other bases: host fill + upload.
-    if (device_sp_sto3g_ok(basis, h_Z.data(), natm)) {
-        if (std::abs(level_shift) > 1e-14) {
-            throw std::invalid_argument(
-                "cuda::scf::RHF: level_shift is not wired on the CUDA-native "
-                "s/p integral path yet — set level_shift = 0 or use a basis "
-                "that takes the host-fill energy path");
-        }
+    // Device s/p integrals when covered and level_shift is off (shift is
+    // only wired on the host-fill SCF path). Non-zero shift → host integrals.
+    if (device_sp_sto3g_ok(basis, h_Z.data(), natm)
+        && std::abs(level_shift) <= 1e-14) {
         solver_ = make_device_sp_sto3g_solver(h_Z.data(), natm, charge, tol,
                                              max_iter);
     } else {
@@ -358,14 +357,16 @@ void RHF::launch(const LaunchContext& ctx) {
     iterations_ = solver_->iterations();
     converged_ = solver_->workspace().converged;
 
-    // ── Forces on device (pure-s) before any energy D2H ─────────────────
+    // ── Forces on device (s/p l≤1) before any energy D2H ────────────────
     // Entire SCF + forces stay device-resident; host energy_ha_ is filled
     // once at the end (post-calculation bookkeeping only).
+    last_force_device_ = false;
     if (compute_force) {
         const auto& ws = solver_->workspace();
         const bool device_forces =
-            ws.pure_s_shells && ws.n > 0 && ws.P && ws.C && ws.eig
-            && ws.d_shell_alpha && ws.d_shell_atom && ws.d_atom_pos
+            ws.device_sp_shells && ws.n > 0 && ws.P && ws.C && ws.eig
+            && ws.d_shell_alpha && ws.d_shell_atom && ws.d_shell_L
+            && ws.d_ao_shell && ws.d_ao_cart && ws.d_atom_pos
             && ctx.frame.atoms.fx && ctx.frame.atoms.fy && ctx.frame.atoms.fz;
 
         if (device_forces) {
@@ -375,11 +376,13 @@ void RHF::launch(const LaunchContext& ctx) {
             if (own_W)
                 cudaMalloc(&d_W, static_cast<size_t>(nn) * sizeof(prec_t));
             launch_build_W_rhf(d_W, ws.C, ws.eig, ws.n, ws.n_occ, stream);
-            launch_rhf_forces_pure_s(
+            launch_rhf_forces_sp(
                 ctx.frame.atoms.fx, ctx.frame.atoms.fy, ctx.frame.atoms.fz,
                 ws.P, d_W, ws.d_shell_alpha, ws.d_shell_coeff,
-                ws.d_shell_center, ws.d_shell_atom, ws.d_atom_Z, ws.d_atom_pos,
-                ws.n, ws.n_prim, ws.natm, stream);
+                ws.d_shell_center, ws.d_shell_atom, ws.d_shell_L, ws.d_ao_shell,
+                ws.d_ao_cart, ws.d_atom_Z, ws.d_atom_pos, ws.n, ws.n_prim,
+                ws.natm, stream);
+            last_force_device_ = true;
             if (own_W) {
                 // Free only after stream completes force kernels — no D2H.
                 cudaStreamSynchronize(stream);

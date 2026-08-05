@@ -351,8 +351,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/semiempirical/dftb3_scc.cpp
             src/cpu/semiempirical/mio_sk_block.cpp
             src/cpu/semiempirical/scc_mixer.cpp
-            src/cpu/semiempirical/gfn2.cpp
-            src/cpu/semiempirical/gfn2_xtb_kernel.cpp
 
             src/cpu/multiscale/qmmm_mechanical.cpp
             src/cpu/multiscale/qmmm_oniom.cpp
@@ -366,6 +364,12 @@ if(NOT ATV_DOCS_ONLY)
             list(APPEND ATOMIVERSE_SRCS
                 src/cpu/multiscale/qmmm_polarizable.cpp
             )
+        endif()
+        # GFN2 (optional while sources land on the branch)
+        if(EXISTS "${CMAKE_SOURCE_DIR}/src/cpu/semiempirical/gfn2.cpp")
+            list(APPEND ATOMIVERSE_SRCS
+                src/cpu/semiempirical/gfn2.cpp
+                src/cpu/semiempirical/gfn2_xtb_kernel.cpp)
         endif()
         # Grimme D3 engine for DFTB2::d3 (and peers) under SE-only cmake.
         # When HF is on, the same sources are listed under ATV_BUILD_HF — do

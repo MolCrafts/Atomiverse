@@ -12,9 +12,8 @@ forces on device and removes needless mid-path stream fences.
 | Case | Path |
 |---|---|
 | STO-3G, every atom **s/p** (l ≤ 1; H…O, **mixed Z OK**) | **Device energy**: molecular shell list → `RHFFockDevice` + `launch_*_sp` |
-| Pure-s STO-3G (all l=0; H₂, He…) + `compute_force` | **Device forces**: `launch_build_W_rhf` + `launch_rhf_forces_pure_s` → `frame.fx/y/z` [eV/Å] |
-| Any p shell + forces | Host `cpu::scf::RHF::forces` (device p-gradient needs l≤2 raise) |
-| Higher L / other bases | Host fill S/Hcore/ERI → upload → device SCF |
+| STO-3G s/p (l ≤ 1; H…O, H₂O) + `compute_force` | **Device forces**: `launch_build_W_rhf` + `launch_rhf_forces_sp` → `frame.fx/y/z` [eV/Å] |
+| Higher L / other bases | Host fill S/Hcore/ERI → upload → device SCF; host forces |
 
 `level_shift != 0` is refused on the device s/p energy path (not wired).
 
@@ -45,12 +44,13 @@ Grok CUDA skills (not ad-hoc style):
 | **3** | **done** | Multi-shell pure-s AO count |
 | **4** | **done** | p-shell device integrals (l≤1 MD/OS); H₂O energy cuda-only |
 | **5** | **done** | Pure-s device analytic forces; async density energy write; no mid-build fence before integrals; `forces()` via `run()` |
+| **6** | **done** | s/p device analytic forces (`launch_rhf_forces_sp`); ends host force fallback for l≤1 |
 
-## Wave 5 layout
+## Wave 6 layout
 
 - **W** on device: `W = 2 Σ_{i<n_occ} ε_i C_i C_iᵀ` (`launch_build_W_rhf`).
-- **Forces** [Ha/Bohr → eV/Å]: pure-s device analytic; p shells host.
-- **API:** `RHF::forces` → `run()` with `compute_force`.
+- **Forces** [Ha/Bohr → eV/Å]: raise/lower on l≤1 (raise to d); AO maps live after SCF.
+- **API:** `RHF::forces` → `run()` with `compute_force`; `last_force_on_device()`.
 
 ## No scientific D2H during calculation (device s/p path)
 

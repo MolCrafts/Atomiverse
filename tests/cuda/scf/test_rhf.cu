@@ -59,6 +59,28 @@ cpu::Frame make_h_atom() {
     return frame;
 }
 
+// Water (Å) — same geometry as CPU SCF H2O pins; s+p STO-3G force twin.
+cpu::Frame make_h2o() {
+    cpu::Frame frame(3);
+    frame.span(kAtom_type)[0] = 8;
+    frame.span(kAtom_x)[0] = double(0);
+    frame.span(kAtom_y)[0] = double(0);
+    frame.span(kAtom_z)[0] = double(0.1173);
+    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_x)[1] = double(0);
+    frame.span(kAtom_y)[1] = double(0.7572);
+    frame.span(kAtom_z)[1] = double(-0.4692);
+    frame.span(kAtom_type)[2] = 1;
+    frame.span(kAtom_x)[2] = double(0);
+    frame.span(kAtom_y)[2] = double(-0.7572);
+    frame.span(kAtom_z)[2] = double(-0.4692);
+    frame.span(kAtom_mass)[0] = double(15.999);
+    frame.span(kAtom_mass)[1] = double(1.008);
+    frame.span(kAtom_mass)[2] = double(1.008);
+    frame.box = cpu::Box::cubic(100.0);
+    return frame;
+}
+
 // Textbook H2/STO-3G/RHF reference values
 constexpr double kH2Energy = -1.1167; // approx total energy [Hartree]
 constexpr double kH2Vnuc = 0.7151;    // approx nuclear repulsion [Hartree]
@@ -618,6 +640,7 @@ TEST(RHF, CUDAForcesMatchCPU_H2_STO3G) {
     ASSERT_TRUE(cuda_rhf.converged());
     ASSERT_EQ(g_cpu.forces.shape()[0], 2u);
     ASSERT_EQ(g_cuda.forces.shape()[0], 2u);
+    EXPECT_TRUE(cuda_rhf.last_force_on_device());
 
     // Energy: meta eV and GradientResult energy must agree; match CPU.
     const double e_bar =
@@ -688,6 +711,72 @@ TEST(RHF, CUDAForcesMatchFD_H2_STO3G) {
                 << " FD=" << f_fd;
         }
     }
+}
+
+// Wave 6: device analytic forces for s+p (end host force fallback on H2O).
+TEST(RHF, CUDAForcesMatchCPU_H2O_STO3G) {
+    auto frame_cpu = make_h2o();
+    auto frame_cuda = make_h2o();
+    const double tol =
+        (sizeof(double) == sizeof(float)) ? double(1e-5) : double(1e-10);
+
+    cpu::scf::RHF cpu_rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
+    const cpu::scf::GradientResult g_cpu = cpu_rhf.forces(frame_cpu);
+
+    cuda::scf::RHF cuda_rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
+    const cpu::scf::GradientResult g_cuda = cuda_rhf.forces(frame_cuda);
+
+    ASSERT_TRUE(cuda_rhf.converged());
+    ASSERT_EQ(g_cpu.forces.shape()[0], 3u);
+    ASSERT_EQ(g_cuda.forces.shape()[0], 3u);
+
+    // Fail-closed: device s/p force path, not host cpu::scf::RHF::forces.
+    EXPECT_TRUE(cuda_rhf.last_force_on_device());
+
+    const double e_bar =
+        (sizeof(double) == sizeof(float)) ? ha_to_ev(1e-4) : ha_to_ev(1e-6);
+    EXPECT_NEAR(g_cuda.energy, g_cpu.energy, e_bar);
+
+    // Forces [eV/Å]: stated CUDA↔CPU tol (non-bit-exact FP accumulation).
+    const double f_bar =
+        (sizeof(double) == sizeof(float)) ? 1e-2 : 1e-4; // eV/Å
+    for (int A = 0; A < 3; ++A) {
+        for (int d = 0; d < 3; ++d) {
+            EXPECT_NEAR(g_cuda.forces(A, d), g_cpu.forces(A, d), f_bar)
+                << "F[" << A << "][" << d << "] CUDA=" << g_cuda.forces(A, d)
+                << " CPU=" << g_cpu.forces(A, d);
+        }
+    }
+}
+
+TEST(RHF, CUDAForcesMatchFD_H2O_STO3G) {
+    // Unit-budget FD spot-check (O, z only) — full 3×3×2 scan is regression-
+    // scale; CUDA↔CPU force twin is the primary gate above.
+    const double h = 1e-3; // Å
+    const double tol =
+        (sizeof(double) == sizeof(float)) ? double(1e-5) : double(1e-10);
+
+    auto frame0 = make_h2o();
+    cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
+    const cpu::scf::GradientResult g = rhf.forces(frame0);
+    ASSERT_TRUE(rhf.converged());
+    EXPECT_TRUE(rhf.last_force_on_device());
+
+    auto energy_at = [&](double delta) {
+        auto f = make_h2o();
+        f.span(kAtom_z)[0] += delta; // O z
+        cuda::scf::RHF r{cpu::scf::BasisSet::STO3G, 0, tol, 100};
+        r.run(f);
+        return static_cast<double>(f.meta.get(kEnergy)); // eV
+    };
+
+    const double fd_bar =
+        (sizeof(double) == sizeof(float)) ? 1.0 : 1e-1; // eV/Å
+    const double ep = energy_at(+h);
+    const double em = energy_at(-h);
+    const double f_fd = -(ep - em) / (2.0 * h);
+    EXPECT_NEAR(g.forces(0, 2), f_fd, fd_bar)
+        << "F[O][z] analytic=" << g.forces(0, 2) << " FD=" << f_fd;
 }
 
 TEST(RHF, WithGradientChain) {

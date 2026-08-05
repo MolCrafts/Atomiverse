@@ -302,6 +302,9 @@ void SCFSolver::destroy(void* stream, cuda::Frame& frame) {
     cudaFree(workspace_.d_shell_coeff);
     cudaFree(workspace_.d_shell_center);
     cudaFree(workspace_.d_shell_atom);
+    cudaFree(workspace_.d_shell_L);
+    cudaFree(workspace_.d_ao_shell);
+    cudaFree(workspace_.d_ao_cart);
     cudaFree(workspace_.d_atom_Z);
     cudaFree(workspace_.d_atom_pos);
     cudaFree(workspace_.d_V_nuc);
