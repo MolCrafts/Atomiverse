@@ -576,8 +576,9 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
             scf.d_shell_center, scf.d_shell_atom, scf.d_atom_pos, n_shells);
     }
 
-    // V_nuc: device reduction + host mirror (setup). Host also recomputes from
-    // packed Bohr positions so energy never depends on a failed GPU atomic.
+    // V_nuc: device-only reduction (Wave 7 — no mid-build D2H/H2D rewrite).
+    // Host `scf.V_nuc` is filled post-SCF in SCFSolver::run from d_V_nuc.
+    // Energy during SCF reads d_V_nuc on device (RHFDensity).
     cudaMalloc(&scf.d_V_nuc, sizeof(double));
     cudaMemsetAsync(scf.d_V_nuc, 0, sizeof(double), stream);
     if (natm >= 2) {
@@ -691,53 +692,16 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaMemcpyAsync(scf.X, d_V_, nn * sizeof(prec_t), cudaMemcpyDeviceToDevice,
                     stream);
 
-    // Defer free of syevd temps and AO maps until after the stream finishes
-    // Löwdin work — use stream callback-free ordered free: enqueue a no-op
-    // sync only for the temporary buffers (no scientific D2H). Prefer keeping
-    // map buffers until destroy when possible; free after last kernel on stream
-    // without reading results to host.
+    // Free Löwdin / AO-start scratch after stream work (no scientific D2H).
+    // cudaFree is device-wide; one stream fence first keeps free after last use.
+    // AO maps (L, ao_shell, ao_cart) stay live for device s/p forces after SCF.
+    cudaStreamSynchronize(stream);
     cudaFree(d_eigenvalues);
     cudaFree(d_work_solver);
     cudaFree(d_info);
-
-    // AO-start is only needed for integral launch; L / ao maps stay live
-    // for device s/p forces after SCF.
     cudaFree(d_ao_start);
-
-    // Setup-only: host V_nuc from device positions (Bohr) + Z. Reliable even
-    // if the GPU atomic reduction is wrong; keeps energy path free of mid-SCF
-    // D2H (V_nuc is a by-value capture after this).
-    {
-        std::vector<prec_t> h_pos(static_cast<std::size_t>(natm) * 3u);
-        std::vector<int> h_Z(static_cast<std::size_t>(natm));
-        cudaMemcpyAsync(h_pos.data(), scf.d_atom_pos,
-                        h_pos.size() * sizeof(prec_t), cudaMemcpyDeviceToHost,
-                        stream);
-        cudaMemcpyAsync(h_Z.data(), scf.d_atom_Z,
-                        h_Z.size() * sizeof(int), cudaMemcpyDeviceToHost,
-                        stream);
-        cudaStreamSynchronize(stream);
-        double vn = 0.0;
-        for (int a = 0; a < natm; ++a) {
-            for (int b = a + 1; b < natm; ++b) {
-                const double dx = static_cast<double>(h_pos[static_cast<std::size_t>(a * 3 + 0)]
-                                                     - h_pos[static_cast<std::size_t>(b * 3 + 0)]);
-                const double dy = static_cast<double>(h_pos[static_cast<std::size_t>(a * 3 + 1)]
-                                                     - h_pos[static_cast<std::size_t>(b * 3 + 1)]);
-                const double dz = static_cast<double>(h_pos[static_cast<std::size_t>(a * 3 + 2)]
-                                                     - h_pos[static_cast<std::size_t>(b * 3 + 2)]);
-                const double r2 = dx * dx + dy * dy + dz * dz;
-                if (r2 > 0.0)
-                    vn += static_cast<double>(h_Z[static_cast<std::size_t>(a)]
-                                              * h_Z[static_cast<std::size_t>(b)])
-                          / std::sqrt(r2);
-            }
-        }
-        scf.V_nuc = vn;
-        // Keep d_V_nuc in sync for any device consumer.
-        cudaMemcpyAsync(scf.d_V_nuc, &scf.V_nuc, sizeof(double),
-                        cudaMemcpyHostToDevice, stream);
-    }
+    // Wave 7: d_V_nuc stays as the sole nuclear-repulsion source for SCF energy;
+    // host scf.V_nuc mirrored only in SCFSolver::run post-pass.
 }
 
 void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {

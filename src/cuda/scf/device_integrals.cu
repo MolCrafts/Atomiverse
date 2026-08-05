@@ -543,10 +543,13 @@ void launch_1e_integrals(prec_t* S, prec_t* T, prec_t* V,
         n_shells, n_prim, natm);
 }
 
-__global__ void compute_eri_kernel(prec_t* ERI, const prec_t* shell_alpha,
-                                   const prec_t* shell_coeff,
-                                   const prec_t* shell_centers, int n,
-                                   int n_prim) {
+// Wave 7: register-heavy MD/Boys ERI — launch_bounds asks for ≥2 resident
+// blocks/SM (choose-launch-configuration). Grid-stride loop below keeps
+// work covered when occupancy caps the active grid.
+__global__ void __launch_bounds__(256, 2)
+compute_eri_kernel(prec_t* ERI, const prec_t* shell_alpha,
+                   const prec_t* shell_coeff, const prec_t* shell_centers, int n,
+                   int n_prim) {
     int n4 = n * n * n * n;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     for (int q_idx = idx; q_idx < n4; q_idx += blockDim.x * gridDim.x) {
@@ -621,9 +624,22 @@ void launch_eri(prec_t* ERI, const prec_t* shell_alpha,
                 const prec_t* shell_coeff, const prec_t* shell_centers,
                 int n_shells, int n_prim, void* stream) {
     auto s = static_cast<cudaStream_t>(stream);
-    int n4 = n_shells * n_shells * n_shells * n_shells;
-    int threads = cuda::kDefaultBlock;
-    int blocks = cuda::grid_size(n4, threads);
+    const int n4 = n_shells * n_shells * n_shells * n_shells;
+    constexpr int threads = cuda::kDefaultBlock;
+    // Occupancy-capped grid + grid-stride in the kernel (skill: choose-launch).
+    int blocks_per_sm = 0;
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &blocks_per_sm, compute_eri_kernel, threads, /*dynSmem=*/0);
+    int sm_count = 0;
+    cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, 0);
+    const int cover = cuda::grid_size(n4, threads);
+    const int occ_cap =
+        (blocks_per_sm > 0 && sm_count > 0) ? blocks_per_sm * sm_count : cover;
+    // Prefer full cover for small tensors; cap to a few waves over occupancy
+    // so large n^4 does not flood the launch queue.
+    const int blocks =
+        (cover <= occ_cap) ? cover
+                           : ((occ_cap * 4 < cover) ? occ_cap * 4 : cover);
     compute_eri_kernel<<<blocks, threads, 0, s>>>(
         ERI, shell_alpha, shell_coeff, shell_centers, n_shells, n_prim);
 }
@@ -729,10 +745,13 @@ void launch_1e_integrals_sp(double* S, double* T, double* V,
         ao_cart, atom_Z, atom_pos, n_ao, n_prim, natm);
 }
 
-__global__ void compute_eri_sp_kernel(
-    prec_t* ERI, const prec_t* shell_alpha, const prec_t* shell_coeff,
-    const prec_t* shell_centers, const int* shell_L, const int* ao_shell,
-    const int* ao_cart, int n_ao, int n_prim) {
+// Wave 7: s/p ERI is register-heavy (MD raise to d, nested 4-prim loops).
+// __launch_bounds__(256, 2) targets ≥2 blocks/SM occupancy.
+__global__ void __launch_bounds__(256, 2)
+compute_eri_sp_kernel(prec_t* ERI, const prec_t* shell_alpha,
+                      const prec_t* shell_coeff, const prec_t* shell_centers,
+                      const int* shell_L, const int* ao_shell,
+                      const int* ao_cart, int n_ao, int n_prim) {
     const int n4 = n_ao * n_ao * n_ao * n_ao;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     for (int q = idx; q < n4; q += blockDim.x * gridDim.x) {
@@ -799,9 +818,20 @@ void launch_eri_sp(double* ERI, const double* shell_alpha,
                    const int* ao_shell, const int* ao_cart, int /*n_shells*/,
                    int n_ao, int n_prim, void* stream) {
     auto s = static_cast<cudaStream_t>(stream);
-    int n4 = n_ao * n_ao * n_ao * n_ao;
-    int threads = cuda::kDefaultBlock;
-    int blocks = cuda::grid_size(n4, threads);
+    const int n4 = n_ao * n_ao * n_ao * n_ao;
+    constexpr int threads = cuda::kDefaultBlock;
+    // Occupancy-capped grid + grid-stride (skill: choose-launch-configuration).
+    int blocks_per_sm = 0;
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &blocks_per_sm, compute_eri_sp_kernel, threads, /*dynSmem=*/0);
+    int sm_count = 0;
+    cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, 0);
+    const int cover = cuda::grid_size(n4, threads);
+    const int occ_cap =
+        (blocks_per_sm > 0 && sm_count > 0) ? blocks_per_sm * sm_count : cover;
+    const int blocks =
+        (cover <= occ_cap) ? cover
+                           : ((occ_cap * 4 < cover) ? occ_cap * 4 : cover);
     compute_eri_sp_kernel<<<blocks, threads, 0, s>>>(
         ERI, shell_alpha, shell_coeff, shell_centers, shell_L, ao_shell,
         ao_cart, n_ao, n_prim);

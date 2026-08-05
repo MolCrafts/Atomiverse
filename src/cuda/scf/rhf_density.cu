@@ -23,13 +23,15 @@ namespace scf {
 namespace internal {
 
 /// energy_ev = (0.5 * dot + V_nuc) * Ha→eV.
-/// `V_nuc` is passed by value (host mirror filled at end of device Fock
-/// build) so energy never depends on a mid-SCF D2H of the scalar.
+/// Prefer `d_V_nuc` (device s/p path — no mid-SCF scientific D2H). Host-fill
+/// path passes nullptr and uses the by-value fallback.
 __global__ void write_rhf_energy_ev_kernel(prec_t* __restrict__ energy_ev,
                                            const prec_t* __restrict__ dot_HFP,
-                                           double V_nuc, prec_t ha2ev) {
+                                           const double* __restrict__ d_V_nuc,
+                                           double V_nuc_host, prec_t ha2ev) {
+    const double vn = d_V_nuc ? *d_V_nuc : V_nuc_host;
     const prec_t e_ha =
-        prec_t(0.5) * (*dot_HFP) + static_cast<prec_t>(V_nuc);
+        prec_t(0.5) * (*dot_HFP) + static_cast<prec_t>(vn);
     *energy_ev = e_ha * ha2ev;
 }
 
@@ -93,10 +95,11 @@ void RHFDensity::step(const SolverContext& ctx, SCFWorkspace& ws) {
             detail::dot(handle, nn, d_HplusF_, 1, scf.P, 1,
                         scf.d_scalar_scratch);
             write_rhf_energy_ev_kernel<<<1, 1, 0, stream>>>(
-                &ctx.frame.scalars->energy, scf.d_scalar_scratch, scf.V_nuc,
-                static_cast<prec_t>(units::kHartreeInEv));
+                &ctx.frame.scalars->energy, scf.d_scalar_scratch, scf.d_V_nuc,
+                scf.V_nuc, static_cast<prec_t>(units::kHartreeInEv));
             cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST);
         } else {
+            // Host-fill path (no d_scalar_scratch): host DOT + host V_nuc.
             cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST);
             prec_t dot_val = 0;
             detail::dot(handle, nn, d_HplusF_, 1, scf.P, 1, &dot_val);
