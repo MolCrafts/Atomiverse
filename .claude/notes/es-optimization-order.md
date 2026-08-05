@@ -27,11 +27,10 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    MG MAIN **~2.1 s** (~**1.6×** CP2K quiet ~1.28 s; was ~42 s). Pins green.
 
 **Active next:** products-default-k re-gate; XC spectral FFT polish
-(`p2-xc-spectral-fft` — remaining KS ~340 ms/iter on UKS O₂). Force path
-reuse landed. Γ OT = DIIS outer + **exact** fixed-H occupied eigenspace
-(`p2-ot-outer-diis` + `p2-ot-exact-fixed-h`): water dual **~4.5 s** (9=9);
-UKS O₂ OT **~10.6 s / 25 it** (was ~19 s / 51 with inexact OT-CG; vs CP2K
-OT 8.68 s → **~1.22×**; faster than in-tree DIIS 30/~12 s).
+(`p2-xc-spectral-fft` — KS ~340–400 ms/iter). Force path reuse landed.
+Γ OT **CP2K-aligned energy functional** (`p2-ot-cp2k-align`): FULL_SINGLE
+H-aware precond + PR+ CG + Armijo (oracle twin uses MINIMIZER DIIS). Water
+**25** OT it; UKS O₂ **~40 s / 84 it** (~**4.6×** CP2K OT 8.68 s).
 
 **Out of this wave:** Gaussian/PW cross-method DIIS·LA extraction; CUDA ES
 coverage freeze still holds.

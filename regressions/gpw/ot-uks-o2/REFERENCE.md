@@ -78,22 +78,23 @@ differences; OT/DIIS in-tree is the tight fixed-point gate.
 
 ## Fair wall (perf gate)
 
-Measured 2026-08-05 (Release, OMP=4, `OMP_PROC_BIND=close`), after
-Γ OT-DIIS outer + exact fixed-H occupied eigenspace:
+Measured 2026-08-05 (Release, OMP=4, `OMP_PROC_BIND=close`), **CP2K-aligned
+energy OT** (FULL_SINGLE-style H-aware precond + PR+ CG + Armijo on total E;
+KS rebuild per accept):
 
 | Twin | Wall [s] | Notes |
 | ---- | -------: | ----- |
-| CP2K OT | **8.68** | `cp2k.psmp`, 1 MPI × 4 OMP, CUTOFF 250 (2026-07-26 pin) |
-| Atomiverse OT only | **~10.6** | 25 outer iters; Pulay DIIS + exact occupied eigenspace |
-| Atomiverse DIIS (parity check) | **~12.3** | 30 DIIS iters |
+| CP2K OT | **8.68** | `cp2k.psmp`, MINIMIZER DIIS + FULL_SINGLE_INVERSE + OUTER_SCF |
+| Atomiverse OT only | **~40** | 84 outer iters; energy OT (CG+Armijo), same manifold/precond class |
+| Atomiverse DIIS (parity check) | **~14** | 30 DIIS iters |
 
-Fair OT-only ratio: \(10.6 / 8.68 \approx \mathbf{1.22}\) (was ~8.5 with
-naive OT energy-min; intermediate ~2.2 with inexact OT-CG fixed-H).
-Full regression (OT+DIIS) wall ≈ 23 s.
+Fair OT-only ratio: \(40 / 8.68 \approx \mathbf{4.6}\) (algorithm-matched
+energy OT; was ~8.5 early energy-min, ~1.2 with Pulay-H + exact eigensolve
+which is **not** CP2K OT). Full regression (OT+DIIS) wall ≈ 54 s.
 
 `within_10x=true` (fair OT, OMP=4).
 
-In-tree OT/DIIS parity: \|E_OT − E_DIIS\| ≈ **3×10⁻¹⁰ Ha** (same grids).
+In-tree OT/DIIS parity: \|E_OT − E_DIIS\| ≈ **6×10⁻¹⁰ Ha** (same grids).
 
 ## Citations
 
