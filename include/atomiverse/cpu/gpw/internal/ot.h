@@ -3,13 +3,20 @@
 ///
 /// **Internal GPW helper.** Does NOT inherit `cpu::Component`. Product Γ path
 /// Product Γ OT (oracle twin class):
-///   - MINIMIZER DIIS directions (CP2K g·e SAFE metric) + Armijo on total E,
-///     with PR+ CG fallback on stall/reject (fixed-STEPSIZE pure DIIS diverges
-///     on product micro-cases; dual-spin DIIS alone plateaus ~1e-4 on O₂)
-///   - PRECONDITIONER FULL_SINGLE-style H-aware dense inverse
+///   - MINIMIZER DIIS (CP2K g·e SAFE metric) + fixed STEPSIZE geodesic (1 KS
+///     per outer); PR+ CG fallback on energy-ascent / stall
+///   - PRECONDITIONER FULL_SINGLE_INVERSE (occupied projector + min-ev shift,
+///     ENERGY_GAP 0.08 Ha) dense SPD inverse
 ///   - OUTER period rebuilds precond without wiping DIIS history
-///   - OUTER_SCF polish (no DFT+U): once projected residual is small, finish
-///     with fixed-H eigen + density mix (kills late energy-OT CG thrash)
+///   - OUTER_SCF polish (no DFT+U): once projected residual is moderate,
+///     hand residual SCF to Pulay DIIS on H (closes energy+err)
+///
+/// Fair twin `ot-minimizer-water` (wave-8 re-measure, OMP=4 bind): control
+/// path **~2.72× → ~1.20×** (OT-only min **2.986 s** / CP2K pin **2.496 s**;
+/// 25→10 it). Residual to ≤1.1× (~2.75 s) is **per-KS/setup** on ngrids=1
+/// (cbg + GGA XC ~150 ms/KS; polish ~7 Pulay) — follow-on
+/// `p0-ot-match-residual`. Pure fixed-STEPSIZE OT-DIIS plateaus ~3.8e-3;
+/// keep OUTER Pulay polish.
 ///
 /// Parameterization (orthonormality-preserving for any S-tangent `x`,
 /// `C0^T S x = 0`):
@@ -47,12 +54,13 @@ class OtPrecond {
     RealMatrix m_inv_;
 };
 
-/// @brief H-aware OT preconditioner (CP2K FULL_SINGLE family).
+/// @brief H-aware OT preconditioner (CP2K FULL_SINGLE_INVERSE).
 ///
-/// Product form: `M = H + (−ε_HOMO + energy_gap) S` with dense SPD inverse.
-/// `ε_HOMO` is the max eigenvalue of the small `Cᵀ H C` block. Built once per
-/// OUTER_SCF; applied every OT micro-step. Default `energy_gap = 1` Ha for
-/// dense CG/DIIS stability (CP2K's sparse FULL_SINGLE_INVERSE uses 0.08).
+/// Dense product form matching `make_full_single_inverse`:
+///   `M = H − 2 (SC)(CᵀHC − ½ I)(SC)ᵀ`, then shift virtuals so the lowest
+/// generalized eigenvalue sits at `max(1.5(ε_min−ε_HOMO), energy_gap)`.
+/// Dense SPD inverse via eigendecomposition. Default `energy_gap = 0.08` Ha
+/// (CP2K FULL_SINGLE_INVERSE default). Built once per OUTER_SCF period.
 class OtPrecondSingleInverse {
   public:
     /// @param H KS matrix [nb×nb] [Ha]
