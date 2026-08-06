@@ -38,17 +38,18 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
     nthread grids; coll **~63** / int **~76** ms; MAIN remeasure **~2.4 s /
     ~1.9×** (setup residual dominates remaining).
 
-**Active next (`es-cpu-cuda-opt` post wave-4 land):**
+**Active next (`es-cpu-cuda-opt` post wave-5 GapCensus):**
 
 | Track | Focus | Anchor |
 | --- | --- | --- |
-| **cpu** | `cpu-products-mg-setup` then `cpu-collint-shell-tasks` (shell-level tasks still open) | `T_atv/T_cp2k` MG MAIN ~1.9× → ~1× |
-| **cuda** | Optional next open-gate slice only (no full GPW product; no higher-L RHF product this loop) | same-settings CPU oracle; device-only kernels; GH200 |
+| **cpu** | `cpu-products-mg-setup` then `cpu-collint-shell-tasks` | `T_atv/T_cp2k` MG MAIN ~1.9× → ~1× |
+| **cuda** | `cuda-rhf-cdiis-device` then `cuda-gpw-rho-collocate-foothold` (no full GPW; no higher-L RHF) | same-settings CPU oracle; device-only kernels; GH200 |
 
 1. **CPU wall** — MG MAIN **~1.9×** is the worst fair-wall class (OT worst
    **~1.4×**, ≤3× aim met). Energy-path change ⇒ re-run FD force oracle.
 2. **CUDA ES** — RHF device s/p energy+forces+level_shift+path-select **landed**;
-   Γ GPW Poisson/FFT + Padé LDA XC footholds **landed** (not full method). Full
+   Γ GPW Poisson/FFT + Padé LDA XC footholds **landed** (not full method). Next
+   open-gate: device CDIIS (CPU MixStage twin) then ρ-collocate foothold. Full
    CUDA GPW product remains blocked.
 
 **Worker law:** branches `wf/escuda-<slug>` off **`dev`**; no push; no
@@ -66,7 +67,8 @@ CUDA RHF: [cuda-rhf-device-only.md](cuda-rhf-device-only.md).
 
 ### CUDA ES this wave
 
-**Wave 4 landed** Padé LDA XC grid foothold + RHF host-Z path select (plus
-CPU collint residual). **Forbidden:** hybrid / GAPW / PAW / meta-GGA product;
-claiming CUDA wins on small-molecule correctness twins; classical MD CUDA
-(separate OpenMM track); full CUDA GPW method product before architecture freeze.
+**Wave 5 census** refilled CUDA pending: CDIIS polish + ρ-collocate foothold
+(after wave-4 land: LDA XC + path-select + collint residual). **Forbidden:**
+hybrid / GAPW / PAW / meta-GGA product; claiming CUDA wins on small-molecule
+correctness twins; classical MD CUDA (separate OpenMM track); full CUDA GPW
+method product before architecture freeze.

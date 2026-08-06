@@ -37,14 +37,15 @@ CUDA RHF `.claude/notes/cuda-rhf-device-only.md`.
 
 ## pending
 
-Wave-4 land 2026-08-06 (`dev` @ collint merge + CUDA merges). Next staff only
+Wave-5 GapCensus 2026-08-06 (`dev` @ `51c998dd`, post wave-4 land). Walls
+carried from wave-4 remeasure (no host re-time this census). Staff only
 `wf/escuda-<slug>` off **current** `dev`. Do not invent hybrid/GAPW/PAW/meta-GGA.
 
-### Fair-wall rank (1 MPI × OMP=4; after wave-4)
+### Fair-wall rank (1 MPI × OMP=4; post wave-4 land)
 
 | Twin | ATV on `dev` | CP2K twin | ratio | lever class |
 | --- | --- | --- | ---: | --- |
-| `gpw-multigrid-kpoints` | MAIN **~2.4 s** remeasure (coll ~63 / int ~76 ms/iter; STVnl ~435 ms; products_mg ~0.3 s) | **~1.28 s** quiet | **~1.9×** | **worst** — primary CPU target (setup residual) |
+| `gpw-multigrid-kpoints` | MAIN **~2.4 s** (coll ~63 / int ~76 ms/iter; STVnl ~435 ms; products_mg ~0.3 s) | **~1.28 s** quiet | **~1.9×** | **worst** — primary CPU target |
 | `ot-uks-o2` | **27** OT it / OT **~11.8 s** | **8.68 s** / **30** SCF steps | **~1.4×** | ≤3× aim **met**; not primary |
 | `ot-minimizer-water` | **25** OT it | ~2.7 s older OT class | improved | outer closed under OT residual |
 | `gpw-uks-o2-gamma` | DIIS ~19–24 s | ~21 s older | **~1×** | closed |
@@ -52,31 +53,39 @@ Wave-4 land 2026-08-06 (`dev` @ collint merge + CUDA merges). Next staff only
 Product path landed: collint residual (hybrid SIMD + cab expand + sphere TLS);
 STVnl Hermite key reuse; Γ OT g·e DIIS + OUTER_SCF polish; spectral FFT GGA.
 Dense `kbg` is **skipped** under MG (`!use_mg`) — do not staff kbg cut for this
-twin. Shell-level task list beyond cartesian-prim groups still open (collint
-not yet CP2K per-iter class).
+twin. Remaining MG residual toward ~1×: **products_mg setup** + **shell-level
+collint tasks** (coll/int still ~3–4× CP2K ~20 ms class).
 
 ### CPU — wall vs CP2K (worst ratio first)
 
-- [ ] `cpu-products-mg-setup` | **P0** Shrink one-shot `build_products` / products_mg (~0.3 s on MG twin) — geometry sort, prim/contrib packing, level assignment. | track cpu | twin: `gpw-multigrid-kpoints` setup mark `products_mg` | files: `multigrid.cpp` (`build_products`), product data structures | gate: products_mg ms ↓; MAIN not worse; pins green; no 5th collocation layout |
-- [ ] `cpu-collint-shell-tasks` | **P1** Shell-level task list beyond cartesian-prim groups (still open after residual polish) — chase coll/int toward CP2K ~20 ms class. | track cpu | twin: `gpw-multigrid-kpoints` MAIN | files: `product_collint.{h,cpp}`, `multigrid.cpp` | gate: per-iter coll/int ↓; MAIN ratio ↓ toward ~1×; pins green; FD if energy path moves |
+- [ ] `cpu-products-mg-setup` | **P0** Shrink one-shot `build_products` / products_mg (~0.3 s on MG twin) — prim/contrib packing, level assignment, geometry sort residual. | track cpu | twin: `gpw-multigrid-kpoints` setup mark `products_mg` | files: `multigrid.cpp` (`build_products`), product data structures | gate: products_mg ms ↓; MAIN not worse; pins green; no 5th collocation layout |
+- [ ] `cpu-collint-shell-tasks` | **P1** Shell-level task list beyond cartesian-prim geometry groups (still **open** in collint table) — chase coll/int toward CP2K ~20 ms class. | track cpu | twin: `gpw-multigrid-kpoints` MAIN | files: `product_collint.{h,cpp}`, `multigrid.cpp` | gate: per-iter coll/int ↓; MAIN ratio ↓ toward ~1×; pins green; FD if energy path moves |
 - [ ] `cpu-simd-2center-setup` | **P3** xsimd analytic 2-center S/T if still hot on slab-class (invisible on small four twins) — from gpw-perf `p2-simd-2center-setup` | track cpu | twin: slab fragment microbench | files: overlap/kinetic internals | gate: setup ↓; four twins no regression |
 
-*Not promoted (stay on gpw-perf-queue):* `p1-products-default-k` (re-gated until product ≤ dense A/B); `p2-mpi-product-grid` (multi-rank; not 1 MPI fair-wall lever); OT further polish (≤3× aim already met on `ot-uks-o2`). *Already landed this loop:* `cpu-xc-spectral-fft`, `cpu-ot-diis-outer`, `cpu-ot-residual`, `cpu-stvnl-residual`, `cpu-collint-residual`.
+*Not promoted (stay on gpw-perf-queue):* `p1-products-default-k` (re-gated until product ≤ dense A/B); `p2-mpi-product-grid` (multi-rank; not 1 MPI fair-wall lever); OT further polish (≤3× aim already met on `ot-uks-o2`); force-grid rebuild residual (not MAIN energy-twin primary). *Already landed this loop:* `cpu-xc-spectral-fft`, `cpu-ot-diis-outer`, `cpu-ot-residual`, `cpu-stvnl-residual`, `cpu-collint-residual`.
 
-### CUDA — corresponding ES (open-gate)
+### CUDA — corresponding ES (open-gate; rank: polish > foothold; pshell forces **done**)
 
-Landed on `dev`: device s/p energy + forces + level_shift + device-only polish +
-**Γ GPW Poisson/FFT** + **Padé LDA XC grid** footholds + RHF host-Z path select.
-Open gate holds for thin device slices with CPU oracle + stated CUDA↔CPU tols.
-Public `run`/`forces` shape stable for RHF; GPW full method still out of scope.
+Landed on `dev`: device s/p energy + **forces** + level_shift + device-only polish +
+host-Z path select + **Γ GPW Poisson/FFT** + **Padé LDA XC grid** footholds.
+Open gate holds for thin device slices with same-settings CPU oracle + stated
+CUDA↔CPU tols. Public `run`/`forces` shape stable for RHF; GPW full method
+still out of scope. Tree scan: CUDA RHF SCF is Fock→diag→density (no CDIIS;
+CPU `MixStage` / `DIISMixer` is the twin).
+
+- [ ] `cuda-rhf-cdiis-device` | **P1** Device CDIIS (Pulay) Fock mixer on s/p RHF path — corresponding CPU `MixStage` / `DIISMixer`; no host Fock materialization on covered systems. | track cuda | twin: `tests/cuda/scf/test_rhf.cu` + H₂O STO-3G CUDA↔CPU energy | files: `scf_solver.cu`, new mix helper under `src/cuda/scf/`, `rhf_fock.cu` as needed | gate: energy @ existing tols (ha_to_ev(1e-6) / 1e-8 Ha class); iter count ≤ fixed-point baseline on H₂/H₂O; GH200 log PASS; no public `*Config` |
+- [ ] `cuda-gpw-rho-collocate-foothold` | **P2** Thin device product ρ collocate foothold vs same-settings CPU collint oracle (Γ small grid) — next link after Poisson + LDA XC; **not** full GPW product. | track cuda | twin: new `tests/cuda/gpw/test_*collocate*` unit | files: `src/cuda/gpw/internal/` + unit | gate: CUDA↔CPU max\|Δρ\| / energy-class tol stated; device-only kernel body; GH200 PASS |
 
 *Not pending this loop:* CUDA d-shell / higher-L RHF product; classical MD CUDA;
 hybrid/GAPW/PAW/meta-GGA; `cuda-gpw-full-product` (blocked — footholds unit
 green, full method product still out of scope / architecture freeze).
+*Already landed this loop:* `cuda-rhf-pshell-forces`, `cuda-rhf-device-only-polish`,
+`cuda-rhf-level-shift`, `cuda-rhf-path-select-host`, `cuda-gpw-foothold`,
+`cuda-gpw-xc-lda-foothold`.
 
 ## in_progress
 
-*(empty after wave-4 land)*
+*(empty after wave-5 census)*
 
 ## blocked
 
