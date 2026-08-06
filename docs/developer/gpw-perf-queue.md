@@ -24,31 +24,43 @@ Wall = **same single twin SCF job**, not multi-gate reg wall.
 
 ## pending
 
-Post wave-2 simd-retry (2026-08-02): P0 exhausted. **SIMD policy change
-(2026-08-03): all optimization levers authorized; SIMD (portable xsimd only)
-is first-class at any priority** — see the architecture note. Wave 3 staffs
-the top MG-kernel + OT-extension rows (in_progress below).
+**Census 2026-08-06 cp2k-perf wave-1** (parent `dev`, binding walls in
+[gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md) — arrhenius1,
+1 MPI × OMP=4 bind, CP2K 2026.1 quiet TIMING `CP2K` TOTAL TIME MAXIMUM):
 
-### P0 — thrash / double work (measured first)
+| Twin | \(T_{\mathrm{atv}}\) [s] | \(T_{\mathrm{cp2k}}\) [s] | ratio | Rank by residual |
+| --- | ---: | ---: | ---: | --- |
+| `ot-minimizer-water` OT | 7.55 | 2.50 | **3.02** | **worst_ratio** (active lever) |
+| `gpw-multigrid-kpoints` MAIN | 1.5 | 0.688 | **2.18** | STVnl + coll/int (see stages) |
+| `gpw-uks-o2-gamma` | 25.1 | 13.69 | **1.83** | largest absolute excess (~11 s) |
+| `gpw-kpoints-si` MAIN | 2.88 | 2.45 | **1.18** | near parity (dense χ^k) |
 
-(empty — all P0 items done)
+**MG stage class** (ATV vs CP2K per-call, same host): collocate **~27 vs ~14.5 ms**
+(~1.9×); integrate **~43 vs ~17.1 ms** (~2.5×); STVnl setup once **~430–475 ms**
+(in_progress `p0-stvnl-setup-residual` claims ~318 after fill — unmerged).
+Thin `product_collint` kernel polish is **exhausted** (wave-8 residual-2 no-land).
+Chase **~1×** with **algorithm-match / non-kernel structure** only; portable xsimd
+still first-class (any new SIMD row states bit-exact/tol plan up front); never
+global `XTENSOR_USE_XSIMD`. No capability expansion.
 
-### P1 — kernel constant + OT + structure
+### P0 — contribution order (worst ratio → stage mass)
 
-- [ ] `p2-simd-2center-setup` | xsimd the analytic 2-center S/T primitive loops (setup STVpp ~99 s at slabw scale after KB/grid-PP fixes; invisible on small twins) | phase P2 | files: overlap/kinetic internals | gate: setup microbench ↓ on a slab-class fragment; four twins no regression |
-- [ ] `p1-products-default-k` | **RE-GATED:** flip is a large regression until product engine is closer to CP2K. Revisit after collint polish with a fresh same-binary A/B. Dense χ^k transitional / opt-out only. Do **not** add a 5th collocation layout without deleting dense χ^k | phase P2 | files: `kpoints.cpp`, solver k-path | gate: fresh A/B shows products ≤ dense on the k twin; pins hold |
+- [ ] `p0-ot-cp2k-match` | **P0** Close fair twin `ot-minimizer-water` **3.02× → ≤1.1×** (ATV OT **7.55 s** / CP2K **2.50 s**; 25 OT it vs CP2K 19 outer). Match CP2K OT further (OUTER_SCF schedule, ENERGY_GAP / FULL_SINGLE_INVERSE where dense-stable, DIIS history, step economics / fewer KS rebuilds) without restoring Pulay-H + fixed-H wall hack. Diagnostic `ot-uks-o2` only after fair twin moves | twin: `ot-minimizer-water` | files: `ot.cpp`, `gpw_solver.cpp` | gate: real CP2K twin wall ratio ↓; pins + FD force PASS; no tol soften |
+- [ ] `p0-mg-collint-structure` | **P0** Non-kernel cut of MG coll+int residual (coll ~1.9×, int ~2.5×; ~0.5 s of the **0.81 s** MAIN gap at ~13 SCF-class calls). Task/OMP scheduling, sphere/cache locality, monom walk order, redundant work outside inner SIMD — **not** another width-N accumulate / kernel micro-SIMD experiment | twin: `gpw-multigrid-kpoints` MAIN | files: `multigrid.cpp`, `product_collint.cpp` (structure only) | gate: MAIN ratio ↓ from **2.18**; coll/int ms ↓ toward CP2K 14.5/17.1; pins + FD force PASS |
+- [ ] `p0-uks-o2-scf-wall` | **P0** Close `gpw-uks-o2-gamma` **1.83× → ≤1.2×** (ATV **25.1 s** / CP2K **13.69 s**; largest absolute excess). Profile dual-spin single-grid cbg collocate/integrate + DIIS iter economics under `ATV_GPW_PROF`; cut redundant KS / dual-collocate structure (χ path, not product collint) | twin: `gpw-uks-o2-gamma` | files: `gpw_solver.cpp`, `collocate.cpp`, `ks_grid_build.cpp` | gate: twin wall ratio ↓; energy pin + UKS force regs PASS; no tol soften |
 
-- [ ] `p2-xc-spectral-fft` | GGA KS ~180 ms with ~110 ms in spectral gradient/div on 884k pts; FFTW threads on + OMP copies landed. Further: fused multi-out FFT / MEASURE plans | phase P2 | files: `grid_fft.cpp`, `xc_grid_gga.cpp` | gate: OT/DIIS KS ms ↓ no energy drift |
+### P1 — near-parity path choice
 
+- [ ] `p1-products-default-k` | **A/B only:** dense χ^k MAIN already **1.18×** on `gpw-kpoints-si` (kbg dominates setup). Re-measure products vs dense **same-binary** on non-MG multi-k; flip default only if products ≤ dense and pins hold. Dense transitional / hard opt-out. **No 5th collocation layout** without deleting dense χ^k. MG already uses products — do not re-litigate MG path here | twin: `gpw-kpoints-si` | files: `kpoints.cpp`, solver k-path | gate: fresh A/B walls; if win, default products + hard-opt-out dense |
 
-### P2 — SIMD, force reuse, MPI grids
+### P2 — scale-out + slab (not 1-MPI fair-wall levers)
 
-
-- [ ] `p2-mpi-product-grid` | Architecture P2: product/grid distribute. Today only k RR + Allreduce density/traces; setup STVpp, products, grids, Poisson replicated on every rank (foothold comments ~L969–1010). Split product scatter / grid FFT across ranks without changing Frame API | phase P2 | files: `gpw_solver.cpp`, `multigrid.cpp`, MPI layout | gate: `mpi-gpw-scaling-4rank` + multi-k regs; scaling wall ↓ |
+- [ ] `p2-mpi-product-grid` | Product/grid distribute across ranks (today only k RR + Allreduce density). Not a 1-MPI fair-wall lever; staff when worst fair twin ≤~1.1× | twin: `mpi-gpw-scaling-4rank` | files: `gpw_solver.cpp`, `multigrid.cpp`, MPI | gate: scaling wall ↓ + multi-k regs |
+- [ ] `p2-simd-2center-setup` | Portable **xsimd** analytic 2-center S/T (raw spans, scalar tail; no arch intrinsics) — slab-class only (invisible on four small twins). **Bit-exact plan:** default gate bit-identical vs current pins; if vectorized reduction reorders FP, land only with stated numeric tol vs CP2K pin **and** fresh FD-force check, documented in commit | twin: slab microbench | files: `one_electron.cpp` / overlap-kinetic | gate: setup ↓; four twins no regression; no silent tol soften |
 
 ## in_progress
 
-(empty)
+- [~] `p0-stvnl-setup-residual` | **resume** unmerged `wf/perf-stvnl-setup-residual` @ `21b15883` (worktree misnamed `Atomiverse-wt-perf-ot-cp2k-match`; branch was renamed ot→mg→stvnl) | bottom-up Hermite `fill_upto` + `contracted_ST_shift` + pair OMP + live-image pack; worker claims ST_k ~402→~318 ms, MAIN ~1.6→~1.5 s, E pin bit-identical, FD PASS — **not merged**, do not demote; merge needs rebased queue (tip prematurely marks slug done) + consistent CP2K MAIN pin (tip re-pin 0.686 s vs baseline 1.28 s) | twin: `gpw-multigrid-kpoints` | files: `one_electron.{h,cpp}`, `kpoints.cpp`, `gpw_solver.cpp` |
 
 ## blocked
 
@@ -79,13 +91,17 @@ the top MG-kernel + OT-extension rows (in_progress below).
 - [x] `p2-ot-exact-fixed-h` | 2026-08-05 | (superseded for Γ by energy OT) Fixed-H eigen was a wall hack; product Γ OT is energy-functional again |
 - [x] `p2-ot-minimizer-diis` | 2026-08-05 | Γ OT MINIMIZER DIIS: OtOrbitalDiis SAFE directions + Armijo (fixed STEPSIZE pure DIIS diverges). Water **69** it; UKS O₂ **180** it / ~62 s (~**7.1×** CP2K). Pins PASS |
 - [x] `p2-ot-cp2k-align` | 2026-08-05 | Γ RKS/UKS OT = energy functional + FULL_SINGLE-style H-aware precond (`M=H+(−ε_H+1)S`) + PR+ CG + Armijo (CP2K twin: MINIMIZER DIIS + FULL_SINGLE_INVERSE + OUTER_SCF; fixed-stepsize DIIS diverges on product micro-cases). Water **25** OT it PASS; UKS O₂ **84** it / ~40 s (~**4.6×** CP2K 8.68 s). \|E_OT−E_DIIS\| ~1e-10. OtOrbitalDiis helper landed for future DIIS minimizer |
+- [x] `p2-xc-spectral-fft` | 2026-08-06 | es-cpu-cuda wave 1: fused multi-out FFT + MEASURE GGA spectral | XC ~108→95 ms |
+- [x] `cpu-ot-diis-outer` + `cpu-ot-residual` | 2026-08-06 | g·e DIIS + OUTER_SCF; UKS O₂ **~7×→~1.4×** CP2K |
+- [x] `cpu-stvnl-residual` + `cpu-products-mg-setup` + collint shell/tasks + integrate residual | 2026-08-06 | MG MAIN **~2.1→~1.6 s / ~1.25×** CP2K 1.28 s |
 
-### Fair wall vs CP2K (2026-08-04 post polish, arrhenius1, OMP=4 bind)
+### Fair wall vs CP2K (2026-08-06 post es-cpu-cuda wave-7, arrhenius1, OMP=4 bind)
 
 `gpw-multigrid-kpoints` MAIN only (MP 2×2×2, 150 Ry, NGRIDS 4):
 
 | Side | Wall [s] | Notes |
 | --- | ---: | --- |
-| ATV quiet MAIN | **~2.1** | best-of-4; was ~42 / ~8 / ~2.6 / ~2.0 |
+| ATV quiet MAIN | **~1.6** | coll ~29 / int ~45 ms; STVnl ~435; products_mg ~18 |
 | CP2K 2026.1 quiet | **~1.28** | `si_kpoints_mg.inp` |
-| **ratio ATV/CP2K** | **~1.6** | STVnl ~0.52 s; coll/int ~80–90 ms/iter |
+| **ratio ATV/CP2K** | **~1.25** | chase ~1× with non-kernel levers (kernel polish exhausted) |
+| `ot-uks-o2` OT | **~11.8 / 8.68** | **~1.4×** (≤3× closed; still primary for OT match) |
