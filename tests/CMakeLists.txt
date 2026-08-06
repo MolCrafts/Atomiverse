@@ -1062,6 +1062,12 @@ if(ATV_BUILD_CUDA)
         atv_add_test(test_cuda_pw_veff cuda/planewave/test_veff.cu)
         target_link_libraries(test_cuda_pw_veff PRIVATE CUDA::cufft)
     endif()
+    # CUDA GPW Γ Poisson foothold — needs CPU solve_poisson oracle (GPW+PW)
+    # and device kernels. Name avoids ATV_TEST_HEAVY_REGEX `gpw_poisson`.
+    if(ATV_BUILD_GPW AND ATV_BUILD_PW)
+        atv_add_test(test_cuda_gpw_device_poisson cuda/gpw/test_device_poisson.cu)
+        target_link_libraries(test_cuda_gpw_device_poisson PRIVATE CUDA::cufft)
+    endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
     atv_add_test(test_cuda_scf_device_integrals cuda/scf/test_device_integrals.cu)
@@ -1069,8 +1075,11 @@ if(ATV_BUILD_CUDA)
         atv_add_test(test_cuda_pw_si  cuda/planewave/test_pw_si.cu)
         # Parity needs a gapped system: uses the checked-in ONCV LDA Si
         # pseudopotential from the pw benchmark reference data.
-        target_compile_definitions(test_cuda_pw_si PRIVATE
-            ATV_PW_UPF_PATH="${CMAKE_SOURCE_DIR}/tests/data/pw/Si_lda_nc.upf")
+        # Guard: atv_add_test may skip heavy targets when ATV_TEST_HEAVY=OFF.
+        if(TARGET test_cuda_pw_si)
+            target_compile_definitions(test_cuda_pw_si PRIVATE
+                ATV_PW_UPF_PATH="${CMAKE_SOURCE_DIR}/tests/data/pw/Si_lda_nc.upf")
+        endif()
     endif()
     atv_add_test(test_cuda_driver_role_validation cuda/test_cuda_driver_role_validation.cu)
     # Registration-time PhaseKind gate, CUDA mirror
