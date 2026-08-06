@@ -30,6 +30,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "atomiverse/core/role.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -145,6 +146,13 @@ class RHF : public cuda::Component, public cuda::HF {
     void destroy(const DestroyContext& ctx) override;
 
   private:
+    /// @brief Seed nuclear Z from a host Frame (path select before upload).
+    ///
+    /// Types are run-static (positions move in MD; Z does not). Calling this
+    /// from `run`/`forces` eliminates the setup type[] D2H on the device s/p
+    /// path. Nested Component-only launches reuse the cache when sizes match.
+    void cache_host_types(const cpu::Frame& frame);
+
     std::unique_ptr<SCFSolver> solver_;
     double energy_ha_ = 0.0;
     bool converged_ = false;
@@ -152,6 +160,8 @@ class RHF : public cuda::Component, public cuda::HF {
     bool built_ = false;
     bool last_force_device_ = false;
     bool last_device_sp_ = false;
+    /// Host-side nuclear Z [e] for path select + shell pack (no type[] D2H).
+    std::vector<int> host_Z_;
 };
 
 } // namespace scf

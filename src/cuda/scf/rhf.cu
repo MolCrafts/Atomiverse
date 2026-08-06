@@ -250,7 +250,8 @@ RHF::RHF(RHF&& other) noexcept
       energy_ha_(other.energy_ha_), converged_(other.converged_),
       iterations_(other.iterations_), built_(other.built_),
       last_force_device_(other.last_force_device_),
-      last_device_sp_(other.last_device_sp_) {
+      last_device_sp_(other.last_device_sp_),
+      host_Z_(std::move(other.host_Z_)) {
     other.energy_ha_ = 0.0;
     other.converged_ = false;
     other.iterations_ = 0;
@@ -259,7 +260,21 @@ RHF::RHF(RHF&& other) noexcept
     other.last_device_sp_ = false;
 }
 
+void RHF::cache_host_types(const cpu::Frame& frame) {
+    const int n = static_cast<int>(frame.nlocal());
+    if (n <= 0) {
+        host_Z_.clear();
+        return;
+    }
+    host_Z_.resize(static_cast<std::size_t>(n));
+    const auto type = frame.span(kAtom_type);
+    for (int i = 0; i < n; ++i)
+        host_Z_[static_cast<std::size_t>(i)] = type[i];
+}
+
 void RHF::run(cpu::Frame& frame) {
+    // Path select + shell pack use host Z before H2D (no setup type[] D2H).
+    cache_host_types(frame);
     // Evaluate owns H2D / component lifecycle / D2H so Frame stays the sole
     // public I/O token and streams stay inside the Component path.
     cuda::Evaluate eval;
@@ -271,6 +286,7 @@ void RHF::run(cpu::Frame& frame) {
 cpu::scf::GradientResult RHF::forces(cpu::Frame& frame) {
     // Wave 6: s/p device path via run()+launch; higher L falls back to host
     // inside launch(). Always enable force assembly for this call.
+    // host_Z_ seeded in run() via cache_host_types.
     const bool prev = compute_force;
     compute_force = true;
     run(frame);
@@ -332,23 +348,29 @@ void RHF::launch(const LaunchContext& ctx) {
         throw std::invalid_argument(
             "cuda::scf::RHF::launch: device frame has no atoms");
     }
-    // Path selection needs Z only (not positions). Async D2H of type[];
-    // geometry stays on device for the pure-s build (Wave 2).
-    std::vector<int> h_Z(static_cast<size_t>(natm));
     auto* stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-    cudaMemcpyAsync(h_Z.data(), ctx.frame.atoms.type,
-                    sizeof(int) * static_cast<size_t>(natm),
-                    cudaMemcpyDeviceToHost, stream);
-    cudaStreamSynchronize(stream); // fence types only (not x/y/z)
+
+    // Path select + shell pack from host-side Z (seeded in run()/forces before
+    // H2D). Z is run-static; geometry stays on device. Covered s/p systems
+    // never D2H type[]. Component-only nested use (e.g. MD without prior
+    // cache_host_types) fills the cache once and reuses it.
+    if (static_cast<int>(host_Z_.size()) != natm) {
+        host_Z_.resize(static_cast<size_t>(natm));
+        cudaMemcpyAsync(host_Z_.data(), ctx.frame.atoms.type,
+                        sizeof(int) * static_cast<size_t>(natm),
+                        cudaMemcpyDeviceToHost, stream);
+        cudaStreamSynchronize(stream);
+    }
+    const int* h_Z = host_Z_.data();
 
     // ── Energy: CUDA-only HF when device s/p kernels cover the molecule ─
     // STO-3G with l≤1 (H…O, mixed Z OK): device S/T/V + ERI + SCF (no host
     // ERI), including virtual level shift λ on the orthonormal Fock.
     // Higher L or other bases: host fill + upload.
     last_device_sp_ = false;
-    if (device_sp_sto3g_ok(basis, h_Z.data(), natm)) {
-        solver_ = make_device_sp_sto3g_solver(h_Z.data(), natm, charge, tol,
-                                             max_iter, level_shift);
+    if (device_sp_sto3g_ok(basis, h_Z, natm)) {
+        solver_ = make_device_sp_sto3g_solver(h_Z, natm, charge, tol, max_iter,
+                                             level_shift);
         last_device_sp_ = true;
     } else {
         cpu::Frame host = host_frame_from_device(ctx.frame);

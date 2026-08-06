@@ -45,13 +45,14 @@ Grok CUDA skills (not ad-hoc style):
 |---|---|---|
 | **0** | **done** | Product path pure-s → `RHFFockDevice` + table-driven contraction |
 | **1** | **done** | Löwdin `S^{-1/2}` fully on device |
-| **2** | **done** | Geometry pack + V_nuc on device; type-only D2H for path select |
+| **2** | **done** | Geometry pack + V_nuc on device; type-only D2H for path select (superseded by host-Z cache) |
 | **3** | **done** | Multi-shell pure-s AO count |
 | **4** | **done** | p-shell device integrals (l≤1 MD/OS); H₂O energy cuda-only |
 | **5** | **done** | Pure-s device analytic forces; async density energy write; no mid-build fence before integrals; `forces()` via `run()` |
 | **6** | **done** | s/p device analytic forces (`launch_rhf_forces_sp`); ends host force fallback for l≤1 |
 | **7** | **landed** | Device-only polish: drop mid-build V_nuc D2H/H2D (energy ← `d_V_nuc`); ERI `__launch_bounds__(256,2)` + occupancy-capped grid-stride |
 | **8** | **landed** | Device `level_shift` on s/p Fock (`RHFFockDevice` + `SCFSolver`); no host-fill when λ≠0 |
+| **9** | **landed** | Path select from host Z before upload (`cache_host_types`); no setup type[] D2H on `run`/`forces` s/p path |
 
 ## Related CUDA ES (not RHF waves)
 
@@ -69,7 +70,7 @@ Grok CUDA skills (not ad-hoc style):
 
 | Phase | Traffic |
 |---|---|
-| **Setup** (before SCF) | type[] D2H once (path select + shell table); H2D of α/c/L; device `V_nuc` atomics |
+| **Setup** (before SCF) | host Z from `run`/`forces` (`host_Z_`); H2D of α/c/L; device `V_nuc` atomics — **no** type[] D2H on covered path |
 | **SCF + s/p forces** | **No** `cudaMemcpy` Device→Host of P, C, ERI, residual, energy, V_nuc |
 | Residual | cuBLAS `nrm2` → `d_residual`; converge flag via **mapped** host page |
 | Energy | cuBLAS `dot` device pointer mode + kernel reads `d_V_nuc` → `frame.scalars->energy` |
@@ -78,7 +79,7 @@ Grok CUDA skills (not ad-hoc style):
 
 ## Host still
 
-- type[] D2H for path select (setup only)
+- host Z for path select (seeded from host Frame before upload; one-time D2H only if Component-only path never saw host)
 - post-calc energy_ha_ / residual mirrors
 - host-integral + host-force path for non-s/p bases (higher L)
 - (level_shift stays on device s/p energy when covered — not a host-only knob)
@@ -101,6 +102,7 @@ Grok CUDA skills (not ad-hoc style):
   same post-merge log: `test_cuda_gpw_device_poisson` **Passed 0.97 s** +
   `test_cuda_pw_poisson` **Passed 1.78 s** (**100%** of 4). Tols: max\|ΔV\|
   **1e-9…1e-10**, Hartree rel **1e-10…1e-12** (cuFFT vs FFTW, not bit-identical).
+- GH200 wave 9 path-select-host (worker job **915654**, branch `wf/escuda-cuda-rhf-path-select-host`): `test_cuda_scf` + `test_cuda_scf_rhf` + `test_cuda_scf_device_integrals` **100% PASS** (1.68 s + 1.89 s + 0.73 s); host `cache_host_types` before upload — no setup type[] D2H on covered `run`/`forces`.
 - `tests/cuda/scf/test_rhf.cu`:
   - `CUDAForcesMatchCPU_H2_STO3G` — |ΔF| **1e-5** eV/Å; energy **ha_to_ev(1e-6)**
   - `CUDAForcesMatchFD_H2_STO3G` — FD bar **5e-2** eV/Å
