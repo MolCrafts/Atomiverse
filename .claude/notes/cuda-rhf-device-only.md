@@ -129,6 +129,13 @@ Grok CUDA skills (not ad-hoc style):
   suite **6/6 PASS**, 7.37 s total). Tols: device≡continuous host **1e-14**;
   vs collint **1e-10·peak + 1e-14** (p-type **1e-9·peak + 1e-13**); ρ sum rel
   **~1e-10**.
+- GH200 GPW product V·shape integrate foothold (feat `2b317beb` / merge
+  `a9f87206`) + post-merge log `.claude/merge-escuda-wave6-915825.out` tip
+  `a9f87206`: `test_cuda_gpw_product_integrate` **Passed 0.95 s** +
+  `test_cuda_gpw_product_collocate` **Passed 2.00 s** + `test_cuda_scf_rhf`
+  **Passed 2.25 s** (**3/3 PASS**, 5.22 s). Tols: device≡continuous host
+  **1e-12·peak + 1e-14**; vs collint **1e-10·peak + 1e-14** (p-type
+  **1e-9·peak + 1e-13**); not full GPW product.
 - `tests/cuda/scf/test_rhf.cu`:
   - `CUDAForcesMatchCPU_H2_STO3G` — |ΔF| **1e-5** eV/Å; energy **ha_to_ev(1e-6)**
   - `CUDAForcesMatchFD_H2_STO3G` — FD bar **5e-2** eV/Å

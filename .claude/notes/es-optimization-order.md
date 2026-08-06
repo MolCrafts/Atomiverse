@@ -40,21 +40,24 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 13. ~~`cpu-products-mg-setup`~~ **landed** (wave 5) — geometry-batch
     `build_products` (shared K/pc per collint geometry, flat exclusive-scan
     packing); products_mg **~285→~18 ms**; MAIN **~1.9 s / ~1.5×** CP2K.
+14. ~~`cpu-collint-shell-tasks`~~ **landed** (wave 6) — `CollintTask` ranges
+    once in `build_products`; collocate/integrate over contiguous monom runs;
+    MAIN **~1.6 s / ~1.25×**; coll **~30** / int **~58** ms.
 
-**Active next (`es-cpu-cuda-opt` post wave-5 land):**
+**Active next (`es-cpu-cuda-opt` post wave-6 land):**
 
 | Track | Focus | Anchor |
 | --- | --- | --- |
-| **cpu** | `cpu-collint-shell-tasks` (then optional `cpu-simd-2center-setup`) | `T_atv/T_cp2k` MG MAIN ~1.5× → ~1× |
-| **cuda** | open-gate only after next GapCensus; no full GPW product; no higher-L RHF | same-settings CPU oracle; device-only; GH200 |
+| **cpu** | `cpu-collint-integrate-residual` (then optional `cpu-simd-2center-setup`) | `T_atv/T_cp2k` MG MAIN ~1.25× → ~1× |
+| **cuda** | foothold chain closed (Poisson + LDA XC + ρ collocate + V integrate); no full GPW product; no higher-L RHF | same-settings CPU oracle; device-only; GH200 |
 
-1. **CPU wall** — MG MAIN **~1.5×** is the worst fair-wall class (OT worst
-   **~1.4×**, ≤3× aim met). Remaining lever: shell-level collint tasks toward
-   CP2K ~20 ms/iter class. Energy-path change ⇒ re-run FD force oracle.
+1. **CPU wall** — MG MAIN **~1.25×** (OT worst **~1.4×**, ≤3× aim met). Primary
+   remaining lever: **integrate residual** (~58 ms vs CP2K ~19 ms). Energy-path
+   change ⇒ re-run FD force oracle.
 2. **CUDA ES** — RHF device s/p energy+forces+level_shift+path-select+**CDIIS**
    **landed**; Γ GPW Poisson/FFT + Padé LDA XC + **ρ collocate** + **V·shape
    integrate** footholds **landed** (not full method). Full CUDA GPW product
-   remains blocked.
+   remains blocked. No open CUDA pending after wave-6 GapCensus.
 
 **Worker law:** branches `wf/escuda-<slug>` off **`dev`**; no push; no
 `reset --hard`. Disk: wipe `build`/`build-*` after every cmake/ctest. CUDA
@@ -71,8 +74,8 @@ CUDA RHF: [cuda-rhf-device-only.md](cuda-rhf-device-only.md).
 
 ### CUDA ES this wave
 
-**Wave 5 landed** device CDIIS (Pulay) on s/p RHF + thin product ρ collocate
-foothold (plus CPU products_mg setup). **Forbidden:** hybrid / GAPW / PAW /
-meta-GGA product; claiming CUDA wins on small-molecule correctness twins;
-classical MD CUDA (separate OpenMM track); full CUDA GPW method product before
-architecture freeze.
+**Wave 6 landed** shell-level collint tasks (CPU) + thin product V·shape
+integrate foothold (CUDA). **Forbidden:** hybrid / GAPW / PAW / meta-GGA
+product; claiming CUDA wins on small-molecule correctness twins; classical MD
+CUDA (separate OpenMM track); full CUDA GPW method product before architecture
+freeze.
