@@ -39,32 +39,30 @@ CUDA RHF `.claude/notes/cuda-rhf-device-only.md`.
 
 ## pending
 
-Wave-7 GapCensus 2026-08-06 (`dev` @ `a9f87206`, post wave-6 land + harness).
-Walls from worker `cpu-collint-shell-tasks` land claim + post-merge FD/unit
-evidence (GH200 **915825**). Staff only `wf/escuda-<slug>` off **current**
-`dev`. Do not invent hybrid/GAPW/PAW/meta-GGA.
+Wave-8 GapCensus 2026-08-06 (`dev` @ `8b76cbe7`, post wave-7 integrate residual).
+Staff only `wf/escuda-<slug>` off **current** `dev`. Do not invent
+hybrid/GAPW/PAW/meta-GGA.
 
-### Fair-wall rank (1 MPI × OMP=4; post wave-6 land)
+### Fair-wall rank (1 MPI × OMP=4; post wave-7 land)
 
 | Twin | ATV on `dev` | CP2K twin | ratio | lever class |
 | --- | --- | --- | ---: | --- |
 | `ot-uks-o2` | **27** OT it / OT **~11.8 s** | **8.68 s** / **30** SCF steps | **~1.4×** | ≤3× aim **met**; not primary |
-| `gpw-multigrid-kpoints` | MAIN **~1.6 s** (coll **~30** / int **~58** ms/iter; products_mg ~18 ms; STVnl ~435 ms) | **~1.28 s** quiet | **~1.25×** | integrate residual primary for ~1× |
+| `gpw-multigrid-kpoints` | MAIN **~1.6 s** (coll **~29** / int **~45** ms/iter; products_mg ~18 ms; STVnl ~435 ms) | **~1.28 s** quiet | **~1.25×** | further int residual (~2.4× CP2K int) for ~1× |
 | `ot-minimizer-water` | **25** OT it | ~2.7 s older OT class | improved | outer closed under OT residual |
 | `gpw-uks-o2-gamma` | DIIS ~19–24 s | ~21 s older | **~1×** | closed |
 
-Product path landed through shell-level collint tasks (`CollintTask` ranges
-built once in `build_products`). Dense `kbg` remains **skipped** under MG
-(`!use_mg`). Remaining MG residual toward ~1×: **integrate residual** (int
-still ~3× CP2K ~19 ms class; coll ~1.5×). OT ≤3× aim already met. Shell-level
-task list **closed** in architecture table.
+Product path landed through shell-level collint tasks + integrate residual.
+Dense `kbg` remains **skipped** under MG (`!use_mg`). Remaining MG residual
+toward ~1×: **further integrate** (int still ~2.4× CP2K ~19 ms; coll ~1.5×).
+OT ≤3× aim already met. Wave-7 first-cut integrate residual **closed**.
 
 ### CPU — wall vs CP2K (worst ratio first)
 
-- [ ] `cpu-collint-integrate-residual` | **P1** Residual integrate toward CP2K ~20 ms class after shell-task land (int still **~58 ms** / ~3×; coll ~30 ms secondary) — group-kernel / cab contract / sphere residual only; no new collocation layout. | track cpu | twin: `gpw-multigrid-kpoints` MAIN | files: `product_collint.{h,cpp}`, `multigrid.cpp` | gate: per-iter int ↓; MAIN ratio ↓ toward ~1×; pins green; FD if energy path moves |
+- [ ] `cpu-collint-int-residual-2` | **P2** Optional further integrate residual toward CP2K ~20 ms (int still **~45 ms** / ~2.4×; coll ~29 secondary) — triangular packing or reverse/kernel polish only; no new collocation layout. | track cpu | twin: `gpw-multigrid-kpoints` MAIN | files: `product_collint.{h,cpp}` | gate: per-iter int ↓; MAIN ratio ↓ toward ~1×; pins green; FD if energy path moves |
 - [ ] `cpu-simd-2center-setup` | **P3** xsimd analytic 2-center S/T if still hot on slab-class (invisible on small four twins) — from gpw-perf `p2-simd-2center-setup` | track cpu | twin: slab fragment microbench | files: overlap/kinetic internals | gate: setup ↓; four twins no regression |
 
-*Not promoted (stay on gpw-perf-queue):* `p1-products-default-k` (re-gated until product ≤ dense A/B; architecture step after integrate residual if MG ~1× closed); `p2-mpi-product-grid` (multi-rank; not 1 MPI fair-wall lever); OT further polish (≤3× aim already met on `ot-uks-o2`); force-grid rebuild residual (force reuse already landed on gpw-perf). *Already landed this loop:* `cpu-xc-spectral-fft`, `cpu-ot-diis-outer`, `cpu-ot-residual`, `cpu-stvnl-residual`, `cpu-collint-residual`, `cpu-products-mg-setup`, `cpu-collint-shell-tasks`.
+*Not promoted (stay on gpw-perf-queue):* `p1-products-default-k` (re-gated until product ≤ dense A/B; architecture step after closer MG parity); `p2-mpi-product-grid` (multi-rank; not 1 MPI fair-wall lever); OT further polish (≤3× aim already met on `ot-uks-o2`); force-grid rebuild residual (force reuse already landed on gpw-perf). *Already landed this loop:* `cpu-xc-spectral-fft`, `cpu-ot-diis-outer`, `cpu-ot-residual`, `cpu-stvnl-residual`, `cpu-collint-residual`, `cpu-products-mg-setup`, `cpu-collint-shell-tasks`, `cpu-collint-integrate-residual`.
 
 ### CUDA — corresponding ES (open-gate; foothold chain closed this loop)
 
@@ -76,7 +74,7 @@ Public `run`/`forces` shape stable for RHF; GPW full method still out of scope.
 Foothold pair collocate↔integrate is complete; **no higher-L RHF** and **no full
 GPW product** this loop.
 
-*(no CUDA pending this loop after wave 6 — next open-gate slice only after
+*(no CUDA pending this loop after wave 7 — next open-gate slice only after
 GapCensus invents a thin oracle-backed unit; full `cuda-gpw-full-product`
 remains blocked)*
 
@@ -91,7 +89,7 @@ green including integrate; full method product still out of scope / architecture
 
 ## in_progress
 
-*(empty after wave-6 land + harness)*
+*(empty after wave-7 land + harness)*
 
 ## blocked
 
@@ -99,6 +97,10 @@ green including integrate; full method product still out of scope / architecture
 - [!] `cuda-gpw-full-product` | blocked until foothold green + CPU architecture frozen for GPW public shape — foothold units green (Poisson + LDA XC + ρ collocate + V·shape integrate); full method product still out of scope for this loop
 
 ## done
+
+Wave 7 land 2026-08-06 (`dev` @ `8b76cbe7`):
+
+- [x] `cpu-collint-integrate-residual` | **P1** Residual integrate toward CP2K ~20 ms class — width-4 segment accumulate on AVX-512 (CP2K AVX2 idiom; avoid width-8 ZMM spill), short-segment scalar, Ltot triangular skip on rectangular monom walks, zero-pol reverse, cab shared-alpha from n≥4 | track cpu | twin: `gpw-multigrid-kpoints` MAIN | files: `product_collint.cpp` | merge: `8b76cbe7` / feat `c6659278` | evidence: int **~58→~45** ms/iter; coll ~29; MAIN **~1.6 s** (**~1.25×** vs CP2K 1.28 s); pin \|ΔE\|=2.029e-05 Ha; unit collocate+multigrid PASS; FD `gpw-forces-water` PASS max\|dF\|=3.243e-04; not bit-exact (SIMD order) |
 
 Wave 6 land 2026-08-06 (`dev` @ `a9f87206`):
 
