@@ -71,6 +71,9 @@ SCFSolver::SCFSolver(xt::xtensor<double, 2> S, xt::xtensor<double, 2> Hcore,
         std::move(S), std::move(Hcore), std::move(ERI), V_nuc, n_occ,
         level_shift_);
     rhf_density_ = std::make_unique<internal::RHFDensity>(n_occ);
+    // CDIIS defaults match cpu::scf::MeanFieldMethod (max=8, start=1).
+    diis_ = std::make_unique<internal::DIISMixer>(/*max_vectors=*/8,
+                                                  /*start_iter=*/1, level_shift_);
 }
 
 SCFSolver::SCFSolver(int n_prim, const double* exponents,
@@ -98,6 +101,8 @@ SCFSolver::SCFSolver(int n_shells_per_atom, int n_prim,
     rhf_fock_device_ = std::make_unique<internal::RHFFockDevice>(
         n_shells_per_atom, n_prim, alpha_atom, coeff_atom, n_occ, level_shift_);
     rhf_density_ = std::make_unique<internal::RHFDensity>(n_occ);
+    diis_ = std::make_unique<internal::DIISMixer>(/*max_vectors=*/8,
+                                                  /*start_iter=*/1, level_shift_);
 }
 
 SCFSolver::SCFSolver(int n_shells, int n_ao, int n_prim, const double* alpha_mol,
@@ -121,6 +126,8 @@ SCFSolver::SCFSolver(int n_shells, int n_ao, int n_prim, const double* alpha_mol
         n_shells, n_ao, n_prim, alpha_mol, coeff_mol, L_mol, atom_of_mol,
         n_occ, level_shift_);
     rhf_density_ = std::make_unique<internal::RHFDensity>(n_occ);
+    diis_ = std::make_unique<internal::DIISMixer>(/*max_vectors=*/8,
+                                                  /*start_iter=*/1, level_shift_);
 }
 
 #endif // ATV_HAS_HF
@@ -140,12 +147,14 @@ void SCFSolver::build(void* stream, cuda::Frame& frame) {
 #ifdef ATV_HAS_HF
     case Path::RHFHostIntegrals:
         rhf_fock_->build(ctx, workspace_);
+        diis_->build(ctx, workspace_);
         eigen_->build(ctx, workspace_);
         rhf_density_->build(ctx, workspace_);
         convergence_->build(ctx, workspace_);
         break;
     case Path::RHFDeviceIntegrals:
         rhf_fock_device_->build(ctx, workspace_);
+        diis_->build(ctx, workspace_);
         eigen_->build(ctx, workspace_);
         rhf_density_->build(ctx, workspace_);
         convergence_->build(ctx, workspace_);
@@ -170,13 +179,19 @@ void SCFSolver::run(void* stream, cuda::Frame& frame) {
                         cu_stream);
 
     // ── Internal SCF self-consistency loop ────────────────────────────
-    // Fixed-order cycle: Fock → diagonalize → density → convergence.
+    // Fixed-order cycle: Fock → CDIIS mix → diagonalize → density → check.
+    // RHF paths run the CPU MixStage twin (Pulay CDIIS + level shift) between
+    // Fock and Eigen so the DIIS error is built from the unshifted Fock.
     //
     // Device-integral path: residual / energy / V_nuc stay on device —
     // **no D2H during the loop**. Host `scf.converged` is filled once after
     // the last iteration (post-pass). Host-integral / synthetic paths still
     // early-exit via host residual (legacy).
     iterations_ = 0;
+#ifdef ATV_HAS_HF
+    if (diis_)
+        diis_->reset();
+#endif
     const bool device_no_d2h =
 #ifdef ATV_HAS_HF
         (path_ == Path::RHFDeviceIntegrals);
@@ -196,12 +211,14 @@ void SCFSolver::run(void* stream, cuda::Frame& frame) {
 #ifdef ATV_HAS_HF
         case Path::RHFHostIntegrals:
             rhf_fock_->step(ctx, workspace_);
+            diis_->step(ctx, workspace_);
             eigen_->step(ctx, workspace_);
             rhf_density_->step(ctx, workspace_);
             convergence_->step(ctx, workspace_);
             break;
         case Path::RHFDeviceIntegrals:
             rhf_fock_device_->step(ctx, workspace_);
+            diis_->step(ctx, workspace_);
             eigen_->step(ctx, workspace_);
             rhf_density_->step(ctx, workspace_);
             convergence_->step(ctx, workspace_);
@@ -275,12 +292,14 @@ void SCFSolver::destroy(void* stream, cuda::Frame& frame) {
         convergence_->destroy(ctx, workspace_);
         rhf_density_->destroy(ctx, workspace_);
         eigen_->destroy(ctx, workspace_);
+        diis_->destroy(ctx, workspace_);
         rhf_fock_->destroy(ctx, workspace_);
         break;
     case Path::RHFDeviceIntegrals:
         convergence_->destroy(ctx, workspace_);
         rhf_density_->destroy(ctx, workspace_);
         eigen_->destroy(ctx, workspace_);
+        diis_->destroy(ctx, workspace_);
         rhf_fock_device_->destroy(ctx, workspace_);
         break;
 #endif
@@ -297,6 +316,7 @@ void SCFSolver::destroy(void* stream, cuda::Frame& frame) {
     cudaFree(workspace_.eig);
     cudaFree(workspace_.work);
     cudaFree(workspace_.Hcore);
+    cudaFree(workspace_.S);
     cudaFree(workspace_.X);
     cudaFree(workspace_.F_prime);
     cudaFree(workspace_.ERI);

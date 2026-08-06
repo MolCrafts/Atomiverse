@@ -49,6 +49,7 @@ struct SCFWorkspace {
 
     // -- RHF-specific --
     prec_t* Hcore = nullptr; ///< Core Hamiltonian T+V [device, n*n].
+    prec_t* S = nullptr; ///< Overlap matrix [device, n*n] (DIIS error e=Xᵀ[F,P]_S X).
     prec_t* X = nullptr; ///< Orthogonalization matrix S^{-1/2} [device, n*n].
     prec_t* F_prime = nullptr; ///< Transformed Fock X^T*F*X [device, n*n].
     prec_t* ERI = nullptr;     ///< Two-electron integrals [device, n^4].

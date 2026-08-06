@@ -118,7 +118,7 @@ class RHFFockDevice {
     void* cublas_handle_ = nullptr;
     void* cusolver_handle_ = nullptr;
     double* d_temp_ = nullptr;
-    double* d_S_ = nullptr;
+    /// Overlap lives on `SCFWorkspace::S` (kept for CDIIS after Löwdin X).
     double* d_T_ = nullptr;
     double* d_V_ = nullptr;
 };

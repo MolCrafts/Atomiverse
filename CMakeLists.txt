@@ -715,6 +715,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/scf/rhf.cu
                 src/cuda/scf/rhf_fock.cu
                 src/cuda/scf/rhf_density.cu
+                src/cuda/scf/diis_mixer.cu
                 src/cuda/scf/device_integrals.cu
             )
         endif()
