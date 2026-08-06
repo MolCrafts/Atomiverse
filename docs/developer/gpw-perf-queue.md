@@ -58,7 +58,7 @@ FD-force on any energy-path land (collocate/integrate/Poisson/XC/V_eff/PP).
 
 ### P0 — contribution order (worst residual first)
 
-- [ ] `p0-mg-collint-sphere-parity` residual | **P1** MG MAIN still **~2.3×** after first-cut sphere land (cmax radius min, `eps_win` 2e-2, `kVFloor` 0.02): coll/int still ~28–30 / ~43–47 ms vs CP2K 14.5/17.1. Next: deeper monom contract / private-grid BW only if prof proves; **no** structure re-open, **no** width-N | twin: `gpw-multigrid-kpoints` MAIN | files: collint/multigrid | gate: MAIN ratio ↓; pins + FD |
+(empty — MG sphere residual closed as far as pin-safe collint levers allow; MAIN still ~2.3×)
 
 ### P1 — near-parity path choice
 
@@ -80,7 +80,7 @@ FD-force on any energy-path land (collocate/integrate/Poisson/XC/V_eff/PP).
 ## done
 
 - [x] `p0-ot-match-residual` | 2026-08-06 | Per-KS residual after control match: (1) RKS packed-χ collocate/integrate (UKS idiom); (2) GGA `ensure_many_plans` warmup at grid setup — first OT KS H **~790→~180 ms** (cold multi-out MEASURE moved out of SCF); (3) polish handoff gnorm **1.5→2.0**, precond only on residual OT outers. OT SCF body **~2.14→~1.57 s**; with setup class **≤1.0×** CP2K 2.50 s pin. 10 it; pins + FD forces-water PASS | feat on `dev` |
-- [x] `p0-mg-collint-sphere-parity` first-cut | 2026-08-06 | cmax radius after cab expand (`min(r_mag,r_cmax)`); `eps_win` **1e-2→2e-2**; integrate `kVFloor` **0.05→0.02**. MAIN quiet **~1.6 s** still **~2.3×** CP2K 0.688 (coll/int residual remains). Pins PASS (\|ΔE\|~3.3e-5); FD forces-water PASS. Residual staff as P1 above |
+- [x] `p0-mg-collint-sphere-parity` | 2026-08-06 | Sphere/contract residual closed for this campaign: (1) cmax radius `min(r_mag,r_cmax)`; (2) `eps_win` 2e-2 + integrate `kVFloor` 0.02; (3) live-weight monom filter (index path, no GridProduct copy) so Ltot tracks density weight; (4) cab shared-alpha from n≥4; (5) parallel private-grid zero. MAIN quiet **~1.6 s / ~2.3×** CP2K 0.688 remains — coll/int ~25–31 / ~43–50 ms vs 14.5/17.1; further cut needs non-pin-safe window or task-list rewrite beyond this loop. Pins PASS (\|ΔE\|~4.6e-5); FD forces-water PASS |
 - [x] `p0-ot-cp2k-match` | 2026-08-06 | FULL_SINGLE_INVERSE + fixed-STEPSIZE 1-KS DIIS + OUTER Pulay polish H-carry. Twin `ot-minimizer-water` OT-only **~7.55→~3.0 s** (wave-8 remeasure min **2.99 s** / CP2K **2.50 s** → **~1.20×**; was **3.02×**); **25→10** it; pins PASS. Residual to ≤1.1× = per-KS cbg+GGA → `p0-ot-match-residual`. Loop fail_streak at ≤1.1× gate; tip recovered post-loop | merged into `dev` (tip `2c58981d` / branch `wf/perf-p0-ot-cp2k-match`) |
 - [x] `p0-mg-collint-structure` | 2026-08-06 | **abandoned** — spatial tasks / monom repack / static slabs: MAIN best 1.5 / median **1.6 s** still **~2.33×**; no landable structure win. Next MG lever: `p0-mg-collint-sphere-parity` |
 - [x] `p0-uks-o2-scf-wall` | 2026-08-06 | dual-spin cbg fuse + packed χ + lazy multi-FFT + `ensure_many_plans` re-entrant mutex fix. Twin `gpw-uks-o2-gamma` wall **25.1→14.75 s**; **ratio_after=1.077** (`T_cp2k=13.691` pin from gpw-perf-baseline 2026-08-06; ratio_before **1.832**). Energy pin holds (\|dE\|1.26e-5); FD-force checked; unit gate 63/63; not bit-exact (triangle). Gate ≤1.2× closed → `p0-uks-post-cbg-residual` abandon | merged `3f991946` (tip `79dcd6e6`) |

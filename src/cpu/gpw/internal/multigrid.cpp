@@ -1143,6 +1143,7 @@ std::vector<double> collocate_products(const UniformGrid& grid,
     nthreads = omp_get_max_threads();
 #endif
     g_rho_scatter.prepare(nthreads, npts);
+#pragma omp parallel for schedule(static)
     for (int t = 0; t < nthreads; ++t)
         std::fill_n(g_rho_scatter.chunk(t), npts, 0.0);
 #pragma omp parallel
@@ -1152,20 +1153,44 @@ std::vector<double> collocate_products(const UniformGrid& grid,
         tid = omp_get_thread_num();
 #endif
         double* loc = g_rho_scatter.chunk(tid);
+        // Index-filter monoms with |w| < eps_drop (no GridProduct copy) so
+        // Ltot/radius track live density weight only.
+        thread_local std::vector<int> keep_i;
+        thread_local std::vector<double> keep_w;
 #pragma omp for schedule(dynamic, 1)
         for (long g = 0; g < nt; ++g) {
             const CollintTask& task = tasks[static_cast<std::size_t>(g)];
             const int n = task.end - task.beg;
             if (n <= 0)
                 continue;
+            if (static_cast<int>(keep_i.size()) < n) {
+                keep_i.resize(static_cast<std::size_t>(n));
+                keep_w.resize(static_cast<std::size_t>(n));
+            }
+            int nk = 0;
             double mag = 0.0;
-            for (int i = task.beg; i < task.end; ++i)
-                mag = std::max(mag, std::abs(wts[static_cast<std::size_t>(i)]));
-            if (mag < eps_drop)
+            for (int i = task.beg; i < task.end; ++i) {
+                const double ww = wts[static_cast<std::size_t>(i)];
+                const double aw = std::abs(ww);
+                if (aw < eps_drop)
+                    continue;
+                keep_i[static_cast<std::size_t>(nk)] = i;
+                keep_w[static_cast<std::size_t>(nk)] = ww;
+                mag = std::max(mag, aw);
+                ++nk;
+            }
+            if (nk <= 0 || !(mag > 0.0))
                 continue;
-            internal::collint_collocate_group(
-                grid, prods.data() + task.beg, wts.data() + task.beg, n, mag,
-                eps_win, loc);
+            if (nk == n) {
+                // Dense task: contiguous path (no idx indirection).
+                internal::collint_collocate_group(
+                    grid, prods.data() + task.beg, wts.data() + task.beg, n,
+                    mag, eps_win, loc);
+            } else {
+                internal::collint_collocate_group_idx(
+                    grid, prods.data(), keep_i.data(), keep_w.data(), nk, mag,
+                    eps_win, loc);
+            }
         }
     }
 #pragma omp parallel for schedule(static)
@@ -1234,6 +1259,7 @@ std::vector<double> integrate_products(
     nthreads = omp_get_max_threads();
 #endif
     g_ks_scatter.prepare(nthreads, nn);
+#pragma omp parallel for schedule(static)
     for (int t = 0; t < nthreads; ++t)
         std::fill_n(g_ks_scatter.chunk(t), nn, 0.0);
 #pragma omp parallel
@@ -1263,12 +1289,14 @@ std::vector<double> integrate_products(
                                               mag, eps_win, V_level.data(),
                                               gacc.data());
             for (int gi = 0; gi < n; ++gi) {
+                const double ig = gacc[static_cast<std::size_t>(gi)];
+                if (std::abs(ig) < eps_drop)
+                    continue;
                 const GridProduct& prod =
                     prods[static_cast<std::size_t>(task.beg + gi)];
                 const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
                 const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-                const double sw =
-                    prod.k * w * gacc[static_cast<std::size_t>(gi)];
+                const double sw = prod.k * w * ig;
                 for (int i = 0; i < A.cn; ++i) {
                     const PrimContrib& ca =
                         contribs[static_cast<std::size_t>(A.cbeg + i)];
@@ -1344,6 +1372,7 @@ std::vector<double> collocate_products_cells(
     nthreads = omp_get_max_threads();
 #endif
     g_rho_scatter.prepare(nthreads, npts);
+#pragma omp parallel for schedule(static)
     for (int t = 0; t < nthreads; ++t)
         std::fill_n(g_rho_scatter.chunk(t), npts, 0.0);
 #pragma omp parallel
@@ -1353,20 +1382,41 @@ std::vector<double> collocate_products_cells(
         tid = omp_get_thread_num();
 #endif
         double* loc = g_rho_scatter.chunk(tid);
+        thread_local std::vector<int> keep_i;
+        thread_local std::vector<double> keep_w;
 #pragma omp for schedule(dynamic, 1)
         for (long g = 0; g < nt; ++g) {
             const CollintTask& task = tasks[static_cast<std::size_t>(g)];
             const int n = task.end - task.beg;
             if (n <= 0)
                 continue;
+            if (static_cast<int>(keep_i.size()) < n) {
+                keep_i.resize(static_cast<std::size_t>(n));
+                keep_w.resize(static_cast<std::size_t>(n));
+            }
+            int nk = 0;
             double mag = 0.0;
-            for (int i = task.beg; i < task.end; ++i)
-                mag = std::max(mag, std::abs(wts[static_cast<std::size_t>(i)]));
-            if (mag < eps_drop)
+            for (int i = task.beg; i < task.end; ++i) {
+                const double ww = wts[static_cast<std::size_t>(i)];
+                const double aw = std::abs(ww);
+                if (aw < eps_drop)
+                    continue;
+                keep_i[static_cast<std::size_t>(nk)] = i;
+                keep_w[static_cast<std::size_t>(nk)] = ww;
+                mag = std::max(mag, aw);
+                ++nk;
+            }
+            if (nk <= 0 || !(mag > 0.0))
                 continue;
-            internal::collint_collocate_group(
-                grid, prods.data() + task.beg, wts.data() + task.beg, n, mag,
-                eps_win, loc);
+            if (nk == n) {
+                internal::collint_collocate_group(
+                    grid, prods.data() + task.beg, wts.data() + task.beg, n,
+                    mag, eps_win, loc);
+            } else {
+                internal::collint_collocate_group_idx(
+                    grid, prods.data(), keep_i.data(), keep_w.data(), nk, mag,
+                    eps_win, loc);
+            }
         }
     }
 #pragma omp parallel for schedule(static)

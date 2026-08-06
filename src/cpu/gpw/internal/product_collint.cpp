@@ -337,7 +337,8 @@ void add_group_to_cxyz(const GridProduct* prods, const double* weights, int n,
                        int lpx, int lpy, int lpz, double* cxyz) {
     if (n <= 0)
         return;
-    if (n < 8) {
+    // Cab shared-alpha wins from small groups (was 8; MAIN tasks often 4–20).
+    if (n < 4) {
         for (int i = 0; i < n; ++i)
             add_product_to_cxyz(prods[i], weights[i], lpx, lpy, lpz, cxyz);
         return;
