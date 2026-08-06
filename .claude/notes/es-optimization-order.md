@@ -36,21 +36,24 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 12. ~~`cpu-collint-residual`~~ **landed** (wave 4) — hybrid xsimd FMA + 4-wide
     residual, lp_z≤9, cab-style alpha, TLS multi-imr sphere, gamma group_idx
     nthread grids; coll **~63** / int **~76** ms; MAIN remeasure **~2.4 s /
-    ~1.9×** (setup residual dominates remaining).
+    ~1.9×** (setup residual dominated remaining).
+13. ~~`cpu-products-mg-setup`~~ **landed** (wave 5) — geometry-batch
+    `build_products` (shared K/pc per collint geometry, flat exclusive-scan
+    packing); products_mg **~285→~18 ms**; MAIN **~1.9 s / ~1.5×** CP2K.
 
-**Active next (`es-cpu-cuda-opt` post wave-5 GapCensus):**
+**Active next (`es-cpu-cuda-opt` post wave-5 land):**
 
 | Track | Focus | Anchor |
 | --- | --- | --- |
-| **cpu** | `cpu-products-mg-setup` then `cpu-collint-shell-tasks` | `T_atv/T_cp2k` MG MAIN ~1.9× → ~1× |
-| **cuda** | `cuda-rhf-cdiis-device` then `cuda-gpw-rho-collocate-foothold` (no full GPW; no higher-L RHF) | same-settings CPU oracle; device-only kernels; GH200 |
+| **cpu** | `cpu-collint-shell-tasks` (then optional `cpu-simd-2center-setup`) | `T_atv/T_cp2k` MG MAIN ~1.5× → ~1× |
+| **cuda** | open-gate only after next GapCensus; no full GPW product; no higher-L RHF | same-settings CPU oracle; device-only; GH200 |
 
-1. **CPU wall** — MG MAIN **~1.9×** is the worst fair-wall class (OT worst
-   **~1.4×**, ≤3× aim met). Energy-path change ⇒ re-run FD force oracle.
-2. **CUDA ES** — RHF device s/p energy+forces+level_shift+path-select **landed**;
-   Γ GPW Poisson/FFT + Padé LDA XC footholds **landed** (not full method). Next
-   open-gate: device CDIIS (CPU MixStage twin) then ρ-collocate foothold. Full
-   CUDA GPW product remains blocked.
+1. **CPU wall** — MG MAIN **~1.5×** is the worst fair-wall class (OT worst
+   **~1.4×**, ≤3× aim met). Remaining lever: shell-level collint tasks toward
+   CP2K ~20 ms/iter class. Energy-path change ⇒ re-run FD force oracle.
+2. **CUDA ES** — RHF device s/p energy+forces+level_shift+path-select+**CDIIS**
+   **landed**; Γ GPW Poisson/FFT + Padé LDA XC + **ρ collocate** footholds
+   **landed** (not full method). Full CUDA GPW product remains blocked.
 
 **Worker law:** branches `wf/escuda-<slug>` off **`dev`**; no push; no
 `reset --hard`. Disk: wipe `build`/`build-*` after every cmake/ctest. CUDA
@@ -67,8 +70,8 @@ CUDA RHF: [cuda-rhf-device-only.md](cuda-rhf-device-only.md).
 
 ### CUDA ES this wave
 
-**Wave 5 census** refilled CUDA pending: CDIIS polish + ρ-collocate foothold
-(after wave-4 land: LDA XC + path-select + collint residual). **Forbidden:**
-hybrid / GAPW / PAW / meta-GGA product; claiming CUDA wins on small-molecule
-correctness twins; classical MD CUDA (separate OpenMM track); full CUDA GPW
-method product before architecture freeze.
+**Wave 5 landed** device CDIIS (Pulay) on s/p RHF + thin product ρ collocate
+foothold (plus CPU products_mg setup). **Forbidden:** hybrid / GAPW / PAW /
+meta-GGA product; claiming CUDA wins on small-molecule correctness twins;
+classical MD CUDA (separate OpenMM track); full CUDA GPW method product before
+architecture freeze.

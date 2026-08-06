@@ -61,6 +61,7 @@ Grok CUDA skills (not ad-hoc style):
 |---|---|---|
 | Γ GPW Poisson/FFT foothold | **landed** (`cuda-gpw-foothold`) | `src/cuda/gpw/internal/poisson_fft.{cu,cuh}`; unit vs CPU oracle; **not** full GPW product |
 | Padé LDA XC grid foothold | **landed** (`cuda-gpw-xc-lda-foothold`) | `src/cuda/gpw/internal/xc_lda.{cu,cuh}`; `test_cuda_gpw_xc_lda` vs `cpu::xc::pade_lsd`; per-point ~1e-12, E ~1e-10 rel; **not** full GPW product |
+| product ρ collocate foothold | **landed** (`cuda-gpw-rho-collocate-foothold`) | `src/cuda/gpw/internal/product_collocate.{cu,cuh}`; `test_cuda_gpw_product_collocate` vs continuous host + `collint_collocate_product`; s/p + multi-s–s; **not** full GPW product |
 
 ## Wave 6 layout
 
@@ -114,7 +115,19 @@ Grok CUDA skills (not ad-hoc style):
   `cc450b59`) + same post-merge **915704**: `test_cuda_gpw_xc_lda` **Passed
   0.86 s** (+ poisson/PW LDA still green). Tols: per-point ~**1e-12**, energy
   reduction rel **~1e-10** (device atomic sum vs host).
-- GH200 device CDIIS (worker job **915746**, feat branch `wf/escuda-cuda-rhf-cdiis-device`): `test_cuda_scf` + `test_cuda_scf_rhf` + `test_cuda_scf_device_integrals` **100% PASS** (1.67 + 1.93 + 0.71 s); energy/forces/level_shift twins green at existing tols (ha_to_ev(1e-6)/1e-8 Ha class).
+- GH200 device CDIIS (worker job **915746**, feat `f21a1173` / merge
+  `d575e50b`) + post-merge log `.claude/merge-escuda-wave5-915778.out` tip
+  `759ca486`: `test_cuda_scf` + `test_cuda_scf_rhf` +
+  `test_cuda_scf_device_integrals` **100% PASS** (0.90 + 2.02 + 0.82 s);
+  energy/forces/level_shift twins green at existing tols
+  (ha_to_ev(1e-6)/1e-8 Ha class). CDIIS after Fock; history on device; tiny
+  (m+1) Pulay solve host-only.
+- GH200 GPW product ρ collocate foothold (worker **915754**, feat `0d2868e7` /
+  merge `759ca486`) + same post-merge **915778**:
+  `test_cuda_gpw_product_collocate` **Passed 0.80 s** (+ poisson/XC + full RHF
+  suite **6/6 PASS**, 7.37 s total). Tols: device≡continuous host **1e-14**;
+  vs collint **1e-10·peak + 1e-14** (p-type **1e-9·peak + 1e-13**); ρ sum rel
+  **~1e-10**.
 - `tests/cuda/scf/test_rhf.cu`:
   - `CUDAForcesMatchCPU_H2_STO3G` — |ΔF| **1e-5** eV/Å; energy **ha_to_ev(1e-6)**
   - `CUDAForcesMatchFD_H2_STO3G` — FD bar **5e-2** eV/Å
