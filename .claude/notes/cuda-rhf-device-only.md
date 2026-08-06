@@ -15,8 +15,10 @@ forces on device (ends host force fallback for STO-3G H…O / H₂O).
 | STO-3G s/p (l ≤ 1; H…O, H₂O) + `compute_force` | **Device forces**: `launch_build_W_rhf` + `launch_rhf_forces_sp` → `frame.fx/y/z` [eV/Å] |
 | Higher L / other bases | Host fill S/Hcore/ERI → upload → device SCF; host forces |
 
-`level_shift != 0` is refused on the device s/p energy path (not wired) —
-falls back to host-fill SCF path rather than silent wrong answer.
+`level_shift` (Saunders–Hillier virtual shift) is wired on **both** host-fill
+and device s/p Fock paths: orthonormal `F' += λ(I − P'_occ)` from previous
+`C_prime`, threshold `|λ| ≤ 1e-4` no-op, post-convergence virtual de-shift on
+`eig`. Energy uses unshifted F so converged E is λ-invariant.
 
 **DRY:** never retype STO-3G numbers — `basis_data/accessors.h` over `sto3g.h`.
 
@@ -70,7 +72,7 @@ Grok CUDA skills (not ad-hoc style):
 - type[] D2H for path select (setup only)
 - post-calc energy_ha_ / residual mirrors
 - host-integral + host-force path for non-s/p bases (higher L)
-- level_shift ≠ 0 → host-fill SCF path (not device s/p energy)
+- (level_shift stays on device s/p energy when covered — not a host-only knob)
 
 ## Validation
 

@@ -62,16 +62,19 @@ class SCFSolver {
               double tol, int max_iter, double level_shift = 0.0);
 
     /// @brief RHF from GPU-native s-shell kernels (one s shell / atom).
+    /// @param level_shift Virtual level shift λ [Hartree]; default 0.
     SCFSolver(int n_prim, const double* exponents, const double* coefficients,
-              int n_occ, double tol, int max_iter);
+              int n_occ, double tol, int max_iter, double level_shift = 0.0);
 
     /// @brief RHF from GPU-native multi-shell pure-s (Wave 3).
     /// @param n_shells_per_atom s shells per atom from the basis table.
     /// @param n_prim Primitives per shell (uniform).
     /// @param alpha_atom [n_shells_per_atom * n_prim] unnormalized α.
     /// @param coeff_atom [n_shells_per_atom * n_prim] unnormalized c.
+    /// @param level_shift Virtual level shift λ [Hartree]; default 0.
     SCFSolver(int n_shells_per_atom, int n_prim, const double* alpha_atom,
-              const double* coeff_atom, int n_occ, double tol, int max_iter);
+              const double* coeff_atom, int n_occ, double tol, int max_iter,
+              double level_shift = 0.0);
 
     /// @brief RHF from GPU-native molecular s+p shells (Wave 4).
     /// @param n_shells Shell count for the whole molecule.
@@ -81,9 +84,10 @@ class SCFSolver {
     /// @param coeff_mol [n_shells * n_prim] unnormalized c.
     /// @param L_mol [n_shells] angular momentum (0 or 1).
     /// @param atom_of_mol [n_shells] atom index per shell.
+    /// @param level_shift Virtual level shift λ [Hartree]; default 0.
     SCFSolver(int n_shells, int n_ao, int n_prim, const double* alpha_mol,
               const double* coeff_mol, const int* L_mol, const int* atom_of_mol,
-              int n_occ, double tol, int max_iter);
+              int n_occ, double tol, int max_iter, double level_shift = 0.0);
 #endif
 
     /// @brief One-time device workspace allocation.

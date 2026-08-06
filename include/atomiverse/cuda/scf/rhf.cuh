@@ -127,6 +127,11 @@ class RHF : public cuda::Component, public cuda::HF {
     ///        (s/p STO-3G path). False for host fallback or energy-only.
     bool last_force_on_device() const { return last_force_device_; }
 
+    /// @brief True when the most recent SCF used device s/p integrals
+    ///        (`RHFFockDevice` / `launch_*_sp`), including non-zero level_shift.
+    ///        False for host-fill integral path.
+    bool last_scf_on_device() const { return last_device_sp_; }
+
     /// @brief Device SCF workspace after a successful `launch()` / `run()`.
     const SCFWorkspace& workspace() const;
 
@@ -146,6 +151,7 @@ class RHF : public cuda::Component, public cuda::HF {
     int iterations_ = 0;
     bool built_ = false;
     bool last_force_device_ = false;
+    bool last_device_sp_ = false;
 };
 
 } // namespace scf

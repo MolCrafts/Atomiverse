@@ -375,9 +375,9 @@ namespace internal {
 RHFFockDevice::RHFFockDevice(int n_shells, int n_ao, int n_prim,
                              const double* alpha_mol, const double* coeff_mol,
                              const int* L_mol, const int* atom_of_mol,
-                             int n_occ)
+                             int n_occ, double level_shift)
     : n_shells_(n_shells), n_ao_(n_ao), n_prim_(n_prim), n_occ_(n_occ),
-      pure_s_broadcast_(false) {
+      level_shift_(level_shift), pure_s_broadcast_(false) {
     const std::size_t nflat =
         static_cast<std::size_t>(n_shells) * static_cast<std::size_t>(n_prim);
     alpha_mol_.assign(alpha_mol, alpha_mol + nflat);
@@ -388,9 +388,9 @@ RHFFockDevice::RHFFockDevice(int n_shells, int n_ao, int n_prim,
 
 RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
                              const double* alpha_atom, const double* coeff_atom,
-                             int n_occ, int natm)
-    : n_prim_(n_prim), n_occ_(n_occ), pure_s_broadcast_(false),
-      n_shells_per_atom_(n_shells_per_atom) {
+                             int n_occ, int natm, double level_shift)
+    : n_prim_(n_prim), n_occ_(n_occ), level_shift_(level_shift),
+      pure_s_broadcast_(false), n_shells_per_atom_(n_shells_per_atom) {
     // Expand pure-s atom block to molecular shells immediately.
     n_shells_ = natm * n_shells_per_atom;
     n_ao_ = n_shells_; // pure-s: 1 AO / shell
@@ -421,9 +421,9 @@ RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
 
 RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
                              const double* alpha_atom, const double* coeff_atom,
-                             int n_occ)
-    : n_prim_(n_prim), n_occ_(n_occ), pure_s_broadcast_(true),
-      n_shells_per_atom_(n_shells_per_atom) {
+                             int n_occ, double level_shift)
+    : n_prim_(n_prim), n_occ_(n_occ), level_shift_(level_shift),
+      pure_s_broadcast_(true), n_shells_per_atom_(n_shells_per_atom) {
     // Defer molecular expand until build() knows natm.
     const std::size_t nflat =
         static_cast<std::size_t>(n_shells_per_atom)
@@ -734,6 +734,22 @@ void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {
                     cudaMemcpyDeviceToDevice, stream);
     cudaMemcpyAsync(scf.H, scf.F_prime, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
+
+    // ── Level shift (same device formula as host-upload RHFFock) ───────
+    // F' += λ(I − P'_occ) on scf.H (EigenSolver input). Energy path keeps
+    // unshifted F in scf.work, so converged E is λ-invariant.
+    // |λ| ≤ 1e-4 → no-op (PySCF threshold; λ=0 bit-identical).
+    if (std::abs(level_shift_) > 1e-4 && ctx.step > 0) {
+        const prec_t lambda = static_cast<prec_t>(level_shift_);
+        int dblocks = cuda::grid_size(n, cuda::kDefaultBlock);
+        add_diagonal_kernel<<<dblocks, cuda::kDefaultBlock, 0, stream>>>(
+            scf.H, lambda, n);
+        const work_t neg_lambda = static_cast<work_t>(-level_shift_);
+        const work_t one_b = work_t(1);
+        detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n, n, scf.n_occ,
+                     &neg_lambda, scf.C_prime, n, scf.C_prime, n, &one_b, scf.H,
+                     n);
+    }
 }
 
 void RHFFockDevice::destroy(const SolverContext& /*ctx*/,

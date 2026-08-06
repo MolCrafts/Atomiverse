@@ -348,23 +348,45 @@ TEST(RHF, CUDASinglePointEnergy) {
 TEST(RHF, CUDALevelShiftEnergyInvariant) {
     // hf-robust-03 CUDA mirror: the virtual-orbital level shift is a pure
     // convergence stabilizer — the converged energy must be λ-invariant.
+    // Shifted s/p STO-3G must stay on the device integral path (not host-fill).
     auto frame0 = make_h2();
     auto frame5 = make_h2();
+    auto frame_cpu = make_h2();
     double tol =
         (sizeof(double) == sizeof(float)) ? double(1e-5) : double(1e-10);
 
     cuda::scf::RHF rhf0{cpu::scf::BasisSet::STO3G, 0, tol, 100, /*level_shift=*/0.0};
+    rhf0.with_gradient(false);
     rhf0.run(frame0);
 
     cuda::scf::RHF rhf5{cpu::scf::BasisSet::STO3G, 0, tol, 100, /*level_shift=*/0.5};
+    rhf5.with_gradient(false);
     rhf5.run(frame5);
 
+    ASSERT_TRUE(rhf0.converged());
+    ASSERT_TRUE(rhf5.converged());
+    // run() destroys the private solver; use sticky path flag (not workspace()).
+    EXPECT_TRUE(rhf0.last_scf_on_device())
+        << "λ=0 H₂/STO-3G must use device s/p RHF path";
+    EXPECT_TRUE(rhf5.last_scf_on_device())
+        << "level_shift=0.5 must use device s/p RHF path, not host-fill SCF";
     ASSERT_TRUE(std::isfinite(static_cast<double>(frame0.meta.get(kEnergy))));
     ASSERT_TRUE(std::isfinite(static_cast<double>(frame5.meta.get(kEnergy))));
     double bar = (sizeof(double) == sizeof(float)) ? 1e-4 : 1e-8;
     EXPECT_NEAR(meta_ha(frame5), meta_ha(frame0), bar)
         << "level_shift=0.5 energy " << meta_ha(frame5)
         << " must match level_shift=0 energy " << meta_ha(frame0);
+
+    // Same-settings CPU oracle (λ=0.5, H₂/STO-3G).
+    {
+        cpu::scf::RHF cpu_rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
+        cpu_rhf.level_shift = 0.5;
+        cpu_rhf.run(frame_cpu);
+        ASSERT_TRUE(cpu_rhf.converged());
+        EXPECT_NEAR(meta_ha(frame5), meta_ha(frame_cpu), bar)
+            << "CUDA level_shift=0.5 energy " << meta_ha(frame5)
+            << " must match CPU " << meta_ha(frame_cpu);
+    }
 }
 
 TEST(RHF, CUDASinglePointHelper) {

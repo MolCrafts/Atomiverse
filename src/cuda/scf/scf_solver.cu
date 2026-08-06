@@ -75,14 +75,15 @@ SCFSolver::SCFSolver(xt::xtensor<double, 2> S, xt::xtensor<double, 2> Hcore,
 
 SCFSolver::SCFSolver(int n_prim, const double* exponents,
                      const double* coefficients, int n_occ, double tol,
-                     int max_iter)
+                     int max_iter, double level_shift)
     : SCFSolver(/*n_shells_per_atom=*/1, n_prim, exponents, coefficients, n_occ,
-                tol, max_iter) {}
+                tol, max_iter, level_shift) {}
 
 SCFSolver::SCFSolver(int n_shells_per_atom, int n_prim,
                      const double* alpha_atom, const double* coeff_atom,
-                     int n_occ, double tol, int max_iter)
-    : path_(Path::RHFDeviceIntegrals), tol_(tol), max_iter_(max_iter) {
+                     int n_occ, double tol, int max_iter, double level_shift)
+    : path_(Path::RHFDeviceIntegrals), tol_(tol), max_iter_(max_iter),
+      level_shift_(level_shift) {
     if (n_occ < 0) {
         throw std::invalid_argument(
             "cuda::scf::SCFSolver: n_occ must be non-negative (got "
@@ -95,15 +96,16 @@ SCFSolver::SCFSolver(int n_shells_per_atom, int n_prim,
     eigen_ = std::make_unique<internal::EigenSolver>();
     convergence_ = std::make_unique<internal::ConvergenceCheck>(tol, false);
     rhf_fock_device_ = std::make_unique<internal::RHFFockDevice>(
-        n_shells_per_atom, n_prim, alpha_atom, coeff_atom, n_occ);
+        n_shells_per_atom, n_prim, alpha_atom, coeff_atom, n_occ, level_shift_);
     rhf_density_ = std::make_unique<internal::RHFDensity>(n_occ);
 }
 
 SCFSolver::SCFSolver(int n_shells, int n_ao, int n_prim, const double* alpha_mol,
                      const double* coeff_mol, const int* L_mol,
                      const int* atom_of_mol, int n_occ, double tol,
-                     int max_iter)
-    : path_(Path::RHFDeviceIntegrals), tol_(tol), max_iter_(max_iter) {
+                     int max_iter, double level_shift)
+    : path_(Path::RHFDeviceIntegrals), tol_(tol), max_iter_(max_iter),
+      level_shift_(level_shift) {
     if (n_occ < 0) {
         throw std::invalid_argument(
             "cuda::scf::SCFSolver: n_occ must be non-negative (got "
@@ -117,7 +119,7 @@ SCFSolver::SCFSolver(int n_shells, int n_ao, int n_prim, const double* alpha_mol
     convergence_ = std::make_unique<internal::ConvergenceCheck>(tol, false);
     rhf_fock_device_ = std::make_unique<internal::RHFFockDevice>(
         n_shells, n_ao, n_prim, alpha_mol, coeff_mol, L_mol, atom_of_mol,
-        n_occ);
+        n_occ, level_shift_);
     rhf_density_ = std::make_unique<internal::RHFDensity>(n_occ);
 }
 
