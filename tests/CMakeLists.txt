@@ -1069,6 +1069,8 @@ if(ATV_BUILD_CUDA)
         target_link_libraries(test_cuda_gpw_device_poisson PRIVATE CUDA::cufft)
         # CUDA GPW Padé LDA XC foothold — vs cpu::xc::pade_lsd / xc_grid_pade.
         atv_add_test(test_cuda_gpw_xc_lda cuda/gpw/test_xc_lda.cu)
+        # CUDA GPW product ρ collocate foothold — vs CPU collint oracle.
+        atv_add_test(test_cuda_gpw_product_collocate cuda/gpw/test_product_collocate.cu)
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
