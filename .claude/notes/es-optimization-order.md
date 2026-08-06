@@ -29,19 +29,23 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    multi-out FFT + MEASURE plans for GGA spectral grad/div; XC ~108→95 ms/iter.
 9. ~~`cpu-ot-diis-outer`~~ **landed** (es-cpu-cuda-opt wave 2) — g·e B-matrix +
    CG fallback; water **93→32** it; UKS O₂ **180→~90** it / ratio **~7.1→~4.4×**.
+10. ~~`cpu-ot-residual`~~ **landed** (es-cpu-cuda-opt wave 3) — OUTER_SCF polish
+    (fixed-H eigen+mix); UKS O₂ **~90→27** it / OT **~13 s** / ratio **~1.5×**.
+11. ~~`cpu-stvnl-residual`~~ **landed** (wave 3) — Hermite geometry-key reuse +
+    phase flatten; STVnl ~507→435 ms; MG MAIN **~2.3 s / ~1.8×**.
 
-**Active next (`es-cpu-cuda-opt` post wave-2 land):**
+**Active next (`es-cpu-cuda-opt` post wave-3 land):**
 
 | Track | Focus | Anchor |
 | --- | --- | --- |
-| **cpu** | Residual MG STVnl/setup + collint tail (`cpu-stvnl-residual`) | `T_atv/T_cp2k` MG MAIN ~1.6× → ~1× |
-| **cuda** | `cuda-rhf-level-shift` then optional thin Γ GPW foothold | same-settings CPU oracle; device-only kernels |
+| **cpu** | Residual MG MAIN toward ~1× (products_mg/kbg + collint ~4× CP2K per-iter; optional `cpu-simd-2center-setup`) | `T_atv/T_cp2k` MG MAIN ~1.8× → ~1× |
+| **cuda** | Optional next RHF coverage (higher-L) **or** deepen GPW device slice beyond Poisson foothold — only with open-gate | same-settings CPU oracle; device-only kernels |
 
-1. **CPU wall** — STVnl ~0.52 s + products_mg/kbg + collint ~4× CP2K per-iter
-   on MG twin. OT outer no longer the dominant story (~4.4× worst). Energy-path
-   change ⇒ re-run FD force oracle.
-2. **CUDA ES** — wave 7 device-only polish **landed**. Next: `cuda-rhf-level-shift`
-   → optional thin Γ GPW foothold (`cuda-gpw-foothold`) **only if** open-gate holds.
+1. **CPU wall** — MG MAIN **~1.8×** is now the worst fair-wall class (OT
+   worst **~1.5×**, ≤3× aim met). Energy-path change ⇒ re-run FD force oracle.
+2. **CUDA ES** — RHF device s/p energy+forces+level_shift **landed**; Γ GPW
+   Poisson/FFT foothold **landed** (not full method). Full CUDA GPW product
+   remains blocked.
 
 **Worker law:** branches `wf/escuda-<slug>` off **`dev`**; no push; no
 `reset --hard`. Disk: wipe `build`/`build-*` after every cmake/ctest. CUDA
@@ -58,6 +62,7 @@ CUDA RHF: [cuda-rhf-device-only.md](cuda-rhf-device-only.md).
 
 ### CUDA ES this wave
 
-**Wave 7 landed** on device s/p energy + forces (`cuda::scf::RHF`). **Forbidden:**
-hybrid / GAPW / PAW / meta-GGA product; claiming CUDA wins on small-molecule
-correctness twins; classical MD CUDA (separate OpenMM track).
+**Wave 3 landed** on device s/p RHF level_shift + thin Γ GPW Poisson/FFT.
+**Forbidden:** hybrid / GAPW / PAW / meta-GGA product; claiming CUDA wins on
+small-molecule correctness twins; classical MD CUDA (separate OpenMM track);
+full CUDA GPW method product before architecture freeze.

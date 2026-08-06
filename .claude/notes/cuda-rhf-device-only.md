@@ -5,7 +5,8 @@
 After the public **shape** (`cuda::scf::RHF{basis}.run(frame)`), the energy
 path for systems the device kernels cover must be **CUDA-only**: integrals +
 SCF loop on device, no host ERI materialization. Wave 6 adds **s/p** analytic
-forces on device (ends host force fallback for STO-3G H…O / H₂O).
+forces on device (ends host force fallback for STO-3G H…O / H₂O). Wave 8
+wires **level_shift** on the device s/p Fock path.
 
 ## Current wiring (`cuda::scf::RHF::launch`)
 
@@ -18,7 +19,8 @@ forces on device (ends host force fallback for STO-3G H…O / H₂O).
 `level_shift` (Saunders–Hillier virtual shift) is wired on **both** host-fill
 and device s/p Fock paths: orthonormal `F' += λ(I − P'_occ)` from previous
 `C_prime`, threshold `|λ| ≤ 1e-4` no-op, post-convergence virtual de-shift on
-`eig`. Energy uses unshifted F so converged E is λ-invariant.
+`eig`. Energy uses unshifted F so converged E is λ-invariant. Device path is
+**not** refused when λ ≠ 0.
 
 **DRY:** never retype STO-3G numbers — `basis_data/accessors.h` over `sto3g.h`.
 
@@ -49,6 +51,13 @@ Grok CUDA skills (not ad-hoc style):
 | **5** | **done** | Pure-s device analytic forces; async density energy write; no mid-build fence before integrals; `forces()` via `run()` |
 | **6** | **done** | s/p device analytic forces (`launch_rhf_forces_sp`); ends host force fallback for l≤1 |
 | **7** | **landed** | Device-only polish: drop mid-build V_nuc D2H/H2D (energy ← `d_V_nuc`); ERI `__launch_bounds__(256,2)` + occupancy-capped grid-stride |
+| **8** | **landed** | Device `level_shift` on s/p Fock (`RHFFockDevice` + `SCFSolver`); no host-fill when λ≠0 |
+
+## Related CUDA ES (not RHF waves)
+
+| Slice | Status | Notes |
+|---|---|---|
+| Γ GPW Poisson/FFT foothold | **landed** (`cuda-gpw-foothold`) | `src/cuda/gpw/internal/poisson_fft.{cu,cuh}`; unit vs CPU oracle; **not** full GPW product |
 
 ## Wave 6 layout
 
@@ -82,10 +91,21 @@ Grok CUDA skills (not ad-hoc style):
   feat `1ae27395`): same pair **100% PASS** (2.29 s + 0.82 s). Configure with
   **`-DCMAKE_CUDA_ARCHITECTURES=90`** on GH200; do not link x86 `libxtb`
   (`-DATV_BUILD_SEMIEMPIRICAL=OFF` or null `ATV_XTB_ROOT`).
+- GH200 wave 8 level_shift (worker job **913709**, feat `77eb7f79` / merge
+  `ba3a8145`) + post-merge log `.claude/merge-escuda-cuda-915584.out` tip
+  `9f2d791c`: `test_cuda_scf_rhf` **Passed 2.04 s** +
+  `test_cuda_scf_device_integrals` **Passed 0.85 s**;
+  `CUDALevelShiftEnergyInvariant` λ=0.5 matches λ=0 and CPU @ **1e-8 Ha**;
+  `last_scf_on_device()` sticky.
+- GH200 GPW foothold (worker **915518**, feat `f604577c` / merge `9f2d791c`) +
+  same post-merge log: `test_cuda_gpw_device_poisson` **Passed 0.97 s** +
+  `test_cuda_pw_poisson` **Passed 1.78 s** (**100%** of 4). Tols: max\|ΔV\|
+  **1e-9…1e-10**, Hartree rel **1e-10…1e-12** (cuFFT vs FFTW, not bit-identical).
 - `tests/cuda/scf/test_rhf.cu`:
   - `CUDAForcesMatchCPU_H2_STO3G` — |ΔF| **1e-5** eV/Å; energy **ha_to_ev(1e-6)**
   - `CUDAForcesMatchFD_H2_STO3G` — FD bar **5e-2** eV/Å
   - `CUDAForcesMatchCPU_H2O_STO3G` — |ΔF| **1e-4** eV/Å; `last_force_on_device()`
   - `CUDAForcesMatchFD_H2O_STO3G` — O-z FD spot **1e-1** eV/Å
+  - `CUDALevelShiftEnergyInvariant` — λ=0.5 vs λ=0 and CPU **1e-8 Ha**
 - H₂ textbook energy ≈ −1.1167 Ha; pure-s / s/p must not call host RHF for
   forces when l≤1.
