@@ -4889,6 +4889,11 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             // regression vs pure energy-OT CG).
             constexpr int kOuterPeriodDiis = 5;
             constexpr int kDiisReseed = 25;
+            // When residual is small, finish with Roothaan+mix (OUTER_SCF
+            // polish) instead of energy-OT CG — kills the late O₂ thrash
+            // (gnorm ~1e-4 plateau → blow-up → recover).
+            constexpr double kPolishG = 1e-2;
+            constexpr double kPolishMix = 0.5;
             internal::OtOrbitalDiis diis_a(kDiisM, 0.15);
             internal::OtOrbitalDiis diis_b(kDiisM, 0.15);
             std::optional<internal::OtPrecondSingleInverse> prec_a, prec_b;
@@ -4987,8 +4992,78 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                         stall_streak = 0;
                     }
                 }
+                // Mild CG restart: residual rose by >20% ⇒ drop conjugacy.
+                if (use_cg && iter > 0 && gnorm > 1.2 * gnorm_prev)
+                    have_prev = false;
                 gnorm_prev = gnorm;
                 e_prev = e_total;
+
+                // OUTER_SCF polish: fixed-H eigen + density mix when residual
+                // is already moderate. Linear mix damps Roothaan oscillation.
+                // Skip for DFT+U — V_U projector is density-history sensitive
+                // and pure eigen polish desynchronizes U vs DIIS twin.
+                if (!do_dftu && iter > 0 && gnorm < kPolishG) {
+                    RealMatrix Pa_cur =
+                        na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb,
+                                                              1.0)
+                               : RealMatrix(xt::zeros<double>({nb, nb}));
+                    RealMatrix Pb_cur =
+                        nb_spin > 0
+                            ? linalg::build_density_matrix(Cocc_b, nb_spin, nb,
+                                                           1.0)
+                            : RealMatrix(xt::zeros<double>({nb, nb}));
+                    if (na > 0) {
+                        auto ot = internal::ot_minimize_fixed(
+                            Ha, S, T, Cocc_a, 1e-12, 1, 1.0);
+                        Cocc_a = std::move(ot.C);
+                    }
+                    if (nb_spin > 0) {
+                        auto ot = internal::ot_minimize_fixed(
+                            Hb, S, T, Cocc_b, 1e-12, 1, 1.0);
+                        Cocc_b = std::move(ot.C);
+                    }
+                    RealMatrix Pa_new =
+                        na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb,
+                                                              1.0)
+                               : Pa_cur;
+                    RealMatrix Pb_new =
+                        nb_spin > 0
+                            ? linalg::build_density_matrix(Cocc_b, nb_spin, nb,
+                                                           1.0)
+                            : Pb_cur;
+                    // Full dens update once the projected residual is already
+                    // tiny (C ≈ eigen of H) — mixing only damps the handoff.
+                    const double a =
+                        (gnorm < 10.0 * ot_grad_tol) ? 1.0 : kPolishMix;
+                    Pa = (1.0 - a) * Pa_cur + a * Pa_new;
+                    Pb = (1.0 - a) * Pb_cur + a * Pb_new;
+                    auto he = build_uks_H(Pa, Pb);
+                    Ha = std::move(std::get<0>(he));
+                    Hb = std::move(std::get<1>(he));
+                    e_total = std::get<2>(he);
+                    // Refresh occupied coeffs from mixed-H eigen so the next
+                    // residual is the true SCF commutator residual.
+                    if (na > 0) {
+                        auto ot = internal::ot_minimize_fixed(
+                            Ha, S, T, Cocc_a, 1e-12, 1, 1.0);
+                        Cocc_a = std::move(ot.C);
+                    }
+                    if (nb_spin > 0) {
+                        auto ot = internal::ot_minimize_fixed(
+                            Hb, S, T, Cocc_b, 1e-12, 1, 1.0);
+                        Cocc_b = std::move(ot.C);
+                    }
+                    have_carried = true;
+                    have_prev = false;
+                    if (ot_prof) {
+                        auto tC = Clk::now();
+                        std::fprintf(stderr,
+                                     "[UKS OT %2d] KS=%.0fms gnorm=%.2e "
+                                     "mode=POLISH bt=0 | total=%.0fms\n",
+                                     iter, ms(tA, tB), gnorm, ms(tA, tC));
+                    }
+                    continue;
+                }
 
                 RealMatrix pz_a =
                     na > 0 && prec_a
@@ -5063,7 +5138,12 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 double alpha = (curv > 1e-300) ? -slope / curv : 1.0;
                 if (!(alpha > 0.0))
                     alpha = 1.0;
-                alpha = std::min(alpha, 2.0);
+                double amax = 2.0;
+                if (gnorm < 5e-2)
+                    amax = 1.0;
+                if (gnorm < 1e-2)
+                    amax = 0.5;
+                alpha = std::min(alpha, amax);
                 constexpr double c1 = 1e-4;
                 RealMatrix Ca_new =
                     na > 0 ? linalg::lowdin_orthonormalize(
@@ -5266,6 +5346,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         constexpr int kDiisM = 7;
         constexpr int kOuterPeriodDiis = 5;
         constexpr int kDiisReseed = 25;
+        constexpr double kPolishG = 1e-2;
+        constexpr double kPolishMix = 0.5;
         internal::OtOrbitalDiis ot_diis(kDiisM, 0.15);
         std::optional<internal::OtPrecondSingleInverse> prec;
         const bool ot_prof = std::getenv("ATV_GPW_OT_PROF") != nullptr;
@@ -5330,8 +5412,40 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     stall_streak = 0;
                 }
             }
+            if (use_cg && iter > 0 && gnorm > 1.2 * gnorm_prev)
+                have_prev = false;
             gnorm_prev = gnorm;
             e_prev = e_total;
+
+            if (!do_dftu && iter > 0 && gnorm < kPolishG) {
+                const RealMatrix P_cur =
+                    linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
+                auto ot = internal::ot_minimize_fixed(H, S, T, Cocc, 1e-12, 1,
+                                                      2.0);
+                Cocc = std::move(ot.C);
+                const RealMatrix P_new =
+                    linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
+                const double a =
+                    (gnorm < 10.0 * ot_grad_tol) ? 1.0 : kPolishMix;
+                P = (1.0 - a) * P_cur + a * P_new;
+                auto he = build_H_and_energy(P);
+                H = std::move(he.first);
+                e_total = he.second;
+                auto ot2 = internal::ot_minimize_fixed(H, S, T, Cocc, 1e-12, 1,
+                                                       2.0);
+                Cocc = std::move(ot2.C);
+                have_prev = false;
+                if (ot_prof) {
+                    auto tD = Clk::now();
+                    std::fprintf(stderr,
+                                 "[OT-DIIS %2d] H=%.0fms dir=0ms ls=0ms "
+                                 "(polish) gnorm=%.2e hist=%d mode=POLISH | "
+                                 "total=%.0fms\n",
+                                 iter, ms(tA, tB), gnorm, ot_diis.n_hist(),
+                                 ms(tA, tD));
+                }
+                continue;
+            }
 
             const RealMatrix pg =
                 linalg::s_tangent(Cocc, S, prec->apply(g));
@@ -5366,7 +5480,12 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             double alpha = (curv > 1e-300) ? -slope / curv : 1.0;
             if (!(alpha > 0.0))
                 alpha = 1.0;
-            alpha = std::min(alpha, 2.0);
+            double amax = 2.0;
+            if (gnorm < 5e-2)
+                amax = 1.0;
+            if (gnorm < 1e-2)
+                amax = 0.5;
+            alpha = std::min(alpha, amax);
             constexpr double c1 = 1e-4;
             RealMatrix Cnew = linalg::lowdin_orthonormalize(
                 internal::ot_parameterize(Cocc, alpha * d, S), S);

@@ -8,6 +8,8 @@
 ///     on product micro-cases; dual-spin DIIS alone plateaus ~1e-4 on O₂)
 ///   - PRECONDITIONER FULL_SINGLE-style H-aware dense inverse
 ///   - OUTER period rebuilds precond without wiping DIIS history
+///   - OUTER_SCF polish (no DFT+U): once projected residual is small, finish
+///     with fixed-H eigen + density mix (kills late energy-OT CG thrash)
 ///
 /// Parameterization (orthonormality-preserving for any S-tangent `x`,
 /// `C0^T S x = 0`):
