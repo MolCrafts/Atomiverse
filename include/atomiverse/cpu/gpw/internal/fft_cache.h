@@ -10,9 +10,9 @@
 /// thread-safe); execute uses new-array FFTW APIs so multi-alpha callers can
 /// point at their own buffers.
 ///
-/// Plans use FFTW_MEASURE (timed once at first shape touch). GGA gradient /
-/// divergence also keep howmany=3 multi-out plans so three Cartesian
-/// components share one execute instead of three serial transforms.
+/// Plans use FFTW_MEASURE (timed once at first shape touch). Single r2c/c2r
+/// plans are created eagerly; GGA howmany=3 multi-out plans are **lazy** on
+/// first many_* use so LDA/Poisson-only twins skip that cold MEASURE cost.
 #pragma once
 
 #include <cstddef>
@@ -127,6 +127,9 @@ class R2cFft {
     ~R2cFft();
     R2cFft(const R2cFft&) = delete;
     R2cFft& operator=(const R2cFft&) = delete;
+
+    /// @brief Build howmany=3 MEASURE plans + buffers on first GGA many_* use.
+    void ensure_many_plans();
 
     int n0_ = 0, n1_ = 0, n2_ = 0, n2c_ = 0;
     long ntot_ = 0, ncplx_ = 0;

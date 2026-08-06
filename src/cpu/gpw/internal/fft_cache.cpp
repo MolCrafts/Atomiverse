@@ -54,6 +54,12 @@ using ShapeKey = std::tuple<int, int, int>;
 // MEASURE overwrites the planning buffers — only call after buffers exist and
 // before any physics content is written.
 constexpr unsigned kPlanFlags = FFTW_MEASURE;
+// howmany=3 multi-out plans are larger and only used on GGA paths; ESTIMATE
+// avoids a second cold MEASURE tax when LDA/Poisson already paid for r2c/c2r.
+// Per-execute cost is essentially identical for these fused 3-transforms on
+// production grids (verified: no wall regression on Padé-only twins that never
+// touch many_*).
+constexpr unsigned kManyPlanFlags = FFTW_ESTIMATE;
 
 } // namespace
 
@@ -67,35 +73,53 @@ R2cFft::R2cFft(int n0, int n1, int n2)
         throw std::invalid_argument("R2cFft: non-positive grid shape");
     r_.resize(static_cast<std::size_t>(ntot_));
     c_.resize(static_cast<std::size_t>(ncplx_));
-    // Multi-out buffers sized before MEASURE so howmany plans can time them.
-    r_many_.resize(static_cast<std::size_t>(3 * ntot_));
-    c_many_.resize(static_cast<std::size_t>(3 * ncplx_));
+    // Single-transform plans only at first shape touch. howmany=3 multi-out
+    // plans (GGA gradient / divergence) are built lazily on first many_* use
+    // so LDA / MT Poisson twins (UKS O₂ Padé) do not pay 2× MEASURE cold cost.
     std::lock_guard<std::mutex> lock(fftw_plan_mutex());
     ensure_fftw_threads();
     fwd_ = fftw_plan_dft_r2c_3d(n0_, n1_, n2_, r(), c(), kPlanFlags);
     bwd_ = fftw_plan_dft_c2r_3d(n0_, n1_, n2_, c(), r(), kPlanFlags);
-    const int n[3] = {n0_, n1_, n2_};
-    many_fwd_ = fftw_plan_many_dft_r2c(
-        /*rank=*/3, n, /*howmany=*/3, r_many(), /*inembed=*/nullptr,
-        /*istride=*/1, /*idist=*/static_cast<int>(ntot_), c_many(),
-        /*onembed=*/nullptr, /*ostride=*/1, /*odist=*/static_cast<int>(ncplx_),
-        kPlanFlags);
-    many_bwd_ = fftw_plan_many_dft_c2r(
-        /*rank=*/3, n, /*howmany=*/3, c_many(), /*inembed=*/nullptr,
-        /*istride=*/1, /*idist=*/static_cast<int>(ncplx_), r_many(),
-        /*onembed=*/nullptr, /*ostride=*/1, /*odist=*/static_cast<int>(ntot_),
-        kPlanFlags);
-    if (!fwd_ || !bwd_ || !many_fwd_ || !many_bwd_) {
+    if (!fwd_ || !bwd_) {
         if (fwd_)
             fftw_destroy_plan(fwd_);
         if (bwd_)
             fftw_destroy_plan(bwd_);
+        fwd_ = bwd_ = nullptr;
+        throw std::runtime_error("R2cFft: fftw_plan_dft_* failed");
+    }
+}
+
+// Lazy howmany=3 plans + buffers for GGA paths only (see R2cFft ctor).
+void R2cFft::ensure_many_plans() {
+    if (many_fwd_ && many_bwd_)
+        return;
+    r_many_.resize(static_cast<std::size_t>(3 * ntot_));
+    c_many_.resize(static_cast<std::size_t>(3 * ncplx_));
+    std::lock_guard<std::mutex> lock(fftw_plan_mutex());
+    if (many_fwd_ && many_bwd_)
+        return; // another caller won the race under the lock
+    ensure_fftw_threads();
+    const int n[3] = {n0_, n1_, n2_};
+    if (!many_fwd_)
+        many_fwd_ = fftw_plan_many_dft_r2c(
+            /*rank=*/3, n, /*howmany=*/3, r_many(), /*inembed=*/nullptr,
+            /*istride=*/1, /*idist=*/static_cast<int>(ntot_), c_many(),
+            /*onembed=*/nullptr, /*ostride=*/1,
+            /*odist=*/static_cast<int>(ncplx_), kManyPlanFlags);
+    if (!many_bwd_)
+        many_bwd_ = fftw_plan_many_dft_c2r(
+            /*rank=*/3, n, /*howmany=*/3, c_many(), /*inembed=*/nullptr,
+            /*istride=*/1, /*idist=*/static_cast<int>(ncplx_), r_many(),
+            /*onembed=*/nullptr, /*ostride=*/1,
+            /*odist=*/static_cast<int>(ntot_), kManyPlanFlags);
+    if (!many_fwd_ || !many_bwd_) {
         if (many_fwd_)
             fftw_destroy_plan(many_fwd_);
         if (many_bwd_)
             fftw_destroy_plan(many_bwd_);
-        fwd_ = bwd_ = many_fwd_ = many_bwd_ = nullptr;
-        throw std::runtime_error("R2cFft: fftw_plan_dft_* failed");
+        many_fwd_ = many_bwd_ = nullptr;
+        throw std::runtime_error("R2cFft: fftw_plan_many_dft_* failed");
     }
 }
 
@@ -124,20 +148,28 @@ fftw_complex* R2cFft::c2() {
     return c2_.data();
 }
 
-double* R2cFft::r_many() { return r_many_.data(); }
+double* R2cFft::r_many() {
+    ensure_many_plans();
+    return r_many_.data();
+}
 
-fftw_complex* R2cFft::c_many() { return c_many_.data(); }
+fftw_complex* R2cFft::c_many() {
+    ensure_many_plans();
+    return c_many_.data();
+}
 
 void R2cFft::execute_c2r_alt() {
     fftw_execute_dft_c2r(bwd_, c2(), r2());
 }
 
 void R2cFft::execute_many_r2c() {
-    fftw_execute_dft_r2c(many_fwd_, r_many(), c_many());
+    ensure_many_plans();
+    fftw_execute_dft_r2c(many_fwd_, r_many_.data(), c_many_.data());
 }
 
 void R2cFft::execute_many_c2r() {
-    fftw_execute_dft_c2r(many_bwd_, c_many(), r_many());
+    ensure_many_plans();
+    fftw_execute_dft_c2r(many_bwd_, c_many_.data(), r_many_.data());
 }
 
 R2cFft& R2cFft::for_shape(int n0, int n1, int n2) {
