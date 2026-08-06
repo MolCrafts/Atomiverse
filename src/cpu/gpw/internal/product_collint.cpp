@@ -6,6 +6,9 @@
 ///   - process-wide sphere-bounds cache (keyed by dh + discretized radius)
 ///   - lp_z-specialized inner contract (CP2K GRID_MAX_LP_OPTIMIZED=9)
 ///   - portable xsimd on contiguous z-runs with 4-wide residual (AVX-512 hosts)
+///   - integrate residual: short-segment scalar (skip batch zero+reduce),
+///     zero-pol skip on reverse, Ltot triangular skip on rectangular monom walks,
+///     cab shared-alpha from n≥4
 ///
 /// Axis map onto ATV z-fast layout `g[(ix*ny+iy)*nz+iz]`:
 ///   CP2K i (fast) ↔ ATV z,  j ↔ y,  k ↔ x.
@@ -444,7 +447,8 @@ void contract_group_from_I(const GridProduct* prods, int n, int lpx, int lpy,
                            int lpz, const double* I, double* out_acc) {
     if (n <= 0)
         return;
-    if (n < 8) {
+    // Cab shared-alpha wins from small groups (was 8; MAIN tasks often 4–20).
+    if (n < 4) {
         for (int i = 0; i < n; ++i)
             out_acc[i] = contract_product_from_I(prods[i], lpx, lpy, lpz, I);
         return;
@@ -856,52 +860,106 @@ inline void integrate_cx_4wide_run(int& i, int istop, int cmax, int pol_len,
 }
 
 template <int LpZ>
+inline void integrate_cx_scalar_run(int& i, int istop, int cmax, int pol_len,
+                                    const double* pol_i, double* cx,
+                                    int cube2grid, long base0, long base1,
+                                    long base2, long base3,
+                                    const double* grid_io) {
+    for (; i <= istop; ++i) {
+        const int ig = i + cube2grid;
+        const double v0 = grid_io[base0 + ig];
+        const double v1 = grid_io[base1 + ig];
+        const double v2 = grid_io[base2 + ig];
+        const double v3 = grid_io[base3 + ig];
+#pragma GCC unroll 10
+        for (int lz = 0; lz <= LpZ; ++lz) {
+            const double p = pol_i[lz * pol_len + (i + cmax)];
+            cx[lz * 4 + 0] += v0 * p;
+            cx[lz * 4 + 1] += v1 * p;
+            cx[lz * 4 + 2] += v2 * p;
+            cx[lz * 4 + 3] += v3 * p;
+        }
+    }
+}
+
+// Integrate prefers width-4 accumulate (CP2K AVX2 idiom). On AVX-512 the
+// native width-8 path needs 4*(LpZ+1) ZMMs — spills for LpZ≳3 and loses to
+// 4-wide with half the live vectors + shorter segments still vectorized.
+template <int LpZ>
 inline void integrate_cx_from_grid_lp(int lb, int ub, int cmax, int pol_len,
                                       const double* pol_i, double* cx,
                                       const int* map0, const int* sec0,
                                       long base0, long base1, long base2,
                                       long base3, const double* grid_io) {
+#if defined(__AVX512F__)
+    // Width-4 primary on AVX-512 hosts (kUseBatch4Residual implies batch4 ok).
+    constexpr int Wd = 4;
+#else
     using batch_t = xsimd::batch<double>;
+    constexpr int Wd = static_cast<int>(batch_t::size);
+#endif
     for (int istart = lb; istart <= ub;) {
         const int istop = imin(ub, istart + sec0[istart + cmax]);
         const int cube2grid = map0[istart + cmax] - istart;
         int i = istart;
-        batch_t a0[LpZ + 1], a1[LpZ + 1], a2[LpZ + 1], a3[LpZ + 1];
-#pragma GCC unroll 10
-        for (int lz = 0; lz <= LpZ; ++lz) {
-            a0[lz] = batch_t(0.0);
-            a1[lz] = batch_t(0.0);
-            a2[lz] = batch_t(0.0);
-            a3[lz] = batch_t(0.0);
+        const int len = istop - istart + 1;
+        // Short sphere segments: scalar only (no batch zero+reduce).
+        if (len < Wd) {
+            integrate_cx_scalar_run<LpZ>(i, istop, cmax, pol_len, pol_i, cx,
+                                         cube2grid, base0, base1, base2, base3,
+                                         grid_io);
+            istart = istop + 1;
+            continue;
         }
-        integrate_cx_vec_pass<batch_t, LpZ>(i, istop, cmax, pol_len, pol_i, a0,
-                                            a1, a2, a3, cube2grid, base0, base1,
-                                            base2, base3, grid_io);
-#pragma GCC unroll 10
-        for (int lz = 0; lz <= LpZ; ++lz) {
-            cx[lz * 4 + 0] += xsimd::reduce_add(a0[lz]);
-            cx[lz * 4 + 1] += xsimd::reduce_add(a1[lz]);
-            cx[lz * 4 + 2] += xsimd::reduce_add(a2[lz]);
-            cx[lz * 4 + 3] += xsimd::reduce_add(a3[lz]);
-        }
-        integrate_cx_4wide_run<kUseBatch4Residual, LpZ>(
-            i, istop, cmax, pol_len, pol_i, cx, cube2grid, base0, base1, base2,
-            base3, grid_io);
-        for (; i <= istop; ++i) {
-            const int ig = i + cube2grid;
-            const double v0 = grid_io[base0 + ig];
-            const double v1 = grid_io[base1 + ig];
-            const double v2 = grid_io[base2 + ig];
-            const double v3 = grid_io[base3 + ig];
+#if defined(__AVX512F__)
+        // Always-on 4-wide segment accumulate (not residual-only).
+        {
+            using batch4_t = xsimd::make_sized_batch_t<double, 4>;
+            batch4_t a0[LpZ + 1], a1[LpZ + 1], a2[LpZ + 1], a3[LpZ + 1];
 #pragma GCC unroll 10
             for (int lz = 0; lz <= LpZ; ++lz) {
-                const double p = pol_i[lz * pol_len + (i + cmax)];
-                cx[lz * 4 + 0] += v0 * p;
-                cx[lz * 4 + 1] += v1 * p;
-                cx[lz * 4 + 2] += v2 * p;
-                cx[lz * 4 + 3] += v3 * p;
+                a0[lz] = batch4_t(0.0);
+                a1[lz] = batch4_t(0.0);
+                a2[lz] = batch4_t(0.0);
+                a3[lz] = batch4_t(0.0);
+            }
+            integrate_cx_vec_pass<batch4_t, LpZ>(
+                i, istop, cmax, pol_len, pol_i, a0, a1, a2, a3, cube2grid,
+                base0, base1, base2, base3, grid_io);
+#pragma GCC unroll 10
+            for (int lz = 0; lz <= LpZ; ++lz) {
+                cx[lz * 4 + 0] += xsimd::reduce_add(a0[lz]);
+                cx[lz * 4 + 1] += xsimd::reduce_add(a1[lz]);
+                cx[lz * 4 + 2] += xsimd::reduce_add(a2[lz]);
+                cx[lz * 4 + 3] += xsimd::reduce_add(a3[lz]);
             }
         }
+#else
+        {
+            using batch_t = xsimd::batch<double>;
+            batch_t a0[LpZ + 1], a1[LpZ + 1], a2[LpZ + 1], a3[LpZ + 1];
+#pragma GCC unroll 10
+            for (int lz = 0; lz <= LpZ; ++lz) {
+                a0[lz] = batch_t(0.0);
+                a1[lz] = batch_t(0.0);
+                a2[lz] = batch_t(0.0);
+                a3[lz] = batch_t(0.0);
+            }
+            integrate_cx_vec_pass<batch_t, LpZ>(
+                i, istop, cmax, pol_len, pol_i, a0, a1, a2, a3, cube2grid,
+                base0, base1, base2, base3, grid_io);
+#pragma GCC unroll 10
+            for (int lz = 0; lz <= LpZ; ++lz) {
+                cx[lz * 4 + 0] += xsimd::reduce_add(a0[lz]);
+                cx[lz * 4 + 1] += xsimd::reduce_add(a1[lz]);
+                cx[lz * 4 + 2] += xsimd::reduce_add(a2[lz]);
+                cx[lz * 4 + 3] += xsimd::reduce_add(a3[lz]);
+            }
+        }
+#endif
+        integrate_cx_scalar_run<LpZ>(i, istop, cmax, pol_len, pol_i, cx,
+                                     cube2grid, base0, base1, base2, base3,
+                                     grid_io);
         istart = istop + 1;
     }
 }
@@ -981,6 +1039,31 @@ inline void integrate_cx_from_grid_dyn(int lp_z, int lb, int ub, int cmax,
         const int istop = imin(ub, istart + sec0[istart + cmax]);
         const int cube2grid = map0[istart + cmax] - istart;
         int i = istart;
+        const int len = istop - istart + 1;
+        if (len < Wd) {
+            // Short segment: 4-wide residual (AVX-512) + scalar, no batch zero.
+            if (lp_z <= kDynMax) {
+                integrate_cx_4wide_dyn_run<kUseBatch4Residual>(
+                    i, istop, lp_z, cmax, pol_len, pol_i, cx, cube2grid, base0,
+                    base1, base2, base3, grid_io);
+            }
+            for (; i <= istop; ++i) {
+                const int ig = i + cube2grid;
+                const double v0 = grid_io[base0 + ig];
+                const double v1 = grid_io[base1 + ig];
+                const double v2 = grid_io[base2 + ig];
+                const double v3 = grid_io[base3 + ig];
+                for (int lz = 0; lz <= lp_z; ++lz) {
+                    const double p = pol_i[lz * pol_len + (i + cmax)];
+                    cx[lz * 4 + 0] += v0 * p;
+                    cx[lz * 4 + 1] += v1 * p;
+                    cx[lz * 4 + 2] += v2 * p;
+                    cx[lz * 4 + 3] += v3 * p;
+                }
+            }
+            istart = istop + 1;
+            continue;
+        }
         if (lp_z <= kDynMax) {
             batch_t a0[kDynMax + 1], a1[kDynMax + 1], a2[kDynMax + 1],
                 a3[kDynMax + 1];
@@ -1113,7 +1196,7 @@ inline void dispatch_integrate_cx(int lp_z, int lb, int ub, int cmax,
 template <bool Collocate>
 void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
                         double zetp, double radius, int lpx, int lpy, int lpz,
-                        double* cxyz, double* grid_io) {
+                        int Ltot, double* cxyz, double* grid_io) {
     const double di = grid.L[2] / static_cast<double>(grid.n[2]);
     const double dj = grid.L[1] / static_cast<double>(grid.n[1]);
     const double dk = grid.L[0] / static_cast<double>(grid.n[0]);
@@ -1224,6 +1307,11 @@ void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
     const int* sb = sphere;
     const int kstart = *sb++;
 
+    // Angular monoms with lx+ly+lz > Ltot are structurally zero (each product
+    // monom has total L ≤ Ltot). Skip them in rectangular walks — CP2K uses
+    // triangular packing for the same reason.
+    const int Lcap = (Ltot >= 0) ? Ltot : (lp_x + lp_y + lp_z);
+
     for (int k1 = kstart; k1 <= 0; ++k1) {
         const int k2 = 1 - k1;
         const int kg1 = map2[k1 + cmax];
@@ -1236,8 +1324,10 @@ void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
                 const double p2 = pol_k[lx * pol_len + (k2 + cmax)];
                 if (p1 == 0.0 && p2 == 0.0)
                     continue;
-                for (int ly = 0; ly <= lp_y; ++ly)
-                    for (int lz = 0; lz <= lp_z; ++lz) {
+                const int ly_max = imin(lp_y, Lcap - lx);
+                for (int ly = 0; ly <= ly_max; ++ly) {
+                    const int lz_max = imin(lp_z, Lcap - lx - ly);
+                    for (int lz = 0; lz <= lz_max; ++lz) {
                         const double c = cxyz[(lx * sy + ly) * sz + lz];
                         if (c == 0.0)
                             continue;
@@ -1245,6 +1335,7 @@ void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
                         cxy[cxy_i + 0] += c * p1;
                         cxy[cxy_i + 1] += c * p2;
                     }
+                }
             }
         }
 
@@ -1261,7 +1352,8 @@ void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
                     const double p2 = pol_j[ly * pol_len + (j2 + cmax)];
                     if (p1 == 0.0 && p2 == 0.0)
                         continue;
-                    for (int lz = 0; lz <= lp_z; ++lz) {
+                    const int lz_max = imin(lp_z, Lcap - ly);
+                    for (int lz = 0; lz <= lz_max; ++lz) {
                         const int cxy_i = (ly * sz + lz) * 2;
                         const double c0 = cxy[cxy_i + 0];
                         const double c1 = cxy[cxy_i + 1];
@@ -1290,30 +1382,40 @@ void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
                 dispatch_integrate_cx(lp_z, lb, ub, cmax, pol_len, pol_i, cx,
                                       map0, sec0, base0, base1, base2, base3,
                                       grid_io);
+                // Reverse cxy ← cx: skip zero pol (collocate already does).
                 for (int ly = 0; ly <= lp_y; ++ly) {
                     const double p1 = pol_j[ly * pol_len + (j1 + cmax)];
                     const double p2 = pol_j[ly * pol_len + (j2 + cmax)];
-                    for (int lz = 0; lz <= lp_z; ++lz) {
+                    if (p1 == 0.0 && p2 == 0.0)
+                        continue;
+                    const int lz_max = imin(lp_z, Lcap - ly);
+                    for (int lz = 0; lz <= lz_max; ++lz) {
                         const int cxy_i = (ly * sz + lz) * 2;
-                        cxy[cxy_i + 0] += cx[lz * 4 + 0] * p1;
-                        cxy[cxy_i + 1] += cx[lz * 4 + 1] * p1;
-                        cxy[cxy_i + 0] += cx[lz * 4 + 2] * p2;
-                        cxy[cxy_i + 1] += cx[lz * 4 + 3] * p2;
+                        cxy[cxy_i + 0] +=
+                            cx[lz * 4 + 0] * p1 + cx[lz * 4 + 2] * p2;
+                        cxy[cxy_i + 1] +=
+                            cx[lz * 4 + 1] * p1 + cx[lz * 4 + 3] * p2;
                     }
                 }
             }
         }
 
         if constexpr (!Collocate) {
+            // Reverse cxyz ← cxy with Ltot triangular skip + zero pol.
             for (int lx = 0; lx <= lp_x; ++lx) {
                 const double p1 = pol_k[lx * pol_len + (k1 + cmax)];
                 const double p2 = pol_k[lx * pol_len + (k2 + cmax)];
-                for (int ly = 0; ly <= lp_y; ++ly)
-                    for (int lz = 0; lz <= lp_z; ++lz) {
+                if (p1 == 0.0 && p2 == 0.0)
+                    continue;
+                const int ly_max = imin(lp_y, Lcap - lx);
+                for (int ly = 0; ly <= ly_max; ++ly) {
+                    const int lz_max = imin(lp_z, Lcap - lx - ly);
+                    for (int lz = 0; lz <= lz_max; ++lz) {
                         const int cxy_i = (ly * sz + lz) * 2;
                         cxyz[(lx * sy + ly) * sz + lz] +=
                             cxy[cxy_i + 0] * p1 + cxy[cxy_i + 1] * p2;
                     }
+                }
             }
         }
     }
@@ -1355,7 +1457,7 @@ void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
     std::memset(cxyz, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
     add_group_to_cxyz(prods, weights, n, lpx, lpy, lpz, cxyz);
     ortho_cxyz_to_grid<true>(grid, prods[0].pc, prods[0].p, radius, lpx, lpy,
-                             lpz, cxyz, rho);
+                             lpz, Ltot, cxyz, rho);
 }
 
 void collint_collocate_group_idx(const UniformGrid& grid,
@@ -1386,7 +1488,7 @@ void collint_collocate_group_idx(const UniformGrid& grid,
     double* cxyz = g_I.data();
     std::memset(cxyz, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
     // Geometry-shared cab expand without packing GridProduct (MAIN avg_g ~85).
-    if (n >= 8) {
+    if (n >= 4) {
         int max_la[3] = {0, 0, 0}, max_lb[3] = {0, 0, 0};
         for (int i = 0; i < n; ++i) {
             const auto& p = prods_base[idx[i]];
@@ -1479,8 +1581,8 @@ void collint_collocate_group_idx(const UniformGrid& grid,
             add_product_to_cxyz(prods_base[idx[i]], weights[i], lpx, lpy, lpz,
                                 cxyz);
     }
-    ortho_cxyz_to_grid<true>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, cxyz,
-                             rho);
+    ortho_cxyz_to_grid<true>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, Ltot,
+                             cxyz, rho);
 }
 
 void collint_integrate_group(const UniformGrid& grid, const GridProduct* prods,
@@ -1503,7 +1605,7 @@ void collint_integrate_group(const UniformGrid& grid, const GridProduct* prods,
     double* I = g_I.data();
     std::memset(I, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
     ortho_cxyz_to_grid<false>(grid, prods[0].pc, prods[0].p, radius, lpx, lpy,
-                              lpz, I, const_cast<double*>(V));
+                              lpz, Ltot, I, const_cast<double*>(V));
     contract_group_from_I(prods, n, lpx, lpy, lpz, I, out_acc);
 }
 
@@ -1537,7 +1639,7 @@ void collint_integrate_group_idx(const UniformGrid& grid,
     ensure_I(static_cast<std::size_t>(cxyz_n));
     double* I = g_I.data();
     std::memset(I, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
-    ortho_cxyz_to_grid<false>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, I,
+    ortho_cxyz_to_grid<false>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, Ltot, I,
                               const_cast<double*>(V));
     // Gather monoms into a temp contiguous buffer so the cab-style contract
     // can share one alpha table (MAIN-class shell tasks).
