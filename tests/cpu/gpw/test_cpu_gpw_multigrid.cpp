@@ -325,8 +325,13 @@ TEST(GpwMultigridCells, UniformStackReducesToGamma) {
             collocate_products_cells(mg.levels[l], ps.by_level[l], ps.prims,
                                      ps.contribs, nb, D, 1e-12);
         ASSERT_EQ(rho_gamma.size(), rho_cells.size());
+        // Uniform D-stack must match the Γ product path mathematically; FP
+        // reduction order across the two kernels can differ by a few ulps, so
+        // match the integrate half of this test (1e-12 relative), not
+        // bit-identical equality.
         for (std::size_t g = 0; g < rho_gamma.size(); ++g)
-            ASSERT_DOUBLE_EQ(rho_gamma[g], rho_cells[g]);
+            ASSERT_NEAR(rho_gamma[g], rho_cells[g],
+                        1e-12 * (std::abs(rho_gamma[g]) + 1.0));
 
         const auto V_r =
             cells_rand(static_cast<std::size_t>(mg.levels[l].npts()), 11u);
