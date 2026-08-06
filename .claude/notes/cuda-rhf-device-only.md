@@ -59,6 +59,7 @@ Grok CUDA skills (not ad-hoc style):
 | Slice | Status | Notes |
 |---|---|---|
 | Γ GPW Poisson/FFT foothold | **landed** (`cuda-gpw-foothold`) | `src/cuda/gpw/internal/poisson_fft.{cu,cuh}`; unit vs CPU oracle; **not** full GPW product |
+| Padé LDA XC grid foothold | **landed** (`cuda-gpw-xc-lda-foothold`) | `src/cuda/gpw/internal/xc_lda.{cu,cuh}`; `test_cuda_gpw_xc_lda` vs `cpu::xc::pade_lsd`; per-point ~1e-12, E ~1e-10 rel; **not** full GPW product |
 
 ## Wave 6 layout
 
@@ -102,7 +103,16 @@ Grok CUDA skills (not ad-hoc style):
   same post-merge log: `test_cuda_gpw_device_poisson` **Passed 0.97 s** +
   `test_cuda_pw_poisson` **Passed 1.78 s** (**100%** of 4). Tols: max\|ΔV\|
   **1e-9…1e-10**, Hartree rel **1e-10…1e-12** (cuFFT vs FFTW, not bit-identical).
-- GH200 wave 9 path-select-host (worker job **915654**, branch `wf/escuda-cuda-rhf-path-select-host`): `test_cuda_scf` + `test_cuda_scf_rhf` + `test_cuda_scf_device_integrals` **100% PASS** (1.68 s + 1.89 s + 0.73 s); host `cache_host_types` before upload — no setup type[] D2H on covered `run`/`forces`.
+- GH200 wave 9 path-select-host (worker job **915654**, feat `6f179574` /
+  merge `44a5d858`) + post-merge log `.claude/merge-escuda-cuda-915704.out`
+  tip `44a5d858`: `test_cuda_scf` + `test_cuda_scf_rhf` +
+  `test_cuda_scf_device_integrals` **100% PASS** (0.95 + 2.03 + 0.87 s);
+  host `cache_host_types` before upload — no setup type[] D2H on covered
+  `run`/`forces`.
+- GH200 GPW Padé LDA XC foothold (worker **915678**, feat `90acb1d5` / merge
+  `cc450b59`) + same post-merge **915704**: `test_cuda_gpw_xc_lda` **Passed
+  0.86 s** (+ poisson/PW LDA still green). Tols: per-point ~**1e-12**, energy
+  reduction rel **~1e-10** (device atomic sum vs host).
 - `tests/cuda/scf/test_rhf.cu`:
   - `CUDAForcesMatchCPU_H2_STO3G` — |ΔF| **1e-5** eV/Å; energy **ha_to_ev(1e-6)**
   - `CUDAForcesMatchFD_H2_STO3G` — FD bar **5e-2** eV/Å
