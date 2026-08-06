@@ -132,12 +132,16 @@ KsGridUks ks_grid_build_uks(const UniformGrid& grid,
         throw std::runtime_error(
             "GPW ks_grid_build_uks: rho_a / rho_b size mismatch");
     check_density_sizes(grid, rho_a.size(), n_ion.size(), "ks_grid_build_uks");
+    // Single pass: total ρ and n = ρ − n_ion (shared Poisson input).
     std::vector<double> rho(rho_a.size());
-    for (std::size_t g = 0; g < rho.size(); ++g)
-        rho[g] = rho_a[g] + rho_b[g];
-    std::vector<double> n_tot(rho.size());
-    for (std::size_t g = 0; g < rho.size(); ++g)
-        n_tot[g] = rho[g] - n_ion[g];
+    std::vector<double> n_tot(rho_a.size());
+    const std::size_t ng = rho_a.size();
+#pragma omp parallel for schedule(static) if (ng > 4096)
+    for (std::size_t g = 0; g < ng; ++g) {
+        const double rt = rho_a[g] + rho_b[g];
+        rho[g] = rt;
+        n_tot[g] = rt - n_ion[g];
+    }
     const PoissonResult es = poisson(grid, n_tot, nonperiodic);
     const XcOnGridSpin xcg = evaluate_xc_uks(grid, rho_a, rho_b, xc);
 
@@ -145,27 +149,32 @@ KsGridUks ks_grid_build_uks(const UniformGrid& grid,
     out.e_xc = xcg.e_xc;
     out.e_hartree = es.e_hartree;
     out.v_es = es.v_r;
-    out.veff_a.resize(rho.size());
-    out.veff_b.resize(rho.size());
+    out.veff_a.resize(ng);
+    out.veff_b.resize(ng);
     const bool have_loc = !v_locsr.empty();
-    if (have_loc && v_locsr.size() != rho.size())
+    if (have_loc && v_locsr.size() != ng)
         throw std::runtime_error(
             "GPW ks_grid_build_uks: v_locsr size does not match density grid");
-    for (std::size_t g = 0; g < rho.size(); ++g) {
+    // Fuse V_eff^α/β assembly + optional ∫ρ V_loc (one grid walk).
+    double e_loc = 0.0;
+#pragma omp parallel for schedule(static) reduction(+ : e_loc) if (ng > 4096)
+    for (std::size_t g = 0; g < ng; ++g) {
         const double vloc = have_loc ? v_locsr[g] : 0.0;
         if (have_loc)
-            out.e_locgrid += rho[g] * vloc;
-        out.veff_a[g] = out.v_es[g] + xcg.vxc_a[g] + vloc;
-        out.veff_b[g] = out.v_es[g] + xcg.vxc_b[g] + vloc;
+            e_loc += rho[g] * vloc;
+        const double ves = out.v_es[g] + vloc;
+        out.veff_a[g] = ves + xcg.vxc_a[g];
+        out.veff_b[g] = ves + xcg.vxc_b[g];
     }
-    out.e_locgrid *= grid.weight();
+    out.e_locgrid = e_loc * grid.weight();
 
     if (vdw_df || vdw_df2 || rvv10) {
         NonlocalVdwOnGrid nl =
             nonlocal_vdw_on_grid(grid, rho, vdw_df, vdw_df2, rvv10,
                                  /*potential=*/true);
         out.e_nl_vdw = nl.energy;
-        for (std::size_t g = 0; g < rho.size(); ++g) {
+#pragma omp parallel for schedule(static) if (ng > 4096)
+        for (std::size_t g = 0; g < ng; ++g) {
             out.veff_a[g] += nl.v_r[g];
             out.veff_b[g] += nl.v_r[g];
         }
