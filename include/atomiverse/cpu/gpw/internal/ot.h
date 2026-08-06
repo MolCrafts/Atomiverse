@@ -3,13 +3,13 @@
 ///
 /// **Internal GPW helper.** Does NOT inherit `cpu::Component`. Product Γ path
 /// Product Γ OT (oracle twin class):
-///   - MINIMIZER DIIS directions (CP2K g·e SAFE metric) + Armijo on total E,
-///     with PR+ CG fallback on stall/reject (fixed-STEPSIZE pure DIIS diverges
-///     on product micro-cases; dual-spin DIIS alone plateaus ~1e-4 on O₂)
-///   - PRECONDITIONER FULL_SINGLE-style H-aware dense inverse
+///   - MINIMIZER DIIS (CP2K g·e SAFE metric) + fixed STEPSIZE geodesic (1 KS
+///     per outer); PR+ CG fallback on energy-ascent / stall
+///   - PRECONDITIONER FULL_SINGLE_INVERSE (occupied projector + min-ev shift,
+///     ENERGY_GAP 0.08 Ha) dense SPD inverse
 ///   - OUTER period rebuilds precond without wiping DIIS history
-///   - OUTER_SCF polish (no DFT+U): once projected residual is small, finish
-///     with fixed-H eigen + density mix (kills late energy-OT CG thrash)
+///   - OUTER_SCF polish (no DFT+U): once projected residual is moderate,
+///     hand residual SCF to Pulay DIIS on H (closes energy+err)
 ///
 /// Parameterization (orthonormality-preserving for any S-tangent `x`,
 /// `C0^T S x = 0`):
