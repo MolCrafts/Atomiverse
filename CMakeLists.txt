@@ -793,6 +793,15 @@ if(NOT ATV_DOCS_ONLY)
                 target_compile_definitions(atomiverse PUBLIC ATV_GPW_FFTW_THREADS)
                 message(STATUS "GPW: FFTW3 OpenMP threading enabled (${FFTW3_OMP_LIB})")
             endif()
+            # CUDA GPW foothold: Γ-point device Poisson/FFT (not full method product).
+            # Gated on CUDA so OFF builds exclude sources entirely (iron law 8).
+            if(ATV_BUILD_CUDA)
+                target_sources(atomiverse PRIVATE
+                    src/cuda/gpw/internal/poisson_fft.cu
+                )
+                target_link_libraries(atomiverse PUBLIC CUDA::cufft)
+                message(STATUS "GPW: CUDA Γ Poisson foothold enabled")
+            endif()
         endif()
         # vdW-DF kernel tables ship zlib-compressed (float32); inflate at first use.
         find_package(ZLIB REQUIRED)
