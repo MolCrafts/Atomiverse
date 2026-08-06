@@ -425,6 +425,7 @@ ProductSet build_products(const MultiGrid& mg,
 
     ProductSet ps;
     ps.by_level.resize(static_cast<std::size_t>(nlev));
+    ps.tasks_by_level.resize(static_cast<std::size_t>(nlev));
 
     // ---- 1. Deduplicate cartesian primitives + flat contrib packing --------
     // Each spherical basis function μ is stored as its real-solid-harmonic
@@ -736,11 +737,17 @@ ProductSet build_products(const MultiGrid& mg,
         for (const auto& b : batches)
             nprod += b.monoms.size();
         auto& dst = ps.by_level[static_cast<std::size_t>(l)];
+        auto& tasks = ps.tasks_by_level[static_cast<std::size_t>(l)];
         dst.resize(nprod);
+        tasks.reserve(batches.size());
         std::size_t w = 0;
         for (const auto& b : batches) {
             const int tcell = cell_of.at(
                 std::array<int, 3>{b.t[0], b.t[1], b.t[2]});
+            // One CollintTask per geometry batch: contiguous monoms share
+            // pol / monom table (CP2K shell-prim task grain).
+            CollintTask task;
+            task.beg = static_cast<int>(w);
             // Monoms already sorted by (ua, ub) because mon_a/mon_b were sorted
             // and the nested loop is lexicographic — matches the old
             // (ua,ub,la,lb) tie-break (la/lb determined by ua/ub).
@@ -762,7 +769,18 @@ ProductSet build_products(const MultiGrid& mg,
                     prod.lb[d] = B.l[d];
                     prod.t[d] = b.t[d];
                 }
+                task.lpx = std::max(task.lpx, A.l[0] + B.l[0]);
+                task.lpy = std::max(task.lpy, A.l[1] + B.l[1]);
+                task.lpz = std::max(task.lpz, A.l[2] + B.l[2]);
+                const int Lsum = A.l[0] + A.l[1] + A.l[2] + B.l[0] + B.l[1]
+                                 + B.l[2];
+                task.Ltot = std::max(task.Ltot, Lsum);
+                task.geom_mag =
+                    std::max(task.geom_mag, A.maxc * B.maxc * std::abs(b.k));
             }
+            task.end = static_cast<int>(w);
+            if (task.end > task.beg)
+                tasks.push_back(task);
         }
     }
     return ps;
@@ -1073,6 +1091,7 @@ inline double product_density_weight(const GridProduct& prod,
 
 std::vector<double> collocate_products(const UniformGrid& grid,
                                        const std::vector<GridProduct>& prods,
+                                       const std::vector<CollintTask>& tasks,
                                        const std::vector<PrimRef>& prims,
                                        const std::vector<PrimContrib>& contribs,
                                        int nb, const std::vector<double>& P,
@@ -1086,42 +1105,30 @@ std::vector<double> collocate_products(const UniformGrid& grid,
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
     std::vector<double> rho(npts, 0.0);
     const long np = static_cast<long>(prods.size());
+    const long nt = static_cast<long>(tasks.size());
     if (std::getenv("ATV_GPW_PROF")) {
         static long printed = 0;
         if (printed < 20) {
-            long ng = 0, maxg = 0, sumg = 0;
-            if (np > 0) {
-                long run = 1;
-                for (long i = 1; i < np; ++i) {
-                    const auto& a = prods[static_cast<std::size_t>(i - 1)];
-                    const auto& b = prods[static_cast<std::size_t>(i)];
-                    if (internal::collint_same_geometry(a, b))
-                        ++run;
-                    else {
-                        ++ng;
-                        maxg = std::max(maxg, run);
-                        sumg += run;
-                        run = 1;
-                    }
-                }
-                ++ng;
-                maxg = std::max(maxg, run);
-                sumg += run;
+            long maxg = 0, sumg = 0;
+            for (const auto& t : tasks) {
+                const long n = static_cast<long>(t.end - t.beg);
+                maxg = std::max(maxg, n);
+                sumg += n;
             }
             std::fprintf(stderr,
-                         "[mg coll] npts=%ld products=%ld groups=%ld "
+                         "[mg coll] npts=%ld products=%ld tasks=%ld "
                          "avg_g=%.1f max_g=%ld\n",
-                         grid.npts(), np, ng,
-                         ng > 0 ? static_cast<double>(sumg) / static_cast<double>(ng)
+                         grid.npts(), np, nt,
+                         nt > 0 ? static_cast<double>(sumg)
+                                      / static_cast<double>(nt)
                                 : 0.0,
                          maxg);
             ++printed;
         }
     }
-    // Geometry-sorted at build: precompute weights → form groups → collocate
-    // group-parallel into per-thread private grids (index lists, no copies).
-    // Same shape as collocate_products_cells (k-path MAIN); avoids ChunkedRange
-    // over-partition into nc ≫ nthreads full-grid privates.
+    // Shell task list (built once in build_products): density weights →
+    // task-parallel collocate on contiguous monom ranges (no geometry re-scan,
+    // no index packing). Same private-grid reduction as before.
     std::vector<double> wts(static_cast<std::size_t>(np), 0.0);
 #pragma omp parallel for schedule(dynamic, 64)
     for (long ip = 0; ip < np; ++ip) {
@@ -1129,56 +1136,6 @@ std::vector<double> collocate_products(const UniformGrid& grid,
         wts[static_cast<std::size_t>(ip)] =
             product_density_weight(prod, prims, contribs, nb, P);
     }
-    struct GRange {
-        int beg = 0, end = 0;
-        double mag = 0.0;
-    };
-    std::vector<GRange> groups;
-    std::vector<int> all_idx;
-    std::vector<double> all_w;
-    groups.reserve(static_cast<std::size_t>(np / 32 + 8));
-    all_idx.reserve(static_cast<std::size_t>(np));
-    all_w.reserve(static_cast<std::size_t>(np));
-    {
-        std::vector<int> idx;
-        std::vector<double> gw;
-        idx.reserve(64);
-        gw.reserve(64);
-        auto flush = [&]() {
-            if (idx.empty())
-                return;
-            double mag = 0.0;
-            for (double w : gw)
-                mag = std::max(mag, std::abs(w));
-            if (mag >= eps_drop) {
-                GRange gr;
-                gr.beg = static_cast<int>(all_idx.size());
-                for (std::size_t k = 0; k < idx.size(); ++k) {
-                    all_idx.push_back(idx[k]);
-                    all_w.push_back(gw[k]);
-                }
-                gr.end = static_cast<int>(all_idx.size());
-                gr.mag = mag;
-                groups.push_back(gr);
-            }
-            idx.clear();
-            gw.clear();
-        };
-        for (long ip = 0; ip < np; ++ip) {
-            const double ww = wts[static_cast<std::size_t>(ip)];
-            if (std::abs(ww) < eps_drop)
-                continue;
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            if (!idx.empty()
-                && !internal::collint_same_geometry(
-                       prods[static_cast<std::size_t>(idx.back())], prod))
-                flush();
-            idx.push_back(static_cast<int>(ip));
-            gw.push_back(ww);
-        }
-        flush();
-    }
-    const long ng = static_cast<long>(groups.size());
     int nthreads = 1;
 #ifdef _OPENMP
     nthreads = omp_get_max_threads();
@@ -1194,11 +1151,19 @@ std::vector<double> collocate_products(const UniformGrid& grid,
 #endif
         double* loc = g_rho_scatter.chunk(tid);
 #pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < ng; ++g) {
-            const GRange& gr = groups[static_cast<std::size_t>(g)];
-            internal::collint_collocate_group_idx(
-                grid, prods.data(), all_idx.data() + gr.beg,
-                all_w.data() + gr.beg, gr.end - gr.beg, gr.mag, eps_win, loc);
+        for (long g = 0; g < nt; ++g) {
+            const CollintTask& task = tasks[static_cast<std::size_t>(g)];
+            const int n = task.end - task.beg;
+            if (n <= 0)
+                continue;
+            double mag = 0.0;
+            for (int i = task.beg; i < task.end; ++i)
+                mag = std::max(mag, std::abs(wts[static_cast<std::size_t>(i)]));
+            if (mag < eps_drop)
+                continue;
+            internal::collint_collocate_group(
+                grid, prods.data() + task.beg, wts.data() + task.beg, n, mag,
+                eps_win, loc);
         }
     }
 #pragma omp parallel for schedule(static)
@@ -1250,76 +1215,17 @@ inline double integrate_window_mag(const UniformGrid& grid,
 
 std::vector<double> integrate_products(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
-    const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
-    int nb, const std::vector<double>& V_level, double eps) {
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<double>& V_level, double eps) {
     const double eps_drop = eps * kProductMassMargin;
     const double eps_win = eps * 1e-2;
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     std::vector<double> V(nn, 0.0);
     const double w = grid.weight();
-    const long np = static_cast<long>(prods.size());
-    // Geometry-sorted at build: parallel per-product window mag → form groups
-    // → group-parallel integrate into per-thread KS bags.
-    // Geometry-sorted: |V(pc)| is constant inside a geometry run — one grid
-    // probe per group instead of per monom (MAIN ~2e5 monoms / ~5e3 groups).
-    std::vector<double> pmags(static_cast<std::size_t>(np), 0.0);
-    {
-        double vsc = 0.0;
-        bool have = false;
-        const GridProduct* prev = nullptr;
-        for (long ip = 0; ip < np; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            if (!have || !internal::collint_same_geometry(*prev, prod)) {
-                constexpr double kVFloor = 0.05;
-                vsc = std::max(v_at_product_center(grid, V_level, prod), kVFloor);
-                have = true;
-            }
-            prev = &prod;
-            const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
-            const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-            const double geom = A.maxc * B.maxc * std::abs(prod.k);
-            pmags[static_cast<std::size_t>(ip)] = geom * vsc;
-        }
-    }
-    struct GRange {
-        int beg = 0, end = 0;
-        double mag = 0.0;
-    };
-    std::vector<GRange> groups;
-    std::vector<int> all_idx;
-    groups.reserve(static_cast<std::size_t>(np / 32 + 8));
-    all_idx.reserve(static_cast<std::size_t>(np));
-    {
-        std::vector<int> idx;
-        idx.reserve(64);
-        auto flush = [&]() {
-            if (idx.empty())
-                return;
-            double mag = 0.0;
-            for (int ip : idx)
-                mag = std::max(mag, pmags[static_cast<std::size_t>(ip)]);
-            if (mag >= eps_drop) {
-                GRange gr;
-                gr.beg = static_cast<int>(all_idx.size());
-                for (int ip : idx)
-                    all_idx.push_back(ip);
-                gr.end = static_cast<int>(all_idx.size());
-                gr.mag = mag;
-                groups.push_back(gr);
-            }
-            idx.clear();
-        };
-        for (long ip = 0; ip < np; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            if (!idx.empty()
-                && !internal::collint_same_geometry(
-                       prods[static_cast<std::size_t>(idx.back())], prod))
-                flush();
-            idx.push_back(static_cast<int>(ip));
-        }
-        flush();
-    }
-    const long ng = static_cast<long>(groups.size());
+    const long nt = static_cast<long>(tasks.size());
+    // Shell tasks: |V(pc)| once per task (constant on geometry) × precomputed
+    // geom_mag → task-parallel integrate on contiguous monom ranges.
     int nthreads = 1;
 #ifdef _OPENMP
     nthreads = omp_get_max_threads();
@@ -1337,16 +1243,25 @@ std::vector<double> integrate_products(
         std::vector<double> gacc;
         gacc.reserve(64);
 #pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < ng; ++g) {
-            const GRange& gr = groups[static_cast<std::size_t>(g)];
-            const int n = gr.end - gr.beg;
+        for (long g = 0; g < nt; ++g) {
+            const CollintTask& task = tasks[static_cast<std::size_t>(g)];
+            const int n = task.end - task.beg;
+            if (n <= 0)
+                continue;
+            constexpr double kVFloor = 0.05;
+            const GridProduct& p0 = prods[static_cast<std::size_t>(task.beg)];
+            const double vsc =
+                std::max(v_at_product_center(grid, V_level, p0), kVFloor);
+            const double mag = task.geom_mag * vsc;
+            if (mag < eps_drop)
+                continue;
             gacc.resize(static_cast<std::size_t>(n));
-            internal::collint_integrate_group_idx(
-                grid, prods.data(), all_idx.data() + gr.beg, n, gr.mag, eps_win,
-                V_level.data(), gacc.data());
+            internal::collint_integrate_group(grid, prods.data() + task.beg, n,
+                                              mag, eps_win, V_level.data(),
+                                              gacc.data());
             for (int gi = 0; gi < n; ++gi) {
-                const GridProduct& prod = prods[static_cast<std::size_t>(
-                    all_idx[static_cast<std::size_t>(gr.beg + gi)])];
+                const GridProduct& prod =
+                    prods[static_cast<std::size_t>(task.beg + gi)];
                 const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
                 const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
                 const double sw =
@@ -1379,67 +1294,40 @@ std::vector<double> integrate_products(
 
 std::vector<double> collocate_products_cells(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
-    const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
-    int nb, const std::vector<std::vector<double>>& D, double eps) {
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<std::vector<double>>& D, double eps) {
     const double eps_drop = eps * kProductMassMargin;
     const double eps_win = eps * 1e-2;
     // `collocate_products` with the density weight resolved per image cell:
-    // w = K · Σ D[tcell][μ,ν]·coeff. Geometry-batched collint (shared pol).
+    // w = K · Σ D[tcell][μ,ν]·coeff. Shell-task collint (shared pol).
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
     std::vector<double> rho(npts, 0.0);
     const long np = static_cast<long>(prods.size());
+    const long nt = static_cast<long>(tasks.size());
     if (std::getenv("ATV_GPW_PROF")) {
         // Always print large grids (MAIN class); cap small-grid spam.
         static long printed_c = 0;
         const bool big = grid.npts() >= 10000;
         if (big || printed_c < 8) {
-            long ng = 0, maxg = 0, sumg = 0;
-            if (np > 0) {
-                std::vector<int> ord(static_cast<std::size_t>(np));
-                for (long i = 0; i < np; ++i)
-                    ord[static_cast<std::size_t>(i)] = static_cast<int>(i);
-                std::sort(ord.begin(), ord.end(), [&](int a, int b) {
-                    const auto& pa = prods[static_cast<std::size_t>(a)];
-                    const auto& pb = prods[static_cast<std::size_t>(b)];
-                    if (internal::collint_geom_less(pa, pb))
-                        return true;
-                    if (internal::collint_geom_less(pb, pa))
-                        return false;
-                    return a < b;
-                });
-                long run = 1;
-                for (long i = 1; i < np; ++i) {
-                    const auto& a = prods[static_cast<std::size_t>(
-                        ord[static_cast<std::size_t>(i - 1)])];
-                    const auto& b = prods[static_cast<std::size_t>(
-                        ord[static_cast<std::size_t>(i)])];
-                    if (internal::collint_same_geometry(a, b))
-                        ++run;
-                    else {
-                        ++ng;
-                        maxg = std::max(maxg, run);
-                        sumg += run;
-                        run = 1;
-                    }
-                }
-                ++ng;
-                maxg = std::max(maxg, run);
-                sumg += run;
+            long maxg = 0, sumg = 0;
+            for (const auto& t : tasks) {
+                const long n = static_cast<long>(t.end - t.beg);
+                maxg = std::max(maxg, n);
+                sumg += n;
             }
             std::fprintf(stderr,
-                         "[mg coll_cells] npts=%ld products=%ld groups=%ld "
+                         "[mg coll_cells] npts=%ld products=%ld tasks=%ld "
                          "avg_g=%.2f max_g=%ld\n",
-                         grid.npts(), np, ng,
-                         ng > 0 ? static_cast<double>(sumg)
-                                      / static_cast<double>(ng)
+                         grid.npts(), np, nt,
+                         nt > 0 ? static_cast<double>(sumg)
+                                      / static_cast<double>(nt)
                                 : 0.0,
                          maxg);
             if (!big)
                 ++printed_c;
         }
     }
-    // Geometry-sorted at build. Precompute weights → form groups → collocate
-    // group-parallel into per-thread private grids (index lists, no copies).
     std::vector<double> wts(static_cast<std::size_t>(np), 0.0);
 #pragma omp parallel for schedule(dynamic, 64)
     for (long ip = 0; ip < np; ++ip) {
@@ -1448,56 +1336,6 @@ std::vector<double> collocate_products_cells(
             prod, prims, contribs, nb,
             D[static_cast<std::size_t>(prod.tcell)]);
     }
-    struct GRange {
-        int beg = 0, end = 0;
-        double mag = 0.0;
-    };
-    std::vector<GRange> groups;
-    std::vector<int> all_idx;
-    std::vector<double> all_w;
-    groups.reserve(static_cast<std::size_t>(np / 32 + 8));
-    all_idx.reserve(static_cast<std::size_t>(np));
-    all_w.reserve(static_cast<std::size_t>(np));
-    {
-        std::vector<int> idx;
-        std::vector<double> gw;
-        idx.reserve(64);
-        gw.reserve(64);
-        auto flush = [&]() {
-            if (idx.empty())
-                return;
-            double mag = 0.0;
-            for (double w : gw)
-                mag = std::max(mag, std::abs(w));
-            if (mag >= eps_drop) {
-                GRange gr;
-                gr.beg = static_cast<int>(all_idx.size());
-                for (std::size_t k = 0; k < idx.size(); ++k) {
-                    all_idx.push_back(idx[k]);
-                    all_w.push_back(gw[k]);
-                }
-                gr.end = static_cast<int>(all_idx.size());
-                gr.mag = mag;
-                groups.push_back(gr);
-            }
-            idx.clear();
-            gw.clear();
-        };
-        for (long ip = 0; ip < np; ++ip) {
-            const double ww = wts[static_cast<std::size_t>(ip)];
-            if (std::abs(ww) < eps_drop)
-                continue;
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            if (!idx.empty()
-                && !internal::collint_same_geometry(
-                       prods[static_cast<std::size_t>(idx.back())], prod))
-                flush();
-            idx.push_back(static_cast<int>(ip));
-            gw.push_back(ww);
-        }
-        flush();
-    }
-    const long ng = static_cast<long>(groups.size());
     int nthreads = 1;
 #ifdef _OPENMP
     nthreads = omp_get_max_threads();
@@ -1513,11 +1351,19 @@ std::vector<double> collocate_products_cells(
 #endif
         double* loc = g_rho_scatter.chunk(tid);
 #pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < ng; ++g) {
-            const GRange& gr = groups[static_cast<std::size_t>(g)];
-            internal::collint_collocate_group_idx(
-                grid, prods.data(), all_idx.data() + gr.beg,
-                all_w.data() + gr.beg, gr.end - gr.beg, gr.mag, eps_win, loc);
+        for (long g = 0; g < nt; ++g) {
+            const CollintTask& task = tasks[static_cast<std::size_t>(g)];
+            const int n = task.end - task.beg;
+            if (n <= 0)
+                continue;
+            double mag = 0.0;
+            for (int i = task.beg; i < task.end; ++i)
+                mag = std::max(mag, std::abs(wts[static_cast<std::size_t>(i)]));
+            if (mag < eps_drop)
+                continue;
+            internal::collint_collocate_group(
+                grid, prods.data() + task.beg, wts.data() + task.beg, n, mag,
+                eps_win, loc);
         }
     }
 #pragma omp parallel for schedule(static)
@@ -1532,79 +1378,18 @@ std::vector<double> collocate_products_cells(
 
 std::vector<std::vector<double>> integrate_products_cells(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
-    const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
-    int nb, const std::vector<double>& V_level, std::size_t ncells,
-    double eps) {
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<double>& V_level, std::size_t ncells, double eps) {
     const double eps_drop = eps * kProductMassMargin;
     const double eps_win = eps * 1e-2;
-    // KS scatter per image cell; geometry-batched monom integrate.
+    // KS scatter per image cell; shell-task monom integrate.
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     const std::size_t nnall = nn * ncells;
     std::vector<std::vector<double>> V(
         ncells, std::vector<double>(nn, 0.0));
     const double w = grid.weight();
-    const long np = static_cast<long>(prods.size());
-    // Geometry-sorted at build: parallel window mag → groups → group-parallel.
-    // Geometry-sorted: |V(pc)| is constant inside a geometry run — one grid
-    // probe per group instead of per monom (MAIN ~2e5 monoms / ~5e3 groups).
-    std::vector<double> pmags(static_cast<std::size_t>(np), 0.0);
-    {
-        double vsc = 0.0;
-        bool have = false;
-        const GridProduct* prev = nullptr;
-        for (long ip = 0; ip < np; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            if (!have || !internal::collint_same_geometry(*prev, prod)) {
-                constexpr double kVFloor = 0.05;
-                vsc = std::max(v_at_product_center(grid, V_level, prod), kVFloor);
-                have = true;
-            }
-            prev = &prod;
-            const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
-            const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
-            const double geom = A.maxc * B.maxc * std::abs(prod.k);
-            pmags[static_cast<std::size_t>(ip)] = geom * vsc;
-        }
-    }
-    struct GRange {
-        int beg = 0, end = 0;
-        double mag = 0.0;
-    };
-    std::vector<GRange> groups;
-    std::vector<int> all_idx;
-    groups.reserve(static_cast<std::size_t>(np / 32 + 8));
-    all_idx.reserve(static_cast<std::size_t>(np));
-    {
-        std::vector<int> idx;
-        idx.reserve(64);
-        auto flush = [&]() {
-            if (idx.empty())
-                return;
-            double mag = 0.0;
-            for (int ip : idx)
-                mag = std::max(mag, pmags[static_cast<std::size_t>(ip)]);
-            if (mag >= eps_drop) {
-                GRange gr;
-                gr.beg = static_cast<int>(all_idx.size());
-                for (int ip : idx)
-                    all_idx.push_back(ip);
-                gr.end = static_cast<int>(all_idx.size());
-                gr.mag = mag;
-                groups.push_back(gr);
-            }
-            idx.clear();
-        };
-        for (long ip = 0; ip < np; ++ip) {
-            const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
-            if (!idx.empty()
-                && !internal::collint_same_geometry(
-                       prods[static_cast<std::size_t>(idx.back())], prod))
-                flush();
-            idx.push_back(static_cast<int>(ip));
-        }
-        flush();
-    }
-    const long ng = static_cast<long>(groups.size());
+    const long nt = static_cast<long>(tasks.size());
     int nthreads = 1;
 #ifdef _OPENMP
     nthreads = omp_get_max_threads();
@@ -1622,16 +1407,25 @@ std::vector<std::vector<double>> integrate_products_cells(
         std::vector<double> gacc;
         gacc.reserve(64);
 #pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < ng; ++g) {
-            const GRange& gr = groups[static_cast<std::size_t>(g)];
-            const int n = gr.end - gr.beg;
+        for (long g = 0; g < nt; ++g) {
+            const CollintTask& task = tasks[static_cast<std::size_t>(g)];
+            const int n = task.end - task.beg;
+            if (n <= 0)
+                continue;
+            constexpr double kVFloor = 0.05;
+            const GridProduct& p0 = prods[static_cast<std::size_t>(task.beg)];
+            const double vsc =
+                std::max(v_at_product_center(grid, V_level, p0), kVFloor);
+            const double mag = task.geom_mag * vsc;
+            if (mag < eps_drop)
+                continue;
             gacc.resize(static_cast<std::size_t>(n));
-            internal::collint_integrate_group_idx(
-                grid, prods.data(), all_idx.data() + gr.beg, n, gr.mag, eps_win,
-                V_level.data(), gacc.data());
+            internal::collint_integrate_group(grid, prods.data() + task.beg, n,
+                                              mag, eps_win, V_level.data(),
+                                              gacc.data());
             for (int gi = 0; gi < n; ++gi) {
-                const GridProduct& prod = prods[static_cast<std::size_t>(
-                    all_idx[static_cast<std::size_t>(gr.beg + gi)])];
+                const GridProduct& prod =
+                    prods[static_cast<std::size_t>(task.beg + gi)];
                 const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
                 const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
                 const double sw =

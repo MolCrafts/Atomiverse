@@ -179,11 +179,31 @@ struct PrimRef {
         0.0; ///< max |coeff| over contributors (for the build screen).
 };
 
+/// @brief Geometry-fixed collint shell task — contiguous monoms in
+///        `ProductSet::by_level[l]` that share one collint pol table
+///        (p, ra, rb, pc). Built once in `build_products` (CP2K-style task
+///        list beyond a flat cartesian-prim monom array). Per-SCF collocate
+///        / integrate iterates tasks; monoms stay the expansion of one
+///        geometry batch (shell-prim pair × angular products × image).
+struct CollintTask {
+    int beg = 0; ///< inclusive start index into `by_level[l]`.
+    int end = 0; ///< exclusive end index into `by_level[l]`.
+    int lpx = 0; ///< max monom (la_x + lb_x) in the task.
+    int lpy = 0; ///< max monom (la_y + lb_y).
+    int lpz = 0; ///< max monom (la_z + lb_z).
+    int Ltot = 0; ///< max |la|+|lb| over monoms (window / radius).
+    /// max_i maxc(ua)·maxc(ub)·|k| — geometry magnitude for integrate screen.
+    double geom_mag = 0.0;
+};
+
 /// @brief Products partitioned by grid level, plus the unique cartesian-primitive
 ///        table and the flat contributor pool the products index into.
 struct ProductSet {
     std::vector<std::vector<GridProduct>>
         by_level; ///< products per level (index ua/ub into prims).
+    /// Per-level shell tasks (geometry batches). Parallel to `by_level`; each
+    /// task's [beg, end) indexes a contiguous monom run of one geometry.
+    std::vector<std::vector<CollintTask>> tasks_by_level;
     std::vector<PrimRef> prims; ///< unique cartesian primitives.
     std::vector<PrimContrib>
         contribs; ///< flat contributor pool (sliced by PrimRef).
@@ -218,11 +238,13 @@ ProductSet build_products(const MultiGrid& mg,
 ///        density matches the single-grid path.
 /// @param grid The level's uniform grid.
 /// @param prods Products assigned to this level (from `ProductSet::by_level[l]`).
+/// @param tasks Shell tasks for this level (`ProductSet::tasks_by_level[l]`).
 /// @param nb Basis size (row stride of `P`).
 /// @param P Density matrix, row-major nb×nb.
 /// @param eps Collocation-window screening tolerance.
 std::vector<double> collocate_products(const UniformGrid& grid,
                                        const std::vector<GridProduct>& prods,
+                                       const std::vector<CollintTask>& tasks,
                                        const std::vector<PrimRef>& prims,
                                        const std::vector<PrimContrib>& contribs,
                                        int nb, const std::vector<double>& P,
@@ -236,8 +258,9 @@ std::vector<double> collocate_products(const UniformGrid& grid,
 /// @return Row-major nb×nb KS contribution from this level.
 std::vector<double> integrate_products(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
-    const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
-    int nb, const std::vector<double>& V_level, double eps);
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<double>& V_level, double eps);
 
 /// @brief `collocate_products` with a per-image-cell density-matrix stack —
 ///        the Bloch-sampled product collocation. Each product weighs by
@@ -248,8 +271,9 @@ std::vector<double> integrate_products(
 /// @return Level density ρ_level, length grid.npts().
 std::vector<double> collocate_products_cells(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
-    const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
-    int nb, const std::vector<std::vector<double>>& D, double eps);
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<std::vector<double>>& D, double eps);
 
 /// @brief `integrate_products` resolved per image cell — the EXACT transpose of
 ///        `collocate_products_cells`: each product's ∫V·shape scatters into the
@@ -260,8 +284,9 @@ std::vector<double> collocate_products_cells(
 /// @return One row-major nb×nb real matrix per image cell.
 std::vector<std::vector<double>> integrate_products_cells(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
-    const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
-    int nb, const std::vector<double>& V_level, std::size_t ncells, double eps);
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<double>& V_level, std::size_t ncells, double eps);
 
 } // namespace gpw
 } // namespace cpu

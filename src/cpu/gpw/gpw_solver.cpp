@@ -1164,8 +1164,8 @@ static GpwResult run_gpw_scf_kpoints(
         std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
         for (std::size_t l = 0; l < mg.levels.size(); ++l) {
             std::vector<double> rho_l = collocate_products_cells(
-                mg.levels[l], products.by_level[l], products.prims,
-                products.contribs, nb, D, cfg.eps_default);
+                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+                products.prims, products.contribs, nb, D, cfg.eps_default);
             if (l == 0) {
                 rho = std::move(rho_l);
             } else {
@@ -1194,8 +1194,9 @@ static GpwResult run_gpw_scf_kpoints(
                                    /*spectral*/ true);
             }
             const auto Vt_l = integrate_products_cells(
-                mg.levels[l], products.by_level[l], products.prims,
-                products.contribs, nb, V_l, n_tcells, cfg.eps_default);
+                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+                products.prims, products.contribs, nb, V_l, n_tcells,
+                cfg.eps_default);
             for (std::size_t c = 0; c < n_tcells; ++c)
                 for (std::size_t e = 0; e < Vt[c].size(); ++e)
                     Vt[c][e] += Vt_l[c][e];
@@ -2500,8 +2501,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
         std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
         for (std::size_t l = 0; l < mg.levels.size(); ++l) {
             std::vector<double> rho_l = collocate_products_cells(
-                mg.levels[l], products.by_level[l], products.prims,
-                products.contribs, nb, D, cfg.eps_default);
+                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+                products.prims, products.contribs, nb, D, cfg.eps_default);
             if (l == 0) {
                 rho = std::move(rho_l);
             } else {
@@ -2527,8 +2528,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
                                    /*spectral*/ true);
             }
             const auto Vt_l = integrate_products_cells(
-                mg.levels[l], products.by_level[l], products.prims,
-                products.contribs, nb, V_l, n_tcells, cfg.eps_default);
+                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+                products.prims, products.contribs, nb, V_l, n_tcells,
+                cfg.eps_default);
             for (std::size_t c = 0; c < n_tcells; ++c)
                 for (std::size_t e = 0; e < Vt[c].size(); ++e)
                     Vt[c][e] += Vt_l[c][e];
@@ -4502,8 +4504,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                                 0.0);
         for (std::size_t l = 0; l < mg.levels.size(); ++l) {
             std::vector<double> rho_l = collocate_products(
-                mg.levels[l], products.by_level[l], products.prims,
-                products.contribs, nb, Pvec, eps_default);
+                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+                products.prims, products.contribs, nb, Pvec, eps_default);
             if (l == 0) {
                 rho = std::move(rho_l); // finest level is the reference grid
             } else {
@@ -4642,8 +4644,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                                        /*spectral*/ true);
                 }
                 const std::vector<double> Vl_ks = integrate_products(
-                    mg.levels[l], products.by_level[l], products.prims,
-                    products.contribs, nb, V_l, eps_default);
+                    mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+                    products.prims, products.contribs, nb, V_l, eps_default);
                 for (std::size_t kk = 0; kk < V_ks.size(); ++kk)
                     V_ks[kk] += Vl_ks[kk];
             }
@@ -4735,7 +4737,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                                            /*spectral*/ true);
                     }
                     const std::vector<double> Vl_ks = integrate_products(
-                        mg.levels[l], products.by_level[l], products.prims,
+                        mg.levels[l], products.by_level[l],
+                        products.tasks_by_level[l], products.prims,
                         products.contribs, nb, V_l, eps_default);
                     for (std::size_t kk = 0; kk < V_ks.size(); ++kk)
                         V_ks[kk] += Vl_ks[kk];
