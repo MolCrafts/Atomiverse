@@ -3,6 +3,8 @@
 ///
 /// Hot path uses a memoized Hermite table per Cartesian axis (no exponential
 /// recursion tree) and a fused prim_ST that shares 1D overlaps between S and T.
+/// Geometry-key reuse keeps tables live across consecutive prim pairs that share
+/// (α, center) — common for solid-harmonic cart terms and shell-mate AOs.
 
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 
@@ -74,6 +76,46 @@ struct HermiteTab {
     }
 };
 
+/// Last (α, center) key for which hx/hy/hz are valid (thread_local).
+struct HermiteGeomKey {
+    double aa = 0, ba = 0;
+    double ac[3] = {0, 0, 0};
+    double bc[3] = {0, 0, 0};
+    bool live = false;
+
+    bool matches(double a_alpha, double b_alpha, const double a_c[3],
+                 const double b_c[3]) const {
+        return live && aa == a_alpha && ba == b_alpha && ac[0] == a_c[0]
+               && ac[1] == a_c[1] && ac[2] == a_c[2] && bc[0] == b_c[0]
+               && bc[1] == b_c[1] && bc[2] == b_c[2];
+    }
+
+    void set(double a_alpha, double b_alpha, const double a_c[3],
+             const double b_c[3]) {
+        aa = a_alpha;
+        ba = b_alpha;
+        ac[0] = a_c[0];
+        ac[1] = a_c[1];
+        ac[2] = a_c[2];
+        bc[0] = b_c[0];
+        bc[1] = b_c[1];
+        bc[2] = b_c[2];
+        live = true;
+    }
+};
+
+/// Ensure per-axis Hermite tables match (α_a, α_b, A, B); skip re-init on hit.
+inline void hermite_ensure(HermiteTab& hx, HermiteTab& hy, HermiteTab& hz,
+                           HermiteGeomKey& key, double a_alpha, double b_alpha,
+                           const double a_c[3], const double b_c[3]) {
+    if (key.matches(a_alpha, b_alpha, a_c, b_c))
+        return;
+    hx.init(a_alpha, b_alpha, a_c[0], b_c[0]);
+    hy.init(a_alpha, b_alpha, a_c[1], b_c[1]);
+    hz.init(a_alpha, b_alpha, a_c[2], b_c[2]);
+    key.set(a_alpha, b_alpha, a_c, b_c);
+}
+
 /// 1D kinetic with known b (ket exponent).
 inline double kinetic_1d_tab(HermiteTab& h, int i, int j, double b) {
     double t = -2.0 * b * b * h.S1d(i, j + 2)
@@ -83,22 +125,55 @@ inline double kinetic_1d_tab(HermiteTab& h, int i, int j, double b) {
     return t;
 }
 
+/// Core ST from live Hermite tables + angular/coeffs.
+inline void st_from_tabs(HermiteTab& hx, HermiteTab& hy, HermiteTab& hz,
+                         int alx, int aly, int alz, int blx, int bly, int blz,
+                         double a_alpha, double b_alpha, double ca, double cb,
+                         double& s_out, double& t_out) {
+    const double sx = hx.S1d(alx, blx);
+    const double sy = hy.S1d(aly, bly);
+    const double sz = hz.S1d(alz, blz);
+    const double tx = kinetic_1d_tab(hx, alx, blx, b_alpha);
+    const double ty = kinetic_1d_tab(hy, aly, bly, b_alpha);
+    const double tz = kinetic_1d_tab(hz, alz, blz, b_alpha);
+    (void)a_alpha;
+    const double c = ca * cb;
+    s_out = c * sx * sy * sz;
+    t_out = c * (tx * sy * sz + sx * ty * sz + sx * sy * tz);
+}
+
+/// s–s closed form (no Hermite).
+inline void st_ss(double a_alpha, double b_alpha, const double a_c[3],
+                  const double b_c[3], double ca, double cb, double& s_out,
+                  double& t_out) {
+    const double p = a_alpha + b_alpha;
+    const double mu = a_alpha * b_alpha / p;
+    const double dx = a_c[0] - b_c[0];
+    const double dy = a_c[1] - b_c[1];
+    const double dz = a_c[2] - b_c[2];
+    const double r2 = dx * dx + dy * dy + dz * dz;
+    // (π/p)^{3/2} = (π/p) √(π/p) — avoid std::pow.
+    const double pi_over_p = M_PI / p;
+    const double S =
+        ca * cb * pi_over_p * std::sqrt(pi_over_p) * std::exp(-mu * r2);
+    s_out = S;
+    t_out = mu * (3.0 - 2.0 * mu * r2) * S;
+}
+
 } // namespace
 
 double prim_overlap(const GridPrimitive& a, const GridPrimitive& b) {
     thread_local HermiteTab hx, hy, hz;
-    hx.init(a.alpha, b.alpha, a.center[0], b.center[0]);
-    hy.init(a.alpha, b.alpha, a.center[1], b.center[1]);
-    hz.init(a.alpha, b.alpha, a.center[2], b.center[2]);
+    thread_local HermiteGeomKey key;
+    hermite_ensure(hx, hy, hz, key, a.alpha, b.alpha, a.center, b.center);
     return a.coeff * b.coeff * hx.S1d(a.l[0], b.l[0]) * hy.S1d(a.l[1], b.l[1])
            * hz.S1d(a.l[2], b.l[2]);
 }
 
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b) {
     thread_local HermiteTab hx, hy, hz;
-    hx.init(a.alpha, b.alpha, a.center[0], b.center[0]);
-    hy.init(a.alpha, b.alpha, a.center[1], b.center[1]);
-    hz.init(a.alpha, b.alpha, a.center[2], b.center[2]);
+    thread_local HermiteGeomKey key;
+    hermite_ensure(hx, hy, hz, key, a.alpha, b.alpha, a.center, b.center);
     const double sx = hx.S1d(a.l[0], b.l[0]);
     const double sy = hy.S1d(a.l[1], b.l[1]);
     const double sz = hz.S1d(a.l[2], b.l[2]);
@@ -110,35 +185,18 @@ double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b) {
 
 void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
              double& t_out) {
-    // s–s fast path: no Hermite table.
+    // s–s fast path: no Hermite table (does not touch geometry key).
     if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0
         && b.l[1] == 0 && b.l[2] == 0) {
-        const double p = a.alpha + b.alpha;
-        const double mu = a.alpha * b.alpha / p;
-        const double dx = a.center[0] - b.center[0];
-        const double dy = a.center[1] - b.center[1];
-        const double dz = a.center[2] - b.center[2];
-        const double r2 = dx * dx + dy * dy + dz * dz;
-        const double S =
-            a.coeff * b.coeff * std::pow(M_PI / p, 1.5) * std::exp(-mu * r2);
-        s_out = S;
-        // ⟨a|−½∇²|b⟩ for s–s = μ(3 − 2μ r²) S  (same as 3-axis kinetic_1d).
-        t_out = mu * (3.0 - 2.0 * mu * r2) * S;
+        st_ss(a.alpha, b.alpha, a.center, b.center, a.coeff, b.coeff, s_out,
+              t_out);
         return;
     }
     thread_local HermiteTab hx, hy, hz;
-    hx.init(a.alpha, b.alpha, a.center[0], b.center[0]);
-    hy.init(a.alpha, b.alpha, a.center[1], b.center[1]);
-    hz.init(a.alpha, b.alpha, a.center[2], b.center[2]);
-    const double sx = hx.S1d(a.l[0], b.l[0]);
-    const double sy = hy.S1d(a.l[1], b.l[1]);
-    const double sz = hz.S1d(a.l[2], b.l[2]);
-    const double tx = kinetic_1d_tab(hx, a.l[0], b.l[0], b.alpha);
-    const double ty = kinetic_1d_tab(hy, a.l[1], b.l[1], b.alpha);
-    const double tz = kinetic_1d_tab(hz, a.l[2], b.l[2], b.alpha);
-    const double c = a.coeff * b.coeff;
-    s_out = c * sx * sy * sz;
-    t_out = c * (tx * sy * sz + sx * ty * sz + sx * sy * tz);
+    thread_local HermiteGeomKey key;
+    hermite_ensure(hx, hy, hz, key, a.alpha, b.alpha, a.center, b.center);
+    st_from_tabs(hx, hy, hz, a.l[0], a.l[1], a.l[2], b.l[0], b.l[1], b.l[2],
+                 a.alpha, b.alpha, a.coeff, b.coeff, s_out, t_out);
 }
 
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b) {

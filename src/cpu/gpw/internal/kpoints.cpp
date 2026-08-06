@@ -167,12 +167,48 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                CplxMatrix(xt::zeros<Cplx>({nb, nb})));
     const PhaseTables ph(kpts, m);
 
+    // Flattened image list + pre-multiplied Bloch phases (one Cplx per k·image).
+    // Saves two complex multiplies per (image, k) in the pair loop.
+    const int nx = 2 * m[0] + 1, ny = 2 * m[1] + 1, nz = 2 * m[2] + 1;
+    const int nimg = nx * ny * nz;
+    struct Img {
+        int tx, ty, tz;
+        double T[3];
+    };
+    std::vector<Img> imgs(static_cast<std::size_t>(nimg));
+    std::vector<Cplx> phase_ik(static_cast<std::size_t>(nk) *
+                               static_cast<std::size_t>(nimg));
+    int ii = 0;
+    for (int tx = -m[0]; tx <= m[0]; ++tx)
+        for (int ty = -m[1]; ty <= m[1]; ++ty)
+            for (int tz = -m[2]; tz <= m[2]; ++tz, ++ii) {
+                imgs[static_cast<std::size_t>(ii)].tx = tx;
+                imgs[static_cast<std::size_t>(ii)].ty = ty;
+                imgs[static_cast<std::size_t>(ii)].tz = tz;
+                imgs[static_cast<std::size_t>(ii)].T[0] = tx * L[0];
+                imgs[static_cast<std::size_t>(ii)].T[1] = ty * L[1];
+                imgs[static_cast<std::size_t>(ii)].T[2] = tz * L[2];
+                for (int ik = 0; ik < nk; ++ik) {
+                    phase_ik[static_cast<std::size_t>(ik) *
+                                 static_cast<std::size_t>(nimg)
+                             + static_cast<std::size_t>(ii)] =
+                        ph.ax[0][static_cast<std::size_t>(ik)]
+                             [static_cast<std::size_t>(tx + m[0])]
+                        * ph.ax[1][static_cast<std::size_t>(ik)]
+                               [static_cast<std::size_t>(ty + m[1])]
+                        * ph.ax[2][static_cast<std::size_t>(ik)]
+                               [static_cast<std::size_t>(tz + m[2])];
+                }
+            }
+
 #pragma omp parallel for schedule(dynamic, 4)
     for (int i = 0; i < nb; ++i) {
         if (basis[static_cast<std::size_t>(i)].empty())
             continue;
         std::vector<Cplx> s_acc(static_cast<std::size_t>(nk));
         std::vector<Cplx> t_acc(static_cast<std::size_t>(nk));
+        // Reused ket image primitive (only center mutates per image/prim).
+        GridPrimitive q;
         for (int j = i; j < nb; ++j) {
             const GridBasisFunction& a = basis[static_cast<std::size_t>(i)];
             const GridBasisFunction& b = basis[static_cast<std::size_t>(j)];
@@ -187,41 +223,40 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
             const double* bc = b[0].center;
             std::fill(s_acc.begin(), s_acc.end(), Cplx(0, 0));
             std::fill(t_acc.begin(), t_acc.end(), Cplx(0, 0));
-            for (int tx = -m[0]; tx <= m[0]; ++tx)
-                for (int ty = -m[1]; ty <= m[1]; ++ty)
-                    for (int tz = -m[2]; tz <= m[2]; ++tz) {
-                        const double T[3] = {tx * L[0], ty * L[1], tz * L[2]};
-                        const double dx = ac[0] - bc[0] - T[0];
-                        const double dy = ac[1] - bc[1] - T[1];
-                        const double dz = ac[2] - bc[2] - T[2];
-                        if (dx * dx + dy * dy + dz * dz > reach2)
-                            continue;
-                        // Per-image REAL integrals, reused by every k.
-                        // Fused prim_ST shares Hermite tables for S and T.
-                        double s_im = 0.0, t_im = 0.0;
-                        for (const auto& pa : a)
-                            for (const auto& pb : b) {
-                                GridPrimitive q = pb; // ket image: center += T
-                                q.center[0] += T[0];
-                                q.center[1] += T[1];
-                                q.center[2] += T[2];
-                                double s_p = 0.0, t_p = 0.0;
-                                prim_ST(pa, q, s_p, t_p);
-                                s_im += s_p;
-                                t_im += t_p;
-                            }
-                        for (int ik = 0; ik < nk; ++ik) {
-                            const Cplx phase =
-                                ph.ax[0][static_cast<std::size_t>(ik)]
-                                     [static_cast<std::size_t>(tx + m[0])]
-                                * ph.ax[1][static_cast<std::size_t>(ik)]
-                                       [static_cast<std::size_t>(ty + m[1])]
-                                * ph.ax[2][static_cast<std::size_t>(ik)]
-                                       [static_cast<std::size_t>(tz + m[2])];
-                            s_acc[static_cast<std::size_t>(ik)] += phase * s_im;
-                            t_acc[static_cast<std::size_t>(ik)] += phase * t_im;
-                        }
+            for (int im = 0; im < nimg; ++im) {
+                const Img& img = imgs[static_cast<std::size_t>(im)];
+                const double dx = ac[0] - bc[0] - img.T[0];
+                const double dy = ac[1] - bc[1] - img.T[1];
+                const double dz = ac[2] - bc[2] - img.T[2];
+                if (dx * dx + dy * dy + dz * dz > reach2)
+                    continue;
+                // Per-image REAL integrals, reused by every k.
+                // Fused prim_ST + Hermite geometry-key reuse across cart terms.
+                double s_im = 0.0, t_im = 0.0;
+                for (const auto& pa : a)
+                    for (const auto& pb : b) {
+                        q.alpha = pb.alpha;
+                        q.l[0] = pb.l[0];
+                        q.l[1] = pb.l[1];
+                        q.l[2] = pb.l[2];
+                        q.coeff = pb.coeff;
+                        q.center[0] = pb.center[0] + img.T[0];
+                        q.center[1] = pb.center[1] + img.T[1];
+                        q.center[2] = pb.center[2] + img.T[2];
+                        double s_p = 0.0, t_p = 0.0;
+                        prim_ST(pa, q, s_p, t_p);
+                        s_im += s_p;
+                        t_im += t_p;
                     }
+                for (int ik = 0; ik < nk; ++ik) {
+                    const Cplx phase =
+                        phase_ik[static_cast<std::size_t>(ik) *
+                                     static_cast<std::size_t>(nimg)
+                                 + static_cast<std::size_t>(im)];
+                    s_acc[static_cast<std::size_t>(ik)] += phase * s_im;
+                    t_acc[static_cast<std::size_t>(ik)] += phase * t_im;
+                }
+            }
             for (int ik = 0; ik < nk; ++ik) {
                 S_k[static_cast<std::size_t>(ik)](i, j) =
                     s_acc[static_cast<std::size_t>(ik)];
