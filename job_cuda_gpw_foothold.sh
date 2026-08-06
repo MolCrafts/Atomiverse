@@ -21,9 +21,14 @@ export PATH="$(printf '%s' "$PATH" | tr ':' '\n' \
 hash -r
 
 export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"
-unset RUSTUP_TOOLCHAIN || true
-# aarch64 GH200: default toolchain is correct — do not force x86.
+# Prefer aarch64 rustc/cxxbridge on GH200; login often defaults to x86_64.
+export RUSTUP_TOOLCHAIN=stable-aarch64-unknown-linux-gnu
+# Drop x86 cargo bin so cxxbridge is not the non-runnable x86 wrapper.
+export PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '/\.cargo/bin' | paste -sd:):$HOME/.rustup/toolchains/stable-aarch64-unknown-linux-gnu/bin"
+hash -r
 export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
+echo "rustc: $(command -v rustc) ($(rustc --version 2>/dev/null || echo fail))"
+echo "cxxbridge: $(command -v cxxbridge || true)"
 
 CMAKE="$(command -v cmake || true)"
 if [ -z "$CMAKE" ] || ! "$CMAKE" --version >/dev/null 2>&1; then

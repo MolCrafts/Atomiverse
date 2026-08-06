@@ -1075,8 +1075,11 @@ if(ATV_BUILD_CUDA)
         atv_add_test(test_cuda_pw_si  cuda/planewave/test_pw_si.cu)
         # Parity needs a gapped system: uses the checked-in ONCV LDA Si
         # pseudopotential from the pw benchmark reference data.
-        target_compile_definitions(test_cuda_pw_si PRIVATE
-            ATV_PW_UPF_PATH="${CMAKE_SOURCE_DIR}/tests/data/pw/Si_lda_nc.upf")
+        # Guard: atv_add_test may skip heavy targets when ATV_TEST_HEAVY=OFF.
+        if(TARGET test_cuda_pw_si)
+            target_compile_definitions(test_cuda_pw_si PRIVATE
+                ATV_PW_UPF_PATH="${CMAKE_SOURCE_DIR}/tests/data/pw/Si_lda_nc.upf")
+        endif()
     endif()
     atv_add_test(test_cuda_driver_role_validation cuda/test_cuda_driver_role_validation.cu)
     # Registration-time PhaseKind gate, CUDA mirror
