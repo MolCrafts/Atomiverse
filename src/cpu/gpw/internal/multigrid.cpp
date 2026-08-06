@@ -426,7 +426,7 @@ ProductSet build_products(const MultiGrid& mg,
     ProductSet ps;
     ps.by_level.resize(static_cast<std::size_t>(nlev));
 
-    // ---- 1. Deduplicate cartesian primitives -------------------------------
+    // ---- 1. Deduplicate cartesian primitives + flat contrib packing --------
     // Each spherical basis function μ is stored as its real-solid-harmonic
     // cartesian expansion, so the SAME (α, center, l) primitive recurs across the
     // shell (e.g. x² in both d_z² and d_x²-y²). Collapse to UNIQUE cartesian
@@ -456,8 +456,13 @@ ProductSet build_products(const MultiGrid& mg,
             return h;
         }
     };
+    // Single scan: unique prims + (prim, contrib) pairs; then exclusive-scan
+    // pack into a flat contrib pool (no vector-of-vectors churn).
     std::unordered_map<PrimKey, int, KeyHash> uniq;
-    std::vector<std::vector<PrimContrib>> tmp_contribs;
+    std::vector<int> raw_prim;
+    std::vector<PrimContrib> raw_contribs;
+    raw_prim.reserve(static_cast<std::size_t>(nb) * 4);
+    raw_contribs.reserve(static_cast<std::size_t>(nb) * 4);
     for (int mu = 0; mu < nb; ++mu) {
         for (const auto& p : basis[static_cast<std::size_t>(mu)]) {
             if (p.coeff == 0.0)
@@ -475,56 +480,154 @@ ProductSet build_products(const MultiGrid& mg,
                     pr.l[d] = p.l[d];
                 }
                 ps.prims.push_back(pr);
-                tmp_contribs.emplace_back();
                 uniq.emplace(key, pi);
             } else {
                 pi = it->second;
             }
-            tmp_contribs[static_cast<std::size_t>(pi)].push_back({mu, p.coeff});
+            raw_prim.push_back(pi);
+            raw_contribs.push_back({mu, p.coeff});
+        }
+    }
+    {
+        const int nprim_tmp = static_cast<int>(ps.prims.size());
+        std::vector<int> contrib_count(static_cast<std::size_t>(nprim_tmp), 0);
+        for (int pi : raw_prim)
+            ++contrib_count[static_cast<std::size_t>(pi)];
+        int total_c = 0;
+        for (int pi = 0; pi < nprim_tmp; ++pi) {
+            PrimRef& pr = ps.prims[static_cast<std::size_t>(pi)];
+            pr.cbeg = total_c;
+            pr.cn = contrib_count[static_cast<std::size_t>(pi)];
+            total_c += pr.cn;
+            contrib_count[static_cast<std::size_t>(pi)] = 0; // fill cursor
+        }
+        ps.contribs.resize(static_cast<std::size_t>(total_c));
+        for (std::size_t i = 0; i < raw_contribs.size(); ++i) {
+            const int pi = raw_prim[i];
+            PrimRef& pr = ps.prims[static_cast<std::size_t>(pi)];
+            const int slot =
+                pr.cbeg + contrib_count[static_cast<std::size_t>(pi)]++;
+            ps.contribs[static_cast<std::size_t>(slot)] = raw_contribs[i];
         }
     }
     const int nprim = static_cast<int>(ps.prims.size());
-    // Flatten contributors; per-prim max|coeff| (build screen) and support radius.
+    // Per-prim max|coeff| (build screen) and support radius.
     std::vector<double> prad(static_cast<std::size_t>(nprim), 0.0);
     for (int pi = 0; pi < nprim; ++pi) {
         PrimRef& pr = ps.prims[static_cast<std::size_t>(pi)];
-        pr.cbeg = static_cast<int>(ps.contribs.size());
-        pr.cn =
-            static_cast<int>(tmp_contribs[static_cast<std::size_t>(pi)].size());
         double mc = 0.0;
-        for (const auto& c : tmp_contribs[static_cast<std::size_t>(pi)]) {
-            ps.contribs.push_back(c);
-            mc = std::max(mc, std::abs(c.coeff));
-        }
+        for (int k = 0; k < pr.cn; ++k)
+            mc = std::max(
+                mc, std::abs(ps.contribs[static_cast<std::size_t>(pr.cbeg + k)]
+                                 .coeff));
         pr.maxc = mc;
         const int Lsum = pr.l[0] + pr.l[1] + pr.l[2];
         prad[static_cast<std::size_t>(pi)] =
             product_radius(mc, pr.alpha, Lsum, eps);
     }
 
-    // ---- 2. Generate UNIQUE-shape products over cartesian-primitive pairs ----
-    // One bucket PER BRA PRIMITIVE, not per thread: the product list order is
-    // the summation order of every downstream density/KS contraction, and a
-    // per-thread bucket makes it a function of which thread took which `ua`
-    // chunk — which a dynamic schedule varies between two runs of the same
-    // binary. Bucketing by the loop index and concatenating in ascending `ua`
-    // gives one canonical list at any thread count.
-    std::vector<std::vector<std::vector<GridProduct>>> per_bra(
-        static_cast<std::size_t>(nprim)); // [ua][level]
-    for (auto& t : per_bra)
-        t.resize(static_cast<std::size_t>(nlev));
+    // ---- 1b. Group monoms that share collint geometry (α, center) -----------
+    // Shell expansions (s/p/d/…) share (α, r) across cartesiens; collint batches
+    // already group monoms with identical p/ra/rb/pc. Pairing at this coarser
+    // grain computes K, pc, image bounds ONCE per geometry pair instead of once
+    // per monom pair (~avg group size × fewer exp on the MG twin).
+    struct GeomKey {
+        double a, cx, cy, cz;
+        bool operator==(const GeomKey& o) const {
+            return a == o.a && cx == o.cx && cy == o.cy && cz == o.cz;
+        }
+    };
+    struct GeomKeyHash {
+        std::size_t operator()(const GeomKey& k) const {
+            std::size_t h = std::hash<double>()(k.a);
+            auto mix = [&h](std::size_t x) {
+                h ^= x + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+            };
+            mix(std::hash<double>()(k.cx));
+            mix(std::hash<double>()(k.cy));
+            mix(std::hash<double>()(k.cz));
+            return h;
+        }
+    };
+    std::unordered_map<GeomKey, int, GeomKeyHash> geom_of;
+    std::vector<std::vector<int>> monoms; // prim indices per geometry, sorted
+    monoms.reserve(static_cast<std::size_t>(nprim));
+    for (int pi = 0; pi < nprim; ++pi) {
+        const PrimRef& pr = ps.prims[static_cast<std::size_t>(pi)];
+        GeomKey gk{pr.alpha, pr.center[0], pr.center[1], pr.center[2]};
+        auto it = geom_of.find(gk);
+        int gi;
+        if (it == geom_of.end()) {
+            gi = static_cast<int>(monoms.size());
+            monoms.emplace_back();
+            geom_of.emplace(gk, gi);
+        } else {
+            gi = it->second;
+        }
+        monoms[static_cast<std::size_t>(gi)].push_back(pi);
+    }
+    const int ngeom = static_cast<int>(monoms.size());
+    for (auto& m : monoms)
+        std::sort(m.begin(), m.end()); // deterministic monom order (prim index)
+    std::vector<double> geom_max_prad(static_cast<std::size_t>(ngeom), 0.0);
+    std::vector<double> geom_max_mc(static_cast<std::size_t>(ngeom), 0.0);
+    for (int gi = 0; gi < ngeom; ++gi) {
+        double rp = 0.0, mc = 0.0;
+        for (int pi : monoms[static_cast<std::size_t>(gi)]) {
+            rp = std::max(rp, prad[static_cast<std::size_t>(pi)]);
+            mc = std::max(mc, ps.prims[static_cast<std::size_t>(pi)].maxc);
+        }
+        geom_max_prad[static_cast<std::size_t>(gi)] = rp;
+        geom_max_mc[static_cast<std::size_t>(gi)] = mc;
+    }
 
-#pragma omp parallel for schedule(dynamic, 4)
-    for (int ua = 0; ua < nprim; ++ua) {
-        auto& out = per_bra[static_cast<std::size_t>(ua)];
-        const PrimRef& A = ps.prims[static_cast<std::size_t>(ua)];
-        for (int ub = 0; ub < nprim; ++ub) {
-            const PrimRef& B = ps.prims[static_cast<std::size_t>(ub)];
-            const double reach = prad[static_cast<std::size_t>(ua)]
-                                 + prad[static_cast<std::size_t>(ub)];
-            const double pa = A.alpha, pb = B.alpha, p = pa + pb;
-            const double mc = A.maxc * B.maxc;
-            // Image shifts of the KET prim (B); the bra A stays home (mirrors
+    // Precompute level ladder cutoffs for O(1)-ish level_for_exponent.
+    // level_for_exponent is already O(nlev) with nlev≤4; hoist need scale only.
+    const double rel = rel_cutoff;
+
+    // Compact monom-pair payload for a geometry batch (shared p/ra/rb/pc/k/t).
+    // Sorting ~N/〈group〉 batch keys then expanding is far cheaper than sorting
+    // every GridProduct (~140 B) through collint_geom_less.
+    struct GeomBatch {
+        double p = 0.0;
+        double k = 0.0;
+        double pc[3] = {0, 0, 0};
+        double ra[3] = {0, 0, 0};
+        double rb[3] = {0, 0, 0};
+        int t[3] = {0, 0, 0};
+        int level = 0;
+        std::vector<std::pair<int, int>> monoms; // (ua, ub)
+    };
+
+    // ---- 2. Geometry-pair products (bra-geom buckets for OpenMP determinism) -
+    // One bucket PER BRA GEOMETRY, not per thread: concatenating in ascending
+    // `ga` gives one canonical list at any thread count (same contract as the
+    // previous per-`ua` buckets).
+    std::vector<std::vector<GeomBatch>> per_bra_geom(
+        static_cast<std::size_t>(ngeom));
+
+#pragma omp parallel for schedule(dynamic, 1)
+    for (int ga = 0; ga < ngeom; ++ga) {
+        auto& batches = per_bra_geom[static_cast<std::size_t>(ga)];
+        const auto& mon_a = monoms[static_cast<std::size_t>(ga)];
+        const PrimRef& A0 =
+            ps.prims[static_cast<std::size_t>(mon_a.front())];
+        const double pa = A0.alpha;
+        const double ra0[3] = {A0.center[0], A0.center[1], A0.center[2]};
+        const double prad_a = geom_max_prad[static_cast<std::size_t>(ga)];
+        const double mc_a = geom_max_mc[static_cast<std::size_t>(ga)];
+
+        for (int gb = 0; gb < ngeom; ++gb) {
+            const auto& mon_b = monoms[static_cast<std::size_t>(gb)];
+            const PrimRef& B0 =
+                ps.prims[static_cast<std::size_t>(mon_b.front())];
+            const double pb = B0.alpha;
+            const double p = pa + pb;
+            const double reach =
+                prad_a + geom_max_prad[static_cast<std::size_t>(gb)];
+            const double mc_pair =
+                mc_a * geom_max_mc[static_cast<std::size_t>(gb)];
+            // Image shifts of the KET geom (B); the bra A stays home (mirrors
             // the Γ-point cross-image product Σ_T φ_A φ_B(·−T)).
             int m[3] = {0, 0, 0};
             if (periodic)
@@ -532,95 +635,136 @@ ProductSet build_products(const MultiGrid& mg,
                     m[d] = (L[d] > 0.0) ? static_cast<int>(std::ceil(
                                               reach / L[d] - 1e-12))
                                         : 0;
+            const int lev = level_for_exponent(mg, rel, p);
             for (int tx = -m[0]; tx <= m[0]; ++tx)
                 for (int ty = -m[1]; ty <= m[1]; ++ty)
                     for (int tz = -m[2]; tz <= m[2]; ++tz) {
                         const double tL[3] = {tx * L[0], ty * L[1],
                                               tz * L[2]};
-                        const double sx = A.center[0] - B.center[0] - tL[0];
-                        const double sy = A.center[1] - B.center[1] - tL[1];
-                        const double sz = A.center[2] - B.center[2] - tL[2];
+                        const double sx = ra0[0] - B0.center[0] - tL[0];
+                        const double sy = ra0[1] - B0.center[1] - tL[1];
+                        const double sz = ra0[2] - B0.center[2] - tL[2];
                         if (sx * sx + sy * sy + sz * sz > reach * reach)
                             continue;
                         double rb[3], dpq2 = 0.0, P[3];
                         for (int d = 0; d < 3; ++d) {
-                            rb[d] = B.center[d] + tL[d];
-                            const double diff = A.center[d] - rb[d];
+                            rb[d] = B0.center[d] + tL[d];
+                            const double diff = ra0[d] - rb[d];
                             dpq2 += diff * diff;
-                            P[d] = (pa * A.center[d] + pb * rb[d]) / p;
+                            P[d] = (pa * ra0[d] + pb * rb[d]) / p;
                         }
                         const double K = std::exp(-pa * pb / p * dpq2);
-                        if (mc * K < eps)
-                            continue; // no contributor pair survives
-                        GridProduct prod;
-                        prod.p = p;
-                        prod.k = K;
-                        prod.ua = ua;
-                        prod.ub = ub;
+                        // Whole-geometry screen: if the strongest monom pair
+                        // dies, every monom of this (ga,gb,T) dies.
+                        if (mc_pair * K < eps)
+                            continue;
+                        GeomBatch batch;
+                        batch.p = p;
+                        batch.k = K;
+                        batch.level = lev;
+                        batch.t[0] = tx;
+                        batch.t[1] = ty;
+                        batch.t[2] = tz;
                         for (int d = 0; d < 3; ++d) {
-                            prod.pc[d] = P[d];
-                            prod.ra[d] = A.center[d];
-                            prod.rb[d] = rb[d];
-                            prod.la[d] = A.l[d];
-                            prod.lb[d] = B.l[d];
+                            batch.pc[d] = P[d];
+                            batch.ra[d] = ra0[d];
+                            batch.rb[d] = rb[d];
                         }
-                        prod.t[0] = tx;
-                        prod.t[1] = ty;
-                        prod.t[2] = tz;
-                        prod.level = level_for_exponent(mg, rel_cutoff, p);
-                        out[static_cast<std::size_t>(prod.level)].push_back(
-                            prod);
+                        batch.monoms.reserve(mon_a.size() * mon_b.size());
+                        for (int ua : mon_a) {
+                            const double mca =
+                                ps.prims[static_cast<std::size_t>(ua)].maxc;
+                            for (int ub : mon_b) {
+                                const double mcb =
+                                    ps.prims[static_cast<std::size_t>(ub)]
+                                        .maxc;
+                                if (mca * mcb * K < eps)
+                                    continue;
+                                batch.monoms.emplace_back(ua, ub);
+                            }
+                        }
+                        if (!batch.monoms.empty())
+                            batches.push_back(std::move(batch));
                     }
         }
     }
 
-    for (auto& t : per_bra)
-        for (int l = 0; l < nlev; ++l) {
-            auto& dst = ps.by_level[static_cast<std::size_t>(l)];
-            auto& src = t[static_cast<std::size_t>(l)];
-            dst.insert(dst.end(), src.begin(), src.end());
-        }
+    // ---- 3. Merge bra-geom batches → per-level batch lists, sort, expand ----
+    std::vector<std::vector<GeomBatch>> batches_by_level(
+        static_cast<std::size_t>(nlev));
+    for (auto& bra : per_bra_geom)
+        for (auto& b : bra)
+            batches_by_level[static_cast<std::size_t>(b.level)].push_back(
+                std::move(b));
 
-    // ---- 3. Index the distinct ket image shifts (Bloch phase cells) --------
-    // Serial post-pass over the canonical concatenated lists: `cells` is
-    // lexicographically sorted (deterministic at any thread count) and every
-    // product's `tcell` points at its shift. Γ consumers ignore both.
+    // Geometry order for collint linear-scan batching: sort batch keys only.
+    auto batch_less = [](const GeomBatch& a, const GeomBatch& b) {
+        if (a.p != b.p)
+            return a.p < b.p;
+        for (int d = 0; d < 3; ++d)
+            if (a.pc[d] != b.pc[d])
+                return a.pc[d] < b.pc[d];
+        for (int d = 0; d < 3; ++d)
+            if (a.ra[d] != b.ra[d])
+                return a.ra[d] < b.ra[d];
+        for (int d = 0; d < 3; ++d)
+            if (a.rb[d] != b.rb[d])
+                return a.rb[d] < b.rb[d];
+        // Stable tie-break on image cell (matches previous t-then-monom order
+        // only after monom expand; cells with equal geometry are rare).
+        for (int d = 0; d < 3; ++d)
+            if (a.t[d] != b.t[d])
+                return a.t[d] < b.t[d];
+        return false;
+    };
+
+    // Collect unique image cells from batch keys (≪ product count).
     std::map<std::array<int, 3>, int> cell_of;
-    for (auto& lev : ps.by_level)
-        for (auto& prod : lev)
-            cell_of.emplace(std::array<int, 3>{prod.t[0], prod.t[1], prod.t[2]},
-                            0);
+    for (const auto& lev : batches_by_level)
+        for (const auto& b : lev)
+            cell_of.emplace(std::array<int, 3>{b.t[0], b.t[1], b.t[2]}, 0);
     ps.cells.reserve(cell_of.size());
     for (auto& [tvec, idx] : cell_of) {
         idx = static_cast<int>(ps.cells.size());
         ps.cells.push_back(tvec);
     }
-    for (auto& lev : ps.by_level)
-        for (auto& prod : lev)
-            prod.tcell = cell_of.at(
-                std::array<int, 3>{prod.t[0], prod.t[1], prod.t[2]});
-    // Geometry order once at build (not per SCF collocate): monoms that share
-    // p/ra/rb/pc become consecutive so collint batching is a linear scan.
-    for (auto& lev : ps.by_level)
-        std::sort(lev.begin(), lev.end(), [](const GridProduct& a,
-                                             const GridProduct& b) {
-            if (internal::collint_geom_less(a, b))
-                return true;
-            if (internal::collint_geom_less(b, a))
-                return false;
-            // Deterministic tie-break (ua,ub,la,lb).
-            if (a.ua != b.ua)
-                return a.ua < b.ua;
-            if (a.ub != b.ub)
-                return a.ub < b.ub;
-            for (int d = 0; d < 3; ++d)
-                if (a.la[d] != b.la[d])
-                    return a.la[d] < b.la[d];
-            for (int d = 0; d < 3; ++d)
-                if (a.lb[d] != b.lb[d])
-                    return a.lb[d] < b.lb[d];
-            return false;
-        });
+
+    for (int l = 0; l < nlev; ++l) {
+        auto& batches = batches_by_level[static_cast<std::size_t>(l)];
+        std::sort(batches.begin(), batches.end(), batch_less);
+        std::size_t nprod = 0;
+        for (const auto& b : batches)
+            nprod += b.monoms.size();
+        auto& dst = ps.by_level[static_cast<std::size_t>(l)];
+        dst.resize(nprod);
+        std::size_t w = 0;
+        for (const auto& b : batches) {
+            const int tcell = cell_of.at(
+                std::array<int, 3>{b.t[0], b.t[1], b.t[2]});
+            // Monoms already sorted by (ua, ub) because mon_a/mon_b were sorted
+            // and the nested loop is lexicographic — matches the old
+            // (ua,ub,la,lb) tie-break (la/lb determined by ua/ub).
+            for (const auto& [ua, ub] : b.monoms) {
+                const PrimRef& A = ps.prims[static_cast<std::size_t>(ua)];
+                const PrimRef& B = ps.prims[static_cast<std::size_t>(ub)];
+                GridProduct& prod = dst[w++];
+                prod.p = b.p;
+                prod.k = b.k;
+                prod.ua = ua;
+                prod.ub = ub;
+                prod.level = l;
+                prod.tcell = tcell;
+                for (int d = 0; d < 3; ++d) {
+                    prod.pc[d] = b.pc[d];
+                    prod.ra[d] = b.ra[d];
+                    prod.rb[d] = b.rb[d];
+                    prod.la[d] = A.l[d];
+                    prod.lb[d] = B.l[d];
+                    prod.t[d] = b.t[d];
+                }
+            }
+        }
+    }
     return ps;
 }
 
