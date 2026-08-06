@@ -1026,11 +1026,12 @@ static GpwResult run_gpw_scf_kpoints(
     std::vector<CplxMatrix> S_k, T_k;
     internal::build_overlap_kinetic_k(basis, radii, cfg.cell, mimg,
                                       kBuildScreen, kpts, S_k, T_k);
+    k_setup_mark_early("ST_k");
     std::vector<CplxMatrix> Vnl_k(static_cast<std::size_t>(nk),
                                   CplxMatrix(xt::zeros<Cplx>({nb, nb})));
     internal::add_nonlocal_kb_k(Vnl_k, basis, atoms, radii, cfg.cell, mimg,
                                 kBuildScreen, kpts);
-    k_setup_mark_early("STVnl_k");
+    k_setup_mark_early("Vnl_k");
 
     // Canonical orthogonalization per k (drops near-null Bloch directions).
     std::vector<internal::KOrth> orth;
