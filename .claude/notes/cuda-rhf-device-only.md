@@ -62,6 +62,7 @@ Grok CUDA skills (not ad-hoc style):
 | Γ GPW Poisson/FFT foothold | **landed** (`cuda-gpw-foothold`) | `src/cuda/gpw/internal/poisson_fft.{cu,cuh}`; unit vs CPU oracle; **not** full GPW product |
 | Padé LDA XC grid foothold | **landed** (`cuda-gpw-xc-lda-foothold`) | `src/cuda/gpw/internal/xc_lda.{cu,cuh}`; `test_cuda_gpw_xc_lda` vs `cpu::xc::pade_lsd`; per-point ~1e-12, E ~1e-10 rel; **not** full GPW product |
 | product ρ collocate foothold | **landed** (`cuda-gpw-rho-collocate-foothold`) | `src/cuda/gpw/internal/product_collocate.{cu,cuh}`; `test_cuda_gpw_product_collocate` vs continuous host + `collint_collocate_product`; s/p + multi-s–s; **not** full GPW product |
+| product V·shape integrate foothold | **landed** (`cuda-gpw-product-integrate-foothold`) | `src/cuda/gpw/internal/product_integrate.{cu,cuh}`; reuses `DeviceProduct`/`CollocateGridDesc`; `test_cuda_gpw_product_integrate` vs continuous host + `collint_integrate_product`; s/p + multi-s–s; **not** full GPW product |
 
 ## Wave 6 layout
 

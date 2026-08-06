@@ -52,8 +52,9 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    **~1.4×**, ≤3× aim met). Remaining lever: shell-level collint tasks toward
    CP2K ~20 ms/iter class. Energy-path change ⇒ re-run FD force oracle.
 2. **CUDA ES** — RHF device s/p energy+forces+level_shift+path-select+**CDIIS**
-   **landed**; Γ GPW Poisson/FFT + Padé LDA XC + **ρ collocate** footholds
-   **landed** (not full method). Full CUDA GPW product remains blocked.
+   **landed**; Γ GPW Poisson/FFT + Padé LDA XC + **ρ collocate** + **V·shape
+   integrate** footholds **landed** (not full method). Full CUDA GPW product
+   remains blocked.
 
 **Worker law:** branches `wf/escuda-<slug>` off **`dev`**; no push; no
 `reset --hard`. Disk: wipe `build`/`build-*` after every cmake/ctest. CUDA
