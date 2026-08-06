@@ -8,6 +8,7 @@
 
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -28,6 +29,8 @@ struct HermiteTab {
     double memo[kMaxAng + 1][kMaxAng + 1][2 * kMaxAng + 1];
     unsigned stamp[kMaxAng + 1][kMaxAng + 1][2 * kMaxAng + 1] = {};
     unsigned gen = 0;
+    // Bottom-up fill extent (inclusive). -1 ⇒ use recursive E only.
+    int filled_i = -1, filled_j = -1;
 
     void init(double a, double b, double Ax, double Bx) {
         p = a + b;
@@ -42,6 +45,59 @@ struct HermiteTab {
             std::memset(stamp, 0, sizeof(stamp));
             gen = 1;
         }
+        filled_i = filled_j = -1;
+    }
+
+    /// Bottom-up McMurchie–Davidson fill of E_t^{i,j} for i≤imax, j≤jmax
+    /// (and all t). Kinetic needs j+2 on the ket side — pass jmax = l_b+2.
+    /// ~2–4× fewer calls than recursive memo for multi-monom shell pairs.
+    void fill_upto(int imax, int jmax) {
+        imax = std::min(imax, kMaxAng);
+        jmax = std::min(jmax, kMaxAng);
+        if (imax < 0 || jmax < 0)
+            return;
+        if (filled_i >= imax && filled_j >= jmax)
+            return;
+        // Grow to the max of previous fill and request (first call: filled=-1).
+        if (filled_i >= 0)
+            imax = std::max(imax, filled_i);
+        if (filled_j >= 0)
+            jmax = std::max(jmax, filled_j);
+        const double oo2p = 0.5 / p;
+        memo[0][0][0] = std::exp(-mu * xab * xab);
+        stamp[0][0][0] = gen;
+        // j=0 column: raise i  (E_t^{i,0})
+        for (int i = 1; i <= imax; ++i) {
+            for (int t = 0; t <= i; ++t) {
+                double v = 0.0;
+                if (t - 1 >= 0 && t - 1 <= i - 1)
+                    v += oo2p * memo[i - 1][0][t - 1];
+                if (t <= i - 1)
+                    v += xpa * memo[i - 1][0][t];
+                if (t + 1 <= i - 1)
+                    v += static_cast<double>(t + 1) * memo[i - 1][0][t + 1];
+                memo[i][0][t] = v;
+                stamp[i][0][t] = gen;
+            }
+        }
+        // raise j for all i
+        for (int j = 1; j <= jmax; ++j) {
+            for (int i = 0; i <= imax; ++i) {
+                for (int t = 0; t <= i + j; ++t) {
+                    double v = 0.0;
+                    if (t - 1 >= 0 && t - 1 <= i + j - 1)
+                        v += oo2p * memo[i][j - 1][t - 1];
+                    if (t <= i + j - 1)
+                        v += xpb * memo[i][j - 1][t];
+                    if (t + 1 <= i + j - 1)
+                        v += static_cast<double>(t + 1) * memo[i][j - 1][t + 1];
+                    memo[i][j][t] = v;
+                    stamp[i][j][t] = gen;
+                }
+            }
+        }
+        filled_i = imax;
+        filled_j = jmax;
     }
 
     double E(int i, int j, int t) {
@@ -51,6 +107,9 @@ struct HermiteTab {
             return 0.0; // refuse — caller should not hit this for GPW
         if (stamp[i][j][t] == gen)
             return memo[i][j][t];
+        // If bottom-up filled this range, missing stamp ⇒ true zero (t gap).
+        if (filled_i >= i && filled_j >= j)
+            return 0.0;
         double v;
         if (i == 0 && j == 0) {
             v = std::exp(-mu * xab * xab); // t==0
@@ -73,6 +132,13 @@ struct HermiteTab {
         if (i < 0 || j < 0)
             return 0.0;
         return E(i, j, 0) * sqrt_pi_p;
+    }
+
+    /// Fast S1d when fill_upto covers (i,j) — direct memo read.
+    double S1d_filled(int i, int j) const {
+        if (i < 0 || j < 0)
+            return 0.0;
+        return memo[i][j][0] * sqrt_pi_p;
     }
 };
 
@@ -198,6 +264,88 @@ void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
     st_from_tabs(hx, hy, hz, a.l[0], a.l[1], a.l[2], b.l[0], b.l[1], b.l[2],
                  a.alpha, b.alpha, a.coeff, b.coeff, s_out, t_out);
 }
+
+
+void contracted_ST_shift(const GridBasisFunction& a,
+                         const GridBasisFunction& b, const double T[3],
+                         double& s_out, double& t_out) {
+    // Local Hermite + bottom-up fill per (α_a, α_b, geometry). Grouping monoms
+    // that share exponents fills the E table once (kinetic needs j+2).
+    HermiteTab hx, hy, hz;
+    HermiteGeomKey key;
+    double s = 0.0, t = 0.0;
+    const int na = static_cast<int>(a.size());
+    const int nb = static_cast<int>(b.size());
+    // Track max angular per current geometry so fill_upto covers all monoms.
+    for (int ia = 0; ia < na; ++ia) {
+        const auto& pa = a[static_cast<std::size_t>(ia)];
+        for (int ib = 0; ib < nb; ++ib) {
+            const auto& pb = b[static_cast<std::size_t>(ib)];
+            const double bc[3] = {pb.center[0] + T[0], pb.center[1] + T[1],
+                                  pb.center[2] + T[2]};
+            double s_p = 0.0, t_p = 0.0;
+            if (pa.l[0] == 0 && pa.l[1] == 0 && pa.l[2] == 0 && pb.l[0] == 0
+                && pb.l[1] == 0 && pb.l[2] == 0) {
+                st_ss(pa.alpha, pb.alpha, pa.center, bc, pa.coeff, pb.coeff, s_p,
+                      t_p);
+                s += s_p;
+                t += t_p;
+                continue;
+            }
+            // On geometry miss: init + scan remaining monoms with same (α,α')
+            // to learn max L for a single fill_upto.
+            if (!key.matches(pa.alpha, pb.alpha, pa.center, bc)) {
+                hx.init(pa.alpha, pb.alpha, pa.center[0], bc[0]);
+                hy.init(pa.alpha, pb.alpha, pa.center[1], bc[1]);
+                hz.init(pa.alpha, pb.alpha, pa.center[2], bc[2]);
+                key.set(pa.alpha, pb.alpha, pa.center, bc);
+                int max_la = 0, max_lb = 0;
+                for (int ja = ia; ja < na; ++ja) {
+                    const auto& qa = a[static_cast<std::size_t>(ja)];
+                    if (qa.alpha != pa.alpha)
+                        continue;
+                    if (qa.center[0] != pa.center[0] || qa.center[1] != pa.center[1]
+                        || qa.center[2] != pa.center[2])
+                        continue;
+                    max_la = std::max(
+                        max_la, std::max(qa.l[0], std::max(qa.l[1], qa.l[2])));
+                }
+                for (int jb = 0; jb < nb; ++jb) {
+                    const auto& qb = b[static_cast<std::size_t>(jb)];
+                    if (qb.alpha != pb.alpha)
+                        continue;
+                    max_lb = std::max(
+                        max_lb, std::max(qb.l[0], std::max(qb.l[1], qb.l[2])));
+                }
+                // Kinetic uses S1d(i, j+2) ⇒ need j up to max_lb+2.
+                const int jfill = std::min(kMaxAng, max_lb + 2);
+                hx.fill_upto(max_la, jfill);
+                hy.fill_upto(max_la, jfill);
+                hz.fill_upto(max_la, jfill);
+            }
+            // Direct filled-table ST (no recursive E).
+            auto kin1d = [](const HermiteTab& h, int i, int j, double b_exp) {
+                double tt = -2.0 * b_exp * b_exp * h.S1d_filled(i, j + 2)
+                            + b_exp * (2 * j + 1) * h.S1d_filled(i, j);
+                if (j >= 2)
+                    tt -= 0.5 * j * (j - 1) * h.S1d_filled(i, j - 2);
+                return tt;
+            };
+            const double sx = hx.S1d_filled(pa.l[0], pb.l[0]);
+            const double sy = hy.S1d_filled(pa.l[1], pb.l[1]);
+            const double sz = hz.S1d_filled(pa.l[2], pb.l[2]);
+            const double tx = kin1d(hx, pa.l[0], pb.l[0], pb.alpha);
+            const double ty = kin1d(hy, pa.l[1], pb.l[1], pb.alpha);
+            const double tz = kin1d(hz, pa.l[2], pb.l[2], pb.alpha);
+            const double c = pa.coeff * pb.coeff;
+            s += c * sx * sy * sz;
+            t += c * (tx * sy * sz + sx * ty * sz + sx * sy * tz);
+        }
+    }
+    s_out = s;
+    t_out = t;
+}
+
 
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b) {
     double s = 0.0;

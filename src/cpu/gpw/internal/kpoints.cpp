@@ -201,73 +201,71 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                 }
             }
 
-#pragma omp parallel for schedule(dynamic, 4)
-    for (int i = 0; i < nb; ++i) {
-        if (basis[static_cast<std::size_t>(i)].empty())
+// Upper-triangle pair list for load-balanced OMP (row-parallel left the
+    // last rows starved; dynamic pair chunks match CP2K pair tasks better).
+    const long npairs = static_cast<long>(nb) * (static_cast<long>(nb) + 1) / 2;
+#pragma omp parallel for schedule(dynamic, 8)
+    for (long p = 0; p < npairs; ++p) {
+        // Decode upper-tri (i,j): p = i*nb - i*(i-1)/2 + (j-i) with j>=i.
+        // Solve i from p via quadratic; small-nb linear scan is fine too.
+        int i = 0;
+        long rem = p;
+        long row = nb;
+        while (rem >= row) {
+            rem -= row;
+            --row;
+            ++i;
+        }
+        const int j = i + static_cast<int>(rem);
+        const GridBasisFunction& a = basis[static_cast<std::size_t>(i)];
+        const GridBasisFunction& b = basis[static_cast<std::size_t>(j)];
+        if (a.empty() || b.empty())
             continue;
-        std::vector<Cplx> s_acc(static_cast<std::size_t>(nk));
-        std::vector<Cplx> t_acc(static_cast<std::size_t>(nk));
-        // Reused ket image primitive (only center mutates per image/prim).
-        GridPrimitive q;
-        for (int j = i; j < nb; ++j) {
-            const GridBasisFunction& a = basis[static_cast<std::size_t>(i)];
-            const GridBasisFunction& b = basis[static_cast<std::size_t>(j)];
-            if (b.empty())
-                continue;
-            if (pair_bound(a, b, L) < screen)
-                continue;
-            const double reach = radii[static_cast<std::size_t>(i)]
-                                 + radii[static_cast<std::size_t>(j)];
-            const double reach2 = reach * reach;
-            const double* ac = a[0].center;
-            const double* bc = b[0].center;
-            std::fill(s_acc.begin(), s_acc.end(), Cplx(0, 0));
-            std::fill(t_acc.begin(), t_acc.end(), Cplx(0, 0));
-            for (int im = 0; im < nimg; ++im) {
-                const Img& img = imgs[static_cast<std::size_t>(im)];
-                const double dx = ac[0] - bc[0] - img.T[0];
-                const double dy = ac[1] - bc[1] - img.T[1];
-                const double dz = ac[2] - bc[2] - img.T[2];
-                if (dx * dx + dy * dy + dz * dz > reach2)
-                    continue;
-                // Per-image REAL integrals, reused by every k.
-                // Fused prim_ST + Hermite geometry-key reuse across cart terms.
-                double s_im = 0.0, t_im = 0.0;
-                for (const auto& pa : a)
-                    for (const auto& pb : b) {
-                        q.alpha = pb.alpha;
-                        q.l[0] = pb.l[0];
-                        q.l[1] = pb.l[1];
-                        q.l[2] = pb.l[2];
-                        q.coeff = pb.coeff;
-                        q.center[0] = pb.center[0] + img.T[0];
-                        q.center[1] = pb.center[1] + img.T[1];
-                        q.center[2] = pb.center[2] + img.T[2];
-                        double s_p = 0.0, t_p = 0.0;
-                        prim_ST(pa, q, s_p, t_p);
-                        s_im += s_p;
-                        t_im += t_p;
-                    }
-                for (int ik = 0; ik < nk; ++ik) {
-                    const Cplx phase =
-                        phase_ik[static_cast<std::size_t>(ik) *
-                                     static_cast<std::size_t>(nimg)
-                                 + static_cast<std::size_t>(im)];
-                    s_acc[static_cast<std::size_t>(ik)] += phase * s_im;
-                    t_acc[static_cast<std::size_t>(ik)] += phase * t_im;
-                }
-            }
+        if (pair_bound(a, b, L) < screen)
+            continue;
+        const double reach = radii[static_cast<std::size_t>(i)]
+                             + radii[static_cast<std::size_t>(j)];
+        const double reach2 = reach * reach;
+        const double* ac = a[0].center;
+        const double* bc = b[0].center;
+        // Pack live images first (branch-free ST + phase over a short list).
+        // For diamond Si + MOLOPT most of nimg is dead — packing cuts mispredicts.
+        thread_local std::vector<int> live;
+        live.clear();
+        live.reserve(32);
+        for (int im = 0; im < nimg; ++im) {
+            const Img& img = imgs[static_cast<std::size_t>(im)];
+            const double dx = ac[0] - bc[0] - img.T[0];
+            const double dy = ac[1] - bc[1] - img.T[1];
+            const double dz = ac[2] - bc[2] - img.T[2];
+            if (dx * dx + dy * dy + dz * dz <= reach2)
+                live.push_back(im);
+        }
+        std::vector<Cplx> s_acc(static_cast<std::size_t>(nk), Cplx(0, 0));
+        std::vector<Cplx> t_acc(static_cast<std::size_t>(nk), Cplx(0, 0));
+        for (int im : live) {
+            const Img& img = imgs[static_cast<std::size_t>(im)];
+            double s_im = 0.0, t_im = 0.0;
+            contracted_ST_shift(a, b, img.T, s_im, t_im);
             for (int ik = 0; ik < nk; ++ik) {
-                S_k[static_cast<std::size_t>(ik)](i, j) =
-                    s_acc[static_cast<std::size_t>(ik)];
-                T_k[static_cast<std::size_t>(ik)](i, j) =
-                    t_acc[static_cast<std::size_t>(ik)];
-                if (j != i) { // Hermiticity by construction
-                    S_k[static_cast<std::size_t>(ik)](j, i) =
-                        std::conj(s_acc[static_cast<std::size_t>(ik)]);
-                    T_k[static_cast<std::size_t>(ik)](j, i) =
-                        std::conj(t_acc[static_cast<std::size_t>(ik)]);
-                }
+                const Cplx phase =
+                    phase_ik[static_cast<std::size_t>(ik) *
+                                 static_cast<std::size_t>(nimg)
+                             + static_cast<std::size_t>(im)];
+                s_acc[static_cast<std::size_t>(ik)] += phase * s_im;
+                t_acc[static_cast<std::size_t>(ik)] += phase * t_im;
+            }
+        }
+        for (int ik = 0; ik < nk; ++ik) {
+            S_k[static_cast<std::size_t>(ik)](i, j) =
+                s_acc[static_cast<std::size_t>(ik)];
+            T_k[static_cast<std::size_t>(ik)](i, j) =
+                t_acc[static_cast<std::size_t>(ik)];
+            if (j != i) {
+                S_k[static_cast<std::size_t>(ik)](j, i) =
+                    std::conj(s_acc[static_cast<std::size_t>(ik)]);
+                T_k[static_cast<std::size_t>(ik)](j, i) =
+                    std::conj(t_acc[static_cast<std::size_t>(ik)]);
             }
         }
     }
