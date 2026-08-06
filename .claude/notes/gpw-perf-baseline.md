@@ -8,7 +8,7 @@ binary differs.
 
 | | |
 | --- | --- |
-| Date | **2026-08-06** (cp2k-perf Baseline re-pin + harness wave-2 MG ATV refresh, parent `dev`) |
+| Date | **2026-08-06** (cp2k-perf Baseline re-pin + harness wave-2 MG + wave-5 UKS ATV refresh, parent `dev`) |
 | Host | `arrhenius1` — AMD EPYC 9255 ×2, OMP=4, `OMP_PROC_BIND=close` `OMP_PLACES=cores` |
 | Build (ATV) | Release, HF+PW+GPW, CUDA OFF, OpenBLAS (`-DBLA_VENDOR=OpenBLAS`) |
 | Env | `ATV_GPW_PROF=1` for stage ms; fair walls without prof where noted |
@@ -61,13 +61,14 @@ cmake --build build -j$(nproc) --target atomiverse \
 | Twin | ATV [s] | CP2K [s] | ratio | Notes |
 | --- | ---: | ---: | ---: | --- |
 | `gpw-multigrid-kpoints` MAIN | **1.6** | **0.688** | **2.33** | post-merge `p0-stvnl-setup-residual` harness re-measure (quiet ×3, MAIN print; E bit-identical); CP2K quiet timer MAX unchanged |
-| `gpw-uks-o2-gamma` | **25.1** | **13.69** | **1.83** | single SCF; ATV `wall=` print / CP2K quiet warm (path untouched this wave) |
+| `gpw-uks-o2-gamma` | **14.75** | **13.691** | **1.077** | post-merge `p0-uks-o2-scf-wall` (`3f991946`); dual-spin cbg fuse + packed χ + lazy multi-FFT; CP2K quiet timer MAX unchanged |
 | `gpw-kpoints-si` MAIN | **2.88** | **2.45** | **1.18** | ATV MAIN = STVnl+kbg+6 KS from `ATV_GPW_PROF` (ngrid=37800 nk=4); full reg ~13.6 s (7 SCF solves, not fair); not re-measured this wave |
 | `ot-minimizer-water` OT-only | **7.55** | **2.50** | **3.02** | ATV OT segment via dual runtime-init timestamps (25 OT it); full OT+DIIS reg ~9.7 s (path untouched) |
 | **worst_ratio** | — | — | **3.02** | OT water |
 
 CP2K walls from 2026-08-06 Baseline re-pin (provenance below). ATV MG MAIN
-refreshed post-merge `e1eaf084` / harness wave-2. Energy pins unchanged.
+refreshed post-merge `e1eaf084` / harness wave-2; UKS ATV refreshed post-merge
+`3f991946` / harness wave-5. Energy pins unchanged.
 
 ### CP2K pin detail (energy + wall + output line)
 
@@ -107,8 +108,8 @@ refreshed post-merge `e1eaf084` / harness wave-2. Energy pins unchanged.
 | Energy line | `ENERGY\| Total FORCE_EVAL ( QS ) energy [hartree]            -31.769803499314229` (warm) |
 | Timer line | `CP2K … MAXIMUM **13.691**` (warm; pass1 14.039) |
 | WALL_SEC | 14.03 warm |
-| ATV | **25.08 s** (`wall=`), 26 DIIS iters; E = −31.769816115873 Ha; \|ΔE\| = 1.262e-05 |
-| ratio | **25.08 / 13.691 = 1.83** |
+| ATV | **14.75 s** post `p0-uks-o2-scf-wall` (`3f991946`; dual-spin cbg fuse + packed χ + lazy multi-FFT); prior pin **25.08 s**; E pin holds (\|ΔE\| ~1.26e-5); not bit-exact (triangle) |
+| ratio | **14.75 / 13.691 = 1.077** |
 
 #### `ot-minimizer-water`
 
@@ -140,7 +141,8 @@ CP2K same twin quiet: collocate ~14.5 ms/call, integrate ~17.1 ms/call
 
 **worst_ratio = 3.02** (`ot-minimizer-water`). MG MAIN **2.33×** vs this
 host’s quiet CP2K 0.688 s (integrate still ~2.8× CP2K per-call class; STVnl
-setup residual landed). UKS O₂ **1.83×**. Dense-χ^k MAIN **~1.2×**. See
+setup residual landed). UKS O₂ **1.077×** (post `p0-uks-o2-scf-wall`; ≤1.2×
+gate closed). Dense-χ^k MAIN **~1.2×**. See
 [gpw-perf-architecture.md](gpw-perf-architecture.md) and
 [cp2k-perf-loop.md](../../docs/developer/cp2k-perf-loop.md).
 
