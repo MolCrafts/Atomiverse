@@ -24,36 +24,39 @@ Wall = **same single twin SCF job**, not multi-gate reg wall.
 
 ## pending
 
-**Census 2026-08-06 cp2k-perf wave-7** (parent `dev` @ `0b3758a3`, binding walls
+**Census 2026-08-06 cp2k-perf wave-8** (parent `dev` @ `26daae00`, binding walls
 unchanged from [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md)
 2026-08-06 re-pin — arrhenius1, 1 MPI × OMP=4 bind, CP2K 2026.1 quiet TIMING
 `CP2K` TOTAL TIME MAXIMUM). Re-diff `cpu/gpw` (solver / OT / product_collint /
 multigrid / collocate / one_electron / kpoints / ks_grid_build / XC / fft /
-poisson) ranked by expected contribution to \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\)
-on the four fair twins — not aesthetics. **No new electronic methods**; no
-arch-intrinsic work; portable-xsimd rows state bit-exact/tol plan up front.
-Staffed `## in_progress` P0s (`p0-ot-cp2k-match` tip `00fa6967`,
-`p0-mg-collint-structure` tip `493b1554`) stay staffed (do **not** re-queue
-those slugs); pending is **unstaffed residual** only. Tip walls are **not**
-binding until merge re-pin. UKS post residual stays pruned (gate closed at
-1.077×). **No new slugs** this wave.
+poisson / forces) ranked by expected contribution to
+\(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) on the four fair twins — not aesthetics.
+**No new electronic methods**; no arch-intrinsic work; portable-xsimd rows
+state bit-exact/tol plan up front. Staffed `## in_progress` P0s
+(`p0-ot-cp2k-match` tip `00fa6967` **not** in `dev`, `p0-mg-collint-structure`
+tip `493b1554` **not** in `dev`) stay staffed (do **not** re-queue those
+slugs); pending is **unstaffed residual** only. Tip walls are **not** binding
+until merge re-pin. UKS post residual stays pruned (gate closed at 1.077×).
+**No new slugs** this wave — residual map confirmed on live sources + tip
+evidence.
 
-| Twin | \(T_{\mathrm{atv}}\) [s] | \(T_{\mathrm{cp2k}}\) [s] | ratio | excess [s] | Residual mass (wave-7 re-diff on `dev` + tip evidence) |
+| Twin | \(T_{\mathrm{atv}}\) [s] | \(T_{\mathrm{cp2k}}\) [s] | ratio | excess [s] | Residual mass (wave-8 re-diff on `dev` + tip evidence) |
 | --- | ---: | ---: | ---: | ---: | --- |
-| `ot-minimizer-water` OT | 7.55 | 2.50 | **3.02** | **5.05** | **worst_ratio** on `dev` (`ot.cpp` gap floor **1.0** FULL_SINGLE form; 25 it vs CP2K 19 OUTER). **staffed** `p0-ot-cp2k-match` tip `00fa6967`/`52a2e00b`: **~3.02→~1.42×** / 7.55→**~3.55 s** min / 25→**10** it (FULL_SINGLE_INVERSE, no floor-1.0; fixed-STEPSIZE 1-KS DIIS; OUTER Pulay polish H-carry). Residual after land: **per-KS/setup** (cbg + GGA XC ~340 ms/KS, ngrids=1) — **not** more precond / control polish |
-| `gpw-multigrid-kpoints` MAIN | 1.6 | 0.688 | **2.33** | **0.91** | steady coll/int **~2.0×/2.8×** (29–30 vs 14.5 / 47–49 vs 17.1 ms); STVnl **landed**. Structure tip `493b1554` **no wall win** (BEFORE ×3 all 1.6 s; AFTER best **1.5** / median **1.6** — still **~2.33×**) — residual is **sphere/window/monom contract** (`shape_radius` / `eps_win`/`eps_drop` in `multigrid.cpp` + cab·I in `product_collint.cpp`), **not** OMP/task restructure (**abandon** structure lever when tip clears/merges) |
-| `gpw-uks-o2-gamma` | **14.75** | 13.691 | **1.077** | **1.06** | **merged** `p0-uks-o2-scf-wall` (`3f991946`): dual-spin cbg fuse + packed χ + lazy multi-FFT; ratio **1.83→1.077** (≤1.2× gate closed). No pending staff — residual demoted vs OT/MG excess |
+| `ot-minimizer-water` OT | 7.55 | 2.50 | **3.02** | **5.05** | **worst_ratio** on `dev` (`ot.cpp` gap floor **1.0** FULL_SINGLE form; 25 it vs CP2K 19 OUTER). **staffed** `p0-ot-cp2k-match` tip `00fa6967`/`52a2e00b` (3 files: `ot.{h,cpp}` + OT path in `gpw_solver.cpp`): **~3.02→~1.42×** / 7.55→**~3.55 s** min / 25→**10** it (FULL_SINGLE_INVERSE, ENERGY_GAP 0.08; fixed-STEPSIZE 1-KS DIIS; OUTER Pulay polish H-carry). Residual after land: **per-KS/setup** (cbg + GGA XC ~340 ms/KS, ngrids=1 water) — **not** more precond / control polish |
+| `gpw-multigrid-kpoints` MAIN | 1.6 | 0.688 | **2.33** | **0.91** | steady coll/int **~2.0×/2.8×** (29–30 vs 14.5 / 47–49 vs 17.1 ms); STVnl **landed**. Structure tip `493b1554` **no wall win** (BEFORE ×3 all 1.6 s; AFTER best **1.5** / median **1.6** — still **~2.33×**; monom repack + static slabs) — residual is **sphere/window/monom contract** (`shape_radius` / `eps_win`/`eps_drop`/`product_radius` + cab·I in `product_collint.cpp`/`multigrid.cpp`), **not** OMP/task restructure (**abandon** structure lever when tip clears/merges) |
+| `gpw-uks-o2-gamma` | **14.75** | 13.691 | **1.077** | **1.06** | **merged** `p0-uks-o2-scf-wall` (`3f991946`): dual-spin cbg fuse + packed χ + lazy multi-FFT; ratio **1.83→1.077** (≤1.2× gate closed). No pending staff — residual demoted vs OT/MG excess (absolute excess ≈ MG but ratio closed) |
 | `gpw-kpoints-si` MAIN | 2.88 | 2.45 | **1.18** | **0.43** | near parity; dense χ^k / kbg setup dominates MAIN; hold products A/B until P0 fair twins move |
 
-**Hotspot re-diff (wave-7):**
+**Hotspot re-diff (wave-8):**
 
 | Rank | Stage / control | Twin impact | Evidence |
 | --- | --- | --- | --- |
-| 1 | OT control (staffed) → per-KS residual | OT **3.02×** bind / tip **~1.42×** | On `dev`: gap floor **1.0**, multi-KS Armijo. Tip `00fa6967` documents control close (~1.42× / 10 it / ~3.55 s min) and names residual **cbg + GGA XC per outer** on ngrids=1 water — follow-on `p0-ot-match-residual` (staff **after** match merges/abandons) |
-| 2 | MG sphere / monom / private-grid | MG **2.33×** / **0.91 s** | Budget ~13×(coll 30 + int 48) ≈ **1.0 s** MAIN vs CP2K coll/int ~**0.41 s**. Micro-SIMD **exhausted** (wave-7/8 integrate residual); structure tip `493b1554` (spatial tasks + monom repack + static slabs) **no clear wall win**. Only remaining fair-wall lever: `shape_radius` / `eps_win`/`eps_drop` / monom cab·I / private-grid BW |
-| 3 | Dual-spin Γ UKS KS wall | UKS **1.077×** (**merged**) | `p0-uks-o2-scf-wall` landed **1.83→1.077**. Do **not** re-open dual-spin fuse |
-| 4 | STVnl setup once | MG / k MAIN | **landed** `e1eaf084`; ST_k ~340 ms once — secondary; **do not re-queue** |
+| 1 | OT control (staffed) → per-KS residual | OT **3.02×** bind / tip **~1.42×** | On `dev`: gap floor **1.0** FULL_SINGLE product form (`ot.cpp`), multi-KS Armijo. Tip `00fa6967` documents control close (~1.42× / 10 it / ~3.55 s min) and names residual **cbg + GGA XC per outer** on ngrids=1 water — follow-on `p0-ot-match-residual` (staff **after** match merges/abandons). Exclusive surface until then: `ot.cpp` + OT path in `gpw_solver.cpp` |
+| 2 | MG sphere / monom / private-grid | MG **2.33×** / **0.91 s** | Budget ~13×(coll 30 + int 48) ≈ **1.0 s** MAIN vs CP2K coll/int ~**0.41 s**. Micro-SIMD **exhausted** (wave-7 integrate residual + wave-8 residual-2); structure tip `493b1554` (spatial tasks + monom repack + static slabs) **no clear wall win**. Only remaining fair-wall lever: `shape_radius` / `eps_win`/`eps_drop`/`product_radius` / monom cab·I / private-grid BW — **not** task sort/schedule |
+| 3 | Dual-spin Γ UKS KS wall | UKS **1.077×** (**merged**) | `p0-uks-o2-scf-wall` landed **1.83→1.077**. Do **not** re-open dual-spin fuse; packed-cbg/lazy-FFT patterns are **reuse sources** for OT residual, not a UKS re-staff |
+| 4 | STVnl setup once | MG / k MAIN | **landed** `e1eaf084`; ST_k ~340 ms once — secondary vs ~1.0 s coll/int; **do not re-queue** (P2 xsimd 2-center is slab-only, not this) |
 | 5 | dense χ^k vs products default | k **1.18×** | A/B only after P0 fair twins move; **no 5th collocation layout** without deleting dense χ^k |
+| 6 | Poisson / XC / FFT cache / forces | all twins secondary | `ks_grid_build` + `poisson_fft` + `fft_cache` + force veff/cbg reuse already landed; not primary fair-wall levers on current twins |
 
 **Budget sketch (MG MAIN, ngrid=37800, ~13 SCF):** setup STVnl+products ~0.42 s once + ~13×(coll 30 + int 48 + XC/Poisson ~5) ≈ **1.5 s** → matches 1.6 s pin. CP2K coll/int class alone ~13×(14.5+17.1) ≈ **0.41 s**. Closing MAIN needs sphere/collint work reduction, not STVnl re-litigation and not more OMP-structure polish.
 
@@ -65,7 +68,7 @@ FD-force on any energy-path land (collocate/integrate/Poisson/XC/V_eff/PP).
 
 ### P0 — contribution order (worst residual after staffed work → stage mass)
 
-Wave-7: `p0-uks-o2-scf-wall` **done** (1.077×). Remaining in `## in_progress`:
+Wave-8: `p0-uks-o2-scf-wall` **done** (1.077×). Remaining in `## in_progress`:
 `p0-ot-cp2k-match`, `p0-mg-collint-structure` — **do not re-queue those slugs**.
 Pending P0 = follow-on residual distinct from staffed surfaces. No new slugs.
 
