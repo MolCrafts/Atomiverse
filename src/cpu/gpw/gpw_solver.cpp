@@ -32,6 +32,7 @@
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
 #include "atomiverse/cpu/gpw/internal/diis.h"
 #include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
+#include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
 #include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
@@ -4066,6 +4067,13 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     internal::GpwWorkspace ws;
     ws.grid = make_uniform_grid(cfg.cell, cfg.cutoff_ry);
     const UniformGrid& grid = ws.grid;
+    // GGA spectral grad/div uses howmany=3 MEASURE plans built lazily on the
+    // first many_* call. Warm them during setup so the first KS (esp. OT water
+    // with cold multi-out) does not bury ~0.5–0.7 s of plan time in the SCF wall.
+    if (cfg.xc == XcKind::PBE || cfg.xc == XcKind::PBEsol
+        || cfg.xc == XcKind::RevPBE) {
+        R2cFft::for_shape(grid.n[0], grid.n[1], grid.n[2]).ensure_many_plans();
+    }
 
     // k-point RKS branch selector.
     // (Configuration conflicts are rejected fail-fast in GpwDft::build.)
@@ -5370,10 +5378,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         // OUTER_SCF Pulay handoff once OT residual is moderate. Water:
         // FULL_SINGLE_INVERSE DIIS drops gnorm 3.8→~1.5 in ~2 outers, then
         // Pulay closes energy+err in ~6–7 KS (same fixed point as non-OT DIIS).
-        // Too-low thresholds waste OT outers on a plateau; pure-Pulay-from-start
-        // is the banned fixed-H wall hack — keep ≥1 OT micro-step. Raising the
-        // threshold to hand off after 1 outer forces extra polish KS (net loss).
-        constexpr double kPolishG = 1.50;
+        // Hand off slightly earlier (2.0 vs 1.5) so residual OT outers that
+        // no longer cut energy do not pay an extra KS; keep ≥1 OT micro-step.
+        constexpr double kPolishG = 2.00;
         constexpr double kPolishMix = 0.5;
         constexpr double kStepSize = 0.15;
         internal::OtOrbitalDiis ot_diis(kDiisM, kStepSize);
@@ -5401,11 +5408,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 H = std::move(he0.first);
                 e_total = he0.second;
             }
+            // Precond only when we stay on OT for this outer. If residual is
+            // already in the polish band, skip the dense inverse rebuild.
             const int outer_period = use_cg ? 1 : kOuterPeriodDiis;
-            if (iter % outer_period == 0)
-                prec.emplace(H, S, Cocc, kEnergyGap);
-            if (iter > 0 && iter % kDiisReseed == 0 && !use_cg)
-                ot_diis.reset();
             auto tB = Clk::now();
             res.iters = iter + 1;
             res.e_total = e_total;
@@ -5428,24 +5433,6 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 res.S = S;
                 break;
             }
-            if (!use_cg && iter > 0) {
-                if (gnorm > 0.98 * gnorm_prev)
-                    ++stall_streak;
-                else
-                    stall_streak = 0;
-                if (stall_streak >= 3) {
-                    use_cg = true;
-                    have_prev = false;
-                    ot_diis.reset();
-                    stall_streak = 0;
-                    step_scale = 1.0;
-                }
-            }
-            if (use_cg && iter > 0 && gnorm > 1.2 * gnorm_prev)
-                have_prev = false;
-            gnorm_prev = gnorm;
-            e_prev = e_total;
-
             // OUTER_SCF polish: Pulay DIIS on H from the OT guess.
             // H already matches dens(Cocc) from the last accepted OT step —
             // reuse it on p=0 (skip a full KS rebuild); rebuild only after P
@@ -5521,6 +5508,30 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 res.e_total = e_total;
                 break;
             }
+
+            // Still on OT: rebuild precond periodically (skipped above when
+            // polishing). Dense inverse is only paid on residual OT outers.
+            if (!prec || iter % outer_period == 0)
+                prec.emplace(H, S, Cocc, kEnergyGap);
+            if (iter > 0 && iter % kDiisReseed == 0 && !use_cg)
+                ot_diis.reset();
+            if (!use_cg && iter > 0) {
+                if (gnorm > 0.98 * gnorm_prev)
+                    ++stall_streak;
+                else
+                    stall_streak = 0;
+                if (stall_streak >= 3) {
+                    use_cg = true;
+                    have_prev = false;
+                    ot_diis.reset();
+                    stall_streak = 0;
+                    step_scale = 1.0;
+                }
+            }
+            if (use_cg && iter > 0 && gnorm > 1.2 * gnorm_prev)
+                have_prev = false;
+            gnorm_prev = gnorm;
+            e_prev = e_total;
 
             const RealMatrix pg =
                 linalg::s_tangent(Cocc, S, prec->apply(g));

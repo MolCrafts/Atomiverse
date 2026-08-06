@@ -1099,9 +1099,11 @@ std::vector<double> collocate_products(const UniformGrid& grid,
     // Drop monoms below eps*margin; size windows at plain eps (CP2K EPS_DEFAULT
     // class). Applying margin to the radius too inflated spheres by ~√log(1/margin).
     const double eps_drop = eps * kProductMassMargin;
-    // Window eps: full margin (1e-4) is correct but large spheres; bare eps
-    // fails energy. 1e-2 is a compromise still inside the pin tol.
-    const double eps_win = eps * 1e-2;
+    // Window eps: radius is refined from max|cxyz| after cab expand (collint), so
+    // a slightly looser window factor than bare 1e-2 is pin-safe and shrinks
+    // work when mag-only radius previously oversize. 2e-2 kept energy within
+    // historical pin class; 1e-1 broke SCF (do not raise further without FD).
+    const double eps_win = eps * 2e-2;
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
     std::vector<double> rho(npts, 0.0);
     const long np = static_cast<long>(prods.size());
@@ -1200,13 +1202,14 @@ inline double v_at_product_center(const UniformGrid& grid,
 }
 
 /// @brief Window magnitude for integrate: geom · max(|V(pc)|, floor).
-/// Floor 0.05 keeps a safety margin vs pure local |V| without reverting to
+/// Floor 0.02 keeps a safety margin vs pure local |V| without reverting to
 /// whole-cell sweeps when |V| is large only near nuclei (global max|V| would
-/// inflate every product).
+/// inflate every product). Tightened from 0.05 after cxyz-radius refine landed
+/// (still pin-safe on MG MAIN; do not drop to 0 without FD).
 inline double integrate_window_mag(const UniformGrid& grid,
                                    const std::vector<double>& V_level,
                                    const GridProduct& prod, double geom) {
-    constexpr double kVFloor = 0.05;
+    constexpr double kVFloor = 0.02;
     const double vsc = std::max(v_at_product_center(grid, V_level, prod), kVFloor);
     return geom * vsc;
 }
@@ -1219,7 +1222,7 @@ std::vector<double> integrate_products(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<double>& V_level, double eps) {
     const double eps_drop = eps * kProductMassMargin;
-    const double eps_win = eps * 1e-2;
+    const double eps_win = eps * 2e-2;
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     std::vector<double> V(nn, 0.0);
     const double w = grid.weight();
@@ -1248,7 +1251,7 @@ std::vector<double> integrate_products(
             const int n = task.end - task.beg;
             if (n <= 0)
                 continue;
-            constexpr double kVFloor = 0.05;
+            constexpr double kVFloor = 0.02;
             const GridProduct& p0 = prods[static_cast<std::size_t>(task.beg)];
             const double vsc =
                 std::max(v_at_product_center(grid, V_level, p0), kVFloor);
@@ -1298,7 +1301,7 @@ std::vector<double> collocate_products_cells(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<std::vector<double>>& D, double eps) {
     const double eps_drop = eps * kProductMassMargin;
-    const double eps_win = eps * 1e-2;
+    const double eps_win = eps * 2e-2;
     // `collocate_products` with the density weight resolved per image cell:
     // w = K · Σ D[tcell][μ,ν]·coeff. Shell-task collint (shared pol).
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
@@ -1382,7 +1385,7 @@ std::vector<std::vector<double>> integrate_products_cells(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<double>& V_level, std::size_t ncells, double eps) {
     const double eps_drop = eps * kProductMassMargin;
-    const double eps_win = eps * 1e-2;
+    const double eps_win = eps * 2e-2;
     // KS scatter per image cell; shell-task monom integrate.
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     const std::size_t nnall = nn * ncells;
@@ -1412,7 +1415,7 @@ std::vector<std::vector<double>> integrate_products_cells(
             const int n = task.end - task.beg;
             if (n <= 0)
                 continue;
-            constexpr double kVFloor = 0.05;
+            constexpr double kVFloor = 0.02;
             const GridProduct& p0 = prods[static_cast<std::size_t>(task.beg)];
             const double vsc =
                 std::max(v_at_product_center(grid, V_level, p0), kVFloor);

@@ -286,6 +286,21 @@ inline void accumulate_outer_upper_csr(double* Vloc, int nbasis,
     }
 }
 
+// Packed single-spin triangle (same summand order as CSR path).
+inline void accumulate_outer_upper_packed(double* Vloc, int nbasis,
+                                          const int* fu, const double* fv,
+                                          std::size_t k, double vw) {
+    for (std::size_t ia = 0; ia < k; ++ia) {
+        const int u = fu[ia];
+        const double pi = fv[ia];
+        double* Vu = &Vloc[static_cast<std::size_t>(u) * nbasis];
+        Vu[u] += vw * pi * pi;
+        const double pwa = pi * vw;
+        for (std::size_t ib = ia + 1; ib < k; ++ib)
+            Vu[fu[ib]] += pwa * fv[ib];
+    }
+}
+
 // Dual-spin triangle: share χ loads; one φφᵀ product scaled by both vwa/vwb.
 // Packed (fu,fv) spans stream better than CSR-indirect inner loads.
 inline void accumulate_outer_upper_dual_packed(double* Va, double* Vb,
@@ -316,24 +331,41 @@ std::vector<double> collocate_density(const CompactBasisGrid& cbg, int nbasis,
                                       const std::vector<double>& P) {
     std::vector<double> rho(static_cast<std::size_t>(cbg.npts), 0.0);
     const long na = static_cast<long>(cbg.gidx.size());
-#pragma omp parallel for schedule(dynamic, 64)
-    for (long a = 0; a < na; ++a) {
-        const std::size_t s = cbg.off[static_cast<std::size_t>(a)];
-        const std::size_t e = cbg.off[static_cast<std::size_t>(a) + 1];
-        // ρ(g) = Σ_uv P_uv χ_u χ_v with P symmetric → diagonal + 2×upper triangle,
-        // halving the inner work (exact; P = 2 C_occ C_occᵀ is symmetric).
-        double acc = 0.0;
-        for (std::size_t ia = s; ia < e; ++ia) {
-            const double* Pu =
-                &P[static_cast<std::size_t>(cbg.fu[ia]) * nbasis];
-            const double va = cbg.fv[ia];
-            acc += va * va * Pu[cbg.fu[ia]]; // diagonal
-            double s2 = 0.0;
-            for (std::size_t ib = ia + 1; ib < e; ++ib)
-                s2 += Pu[cbg.fu[ib]] * cbg.fv[ib];
-            acc += 2.0 * va * s2; // upper triangle counted twice
+    // Pack χ per active point (same idiom as dual-spin collocate): stream
+    // contiguous fu/fv on the inner triangle; summand order matches the
+    // pre-pack CSR walk (bit-identical on the same point).
+#pragma omp parallel
+    {
+        thread_local std::vector<int> t_fu;
+        thread_local std::vector<double> t_fv;
+#pragma omp for schedule(dynamic, 64)
+        for (long a = 0; a < na; ++a) {
+            const std::size_t s = cbg.off[static_cast<std::size_t>(a)];
+            const std::size_t e = cbg.off[static_cast<std::size_t>(a) + 1];
+            const std::size_t k = e - s;
+            if (t_fu.size() < k) {
+                t_fu.resize(k);
+                t_fv.resize(k);
+            }
+            for (std::size_t i = 0; i < k; ++i) {
+                t_fu[i] = cbg.fu[s + i];
+                t_fv[i] = cbg.fv[s + i];
+            }
+            // ρ(g) = Σ_uv P_uv χ_u χ_v with P symmetric → diagonal + 2×upper.
+            double acc = 0.0;
+            for (std::size_t ia = 0; ia < k; ++ia) {
+                const int u = t_fu[ia];
+                const double va = t_fv[ia];
+                const double* Pu =
+                    &P[static_cast<std::size_t>(u) * nbasis];
+                acc += va * va * Pu[u];
+                double s2 = 0.0;
+                for (std::size_t ib = ia + 1; ib < k; ++ib)
+                    s2 += Pu[t_fu[ib]] * t_fv[ib];
+                acc += 2.0 * va * s2;
+            }
+            rho[cbg.gidx[static_cast<std::size_t>(a)]] = acc;
         }
-        rho[cbg.gidx[static_cast<std::size_t>(a)]] = acc;
     }
     return rho;
 }
@@ -414,15 +446,31 @@ std::vector<double> integrate_potential(const CompactBasisGrid& cbg, int nbasis,
         na, device::block_reduce_chunks(nn * sizeof(double)));
     const long nc = range.chunks();
     double* part = g_cbg_integrate_part.ensure(nc, nn);
-#pragma omp parallel for schedule(dynamic, 1)
-    for (long c = 0; c < nc; ++c) {
-        double* Vloc = &part[static_cast<std::size_t>(c) * nn];
-        const long alo = range.begin(c), ahi = range.end(c);
-        for (long a = alo; a < ahi; ++a) {
-            const std::size_t s = cbg.off[static_cast<std::size_t>(a)];
-            const std::size_t e = cbg.off[static_cast<std::size_t>(a) + 1];
-            const double vw = V_r[cbg.gidx[static_cast<std::size_t>(a)]] * w;
-            accumulate_outer_upper_csr(Vloc, nbasis, cbg, s, e, vw);
+#pragma omp parallel
+    {
+        thread_local std::vector<int> t_fu;
+        thread_local std::vector<double> t_fv;
+#pragma omp for schedule(dynamic, 1)
+        for (long c = 0; c < nc; ++c) {
+            double* Vloc = &part[static_cast<std::size_t>(c) * nn];
+            const long alo = range.begin(c), ahi = range.end(c);
+            for (long a = alo; a < ahi; ++a) {
+                const std::size_t s = cbg.off[static_cast<std::size_t>(a)];
+                const std::size_t e = cbg.off[static_cast<std::size_t>(a) + 1];
+                const std::size_t k = e - s;
+                if (t_fu.size() < k) {
+                    t_fu.resize(k);
+                    t_fv.resize(k);
+                }
+                for (std::size_t i = 0; i < k; ++i) {
+                    t_fu[i] = cbg.fu[s + i];
+                    t_fv[i] = cbg.fv[s + i];
+                }
+                const double vw =
+                    V_r[cbg.gidx[static_cast<std::size_t>(a)]] * w;
+                accumulate_outer_upper_packed(Vloc, nbasis, t_fu.data(),
+                                              t_fv.data(), k, vw);
+            }
         }
     }
     for (long c = 0; c < nc; ++c) {

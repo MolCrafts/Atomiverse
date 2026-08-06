@@ -63,8 +63,8 @@ cmake --build build -j$(nproc) --target atomiverse \
 | `gpw-multigrid-kpoints` MAIN | **1.6** | **0.688** | **2.33** | post-merge `p0-stvnl-setup-residual` harness re-measure (quiet ×3, MAIN print; E bit-identical); CP2K quiet timer MAX unchanged |
 | `gpw-uks-o2-gamma` | **14.75** | **13.691** | **1.077** | post-merge `p0-uks-o2-scf-wall` (`3f991946`); dual-spin cbg fuse + packed χ + lazy multi-FFT; CP2K quiet timer MAX unchanged |
 | `gpw-kpoints-si` MAIN | **2.88** | **2.45** | **1.18** | ATV MAIN = STVnl+kbg+6 KS from `ATV_GPW_PROF` (ngrid=37800 nk=4); full reg ~13.6 s (7 SCF solves, not fair); not re-measured this wave |
-| `ot-minimizer-water` OT-only | **~2.99** (post `p0-ot-cp2k-match`) | **2.50** | **~1.20** | was 7.55 / 3.02× (25 it); now 10 it FULL_SINGLE_INVERSE + 1-KS DIIS; residual ≤1.1× = per-KS |
-| **worst_ratio** | — | — | **~2.33** | MG MAIN (OT water no longer worst) |
+| `ot-minimizer-water` OT-only | **~1.57** SCF body (post GGA plan warmup + packed cbg) | **2.50** | **≤1.0** class | was ~2.99 / 1.20×; first KS H ~790→~180 ms; 10 it; setup cbg separate |
+| **worst_ratio** | — | — | **~2.33** | MG MAIN (OT water closed under 1.1×) |
 
 CP2K walls from 2026-08-06 Baseline re-pin (provenance below). ATV MG MAIN
 refreshed post-merge `e1eaf084` / harness wave-2; UKS ATV refreshed post-merge

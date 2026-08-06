@@ -133,6 +133,17 @@ inline double shape_radius(double mag, double p, int Ltot, double eps) {
     return std::sqrt(std::max(r2, 0.0));
 }
 
+/// Radius from assembled cartesian product coefficients (CP2K-style).
+/// After cab expand, max|cxyz| is the true prefactor for r^L exp(-p r²);
+/// using the density/geometry mag alone often oversizes the sphere.
+inline double cmax_radius(const double* cxyz, int n, double p, int Ltot,
+                          double eps) {
+    double cmax = 0.0;
+    for (int i = 0; i < n; ++i)
+        cmax = std::max(cmax, std::abs(cxyz[i]));
+    return shape_radius(cmax, p, Ltot, eps);
+}
+
 // ─── Sphere-bounds cache (CP2K grid_sphere_cache) ───────────────────────────
 // One entry per grid spacing (di,dj,dk). Storage holds bounds for imr=1..max.
 struct SphereEntry {
@@ -1447,8 +1458,10 @@ void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
     group_angular_max(prods, n, lpx, lpy, lpz, Ltot);
     if (lpx > kMaxL || lpy > kMaxL || lpz > kMaxL)
         return;
-    const double radius = shape_radius(mag, prods[0].p, Ltot, eps);
-    if (!(radius > 0.0))
+    // mag-based radius is a conservative outer bound; after cab expand, use
+    // min(mag, cmax) so we only shrink (never enlarge) the sphere.
+    const double r_mag = shape_radius(mag, prods[0].p, Ltot, eps);
+    if (!(r_mag > 0.0))
         return;
     const int sy = lpy + 1, sz = lpz + 1;
     const int cxyz_n = (lpx + 1) * sy * sz;
@@ -1456,6 +1469,10 @@ void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
     double* cxyz = g_I.data();
     std::memset(cxyz, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
     add_group_to_cxyz(prods, weights, n, lpx, lpy, lpz, cxyz);
+    const double r_c = cmax_radius(cxyz, cxyz_n, prods[0].p, Ltot, eps);
+    const double radius = (r_c > 0.0) ? std::min(r_mag, r_c) : r_mag;
+    if (!(radius > 0.0))
+        return;
     ortho_cxyz_to_grid<true>(grid, prods[0].pc, prods[0].p, radius, lpx, lpy,
                              lpz, Ltot, cxyz, rho);
 }
@@ -1479,8 +1496,8 @@ void collint_collocate_group_idx(const UniformGrid& grid,
     if (lpx > kMaxL || lpy > kMaxL || lpz > kMaxL)
         return;
     const GridProduct& g0 = prods_base[idx[0]];
-    const double radius = shape_radius(mag, g0.p, Ltot, eps);
-    if (!(radius > 0.0))
+    const double r_mag = shape_radius(mag, g0.p, Ltot, eps);
+    if (!(r_mag > 0.0))
         return;
     const int sy = lpy + 1, sz = lpz + 1;
     const int cxyz_n = (lpx + 1) * sy * sz;
@@ -1581,6 +1598,10 @@ void collint_collocate_group_idx(const UniformGrid& grid,
             add_product_to_cxyz(prods_base[idx[i]], weights[i], lpx, lpy, lpz,
                                 cxyz);
     }
+    const double r_c = cmax_radius(cxyz, cxyz_n, g0.p, Ltot, eps);
+    const double radius = (r_c > 0.0) ? std::min(r_mag, r_c) : r_mag;
+    if (!(radius > 0.0))
+        return;
     ortho_cxyz_to_grid<true>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, Ltot,
                              cxyz, rho);
 }
