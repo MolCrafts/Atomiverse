@@ -795,16 +795,17 @@ if(NOT ATV_DOCS_ONLY)
                 message(STATUS "GPW: FFTW3 OpenMP threading enabled (${FFTW3_OMP_LIB})")
             endif()
             # CUDA GPW foothold: Γ-point device Poisson/FFT + Padé LDA XC grid
-            # + product ρ collocate (not full method product). Gated on CUDA so
-            # OFF builds exclude sources entirely (iron law 8).
+            # + product ρ collocate / V·shape integrate (not full method product).
+            # Gated on CUDA so OFF builds exclude sources entirely (iron law 8).
             if(ATV_BUILD_CUDA)
                 target_sources(atomiverse PRIVATE
                     src/cuda/gpw/internal/poisson_fft.cu
                     src/cuda/gpw/internal/xc_lda.cu
                     src/cuda/gpw/internal/product_collocate.cu
+                    src/cuda/gpw/internal/product_integrate.cu
                 )
                 target_link_libraries(atomiverse PUBLIC CUDA::cufft)
-                message(STATUS "GPW: CUDA Γ Poisson + Padé LDA XC + ρ collocate foothold enabled")
+                message(STATUS "GPW: CUDA Γ Poisson + Padé LDA XC + ρ collocate/integrate foothold enabled")
             endif()
         endif()
         # vdW-DF kernel tables ship zlib-compressed (float32); inflate at first use.
