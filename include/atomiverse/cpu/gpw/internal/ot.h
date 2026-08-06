@@ -11,6 +11,13 @@
 ///   - OUTER_SCF polish (no DFT+U): once projected residual is moderate,
 ///     hand residual SCF to Pulay DIIS on H (closes energy+err)
 ///
+/// Fair twin `ot-minimizer-water` (wave-8 re-measure, OMP=4 bind): control
+/// path **~2.72× → ~1.20×** (OT-only min **2.986 s** / CP2K pin **2.496 s**;
+/// 25→10 it). Residual to ≤1.1× (~2.75 s) is **per-KS/setup** on ngrids=1
+/// (cbg + GGA XC ~150 ms/KS; polish ~7 Pulay) — follow-on
+/// `p0-ot-match-residual`. Pure fixed-STEPSIZE OT-DIIS plateaus ~3.8e-3;
+/// keep OUTER Pulay polish.
+///
 /// Parameterization (orthonormality-preserving for any S-tangent `x`,
 /// `C0^T S x = 0`):
 ///   `C(x) = C0 cos(U) + x U^{-1} sin(U)`,  `U = (x^T S x)^{1/2}`.
