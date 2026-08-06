@@ -437,6 +437,101 @@ double contract_product_from_I(const GridProduct& prod, int lpx, int lpy,
     return s;
 }
 
+/// CP2K cab_to_cxyz transpose for integrate: shared alpha table once per
+/// geometry, then contract each monom from the monom integral table I.
+/// Wins when avg_g ≫ 1 (MAIN shell tasks ~ tens–hundreds of monoms).
+void contract_group_from_I(const GridProduct* prods, int n, int lpx, int lpy,
+                           int lpz, const double* I, double* out_acc) {
+    if (n <= 0)
+        return;
+    if (n < 8) {
+        for (int i = 0; i < n; ++i)
+            out_acc[i] = contract_product_from_I(prods[i], lpx, lpy, lpz, I);
+        return;
+    }
+    int max_la[3] = {0, 0, 0}, max_lb[3] = {0, 0, 0};
+    for (int i = 0; i < n; ++i) {
+        for (int d = 0; d < 3; ++d) {
+            max_la[d] = imax(max_la[d], prods[i].la[d]);
+            max_lb[d] = imax(max_lb[d], prods[i].lb[d]);
+        }
+    }
+    const int mla = imax(imax(max_la[0], max_la[1]), max_la[2]);
+    const int mlb = imax(imax(max_lb[0], max_lb[1]), max_lb[2]);
+    const int mlp = mla + mlb;
+    if (mla > kMaxL || mlb > kMaxL || mlp > kMaxL) {
+        for (int i = 0; i < n; ++i)
+            out_acc[i] = contract_product_from_I(prods[i], lpx, lpy, lpz, I);
+        return;
+    }
+    thread_local std::vector<double> alpha_buf;
+    const int stride_ls = mlp + 1;
+    const int stride_la = (mla + 1) * stride_ls;
+    const int stride_lb = (mlb + 1) * stride_la;
+    const int need = 3 * stride_lb;
+    if (static_cast<int>(alpha_buf.size()) < need)
+        alpha_buf.assign(static_cast<std::size_t>(need), 0.0);
+    else
+        std::memset(alpha_buf.data(), 0,
+                    static_cast<std::size_t>(need) * sizeof(double));
+    const double* pc = prods[0].pc;
+    const double* ra = prods[0].ra;
+    const double* rb = prods[0].rb;
+    for (int d = 0; d < 3; ++d) {
+        double* ad = alpha_buf.data() + d * stride_lb;
+        const double drpa = pc[d] - ra[d];
+        const double drpb = pc[d] - rb[d];
+        for (int lxa = 0; lxa <= max_la[d]; ++lxa) {
+            for (int lxb = 0; lxb <= max_lb[d]; ++lxb) {
+                double binomial_k_lxa = 1.0;
+                double a = 1.0;
+                for (int k = 0; k <= lxa; ++k) {
+                    double binomial_l_lxb = 1.0;
+                    double b = 1.0;
+                    for (int l = 0; l <= lxb; ++l) {
+                        const int ls = lxa - k + lxb - l;
+                        ad[(lxb * (mla + 1) + lxa) * stride_ls + ls] +=
+                            binomial_k_lxa * binomial_l_lxb * a * b;
+                        binomial_l_lxb *=
+                            static_cast<double>(lxb - l) / static_cast<double>(l + 1);
+                        b *= drpb;
+                    }
+                    binomial_k_lxa *=
+                        static_cast<double>(lxa - k) / static_cast<double>(k + 1);
+                    a *= drpa;
+                }
+            }
+        }
+    }
+    const double* ax = alpha_buf.data();
+    const double* ay = alpha_buf.data() + stride_lb;
+    const double* az = alpha_buf.data() + 2 * stride_lb;
+    const int sy = lpy + 1, sz = lpz + 1;
+    for (int i = 0; i < n; ++i) {
+        const auto& p = prods[i];
+        const int lax = p.la[0], lay = p.la[1], laz = p.la[2];
+        const int lbx = p.lb[0], lby = p.lb[1], lbz = p.lb[2];
+        const double* ax_row = ax + (lbx * (mla + 1) + lax) * stride_ls;
+        const double* ay_row = ay + (lby * (mla + 1) + lay) * stride_ls;
+        const double* az_row = az + (lbz * (mla + 1) + laz) * stride_ls;
+        const int lpx_p = lax + lbx, lpy_p = lay + lby, lpz_p = laz + lbz;
+        double s = 0.0;
+        for (int lx = 0; lx <= lpx_p; ++lx) {
+            if (ax_row[lx] == 0.0)
+                continue;
+            for (int ly = 0; ly <= lpy_p; ++ly) {
+                const double axy = ax_row[lx] * ay_row[ly];
+                if (axy == 0.0)
+                    continue;
+                const double* row = I + (lx * sy + ly) * sz;
+                for (int lz = 0; lz <= lpz_p; ++lz)
+                    s += row[lz] * axy * az_row[lz];
+            }
+        }
+        out_acc[i] = s;
+    }
+}
+
 // ─── lp_z-specialized cx → grid (collocate) ─────────────────────────────────
 // Native batch (AVX-512 = 8 on this host) plus a 4-wide residual pass so short
 // sphere segments (common when the cube wraps) still vectorize — matches CP2K's
@@ -1409,8 +1504,7 @@ void collint_integrate_group(const UniformGrid& grid, const GridProduct* prods,
     std::memset(I, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
     ortho_cxyz_to_grid<false>(grid, prods[0].pc, prods[0].p, radius, lpx, lpy,
                               lpz, I, const_cast<double*>(V));
-    for (int i = 0; i < n; ++i)
-        out_acc[i] = contract_product_from_I(prods[i], lpx, lpy, lpz, I);
+    contract_group_from_I(prods, n, lpx, lpy, lpz, I, out_acc);
 }
 
 void collint_integrate_group_idx(const UniformGrid& grid,
@@ -1421,6 +1515,8 @@ void collint_integrate_group_idx(const UniformGrid& grid,
         out_acc[i] = 0.0;
     if (n <= 0 || !(mag > 0.0))
         return;
+    // Contiguous-path preferred for shell tasks; idx path packs a temp group
+    // only when the caller still needs sparse selection.
     int lpx = 0, lpy = 0, lpz = 0, Ltot = 0;
     for (int i = 0; i < n; ++i) {
         const auto& p = prods_base[idx[i]];
@@ -1443,9 +1539,14 @@ void collint_integrate_group_idx(const UniformGrid& grid,
     std::memset(I, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
     ortho_cxyz_to_grid<false>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, I,
                               const_cast<double*>(V));
+    // Gather monoms into a temp contiguous buffer so the cab-style contract
+    // can share one alpha table (MAIN-class shell tasks).
+    thread_local std::vector<GridProduct> packed;
+    if (static_cast<int>(packed.size()) < n)
+        packed.resize(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i)
-        out_acc[i] =
-            contract_product_from_I(prods_base[idx[i]], lpx, lpy, lpz, I);
+        packed[static_cast<std::size_t>(i)] = prods_base[idx[i]];
+    contract_group_from_I(packed.data(), n, lpx, lpy, lpz, I, out_acc);
 }
 
 } // namespace internal

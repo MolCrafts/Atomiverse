@@ -318,12 +318,12 @@ TEST(GpwMultigridCells, UniformStackReducesToGamma) {
     ASSERT_GT(ps.by_level[1].size(), 0u);
 
     for (std::size_t l = 0; l < mg.levels.size(); ++l) {
-        const auto rho_gamma =
-            collocate_products(mg.levels[l], ps.by_level[l], ps.prims,
-                               ps.contribs, nb, P, 1e-12);
-        const auto rho_cells =
-            collocate_products_cells(mg.levels[l], ps.by_level[l], ps.prims,
-                                     ps.contribs, nb, D, 1e-12);
+        const auto rho_gamma = collocate_products(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, P, 1e-12);
+        const auto rho_cells = collocate_products_cells(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, D, 1e-12);
         ASSERT_EQ(rho_gamma.size(), rho_cells.size());
         // Uniform D-stack must match the Γ product path mathematically; FP
         // reduction order across the two kernels can differ by a few ulps, so
@@ -336,11 +336,11 @@ TEST(GpwMultigridCells, UniformStackReducesToGamma) {
         const auto V_r =
             cells_rand(static_cast<std::size_t>(mg.levels[l].npts()), 11u);
         const auto V_gamma = integrate_products(
-            mg.levels[l], ps.by_level[l], ps.prims, ps.contribs, nb, V_r,
-            1e-12);
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, V_r, 1e-12);
         const auto V_cells = integrate_products_cells(
-            mg.levels[l], ps.by_level[l], ps.prims, ps.contribs, nb, V_r,
-            ps.cells.size(), 1e-12);
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, V_r, ps.cells.size(), 1e-12);
         for (std::size_t e = 0; e < V_gamma.size(); ++e) {
             double s = 0.0;
             for (const auto& Vc : V_cells)
@@ -371,14 +371,14 @@ TEST(GpwMultigridCells, CellsIntegrateIsAdjointOfCellsCollocate) {
     for (std::size_t l = 0; l < mg.levels.size(); ++l) {
         const auto V_r =
             cells_rand(static_cast<std::size_t>(mg.levels[l].npts()), 23u);
-        const auto rho =
-            collocate_products_cells(mg.levels[l], ps.by_level[l], ps.prims,
-                                     ps.contribs, nb, D, 1e-12);
+        const auto rho = collocate_products_cells(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, D, 1e-12);
         for (std::size_t g = 0; g < rho.size(); ++g)
             lhs += mg.levels[l].weight() * V_r[g] * rho[g];
         const auto Vt = integrate_products_cells(
-            mg.levels[l], ps.by_level[l], ps.prims, ps.contribs, nb, V_r,
-            ps.cells.size(), 1e-12);
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, V_r, ps.cells.size(), 1e-12);
         for (std::size_t c = 0; c < ps.cells.size(); ++c)
             for (std::size_t e = 0; e < nn; ++e)
                 rhs += D[c][e] * Vt[c][e];
@@ -467,7 +467,8 @@ TEST(GpwMultigridCells, MatchesKpointBasisGridPath) {
 
     // Density: product path vs pre-summed χ^k path.
     const auto rho_prod = collocate_products_cells(
-        grid, ps.by_level[0], ps.prims, ps.contribs, nb, D, 1e-12);
+        grid, ps.by_level[0], ps.tasks_by_level[0], ps.prims, ps.contribs, nb,
+        D, 1e-12);
     std::vector<double> rho_kbg(static_cast<std::size_t>(grid.npts()), 0.0);
     ATV::cpu::gpw::internal::collocate_density_k(kbg, 0, P, 1.0, rho_kbg);
     double rho_max = 0.0, rho_err = 0.0;
@@ -480,9 +481,9 @@ TEST(GpwMultigridCells, MatchesKpointBasisGridPath) {
 
     // KS: phase-summed V_t vs integrate_potential_k; Hermiticity.
     const auto V_r = cells_rand(static_cast<std::size_t>(grid.npts()), 29u);
-    const auto Vt = integrate_products_cells(grid, ps.by_level[0], ps.prims,
-                                             ps.contribs, nb, V_r,
-                                             ps.cells.size(), 1e-12);
+    const auto Vt = integrate_products_cells(
+        grid, ps.by_level[0], ps.tasks_by_level[0], ps.prims, ps.contribs, nb,
+        V_r, ps.cells.size(), 1e-12);
     CplxMatrix Vk = xt::zeros<Cplx>({nb, nb});
     for (std::size_t c = 0; c < ps.cells.size(); ++c)
         for (int i = 0; i < nb; ++i)

@@ -264,12 +264,12 @@ TEST(GpwThreadReproducibility, ProductCollocationIsThreadIndependent) {
         build_products(mg, basis, L, /*rel_cutoff*/ 20.0, /*eps*/ 1e-10,
                        /*periodic*/ true);
     ASSERT_FALSE(ref_ps.by_level[0].empty());
-    const std::vector<double> ref_rho =
-        collocate_products(mg.levels[0], ref_ps.by_level[0], ref_ps.prims,
-                           ref_ps.contribs, nb, P, 1e-10);
-    const std::vector<double> ref_ks =
-        integrate_products(mg.levels[0], ref_ps.by_level[0], ref_ps.prims,
-                           ref_ps.contribs, nb, V_l, 1e-10);
+    const std::vector<double> ref_rho = collocate_products(
+        mg.levels[0], ref_ps.by_level[0], ref_ps.tasks_by_level[0],
+        ref_ps.prims, ref_ps.contribs, nb, P, 1e-10);
+    const std::vector<double> ref_ks = integrate_products(
+        mg.levels[0], ref_ps.by_level[0], ref_ps.tasks_by_level[0],
+        ref_ps.prims, ref_ps.contribs, nb, V_l, 1e-10);
 
     for (int w : kWidths) {
         set_width(w);
@@ -277,11 +277,13 @@ TEST(GpwThreadReproducibility, ProductCollocationIsThreadIndependent) {
             build_products(mg, basis, L, 20.0, 1e-10, /*periodic*/ true);
         ASSERT_EQ(ps.by_level[0].size(), ref_ps.by_level[0].size())
             << "thread count " << w;
-        EXPECT_EQ(collocate_products(mg.levels[0], ps.by_level[0], ps.prims,
+        EXPECT_EQ(collocate_products(mg.levels[0], ps.by_level[0],
+                                     ps.tasks_by_level[0], ps.prims,
                                      ps.contribs, nb, P, 1e-10),
                   ref_rho)
             << "thread count " << w;
-        EXPECT_EQ(integrate_products(mg.levels[0], ps.by_level[0], ps.prims,
+        EXPECT_EQ(integrate_products(mg.levels[0], ps.by_level[0],
+                                     ps.tasks_by_level[0], ps.prims,
                                      ps.contribs, nb, V_l, 1e-10),
                   ref_ks)
             << "thread count " << w;
