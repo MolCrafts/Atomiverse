@@ -46,7 +46,7 @@ Grok CUDA skills (not ad-hoc style):
 | **4** | **done** | p-shell device integrals (l≤1 MD/OS); H₂O energy cuda-only |
 | **5** | **done** | Pure-s device analytic forces; async density energy write; no mid-build fence before integrals; `forces()` via `run()` |
 | **6** | **done** | s/p device analytic forces (`launch_rhf_forces_sp`); ends host force fallback for l≤1 |
-| **7** | **next** | Device-only polish (residual mid-path H2D/D2H; ERI occupancy) — queue `cuda-rhf-device-only-polish` |
+| **7** | **landed** | Device-only polish: drop mid-build V_nuc D2H/H2D (energy ← `d_V_nuc`); ERI `__launch_bounds__(256,2)` + occupancy-capped grid-stride |
 
 ## Wave 6 layout
 
@@ -58,11 +58,11 @@ Grok CUDA skills (not ad-hoc style):
 
 | Phase | Traffic |
 |---|---|
-| **Setup** (before SCF) | type[] D2H once (path select + shell table); H2D of α/c/L |
+| **Setup** (before SCF) | type[] D2H once (path select + shell table); H2D of α/c/L; device `V_nuc` atomics |
 | **SCF + s/p forces** | **No** `cudaMemcpy` Device→Host of P, C, ERI, residual, energy, V_nuc |
 | Residual | cuBLAS `nrm2` → `d_residual`; converge flag via **mapped** host page |
-| Energy | cuBLAS `dot` device pointer mode + kernel → `frame.scalars->energy` |
-| V_nuc | stays on `d_V_nuc` for the whole SCF |
+| Energy | cuBLAS `dot` device pointer mode + kernel reads `d_V_nuc` → `frame.scalars->energy` |
+| V_nuc | stays on `d_V_nuc` only (no mid-build host recompute rewrite) |
 | **After SCF** | optional residual / V_nuc / `energy_ha_` D2H for host bookkeeping only |
 
 ## Host still
