@@ -47,12 +47,13 @@ class OtPrecond {
     RealMatrix m_inv_;
 };
 
-/// @brief H-aware OT preconditioner (CP2K FULL_SINGLE family).
+/// @brief H-aware OT preconditioner (CP2K FULL_SINGLE_INVERSE).
 ///
-/// Product form: `M = H + (−ε_HOMO + energy_gap) S` with dense SPD inverse.
-/// `ε_HOMO` is the max eigenvalue of the small `Cᵀ H C` block. Built once per
-/// OUTER_SCF; applied every OT micro-step. Default `energy_gap = 1` Ha for
-/// dense CG/DIIS stability (CP2K's sparse FULL_SINGLE_INVERSE uses 0.08).
+/// Dense product form matching `make_full_single_inverse`:
+///   `M = H − 2 (SC)(CᵀHC − ½ I)(SC)ᵀ`, then shift virtuals so the lowest
+/// generalized eigenvalue sits at `max(1.5(ε_min−ε_HOMO), energy_gap)`.
+/// Dense SPD inverse via eigendecomposition. Default `energy_gap = 0.08` Ha
+/// (CP2K FULL_SINGLE_INVERSE default). Built once per OUTER_SCF period.
 class OtPrecondSingleInverse {
   public:
     /// @param H KS matrix [nb×nb] [Ha]

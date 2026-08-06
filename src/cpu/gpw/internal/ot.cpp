@@ -64,46 +64,77 @@ RealMatrix OtPrecond::apply(const RealMatrix& g) const {
 
 // CP2K make_full_single_inverse (preconditioner_makes.F):
 //   M = H
-//   cThc ← Cᵀ H C − ½ I
+//   cThc ← Cᵀ H C;  ε_HOMO = max eig(cThc)
+//   cThc ← cThc − ½ I
 //   M  ← M − 2 (S C) cThc (S C)ᵀ
-//   σ  ← max(1.5 (ε_min − ε_homo), energy_gap); shift virtuals if needed
-//   M  ← M + σ S
-// Product uses the HOMO = max eigenvalue of Cᵀ H C and a cheap lower bound
-// on the spectrum of M for σ (min diagonal of Löwdin-orthogonalized M).
+//   ε_min ← min generalized eig of (M, S)   (dense dsygvd; CP2K uses Arnoldi)
+//   σ  ← max(1.5 (ε_min − ε_HOMO), energy_gap)
+//   if ε_min < σ: M ← M + (σ − ε_min) S
+// Dense inverse via symmetric eigendecomposition (PSD guard).
 OtPrecondSingleInverse::OtPrecondSingleInverse(const RealMatrix& H,
                                                const RealMatrix& S,
                                                const RealMatrix& C,
                                                double energy_gap) {
-    // H-aware OT preconditioner (CP2K FULL_SINGLE family).
-    //
-    // Product form (stable on water RKS + O₂ UKS energy OT):
-    //   M = H + (−ε_HOMO + ENERGY_GAP) S
-    // with ε_HOMO = max eig of the small Cᵀ H C block. This is the dense
-    // analogue of CP2K FULL_SINGLE (shift by HOMO, scale virtuals by gap);
-    // FULL_SINGLE_INVERSE's extra occupied projector term
-    //   −2 (SC)(CᵀHC − ½ I)(SC)ᵀ
-    // is available in CP2K for sparse Cholesky invert but, when inverted
-    // densely here without Arnoldi LUMO estimation, degraded CG+Armijo
-    // convergence on the product micro-cases (water 23→190 outer).
-    //
-    // Dense M^{-1} via symmetric eigendecomposition (PSD guard).
+    const int nb = static_cast<int>(H.shape(0));
     const int no = static_cast<int>(C.shape(1));
-    // ENERGY_GAP default in CP2K is 0.08, but the dense product path needs a
-    // larger margin (1 Ha) for stable CG+Armijo on open-shell micro-cases —
-    // too aggressive a shift leaves M barely PD and stalls O₂ UKS.
-    const double gap = std::max(energy_gap, 1.0);
-    double homo = 0.0;
-    if (no > 0) {
-        const RealMatrix cThc = dot(xt::transpose(C), dot(H, C));
-        auto [theta, V] = xt::linalg::eigh(cThc);
-        (void)V;
-        homo = theta(0);
-        for (double t : theta)
-            homo = std::max(homo, t);
+    // CP2K FULL_SINGLE_INVERSE default ENERGY_GAP is 0.08 Ha. No artificial
+    // floor: the occupied projector + min-ev shift keep M PD on water RKS
+    // and O₂ UKS (the old floor-1.0 FULL_SINGLE form was a dense substitute
+    // for missing min-ev estimation).
+    const double gap = std::max(energy_gap, 0.0);
+
+    if (no <= 0 || nb <= 0) {
+        m_inv_ = sym_inverse(H + std::max(gap, 0.08) * S);
+        return;
     }
-    // Shift so occupied spectrum sits at ~+gap in the S-metric.
-    const double a = -homo + gap;
-    m_inv_ = sym_inverse(H + a * S);
+
+    const RealMatrix HC = dot(H, C);
+    RealMatrix cThc = dot(xt::transpose(C), HC);
+    auto [theta_occ, Vocc] = xt::linalg::eigh(cThc);
+    (void)Vocc;
+    double max_ev = theta_occ(0);
+    for (double t : theta_occ)
+        max_ev = std::max(max_ev, t);
+    for (int i = 0; i < no; ++i)
+        cThc(i, i) -= 0.5;
+
+    // M = H − 2 (S C) cThc (S C)ᵀ
+    const RealMatrix SC = dot(S, C);
+    RealMatrix M = H - 2.0 * dot(SC, dot(cThc, xt::transpose(SC)));
+
+    // Lowest generalized eigenvalue of (M, S) — dense stand-in for Arnoldi.
+    double min_ev = 0.0;
+    try {
+        auto [evals, evecs] = linalg::diagonalize_fock_generalized(M, S);
+        (void)evecs;
+        min_ev = evals(0);
+        for (double t : evals)
+            min_ev = std::min(min_ev, t);
+    } catch (...) {
+        try {
+            const RealMatrix Sh = linalg::sym_function(
+                S, [](double t) { return t > 1e-12 ? 1.0 / std::sqrt(t) : 0.0; });
+            const RealMatrix Morth = dot(Sh, dot(M, Sh));
+            auto [evals, evecs] = xt::linalg::eigh(Morth);
+            (void)evecs;
+            min_ev = evals(0);
+            for (double t : evals)
+                min_ev = std::min(min_ev, t);
+        } catch (...) {
+            min_ev = max_ev;
+        }
+    }
+
+    // Shift virtual floor: CP2K pre_shift logic.
+    double pre_shift = std::max(1.5 * (min_ev - max_ev), gap);
+    if (min_ev < pre_shift)
+        pre_shift = pre_shift - min_ev;
+    else
+        pre_shift = 0.0;
+    if (pre_shift != 0.0)
+        M = M + pre_shift * S;
+
+    m_inv_ = sym_inverse(M);
 }
 
 RealMatrix OtPrecondSingleInverse::apply(const RealMatrix& g) const {

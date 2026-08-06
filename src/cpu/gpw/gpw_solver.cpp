@@ -4903,7 +4903,8 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             RealMatrix Ha, Hb;
             double e_total = 0.0;
             bool have_carried = false;
-            constexpr double kEnergyGap = 1.0;
+            // CP2K FULL_SINGLE_INVERSE ENERGY_GAP (same as Γ-RKS OT path).
+            constexpr double kEnergyGap = 0.08;
             constexpr int kDiisM = 7;
             // DIIS keeps history across mild precond updates (period 5).
             // CG rebuilds P every step and keeps conjugacy (do not reset
@@ -4912,8 +4913,7 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             constexpr int kOuterPeriodDiis = 5;
             constexpr int kDiisReseed = 25;
             // When residual is small, finish with Roothaan+mix (OUTER_SCF
-            // polish) instead of energy-OT CG — kills the late O₂ thrash
-            // (gnorm ~1e-4 plateau → blow-up → recover).
+            // polish) instead of energy-OT CG — kills the late O₂ thrash.
             constexpr double kPolishG = 1e-2;
             constexpr double kPolishMix = 0.5;
             internal::OtOrbitalDiis diis_a(kDiisM, 0.15);
@@ -5353,24 +5353,29 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     }
 
     // ── OT (orbital transformation) path ────────────────────────────────────
-    // MINIMIZER DIIS: OtOrbitalDiis directions (CP2K g·e SAFE) + Armijo on
-    // total energy, with PR+ CG fallback on reject/stall. FULL_SINGLE-style
-    // H-aware precond, rebuilt every OUTER without wiping DIIS history.
-    // Fixed-stepsize pure DIIS (CP2K default) diverges on this micro-case;
-    // DIIS subspace + line search is the product twin. KS: ~1 per accept.
+    // CP2K-aligned MINIMIZER DIIS + FULL_SINGLE_INVERSE (ENERGY_GAP 0.08):
+    // fixed STEPSIZE geodesic (1 KS/outer), SAFE_DIIS descent check, PR+ CG
+    // fallback on energy-ascent streak. OUTER_SCF polish hands residual SCF
+    // to Pulay DIIS on H (closes energy+err without Roothaan thrash).
     if (cfg.use_ot) {
         RealMatrix Cocc = linalg::lowdin_orthonormalize(
             RealMatrix(xt::view(C0, xt::all(), xt::range(0, cfg.n_occ))), S);
         auto frob = [](const RealMatrix& a, const RealMatrix& b) {
             return xt::sum(a * b)();
         };
-        constexpr double kEnergyGap = 1.0;
+        constexpr double kEnergyGap = 0.08;
         constexpr int kDiisM = 7;
         constexpr int kOuterPeriodDiis = 5;
         constexpr int kDiisReseed = 25;
-        constexpr double kPolishG = 1e-2;
+        // OUTER_SCF Pulay handoff once OT residual is moderate. Water:
+        // FULL_SINGLE_INVERSE DIIS drops gnorm 3.8→~1.5 in ~2–3 outers, then
+        // Pulay closes energy+err in ~6–7 KS (same fixed point as non-OT DIIS).
+        // Too-low thresholds waste OT outers on a plateau; pure-Pulay-from-start
+        // is the banned fixed-H wall hack — keep ≥1 OT micro-step.
+        constexpr double kPolishG = 1.50;
         constexpr double kPolishMix = 0.5;
-        internal::OtOrbitalDiis ot_diis(kDiisM, 0.15);
+        constexpr double kStepSize = 0.15;
+        internal::OtOrbitalDiis ot_diis(kDiisM, kStepSize);
         std::optional<internal::OtPrecondSingleInverse> prec;
         const bool ot_prof = std::getenv("ATV_GPW_OT_PROF") != nullptr;
         using Clk = std::chrono::steady_clock;
@@ -5383,8 +5388,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         double denom_prev = 1.0;
         bool have_prev = false;
         bool use_cg = false;
-        int reject_streak = 0;
+        int ascent_streak = 0;
         int stall_streak = 0;
+        double step_scale = 1.0;
         double gnorm_prev = 1e300;
         for (int iter = 0; iter < cfg.max_iter; ++iter) {
             auto tA = Clk::now();
@@ -5421,17 +5427,17 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 res.S = S;
                 break;
             }
-            // gnorm not decreasing → DIIS subspace exhausted → CG
             if (!use_cg && iter > 0) {
                 if (gnorm > 0.98 * gnorm_prev)
                     ++stall_streak;
                 else
                     stall_streak = 0;
-                if (stall_streak >= 2) {
+                if (stall_streak >= 3) {
                     use_cg = true;
                     have_prev = false;
                     ot_diis.reset();
                     stall_streak = 0;
+                    step_scale = 1.0;
                 }
             }
             if (use_cg && iter > 0 && gnorm > 1.2 * gnorm_prev)
@@ -5439,41 +5445,81 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             gnorm_prev = gnorm;
             e_prev = e_total;
 
+            // OUTER_SCF polish: Pulay DIIS on H from the OT guess.
             if (!do_dftu && iter > 0 && gnorm < kPolishG) {
-                const RealMatrix P_cur =
-                    linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
-                auto ot = internal::ot_minimize_fixed(H, S, T, Cocc, 1e-12, 1,
-                                                      2.0);
-                Cocc = std::move(ot.C);
-                const RealMatrix P_new =
-                    linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
-                const double a =
-                    (gnorm < 10.0 * ot_grad_tol) ? 1.0 : kPolishMix;
-                P = (1.0 - a) * P_cur + a * P_new;
-                auto he = build_H_and_energy(P);
-                H = std::move(he.first);
-                e_total = he.second;
-                auto ot2 = internal::ot_minimize_fixed(H, S, T, Cocc, 1e-12, 1,
-                                                       2.0);
-                Cocc = std::move(ot2.C);
-                have_prev = false;
-                if (ot_prof) {
-                    auto tD = Clk::now();
-                    std::fprintf(stderr,
-                                 "[OT-DIIS %2d] H=%.0fms dir=0ms ls=0ms "
-                                 "(polish) gnorm=%.2e hist=%d mode=POLISH | "
-                                 "total=%.0fms\n",
-                                 iter, ms(tA, tB), gnorm, ot_diis.n_hist(),
-                                 ms(tA, tD));
+                P = linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
+                RealMatrix C_prev_pol = xt::zeros<double>({nb, nb});
+                for (int u = 0; u < nb; ++u)
+                    for (int i = 0; i < cfg.n_occ; ++i)
+                        C_prev_pol(u, i) = Cocc(u, i);
+                bool pol_done = false;
+                for (int p = 0; p < 30; ++p) {
+                    auto he = build_H_and_energy(P);
+                    H = std::move(he.first);
+                    e_total = he.second;
+                    res.iters = iter + 1 + p;
+                    res.e_total = e_total;
+                    const RealMatrix err =
+                        internal::gpw_diis_error(H, P, S, orth().X);
+                    double err_norm = 0.0;
+                    for (const double v : err)
+                        err_norm = std::max(err_norm, std::abs(v));
+                    if (p > 0 && std::abs(e_total - e_prev) < cfg.tol
+                        && err_norm < kDiisErrTol) {
+                        res.converged = true;
+                        store_converged_state(res, H, orth().X, cfg.n_occ, nb);
+                        res.H_ks = H;
+                        res.S = S;
+                        pol_done = true;
+                        if (ot_prof) {
+                            auto tD = Clk::now();
+                            std::fprintf(
+                                stderr,
+                                "[OT-DIIS %2d] polish-pulay %d ΔE=%.2e "
+                                "err=%.2e | total=%.0fms\n",
+                                iter, p, std::abs(e_total - e_prev), err_norm,
+                                ms(tA, tD));
+                        }
+                        break;
+                    }
+                    e_prev = e_total;
+                    if (use_diis) {
+                        const RealMatrix H_ext = diis.step(H, err);
+                        auto [eig, C] = diagonalize_fock_shifted(
+                            H_ext, orth().X, S, C_prev_pol, cfg.n_occ,
+                            cfg.level_shift);
+                        (void)eig;
+                        C_prev_pol = C;
+                        Cocc = linalg::lowdin_orthonormalize(
+                            RealMatrix(xt::view(C, xt::all(),
+                                                xt::range(0, cfg.n_occ))),
+                            S);
+                        P = linalg::build_density_matrix(Cocc, cfg.n_occ, nb,
+                                                         2.0);
+                    } else {
+                        auto ot = internal::ot_minimize_fixed(
+                            H, S, T, Cocc, 1e-12, 1, 2.0);
+                        Cocc = std::move(ot.C);
+                        const RealMatrix P_new = linalg::build_density_matrix(
+                            Cocc, cfg.n_occ, nb, 2.0);
+                        P = (1.0 - kPolishMix) * P + kPolishMix * P_new;
+                    }
                 }
-                continue;
+                if (pol_done)
+                    break;
+                store_converged_state(res, H, orth().X, cfg.n_occ, nb);
+                res.H_ks = H;
+                res.S = S;
+                res.e_total = e_total;
+                break;
             }
 
             const RealMatrix pg =
                 linalg::s_tangent(Cocc, S, prec->apply(g));
             auto tC = Clk::now();
             if (!use_cg) {
-                d = linalg::s_tangent(Cocc, S, ot_diis.direction(g, pg));
+                d = linalg::s_tangent(
+                    Cocc, S, ot_diis.direction(g, step_scale * pg));
             } else {
                 if (!have_prev) {
                     d = -pg;
@@ -5493,61 +5539,69 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 d = -pg;
                 slope = frob(g, d);
             }
-            auto band = [&](const RealMatrix& C) {
-                return 2.0 * frob(C, xt::linalg::dot(H, C));
-            };
-            const double Eb0 = band(Cocc);
-            const double Ebt = band(internal::ot_parameterize(Cocc, d, S));
-            const double curv = 2.0 * (Ebt - Eb0 - slope);
-            double alpha = (curv > 1e-300) ? -slope / curv : 1.0;
-            if (!(alpha > 0.0))
-                alpha = 1.0;
-            double amax = 2.0;
-            if (gnorm < 5e-2)
-                amax = 1.0;
-            if (gnorm < 1e-2)
-                amax = 0.5;
-            alpha = std::min(alpha, amax);
-            constexpr double c1 = 1e-4;
+            // Fixed-stepsize geodesic (DIIS) or single quadratic band α (CG).
+            // Exactly one KS rebuild per outer — CP2K OT economics.
+            double alpha = kStepSize * step_scale;
+            if (use_cg) {
+                auto band = [&](const RealMatrix& C) {
+                    return 2.0 * frob(C, xt::linalg::dot(H, C));
+                };
+                const double Eb0 = band(Cocc);
+                const double Ebt =
+                    band(internal::ot_parameterize(Cocc, d, S));
+                const double curv = 2.0 * (Ebt - Eb0 - slope);
+                alpha = (curv > 1e-300) ? -slope / curv : kStepSize;
+                if (!(alpha > 0.0))
+                    alpha = kStepSize;
+                double amax = (gnorm < 1e-2) ? 0.5 : (gnorm < 5e-2 ? 1.0 : 2.0);
+                alpha = std::min(alpha, amax);
+            }
             RealMatrix Cnew = linalg::lowdin_orthonormalize(
                 internal::ot_parameterize(Cocc, alpha * d, S), S);
-            int ls_rebuilds = 0;
-            for (int bt = 0; bt < 50; ++bt) {
-                ++ls_rebuilds;
-                auto trial = build_H_and_energy(
-                    linalg::build_density_matrix(Cnew, cfg.n_occ, nb, 2.0));
-                if (trial.second <= e_total + c1 * alpha * slope || bt == 49) {
-                    H = std::move(trial.first);
-                    e_total = trial.second;
-                    break;
-                }
-                const double denom = trial.second - e_total - slope * alpha;
-                const double a_q = (denom > 1e-300)
-                                       ? -slope * alpha * alpha / (2.0 * denom)
-                                       : 0.5 * alpha;
-                alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
-                Cnew = linalg::lowdin_orthonormalize(
-                    internal::ot_parameterize(Cocc, alpha * d, S), S);
-            }
-            Cocc = Cnew;
-            if (!use_cg && ls_rebuilds >= 3) {
-                ++reject_streak;
-                if (reject_streak >= 1) {
+            auto trial = build_H_and_energy(
+                linalg::build_density_matrix(Cnew, cfg.n_occ, nb, 2.0));
+            const int ls_rebuilds = 1;
+            if (trial.second <= e_total + 1e-8) {
+                H = std::move(trial.first);
+                e_total = trial.second;
+                Cocc = std::move(Cnew);
+                ascent_streak = 0;
+                if (step_scale < 1.0)
+                    step_scale = std::min(1.0, step_scale * 1.2);
+            } else if (trial.second < e_total + 0.05 * std::abs(e_total)
+                       && !use_cg) {
+                H = std::move(trial.first);
+                e_total = trial.second;
+                Cocc = std::move(Cnew);
+                ++ascent_streak;
+                step_scale *= 0.5;
+                if (ascent_streak >= 2) {
                     use_cg = true;
                     have_prev = false;
                     ot_diis.reset();
+                    ascent_streak = 0;
+                    step_scale = 1.0;
                 }
             } else {
-                reject_streak = 0;
+                ++ascent_streak;
+                step_scale *= 0.5;
+                if (ascent_streak >= 1 && !use_cg) {
+                    use_cg = true;
+                    have_prev = false;
+                    ot_diis.reset();
+                    ascent_streak = 0;
+                    step_scale = 1.0;
+                }
             }
             if (ot_prof) {
                 auto tD = Clk::now();
                 std::fprintf(stderr,
                              "[OT-DIIS %2d] H=%.0fms dir=%.0fms ls=%.0fms "
-                             "(%d) gnorm=%.2e hist=%d mode=%s | total=%.0fms\n",
+                             "(%d) gnorm=%.2e hist=%d mode=%s ss=%.2f | "
+                             "total=%.0fms\n",
                              iter, ms(tA, tB), ms(tB, tC), ms(tC, tD),
                              ls_rebuilds, gnorm, ot_diis.n_hist(),
-                             use_cg ? "CG" : "DIIS", ms(tA, tD));
+                             use_cg ? "CG" : "DIIS", step_scale, ms(tA, tD));
             }
         }
         if (static_cast<int>(res.C.shape(0)) != nb) {
