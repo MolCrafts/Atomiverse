@@ -101,16 +101,20 @@ void R2cFft::ensure_many_plans() {
         return; // another caller won the race under the lock
     ensure_fftw_threads();
     const int n[3] = {n0_, n1_, n2_};
+    // Use raw buffer pointers — never r_many()/c_many() here: those call
+    // ensure_many_plans() and would re-enter fftw_plan_mutex (non-recursive).
+    double* rbuf = r_many_.data();
+    fftw_complex* cbuf = c_many_.data();
     if (!many_fwd_)
         many_fwd_ = fftw_plan_many_dft_r2c(
-            /*rank=*/3, n, /*howmany=*/3, r_many(), /*inembed=*/nullptr,
-            /*istride=*/1, /*idist=*/static_cast<int>(ntot_), c_many(),
+            /*rank=*/3, n, /*howmany=*/3, rbuf, /*inembed=*/nullptr,
+            /*istride=*/1, /*idist=*/static_cast<int>(ntot_), cbuf,
             /*onembed=*/nullptr, /*ostride=*/1,
             /*odist=*/static_cast<int>(ncplx_), kManyPlanFlags);
     if (!many_bwd_)
         many_bwd_ = fftw_plan_many_dft_c2r(
-            /*rank=*/3, n, /*howmany=*/3, c_many(), /*inembed=*/nullptr,
-            /*istride=*/1, /*idist=*/static_cast<int>(ncplx_), r_many(),
+            /*rank=*/3, n, /*howmany=*/3, cbuf, /*inembed=*/nullptr,
+            /*istride=*/1, /*idist=*/static_cast<int>(ncplx_), rbuf,
             /*onembed=*/nullptr, /*ostride=*/1,
             /*odist=*/static_cast<int>(ntot_), kManyPlanFlags);
     if (!many_fwd_ || !many_bwd_) {
