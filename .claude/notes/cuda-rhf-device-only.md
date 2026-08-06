@@ -53,6 +53,7 @@ Grok CUDA skills (not ad-hoc style):
 | **7** | **landed** | Device-only polish: drop mid-build V_nuc D2H/H2D (energy ← `d_V_nuc`); ERI `__launch_bounds__(256,2)` + occupancy-capped grid-stride |
 | **8** | **landed** | Device `level_shift` on s/p Fock (`RHFFockDevice` + `SCFSolver`); no host-fill when λ≠0 |
 | **9** | **landed** | Path select from host Z before upload (`cache_host_types`); no setup type[] D2H on `run`/`forces` s/p path |
+| **10** | **landed** | Device CDIIS (Pulay) Fock mixer + level shift in mix step (CPU MixStage twin); `ws.S` for e=Xᵀ[F,P]_S X; history on device |
 
 ## Related CUDA ES (not RHF waves)
 
@@ -113,6 +114,7 @@ Grok CUDA skills (not ad-hoc style):
   `cc450b59`) + same post-merge **915704**: `test_cuda_gpw_xc_lda` **Passed
   0.86 s** (+ poisson/PW LDA still green). Tols: per-point ~**1e-12**, energy
   reduction rel **~1e-10** (device atomic sum vs host).
+- GH200 device CDIIS (worker job **915746**, feat branch `wf/escuda-cuda-rhf-cdiis-device`): `test_cuda_scf` + `test_cuda_scf_rhf` + `test_cuda_scf_device_integrals` **100% PASS** (1.67 + 1.93 + 0.71 s); energy/forces/level_shift twins green at existing tols (ha_to_ev(1e-6)/1e-8 Ha class).
 - `tests/cuda/scf/test_rhf.cu`:
   - `CUDAForcesMatchCPU_H2_STO3G` — |ΔF| **1e-5** eV/Å; energy **ha_to_ev(1e-6)**
   - `CUDAForcesMatchFD_H2_STO3G` — FD bar **5e-2** eV/Å

@@ -26,6 +26,7 @@
 #include "atomiverse/cuda/scf/scf_workspace.cuh"
 
 #ifdef ATV_HAS_HF
+#include "atomiverse/cuda/scf/internal/diis_mixer.cuh"
 #include "atomiverse/cuda/scf/internal/rhf_density.cuh"
 #include "atomiverse/cuda/scf/internal/rhf_fock.cuh"
 #endif
@@ -137,6 +138,8 @@ class SCFSolver {
     std::unique_ptr<internal::RHFFock> rhf_fock_;
     std::unique_ptr<internal::RHFFockDevice> rhf_fock_device_;
     std::unique_ptr<internal::RHFDensity> rhf_density_;
+    /// Device CDIIS + level shift (CPU MixStage twin). RHF paths only.
+    std::unique_ptr<internal::DIISMixer> diis_;
 #endif
 };
 

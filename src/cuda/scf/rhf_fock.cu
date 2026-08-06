@@ -33,14 +33,7 @@ using cuda::work_t;
 namespace scf {
 namespace internal {
 
-// ── Kernel: add a scalar to a matrix diagonal ────────────────────────
-// M_ii += lambda, for the level shift F' += λ·I (col-major, n×n).
-__global__ void add_diagonal_kernel(prec_t* __restrict__ M, prec_t lambda,
-                                    int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n)
-        M[i + i * n] += lambda;
-}
+// Level-shift diagonal kernel lives in diis_mixer.cu (CDIIS owns shift).
 
 // ── Kernel: Löwdin column scale U[:,j] *= rsqrt(λ_j) (or 0 if λ_j ≤ thr) ─
 // Skills: fuse-elementwise (scale+rsqrt), optimize-global-memory (col-major
@@ -214,6 +207,7 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaMalloc(&scf.eig, n * sizeof(prec_t));
     cudaMalloc(&scf.work, nn * sizeof(prec_t));
     cudaMalloc(&scf.Hcore, nn * sizeof(prec_t));
+    cudaMalloc(&scf.S, nn * sizeof(prec_t));
     cudaMalloc(&scf.X, nn * sizeof(prec_t));
     cudaMalloc(&scf.F_prime, nn * sizeof(prec_t));
     cudaMalloc(&scf.ERI, n4 * sizeof(prec_t));
@@ -231,6 +225,12 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
             buf[i + j * n] = Hcore_(i, j); // col-major
     cudaMemcpy(scf.Hcore, buf.data(), nn * sizeof(prec_t),
                cudaMemcpyHostToDevice);
+
+    // Upload S for device CDIIS error e = Xᵀ (FPS − SPF) X.
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            buf[i + j * n] = S_(i, j);
+    cudaMemcpy(scf.S, buf.data(), nn * sizeof(prec_t), cudaMemcpyHostToDevice);
 
     // Upload ERI (row-major 4D xtensor -> column-major 4D device)
     std::vector<work_t> eri_buf(n4);
@@ -315,28 +315,12 @@ void RHFFock::step(const SolverContext& ctx, SCFWorkspace& ws) {
                     cudaMemcpyDeviceToDevice, stream);
     cudaMemcpyAsync(scf.H, scf.F_prime, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
-    // Now: scf.H = F' (for EigenSolver), scf.work = F (for energy in RHFDensity)
-
-    // ── Level shift (hf-robust-03 CUDA mirror) ────────────────────────
-    // In the orthonormal basis the Saunders–Hillier shift F + λ(S−SD S)
-    // becomes F' += λ(I − P'_occ), with P'_occ = C'_occ C'_occ^T the
-    // occupied projector from the PREVIOUS iteration's orthonormal
-    // eigenvectors (scf.C_prime). Applied to scf.H (what EigenSolver
-    // diagonalizes), never to scf.F_prime. Skipped on step 0 (density is
-    // zero, no previous C') and below the PySCF |λ| ≤ 1e-4 threshold — so
-    // λ = 0 is bit-identical to the pre-feature path.
-    if (std::abs(level_shift_) > 1e-4 && ctx.step > 0) {
-        const prec_t lambda = static_cast<prec_t>(level_shift_);
-        int dblocks = cuda::grid_size(n, cuda::kDefaultBlock);
-        add_diagonal_kernel<<<dblocks, cuda::kDefaultBlock, 0, stream>>>(
-            scf.H, lambda, n); // scf.H += λ·I
-        // scf.H += (−λ)·C'_occ C'_occ^T  (β=1 accumulate; first n_occ cols).
-        const work_t neg_lambda = static_cast<work_t>(-level_shift_);
-        const work_t one_b = work_t(1);
-        detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n, n, scf.n_occ,
-                     &neg_lambda, scf.C_prime, n, scf.C_prime, n, &one_b, scf.H,
-                     n);
-    }
+    // Now: scf.H = F' (seed for EigenSolver), scf.work = unshifted AO F.
+    // Device CDIIS (DIISMixer) extrapolates work, rebuilds F', and applies
+    // the Saunders–Hillier level shift before diagonalization — matching
+    // CPU MixStage order (DIIS on unshifted F, then level shift).
+    (void)level_shift_;
+    (void)ctx;
 }
 
 void RHFFock::destroy(const SolverContext& /*ctx*/, SCFWorkspace& /*ws*/) {
@@ -600,11 +584,11 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaMalloc(&scf.eig, n * sizeof(prec_t));
     cudaMalloc(&scf.work, nn * sizeof(prec_t));
     cudaMalloc(&scf.Hcore, nn * sizeof(prec_t));
+    cudaMalloc(&scf.S, nn * sizeof(prec_t));
     cudaMalloc(&scf.X, nn * sizeof(prec_t));
     cudaMalloc(&scf.F_prime, nn * sizeof(prec_t));
     cudaMalloc(&scf.ERI, n4 * sizeof(prec_t));
     cudaMalloc(&d_temp_, nn * sizeof(prec_t));
-    cudaMalloc(&d_S_, nn * sizeof(prec_t));
     cudaMalloc(&d_T_, nn * sizeof(prec_t));
     cudaMalloc(&d_V_, nn * sizeof(prec_t));
     // Device control scalars + force W (no mid-SCF scientific D2H).
@@ -632,7 +616,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     // Use the unified sp path for all device RHF so pure-s and mixed share
     // one contraction (avoids dual-kernel norm/layout drift).
     ATV::cuda::scf::launch_1e_integrals_sp(
-        d_S_, d_T_, d_V_, scf.d_shell_alpha, scf.d_shell_coeff,
+        scf.S, d_T_, d_V_, scf.d_shell_alpha, scf.d_shell_coeff,
         scf.d_shell_center, scf.d_shell_L, d_ao_start, scf.d_ao_shell,
         scf.d_ao_cart, scf.d_atom_Z, scf.d_atom_pos, n_shells, n, n_prim_,
         natm, stream);
@@ -658,7 +642,8 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cusolverDnSetStream(solver, stream);
     cusolver_handle_ = solver;
 
-    cudaMemcpyAsync(scf.X, d_S_, nn * sizeof(prec_t), cudaMemcpyDeviceToDevice,
+    // Keep scf.S intact for CDIIS; syevd overwrites a copy in scf.X.
+    cudaMemcpyAsync(scf.X, scf.S, nn * sizeof(prec_t), cudaMemcpyDeviceToDevice,
                     stream);
 
     int lwork = 0;
@@ -734,22 +719,9 @@ void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {
                     cudaMemcpyDeviceToDevice, stream);
     cudaMemcpyAsync(scf.H, scf.F_prime, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
-
-    // ── Level shift (same device formula as host-upload RHFFock) ───────
-    // F' += λ(I − P'_occ) on scf.H (EigenSolver input). Energy path keeps
-    // unshifted F in scf.work, so converged E is λ-invariant.
-    // |λ| ≤ 1e-4 → no-op (PySCF threshold; λ=0 bit-identical).
-    if (std::abs(level_shift_) > 1e-4 && ctx.step > 0) {
-        const prec_t lambda = static_cast<prec_t>(level_shift_);
-        int dblocks = cuda::grid_size(n, cuda::kDefaultBlock);
-        add_diagonal_kernel<<<dblocks, cuda::kDefaultBlock, 0, stream>>>(
-            scf.H, lambda, n);
-        const work_t neg_lambda = static_cast<work_t>(-level_shift_);
-        const work_t one_b = work_t(1);
-        detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n, n, scf.n_occ,
-                     &neg_lambda, scf.C_prime, n, scf.C_prime, n, &one_b, scf.H,
-                     n);
-    }
+    // Level shift + CDIIS live in DIISMixer (after this step).
+    (void)level_shift_;
+    (void)ctx;
 }
 
 void RHFFockDevice::destroy(const SolverContext& /*ctx*/,
@@ -764,8 +736,6 @@ void RHFFockDevice::destroy(const SolverContext& /*ctx*/,
     }
     cudaFree(d_temp_);
     d_temp_ = nullptr;
-    cudaFree(d_S_);
-    d_S_ = nullptr;
     cudaFree(d_T_);
     d_T_ = nullptr;
     cudaFree(d_V_);
