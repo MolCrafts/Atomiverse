@@ -68,9 +68,10 @@ class RHFFockDevice {
     /// @param L_mol Host [n_shells] angular momentum (0 or 1).
     /// @param atom_of_mol Host [n_shells] atom index for each shell center.
     /// @param n_occ Doubly occupied MOs.
+    /// @param level_shift Virtual shift λ [Hartree] (0 = off).
     RHFFockDevice(int n_shells, int n_ao, int n_prim, const double* alpha_mol,
                   const double* coeff_mol, const int* L_mol,
-                  const int* atom_of_mol, int n_occ);
+                  const int* atom_of_mol, int n_occ, double level_shift = 0.0);
 
     /// @brief Multi-shell pure-s convenience (Wave 3): one element type, all L=0.
     /// @param n_shells_per_atom s shells per atom (table order).
@@ -79,18 +80,21 @@ class RHFFockDevice {
     /// @param coeff_atom Host [n_shells_per_atom * n_prim].
     /// @param n_occ Doubly occupied MOs.
     /// @param natm Atom count (builds atom_of = shell / n_shells_per_atom).
+    /// @param level_shift Virtual shift λ [Hartree] (0 = off).
     RHFFockDevice(int n_shells_per_atom, int n_prim, const double* alpha_atom,
-                  const double* coeff_atom, int n_occ, int natm);
+                  const double* coeff_atom, int n_occ, int natm,
+                  double level_shift = 0.0);
 
     /// @brief Legacy single-shell pure-s (one s shell / atom).
     RHFFockDevice(int n_prim, const double* exponents, const double* coefficients,
-                  int n_occ, int natm)
+                  int n_occ, int natm, double level_shift = 0.0)
         : RHFFockDevice(/*n_shells_per_atom=*/1, n_prim, exponents, coefficients,
-                        n_occ, natm) {}
+                        n_occ, natm, level_shift) {}
 
     /// @brief Legacy Wave-3 signature without natm — natm taken at build().
     RHFFockDevice(int n_shells_per_atom, int n_prim, const double* alpha_atom,
-                  const double* coeff_atom, int n_occ);
+                  const double* coeff_atom, int n_occ,
+                  double level_shift = 0.0);
 
     void build(const SolverContext& ctx, SCFWorkspace& ws);
     void step(const SolverContext& ctx, SCFWorkspace& ws);
@@ -101,6 +105,7 @@ class RHFFockDevice {
     int n_ao_ = 0;
     int n_prim_ = 0;
     int n_occ_ = 0;
+    double level_shift_ = 0.0;
     /// When true, rebuild molecular shell list from pure-s atom block at build.
     bool pure_s_broadcast_ = false;
     int n_shells_per_atom_ = 1;

@@ -179,9 +179,10 @@ make_host_integral_solver(const cpu::Frame& frame, cpu::scf::BasisSet basis,
 ///
 /// Builds a full-molecule shell list from `basis_data::sp_sto3g_shells(Z)`
 /// per atom (mixed Z OK). n_AO = Σ n_cart(L) with s→1, p→3.
+/// @param level_shift Virtual level shift λ [Hartree]; wired on device Fock.
 std::unique_ptr<SCFSolver>
 make_device_sp_sto3g_solver(const int* h_Z, int natm, int charge, double tol,
-                           int max_iter) {
+                           int max_iter, double level_shift) {
     int n_electrons = -charge;
     for (int i = 0; i < natm; ++i)
         n_electrons += h_Z[i];
@@ -232,7 +233,7 @@ make_device_sp_sto3g_solver(const int* h_Z, int natm, int charge, double tol,
 
     return std::make_unique<SCFSolver>(
         n_shells, n_ao, n_prim, alpha_mol.data(), coeff_mol.data(),
-        L_mol.data(), atom_of.data(), n_occ, tol, max_iter);
+        L_mol.data(), atom_of.data(), n_occ, tol, max_iter, level_shift);
 }
 
 } // namespace
@@ -248,12 +249,14 @@ RHF::RHF(RHF&& other) noexcept
       compute_force(other.compute_force), solver_(std::move(other.solver_)),
       energy_ha_(other.energy_ha_), converged_(other.converged_),
       iterations_(other.iterations_), built_(other.built_),
-      last_force_device_(other.last_force_device_) {
+      last_force_device_(other.last_force_device_),
+      last_device_sp_(other.last_device_sp_) {
     other.energy_ha_ = 0.0;
     other.converged_ = false;
     other.iterations_ = 0;
     other.built_ = false;
     other.last_force_device_ = false;
+    other.last_device_sp_ = false;
 }
 
 void RHF::run(cpu::Frame& frame) {
@@ -340,13 +343,13 @@ void RHF::launch(const LaunchContext& ctx) {
 
     // ── Energy: CUDA-only HF when device s/p kernels cover the molecule ─
     // STO-3G with l≤1 (H…O, mixed Z OK): device S/T/V + ERI + SCF (no host
-    // ERI). Higher L or other bases: host fill + upload.
-    // Device s/p integrals when covered and level_shift is off (shift is
-    // only wired on the host-fill SCF path). Non-zero shift → host integrals.
-    if (device_sp_sto3g_ok(basis, h_Z.data(), natm)
-        && std::abs(level_shift) <= 1e-14) {
+    // ERI), including virtual level shift λ on the orthonormal Fock.
+    // Higher L or other bases: host fill + upload.
+    last_device_sp_ = false;
+    if (device_sp_sto3g_ok(basis, h_Z.data(), natm)) {
         solver_ = make_device_sp_sto3g_solver(h_Z.data(), natm, charge, tol,
-                                             max_iter);
+                                             max_iter, level_shift);
+        last_device_sp_ = true;
     } else {
         cpu::Frame host = host_frame_from_device(ctx.frame);
         solver_ = make_host_integral_solver(host, basis, charge, tol, max_iter,
