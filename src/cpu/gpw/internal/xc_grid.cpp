@@ -59,12 +59,17 @@ XcOnGridSpin xc_grid_pade_lsd(const UniformGrid& grid,
     out.vxc_b.assign(static_cast<std::size_t>(ng), 0.0);
     const device::ChunkedRange range(ng, kXcChunks);
     std::vector<double> part(static_cast<std::size_t>(range.chunks()), 0.0);
+    // Vacuum short-circuit: pade_lsd returns zeros for rho_total < 1e-12; skip
+    // the call (and leave pre-zeroed V_xc) on empty regions of large MT boxes.
+    constexpr double kRhoCut = 1.0e-12;
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < range.chunks(); ++c) {
         double s = 0.0;
         for (long g = range.begin(c); g < range.end(c); ++g) {
             const double ra = rho_a[static_cast<std::size_t>(g)];
             const double rb = rho_b[static_cast<std::size_t>(g)];
+            if (ra + rb < kRhoCut)
+                continue;
             const ATV::cpu::xc::PadeXC xc = ATV::cpu::xc::pade_lsd(ra, rb);
             s += w * (ra + rb) * xc.exc;
             out.vxc_a[static_cast<std::size_t>(g)] = xc.vrho_a;

@@ -4751,6 +4751,7 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 
         // Build dual KS + total energy (and fill res energy channels) from Pa/Pb.
         // ATV_GPW_PROF: Γ-UKS [gpw prof uks] matches RKS [gpw prof] shape.
+        // Single-grid path uses dual-spin collocate/integrate (one χ walk).
         const bool uks_prof = std::getenv("ATV_GPW_PROF") != nullptr;
         using UksProfClk = std::chrono::steady_clock;
         auto uks_pms = [](UksProfClk::time_point a, UksProfClk::time_point b) {
@@ -4761,8 +4762,15 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             -> std::tuple<RealMatrix, RealMatrix, double> {
             ++uks_energy_builds;
             auto t0p = UksProfClk::now();
-            std::vector<double> rho_a = collocate_P(Pa_in);
-            std::vector<double> rho_b = collocate_P(Pb_in);
+            std::vector<double> rho_a, rho_b;
+            if (!use_prod) {
+                // Dual-spin cbg: one CSR walk for both P^α and P^β.
+                collocate_density_spin(cbg, nb, mat_to_vec(Pa_in, nb),
+                                       mat_to_vec(Pb_in, nb), rho_a, rho_b);
+            } else {
+                rho_a = collocate_P(Pa_in);
+                rho_b = collocate_P(Pb_in);
+            }
             auto t1p = UksProfClk::now();
             if (use_prod && use_mg
                 && (mg.levels[0].n[0] != grid.n[0]
@@ -4793,8 +4801,18 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             res.veff_b = ks.veff_b;
             res.v_es = ks.v_es;
 
-            RealMatrix Ha = H0 + integrate_V(res.veff_a);
-            RealMatrix Hb = H0 + integrate_V(res.veff_b);
+            RealMatrix Ha, Hb;
+            if (!use_prod) {
+                // Dual-spin cbg integrate: one CSR walk for V_eff^α and V_eff^β.
+                std::vector<double> Va, Vb;
+                integrate_potential_spin(cbg, nb, res.veff_a, res.veff_b, Va,
+                                         Vb);
+                Ha = H0 + vec_to_mat(Va, nb);
+                Hb = H0 + vec_to_mat(Vb, nb);
+            } else {
+                Ha = H0 + integrate_V(res.veff_a);
+                Hb = H0 + integrate_V(res.veff_b);
+            }
             auto t4p = UksProfClk::now();
             if (uks_prof)
                 std::fprintf(stderr,
