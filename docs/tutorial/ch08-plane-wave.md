@@ -238,7 +238,7 @@ cpu::Frame (Si diamond, 2 atoms)  +  PW
         PoissonSolver   → V_H(G)
         XCBuilder       → V_xc(G)  via FFT + LDA
         VeffBuilder     → V_eff = V_loc + V_H + V_xc
-        DavidsonSolver  → lowest N_occ bands per k-point  (cuFFT/cuBLAS on GPU)
+        DavidsonSolver  → lowest N_occ bands per k-point
         DensityBuilder  → ρ(G) + Pulay mixing
         ConvergenceCheck→ ||Δρ|| < tol
   → PWResult{energy [Ry], energy_ha, converged, iterations}
@@ -249,10 +249,40 @@ rebuilt inside each `run()`, so the same solver handles a moving geometry (AIMD,
 optimization). Under MPI the solver distributes k-points round-robin across
 `MPI_COMM_WORLD` and Allreduces the density and band-energy accumulations.
 
-A GPU path exists: `cuda::pw::pw_scf` runs the Davidson hot path on the device
-(cuFFT for \f$H\psi\f$, cuBLAS for the subspace algebra) and reuses the CPU
-`internal` helpers for every other step, so CPU and CUDA agree numerically
-(asserted by `tests/cuda/planewave/test_pw_si.cu`).
+A GPU path exists as the same method shape: `cuda::pw::PW` has the same public
+members as `cpu::pw::PW` plus `build(reference)` / `run(frame)` /
+`last_result()`, and returns the same `PWResult`. Both halves of the SCF
+iteration are device-resident: the Davidson hot path (cuFFT for \f$H\psi\f$,
+cuBLAS for the subspace algebra) and the whole density side — \f$\rho(G) \to
+V_H \to V_{xc} \to V_\mathrm{eff}(r)\f$, Pulay mixing and the energy/residual
+reductions. Per SCF iteration **no \f$O(N_G)\f$ or \f$O(N_r)\f$ array crosses
+PCIe**; what does is the \f$\le 8\times 8\f$ Pulay Gram matrix, its
+coefficients, and five energy/residual scalars. The host keeps the geometry
+work (problem assembly, per-k table binding), the Pulay coefficient solve
+(bit-for-bit the CPU's `solve_pulay_coefficients`) and the energy report.
+
+```cpp
+cuda::pw::PW pw;
+pw.upf_path = "Si_lda_nc.upf";
+pw.ecut_ry = 15.0;
+pw.k_mesh = 2;
+pw.xc = cpu::scf::XCType::LSDA;   // required on this backend
+pw.build(frame);
+const auto& r = pw.run(frame);    // r.energy [Ry], r.energy_ha [Ha]
+```
+
+The device path is a strict subset of the CPU path, and a member it cannot
+honour makes `run()` throw with a how-to instead of silently computing a
+different Hamiltonian: only `XCType::LSDA`, only restricted
+(`spin_polarized = false`, `multiplicity = 1`), only fixed closed-shell
+occupations (`smearing = Smearing::none`). k-points are not distributed across
+MPI ranks on this backend — every rank computes every k-point, so
+`n_kpts_local == n_kpts`. Use `cpu::pw::PW` for GGA, collinear spin, metallic
+smearing, or MPI k-point parallelism.
+
+CPU↔CUDA agreement at identical settings is asserted end-to-end by
+`regressions/pw/pw-cuda-lda-si/` (`--device=both`), which also carries the
+ABINIT-class literature window.
 
 ## Where to read the code
 

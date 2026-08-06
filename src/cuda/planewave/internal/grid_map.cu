@@ -1,4 +1,4 @@
-/// @file cuda/pw/internal/grid_map.cu
+/// @file cuda/planewave/internal/grid_map.cu
 #include "atomiverse/cuda/planewave/internal/grid_map.cuh"
 
 namespace ATV {
@@ -10,6 +10,11 @@ namespace {
 
 /// @brief Fold Miller (h,k,l) onto the half-complex grid index, mirroring the
 ///        CPU pad loops. Returns the linear index and sets @p conj.
+///
+/// The `kx > nx/2` test deliberately excludes `kx == nx/2`: at the Nyquist
+/// plane the mirror is itself, so G and −G collide with conjugate values.
+/// See the race note in grid_map.cuh — unreachable on the PW path because the
+/// FFT grid spans ~2× the G-sphere extent.
 __device__ __forceinline__ int fold_index(int h, int k, int l, int nx, int ny,
                                           int nz, bool& conj) {
     int kx = ((h % nx) + nx) % nx;

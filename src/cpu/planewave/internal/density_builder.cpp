@@ -145,10 +145,11 @@ void DensityBuilder::finish(PWWorkspace& ws) {
     }
 
     // ── Pulay/DIIS mixing — the shared CPU/CUDA implementation in
-    // internal::pulay_mix (pw_setup.cpp), driven by this builder's
-    // configured beta / history depth.
-    ws.mix_beta = mix_beta_;
-    ws.pulay_depth = pulay_depth_;
+    // internal::pulay_mix (pw_setup.cpp), driven by the LIVE workspace
+    // beta / history depth. This builder must not write them: it is
+    // constructed once per method object while `mix_beta` / `pulay_depth`
+    // are public members a caller may change between run()s, so a
+    // constructor snapshot here silently defeated PW::run's assignment.
     internal::pulay_mix(ws);
 }
 

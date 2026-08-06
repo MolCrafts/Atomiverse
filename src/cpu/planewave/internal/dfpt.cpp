@@ -1022,7 +1022,7 @@ dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     PoissonSolver poisson;
     XCBuilder xc;
     VeffBuilder veff;
-    DensityBuilder density{AccReal(method.mix_beta), method.pulay_depth};
+    DensityBuilder density;
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     DfptGammaOutput out;
@@ -1849,7 +1849,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     PoissonSolver poisson;
     XCBuilder xc;
     VeffBuilder veff;
-    DensityBuilder density{AccReal(method.mix_beta), method.pulay_depth};
+    DensityBuilder density;
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     DfptGammaOutput out;
@@ -2549,7 +2549,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     PoissonSolver poisson;
     XCBuilder xc;
     VeffBuilder veff;
-    DensityBuilder density{AccReal(method.mix_beta), method.pulay_depth};
+    DensityBuilder density;
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     DfptQOutput out;
@@ -3492,7 +3492,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     PoissonSolver poisson;
     XCBuilder xc;
     VeffBuilder veff;
-    DensityBuilder density{AccReal(method.mix_beta), method.pulay_depth};
+    DensityBuilder density;
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     DfptQOutput out;

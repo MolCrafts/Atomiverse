@@ -1,4 +1,4 @@
-/// @file cuda/pw/internal/poisson.cuh
+/// @file cuda/planewave/internal/poisson.cuh
 /// @brief Reciprocal-space Hartree (Poisson) solver — device kernel, the CUDA
 ///        mirror of cpu::pw::PW_Poisson::launch.
 #pragma once

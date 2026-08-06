@@ -1,14 +1,15 @@
-/// @file cuda/pw/internal/device_solver.cuh
+/// @file cuda/planewave/internal/device_solver.cuh
 /// @brief Device-resident plane-wave band solver (block Davidson) and
-///        density accumulator used by `cuda::pw::pw_scf`.
+///        density accumulator used by `cuda::pw::PW`.
 ///
-/// Owned by the CUDA PW SCF driver, never registered in any Driver Plan
+/// Owned by the CUDA PW method object, never registered in any Driver Plan
 /// (same internal-helper contract as `cuda::scf::internal::*`). All
 /// per-band hot loops run on the GPU: H·ψ via cuFFT Z2Z + V_eff(r)
 /// multiply + Kleinman-Bylander projector GEMVs, subspace algebra via
-/// cuBLAS ZGEMM. Only the small dense subspace eigenproblem (Jacobi)
-/// and the Davidson bookkeeping stay on the host, reusing the exact CPU
-/// helpers from `cpu/pw/internal/pw_subspace.h` for numerical parity.
+/// cuBLAS ZGEMM. Only the small dense subspace eigenproblem (complex
+/// Hermitian Jacobi) and the Davidson bookkeeping stay on the host,
+/// reusing the exact CPU helpers from `cpu/planewave/internal/pw_subspace.h`
+/// for numerical parity.
 #pragma once
 
 #include "atomiverse/core/precision.h"
@@ -26,16 +27,21 @@ namespace internal {
 
 /// @brief GPU band solver for one plane-wave SCF run.
 ///
-/// Lifecycle per SCF iteration (mirrors the CPU loop in pw_scf.cpp):
+/// The real-space V_eff(r) it reads and the density accumulator it writes are
+/// **owned by `internal::DeviceDensity`** and borrowed through `bind_grids`,
+/// so neither crosses PCIe during the SCF. Lifecycle:
 /// @code
-///   solver.set_veff(ws.V_eff_r.data());          // once per iteration
-///   solver.zero_density();
-///   for each k-point:
-///     // ws.gvec / ws.n_g / ws.T_G bound to the k-sphere by the caller
-///     solver.set_kpoint(ws);
-///     solver.solve(ws, tol, max_dav);            // ws.eigenvalues filled
-///     solver.accumulate_density(weight, ws.omega);
-///   solver.fetch_density_g(gv0, rho_g_out);      // ρ(G) on the Γ-sphere
+///   solver.bind_grids(den.density_accumulator(),      // once per run
+///                     den.effective_potential());
+///   for each SCF iteration:
+///     den.hartree(); den.exchange_correlation(); den.assemble_veff();
+///     den.zero_accumulator();
+///     for each k-point:
+///       // ws.gvec / ws.n_g / ws.T_G bound to the k-sphere by the caller
+///       solver.set_kpoint(ws);
+///       solver.solve(ws, max_dav);                 // ws.eigenvalues filled
+///       solver.accumulate_density(weight, ws.omega);
+///     den.collect(); den.mix(iter); den.reduce(vol);
 /// @endcode
 ///
 /// Internally all math is double precision (matching the CPU path, which
@@ -49,8 +55,16 @@ class DeviceBandSolver {
     DeviceBandSolver(const DeviceBandSolver&) = delete;
     DeviceBandSolver& operator=(const DeviceBandSolver&) = delete;
 
-    /// @brief Upload V_eff(r) (size nr) for the current SCF iteration.
-    void set_veff(const AccReal* v_eff_r);
+    /// @brief Bind the device grids owned by `internal::DeviceDensity`.
+    ///
+    /// The solver reads V_eff(r) and writes the density accumulator in place;
+    /// it owns neither buffer and never copies them across PCIe. Must be
+    /// called once per SCF run, before the first `solve()`.
+    ///
+    /// @param d_rho_accum Real-space density accumulator, nr doubles (device).
+    /// @param d_veff_r    Real-space effective potential, nr doubles (device)
+    ///                    [Hartree].
+    void bind_grids(double* d_rho_accum, const double* d_veff_r);
 
     /// @brief Bind the k-point currently selected in `ws` (gvec/n_g/T_G):
     /// uploads T(G), G-vectors, the G→FFT-grid index map and rebuilds the
@@ -58,21 +72,18 @@ class DeviceBandSolver {
     void set_kpoint(const cpu::pw::internal::PWWorkspace& ws);
 
     /// @brief Block-Davidson diagonalization for the bound k-point,
-    /// algorithmically identical to `cpu::pw::PW_Davidson::launch`.
-    /// Writes ws.eigenvalues; band wavefunctions stay device-resident.
-    void solve(cpu::pw::internal::PWWorkspace& ws, AccReal tol, int max_iter);
+    /// algorithmically identical to `cpu::pw::internal::DavidsonSolver::step`,
+    /// including its fixed |R|² residual threshold. Writes ws.eigenvalues;
+    /// band wavefunctions stay device-resident.
+    /// @param ws       Workspace with the k-sphere bound (gvec/n_g/T_G).
+    /// @param max_iter Maximum Davidson expansion rounds (capped at 20).
+    void solve(cpu::pw::internal::PWWorkspace& ws, int max_iter);
 
-    /// @brief Reset the device real-space density accumulator.
-    void zero_density();
-
-    /// @brief rho_r += weight·2·|ψ_b(r)|²/Ω over the bands of the most
-    /// recent solve() (occupations = 2, as on CPU).
+    /// @brief rho_accum += weight·2·|ψ_b(r)|²/Ω over the bands of the most
+    /// recent solve() (occupations = 2, as on CPU). Writes the borrowed
+    /// accumulator; the buffer is zeroed by
+    /// `DeviceDensity::zero_accumulator()`.
     void accumulate_density(AccReal weight, AccReal omega);
-
-    /// @brief Forward-FFT the accumulated density and gather ρ(G) on the
-    /// Γ-centred sphere `gv0` (host output, gv0.count() entries).
-    void fetch_density_g(const cpu::pw::internal::GVectorList& gv0,
-                         std::complex<AccReal>* rho_g);
 
     /// @brief Test hook: H·ψ for one host vector on the bound k-point
     /// (H2D → apply_h → D2H). Used by the band-parity diagnostics to
@@ -97,9 +108,10 @@ class DeviceBandSolver {
     cublasHandle_t blas_ = nullptr;
 
     // Dense-grid buffers
-    cufftDoubleComplex* d_grid_ = nullptr; ///< nr c2c work grid.
-    double* d_veff_ = nullptr;             ///< nr V_eff(r).
-    double* d_rho_ = nullptr;              ///< nr density accumulator.
+    cufftDoubleComplex* d_grid_ = nullptr; ///< nr c2c work grid (owned).
+    // Borrowed from internal::DeviceDensity — never allocated or freed here.
+    double* rho_accum_ = nullptr;     ///< nr density accumulator (device).
+    const double* veff_r_ = nullptr;  ///< nr V_eff(r) [Hartree] (device).
 
     // Per-k-point buffers (sized to ng_)
     int* d_idx_ = nullptr;                   ///< G → flat FFT-grid index.

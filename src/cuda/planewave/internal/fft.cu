@@ -1,4 +1,4 @@
-/// @file cuda/pw/internal/fft.cu
+/// @file cuda/planewave/internal/fft.cu
 /// @brief cuFFT wrapper implementation — CUDA mirror of the FFTW3 plane-wave
 ///        FFT. Built only with ATV_BUILD_PW && ATV_BUILD_CUDA.
 
@@ -32,7 +32,7 @@ FFTPlan3D::FFTPlan3D(int nx, int ny, int nz, cudaStream_t stream)
 
     // cuFFT takes dims slowest-first; pass (nz, ny, nx) so the contiguous axis
     // is x — matching FFTW's fftw_plan_dft_*_3d(nz, ny, nx, ...) in the CPU
-    // class and the `ix + nx*(iy + ny*iz)` indexing used throughout pw_scf.
+    // class and the `ix + nx*(iy + ny*iz)` indexing used throughout pw_solver.
     try {
         check_cufft(cufftPlan3d(&r2c_, nz, ny, nx, CUFFT_D2Z),
                     "cufftPlan3d D2Z");

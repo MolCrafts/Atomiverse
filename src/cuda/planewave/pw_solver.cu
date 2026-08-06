@@ -1,0 +1,233 @@
+/// @file cuda/planewave/pw_solver.cu
+/// @brief cuda::pw::PW — GPU plane-wave SCF method object.
+///
+/// Mirrors the CPU SCF loop in src/cpu/planewave/pw_solver.cpp stage for
+/// stage. Problem assembly (`setup_pw_problem`) and the per-k table binding
+/// stay on the host — they are geometry work, not per-iteration work. Both
+/// halves of the iteration are device-resident:
+///
+///   * band side — `internal::DeviceBandSolver` (cuFFT + cuBLAS Davidson),
+///   * density side — `internal::DeviceDensity` (ρ(G) → V_H → V_xc →
+///     V_eff(r) → Pulay mixing → energy/residual reductions).
+///
+/// The two meet only through two device pointers bound once per run
+/// (`bind_grids`), so **no O(N_G) or O(N_r) density-side array crosses PCIe
+/// per SCF iteration**. The claim is scoped to `DeviceDensity` on purpose —
+/// the band side still transfers per iteration (see below). What the density
+/// side still crosses with: the Pulay Gram matrix (≤ 8²·16 B, only once the
+/// history holds ≥ 2 entries), its ≤ 8 coefficients, and 5 energy/residual
+/// doubles. Each is documented at its call site in device_density.cu.
+///
+/// Still NOT device-resident (named, not claimed fixed): the Davidson round
+/// trip of the n_sub² subspace Hamiltonian and Ritz rotation, its
+/// host-pointer `cublasDznrm2` calls, and the per-k index/T(G)/β table rebuild
+/// in `set_kpoint` — all inside device_solver.cu, all out of scope here.
+///
+/// Logging goes through `cpu::pw::internal::log_iteration_energy` on purpose:
+/// `core/log.h` is CUDA-free and must not be included from a `.cu`.
+
+#include "atomiverse/cuda/planewave/pw_solver.cuh"
+
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/precision.h"
+#include "atomiverse/cpu/planewave/internal/convergence.h"
+#include "atomiverse/cpu/planewave/internal/pw_setup.h"
+#include "atomiverse/cpu/planewave/internal/pw_workspace.h"
+#include "atomiverse/cpu/planewave/internal/upf_reader.h"
+#include "atomiverse/cpu/planewave/qe_units.h"
+#include "atomiverse/cuda/planewave/internal/device_density.cuh"
+#include "atomiverse/cuda/planewave/internal/device_solver.cuh"
+
+#include <complex>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace ATV {
+namespace cuda {
+namespace pw {
+
+void PW::validate_members() const {
+    // XCType::LSDA is the ONLY functional with a device path: the kernel in
+    // cuda/planewave/internal/xc_lda.cu is hard-wired to Slater + VWN5.
+    // Testing `xc != LSDA` rather than `is_gga(xc)` keeps the gate honest if
+    // a second non-GGA functional is ever added to the enum.
+    if (xc != cpu::scf::XCType::LSDA)
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: xc has no device path — only XCType::LSDA "
+            "(Slater + VWN5) is implemented on the GPU. Set pw.xc = "
+            "cpu::scf::XCType::LSDA, or run this functional on cpu::pw::PW.");
+    if (spin_polarized)
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: spin_polarized=true has no device path — the "
+            "device density accumulator is fixed at nspin=1 with 2 electrons "
+            "per band. Use cpu::pw::PW for collinear spin.");
+    if (multiplicity != 1)
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: multiplicity != 1 requires spin_polarized, "
+            "which has no device path. Use cpu::pw::PW.");
+    if (smearing != Smearing::none)
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: smearing has no device path — occupations are "
+            "fixed closed-shell on the GPU (degauss / mp_order / extra_bands "
+            "are inert here). Use cpu::pw::PW for metallic smearing.");
+    // k_mesh = 0 is the dangerous one: generate_mp_mesh loops zero times and
+    // returns an empty grid without throwing, so run() would iterate over a
+    // density that is never accumulated and report a converged e_band of 0.
+    if (k_mesh < 1)
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: k_mesh must be >= 1 (Monkhorst-Pack mesh "
+            "size per dimension; 1 = Γ-point only)");
+    if (!(ecut_ry > 0.0))
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: ecut_ry must be > 0 [Ry]");
+    if (!(tol > 0.0))
+        throw std::invalid_argument("cuda::pw::PW::run: tol must be > 0");
+    if (!(mix_beta > 0.0))
+        throw std::invalid_argument("cuda::pw::PW::run: mix_beta must be > 0");
+    if (pulay_depth < 1)
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: pulay_depth must be >= 1");
+    if (max_iter < 1)
+        throw std::invalid_argument("cuda::pw::PW::run: max_iter must be >= 1");
+}
+
+void PW::build(const cpu::Frame& reference) {
+    if (!upf_path.empty()) {
+        // Validate the pseudopotential up front (throws on parse error);
+        // setup_pw_problem() re-reads it at each run().
+        (void)cpu::pw::internal::read_upf_v1(upf_path);
+    } else {
+        // Validate the toy valence table covers every atom type up front
+        // (throws on unsupported Z — no silent 0-electron fallback).
+        const int* sp_type = reference.span(kAtom_type);
+        for (size_t i = 0; i < reference.nlocal(); ++i)
+            (void)cpu::pw::internal::valence_from_z(sp_type[i]);
+    }
+    built_ = true;
+}
+
+PWResult& PW::run(const cpu::Frame& frame) {
+    // Reject unsupported members before any allocation or CUDA call.
+    validate_members();
+
+    // Lazy build — convenience for callers that skip explicit build().
+    if (!built_)
+        build(frame);
+
+    result_ = PWResult{};
+
+    // ── Shared problem assembly (identical to the CPU backend) ──
+    // PWProblem is non-copyable (ws.gvec aliases gv0): construct in place.
+    cpu::pw::internal::PWProblem prob;
+    cpu::pw::internal::setup_pw_problem(frame, upf_path, ecut_ry, k_mesh, prob);
+    cpu::pw::internal::PWWorkspace& ws = prob.ws;
+
+    if (prob.n_elec % 2 != 0)
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: " + std::to_string(prob.n_elec)
+            + " valence electrons is not closed-shell — the device band "
+              "solver occupies every band with exactly 2 electrons. Use "
+              "cpu::pw::PW with smearing or spin_polarized.");
+
+    // Mixing members are the method's, not the workspace defaults. The device
+    // mixer reads them through DeviceDensity's constructor; the workspace
+    // fields are kept in sync so the host `ws` never lies about the run.
+    ws.mix_beta = AccReal(mix_beta);
+    ws.pulay_depth = pulay_depth;
+
+    // Density-sphere size. ws.n_g is rebound to each k-sphere inside the
+    // loop, so it is never a stable density-sphere size — capture once.
+    const int ng0 = prob.gv0.count();
+    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_bands = prob.n_bands;
+    const AccReal vol_bohr = prob.vol_bohr;
+
+    // No MPI k-point distribution on this backend: every rank owns every k.
+    result_.n_kpts = n_kpts;
+    result_.n_kpts_local = n_kpts;
+
+    // Device state: one-time H2D of the geometry-constant G-sphere tables and
+    // the atomic ρ(G) seed, then nothing scientific leaves the GPU.
+    internal::DeviceDensity den(prob, mix_beta, pulay_depth);
+    internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands);
+    solver.bind_grids(den.density_accumulator(), den.effective_potential());
+
+    // Same convergence policy object the CPU backend uses (warmup = 2); the
+    // device reduces ‖ρ − ρ_old‖₂ itself, so feed the norm overload.
+    cpu::pw::internal::ConvergenceCheck conv{AccReal(tol), 2};
+
+    for (int iter = 0; iter < max_iter; ++iter) {
+        den.hartree();              // PoissonSolver::step
+        den.exchange_correlation(); // XCBuilder::step(ws, LSDA)
+        den.assemble_veff();        // VeffBuilder::step
+        den.zero_accumulator();     // DensityBuilder::begin
+
+        AccReal e_band = 0;
+        for (int ik = 0; ik < n_kpts; ++ik) {
+            const int n_g_k = prob.gv_k[ik].count();
+            auto* saved_gvec = ws.gvec;
+            ws.gvec = &prob.gv_k[ik];
+            ws.n_g = n_g_k;
+            // Nonlocal/wfc tables live on q = k+G: bind this k's tables.
+            if (!prob.kb_proj_k.empty())
+                ws.kb_proj = prob.kb_proj_k[ik];
+            if (!prob.atom_wfc_k.empty())
+                ws.atom_wfc = prob.atom_wfc_k[ik];
+            // Kinetic on q = k+G, sized to this k-sphere (matches the CPU).
+            ws.T_G.resize({static_cast<std::size_t>(n_g_k)});
+            for (int ig = 0; ig < n_g_k; ++ig)
+                ws.T_G[ig] = prob.gv_k[ik].ekin[ig];
+
+            solver.set_kpoint(ws);
+            solver.solve(ws, 40);
+
+            const AccReal weight = prob.kg.weights[ik];
+            // Eigenvalues are the only band-side quantity the host needs;
+            // they are already in ws (the Davidson subspace solve is a host
+            // step). No wavefunction or density array is read back.
+            for (int b = 0; b < n_bands; ++b)
+                e_band += weight * ws.eigenvalues[b] * AccReal(2);
+
+            solver.accumulate_density(weight, ws.omega);
+
+            ws.gvec = saved_gvec;
+            ws.n_g = ng0;
+        }
+
+        den.collect();  // DensityBuilder::finish, first half
+        den.mix(iter);  // pulay_mix (host solve of the ≤ 8×8 DIIS system)
+        const auto s = den.reduce(static_cast<double>(vol_bohr));
+
+        // The shared logger reads ws.E_xc; every other host density-side
+        // array is stale after W2 and is deliberately never read again.
+        ws.E_xc = AccReal(s.e_xc);
+
+        // The SHARED decomposition. `iteration_energy` itself cannot be
+        // called: its Parseval G-loop reads ws.rho_G / ws.V_*_G, which after
+        // W2 live only on the device. Its combiner half can, and does — one
+        // definition of e_one / total for both backends, so the
+        // catastrophic-cancellation term order cannot drift apart.
+        const auto terms = cpu::pw::internal::combine_energy_terms(
+            e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+            ws.E_xc, prob.ew_total, ws.E_aug);
+
+        cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total, iter);
+
+        result_.iterations = iter + 1;
+        result_.energy_ha = static_cast<double>(terms.total);
+        result_.energy =
+            result_.energy_ha / cpu::pw::qe_units::rydberg_to_hartree;
+
+        if (conv.step(AccReal(s.resid))) {
+            result_.converged = true;
+            break;
+        }
+    }
+
+    return result_;
+}
+
+} // namespace pw
+} // namespace cuda
+} // namespace ATV

@@ -748,6 +748,57 @@ void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
     }
 }
 
+void solve_pulay_coefficients(const AccReal* B, int m, AccReal* c_out) {
+    // Solve B·c = 1 (with constraint Σc=1 via Lagrangian)
+    // Augmented system: [B  1] [c] = [0]
+    //                    [1  0] [λ]   [1]
+    const int depth = m;
+    int n = depth + 1;
+    std::vector<AccReal> A(n * n, AccReal(0));
+    for (int i = 0; i < depth; ++i)
+        for (int j = 0; j < depth; ++j)
+            A[i * n + j] = B[i * depth + j];
+    for (int i = 0; i < depth; ++i)
+        A[i * n + depth] = A[depth * n + i] = AccReal(1);
+
+    std::vector<AccReal> rhs(n, AccReal(0));
+    rhs[depth] = AccReal(1);
+
+    // Solve via Gaussian elimination
+    std::vector<AccReal> c(n, AccReal(0));
+    auto aug = A;
+    auto b = rhs;
+    for (int k = 0; k < n; ++k) {
+        // Pivot
+        int imax = k;
+        for (int i = k + 1; i < n; ++i)
+            if (std::abs(aug[i * n + k]) > std::abs(aug[imax * n + k]))
+                imax = i;
+        if (imax != k) {
+            for (int j = 0; j < n; ++j)
+                std::swap(aug[k * n + j], aug[imax * n + j]);
+            std::swap(b[k], b[imax]);
+        }
+        if (std::abs(aug[k * n + k]) < AccReal(1e-14))
+            continue;
+        for (int i = k + 1; i < n; ++i) {
+            AccReal factor = aug[i * n + k] / aug[k * n + k];
+            for (int j = k; j < n; ++j)
+                aug[i * n + j] -= factor * aug[k * n + j];
+            b[i] -= factor * b[k];
+        }
+    }
+    for (int k = n - 1; k >= 0; --k) {
+        AccReal sum = b[k];
+        for (int j = k + 1; j < n; ++j)
+            sum -= aug[k * n + j] * c[j];
+        if (std::abs(aug[k * n + k]) > AccReal(1e-14))
+            c[k] = sum / aug[k * n + k];
+    }
+    for (int i = 0; i < depth; ++i)
+        c_out[i] = c[i];
+}
+
 void pulay_mix(PWWorkspace& ws) {
     // Pulay/DIIS mixing (QE's Anderson/Broyden simplified)
     // Store residual F = ρ_out - ρ_in
@@ -780,51 +831,11 @@ void pulay_mix(PWWorkspace& ws) {
                 B[i * depth + j] = B[j * depth + i] = dot;
             }
         }
-        // Solve B·c = 1 (with constraint Σc=1 via Lagrangian)
-        // Augmented system: [B  1] [c] = [0]
-        //                    [1  0] [λ]   [1]
-        int n = depth + 1;
-        std::vector<AccReal> A(n * n, AccReal(0));
-        for (int i = 0; i < depth; ++i)
-            for (int j = 0; j < depth; ++j)
-                A[i * n + j] = B[i * depth + j];
-        for (int i = 0; i < depth; ++i)
-            A[i * n + depth] = A[depth * n + i] = AccReal(1);
-
-        std::vector<AccReal> rhs(n, AccReal(0));
-        rhs[depth] = AccReal(1);
-
-        // Solve via Gaussian elimination
-        std::vector<AccReal> c(n, AccReal(0));
-        auto aug = A;
-        auto b = rhs;
-        for (int k = 0; k < n; ++k) {
-            // Pivot
-            int imax = k;
-            for (int i = k + 1; i < n; ++i)
-                if (std::abs(aug[i * n + k]) > std::abs(aug[imax * n + k]))
-                    imax = i;
-            if (imax != k) {
-                for (int j = 0; j < n; ++j)
-                    std::swap(aug[k * n + j], aug[imax * n + j]);
-                std::swap(b[k], b[imax]);
-            }
-            if (std::abs(aug[k * n + k]) < AccReal(1e-14))
-                continue;
-            for (int i = k + 1; i < n; ++i) {
-                AccReal factor = aug[i * n + k] / aug[k * n + k];
-                for (int j = k; j < n; ++j)
-                    aug[i * n + j] -= factor * aug[k * n + j];
-                b[i] -= factor * b[k];
-            }
-        }
-        for (int k = n - 1; k >= 0; --k) {
-            AccReal sum = b[k];
-            for (int j = k + 1; j < n; ++j)
-                sum -= aug[k * n + j] * c[j];
-            if (std::abs(aug[k * n + k]) > AccReal(1e-14))
-                c[k] = sum / aug[k * n + k];
-        }
+        // Constrained least-squares coefficients — the shared CPU/CUDA
+        // solve (`cuda::pw::internal::DeviceDensity::mix` calls the same
+        // function on its cublasZgemm-built Gram matrix).
+        std::vector<AccReal> c(depth, AccReal(0));
+        solve_pulay_coefficients(B.data(), depth, c.data());
         // Build mixed density: ρ_new = Σ c_i (ρ_in^(i) + α·F^(i))
         AccReal alpha = ws.mix_beta;
         for (int ig = 0; ig < ws.n_g; ++ig)
@@ -841,6 +852,21 @@ void pulay_mix(PWWorkspace& ws) {
     }
 }
 
+PWEnergyTerms combine_energy_terms(AccReal e_band, AccReal e_h,
+                                   AccReal e_xc_int, AccReal e_loc,
+                                   AccReal e_xc, AccReal ew_total,
+                                   AccReal e_aug) {
+    PWEnergyTerms t;
+    t.e_h = e_h;
+    t.e_xc_int = e_xc_int;
+    t.e_loc = e_loc;
+    // one-electron = Σ ε_i - ∫ρ V_H - ∫ρ V_xc
+    t.e_one = e_band - AccReal(2.0) * t.e_h - t.e_xc_int;
+    // total = one-electron + Hartree + XC + Ewald + augmentation
+    t.total = t.e_one + t.e_h + e_xc + ew_total + e_aug;
+    return t;
+}
+
 PWEnergyTerms iteration_energy(const PWWorkspace& ws, AccReal e_band,
                                AccReal ew_total, AccReal vol_bohr) {
     // Energy decomposition
@@ -848,22 +874,19 @@ PWEnergyTerms iteration_energy(const PWWorkspace& ws, AccReal e_band,
     // imaginary parts contribute (ρ_G is complex for any cell without
     // inversion symmetry about the origin; taking Re·Re only silently
     // dropped the Im·Im half and tilted E(V)).
-    PWEnergyTerms t;
+    AccReal e_h = 0, e_xc_int = 0, e_loc = 0;
     for (int i = 0; i < ws.n_g; ++i) {
         std::complex<AccReal> rh = ws.rho_G[i];
-        t.e_h += AccReal(0.5) * std::real(std::conj(rh) * ws.V_H_G[i]);
-        t.e_xc_int += std::real(std::conj(rh) * ws.V_xc_G[i]);
-        t.e_loc += std::real(std::conj(rh) * ws.V_loc_G[i]);
+        e_h += AccReal(0.5) * std::real(std::conj(rh) * ws.V_H_G[i]);
+        e_xc_int += std::real(std::conj(rh) * ws.V_xc_G[i]);
+        e_loc += std::real(std::conj(rh) * ws.V_loc_G[i]);
     }
-    t.e_loc *= vol_bohr;
-    t.e_h *= vol_bohr;
-    t.e_xc_int *= vol_bohr;
+    e_loc *= vol_bohr;
+    e_h *= vol_bohr;
+    e_xc_int *= vol_bohr;
 
-    // one-electron = Σ ε_i - ∫ρ V_H - ∫ρ V_xc
-    t.e_one = e_band - AccReal(2.0) * t.e_h - t.e_xc_int;
-    // total = one-electron + Hartree + XC + Ewald + augmentation
-    t.total = t.e_one + t.e_h + ws.E_xc + ew_total + ws.E_aug;
-    return t;
+    return combine_energy_terms(e_band, e_h, e_xc_int, e_loc, ws.E_xc, ew_total,
+                                ws.E_aug);
 }
 
 void log_iteration_energy(const PWEnergyTerms& terms, const PWWorkspace& ws,

@@ -1,6 +1,11 @@
-/// @file tests/cuda/pw/test_veff.cu
+/// @file tests/cuda/planewave/test_veff.cu
 /// @brief Verifies cuda::pw::internal::veff_assemble_g against the host
 ///        elementwise sum V_eff(G) = V_loc(G) + V_H(G) + V_xc(G).
+///
+/// V_loc(G) carries the structure factor Σ_a e^{-iG·R_a} and is therefore
+/// COMPLEX for any cell without inversion symmetry about the origin. The
+/// reference inputs below all have a nonzero Im[V_loc]: a real-only V_loc
+/// test cannot detect a launcher that drops the imaginary part.
 #include "atomiverse/cuda/planewave/internal/veff.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
@@ -20,17 +25,21 @@ void* dmalloc(size_t bytes) {
 
 TEST(CudaPWVeff, MatchesHostSum) {
     const int n_g = 3333;
-    std::vector<double> vloc(n_g);
-    std::vector<cufftDoubleComplex> vh(n_g), vxc(n_g);
+    std::vector<cufftDoubleComplex> vloc(n_g), vh(n_g), vxc(n_g);
     std::mt19937 rng(99);
     std::uniform_real_distribution<double> d(-2, 2);
+    double max_im_vloc = 0;
     for (int i = 0; i < n_g; ++i) {
-        vloc[i] = d(rng);
+        vloc[i] = {d(rng), d(rng)};
         vh[i] = {d(rng), d(rng)};
         vxc[i] = {d(rng), d(rng)};
+        max_im_vloc = std::max(max_im_vloc, std::abs(vloc[i].y));
     }
+    // Guard the guard: the inputs must actually exercise Im[V_loc].
+    ASSERT_GT(max_im_vloc, 0.1);
 
-    auto* d_vloc = static_cast<double*>(dmalloc(n_g * sizeof(double)));
+    auto* d_vloc = static_cast<cufftDoubleComplex*>(
+        dmalloc(n_g * sizeof(cufftDoubleComplex)));
     auto* d_vh = static_cast<cufftDoubleComplex*>(
         dmalloc(n_g * sizeof(cufftDoubleComplex)));
     auto* d_vxc = static_cast<cufftDoubleComplex*>(
@@ -38,7 +47,7 @@ TEST(CudaPWVeff, MatchesHostSum) {
     auto* d_veff = static_cast<cufftDoubleComplex*>(
         dmalloc(n_g * sizeof(cufftDoubleComplex)));
 
-    cudaMemcpy(d_vloc, vloc.data(), n_g * sizeof(double),
+    cudaMemcpy(d_vloc, vloc.data(), n_g * sizeof(cufftDoubleComplex),
                cudaMemcpyHostToDevice);
     cudaMemcpy(d_vh, vh.data(), n_g * sizeof(cufftDoubleComplex),
                cudaMemcpyHostToDevice);
@@ -54,8 +63,8 @@ TEST(CudaPWVeff, MatchesHostSum) {
 
     double max_err = 0;
     for (int i = 0; i < n_g; ++i) {
-        double rx = vloc[i] + vh[i].x + vxc[i].x;
-        double ry = vh[i].y + vxc[i].y;
+        double rx = vloc[i].x + vh[i].x + vxc[i].x;
+        double ry = vloc[i].y + vh[i].y + vxc[i].y;
         max_err = std::max(max_err, std::abs(veff[i].x - rx));
         max_err = std::max(max_err, std::abs(veff[i].y - ry));
     }
@@ -70,21 +79,21 @@ TEST(CudaPWVeff, MatchesHostSum) {
 // In-place aliasing onto the V_xc buffer.
 TEST(CudaPWVeff, InPlaceAliasing) {
     const int n_g = 777;
-    std::vector<double> vloc(n_g);
-    std::vector<cufftDoubleComplex> vh(n_g), vxc(n_g);
+    std::vector<cufftDoubleComplex> vloc(n_g), vh(n_g), vxc(n_g);
     std::mt19937 rng(3);
     std::uniform_real_distribution<double> d(-1, 1);
     for (int i = 0; i < n_g; ++i) {
-        vloc[i] = d(rng);
+        vloc[i] = {d(rng), d(rng)};
         vh[i] = {d(rng), d(rng)};
         vxc[i] = {d(rng), d(rng)};
     }
-    auto* d_vloc = static_cast<double*>(dmalloc(n_g * sizeof(double)));
+    auto* d_vloc = static_cast<cufftDoubleComplex*>(
+        dmalloc(n_g * sizeof(cufftDoubleComplex)));
     auto* d_vh = static_cast<cufftDoubleComplex*>(
         dmalloc(n_g * sizeof(cufftDoubleComplex)));
     auto* d_vxc = static_cast<cufftDoubleComplex*>(
         dmalloc(n_g * sizeof(cufftDoubleComplex)));
-    cudaMemcpy(d_vloc, vloc.data(), n_g * sizeof(double),
+    cudaMemcpy(d_vloc, vloc.data(), n_g * sizeof(cufftDoubleComplex),
                cudaMemcpyHostToDevice);
     cudaMemcpy(d_vh, vh.data(), n_g * sizeof(cufftDoubleComplex),
                cudaMemcpyHostToDevice);
@@ -100,8 +109,8 @@ TEST(CudaPWVeff, InPlaceAliasing) {
 
     double max_err = 0;
     for (int i = 0; i < n_g; ++i) {
-        double rx = vloc[i] + vh[i].x + vxc[i].x;
-        double ry = vh[i].y + vxc[i].y;
+        double rx = vloc[i].x + vh[i].x + vxc[i].x;
+        double ry = vloc[i].y + vh[i].y + vxc[i].y;
         max_err = std::max(max_err, std::abs(veff[i].x - rx));
         max_err = std::max(max_err, std::abs(veff[i].y - ry));
     }

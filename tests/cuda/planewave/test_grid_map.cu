@@ -1,4 +1,4 @@
-/// @file tests/cuda/pw/test_grid_map.cu
+/// @file tests/cuda/planewave/test_grid_map.cu
 /// @brief Verifies cuda::pw::internal scatter/gather between the sparse
 ///        G-vector list and the dense Hermitian half-complex FFT grid against
 ///        an identical host fold (the CPU PW_LDA / PW_Veff pad arithmetic).
@@ -76,6 +76,101 @@ TEST(CudaPWGridMap, ScatterMatchesHostFold) {
         ref[idx].x = g.val[ig].x;
         ref[idx].y = conj ? -g.val[ig].y : g.val[ig].y;
     }
+
+    auto* d_val = static_cast<cufftDoubleComplex*>(
+        dmalloc(n_g * sizeof(cufftDoubleComplex)));
+    auto* d_h = static_cast<int*>(dmalloc(n_g * sizeof(int)));
+    auto* d_k = static_cast<int*>(dmalloc(n_g * sizeof(int)));
+    auto* d_l = static_cast<int*>(dmalloc(n_g * sizeof(int)));
+    auto* d_hc = static_cast<cufftDoubleComplex*>(
+        dmalloc(nc * sizeof(cufftDoubleComplex)));
+
+    cudaMemcpy(d_val, g.val.data(), n_g * sizeof(cufftDoubleComplex),
+               cudaMemcpyHostToDevice);
+    cudaMemcpy(d_h, g.h.data(), n_g * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_k, g.k.data(), n_g * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_l, g.l.data(), n_g * sizeof(int), cudaMemcpyHostToDevice);
+
+    scatter_g_to_halfcomplex(d_val, d_h, d_k, d_l, n_g, d_hc, nx, ny, nz);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+
+    std::vector<cufftDoubleComplex> hc(nc);
+    cudaMemcpy(hc.data(), d_hc, nc * sizeof(cufftDoubleComplex),
+               cudaMemcpyDeviceToHost);
+
+    double max_err = 0;
+    for (int i = 0; i < nc; ++i) {
+        max_err = std::max(max_err, std::abs(hc[i].x - ref[i].x));
+        max_err = std::max(max_err, std::abs(hc[i].y - ref[i].y));
+    }
+    EXPECT_LT(max_err, 1e-14);
+
+    cudaFree(d_val);
+    cudaFree(d_h);
+    cudaFree(d_k);
+    cudaFree(d_l);
+    cudaFree(d_hc);
+}
+
+// The scatter is race-free ONLY because a Hermitian pair (G, −G) folds to the
+// same half-complex cell with identical STORED values. Every list above is
+// collision-free, so none of them exercises that claim — and after the W2
+// device-residency wave this scatter runs four times per SCF iteration on
+// lists that do contain (G, −G) pairs.
+//
+// Caveat, deliberately not exercised: at the Nyquist plane kx == nx/2 the
+// mirror kx' = nx − kx == nx/2 does NOT trigger the fold, so G and −G land in
+// the same cell with conjugate values and the winner is whichever thread runs
+// last. The CPU pad loop has the same collision (last G in the list wins), so
+// the two backends can disagree there. Unreachable in practice: the PW FFT
+// grid is ~2× the G-sphere extent, so |h| never reaches nx/2.
+TEST(CudaPWGridMap, HermitianPairCollisionIsConsistent) {
+    const int nx = 8, ny = 6, nz = 4;
+    const int nc = (nx / 2 + 1) * ny * nz;
+
+    GList g;
+    std::mt19937 rng(2027);
+    std::uniform_real_distribution<double> dist(-1, 1);
+    int n_folded = 0;
+    for (int h = 1; h <= 3; ++h) // 0 < kx < nx/2 ⇒ −G folds back onto +G
+        for (int k : {0, 1, -2})
+            for (int l : {0, 1}) {
+                const cufftDoubleComplex v{dist(rng), dist(rng)};
+                g.h.push_back(h);
+                g.k.push_back(k);
+                g.l.push_back(l);
+                g.val.push_back(v);
+                // −G carries the Hermitian conjugate, as ρ(G)/V(G) of a real
+                // field do.
+                g.h.push_back(-h);
+                g.k.push_back(-k);
+                g.l.push_back(-l);
+                g.val.push_back({v.x, -v.y});
+                ++n_folded;
+            }
+    const int n_g = static_cast<int>(g.h.size());
+    ASSERT_GT(n_folded, 0);
+
+    // Host reference: every pair must resolve to the SAME stored value, so
+    // the reference is unambiguous.
+    std::vector<cufftDoubleComplex> ref(nc, {0.0, 0.0});
+    std::vector<char> touched(static_cast<size_t>(nc), 0);
+    int n_collisions = 0;
+    for (int ig = 0; ig < n_g; ++ig) {
+        bool conj;
+        int idx = host_fold(g.h[ig], g.k[ig], g.l[ig], nx, ny, nz, conj);
+        cufftDoubleComplex stored{g.val[ig].x,
+                                  conj ? -g.val[ig].y : g.val[ig].y};
+        if (touched[idx]) {
+            ++n_collisions;
+            ASSERT_NEAR(ref[idx].x, stored.x, 1e-15);
+            ASSERT_NEAR(ref[idx].y, stored.y, 1e-15);
+        }
+        touched[idx] = 1;
+        ref[idx] = stored;
+    }
+    // If nothing collided the test proves nothing about write agreement.
+    ASSERT_EQ(n_collisions, n_folded);
 
     auto* d_val = static_cast<cufftDoubleComplex*>(
         dmalloc(n_g * sizeof(cufftDoubleComplex)));

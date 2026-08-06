@@ -1,4 +1,4 @@
-/// @file cuda/pw/internal/grid_map.cuh
+/// @file cuda/planewave/internal/grid_map.cuh
 /// @brief Sparse G-vector ↔ dense Hermitian half-complex FFT-grid mapping —
 ///        the device bridge shared by the CUDA pw LDA / Veff / density kernels,
 ///        mirroring the half-complex pad/gather loops in cpu::pw::internal::XCBuilder and
@@ -22,8 +22,15 @@ namespace internal {
 /// (nx/2+1)*ny*nz` complex) is zeroed first, so unreferenced cells are 0 —
 /// matching the CPU `for i in nc: vg[i] = 0` prelude.
 ///
-/// Race-free: a Hermitian pair (G, −G) folds to the same cell with identical
-/// stored values, so concurrent writes agree.
+/// Race-free where it is used: a Hermitian pair (G, −G) folds to the same
+/// cell with identical stored values, so concurrent writes agree. The one
+/// exception is the Nyquist plane `kx == nx/2` — its mirror `nx − kx` is
+/// itself, so the `kx > nx/2` fold never fires and G and −G land in the same
+/// cell with *conjugate* values, making the winner nondeterministic (the CPU
+/// pad loop is deterministic last-wins, so the backends could disagree).
+/// Unreachable on the plane-wave path: the FFT grid spans ~2× the G-sphere
+/// extent, so |h| never reaches nx/2. Any future caller with a tighter grid
+/// must revisit this.
 ///
 /// @param d_gspace      n_g complex G-space values (device).
 /// @param d_h,d_k,d_l   n_g Miller indices each (device).

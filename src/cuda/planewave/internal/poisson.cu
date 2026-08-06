@@ -1,4 +1,4 @@
-/// @file cuda/pw/internal/poisson.cu
+/// @file cuda/planewave/internal/poisson.cu
 #include "atomiverse/cuda/planewave/internal/poisson.cuh"
 
 namespace ATV {

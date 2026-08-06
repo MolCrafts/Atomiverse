@@ -200,7 +200,7 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
     PoissonSolver poisson;
     XCBuilder xc;
     VeffBuilder veff;
-    DensityBuilder density(AccReal(method.mix_beta), method.pulay_depth);
+    DensityBuilder density;
     DavidsonSolver davidson(n_bands_dav, AccReal(method.tol) * AccReal(0.1),
                             40);
     xc.prepare(ws);
@@ -479,8 +479,7 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
             internal::PoissonSolver poisson;
             internal::XCBuilder xc;
             internal::VeffBuilder veff;
-            internal::DensityBuilder density(AccReal(method.mix_beta),
-                                             method.pulay_depth);
+            internal::DensityBuilder density;
             internal::DavidsonSolver davidson(
                 n_scf_bands, AccReal(method.tol) * AccReal(0.1), 40);
             scf = internal::run_scf_smear_restricted(
@@ -781,8 +780,7 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
         internal::PoissonSolver poisson;
         internal::XCBuilder xc;
         internal::VeffBuilder veff;
-        internal::DensityBuilder density(AccReal(method.mix_beta),
-                                         method.pulay_depth);
+        internal::DensityBuilder density;
         internal::DavidsonSolver davidson(n_scf_bands,
                                           AccReal(method.tol) * AccReal(0.1),
                                           40);

@@ -1,4 +1,4 @@
-/// @file tests/cuda/pw/test_poisson.cu
+/// @file tests/cuda/planewave/test_poisson.cu
 /// @brief Verifies cuda::pw::internal::poisson_hartree against the closed-form
 ///        CPU formula V_H(G) = 4π ρ(G)/|G|² (PW_Poisson::launch).
 #include "atomiverse/cuda/planewave/internal/poisson.cuh"

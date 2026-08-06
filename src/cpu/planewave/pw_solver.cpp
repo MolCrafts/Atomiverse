@@ -98,8 +98,7 @@ void ensure_helpers(PW& self, std::unique_ptr<internal::PoissonSolver>& poisson,
     if (!veff)
         veff = std::make_unique<internal::VeffBuilder>();
     if (!density)
-        density = std::make_unique<internal::DensityBuilder>(
-            AccReal(self.mix_beta), self.pulay_depth);
+        density = std::make_unique<internal::DensityBuilder>();
 }
 } // namespace
 
@@ -117,8 +116,7 @@ void PW::build(const cpu::Frame& reference) {
         poisson_ = std::make_unique<internal::PoissonSolver>();
         xc_ = std::make_unique<internal::XCBuilder>();
         veff_ = std::make_unique<internal::VeffBuilder>();
-        density_ = std::make_unique<internal::DensityBuilder>(AccReal(mix_beta),
-                                                              pulay_depth);
+        density_ = std::make_unique<internal::DensityBuilder>();
     }
     if (!upf_path.empty()) {
         // Validate the pseudopotential up front (throws on parse error);
@@ -615,35 +613,28 @@ PWResult& PW::run(const cpu::Frame& frame) {
             std::vector<std::vector<AccReal>> occ_k(
                 static_cast<std::size_t>(n_kpts));
 
-            if (use_smear) {
-                mu_ha = internal::find_fermi_level(
-                    all_evals, all_weights, AccReal(prob.n_elec), degauss_ha,
-                    smear_kind, mp_order);
-                for (int ik = 0; ik < n_kpts; ++ik) {
-                    const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
-                    const auto& ev = evals_k[static_cast<std::size_t>(ik)];
-                    std::vector<AccReal> w_one(ev.size(), w);
-                    auto fill = internal::fill_occupations(
-                        ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
-                    // fill_occupations multiplies by weights already for n_occ;
-                    // store bare occupations per band.
-                    occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
-                    for (std::size_t b = 0; b < ev.size(); ++b)
-                        occ_k[static_cast<std::size_t>(ik)][b] =
-                            internal::smear_f_band(ev[b], mu_ha, degauss_ha,
-                                                   smear_kind, mp_order);
-                    n_occ += fill.n_occ;
-                    entropy_sum += fill.entropy;
-                }
-            } else {
-                // Fixed closed-shell: first n_bands_eff bands fully occupied (f=2).
-                for (int ik = 0; ik < n_kpts; ++ik) {
-                    occ_k[static_cast<std::size_t>(ik)].assign(
-                        static_cast<std::size_t>(n_bands_eff), AccReal(2));
-                    n_occ += prob.kg.weights[static_cast<std::size_t>(ik)]
-                             * AccReal(2) * AccReal(n_bands_eff);
-                }
+            // Unconditional: this arm IS the metallic-smearing SCF
+            // (`} else if (use_smear)` above), so the fixed-occupation
+            // branch that used to sit here was unreachable.
+            mu_ha = internal::find_fermi_level(
+                all_evals, all_weights, AccReal(prob.n_elec), degauss_ha,
+                smear_kind, mp_order);
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                const AccReal w =
+                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                std::vector<AccReal> w_one(ev.size(), w);
+                auto fill = internal::fill_occupations(
+                    ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
+                // fill_occupations multiplies by weights already for n_occ;
+                // store bare occupations per band.
+                occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
+                for (std::size_t b = 0; b < ev.size(); ++b)
+                    occ_k[static_cast<std::size_t>(ik)][b] =
+                        internal::smear_f_band(ev[b], mu_ha, degauss_ha,
+                                               smear_kind, mp_order);
+                n_occ += fill.n_occ;
+                entropy_sum += fill.entropy;
             }
 
             // Pass 2: density + band energy with occupations (owned k only).

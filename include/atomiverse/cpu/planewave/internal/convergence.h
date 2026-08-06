@@ -30,6 +30,15 @@ class ConvergenceCheck {
     /// @return true when past warmup and the density change is below tol.
     bool step(const PWWorkspace& ws);
 
+    /// @brief Test convergence against an already-computed density-change
+    ///        norm — the CUDA backend reduces ‖ρ − ρ_old‖₂ on the device, so
+    ///        it has the norm but not the host arrays. Same counter, same
+    ///        warmup policy, one definition.
+    /// @param resid_l2 ‖ρ(G) − ρ_old(G)‖₂ (dimensionless, same measure as the
+    ///        workspace overload computes).
+    /// @return true when past warmup and @p resid_l2 is below tol.
+    bool step(AccReal resid_l2);
+
   private:
     AccReal tol_ = AccReal(1e-8);
     int warmup_ = 2;

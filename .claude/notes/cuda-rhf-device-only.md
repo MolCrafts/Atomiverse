@@ -63,6 +63,49 @@ Grok CUDA skills (not ad-hoc style):
 | Padé LDA XC grid foothold | **landed** (`cuda-gpw-xc-lda-foothold`) | `src/cuda/gpw/internal/xc_lda.{cu,cuh}`; `test_cuda_gpw_xc_lda` vs `cpu::xc::pade_lsd`; per-point ~1e-12, E ~1e-10 rel; **not** full GPW product |
 | product ρ collocate foothold | **landed** (`cuda-gpw-rho-collocate-foothold`) | `src/cuda/gpw/internal/product_collocate.{cu,cuh}`; `test_cuda_gpw_product_collocate` vs continuous host + `collint_collocate_product`; s/p + multi-s–s; **not** full GPW product |
 | product V·shape integrate foothold | **landed** (`cuda-gpw-product-integrate-foothold`) | `src/cuda/gpw/internal/product_integrate.{cu,cuh}`; reuses `DeviceProduct`/`CollocateGridDesc`; `test_cuda_gpw_product_integrate` vs continuous host + `collint_integrate_product`; s/p + multi-s–s; **not** full GPW product |
+| **PW method slice** | **landed** (`cuda-pw-method-slice`) | `cuda::pw::PW` method object (`cuda/planewave/pw_solver.{cuh,cu}`) + `internal::DeviceDensity` — density side (ρ(G)→V_H→V_xc→V_eff(r)→Pulay→reductions) device-resident. See below. |
+
+### CUDA PW slice — envelope and evidence
+
+Public shape mirrors `cpu::pw::PW`: public members → `build(frame)` →
+`run(frame)` → `PWResult`. The free function `cuda::pw::pw_scf` is **deleted**
+(no shim). Device envelope — everything else **throws** `std::invalid_argument`
+naming the member and the way out: restricted only (`spin_polarized=false`,
+`multiplicity=1`), `smearing=none`, `xc=XCType::LSDA` (Slater + VWN5), closed
+shell, `k_mesh>=1`, `ecut_ry>0`. k-points are **not** MPI-distributed here.
+
+Per-iteration PCIe traffic, density side: Pulay Gram ≤ 1 KB (only once history
+≥ 2) + ≤ 8 coefficients + 5 energy/residual doubles. **No O(N_G) / O(N_r)
+density-side array crosses.** Band side is **not** device-resident yet:
+`set_kpoint` rebuilds the per-k index/T(G)/β tables (~9 allocs + 12 H2D + a
+`cudaDeviceSynchronize`) every k every iteration, and Davidson still round-trips
+the n_sub² subspace Hamiltonian + Ritz rotation. Those are the named next waves,
+along with cuSOLVER `Zheevd`, device-pointer `cublasDznrm2`, a non-default
+stream, and PBE-GGA on device.
+
+Three latent defects were found and fixed **in the pre-existing** foothold
+kernels while wiring them in — all three would have made the SCF silently
+wrong, and none was caught by the existing unit tests:
+
+| Where | Defect |
+|---|---|
+| `pw_scf.cu` (deleted) | called `XCBuilder::step(ws)` with the `XCType::PBE` default — the "CUDA LDA" path was running true GGA |
+| `veff_assemble_g` | took `V_loc` as **real**, dropping `Im[Σ_a e^{−iG·R_a}]`; the old test fed a real V_loc so it never surfaced |
+| `xc_lda_grid` | computed Slater + **PW92**, which no public `XCType` selects; `XCType::LSDA` is Slater + **VWN5** (now `xc_lsda_grid`, with `IsVwn5NotPw92` guarding regression) |
+
+Evidence, GH200 job **948152** (nvcc 13.0.88, `sm_90`), log
+`.claude/cuda-pw-slice-948152.out`; re-run with `sbatch
+tools/gpu_job_cuda_pw.sh`. Job **948055** measured the same slice before the
+review-fix round and produced **bit-identical** numbers — that equality is the
+evidence the fix round changed no physics:
+
+- `test_cuda_pw_{fft,poisson,grid_map,xc_lda,veff,guards,density}` +
+  `test_cuda_scf_rhf` — **8/8 PASS**, 8.72 s.
+- `diag_band_parity` — **MAX_EIG_DIFF 6.051e-15 Ha**.
+- `regressions/pw/pw-cuda-lda-si --device=both` — E_cpu = E_cuda =
+  **−15.67177311 Ry**, both 5 iterations, **|Δ| = 2.132e-14 Ry**; inside the
+  PseudoDojo/ABINIT window. Parity bound stays at the design-time 1e-3 Ry —
+  do not tighten from one cell.
 
 ## Wave 6 layout
 

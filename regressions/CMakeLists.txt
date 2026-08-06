@@ -155,6 +155,26 @@ if(ATV_BUILD_PW)
     atv_add_regression(pw pw-analytic-stress-si)
     # In-tree ONCV Si UPF for NC-PW regressions (compile-time path pin).
     set(_atv_si_upf "${CMAKE_SOURCE_DIR}/tests/data/pw/Si_lda_nc.upf")
+    if(ATV_BUILD_CUDA)
+        # PW LSDA Si on cuda::pw::PW — ABINIT-class literature window plus
+        # same-settings CPU parity. .cu TU: atv_add_regression compiles .cpp
+        # only, so this target is spelled out (mirrors scf/h2o_rhf_sto3g).
+        set(_reg_pw_cuda reg_pw-cuda-lda-si)
+        add_executable(${_reg_pw_cuda} pw/pw-cuda-lda-si/${_reg_pw_cuda}.cu)
+        target_link_libraries(${_reg_pw_cuda} PRIVATE atomiverse)
+        set_target_properties(${_reg_pw_cuda} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        target_compile_definitions(${_reg_pw_cuda} PRIVATE
+            ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data"
+            ATV_PW_UPF_PATH="${_atv_si_upf}")
+        add_custom_target(run_${_reg_pw_cuda}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_pw_cuda}> --device=both
+            DEPENDS ${_reg_pw_cuda}
+            COMMENT "regression [pw/pw-cuda-lda-si] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_pw_cuda})
+        unset(_reg_pw_cuda)
+    endif()
     if(TARGET reg_pw-lda-si)
         target_compile_definitions(reg_pw-lda-si PRIVATE
             ATV_PW_UPF_PATH="${_atv_si_upf}")

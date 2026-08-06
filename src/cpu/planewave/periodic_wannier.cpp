@@ -916,8 +916,7 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
         internal::PoissonSolver poisson;
         internal::XCBuilder xc;
         internal::VeffBuilder veff;
-        internal::DensityBuilder density(AccReal(method.mix_beta),
-                                         method.pulay_depth);
+        internal::DensityBuilder density;
         DavidsonSolver davidson(n_bands, AccReal(method.tol) * AccReal(0.1),
                                 40);
         xc.prepare(ws);

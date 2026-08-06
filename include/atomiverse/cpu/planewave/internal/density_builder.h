@@ -27,11 +27,10 @@ namespace internal {
 /// before `finish()`.
 class DensityBuilder {
   public:
-    /// @param mix_beta    Linear/Pulay mixing parameter (QE mixing_beta).
-    /// @param pulay_depth Pulay history window depth.
-    explicit DensityBuilder(AccReal mix_beta = AccReal(0.7),
-                            int pulay_depth = 5)
-        : mix_beta_(mix_beta), pulay_depth_(pulay_depth) {}
+    /// @brief Default construct. Mixing parameters are NOT snapshotted here:
+    ///        `finish()` reads the live `ws.mix_beta` / `ws.pulay_depth`, so a
+    ///        caller changing them between run()s takes effect.
+    DensityBuilder() = default;
 
     /// @brief Size scratch to the workspace's FFT grid (idempotent).
     void prepare(const PWWorkspace& ws);
@@ -68,8 +67,6 @@ class DensityBuilder {
                  xt::xarray<std::complex<AccReal>>& rho_out);
 
   private:
-    AccReal mix_beta_ = AccReal(0.7);
-    int pulay_depth_ = 5;
     FFTWBuffer<AccReal> rho_r_accum_;
     FFTWBuffer<fftw_complex> psi_cc_;
     FFTWBuffer<fftw_complex> rho_g_full_;

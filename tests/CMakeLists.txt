@@ -1061,6 +1061,19 @@ if(ATV_BUILD_CUDA)
         target_link_libraries(test_cuda_pw_xc_lda PRIVATE CUDA::cufft)
         atv_add_test(test_cuda_pw_veff cuda/planewave/test_veff.cu)
         target_link_libraries(test_cuda_pw_veff PRIVATE CUDA::cufft)
+        # cuda::pw::PW surface + honesty guards. No SCF, no device work:
+        # every assertion fires before setup_pw_problem and before CUDA.
+        atv_add_test(test_cuda_pw_guards cuda/planewave/test_guards.cu)
+        if(TARGET test_cuda_pw_guards)
+            target_link_libraries(test_cuda_pw_guards PRIVATE CUDA::cufft)
+        endif()
+        # DeviceDensity stage parity vs the CPU stage helpers. Unit-only:
+        # no SCF loop, no Davidson — the end-to-end parity solve lives in
+        # regressions/pw/pw-cuda-lda-si.
+        atv_add_test(test_cuda_pw_density cuda/planewave/test_density.cu)
+        if(TARGET test_cuda_pw_density)
+            target_link_libraries(test_cuda_pw_density PRIVATE CUDA::cufft)
+        endif()
     endif()
     # CUDA GPW Γ Poisson foothold — needs CPU solve_poisson oracle (GPW+PW)
     # and device kernels. Name avoids ATV_TEST_HEAVY_REGEX `gpw_poisson`.
@@ -1077,16 +1090,8 @@ if(ATV_BUILD_CUDA)
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
     atv_add_test(test_cuda_scf_device_integrals cuda/scf/test_device_integrals.cu)
-    if(ATV_BUILD_PW)
-        atv_add_test(test_cuda_pw_si  cuda/planewave/test_pw_si.cu)
-        # Parity needs a gapped system: uses the checked-in ONCV LDA Si
-        # pseudopotential from the pw benchmark reference data.
-        # Guard: atv_add_test may skip heavy targets when ATV_TEST_HEAVY=OFF.
-        if(TARGET test_cuda_pw_si)
-            target_compile_definitions(test_cuda_pw_si PRIVATE
-                ATV_PW_UPF_PATH="${CMAKE_SOURCE_DIR}/tests/data/pw/Si_lda_nc.upf")
-        endif()
-    endif()
+    # CPU/CUDA PW parity is an end-to-end SCF solve: it lives in
+    # regressions/pw/pw-cuda-lda-si (--device=both), never under ctest.
     atv_add_test(test_cuda_driver_role_validation cuda/test_cuda_driver_role_validation.cu)
     # Registration-time PhaseKind gate, CUDA mirror
     # (arch-refactor-01-bindings). add()-only — needs no CUDA device.

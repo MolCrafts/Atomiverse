@@ -373,7 +373,7 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
     PoissonSolver poisson;
     XCBuilder xc;
     VeffBuilder veff;
-    DensityBuilder density{AccReal(method.mix_beta), method.pulay_depth};
+    DensityBuilder density;
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     PWProblem scf_prob;

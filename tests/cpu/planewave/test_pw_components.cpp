@@ -420,8 +420,12 @@ TEST(PWInternal, DensityBuilderConservesElectrons) {
     // Σ_G |ψ(G)|² = 1: ψ(G) = δ_{G,0}. Then ψ_phys(r) = 1/√Ω, so
     // ρ(r) = 2/Ω and the electron count ∫ρ d³r = ρ(G=0)·Ω must be 2.
     // mix_beta = 1 turns the first-iteration linear mixing into a pure
-    // replacement, exposing the raw built density.
-    DensityBuilder db(AccReal(1.0), 5);
+    // replacement, exposing the raw built density. The builder reads the
+    // LIVE workspace values — it deliberately keeps no constructor snapshot,
+    // so mixing parameters set here are the ones finish() honours.
+    f.ws.mix_beta = AccReal(1.0);
+    f.ws.pulay_depth = 5;
+    DensityBuilder db;
     db.prepare(f.ws);
     db.reset(f.ws);
 

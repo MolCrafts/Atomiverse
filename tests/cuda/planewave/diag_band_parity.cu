@@ -1,4 +1,4 @@
-/// @file tests/cuda/pw/diag_band_parity.cu
+/// @file tests/cuda/planewave/diag_band_parity.cu
 /// @brief Diagnostic (not a registered test): fixed-V_eff band-solver
 /// parity, CPU internal::DavidsonSolver vs cuda DeviceBandSolver, per
 /// k-point.
@@ -12,9 +12,35 @@
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
 #include <cstdio>
 #include <cstdlib>
+#include <cuda_runtime.h>
 
 using namespace ATV;
 using namespace ATV::cpu::pw;
+
+namespace {
+/// The band solver no longer owns V_eff(r) or the density accumulator — they
+/// belong to `cuda::pw::internal::DeviceDensity` in production. This
+/// diagnostic stands in for it with two plain device buffers so the band
+/// comparison stays a band comparison.
+struct BorrowedGrids {
+    double* d_veff = nullptr;
+    double* d_rho = nullptr;
+
+    explicit BorrowedGrids(int nr, const AccReal* host_veff) {
+        cudaMalloc(&d_veff, static_cast<size_t>(nr) * sizeof(double));
+        cudaMalloc(&d_rho, static_cast<size_t>(nr) * sizeof(double));
+        cudaMemcpy(d_veff, host_veff, static_cast<size_t>(nr) * sizeof(double),
+                   cudaMemcpyHostToDevice);
+        cudaMemset(d_rho, 0, static_cast<size_t>(nr) * sizeof(double));
+    }
+    ~BorrowedGrids() {
+        cudaFree(d_veff);
+        cudaFree(d_rho);
+    }
+    BorrowedGrids(const BorrowedGrids&) = delete;
+    BorrowedGrids& operator=(const BorrowedGrids&) = delete;
+};
+} // namespace
 
 int main(int argc, char** argv) {
     const char* upf = (argc > 1) ? argv[1] : "";
@@ -44,7 +70,9 @@ int main(int argc, char** argv) {
     po.step(ws);
     internal::XCBuilder lda;
     lda.prepare(ws);
-    lda.step(ws);
+    // LSDA explicitly: XCBuilder::step defaults to PBE, and the CUDA PW path
+    // is LSDA-only, so the fixed V_eff both legs diagonalize must be LSDA.
+    lda.step(ws, cpu::scf::XCType::LSDA);
     internal::VeffBuilder v;
     v.prepare(ws);
     v.step(ws);
@@ -53,7 +81,8 @@ int main(int argc, char** argv) {
     bool fresh = (argc > 3); // any 3rd arg: new solver per k-point
     cuda::pw::internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz,
                                                 nb);
-    solver.set_veff(ws.V_eff_r.data());
+    BorrowedGrids grids(ws.nr, ws.V_eff_r.data());
+    solver.bind_grids(grids.d_rho, grids.d_veff);
 
     double max_diff = 0;
     for (size_t ik = 0; ik < prob.gv_k.size(); ++ik) {
@@ -85,12 +114,12 @@ int main(int argc, char** argv) {
         if (fresh) {
             cuda::pw::internal::DeviceBandSolver s2(ws.fft_nx, ws.fft_ny,
                                                     ws.fft_nz, nb);
-            s2.set_veff(ws.V_eff_r.data());
+            s2.bind_grids(grids.d_rho, grids.d_veff);
             s2.set_kpoint(ws);
-            s2.solve(ws, AccReal(1e-9), 40);
+            s2.solve(ws, 40);
         } else {
             solver.set_kpoint(ws);
-            solver.solve(ws, AccReal(1e-9), 40);
+            solver.solve(ws, 40);
         }
         std::printf("k%zu CUDA:", ik);
         for (int b = 0; b < nb; ++b) {
@@ -111,7 +140,7 @@ int main(int argc, char** argv) {
                 psi[ig] = wfc_cpu_b0[ig];
             cuda::pw::internal::DeviceBandSolver s3(ws.fft_nx, ws.fft_ny,
                                                     ws.fft_nz, nb);
-            s3.set_veff(ws.V_eff_r.data());
+            s3.bind_grids(grids.d_rho, grids.d_veff);
             s3.set_kpoint(ws);
             s3.apply_h_host(psi.data(), hpsi.data());
             double r2 = 0, n2 = 0;

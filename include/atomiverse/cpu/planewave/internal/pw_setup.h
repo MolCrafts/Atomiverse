@@ -1,7 +1,7 @@
 /// @file cpu/pw/internal/pw_setup.h
 /// @brief Host-side plane-wave SCF problem assembly and density mixing,
 ///        shared by the CPU (`cpu::pw::PW`) and CUDA
-///        (`cuda::pw::pw_scf`) drivers.
+///        (`cuda::pw::PW`) methods.
 #pragma once
 
 #include "atomiverse/core/precision.h"
@@ -96,6 +96,24 @@ void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
                       const std::string& upf_path, double ecut_ry,
                       const std::vector<Vec3>& kfrac);
 
+/// @brief Solve the Pulay/DIIS constrained least-squares coefficients.
+///
+/// Builds and solves the augmented Lagrangian system
+/// \([B\;\mathbf{1};\;\mathbf{1}^T\;0]\,[c;\lambda] = [0;1]\) by Gaussian
+/// elimination with partial pivoting, so \(\sum_i c_i = 1\). Singular pivots
+/// (|a_kk| < 1e-14) are skipped, leaving the corresponding coefficient at 0 —
+/// the same guarded behaviour both backends must reproduce exactly.
+///
+/// Shared by `pulay_mix` (CPU) and `cuda::pw::internal::DeviceDensity::mix`
+/// (CUDA), which builds the same Gram matrix with one `cublasZgemm` and then
+/// calls this host solve on the ≤ 8×8 result.
+///
+/// @param B     Row-major m×m Gram matrix
+///              \(B_{ij}=\mathrm{Re}\langle F_i|F_j\rangle\).
+/// @param m     History length (≥ 1).
+/// @param c_out Output coefficients, m entries (dimensionless).
+void solve_pulay_coefficients(const AccReal* B, int m, AccReal* c_out);
+
 /// @brief Pulay/DIIS density mixing on the G-sphere.
 ///
 /// Expects `ws.rho_G` = output density of the current iteration and
@@ -116,13 +134,37 @@ struct PWEnergyTerms {
     AccReal total = 0;    ///< Total energy incl. E_xc, Ewald, augmentation.
 };
 
+/// @brief Combine already-integrated SCF energy pieces into the decomposition.
+///
+/// The one place `e_one` and `total` are formed. `e_one` is the
+/// catastrophic-cancellation site (band sum minus the double-counted
+/// Hartree and XC potentials), so its term order is part of the contract
+/// and must not be reassociated by any caller.
+///
+/// Shared by `iteration_energy` (CPU, after its Parseval G-loop) and
+/// `cuda::pw::PW::run`, which supplies the same integrals reduced on the
+/// device — there is exactly one definition of the decomposition.
+///
+/// @param e_band    Occupation-weighted band-energy sum Σ f_i ε_i [Hartree].
+/// @param e_h       Hartree energy ½Ω Σ_G Re[ρ*V_H] [Hartree].
+/// @param e_xc_int  Integral ∫ρ V_xc = Ω Σ_G Re[ρ*V_xc] [Hartree].
+/// @param e_loc     Integral ∫ρ V_loc [Hartree] (diagnostic only).
+/// @param e_xc      XC energy ∫ε_xc[ρ]ρ d³r [Hartree] (`ws.E_xc`).
+/// @param ew_total  Ewald energy incl. the QE G=0 term [Hartree].
+/// @param e_aug     Augmentation-charge energy [Hartree] (`ws.E_aug`).
+/// @return Filled decomposition [Hartree].
+PWEnergyTerms combine_energy_terms(AccReal e_band, AccReal e_h,
+                                   AccReal e_xc_int, AccReal e_loc,
+                                   AccReal e_xc, AccReal ew_total,
+                                   AccReal e_aug);
+
 /// @brief Compute the per-iteration energy decomposition (no I/O).
 PWEnergyTerms iteration_energy(const PWWorkspace& ws, AccReal e_band,
                                AccReal ew_total, AccReal vol_bohr);
 
 /// @brief Emit the per-iteration SCF energy summary as a rank-0-only
 ///        ATV_DEBUG line — the single formatter path shared by the CPU
-///        (`PW::run`) and CUDA (`cuda::pw::pw_scf`) SCF loops.
+///        (`PW::run`) and CUDA (`cuda::pw::PW::run`) SCF loops.
 ///
 /// Host-compiled on purpose: `core/log.h` is CUDA-free, so `.cu` callers
 /// delegate their logging here instead of including spdlog directly.

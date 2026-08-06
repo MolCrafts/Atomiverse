@@ -1,4 +1,4 @@
-/// @file cuda/pw/internal/fft.cuh
+/// @file cuda/planewave/internal/fft.cuh
 /// @brief RAII wrapper around cuFFT 3D transforms — device-resident plane-wave
 ///        FFT, the CUDA mirror of cpu::pw::internal::FFTPlan3D.
 #pragma once

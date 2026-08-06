@@ -1,6 +1,6 @@
-/// @file tests/cuda/pw/test_fft.cu
+/// @file tests/cuda/planewave/test_fft.cu
 /// @brief Round-trip tests for cuda::pw::internal::FFTPlan3D (cuFFT). Mirrors
-///        the CPU tests/cpu/pw/test_fft.cpp and adds a c2c round trip.
+///        the CPU tests/cpu/planewave/test_fft.cpp and adds a c2c round trip.
 #include "atomiverse/cuda/planewave/internal/fft.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
