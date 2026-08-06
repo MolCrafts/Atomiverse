@@ -68,7 +68,7 @@ rm -rf "$BD" CMakeCache.txt CMakeFiles 2>/dev/null || true
     -DATV_BUILD_TESTS=ON \
     -DATV_BUILD_REGRESSIONS=OFF \
     -DATV_BUILD_SEMIEMPIRICAL=OFF \
-    -DATV_BUILD_MD=OFF \
+    -DATV_BUILD_MD=ON \
     -DATV_BUILD_MC=OFF \
     -DATV_BUILD_MINIMIZER=OFF \
     -DATV_BUILD_VIB=OFF \
