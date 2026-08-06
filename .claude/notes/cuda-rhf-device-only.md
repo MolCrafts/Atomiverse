@@ -74,8 +74,12 @@ Grok CUDA skills (not ad-hoc style):
 
 ## Validation
 
-- GH200 (merge log `.claude/merge-cuda-rhf-913053.out`, tip `8337251b`):
+- GH200 wave 6 (`.claude/merge-cuda-rhf-913053.out`, tip `8337251b`):
   `test_cuda_scf_rhf` + `test_cuda_scf_device_integrals` **100% PASS**.
+- GH200 wave 7 (`.claude/merge-cuda-polish-913612.out`, tip `fb9e7ed8` /
+  feat `1ae27395`): same pair **100% PASS** (2.29 s + 0.82 s). Configure with
+  **`-DCMAKE_CUDA_ARCHITECTURES=90`** on GH200; do not link x86 `libxtb`
+  (`-DATV_BUILD_SEMIEMPIRICAL=OFF` or null `ATV_XTB_ROOT`).
 - `tests/cuda/scf/test_rhf.cu`:
   - `CUDAForcesMatchCPU_H2_STO3G` — |ΔF| **1e-5** eV/Å; energy **ha_to_ev(1e-6)**
   - `CUDAForcesMatchFD_H2_STO3G` — FD bar **5e-2** eV/Å

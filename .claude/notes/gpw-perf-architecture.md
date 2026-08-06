@@ -57,25 +57,28 @@ Portable **xsimd only** (no arch intrinsics, no global `XTENSOR_USE_XSIMD`).
 Landed: z-run axpy/dot; 1D poly/E2 (legacy collocate_one); collint z-contract;
 `reduce_add` on dots. Exp recurrence stays scalar.
 
-### Critical bottlenecks (re-ranked post-collint)
+### Critical bottlenecks (re-ranked post OT outer + collint)
 
 | Rank | Issue | Where |
 | --- | --- | --- |
 | **1** | Residual setup (STVnl ~0.52 s, products_mg ~0.3 s, kbg ~0.2 s) | k-path |
 | 2 | Collint residual (~4× CP2K per-iter; ~1.6× overall) | `product_collint.cpp` |
-| 3 | Multi-k dense χ^k until products default | `kpoints.cpp` |
-| 4 | Force path rebuilds grids | `gpw_forces.cpp` |
+| 3 | OT outer residual (~4.4× UKS O₂ vs CP2K; was ~7×) | `ot.cpp` / solver |
+| 4 | Multi-k dense χ^k until products default | `kpoints.cpp` |
+| 5 | Force path rebuilds grids | `gpw_forces.cpp` |
 
 **Done (do not re-open as primary):** GpwWorkspace; `ks_grid_build_*`; OT
-economics; |V(pc)| windows; 1D poly SIMD; **first collint + geometry batch**.
+economics + **g·e DIIS outer**; |V(pc)| windows; 1D poly SIMD; **first collint
++ geometry batch**; spectral FFT.
 
 ### Extract / rewrite order
 
 1. ~~`GpwWorkspace`~~ landed  
 2. ~~`KsGridBuild`~~ landed  
 3. ~~CP2K collint product path (cxyz + pol + geometry batch)~~ **landed**  
-4. **Active:** reflection pairs + sphere cache + tighter task locality  
-5. Force grid reuse; MPI product/grid distribute; products-default-k after (4)
+4. ~~OT g·e DIIS outer~~ **landed**  
+5. **Active:** residual STVnl/setup + collint toward ~1× MG  
+6. Force grid reuse; MPI product/grid distribute; products-default-k after (5)
 
 ### Forbidden
 

@@ -7,7 +7,7 @@ do not trust older REFERENCE.md wall numbers when the node or module differs.
 
 | | |
 | --- | --- |
-| Date | 2026-08-06 (wave-1: spectral FFT land; MG STVnl numbers still 2026-08-04) |
+| Date | 2026-08-06 (wave-2: OT g·e DIIS outer; MG STVnl numbers still 2026-08-04) |
 | Host | `arrhenius1` — AMD EPYC 9255 ×2, OMP=4, `OMP_PROC_BIND=close` |
 | Build | Release, HF+PW+GPW, CUDA OFF, OpenBLAS |
 | Env | `ATV_GPW_PROF=1` |
@@ -31,11 +31,12 @@ export CP2K_DATA_DIR=$EBROOTCP2K/share/cp2k/data
 | `gpw-multigrid-kpoints` MAIN | **~2.1** quiet best-of-4 | **~1.28** quiet | **~1.6** | pin OK; STVnl ~0.52 s; coll/int ~80–90 ms |
 | `gpw-uks-o2-gamma` | ~19–24 | ~21 (older pin) | ~1 | DIIS path; not product MG |
 | `gpw-kpoints-si` MAIN | ~few s KS after setup | ~3.3 (older) | ~1 | dense χ^k, not MG products |
-| `ot-minimizer-water` | ~**16.2** quiet (post spectral) | OT class ~2.7 (older) | ~**6.0** | outer-count dominated; XC ~95 ms/iter |
+| `ot-minimizer-water` | **32** OT it; reg wall **~11.6–14 s** (OT+DIIS) | OT class ~2.7 (older) | **~3–4×** class | was 93 it / ~16.2 s / ~6× |
+| `ot-uks-o2` | **87–94** OT it / OT **~38.5 s** | **8.68** OT-only | **~4.4** | was 180 it / ~62 s / ~7.1×; land claim 3.74× |
 
 **Supersedes** pre-collint MAIN **~42 s / ~47×**, mid-collint **~27 s / ~30×**,
-and the stale wave2 CP2K wall 23.6 s. Keep energy pins; refresh walls every
-perf wave.
+pre-OT-outer water ~16.2 s / ~6× and UKS ~7.1×. Keep energy pins; refresh walls
+every perf wave.
 
 ### Per-step KS (MG MAIN class, ATV quiet builds)
 
@@ -48,18 +49,25 @@ perf wave.
 
 CP2K same twin: `grid_collocate` ~0.018 s/iter, `grid_integrate` ~0.019 s/iter.
 
+### Wave-2 OT outer (landed `cpu-ot-diis-outer`)
+
+g·e B-matrix (CP2K `ot_diis_step` default) + SAFE_DIIS/Armijo + PR+ CG fallback
+on stall. Re-pin 2026-08-06 OMP=4 bind:
+
+| Twin | iters | wall | pin / FD |
+| --- | ---: | ---: | --- |
+| `ot-minimizer-water` | **32** (was 93) | reg ~11.6–14 s | pin PASS; \|E_OT−E_DIIS\|~4e-11 |
+| `ot-uks-o2` | **87–94** (was 180) | OT ~38.5 s | pin PASS; FD forces-water PASS |
+| ratio worst | — | **~4.4×** vs CP2K 8.68 s | was ~7.1× |
+
 ### Wave-1 spectral FFT (landed `cpu-xc-spectral-fft`)
 
 Fused multi-out howmany=3 FFT + FFTW_MEASURE plans for GGA spectral grad/div.
-OT water quiet wall ~16.5→**16.2 s** (ratio ~6.11→**~5.99** vs CP2K note 2.7 s);
-XC residual ~108→**95** ms/iter. Energy pin stable; FD forces-water PASS.
-Non-bit-exact MEASURE plans — stated tol, not soft pins.
+XC residual ~108→**95** ms/iter. Non-bit-exact MEASURE plans — stated tol.
 
 ### Active lever
 
-**OT outer count** still dominates OT twins (~6–7× on `dev`). MG residual
-~0.8 s vs CP2K is setup (STVnl + products_mg + kbg) + collint ~4× CP2K
-per-iter. Branch `wf/escuda-cpu-ot-diis-outer` claims water 32 it / UKS ~3.9×
-— not on `dev` until merge. See
+**MG residual** toward ~1× (STVnl + products_mg + kbg + collint ~4× CP2K
+per-iter). OT outer no longer dominates (~4.4× worst). See
 [gpw-perf-architecture.md](gpw-perf-architecture.md) and
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).

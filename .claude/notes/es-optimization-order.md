@@ -26,29 +26,28 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
    fast path (STVnl ~1500→520 ms); integrate group-idx + segment SIMD.
    MG MAIN **~2.1 s** (~**1.6×** CP2K quiet ~1.28 s; was ~42 s). Pins green.
 8. ~~`cpu-xc-spectral-fft`~~ **landed** (es-cpu-cuda-opt wave 1) — fused
-   multi-out FFT + MEASURE plans for GGA spectral grad/div; XC ~108→95 ms/iter;
-   OT water quiet ~16.5→16.2 s (~5.99× vs 2.7 s CP2K note). Pins + FD forces
-   green. Non-bit-exact MEASURE FP with stated tol.
+   multi-out FFT + MEASURE plans for GGA spectral grad/div; XC ~108→95 ms/iter.
+9. ~~`cpu-ot-diis-outer`~~ **landed** (es-cpu-cuda-opt wave 2) — g·e B-matrix +
+   CG fallback; water **93→32** it; UKS O₂ **180→~90** it / ratio **~7.1→~4.4×**.
 
-**Active next (`es-cpu-cuda-opt` post wave-1 land):**
+**Active next (`es-cpu-cuda-opt` post wave-2 land):**
 
 | Track | Focus | Anchor |
 | --- | --- | --- |
-| **cpu** | OT outer count (`cpu-ot-diis-outer` still open on branch) + residual STVnl | `T_atv/T_cp2k`, 1 MPI × OMP=4 |
-| **cuda** | Device-only polish on landed s/p RHF; GPW foothold only under open-gate | same-settings CPU oracle; device-only kernels |
+| **cpu** | Residual MG STVnl/setup + collint tail (`cpu-stvnl-residual`) | `T_atv/T_cp2k` MG MAIN ~1.6× → ~1× |
+| **cuda** | `cuda-rhf-level-shift` then optional thin Γ GPW foothold | same-settings CPU oracle; device-only kernels |
 
-1. **CPU wall** — finish/merge `cpu-ot-diis-outer` (Γ OT MINIMIZER DIIS outer
-   count toward CP2K ~30 class; branch claims 93→32 / 180→94 / ~3.9×). Then
-   residual STVnl/setup on MG twin (~1.6×). Energy-path change ⇒ re-run FD
-   force oracle.
-2. **CUDA ES** — `cuda-rhf-pshell-forces` **landed** (wave 6 device s/p forces;
-   GH200 unit green). Next: `cuda-rhf-device-only-polish` →
-   `cuda-rhf-level-shift` → optional thin Γ GPW foothold (`cuda-gpw-foothold`)
-   **only if** open-gate holds.
+1. **CPU wall** — STVnl ~0.52 s + products_mg/kbg + collint ~4× CP2K per-iter
+   on MG twin. OT outer no longer the dominant story (~4.4× worst). Energy-path
+   change ⇒ re-run FD force oracle.
+2. **CUDA ES** — wave 7 device-only polish **landed**. Next: `cuda-rhf-level-shift`
+   → optional thin Γ GPW foothold (`cuda-gpw-foothold`) **only if** open-gate holds.
 
 **Worker law:** branches `wf/escuda-<slug>` off **`dev`**; no push; no
 `reset --hard`. Disk: wipe `build`/`build-*` after every cmake/ctest. CUDA
-build/run only via `sbatch -p gpu` (login has no toolkit).
+build/run only via `sbatch -p gpu` (login has no toolkit). GH200 cmake needs
+`-DCMAKE_CUDA_ARCHITECTURES=90` and must not link x86 `libxtb` (SE OFF or
+null `ATV_XTB_ROOT`).
 
 Queue: [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md) +
 [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md).
@@ -59,7 +58,6 @@ CUDA RHF: [cuda-rhf-device-only.md](cuda-rhf-device-only.md).
 
 ### CUDA ES this wave
 
-**Re-opened and partially landed.** Device s/p energy + device s/p forces on
-`cuda::scf::RHF` (wave 6). **Forbidden:** hybrid / GAPW / PAW / meta-GGA
-product; claiming CUDA wins on small-molecule correctness twins; classical MD
-CUDA (separate OpenMM track).
+**Wave 7 landed** on device s/p energy + forces (`cuda::scf::RHF`). **Forbidden:**
+hybrid / GAPW / PAW / meta-GGA product; claiming CUDA wins on small-molecule
+correctness twins; classical MD CUDA (separate OpenMM track).
