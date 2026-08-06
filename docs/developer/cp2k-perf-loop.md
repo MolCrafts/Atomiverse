@@ -102,4 +102,4 @@ Then **wipe build** before leaving the worktree.
 
 ## Run log
 
-(autonomous harness appends lines here)
+- 2026-08-06 harness wave 2: merged `p0-stvnl-setup-residual` (`e1eaf084`, worker `fc6fe3d5`); queue done [x] with worker ratio_after **2.762**; parent harness re-measured `gpw-multigrid-kpoints` MAIN quiet **1.6 s** / CP2K pin **0.688 s** → **2.33×** (E pin bit-identical −15.8023961242 Ha; ST_k~340 + Vnl_k~60 ms); other three twin ATV walls not re-run (path untouched) — binding worst_ratio still **3.02** (`ot-minimizer-water`); twins_at_target=false (target 1.05); pending **6** (P0×3 + P1×1 + P2×2); builds wiped.

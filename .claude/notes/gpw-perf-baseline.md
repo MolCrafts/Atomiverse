@@ -8,7 +8,7 @@ binary differs.
 
 | | |
 | --- | --- |
-| Date | **2026-08-06** (cp2k-perf Baseline re-pin, parent `dev`) |
+| Date | **2026-08-06** (cp2k-perf Baseline re-pin + harness wave-2 MG ATV refresh, parent `dev`) |
 | Host | `arrhenius1` — AMD EPYC 9255 ×2, OMP=4, `OMP_PROC_BIND=close` `OMP_PLACES=cores` |
 | Build (ATV) | Release, HF+PW+GPW, CUDA OFF, OpenBLAS (`-DBLA_VENDOR=OpenBLAS`) |
 | Env | `ATV_GPW_PROF=1` for stage ms; fair walls without prof where noted |
@@ -60,15 +60,14 @@ cmake --build build -j$(nproc) --target atomiverse \
 
 | Twin | ATV [s] | CP2K [s] | ratio | Notes |
 | --- | ---: | ---: | ---: | --- |
-| `gpw-multigrid-kpoints` MAIN | **1.5** | **0.688** | **2.18** | ATV MAIN wall print (quiet, no prof, warm); CP2K quiet timer MAX |
-| `gpw-uks-o2-gamma` | **25.1** | **13.69** | **1.83** | single SCF; ATV `wall=` print / CP2K quiet warm |
-| `gpw-kpoints-si` MAIN | **2.88** | **2.45** | **1.18** | ATV MAIN = STVnl+kbg+6 KS from `ATV_GPW_PROF` (ngrid=37800 nk=4); full reg ~13.6 s (7 SCF solves, not fair) |
-| `ot-minimizer-water` OT-only | **7.55** | **2.50** | **3.02** | ATV OT segment via dual runtime-init timestamps (25 OT it); full OT+DIIS reg ~9.7 s |
+| `gpw-multigrid-kpoints` MAIN | **1.6** | **0.688** | **2.33** | post-merge `p0-stvnl-setup-residual` harness re-measure (quiet ×3, MAIN print; E bit-identical); CP2K quiet timer MAX unchanged |
+| `gpw-uks-o2-gamma` | **25.1** | **13.69** | **1.83** | single SCF; ATV `wall=` print / CP2K quiet warm (path untouched this wave) |
+| `gpw-kpoints-si` MAIN | **2.88** | **2.45** | **1.18** | ATV MAIN = STVnl+kbg+6 KS from `ATV_GPW_PROF` (ngrid=37800 nk=4); full reg ~13.6 s (7 SCF solves, not fair); not re-measured this wave |
+| `ot-minimizer-water` OT-only | **7.55** | **2.50** | **3.02** | ATV OT segment via dual runtime-init timestamps (25 OT it); full OT+DIIS reg ~9.7 s (path untouched) |
 | **worst_ratio** | — | — | **3.02** | OT water |
 
-Supersedes the 2026-08-06 wave-7 approximate table (~1.25× MAIN vs ~1.28 s CP2K
-on a prior quiet pin / different wall definition). Energy pins unchanged;
-**walls refreshed on this host + source-install `cp2k.psmp`**.
+CP2K walls from 2026-08-06 Baseline re-pin (provenance below). ATV MG MAIN
+refreshed post-merge `e1eaf084` / harness wave-2. Energy pins unchanged.
 
 ### CP2K pin detail (energy + wall + output line)
 
@@ -83,8 +82,10 @@ on a prior quiet pin / different wall definition). Energy pins unchanged;
 | grid_collocate_task_list | 0.203 s / 14 calls ≈ **14.5 ms**/call |
 | grid_integrate_task_list | 0.222 s / 13 calls ≈ **17.1 ms**/call |
 | SCF | 13 steps |
-| ATV MAIN | **1.5 s** (pass2 quiet); E = −15.8023961242 Ha; \|ΔE\|pin = 2.029e-05 Ha |
-| ratio | **1.5 / 0.688 = 2.18** |
+| ATV MAIN | **1.6 s** (quiet ×3 post `p0-stvnl-setup-residual`; loadavg high but stable); E = −15.8023961242 Ha; \|ΔE\|pin = 2.029e-05 Ha |
+| ATV setup (prof MAIN) | ST_k **~340–346** ms + Vnl_k **~57–62** ms; products_mg **~19–21** ms |
+| steady coll/int (MAIN ngrid=37800) | collocate **~29–30** ms; integrate **~47–49** ms |
+| ratio | **1.6 / 0.688 = 2.33** |
 
 #### `gpw-kpoints-si`
 
@@ -126,20 +127,20 @@ on a prior quiet pin / different wall definition). Energy pins unchanged;
 
 | stage | ms / rebuild (order of) |
 | --- | ---: |
-| collocate (steady) | **~27** |
-| integrate (steady) | **~43** |
-| Poisson + XC | ~4 (MG LDA-class) |
-| setup products_mg (once) | **~17–23** |
-| setup STVnl_k (once) | **~430–475** |
+| collocate (steady) | **~29–30** |
+| integrate (steady) | **~47–49** |
+| Poisson + XC | ~4–5 (MG PBE-class; first build higher) |
+| setup products_mg (once) | **~19–21** |
+| setup ST_k / Vnl_k (once) | **~340–346 / ~57–62** (post `p0-stvnl-setup-residual`) |
 
 CP2K same twin quiet: collocate ~14.5 ms/call, integrate ~17.1 ms/call
 (TOTAL time / CALLS on the TIMING table).
 
 ### Active lever
 
-**worst_ratio = 3.02** (`ot-minimizer-water`). MG MAIN **2.18×** vs this
-host’s quiet CP2K 0.69 s (integrate still ~2.5× CP2K per-call class). UKS O₂
-**1.83×**. Dense-χ^k MAIN **~1.2×**. See
+**worst_ratio = 3.02** (`ot-minimizer-water`). MG MAIN **2.33×** vs this
+host’s quiet CP2K 0.688 s (integrate still ~2.8× CP2K per-call class; STVnl
+setup residual landed). UKS O₂ **1.83×**. Dense-χ^k MAIN **~1.2×**. See
 [gpw-perf-architecture.md](gpw-perf-architecture.md) and
 [cp2k-perf-loop.md](../../docs/developer/cp2k-perf-loop.md).
 
