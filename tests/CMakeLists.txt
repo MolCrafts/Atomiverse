@@ -1067,6 +1067,8 @@ if(ATV_BUILD_CUDA)
     if(ATV_BUILD_GPW AND ATV_BUILD_PW)
         atv_add_test(test_cuda_gpw_device_poisson cuda/gpw/test_device_poisson.cu)
         target_link_libraries(test_cuda_gpw_device_poisson PRIVATE CUDA::cufft)
+        # CUDA GPW Padé LDA XC foothold — vs cpu::xc::pade_lsd / xc_grid_pade.
+        atv_add_test(test_cuda_gpw_xc_lda cuda/gpw/test_xc_lda.cu)
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
