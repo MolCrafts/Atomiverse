@@ -47,16 +47,16 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
     accumulate on AVX-512, short-segment scalar, Ltot triangular skip, zero-pol
     reverse, cab n≥4; int **~58→~45** ms; MAIN **~1.6 s / ~1.25×**.
 
-**Active next (`es-cpu-cuda-opt` post wave-7 land):**
+**Active next (`es-cpu-cuda-opt` post wave-7; wave-8 no-land):**
 
 | Track | Focus | Anchor |
 | --- | --- | --- |
-| **cpu** | optional further int residual / coll residual / `cpu-simd-2center-setup` | `T_atv/T_cp2k` MG MAIN ~1.25× → ~1× |
-| **cuda** | foothold chain closed (Poisson + LDA XC + ρ collocate + V integrate); no full GPW product; no higher-L RHF | same-settings CPU oracle; device-only; GH200 |
+| **cpu** | optional residual-2 **kernel-exhausted** on host (~47–49 ms int); `cpu-simd-2center-setup` slab-only | MG MAIN ~1.25–1.33× → needs non-kernel lever for ~1× |
+| **cuda** | foothold chain closed; no full GPW product; no higher-L RHF | same-settings CPU oracle; device-only; GH200 |
 
-1. **CPU wall** — MG MAIN **~1.25×** (OT worst **~1.4×**, ≤3× aim met). Primary
-   remaining lever: **integrate still ~2.4× CP2K** (~45 vs ~19 ms); coll ~1.5×.
-   Energy-path change ⇒ re-run FD force oracle.
+1. **CPU wall** — MG MAIN **~1.25–1.33×** host (OT worst **~1.4×**, ≤3× aim met).
+   Wave-8 residual-2: no landable kernel win (per-chunk hsum regressed). Integrate
+   still ~2.5× CP2K (~48 vs ~19 ms). Next free lever is **not** thin collint polish.
 2. **CUDA ES** — RHF device s/p energy+forces+level_shift+path-select+**CDIIS**
    **landed**; Γ GPW Poisson/FFT + Padé LDA XC + **ρ collocate** + **V·shape
    integrate** footholds **landed** (not full method). Full CUDA GPW product
