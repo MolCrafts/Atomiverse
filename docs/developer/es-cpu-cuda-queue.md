@@ -36,28 +36,35 @@ CUDA RHF `.claude/notes/cuda-rhf-device-only.md`.
 
 ## pending
 
-Wave-3 **landed** 2026-08-06 on **`dev` @ `9f2d791c`**. Next residual rank (do not invent hybrid/GAPW/PAW/meta-GGA). Staff only `wf/escuda-<slug>` off **current** `dev`.
+Wave-4 **GapCensus** 2026-08-06 on **`dev` @ `31b37338`** (wave-3 land tip `9f2d791c` + harness chore). Re-diff baselines + architecture vs landed product. Staff only `wf/escuda-<slug>` off **current** `dev`. Do not invent hybrid/GAPW/PAW/meta-GGA.
+
+### Fair-wall rank (1 MPI × OMP=4; after wave-3)
+
+| Twin | ATV on `dev` | CP2K twin | ratio | lever class |
+| --- | --- | --- | ---: | --- |
+| `gpw-multigrid-kpoints` | MAIN quiet best **~2.3 s** (STVnl ~435 ms; products_mg ~0.3 s; coll/int ~80–90 ms/iter) | **~1.28 s** quiet | **~1.8×** | **worst** — primary CPU target |
+| `ot-uks-o2` | **27** OT it / OT **~13 s** | **8.68 s** / **30** SCF steps | **~1.5×** | ≤3× aim **met**; not primary |
+| `ot-minimizer-water` | **25** OT it | ~2.7 s older OT class | improved | outer closed under OT residual |
+| `gpw-uks-o2-gamma` | DIIS ~19–24 s | ~21 s older | **~1×** | closed |
+
+Product path landed: collint stack; STVnl Hermite key reuse; Γ OT g·e DIIS + OUTER_SCF polish; spectral FFT GGA. Dense `kbg` is **skipped** under MG (`!use_mg`) — do not staff kbg cut for this twin.
 
 ### CPU — wall vs CP2K (worst ratio first)
 
-Product path on **`dev`**: Γ OT = g·e DIIS + SAFE/Armijo + PR+ CG + **OUTER_SCF polish** (fixed-H eigen+mix when residual moderate; skip under DFT+U); STVnl Hermite geometry-key reuse + phase flatten. Anchors 1 MPI × OMP=4. **Worst class is now MG MAIN ~1.8×** (OT worst ~1.5× closed under 3× aim).
-
-| Twin | ATV evidence on `dev` | CP2K twin | ratio class |
-| --- | --- | --- | --- |
-| `gpw-multigrid-kpoints` | MAIN quiet best **~2.3 s** (STVnl ~435 ms) | **~1.28 s** quiet | **~1.8×** |
-| `ot-uks-o2` | **27** OT it / OT wall **~13 s** | **8.68 s** / **30** SCF steps | **~1.5×** (was ~4.4× / ~90 it) |
-| `ot-minimizer-water` | **25** OT it | ~2.7 s older OT class | outer improved (was 32) |
-| `gpw-uks-o2-gamma` | DIIS ~19–24 s | ~21 s older | **~1×** |
-
+- [ ] `cpu-collint-residual` | **P0** Cut product collocate/integrate toward CP2K per-iter (~80–90 ms → ~20 ms class). Open piece: shell-level task list beyond cartesian-prim groups; residual batching / contract in `product_collint` + `multigrid` wire. | track cpu | twin: `gpw-multigrid-kpoints` MAIN | files: `src/cpu/gpw/internal/product_collint.{h,cpp}`, `multigrid.cpp` | gate: MAIN quiet ratio ↓ toward ~1×; pin bit-stable or stated tol; FD `gpw-forces-water` if energy path moves; four twins no regression |
+- [ ] `cpu-products-mg-setup` | **P1** Shrink one-shot `build_products` / products_mg (~0.3 s on MG twin) — geometry sort, prim/contrib packing, level assignment. | track cpu | twin: `gpw-multigrid-kpoints` setup mark `products_mg` | files: `multigrid.cpp` (`build_products`), product data structures | gate: products_mg ms ↓; MAIN not worse; pins green; no 5th collocation layout |
 - [ ] `cpu-simd-2center-setup` | **P3** xsimd analytic 2-center S/T if still hot on slab-class (invisible on small four twins) — from gpw-perf `p2-simd-2center-setup` | track cpu | twin: slab fragment microbench | files: overlap/kinetic internals | gate: setup ↓; four twins no regression |
 
-*Not promoted (stay on gpw-perf-queue):* `p1-products-default-k` (re-gated until product ≤ dense A/B); `p2-mpi-product-grid` (multi-rank; not 1 MPI fair-wall lever). *Already landed this loop:* `cpu-xc-spectral-fft`, `cpu-ot-diis-outer`, `cpu-ot-residual`, `cpu-stvnl-residual`.
+*Not promoted (stay on gpw-perf-queue):* `p1-products-default-k` (re-gated until product ≤ dense A/B — needs collint residual first); `p2-mpi-product-grid` (multi-rank; not 1 MPI fair-wall lever); OT further polish (≤3× aim already met on `ot-uks-o2`). *gpw-perf `p2-xc-spectral-fft` already landed here as `cpu-xc-spectral-fft`.* *Already landed this loop:* `cpu-xc-spectral-fft`, `cpu-ot-diis-outer`, `cpu-ot-residual`, `cpu-stvnl-residual`.
 
-### CUDA — corresponding ES
+### CUDA — corresponding ES (open-gate; value after wave-3)
 
-Landed on `dev`: device s/p energy + forces + **level_shift on device** + **Γ GPW Poisson/FFT foothold**. Residual: higher-L / non-STO-3G host integrals; type[] D2H path select; full GPW method product blocked.
+Landed on `dev`: device s/p energy + forces + level_shift + device-only polish + **Γ GPW Poisson/FFT foothold**. Open gate holds for thin device slices with CPU oracle + stated CUDA↔CPU tols. Public `run`/`forces` shape stable for RHF; GPW full method still out of scope.
 
-*Not pending this loop:* CUDA d-shell / higher-L RHF product; classical MD CUDA; hybrid/GAPW/PAW/meta-GGA; `cuda-gpw-full-product` (blocked until foothold green — foothold is green, still not a full product).
+- [ ] `cuda-gpw-xc-lda-foothold` | **P1** Thin device **LDA XC** on a real-space grid vs same-settings CPU oracle (mirror PW `xc_lda` style; no host loops over grid points). Deepens GPW beyond Poisson only — **not** full SCF product. | track cuda | twin: new `tests/cuda/gpw/` unit vs `cpu::gpw`/`xc` LDA | files: `src/cuda/gpw/internal/` (+ cuh) | gate: GH200 log PASS; tols stated (cu vs CPU); no Frame API change; wipe build after |
+- [ ] `cuda-rhf-path-select-host` | **P2** Eliminate setup **type[] D2H** for device-path select on covered s/p systems (decide path from host Z/basis before upload; keep device-only SCF/forces). | track cuda | twin: `tests/cuda/scf/test_rhf.cu` (H₂ + H₂O still device energy/forces) | files: `rhf.cu`, shell pack path | gate: GH200 `test_cuda_scf_rhf` + device_integrals PASS; no mid-SCF D2H regression; tols unchanged |
+
+*Not pending this loop:* CUDA d-shell / higher-L RHF product; classical MD CUDA; hybrid/GAPW/PAW/meta-GGA; `cuda-gpw-full-product` (blocked — foothold unit green, full method product still out of scope / architecture freeze).
 
 ## in_progress
 
