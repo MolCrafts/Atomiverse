@@ -5368,10 +5368,11 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         constexpr int kOuterPeriodDiis = 5;
         constexpr int kDiisReseed = 25;
         // OUTER_SCF Pulay handoff once OT residual is moderate. Water:
-        // FULL_SINGLE_INVERSE DIIS drops gnorm 3.8→~1.5 in ~2–3 outers, then
+        // FULL_SINGLE_INVERSE DIIS drops gnorm 3.8→~1.5 in ~2 outers, then
         // Pulay closes energy+err in ~6–7 KS (same fixed point as non-OT DIIS).
         // Too-low thresholds waste OT outers on a plateau; pure-Pulay-from-start
-        // is the banned fixed-H wall hack — keep ≥1 OT micro-step.
+        // is the banned fixed-H wall hack — keep ≥1 OT micro-step. Raising the
+        // threshold to hand off after 1 outer forces extra polish KS (net loss).
         constexpr double kPolishG = 1.50;
         constexpr double kPolishMix = 0.5;
         constexpr double kStepSize = 0.15;
@@ -5446,6 +5447,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             e_prev = e_total;
 
             // OUTER_SCF polish: Pulay DIIS on H from the OT guess.
+            // H already matches dens(Cocc) from the last accepted OT step —
+            // reuse it on p=0 (skip a full KS rebuild); rebuild only after P
+            // updates. Saves one KS (~one polish step) on the water twin.
             if (!do_dftu && iter > 0 && gnorm < kPolishG) {
                 P = linalg::build_density_matrix(Cocc, cfg.n_occ, nb, 2.0);
                 RealMatrix C_prev_pol = xt::zeros<double>({nb, nb});
@@ -5453,10 +5457,14 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     for (int i = 0; i < cfg.n_occ; ++i)
                         C_prev_pol(u, i) = Cocc(u, i);
                 bool pol_done = false;
+                bool h_matches_P = true;
                 for (int p = 0; p < 30; ++p) {
-                    auto he = build_H_and_energy(P);
-                    H = std::move(he.first);
-                    e_total = he.second;
+                    if (!h_matches_P) {
+                        auto he = build_H_and_energy(P);
+                        H = std::move(he.first);
+                        e_total = he.second;
+                    }
+                    h_matches_P = false;
                     res.iters = iter + 1 + p;
                     res.e_total = e_total;
                     const RealMatrix err =
