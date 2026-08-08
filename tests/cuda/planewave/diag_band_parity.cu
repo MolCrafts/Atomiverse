@@ -40,6 +40,25 @@ struct BorrowedGrids {
     BorrowedGrids(const BorrowedGrids&) = delete;
     BorrowedGrids& operator=(const BorrowedGrids&) = delete;
 };
+
+/// @brief Bind `ws` to k-sphere @p ik for the CPU reference solver.
+///
+/// The device solver gets its k-point from `bind_kpoint`; the host
+/// `DavidsonSolver` this diagnostic compares against still reads the
+/// workspace, so the rebinding lives on here.
+void rebind_k(const internal::PWProblem& prob, internal::PWWorkspace& ws,
+              size_t ik) {
+    ws.gvec = &prob.gv_k[ik];
+    ws.n_g = prob.gv_k[ik].count();
+    if (!prob.kb_proj_k.empty())
+        ws.kb_proj = prob.kb_proj_k[ik];
+    if (!prob.atom_wfc_k.empty())
+        ws.atom_wfc = prob.atom_wfc_k[ik];
+    // Kinetic on q = k+G, sized to this k-sphere.
+    ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
+    for (int ig = 0; ig < ws.n_g; ++ig)
+        ws.T_G[ig] = ws.gvec->ekin[ig];
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -83,20 +102,14 @@ int main(int argc, char** argv) {
                                                 nb);
     BorrowedGrids grids(ws.nr, ws.V_eff_r.data());
     solver.bind_grids(grids.d_rho, grids.d_veff);
+    // Per-k device tables are geometry: built once, then bound by index.
+    // (Leaves ws bound to the density sphere; the loop below rebinds it for
+    // the CPU reference solver anyway.)
+    solver.build_kpoints(prob);
 
     double max_diff = 0;
     for (size_t ik = 0; ik < prob.gv_k.size(); ++ik) {
-        ws.gvec = &prob.gv_k[ik];
-        ws.n_g = prob.gv_k[ik].count();
-        if (!prob.kb_proj_k.empty())
-            ws.kb_proj = prob.kb_proj_k[ik];
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[ik];
-
-        // Kinetic on q = k+G, sized to this k-sphere.
-        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.T_G[ig] = ws.gvec->ekin[ig];
+        rebind_k(prob, ws, ik);
         internal::DavidsonSolver d{nb, 1e-9, 40};
         d.prepare(ws);
         d.step(ws);
@@ -115,10 +128,14 @@ int main(int argc, char** argv) {
             cuda::pw::internal::DeviceBandSolver s2(ws.fft_nx, ws.fft_ny,
                                                     ws.fft_nz, nb);
             s2.bind_grids(grids.d_rho, grids.d_veff);
-            s2.set_kpoint(ws);
+            s2.build_kpoints(prob);
+            s2.bind_kpoint(static_cast<int>(ik));
             s2.solve(ws, 40);
+            // build_kpoints rebinds ws while it walks the k-spheres; put it
+            // back on this k for the CPU-side reads that follow.
+            rebind_k(prob, ws, ik);
         } else {
-            solver.set_kpoint(ws);
+            solver.bind_kpoint(static_cast<int>(ik));
             solver.solve(ws, 40);
         }
         std::printf("k%zu CUDA:", ik);
@@ -141,8 +158,10 @@ int main(int argc, char** argv) {
             cuda::pw::internal::DeviceBandSolver s3(ws.fft_nx, ws.fft_ny,
                                                     ws.fft_nz, nb);
             s3.bind_grids(grids.d_rho, grids.d_veff);
-            s3.set_kpoint(ws);
+            s3.build_kpoints(prob);
+            s3.bind_kpoint(static_cast<int>(ik));
             s3.apply_h_host(psi.data(), hpsi.data());
+            rebind_k(prob, ws, ik);
             double r2 = 0, n2 = 0;
             for (int ig = 0; ig < ngk; ++ig) {
                 auto r = hpsi[ig] - std::complex<AccReal>(e_cpu[0]) * psi[ig];

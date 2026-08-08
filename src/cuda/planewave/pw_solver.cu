@@ -18,10 +18,15 @@
 /// history holds ≥ 2 entries), its ≤ 8 coefficients, and 5 energy/residual
 /// doubles. Each is documented at its call site in device_density.cu.
 ///
+/// The band side is geometry-hoisted too: `build_kpoints` uploads every per-k
+/// table (G→FFT map, T(G), q = k+G, KB descriptors, initial Davidson subspace)
+/// once per run, so `bind_kpoint` allocates nothing, copies nothing across
+/// PCIe and synchronizes nothing.
+///
 /// Still NOT device-resident (named, not claimed fixed): the Davidson round
-/// trip of the n_sub² subspace Hamiltonian and Ritz rotation, its
-/// host-pointer `cublasDznrm2` calls, and the per-k index/T(G)/β table rebuild
-/// in `set_kpoint` — all inside device_solver.cu, all out of scope here.
+/// trip of the n_sub² subspace Hamiltonian and Ritz rotation per expansion
+/// round, and its host-pointer `cublasDznrm2` calls — both inside
+/// device_solver.cu, both out of scope here.
 ///
 /// Logging goes through `cpu::pw::internal::log_iteration_energy` on purpose:
 /// `core/log.h` is CUDA-free and must not be included from a `.cu`.
@@ -136,12 +141,12 @@ PWResult& PW::run(const cpu::Frame& frame) {
     ws.mix_beta = AccReal(mix_beta);
     ws.pulay_depth = pulay_depth;
 
-    // Density-sphere size. ws.n_g is rebound to each k-sphere inside the
-    // loop, so it is never a stable density-sphere size — capture once.
-    const int ng0 = prob.gv0.count();
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
     const int n_bands = prob.n_bands;
     const AccReal vol_bohr = prob.vol_bohr;
+    // build_kpoints() leaves ws bound to the density sphere, so ws.omega is
+    // stable for the whole run; the k-loop no longer touches ws at all.
+    const AccReal omega_bohr = ws.omega;
 
     // No MPI k-point distribution on this backend: every rank owns every k.
     result_.n_kpts = n_kpts;
@@ -152,6 +157,9 @@ PWResult& PW::run(const cpu::Frame& frame) {
     internal::DeviceDensity den(prob, mix_beta, pulay_depth);
     internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands);
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
+    // Every per-k table (G→FFT map, T(G), q = k+G, KB descriptors, initial
+    // Davidson subspace) is geometry — built and uploaded once, here.
+    solver.build_kpoints(prob);
 
     // Same convergence policy object the CPU backend uses (warmup = 2); the
     // device reduces ‖ρ − ρ_old‖₂ itself, so feed the norm overload.
@@ -165,21 +173,11 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
         AccReal e_band = 0;
         for (int ik = 0; ik < n_kpts; ++ik) {
-            const int n_g_k = prob.gv_k[ik].count();
-            auto* saved_gvec = ws.gvec;
-            ws.gvec = &prob.gv_k[ik];
-            ws.n_g = n_g_k;
-            // Nonlocal/wfc tables live on q = k+G: bind this k's tables.
-            if (!prob.kb_proj_k.empty())
-                ws.kb_proj = prob.kb_proj_k[ik];
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[ik];
-            // Kinetic on q = k+G, sized to this k-sphere (matches the CPU).
-            ws.T_G.resize({static_cast<std::size_t>(n_g_k)});
-            for (int ig = 0; ig < n_g_k; ++ig)
-                ws.T_G[ig] = prob.gv_k[ik].ekin[ig];
-
-            solver.set_kpoint(ws);
+            // The per-k workspace rebinding that used to live here — G-sphere,
+            // KB/atomic-wfc table copies, the T(G) refill — was rebuilding
+            // geometry that cannot change inside the SCF. It now happens once
+            // in build_kpoints(); binding is a pointer swap.
+            solver.bind_kpoint(ik);
             solver.solve(ws, 40);
 
             const AccReal weight = prob.kg.weights[ik];
@@ -189,10 +187,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
             for (int b = 0; b < n_bands; ++b)
                 e_band += weight * ws.eigenvalues[b] * AccReal(2);
 
-            solver.accumulate_density(weight, ws.omega);
-
-            ws.gvec = saved_gvec;
-            ws.n_g = ng0;
+            solver.accumulate_density(weight, omega_bohr);
         }
 
         den.collect();  // DensityBuilder::finish, first half

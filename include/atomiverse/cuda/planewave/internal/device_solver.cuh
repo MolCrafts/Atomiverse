@@ -21,6 +21,14 @@
 #include <vector>
 
 namespace ATV {
+namespace cpu {
+namespace pw {
+namespace internal {
+struct PWProblem; ///< Defined in cpu/planewave/internal/pw_setup.h.
+} // namespace internal
+} // namespace pw
+} // namespace cpu
+
 namespace cuda {
 namespace pw {
 namespace internal {
@@ -33,12 +41,12 @@ namespace internal {
 /// @code
 ///   solver.bind_grids(den.density_accumulator(),      // once per run
 ///                     den.effective_potential());
+///   solver.build_kpoints(prob);                       // once per run
 ///   for each SCF iteration:
 ///     den.hartree(); den.exchange_correlation(); den.assemble_veff();
 ///     den.zero_accumulator();
-///     for each k-point:
-///       // ws.gvec / ws.n_g / ws.T_G bound to the k-sphere by the caller
-///       solver.set_kpoint(ws);
+///     for each k-point ik:
+///       solver.bind_kpoint(ik);   // pointer swap + one β launch
 ///       solver.solve(ws, max_dav);                 // ws.eigenvalues filled
 ///       solver.accumulate_density(weight, ws.omega);
 ///     den.collect(); den.mix(iter); den.reduce(vol);
@@ -66,16 +74,46 @@ class DeviceBandSolver {
     ///                    [Hartree].
     void bind_grids(double* d_rho_accum, const double* d_veff_r);
 
-    /// @brief Bind the k-point currently selected in `ws` (gvec/n_g/T_G):
-    /// uploads T(G), G-vectors, the G→FFT-grid index map and rebuilds the
-    /// KB projector matrix β (ng × n_proj_columns) on device.
-    void set_kpoint(const cpu::pw::internal::PWWorkspace& ws);
+    /// @brief Build every per-k-point table on device, once per run.
+    ///
+    /// Everything this uploads is a pure function of the geometry — the
+    /// G→FFT index map, T(G), q = k+G, the KB projector descriptors and
+    /// radial f_G, and the initial Davidson subspace (`init_subspace`, which
+    /// reads only T_G / atom_wfc / gvec / atom_pos_bohr). None of it depends
+    /// on V_eff or ρ, so rebuilding it per SCF iteration — as the loop did
+    /// before — was repeating identical work `max_iter` times.
+    ///
+    /// Device cost is \f$\sum_k\f$ over the k-spheres; `bind_kpoint` then
+    /// allocates nothing and copies nothing across PCIe. The total is checked
+    /// against free device memory and throws a message naming the figure
+    /// rather than surfacing a bare cudaMalloc failure.
+    ///
+    /// @param prob Problem assembled by `setup_pw_problem`. `prob.ws` is
+    ///        temporarily rebound to each k-sphere and left bound to the
+    ///        density sphere (`prob.gv0`) on return.
+    void build_kpoints(cpu::pw::internal::PWProblem& prob);
+
+    /// @brief Select a k-point built by `build_kpoints`.
+    ///
+    /// Moves pointers into the packed tables and relaunches the β build
+    /// kernel from already-resident inputs. No allocation, no host↔device
+    /// copy, no synchronization. β itself is recomputed rather than cached
+    /// because it is the one \f$O(n_G n_\mathrm{proj})\f$ array here, and
+    /// caching it over all k would dominate device memory on any real cell.
+    ///
+    /// @param ik k-point index into `prob.gv_k` (0-based).
+    void bind_kpoint(int ik);
 
     /// @brief Block-Davidson diagonalization for the bound k-point,
     /// algorithmically identical to `cpu::pw::internal::DavidsonSolver::step`,
     /// including its fixed |R|² residual threshold. Writes ws.eigenvalues;
     /// band wavefunctions stay device-resident.
-    /// @param ws       Workspace with the k-sphere bound (gvec/n_g/T_G).
+    ///
+    /// The starting subspace is copied device→device from the table
+    /// `build_kpoints` produced, so no O(n_G) array crosses PCIe here.
+    ///
+    /// @param ws       Workspace, used only to receive `eigenvalues`; the
+    ///                 k-sphere comes from `bind_kpoint`, not from `ws`.
     /// @param max_iter Maximum Davidson expansion rounds (capped at 20).
     void solve(cpu::pw::internal::PWWorkspace& ws, int max_iter);
 
@@ -95,14 +133,17 @@ class DeviceBandSolver {
     /// H·ψ for one device vector (cuFFT + V_eff + KB projectors).
     void apply_h(const cufftDoubleComplex* psi, cufftDoubleComplex* hpsi);
     void ensure_subspace_capacity(int ng, int cap);
+    /// Release the packed per-k tables and null the views into them.
+    void free_tables();
 
     int nx_, ny_, nz_, nr_;
     int n_bands_;
     int ng_ = 0;       ///< G-sphere size of the bound k-point.
     int n_proj_ = 0;   ///< KB projector columns (Σ_atoms Σ_proj (2l+1)).
+    int n_sub0_ = 0;   ///< Initial subspace vectors of the bound k-point.
+    int bound_k_ = -1; ///< k-point index bound by bind_kpoint(), −1 = none.
     int cap_sub_ = 0;  ///< Allocated subspace capacity (vectors).
     int ng_cap_ = 0;   ///< Allocated per-vector length (G-sphere size).
-    double omega_ = 0; ///< Cell volume of the bound workspace [Bohr³].
 
     cufftHandle fft_plan_ = 0;
     cublasHandle_t blas_ = nullptr;
@@ -113,12 +154,38 @@ class DeviceBandSolver {
     double* rho_accum_ = nullptr;     ///< nr density accumulator (device).
     const double* veff_r_ = nullptr;  ///< nr V_eff(r) [Hartree] (device).
 
-    // Per-k-point buffers (sized to ng_)
-    int* d_idx_ = nullptr;                   ///< G → flat FFT-grid index.
-    double* d_tg_ = nullptr;                 ///< T(G) kinetic diagonal.
+    // ── Views into the packed tables below, moved by bind_kpoint(). ──
+    // NOT owned: never pass these to device_free().
+    const int* d_idx_ = nullptr;    ///< G → flat FFT-grid index (bound k).
+    const double* d_tg_ = nullptr;  ///< T(G) kinetic diagonal (bound k).
+    const double* d_betad_ = nullptr; ///< per-column KB strength D (bound k).
+    const cufftDoubleComplex* d_sub0_ = nullptr; ///< initial subspace (bound k).
+
+    // Owned, sized to the largest k-sphere; contents rebuilt per bind_kpoint.
     cufftDoubleComplex* d_beta_ = nullptr;   ///< β matrix (ng × n_proj_).
-    double* d_betad_ = nullptr;              ///< per-column KB strength D.
     cufftDoubleComplex* d_proj_c_ = nullptr; ///< ⟨β|ψ⟩ workspace (n_proj_).
+
+    // ── Packed per-k tables (owned), built once by build_kpoints(). ──
+    // Indexed via the offset vectors; k_goff_ addresses per-(k,G) arrays,
+    // k_coff_ per-(k,β-column), k_fgoff_ the concatenated radial f_G, and
+    // k_soff_ the concatenated initial subspaces.
+    int n_kpts_ = 0;
+    double pref_ = 0; ///< 4π/√Ω, constant over k.
+    std::vector<int> k_ng_, k_ncol_, k_nsub_;
+    std::vector<std::size_t> k_goff_, k_coff_, k_fgoff_, k_soff_;
+    int* d_idx_all_ = nullptr;
+    double* d_tg_all_ = nullptr;
+    double* d_qx_all_ = nullptr; ///< q = k+G, x component [Bohr⁻¹].
+    double* d_qy_all_ = nullptr;
+    double* d_qz_all_ = nullptr;
+    int* d_cl_all_ = nullptr;  ///< β column: l.
+    int* d_cm_all_ = nullptr;  ///< β column: m.
+    int* d_co_all_ = nullptr;  ///< β column: offset into this k's f_G block.
+    int* d_cn_all_ = nullptr;  ///< β column: length of its f_G run.
+    double* d_cd_all_ = nullptr; ///< β column: KB strength D.
+    double* d_cp_all_ = nullptr; ///< β column: atom position (3 per column).
+    double* d_fg_all_ = nullptr; ///< concatenated radial f_G.
+    cufftDoubleComplex* d_sub0_all_ = nullptr; ///< concatenated subspaces.
 
     // Davidson buffers
     cufftDoubleComplex* d_sub_ = nullptr;   ///< subspace V (ng × cap_sub).

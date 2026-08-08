@@ -95,8 +95,18 @@ DIAG_BIN=$(find "${BUILD}" -type f -name diag_band_parity -perm -u+x | head -1)
 echo "DIAG_BAND_PARITY_RC=${DIAG_RC}"
 
 # Stage 5: end-to-end CPU/CUDA parity + ABINIT-class literature window.
+# Timed: this slug is the only in-tree exercise of the full CUDA SCF loop, so
+# its CUDA-leg wall time is the before/after signal for band-side work. It is
+# a 2-atom cell — a same-backend before/after only, never a CPU-vs-CUDA claim.
 echo "=== STAGE 5: reg_pw-cuda-lda-si --device=both ==="
 REG_RC=0
+REG_BIN=$(find "${BUILD}" -type f -name reg_pw-cuda-lda-si -perm -u+x | head -1)
+for dev in cpu cuda; do
+  echo "--- timing ${dev} leg ---"
+  /usr/bin/time -f "WALL_${dev}=%e s  MAXRSS=%M KB" \
+    env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+    "${REG_BIN}" --device=${dev} || REG_RC=$?
+done
 cmake --build "${BUILD}" --target run_reg_pw-cuda-lda-si || REG_RC=$?
 echo "REG_PW_CUDA_RC=${REG_RC}"
 

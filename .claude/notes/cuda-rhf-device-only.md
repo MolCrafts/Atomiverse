@@ -76,12 +76,28 @@ shell, `k_mesh>=1`, `ecut_ry>0`. k-points are **not** MPI-distributed here.
 
 Per-iteration PCIe traffic, density side: Pulay Gram ≤ 1 KB (only once history
 ≥ 2) + ≤ 8 coefficients + 5 energy/residual doubles. **No O(N_G) / O(N_r)
-density-side array crosses.** Band side is **not** device-resident yet:
-`set_kpoint` rebuilds the per-k index/T(G)/β tables (~9 allocs + 12 H2D + a
-`cudaDeviceSynchronize`) every k every iteration, and Davidson still round-trips
-the n_sub² subspace Hamiltonian + Ritz rotation. Those are the named next waves,
-along with cuSOLVER `Zheevd`, device-pointer `cublasDznrm2`, a non-default
-stream, and PBE-GGA on device.
+density-side array crosses.**
+
+Band side, after `cuda-pw-kpoint-hoist`: `build_kpoints(prob)` uploads every
+per-k table once per run — G→FFT index map, T(G), q = k+G, KB projector
+descriptors + radial f_G, **and the initial Davidson subspace**. `init_subspace`
+reads only T_G / atom_wfc / gvec / atom_pos_bohr, i.e. it is pure geometry, so
+the old loop was recomputing an identical starting guess (including an n_G sort)
+and re-uploading it every k every iteration. `bind_kpoint(ik)` is now a pointer
+swap plus one β launch: **no allocation, no H2D, no `cudaDeviceSynchronize`**,
+and `solve()` seeds the subspace device→device.
+
+β is deliberately **not** cached across k: it is the one O(n_G·n_proj) array
+here, so caching it over all k would reach TB scale on a real cell. Its inputs
+are cached instead. `build_kpoints` sizes the tables against `cudaMemGetInfo`
+and throws with the figure rather than letting a bare `cudaMalloc` fail;
+k-batching is the answer if a cell ever exceeds that, and is not implemented.
+
+Still not device-resident (named, not claimed fixed): the Davidson n_sub²
+subspace Hamiltonian + Ritz rotation round trip per expansion round, and its
+host-pointer `cublasDznrm2`. Next waves: cuSOLVER `Zheevd`, device-pointer
+`cublasDznrm2`, a non-default stream, PBE-GGA on device, and — now that the
+slice is correct — the first large-cell measurement (ES order step 4).
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently
@@ -106,6 +122,19 @@ evidence the fix round changed no physics:
   **−15.67177311 Ry**, both 5 iterations, **|Δ| = 2.132e-14 Ry**; inside the
   PseudoDojo/ABINIT window. Parity bound stays at the design-time 1e-3 Ry —
   do not tighten from one cell.
+- k-point hoist (job **983622**): all three figures above **bit-identical** to
+  the pre-hoist tree — the correctness bar for a wave that only deletes
+  redundant recomputation.
+
+**No speed claim for the hoist.** 7 timed runs of the CUDA leg per tree,
+same node type and settings: hoisted median **2.31 s** (min 1.79, spread
+1.79–2.52), baseline median **2.32 s** (min 1.68, spread 1.68–2.53). The
+within-tree spread is ±20 %, far wider than the between-tree difference, so
+this 2-atom cell **cannot resolve** the change — process startup and CUDA
+context init dominate its ~2 s. The wave is justified structurally (no
+allocation and no device sync left in the k-loop; removed work scales as
+n_k · max_iter · N_atoms · n_proj · n_G), not by this measurement. Per the ES
+optimization order, small cells are correctness-only and never the speed story.
 
 ## Wave 6 layout
 

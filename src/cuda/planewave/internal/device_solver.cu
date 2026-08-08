@@ -9,6 +9,7 @@
 /// matrices whose column j is subspace vector j.
 
 #include "atomiverse/core/precision.h"
+#include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
@@ -215,27 +216,6 @@ T* device_alloc(size_t n) {
     return p;
 }
 
-/// @brief Owning scratch buffer freed on every exit path.
-///
-/// `set_kpoint` builds nine staging buffers and then runs twelve throwing
-/// `ATV_CUDA_CHECK` copies plus a launch check before it can free them; a
-/// plain `cudaFree` at the bottom leaks all nine when any of those throws.
-/// The SCF calls `set_kpoint` once per k-point per iteration, so a repeated
-/// transient failure would exhaust device memory.
-template <typename T>
-class DeviceScratch {
-  public:
-    explicit DeviceScratch(size_t n) : p_(device_alloc<T>(n)) {}
-    ~DeviceScratch() { device_free(p_); }
-    DeviceScratch(const DeviceScratch&) = delete;
-    DeviceScratch& operator=(const DeviceScratch&) = delete;
-    /// @return Device pointer owned by this object (never null).
-    T* get() const noexcept { return p_; }
-    operator T*() const noexcept { return p_; }
-
-  private:
-    T* p_ = nullptr;
-};
 
 } // namespace
 
@@ -252,13 +232,36 @@ DeviceBandSolver::DeviceBandSolver(int fft_nx, int fft_ny, int fft_nz,
     d_grid_ = device_alloc<cufftDoubleComplex>(nr_);
 }
 
+void DeviceBandSolver::free_tables() {
+    device_free(d_idx_all_);
+    device_free(d_tg_all_);
+    device_free(d_qx_all_);
+    device_free(d_qy_all_);
+    device_free(d_qz_all_);
+    device_free(d_cl_all_);
+    device_free(d_cm_all_);
+    device_free(d_co_all_);
+    device_free(d_cn_all_);
+    device_free(d_cd_all_);
+    device_free(d_cp_all_);
+    device_free(d_fg_all_);
+    device_free(d_sub0_all_);
+    device_free(d_beta_);
+    device_free(d_proj_c_);
+    // Views into what was just freed.
+    d_idx_ = nullptr;
+    d_tg_ = nullptr;
+    d_betad_ = nullptr;
+    d_sub0_ = nullptr;
+    ng_ = 0;
+    n_proj_ = 0;
+    n_sub0_ = 0;
+    bound_k_ = -1;
+}
+
 DeviceBandSolver::~DeviceBandSolver() {
     device_free(d_grid_);
-    device_free(d_idx_);
-    device_free(d_tg_);
-    device_free(d_beta_);
-    device_free(d_betad_);
-    device_free(d_proj_c_);
+    free_tables();
     device_free(d_sub_);
     device_free(d_hsub_);
     device_free(d_ritz_);
@@ -288,119 +291,219 @@ inline void require_bound(const void* rho_accum, const void* veff_r) {
 }
 } // namespace
 
-void DeviceBandSolver::set_kpoint(const cpu::pw::internal::PWWorkspace& ws) {
-    int ng = ws.n_g;
-    const auto& gv = *ws.gvec;
-    ng_ = ng;
-    omega_ = ws.omega;
+void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
+    const int n_k = static_cast<int>(prob.gv_k.size());
+    if (n_k <= 0)
+        throw std::runtime_error(
+            "DeviceBandSolver::build_kpoints: prob.gv_k is empty — "
+            "setup_pw_problem() must run first");
 
-    // G → flat c2c FFT-grid index map (same modular fold as pad_to_fft).
-    std::vector<int> idx(ng);
-    std::vector<double> tg(ng), gx(ng), gy(ng), gz(ng);
-    for (int ig = 0; ig < ng; ++ig) {
-        int ix = ((gv.h[ig] % nx_) + nx_) % nx_;
-        int iy = ((gv.k[ig] % ny_) + ny_) % ny_;
-        int iz = ((gv.l[ig] % nz_) + nz_) % nz_;
-        idx[ig] = ix + nx_ * (iy + ny_ * iz);
-        tg[ig] = static_cast<double>(ws.T_G[ig]);
-        // Bloch states live on q = k+G (Y_lm direction, phase).
-        gx[ig] = gv.g[ig][0] + gv.kvec[0];
-        gy[ig] = gv.g[ig][1] + gv.kvec[1];
-        gz[ig] = gv.g[ig][2] + gv.kvec[2];
-    }
-    device_free(d_idx_);
-    device_free(d_tg_);
-    d_idx_ = device_alloc<int>(ng);
-    d_tg_ = device_alloc<double>(ng);
-    ATV_CUDA_CHECK(cudaMemcpy(d_idx_, idx.data(), ng * sizeof(int),
-                              cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(cudaMemcpy(d_tg_, tg.data(), ng * sizeof(double),
-                              cudaMemcpyHostToDevice));
+    auto& ws = prob.ws;
+    auto* saved_gvec = ws.gvec;
+    const int saved_ng = ws.n_g;
 
-    // ── KB projector matrix ──
-    // Flatten (atom, projector, m) into β columns; skip |D| < 1e-16
-    // projectors exactly like the CPU apply_hamiltonian.
-    std::vector<int> col_l, col_m, col_fgoff, col_fglen;
-    std::vector<double> col_d, col_pos, fg_flat;
-    for (size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
-        const auto& pos = ws.atom_pos_bohr[ia];
-        for (size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
-            const auto& proj = ws.kb_proj[ia][ip];
-            if (std::abs(proj.d) < AccReal(1e-16))
-                continue;
-            int fg_off = static_cast<int>(fg_flat.size());
-            int fg_len = static_cast<int>(
-                std::min<size_t>(proj.f_G.size(), static_cast<size_t>(ng)));
-            for (int ig = 0; ig < fg_len; ++ig)
-                fg_flat.push_back(static_cast<double>(proj.f_G[ig]));
-            int nm = 2 * proj.l + 1;
-            for (int m = 0; m < nm; ++m) {
-                col_l.push_back(proj.l);
-                col_m.push_back(m);
-                col_d.push_back(static_cast<double>(proj.d));
-                col_pos.push_back(pos[0]);
-                col_pos.push_back(pos[1]);
-                col_pos.push_back(pos[2]);
-                col_fgoff.push_back(fg_off);
-                col_fglen.push_back(fg_len);
+    n_kpts_ = n_k;
+    pref_ = 4.0 * M_PI / std::sqrt(static_cast<double>(ws.omega));
+
+    k_ng_.assign(n_k, 0);
+    k_ncol_.assign(n_k, 0);
+    k_nsub_.assign(n_k, 0);
+    k_goff_.assign(n_k, 0);
+    k_coff_.assign(n_k, 0);
+    k_fgoff_.assign(n_k, 0);
+    k_soff_.assign(n_k, 0);
+
+    // Host staging, filled once for every k-point. These are the exact
+    // arrays the old per-iteration set_kpoint() rebuilt from scratch.
+    std::vector<int> h_idx, h_cl, h_cm, h_co, h_cn;
+    std::vector<double> h_tg, h_qx, h_qy, h_qz, h_cd, h_cp, h_fg;
+    std::vector<std::complex<AccReal>> h_sub0;
+
+    int max_ng = 0, max_ncol = 0;
+
+    for (int ik = 0; ik < n_k; ++ik) {
+        // Bind this k-sphere exactly as the SCF loop used to, so the host
+        // helpers (init_subspace) see what they saw before.
+        const int ng = prob.gv_k[ik].count();
+        ws.gvec = &prob.gv_k[ik];
+        ws.n_g = ng;
+        if (!prob.kb_proj_k.empty())
+            ws.kb_proj = prob.kb_proj_k[ik];
+        if (!prob.atom_wfc_k.empty())
+            ws.atom_wfc = prob.atom_wfc_k[ik];
+        ws.T_G.resize({static_cast<std::size_t>(ng)});
+        for (int ig = 0; ig < ng; ++ig)
+            ws.T_G[ig] = prob.gv_k[ik].ekin[ig];
+
+        const auto& gv = *ws.gvec;
+        k_ng_[ik] = ng;
+        k_goff_[ik] = h_idx.size();
+        max_ng = std::max(max_ng, ng);
+
+        // G → flat c2c FFT-grid index map (same modular fold as pad_to_fft).
+        for (int ig = 0; ig < ng; ++ig) {
+            const int ix = ((gv.h[ig] % nx_) + nx_) % nx_;
+            const int iy = ((gv.k[ig] % ny_) + ny_) % ny_;
+            const int iz = ((gv.l[ig] % nz_) + nz_) % nz_;
+            h_idx.push_back(ix + nx_ * (iy + ny_ * iz));
+            h_tg.push_back(static_cast<double>(ws.T_G[ig]));
+            // Bloch states live on q = k+G (Y_lm direction, phase).
+            h_qx.push_back(gv.g[ig][0] + gv.kvec[0]);
+            h_qy.push_back(gv.g[ig][1] + gv.kvec[1]);
+            h_qz.push_back(gv.g[ig][2] + gv.kvec[2]);
+        }
+
+        // ── KB projector columns ──
+        // Flatten (atom, projector, m) into β columns; skip |D| < 1e-16
+        // projectors exactly like the CPU apply_hamiltonian. f_G offsets are
+        // relative to this k's block, so the kernel receives a base pointer.
+        k_coff_[ik] = h_cl.size();
+        k_fgoff_[ik] = h_fg.size();
+        const std::size_t fg_base = h_fg.size();
+        for (std::size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
+            const auto& pos = ws.atom_pos_bohr[ia];
+            for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
+                const auto& proj = ws.kb_proj[ia][ip];
+                if (std::abs(proj.d) < AccReal(1e-16))
+                    continue;
+                const int fg_off = static_cast<int>(h_fg.size() - fg_base);
+                const int fg_len = static_cast<int>(std::min<std::size_t>(
+                    proj.f_G.size(), static_cast<std::size_t>(ng)));
+                for (int ig = 0; ig < fg_len; ++ig)
+                    h_fg.push_back(static_cast<double>(proj.f_G[ig]));
+                const int nm = 2 * proj.l + 1;
+                for (int m = 0; m < nm; ++m) {
+                    h_cl.push_back(proj.l);
+                    h_cm.push_back(m);
+                    h_cd.push_back(static_cast<double>(proj.d));
+                    h_cp.push_back(pos[0]);
+                    h_cp.push_back(pos[1]);
+                    h_cp.push_back(pos[2]);
+                    h_co.push_back(fg_off);
+                    h_cn.push_back(fg_len);
+                }
             }
         }
+        k_ncol_[ik] = static_cast<int>(h_cl.size() - k_coff_[ik]);
+        max_ncol = std::max(max_ncol, k_ncol_[ik]);
+
+        // ── Initial Davidson subspace ──
+        // A pure function of T_G / atom_wfc / gvec / atom_pos_bohr, i.e. of
+        // the geometry: identical in every SCF iteration, so it is built and
+        // uploaded once here instead of once per k per iteration.
+        std::vector<std::complex<AccReal>> sub_host;
+        k_nsub_[ik] =
+            cpu::pw::internal::init_subspace(ws, n_bands_, sub_host);
+        k_soff_[ik] = h_sub0.size();
+        h_sub0.insert(h_sub0.end(), sub_host.begin(), sub_host.end());
     }
-    n_proj_ = static_cast<int>(col_l.size());
 
-    device_free(d_beta_);
-    device_free(d_betad_);
-    device_free(d_proj_c_);
+    ws.gvec = saved_gvec;
+    ws.n_g = saved_ng;
+
+    // Fail with the figure rather than a bare cudaMalloc error. The subspace
+    // block dominates; k-batching is the answer if a cell ever exceeds this.
+    const std::size_t bytes =
+        h_idx.size() * sizeof(int) + h_tg.size() * sizeof(double)
+        + (h_qx.size() + h_qy.size() + h_qz.size()) * sizeof(double)
+        + (h_cl.size() + h_cm.size() + h_co.size() + h_cn.size()) * sizeof(int)
+        + (h_cd.size() + h_cp.size() + h_fg.size()) * sizeof(double)
+        + h_sub0.size() * sizeof(cufftDoubleComplex)
+        + static_cast<std::size_t>(max_ng) * max_ncol
+              * sizeof(cufftDoubleComplex);
+    std::size_t free_b = 0, total_b = 0;
+    ATV_CUDA_CHECK(cudaMemGetInfo(&free_b, &total_b));
+    if (bytes >= free_b)
+        throw std::runtime_error(
+            "DeviceBandSolver::build_kpoints: the per-k tables for "
+            + std::to_string(n_k) + " k-points need "
+            + std::to_string(bytes / (1024 * 1024)) + " MiB but only "
+            + std::to_string(free_b / (1024 * 1024)) + " of "
+            + std::to_string(total_b / (1024 * 1024))
+            + " MiB is free on this device. Reduce k_mesh or ecut_ry; "
+              "batching the k-tables is not implemented. (The Davidson "
+              "subspace is allocated after this and is not counted here.)");
+
+    auto upload_i = [](const std::vector<int>& h, int*& d) {
+        if (h.empty())
+            return;
+        d = device_alloc<int>(h.size());
+        ATV_CUDA_CHECK(cudaMemcpy(d, h.data(), h.size() * sizeof(int),
+                                  cudaMemcpyHostToDevice));
+    };
+    auto upload_d = [](const std::vector<double>& h, double*& d) {
+        if (h.empty())
+            return;
+        d = device_alloc<double>(h.size());
+        ATV_CUDA_CHECK(cudaMemcpy(d, h.data(), h.size() * sizeof(double),
+                                  cudaMemcpyHostToDevice));
+    };
+
+    free_tables();
+    upload_i(h_idx, d_idx_all_);
+    upload_d(h_tg, d_tg_all_);
+    upload_d(h_qx, d_qx_all_);
+    upload_d(h_qy, d_qy_all_);
+    upload_d(h_qz, d_qz_all_);
+    upload_i(h_cl, d_cl_all_);
+    upload_i(h_cm, d_cm_all_);
+    upload_i(h_co, d_co_all_);
+    upload_i(h_cn, d_cn_all_);
+    upload_d(h_cd, d_cd_all_);
+    upload_d(h_cp, d_cp_all_);
+    upload_d(h_fg, d_fg_all_);
+
+    if (!h_sub0.empty()) {
+        // std::complex<double> and cufftDoubleComplex are both two adjacent
+        // doubles; the CPU path already relies on this layout equivalence.
+        static_assert(sizeof(std::complex<AccReal>)
+                          == sizeof(cufftDoubleComplex),
+                      "initial subspace upload assumes layout equivalence");
+        d_sub0_all_ = device_alloc<cufftDoubleComplex>(h_sub0.size());
+        ATV_CUDA_CHECK(cudaMemcpy(d_sub0_all_, h_sub0.data(),
+                                  h_sub0.size() * sizeof(cufftDoubleComplex),
+                                  cudaMemcpyHostToDevice));
+    }
+
+    // β and its ⟨β|ψ⟩ workspace are rebuilt per bind_kpoint, so one
+    // allocation at the largest k-point serves every k.
+    if (max_ncol > 0) {
+        d_beta_ = device_alloc<cufftDoubleComplex>(
+            static_cast<std::size_t>(max_ng) * max_ncol);
+        d_proj_c_ = device_alloc<cufftDoubleComplex>(max_ncol);
+    }
+    bound_k_ = -1;
+}
+
+void DeviceBandSolver::bind_kpoint(int ik) {
+    if (ik < 0 || ik >= n_kpts_)
+        throw std::runtime_error(
+            "DeviceBandSolver::bind_kpoint: k-point index "
+            + std::to_string(ik) + " out of range for "
+            + std::to_string(n_kpts_)
+            + " built k-points (build_kpoints() must run first)");
+
+    ng_ = k_ng_[ik];
+    n_proj_ = k_ncol_[ik];
+    n_sub0_ = k_nsub_[ik];
+    bound_k_ = ik;
+
+    const std::size_t go = k_goff_[ik], co = k_coff_[ik];
+    d_idx_ = d_idx_all_ + go;
+    d_tg_ = d_tg_all_ + go;
+    d_betad_ = d_cd_all_ ? d_cd_all_ + co : nullptr;
+    d_sub0_ = d_sub0_all_ ? d_sub0_all_ + k_soff_[ik] : nullptr;
+
     if (n_proj_ > 0) {
-        d_beta_ =
-            device_alloc<cufftDoubleComplex>(static_cast<size_t>(ng) * n_proj_);
-        d_betad_ = device_alloc<double>(n_proj_);
-        d_proj_c_ = device_alloc<cufftDoubleComplex>(n_proj_);
-        ATV_CUDA_CHECK(cudaMemcpy(d_betad_, col_d.data(),
-                                  n_proj_ * sizeof(double),
-                                  cudaMemcpyHostToDevice));
-
-        // RAII: the twelve ATV_CUDA_CHECK copies and the launch check below
-        // all throw, so these must free on the unwind path too.
-        DeviceScratch<double> d_gx(ng);
-        DeviceScratch<double> d_gy(ng);
-        DeviceScratch<double> d_gz(ng);
-        DeviceScratch<int> d_cl(n_proj_);
-        DeviceScratch<int> d_cm(n_proj_);
-        DeviceScratch<double> d_cp(3 * n_proj_);
-        DeviceScratch<int> d_co(n_proj_);
-        DeviceScratch<int> d_cn(n_proj_);
-        DeviceScratch<double> d_fg(std::max<size_t>(fg_flat.size(), 1));
-        ATV_CUDA_CHECK(cudaMemcpy(d_gx, gx.data(), ng * sizeof(double),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_gy, gy.data(), ng * sizeof(double),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_gz, gz.data(), ng * sizeof(double),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_cl, col_l.data(), n_proj_ * sizeof(int),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_cm, col_m.data(), n_proj_ * sizeof(int),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_cp, col_pos.data(),
-                                  3 * n_proj_ * sizeof(double),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_co, col_fgoff.data(), n_proj_ * sizeof(int),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_cn, col_fglen.data(), n_proj_ * sizeof(int),
-                                  cudaMemcpyHostToDevice));
-        if (!fg_flat.empty())
-            ATV_CUDA_CHECK(cudaMemcpy(d_fg, fg_flat.data(),
-                                      fg_flat.size() * sizeof(double),
-                                      cudaMemcpyHostToDevice));
-
-        double pref = 4.0 * M_PI / std::sqrt(static_cast<double>(ws.omega));
-        dim3 grid(n_blocks(ng), n_proj_);
-        k_build_beta<<<grid, kBlock>>>(d_gx, d_gy, d_gz, d_cl, d_cm, d_cp, d_co,
-                                       d_cn, d_fg, pref, ng, n_proj_, d_beta_);
+        // Inputs are already resident: one launch, no alloc, no H2D, and no
+        // sync (the following kernels are ordered behind it on this stream).
+        const dim3 grid(n_blocks(ng_), n_proj_);
+        k_build_beta<<<grid, kBlock>>>(
+            d_qx_all_ + go, d_qy_all_ + go, d_qz_all_ + go, d_cl_all_ + co,
+            d_cm_all_ + co, d_cp_all_ + 3 * co, d_co_all_ + co,
+            d_cn_all_ + co, d_fg_all_ + k_fgoff_[ik], pref_, ng_, n_proj_,
+            d_beta_);
         ATV_CUDA_CHECK(cudaGetLastError());
-        ATV_CUDA_CHECK(cudaDeviceSynchronize());
-        // Scratch buffers free here via ~DeviceScratch, on this path and on
-        // every throwing path above.
     }
 }
 
@@ -469,26 +572,28 @@ void DeviceBandSolver::apply_h(const cufftDoubleComplex* psi,
 
 void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
     require_bound(rho_accum_, veff_r_);
-    int ng = ws.n_g;
-    int nb = n_bands_;
-    if (ng != ng_)
+    if (bound_k_ < 0)
         throw std::runtime_error(
-            "DeviceBandSolver::solve: set_kpoint(ws) must bind the same "
-            "G-sphere first");
+            "DeviceBandSolver::solve: bind_kpoint() must select a k-point "
+            "built by build_kpoints() first");
+    int ng = ng_;
+    int nb = n_bands_;
 
     ws.eigenvalues.resize({static_cast<std::size_t>(nb)});
 
-    // ── Initial subspace: identical to the CPU solver ──
-    std::vector<std::complex<AccReal>> sub_host;
-    int n_sub = cpu::pw::internal::init_subspace(ws, nb, sub_host);
-
+    // ── Initial subspace ──
+    // Identical to the CPU solver, but built once per k-point by
+    // build_kpoints() rather than per SCF iteration: init_subspace() is a
+    // pure function of the geometry, so this copy is device→device and no
+    // O(n_G) array crosses PCIe here.
+    int n_sub = n_sub0_;
     int max_david = std::min(max_iter, 20);
     int cap = std::min(ng, n_sub + nb * max_david);
     ensure_subspace_capacity(ng, cap);
     ATV_CUDA_CHECK(
-        cudaMemcpy(d_sub_, sub_host.data(),
+        cudaMemcpy(d_sub_, d_sub0_,
                    static_cast<size_t>(n_sub) * ng * sizeof(cufftDoubleComplex),
-                   cudaMemcpyHostToDevice));
+                   cudaMemcpyDeviceToDevice));
     std::vector<bool> h_computed(n_sub, false);
 
     const cuDoubleComplex c_one{1.0, 0.0}, c_zero{0.0, 0.0}, c_mone{-1.0, 0.0};
@@ -694,13 +799,14 @@ void DeviceBandSolver::apply_h_host(const std::complex<AccReal>* psi,
 void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega) {
     require_bound(rho_accum_, veff_r_);
     // require_bound covers the borrowed grids only. This method also reads
-    // d_ritz_ / d_idx_, which stay null until set_kpoint() + solve() have
+    // d_ritz_ / d_idx_, which stay null until bind_kpoint() + solve() have
     // run — dereferencing them would be a silent out-of-bounds read rather
     // than a named error.
     if (!d_ritz_ || !d_idx_ || ng_ <= 0)
         throw std::runtime_error(
             "cuda::pw::internal::DeviceBandSolver::accumulate_density: "
-            "set_kpoint() and solve() must run first (no Ritz vectors bound)");
+            "bind_kpoint() and solve() must run first (no Ritz vectors "
+            "bound)");
     double scale =
         static_cast<double>(weight) * 2.0 / static_cast<double>(omega);
     for (int b = 0; b < n_bands_; ++b) {
