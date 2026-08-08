@@ -110,6 +110,27 @@ __global__ void k_scale_cols(cufftDoubleComplex* __restrict__ c,
     }
 }
 
+/// inv = 1/norm, or 0 when the vector is at rounding level.
+///
+/// The zero is what makes the unconditional pipeline safe: a band that will
+/// be rejected still gets scaled, and scaling by 0 leaves a clean zero vector
+/// instead of inf/NaN propagating into the Gram-Schmidt that follows.
+__global__ void k_safe_reciprocal(const double* __restrict__ norm,
+                                  double* __restrict__ inv) {
+    *inv = (*norm > 0.0) ? 1.0 / *norm : 0.0;
+}
+
+/// accept = the three host branches this replaces, evaluated on device.
+///
+/// Byte-for-byte the CPU predicates: reject a converged band (‖R‖ < 1e-6),
+/// and reject rounding-level remainders before and after Gram-Schmidt
+/// (‖·‖² < 1e-24).
+__global__ void k_accept_flag(const double* __restrict__ nrm,
+                              int* __restrict__ accept) {
+    const double r = nrm[0], p = nrm[1], d = nrm[2];
+    *accept = (r >= 1e-6 && p * p >= 1e-24 && d * d >= 1e-24) ? 1 : 0;
+}
+
 /// R = Hψ − ε·ψ
 __global__ void k_residual(const cufftDoubleComplex* __restrict__ hpsi,
                            const cufftDoubleComplex* __restrict__ psi,
@@ -239,8 +260,15 @@ DeviceBandSolver::DeviceBandSolver(int fft_nx, int fft_ny, int fft_nz,
     check_cufft(cufftPlan3d(&fft_plan_, nz_, ny_, nx_, CUFFT_Z2Z),
                 "cufftPlan3d");
     check_cublas(cublasCreate(&blas_), "cublasCreate");
+    check_cublas(cublasCreate(&blas_dev_), "cublasCreate device-pointer");
+    check_cublas(
+        cublasSetPointerMode(blas_dev_, CUBLAS_POINTER_MODE_DEVICE),
+        "cublasSetPointerMode");
     check_cusolver(cusolverDnCreate(&solver_), "cusolverDnCreate");
     d_grid_ = device_alloc<cufftDoubleComplex>(nr_);
+    d_nrm_ = device_alloc<double>(3);
+    d_inv_ = device_alloc<double>(2);
+    d_accept_ = device_alloc<int>(1);
 }
 
 void DeviceBandSolver::free_tables() {
@@ -283,10 +311,15 @@ DeviceBandSolver::~DeviceBandSolver() {
     device_free(d_evd_info_);
     device_free(d_work_);
     device_free(d_ovlp_);
+    device_free(d_nrm_);
+    device_free(d_inv_);
+    device_free(d_accept_);
     if (fft_plan_)
         cufftDestroy(fft_plan_);
     if (blas_)
         cublasDestroy(blas_);
+    if (blas_dev_)
+        cublasDestroy(blas_dev_);
     if (solver_)
         cusolverDnDestroy(solver_);
 }
@@ -733,17 +766,26 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
                     d_ritz_ + static_cast<size_t>(b) * ng, eps, ng, d_work_);
                 ATV_CUDA_CHECK(cudaGetLastError());
 
-                double rnorm = 0;
+                // ── Norms on device, one readback per band ──
+                // The CPU solver branches three times here (converged band,
+                // rounding-level before and after Gram-Schmidt), and each
+                // branch used to cost a host-pointer cublasDznrm2, i.e. a
+                // synchronization. All three stages now run unconditionally
+                // with device-pointer norms and device-computed reciprocal
+                // scales, and the three predicates are folded into one accept
+                // flag — the loop's only sync.
+                //
+                // Predicates and arithmetic are unchanged, so an accepted
+                // band is bit-identical to before. A rejected band pays two
+                // extra ZGEMVs it would previously have skipped; that is the
+                // trade for dropping two syncs per band. k_safe_reciprocal
+                // keeps the rejected path finite.
                 check_cublas(
                     cublasDznrm2(
-                        blas_, ng,
+                        blas_dev_, ng,
                         reinterpret_cast<const cuDoubleComplex*>(d_work_), 1,
-                        &rnorm),
+                        d_nrm_ + 0),
                     "Dznrm2 residual");
-                // Converged band: appending its residual would only
-                // inject rounding noise into the subspace.
-                if (rnorm < 1e-6)
-                    continue;
 
                 k_precondition<<<n_blocks(ng), kBlock>>>(d_work_, d_tg_, eps,
                                                          ng);
@@ -753,18 +795,16 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
                 // Gram-Schmidt passes — same policy as the CPU solver:
                 // one pass loses orthogonality at large n_sub and the
                 // standard Rayleigh-Ritz drifts below the spectrum.
-                double pre_norm = 0;
                 check_cublas(
                     cublasDznrm2(
-                        blas_, ng,
+                        blas_dev_, ng,
                         reinterpret_cast<const cuDoubleComplex*>(d_work_), 1,
-                        &pre_norm),
+                        d_nrm_ + 1),
                     "Dznrm2 pre");
-                if (pre_norm * pre_norm < 1e-24)
-                    continue;
-                double inv_pre = 1.0 / pre_norm;
+                k_safe_reciprocal<<<1, 1>>>(d_nrm_ + 1, d_inv_ + 0);
+                ATV_CUDA_CHECK(cudaGetLastError());
                 check_cublas(
-                    cublasZdscal(blas_, ng, &inv_pre,
+                    cublasZdscal(blas_dev_, ng, d_inv_ + 0,
                                  reinterpret_cast<cuDoubleComplex*>(d_work_),
                                  1),
                     "Zdscal pre");
@@ -789,22 +829,27 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
                         "Zgemv project-out");
                 }
 
-                double dnorm = 0;
                 check_cublas(
                     cublasDznrm2(
-                        blas_, ng,
+                        blas_dev_, ng,
                         reinterpret_cast<const cuDoubleComplex*>(d_work_), 1,
-                        &dnorm),
+                        d_nrm_ + 2),
                     "Dznrm2 delta");
-                // Drop only true rounding-level remainders.
-                if (dnorm * dnorm < 1e-24)
-                    continue;
-                double inv = 1.0 / dnorm;
+                k_safe_reciprocal<<<1, 1>>>(d_nrm_ + 2, d_inv_ + 1);
+                ATV_CUDA_CHECK(cudaGetLastError());
                 check_cublas(
-                    cublasZdscal(blas_, ng, &inv,
+                    cublasZdscal(blas_dev_, ng, d_inv_ + 1,
                                  reinterpret_cast<cuDoubleComplex*>(d_work_),
                                  1),
                     "Zdscal delta");
+
+                k_accept_flag<<<1, 1>>>(d_nrm_, d_accept_);
+                ATV_CUDA_CHECK(cudaGetLastError());
+                int accept = 0;
+                ATV_CUDA_CHECK(cudaMemcpy(&accept, d_accept_, sizeof(int),
+                                          cudaMemcpyDeviceToHost));
+                if (!accept)
+                    continue;
 
                 ATV_CUDA_CHECK(cudaMemcpy(
                     d_sub_ + static_cast<size_t>(n_sub) * ng, d_work_,

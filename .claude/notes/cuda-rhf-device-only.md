@@ -114,12 +114,34 @@ fixed closed-shell occupations on a gapped system, stated in the header rather
 than assumed. Individual residuals do differ, so the Davidson path may diverge
 from the CPU one; the converged eigenvalues are the contract.
 
+After `cuda-pw-devptr-nrm2`, the residual-expansion norms are device-pointer
+too. The CPU solver branches three times per band (converged band, then
+rounding-level before and after Gram-Schmidt) and each branch cost a
+host-pointer `cublasDznrm2`, i.e. a sync. All three stages now run
+**unconditionally** with device-pointer norms into `d_nrm_[3]`, device-computed
+guarded reciprocals in `d_inv_[2]` feeding `cublasZdscal` with a device alpha,
+and the three predicates folded into one `accept` int — **one sync per band
+instead of three**. Predicates and arithmetic are untouched, so results are
+bit-identical; the price is that a *rejected* band now pays two extra ZGEMVs it
+used to skip. `k_safe_reciprocal` returns 0 rather than inf at zero norm, which
+is what keeps the unconditional path finite.
+
+A second cuBLAS handle `blas_dev_` is pinned to `CUBLAS_POINTER_MODE_DEVICE`
+rather than toggling `blas_`: the mode also governs GEMM's alpha/beta, and a
+throw between set and reset would leave the shared handle wrong. ZGEMV keeps
+using `blas_` — its scalars are host constants.
+
+Gram-Schmidt is genuinely sequential across bands (band b projects out the
+vectors appended earlier in the same round), so the bands cannot be batched
+without changing the algorithm. One flag readback per band is the floor for
+this structure.
+
 Still on the host per Davidson round (named, not claimed fixed): the 4-byte
-`devInfo` check, the n_bands eigenvalues (they are kernel scalar arguments for
-the residual shift and preconditioner), and three host-pointer
-`cublasDznrm2` calls per band. Next waves: device-pointer `cublasDznrm2`, a
-non-default stream, PBE-GGA on device, and — now that the slice is correct —
-the first large-cell measurement (ES order step 4).
+Zheevd `devInfo` check, the n_bands eigenvalues (kernel scalar arguments for
+the residual shift and preconditioner), and the accept flag above. Next waves:
+a non-default stream, PBE-GGA on device, and — now that the slice is correct —
+the first large-cell measurement (ES order step 4), which is the only place any
+of these residency waves can actually be shown to pay.
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently
@@ -147,6 +169,10 @@ evidence the fix round changed no physics:
 - k-point hoist (job **983622**): all three figures above **bit-identical** to
   the pre-hoist tree — the correctness bar for a wave that only deletes
   redundant recomputation.
+- device-pointer `cublasDznrm2` (job **988030**): 8/8 ctest; MAX_EIG_DIFF
+  **5.274e-15 Ha** and |E_cuda − E_cpu| **1.243e-14 Ry**, both *exactly* the
+  987865 figures — bit-identity is the evidence the unconditional restructure
+  preserved every predicate.
 - cuSOLVER `Zheevd` (job **987865**): 8/8 ctest; MAX_EIG_DIFF
   **6.051e-15 → 5.274e-15 Ha**; |E_cuda − E_cpu| **2.132e-14 → 1.243e-14 Ry**;
   iterations 5 → 5. The figures **move**, which is the expected signature of a

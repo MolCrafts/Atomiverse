@@ -158,6 +158,11 @@ class DeviceBandSolver {
 
     cufftHandle fft_plan_ = 0;
     cublasHandle_t blas_ = nullptr;
+    /// Second handle pinned to CUBLAS_POINTER_MODE_DEVICE for the residual
+    /// norms and their reciprocal scales. A separate handle rather than
+    /// toggling `blas_`: the mode also governs GEMM's alpha/beta, and a
+    /// throw between set and reset would leave the shared handle wrong.
+    cublasHandle_t blas_dev_ = nullptr;
     cusolverDnHandle_t solver_ = nullptr;
 
     // Dense-grid buffers
@@ -213,6 +218,10 @@ class DeviceBandSolver {
     int* d_evd_info_ = nullptr;             ///< Zheevd convergence flag.
     int evd_lwork_ = 0;                     ///< Allocated Zheevd workspace.
     cufftDoubleComplex* d_work_ = nullptr;  ///< ng scratch (R / δ).
+    // Residual-expansion scalars, device-resident for a whole band step.
+    double* d_nrm_ = nullptr;  ///< [3]: ‖R‖, ‖precond‖, ‖δ‖.
+    double* d_inv_ = nullptr;  ///< [2]: guarded 1/‖precond‖, 1/‖δ‖.
+    int* d_accept_ = nullptr;  ///< 1 = append this band's δ to the subspace.
     cufftDoubleComplex* d_ovlp_ = nullptr;  ///< cap scratch (⟨V|δ⟩).
 };
 
