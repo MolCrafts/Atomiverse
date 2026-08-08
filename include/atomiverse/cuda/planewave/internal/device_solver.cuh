@@ -6,10 +6,20 @@
 /// (same internal-helper contract as `cuda::scf::internal::*`). All
 /// per-band hot loops run on the GPU: H·ψ via cuFFT Z2Z + V_eff(r)
 /// multiply + Kleinman-Bylander projector GEMVs, subspace algebra via
-/// cuBLAS ZGEMM. Only the small dense subspace eigenproblem (complex
-/// Hermitian Jacobi) and the Davidson bookkeeping stay on the host,
-/// reusing the exact CPU helpers from `cpu/planewave/internal/pw_subspace.h`
-/// for numerical parity.
+/// cuBLAS ZGEMM, and the dense subspace eigenproblem via cuSOLVER
+/// `Zheevd` in place. What still reaches the host per Davidson round is
+/// the `devInfo` flag, the n_bands lowest eigenvalues (kernel scalar
+/// arguments) and the host-pointer `cublasDznrm2` residual norms.
+///
+/// **Not bit-identical to the CPU solver, by construction.** The CPU uses a
+/// complex Hermitian Jacobi rotation sweep; `Zheevd` is divide-and-conquer.
+/// Eigenvalues agree to roundoff, but eigenvectors differ by a phase and,
+/// inside a degenerate multiplet, by an arbitrary unitary rotation. The
+/// density is invariant under both **provided a degenerate multiplet is not
+/// split across the n_bands cut** — with fixed closed-shell occupations and a
+/// gapped system it is not. Individual residual vectors do differ, so the
+/// Davidson trajectory can diverge from the CPU one; the converged
+/// eigenvalues are what is compared, not the path.
 #pragma once
 
 #include "atomiverse/core/precision.h"
@@ -18,6 +28,7 @@
 #include <complex>
 #include <cublas_v2.h>
 #include <cufft.h>
+#include <cusolverDn.h>
 #include <vector>
 
 namespace ATV {
@@ -147,6 +158,7 @@ class DeviceBandSolver {
 
     cufftHandle fft_plan_ = 0;
     cublasHandle_t blas_ = nullptr;
+    cusolverDnHandle_t solver_ = nullptr;
 
     // Dense-grid buffers
     cufftDoubleComplex* d_grid_ = nullptr; ///< nr c2c work grid (owned).
@@ -192,8 +204,14 @@ class DeviceBandSolver {
     cufftDoubleComplex* d_hsub_ = nullptr;  ///< H·V (ng × cap_sub).
     cufftDoubleComplex* d_ritz_ = nullptr;  ///< Ritz vectors (ng × nb).
     cufftDoubleComplex* d_hritz_ = nullptr; ///< H·Ritz (ng × nb).
-    cufftDoubleComplex* d_hs_ = nullptr;    ///< subspace H (cap × cap).
-    cufftDoubleComplex* d_x_ = nullptr;     ///< Ritz rotation (cap × nb).
+    /// Subspace H (cap × cap, column-major). `cusolverDnZheevd` overwrites it
+    /// in place with the eigenvectors, whose first n_bands columns ARE the
+    /// Ritz rotation — so no separate rotation buffer exists.
+    cufftDoubleComplex* d_hs_ = nullptr;
+    double* d_eig_ = nullptr;               ///< subspace eigenvalues (cap).
+    cufftDoubleComplex* d_evd_work_ = nullptr; ///< Zheevd workspace.
+    int* d_evd_info_ = nullptr;             ///< Zheevd convergence flag.
+    int evd_lwork_ = 0;                     ///< Allocated Zheevd workspace.
     cufftDoubleComplex* d_work_ = nullptr;  ///< ng scratch (R / δ).
     cufftDoubleComplex* d_ovlp_ = nullptr;  ///< cap scratch (⟨V|δ⟩).
 };

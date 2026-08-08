@@ -23,10 +23,12 @@
 /// once per run, so `bind_kpoint` allocates nothing, copies nothing across
 /// PCIe and synchronizes nothing.
 ///
-/// Still NOT device-resident (named, not claimed fixed): the Davidson round
-/// trip of the n_sub² subspace Hamiltonian and Ritz rotation per expansion
-/// round, and its host-pointer `cublasDznrm2` calls — both inside
-/// device_solver.cu, both out of scope here.
+/// The Davidson subspace eigenproblem runs on device too (cuSOLVER `Zheevd`,
+/// in place), so the n_sub² Hamiltonian and the Ritz rotation no longer round
+/// trip. Still NOT device-resident (named, not claimed fixed): the
+/// host-pointer `cublasDznrm2` residual norms, the n_bands eigenvalues that
+/// are kernel scalar arguments, and the Zheevd `devInfo` check — all inside
+/// device_solver.cu, all out of scope here.
 ///
 /// Logging goes through `cpu::pw::internal::log_iteration_energy` on purpose:
 /// `core/log.h` is CUDA-free and must not be included from a `.cu`.

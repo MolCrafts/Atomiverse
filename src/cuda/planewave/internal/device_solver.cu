@@ -1,12 +1,16 @@
 /// @file cuda/planewave/internal/device_solver.cu
 /// @brief Device-resident plane-wave band solver (block Davidson).
 ///
-/// Mirrors cpu/planewave/internal/davidson.cpp step for step: same subspace
-/// initialization (shared host helper), same complex Hermitian Jacobi
-/// subspace eigensolver (shared host helper, eigenpairs sorted ascending),
-/// same preconditioner and residual policy. The per-G hot loops run as CUDA
-/// kernels; subspace algebra runs as cuBLAS ZGEMM/ZGEMV on column-major
-/// matrices whose column j is subspace vector j.
+/// Follows cpu/planewave/internal/davidson.cpp step for step: same subspace
+/// initialization (shared host helper), same preconditioner and residual
+/// policy, eigenpairs ascending. The per-G hot loops run as CUDA kernels;
+/// subspace algebra runs as cuBLAS ZGEMM/ZGEMV on column-major matrices whose
+/// column j is subspace vector j; the dense subspace eigenproblem runs as
+/// cuSOLVER `Zheevd` in place on that same column-major buffer.
+///
+/// The eigensolver is where this stops being a transcription of the CPU path:
+/// Jacobi there, divide-and-conquer here. See the parity note in the header —
+/// eigenvalues match to roundoff, eigenvectors need not.
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
@@ -44,6 +48,12 @@ inline void check_cublas(cublasStatus_t s, const char* what) {
     if (s != CUBLAS_STATUS_SUCCESS)
         throw std::runtime_error(std::string("cuda::pw cuBLAS error in ") + what
                                  + ": " + std::to_string(s));
+}
+
+inline void check_cusolver(cusolverStatus_t st, const char* what) {
+    if (st != CUSOLVER_STATUS_SUCCESS)
+        throw std::runtime_error(std::string("cuda::pw cuSOLVER error in ")
+                                 + what + ": " + std::to_string(st));
 }
 
 inline int n_blocks(int n) { return (n + kBlock - 1) / kBlock; }
@@ -229,6 +239,7 @@ DeviceBandSolver::DeviceBandSolver(int fft_nx, int fft_ny, int fft_nz,
     check_cufft(cufftPlan3d(&fft_plan_, nz_, ny_, nx_, CUFFT_Z2Z),
                 "cufftPlan3d");
     check_cublas(cublasCreate(&blas_), "cublasCreate");
+    check_cusolver(cusolverDnCreate(&solver_), "cusolverDnCreate");
     d_grid_ = device_alloc<cufftDoubleComplex>(nr_);
 }
 
@@ -267,13 +278,17 @@ DeviceBandSolver::~DeviceBandSolver() {
     device_free(d_ritz_);
     device_free(d_hritz_);
     device_free(d_hs_);
-    device_free(d_x_);
+    device_free(d_eig_);
+    device_free(d_evd_work_);
+    device_free(d_evd_info_);
     device_free(d_work_);
     device_free(d_ovlp_);
     if (fft_plan_)
         cufftDestroy(fft_plan_);
     if (blas_)
         cublasDestroy(blas_);
+    if (solver_)
+        cusolverDnDestroy(solver_);
 }
 
 void DeviceBandSolver::bind_grids(double* d_rho_accum, const double* d_veff_r) {
@@ -517,7 +532,9 @@ void DeviceBandSolver::ensure_subspace_capacity(int ng, int cap) {
     device_free(d_ritz_);
     device_free(d_hritz_);
     device_free(d_hs_);
-    device_free(d_x_);
+    device_free(d_eig_);
+    device_free(d_evd_work_);
+    device_free(d_evd_info_);
     device_free(d_work_);
     device_free(d_ovlp_);
     cap_sub_ = std::max(cap, cap_sub_);
@@ -529,10 +546,24 @@ void DeviceBandSolver::ensure_subspace_capacity(int ng, int cap) {
     d_ritz_ = device_alloc<cufftDoubleComplex>(ngs * n_bands_);
     d_hritz_ = device_alloc<cufftDoubleComplex>(ngs * n_bands_);
     d_hs_ = device_alloc<cufftDoubleComplex>(static_cast<size_t>(cap) * cap);
-    d_x_ =
-        device_alloc<cufftDoubleComplex>(static_cast<size_t>(cap) * n_bands_);
+    d_eig_ = device_alloc<double>(cap);
+    d_evd_info_ = device_alloc<int>(1);
     d_work_ = device_alloc<cufftDoubleComplex>(ngs);
     d_ovlp_ = device_alloc<cufftDoubleComplex>(cap);
+
+    // Zheevd scratch, sized for the largest subspace this capacity allows.
+    // The requirement grows with n, so a buffer for `cap` covers every
+    // n_sub <= cap the Davidson loop reaches; solve() re-queries anyway and
+    // grows if a cuSOLVER version ever breaks that.
+    evd_lwork_ = 0;
+    check_cusolver(cusolverDnZheevd_bufferSize(
+                       solver_, CUSOLVER_EIG_MODE_VECTOR,
+                       CUBLAS_FILL_MODE_UPPER, cap,
+                       reinterpret_cast<const cuDoubleComplex*>(d_hs_), cap,
+                       d_eig_, &evd_lwork_),
+                   "Zheevd_bufferSize");
+    d_evd_work_ = device_alloc<cufftDoubleComplex>(
+        static_cast<size_t>(std::max(evd_lwork_, 1)));
 }
 
 void DeviceBandSolver::apply_h(const cufftDoubleComplex* psi,
@@ -598,10 +629,10 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
 
     const cuDoubleComplex c_one{1.0, 0.0}, c_zero{0.0, 0.0}, c_mone{-1.0, 0.0};
 
-    std::vector<std::complex<double>> hs_host;
-    std::vector<std::complex<AccReal>> hs_herm, sub_vecs;
-    std::vector<AccReal> sub_eig;
-    std::vector<std::complex<double>> x_host;
+    // Only the nb lowest eigenvalues come back to the host: they are kernel
+    // scalar arguments (residual shift, preconditioner) and the caller's
+    // eigenvalue output. Everything else stays on device.
+    std::vector<double> sub_eig(static_cast<size_t>(nb), 0.0);
 
     for (int idavid = 0; idavid < max_david; ++idavid) {
         // H·v for vectors that don't have it yet
@@ -621,65 +652,70 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
                 reinterpret_cast<const cuDoubleComplex*>(d_hsub_), ng, &c_zero,
                 reinterpret_cast<cuDoubleComplex*>(d_hs_), n_sub),
             "Zgemm V^H HV");
-        hs_host.resize(static_cast<size_t>(n_sub) * n_sub);
-        ATV_CUDA_CHECK(cudaMemcpy(hs_host.data(), d_hs_,
-                                  hs_host.size() * sizeof(cufftDoubleComplex),
+        // ── Subspace eigenproblem, in place on device ──
+        // cuBLAS wrote Hs column-major with ld = n_sub, so element (mu, nu) =
+        // ⟨v_mu|H|v_nu⟩ sits at d_hs_[nu*n_sub + mu]. CUBLAS_FILL_MODE_UPPER
+        // makes Zheevd read exactly the mu <= nu triangle the CPU assembly
+        // read, and LAPACK ignores the imaginary part of the diagonal just as
+        // the CPU code forced it to zero — same matrix, no transpose or
+        // conjugation to get wrong.
+        //
+        // Zheevd OVERWRITES d_hs_ with the eigenvectors, column-major, column
+        // b being eigenvector b, ascending by eigenvalue. Its first nb columns
+        // are therefore the Ritz rotation itself: the ZGEMMs below consume
+        // d_hs_ directly and no rotation matrix is ever formed on the host.
+        int lwork = 0;
+        check_cusolver(cusolverDnZheevd_bufferSize(
+                           solver_, CUSOLVER_EIG_MODE_VECTOR,
+                           CUBLAS_FILL_MODE_UPPER, n_sub,
+                           reinterpret_cast<const cuDoubleComplex*>(d_hs_),
+                           n_sub, d_eig_, &lwork),
+                       "Zheevd_bufferSize");
+        if (lwork > evd_lwork_) {
+            // Not expected: the capacity-time query used cap >= n_sub. Grow
+            // rather than under-allocate if a cuSOLVER version disagrees.
+            device_free(d_evd_work_);
+            evd_lwork_ = lwork;
+            d_evd_work_ = device_alloc<cufftDoubleComplex>(
+                static_cast<size_t>(evd_lwork_));
+        }
+        check_cusolver(
+            cusolverDnZheevd(solver_, CUSOLVER_EIG_MODE_VECTOR,
+                             CUBLAS_FILL_MODE_UPPER, n_sub,
+                             reinterpret_cast<cuDoubleComplex*>(d_hs_), n_sub,
+                             d_eig_,
+                             reinterpret_cast<cuDoubleComplex*>(d_evd_work_),
+                             evd_lwork_, d_evd_info_),
+            "Zheevd");
+
+        // One 4-byte + nb*8-byte readback per round. devInfo must be checked —
+        // a non-zero value means the eigenvectors are garbage, and silently
+        // rotating the subspace with them would poison the whole SCF.
+        int evd_info = 0;
+        ATV_CUDA_CHECK(cudaMemcpy(&evd_info, d_evd_info_, sizeof(int),
                                   cudaMemcpyDeviceToHost));
-
-        // Row-major complex Hermitian Hs — byte-for-byte the CPU assembly in
-        // cpu/planewave/internal/davidson.cpp. cuBLAS writes C column-major with
-        // ld = n_sub, so element (mu, nu) = ⟨v_mu|H|v_nu⟩ sits at
-        // hs_host[nu*n_sub + mu]; the row-major mirror must be rebuilt
-        // explicitly (reinterpreting the buffer would hand the solver Hᵀ =
-        // conj(H) and conjugate every Ritz vector). Truncating Hs to its
-        // real part — the historical bug here — corrupts the Ritz VECTORS at
-        // first order at any k that is not time-reversal invariant.
-        hs_herm.assign(static_cast<size_t>(n_sub) * n_sub,
-                       std::complex<AccReal>(0, 0));
-        for (int mu = 0; mu < n_sub; ++mu)
-            for (int nu = mu; nu < n_sub; ++nu) {
-                const std::complex<AccReal> sum =
-                    hs_host[static_cast<size_t>(nu) * n_sub + mu];
-                if (nu == mu) {
-                    hs_herm[static_cast<size_t>(mu) * n_sub + mu] =
-                        std::complex<AccReal>(sum.real(), 0);
-                } else {
-                    hs_herm[static_cast<size_t>(mu) * n_sub + nu] = sum;
-                    hs_herm[static_cast<size_t>(nu) * n_sub + mu] =
-                        std::conj(sum);
-                }
-            }
-
-        sub_eig.assign(n_sub, AccReal(0));
-        sub_vecs.assign(static_cast<size_t>(n_sub) * n_sub,
-                        std::complex<AccReal>(0, 0));
-        cpu::pw::internal::jacobi_eigh_hermitian(
-            n_sub, hs_herm.data(), sub_eig.data(), sub_vecs.data());
-
-        // Ritz rotation X (n_sub × nb, column-major). Eigenvector b is
-        // column b of sub_vecs (row-major): component mu = sub_vecs[mu*n+b].
-        x_host.assign(static_cast<size_t>(n_sub) * nb,
-                      std::complex<double>(0, 0));
-        for (int b = 0; b < nb; ++b)
-            for (int mu = 0; mu < n_sub; ++mu)
-                x_host[static_cast<size_t>(b) * n_sub + mu] =
-                    sub_vecs[static_cast<size_t>(mu) * n_sub + b];
-        ATV_CUDA_CHECK(cudaMemcpy(d_x_, x_host.data(),
-                                  x_host.size() * sizeof(cufftDoubleComplex),
-                                  cudaMemcpyHostToDevice));
+        if (evd_info != 0)
+            throw std::runtime_error(
+                "cuda::pw DeviceBandSolver::solve: cusolverDnZheevd failed to "
+                "converge the "
+                + std::to_string(n_sub) + "x" + std::to_string(n_sub)
+                + " subspace (devInfo=" + std::to_string(evd_info) + ")");
+        ATV_CUDA_CHECK(cudaMemcpy(sub_eig.data(), d_eig_,
+                                  static_cast<size_t>(nb) * sizeof(double),
+                                  cudaMemcpyDeviceToHost));
 
         // ritz = V·X ; H·ritz = (HV)·X (H is linear, so no re-apply needed)
         check_cublas(
             cublasZgemm(blas_, CUBLAS_OP_N, CUBLAS_OP_N, ng, nb, n_sub, &c_one,
                         reinterpret_cast<const cuDoubleComplex*>(d_sub_), ng,
-                        reinterpret_cast<const cuDoubleComplex*>(d_x_), n_sub,
+                        reinterpret_cast<const cuDoubleComplex*>(d_hs_), n_sub,
                         &c_zero, reinterpret_cast<cuDoubleComplex*>(d_ritz_),
                         ng),
             "Zgemm ritz");
         check_cublas(
             cublasZgemm(blas_, CUBLAS_OP_N, CUBLAS_OP_N, ng, nb, n_sub, &c_one,
                         reinterpret_cast<const cuDoubleComplex*>(d_hsub_), ng,
-                        reinterpret_cast<const cuDoubleComplex*>(d_x_), n_sub,
+                        reinterpret_cast<const cuDoubleComplex*>(d_hs_), n_sub,
                         &c_zero, reinterpret_cast<cuDoubleComplex*>(d_hritz_),
                         ng),
             "Zgemm Hritz");

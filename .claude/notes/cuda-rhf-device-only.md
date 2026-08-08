@@ -93,11 +93,33 @@ are cached instead. `build_kpoints` sizes the tables against `cudaMemGetInfo`
 and throws with the figure rather than letting a bare `cudaMalloc` fail;
 k-batching is the answer if a cell ever exceeds that, and is not implemented.
 
-Still not device-resident (named, not claimed fixed): the Davidson n_sub²
-subspace Hamiltonian + Ritz rotation round trip per expansion round, and its
-host-pointer `cublasDznrm2`. Next waves: cuSOLVER `Zheevd`, device-pointer
-`cublasDznrm2`, a non-default stream, PBE-GGA on device, and — now that the
-slice is correct — the first large-cell measurement (ES order step 4).
+After `cuda-pw-zheevd`, the subspace eigenproblem runs on device as well:
+cuSOLVER `Zheevd` in place on the column-major `d_hs_` cuBLAS just wrote.
+`CUBLAS_FILL_MODE_UPPER` reads exactly the `mu <= nu` triangle the CPU
+assembly read, and LAPACK ignores the diagonal's imaginary part just as the
+CPU forced it to zero — so no transpose/conjugation convention is left to get
+wrong (the earlier row-major rebuild existed precisely because that trap is
+easy to fall into). Zheevd overwrites `d_hs_` with the eigenvectors, whose
+first n_bands columns **are** the Ritz rotation, so the ZGEMMs consume it
+directly and the `d_x_` buffer is gone. Removed per Davidson round: a
+n_sub² D2H, the host row-major Hermitian rebuild, the host Jacobi sweep
+(O(n_sub³)), and a cap×n_bands H2D.
+
+**This wave is deliberately not bit-identical** — the first in the PW slice
+that isn't. CPU Jacobi vs device divide-and-conquer: eigenvalues agree to
+roundoff, eigenvectors differ by a phase and, inside a degenerate multiplet,
+by an arbitrary unitary rotation. The density is invariant under both *only
+if a degenerate multiplet is not split across the n_bands cut* — true for
+fixed closed-shell occupations on a gapped system, stated in the header rather
+than assumed. Individual residuals do differ, so the Davidson path may diverge
+from the CPU one; the converged eigenvalues are the contract.
+
+Still on the host per Davidson round (named, not claimed fixed): the 4-byte
+`devInfo` check, the n_bands eigenvalues (they are kernel scalar arguments for
+the residual shift and preconditioner), and three host-pointer
+`cublasDznrm2` calls per band. Next waves: device-pointer `cublasDznrm2`, a
+non-default stream, PBE-GGA on device, and — now that the slice is correct —
+the first large-cell measurement (ES order step 4).
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently
@@ -125,6 +147,12 @@ evidence the fix round changed no physics:
 - k-point hoist (job **983622**): all three figures above **bit-identical** to
   the pre-hoist tree — the correctness bar for a wave that only deletes
   redundant recomputation.
+- cuSOLVER `Zheevd` (job **987865**): 8/8 ctest; MAX_EIG_DIFF
+  **6.051e-15 → 5.274e-15 Ha**; |E_cuda − E_cpu| **2.132e-14 → 1.243e-14 Ry**;
+  iterations 5 → 5. The figures **move**, which is the expected signature of a
+  different eigensolver — a bit-identical result here would have meant Zheevd
+  was not actually on the path. Both land at roundoff, an order of magnitude
+  or more below the ~1e-12 / ~1e-10 that was predicted before the run.
 
 **No speed claim for the hoist.** 7 timed runs of the CUDA leg per tree,
 same node type and settings: hoisted median **2.31 s** (min 1.79, spread
