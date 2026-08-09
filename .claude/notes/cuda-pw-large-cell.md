@@ -52,7 +52,7 @@ is stated only where the CPU wall exceeds 60 s.
 | 1035136 | FAILED | configure — no molrs submodule | (old worktree) |
 | 1035238 | FAILED | HARNESS_LINK_FAILED (dlink rsp not substituted) | `.claude/cuda-pw-large-cell-1035238.out` |
 | **1035278** | CANCELLED after ~2.8 h (n=3 CPU mid-leg) | first complete ladder walls | `.claude/cuda-pw-large-cell-1035278.out` |
-| **1048264** | RUNNING / reconfirm (gate fix + 3.3 h n=2 CPU budget) | same ladder on tip `fbc8f229`+ | `.claude/cuda-pw-large-cell-1048264.out` |
+| **1048264** | CANCELLED at 47 min (uid 4001043) mid n=2 CPU | reconfirmed slice + n=1 + n=2 CUDA | `.claude/cuda-pw-large-cell-1048264.out` |
 
 ## Results
 
@@ -72,7 +72,7 @@ parentheses where finished.
 | 1 | 8 | 16 | both 16t | cpu **17.93** / cuda **0.97** (17.85 / 0.96) | −62.677194 | 5 | \|ΔE\|=**2.089e-08** Ry (1048264 `BENCH_PARITY`) |
 | 1 | 8 | 16 | cpu 1t | **17.91** (17.85) | −62.677194 | 5 | OpenBLAS thr ≈ no-op (serial PW) |
 | 2 | 64 | 128 | cuda 16t | **9.664** (**9.645**) | −507.09055846 | 5 | bit-stable E across jobs |
-| 2 | 64 | 128 | cpu 16t | **> 5400** (1048264 budgeting 12000 s) | — | — | 1035278 `LEG_TIMEOUT`; gate met |
+| 2 | 64 | 128 | cpu 16t | **> 5400** | — | — | 1035278 `LEG_TIMEOUT`; 1048264 cancelled before finish; gate met |
 | 3 | 216 | 432 | cuda 16t | **191.214** | −1712.93740038 | 5 | 1035278 only |
 | 3 | 216 | 432 | cpu 16t | (cancelled) | — | — | not required once gate met |
 
@@ -96,13 +96,13 @@ perf-exempt: this is real large-cell wall evidence, not a foothold skip.
 - No fair twin vs CP2K/QE (oracle is ATV CPU same-settings).
 - No “CUDA wins” from 2-atom or 8-atom cells alone.
 - No device forces / stress / PBE product (other slugs).
-- n=2 CPU exact wall remains a lower bound until 1048264 finishes (optional).
+- n=2 CPU exact wall remains a lower bound (>5400 s). Optional polish only.
 
 ## Gate checklist
 
 | Check | Status |
 | --- | --- |
-| GH200 log with filled results | **yes** — jobs **1035278** + **1048264** (quick legs) |
+| GH200 log with filled results | **yes** — **1035278** (+ 1048264 reconfirm) |
 | Correctness suite (`pw-cuda-lda-si` both) | **PASS** \|ΔE\|=1.243e-14 Ry |
 | CPU wall > 60 s | **yes** at 64 atoms (>5400 s) |
 | CPU↔CUDA walls reported | **yes** (table above) |
