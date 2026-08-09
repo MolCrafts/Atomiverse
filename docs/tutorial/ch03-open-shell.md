@@ -178,15 +178,28 @@ $N_e$ pairs with odd $M$, odd $N_e$ with even $M$), and $n_\beta \ge 0$
 requires $M \le N_e + 1$. Any violation means the requested state does not
 exist.
 
-**Algorithm.** The resolver is a struct you instantiate directly —
-construction computes and validates in one step, and the resolved counts feed
-the method constructor:
+**Algorithm.** The public surface of an open-shell method is the α/β pair
+itself: `UHF` and `UKS` take `(n_alpha, n_beta)` as constructor arguments.
+Multiplicity is a bookkeeping convention on your side of the boundary — apply
+the two formulas above and pass the resulting counts:
 
 ```cpp
-// H2O+ : N_e = Σ Z − q = 9, doublet
-cpu::scf::SpinResolution occ(/*n_electrons=*/9, /*multiplicity=*/2);
-cpu::scf::UHF uhf(occ.n_alpha, occ.n_beta);  // e.g. (5, 4)
+// H2O+ : N_e = Σ Z − q = 9, doublet (M = 2)
+const int n_electrons = 9;
+const int multiplicity = 2;                                 // M = 2S + 1
+const int n_alpha = (n_electrons + multiplicity - 1) / 2;   // 5
+const int n_beta  = (n_electrons - multiplicity + 1) / 2;   // 4
+
+cpu::scf::UHF uhf(n_alpha, n_beta);   // (5, 4)
 ```
+
+Guard the two validity conditions yourself before constructing: $N_e$ and
+$M - 1$ must share parity (otherwise the integer divisions silently truncate),
+and $M \le N_e + 1$ (otherwise $n_\beta$ goes negative). The engine performs
+the same check internally — `cpu::scf::internal`'s occupation resolver throws
+`std::invalid_argument` on either violation — but that type lives under
+`cpu/scf/internal/` and is **not** part of the public API; do not include or
+name it.
 
 Worked table (all rows are validated against PySCF 2.13.1 and
 regression-locked — see below):
@@ -198,16 +211,17 @@ regression-locked — see below):
 | $\mathrm{H_2O^+}$ | +1 | 2 | 9 | 5 | 4 |
 | O atom | 0 | 3 | 8 | 5 | 3 |
 
-Rejected combinations (the constructor throws `std::invalid_argument`):
+Rejected combinations (the internal resolver throws `std::invalid_argument`):
 $\mathrm{H_2O}(0, 2)$ — even $N_e = 10$ with even $M$ breaks parity;
 $\mathrm{H_2O^+}(+1, 1)$ — odd $N_e = 9$ with odd $M$ breaks parity;
 $\mathrm{H}(0, 4)$ — $M = 4 > N_e + 1 = 2$ would need $n_\beta = -1$.
 
 One convention contrast worth memorizing: PySCF's `mol.spin` is **not** the
 multiplicity — it is $2S = n_\alpha - n_\beta = M - 1$. A PySCF doublet is
-`spin=1`; the same state here is `SpinResolution(N_e, /*multiplicity=*/2)`.
+`spin=1`; here you write the same state as $M = 2$, i.e.
+`cpu::scf::UHF{5, 4}`.
 
-**Limitations.** The resolver fixes bookkeeping only. It cannot tell you
+**Limitations.** Resolving the occupation fixes bookkeeping only. It cannot tell you
 *which* multiplicity is the ground state (the O atom is a triplet because of
 Hund's rule, not because $M=3$ is the only valid input), and it does not
 protect against spin contamination — that diagnostic is the next section.

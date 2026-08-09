@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cuda_runtime.h>
+#include <stdexcept>
 
 namespace ATV {
 
@@ -253,6 +254,23 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
     prec_t host_box[9];
     cudaMemcpy(host_box, ctx.frame.box, 9 * sizeof(prec_t),
                cudaMemcpyDeviceToHost);
+
+    // Enforce the restriction instead of documenting it. Only the diagonal
+    // is read below and only the diagonal is written back, so a tilted cell
+    // would have its off-diagonals silently dropped on the first barostat
+    // step — and the CPU twin, which guards, would then disagree with CUDA
+    // on identical input with nothing to point at.
+    for (int i = 0; i < 9; ++i) {
+        if (i == 0 || i == 4 || i == 8)
+            continue;
+        if (host_box[i] != prec_t(0))
+            throw std::runtime_error(
+                "cuda::md::NoseHooverNPT: triclinic cells are not supported "
+                "(couple_axis is per diagonal axis; off-diagonals would be "
+                "dropped). Use an orthorhombic cell, or run this on the CPU "
+                "backend.");
+    }
+
     box_lx_ = static_cast<double>(host_box[0]);
     box_ly_ = static_cast<double>(host_box[4]);
     box_lz_ = static_cast<double>(host_box[8]);

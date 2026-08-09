@@ -9,7 +9,7 @@ namespace ATV {
 /// Every driver category owns its own `Phase` enum (facade/stage.h) and the
 /// numeric values overlap (all start at 0), so a raw `int phase` cannot be
 /// told apart across workflows. `PhaseKind` records which workflow's enum a
-/// binding was built from, letting `Driver::add()` reject a component whose
+/// binding was built from, letting `bind_defaults()` reject a component whose
 /// default bindings target a different workflow at registration time.
 enum class PhaseKind { MD, Minimizer, Evaluate, Vib, Sampling, Path, SCF };
 

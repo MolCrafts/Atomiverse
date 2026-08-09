@@ -6,6 +6,17 @@ The Fock matrix has \(O(N^2)\) elements; four-centre integrals scale as
 
 See also [Ch. 2](ch02-rhf.md) and the [Appendix](appendix-pyscf-oracle.md).
 
+> **Build flags.** The SCF sections need `ATV_BUILD_HF=ON` and the
+> electrostatics sections (19.3 PME, 19.4 FMM) need `ATV_BUILD_KSPACE=ON`.
+> **Both are OFF by default** — with a flag off, that domain's sources,
+> headers, tests and regressions are excluded from the build entirely.
+>
+> ```bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DATV_BUILD_KSPACE=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ```
+
 ---
 
 ## 19.1 Direct SCF and Schwarz screening
@@ -92,10 +103,16 @@ uses B-spline charge assignment + FFT → \(O(N\log N)\).
 const double alpha = 0.3;  // 1/Å — same on both halves
 const double cutoff = 8.0; // Å
 sim.set_evaluator(cpu::CoulLong{alpha, cutoff});
-sim.add(cpu::KSpacePME{alpha, /*grid_spacing=*/1.0, /*order=*/6});
+sim.set_evaluator(cpu::KSpacePME{alpha, /*grid_spacing=*/1.0, /*order=*/6});
 ```
 
-Pure math lives in `include/atomiverse/longrange/`; CPU wrappers are
+`set_evaluator` is plural — the real-space and reciprocal halves are two energy
+sources, and both go through the same categorical setter. They form a
+`LongRangeParticipant` pair, so exactly one matched real/reciprocal pair must be
+registered and `alpha` must agree on both sides.
+
+Reciprocal-space solvers and their math live in
+`include/atomiverse/cpu/longrange/`; the Component wrappers are
 `KSpaceEwald` / `KSpacePME`.
 
 ### Results
@@ -119,7 +136,7 @@ boundary).
 ### Practice
 
 ```cpp
-#include "atomiverse/longrange/fmm_tree.h"
+#include "atomiverse/cpu/longrange/fmm_tree.h"
 
 ATV::longrange::FmmTree tree(/*order=*/8, /*max_per_leaf=*/8);
 double e = tree.energy(positions, charges); // dimensionless Coulomb sum

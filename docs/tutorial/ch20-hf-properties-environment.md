@@ -7,6 +7,16 @@ Hamiltonian. Each topic uses **Theory → Practice → Results**.
 See also [Ch. 2](ch02-rhf.md), [Ch. 14](ch14-vibrations.md), and the
 [Appendix](appendix-pyscf-oracle.md).
 
+> **Build flag.** Everything in this chapter lives behind `ATV_BUILD_HF`, which
+> is **OFF by default** — with it off the `cpu::scf::…` headers, sources, tests
+> and regressions are excluded from the build entirely.
+>
+> ```bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ```
+
 ---
 
 ## 20.1 Multipole moments

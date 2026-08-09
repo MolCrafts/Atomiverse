@@ -244,10 +244,9 @@ using namespace ATV;
 
 cpu::Frame frame = /* H2O, positions in Å, type = Z */;
 
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
-rhf.tol = 1e-12;   // tight for FD comparisons
-const auto& result = rhf.run(frame);
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                  /*tol=*/1e-12};   // tight for FD comparisons
+rhf.run(frame);
 
 // Analytic forces [n_atoms, 3] eV/Å — method owns private workspace.
 auto analytic = rhf.forces(frame);
@@ -259,9 +258,10 @@ Two details are worth internalizing because they recur:
 - **The SCF must be gradient-stationary.** Finite differences probe the
   *true* energy surface, so if the SCF is only loosely converged the ±h
   energies carry convergence noise and the FD gradient is dominated by it.
-  For a tight check, tighten the config: `rhf.tol = 1e-12`
-  and set `config.conv_tol_grad = 1e-9`. (This is exactly what the vibration
-  tests do — see [Chapter 14](ch14-vibrations.md).)
+  For a tight check, pass a tight tolerance to the constructor
+  (`RHF{basis, 0, /*tol=*/1e-12}`) and set `rhf.conv_tol_grad = 1e-9`.
+  (This is exactly what the vibration tests do — see
+  [Chapter 14](ch14-vibrations.md).)
 - **The step size `h` trades truncation against round-off.** The default
   `5e-5 Å` sits in the sweet spot for double-precision energies; far smaller
   and catastrophic cancellation dominates, far larger and the

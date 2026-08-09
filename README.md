@@ -94,7 +94,12 @@ read in order. Each tutorial chapter is written around the matching example.
 | 07 | `examples/07_md_lj.cpp` | Classical MD (argon, LJ) | — (CUDA twin `07_md_lj.cu`: `ATV_BUILD_CUDA`) |
 | 08 | `examples/08_pw.cpp` | Plane-wave DFT (silicon) | `ATV_BUILD_PW` |
 | 09 | `examples/09_gpw.cpp` | GPW DFT (water) | `ATV_BUILD_GPW` (needs `ATV_BUILD_PW`) |
-| 10 | `examples/10_gpw_znoedl.cpp` | GPW DFT (1214-atom ZnO EDL slab) | `ATV_BUILD_GPW` (needs `ATV_BUILD_PW`) |
+| 11 | `examples/11_koopmans.cpp` | Koopmans IP/EA | `ATV_BUILD_HF` |
+| 12 | `examples/12_delta_scf.cpp` | ΔSCF excited state | `ATV_BUILD_HF` |
+| 13 | `examples/13_mp2.cpp` | MP2 correlation | `ATV_BUILD_HF` |
+| 14 | `examples/14_fci.cpp` | Full CI | `ATV_BUILD_HF` |
+| 15 | `examples/15_am1.cpp` | AM1 semiempirical | `ATV_BUILD_SEMIEMPIRICAL` |
+| 16 | `examples/16_density_cube.cpp` | Density cube output | `ATV_BUILD_HF` |
 
 See [`examples/README.md`](examples/README.md) for the full table and the rules
 for adding new examples.

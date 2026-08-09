@@ -9,8 +9,9 @@ almost every public surface:
 | **Component** | One step of work (force, integrate, observe, write) | Construct and register |
 | **Driver** | The loop (stages + plan + when to stop) | Pick a preset, call `run` |
 
-A fourth idea — **Runtime** (`cpu::Backend`) — is shared infrastructure
-(frame binding, MPI, timing). One Runtime per run; nested drivers borrow it.
+A fourth idea — **Runtime** (`cpu::Runtime`, `cpu/driver/runtime.h`) — is shared
+infrastructure (frame binding, MPI, timing). One Runtime per run; nested drivers
+borrow it.
 
 ## Frame
 
@@ -32,7 +33,8 @@ CUDA workflows use an analogous device frame; transfers are explicit
 
 A component does **one** thing at a **typed stage** of the plan:
 
-- force / energy sources: `PairLJCut`, `cpu::scf::SCF`, `PWEvaluator`, …
+- force / energy sources: `PairLJCut`, `cpu::scf::RHF` (and the other
+  concrete Gaussian methods), `PWEvaluator`, …
 - dynamics: `VelocityVerlet`, thermostats, barostats
 - optimizers / movers: `LBFGS`, `TranslateMove`
 - observers / recorders: RDF, Thermo, XYZ

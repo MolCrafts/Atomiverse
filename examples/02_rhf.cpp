@@ -37,11 +37,12 @@ int main() {
     std::cout << "=== H2 / STO-3G / RHF (CPU) ===\n"
               << "Geometry: H-H at 0.74 Angstrom\n\n";
 
-    // Concrete method — parameters are members; Frame is the only I/O.
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = (sizeof(double) == sizeof(float)) ? double(1e-5) : double(1e-10);
-    rhf.max_iter = 100;
+    // Concrete method — parameters are constructor arguments; Frame is the
+    // only I/O.
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                      /*tol=*/(sizeof(double) == sizeof(float)) ? double(1e-5)
+                                                                : double(1e-10),
+                      /*max_iter=*/100};
 
     rhf.run(frame); // eV energy on frame.meta[kEnergy]; Hartree on energy()
 

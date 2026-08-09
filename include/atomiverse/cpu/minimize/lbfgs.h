@@ -22,7 +22,8 @@
 ///   cpu::minimizer::Minimize opt;
 ///   opt.set_optimizer(cpu::minimizer::LBFGS{memory, alpha, max_ls});
 ///   opt.add_criterion(cpu::ForceConverged{});   // the convergence policy
-///   opt.on(ATV::minimizer::Phase::force).add(cpu::scf::SCF{config});
+///   opt.on(ATV::minimizer::Phase::force)
+///      .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
 ///   opt.on(ATV::minimizer::Phase::end_of_step).add(Thermo{1});
 ///   opt.build();
 ///   opt.run(frame, 100);

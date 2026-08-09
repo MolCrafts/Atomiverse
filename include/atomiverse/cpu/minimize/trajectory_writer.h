@@ -8,7 +8,8 @@
 /// @code
 ///   cpu::minimizer::Minimize opt;
 ///   opt.set_optimizer(cpu::minimizer::LBFGS{/*...*/});
-///   opt.on(minimizer::Phase::force).add(cpu::scf::SCF{config});
+///   opt.on(minimizer::Phase::force)
+///      .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
 ///   opt.on(minimizer::Phase::end_of_step)
 ///      .add(cpu::minimizer::TrajectoryWriter{"aspirin_traj.xyz", /*stride=*/1});
 ///   opt.build();

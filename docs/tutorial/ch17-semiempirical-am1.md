@@ -46,9 +46,9 @@ differences; regressions live under `regressions/semiempirical/`.
 ## Example code
 
 ```cpp
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/core/stage.h"
 
 cpu::Frame frame = /* water: type = Z, positions (Å) */;
 

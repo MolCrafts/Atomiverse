@@ -133,10 +133,10 @@ potential. The full driver setup is:
 auto frame = make_fcc_argon(4, /*a=*/5.32);  // Å, FCC Ar lattice constant
 
 cpu::md::MD sim;
-sim.add(cpu::md::InitVelocity{/*T_K=*/100.0, /*seed=*/42u});
-sim.add(cpu::md::VelocityVerlet{/*dt_fs=*/4.0});
-sim.on(md::Phase::pre_force).add(
-    cpu::md::NeighborList<>{/*cutoff=*/6.8});
+sim.on(md::Phase::initial_integrate)
+   .add(cpu::md::InitVelocity{/*T_K=*/100.0, /*seed=*/42u}, /*order=*/-999);
+sim.set_integrator(cpu::md::VelocityVerlet{/*dt_fs=*/4.0});
+sim.set_neighbor(cpu::md::NeighborList<>{/*cutoff=*/6.8});
 sim.on(md::Phase::force).add(
     cpu::PairLJCut{/*eps=*/0.0104, /*sig=*/3.4, /*cutoff=*/6.8});
 sim.build();
@@ -146,32 +146,42 @@ sim.run(frame, 10000);
 Five lines describe a complete simulation. Read them in the order they
 appear:
 
-1. **`InitVelocity{T, seed}`** binds at `initial_integrate @ -999`. Its
+1. **`InitVelocity{T, seed}`** has no categorical setter, so it is bound
+   explicitly at `initial_integrate @ -999` — the phase and order its own
+   `default_bindings()` declare. Its
    `launch()` is a no-op; its `build()` draws a Maxwell-Boltzmann sample
    at temperature $T$, scales velocities by $\sqrt{k_B T / m}$ per atom,
    and removes the centre-of-mass velocity. By the time the first MD
    step runs, the `kAtom_vx/vy/vz` columns already carry physical thermal
    velocities.
-2. **`VelocityVerlet{dt}`** is the integrator. It binds at
-   `initial_integrate @ 0` (first half-kick + position drift) and
-   `final_integrate @ 0` (second half-kick). The factor between
+2. **`VelocityVerlet{dt}`** is the integrator, so it goes through the
+   `set_integrator` categorical setter (singular — a second call throws).
+   It binds at `initial_integrate @ 0` (first half-kick + position drift)
+   and `final_integrate @ 0` (second half-kick). The factor between
    $f$ in eV/Å, $m$ in amu, $v$ in Å/fs is the metal-units conversion
    constant `units::force_to_accel` — handled internally; the user sees physical
    units on every public field.
-3. **`NeighborList`** must be bound explicitly at the `pre_force` phase
-   because its natural slot is shared between MD and minimization (no
-   `default_bindings()`). It owns a cell-list strategy with a Verlet
-   skin; the rebuild cadence follows LAMMPS's `neigh_modify every 1
-   delay 0 check yes` discipline. On non-rebuild steps the cost
+3. **`NeighborList`** goes through `set_neighbor`, which places it at the
+   driver's `neighbor_phase @ -10` — for MD the dedicated `neighbor` phase,
+   after the ghost build and before `force`. It owns a cell-list strategy
+   with a Verlet skin; the rebuild cadence follows LAMMPS's `neigh_modify
+   every 1 delay 0 check yes` discipline. On non-rebuild steps the cost
    collapses to a single $O(N)$ skin scan.
 4. **`PairLJCut`** binds explicitly at `force`. The constructor takes
    $\varepsilon$ in eV, $\sigma$ in Å, and a cutoff in Å. The cutoff
    choice has to match — or be larger than — the neighbor-list cutoff;
    the test suite uses $6.8 \approx 2\sigma$ for Argon. Energy is
    shifted so that $V(r_{\mathrm{cut}}) = 0$.
-5. **`build()`** compiles the plan: each component's
-   `default_bindings()` are merged with the explicit `on().add()`
+5. **`build()`** compiles the plan: the bindings contributed by the
+   categorical setters are merged with the explicit `on(phase).add()`
    bindings, sorted by `(phase, order, insertion)`, and validated.
+
+There is no bare `sim.add(component)`. Registration is either a categorical
+setter (`set_integrator`, `set_thermostat`, `set_barostat`, `set_evaluator`,
+`set_neighbor`, `set_observer`, `set_record`, `set_thermo`) or the explicit
+`sim.on(phase).add(component, order)` — the phase is never guessed. The
+rvalue form transfers ownership; pass an lvalue you own with
+`add_ref` / `set_*_ref` instead (plain `add(lvalue)` is `= delete`d).
 
 The driver's auto-added infrastructure — `ZeroForces`, `ZeroEnergy`,
 `ZeroStress` at `pre_force @ -1000/-999/-998`, `KineticEnergy` at
@@ -193,7 +203,8 @@ toward the target on a timescale $\tau$. Use it when you want a smooth,
 deterministic time series — the textbook canonical ensemble.
 
 ```cpp
-sim.add(cpu::md::NoseHoover{/*T_target=*/100.0, /*tau=*/200.0, /*dt=*/4.0});
+sim.set_thermostat(cpu::md::NoseHoover{/*T_target=*/100.0, /*tau=*/200.0,
+                                       /*dt=*/4.0});
 ```
 
 **Langevin** is a stochastic thermostat applied as additive friction
@@ -204,9 +215,9 @@ combined drag + kick satisfies the fluctuation–dissipation theorem;
 velocity-Verlet integration of the augmented force gives canonical NVT.
 
 ```cpp
-sim.add(cpu::md::FixLangevin{/*T_start=*/100.0, /*T_stop=*/100.0,
-                              /*damp=*/100.0, /*dt=*/4.0,
-                              /*seed=*/0xDEADBEEFu});
+sim.set_thermostat(cpu::md::FixLangevin{/*T_start=*/100.0, /*T_stop=*/100.0,
+                                        /*damp=*/100.0, /*dt=*/4.0,
+                                        /*seed=*/0xDEADBEEFu});
 ```
 
 A Langevin run is the right choice when you want trajectories from
@@ -229,8 +240,8 @@ Roles describe structure; capabilities describe data flow.
 For NPT, combine a thermostat with the Berendsen barostat:
 
 ```cpp
-sim.add(cpu::md::NoseHoover{T_target, tau_T, dt});
-sim.add(cpu::md::Barostat {P_target, tau_P, dt});
+sim.set_thermostat(cpu::md::NoseHoover{T_target, tau_T, dt});
+sim.set_barostat  (cpu::md::Barostat{P_target, tau_P, dt});
 ```
 
 `Barostat` reads the global virial sum from `frame.meta.get(kStress)`, computes the
@@ -324,25 +335,39 @@ The auto-added components in `cpu::md::MD` are, in order:
 User-side, the canonical first additions are:
 
 ```cpp
-sim.add(cpu::Thermo{/*every=*/100});
+sim.set_thermo(/*every=*/100);
 sim.set_observer(ATV::RDF{/*r_max=*/5.5, /*n_bins=*/200,
                           /*freq=*/100, "rdf.dat"});
 ```
 
-`cpu::Thermo` prints the LAMMPS-style "step PE KE T" line synchronously
-on rank 0. `ATV::RDF` is an async observer — it inherits
-`cpu::md::AsyncObserver`, runs on a background thread, and accumulates a
-half-list pair-distance histogram from the published snapshots. At the
-end of the run its `finalize()` writes the normalized $g(r)$ to disk.
+`set_thermo(N)` binds `cpu::Thermo{N}` at `end_of_step @ +20`; it prints the
+LAMMPS-style "step PE KE T" line synchronously on rank 0. `ATV::RDF` is an
+async observer — it inherits `cpu::md::AsyncObserver`, runs on a background
+thread, and accumulates a half-list pair-distance histogram from the published
+snapshots. At the end of the run its `finalize()` writes the normalized
+$g(r)$ to disk. Note that `set_observer` takes an **rvalue**; to keep the
+observer around and read `rdf.gr()` after the run, declare it first and borrow
+it with `set_observer_ref(rdf)`.
 
-For per-frame trajectory output, append a writer at `end_of_step`:
+**Trajectory output — not yet a Recorder.** `cpu::XYZ` is a plain writer
+(`write` / `append`), not a Component, so it cannot be handed to
+`on(phase).add(...)` or `set_record(...)`. There is currently **no MD
+trajectory Recorder in the tree**. Until one lands, dump frames by segmenting
+the run yourself:
 
 ```cpp
-sim.on(md::Phase::end_of_step).add(cpu::XYZ{"traj.xyz"});
+cpu::XYZ traj{"traj.xyz"};
+traj.write(frame);                       // first frame: truncate/create
+for (int chunk = 0; chunk < 100; ++chunk) {
+    sim.run(frame, 100);                 // continuable: extends one trajectory
+    traj.append(frame);                  // one frame every 100 steps
+}
 ```
 
-(The exact recorder API is still consolidating — see `cpu/record/`
-headers for the currently shipped writers.)
+Consecutive `run()` calls on a `cpu::Frame&` extend a single trajectory, so
+this costs nothing beyond the per-segment run summary. (`cpu::minimizer::
+TrajectoryWriter` *is* a real Component, but it is bound to the minimizer
+phases and does not serve MD.)
 
 ## When the Force Producer Changes
 

@@ -50,6 +50,7 @@ export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu
 Smallest useful start — Gaussian SCF + examples, CPU only:
 
 ```bash
+git submodule update --init --recursive molrs   # once per clone
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
       -DATV_BUILD_CUDA=OFF -DATV_BUILD_HF=ON -DATV_BUILD_EXAMPLES=ON \
       -DBLA_VENDOR=OpenBLAS
@@ -58,8 +59,9 @@ cmake --build build --target 02_rhf -j
 
 Add `-DATV_BUILD_PW=ON` for plane-wave, `-DATV_BUILD_TESTS=ON` for tests.
 
-> **molrs path:** default is `../molrs`. In a git worktree or non-standard
-> layout, pass an absolute path:
+> **molrs path:** molrs is a hard dependency, vendored as a git submodule at
+> `./molrs`, so `ATV_MOLRS_PATH` defaults to `${CMAKE_SOURCE_DIR}/molrs`. In a
+> git worktree or non-standard layout, pass an absolute path:
 > `-DATV_MOLRS_PATH=/abs/path/to/molrs`.
 
 ## 4. Run a first example
@@ -75,10 +77,9 @@ the same SCF — not a bare geometry canvas.
 
 Theory and Practice snippets: [Chapter 2](../tutorial/ch02-rhf.md). Other
 runnable demos live under `examples/` and document themselves; the handbook
-does not catalogue them.
-| `08_pw` | plane-wave crystal | `ATV_BUILD_PW` |
-| `09_gpw` | GPW DFT | `ATV_BUILD_GPW` |
-| `15_am1` | AM1 + Minimize | — |
+does not catalogue them. `examples/CMakeLists.txt` shows which build flag each
+one is gated behind (e.g. `08_pw` needs `ATV_BUILD_PW`, `09_gpw` needs
+`ATV_BUILD_GPW`); a target that is not configured simply does not exist.
 
 Full catalog and scientific context: [Tutorial index](../tutorial/).
 
@@ -88,6 +89,12 @@ Every calculation looks like this — fill a **Frame**, pick a **preset**,
 attach **components**, `build` + `run`:
 
 ```cpp
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/neighbor/neighbor_list.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut.h"
+using namespace ATV;
+
 cpu::md::MD sim;
 sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});
 sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
@@ -96,7 +103,11 @@ sim.build();
 sim.run(frame, 1000);
 ```
 
-Read energy from `frame.meta.get(kEnergy)` (eV). Details:
+Header paths follow the **directory** a type lives in, not its namespace:
+`cpu::md::MD` is `atomiverse/cpu/dynamics/md.h`, `cpu::minimizer::Minimize` is
+`atomiverse/cpu/minimize/minimize.h`.
+
+Read energy from `frame.meta.get(ATV::kEnergy)` (eV). Details:
 [Core concepts](concepts.md) · [Methods](methods.md).
 
 ## 6. Recommended path

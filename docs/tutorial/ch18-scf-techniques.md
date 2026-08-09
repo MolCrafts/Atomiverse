@@ -7,6 +7,16 @@ Results**.
 
 See also [Ch. 2](ch02-rhf.md) and [Ch. 3](ch03-open-shell.md).
 
+> **Build flag.** Everything in this chapter lives behind `ATV_BUILD_HF`, which
+> is **OFF by default** — with it off the `cpu::scf::…` headers, sources, tests
+> and regressions are excluded from the build entirely.
+>
+> ```bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ```
+
 ---
 
 ## 18.1 Why iterations fail
@@ -68,10 +78,8 @@ spin-symmetric guess.
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Def2SVP;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP, /*charge=*/0, /*tol=*/1e-9};
 rhf.init_guess = cpu::scf::InitGuess::Hueckel; // or SAP, MINAO, Hcore
-rhf.tol = 1e-9;
 rhf.run(frame);
 ```
 

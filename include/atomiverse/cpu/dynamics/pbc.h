@@ -22,9 +22,21 @@ namespace md {
 /// exactly `x == L` are wrapped to `0`. Ghost rows `[n_owned, n)` are
 /// left alone; they are owned by the halo exchange.
 ///
+/// **Triclinic cells are a no-op**, and the guard lives here rather than at
+/// the call sites. Wrapping a tilted cell by its diagonal lengths does not
+/// fail — it silently shifts atoms across the tilt, corrupting positions
+/// with no diagnostic. Leaving them unwrapped is safe for the physics:
+/// `Box::min_image` has a correct triclinic branch, so forces and energies
+/// are unaffected; only the "atoms live in [0, L)" convenience is lost, and
+/// `Box::wrap_axis` documents triclinic wrap as a separate concern.
+/// `ParrinelloRahmanNPT` already guarded its own call site for this reason;
+/// five other integrators did not, which is what this centralizes.
+///
 /// @param frame Frame whose `atoms.x/y/z` are shifted in place.
 /// @param n_owned Number of owned atoms to wrap (typically `owned_count(ctx)`).
 inline void wrap_orthorhombic(cpu::Frame& frame, int n_owned) {
+    if (!frame.box.is_orthorhombic())
+        return;
     const double lx = frame.box.length(0);
     const double ly = frame.box.length(1);
     const double lz = frame.box.length(2);

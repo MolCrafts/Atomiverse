@@ -34,9 +34,8 @@ static cpu::Frame make_water() {
 int main() {
     auto frame = make_water();
 
-    cpu::scf::RHF neutral;
-    neutral.basis = cpu::scf::BasisSet::STO3G;
-    neutral.tol = 1e-10;
+    cpu::scf::RHF neutral{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                          /*tol=*/1e-10};
     neutral.run(frame);
     const double e_n = neutral.energy();
 

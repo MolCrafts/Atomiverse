@@ -33,9 +33,7 @@ static cpu::Frame make_water() {
 
 int main() {
     auto frame = make_water();
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = 1e-10;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10};
     rhf.run(frame);
     // HOMO = last occupied (n_alpha - 1)
     using Spin = cpu::scf::SlaterDeterminant::Spin;

@@ -5,10 +5,20 @@ thermochemistry. Bind any force component you trust for Minimize.
 
 ```cpp
 cpu::vib::Hessian vib;
-vib.on(vib::Phase::force).add(/* Potential or SCF or AM1 */);
+vib.on(ATV::vib::Phase::force).add(/* Potential or RHF/UHF/RKS/UKS or AM1 */);
 vib.build();
-vib.run(frame);
+cpu::vib::HessianResult H = vib.run(frame);
 ```
+
+> **Build flag.** The ab initio examples below need `ATV_BUILD_HF=ON`, which is
+> **OFF by default** — with it off the `cpu::scf::…` headers are not installed.
+> The `Hessian` preset itself is `ATV_BUILD_VIB`, ON by default.
+>
+> ```bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ```
 
 Frequencies are only as good as the underlying forces: validate analytic vs FD
 forces ([Chapter 1](ch01-foundations.md)) before trusting thermochemistry.
@@ -108,14 +118,14 @@ MD and minimization use, and auto-wires the surrounding machinery
 (`ReferenceGeometry` caches the equilibrium geometry, `DisplaceStep` applies
 the ±h shifts, `HessianAccumulator` builds the rows, `Symmetrize`,
 `MassWeighting`, `HessianDiagonalizer`, and the thermochemistry chain). The evaluator
-advertises `Capability::Force`; everything else the driver supplies. On return
+writes the `kAtom_fx/fy/fz` columns; everything else the driver supplies. On return
 the frame carries the equilibrium geometry again — the displacements are
 transparent to the caller.
 
 ## The C++ API: One Driver, One Force Evaluator
 
 The recipe mirrors AIMD and geometry optimization: construct the driver,
-register a `Capability::Force` evaluator on the `force` phase, `build()`, and
+register a force-writing evaluator on the `force` phase, `build()`, and
 `run()`. The result is a plain `HessianResult` returned by value (Frame purity
 means the Hessian is *not* stored on the frame):
 
@@ -125,15 +135,12 @@ using namespace ATV;
 cpu::Frame frame = /* an OPTIMIZED geometry, positions in Å, type = Z */;
 
 // Tight SCF so each displaced force is gradient-stationary (see below).
-/* integrals private inside RHF/UHF/RKS/UKS */
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
-rhf.tol = 1e-12;
-cfg.conv_tol_grad = 1e-9;
+// Integrals stay private inside the method.
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631G, /*charge=*/0, /*tol=*/1e-12};
+rhf.conv_tol_grad = 1e-9;
 
 cpu::vib::Hessian driver;
-driver.on(ATV::vib::Phase::force)
-      .add(cpu::scf::SCF{cfg, cpu::scf::BasisSet::Pople631G});
+driver.on(ATV::vib::Phase::force).add(std::move(rhf));
 driver.build();
 
 cpu::vib::HessianResult H = driver.run(frame);   // 6N + 1 force evaluations
@@ -170,21 +177,20 @@ Two API details that decide whether your result is meaningful:
 ### Thermochemistry
 
 Thermochemistry runs automatically as part of the Response loop; you supply
-the conditions through the multi-argument `Hessian` constructor
-constructor:
+the conditions as plain constructor arguments on `Hessian` — there is no
+config bag to fill in:
 
 ```cpp
-cpu::vib::Thermochem members tc;
-tc.temperature     = 298.15;   // K
-tc.pressure        = 101325.0; // Pa
-tc.multiplicity    = 1;        // 2S+1; 1 for a closed-shell singlet
-tc.symmetry_number = 2;        // rotational σ, supplied per molecule (H2O: 2)
+cpu::vib::Hessian driver{
+    /*temperature=*/     298.15,    // K
+    /*pressure=*/        101325.0,  // Pa
+    /*multiplicity=*/    1,         // 2S+1; 1 for a closed-shell singlet
+    /*symmetry_number=*/ 2};        // rotational σ, per molecule (H2O: 2)
 
-cpu::vib::Hessian driver{tc};
 driver.on(ATV::vib::Phase::force)
-      .add(cpu::scf::SCF{cfg, cpu::scf::BasisSet::Pople631G});
+      .add(cpu::scf::RHF{cpu::scf::BasisSet::Pople631G});
 driver.build();
-auto H = driver.run(frame);
+cpu::vib::HessianResult H = driver.run(frame);
 
 double zpe       = H.zpe;        // harmonic zero-point energy (Hartree)
 double g_thermal = H.g_thermal;  // thermal Gibbs correction G(T) − E0 (Hartree)
@@ -195,8 +201,8 @@ The thermochemistry is a faithful port of PySCF's `thermo()`, reporting the
 electronic / translational / rotational / vibrational contributions to
 internal energy, enthalpy, entropy, and Gibbs free energy — each in Hartree
 (or Hartree/K), consistent with PySCF. The default constructor uses standard
-conditions (298.15 K, 1 atm, closed-shell singlet, σ = 1); the `Config`
-overload lets you set temperature, pressure, spin multiplicity, and the
+conditions (298.15 K, 1 atm, closed-shell singlet, σ = 1); the four-argument
+overload above lets you set temperature, pressure, spin multiplicity, and the
 rotational symmetry number. Note that σ is **supplied**, not auto-detected —
 you provide the molecule's point-group rotational symmetry number (2 for
 water, 3 for ammonia, 12 for methane). A third constructor,
@@ -257,34 +263,34 @@ Vibrational analysis is the clearest proof that Atomiverse's "swap the
 evaluator, keep the driver" architecture is not confined to MD. `cpu::vib::
 Hessian` is its own loop — its own phase enum, its own fixed
 $6N$-displacement schedule, no termination criterion — yet it consumes the
-*identical* `SCF{config}` that:
+*identical* concrete method (`cpu::scf::RHF{basis}`) that:
 
 - MD ([Chapter 15](ch15-cross-method.md)) plugs into `cpu::md::MD` for AIMD,
 - the minimizer ([Chapter 12](ch12-geometry-optimization.md)) plugs into
   `cpu::minimizer::Minimize` for geometry optimization,
-- and the hybrid-DFT chapter ([Chapter 6](ch06-hybrid-dft.md)) feeds it a
-  `b3lyp_config` for hybrid forces.
+- and the hybrid-DFT chapter ([Chapter 6](ch06-hybrid-dft.md)) swaps in
+  `cpu::scf::RKS{XCType::B3LYP}` for hybrid forces.
 
-So the natural workflow — optimize, then characterize — is *one config, two
+So the natural workflow — optimize, then characterize — is *one method, two
 drivers*:
 
 ```cpp
 // 1. Optimize
 cpu::minimizer::Minimize opt;
-opt.add(cpu::minimizer::LBFGS{/* ... */});
-opt.on(minimizer::Phase::force).add(cpu::scf::SCF{cfg, basis});
+opt.set_optimizer(cpu::minimizer::LBFGS{/* ... */});
+opt.on(minimizer::Phase::force).add(cpu::scf::RHF{basis});
 opt.build();  opt.run(frame, 100);
 
-// 2. Characterize at the optimized geometry — same cfg, same basis
+// 2. Characterize at the optimized geometry — same method, same basis
 cpu::vib::Hessian vib{tc};
-vib.on(ATV::vib::Phase::force).add(cpu::scf::SCF{cfg, basis});
+vib.on(ATV::vib::Phase::force).add(cpu::scf::RHF{basis});
 vib.build();  auto H = vib.run(frame);
 ```
 
-Because any `Capability::Force` component works at the `force` phase, the very
-same driver produces *classical* vibrational frequencies if you register a
-force-field evaluator (`PairLJCut` + bonded terms) instead of an
-`SCF`. The Hessian machinery never learns whether its forces are
+Because anything that writes the force columns works at the `force` phase, the
+very same driver produces *classical* vibrational frequencies if you register a
+force-field evaluator (`PairLJCut` + bonded terms) instead. The Hessian
+machinery never learns whether its forces are
 empirical or quantum — which is exactly the invariant
 [Chapter 15](ch15-cross-method.md) elevates to a design principle.
 

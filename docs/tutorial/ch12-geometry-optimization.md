@@ -3,6 +3,18 @@
 The same `cpu::minimizer::Minimize` preset and `ForceConverged` criterion work
 for classical, AM1, and SCF forces — only the force-phase component changes.
 
+> **Build flag.** The ab initio half of this chapter needs `ATV_BUILD_HF=ON`,
+> which is **OFF by default** — with it off, the `cpu::scf::…` headers are not
+> installed at all (a method domain OFF excludes its sources, headers, tests and
+> regressions). The `Minimize` preset itself is `ATV_BUILD_MINIMIZER`, ON by
+> default.
+>
+> ```bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ```
+
 ### Fast path: AM1 water
 
 | | Before | After L-BFGS |
@@ -166,8 +178,8 @@ The constructor takes:
 ```cpp
 cpu::minimizer::LBFGS{
     /*memory=*/   5,         // history size m
-    /*alpha0=*/   0.01,      // initial step length [Å²/eV]
-    /*max_ls=*/   10         // backtracking attempts (only used when line search is on)
+    /*alpha0=*/   0.01,      // initial step length [Å²/eV], used by LineSearchMode::Fixed
+    /*max_ls=*/   10         // maximum backtracking attempts per step
 };
 ```
 
@@ -196,25 +208,49 @@ flat saddle with a tiny gradient passes but the geometry is still
 walking around. If you find yourself loosening tolerances to make a run
 succeed, prefer to loosen them all uniformly rather than disable any.
 
-By default `LBFGS` uses a fixed step length `alpha0`. You can opt into
-backtracking line search:
+**Line search is on by default.** `LBFGS::line_search` selects a
+`LineSearchMode`, and the default is `StrongWolfe` — you opt *out* of the
+line search, not into it. The three modes:
+
+| `LineSearchMode` | What each step does |
+|---|---|
+| `StrongWolfe` (default) | Bracket + zoom enforcing Nocedal & Wright 3.7a+3.7b. `yᵀs > 0` is automatic, so every stored curvature pair is valid. |
+| `Armijo` | Backtracking on sufficient decrease (3.6a) only — energy per trial, no gradient. |
+| `Fixed` | Legacy step `x -= min(alpha0, cap)·(-p)`. No trial evaluation at all. |
+
+In `StrongWolfe` and `Armijo`, trial geometries $x_k + \alpha p$ are evaluated
+by replaying the force phase through `Context::reeval_forces`, and $\alpha$ is
+a dimensionless multiplier on the quasi-Newton direction $p = -Hg$ (initial
+trial 1.0). `alpha0` is only consulted in `Fixed` mode.
+
+The first argument is the **mode**, not a tolerance:
 
 ```cpp
-auto step = cpu::minimizer::LBFGS{m, alpha0, max_ls}
-              .line_search(/*c1=*/1e-4, /*contract=*/0.5,
-                           /*min_alpha=*/1e-6);
-opt.add(std::move(step));
+cpu::minimizer::LBFGS step{/*memory=*/5, /*alpha0=*/0.01, /*max_ls=*/10};
+step.line_search(cpu::minimizer::LineSearchMode::Armijo,
+                 /*c1=*/1e-4,        // sufficient-decrease constant, in (0,1)
+                 /*c2=*/0.9,         // Wolfe curvature constant, c1 < c2 < 1
+                 /*max_step=*/0.2,   // max trial displacement [Å]; caps alpha
+                 /*min_alpha=*/1e-8);
+opt.set_optimizer(std::move(step));
 ```
 
-When the line search is on, every step that fails the Armijo condition
+Two API details that bite: `line_search()` must be called **before**
+`opt.build()`, and it returns `LBFGS&` — an lvalue reference — while `LBFGS`
+itself is move-only (it owns the curvature history). So `auto step = LBFGS{…}
+.line_search(…)` does **not** compile; declare the optimizer, configure it as
+a statement, then `set_optimizer(std::move(step))` (or `set_optimizer_ref(step)`
+to keep it alive and read `step.trace()` afterwards).
+
+Every trial that fails the sufficient-decrease condition
 
 $$E_{k+1} - E_k \le c_1 \alpha_k g_k \cdot d_k$$
 
-rolls back: positions return to $x_k$, $\alpha_k$ is contracted by
-`contract`, and the trial is re-taken from $x_k$ along the same
-direction. The $(s, y)$ history is updated only on accepted trials.
-`min_alpha` floors the contraction so the loop cannot run forever on a
-pathological evaluation.
+rolls back: positions return to $x_k$, $\alpha_k$ is contracted, and the trial
+is re-taken from $x_k$ along the same direction. The $(s, y)$ history is
+updated only on accepted trials. `min_alpha` floors the contraction so the
+loop cannot run forever on a pathological evaluation, and `max_ls` caps the
+attempts per step.
 
 ## Conjugate Gradient as an Alternative
 
@@ -231,7 +267,7 @@ periodic-restart parameter.
 To swap CG in for L-BFGS, change one line:
 
 ```cpp
-opt.add(cpu::minimizer::CG{/*alpha0=*/0.01});
+opt.set_optimizer(cpu::minimizer::CG{/*alpha0=*/0.01});
 ```
 
 The rest of the driver setup is unchanged. The hot-swap is exercised in
@@ -259,22 +295,23 @@ The setup, in full:
 ```cpp
 auto frame = make_aspirin();              // aspirin geometry
 
-auto integrals = /* use RHF{basis}.run(frame) */;
-auto config    = /* use cpu::scf::RHF */;   // RHF: no XC grid, fast
-                                                    // (default_config => KS/PBE)
-config.tol     = 1e-6;                    // Hartree
-config.max_iter = 200;
+// RHF: no XC grid, so each step is a plain SCF + analytic gradient.
+// Every parameter is a constructor argument — there is no config bag, and
+// the integrals are private to the method.
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                  /*tol=*/1e-6,             // [Hartree]
+                  /*max_iter=*/200};
 
 cpu::minimizer::Minimize opt;
 opt.set_optimizer(cpu::minimizer::LBFGS{5, /*alpha0=*/0.01, /*max_ls=*/10});
 opt.add_criterion(cpu::ForceConverged{
     /*ftol=*/     0.05,   // (eV/Å)
     /*rms_ftol=*/ 0.03,   // (eV/Å)
-    /*max_dtol=*/ 0.1,    // (Å) — slightly looser; fixed-step L-BFGS takes ~0.05–0.2 Å steps
+    /*max_dtol=*/ 0.1,    // (Å) — slightly looser; L-BFGS takes ~0.05–0.2 Å steps
     /*rms_dtol=*/ 0.05,   // (Å)
     /*etol=*/     1e-3    // (eV)
 });
-opt.on(minimizer::Phase::force).add(cpu::scf::RHF{});
+opt.on(minimizer::Phase::force).add(std::move(rhf));
 opt.build();
 
 int iters = opt.run(frame, /*max_iter=*/100);
@@ -289,7 +326,7 @@ attach its default one — the preset supplies `ForceConverged{}` only
 when you have supplied no criterion of your own.
 
 The single line that does *all* the chemistry is
-`opt.on(minimizer::Phase::force).add(cpu::scf::RHF{})`.
+`opt.on(minimizer::Phase::force).add(std::move(rhf))`.
 The evaluator's `launch()` rebuilds the integrals at the current
 geometry, runs the SCF cycle, computes the analytic nuclear gradient
 ($\partial E / \partial R_A$), and writes the negative gradient into
@@ -399,7 +436,7 @@ there.
 
 ## What's Next
 
-The exact same recipe — `Minimize` driver, `SCF` at force
+The exact same recipe — `Minimize` driver, `RHF` at the force
 phase, optimizer component at `search_direction` — also drives
 classical relaxation. Replace the SCF with `cpu::PairLJCut` and
 `cpu::BondHarmonic`, and you have a force-field minimization.
@@ -407,20 +444,19 @@ The optimizer does not know the difference, and the convergence
 tolerances stay in the same units.
 
 If you came here from [Chapter 15](ch15-cross-method.md), the symmetry is
-worth pausing on. The same `SCF{config}` instance plugs into
-either driver:
+worth pausing on. The same concrete method plugs into either driver:
 
 ```cpp
 // Geometry optimization (Optimize loop)
 cpu::minimizer::Minimize opt;
-opt.add(cpu::minimizer::LBFGS{...});
-opt.on(minimizer::Phase::force).add(cpu::scf::RHF{});
+opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});
+opt.on(minimizer::Phase::force).add(cpu::scf::RHF{basis});
 
 // Ab initio molecular dynamics (Dynamics loop)
 cpu::md::MD                sim;
-sim.add(cpu::md::VelocityVerlet{dt});
-sim.add(cpu::md::NoseHoover{T, tau, dt});
-sim.on(md::Phase::force).add(cpu::scf::RHF{}.predictor(3));
+sim.set_integrator(cpu::md::VelocityVerlet{dt});
+sim.set_thermostat(cpu::md::NoseHoover{T, tau, dt});
+sim.on(md::Phase::force).add(cpu::scf::RHF{basis}.predictor(3));
 ```
 
 Two drivers, one evaluator, two ensembles. That is the architecture

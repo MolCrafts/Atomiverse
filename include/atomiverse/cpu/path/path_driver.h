@@ -32,7 +32,7 @@
 /// The spec for this probe called for a Backend (and therefore a Context, and therefore
 /// an `IterationStatus`) **per replica**, which would have given collective termination for
 /// free. It is not implementable, and finding that out is one of this probe's results:
-/// **components cannot be cloned.** `Driver::add()` *moves* a component into
+/// **components cannot be cloned.** `PhaseBuilder::add()` *moves* a component into
 /// `owned_components_`, and there is no `clone()` anywhere in the tree — so N backends
 /// would need N independently-constructed component sets, which the user would have to
 /// supply through a factory callback (against both the OOP style rule and any hope of a

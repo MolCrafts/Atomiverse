@@ -2,7 +2,7 @@
 
 PROJECT_NAME           = "Atomiverse"
 PROJECT_BRIEF          = "Unified Molecular Simulation Platform — MD / DFT / MLIP"
-PROJECT_NUMBER         = "0.1.0-poc"
+PROJECT_NUMBER         = "0.1.0"
 
 # Input
 INPUT                  = include docs/mainpage.dox

@@ -3,8 +3,8 @@
 ///
 /// AIMD = Born-Oppenheimer molecular dynamics. The classical MD loop runs
 /// unchanged; the only difference is that the per-step force evaluator is
-/// `cpu::scf::SCF` (a self-consistent SCF + analytic gradient)
-/// instead of a classical pair potential. This is the same Driver/Component
+/// the concrete method `cpu::scf::RHF` (a self-consistent SCF + analytic
+/// gradient) instead of a classical pair potential. This is the same Driver
 /// composition that drives geometry optimization in
 /// `examples/05_geom_opt.cpp`, only with the integration loop
 /// (`cpu::md::MD`) instead of the optimization loop (`cpu::minimizer::
@@ -14,7 +14,7 @@
 ///   1. Construct an H2 frame and integrals at STO-3G.
 ///   2. Compose `cpu::md::MD` with InitVelocity + VelocityVerlet +
 ///      NoseHoover (NVT ensemble).
-///   3. Bind `SCF{config}.predictor(3)` at md::Phase::force —
+///   3. Bind `RHF{}.predictor(3)` at md::Phase::force —
 ///      ASPC predictor warm-starts the density across MD steps.
 ///   4. Run 200 steps and report initial / final energy + temperature.
 ///

@@ -50,7 +50,7 @@ class MoveSelector : public cpu::Mover {
     ///
     /// Ref-qualified: chaining on a temporary (`MoveSelector{}.add(…).add(…)`)
     /// stays an rvalue all the way into `set_mover`, so the driver takes the
-    /// OWNING branch of `Driver::add`. Without the `&&` overload the chain
+    /// OWNING branch of `PhaseBuilder::add`. Without the `&&` overload the chain
     /// yields an lvalue reference to the temporary, the driver stores a
     /// non-owning pointer to it, and the selector dangles the moment the
     /// full expression ends.

@@ -151,11 +151,10 @@ frame.span(kAtom_type)[0] = 1;
 frame.span(kAtom_type)[1] = 1;
 frame.box = cpu::Box::cubic(100.0);
 
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
-rhf.tol = 1e-10;
-rhf.max_iter = 100;
-const auto& result = rhf.run(frame);   // energy [Hartree]
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10,
+                  /*max_iter=*/100};
+rhf.run(frame);                        // eV on frame.meta.get(kEnergy)
+double e_ha = rhf.energy();            // total energy [Hartree]
 ```
 
 Two nuclei at the equilibrium bond length, each of charge \(+1\), give two
@@ -257,19 +256,19 @@ disappears from the calculation. The resulting energy is perfectly convergent
 and perfectly meaningless.
 
 **Algorithm.** Atomiverse guards against this at the single choke point every
-Gaussian-SCF path passes through, the solver entry (`SCFSolver::run`). Before
-any allocation or iteration it checks that $n_\alpha \ge 0$, $n_\beta \ge 0$,
-$n_\alpha + n_\beta = N_e$, and $n_\alpha = n_\beta$ for a restricted spin
-treatment, and throws `std::invalid_argument` otherwise. The classic trap now
-fails loudly: water cation ($\mathrm{H_2O^+}$, $N_e = 9$) routed through
-`rhf_config` yields $n_\alpha = n_\beta = 4$, the sum $8 \ne 9$ trips the
-guard, and no SCF iteration ever runs.
+Gaussian-SCF path passes through: the occupation resolution inside
+`MeanFieldMethod<D>::run`, before any allocation or iteration. It checks that
+$n_\alpha \ge 0$, $n_\beta \ge 0$, $n_\alpha + n_\beta = N_e$, and
+$n_\alpha = n_\beta$ for a restricted spin treatment, and throws
+`std::invalid_argument` otherwise. The classic trap now fails loudly: the water
+cation ($\mathrm{H_2O^+}$, $N_e = 9$) run through `RHF` yields
+$n_\alpha = n_\beta = 4$, the sum $8 \ne 9$ trips the guard, and no SCF
+iteration ever runs.
 
 ```cpp
-/* integrals private inside RHF/UHF/RKS/UKS */   // H2O+, 9 electrons
-cpu::scf::RHF rhf;
-solver.build(ints);
-solver.run(ints);             // throws std::invalid_argument — not silence
+// H2O+, 9 electrons — integrals stay private inside the method.
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/1};
+rhf.run(frame);               // throws std::invalid_argument — not silence
 ```
 
 Because the guard is read-only and runs before any work, valid closed-shell
@@ -288,7 +287,7 @@ resolution rules.
 
 <!-- Every number and thrown case in this section is regression-locked by
      tests/cpu/scf/test_spin_resolution.cpp (test_cpu_scf_spin_resolution):
-     H2O+ via rhf_config throws (OddElectronRhfThrows); the neutral-H2O
+     H2O+ via RHF throws (OddElectronRhfThrows); the neutral-H2O
      baseline pin (1e-8 Ha) is NeutralH2ORhfEnergyMatchesBaseline. Change one
      side only in lockstep with the other. -->
 
@@ -308,7 +307,7 @@ speed for stability. One engine-specific convention to note: Atomiverse damps
 the **density after diagonalization** (`RHF::damping_factor` = fraction
 of *old* density retained), whereas PySCF damps the **Fock matrix before
 DIIS**. Both act only while DIIS is inactive; the difference is deliberate
-and documented in the solver.
+and documented on the method.
 
 **DIIS** (Pulay's Direct Inversion in the Iterative Subspace) extrapolates
 the Fock matrix from its recent history, choosing the combination that
@@ -417,13 +416,11 @@ dominates and the cancellation argument no longer holds.
 the sorted orbital energies; the HOMO is the last occupied one:
 
 ```cpp
-auto ints   = /* use RHF{basis}.run(frame) */;
-cpu::scf::RHF rhf;  // set members (tol, max_iter, …)
-config.max_iter = 100;
-cpu::scf::RHF rhf;
-solver.build(ints);
-const auto& result = solver.run(ints);
-double eps_homo = result.eigenvalues_alpha(ints.n_occ() - 1); // (Hartree)
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10,
+                  /*max_iter=*/100};
+rhf.run(frame);
+using Spin = cpu::scf::SlaterDeterminant::Spin;
+double eps_homo = rhf.determinant().homo(Spin::alpha);    // (Hartree)
 double ip_eV    = -eps_homo * 27.211386245988;            // 1 Ha = 27.211386245988 eV
 ```
 
@@ -497,9 +494,7 @@ an open shell, so the cation is a UHF run):
 
 ```cpp
 // Neutral N2 at the experimental bond length (1.0977 Å): RHF/6-31G*.
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Pople631Gs;
-rhf.tol = 1e-12;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs, /*charge=*/0, /*tol=*/1e-12};
 rhf.run(frame);
 double e_n2 = rhf.energy();                              // [Hartree]
 
@@ -510,11 +505,9 @@ double ip_koopmans =
     * 27.211386245988;                                   // [eV]
 
 // Cation N2+: one α electron removed — members only, no new API.
-cpu::scf::UHF uhf;
-uhf.basis = cpu::scf::BasisSet::Pople631Gs;
+cpu::scf::UHF uhf{/*n_alpha=*/7, /*n_beta=*/6};   // 13 electrons: doublet
+uhf.basis = cpu::scf::BasisSet::Pople631Gs;      // no basis ctor slot on UHF yet
 uhf.charge = 1;
-uhf.n_alpha = 7;   // 13 electrons: doublet
-uhf.n_beta = 6;
 uhf.tol = 1e-12;
 uhf.run(frame);
 double ip_delta = (uhf.energy() - e_n2) * 27.211386245988;   // [eV]

@@ -189,7 +189,7 @@ energy to `frame.meta.get(kEnergy)` in eV (the Rydberg / Hartree breakdown stays
 concisely via the `cpu::single_point` helper:
 
 ```cpp
-#include "atomiverse/cpu/driver/single_point.h"
+#include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/planewave/pw_evaluator.h"
 
 cpu::pw::PW pw;

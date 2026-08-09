@@ -7,14 +7,14 @@ order.
 | # | File | Concept | Requires |
 |---|------|---------|----------|
 | 01 | `01_scf.cpp` | The bare SCF loop on raw xtensor arrays (no atomiverse link) | — |
-| 02 | `02_rhf.cpp` / `02_rhf.cu` | First real chemistry: RHF single-point (CPU via `scf::SCFSolver`; CUDA twin via `single_point + cuda::scf::SCF`) | `ATV_BUILD_HF` (+`ATV_BUILD_CUDA` for the twin) |
-| 03 | `03_uhf.cpp` | Open-shell UHF (`scf::SCFSolver`) + spin contamination | `ATV_BUILD_HF` |
-| 04 | `04_uks.cpp` | DFT (UKS-LSDA) with the native XC stack (`scf::SCFSolver`) | `ATV_BUILD_HF` |
-| 05 | `05_geom_opt.cpp` | Geometry optimization: `Minimize + LBFGS + scf::SCF` (DFT/PBE forces) | `ATV_BUILD_HF` |
-| 06 | `06_aimd.cpp` | Ab-initio MD: `MD + VelocityVerlet + NoseHoover + scf::SCF` | `ATV_BUILD_HF` |
+| 02 | `02_rhf.cpp` / `02_rhf.cu` | First real chemistry: RHF single-point (CPU via `cpu::scf::RHF`; CUDA twin via `single_point + cuda::scf::SCF`) | `ATV_BUILD_HF` (+`ATV_BUILD_CUDA` for the twin) |
+| 03 | `03_uhf.cpp` | Open-shell UHF (`cpu::scf::UHF`) + spin contamination | `ATV_BUILD_HF` |
+| 04 | `04_uks.cpp` | DFT (UKS-LSDA) with the native XC stack (`cpu::scf::UKS`) | `ATV_BUILD_HF` |
+| 05 | `05_geom_opt.cpp` | Geometry optimization: `Minimize + LBFGS + cpu::scf::RHF` (RHF/STO-3G forces) | `ATV_BUILD_HF` |
+| 06 | `06_aimd.cpp` | Ab-initio MD: `MD + VelocityVerlet + NoseHoover + cpu::scf::RHF` | `ATV_BUILD_HF` |
 | 07 | `07_md_lj.cpp` / `07_md_lj.cu` | Classical MD (NVE LJ argon): `md::MD + NeighborList + PairLJCut` (CPU canonical; CUDA twin = `07_md_lj_cuda`) | — (`.cu` needs `ATV_BUILD_CUDA`) |
 | 08 | `08_pw.cpp` | Plane-wave DFT for a periodic crystal: `Evaluate + pw::PWEvaluator` (silicon) | `ATV_BUILD_PW` |
-| 09 | `09_gpw.cpp` | Gaussian-and-plane-waves DFT single point: `gpw::GPW` | `ATV_BUILD_GPW` |
+| 09 | `09_gpw.cpp` | Gaussian-and-plane-waves DFT single point: `cpu::gpw::GPWEvaluator` | `ATV_BUILD_GPW` |
 | 11 | `11_koopmans.cpp` | Koopmans' theorem: HOMO energy → vertical IP via `scf::OrbitalInfoObserver` (5×2 basis sweep) | `ATV_BUILD_HF` |
 | 12 | `12_delta_scf.cpp` | ΔSCF ionization energies beyond Koopmans: neutral RHF vs `SCFInitialGuess`-seeded cation UHF | `ATV_BUILD_HF` |
 | 13 | `13_mp2.cpp` | Closed-shell MP2 correlation energy (`scf::mp2_energy`, AO→MO ovov transform) | `ATV_BUILD_HF` |
@@ -43,8 +43,10 @@ Atomiverse columns always come from a real binary on this tree.
 3. **CPU `.cpp` is the canonical lesson.** A CUDA `.cu` twin reuses the same
    number and gets a `_cuda`-suffixed target (`02_rhf.cu` → `02_rhf_cuda`,
    `07_md_lj.cu` → `07_md_lj_cuda`).
-4. **Examples are not benchmarks.** Anything that measures speed or compares
-   against LAMMPS / PySCF / QE belongs in `benchmarks/<domain>/<case>/`.
+4. **Examples are not end-to-end checks.** Anything that measures speed or
+   compares against LAMMPS / PySCF / CP2K / QE belongs in
+   `regressions/<domain>/<case>/` — an out-of-library consumer checked against
+   a cited value. Never in `tests/`.
 5. Register the target in `CMakeLists.txt` behind the narrowest option gate
    (`ATV_BUILD_HF`, `ATV_BUILD_CUDA`, …).
 6. **Ship a `results/<name>.json`** when the example produces a number the

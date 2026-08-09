@@ -70,7 +70,11 @@ namespace detail {
     case Length::Angstrom:
         return kAngstromInBohr;
     }
-    return 0.0; // unreachable
+    // No fallback: a zero conversion factor would silently turn every
+    // converted quantity into 0. Unreachable for the declared enums;
+    // throwing keeps it constant-evaluable (a throw in a constexpr
+    // function is only an error if that branch is actually taken).
+    throw "units::factor: unhandled unit enum value";
 }
 
 [[nodiscard]] inline constexpr double factor(Energy u) {
@@ -80,7 +84,11 @@ namespace detail {
     case Energy::eV:
         return kEvInHartree;
     }
-    return 0.0;
+    // No fallback: a zero conversion factor would silently turn every
+    // converted quantity into 0. Unreachable for the declared enums;
+    // throwing keeps it constant-evaluable (a throw in a constexpr
+    // function is only an error if that branch is actually taken).
+    throw "units::factor: unhandled unit enum value";
 }
 
 [[nodiscard]] inline constexpr double factor(Angle u) {
@@ -90,7 +98,11 @@ namespace detail {
     case Angle::Degree:
         return kDegreeInRad;
     }
-    return 0.0;
+    // No fallback: a zero conversion factor would silently turn every
+    // converted quantity into 0. Unreachable for the declared enums;
+    // throwing keeps it constant-evaluable (a throw in a constexpr
+    // function is only an error if that branch is actually taken).
+    throw "units::factor: unhandled unit enum value";
 }
 
 [[nodiscard]] inline constexpr double factor(Force u) {
@@ -100,7 +112,11 @@ namespace detail {
     case Force::eVPerAngstrom:
         return kEvPerAngstromInHartreePerBohr;
     }
-    return 0.0;
+    // No fallback: a zero conversion factor would silently turn every
+    // converted quantity into 0. Unreachable for the declared enums;
+    // throwing keeps it constant-evaluable (a throw in a constexpr
+    // function is only an error if that branch is actually taken).
+    throw "units::factor: unhandled unit enum value";
 }
 
 } // namespace detail

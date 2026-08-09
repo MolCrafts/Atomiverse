@@ -1,4 +1,4 @@
-/// @file cpu/driver/single_point.h
+/// @file cpu/evaluate/single_point.h
 /// @brief cpu::single_point — free-function syntactic sugar for one-shot
 ///        evaluator / method-driver runs.
 ///

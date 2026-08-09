@@ -513,6 +513,9 @@ target_include_directories(test_app_interpreter_locator PRIVATE
 # ExtXYZ loading through molrs — inline fixtures only, no external file.
 atv_add_cpp_test(test_cpu_io_extxyz                       cpu/io/test_cpu_io_extxyz.cpp)
 
+# Unreadable input paths must throw std::runtime_error, not abort in Rust.
+atv_add_cpp_test(test_cpu_io_missing_file                 cpu/io/test_cpu_io_missing_file.cpp)
+
 # ── MPI tests (launched under `mpirun`) ─────────────────────────────────
 
 if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
@@ -642,6 +645,7 @@ if(ATV_BUILD_PW)
     # Naming convention: test_{backend}_{domain}_{component}.
     atv_add_cpp_test(test_cpu_pw_g_vector   cpu/planewave/test_g_vector.cpp)
     atv_add_cpp_test(test_cpu_pw_upf        cpu/planewave/test_upf.cpp)
+    atv_add_cpp_test(test_cpu_pw_gth_upf    cpu/planewave/test_gth_upf.cpp)
     atv_add_cpp_test(test_cpu_pw_kpoint     cpu/planewave/test_kpoint.cpp)
     atv_add_cpp_test(test_cpu_pw_crystal    cpu/planewave/test_crystal.cpp)
     atv_add_cpp_test(test_cpu_pw_ewald      cpu/planewave/test_ewald.cpp)
@@ -651,8 +655,17 @@ if(ATV_BUILD_PW)
     atv_add_cpp_test(test_cpu_pw_method     cpu/planewave/test_pw_method.cpp)
     atv_add_cpp_test(test_cpu_pw_spin       cpu/planewave/test_pw_spin.cpp)
     atv_add_cpp_test(test_cpu_pw_forces     cpu/planewave/test_pw_forces.cpp)
+    atv_add_cpp_test(test_cpu_pw_forces_fd  cpu/planewave/test_pw_forces_fd.cpp)
+    # ctest runs from the build tree, so the in-tree Si UPF must be located
+    # absolutely — a relative path silently GTEST_SKIPped the only UPF force
+    # coverage in the suite.
+    if(TARGET test_cpu_pw_forces)
+        target_compile_definitions(test_cpu_pw_forces
+            PRIVATE ATV_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    endif()
     atv_add_cpp_test(test_cpu_pw_bomd       cpu/planewave/test_pw_bomd.cpp)
     atv_add_cpp_test(test_cpu_pw_stress     cpu/planewave/test_pw_stress.cpp)
+    atv_add_cpp_test(test_cpu_pw_stress_fd  cpu/planewave/test_pw_stress_fd.cpp)
     atv_add_cpp_test(test_cpu_pw_dfpt       cpu/planewave/test_dfpt.cpp)
     atv_add_cpp_test(test_cpu_pw_smearing   cpu/planewave/test_pw_smearing.cpp)
     atv_add_cpp_test(test_cpu_pw_bands_dos  cpu/planewave/test_pw_bands_dos.cpp)

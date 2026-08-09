@@ -1,13 +1,28 @@
 #!/usr/bin/env python3
 """Compare Atomiverse plane-wave DFT against Quantum ESPRESSO for Si diamond.
 
+Both codes read the **same** norm-conserving pseudopotential file and are
+given the same Hamiltonian, or the comparison means nothing:
+
+* Pseudopotential — the in-tree ONCVPSP norm-conserving UPF
+  ``tests/data/pw/Si_lda_nc.upf``, used verbatim by Atomiverse
+  (``PW.upf_path``) and by QE (``ATOMIC_SPECIES``). The plane-wave path
+  implements norm-conserving pseudopotentials only: it applies no
+  augmentation charge, so an ultrasoft or PAW file is rejected on read
+  rather than integrated as if it were norm-conserving.
+* XC — the QE input pins ``input_dft = 'PBE'`` because the Python ``PW``
+  surface runs its PBE default and does not currently expose an ``xc``
+  member (see NOTE at ``QE_INPUT_TEMPLATE``). The PP is LDA-generated;
+  both codes use it identically, so the two totals stay comparable.
+* Occupations — fixed on both sides (Si diamond is a gapped insulator);
+  the Python surface exposes no smearing member either.
+
 Requires:
     - atomiverse (with PW enabled): ``pip install -e './python'``
     - examples extras: ``pip install -e './python[examples]'``
       (``molcrafts-molplot`` for figures, ``molcrafts-molpy`` for the
       MolCrafts system stack — not matplotlib / ASE)
-    - Quantum ESPRESSO ``pw.x`` on PATH
-    - Si pseudopotential (Si.upf) in pseudopotentials/ directory
+    - Quantum ESPRESSO ``pw.x`` (skip with ``--skip-qe``)
 
 Generates comparison plots (via **molplot**, not raw matplotlib):
     1. Total energy vs plane-wave cutoff (ecut)
@@ -39,7 +54,9 @@ import numpy as np
 # ── Paths ──
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PSEUDO_DIR = SCRIPT_DIR / "pseudopotentials"
+REPO_ROOT = SCRIPT_DIR.parent.parent
+# In-tree ONCVPSP norm-conserving UPF (pseudo_type="NC", Z_val = 4).
+DEFAULT_UPF = REPO_ROOT / "tests" / "data" / "pw" / "Si_lda_nc.upf"
 QE_BIN = "/tmp/qe-install/bin/pw.x"
 
 # ── Si diamond structure builder ──
@@ -72,6 +89,14 @@ def build_si_diamond(a_lat: float = 5.43) -> "molrs.Frame":
 
 # ── QE helpers ──
 
+# NOTE — the two settings that keep this an apples-to-apples comparison:
+#   input_dft = 'PBE'      matches the Python PW surface, which runs its PBE
+#                          default; the binding exposes no `xc` member, so the
+#                          QE side is pinned instead of the Atomiverse side.
+#   occupations = 'fixed'  matches the Python PW surface, which exposes no
+#                          smearing member. Si diamond is a gapped insulator.
+# `pseudo_dir` / the ATOMIC_SPECIES filename are both taken from the one
+# resolved UPF path, so QE reads literally the file Atomiverse read.
 QE_INPUT_TEMPLATE = """&control
     calculation  = 'scf'
     prefix       = 'si'
@@ -85,16 +110,15 @@ QE_INPUT_TEMPLATE = """&control
     nat          = 2
     ntyp         = 1
     ecutwfc      = {ecut_ry}
-    occupations  = 'smearing'
-    smearing     = 'gaussian'
-    degauss      = 0.01
+    input_dft    = 'PBE'
+    occupations  = 'fixed'
 /
 &electrons
     conv_thr     = {conv_thr}
     mixing_beta  = 0.4
 /
 ATOMIC_SPECIES
-    Si   28.0855  Si.upf
+    Si   28.0855  {upf_file}
 ATOMIC_POSITIONS crystal
     Si   0.000000  0.000000  0.000000
     Si   0.250000  0.250000  0.250000
@@ -104,14 +128,26 @@ K_POINTS automatic
 
 
 def write_qe_input(
-    path: str, *, a_lat: float, ecut_ry: float, kmesh: int, conv_thr: float = 1e-6
+    path: str,
+    *,
+    a_lat: float,
+    ecut_ry: float,
+    kmesh: int,
+    upf_path: str,
+    conv_thr: float = 1e-6,
 ) -> str:
-    """Write a QE input file and return the outdir path."""
+    """Write a QE input file and return the outdir path.
+
+    ``upf_path`` is the same file handed to ``PW.upf_path``; its directory
+    becomes QE's ``pseudo_dir`` and its name the ``ATOMIC_SPECIES`` entry.
+    """
     alat_bohr = a_lat / 0.52917721092  # Angstrom → Bohr
     outdir = str(Path(path).parent / "qe_out")
+    upf = Path(upf_path).resolve()
 
     content = QE_INPUT_TEMPLATE.format(
-        pseudo_dir=PSEUDO_DIR,
+        pseudo_dir=upf.parent,
+        upf_file=upf.name,
         outdir=outdir,
         alat_bohr=f"{alat_bohr:.8f}",
         ecut_ry=f"{ecut_ry:.4f}",
@@ -173,11 +209,16 @@ def run_atomiverse(
     a_lat: float,
     ecut_ry: float,
     kmesh: int,
+    upf_path: str,
     tol: float = 1e-6,
     max_iter: int = 80,
-    upf_path: str = "",
 ) -> dict:
-    """Run Atomiverse PW and return results."""
+    """Run Atomiverse PW and return results.
+
+    ``upf_path`` is required: a plane-wave run has no default
+    pseudopotential, and ``PW.build`` raises when neither ``upf_path`` nor
+    ``gth_name`` is set.
+    """
     import atomiverse as av
 
     frame = build_si_diamond(a_lat)
@@ -199,9 +240,7 @@ def run_atomiverse(
 # ── Parameter sweep ──
 
 
-def sweep_ecut(
-    skip_qe: bool = False, skip_av: bool = False, upf: str = ""
-) -> list[dict]:
+def sweep_ecut(skip_qe: bool, skip_av: bool, upf: str) -> list[dict]:
     """Energy vs plane-wave cutoff."""
     results = []
     ecuts = [10, 15, 20, 25, 30, 35, 40, 50, 60]
@@ -210,7 +249,7 @@ def sweep_ecut(
         point = {"param": "ecut", "value": ecut}
 
         if not skip_av:
-            av = run_atomiverse(5.43, ecut, 4, max_iter=80, upf_path=upf)
+            av = run_atomiverse(5.43, ecut, 4, upf, max_iter=80)
             point["atomiverse"] = av
             print(
                 f"  AV  ecut={ecut:3.0f} Ry  E={av['energy']:15.6f}  iters={av['iterations']}"
@@ -219,7 +258,9 @@ def sweep_ecut(
         if not skip_qe:
             with tempfile.TemporaryDirectory() as tmpdir:
                 inp = os.path.join(tmpdir, "si.in")
-                outdir = write_qe_input(inp, a_lat=5.43, ecut_ry=ecut, kmesh=4)
+                outdir = write_qe_input(
+                    inp, a_lat=5.43, ecut_ry=ecut, kmesh=4, upf_path=upf
+                )
                 os.makedirs(outdir, exist_ok=True)
                 qe = run_qe(inp, outdir)
                 point["qe"] = qe
@@ -233,9 +274,7 @@ def sweep_ecut(
     return results
 
 
-def sweep_kmesh(
-    skip_qe: bool = False, skip_av: bool = False, upf: str = ""
-) -> list[dict]:
+def sweep_kmesh(skip_qe: bool, skip_av: bool, upf: str) -> list[dict]:
     """Energy vs k-point mesh."""
     results = []
     kmeshes = [1, 2, 3, 4, 5, 6, 8]
@@ -244,14 +283,16 @@ def sweep_kmesh(
         point = {"param": "kmesh", "value": k}
 
         if not skip_av:
-            av = run_atomiverse(5.43, 30, k, max_iter=80, upf_path=upf)
+            av = run_atomiverse(5.43, 30, k, upf, max_iter=80)
             point["atomiverse"] = av
             print(f"  AV  kmesh={k}  E={av['energy']:15.6f}  iters={av['iterations']}")
 
         if not skip_qe:
             with tempfile.TemporaryDirectory() as tmpdir:
                 inp = os.path.join(tmpdir, "si.in")
-                outdir = write_qe_input(inp, a_lat=5.43, ecut_ry=30, kmesh=k)
+                outdir = write_qe_input(
+                    inp, a_lat=5.43, ecut_ry=30, kmesh=k, upf_path=upf
+                )
                 os.makedirs(outdir, exist_ok=True)
                 qe = run_qe(inp, outdir)
                 point["qe"] = qe
@@ -265,9 +306,7 @@ def sweep_kmesh(
     return results
 
 
-def sweep_alat(
-    skip_qe: bool = False, skip_av: bool = False, upf: str = ""
-) -> list[dict]:
+def sweep_alat(skip_qe: bool, skip_av: bool, upf: str) -> list[dict]:
     """Energy vs lattice constant (EOS scan)."""
     results = []
     alats = [5.20, 5.30, 5.35, 5.40, 5.43, 5.45, 5.50, 5.55, 5.60, 5.70]
@@ -276,7 +315,7 @@ def sweep_alat(
         point = {"param": "alat", "value": a}
 
         if not skip_av:
-            av = run_atomiverse(a, 30, 4, max_iter=80, upf_path=upf)
+            av = run_atomiverse(a, 30, 4, upf, max_iter=80)
             point["atomiverse"] = av
             print(
                 f"  AV  alat={a:.2f} A  E={av['energy']:15.6f}  iters={av['iterations']}"
@@ -285,7 +324,9 @@ def sweep_alat(
         if not skip_qe:
             with tempfile.TemporaryDirectory() as tmpdir:
                 inp = os.path.join(tmpdir, "si.in")
-                outdir = write_qe_input(inp, a_lat=a, ecut_ry=30, kmesh=4)
+                outdir = write_qe_input(
+                    inp, a_lat=a, ecut_ry=30, kmesh=4, upf_path=upf
+                )
                 os.makedirs(outdir, exist_ok=True)
                 qe = run_qe(inp, outdir)
                 point["qe"] = qe
@@ -450,20 +491,24 @@ def main():
         default="all",
         help="Which sweep to run",
     )
-    parser.add_argument("--upf", default="", help="Path to Si UPF pseudopotential")
+    parser.add_argument(
+        "--upf",
+        default="",
+        help="Path to a norm-conserving Si UPF "
+        f"(default: {DEFAULT_UPF.relative_to(REPO_ROOT)})",
+    )
     parser.add_argument("--output", default="", help="Save plot to file")
     args = parser.parse_args()
 
-    # Auto-detect UPF
-    upf = args.upf
-    if not upf:
-        default_upf = PSEUDO_DIR / "Si.upf"
-        if default_upf.exists():
-            upf = str(default_upf)
-            print(f"Using pseudopotential: {upf}")
-        else:
-            print("No UPF found — using toy local potential (results not physical)")
-            print(f"Place Si.upf in {PSEUDO_DIR}/ for meaningful results")
+    # Pseudopotential: required, norm-conserving, and shared by both codes.
+    # There is no toy fallback — a bare valence-charge potential is not
+    # representable in a plane-wave basis at any finite cutoff.
+    upf = args.upf or str(DEFAULT_UPF)
+    if not Path(upf).exists():
+        print(f"Pseudopotential not found: {upf}")
+        print("Pass --upf with a norm-conserving (ONCVPSP-style) Si UPF.")
+        sys.exit(1)
+    print(f"Using pseudopotential: {upf}")
 
     if args.skip_qe:
         print("Skipping Quantum ESPRESSO calculations\n")

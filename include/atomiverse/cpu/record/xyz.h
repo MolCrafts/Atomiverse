@@ -56,9 +56,12 @@ class ZarrReader {
     ZarrReader& operator=(const ZarrReader&) = delete;
 
     /// @brief Read the first frame of the Zarr store into `frame`.
-    /// Overwrites the owned atom Block rows and `frame.box`. Throws on
-    /// I/O error or if `n_global > frame.nlocal()`.
+    /// Overwrites the owned atom Block rows and `frame.box`.
     /// @return Number of atoms loaded (== `n_global` from the file).
+    /// @throws std::runtime_error if the store path does not exist or cannot be
+    ///         read, the store is empty, an expected per-atom column is missing
+    ///         or short, the box is not 9 elements, or
+    ///         `n_global > frame.nlocal()`.
     int read_into(Frame& frame);
 
   private:

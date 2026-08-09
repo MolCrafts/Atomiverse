@@ -26,10 +26,10 @@ to experiment, while H₂O still needs correlation beyond single-reference HF.
 
 [Chapter 2](ch02-rhf.md) computed an RHF energy for H₂ in the minimal STO-3G
 basis and quietly accepted whatever number came out. This chapter goes back
-to that one line —
+to that one constructor argument —
 
 ```cpp
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 ```
 
 — and asks the question every practitioner eventually asks: **how much does
@@ -156,9 +156,7 @@ for (auto basis : {cpu::scf::BasisSet::STO3G,
                    cpu::scf::BasisSet::Pople631G,
                    cpu::scf::BasisSet::Pople631Gs,
                    cpu::scf::BasisSet::Def2SVP}) {
-    cpu::scf::RHF rhf;
-    rhf.basis = basis;
-    rhf.max_iter = 100;
+    cpu::scf::RHF rhf{basis, /*charge=*/0, /*tol=*/1e-9, /*max_iter=*/100};
     rhf.run(frame);
 
     const int n_ao = static_cast<int>(
@@ -175,12 +173,12 @@ for (auto basis : {cpu::scf::BasisSet::STO3G,
 the spin-resolved orbital eigenvalues on `determinant()`. `basis_set_name`
 gives the human-readable label for logs.
 
-Select the basis as a member and run — there is no separate integral or
+Pass the basis to the constructor and run — there is no separate integral or
 config step:
 
 ```cpp
-cpu::scf::RHF rhf;                            // Restricted HF, MINAO guess
-rhf.basis = cpu::scf::BasisSet::Def2SVP;
+// Restricted HF, MINAO guess
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP};
 rhf.run(frame);                               // rhf.energy() in Ha
 ```
 
@@ -291,8 +289,8 @@ must absorb that ratio so that a unit-normalised d shell maps to a \(5\times5\)
 unit spherical overlap.
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Def2SVP; // spherical by definition
+// def2-SVP is spherical by definition
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP};
 rhf.run(frame); // H2O: 24 spherical AOs (25 Cartesian)
 ```
 
@@ -363,8 +361,7 @@ ECP and explicit x2c on the same atom double-counts those effects; the
 engine rejects that combination element-wise.
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Def2SVP;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP};
 rhf.ecp = "def2-ECP";
 rhf.run(i2_frame); // I2, r = 2.666 Å → E ≈ −593.316 Ha
 ```
@@ -414,9 +411,7 @@ Ghost indices are method members (`ghost_atoms`), not Frame columns.
 `Counterpoise` orchestrates five SCF runs on a configured method object:
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Pople631Gs;
-rhf.tol = 1e-10;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs, /*charge=*/0, /*tol=*/1e-10};
 
 cpu::scf::Counterpoise cp({0, 1, 2}, {3, 4, 5}); // water dimer
 auto r = cp.run(dimer_frame, rhf);

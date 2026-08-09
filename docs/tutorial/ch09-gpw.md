@@ -23,7 +23,7 @@ const cpu::gpw::Kind O{
     cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
     cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 // … H kind …
-cpu::gpw::GpwDftEvaluator eval(
+cpu::gpw::GPWEvaluator eval(
     /*kinds*/ {O, H}, /*cutoff_ry*/ 400.0, /*max_iter*/ 200, /*tol*/ 1e-7,
     /*mix*/ 0.3, /*xc*/ cpu::gpw::XcKind::PBE, /*nonperiodic*/ true);
 cpu::single_point(frame, eval);
@@ -105,7 +105,7 @@ AIMD on thousands of atoms.
 
 GPW follows the exact architecture of the other electronic-structure methods in
 this manual. The SCF machinery is an **inner solver** — `cpu::gpw::GpwDft`,
-driven by `cpu::gpw::GpwDftEvaluator` — and it is *not* a `Driver` subclass, just
+driven by `cpu::gpw::GPWEvaluator` — and it is *not* a `Driver` subclass, just
 as [Gaussian SCF is an inner solver](ch02-rhf.md) behind `SCF` and
 [plane-wave DFT](ch08-plane-wave.md) is one behind `PWEvaluator`.
 
@@ -163,7 +163,7 @@ The `q6`/`q1` suffixes are the valence electron counts the pseudopotential keeps
 in the constructor (no public Config bag):
 
 ```cpp
-cpu::gpw::GpwDftEvaluator eval(
+cpu::gpw::GPWEvaluator eval(
     /*kinds*/ {O, H},
     /*cutoff_ry*/ 400.0,                   // real-space grid resolution [Ry]
     /*max_iter*/ 200,

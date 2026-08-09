@@ -39,6 +39,7 @@ void bind_pw(nb::module_& m) {
     nb::class_<PW>(m, "PW", "Concrete plane-wave DFT method (members + run).")
         .def(nb::init<>())
         .def_rw("upf_path", &PW::upf_path)
+        .def_rw("gth_name", &PW::gth_name)
         .def_rw("ecut_ry", &PW::ecut_ry)
         .def_rw("k_mesh", &PW::k_mesh)
         .def_rw("tol", &PW::tol)

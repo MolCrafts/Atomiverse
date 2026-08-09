@@ -11,7 +11,8 @@
 /// DZVP-MOLOPT-GTH basis + GTH-PBE pseudopotentials, Martyna-Tuckerman isolated
 /// electrostatics. The user-facing component is cpu::gpw::GPWEvaluator (role
 /// Evaluator, capability Energy), run through cpu::single_point exactly like
-/// cpu::pw::PWEvaluator and cpu::scf::SCF.
+/// cpu::pw::PWEvaluator; the Gaussian methods (cpu::scf::RHF and friends)
+/// have the same Frame-in / Frame-out shape.
 ///
 /// Build:
 ///   cmake -B build -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \

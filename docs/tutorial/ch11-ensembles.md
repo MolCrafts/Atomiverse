@@ -113,7 +113,10 @@ registered as the integrator.
 The categorical setters on `cpu::md::MD` are the primary API:
 `set_integrator` (singular — one integrator), `set_thermostat` and
 `set_barostat` (plural — each call appends), plus the shared `set_evaluator`,
-`set_neighbor`, `set_thermo`.
+`set_neighbor`, `set_thermo`. A component with no categorical setter of its
+own — `InitVelocity` below, for instance — is bound with the explicit
+`sim.on(phase).add(component, order)`. There is no bare `sim.add(...)`: the
+phase is always either implied by a setter or written out.
 
 ### NVE — the baseline
 
@@ -126,7 +129,8 @@ using namespace ATV;
 auto frame = make_fcc_argon(4, /*a=*/5.32);   // 256 Ar atoms, Å
 
 cpu::md::MD sim;
-sim.add(cpu::md::InitVelocity{100.0, /*seed=*/42u});
+sim.on(md::Phase::initial_integrate)
+   .add(cpu::md::InitVelocity{100.0, /*seed=*/42u}, /*order=*/-999);
 sim.set_evaluator(cpu::PairLJCut{/*eps=*/0.0104, /*sigma=*/3.4, /*cutoff=*/6.8});
 sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
 sim.set_integrator(cpu::md::VelocityVerlet{/*dt=*/4.0});
@@ -235,8 +239,8 @@ statistics, prefer the MTK integrator below.
 `NoseHooverNPT` is a Martyna-Tobias-Klein integrator that fuses velocity
 integration, an M-chain Nosé-Hoover thermostat, and an NHC barostat into one
 symplectic Trotter step. It **replaces** `VelocityVerlet` / `NoseHoover` /
-`Barostat` and is set as the *integrator*. Its `Config` is an aggregate
-constructed with designated initializers (the idiom the test suite uses):
+`Barostat` and is set as the *integrator*. Its parameters are plain
+constructor arguments — there is no `Config` bag:
 
 ```cpp
 sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});
@@ -321,7 +325,7 @@ designated ensemble validation case.
 
 Every ensemble in this chapter was built on classical `PairLJCut` forces, but
 nothing in the thermostat or barostat touches the force *source*. Replace the
-pair potential with an `SCF` on the force phase and every line about
+pair potential with an `RHF` on the force phase and every line about
 temperature and pressure control stays exactly as written — that is **ab
 initio molecular dynamics in the canonical or isothermal-isobaric ensemble**:
 

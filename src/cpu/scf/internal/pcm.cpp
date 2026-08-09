@@ -63,7 +63,19 @@ double lebedev_xi_factor(int n_leb) {
     case 770:
         return 4.90656435779;
     default:
-        return 0.0; // fall back to Klamt point-charge S
+        // No fallback: ξ = 0 drops the self-interaction term, which silently
+        // switches the run from the tabulated surface model to Klamt
+        // point-charge S — a different solvation model, reported as the one
+        // that was asked for. resolve_lebedev() below throws on the same
+        // input; this must agree with it.
+        // n = 266 is the live case: resolve_lebedev() accepts it, this table
+        // does not, so it used to select a different solvation model in
+        // silence. The orders below are the intersection of the two.
+        throw std::runtime_error(
+            "Pcm: no tabulated Lange-Herbert xi factor for Lebedev order "
+            + std::to_string(n_leb)
+            + " — the Gaussian-smeared surface model is undefined there. Use "
+              "lebedev_n of 6, 38, 50, 86, 110, 194, 302, 590 or 770.");
     }
 }
 

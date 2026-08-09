@@ -24,8 +24,9 @@ namespace (pinned per row in test_namespaces.py):
   concatenation so this file never contains one literally.
 
 Smoke parameters reuse the verified conftest values (Ar LJ
-epsilon=0.0104 eV, sigma=3.4 A, mass 39.948 amu; toy PW with empty
-upf_path: "runs, unphysical") — no new reference values are introduced.
+epsilon=0.0104 eV, sigma=3.4 A, mass 39.948 amu; PW on the in-tree
+analytic ``gth_name = "GTH-PBE-q4"`` at ecut 8 Ry / 1 k-point: "runs,
+underconverged") — no new reference values are introduced.
 """
 
 from __future__ import annotations
@@ -222,11 +223,12 @@ class TestDeadSurfaceFailsLoud:
 
 class TestPWSurface:
     @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
-    def test_explicit_solver_toy_smoke(self, silicon_frame: "molrs.Frame") -> None:
-        """Toy local potential (empty upf_path) runs and returns a
-        finite energy [Ry] — 'runs, unphysical' contract, no new
-        reference values."""
+    def test_explicit_solver_gth_smoke(self, silicon_frame: "molrs.Frame") -> None:
+        """The analytic in-tree GTH path runs from Python and returns a
+        finite energy [Ry] — 'runs, underconverged' contract at ecut 8 Ry
+        and one k-point, no new reference values."""
         pw = av.PW()
+        pw.gth_name = "GTH-PBE-q4"  # Si, in-tree analytic GTH; no file
         pw.ecut_ry = 8.0
         pw.k_mesh = 1
         pw.max_iter = 5
@@ -235,6 +237,17 @@ class TestPWSurface:
         assert result.iterations >= 1
         assert isinstance(result.energy, float)
         assert np.isfinite(result.energy)
+
+    @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
+    def test_no_pseudopotential_raises(self, silicon_frame: "molrs.Frame") -> None:
+        """A plane-wave run has no default pseudopotential: leaving both
+        `gth_name` and `upf_path` empty fails loud instead of running a
+        bare valence-charge potential that no cutoff converges."""
+        pw = av.PW()
+        pw.ecut_ry = 8.0
+        pw.k_mesh = 1
+        with pytest.raises(Exception):
+            pw.build(silicon_frame)
 
     @pytest.mark.skipif(_HAS_PW, reason="extension built with ATV_BUILD_PW")
     @pytest.mark.parametrize("name", ("PW", "PWResult"))

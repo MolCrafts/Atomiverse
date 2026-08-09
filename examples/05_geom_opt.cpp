@@ -100,11 +100,9 @@ int main() {
 
     auto frame = make_aspirin();
 
-    // Concrete RHF force provider — parameters are members.
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = double(1e-6);
-    rhf.max_iter = 200;
+    // Concrete RHF force provider — parameters are constructor arguments.
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                      /*tol=*/double(1e-6), /*max_iter=*/200};
 
     cpu::minimizer::Minimize opt;
     opt.set_optimizer(cpu::minimizer::LBFGS{

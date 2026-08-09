@@ -26,8 +26,7 @@ int main() {
     frame.span(kAtom_mass)[1] = 1.008;
     frame.box = cpu::Box::cubic(20.0);
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.with_gradient(false);
     auto handle = rhf.result_handle();
 

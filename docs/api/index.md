@@ -28,12 +28,15 @@ Start with these types:
 
 ### Build staged workflows
 
-Start with these facade headers:
+Start with these headers (`core/` holds the device-independent contracts; the
+CPU loop node lives under `cpu/driver/`):
 
-- [`Driver`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/driver.h)
-- [`Plan`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/plan.h)
-- [`Phase` enums](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/stage.h)
-- [`Verdict` / `ConvergenceMetrics`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/loop.h) — the vocabulary termination is decided in
+- [`cpu::Driver<PhaseEnum>` — the loop node every CPU preset derives from](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/driver.h)
+- [`Driver<PhaseEnum, DeviceTag>` — the backend-independent dispatch template](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/driver_template.h)
+- [`Plan`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/plan.h)
+- [`Phase` enums + `slot_of` / `slot_count`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/stage.h)
+- [`Verdict` / `ConvergenceMetrics`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/verdict.h) — the vocabulary termination is decided in
+- [`IterationStatus`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/iteration_status.h) — the per-loop status a driver owns
 
 ### Decide when a run stops
 
@@ -47,8 +50,10 @@ policy slots. Both are user-definable from outside the library:
   ([`cpu/driver/criteria.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/criteria.h)).
 - [`cpu::OutcomePolicy`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/outcome_policy.h) —
   *does this iteration count?* `driver.set_outcome(p)`, singular. Ships `Metropolis`.
-- [`cpu::SubDriver`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/sub_driver.h) —
-  put one driver in another's plan; the child runs on the parent's runtime.
+- [`cpu::DriverNode`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/driver_node.h) —
+  the erased node interface that lets a Plan slot hold a nested driver instead
+  of a component; the child runs on the parent's runtime. There is no separate
+  `SubDriver` wrapper: a Driver *is* an executable node.
 
 ### Run molecular dynamics and minimization
 
@@ -83,8 +88,8 @@ Start with these headers:
 
 - [`cuda::scf::RHF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/rhf.cuh)
 - [`cuda::scf::SCFEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/scf_evaluator.cuh)
-- [`cuda::Evaluate`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/driver/evaluate.cuh)
-- [`cuda::single_point`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/driver/single_point.cuh)
+- [`cuda::Evaluate`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/evaluate/evaluate.cuh)
+- [`cuda::single_point`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/evaluate/single_point.cuh)
 
 ### Record output and analyze results
 

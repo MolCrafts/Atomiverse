@@ -38,9 +38,10 @@ You will learn:
 2. **The representation.** A derived quantity is a `role() == Observer`
    **Component** (LAMMPS `compute`), fed by an asynchronous snapshot ring so it
    never stalls the integrator, and backed by molrs for the actual math.
-3. **The C++ API.** `set_observer` attaches an observer;
-   `ATV::RDF`, `ATV::MSD`, and `ATV::VACF` are the three ready-made ones, and
-   `cpu::XYZ` dumps the raw trajectory.
+3. **The C++ API.** `set_observer` / `set_observer_ref` attach an observer;
+   `ATV::RDF`, `ATV::MSD`, and `ATV::VACF` are the three ready-made ones.
+   `cpu::XYZ` dumps the raw trajectory, but it is a plain writer you drive
+   yourself, not a Recorder component.
 4. **The expected result.** g(r) with a first peak at the nearest-neighbour
    distance; a linear MSD(t) whose slope is the self-diffusion coefficient; a
    VACF that decays from ⟨v²⟩ and rings.
@@ -130,10 +131,21 @@ exposes it through a thin CXX FFI bridge rather than porting the numerics.
 
 ## The C++ API: Attach an Observer, Read the Result
 
-Observers are *plural* — you can attach several — so they use `set_observer`
-(which forwards to the generic `add()` and its default phase binding). Build the
-MD system exactly as in [Chapter 11](ch11-ensembles.md); the only new lines
-construct an observer and call `set_observer`.
+Observers are *plural* — you can attach several — so they use `set_observer`,
+which binds the component at the phase and order its own `default_bindings()`
+declare. Two forms, and the distinction matters here more than anywhere else in
+the book:
+
+- `set_observer(Obs&&)` **takes ownership** of an rvalue. The observer lives
+  inside the driver and you cannot read its curve afterwards.
+- `set_observer_ref(Obs&)` **borrows** an observer you declared yourself. This
+  is the form you want whenever you intend to call `rdf.gr()` / `msd.curve()`
+  after the run. Declare the observer *before* the driver so the driver is
+  destroyed first.
+
+Passing an lvalue to `set_observer` is `= delete`d — there is no implicit
+borrow. Build the MD system exactly as in [Chapter 11](ch11-ensembles.md); the
+only new lines construct an observer and call `set_observer_ref`.
 
 ### The cheapest observable: energy conservation
 
@@ -161,19 +173,36 @@ timestep. This is a **physical-approximation** result: you validate it as a
 bounded energy drift over the run, and it is the standard first check that an
 integrator and force field are wired correctly.
 
-### Dumping the trajectory: `cpu::XYZ`
+### Dumping the trajectory: `cpu::XYZ` (no Recorder yet)
 
 When you want the frames themselves — for external analysis or visualisation —
-attach the `cpu::XYZ` recorder (a `Recorder`, LAMMPS `dump`, not an `Observer`;
-it writes I/O rather than deriving a quantity):
+you write them yourself. **`cpu::XYZ` is a plain writer, not a Component**: it
+exposes `write(frame)` and `append(frame)` and inherits from nothing, so it
+cannot be handed to `set_record(...)` or `on(phase).add(...)`. As of today
+**there is no MD trajectory Recorder in the tree** — `cpu/record/` ships
+`Thermo` (a real `Recorder`), the two cube writers, and the timing report, and
+that is all.
+
+Until one lands, segment the run and append between segments:
 
 ```cpp
-sim.set_record(cpu::XYZ{"trajectory.xyz"});
+cpu::XYZ traj{"trajectory.xyz"};
+traj.write(frame);                       // first frame: truncate/create
+for (int chunk = 0; chunk < 1000; ++chunk) {
+    sim.run(frame, 1000);                // continuable — one trajectory
+    traj.append(frame);                  // one frame per 1000 steps
+}
 ```
 
-The recorder appends one frame per its configured cadence. Keep dumps sparse:
-the point of the observers below is that you rarely need the full trajectory on
-disk — the observable is computed as the run proceeds.
+Consecutive `run()` calls on the same `cpu::Frame&` extend a single trajectory
+rather than restarting it, so the only cost is the per-segment run summary.
+Keep dumps sparse regardless: the point of the observers below is that you
+rarely need the full trajectory on disk — the observable is computed as the run
+proceeds.
+
+> **Not-yet-supported.** A `Recorder`-kind trajectory dump (LAMMPS `dump`,
+> reachable through `set_record`) does not exist. Do not write
+> `sim.set_record(cpu::XYZ{...})`; it does not compile.
 
 ### Structure: the radial distribution function `ATV::RDF`
 
@@ -184,7 +213,7 @@ normalisation all live in molrs; the observer keeps only O(n_bins) state:
 ```cpp
 // r_max (Å), n_bins, capture frequency [steps], output file
 ATV::RDF rdf{/*r_max=*/6.0, /*n_bins=*/200, /*freq=*/100, "rdf.dat"};
-sim.set_observer(rdf);
+sim.set_observer_ref(rdf);   // borrow: rdf must outlive sim
 sim.build();
 sim.run(frame, 1'000'000);
 // rdf.dat now holds two columns: r (Å), g(r); rdf.gr() exposes the curve
@@ -209,7 +238,7 @@ plus the Einstein $D$ from the windowed-MSD slope fit:
 ```cpp
 // dt between captured frames = timestep * freq = 4 fs * 25 = 100 fs
 ATV::MSD msd{/*dt=*/100.0, /*freq=*/25, "msd.dat"};
-sim.set_observer(msd);
+sim.set_observer_ref(msd);   // borrow: msd must outlive sim
 sim.build();
 sim.run(frame, 2'000'000);
 
@@ -236,7 +265,7 @@ curve at `finalize()`:
 ```cpp
 // dt (fs), resolution (max lag in captured frames, >= 1), freq [steps], output
 ATV::VACF vacf{/*dt=*/100.0, /*resolution=*/256, /*freq=*/25, "vacf.dat"};
-sim.set_observer(vacf);
+sim.set_observer_ref(vacf);  // borrow: vacf must outlive sim
 sim.build();
 sim.run(frame, 2'000'000);
 

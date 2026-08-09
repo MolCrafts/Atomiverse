@@ -459,11 +459,16 @@ pair required), `PairEvaluator`, `AsyncComponent`.
 **Lifecycle:** `build()` (one-time alloc) → `launch()` × N → `destroy()`. No
 allocation in `launch()`.
 
-**Ownership is explicit at every registration path:** `add(rvalue)` and
-`on(phase).add(rvalue, order)` transfer; `add_ref(lvalue)` and
-`on(phase).add_ref(lvalue, order)` borrow; plain `add(lvalue)` is deleted.
-Categorical setters follow the same rule (`set_xxx` owns, `set_xxx_ref`
-borrows).
+**Ownership is explicit at every registration path:** `on(phase).add(rvalue,
+order)` transfers; `on(phase).add_ref(lvalue, order)` borrows; plain
+`on(phase).add(lvalue)` is deleted. Categorical setters follow the same rule
+(`set_xxx` owns, `set_xxx_ref` borrows).
+
+`on(phase)` is the **only** public registration path in C++. There is no bare
+`Driver::add` / `add_ref` that infers the phase — the driver-level binder is
+`bind_defaults` and it is `protected`
+(`core/driver_template.h:197`, `:238`). Python's `sim.add(...)` is a binding
+convenience and is not the C++ surface.
 
 **Observer computes; Recorder writes I/O.** Never both.
 

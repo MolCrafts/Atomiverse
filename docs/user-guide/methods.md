@@ -47,16 +47,28 @@ Two policy slots let you change *when* a run ends without writing a driver:
 
 | Method | Component (kind) | Build flag |
 |---|---|---|
-| Lennard-Jones + bonded styles | `PairLJCut` / `BondHarmonic` / … (`Potential`) | *(always on)* |
-| Gaussian SCF — RHF / UHF / Kohn-Sham DFT | `cpu::scf::SCF` (`HF`) | `ATV_BUILD_HF` |
+| Lennard-Jones + bonded styles | `PairLJCut` / `BondHarmonic` / … (`Potential`) | `ATV_BUILD_POTENTIALS` |
+| Gaussian SCF — RHF / UHF / Kohn-Sham DFT | `cpu::scf::RHF` / `UHF` / `RKS` / `UKS` (`HF`) | `ATV_BUILD_HF` |
 | Plane-wave DFT | `cpu::pw::PWEvaluator` (`PlaneWave`) | `ATV_BUILD_PW` |
 | Gaussian-and-plane-waves DFT | `cpu::gpw::GPWEvaluator` (`GPW`) | `ATV_BUILD_GPW` |
-| NDDO / AM1 semiempirics | `cpu::semiempirical::AM1Evaluator` (`Semiempirical`) | `ATV_BUILD_HF` |
+| NDDO / AM1 semiempirics | `cpu::semiempirical::AM1Evaluator` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
 
-Each method is a **concrete type** with members + `run(frame)`:
-`cpu::scf::RHF`/`UHF`/`RKS`/`UKS`, `cpu::pw::PW`, `cpu::gpw::GpwDft`,
-`cpu::semiempirical::AM1`/`RM1`. Bind the matching evaluator component when a
-Driver needs energy/forces on a Plan slot.
+Most methods are a **concrete type** carrying its parameters as constructor
+arguments and public members, with `run(frame)` as the entry point —
+`cpu::scf::RHF`/`UHF`/`RKS`/`UKS` (`cpu/scf/methods.h`), `cpu::pw::PW`
+(`cpu/planewave/pw_solver.h`), `cpu::semiempirical::AM1`/`RM1`
+(`cpu/semiempirical/am1_solver.h`). `PW` and `AM1` want one `build(reference)`
+before the first `run()`; the SCF methods build themselves.
+
+`cpu::gpw::GpwDft` (`cpu/gpw/gpw_solver.h`) is the exception: its `run()` takes
+a `std::vector<GpwAtom>` — positions in **Bohr**, with the contracted basis and
+the GTH pseudopotential already resolved per atom — not a `Frame`. The
+Frame-shaped entry point for GPW is therefore the `cpu::gpw::GPWEvaluator`
+component (`cpu/gpw/gpw_evaluator.h`), which owns the solver and does that
+translation; use it, not `GpwDft`, from user code.
+
+Bind the matching evaluator component when a Driver needs energy/forces on a
+Plan slot.
 
 ## Classical molecular dynamics
 
@@ -65,15 +77,25 @@ electrostatics (Ewald / PME under `ATV_BUILD_KSPACE`). Components are attached
 with LAMMPS-shaped categorical setters.
 
 ```cpp
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/nose_hoover.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/neighbor/neighbor_list.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut.h"
+using namespace ATV;
+
 cpu::md::MD sim;
-sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});          // eps (eV), sigma (Å), rcut (Å)
-sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
+sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});     // eps (eV), sigma (Å), rcut (Å)
+sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});     // cutoff (Å), skin (Å)
 sim.set_integrator(cpu::md::VelocityVerlet{0.01});       // dt (fs)
-sim.set_thermostat(cpu::md::NoseHoover{300.0, 100.0});   // T (K), tau (fs)
+sim.set_thermostat(cpu::md::NoseHoover{300.0, 100.0, 0.01});  // T (K), tau_T (fs), dt (fs)
 sim.set_thermo(100);
 sim.build();
 sim.run(frame, 1000);
 ```
+
+The thermostat takes the timestep too — it integrates its own chain variable on
+the same clock as the integrator, so pass the same `dt`.
 
 See [Chapter 10](../tutorial/ch10-classical-md.md) and
 [Chapter 11](../tutorial/ch11-ensembles.md).
@@ -84,22 +106,36 @@ RHF, UHF, and Kohn-Sham DFT (LSDA, PBE, B3LYP, PBE0) for molecules, with
 analytic gradients. Basis sets: `STO3G`, `Pople631G`, `Pople631Gs`, `Def2SVP`,
 `Def2TZVP`.
 
-There is **no** public freestanding integral bag / `SCFConfig` / `SCFSolver`. Construct a
-**concrete method**, set members, pass a `Frame`:
+There is **no** public freestanding integral bag / `SCFConfig` / `SCFSolver`.
+Construct a **concrete method** with its parameters as constructor arguments and
+pass a `Frame`:
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
-rhf.tol = 1e-10;
-rhf.max_iter = 100;
-const auto& res = rhf.run(frame);   // res.energy [Hartree]
+#include "atomiverse/cpu/scf/methods.h"
+using namespace ATV;
+
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10,
+                  /*max_iter=*/100};
+rhf.run(frame);                  // returns void — results land on the object
+                                 // and on the Frame
+double e_ha = rhf.energy();                  // total energy [Hartree]
+double e_ev = frame.meta.get(ATV::kEnergy);  // the same energy [eV]
+bool ok = rhf.converged();
+
 // forces:
-// auto g = rhf.forces(frame);      // eV/Å on frame force columns
+// cpu::scf::GradientResult g = rhf.forces(frame);  // eV/Å, also written to
+//                                                  // the fx/fy/fz columns
 ```
+
+`run()` writes eV to `frame.meta[kEnergy]`; the Hartree internals stay on the
+method (`energy()`, `converged()`, `iterations()`, `determinant()`).
 
 Open-shell and KS:
 
 ```cpp
+#include "atomiverse/cpu/scf/methods.h"
+using namespace ATV;
+
 cpu::scf::UHF uhf(/*n_alpha=*/5, /*n_beta=*/4);
 uhf.charge = 1;
 uhf.run(frame);
@@ -120,6 +156,11 @@ The same `MD` driver, with the SCF evaluator bound at the force phase. This is
 the whole point of the architecture: nothing about the loop changes.
 
 ```cpp
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/scf/methods.h"
+using namespace ATV;
+
 cpu::md::MD aimd;
 aimd.set_integrator(cpu::md::VelocityVerlet{0.5});
 aimd.on(md::Phase::force).add(cpu::scf::RHF{});  // concrete method as force component
@@ -129,18 +170,31 @@ aimd.run(frame, 100);
 
 ## Plane-wave and GPW DFT
 
-Plane-wave Kohn-Sham DFT (`cpu::pw`) targets periodic crystals: UPF
-pseudopotentials, a plane-wave cutoff, a k-mesh, per-k Davidson diagonalization,
-and Pulay mixing. GPW (`cpu::gpw`) is the CP2K-style hybrid — Gaussian orbitals
-with a plane-wave density — carrying in-tree GTH pseudopotentials, MOLOPT basis
-sets, and DFT-D3 dispersion, so it needs no external data files.
+Plane-wave Kohn-Sham DFT (`cpu::pw`) targets periodic crystals: norm-conserving
+pseudopotentials (analytic GTH in-tree, or a UPF file), a plane-wave cutoff, a
+k-mesh, per-k Davidson diagonalization, and Pulay mixing. GPW (`cpu::gpw`) is
+the CP2K-style hybrid — Gaussian orbitals with a plane-wave density — carrying
+in-tree GTH pseudopotentials, MOLOPT basis sets, and DFT-D3 dispersion, so it
+needs no external data files.
+
+A plane-wave run has **no default pseudopotential**: set exactly one of
+`gth_name` (analytic Goedecker-Teter-Hutter, shipped in-tree — H, O, Na, Cl, Ar,
+Si, Ni, Zn) or `upf_path` (a norm-conserving UPF file). Setting neither, or
+both, throws.
 
 ```cpp
+#include <utility>
+
+#include "atomiverse/cpu/evaluate/single_point.h"
+#include "atomiverse/cpu/planewave/pw_evaluator.h"
+using namespace ATV;
+
 cpu::pw::PW pw;
-pw.ecut_ry = 30.0;
-pw.k_mesh = 4;
-cpu::pw::PWEvaluator pwe{std::move(pw)};
-cpu::single_point(frame, pwe);            // frame.meta.get(kEnergy) (eV)
+pw.gth_name = "GTH-PBE-q4";               // in-tree analytic GTH (Si, 4 valence e⁻)
+pw.ecut_ry = 30.0;                        // wavefunction cutoff [Ry]
+pw.k_mesh = 4;                            // Monkhorst-Pack mesh per dimension
+cpu::pw::PWEvaluator pwe{std::move(pw)};  // PW is move-only
+cpu::single_point(frame, pwe);            // frame.meta.get(ATV::kEnergy) (eV)
 ```
 
 See [Chapter 8](../tutorial/ch08-plane-wave.md) and
@@ -152,6 +206,12 @@ L-BFGS or conjugate gradient (Polak-Ribière+), hot-swappable on the same driver
 over *any* force provider — classical or quantum.
 
 ```cpp
+#include "atomiverse/cpu/driver/criteria.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
+#include "atomiverse/cpu/scf/methods.h"
+using namespace ATV;
+
 cpu::minimizer::Minimize opt;
 opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});  // memory, alpha0, max_ls
 // Convergence is the criterion's, not the optimizer's. Omit it and Minimize
@@ -171,6 +231,12 @@ energies, so a system you can run with MD you can also sample with MC — you on
 add a **Mover**.
 
 ```cpp
+#include "atomiverse/cpu/montecarlo/mc.h"
+#include "atomiverse/cpu/montecarlo/translate_move.h"
+#include "atomiverse/cpu/neighbor/neighbor_list.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut.h"
+using namespace ATV;
+
 cpu::mc::MC mc{/*T (K)=*/300.0, /*seed=*/12345u};
 mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
 mc.set_neighbor(cpu::md::NeighborList<>{cutoff, skin, 1, 0, true});

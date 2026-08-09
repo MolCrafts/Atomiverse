@@ -76,10 +76,10 @@ namespace md {
 /// LAMMPS's `fix halt`, which was impossible to write when "stop or not" was a private
 /// `if` inside DynamicsDriver.
 ///
-/// `add()` and `on(phase).add()` from the underlying `Driver<>`
-/// remain public — they are the documented escape hatch for
-/// user-defined hooks (custom observers, recorders, etc.) that do
-/// not yet have a categorical setter.
+/// `on(phase).add()` from the underlying `Driver<>` remains public — it
+/// is the documented escape hatch for user-defined hooks (custom
+/// observers, recorders, etc.) that do not yet have a categorical
+/// setter. There is no bare `add()`: the phase is always explicit.
 ///
 /// Phase skeleton (LAMMPS-granular; see
 /// `.claude/notes/cpu-md-execution-model.md`): initial_integrate →

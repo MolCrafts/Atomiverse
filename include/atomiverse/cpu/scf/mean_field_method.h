@@ -105,7 +105,7 @@ struct MeanFieldOutputs {
 /// @brief Shared members and Frame API for concrete mean-field methods.
 ///
 /// CRTP (`Derived` = `RHF`/`UHF`/`RKS`/`UKS`) so chaining
-/// (`RHF{}.predictor(3)`) keeps the concrete type for `Driver::add`.
+/// (`RHF{}.predictor(3)`) keeps the concrete type for `on(phase).add`.
 ///
 /// Derives `cpu::Driver<ATV::scf::Phase>` (the self-consistency loop node)
 /// and pure tag `HF` (not a Component). Nested binding is a native driver node;

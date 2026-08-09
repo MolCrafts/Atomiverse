@@ -1,10 +1,13 @@
 cmake_minimum_required(VERSION 3.18)
 option(ATV_DOCS_ONLY "Configure documentation targets without the C++/CUDA toolchain" OFF)
 
+# Single source of truth for the release version. python/pyproject.toml,
+# python/src/atomiverse/__init__.py and Doxyfile must match it; the Python
+# native-install CLI additionally requires the git tag to be v${VERSION}.
 if(ATV_DOCS_ONLY)
-    project(Atomiverse LANGUAGES NONE)
+    project(Atomiverse VERSION 0.1.0 LANGUAGES NONE)
 else()
-    project(Atomiverse LANGUAGES CXX)
+    project(Atomiverse VERSION 0.1.0 LANGUAGES CXX)
 endif()
 
 find_package(Doxygen QUIET)
@@ -739,7 +742,6 @@ if(NOT ATV_DOCS_ONLY)
         target_sources(atomiverse PRIVATE
             src/cpu/gpw/internal/local_pp.cpp
             src/cpu/gpw/gaussian_basis.cpp
-            src/cpu/gpw/gth_potential.cpp
             src/cpu/gpw/internal/gth_integrals.cpp
             src/cpu/gpw/internal/diis.cpp
             src/cpu/gpw/internal/ot.cpp
@@ -836,6 +838,12 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/planewave/internal/g_vector.cpp
             src/cpu/planewave/internal/fft.cpp
             src/cpu/planewave/internal/upf_reader.cpp
+            # Analytic GTH pseudopotentials. gth_potential.cpp is shared data
+            # (GPW consumes it too) and is built here because PW is the wider
+            # of the two flags; its home under cpu/gpw/ is a directory-layering
+            # debt, not a dependency — it pulls in only its own table header.
+            src/cpu/gpw/gth_potential.cpp
+            src/cpu/planewave/internal/gth_upf.cpp
             src/cpu/planewave/internal/kpoint.cpp
             src/cpu/planewave/internal/ewald.cpp
             src/cpu/planewave/internal/pw_setup.cpp
