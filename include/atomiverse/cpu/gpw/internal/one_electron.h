@@ -56,6 +56,14 @@ double overlap(const GridBasisFunction& a, const GridBasisFunction& b,
 double kinetic(const GridBasisFunction& a, const GridBasisFunction& b,
                const double L[3], const int m[3], double reach);
 
+/// @brief Fused Γ-point periodic S and T over the same live image set.
+///        Prefer this when both operators are needed (avoids a second image
+///        sweep). Pure s–s pairs use portable xsimd on the image axis.
+void contracted_ST_periodic(const GridBasisFunction& a,
+                            const GridBasisFunction& b, const double L[3],
+                            const int m[3], double reach, double& s_out,
+                            double& t_out);
+
 } // namespace gpw
 } // namespace cpu
 } // namespace ATV

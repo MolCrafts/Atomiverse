@@ -675,9 +675,17 @@ struct OneElectronSetup {
                     return;
                 const double reach = radii[static_cast<std::size_t>(i)]
                                      + radii[static_cast<std::size_t>(j)];
-                S(i, j) = overlap(basis[i], basis[j], cell, mimg, reach);
-                if (T != nullptr)
-                    (*T)(i, j) = kinetic(basis[i], basis[j], cell, mimg, reach);
+                // Fused S+T over the live image set (xsimd s–s image axis on
+                // pure s shells). Avoids a second image sweep when T is wanted.
+                if (T != nullptr) {
+                    double s_ij = 0.0, t_ij = 0.0;
+                    contracted_ST_periodic(basis[i], basis[j], cell, mimg,
+                                           reach, s_ij, t_ij);
+                    S(i, j) = s_ij;
+                    (*T)(i, j) = t_ij;
+                } else {
+                    S(i, j) = overlap(basis[i], basis[j], cell, mimg, reach);
+                }
                 if (Vpp != nullptr && !grid_loc) // analytic local PP only when
                                                  // the grid route is disabled
                     (*Vpp)(i, j) =

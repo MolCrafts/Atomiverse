@@ -632,10 +632,9 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 for (int nu = 0; nu < nb; ++nu) {
                     const double reach =
                         rdmu + radii[static_cast<std::size_t>(nu)];
-                    const double s =
-                        overlap(dmu, basis[nu], cfg.cell, mimg, reach);
-                    const double t =
-                        kinetic(dmu, basis[nu], cfg.cell, mimg, reach);
+                    double s = 0.0, t = 0.0;
+                    contracted_ST_periodic(dmu, basis[nu], cfg.cell, mimg,
+                                           reach, s, t);
                     f += 2.0 * (*W_use)(mu, nu) * s; // + W dS (+U fold inside)
                     f -= 2.0 * Ptot(mu, nu) * t; // - P dT
                     f -=
