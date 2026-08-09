@@ -34,3 +34,21 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 - Order: `.claude/notes/es-optimization-order.md`
 - Walls: `.claude/notes/gpw-perf-baseline.md`
 - CUDA RHF: `.claude/notes/cuda-rhf-device-only.md`
+
+## Run log
+
+(autonomous harness appends lines here)
+
+- **2026-08-10 harness wave 1 (parent `dev` @ `948d0d86`):** 1 of staffed
+  → done [x]: `cuda-pw-pbe-device` (device closed-shell PBE-GGA for
+  `cuda::pw::PW`; merge `3f901034`; GH200 job **1048320** units 4/4 PASS +
+  dual-gate \(E_\mathrm{cpu}=E_\mathrm{cuda}=-14.84955549\) Ry,
+  \(\lvert\Delta\rvert=1.421\times10^{-14}\) Ry; roadmap PBE CUDA ✓ already
+  on branch — no ○→✓ this wave). Spec closed (deleted
+  `.claude/specs/cuda-pw-pbe-device/`). Keep other `[~]`:
+  `cuda-pw-large-cell-measure`, `cuda-pw-nondefault-stream`. Pending **4**
+  (`cuda-pw-forces`, `cuda-gpw-ks-chain`, `cpu-simd-2center-setup`,
+  `cuda-rhf-nondefault-stream`). Blocked **3** (`global-xtensor-xsimd`,
+  `cuda-gpw-full-product`, `mg-main-structural`). Clearup already ran. Queue
+  **not** exhausted (GapCensus owns discovery). No push.
+

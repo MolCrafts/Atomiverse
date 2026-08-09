@@ -100,9 +100,9 @@ PW method slice are **landed** but production depth is missing:
 | --- | --- | --- |
 | RHF s/p energy + forces + level_shift + path-select + device CDIIS | **landed** | stream polish only |
 | Γ GPW Poisson/FFT + Padé LDA XC + product collocate + product integrate | **landed** unit footholds | no composed ρ→V_eff stage; **≠** full method |
-| `cuda::pw::PW` LSDA restricted + density device + kpoint hoist + Zheevd + devptr nrm2 | **landed** energy slice | **energy-only** (roadmap); no device forces/stress; PBE tip incomplete; large-cell note still PENDING |
+| `cuda::pw::PW` LSDA + **device PBE-GGA** + density device + kpoint hoist + Zheevd + devptr nrm2 | **landed** energy slice (PBE closed-shell) | **energy-only** (roadmap); no device forces/stress; large-cell walls on branch (harness not yet closed) |
 
-Value order: **PW method depth** (PBE tip → forces → large-cell evidence →
+Value order: **PW method depth** (forces → large-cell harness close →
 stream) > **GPW composed stage** (not another lone kernel foothold) >
 RHF/CPU polish. Higher-L RHF stays product-out-of-scope.
 
@@ -132,15 +132,14 @@ current `dev` before land.)*
 `cuda-rhf-cdiis-device`, `cuda-gpw-foothold`, `cuda-gpw-xc-lda-foothold`,
 `cuda-gpw-rho-collocate-foothold`, `cuda-gpw-product-integrate-foothold`,
 `cuda-pw-method-slice` (+ `cuda-pw-kpoint-hoist`, `cuda-pw-zheevd`,
-`cuda-pw-devptr-nrm2` residency polish on `dev`).
+`cuda-pw-devptr-nrm2` residency polish on `dev`), `cuda-pw-pbe-device`.
 
 ## in_progress
 
-Recover + hold 2026-08-10 (`dev` @ `8c13bc36`). Incomplete unmerged tips +
-named residual. **Re-base tips off current `dev` before merge; never
+Harness wave 1 2026-08-10 (`dev` @ `948d0d86` post PBE land). Keep other
+`[~]` incomplete; **re-base tips off current `dev` before merge; never
 blind-merge; no `reset --hard`.**
 
-- [~] `cuda-pw-pbe-device` | **P0** Device PBE-GGA for `cuda::pw::PW` — lift LSDA-only gate; same-settings CPU oracle; device-only XC kernels | method=cuda | **resume** `wf/cuda-pw-pbe-device` @ `3ffc13ed` (`e1147831` + cmake arch) — ahead of `dev` on tip, many behind; prior GH200 fail: x86 `libxtb` on aarch64 link | twin: unit `test_xc_pbe` + DeviceDensity stage parity vs CPU XCBuilder PBE | files: `xc_pbe.{cu,cuh}`, `device_density.{cu,cuh}`, `pw_solver.{cu,cuh}` | gate: GH200 green; tols **1e-12·max(1,\|ref\|)** pointwise + LDA-stage bounds for stage parity; no host loops in `.cu` |
 - [~] `cuda-pw-large-cell-measure` | **P1** ES order step 4 — first large-cell CPU↔CUDA wall (small cells correctness-only; no “CUDA wins” on 2-atom Si) | method=cuda | **resume** `wf/cuda-pw-large-cell-measure` @ `d574d65d` (`9e594216` + dlink); note results still **PENDING** — job logs show n=1 CUDA **0.97 s** vs CPU **~17.9 s**, n=2 CUDA **9.7 s** / CPU timeout, n=3 CUDA **191 s**; harness re-link flake on 1035278 | twin: `tools/bench_cuda_pw_cell.cu` ladder 8/64/216 Si + `pw-cuda-lda-si` green | files: `tools/bench_cuda_pw_cell.cu`, `tools/gpu_job_cuda_pw_large_cell.sh`, note | gate: GH200 log with filled results; correctness suite PASS; re-base after/with PBE if merged |
 - [~] `cuda-pw-nondefault-stream` | **P2** Non-default stream on PW device path (named residual after Zheevd/devptr-nrm2 in `cuda-rhf-device-only.md`); no physics change | method=cuda | **fresh** — no incomplete tip | twin: `tests/cuda/planewave/*` + `pw-cuda-lda-si` | files: `pw_solver.cu`, `device_solver.cu`, `device_density.cu` | gate: GH200 100% PASS; tols unchanged; device-only |
 
@@ -152,7 +151,6 @@ blind-merge; no `reset --hard`.**
 
 | Worktree branch | Loop ownership | Note |
 | --- | --- | --- |
-| `wf/cuda-pw-pbe-device` | **this loop P0** — recovered above | re-base off `dev` then finish GH200 gate |
 | `wf/cuda-pw-large-cell-measure` | **this loop P1** — recovered above | re-base; fill results from job log |
 | `wf/cuda-md-first-regression` | **OpenMM / MD** — not this loop | leave alone |
 | `wf/test-gpw-unit-shrink` | other harness | tip already ancestor of `dev` (0 ahead) |
@@ -165,6 +163,10 @@ blind-merge; no `reset --hard`.**
 - [!] `mg-main-structural` | MG MAIN **2.33×** residual after pin-safe collint + structure + sphere campaigns; further cut needs non-pin-safe windows or task-list rewrite beyond this loop’s pin law — do not staff as soft-tol or self-golden
 
 ## done
+
+Harness wave 1 2026-08-10 (`dev` @ `948d0d86`, PBE land `3f901034`):
+
+- [x] `cuda-pw-pbe-device` | **P0** Device PBE-GGA for `cuda::pw::PW` — lift LSDA-only gate; closed-shell PBE-X + PW92-based PBE-C at ζ=0; spectral ∇ρ / −∇·flux in `DeviceDensity`; same-settings CPU oracle | track cuda | twin: unit `test_cuda_pw_xc_pbe` + DeviceDensity stage parity + e2e `reg_cuda-pw-pbe-device` | files: `xc_pbe.{cu,cuh}`, `device_density.{cu,cuh}`, `pw_solver.{cu,cuh}` | merge: `3f901034` | evidence: GH200 job **1048320** — units **4/4 PASS**; dual-gate \(E_\mathrm{cpu}=E_\mathrm{cuda}=-14.84955549\) Ry (7 it); \(\lvert\Delta\rvert=1.421\times10^{-14}\) Ry ≪ 1e-3 Ry; tols **1e-12·max(1,\|ref\|)** pointwise; roadmap PBE CUDA ✓ (PW closed-shell only); **perf_exempt** small cell; not forces/stress/spin/PBE-family |
 
 Wave 7 land 2026-08-06 (`dev` @ `8b76cbe7`):
 

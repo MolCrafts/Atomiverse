@@ -49,7 +49,7 @@ History is git's job — superseded designs are deleted, not archived here.
 | gpw-perf-loop | queue [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md); arch [gpw-perf-architecture.md](gpw-perf-architecture.md); **always wipe builds**; first structural cut `p1-gpw-workspace` → `p1-ks-grid-build` ([es-optimization-order.md](es-optimization-order.md)) |
 | tb-method-loop | [tb-blocked-capabilities.md](tb-blocked-capabilities.md), [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md), [gfn2-xtb-chon.md](gfn2-xtb-chon.md) |
 | metalwalls-method-loop | [metalwalls-capability-map.md](metalwalls-capability-map.md), [oracle-pin-provenance.md](oracle-pin-provenance.md) |
-| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; owns `cuda::scf::SCFSolver` debt; sanctioned next: non-default stream, device PBE-GGA, first large-cell measure — ES order step 4); full CUDA GPW product stays blocked ([es-optimization-order.md](es-optimization-order.md)) |
+| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; owns `cuda::scf::SCFSolver` debt; **PBE-GGA + large-cell walls landed**; sanctioned next: non-default stream / forces / GPW compose — [es-optimization-order.md](es-optimization-order.md)); full CUDA GPW product stays blocked |
 | CUDA MD perf | [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) (A/B methodology + precision mode map vs LAMMPS Kokkos); **not** blocked by ES CPU priority |
 
 ## Build-shape conclusions
