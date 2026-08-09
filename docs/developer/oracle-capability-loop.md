@@ -125,7 +125,7 @@ Clearup reports `worktrees_removed`, `branches_pruned`, `builds_wiped` (see temp
 | ---- | ---- |
 | Rhai skeleton | `.grok/workflows/_templates/oracle-capability-loop-template.rhai` |
 | Skill | `.agents/skills/create-oracle-loop/SKILL.md` |
-| Instances | `pyscf-method-loop.rhai`, `cp2k-method-loop.rhai`, `metalwalls-method-loop.rhai`, `tb-method-loop.rhai` |
+| Instances | `pyscf-method-loop.rhai`, `cp2k-method-loop.rhai`, `metalwalls-method-loop.rhai`, `tb-method-loop.rhai`, `es-cpu-cuda-opt.rhai` (dual-track opt; same phase order) |
 
 Rhai has **no include** — instances are full scripts copied from the template.
 Specialize only:

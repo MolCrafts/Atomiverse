@@ -49,36 +49,47 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 
 > **Wall numbers in the wave list above are as-claimed-at-the-time and are
 > superseded.** [`gpw-perf-baseline.md`](gpw-perf-baseline.md) is the single
-> authority: it re-measured MG MAIN at **1.6 s ATV / 0.688 s CP2K = 2.33×**
-> (worst_ratio **3.02**, `ot-minimizer-water`) and states explicitly that that
-> row *replaces* the earlier ~1.25× figures, which came from an older quiet
-> definition. Do not quote ~1.25× as current.
+> authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
+> after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-**Active next (`cp2k-perf-loop` — CP2K hard anchor, CPU only):**
+### Active next — dual track `es-cpu-cuda-opt` (2026-08-09 bootstrap)
 
-| Priority | Slug | Target |
+**Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
+meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
+`wf/escuda-<slug>`; no push; no `reset --hard`. Wipe `build` / `build-*` after
+every cmake/ctest and before every worker/clearup exit (`builds_wiped=false`
+fails the wave).
+
+| Track | Goal | Anchor / gate |
 | --- | --- | --- |
-| P0 | `p0-mg-main-structure` | MG MAIN **2.33× → ~1×** non-kernel structure |
-| P1 | `p1-products-default-k` | fresh products vs dense A/B only |
+| **cpu** | Cut wall on **landed** GPW/SCF vs real CP2K | \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) on matched twin, **1 MPI × OMP=4**; \(T_{\mathrm{cp2k}}\) from real `cp2k.psmp` (`source …/cp2k/install/env.sh`); provenance in [gpw-perf-baseline.md](gpw-perf-baseline.md) / [oracle-pin-provenance.md](oracle-pin-provenance.md). Pins green; FD-force if energy path moves. |
+| **cuda** | **Corresponding** CUDA for landed ES — **RHF first**; GPW foothold only under open-gate | CPU twin green; public `run`/`forces` stable; CUDA↔CPU energy/forces tols **stated**; device-only kernels (no host loops in `.cu` wrappers). Same-settings CPU (or external pin) is correctness oracle. Login has **no** toolkit — `sbatch -p gpu`, module `GPU/buildenv-gcccuda/2026.03-cu13.0`; never claim green without GPU log evidence. |
 
-Merged, no longer pending: `p0-ot-cp2k-match` (`cfd75024`),
-`p0-stvnl-setup-residual` (`d9e1b0aa`).
+**CPU rank (fair walls — baseline authority):**
 
-**Forbidden this loop:** thin `product_collint` width-N re-polish (wave-8
-exhausted); CUDA staff; hybrid/GAPW capability; global `XTENSOR_USE_XSIMD`.
+| Twin | ratio | Residual / staff note |
+| --- | ---: | --- |
+| `gpw-multigrid-kpoints` MAIN | **2.33** | worst_ratio — coll/int class vs CP2K; kernel polish + structure levers largely exhausted on pin-safe surface; further cut only with non-kernel / non-pin-softening lever |
+| `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
+| `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
+| `ot-minimizer-water` | **≤1.0** class | control + residual closed |
 
-**Worker law:** branches `wf/perf-<slug>` off **`dev`**; no push; wipe
-`build` after every cmake/ctest. Metric = absolute `T_atv/T_cp2k` vs pinned
-real `cp2k.psmp`.
+**CUDA open-gate (slice staffing):** CPU regs green + public shape stable +
+CUDA↔CPU tols stated. **Re-open is intentional** for this loop (user 8h
+acceptance). Landed already: device s/p RHF energy/forces/level_shift/CDIIS +
+path-select; Γ GPW Poisson/FFT + Padé LDA XC + product collocate + product
+integrate footholds; thin PW method slice. **Still blocked:** full
+`cuda-gpw-full-product` (footholds unit-green ≠ full method product). Staff only
+thin oracle-backed corresponding ports — not capability invention.
 
-Queue: [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md).
-Architecture: [gpw-perf-architecture.md](gpw-perf-architecture.md).
-Baseline: [gpw-perf-baseline.md](gpw-perf-baseline.md).
+**Queues (binding worklists):**
 
-### CUDA ES this wave
+- Dual-track queue: [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md)
+- CPU GPW wall detail: [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md)
+- Architecture: [gpw-perf-architecture.md](gpw-perf-architecture.md)
+- CUDA RHF envelope: [cuda-rhf-device-only.md](cuda-rhf-device-only.md)
 
-**CPU-first.** Footholds already landed; `cp2k-perf-loop` does **not** staff
-CUDA. Full `cuda-gpw-full-product` still blocked. **Forbidden:** hybrid / GAPW /
-PAW / meta-GGA product; claiming CUDA wins on small-molecule correctness twins;
-classical MD CUDA (separate OpenMM track); full CUDA GPW method product before
-architecture freeze.
+**Forbidden:** hybrid/GAPW/PAW/meta-GGA product; classical MD CUDA; global
+`XTENSOR_USE_XSIMD`; arch intrinsics; soften tols / self-golden pins; leave
+multi-GB builds; nested long-lived subagents; invent capability gaps here
+(use method loops). SIMD = portable xsimd only.
