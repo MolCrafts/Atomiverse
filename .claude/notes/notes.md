@@ -8,9 +8,13 @@ History is git's job — superseded designs are deleted, not archived here.
 
 - **ES optimization order (binding in CLAUDE.md).** Wave state:
   [es-optimization-order.md](es-optimization-order.md). Structure + OT +
-  windows + collint + STVnl polish (MG MAIN **~2.1 s ≈ 1.6×** CP2K quiet
-  ~1.28 s). Fair walls in [gpw-perf-baseline.md](gpw-perf-baseline.md).
-  CUDA ES freeze this wave; classical MD CUDA independent.
+  windows + collint + STVnl polish landed; per-wave walls there are
+  as-claimed-at-the-time and superseded —
+  [gpw-perf-baseline.md](gpw-perf-baseline.md) is the single wall authority
+  (MG MAIN re-measured **1.6 s / 2.33×** CP2K quiet 0.688 s). CUDA ES stays
+  CPU-first (only the sanctioned next waves in
+  [cuda-rhf-device-only.md](cuda-rhf-device-only.md)); classical MD CUDA
+  independent.
 - **e2e-in-tests migration (queued campaign).** ~102 registered "unit" tests
   are full method solves hidden behind `ATV_TEST_HEAVY=OFF` (ccsd/fci/mp2,
   gpw_*/pw_* solves, bomd/cpmd/xl_bomd, dftb, am1 thermochemistry runs), plus
@@ -25,8 +29,14 @@ History is git's job — superseded designs are deleted, not archived here.
   Broyden. A better mixer for open-shell cluster GPW is the actionable gap,
   and it also blocks the `gpw-fd-phonon-si` e2e (cost/SCF exceeds the 60 s
   tier everywhere CP2K converges).
-- **GPW OT convergence.** OT plateaus around ~60 iterations where CP2K takes
-  10–30 — the single biggest CPU-GPW performance lever vs CP2K.
+- **GPW MG MAIN residual.** OT convergence is closed: `p0-ot-cp2k-match` +
+  `p0-ot-match-residual` match CP2K at **10 iterations** (OT wall ~2.99 s vs
+  CP2K 2.50 s ≈ **1.20×**, SCF body ≤1.0× —
+  [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md)). The biggest
+  remaining CPU-GPW lever vs CP2K is now MG MAIN **2.33×** (coll/int
+  ~2.0×/2.8×); kernel-level SIMD, structure, and sphere/contract cuts are
+  exhausted — further cut needs non-pin-safe windows or a task-list rewrite
+  beyond the current loop.
 - **Component clone ceiling.** Components cannot be cloned, so one inner
   Driver body over N replicas (N L-BFGS histories) is not expressible yet.
   Undecided; revisit when a real N-replica inner-loop user appears.
@@ -39,7 +49,7 @@ History is git's job — superseded designs are deleted, not archived here.
 | gpw-perf-loop | queue [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md); arch [gpw-perf-architecture.md](gpw-perf-architecture.md); **always wipe builds**; first structural cut `p1-gpw-workspace` → `p1-ks-grid-build` ([es-optimization-order.md](es-optimization-order.md)) |
 | tb-method-loop | [tb-blocked-capabilities.md](tb-blocked-capabilities.md), [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md), [gfn2-xtb-chon.md](gfn2-xtb-chon.md) |
 | metalwalls-method-loop | [metalwalls-capability-map.md](metalwalls-capability-map.md), [oracle-pin-provenance.md](oracle-pin-provenance.md) |
-| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–5 done; owns `cuda::scf::SCFSolver` debt); **this wave: no new ES coverage** — foothold green only ([es-optimization-order.md](es-optimization-order.md)) |
+| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; owns `cuda::scf::SCFSolver` debt; sanctioned next: non-default stream, device PBE-GGA, first large-cell measure — ES order step 4); full CUDA GPW product stays blocked ([es-optimization-order.md](es-optimization-order.md)) |
 | CUDA MD perf | [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) (A/B methodology + precision mode map vs LAMMPS Kokkos); **not** blocked by ES CPU priority |
 
 ## Build-shape conclusions
