@@ -21,3 +21,9 @@ sides share one non-default CUDA stream (slug `cuda-pw-nondefault-stream`).
 Production path: `DeviceDensity` creates a non-default stream; `PW::run`
 passes it into `DeviceBandSolver`. Unit test
 `CudaPWDensity.NonDefaultStreamOwnedAndShareable` asserts the handles.
+
+## GH200 evidence
+
+| Job | Result |
+| --- | --- |
+| **1049681** | 9/9 ctest; MAX_EIG_DIFF 5.274e-15 Ha; both regs \|ΔE\|=1.243e-14 Ry; `GPU_JOB_OK` |
