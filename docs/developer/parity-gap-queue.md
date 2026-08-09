@@ -43,14 +43,15 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ### P0 — harness truth
 
-- [ ] `test-gpw-timeout-triage` — oracle: ctest.
-  2026-08-09 full suite: 5/377 Timeout — `test_cpu_gpw_{mbd,hirshfeld,forces,
-  stress}` + `test_mpi_pw_kpoint_n4` (234 s total suite, no assertion
-  failures). Re-run the five serially on a quiet shell with `--timeout`
-  raised, record wall each; classify load-flake vs genuinely heavy. If heavy:
-  shrink the test system (unit suite is seconds-scale by iron law) on a
-  branch; if flake: report evidence, no code change. Read-only on parent
-  build; any fix goes through a worktree.
+- [ ] `test-gpw-unit-shrink` — oracle: ctest. From `test-gpw-timeout-triage`
+  (done, quiet-shell walls below): shrink the test systems of
+  `test_cpu_gpw_mbd` (34.07 s), `test_cpu_gpw_hirshfeld` (98.27 s, 4.8 GB
+  RSS) and `test_cpu_gpw_stress` (13.57 s) to seconds-scale per iron law 1
+  (registered per-test TIMEOUT is 10 s and overrides `ctest --timeout`), and
+  restore load headroom in `test_cpu_gpw_forces` (8.2–8.4 s, only ~18%
+  margin). All assertions pass today — this is a size change, not a physics
+  change: keep every assertion, shrink cells/grids until each binary is
+  comfortably under the 10 s registration. Worktree + scoped build required.
 
 ### P1 — regression honesty + sanctioned CUDA
 
@@ -135,3 +136,10 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
   (`pw-pbe-gga-si`, `pw-analytic-stress-si`, `pw-uks-kmesh-fe`,
   `bands-dos-si`): REFERENCE.md perf sections rewritten from `perf_exempt` to
   T_atv/T_qe ratios, QE inputs pinned under `tools/qe_oracle/inputs/`.
+- [x] `test-gpw-timeout-triage` — 2026-08-09, no code change (read-only
+  verdict; no branch). Quiet-shell walls with the registered env:
+  `mbd` 34.07 s, `hirshfeld` 98.27 s @ 4.8 GB RSS, `stress` 13.57 s —
+  genuinely heavy vs the 10 s per-test registration; `forces` 8.2–8.4 s and
+  `test_mpi_pw_kpoint_n4` 2.3–2.5 s — load-flakes (original suite ran at
+  load ~51 on the 48-core node). No assertion failures anywhere. Follow-up
+  filed as `test-gpw-unit-shrink` (pending P0).
