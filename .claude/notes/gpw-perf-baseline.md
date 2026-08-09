@@ -68,7 +68,9 @@ cmake --build build -j$(nproc) --target atomiverse \
 
 CP2K walls from 2026-08-06 Baseline re-pin (provenance below). ATV MG MAIN
 refreshed post-merge `e1eaf084` / harness wave-2; UKS ATV refreshed post-merge
-`3f991946` / harness wave-5. Energy pins unchanged.
+`3f991946` / harness wave-5; OT water carried from the `gpw-perf-queue.md`
+`p0-ot-cp2k-match` + `p0-ot-match-residual` done rows (2026-08-06 post-merge
+measurements). Energy pins unchanged.
 
 ### CP2K pin detail (energy + wall + output line)
 
@@ -119,10 +121,11 @@ refreshed post-merge `e1eaf084` / harness wave-2; UKS ATV refreshed post-merge
 | Energy line | `ENERGY\| Total FORCE_EVAL ( QS ) energy [hartree]            -17.212848291913609` (warm) |
 | Timer line | `CP2K … MAXIMUM **2.496**` (warm; pass1 2.466); 19 OT outer steps |
 | WALL_SEC | 2.83 |
-| ATV OT-only | **7.55 s** (runtime init → second runtime init before DIIS path); 25 OT it |
-| ATV OT+DIIS reg | **9.7 s** full binary (not fair vs CP2K OT alone) |
-| E_OT | −17.2118582735 Ha; \|ΔE\|CP2K = 9.900e-04 |
-| ratio OT | **7.55 / 2.496 = 3.02** |
+| ATV OT-only | **~2.99 s** (wave-8 min post `p0-ot-cp2k-match`: FULL_SINGLE_INVERSE + fixed-STEPSIZE 1-KS DIIS + OUTER Pulay polish; **25→10** OT it) |
+| ATV SCF body | **~1.57 s** post `p0-ot-match-residual` (RKS packed-χ cbg + GGA `ensure_many_plans` warmup at grid setup; first KS H ~790→~180 ms); setup cbg separate |
+| E_OT | −17.2118582735 Ha; \|ΔE\|CP2K = 9.900e-04 (pins + FD forces-water PASS on both lands) |
+| ratio OT | **2.99 / 2.496 ≈ 1.20** full OT-only; SCF body + setup class **≤1.0×** |
+| ATV provenance | walls carried from `docs/developer/gpw-perf-queue.md` done rows `p0-ot-cp2k-match` / `p0-ot-match-residual` (2026-08-06 post-merge measurements); not re-measured quiet ×3 for this table. The full OT+DIIS reg binary is not the fair twin and has no post-match wall |
 
 ### Per-step KS (MG MAIN class, ATV)
 
@@ -139,9 +142,12 @@ CP2K same twin quiet: collocate ~14.5 ms/call, integrate ~17.1 ms/call
 
 ### Active lever
 
-**worst_ratio = 3.02** (`ot-minimizer-water`). MG MAIN **2.33×** vs this
-host’s quiet CP2K 0.688 s (integrate still ~2.8× CP2K per-call class; STVnl
-setup residual landed). UKS O₂ **1.077×** (post `p0-uks-o2-scf-wall`; ≤1.2×
+**worst_ratio = 2.33** (`gpw-multigrid-kpoints` MAIN) vs this host’s quiet
+CP2K 0.688 s (integrate still ~2.8× CP2K per-call class; STVnl setup residual
+landed; pin-safe collint levers exhausted — residual owned by
+`mg-main-structural`, blocked). OT water **closed**: OT-only ~2.99 s / ~1.20×
+post `p0-ot-cp2k-match`, SCF body ~1.57 s / ≤1.0× class post
+`p0-ot-match-residual`. UKS O₂ **1.077×** (post `p0-uks-o2-scf-wall`; ≤1.2×
 gate closed). Dense-χ^k MAIN **~1.2×**. See
 [gpw-perf-architecture.md](gpw-perf-architecture.md) and
 [cp2k-perf-loop.md](../../docs/developer/cp2k-perf-loop.md).
