@@ -21,6 +21,7 @@
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
+#include "atomiverse/cuda/planewave/internal/device_solver.cuh"
 
 #include <cmath>
 #include <complex>
@@ -31,6 +32,7 @@
 
 using ATV::AccReal;
 using ATV::cpu::scf::XCType;
+using ATV::cuda::pw::internal::DeviceBandSolver;
 using ATV::cuda::pw::internal::DeviceDensity;
 using ATV::cuda::pw::internal::GField;
 namespace cpupw = ATV::cpu::pw::internal;
@@ -355,4 +357,24 @@ TEST(CudaPWDensity, ReductionsAreBitwiseReproducible) {
     EXPECT_EQ(a.e_xc_int, b.e_xc_int);
     EXPECT_EQ(a.e_loc, b.e_loc);
     EXPECT_EQ(a.resid, b.resid);
+}
+
+// ── Stream contract (cuda-pw-nondefault-stream) ──────────────────────────
+// Density owns a non-default stream; the band solver can borrow it so both
+// SCF halves share one serial chain. Physics-free: only the handle identity.
+TEST(CudaPWDensity, NonDefaultStreamOwnedAndShareable) {
+    cpupw::PWProblem prob;
+    build_problem(prob);
+    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
+    ASSERT_NE(den.stream(), static_cast<cudaStream_t>(nullptr));
+
+    DeviceBandSolver solver(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz,
+                            prob.n_bands, den.stream());
+    EXPECT_EQ(solver.stream(), den.stream());
+
+    // Stand-alone solver (diagnostics) still refuses the default stream.
+    DeviceBandSolver own(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz,
+                         prob.n_bands);
+    ASSERT_NE(own.stream(), static_cast<cudaStream_t>(nullptr));
+    EXPECT_NE(own.stream(), den.stream());
 }

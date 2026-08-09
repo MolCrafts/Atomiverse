@@ -83,7 +83,10 @@ int main(int argc, char** argv) {
     f.box.set_cell(cell);
 
     internal::PWProblem prob;
-    internal::setup_pw_problem(f, upf, ecut, 2, prob);
+    // Signature: (frame, upf_path, gth_name, ecut_ry, k_mesh, out). Empty
+    // gth_name selects the UPF path (exactly one PP source required).
+    internal::setup_pw_problem(f, upf, /*gth_name=*/"", ecut, /*k_mesh=*/2,
+                               prob);
     auto& ws = prob.ws;
     internal::PoissonSolver po;
     po.step(ws);

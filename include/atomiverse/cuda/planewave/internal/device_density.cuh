@@ -17,6 +17,12 @@
 /// per-k table binding and for `ws.E_xc` (written back from `reduce()` so the
 /// shared `log_iteration_energy` formatter keeps working).
 ///
+/// Stream: construction creates one non-default `cudaStream_t` and runs every
+/// density-side kernel, cuFFT transform and cuBLAS call on it. The band
+/// solver borrows the same stream via `stream()` so density and band work
+/// stay strictly ordered without events. Host decisions (Pulay coefficients,
+/// SCF residual) synchronize that stream only — never the default stream.
+///
 /// NUMERICAL PARITY CONTRACT vs `cpu::pw::PW`
 /// ------------------------------------------
 /// The device path is algorithmically identical to the CPU stage helpers
@@ -166,6 +172,13 @@ class DeviceDensity {
     /// @param out Host buffer of `ws.nr` doubles [Hartree].
     void fetch_veff_r(double* out) const;
 
+    /// @brief Non-default CUDA stream every density stage executes on.
+    ///
+    /// Never null after a successful constructor. Pass to
+    /// `DeviceBandSolver` so the band side shares the same serial chain.
+    /// @return Owned stream handle (destroyed in the destructor).
+    cudaStream_t stream() const { return stream_; }
+
   private:
     void free_all();
 
@@ -175,6 +188,7 @@ class DeviceDensity {
     double omega_ = 0;
     cpu::scf::XCType xc_ = cpu::scf::XCType::LSDA;
     bool gga_ = false;
+    cudaStream_t stream_ = nullptr; ///< Non-default; owned.
     FFTPlan3D fft_;
     cublasHandle_t blas_ = nullptr;
 
