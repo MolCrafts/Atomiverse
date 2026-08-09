@@ -2,18 +2,20 @@
 #SBATCH -p gpu
 #SBATCH -A naiss2026-4-715-gpu
 #SBATCH --gpus 1
-#SBATCH -t 03:30:00
+#SBATCH -t 04:30:00
 #SBATCH -c 16
 #SBATCH -J atv-pw-cell
 #SBATCH -o .claude/cuda-pw-large-cell-%j.out
 #SBATCH -e .claude/cuda-pw-large-cell-%j.err
 
-# GH200 large-cell CPU-vs-CUDA plane-wave wall measurement (parity-gap slug
+# GH200 large-cell CPU-vs-CUDA plane-wave wall measurement (es-cpu-cuda slug
 # `cuda-pw-large-cell-measure`, ES order step 4). Same-settings LSDA Si
 # supercell ladder (8 / 64 / 216 atoms, Γ-point, ecut 15 Ry, UPF
 # Si_lda_nc.upf) on cpu::pw::PW vs cuda::pw::PW, scaled until the CPU wall
 # exceeds 60 s. Results feed .claude/notes/cuda-pw-large-cell.md; no perf
-# claim is made from the small sizes.
+# claim is made from the small sizes. n=2 CPU is O(nb^3) dense and can
+# exceed 2 h — budget prefers finishing that wall over n=3 once the
+# >60 s gate is already met (or lower-bounded by a leg timeout).
 #
 #   sbatch tools/gpu_job_cuda_pw_large_cell.sh
 #
@@ -39,7 +41,7 @@ echo "HEAD=$(git rev-parse HEAD)"
 nvidia-smi -L || true
 lscpu | grep -E 'Model name|^CPU\(s\)' || true
 
-WALL_BUDGET=12600 # seconds, mirrors -t above
+WALL_BUDGET=16200 # seconds, mirrors -t 04:30:00 above
 BUILD=build-cuda-pw-cell
 UPF="${SLURM_SUBMIT_DIR}/tests/data/pw/Si_lda_nc.upf"
 # Reuse a surviving build tree from a failed run (ATV_FRESH=1 forces a wipe).
@@ -117,13 +119,17 @@ test -x "${BENCH}" || { echo HARNESS_MISSING; exit 3; }
 echo "HARNESS_OK ${BENCH}"
 
 echo "=== STAGE 3: slice sanity — reg_pw-cuda-lda-si --device=both (1t) ==="
+# Twin correctness for this slug: CUDA↔CPU PW LSDA energy parity (2-atom Si).
 REG_BIN=$(find "${REGDIR}" -maxdepth 1 -type f -name reg_pw-cuda-lda-si -perm -u+x | head -1)
 timeout 900 env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   "${REG_BIN}" --device=both
-echo "SLICE_SANITY_RC=$?"
+SLICE_RC=$?
+echo "SLICE_SANITY_RC=${SLICE_RC}"
+[ "${SLICE_RC}" -eq 0 ] || { echo "SLICE_SANITY_FAILED"; exit 4; }
 
 echo "=== STAGE 4: supercell ladder (LSDA, Γ, ecut 15 Ry, tol 1e-6) ==="
 LAST_WALL=0
+LAST_RC=0
 leg() { # dev threads n_rep timeout_s
   local dev=$1 thr=$2 n=$3 tmo=$4
   local tag="n${n}_${dev}_t${thr}"
@@ -133,32 +139,60 @@ leg() { # dev threads n_rep timeout_s
     "${BENCH}" "${UPF}" "${n}" "${dev}" 15.0 1 1e-6 100 > "${out}" 2>&1
   local rc=$?
   cat "${out}"
-  [ "${rc}" -eq 124 ] && echo "LEG_TIMEOUT ${tag} after ${tmo}s"
-  echo "LEG_RC=${rc} ${tag}"
-  LAST_WALL=$(grep -o 'wall_s=[0-9.]*' "${out}" | tail -1 | cut -d= -f2)
-  LAST_WALL=${LAST_WALL:-0}
+  LAST_RC=${rc}
+  if [ "${rc}" -eq 124 ]; then
+    # timeout: wall lower-bounded by the timeout itself (gate + note)
+    echo "LEG_TIMEOUT ${tag} after ${tmo}s"
+    echo "WALL_LOWER_BOUND wall_s>${tmo} tag=${tag}"
+    LAST_WALL=${tmo}
+  else
+    LAST_WALL=$(grep -o 'wall_s=[0-9.]*' "${out}" | tail -1 | cut -d= -f2)
+    LAST_WALL=${LAST_WALL:-0}
+  fi
+  echo "LEG_RC=${rc} ${tag} LAST_WALL=${LAST_WALL}"
   return 0
 }
 gt60() { awk "BEGIN{exit !(${1:-0} > 60)}"; }
 
-# n=1 — 8 atoms: warm-up size, CUDA + threaded and serial CPU reference.
-leg cuda 16 1 1200
-leg cpu 16 1 2400
+# n=1 — 8 atoms: warm-up + same-process energy parity (correctness only).
+leg both 16 1 2400
+# Serial CPU reference at n=1 (OpenBLAS-threaded vs serial sensitivity).
 leg cpu 1 1 3600
 
-# n=2 — 64 atoms: the expected >60 s CPU crossing.
+# n=2 — 64 atoms: expected >60 s CPU crossing (dense O(nb^3) on host).
 leg cuda 16 2 2400
-leg cpu 16 2 5400
+# Prefer finishing this wall over climbing to n=3: ~2–3 h expected from
+# n=1 ~18 s × (128/16)^3 dense-diag scaling.
+REMAIN=$((WALL_BUDGET - SECONDS))
+CPU2_TMO=$((REMAIN - 900))
+[ "${CPU2_TMO}" -gt 12000 ] && CPU2_TMO=12000
+[ "${CPU2_TMO}" -lt 3600 ] && CPU2_TMO=3600
+leg cpu 16 2 "${CPU2_TMO}"
 CPU2_WALL=${LAST_WALL}
+CPU2_RC=${LAST_RC}
+GATE_MET=0
 if gt60 "${CPU2_WALL}"; then
-  echo "GATE n=2: CPU(16t) wall ${CPU2_WALL}s > 60 s — gate met at 64 atoms"
+  GATE_MET=1
+  if [ "${CPU2_RC}" -eq 124 ]; then
+    echo "GATE n=2: CPU(16t) wall >${CPU2_WALL}s (timeout) — gate met at 64 atoms"
+  else
+    echo "GATE n=2: CPU(16t) wall ${CPU2_WALL}s > 60 s — gate met at 64 atoms"
+  fi
 else
   echo "GATE n=2: CPU(16t) wall ${CPU2_WALL}s <= 60 s — must scale to n=3"
 fi
 
-# n=3 — 216 atoms: run when budget remains; CPU leg capped by walltime.
+# n=3 — 216 atoms only if the >60 s gate is still open, or residual budget
+# is large enough for a CUDA-only large-cell point.
 REMAIN=$((WALL_BUDGET - SECONDS))
-if [ "${REMAIN}" -gt 3000 ]; then
+if [ "${GATE_MET}" -eq 1 ]; then
+  if [ "${REMAIN}" -gt 1200 ]; then
+    echo "GATE already met — optional n=3 CUDA-only if budget remains (${REMAIN}s)"
+    leg cuda 16 3 1000
+  else
+    echo "SKIP n=3: gate met at n=2; only ${REMAIN}s walltime left"
+  fi
+elif [ "${REMAIN}" -gt 3000 ]; then
   leg cuda 16 3 2400
   REMAIN=$((WALL_BUDGET - SECONDS))
   CPU3_TMO=$((REMAIN - 600))
@@ -169,11 +203,12 @@ if [ "${REMAIN}" -gt 3000 ]; then
     echo "SKIP n=3 cpu leg: only ${REMAIN}s walltime left"
   fi
 else
-  echo "SKIP n=3: only ${REMAIN}s walltime left"
+  echo "SKIP n=3: only ${REMAIN}s walltime left and gate not yet met"
 fi
 
 echo "=== SUMMARY (all BENCH_RESULT / BENCH_PARITY lines) ==="
-grep -h 'BENCH_RESULT\|BENCH_PARITY' "${BUILD}"/leg_*.txt || true
+grep -hE 'BENCH_RESULT|BENCH_PARITY' "${BUILD}"/leg_*.txt || true
+echo "GATE_MET=${GATE_MET} SLICE_SANITY_RC=${SLICE_RC}"
 echo "GPU_JOB_DONE elapsed=$((SECONDS))s"
 
 # Wipe only THIS job's build dir.
