@@ -1,0 +1,29 @@
+! Fair-wall twin of regressions/pw/bands-dos-si, step 1 of 4: SCF density.
+! Same NC UPF, cell, ecutwfc = 15 Ry, MP 2x2x2 as the ATV regression's SCF.
+&control
+  calculation = 'scf'
+  prefix = 'si_bd'
+  pseudo_dir = '<ATV_CHECKOUT>/tests/data/pw'
+  outdir = './out'
+/
+&system
+  ibrav = 0
+  nat = 2
+  ntyp = 1
+  ecutwfc = 15.0
+  input_dft = 'SLA PW'
+/
+&electrons
+  conv_thr = 1.0d-8
+/
+ATOMIC_SPECIES
+Si 28.0855 Si_lda_nc.upf
+CELL_PARAMETERS angstrom
+0.000 2.715 2.715
+2.715 0.000 2.715
+2.715 2.715 0.000
+ATOMIC_POSITIONS angstrom
+Si 0.0000 0.0000 0.0000
+Si 1.3575 1.3575 1.3575
+K_POINTS automatic
+2 2 2 0 0 0

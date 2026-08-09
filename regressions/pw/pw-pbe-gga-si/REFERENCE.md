@@ -54,9 +54,10 @@ Pin strategy (binding for this regression):
 3. **Energy finiteness / convergence.** \(E_{\mathrm{PBE}}\) is finite;
    preferred: SCF converges within `max_iter`.
 
-When a CP2K Quickstep or QE twin becomes available offline, replace/extend
-this file with the twin total energy (cite version, cutoff, PP) without
-changing the public API.
+A QE twin is now installed offline (see the fair wall below); its total
+energies at these exact settings are recorded there as provenance output
+lines. The ctest gates above are unchanged — promoting the QE energies to
+correctness pins is separate queue work, not part of the fair-wall repin.
 
 ### Observed Atomiverse numbers (informational, not a self-golden pin)
 
@@ -70,13 +71,41 @@ Worker run 2026-07-23 (`wf/pw-pbe-gga-si`, Release, single rank):
 | \(\|F_0\|\), \(\|F_1\|\) | ~0.0015 eV/Å (< 0.5 eV/Å) |
 | Wall (PBE+forces+LSDA) | ~27 s |
 
-## Performance gate
+## Performance gate — measured fair wall (oracle: qe)
 
-**perf_exempt = true**
+**Measured 2026-08-09** against the offline Quantum ESPRESSO twin
+(`Program PWSCF v.7.6`, source build of 2026-08-09,
+`/nobackup/proj/disk/teoroo/personal/jicli594/work/qe/install/bin/pw.x`;
+install record `tools/qe_oracle/pin_notes.md`). Twin job = the exact
+regression workload: PBE SCF + forces, then LSDA SCF, same NC UPF
+(`tests/data/pw/Si_lda_nc.upf`), cell, \(E_\mathrm{cut}=15\) Ry, MP
+\(2\times2\times2\). Inputs: `tools/qe_oracle/inputs/pw-pbe-gga-si/`
+(`si_pbe.in` with `tprnfor`, `si_lsda.in` with `input_dft='SLA PW'`).
 
-Reason: no offline CP2K/QE binary on host for a fair wall twin
-(\(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) undefined). Correctness pins above still
-apply. Re-run fair bench when oracle is installed; target ratio ≤ 10.
+| Item | Value |
+| ---- | ----- |
+| \(T_{\mathrm{atv}}\) | **10.94 s** (`reg_pw-pbe-gga-si`, median of 3) |
+| \(T_{\mathrm{qe}}\) | **0.69 s** (0.35 s PBE+forces + 0.34 s LSDA, QE-printed WALL, median of 3) |
+| \(T_{\mathrm{atv}}/T_{\mathrm{qe}}\) | **15.9** |
+| within_10x | **false — open PW perf debt** (was the stated target when exempt) |
+
+Protocol: Arrhenius x86_64 epyc login node (48-core, shared; load avg 7–24
+during the window), one shell, 3 interleaved repetitions, medians; both sides
+single process, `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1` (the regression's
+declared thread shape), QE as `mpirun -np 1 pw.x`. ATV binary: Release,
+`-march=native`, this commit.
+
+QE key output lines (provenance, not ctest pins):
+
+```text
+si_pbe.out : !    total energy              =     -15.70442105 Ry   (6 iters)
+si_pbe.out :      Total force =     0.000000
+si_lsda.out: !    total energy              =     -15.67051079 Ry   (7 iters)
+```
+
+Known cost asymmetry, recorded not excused: QE reduces the unshifted
+\(2\times2\times2\) mesh to 3 IBZ k-points by symmetry; ATV diagonalizes all
+8. That accounts for ≲ 2.7× of the 15.9× — the rest is ATV solver cost.
 
 ## What the binary checks
 

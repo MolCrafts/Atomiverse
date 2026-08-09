@@ -89,28 +89,59 @@ sibling shows the same fossil independently (its own old σ=0 pin
 `c6a6273c` re-pinned that Γ sibling and missed this one.
 
 **Why the pin was deleted rather than moved.** O₂ at E_cut = 5 Ry in a 5.5 Å
-box has no citable external value — no literature number, no analytic result,
-and the host has no `pw.x`/CP2K twin for NC-UPF plane waves. Re-freezing ATV's
-current output would validate nothing; it is what produced two stale pins in
-five days. The gates above are exact statements (a literature occupation
-identity, a mesh-size identity, and an activation floor) instead.
+box has no citable external value — no literature number, no analytic result
+— and re-freezing ATV's current output would validate nothing; it is what
+produced two stale pins in five days. The gates above are exact statements (a
+literature occupation identity, a mesh-size identity, and an activation
+floor) instead. A `pw.x` NC-UPF twin now exists offline (see Perf below);
+promoting its total energies to a correctness pin is separate queue work.
 
 **Oracle note:** host CP2K is not an absolute-energy twin here (GTH-GPW ≠
 NC-UPF PW); same limitation as `pw-spin-polarized-o2`. Optional documentation
 twin (algorithm only, never energy-compared): Quickstep UKS + `KPOINTS`
 Monkhorst–Pack 2×2×2 on the same O₂ cell.
 
-## Perf
+## Perf — measured fair wall (oracle: qe)
+
+**Measured 2026-08-09** against the offline Quantum ESPRESSO twin
+(`Program PWSCF v.7.6`, source build of 2026-08-09,
+`/nobackup/proj/disk/teoroo/personal/jicli594/work/qe/install/bin/pw.x`;
+install record `tools/qe_oracle/pin_notes.md`). Twin job = the exact
+regression workload: collinear spin-PBE SCF then spin-LSDA SCF, same SG15
+ONCV PBE oxygen UPF (`tests/data/pw/O_ONCV_PBE-1.2.upf`), cubic L = 5.5 Å,
+\(E_\mathrm{cut}=5\) Ry, MP \(2\times2\times2\), fixed occupations
+`tot_magnetization = 2`. Inputs: `tools/qe_oracle/inputs/pw-uks-kmesh-fe/`
+(`o2_pbe.in`, `o2_lsda.in` with `input_dft='SLA PW'`).
 
 | Field | Value |
 | ----- | ----- |
-| perf_exempt | true |
-| reason | CP2K binary not usable as a fair single-rank PW/NC-UPF twin; no loadable comparable twin on this host |
-| T_atv (this host, OMP=1, single rank) | **~26 s** (two solves) |
-| ratio T_atv/T_cp2k | n/a |
+| \(T_{\mathrm{atv}}\) | **25.22 s** (`reg_pw-uks-kmesh-fe`, two solves; median of 3) |
+| \(T_{\mathrm{qe}}\) | **0.30 s** (0.17 s spin-PBE + 0.13 s spin-LSDA, QE-printed WALL, median of 3) |
+| \(T_{\mathrm{atv}}/T_{\mathrm{qe}}\) | **84.1 — worst of the wave-3 PW batch; open PW perf debt** |
+
+Protocol: Arrhenius x86_64 epyc login node (48-core, shared; load avg 7–24
+during the window), one shell, 3 interleaved repetitions, medians; both sides
+single process, `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, QE as
+`mpirun -np 1 pw.x`. ATV binary: Release, `-march=native`, this commit.
+
+QE key output lines (provenance, not ctest pins — the case deliberately
+carries no absolute-energy pin, see "Void pin"):
+
+```text
+o2_pbe.out : !    total energy              =     -50.38166627 Ry  (15 iters, M = 2.00)
+o2_lsda.out: !    total energy              =     -50.20591384 Ry  (10 iters, M = 2.00)
+```
+
+Known cost asymmetry, recorded not excused: QE reduces the unshifted
+\(2\times2\times2\) mesh to 6 IBZ k-points; ATV solves all 8 (that is this
+case's own gate 2). That is ≲ 1.3× of the 84× — at this tiny basis
+(\(E_\mathrm{cut}=5\) Ry) essentially the whole gap is ATV per-iteration and
+fixed-cost overhead, making this the sharpest small-system profile target of
+the batch.
 
 ## Dual gate
 
 1. Correctness: `converged` + M = 2 + `n_kpts = 8` + spin-GGA activation, for
    both functionals.
-2. Perf: exempt (no CP2K twin wall).
+2. Perf: measured fair wall above (`oracle: qe`); ratio 84.1 recorded as open
+   perf debt.
