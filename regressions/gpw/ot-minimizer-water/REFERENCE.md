@@ -78,33 +78,20 @@ from CP2K (NGRIDS/REL_CUTOFF/collocation). OT vs DIIS in-tree is near machine
 parity on the same grids. Product path stays **single-grid** on this twin:
 product multigrid is a net loss for 3-atom / 10 Å at 250 Ry.
 
-### Fair wall (2026-08-05, OMP=4 bind, arrhenius1)
-
-| Side | Wall [s] | Notes |
-| --- | ---: | --- |
-| ATV reg (OT + DIIS dual) | **~4.5** | **9 OT + 9 DIIS** KS builds (`p2-ot-outer-diis`) |
-| ATV OT-only (prof) | **~1.6–2** | setup ~0.7 + 9×~0.18 s |
-| CP2K OT quiet | **~4.3** | 19 OT steps, NGRIDS 4 |
+### Measured fixed points
 
 Γ OT is Pulay DIIS on H with fixed-H `ot_minimize_fixed` (no Armijo grid
-rebuild per micro-step). \|E_OT−E_DIIS\| ~1e-12 on this twin. Residual KS cost
-is still GGA spectral FFT; next lever `p2-xc-spectral-fft`.
-
-Measured (2026-07-23): \(\|E_{\mathrm{OT}}-E_{\mathrm{CP2K}}\|=9.90\times10^{-4}\) Ha;
-\(\|E_{\mathrm{OT}}-E_{\mathrm{DIIS}}\|\approx 4\times10^{-11}\) Ha.
+rebuild per micro-step).
+\(\|E_{\mathrm{OT}}-E_{\mathrm{CP2K}}\|=9.90\times10^{-4}\) Ha;
+in-tree \(\|E_{\mathrm{OT}}-E_{\mathrm{DIIS}}\|\sim1\times10^{-12}\) Ha
+(2026-08-05).
 
 ## Fair wall (perf gate)
 
-Comparable settings (cutoff 250 Ry, PBE, MT, single rank, OMP=4):
-
-| Twin | Wall [s] | Notes |
-| ---- | -------: | ----- |
-| CP2K OT | **4.31** | `cp2k.psmp`, OMP=4 |
-| ATV OT+DIIS (regression binary) | **41.73** | OMP=4, both paths |
-| ATV OT+DIIS | **54.01** | OMP=1 (≤60 s gate) |
-
-Fair OT-only estimate (OMP=4): ATV OT ≈ 39 s from regression timestamps →
-\(r \approx 39/4.31 \approx \mathbf{9.0}\) ≤ 10. Full regression (OT+DIIS)
-vs CP2K OT alone is not a fair twin; report OT-only ratio.
-
-`within_10x=true` (fair OT, OMP=4).
+This file carries no wall numbers. The single binding fair-wall source for
+this twin — host, CP2K binary provenance, PRINT_LEVEL/timer convention,
+reproduction recipe, and the current \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) —
+is [`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
+The fair twin is CP2K OT vs ATV OT-only; the full regression binary runs
+OT + DIIS and is not a fair wall. Case-local walls were last measured here
+2026-08-05 and are superseded by that note.

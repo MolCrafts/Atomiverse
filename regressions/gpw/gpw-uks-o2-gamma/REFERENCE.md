@@ -37,7 +37,6 @@ Atomiverse path: `cpu::gpw::GpwDft` with `n_alpha`/`n_beta`, dual KS matrices,
   mpirun -np 1 cp2k.psmp -i o2_uks_pade.inp -o o2_uks_pade.out
   ```
 - **Date:** 2026-07-23 (centered geometry re-pin)
-- **Wall (CP2K, 1 MPI × 4 OMP):** ≈ **21.3 s** total (`CP2K` timer MAXIMUM)
 
 | Quantity | CP2K pin | Tolerance (regression) |
 |----------|----------|------------------------|
@@ -56,12 +55,12 @@ ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]            -31.769803499314250
 
 ## Perf gate
 
-| Side | Wall [s] | Notes |
-|------|----------|--------|
-| CP2K 2026.1 | 21.3 | 1 rank, OMP=4, NGRIDS 4 multigrid |
-| Atomiverse | **20.8** | Release, single density grid, OMP=4, 2026-07-23 |
-
-`ratio = T_atv / T_cp2k = 20.8/21.3 ≈ **0.98**` (≤ 10 ✓).
+This file carries no wall numbers. The single binding fair-wall source for
+this twin — host, CP2K binary provenance, PRINT_LEVEL/timer convention,
+reproduction recipe, and the current \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) —
+is [`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
+Case-local walls were last measured here 2026-07-23 and are superseded by
+that note.
 
 ## Citations
 
