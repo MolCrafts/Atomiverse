@@ -43,4 +43,4 @@ Perf gates apply only to slugs whose oracle is a wall twin.
 
 | Date | Wave(s) | Staffed | Merged | Notes |
 | --- | --- | --- | --- | --- |
-| _(pending first run)_ | | | | |
+| 2026-08-09 | 1 | 6 | 6 | P0 docs-only harness-truth slugs all merged (825eaba3…156c5f91), 0 deferred; P0 residual is `test-gpw-timeout-triage` (ctest), then P1. |

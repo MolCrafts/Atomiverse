@@ -41,48 +41,8 @@ CUDA ES state `.claude/notes/cuda-rhf-device-only.md`; order + freezes
 Priority order. `oracle:` names the code that produced (or will produce) the
 pin — `harness` marks docs-only truth repairs (no build, no pin).
 
-### P0 — harness truth (docs-only, one wave)
+### P0 — harness truth
 
-- [ ] `doc-hf-cuda-truth` — oracle: harness.
-  `docs/roadmap/hartree-fock.md:92,104-108` still claims CUDA has no DIIS, no
-  gradients, device ERI s-type only. Superseded by es-cpu-cuda waves 1–5:
-  device s/p integrals + analytic s/p forces, Saunders–Hillier level shift,
-  device CDIIS (`docs/developer/es-cpu-cuda-queue.md:103,113,126,137`,
-  `.claude/notes/cuda-rhf-device-only.md:44-56`). Rewrite the CUDA rows.
-- [ ] `doc-notes-perf-fossils` — oracle: harness.
-  `.claude/notes/notes.md:9-13` ("MG MAIN ~2.1 s ≈ 1.6×") and `:30-31` ("OT
-  plateaus ~60 iters — the single biggest lever") are fossils:
-  `es-optimization-order.md:50-55` marks the walls superseded, and OT now
-  matches CP2K at 10 iterations (`docs/developer/gpw-perf-queue.md:82-84`).
-  Also `:42` says cuda-rhf-reshape is at waves 0–5; the topic note says 0–10.
-  Rewrite all three in place.
-- [ ] `doc-gpw-baseline-ot-sync` — oracle: harness.
-  `.claude/notes/gpw-perf-baseline.md:114-125,142` still carries the
-  pre-OT-match `ot-minimizer-water` section (7.55 s, ratio 3.02, worst_ratio
-  3.02). Post `p0-ot-cp2k-match` + `p0-ot-match-residual` the OT wall is
-  ~2.99 s / 1.20× with SCF body ≤1.0× (`gpw-perf-queue.md:36,82-84`);
-  worst_ratio is 2.33 (MG MAIN). Re-measure OT wall if cheap, else carry the
-  queue numbers with provenance; sync the section and the worst_ratio line.
-- [ ] `doc-dft-roadmap-consistency` — oracle: harness.
-  `docs/roadmap/dft.md:528-533` (§10 "pending residual" list) contradicts the
-  same file's intro `:85-88` and §12 `:752-761` (wave-8 landed those rows);
-  `gpw-ts-kpoint-stress` / `gpw-metallic-stress` still `[~]` though the queue
-  has them `[x]` (`docs/developer/cp2k-method-queue.md:1686-1687`); `:438`
-  should name `cuda::pw::PW` (LSDA, restricted, energy-only) instead of the
-  bare "CUDA path remains LDA". Fix all three spots.
-- [ ] `doc-arch-cuda-gpw-truth` — oracle: harness.
-  `CLAUDE.md` backend table marks `gpw/` CPU-only and
-  `.claude/notes/architecture.md:28,34` says 16 cuda dirs / no gpw. The tree
-  has `include/atomiverse/cuda/gpw/internal/` = 4 unit-tested kernel footholds
-  (Poisson FFT, Padé LDA XC, ρ collocate, V·shape integrate) with **no method
-  product** — `cuda-gpw-full-product` stays blocked. Minimal truth edit in
-  both files: footholds exist, method product does not.
-- [ ] `doc-fair-twin-reference-supersede` — oracle: harness.
-  Four fair-twin REFERENCE.md perf sections are stale by 3–8× vs the binding
-  pins (`gpw-multigrid-kpoints/REFERENCE.md:121` "1.6", `gpw-uks-o2-gamma
-  :64` "0.98", `ot-uks-o2:91` "7.1", `ot-minimizer-water:105` "9.0"). Rewrite
-  each perf section to carry only the case-local measurement date + a pointer
-  to `.claude/notes/gpw-perf-baseline.md` as the single binding wall source.
 - [ ] `test-gpw-timeout-triage` — oracle: ctest.
   2026-08-09 full suite: 5/377 Timeout — `test_cpu_gpw_{mbd,hirshfeld,forces,
   stress}` + `test_mpi_pw_kpoint_n4` (234 s total suite, no assertion
@@ -154,4 +114,21 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ## done
 
-(empty — seeded 2026-08-09)
+- [x] `doc-hf-cuda-truth` — 2026-08-09, merge `825eaba3`. HF roadmap CUDA rows
+  rewritten to es-cpu-cuda waves 1–10 truth (device s/p ERI + forces, CDIIS,
+  level shift).
+- [x] `doc-notes-perf-fossils` — 2026-08-09, merge `958b4940`. Three
+  `notes.md` fossils superseded in place (MG wall, OT-plateau lever, reshape
+  wave count).
+- [x] `doc-gpw-baseline-ot-sync` — 2026-08-09, merge `647ecbe2`.
+  `gpw-perf-baseline.md` OT section synced to post-OT-match walls
+  (~2.99 s / 1.20×); worst_ratio now 2.33 (MG MAIN).
+- [x] `doc-dft-roadmap-consistency` — 2026-08-09, merge `814119c2`.
+  `docs/roadmap/dft.md` §10 residual list, stress-case `[~]` rows, and the
+  CUDA-PW line reconciled with wave-7/8 truth.
+- [x] `doc-arch-cuda-gpw-truth` — 2026-08-09, merge `862c40f5`. `CLAUDE.md`
+  backend table + `architecture.md` now state the truth: 4 cuda/gpw kernel
+  footholds exist, no method product.
+- [x] `doc-fair-twin-reference-supersede` — 2026-08-09, merge `156c5f91`.
+  Four stale REFERENCE.md perf sections rewritten to case-local snapshots
+  pointing at `gpw-perf-baseline.md` as the single wall source.
