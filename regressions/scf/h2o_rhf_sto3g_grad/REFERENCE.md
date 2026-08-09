@@ -58,3 +58,15 @@ Literature: Pulay, *Mol. Phys.* **17**, 197 (1969) (energy-weighted density /
 Pulay forces); Helgaker, Jørgensen, Olsen, *Molecular Electronic-Structure
 Theory* §10 (molecular gradients); Hehre, Stewart, Pople, *J. Chem. Phys.*
 **51**, 2657 (1969), doi:10.1063/1.1672392 (STO-3G).
+
+## Measurement log
+
+| Item | Value |
+| ---- | ----- |
+| GH200 job id | **1039997** (node `n188`, NVIDIA GH200 120GB) — the committed tree |
+| Toolchain | `GPU/buildenv-gcccuda/2026.03-cu13.0`, nvcc **13.0.88** / GNU 14.3.0; cubins sm_75 + runtime PTX JIT to ISA 90 |
+| GH200 log path | `.claude/reg-cuda-grad-honesty-1039997.log` |
+| cpu leg | PASS — max element-wise err **3.870e-11** Ha/Bohr (gate 1e-6); ‖Σ_A g_A‖ 1.133e-14 (gate 1e-8) |
+| cuda leg | PASS — `path=device` (both residency flags asserted true); max element-wise err **3.867e-11** Ha/Bohr (gate 5e-6); ‖Σ_A g_A‖ 4.430e-14 (gate 1e-7) |
+| CUDA↔CPU parity | **3.200e-14** Ha/Bohr (gate 2e-6) |
+| Job verdict | `=== ALL CUDA LEGS PASS ===` (this case + `h2o_rhf_def2svp_grad`, `--device=both`) |

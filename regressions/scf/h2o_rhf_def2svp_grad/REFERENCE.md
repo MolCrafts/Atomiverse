@@ -63,3 +63,12 @@ d 壳层(l=2,6→5)在此几何上被激活,是约定错误最先暴露之处。
 83 (1995), DOI 10.1002/qua.560540202(c2s 闭式系数);Pulay(能量加权密度 /
 Pulay 力);Helgaker, Jørgensen, Olsen, *Molecular Electronic-Structure
 Theory* §10(分子梯度)。
+
+## Measurement log
+
+GH200 job **1039997** (node `n188`, `GPU/buildenv-gcccuda/2026.03-cu13.0`,
+nvcc 13.0.88; log `.claude/reg-cuda-grad-honesty-1039997.log`): cpu leg PASS
+(max element-wise err 1.681e-09 Ha/Bohr, gate 1e-6; ‖Σ_A g_A‖ 3.195e-14); cuda
+leg PASS with the documented `path=host-fallback` banner and both residency
+flags asserted **false** — identical 1.681e-09 vs the pin, as expected from
+full delegation.
