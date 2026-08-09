@@ -45,7 +45,6 @@ Public Frame energy [eV] via `kEnergy`. Method channel:
   mpirun -np 1 cp2k.psmp -i o2_uks_ot_pade.inp -o o2_uks_ot_pade.out
   ```
 - **Date:** 2026-07-26
-- **Wall (CP2K, 1 MPI × 4 OMP):** **8.68 s** (`CP2K` timer MAXIMUM)
 
 | Quantity | CP2K OT pin | Tolerance (regression) |
 |----------|------------:|------------------------:|
@@ -78,20 +77,12 @@ differences; OT/DIIS in-tree is the tight fixed-point gate.
 
 ## Fair wall (perf gate)
 
-Measured 2026-08-05 (Release, OMP=4, `OMP_PROC_BIND=close`), **MINIMIZER
-DIIS** (OtOrbitalDiis SAFE directions + Armijo on total E; FULL_SINGLE-style
-precond; OUTER precond refresh):
-
-| Twin | Wall [s] | Notes |
-| ---- | -------: | ----- |
-| CP2K OT | **8.68** | `cp2k.psmp`, MINIMIZER DIIS + FULL_SINGLE_INVERSE + OUTER_SCF |
-| Atomiverse OT only | **~62** | 180 outer iters; DIIS directions + Armijo |
-| Atomiverse DIIS (parity check) | **~11** | 30 diagonalization DIIS iters |
-
-Fair OT-only ratio: 62 / 8.68 ≈ **7.1**. Full regression (OT+DIIS) wall ≈ 73 s.
-Fixed-STEPSIZE pure DIIS (no Armijo) diverges on this micro-case.
-
-`within_10x=true` (fair OT, OMP=4).
+This file carries no wall numbers. The single binding fair-wall source —
+host, CP2K binary provenance, PRINT_LEVEL/timer convention, and the
+reproduction recipe — is
+[`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
+Case-local walls were last measured here 2026-08-05 and are superseded by
+that note.
 
 In-tree OT/DIIS parity: |E_OT − E_DIIS| ≈ **5×10⁻¹⁰ Ha** (same grids).
 

@@ -113,13 +113,12 @@ the pin; mechanisms unit-pinned in `tests/cpu/gpw/test_cpu_gpw_multigrid.cpp`
 
 ## Performance
 
-| Side | Wall [s] | Notes |
-|------|----------|--------|
-| CP2K 2026.1 (NGRIDS 4 twin) | 23.6 | 1 rank × OMP 4 (`CP2K` timer) |
-| Atomiverse (main MP run alone) | 38.6 | OMP 8, Release, 2026-07-31 |
-
-`ratio = T_atv / T_cp2k = 38.6/23.6 ≈ 1.6` (≤ 10 ✓). Whole regression
-(3 SCFs) ≈ 55 s at OMP 8.
+This file carries no wall numbers. The single binding fair-wall source for
+this twin — host, CP2K binary provenance, PRINT_LEVEL/timer convention,
+reproduction recipe, and the current \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) —
+is [`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
+Case-local walls were last measured here 2026-07-31 and are superseded by
+that note.
 
 ## Citations
 
