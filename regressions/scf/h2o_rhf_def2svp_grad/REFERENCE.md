@@ -4,6 +4,24 @@
 (default `both` when built with CUDA). Same PySCF pin on every device — not a
 `*_cuda` sibling. Public RHF + Frame only (no integral pack bag).
 
+## Device legs — what `--device=cuda` actually exercises
+
+The CUDA leg is a **documented host fallback, not a device-gradient result**.
+def2-SVP carries d shells, outside the device s/p STO-3G envelope
+(`device_sp_sto3g_ok`, `src/cuda/scf/rhf.cu`), so `cuda::scf::RHF`:
+
+- **SCF:** host-filled S/Hcore/ERI (`fill_rhf_matrices`) uploaded to the
+  device SCF loop — `last_scf_on_device() == false` (host-fill path);
+- **gradient:** full delegation to `cpu::scf::RHF::forces` —
+  `last_force_on_device() == false`. The graded numbers are the CPU
+  implementation's output reached through the `cuda::scf::RHF` envelope.
+
+The leg therefore validates the public CUDA envelope + fallback wiring against
+the pin, and **asserts both flags are false** so it fails loudly if the device
+envelope ever grows to cover def2-SVP — at which point this section must be
+rewritten with device tolerances. The fail-closed *device* s/p gradient e2e is
+`scf/h2o_rhf_sto3g_grad` (asserts the flags are true).
+
 Oracle protocol: docs/tutorial/appendix-pyscf-oracle.md (external run, pinned).
 
 | 字段 | 值 |
@@ -45,3 +63,12 @@ d 壳层(l=2,6→5)在此几何上被激活,是约定错误最先暴露之处。
 83 (1995), DOI 10.1002/qua.560540202(c2s 闭式系数);Pulay(能量加权密度 /
 Pulay 力);Helgaker, Jørgensen, Olsen, *Molecular Electronic-Structure
 Theory* §10(分子梯度)。
+
+## Measurement log
+
+GH200 job **1039997** (node `n188`, `GPU/buildenv-gcccuda/2026.03-cu13.0`,
+nvcc 13.0.88; log `.claude/reg-cuda-grad-honesty-1039997.log`): cpu leg PASS
+(max element-wise err 1.681e-09 Ha/Bohr, gate 1e-6; ‖Σ_A g_A‖ 3.195e-14); cuda
+leg PASS with the documented `path=host-fallback` banner and both residency
+flags asserted **false** — identical 1.681e-09 vs the pin, as expected from
+full delegation.
