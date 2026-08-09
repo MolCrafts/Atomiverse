@@ -44,3 +44,4 @@ Perf gates apply only to slugs whose oracle is a wall twin.
 | Date | Wave(s) | Staffed | Merged | Notes |
 | --- | --- | --- | --- | --- |
 | 2026-08-09 | 1 | 6 | 6 | P0 docs-only harness-truth slugs all merged (825eaba3…156c5f91), 0 deferred; P0 residual is `test-gpw-timeout-triage` (ctest), then P1. |
+| 2026-08-09 | 2 | 5 | 1 | `pw-perf-qe-install` merged (6d13a436, `tools/qe_oracle/` live). 3 GH200 slugs deferred with jobs: `reg-cuda-grad-honesty` 1035228 (nvcc compile fail), `cuda-pw-pbe-device` 1035270 (x86_64 libxtb link fail), `cuda-pw-large-cell-measure` 1035278 (running at close). `cuda-md-first-regression` unmerged, parked at `wf/cuda-md-first-regression` (ea17e11a). |

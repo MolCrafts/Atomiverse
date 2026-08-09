@@ -54,43 +54,19 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ### P1 — regression honesty + sanctioned CUDA
 
-- [ ] `reg-cuda-grad-honesty` — oracle: pyscf (existing pin) + cpu-parity.
-  `regressions/scf/h2o_rhf_def2svp_grad --device=cuda` silently grades the
-  host path (Def2SVP fails `device_sp_sto3g_ok`; `src/cuda/scf/rhf.cu:417-420`
-  calls `cpu::scf::RHF::forces`) with no `last_force_on_device()` assertion —
-  a false-positive "CUDA gradient regression". Fix: REFERENCE.md documents the
-  host-fallback leg honestly, and the CUDA leg asserts the fallback flags so
-  the case fails loudly if the envelope ever changes; add an STO-3G s/p
-  device-path gradient leg (device forces are a delivered feature with only
-  unit coverage). Validate via one GH200 batch run.
 - [ ] `cuda-md-first-regression` — oracle: lammps or literature.
   CUDA MD has zero regression cases (`grep -rl cuda regressions/{md,
   forcefield,mc}` = 0) while the OpenMM-engine track is explicitly unfrozen.
   Add one: LJ argon NVE (existing CPU case's geometry), `--device=cuda`,
   energy-conservation envelope + cited pin, ≤60 s, public headers only.
-  Validate via one GH200 batch run.
-- [ ] `cuda-pw-large-cell-measure` — oracle: cpu-parity (wall).
-  ES order step 4, sanctioned by `.claude/notes/cuda-rhf-device-only.md:
-  145-147`: first large-cell `cuda::pw::PW` vs same-settings CPU wall
-  measurement on GH200 (LSDA envelope; scale Si supercell until >60 s CPU).
-  Output = measurement note in `.claude/notes/` with job ids + methodology;
-  **no perf claim enters docs/roadmap from small cells**.
-- [ ] `cuda-pw-pbe-device` — oracle: cpu-parity.
-  Sanctioned next wave (`cuda-rhf-device-only.md:145-147`): PBE GGA on device
-  for `cuda::pw::PW` (today throws at `src/cuda/planewave/pw_solver.cu:63`).
-  CPU same-settings oracle; stated tolerances vs `tests/cuda/planewave/`
-  stage-parity pattern; energy-path change re-runs the CPU force regressions.
+  Validate via one GH200 batch run. Wave-2 attempt is parked unmerged at
+  branch `wf/cuda-md-first-regression` (`ea17e11a`; GH200 jobs 1035232 /
+  1035271 failed) — resume from that branch, do not restart from scratch.
 
-### P2 — PW perf debt (ordered; second depends on first)
+### P2 — PW perf debt
 
-- [ ] `pw-perf-qe-install` — oracle: qe.
-  22/27 `regressions/pw/*/REFERENCE.md` are `perf_exempt` solely because no
-  QE/ABINIT/CP2K binary existed on the pin host (e.g. `pw-pbe-gga-si/
-  REFERENCE.md:30-31`). Per the strict-loop law, "no binary" is not a green
-  path: build QE `pw.x` offline on the x86_64 login env, scaffold
-  `tools/qe_oracle/` (README + provenance rules mirroring `tools/cp2k_oracle/`),
-  record version + build line. No ATV code changes.
-- [ ] `pw-perf-fair-walls-batch1` — oracle: qe. Depends: `pw-perf-qe-install`.
+- [ ] `pw-perf-fair-walls-batch1` — oracle: qe. Depends: `pw-perf-qe-install`
+  (merged `6d13a436`; `tools/qe_oracle/` is live).
   Repin the first batch of exempt PW cases with real same-settings NC-UPF
   walls (`pw-pbe-gga-si`, `pw-analytic-stress-si`, `pw-uks-kmesh-fe`,
   `bands-dos-si`): T_atv/T_qe with full provenance, REFERENCE.md perf sections
@@ -99,7 +75,22 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ## in_progress
 
-(empty)
+- [~] `reg-cuda-grad-honesty` — deferred 2026-08-09, GH200 job 1035228
+  (FAILED: nvcc syntax errors in the new
+  `regressions/scf/h2o_rhf_sto3g_grad/reg_h2o_rhf_sto3g_grad.cu`). Worktree
+  `.claude/worktrees/wf_f384f427-0b3-11` @ `wf/reg-cuda-grad-honesty`
+  (`9fa88e9e`). Next: fix the `.cu` compile, resubmit one batch run.
+- [~] `cuda-pw-large-cell-measure` — deferred 2026-08-09, GH200 job 1035278
+  (RUNNING at wave close; earlier attempts 1035136 / 1035238 failed). Worktree
+  `.claude/worktrees/wf_f384f427-0b3-13` @ `wf/cuda-pw-large-cell-measure`
+  (`d574d65d`), build kept for the pending job. Next: harvest
+  `.claude/cuda-pw-large-cell-1035278.{out,err}`, write the measurement note.
+- [~] `cuda-pw-pbe-device` — deferred 2026-08-09, GH200 job 1035270
+  (FAILED: aarch64 link pulled x86_64 `libxtb.so` — "file in wrong format" —
+  while linking `test_cuda_pw_xc_pbe`). Worktree
+  `.claude/worktrees/wf_f384f427-0b3-14` @ `wf/cuda-pw-pbe-device`
+  (`e1147831`). Next: scrub the xtb lib path from the GH200 link line,
+  resubmit.
 
 ## blocked
 
@@ -132,3 +123,7 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 - [x] `doc-fair-twin-reference-supersede` — 2026-08-09, merge `156c5f91`.
   Four stale REFERENCE.md perf sections rewritten to case-local snapshots
   pointing at `gpw-perf-baseline.md` as the single wall source.
+- [x] `pw-perf-qe-install` — 2026-08-09, merge `6d13a436`. QE offline oracle
+  scaffolded at `tools/qe_oracle/` (README + provenance rules + smoke-si
+  input + pin_notes with version/build line); unblocks
+  `pw-perf-fair-walls-batch1`.
