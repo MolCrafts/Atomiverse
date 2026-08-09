@@ -294,6 +294,7 @@ if(ATV_BUILD_GPW)
     # in benchmarks/qc/gpw/validation and never runs under ctest.
     atv_add_cpp_test(test_cpu_gpw_gth_integrals    cpu/gpw/test_cpu_gpw_gth_integrals.cpp)
     atv_add_cpp_test(test_cpu_gpw_collocate        cpu/gpw/test_cpu_gpw_collocate.cpp)
+    atv_add_cpp_test(test_cpu_gpw_gamma_k_identity cpu/gpw/test_cpu_gpw_gamma_k_identity.cpp)
     atv_add_cpp_test(test_cpu_gpw_multigrid        cpu/gpw/test_cpu_gpw_multigrid.cpp)
     if(ATV_BUILD_PW)  # FFT transfer (prolong_fft / restrict_fft) needs FFTW3
         target_link_libraries(test_cpu_gpw_multigrid PRIVATE fftw3_stub)
@@ -345,6 +346,8 @@ if(ATV_BUILD_GPW)
         atv_add_cpp_test(test_cpu_gpw_second_gen_cpmd cpu/gpw/test_gpw_second_gen_cpmd.cpp)
         if(ATV_BUILD_MD)
             atv_add_cpp_test(test_cpu_gpw_bomd    cpu/gpw/test_gpw_bomd.cpp)
+            atv_add_cpp_test(test_cpu_gpw_evaluator
+                                                  cpu/gpw/test_gpw_evaluator.cpp)
         endif()
     endif()
 

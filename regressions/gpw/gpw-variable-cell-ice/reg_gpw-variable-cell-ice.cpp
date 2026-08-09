@@ -81,7 +81,6 @@ int main() {
     cpu::minimizer::AnisotropicCellRelax cell(/*P_target*/ 0.0, /*alpha*/ 1.0);
     cell.bulk_mod = 0.15; // measured dσ_xx/dε at a* (REFERENCE) → ~Newton step
     cell.max_scale = 0.05;
-    cell.stress_is_virial = false; // GPW writes intensive stress [eV/Å³]
     cell.relax_y = false;
     cell.relax_z = false;
     opt.set_optimizer_ref(cell);
@@ -109,7 +108,10 @@ int main() {
     const double b1 = frame.box.length(1);
     const double c1 = frame.box.length(2);
     const double e_ha = eval.last_energy_hartree();
-    const double sxx_ev_a3 = frame.meta.get(kStress)[0];
+    // kStress is the extensive Voigt virial [eV]; this gate is written
+    // against the intensive stress W_xx/V [eV/A^3].
+    const double sxx_ev_a3 =
+        frame.meta.get(kStress)[0] / frame.box.volume();
     const double sxx_ha_bohr3 = eval.last_stress_ha_bohr3()[0];
 
     std::printf(

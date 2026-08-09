@@ -1050,6 +1050,27 @@ inline void collocate_one(const UniformGrid& grid, const GridProduct& prod,
 /// footprint matches what an 8-thread run already paid for per-thread buffers.
 constexpr long kMinScatterChunks = 8;
 
+/// @brief Chunk count for a product scatter whose accumulator is a block.
+///
+/// A function of the accumulator size **only** — the OpenMP thread count must
+/// never enter it, or the grouping of summands at a grid point becomes a
+/// property of the runtime and the reduction stops being reproducible. That is
+/// exactly the defect these four scatters carried.
+///
+/// `block_reduce_chunks` caps the count from a 64 MiB accumulator budget, which
+/// on a production grid (CUTOFF 400, ~144³ points ⇒ ~24 MB per accumulator)
+/// yields 2 and would strangle parallel width; `kMinScatterChunks` restores the
+/// footprint an 8-thread run already paid for as per-thread buffers — never
+/// worse than the old code at 8 threads, and strictly better above it. The
+/// stated cost: on a node wider than the chunk count, the scatter's effective
+/// parallel width is capped there.
+///
+/// @param block_bytes Size of one accumulator block [bytes].
+/// @return Chunk count (dimensionless), at least `kMinScatterChunks`.
+inline long scatter_chunks(std::size_t block_bytes) {
+    return std::max(kMinScatterChunks, device::block_reduce_chunks(block_bytes));
+}
+
 // Grow-only flat fixed-chunk scatter pools (levels sequential). Layout
 // chunk c starts at c*stride. Capacity grows across SCF iters; workers zero the
 // active prefix. Avoids per-call allocate/free of nc full-grid / nb² buffers.
@@ -1194,22 +1215,22 @@ std::vector<double> collocate_products(const UniformGrid& grid,
         wts[static_cast<std::size_t>(ip)] =
             product_density_weight(prod, prims, contribs, nb, P);
     }
-    int nthreads = 1;
-#ifdef _OPENMP
-    nthreads = omp_get_max_threads();
-#endif
-    g_rho_scatter.prepare_zeroed(nthreads, npts);
-#pragma omp parallel
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        double* loc = g_rho_scatter.chunk(tid);
+    // One accumulator per *chunk* of the task list, folded in ascending chunk
+    // order: both the grouping and the order of summands at a grid point are
+    // then a function of `nt` alone, so the result is bitwise identical at any
+    // thread count. `schedule(dynamic, 1)` stays legal because which thread
+    // runs a chunk no longer enters the arithmetic.
+    const device::ChunkedRange range(nt,
+                                     scatter_chunks(npts * sizeof(double)));
+    const long nc = range.chunks();
+    g_rho_scatter.prepare_zeroed(nc, npts);
+#pragma omp parallel for schedule(dynamic, 1)
+    for (long c = 0; c < nc; ++c) {
+        double* loc = g_rho_scatter.chunk(c);
         std::vector<int> keep_i;
         std::vector<double> keep_w;
-#pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < nt; ++g)
+        const long glo = range.begin(c), ghi = range.end(c);
+        for (long g = glo; g < ghi; ++g)
             collocate_task_live(grid, prods, wts,
                                 tasks[static_cast<std::size_t>(g)], eps_drop,
                                 eps_win, keep_i, keep_w, loc);
@@ -1217,8 +1238,8 @@ std::vector<double> collocate_products(const UniformGrid& grid,
 #pragma omp parallel for schedule(static)
     for (long g = 0; g < static_cast<long>(npts); ++g) {
         double s = 0.0;
-        for (int t = 0; t < nthreads; ++t)
-            s += g_rho_scatter.chunk(t)[static_cast<std::size_t>(g)];
+        for (long c = 0; c < nc; ++c)
+            s += g_rho_scatter.chunk(c)[static_cast<std::size_t>(g)];
         rho[static_cast<std::size_t>(g)] = s;
     }
     return rho;
@@ -1274,22 +1295,19 @@ std::vector<double> integrate_products(
     const long nt = static_cast<long>(tasks.size());
     // Shell tasks: |V(pc)| once per task (constant on geometry) × precomputed
     // geom_mag → task-parallel integrate on contiguous monom ranges.
-    int nthreads = 1;
-#ifdef _OPENMP
-    nthreads = omp_get_max_threads();
-#endif
-    g_ks_scatter.prepare_zeroed(nthreads, nn);
-#pragma omp parallel
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        double* Vloc = g_ks_scatter.chunk(tid);
+    // One nb² accumulator per chunk of the task list, folded in ascending
+    // chunk order — see collocate_products for why the thread count must not
+    // enter the partition.
+    const device::ChunkedRange range(nt, scatter_chunks(nn * sizeof(double)));
+    const long nc = range.chunks();
+    g_ks_scatter.prepare_zeroed(nc, nn);
+#pragma omp parallel for schedule(dynamic, 1)
+    for (long c = 0; c < nc; ++c) {
+        double* Vloc = g_ks_scatter.chunk(c);
         std::vector<double> gacc;
         gacc.reserve(64);
-#pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < nt; ++g) {
+        const long glo = range.begin(c), ghi = range.end(c);
+        for (long g = glo; g < ghi; ++g) {
             const CollintTask& task = tasks[static_cast<std::size_t>(g)];
             const int n = task.end - task.beg;
             if (n <= 0)
@@ -1331,8 +1349,8 @@ std::vector<double> integrate_products(
 #pragma omp parallel for schedule(static)
     for (long kk = 0; kk < static_cast<long>(nn); ++kk) {
         double s = 0.0;
-        for (int t = 0; t < nthreads; ++t)
-            s += g_ks_scatter.chunk(t)[static_cast<std::size_t>(kk)];
+        for (long c = 0; c < nc; ++c)
+            s += g_ks_scatter.chunk(c)[static_cast<std::size_t>(kk)];
         V[static_cast<std::size_t>(kk)] = s;
     }
     return V;
@@ -1382,22 +1400,22 @@ std::vector<double> collocate_products_cells(
             prod, prims, contribs, nb,
             D[static_cast<std::size_t>(prod.tcell)]);
     }
-    int nthreads = 1;
-#ifdef _OPENMP
-    nthreads = omp_get_max_threads();
-#endif
-    g_rho_scatter.prepare_zeroed(nthreads, npts);
-#pragma omp parallel
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        double* loc = g_rho_scatter.chunk(tid);
+    // One accumulator per *chunk* of the task list, folded in ascending chunk
+    // order: both the grouping and the order of summands at a grid point are
+    // then a function of `nt` alone, so the result is bitwise identical at any
+    // thread count. `schedule(dynamic, 1)` stays legal because which thread
+    // runs a chunk no longer enters the arithmetic.
+    const device::ChunkedRange range(nt,
+                                     scatter_chunks(npts * sizeof(double)));
+    const long nc = range.chunks();
+    g_rho_scatter.prepare_zeroed(nc, npts);
+#pragma omp parallel for schedule(dynamic, 1)
+    for (long c = 0; c < nc; ++c) {
+        double* loc = g_rho_scatter.chunk(c);
         std::vector<int> keep_i;
         std::vector<double> keep_w;
-#pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < nt; ++g)
+        const long glo = range.begin(c), ghi = range.end(c);
+        for (long g = glo; g < ghi; ++g)
             collocate_task_live(grid, prods, wts,
                                 tasks[static_cast<std::size_t>(g)], eps_drop,
                                 eps_win, keep_i, keep_w, loc);
@@ -1405,8 +1423,8 @@ std::vector<double> collocate_products_cells(
 #pragma omp parallel for schedule(static)
     for (long g = 0; g < static_cast<long>(npts); ++g) {
         double s = 0.0;
-        for (int t = 0; t < nthreads; ++t)
-            s += g_rho_scatter.chunk(t)[static_cast<std::size_t>(g)];
+        for (long c = 0; c < nc; ++c)
+            s += g_rho_scatter.chunk(c)[static_cast<std::size_t>(g)];
         rho[static_cast<std::size_t>(g)] = s;
     }
     return rho;
@@ -1426,22 +1444,19 @@ std::vector<std::vector<double>> integrate_products_cells(
         ncells, std::vector<double>(nn, 0.0));
     const double w = grid.weight();
     const long nt = static_cast<long>(tasks.size());
-    int nthreads = 1;
-#ifdef _OPENMP
-    nthreads = omp_get_max_threads();
-#endif
-    g_ks_cell_scatter.prepare_zeroed(nthreads, nnall);
-#pragma omp parallel
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        double* Vloc = g_ks_cell_scatter.chunk(tid);
+    // One nb²·ncells accumulator per chunk of the task list, folded in
+    // ascending chunk order — see collocate_products for the rationale.
+    const device::ChunkedRange range(nt,
+                                     scatter_chunks(nnall * sizeof(double)));
+    const long nc = range.chunks();
+    g_ks_cell_scatter.prepare_zeroed(nc, nnall);
+#pragma omp parallel for schedule(dynamic, 1)
+    for (long c = 0; c < nc; ++c) {
+        double* Vloc = g_ks_cell_scatter.chunk(c);
         std::vector<double> gacc;
         gacc.reserve(64);
-#pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < nt; ++g) {
+        const long glo = range.begin(c), ghi = range.end(c);
+        for (long g = glo; g < ghi; ++g) {
             const CollintTask& task = tasks[static_cast<std::size_t>(g)];
             const int n = task.end - task.beg;
             if (n <= 0)
@@ -1483,8 +1498,8 @@ std::vector<std::vector<double>> integrate_products_cells(
 #pragma omp parallel for schedule(static)
     for (long kk = 0; kk < static_cast<long>(nnall); ++kk) {
         double s = 0.0;
-        for (int t = 0; t < nthreads; ++t)
-            s += g_ks_cell_scatter.chunk(t)[static_cast<std::size_t>(kk)];
+        for (long c = 0; c < nc; ++c)
+            s += g_ks_cell_scatter.chunk(c)[static_cast<std::size_t>(kk)];
         V[static_cast<std::size_t>(kk) / nn]
          [static_cast<std::size_t>(kk) % nn] = s;
     }

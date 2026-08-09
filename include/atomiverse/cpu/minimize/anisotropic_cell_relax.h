@@ -17,11 +17,9 @@ namespace minimizer {
 /// Reads Voigt stress on `kStress`; independently scales axes toward
 /// target pressure \(P_{\mathrm{target}}\) (same on each axis for v1).
 ///
-/// Two `kStress` conventions coexist in the tree (pre-existing divergence,
-/// made explicit here): classical pair/bond writers accumulate the
-/// **extensive virial [eV]** (default, `stress_is_virial = true` — per-axis
-/// pressure is σ_dd/V), while the PW/GPW evaluators write **intensive stress
-/// [eV/Å³]** (`stress_is_virial = false` — σ_dd is used directly). Axes may
+/// `kStress` is the **extensive Voigt virial [eV]** for every producer
+/// (core/frame_schema.h), so the per-axis pressure is σ_dd/V
+/// unconditionally. Axes may
 /// be masked out (`relax_x/y/z`) for constrained variable-cell runs
 /// (CP2K `CELL_OPT` `CONSTRAINT` twin): a masked axis is never scaled and
 /// never enters the residual.
@@ -31,10 +29,6 @@ class AnisotropicCellRelax : public Optimizer {
     double alpha0 = 0.05;    ///< Scale gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per axis.
     double bulk_mod = 1.0;   ///< Soft bulk modulus [eV/Å³].
-    /// `kStress` holds the extensive virial [eV] (classical writers; divide
-    /// by V). Set false when the bound evaluator writes intensive stress
-    /// [eV/Å³] (PW `with_stress`, GPW `compute_stress`).
-    bool stress_is_virial = true;
     bool relax_x = true; ///< Relax the x box edge.
     bool relax_y = true; ///< Relax the y box edge.
     bool relax_z = true; ///< Relax the z box edge.

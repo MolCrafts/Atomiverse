@@ -243,8 +243,11 @@ TEST(DFTB2DispersionD3, StressIncludesD3) {
         max_diff =
             std::max(max_diff, std::abs(st_on[static_cast<std::size_t>(v)]
                                         - st_off[static_cast<std::size_t>(v)]));
+        // kStress is the extensive Voigt virial [eV]; last_stress() is the
+        // intensive σ [eV/Å³] (core/frame_schema.h).
         EXPECT_NEAR(st_meta[static_cast<std::size_t>(v)],
-                    st_on[static_cast<std::size_t>(v)], 1e-14);
+                    st_on[static_cast<std::size_t>(v)] * f_on.box.volume(),
+                    1e-14 * f_on.box.volume());
     }
     EXPECT_GT(max_diff, 1e-12) << "σ(d3=true) should differ from σ(d3=false)";
 

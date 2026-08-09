@@ -2,6 +2,7 @@
 /// @brief Unit tests for cpu::md::FixWallLJ1043 (Steele 10-4-3).
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -85,6 +86,61 @@ TEST(FixWallLJ1043, AnalyticEnergyAndForceAtSeveralR) {
         EXPECT_NEAR(f.span(kAtom_fy)[0], 0.0, 1e-15);
         EXPECT_NEAR(wall.last_energy(), U_shift(c, r), 1e-12);
     }
+}
+
+// The 10-4-3 form is defined only on 0 < r < r_c: it diverges as r->0+ and its
+// third term turns attractive past the pole at r = -(0.61/sqrt2)*sigma. An atom
+// at r <= 0 therefore has no wall energy, and skipping it would delete the wall
+// for that atom permanently (F = 0 => it can never re-enter).
+TEST(FixWallLJ1043, ThrowsOnWallSurface) {
+    const double eps = 0.010338, sig = 3.40, rc = 12.0;
+    cpu::Context ctx;
+    auto f = one_atom_z(0.0); // exactly on the lo wall => delta == 0
+    cpu::md::FixWallLJ1043 wall(2, -1, 0.0, eps, sig, rc);
+    EXPECT_THROW(wall.launch({ctx, f, 0, 0}), std::runtime_error);
+}
+
+TEST(FixWallLJ1043, ThrowsBehindLoWallNamingAxisAndCoord) {
+    const double eps = 0.010338, sig = 3.40, rc = 12.0;
+    cpu::Context ctx;
+    auto f = one_atom_z(-0.5);
+    cpu::md::FixWallLJ1043 wall(2, -1, 0.0, eps, sig, rc);
+    try {
+        wall.launch({ctx, f, 0, 0});
+        FAIL() << "expected std::runtime_error for an atom behind the wall";
+    } catch (const std::runtime_error& e) {
+        const std::string msg = e.what();
+        EXPECT_NE(msg.find("axis z"), std::string::npos) << msg;
+        EXPECT_NE(msg.find("-0.5"), std::string::npos) << msg;
+    }
+}
+
+TEST(FixWallLJ1043, ThrowsBehindHiWall) {
+    const double eps = 0.010338, sig = 3.40, rc = 12.0;
+    cpu::Context ctx;
+    auto f = one_atom_z(26.0);
+    cpu::md::FixWallLJ1043 wall(2, +1, /*wall_pos=*/25.0, eps, sig, rc);
+    EXPECT_THROW(wall.launch({ctx, f, 0, 0}), std::runtime_error);
+}
+
+// The boundary is r > 0 exactly, not "r beyond some tolerance".
+TEST(FixWallLJ1043, StrictlyPositiveSeparationIsLegal) {
+    const double eps = 0.010338, sig = 3.40, rc = 12.0;
+    cpu::Context ctx;
+    auto f = one_atom_z(1e-12);
+    cpu::md::FixWallLJ1043 wall(2, -1, 0.0, eps, sig, rc);
+    EXPECT_NO_THROW(wall.launch({ctx, f, 0, 0}));
+}
+
+// A configuration with no defined wall energy must not deposit a partial one.
+TEST(FixWallLJ1043, RejectedConfigurationLeavesFrameUntouched) {
+    const double eps = 0.010338, sig = 3.40, rc = 12.0;
+    cpu::Context ctx;
+    auto f = one_atom_z(-0.5);
+    cpu::md::FixWallLJ1043 wall(2, -1, 0.0, eps, sig, rc);
+    EXPECT_THROW(wall.launch({ctx, f, 0, 0}), std::runtime_error);
+    EXPECT_EQ(f.meta.get(kEnergy), 0.0);
+    EXPECT_EQ(f.span(kAtom_fz)[0], 0.0);
 }
 
 TEST(FixWallLJ1043, ZeroBeyondCutoff) {

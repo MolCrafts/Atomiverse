@@ -4,6 +4,12 @@
 /// The full virial stress tensor is
 ///   σ_αβ = (1/V) [Σ_i m_i v_iα v_iβ + Σ_{pairs} r_ij_α F_ij_β]
 ///
+/// The device buffers hold the **extensive** bracketed terms [eV] — *not* σ —
+/// matching the `kStress` / `kStressKinetic` contract on the CPU side
+/// (`core/frame_schema.h`): extensive is what makes `+=` across evaluators and
+/// the MPI sum of rank-local partials well-defined. The 1/V is applied by the
+/// consumer, as the producer split below states.
+///
 /// Producer split:
 ///   - Kinetic term `Σ m·vα·vβ · ATV::units::mass_v2_to_energy` → `cuda::md::KineticEnergy`
 ///     atomic-adds it into `frame.scalars->stress_kinetic[6]` via the

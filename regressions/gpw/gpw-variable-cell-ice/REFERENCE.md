@@ -4,7 +4,7 @@
 
 Productizes GPW strain-FD stress (`gpw-stress-water`) into **variable-cell
 relaxation**: `cpu::minimizer::Minimize` + `AnisotropicCellRelax`
-(per-axis mask `relax_x` only; `stress_is_virial = false` — GPW writes
+(per-axis mask `relax_x` only; `kStress` is the extensive Voigt virial
 intensive `kStress` [eV/Å³]) + `StressConverged` criterion, with
 `cpu::gpw::GPWEvaluator` (`compute_stress = true`,
 `stress_axes = {x only}`) bound at the `force` phase. `GPWEvaluator::launch`
@@ -174,7 +174,7 @@ mpirun -np 1 cp2k.psmp -i chain_cellopt.inp -o cellopt.out
    intensive stress [eV/Å³] on the same meta key.
    `IsotropicCellRelax` / `PressureConverged` divide by V (virial
    convention). This slug makes the convention explicit at the read site
-   (`AnisotropicCellRelax::stress_is_virial`, `StressConverged` docs);
+   (`AnisotropicCellRelax`, `StressConverged` docs);
    unifying the schema key is a dedicated follow-up.
 2. **`copy_gpw` dropped `d4` / `plus_u` / `atom_spin_guess`** in
    `internal/gpw_stress.cpp` — strained stress SCFs silently lost D4/DFT+U/

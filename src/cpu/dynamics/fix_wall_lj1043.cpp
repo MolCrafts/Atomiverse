@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/component/owned_range.h"
@@ -87,7 +88,14 @@ void FixWallLJ1043::launch(const cpu::LaunchContext& ctx) {
     double u = 0.0;
     const bool want_force = ctx.forces_requested;
 
-#pragma omp parallel for reduction(+ : u) schedule(static)
+    // Lowest owned index found on or behind the wall; `n` means "none". A throw
+    // cannot leave an OpenMP region, so the condition is collected with a `min`
+    // reduction (LAMMPS's `onflag` shape) and raised after the loop. `min` makes
+    // the reported atom independent of the thread count.
+    int on_wall_i = n;
+
+#pragma omp parallel for reduction(+ : u) reduction(min : on_wall_i)            \
+    schedule(static)
     for (int i = 0; i < n; ++i) {
         // delta = distance into the fluid half-space (LAMMPS wall_particle).
         const double xi = static_cast<double>(x[i]);
@@ -97,8 +105,14 @@ void FixWallLJ1043::launch(const cpu::LaunchContext& ctx) {
         else
             delta = coord - xi; // hi: atom below wall
 
-        if (delta <= 0.0)
-            continue; // on or behind wall — skip (foothold: no hard error)
+        if (delta <= 0.0) {
+            // The 10-4-3 potential diverges as r->0+ and its third term has a
+            // pole at r = -(0.61/sqrt2)*sigma, so it has no value for r <= 0.
+            // Skipping the atom would make the wall vanish for it permanently
+            // (F = 0 => it can never re-enter) and break energy conservation.
+            on_wall_i = i < on_wall_i ? i : on_wall_i;
+            continue;
+        }
         if (delta >= rc)
             continue;
 
@@ -120,6 +134,19 @@ void FixWallLJ1043::launch(const cpu::LaunchContext& ctx) {
 
         // U = coeff1/r^10 - coeff2/r^4 - coeff3/(r+c4)^3 - offset
         u += coeff1_ * r10inv - coeff2_ * r4inv - coeff3_ * rp3_inv - offset_;
+    }
+
+    // Raise before any of this launch's energy reaches the Frame: a
+    // configuration with no defined wall energy must not deposit a partial one.
+    if (on_wall_i < n) {
+        const char kAxisName[3] = {'x', 'y', 'z'};
+        throw std::runtime_error(
+            std::string("FixWallLJ1043: atom ") + std::to_string(on_wall_i)
+            + " is on or behind the wall (axis " + kAxisName[dim] + ", side "
+            + (sgn < 0 ? "lo" : "hi") + ", wall_pos=" + std::to_string(coord)
+            + ", coord=" + std::to_string(static_cast<double>(x[on_wall_i]))
+            + "). The 10-4-3 potential diverges as r->0+ and is undefined for "
+              "r <= 0. Reduce the timestep or move the wall.");
     }
 
     last_u_ = u;

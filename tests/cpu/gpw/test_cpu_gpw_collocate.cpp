@@ -108,3 +108,30 @@ TEST(GpwCollocate, GridSizingFromCutoff) {
     EXPECT_EQ(g.n[2], expected);
     EXPECT_GT(g.weight(), 0.0);
 }
+
+// ── Center-derivative reach ────────────────────────────────────────────────
+// d φ / dR_k = 2α φ_{l_k+1} − l_k φ_{l_k−1}: the l+1 component decays as
+// r^{l+1} e^{−αr²} against φ's r^l e^{−αr²}, so it crosses any fixed eps
+// FARTHER out than φ does. Every consumer that sizes lattice-image ranges for
+// a loop whose pair reach is `radius(dφ_μ) + radius(φ_ν)` must therefore size
+// them from the derivative radius, not from φ's — sizing from 2·max radius(φ)
+// silently drops images from the gradient that the energy's own lattice sum
+// keeps. This pins the inequality that rule rests on.
+TEST(GpwCollocate, CenterDerivativeReachesFartherThanTheFunction) {
+    for (double alpha : {0.15, 0.5, 2.0, 8.0}) {
+        GridBasisFunction s;
+        s.push_back(GridPrimitive{alpha, {0.0, 0.0, 0.0}, {0, 0, 0}, 1.0});
+
+        // d/dR_x of an s primitive is the 2α·p_x component alone.
+        GridBasisFunction dsx;
+        dsx.push_back(
+            GridPrimitive{alpha, {0.0, 0.0, 0.0}, {1, 0, 0}, 2.0 * alpha});
+
+        for (double eps : {1e-6, 1e-8, 1e-10, 1e-12}) {
+            const double r = ATV::cpu::gpw::basis_function_radius(s, eps);
+            const double rd = ATV::cpu::gpw::basis_function_radius(dsx, eps);
+            EXPECT_GT(rd, r) << "alpha=" << alpha << " eps=" << eps
+                             << " radius(phi)=" << r << " radius(dphi)=" << rd;
+        }
+    }
+}

@@ -48,7 +48,6 @@ int main() {
     cpu::minimizer::IsotropicCellRelax cell(0.0, 0.05);
     cell.max_scale = 0.05;
     cell.bulk_mod = 0.2;
-    cell.stress_is_virial = false; // PW intensive kStress [eV/Å³]
     opt.set_optimizer_ref(cell);
     opt.add_criterion(cpu::StressConverged{0.0, 1e-2});
     opt.on(minimizer::Phase::force)

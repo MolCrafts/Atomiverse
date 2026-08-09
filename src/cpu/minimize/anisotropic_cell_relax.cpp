@@ -53,10 +53,11 @@ void AnisotropicCellRelax::launch(const LaunchContext& ctx) {
         throw std::runtime_error("AnisotropicCellRelax: non-positive volume");
     const auto& s = f.meta.get(kStress);
 
-    // Per-axis pressure: extensive virial → σ_dd/V; intensive stress → σ_dd.
-    const double Px = stress_is_virial ? s[0] / V : s[0];
-    const double Py = stress_is_virial ? s[1] / V : s[1];
-    const double Pz = stress_is_virial ? s[2] / V : s[2];
+    // kStress is the extensive Voigt virial [eV] for every producer, so the
+    // per-axis pressure is W_dd/V unconditionally.
+    const double Px = s[0] / V;
+    const double Py = s[1] / V;
+    const double Pz = s[2] / V;
 
     // Residual over the RELAXED axes only (masked axes are not driven to
     // P_target — their stress is a constraint reaction, not an objective).

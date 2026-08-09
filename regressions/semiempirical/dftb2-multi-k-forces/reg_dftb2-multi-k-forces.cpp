@@ -172,7 +172,12 @@ int main() {
     // an affine strain enters only through the bonds. Self-images (A, A+T)
     // carry no force but do scale, and Lx = 2.8 Å < r_cut = 4.5 Å here, so
     // this gate is exactly what a molecule-in-a-box stress case cannot see.
-    const auto& sigma = frame.meta.get(kStress);
+    // kStress is the extensive Voigt virial [eV] (core/frame_schema.h);
+    // these gates are written against the intensive stress W/V [eV/A^3].
+    const auto& w_ext = frame.meta.get(kStress);
+    double sigma[6];
+    for (int v = 0; v < 6; ++v)
+        sigma[v] = w_ext[static_cast<std::size_t>(v)] / frame.box.volume();
     constexpr double h_s = 2.0e-4;
     constexpr double kStressTol = 1.0e-6; // eV/Å³
     const double vol = frame.box.volume();

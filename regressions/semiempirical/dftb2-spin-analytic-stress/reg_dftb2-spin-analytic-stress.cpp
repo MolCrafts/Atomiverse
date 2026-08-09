@@ -149,7 +149,12 @@ int check_case(const char* label, int z1, double r_ang, int multiplicity) {
     // central-difference truncation error.
     constexpr double tol = 1e-8; // eV/A^3
     const double vol = frame.box.volume();
-    const auto& st = frame.meta.get(kStress);
+    // kStress is the extensive Voigt virial [eV] (core/frame_schema.h);
+    // these gates are written against the intensive stress W/V [eV/A^3].
+    const auto& w_ext = frame.meta.get(kStress);
+    double st[6];
+    for (int v = 0; v < 6; ++v)
+        st[v] = w_ext[static_cast<std::size_t>(v)] / vol;
 
     for (int voigt = 0; voigt < 6; ++voigt) {
         const double s_an = st[static_cast<std::size_t>(voigt)];

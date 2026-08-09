@@ -30,7 +30,6 @@ This page is the **pin-quality MOLOPT re-twin** of
   `stress_axes = {x}`;
 - outer loop: `cpu::minimizer::Minimize` +
   `cpu::minimizer::AnisotropicCellRelax` (`relax_x` only,
-  `stress_is_virial = false`) + criterion `cpu::StressConverged`
   (x-only).
 
 Hard-coded offline **CP2K 2026.1** CELL_OPT pins (never live from ctest):
@@ -209,7 +208,6 @@ cpu::minimizer::Minimize opt;
 cpu::minimizer::AnisotropicCellRelax cell(/*P_target*/ 0.0, /*alpha*/ 1.0);
 cell.bulk_mod = 0.20;          // from offline E(a) curvature [eV/Å³]
 cell.max_scale = 0.05;
-cell.stress_is_virial = false; // GPW writes intensive stress [eV/Å³]
 cell.relax_y = false;
 cell.relax_z = false;
 opt.set_optimizer_ref(cell);

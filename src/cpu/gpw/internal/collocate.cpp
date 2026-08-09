@@ -239,6 +239,38 @@ build_compact_basis_grid(const UniformGrid& grid,
         cbg.fu[pos] = t.u;
         cbg.fv[pos] = t.v;
     }
+    // Coalesce duplicate (g, u) entries. A window wider than the box maps
+    // several unwrapped cells of the same function onto one grid point, and
+    // the stable counting sort leaves those images adjacent, so summing runs
+    // of equal `u` stores the Γ Bloch sum χ_u(r_g) = Σ_T φ_u(r_g − T) as ONE
+    // entry. The per-image layout silently broke the KS-integrate triangle:
+    // the cross-image product φ_u^{T1}·φ_u^{T2} belongs to the DIAGONAL
+    // element (u,u), which the upper-triangle + symmetrize pass counts once
+    // instead of twice — the Γ H_KS was not the exact ∂E/∂P of the collocated
+    // energy, so the Γ SCF fixed point drifted off the k={Γ} path's.
+    {
+        std::vector<std::size_t> noff;
+        noff.reserve(cbg.off.size());
+        noff.push_back(0);
+        std::size_t w = 0;
+        for (std::size_t a = 0; a + 1 < cbg.off.size(); ++a) {
+            const std::size_t s = cbg.off[a], e = cbg.off[a + 1];
+            const std::size_t pstart = w;
+            for (std::size_t i = s; i < e; ++i) {
+                if (w > pstart && cbg.fu[w - 1] == cbg.fu[i]) {
+                    cbg.fv[w - 1] += cbg.fv[i];
+                } else {
+                    cbg.fu[w] = cbg.fu[i];
+                    cbg.fv[w] = cbg.fv[i];
+                    ++w;
+                }
+            }
+            noff.push_back(w);
+        }
+        cbg.fu.resize(w);
+        cbg.fv.resize(w);
+        cbg.off = std::move(noff);
+    }
     return cbg;
 }
 

@@ -4,15 +4,12 @@
 /// Reads Voigt stress on `kStress` and isotropically scales the Box
 /// (+ affine atom coordinates) toward a target pressure \(P_{\mathrm{target}}\).
 ///
-/// Two `kStress` conventions coexist (same as `AnisotropicCellRelax`):
-/// classical pair/bond writers accumulate the **extensive virial [eV]**
-/// (`stress_is_virial = true`, default — \(P=\mathrm{tr}(\sigma)/(3V)\));
-/// PW/GPW evaluators write **intensive stress [eV/Å³]**
-/// (`stress_is_virial = false` — \(P=\mathrm{tr}(\sigma)/3\)).
+/// `kStress` is the **extensive Voigt virial [eV]** for every producer
+/// (core/frame_schema.h), so \(P=\mathrm{tr}(\sigma)/(3V)\) unconditionally.
 ///
 /// Termination is **not** ForceConverged by default — use
-/// `cpu::PressureConverged` (classical virial) or `cpu::StressConverged`
-/// (intensive PW/GPW). Atom positions only scale affinely with the cell.
+/// `cpu::PressureConverged` or `cpu::StressConverged`. Atom positions only
+/// scale affinely with the cell.
 #pragma once
 
 #include <string>
@@ -33,10 +30,6 @@ class IsotropicCellRelax : public Optimizer {
     double alpha0 = 0.05; ///< Relative scale step gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per step (dimensionless).
     double bulk_mod = 1.0;   ///< Soft bulk modulus scale [eV/Å³] for step size.
-    /// `kStress` holds the extensive virial [eV] (classical; divide by V).
-    /// Set false when the bound evaluator writes intensive stress [eV/Å³]
-    /// (PW `with_stress`, GPW `compute_stress`).
-    bool stress_is_virial = true;
 
     /// @brief Construct with zero target pressure and default step gains.
     IsotropicCellRelax() = default;

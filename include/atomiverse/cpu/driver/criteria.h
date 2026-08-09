@@ -169,11 +169,19 @@ class StressConverged : public Criterion {
     void launch(const LaunchContext&) override {}
 
     Verdict verdict(const LoopState& s) override {
+        // kStress is the extensive Voigt virial [eV] (core/frame_schema.h), so
+        // the intensive stress this criterion judges is st[d]/V. Reading st[d]
+        // directly — as this did before the convention was fixed — compared an
+        // eV number against an eV/Å³ tolerance, which for a classical evaluator
+        // is off by the cell volume (~10³ Å³) and fired on the first iteration.
+        const double V = s.frame.box.volume();
+        if (!(V > 0.0))
+            throw std::runtime_error("StressConverged: non-positive volume");
         const auto& st = s.frame.meta.get(kStress);
         double r = 0.0;
         for (std::size_t d = 0; d < 3; ++d)
             if (check_[d])
-                r = std::max(r, std::fabs(st[d] - sigma_target_));
+                r = std::max(r, std::fabs(st[d] / V - sigma_target_));
         return (r < stol_) ? Verdict::Converged : Verdict::Continue;
     }
 

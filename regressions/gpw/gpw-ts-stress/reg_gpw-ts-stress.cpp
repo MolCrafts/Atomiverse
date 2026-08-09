@@ -251,6 +251,9 @@ int main() {
           "D sigma(ts)-sigma(plain) equals the libMBD strain-FD term");
 
     // ── E: Frame kStress unit conversion (eV/Å³) ──────────────────────────
+    // kStress is the extensive Voigt virial [eV]: the method's Ha/Bohr^3
+    // return stays intensive, so the published value is sigma * V.
+    const double kStressVolA3 = frame.box.volume();
     const auto& st = frame.meta.get(kStress);
     const double ha_bohr3_to_ev_a3 =
         units::kHartreeInEv
@@ -259,8 +262,8 @@ int main() {
     bool conv_ok = true;
     for (int k = 0; k < 3; ++k) {
         const double expect =
-            san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9)
+            san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3)
             conv_ok = false;
     }
     check(conv_ok, "E kStress unit conversion");

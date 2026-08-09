@@ -35,6 +35,43 @@ const Kind& find_kind(const std::vector<Kind>& kinds, int z) {
         "GPWEvaluator: no basis/potential configured for Z="
         + std::to_string(z));
 }
+
+/// @brief Refuse a cell GPW cannot represent.
+///
+/// GPW carries the cell as three edge lengths and builds its lattice images
+/// from them, so a sheared frame would be solved on `diag(h)` — a *different*
+/// Bravais lattice. The Gamma-point Bloch sum would then run over the wrong
+/// images and every lattice-sum quantity (S, T, V_pp, V_nl, rho) would be wrong
+/// at O(shear), not O(shear^2), while `Box::volume()` still reported |det h|.
+/// There is no regime in which that is an approximation of the requested
+/// system, so it is refused rather than approximated.
+///
+/// @param box Frame cell [Angstrom].
+/// @param who Call site name, for the message.
+/// @throws std::invalid_argument if `box` has any non-zero off-diagonal entry.
+void require_orthorhombic(const cpu::Box& box, const char* who) {
+    if (box.is_orthorhombic())
+        return;
+    const Mat3& h = box.cell();
+    std::string msg = std::string(who)
+                      + ": GPW supports orthorhombic cells only, but the frame "
+                        "cell is sheared (";
+    bool first = true;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) {
+            if (i == j || h(i, j) == 0.0)
+                continue;
+            if (!first)
+                msg += ", ";
+            first = false;
+            msg += "h(" + std::to_string(i) + "," + std::to_string(j)
+                   + ")=" + std::to_string(h(i, j));
+        }
+    msg += " [Angstrom]). Supply a diagonal cell matrix (e.g. "
+           "cpu::Box::orthorhombic(a, b, c)), or use a method that handles a "
+           "general cell.";
+    throw std::invalid_argument(msg);
+}
 } // namespace
 
 namespace {
@@ -130,10 +167,16 @@ void add_stress_to_frame(cpu::Frame& frame,
         ATV::units::kHartreeInEv
         / (ATV::units::kBohrInAngstrom * ATV::units::kBohrInAngstrom
            * ATV::units::kBohrInAngstrom);
+    // kStress is the EXTENSIVE Voigt virial [eV] (see core/frame_schema.h): it
+    // is `+=`-accumulated by every evaluator and MPI-summed over ranks, and
+    // both of those are only defined for an extensive quantity. GPW computes
+    // the intensive σ = −(1/Ω)∂E/∂ε, so the volume goes back in here — the
+    // method-level Ha/Bohr³ return stays intensive.
+    const double vol = frame.box.volume();
     auto& st = frame.meta.get(kStress);
     for (int k = 0; k < 6; ++k)
         st[static_cast<std::size_t>(k)] +=
-            sigma_ha[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3;
+            sigma_ha[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * vol;
 }
 } // namespace
 
@@ -147,6 +190,8 @@ void GPWEvaluator::set_timestep(double dt_fs) {
 }
 
 void GPWEvaluator::build(const cpu::BuildContext& ctx) {
+    require_orthorhombic(ctx.frame.box, "GPWEvaluator::build");
+
     // Validate that every atom in the frame has a configured element, and
     // count valence electrons for the closed-shell occupation.
     const int n_build = ctx.frame.nlocal();
@@ -414,6 +459,12 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
 void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
     cpu::Frame& frame = ctx.frame;
     const int n = frame.nlocal();
+
+    // Re-checked every launch, not only at build: this is the variable-cell
+    // path, and TriclinicCellRelax and ParrinelloRahmanNPT both write a general
+    // cell matrix back to the Frame between launches. A build-time-only guard
+    // would let those silently reduce the cell to its diagonal.
+    require_orthorhombic(frame.box, "GPWEvaluator::launch");
 
     // Variable cell: re-target the solver to the frame's current orthorhombic
     // box. GpwDft::run rebuilds every geometry-dependent structure (grids,

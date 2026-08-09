@@ -252,7 +252,35 @@ inline constexpr MetaKey<double> kEnergyElectronKinetic{
 /// Nosé–Hoover electronic thermostat energy [eV] (0 for NVE electrons).
 inline constexpr MetaKey<double> kEnergyElectronThermostat{
     "energy_electron_thermostat", true};
+/// @brief Configurational stress: the **extensive Voigt virial**
+///        \(W_{ab}=\sum_{i<j} r_{ij,a}F_{ij,b}\), Voigt order
+///        (xx, yy, zz, xy, xz, yz), in **eV**, **compression-positive**,
+///        **excluding** the kinetic term (that is `kStressKinetic`).
+///
+/// Extensive is forced, not chosen. Every evaluator `+=`-accumulates onto this
+/// one key, and the driver MPI-`Reduce`s it by summing rank-local partials —
+/// both are defined only for an extensive quantity (summing rank-local
+/// *intensive* stresses would multiply σ by the rank count).
+///
+/// Consequences for producers and consumers:
+/// - Classical pair/bond/long-range writers already accumulate \(W\) directly.
+/// - Methods that naturally compute the intensive
+///   \(\sigma_{ab}=-(1/\Omega)\,\partial E/\partial\varepsilon_{ab}\)
+///   (PW, GPW, DFTB2) multiply by the cell volume **at the Frame write**; their
+///   own `last_stress()` / `pw_stress()` returns stay intensive [eV/Å³].
+/// - Every consumer divides by \(V\) to obtain a pressure: `IsotropicCellRelax`
+///   and `JointIsotropicRelax` use \(\mathrm{tr}(W)/(3V)\),
+///   `AnisotropicCellRelax` and `TriclinicCellRelax` use \(W_{ab}/V\), and
+///   `StressConverged` judges \(W_{dd}/V\) against a target in eV/Å³.
+///
+/// Sign and factor follow Nielsen & Martin, Phys. Rev. B **32**, 3780 (1985),
+/// Eqs. (5)–(6) (\(\sigma_{\alpha\beta}=T_{\alpha\beta}/\Omega\)); the DFT
+/// strain-derivative form and the classical virial are the *same tensor* up to
+/// \(1/\Omega\), since \(\partial E/\partial\varepsilon_{ab}=-W_{ab}\).
 inline constexpr MetaKey<MetaF64x6> kStress{"stress", true};
+/// @brief Kinetic stress \(\sum_i m_i v_{ia} v_{ib}\) [eV] — extensive, same
+///        Voigt order and sign convention as `kStress`, kept on a separate key
+///        so a 0 K geometry optimization can ignore it.
 inline constexpr MetaKey<MetaF64x6> kStressKinetic{"stress_kinetic", true};
 /// Per-electrode total charge [e], first ≤3 electrodes (ElectrodeChargeObserver).
 inline constexpr MetaKey<MetaF64x3> kElectrodeCharge{"electrode_charge", true};

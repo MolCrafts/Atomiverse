@@ -36,9 +36,14 @@ void PWEvaluator::launch(const cpu::LaunchContext& ctx) {
         ctx.frame.meta.get(kEnergy) += energy_ry * qe_units::rydberg_to_ev;
         ctx.frame.meta.get(kEnergyElectronic) +=
             energy_ry * qe_units::rydberg_to_ev;
+        // kStress is the EXTENSIVE Voigt virial [eV] (see core/frame_schema.h):
+        // pw_stress returns the intensive sigma [eV/A^3], so it is multiplied by
+        // the cell volume on the way onto the shared, `+=`-accumulated key.
+        const double vol = ctx.frame.box.volume();
         auto& st = ctx.frame.meta.get(kStress);
         for (int k = 0; k < 6; ++k)
-            st[static_cast<std::size_t>(k)] += s[static_cast<std::size_t>(k)];
+            st[static_cast<std::size_t>(k)] +=
+                s[static_cast<std::size_t>(k)] * vol;
         return;
     }
 
@@ -72,9 +77,12 @@ void PWEvaluator::launch(const cpu::LaunchContext& ctx) {
         const auto saved = ctx.frame.resolution_window();
         const auto s = pw_stress(ctx.frame, method_); // eV/Å³ Voigt
         ctx.frame.restore_resolution_window(saved);
+        // Intensive σ → extensive virial for the shared kStress key [eV].
+        const double vol = ctx.frame.box.volume();
         auto& st = ctx.frame.meta.get(kStress);
         for (int k = 0; k < 6; ++k)
-            st[static_cast<std::size_t>(k)] += s[static_cast<std::size_t>(k)];
+            st[static_cast<std::size_t>(k)] +=
+                s[static_cast<std::size_t>(k)] * vol;
     }
 }
 

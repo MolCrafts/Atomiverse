@@ -63,8 +63,7 @@ means attraction toward the wall for Ar at the equilibrium side of the well.
 **Key exclusions (non-goals of this slug)**
 
 - Variable / moving wall position, multi-wall in one object, lattice units.
-- `fld yes` / field-only modes, hard error when atom is on or behind the wall
-  (foothold skips \(r\le 0\) silently).
+- `fld yes` / field-only modes.
 - Multi-atom bulk slab fair-bench twin (deferred; pin is textbook 1-atom).
 - Live LAMMPS inside ctest; MetalWalls oracle (feature exists in LAMMPS).
 - Public `*Config` bags or `make_*` / `build_*` factories.
@@ -220,8 +219,11 @@ defined offline, record version + walls and replace `perf_exempt` in REFERENCE.
 
 - **Foothold scope.** Fixed planar wall; no variable wall motion, multi-wall
   object, or lattice-unit wall coordinates.
-- **Behind-wall atoms.** \(r\le 0\) are skipped silently (no LAMMPS-style
-  hard error / lose-atom path in this foothold).
+- **Behind-wall atoms.** \(r\le 0\) raises `std::runtime_error` naming the axis,
+  the wall position and the offending coordinate. The 10-4-3 form is defined
+  only on \(0<r<r_c\) — it diverges as \(r\to0^+\) and turns attractive past its
+  pole at \(r=-(0.61/\sqrt2)\sigma\) — so a behind-wall atom has no wall energy
+  to report. Reduce the timestep or move the wall.
 - **No fair speed ratio** until a multi-atom slab twin is pinned offline.
 - **E8 force-field slice only.** Related continuum / pair styles (Born,
   Fumi–Tosi, Buckingham) are sibling slugs with their own pages when written.

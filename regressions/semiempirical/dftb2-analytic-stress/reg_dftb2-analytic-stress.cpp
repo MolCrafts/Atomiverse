@@ -127,7 +127,13 @@ int main() {
         return 1;
     }
 
-    const auto& st = frame.meta.get(kStress);
+    // kStress is the extensive Voigt virial [eV] (core/frame_schema.h); this
+    // gate is written against the intensive stress W/V [eV/A^3].
+    const double vol_a3 = frame.box.volume();
+    const auto& w = frame.meta.get(kStress);
+    double st[6];
+    for (int v = 0; v < 6; ++v)
+        st[v] = w[static_cast<std::size_t>(v)] / vol_a3;
     for (int v = 0; v < 6; ++v) {
         std::printf("  σ[%d]=%.8e eV/A3\n", v, st[static_cast<std::size_t>(v)]);
         if (!std::isfinite(st[static_cast<std::size_t>(v)])) {

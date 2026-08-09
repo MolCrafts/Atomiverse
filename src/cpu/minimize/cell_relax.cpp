@@ -25,14 +25,15 @@ IsotropicCellRelax::IsotropicCellRelax(double P_target_ev_a3, double alpha)
 }
 
 double IsotropicCellRelax::pressure_from_frame_(const Frame& f) const {
-    // Classical extensive virial: P = tr(σ)/(3V). Intensive PW/GPW: P = tr/3.
-    // Kinetic neglected for 0 K geometry optimization.
+    // kStress is the extensive Voigt virial [eV] for every producer, so
+    // P = tr(W)/(3V) unconditionally. Kinetic neglected for 0 K geometry
+    // optimization (it lives on kStressKinetic).
     const double V = f.box.volume();
     if (!(V > 0.0))
         throw std::runtime_error("IsotropicCellRelax: non-positive volume");
     const auto& s = f.meta.get(kStress);
     const double tr = s[0] + s[1] + s[2];
-    return stress_is_virial ? tr / (3.0 * V) : tr / 3.0;
+    return tr / (3.0 * V);
 }
 
 void IsotropicCellRelax::apply_scale_(Frame& f, double s) const {

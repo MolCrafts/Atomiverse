@@ -38,10 +38,16 @@ class ConstStress : public cpu::Potential {
         if (!ctx.at(ATV::minimizer::Phase::force))
             return;
         ctx.frame.meta.get(kEnergy) = 0.0;
+        // (sxx, syy, szz) is the constant *intensive* stress this stand-in
+        // represents [eV/Å³]. kStress carries the extensive Voigt virial [eV]
+        // (core/frame_schema.h), so it is published as σ·V against the frame's
+        // current volume — which keeps the represented stress constant while
+        // the relaxer rescales the cell.
+        const double vol = ctx.frame.box.volume();
         auto& st = ctx.frame.meta.get(kStress);
-        st[0] = sxx;
-        st[1] = syy;
-        st[2] = szz;
+        st[0] = sxx * vol;
+        st[1] = syy * vol;
+        st[2] = szz * vol;
         st[3] = st[4] = st[5] = 0.0;
     }
 };
@@ -74,7 +80,6 @@ TEST(AnisotropicCellRelax, IntensiveStressStepAndMask) {
     cpu::minimizer::AnisotropicCellRelax cell(0.0, /*alpha*/ 0.5);
     cell.bulk_mod = 1.0;
     cell.max_scale = 0.05;
-    cell.stress_is_virial = false;
     cell.relax_y = false;
     cell.relax_z = false;
     opt.set_optimizer_ref(cell);
@@ -99,7 +104,6 @@ TEST(AnisotropicCellRelax, MaxScaleClampsIntensiveStep) {
     cpu::minimizer::AnisotropicCellRelax cell(0.0, /*alpha*/ 1.0);
     cell.bulk_mod = 1.0;
     cell.max_scale = 0.03;
-    cell.stress_is_virial = false;
     cell.relax_y = false;
     cell.relax_z = false;
     opt.set_optimizer_ref(cell);
@@ -130,13 +134,17 @@ TEST(StressConverged, Name) {
     EXPECT_EQ(sc.name(), "stress_converged");
 }
 
-TEST(StressConverged, VerdictMaskedIntensive) {
+TEST(StressConverged, VerdictMaskedPerAxis) {
     cpu::Frame frame(1);
     frame.box = cpu::Box::cubic(10.0);
+    const double V = frame.box.volume(); // 1000 Å³
+    // kStress is the extensive Voigt virial [eV]; the criterion judges the
+    // intensive W_dd/V [eV/Å³] against its tolerance, so the stresses under
+    // test are published as σ·V.
     auto& st = frame.meta.get(kStress);
-    st[0] = 5e-5; // under tol
-    st[1] = 0.5;  // way out — but masked below
-    st[2] = -0.5; // way out — masked
+    st[0] = 5e-5 * V; // σ_xx under tol
+    st[1] = 0.5 * V;  // way out — but masked below
+    st[2] = -0.5 * V; // way out — masked
     cpu::Context rt;
     ConvergenceMetrics metrics;
     cpu::LoopState s{/*iteration=*/0, frame, rt, metrics};
@@ -147,7 +155,7 @@ TEST(StressConverged, VerdictMaskedIntensive) {
     cpu::StressConverged all(0.0, 1e-4);
     EXPECT_EQ(all.verdict(s), Verdict::Continue);
 
-    st[0] = 2e-4; // x now out of tol
+    st[0] = 2e-4 * V; // σ_xx now out of tol
     EXPECT_EQ(x_only.verdict(s), Verdict::Continue);
 }
 

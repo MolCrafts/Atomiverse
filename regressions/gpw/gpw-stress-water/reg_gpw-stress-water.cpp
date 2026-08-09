@@ -123,6 +123,9 @@ int main() {
     }
 
     // Frame kStress is eV/Å³ — check conversion finite and consistent.
+    // kStress is the extensive Voigt virial [eV]: the method's Ha/Bohr^3
+    // return stays intensive, so the published value is sigma * V.
+    const double kStressVolA3 = frame.box.volume();
     const auto& st = frame.meta.get(kStress);
     const double ha_bohr3_to_ev_a3 =
         units::kHartreeInEv
@@ -130,8 +133,8 @@ int main() {
            * units::kBohrInAngstrom);
     for (int k = 0; k < 3; ++k) {
         const double expect =
-            s[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9) {
+            s[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;

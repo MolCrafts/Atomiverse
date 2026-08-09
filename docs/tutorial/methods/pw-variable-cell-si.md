@@ -6,7 +6,6 @@
 | ----- | ----- |
 | Slug | `pw-variable-cell-si` |
 | Regression | `regressions/pw/pw-variable-cell-si/` |
-| Public API | `cpu::minimizer::Minimize` + `IsotropicCellRelax` (`stress_is_virial = false`) + `StressConverged`; force slot: `cpu::pw::PWEvaluator{…}.with_stress(true)` → intensive `frame.meta.get(kStress)` [eV/Å³] |
 | Roadmap | [optimization.md](../../roadmap/optimization.md) § cell relax; [dft.md](../../roadmap/dft.md) § PW CELL_OPT; queue `docs/developer/cp2k-method-queue.md` `pw-variable-cell-si` (done) |
 
 ## Summary
@@ -65,7 +64,6 @@ zero). Conventional cubic lattice constant is recovered as
 | ----- | ---- |
 | `IsotropicCellRelax(P_target, alpha)` | steepest-descent scale toward \(P_\mathrm{target}\) |
 | `bulk_mod`, `max_scale` | soft \(B\) and per-step \(\lvert s-1\rvert\) cap (damp flat incomplete-basis EOS) |
-| `stress_is_virial = false` | read intensive PW `kStress` [eV/Å³] |
 | `StressConverged{0, stol}` | stop when \(\max_d\lvert\sigma_{dd}-\sigma^\*\rvert \le \mathrm{stol}\) |
 
 **XC / spin / occupations.** `XCType::LSDA`; restricted closed shell; no metallic
@@ -156,7 +154,6 @@ cpu::minimizer::Minimize opt;
 cpu::minimizer::IsotropicCellRelax cell(/*P_target*/ 0.0, /*alpha*/ 1.0);
 cell.bulk_mod = 3.5;           // eV/Å³ — soft B damps incomplete-basis EOS
 cell.max_scale = 0.012;        // |s−1| cap per step
-cell.stress_is_virial = false; // intensive PW kStress [eV/Å³]
 opt.set_optimizer_ref(cell);
 opt.add_criterion(cpu::StressConverged{0.0, kStol});
 opt.on(minimizer::Phase::force)

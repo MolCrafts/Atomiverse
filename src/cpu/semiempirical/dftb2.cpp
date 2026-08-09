@@ -2037,10 +2037,13 @@ double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
                     res.kpts, res.Pk, res.Wk, k_time_reversal, fx, fy, fz,
                     with_forces, with_stress ? stress_buf : nullptr);
             if (with_stress) {
+                // kStress is the extensive Voigt virial [eV]; `stress_buf` and
+                // `out_stress` (last_stress()) stay intensive [eV/Å³].
+                const double vol = f.box.volume();
                 auto& st = f.meta.get(kStress);
                 for (int v = 0; v < 6; ++v) {
                     out_stress[static_cast<std::size_t>(v)] = stress_buf[v];
-                    st[static_cast<std::size_t>(v)] += stress_buf[v];
+                    st[static_cast<std::size_t>(v)] += stress_buf[v] * vol;
                 }
             }
         }
@@ -2071,10 +2074,13 @@ double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
                                with_stress ? stress_buf : nullptr);
 
     if (with_stress) {
+        // kStress is the extensive Voigt virial [eV]; `stress_buf` and
+        // `out_stress` (last_stress()) stay intensive [eV/Å³].
+        const double vol = f.box.volume();
         auto& st = f.meta.get(kStress);
         for (int v = 0; v < 6; ++v) {
             out_stress[static_cast<std::size_t>(v)] = stress_buf[v];
-            st[static_cast<std::size_t>(v)] += stress_buf[v];
+            st[static_cast<std::size_t>(v)] += stress_buf[v] * vol;
         }
     }
     return energy;
@@ -2823,10 +2829,13 @@ double launch_3ob(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
                             with_stress ? stress_buf : nullptr,
                             f.box.volume());
         if (with_stress) {
+            // kStress is the extensive Voigt virial [eV]; `stress_buf` and
+            // `out_stress` (last_stress()) stay intensive [eV/Å³].
+            const double vol = f.box.volume();
             auto& st = f.meta.get(kStress);
             for (int v = 0; v < 6; ++v) {
                 out_stress[static_cast<std::size_t>(v)] = stress_buf[v];
-                st[static_cast<std::size_t>(v)] += stress_buf[v];
+                st[static_cast<std::size_t>(v)] += stress_buf[v] * vol;
             }
         }
     }
@@ -3086,7 +3095,11 @@ void DFTB2::launch(const LaunchContext& ctx) {
             for (int v = 0; v < 6; ++v) {
                 const double sig = res.virial[v] * w2e;
                 last_stress_[static_cast<std::size_t>(v)] += sig;
-                st[static_cast<std::size_t>(v)] += sig;
+                // kStress is the extensive Voigt virial [eV] — which for this
+                // term is the dftd3 pair virial itself, W·(Ha→eV), i.e. sig
+                // without the 1/V that made it intensive.
+                st[static_cast<std::size_t>(v)] +=
+                    res.virial[v] * units::kHartreeInEv;
             }
         }
     }

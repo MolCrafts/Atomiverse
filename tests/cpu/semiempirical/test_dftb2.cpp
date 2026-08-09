@@ -586,9 +586,11 @@ TEST(DFTB2, AnalyticStressMatchesStrainFdH2) {
     EXPECT_NEAR(san[0], strain_fd(0), 5e-4); // xx
     EXPECT_NEAR(san[1], strain_fd(1), 5e-4); // yy (~0 for axial H2)
 
-    // Frame meta accumulation
+    // Frame meta accumulation. last_stress() is the intensive σ [eV/Å³];
+    // kStress carries the extensive Voigt virial [eV] (core/frame_schema.h),
+    // so the published value is σ·V.
     const auto& st = f.meta.get(kStress);
-    EXPECT_NEAR(st[0], san[0], 1e-14);
+    EXPECT_NEAR(st[0], san[0] * f.box.volume(), 1e-14 * f.box.volume());
 }
 
 namespace {
@@ -678,11 +680,14 @@ TEST(DFTB2, SpinAnalyticStressMatchesStrainFdO2Triplet) {
             << "voigt=" << v;
     }
 
-    // Frame meta accumulation is the same buffer.
+    // Frame meta accumulation is the same buffer, in the extensive kStress
+    // convention: σ·V [eV] against last_stress()'s intensive σ [eV/Å³].
     const auto& st = f.meta.get(kStress);
+    const double vol_a3 = f.box.volume();
     for (int v = 0; v < 6; ++v)
         EXPECT_NEAR(st[static_cast<std::size_t>(v)],
-                    san[static_cast<std::size_t>(v)], 1e-14);
+                    san[static_cast<std::size_t>(v)] * vol_a3,
+                    1e-14 * vol_a3);
 
     // Translational invariance of the open-shell gradient is unchanged.
     double net[3] = {0, 0, 0};

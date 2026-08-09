@@ -7,7 +7,7 @@ variable-cell problem (fixed fractional coordinates; only the chain axis
 relaxes), productized as:
 
 `cpu::minimizer::Minimize` + `AnisotropicCellRelax` (`relax_x` only;
-`stress_is_virial = false`) + `StressConverged` + `cpu::gpw::GPWEvaluator`
+extensive `kStress` [eV]) + `StressConverged` + `cpu::gpw::GPWEvaluator`
 (`compute_stress = true`, product **analytic fixed-\(P\)** stress,
 `stress_axes = {x}`).
 

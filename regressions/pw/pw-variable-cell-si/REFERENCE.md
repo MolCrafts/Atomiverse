@@ -6,7 +6,7 @@ Productizes plane-wave **Nielsen–Martin analytic stress** (`pw-analytic-stress
 into **variable-cell relaxation**:
 
 - `cpu::minimizer::Minimize` + `IsotropicCellRelax` with
-  `stress_is_virial = false` (intensive `kStress` [eV/Å³])
+  extensive `kStress` [eV]; the relaxer divides by V
 - `StressConverged` criterion (mechanical / CP2K stress convention)
 - `cpu::pw::PWEvaluator{…}.with_stress(true)` bound at `force`
 - Stress-only evaluator path: **one** production SCF supplies both energy

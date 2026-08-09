@@ -15,6 +15,8 @@
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
+#include <cstdio>
 #include <complex>
 #include <stdexcept>
 #include <vector>
@@ -219,6 +221,9 @@ GridBasisFunction deriv_bf(const GridBasisFunction& bf, int k) {
     return d;
 }
 
+
+
+
 // Γ-point periodic <a | Σ_C v_C | b> over the given GTH centers: the ket b is
 // summed over its lattice images T (within `reach` of a), and each center C is
 // taken at its nearest image to the bra·ket product center. Matches the energy's
@@ -343,8 +348,27 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             basis_function_radius(basis[u], eps);
         rmax = std::max(rmax, radii[static_cast<std::size_t>(u)]);
     }
+    // Center-derivative basis functions d φ_u / dR_u along each axis, plus their
+    // radii (the l+1 component reaches slightly farther than φ_u).
+    std::vector<std::array<GridBasisFunction, 3>> dphi(nb);
+    std::vector<std::array<double, 3>> drad(nb);
+    double drmax = 0.0;
+    for (int u = 0; u < nb; ++u)
+        for (int k = 0; k < 3; ++k) {
+            dphi[u][k] = deriv_bf(basis[u], k);
+            drad[u][k] = basis_function_radius(dphi[u][k], eps);
+            drmax = std::max(drmax, drad[u][k]);
+        }
+
+    // Image extent must cover the LARGEST pair reach any loop below asks for.
+    // The Pulay and GTH operator-center loops ask for `drad[mu][k] + radii[nu]`,
+    // and `deriv_bf` raises l by one, so `drmax > rmax`: sizing the images from
+    // the undifferentiated `2*rmax` silently dropped images from the gradient
+    // that the energy's own lattice sum kept. The truncation only bites when
+    // images reach at all, which is why it vanished in a large enough cell.
     int mimg[3];
-    pair_image_counts(cfg.cell, periodic, 2.0 * rmax, mimg);
+    pair_image_counts(cfg.cell, periodic, std::max(2.0 * rmax, drmax + rmax),
+                      mimg);
 
     // ── Dudarev DFT+U geometric term ───────────────────────────────────────
     // n = ½(PS+SP)|shell depends on geometry through S, so at fixed P the +U
@@ -384,16 +408,6 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             W_use = &W_fold;
         }
     }
-
-    // Center-derivative basis functions d φ_u / dR_u along each axis, plus their
-    // radii (the l+1 component reaches slightly farther than φ_u).
-    std::vector<std::array<GridBasisFunction, 3>> dphi(nb);
-    std::vector<std::array<double, 3>> drad(nb);
-    for (int u = 0; u < nb; ++u)
-        for (int k = 0; k < 3; ++k) {
-            dphi[u][k] = deriv_bf(basis[u], k);
-            drad[u][k] = basis_function_radius(dphi[u][k], eps);
-        }
 
     // Grid + multi-image collocation (same window as the SCF density).
     UniformGrid grid = make_uniform_grid(cfg.cell, cfg.cutoff_ry);
@@ -1129,8 +1143,18 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
             basis_function_radius(basis[u], eps);
         rmax = std::max(rmax, radii[static_cast<std::size_t>(u)]);
     }
+    // Same image-extent rule as the Γ path: the derivative loops below ask for
+    // `drad[mu][k] + radii[nu]`, and `deriv_bf` raises l by one, so sizing the
+    // images from the undifferentiated `2*rmax` would drop images the energy's
+    // lattice sum keeps.
+    double drmax = 0.0;
+    for (int u = 0; u < nb; ++u)
+        for (int k = 0; k < 3; ++k)
+            drmax = std::max(drmax,
+                             basis_function_radius(deriv_bf(basis[u], k), eps));
     int mimg[3];
-    pair_image_counts(cfg.cell, /*periodic=*/true, 2.0 * rmax, mimg);
+    pair_image_counts(cfg.cell, /*periodic=*/true,
+                      std::max(2.0 * rmax, drmax + rmax), mimg);
 
     // ── Dudarev DFT+U geometric term (multi-k) ─────────────────────────────
     // BZ-averaged n = Σ_k w_k ½Herm[(P_k S_k)+(S_k P_k)]|shell depends on

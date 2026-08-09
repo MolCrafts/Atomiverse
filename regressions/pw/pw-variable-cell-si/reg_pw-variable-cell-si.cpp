@@ -92,7 +92,6 @@ int main() {
     // incomplete-basis EOS.
     cell.bulk_mod = 3.5;
     cell.max_scale = 0.012;
-    cell.stress_is_virial = false; // PW intensive kStress [eV/Å³]
     opt.set_optimizer_ref(cell);
     opt.add_criterion(cpu::StressConverged{0.0, kStol});
     opt.on(minimizer::Phase::force)
@@ -103,7 +102,11 @@ int main() {
     opt.run(frame, 3);
 
     const double a1 = conventional_a(frame);
-    const auto& st = frame.meta.get(kStress);
+    // kStress is the extensive Voigt virial [eV]; the intensive stress this
+    // gate is written against is W/V [eV/Å³].
+    const double vol = frame.box.volume();
+    const auto& w = frame.meta.get(kStress);
+    const double st[3] = {w[0] / vol, w[1] / vol, w[2] / vol};
     const double p_hydro = (st[0] + st[1] + st[2]) / 3.0;
     const double max_diag =
         std::max({std::fabs(st[0]), std::fabs(st[1]), std::fabs(st[2])});

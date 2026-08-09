@@ -33,10 +33,21 @@ namespace md {
 /// single-point Evaluate, register explicitly:
 /// `eval.on(evaluate::Phase::evaluate).add(FixWallLJ1043{…})`.
 ///
+/// The potential is defined only on \(0 < r < r_c\): it diverges as
+/// \(r\to0^+\), and its third term has a pole at \(r=-(0.61/\sqrt2)\sigma\),
+/// so for \(-0.431\sigma < r < 0\) the expression is finite and *attractive*.
+/// `launch` therefore throws `std::runtime_error` naming the axis, the wall
+/// position and the offending coordinate when any owned atom reaches \(r\le0\),
+/// before any of that launch's energy is written to the Frame.
+///
+/// This deliberately diverges from LAMMPS's own `fix_wall_lj1043.cpp`, which
+/// skips such atoms silently — an inconsistency within LAMMPS, whose every
+/// other wall style raises "Particle on or inside fix wall surface" and whose
+/// documentation requires \(r>0\). We follow the documented contract.
+///
 /// ── Not in scope ─────────────────────────────────────────────────────
 /// variable wall position, multi-wall in one object, `units lattice`,
-/// `fld yes`, particle-on/behind-wall hard error (atoms with \(r\le 0\) are
-/// skipped silently in this foothold).
+/// `fld yes`.
 class FixWallLJ1043 : public cpu::Bias {
   public:
     /// @param axis Wall normal: 0 = \(x\), 1 = \(y\), 2 = \(z\).

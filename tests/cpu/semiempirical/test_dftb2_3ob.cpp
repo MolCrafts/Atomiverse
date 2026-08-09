@@ -324,10 +324,11 @@ TEST(DFTB23ob, AnalyticStressMatchesStrainFdCh4) {
     ASSERT_GT(vol, 0.0);
     const std::array<double, 6> san = stress_3ob(f);
 
-    // Frame meta carries the same intensive tensor the method reports.
+    // Frame meta carries the same tensor the method reports, in the extensive
+    // kStress convention: σ·V [eV] against the method's intensive σ [eV/Å³].
     for (int v = 0; v < 6; ++v)
         EXPECT_NEAR(f.meta.get(kStress)[static_cast<std::size_t>(v)],
-                    san[static_cast<std::size_t>(v)], 1e-15)
+                    san[static_cast<std::size_t>(v)] * vol, 1e-15 * vol)
             << "voigt " << v;
 
     double norm2 = 0;
