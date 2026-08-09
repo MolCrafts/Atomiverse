@@ -41,7 +41,9 @@ echo "HEAD=$(git rev-parse HEAD)"
 echo "branch=$(git rev-parse --abbrev-ref HEAD)"
 nvidia-smi -L || true
 
-BUILD=build-cuda-pw-stream
+# Name deliberately avoids `build` / `build-*` so concurrent disk-law
+# sweeps cannot unmap the tree mid-compile (jobs 1049633/1049641).
+BUILD=_pw_stream_work
 # Keep a failed tree for diagnosis unless ATV_FRESH=1 or success wipe.
 if [ "${ATV_FRESH:-1}" = "1" ]; then
   rm -rf "${BUILD}"
