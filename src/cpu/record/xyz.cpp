@@ -3,6 +3,7 @@
 
 #include "atomiverse/cpu/record/xyz.h"
 #include "../io/molrs_meta.h"
+#include "../io/readable_path.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -73,11 +74,18 @@ ZarrReader::ZarrReader(const std::string& path) : path_(path) {}
 ZarrReader::~ZarrReader() = default;
 
 int ZarrReader::read_into(Frame& frame) {
+    // Pre-flight the common "wrong path" case so the message is ours.
+    internal::require_readable_store("cpu::ZarrReader::read_into", path_);
+
     // Get the first frame of the Zarr store as a molrs FrameRef. Column
     // names follow the convention established by `dump_frame_to_zarr()`
     // in the polyethylene_tension bench: f64 columns for positions /
     // velocities / mass / tag / image components, f64 column for type.
-    auto fref = molrs::read_frame_zarr_first({path_.data(), path_.size()});
+    // Fallible since molrs 0.13: a corrupt store raises `rust::Error` rather
+    // than aborting, and the wrapper attaches the path the bridge omits.
+    auto fref = internal::with_molrs_context(
+        "cpu::ZarrReader::read_into", path_,
+        [&] { return molrs::read_frame_zarr_first({path_.data(), path_.size()}); });
     auto& fr = *fref;
 
     auto x = molrs::frame_column_f64(fr, "atoms", "x");
@@ -91,12 +99,35 @@ int ZarrReader::read_into(Frame& frame) {
     auto img_x = molrs::frame_column_f64(fr, "atoms", "image_x");
     auto img_y = molrs::frame_column_f64(fr, "atoms", "image_y");
     auto img_z = molrs::frame_column_f64(fr, "atoms", "image_z");
-    auto type = molrs::frame_column_f64(fr, "atoms", "type");
+    // molrs 0.13 renamed the element column; `type` is now a String
+    // force-field label. The Zarr store writes numerics as f64.
+    auto type = molrs::frame_column_f64(fr, "atoms", "atomic_number");
     auto box_h = molrs::frame_box(fr);
 
     const int n = static_cast<int>(x.size());
     if (n == 0)
         throw std::runtime_error("ZarrReader: empty Zarr at " + path_);
+    // A column molrs cannot find is returned as an *empty* vector, not as an
+    // error, so a store missing e.g. `vx` would be read past its end by the
+    // per-atom loop below. Require every column to match the `x` row count.
+    auto require_rows = [&](const char* col, std::size_t rows) {
+        if (rows != x.size())
+            throw std::runtime_error(
+                "ZarrReader: atoms." + std::string(col) + " has "
+                + std::to_string(rows) + " rows, expected "
+                + std::to_string(x.size()) + " at " + path_);
+    };
+    require_rows("y", y.size());
+    require_rows("z", z.size());
+    require_rows("vx", vx.size());
+    require_rows("vy", vy.size());
+    require_rows("vz", vz.size());
+    require_rows("mass", mass.size());
+    require_rows("tag", tag.size());
+    require_rows("image_x", img_x.size());
+    require_rows("image_y", img_y.size());
+    require_rows("image_z", img_z.size());
+    require_rows("type", type.size());
     if (n > frame.nlocal())
         throw std::runtime_error(
             "ZarrReader: n_global=" + std::to_string(n) + " > frame.nlocal()="

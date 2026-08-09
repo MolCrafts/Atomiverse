@@ -15,7 +15,8 @@ pip install atomiverse
 
 This installs the Python API shell and CLI only — **no C++ compile**, no
 prebuilt `_atomiverse` binary. Requires Python ≥ 3.9, NumPy, and
-`molcrafts-molrs==0.7.0` (frame schema v2; other molrs releases are rejected).
+`molcrafts-molrs==0.13.0` (frame schema v2; other molrs releases are rejected).
+This must match the vendored submodule pin in `.gitmodules` / `molrs/Cargo.toml`.
 
 After phase 1 you can run:
 
@@ -270,19 +271,30 @@ Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
 
 ```python
 pw = av.PW()
-pw.upf_path = "Si.upf"
+pw.gth_name = "GTH-PBE-q4"   # analytic GTH for Si; no external file
 pw.ecut_ry = 30.0
 pw.k_mesh = 4
-pw = av.PW()  # members below
-solver.build(frame)
+pw.build(frame)
 result = pw.run(frame)
 print(result.energy)      # [Ry]
 print(result.converged, result.iterations)
 ```
 
-An empty `upf_path` runs a toy local potential (useful as a smoke test;
-results are not physical). On a default wheel (`ATV_BUILD_PW=OFF`) the PW
-types are not exported; rebuild with `ATV_BUILD_PW=ON` to use this API.
+### Pseudopotential: exactly one of two, and there is no default
+
+| Member | What it takes |
+|--------|---------------|
+| `gth_name` | In-tree analytic Goedecker-Teter-Hutter parameterization, e.g. `"GTH-PBE-q4"` (Si), `"GTH-PBE-q1"` (H), `"GTH-PBE-q6"` (O). No file needed. In-tree coverage: H, O, Na, Cl, Ar, Si, Ni, Zn. One potential serves the whole cell, so the frame must be single-species. |
+| `upf_path` | Path to a **norm-conserving** UPF file, e.g. the in-tree `tests/data/pw/Si_lda_nc.upf` (ONCVPSP). |
+
+Setting both, or neither, raises. Ultrasoft (`pseudo_type="USPP"`) and PAW
+files are rejected when read: the plane-wave path applies no augmentation
+charge, so integrating one would be wrong by an unbounded amount. There is
+no toy/bare-Coulomb fallback either — a bare valence-charge potential is not
+representable in a plane-wave basis at any finite cutoff.
+
+On a default wheel (`ATV_BUILD_PW=OFF`) the PW types are not exported;
+rebuild with `ATV_BUILD_PW=ON` to use this API.
 
 ## Timing
 

@@ -51,15 +51,22 @@ void validate_exchange_schema(const molrs::FrameRef& src) {
                                      + block + "'");
     }
 
+    // molrs 0.13 split the two meanings that used to share `atoms.type`:
+    // `atomic_number` (UInt) carries Z, while `type` is a String force-field
+    // label the caller owns. Atomiverse keys on Z, so it reads and writes
+    // `atomic_number`; `type` stays in the allow-list — a frame arriving from a
+    // molrs tool may legitimately carry one — but is not imported.
     validate_columns(src, "atoms",
                      {"x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "mass",
-                      "charge", "type", "tag", "ix", "iy", "iz"});
-    validate_columns(src, "bonds", {"atomi", "atomj", "type"});
-    validate_columns(src, "angles", {"atomi", "atomj", "atomk", "type"});
+                      "charge", "atomic_number", "type", "tag", "ix", "iy",
+                      "iz"});
+    validate_columns(src, "bonds", {"atomi", "atomj", "type_id", "type"});
+    validate_columns(src, "angles",
+                     {"atomi", "atomj", "atomk", "type_id", "type"});
     validate_columns(src, "dihedrals",
-                     {"atomi", "atomj", "atomk", "atoml", "type"});
+                     {"atomi", "atomj", "atomk", "atoml", "type_id", "type"});
     validate_columns(src, "impropers",
-                     {"atomi", "atomj", "atomk", "atoml", "type"});
+                     {"atomi", "atomj", "atomk", "atoml", "type_id", "type"});
 }
 
 bool has_column(const molrs::FrameRef& src, const char* block,
@@ -73,6 +80,16 @@ bool has_column(const molrs::FrameRef& src, const char* block,
 ::rust::Vec<double> require_f64(const molrs::FrameRef& src, const char* block,
                                 const char* col) {
     auto values = molrs::frame_column_f64(src, block, col);
+    if (values.empty())
+        throw std::runtime_error("cpu::from_molrs: required field '"
+                                 + std::string(block) + "." + col
+                                 + "' is missing or empty");
+    return values;
+}
+
+::rust::Vec<std::uint32_t> require_u32(const molrs::FrameRef& src,
+                                      const char* block, const char* col) {
+    auto values = molrs::frame_column_u32(src, block, col);
     if (values.empty())
         throw std::runtime_error("cpu::from_molrs: required field '"
                                  + std::string(block) + "." + col
@@ -105,16 +122,41 @@ void copy_optional_f64(const molrs::FrameRef& src, const char* key,
         out[i] = static_cast<T>(values[i]);
 }
 
+/// @brief Read one integer topology column (`atomi`/`atomj`/... or `type_id`).
+///
+/// molrs binds a key's dtype globally: `type` is String everywhere, `type_id`
+/// is UInt. Atomiverse's topology kinds are integers, so they travel as
+/// `type_id`; the connectivity indices stay signed and are read as i32.
+std::vector<int> topology_kind_column(const molrs::FrameRef& src,
+                                      const char* block, int n) {
+    auto values = molrs::frame_column_u32(src, block, "type_id");
+    if (static_cast<int>(values.size()) != n)
+        throw std::runtime_error(
+            "cpu::from_molrs: topology field '" + std::string(block)
+            + ".type_id' is missing or has the wrong dtype/row count");
+    std::vector<int> out(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i)
+        out[static_cast<std::size_t>(i)] = static_cast<int>(values[i]);
+    return out;
+}
+
+/// @brief Read one topology connectivity column (`atomi`/`atomj`/`atomk`/
+///        `atoml`).
+///
+/// molrs declares every identifier key UInt, so the endpoint indices are u32 —
+/// they are row numbers into the target node block and are never negative.
+/// Kinds travel separately as `type_id` (`topology_kind_column`); `type` is a
+/// String force-field label this boundary does not import.
 std::vector<int> topology_column(const molrs::FrameRef& src, const char* block,
                                  const char* key, int n) {
-    auto values = molrs::frame_column_i32(src, block, key);
+    auto values = molrs::frame_column_u32(src, block, key);
     if (static_cast<int>(values.size()) != n)
         throw std::runtime_error(
             "cpu::from_molrs: topology field '" + std::string(block) + "."
             + key + "' is missing or has the wrong dtype/row count");
     std::vector<int> out(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i)
-        out[static_cast<std::size_t>(i)] = values[i];
+        out[static_cast<std::size_t>(i)] = static_cast<int>(values[i]);
     return out;
 }
 
@@ -136,7 +178,7 @@ Frame from_molrs(const molrs::FrameRef& src) {
     auto x = require_f64(src, "atoms", "x");
     auto y = require_f64(src, "atoms", "y");
     auto z = require_f64(src, "atoms", "z");
-    auto type = require_i32(src, "atoms", "type");
+    auto type = require_u32(src, "atoms", "atomic_number");
     const int n = static_cast<int>(x.size());
     if (static_cast<int>(y.size()) != n || static_cast<int>(z.size()) != n
         || static_cast<int>(type.size()) != n)
@@ -152,7 +194,7 @@ Frame from_molrs(const molrs::FrameRef& src) {
         px[i] = static_cast<StorageReal>(x[i]);
         py[i] = static_cast<StorageReal>(y[i]);
         pz[i] = static_cast<StorageReal>(z[i]);
-        ptype[i] = type[i];
+        ptype[i] = static_cast<int>(type[i]);
     }
 
     copy_optional_f64(src, "vx", frame.span(kAtom_vx), n);
@@ -195,7 +237,7 @@ Frame from_molrs(const molrs::FrameRef& src) {
     if (nb > 0) {
         auto atomi = topology_column(src, "bonds", "atomi", nb);
         auto atomj = topology_column(src, "bonds", "atomj", nb);
-        auto kind = topology_column(src, "bonds", "type", nb);
+        auto kind = topology_kind_column(src, "bonds", nb);
         for (int k = 0; k < nb; ++k)
             frame.add_bond(atomi[k], atomj[k], kind[k]);
     }
@@ -204,7 +246,7 @@ Frame from_molrs(const molrs::FrameRef& src) {
         auto atomi = topology_column(src, "angles", "atomi", na);
         auto atomj = topology_column(src, "angles", "atomj", na);
         auto atomk = topology_column(src, "angles", "atomk", na);
-        auto kind = topology_column(src, "angles", "type", na);
+        auto kind = topology_kind_column(src, "angles", na);
         for (int k = 0; k < na; ++k)
             frame.add_angle(atomi[k], atomj[k], atomk[k], kind[k]);
     }
@@ -214,7 +256,7 @@ Frame from_molrs(const molrs::FrameRef& src) {
         auto atomj = topology_column(src, "dihedrals", "atomj", nd);
         auto atomk = topology_column(src, "dihedrals", "atomk", nd);
         auto atoml = topology_column(src, "dihedrals", "atoml", nd);
-        auto kind = topology_column(src, "dihedrals", "type", nd);
+        auto kind = topology_kind_column(src, "dihedrals", nd);
         for (int k = 0; k < nd; ++k)
             frame.add_dihedral(atomi[k], atomj[k], atomk[k], atoml[k], kind[k]);
     }
@@ -224,7 +266,7 @@ Frame from_molrs(const molrs::FrameRef& src) {
         auto atomj = topology_column(src, "impropers", "atomj", ni);
         auto atomk = topology_column(src, "impropers", "atomk", ni);
         auto atoml = topology_column(src, "impropers", "atoml", ni);
-        auto kind = topology_column(src, "impropers", "type", ni);
+        auto kind = topology_kind_column(src, "impropers", ni);
         for (int k = 0; k < ni; ++k)
             frame.add_improper(atomi[k], atomj[k], atomk[k], atoml[k], kind[k]);
     }

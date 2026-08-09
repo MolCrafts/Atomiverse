@@ -163,10 +163,12 @@ make_molrs_methane_graph_frame(bool include_atomic_numbers = true) {
         *frame, "atoms", "element",
         ::rust::Slice<const rust::String>(elements.data(), elements.size()));
     if (include_atomic_numbers) {
-        const std::vector<std::int32_t> type = {6, 1, 1, 1, 1};
-        molrs::frame_set_column_i32(
-            *frame, "atoms", "type",
-            ::rust::Slice<const std::int32_t>(type.data(), type.size()));
+        // molrs 0.13: Z lives in `atomic_number` (UInt); `type` is a String
+        // force-field label and refuses an integer outright.
+        const std::vector<std::uint32_t> z = {6, 1, 1, 1, 1};
+        molrs::frame_set_column_u32(
+            *frame, "atoms", "atomic_number",
+            ::rust::Slice<const std::uint32_t>(z.data(), z.size()));
     }
 
     const std::vector<double> x = {0.0, 0.629118, -0.629118, -0.629118,
@@ -324,8 +326,12 @@ TEST(AM1BCCChargeAssigner, RejectsSymbolOnlyAtomicNumberFallback) {
             try {
                 (void)assigner.assign(*frame);
             } catch (const std::runtime_error& error) {
-                EXPECT_NE(std::string(error.what()).find("atoms.type"),
-                          std::string::npos);
+                // Since molrs 0.13 the element identity column is
+                // `atoms.atomic_number`; a symbol-only frame must still be
+                // rejected rather than silently falling back.
+                EXPECT_NE(
+                    std::string(error.what()).find("atoms.atomic_number"),
+                    std::string::npos);
                 throw;
             }
         },

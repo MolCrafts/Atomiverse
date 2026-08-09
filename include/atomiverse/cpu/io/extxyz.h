@@ -27,9 +27,16 @@ namespace cpu {
 /// @param path Filesystem path to the (ext)XYZ file.
 /// @return Newly constructed cpu::Frame with atom positions, `type` (Z), and
 ///         the periodic box filled.
-/// @throws std::runtime_error if the file cannot be read, contains an unknown
-///         element symbol, or lacks the required `Lattice=` header (no fallback
-///         box is substituted).
+/// @throws std::runtime_error if `path` does not exist, is a directory, or
+///         cannot be opened for reading; or if the file lacks the required
+///         `Lattice="..."` header (no fallback box is substituted). The message
+///         names the function and the offending path.
+///          Parse failures *inside* the file (unknown element symbol, missing
+///          `species` column, malformed atom table) also throw as of molrs
+///          0.13, which made `xyz_read_first_frame` return `Result`; cxx maps
+///          that to a `rust::Error`, and this function rethrows it as a
+///          `std::runtime_error` naming the path. Earlier molrs releases
+///          aborted the process on those inputs and could not be caught.
 Frame load_extxyz(const std::string& path);
 
 } // namespace cpu

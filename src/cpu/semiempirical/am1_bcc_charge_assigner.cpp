@@ -27,14 +27,14 @@ namespace {
     return values;
 }
 
-::rust::Vec<std::int32_t> require_i32_column(const molrs::FrameRef& frame,
-                                             const char* block,
-                                             const char* col) {
-    auto values = molrs::frame_column_i32(frame, block, col);
+::rust::Vec<std::uint32_t> require_u32_column(const molrs::FrameRef& frame,
+                                              const char* block,
+                                              const char* col) {
+    auto values = molrs::frame_column_u32(frame, block, col);
     if (values.empty()) {
         throw std::runtime_error(std::string("AM1BCCChargeAssigner: required ")
                                  + block + "." + col
-                                 + " i32 column is missing");
+                                 + " uint column is missing");
     }
     return values;
 }
@@ -43,7 +43,9 @@ cpu::Frame build_am1_frame(const molrs::FrameRef& frame) {
     auto x = require_f64_column(frame, "atoms", "x");
     auto y = require_f64_column(frame, "atoms", "y");
     auto z = require_f64_column(frame, "atoms", "z");
-    auto atomic_numbers = require_i32_column(frame, "atoms", "type");
+    // molrs 0.13: Z is `atomic_number` (UInt). `type` is a String
+    // force-field label and no longer carries the element.
+    auto atomic_numbers = require_u32_column(frame, "atoms", "atomic_number");
 
     const auto n = static_cast<int>(x.size());
     if (static_cast<int>(y.size()) != n || static_cast<int>(z.size()) != n) {

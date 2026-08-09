@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+#include "readable_path.h"
+
 namespace ATV {
 namespace cpu {
 
@@ -13,11 +15,17 @@ void write_frame_xyz(const std::string& path, const std::vector<int>& type_id,
                      const std::vector<double>& x, const std::vector<double>& y,
                      const std::vector<double>& z,
                      const std::array<double, 9>& box_mat, bool append) {
-    molrs::write_frame_xyz(
-        {path.data(), path.size()},
-        {reinterpret_cast<const std::int32_t*>(type_id.data()), type_id.size()},
-        {x.data(), x.size()}, {y.data(), y.size()}, {z.data(), z.size()},
-        {box_mat.data(), box_mat.size()}, append);
+    // molrs 0.13 made this fallible (it aborted the process before), so an
+    // unwritable directory or a full disk is now a catchable error — but the
+    // bridge message does not name the file.
+    internal::with_molrs_context("cpu::write_frame_xyz", path, [&] {
+        molrs::write_frame_xyz(
+            {path.data(), path.size()},
+            {reinterpret_cast<const std::int32_t*>(type_id.data()),
+             type_id.size()},
+            {x.data(), x.size()}, {y.data(), y.size()}, {z.data(), z.size()},
+            {box_mat.data(), box_mat.size()}, append);
+    });
 }
 
 void write_frame_zarr(const std::string& path, const std::vector<int>& type_id,
@@ -30,12 +38,15 @@ void write_frame_zarr(const std::string& path, const std::vector<int>& type_id,
     rust::Vec<rust::String> names;
     for (const auto& n : field_names)
         names.push_back(rust::String(n));
-    molrs::write_frame_zarr(
-        {path.data(), path.size()},
-        {reinterpret_cast<const std::int32_t*>(type_id.data()), type_id.size()},
-        {x.data(), x.size()}, {y.data(), y.size()}, {z.data(), z.size()},
-        {box_mat.data(), box_mat.size()}, std::move(names),
-        {field_data.data(), field_data.size()});
+    internal::with_molrs_context("cpu::write_frame_zarr", path, [&] {
+        molrs::write_frame_zarr(
+            {path.data(), path.size()},
+            {reinterpret_cast<const std::int32_t*>(type_id.data()),
+             type_id.size()},
+            {x.data(), x.size()}, {y.data(), y.size()}, {z.data(), z.size()},
+            {box_mat.data(), box_mat.size()}, std::move(names),
+            {field_data.data(), field_data.size()});
+    });
 }
 
 } // namespace cpu

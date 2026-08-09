@@ -190,8 +190,14 @@ Frame load_lammps_data(const std::string& path) {
                 sp_type[idx] = atype - 1; // 0-indexed
                 sp_q[idx] = static_cast<StorageReal>(q);
                 auto it = type_to_mass.find(atype);
-                sp_mass[idx] = static_cast<StorageReal>(
-                    (it != type_to_mass.end()) ? it->second : 0.0);
+                // No fallback: mass 0 makes the first integration step
+                // produce inf/NaN velocities with nothing to trace it to.
+                if (it == type_to_mass.end())
+                    throw std::runtime_error(
+                        "load_lammps_data: atom type " + std::to_string(atype)
+                        + " appears in the Atoms section but has no entry in "
+                          "Masses. Add it to the Masses section.");
+                sp_mass[idx] = static_cast<StorageReal>(it->second);
             };
 
             // First row (already in `line`).
