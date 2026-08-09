@@ -41,29 +41,6 @@ CUDA ES state `.claude/notes/cuda-rhf-device-only.md`; order + freezes
 Priority order. `oracle:` names the code that produced (or will produce) the
 pin — `harness` marks docs-only truth repairs (no build, no pin).
 
-### P0 — harness truth
-
-- [ ] `test-gpw-unit-shrink` — oracle: ctest. From `test-gpw-timeout-triage`
-  (done, quiet-shell walls below): shrink the test systems of
-  `test_cpu_gpw_mbd` (34.07 s), `test_cpu_gpw_hirshfeld` (98.27 s, 4.8 GB
-  RSS) and `test_cpu_gpw_stress` (13.57 s) to seconds-scale per iron law 1
-  (registered per-test TIMEOUT is 10 s and overrides `ctest --timeout`), and
-  restore load headroom in `test_cpu_gpw_forces` (8.2–8.4 s, only ~18%
-  margin). All assertions pass today — this is a size change, not a physics
-  change: keep every assertion, shrink cells/grids until each binary is
-  comfortably under the 10 s registration. Worktree + scoped build required.
-
-### P1 — regression honesty + sanctioned CUDA
-
-- [ ] `cuda-md-first-regression` — oracle: lammps or literature.
-  CUDA MD has zero regression cases (`grep -rl cuda regressions/{md,
-  forcefield,mc}` = 0) while the OpenMM-engine track is explicitly unfrozen.
-  Add one: LJ argon NVE (existing CPU case's geometry), `--device=cuda`,
-  energy-conservation envelope + cited pin, ≤60 s, public headers only.
-  Validate via one GH200 batch run. Wave-2 attempt is parked unmerged at
-  branch `wf/cuda-md-first-regression` (`ea17e11a`; GH200 jobs 1035232 /
-  1035271 failed) — resume from that branch, do not restart from scratch.
-
 ### P2 — PW perf debt
 
 - [ ] `pw-perf-fair-walls-batch2` — oracle: qe. Depends: `tools/qe_oracle/`
@@ -78,11 +55,19 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ## in_progress
 
-- [~] `reg-cuda-grad-honesty` — deferred 2026-08-09, GH200 job 1035228
-  (FAILED: nvcc syntax errors in the new
-  `regressions/scf/h2o_rhf_sto3g_grad/reg_h2o_rhf_sto3g_grad.cu`). Worktree
-  `.claude/worktrees/wf_f384f427-0b3-11` @ `wf/reg-cuda-grad-honesty`
-  (`9fa88e9e`). Next: fix the `.cu` compile, resubmit one batch run.
+- [~] `test-gpw-unit-shrink` — assigned 2026-08-09 run 2 round 1 (oracle:
+  ctest). From `test-gpw-timeout-triage` (done): shrink `test_cpu_gpw_mbd`
+  (34.07 s), `test_cpu_gpw_hirshfeld` (98.27 s, 4.8 GB RSS) and
+  `test_cpu_gpw_stress` (13.57 s) to seconds-scale per iron law 1 (registered
+  per-test TIMEOUT is 10 s), and restore load headroom in
+  `test_cpu_gpw_forces` (8.2–8.4 s, ~18% margin). Size change only — keep
+  every assertion. Worktree + scoped build required.
+- [~] `cuda-md-first-regression` — assigned 2026-08-09 run 2 round 1 (oracle:
+  lammps or literature). Resume the parked wave-2 attempt at branch
+  `wf/cuda-md-first-regression` (`ea17e11a`, LJ argon NVE multi-device case;
+  GH200 jobs 1035232 / 1035271 failed) — re-anchor onto current dev tip,
+  diagnose the job failures, validate via one GH200 batch run. Do not restart
+  from scratch.
 - [~] `cuda-pw-large-cell-measure` — deferred 2026-08-09, GH200 job 1035278
   (still RUNNING at wave-3 close, ~48 min into the 1 h limit; earlier attempts
   1035136 / 1035238 failed). Worktree
@@ -109,6 +94,11 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ## done
 
+- [x] `reg-cuda-grad-honesty` — 2026-08-09, merge `8e716f5d`. Fail-closed CUDA
+  gradient honesty e2e: device s/p STO-3G analytic-gradient regression
+  asserting on-device SCF+force residency, plus the documented def2-SVP
+  host-fallback counterpart. GH200 job 1039997 green (ALL CUDA LEGS PASS);
+  `wf/reg-cuda-grad-honesty` pruned.
 - [x] `doc-hf-cuda-truth` — 2026-08-09, merge `825eaba3`. HF roadmap CUDA rows
   rewritten to es-cpu-cuda waves 1–10 truth (device s/p ERI + forces, CDIIS,
   level shift).
