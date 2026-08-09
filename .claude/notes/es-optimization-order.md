@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — dual track `es-cpu-cuda-opt` (2026-08-09 bootstrap)
+### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 2)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
@@ -69,18 +69,20 @@ fails the wave).
 
 | Twin | ratio | Residual / staff note |
 | --- | ---: | --- |
-| `gpw-multigrid-kpoints` MAIN | **2.33** | worst_ratio — coll/int class vs CP2K; kernel polish + structure levers largely exhausted on pin-safe surface; further cut only with non-kernel / non-pin-softening lever |
-| `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
+| `gpw-multigrid-kpoints` MAIN | **2.33** | worst_ratio — pin-safe collint/structure/sphere **exhausted**; blocked as `mg-main-structural` |
+| `ot-uks-o2` | **~1.4** | ≤3× aim met; not primary |
+| `ot-minimizer-water` | OT ~**1.20** / SCF body **≤1.0** | control + residual closed |
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
-| `ot-minimizer-water` | **≤1.0** class | control + residual closed |
+| `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (slice staffing):** CPU regs green + public shape stable +
-CUDA↔CPU tols stated. **Re-open is intentional** for this loop (user 8h
-acceptance). Landed already: device s/p RHF energy/forces/level_shift/CDIIS +
-path-select; Γ GPW Poisson/FFT + Padé LDA XC + product collocate + product
-integrate footholds; thin PW method slice. **Still blocked:** full
-`cuda-gpw-full-product` (footholds unit-green ≠ full method product). Staff only
-thin oracle-backed corresponding ports — not capability invention.
+**CUDA open-gate (wave-2 staff order):** Landed: device s/p RHF + CDIIS; Γ GPW
+Poisson/LDA/collocate/integrate footholds; `cuda::pw::PW` LSDA method slice +
+residency polish. **Still blocked:** full `cuda-gpw-full-product`. **Pending:**
+`cuda-pw-pbe-device` (P0) → `cuda-pw-large-cell-measure` (P1) →
+`cuda-pw-nondefault-stream` (P2) → `cuda-rhf-nondefault-stream` (P3); optional
+CPU `cpu-simd-2center-setup` (P3). Incomplete tips on
+`wf/cuda-pw-pbe-device` / `wf/cuda-pw-large-cell-measure` must re-base onto
+`wf/escuda-<slug>` off current `dev` — never blind-merge.
 
 **Queues (binding worklists):**
 
