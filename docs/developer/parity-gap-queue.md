@@ -65,13 +65,15 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ### P2 — PW perf debt
 
-- [ ] `pw-perf-fair-walls-batch1` — oracle: qe. Depends: `pw-perf-qe-install`
-  (merged `6d13a436`; `tools/qe_oracle/` is live).
-  Repin the first batch of exempt PW cases with real same-settings NC-UPF
-  walls (`pw-pbe-gga-si`, `pw-analytic-stress-si`, `pw-uks-kmesh-fe`,
-  `bands-dos-si`): T_atv/T_qe with full provenance, REFERENCE.md perf sections
-  rewritten from `perf_exempt` to measured ratios. Remaining cases become
-  `pw-perf-fair-walls-batch2+` via GapCensus.
+- [ ] `pw-perf-fair-walls-batch2` — oracle: qe. Depends: `tools/qe_oracle/`
+  (live; proven end-to-end by batch 1, merge `2a7bd70b`).
+  2026-08-09 post-batch-1 census: **18** PW `REFERENCE.md` files still carry
+  `perf_exempt`. Repin the next slice with real same-settings NC-UPF walls
+  (`pw-lda-si`, `pw-spin-gga`, `pw-spin-polarized-o2`, `pw-uks-fe-smearing`),
+  same shape as batch 1 (T_atv/T_qe + QE inputs under
+  `tools/qe_oracle/inputs/`). `pw-variable-cell-si` overlaps the in-flight
+  variable-cell tree — leave it for a later batch. Remaining cases become
+  `pw-perf-fair-walls-batch3+` via GapCensus.
 
 ## in_progress
 
@@ -81,7 +83,8 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
   `.claude/worktrees/wf_f384f427-0b3-11` @ `wf/reg-cuda-grad-honesty`
   (`9fa88e9e`). Next: fix the `.cu` compile, resubmit one batch run.
 - [~] `cuda-pw-large-cell-measure` — deferred 2026-08-09, GH200 job 1035278
-  (RUNNING at wave close; earlier attempts 1035136 / 1035238 failed). Worktree
+  (still RUNNING at wave-3 close, ~48 min into the 1 h limit; earlier attempts
+  1035136 / 1035238 failed). Worktree
   `.claude/worktrees/wf_f384f427-0b3-13` @ `wf/cuda-pw-large-cell-measure`
   (`d574d65d`), build kept for the pending job. Next: harvest
   `.claude/cuda-pw-large-cell-1035278.{out,err}`, write the measurement note.
@@ -127,3 +130,8 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
   scaffolded at `tools/qe_oracle/` (README + provenance rules + smoke-si
   input + pin_notes with version/build line); unblocks
   `pw-perf-fair-walls-batch1`.
+- [x] `pw-perf-fair-walls-batch1` — 2026-08-09, merge `2a7bd70b`. Four exempt
+  PW cases repinned with measured same-settings QE 7.6 NC-UPF walls
+  (`pw-pbe-gga-si`, `pw-analytic-stress-si`, `pw-uks-kmesh-fe`,
+  `bands-dos-si`): REFERENCE.md perf sections rewritten from `perf_exempt` to
+  T_atv/T_qe ratios, QE inputs pinned under `tools/qe_oracle/inputs/`.
