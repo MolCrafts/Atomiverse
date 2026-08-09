@@ -22,7 +22,7 @@ on the HF reference live in [Post-Hartree–Fock](post-hf.md).
 | Broken-symmetry Hartree–Fock               |  ○  |   ○  |   ○  |
 | Delta-SCF Hartree–Fock                     |  ✓  |   ○  |   ○  |
 | Maximum-overlap excited-state Hartree–Fock |  ✓  |   ○  |   ○  |
-| RHF analytic gradient                      |  ✓  |   ○  |   ○  |
+| RHF analytic gradient                      |  ✓  |   ✓  |   ○  |
 | UHF analytic gradient                      |  ✓  |   ○  |   ○  |
 | ROHF analytic gradient                     |  ✓  |   ○  |   ○  |
 | GHF analytic gradient                      |  ✓  |   ○  |   ○  |
@@ -73,7 +73,7 @@ would need is partly in place; the four-index periodic exchange is not.
 
 | Capability | CPU | CUDA | Kokkos |
 | ---------- | :-: | :--: | :---: |
-| DIIS | ✓ | ○ |   ○  |
+| DIIS | ✓ | ✓ (device CDIIS) |   ○  |
 | Linear damping | ✓ | ○ |   ○  |
 | Virtual-orbital level shift (Saunders–Hillier) | ✓ | ✓ |   ○  |
 | SOSCF (second-order SCF) | ✓ | ○ |   ○  |
@@ -89,8 +89,8 @@ would need is partly in place; the four-index periodic exchange is not.
 | Native Rys ERI engine (l ≤ 3, s/p/d/f) | ✓ | ○ |   ○  |
 | Effective core potentials (ECP) | ✓ | ○ |   ○  |
 | x2c-1e scalar relativity (energy) | ✓ | ○ |   ○  |
-| Device ERI kernels | — | ○ (s-type only) |
-| Diagonalization | ✓ (LAPACK) | ✓ (cuSOLVER) |
+| Device ERI kernels | — | ✓ (s/p, l ≤ 1) |   ○  |
+| Diagonalization | ✓ (LAPACK) | ✓ (cuSOLVER) |   ○  |
 
 Basis sets: STO-3G, 6-31G, 6-31G\*, def2-SVP, def2-TZVP. Cartesian is the
 default engine space; spherical (pure) is available for sets defined that way
@@ -101,8 +101,12 @@ JKFIT (SCF only — not RI-MP2). CFMM-J is an alternate Coulomb algorithm
 The MINAO guess table covers H, C, N, O, F only; other elements fall back to
 Hcore.
 
-**The CUDA column is a restricted-HF energy engine, not a general SCF.** Fock
-build, density build, and diagonalization run on device, but there is no DIIS,
-no UHF, no Kohn–Sham path, and **no gradient kernel** — hence no GPU AIMD. Its
-device-native integrals are s-type only; higher shells require a host-built
-integral pack.
+**The CUDA column is a restricted-HF engine, not a general SCF.** The SCF loop
+is device-resident: Fock and density builds, cuSOLVER diagonalization, device
+CDIIS (Pulay) Fock mixing (history on device; only the tiny (m+1) Pulay solve
+runs on host), and the Saunders–Hillier level shift on the device Fock path.
+Device-native integrals **and analytic nuclear forces** cover s/p shells
+(l ≤ 1, STO-3G class — mixed Z up to O); higher angular momentum and other
+basis sets fall back to a host-built integral pack (SCF loop still on device,
+analytic forces on host). Still missing on CUDA: UHF and any Gaussian-basis
+Kohn–Sham path.
