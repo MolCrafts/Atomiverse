@@ -42,11 +42,16 @@ nvidia-smi -L || true
 lscpu | grep -E 'Model name|^CPU\(s\)' || true
 
 WALL_BUDGET=16200 # seconds, mirrors -t 04:30:00 above
-BUILD=build-cuda-pw-cell
+# Name deliberately avoids `build` / `build-*` so concurrent disk-law
+# sweeps (`rm -rf build build-*`, find worktrees -name 'build-*') cannot
+# unmap the tree mid-ladder (job 1048264 lost leg files that way).
+BUILD=_pw_cell_work
+LEGDIR="${SLURM_SUBMIT_DIR}/.claude/pw-cell-legs"
 UPF="${SLURM_SUBMIT_DIR}/tests/data/pw/Si_lda_nc.upf"
-# Reuse a surviving build tree from a failed run (ATV_FRESH=1 forces a wipe).
+# Reuse a surviving work tree from a failed run (ATV_FRESH=1 forces a wipe).
 [ "${ATV_FRESH:-0}" = "1" ] && rm -rf "${BUILD}"
 rm -rf CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
+mkdir -p "${LEGDIR}"
 
 cmake -B "${BUILD}" -G "Unix Makefiles" \
   -DCMAKE_BUILD_TYPE=Release \
@@ -134,11 +139,20 @@ leg() { # dev threads n_rep timeout_s
   local dev=$1 thr=$2 n=$3 tmo=$4
   local tag="n${n}_${dev}_t${thr}"
   echo "--- LEG ${tag} (timeout ${tmo}s, elapsed $((SECONDS))s) ---"
-  local out="${BUILD}/leg_${tag}.txt"
+  # Legs live under .claude/ (not BUILD) so a concurrent disk wipe cannot
+  # drop the BENCH_RESULT lines the note is written from. Also stream to
+  # the job .out via tee so the SLURM log is self-contained.
+  local out="${LEGDIR}/leg_${tag}.txt"
+  # line-buffer the harness so long CPU legs show progress in the log;
+  # pipe+tee so the SLURM .out always carries BENCH_* even if LEGDIR is
+  # later disturbed. PIPESTATUS[0] is timeout/bench (pipefail is on via -o).
+  set +o pipefail
   timeout "${tmo}" env OMP_NUM_THREADS="${thr}" OPENBLAS_NUM_THREADS="${thr}" \
-    "${BENCH}" "${UPF}" "${n}" "${dev}" 15.0 1 1e-6 100 > "${out}" 2>&1
-  local rc=$?
-  cat "${out}"
+    stdbuf -oL -eL \
+    "${BENCH}" "${UPF}" "${n}" "${dev}" 15.0 1 1e-6 100 2>&1 \
+    | tee "${out}"
+  local rc=${PIPESTATUS[0]}
+  set -o pipefail
   LAST_RC=${rc}
   if [ "${rc}" -eq 124 ]; then
     # timeout: wall lower-bounded by the timeout itself (gate + note)
@@ -146,7 +160,7 @@ leg() { # dev threads n_rep timeout_s
     echo "WALL_LOWER_BOUND wall_s>${tmo} tag=${tag}"
     LAST_WALL=${tmo}
   else
-    LAST_WALL=$(grep -o 'wall_s=[0-9.]*' "${out}" | tail -1 | cut -d= -f2)
+    LAST_WALL=$(grep -o 'wall_s=[0-9.]*' "${out}" 2>/dev/null | tail -1 | cut -d= -f2)
     LAST_WALL=${LAST_WALL:-0}
   fi
   echo "LEG_RC=${rc} ${tag} LAST_WALL=${LAST_WALL}"
@@ -207,11 +221,11 @@ else
 fi
 
 echo "=== SUMMARY (all BENCH_RESULT / BENCH_PARITY lines) ==="
-grep -hE 'BENCH_RESULT|BENCH_PARITY' "${BUILD}"/leg_*.txt || true
+grep -hE 'BENCH_RESULT|BENCH_PARITY' "${LEGDIR}"/leg_*.txt 2>/dev/null || true
 echo "GATE_MET=${GATE_MET} SLICE_SANITY_RC=${SLICE_RC}"
 echo "GPU_JOB_DONE elapsed=$((SECONDS))s"
 
-# Wipe only THIS job's build dir.
+# Wipe only THIS job's work dir (not .claude/ legs — note is written from them).
 rm -rf "${BUILD}" 2>/dev/null || true
 rm -rf /tmp/atv-* 2>/dev/null || true
 echo "BUILDS_WIPED"
