@@ -4,6 +4,24 @@
 (default `both` when built with CUDA). Same PySCF pin on every device — not a
 `*_cuda` sibling. Public RHF + Frame only (no integral pack bag).
 
+## Device legs — what `--device=cuda` actually exercises
+
+The CUDA leg is a **documented host fallback, not a device-gradient result**.
+def2-SVP carries d shells, outside the device s/p STO-3G envelope
+(`device_sp_sto3g_ok`, `src/cuda/scf/rhf.cu`), so `cuda::scf::RHF`:
+
+- **SCF:** host-filled S/Hcore/ERI (`fill_rhf_matrices`) uploaded to the
+  device SCF loop — `last_scf_on_device() == false` (host-fill path);
+- **gradient:** full delegation to `cpu::scf::RHF::forces` —
+  `last_force_on_device() == false`. The graded numbers are the CPU
+  implementation's output reached through the `cuda::scf::RHF` envelope.
+
+The leg therefore validates the public CUDA envelope + fallback wiring against
+the pin, and **asserts both flags are false** so it fails loudly if the device
+envelope ever grows to cover def2-SVP — at which point this section must be
+rewritten with device tolerances. The fail-closed *device* s/p gradient e2e is
+`scf/h2o_rhf_sto3g_grad` (asserts the flags are true).
+
 Oracle protocol: docs/tutorial/appendix-pyscf-oracle.md (external run, pinned).
 
 | 字段 | 值 |

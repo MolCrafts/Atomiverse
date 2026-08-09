@@ -698,6 +698,27 @@ if(ATV_BUILD_HF)
     else()
         atv_add_regression(scf h2o_rhf_def2svp_grad)
     endif()
+    # Device s/p analytic gradient e2e: the cuda leg is fail-closed
+    # (last_scf_on_device + last_force_on_device asserted) — the honest
+    # counterpart of the documented def2-SVP host-fallback leg above.
+    if(ATV_BUILD_CUDA)
+        set(_reg_h2o_sg reg_h2o_rhf_sto3g_grad)
+        add_executable(${_reg_h2o_sg} scf/h2o_rhf_sto3g_grad/${_reg_h2o_sg}.cu)
+        target_link_libraries(${_reg_h2o_sg} PRIVATE atomiverse)
+        set_target_properties(${_reg_h2o_sg} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        target_compile_definitions(${_reg_h2o_sg} PRIVATE
+            ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+        add_custom_target(run_${_reg_h2o_sg}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_h2o_sg}> --device=both
+            DEPENDS ${_reg_h2o_sg}
+            COMMENT "regression [scf/h2o_rhf_sto3g_grad] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_h2o_sg})
+        unset(_reg_h2o_sg)
+    else()
+        atv_add_regression(scf h2o_rhf_sto3g_grad)
+    endif()
     # Short BOMD: MD + RHF composition (no AimdDriver); multi-device.
     if(ATV_BUILD_CUDA)
         set(_reg_aimd reg_h2_rhf_sto3g_aimd)

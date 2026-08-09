@@ -3,6 +3,15 @@
 ///        `--device=cpu|cuda|both` (default both). See REFERENCE.md.
 ///
 /// Public RHF + Frame only. Frame + concrete method only; no SCFSolver / *Config.
+///
+/// **The CUDA leg is a DOCUMENTED host fallback** (REFERENCE.md §Device
+/// legs): def2-SVP carries d shells, outside the device s/p STO-3G envelope,
+/// so `cuda::scf::RHF::forces` delegates the gradient to `cpu::scf::RHF`.
+/// The leg asserts exactly that (`last_scf_on_device()` and
+/// `last_force_on_device()` both false), so it can never masquerade as a
+/// device-gradient result, and fails loudly the day the envelope grows —
+/// forcing an honest re-documentation with device tolerances. The device
+/// s/p gradient e2e is `scf/h2o_rhf_sto3g_grad`.
 
 #include <algorithm>
 #include <cmath>
@@ -69,6 +78,26 @@ int run_on_device(Device dev) {
         cuda::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP, 0, 1e-12, 200};
         res = rhf.forces(frame);
         converged = rhf.converged();
+
+        // Honesty gate (REFERENCE.md §Device legs): def2-SVP is outside the
+        // device s/p STO-3G envelope (`device_sp_sto3g_ok`), so this leg is a
+        // documented host fallback — the graded gradient is
+        // cpu::scf::RHF::forces reached through the cuda::scf::RHF envelope.
+        // If the device path ever covers def2-SVP this must fail loudly:
+        // re-document the leg with device tolerances instead of silently
+        // relabeling a host result as CUDA (or the reverse).
+        if (rhf.last_scf_on_device() || rhf.last_force_on_device()) {
+            std::fprintf(stderr,
+                         "FAIL [cuda]: def2-SVP ran on the device path "
+                         "(scf_on_device=%d force_on_device=%d) but this leg "
+                         "is documented as HOST FALLBACK — update REFERENCE.md "
+                         "and retighten this leg for the device envelope\n",
+                         rhf.last_scf_on_device() ? 1 : 0,
+                         rhf.last_force_on_device() ? 1 : 0);
+            return 1;
+        }
+        std::printf("[cuda] path=host-fallback (documented: def2-SVP d shells "
+                    "outside the device s/p STO-3G envelope)\n");
     }
 
     if (!converged) {
