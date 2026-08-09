@@ -19,12 +19,13 @@
 /// backends ~1e-15 relative apart. Every device reduction here uses a FIXED
 /// launch geometry, so it is bitwise reproducible run-to-run.
 ///
-/// Synchronization: everything runs on the default stream, which is a strict
-/// serial chain — no stream, event or `cudaDeviceSynchronize` is needed for
-/// ordering. The only host waits are the two blocking `cudaMemcpy` D2H calls
-/// documented at their call sites (`mix`'s Gram readback and `reduce`'s
-/// 5-scalar readback); both are unavoidable because the Pulay coefficient
-/// solve and the SCF convergence/energy report are host decisions.
+/// Synchronization: everything runs on one non-default stream owned by this
+/// object (`stream_`). Kernels, cuFFT and cuBLAS are stream-ordered; no
+/// `cudaDeviceSynchronize` is issued. The only host waits are the two
+/// stream-scoped D2H fences documented at their call sites (`mix`'s Gram
+/// readback and `reduce`'s 5-scalar readback); both are unavoidable because
+/// the Pulay coefficient solve and the SCF convergence/energy report are
+/// host decisions.
 
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 
@@ -286,6 +287,9 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
       depth_(pulay_depth), mix_beta_(mix_beta),
       omega_(static_cast<double>(prob.ws.omega)), xc_(xc),
       gga_(cpu::scf::is_gga(xc)),
+      // Temporary default-stream FFT; rebound after stream_ is created below.
+      // FFTPlan3D cannot be default-constructed, so we build it first then
+      // rebind via set_stream once stream_ exists.
       fft_(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz) {
     if (pulay_depth < 1)
         throw std::invalid_argument(
@@ -310,7 +314,13 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
             "ws.fft_nx/ny/nz grid the cuFFT plans were built from");
 
     try {
+        // One non-default stream for the whole density side. The band solver
+        // borrows it so SCF stages stay ordered without events.
+        ATV_CUDA_CHECK(cudaStreamCreate(&stream_));
+        fft_.set_stream(stream_);
+
         check_cublas(cublasCreate(&blas_), "cublasCreate");
+        check_cublas(cublasSetStream(blas_, stream_), "cublasSetStream");
 
         const size_t ng = static_cast<size_t>(ng0_);
         const size_t nr = static_cast<size_t>(nr_);
@@ -358,14 +368,16 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         // Zero the Pulay ring: unfilled slots then contribute finite zeros to
         // the Gram matrix instead of whatever the allocator handed back. The
         // corresponding rows/columns are discarded on the host, but a NaN
-        // there would be a debugging trap for no reason.
+        // there would be a debugging trap for no reason. Stream-ordered so
+        // the first SCF stage cannot race an incomplete memset.
+        ATV_CUDA_CHECK(cudaMemsetAsync(
+            d_res_hist_, 0, ring * sizeof(cufftDoubleComplex), stream_));
+        ATV_CUDA_CHECK(cudaMemsetAsync(
+            d_rho_hist_, 0, ring * sizeof(cufftDoubleComplex), stream_));
+        ATV_CUDA_CHECK(cudaMemsetAsync(
+            d_rho_G_old_, 0, ng * sizeof(cufftDoubleComplex), stream_));
         ATV_CUDA_CHECK(
-            cudaMemset(d_res_hist_, 0, ring * sizeof(cufftDoubleComplex)));
-        ATV_CUDA_CHECK(
-            cudaMemset(d_rho_hist_, 0, ring * sizeof(cufftDoubleComplex)));
-        ATV_CUDA_CHECK(
-            cudaMemset(d_rho_G_old_, 0, ng * sizeof(cufftDoubleComplex)));
-        ATV_CUDA_CHECK(cudaMemset(d_scalars_, 0, 5 * sizeof(double)));
+            cudaMemsetAsync(d_scalars_, 0, 5 * sizeof(double), stream_));
 
         // ── One-time uploads (never repeated per SCF iteration) ──
         const auto& gv = prob.gv0;
@@ -375,20 +387,20 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
                 static_cast<double>(gv.g[static_cast<size_t>(i)]
                                         .norm_squared());
 
-        ATV_CUDA_CHECK(cudaMemcpy(d_h_, gv.h.data(), ng * sizeof(int),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_k_, gv.k.data(), ng * sizeof(int),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_l_, gv.l.data(), ng * sizeof(int),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_g2_, g2.data(), ng * sizeof(double),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_V_loc_G_, prob.ws.V_loc_G.data(),
-                                  ng * sizeof(cufftDoubleComplex),
-                                  cudaMemcpyHostToDevice));
-        ATV_CUDA_CHECK(cudaMemcpy(d_rho_G_, prob.ws.rho_G.data(),
-                                  ng * sizeof(cufftDoubleComplex),
-                                  cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_h_, gv.h.data(), ng * sizeof(int),
+                                       cudaMemcpyHostToDevice, stream_));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_k_, gv.k.data(), ng * sizeof(int),
+                                       cudaMemcpyHostToDevice, stream_));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_l_, gv.l.data(), ng * sizeof(int),
+                                       cudaMemcpyHostToDevice, stream_));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_g2_, g2.data(), ng * sizeof(double),
+                                       cudaMemcpyHostToDevice, stream_));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_V_loc_G_, prob.ws.V_loc_G.data(),
+                                       ng * sizeof(cufftDoubleComplex),
+                                       cudaMemcpyHostToDevice, stream_));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_G_, prob.ws.rho_G.data(),
+                                       ng * sizeof(cufftDoubleComplex),
+                                       cudaMemcpyHostToDevice, stream_));
 
         if (gga_) {
             // Cartesian G components per axis — the CPU's gv.g[ig][d],
@@ -399,11 +411,15 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
                 for (int i = 0; i < ng0_; ++i)
                     gcart[static_cast<size_t>(i)] = static_cast<double>(
                         gv.g[static_cast<size_t>(i)][d]);
-                ATV_CUDA_CHECK(cudaMemcpy(dst[d], gcart.data(),
-                                          ng * sizeof(double),
-                                          cudaMemcpyHostToDevice));
+                ATV_CUDA_CHECK(cudaMemcpyAsync(dst[d], gcart.data(),
+                                               ng * sizeof(double),
+                                               cudaMemcpyHostToDevice, stream_));
             }
         }
+        // Fence before the host returns: the atomic ρ seed and V_loc must be
+        // resident before the first hartree()/band solve can touch them, and
+        // the host g2 vector goes out of scope here.
+        ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
     } catch (...) {
         free_all();
         throw;
@@ -413,6 +429,16 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
 DeviceDensity::~DeviceDensity() { free_all(); }
 
 void DeviceDensity::free_all() {
+    // Drain the density stream, rebind cuFFT off it, then free. Order matters:
+    // cufftDestroy in ~FFTPlan3D must not see a destroyed stream handle.
+    if (stream_) {
+        cudaStreamSynchronize(stream_);
+        try {
+            fft_.set_stream(nullptr);
+        } catch (...) {
+            // Best-effort rebind on the teardown path.
+        }
+    }
     device_free(d_h_);
     device_free(d_k_);
     device_free(d_l_);
@@ -448,10 +474,14 @@ void DeviceDensity::free_all() {
         cublasDestroy(blas_);
         blas_ = nullptr;
     }
+    if (stream_) {
+        cudaStreamDestroy(stream_);
+        stream_ = nullptr;
+    }
 }
 
 void DeviceDensity::hartree() {
-    poisson_hartree(d_rho_G_, d_g2_, d_V_H_G_, ng0_);
+    poisson_hartree(d_rho_G_, d_g2_, d_V_H_G_, ng0_, stream_);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
@@ -461,7 +491,7 @@ void DeviceDensity::exchange_correlation() {
     // ρ(G) → ρ(r). c2r is UNNORMALIZED on both backends:
     // ρ(r) = Σ_G ρ(G) e^{iGr}.
     scatter_g_to_halfcomplex(d_rho_G_, d_h_, d_k_, d_l_, ng0_, d_half_, nx, ny,
-                             nz);
+                             nz, stream_);
     fft_.c2r(d_half_, d_rho_r_in_);
 
     if (gga_) {
@@ -469,11 +499,11 @@ void DeviceDensity::exchange_correlation() {
         double* grad_r[3] = {d_grad_x_r_, d_grad_y_r_, d_grad_z_r_};
         const double* gcart[3] = {d_gx_, d_gy_, d_gz_};
         for (int d = 0; d < 3; ++d) {
-            pw_mul_ig_kernel<<<n_blocks(ng0_), kBlock>>>(d_rho_G_, gcart[d],
-                                                         ng0_, d_sph_);
+            pw_mul_ig_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
+                d_rho_G_, gcart[d], ng0_, d_sph_);
             ATV_CUDA_CHECK(cudaGetLastError());
             scatter_g_to_halfcomplex(d_sph_, d_h_, d_k_, d_l_, ng0_, d_half_,
-                                     nx, ny, nz);
+                                     nx, ny, nz, stream_);
             fft_.c2r(d_half_, grad_r[d]);
         }
 
@@ -482,56 +512,57 @@ void DeviceDensity::exchange_correlation() {
         // (dV = Ω/nr); the CPU accumulates it in the same grid loop, BEFORE
         // the divergence correction, and ε_xc is untouched by it.
         xc_pbe_grid(d_rho_r_in_, d_grad_x_r_, d_grad_y_r_, d_grad_z_r_,
-                    d_V_xc_r_, d_exc_r_, nr_);
+                    d_V_xc_r_, d_exc_r_, nr_, stream_);
         xc_energy(d_rho_r_in_, d_exc_r_, nr_,
                   omega_ / static_cast<double>(nr_), d_scalars_ + 0,
-                  d_xc_partials_);
+                  d_xc_partials_, stream_);
 
         // ── v_xc −= ∇·flux, via div(G) = Σ_d i G_d flux_d(G) ──
         // d_V_xc_G_ is the accumulation scratch here, exactly as the CPU
         // reuses ws.V_xc_G — it is overwritten by the final r2c gather below.
         ATV_CUDA_CHECK(cudaMemsetAsync(
             d_V_xc_G_, 0,
-            static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex), nullptr));
+            static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex), stream_));
         for (int d = 0; d < 3; ++d) {
             fft_.r2c(grad_r[d], d_half_); // grad_r now holds flux_d
             gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_sph_,
                                     nx, ny, nz,
-                                    1.0 / static_cast<double>(nr_));
-            pw_axpy_ig_kernel<<<n_blocks(ng0_), kBlock>>>(d_sph_, gcart[d],
-                                                          ng0_, d_V_xc_G_);
+                                    1.0 / static_cast<double>(nr_), stream_);
+            pw_axpy_ig_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
+                d_sph_, gcart[d], ng0_, d_V_xc_G_);
             ATV_CUDA_CHECK(cudaGetLastError());
         }
         scatter_g_to_halfcomplex(d_V_xc_G_, d_h_, d_k_, d_l_, ng0_, d_half_,
-                                 nx, ny, nz);
+                                 nx, ny, nz, stream_);
         fft_.c2r(d_half_, d_div_r_);
-        pw_sub_kernel<<<n_blocks(nr_), kBlock>>>(d_V_xc_r_, d_div_r_, nr_);
+        pw_sub_kernel<<<n_blocks(nr_), kBlock, 0, stream_>>>(d_V_xc_r_,
+                                                              d_div_r_, nr_);
         ATV_CUDA_CHECK(cudaGetLastError());
     } else {
         // Pointwise LSDA + the E_xc quadrature (dV = Ω/nr, as on the CPU).
-        xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr_);
+        xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr_, stream_);
         xc_energy(d_rho_r_in_, d_exc_r_, nr_,
                   omega_ / static_cast<double>(nr_), d_scalars_ + 0,
-                  d_xc_partials_);
+                  d_xc_partials_, stream_);
     }
 
     // V_xc(r) → V_xc(G), scaled by 1/nr (r2c is unnormalized).
     // NOTE: d_half_ is reused by every scatter/gather+FFT pair of an
-    // iteration. They are strictly sequential on the default stream, and
+    // iteration. They are strictly sequential on stream_, and
     // FFTPlan3D::c2r copies its input into private scratch first, so no pair
     // can clobber another. An "optimization" that drops a re-scatter would
     // break that silently.
     fft_.r2c(d_V_xc_r_, d_half_);
     gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_V_xc_G_, nx, ny,
-                            nz, 1.0 / static_cast<double>(nr_));
-    pw_zero_imag0_kernel<<<1, 1>>>(d_V_xc_G_);
+                            nz, 1.0 / static_cast<double>(nr_), stream_);
+    pw_zero_imag0_kernel<<<1, 1, 0, stream_>>>(d_V_xc_G_);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 void DeviceDensity::assemble_veff() {
-    veff_assemble_g(d_V_loc_G_, d_V_H_G_, d_V_xc_G_, d_V_eff_G_, ng0_);
+    veff_assemble_g(d_V_loc_G_, d_V_H_G_, d_V_xc_G_, d_V_eff_G_, ng0_, stream_);
     scatter_g_to_halfcomplex(d_V_eff_G_, d_h_, d_k_, d_l_, ng0_, d_half_,
-                             fft_.nx(), fft_.ny(), fft_.nz());
+                             fft_.nx(), fft_.ny(), fft_.nz(), stream_);
     // Unnormalized c2r: V_eff(r) = Σ_G V_eff(G) e^{iGr}, matching VeffBuilder.
     fft_.c2r(d_half_, d_V_eff_r_);
     ATV_CUDA_CHECK(cudaGetLastError());
@@ -540,18 +571,18 @@ void DeviceDensity::assemble_veff() {
 void DeviceDensity::zero_accumulator() {
     ATV_CUDA_CHECK(cudaMemsetAsync(d_rho_r_acc_, 0,
                                    static_cast<size_t>(nr_) * sizeof(double),
-                                   nullptr));
+                                   stream_));
 }
 
 void DeviceDensity::collect() {
     ATV_CUDA_CHECK(cudaMemcpyAsync(
         d_rho_G_old_, d_rho_G_,
         static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
-        cudaMemcpyDeviceToDevice, nullptr));
+        cudaMemcpyDeviceToDevice, stream_));
     fft_.r2c(d_rho_r_acc_, d_half_);
     gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_rho_G_,
                             fft_.nx(), fft_.ny(), fft_.nz(),
-                            1.0 / static_cast<double>(nr_));
+                            1.0 / static_cast<double>(nr_), stream_);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
@@ -563,7 +594,7 @@ void DeviceDensity::mix(int iter) {
     const int m = std::min(iter + 1, depth_);
     const int hist_start = (iter + 1 > depth_) ? (iter + 1) % depth_ : 0;
 
-    pw_push_history_kernel<<<n_blocks(ng0_), kBlock>>>(
+    pw_push_history_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
         d_rho_G_, d_rho_G_old_, ng0_,
         d_res_hist_ + static_cast<size_t>(slot_push) * ng,
         d_rho_hist_ + static_cast<size_t>(slot_push) * ng);
@@ -571,7 +602,7 @@ void DeviceDensity::mix(int iter) {
 
     if (m < 2) {
         // CPU's `depth < 2` branch: plain linear mixing.
-        pw_linear_mix_kernel<<<n_blocks(ng0_), kBlock>>>(
+        pw_linear_mix_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
             d_rho_G_, d_rho_G_old_,
             d_res_hist_ + static_cast<size_t>(slot_push) * ng, mix_beta_, ng0_);
         ATV_CUDA_CHECK(cudaGetLastError());
@@ -597,16 +628,17 @@ void DeviceDensity::mix(int iter) {
                  "Zgemm pulay gram");
 
     // ── SYNC POINT 1 (per iteration) ──
-    // Blocking D2H of depth² complex doubles (≤ 8²·16 B = 1 KB). Unavoidable:
-    // the augmented Lagrangian solve is a host algorithm shared bit-for-bit
-    // with cpu::pw::pulay_mix, and its coefficients feed the very next kernel.
-    // A blocking cudaMemcpy on the default stream IS the fence; no separate
-    // cudaStreamSynchronize / cudaDeviceSynchronize is issued.
+    // Stream-scoped D2H of depth² complex doubles (≤ 8²·16 B = 1 KB).
+    // Unavoidable: the augmented Lagrangian solve is a host algorithm shared
+    // bit-for-bit with cpu::pw::pulay_mix, and its coefficients feed the very
+    // next kernel. Async copy + stream sync fences only this chain — not the
+    // default stream / whole device.
     std::vector<std::complex<double>> gram(
         static_cast<size_t>(depth_) * depth_);
-    ATV_CUDA_CHECK(cudaMemcpy(gram.data(), d_gram_,
-                              gram.size() * sizeof(cufftDoubleComplex),
-                              cudaMemcpyDeviceToHost));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(gram.data(), d_gram_,
+                                   gram.size() * sizeof(cufftDoubleComplex),
+                                   cudaMemcpyDeviceToHost, stream_));
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
 
     // Row-major m×m real Gram, B[i][j] = Re⟨F_i|F_j⟩ — the CPU's
     // Σ(Fi.re·Fj.re + Fi.im·Fj.im). Only the upper triangle is read and it is
@@ -630,18 +662,18 @@ void DeviceDensity::mix(int iter) {
     cpu::pw::internal::solve_pulay_coefficients(B.data(), m, c.data());
 
     std::vector<double> c_d(c.begin(), c.end());
-    ATV_CUDA_CHECK(cudaMemcpy(d_coeff_, c_d.data(),
-                              static_cast<size_t>(m) * sizeof(double),
-                              cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(d_coeff_, c_d.data(),
+                                   static_cast<size_t>(m) * sizeof(double),
+                                   cudaMemcpyHostToDevice, stream_));
 
-    pw_pulay_combine_kernel<<<n_blocks(ng0_), kBlock>>>(
+    pw_pulay_combine_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
         d_rho_G_, d_rho_hist_, d_res_hist_, d_coeff_, mix_beta_, ng0_, m,
         hist_start, depth_);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 DeviceDensity::IterationScalars DeviceDensity::reduce(double vol_bohr) {
-    pw_reduce_terms_kernel<<<kReduceBlocks, kBlock>>>(
+    pw_reduce_terms_kernel<<<kReduceBlocks, kBlock, 0, stream_>>>(
         d_rho_G_, d_rho_G_old_, d_V_H_G_, d_V_xc_G_, d_V_loc_G_, ng0_,
         d_partials_);
     ATV_CUDA_CHECK(cudaGetLastError());
@@ -657,20 +689,20 @@ DeviceDensity::IterationScalars DeviceDensity::reduce(double vol_bohr) {
     spec.take_sqrt[1] = 0;
     spec.take_sqrt[2] = 0;
     spec.take_sqrt[3] = 1; // ‖Δρ‖₂
-    pw_reduce_finalize_kernel<<<kLanes, kReduceBlocks>>>(
+    pw_reduce_finalize_kernel<<<kLanes, kReduceBlocks, 0, stream_>>>(
         d_partials_, kReduceBlocks, spec, d_scalars_ + 1);
     ATV_CUDA_CHECK(cudaGetLastError());
 
     // ── SYNC POINT 2 (per iteration) ──
-    // Blocking D2H of 5 doubles (40 B): E_xc (written by
+    // Stream-scoped D2H of 5 doubles (40 B): E_xc (written by
     // exchange_correlation) plus the four lanes above. Unavoidable: the SCF
     // stop decision and the per-iteration energy report are host-side, and
     // `e_one = e_band − 2 e_h − e_xc_int` must be evaluated on the host in the
     // CPU's exact order (catastrophic cancellation — never reassociate it).
-    // Again the blocking copy is itself the fence.
     double host[5] = {0, 0, 0, 0, 0};
-    ATV_CUDA_CHECK(cudaMemcpy(host, d_scalars_, 5 * sizeof(double),
-                              cudaMemcpyDeviceToHost));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(host, d_scalars_, 5 * sizeof(double),
+                                   cudaMemcpyDeviceToHost, stream_));
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
 
     IterationScalars out;
     out.e_xc = host[0];
@@ -700,6 +732,9 @@ void DeviceDensity::fetch_g(GField which, std::complex<double>* out) const {
         src = d_V_eff_G_;
         break;
     }
+    // Diagnostic path: fence the density stream so the readback sees the
+    // last stage's writes, then blocking D2H (not on the SCF hot path).
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
     ATV_CUDA_CHECK(cudaMemcpy(out, src,
                               static_cast<size_t>(ng0_)
                                   * sizeof(cufftDoubleComplex),
@@ -707,6 +742,7 @@ void DeviceDensity::fetch_g(GField which, std::complex<double>* out) const {
 }
 
 void DeviceDensity::fetch_veff_r(double* out) const {
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
     ATV_CUDA_CHECK(cudaMemcpy(out, d_V_eff_r_,
                               static_cast<size_t>(nr_) * sizeof(double),
                               cudaMemcpyDeviceToHost));

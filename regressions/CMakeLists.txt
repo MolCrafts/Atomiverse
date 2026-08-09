@@ -189,6 +189,24 @@ if(ATV_BUILD_PW)
             COMMENT "regression [pw/cuda-pw-pbe-device] devices=both (1t)")
         add_dependencies(regressions run_${_reg_pw_pbe})
         unset(_reg_pw_pbe)
+
+        # Non-default stream polish gate — same Si LSDA pins as pw-cuda-lda-si.
+        set(_reg_pw_stream reg_cuda-pw-nondefault-stream)
+        add_executable(${_reg_pw_stream}
+            pw/cuda-pw-nondefault-stream/${_reg_pw_stream}.cu)
+        target_link_libraries(${_reg_pw_stream} PRIVATE atomiverse)
+        set_target_properties(${_reg_pw_stream} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        target_compile_definitions(${_reg_pw_stream} PRIVATE
+            ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data"
+            ATV_PW_UPF_PATH="${_atv_si_upf}")
+        add_custom_target(run_${_reg_pw_stream}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_pw_stream}> --device=both
+            DEPENDS ${_reg_pw_stream}
+            COMMENT "regression [pw/cuda-pw-nondefault-stream] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_pw_stream})
+        unset(_reg_pw_stream)
     endif()
     if(TARGET reg_pw-lda-si)
         target_compile_definitions(reg_pw-lda-si PRIVATE

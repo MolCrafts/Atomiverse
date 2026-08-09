@@ -164,9 +164,12 @@ PWResult& PW::run(const cpu::Frame& frame) {
     result_.n_kpts_local = n_kpts;
 
     // Device state: one-time H2D of the geometry-constant G-sphere tables and
-    // the atomic ρ(G) seed, then nothing scientific leaves the GPU.
+    // the atomic ρ(G) seed, then nothing scientific leaves the GPU. Density
+    // owns the non-default SCF stream; the band solver borrows it so both
+    // halves stay ordered without events (cuda-pw-nondefault-stream).
     internal::DeviceDensity den(prob, mix_beta, pulay_depth, xc);
-    internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands);
+    internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
+                                      den.stream());
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
     // Every per-k table (G→FFT map, T(G), q = k+G, KB descriptors, initial
     // Davidson subspace) is geometry — built and uploaded once, here.

@@ -9,7 +9,9 @@
 /// cuBLAS ZGEMM, and the dense subspace eigenproblem via cuSOLVER
 /// `Zheevd` in place. What still reaches the host per Davidson round is
 /// the `devInfo` flag, the n_bands lowest eigenvalues (kernel scalar
-/// arguments) and the host-pointer `cublasDznrm2` residual norms.
+/// arguments) and one accept-flag int per residual band. Residual norms
+/// themselves are device-pointer (`blas_dev_`). All device work runs on a
+/// non-default stream (owned or borrowed — see constructor).
 ///
 /// **Not bit-identical to the CPU solver, by construction.** The CPU uses a
 /// complex Hermitian Jacobi rotation sweep; `Zheevd` is divide-and-conquer.
@@ -69,10 +71,19 @@ class DeviceBandSolver {
   public:
     /// @param fft_nx,fft_ny,fft_nz Dense c2c FFT grid dims (ws.fft_n*).
     /// @param n_bands Number of bands to solve per k-point.
-    DeviceBandSolver(int fft_nx, int fft_ny, int fft_nz, int n_bands);
+    /// @param stream  CUDA stream for every kernel / cuFFT / cuBLAS /
+    ///                cuSOLVER call. Pass `DeviceDensity::stream()` from the
+    ///                production SCF so density and band sides share one
+    ///                serial chain. If null, this object creates and owns a
+    ///                non-default stream (diagnostics / unit tests).
+    DeviceBandSolver(int fft_nx, int fft_ny, int fft_nz, int n_bands,
+                     cudaStream_t stream = nullptr);
     ~DeviceBandSolver();
     DeviceBandSolver(const DeviceBandSolver&) = delete;
     DeviceBandSolver& operator=(const DeviceBandSolver&) = delete;
+
+    /// @brief Stream every band-side launch uses (never the default stream).
+    cudaStream_t stream() const { return stream_; }
 
     /// @brief Bind the device grids owned by `internal::DeviceDensity`.
     ///
@@ -155,6 +166,9 @@ class DeviceBandSolver {
     int bound_k_ = -1; ///< k-point index bound by bind_kpoint(), −1 = none.
     int cap_sub_ = 0;  ///< Allocated subspace capacity (vectors).
     int ng_cap_ = 0;   ///< Allocated per-vector length (G-sphere size).
+
+    cudaStream_t stream_ = nullptr; ///< Non-default; see owns_stream_.
+    bool owns_stream_ = false;      ///< True iff ctor created stream_.
 
     cufftHandle fft_plan_ = 0;
     cublasHandle_t blas_ = nullptr;
