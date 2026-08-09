@@ -76,6 +76,7 @@ TEST(PeriodicWannierMath, InvalidArgumentsOnCompute) {
     PeriodicWannier mlwf;
     mlwf.k_mesh = 0;
     PW method;
+    method.gth_name = "GTH-PBE-q1";
     cpu::Frame f(1);
     f.span(kAtom_type)[0] = 1;
     f.box = cpu::Box::cubic(5.0);
@@ -91,6 +92,7 @@ TEST(PeriodicWannierMath, SpinPolarizedGateNoLongerFootholdThrow) {
     PeriodicWannier mlwf;
     mlwf.k_mesh = 0;
     PW method;
+    method.gth_name = "GTH-PBE-q1";
     method.spin_polarized = true;
     method.multiplicity = 1;
     cpu::Frame f(1);

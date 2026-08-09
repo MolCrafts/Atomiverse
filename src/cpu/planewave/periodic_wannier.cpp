@@ -870,7 +870,8 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
                 "spin_polarized");
 
         internal::PWProblem prob;
-        internal::setup_pw_problem(frame, method.upf_path, method.ecut_ry,
+        internal::setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry,
                                    method.k_mesh, prob);
         internal::PWWorkspace& ws = prob.ws;
         auto& gv0 = prob.gv0;
@@ -1018,7 +1019,8 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
         kvec.reserve(static_cast<std::size_t>(nk));
         for (const auto& kf : kg.kpoints)
             kvec.push_back(kf);
-        internal::rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry,
+        internal::rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry,
                                    kvec);
 
         for (int s = 0; s < 2; ++s) {
@@ -1106,7 +1108,8 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
     for (const auto& kf : kg.kpoints)
         kvec.push_back(kf);
 
-    internal::rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry,
+    internal::rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry,
                                kvec);
 
     internal::PWWorkspace& ws = prob.ws;

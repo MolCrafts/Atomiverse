@@ -1,5 +1,6 @@
 /// @file regressions/pw/h_stress_cubic/reg_h_stress_cubic.cpp
 /// @brief END-TO-END: cubic monoatomic PW stress off-diagonals vanish.
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -18,6 +19,7 @@ int main() {
     frame.box = cpu::Box::cubic(6.0);
 
     PW cfg;
+    cfg.gth_name = "GTH-PBE-q1";
     cfg.ecut_ry = 5.0;
     cfg.k_mesh = 1;
     cfg.tol = 1e-4;
@@ -25,16 +27,37 @@ int main() {
     cfg.mix_beta = 0.5;
 
     const auto s = pw_stress(frame, cfg);
-    const double tol = 0.5;
+    // eV/Å³. Cubic cell + one atom at the origin: the off-diagonal stress
+    // vanishes and the three diagonals are equal, both by symmetry rather than
+    // by convergence. The two are NOT the same kind of bound, so they do not
+    // share a tolerance:
+    //
+    //   * tol_offdiag — the off-diagonals are structurally zero, so this is a
+    //     machine-precision identity. Measured: |s| <= 1.1e-14.
+    //   * tol_diag    — `pw_stress` takes central finite differences of the
+    //     SCF energy under strain, and each diagonal component comes from an
+    //     independent FD evaluation. The floor is therefore set by the FD step
+    //     and the 1e-4 / 8-iteration SCF, NOT by machine epsilon. Measured
+    //     spread: 1.5e-8 against a signal of 0.01138 (1.3e-6 relative), and
+    //     bit-identical at 1, 4 and 8 OpenMP threads.
+    //
+    // The pre-GTH value of 0.5 was sized for the deleted toy potential and was
+    // ~7 orders too loose to catch an asymmetric stress term.
+    const double tol_offdiag = 1e-9;
+    const double tol_diag = 1e-6;
     for (int k = 3; k < 6; ++k) {
-        if (!(std::abs(s[k]) < tol)) {
-            std::printf("FAIL: off-diag stress[%d]=%.6g\n", k, s[k]);
+        if (!(std::abs(s[k]) < tol_offdiag)) {
+            std::printf("FAIL: off-diag stress[%d]=%.6g tol=%g\n", k, s[k], tol_offdiag);
             return 1;
         }
     }
-    if (!(std::abs(s[0] - s[1]) < tol && std::abs(s[1] - s[2]) < tol)) {
-        std::printf("FAIL: diagonal not equal xx=%.4g yy=%.4g zz=%.4g\n", s[0],
-                    s[1], s[2]);
+    const double spread = std::max(std::abs(s[0] - s[1]),
+                                   std::max(std::abs(s[1] - s[2]),
+                                            std::abs(s[0] - s[2])));
+    if (!(spread < tol_diag)) {
+        std::printf("FAIL: diagonal not equal xx=%.17g yy=%.17g zz=%.17g "
+                    "spread=%.6g tol=%g\n",
+                    s[0], s[1], s[2], spread, tol_diag);
         return 1;
     }
     std::printf("ok: stress Voigt = %.4g %.4g %.4g | %.4g %.4g %.4g eV/A3\n",

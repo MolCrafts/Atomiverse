@@ -1,7 +1,8 @@
 /// @file cpu/pw/pw_evaluator.h
 /// @brief PWEvaluator — plane-wave DFT energy (+ optional analytic forces).
 ///
-/// Mirrors `cpu::scf::SCF`: holds a `PW` inner solver built once;
+/// Mirrors the Gaussian methods (`cpu::scf::RHF` / `RKS` / …): holds a `PW`
+/// inner solver built once;
 /// each `launch()` runs the plane-wave SCF and writes energy [eV]. With
 /// `with_gradient(true)` (default **false**), ionic forces are filled via
 /// `pw_forces_analytic` [eV/Å]. FD oracle remains `pw_forces_fd`.

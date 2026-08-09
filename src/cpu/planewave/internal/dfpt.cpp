@@ -1027,7 +1027,8 @@ dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
 
     DfptGammaOutput out;
     PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
@@ -1792,10 +1793,13 @@ DfptGammaOutput
 dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                            AccReal response_tol, int response_max_iter,
                            AccReal cg_tol, int cg_max_iter, AccReal mix_beta) {
-    if (method.upf_path.empty())
+    // Fail fast, before any SCF: a run needs a real pseudopotential from one
+    // of the two sources. This used to test `upf_path` alone, which rejected
+    // a perfectly valid analytic-GTH run as if it were the deleted toy path.
+    if (method.upf_path.empty() && method.gth_name.empty())
         throw std::invalid_argument(
-            "dfpt_gamma_force_constants: requires a UPF pseudopotential "
-            "(toy V_loc path unsupported)");
+            "dfpt_gamma_force_constants: requires a pseudopotential — set "
+            "PW::upf_path (UPF file) or PW::gth_name (e.g. \"GTH-PBE-q4\")");
     if (!dfpt_xc_supported(method.xc))
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: hybrid XC unsupported "
@@ -2554,7 +2558,8 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
 
     DfptQOutput out;
     PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
@@ -2823,7 +2828,8 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
         kq_frac[static_cast<std::size_t>(ik)] = {
             kf[0] + q_frac[0], kf[1] + q_frac[1], kf[2] + q_frac[2]};
     }
-    rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry, kq_frac);
+    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, kq_frac);
     std::vector<GVectorList> gv_kq = prob.gv_k;
     std::vector<KState> kqstates(static_cast<std::size_t>(2 * n_kpts));
     for (int s = 0; s < 2; ++s) {
@@ -3437,10 +3443,12 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                                    const Vec3& q_frac, AccReal response_tol,
                                    int response_max_iter, AccReal cg_tol,
                                    int cg_max_iter, AccReal mix_beta) {
-    if (method.upf_path.empty())
+    // Same fail-fast gate as the Γ path: either pseudopotential source is
+    // valid; only "neither set" is an error.
+    if (method.upf_path.empty() && method.gth_name.empty())
         throw std::invalid_argument(
-            "dfpt_q_force_constants: requires a UPF pseudopotential "
-            "(toy V_loc path unsupported)");
+            "dfpt_q_force_constants: requires a pseudopotential — set "
+            "PW::upf_path (UPF file) or PW::gth_name (e.g. \"GTH-PBE-q4\")");
     if (!dfpt_xc_supported(method.xc))
         throw std::invalid_argument(
             "dfpt_q_force_constants: hybrid XC unsupported "
@@ -3634,7 +3642,8 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
         kq_frac[static_cast<std::size_t>(ik)] = {
             kf[0] + q_frac[0], kf[1] + q_frac[1], kf[2] + q_frac[2]};
     }
-    rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry, kq_frac);
+    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, kq_frac);
     std::vector<GVectorList> gv_kq = prob.gv_k;
     std::vector<KState> kqstates(static_cast<std::size_t>(n_kpts));
     for (int ik = 0; ik < n_kpts; ++ik) {

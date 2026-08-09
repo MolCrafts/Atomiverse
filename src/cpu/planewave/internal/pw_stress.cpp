@@ -81,25 +81,6 @@ MpiLayout mpi_layout() {
     return layout;
 }
 
-PW copy_pw(const PW& m) {
-    PW p;
-    p.upf_path = m.upf_path;
-    p.ecut_ry = m.ecut_ry;
-    p.k_mesh = m.k_mesh;
-    p.tol = m.tol;
-    p.max_iter = m.max_iter;
-    p.mix_beta = m.mix_beta;
-    p.pulay_depth = m.pulay_depth;
-    p.xc = m.xc;
-    p.spin_polarized = m.spin_polarized;
-    p.multiplicity = m.multiplicity;
-    p.smearing = m.smearing;
-    p.degauss = m.degauss;
-    p.mp_order = m.mp_order;
-    p.extra_bands = m.extra_bands;
-    return p;
-}
-
 void voigt_pair(int v, int& a, int& b) {
     static const int A[6] = {0, 1, 2, 0, 0, 1};
     static const int B[6] = {0, 1, 2, 1, 2, 2};
@@ -137,7 +118,7 @@ void apply_strain(cpu::Frame& frame, const Mat3& strain) {
 }
 
 double scf_energy_ry(const cpu::Frame& frame, const PW& method) {
-    PW solver = copy_pw(method);
+    PW solver = copy_pw_params(method);
     solver.build(frame);
     return solver.run(frame).energy;
 }
@@ -250,7 +231,8 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
                       PoissonSolver& poisson, XCBuilder& xc, VeffBuilder& veff,
                       DavidsonSolver& davidson, int n_bands) {
     PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     ws.mix_beta = AccReal(method.mix_beta);

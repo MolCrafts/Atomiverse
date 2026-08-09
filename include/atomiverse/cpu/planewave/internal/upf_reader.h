@@ -12,6 +12,11 @@ namespace pw {
 namespace internal {
 
 struct UPFData {
+    /// UPF `pseudo_type` attribute verbatim ("NC", "US", "USPP", "PAW", ...).
+    /// Empty when the file predates the attribute (UPF v1). Only "NC" is
+    /// supported; `read_upf_v1` rejects anything else rather than treating an
+    /// augmentation-charge pseudopotential as norm-conserving.
+    std::string pseudo_type;
     int z_val = 0;
     int l_max = 0;
     std::vector<AccReal> r;        // radial mesh [Bohr]

@@ -58,6 +58,31 @@ MPI_Datatype mpi_real_type() {
 
 } // namespace
 
+PW copy_pw_params(const PW& m) {
+    PW p;
+    // Pseudopotential source — exactly one of these is set, and dropping
+    // either makes the copy throw "no default pseudopotential" at build().
+    p.upf_path = m.upf_path;
+    p.gth_name = m.gth_name;
+    // Basis / k-mesh
+    p.ecut_ry = m.ecut_ry;
+    p.k_mesh = m.k_mesh;
+    // SCF control
+    p.tol = m.tol;
+    p.max_iter = m.max_iter;
+    p.mix_beta = m.mix_beta;
+    p.pulay_depth = m.pulay_depth;
+    // Hamiltonian / occupations
+    p.xc = m.xc;
+    p.spin_polarized = m.spin_polarized;
+    p.multiplicity = m.multiplicity;
+    p.smearing = m.smearing;
+    p.degauss = m.degauss;
+    p.mp_order = m.mp_order;
+    p.extra_bands = m.extra_bands;
+    return p;
+}
+
 PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
                            PWProblem& prob, PoissonSolver& poisson,
                            XCBuilder& xc, VeffBuilder& veff,
@@ -66,7 +91,8 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
     PWResult result{};
     const auto layout = mpi_layout();
 
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
@@ -171,7 +197,8 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
     PWResult result{};
     const auto layout = mpi_layout();
 
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;

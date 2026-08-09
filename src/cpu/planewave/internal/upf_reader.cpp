@@ -100,6 +100,7 @@ UPFData read_upf_v1(const std::string& path) {
             line = join_open_tag(f, line);
             auto zv = extract_attr(line, "z_valence");
             auto lm = extract_attr(line, "l_max");
+            upf.pseudo_type = extract_attr(line, "pseudo_type");
             if (!zv.empty())
                 upf.z_val = std::stoi(zv);
             if (!lm.empty())
@@ -183,6 +184,19 @@ UPFData read_upf_v1(const std::string& path) {
 
     if (upf.r.empty())
         throw std::runtime_error("UPF: no mesh found in " + path);
+
+    // Norm-conserving only. The plane-wave path applies no augmentation
+    // charge, so an ultrasoft or PAW pseudopotential would be integrated as
+    // if it were norm-conserving — E_aug still enters the total energy and
+    // the result is wrong by an unbounded amount, silently. An empty
+    // pseudo_type means the file predates the attribute (UPF v1); those are
+    // norm-conserving by construction and stay accepted.
+    if (!upf.pseudo_type.empty() && upf.pseudo_type != "NC")
+        throw std::runtime_error(
+            "UPF: " + path + " declares pseudo_type=\"" + upf.pseudo_type
+            + "\", but the plane-wave path implements norm-conserving "
+              "pseudopotentials only (no augmentation charge). Use an NC "
+              "pseudopotential, e.g. an ONCVPSP one.");
     return upf;
 }
 

@@ -6,7 +6,11 @@ Born–Oppenheimer molecular dynamics (BOMD) with plane-wave DFT forces:
 
 - Outer loop: `cpu::md::MD` + `VelocityVerlet` (NVE; no thermostat)
 - Force/energy: `cpu::pw::PWEvaluator` with `with_gradient(true)`
-  (analytic local Hellmann–Feynman + Ewald; toy empty UPF ⇒ no KB nonlocal)
+  (analytic local Hellmann–Feynman + Ewald). The pseudopotential is the
+  published analytic **GTH-PBE-q1** parameterization for hydrogen, evaluated
+  in-tree from `cpu/gpw/basis_data/gpw_tables.h` — no external file. That
+  entry carries no nonlocal projectors, so the KB term is legitimately zero
+  here (it is not "switched off").
 - Units on the public surface: energy eV, length Å, time fs, force eV/Å
 
 Literature basis for the **observable** (total-energy conservation on NVE when
@@ -21,7 +25,8 @@ Literature basis for the **observable** (total-energy conservation on NVE when
 
 **Symmetry pin** for residual force (same as `regressions/pw/h_force_analytic`):
 a single ion at a cubic high-symmetry site has \(\mathbf{F}=\mathbf{0}\) by
-lattice symmetry (toy PP path). Residual from short SCF is bounded by
+lattice symmetry — a statement about the lattice, independent of which
+pseudopotential is used. Residual from short SCF is bounded by
 \(|F| < 0.5\) eV/Å.
 
 This is **not** a golden snapshot of Atomiverse total energy. The pin is the
@@ -34,7 +39,7 @@ This is **not** a golden snapshot of Atomiverse total energy. The pin is the
 | Species | 1 × H (Z = 1) at the origin |
 | Mass | 1.008 amu |
 | Cell | cubic \(L = 6\) Å |
-| Pseudopotential | empty `upf_path` (toy local \(V\); same foothold as `h_force_*`) |
+| Pseudopotential | `gth_name = "GTH-PBE-q1"` (analytic GTH; same foothold as `h_force_*`) |
 | \(E_\mathrm{cut}\) | 5 Ry |
 | k-mesh | Γ-only (`k_mesh = 1`) |
 | SCF | `tol = 1e-4`, `max_iter = 12`, `mix_beta = 0.5` |
@@ -43,10 +48,10 @@ This is **not** a golden snapshot of Atomiverse total energy. The pin is the
 | Initial velocity | \(v_x = 0.002\) Å/fs (hand-set; `InitVelocity` COM-zeros N=1) |
 | Steps | 1 warm-up + 10 production (chunked) |
 
-**Why not H₂?** With the toy empty-UPF local potential the bare nuclear
-Coulomb repulsion of two protons is not cancelled by a physical molecular
-bonding curve; a short NVE traj dissociates violently and is not a useful
-energy-drift pin. The product force math is already covered by
+**Why not H₂?** At the 5 Ry cutoff this slug uses, the H 1s state is far
+from represented, so a two-proton cell has no meaningful bonding curve and a
+short NVE traj is not a useful energy-drift pin. The product force math is
+already covered by
 `h_force_analytic` / FD unit tests on dimers; this slug pins **MD binding +
 NVE conservation** on the symmetry-stable single-H foothold. A production
 Si/UPF BOMD traj is a follow-on once `pw-lda-si` re-pins bulk energy.

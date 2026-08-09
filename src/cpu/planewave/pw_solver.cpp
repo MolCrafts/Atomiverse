@@ -19,6 +19,8 @@
 
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
+#include "atomiverse/cpu/gpw/gth_potential.h"
+
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/units.h"
@@ -31,6 +33,7 @@
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_stress.h"
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
+#include "atomiverse/cpu/planewave/internal/scf_loop.h"
 #include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
@@ -118,16 +121,22 @@ void PW::build(const cpu::Frame& reference) {
         veff_ = std::make_unique<internal::VeffBuilder>();
         density_ = std::make_unique<internal::DensityBuilder>();
     }
+    // Validate the pseudopotential up front so a bad file or an unknown GTH
+    // name fails at build() rather than mid-SCF. setup_pw_problem() rebuilds
+    // it at each run().
+    if (upf_path.empty() == gth_name.empty())
+        throw std::invalid_argument(
+            "cpu::pw::PW::build: set exactly one of upf_path (a "
+            "norm-conserving UPF file) or gth_name (an in-tree analytic GTH "
+            "parameterization such as \"GTH-PBE-q4\"). A plane-wave run has "
+            "no default pseudopotential.");
     if (!upf_path.empty()) {
-        // Validate the pseudopotential up front (throws on parse error);
-        // setup_pw_problem() re-reads it at each run().
         (void)internal::read_upf_v1(upf_path);
     } else {
-        // Validate the toy valence table covers every atom type up front
-        // (throws on unsupported Z — no silent 0-electron fallback).
         const int* __restrict sp_type = reference.span(kAtom_type);
-        for (size_t i = 0; i < reference.nlocal(); ++i)
-            (void)internal::valence_from_z(sp_type[i]);
+        if (reference.nlocal() > 0)
+            (void)gpw::GthPotential(
+                static_cast<molrs::Element>(sp_type[0]), gth_name);
     }
     built_ = true;
 }
@@ -150,7 +159,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
     // ── Shared problem assembly (identical to the CUDA backend) ──
     internal::PWProblem prob;
-    internal::setup_pw_problem(frame, upf_path, ecut_ry, k_mesh, prob);
+    internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry, k_mesh,
+                               prob);
     internal::PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -237,7 +247,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
         ATV_INFO("[pw] start atoms={} elec={} bands={} ecut_ry={} {} "
                  "k_mesh={} ranks={} spin={} mult={} Na={} Nb={} smear={}",
                  frame.nlocal(), n_elec, n_bands_eff, ecut_ry,
-                 upf_path.empty() ? "toy" : "upf", k_mesh, layout.nprocs,
+                 upf_path.empty() ? gth_name.c_str() : "upf", k_mesh,
+                 layout.nprocs,
                  spin_polarized ? 2 : 1, multiplicity, n_alpha, n_beta,
                  use_smear ? 1 : 0);
 
@@ -898,27 +909,6 @@ PWResult& PW::run(const cpu::Frame& frame) {
     return result_;
 }
 
-namespace {
-PW copy_params(const PW& m) {
-    PW p;
-    p.upf_path = m.upf_path;
-    p.ecut_ry = m.ecut_ry;
-    p.k_mesh = m.k_mesh;
-    p.tol = m.tol;
-    p.max_iter = m.max_iter;
-    p.mix_beta = m.mix_beta;
-    p.pulay_depth = m.pulay_depth;
-    p.xc = m.xc;
-    p.spin_polarized = m.spin_polarized;
-    p.multiplicity = m.multiplicity;
-    p.smearing = m.smearing;
-    p.degauss = m.degauss;
-    p.mp_order = m.mp_order;
-    p.extra_bands = m.extra_bands;
-    p.multiplicity = m.multiplicity;
-    return p;
-}
-} // namespace
 
 std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                                                       const PW& method) {
@@ -961,12 +951,12 @@ pw_forces_fd(const cpu::Frame& frame, const PW& method, double h_ang) {
             const StorageReal r0 = axes[k][a];
 
             axes[k][a] = r0 + static_cast<StorageReal>(h_ang);
-            PW plus = copy_params(method);
+            PW plus = internal::copy_pw_params(method);
             plus.build(work);
             const double e_plus = plus.run(work).energy; // Ry
 
             axes[k][a] = r0 - static_cast<StorageReal>(h_ang);
-            PW minus = copy_params(method);
+            PW minus = internal::copy_pw_params(method);
             minus.build(work);
             const double e_minus = minus.run(work).energy;
 

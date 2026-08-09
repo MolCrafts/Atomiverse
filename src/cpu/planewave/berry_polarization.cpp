@@ -317,7 +317,7 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
                                 static_cast<AccReal>(f[1]),
                                 static_cast<AccReal>(f[2])});
             internal::rebuild_k_tables(prob, frame, method.upf_path,
-                                       method.ecut_ry, kvec);
+                                       method.gth_name, method.ecut_ry, kvec);
             const double phase =
                 string_phase_for_channel(prob, prob.ws, kf, dir, k_string,
                                          k_perp, n_occ, method.tol, two_pi);
@@ -363,7 +363,8 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
             kvec.push_back({static_cast<AccReal>(f[0]),
                             static_cast<AccReal>(f[1]),
                             static_cast<AccReal>(f[2])});
-        internal::rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry,
+        internal::rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry,
                                    kvec);
 
         double phase_sum = 0.0;

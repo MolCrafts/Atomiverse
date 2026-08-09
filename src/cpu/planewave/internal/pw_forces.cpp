@@ -71,15 +71,21 @@ std::complex<AccReal> im_l_factor(int l) {
     return {1, 0};
 }
 
-/// Local Hellmann–Feynman forces [Hartree/Bohr] from ρ(G) and atomic form
-/// factors. Toy: v_I(G) = −4π Z_I /(Ω G²). UPF: shared radial v(G) × phase.
+/// Local Hellmann–Feynman forces [Hartree/Bohr] from ρ(G) and the atomic
+/// form factor: the shared radial v(G) (`upf_vloc_to_gspace`) × phase.
+///
+/// `v(G)` is a required input. It used to be optional, with a bare-Coulomb
+/// −4π Z_v/(Ω G²) fallback when no UPF file was given — the local half of
+/// the deleted toy potential. Every run now carries a real pseudopotential
+/// (UPF file or analytic GTH), so there is nothing left to fall back to.
+///
+/// @param n_atoms Atom count (form factor is per-species, not per-atom).
+/// @param upf_vg  Radial local form factor v(G) [Hartree], one per G.
 void accumulate_local_forces(const PWWorkspace& ws, const GVectorList& gv,
-                             const std::vector<AccReal>& charges,
-                             const std::vector<AccReal>* upf_vg,
+                             int n_atoms,
+                             const std::vector<AccReal>& upf_vg,
                              std::vector<Vec3>& F_ha_bohr) {
-    const int n_atoms = static_cast<int>(charges.size());
     const AccReal omega = ws.omega;
-    const AccReal four_pi = AccReal(4.0 * M_PI);
 
     for (int ig = 0; ig < ws.n_g; ++ig) {
         AccReal g2 = gv.g[ig].norm_squared();
@@ -97,13 +103,7 @@ void accumulate_local_forces(const PWWorkspace& ws, const GVectorList& gv,
             AccReal cosph = std::cos(phase);
             AccReal sinph = std::sin(phase);
 
-            AccReal vg_atom;
-            if (upf_vg) {
-                vg_atom = (*upf_vg)[static_cast<std::size_t>(ig)];
-            } else {
-                vg_atom = -four_pi * charges[static_cast<std::size_t>(ia)]
-                          / (omega * g2);
-            }
+            const AccReal vg_atom = upf_vg[static_cast<std::size_t>(ig)];
             AccReal scale = omega * vg_atom * (rho_r * sinph + rho_i * cosph);
             F_ha_bohr[static_cast<std::size_t>(ia)] =
                 F_ha_bohr[static_cast<std::size_t>(ia)]
@@ -240,18 +240,17 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
 
     std::vector<Vec3> F_ha(static_cast<std::size_t>(n), Vec3::zeros());
 
-    std::vector<AccReal> valence_charges, nuclear_Z;
-    valence_charges.reserve(static_cast<std::size_t>(n));
-    nuclear_Z.reserve(static_cast<std::size_t>(n));
-    const int* types = frame.span(kAtom_type);
-    for (int i = 0; i < n; ++i) {
-        int z = types[i];
-        nuclear_Z.push_back(static_cast<AccReal>(z));
-        valence_charges.push_back(static_cast<AccReal>(valence_from_z(z)));
-    }
-    const bool has_upf = !method.upf_path.empty();
-    const auto& ewald_charges = has_upf ? valence_charges : nuclear_Z;
-    const auto& loc_charges = valence_charges;
+    // The pseudopotential — UPF file or analytic GTH — is the single source
+    // of both the ion charge the Ewald sum sees and the local form factor,
+    // exactly as in setup_pw_problem(). It used to be read only when a UPF
+    // *file* was named: a GTH run took the `else` branches and silently got
+    // bare nuclear Z in the Ewald sum, a bare-Coulomb local force and no KB
+    // term at all, i.e. the deleted toy potential's forces.
+    const UPFData upf =
+        load_pseudopotential(frame, method.upf_path, method.gth_name);
+    const std::vector<AccReal> ion_charges(static_cast<std::size_t>(n),
+                                           static_cast<AccReal>(upf.z_val));
+    const auto& ewald_charges = ion_charges;
 
     // ── Ewald ──
     std::vector<Vec3> pos_ang(static_cast<std::size_t>(n));
@@ -278,17 +277,13 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
     // with nonzero per-atom force contributions, since ρ(G) does not
     // vanish there) and silently zeroed those shells. Exact per-species
     // v(G) is shared with setup via internal::upf_vloc_to_gspace.
-    std::vector<AccReal> upf_vg;
-    const std::vector<AccReal>* upf_ptr = nullptr;
-    if (has_upf) {
-        const UPFData upf = read_upf_v1(method.upf_path);
-        upf_vg = upf_vloc_to_gspace(upf, scf_prob.gv0, ws.omega);
-        upf_ptr = &upf_vg;
-    }
-    accumulate_local_forces(ws, scf_prob.gv0, loc_charges, upf_ptr, F_ha);
+    const std::vector<AccReal> upf_vg =
+        upf_vloc_to_gspace(upf, scf_prob.gv0, ws.omega);
+    accumulate_local_forces(ws, scf_prob.gv0, n, upf_vg, F_ha);
 
-    // ── Nonlocal KB (UPF only) ──
-    if (has_upf && !scf_prob.kb_proj_k.empty()) {
+    // ── Nonlocal KB ── (absent only for a potential with no projectors,
+    // e.g. GTH-PBE-q1 for hydrogen, which is purely local.)
+    if (!scf_prob.kb_proj_k.empty()) {
         std::vector<Vec3> F_nl(static_cast<std::size_t>(n), Vec3::zeros());
 
         poisson.step(ws);

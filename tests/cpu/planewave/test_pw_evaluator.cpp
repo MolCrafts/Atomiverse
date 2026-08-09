@@ -56,12 +56,18 @@ cpu::Frame make_si_fcc(double a) {
     return f;
 }
 
+/// Cheapest settings that still run the real GTH path. Every gate in this
+/// file is an identity between two runs of the *same* settings (evaluator
+/// vs direct solver, Ry vs eV), so SCF quality is irrelevant to what is
+/// asserted — only determinism is. Converged Si numbers live in
+/// regressions/pw/pw-lda-si.
 PW small_config() {
     PW cfg;
-    cfg.ecut_ry = 10.0;
-    cfg.k_mesh = 2;
-    cfg.tol = 1e-6;
-    cfg.max_iter = 20;
+    cfg.gth_name = "GTH-PBE-q4";
+    cfg.ecut_ry = 8.0;
+    cfg.k_mesh = 1;
+    cfg.tol = 1e-4;
+    cfg.max_iter = 6;
     return cfg;
 }
 } // namespace

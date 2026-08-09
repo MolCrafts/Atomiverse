@@ -9,7 +9,7 @@
 #   EVALUATE, ANALYSIS, IO
 #
 # molrs (Rust CXX) is **derived**, not a peer product switch:
-#   ATV_BUILD_ANALYSIS / IO / PYTHON / GPW / HF / SEMIEMPIRICAL  →  enable MOLRS
+#   ATV_BUILD_ANALYSIS / IO / PYTHON / GPW / HF / PW / SEMIEMPIRICAL → enable MOLRS
 #   User turns ANALYSIS (or IO/…) on/off; MOLRS follows. Never “MOLRS requires
 #   ANALYSIS” — the product owns the feature, molrs is the implementation.
 #
@@ -18,7 +18,7 @@
 #   PATH → MINIMIZER  (then inherits minimizer → potentials+neighbor)
 #   KSPACE → POTENTIALS
 #   PYTHON → IO (exchange for nanobind)
-#   ANALYSIS | IO | PYTHON | GPW | HF | SEMIEMPIRICAL → MOLRS (derived)
+#   ANALYSIS | IO | PYTHON | GPW | HF | PW | SEMIEMPIRICAL → MOLRS (derived)
 # GPW → HF ∧ PW, TORCH → CUDA, LAUNCHER → MPI∧PYTHON remain FATAL elsewhere.
 
 option(ATV_BUILD_MD "Build classical MD domain (cpu/dynamics, cuda/dynamics)" ON)
@@ -86,6 +86,11 @@ endif()
 if(ATV_BUILD_GPW)
     set(_atv_need_molrs TRUE)
     list(APPEND _atv_molrs_why "GPW")
+endif()
+# PW consumes the shared analytic GTH tables, which key on molrs::Element.
+if(ATV_BUILD_PW)
+    set(_atv_need_molrs TRUE)
+    list(APPEND _atv_molrs_why "PW")
 endif()
 if(ATV_BUILD_HF)
     set(_atv_need_molrs TRUE)

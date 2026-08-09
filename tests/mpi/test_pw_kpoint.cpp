@@ -55,6 +55,7 @@ TEST(PWMpiKpoint, AllRanksAgreeOnEnergy) {
     auto frame = make_si_fcc(5.43);
 
     PW cfg;
+    cfg.gth_name = "GTH-PBE-q4";
     cfg.ecut_ry = 10.0;
     cfg.k_mesh = 2; // 8 k-points → exercises distribution at n=2,4
     cfg.tol = 1e-6;
@@ -97,6 +98,7 @@ TEST(PWMpiKpoint, RankCountInvariantEnergy) {
     auto frame = make_si_fcc(5.43);
 
     PW cfg;
+    cfg.gth_name = "GTH-PBE-q4";
     cfg.ecut_ry = 10.0;
     cfg.k_mesh = 2;
     cfg.tol = 1e-6;
@@ -119,6 +121,7 @@ TEST(PWMpiKpoint, RoundRobinPartitionCoversAllKpoints) {
     auto frame = make_si_fcc(5.43);
 
     PW cfg;
+    cfg.gth_name = "GTH-PBE-q4";
     cfg.ecut_ry = 10.0;
     cfg.k_mesh = 2; // 8 k-points
     cfg.tol = 1e-6;

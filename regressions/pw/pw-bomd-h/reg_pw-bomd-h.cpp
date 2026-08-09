@@ -1,5 +1,5 @@
 /// @file regressions/pw/pw-bomd-h/reg_pw-bomd-h.cpp
-/// @brief END-TO-END: short PW BOMD NVE on H (toy PP) — energy-drift pin.
+/// @brief END-TO-END: short PW BOMD NVE on H (GTH PP) — energy-drift pin.
 ///
 /// See REFERENCE.md. Public API only. Requires ATV_BUILD_PW (+ MD product).
 /// Exit non-zero on failure.
@@ -19,8 +19,8 @@
 using namespace ATV;
 
 int main() {
-    // Single H at the cubic-cell origin: lattice symmetry ⇒ F ≈ 0 for the
-    // toy PP (same foothold as regressions/pw/h_force_*). Free-particle
+    // Single H at the cubic-cell origin: lattice symmetry ⇒ F ≈ 0
+    // (same foothold as regressions/pw/h_force_*). Free-particle
     // NVE with a hand-set velocity (InitVelocity always zeros COM, which
     // kills KE for N=1). BOMD product path still runs full SCF+analytic
     // forces every step.
@@ -38,12 +38,12 @@ int main() {
     frame.box = cpu::Box::cubic(6.0);
 
     cpu::pw::PW pw;
+    pw.gth_name = "GTH-PBE-q1"; // analytic GTH for H (see REFERENCE.md)
     pw.ecut_ry = 5.0;
     pw.k_mesh = 1;
     pw.tol = 1e-4;
     pw.max_iter = 12;
     pw.mix_beta = 0.5;
-    // empty upf_path → toy V_loc (see REFERENCE.md)
 
     constexpr double dt = 0.5; // fs
     constexpr int n_prod = 10;

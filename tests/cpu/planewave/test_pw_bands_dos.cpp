@@ -133,6 +133,7 @@ TEST(BandsCompute, SpinPlusMetallicSmearRequiresPositiveDegauss) {
     frame.box = ATV::cpu::Box::cubic(5.0);
 
     PW method;
+    method.gth_name = "GTH-PBE-q4"; // valid potential: degauss is what fails
     method.spin_polarized = true;
     method.multiplicity = 1;
     method.smearing = Smearing::fermi_dirac;
@@ -166,7 +167,8 @@ TEST(BandsCompute, SpinPlusMetallicSmearNotRejectedByCombo) {
     method.extra_bands = 2;
     method.ecut_ry = 5.0;
     method.k_mesh = 1;
-    method.max_iter = 1; // cheap if setup succeeds with empty UPF toy path
+    method.gth_name = "GTH-PBE-q4"; // analytic Si, no file dependency
+    method.max_iter = 1;
 
     Bands bands;
     bands.n_bands = 4;

@@ -17,7 +17,21 @@ using namespace ATV;
 using namespace ATV::cpu::pw;
 
 int main() {
-    const double tol = 0.5; // eV/Å — residual of toy-PP + short SCF
+    // eV/Å. A single atom at the origin of a cubic cell: the force vanishes by
+    // point symmetry, not by convergence, so both bounds below are symmetry
+    // identities rather than SCF-quality bounds.
+    //
+    // The two paths have genuinely different floors, so they get different
+    // bounds instead of one blanket number:
+    //   * tol_fd    — central differences with the 5e-3 Å step below, so the
+    //                 floor is set by the FD step and the 1e-4 SCF tolerance,
+    //                 not by machine epsilon. Measured: 8.3e-7.
+    //   * tol_eval  — the evaluator path returns the analytic gradient here.
+    //                 Measured: 3.9e-15.
+    // The pre-GTH value of 0.5 was sized for the deleted toy potential and was
+    // far too loose to detect a dropped or asymmetric force term.
+    const double tol_fd = 1e-4;
+    const double tol_eval = 1e-9;
 
     cpu::Frame frame(1);
     frame.span(kAtom_type)[0] = 1;
@@ -28,6 +42,7 @@ int main() {
     frame.box = cpu::Box::cubic(6.0);
 
     PW cfg;
+    cfg.gth_name = "GTH-PBE-q1";
     cfg.ecut_ry = 5.0;
     cfg.k_mesh = 1;
     cfg.tol = 1e-4;
@@ -41,8 +56,8 @@ int main() {
     }
     const double mag =
         std::sqrt(F[0][0] * F[0][0] + F[0][1] * F[0][1] + F[0][2] * F[0][2]);
-    if (!(mag < tol)) {
-        std::printf("FAIL: |F|=%.6g eV/Å  tol=%g (symmetry)\n", mag, tol);
+    if (!(mag < tol_fd)) {
+        std::printf("FAIL: |F|=%.6g eV/Å  tol=%g (symmetry)\n", mag, tol_fd);
         return 1;
     }
 
@@ -65,8 +80,8 @@ int main() {
         frame.span(kAtom_fx)[0] * frame.span(kAtom_fx)[0]
         + frame.span(kAtom_fy)[0] * frame.span(kAtom_fy)[0]
         + frame.span(kAtom_fz)[0] * frame.span(kAtom_fz)[0]));
-    if (!(mag2 < tol)) {
-        std::printf("FAIL: evaluator |F|=%.6g eV/Å  tol=%g\n", mag2, tol);
+    if (!(mag2 < tol_eval)) {
+        std::printf("FAIL: evaluator |F|=%.6g eV/Å  tol=%g\n", mag2, tol_eval);
         return 1;
     }
 

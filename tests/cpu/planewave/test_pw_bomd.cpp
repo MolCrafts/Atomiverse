@@ -40,6 +40,7 @@ cpu::Frame make_h_cubic() {
 
 PW cheap_cfg() {
     PW cfg;
+    cfg.gth_name = "GTH-PBE-q1";
     cfg.ecut_ry = 5.0;
     cfg.k_mesh = 1;
     cfg.tol = 1e-4;

@@ -36,7 +36,8 @@ struct PWProblem {
     /// Per-k-point nonlocal projector / atomic-wfc tables, evaluated on
     /// q = k+G of each sphere (size and values are k-dependent). The SCF
     /// loop copies entry ik into ws.kb_proj / ws.atom_wfc before solving
-    /// that k-point. Empty for the toy potential.
+    /// that k-point. Empty when the potential carries no projectors
+    /// (e.g. GTH-PBE-q1 for hydrogen, which is purely local).
     std::vector<std::vector<std::vector<PWWorkspace::KBProjG>>> kb_proj_k;
     std::vector<std::vector<std::vector<PWWorkspace::AtomWfc>>> atom_wfc_k;
 
@@ -48,6 +49,30 @@ struct PWProblem {
 /// @brief Number of valence electrons assumed for nuclear charge `z`
 ///        (H..Ar) when no UPF pseudopotential supplies it.
 int valence_from_z(int z);
+
+/// @brief Resolve a run's pseudopotential to `UPFData`, from either source.
+///
+/// Exactly one of @p upf_path / @p gth_name must be set — a plane-wave run
+/// has no meaningful default. The analytic GTH branch evaluates the
+/// published parameters onto UPF-shaped radial tables
+/// (`internal::upf_from_gth`), so every downstream consumer — local form
+/// factor, KB projectors, forces, stress, DFPT — sees one representation.
+///
+/// This is the single definition of "which potential does this run use".
+/// `setup_pw_problem` and the analytic force path both call it: when the
+/// force path answered that question on its own it looked only for a UPF
+/// *file*, so GTH runs silently fell back to bare nuclear Coulomb.
+///
+/// @param frame     Geometry; supplies the atomic numbers (single species).
+/// @param upf_path  Norm-conserving UPF file, or empty to use @p gth_name.
+/// @param gth_name  In-tree GTH parameterization (e.g. "GTH-PBE-q4"), or
+///                  empty to use @p upf_path.
+/// @return Parsed / synthesized pseudopotential tables.
+/// @throws std::invalid_argument if neither or both are set, or if
+///         @p gth_name is used on a frame that mixes atomic numbers.
+UPFData load_pseudopotential(const cpu::Frame& frame,
+                             const std::string& upf_path,
+                             const std::string& gth_name);
 
 /// @brief Radial → G-space form factor v(G) of the UPF local potential
 ///        [Hartree], one value per G of `gv` (QE `vloc_mod.f90` route:
@@ -66,19 +91,25 @@ std::vector<AccReal> upf_vloc_to_gspace(const UPFData& upf,
                                         const GVectorList& gv, AccReal omega);
 
 /// @brief Assemble the complete SCF problem from a Frame: Ewald energy,
-///        G-vectors, k-mesh, FFT grids, V_loc (UPF or toy), KB projectors,
+///        G-vectors, k-mesh, FFT grids, V_loc, KB projectors,
 ///        atomic wavefunctions and the initial density.
 ///
 /// This is the entire pre-loop section of the original monolithic solver; both
 /// backends call it and then run their own SCF loop.
 ///
-/// @param frame    Input structure (positions in Å, type = Z).
-/// @param upf_path UPF pseudopotential file ("" = toy V_loc).
-/// @param ecut_ry  Plane-wave cutoff [Ry].
-/// @param k_mesh   Monkhorst-Pack mesh size per dimension.
-/// @param out      Problem to fill (must outlive the SCF loop).
+/// @param frame     Input structure: geometry (positions [Å]), species
+///                  (type = Z) and cell.
+/// @param upf_path  Norm-conserving UPF file, or empty to use @p gth_name.
+/// @param gth_name  In-tree analytic GTH parameterization (e.g.
+///                  "GTH-PBE-q4"), or empty to use @p upf_path. Exactly one
+///                  of the two must be set — a plane-wave run has no
+///                  meaningful default pseudopotential.
+/// @param ecut_ry   Wavefunction cutoff [Ry].
+/// @param k_mesh    Monkhorst-Pack mesh size per dimension.
+/// @param out       Problem to fill (must outlive the SCF loop).
 void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
-                      double ecut_ry, int k_mesh, PWProblem& out);
+                      const std::string& gth_name, double ecut_ry, int k_mesh,
+                      PWProblem& out);
 
 /// @brief Replace only the k-mesh tables on an assembled problem.
 ///
@@ -89,11 +120,14 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 ///
 /// @param out      Problem from a prior `setup_pw_problem` (density frozen).
 /// @param frame    Geometry (positions [Å], types); used for KB structure factors.
-/// @param upf_path UPF path ("" = toy — no KB tables).
+/// @param upf_path UPF file, or empty to use @p gth_name.
+/// @param gth_name In-tree GTH parameterization, or empty to use
+///                 @p upf_path.
 /// @param ecut_ry  Wavefunction cutoff [Ry] (same as SCF).
 /// @param kfrac    Fractional (crystal) k-coordinates.
 void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
-                      const std::string& upf_path, double ecut_ry,
+                      const std::string& upf_path, const std::string& gth_name,
+                      double ecut_ry,
                       const std::vector<Vec3>& kfrac);
 
 /// @brief Solve the Pulay/DIIS constrained least-squares coefficients.

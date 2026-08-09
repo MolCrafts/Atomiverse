@@ -33,6 +33,7 @@ cpu::Frame o2_frame(double L_ang) {
 
 TEST(PWSpin, DefaultRestricted) {
     PW pw;
+    pw.gth_name = "GTH-PBE-q6";
     EXPECT_FALSE(pw.spin_polarized);
     EXPECT_EQ(pw.multiplicity, 1);
     EXPECT_DOUBLE_EQ(pw.last_result().magnetization, 0.0);
@@ -41,12 +42,12 @@ TEST(PWSpin, DefaultRestricted) {
 TEST(PWSpin, MultiplicityParityThrows) {
     auto f = o2_frame(8.0);
     PW pw;
+    pw.gth_name = "GTH-PBE-q6";
     pw.spin_polarized = true;
     pw.multiplicity = 2; // odd mag with even n_elec → invalid
     pw.ecut_ry = 8.0;
     pw.k_mesh = 1;
     pw.max_iter = 1;
-    // empty upf_path = toy V_loc (valence_from_z)
     pw.build(f);
     EXPECT_THROW(pw.run(f), std::invalid_argument);
 }
@@ -56,12 +57,13 @@ TEST(PWSpin, O2TripletMagnetizationIdentity) {
     // identity; does not require a tight SCF). Tiny ecut / short budget so
     // the unit suite stays in the seconds regime. Default xc=PBE uses true
     // collinear spin-GGA (`XCBuilder::step_spin`).
-    auto f = o2_frame(8.0);
+    auto f = o2_frame(6.0);
     PW pw;
-    pw.ecut_ry = 6.0;
+    pw.gth_name = "GTH-PBE-q6";
+    pw.ecut_ry = 4.0;
     pw.k_mesh = 1;
     pw.tol = 1e-3;
-    pw.max_iter = 4;
+    pw.max_iter = 2; // occupation identity; SCF quality is irrelevant
     pw.mix_beta = 0.5;
     pw.spin_polarized = true;
     pw.multiplicity = 3;
@@ -88,6 +90,7 @@ TEST(PWSpin, CollinearSmearNonMagneticSeedKeepsSpinSymmetry) {
     // symmetry spontaneously (M ≈ −0.61 on a non-magnetic cell).
     auto f = o2_frame(6.0);
     PW pw;
+    pw.gth_name = "GTH-PBE-q6";
     pw.ecut_ry = 4.0;
     pw.k_mesh = 1;
     pw.tol = 1e-4;
@@ -115,6 +118,7 @@ TEST(PWSpin, CollinearSmearMultiKSharedMuConservesElectrons) {
     //       also proves each k-point's spin-↓ Hamiltonian is the spin-↑ one.
     auto f = o2_frame(5.5);
     PW pw;
+    pw.gth_name = "GTH-PBE-q6";
     pw.ecut_ry = 4.0;
     pw.k_mesh = 2;
     pw.tol = 1e-4;
@@ -140,6 +144,7 @@ TEST(PWSpin, O2TripletMultiKMagnetizationIdentity) {
     // enough for the occupation identity; keep wall in the unit-test budget.
     auto f = o2_frame(5.5);
     PW pw;
+    pw.gth_name = "GTH-PBE-q6";
     pw.ecut_ry = 4.0;
     pw.k_mesh = 2;
     pw.tol = 1e-1;

@@ -4,7 +4,11 @@
 /// Facade-private step helper owned by `cpu::pw::PW`. NOT a
 /// `cpu::Component` subclass; it never touches the driver loop's
 /// `IterationStatus` (borrowed by the Context as `ctx.loop`) — the plane-wave
-/// SCF manages its own internal convergence, exactly like `cpu::scf::SCFSolver`.
+/// SCF manages its own internal convergence. (The Gaussian methods no longer
+/// work this way: `cpu::scf::MeanFieldMethod<D>` *is* a `Driver<scf::Phase>`
+/// node and owns a real `IterationStatus` — see `docs/developer/
+/// cpu-internals.md`. Turning `cpu::pw::PW` into a Driver node too is
+/// scheduled debt, not a pattern to copy.)
 #pragma once
 
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"

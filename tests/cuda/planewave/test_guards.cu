@@ -24,7 +24,8 @@ static_assert(std::is_move_constructible_v<ATV::cuda::pw::PW>,
 
 namespace {
 
-/// @brief One H atom in a 6 Å cubic box, toy V_loc (no UPF file needed).
+/// @brief One H atom in a 6 Å cubic box. The potential comes from the
+///        analytic GTH-PBE-q1 parameterization, so no UPF file is needed.
 cpu::Frame make_h_atom() {
     cpu::Frame f(1);
     f.span(kAtom_type)[0] = 1;
@@ -40,7 +41,7 @@ cpu::Frame make_h_atom() {
 ///        fixed occupations) so a test can flip exactly one of them.
 cuda::pw::PW make_supported() {
     cuda::pw::PW pw;
-    pw.upf_path = "";
+    pw.gth_name = "GTH-PBE-q1"; // real H potential, no file needed
     pw.ecut_ry = 6.0;
     pw.k_mesh = 1;
     pw.xc = cpu::scf::XCType::LSDA;

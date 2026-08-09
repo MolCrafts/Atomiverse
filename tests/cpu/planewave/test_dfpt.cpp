@@ -164,7 +164,7 @@ cpu::Frame si_frame() {
 
 TEST(DfptPhonon, ThrowsOnEmptyUpf) {
     auto frame = si_frame();
-    PW method; // upf_path empty (toy)
+    PW method; // no pseudopotential set at all
     method.xc = cpu::scf::XCType::LSDA;
     DfptPhonon dfpt;
     EXPECT_THROW(dfpt.compute(method, frame), std::invalid_argument);
@@ -184,7 +184,7 @@ TEST(DfptPhonon, ThrowsOnHybridXc) {
 TEST(DfptPhonon, ThrowsOnEmptyUpfWithPbe) {
     // Pure PBE is accepted at the XC gate; empty UPF still fails first.
     auto frame = si_frame();
-    PW method; // upf_path empty
+    PW method; // no pseudopotential set at all
     method.xc = cpu::scf::XCType::PBE;
     DfptPhonon dfpt;
     EXPECT_THROW(dfpt.compute(method, frame), std::invalid_argument);

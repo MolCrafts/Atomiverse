@@ -50,8 +50,14 @@ using Smearing = ::ATV::cpu::pw::Smearing;
 /// each `run()`, so the object is safe to reuse across AIMD / optimize steps.
 class PW {
   public:
-    /// @brief UPF v1 pseudopotential path (empty = toy V_loc).
+    /// @brief Norm-conserving UPF pseudopotential file. Mutually exclusive
+    ///        with `gth_name`; exactly one must be set.
     std::string upf_path;
+    /// @brief In-tree analytic GTH parameterization, e.g. "GTH-PBE-q4".
+    ///        Needs no external file. Mutually exclusive with `upf_path`;
+    ///        leaving both empty throws — there is no default
+    ///        pseudopotential. Same surface as `cpu::pw::PW`.
+    std::string gth_name;
     /// @brief Wavefunction cutoff [Ry].
     double ecut_ry = 30.0;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).
@@ -96,11 +102,19 @@ class PW {
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
 
-    /// @brief One-time setup: parses the UPF (if any) and validates Z.
+    /// @brief One-time setup: resolves the pseudopotential and validates Z.
+    ///
+    /// Validates the chosen source up front so a missing file or an unknown
+    /// GTH name fails here rather than mid-SCF. Same envelope as
+    /// `cpu::pw::PW::build`.
+    ///
     /// @param reference Frame used only to validate atom types.
-    /// @throws std::runtime_error if the UPF cannot be parsed.
-    /// @throws std::out_of_range if the toy valence table has no entry for
-    ///         some atom's Z (no silent zero-electron fallback).
+    /// @throws std::invalid_argument if neither or both of `upf_path` and
+    ///         `gth_name` are set — a plane-wave run has no default
+    ///         pseudopotential.
+    /// @throws std::runtime_error if the UPF cannot be parsed, or if
+    ///         `gth_name` names no in-tree parameterization for this element
+    ///         (no silent fallback).
     void build(const cpu::Frame& reference);
 
     /// @brief Plane-wave SCF at the frame's current geometry, on the GPU.

@@ -17,7 +17,14 @@ using namespace ATV;
 using namespace ATV::cpu::pw;
 
 int main() {
-    const double tol = 0.5; // eV/Å — residual of toy-PP + short SCF
+    // eV/Å. A single atom at the origin of a cubic cell: the force is zero by
+    // point symmetry, not by convergence, so this is a machine-precision
+    // identity and NOT an SCF-quality bound — it holds even though the 8-iter
+    // SCF below stops short of `cfg.tol`. Measured with GTH-PBE-q1 at
+    // ecut_ry=5: |F| = 3.9e-15 for both the analytic and the evaluator path.
+    // (The pre-GTH value of 0.5 was sized for the deleted toy potential and
+    // was ~14 orders of magnitude too loose to detect a broken force term.)
+    const double tol = 1e-9;
 
     cpu::Frame frame(1);
     frame.span(kAtom_type)[0] = 1;
@@ -28,6 +35,7 @@ int main() {
     frame.box = cpu::Box::cubic(6.0);
 
     PW cfg;
+    cfg.gth_name = "GTH-PBE-q1";
     cfg.ecut_ry = 5.0;
     cfg.k_mesh = 1;
     cfg.tol = 1e-4;

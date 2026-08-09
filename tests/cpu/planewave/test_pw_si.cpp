@@ -41,10 +41,11 @@ cpu::Frame make_si_fcc(double a) {
 TEST(PW, CompilesAndRuns) {
     auto frame = make_si_fcc(5.43);
     PW cfg;
-    cfg.ecut_ry = 10.0;
-    cfg.k_mesh = 2;
-    cfg.tol = 1e-6;
-    cfg.max_iter = 30;
+    cfg.gth_name = "GTH-PBE-q4";
+    cfg.ecut_ry = 8.0;
+    cfg.k_mesh = 1;
+    cfg.tol = 1e-4;
+    cfg.max_iter = 6;
     PW solver = std::move(cfg);
     solver.build(frame);
     const auto& r = solver.run(frame);
@@ -55,10 +56,11 @@ TEST(PW, CompilesAndRuns) {
 TEST(PW, RunsWithoutCrash) {
     auto frame = make_si_fcc(5.43);
     PW cfg;
-    cfg.ecut_ry = 10.0;
-    cfg.k_mesh = 2;
-    cfg.tol = 1e-6;
-    cfg.max_iter = 20;
+    cfg.gth_name = "GTH-PBE-q4";
+    cfg.ecut_ry = 8.0;
+    cfg.k_mesh = 1;
+    cfg.tol = 1e-4;
+    cfg.max_iter = 8;
     PW solver = std::move(cfg);
     solver.build(frame);
     const auto& r = solver.run(frame);

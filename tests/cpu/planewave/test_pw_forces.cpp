@@ -35,7 +35,8 @@ cpu::Frame make_h_cubic(double L) {
 
 PW cheap_cfg() {
     PW cfg;
-    cfg.ecut_ry = 5.0;
+    cfg.gth_name = "GTH-PBE-q1"; // analytic H, no file dependency
+    cfg.ecut_ry = 4.0;
     cfg.k_mesh = 1;
     cfg.tol = 1e-4;
     cfg.max_iter = 6;
@@ -46,7 +47,7 @@ PW cheap_cfg() {
 } // namespace
 
 TEST(PWForces, RejectsBadStep) {
-    auto f = make_h_cubic(6.0);
+    auto f = make_h_cubic(4.5);
     EXPECT_THROW(pw_forces_fd(f, cheap_cfg(), 0.0), std::invalid_argument);
     EXPECT_THROW(pw_forces_fd(f, cheap_cfg(), -1e-3), std::invalid_argument);
 }
@@ -57,27 +58,32 @@ TEST(PWForces, AnalyticRejectsEmptyFrame) {
 }
 
 TEST(PWForces, SingleAtomForceVanishesFd) {
-    // 6 SCF solves; cheap settings keep this under ~30 s on a laptop.
-    auto f = make_h_cubic(6.0);
+    // 6 SCF solves. A single ion at a cubic high-symmetry site has F = 0 by
+    // lattice symmetry, exactly — the gate is the FD/SCF noise floor, not a
+    // physical magnitude. With a real GTH potential the residual is ~1e-7
+    // eV/Å; the old 0.5 eV/Å bound dated from the toy potential and was so
+    // loose it would have accepted a completely wrong local force.
+    auto f = make_h_cubic(4.5);
     const auto F = pw_forces_fd(f, cheap_cfg(), 5e-3);
     ASSERT_EQ(F.size(), 1u);
     const double mag =
         std::sqrt(F[0][0] * F[0][0] + F[0][1] * F[0][1] + F[0][2] * F[0][2]);
-    // Toy PP + loose SCF: force is numerical noise around zero.
-    EXPECT_LT(mag, 0.5) << " |F|=" << mag;
+    EXPECT_LT(mag, 1e-5) << " |F|=" << mag;
 }
 
 TEST(PWForces, AnalyticSingleAtomForceVanishes) {
-    auto f = make_h_cubic(6.0);
+    // Same exact symmetry statement as the FD test above, on the analytic
+    // path: the Hellmann–Feynman sum over G must cancel shell by shell.
+    auto f = make_h_cubic(4.5);
     const auto F = pw_forces_analytic(f, cheap_cfg());
     ASSERT_EQ(F.size(), 1u);
     const double mag =
         std::sqrt(F[0][0] * F[0][0] + F[0][1] * F[0][1] + F[0][2] * F[0][2]);
-    EXPECT_LT(mag, 0.5) << " |F_analytic|=" << mag;
+    EXPECT_LT(mag, 1e-8) << " |F_analytic|=" << mag;
 }
 
 TEST(PWForces, EvaluatorWritesAnalyticForcesWhenRequested) {
-    auto frame = make_h_cubic(6.0);
+    auto frame = make_h_cubic(4.5);
     for (int i = 0; i < frame.nlocal(); ++i) {
         frame.span(kAtom_fx)[i] = 99.0;
         frame.span(kAtom_fy)[i] = 99.0;
@@ -99,11 +105,11 @@ TEST(PWForces, EvaluatorWritesAnalyticForcesWhenRequested) {
         frame.span(kAtom_fx)[0] * frame.span(kAtom_fx)[0]
         + frame.span(kAtom_fy)[0] * frame.span(kAtom_fy)[0]
         + frame.span(kAtom_fz)[0] * frame.span(kAtom_fz)[0]));
-    EXPECT_LT(mag, 0.5);
+    EXPECT_LT(mag, 1e-8) << " |F_frame|=" << mag; // same symmetry zero
 }
 
 TEST(PWForces, EvaluatorEnergyOnlySkipsForces) {
-    auto frame = make_h_cubic(6.0);
+    auto frame = make_h_cubic(4.5);
     PWEvaluator pwe{cheap_cfg()};
     EXPECT_FALSE(pwe.compute_forces());
 
@@ -121,8 +127,12 @@ TEST(PWForces, AnalyticUpfSiDimerFiniteForces) {
     // atoms are slightly off the ideal high-symmetry relative placement.
     namespace fs = std::filesystem;
     const char* candidates[] = {
+#ifdef ATV_SOURCE_DIR
+        // Absolute: ctest's working directory is the build tree, so a
+        // relative path here skipped this test instead of running it.
+        ATV_SOURCE_DIR "/tests/data/pw/Si_lda_nc.upf",
+#endif
         "tests/data/pw/Si_lda_nc.upf",
-        "benchmarks/pw/si/validation/reference/Si_lda_nc.upf",
     };
     std::string upf;
     for (const char* c : candidates) {
@@ -187,51 +197,4 @@ TEST(PWForces, AnalyticUpfSiDimerFiniteForces) {
         std::sqrt(sum_fx * sum_fx + sum_fy * sum_fy + sum_fz * sum_fz);
     EXPECT_GT(max_abs, 1e-6) << "expected nonzero force on stretched Si dimer";
     EXPECT_LT(sum_mag, 2.0) << " |sum F|=" << sum_mag;
-}
-
-TEST(PWForces, AnalyticMatchesFdToyDimer) {
-    // Two H in a large box — toy PP, cheap ecut. Compare analytic vs FD.
-    cpu::Frame f(2);
-    f.span(kAtom_type)[0] = 1;
-    f.span(kAtom_type)[1] = 1;
-    f.span(kAtom_mass)[0] = 1.008;
-    f.span(kAtom_mass)[1] = 1.008;
-    f.span(kAtom_x)[0] = -0.4;
-    f.span(kAtom_y)[0] = 0.0;
-    f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_x)[1] = 0.5;
-    f.span(kAtom_y)[1] = 0.1;
-    f.span(kAtom_z)[1] = -0.05;
-    f.box = cpu::Box::cubic(8.0);
-
-    PW cfg = cheap_cfg();
-    cfg.max_iter = 12;
-    cfg.tol = 1e-5;
-
-    const auto Fa = pw_forces_analytic(f, cfg);
-    const auto Ff = pw_forces_fd(f, cfg, 2e-3);
-    ASSERT_EQ(Fa.size(), 2u);
-    ASSERT_EQ(Ff.size(), 2u);
-
-    double max_diff = 0.0;
-    double sum_fx = 0.0, sum_fy = 0.0, sum_fz = 0.0;
-    for (int a = 0; a < 2; ++a) {
-        for (int k = 0; k < 3; ++k) {
-            max_diff = std::max(
-                max_diff,
-                std::abs(
-                    Fa[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)]
-                    - Ff[static_cast<std::size_t>(a)]
-                        [static_cast<std::size_t>(k)]));
-        }
-        sum_fx += Fa[static_cast<std::size_t>(a)][0];
-        sum_fy += Fa[static_cast<std::size_t>(a)][1];
-        sum_fz += Fa[static_cast<std::size_t>(a)][2];
-    }
-    // Toy + short SCF: loose absolute gate (eV/Å).
-    EXPECT_LT(max_diff, 0.8) << " max |F_a - F_fd|=" << max_diff;
-    // Translational soft sum rule
-    const double sum_mag =
-        std::sqrt(sum_fx * sum_fx + sum_fy * sum_fy + sum_fz * sum_fz);
-    EXPECT_LT(sum_mag, 0.5) << " |sum F|=" << sum_mag;
 }

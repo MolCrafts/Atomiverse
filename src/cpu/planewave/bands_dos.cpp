@@ -165,7 +165,8 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
     using namespace internal;
     PWResult result{};
 
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
@@ -496,7 +497,8 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
             out.e_fermi_ry = 0;
         }
 
-        rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry, kvec);
+        rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, kvec);
 
         out.nspin = 1;
         out.magnetization = 0;
@@ -570,7 +572,8 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
         veff_r[s].assign(ws.V_eff_r.begin(), ws.V_eff_r.begin() + nr);
     }
 
-    rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry, kvec);
+    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, kvec);
 
     // NSCF α
     ws.V_eff_r.resize({static_cast<std::size_t>(nr)});
@@ -676,7 +679,8 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
         }
 
         auto kg = generate_mp_mesh(k_mesh, k_mesh, k_mesh);
-        rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry,
+        rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry,
                          kg.kpoints);
 
         // NSCF α / β on frozen V_eff,σ
@@ -795,7 +799,8 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
 
     // Replace k-mesh with denser MP grid for the DOS eigenvalues.
     auto kg = internal::generate_mp_mesh(k_mesh, k_mesh, k_mesh);
-    rebuild_k_tables(prob, frame, method.upf_path, method.ecut_ry, kg.kpoints);
+    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, kg.kpoints);
 
     auto evals = nscf_evals_ry(prob, n_bands, method.tol * 0.1);
     const int n_kpts = static_cast<int>(evals.size());

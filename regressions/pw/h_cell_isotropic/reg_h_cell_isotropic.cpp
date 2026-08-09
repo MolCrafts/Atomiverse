@@ -28,10 +28,11 @@ int main() {
     frame.span(kAtom_mass)[0] = 1.008;
     frame.span(kAtom_x)[0] = frame.span(kAtom_y)[0] = frame.span(kAtom_z)[0] =
         0;
-    const double L0 = 8.0; // expanded cubic H cell (toy)
+    const double L0 = 8.0; // expanded cubic H cell (GTH-PBE-q1)
     frame.box = cpu::Box::cubic(L0);
 
     cpu::pw::PW cfg;
+    cfg.gth_name = "GTH-PBE-q1";
     cfg.ecut_ry = 5.0;
     cfg.k_mesh = 1;
     cfg.tol = 1e-4;

@@ -28,7 +28,8 @@ PWResult run_restricted_scf(const cpu::Frame& frame, const PW& method,
                             PWProblem& prob) {
     PWResult result{};
 
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
@@ -118,7 +119,8 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
             "run_collinear_scf: multiplicity must be >= 1");
 
     PWResult result{};
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
@@ -268,7 +270,8 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         n_bands_min = 1;
 
     PWResult result{};
-    setup_pw_problem(frame, method.upf_path, method.ecut_ry, method.k_mesh,
+    setup_pw_problem(frame, method.upf_path, method.gth_name,
+                     method.ecut_ry, method.k_mesh,
                      prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;

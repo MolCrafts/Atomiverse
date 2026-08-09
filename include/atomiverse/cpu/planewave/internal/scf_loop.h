@@ -22,6 +22,22 @@ class VeffBuilder;
 class DensityBuilder;
 class DavidsonSolver;
 
+/// @brief Copy every `PW` **parameter** into a fresh, unbuilt solver.
+///
+/// `PW` is move-only (it owns the step helpers), so the finite-difference
+/// oracles — which need one independent solver per displaced/strained
+/// geometry — cannot simply copy it. This is the single definition of
+/// "the same method, no state": `pw_forces_fd` and `scf_energy_ry` (strain
+/// FD) both use it, and it must list **every** public member of `PW`.
+///
+/// Promoted from two file-local copies that each silently dropped the newly
+/// added `gth_name`, so an FD oracle asked for a pseudopotential-free run
+/// and threw. One definition is the only way that stays fixed.
+///
+/// @param m Source method (not mutated; helpers are not shared).
+/// @return Parameter-identical `PW` with `built_ == false`.
+PW copy_pw_params(const PW& m);
+
 /// @brief Run the restricted fixed-occupation SCF loop to convergence.
 ///
 /// Assembles the problem via `setup_pw_problem` and iterates

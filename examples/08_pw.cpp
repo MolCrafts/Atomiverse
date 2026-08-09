@@ -12,23 +12,26 @@
 /// SCF loop lives inside the inner solver `cpu::pw::PW`; the
 /// user-facing component is `cpu::pw::PWEvaluator` (role Evaluator,
 /// capability Energy), run through the one-pass `cpu::Evaluate` driver via
-/// the `cpu::single_point` helper — exactly like `cpu::scf::SCF`.
+/// the `cpu::single_point` helper — the same shape as the Gaussian methods
+/// (`cpu::scf::RHF{basis}.run(frame)`).
 ///
 /// Build:
 ///   cmake -B build -DATV_BUILD_PW=ON -DATV_BUILD_EXAMPLES=ON   # needs FFTW3
 ///   cmake --build build --target 08_pw
 ///
-/// Run (toy local potential — runnable with zero arguments):
+/// Run (analytic GTH pseudopotential — runnable with zero arguments):
 ///   ./build/examples/08_pw
 ///
-/// Run with a real norm-conserving pseudopotential (UPF v1) for a physical
-/// energy. A silicon LDA pseudopotential ships with the repository:
-///   ./build/examples/08_pw benchmarks/pw/si/validation/reference/Si_lda_nc.upf
+/// Run against a norm-conserving UPF v1 file instead. A silicon LDA
+/// pseudopotential ships with the repository:
+///   ./build/examples/08_pw tests/data/pw/Si_lda_nc.upf
 ///
-/// Without a UPF file the solver falls back to a toy V_loc ~ -1/G^2: the SCF
-/// loop still runs and returns a finite energy, but the number is not
-/// physically meaningful. Use it to see the workflow; use a real UPF for
-/// real numbers.
+/// With no argument the solver uses the published Goedecker-Teter-Hutter
+/// parameterization "GTH-PBE-q4" for silicon, evaluated in-tree from
+/// `cpu/gpw/basis_data/gpw_tables.h`. There is no pseudopotential-free
+/// mode: a bare valence-charge Coulomb potential is not representable in a
+/// plane-wave basis at any finite cutoff, so a run with neither
+/// `upf_path` nor `gth_name` set throws.
 
 #include <iomanip>
 #include <iostream>
@@ -81,12 +84,16 @@ cpu::Frame make_silicon(double a) {
 } // namespace
 
 int main(int argc, char** argv) {
+    // A plane-wave run has no default pseudopotential. With no argument this
+    // uses the in-tree analytic GTH parameterization for silicon; pass a UPF
+    // file path to use that instead.
     const std::string upf_path = (argc > 1) ? argv[1] : "";
+    const std::string gth_name = upf_path.empty() ? "GTH-PBE-q4" : "";
 
     std::cout << "=== Silicon (diamond) / plane-wave LDA ===\n"
               << "Cell: 2-atom fcc primitive, a = 5.43 Angstrom\n"
               << "Pseudopotential: "
-              << (upf_path.empty() ? "(none — toy V_loc, unphysical energy)"
+              << (upf_path.empty() ? gth_name + " (analytic, in-tree)"
                                    : upf_path)
               << "\n\n";
 
@@ -102,6 +109,7 @@ int main(int argc, char** argv) {
     // tol      : SCF convergence tolerance on the density change.
     cpu::pw::PW cfg;
     cfg.upf_path = upf_path;
+    cfg.gth_name = gth_name;
     cfg.ecut_ry = 15.0;
     cfg.k_mesh = 2;
     cfg.tol = 1e-6;
@@ -126,10 +134,9 @@ int main(int argc, char** argv) {
               << "E_total:      " << frame.meta.get(ATV::kEnergy) << " eV\n";
 
     if (upf_path.empty())
-        std::cout << "\nNote: re-run with a UPF pseudopotential for a "
-                     "physical energy, e.g.\n"
-                     "  ./08_pw "
-                     "benchmarks/pw/si/validation/reference/Si_lda_nc.upf\n";
+        std::cout << "\nNote: re-run against a UPF file to compare "
+                     "pseudopotentials, e.g.\n"
+                     "  ./08_pw tests/data/pw/Si_lda_nc.upf\n";
 
     std::cout << "\n=== Done ===\n";
     return 0;

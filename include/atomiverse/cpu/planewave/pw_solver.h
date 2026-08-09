@@ -72,8 +72,20 @@ enum class Smearing : int {
 
 class PW {
   public:
-    /// @brief UPF v1 pseudopotential path (empty = toy V_loc).
+    /// @brief Norm-conserving UPF pseudopotential file. Mutually exclusive
+    ///        with `gth_name`; exactly one must be set.
     std::string upf_path;
+    /// @brief In-tree analytic Goedecker-Teter-Hutter parameterization, e.g.
+    ///        "GTH-PBE-q4" or "GTH-PADE-q6". Needs no external file: the
+    ///        published parameters ship in `cpu/gpw/basis_data/gpw_tables.h`
+    ///        (Goedecker-Teter-Hutter, PRB 54, 1703 (1996); Krack, TCA 114,
+    ///        145 (2005)). Mutually exclusive with `upf_path`.
+    ///
+    /// A plane-wave run has **no default pseudopotential** — leaving both
+    /// empty throws. There is no built-in substitute for a real
+    /// pseudopotential: a bare valence-charge Coulomb potential is not
+    /// representable in a plane-wave basis at any finite cutoff.
+    std::string gth_name;
     /// @brief Wavefunction cutoff [Ry].
     double ecut_ry = 30.0;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).

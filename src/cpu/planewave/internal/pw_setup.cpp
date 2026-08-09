@@ -3,6 +3,9 @@
 ///        the pre-loop section of the solver) shared by both backends.
 
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
+
+#include "atomiverse/cpu/gpw/gth_potential.h"
+#include "atomiverse/cpu/planewave/internal/gth_upf.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/mat3.h"
@@ -51,7 +54,7 @@ void setup_upf_vloc(PWWorkspace& ws, const internal::GVectorList& gv,
     // Atom form factor × structure factor Σ_a e^{-iG·R_a}.
     // vg[0] already holds only the finite part (QE "αZ" term); the
     // divergent −4πZ/ΩG² jellium piece is cancelled against the
-    // Ewald/Hartree G=0 conventions, exactly as for the toy potential.
+    // Ewald/Hartree G=0 conventions.
     const auto& pos = ws.atom_pos_bohr;
     for (int ig = 0; ig < ws.n_g; ++ig) {
         AccReal s_re = 0, s_im = 0;
@@ -65,28 +68,6 @@ void setup_upf_vloc(PWWorkspace& ws, const internal::GVectorList& gv,
     }
 }
 
-void setup_toy_vloc(PWWorkspace& ws, const internal::GVectorList& gv,
-                    const std::vector<Vec3>& positions,
-                    const std::vector<AccReal>& charges, AccReal omega) {
-    for (int ig = 0; ig < ws.n_g; ++ig) {
-        AccReal g2 = gv.g[ig].norm_squared();
-        Vec3 gvec = gv.g[ig];
-        if (g2 < AccReal(1e-16)) {
-            ws.V_loc_G[ig] = AccReal(0);
-        } else {
-            AccReal s_re = 0, s_im = 0;
-            for (size_t ia = 0; ia < charges.size(); ++ia) {
-                AccReal phase = gvec[0] * positions[ia][0]
-                                + gvec[1] * positions[ia][1]
-                                + gvec[2] * positions[ia][2];
-                s_re += charges[ia] * std::cos(phase);
-                s_im -= charges[ia] * std::sin(phase);
-            }
-            ws.V_loc_G[ig] = AccReal(-4.0 * M_PI) / (omega * g2)
-                             * std::complex<AccReal>(s_re, s_im);
-        }
-    }
-}
 
 std::vector<Vec3> pos_to_bohr(const cpu::Frame& frame) {
     AccReal a2b = AccReal(1.8897259886);
@@ -335,7 +316,7 @@ void setup_atomic_wfc(std::vector<std::vector<PWWorkspace::AtomWfc>>& out,
 /// The G=0 element gets the finite part only (QE's "αZ" term):
 /// V(0) = (4π/Ω)∫ r²(V(r) + Z/r) dr — the divergent jellium piece is
 /// cancelled against the Ewald/Hartree G=0 conventions exactly as for
-/// the toy potential. All outputs in Hartree.
+/// the local potential. All outputs in Hartree.
 std::vector<AccReal> upf_vloc_to_gspace(const internal::UPFData& upf,
                                         const internal::GVectorList& gv,
                                         AccReal omega) {
@@ -420,13 +401,50 @@ int valence_from_z(int z) {
     default:
         // No-fallback rule: a 0-electron atom would be silently wrong.
         throw std::invalid_argument(
-            "valence_from_z: no toy-potential valence count for Z="
+            "valence_from_z: no fallback valence count for Z="
             + std::to_string(z) + " (H..Ar supported); supply a UPF");
     }
 }
 
+UPFData load_pseudopotential(const cpu::Frame& frame,
+                             const std::string& upf_path,
+                             const std::string& gth_name) {
+    // A plane-wave run has no default pseudopotential. Bare valence-charge
+    // Coulomb — the old "toy" path — is not representable in a plane-wave
+    // basis at any finite cutoff, so it produced numbers that neither were
+    // right nor converged with ecut. Exactly one real source is required.
+    if (upf_path.empty() == gth_name.empty())
+        throw std::invalid_argument(
+            "load_pseudopotential: set exactly one of PW::upf_path (a "
+            "norm-conserving UPF file) or PW::gth_name (an in-tree analytic "
+            "GTH parameterization such as \"GTH-PBE-q4\"). Both were "
+            + std::string(upf_path.empty() ? "empty" : "set") + ".");
+
+    if (!upf_path.empty())
+        return read_upf_v1(upf_path);
+
+    // Single-species, as for the UPF path: one potential serves every atom.
+    // Element identity comes from the Frame's atomic numbers.
+    const int n_atoms = static_cast<int>(frame.nlocal());
+    if (n_atoms <= 0)
+        throw std::invalid_argument(
+            "load_pseudopotential: frame has no atoms, so PW::gth_name "
+            "cannot be resolved to an element.");
+    const int* __restrict sp_type = frame.span(kAtom_type);
+    const int z0 = sp_type[0];
+    for (int i = 1; i < n_atoms; ++i)
+        if (sp_type[i] != z0)
+            throw std::invalid_argument(
+                "load_pseudopotential: PW::gth_name selects one potential for "
+                "the whole cell, but the frame mixes atomic numbers. "
+                "Multi-species plane-wave runs are not implemented.");
+    return upf_from_gth(
+        gpw::GthPotential(static_cast<molrs::Element>(z0), gth_name));
+}
+
 void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
-                      double ecut_ry, int k_mesh, PWProblem& out) {
+                      const std::string& gth_name, double ecut_ry, int k_mesh,
+                      PWProblem& out) {
     int n_atoms = static_cast<int>(frame.nlocal());
     const cpu::Box& box_ang = frame.box;
     cpu::Box box_bohr;
@@ -438,18 +456,16 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 
     auto pos_bohr = pos_to_bohr(frame);
 
-    const bool has_upf = !upf_path.empty();
     const bool rank0 = log_rank0();
 
-    // Valence electron count: UPF `z_valence` when present (supports elements
-    // beyond the toy H–Ar table, e.g. Fe Z=26 with SG15 ONCV Z_val=16);
-    // otherwise the toy `valence_from_z` table (throws on unsupported Z).
-    internal::UPFData upf_early;
-    if (has_upf)
-        upf_early = internal::read_upf_v1(upf_path);
+    const internal::UPFData upf_early =
+        load_pseudopotential(frame, upf_path, gth_name);
+    // Retained for the branch sites below: a pseudopotential is now always
+    // present, from a file or from the analytic tables.
+    const bool has_upf = true;
 
     int n_elec = 0;
-    std::vector<AccReal> valence_charges, nuclear_Z;
+    std::vector<AccReal> valence_charges;
     const int* __restrict sp_type = frame.span(kAtom_type);
     for (int i = 0; i < n_atoms; ++i) {
         int z = sp_type[i];
@@ -458,7 +474,6 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
                         : valence_from_z(z);
         n_elec += v;
         valence_charges.push_back(static_cast<AccReal>(v));
-        nuclear_Z.push_back(static_cast<AccReal>(z));
     }
     out.n_elec = n_elec;
     out.n_bands = std::max(n_elec / 2, 1);
@@ -466,7 +481,8 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
     if (rank0) {
         ATV_INFO("[pw] ========== PW SCF ==========");
         ATV_INFO("[pw] atoms={} elec={} bands={} ecut_ry={} {}", n_atoms,
-                 n_elec, out.n_bands, ecut_ry, has_upf ? "UPF" : "toy");
+                 n_elec, out.n_bands, ecut_ry,
+                 gth_name.empty() ? "UPF" : gth_name.c_str());
     }
 
     // === Ewald ===
@@ -478,8 +494,8 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
         pos_ang.push_back({static_cast<AccReal>(sp_x[i]),
                            static_cast<AccReal>(sp_y[i]),
                            static_cast<AccReal>(sp_z[i])});
-    // Ewald: use same charges as V_loc (nuclear for toy, valence for UPF)
-    auto& ewald_charges = has_upf ? valence_charges : nuclear_Z;
+    // Ewald uses the same charges as V_loc: pseudopotential valence.
+    auto& ewald_charges = valence_charges;
     internal::EwaldSummation ewald(pos_ang, ewald_charges, box_ang, ecut_ht);
     AccReal ew_total = ewald.total_energy();
 
@@ -542,7 +558,7 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
         pos_bohr; // atom positions for augmentation structure factor
 
     // Initial density: reuse the UPF already parsed for valence counts.
-    internal::UPFData& upf = upf_early;
+    const internal::UPFData& upf = upf_early;
 
     for (int i = 0; i < ws.n_g; ++i)
         ws.rho_G[i] = std::complex<AccReal>(0, 0);
@@ -657,8 +673,6 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
             for (int ig = 0; ig < ws.n_g; ++ig)
                 ws.aug_form_factor_G[ig] = AccReal(0);
         }
-    } else {
-        setup_toy_vloc(ws, gv0, pos_bohr, valence_charges, vol_bohr);
     }
     if (rank0)
         ATV_DEBUG("[pw]   V_loc(G) [1]={} [10]={}", ws.V_loc_G[1].real(),
@@ -703,7 +717,8 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 }
 
 void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
-                      const std::string& upf_path, double ecut_ry,
+                      const std::string& upf_path, const std::string& gth_name,
+                      double ecut_ry,
                       const std::vector<Vec3>& kfrac) {
     if (kfrac.empty())
         throw std::invalid_argument("rebuild_k_tables: empty k-list");
@@ -734,8 +749,14 @@ void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
 
     out.kb_proj_k.clear();
     out.atom_wfc_k.clear();
-    if (!upf_path.empty()) {
-        auto upf = internal::read_upf_v1(upf_path);
+    {
+        // Same pseudopotential source as setup_pw_problem — a k-path rebuild
+        // must not silently switch potentials.
+        const int* __restrict sp_t = frame.span(kAtom_type);
+        auto upf = gth_name.empty()
+                       ? internal::read_upf_v1(upf_path)
+                       : internal::upf_from_gth(gpw::GthPotential(
+                             static_cast<molrs::Element>(sp_t[0]), gth_name));
         const auto n_k = out.gv_k.size();
         out.kb_proj_k.resize(n_k);
         out.atom_wfc_k.resize(n_k);

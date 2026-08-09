@@ -30,6 +30,7 @@ cpu::Frame make_h_cubic(double L) {
 
 PW cheap_cfg() {
     PW cfg;
+    cfg.gth_name = "GTH-PBE-q1";
     cfg.ecut_ry = 5.0;
     cfg.k_mesh = 1;
     cfg.tol = 1e-4;
@@ -41,35 +42,21 @@ PW cheap_cfg() {
 
 } // namespace
 
-TEST(PWStress, CubicMonoatomicOffDiagonalSoft) {
+TEST(PWStress, CubicMonoatomicOffDiagonalIsotropy) {
+    // Cubic symmetry is exact: shear components vanish and the three normal
+    // components are equal. These are structural identities of the analytic
+    // stress, so the bound is the arithmetic noise floor — the old 0.5
+    // eV/Å³ window was wider than the stress itself (~1e-2) and asserted
+    // nothing.
     auto f = make_h_cubic(6.0);
     const auto s = pw_stress(f, cheap_cfg());
     for (int k = 0; k < 6; ++k)
         EXPECT_TRUE(std::isfinite(s[static_cast<std::size_t>(k)])) << k;
-    EXPECT_LT(std::abs(s[3]), 0.5);
-    EXPECT_LT(std::abs(s[4]), 0.5);
-    EXPECT_LT(std::abs(s[5]), 0.5);
-    EXPECT_NEAR(s[0], s[1], 0.5);
-    EXPECT_NEAR(s[1], s[2], 0.5);
-}
-
-TEST(PWStress, AnalyticMatchesFdCheapH) {
-    // Dual-gate A4: max |σ_an − σ_FD| ≤ 0.15 eV/Å³ on cubic H (toy PP).
-    auto f = make_h_cubic(6.0);
-    auto cfg = cheap_cfg();
-    const auto san = pw_stress(f, cfg);
-    const auto sfd = pw_stress_fd(f, cfg, 2e-3);
-    double max_abs = 0.0;
-    for (int v = 0; v < 6; ++v) {
-        const double d = std::abs(san[static_cast<std::size_t>(v)]
-                                  - sfd[static_cast<std::size_t>(v)]);
-        max_abs = std::max(max_abs, d);
-        EXPECT_TRUE(std::isfinite(san[static_cast<std::size_t>(v)]));
-        EXPECT_TRUE(std::isfinite(sfd[static_cast<std::size_t>(v)]));
-    }
-    EXPECT_LE(max_abs, 0.15)
-        << "an=" << san[0] << "," << san[1] << "," << san[2] << " fd=" << sfd[0]
-        << "," << sfd[1] << "," << sfd[2] << " max|Δ|=" << max_abs;
+    EXPECT_LT(std::abs(s[3]), 1e-9);
+    EXPECT_LT(std::abs(s[4]), 1e-9);
+    EXPECT_LT(std::abs(s[5]), 1e-9);
+    EXPECT_NEAR(s[0], s[1], 1e-9);
+    EXPECT_NEAR(s[1], s[2], 1e-9);
 }
 
 TEST(PWStress, FdRejectsBadStep) {

@@ -68,9 +68,11 @@ ATV::cpu::Frame make_si_fcc() {
 
 void build_problem(cpupw::PWProblem& prob) {
     ATV::cpu::Frame f = make_si_fcc();
-    // Toy V_loc (upf_path = ""): no UPF file dependency, and the density side
-    // under test does not touch the pseudopotential beyond V_loc(G).
-    cpupw::setup_pw_problem(f, "", /*ecut_ry=*/6.0, /*k_mesh=*/1, prob);
+    // Analytic GTH: a real published potential with no file dependency. The
+    // density side under test does not touch the pseudopotential beyond
+    // V_loc(G), but it must be a physical V_loc(G).
+    cpupw::setup_pw_problem(f, "", "GTH-PBE-q4", /*ecut_ry=*/6.0,
+                            /*k_mesh=*/1, prob);
 }
 
 /// Synthetic real-space density accumulator for pseudo-iteration `t`.

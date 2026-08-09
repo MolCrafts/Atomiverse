@@ -37,6 +37,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/precision.h"
+#include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/planewave/internal/convergence.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
@@ -100,16 +101,21 @@ void PW::validate_members() const {
 }
 
 void PW::build(const cpu::Frame& reference) {
+    // Same envelope as cpu::pw::PW: exactly one pseudopotential source,
+    // validated up front so a bad file or unknown GTH name fails here.
+    if (upf_path.empty() == gth_name.empty())
+        throw std::invalid_argument(
+            "cuda::pw::PW::build: set exactly one of upf_path (a "
+            "norm-conserving UPF file) or gth_name (an in-tree analytic GTH "
+            "parameterization such as \"GTH-PBE-q4\"). A plane-wave run has "
+            "no default pseudopotential.");
     if (!upf_path.empty()) {
-        // Validate the pseudopotential up front (throws on parse error);
-        // setup_pw_problem() re-reads it at each run().
         (void)cpu::pw::internal::read_upf_v1(upf_path);
     } else {
-        // Validate the toy valence table covers every atom type up front
-        // (throws on unsupported Z — no silent 0-electron fallback).
         const int* sp_type = reference.span(kAtom_type);
-        for (size_t i = 0; i < reference.nlocal(); ++i)
-            (void)cpu::pw::internal::valence_from_z(sp_type[i]);
+        if (reference.nlocal() > 0)
+            (void)cpu::gpw::GthPotential(
+                static_cast<molrs::Element>(sp_type[0]), gth_name);
     }
     built_ = true;
 }
@@ -127,7 +133,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
     // ── Shared problem assembly (identical to the CPU backend) ──
     // PWProblem is non-copyable (ws.gvec aliases gv0): construct in place.
     cpu::pw::internal::PWProblem prob;
-    cpu::pw::internal::setup_pw_problem(frame, upf_path, ecut_ry, k_mesh, prob);
+    cpu::pw::internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry,
+                                        k_mesh, prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
 
     if (prob.n_elec % 2 != 0)
