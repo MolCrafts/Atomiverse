@@ -42,7 +42,7 @@ std::string parse_device_arg(int argc, char** argv) {
     return want;
 }
 
-cpu::Frame make_frame() {
+ATV::cpu::Frame make_frame() {
     using namespace ATV;
     cpu::Frame frame(3);
     frame.span(kAtom_type)[0] = 8;
