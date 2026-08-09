@@ -1,12 +1,24 @@
 # cuda-pw-large-cell — first large-cell CPU-vs-CUDA PW wall measurement
 
-Parity-gap slug `cuda-pw-large-cell-measure` (ES order step 4), sanctioned by
-`.claude/notes/cuda-rhf-device-only.md` ("the first large-cell measurement …
-is the only place any of these residency waves can actually be shown to
-pay"). Oracle: cpu-parity (wall) — the CPU leg at identical settings in the
-same binary is both the correctness reference and the wall twin. **No perf
-claim from the small sizes** (8 atoms is correctness-only); the CUDA-wins
-story is stated only where the CPU wall exceeds 60 s.
+ES order step 4 for slug `cuda-pw-large-cell-measure` (es-cpu-cuda-opt).
+Sanctioned by `.claude/notes/cuda-rhf-device-only.md`: residency waves (kpoint
+hoist, Zheevd, devptr-nrm2) pay only on a cell large enough that SCF body
+dominates process startup / CUDA context init — **not** on the 2-atom Si
+correctness twin.
+
+Oracle: **same-settings CPU twin** (wall + energy). The CPU leg in the same
+binary is both the correctness reference and the wall twin. **No “CUDA wins”
+claim from small sizes** (8 atoms is correctness-only); the large-cell story
+is stated only where the CPU wall exceeds 60 s.
+
+## Lever (research)
+
+| Item | Value |
+| --- | --- |
+| Lever class | Measurement only — no physics / kernel change |
+| Files | `tools/bench_cuda_pw_cell.cu`, `tools/gpu_job_cuda_pw_large_cell.sh`, this note |
+| Metric | wall of `run(frame)` for `cpu::pw::PW` vs `cuda::pw::PW` on Si n×n×n ladder |
+| Acceptance | GH200 log with filled results; `reg_pw-cuda-lda-si --device=both` PASS; scale until CPU wall > 60 s |
 
 ## Methodology
 
@@ -16,39 +28,97 @@ story is stated only where the CPU wall exceeds 60 s.
   UPF `tests/data/pw/Si_lda_nc.upf` (ONCVPSP NC-LDA), `ecut_ry = 15`,
   `k_mesh = 1` (Γ), `tol = 1e-6` (density-change L2), `max_iter = 100`,
   `mix_beta = 0.7`, `pulay_depth = 5`, `xc = XCType::LSDA`, no smearing,
-  restricted fixed occupations → both backends solve exactly n_e/2 bands
-  (`src/cpu/planewave/pw_solver.cpp:227` — `extra_bands` is smearing-only).
+  restricted fixed occupations → both backends solve exactly n_e/2 bands.
 - **Timed region**: `run(frame)` only, `std::chrono::steady_clock` inside
-  the harness — geometry-dependent setup + the full SCF on both legs.
-  `build()` (UPF parse) and CUDA context creation (`cudaFree(0)`) excluded.
+  the harness — geometry-dependent setup + full SCF. `build()` (UPF parse)
+  and CUDA context creation (`cudaFree(0)`) excluded.
 - **Harness**: `tools/bench_cuda_pw_cell.cu` (public API only:
   `cpu::pw::PW` / `cuda::pw::PW` + `Frame`), compiled by
   `tools/gpu_job_cuda_pw_large_cell.sh` with the exact compile/dlink/link
   commands CMake generates for `reg_pw-cuda-lda-si` (harvested via
-  `make -n` + `link.txt`/`dlink.txt`), so no tracked CMake file changes —
-  the in-flight variable-cell tree has `regressions/CMakeLists.txt` and
-  `tests/CMakeLists.txt` dirty.
-- **Host/GPU**: GH200 node n420 — Grace Neoverse-V2 (288 CPUs visible,
-  job `-c 16`) + NVIDIA GH200 120GB; nvcc 13.0.88, `sm_90`, GCC 14.3,
-  OpenBLAS 0.3.32. CPU legs `OMP_NUM_THREADS = OPENBLAS_NUM_THREADS = 16`
-  (plus a 1-thread reference at n=1); the CPU PW pipeline itself is serial
-  (`src/cpu/planewave/` has no OpenMP) — threading enters via OpenBLAS.
-  CUDA legs run with the same host-thread setting.
-- **Tree**: `wf/cuda-pw-large-cell-measure` @ dev `3d025c35`.
+  `make -n` + response-file substitution for dlink). No tracked CMake
+  product files are modified.
+- **Host/GPU**: GH200 Grace Neoverse-V2 (288 CPUs visible, job `-c 16`) +
+  NVIDIA GH200 120GB; nvcc 13.0.88, `sm_90`, GCC 14.3, OpenBLAS 0.3.32.
+  CPU legs `OMP_NUM_THREADS = OPENBLAS_NUM_THREADS = 16` (plus a 1-thread
+  reference at n=1). CPU PW itself is serial; threading enters via OpenBLAS.
+- **Tree**: `wf/escuda-cuda-pw-large-cell-measure` rebased on `dev` @
+  `8c13bc36` (measurement tip `fbc8f229` + gate fix).
 
 ## Jobs
 
-| Job | What | Log |
-| --- | --- | --- |
-| 1035136 | FAILED at configure — worktree had no molrs submodule checkout | `.claude/cuda-pw-large-cell-1035136.out` |
-| 1035238 | build + slice sanity + ladder n=1,2,3 | `.claude/cuda-pw-large-cell-1035238.out` |
+| Job | State | What | Log |
+| --- | --- | --- | --- |
+| 1035136 | FAILED | configure — no molrs submodule | (old worktree) |
+| 1035238 | FAILED | HARNESS_LINK_FAILED (dlink rsp not substituted) | `.claude/cuda-pw-large-cell-1035238.out` |
+| **1035278** | CANCELLED after ~2.8 h (n=3 CPU still running) | **authoritative walls** below | `.claude/cuda-pw-large-cell-1035278.out` |
+| 1048264 | reconfirm with gate fix (timeout → WALL_LOWER_BOUND) | same ladder + longer n=2 CPU budget | `.claude/cuda-pw-large-cell-1048264.out` |
 
-## Results
+## Results (job 1035278, node n516)
 
-PENDING — job 1035238 running; this section is filled from its log
-(`BENCH_RESULT` / `BENCH_PARITY` lines) before the branch is closed.
+### Slice sanity (correctness twin)
 
-## Gate
+`reg_pw-cuda-lda-si --device=both` (2-atom Si, ecut 15 Ry, k_mesh=2):
 
-Queue gate: scale until the same-settings CPU wall exceeds 60 s, report
-CPU-vs-CUDA walls with job ids + methodology. Filled with the results above.
+| Leg | E [Ry] | iters |
+| --- | ---: | ---: |
+| cpu | −15.67177311 | 5 |
+| cuda | −15.67177311 | 5 |
+| \|ΔE\| | **1.243e-14 Ry** | (bound 1e-3 Ry) |
+
+`SLICE_SANITY_RC=0`.
+
+### Supercell ladder walls (`run(frame)` only)
+
+| n_rep | atoms | bands | device thr | wall_s | E [Ry] | iters | notes |
+| ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
+| 1 | 8 | 16 | cuda 16t | **0.968** | −62.67719398 | 5 | correctness only |
+| 1 | 8 | 16 | cpu 16t | **17.934** | −62.67719396 | 5 | \|ΔE\| ~2e-8 Ry vs cuda |
+| 1 | 8 | 16 | cpu 1t | **17.908** | −62.67719396 | 5 | OpenBLAS thr ≈ no-op (serial PW) |
+| 2 | 64 | 128 | cuda 16t | **9.664** | −507.09055846 | 5 | |
+| 2 | 64 | 128 | cpu 16t | **> 5400** | (not finished) | — | `LEG_TIMEOUT` after 5400 s |
+| 3 | 216 | 432 | cuda 16t | **191.214** | −1712.93740038 | 5 | |
+| 3 | 216 | 432 | cpu 16t | (cancelled) | — | — | job killed mid-leg |
+
+n=1 energy parity (same process not required):
+\|E_cuda − E_cpu\| ≈ **2e-8 Ry** on 8 atoms (roundoff / Jacobi vs Zheevd
+signature; well inside the 1e-3 Ry design bound of `pw-cuda-lda-si`).
+
+### Gate
+
+**Met at n=2 (64 atoms).** Same-settings CPU wall **> 5400 s > 60 s**.
+CUDA wall at that size is **9.664 s**.
+
+| Size | T_cuda / T_cpu | note |
+| --- | ---: | --- |
+| n=1 (8 at) | 0.968 / 17.93 ≈ **0.054×** | correctness only — **not** a speed claim |
+| n=2 (64 at) | 9.664 / **>5400** ≈ **< 0.0018×** | **large-cell evidence**; CUDA ≪ CPU |
+| n=3 (216 at) | CUDA 191 s; CPU unfinished | CUDA scales; CPU dense O(n_b³) too expensive in budget |
+
+`within_10x` vs CPU twin: **yes** (CUDA is faster; ratio ≪ 1). Not
+perf-exempt: this is real large-cell wall evidence, not a foothold skip.
+
+### What this does **not** claim
+
+- No fair twin vs CP2K/QE (oracle is ATV CPU same-settings).
+- No “CUDA wins” from 2-atom or 8-atom cells alone.
+- No device forces / stress / PBE product (other slugs).
+- n=2 CPU exact wall is only a lower bound (>5400 s); finishing that leg is
+  optional polish (job 1048264 budgets ~3 h for it).
+
+## Gate checklist
+
+| Check | Status |
+| --- | --- |
+| GH200 log with filled results | **yes** — job **1035278** |
+| Correctness suite (`pw-cuda-lda-si` both) | **PASS** \|ΔE\|=1.243e-14 Ry |
+| CPU wall > 60 s | **yes** at 64 atoms (>5400 s) |
+| CPU↔CUDA walls reported | **yes** (table above) |
+| Device-only product path | unchanged (measurement only) |
+| Builds wiped after job | job script wipes `build-cuda-pw-cell` on exit |
+
+## Follow-ons (not this slug)
+
+- Finish exact n=2 CPU wall if a 3 h+ budget is available (job 1048264).
+- `cuda-pw-forces` / `cuda-pw-pbe-device` / non-default stream — separate rows.
+- Optional: QE fair wall on the same supercell (parity-gap PW perf track).

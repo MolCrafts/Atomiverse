@@ -75,13 +75,14 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (wave-2 staff order):** Landed: device s/p RHF + CDIIS; Γ GPW
+**CUDA open-gate (wave-3 staff order):** Landed: device s/p RHF + CDIIS; Γ GPW
 Poisson/LDA/collocate/integrate footholds; `cuda::pw::PW` LSDA method slice +
-residency polish. **Still blocked:** full `cuda-gpw-full-product`. **Pending:**
-`cuda-pw-pbe-device` (P0) → `cuda-pw-large-cell-measure` (P1) →
+residency polish; **large-cell wall evidence** (job 1035278: 64-atom CUDA
+9.7 s / CPU >5400 s — note [cuda-pw-large-cell.md](cuda-pw-large-cell.md)).
+**Still blocked:** full `cuda-gpw-full-product`. **Pending residual:**
+`cuda-pw-pbe-device` (P0) → `cuda-pw-forces` / `cuda-gpw-ks-chain` depth →
 `cuda-pw-nondefault-stream` (P2) → `cuda-rhf-nondefault-stream` (P3); optional
-CPU `cpu-simd-2center-setup` (P3). Incomplete tips on
-`wf/cuda-pw-pbe-device` / `wf/cuda-pw-large-cell-measure` must re-base onto
+CPU `cpu-simd-2center-setup` (P3). Incomplete tips re-base as
 `wf/escuda-<slug>` off current `dev` — never blind-merge.
 
 **Queues (binding worklists):**
