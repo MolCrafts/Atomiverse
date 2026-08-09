@@ -50,14 +50,34 @@ cuda::pw::PW make_supported() {
 
 } // namespace
 
-TEST(CudaPWGuards, DefaultXcIsPbeAndThrows) {
-    auto frame = make_h_atom();
+TEST(CudaPWGuards, DefaultXcIsPbe) {
     cuda::pw::PW pw;
-    // The default deliberately matches cpu::pw::PW (PBE): a CUDA-only LSDA
-    // default would make identical user code compute a different functional
-    // on the two backends.
+    // The default deliberately matches cpu::pw::PW (PBE): identical user
+    // code computes the same functional on both backends. PBE has a device
+    // path, so the default is runnable — no throw to assert here.
     EXPECT_EQ(pw.xc, cpu::scf::XCType::PBE);
+}
+
+TEST(CudaPWGuards, UnsupportedXcThrows) {
+    auto frame = make_h_atom();
+    auto pw = make_supported();
+    // BLYP has no device kernel — only LSDA and PBE do. The gate must throw
+    // rather than silently compute a different functional.
+    pw.xc = cpu::scf::XCType::BLYP;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
+}
+
+TEST(CudaPWGuards, PbeFamilyVariantsThrow) {
+    auto frame = make_h_atom();
+    // PBEsol/revPBE/RPBE differ from PBE by μ/κ/β constants the device
+    // kernel hard-wires; accepting them would silently compute plain PBE.
+    for (const auto xc :
+         {cpu::scf::XCType::PBEsol, cpu::scf::XCType::RevPBE,
+          cpu::scf::XCType::RPBE}) {
+        auto pw = make_supported();
+        pw.xc = xc;
+        EXPECT_THROW(pw.run(frame), std::invalid_argument);
+    }
 }
 
 TEST(CudaPWGuards, SpinPolarizedThrows) {

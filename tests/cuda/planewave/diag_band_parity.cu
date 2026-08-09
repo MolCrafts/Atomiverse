@@ -89,8 +89,9 @@ int main(int argc, char** argv) {
     po.step(ws);
     internal::XCBuilder lda;
     lda.prepare(ws);
-    // LSDA explicitly: XCBuilder::step defaults to PBE, and the CUDA PW path
-    // is LSDA-only, so the fixed V_eff both legs diagonalize must be LSDA.
+    // LSDA explicitly: XCBuilder::step defaults to PBE. The functional is
+    // irrelevant to this band-solver harness — both legs diagonalize the
+    // SAME fixed V_eff — so keep the cheaper local one.
     lda.step(ws, cpu::scf::XCType::LSDA);
     internal::VeffBuilder v;
     v.prepare(ws);

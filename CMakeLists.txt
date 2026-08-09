@@ -35,17 +35,15 @@ if(NOT ATV_DOCS_ONLY)
 
     option(ATV_BUILD_CUDA "Build CUDA backend (requires CUDA toolkit)" ON)
     if(ATV_BUILD_CUDA)
-        enable_language(CUDA)
-        # CUDA TUs that transitively include xtensor (via cpu/frame.h) need
-        # C++20: xtensor 0.27.1 uses `<concepts>` / `std::input_iterator`
-        # on toolchains where `<concepts>` is available (GCC 13), which
-        # nvcc cannot parse at -std=c++17. The CPU side is C++20 too (above).
-        set(CMAKE_CUDA_STANDARD 20)
-        set(CMAKE_CUDA_STANDARD_REQUIRED ON)
         # Prefer an explicit arch when building for GH200 (sm_90). `native`
         # only works when configure+compile run on the target GPU node; a
         # login-node or cross configure silently omits ISA 90 and produces
         # runtime "No device code available for GPU ISA 90" warnings.
+        # This MUST precede enable_language(CUDA): compiler detection caches
+        # the nvcc default (sm_75) into CMAKE_CUDA_ARCHITECTURES, after which
+        # `NOT DEFINED` can never fire — sm_75 cubins on an sm_90 GH200 then
+        # pay a >10 s driver PTX JIT on the first kernel launch, which is
+        # enough to blow the 10 s ctest budget of the first test binary.
         if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
             if(DEFINED ENV{ATV_CUDA_ARCHITECTURES} AND NOT "$ENV{ATV_CUDA_ARCHITECTURES}" STREQUAL "")
                 set(CMAKE_CUDA_ARCHITECTURES "$ENV{ATV_CUDA_ARCHITECTURES}")
@@ -53,6 +51,13 @@ if(NOT ATV_DOCS_ONLY)
                 set(CMAKE_CUDA_ARCHITECTURES "90")
             endif()
         endif()
+        enable_language(CUDA)
+        # CUDA TUs that transitively include xtensor (via cpu/frame.h) need
+        # C++20: xtensor 0.27.1 uses `<concepts>` / `std::input_iterator`
+        # on toolchains where `<concepts>` is available (GCC 13), which
+        # nvcc cannot parse at -std=c++17. The CPU side is C++20 too (above).
+        set(CMAKE_CUDA_STANDARD 20)
+        set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     endif()
 
     # CUDA precision — aligned with LAMMPS Kokkos `KOKKOS_PREC` (one knob, three
@@ -876,14 +881,15 @@ if(NOT ATV_DOCS_ONLY)
 
         # CUDA plane-wave backend — device-resident kernels mirroring the CPU
         # pw module (cuFFT FFT layer, G-space Hartree solver, sparse-G ↔ dense
-        # grid bridge, LDA/Veff stages) plus the full pw SCF band solver
-        # (cuFFT + cuBLAS Davidson). Only built when CUDA is also enabled.
+        # grid bridge, LDA/PBE XC and Veff stages) plus the full pw SCF band
+        # solver (cuFFT + cuBLAS Davidson). Only built when CUDA is enabled.
         if(ATV_BUILD_CUDA)
             target_sources(atomiverse PRIVATE
                 src/cuda/planewave/internal/fft.cu
                 src/cuda/planewave/internal/poisson.cu
                 src/cuda/planewave/internal/grid_map.cu
                 src/cuda/planewave/internal/xc_lda.cu
+                src/cuda/planewave/internal/xc_pbe.cu
                 src/cuda/planewave/internal/veff.cu
                 src/cuda/planewave/internal/device_solver.cu
                 src/cuda/planewave/internal/device_density.cu
