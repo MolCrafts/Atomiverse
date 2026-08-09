@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 2)
+### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 3)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
@@ -63,7 +63,7 @@ fails the wave).
 | Track | Goal | Anchor / gate |
 | --- | --- | --- |
 | **cpu** | Cut wall on **landed** GPW/SCF vs real CP2K | \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) on matched twin, **1 MPI × OMP=4**; \(T_{\mathrm{cp2k}}\) from real `cp2k.psmp` (`source …/cp2k/install/env.sh`); provenance in [gpw-perf-baseline.md](gpw-perf-baseline.md) / [oracle-pin-provenance.md](oracle-pin-provenance.md). Pins green; FD-force if energy path moves. |
-| **cuda** | **Corresponding** CUDA for landed ES — **RHF first**; GPW foothold only under open-gate | CPU twin green; public `run`/`forces` stable; CUDA↔CPU energy/forces tols **stated**; device-only kernels (no host loops in `.cu` wrappers). Same-settings CPU (or external pin) is correctness oracle. Login has **no** toolkit — `sbatch -p gpu`, module `GPU/buildenv-gcccuda/2026.03-cu13.0`; never claim green without GPU log evidence. |
+| **cuda** | **Corresponding** CUDA for landed ES — PW method depth + GPW compose | CPU twin green; public `run`/`forces` stable; CUDA↔CPU energy/forces tols **stated**; device-only kernels (no host loops in `.cu` wrappers). Same-settings CPU (or external pin) is correctness oracle. Login has **no** toolkit — `sbatch -p gpu`, module `GPU/buildenv-gcccuda/2026.03-cu13.0`; never claim green without GPU log evidence. |
 
 **CPU rank (fair walls — baseline authority):**
 
@@ -75,14 +75,15 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (wave-2 staff order):** Landed: device s/p RHF + CDIIS; Γ GPW
-Poisson/LDA/collocate/integrate footholds; `cuda::pw::PW` LSDA method slice +
-residency polish. **Still blocked:** full `cuda-gpw-full-product`. **Pending:**
-`cuda-pw-pbe-device` (P0) → `cuda-pw-large-cell-measure` (P1) →
-`cuda-pw-nondefault-stream` (P2) → `cuda-rhf-nondefault-stream` (P3); optional
-CPU `cpu-simd-2center-setup` (P3). Incomplete tips on
-`wf/cuda-pw-pbe-device` / `wf/cuda-pw-large-cell-measure` must re-base onto
-`wf/escuda-<slug>` off current `dev` — never blind-merge.
+**CUDA open-gate (wave-3):** Landed: device s/p RHF + CDIIS; Γ GPW unit
+footholds; `cuda::pw::PW` LSDA energy slice + residency polish. **in_progress:**
+`cuda-pw-pbe-device` → `cuda-pw-large-cell-measure` →
+`cuda-pw-nondefault-stream`. **Pending depth (foothold ≠ closed):**
+`cuda-pw-forces` (P0 — energy-only gap), `cuda-gpw-ks-chain` (P1 — compose
+footholds, not full product), `cpu-simd-2center-setup` (P3),
+`cuda-rhf-nondefault-stream` (P3). **Still blocked:** `cuda-gpw-full-product`,
+`mg-main-structural`. Incomplete tips must re-base onto `wf/escuda-<slug>` off
+current `dev` — never blind-merge.
 
 **Queues (binding worklists):**
 
