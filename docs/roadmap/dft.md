@@ -79,9 +79,10 @@ RKS/UKS free-energy **metallic forces** under smear
 nonlocal **vdW forces** (`reg_gpw-vdw-kpoint-forces`), **optB88**
 ENERGY_FORCE (`reg_gpw-optb88-forces`), multi-k **Hirshfeld stress**
 (`reg_gpw-hirshfeld-kpoint-stress`), and **GPW bands/DOS**
-(`reg_gpw-bands-si` / `reg_gpw-dos-si`); open residuals (**incomplete
-`[~]`**): multi-k free-atom **TS stress** (`gpw-ts-kpoint-stress`) +
-multi-k free-energy **metallic stress** (`gpw-metallic-stress`);
+(`reg_gpw-bands-si` / `reg_gpw-dos-si`); the wave-6 residuals closed
+`[x]` in the wave-7 partial land 2026-08-01: multi-k free-atom **TS
+stress** (`gpw-ts-kpoint-stress`) + multi-k RKS free-energy **metallic
+stress** (`gpw-metallic-stress`);
 wave-8 residual closed 2026-08-04: metallic **BOMD**, GPW **UKS /
 metallic bands**, nonlocal **vdW stress**, multi-k UKS free-energy
 **metallic stress**, UKS/metallic **DOS** (latter wave-7); pending
@@ -145,15 +146,16 @@ is restricted HF only.
 | Functional           | CPU | CUDA | Kokkos |
 | -------------------- | :-: | :--: | :---: |
 | Slater exchange      |  ✓  |   ✓  |   ○  |
-| VWN correlation      |  ✓  |   ○  |   ○  |
+| VWN correlation      |  ✓  |   ✓  |   ○  |
 | SVWN                 |  ✓  |   ○  |   ○  |
-| Perdew–Wang 1992 LDA |  ✓  |   ✓  |   ○  |
+| Perdew–Wang 1992 LDA |  ✓  |   ○  |   ○  |
 | Spin-polarized LDA   |  ✓  |   ○  |   ○  |
 
 `LSDA` = Slater (Dirac) exchange + VWN5 correlation. VWN-RPA is also
 implemented, as the LDA correlation component inside B3LYP. PW92 is present as
-the LDA base of PBE. The CUDA column here is **plane-wave only**: Slater + PW92
-on the PW grid (`cuda/planewave/internal/xc_lda.cu`), spin-unpolarized — see
+the LDA base of PBE. The CUDA column here is **plane-wave only**: Slater + VWN5
+(`XCType::LSDA`, `cuda/planewave/internal/xc_lda.cu` — deliberately NOT the
+PW92-correlation σ→0 limit of PBE), spin-unpolarized — see
 [Periodic Kohn–Sham Methods](#10-periodic-kohnsham-methods) below. There is no
 XC on the device in the Gaussian path.
 
@@ -355,8 +357,8 @@ Multi-k dedicated stress pins for **D3 / D3(BJ) / D3 ATM (C9)** are product
 twins on MP meshes). Multi-k **D4** and **XDM** stress pins are product
 (`reg_gpw-d4-kpoint-stress` CP2K libdftd4 NUMERICAL Δσ;
 `reg_gpw-xdm-kpoint-stress` dual pure-Python strain); multi-k free-atom
-**TS** stress remains incomplete (`[~] gpw-ts-kpoint-stress` on unmerged
-`wf/*`). The **D3 ATM stress** pin is product
+**TS** stress is product (`reg_gpw-ts-kpoint-stress`; libMBD strain
+dual-gate, wave-7 partial land 2026-08-01). The **D3 ATM stress** pin is product
 (`reg_gpw-d3-atm-stress`: CP2K 2026.1 `STRESS_TENSOR NUMERICAL`
 difference C9 on−off isolates the pure ATM stress, Δσ parity 1.1e−13
 Ha/Bohr³ at CP2K's own `DX 0.001` FD step — the hard-gated triple sum is
@@ -394,13 +396,13 @@ Multi-k **Hirshfeld-scaled TS/MBD forces** are product
 wiring). Multi-k free-atom **TS forces** are product
 (`reg_gpw-ts-kpoint-forces`). Multi-k **D4 ATM stress** is product
 (`reg_gpw-d4-atm-kpoint-stress`; CP2K libdftd4 multi-k NUMERICAL ATM−2b
-Δσ). Multi-k free-atom **TS stress** stays incomplete
-(`[~] gpw-ts-kpoint-stress`). Multi-k **Hirshfeld-scaled stress** is
+Δσ). Multi-k free-atom **TS stress** is product
+(`reg_gpw-ts-kpoint-stress`). Multi-k **Hirshfeld-scaled stress** is
 product (`reg_gpw-hirshfeld-kpoint-stress`; fixed-\(v\) dual-gate). Multi-k
 **nonlocal vdW forces** and **optB88 ENERGY_FORCE** pins are product
 (`reg_gpw-vdw-kpoint-forces` / `reg_gpw-optb88-forces`). Analytic cell
-stress still omits nonlocal \(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain
-(queued `gpw-vdw-stress`).
+stress folds nonlocal \(E_{\mathrm{c}}^{\mathrm{nl}}\) under strain
+(`reg_gpw-vdw-stress`; wave-8 land 2026-08-04).
 
 ## 9. Composite DFT Methods
 
@@ -435,7 +437,10 @@ Two periodic DFT engines exist, with disjoint strengths:
   bands `reg_bands-metallic-si` + spin DOS `reg_dos-spin-si`). **PW
   CELL_OPT**
   (`IsotropicCellRelax` + intensive `kStress`; `reg_pw-variable-cell-si`).
-  CUDA path remains LDA / spin-unpolarized.
+  CUDA is `cuda::pw::PW` — a strict subset of the CPU method: **LSDA**
+  only (Slater + VWN5 device kernel), **restricted** closed-shell
+  (`spin_polarized` / smearing throw), **energy-only** (`run()`; no
+  device forces or stress).
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA
   (Padé) or **PBE / PBEsol / revPBE / RPBE / BLYP** (RKS + **Γ-UKS BLYP**
@@ -525,12 +530,17 @@ Two periodic DFT engines exist, with disjoint strengths:
   (`reg_gpw-ts-kpoint-forces` / `reg_gpw-metallic-forces` /
   `reg_gpw-uks-metallic-forces` / `reg_gpw-vdw-kpoint-forces` /
   `reg_gpw-optb88-forces` / `reg_gpw-hirshfeld-kpoint-stress` /
-  `reg_gpw-bands-si` / `reg_gpw-dos-si`). Open residuals (**incomplete
-  `[~]`**): multi-k free-atom **TS stress** + multi-k free-energy
-  **metallic stress**; **pending residual**: metallic **BOMD**, GPW
-  UKS/metallic **bands+DOS**, nonlocal **vdW stress**, multi-k UKS
-  free-energy **metallic stress** (see `cp2k-method-queue.md`; queue not
-  exhausted; GapCensus owns discovery).
+  `reg_gpw-bands-si` / `reg_gpw-dos-si`). The **wave-7 partial land
+  (2026-08-01)** closes `[x]` multi-k free-atom **TS stress**
+  (`reg_gpw-ts-kpoint-stress`) + multi-k RKS free-energy **metallic
+  stress** (`reg_gpw-metallic-stress`); the **wave-8 land (2026-08-04)**
+  closes metallic **BOMD** (`reg_gpw-bomd-smearing`), GPW UKS/metallic
+  **bands+DOS** (`reg_gpw-bands-uks` / `reg_gpw-dos-uks` /
+  `reg_gpw-bands-metallic` / `reg_gpw-dos-metallic`; DOS wave-7),
+  nonlocal **vdW stress** (`reg_gpw-vdw-stress`), and multi-k UKS
+  free-energy **metallic stress** (`reg_gpw-uks-metallic-stress`).
+  Pending residual empty (see `cp2k-method-queue.md`; GapCensus owns
+  discovery).
   Hybrids / meta-GGA / GAPW / PAW remain blocked. CPU only.
 
 | Method                           | CPU | CUDA | Kokkos |
@@ -569,8 +579,9 @@ Which engine backs which ✓:
   (forces: `reg_gpw-uks-forces`); **Γ-UKS BLYP**: `reg_gpw-uks-blyp`;
   **Γ-UKS revPBE**: `reg_gpw-uks-revpbe`; **Γ-UKS RPBE**: `reg_gpw-uks-rpbe`;
   **Γ-UKS PBEsol**: `reg_gpw-uks-pbesol`.
-- **Periodic LDA** is provided twice: Padé-LDA in GPW, and Slater + PW92 on the
-  plane-wave grid (the latter is the CUDA ✓; CPU PW also has LDA). **Periodic
+- **Periodic LDA** is provided twice: Padé-LDA in GPW, and Slater + VWN5
+  (`XCType::LSDA`) on the plane-wave grid (the latter is the CUDA ✓; CPU PW
+  also has LDA). **Periodic
   GGA** is GPW PBE / **PBEsol** (`reg_gpw-pbesol-si` + UKS
   `reg_gpw-uks-pbesol`) / **revPBE**
   (`reg_gpw-revpbe-si` + UKS `reg_gpw-uks-revpbe`) / **RPBE**
