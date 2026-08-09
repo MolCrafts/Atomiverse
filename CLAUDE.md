@@ -284,7 +284,8 @@ backend.
   scf/           Gaussian-basis SCF
   semiempirical/ NDDO/AM1                                   (CPU only)
   planewave/     plane-wave DFT
-  gpw/           Gaussian-and-plane-waves DFT               (CPU only)
+  gpw/           Gaussian-and-plane-waves DFT (method CPU-only; cuda/gpw/
+                 holds internal kernel footholds only, no method product)
   xc/            shared exchange-correlation pieces
   vibration/     FD Hessian, thermochemistry                (CPU only)
   longrange/     reciprocal-space electrostatics + its operator math
