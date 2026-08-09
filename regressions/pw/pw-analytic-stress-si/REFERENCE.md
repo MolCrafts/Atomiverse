@@ -48,8 +48,8 @@ FD pin magnitude is unchanged; the hard-coded diagonal is **+0.05755**.
 
 CP2K Quickstep bulk-Si decks use **GTH-PADE + DZVP-GTH**, not ONCV
 plane-wave. Absolute `STRESS_TENSOR` values are **not** comparable to this
-NC-UPF twin. No CP2K binary was available on the pin host this shift for a
-fair PW wall twin. Optional skeleton: `tools/cp2k_oracle/inputs/si_lda_pw_note.inp`.
+NC-UPF twin; the fair PW twin is Quantum ESPRESSO (below). Optional
+skeleton: `tools/cp2k_oracle/inputs/si_lda_pw_note.inp`.
 
 ## Literature / PseudoDojo context
 
@@ -63,16 +63,44 @@ Compressed cell → compressive hydrostatic \(\sigma_{xx}>0\) (mechanical /
 CP2K \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\)), consistent
 with the FD pin sign.
 
-## Performance
+## Performance — measured fair wall (oracle: qe)
+
+**Measured 2026-08-09** against the offline Quantum ESPRESSO twin
+(`Program PWSCF v.7.6`, source build of 2026-08-09,
+`/nobackup/proj/disk/teoroo/personal/jicli594/work/qe/install/bin/pw.x`;
+install record `tools/qe_oracle/pin_notes.md`). Twin job = one SCF + cell
+stress on the same NC UPF / cell / \(E_\mathrm{cut}=15\) Ry /
+\(2\times2\times2\) mesh. Input:
+`tools/qe_oracle/inputs/pw-analytic-stress-si/si_stress.in`
+(`input_dft='SLA PW'`, `tstress=.true.`).
 
 | Item | Value |
 | ---- | ----- |
-| `perf_exempt` | **true** |
-| Reason | No CP2K / QE / ABINIT binary on the pin host for a fair NC-UPF PW stress wall twin |
-| ATV analytic wall (informative) | ≈ **30 s** (1 SCF + 12 NSCF diagonalizations; Release, 16 threads) |
+| \(T_{\mathrm{atv}}\) | **13.69 s** (`reg_pw-analytic-stress-si`: 1 SCF + 12 NSCF strained diagonalizations; median of 3) |
+| \(T_{\mathrm{qe}}\) | **0.35 s** (1 SCF + analytic NM stress, QE-printed WALL, median of 3) |
+| \(T_{\mathrm{atv}}/T_{\mathrm{qe}}\) | **39.1** |
+| within_10x | **false — open PW perf debt** (was the stated target when exempt) |
 | Live dual-gate (analytic + full FD) | ≈ 116 s offline only — not in ctest |
-| `ratio_atv_over_cp2k` | n/a (exempt) |
-| `within_10x` | n/a (exempt; dual-gate correctness only) |
 
-When a plane-wave oracle binary is available: time the same geometry, append
-\(r = T_\mathrm{atv}/T_\mathrm{oracle}\) here, require \(r \le 10\).
+Protocol: Arrhenius x86_64 epyc login node (48-core, shared; load avg 7–24
+during the window), one shell, 3 interleaved repetitions, medians; both sides
+single process, `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, QE as
+`mpirun -np 1 pw.x`. ATV binary: Release, `-march=native`, this commit.
+
+QE key output lines (provenance, not ctest pins):
+
+```text
+!    total energy              =     -15.67051079 Ry   (7 iters)
+total   stress  (Ry/bohr**3)  diag 0.00019885 = 29.25 kbar, off-diag 0
+```
+
+Two recorded asymmetries, not excuses: (a) QE evaluates the **analytic**
+Nielsen–Martin stress after 1 SCF while ATV's production path does 12 NSCF
+strained diagonalizations — that algorithmic gap is most of the 39×; QE also
+reduces the mesh to 3 IBZ k-points vs ATV's 8. (b) QE's analytic 29.25 kbar
+vs ATV's FD-consistent ≈ 92 kbar (+0.0575 eV/Å³) differ because ATV's
+strain-FD derivative of the *discretized* energy includes the finite-basis
+(Pulay) contribution, which QE's infinite-basis analytic expression omits —
+at this deliberately incomplete \(E_\mathrm{cut}=15\) Ry that term is tens of
+kbar. The regression's correctness gate stays the internal analytic-vs-FD
+dual gate, which is basis-consistent by construction.

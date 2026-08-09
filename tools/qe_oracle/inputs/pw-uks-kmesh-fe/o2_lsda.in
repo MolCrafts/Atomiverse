@@ -1,0 +1,29 @@
+! Fair-wall twin of regressions/pw/pw-uks-kmesh-fe, run 2 of 2 (local LSDA).
+! ATV's XCType::LSDA is Slater + PW92 -> QE input_dft='SLA PW'.
+&control
+  calculation = 'scf'
+  prefix = 'o2_lsda'
+  pseudo_dir = '<ATV_CHECKOUT>/tests/data/pw'
+  outdir = './out'
+/
+&system
+  ibrav = 1
+  A = 5.5
+  nat = 2
+  ntyp = 1
+  ecutwfc = 5.0
+  nspin = 2
+  tot_magnetization = 2.0
+  occupations = 'fixed'
+  input_dft = 'SLA PW'
+/
+&electrons
+  conv_thr = 1.0d-6
+/
+ATOMIC_SPECIES
+O 15.999 O_ONCV_PBE-1.2.upf
+ATOMIC_POSITIONS angstrom
+O 0.0 0.0 0.0
+O 0.0 0.0 1.2075
+K_POINTS automatic
+2 2 2 0 0 0

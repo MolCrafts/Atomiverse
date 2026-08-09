@@ -1,0 +1,10 @@
+! Fair-wall twin of regressions/pw/bands-dos-si, step 4 of 4: dos.x.
+! ATV Dos: Gaussian sigma = 0.05 Ry, 200 bins over the eigenvalue span
+! (~0.1 eV/bin) -> degauss = 0.05 Ry, DeltaE = 0.1 eV.
+&DOS
+  prefix = 'si_bd'
+  outdir = './out'
+  degauss = 0.05
+  DeltaE = 0.1
+  fildos = 'si_bd.dos'
+/

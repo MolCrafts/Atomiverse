@@ -89,15 +89,40 @@ Character (indirect Si, \(\varepsilon_c(X)<\varepsilon_c(\Gamma)\)) and the
 Yin–Cohen LDA Γ→X window are the scientific pins. Offline twin input:
 `tools/cp2k_oracle/inputs/si_bands_dos_note.inp`.
 
-## Performance
+## Performance — measured fair wall (oracle: qe)
+
+**Measured 2026-08-09** against the offline Quantum ESPRESSO twin
+(`Program PWSCF v.7.6`, source build of 2026-08-09,
+`/nobackup/proj/disk/teoroo/personal/jicli594/work/qe/install/bin/pw.x` +
+`dos.x`; install record `tools/qe_oracle/pin_notes.md`). Twin job = bands +
+DOS for this system in each engine's native workflow, same NC UPF / cell /
+\(E_\mathrm{cut}=15\) Ry: QE runs scf (\(2^3\)) → `bands` NSCF on **exactly
+ATV's 16-point** Γ–X–W–L–Γ–K list (`set_diamond_path(4)`, 8 bands) → `nscf`
+on the \(4^3\) DOS mesh → `dos.x` (degauss 0.05 Ry, ΔE 0.1 eV ≈ 200 bins).
+Inputs: `tools/qe_oracle/inputs/bands-dos-si/` (`si_scf.in`, `si_bands.in`,
+`si_nscf_dos.in`, `si_dos.in`).
 
 | Item | Value |
 | ---- | ----- |
-| `perf_exempt` | **true** |
-| Reason | No CP2K binary / module on the build host for a fair wall twin this shift |
-| ATV twin wall (informative) | ~22 s (Release, 8 OMP threads, ecut 15 / k=2 + path + DOS k=4) |
-| `ratio_atv_over_cp2k` | n/a (exempt) |
-| `within_10x` | n/a (exempt; correctness gate only) |
+| \(T_{\mathrm{atv}}\) | **21.68 s** (`reg_bands-dos-si`; median of 3) |
+| \(T_{\mathrm{qe}}\) | **1.32 s** (0.34 scf + 0.44 bands + 0.37 nscf + 0.17 dos.x, printed WALLs, median of 3) |
+| \(T_{\mathrm{atv}}/T_{\mathrm{qe}}\) | **16.4** |
+| within_10x | **false — open PW perf debt** (was the stated target when exempt) |
 
-When a CP2K binary is available: time the same geometry with the oracle input,
-append \(r = T_\mathrm{atv}/T_\mathrm{cp2k}\) here, require \(r \le 10\).
+Protocol: Arrhenius x86_64 epyc login node (48-core, shared; load avg 7–24
+during the window), one shell, 3 interleaved repetitions, medians; both sides
+single process, `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, QE as
+`mpirun -np 1`. ATV binary: Release, `-march=native`, this commit.
+
+QE key output lines (provenance, not ctest pins):
+
+```text
+si_scf.out : !    total energy              =     -15.67051079 Ry   (7 iters)
+si_nscf.out:      highest occupied, lowest unoccupied level (ev): 6.3310  6.8061
+```
+
+Recorded cost asymmetries: QE computes the SCF density **once** and reuses it
+for both NSCF steps, while ATV's `Bands::compute` and `Dos::compute` each run
+their own SCF (public-API cost structure, counted as-is); QE also reduces the
+\(2^3\) SCF mesh to 3 IBZ points and the \(4^3\) DOS mesh to 8, vs ATV's full
+8 and 64.
