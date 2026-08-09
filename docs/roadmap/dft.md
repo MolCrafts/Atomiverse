@@ -444,8 +444,10 @@ Two periodic DFT engines exist, with disjoint strengths:
   (`IsotropicCellRelax` + intensive `kStress`; `reg_pw-variable-cell-si`).
   CUDA is `cuda::pw::PW` — a strict subset of the CPU method: **LSDA**
   (Slater + VWN5 device kernel) or **PBE** (device closed-shell GGA,
-  `internal/xc_pbe.cu`), **restricted** closed-shell (`spin_polarized` /
-  smearing throw), **energy-only** (`run()`; no device forces or stress).
+  `internal/xc_pbe.cu` — table **Periodic GGA** CUDA ✓ is this slice only),
+  **restricted** closed-shell (`spin_polarized` / smearing throw),
+  **energy-only** (`run()`; no device forces or stress; large-cell wall
+  evidence on Si supercells — see es-cpu-cuda queue).
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA
   (Padé) or **PBE / PBEsol / revPBE / RPBE / BLYP** (RKS + **Γ-UKS BLYP**
@@ -559,7 +561,7 @@ Two periodic DFT engines exist, with disjoint strengths:
 | GAPW DFT                         |  ○  |   ○  |   ○  |
 | Periodic Gaussian-basis DFT      |  ✓  |   ○  |   ○  |
 | Periodic LDA                     |  ✓  |   ✓  |   ○  |
-| Periodic GGA                     |  ✓  |   ○  |   ○  |
+| Periodic GGA                     |  ✓  |   ✓  |   ○  |
 | Periodic meta-GGA                |  ○  |   ○  |   ○  |
 | Periodic hybrid DFT              |  ○  |   ○  |   ○  |
 | Periodic range-separated hybrid  |  ○  |   ○  |   ○  |
@@ -592,7 +594,9 @@ Which engine backs which ✓:
   (`reg_gpw-revpbe-si` + UKS `reg_gpw-uks-revpbe`) / **RPBE**
   (`reg_gpw-rpbe-water` + UKS `reg_gpw-uks-rpbe`) / **BLYP**
   (`reg_gpw-blyp-water`) **and** CPU PW true PBE (`reg_pw-pbe-gga-si`) +
-  **true collinear spin-GGA** (`reg_pw-spin-gga`).
+  **true collinear spin-GGA** (`reg_pw-spin-gga`) **and** CUDA PW
+  closed-shell device PBE (`cuda::pw::PW` / `reg_cuda-pw-pbe-device` —
+  table CUDA ✓; no spin / no PBE-family variants on device).
 - **Periodic DFT+U** is GPW Dudarev PLUS_U energy (`reg_gpw-dftu-nio`) **and
   analytic stress** (`reg_gpw-dftu-stress`) **and ionic forces**
   (`reg_gpw-dftu-forces`; full-6N FD dual-gate + CP2K ENERGY_FORCE energy
