@@ -66,12 +66,16 @@ step 4). No wall-clock ratio is recorded and none may be inferred.
 
 ## Measurement log
 
-Filled after the first green GH200 job for this slug.
-
 | Item | Value |
 | ---- | ----- |
-| GH200 job id | *pending* |
-| Measured \(E_\mathrm{cpu}\) | *pending* |
-| Measured \(E_\mathrm{cuda}\) | *pending* |
-| Measured \(\lvert\Delta\rvert\) | *pending* |
-| Gate (CPU parity) | *pending* |
+| GH200 job id | **1048320** (NVIDIA GH200) |
+| Toolchain | `GPU/buildenv-gcccuda/2026.03-cu13.0`, nvcc 13.0 / GNU 14.3, `-DCMAKE_CUDA_ARCHITECTURES=90` |
+| Log | `.claude/cuda-pw-pbe-device-1048320.out` |
+| Unit suite | **100%** (4/4): `test_cuda_pw_xc_lda`, `test_cuda_pw_xc_pbe`, `test_cuda_pw_guards`, `test_cuda_pw_density` |
+| Measured \(E_\mathrm{cpu}\) | **−14.84955549 Ry** (7 iterations) |
+| Measured \(E_\mathrm{cuda}\) | **−14.84955549 Ry** (7 iterations) |
+| Measured \(\lvert\Delta\rvert\) | **1.421 × 10⁻¹⁴ Ry** |
+| Gate (CPU parity) | PASS — 1.421e−14 Ry < 1.0e−03 Ry |
+
+Both legs converge in the same iteration count (7): device Pulay reproduces the
+host trajectory, not only the fixed point.
