@@ -76,11 +76,13 @@ fails the wave).
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
 **CUDA open-gate (wave-3):** Landed: device s/p RHF + CDIIS; Γ GPW unit
-footholds; `cuda::pw::PW` LSDA energy slice + residency polish. **in_progress:**
-`cuda-pw-pbe-device` → `cuda-pw-large-cell-measure` →
-`cuda-pw-nondefault-stream`. **Pending depth (foothold ≠ closed):**
-`cuda-pw-forces` (P0 — energy-only gap), `cuda-gpw-ks-chain` (P1 — compose
-footholds, not full product), `cpu-simd-2center-setup` (P3),
+footholds; `cuda::pw::PW` LSDA energy slice + residency polish; **large-cell
+wall measure** (jobs 1035278 / 1048264: Si 64-atom CUDA ~9.65 s / CPU >5400 s —
+\(T_{\mathrm{cu}}/T_{\mathrm{cp}} < 0.0018\), \(|\Delta E|=1.24\times10^{-14}\) Ry;
+note [cuda-pw-large-cell.md](cuda-pw-large-cell.md)). **in_progress:**
+`cuda-pw-pbe-device` → `cuda-pw-nondefault-stream`. **Pending depth (foothold ≠
+closed):** `cuda-pw-forces` (P0 — energy-only gap), `cuda-gpw-ks-chain` (P1 —
+compose footholds, not full product), `cpu-simd-2center-setup` (P3),
 `cuda-rhf-nondefault-stream` (P3). **Still blocked:** `cuda-gpw-full-product`,
 `mg-main-structural`. Incomplete tips must re-base onto `wf/escuda-<slug>` off
 current `dev` — never blind-merge.

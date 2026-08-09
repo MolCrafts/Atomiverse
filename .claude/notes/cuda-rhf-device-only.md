@@ -139,9 +139,12 @@ this structure.
 Still on the host per Davidson round (named, not claimed fixed): the 4-byte
 Zheevd `devInfo` check, the n_bands eigenvalues (kernel scalar arguments for
 the residual shift and preconditioner), and the accept flag above. Next waves:
-a non-default stream, PBE-GGA on device, and — now that the slice is correct —
-the first large-cell measurement (ES order step 4), which is the only place any
-of these residency waves can actually be shown to pay.
+a non-default stream and PBE-GGA on device. **Large-cell walls (ES order step
+4) are filled** — GH200 job **1035278**: 64-atom Si Γ LSDA, CUDA
+`run(frame)` **9.664 s** vs same-settings CPU **>5400 s**; 216-atom CUDA
+**191 s**; slice sanity \|ΔE\|=1.243e-14 Ry. Detail:
+[cuda-pw-large-cell.md](cuda-pw-large-cell.md). 8-atom cells remain
+correctness-only.
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently
