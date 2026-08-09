@@ -6,7 +6,7 @@
 /// | method                    | CPU twin                                  |
 /// |---------------------------|-------------------------------------------|
 /// | `hartree()`               | `PoissonSolver::step`                     |
-/// | `exchange_correlation()`  | `XCBuilder::step(ws, XCType::LSDA)`       |
+/// | `exchange_correlation()`  | `XCBuilder::step(ws, xc)` (LSDA or PBE)   |
 /// | `assemble_veff()`         | `VeffBuilder::step`                       |
 /// | `zero_accumulator()`      | `DensityBuilder::begin`                   |
 /// | `collect()`               | first half of `DensityBuilder::finish`    |
@@ -34,6 +34,7 @@
 #include "atomiverse/cuda/planewave/internal/poisson.cuh"
 #include "atomiverse/cuda/planewave/internal/veff.cuh"
 #include "atomiverse/cuda/planewave/internal/xc_lda.cuh"
+#include "atomiverse/cuda/planewave/internal/xc_pbe.cuh"
 
 #include <algorithm>
 #include <cmath>
@@ -81,6 +82,44 @@ struct FinalizeSpec {
 /// `ws.V_xc_G[0] = {V_xc_G[0].real(), 0}` closing line of XCBuilder::step.
 __global__ void pw_zero_imag0_kernel(cufftDoubleComplex* __restrict__ v) {
     v[0].y = 0.0;
+}
+
+/// out = i·G_d·z on the G-sphere — the spectral-derivative factor of
+/// XCBuilder's gradient pack lambda: complex(0, G_d)·ρ = (−G_d·Im, G_d·Re).
+__global__ void pw_mul_ig_kernel(const cufftDoubleComplex* __restrict__ z,
+                                 const double* __restrict__ gd, int n_g,
+                                 cufftDoubleComplex* __restrict__ out) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_g)
+        return;
+    const cufftDoubleComplex v = z[i];
+    const double g = gd[i];
+    out[i].x = -g * v.y;
+    out[i].y = g * v.x;
+}
+
+/// acc += i·G_d·z — the divergence accumulation of XCBuilder's GGA pass
+/// (`V_xc_G[ig] += (−G_d·im, G_d·re)`), launched once per axis in x,y,z
+/// order so the association matches the CPU loop.
+__global__ void pw_axpy_ig_kernel(const cufftDoubleComplex* __restrict__ z,
+                                  const double* __restrict__ gd, int n_g,
+                                  cufftDoubleComplex* __restrict__ acc) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_g)
+        return;
+    const cufftDoubleComplex v = z[i];
+    const double g = gd[i];
+    acc[i].x += -g * v.y;
+    acc[i].y += g * v.x;
+}
+
+/// v -= d, elementwise — XCBuilder's closing `V_xc_r[i] -= div_r[i]`.
+__global__ void pw_sub_kernel(double* __restrict__ v,
+                              const double* __restrict__ d, int nr) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= nr)
+        return;
+    v[i] -= d[i];
 }
 
 /// F = ρ − ρ_old into the residual ring slot, ρ_old into the density ring
@@ -241,14 +280,23 @@ inline void check_cublas(cublasStatus_t s, const char* what) {
 // ── DeviceDensity ────────────────────────────────────────────────────────
 
 DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
-                             double mix_beta, int pulay_depth)
+                             double mix_beta, int pulay_depth,
+                             cpu::scf::XCType xc)
     : ng0_(prob.gv0.count()), nr_(prob.ws.nr), nc_(prob.ws.nc),
       depth_(pulay_depth), mix_beta_(mix_beta),
-      omega_(static_cast<double>(prob.ws.omega)),
+      omega_(static_cast<double>(prob.ws.omega)), xc_(xc),
+      gga_(cpu::scf::is_gga(xc)),
       fft_(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz) {
     if (pulay_depth < 1)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: pulay_depth must be >= 1");
+    // Only the two functionals with device kernels; no silent fallback. The
+    // PBE-family variants (PBEsol/revPBE/RPBE) differ by constants the
+    // xc_pbe.cu kernel hard-wires, so they are NOT accepted here.
+    if (xc_ != cpu::scf::XCType::LSDA && xc_ != cpu::scf::XCType::PBE)
+        throw std::invalid_argument(
+            "cuda::pw::internal::DeviceDensity: only XCType::LSDA and "
+            "XCType::PBE have device XC kernels");
     if (ng0_ <= 0 || nr_ <= 0 || nc_ <= 0)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: the assembled problem has an "
@@ -296,6 +344,17 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
             device_alloc<double>(static_cast<size_t>(kXcEnergyPartials));
         d_scalars_ = device_alloc<double>(5);
 
+        if (gga_) {
+            d_gx_ = device_alloc<double>(ng);
+            d_gy_ = device_alloc<double>(ng);
+            d_gz_ = device_alloc<double>(ng);
+            d_sph_ = device_alloc<cufftDoubleComplex>(ng);
+            d_grad_x_r_ = device_alloc<double>(nr);
+            d_grad_y_r_ = device_alloc<double>(nr);
+            d_grad_z_r_ = device_alloc<double>(nr);
+            d_div_r_ = device_alloc<double>(nr);
+        }
+
         // Zero the Pulay ring: unfilled slots then contribute finite zeros to
         // the Gram matrix instead of whatever the allocator handed back. The
         // corresponding rows/columns are discarded on the host, but a NaN
@@ -330,6 +389,21 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         ATV_CUDA_CHECK(cudaMemcpy(d_rho_G_, prob.ws.rho_G.data(),
                                   ng * sizeof(cufftDoubleComplex),
                                   cudaMemcpyHostToDevice));
+
+        if (gga_) {
+            // Cartesian G components per axis — the CPU's gv.g[ig][d],
+            // geometry only, uploaded once for the spectral ∇ρ / divergence.
+            std::vector<double> gcart(ng);
+            double* dst[3] = {d_gx_, d_gy_, d_gz_};
+            for (int d = 0; d < 3; ++d) {
+                for (int i = 0; i < ng0_; ++i)
+                    gcart[static_cast<size_t>(i)] = static_cast<double>(
+                        gv.g[static_cast<size_t>(i)][d]);
+                ATV_CUDA_CHECK(cudaMemcpy(dst[d], gcart.data(),
+                                          ng * sizeof(double),
+                                          cudaMemcpyHostToDevice));
+            }
+        }
     } catch (...) {
         free_all();
         throw;
@@ -362,6 +436,14 @@ void DeviceDensity::free_all() {
     device_free(d_partials_);
     device_free(d_xc_partials_);
     device_free(d_scalars_);
+    device_free(d_gx_);
+    device_free(d_gy_);
+    device_free(d_gz_);
+    device_free(d_sph_);
+    device_free(d_grad_x_r_);
+    device_free(d_grad_y_r_);
+    device_free(d_grad_z_r_);
+    device_free(d_div_r_);
     if (blas_) {
         cublasDestroy(blas_);
         blas_ = nullptr;
@@ -382,13 +464,59 @@ void DeviceDensity::exchange_correlation() {
                              nz);
     fft_.c2r(d_half_, d_rho_r_in_);
 
-    // Pointwise LSDA + the E_xc quadrature (dV = Ω/nr, as on the CPU).
-    xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr_);
-    xc_energy(d_rho_r_in_, d_exc_r_, nr_, omega_ / static_cast<double>(nr_),
-              d_scalars_ + 0, d_xc_partials_);
+    if (gga_) {
+        // ── Spectral ∇ρ: ∂_dρ(r) = c2r[ i G_d ρ(G) ], per axis ──
+        double* grad_r[3] = {d_grad_x_r_, d_grad_y_r_, d_grad_z_r_};
+        const double* gcart[3] = {d_gx_, d_gy_, d_gz_};
+        for (int d = 0; d < 3; ++d) {
+            pw_mul_ig_kernel<<<n_blocks(ng0_), kBlock>>>(d_rho_G_, gcart[d],
+                                                         ng0_, d_sph_);
+            ATV_CUDA_CHECK(cudaGetLastError());
+            scatter_g_to_halfcomplex(d_sph_, d_h_, d_k_, d_l_, ng0_, d_half_,
+                                     nx, ny, nz);
+            fft_.c2r(d_half_, grad_r[d]);
+        }
+
+        // Pointwise closed-shell PBE: local v_ρ, ε_xc, and the flux written
+        // over the gradient arrays. E_xc quadrature exactly as the LSDA path
+        // (dV = Ω/nr); the CPU accumulates it in the same grid loop, BEFORE
+        // the divergence correction, and ε_xc is untouched by it.
+        xc_pbe_grid(d_rho_r_in_, d_grad_x_r_, d_grad_y_r_, d_grad_z_r_,
+                    d_V_xc_r_, d_exc_r_, nr_);
+        xc_energy(d_rho_r_in_, d_exc_r_, nr_,
+                  omega_ / static_cast<double>(nr_), d_scalars_ + 0,
+                  d_xc_partials_);
+
+        // ── v_xc −= ∇·flux, via div(G) = Σ_d i G_d flux_d(G) ──
+        // d_V_xc_G_ is the accumulation scratch here, exactly as the CPU
+        // reuses ws.V_xc_G — it is overwritten by the final r2c gather below.
+        ATV_CUDA_CHECK(cudaMemsetAsync(
+            d_V_xc_G_, 0,
+            static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex), nullptr));
+        for (int d = 0; d < 3; ++d) {
+            fft_.r2c(grad_r[d], d_half_); // grad_r now holds flux_d
+            gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_sph_,
+                                    nx, ny, nz,
+                                    1.0 / static_cast<double>(nr_));
+            pw_axpy_ig_kernel<<<n_blocks(ng0_), kBlock>>>(d_sph_, gcart[d],
+                                                          ng0_, d_V_xc_G_);
+            ATV_CUDA_CHECK(cudaGetLastError());
+        }
+        scatter_g_to_halfcomplex(d_V_xc_G_, d_h_, d_k_, d_l_, ng0_, d_half_,
+                                 nx, ny, nz);
+        fft_.c2r(d_half_, d_div_r_);
+        pw_sub_kernel<<<n_blocks(nr_), kBlock>>>(d_V_xc_r_, d_div_r_, nr_);
+        ATV_CUDA_CHECK(cudaGetLastError());
+    } else {
+        // Pointwise LSDA + the E_xc quadrature (dV = Ω/nr, as on the CPU).
+        xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr_);
+        xc_energy(d_rho_r_in_, d_exc_r_, nr_,
+                  omega_ / static_cast<double>(nr_), d_scalars_ + 0,
+                  d_xc_partials_);
+    }
 
     // V_xc(r) → V_xc(G), scaled by 1/nr (r2c is unnormalized).
-    // NOTE: d_half_ is reused by all four scatter/gather+FFT pairs of an
+    // NOTE: d_half_ is reused by every scatter/gather+FFT pair of an
     // iteration. They are strictly sequential on the default stream, and
     // FFTPlan3D::c2r copies its input into private scratch first, so no pair
     // can clobber another. An "optimization" that drops a re-scatter would

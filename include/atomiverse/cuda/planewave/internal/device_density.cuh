@@ -20,8 +20,8 @@
 /// NUMERICAL PARITY CONTRACT vs `cpu::pw::PW`
 /// ------------------------------------------
 /// The device path is algorithmically identical to the CPU stage helpers
-/// (`PoissonSolver`, `XCBuilder` with `XCType::LSDA`, `VeffBuilder`,
-/// `DensityBuilder::finish`, `pulay_mix`, `ConvergenceCheck`,
+/// (`PoissonSolver`, `XCBuilder` with `XCType::LSDA` or `XCType::PBE`,
+/// `VeffBuilder`, `DensityBuilder::finish`, `pulay_mix`, `ConvergenceCheck`,
 /// `iteration_energy`), including every cutoff, floor and G = 0 special case.
 /// It is deliberately NOT bit-exact against the CPU:
 ///   * cuFFT and FFTW use different butterfly orders, so ρ(r) / V_eff(r) and
@@ -40,6 +40,7 @@
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
+#include "atomiverse/cpu/scf/xc_functional.h"
 #include "atomiverse/cuda/planewave/internal/fft.cuh"
 #include <complex>
 #include <cublas_v2.h>
@@ -74,18 +75,22 @@ class DeviceDensity {
     /// @brief Allocate and seed every density-side device buffer.
     ///
     /// Uploads (once per run, never per iteration): the density-sphere Miller
-    /// indices h/k/l, |G|², the complex V_loc(G), and the atomic ρ(G) seed
-    /// from `prob.ws.rho_G`.
+    /// indices h/k/l, |G|², the complex V_loc(G), the atomic ρ(G) seed from
+    /// `prob.ws.rho_G`, and — for a GGA functional — the Cartesian G
+    /// components feeding the spectral ∇ρ / divergence passes.
     ///
     /// @param prob        Assembled problem from `setup_pw_problem` (must
     ///                    outlive this object; `ws.gvec` aliases `gv0`).
     /// @param mix_beta    Density mixing parameter (dimensionless).
     /// @param pulay_depth Pulay history window ≥ 1 (dimensionless).
-    /// @throws std::invalid_argument if `pulay_depth < 1` or the problem has
-    ///         an empty G-sphere / FFT grid.
+    /// @param xc          Functional `exchange_correlation()` evaluates. Only
+    ///                    `XCType::LSDA` and `XCType::PBE` have device
+    ///                    kernels; anything else throws (no fallback).
+    /// @throws std::invalid_argument if `pulay_depth < 1`, the problem has
+    ///         an empty G-sphere / FFT grid, or `xc` has no device kernel.
     /// @throws std::runtime_error on any CUDA / cuFFT / cuBLAS failure.
     DeviceDensity(const cpu::pw::internal::PWProblem& prob, double mix_beta,
-                  int pulay_depth);
+                  int pulay_depth, cpu::scf::XCType xc);
     ~DeviceDensity();
     DeviceDensity(const DeviceDensity&) = delete;
     DeviceDensity& operator=(const DeviceDensity&) = delete;
@@ -95,9 +100,13 @@ class DeviceDensity {
     ///        |G|² < 1e-16 floor.
     void hartree();
 
-    /// @brief ρ(G)→ρ(r), LSDA V_xc(r)/ε_xc(r), E_xc, then V_xc(G) [Hartree].
-    ///        Mirrors `cpu::pw::internal::XCBuilder::step(ws, XCType::LSDA)`,
-    ///        including the ρ < 1e-12 cutoff and zeroing Im[V_xc(G = 0)].
+    /// @brief ρ(G)→ρ(r), V_xc(r)/ε_xc(r), E_xc, then V_xc(G) [Hartree].
+    ///        Mirrors `cpu::pw::internal::XCBuilder::step(ws, xc)` for the
+    ///        constructor's functional, including the ρ < 1e-12 cutoff and
+    ///        zeroing Im[V_xc(G = 0)]. For `XCType::PBE` this adds the CPU's
+    ///        GGA passes in the same order: spectral ∇ρ from i G ρ(G), the
+    ///        pointwise PBE evaluation with flux assembly, and
+    ///        v_xc −= ∇·flux via three r2c + one c2r transform.
     void exchange_correlation();
 
     /// @brief V_eff(G) = V_loc + V_H + V_xc, then the UNNORMALIZED c2r to
@@ -164,6 +173,8 @@ class DeviceDensity {
     int depth_ = 0;
     double mix_beta_ = 0;
     double omega_ = 0;
+    cpu::scf::XCType xc_ = cpu::scf::XCType::LSDA;
+    bool gga_ = false;
     FFTPlan3D fft_;
     cublasHandle_t blas_ = nullptr;
 
@@ -192,6 +203,17 @@ class DeviceDensity {
     double* d_V_xc_r_ = nullptr;
     double* d_exc_r_ = nullptr;
     double* d_V_eff_r_ = nullptr;
+
+    // GGA-only scratch (allocated only when is_gga(xc_); else null).
+    double* d_gx_ = nullptr; ///< Cartesian G_x per sphere entry [1/Bohr].
+    double* d_gy_ = nullptr; ///< Cartesian G_y per sphere entry [1/Bohr].
+    double* d_gz_ = nullptr; ///< Cartesian G_z per sphere entry [1/Bohr].
+    cufftDoubleComplex* d_sph_ = nullptr; ///< ng0_ G-sphere staging
+                                          ///< (i·G_d·ρ and flux_d(G)).
+    double* d_grad_x_r_ = nullptr; ///< ∂ρ/∂x, overwritten with flux_x.
+    double* d_grad_y_r_ = nullptr; ///< ∂ρ/∂y, overwritten with flux_y.
+    double* d_grad_z_r_ = nullptr; ///< ∂ρ/∂z, overwritten with flux_z.
+    double* d_div_r_ = nullptr;    ///< ∇·flux on the real grid.
 
     // Reduction scratch and outputs
     double* d_partials_ = nullptr;    ///< 4 × kReduceBlocks stage-1 partials.

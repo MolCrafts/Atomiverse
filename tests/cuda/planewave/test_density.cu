@@ -30,6 +30,7 @@
 #include <vector>
 
 using ATV::AccReal;
+using ATV::cpu::scf::XCType;
 using ATV::cuda::pw::internal::DeviceDensity;
 using ATV::cuda::pw::internal::GField;
 namespace cpupw = ATV::cpu::pw::internal;
@@ -98,8 +99,12 @@ double max_abs(const std::vector<std::complex<double>>& v) {
 
 } // namespace
 
-// ── Stage parity: Poisson, LSDA XC, V_eff ────────────────────────────────
-TEST(CudaPWDensity, HartreeXcVeffMatchCpu) {
+// ── Stage parity: Poisson, XC (LSDA or PBE), V_eff ───────────────────────
+// Shared body: device stages vs CPU stage helpers for one functional. The
+// tolerances are the LDA-parity bounds; the PBE run reuses them unchanged —
+// its extra FFT depth (3 gradient c2r + 3 flux r2c + 1 divergence c2r on
+// BOTH backends) stays well inside the same envelope.
+static void expect_stage_parity(XCType xc) {
     cpupw::PWProblem prob;
     build_problem(prob);
     auto& ws = prob.ws;
@@ -109,7 +114,7 @@ TEST(CudaPWDensity, HartreeXcVeffMatchCpu) {
     ASSERT_GT(nr, 0);
 
     // Device stages on the atomic seed density uploaded by the constructor.
-    DeviceDensity den(prob, kMixBeta, kDepth);
+    DeviceDensity den(prob, kMixBeta, kDepth, xc);
     den.hartree();
     den.exchange_correlation();
     den.assemble_veff();
@@ -119,7 +124,7 @@ TEST(CudaPWDensity, HartreeXcVeffMatchCpu) {
     po.step(ws);
     cpupw::XCBuilder xcb;
     xcb.prepare(ws);
-    xcb.step(ws, ATV::cpu::scf::XCType::LSDA);
+    xcb.step(ws, xc);
     cpupw::VeffBuilder vb;
     vb.prepare(ws);
     vb.step(ws);
@@ -187,6 +192,18 @@ TEST(CudaPWDensity, HartreeXcVeffMatchCpu) {
                 1e-12 * std::max(1.0, std::abs(static_cast<double>(ws.E_xc))));
 }
 
+TEST(CudaPWDensity, HartreeXcVeffMatchCpu) {
+    expect_stage_parity(XCType::LSDA);
+}
+
+// The PBE leg additionally exercises the spectral ∇ρ, the pointwise PBE
+// kernel, and the v_xc −= ∇·flux divergence pass against
+// XCBuilder::step(ws, PBE) — the CPU twin runs its true-GGA branch on the
+// same atomic seed density.
+TEST(CudaPWDensity, HartreeXcVeffMatchCpuPbe) {
+    expect_stage_parity(XCType::PBE);
+}
+
 // ── Pulay mixing parity, including the ring wrap ─────────────────────────
 TEST(CudaPWDensity, MixingMatchesCpuPulay) {
     cpupw::PWProblem prob;
@@ -195,7 +212,7 @@ TEST(CudaPWDensity, MixingMatchesCpuPulay) {
     const int ng = prob.gv0.count();
     const int nr = ws.nr;
 
-    DeviceDensity den(prob, kMixBeta, kDepth);
+    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
 
     // The CPU builder keeps no ctor snapshot: finish() honours the LIVE
     // workspace mixing parameters, so pin them to match DeviceDensity.
@@ -251,7 +268,7 @@ TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
     const int ng = prob.gv0.count();
     const int nr = ws.nr;
 
-    DeviceDensity den(prob, kMixBeta, kDepth);
+    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
 
     // One pseudo-iteration, host and device in lockstep.
     den.hartree();
@@ -320,7 +337,7 @@ TEST(CudaPWDensity, ReductionsAreBitwiseReproducible) {
     cpupw::PWProblem prob;
     build_problem(prob);
 
-    DeviceDensity den(prob, kMixBeta, kDepth);
+    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
     const double vol = static_cast<double>(prob.vol_bohr);
 
     // Re-run the WHOLE XC pass each time so the E_xc reduction is exercised

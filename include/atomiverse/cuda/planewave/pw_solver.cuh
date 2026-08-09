@@ -9,7 +9,8 @@
 /// The device path is a strict subset of the CPU path. Members the GPU
 /// cannot honour make `run()` throw with a how-to — the class never
 /// silently degrades to a different Hamiltonian. Supported today:
-/// restricted (nspin = 1), fixed closed-shell occupations, `XCType::LSDA`.
+/// restricted (nspin = 1), fixed closed-shell occupations, `XCType::LSDA`
+/// and `XCType::PBE`.
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -21,7 +22,7 @@
 ///   pw.upf_path = "Si_lda_nc.upf";
 ///   pw.ecut_ry = 15.0;
 ///   pw.k_mesh = 2;
-///   pw.xc = cpu::scf::XCType::LSDA;   // required: PBE has no device path
+///   pw.xc = cpu::scf::XCType::LSDA;   // or XCType::PBE (the default)
 ///   pw.build(frame);
 ///   const auto& result = pw.run(frame);   // energy [Ry] / energy_ha [Ha]
 /// @endcode
@@ -76,10 +77,12 @@ class PW {
     int pulay_depth = 5;
     /// @brief Exchange–correlation functional.
     ///
-    /// Only `XCType::LSDA` (Slater exchange + VWN5 correlation) has a device
-    /// path. The default matches `cpu::pw::PW` deliberately: a CUDA-only
-    /// default would make identical user code compute a different functional
-    /// on the two backends. `run()` throws for anything else.
+    /// `XCType::LSDA` (Slater exchange + VWN5 correlation) and `XCType::PBE`
+    /// (PBE GGA over a PW92 base) have device paths. The default matches
+    /// `cpu::pw::PW` deliberately: identical user code computes the same
+    /// functional on both backends. `run()` throws for anything else,
+    /// including the PBE-family variants (PBEsol/revPBE/RPBE) whose
+    /// constants the device kernel does not carry.
     cpu::scf::XCType xc = cpu::scf::XCType::PBE;
     /// @brief Collinear spin-polarized KS. No device path — `true` throws.
     bool spin_polarized = false;
@@ -125,8 +128,8 @@ class PW {
     ///
     /// @param frame Atom positions [Å], types (Z), and simulation cell.
     /// @return Owned `PWResult` (valid until the next `run()`).
-    /// @throws std::invalid_argument for `xc != XCType::LSDA`,
-    ///         `spin_polarized`,
+    /// @throws std::invalid_argument for an `xc` other than `XCType::LSDA` /
+    ///         `XCType::PBE`, `spin_polarized`,
     ///         `multiplicity != 1`, `smearing != Smearing::none`,
     ///         non-positive `tol`/`mix_beta`, `pulay_depth < 1`,
     ///         `max_iter < 1`, or an odd valence-electron count (the device

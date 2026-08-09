@@ -876,14 +876,15 @@ if(NOT ATV_DOCS_ONLY)
 
         # CUDA plane-wave backend — device-resident kernels mirroring the CPU
         # pw module (cuFFT FFT layer, G-space Hartree solver, sparse-G ↔ dense
-        # grid bridge, LDA/Veff stages) plus the full pw SCF band solver
-        # (cuFFT + cuBLAS Davidson). Only built when CUDA is also enabled.
+        # grid bridge, LDA/PBE XC and Veff stages) plus the full pw SCF band
+        # solver (cuFFT + cuBLAS Davidson). Only built when CUDA is enabled.
         if(ATV_BUILD_CUDA)
             target_sources(atomiverse PRIVATE
                 src/cuda/planewave/internal/fft.cu
                 src/cuda/planewave/internal/poisson.cu
                 src/cuda/planewave/internal/grid_map.cu
                 src/cuda/planewave/internal/xc_lda.cu
+                src/cuda/planewave/internal/xc_pbe.cu
                 src/cuda/planewave/internal/veff.cu
                 src/cuda/planewave/internal/device_solver.cu
                 src/cuda/planewave/internal/device_density.cu

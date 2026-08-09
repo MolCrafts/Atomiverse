@@ -7,8 +7,8 @@
 /// halves of the iteration are device-resident:
 ///
 ///   * band side — `internal::DeviceBandSolver` (cuFFT + cuBLAS Davidson),
-///   * density side — `internal::DeviceDensity` (ρ(G) → V_H → V_xc →
-///     V_eff(r) → Pulay mixing → energy/residual reductions).
+///   * density side — `internal::DeviceDensity` (ρ(G) → V_H → V_xc (LSDA or
+///     PBE GGA) → V_eff(r) → Pulay mixing → energy/residual reductions).
 ///
 /// The two meet only through two device pointers bound once per run
 /// (`bind_grids`), so **no O(N_G) or O(N_r) density-side array crosses PCIe
@@ -56,15 +56,17 @@ namespace cuda {
 namespace pw {
 
 void PW::validate_members() const {
-    // XCType::LSDA is the ONLY functional with a device path: the kernel in
-    // cuda/planewave/internal/xc_lda.cu is hard-wired to Slater + VWN5.
-    // Testing `xc != LSDA` rather than `is_gga(xc)` keeps the gate honest if
-    // a second non-GGA functional is ever added to the enum.
-    if (xc != cpu::scf::XCType::LSDA)
+    // Exactly two functionals have device kernels: XCType::LSDA
+    // (cuda/planewave/internal/xc_lda.cu, Slater + VWN5) and XCType::PBE
+    // (internal/xc_pbe.cu, PBE-X + PW92-based PBE-C with the spectral GGA
+    // passes in DeviceDensity). An explicit whitelist rather than
+    // `!is_gga(xc)` keeps the gate honest for the PBE-family variants
+    // (PBEsol/revPBE/RPBE) whose constants the device kernel does NOT carry.
+    if (xc != cpu::scf::XCType::LSDA && xc != cpu::scf::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::PW::run: xc has no device path — only XCType::LSDA "
-            "(Slater + VWN5) is implemented on the GPU. Set pw.xc = "
-            "cpu::scf::XCType::LSDA, or run this functional on cpu::pw::PW.");
+            "(Slater + VWN5) and XCType::PBE are implemented on the GPU. Set "
+            "pw.xc to one of those, or run this functional on cpu::pw::PW.");
     if (spin_polarized)
         throw std::invalid_argument(
             "cuda::pw::PW::run: spin_polarized=true has no device path — the "
@@ -163,7 +165,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
     // Device state: one-time H2D of the geometry-constant G-sphere tables and
     // the atomic ρ(G) seed, then nothing scientific leaves the GPU.
-    internal::DeviceDensity den(prob, mix_beta, pulay_depth);
+    internal::DeviceDensity den(prob, mix_beta, pulay_depth, xc);
     internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands);
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
     // Every per-k table (G→FFT map, T(G), q = k+G, KB descriptors, initial
@@ -176,7 +178,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
     for (int iter = 0; iter < max_iter; ++iter) {
         den.hartree();              // PoissonSolver::step
-        den.exchange_correlation(); // XCBuilder::step(ws, LSDA)
+        den.exchange_correlation(); // XCBuilder::step(ws, xc)
         den.assemble_veff();        // VeffBuilder::step
         den.zero_accumulator();     // DensityBuilder::begin
 

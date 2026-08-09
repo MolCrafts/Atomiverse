@@ -163,7 +163,7 @@ XC on the device in the Gaussian path.
 
 | Functional | CPU | CUDA | Kokkos |
 | ---------- | :-: | :--: | :---: |
-| PBE        |  ✓  |   ○  |   ○  |
+| PBE        |  ✓  |   ✓  |   ○  |
 | PBEsol     |  ✓  |   ○  |   ○  |
 | revPBE     |  ✓  |   ○  |   ○  |
 | RPBE       |  ✓  |   ○  |   ○  |
@@ -175,6 +175,11 @@ XC on the device in the Gaussian path.
 | HCTH/407   |  ○  |   ○  |   ○  |
 | SOGGA      |  ○  |   ○  |   ○  |
 
+The PBE CUDA ✓ is **plane-wave, closed-shell only**: the `cuda::pw::PW`
+density side runs device PBE (`cuda/planewave/internal/xc_pbe.cu` — PBE-X +
+PW92-based PBE-C at ζ = 0, spectral ∇ρ / divergence in `DeviceDensity`)
+against the CPU stage helpers as oracle. No CUDA GGA exists on the Gaussian
+or GPW paths, and the PBE-family variants (PBEsol/revPBE/RPBE) stay CPU-only.
 `XCType::BLYP` is pure B88+LYP (unit weights, no HF admixture); regression
 `reg_blyp-water-sto3g` pins H2O/STO-3G vs PySCF xc=blyp. **BLYP on GPW**
 ships as `XcKind::BLYP` (`reg_gpw-blyp-water`; dual-gate vs PBE). **PBEsol**
@@ -438,9 +443,9 @@ Two periodic DFT engines exist, with disjoint strengths:
   CELL_OPT**
   (`IsotropicCellRelax` + intensive `kStress`; `reg_pw-variable-cell-si`).
   CUDA is `cuda::pw::PW` — a strict subset of the CPU method: **LSDA**
-  only (Slater + VWN5 device kernel), **restricted** closed-shell
-  (`spin_polarized` / smearing throw), **energy-only** (`run()`; no
-  device forces or stress).
+  (Slater + VWN5 device kernel) or **PBE** (device closed-shell GGA,
+  `internal/xc_pbe.cu`), **restricted** closed-shell (`spin_polarized` /
+  smearing throw), **energy-only** (`run()`; no device forces or stress).
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA
   (Padé) or **PBE / PBEsol / revPBE / RPBE / BLYP** (RKS + **Γ-UKS BLYP**
