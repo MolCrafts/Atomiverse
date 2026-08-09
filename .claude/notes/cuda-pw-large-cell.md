@@ -51,49 +51,42 @@ is stated only where the CPU wall exceeds 60 s.
 | --- | --- | --- | --- |
 | 1035136 | FAILED | configure — no molrs submodule | (old worktree) |
 | 1035238 | FAILED | HARNESS_LINK_FAILED (dlink rsp not substituted) | `.claude/cuda-pw-large-cell-1035238.out` |
-| **1035278** | CANCELLED after ~2.8 h (n=3 CPU still running) | **authoritative walls** below | `.claude/cuda-pw-large-cell-1035278.out` |
-| 1048264 | reconfirm with gate fix (timeout → WALL_LOWER_BOUND) | same ladder + longer n=2 CPU budget | `.claude/cuda-pw-large-cell-1048264.out` |
+| **1035278** | CANCELLED after ~2.8 h (n=3 CPU mid-leg) | first complete ladder walls | `.claude/cuda-pw-large-cell-1035278.out` |
+| **1048264** | RUNNING / reconfirm (gate fix + 3.3 h n=2 CPU budget) | same ladder on tip `fbc8f229`+ | `.claude/cuda-pw-large-cell-1048264.out` |
 
-## Results (job 1035278, node n516)
+## Results
 
 ### Slice sanity (correctness twin)
 
-`reg_pw-cuda-lda-si --device=both` (2-atom Si, ecut 15 Ry, k_mesh=2):
-
-| Leg | E [Ry] | iters |
-| --- | ---: | ---: |
-| cpu | −15.67177311 | 5 |
-| cuda | −15.67177311 | 5 |
-| \|ΔE\| | **1.243e-14 Ry** | (bound 1e-3 Ry) |
-
-`SLICE_SANITY_RC=0`.
+`reg_pw-cuda-lda-si --device=both` (2-atom Si, ecut 15 Ry, k_mesh=2) on both
+jobs: **PASS**, \|E_cuda − E_cpu\| = **1.243e-14 Ry** (bound 1e-3 Ry), 5 iters
+each. `SLICE_SANITY_RC=0`.
 
 ### Supercell ladder walls (`run(frame)` only)
 
+Primary walls from **1035278** (n516); reconfirm **1048264** (n522) in
+parentheses where finished.
+
 | n_rep | atoms | bands | device thr | wall_s | E [Ry] | iters | notes |
 | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | 8 | 16 | cuda 16t | **0.968** | −62.67719398 | 5 | correctness only |
-| 1 | 8 | 16 | cpu 16t | **17.934** | −62.67719396 | 5 | \|ΔE\| ~2e-8 Ry vs cuda |
-| 1 | 8 | 16 | cpu 1t | **17.908** | −62.67719396 | 5 | OpenBLAS thr ≈ no-op (serial PW) |
-| 2 | 64 | 128 | cuda 16t | **9.664** | −507.09055846 | 5 | |
-| 2 | 64 | 128 | cpu 16t | **> 5400** | (not finished) | — | `LEG_TIMEOUT` after 5400 s |
-| 3 | 216 | 432 | cuda 16t | **191.214** | −1712.93740038 | 5 | |
-| 3 | 216 | 432 | cpu 16t | (cancelled) | — | — | job killed mid-leg |
-
-n=1 energy parity (same process not required):
-\|E_cuda − E_cpu\| ≈ **2e-8 Ry** on 8 atoms (roundoff / Jacobi vs Zheevd
-signature; well inside the 1e-3 Ry design bound of `pw-cuda-lda-si`).
+| 1 | 8 | 16 | both 16t | cpu **17.93** / cuda **0.97** (17.85 / 0.96) | −62.677194 | 5 | \|ΔE\|=**2.089e-08** Ry (1048264 `BENCH_PARITY`) |
+| 1 | 8 | 16 | cpu 1t | **17.91** (17.85) | −62.677194 | 5 | OpenBLAS thr ≈ no-op (serial PW) |
+| 2 | 64 | 128 | cuda 16t | **9.664** (**9.645**) | −507.09055846 | 5 | bit-stable E across jobs |
+| 2 | 64 | 128 | cpu 16t | **> 5400** (1048264 budgeting 12000 s) | — | — | 1035278 `LEG_TIMEOUT`; gate met |
+| 3 | 216 | 432 | cuda 16t | **191.214** | −1712.93740038 | 5 | 1035278 only |
+| 3 | 216 | 432 | cpu 16t | (cancelled) | — | — | not required once gate met |
 
 ### Gate
 
 **Met at n=2 (64 atoms).** Same-settings CPU wall **> 5400 s > 60 s**.
-CUDA wall at that size is **9.664 s**.
+CUDA wall at that size is **~9.65 s** (two independent GH200 runs agree to
+0.02 s).
 
 | Size | T_cuda / T_cpu | note |
 | --- | ---: | --- |
-| n=1 (8 at) | 0.968 / 17.93 ≈ **0.054×** | correctness only — **not** a speed claim |
-| n=2 (64 at) | 9.664 / **>5400** ≈ **< 0.0018×** | **large-cell evidence**; CUDA ≪ CPU |
-| n=3 (216 at) | CUDA 191 s; CPU unfinished | CUDA scales; CPU dense O(n_b³) too expensive in budget |
+| n=1 (8 at) | 0.96 / 17.9 ≈ **0.054×** | correctness only — **not** a speed claim |
+| n=2 (64 at) | 9.65 / **>5400** ≈ **< 0.0018×** | **large-cell evidence**; CUDA ≪ CPU |
+| n=3 (216 at) | CUDA 191 s; CPU unfinished | CUDA scales; CPU dense O(n_b³) too expensive |
 
 `within_10x` vs CPU twin: **yes** (CUDA is faster; ratio ≪ 1). Not
 perf-exempt: this is real large-cell wall evidence, not a foothold skip.
@@ -103,14 +96,13 @@ perf-exempt: this is real large-cell wall evidence, not a foothold skip.
 - No fair twin vs CP2K/QE (oracle is ATV CPU same-settings).
 - No “CUDA wins” from 2-atom or 8-atom cells alone.
 - No device forces / stress / PBE product (other slugs).
-- n=2 CPU exact wall is only a lower bound (>5400 s); finishing that leg is
-  optional polish (job 1048264 budgets ~3 h for it).
+- n=2 CPU exact wall remains a lower bound until 1048264 finishes (optional).
 
 ## Gate checklist
 
 | Check | Status |
 | --- | --- |
-| GH200 log with filled results | **yes** — job **1035278** |
+| GH200 log with filled results | **yes** — jobs **1035278** + **1048264** (quick legs) |
 | Correctness suite (`pw-cuda-lda-si` both) | **PASS** \|ΔE\|=1.243e-14 Ry |
 | CPU wall > 60 s | **yes** at 64 atoms (>5400 s) |
 | CPU↔CUDA walls reported | **yes** (table above) |
