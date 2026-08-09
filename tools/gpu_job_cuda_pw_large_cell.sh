@@ -42,7 +42,9 @@ lscpu | grep -E 'Model name|^CPU\(s\)' || true
 WALL_BUDGET=12600 # seconds, mirrors -t above
 BUILD=build-cuda-pw-cell
 UPF="${SLURM_SUBMIT_DIR}/tests/data/pw/Si_lda_nc.upf"
-rm -rf "${BUILD}" CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
+# Reuse a surviving build tree from a failed run (ATV_FRESH=1 forces a wipe).
+[ "${ATV_FRESH:-0}" = "1" ] && rm -rf "${BUILD}"
+rm -rf CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
 
 cmake -B "${BUILD}" -G "Unix Makefiles" \
   -DCMAKE_BUILD_TYPE=Release \
@@ -88,7 +90,14 @@ printf '%s\n' "${COMPILE_LINE}" \
   | sed -e "s|${SRC_REG}|${SRC_BENCH}|g" \
         -e "s|${OBJ_REG}|${OBJ_BENCH}|g" \
   > "${BUILD}/bench_compile.sh"
+# The dlink object list lives in a response file — substitute it too, or the
+# device link binds the regression's object (job 1035238: HARNESS_LINK_FAILED,
+# mismatched __cudaRegisterLinkedBinary/__fatbinwrap symbols).
 sed -e "s|${OBJ_REG}|${OBJ_BENCH}|g" \
+    -e "s|pw/pw-cuda-lda-si/reg_pw-cuda-lda-si\.cu\.o|bench/bench_cuda_pw_cell.cu.o|g" \
+    "${DIR}/deviceObjects1.rsp" > "${DIR}/bench_deviceObjects.rsp"
+sed -e "s|${OBJ_REG}|${OBJ_BENCH}|g" \
+    -e "s|deviceObjects1\.rsp|bench_deviceObjects.rsp|g" \
     -e "s|cmake_device_link\.o|bench_device_link.o|g" \
     "${DIR}/dlink.txt" > "${BUILD}/bench_dlink.sh"
 sed -e "s|${OBJ_REG}|${OBJ_BENCH}|g" \
