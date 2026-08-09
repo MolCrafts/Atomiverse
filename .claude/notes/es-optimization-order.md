@@ -47,37 +47,38 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
     accumulate on AVX-512, short-segment scalar, Ltot triangular skip, zero-pol
     reverse, cab n≥4; int **~58→~45** ms; MAIN **~1.6 s / ~1.25×**.
 
-**Active next (`es-cpu-cuda-opt` post wave-7; wave-8 no-land):**
+> **Wall numbers in the wave list above are as-claimed-at-the-time and are
+> superseded.** [`gpw-perf-baseline.md`](gpw-perf-baseline.md) is the single
+> authority: it re-measured MG MAIN at **1.6 s ATV / 0.688 s CP2K = 2.33×**
+> (worst_ratio **3.02**, `ot-minimizer-water`) and states explicitly that that
+> row *replaces* the earlier ~1.25× figures, which came from an older quiet
+> definition. Do not quote ~1.25× as current.
 
-| Track | Focus | Anchor |
+**Active next (`cp2k-perf-loop` — CP2K hard anchor, CPU only):**
+
+| Priority | Slug | Target |
 | --- | --- | --- |
-| **cpu** | optional residual-2 **kernel-exhausted** on host (~47–49 ms int); `cpu-simd-2center-setup` slab-only | MG MAIN ~1.25–1.33× → needs non-kernel lever for ~1× |
-| **cuda** | foothold chain closed; no full GPW product; no higher-L RHF | same-settings CPU oracle; device-only; GH200 |
+| P0 | `p0-mg-main-structure` | MG MAIN **2.33× → ~1×** non-kernel structure |
+| P1 | `p1-products-default-k` | fresh products vs dense A/B only |
 
-1. **CPU wall** — MG MAIN **~1.25–1.33×** host (OT worst **~1.4×**, ≤3× aim met).
-   Wave-8 residual-2: no landable kernel win (per-chunk hsum regressed). Integrate
-   still ~2.5× CP2K (~48 vs ~19 ms). Next free lever is **not** thin collint polish.
-2. **CUDA ES** — RHF device s/p energy+forces+level_shift+path-select+**CDIIS**
-   **landed**; Γ GPW Poisson/FFT + Padé LDA XC + **ρ collocate** + **V·shape
-   integrate** footholds **landed** (not full method). Full CUDA GPW product
-   remains blocked. No open CUDA pending after wave-7 GapCensus.
+Merged, no longer pending: `p0-ot-cp2k-match` (`cfd75024`),
+`p0-stvnl-setup-residual` (`d9e1b0aa`).
 
-**Worker law:** branches `wf/escuda-<slug>` off **`dev`**; no push; no
-`reset --hard`. Disk: wipe `build`/`build-*` after every cmake/ctest. CUDA
-build/run only via `sbatch -p gpu` (login has no toolkit). GH200 cmake needs
-`-DCMAKE_CUDA_ARCHITECTURES=90` and must not link x86 `libxtb` (SE OFF or
-null `ATV_XTB_ROOT`).
+**Forbidden this loop:** thin `product_collint` width-N re-polish (wave-8
+exhausted); CUDA staff; hybrid/GAPW capability; global `XTENSOR_USE_XSIMD`.
 
-Queue: [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md) +
-[gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md).
+**Worker law:** branches `wf/perf-<slug>` off **`dev`**; no push; wipe
+`build` after every cmake/ctest. Metric = absolute `T_atv/T_cp2k` vs pinned
+real `cp2k.psmp`.
 
+Queue: [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md).
 Architecture: [gpw-perf-architecture.md](gpw-perf-architecture.md).
-Baseline walls: [gpw-perf-baseline.md](gpw-perf-baseline.md).
-CUDA RHF: [cuda-rhf-device-only.md](cuda-rhf-device-only.md).
+Baseline: [gpw-perf-baseline.md](gpw-perf-baseline.md).
 
 ### CUDA ES this wave
 
-**Wave 7 landed** integrate residual (CPU only). **Forbidden:** hybrid / GAPW /
+**CPU-first.** Footholds already landed; `cp2k-perf-loop` does **not** staff
+CUDA. Full `cuda-gpw-full-product` still blocked. **Forbidden:** hybrid / GAPW /
 PAW / meta-GGA product; claiming CUDA wins on small-molecule correctness twins;
 classical MD CUDA (separate OpenMM track); full CUDA GPW method product before
 architecture freeze.

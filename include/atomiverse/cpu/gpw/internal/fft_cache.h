@@ -122,9 +122,9 @@ class R2cFft {
     /// @brief howmany=3 backward: `c_many` → `r_many` (gradient outputs).
     void execute_many_c2r();
 
-    /// @brief Build howmany=3 MEASURE plans + buffers (idempotent).
-    /// Call during SCF setup for GGA so the first KS does not pay cold MEASURE
-    /// inside the OT/DIIS wall (~0.5–0.7 s on water-class grids).
+    /// @brief Build the howmany=3 plans and their 3×-sized buffers (idempotent).
+    /// Call during SCF setup for GGA so the first KS does not pay the cold
+    /// buffer allocation inside the OT/DIIS wall.
     void ensure_many_plans();
 
   private:

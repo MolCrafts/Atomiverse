@@ -31,8 +31,8 @@
 #include "atomiverse/cpu/gpw/internal/dft_plus_u.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
 #include "atomiverse/cpu/gpw/internal/diis.h"
-#include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
+#include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
 #include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
@@ -2346,13 +2346,6 @@ static GpwResult run_gpw_scf_kpoints_uks(
             "guess_P_k_beta (no partial spin guess)");
     validate_spin_k_guess(guess_Pa_k, "guess_P_k");
     validate_spin_k_guess(guess_Pb_k, "guess_P_k_beta");
-    if (cfg.xc != XcKind::PADE && cfg.xc != XcKind::PBE
-        && cfg.xc != XcKind::PBEsol && cfg.xc != XcKind::RevPBE
-        && cfg.xc != XcKind::RPBE && cfg.xc != XcKind::BLYP
-        && cfg.xc != XcKind::OptB88VdW)
-        throw std::runtime_error("GPW k-UKS: XcKind must be PADE, PBE, PBEsol, "
-                                 "RevPBE, RPBE, BLYP, or OptB88VdW");
-
     const GpwMpiLayout layout = gpw_mpi_layout();
     int n_kpts_local = 0;
     for (int ik = layout.rank; ik < nk; ik += layout.nprocs)
@@ -4067,13 +4060,12 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     internal::GpwWorkspace ws;
     ws.grid = make_uniform_grid(cfg.cell, cfg.cutoff_ry);
     const UniformGrid& grid = ws.grid;
-    // GGA spectral grad/div uses howmany=3 MEASURE plans built lazily on the
-    // first many_* call. Warm them during setup so the first KS (esp. OT water
-    // with cold multi-out) does not bury ~0.5–0.7 s of plan time in the SCF wall.
-    if (cfg.xc == XcKind::PBE || cfg.xc == XcKind::PBEsol
-        || cfg.xc == XcKind::RevPBE) {
+    // GGA spectral grad/div goes through howmany=3 plans whose 3×-sized real and
+    // complex buffers are allocated lazily on the first many_* call. Warm them
+    // during setup so the first KS (esp. OT water with cold multi-out) does not
+    // bury that allocation in the SCF wall.
+    if (is_gga(cfg.xc))
         R2cFft::for_shape(grid.n[0], grid.n[1], grid.n[2]).ensure_many_plans();
-    }
 
     // k-point RKS branch selector.
     // (Configuration conflicts are rejected fail-fast in GpwDft::build.)
@@ -4720,14 +4712,6 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     // ngrids==1 keeps the CompactBasisGrid single-grid path bit-identical.
     // OT (use_ot) is product for Γ-UKS; DIIS/diagonalization remains default.
     if (uks) {
-        if (cfg.xc != XcKind::PADE && cfg.xc != XcKind::PBE
-            && cfg.xc != XcKind::PBEsol && cfg.xc != XcKind::RevPBE
-            && cfg.xc != XcKind::RPBE && cfg.xc != XcKind::BLYP
-            && cfg.xc != XcKind::OptB88VdW)
-            throw std::runtime_error(
-                "GPW UKS: XcKind must be PADE, PBE, PBEsol, RevPBE, RPBE, "
-                "BLYP, or OptB88VdW");
-
         // Collocate one spin density: multigrid products or single-grid cbg.
         auto collocate_P = [&](const RealMatrix& Pin) {
             return collocate_rho_fine(mat_to_vec(Pin, nb));
@@ -5408,10 +5392,6 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 H = std::move(he0.first);
                 e_total = he0.second;
             }
-            // Precond only when we stay on OT for this outer. If residual is
-            // already in the polish band, skip the dense inverse rebuild.
-            const int outer_period = use_cg ? 1 : kOuterPeriodDiis;
-            auto tB = Clk::now();
             res.iters = iter + 1;
             res.e_total = e_total;
 
@@ -5509,9 +5489,11 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 break;
             }
 
-            // Still on OT: rebuild precond periodically (skipped above when
-            // polishing). Dense inverse is only paid on residual OT outers.
-            if (!prec || iter % outer_period == 0)
+            // Still on OT: rebuild precond periodically. The polish branch above
+            // always breaks, so the dense inverse is only paid on outers that
+            // actually take an OT step. CG rebuilds every step; DIIS keeps its
+            // history across the mild period-kOuterPeriodDiis refresh.
+            if (!prec || iter % (use_cg ? 1 : kOuterPeriodDiis) == 0)
                 prec.emplace(H, S, Cocc, kEnergyGap);
             if (iter > 0 && iter % kDiisReseed == 0 && !use_cg)
                 ot_diis.reset();
@@ -5533,6 +5515,9 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             gnorm_prev = gnorm;
             e_prev = e_total;
 
+            // `H=` covers the H build plus the precond rebuild, so the split
+            // keeps its meaning now that the precond moved past the polish test.
+            auto tB = Clk::now();
             const RealMatrix pg =
                 linalg::s_tangent(Cocc, S, prec->apply(g));
             auto tC = Clk::now();
@@ -5744,12 +5729,6 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
                 "n_alpha+n_beta >= 1 (got n_alpha="
                 + std::to_string(n_alpha) + " n_beta=" + std::to_string(n_beta)
                 + ")");
-        if (xc != XcKind::PADE && xc != XcKind::PBE && xc != XcKind::PBEsol
-            && xc != XcKind::RevPBE && xc != XcKind::RPBE && xc != XcKind::BLYP
-            && xc != XcKind::OptB88VdW)
-            throw std::invalid_argument(
-                "GpwDft::build: UKS supports XcKind::PADE, PBE, PBEsol, "
-                "RevPBE, RPBE, BLYP, or OptB88VdW");
         // Nonlocal vdW (vdw_df / vdw_df2 / rvv10) is wired for Γ UKS and
         // multi-k UKS: V_nl on the total density lands in both spin
         // potentials each SCF iteration (build_uks_H / build_uks_k_energy)
@@ -5890,12 +5869,6 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
         // single-grid gpw-vdw-uks-kpoints; REL_CUTOFF multigrid product
         // gpw-vdw-uks-kpoint-multigrid; Γ UKS product via gpw-vdw-uks /
         // gpw-vdw-uks-multigrid).
-        if (is_uks() && xc != XcKind::PADE && xc != XcKind::PBE
-            && xc != XcKind::PBEsol && xc != XcKind::RevPBE
-            && xc != XcKind::RPBE && xc != XcKind::BLYP
-            && xc != XcKind::OptB88VdW)
-            reject("k-UKS with this XcKind (need PADE, PBE, PBEsol, RevPBE, "
-                   "RPBE, BLYP, or OptB88VdW)");
         if (!k_points.empty()) {
             double wsum = 0.0;
             for (const double w : k_point_weights) {

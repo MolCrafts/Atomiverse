@@ -133,15 +133,17 @@ inline double shape_radius(double mag, double p, int Ltot, double eps) {
     return std::sqrt(std::max(r2, 0.0));
 }
 
-/// Radius from assembled cartesian product coefficients (CP2K-style).
-/// After cab expand, max|cxyz| is the true prefactor for r^L exp(-p r²);
-/// using the density/geometry mag alone often oversizes the sphere.
-inline double cmax_radius(const double* cxyz, int n, double p, int Ltot,
-                          double eps) {
+/// Shrink a mag-based radius using the assembled cartesian product coefficients
+/// (CP2K-style). After the cab expand, max|cxyz| is the true prefactor for
+/// r^L exp(-p r²), while the density/geometry `mag` alone often oversizes the
+/// sphere. Returns min(r_mag, r_cmax) — only ever shrinks, never enlarges.
+inline double refine_radius(double r_mag, const double* cxyz, int n, double p,
+                            int Ltot, double eps) {
     double cmax = 0.0;
     for (int i = 0; i < n; ++i)
         cmax = std::max(cmax, std::abs(cxyz[i]));
-    return shape_radius(cmax, p, Ltot, eps);
+    const double r_c = shape_radius(cmax, p, Ltot, eps);
+    return (r_c > 0.0) ? std::min(r_mag, r_c) : r_mag;
 }
 
 // ─── Sphere-bounds cache (CP2K grid_sphere_cache) ───────────────────────────
@@ -331,14 +333,18 @@ void add_product_to_cxyz(const GridProduct& prod, double weight, int lpx,
         }
 }
 
+/// Smallest group size for which building the shared-alpha cab table beats
+/// per-monom expansion (was 8; MAIN tasks often hold only 4–20). Every cab
+/// entry point below branches on this one value.
+constexpr int kCabGroupMin = 4;
+
 /// CP2K cab_to_cxyz-style: build alpha[dir][lb][la][ls] once for the group
 /// geometry, then scatter each monom weight. Wins when avg_g ≫ 1 (MAIN ~85).
 void add_group_to_cxyz(const GridProduct* prods, const double* weights, int n,
                        int lpx, int lpy, int lpz, double* cxyz) {
     if (n <= 0)
         return;
-    // Cab shared-alpha wins from small groups (was 8; MAIN tasks often 4–20).
-    if (n < 4) {
+    if (n < kCabGroupMin) {
         for (int i = 0; i < n; ++i)
             add_product_to_cxyz(prods[i], weights[i], lpx, lpy, lpz, cxyz);
         return;
@@ -459,8 +465,7 @@ void contract_group_from_I(const GridProduct* prods, int n, int lpx, int lpy,
                            int lpz, const double* I, double* out_acc) {
     if (n <= 0)
         return;
-    // Cab shared-alpha wins from small groups (was 8; MAIN tasks often 4–20).
-    if (n < 4) {
+    if (n < kCabGroupMin) {
         for (int i = 0; i < n; ++i)
             out_acc[i] = contract_product_from_I(prods[i], lpx, lpy, lpz, I);
         return;
@@ -1459,8 +1464,8 @@ void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
     group_angular_max(prods, n, lpx, lpy, lpz, Ltot);
     if (lpx > kMaxL || lpy > kMaxL || lpz > kMaxL)
         return;
-    // mag-based radius is a conservative outer bound; after cab expand, use
-    // min(mag, cmax) so we only shrink (never enlarge) the sphere.
+    // mag-based radius is a conservative outer bound; refine_radius shrinks it
+    // to the assembled cxyz prefactor once the cab expand has run.
     const double r_mag = shape_radius(mag, prods[0].p, Ltot, eps);
     if (!(r_mag > 0.0))
         return;
@@ -1470,10 +1475,8 @@ void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
     double* cxyz = g_I.data();
     std::memset(cxyz, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
     add_group_to_cxyz(prods, weights, n, lpx, lpy, lpz, cxyz);
-    const double r_c = cmax_radius(cxyz, cxyz_n, prods[0].p, Ltot, eps);
-    const double radius = (r_c > 0.0) ? std::min(r_mag, r_c) : r_mag;
-    if (!(radius > 0.0))
-        return;
+    const double radius =
+        refine_radius(r_mag, cxyz, cxyz_n, prods[0].p, Ltot, eps);
     ortho_cxyz_to_grid<true>(grid, prods[0].pc, prods[0].p, radius, lpx, lpy,
                              lpz, Ltot, cxyz, rho);
 }
@@ -1506,7 +1509,7 @@ void collint_collocate_group_idx(const UniformGrid& grid,
     double* cxyz = g_I.data();
     std::memset(cxyz, 0, static_cast<std::size_t>(cxyz_n) * sizeof(double));
     // Geometry-shared cab expand without packing GridProduct (MAIN avg_g ~85).
-    if (n >= 4) {
+    if (n >= kCabGroupMin) {
         int max_la[3] = {0, 0, 0}, max_lb[3] = {0, 0, 0};
         for (int i = 0; i < n; ++i) {
             const auto& p = prods_base[idx[i]];
@@ -1599,10 +1602,7 @@ void collint_collocate_group_idx(const UniformGrid& grid,
             add_product_to_cxyz(prods_base[idx[i]], weights[i], lpx, lpy, lpz,
                                 cxyz);
     }
-    const double r_c = cmax_radius(cxyz, cxyz_n, g0.p, Ltot, eps);
-    const double radius = (r_c > 0.0) ? std::min(r_mag, r_c) : r_mag;
-    if (!(radius > 0.0))
-        return;
+    const double radius = refine_radius(r_mag, cxyz, cxyz_n, g0.p, Ltot, eps);
     ortho_cxyz_to_grid<true>(grid, g0.pc, g0.p, radius, lpx, lpy, lpz, Ltot,
                              cxyz, rho);
 }

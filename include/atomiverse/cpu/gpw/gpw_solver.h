@@ -117,6 +117,13 @@ enum class XcKind : int {
     OptB88VdW
 };
 
+/// @brief Whether `xc` needs the density gradient (GGA) rather than ρ alone.
+/// @param xc functional choice.
+/// @return `true` for every functional routed through `xc_grid_gga*`, i.e.
+///         everything except the `PADE` LDA. Owns the question that callers
+///         would otherwise re-enumerate member by member.
+constexpr bool is_gga(XcKind xc) { return xc != XcKind::PADE; }
+
 /// @brief Metallic occupation smearing kind (product path: multi-k RKS/UKS).
 ///
 /// Mirrors `cpu::pw::Smearing` for API parity with QE/CP2K. Default `none`

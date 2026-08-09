@@ -271,22 +271,8 @@ inline void symmetrize_packed(double* V, int nbasis) {
     }
 }
 
-// Triangle accumulate into upper of nb×nb from CSR span [s,e): V += vw · φφᵀ.
-inline void accumulate_outer_upper_csr(double* Vloc, int nbasis,
-                                       const CompactBasisGrid& cbg,
-                                       std::size_t s, std::size_t e,
-                                       double vw) {
-    for (std::size_t ia = s; ia < e; ++ia) {
-        const int u = cbg.fu[ia];
-        const double fi = cbg.fv[ia] * vw;
-        double* Vu = &Vloc[static_cast<std::size_t>(u) * nbasis];
-        Vu[u] += fi * cbg.fv[ia];
-        for (std::size_t ib = ia + 1; ib < e; ++ib)
-            Vu[cbg.fu[ib]] += fi * cbg.fv[ib];
-    }
-}
-
-// Packed single-spin triangle (same summand order as CSR path).
+// Triangle accumulate into upper of nb×nb over one contiguous χ run:
+// V += vw · φφᵀ. Callers pass the CSR span directly (`cbg.fu.data() + s`).
 inline void accumulate_outer_upper_packed(double* Vloc, int nbasis,
                                           const int* fu, const double* fv,
                                           std::size_t k, double vw) {
@@ -331,41 +317,28 @@ std::vector<double> collocate_density(const CompactBasisGrid& cbg, int nbasis,
                                       const std::vector<double>& P) {
     std::vector<double> rho(static_cast<std::size_t>(cbg.npts), 0.0);
     const long na = static_cast<long>(cbg.gidx.size());
-    // Pack χ per active point (same idiom as dual-spin collocate): stream
-    // contiguous fu/fv on the inner triangle; summand order matches the
-    // pre-pack CSR walk (bit-identical on the same point).
-#pragma omp parallel
-    {
-        thread_local std::vector<int> t_fu;
-        thread_local std::vector<double> t_fv;
-#pragma omp for schedule(dynamic, 64)
-        for (long a = 0; a < na; ++a) {
-            const std::size_t s = cbg.off[static_cast<std::size_t>(a)];
-            const std::size_t e = cbg.off[static_cast<std::size_t>(a) + 1];
-            const std::size_t k = e - s;
-            if (t_fu.size() < k) {
-                t_fu.resize(k);
-                t_fv.resize(k);
-            }
-            for (std::size_t i = 0; i < k; ++i) {
-                t_fu[i] = cbg.fu[s + i];
-                t_fv[i] = cbg.fv[s + i];
-            }
-            // ρ(g) = Σ_uv P_uv χ_u χ_v with P symmetric → diagonal + 2×upper.
-            double acc = 0.0;
-            for (std::size_t ia = 0; ia < k; ++ia) {
-                const int u = t_fu[ia];
-                const double va = t_fv[ia];
-                const double* Pu =
-                    &P[static_cast<std::size_t>(u) * nbasis];
-                acc += va * va * Pu[u];
-                double s2 = 0.0;
-                for (std::size_t ib = ia + 1; ib < k; ++ib)
-                    s2 += Pu[t_fu[ib]] * t_fv[ib];
-                acc += 2.0 * va * s2;
-            }
-            rho[cbg.gidx[static_cast<std::size_t>(a)]] = acc;
+    // The CSR span [s,e) is already the contiguous χ run the triangle wants, so
+    // it is read in place — copying it into scratch first only adds O(k) stores
+    // per active point and removes no indirection.
+#pragma omp parallel for schedule(dynamic, 64)
+    for (long a = 0; a < na; ++a) {
+        const std::size_t s = cbg.off[static_cast<std::size_t>(a)];
+        const std::size_t k = cbg.off[static_cast<std::size_t>(a) + 1] - s;
+        const int* fu = cbg.fu.data() + s;
+        const double* fv = cbg.fv.data() + s;
+        // ρ(g) = Σ_uv P_uv χ_u χ_v with P symmetric → diagonal + 2×upper.
+        double acc = 0.0;
+        for (std::size_t ia = 0; ia < k; ++ia) {
+            const int u = fu[ia];
+            const double va = fv[ia];
+            const double* Pu = &P[static_cast<std::size_t>(u) * nbasis];
+            acc += va * va * Pu[u];
+            double s2 = 0.0;
+            for (std::size_t ib = ia + 1; ib < k; ++ib)
+                s2 += Pu[fu[ib]] * fv[ib];
+            acc += 2.0 * va * s2;
         }
+        rho[cbg.gidx[static_cast<std::size_t>(a)]] = acc;
     }
     return rho;
 }
@@ -446,31 +419,17 @@ std::vector<double> integrate_potential(const CompactBasisGrid& cbg, int nbasis,
         na, device::block_reduce_chunks(nn * sizeof(double)));
     const long nc = range.chunks();
     double* part = g_cbg_integrate_part.ensure(nc, nn);
-#pragma omp parallel
-    {
-        thread_local std::vector<int> t_fu;
-        thread_local std::vector<double> t_fv;
-#pragma omp for schedule(dynamic, 1)
-        for (long c = 0; c < nc; ++c) {
-            double* Vloc = &part[static_cast<std::size_t>(c) * nn];
-            const long alo = range.begin(c), ahi = range.end(c);
-            for (long a = alo; a < ahi; ++a) {
-                const std::size_t s = cbg.off[static_cast<std::size_t>(a)];
-                const std::size_t e = cbg.off[static_cast<std::size_t>(a) + 1];
-                const std::size_t k = e - s;
-                if (t_fu.size() < k) {
-                    t_fu.resize(k);
-                    t_fv.resize(k);
-                }
-                for (std::size_t i = 0; i < k; ++i) {
-                    t_fu[i] = cbg.fu[s + i];
-                    t_fv[i] = cbg.fv[s + i];
-                }
-                const double vw =
-                    V_r[cbg.gidx[static_cast<std::size_t>(a)]] * w;
-                accumulate_outer_upper_packed(Vloc, nbasis, t_fu.data(),
-                                              t_fv.data(), k, vw);
-            }
+    // The CSR span is already contiguous, so the triangle reads it in place.
+#pragma omp parallel for schedule(dynamic, 1)
+    for (long c = 0; c < nc; ++c) {
+        double* Vloc = &part[static_cast<std::size_t>(c) * nn];
+        const long alo = range.begin(c), ahi = range.end(c);
+        for (long a = alo; a < ahi; ++a) {
+            const std::size_t s = cbg.off[static_cast<std::size_t>(a)];
+            const std::size_t k = cbg.off[static_cast<std::size_t>(a) + 1] - s;
+            const double vw = V_r[cbg.gidx[static_cast<std::size_t>(a)]] * w;
+            accumulate_outer_upper_packed(Vloc, nbasis, cbg.fu.data() + s,
+                                          cbg.fv.data() + s, k, vw);
         }
     }
     for (long c = 0; c < nc; ++c) {

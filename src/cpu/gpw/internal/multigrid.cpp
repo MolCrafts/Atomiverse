@@ -397,6 +397,13 @@ int level_for_exponent(const MultiGrid& mg, double rel_cutoff, double p) {
 // sensitivity (gpw-multigrid-kpoints, 2026-07-31).
 constexpr double kProductMassMargin = 1e-4;
 
+// Window eps factor applied to every collocate/integrate entry point. The
+// radius is refined from max|cxyz| after the cab expand (collint), so a looser
+// window than bare eps is pin-safe and shrinks work where the mag-only radius
+// previously oversized the sphere. 2e-2 keeps energy within the historical pin
+// class; 1e-1 broke SCF — do not raise without an FD check.
+constexpr double kProductWindowEps = 2e-2;
+
 // Radius [Bohr] beyond which |gw·r^(la+lb)·exp(-p r²)| < eps for a product
 // Gaussian. Same fixed-point root as basis_function_radius, with the combined
 // polynomial order L = |la|+|lb| and prefactor magnitude |gw|.
@@ -1055,6 +1062,14 @@ struct FlatChunkPool {
             data.resize(need);
         stride = n;
     }
+    /// Grow to `nc` chunks of `n` and zero the active prefix in parallel, so
+    /// each worker first-touches the chunk it will accumulate into.
+    void prepare_zeroed(long nc, std::size_t n) {
+        prepare(nc, n);
+#pragma omp parallel for schedule(static)
+        for (long c = 0; c < nc; ++c)
+            std::fill_n(chunk(c), n, 0.0);
+    }
     double* chunk(long c) {
         return data.data() + static_cast<std::size_t>(c) * stride;
     }
@@ -1087,6 +1102,50 @@ inline double product_density_weight(const GridProduct& prod,
     }
     return s * prod.k;
 }
+
+/// Collocate one shell task, index-filtering monoms whose live weight is below
+/// `eps_drop` (no GridProduct copy) so Ltot/radius track live density weight
+/// only. `keep_i`/`keep_w` are caller-owned per-thread scratch, grown once per
+/// thread. A task that loses nothing takes the contiguous path; the indexed
+/// entry point is only paid when the filter actually dropped a monom.
+inline void collocate_task_live(const UniformGrid& grid,
+                                const std::vector<GridProduct>& prods,
+                                const std::vector<double>& wts,
+                                const CollintTask& task, double eps_drop,
+                                double eps_win, std::vector<int>& keep_i,
+                                std::vector<double>& keep_w, double* loc) {
+    const int n = task.end - task.beg;
+    if (n <= 0)
+        return;
+    if (static_cast<int>(keep_i.size()) < n) {
+        keep_i.resize(static_cast<std::size_t>(n));
+        keep_w.resize(static_cast<std::size_t>(n));
+    }
+    int nk = 0;
+    double mag = 0.0;
+    for (int i = task.beg; i < task.end; ++i) {
+        const double ww = wts[static_cast<std::size_t>(i)];
+        const double aw = std::abs(ww);
+        if (aw < eps_drop)
+            continue;
+        keep_i[static_cast<std::size_t>(nk)] = i;
+        keep_w[static_cast<std::size_t>(nk)] = ww;
+        mag = std::max(mag, aw);
+        ++nk;
+    }
+    if (nk <= 0)
+        return;
+    // A zero/NaN mag yields radius 0 and the collint entry points return
+    // without writing, so no extra guard is needed here.
+    if (nk == n) {
+        internal::collint_collocate_group(grid, prods.data() + task.beg,
+                                          wts.data() + task.beg, n, mag,
+                                          eps_win, loc);
+        return;
+    }
+    internal::collint_collocate_group_idx(grid, prods.data(), keep_i.data(),
+                                          keep_w.data(), nk, mag, eps_win, loc);
+}
 } // namespace
 
 std::vector<double> collocate_products(const UniformGrid& grid,
@@ -1096,14 +1155,11 @@ std::vector<double> collocate_products(const UniformGrid& grid,
                                        const std::vector<PrimContrib>& contribs,
                                        int nb, const std::vector<double>& P,
                                        double eps) {
-    // Drop monoms below eps*margin; size windows at plain eps (CP2K EPS_DEFAULT
-    // class). Applying margin to the radius too inflated spheres by ~√log(1/margin).
+    // Drop monoms below eps*margin; size windows at eps*kProductWindowEps (CP2K
+    // EPS_DEFAULT class). Applying the mass margin to the radius too inflated
+    // spheres by ~√log(1/margin).
     const double eps_drop = eps * kProductMassMargin;
-    // Window eps: radius is refined from max|cxyz| after cab expand (collint), so
-    // a slightly looser window factor than bare 1e-2 is pin-safe and shrinks
-    // work when mag-only radius previously oversize. 2e-2 kept energy within
-    // historical pin class; 1e-1 broke SCF (do not raise further without FD).
-    const double eps_win = eps * 2e-2;
+    const double eps_win = eps * kProductWindowEps;
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
     std::vector<double> rho(npts, 0.0);
     const long np = static_cast<long>(prods.size());
@@ -1142,10 +1198,7 @@ std::vector<double> collocate_products(const UniformGrid& grid,
 #ifdef _OPENMP
     nthreads = omp_get_max_threads();
 #endif
-    g_rho_scatter.prepare(nthreads, npts);
-#pragma omp parallel for schedule(static)
-    for (int t = 0; t < nthreads; ++t)
-        std::fill_n(g_rho_scatter.chunk(t), npts, 0.0);
+    g_rho_scatter.prepare_zeroed(nthreads, npts);
 #pragma omp parallel
     {
         int tid = 0;
@@ -1153,45 +1206,13 @@ std::vector<double> collocate_products(const UniformGrid& grid,
         tid = omp_get_thread_num();
 #endif
         double* loc = g_rho_scatter.chunk(tid);
-        // Index-filter monoms with |w| < eps_drop (no GridProduct copy) so
-        // Ltot/radius track live density weight only.
-        thread_local std::vector<int> keep_i;
-        thread_local std::vector<double> keep_w;
+        std::vector<int> keep_i;
+        std::vector<double> keep_w;
 #pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < nt; ++g) {
-            const CollintTask& task = tasks[static_cast<std::size_t>(g)];
-            const int n = task.end - task.beg;
-            if (n <= 0)
-                continue;
-            if (static_cast<int>(keep_i.size()) < n) {
-                keep_i.resize(static_cast<std::size_t>(n));
-                keep_w.resize(static_cast<std::size_t>(n));
-            }
-            int nk = 0;
-            double mag = 0.0;
-            for (int i = task.beg; i < task.end; ++i) {
-                const double ww = wts[static_cast<std::size_t>(i)];
-                const double aw = std::abs(ww);
-                if (aw < eps_drop)
-                    continue;
-                keep_i[static_cast<std::size_t>(nk)] = i;
-                keep_w[static_cast<std::size_t>(nk)] = ww;
-                mag = std::max(mag, aw);
-                ++nk;
-            }
-            if (nk <= 0 || !(mag > 0.0))
-                continue;
-            if (nk == n) {
-                // Dense task: contiguous path (no idx indirection).
-                internal::collint_collocate_group(
-                    grid, prods.data() + task.beg, wts.data() + task.beg, n,
-                    mag, eps_win, loc);
-            } else {
-                internal::collint_collocate_group_idx(
-                    grid, prods.data(), keep_i.data(), keep_w.data(), nk, mag,
-                    eps_win, loc);
-            }
-        }
+        for (long g = 0; g < nt; ++g)
+            collocate_task_live(grid, prods, wts,
+                                tasks[static_cast<std::size_t>(g)], eps_drop,
+                                eps_win, keep_i, keep_w, loc);
     }
 #pragma omp parallel for schedule(static)
     for (long g = 0; g < static_cast<long>(npts); ++g) {
@@ -1235,8 +1256,7 @@ inline double integrate_window_mag(const UniformGrid& grid,
                                    const std::vector<double>& V_level,
                                    const GridProduct& prod, double geom) {
     constexpr double kVFloor = 0.02;
-    const double vsc = std::max(v_at_product_center(grid, V_level, prod), kVFloor);
-    return geom * vsc;
+    return geom * std::max(v_at_product_center(grid, V_level, prod), kVFloor);
 }
 
 } // namespace
@@ -1247,7 +1267,7 @@ std::vector<double> integrate_products(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<double>& V_level, double eps) {
     const double eps_drop = eps * kProductMassMargin;
-    const double eps_win = eps * 2e-2;
+    const double eps_win = eps * kProductWindowEps;
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     std::vector<double> V(nn, 0.0);
     const double w = grid.weight();
@@ -1258,10 +1278,7 @@ std::vector<double> integrate_products(
 #ifdef _OPENMP
     nthreads = omp_get_max_threads();
 #endif
-    g_ks_scatter.prepare(nthreads, nn);
-#pragma omp parallel for schedule(static)
-    for (int t = 0; t < nthreads; ++t)
-        std::fill_n(g_ks_scatter.chunk(t), nn, 0.0);
+    g_ks_scatter.prepare_zeroed(nthreads, nn);
 #pragma omp parallel
     {
         int tid = 0;
@@ -1277,11 +1294,9 @@ std::vector<double> integrate_products(
             const int n = task.end - task.beg;
             if (n <= 0)
                 continue;
-            constexpr double kVFloor = 0.02;
-            const GridProduct& p0 = prods[static_cast<std::size_t>(task.beg)];
-            const double vsc =
-                std::max(v_at_product_center(grid, V_level, p0), kVFloor);
-            const double mag = task.geom_mag * vsc;
+            const double mag = integrate_window_mag(
+                grid, V_level, prods[static_cast<std::size_t>(task.beg)],
+                task.geom_mag);
             if (mag < eps_drop)
                 continue;
             gacc.resize(static_cast<std::size_t>(n));
@@ -1329,7 +1344,7 @@ std::vector<double> collocate_products_cells(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<std::vector<double>>& D, double eps) {
     const double eps_drop = eps * kProductMassMargin;
-    const double eps_win = eps * 2e-2;
+    const double eps_win = eps * kProductWindowEps;
     // `collocate_products` with the density weight resolved per image cell:
     // w = K · Σ D[tcell][μ,ν]·coeff. Shell-task collint (shared pol).
     const std::size_t npts = static_cast<std::size_t>(grid.npts());
@@ -1371,10 +1386,7 @@ std::vector<double> collocate_products_cells(
 #ifdef _OPENMP
     nthreads = omp_get_max_threads();
 #endif
-    g_rho_scatter.prepare(nthreads, npts);
-#pragma omp parallel for schedule(static)
-    for (int t = 0; t < nthreads; ++t)
-        std::fill_n(g_rho_scatter.chunk(t), npts, 0.0);
+    g_rho_scatter.prepare_zeroed(nthreads, npts);
 #pragma omp parallel
     {
         int tid = 0;
@@ -1382,42 +1394,13 @@ std::vector<double> collocate_products_cells(
         tid = omp_get_thread_num();
 #endif
         double* loc = g_rho_scatter.chunk(tid);
-        thread_local std::vector<int> keep_i;
-        thread_local std::vector<double> keep_w;
+        std::vector<int> keep_i;
+        std::vector<double> keep_w;
 #pragma omp for schedule(dynamic, 1)
-        for (long g = 0; g < nt; ++g) {
-            const CollintTask& task = tasks[static_cast<std::size_t>(g)];
-            const int n = task.end - task.beg;
-            if (n <= 0)
-                continue;
-            if (static_cast<int>(keep_i.size()) < n) {
-                keep_i.resize(static_cast<std::size_t>(n));
-                keep_w.resize(static_cast<std::size_t>(n));
-            }
-            int nk = 0;
-            double mag = 0.0;
-            for (int i = task.beg; i < task.end; ++i) {
-                const double ww = wts[static_cast<std::size_t>(i)];
-                const double aw = std::abs(ww);
-                if (aw < eps_drop)
-                    continue;
-                keep_i[static_cast<std::size_t>(nk)] = i;
-                keep_w[static_cast<std::size_t>(nk)] = ww;
-                mag = std::max(mag, aw);
-                ++nk;
-            }
-            if (nk <= 0 || !(mag > 0.0))
-                continue;
-            if (nk == n) {
-                internal::collint_collocate_group(
-                    grid, prods.data() + task.beg, wts.data() + task.beg, n,
-                    mag, eps_win, loc);
-            } else {
-                internal::collint_collocate_group_idx(
-                    grid, prods.data(), keep_i.data(), keep_w.data(), nk, mag,
-                    eps_win, loc);
-            }
-        }
+        for (long g = 0; g < nt; ++g)
+            collocate_task_live(grid, prods, wts,
+                                tasks[static_cast<std::size_t>(g)], eps_drop,
+                                eps_win, keep_i, keep_w, loc);
     }
 #pragma omp parallel for schedule(static)
     for (long g = 0; g < static_cast<long>(npts); ++g) {
@@ -1435,7 +1418,7 @@ std::vector<std::vector<double>> integrate_products_cells(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<double>& V_level, std::size_t ncells, double eps) {
     const double eps_drop = eps * kProductMassMargin;
-    const double eps_win = eps * 2e-2;
+    const double eps_win = eps * kProductWindowEps;
     // KS scatter per image cell; shell-task monom integrate.
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     const std::size_t nnall = nn * ncells;
@@ -1447,9 +1430,7 @@ std::vector<std::vector<double>> integrate_products_cells(
 #ifdef _OPENMP
     nthreads = omp_get_max_threads();
 #endif
-    g_ks_cell_scatter.prepare(nthreads, nnall);
-    for (int t = 0; t < nthreads; ++t)
-        std::fill_n(g_ks_cell_scatter.chunk(t), nnall, 0.0);
+    g_ks_cell_scatter.prepare_zeroed(nthreads, nnall);
 #pragma omp parallel
     {
         int tid = 0;
@@ -1465,11 +1446,9 @@ std::vector<std::vector<double>> integrate_products_cells(
             const int n = task.end - task.beg;
             if (n <= 0)
                 continue;
-            constexpr double kVFloor = 0.02;
-            const GridProduct& p0 = prods[static_cast<std::size_t>(task.beg)];
-            const double vsc =
-                std::max(v_at_product_center(grid, V_level, p0), kVFloor);
-            const double mag = task.geom_mag * vsc;
+            const double mag = integrate_window_mag(
+                grid, V_level, prods[static_cast<std::size_t>(task.beg)],
+                task.geom_mag);
             if (mag < eps_drop)
                 continue;
             gacc.resize(static_cast<std::size_t>(n));

@@ -4,7 +4,8 @@
 Physics pipeline is one algorithm; SCF control flow is still forked (Γ/k ×
 RKS/UKS) but **workspace + shared fine-grid KS build are landed**. Product
 collocate/integrate now uses a **CP2K-style collint engine** with geometry
-batching + shell-level tasks; fair wall vs CP2K is **~1.25×** MAIN (was
+batching + shell-level tasks; fair wall vs CP2K is **2.33×** MAIN per
+[`gpw-perf-baseline.md`](gpw-perf-baseline.md) (the ~1.25× figure was
 ~30–47× pre-collint; ~1.5× post products_mg). Integrate residual wave-7 cut
 int **~58→~45** ms (still ~2.4× CP2K ~19 ms class).
 
@@ -26,7 +27,7 @@ Twin `gpw-multigrid-kpoints` MAIN (MP 2×2×2, 150 Ry, NGRIDS 4):
 | --- | ---: | --- |
 | ATV MAIN | **~1.6** | post integrate residual (coll ~29 / int **~45** ms) |
 | CP2K 2026.1 same host | **~1.28** quiet | re-run 2026-08-04 |
-| **ratio ATV/CP2K** | **~1.25×** | ≤2× closed; chase ~1× via further int/coll residual |
+| **ratio ATV/CP2K** | **2.33×** | per gpw-perf-baseline.md re-measure; chase ~1× |
 
 Landed: collint residual (hybrid xsimd FMA, cab expand, TLS sphere); STVnl
 gen-stamp Hermite + s–s + fused `prim_ST` (~1500→520→**435** ms); products_mg
@@ -75,7 +76,7 @@ with FMA + 4-wide residual on wide hosts (gated so NEON/aarch64 still builds);
 | --- | ---: | --- |
 | **1** | integrate still ~2.4× CP2K per-iter (~45 vs ~19 ms) | `product_collint.cpp` |
 | 2 | collocate ~1.5× CP2K (~29 vs ~18 ms) | `product_collint.cpp` |
-| 3 | MG MAIN overall **~1.25×** (chase ~1×) | MAIN twin |
+| 3 | MG MAIN overall **2.33×** (chase ~1×) | MAIN twin |
 | 4 | OT outer residual **~1.4×** UKS O₂ (≤3× aim met) | `ot.cpp` / `gpw_solver.cpp` polish |
 | 5 | Multi-k dense χ^k until products default | `kpoints.cpp` |
 
@@ -93,8 +94,10 @@ collint tasks**; **integrate residual (wave 7)**.
 4. ~~OT g·e DIIS outer + OUTER_SCF polish~~ **landed**  
 5. ~~products_mg setup geometry-batch~~ **landed**  
 6. ~~shell-level collint tasks~~ **landed**  
-7. ~~integrate residual~~ **landed** (wave 7; further polish optional toward ~1×)  
-8. products-default-k after closer to parity; MPI product/grid distribute
+7. ~~integrate residual~~ **landed** (wave 7; thin kernel residual-2 **exhausted** wave-8)  
+8. **now:** MG MAIN non-kernel structure (2.33×→~1×). OT CP2K match and
+   STVnl setup residual are merged.  
+9. products-default-k fresh A/B only if MAIN near parity; then MPI product/grid
 
 ### CUDA GPW foothold (landed, not product)
 
