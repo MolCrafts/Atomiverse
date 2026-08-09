@@ -107,10 +107,10 @@ perf-exempt: this is real large-cell wall evidence, not a foothold skip.
 | CPU wall > 60 s | **yes** at 64 atoms (>5400 s) |
 | CPU↔CUDA walls reported | **yes** (table above) |
 | Device-only product path | unchanged (measurement only) |
-| Builds wiped after job | job script wipes `build-cuda-pw-cell` on exit |
+| Builds wiped after job | yes — work tree `_pw_cell_work` (not `build-*`) wiped on exit; legs under `.claude/pw-cell-legs/` |
 
 ## Follow-ons (not this slug)
 
-- Finish exact n=2 CPU wall if a 3 h+ budget is available (job 1048264).
+- Optional: exact n=2 CPU wall with ≥3 h budget (gate already closed at >5400 s).
 - `cuda-pw-forces` / `cuda-pw-pbe-device` / non-default stream — separate rows.
 - Optional: QE fair wall on the same supercell (parity-gap PW perf track).
