@@ -5,12 +5,12 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `8dbfeef5` (queue GapCensus wave 2)
+- **Parent:** `dev` (queue GapCensus wave 2 + Recover)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai` (template-shaped GapCensus loop)
-- **Last action:** dual-track GapCensus wave 2 (2026-08-10) — re-diff
-  baseline/notes/tree; refill `## pending`; **no workers staffed** (census-only);
-  `builds_wiped=true`
+- **Last action:** dual-track GapCensus wave 2 (2026-08-10) refilled pending from
+  baseline; Recover moved P0–P2 into `## in_progress` (resume incomplete PW
+  tips + fresh PW stream); `builds_wiped=true`
 
 ## How to run
 
@@ -20,10 +20,11 @@ args: { "mode": "exhaust", "staff_count": 3, "max_waves": 6, "target_branch": "d
 agent_budget: 256+
 ```
 
-Staff order from queue: `cuda-pw-pbe-device` (P0) → `cuda-pw-large-cell-measure`
-(P1) → `cuda-pw-nondefault-stream` (P2) → `cuda-rhf-nondefault-stream` (P3);
-optional CPU `cpu-simd-2center-setup` (P3) only if slab microbench shows heat.
-Re-base incomplete tips onto `wf/escuda-<slug>` off current `dev` before merge.
+Staff order from `## in_progress`: `cuda-pw-pbe-device` (P0 resume) →
+`cuda-pw-large-cell-measure` (P1 resume) → `cuda-pw-nondefault-stream` (P2 fresh).
+Still pending: `cuda-rhf-nondefault-stream` (P3), optional
+`cpu-simd-2center-setup` (P3 slab). Re-base incomplete tips onto
+`wf/escuda-<slug>` off current `dev` before merge.
 
 ## Disk
 

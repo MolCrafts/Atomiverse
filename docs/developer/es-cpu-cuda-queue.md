@@ -105,9 +105,8 @@ closed through CDIIS; higher-L RHF stays product-out-of-scope.
 Open gate: CPU twin green + public `run`/`forces` stable + stated CUDA↔CPU
 tols + device-only kernels + **GH200 log evidence**.
 
-- [ ] `cuda-pw-pbe-device` | **P0** Device PBE-GGA for `cuda::pw::PW` — lift LSDA-only gate; same-settings CPU oracle; device-only XC kernels. Incomplete tip on `wf/cuda-pw-pbe-device` — **re-base off current `dev`** (prior GH200 fail: x86 `libxtb` on aarch64 link); do not merge stale tip blindly | track cuda | twin: CUDA↔CPU PBE energy (small cell correctness) + unit XC grid | files: `src/cuda/planewave/internal/xc_*.{cu,cuh}`, `pw_solver.{cu,cuh}`, density step | gate: GH200 green; stated tols; no host loops in `.cu` |
-- [ ] `cuda-pw-large-cell-measure` | **P1** ES order step 4 — first large-cell CPU↔CUDA wall (small cells correctness-only; no “CUDA wins” on 2-atom Si). Tip `wf/cuda-pw-large-cell-measure` unmerged — **re-base off `dev`** (+ PBE if landed); harvest/write measurement note from GH200 | track cuda | twin: large-cell bench + `pw-cuda-lda-si` still green | files: `tools/` bench + job script | gate: GH200 log with walls; correctness suite PASS |
-- [ ] `cuda-pw-nondefault-stream` | **P2** Non-default stream on PW device path (named residual after Zheevd/devptr-nrm2 in `cuda-rhf-device-only.md`); no physics change | track cuda | twin: `tests/cuda/planewave/*` + `pw-cuda-lda-si` | files: `pw_solver.cu`, `device_solver.cu`, `device_density.cu` | gate: GH200 100% PASS; tols unchanged; device-only |
+*(P0–P2 recovered into ## in_progress 2026-08-10 — re-base incomplete tips off `dev` before land.)*
+
 - [ ] `cuda-rhf-nondefault-stream` | **P3** Non-default stream on device s/p RHF path (polish after waves 0–10); reduce default-stream syncs without changing physics | track cuda | twin: `tests/cuda/scf/test_rhf.cu` + device integrals | files: `rhf.cu`, `rhf_fock.cu`, `scf_solver.cu` | gate: GH200 100% PASS; tols unchanged; device-only |
 
 *Not pending this loop:*
@@ -129,15 +128,24 @@ tols + device-only kernels + **GH200 log evidence**.
 
 ## in_progress
 
-*(empty — GapCensus wave 2 census-only; no workers staffed this turn)*
+Recover 2026-08-10 (`dev` @ `333b9a0e`). Incomplete unmerged tips + next staff-order residual.
+**Re-base tips off current `dev` before merge; never blind-merge; no `reset --hard`.**
+
+- [~] `cuda-pw-pbe-device` | **P0** Device PBE-GGA for `cuda::pw::PW` — lift LSDA-only gate; same-settings CPU oracle; device-only XC kernels | track cuda | **resume** `wf/cuda-pw-pbe-device` @ `3ffc13ed` (`e1147831` + cmake arch) — 2 ahead / 14 behind `dev`; prior GH200 fail: x86 `libxtb` on aarch64 link | twin: unit `test_xc_pbe` + DeviceDensity stage parity vs CPU XCBuilder PBE | files: `xc_pbe.{cu,cuh}`, `device_density.{cu,cuh}`, `pw_solver.{cu,cuh}` | gate: GH200 green; tols **1e-12·max(1,\|ref\|)** pointwise + LDA-stage bounds for stage parity; no host loops in `.cu` |
+- [~] `cuda-pw-large-cell-measure` | **P1** ES order step 4 — first large-cell CPU↔CUDA wall (small cells correctness-only; no “CUDA wins” on 2-atom Si) | track cuda | **resume** `wf/cuda-pw-large-cell-measure` @ `d574d65d` (`9e594216` + dlink) — 2 ahead / 14 behind; results section still PENDING on tip | twin: `tools/bench_cuda_pw_cell.cu` ladder 8/64/216 Si + `pw-cuda-lda-si` green | files: `tools/bench_cuda_pw_cell.cu`, `tools/gpu_job_cuda_pw_large_cell.sh`, note | gate: GH200 log with walls; correctness suite PASS; re-base after/with PBE if merged |
+- [~] `cuda-pw-nondefault-stream` | **P2** Non-default stream on PW device path (named residual after Zheevd/devptr-nrm2 in `cuda-rhf-device-only.md`); no physics change | track cuda | **fresh** — no incomplete tip | twin: `tests/cuda/planewave/*` + `pw-cuda-lda-si` | files: `pw_solver.cu`, `device_solver.cu`, `device_density.cu` | gate: GH200 100% PASS; tols unchanged; device-only |
+
+*Left in pending (not incomplete / lower priority this recover):* `cuda-rhf-nondefault-stream` (P3), `cpu-simd-2center-setup` (P3 slab-only).
 
 **Foreign incomplete worktrees on parent (do not steal / do not force-merge):**
 
 | Worktree branch | Loop ownership | Note |
 | --- | --- | --- |
-| `wf/cuda-pw-pbe-device` | overlaps this loop’s P0 | re-base + re-gate on `wf/escuda-cuda-pw-pbe-device` before staff |
-| `wf/cuda-pw-large-cell-measure` | overlaps this loop’s P1 | re-base + re-gate on `wf/escuda-cuda-pw-large-cell-measure` |
+| `wf/cuda-pw-pbe-device` | **this loop P0** — recovered above | re-base off `dev` then finish GH200 gate |
+| `wf/cuda-pw-large-cell-measure` | **this loop P1** — recovered above | re-base; fill results from job log |
 | `wf/cuda-md-first-regression` | **OpenMM / MD** — not this loop | leave alone |
+| `wf/test-gpw-unit-shrink` | other harness | tip already ancestor of `dev` (0 ahead) |
+| `wf/perf-stvnl-setup-residual` | superseded | STVnl residual already landed on `dev` — do not re-staff |
 
 ## blocked
 
