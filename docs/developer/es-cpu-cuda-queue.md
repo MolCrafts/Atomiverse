@@ -44,10 +44,9 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 
 ## pending
 
-Dual-track **GapCensus wave 4** 2026-08-10 (`dev` @ `e22325b7`; re-diff after
-`cuda-pw-pbe-device` + **`cuda-pw-large-cell-measure` merge** `948d0d86` +
-active `wf/escuda-cuda-pw-nondefault-stream`). Staff only `wf/escuda-<slug>`
-off **current** `dev`. Do not invent hybrid/GAPW/PAW/meta-GGA. **Foothold ≠
+Dual-track **harness wave 2** 2026-08-10 (`dev` @ `8280ed89`; post
+`cuda-pw-nondefault-stream` land + prior large-cell/PBE). Staff only
+`wf/escuda-<slug>` off **current** `dev`. Do not invent hybrid/GAPW/PAW/meta-GGA. **Foothold ≠
 closed.** Walls from
 [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md) only —
 never the superseded ~1.25× MAIN claim. Authority walls **unchanged** (no new
@@ -76,8 +75,6 @@ collint micro-opts (`cpu-collint-int-residual-2` wave-8 **no-land**).
 Honest staffable set is **thin**: worst twin has no pin-safe lever left.
 Authority walls unchanged vs baseline (no new quiet re-pin this census).
 
-- [ ] `cpu-simd-2center-setup` | **P3** Portable xsimd analytic 2-center S/T on slab-class only (invisible on the four fair twins; ST_k residual secondary after Hermite path) — promoted from gpw-perf `p2-simd-2center-setup` | method=cpu | twin: slab fragment microbench | files: `src/cpu/gpw/internal/one_electron.cpp` / overlap-kinetic | gate: setup ↓; four twins no regression; bit-exact default, else stated tol + FD if energy path | rationale: only remaining pin-safe CPU staffable lever; not a fair-wall closer |
-
 *Not pending (residual mass still counted in `gaps_remaining`, not staffable):*
 
 | Row | Why not pending |
@@ -103,22 +100,18 @@ evidence is **merged**, but production depth is still open:
 | --- | --- | --- |
 | RHF s/p energy + forces + level_shift + path-select + device CDIIS | **landed** | stream polish only (`cuda-rhf-nondefault-stream`) |
 | Γ GPW Poisson/FFT + Padé LDA XC + product collocate + product integrate | **landed** unit footholds (`src/cuda/gpw/internal/{poisson_fft,xc_lda,product_collocate,product_integrate}.cu`) | **no** composed ρ→V_eff stage; **≠** full method (`cuda-gpw-ks-chain`) |
-| `cuda::pw::PW` LSDA + **device PBE-GGA** + density device + kpoint hoist + Zheevd + devptr nrm2 + **large-cell walls** | **landed** energy slice (closed-shell); large-cell GH200 **1035278**/**1048264** (64-at CUDA ~9.65 s / CPU >5400 s) | **energy-only** — `spin_polarized` / `smearing` **throw**; no device forces/stress; public surface mirrors energy `run()` only |
+| `cuda::pw::PW` LSDA + **device PBE-GGA** + density device + kpoint hoist + Zheevd + devptr nrm2 + **non-default stream** + **large-cell walls** | **landed** energy slice (closed-shell); stream GH200 **1049681**; large-cell **1035278**/**1048264** | **energy-only** — `spin_polarized` / `smearing` **throw**; no device forces/stress; public surface mirrors energy `run()` only |
 
-Value order: **PW method depth** (forces → collinear spin → metallic smear →
-stream polish) > **GPW composed stage** (not another lone kernel foothold) >
-RHF/CPU polish. Higher-L RHF stays product-out-of-scope. Full GPW product
-stays **blocked**.
+Value order: **PW method depth** (forces → collinear spin → metallic smear) >
+**GPW composed stage** (not another lone kernel foothold) > RHF/CPU polish.
+Higher-L RHF stays product-out-of-scope. Full GPW product stays **blocked**.
 
 Open gate: CPU twin green + public `run`/`forces` stable + stated CUDA↔CPU
 tols + device-only kernels + **GH200 log evidence**.
 
-*(Stream residual lives under ## in_progress — tip
-`wf/escuda-cuda-pw-nondefault-stream` @ `ec82cba4`; re-base off current `dev`
-before land if needed.)*
-
-- [ ] `cuda-pw-forces` | **P0** Device analytic ionic forces for `cuda::pw::PW` — close energy-only gap vs CPU `pw_forces_analytic` (local HF + Ewald + KB nonlocal); same-settings CPU oracle + FD dual-gate on small Si | method=cuda | twin: CPU `pw_forces_analytic` / `pw_forces_fd` + unit force parity (`reg_h_force_*` class) | files: new `src/cuda/planewave/internal/pw_forces.{cu,cuh}` (+ wire `pw_solver` / public forces surface mirroring CPU `pw_forces_analytic`) | gate: GH200 green; stated CUDA↔CPU force tols (eV/Å); device-only force kernels; energy path unchanged; **not** full stress product | rationale: roadmap §10 + `pw_solver.cuh` energy-only while CPU forces landed — energy slice ≠ forces closed |
-- [ ] `cuda-gpw-ks-chain` | **P1** Compose landed GPW device footholds into one ρ→V_eff **stage unit** (product collocate → Poisson/FFT → Padé LDA XC → product integrate) vs same-settings CPU `ks_grid_build_rks` / collint fragment — **not** `GpwDft::run` product | method=cuda | twin: unit chain vs CPU oracle on Γ small grid | files: new stage glue under `src/cuda/gpw/internal/` reusing `product_collocate`, `poisson_fft`, `xc_lda`, `product_integrate` | gate: GH200 green; stated stage tols; device-only; no public full GPW method | rationale: four footholds green on tree but zero composed capability; full product stays blocked |
+- [ ] `cuda-pw-forces` | **P0** Device analytic ionic forces for `cuda::pw::PW` — close energy-only gap vs CPU `pw_forces_analytic` (local HF + Ewald + KB nonlocal); same-settings CPU oracle + FD dual-gate on small Si | method=cuda | twin: CPU `pw_forces_analytic` / `pw_forces_fd` + unit force parity | files: new `src/cuda/planewave/internal/pw_forces.{cu,cuh}` (+ wire `pw_solver` / public forces surface mirroring CPU) | gate: GH200 green; stated CUDA↔CPU force tols (eV/Å); device-only force kernels; energy path unchanged; **not** full stress product | rationale: energy slice ≠ forces closed |
+- [ ] `cuda-gpw-ks-chain` | **P1** Compose landed GPW device footholds into one ρ→V_eff **stage unit** (product collocate → Poisson/FFT → Padé LDA XC → product integrate) vs same-settings CPU `ks_grid_build_rks` / collint fragment — **not** `GpwDft::run` product | method=cuda | twin: unit chain vs CPU oracle on Γ small grid | files: new stage glue under `src/cuda/gpw/internal/` reusing footholds | gate: GH200 green; stated stage tols; device-only; no public full GPW method |
+- [ ] `cpu-simd-2center-setup` | **P3** Portable xsimd analytic 2-center S/T on slab-class only (invisible on the four fair twins) — tip `wf/escuda-cpu-simd-2center-setup` @ `11c836b2` needs CPU unit/regression green + re-base before land | method=cpu | twin: slab fragment microbench | files: `one_electron.cpp` | gate: four twins no regression; stated tol + FD if energy path |
 - [ ] `cuda-pw-collinear-spin` | **P2** Lift `spin_polarized` throw on `cuda::pw::PW` — device nspin=2 density accumulate + collinear LSDA (then optional closed-shell PBE spin path only if dual-gate holds); same-settings CPU `cpu::pw::PW` spin twin | method=cuda | twin: CPU spin energy on small O₂ / Fe-class cell inside CUDA envelope; unit density/XC spin parity | files: `device_density.cu`, `xc_lda.cu` (+ spin channels), `pw_solver.{cu,cuh}`, `device_solver.cu` | gate: GH200 green; stated CUDA↔CPU energy tols; device-only; **no** smear/forces in this slug | rationale: CPU collinear spin-GGA product landed; CUDA fixed nspin=1 throw — energy foothold ≠ spin capability |
 - [ ] `cuda-pw-metallic-smear` | **P2** Lift `smearing != none` throw — Fermi–Dirac (and/or MP) occupations + `extra_bands` on device band path; same-settings CPU metallic twin | method=cuda | twin: CPU `pw-smearing-al` / Fe smear class energy (restricted first) | files: `device_solver.cu`, `pw_solver.{cu,cuh}` occupations | gate: GH200 green; stated energy tols; device-only; staff **after or with** spin only if UKS+smear needed — restricted metallic can land first | rationale: CPU metallic smear product landed; CUDA rejects all smear — energy slice ≠ metallic capability |
 - [ ] `cuda-rhf-nondefault-stream` | **P3** Non-default stream on device s/p RHF path (polish after waves 0–10); reduce default-stream syncs without changing physics | method=cuda | twin: `tests/cuda/scf/test_rhf.cu` + device integrals | files: `rhf.cu`, `rhf_fock.cu`, `scf_solver.cu` | gate: GH200 100% PASS; tols unchanged; device-only | rationale: RHF device product landed; residual is stream polish only |
@@ -141,25 +134,23 @@ before land if needed.)*
 `cuda-gpw-rho-collocate-foothold`, `cuda-gpw-product-integrate-foothold`,
 `cuda-pw-method-slice` (+ `cuda-pw-kpoint-hoist`, `cuda-pw-zheevd`,
 `cuda-pw-devptr-nrm2` residency polish on `dev`), `cuda-pw-pbe-device`,
-`cuda-pw-large-cell-measure`.
+`cuda-pw-large-cell-measure`, `cuda-pw-nondefault-stream`.
 
 ## in_progress
 
-GapCensus wave 4 2026-08-10 (`dev` @ `e22325b7`). **Re-base tips off
-current `dev` before merge; never blind-merge; no `reset --hard`.**
+Harness wave 2 2026-08-10 (`dev` @ `8280ed89` post nondefault-stream merge).
+No open `[~]` staffed this wave beyond land. **Re-base tips off current `dev`
+before merge; never blind-merge; no `reset --hard`.**
 
-- [~] `cuda-pw-nondefault-stream` | **P2** Non-default stream on PW density+band SCF path (named residual after Zheevd/devptr-nrm2 in `cuda-rhf-device-only.md`); no physics change | method=cuda | **active tip** `wf/escuda-cuda-pw-nondefault-stream` @ `ec82cba4` (feat + reg + job script; not yet on `dev`) | twin: `tests/cuda/planewave/*` + `pw-cuda-lda-si` + `reg_cuda-pw-nondefault-stream` | files: `device_density.{cu,cuh}`, `device_solver.{cu,cuh}`, `pw_solver.cu` | gate: GH200 100% PASS; tols unchanged; device-only; energy bit-stable vs default stream |
-
-*Left in ## pending (capability depth + polish):* `cuda-pw-forces` (P0),
-`cuda-gpw-ks-chain` (P1), `cuda-pw-collinear-spin` (P2),
-`cuda-pw-metallic-smear` (P2), `cuda-rhf-nondefault-stream` (P3),
-`cpu-simd-2center-setup` (P3).
+*None staffed green this wave beyond closed stream land.* Next staff: P0
+`cuda-pw-forces` then P1 `cuda-gpw-ks-chain` (see ## pending). CPU tip
+`wf/escuda-cpu-simd-2center-setup` remains unvalidated (build wiped mid-job).
 
 **Foreign incomplete worktrees on parent (do not steal / do not force-merge):**
 
 | Worktree branch | Loop ownership | Note |
 | --- | --- | --- |
-| `wf/escuda-cuda-pw-nondefault-stream` | **this loop P2** — active above | land only with GH200 evidence; re-base if `dev` moves |
+| `wf/escuda-cpu-simd-2center-setup` | **this loop P3** — tip exists | needs unit/reg green on login before land |
 | `wf/cuda-md-first-regression` | **OpenMM / MD** — not this loop | leave alone |
 
 ## blocked
@@ -169,6 +160,10 @@ current `dev` before merge; never blind-merge; no `reset --hard`.**
 - [!] `mg-main-structural` | MG MAIN **2.33×** residual after pin-safe collint + structure + sphere campaigns; further cut needs non-pin-safe windows or task-list rewrite beyond this loop’s pin law — do not staff as soft-tol or self-golden
 
 ## done
+
+Harness wave 2 2026-08-10 (`dev` @ `8280ed89`):
+
+- [x] `cuda-pw-nondefault-stream` | **P2** Non-default stream on PW density+band SCF path — `DeviceDensity` owns `cudaStream_t`; band solver borrows; kernels/cuFFT/cuBLAS/cuSOLVER bound; mid-SCF fences stream-scoped | track cuda | twin: unit stream handle + `pw-cuda-lda-si` + `reg_cuda-pw-nondefault-stream` | files: `device_density.{cu,cuh}`, `device_solver.{cu,cuh}`, `pw_solver.cu`, job shield | merge: `8280ed89` / feat `05b52ba2` | evidence: GH200 **1049681** — ctest **9/9 PASS**; MAX_EIG_DIFF **5.274e-15 Ha**; \|E_cuda−E_cpu\| **1.243e-14 Ry** (both regs); tols unchanged; **perf_exempt** small cell; wipe-shield `BUILD=_pw_stream_work` |
 
 GapCensus wave 4 recovery 2026-08-10 (`dev` @ `e22325b7` / large-cell merge
 `948d0d86`):

@@ -52,3 +52,14 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
   `cuda-gpw-full-product`, `mg-main-structural`). Clearup already ran. Queue
   **not** exhausted (GapCensus owns discovery). No push.
 
+- **2026-08-10 harness wave 2 (parent `dev` @ `8280ed89`):** land
+  `cuda-pw-nondefault-stream` (merge `8280ed89`; GH200 **1049681** — 9/9
+  ctest, MAX_EIG_DIFF 5.274e-15 Ha, |E_cuda−E_cpu|=1.243e-14 Ry on
+  `pw-cuda-lda-si` + `reg_cuda-pw-nondefault-stream`; wipe-shield
+  `_pw_stream_work`). Also close bookkeeping for `cuda-pw-large-cell-measure`
+  (already merge `948d0d86`). CPU fair walls **unchanged** (worst fair ratio
+  **2.33×** MG MAIN). Specs closed. Pending: `cuda-pw-forces` P0,
+  `cuda-gpw-ks-chain` P1, spin/smear P2, simd/RHF-stream P3. Clearup this
+  wave. Queue **not** exhausted. No push.
+
+

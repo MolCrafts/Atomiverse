@@ -140,12 +140,14 @@ Still on the host per Davidson round (named, not claimed fixed): the 4-byte
 Zheevd `devInfo` check, the n_bands eigenvalues (kernel scalar arguments for
 the residual shift and preconditioner), and the accept flag above. **Device
 PBE-GGA landed** (`cuda-pw-pbe-device`, GH200 **1048320** — dual-gate
-\|ΔE\|=1.421e-14 Ry on Si GTH-PBE-q4). Next residual: non-default stream on the
-PW path (`cuda-pw-nondefault-stream`). **Large-cell walls (ES order step 4)
-are filled** — GH200 job **1035278**: 64-atom Si Γ LSDA, CUDA `run(frame)`
-**9.664 s** vs same-settings CPU **>5400 s**; 216-atom CUDA **191 s**; slice
-sanity \|ΔE\|=1.243e-14 Ry. Detail: [cuda-pw-large-cell.md](cuda-pw-large-cell.md).
-8-atom cells remain correctness-only.
+|ΔE|=1.421e-14 Ry on Si GTH-PBE-q4). **Non-default stream landed**
+(`cuda-pw-nondefault-stream`, GH200 **1049681** — 9/9 ctest, MAX_EIG_DIFF
+5.274e-15 Ha, |ΔE|=1.243e-14 Ry; density owns stream, band solver borrows).
+**Large-cell walls (ES order step 4) are filled** — GH200 job **1035278**:
+64-atom Si Γ LSDA, CUDA `run(frame)` **9.664 s** vs same-settings CPU **>5400 s**;
+216-atom CUDA **191 s**; slice sanity |ΔE|=1.243e-14 Ry. Detail:
+[cuda-pw-large-cell.md](cuda-pw-large-cell.md). 8-atom cells remain
+correctness-only. Next depth: device analytic forces (`cuda-pw-forces`).
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently

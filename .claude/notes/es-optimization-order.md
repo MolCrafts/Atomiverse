@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 4)
+### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 harness wave 2)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
@@ -75,20 +75,15 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (GapCensus wave 4, `dev` @ `e22325b7`):** Landed: device s/p
+**CUDA open-gate (harness wave 2, `dev` @ `8280ed89`):** Landed: device s/p
 RHF + CDIIS; Γ GPW unit footholds; `cuda::pw::PW` LSDA + **device closed-shell
-PBE-GGA** (`cuda-pw-pbe-device`, GH200 **1048320**) + residency polish;
-**large-cell wall measure** **done** (merge `948d0d86`; jobs 1035278 /
-1048264: Si 64-atom CUDA ~9.65 s / CPU >5400 s —
-\(T_{\mathrm{cu}}/T_{\mathrm{cp}} < 0.0018\), \(|\Delta E|=1.24\times10^{-14}\) Ry;
-note [cuda-pw-large-cell.md](cuda-pw-large-cell.md)). **in_progress:**
-`cuda-pw-nondefault-stream` (`wf/escuda-cuda-pw-nondefault-stream`).
-**Pending depth (foothold ≠ closed):** `cuda-pw-forces` (P0 — energy-only),
-`cuda-gpw-ks-chain` (P1 — compose footholds), `cuda-pw-collinear-spin` (P2),
-`cuda-pw-metallic-smear` (P2), `cuda-rhf-nondefault-stream` (P3),
-`cpu-simd-2center-setup` (P3). **Still blocked:** `cuda-gpw-full-product`,
-`mg-main-structural`. Incomplete tips must re-base onto `wf/escuda-<slug>` off
-current `dev` — never blind-merge.
+PBE-GGA** (GH200 **1048320**) + residency polish + **non-default stream**
+(GH200 **1049681**, merge `8280ed89`); **large-cell wall measure** done
+(merge `948d0d86`; 64-at CUDA ~9.65 s / CPU >5400 s —
+\(T_{\mathrm{cu}}/T_{\mathrm{cp}} < 0.0018\)). **Pending depth:**
+`cuda-pw-forces` (P0), `cuda-gpw-ks-chain` (P1), spin/smear (P2),
+`cpu-simd-2center-setup` / `cuda-rhf-nondefault-stream` (P3). **Blocked:**
+`cuda-gpw-full-product`, `mg-main-structural`. Staff only `wf/escuda-<slug>`.
 
 **Queues (binding worklists):**
 
