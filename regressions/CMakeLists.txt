@@ -611,6 +611,20 @@ if(ATV_BUILD_GPW)
         add_dependencies(regressions run_${_reg_gpw_uks})
         unset(_reg_gpw_uks)
 
+        # Device free-fn forces (host AO Pulay + device grid HF product).
+        set(_reg_gpw_dfor reg_cuda-gpw-device-forces)
+        add_executable(${_reg_gpw_dfor}
+            gpw/cuda-gpw-device-forces/${_reg_gpw_dfor}.cu)
+        target_link_libraries(${_reg_gpw_dfor} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_dfor} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_dfor}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_dfor}> --device=both
+            DEPENDS ${_reg_gpw_dfor}
+            COMMENT "regression [gpw/cuda-gpw-device-forces] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_dfor})
+        unset(_reg_gpw_dfor)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)

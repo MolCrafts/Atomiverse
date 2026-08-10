@@ -9,7 +9,8 @@
 /// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
-///   * host — STVnl / product-list build / DIIS / diagonalize / acc scatter
+///   * host — STVnl / product-list build / DIIS / diagonalize / acc scatter;
+///     force AO Pulay (W·dS / P·dT / P·dVnl)
 ///   * device — product collocate + KS + product integrate via
 ///     `internal::KsChainDevice::run` (RKS single-grid),
 ///     `internal::KsMultiGridChainDevice::run` (RKS multigrid: per-level
@@ -17,6 +18,8 @@
 ///     per-level integrate), or `KsChainDevice::run_uks` (collinear UKS;
 ///     dual ρ → Poisson(total) → Padé LSD → dual V_eff → dual integrate).
 ///     Mid-SCF does not H2D ρ or D2H V_eff for H.
+///     Forces (Γ RKS single-grid first cut): device grid V_eff Pulay + ionic
+///     HF + local-PP HF (UKS / multigrid force free-fns remain fail-closed).
 ///
 /// Unsupported members throw with a how-to (no silent CPU-SCF fallback).
 /// Contract: `.claude/notes/cuda-gpw-public-shape.md`.
@@ -127,10 +130,9 @@ class GpwDft {
 /// @brief Analytic ionic forces after a CUDA Γ SCF (free-function family).
 ///
 /// Runs `method.run(atoms)` then assembles forces from the converged
-/// `GpwResult` via the same analytic path as CPU `gpw_forces_from_scf`
-/// (Pulay + core + grid HF on the SCF V_eff / V_es). Forces match the density
-/// that produced `method.last_result().e_total`. RKS and UKS CPU-backed first
-/// cut (device forces are a deeper slug).
+/// `GpwResult`: host AO Pulay + device grid HF product on SCF V_eff / V_es
+/// (Γ RKS single-grid first cut). Forces match the density that produced
+/// `method.last_result().e_total`. UKS / multigrid free-fn forces fail-closed.
 ///
 /// @param atoms Geometry + basis/PP [Bohr].
 /// @param method CUDA method (members must match the SCF that will run).
