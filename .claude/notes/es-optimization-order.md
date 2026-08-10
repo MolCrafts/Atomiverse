@@ -63,17 +63,18 @@ step 1 — CPU architecture**, not more collint polish.
 | P0 | ~~`arch-gpw-driver-node`~~ **landed** | `GpwDft` → `Driver<gpw::Phase>`; residual paths → `arch-gpw-driver-paths` |
 | P0 | ~~`arch-gpw-driver-paths`~~ **landed** | multi-path DIIS (Γ UKS + multi-k RKS/UKS) on stages; OT free-loop residual (not a new slug) — merge `e34ccf92` |
 | P0 | ~~`arch-pw-driver-node`~~ **landed** | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
-| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `9edaa157` (rebase onto `9cbdc47b`) |
+| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `0035b0f4` (ahead=1 behind=1 vs post-chore `dev`) |
 | P1 | ~~`arch-cuda-scf-solver-fold`~~ **landed** | free-loop `SCFSolver` → private `RhfScfCycle`; nested CUDA Driver residual |
-| P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product (**staffable** — multi-path DIIS dep satisfied) |
-| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× after Driver paths (**staffable**) |
+| P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product — **unmerged tip** @ `d466f5a8` |
+| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× structural — **unmerged tip** @ `2ed7a836` |
 
-**GapCensus wave 6:** on `dev` @ `9cbdc47b` (post harness wave-5). Tree
-reconfirmed multi-path GPW DIIS + PW fixed-occ Driver + folded CUDA RHF +
-CUDA GPW stages≠product + HEAVY `^$`. Keep `[~]` `arch-pw-driver-paths`.
-**gaps_remaining=4**, **new_slugs=0**; pending staffable=2 (shape-freeze +
-mg-main unheld); in_progress=1; blocked product=1 (`cuda-gpw-full-product`
-needs freeze). Queue:
+**GapCensus wave 7:** on `dev` after Assign base `52d555b7` + this census
+chore. Tree reconfirmed multi-path GPW DIIS + PW fixed-occ Driver + folded
+CUDA RHF + CUDA GPW stages≠product + HEAVY `^$`. All three incomplete tips
+claim product work (ahead=1 behind=1; behind is docs-only census); **unmerged
+tip ≠ done**. **gaps_remaining=4**, **new_slugs=0**; pending unheld=0;
+in_progress=3; blocked product=1 (`cuda-gpw-full-product` needs freeze green
+on `dev`). Queue:
 [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
 Workflow: `.grok/workflows/arch-campaign.rhai`.
 
