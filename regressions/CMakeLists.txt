@@ -1053,6 +1053,9 @@ if(ATV_BUILD_PW)
         target_compile_definitions(reg_arch-pw-driver-node PRIVATE
             ATV_PW_UPF_PATH="${CMAKE_SOURCE_DIR}/tests/data/pw/Si_lda_nc.upf")
     endif()
+    # arch-pw-driver-paths: collinear + metallic multi-path stages on same
+    # pw::Phase skeleton (shape gate; energy twins in pw-* product regs).
+    atv_add_regression(architecture arch-pw-driver-paths)
 endif()
 if(ATV_BUILD_CUDA AND ATV_BUILD_HF)
     # arch-cuda-scf-solver-fold: free-loop SCFSolver folded under RHF; public

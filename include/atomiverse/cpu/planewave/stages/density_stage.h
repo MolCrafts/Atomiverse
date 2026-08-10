@@ -17,10 +17,9 @@ namespace pw {
 
 /// @brief Density stage for the plane-wave Driver loop.
 ///
-/// On the restricted fixed-occupation path the real-space accumulation is
-/// already complete after `DiagonalizeStage`; this stage is the hook for
-/// pre-mix bookkeeping (energy terms from the new bands, etc.) before
-/// `MixStage` runs Pulay. Path-local step is supplied at wire time.
+/// Fixed-occupation paths: pre-mix bookkeeping (accumulation often done
+/// in DiagonalizeStage). Metallic-smear paths: Fermi search, occupations,
+/// and density accumulate. Path-local step is supplied at wire time.
 class DensityStage : public cpu::Component {
   public:
     /// @brief Zero-arg step body for one density bookkeeping pass.

@@ -17,8 +17,9 @@ namespace pw {
 
 /// @brief Effective-potential build stage for the plane-wave Driver loop.
 ///
-/// Invokes a path-local step (restricted: Poisson → XC → Veff) supplied by
-/// the method at wire time. Self-guards on `pw::Phase::veff`.
+/// Invokes a path-local step (Poisson → XC → Veff; collinear uses spin XC
+/// and may defer per-spin Veff into diagonalize) supplied by the method at
+/// wire time. Self-guards on `pw::Phase::veff`.
 class VeffStage : public cpu::Component {
   public:
     /// @brief Zero-arg step body for one Veff assembly.
