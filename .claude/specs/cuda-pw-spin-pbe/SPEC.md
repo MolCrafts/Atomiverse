@@ -1,6 +1,7 @@
 # cuda-pw-spin-pbe
 
-**acceptance_met=true** (GH200 **1122874**, exit 0; dual-gate below).
+**acceptance_met=true** (GH200 **1123961** reconfirm after rebase onto
+`dev`@`4913b33b`, exit 0; prior **1122874**).
 
 ## Lever
 
@@ -25,7 +26,7 @@
 - CPU: `reg_pw-spin-gga` class (O₂, ecut 12 Ry, k=1, mult=3, mix_beta=0.3, PBE).
 - Oracle: same-settings `cpu::pw::PW` (not self-golden CUDA).
 
-## Gate evidence (GH200 **1122874**, n416)
+## Gate evidence (GH200 **1123961**, n454 — wave-3 reconfirm)
 
 | Check | Result |
 | --- | --- |
@@ -36,3 +37,5 @@
 | \|E_cuda − E_cpu\| | **1.14e-13 Ha** (tol 2e-3) |
 | \|E_PBE − E_LSDA\|_cpu | **0.129 Ha** (floor 1e-4) |
 | RCs | BUILD=0 UNIT_SPIN=0 UNIT_GUARD=0 REG=0 |
+
+Prior gate: **1122874** (n416) same dual-gate numbers on pre-rebase tip.
