@@ -28,3 +28,12 @@ fair-wall twin vs CP2K).
 
 Multigrid forces, multi-k × MG, UKS × MG, PBE product dual-gate, device
 DIIS/eigen.
+
+## Evidence
+
+| Job | Host | Result |
+| --- | --- | --- |
+| GH200 **1125894** | tip pre-rebase | unit + reg PASS; \|dE\|=**1.587e-07** Ha |
+| GH200 **1126433** | tip rebased onto `dev` @ Assign wave 7 | `test_cuda_gpw_full_product` + `test_cuda_gpw_ks_multigrid` PASS; reg \|dE\|=**1.587e-07** Ha (tol 5e-6); `GPU_JOB_OK`; builds wiped |
+
+Oracle: same-settings CPU twin (not CP2K). **perf_exempt** small cell.
