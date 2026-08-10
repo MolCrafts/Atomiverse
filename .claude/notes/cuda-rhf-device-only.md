@@ -169,8 +169,10 @@ multi-grid product KS stage landed** (`cuda-gpw-ks-multigrid`, GH200
 **1051041**). **Restricted metallic smear landed** (`cuda-pw-metallic-smear`,
 GH200 **1051119** dual-gate Al \|ΔE\|=1.24e-14 Ry). **RHF non-default stream
 D2H landed** (`cuda-rhf-nondefault-stream`, GH200 **1051227** 2/2 PASS).
-Residual open depth: spin+smear / spin forces / spin stress / spin-PBE;
-full GPW product (blocked).
+Residual open depth: spin+smear / spin forces / spin stress / spin-PBE
+(+ spin-smear F/σ after spin-smear energy); GPW first product **landed** —
+depth residual on es-cpu-cuda queue (device collocate tip, DIIS/eigen, forces,
+MG/UKS/kpoints, …).
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently
