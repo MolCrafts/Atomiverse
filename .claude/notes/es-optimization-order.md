@@ -52,13 +52,13 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 harness wave 2)
+### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 3)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
-`wf/escuda-<slug>`; no push; no `reset --hard`. Wipe `build` / `build-*` after
-every cmake/ctest and before every worker/clearup exit (`builds_wiped=false`
-fails the wave).
+`wf/escuda-<slug>` (or re-base existing `wf/<slug>`); no push; no `reset --hard`.
+Wipe `build` / `build-*` after every cmake/ctest and before every
+worker/clearup exit (`builds_wiped=false` fails the wave).
 
 | Track | Goal | Anchor / gate |
 | --- | --- | --- |
@@ -75,15 +75,16 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (harness wave 2, `dev` @ `8280ed89`):** Landed: device s/p
-RHF + CDIIS; Γ GPW unit footholds; `cuda::pw::PW` LSDA + **device closed-shell
-PBE-GGA** (GH200 **1048320**) + residency polish + **non-default stream**
-(GH200 **1049681**, merge `8280ed89`); **large-cell wall measure** done
-(merge `948d0d86`; 64-at CUDA ~9.65 s / CPU >5400 s —
+**CUDA open-gate (GapCensus wave 3, `dev` @ `ce243d3c`):** Landed: device s/p
+RHF + CDIIS; Γ GPW unit footholds (no compose on `dev`); `cuda::pw::PW` LSDA +
+**device closed-shell PBE-GGA** (GH200 **1048320**) + residency polish +
+**non-default stream** (GH200 **1049681**, merge `8280ed89`); **large-cell
+wall measure** done (merge `948d0d86`; 64-at CUDA ~9.65 s / CPU >5400 s —
 \(T_{\mathrm{cu}}/T_{\mathrm{cp}} < 0.0018\)). **Pending depth:**
-`cuda-pw-forces` (P0), `cuda-gpw-ks-chain` (P1), spin/smear (P2),
-`cpu-simd-2center-setup` / `cuda-rhf-nondefault-stream` (P3). **Blocked:**
-`cuda-gpw-full-product`, `mg-main-structural`. Staff only `wf/escuda-<slug>`.
+`cuda-pw-forces` (P0), `cuda-gpw-ks-chain` (P1), `cuda-pw-stress` /
+spin/smear / `cuda-gpw-ks-gga` (P2), `cpu-simd-2center-setup` /
+`cuda-rhf-nondefault-stream` (P3). **Blocked:** `cuda-gpw-full-product`,
+`mg-main-structural`. WIP tips ≠ landed.
 
 **Queues (binding worklists):**
 
