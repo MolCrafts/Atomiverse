@@ -39,6 +39,15 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 9 (parent `dev`):** 2 of 3 staffed → done [x]:
+  `cuda-gpw-stress` (GH200 **1128195** \|dE\|=**1.617e-07** max\|dσ\|=**2.242e-10**)
+  + `cuda-gpw-nondefault-stream` (GH200 **1128196** \|dE\|=**1.617e-07**
+  max\|dF\|=**2.329e-06**). **no-land** `cuda-gpw-product-h2o-gate` (CUDA
+  water RKS SCF non-convergence on device path through density warm-start +
+  mix; GH200 **1128295** last). Specs closed for landed tips. **cpu_pending=0**.
+  Queue **not** exhausted. No push.
+
+
 - **2026-08-10 GapCensus+Assign wave 9 (parent `dev` @ `8b517bb1`):** Re-diff
   post wave-8 land (`4f78d716` + chore). Fair walls held MG MAIN **2.33×**;
   **cpu_pending=0**. Product depth on base: collocate + MG + UKS + device

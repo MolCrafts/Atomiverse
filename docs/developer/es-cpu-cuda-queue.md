@@ -120,9 +120,9 @@ metallic-GPW stay same-capability follow-on. **No gpw-perf-queue promote**.
 | Claimed-but-ungated | product `XcKind::PBE` accepted; e2e dual-gates PADE-class (H₂ RKS/MG/UKS); no O₂ UKS / water MG e2e |
 | Closed-shell PW stress | **LSDA + PBE** dual-gate **landed** (`cuda-pw-stress` + `cuda-pw-pbe-stress`) |
 | Collinear spin-PBE energy | **landed** merge `118d3003` / GH200 **1124645** (Γ dual-gate only) |
-| Staffed tips (not base) | `[~]` `device-forces` (**1126434** / prior **1125926**) |
+| Staffed tips (not base) | *(none — wave-9 stress/stream on base; h2o no-land)* |
 
-**Counts:** **pending_count=68**; **in_progress=3**; **cpu_pending=0**; **cuda_pending=68**; **gaps_remaining≈71** (68 pending + 3 tips + MG fair-wall residual). Queue **not** exhausted. Wave-9 staffs 3 P2 product residuals.
+**Counts:** **pending_count≈66**; **in_progress=0**; **cpu_pending=0**; **cuda_pending≈66**; **gaps_remaining≈67** (water gate residual + MG fair-wall). Queue **not** exhausted. Wave-9 landed **2**/3 staffed (stress + stream).
 residual). Queue **not** exhausted. **new_slugs_added=20** (wave 8).
 
 ### CUDA — GPW product depth (product on base — staff depth)
@@ -145,13 +145,7 @@ UKS DIIS PADE energy via `KsChainDevice::run_uks`; residual UKS F/σ +
 UKS-PBE + joint paths → child rows.
 
 
-- [ ] `cuda-gpw-nondefault-stream` | **P2** Product constructs
-  `KsChainDevice(..., /*stream=*/nullptr)`; mid-SCF H2D/D2H use default stream
-  (collocate tip still stream-null). Track: **cuda**. Twin: same dual-gate
-  energy after stream bind (PADE class). Gate: GH200 + tols unchanged;
-  stream-scoped fences. Lever: own `cudaStream_t` on product / pass into
-  `KsChainDevice` + device collocate when composed (mirror
-  `cuda-pw-nondefault-stream`). Staff after or with `device-collocate`.
+
 - [ ] `cuda-gpw-device-diis-eigen` | **P2** Mid-SCF host residual after device
   KS / collocate tip: every iter host packs `DeviceProduct` density weights
   (P→w H2D), D2H integrate-acc, host scatter → V_grid, then host
@@ -173,12 +167,7 @@ UKS-PBE + joint paths → child rows.
   class. Gate: GH200 dual-gate energy. Lever: phased STVnl/products host or
   device compose; not OT / not UKS multi-k in this slug. Forces are
   `kpoint-forces` after energy; joint MG multi-k is `multigrid-kpoints`.
-- [ ] `cuda-gpw-stress` | **P2** Public cell-stress twin missing entirely on
-  CUDA GPW (CPU `gpw_stress` / Frame evaluator product). Track: **cuda**.
-  Twin: CPU Γ RKS fixed-\(P\) stress + dual-gate. Gate: GH200 + stated
-  max‖Δσ‖; fail-closed multi-k/UKS/OT until owned. Lever: compose SCF
-  `last_result` + device/host stress assembly under `cuda::gpw::gpw_stress`
-  matching freeze optional depth.
+
 - [ ] `cuda-gpw-uks-forces` | **P3** Analytic free-fn forces under Γ UKS
   product after `uks-gamma` energy (energy slug does not own forces; base
   free-fn is RKS CPU-backed only). Track: **cuda**. Twin: CPU
@@ -654,9 +643,10 @@ stay pending. Do **not** claim queue exhausted.
 
 ## in_progress
 
-- [~] `cuda-gpw-product-h2o-gate` | **P2** Water-class Γ RKS PADE dual-gate | track cuda | twin: CPU water SZV PADE | GH200 **1128194** pending | branch `wf/cuda-gpw-product-h2o-gate` @ `9bf5b2ac`
-- [~] `cuda-gpw-stress` | **P2** Public `gpw_stress` free-fn (CUDA density + host fixed-P) | track cuda | twin: H2 stress dual-gate | GH200 **1128195** pending | branch `wf/cuda-gpw-stress` @ `d58e9815`
-- [~] `cuda-gpw-nondefault-stream` | **P2** Product SCF owns non-default stream | track cuda | twin: H2 energy+forces dual-gate | GH200 **1128196** pending | branch `wf/cuda-gpw-nondefault-stream` @ `5018ed7c`
+*(empty — wave-9 landed stress + nondefault-stream; product-h2o-gate **no-land** —
+CUDA water RKS SCF does not reach stationarity on device KS path even with
+density warm-start + linear mix / DIIS; residual stays pending for device
+DIIS/eigen or product SCF polish)*
 
 
 ## blocked
@@ -667,6 +657,13 @@ stay pending. Do **not** claim queue exhausted.
   fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 
 ## done
+
+Post-wave-9 land 2026-08-11 (`dev` @ wave-9 merges):
+
+- [x] `cuda-gpw-stress` | **P2** Public `cuda::gpw::gpw_stress` free-fn (CUDA Γ density + host fixed-P analytic) | GH200 **1128195** \|dE\|=**1.617e-07** Ha max\|dσ\|=**2.242e-10** Ha/Bohr³ | merge stress + feat `d58e9815`
+- [x] `cuda-gpw-nondefault-stream` | **P2** Product SCF owns non-default stream for mid-SCF + KS | GH200 **1128196** \|dE\|=**1.617e-07** max\|dF\|=**2.329e-06** Ha/Bohr | merge stream + feat `5018ed7c`
+
+*no-land wave 9:* `cuda-gpw-product-h2o-gate` — CUDA water RKS SCF non-convergence on device path (GH200 **1128194**/**1128217**/**1128269**/**1128295**); tip dropped; row stays pending.
 
 Post-wave-8 land 2026-08-10/11 (`dev` @ `4f78d716`):
 
