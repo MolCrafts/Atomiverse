@@ -25,6 +25,7 @@ OT / dispersion / DFT+U force fold.
 
 ## Result
 
-**acceptance_met=true** (GH200 **1125926**): units 2/2 PASS;
-\|ΔE\|=**1.617e-7** Ha; max\|ΔF\|=**2.360e-6** Ha/Bohr; **perf_exempt**
-small cell. Commit `5fa33be9`.
+**acceptance_met=true** (post-rebase GH200 **1126434** / prior **1125926**):
+units 2/2 PASS; \|ΔE\|=**1.617e-7** Ha; max\|ΔF\|=**2.321e-6** Ha/Bohr
+(≤ 5e-5); **perf_exempt** small cell. Rebase onto `dev` @ `0bb5312b`
+clean; dual-gate re-verified.

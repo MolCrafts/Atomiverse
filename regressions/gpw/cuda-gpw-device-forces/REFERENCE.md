@@ -32,14 +32,15 @@ UKS / multi-k / multigrid / stress / PBE force dual-gate / dispersion.
 
 ## GH200 evidence
 
-Job **1125926** (partition gpu, n69 GH200, module
-`GPU/buildenv-gcccuda/2026.03-cu13.0`, sacct **COMPLETED 0:0** ~7m47s):
+Post-rebase job **1126434** (partition gpu, n74 GH200, module
+`GPU/buildenv-gcccuda/2026.03-cu13.0`, sacct **COMPLETED 0:0** ~6m13s;
+prior tip gate **1125926** ~7m47s same class):
 
 | Quantity | Value |
 | --- | ---: |
 | \|E_cuda − E_cpu\| | **1.617×10⁻⁷ Ha** |
-| max\|ΔF\| | **2.360×10⁻⁶ Ha/Bohr** |
-| CPU iters / CUDA iters | 5 / 9 |
+| max\|ΔF\| | **2.321×10⁻⁶ Ha/Bohr** |
+| CPU iters / CUDA iters | 6 / 9 |
 | Units | `test_cuda_gpw_forces` + `test_cuda_gpw_full_product` **2/2 PASS** |
 | Exit | **GPU_JOB_OK** |
 
