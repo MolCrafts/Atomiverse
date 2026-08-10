@@ -1038,6 +1038,15 @@ if(ATV_BUILD_PATH)
 endif()
 atv_add_regression(architecture harmonic_driver_matrix)
 atv_add_regression(architecture module_compile_defs)
+if(ATV_BUILD_PW)
+    # arch-pw-driver-node: PW → cpu::Driver<pw::Phase> restricted fixed-occ;
+    # public run still hits the offline ABINIT-class Si LDA band.
+    atv_add_regression(architecture arch-pw-driver-node)
+    if(TARGET reg_arch-pw-driver-node)
+        target_compile_definitions(reg_arch-pw-driver-node PRIVATE
+            ATV_PW_UPF_PATH="${CMAKE_SOURCE_DIR}/tests/data/pw/Si_lda_nc.upf")
+    endif()
+endif()
 if(ATV_BUILD_CUDA AND ATV_BUILD_HF)
     # arch-cuda-scf-solver-fold: free-loop SCFSolver folded under RHF; public
     # run still hits the H2/STO-3G literature pin on device.

@@ -114,6 +114,77 @@ PW::~PW() = default;
 PW::PW(PW&&) noexcept = default;
 PW& PW::operator=(PW&&) noexcept = default;
 
+// ── PW Driver node: restricted fixed-occupation stages ───────────────
+
+void PW::reset_built_driver_() {
+    veff_stage_.reset();
+    diag_stage_.reset();
+    density_stage_.reset();
+    mix_stage_.reset();
+    converged_stage_.reset();
+    this->pending_.clear();
+    this->owned_components_.clear();
+    this->plan_ = {};
+    this->criteria_.clear();
+    this->criteria_owned_.clear();
+    this->backend_.reset();
+    driver_built_ = false;
+    wired_self_ = nullptr;
+}
+
+void PW::ensure_driver_built_(VeffStage::StepFn veff, DiagonalizeStage::StepFn diag,
+                              DensityStage::StepFn dens, MixStage::StepFn mix) {
+    if (driver_built_) {
+        if (wired_self_ == this)
+            return;
+        reset_built_driver_();
+    }
+
+    veff_stage_ = std::make_unique<VeffStage>(std::move(veff));
+    diag_stage_ = std::make_unique<DiagonalizeStage>(std::move(diag));
+    density_stage_ = std::make_unique<DensityStage>(std::move(dens));
+    mix_stage_ = std::make_unique<MixStage>(std::move(mix));
+    converged_stage_ = std::make_unique<PwConverged>(loop_converged_);
+
+    this->on(ATV::pw::Phase::veff).add_ref(*veff_stage_);
+    this->on(ATV::pw::Phase::diagonalize).add_ref(*diag_stage_);
+    this->on(ATV::pw::Phase::density).add_ref(*density_stage_);
+    this->on(ATV::pw::Phase::mix).add_ref(*mix_stage_);
+    this->add_criterion_ref(*converged_stage_);
+
+    this->set_serial_on_replica();
+    cpu::Driver<ATV::pw::Phase>::build();
+    driver_built_ = true;
+    wired_self_ = this;
+}
+
+bool PW::drive_restricted_fixed_occ_(int max_iter_in, PWResult& res) {
+    // Stages must already be wired via ensure_driver_built_ (lambdas capture
+    // the run() prologue). Serial whole-molecule loop — empty Frame is fine
+    // under set_serial_on_replica.
+    loop_converged_ = false;
+    if (converged_stage_)
+        converged_stage_->reset();
+
+    cpu::Frame loop_frame;
+    setup_pass(loop_frame);
+
+    int executed = 0;
+    for (int iter = 0; iter < max_iter_in; ++iter) {
+        mutable_outer_status().reset();
+        step_once(iter);
+        ++executed;
+        res.iterations = executed;
+        if (poll_criteria_(iter) != ATV::Verdict::Continue)
+            break;
+    }
+    teardown_pass();
+
+    const bool conv = this->converged() || loop_converged_;
+    res.converged = conv;
+    return conv;
+}
+
 void PW::build(const cpu::Frame& reference) {
     if (!poisson_) {
         poisson_ = std::make_unique<internal::PoissonSolver>();
@@ -729,122 +800,140 @@ PWResult& PW::run(const cpu::Frame& frame) {
             ATV_WARN("[pw] not converged after {} iters energy_ry={:.8f}",
                      max_iter, result_.energy);
 
-    } else
+    } else if (spin_polarized) {
+        // Collinear fixed-occupation residual free loop (path-migration later).
         for (int iter = 0; iter < max_iter; ++iter) {
             AccReal e_band = 0;
             auto* saved_gvec = ws.gvec;
 
-            if (spin_polarized) {
-                // Total density for Poisson / energy from spin channels.
+            // Total density for Poisson / energy from spin channels.
+            for (int ig = 0; ig < ws.n_g; ++ig)
+                ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
+
+            poisson_->step(ws);
+            xc_->step_spin(ws, xc);
+
+            const int n_occ[2] = {n_alpha, n_beta};
+            // Solve max(N↑,N↓) states per spin; occupy only n_occ[s].
+            if (davidson_bands_ != n_bands_r) {
+                davidson_ = std::make_unique<internal::DavidsonSolver>(
+                    n_bands_r, AccReal(tol) * AccReal(0.1), 40);
+                davidson_bands_ = n_bands_r;
+                davidson_->prepare(ws);
+            }
+            xt::xarray<std::complex<AccReal>> rho_out[2];
+            for (int s = 0; s < 2; ++s) {
+                // Veff_σ = V_loc + V_H + Vxc_σ
                 for (int ig = 0; ig < ws.n_g; ++ig)
-                    ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
+                    ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
+                veff_->step(ws);
 
-                poisson_->step(ws);
-                xc_->step_spin(ws, xc);
-
-                const int n_occ[2] = {n_alpha, n_beta};
-                // Solve max(N↑,N↓) states per spin; occupy only n_occ[s].
-                if (davidson_bands_ != n_bands_r) {
-                    davidson_ = std::make_unique<internal::DavidsonSolver>(
-                        n_bands_r, AccReal(tol) * AccReal(0.1), 40);
-                    davidson_bands_ = n_bands_r;
-                    davidson_->prepare(ws);
-                }
-                xt::xarray<std::complex<AccReal>> rho_out[2];
-                for (int s = 0; s < 2; ++s) {
-                    // Veff_σ = V_loc + V_H + Vxc_σ
+                density_->begin(ws);
+                for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                    auto& gvk = prob.gv_k[ik];
+                    ws.gvec = &gvk;
+                    ws.n_g = gvk.count();
+                    ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
                     for (int ig = 0; ig < ws.n_g; ++ig)
-                        ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
-                    veff_->step(ws);
+                        ws.T_G[ig] = gvk.ekin[ig];
+                    if (!prob.kb_proj_k.empty())
+                        ws.kb_proj = prob.kb_proj_k[ik];
+                    if (!prob.atom_wfc_k.empty())
+                        ws.atom_wfc = prob.atom_wfc_k[ik];
 
-                    density_->begin(ws);
-                    for (int ik = layout.rank; ik < n_kpts;
-                         ik += layout.nprocs) {
-                        auto& gvk = prob.gv_k[ik];
-                        ws.gvec = &gvk;
-                        ws.n_g = gvk.count();
-                        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                        for (int ig = 0; ig < ws.n_g; ++ig)
-                            ws.T_G[ig] = gvk.ekin[ig];
-                        if (!prob.kb_proj_k.empty())
-                            ws.kb_proj = prob.kb_proj_k[ik];
-                        if (!prob.atom_wfc_k.empty())
-                            ws.atom_wfc = prob.atom_wfc_k[ik];
+                    davidson_->step(ws);
 
-                        davidson_->step(ws);
+                    const AccReal weight = prob.kg.weights[ik];
+                    for (int b = 0; b < n_occ[s]; ++b)
+                        e_band += weight * ws.eigenvalues[b]; // spin-orbital
 
-                        const AccReal weight = prob.kg.weights[ik];
-                        for (int b = 0; b < n_occ[s]; ++b)
-                            e_band +=
-                                weight * ws.eigenvalues[b]; // spin-orbital
+                    density_->accumulate_kpoint(ws, weight, n_occ[s], AccReal(1));
 
-                        density_->accumulate_kpoint(ws, weight, n_occ[s],
-                                                    AccReal(1));
-
-                        ws.gvec = saved_gvec;
-                        ws.n_g = gv0.count();
-                    }
-
-#ifdef ATV_HAS_MPI
-                    if (layout.active) {
-                        MPI_Allreduce(MPI_IN_PLACE, density_->accumulation(),
-                                      ws.nr, mpi_real_type(), MPI_SUM,
-                                      MPI_COMM_WORLD);
-                    }
-#endif
-                    density_->extract(ws, rho_out[s]);
+                    ws.gvec = saved_gvec;
+                    ws.n_g = gv0.count();
                 }
 
 #ifdef ATV_HAS_MPI
                 if (layout.active) {
-                    MPI_Allreduce(MPI_IN_PLACE, &e_band, 1, mpi_real_type(),
-                                  MPI_SUM, MPI_COMM_WORLD);
+                    MPI_Allreduce(MPI_IN_PLACE, density_->accumulation(), ws.nr,
+                                  mpi_real_type(), MPI_SUM, MPI_COMM_WORLD);
                 }
 #endif
+                density_->extract(ws, rho_out[s]);
+            }
 
-                // Linear mix each spin channel (simple, stable for molecules).
-                for (int s = 0; s < 2; ++s) {
-                    for (int ig = 0; ig < ws.n_g; ++ig) {
-                        ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                        ws.rho_spin_G[s][ig] =
-                            ws.rho_spin_G_old[s][ig]
-                            + AccReal(mix_beta)
-                                  * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-                    }
-                }
+#ifdef ATV_HAS_MPI
+            if (layout.active) {
+                MPI_Allreduce(MPI_IN_PLACE, &e_band, 1, mpi_real_type(),
+                              MPI_SUM, MPI_COMM_WORLD);
+            }
+#endif
+
+            // Linear mix each spin channel (simple, stable for molecules).
+            for (int s = 0; s < 2; ++s) {
                 for (int ig = 0; ig < ws.n_g; ++ig) {
-                    ws.rho_G_old[ig] = ws.rho_G[ig];
-                    ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
+                    ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
+                    ws.rho_spin_G[s][ig] =
+                        ws.rho_spin_G_old[s][ig]
+                        + AccReal(mix_beta)
+                              * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
                 }
+            }
+            for (int ig = 0; ig < ws.n_g; ++ig) {
+                ws.rho_G_old[ig] = ws.rho_G[ig];
+                ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
+            }
 
-                // Convergence on total density change.
-                AccReal dr = 0;
-                for (int ig = 0; ig < ws.n_g; ++ig) {
-                    auto d = ws.rho_G[ig] - ws.rho_G_old[ig];
-                    dr += d.real() * d.real() + d.imag() * d.imag();
-                }
-                converged = (std::sqrt(dr) < AccReal(tol));
-                result_.iterations = iter + 1;
+            // Convergence on total density change.
+            AccReal dr = 0;
+            for (int ig = 0; ig < ws.n_g; ++ig) {
+                auto d = ws.rho_G[ig] - ws.rho_G_old[ig];
+                dr += d.real() * d.real() + d.imag() * d.imag();
+            }
+            converged = (std::sqrt(dr) < AccReal(tol));
+            result_.iterations = iter + 1;
 
-                // Spin energy: e_one = e_band - 2 EH - ∫(ρ↑Vxc↑+ρ↓Vxc↓)
-                auto terms = internal::iteration_energy(
-                    ws, e_band, prob.ew_total, vol_bohr);
-                // Replace restricted e_xc_int (used ρ·Vxc_avg) with spin integral.
-                terms.e_one =
-                    e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
-                terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total
-                              + ws.E_aug;
-                result_.energy_ha = static_cast<double>(terms.total);
-                result_.energy =
-                    result_.energy_ha / qe_units::rydberg_to_hartree;
-                internal::log_iteration_energy(terms, ws, prob.ew_total, iter);
+            // Spin energy: e_one = e_band - 2 EH - ∫(ρ↑Vxc↑+ρ↓Vxc↓)
+            auto terms =
+                internal::iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+            terms.e_one =
+                e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
+            terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total
+                          + ws.E_aug;
+            result_.energy_ha = static_cast<double>(terms.total);
+            result_.energy = result_.energy_ha / qe_units::rydberg_to_hartree;
+            internal::log_iteration_energy(terms, ws, prob.ew_total, iter);
 
-            } else {
-                // ── Restricted (spin-unpolarized) path — unchanged ──
+            if (converged) {
+                result_.converged = true;
+                if (log_rank0)
+                    ATV_INFO("[pw] converged iter={} energy_ry={:.8f} mag={}",
+                             iter + 1, result_.energy, result_.magnetization);
+                break;
+            }
+        }
+
+        if (!result_.converged && log_rank0)
+            ATV_WARN("[pw] not converged after {} iters energy_ry={:.8f}",
+                     max_iter, result_.energy);
+
+    } else {
+        // ── Restricted fixed-occupation path — Driver stages ──
+        AccReal e_band = 0;
+        int iter_log = 0;
+
+        // Rebuild stages every run — lambdas capture the prologue.
+        reset_built_driver_();
+        ensure_driver_built_(
+            /*veff=*/
+            [&]() {
                 poisson_->step(ws);
                 xc_->step(ws, xc);
                 veff_->step(ws);
-
+            },
+            /*diag=*/
+            [&]() {
+                auto* saved_gvec = ws.gvec;
                 density_->begin(ws);
                 e_band = 0;
                 for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
@@ -879,32 +968,37 @@ PWResult& PW::run(const cpu::Frame& frame) {
                                   MPI_SUM, MPI_COMM_WORLD);
                 }
 #endif
-
+            },
+            /*density=*/
+            [&]() {
+                // Pre-mix bookkeeping hook (accumulation already done).
+            },
+            /*mix=*/
+            [&]() {
                 density_->finish(ws);
-
-                converged = convergence.step(ws);
-                result_.iterations = iter + 1;
+                loop_converged_ = convergence.step(ws);
 
                 const auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
                 result_.energy_ha = static_cast<double>(terms.total);
                 result_.energy =
                     result_.energy_ha / qe_units::rydberg_to_hartree;
-                internal::log_iteration_energy(terms, ws, prob.ew_total, iter);
-            }
+                internal::log_iteration_energy(terms, ws, prob.ew_total,
+                                               iter_log);
+                ++iter_log;
+            });
 
-            if (converged) {
-                result_.converged = true;
-                if (log_rank0)
-                    ATV_INFO("[pw] converged iter={} energy_ry={:.8f} mag={}",
-                             iter + 1, result_.energy, result_.magnetization);
-                break;
-            }
+        const bool conv = drive_restricted_fixed_occ_(max_iter, result_);
+        if (conv) {
+            if (log_rank0)
+                ATV_INFO("[pw] converged iter={} energy_ry={:.8f} mag={}",
+                         result_.iterations, result_.energy,
+                         result_.magnetization);
+        } else if (log_rank0) {
+            ATV_WARN("[pw] not converged after {} iters energy_ry={:.8f}",
+                     max_iter, result_.energy);
         }
-
-    if (!result_.converged && log_rank0)
-        ATV_WARN("[pw] not converged after {} iters energy_ry={:.8f}", max_iter,
-                 result_.energy);
+    }
 
     return result_;
 }

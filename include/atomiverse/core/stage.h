@@ -137,8 +137,10 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 /// is a staged loop with a termination criterion — exactly a Driver — so the
 /// gaussian-basis SCF iteration becomes a `cpu::Driver<scf::Phase>`, and the
 /// concrete methods (`RHF`/`UHF`/`RKS`/`UKS`) supply the components that fill its
-/// stages. CUDA SCF free-loop bag folded under RHF (RhfScfCycle); full cuda::Driver nesting residual; `cpu::pw::PW` remain residual Driver debt;
-/// GPW uses `gpw::Phase` below. This enum is CPU-only.
+/// stages. CUDA SCF free-loop bag folded under RHF (RhfScfCycle); full
+/// `cuda::Driver` nesting residual. GPW uses `gpw::Phase` below; plane-wave
+/// `cpu::pw::PW` uses `pw::Phase` (restricted fixed-occ path). This enum is
+/// CPU-only.
 ///
 /// The phase order reflects what runs within one self-consistent iteration:
 /// build the Fock/Hamiltonian matrix (`fock`), extrapolate it in **Fock space**
@@ -216,6 +218,45 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 }
 
 } // namespace gpw
+
+/// @brief Plane-wave KS self-consistency phases.
+///
+/// `cpu::pw::PW` is a `cpu::Driver<pw::Phase>`. Unlike Gaussian SCF / GPW
+/// (H-space DIIS before diagonalize), plane-wave SCF **density-mixes**
+/// (Pulay on ρ), so the stage order is
+/// `veff → diagonalize → density → mix → check`. `kind_of` returns
+/// `PhaseKind::SCF` (self-consistency workflow class). Restricted
+/// fixed-occupation is driven by stages; collinear spin and metallic
+/// smearing remain free-loop residual until a path-migration wave.
+namespace pw {
+
+/// @brief Phase order for one plane-wave KS self-consistency iteration.
+enum class Phase {
+    veff,        ///< Poisson + XC + Veff from the current density.
+    diagonalize, ///< Per-k Davidson + density accumulation.
+    density,     ///< Extract new ρ(G) (pre-mix bookkeeping).
+    mix,         ///< Pulay / linear density mix.
+    check,       ///< Convergence test (‖Δρ‖₂ residual).
+    COUNT        ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the plane-wave phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in the same order as the enum values, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"veff", "diagonalize", "density", "mix", "check"};
+}
+
+/// @brief Workflow discriminant for `pw::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF` (self-consistency loop class).
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace pw
 
 /// @brief Vibrational-analysis (finite-difference response) phases.
 ///
