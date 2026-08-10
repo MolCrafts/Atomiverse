@@ -445,12 +445,15 @@ Two periodic DFT engines exist, with disjoint strengths:
   CUDA is `cuda::pw::PW` — a strict subset of the CPU method: **LSDA**
   (Slater + VWN5 device kernel) or **PBE** (device closed-shell GGA,
   `internal/xc_pbe.cu` — table **Periodic GGA** CUDA ✓ is this slice only),
-  **restricted** closed-shell (`spin_polarized` / smearing throw),
-  **energy** (`run()`) plus **analytic ionic forces**
-  (`cuda::pw::pw_forces_analytic` — local HF + Ewald + KB nonlocal; GH200
-  dual-gate vs CPU, LSDA reg green; PBE force dual-gate still open on the
-  es-cpu-cuda queue); **no device stress** yet; large-cell wall evidence on
-  Si supercells — see es-cpu-cuda queue.
+  **energy** (`run()`), **analytic ionic forces** (closed-shell **LSDA +
+  PBE**; `cuda::pw::pw_forces_analytic` — local HF + Ewald + KB nonlocal;
+  GH200 dual-gate), **analytic cell stress** (closed-shell LSDA;
+  `cuda::pw::pw_stress`), **collinear LSDA spin** energy (fixed occupation;
+  spin-PBE / spin forces / spin stress still reject), and **restricted
+  metallic smear** (FD/Gaussian/MP + `extra_bands` + Mermin free energy;
+  spin+smear still rejects); large-cell wall evidence on Si supercells —
+  see es-cpu-cuda queue. **No CUDA GPW method product** (stage footholds
+  only; blocked on arch-campaign Driver paths + public-shape freeze).
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA
   (Padé) or **PBE / PBEsol / revPBE / RPBE / BLYP** (RKS + **Γ-UKS BLYP**
@@ -660,7 +663,7 @@ Which engine backs which ✓:
 | Method                                 | CPU | CUDA | Kokkos |
 | -------------------------------------- | :-: | :--: | :---: |
 | Periodic analytic forces               |  ✓  |   ◐  |   ○  |
-| Periodic analytic stress               |  ✓  |   ○  |   ○  |
+| Periodic analytic stress               |  ✓  |   ◐  |   ○  |
 | Density-functional perturbation theory |  ✓  |   ○  |   ○  |
 | Finite-displacement phonons            |  ✓  |   ○  |   ○  |
 | Berry-phase polarization               |  ✓  |   ○  |   ○  |
@@ -671,9 +674,12 @@ Which engine backs which ✓:
   multi-k **UKS** `reg_gpw-kpoint-uks-forces`) and plane-wave **local HF +
   Ewald + KB nonlocal** (`pw_forces_analytic`). PW FD remains as oracle.
   **CUDA ◐** = plane-wave only (`cuda::pw::pw_forces_analytic`; closed-shell
-  LSDA dual-gate landed); no CUDA GPW forces product.
+  LSDA + PBE dual-gate landed); no CUDA GPW forces product; spin forces
+  still reject on device.
 - **PW stress** is **Nielsen–Martin analytic** (`pw_stress` → Frame `kStress`;
   multi-SCF strain-FD oracle `pw_stress_fd`; `reg_pw-analytic-stress-si`).
+  **CUDA ◐** = plane-wave closed-shell LSDA (`cuda::pw::pw_stress`; GH200
+  dual-gate); spin / smear / PBE stress still reject; no CUDA GPW stress.
   **GPW stress** is **analytic fixed-\(P\)+Pulay** product at Γ **RKS and
   UKS**, **k-points for closed-shell RKS**, **multi-k UKS**
   (`reg_gpw-kpoint-uks-stress`), and **Γ DFT+U** (`reg_gpw-dftu-stress`)
@@ -768,12 +774,15 @@ Which engine backs which ✓:
 | Orbital-transformation (OT) minimizer | ✓ | ○ |   ○  |
 | Real-space multigrid collocation | ✓ | ○ |   ○  |
 | Ultrasoft / PAW | ○ | ○ |   ○  |
-| Smearing for metals | ✓ | ○ |   ○  |
+| Smearing for metals | ✓ | ◐ |   ○  |
 | Band structure / DOS post-processing | ✓ | ○ |   ○  |
 
 **Smearing for metals** on CPU PW: `PW::smearing` (Fermi–Dirac / Methfessel–Paxton)
 + `degauss` [Ry] + `extra_bands` (`reg_pw-smearing-al`) **and GPW** multi-k RKS
 FD/MP (`reg_gpw-metallic-smearing`) **and multi-k UKS** (`reg_gpw-uks-smearing`).
+**CUDA ◐** = restricted PW path only (`cuda::pw::PW` FD/Gaussian/MP +
+`extra_bands` + Mermin free energy; `reg_cuda-pw-metallic-smear`); spin+smear
+still rejects; no CUDA GPW smear product.
 GPW free-energy **analytic ionic forces under smear** are product for multi-k
 RKS and UKS (`reg_gpw-metallic-forces` / `reg_gpw-uks-metallic-forces`;
 fractional \(P_k/W_k\) payload). Multi-k free-energy **stress under smear**

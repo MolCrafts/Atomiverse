@@ -15,16 +15,29 @@ Binding order (CLAUDE.md → Electronic structure optimization order):
 Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
 rows; foothold ≠ closed capability.
 
+**GapCensus wave 1 (2026-08-10)** on `dev` @ `19280211` (post
+`arch-gpw-driver-node` merge `bf5897fb`). Tree facts: `GpwDft :
+cpu::Driver<gpw::Phase>` + `drive_gamma_rks_diis_` + `gpw/stages/*` for **Γ
+RKS DIIS only**; `run_gpw_scf_kpoints*` / UKS / OT still free loops; `cpu::pw::PW`
+plain class (no `pw::Phase` / no stages); `cuda::scf::SCFSolver` dual under
+`RHF`; CUDA GPW = stage footholds only (`ks_chain` / MG, no public product);
+e2e wave-1 done, residual multi-iter under `tests/` + HEAVY_REGEX safety net.
+No open `wf/arch-*` worktrees; no open arch specs. Lever:
+`MeanFieldMethod` + `cpu/scf/stages/` + landed Γ RKS GPW stages.
+
 ### P0 — ES loop nodes (CPU)
 
 - [ ] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS DIIS
-  loops onto the same `gpw::Phase` stages (OT residual separate) | method=cpu-arch
-  | twin: `regressions/gpw/*` | files: `gpw_solver.cpp`, `gpw/stages/` | gate:
-  pins green; wipe builds |
-- [ ] `arch-pw-driver-node` | **P0** Same reshape for `cpu::pw::PW` after or
-  parallel to GPW once phase pattern lands | method=cpu-arch | twin:
-  `regressions/pw/*` | files: `pw_solver.*`, PW stages | gate: public
-  `run`/`forces` stable |
+  onto same `gpw::Phase` stages; OT free-loop residual may trail as
+  same-capability follow-on (not a separate method) | method=cpu-arch |
+  twin: `regressions/gpw/*` (uks-o2-gamma, multigrid-kpoints, kpoints-si) |
+  files: `gpw_solver.cpp` `run_gpw_scf_kpoints*`, `gpw/stages/` | gate: pins
+  green; public `run`/`forces` stable; wipe builds |
+- [ ] `arch-pw-driver-node` | **P0** Reshape `cpu::pw::PW` →
+  `cpu::Driver<pw::Phase>` after (or parallel once) GPW stage pattern is
+  clear | method=cpu-arch | twin: `regressions/pw/*` | files: `pw_solver.*`,
+  new `pw/stages/`, `core/stage.h` `pw::Phase` | gate: public `run`/`forces`
+  stable |
 
 ### P1 — CUDA SCF debt + freeze product shape
 
@@ -32,31 +45,33 @@ rows; foothold ≠ closed capability.
   private under `cuda::scf::RHF` Driver-like shape (no dual architecture) |
   method=cuda-arch | twin: `tests/cuda/scf/test_rhf.cu` + CPU RHF oracle |
   files: `cuda/scf/*` | gate: GH200 green; device-only |
-- [ ] `arch-cuda-gpw-public-shape-freeze` | **P1** Document + enforce:
-  full CUDA GPW method product **equals** CPU `GpwDft` public shape after
-  Driver node lands; compose existing stage footholds only | method=arch-doc |
-  twin: n/a (harness) | files: notes + queue unlock condition for
-  `cuda-gpw-full-product` |
+- [ ] `arch-cuda-gpw-public-shape-freeze` | **P1** Document + enforce: full
+  CUDA GPW method product **equals** CPU `GpwDft` public shape after
+  multi-path Driver (`arch-gpw-driver-paths`) lands; compose existing stage
+  footholds only | method=arch-doc | twin: n/a (harness) | files: notes +
+  queue unlock condition for `cuda-gpw-full-product` |
 
 ### P2 — test iron law residual + MG structure
 
-- [ ] `arch-e2e-tests-wave2` | **P2** Residual audit of `tests/` for multi-iter
-  solves after wave-1 delete; migrate unique only | method=harness | twin:
-  ctest default gate seconds-scale | files: `tests/**` |
+- [ ] `arch-e2e-tests-wave2` | **P2** Residual audit of `tests/` for
+  multi-iter solves after wave-1 (e.g. `test_soscf` RHF.run loops,
+  `test_full_grid_alda`, MPI PW/GPW multi-iter, residual HEAVY_REGEX safety
+  net); migrate unique only | method=harness | twin: ctest default gate
+  seconds-scale | files: `tests/**` |
 - [ ] `arch-mg-main-structural` | **P2** Task-list / products-default path
   rewrite toward MAIN ~1× (explicitly **not** pin-softening) — only after
-  GPW Driver node stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` |
+  GPW Driver paths stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` |
   files: multigrid / products | gate: pins green; baseline note rewrite |
 
 ## in_progress
 
-*(empty)*
+*(empty — GapCensus only; Assign staffs ≤4 from pending)*
 
 ## blocked
 
 - [!] `cuda-gpw-full-product` | blocked until `arch-gpw-driver-paths` (full
   multi-path Driver) + public-shape freeze green — Γ RKS Driver foothold alone
-  is not full product shape freeze
+  is not full product shape freeze; CUDA stage units ≠ method product
 - [!] `mg-main-soft-tol` | never staff as soften tols / self-golden
 - [!] `hybrid-gapw-paw-metagga` | method loops, not this campaign
 

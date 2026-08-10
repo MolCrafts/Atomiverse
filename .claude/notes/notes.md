@@ -48,7 +48,7 @@ History is git's job — superseded designs are deleted, not archived here.
 | tb-method-loop | [tb-blocked-capabilities.md](tb-blocked-capabilities.md), [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md), [gfn2-xtb-chon.md](gfn2-xtb-chon.md) |
 | metalwalls-method-loop | [metalwalls-capability-map.md](metalwalls-capability-map.md), [oracle-pin-provenance.md](oracle-pin-provenance.md) |
 | cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; owns `cuda::scf::SCFSolver` debt — now staffed via **arch-campaign** `arch-cuda-scf-solver-fold`); full CUDA GPW product blocked until GPW Driver + shape freeze |
-| **arch-campaign** | queue [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md); loop [arch-campaign-loop.md](../../docs/developer/arch-campaign-loop.md); spine **GpwDft/PW Driver nodes → CUDA SCF fold → shape freeze → MG structural**; **`arch-gpw-driver-node` landed** (Γ RKS DIIS; residual `arch-gpw-driver-paths`) |
+| **arch-campaign** | queue [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md); loop [arch-campaign-loop.md](../../docs/developer/arch-campaign-loop.md); spine **GpwDft/PW Driver nodes → CUDA SCF fold → shape freeze → MG structural**; **`arch-gpw-driver-node` landed** (Γ RKS DIIS); GapCensus wave-1 **pending=6** / **gaps_remaining=7** (paths, PW Driver, CUDA SCF fold, shape freeze, e2e-wave2, mg-main + blocked full CUDA GPW product) |
 | CUDA MD perf | [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) (A/B methodology + precision mode map vs LAMMPS Kokkos); **not** blocked by ES CPU priority |
 
 ## Build-shape conclusions
