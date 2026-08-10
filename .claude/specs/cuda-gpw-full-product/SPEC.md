@@ -42,7 +42,14 @@ Stage footholds stay under `cuda/gpw/internal/` — **not** the user API.
 
 ## acceptance_met
 
-**true** — GH200 job **1120312**: `test_cuda_gpw_full_product` PASS;
-`reg_cuda-gpw-full-product` dual-gate \|ΔE\|=**9.992e-15** Ha,
-max\|ΔF\|=**3.610e-08** Ha/Bohr (tols 5e-6 / 5e-5); shape freeze held;
-**perf_exempt** small cell.
+**true** — GH200 evidence:
+
+| Job | Note | \|ΔE\| [Ha] | max\|ΔF\| [Ha/Bohr] |
+| --- | --- | ---: | ---: |
+| **1120312** | first land (pre-rebase) | 9.992e-15 | 3.610e-08 |
+| **1120817** | reconfirm after rebase onto `dev` @ `ea6058d8` | **4.796e-14** | **2.643e-09** |
+
+`test_cuda_gpw_full_product` + `test_cuda_gpw_ks_chain` 2/2 PASS; reg
+`PASS: cuda-gpw-full-product` (tols 5e-6 / 5e-5); shape freeze held;
+**perf_exempt** small cell. Rebased tip commits: `9c59dd99` feat +
+`ce525145` docs (then reconfirm docs).
