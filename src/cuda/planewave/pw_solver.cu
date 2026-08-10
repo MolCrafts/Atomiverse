@@ -46,6 +46,7 @@
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
 #include "atomiverse/cuda/planewave/internal/pw_forces.cuh"
+#include "atomiverse/cuda/planewave/internal/pw_stress.cuh"
 
 #include <array>
 #include <complex>
@@ -332,6 +333,35 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     return internal::pw_forces_analytic_impl(frame, method.upf_path,
                                              method.gth_name, method.ecut_ry,
                                              den, solver, prob, ws);
+}
+
+std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
+                                double* energy_ry_out) {
+    method.validate_members();
+    if (frame.nlocal() <= 0)
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: frame has no atoms");
+    if (frame.box.volume() <= 0)
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: non-positive cell volume");
+
+    if (method.upf_path.empty() == method.gth_name.empty())
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: set exactly one of upf_path or gth_name "
+            "(same envelope as PW::build)");
+    if (!method.upf_path.empty()) {
+        (void)cpu::pw::internal::read_upf_v1(method.upf_path);
+    } else {
+        const int* sp_type = frame.span(kAtom_type);
+        if (frame.nlocal() > 0)
+            (void)cpu::gpw::GthPotential(
+                static_cast<molrs::Element>(sp_type[0]), method.gth_name);
+    }
+
+    return internal::pw_stress_analytic_impl(
+        frame, method.upf_path, method.gth_name, method.ecut_ry, method.k_mesh,
+        method.tol, method.max_iter, method.mix_beta, method.pulay_depth,
+        method.xc, energy_ry_out);
 }
 
 } // namespace pw

@@ -148,6 +148,9 @@ class PW {
   private:
     friend std::vector<std::array<double, 3>>
     pw_forces_analytic(const cpu::Frame& frame, const PW& method);
+    friend std::array<double, 6> pw_stress(const cpu::Frame& frame,
+                                           const PW& method,
+                                           double* energy_ry_out);
     /// @brief Reject every member with no device path (throws, never warns).
     void validate_members() const;
 
@@ -168,6 +171,22 @@ class PW {
 /// @throws std::invalid_argument for empty frame or unsupported members.
 std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                                                       const PW& method);
+
+/// @brief Nielsen–Martin analytic cell stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
+///
+/// CUDA twin of `cpu::pw::pw_stress`: one device SCF + Hellmann–Feynman
+/// strain-FD of the non-self-consistent total energy under remapped density.
+/// Mechanical / CP2K sign: \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\).
+/// Rejects the same unsupported members as `PW::run`.
+///
+/// @param frame         Geometry [Å], types (Z), cell; not mutated.
+/// @param method        Plane-wave method members.
+/// @param energy_ry_out Optional: reference SCF total energy [Ry].
+/// @return Intensive stress [eV/Å³] Voigt.
+/// @throws std::invalid_argument for empty frame, bad cell, or unsupported
+///         members.
+std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
+                                double* energy_ry_out = nullptr);
 
 } // namespace pw
 } // namespace cuda

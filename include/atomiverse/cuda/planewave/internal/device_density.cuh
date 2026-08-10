@@ -169,6 +169,9 @@ class DeviceDensity {
     /// @brief Density-sphere G-count (`prob.gv0.count()`).
     int n_g0() const { return ng0_; }
 
+    /// @brief Real-space FFT grid point count (`ws.nr`).
+    int nr() const { return nr_; }
+
     /// @brief Cell volume Ω [Bohr³] used by the density side.
     double omega() const { return omega_; }
 
@@ -182,6 +185,25 @@ class DeviceDensity {
     ///        Never called inside the SCF loop — tests and diagnostics only.
     /// @param out Host buffer of `ws.nr` doubles [Hartree].
     void fetch_veff_r(double* out) const;
+
+    /// @brief Real-space density ρ(r) [Bohr⁻³] via unnormalized c2r of ρ(G).
+    ///
+    /// Used by Nielsen–Martin cell stress after the reference SCF. Mutates
+    /// staging buffers (`d_half_`, `d_rho_r_in_`); not on the SCF hot path.
+    ///
+    /// @param out Host buffer of `nr()` doubles.
+    void fetch_rho_r(double* out);
+
+    /// @brief Overwrite ρ(G) from a real-space density, scaled by `scale`.
+    ///
+    /// Twin of CPU `load_rho_real_scaled`: ρ'(r) = ρ₀(r)·scale then r2c /
+    /// gather with 1/nr. When `nr0 != nr()` falls back to a uniform mean
+    /// density (rare under small strain at fixed ecut).
+    ///
+    /// @param rho_r0 Host real-space density [Bohr⁻³], length `nr0`.
+    /// @param nr0    Length of `rho_r0`.
+    /// @param scale  Volume remap Ω₀/Ω (dimensionless).
+    void load_rho_r_scaled(const double* rho_r0, int nr0, double scale);
 
     /// @brief Non-default CUDA stream every density stage executes on.
     ///

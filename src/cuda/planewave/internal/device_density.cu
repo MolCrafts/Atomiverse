@@ -748,6 +748,54 @@ void DeviceDensity::fetch_veff_r(double* out) const {
                               cudaMemcpyDeviceToHost));
 }
 
+void DeviceDensity::fetch_rho_r(double* out) {
+    // Unnormalized c2r: ρ(r) = Σ_G ρ(G) e^{iGr} — same convention as
+    // exchange_correlation()'s first step and the CPU rho_g_to_real path.
+    const int nx = fft_.nx(), ny = fft_.ny(), nz = fft_.nz();
+    scatter_g_to_halfcomplex(d_rho_G_, d_h_, d_k_, d_l_, ng0_, d_half_, nx, ny,
+                             nz, stream_);
+    fft_.c2r(d_half_, d_rho_r_in_);
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
+    ATV_CUDA_CHECK(cudaMemcpy(out, d_rho_r_in_,
+                              static_cast<size_t>(nr_) * sizeof(double),
+                              cudaMemcpyDeviceToHost));
+}
+
+void DeviceDensity::load_rho_r_scaled(const double* rho_r0, int nr0,
+                                      double scale) {
+    // Host-side scale + optional mean fallback when FFT dims differ under
+    // strain (rare at fixed ecut for small h). Then r2c → ρ(G) with 1/nr.
+    std::vector<double> rho_r(static_cast<size_t>(nr_), 0.0);
+    if (nr0 == nr_ && rho_r0 != nullptr) {
+        for (int i = 0; i < nr_; ++i)
+            rho_r[static_cast<size_t>(i)] = rho_r0[static_cast<size_t>(i)] * scale;
+    } else {
+        double mean = 0.0;
+        if (rho_r0 != nullptr && nr0 > 0) {
+            for (int i = 0; i < nr0; ++i)
+                mean += rho_r0[static_cast<size_t>(i)];
+            mean /= static_cast<double>(nr0);
+        }
+        const double v = mean * scale;
+        for (int i = 0; i < nr_; ++i)
+            rho_r[static_cast<size_t>(i)] = v;
+    }
+    ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_r_acc_, rho_r.data(),
+                                   static_cast<size_t>(nr_) * sizeof(double),
+                                   cudaMemcpyHostToDevice, stream_));
+    fft_.r2c(d_rho_r_acc_, d_half_);
+    gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_rho_G_,
+                            fft_.nx(), fft_.ny(), fft_.nz(),
+                            1.0 / static_cast<double>(nr_), stream_);
+    ATV_CUDA_CHECK(cudaGetLastError());
+    // Keep rho_old in sync so a stray reduce() residual is not huge noise
+    // (NSCF stress never mixes; residual is unused).
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        d_rho_G_old_, d_rho_G_,
+        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+        cudaMemcpyDeviceToDevice, stream_));
+}
+
 } // namespace internal
 } // namespace pw
 } // namespace cuda
