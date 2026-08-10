@@ -1,17 +1,20 @@
 /// @file cuda/gpw/gpw_solver.cuh
 /// @brief `cuda::gpw::GpwDft` — concrete GPW DFT method on CUDA (first product).
 ///
-/// Public twin of `cpu::gpw::GpwDft` for the **first product slice**:
+/// Public twin of `cpu::gpw::GpwDft` for the **product energy slice**:
 /// Γ-point closed-shell DIIS RKS with Padé LDA or PBE-GGA, single-grid
-/// (`ngrids==1`), periodic Poisson. Parameters are public members (no
-/// `*Config` bag, no `make_*` factory). Stage footholds under
-/// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
+/// (`ngrids==1`) **or** REL_CUTOFF multigrid (`ngrids>1` + `rel_cutoff>0`),
+/// periodic Poisson. Parameters are public members (no `*Config` bag, no
+/// `make_*` factory). Stage footholds under `cuda/gpw/internal/` are composed
+/// inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
 ///   * host — STVnl / product-list build / DIIS / diagonalize / acc scatter
 ///   * device — product collocate + KS + product integrate via
-///     `internal::KsChainDevice::run` (ρ on device; Poisson + Padé/PBE +
-///     V_eff; shape integrate). Mid-SCF does not H2D ρ or D2H V_eff for H.
+///     `internal::KsChainDevice::run` (single-grid) or
+///     `internal::KsMultiGridChainDevice::run` (multigrid: per-level collocate,
+///     spectral prolong, fine Poisson/XC, spectral restrict, per-level
+///     integrate). Mid-SCF does not H2D ρ or D2H V_eff for H.
 ///
 /// Unsupported members throw with a how-to (no silent CPU-SCF fallback).
 /// Contract: `.claude/notes/cuda-gpw-public-shape.md`.
@@ -48,18 +51,18 @@ using GpwAtom = ::ATV::cpu::gpw::GpwAtom;
 /// @brief Concrete GPW DFT method on CUDA — members + `build` / `run` /
 ///        `last_result`.
 ///
-/// First slice: Γ RKS DIIS, `XcKind::PADE` or `XcKind::PBE`, single grid,
-/// periodic, fixed occupations. Move-only.
+/// Product energy: Γ RKS DIIS, `XcKind::PADE` or `XcKind::PBE`, single grid
+/// or REL_CUTOFF multigrid, periodic, fixed occupations. Move-only.
 class GpwDft {
   public:
-    // ── Method parameters (mirror CPU GpwDft first-slice members) ────────
+    // ── Method parameters (mirror CPU GpwDft product energy members) ─────
     double cell[3] = {0, 0, 0}; ///< orthorhombic box lengths [Bohr].
     double cutoff_ry = 300.0;   ///< density grid cutoff [Ry].
-    int ngrids = 1;             ///< multigrid levels (device slice: must be 1).
-    double rel_cutoff = 0.0;    ///< CP2K REL_CUTOFF [Ry] (unused when ngrids=1).
+    int ngrids = 1;             ///< multigrid levels (≥1; >1 needs rel_cutoff>0).
+    double rel_cutoff = 0.0;    ///< CP2K REL_CUTOFF [Ry] (required when ngrids>1).
     int n_occ = 0;              ///< RKS: doubly-occupied orbitals (N_elec / 2).
-    int n_alpha = 0;            ///< UKS α (device slice: must stay 0).
-    int n_beta = 0;             ///< UKS β (device slice: must stay 0).
+    int n_alpha = 0;            ///< UKS α (device product: must stay 0).
+    int n_beta = 0;             ///< UKS β (device product: must stay 0).
     int max_iter = 100;         ///< max SCF iterations.
     double tol = 1e-8;          ///< SCF energy convergence [Hartree].
     double eps_default = 1e-8;  ///< Gaussian-tail cutoff.
@@ -70,8 +73,8 @@ class GpwDft {
     XcKind xc = XcKind::PADE;       ///< PADE or PBE on device.
     bool nonperiodic = false;       ///< MT Poisson — not on device (throws).
     bool local_pp_on_grid = true;   ///< collocate GTH local SR PP on grid.
-    bool use_ot = false;            ///< OT — not on device first slice (throws).
-    int k_mesh[3] = {1, 1, 1};      ///< must stay Γ for first slice.
+    bool use_ot = false;            ///< OT — not on device product (throws).
+    int k_mesh[3] = {1, 1, 1};      ///< must stay Γ for this product depth.
 
     GpwDft() = default;
     ~GpwDft() = default;
@@ -89,9 +92,12 @@ class GpwDft {
     /// @return true when configured for UKS (`n_alpha+n_beta>0`).
     bool is_uks() const { return n_alpha + n_beta > 0; }
 
-    /// @brief Γ RKS DIIS SCF at the given geometry (device fine-grid KS).
+    /// @brief Γ RKS DIIS SCF at the given geometry (device KS, single- or multi-grid).
     ///
     /// Re-entrant: geometry-dependent structures are rebuilt per call.
+    /// Multigrid (`ngrids>1 && rel_cutoff>0`) collocates products per level,
+    /// prolongs to the fine grid for Poisson/XC, restricts V_eff, and integrates
+    /// per level — twin of CPU `multigrid_collocate_rho` / integrate.
     /// @param atoms Atom set at the current geometry [Bohr].
     /// @param guess_C Optional warm-start MO coefficients (nb × nb).
     /// @param guess_P Optional initial closed-shell density (nb × nb).

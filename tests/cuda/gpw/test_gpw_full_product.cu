@@ -96,11 +96,20 @@ TEST(CudaGpwFullProduct, FailClosedUnsupported) {
         EXPECT_THROW(m.build(atoms), std::invalid_argument);
     }
     {
+        // Multigrid without REL_CUTOFF is fail-closed (would silently collapse).
+        ATV::cuda::gpw::GpwDft m;
+        set_h2_cfg_cuda(m);
+        m.ngrids = 4;
+        m.rel_cutoff = 0.0;
+        EXPECT_THROW(m.build(atoms), std::invalid_argument);
+    }
+    {
+        // Multigrid with REL_CUTOFF is accepted on the product energy path.
         ATV::cuda::gpw::GpwDft m;
         set_h2_cfg_cuda(m);
         m.ngrids = 4;
         m.rel_cutoff = 40.0;
-        EXPECT_THROW(m.build(atoms), std::invalid_argument);
+        EXPECT_NO_THROW(m.build(atoms));
     }
     {
         ATV::cuda::gpw::GpwDft m;
@@ -161,4 +170,45 @@ TEST(CudaGpwFullProduct, H2GammaPadeForcesDualGate) {
         for (int k = 0; k < 3; ++k)
             maxd = std::max(maxd, std::abs(Fg[a][k] - Fc[a][k]));
     EXPECT_LT(maxd, kFTol) << "max|dF|=" << maxd;
+}
+
+// Multigrid product energy: ngrids=4 + rel_cutoff=40 vs same-settings CPU.
+TEST(CudaGpwFullProduct, H2GammaPadeMultigridEnergyDualGate) {
+    auto atoms = h2_atoms();
+
+    auto set_mg = [](auto& m) {
+        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+        m.cutoff_ry = 80.0;
+        m.ngrids = 4;
+        m.rel_cutoff = 40.0;
+        m.n_occ = 1;
+        m.max_iter = 40;
+        m.tol = 1e-8;
+        m.diis_depth = 6;
+        m.xc = XcKind::PADE;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.use_ot = false;
+        m.eps_default = 1e-8;
+    };
+
+    ATV::cpu::gpw::GpwDft cpu;
+    set_mg(cpu);
+    cpu.build(atoms);
+    const auto& rc = cpu.run(atoms);
+    ASSERT_TRUE(rc.converged) << "CPU MG SCF failed iters=" << rc.iters;
+    ASSERT_TRUE(std::isfinite(rc.e_total));
+
+    ATV::cuda::gpw::GpwDft gpu;
+    set_mg(gpu);
+    gpu.build(atoms);
+    const auto& rg = gpu.run(atoms);
+    ASSERT_TRUE(rg.converged) << "CUDA MG SCF failed iters=" << rg.iters;
+    ASSERT_TRUE(std::isfinite(rg.e_total));
+
+    // Composite of stage MG foothold tols + host STVnl/DIIS (not bit-exact).
+    constexpr double kETolHa = 5.0e-6;
+    const double de = std::abs(rg.e_total - rc.e_total);
+    EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
+                           << " |dE|=" << de;
 }

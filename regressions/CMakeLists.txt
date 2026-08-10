@@ -578,6 +578,22 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-device-collocate] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_dcoll})
         unset(_reg_gpw_dcoll)
+
+        # Public GpwDft multigrid product energy (ngrids>1 + rel_cutoff):
+        # KsMultiGridChainDevice mid-SCF vs same-settings CPU MG (H2).
+        set(_reg_gpw_mgrun reg_cuda-gpw-multigrid-run)
+        add_executable(${_reg_gpw_mgrun}
+            gpw/cuda-gpw-multigrid-run/${_reg_gpw_mgrun}.cu)
+        target_link_libraries(${_reg_gpw_mgrun} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_mgrun} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_mgrun}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_mgrun}> --device=both
+            DEPENDS ${_reg_gpw_mgrun}
+            COMMENT "regression [gpw/cuda-gpw-multigrid-run] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_mgrun})
+        unset(_reg_gpw_mgrun)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)
