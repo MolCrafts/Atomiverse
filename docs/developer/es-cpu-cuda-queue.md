@@ -53,19 +53,19 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 
 ## pending
 
-**Harness wave 6 land** 2026-08-10 (`dev` @ `61f873c9` after merges
-`0482e668` / `61f873c9`). Staffed and landed both CUDA slices; **cpu_pending=0**
-held (no pin-safe fair-wall lever). Fair walls **unchanged** (authority
+**Harness wave 7 land** 2026-08-10 (`dev` @ `018dca0d` after merges
+`d2ccc627` / `018dca0d`). Staffed and landed both remaining CUDA pending
+slices; **cpu_pending=0** held (no pin-safe fair-wall lever). Fair walls
+**unchanged** (authority
 [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md); worst_ratio
-**2.33×** MG MAIN). Confirmed open after land: `smearing != none` still throws;
-collinear spin is **LSDA-only** (spin-PBE / spin forces / spin stress still
-reject); `KsMultiGridChainDevice` is **stage unit only** (no public `GpwDft`).
+**2.33×** MG MAIN). Confirmed open after land: restricted metallic smear
+landed; spin+smear / spin forces / spin stress / spin-PBE still reject;
+`KsMultiGridChainDevice` is **stage unit only** (no public `GpwDft`).
 Staff only `wf/escuda-<slug>` off current `dev`. Do not invent
 hybrid/GAPW/PAW/meta-GGA. **No gpw-perf-queue promote**.
-**new_slugs_added=0.** **pending_count=2**; **cpu_pending=0**;
-**cuda_pending=2** (metallic smear + RHF stream); **gaps_remaining=7**
-(2 unstaffed CUDA pending + 5 residual-mass rows; blocked full-product /
-mg-main-structural sit in residual+blocked).
+**new_slugs_added=0.** **pending_count=0**; **cpu_pending=0**;
+**cuda_pending=0**; **gaps_remaining=5**
+(residual-mass + blocked full-product / mg-main-structural — not staffable).
 
 ### Fair-wall rank (1 MPI × OMP=4; worst residual first)
 
@@ -111,28 +111,22 @@ CPU polish staffed here without a pin-safe wall lever. **No promote** from
 
 ### CUDA — corresponding ES (open-gate readiness × user value)
 
-**Tree fact on `dev` @ `61f873c9` (wave-6 land):** Confirmed present: prior
-wave-5 surface **plus** collinear LSDA `cuda::pw::PW` (nspin=2 density + VWN5
-spin XC + fixed-occupation UKS) **and** `KsMultiGridChainDevice` (spectral
-prolong/restrict + multi-level product collocate/integrate). Confirmed open
-depth gaps below. **cuda_pending = 2.**
+**Tree fact on `dev` @ `018dca0d` (wave-7 land):** Confirmed present: prior
+wave-6 surface **plus** restricted metallic smear on `cuda::pw::PW` (FD/Gaussian/MP
+occupations + extra_bands + Mermin free energy) **and** RHF residual/V_nuc D2H
+on Evaluate non-default stream. **cuda_pending = 0.**
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
-| RHF s/p energy + forces + level_shift + path-select + device CDIIS | **landed** | stream polish only (`cuda-rhf-nondefault-stream`) |
+| RHF s/p energy + forces + level_shift + path-select + device CDIIS + **non-default stream D2H** | **landed** | higher-L host-fill remains |
 | Γ GPW Poisson/FFT + Padé LDA XC + product collocate/integrate + **composed `KsChainDevice`** (LDA + **closed-shell PBE**) + **`KsMultiGridChainDevice`** | **landed** stage units (MG GH200 **1051042** max\|ΔV_eff\|=8.1e-10) | stage only — **≠** full method product |
-| `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **analytic cell stress** + **collinear LSDA spin** | **landed** energy (+ spin energy); closed-shell forces/stress; collinear spin GH200 **1051041** \|ΔE\|=1.07e-13 Ha | smear throw; spin-PBE / spin forces / spin stress still reject |
+| `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **analytic cell stress** + **collinear LSDA spin** + **restricted metallic smear** | **landed** energy (+ spin energy + restricted free energy); closed-shell forces/stress | spin+smear / spin-PBE / spin forces / spin stress still reject |
 
-**Staff order (readiness × value):** P2 metallic smear (now unblocked by
-collinear land — prefer restricted first), then RHF stream polish. Full GPW
-product stays **blocked**. Higher-L RHF stays product-out-of-scope.
+**Staff order:** queue empty for pin-safe / open-gate CUDA depth in this loop.
+Full GPW product stays **blocked**. Higher-L RHF stays product-out-of-scope.
 
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
-Metallic `regressions/pw/pw-smearing-al` remains on-tree oracle for smear depth.
-
-- [ ] `cuda-pw-metallic-smear` | **P2** Lift `smearing != none` throw — Fermi–Dirac (and/or MP) occupations + `extra_bands` on device band path; same-settings CPU metallic twin | method=cuda | twin: CPU `pw-smearing-al` / Fe smear class energy (restricted first) | files: `device_solver.cu`, `pw_solver.{cu,cuh}` occupations | gate: restricted metallic can land before UKS+smear; GH200 green; stated energy tols; device-only | rationale: CPU metallic smear product landed; CUDA rejects all smear — energy+forces+stress+spin slice ≠ metallic capability |
-- [ ] `cuda-rhf-nondefault-stream` | **P3** Non-default stream on device s/p RHF path (polish after waves 0–10); reduce default-stream syncs without changing physics | method=cuda | twin: `tests/cuda/scf/test_rhf.cu` + device integrals | files: `rhf.cu`, `rhf_fock.cu`, `scf_solver.cu` | gate: GH200 100% PASS; tols unchanged; device-only | rationale: RHF device product landed; residual is stream polish only (PW stream already landed) |
 
 *Not pending this loop:*
 
@@ -147,20 +141,19 @@ Metallic `regressions/pw/pw-smearing-al` remains on-tree oracle for smear depth.
 
 *Already landed this loop (CUDA):* `cuda-rhf-pshell-forces`,
 `cuda-rhf-device-only-polish`, `cuda-rhf-level-shift`, `cuda-rhf-path-select-host`,
-`cuda-rhf-cdiis-device`, `cuda-gpw-foothold`, `cuda-gpw-xc-lda-foothold`,
-`cuda-gpw-rho-collocate-foothold`, `cuda-gpw-product-integrate-foothold`,
-`cuda-gpw-ks-chain`, `cuda-gpw-ks-gga`, `cuda-gpw-ks-multigrid`,
-`cuda-pw-method-slice` (+ `cuda-pw-kpoint-hoist`,
+`cuda-rhf-cdiis-device`, `cuda-rhf-nondefault-stream`, `cuda-gpw-foothold`,
+`cuda-gpw-xc-lda-foothold`, `cuda-gpw-rho-collocate-foothold`,
+`cuda-gpw-product-integrate-foothold`, `cuda-gpw-ks-chain`, `cuda-gpw-ks-gga`,
+`cuda-gpw-ks-multigrid`, `cuda-pw-method-slice` (+ `cuda-pw-kpoint-hoist`,
 `cuda-pw-zheevd`, `cuda-pw-devptr-nrm2` residency polish on `dev`),
 `cuda-pw-pbe-device`, `cuda-pw-large-cell-measure`, `cuda-pw-nondefault-stream`,
 `cuda-pw-forces`, `cuda-pw-forces-pbe`, `cuda-pw-stress`,
-`cuda-pw-collinear-spin`.
+`cuda-pw-collinear-spin`, `cuda-pw-metallic-smear`.
 
 ## in_progress
 
-(empty — harness wave 6 closed. Next staff prefer `cuda-pw-metallic-smear` P2
-then `cuda-rhf-nondefault-stream` P3. Workers on `wf/escuda-<slug>` off
-`61f873c9`+.)
+(empty — harness wave 7 closed. Staffable cuda/cpu pending empty; residual
+gaps are blocked structural / out-of-scope.)
 
 **Foreign incomplete worktrees on parent (do not steal / do not force-merge):**
 
@@ -177,6 +170,11 @@ then `cuda-rhf-nondefault-stream` P3. Workers on `wf/escuda-<slug>` off
 - [!] `mg-main-structural` | MG MAIN **2.33×** residual after pin-safe collint + structure + sphere campaigns; further cut needs non-pin-safe windows or task-list rewrite beyond this loop’s pin law — do not staff as soft-tol or self-golden
 
 ## done
+
+Harness wave 7 land 2026-08-10 (`dev` @ `018dca0d`):
+
+- [x] `cuda-pw-metallic-smear` | **P2** Lift restricted `smearing != none` — Fermi–Dirac / Gaussian / Methfessel–Paxton occupations + `extra_bands` on device band path; multi-k device Ritz cache; Mermin free energy; spin+smear / forces / stress still reject | track cuda | twin: unit guards + `reg_cuda-pw-metallic-smear` Al FD dual-gate | files: `device_solver.{cu,cuh}`, `pw_solver.{cu,cuh}`, reg, guards | merge: `d2ccc627` / feat `2891e824` | evidence: GH200 **1051119** ctest 9/9; dual-gate E both **−7.5496489573 Ry** n_occ=3 \|ΔE\|=**1.24e-14** Ry (tol 5e-3); **perf_exempt** small cell; not spin+smear / forces / stress |
+- [x] `cuda-rhf-nondefault-stream` | **P3** Residual/V_nuc D2H on Evaluate non-default stream (not default stream); host force H2D fallback stream-bound | track cuda | twin: `tests/cuda/scf/test_rhf.cu` + device integrals | files: `scf_solver.cu`, `rhf.cu`, test | merge: `018dca0d` / feat `a8e23747` | evidence: GH200 **1051227** `test_cuda_scf_rhf` + `test_cuda_scf_device_integrals` **100% PASS** (2.98 + 0.86 s); tols unchanged |
 
 Harness wave 6 land 2026-08-10 (`dev` @ `61f873c9`):
 

@@ -71,6 +71,8 @@ Grok CUDA skills (not ad-hoc style):
 | PW PBE analytic ionic forces | **landed** (`cuda-pw-forces-pbe`) | same public API under `XCType::PBE`; force path shares `den.stream()`; GH200 post-merge **1050801** max\|ΔF\|=2.63e-13 eV/Å (tol 5e-3); E both −13.89672028 Ry; **not** stress/spin/smear |
 | PW analytic cell stress | **landed** (`cuda-pw-stress`) | `internal/pw_stress.{cu,cuh}` + `cuda::pw::pw_stress`; Nielsen–Martin NSCF strain-FD + ρ·Ω₀/Ω remap; GH200 **1050604** max\|Δσ\|=1.36e-12 eV/Å³ vs CPU (LSDA Si; tol 5e-2); **not** spin/smear/multi-SCF FD product |
 | PW collinear LSDA spin | **landed** (`cuda-pw-collinear-spin`) | nspin=2 density + VWN5 spin XC + fixed-occupation UKS; GH200 **1051041** O₂ \|ΔE\|=1.07e-13 Ha (tol 2e-3); forces/stress reject spin; **not** spin-PBE / smear |
+| PW restricted metallic smear | **landed** (`cuda-pw-metallic-smear`) | FD/Gaussian/MP + extra_bands + Ritz cache; GH200 **1051119** Al \|ΔE\|=1.24e-14 Ry; spin+smear / forces / stress reject |
+| RHF non-default stream D2H | **landed** (`cuda-rhf-nondefault-stream`) | residual/V_nuc async on Evaluate stream; GH200 **1051227** 2/2 PASS |
 
 ### CUDA PW slice — envelope and evidence
 
@@ -78,10 +80,10 @@ Public shape mirrors `cpu::pw::PW`: public members → `build(frame)` →
 `run(frame)` → `PWResult`. The free function `cuda::pw::pw_scf` is **deleted**
 (no shim). Device envelope — everything else **throws** `std::invalid_argument`
 naming the member and the way out: closed-shell **or collinear fixed-occupation
-UKS with `XCType::LSDA`** (`spin_polarized` + integer mag), `smearing=none`,
-`xc=XCType::LSDA` or closed-shell `XCType::PBE`, `k_mesh>=1`, `ecut_ry>0`.
-k-points are **not** MPI-distributed here. Spin-PBE, spin forces, and spin
-stress still reject.
+UKS with `XCType::LSDA`** (`spin_polarized` + integer mag), restricted metallic
+smear (FD/Gaussian/MP; not with spin), `xc=XCType::LSDA` or closed-shell
+`XCType::PBE`, `k_mesh>=1`, `ecut_ry>0`. k-points are **not** MPI-distributed
+here. Spin-PBE, spin+smear, spin forces, and spin stress still reject.
 
 Per-iteration PCIe traffic, density side: Pulay Gram ≤ 1 KB (only once history
 ≥ 2) + ≤ 8 coefficients + 5 energy/residual doubles. **No O(N_G) / O(N_r)
@@ -164,7 +166,11 @@ correctness-only. **Analytic ionic forces landed** (`cuda-pw-forces`, GH200
 (`cuda-gpw-ks-gga`, GH200 **1050680** / post-merge **1050825**). **GPW
 multi-grid product KS stage landed** (`cuda-gpw-ks-multigrid`, GH200
 **1051042**). **Collinear LSDA spin landed** (`cuda-pw-collinear-spin`, GH200
-**1051041**). Next depth: metallic smear / RHF non-default stream.
+**1051041**). **Restricted metallic smear landed** (`cuda-pw-metallic-smear`,
+GH200 **1051119** dual-gate Al \|ΔE\|=1.24e-14 Ry). **RHF non-default stream
+D2H landed** (`cuda-rhf-nondefault-stream`, GH200 **1051227** 2/2 PASS).
+Residual open depth: spin+smear / spin forces / spin stress / spin-PBE;
+full GPW product (blocked).
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently
