@@ -363,3 +363,61 @@ TEST(CudaGpwFullProduct, H2HighSpinUksPadeEnergyDualGate) {
     EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
                            << " |dE|=" << de;
 }
+
+// Production O₂ triplet Γ UKS PADE energy dual-gate (p-shell AO depth after
+// H₂ pure-s foothold). Needs GPU. Periodic cell (CUDA rejects MT).
+TEST(CudaGpwFullProduct, O2UksPadeEnergyDualGate) {
+    const auto basis = GaussianBasis(molrs::Element::O, "SZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::O, "GTH-PADE-q6");
+    constexpr double kBondBohr = 1.2075 / 0.52917721067;
+    constexpr double kCell = 12.0;
+    const double half = 0.5 * kBondBohr;
+    const double c = 0.5 * kCell;
+    const double rA[3] = {c, c, c - half};
+    const double rB[3] = {c, c, c + half};
+    std::vector<ATV::cpu::gpw::GpwAtom> atoms{
+        ATV::cpu::gpw::GpwAtom(rA, basis, pot, 8),
+        ATV::cpu::gpw::GpwAtom(rB, basis, pot, 8)};
+
+    auto set_uks = [](auto& m) {
+        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+        m.cutoff_ry = 100.0;
+        m.n_occ = 0;
+        m.n_alpha = 7;
+        m.n_beta = 5;
+        m.max_iter = 80;
+        m.tol = 1e-8;
+        m.diis_depth = 6;
+        m.xc = XcKind::PADE;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.use_ot = false;
+        m.ngrids = 1;
+        m.eps_default = 1e-8;
+    };
+
+    ATV::cpu::gpw::GpwDft cpu;
+    set_uks(cpu);
+    cpu.build(atoms);
+    const auto& rc = cpu.run(atoms);
+    ASSERT_TRUE(rc.converged) << "CPU O2 UKS SCF failed iters=" << rc.iters;
+    ASSERT_TRUE(std::isfinite(rc.e_total));
+
+    ATV::cuda::gpw::GpwDft gpu;
+    set_uks(gpu);
+    gpu.build(atoms);
+    const auto& rg = gpu.run(atoms);
+    ASSERT_TRUE(rg.converged) << "CUDA O2 UKS SCF failed iters=" << rg.iters;
+    ASSERT_TRUE(std::isfinite(rg.e_total));
+    EXPECT_FALSE(rg.P_beta.size() == 0);
+    EXPECT_FALSE(rg.veff_a.empty());
+    EXPECT_FALSE(rg.veff_b.empty());
+    // Multiplicity 3: Löwdin <S2> near 2.
+    EXPECT_GT(rg.s2, 1.5);
+
+    // p-shell O product composite (cuFFT/FFTW); wider than H2 pure-s 5e-6.
+    constexpr double kETolHa = 5.0e-5;
+    const double de = std::abs(rg.e_total - rc.e_total);
+    EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
+                           << " |dE|=" << de;
+}
