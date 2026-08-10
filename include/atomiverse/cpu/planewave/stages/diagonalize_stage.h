@@ -17,8 +17,9 @@ namespace pw {
 
 /// @brief Band diagonalization stage for the plane-wave Driver loop.
 ///
-/// Path-local step runs per-k Davidson and accumulates the real-space
-/// density (begin + accumulate + MPI allreduce of the partial density).
+/// Path-local step runs per-(spin,)k Davidson. Fixed-occupation paths
+/// accumulate density here; metallic-smear paths stash eigenpairs and
+/// leave occupations + accumulation to DensityStage.
 class DiagonalizeStage : public cpu::Component {
   public:
     /// @brief Zero-arg step body for one diagonalize / accumulate pass.

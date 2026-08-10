@@ -17,9 +17,10 @@ namespace pw {
 
 /// @brief Density-mixing stage for the plane-wave Driver loop.
 ///
-/// Restricted fixed-occupation path: `DensityBuilder::finish` (FFT ρ(G) +
-/// Pulay). Unlike Gaussian SCF / GPW (H-space DIIS before diagonalize), PW
-/// mixes **after** the density rebuild.
+/// Restricted / metallic paths: `DensityBuilder::finish` (FFT ρ(G) +
+/// Pulay). Collinear: linear mix of spin channels + residual on total ρ.
+/// Unlike Gaussian SCF / GPW (H-space DIIS before diagonalize), PW mixes
+/// **after** the density rebuild. Also writes residual → `loop_converged_`.
 class MixStage : public cpu::Component {
   public:
     /// @brief Zero-arg step body for one density mix.

@@ -3,9 +3,10 @@
 ///
 /// Parameters are public members (RHF pattern). Frame is the only I/O.
 /// Self-consistency is a **Driver loop**: `PW` derives
-/// `cpu::Driver<ATV::pw::Phase>`. The restricted fixed-occupation path is
-/// owned as stages (`veff → diagonalize → density → mix → check`);
-/// collinear spin and metallic smearing remain free-loop residual.
+/// `cpu::Driver<ATV::pw::Phase>`. All product SCF paths (restricted
+/// fixed-occupation, collinear fixed-occupation, restricted metallic
+/// smearing, collinear + metallic smearing) are owned as stages
+/// (`veff → diagonalize → density → mix → check`) with path-local StepFns.
 /// Workflow entry: `PWEvaluator` or direct `build`/`run`.
 ///
 /// @code
@@ -73,8 +74,8 @@ struct PWResult {
 /// Construction → set members → `build(reference)` → `run(frame)`.
 /// `last_result()` is valid after each `run()`. Geometry-dependent
 /// structures rebuild inside each `run()` (AIMD / optimize safe).
-/// Restricted fixed-occupation SCF is driven by Driver stages; spin /
-/// metallic-smearing residual paths still use free loops.
+/// All product SCF paths are driven by the same Driver stages with
+/// path-local StepFn bodies (restricted / collinear × fixed / smear).
 enum class Smearing : int {
     none = 0,              ///< Fixed closed-shell occupations.
     fermi_dirac = 1,       ///< Fermi–Dirac.
@@ -159,7 +160,7 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     const PWResult& last_result() const { return result_; }
 
   private:
-    /// @brief Wire restricted fixed-occ stages + compile Plan (rebuilds each drive).
+    /// @brief Wire path-local stage StepFns + compile Plan (rebuilds each drive).
     void ensure_driver_built_(VeffStage::StepFn veff, DiagonalizeStage::StepFn diag,
                               DensityStage::StepFn dens, MixStage::StepFn mix);
 
@@ -169,9 +170,11 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// @brief Stages fixed by ensure; nothing user-suppliable.
     void validate_components() const override {}
 
-    /// @brief Drive restricted fixed-occupation SCF via Driver stages.
+    /// @brief Shared Driver loop: setup_pass → step_once × N → poll_criteria.
+    /// @param max_iter_in SCF iteration budget (dimensionless).
+    /// @param res Result buffer (writes iterations / converged).
     /// @return true if the residual gate fired (Driver converged).
-    bool drive_restricted_fixed_occ_(int max_iter_in, PWResult& res);
+    bool drive_stage_loop_(int max_iter_in, PWResult& res);
 
     bool built_ = false;
     std::unique_ptr<internal::PoissonSolver> poisson_;
@@ -182,7 +185,7 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     int davidson_bands_ = 0;
     PWResult result_;
 
-    // ── Restricted fixed-occ iteration state (wired into stages) ─────
+    // ── SCF iteration residual flag (wired into PwConverged) ─────────
     bool loop_converged_ = false;
     bool driver_built_ = false;
     const void* wired_self_ = nullptr;
