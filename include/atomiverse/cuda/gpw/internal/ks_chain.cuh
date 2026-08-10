@@ -8,10 +8,11 @@
 /// periodic Poisson) plus collocate/integrate bookends, and the multi-level
 /// product density assembly of CPU Γ multigrid (collocate per level → spectral
 /// prolong to fine → KS on fine → spectral restrict → integrate per level).
-/// **Not** a full GPW method product: no k-points, no spin/vdW, no public
-/// `GpwDft` surface. Full CUDA GPW product public shape is frozen to equal
-/// CPU `GpwDft` (see `.claude/notes/cuda-gpw-public-shape.md`); this stage
-/// unit is composed under that product, never promoted to user API.
+/// **Not** a full GPW method product: no k-points, no vdW, no public
+/// `GpwDft` surface. Collinear UKS is an optional stage API (`run_uks`)
+/// composed under the product. Full CUDA GPW product public shape is frozen
+/// to equal CPU `GpwDft` (see `.claude/notes/cuda-gpw-public-shape.md`); this
+/// stage unit is never promoted to user API.
 #pragma once
 
 #include "atomiverse/cuda/gpw/internal/multigrid_transfer.cuh"
@@ -64,12 +65,12 @@ class KsChainDevice {
     PoissonFftDevice poisson_;
     SpectralFftDevice spectral_;
 
-    double* d_rho_ = nullptr;    ///< electron density ρ
+    double* d_rho_ = nullptr;    ///< electron density ρ (total; UKS: ρ_α+ρ_β)
     double* d_n_tot_ = nullptr;  ///< n = ρ − n_ion (Poisson input)
     double* d_v_es_ = nullptr;   ///< electrostatic potential
-    double* d_vxc_ = nullptr;    ///< XC potential (local part, then full)
+    double* d_vxc_ = nullptr;    ///< XC potential (RKS; UKS: V_xc^α)
     double* d_exc_ = nullptr;    ///< per-electron ε_xc
-    double* d_veff_ = nullptr;   ///< V_es + V_xc [+ V_loc]
+    double* d_veff_ = nullptr;   ///< V_es + V_xc [+ V_loc] (RKS; UKS: V_eff^α)
     double* d_e_xc_ = nullptr;   ///< scalar E_xc
     double* d_e_loc_ = nullptr;  ///< scalar ∫ρ V_loc / then ×w
     // GGA scratch: ∇ρ / flux components + divergence of flux.
@@ -77,6 +78,11 @@ class KsChainDevice {
     double* d_gy_ = nullptr;
     double* d_gz_ = nullptr;
     double* d_div_ = nullptr;
+    // Collinear UKS workspace (allocated on first `run_uks`).
+    double* d_rho_a_ = nullptr;
+    double* d_rho_b_ = nullptr;
+    double* d_vxc_b_ = nullptr;
+    double* d_veff_b_ = nullptr;
 
   public:
     /// @brief Allocate workspace + Poisson / spectral plans for grid shape / cell.
@@ -138,19 +144,59 @@ class KsChainDevice {
                                  int nprod = 0, double* d_acc = nullptr,
                                  KsXcKind xc = KsXcKind::PADE);
 
-    /// @brief Device pointer to last V_eff (length npts) [Hartree].
+    /// @brief Collinear UKS product chain (Padé LSD first cut).
+    ///
+    /// Steps (all device):
+    ///  1. collocate α products → ρ_α; collocate β products → ρ_β
+    ///     (nprod_σ==0 ⇒ that spin density is zero)
+    ///  2. ρ = ρ_α + ρ_β; n = ρ − n_ion
+    ///  3. Poisson(n) → V_es, e_hartree
+    ///  4. Padé LSD(ρ_α, ρ_β) → V_xc^α/β, E_xc  (PBE-UKS not on this stage)
+    ///  5. V_eff^σ = V_es + V_xc^σ [+ V_loc]; e_locgrid = w Σ ρ V_loc
+    ///  6. optional integrate V_eff^σ against product shapes → d_acc_σ
+    ///
+    /// @param d_prods_a α products (null only if nprod_a==0).
+    /// @param nprod_a   α product count (≥ 0).
+    /// @param d_prods_b β products (null only if nprod_b==0).
+    /// @param nprod_b   β product count (≥ 0).
+    /// @param d_n_ion   Optional ionic density.
+    /// @param d_v_loc   Optional local PP.
+    /// @param d_acc_a   Optional α integrate output (null ⇒ skip).
+    /// @param d_acc_b   Optional β integrate output (null ⇒ skip).
+    /// @param xc        Must be `KsXcKind::PADE` (first UKS cut).
+    /// @return Host-side energy pieces after device sync.
+    KsChainEnergies run_uks(const DeviceProduct* d_prods_a, int nprod_a,
+                            const DeviceProduct* d_prods_b, int nprod_b,
+                            const double* d_n_ion = nullptr,
+                            const double* d_v_loc = nullptr,
+                            double* d_acc_a = nullptr,
+                            double* d_acc_b = nullptr,
+                            KsXcKind xc = KsXcKind::PADE);
+
+    /// @brief Device pointer to last V_eff (RKS) / V_eff^α (UKS) [Hartree].
     const double* d_veff() const { return d_veff_; }
-    /// @brief Device pointer to last ρ (length npts).
+    /// @brief Device pointer to last V_eff^β after `run_uks` (null before).
+    const double* d_veff_b() const { return d_veff_b_; }
+    /// @brief Device pointer to last ρ (total; length npts).
     const double* d_rho() const { return d_rho_; }
+    /// @brief Device pointer to last ρ_α after `run_uks` (null before).
+    const double* d_rho_a() const { return d_rho_a_; }
+    /// @brief Device pointer to last ρ_β after `run_uks` (null before).
+    const double* d_rho_b() const { return d_rho_b_; }
     /// @brief Device pointer to last V_es (length npts).
     const double* d_v_es() const { return d_v_es_; }
-    /// @brief Device pointer to last V_xc (length npts).
+    /// @brief Device pointer to last V_xc (RKS) / V_xc^α (UKS).
     const double* d_vxc() const { return d_vxc_; }
+    /// @brief Device pointer to last V_xc^β after `run_uks` (null before).
+    const double* d_vxc_b() const { return d_vxc_b_; }
 
     long ntot() const { return ntot_; }
     double weight() const { return weight_; }
     const CollocateGridDesc& coll_grid() const { return coll_grid_; }
     cudaStream_t stream() const { return stream_; }
+
+  private:
+    void ensure_uks_buffers_();
 };
 
 /// @brief Multi-grid product collocate → fine KS → restrict → integrate.

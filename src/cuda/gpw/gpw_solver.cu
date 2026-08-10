@@ -1,13 +1,13 @@
 /// @file cuda/gpw/gpw_solver.cu
-/// @brief `cuda::gpw::GpwDft` — product energy (Γ RKS DIIS + device KS).
+/// @brief `cuda::gpw::GpwDft` — product slice (Γ RKS/UKS DIIS + device KS).
 ///
-/// Lever (multigrid-run + device-collocate): host STVnl / DIIS / diagonalize
+/// Lever (merged multigrid-run + uks-gamma): host STVnl / DIIS / diagonalize
 /// compose with geometry-fixed product list + device collocate / KS / integrate.
-/// Single-grid: `KsChainDevice::run`. Multigrid (`ngrids>1 && rel_cutoff>0`):
-/// `KsMultiGridChainDevice::run` (per-level collocate → spectral prolong → fine
-/// Poisson/XC → spectral restrict → per-level integrate). Mid-SCF drops host
-/// collocate/integrate and H2D ρ / D2H V_eff for H. V_eff / V_es pulled only for
-/// `result_` force reuse. Forces free functions stay CPU-backed analytic.
+/// Single-grid RKS: `KsChainDevice::run`. Multigrid RKS (`ngrids>1 &&
+/// rel_cutoff>0`): `KsMultiGridChainDevice::run`. Collinear UKS (single-grid
+/// Padé LSD): `KsChainDevice::run_uks` + host dual DIIS/eigen. Mid-SCF drops
+/// host collocate/integrate and H2D ρ / D2H V_eff for H. Forces free functions
+/// stay CPU-backed analytic.
 
 #include "atomiverse/cuda/gpw/gpw_solver.cuh"
 
@@ -280,7 +280,7 @@ std::pair<RealVector, RealMatrix>
 diagonalize_fock_shifted(const RealMatrix& F, const RealMatrix& X,
                          const RealMatrix& S, const RealMatrix& C_prev,
                          int n_occ, double shift) {
-    if (shift <= 0.0 || C_prev.size() == 0)
+    if (shift <= 0.0 || C_prev.size() == 0 || n_occ <= 0)
         return diagonalize_fock(F, X);
 
     const int m = static_cast<int>(X.shape(1));
@@ -308,6 +308,38 @@ void store_converged_state(GpwResult& res, const RealMatrix& H,
     res.eps.assign(eig.begin(), eig.end());
     res.P = build_density_matrix(res.C, n_occ, nb, 2.0);
     res.H_ks = H;
+}
+
+void store_converged_state_uks(GpwResult& res, const RealMatrix& Ha,
+                               const RealMatrix& Hb, const RealMatrix& X,
+                               const RealMatrix& S, int n_alpha, int n_beta,
+                               int nb) {
+    auto [eiga, Ca] = diagonalize_fock(Ha, X);
+    auto [eigb, Cb] = diagonalize_fock(Hb, X);
+    res.C = Ca;
+    res.C_beta = Cb;
+    res.eps.assign(eiga.begin(), eiga.end());
+    res.eps_beta.assign(eigb.begin(), eigb.end());
+    res.P = build_density_matrix(Ca, n_alpha, nb, 1.0);
+    res.P_beta = build_density_matrix(Cb, n_beta, nb, 1.0);
+    res.H_ks = Ha;
+    res.H_ks_beta = Hb;
+
+    const double sz = 0.5 * static_cast<double>(n_alpha - n_beta);
+    double ov = 0.0;
+    if (n_alpha > 0 && n_beta > 0) {
+        const RealMatrix Ca_occ =
+            xt::view(Ca, xt::all(), xt::range(0, n_alpha));
+        const RealMatrix Cb_occ = xt::view(Cb, xt::all(), xt::range(0, n_beta));
+        const RealMatrix Sab =
+            xt::linalg::dot(xt::transpose(Ca_occ), xt::linalg::dot(S, Cb_occ));
+        for (int i = 0; i < n_alpha; ++i)
+            for (int j = 0; j < n_beta; ++j) {
+                const double s = Sab(i, j);
+                ov += s * s;
+            }
+    }
+    res.s2 = sz * (sz + 1.0) + static_cast<double>(n_beta) - ov;
 }
 
 // Map CUDA method members onto a CPU GpwDft for force assembly only.
@@ -360,8 +392,10 @@ KsXcKind to_ks_xc(XcKind xc) {
 struct DeviceKsBuffers {
     double* d_n_ion = nullptr;
     double* d_v_loc = nullptr;
-    DeviceProduct* d_prods = nullptr;
-    double* d_acc = nullptr;
+    DeviceProduct* d_prods = nullptr;   ///< RKS products / UKS α
+    DeviceProduct* d_prods_b = nullptr; ///< UKS β products
+    double* d_acc = nullptr;            ///< RKS acc / UKS α
+    double* d_acc_b = nullptr;          ///< UKS β acc
     int nprod_cap = 0;
     long npts = 0;
 
@@ -372,15 +406,10 @@ struct DeviceKsBuffers {
         check_cuda(cudaMalloc(&d_n_ion, bytes), "malloc d_n_ion");
         check_cuda(cudaMalloc(&d_v_loc, bytes), "malloc d_v_loc");
     }
-    void ensure_prods(int nprod) {
-        if (nprod <= nprod_cap)
+    void ensure_prods(int nprod, bool uks = false) {
+        if (nprod <= nprod_cap && (!uks || d_prods_b != nullptr))
             return;
-        if (d_prods)
-            cudaFree(d_prods);
-        if (d_acc)
-            cudaFree(d_acc);
-        d_prods = nullptr;
-        d_acc = nullptr;
+        free_prods();
         nprod_cap = nprod;
         if (nprod <= 0)
             return;
@@ -390,6 +419,15 @@ struct DeviceKsBuffers {
         check_cuda(cudaMalloc(&d_acc,
                               static_cast<size_t>(nprod) * sizeof(double)),
                    "malloc d_acc");
+        if (uks) {
+            check_cuda(cudaMalloc(&d_prods_b,
+                                  static_cast<size_t>(nprod)
+                                      * sizeof(DeviceProduct)),
+                       "malloc d_prods_b");
+            check_cuda(cudaMalloc(&d_acc_b,
+                                  static_cast<size_t>(nprod) * sizeof(double)),
+                       "malloc d_acc_b");
+        }
     }
     void free_grids() {
         if (d_n_ion)
@@ -402,10 +440,14 @@ struct DeviceKsBuffers {
     void free_prods() {
         if (d_prods)
             cudaFree(d_prods);
+        if (d_prods_b)
+            cudaFree(d_prods_b);
         if (d_acc)
             cudaFree(d_acc);
-        d_prods = nullptr;
-        d_acc = nullptr;
+        if (d_acc_b)
+            cudaFree(d_acc_b);
+        d_prods = d_prods_b = nullptr;
+        d_acc = d_acc_b = nullptr;
         nprod_cap = 0;
     }
     void free() {
@@ -529,15 +571,31 @@ RealMatrix scatter_product_acc(const std::vector<GridProduct>& prods,
 } // namespace
 
 void GpwDft::validate_slice_() const {
-    if (is_uks())
-        throw std::invalid_argument(
-            "cuda::gpw::GpwDft: collinear UKS has no device product path yet "
-            "(first slice is closed-shell RKS). Set n_alpha=n_beta=0 and "
-            "n_occ, or use cpu::gpw::GpwDft.");
-    if (n_occ < 1)
+    if (is_uks()) {
+        if (n_alpha < 0 || n_beta < 0)
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft: n_alpha and n_beta must be >= 0");
+        if (n_alpha + n_beta < 1)
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft: UKS requires n_alpha+n_beta >= 1");
+        // First UKS product cut: Padé LSD only (PBE-UKS → uks-pbe-gate).
+        if (xc != XcKind::PADE)
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft: collinear UKS first cut is XcKind::PADE "
+                "only (Padé LSD). Set xc=PADE or use cpu::gpw::GpwDft; "
+                "PBE-UKS is a deeper slug (cuda-gpw-uks-pbe-gate).");
+        // UKS multigrid is not on the product path (single-grid run_uks only).
+        if (ngrids > 1)
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft: collinear UKS first cut is single-grid "
+                "only (ngrids=1). Multigrid UKS is a deeper slug; set "
+                "ngrids=1 or use cpu::gpw::GpwDft.");
+    } else if (n_occ < 1) {
         throw std::invalid_argument(
             "cuda::gpw::GpwDft: n_occ must be >= 1 for closed-shell RKS (got "
-            + std::to_string(n_occ) + ")");
+            + std::to_string(n_occ)
+            + "), or set n_alpha/n_beta for collinear UKS");
+    }
     if (nonperiodic)
         throw std::invalid_argument(
             "cuda::gpw::GpwDft: nonperiodic (Martyna–Tuckerman) Poisson has no "
@@ -599,7 +657,8 @@ void GpwDft::build(const std::vector<GpwAtom>& reference) {
 }
 
 GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
-                      const RealMatrix* guess_C, const RealMatrix* guess_P) {
+                      const RealMatrix* guess_C, const RealMatrix* guess_P,
+                      const RealMatrix* guess_P_beta) {
     validate_slice_();
     if (!built_)
         build(atoms);
@@ -610,6 +669,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     result_ = GpwResult{};
     const bool periodic = true;
     const double eps = eps_default;
+    const bool uks = is_uks();
 
     const std::vector<GridBasisFunction> basis = flatten_basis(atoms);
     const int nb = static_cast<int>(basis.size());
@@ -633,7 +693,8 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     const RealMatrix H0 = T + Vpp;
 
     // Multigrid product energy when ngrids>1 && rel_cutoff>0 (CPU twin gate).
-    // ngrids==1 keeps the single-grid KsChainDevice path (unchanged dual-gate).
+    // ngrids==1 keeps the single-grid KsChainDevice path (RKS + UKS).
+    // UKS + multigrid is rejected in validate_slice_.
     const bool use_mg = ngrids > 1 && rel_cutoff > 0.0;
     const int nlev = use_mg ? ngrids : 1;
     const double rel_for_build = use_mg ? rel_cutoff : cutoff_ry;
@@ -692,15 +753,21 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         throw std::runtime_error(
             "cuda::gpw::GpwDft::run: empty product list after build_products "
             "(basis/radius screening dropped every pair)");
+    // Single-grid product list alias (UKS + RKS ngrids==1).
+    const std::vector<GridProduct>& prods = pset.by_level[0];
+    const int nprod_geom = nprod_by_level[0];
 
     CanonicalOrth orth(S, lindep_threshold);
     if (orth.s_min < -1e-8)
         throw std::runtime_error(
             "cuda::gpw::GpwDft: overlap not positive definite (s_min="
             + std::to_string(orth.s_min) + ")");
-    if (n_occ > static_cast<int>(orth.X.shape(1)))
+    const int n_need =
+        uks ? std::max(n_alpha, n_beta) : n_occ;
+    if (n_need > static_cast<int>(orth.X.shape(1)))
         throw std::runtime_error(
-            "cuda::gpw::GpwDft: n_occ exceeds linearly independent directions");
+            "cuda::gpw::GpwDft: occupied count exceeds linearly independent "
+            "directions");
 
     RealMatrix C0;
     if (guess_C != nullptr && static_cast<int>(guess_C->shape(0)) == nb
@@ -709,21 +776,13 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     } else {
         C0 = std::get<1>(diagonalize_fock(H0, orth.X));
     }
-    RealMatrix P = build_density_matrix(C0, n_occ, nb, 2.0);
-    if (guess_P != nullptr) {
-        if (static_cast<int>(guess_P->shape(0)) != nb
-            || static_cast<int>(guess_P->shape(1)) != nb)
-            throw std::invalid_argument(
-                "cuda::gpw::GpwDft::run: guess_P shape does not match nb");
-        P = *guess_P;
-    }
-    RealMatrix C_prev = C0;
 
     // Device KS workspace: n_ion / v_loc on fine grid once.
     DeviceKsBuffers dev;
     DeviceMgProdBuffers mg_prods;
     const long npts = grid.npts();
     const double w_fine = grid.weight();
+    const double w_grid = w_fine; // UKS single-grid alias
     dev.alloc_grids(npts);
     const size_t bytes = static_cast<size_t>(npts) * sizeof(double);
     check_cuda(cudaMemcpy(dev.d_n_ion, n_ion.data(), bytes,
@@ -739,8 +798,9 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     const KsXcKind kxc = to_ks_xc(xc);
     const double* d_vloc_arg = v_locsr.empty() ? nullptr : dev.d_v_loc;
     const double eps_drop = eps * kProductMassMargin;
+    const bool use_diis = diis_depth > 0;
 
-    // Single-grid chain (ngrids==1) vs multi-grid chain.
+    // Single-grid chain (RKS/UKS) vs multi-grid chain (RKS only).
     std::unique_ptr<KsChainDevice> ks_sg;
     std::unique_ptr<KsMultiGridChainDevice> ks_mg;
     MultigridDesc mg_desc;
@@ -757,11 +817,8 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     } else {
         ks_sg = std::make_unique<KsChainDevice>(to_coll(grid),
                                                 /*stream=*/nullptr);
-        dev.ensure_prods(nprod_by_level[0]);
+        dev.ensure_prods(nprod_geom, uks);
     }
-
-    const bool use_diis = diis_depth > 0;
-    cpu::gpw::internal::GpwDiis diis(use_diis ? diis_depth : 1);
 
     // Host scratch for packing products / reading integrate acc each SCF step.
     std::vector<std::vector<DeviceProduct>> h_prods_by_level(
@@ -775,6 +832,227 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         h_acc_by_level[static_cast<std::size_t>(l)].assign(
             static_cast<std::size_t>(np), 0.0);
     }
+    // UKS β scratch (single-grid only; same length as level-0).
+    std::vector<DeviceProduct> h_prods_b(static_cast<std::size_t>(nprod_geom));
+    std::vector<double> h_acc_b(static_cast<std::size_t>(nprod_geom), 0.0);
+    auto& h_prods = h_prods_by_level[0];
+    auto& h_acc = h_acc_by_level[0];
+
+    auto pack_products = [&](const RealMatrix& Pin,
+                             std::vector<DeviceProduct>& out) {
+        const std::vector<double> Pvec = mat_to_vec(Pin, nb);
+        for (int ip = 0; ip < nprod_geom; ++ip) {
+            const GridProduct& gp = prods[static_cast<std::size_t>(ip)];
+            double w = product_density_weight(gp, pset.prims, pset.contribs, nb,
+                                              Pvec);
+            if (std::abs(w) < eps_drop)
+                w = 0.0;
+            out[static_cast<std::size_t>(ip)] = to_device_product(gp, w);
+        }
+    };
+
+    // ── Collinear UKS (Padé LSD + dual DIIS; single-grid only) ────────────
+    if (uks) {
+        // use_mg is impossible after validate_slice_; ks_sg is live.
+        RealMatrix Pa = build_density_matrix(C0, n_alpha, nb, 1.0);
+        RealMatrix Pb = build_density_matrix(C0, n_beta, nb, 1.0);
+        if (guess_P != nullptr) {
+            if (static_cast<int>(guess_P->shape(0)) != nb
+                || static_cast<int>(guess_P->shape(1)) != nb)
+                throw std::invalid_argument(
+                    "cuda::gpw::GpwDft::run: guess_P shape does not match nb");
+            if (guess_P_beta == nullptr)
+                throw std::invalid_argument(
+                    "cuda::gpw::GpwDft::run: UKS guess_P requires guess_P_beta");
+            if (static_cast<int>(guess_P_beta->shape(0)) != nb
+                || static_cast<int>(guess_P_beta->shape(1)) != nb)
+                throw std::invalid_argument(
+                    "cuda::gpw::GpwDft::run: guess_P_beta shape does not match "
+                    "nb");
+            Pa = *guess_P;
+            Pb = *guess_P_beta;
+        } else if (guess_P_beta != nullptr) {
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft::run: guess_P_beta without guess_P");
+        }
+        RealMatrix Ca_prev = C0;
+        RealMatrix Cb_prev = C0;
+
+        cpu::gpw::internal::GpwDiis diis_a(use_diis ? diis_depth : 1);
+        cpu::gpw::internal::GpwDiis diis_b(use_diis ? diis_depth : 1);
+
+        auto build_uks_H =
+            [&](const RealMatrix& Pa_in, const RealMatrix& Pb_in,
+                bool store_grids)
+            -> std::tuple<RealMatrix, RealMatrix, double> {
+            pack_products(Pa_in, h_prods);
+            pack_products(Pb_in, h_prods_b);
+            check_cuda(cudaMemcpy(dev.d_prods, h_prods.data(),
+                                  static_cast<size_t>(nprod_geom)
+                                      * sizeof(DeviceProduct),
+                                  cudaMemcpyHostToDevice),
+                       "H2D products_a");
+            check_cuda(cudaMemcpy(dev.d_prods_b, h_prods_b.data(),
+                                  static_cast<size_t>(nprod_geom)
+                                      * sizeof(DeviceProduct),
+                                  cudaMemcpyHostToDevice),
+                       "H2D products_b");
+
+            const KsChainEnergies e = ks_sg->run_uks(
+                dev.d_prods, nprod_geom, dev.d_prods_b, nprod_geom, dev.d_n_ion,
+                d_vloc_arg, dev.d_acc, dev.d_acc_b, kxc);
+
+            check_cuda(cudaMemcpy(h_acc.data(), dev.d_acc,
+                                  static_cast<size_t>(nprod_geom)
+                                      * sizeof(double),
+                                  cudaMemcpyDeviceToHost),
+                       "D2H product acc_a");
+            check_cuda(cudaMemcpy(h_acc_b.data(), dev.d_acc_b,
+                                  static_cast<size_t>(nprod_geom)
+                                      * sizeof(double),
+                                  cudaMemcpyDeviceToHost),
+                       "D2H product acc_b");
+            const RealMatrix Va = scatter_product_acc(
+                prods, pset.prims, pset.contribs, nb, h_acc, w_grid);
+            const RealMatrix Vb = scatter_product_acc(
+                prods, pset.prims, pset.contribs, nb, h_acc_b, w_grid);
+            const RealMatrix Ha = H0 + Va;
+            const RealMatrix Hb = H0 + Vb;
+
+            if (store_grids) {
+                std::vector<double> veff_a(static_cast<std::size_t>(npts));
+                std::vector<double> veff_b(static_cast<std::size_t>(npts));
+                std::vector<double> v_es(static_cast<std::size_t>(npts));
+                check_cuda(cudaMemcpy(veff_a.data(), ks_sg->d_veff(), bytes,
+                                      cudaMemcpyDeviceToHost),
+                           "D2H veff_a");
+                check_cuda(cudaMemcpy(veff_b.data(), ks_sg->d_veff_b(), bytes,
+                                      cudaMemcpyDeviceToHost),
+                           "D2H veff_b");
+                check_cuda(cudaMemcpy(v_es.data(), ks_sg->d_v_es(), bytes,
+                                      cudaMemcpyDeviceToHost),
+                           "D2H v_es");
+                result_.veff_a = std::move(veff_a);
+                result_.veff_b = std::move(veff_b);
+                result_.v_es = std::move(v_es);
+                // RKS veff slot unused for UKS force path (CPU uses veff_a/b).
+                result_.veff.clear();
+            }
+
+            const RealMatrix Ptot = Pa_in + Pb_in;
+            result_.e_kinetic = trace_product(Ptot, T, nb);
+            result_.e_nonlocal = 0.0;
+            result_.e_loc_sr = trace_product(Ptot, Vpp, nb) + e.e_locgrid;
+            result_.e_es = e.e_hartree - e_self;
+            result_.e_xc = e.e_xc;
+            const double e_total = result_.e_kinetic + result_.e_loc_sr
+                                   + result_.e_es + result_.e_xc;
+            return {Ha, Hb, e_total};
+        };
+
+        if (max_iter == 0) {
+            if (guess_P == nullptr || guess_P_beta == nullptr)
+                throw std::invalid_argument(
+                    "cuda::gpw::GpwDft: max_iter==0 UKS requires guess_P and "
+                    "guess_P_beta");
+            auto [Ha, Hb, e_total] =
+                build_uks_H(Pa, Pb, /*store_grids=*/true);
+            result_.e_total = e_total;
+            result_.P = Pa;
+            result_.P_beta = Pb;
+            result_.H_ks = std::move(Ha);
+            result_.H_ks_beta = std::move(Hb);
+            result_.S = S;
+            result_.converged = true;
+            result_.iters = 0;
+            return result_;
+        }
+
+        double prev_energy = std::numeric_limits<double>::quiet_NaN();
+        RealMatrix Ha_raw, Hb_raw;
+        bool conv = false;
+        int it = 0;
+        for (it = 0; it < max_iter; ++it) {
+            auto [Ha, Hb, e_total] =
+                build_uks_H(Pa, Pb, /*store_grids=*/false);
+            Ha_raw = Ha;
+            Hb_raw = Hb;
+            result_.e_total = e_total;
+            const RealMatrix err_a =
+                cpu::gpw::internal::gpw_diis_error(Ha, Pa, S, orth.X);
+            const RealMatrix err_b =
+                cpu::gpw::internal::gpw_diis_error(Hb, Pb, S, orth.X);
+            double err_norm = 0.0;
+            for (const double v : err_a)
+                err_norm = std::max(err_norm, std::abs(v));
+            for (const double v : err_b)
+                err_norm = std::max(err_norm, std::abs(v));
+            const bool has_prev = !std::isnan(prev_energy);
+            const double dE =
+                has_prev ? (e_total - prev_energy)
+                         : std::numeric_limits<double>::infinity();
+            prev_energy = e_total;
+            if (has_prev && std::abs(dE) < tol && err_norm < kDiisErrTol) {
+                conv = true;
+                break;
+            }
+            RealMatrix Ha_use, Hb_use;
+            if (use_diis) {
+                Ha_use = diis_a.step(Ha, err_a);
+                Hb_use = diis_b.step(Hb, err_b);
+            } else {
+                Ha_use = Ha;
+                Hb_use = Hb;
+            }
+            auto [eiga, Ca] = diagonalize_fock_shifted(
+                Ha_use, orth.X, S, Ca_prev, n_alpha, level_shift);
+            auto [eigb, Cb] = diagonalize_fock_shifted(
+                Hb_use, orth.X, S, Cb_prev, n_beta, level_shift);
+            (void)eiga;
+            (void)eigb;
+            Ca_prev = std::move(Ca);
+            Cb_prev = std::move(Cb);
+            RealMatrix Pa_new = build_density_matrix(Ca_prev, n_alpha, nb, 1.0);
+            RealMatrix Pb_new = build_density_matrix(Cb_prev, n_beta, nb, 1.0);
+            if (use_diis) {
+                Pa = std::move(Pa_new);
+                Pb = std::move(Pb_new);
+            } else {
+                Pa = (1.0 - mix) * Pa + mix * Pa_new;
+                Pb = (1.0 - mix) * Pb + mix * Pb_new;
+            }
+        }
+        {
+            auto [Ha_final, Hb_final, e_final] =
+                build_uks_H(Pa, Pb, /*store_grids=*/true);
+            result_.e_total = e_final;
+            Ha_raw = std::move(Ha_final);
+            Hb_raw = std::move(Hb_final);
+            store_converged_state_uks(result_, Ha_raw, Hb_raw, orth.X, S,
+                                      n_alpha, n_beta, nb);
+            result_.S = S;
+            result_.converged = conv;
+            result_.iters = conv ? (it + 1) : max_iter;
+        }
+        return result_;
+    }
+
+    // ── Closed-shell RKS (single-grid or multigrid) ───────────────────────
+    RealMatrix P = build_density_matrix(C0, n_occ, nb, 2.0);
+    if (guess_P != nullptr) {
+        if (static_cast<int>(guess_P->shape(0)) != nb
+            || static_cast<int>(guess_P->shape(1)) != nb)
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft::run: guess_P shape does not match nb");
+        P = *guess_P;
+    }
+    if (guess_P_beta != nullptr)
+        throw std::invalid_argument(
+            "cuda::gpw::GpwDft::run: guess_P_beta is UKS-only (set n_alpha/"
+            "n_beta)");
+    RealMatrix C_prev = C0;
+
+    cpu::gpw::internal::GpwDiis diis(use_diis ? diis_depth : 1);
 
     auto build_H_and_energy =
         [&](const RealMatrix& Pin,
@@ -785,10 +1063,6 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
 
         if (!use_mg) {
             // ── Single-grid device product path ──────────────────────────
-            const std::vector<GridProduct>& prods = pset.by_level[0];
-            const int nprod_geom = nprod_by_level[0];
-            auto& h_prods = h_prods_by_level[0];
-            auto& h_acc = h_acc_by_level[0];
             for (int ip = 0; ip < nprod_geom; ++ip) {
                 const GridProduct& gp = prods[static_cast<std::size_t>(ip)];
                 double w = product_density_weight(gp, pset.prims, pset.contribs,
@@ -825,31 +1099,30 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             }
         } else {
             // ── Multigrid: per-level pack → KsMultiGridChainDevice ───────
-            // Host tables of device pointers (KsMultiGridChainDevice API).
             std::vector<DeviceProduct*> d_prods_ptr(
                 static_cast<std::size_t>(nlevels), nullptr);
             std::vector<double*> d_acc_ptr(
                 static_cast<std::size_t>(nlevels), nullptr);
             for (int l = 0; l < nlevels; ++l) {
                 const int np = nprod_by_level[static_cast<std::size_t>(l)];
-                const std::vector<GridProduct>& prods =
+                const std::vector<GridProduct>& prods_l =
                     pset.by_level[static_cast<std::size_t>(l)];
-                auto& h_prods = h_prods_by_level[static_cast<std::size_t>(l)];
+                auto& h_prods_l = h_prods_by_level[static_cast<std::size_t>(l)];
                 for (int ip = 0; ip < np; ++ip) {
                     const GridProduct& gp =
-                        prods[static_cast<std::size_t>(ip)];
+                        prods_l[static_cast<std::size_t>(ip)];
                     double w = product_density_weight(
                         gp, pset.prims, pset.contribs, nb, Pvec);
                     if (std::abs(w) < eps_drop)
                         w = 0.0;
-                    h_prods[static_cast<std::size_t>(ip)] =
+                    h_prods_l[static_cast<std::size_t>(ip)] =
                         to_device_product(gp, w);
                 }
                 if (np > 0) {
                     check_cuda(
                         cudaMemcpy(
                             mg_prods.d_prods[static_cast<std::size_t>(l)],
-                            h_prods.data(),
+                            h_prods_l.data(),
                             static_cast<size_t>(np) * sizeof(DeviceProduct),
                             cudaMemcpyHostToDevice),
                         "H2D products level");
@@ -861,14 +1134,13 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             }
             e = ks_mg->run(d_prods_ptr.data(), nprod_by_level.data(),
                            dev.d_n_ion, d_vloc_arg, d_acc_ptr.data(), kxc);
-            // Scatter per-level integrate acc with that level's grid weight.
             for (int l = 0; l < nlevels; ++l) {
                 const int np = nprod_by_level[static_cast<std::size_t>(l)];
                 if (np <= 0)
                     continue;
-                auto& h_acc = h_acc_by_level[static_cast<std::size_t>(l)];
+                auto& h_acc_l = h_acc_by_level[static_cast<std::size_t>(l)];
                 check_cuda(
-                    cudaMemcpy(h_acc.data(),
+                    cudaMemcpy(h_acc_l.data(),
                                mg_prods.d_acc[static_cast<std::size_t>(l)],
                                static_cast<size_t>(np) * sizeof(double),
                                cudaMemcpyDeviceToHost),
@@ -877,7 +1149,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                     mg.levels[static_cast<std::size_t>(l)].weight();
                 const RealMatrix Vl = scatter_product_acc(
                     pset.by_level[static_cast<std::size_t>(l)], pset.prims,
-                    pset.contribs, nb, h_acc, w_l);
+                    pset.contribs, nb, h_acc_l, w_l);
                 Vgrid = Vgrid + Vl;
             }
             if (store_grids) {
@@ -968,7 +1240,6 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         store_converged_state(result_, H_raw, orth.X, n_occ, nb);
         result_.S = S;
         result_.converged = conv;
-        result_.iters = it + (conv ? 0 : 0);
         if (conv)
             result_.iters = it + 1;
         else
