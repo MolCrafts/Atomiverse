@@ -363,32 +363,36 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 ## in_progress
 
-**GapCensus wave 4** (parent `dev` @ `3cd45234`): prior wave-3 land
-`cuda-pw-pbe-stress` held. Keep **[~]** — **2** merge-ready resumes (GH200
-green on tips; **not on base**). Do **not** staff NEW P1 (`device-forces` /
+**Assign wave 4** (parent `dev` @ `edf50209` / GapCensus base `3cd45234`):
+Priority **[~] first** — reconfirm **2** merge-ready resumes (GH200 green on
+tips; **not on base**). Do **not** staff NEW P1 (`device-forces` /
 `multigrid-run` / `uks-gamma` / `pbe-product-gate`) until these two merge.
-Theme held: GPW product depth + PW spin axis; wave-4 opened deeper P3 only
-(no new P1 staffing). No hybrid/GAPW; GH200 green required. Base still host
-collocate/integrate + spin∧PBE energy reject; closed-shell stress dual-gate
-is **LSDA + PBE**.
+Theme held: GPW product depth + PW spin axis; GapCensus wave-4 opened deeper
+P3 only (no new P1 staffing). No hybrid/GAPW; GH200 green required. Tips are
+**ahead 4 / behind 6** vs `dev` (landed `cuda-pw-pbe-stress` + queue
+harness + GapCensus w4) — **rebase onto current `dev` before merge**. Base
+still host collocate/integrate + spin∧PBE energy reject; closed-shell stress
+dual-gate is **LSDA + PBE**.
 
 - [~] `cuda-gpw-device-collocate` | **P1** method=cuda | **resume / merge-ready**
   | compose landed product_collocate/integrate into `GpwDft::run` (drop mid-SCF
   H2D ρ / D2H V_eff on Γ single-grid path) | twin: same-settings CPU + dual-gate
   E/F | gate: GH200; E 5e-6 Ha / F 5e-5 Ha/Bohr; fail-closed non-Γ until later
   depth | lever: `src/cuda/gpw/gpw_solver.cu` `build_H_and_energy` +
-  `cuda/gpw/internal/` DeviceProduct/collint | tip `dedb2a28` on
-  `wf/cuda-gpw-device-collocate` | GH200 **1123960** (post-rebase) /
-  **1122743** \|ΔE\|=**1.617e-7** Ha max\|ΔF\|=**2.321e-6** Ha/Bohr |
-  spec on tip `.claude/specs/cuda-gpw-device-collocate/SPEC.md`
+  `cuda/gpw/internal/` DeviceProduct/collint | tip `dedb2a28` (feat `1f8377a7`)
+  on `wf/cuda-gpw-device-collocate` | ahead 4 / behind 6 vs `dev` | GH200
+  **1123960** (post-rebase) / **1122743** \|ΔE\|=**1.617e-7** Ha
+  max\|ΔF\|=**2.321e-6** Ha/Bohr | spec on tip
+  `.claude/specs/cuda-gpw-device-collocate/SPEC.md`
 - [~] `cuda-pw-spin-pbe` | **P1** method=cuda | **resume / merge-ready** | lift
   spin∧PBE reject on `cuda::pw::PW::run` — collinear spin-GGA energy only |
   twin: CPU `reg_pw-spin-gga` / O₂ spin-PBE dual-gate | gate: GH200; \|ΔE\| ≤
   2e-3 Ha; not forces/stress/smear | lever:
   `DeviceDensity::exchange_correlation_spin` + `xc_pbe.cu` spin helpers | tip
-  `03d5c0bf` on `wf/cuda-pw-spin-pbe` | GH200 **1123961** (post-rebase) /
-  **1122874** \|ΔE\|=**1.14e-13** Ha | spec on tip
-  `.claude/specs/cuda-pw-spin-pbe/SPEC.md` (`acceptance_met=true` on tip)
+  `03d5c0bf` (feat `69923454`) on `wf/cuda-pw-spin-pbe` | ahead 4 / behind 6
+  vs `dev` | GH200 **1123961** (post-rebase) / **1122874** \|ΔE\|=**1.14e-13**
+  Ha | spec on tip `.claude/specs/cuda-pw-spin-pbe/SPEC.md`
+  (`acceptance_met=true` on tip)
 
 ## blocked
 
