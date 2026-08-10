@@ -16,27 +16,29 @@ Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
 rows; foothold ≠ closed capability. **Unmerged tip ≠ done** — only green merge
 onto `dev` closes a slug.
 
-**GapCensus harness wave 2 / census wave 3 (2026-08-10)** on `dev` @
-`42b8982c` (post merge of `arch-cuda-scf-solver-fold` + `arch-e2e-tests-wave2`).
-Tree facts reconfirmed:
+**GapCensus wave 3 (2026-08-10)** on `dev` @ `350644ca` (post harness wave-2
+chore after merges of `arch-cuda-scf-solver-fold` + `arch-e2e-tests-wave2`).
+Re-diff of CLAUDE iron laws + ES order, notes, arch/e2e/es queues, and tree
+scan of `cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` — **no new staffable
+arch slugs**. Tree facts reconfirmed:
 
 | Surface | On `dev` |
 | --- | --- |
 | `GpwDft` | `cpu::Driver<gpw::Phase>` + `drive_gamma_rks_diis_` + `gpw/stages/*` for **Γ RKS DIIS only** |
 | GPW residual free loops | `run_gpw_scf_kpoints*` (RKS/UKS DIIS), Γ UKS DIIS, all **OT** (`use_ot`) |
-| `cpu::pw::PW` | plain class — **no** `pw::Phase`, no stages, free SCF in `pw_solver.cpp` |
+| `cpu::pw::PW` | plain class — **no** `pw::Phase`, no stages; free SCF in `internal/scf_loop` + `pw_solver` |
 | `cuda::scf::RHF` | Component+HF + private `internal::RhfScfCycle` (`scf::Phase` order); **no** public/free-loop `SCFSolver` type |
-| Nested CUDA Driver | residual — full `cuda::Driver<scf::Phase>` needs nested CUDA DriverNode (not a separate staffable product slug yet) |
+| Nested CUDA Driver | residual — full `cuda::Driver<scf::Phase>` needs nested CUDA DriverNode (**not** a separate staffable product slug yet) |
 | CUDA GPW | stage footholds only (`ks_chain` / MG / GGA); **no** public method product |
-| e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear |
+| e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear (none staffed this census) |
 
 Orphan **branch tips** (no isolation worktrees; **not** on `dev` — do not mark
 done; Assign may rebase/re-staff or discard):
 
 | Tip | Claim (unverified until merge) |
 | --- | --- |
-| `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual |
-| `wf/arch-pw-driver-node` | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
+| `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual (`6553a036`, base `9c421cc0`) |
+| `wf/arch-pw-driver-node` | `PW` → `Driver<pw::Phase>` restricted fixed-occ (`42842e25`, base `9c421cc0`) |
 
 No open arch specs under `.claude/specs/` (only unrelated
 `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`). Lever still:

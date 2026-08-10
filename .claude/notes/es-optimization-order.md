@@ -67,10 +67,11 @@ step 1 — CPU architecture**, not more collint polish.
 | P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product |
 | P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× after Driver paths |
 
-**GapCensus harness wave 2 / census wave 3:** pending=4, gaps_remaining=5,
-new_slugs=0 — fold + e2e-wave2 merged on `dev` @ `42b8982c`; orphan
-`wf/arch-gpw-driver-paths` / `wf/arch-pw-driver-node` tips still not on `dev`.
-Queue: [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
+**GapCensus wave 3:** pending=4, gaps_remaining=5, new_slugs=0 — fold +
+e2e-wave2 merged; `dev` @ `350644ca`; orphan `wf/arch-gpw-driver-paths` /
+`wf/arch-pw-driver-node` tips still not on `dev` (≠ done). No new staffable
+arch slug vs iron laws / tree. Queue:
+[arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
 Workflow: `.grok/workflows/arch-campaign.rhai`.
 
 **Forbidden this campaign:** soft tols; invent hybrid/GAPW; staff
