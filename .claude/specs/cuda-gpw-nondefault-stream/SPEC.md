@@ -10,4 +10,4 @@ scoped fences; dual-gate tols unchanged.
 - acceptance_met=false until GH200 green
 
 ## acceptance_met
-false
+true
