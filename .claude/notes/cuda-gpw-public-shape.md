@@ -20,7 +20,7 @@ footholds.
 | --- | --- |
 | CPU method | `cpu::gpw::GpwDft` — multi-path **DIIS** on Driver stages; **OT** free-loop residual (same capability follow-on, not a block) |
 | CUDA stages | `cuda/gpw/internal/`: Poisson, XC LDA, product collocate/integrate, composed `KsChainDevice` (LDA+PBE), `KsMultiGridChainDevice` |
-| CUDA public method | **first slice landed** (`cuda::gpw::GpwDft` Γ RKS DIIS PADE/PBE; host STVnl/cbg/collocate/integrate/DIIS + device KS; free-fn forces CPU-backed) — depth residual on queue |
+| CUDA public method | **first slice landed** (`cuda::gpw::GpwDft` Γ RKS DIIS PADE/PBE; host STVnl/DIIS + device product collocate/KS/integrate via `KsChainDevice::run`; free-fn forces CPU-backed) — depth residual on queue |
 
 ## Frozen public shape (CUDA product must match)
 
@@ -77,7 +77,7 @@ staffed.
 | Multi-path DIIS CPU Driver | **green** (`arch-gpw-driver-paths`) |
 | Public-shape freeze | **green** (this note; merge `0147fe02`) |
 | Stage footholds composed | **green** (ks-chain / GGA / MG units) |
-| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); depth residual (device collocate/forces, PBE product gate, MG, UKS, multi-k, stress, product stream) stays on es-cpu-cuda queue |
+| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); device collocate depth `cuda-gpw-device-collocate` GH200 **1122198**; residual (device forces, PBE product gate, MG, UKS, multi-k, stress, product stream) stays on es-cpu-cuda queue |
 
 `cuda-gpw-full-product` is no longer blocked on “needs architecture freeze”.
 It remains a product implementation slug (compose internals → public method),

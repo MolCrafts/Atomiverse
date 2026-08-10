@@ -1,10 +1,12 @@
 /// @file cuda/gpw/gpw_solver.cu
 /// @brief `cuda::gpw::GpwDft` — first product slice (Γ RKS DIIS + device KS).
 ///
-/// Lever: host STVnl / cbg collocate / integrate / DIIS / diagonalize compose
-/// with device `KsChainDevice::run_from_rho` for fine-grid Poisson + XC + V_eff.
-/// Forces free functions map members onto the CPU analytic force assembly so
-/// the public forces family matches `cpu::gpw::gpw_forces_*` shape.
+/// Lever (device-collocate depth): host STVnl / DIIS / diagonalize compose with
+/// geometry-fixed product list + device collocate / KS / integrate
+/// (`KsChainDevice::run` → `product_collocate` + Poisson/XC + `product_integrate`).
+/// Mid-SCF drops host `collocate_density` / `integrate_potential` and the H2D ρ
+/// / D2H V_eff pair used only for that path. V_eff / V_es are still pulled for
+/// `result_` force reuse. Forces free functions stay CPU-backed analytic.
 
 #include "atomiverse/cuda/gpw/gpw_solver.cuh"
 
@@ -13,11 +15,13 @@
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 #include "atomiverse/cpu/gpw/internal/local_pp.h"
+#include "atomiverse/cpu/gpw/internal/multigrid.h"
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 #include "atomiverse/cpu/gpw/internal/periodic.h"
 #include "atomiverse/cpu/linalg/density.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cuda/gpw/internal/ks_chain.cuh"
+#include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 
 #include <algorithm>
 #include <cmath>
@@ -35,15 +39,20 @@ namespace {
 
 using cpu::gpw::CompactBasisGrid;
 using cpu::gpw::GridBasisFunction;
+using cpu::gpw::GridProduct;
+using cpu::gpw::MultiGrid;
 using cpu::gpw::Prim;
+using cpu::gpw::PrimContrib;
+using cpu::gpw::PrimRef;
+using cpu::gpw::ProductSet;
 using cpu::gpw::UniformGrid;
 using cpu::gpw::basis_function_radius;
 using cpu::gpw::build_compact_basis_grid;
-using cpu::gpw::collocate_density;
+using cpu::gpw::build_products;
 using cpu::gpw::contracted_ST_periodic;
 using cpu::gpw::gth_nonlocal;
-using cpu::gpw::integrate_potential;
 using cpu::gpw::local_pp_grid;
+using cpu::gpw::make_multigrid;
 using cpu::gpw::make_uniform_grid;
 using cpu::gpw::pair_image_counts;
 using cpu::linalg::CanonicalOrth;
@@ -52,12 +61,16 @@ using cpu::linalg::RealVector;
 using cpu::linalg::build_density_matrix;
 using cpu::linalg::diagonalize_fock;
 using internal::CollocateGridDesc;
+using internal::DeviceProduct;
 using internal::KsChainDevice;
 using internal::KsChainEnergies;
 using internal::KsXcKind;
 
 constexpr double kBuildScreen = 1.0e-14;
 constexpr double kDiisErrTol = 1.0e-5;
+/// Matches CPU product mass-margin drop (multigrid.cpp); drop monoms below
+/// `eps * kProductMassMargin` when packing live density weights.
+constexpr double kProductMassMargin = 1.0e-4;
 
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
@@ -243,14 +256,6 @@ void build_STVpp(const std::vector<GpwAtom>& atoms,
     (void)periodic;
 }
 
-RealMatrix vec_to_mat(const std::vector<double>& v, int n) {
-    RealMatrix m = xt::zeros<double>({n, n});
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            m(i, j) = v[static_cast<std::size_t>(i) * n + j];
-    return m;
-}
-
 std::vector<double> mat_to_vec(const RealMatrix& m, int n) {
     std::vector<double> v(static_cast<std::size_t>(n) * n);
     for (int i = 0; i < n; ++i)
@@ -349,39 +354,127 @@ KsXcKind to_ks_xc(XcKind xc) {
 }
 
 struct DeviceKsBuffers {
-    double* d_rho = nullptr;
     double* d_n_ion = nullptr;
     double* d_v_loc = nullptr;
-    double* d_veff = nullptr;
-    double* d_v_es = nullptr;
+    DeviceProduct* d_prods = nullptr;
+    double* d_acc = nullptr;
+    int nprod_cap = 0;
     long npts = 0;
 
-    void alloc(long n) {
-        free();
+    void alloc_grids(long n) {
+        free_grids();
         npts = n;
         const size_t bytes = static_cast<size_t>(n) * sizeof(double);
-        check_cuda(cudaMalloc(&d_rho, bytes), "malloc d_rho");
         check_cuda(cudaMalloc(&d_n_ion, bytes), "malloc d_n_ion");
         check_cuda(cudaMalloc(&d_v_loc, bytes), "malloc d_v_loc");
-        check_cuda(cudaMalloc(&d_veff, bytes), "malloc d_veff");
-        check_cuda(cudaMalloc(&d_v_es, bytes), "malloc d_v_es");
     }
-    void free() {
-        if (d_rho)
-            cudaFree(d_rho);
+    void ensure_prods(int nprod) {
+        if (nprod <= nprod_cap)
+            return;
+        if (d_prods)
+            cudaFree(d_prods);
+        if (d_acc)
+            cudaFree(d_acc);
+        d_prods = nullptr;
+        d_acc = nullptr;
+        nprod_cap = nprod;
+        if (nprod <= 0)
+            return;
+        check_cuda(cudaMalloc(&d_prods,
+                              static_cast<size_t>(nprod) * sizeof(DeviceProduct)),
+                   "malloc d_prods");
+        check_cuda(cudaMalloc(&d_acc,
+                              static_cast<size_t>(nprod) * sizeof(double)),
+                   "malloc d_acc");
+    }
+    void free_grids() {
         if (d_n_ion)
             cudaFree(d_n_ion);
         if (d_v_loc)
             cudaFree(d_v_loc);
-        if (d_veff)
-            cudaFree(d_veff);
-        if (d_v_es)
-            cudaFree(d_v_es);
-        d_rho = d_n_ion = d_v_loc = d_veff = d_v_es = nullptr;
+        d_n_ion = d_v_loc = nullptr;
         npts = 0;
+    }
+    void free_prods() {
+        if (d_prods)
+            cudaFree(d_prods);
+        if (d_acc)
+            cudaFree(d_acc);
+        d_prods = nullptr;
+        d_acc = nullptr;
+        nprod_cap = 0;
+    }
+    void free() {
+        free_grids();
+        free_prods();
     }
     ~DeviceKsBuffers() { free(); }
 };
+
+/// Density weight w = k · Σ P[μ,ν] coeff_μ coeff_ν (CPU product path twin).
+double product_density_weight(const GridProduct& prod,
+                              const std::vector<PrimRef>& prims,
+                              const std::vector<PrimContrib>& contribs, int nb,
+                              const std::vector<double>& P) {
+    const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+    const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+    double s = 0.0;
+    for (int i = 0; i < A.cn; ++i) {
+        const PrimContrib& ca = contribs[static_cast<std::size_t>(A.cbeg + i)];
+        const std::size_t row = static_cast<std::size_t>(ca.mu) * nb;
+        double rs = 0.0;
+        for (int j = 0; j < B.cn; ++j) {
+            const PrimContrib& cb =
+                contribs[static_cast<std::size_t>(B.cbeg + j)];
+            rs += P[row + static_cast<std::size_t>(cb.mu)] * cb.coeff;
+        }
+        s += ca.coeff * rs;
+    }
+    return s * prod.k;
+}
+
+DeviceProduct to_device_product(const GridProduct& prod, double weight) {
+    DeviceProduct q;
+    q.p = prod.p;
+    q.weight = weight;
+    for (int d = 0; d < 3; ++d) {
+        q.pc[d] = prod.pc[d];
+        q.ra[d] = prod.ra[d];
+        q.rb[d] = prod.rb[d];
+        q.la[d] = prod.la[d];
+        q.lb[d] = prod.lb[d];
+    }
+    return q;
+}
+
+/// Scatter bare product integrals (Σ_g V·shape) into V_μν with k · w · coeffs.
+RealMatrix scatter_product_acc(const std::vector<GridProduct>& prods,
+                               const std::vector<PrimRef>& prims,
+                               const std::vector<PrimContrib>& contribs, int nb,
+                               const std::vector<double>& acc, double w_grid) {
+    RealMatrix V = xt::zeros<double>({nb, nb});
+    const int nprod = static_cast<int>(prods.size());
+    for (int ip = 0; ip < nprod; ++ip) {
+        const double ig = acc[static_cast<std::size_t>(ip)];
+        if (ig == 0.0)
+            continue;
+        const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
+        const PrimRef& A = prims[static_cast<std::size_t>(prod.ua)];
+        const PrimRef& B = prims[static_cast<std::size_t>(prod.ub)];
+        const double sw = prod.k * w_grid * ig;
+        for (int i = 0; i < A.cn; ++i) {
+            const PrimContrib& ca =
+                contribs[static_cast<std::size_t>(A.cbeg + i)];
+            const double cas = ca.coeff * sw;
+            for (int j = 0; j < B.cn; ++j) {
+                const PrimContrib& cb =
+                    contribs[static_cast<std::size_t>(B.cbeg + j)];
+                V(ca.mu, cb.mu) += cas * cb.coeff;
+            }
+        }
+    }
+    return V;
+}
 
 } // namespace
 
@@ -496,10 +589,26 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         local_pp_on_grid ? local_pp_grid(grid, atoms, periodic)
                          : std::vector<double>{};
 
+    // Compact AO grid retained for force assembly (CPU free-fn path).
     CompactBasisGrid cbg =
         build_compact_basis_grid(grid, basis, periodic, eps);
     result_.scf_cbg = cbg;
     result_.scf_cbg_valid = true;
+
+    // Geometry-fixed product list (single-grid). Device collocate/integrate
+    // consume DeviceProduct views of these monoms; P enters only as weights.
+    const MultiGrid mg = make_multigrid(cell, cutoff_ry, /*ngrids=*/1,
+                                        rel_cutoff);
+    const double rel_for_build =
+        (rel_cutoff > 0.0) ? rel_cutoff : cutoff_ry;
+    const ProductSet pset =
+        build_products(mg, basis, cell, rel_for_build, eps, periodic);
+    const std::vector<GridProduct>& prods = pset.by_level[0];
+    const int nprod_geom = static_cast<int>(prods.size());
+    if (nprod_geom < 1)
+        throw std::runtime_error(
+            "cuda::gpw::GpwDft::run: empty product list after build_products "
+            "(basis/radius screening dropped every pair)");
 
     CanonicalOrth orth(S, lindep_threshold);
     if (orth.s_min < -1e-8)
@@ -527,10 +636,12 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     }
     RealMatrix C_prev = C0;
 
-    // Device KS workspace (geometry-fixed n_ion / v_loc uploaded once).
+    // Device KS workspace: n_ion / v_loc once; products + acc per geometry.
     DeviceKsBuffers dev;
     const long npts = grid.npts();
-    dev.alloc(npts);
+    const double w_grid = grid.weight();
+    dev.alloc_grids(npts);
+    dev.ensure_prods(nprod_geom);
     const size_t bytes = static_cast<size_t>(npts) * sizeof(double);
     check_cuda(cudaMemcpy(dev.d_n_ion, n_ion.data(), bytes,
                           cudaMemcpyHostToDevice),
@@ -545,36 +656,61 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     KsChainDevice ks_dev(to_coll(grid), /*stream=*/nullptr);
     const KsXcKind kxc = to_ks_xc(xc);
     const double* d_vloc_arg = v_locsr.empty() ? nullptr : dev.d_v_loc;
+    const double eps_drop = eps * kProductMassMargin;
 
     const bool use_diis = diis_depth > 0;
     cpu::gpw::internal::GpwDiis diis(use_diis ? diis_depth : 1);
 
-    auto build_H_and_energy =
-        [&](const RealMatrix& Pin) -> std::pair<RealMatrix, double> {
-        const std::vector<double> Pvec = mat_to_vec(Pin, nb);
-        std::vector<double> rho = collocate_density(cbg, nb, Pvec);
-        check_cuda(cudaMemcpy(dev.d_rho, rho.data(), bytes,
-                              cudaMemcpyHostToDevice),
-                   "H2D rho");
-        const KsChainEnergies e =
-            ks_dev.run_from_rho(dev.d_rho, dev.d_n_ion, d_vloc_arg,
-                                /*d_prods=*/nullptr, /*nprod=*/0,
-                                /*d_acc=*/nullptr, kxc);
-        // Pull V_eff / V_es for force reuse + host integrate.
-        std::vector<double> veff(static_cast<std::size_t>(npts));
-        std::vector<double> v_es(static_cast<std::size_t>(npts));
-        check_cuda(cudaMemcpy(veff.data(), ks_dev.d_veff(), bytes,
-                              cudaMemcpyDeviceToHost),
-                   "D2H veff");
-        check_cuda(cudaMemcpy(v_es.data(), ks_dev.d_v_es(), bytes,
-                              cudaMemcpyDeviceToHost),
-                   "D2H v_es");
-        result_.veff = veff;
-        result_.v_es = v_es;
+    // Host scratch for packing products / reading integrate acc each SCF step.
+    std::vector<DeviceProduct> h_prods(static_cast<std::size_t>(nprod_geom));
+    std::vector<double> h_acc(static_cast<std::size_t>(nprod_geom), 0.0);
 
-        RealMatrix Vgrid =
-            vec_to_mat(integrate_potential(cbg, nb, veff), nb);
+    auto build_H_and_energy =
+        [&](const RealMatrix& Pin,
+            bool store_grids) -> std::pair<RealMatrix, double> {
+        const std::vector<double> Pvec = mat_to_vec(Pin, nb);
+        // Pack density weights into DeviceProduct; integrate uses shape only
+        // so every geometry product stays present (weight may be ~0).
+        for (int ip = 0; ip < nprod_geom; ++ip) {
+            const GridProduct& gp = prods[static_cast<std::size_t>(ip)];
+            double w = product_density_weight(gp, pset.prims, pset.contribs, nb,
+                                              Pvec);
+            if (std::abs(w) < eps_drop)
+                w = 0.0;
+            h_prods[static_cast<std::size_t>(ip)] = to_device_product(gp, w);
+        }
+        check_cuda(cudaMemcpy(dev.d_prods, h_prods.data(),
+                              static_cast<size_t>(nprod_geom)
+                                  * sizeof(DeviceProduct),
+                              cudaMemcpyHostToDevice),
+                   "H2D products");
+
+        // Device: collocate ρ → Poisson/XC → V_eff → integrate shapes → d_acc.
+        // No H2D ρ; no D2H V_eff for the integrate path.
+        const KsChainEnergies e =
+            ks_dev.run(dev.d_prods, nprod_geom, dev.d_n_ion, d_vloc_arg,
+                       dev.d_acc, kxc);
+
+        check_cuda(cudaMemcpy(h_acc.data(), dev.d_acc,
+                              static_cast<size_t>(nprod_geom) * sizeof(double),
+                              cudaMemcpyDeviceToHost),
+                   "D2H product acc");
+        const RealMatrix Vgrid = scatter_product_acc(
+            prods, pset.prims, pset.contribs, nb, h_acc, w_grid);
         const RealMatrix H = H0 + Vgrid;
+
+        if (store_grids) {
+            std::vector<double> veff(static_cast<std::size_t>(npts));
+            std::vector<double> v_es(static_cast<std::size_t>(npts));
+            check_cuda(cudaMemcpy(veff.data(), ks_dev.d_veff(), bytes,
+                                  cudaMemcpyDeviceToHost),
+                       "D2H veff");
+            check_cuda(cudaMemcpy(v_es.data(), ks_dev.d_v_es(), bytes,
+                                  cudaMemcpyDeviceToHost),
+                       "D2H v_es");
+            result_.veff = std::move(veff);
+            result_.v_es = std::move(v_es);
+        }
 
         result_.e_kinetic = trace_product(Pin, T, nb);
         result_.e_nonlocal = 0.0;
@@ -591,7 +727,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         if (guess_P == nullptr)
             throw std::invalid_argument(
                 "cuda::gpw::GpwDft: max_iter==0 requires guess_P");
-        auto [H, e_total] = build_H_and_energy(P);
+        auto [H, e_total] = build_H_and_energy(P, /*store_grids=*/true);
         result_.e_total = e_total;
         result_.P = P;
         result_.H_ks = std::move(H);
@@ -606,7 +742,8 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     bool conv = false;
     int it = 0;
     for (it = 0; it < max_iter; ++it) {
-        auto [H, e_total] = build_H_and_energy(P);
+        // Mid-SCF: device collocate/integrate only — skip D2H V_eff/V_es.
+        auto [H, e_total] = build_H_and_energy(P, /*store_grids=*/false);
         H_raw = H;
         result_.e_total = e_total;
         const RealMatrix err =
@@ -638,9 +775,9 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         else
             P = (1.0 - mix) * P + mix * P_new;
     }
-    // One final KS at the last density for break-before-mix energy pieces.
+    // Final KS at the last density: energy pieces + V_eff/V_es for forces.
     {
-        auto [H_final, e_final] = build_H_and_energy(P);
+        auto [H_final, e_final] = build_H_and_energy(P, /*store_grids=*/true);
         result_.e_total = e_final;
         H_raw = H_final;
         store_converged_state(result_, H_raw, orth.X, n_occ, nb);

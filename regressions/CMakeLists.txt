@@ -562,6 +562,22 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-full-product] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_prod})
         unset(_reg_gpw_prod)
+
+        # Device product collocate/integrate composed into public GpwDft mid-SCF
+        # (no host cbg coll/int for H). Dual-gate vs CPU twin (H2).
+        set(_reg_gpw_dcoll reg_cuda-gpw-device-collocate)
+        add_executable(${_reg_gpw_dcoll}
+            gpw/cuda-gpw-device-collocate/${_reg_gpw_dcoll}.cu)
+        target_link_libraries(${_reg_gpw_dcoll} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_dcoll} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_dcoll}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_dcoll}> --device=both
+            DEPENDS ${_reg_gpw_dcoll}
+            COMMENT "regression [gpw/cuda-gpw-device-collocate] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_dcoll})
+        unset(_reg_gpw_dcoll)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)
