@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 4)
+### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 harness wave 4 closed)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
@@ -75,14 +75,14 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (GapCensus wave 4, `dev` @ `1ba1678f`):** Landed: device s/p
-RHF + CDIIS; Γ GPW footholds + **LDA `ks_chain`** (GH200 **1049858**);
+**CUDA open-gate (harness wave 4 close, `dev` @ `2987d20f`):** Landed: device
+s/p RHF + CDIIS; Γ GPW footholds + **LDA `ks_chain`** (GH200 **1049858**);
 `cuda::pw::PW` LSDA + closed-shell PBE + residency + stream + large-cell walls
-+ **analytic ionic forces** (GH200 **1050105**); pure-s 2-center SIMD.
-**Pending depth:** `cuda-pw-stress` (P0), `cuda-gpw-ks-gga` /
-`cuda-pw-collinear-spin` (P1), smear / PBE-force dual-gate / MG chain (P2),
-angular 2-center SIMD + RHF stream (P3). **Blocked:** `cuda-gpw-full-product`,
-`mg-main-structural`.
++ **analytic ionic forces** (GH200 **1050105**) + **analytic cell stress**
+(GH200 **1050604** max\|Δσ\|=1.36e-12 eV/Å³); pure-s + **mixed-angular**
+2-center SIMD. **Pending depth:** `cuda-gpw-ks-gga` / `cuda-pw-collinear-spin`
+(P1), smear / PBE-force dual-gate / MG chain (P2), RHF stream (P3).
+**Blocked:** `cuda-gpw-full-product`, `mg-main-structural`.
 
 **Queues (binding worklists):**
 

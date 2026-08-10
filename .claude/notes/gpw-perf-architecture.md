@@ -57,7 +57,8 @@ Files: `internal/product_collint.{h,cpp}` + wire in `multigrid.cpp`.
 | products_mg geometry-batch build_products | **landed** (wave 5) |
 | shell-level task list (`CollintTask` once in build_products) | **landed** (wave 6) |
 | integrate residual (width-4 / Ltot / short seg) | **landed** (wave 7) |
-| further int residual toward CP2K ~20 ms | **open** |
+| further int residual toward CP2K ~20 ms | **blocked** (`mg-main-structural` / non-pin-safe) |
+| pure-s + mixed-angular 2-center S/T xsimd | **landed** (slab-class; not fair-wall lever) |
 
 Algorithm after CP2K `src/grid/cpu/grid_cpu_collint.h` (BSD-3, Ole Schuett).
 Public API / Frame laws unchanged. SIMD: portable **xsimd only**.
