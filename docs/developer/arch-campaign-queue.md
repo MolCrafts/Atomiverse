@@ -17,14 +17,10 @@ rows; foothold ≠ closed capability.
 
 ### P0 — ES loop nodes (CPU)
 
-- [ ] `arch-gpw-driver-node` | **P0** Reshape `cpu::gpw::GpwDft` into
-  `cpu::Driver<gpw::Phase>` (or equivalent typed phase enum) with stage
-  components; public surface stays members + `run`/`forces`/`build`; no
-  collint numerical churn | method=cpu-arch | twin: existing `regressions/gpw/*`
-  pins green; unit workspace/ks_grid unchanged | files:
-  `include/atomiverse/cpu/gpw/gpw_solver.h`, `src/cpu/gpw/gpw_solver.cpp`,
-  stages under `gpw/stages/` if extracted | gate: no public API break; scoped
-  unit + reg green; wipe builds |
+- [ ] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS DIIS
+  loops onto the same `gpw::Phase` stages (OT residual separate) | method=cpu-arch
+  | twin: `regressions/gpw/*` | files: `gpw_solver.cpp`, `gpw/stages/` | gate:
+  pins green; wipe builds |
 - [ ] `arch-pw-driver-node` | **P0** Same reshape for `cpu::pw::PW` after or
   parallel to GPW once phase pattern lands | method=cpu-arch | twin:
   `regressions/pw/*` | files: `pw_solver.*`, PW stages | gate: public
@@ -58,13 +54,18 @@ rows; foothold ≠ closed capability.
 
 ## blocked
 
-- [!] `cuda-gpw-full-product` | blocked until `arch-gpw-driver-node` +
-  public-shape freeze green
+- [!] `cuda-gpw-full-product` | blocked until `arch-gpw-driver-paths` (full
+  multi-path Driver) + public-shape freeze green — Γ RKS Driver foothold alone
+  is not full product shape freeze
 - [!] `mg-main-soft-tol` | never staff as soften tols / self-golden
 - [!] `hybrid-gapw-paw-metagga` | method loops, not this campaign
 
 ## done
 
+- [x] `arch-gpw-driver-node` | **P0** `GpwDft` → `cpu::Driver<gpw::Phase>`;
+  Γ RKS DIIS via stages; public `run`/`build` stable | merge: `bf5897fb` |
+  evidence: `test_cpu_gpw_driver_node` + `reg_gpw-water-pbe-mt`; residual paths
+  staffed as `arch-gpw-driver-paths`
 - [x] `arch-e2e-tests-wave1` | **P0** Delete 78 heavy e2e sources duplicated by
-  regressions; ungate kernel unit regex tokens | merge: *(this commit)* |
-  evidence: `docs/developer/e2e-in-tests-campaign.md`
+  regressions; ungate kernel unit regex tokens | merge: wave-1 | evidence:
+  `docs/developer/e2e-in-tests-campaign.md`
