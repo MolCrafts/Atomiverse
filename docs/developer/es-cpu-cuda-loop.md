@@ -39,6 +39,15 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-10 GapCensus+Assign wave 9 (parent `dev` @ `8b517bb1`):** Re-diff
+  post wave-8 land (`4f78d716` + chore). Fair walls held MG MAIN **2.33×**;
+  **cpu_pending=0**. Product depth on base: collocate + MG + UKS + device
+  forces + PBE energy + O₂ UKS gate. Staff **3** P2: `product-h2o-gate`
+  (GH200 **1128194**), `stress` (**1128195**), `nondefault-stream`
+  (**1128196**). **pending_count≈68**; **in_progress=3**;
+  **gaps_remaining≈71**. Queue **not** exhausted. No push.
+
+
 - **2026-08-10 harness wave 7 (parent `dev` @ `f679807c`):** 2 of staffed
   → done [x]: `cuda-gpw-multigrid-run` (feat `2d780cff` / `e201a6cb`; GH200
   **1126433** \|dE\|=**1.587e-7** Ha H₂ Γ RKS PADE ngrids=4; prior

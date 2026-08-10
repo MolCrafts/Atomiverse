@@ -5,16 +5,14 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `4f78d716` (wave-8 tips landed)
+- **Parent:** `dev` @ `8b517bb1` (wave-8 landed; wave-9 staff in flight)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** After `es-cpu-cuda-opt-2` (8 waves, 5 auto-merges), operator
-  FF/merged residual green tips:
-  - `cuda-gpw-device-forces` (GH200 **1127167**)
-  - `cuda-gpw-pbe-product-gate` (GH200 **1127166**)
-  - `cuda-gpw-uks-o2-gate` (GH200 **1127173**)
-  Prior auto lands: full-product, device-collocate, multigrid-run, uks-gamma,
-  pw-pbe-stress, pw-spin-pbe.
+- **Last action:** GapCensus wave 9 + Assign 3 P2 product residuals on worktrees:
+  - `cuda-gpw-product-h2o-gate` — GH200 **1128194** — `wf/…` @ `9bf5b2ac`
+  - `cuda-gpw-stress` — GH200 **1128195** — `wf/…` @ `d58e9815`
+  - `cuda-gpw-nondefault-stream` — GH200 **1128196** — `wf/…` @ `5018ed7c`
+  Wave-8 on base: device-forces / pbe-product-gate / uks-o2-gate.
 
 ## How to run
 
@@ -25,14 +23,13 @@ args: {
   "staff_count": 3,
   "max_waves": 6,
   "target_branch": "dev",
-  "theme": "GPW P1 residual: stress, multi-k energy, nondefault-stream, device-diis-eigen; PW spin-forces + smear-forces; no soft tols; no dual-gate spam for already-gated paths"
+  "theme": "GPW P2 residual: device-diis-eigen, multi-k energy; PW spin-forces + smear-forces; no soft tols"
 }
 agent_budget: 384+
 ```
 
-**Staff order:** real product residual first (stress / multi-k / stream / DIIS),
-then PW spin/smear F/σ. Prefer compose into `GpwDft`, not new footholds.
-GapCensus must **not** explode dual-gate matrix without a stated production twin.
+**Staff order:** merge wave-9 tips when GH200 green; then device-diis-eigen /
+kpoints + PW spin/smear F/σ. Prefer compose into `GpwDft`, not new footholds.
 
 ## Disk
 
@@ -43,7 +40,7 @@ not under `tools/`.
 
 | Track | Residual |
 | --- | --- |
-| **cuda GPW** | stress API; multi-k; non-default stream; device DIIS/eigen; STVnl; MG/UKS forces; UKS-PBE |
+| **cuda GPW** | (staffed) stress / stream / H₂O gate; residual device DIIS/eigen; multi-k; MG/UKS forces; UKS-PBE |
 | **cuda PW** | spin forces/stress; smear forces/stress; spin+smear; multi-k PBE F/σ |
 | **cpu** | MG MAIN **2.33×** pin-unsafe blocked |
 

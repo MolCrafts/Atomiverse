@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-10 GapCensus wave 8)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-10 GapCensus wave 9)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
 **landed** on `dev` (feat `31d24207`; GH200 **1120817**). Device mid-SCF
@@ -62,21 +62,20 @@ GH200 **1125709**). Closed-shell PBE stress dual-gate **landed**
 energy** **landed** (`cuda-pw-spin-pbe` / `118d3003`; GH200 **1124645**).
 **Product multigrid energy landed** (`cuda-gpw-multigrid-run` / `2d780cff`;
 GH200 **1126433**). **Γ UKS DIIS PADE energy landed** (`cuda-gpw-uks-gamma` /
-`f679807c`; GH200 **1126430** — H₂ foothold). Keep **[~]** `device-forces`
-tip (**1126434** / prior **1125926**). GapCensus wave 8 **opens** production
-dual-gates (O₂ UKS, water MG), path×PBE F/σ, multi-path PBE joints, PW
-smear-PBE + multi-k/spin-kmesh PBE F/σ (**+20** pending). Merge remaining tip
-next; do not re-merge closed MG/UKS energy rows.
+`f679807c`; GH200 **1126430** — H₂ foothold). Wave-8 tips **on base** (device-forces / pbe-product-gate / uks-o2-gate).
+Wave-9 **staffs** P2 `product-h2o-gate` / `stress` / `nondefault-stream`
+(GH200 **1128194** / **1128195** / **1128196**). Residual: device-diis-eigen,
+multi-k, MG/UKS F/σ, path×PBE joints, PW spin/smear depth.
 
 | Priority | slug | Goal |
 | --- | --- | --- |
-| P1 | `[~]` `device-forces` then `pbe-product-gate` | GPW real F path + PBE product dual-gate |
-| P2 | `nondefault-stream` / `device-diis-eigen` / `product-h2o-gate` / **`uks-o2-gate`** / `kpoints` / `stress` + PW smear/spin F/σ/smear + **`smear-pbe`** + **`spin-kmesh`** + **`kmesh-forces`/`-stress`** | Stream + host-SCF residual + water/O₂ dual-gates + multi-k + stress + PW depth |
+| P1 | *(closed wave-8)* device-forces + pbe-product-gate | on base |
+| P2 | `[~]` nondefault-stream / product-h2o-gate / stress; residual device-diis-eigen / kpoints + PW smear/spin F/σ | Stream + water dual-gate + stress free-fn + host residual + multi-k + PW depth |
 | P3 | wave-4…8 joint paths (UKS/MG/k F+σ + multi-k MG/UKS + triple UKS-MG-k F/σ + path×PBE energy **and F/σ** + multi-path PBE joints + UKS-PBE F/σ + product-h2o-pbe + multigrid-h2o + device-stvnl + spin-pbe/smear F/σ + spin-kmesh-PBE/F/σ + kmesh-PBE F/σ) | after parent energy rows (MG+UKS energy parents **landed**) |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=71**; **in_progress=1**; **cuda_pending=71**;
-**gaps_remaining≈73**. Contract:
+(not soft-tol). **pending_count≈68**; **in_progress=3**; **cuda_pending≈68**;
+**gaps_remaining≈71**. Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 
