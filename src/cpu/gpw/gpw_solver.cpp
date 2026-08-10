@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -4026,13 +4027,13 @@ static GpwResult run_gpw_scf_kpoints_uks(
 }
 
 /// The full GPW SCF implementation, owned and reached through
-/// `GpwDft::run`.
-static GpwResult
-run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
-                 const RealMatrix* guess_C, const RealMatrix* guess_P,
-                 const RealMatrix* guess_P_beta,
-                 const std::vector<linalg::CplxMatrix>* guess_P_k,
-                 const std::vector<linalg::CplxMatrix>* guess_P_k_beta) {
+/// `GpwDft::run` → `run_impl_`.
+GpwResult GpwDft::run_impl_(
+    const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
+    const RealMatrix* guess_P, const RealMatrix* guess_P_beta,
+    const std::vector<linalg::CplxMatrix>* guess_P_k,
+    const std::vector<linalg::CplxMatrix>* guess_P_k_beta) {
+    const GpwDft& cfg = *this;
 #ifdef ATV_GPW_FFTW_THREADS
     // One-time global FFTW threading init; fftw_plan_with_nthreads is a global
     // setting, so every FFT plan created downstream (Poisson, GGA grad/div, MT)
@@ -5640,62 +5641,35 @@ run_gpw_scf_impl(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     }
 
 
-    for (int iter = 0; iter < cfg.max_iter; ++iter) {
-        const auto [H, e_total] = build_H_and_energy(P);
-
-        res.iters = iter + 1;
-        res.e_total = e_total;
-
-        if (use_diis) {
-            // Pulay DIIS: extrapolate the KS matrix from the (H, residual)
-            // history and rebuild P directly from its eigenvectors (no density
-            // mixing — DIIS does the averaging).
-            const RealMatrix err = internal::gpw_diis_error(H, P, S, orth().X);
-            double err_norm = 0.0;
-            for (const double v : err)
-                err_norm = std::max(err_norm, std::abs(v));
-
-            if (std::getenv("ATV_GPW_TRACE"))
-                std::fprintf(
-                    stderr,
-                    "[gpw it %2d] E=%.8f  T=%.4f loc=%.4f es=%.4f xc=%.4f  "
-                    "dE=%.2e err=%.2e\n",
-                    iter, e_total, res.e_kinetic, res.e_loc_sr, res.e_es,
-                    res.e_xc, std::abs(e_total - e_prev), err_norm);
-
-            const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
-            if (!no_stop && iter > 0 && std::abs(e_total - e_prev) < cfg.tol
-                && err_norm < kDiisErrTol) {
-                res.converged = true;
-                store_converged_state(res, H, orth().X, cfg.n_occ, nb);
-                // H_ks/S for force-at-density consumers (second-gen CP).
-                res.H_ks = H;
-                res.S = S;
-                break;
-            }
-            e_prev = e_total;
-
-            const RealMatrix H_ext = diis.step(H, err);
-            auto [eig, C] = diagonalize_fock_shifted(
-                H_ext, orth().X, S, C_prev, cfg.n_occ, cfg.level_shift);
-            C_prev = C;
-            P = linalg::build_density_matrix(C, cfg.n_occ, nb, 2.0);
-        } else {
-            // Legacy linear density mixing.
-            auto [eig, C] = diagonalize_fock_shifted(
-                H, orth().X, S, C_prev, cfg.n_occ, cfg.level_shift);
-            C_prev = C;
-            RealMatrix P_new =
-                linalg::build_density_matrix(C, cfg.n_occ, nb, 2.0);
-            if (iter > 0 && std::abs(e_total - e_prev) < cfg.tol) {
-                res.converged = true;
-                store_converged_state(res, H, orth().X, cfg.n_occ, nb);
-                res.H_ks = H;
-                res.S = S;
-                break;
-            }
-            e_prev = e_total;
-            P = (1.0 - cfg.mix) * P + cfg.mix * P_new;
+    // Γ RKS DIIS / linear-mix — Driver stages (gpw::Phase).
+    {
+        auto build_H = [&](const RealMatrix& Pin, RealMatrix& Hout,
+                           double& eout) {
+            auto he = build_H_and_energy(Pin);
+            Hout = std::move(he.first);
+            eout = he.second;
+            // Mirror free-loop side effects into res energy pieces when
+            // build_H_and_energy writes them via the shared lambdas.
+            res.e_total = eout;
+        };
+        auto diag_fn =
+            [&](const RealMatrix& Hext,
+                const RealMatrix& Cprev)
+            -> std::pair<linalg::RealVector, RealMatrix> {
+            return diagonalize_fock_shifted(Hext, orth().X, S, Cprev,
+                                            cfg.n_occ, cfg.level_shift);
+        };
+        const bool conv = drive_gamma_rks_diis_(
+            std::move(P), S, orth().X, std::move(C_prev), cfg.n_occ, nb,
+            use_diis, cfg.mix, cfg.level_shift, cfg.max_iter, cfg.tol,
+            kDiisErrTol, cfg.diis_depth, build_H, diag_fn, res);
+        P = loop_P_;
+        C_prev = loop_C_;
+        if (conv) {
+            store_converged_state(res, loop_H_, orth().X, cfg.n_occ, nb);
+            res.H_ks = loop_H_;
+            res.S = S;
+            res.e_total = loop_e_total_;
         }
     }
     // Partial-SCF consumers (second-generation CP corrector): export the last
@@ -5939,8 +5913,8 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         throw std::invalid_argument(
             "GpwDft::run: multi-k UKS density guess requires both "
             "guess_P_k (alpha) and guess_P_k_beta (no partial spin guess)");
-    result_ = run_gpw_scf_impl(atoms, *this, guess_C, guess_P, guess_P_beta,
-                               guess_P_k, guess_P_k_beta);
+    result_ = run_impl_(atoms, guess_C, guess_P, guess_P_beta, guess_P_k,
+                        guess_P_k_beta);
     return result_;
 }
 
@@ -6072,6 +6046,116 @@ gpw_forces_fd(const std::vector<GpwAtom>& atoms, const GpwDft& cfg, double h) {
         }
     }
     return forces;
+}
+
+
+
+// ── GpwDft Driver node: Γ RKS stages ────────────────────────────────────────
+
+void GpwDft::reset_built_driver_() {
+    ks_build_stage_.reset();
+    mix_stage_.reset();
+    diag_stage_.reset();
+    density_stage_.reset();
+    converged_stage_.reset();
+    this->pending_.clear();
+    this->owned_components_.clear();
+    this->plan_ = {};
+    this->criteria_.clear();
+    this->criteria_owned_.clear();
+    this->backend_.reset();
+    driver_built_ = false;
+    wired_self_ = nullptr;
+}
+
+void GpwDft::ensure_driver_built_(bool use_diis, double mix, int n_occ,
+                                  int n_basis, int diis_depth, double tol,
+                                  double diis_err_tol,
+                                  KsBuildStage::Builder builder,
+                                  DiagonalizeStage::DiagFn diag) {
+    if (driver_built_) {
+        if (wired_self_ == this)
+            return;
+        reset_built_driver_();
+    }
+
+    ks_build_stage_ = std::make_unique<KsBuildStage>(
+        std::move(builder), loop_P_, loop_S_, loop_X_, loop_H_, loop_err_,
+        loop_e_total_, loop_err_norm_, loop_prev_energy_, tol, diis_err_tol,
+        loop_skip_update_);
+    mix_stage_ = std::make_unique<MixStage>(use_diis, diis_depth, loop_H_,
+                                            loop_err_, loop_H_ext_,
+                                            loop_skip_update_);
+    diag_stage_ = std::make_unique<DiagonalizeStage>(
+        std::move(diag), loop_H_ext_, loop_C_, loop_skip_update_);
+    density_stage_ = std::make_unique<DensityStage>(
+        use_diis, mix, n_occ, n_basis, loop_C_, loop_P_, loop_skip_update_);
+    converged_stage_ = std::make_unique<GpwConverged>(loop_skip_update_);
+
+    this->on(ATV::gpw::Phase::ks_build).add_ref(*ks_build_stage_);
+    this->on(ATV::gpw::Phase::mix).add_ref(*mix_stage_);
+    this->on(ATV::gpw::Phase::diagonalize).add_ref(*diag_stage_);
+    this->on(ATV::gpw::Phase::density).add_ref(*density_stage_);
+    this->add_criterion_ref(*converged_stage_);
+
+    this->set_serial_on_replica();
+    cpu::Driver<ATV::gpw::Phase>::build();
+    driver_built_ = true;
+    wired_self_ = this;
+}
+
+bool GpwDft::drive_gamma_rks_diis_(
+    linalg::RealMatrix P, const linalg::RealMatrix& S,
+    const linalg::RealMatrix& X, linalg::RealMatrix C_prev, int n_occ, int nb,
+    bool use_diis, double mix, double /*level_shift*/, int max_iter, double tol,
+    double diis_err_tol, int diis_depth, KsBuildStage::Builder build_H,
+    DiagonalizeStage::DiagFn diag, GpwResult& res) {
+    loop_P_ = std::move(P);
+    loop_S_ = S;
+    loop_X_ = X;
+    loop_C_ = std::move(C_prev);
+    loop_H_ = linalg::RealMatrix{};
+    loop_H_ext_ = linalg::RealMatrix{};
+    loop_err_ = linalg::RealMatrix{};
+    loop_e_total_ = 0;
+    loop_err_norm_ = 0;
+    loop_prev_energy_ = std::numeric_limits<double>::quiet_NaN();
+    loop_skip_update_ = false;
+
+    // Rebuild stages every run — builder/diag lambdas capture the prologue.
+    reset_built_driver_();
+    ensure_driver_built_(use_diis, mix, n_occ, nb, diis_depth, tol,
+                         diis_err_tol, std::move(build_H), std::move(diag));
+    mix_stage_->reset();
+    converged_stage_->reset();
+
+    // Serial whole-molecule loop — empty Frame is fine under set_serial.
+    cpu::Frame loop_frame;
+    setup_pass(loop_frame);
+
+    int executed = 0;
+    for (int iter = 0; iter < max_iter; ++iter) {
+        mutable_outer_status().reset();
+        step_once(iter);
+        ++executed;
+        res.iters = executed;
+        res.e_total = loop_e_total_;
+        if (std::getenv("ATV_GPW_TRACE"))
+            std::fprintf(stderr,
+                         "[gpw it %2d] E=%.8f  dE gate / err=%.2e  skip=%d\n",
+                         iter, loop_e_total_, loop_err_norm_,
+                         (int)loop_skip_update_);
+        if (poll_criteria_(iter) != ATV::Verdict::Continue)
+            break;
+    }
+    teardown_pass();
+
+    const bool conv = this->converged() || loop_skip_update_;
+    res.converged = conv;
+    res.e_total = loop_e_total_;
+    // Caller (run_impl_, still in the anon TU) runs store_converged_state on
+    // loop_H_ when conv — keeps that helper internal-linkage.
+    return conv;
 }
 
 } // namespace gpw
