@@ -36,17 +36,22 @@ landed CPU analytic path). Optional class: CPU FD gate in
 
 \[
 \max_{i,\alpha}\lvert F^{\mathrm{cuda}}_{i\alpha} - F^{\mathrm{cpu}}_{i\alpha}\rvert
-  \le 5\times 10^{-2}\ \mathrm{eV/Å}
+  \le 5\times 10^{-3}\ \mathrm{eV/Å}
 \]
 
 and \(\max |F^{\mathrm{cpu}}| > 0.05\) eV/Å (non-vacuous).
 
-**Re-pin GH200 job 1049792:** measured \(\max|\Delta F|\approx 2.0\times 10^{-2}\)
-eV/Å (CPU \(\max|F|\approx 2.54\), CUDA \(\approx 2.52\)); design-time 5e-3 was
-below the independent-SCF floor. Bound = 2.5× measured residual.
+**GH200 job 1050105:** measured \(\max|\Delta F| = 2.86\times 10^{-13}\) eV/Å
+(CPU = CUDA \(\max|F| = 2.517979\) eV/Å; force-path SCF energy both
+\(-13.85556302\) Ry). Bound kept at design-time \(5\times 10^{-3}\).
 
-Tolerance absorbs independent SCF trajectories (cuFFT vs FFTW, Zheevd vs
-Jacobi eigenvectors, tree vs serial reductions). Not bit-exact by design.
+**Root cause of earlier \(\sim 2\times 10^{-2}\) residual:** CPU force path
+called `XCBuilder::step(ws)` without `method.xc`, so the NL band re-solve
+rebuilt \(V_{\mathrm{eff}}\) with the default **PBE** while SCF (and CUDA)
+used **LSDA**. Fixed to `xc.step(ws, method.xc)`.
+
+Not bit-exact by design (independent SCF + FFT/eigensolve paths) but
+observed residual is at floating-point noise for this cell.
 
 ## Dual gate
 

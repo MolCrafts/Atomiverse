@@ -286,8 +286,12 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
     if (!scf_prob.kb_proj_k.empty()) {
         std::vector<Vec3> F_nl(static_cast<std::size_t>(n), Vec3::zeros());
 
+        // Rebuild V_eff from the final mixed density with the SAME XC the
+        // SCF used. `XCBuilder::step` defaults to PBE — a silent LSDA→PBE
+        // swap here made analytic forces disagree with FD (and with the
+        // CUDA twin, which rebuilds V_eff from the method's xc).
         poisson.step(ws);
-        xc.step(ws);
+        xc.step(ws, method.xc);
         veff.step(ws);
 
         const auto layout = mpi_layout();

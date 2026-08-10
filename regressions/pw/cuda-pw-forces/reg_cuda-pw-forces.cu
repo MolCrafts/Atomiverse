@@ -26,10 +26,10 @@ using namespace ATV;
 
 namespace {
 
-// GH200 job 1049792 measured max|ΔF| ≈ 2.0e-2 eV/Å on this cell with
-// independent SCF (cuFFT/FFTW + Zheevd/Jacobi). Bound is 2.5× measured
-// residual — never tighten below the measured floor without re-evidence.
-constexpr double kForceTolEvA = 5.0e-2;
+// Design-time parity bound. Pre-fix residual ~2e-2 eV/Å was from a CPU
+// force-path bug (`xc.step(ws)` defaulted to PBE while SCF was LSDA); with
+// `xc.step(ws, method.xc)` the CUDA twin should sit well under this.
+constexpr double kForceTolEvA = 5.0e-3;
 constexpr double kA = 5.43; // Å
 constexpr double kStretch = 0.08; // Å along x on atom 1
 constexpr double kEcutRy = 8.0;
