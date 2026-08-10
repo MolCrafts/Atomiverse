@@ -4,18 +4,25 @@ Rewrite in place each harness wave.
 
 ## Status
 
-- **Parent:** `dev` @ `19280211` (post `arch-gpw-driver-node` / `bf5897fb`)
-- **Wave-1 done:** e2e-in-tests delete (78 sources)
-- **Wave-2 done:** `arch-gpw-driver-node` — GpwDft is `cpu::Driver<gpw::Phase>`;
-  Γ RKS DIIS driven by stages; residual multi-k/UKS/OT → `arch-gpw-driver-paths`
-- **GapCensus wave 1 (2026-08-10):** refilled **pending=6** (P0 paths + PW;
-  P1 CUDA SCF fold + shape freeze; P2 e2e-wave2 + mg-main). **in_progress
-  empty**. Blocked: `cuda-gpw-full-product` (until paths + freeze). No open
-  arch specs; no `wf/arch-*` worktrees. Foreign leftover `wf/escuda-*` /
-  `wf/cuda-*` / MD branches not stolen.
+- **Parent:** `dev` @ `42b8982c` (post `arch-cuda-scf-solver-fold` +
+  `arch-e2e-tests-wave2` merges)
+- **Wave-1 done:** e2e-in-tests delete (78 sources); `arch-gpw-driver-node`
+- **Wave-2 done (this harness):**
+  - `arch-cuda-scf-solver-fold` — no free-loop `SCFSolver`; RHF owns
+    `internal::RhfScfCycle` in `scf::Phase` order; nested `cuda::Driver`
+    residual
+  - `arch-e2e-tests-wave2` — residual multi-iter out of `tests/`;
+    `ATV_TEST_HEAVY_REGEX=^$`
+- **GapCensus harness wave 2 / census wave 3 (2026-08-10):** refilled
+  **pending=4** (P0 paths + PW; P1 shape freeze; P2 mg-main). **in_progress
+  empty**. Blocked: `cuda-gpw-full-product` (until paths + freeze). Specs
+  closed for both wave-2 lands; no open arch specs. No `wf/arch-*` worktrees.
+  Orphan tips `wf/arch-gpw-driver-paths` / `wf/arch-pw-driver-node` **not** on
+  `dev` — do not mark done. Foreign leftover `wf/escuda-*` / `wf/cuda-*` / MD
+  branches not stolen.
 - **Lever:** copy `MeanFieldMethod` + `scf/stages/` + landed
   `drive_gamma_rks_diis_` / `gpw/stages/*` — do not invent a second SCF shape.
-- **gaps_remaining=7** (6 pending + blocked full CUDA GPW product).
+- **gaps_remaining=5** (4 pending + blocked full CUDA GPW product).
 
 ## Run
 

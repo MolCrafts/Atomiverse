@@ -63,14 +63,15 @@ step 1 — CPU architecture**, not more collint polish.
 | P0 | ~~`arch-gpw-driver-node`~~ **landed** | `GpwDft` → `Driver<gpw::Phase>`; residual paths → `arch-gpw-driver-paths` |
 | P0 | `arch-gpw-driver-paths` | UKS + multi-k DIIS onto same stages (OT trails) |
 | P0 | `arch-pw-driver-node` | `PW` same shape after GPW pattern |
-| P1 | `arch-cuda-scf-solver-fold` | fold `cuda::scf::SCFSolver` private under RHF |
+| P1 | ~~`arch-cuda-scf-solver-fold`~~ **landed** | free-loop `SCFSolver` → private `RhfScfCycle`; nested CUDA Driver residual |
 | P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product |
-| P2 | `arch-e2e-tests-wave2` / `arch-mg-main-structural` | residual iron law; MG ~1× after Driver |
+| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× after Driver paths |
 
-**GapCensus wave 2:** pending=6, gaps_remaining=7, new_slugs=0 — tree on `dev`
-unchanged since Γ RKS Driver land; orphan `wf/arch-*` tips not merged. Queue:
-[arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md). Workflow:
-`.grok/workflows/arch-campaign.rhai`.
+**GapCensus harness wave 2 / census wave 3:** pending=4, gaps_remaining=5,
+new_slugs=0 — fold + e2e-wave2 merged on `dev` @ `42b8982c`; orphan
+`wf/arch-gpw-driver-paths` / `wf/arch-pw-driver-node` tips still not on `dev`.
+Queue: [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
+Workflow: `.grok/workflows/arch-campaign.rhai`.
 
 **Forbidden this campaign:** soft tols; invent hybrid/GAPW; staff
 `cuda-gpw-full-product` before multi-path Driver + freeze; leave `build*`.

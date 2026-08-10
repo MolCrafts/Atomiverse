@@ -16,18 +16,19 @@ Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
 rows; foothold ≠ closed capability. **Unmerged tip ≠ done** — only green merge
 onto `dev` closes a slug.
 
-**GapCensus wave 2 (2026-08-10)** on `dev` @ `c77f8145` (post wave-1 queue
-rewrite; no arch land since `arch-gpw-driver-node` @ `bf5897fb`). Tree facts
-reconfirmed:
+**GapCensus harness wave 2 / census wave 3 (2026-08-10)** on `dev` @
+`42b8982c` (post merge of `arch-cuda-scf-solver-fold` + `arch-e2e-tests-wave2`).
+Tree facts reconfirmed:
 
 | Surface | On `dev` |
 | --- | --- |
 | `GpwDft` | `cpu::Driver<gpw::Phase>` + `drive_gamma_rks_diis_` + `gpw/stages/*` for **Γ RKS DIIS only** |
 | GPW residual free loops | `run_gpw_scf_kpoints*` (RKS/UKS DIIS), Γ UKS DIIS, all **OT** (`use_ot`) |
 | `cpu::pw::PW` | plain class — **no** `pw::Phase`, no stages, free SCF in `pw_solver.cpp` |
-| `cuda::scf::SCFSolver` | free-loop internal under `RHF` (`unique_ptr<SCFSolver> solver_`); **not** Driver-like fold |
+| `cuda::scf::RHF` | Component+HF + private `internal::RhfScfCycle` (`scf::Phase` order); **no** public/free-loop `SCFSolver` type |
+| Nested CUDA Driver | residual — full `cuda::Driver<scf::Phase>` needs nested CUDA DriverNode (not a separate staffable product slug yet) |
 | CUDA GPW | stage footholds only (`ks_chain` / MG / GGA); **no** public method product |
-| e2e iron law | wave-1 + wave-2 residual multi-iter out of `tests/`; `ATV_TEST_HEAVY_REGEX` empty (`^$`) on tip |
+| e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear |
 
 Orphan **branch tips** (no isolation worktrees; **not** on `dev` — do not mark
 done; Assign may rebase/re-staff or discard):
@@ -36,7 +37,6 @@ done; Assign may rebase/re-staff or discard):
 | --- | --- |
 | `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual |
 | `wf/arch-pw-driver-node` | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
-| `wf/arch-cuda-scf-solver-fold` | fold free-loop under RHF private cycle |
 
 No open arch specs under `.claude/specs/` (only unrelated
 `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`). Lever still:
@@ -58,13 +58,8 @@ No open arch specs under `.claude/specs/` (only unrelated
   `run`/`forces`/`stress` stable; spin/smear may remain free-loop residual if
   restricted fixed-occ lands first |
 
-### P1 — CUDA SCF debt + freeze product shape
+### P1 — freeze product shape (CUDA GPW)
 
-- [ ] `arch-cuda-scf-solver-fold` | **P1** Fold `cuda::scf::SCFSolver` fully
-  private under `cuda::scf::RHF` Driver-like shape (no dual free-loop
-  architecture; kill synthetic dual path as public surface) | method=cuda-arch
-  | twin: `tests/cuda/scf/test_rhf.cu` + CPU RHF oracle | files: `cuda/scf/*`
-  | gate: GH200 green; device-only; no push |
 - [ ] `arch-cuda-gpw-public-shape-freeze` | **P1** Document + enforce: full
   CUDA GPW method product **equals** CPU `GpwDft` public shape after
   multi-path Driver (`arch-gpw-driver-paths`) lands; compose existing stage
@@ -80,7 +75,7 @@ No open arch specs under `.claude/specs/` (only unrelated
 
 ## in_progress
 
-*(none — `wf/arch-e2e-tests-wave2` tip ready for merge gate)*
+*(none)*
 
 ## blocked
 
@@ -99,9 +94,16 @@ No open arch specs under `.claude/specs/` (only unrelated
 - [x] `arch-e2e-tests-wave1` | **P0** Delete 78 heavy e2e sources duplicated by
   regressions; ungate kernel unit regex tokens | merge: wave-1 | evidence:
   `docs/developer/e2e-in-tests-campaign.md`
+- [x] `arch-cuda-scf-solver-fold` | **P1** Fold free-loop `SCFSolver` under
+  `cuda::scf::RHF` private `internal::RhfScfCycle` (`scf::Phase` order); no
+  public SCFSolver; RHF stays Component+HF (nested CUDA Driver residual) |
+  merge: `3a20af0a` / impl `772497c1` | evidence:
+  `regressions/architecture/arch-cuda-scf-solver-fold` + `test_cuda_scf*`
+  (GH200); spec closed
 - [x] `arch-e2e-tests-wave2` | **P2** Residual multi-iter out of `tests/`
   (TDA/NAC/ALDA/hessian/delta-SCF/MPI kpoint + GPW vol product SCF +
   multiscale/qm_engine multi-iter); slim mixed units; empty
-  `ATV_TEST_HEAVY_REGEX`; harness `reg_arch-e2e-tests-wave2` | branch:
-  `wf/arch-e2e-tests-wave2` | evidence: `docs/developer/e2e-in-tests-campaign.md`
-  (merge still required onto `dev`)
+  `ATV_TEST_HEAVY_REGEX`; harness `reg_arch-e2e-tests-wave2` | merge:
+  `42b8982c` / impl `49d03074` + polish `c6b623be` | evidence:
+  `docs/developer/e2e-in-tests-campaign.md` +
+  `regressions/architecture/arch-e2e-tests-wave2`; spec closed

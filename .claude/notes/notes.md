@@ -15,11 +15,11 @@ History is git's job — superseded designs are deleted, not archived here.
   CPU-first (only the sanctioned next waves in
   [cuda-rhf-device-only.md](cuda-rhf-device-only.md)); classical MD CUDA
   independent.
-- **e2e-in-tests migration (wave 1 done).** Deleted **78** heavy full-method
-  sources duplicated by `regressions/**`; kernel unit tokens re-ungated in
-  `ATV_TEST_HEAVY_REGEX`. Ledger:
+- **e2e-in-tests migration (wave 1 + wave 2 done on `dev`).** Wave-1 deleted
+  **78** heavy full-method sources; wave-2 removed residual multi-iter and
+  emptied `ATV_TEST_HEAVY_REGEX` to `^$`. Ledger:
   [e2e-in-tests-campaign.md](../../docs/developer/e2e-in-tests-campaign.md).
-  Residual audit is `arch-e2e-tests-wave2` on the architecture campaign queue.
+  Optional wave-3 only if unique pin gaps appear after inventory.
 - **Open-shell cluster GPW mixer.** GPW analytic forces are validated
   (analytic-vs-FD ≤ 3.6e-6 Ha/Bohr across Si₂ RKS/UKS setups), but Si₂-triplet
   GTH in a cluster box is SCF-ill-conditioned for both ATV and CP2K in
@@ -47,8 +47,8 @@ History is git's job — superseded designs are deleted, not archived here.
 | gpw-perf-loop | queue [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md); arch [gpw-perf-architecture.md](gpw-perf-architecture.md); **always wipe builds**; first structural cut `p1-gpw-workspace` → `p1-ks-grid-build` ([es-optimization-order.md](es-optimization-order.md)) |
 | tb-method-loop | [tb-blocked-capabilities.md](tb-blocked-capabilities.md), [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md), [gfn2-xtb-chon.md](gfn2-xtb-chon.md) |
 | metalwalls-method-loop | [metalwalls-capability-map.md](metalwalls-capability-map.md), [oracle-pin-provenance.md](oracle-pin-provenance.md) |
-| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; owns `cuda::scf::SCFSolver` debt — now staffed via **arch-campaign** `arch-cuda-scf-solver-fold`); full CUDA GPW product blocked until GPW Driver + shape freeze |
-| **arch-campaign** | queue [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md); loop [arch-campaign-loop.md](../../docs/developer/arch-campaign-loop.md); spine **GpwDft/PW Driver nodes → CUDA SCF fold → shape freeze → MG structural**; **`arch-gpw-driver-node` landed** (Γ RKS DIIS); GapCensus wave-2 **pending=6** / **gaps_remaining=7** / **new_slugs=0** (same staffable set; residual e2e inventory deepened; orphan `wf/arch-*` tips not on `dev` ≠ done) |
+| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; free-loop `SCFSolver` **folded** via **arch-campaign** `arch-cuda-scf-solver-fold` → private `RhfScfCycle`; nested `cuda::Driver<scf::Phase>` residual); full CUDA GPW product blocked until multi-path GPW Driver + shape freeze |
+| **arch-campaign** | queue [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md); loop [arch-campaign-loop.md](../../docs/developer/arch-campaign-loop.md); spine **GpwDft/PW Driver nodes → CUDA SCF fold → shape freeze → MG structural**; landed: `arch-gpw-driver-node`, `arch-cuda-scf-solver-fold`, `arch-e2e-tests-wave{1,2}`; GapCensus harness wave-2 **pending=4** / **gaps_remaining=5** / **new_slugs=0**; orphan `wf/arch-gpw-driver-paths` / `wf/arch-pw-driver-node` tips not on `dev` ≠ done |
 | CUDA MD perf | [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) (A/B methodology + precision mode map vs LAMMPS Kokkos); **not** blocked by ES CPU priority |
 
 ## Build-shape conclusions

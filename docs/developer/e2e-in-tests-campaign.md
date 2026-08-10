@@ -60,6 +60,11 @@ mixed files to bind/build/throw/math only. Empty `ATV_TEST_HEAVY_REGEX` to `^$`.
 - Oracle/live third-party calls under ctest
 - Fat unanchored `ATV_TEST_HEAVY_REGEX` tokens that false-hit unit names
 
+## Status on `dev`
+
+Wave-1 + wave-2 **merged** (`42b8982c` and ancestors). Specs closed. Optional
+wave-3 remains discovery-only (unique pin migrate) — not auto-staffed.
+
 ## Next waves
 
 - Wave 3: optional migrate of *unique* coverage discovered only after green

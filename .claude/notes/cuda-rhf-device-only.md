@@ -51,7 +51,7 @@ Grok CUDA skills (not ad-hoc style):
 | **5** | **done** | Pure-s device analytic forces; async density energy write; no mid-build fence before integrals; `forces()` via `run()` |
 | **6** | **done** | s/p device analytic forces (`launch_rhf_forces_sp`); ends host force fallback for l≤1 |
 | **7** | **landed** | Device-only polish: drop mid-build V_nuc D2H/H2D (energy ← `d_V_nuc`); ERI `__launch_bounds__(256,2)` + occupancy-capped grid-stride |
-| **8** | **landed** | Device `level_shift` on s/p Fock (`RHFFockDevice` + `SCFSolver`); no host-fill when λ≠0 |
+| **8** | **landed** | Device `level_shift` on s/p Fock (`RHFFockDevice` + private cycle); no host-fill when λ≠0 |
 | **9** | **landed** | Path select from host Z before upload (`cache_host_types`); no setup type[] D2H on `run`/`forces` s/p path |
 | **10** | **landed** | Device CDIIS (Pulay) Fock mixer + level shift in mix step (CPU MixStage twin); `ws.S` for e=Xᵀ[F,P]_S X; history on device |
 
