@@ -31,7 +31,7 @@ existence is noted).
 - `dynamics` (10) · `minimize` (5) · `potentials` (12) · `longrange` (3) · `observe` (3) · `record` (3)
 - `scf` (12: 4 public + `internal/`) · `planewave` (7: 1 public + `internal/`) · `gpw` (0 public, all `internal/` — stage footholds: Poisson, XC LDA, collocate/integrate, composed KS chain LDA+PBE, multigrid KS; public method product must mirror CPU `GpwDft` — [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md))
 
-CPU-only domains, absent (never renamed) on `cuda/`: `bias`, `electrodes`, `electronic`, `io`, `linalg`, `montecarlo`, `multiscale`, `path`, `replica`, `semiempirical`, `task`, `vibration`, `xc`. `gpw` is no longer absent — `cuda/gpw/internal/` carries unit-tested kernel footholds (no public method yet). Full CUDA GPW product public shape is **frozen** to equal CPU `GpwDft` ([cuda-gpw-public-shape.md](cuda-gpw-public-shape.md)); `cuda-gpw-full-product` is staffable under that contract after freeze merge.
+CPU-only domains, absent (never renamed) on `cuda/`: `bias`, `electrodes`, `electronic`, `io`, `linalg`, `montecarlo`, `multiscale`, `path`, `replica`, `semiempirical`, `task`, `vibration`, `xc`. `gpw` is no longer absent — `cuda/gpw/internal/` carries unit-tested kernel footholds (no public method yet). Full CUDA GPW product public shape is **frozen** to equal CPU `GpwDft` ([cuda-gpw-public-shape.md](cuda-gpw-public-shape.md); freeze merge `0147fe02`); `cuda-gpw-full-product` is staffable under that contract (not auto-landed; GH200 + CUDA↔CPU tols).
 
 **Torch backend** (`include/atomiverse/torch/`, 5 directories, 8 headers) — `frame`, `component`, `device`, `neighbor`, `potentials`. Partial backend: no driver/, no evaluate/.
 

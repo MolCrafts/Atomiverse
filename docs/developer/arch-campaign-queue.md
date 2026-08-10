@@ -16,11 +16,12 @@ Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
 rows; foothold ≠ closed capability. **Unmerged tip ≠ done** — only green merge
 onto `dev` closes a slug.
 
-**GapCensus wave 8 (2026-08-10)** on `dev` @ `9271cae3` (wave-7 census
-chore). Re-diff CLAUDE iron laws + ES order, notes, arch/e2e/es queues, tree
-scan `cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` —
-**no new staffable residual slug** (`new_slugs_added=0`). Tree facts on
-`dev` (product source of truth; unmerged tips are claims only):
+**Harness wave 8 (2026-08-10)** on `dev` @ `0147fe02` (merge
+`wf/arch-cuda-gpw-public-shape-freeze` / docs `aea603bb` — freeze note +
+`reg_arch-cuda-gpw-public-shape-freeze`). Re-diff CLAUDE iron laws + ES order,
+notes, arch/e2e/es queues, tree scan `cpu/{gpw,planewave,scf}` + `cuda/scf` +
+`tests/` — **no new staffable residual slug** (`new_slugs_added=0`). Tree
+facts on `dev` (product source of truth; unmerged tips are claims only):
 
 | Surface | On `dev` |
 | --- | --- |
@@ -29,51 +30,48 @@ scan `cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` —
 | `cpu::pw::PW` | `cpu::Driver<pw::Phase>` + stages for **restricted fixed-occ**; collinear spin + metallic smearing free-loop residual |
 | `cuda::scf::RHF` | Component+HF + private `internal::RhfScfCycle` (`scf::Phase` order); **no** public/free-loop `SCFSolver` type |
 | Nested CUDA Driver | residual — full `cuda::Driver<scf::Phase>` needs nested CUDA DriverNode (**not** a separate staffable product slug yet) |
-| CUDA GPW | stage footholds only (`ks_chain` / MG / GGA); **no** public method product; freeze note **not** on `dev` |
+| CUDA GPW | stage footholds only (`ks_chain` / MG / GGA); **no** public method product; public shape **frozen** to CPU `GpwDft` ([cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)) |
 | e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear (none staffed this wave) |
 
 **Unmerged tips** (no isolation worktree; **not** on `dev` — keep `[~]`; do
-not mark done). Product tips rebased onto pre-census `9271cae3`. Docs-only
-GapCensus/Assign chores on `dev` require **rebase onto current `dev` before
-gate**:
-
+not mark done). Tips are **behind** post-freeze-merge `dev` — rebase onto
+current `dev` before gate:
 
 | Tip | Claim (unverified until merge) |
 | --- | --- |
-| `wf/arch-pw-driver-paths` | all product SCF paths on same `pw::Phase` stages via path-local StepFns + shared `drive_stage_loop_` (`e04ba781`) |
-| `wf/arch-cuda-gpw-public-shape-freeze` | freeze doc + harness: CUDA GPW product shape equals CPU `GpwDft` (`a625c232`) |
-| `wf/arch-mg-main-structural` | single-owner multi-level MAIN product path (`3d9a64ba`) |
+| `wf/arch-pw-driver-paths` | all product SCF paths on same `pw::Phase` stages via path-local StepFns + shared `drive_stage_loop_` (`c20bb04f`; ahead=1 behind=2 vs `dev` @ `0147fe02`) |
+| `wf/arch-mg-main-structural` | single-owner multi-level MAIN product path (`9ee9f49e` / feat `1f62a117`; ahead=2 behind=2 vs `dev` @ `0147fe02`) |
 
-Open arch specs on `dev`: **none** (specs live only on tips under
-`.claude/specs/arch-{pw-driver-paths,cuda-gpw-public-shape-freeze,mg-main-structural}/`).
+Open arch specs on `dev`: **none** (freeze spec closed this harness; PW/MG
+specs live only on tips under
+`.claude/specs/arch-{pw-driver-paths,mg-main-structural}/`).
 Lever: `MeanFieldMethod` + `cpu/scf/stages/` + landed multi-path GPW DIIS
-stages + landed PW fixed-occ stages (+ tip multi-path PW Ops / freeze note /
-MG structural).
+stages + landed PW fixed-occ stages + freeze note
+([cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md))
+(+ tip multi-path PW Ops / MG structural).
 
 ### P0 — ES loop residual paths (CPU)
 
 (none staffable unassigned — `arch-pw-driver-paths` remains `[~]`; tip
-`e04ba781`; rebase onto current `dev`)
+`c20bb04f`; rebase onto current `dev`)
 
 ### P1 — freeze product shape (CUDA GPW)
 
-(none staffable unassigned — `arch-cuda-gpw-public-shape-freeze` remains
-`[~]`; tip `a625c232`; rebase onto current `dev`)
+(none — `arch-cuda-gpw-public-shape-freeze` → **done** this harness; merge
+`0147fe02` / docs `aea603bb`)
 
 ### P2 — MG structure (after Driver paths)
 
 (none staffable unassigned — `arch-mg-main-structural` remains `[~]`; tip
-`3d9a64ba`; prefer freeze-first among freeze/mg if contention at merge;
-rebase onto current `dev`)
+`9ee9f49e`; freeze green; rebase onto current `dev` before gate)
 
 ## in_progress
 
-**Assign wave 8** (parent `dev` @ `307eaaa9` post GapCensus wave-8) —
-**3** incomplete resumes (`[~]`); **new_assigned=0** (pending unheld=0; no
-open arch specs on `dev`; GapCensus `new_slugs_added=0`). Tips claim product;
-**rebase onto current `dev` before gate**. Unmerged tip ≠ done.
-**incomplete_remaining=3**. Pending unheld: 0. Blocked product: 1.
-**gaps_remaining=4**.
+**Harness wave 8** closed `arch-cuda-gpw-public-shape-freeze` → **done**.
+Keep other `[~]`: `arch-pw-driver-paths` + `arch-mg-main-structural`.
+**incomplete_remaining=2**. Pending unheld: 0. Blocked product: 1
+(`cuda-gpw-full-product` staffable under freeze contract; not auto-landed /
+not staffed this campaign wave). **gaps_remaining=3**. **new_slugs_added=0**.
 
 - [~] `arch-pw-driver-paths` | **P0** Migrate collinear spin + metallic
   smearing free loops onto same `pw::Phase` stages
@@ -83,36 +81,25 @@ open arch specs on `dev`; GapCensus `new_slugs_added=0`). Tips claim product;
   pw-smearing-al, metallic DOS/bands) + `test_cpu_pw_driver_node` +
   `reg_arch-pw-driver-paths` (tip) | files: `pw_solver.cpp` free-loop arms,
   `planewave/stages/`, `drive_*` | gate: pins green; public surface stable;
-  wipe builds | **tip** `wf/arch-pw-driver-paths` @ `e04ba781` (claim all
-  product SCF paths on stages; rebase onto current `dev` before gate) |
+  wipe builds | **tip** `wf/arch-pw-driver-paths` @ `c20bb04f` (claim all
+  product SCF paths on stages; **rebase onto `0147fe02`** before gate) |
   spec (tip): `.claude/specs/arch-pw-driver-paths/SPEC.md` |
-- [~] `arch-cuda-gpw-public-shape-freeze` | **P1** Document + enforce: full
-  CUDA GPW method product **equals** CPU `GpwDft` public shape after
-  multi-path DIIS Driver (`arch-gpw-driver-paths` **merged**); compose existing
-  stage footholds only; OT free-loop residual is documented on CPU and does
-  not block the freeze doc | method=arch-doc | twin: harness
-  `reg_arch-cuda-gpw-public-shape-freeze` | files: note
-  `.claude/notes/cuda-gpw-public-shape.md` + queue unlock for
-  `cuda-gpw-full-product` | **tip** `wf/arch-cuda-gpw-public-shape-freeze`
-  (rebased onto current `dev`; freeze doc + shape harness; unmerged ≠ done) |
-  gate: freeze doc lands; unlock path for full product stated | spec:
-  `.claude/specs/arch-cuda-gpw-public-shape-freeze/SPEC.md` |
 - [~] `arch-mg-main-structural` | **P2** Task-list / products-default path
   rewrite toward MAIN ~1× (explicitly **not** pin-softening) — only after
   GPW Driver paths stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` +
   tip `reg_arch-mg-main-structural` | files: multigrid / products | gate:
   pins green; baseline note rewrite | **tip** `wf/arch-mg-main-structural`
-  @ `3d9a64ba` (prefer freeze-first if contention; rebase onto current `dev`
+  @ `9ee9f49e` (feat `1f62a117`; freeze green; **rebase onto `0147fe02`**
   before gate) | spec (tip): `.claude/specs/arch-mg-main-structural/` |
 
 ## blocked
 
 - [!] `cuda-gpw-full-product` | **implement product** under freeze contract
   (not staffed this campaign wave) — multi-path DIIS Driver on `dev`; stage
-  footholds green; public shape = CPU `GpwDft` (freeze tip
-  `wf/arch-cuda-gpw-public-shape-freeze` + note
-  `cuda-gpw-public-shape.md`). Staff only after freeze merges; compose
-  `internal/` stages → public method; GH200 + CUDA↔CPU tols required
+  footholds green; public shape = CPU `GpwDft` (freeze **merged**
+  `0147fe02` / note `cuda-gpw-public-shape.md` +
+  `reg_arch-cuda-gpw-public-shape-freeze`). Staffable under that contract;
+  compose `internal/` stages → public method; GH200 + CUDA↔CPU tols required
 - [!] `mg-main-soft-tol` | never staff as soften tols / self-golden
 - [!] `hybrid-gapw-paw-metagga` | method loops, not this campaign
 
@@ -153,3 +140,11 @@ open arch specs on `dev`; GapCensus `new_slugs_added=0`). Tips claim product;
   `e34ccf92` / impl `42454014` + gate docs `2ba03049` | evidence:
   `test_cpu_gpw_driver_node` + `reg_arch-gpw-driver-paths` +
   `reg_gpw-uks-o2-gamma` + `reg_gpw-kpoints-si`; spec closed
+- [x] `arch-cuda-gpw-public-shape-freeze` | **P1** Document + enforce: full
+  CUDA GPW method product **equals** CPU `GpwDft` public shape after
+  multi-path DIIS Driver; compose existing stage footholds only; OT free-loop
+  residual documented on CPU and does not block the freeze | method=arch-doc |
+  merge: `0147fe02` / docs `aea603bb` | evidence: note
+  `.claude/notes/cuda-gpw-public-shape.md` +
+  `reg_arch-cuda-gpw-public-shape-freeze` + queue unlock for
+  `cuda-gpw-full-product`; spec closed

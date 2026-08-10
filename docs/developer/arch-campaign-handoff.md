@@ -4,8 +4,8 @@ Rewrite in place each harness wave.
 
 ## Status
 
-- **Parent:** `dev` @ `307eaaa9` (post GapCensus wave-8; Assign wave-8 re-staffs 3 resumes; harness wave-5
-  merge `e34ccf92` still latest product merge for this campaign)
+- **Parent:** `dev` @ `0147fe02` (merge `wf/arch-cuda-gpw-public-shape-freeze`
+  / docs `aea603bb`)
 - **Wave-1 done:** e2e-in-tests delete (78 sources); `arch-gpw-driver-node`
 - **Wave-2 done:**
   - `arch-cuda-scf-solver-fold` — no free-loop `SCFSolver`; RHF owns
@@ -25,25 +25,28 @@ Rewrite in place each harness wave.
     merge `e34ccf92` / impl `42454014` + gate docs `2ba03049`;
     `test_cpu_gpw_driver_node` + `reg_arch-gpw-driver-paths` +
     twin regs `gpw-uks-o2-gamma` / `gpw-kpoints-si`; spec closed
-- **GapCensus wave 8:** reconfirmed open set; **no new slugs**. Tree facts
-  match queue. Tips advanced product claims then census chore on `dev`.
-- **Assign wave 8:** staff **3** resumes → `[~]`:
-  - resume `arch-pw-driver-paths` @ `e04ba781` (**rebase onto current `dev`**
-    before gate)
-  - resume `arch-cuda
-  - resume `arch-cuda-gpw-public-shape-freeze` @ `a625c232` (rebase)
-  - resume `arch-mg
-  - resume `arch-mg-main-structural` @ `3d9a64ba` (rebase; prefer freeze-first
-    if contention)
-
-- **new_assigned=0**, **incomplete_remaining=3**, pending unheld=0, blocked
-  staffable product=1 (`cuda-gpw-full-product` still needs freeze).
+- **Wave-8 done (this harness):**
+  - `arch-cuda-gpw-public-shape-freeze` — freeze note
+    `.claude/notes/cuda-gpw-public-shape.md` + shape-only harness
+    `reg_arch-cuda-gpw-public-shape-freeze`; CUDA full GPW product public
+    shape **equals** CPU `GpwDft`; OT residual does not block; unlocks
+    staffing `cuda-gpw-full-product` under that contract (not auto-landed);
+    merge `0147fe02` / docs `aea603bb`; spec closed
+- **Still `[~]`:**
+  - `arch-pw-driver-paths` @ `c20bb04f` (ahead=1 behind=2; **rebase onto
+    `0147fe02`** before gate)
+  - `arch-mg-main-structural` @ `9ee9f49e` (feat `1f62a117`; ahead=2
+    behind=2; **rebase onto `0147fe02`** before gate)
+  Unmerged tip ≠ done.
 - **Lever:** copy `MeanFieldMethod` + `scf/stages/` + landed multi-path
-  GPW DIIS + landed PW fixed-occ stages (+ tip PW multi-path Ops / freeze
-  note / MG structural) — do not invent a second SCF shape. Freeze is
-  **doc/harness** (public shape = CPU `GpwDft`); MG is structural MAIN
-  path, not soft pins.
-- **gaps_remaining=4** (3 in_progress + blocked full CUDA GPW product).
+  GPW DIIS + landed PW fixed-occ stages + freeze note
+  ([cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md))
+  (+ tip PW multi-path Ops / MG structural) — do not invent a second SCF
+  shape. MG is structural MAIN path, not soft pins.
+- **incomplete_remaining=2**, pending unheld=0, blocked staffable product=1
+  (`cuda-gpw-full-product` under freeze contract; GH200 + CUDA↔CPU tols;
+  not staffed this campaign wave).
+- **gaps_remaining=3** (2 in_progress + blocked full CUDA GPW product).
   **new_slugs_added=0**. Queue **not** exhausted.
 
 ## Run

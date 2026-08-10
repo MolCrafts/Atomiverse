@@ -117,8 +117,8 @@ Unit/stage oracle tols stated — **no** public `GpwDft`. Public shape for the
 full method product is **frozen** to equal CPU `GpwDft` — see
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Stage units stay
 `internal/` and are composed under that product; OT residual does not block.
-`cuda-gpw-full-product` is staffable under that contract after freeze merge
-(still a product implement, not auto-landed).
+`cuda-gpw-full-product` is staffable under that contract (freeze green on
+`dev` @ `0147fe02`; still a product implement, not auto-landed).
 
 ### Forbidden
 

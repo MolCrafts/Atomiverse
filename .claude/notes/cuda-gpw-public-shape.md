@@ -1,7 +1,8 @@
 # CUDA GPW public-shape freeze
 
 Binding contract for `cuda-gpw-full-product`. Landed by
-`arch-cuda-gpw-public-shape-freeze` (method=arch-doc). Current understanding
+`arch-cuda-gpw-public-shape-freeze` (method=arch-doc; merge `0147fe02` /
+docs `aea603bb`). Current understanding
 only — not a history log.
 
 ## Lever
@@ -71,10 +72,10 @@ staffed.
 
 ## Unlock condition for `cuda-gpw-full-product`
 
-| Gate | State after this freeze merges |
+| Gate | State on `dev` @ `0147fe02` |
 | --- | --- |
 | Multi-path DIIS CPU Driver | **green** (`arch-gpw-driver-paths`) |
-| Public-shape freeze | **green** (this note + `reg_arch-cuda-gpw-public-shape-freeze`) |
+| Public-shape freeze | **green** (this note + `reg_arch-cuda-gpw-public-shape-freeze`; merge `0147fe02`) |
 | Stage footholds composed | **green** (ks-chain / GGA / MG units) |
 | Full method product | **staffable** under this contract — still needs GH200 log, CUDA↔CPU energy/force tols, scoped product slice; not “auto-landed” |
 

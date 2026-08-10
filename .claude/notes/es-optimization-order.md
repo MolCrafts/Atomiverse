@@ -63,18 +63,18 @@ step 1 — CPU architecture**, not more collint polish.
 | P0 | ~~`arch-gpw-driver-node`~~ **landed** | `GpwDft` → `Driver<gpw::Phase>`; residual paths → `arch-gpw-driver-paths` |
 | P0 | ~~`arch-gpw-driver-paths`~~ **landed** | multi-path DIIS (Γ UKS + multi-k RKS/UKS) on stages; OT free-loop residual (not a new slug) — merge `e34ccf92` |
 | P0 | ~~`arch-pw-driver-node`~~ **landed** | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
-| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `e04ba781` (rebase onto current `dev` before gate) |
+| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `c20bb04f` (rebase onto `0147fe02` before gate) |
 | P1 | ~~`arch-cuda-scf-solver-fold`~~ **landed** | free-loop `SCFSolver` → private `RhfScfCycle`; nested CUDA Driver residual |
-| P1 | `arch-cuda-gpw-public-shape-freeze` | freeze CUDA product public shape = CPU `GpwDft` ([cuda-gpw-public-shape.md](cuda-gpw-public-shape.md)); unlocks `cuda-gpw-full-product` staffing after merge — **unmerged tip** (rebased onto current `dev`) |
-| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× structural — **unmerged tip** @ `3d9a64ba` (rebase onto current `dev`; freeze-first if contention) |
+| P1 | ~~`arch-cuda-gpw-public-shape-freeze`~~ **landed** | freeze CUDA product public shape = CPU `GpwDft` ([cuda-gpw-public-shape.md](cuda-gpw-public-shape.md)); unlocks `cuda-gpw-full-product` under that contract — merge `0147fe02` / docs `aea603bb` |
+| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× structural — **unmerged tip** @ `9ee9f49e` (feat `1f62a117`; rebase onto `0147fe02` before gate) |
 
-**GapCensus wave 8:** on `dev` @ `9271cae3`. Tree reconfirmed multi-path GPW
-DIIS + PW fixed-occ Driver + folded CUDA RHF + CUDA GPW stages≠product +
-HEAVY `^$`. All three incomplete tips rebased onto `9271cae3` with advanced
-product claims (ahead=1 behind=0); **unmerged tip ≠ done**.
-**gaps_remaining=4**, **new_slugs=0**; pending unheld=0; in_progress=3;
-blocked product=1 (`cuda-gpw-full-product` needs freeze green on `dev`).
-Queue: [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
+**Harness wave 8:** on `dev` @ `0147fe02`; `arch-cuda-gpw-public-shape-freeze`
+merged (freeze note + shape harness; product not auto-landed). Keep `[~]`
+`arch-pw-driver-paths` + `arch-mg-main-structural`. **gaps_remaining=3**,
+**new_slugs=0**; pending unheld=0; in_progress=2; blocked product=1
+(`cuda-gpw-full-product` staffable under freeze contract; GH200 + CUDA↔CPU
+tols). Queue:
+[arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
 Workflow: `.grok/workflows/arch-campaign.rhai`.
 
 **Forbidden this campaign:** soft tols; invent hybrid/GAPW; staff
@@ -112,8 +112,9 @@ stream + large-cell + analytic ionic forces (LSDA + PBE) + analytic cell stress
 (LSDA) + **collinear LSDA spin** (GH200 **1051041** \|ΔE\|=1.07e-13 Ha on O₂).
 **Pending depth:** `cuda-pw-metallic-smear` (P2), `cuda-rhf-nondefault-stream`
 (P3). **Blocked structural:** `mg-main-structural`. **`cuda-gpw-full-product`:**
-public-shape freeze tip green under contract — staffable after freeze merge
-(compose stages → `GpwDft`-shaped product; not auto-landed).
+public-shape freeze **green on `dev`** (`0147fe02`) — staffable under contract
+(compose stages → `GpwDft`-shaped product; not auto-landed; GH200 + CUDA↔CPU
+tols).
 **cpu_pending=0** — no pin-safe wall lever.
 
 **Queues (binding worklists):**

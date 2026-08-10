@@ -83,12 +83,12 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ## blocked
 
-- `cuda-gpw-full-product` — gate: public-shape freeze
+- `cuda-gpw-full-product` — gate: public-shape freeze **green** on `dev`
   ([cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md);
-  tip `wf/arch-cuda-gpw-public-shape-freeze`) then product implement
-  (`docs/developer/es-cpu-cuda-queue.md:97`). Owner: `es-cpu-cuda-opt`. The
-  four footholds are green; the product is out of this loop's scope until the
-  gate lifts.
+  merge `0147fe02`); remaining work is product implement under that contract
+  (`docs/developer/es-cpu-cuda-queue.md`). Owner: `es-cpu-cuda-opt` / product
+  wave. Footholds green; full method product not auto-landed (GH200 +
+  CUDA↔CPU tols).
 - `mg-main-structural` — gate: MG collocate/integrate 2.33× residual needs
   pin-unsafe sphere windows or a task-list rewrite; micro-SIMD exhausted and
   P0 closed (`docs/developer/gpw-perf-queue.md:61,83,85`). Owner:
