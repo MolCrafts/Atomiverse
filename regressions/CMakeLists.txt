@@ -222,6 +222,20 @@ if(ATV_BUILD_PW)
         add_dependencies(regressions run_${_reg_pw_forces})
         unset(_reg_pw_forces)
 
+        # Nielsen–Martin cell stress CUDA↔CPU dual-gate.
+        set(_reg_pw_stress reg_cuda-pw-stress)
+        add_executable(${_reg_pw_stress} pw/cuda-pw-stress/${_reg_pw_stress}.cu)
+        target_link_libraries(${_reg_pw_stress} PRIVATE atomiverse)
+        set_target_properties(${_reg_pw_stress} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_pw_stress}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_pw_stress}> --device=both
+            DEPENDS ${_reg_pw_stress}
+            COMMENT "regression [pw/cuda-pw-stress] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_pw_stress})
+        unset(_reg_pw_stress)
+
     endif()
     if(TARGET reg_pw-lda-si)
         target_compile_definitions(reg_pw-lda-si PRIVATE

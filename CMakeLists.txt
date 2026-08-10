@@ -898,6 +898,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/planewave/internal/device_solver.cu
                 src/cuda/planewave/internal/device_density.cu
                 src/cuda/planewave/internal/pw_forces.cu
+                src/cuda/planewave/internal/pw_stress.cu
                 src/cuda/planewave/pw_solver.cu
             )
             target_link_libraries(atomiverse PUBLIC CUDA::cufft)

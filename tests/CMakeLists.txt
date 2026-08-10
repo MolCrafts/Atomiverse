@@ -1099,6 +1099,12 @@ if(ATV_BUILD_CUDA)
         if(TARGET test_cuda_pw_force_local)
             target_link_libraries(test_cuda_pw_force_local PRIVATE CUDA::cufft)
         endif()
+        # Cell stress public API + cheap H isotropy/CUDA↔CPU (unit-only).
+        # Name avoids ATV_TEST_HEAVY_REGEX `pw_stress` (CPU product path).
+        atv_add_test(test_cuda_pw_cell_stress cuda/planewave/test_pw_cell_stress.cu)
+        if(TARGET test_cuda_pw_cell_stress)
+            target_link_libraries(test_cuda_pw_cell_stress PRIVATE CUDA::cufft)
+        endif()
     endif()
     # CUDA GPW Γ Poisson foothold — needs CPU solve_poisson oracle (GPW+PW)
     # and device kernels. Name avoids ATV_TEST_HEAVY_REGEX `gpw_poisson`.
