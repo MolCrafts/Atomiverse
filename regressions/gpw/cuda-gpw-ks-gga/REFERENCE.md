@@ -52,8 +52,9 @@ cmake --build build --target run_reg_cuda-gpw-ks-gga
 
 | Item | Value |
 | --- | --- |
-| GH200 job | **1050277** (`GPU_JOB_OK`, exit 0) |
-| HEAD | `16042618` on `wf/escuda-cuda-gpw-ks-gga` |
-| Unit | 2/2 PASS (`test_cuda_gpw_ks_gga` + LDA `test_cuda_gpw_ks_chain`) |
-| Dual-gate | `PASS cuda-gpw-ks-gga dual-gate` — e_H/e_xc/e_loc ~1e-15; max\|ΔV_eff\|=8.0e-16; max\|Δacc\|=3.9e-14 |
-| Log | `.claude/worktrees/cuda-gpw-ks-gga/.claude/cuda-gpw-ks-gga-1050277.out` |
+| GH200 job | **1050680** (`GPU_JOB_OK`, exit 0; rebased on `dev` `9f05a4fc`) |
+| HEAD | `93c26d40` on `wf/escuda-cuda-gpw-ks-gga` |
+| Unit | 1/1 PASS (`test_cuda_gpw_ks_gga`) |
+| Dual-gate | `PASS cuda-gpw-ks-gga dual-gate` — e_H/e_xc ~1e-15; max\|ΔV_eff\|=8.0e-16; max\|Δacc\|=3.9e-14 |
+| Log | `.claude/worktrees/wf_escuda_cuda_gpw_ks_gga/.claude/cuda-gpw-ks-gga-1050680.out` |
+| Prior | job **1050277** (pre-rebase) same tols |
