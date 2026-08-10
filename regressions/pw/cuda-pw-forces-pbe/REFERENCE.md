@@ -43,10 +43,16 @@ class coverage remains on CPU (`tests/cpu/planewave/test_pw_forces_fd.cpp`).
 
 and \(\max |F^{\mathrm{cpu}}| > 0.05\) eV/Å (non-vacuous).
 
-**GH200 job 1050253** (`f28cb2df`): units **1/1 PASS**; dual-gate
-\(\max|\Delta F| = 2.615\times 10^{-13}\) eV/Å (tol \(5\times 10^{-3}\));
-CPU = CUDA \(\max|F| = 2.486453\) eV/Å; force-path SCF both **iter=8**,
-\(E = -13.89672028\) Ry. Bound kept at design-time \(5\times 10^{-3}\).
+**GH200 job 1050253** (`f28cb2df`, pre-rebase tip): units **1/1 PASS**;
+dual-gate \(\max|\Delta F| = 2.615\times 10^{-13}\) eV/Å (tol \(5\times
+10^{-3}\)); CPU = CUDA \(\max|F| = 2.486453\) eV/Å; force-path SCF both
+**iter=8**, \(E = -13.89672028\) Ry.
+
+**GH200 job 1050675** (rebased on `dev` @ `9f05a4fc`, branch
+`wf/escuda-cuda-pw-forces-pbe`): units **1/1 PASS**; dual-gate
+\(\max|\Delta F| = 2.634\times 10^{-13}\) eV/Å; same \(E = -13.89672028\)
+Ry / \(\max|F| = 2.486453\) eV/Å / **iter=8**. Bound kept at design-time
+\(5\times 10^{-3}\).
 
 **Root cause of first fail (job 1050212, \(\max|\Delta F|\sim 14\) eV/Å):**
 `pw_forces_analytic` constructed `DeviceBandSolver` without

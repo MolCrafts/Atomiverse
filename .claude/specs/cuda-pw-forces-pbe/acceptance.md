@@ -9,8 +9,9 @@ acceptance_met: true
 - [x] `reg_cuda-pw-forces-pbe` lands with `XCType::PBE` Si dimer stretch
 - [x] CMake target `run_reg_cuda-pw-forces-pbe`
 - [x] Unit: public API accepts PBE (no throw on empty-frame gate before SCF)
-- [x] GH200 job **1050253**: units PASS + dual-gate PASS max|ΔF|=2.615e-13
+- [x] GH200 job **1050253** (pre-rebase tip): units PASS + dual-gate max|ΔF|=2.615e-13
+- [x] GH200 job **1050675** (rebased `wf/escuda-cuda-pw-forces-pbe`): units PASS + dual-gate max|ΔF|=2.634e-13
 - [x] `builds_wiped=true` on job exit
-- [x] Commits on `wf/cuda-pw-forces-pbe` only (no push)
+- [x] Commits on `wf/escuda-cuda-pw-forces-pbe` only (no push)
 
 Also fixed force-path stream race (`den.stream()` shared with band solver).
