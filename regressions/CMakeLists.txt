@@ -92,7 +92,28 @@ if(ATV_BUILD_MD)
     atv_add_regression(layout driver_names)
     atv_add_regression(layout no_backend)
     atv_add_regression(layout architecture_gates)
-    atv_add_regression(md lj_argon)
+    # One case per physics pin; multi-device via --device=cpu|cuda|both
+    # (PyTorch-style). When ATV_BUILD_CUDA=ON the .cu TU is the target so the
+    # same binary can run both backends (mirrors scf/h2o_rhf_sto3g); otherwise
+    # the .cpp (cpu only).
+    if(ATV_BUILD_CUDA)
+        set(_reg_lj reg_lj_argon)
+        add_executable(${_reg_lj} md/lj_argon/${_reg_lj}.cu)
+        target_link_libraries(${_reg_lj} PRIVATE atomiverse)
+        set_target_properties(${_reg_lj} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        target_compile_definitions(${_reg_lj} PRIVATE
+            ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+        add_custom_target(run_${_reg_lj}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_lj}> --device=both
+            DEPENDS ${_reg_lj}
+            COMMENT "regression [md/lj_argon] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_lj})
+        unset(_reg_lj)
+    else()
+        atv_add_regression(md lj_argon)
+    endif()
     atv_add_regression(md const-pot-bo-parallel-plate)
     atv_add_regression(md per-electrode-eta)
     atv_add_regression(md const-charge-electrode)
