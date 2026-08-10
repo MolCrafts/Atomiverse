@@ -805,8 +805,9 @@ if(NOT ATV_DOCS_ONLY)
             endif()
             # CUDA GPW foothold: Γ-point device Poisson/FFT + Padé LDA XC grid
             # + product ρ collocate / V·shape integrate + composed KS chain
-            # stage with closed-shell PBE-GGA (spectral ∇ρ / −∇·flux; not full
-            # method product).
+            # stage with closed-shell PBE-GGA (spectral ∇ρ / −∇·flux) +
+            # multi-grid product collocate/integrate (spectral prolong/restrict;
+            # not full method product).
             # Gated on CUDA so OFF builds exclude sources entirely (iron law 8).
             if(ATV_BUILD_CUDA)
                 target_sources(atomiverse PRIVATE
@@ -815,10 +816,11 @@ if(NOT ATV_DOCS_ONLY)
                     src/cuda/gpw/internal/product_collocate.cu
                     src/cuda/gpw/internal/product_integrate.cu
                     src/cuda/gpw/internal/spectral_fft.cu
+                    src/cuda/gpw/internal/multigrid_transfer.cu
                     src/cuda/gpw/internal/ks_chain.cu
                 )
                 target_link_libraries(atomiverse PUBLIC CUDA::cufft)
-                message(STATUS "GPW: CUDA Γ Poisson + Padé/PBE KS chain + ρ collocate/integrate enabled")
+                message(STATUS "GPW: CUDA Γ Poisson + Padé/PBE KS chain + multigrid transfer + ρ collocate/integrate enabled")
             endif()
         endif()
         # vdW-DF kernel tables ship zlib-compressed (float32); inflate at first use.
