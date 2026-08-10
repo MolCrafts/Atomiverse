@@ -65,6 +65,12 @@ class GpwDiis {
     ///         a singular subspace).
     RealMatrix step(const RealMatrix& H, const RealMatrix& e);
 
+    /// @brief Drop all stored (H, error) pairs (e.g. after an energy ascent).
+    void clear() {
+        h_hist_.clear();
+        e_hist_.clear();
+    }
+
   private:
     int max_vectors_;
     std::deque<RealMatrix> h_hist_;

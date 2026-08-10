@@ -319,6 +319,63 @@ TEST(CudaGpwFullProduct, H2GammaPbeForcesDualGate) {
     EXPECT_LT(maxd, kFTol) << "max|dF|=" << maxd;
 }
 
+// Water Γ RKS PADE energy dual-gate (multi-species production class after H₂
+// foothold; cuda-gpw-product-h2o-gate — needs GPU).
+TEST(CudaGpwFullProduct, WaterGammaPadeEnergyDualGate) {
+    const auto bas_O = GaussianBasis(molrs::Element::O, "SZV-GTH-PADE");
+    const auto pot_O = GthPotential(molrs::Element::O, "GTH-PADE-q6");
+    const auto bas_H = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot_H = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    constexpr double kA0 = 0.52917721067;
+    constexpr double kCell = 12.0;
+    const double dHx = 0.7586 / kA0;
+    const double dHz = 0.5043 / kA0;
+    const double c = 0.5 * kCell;
+    const double rO[3] = {c, c, c};
+    const double rH1[3] = {c + dHx, c, c + dHz};
+    const double rH2[3] = {c - dHx, c, c + dHz};
+    std::vector<ATV::cpu::gpw::GpwAtom> atoms = {
+        ATV::cpu::gpw::GpwAtom(rO, bas_O, pot_O, 8),
+        ATV::cpu::gpw::GpwAtom(rH1, bas_H, pot_H, 1),
+        ATV::cpu::gpw::GpwAtom(rH2, bas_H, pot_H, 1)};
+
+    auto set_h2o = [](auto& m) {
+        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+        m.cutoff_ry = 100.0;
+        m.n_occ = 4;
+        m.max_iter = 80;
+        m.tol = 1e-8;
+        m.diis_depth = 6;
+        m.xc = XcKind::PADE;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.use_ot = false;
+        m.ngrids = 1;
+        m.eps_default = 1e-8;
+    };
+
+    ATV::cpu::gpw::GpwDft cpu;
+    set_h2o(cpu);
+    cpu.build(atoms);
+    const auto& rc = cpu.run(atoms);
+    ASSERT_TRUE(rc.converged) << "CPU H2O SCF failed iters=" << rc.iters;
+    ASSERT_TRUE(std::isfinite(rc.e_total));
+
+    ATV::cuda::gpw::GpwDft gpu;
+    set_h2o(gpu);
+    gpu.build(atoms);
+    const auto& rg = gpu.run(atoms);
+    ASSERT_TRUE(rg.converged) << "CUDA H2O SCF failed iters=" << rg.iters
+                              << " E=" << rg.e_total;
+    ASSERT_TRUE(std::isfinite(rg.e_total));
+
+    // Multi-center p-shell class (matches O₂ production energy tol).
+    constexpr double kETolHa = 5.0e-5;
+    const double de = std::abs(rg.e_total - rc.e_total);
+    EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
+                           << " |dE|=" << de;
+}
+
 // High-spin H₂ Γ UKS PADE energy dual-gate (O₂-class collinear UKS path;
 // small cell correctness only — needs GPU).
 TEST(CudaGpwFullProduct, H2HighSpinUksPadeEnergyDualGate) {

@@ -34,6 +34,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cuda_runtime.h>
 #include <limits>
 #include <memory>
@@ -81,6 +83,11 @@ using internal::MultigridDesc;
 
 constexpr double kBuildScreen = 1.0e-14;
 constexpr double kDiisErrTol = 1.0e-5;
+/// DIIS subspace reset when energy rises by more than this [Ha]. Device KS
+/// residual (cuFFT / tree reductions) can make pure Pulay non-stationary on
+/// multi-center systems (water class); clearing history restarts the warm-up
+/// path. H₂-class dual-gates stay within stated tols.
+constexpr double kDiisAscentResetHa = 1.0e-3;
 /// Matches CPU product mass-margin drop (multigrid.cpp); drop monoms below
 /// `eps * kProductMassMargin` when packing live density weights.
 constexpr double kProductMassMargin = 1.0e-4;
@@ -999,6 +1006,8 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             const double dE =
                 has_prev ? (e_total - prev_energy)
                          : std::numeric_limits<double>::infinity();
+            // UKS: do not reset DIIS on energy ascent — dual-channel O₂ thrashing.
+            // RKS multi-center residual uses kDiisAscentResetHa in the RKS loop.
             prev_energy = e_total;
             if (has_prev && std::abs(dE) < tol && err_norm < kDiisErrTol) {
                 conv = true;
@@ -1226,6 +1235,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     RealMatrix H_raw;
     bool conv = false;
     int it = 0;
+    const bool scf_trace = std::getenv("ATV_GPW_CUDA_TRACE") != nullptr;
     for (it = 0; it < max_iter; ++it) {
         // Mid-SCF: device collocate/integrate only — skip D2H V_eff/V_es.
         auto [H, e_total] = build_H_and_energy(P, /*store_grids=*/false);
@@ -1237,6 +1247,15 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         const double dE =
             has_prev ? (e_total - prev_energy)
                      : std::numeric_limits<double>::infinity();
+        // Multi-center device residual: drop bad DIIS history on ascent
+        // (water-class non-stationarity; H₂ dual-gates remain green).
+        // RKS uses AoDiisEigenDevice after device-diis-eigen — not host GpwDiis.
+        if (use_diis && has_prev && dE > kDiisAscentResetHa)
+            ao_scf.reset();
+        if (scf_trace)
+            std::fprintf(stderr,
+                         "[cuda gpw scf %3d] E=%.10f  dE=%.3e  err=%.3e\n", it,
+                         e_total, has_prev ? dE : 0.0, err_norm);
         prev_energy = e_total;
         if (has_prev && std::abs(dE) < tol && err_norm < kDiisErrTol) {
             conv = true;

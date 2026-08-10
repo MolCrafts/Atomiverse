@@ -699,6 +699,21 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-device-diis-eigen] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_diis})
         unset(_reg_gpw_diis)
+
+        # Production water Γ RKS PADE dual-gate (multi-species after H2 foothold).
+        set(_reg_gpw_h2o reg_cuda-gpw-product-h2o-gate)
+        add_executable(${_reg_gpw_h2o}
+            gpw/cuda-gpw-product-h2o-gate/${_reg_gpw_h2o}.cu)
+        target_link_libraries(${_reg_gpw_h2o} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_h2o} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_h2o}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_h2o}> --device=both
+            DEPENDS ${_reg_gpw_h2o}
+            COMMENT "regression [gpw/cuda-gpw-product-h2o-gate] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_h2o})
+        unset(_reg_gpw_h2o)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)
