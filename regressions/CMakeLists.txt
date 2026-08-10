@@ -1057,6 +1057,10 @@ if(ATV_BUILD_CUDA AND ATV_BUILD_HF)
     add_dependencies(regressions run_${_reg_cuda_scf_fold})
     unset(_reg_cuda_scf_fold)
 endif()
+if(ATV_BUILD_HF)
+    # e2e-in-tests wave-2 harness twin: residual multi-iter out of tests/.
+    atv_add_regression(architecture arch-e2e-tests-wave2)
+endif()
 if(ATV_BUILD_HF AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
     # esmm-contract-05-accumulate-switch (R1): the first ES x MM co-bound case.
     # One cpu::Evaluate over one Frame — a He pair under PairLJCut plus a

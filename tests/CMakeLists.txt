@@ -33,10 +33,10 @@ option(ATV_TEST_HEAVY
     "Build/register multi-second method tests (default OFF — pre-push gate)"
     OFF)
 # Not CACHE: must track the source list (a sticky CACHE goes stale).
-set(ATV_TEST_HEAVY_REGEX
-    # Residual safety net after e2e-in-tests wave-1 delete (2026-08-10).
-    # True kernel unit names must NOT match (gpw_poisson/grid_fft/thread/… dropped).
-    "ccsd|fci|mp2|rpa|g0w0|casscf|nevpt|eom_|tdhf|ri_mp2|bomd|cpmd|xl_bomd|second_gen_cpmd|gpw_solver|gpw_method|gpw_ot|gpw_forces|gpw_stress|gpw_uks|gpw_mbd|gpw_dftd|gpw_ts|gpw_xdm|gpw_vdw|gpw_rvv10|gpw_hirshfeld|gpw_dftu|gpw_kpoints|gpw_periodic_wannier|gpw_smearing|pw_si|pw_bomd|pw_forces|pw_method|pw_evaluator|pw_spin|pw_stress|pw_dfpt|pw_bands|pw_berry|pw_periodic_wannier|pw_smearing|pw_components|scf_solver|rohf_solver|uks_solver|uhf_solver|x2c|pcm|embedding|counterpoise|cphf|dispersion|rks_tda|ghf|scf_cpmd|scf_xl|scf_aspc|scf_mc_predictor|method_driver|dftb2$|dftb3$|dftb2_3ob|dftb2_dispersion|dftb3_scc|dftb0$|am1_scaffold|am1_thermochemistry|scf_wannier|scf_ecp$|electronic_cpmd|electronic_xl|no_alloc")
+# Wave-2 (2026-08-10): residual multi-iter e2e under tests/ deleted; false-heavy
+# tokens that gated true units (method_driver, eom_, tdhf, dispersion→phonon,
+# pw_evaluator→gpw_evaluator) removed. Empty regex = no name-based heavy skip.
+set(ATV_TEST_HEAVY_REGEX "^$")
 
 # Fast-gate discipline (HARD RULE):
 #   • tests/ = one component / one method / ≤ ATV_TEST_TIMEOUT_SECONDS.
@@ -316,7 +316,7 @@ if(ATV_BUILD_GPW)
                                                    cpu/gpw/test_cpu_gpw_thread_reproducibility.cpp)
         atv_add_cpp_test(test_cpu_gpw_ksv
                                                    cpu/gpw/test_cpu_gpw_ksv.cpp)
-        # Name is bandpath not bands: residual HEAVY_REGEX still has unanchored
+        # Name is bandpath (historical); wave-2 emptied HEAVY_REGEX.
         # `pw_bands` which would skip a naive test_cpu_gpw_bands name.
         atv_add_cpp_test(test_cpu_gpw_bandpath
                                                    cpu/gpw/test_cpu_gpw_bandpath.cpp)
@@ -615,21 +615,9 @@ if(ATV_BUILD_PW)
         ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
     endif()
 
-    # MPI k-point parallel parity (launched under mpirun). Full PW/GPW SCF
-    # solves — cannot finish inside the unit-test cap, so heavy-only until
-    # they migrate to regressions/ with the rest of the e2e-in-tests debt.
-    if(ATV_TEST_HEAVY AND ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
-        atv_add_mpi_exec(test_mpi_pw_kpoint mpi/test_pw_kpoint.cpp)
-        atv_add_mpi_run(test_mpi_pw_kpoint_n1 test_mpi_pw_kpoint 1)
-        atv_add_mpi_run(test_mpi_pw_kpoint_n2 test_mpi_pw_kpoint 2)
-        atv_add_mpi_run(test_mpi_pw_kpoint_n4 test_mpi_pw_kpoint 4)
-    endif()
-    if(ATV_TEST_HEAVY AND ATV_USE_MPI AND MPIEXEC_EXECUTABLE AND ATV_BUILD_GPW)
-        atv_add_mpi_exec(test_mpi_gpw_kpoint mpi/test_gpw_kpoint.cpp)
-        atv_add_mpi_run(test_mpi_gpw_kpoint_n1 test_mpi_gpw_kpoint 1)
-        atv_add_mpi_run(test_mpi_gpw_kpoint_n2 test_mpi_gpw_kpoint 2)
-        atv_add_mpi_run(test_mpi_gpw_kpoint_n4 test_mpi_gpw_kpoint 4)
-    endif()
+    # MPI PW/GPW k-point multi-iter SCF: e2e-in-tests wave-2 deleted the unit
+    # sources. Industrial gates live in regressions/pw/mpi-pw-scaling-4rank and
+    # regressions/gpw/mpi-gpw-scaling-4rank (not under ctest default gate).
 endif()
 
 # ── Shared dense linear algebra (cpu/linalg) ──────────────────────────
@@ -695,7 +683,9 @@ if(ATV_BUILD_HF)
     # SlaterDeterminant invariants, H2 collapse to UHF, noncollinear win on
     # the frustrated H3 triangle vs externally pinned PySCF, collinear trap.
     atv_add_cpp_test(test_cpu_scf_xc_functional cpu/scf/test_xc_functional.cpp)
-    # scf-driver-refactor-04b-wire: method-driver nesting + MeanFieldOutputs.
+    # scf-driver-refactor-04b-wire: method-driver is DriverNode + outer Plan
+    # bind/build only (no full SCF under tests/; wave-2). Nested energy pins:
+    # regressions/architecture/lj_rhf_coupled + scf/*rhf*.
     atv_add_cpp_test(test_cpu_scf_method_driver_wire
                      cpu/scf/test_method_driver_wire.cpp)
     # esmm-cpmd-04-ao-cpmd: AO Car-Parrinello on the mean-field methods —
@@ -738,17 +728,10 @@ if(ATV_BUILD_HF)
     # regressions/scf/h2_rhf_stability.
     atv_add_cpp_test(test_cpu_scf_orbital_hessian cpu/scf/test_orbital_hessian.cpp)
     atv_add_cpp_test(test_cpu_scf_stability       cpu/scf/test_stability.cpp)
-    # hf-capability-gaps-14-tdhf: TDA + TDHF/RPA lowest roots over the same
-    # A/B kernel (dense vs full-supermatrix vs Davidson parity, the
-    # triplet-instability throw) + the RHF::tda()/tdhf() method surface.
-    # Formaldehyde oracle e2e lives in regressions/scf/ch2o_tdhf.
+    # hf-capability-gaps-14-tdhf: TDA + TDHF/RPA pack units (no SCF loop).
+    # Formaldehyde / H2 TDA-force / NAC / ALDA e2e: regressions/scf/{ch2o_tdhf,
+    # h2_tda_force,h2_analytic_tda_force,h2_tda_nac,h2_nac_vectors,h2_full_grid_alda}.
     atv_add_cpp_test(test_cpu_scf_tdhf_pack       cpu/scf/test_tdhf_pack.cpp)
-    atv_add_cpp_test(test_cpu_scf_tda_forces      cpu/scf/test_tda_forces.cpp)
-    atv_add_cpp_test(test_cpu_scf_analytic_tda_forces cpu/scf/test_analytic_tda_forces.cpp)
-    atv_add_cpp_test(test_cpu_scf_tda_nac         cpu/scf/test_tda_nac.cpp)
-    atv_add_cpp_test(test_cpu_scf_nac_vectors        cpu/scf/test_nac_vectors.cpp)
-    atv_add_cpp_test(test_cpu_scf_alda_diff       cpu/scf/test_alda_diff.cpp)
-    atv_add_cpp_test(test_cpu_scf_full_grid_alda  cpu/scf/test_full_grid_alda.cpp)
     # hf-capability-gaps-16-solvent: C-PCM cavity/Born oracle, f(ε), H2O
     # solvent vs gas, solvent_eps=0 vacuum identity, forces throw.
     # hf-capability-gaps-17-bsse: ghost AtomList/ShellList/IntegralWorkspace
@@ -756,15 +739,10 @@ if(ATV_BUILD_HF)
     # (He–He/STO-3G; locked bsse ≤ 0). Water-dimer e2e lives in
     # regressions/scf/h2o_dimer_cp_hf631gs.
     atv_add_cpp_test(test_ghost_basis             cpu/scf/test_ghost_basis.cpp)
-    # hf-capability-gaps-13-cphf: second/skeleton derivative-integral FD
-    # gates, B^x sum rules, CPHF iterative-vs-dense parity + the link-08
-    # sigma_plus LHS identity (micro HeH+), and the H2/STO-3G analytic-
-    # Hessian-vs-FD-of-analytic-forces first gate. The H2O/6-31G* e2e lives
-    # in regressions/scf/h2o_rhf_freq.
-    atv_add_cpp_test(test_cpu_scf_analytic_hessian
-                     cpu/scf/test_analytic_hessian.cpp)
-    atv_add_cpp_test(test_cpu_scf_uhf_hessian
-                     cpu/scf/test_uhf_hessian.cpp)
+    # hf-capability-gaps-13-cphf: Hessian multi-SCF first-gates removed in
+    # e2e-in-tests wave-2 (were full RHF/UHF.hessian campaigns under tests/).
+    # E2e: regressions/scf/{h2o_rhf_freq,uhf-hessian-o2,uks-hessian-o2-sto3g,
+    # rks-hessian-h2o-sto3g,rohf-hessian-o2}.
     # scf-review-04-meanfield-dedup: the FD nuclear-Hessian skeleton hoisted to
     # the protected CRTP template
     # MeanFieldMethod<Derived>::central_difference_nuclear_hessian, pinned in
@@ -778,9 +756,8 @@ if(ATV_BUILD_HF)
                      cpu/scf/test_gradient_result.cpp)
     # hf-capability-gaps-09-soscf: CIAH stepper units — exp(κ) unitarity,
     # gradient vs FD, matrix-free CIAH vs dense augmented eigensolve, trust
-    # region, MixStage latch; plus the allowed micro H2/STO-3G default-off
-    # invariance pin (milliseconds). The hard-case contrast is
-    # regressions/scf/soscf_hard_case.
+    # region, MixStage latch; KS+soscf throw. No full RHF.run loop (wave-2).
+    # Hard-case contrast: regressions/scf/soscf_hard_case.
     atv_add_cpp_test(test_soscf                   cpu/scf/test_soscf.cpp)
     # scf-review-02-eri-hoists: hosted spin-orbital ERI helpers
     # (SpinOrbital / antisym_eri / mp_denominator) in internal/spin_orbital_eri.h.
@@ -792,8 +769,6 @@ if(ATV_BUILD_HF)
     # scf-review-03-posthf-dedup: the single hoisted make_tau in
     # internal/eom_ccsd_common.h; hand-computed tau pins (1e-12, fac=1 and 0.5).
     atv_add_cpp_test(test_cpu_scf_eom_ccsd_common cpu/scf/test_eom_ccsd_common.cpp)
-    atv_add_cpp_test(test_cpu_scf_koopmans      cpu/scf/test_koopmans.cpp)
-    atv_add_cpp_test(test_cpu_scf_delta_scf     cpu/scf/test_delta_scf.cpp)
     atv_add_cpp_test(test_cpu_scf_integrals     cpu/scf/test_integrals.cpp)
     # scf-review-07-posthf-perf: block-assembled dense ERI (item 17) equivalence
     # guard — IntegralWorkspace::eri_dense vs per-AO native::eri reference (≤1e-12) +
@@ -825,8 +800,8 @@ if(ATV_BUILD_HF)
     # regressions/scf/h2o_scf_convergence).
     atv_add_cpp_test(test_cpu_scf_init_guess    cpu/scf/test_init_guess.cpp)
     atv_add_cpp_test(test_cpu_scf_ediis_adiis   cpu/scf/test_ediis_adiis.cpp)
-    # Charge/multiplicity resolver + method run() validity guard
-    # (hf-robust-01); tutorial ch02/ch03 regression anchor.
+    # Charge/multiplicity resolver + occupation-guard throws (hf-robust-01).
+    # Converged UHF e2e is regressions/scf/*uhf*; no multi-iter here (wave-2).
     atv_add_cpp_test(test_cpu_scf_spin_resolution cpu/scf/test_spin_resolution.cpp)
     # SlaterDeterminant value type: validating ctors, per-spin density,
     # expect/homo/lumo, with_occupation, validate(S)
@@ -836,12 +811,6 @@ if(ATV_BUILD_HF)
     # gradient_result.h, scf_guess.h — without including scf_result.h
     # (scf-slater-determinant-02-rehome).
     atv_add_cpp_test(test_scf_type_homes cpu/scf/test_scf_type_homes.cpp)
-    # SCF linear-dependence handling via canonical orthogonalization
-    # (hf-robust-02); tutorial ch02 regression anchor.
-    atv_add_cpp_test(test_cpu_scf_lindep         cpu/scf/test_scf_lindep.cpp)
-    # Virtual-orbital level shift, PySCF get_fock ordering parity
-    # (hf-robust-03); tutorial ch02 regression anchor.
-    atv_add_cpp_test(test_cpu_scf_level_shift    cpu/scf/test_level_shift.cpp)
     # scf-driver-refactor-02-stages: five scf::Phase stage components wrapping
     # the internal SCF helpers, isolated bit-identical parity (unit tier).
     atv_add_cpp_test(test_cpu_scf_stages cpu/scf/stages/test_scf_stages.cpp)
@@ -861,24 +830,17 @@ if(ATV_BUILD_HF)
         ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
     endif()
     atv_add_cpp_test(test_cpu_evaluate_driver        cpu/test_evaluate_driver.cpp)
-    # esmm-contract-05-accumulate-switch (U7): two energy sources co-bound into
-    # ONE cpu::Evaluate pass must both land in kEnergy, in either binding order.
-    # HF-gated because the second source is a real cpu::scf::RHF (H2/STO-3G,
-    # literature-pinned) — one SCF on 2 atoms, milliseconds. Serial for the same
-    # ULP-determinism reason as test_cpu_scf_method_driver_parity.
+    # esmm-contract-05-accumulate-switch (U7): two accumulating stubs co-bound
+    # into ONE cpu::Evaluate pass (no SCF; wave-2). QM×MM pin lives in
+    # regressions/architecture/lj_rhf_coupled.
     atv_add_cpp_test(test_cpu_evaluate_source_cobinding
                      cpu/evaluate/test_source_cobinding.cpp)
-    if(TARGET test_cpu_evaluate_source_cobinding)
-    set_tests_properties(test_cpu_evaluate_source_cobinding PROPERTIES
-        ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
-    endif()
     atv_add_cpp_test(test_cpu_scf_minao         cpu/scf/test_minao.cpp)
     atv_add_cpp_test(test_cpu_scf_rys_eri_deriv cpu/scf/test_rys_eri_deriv.cpp)
     # test_cpu_minimizer_lbfgs relocated to benchmarks/qc/rhf/validation/
     # (val_min_lbfgs_geoopt) — full SCF-driven H2 geometry optimizations.
     atv_add_cpp_test(test_cpu_minimizer_line_search cpu/minimize/test_line_search.cpp)
     atv_add_cpp_test(test_cpu_minimize_driver_swap_optimizer cpu/test_minimize_driver_swap_optimizer.cpp)
-    atv_add_cpp_test(test_cpu_scf_orbital_info_observer cpu/scf/test_orbital_info_observer.cpp)
     # Vibrational analysis (finite-difference Hessian) is an end-to-end /
     # PySCF-parity suite — too slow for the unit gate. RELOCATED to
     # benchmarks/qc/vib/validation/ (run under -DATV_BUILD_BENCHMARKS=ON).
@@ -990,21 +952,21 @@ if(ATV_BUILD_CUDA)
             target_link_libraries(test_cuda_pw_density PRIVATE CUDA::cufft)
         endif()
         # Device local HF force kernel + public API symmetry (unit-only).
-        # Name avoids ATV_TEST_HEAVY_REGEX `pw_forces` (that is the full SCF
+        # Name keeps historical token; full SCF product e2e is regressions.
         # analytic path on CPU); this is a kernel/API unit gate.
         atv_add_test(test_cuda_pw_force_local cuda/planewave/test_pw_force_local.cu)
         if(TARGET test_cuda_pw_force_local)
             target_link_libraries(test_cuda_pw_force_local PRIVATE CUDA::cufft)
         endif()
         # Cell stress public API + cheap H isotropy/CUDA↔CPU (unit-only).
-        # Name avoids ATV_TEST_HEAVY_REGEX `pw_stress` (CPU product path).
+        # Name keeps historical token; full SCF product e2e is regressions.
         atv_add_test(test_cuda_pw_cell_stress cuda/planewave/test_pw_cell_stress.cu)
         if(TARGET test_cuda_pw_cell_stress)
             target_link_libraries(test_cuda_pw_cell_stress PRIVATE CUDA::cufft)
         endif()
     endif()
     # CUDA GPW Γ Poisson foothold — needs CPU solve_poisson oracle (GPW+PW)
-    # and device kernels. Name avoids ATV_TEST_HEAVY_REGEX `gpw_poisson`.
+    # and device kernels.
     if(ATV_BUILD_GPW AND ATV_BUILD_PW)
         atv_add_test(test_cuda_gpw_device_poisson cuda/gpw/test_device_poisson.cu)
         target_link_libraries(test_cuda_gpw_device_poisson PRIVATE CUDA::cufft)

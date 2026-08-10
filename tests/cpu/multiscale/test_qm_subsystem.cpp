@@ -1,10 +1,13 @@
 /// @file tests/cpu/multiscale/test_qm_subsystem.cpp
 /// @brief Unit: QmSubsystem mask / frame / engine (esmm-qmmm-03).
+///
+/// Multi-iter private-frame launch energy pins: regressions/multiscale/*
+/// (e2e-in-tests wave-2).
 
 #ifdef ATV_HAS_HF
 
-#include <cmath>
 #include <stdexcept>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -29,7 +32,6 @@ void insert_qm_z(cpu::Frame& f) {
 }
 
 cpu::Frame make_h2o_ar() {
-    // 3 QM water + 1 MM Ar-like
     cpu::Frame f(4);
     f.span(kAtom_type)[0] = 8;
     f.span(kAtom_z)[0] = 0.1173;
@@ -119,42 +121,16 @@ TEST(QmSubsystem, MpiSizeGreaterThanOneThrows) {
     EXPECT_THROW(sub.build(f, 2), std::runtime_error);
 }
 
-TEST(QmSubsystem, PrivateFrameStableAddress) {
+TEST(QmSubsystem, PrivateFrameAllocatedOnBuild) {
     auto f = make_h2o_ar();
     QmSubsystem sub;
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = 1e-8;
-    rhf.max_iter = 40;
     sub.set_engine(std::move(rhf));
     sub.embed_cutoff() = 20.0;
     sub.build(f, 1);
-    const cpu::Frame* p0 = sub.private_frame();
-    ASSERT_NE(p0, nullptr);
-    double e = 0;
-    sub.launch(f, /*forces=*/false, e);
-    EXPECT_EQ(sub.private_frame(), p0);
-    sub.launch(f, /*forces=*/false, e);
-    EXPECT_EQ(sub.private_frame(), p0);
-    EXPECT_TRUE(std::isfinite(e));
-}
-
-TEST(QmSubsystem, SiteCollectionHonorsCutoffAndCharge) {
-    auto f = make_h2o_ar();
-    // Far MM atom outside cutoff
-    f.span(kAtom_z)[3] = 50.0;
-    QmSubsystem sub;
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = 1e-8;
-    rhf.max_iter = 40;
-    sub.set_engine(std::move(rhf));
-    sub.embed_cutoff() = 5.0; // far atom excluded
-    sub.build(f, 1);
-    double e = 0;
-    sub.launch(f, false, e);
-    // With no sites, embedding is empty — energy is bare molecular RHF
-    EXPECT_TRUE(std::isfinite(e));
+    ASSERT_NE(sub.private_frame(), nullptr);
+    EXPECT_GE(sub.private_frame()->nlocal(), 1);
 }
 
 #else

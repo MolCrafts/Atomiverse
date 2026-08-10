@@ -20,29 +20,47 @@ even when short).
 
 **Also:** slimmed `ATV_TEST_HEAVY_REGEX` — **dropped kernel-unit tokens**
 (`gpw_poisson`, `gpw_hartree`, `gpw_grid_fft`, `gpw_xc_grid_gga`,
-`gpw_mt_poisson`, `gpw_thread`) so true unit binaries rejoin the default
+`gpw_mt_poisson`, `gpw_thread`) so true kernel unit binaries rejoin the default
 (pre-push) gate.
 
-## Residual (not wave-1)
+## Wave 2 (2026-08-10) — residual multi-iter + empty HEAVY
+
+**Action:** audit + delete residual multi-iter SCF / MPI / multiscale under
+`tests/` that wave-1 left (not heavy-gated, or false-heavy unit names). Slim
+mixed files to bind/build/throw/math only. Empty `ATV_TEST_HEAVY_REGEX` to `^$`.
+
+| Class | Wave-2 action | Coverage |
+| --- | --- | --- |
+| TDA / NAC / ALDA e2e units | **deleted** | `regressions/scf/h2_{tda_force,analytic_tda_force,tda_nac,nac_vectors,full_grid_alda,alda_vs_cis,rks_alda_tda}` |
+| Analytic Hessian multi-SCF | **deleted** | `regressions/scf/{h2o_rhf_freq,uhf-hessian-o2,…}` |
+| delta-SCF / Koopmans / lindep / level_shift smokes | **deleted** | `regressions/scf/{n2_ionization,delta-scf-n2,h2o_rhf_sto3g,…}` |
+| MPI PW/GPW kpoint multi-iter | **deleted** | `regressions/pw/mpi-pw-scaling-4rank`, `regressions/gpw/mpi-gpw-scaling-4rank` |
+| GPW vol-forces product SCF (max_iter=60) | **slimmed** (geometry-only FD duals) | `regressions/gpw/{gpw-hirshfeld-forces,gpw-hirshfeld-kpoint-forces,…}` |
+| `test_qm_engine` multi-iter evaluate | **slimmed** (protocol/bind only) | `regressions/multiscale/*`, `architecture/lj_rhf_coupled` |
+| multiscale RHF.launch multi-iter | **slimmed** (build/throw/math + link-count) | `regressions/multiscale/*` |
+| `test_soscf` micro RHF.run pin | **slimmed** (stepper units only) | `regressions/scf/soscf_hard_case` |
+| `test_method_driver_wire` nested run/MD | **slimmed** (bind/build only) | `regressions/architecture/lj_rhf_coupled` |
+| `test_source_cobinding` RHF co-bind | **slimmed** (stubs only) | `regressions/architecture/lj_rhf_coupled` |
+| `test_spin_resolution` UHF converge | **slimmed** (math + throw) | `regressions/scf/*uhf*` |
+| `ATV_TEST_HEAVY_REGEX` false hits | **emptied** (`^$`) | units rejoin default gate |
+| Harness twin | `reg_arch-e2e-tests-wave2` | architecture |
+
+## Residual (not wave-2)
 
 | Class | Policy |
 | --- | --- |
-| Remaining heavy name hits | Safety-net regex only; should be empty/near-empty after wave 1 |
-| Unique e2e still only in deleted files | **none intentional** — if a pin was only in a deleted test, re-add as `regressions/<domain>/<slug>/` with REFERENCE.md |
-| False-heavy renames | Prefer rename over regex gymnastics when a new unit collides with residual tokens |
+| Unique pin only discovered after green inventory | Migrate to `regressions/<domain>/<slug>/` with REFERENCE.md |
+| New unit that collides with a future heavy token | Prefer rename over reintroducing a fat HEAVY_REGEX |
+| Classical MD multi-step skin/neighbor unit loops | Out of ES iron-law wave; do not re-open fat HEAVY_REGEX for them |
 
 ## Do not reintroduce
 
-- Full `GpwDft::run` / `PW::run` SCF loops under `tests/`
-- Multi-step `MD` / `Minimize` campaigns under `tests/`
+- Full `GpwDft::run` / `PW::run` / `RHF::run` SCF loops under `tests/`
+- Multi-step `MD` / `Minimize` campaigns driven by electronic methods under `tests/`
 - Oracle/live third-party calls under ctest
+- Fat unanchored `ATV_TEST_HEAVY_REGEX` tokens that false-hit unit names
 
 ## Next waves
 
-- Wave 2 (`arch-e2e-tests-wave2`, pending): residual multi-iter under `tests/`
-  after wave-1 — GapCensus wave-2 concrete hits include
-  `test_cpu_gpw_vol_forces` (max_iter=60), `test_soscf` / `test_full_grid_alda`,
-  multiscale + `test_qm_engine` (max_iter 40–100), MPI `test_gpw_kpoint` /
-  `test_pw_kpoint` (max_iter 20–30), plus fat residual `ATV_TEST_HEAVY_REGEX`
 - Wave 3: optional migrate of *unique* coverage discovered only after green
-  regression inventory
+  regression inventory (if any gap remains after wave-2 inventory)

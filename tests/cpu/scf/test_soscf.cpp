@@ -4,13 +4,11 @@
 ///        rotation energy, CIAH matrix-free root vs an explicit dense
 ///        augmented-matrix eigensolve (H built explicitly IN THE TEST ONLY),
 ///        trust-region clipping, stationary no-op, UHF dimension-mismatch
-///        throw, MixStage SOSCF activation latch, and the default-off
-///        (`soscf = false`) micro H2/STO-3G invariance pin.
+///        throw, MixStage SOSCF activation latch, and the KS+soscf throw.
 ///
-/// No production-path SCF beyond the explicitly allowed micro H2/STO-3G
-/// bit-invariance check (a handful of iterations, milliseconds). All other
-/// tests drive the stepper on single Fock builds — never to
-/// self-consistency.
+/// No production-path SCF loop (e2e-in-tests wave-2). Stepper tests drive
+/// single Fock builds only. Hard-case convergence lives in
+/// regressions/scf/soscf_hard_case.
 
 #ifdef ATV_HAS_HF
 
@@ -464,31 +462,6 @@ TEST(SoscfMixStage, StaysInactiveAboveThresholdAndLatchesBelow) {
     F_b = F_a;
     mix.launch(lc);
     EXPECT_TRUE(latch);
-}
-
-// ── Default-off invariance: micro H2/STO-3G SCF pin (milliseconds) ──────────
-
-TEST(SoscfDefaultOff, MicroH2Sto3gTrajectoryUnchanged) {
-    // soscf defaults to false; the pinned energy/iteration pair was captured
-    // from the pre-SOSCF loop and must stay bit-stable when the flag is off.
-    // PySCF 2.14.0 cross-check: RHF/STO-3G H2 @ 0.74 Å = -1.116759 Ha.
-    auto run = []() {
-        cpu::Frame f = make_h2_frame();
-        cpu::scf::RHF rhf;
-        rhf.basis = BasisSet::STO3G;
-        rhf.tol = 1e-10;
-        rhf.max_iter = 15;
-        rhf.run(f);
-        return std::make_pair(rhf.energy(), rhf.iterations());
-    };
-    const auto [e1, it1] = run();
-    const auto [e2, it2] = run();
-    // OpenMP reduction order is not bitwise-reproducible across runs; the
-    // default-path invariance contract is agreement to accumulator precision.
-    EXPECT_NEAR(e1, e2, 1e-12) << "default path must be run-to-run stable";
-    EXPECT_EQ(it1, it2);
-    EXPECT_NEAR(e1, -1.11675930740, 1e-9)
-        << "default-off energy drifted from the pinned pre-SOSCF value";
 }
 
 TEST(SoscfDefaultOff, SoscfOnKohnShamThrows) {
