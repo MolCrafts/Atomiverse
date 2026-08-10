@@ -1,5 +1,7 @@
 # cuda-pw-spin-pbe
 
+**acceptance_met=true** (GH200 **1122874**, exit 0; dual-gate below).
+
 ## Lever
 
 | Item | Value |
@@ -22,3 +24,15 @@
 
 - CPU: `reg_pw-spin-gga` class (O₂, ecut 12 Ry, k=1, mult=3, mix_beta=0.3, PBE).
 - Oracle: same-settings `cpu::pw::PW` (not self-golden CUDA).
+
+## Gate evidence (GH200 **1122874**, n416)
+
+| Check | Result |
+| --- | --- |
+| `test_cuda_pw_xc_pbe_spin` | Passed |
+| `test_cuda_pw_guards` | Passed |
+| CPU PBE E | **−28.7585210635 Ha**, mag=2, conv |
+| CUDA PBE E | **−28.7585210635 Ha**, mag=2, conv |
+| \|E_cuda − E_cpu\| | **1.14e-13 Ha** (tol 2e-3) |
+| \|E_PBE − E_LSDA\|_cpu | **0.129 Ha** (floor 1e-4) |
+| RCs | BUILD=0 UNIT_SPIN=0 UNIT_GUARD=0 REG=0 |

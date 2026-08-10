@@ -39,6 +39,15 @@ Collinear fixed-occupation UKS with **true spin-GGA PBE** on `cuda::pw::PW`
 | \|E_cuda − E_cpu\| | **2e-3 Ha** (cuFFT/FFTW, tree/serial, libdevice/libm, Davidson) |
 | \|E_PBE − E_LSDA\| | > 1e-4 Ha |
 
+## Gate (GH200)
+
+| Job | Result |
+| --- | --- |
+| **1122874** (n416, exit 0) | CPU/CUDA PBE both **−28.7585210635 Ha**, mag=2; \|ΔE\|=**1.14e-13 Ha**; \|E_PBE−E_LSDA\|_cpu=**0.129 Ha** |
+| prior **1122357** | first green on pre-rebase tip |
+
+Log path on staff tree: `.claude/cuda-pw-spin-pbe-1122874.out`.
+
 ## Not claimed
 
 Forces, stress, spin+smear, PBEsol/revPBE/RPBE, fair CP2K wall.
