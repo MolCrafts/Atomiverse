@@ -43,7 +43,17 @@ class coverage remains on CPU (`tests/cpu/planewave/test_pw_forces_fd.cpp`).
 
 and \(\max |F^{\mathrm{cpu}}| > 0.05\) eV/Å (non-vacuous).
 
-GH200 evidence: fill after gate job (job id, max\|ΔF\|, SCF energies).
+**GH200 job 1050253** (`f28cb2df`): units **1/1 PASS**; dual-gate
+\(\max|\Delta F| = 2.615\times 10^{-13}\) eV/Å (tol \(5\times 10^{-3}\));
+CPU = CUDA \(\max|F| = 2.486453\) eV/Å; force-path SCF both **iter=8**,
+\(E = -13.89672028\) Ry. Bound kept at design-time \(5\times 10^{-3}\).
+
+**Root cause of first fail (job 1050212, \(\max|\Delta F|\sim 14\) eV/Å):**
+`pw_forces_analytic` constructed `DeviceBandSolver` without
+`den.stream()`, so density and band halves raced on separate non-default
+streams. LSDA often survived; PBE (many more density-side FFTs) failed to
+converge (hit `max_iter=40`). Fixed: borrow `den.stream()` as in `PW::run`;
+local HF launches on the same stream.
 
 ## Dual gate
 

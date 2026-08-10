@@ -1,6 +1,6 @@
 ---
 slug: cuda-pw-forces-pbe
-status: in_progress
+status: done
 created: 2026-08-10
 domain: cuda / planewave
 queue: es-cpu-cuda
