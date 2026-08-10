@@ -656,6 +656,21 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-uks-o2-gate] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_uks_o2})
         unset(_reg_gpw_uks_o2)
+
+        # Product SCF non-default stream dual-gate (H2 Γ RKS PADE).
+        set(_reg_gpw_stream reg_cuda-gpw-nondefault-stream)
+        add_executable(${_reg_gpw_stream}
+            gpw/cuda-gpw-nondefault-stream/${_reg_gpw_stream}.cu)
+        target_link_libraries(${_reg_gpw_stream} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_stream} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_stream}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_stream}> --device=both
+            DEPENDS ${_reg_gpw_stream}
+            COMMENT "regression [gpw/cuda-gpw-nondefault-stream] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_stream})
+        unset(_reg_gpw_stream)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)

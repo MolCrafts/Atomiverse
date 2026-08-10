@@ -20,6 +20,8 @@
 ///     Mid-SCF does not H2D ρ or D2H V_eff for H.
 ///     Forces (Γ RKS single-grid first cut): device grid V_eff Pulay + ionic
 ///     HF + local-PP HF (UKS / multigrid force free-fns remain fail-closed).
+///     Product SCF owns a non-default CUDA stream for mid-SCF transfers
+///     and KS chain work (default stream is not used for the SCF body).
 ///
 /// Unsupported members throw with a how-to (no silent CPU-SCF fallback).
 /// Contract: `.claude/notes/cuda-gpw-public-shape.md`.
