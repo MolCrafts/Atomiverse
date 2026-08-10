@@ -6,7 +6,7 @@
 ///
 /// Registers on a `cuda::Evaluate` driver alongside a
 /// `cuda::scf::SCF`; it runs in the `evaluate::Phase::finalize`
-/// pass, after the inner `cuda::scf::SCFSolver` has converged the density.
+/// pass, after the inner `the concrete method (cuda::scf::RHF) private cycle` has converged the density.
 ///
 /// The converged density matrix is no longer carried on `cuda::Frame`; the
 /// observer holds a reference to the `cuda::scf::SCF` and reads the

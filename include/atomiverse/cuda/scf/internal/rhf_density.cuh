@@ -2,7 +2,7 @@
 /// @brief internal::RHFDensity -- back-transform C, rebuild P, compute RHF energy.
 ///
 /// **Internal SCF helper.** Does NOT inherit `cuda::Component` and is
-/// never registered into a `Driver` Plan. Owned by `cuda::scf::SCFSolver`,
+/// never registered into a `Driver` Plan. Owned by `the concrete method (cuda::scf::RHF) private cycle`,
 /// which drives its `build` / `step` / `destroy` lifecycle directly.
 ///
 /// In `step()`:
@@ -11,7 +11,7 @@
 ///   3. E = 0.5 * Tr[(Hcore + F) * P] + V_nuc
 ///   4. Write E to frame.scalars->energy
 ///
-/// @see cuda::scf::SCFSolver for the inner solver that owns this helper
+/// @see the concrete method (cuda::scf::RHF) private cycle for the inner solver that owns this helper
 /// @see internal::RHFFock for the Fock matrix builder
 #pragma once
 

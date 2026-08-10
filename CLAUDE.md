@@ -426,9 +426,9 @@ concrete method (or a thin force-slot component owning it).
 *Properties* (charges, dipoles, Mulliken, AM1-BCC) are component **outputs
 written to Frame** — never Driver-level categories.
 
-**Remaining debt, do not extend:** `cuda::scf::SCFSolver` (owned by
-arch-campaign `arch-cuda-scf-solver-fold`); `cpu::pw::PW` (not yet a Driver
-node); `GpwDft` is `cpu::Driver<gpw::Phase>` for Γ RKS DIIS — multi-k / UKS /
+**Remaining debt, do not extend:** `cuda::scf::RHF` is Component+private
+`RhfScfCycle` (not yet `cuda::Driver<scf::Phase>` — needs nested CUDA
+DriverNode); `cpu::pw::PW` (not yet a Driver node); `GpwDft` is `cpu::Driver<gpw::Phase>` for Γ RKS DIIS — multi-k / UKS /
 OT path migration is residual (`arch-gpw-driver-paths`).
 
 ### Component

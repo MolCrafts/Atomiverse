@@ -3,7 +3,7 @@
 ///        of P - P_old.
 ///
 /// **Internal SCF helper.** Does NOT inherit `cuda::Component` and is
-/// never registered into a `Driver` Plan. Owned by `cuda::scf::SCFSolver`,
+/// never registered into a `Driver` Plan. Owned by `the concrete method (cuda::scf::RHF) private cycle`,
 /// which drives its `build` / `step` / `destroy` lifecycle directly.
 ///
 /// Computes ||P - P_old||_F using cuBLAS (axpy + nrm2) and compares against
@@ -14,7 +14,7 @@
 /// writes it to frame.scalars->energy. Set to false when another helper (e.g.
 /// internal::RHFDensity) computes the proper energy.
 ///
-/// @see cuda::scf::SCFSolver for the inner solver that owns this helper
+/// @see the concrete method (cuda::scf::RHF) private cycle for the inner solver that owns this helper
 /// @see internal::DensityBuilder for the helper that produces P and P_old
 #pragma once
 

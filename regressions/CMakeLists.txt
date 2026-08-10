@@ -1038,6 +1038,25 @@ if(ATV_BUILD_PATH)
 endif()
 atv_add_regression(architecture harmonic_driver_matrix)
 atv_add_regression(architecture module_compile_defs)
+if(ATV_BUILD_CUDA AND ATV_BUILD_HF)
+    # arch-cuda-scf-solver-fold: free-loop SCFSolver folded under RHF; public
+    # run still hits the H2/STO-3G literature pin on device.
+    set(_reg_cuda_scf_fold reg_arch-cuda-scf-solver-fold)
+    add_executable(${_reg_cuda_scf_fold}
+        architecture/arch-cuda-scf-solver-fold/${_reg_cuda_scf_fold}.cu)
+    target_link_libraries(${_reg_cuda_scf_fold} PRIVATE atomiverse)
+    set_target_properties(${_reg_cuda_scf_fold} PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+    target_compile_definitions(${_reg_cuda_scf_fold} PRIVATE
+        ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+    add_custom_target(run_${_reg_cuda_scf_fold}
+        COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                $<TARGET_FILE:${_reg_cuda_scf_fold}>
+        DEPENDS ${_reg_cuda_scf_fold}
+        COMMENT "regression [architecture/arch-cuda-scf-solver-fold] (1t)")
+    add_dependencies(regressions run_${_reg_cuda_scf_fold})
+    unset(_reg_cuda_scf_fold)
+endif()
 if(ATV_BUILD_HF AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
     # esmm-contract-05-accumulate-switch (R1): the first ES x MM co-bound case.
     # One cpu::Evaluate over one Frame — a He pair under PairLJCut plus a

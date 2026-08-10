@@ -561,7 +561,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     }
 
     // V_nuc: device-only reduction (Wave 7 — no mid-build D2H/H2D rewrite).
-    // Host `scf.V_nuc` is filled post-SCF in SCFSolver::run from d_V_nuc.
+    // Host `scf.V_nuc` is filled post-SCF in RhfScfCycle::drive from d_V_nuc.
     // Energy during SCF reads d_V_nuc on device (RHFDensity).
     cudaMalloc(&scf.d_V_nuc, sizeof(double));
     cudaMemsetAsync(scf.d_V_nuc, 0, sizeof(double), stream);
@@ -686,7 +686,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaFree(d_info);
     cudaFree(d_ao_start);
     // Wave 7: d_V_nuc stays as the sole nuclear-repulsion source for SCF energy;
-    // host scf.V_nuc mirrored only in SCFSolver::run post-pass.
+    // host scf.V_nuc mirrored only in RhfScfCycle::drive post-pass.
 }
 
 void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {

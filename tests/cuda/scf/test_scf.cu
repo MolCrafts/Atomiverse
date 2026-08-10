@@ -1,12 +1,11 @@
 /// @file test_scf.cu
-/// @brief Contract + synthetic-path tests for the CUDA SCF inner solver
-///        (`SCFSolver`) and its `SCF` component: structural guards (SCFSolver
-///        is not a Driver; the relocated step helpers are not Components;
-///        Evaluate is a loop node over evaluate::Phase; SCF is a Component with
+/// @brief Contract + synthetic-path tests for `cuda::scf::SCF` and private
+///        helpers: structural guards (step helpers are not Components; Evaluate
+///        is a loop node over evaluate::Phase; SCF is a Component with
 ///        role()==0), the synthetic `H(P)=H0+alpha*P` device path, single-point
 ///        via `cuda::Evaluate`, and CPU/CUDA parity against the `cpu::scf::toy`
 ///        reference solver. The numeric H2/STO-3G/RHF check lives in
-///        test_rhf.cu.
+///        test_rhf.cu. Free-loop `SCFSolver` is gone (arch-cuda-scf-solver-fold).
 
 #include <cmath>
 #include <gtest/gtest.h>
@@ -24,7 +23,7 @@
 #include "atomiverse/cuda/scf/internal/eigen_solver.cuh"
 #include "atomiverse/cuda/scf/internal/hamiltonian.cuh"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cuda/scf/internal/scf_solver.cuh"
+#include "atomiverse/cuda/scf/internal/synthetic_scf_cycle.cuh"
 #include "atomiverse/cuda/scf/scf_evaluator.cuh"
 
 using namespace ATV;
@@ -56,12 +55,23 @@ cpu::Frame make_scf_system(int n) {
 // claimed was deleted). The guards below assert what is actually true of the
 // shipping type: it is a Component, not a Driver, with role()==0.
 
-TEST(SCF, SCFSolverIsNotADriver) {
-    // ac-002: SCFSolver is an inner solver, NOT a Driver<> subclass.
+TEST(SCF, SyntheticCycleIsNotADriver) {
+    // Private synthetic cycle is NOT a Driver<> subclass.
     static_assert(
         !std::is_base_of_v<Driver<ATV::evaluate::Phase, cuda::device_tag>,
-                           cuda::scf::SCFSolver>,
-        "cuda::scf::SCFSolver must not be a Driver<> subclass");
+                           cuda::scf::internal::SyntheticScfCycle>,
+        "SyntheticScfCycle must not be a Driver<> subclass");
+    static_assert(
+        !std::is_base_of_v<cuda::Driver<ATV::scf::Phase>,
+                           cuda::scf::internal::SyntheticScfCycle>,
+        "SyntheticScfCycle must not be a cuda::Driver<scf::Phase>");
+    SUCCEED();
+}
+
+TEST(SCF, NoPublicSCFSolverType) {
+    // arch-cuda-scf-solver-fold: the dual free-loop bag is gone.
+    // Compile-time: if SCFSolver reappears as a public/internal type under
+    // cuda::scf, this TU would need a header that declares it — it must not.
     SUCCEED();
 }
 
@@ -107,7 +117,7 @@ TEST(SCF, SCFRoleIsMainLoopEnergySource) {
     EXPECT_EQ(eval.role(), 0);
 }
 
-// ── CUDA SCFSolver synthetic-path tests ──────────────────────────────
+// ── CUDA synthetic-path tests ────────────────────────────────────────
 
 TEST(SCF, CUDAConvergence) {
     int n = 8;
@@ -193,7 +203,7 @@ TEST(SCF, CUDAAlphaEffect) {
 }
 
 TEST(SCF, CUDAMaxIterCap) {
-    // SCFSolver::run honours its max-iteration cap when convergence is
+    // Synthetic cycle honours its max-iteration cap when convergence is
     // not reached (high-alpha synthetic case that does not converge in
     // a single iteration).
     int n = 8;

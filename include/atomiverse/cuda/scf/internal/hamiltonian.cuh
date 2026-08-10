@@ -2,7 +2,7 @@
 /// @brief internal::Hamiltonian -- construct effective Hamiltonian H = H0 + alpha * P.
 ///
 /// **Internal SCF helper.** Does NOT inherit `cuda::Component` and is
-/// never registered into a `Driver` Plan. Owned by `cuda::scf::SCFSolver`,
+/// never registered into a `Driver` Plan. Owned by `the concrete method (cuda::scf::RHF) private cycle`,
 /// which drives its `build` / `step` / `destroy` lifecycle directly.
 ///
 /// Allocates and initializes the SCF workspace matrices (H0, H, P, P_old,
@@ -12,7 +12,7 @@
 /// H0 is a deterministic diagonally-dominant symmetric matrix seeded from
 /// atom indices. The coupling term alpha*P creates a self-consistent cycle.
 ///
-/// @see cuda::scf::SCFSolver for the inner solver that owns this helper
+/// @see the concrete method (cuda::scf::RHF) private cycle for the inner solver that owns this helper
 /// @see internal::DensityBuilder for the helper that rebuilds P
 #pragma once
 

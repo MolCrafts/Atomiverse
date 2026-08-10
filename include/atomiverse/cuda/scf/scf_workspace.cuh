@@ -6,14 +6,15 @@
 /// data) for the CUDA SCF self-consistency cycle. Per the CLAUDE.md Frame
 /// purity rule ("hot-path data structures carry only fundamental physical
 /// quantities -- never precomputed indices, caches, or derived maps") this
-/// is **not** part of `cuda::Frame`: it is owned by `cuda::scf::SCFSolver`,
-/// mirroring how the CPU SCF workspace lives in `cpu::scf::SCFSolver`.
+/// is **not** part of `cuda::Frame`: it is owned by the concrete method's
+/// private cycle (`internal::RhfScfCycle` for RHF; synthetic tests use
+/// `internal::SyntheticScfCycle`). Method-private (Frame purity).
 ///
 /// Allocated by the SCF `internal::*` step helpers in their `build()` and
-/// freed in their `destroy()`; `SCFSolver` holds the single instance and
+/// freed in their `destroy()`; the owning cycle holds the single instance and
 /// passes it by reference into every helper call.
 ///
-/// @see cuda::scf::SCFSolver for the inner solver that owns this workspace
+/// @see internal::RhfScfCycle for the RHF private cycle that owns this workspace
 #pragma once
 
 #include "atomiverse/cuda/frame/types.cuh"
@@ -25,7 +26,7 @@ namespace scf {
 /// @brief SCF electronic-structure workspace -- all arrays on device.
 ///
 /// Column-major dense matrices (cuBLAS convention), dimension n x n.
-/// Owned by `cuda::scf::SCFSolver`, not by `cuda::Frame`.
+/// Owned by the method private cycle, not by `cuda::Frame`.
 struct SCFWorkspace {
     // -- Shared (toy-scf + RHF) --
     prec_t* H0 = nullptr; ///< Base Hamiltonian (toy) [device, n*n].
