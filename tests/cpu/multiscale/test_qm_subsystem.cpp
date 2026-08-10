@@ -130,7 +130,7 @@ TEST(QmSubsystem, PrivateFrameAllocatedOnBuild) {
     sub.embed_cutoff() = 20.0;
     sub.build(f, 1);
     ASSERT_NE(sub.private_frame(), nullptr);
-    EXPECT_GE(sub.private_frame()->n_local(), 1);
+    EXPECT_GE(sub.private_frame()->nlocal(), 1);
 }
 
 #else
