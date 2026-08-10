@@ -65,6 +65,10 @@ CPU = CUDA \(E = -13.90403280\) Ry, stress-SCF **iter=7**,
 1/1 PASS; dual-gate max|Δσ| = \(5.585\times 10^{-12}\) eV/Å³; same E and
 |ΔE|; `BUILDS_WIPED_OK`.
 
+**Re-verify GH200 job 1123959** after rebase onto `dev@4913b33b` (Assign
+wave 3): unit 1/1 PASS; dual-gate max|Δσ| = \(5.585\times 10^{-12}\) eV/Å³;
+same E and |ΔE|; `BUILDS_WIPED_OK`.
+
 ## Dual gate
 
 | Gate | Criterion |
