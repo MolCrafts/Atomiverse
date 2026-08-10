@@ -660,22 +660,8 @@ exhausted.
 
 ## in_progress
 
-**GapCensus wave 8** (parent `dev` @ `2c804e76`): wave-7 MG/UKS energy
-**held on base**. Keep **[~]** `device-forces` until Merge.
-**in_progress=1**; residual P1 `pbe-product-gate` + P2/P3 (incl. wave-8
-depth rows) stay pending. Queue **not** exhausted.
+*(empty — wave-8 tips landed: device-forces + pbe-product-gate + uks-o2-gate)*
 
-- [~] `cuda-gpw-device-forces` | **P1** Free-function forces call **CPU**
-  `cpu::gpw::gpw_forces_from_scf` on **base** (no device force product).
-  Track: **cuda**. Twin: same-settings CPU analytic forces + dual-gate vs
-  CUDA SCF density. Gate: GH200 + stated max\|ΔF\| ≤ **5e-5** Ha/Bohr,
-  \|ΔE\| ≤ **5e-6** Ha; keep free-function public shape. Lever: `gpw_forces_*`
-  in `gpw_solver.cu` + device grid HF / Pulay after landed `device-collocate`.
-  Tip: `wf/cuda-gpw-device-forces` (`9ec138dc` / feat `da3bf2e3`); GH200
-  **1126434** re-verify after rebase (max\|ΔF\|=**2.321e-6** Ha/Bohr,
-  \|ΔE\|=**1.617e-7** Ha; prior **1125926** max\|ΔF\|=**2.360e-6**) — not on
-  base. Spec: `.claude/specs/cuda-gpw-device-forces/` (tip only). Resume:
-  `is_resume=true` from tip `9ec138dc`.
 
 ## blocked
 
@@ -685,6 +671,13 @@ depth rows) stay pending. Queue **not** exhausted.
   fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 
 ## done
+
+Post-wave-8 land 2026-08-10/11 (`dev` @ `4f78d716`):
+
+- [x] `cuda-gpw-device-forces` | **P1** Device grid force product on free-fn forces (host AO Pulay + device HF grid) | GH200 **1127167** max\|ΔF\|=**2.056e-6** Ha/Bohr \|ΔE\|=**1.617e-7** Ha | FF `81b74dec` / feat `d6eee397`
+- [x] `cuda-gpw-pbe-product-gate` | **P1** H₂ Γ RKS **PBE** e2e dual-gate on public GpwDft | GH200 **1127166** \|dE\|=**1.658e-7** max\|dF\|=**5.232e-7** | merge `d38eb0e5` / feat `37c663c2`
+- [x] `cuda-gpw-uks-o2-gate` | **P2** O₂ Γ UKS PADE production dual-gate after H₂ foothold | GH200 **1127173** \|dE\|=**3.52e-6** Ha | merge `4f78d716` / feat `dbb07ad3`
+
 
 Harness wave 7 land 2026-08-10 (`dev` @ `f679807c`):
 
