@@ -1175,52 +1175,17 @@ static GpwResult run_gpw_scf_kpoints(
 #endif
         return D;
     };
-    // Fine-grid density from {P_k}: per-level product collocation weighted by
-    // the (full) D stack + spectral prolongation — every rank returns the
-    // GLOBAL density (no further reduction).
+    // Fine-grid density from {P_k}: multi-level product collocation + spectral
+    // prolongation (shared MAIN path). Every rank returns the GLOBAL density.
     auto mg_density = [&](const std::vector<CplxMatrix>& Pk) {
-        const auto D = mg_density_stack(Pk);
-        std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
-        for (std::size_t l = 0; l < mg.levels.size(); ++l) {
-            std::vector<double> rho_l = collocate_products_cells(
-                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
-                products.prims, products.contribs, nb, D, cfg.eps_default);
-            if (l == 0) {
-                rho = std::move(rho_l);
-            } else {
-                const std::vector<double> up =
-                    prolong_fft(mg.levels[l], mg.levels[0], rho_l,
-                                /*spectral*/ true);
-                for (std::size_t g = 0; g < rho.size(); ++g)
-                    rho[g] += up[g];
-            }
-        }
-        return rho;
+        return multigrid_collocate_rho_cells(mg, products, nb,
+                                             mg_density_stack(Pk),
+                                             cfg.eps_default);
     };
-    // Real per-cell KS stack V_t from the fine effective potential: restrict
-    // per level (exact adjoint of the prolongation) + integrate each level's
-    // products. k-independent — one stack serves every k via the phase sum.
+    // Real per-cell KS stack V_t from fine V_eff (shared MAIN restrict+integrate).
     auto mg_vt_stack = [&](const std::vector<double>& veff) {
-        std::vector<std::vector<double>> Vt(
-            n_tcells,
-            std::vector<double>(static_cast<std::size_t>(nb) * nb, 0.0));
-        for (std::size_t l = 0; l < mg.levels.size(); ++l) {
-            std::vector<double> V_l;
-            if (l == 0) {
-                V_l = veff;
-            } else {
-                V_l = restrict_fft(mg.levels[0], mg.levels[l], veff,
-                                   /*spectral*/ true);
-            }
-            const auto Vt_l = integrate_products_cells(
-                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
-                products.prims, products.contribs, nb, V_l, n_tcells,
-                cfg.eps_default);
-            for (std::size_t c = 0; c < n_tcells; ++c)
-                for (std::size_t e = 0; e < Vt[c].size(); ++e)
-                    Vt[c][e] += Vt_l[c][e];
-        }
-        return Vt;
+        return multigrid_integrate_veff_cells(mg, products, nb, veff,
+                                              cfg.eps_default);
     };
     // Per-k Hermitian grid KS matrix V^k = Σ_t e^{+2πi κ·t} V_t (conjugate of
     // the collocation phase).
@@ -2534,46 +2499,15 @@ static GpwResult run_gpw_scf_kpoints_uks(
 #endif
         return D;
     };
+    // Shared MAIN multi-level product path (same helpers as multi-k RKS).
     auto mg_density = [&](const std::vector<CplxMatrix>& Pk) {
-        const auto D = mg_density_stack(Pk);
-        std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
-        for (std::size_t l = 0; l < mg.levels.size(); ++l) {
-            std::vector<double> rho_l = collocate_products_cells(
-                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
-                products.prims, products.contribs, nb, D, cfg.eps_default);
-            if (l == 0) {
-                rho = std::move(rho_l);
-            } else {
-                const std::vector<double> up =
-                    prolong_fft(mg.levels[l], mg.levels[0], rho_l,
-                                /*spectral*/ true);
-                for (std::size_t g = 0; g < rho.size(); ++g)
-                    rho[g] += up[g];
-            }
-        }
-        return rho;
+        return multigrid_collocate_rho_cells(mg, products, nb,
+                                             mg_density_stack(Pk),
+                                             cfg.eps_default);
     };
     auto mg_vt_stack = [&](const std::vector<double>& veff) {
-        std::vector<std::vector<double>> Vt(
-            n_tcells,
-            std::vector<double>(static_cast<std::size_t>(nb) * nb, 0.0));
-        for (std::size_t l = 0; l < mg.levels.size(); ++l) {
-            std::vector<double> V_l;
-            if (l == 0) {
-                V_l = veff;
-            } else {
-                V_l = restrict_fft(mg.levels[0], mg.levels[l], veff,
-                                   /*spectral*/ true);
-            }
-            const auto Vt_l = integrate_products_cells(
-                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
-                products.prims, products.contribs, nb, V_l, n_tcells,
-                cfg.eps_default);
-            for (std::size_t c = 0; c < n_tcells; ++c)
-                for (std::size_t e = 0; e < Vt[c].size(); ++e)
-                    Vt[c][e] += Vt_l[c][e];
-        }
-        return Vt;
+        return multigrid_integrate_veff_cells(mg, products, nb, veff,
+                                              cfg.eps_default);
     };
     auto mg_phase_V = [&](const std::vector<std::vector<double>>& Vt, int ik) {
         CplxMatrix V = xt::zeros<Cplx>({nb, nb});
@@ -4512,29 +4446,13 @@ GpwResult GpwDft::run_impl_(
     }
 
     // Total density on the finest grid from a flattened P. Single-grid:
-    // direct compact (cbg) collocation. Multigrid: collocate each level's
-    // products, then spectral (band-limited) prolongation to the fine grid —
-    // shape-exact and mass-conserving (no D_l correction). Shared by the SCF
-    // KS build, fold_dispersion, and the final nonlocal-vdW evaluation.
+    // direct compact (cbg) collocation. Multigrid: shared MAIN multi-level
+    // product path (`multigrid_collocate_rho`). Used by SCF KS build,
+    // fold_dispersion, and the final nonlocal-vdW evaluation.
     auto collocate_rho_fine = [&](const std::vector<double>& Pvec) {
         if (!use_prod)
             return collocate_density(cbg, nb, Pvec);
-        std::vector<double> rho(static_cast<std::size_t>(mg.levels[0].npts()),
-                                0.0);
-        for (std::size_t l = 0; l < mg.levels.size(); ++l) {
-            std::vector<double> rho_l = collocate_products(
-                mg.levels[l], products.by_level[l], products.tasks_by_level[l],
-                products.prims, products.contribs, nb, Pvec, eps_default);
-            if (l == 0) {
-                rho = std::move(rho_l); // finest level is the reference grid
-            } else {
-                const std::vector<double> up = prolong_fft(
-                    mg.levels[l], mg.levels[0], rho_l, /*spectral*/ true);
-                for (std::size_t g = 0; g < rho.size(); ++g)
-                    rho[g] += up[g];
-            }
-        }
-        return rho;
+        return multigrid_collocate_rho(mg, products, nb, Pvec, eps_default);
     };
 
     // Fold free-atom e_d3, or Hirshfeld-scaled TS/MBD from the final density.
@@ -4644,31 +4562,12 @@ GpwResult GpwDft::run_impl_(
         const std::vector<double>& veff = res.veff;
         const double e_locgrid = ks.e_locgrid;
         // KS grid matrix. Single-grid: integrate veff directly. Multigrid:
-        // restrict the fine potential to each level (the transpose of prolong) and
-        // integrate each level's products — the adjoint of the density assembly,
-        // so the KS matrix stays the exact gradient of the collocated energy.
+        // shared MAIN restrict+integrate (`multigrid_integrate_veff`).
         RealMatrix Vgrid;
         if (use_prod) {
-            std::vector<double> V_ks(static_cast<std::size_t>(nb) * nb, 0.0);
-            for (std::size_t l = 0; l < mg.levels.size(); ++l) {
-                std::vector<double> V_l;
-                if (l == 0) {
-                    V_l = veff;
-                } else {
-                    // Exact adjoint of the spectral prolongation used for the
-                    // density: restrict the fine potential by spectral truncation,
-                    // so the KS matrix is the exact gradient of the collocated
-                    // energy (variational SCF).
-                    V_l = restrict_fft(mg.levels[0], mg.levels[l], veff,
-                                       /*spectral*/ true);
-                }
-                const std::vector<double> Vl_ks = integrate_products(
-                    mg.levels[l], products.by_level[l], products.tasks_by_level[l],
-                    products.prims, products.contribs, nb, V_l, eps_default);
-                for (std::size_t kk = 0; kk < V_ks.size(); ++kk)
-                    V_ks[kk] += Vl_ks[kk];
-            }
-            Vgrid = vec_to_mat(V_ks, nb);
+            Vgrid = vec_to_mat(
+                multigrid_integrate_veff(mg, products, nb, veff, eps_default),
+                nb);
         } else {
             Vgrid = vec_to_mat(integrate_potential(cbg, nb, veff), nb);
         }
@@ -4734,27 +4633,12 @@ GpwResult GpwDft::run_impl_(
         auto collocate_P = [&](const RealMatrix& Pin) {
             return collocate_rho_fine(mat_to_vec(Pin, nb));
         };
-        // Integrate one spin potential: multigrid restrict+products or cbg.
+        // Integrate one spin potential: shared MAIN multigrid path or cbg.
         auto integrate_V = [&](const std::vector<double>& veff) {
             if (use_prod) {
-                std::vector<double> V_ks(static_cast<std::size_t>(nb) * nb,
-                                         0.0);
-                for (std::size_t l = 0; l < mg.levels.size(); ++l) {
-                    std::vector<double> V_l;
-                    if (l == 0) {
-                        V_l = veff;
-                    } else {
-                        V_l = restrict_fft(mg.levels[0], mg.levels[l], veff,
-                                           /*spectral*/ true);
-                    }
-                    const std::vector<double> Vl_ks = integrate_products(
-                        mg.levels[l], products.by_level[l],
-                        products.tasks_by_level[l], products.prims,
-                        products.contribs, nb, V_l, eps_default);
-                    for (std::size_t kk = 0; kk < V_ks.size(); ++kk)
-                        V_ks[kk] += Vl_ks[kk];
-                }
-                return vec_to_mat(V_ks, nb);
+                return vec_to_mat(multigrid_integrate_veff(mg, products, nb,
+                                                           veff, eps_default),
+                                  nb);
             }
             return vec_to_mat(integrate_potential(cbg, nb, veff), nb);
         };

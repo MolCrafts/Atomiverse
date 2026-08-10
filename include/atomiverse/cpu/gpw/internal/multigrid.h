@@ -288,6 +288,52 @@ std::vector<std::vector<double>> integrate_products_cells(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<double>& V_level, std::size_t ncells, double eps);
 
+// ── Multi-level MAIN product path (single owner for Γ + multi-k SCF) ─────
+//
+// Per-level collocate_products* / integrate_products* are the kernels; the
+// MAIN multigrid path is the multi-level composition:
+//   ρ_fine = Σ_l prolong(collocate_level_l)
+//   V_ks   = Σ_l integrate_level_l(restrict(V_fine))
+// That composition was historically forked as lambdas in every SCF runner
+// (Γ RKS/UKS, multi-k RKS/UKS). These free functions are the one algorithm.
+
+/// @brief Fine-grid density from a Γ density matrix via multi-level product
+///        collocation + spectral prolongation (MAIN multigrid path).
+/// @param mg Multigrid (levels finest-first; level 0 is the SCF grid).
+/// @param products Geometry-fixed product set with tasks_by_level filled.
+/// @param nb Basis size (row stride of `P`).
+/// @param P Row-major density matrix nb×nb.
+/// @param eps Collocation screening tolerance.
+/// @return Total density on the finest level, length `mg.levels[0].npts()`.
+std::vector<double> multigrid_collocate_rho(const MultiGrid& mg,
+                                            const ProductSet& products, int nb,
+                                            const std::vector<double>& P,
+                                            double eps);
+
+/// @brief Fine-grid density from a Bloch D(t) stack (multi-k MAIN path).
+/// @param D One row-major nb×nb real matrix per `products.cells` entry.
+/// @return Total density on the finest level.
+std::vector<double> multigrid_collocate_rho_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<std::vector<double>>& D, double eps);
+
+/// @brief Integrate fine V_eff into the Γ KS matrix contribution — multi-level
+///        spectral restrict + product integrate (exact adjoint of
+///        `multigrid_collocate_rho`).
+/// @param veff Fine-grid effective potential, length `mg.levels[0].npts()`.
+/// @return Row-major nb×nb real KS grid contribution.
+std::vector<double> multigrid_integrate_veff(const MultiGrid& mg,
+                                             const ProductSet& products, int nb,
+                                             const std::vector<double>& veff,
+                                             double eps);
+
+/// @brief Integrate fine V_eff into the per-image-cell real KS stack (multi-k
+///        MAIN path) — exact adjoint of `multigrid_collocate_rho_cells`.
+/// @return One row-major nb×nb real matrix per `products.cells` entry.
+std::vector<std::vector<double>> multigrid_integrate_veff_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<double>& veff, double eps);
+
 } // namespace gpw
 } // namespace cpu
 } // namespace ATV
