@@ -4,8 +4,8 @@ Rewrite in place each harness wave.
 
 ## Status
 
-- **Parent:** `dev` @ `d24283d1` (post harness wave-3 chore marking
-  `arch-pw-driver-node` done; GapCensus wave-4 on same tip)
+- **Parent:** `dev` @ `26fb8328` (GapCensus wave-4 chore; no arch product
+  merge since PW node `f016215e` / harness wave-3 `d24283d1`)
 - **Wave-1 done:** e2e-in-tests delete (78 sources); `arch-gpw-driver-node`
 - **Wave-2 done:**
   - `arch-cuda-scf-solver-fold` — no free-loop `SCFSolver`; RHF owns
@@ -18,19 +18,24 @@ Rewrite in place each harness wave.
     fixed-occ stages; spin/smear free-loop residual; merge `f016215e` /
     impl `1bad527a`; unit `test_cpu_pw_driver_node` +
     `reg_arch-pw-driver-node`
-- **GapCensus wave-4:** re-diff harness + notes + queues + tree vs
-  `dev` @ `d24283d1`. **Staffed** residual `arch-pw-driver-paths` (new).
-  **pending=3** (pw-paths + held freeze + held mg-main), **in_progress=1**,
-  **new_slugs_added=1**. Blocked: `cuda-gpw-full-product` (until paths +
-  freeze). Roadmap arch prose updated (PW is a Driver node). Clearup not
-  required this census (no worktrees opened).
-- **Keep incomplete `[~]`:** `arch-gpw-driver-paths` @ `cca084b6` (ahead=1
-  behind=3 vs `dev`; rebase onto `d24283d1` before gate). **Hold** P1
-  shape-freeze + P2 mg-main until GPW paths merge.
+- **GapCensus wave-5:** re-diff harness + notes + queues + tree vs
+  `dev` @ `26fb8328`. **Tree on `dev` unchanged** (Γ RKS DIIS only / PW
+  fixed-occ only / folded CUDA RHF / CUDA GPW stages≠product / HEAVY
+  `^$`). **No new slug.** Tips advanced and rebased onto `26fb8328`
+  (ahead=1 behind=0 each) — **unmerged tip ≠ done**.
+  - `wf/arch-gpw-driver-paths` @ `06bc94fb` — claim multi-path DIIS;
+    OT residual
+  - `wf/arch-pw-driver-paths` @ `98e98ed5` — claim all product SCF paths
+    on stages
+  **pending held=2** (shape-freeze + mg-main), **in_progress=2**,
+  **new_slugs_added=0**, **gaps_remaining=5**. Blocked:
+  `cuda-gpw-full-product` (until paths + freeze). Roadmap arch prose
+  already accurate (no ○→✓). Clearup not required this census (no
+  worktrees opened).
 - **Lever:** copy `MeanFieldMethod` + `scf/stages/` + landed
-  `drive_gamma_rks_diis_` / `gpw/stages/*` + landed PW fixed-occ stages —
-  do not invent a second SCF shape.
-- **gaps_remaining=5** (1 in_progress + 3 pending + blocked full CUDA
+  `drive_gamma_rks_diis_` / `gpw/stages/*` + landed PW fixed-occ stages
+  (+ tip multi-path Ops) — do not invent a second SCF shape.
+- **gaps_remaining=5** (2 in_progress + 2 pending held + blocked full CUDA
   GPW product).
 
 ## Run

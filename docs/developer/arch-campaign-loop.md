@@ -92,3 +92,21 @@ Wipe `build` / `build-*` under parent and every worktree every wave.
   **new_slugs_added=1**. Roadmap arch prose: drop "PW not-yet-Driver"; name
   both path residuals. Keep `[~]` `wf/arch-gpw-driver-paths` @ `cca084b6`
   (ahead=1 behind=3; rebase). Optional `chore(queue)` only. No push.
+- **2026-08-10 Assign wave 4 (parent `dev` @ `d24283d1` / queue `26fb8328`):**
+  staff **2** → `[~]`: resume `arch-gpw-driver-paths` (`cca084b6`, ahead=1
+  behind=3; rebase onto `d24283d1` before gate) + new
+  `arch-pw-driver-paths` (branch `wf/arch-pw-driver-paths` off `dev`; no tip
+  yet). Skipped P1 `arch-cuda-gpw-public-shape-freeze` + P2
+  `arch-mg-main-structural` (dep on GPW paths). **new_assigned=1**,
+  **incomplete_remaining=2**, pending held=2, blocked=1 staffable product.
+  No open arch specs. Lever: MeanFieldMethod + scf/stages + landed Γ-RKS
+  GPW + PW fixed-occ (+ tip multi-path Ops). No push.
+- **2026-08-10 GapCensus wave 5 (parent `dev` @ `26fb8328`):** re-diff only —
+  tree reconfirmed Γ-RKS-only GPW Driver, PW restricted fixed-occ Driver +
+  spin/smear free loops, folded CUDA RHF, CUDA GPW stages≠product, HEAVY
+  `^$`. Tips rebased/advanced onto `26fb8328` (ahead=1 behind=0):
+  `wf/arch-gpw-driver-paths` @ `06bc94fb` (DIIS multi-path claim; OT residual);
+  `wf/arch-pw-driver-paths` @ `98e98ed5` (all product SCF claim). **Unmerged
+  tip ≠ done.** **pending=2** (held freeze + mg-main), **in_progress=2**,
+  **gaps_remaining=5**, **new_slugs_added=0**. Roadmap: no ○→✓ (arch prose
+  already accurate for `dev`). Optional `chore(queue)` only. No push.
