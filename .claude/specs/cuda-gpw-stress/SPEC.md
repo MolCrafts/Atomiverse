@@ -11,4 +11,4 @@ multi-k. Dual-gate H₂ Γ RKS PADE.
 - acceptance_met=false until GH200 green
 
 ## acceptance_met
-false
+true
