@@ -180,6 +180,15 @@ struct PhaseTraits<ATV::gpw::Phase> {
     static constexpr auto end_phase = ATV::gpw::Phase::check;
 };
 
+/// PW (`cpu::pw::PW : Driver<pw::Phase>`): Veff is the energy slot; no
+/// neighbor list; end-of-iteration is `check` (density residual Criterion).
+template <>
+struct PhaseTraits<ATV::pw::Phase> {
+    static constexpr auto eval_phase = ATV::pw::Phase::veff;
+    static constexpr auto neighbor_phase = ATV::pw::Phase::veff;
+    static constexpr auto end_phase = ATV::pw::Phase::check;
+};
+
 /// @brief CPU-backend loop node — the one class every CPU preset derives from.
 template <typename PhaseEnum>
 class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,

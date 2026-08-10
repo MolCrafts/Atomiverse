@@ -1,10 +1,12 @@
 /// @file cpu/pw/pw_solver.h
-/// @brief cpu::pw::PW — concrete plane-wave DFT method (CPU).
+/// @brief cpu::pw::PW — concrete plane-wave DFT method (CPU Driver node).
 ///
 /// Parameters are public members (RHF pattern). Frame is the only I/O.
-/// The self-consistency loop is owned by this method object (not a
-/// public `PWConfig`/`PWSolver` bag). Workflow entry: `PWEvaluator` or
-/// direct `build`/`run`.
+/// Self-consistency is a **Driver loop**: `PW` derives
+/// `cpu::Driver<ATV::pw::Phase>`. The restricted fixed-occupation path is
+/// owned as stages (`veff → diagonalize → density → mix → check`);
+/// collinear spin and metallic smearing remain free-loop residual.
+/// Workflow entry: `PWEvaluator` or direct `build`/`run`.
 ///
 /// @code
 ///   cpu::pw::PW pw;
@@ -16,12 +18,20 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/precision.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/planewave/stages/density_stage.h"
+#include "atomiverse/cpu/planewave/stages/diagonalize_stage.h"
+#include "atomiverse/cpu/planewave/stages/mix_stage.h"
+#include "atomiverse/cpu/planewave/stages/pw_converged.h"
+#include "atomiverse/cpu/planewave/stages/veff_stage.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 
 namespace ATV {
@@ -58,11 +68,13 @@ struct PWResult {
     int n_kpts_local = 0;
 };
 
-/// @brief Concrete plane-wave DFT method — members + `run(frame)`.
+/// @brief Concrete plane-wave DFT method — `cpu::Driver<pw::Phase>` loop node.
 ///
 /// Construction → set members → `build(reference)` → `run(frame)`.
 /// `last_result()` is valid after each `run()`. Geometry-dependent
 /// structures rebuild inside each `run()` (AIMD / optimize safe).
+/// Restricted fixed-occupation SCF is driven by Driver stages; spin /
+/// metallic-smearing residual paths still use free loops.
 enum class Smearing : int {
     none = 0,              ///< Fixed closed-shell occupations.
     fermi_dirac = 1,       ///< Fermi–Dirac.
@@ -70,8 +82,11 @@ enum class Smearing : int {
     gaussian = 3,          ///< Gaussian (cold/Marzari–Vanderbilt not here).
 };
 
-class PW {
+class PW : public cpu::Driver<ATV::pw::Phase> {
   public:
+    /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(frame)`.
+    using cpu::Driver<ATV::pw::Phase>::build;
+
     /// @brief Norm-conserving UPF pseudopotential file. Mutually exclusive
     ///        with `gth_name`; exactly one must be set.
     std::string upf_path;
@@ -144,6 +159,20 @@ class PW {
     const PWResult& last_result() const { return result_; }
 
   private:
+    /// @brief Wire restricted fixed-occ stages + compile Plan (rebuilds each drive).
+    void ensure_driver_built_(VeffStage::StepFn veff, DiagonalizeStage::StepFn diag,
+                              DensityStage::StepFn dens, MixStage::StepFn mix);
+
+    /// @brief Drop wired stages / Plan / criteria so the next ensure rebinds.
+    void reset_built_driver_();
+
+    /// @brief Stages fixed by ensure; nothing user-suppliable.
+    void validate_components() const override {}
+
+    /// @brief Drive restricted fixed-occupation SCF via Driver stages.
+    /// @return true if the residual gate fired (Driver converged).
+    bool drive_restricted_fixed_occ_(int max_iter_in, PWResult& res);
+
     bool built_ = false;
     std::unique_ptr<internal::PoissonSolver> poisson_;
     std::unique_ptr<internal::XCBuilder> xc_;
@@ -152,6 +181,17 @@ class PW {
     std::unique_ptr<internal::DavidsonSolver> davidson_;
     int davidson_bands_ = 0;
     PWResult result_;
+
+    // ── Restricted fixed-occ iteration state (wired into stages) ─────
+    bool loop_converged_ = false;
+    bool driver_built_ = false;
+    const void* wired_self_ = nullptr;
+
+    std::unique_ptr<VeffStage> veff_stage_;
+    std::unique_ptr<DiagonalizeStage> diag_stage_;
+    std::unique_ptr<DensityStage> density_stage_;
+    std::unique_ptr<MixStage> mix_stage_;
+    std::unique_ptr<PwConverged> converged_stage_;
 };
 
 /// @brief Finite-difference ionic forces [eV/Å] (oracle for analytic).

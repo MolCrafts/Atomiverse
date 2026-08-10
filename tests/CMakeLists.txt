@@ -596,6 +596,7 @@ if(ATV_BUILD_PW)
     atv_add_cpp_test(test_cpu_pw_kpoint     cpu/planewave/test_kpoint.cpp)
     atv_add_cpp_test(test_cpu_pw_crystal    cpu/planewave/test_crystal.cpp)
     atv_add_cpp_test(test_cpu_pw_ewald      cpu/planewave/test_ewald.cpp)
+    atv_add_cpp_test(test_cpu_pw_driver_node cpu/planewave/test_cpu_pw_driver_node.cpp)
     # ctest runs from the build tree, so the in-tree Si UPF must be located
     # absolutely — a relative path silently GTEST_SKIPped the only UPF force
     # coverage in the suite.
