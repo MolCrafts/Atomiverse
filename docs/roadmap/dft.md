@@ -447,20 +447,22 @@ Two periodic DFT engines exist, with disjoint strengths:
   `internal/xc_pbe.cu` — table **Periodic GGA** CUDA ✓ is this slice only),
   **energy** (`run()`), **analytic ionic forces** (closed-shell **LSDA +
   PBE**; `cuda::pw::pw_forces_analytic` — local HF + Ewald + KB nonlocal;
-  GH200 dual-gate), **analytic cell stress** (closed-shell LSDA;
-  `cuda::pw::pw_stress`), **collinear LSDA spin** energy (fixed occupation;
+  GH200 dual-gate), **analytic cell stress** (closed-shell **LSDA** dual-gate pin;
+  `cuda::pw::pw_stress` — closed-shell **PBE** stress dual-gate still open
+  on es-cpu-cuda queue), **collinear LSDA spin** energy (fixed occupation;
   spin-PBE / spin forces / spin stress still reject), and **restricted
-  metallic smear** (FD/Gaussian/MP + `extra_bands` + Mermin free energy;
-  spin+smear still rejects); large-cell wall evidence on Si supercells —
-  see es-cpu-cuda queue. **No CUDA GPW method product** (stage footholds
-  only; multi-path DIIS Driver landed; blocked on arch-campaign
-  public-shape freeze before `cuda-gpw-full-product`).
+  metallic smear** energy (FD/Gaussian/MP + `extra_bands` + Mermin free
+  energy; spin+smear / smear forces / smear stress still reject); large-cell
+  wall evidence on Si supercells — see es-cpu-cuda queue. **No CUDA GPW
+  method product** (stage footholds only under `cuda/gpw/internal/`;
+  multi-path DIIS CPU Driver + public-shape freeze **green** — product is
+  staffable as `cuda-gpw-full-product`, not auto-landed).
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
   **multi-path DIIS** (Γ RKS/UKS + multi-k RKS/UKS landed; OT free-loop
   residual is same-capability follow-on, not a new slug). `cpu::pw::PW` is
-  `cpu::Driver<pw::Phase>` for **restricted fixed-occ** (landed); collinear
-  spin + metallic smearing free-loop residual = `arch-pw-driver-paths`.
-  Capability tables above are product physics, not loop-shape closed.
+  `cpu::Driver<pw::Phase>` for **restricted fixed-occ + collinear spin +
+  metallic smear** on stages (`arch-pw-driver-paths` **merged**). Capability
+  tables above are product physics, not loop-shape closed.
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA
   (Padé) or **PBE / PBEsol / revPBE / RPBE / BLYP** (RKS + **Γ-UKS BLYP**

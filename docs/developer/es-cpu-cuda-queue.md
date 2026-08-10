@@ -53,22 +53,25 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 
 ## pending
 
-**GapCensus 2026-08-10 (parent `dev` @ `0316e7d0`):** re-diff vs tree +
-arch-campaign close + notes + roadmap DFT CUDA/GPW columns.
+**GapCensus 2026-08-10 re-diff (parent `dev` @ `8122eb0e`):** tree +
+baseline authority + notes + roadmap DFT CUDA/GPW columns +
+`pw_solver.cu` reject matrix. Prior census (product + four spin-depth)
+**held**; autonomous discovery **opens three closed-shell PW depth rows**
+that spin-only staffing missed.
 
 | Fact | Evidence |
 | --- | --- |
 | Public-shape freeze | **green** merge `0147fe02` / note [cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md) |
 | `arch-pw-driver-paths` + `arch-mg-main-structural` | **merged** (`8dcb5de0`, `aef1cd3b`) |
-| CUDA `gpw/` public method | **absent** — only `include/atomiverse/cuda/gpw/internal/*` stage units |
+| CUDA `gpw/` public method | **absent** — only `include/atomiverse/cuda/gpw/internal/*` stage units (7 units; no `gpw_solver.cuh`) |
 | CPU fair walls | unchanged; authority [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md); worst **2.33×** MG MAIN |
 | Worktrees / `wf/*` / `build*` | empty on parent |
 
-**Counts:** **pending_count=5**; **cpu_pending=0**; **cuda_pending=5**;
-**gaps_remaining≈7** (1 product + 4 PW depth + residual MG mass + higher-L RHF
-out-of-scope). Staff only `wf/escuda-<slug>` off current `dev`. Do **not**
+**Counts:** **pending_count=8**; **cpu_pending=0**; **cuda_pending=8**;
+**gaps_remaining≈10** (1 product + 7 PW depth + residual MG mass + higher-L
+RHF out-of-scope). Staff only `wf/escuda-<slug>` off current `dev`. Do **not**
 invent hybrid/GAPW/PAW/meta-GGA. **No gpw-perf-queue promote**. Foothold ≠
-closed — full product still the capability gap.
+closed — full GPW product still the capability gap.
 
 ### CUDA — product (open gate) — **staff first**
 
@@ -80,19 +83,39 @@ closed — full product still the capability gap.
   **cuda**. Twin: same-settings CPU `GpwDft` oracle + unit stage suite.
   Gate: GH200 log + stated CUDA↔CPU energy/force tols; fail-closed device path.
   Contract: [cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md).
+  Spec: [.claude/specs/cuda-gpw-full-product/SPEC.md](../../.claude/specs/cuda-gpw-full-product/SPEC.md).
   **Not** foothold-as-product; **not** auto-land without GPU evidence.
   Lever (research): public type under `include/atomiverse/cuda/gpw/` composing
   `KsChainDevice` / `KsMultiGridChainDevice` + CPU-side STVnl/DIIS twin path as
   needed for first Γ RKS energy; forces via device/CPU dual-gate pin.
 
-### CUDA — PW depth (landed surface still rejects) — after product or parallel staff
+### CUDA — PW depth (landed surface incomplete) — after product or parallel staff
 
-Discovered by tree scan of `pw_solver.cu` / force / stress guards on `dev`:
+Discovered by re-diff of `pw_solver.cu` / `pw_forces` / `pw_stress` guards +
+regs on `dev` @ `8122eb0e` (method=cuda throughout):
+
+**Closed-shell axis** (energy/forces landings green; stress/smear depth open):
+
+- [ ] `cuda-pw-pbe-stress` | **P1** Dual-gate closed-shell **PBE** cell stress —
+  `pw_stress` path already takes `XCType` (LSDA reg only; roadmap claim still
+  LSDA-only). Track: **cuda**. Twin: CPU `pw_stress` under PBE + dual-gate reg
+  (Si class). Gate: GH200 + stated CUDA↔CPU max‖Δσ‖; fail-closed spin/smear
+  unchanged. Lever: `pw_stress` / `pw_stress_analytic_impl` + new
+  `reg_cuda-pw-stress-pbe` (or extend dual-gate); no energy-path change if
+  stress-only.
+- [ ] `cuda-pw-smear-forces` | **P2** Lift restricted `smearing != none` reject on
+  `pw_forces_analytic` (energy smear landed; forces still throw). Track:
+  **cuda**. Twin: CPU forces under metallic occ + dual-gate. Gate: GH200.
+- [ ] `cuda-pw-smear-stress` | **P2** Lift restricted smear reject on
+  `pw_stress`. Track: **cuda**. Twin: CPU `pw_stress` + dual-gate. Gate: GH200.
+
+**Collinear spin axis** (LSDA energy landed; PBE / derivatives open):
 
 - [ ] `cuda-pw-spin-pbe` | **P1** Lift collinear `spin_polarized` + `XCType::PBE`
-  reject on `cuda::pw::PW::run` — device spin-GGA energy path (CPU twin oracle).
-  Track: **cuda**. Not forces/stress/smear. Twin: O₂ or spin-PBE unit + dual-gate
-  reg. Gate: GH200 + stated CUDA↔CPU energy tol.
+  reject on `cuda::pw::PW::run` — device spin-GGA energy path (CPU twin
+  `reg_pw-spin-gga`). Track: **cuda**. Not forces/stress/smear. Twin: O₂
+  spin-PBE dual-gate. Gate: GH200 + stated CUDA↔CPU energy tol.
+  Lever: `DeviceDensity::exchange_correlation_spin` + device PBE spin flux.
 - [ ] `cuda-pw-spin-forces` | **P2** Analytic ionic forces under collinear LSDA
   spin (currently forces reject spin). Track: **cuda**. Twin: CPU
   `pw_forces_analytic` + dual-gate. Gate: GH200; fail-closed non-spin path
@@ -101,8 +124,9 @@ Discovered by tree scan of `pw_solver.cu` / force / stress guards on `dev`:
   (currently stress reject spin). Track: **cuda**. Twin: CPU `pw_stress`.
   Gate: GH200.
 - [ ] `cuda-pw-spin-smear` | **P2** Collinear spin + metallic smear free energy
-  (currently spin∧smear throws). Track: **cuda**. Twin: CPU spin+smear pin.
-  Gate: GH200; optional after spin-PBE / energy spin path stable.
+  (currently spin∧smear throws). Track: **cuda**. Twin: CPU
+  `reg_pw-uks-fe-smearing` class. Gate: GH200; optional after spin-PBE /
+  energy spin path stable.
 
 ### Fair-wall rank (1 MPI × OMP=4; worst residual first)
 
@@ -149,16 +173,17 @@ CPU polish staffed here without a pin-safe wall lever. **No promote** from
 
 ### CUDA — corresponding ES (open-gate readiness × user value)
 
-**Tree fact on `dev` @ `0316e7d0` (post arch residual close):** stage units +
-PW depth landings confirmed; **no** `cuda::gpw::GpwDft` public type.
+**Tree fact on `dev` @ `8122eb0e`:** stage units + PW landings confirmed;
+**no** `cuda::gpw::GpwDft` public type.
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
 | RHF s/p energy + forces + level_shift + path-select + device CDIIS + **non-default stream D2H** | **landed** | higher-L host-fill remains (out of product scope) |
 | Γ GPW Poisson/FFT + Padé LDA XC + product collocate/integrate + **composed `KsChainDevice`** (LDA + **closed-shell PBE**) + **`KsMultiGridChainDevice`** | **landed** stage units only | **≠** full method product → **staff `cuda-gpw-full-product`** |
-| `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **analytic cell stress** + **collinear LSDA spin** + **restricted metallic smear** | **landed** energy (+ spin energy + restricted free energy); closed-shell forces/stress | **pending depth:** spin-PBE / spin forces / spin stress / spin+smear |
+| `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **cell stress (LSDA pin)** + **collinear LSDA spin energy** + **restricted metallic smear energy** | **landed** closed-shell energy/forces; LSDA stress; spin+smear energy axes partial | **pending:** PBE stress dual-gate; smear forces/stress; spin-PBE / spin forces / spin stress / spin+smear |
 
-**Staff order:** (1) `cuda-gpw-full-product` **P0**; (2) PW spin-depth rows P1–P2.
+**Staff order:** (1) `cuda-gpw-full-product` **P0**; (2) closed-shell
+`cuda-pw-pbe-stress` + `cuda-pw-spin-pbe` **P1**; (3) remaining PW depth **P2**.
 Do not staff lone new GPW kernel footholds (compose product instead). Higher-L
 RHF stays product-out-of-scope.
 
@@ -188,14 +213,14 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 ## in_progress
 
-(empty — GapCensus wave ready to Assign. Staff **`cuda-gpw-full-product`** first
-on `wf/escuda-cuda-gpw-full-product` off `dev` @ `0316e7d0`.)
+(empty — GapCensus re-diff ready to Assign. Staff **`cuda-gpw-full-product`**
+first on `wf/escuda-cuda-gpw-full-product` off `dev` @ `8122eb0e`.)
 
 **Foreign incomplete worktrees on parent (do not steal / do not force-merge):**
 
 | Worktree branch | Loop ownership | Note |
 | --- | --- | --- |
-| *(none listed)* | — | parent worktree list clean 2026-08-10 GapCensus |
+| *(none listed)* | — | parent worktree list clean 2026-08-10 GapCensus re-diff |
 
 ## blocked
 

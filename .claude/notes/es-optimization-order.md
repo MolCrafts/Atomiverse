@@ -52,17 +52,17 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product (2026-08-10)
+### Active next — `es-cpu-cuda-opt` product (2026-08-10 GapCensus re-diff)
 
-Arch-campaign residual **closed** on `dev` @ `0316e7d0`
-(`arch-pw-driver-paths`, `arch-mg-main-structural`, public-shape freeze).
-Binding staffable work returns to dual-track opt:
+Arch residual **closed**; public-shape freeze **green**. Parent `dev` @
+`8122eb0e`. Dual-track staffable set:
 
 | Priority | slug | Goal |
 | --- | --- | --- |
 | P0 | `cuda-gpw-full-product` | Public `cuda::gpw::GpwDft` = CPU shape; first slice Γ RKS DIIS energy+forces; GH200 |
+| P1 | `cuda-pw-pbe-stress` | Closed-shell PBE cell-stress dual-gate (LSDA stress landed) |
 | P1 | `cuda-pw-spin-pbe` | Collinear spin + PBE energy (lift reject) |
-| P2 | `cuda-pw-spin-forces` / `spin-stress` / `spin-smear` | PW spin depth |
+| P2 | smear forces/stress; spin forces/stress/smear | PW derivative depth |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
 (not soft-tol). Contract:
@@ -72,7 +72,7 @@ Binding staffable work returns to dual-track opt:
 **Forbidden:** soft tols; invent hybrid/GAPW; staff product with non-CPU public
 shape; leave `build*`.
 
-### Superseded focus — dual track `es-cpu-cuda-opt` (closed staffable set 2026-08-10)
+### Superseded focus — dual track `es-cpu-cuda-opt` (foothold set closed 2026-08-10)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
@@ -95,18 +95,14 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (harness wave 6 close, `dev` @ `61f873c9`):** Landed: device
-s/p RHF + CDIIS; Γ GPW footholds + LDA + closed-shell PBE `ks_chain` +
-**multi-grid product KS stage** (`KsMultiGridChainDevice`, GH200 **1051042**
-max\|ΔV_eff\|=8.1e-10); `cuda::pw::PW` LSDA + closed-shell PBE + residency +
-stream + large-cell + analytic ionic forces (LSDA + PBE) + analytic cell stress
-(LSDA) + **collinear LSDA spin** (GH200 **1051041** \|ΔE\|=1.07e-13 Ha on O₂).
-**Pending depth:** `cuda-pw-metallic-smear` (P2), `cuda-rhf-nondefault-stream`
-(P3). **Blocked structural:** `mg-main-structural`. **`cuda-gpw-full-product`:**
-public-shape freeze **green on `dev`** (`0147fe02`) — staffable under contract
-(compose stages → `GpwDft`-shaped product; not auto-landed; GH200 + CUDA↔CPU
-tols).
-**cpu_pending=0** — no pin-safe wall lever.
+**CUDA open-gate (`dev` @ `8122eb0e`):** Landed: device s/p RHF + CDIIS +
+non-default stream D2H; Γ GPW footholds + LDA + closed-shell PBE `ks_chain` +
+**multi-grid product KS stage**; `cuda::pw::PW` LSDA + closed-shell PBE +
+residency + stream + large-cell + forces (LSDA+PBE) + cell stress (LSDA pin) +
+collinear LSDA spin energy + **restricted metallic smear energy**. **Pending:**
+`cuda-gpw-full-product` P0; PW closed-shell + spin depth (see queue).
+**Blocked structural:** `mg-main-structural`. Public-shape freeze **green**
+(`0147fe02`). **cpu_pending=0** — no pin-safe wall lever.
 
 **Queues (binding worklists):**
 

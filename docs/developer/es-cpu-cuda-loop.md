@@ -71,3 +71,12 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
   Spec-lite `.claude/specs/cuda-gpw-full-product/`. Worktrees/`wf/*`/`build*`
   empty. Staff next: product only. Queue **not** exhausted. No push.
 
+- **2026-08-10 GapCensus re-diff (parent `dev` @ `8122eb0e`):** Re-diff
+  tree/baseline/notes/roadmap + `pw_solver` reject matrix. Product gap +
+  freeze green **held**; **cpu_pending=0**; fair wall **2.33×** MG MAIN
+  blocked. Autonomous discovery opens **3** closed-shell PW depth rows
+  (`cuda-pw-pbe-stress`, `cuda-pw-smear-forces`, `cuda-pw-smear-stress`)
+  missed by spin-only staffing → **pending_count=8**, **gaps_remaining≈10**.
+  Roadmap prose: freeze staffable (no ○→✓). Worktrees/`build*` empty. Staff
+  next: product P0. Queue **not** exhausted. No push.
+
