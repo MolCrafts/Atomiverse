@@ -34,7 +34,9 @@ option(ATV_TEST_HEAVY
     OFF)
 # Not CACHE: must track the source list (a sticky CACHE goes stale).
 set(ATV_TEST_HEAVY_REGEX
-    "ccsd|fci|mp2|rpa|g0w0|casscf|nevpt|eom_|tdhf|ri_mp2|bomd|cpmd|xl_bomd|second_gen_cpmd|gpw_solver|gpw_method|gpw_ot|gpw_forces|gpw_stress|gpw_uks|gpw_mbd|gpw_dftd|gpw_ts|gpw_xdm|gpw_vdw|gpw_rvv10|gpw_hirshfeld|gpw_dftu|gpw_kpoints|gpw_thread|gpw_periodic_wannier|gpw_smearing|gpw_poisson|gpw_hartree|gpw_grid_fft|gpw_xc_grid_gga|gpw_mt_poisson|pw_si|pw_bomd|pw_forces|pw_method|pw_evaluator|pw_spin|pw_stress|pw_dfpt|pw_bands|pw_berry|pw_periodic_wannier|pw_smearing|pw_components|scf_solver|rohf_solver|uks_solver|uhf_solver|x2c|pcm|embedding|counterpoise|cphf|dispersion|rks_tda|ghf|scf_cpmd|scf_xl|scf_aspc|scf_mc_predictor|method_driver|dftb2$|dftb3$|dftb2_3ob|dftb2_dispersion|dftb3_scc|dftb0$|am1_scaffold|am1_thermochemistry|scf_wannier|scf_ecp$|electronic_cpmd|electronic_xl|no_alloc")
+    # Residual safety net after e2e-in-tests wave-1 delete (2026-08-10).
+    # True kernel unit names must NOT match (gpw_poisson/grid_fft/thread/… dropped).
+    "ccsd|fci|mp2|rpa|g0w0|casscf|nevpt|eom_|tdhf|ri_mp2|bomd|cpmd|xl_bomd|second_gen_cpmd|gpw_solver|gpw_method|gpw_ot|gpw_forces|gpw_stress|gpw_uks|gpw_mbd|gpw_dftd|gpw_ts|gpw_xdm|gpw_vdw|gpw_rvv10|gpw_hirshfeld|gpw_dftu|gpw_kpoints|gpw_periodic_wannier|gpw_smearing|pw_si|pw_bomd|pw_forces|pw_method|pw_evaluator|pw_spin|pw_stress|pw_dfpt|pw_bands|pw_berry|pw_periodic_wannier|pw_smearing|pw_components|scf_solver|rohf_solver|uks_solver|uhf_solver|x2c|pcm|embedding|counterpoise|cphf|dispersion|rks_tda|ghf|scf_cpmd|scf_xl|scf_aspc|scf_mc_predictor|method_driver|dftb2$|dftb3$|dftb2_3ob|dftb2_dispersion|dftb3_scc|dftb0$|am1_scaffold|am1_thermochemistry|scf_wannier|scf_ecp$|electronic_cpmd|electronic_xl|no_alloc")
 
 # Fast-gate discipline (HARD RULE):
 #   • tests/ = one component / one method / ≤ ATV_TEST_TIMEOUT_SECONDS.
@@ -269,17 +271,8 @@ if(ATV_BUILD_KSPACE)
     atv_add_cpp_test(test_cpu_pppm_coul           cpu/longrange/test_pppm_coul.cpp)
 endif()
 atv_add_cpp_test(test_cpu_nddo_calpar_derived    cpu/semiempirical/test_nddo_calpar_derived.cpp)
-atv_add_cpp_test(test_cpu_am1_scaffold            cpu/semiempirical/test_am1_scaffold.cpp)
-atv_add_cpp_test(test_cpu_am1_thermochemistry     cpu/semiempirical/test_am1_thermochemistry.cpp)
 atv_add_cpp_test(test_cpu_rm1                     cpu/semiempirical/test_rm1.cpp)
-atv_add_cpp_test(test_cpu_dftb2                   cpu/semiempirical/test_dftb2.cpp)
-atv_add_cpp_test(test_cpu_dftb0                   cpu/semiempirical/test_dftb0.cpp)
 atv_add_cpp_test(test_cpu_dftb2_sk                cpu/semiempirical/test_dftb2_sk.cpp)
-atv_add_cpp_test(test_cpu_dftb2_3ob               cpu/semiempirical/test_dftb2_3ob.cpp)
-atv_add_cpp_test(test_cpu_dftb2_dispersion_d3     cpu/semiempirical/test_dftb2_dispersion_d3.cpp)
-atv_add_cpp_test(test_cpu_td_dftb2                cpu/semiempirical/test_td_dftb2.cpp)
-atv_add_cpp_test(test_cpu_dftb3                   cpu/semiempirical/test_dftb3.cpp)
-atv_add_cpp_test(test_cpu_dftb3_scc               cpu/semiempirical/test_dftb3_scc.cpp)
 atv_add_cpp_test(test_cpu_scc_mixer               cpu/semiempirical/test_scc_mixer.cpp)
 
 # GPW module tests. All of them run unconditionally on the in-tree GTH + MOLOPT +
@@ -313,9 +306,6 @@ if(ATV_BUILD_GPW)
         atv_add_cpp_test(test_cpu_gpw_grid_fft     cpu/gpw/test_cpu_gpw_grid_fft.cpp)
         atv_add_cpp_test(test_cpu_gpw_xc_grid_gga  cpu/gpw/test_cpu_gpw_xc_grid_gga.cpp)
         atv_add_cpp_test(test_cpu_gpw_mt_poisson   cpu/gpw/test_cpu_gpw_mt_poisson.cpp)
-        atv_add_cpp_test(test_cpu_gpw_method       cpu/gpw/test_gpw_method.cpp)
-        atv_add_cpp_test(test_cpu_gpw_solver       cpu/gpw/test_cpu_gpw_solver.cpp)
-        atv_add_cpp_test(test_cpu_gpw_kpoints      cpu/gpw/test_cpu_gpw_kpoints.cpp)
         # Gaussian DOS free math + multi-k mesh guards (no full SCF e2e).
         atv_add_cpp_test(test_cpu_gpw_dos          cpu/gpw/test_cpu_gpw_dos.cpp)
         # Bitwise-identical grid kernels at 1/2/4/8/16 OpenMP threads. Guards the
@@ -323,64 +313,25 @@ if(ATV_BUILD_GPW)
         # iterations for the same input on the same binary.
         atv_add_cpp_test(test_cpu_gpw_thread_reproducibility
                                                    cpu/gpw/test_cpu_gpw_thread_reproducibility.cpp)
-        atv_add_cpp_test(test_cpu_gpw_periodic_wannier
-                                                   cpu/gpw/test_cpu_gpw_periodic_wannier.cpp)
         atv_add_cpp_test(test_cpu_gpw_ksv
                                                    cpu/gpw/test_cpu_gpw_ksv.cpp)
-        # Name is bandpath not bands: HEAVY_REGEX `pw_bands` is an unanchored
-        # substring match and would skip test_cpu_gpw_bands.
+        # Name is bandpath not bands: residual HEAVY_REGEX still has unanchored
+        # `pw_bands` which would skip a naive test_cpu_gpw_bands name.
         atv_add_cpp_test(test_cpu_gpw_bandpath
                                                    cpu/gpw/test_cpu_gpw_bandpath.cpp)
-        atv_add_cpp_test(test_cpu_gpw_smearing     cpu/gpw/test_cpu_gpw_smearing.cpp)
-        atv_add_cpp_test(test_cpu_gpw_ot           cpu/gpw/test_cpu_gpw_ot.cpp)
-        # Γ-point GPW MP2 kernels (spin-orbital cross-check, MO-on-grid,
-        # (ia|jb) vs Poisson Hartree identity, guard throws). No SCF here.
-        atv_add_cpp_test(test_cpu_gpw_mp2          cpu/gpw/test_cpu_gpw_mp2.cpp)
-        # Γ-point GPW dRPA plasmon kernel + GpwDft::direct_rpa guards.
-        atv_add_cpp_test(test_cpu_gpw_rpa          cpu/gpw/test_cpu_gpw_rpa.cpp)
-        atv_add_cpp_test(test_cpu_gpw_g0w0         cpu/gpw/test_cpu_gpw_g0w0.cpp)
-        # XL-BOMD propagator (Table-I pin, fixed point, bounded response)
-        # + GpwDft guess_P plumbing on the inline ms-scale H2.
-        atv_add_cpp_test(test_cpu_gpw_xl_bomd     cpu/gpw/test_gpw_xl_bomd.cpp)
-        atv_add_cpp_test(test_cpu_gpw_cpmd        cpu/gpw/test_gpw_cpmd.cpp)
-        atv_add_cpp_test(test_cpu_gpw_second_gen_cpmd cpu/gpw/test_gpw_second_gen_cpmd.cpp)
+        # Cell-precondition unit (orthorhombic-only refuse) — no SCF.
         if(ATV_BUILD_MD)
-            atv_add_cpp_test(test_cpu_gpw_bomd    cpu/gpw/test_gpw_bomd.cpp)
             atv_add_cpp_test(test_cpu_gpw_evaluator
                                                   cpu/gpw/test_gpw_evaluator.cpp)
         endif()
     endif()
 
-    # Data-table unit tests: grammar/ingest of the in-tree GTH + MOLOPT tables and
-    # the D3 parameter tables. No SCF is run here — the converged-SCF checks that
-    # used to live alongside these are now benchmarks/qc/gpw/validation.
+    # Data-table / lattice-sum / volume-force units — no full SCF e2e here.
+    # Method-level pins live in regressions/gpw/.
     atv_add_cpp_test(test_cpu_gpw_data_table    cpu/gpw/test_cpu_gpw_data_table.cpp)
-    # Minimal model system for the Γ-point lattice sum: S must be positive definite
-    # at every cell size (Gram matrix). Pinned against PySCF.
     atv_add_cpp_test(test_cpu_gpw_periodic_overlap cpu/gpw/test_cpu_gpw_periodic_overlap.cpp)
-    # Heavy elements: Zn/Na/Cl GTH-PBE +
-    # DZVP-MOLOPT-SR-GTH ingest, incl. the Zn d/f channels.
     atv_add_cpp_test(test_cpu_gpw_heavy_elements cpu/gpw/test_cpu_gpw_heavy_elements.cpp)
-    # Grimme DFT-D3 (D3): energy + analytic force incl. the CN-derivative
-    # term, against a finite-difference check. Reference-free.
-    atv_add_cpp_test(test_cpu_gpw_dftd3         cpu/gpw/test_cpu_gpw_dftd3.cpp)
-    atv_add_cpp_test(test_cpu_gpw_dftd4         cpu/gpw/test_cpu_gpw_dftd4.cpp)
-    atv_add_cpp_test(test_cpu_gpw_ts            cpu/gpw/test_cpu_gpw_ts.cpp)
-    atv_add_cpp_test(test_cpu_gpw_xdm           cpu/gpw/test_cpu_gpw_xdm.cpp)
-    atv_add_cpp_test(test_cpu_gpw_mbd           cpu/gpw/test_cpu_gpw_mbd.cpp)
-    atv_add_cpp_test(test_cpu_gpw_vdw_df        cpu/gpw/test_cpu_gpw_vdw_df.cpp)
-    atv_add_cpp_test(test_cpu_gpw_rvv10         cpu/gpw/test_cpu_gpw_rvv10.cpp)
-    atv_add_cpp_test(test_cpu_gpw_hirshfeld     cpu/gpw/test_cpu_gpw_hirshfeld.cpp)
-    # Fixed-v TS/MBD force dual-gates (geometry FD + light H2 product fold).
-    # Name avoids the gpw_hirshfeld heavy regex — suite is unit-test class.
     atv_add_cpp_test(test_cpu_gpw_vol_forces    cpu/gpw/test_cpu_gpw_vol_forces.cpp)
-    # These four were registered inside the ATV_BUILD_PW block, so a build with
-    # PW=ON and GPW=OFF — the copy-pasteable CPU build in AGENTS.md/CLAUDE.md —
-    # failed to link them against a library with no GPW sources compiled in.
-    atv_add_cpp_test(test_cpu_gpw_forces        cpu/gpw/test_cpu_gpw_forces.cpp)
-    atv_add_cpp_test(test_cpu_gpw_stress        cpu/gpw/test_cpu_gpw_stress.cpp)
-    atv_add_cpp_test(test_cpu_gpw_uks           cpu/gpw/test_cpu_gpw_uks.cpp)
-    atv_add_cpp_test(test_cpu_gpw_dftu          cpu/gpw/test_cpu_gpw_dftu.cpp)
 endif()
 atv_add_cpp_test(test_cpu_md_pair_morse_smoke     cpu/dynamics/test_pair_morse_smoke.cpp)
 atv_add_cpp_test(test_cpu_md_pe_ff_constants      cpu/dynamics/test_pe_ff_constants.cpp)
@@ -459,7 +410,6 @@ atv_add_cpp_test(test_cpu_observer_potential_profile
 atv_add_cpp_test(test_cpu_observer_species_density_profile
                  cpu/observe/test_species_density_profile.cpp)
 
-atv_add_cpp_test(test_cpu_md_no_alloc              cpu/test_md_no_alloc.cpp)
 atv_add_cpp_test(test_cpu_driver_role_validation cpu/test_cpu_driver_role_validation.cpp)
 # Registration-time PhaseKind gate + five-driver plan-shape regression
 # (arch-refactor-01-bindings). Uses AM1Evaluator (unconditional, no RHF gate).
@@ -479,7 +429,6 @@ atv_add_cpp_test(test_cpu_md_timestep_protocol            cpu/dynamics/test_time
 # kConserved = kEnergy + kKinetic + the two electronic keys, end_of_step @ -90,
 # throw when the electronic keys are absent. Pure meta arithmetic on a seeded
 # one-atom frame — no GPW, no SCF, no MD step.
-atv_add_cpp_test(test_cpu_md_cpmd_conserved               cpu/dynamics/test_cpmd_conserved.cpp)
 atv_add_cpp_test(test_cpu_minimize_evaluate_set_api       cpu/test_minimize_evaluate_set_api.cpp)
 atv_add_cpp_test(test_cpu_materialize                     cpu/test_materialize.cpp)
 atv_add_cpp_test(test_cpu_molrs_contract                  cpu/test_molrs_contract.cpp)
@@ -595,12 +544,6 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
     atv_add_mpi_run(test_mpi_minimize_lj_n8 test_mpi_minimize_lj 8)
 
 
-
-
-
-
-
-
     atv_add_mpi_exec(test_mpi_nose_hoover_npt_multirank
                      mpi/test_nose_hoover_npt_multirank.cpp)
     atv_add_mpi_run(test_mpi_nose_hoover_npt_multirank_n8
@@ -652,13 +595,6 @@ if(ATV_BUILD_PW)
     atv_add_cpp_test(test_cpu_pw_kpoint     cpu/planewave/test_kpoint.cpp)
     atv_add_cpp_test(test_cpu_pw_crystal    cpu/planewave/test_crystal.cpp)
     atv_add_cpp_test(test_cpu_pw_ewald      cpu/planewave/test_ewald.cpp)
-    atv_add_cpp_test(test_cpu_pw_components cpu/planewave/test_pw_components.cpp)
-    atv_add_cpp_test(test_cpu_pw_si         cpu/planewave/test_pw_si.cpp)
-    atv_add_cpp_test(test_cpu_pw_evaluator  cpu/planewave/test_pw_evaluator.cpp)
-    atv_add_cpp_test(test_cpu_pw_method     cpu/planewave/test_pw_method.cpp)
-    atv_add_cpp_test(test_cpu_pw_spin       cpu/planewave/test_pw_spin.cpp)
-    atv_add_cpp_test(test_cpu_pw_forces     cpu/planewave/test_pw_forces.cpp)
-    atv_add_cpp_test(test_cpu_pw_forces_fd  cpu/planewave/test_pw_forces_fd.cpp)
     # ctest runs from the build tree, so the in-tree Si UPF must be located
     # absolutely — a relative path silently GTEST_SKIPped the only UPF force
     # coverage in the suite.
@@ -666,14 +602,6 @@ if(ATV_BUILD_PW)
         target_compile_definitions(test_cpu_pw_forces
             PRIVATE ATV_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     endif()
-    atv_add_cpp_test(test_cpu_pw_bomd       cpu/planewave/test_pw_bomd.cpp)
-    atv_add_cpp_test(test_cpu_pw_stress     cpu/planewave/test_pw_stress.cpp)
-    atv_add_cpp_test(test_cpu_pw_stress_fd  cpu/planewave/test_pw_stress_fd.cpp)
-    atv_add_cpp_test(test_cpu_pw_dfpt       cpu/planewave/test_dfpt.cpp)
-    atv_add_cpp_test(test_cpu_pw_smearing   cpu/planewave/test_pw_smearing.cpp)
-    atv_add_cpp_test(test_cpu_pw_bands_dos  cpu/planewave/test_pw_bands_dos.cpp)
-    atv_add_cpp_test(test_cpu_pw_berry      cpu/planewave/test_berry_polarization.cpp)
-    atv_add_cpp_test(test_cpu_pw_periodic_wannier cpu/planewave/test_periodic_wannier.cpp)
 
     # FFT test needs FFTW3 linkage
     add_executable(test_cpu_pw_fft cpu/planewave/test_fft.cpp)
@@ -732,10 +660,8 @@ atv_add_cpp_test(test_cpu_linalg_linear_solve
 # XlBomd/XlBomdCplx compile in the always-on set (classical PIM XL dipoles
 # consume the recursion in MD-only builds), so its unit is unconditional.
 
-atv_add_cpp_test(test_cpu_electronic_xl_bomd cpu/electronic/test_xl_bomd.cpp)
 
 if(ATV_BUILD_HF)
-    atv_add_cpp_test(test_cpu_electronic_cpmd   cpu/electronic/test_cpmd.cpp)
     atv_add_cpp_test(test_cpu_electronic_aspc_predictor
                      cpu/electronic/test_aspc_predictor.cpp)
 endif()
@@ -745,7 +671,6 @@ endif()
 if(ATV_BUILD_HF)
     atv_add_cpp_test(test_cpu_scf_cart2sph     cpu/scf/test_cart2sph.cpp)
     atv_add_cpp_test(test_cpu_scf_multipole_ints cpu/scf/test_multipole_integrals.cpp)
-    atv_add_cpp_test(test_cpu_scf_wannier        cpu/scf/test_wannier.cpp)
     atv_add_cpp_test(test_cpu_observer_multipole cpu/observe/test_multipole.cpp)
     # Löwdin populations + MK/CHELPG ESP fit — hand-built shells/determinant
     # and synthetic point-charge potentials only (hf-capability-gaps-04).
@@ -763,16 +688,11 @@ if(ATV_BUILD_HF)
     # hf-capability-gaps-18-x2c: spin-free pVp kernel pins, X2cWorkspace
     # nonrel/exact-decoupling identities, ECP↔x2c mutual exclusion both
     # ways, forces() intercept. No heavy-atom SCF in this unit binary.
-    atv_add_cpp_test(test_cpu_scf_x2c           cpu/scf/test_x2c.cpp)
-    atv_add_cpp_test(test_cpu_scf_uhf_solver   cpu/scf/test_uhf_solver.cpp)
     # hf-capability-gaps-10-rohf: ROHF (Roothaan effective Fock, PySCF
     # canonical / Guest-Saunders convention) vs externally pinned PySCF.
-    atv_add_cpp_test(test_cpu_scf_rohf_solver  cpu/scf/test_rohf_solver.cpp)
     # hf-capability-gaps-11-ghf: real two-component GHF — spinor
     # SlaterDeterminant invariants, H2 collapse to UHF, noncollinear win on
     # the frustrated H3 triangle vs externally pinned PySCF, collinear trap.
-    atv_add_cpp_test(test_cpu_scf_ghf          cpu/scf/test_ghf.cpp)
-    atv_add_cpp_test(test_cpu_scf_uks_solver   cpu/scf/test_uks_solver.cpp)
     atv_add_cpp_test(test_cpu_scf_xc_functional cpu/scf/test_xc_functional.cpp)
     # scf-driver-refactor-04b-wire: method-driver nesting + MeanFieldOutputs.
     atv_add_cpp_test(test_cpu_scf_method_driver_wire
@@ -783,14 +703,11 @@ if(ATV_BUILD_HF)
     # zero-SCF-iteration production signature. H2/STO-3G only (2 AOs); the
     # E_cons drift physics is regressions/dynamics/cpmd-{rhf-h2,rks-water,
     # uhf-o2}.
-    atv_add_cpp_test(test_cpu_scf_cpmd            cpu/scf/test_scf_cpmd.cpp)
     # BOMD+d3bj/d4 conservativeness: `MeanFieldMethod` adds E_disp to the total
     # energy, so `internal::ScfGradient` must add −∂E_disp/∂R to the force. That
     # reduces to whether D3BJ/D4 `forces()` differentiates their own `energy()`
     # — measured here by central difference, no SCF (ms). The end-to-end
     # conservation witness is regressions/scf/bomd-d3bj-ar2-nve.
-    atv_add_cpp_test(test_cpu_scf_dispersion_gradient
-                     cpu/scf/test_dispersion_gradient.cpp)
     # esmm-cpmd-05-scf-xlbomd: XL-BOMD (Niklasson JCP 130, 214109) as the
     # Gaussian-SCF guess — the xl_bomd/xl_bomd_k member surface, the
     # exclusivity gates (ASPC predictor, cpmd, Table-I order K in [3,9]),
@@ -798,13 +715,10 @@ if(ATV_BUILD_HF)
     # the guess ladder explicit > xl > ASPC > last-P. H2O/STO-3G on a
     # ballistic nested-MD trajectory, ~1 s; the warm-step iteration margin and
     # the drift envelope are regressions/dynamics/xl-bomd-rhf-water.
-    atv_add_cpp_test(test_cpu_scf_xl_bomd         cpu/scf/test_scf_xl_bomd.cpp)
     # esmm-contract-04-forces-requested: the ASPC-predictor-under-MC guard on
     # MeanFieldMethod::run_nested_erased — extrapolated density histories are
     # MD-only (rejected trials break the continuity the extrapolation assumes),
     # while plain last-P reuse under MC stays legal. H2/STO-3G, one sweep.
-    atv_add_cpp_test(test_cpu_scf_mc_predictor_guard
-                     cpu/scf/test_scf_mc_predictor_guard.cpp)
     # esmm-contract-05-accumulate-switch: the ONE entry that runs two SCF
     # epilogues — the ASPC corrector-miss fallback — must leave exactly one
     # contribution in the driver-owned accumulators (kEnergy /
@@ -812,8 +726,6 @@ if(ATV_BUILD_HF)
     # Four 6-step H2/STO-3G nested trajectories, ~20 ms. Serial for the same
     # ULP-determinism reason as test_cpu_scf_method_driver_parity: the pin is
     # bit-identity against the method's own energy() readback.
-    atv_add_cpp_test(test_cpu_scf_aspc_fallback_accumulate
-                     cpu/scf/test_scf_aspc_fallback_accumulate.cpp)
     if(TARGET test_cpu_scf_aspc_fallback_accumulate)
     set_tests_properties(test_cpu_scf_aspc_fallback_accumulate PROPERTIES
         ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
@@ -830,32 +742,24 @@ if(ATV_BUILD_HF)
     # triplet-instability throw) + the RHF::tda()/tdhf() method surface.
     # Formaldehyde oracle e2e lives in regressions/scf/ch2o_tdhf.
     atv_add_cpp_test(test_cpu_scf_tdhf_pack       cpu/scf/test_tdhf_pack.cpp)
-    atv_add_cpp_test(test_cpu_scf_tdhf_method     cpu/scf/test_tdhf_method.cpp)
-    atv_add_cpp_test(test_cpu_scf_rks_tda         cpu/scf/test_rks_tda.cpp)
     atv_add_cpp_test(test_cpu_scf_tda_forces      cpu/scf/test_tda_forces.cpp)
     atv_add_cpp_test(test_cpu_scf_analytic_tda_forces cpu/scf/test_analytic_tda_forces.cpp)
     atv_add_cpp_test(test_cpu_scf_tda_nac         cpu/scf/test_tda_nac.cpp)
     atv_add_cpp_test(test_cpu_scf_nac_vectors        cpu/scf/test_nac_vectors.cpp)
-    atv_add_cpp_test(test_cpu_scf_mp2_public      cpu/scf/test_mp2_public.cpp)
-    atv_add_cpp_test(test_cpu_scf_ri_mp2          cpu/scf/test_ri_mp2.cpp)
     atv_add_cpp_test(test_cpu_scf_alda_diff       cpu/scf/test_alda_diff.cpp)
     atv_add_cpp_test(test_cpu_scf_full_grid_alda  cpu/scf/test_full_grid_alda.cpp)
-    atv_add_cpp_test(test_cpu_scf_embedding       cpu/scf/test_embedding.cpp)
     # hf-capability-gaps-16-solvent: C-PCM cavity/Born oracle, f(ε), H2O
     # solvent vs gas, solvent_eps=0 vacuum identity, forces throw.
-    atv_add_cpp_test(test_cpu_scf_pcm             cpu/scf/test_pcm.cpp)
     # hf-capability-gaps-17-bsse: ghost AtomList/ShellList/IntegralWorkspace
     # workspace semantics + Boys–Bernardi Counterpoise 5-SCF identities
     # (He–He/STO-3G; locked bsse ≤ 0). Water-dimer e2e lives in
     # regressions/scf/h2o_dimer_cp_hf631gs.
     atv_add_cpp_test(test_ghost_basis             cpu/scf/test_ghost_basis.cpp)
-    atv_add_cpp_test(test_counterpoise            cpu/scf/test_counterpoise.cpp)
     # hf-capability-gaps-13-cphf: second/skeleton derivative-integral FD
     # gates, B^x sum rules, CPHF iterative-vs-dense parity + the link-08
     # sigma_plus LHS identity (micro HeH+), and the H2/STO-3G analytic-
     # Hessian-vs-FD-of-analytic-forces first gate. The H2O/6-31G* e2e lives
     # in regressions/scf/h2o_rhf_freq.
-    atv_add_cpp_test(test_cpu_scf_cphf            cpu/scf/test_cphf.cpp)
     atv_add_cpp_test(test_cpu_scf_analytic_hessian
                      cpu/scf/test_analytic_hessian.cpp)
     atv_add_cpp_test(test_cpu_scf_uhf_hessian
@@ -877,11 +781,9 @@ if(ATV_BUILD_HF)
     # invariance pin (milliseconds). The hard-case contrast is
     # regressions/scf/soscf_hard_case.
     atv_add_cpp_test(test_soscf                   cpu/scf/test_soscf.cpp)
-    atv_add_cpp_test(test_cpu_scf_mp2           cpu/scf/test_mp2.cpp)
     # scf-review-02-eri-hoists: hosted spin-orbital ERI helpers
     # (SpinOrbital / antisym_eri / mp_denominator) in internal/spin_orbital_eri.h.
     atv_add_cpp_test(test_cpu_scf_spin_orbital_eri cpu/scf/test_spin_orbital_eri.cpp)
-    atv_add_cpp_test(test_cpu_scf_fci           cpu/scf/test_fci.cpp)
     # scf-review-03-posthf-dedup: canonical determinant-CI evaluators
     # (choose/enumerate_strings/jw_single_sign/Slater-Condon elements/ci_element)
     # hoisted to internal/ci_engine.h; hand-computed 2-orbital pins (1e-12).
@@ -917,7 +819,6 @@ if(ATV_BUILD_HF)
     # scf-review-08-ccsd-spatial-diis: closed-shell spatial-orbital CCSD kernel
     # (internal/ccsd_spatial.h) — H2/STO-3G E_corr pin (same PySCF pin as
     # regressions/scf/ccsd-h2-sto3g) + He/STO-3G zero-virtual edge.
-    atv_add_cpp_test(test_cpu_scf_ccsd_spatial  cpu/scf/test_ccsd_spatial.cpp)
     # hf-capability-gaps-07-guess: Hückel/SAP guess matrices + EDIIS/ADIIS
     # far-field mixers (single-call math only; iteration-count contrast is
     # regressions/scf/h2o_scf_convergence).
@@ -940,7 +841,6 @@ if(ATV_BUILD_HF)
     # Virtual-orbital level shift, PySCF get_fock ordering parity
     # (hf-robust-03); tutorial ch02 regression anchor.
     atv_add_cpp_test(test_cpu_scf_level_shift    cpu/scf/test_level_shift.cpp)
-    atv_add_cpp_test(test_cpu_scf_solver        cpu/scf/test_scf_solver.cpp)
     # scf-driver-refactor-02-stages: five scf::Phase stage components wrapping
     # the internal SCF helpers, isolated bit-identical parity (unit tier).
     atv_add_cpp_test(test_cpu_scf_stages cpu/scf/stages/test_scf_stages.cpp)
@@ -955,14 +855,10 @@ if(ATV_BUILD_HF)
     # scf-driver-refactor-03a-convert: RHF/UHF/RKS/UKS as Driver<scf::Phase>,
     # regression-pinned against the 03a-parity energies/eigenvalues. Pins serial
     # execution for the same ULP-determinism reason as test_cpu_scf_stages.
-    atv_add_cpp_test(test_cpu_scf_method_driver_parity
-                     cpu/scf/test_method_driver_parity.cpp)
     if(TARGET test_cpu_scf_method_driver_parity)
     set_tests_properties(test_cpu_scf_method_driver_parity PROPERTIES
         ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
     endif()
-    atv_add_cpp_test(test_cpu_scf_method_driver_no_alloc
-                     cpu/scf/test_method_driver_no_alloc.cpp)
     atv_add_cpp_test(test_cpu_evaluate_driver        cpu/test_evaluate_driver.cpp)
     # esmm-contract-05-accumulate-switch (U7): two energy sources co-bound into
     # ONE cpu::Evaluate pass must both land in kEnergy, in either binding order.

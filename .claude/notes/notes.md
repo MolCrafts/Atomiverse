@@ -15,13 +15,11 @@ History is git's job — superseded designs are deleted, not archived here.
   CPU-first (only the sanctioned next waves in
   [cuda-rhf-device-only.md](cuda-rhf-device-only.md)); classical MD CUDA
   independent.
-- **e2e-in-tests migration (queued campaign).** ~102 registered "unit" tests
-  are full method solves hidden behind `ATV_TEST_HEAVY=OFF` (ccsd/fci/mp2,
-  gpw_*/pw_* solves, bomd/cpmd/xl_bomd, dftb, am1 thermochemistry runs), plus
-  8 `test_mpi_{pw,gpw}_kpoint_*` mpirun solves now also heavy-gated. Per the
-  test iron law they belong in `regressions/` — and most overlap the existing
-  392 cases, so the move is **dedupe first**: where a regression already pins
-  the same method+system, delete the heavy test; migrate only unique coverage.
+- **e2e-in-tests migration (wave 1 done).** Deleted **78** heavy full-method
+  sources duplicated by `regressions/**`; kernel unit tokens re-ungated in
+  `ATV_TEST_HEAVY_REGEX`. Ledger:
+  [e2e-in-tests-campaign.md](../../docs/developer/e2e-in-tests-campaign.md).
+  Residual audit is `arch-e2e-tests-wave2` on the architecture campaign queue.
 - **Open-shell cluster GPW mixer.** GPW analytic forces are validated
   (analytic-vs-FD ≤ 3.6e-6 Ha/Bohr across Si₂ RKS/UKS setups), but Si₂-triplet
   GTH in a cluster box is SCF-ill-conditioned for both ATV and CP2K in
@@ -49,7 +47,8 @@ History is git's job — superseded designs are deleted, not archived here.
 | gpw-perf-loop | queue [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md); arch [gpw-perf-architecture.md](gpw-perf-architecture.md); **always wipe builds**; first structural cut `p1-gpw-workspace` → `p1-ks-grid-build` ([es-optimization-order.md](es-optimization-order.md)) |
 | tb-method-loop | [tb-blocked-capabilities.md](tb-blocked-capabilities.md), [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md), [gfn2-xtb-chon.md](gfn2-xtb-chon.md) |
 | metalwalls-method-loop | [metalwalls-capability-map.md](metalwalls-capability-map.md), [oracle-pin-provenance.md](oracle-pin-provenance.md) |
-| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; owns `cuda::scf::SCFSolver` debt; **PBE-GGA + large-cell walls landed**; sanctioned next: non-default stream / forces / GPW compose — [es-optimization-order.md](es-optimization-order.md)); full CUDA GPW product stays blocked |
+| cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; owns `cuda::scf::SCFSolver` debt — now staffed via **arch-campaign** `arch-cuda-scf-solver-fold`); full CUDA GPW product blocked until GPW Driver + shape freeze |
+| **arch-campaign** | queue [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md); loop [arch-campaign-loop.md](../../docs/developer/arch-campaign-loop.md); spine **GpwDft/PW Driver nodes → CUDA SCF fold → shape freeze → MG structural** |
 | CUDA MD perf | [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) (A/B methodology + precision mode map vs LAMMPS Kokkos); **not** blocked by ES CPU priority |
 
 ## Build-shape conclusions

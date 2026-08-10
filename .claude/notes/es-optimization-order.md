@@ -52,7 +52,27 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 harness wave 6 closed)
+### Active next — architecture campaign `arch-campaign` (2026-08-10)
+
+Pin-safe dual-track `es-cpu-cuda-opt` **exhausted** staffable open-gate rows
+(CPU lever empty; CUDA corresponding slices landed). Binding next is **ES order
+step 1 — CPU architecture**, not more collint polish.
+
+| Priority | Slug | Goal |
+| --- | --- | --- |
+| P0 | `arch-gpw-driver-node` | `GpwDft` → `Driver<gpw::Phase>` (public `run`/`forces` stable) |
+| P0 | `arch-pw-driver-node` | `PW` same shape after GPW pattern |
+| P1 | `arch-cuda-scf-solver-fold` | fold `cuda::scf::SCFSolver` private under RHF |
+| P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product |
+| P2 | `arch-e2e-tests-wave2` / `arch-mg-main-structural` | residual iron law; MG ~1× after Driver |
+
+Queue: [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
+Workflow: `.grok/workflows/arch-campaign.rhai`.
+
+**Forbidden this campaign:** soft tols; invent hybrid/GAPW; staff
+`cuda-gpw-full-product` before Driver + freeze; leave `build*`.
+
+### Superseded focus — dual track `es-cpu-cuda-opt` (closed staffable set 2026-08-10)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
