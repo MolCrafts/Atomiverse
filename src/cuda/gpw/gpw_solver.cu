@@ -10,6 +10,8 @@
 ///     force grid product (V_eff·dχ·Pχ + ionic HF + local-PP HF) on Γ RKS
 ///     single-grid free-fn path.
 /// Final KS still D2Hs V_eff/V_es for force reuse on the free-fn path.
+/// Mid-SCF product work runs on a non-default `cudaStream_t` owned for
+/// the duration of `run()` (cuda-gpw-nondefault-stream).
 
 #include "atomiverse/cuda/gpw/gpw_solver.cuh"
 
@@ -84,6 +86,26 @@ void check_cuda(cudaError_t e, const char* what) {
         throw std::runtime_error(std::string("cuda::gpw::GpwDft: ") + what
                                  + ": " + cudaGetErrorString(e));
 }
+
+/// Non-default SCF stream for product mid-SCF (cuda-gpw-nondefault-stream).
+/// Destroyed after the last device use in `run` (fences this stream only).
+struct ScfStream {
+    cudaStream_t s = nullptr;
+    ScfStream() {
+        check_cuda(cudaStreamCreate(&s), "cudaStreamCreate SCF");
+    }
+    ~ScfStream() {
+        if (s) {
+            cudaStreamSynchronize(s);
+            cudaStreamDestroy(s);
+            s = nullptr;
+        }
+    }
+    ScfStream(const ScfStream&) = delete;
+    ScfStream& operator=(const ScfStream&) = delete;
+    operator cudaStream_t() const { return s; }
+};
+
 
 std::vector<GridBasisFunction> flatten_basis(const std::vector<GpwAtom>& atoms) {
     std::vector<GridBasisFunction> basis;
@@ -753,7 +775,11 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         C0 = std::get<1>(diagonalize_fock(H0, orth.X));
     }
 
-    // Device KS workspace: n_ion / v_loc on fine grid once.
+    // Non-default stream for product SCF: grid upload + mid-SCF H2D/D2H + KS.
+    ScfStream scf_stream;
+    const cudaStream_t stream = scf_stream;
+
+    // Device KS workspace: n_ion / v_loc on fine grid once (stream-ordered).
     DeviceKsBuffers dev;
     DeviceMgProdBuffers mg_prods;
     const long npts = grid.npts();
@@ -761,15 +787,16 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     const double w_grid = w_fine; // UKS single-grid alias
     dev.alloc_grids(npts);
     const size_t bytes = static_cast<size_t>(npts) * sizeof(double);
-    check_cuda(cudaMemcpy(dev.d_n_ion, n_ion.data(), bytes,
-                          cudaMemcpyHostToDevice),
+    check_cuda(cudaMemcpyAsync(dev.d_n_ion, n_ion.data(), bytes,
+                               cudaMemcpyHostToDevice, stream),
                "H2D n_ion");
     if (!v_locsr.empty())
-        check_cuda(cudaMemcpy(dev.d_v_loc, v_locsr.data(), bytes,
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(dev.d_v_loc, v_locsr.data(), bytes,
+                                   cudaMemcpyHostToDevice, stream),
                    "H2D v_loc");
     else
-        check_cuda(cudaMemset(dev.d_v_loc, 0, bytes), "zero v_loc");
+        check_cuda(cudaMemsetAsync(dev.d_v_loc, 0, bytes, stream),
+                   "zero v_loc");
 
     const KsXcKind kxc = to_ks_xc(xc);
     const double* d_vloc_arg = v_locsr.empty() ? nullptr : dev.d_v_loc;
@@ -785,14 +812,12 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         for (int l = 0; l < nlevels; ++l)
             mg_desc.levels[static_cast<std::size_t>(l)] =
                 to_coll(mg.levels[static_cast<std::size_t>(l)]);
-        ks_mg = std::make_unique<KsMultiGridChainDevice>(mg_desc,
-                                                         /*stream=*/nullptr);
+        ks_mg = std::make_unique<KsMultiGridChainDevice>(mg_desc, stream);
         mg_prods.resize_levels(nlevels);
         for (int l = 0; l < nlevels; ++l)
             mg_prods.ensure_level(l, nprod_by_level[static_cast<std::size_t>(l)]);
     } else {
-        ks_sg = std::make_unique<KsChainDevice>(to_coll(grid),
-                                                /*stream=*/nullptr);
+        ks_sg = std::make_unique<KsChainDevice>(to_coll(grid), stream);
         dev.ensure_prods(nprod_geom, uks);
     }
 
@@ -863,31 +888,32 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             -> std::tuple<RealMatrix, RealMatrix, double> {
             pack_products(Pa_in, h_prods);
             pack_products(Pb_in, h_prods_b);
-            check_cuda(cudaMemcpy(dev.d_prods, h_prods.data(),
-                                  static_cast<size_t>(nprod_geom)
-                                      * sizeof(DeviceProduct),
-                                  cudaMemcpyHostToDevice),
+            check_cuda(cudaMemcpyAsync(dev.d_prods, h_prods.data(),
+                                       static_cast<size_t>(nprod_geom)
+                                           * sizeof(DeviceProduct),
+                                       cudaMemcpyHostToDevice, stream),
                        "H2D products_a");
-            check_cuda(cudaMemcpy(dev.d_prods_b, h_prods_b.data(),
-                                  static_cast<size_t>(nprod_geom)
-                                      * sizeof(DeviceProduct),
-                                  cudaMemcpyHostToDevice),
+            check_cuda(cudaMemcpyAsync(dev.d_prods_b, h_prods_b.data(),
+                                       static_cast<size_t>(nprod_geom)
+                                           * sizeof(DeviceProduct),
+                                       cudaMemcpyHostToDevice, stream),
                        "H2D products_b");
 
             const KsChainEnergies e = ks_sg->run_uks(
                 dev.d_prods, nprod_geom, dev.d_prods_b, nprod_geom, dev.d_n_ion,
                 d_vloc_arg, dev.d_acc, dev.d_acc_b, kxc);
 
-            check_cuda(cudaMemcpy(h_acc.data(), dev.d_acc,
-                                  static_cast<size_t>(nprod_geom)
-                                      * sizeof(double),
-                                  cudaMemcpyDeviceToHost),
+            check_cuda(cudaMemcpyAsync(h_acc.data(), dev.d_acc,
+                                       static_cast<size_t>(nprod_geom)
+                                           * sizeof(double),
+                                       cudaMemcpyDeviceToHost, stream),
                        "D2H product acc_a");
-            check_cuda(cudaMemcpy(h_acc_b.data(), dev.d_acc_b,
-                                  static_cast<size_t>(nprod_geom)
-                                      * sizeof(double),
-                                  cudaMemcpyDeviceToHost),
+            check_cuda(cudaMemcpyAsync(h_acc_b.data(), dev.d_acc_b,
+                                       static_cast<size_t>(nprod_geom)
+                                           * sizeof(double),
+                                       cudaMemcpyDeviceToHost, stream),
                        "D2H product acc_b");
+            check_cuda(cudaStreamSynchronize(stream), "sync uks acc D2H");
             const RealMatrix Va = scatter_product_acc(
                 prods, pset.prims, pset.contribs, nb, h_acc, w_grid);
             const RealMatrix Vb = scatter_product_acc(
@@ -899,15 +925,17 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                 std::vector<double> veff_a(static_cast<std::size_t>(npts));
                 std::vector<double> veff_b(static_cast<std::size_t>(npts));
                 std::vector<double> v_es(static_cast<std::size_t>(npts));
-                check_cuda(cudaMemcpy(veff_a.data(), ks_sg->d_veff(), bytes,
-                                      cudaMemcpyDeviceToHost),
+                check_cuda(cudaMemcpyAsync(veff_a.data(), ks_sg->d_veff(), bytes,
+                                           cudaMemcpyDeviceToHost, stream),
                            "D2H veff_a");
-                check_cuda(cudaMemcpy(veff_b.data(), ks_sg->d_veff_b(), bytes,
-                                      cudaMemcpyDeviceToHost),
+                check_cuda(cudaMemcpyAsync(veff_b.data(), ks_sg->d_veff_b(),
+                                           bytes, cudaMemcpyDeviceToHost,
+                                           stream),
                            "D2H veff_b");
-                check_cuda(cudaMemcpy(v_es.data(), ks_sg->d_v_es(), bytes,
-                                      cudaMemcpyDeviceToHost),
+                check_cuda(cudaMemcpyAsync(v_es.data(), ks_sg->d_v_es(), bytes,
+                                           cudaMemcpyDeviceToHost, stream),
                            "D2H v_es");
+                check_cuda(cudaStreamSynchronize(stream), "sync uks veff D2H");
                 result_.veff_a = std::move(veff_a);
                 result_.veff_b = std::move(veff_b);
                 result_.v_es = std::move(v_es);
@@ -1047,29 +1075,31 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                     w = 0.0;
                 h_prods[static_cast<std::size_t>(ip)] = to_device_product(gp, w);
             }
-            check_cuda(cudaMemcpy(dev.d_prods, h_prods.data(),
-                                  static_cast<size_t>(nprod_geom)
-                                      * sizeof(DeviceProduct),
-                                  cudaMemcpyHostToDevice),
+            check_cuda(cudaMemcpyAsync(dev.d_prods, h_prods.data(),
+                                       static_cast<size_t>(nprod_geom)
+                                           * sizeof(DeviceProduct),
+                                       cudaMemcpyHostToDevice, stream),
                        "H2D products");
             e = ks_sg->run(dev.d_prods, nprod_geom, dev.d_n_ion, d_vloc_arg,
                            dev.d_acc, kxc);
-            check_cuda(cudaMemcpy(h_acc.data(), dev.d_acc,
-                                  static_cast<size_t>(nprod_geom)
-                                      * sizeof(double),
-                                  cudaMemcpyDeviceToHost),
+            check_cuda(cudaMemcpyAsync(h_acc.data(), dev.d_acc,
+                                       static_cast<size_t>(nprod_geom)
+                                           * sizeof(double),
+                                       cudaMemcpyDeviceToHost, stream),
                        "D2H product acc");
+            check_cuda(cudaStreamSynchronize(stream), "sync rks acc D2H");
             Vgrid = scatter_product_acc(prods, pset.prims, pset.contribs, nb,
                                         h_acc, w_fine);
             if (store_grids) {
                 std::vector<double> veff(static_cast<std::size_t>(npts));
                 std::vector<double> v_es(static_cast<std::size_t>(npts));
-                check_cuda(cudaMemcpy(veff.data(), ks_sg->d_veff(), bytes,
-                                      cudaMemcpyDeviceToHost),
+                check_cuda(cudaMemcpyAsync(veff.data(), ks_sg->d_veff(), bytes,
+                                           cudaMemcpyDeviceToHost, stream),
                            "D2H veff");
-                check_cuda(cudaMemcpy(v_es.data(), ks_sg->d_v_es(), bytes,
-                                      cudaMemcpyDeviceToHost),
+                check_cuda(cudaMemcpyAsync(v_es.data(), ks_sg->d_v_es(), bytes,
+                                           cudaMemcpyDeviceToHost, stream),
                            "D2H v_es");
+                check_cuda(cudaStreamSynchronize(stream), "sync rks veff D2H");
                 result_.veff = std::move(veff);
                 result_.v_es = std::move(v_es);
             }
@@ -1096,11 +1126,11 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                 }
                 if (np > 0) {
                     check_cuda(
-                        cudaMemcpy(
+                        cudaMemcpyAsync(
                             mg_prods.d_prods[static_cast<std::size_t>(l)],
                             h_prods_l.data(),
                             static_cast<size_t>(np) * sizeof(DeviceProduct),
-                            cudaMemcpyHostToDevice),
+                            cudaMemcpyHostToDevice, stream),
                         "H2D products level");
                     d_prods_ptr[static_cast<std::size_t>(l)] =
                         mg_prods.d_prods[static_cast<std::size_t>(l)];
@@ -1116,11 +1146,14 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                     continue;
                 auto& h_acc_l = h_acc_by_level[static_cast<std::size_t>(l)];
                 check_cuda(
-                    cudaMemcpy(h_acc_l.data(),
-                               mg_prods.d_acc[static_cast<std::size_t>(l)],
-                               static_cast<size_t>(np) * sizeof(double),
-                               cudaMemcpyDeviceToHost),
+                    cudaMemcpyAsync(
+                        h_acc_l.data(),
+                        mg_prods.d_acc[static_cast<std::size_t>(l)],
+                        static_cast<size_t>(np) * sizeof(double),
+                        cudaMemcpyDeviceToHost, stream),
                     "D2H product acc level");
+                check_cuda(cudaStreamSynchronize(stream),
+                           "sync mg acc D2H");
                 const double w_l =
                     mg.levels[static_cast<std::size_t>(l)].weight();
                 const RealMatrix Vl = scatter_product_acc(
@@ -1131,14 +1164,17 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             if (store_grids) {
                 std::vector<double> veff(static_cast<std::size_t>(npts));
                 std::vector<double> v_es(static_cast<std::size_t>(npts));
-                check_cuda(cudaMemcpy(veff.data(),
-                                      ks_mg->fine_chain().d_veff(), bytes,
-                                      cudaMemcpyDeviceToHost),
+                check_cuda(cudaMemcpyAsync(veff.data(),
+                                           ks_mg->fine_chain().d_veff(),
+                                           bytes, cudaMemcpyDeviceToHost,
+                                           stream),
                            "D2H veff fine");
-                check_cuda(cudaMemcpy(v_es.data(),
-                                      ks_mg->fine_chain().d_v_es(), bytes,
-                                      cudaMemcpyDeviceToHost),
+                check_cuda(cudaMemcpyAsync(v_es.data(),
+                                           ks_mg->fine_chain().d_v_es(),
+                                           bytes, cudaMemcpyDeviceToHost,
+                                           stream),
                            "D2H v_es fine");
+                check_cuda(cudaStreamSynchronize(stream), "sync mg veff D2H");
                 result_.veff = std::move(veff);
                 result_.v_es = std::move(v_es);
             }
