@@ -453,7 +453,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   metallic smear** (FD/Gaussian/MP + `extra_bands` + Mermin free energy;
   spin+smear still rejects); large-cell wall evidence on Si supercells —
   see es-cpu-cuda queue. **No CUDA GPW method product** (stage footholds
-  only; blocked on arch-campaign Driver paths + public-shape freeze).
+  only; blocked on arch-campaign multi-path Driver + public-shape freeze).
+  **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
+  **Γ RKS DIIS only** (landed); multi-k / UKS / OT free-loop residual and
+  `cpu::pw::PW` not-yet-Driver remain pending — capability tables above are
+  product physics, not loop-shape closed.
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA
   (Padé) or **PBE / PBEsol / revPBE / RPBE / BLYP** (RKS + **Γ-UKS BLYP**

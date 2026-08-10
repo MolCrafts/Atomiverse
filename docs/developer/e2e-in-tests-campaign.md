@@ -39,5 +39,10 @@ even when short).
 
 ## Next waves
 
-- Wave 2: audit remaining `tests/cpu/scf/*` and vib for any residual multi-iter solves
-- Wave 3: optional migrate of *unique* coverage discovered only after green regression inventory
+- Wave 2 (`arch-e2e-tests-wave2`, pending): residual multi-iter under `tests/`
+  after wave-1 — GapCensus wave-2 concrete hits include
+  `test_cpu_gpw_vol_forces` (max_iter=60), `test_soscf` / `test_full_grid_alda`,
+  multiscale + `test_qm_engine` (max_iter 40–100), MPI `test_gpw_kpoint` /
+  `test_pw_kpoint` (max_iter 20–30), plus fat residual `ATV_TEST_HEAVY_REGEX`
+- Wave 3: optional migrate of *unique* coverage discovered only after green
+  regression inventory

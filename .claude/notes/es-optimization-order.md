@@ -58,20 +58,22 @@ Pin-safe dual-track `es-cpu-cuda-opt` **exhausted** staffable open-gate rows
 (CPU lever empty; CUDA corresponding slices landed). Binding next is **ES order
 step 1 — CPU architecture**, not more collint polish.
 
-| Priority | Slug | Goal |
+| Priority | slug | Goal |
 | --- | --- | --- |
 | P0 | ~~`arch-gpw-driver-node`~~ **landed** | `GpwDft` → `Driver<gpw::Phase>`; residual paths → `arch-gpw-driver-paths` |
-| P0 | `arch-gpw-driver-paths` | UKS + multi-k DIIS onto same stages |
+| P0 | `arch-gpw-driver-paths` | UKS + multi-k DIIS onto same stages (OT trails) |
 | P0 | `arch-pw-driver-node` | `PW` same shape after GPW pattern |
 | P1 | `arch-cuda-scf-solver-fold` | fold `cuda::scf::SCFSolver` private under RHF |
 | P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product |
 | P2 | `arch-e2e-tests-wave2` / `arch-mg-main-structural` | residual iron law; MG ~1× after Driver |
 
-Queue: [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
-Workflow: `.grok/workflows/arch-campaign.rhai`.
+**GapCensus wave 2:** pending=6, gaps_remaining=7, new_slugs=0 — tree on `dev`
+unchanged since Γ RKS Driver land; orphan `wf/arch-*` tips not merged. Queue:
+[arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md). Workflow:
+`.grok/workflows/arch-campaign.rhai`.
 
 **Forbidden this campaign:** soft tols; invent hybrid/GAPW; staff
-`cuda-gpw-full-product` before Driver + freeze; leave `build*`.
+`cuda-gpw-full-product` before multi-path Driver + freeze; leave `build*`.
 
 ### Superseded focus — dual track `es-cpu-cuda-opt` (closed staffable set 2026-08-10)
 

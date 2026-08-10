@@ -13,38 +13,59 @@ Binding order (CLAUDE.md → Electronic structure optimization order):
 ## pending
 
 Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
-rows; foothold ≠ closed capability.
+rows; foothold ≠ closed capability. **Unmerged tip ≠ done** — only green merge
+onto `dev` closes a slug.
 
-**GapCensus wave 1 (2026-08-10)** on `dev` @ `19280211` (post
-`arch-gpw-driver-node` merge `bf5897fb`). Tree facts: `GpwDft :
-cpu::Driver<gpw::Phase>` + `drive_gamma_rks_diis_` + `gpw/stages/*` for **Γ
-RKS DIIS only**; `run_gpw_scf_kpoints*` / UKS / OT still free loops; `cpu::pw::PW`
-plain class (no `pw::Phase` / no stages); `cuda::scf::SCFSolver` dual under
-`RHF`; CUDA GPW = stage footholds only (`ks_chain` / MG, no public product);
-e2e wave-1 done, residual multi-iter under `tests/` + HEAVY_REGEX safety net.
-No open `wf/arch-*` worktrees; no open arch specs. Lever:
+**GapCensus wave 2 (2026-08-10)** on `dev` @ `c77f8145` (post wave-1 queue
+rewrite; no arch land since `arch-gpw-driver-node` @ `bf5897fb`). Tree facts
+reconfirmed:
+
+| Surface | On `dev` |
+| --- | --- |
+| `GpwDft` | `cpu::Driver<gpw::Phase>` + `drive_gamma_rks_diis_` + `gpw/stages/*` for **Γ RKS DIIS only** |
+| GPW residual free loops | `run_gpw_scf_kpoints*` (RKS/UKS DIIS), Γ UKS DIIS, all **OT** (`use_ot`) |
+| `cpu::pw::PW` | plain class — **no** `pw::Phase`, no stages, free SCF in `pw_solver.cpp` |
+| `cuda::scf::SCFSolver` | free-loop internal under `RHF` (`unique_ptr<SCFSolver> solver_`); **not** Driver-like fold |
+| CUDA GPW | stage footholds only (`ks_chain` / MG / GGA); **no** public method product |
+| e2e iron law | wave-1 deleted 78 heavy sources; residual multi-iter still under `tests/` + fat `ATV_TEST_HEAVY_REGEX` safety net |
+
+Orphan **branch tips** (no isolation worktrees; **not** on `dev` — do not mark
+done; Assign may rebase/re-staff or discard):
+
+| Tip | Claim (unverified until merge) |
+| --- | --- |
+| `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual |
+| `wf/arch-pw-driver-node` | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
+| `wf/arch-cuda-scf-solver-fold` | fold free-loop under RHF private cycle |
+| `wf/arch-e2e-tests-wave2` | residual multi-iter delete/migrate |
+
+No open arch specs under `.claude/specs/` (only unrelated
+`periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`). Lever still:
 `MeanFieldMethod` + `cpu/scf/stages/` + landed Γ RKS GPW stages.
 
 ### P0 — ES loop nodes (CPU)
 
-- [ ] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS DIIS
-  onto same `gpw::Phase` stages; OT free-loop residual may trail as
-  same-capability follow-on (not a separate method) | method=cpu-arch |
-  twin: `regressions/gpw/*` (uks-o2-gamma, multigrid-kpoints, kpoints-si) |
-  files: `gpw_solver.cpp` `run_gpw_scf_kpoints*`, `gpw/stages/` | gate: pins
-  green; public `run`/`forces` stable; wipe builds |
+- [ ] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS **DIIS**
+  onto same `gpw::Phase` stages (`ks_build → mix → diagonalize → density →
+  check`); OT free-loop residual may trail as same-capability follow-on (not a
+  separate method / not a new slug) | method=cpu-arch | twin:
+  `regressions/gpw/*` (uks-o2-gamma, multigrid-kpoints, kpoints-si) | files:
+  `gpw_solver.cpp` `run_gpw_scf_kpoints*`, `gpw/stages/`, `drive_*` | gate:
+  pins green; public `run`/`forces` stable; wipe builds |
 - [ ] `arch-pw-driver-node` | **P0** Reshape `cpu::pw::PW` →
-  `cpu::Driver<pw::Phase>` after (or parallel once) GPW stage pattern is
-  clear | method=cpu-arch | twin: `regressions/pw/*` | files: `pw_solver.*`,
-  new `pw/stages/`, `core/stage.h` `pw::Phase` | gate: public `run`/`forces`
-  stable |
+  `cpu::Driver<pw::Phase>` after (or parallel once) GPW stage pattern is clear
+  | method=cpu-arch | twin: `regressions/pw/*` (lda-si baseline) | files:
+  `pw_solver.*`, new `pw/stages/`, `core/stage.h` `pw::Phase` | gate: public
+  `run`/`forces`/`stress` stable; spin/smear may remain free-loop residual if
+  restricted fixed-occ lands first |
 
 ### P1 — CUDA SCF debt + freeze product shape
 
 - [ ] `arch-cuda-scf-solver-fold` | **P1** Fold `cuda::scf::SCFSolver` fully
-  private under `cuda::scf::RHF` Driver-like shape (no dual architecture) |
-  method=cuda-arch | twin: `tests/cuda/scf/test_rhf.cu` + CPU RHF oracle |
-  files: `cuda/scf/*` | gate: GH200 green; device-only |
+  private under `cuda::scf::RHF` Driver-like shape (no dual free-loop
+  architecture; kill synthetic dual path as public surface) | method=cuda-arch
+  | twin: `tests/cuda/scf/test_rhf.cu` + CPU RHF oracle | files: `cuda/scf/*`
+  | gate: GH200 green; device-only; no push |
 - [ ] `arch-cuda-gpw-public-shape-freeze` | **P1** Document + enforce: full
   CUDA GPW method product **equals** CPU `GpwDft` public shape after
   multi-path Driver (`arch-gpw-driver-paths`) lands; compose existing stage
@@ -53,11 +74,16 @@ No open `wf/arch-*` worktrees; no open arch specs. Lever:
 
 ### P2 — test iron law residual + MG structure
 
-- [ ] `arch-e2e-tests-wave2` | **P2** Residual audit of `tests/` for
-  multi-iter solves after wave-1 (e.g. `test_soscf` RHF.run loops,
-  `test_full_grid_alda`, MPI PW/GPW multi-iter, residual HEAVY_REGEX safety
-  net); migrate unique only | method=harness | twin: ctest default gate
-  seconds-scale | files: `tests/**` |
+- [ ] `arch-e2e-tests-wave2` | **P2** Residual audit of `tests/` for multi-iter
+  solves after wave-1 — migrate unique only to `regressions/`, else delete;
+  slim residual `ATV_TEST_HEAVY_REGEX` safety net | method=harness | twin:
+  ctest default gate seconds-scale | concrete residual on `dev` (not exhaustive):
+  `tests/cpu/gpw/test_cpu_gpw_vol_forces.cpp` (max_iter=60 full SCF),
+  `tests/cpu/scf/test_soscf.cpp` / `test_full_grid_alda.cpp` / many
+  `*.run(frame)` multi-iter helpers, `tests/cpu/multiscale/*` +
+  `tests/cpu/component/test_qm_engine.cpp` (max_iter 40–100),
+  `tests/mpi/test_gpw_kpoint.cpp` + `test_pw_kpoint.cpp` (max_iter 20–30) |
+  files: `tests/**`, `tests/CMakeLists.txt` HEAVY_REGEX |
 - [ ] `arch-mg-main-structural` | **P2** Task-list / products-default path
   rewrite toward MAIN ~1× (explicitly **not** pin-softening) — only after
   GPW Driver paths stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` |
