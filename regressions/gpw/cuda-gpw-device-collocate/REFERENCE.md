@@ -34,17 +34,19 @@ stream.
 
 ## GH200 evidence
 
-Post-rebase dual-gate job **1122743** (partition gpu, n467 GH200, module
-`GPU/buildenv-gcccuda/2026.03-cu13.0`, HEAD `c493d171` then evidence commit):
+Post-rebase onto current `dev` dual-gate job **1123960** (partition gpu,
+n454 GH200, module `GPU/buildenv-gcccuda/2026.03-cu13.0`, HEAD `67a24b24`
+before this evidence commit):
 
 | Quantity | Value |
 | --- | ---: |
 | \|E_cuda − E_cpu\| | **1.617×10⁻⁷ Ha** |
-| max\|ΔF\| | **2.321×10⁻⁶ Ha/Bohr** |
+| max\|ΔF\| | **2.425×10⁻⁶ Ha/Bohr** |
 | CPU iters / CUDA iters | 5 / 9 |
 | Units | `test_cuda_gpw_full_product` + product collocate/integrate **3/3 PASS** |
 | Exit | **GPU_JOB_OK** / sacct **COMPLETED 0:0** |
 
-Prior pre-rebase tip evidence: job **1122198** (same dual-gate class).
+Prior evidence on earlier tip: **1122743** (max\|ΔF\|=2.321e-6); pre-rebase
+**1122198** (same dual-gate class).
 
 Tols: energy 5×10⁻⁶ Ha, forces 5×10⁻⁵ Ha/Bohr. **perf_exempt** small cell.
