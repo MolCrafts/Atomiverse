@@ -51,23 +51,26 @@ to:
 - [x] Multi-level MAIN path helpers exist and unit-test the forked-loop identity + adjointness
 - [x] All four SCF runners (Γ RKS/UKS, multi-k RKS/UKS) call the helpers
 - [x] Twin reg `gpw-multigrid-kpoints` green (offline CP2K pin; tolerances unchanged)
-      — MAIN E = −15.8024626200 Ha, \|Δ\| = 4.621e-05 Ha vs pin (tol 1e-3); wall 1.5 s
+      — MAIN E = −15.8024626200 Ha, \|Δ\| = 4.621e-05 Ha vs pin (tol 1e-3)
 - [x] Arch reg `reg_arch-mg-main-structural` green (shape)
 - [x] Public API unchanged
 - [x] Baseline / architecture note rewritten for single-owner MAIN path
 - [x] Unit `test_cpu_gpw_multigrid` green (MainPath suite)
-- [ ] wipe builds after gate (post-commit)
+- [x] wipe builds after gate (post-commit)
 
 ## Gate evidence
 
+Re-gate after rebase onto `dev` @ Assign wave-8 (`f790f485`), 2026-08-10:
+
 | Gate | Result |
 | --- | --- |
-| `test_cpu_gpw_multigrid` | PASS |
+| `test_cpu_gpw_multigrid` | PASS (0.85 s) |
 | `run_reg_arch-mg-main-structural` | PASS |
-| `run_reg_gpw-multigrid-kpoints` | PASS — \|dE\|=4.621e-05 Ha vs CP2K pin |
+| `run_reg_gpw-multigrid-kpoints` | PASS — \|dE\|=4.621e-05 Ha vs offline CP2K pin; MAIN E = −15.8024626200 Ha |
 
 Lever: extract multi-level product composition (second+ call site) parallel to
-`ks_grid_build_*`. Wall residual ~2.33× remains on the shared MAIN path.
+`ks_grid_build_*` / MeanFieldMethod stage extract. Wall residual ~2.33× remains
+on the shared MAIN path (not pin-softened; further cut is kernel residual).
 
 ## Out
 
