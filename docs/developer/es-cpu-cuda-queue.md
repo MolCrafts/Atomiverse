@@ -72,8 +72,8 @@ accepted, ungated). PW on base: collinear **LSDA + PBE** energy landed
 (`cuda-pw-spin-pbe` / GH200 **1124645**); forces/stress still reject
 spin/smear; spin∧smear still rejects. One staffed tip **not on base**:
 `wf/cuda-gpw-device-collocate` tip `6a564562` (GH200 **1124643** /
-**1123960** / **1122743**; **ahead 5 / behind 7** vs `dev` — rebase before
-merge).
+**1123960** / **1122743**; **ahead 5 / behind 8** vs `dev` `e5a20b4a` —
+rebase before merge). Assign wave 5 staffs **only** this resume.
 
 **Autonomous discovery (wave 5 — foothold ≠ closed):** Prior wave-4 parents
 still open on base; first-slice product + stage units leave **joint-path**
@@ -100,7 +100,7 @@ spine (not pending this wave). **No gpw-perf-queue promote**. Staff
 | Claimed-but-ungated | product `XcKind::PBE` accepted; only PADE H₂ dual-gate reg on base |
 | Closed-shell PW stress | **LSDA + PBE** dual-gate **landed** (`cuda-pw-stress` + `cuda-pw-pbe-stress`) |
 | Collinear spin-PBE energy | **landed** merge `118d3003` / GH200 **1124645** |
-| Staffed tips (not base) | collocate `6a564562` / GH200 **1124643** (behind 7) |
+| Staffed tips (not base) | collocate `6a564562` / GH200 **1124643** (behind 8) |
 
 **Counts:** **pending_count=29**; **in_progress=1**; **cpu_pending=0**;
 **cuda_pending=30** (1 staffed + 29 open); **gaps_remaining≈31** (20 GPW
@@ -123,7 +123,7 @@ method=cuda throughout. Product is **on base** — staff depth into public
   Lever: `gpw_solver.cu` SCF loop + `DeviceProduct` / collint descriptors in
   `cuda/gpw/internal/` (stage units green). **staffed** tip `6a564562`
   (GH200 **1124643** / **1123960** / **1122743** \|ΔE\|=1.617e-7 Ha
-  max\|ΔF\|=2.332e-6 Ha/Bohr; **not on base**; **ahead 5 / behind 7**). Residual
+  max\|ΔF\|=2.332e-6 Ha/Bohr; **not on base**; **ahead 5 / behind 8**). Residual
   after merge still host weight pack + D2H acc + host DIIS/eigen →
   `device-diis-eigen` (not closed by this slug).
 - [ ] `cuda-gpw-pbe-product-gate` | **P1** Public product accepts `XcKind::PBE`
@@ -356,7 +356,7 @@ energy** dual-gates confirmed. `gpw_solver.cu` still host collocate/integrate
 + device KS stream-null + host DIIS/eigen + host `build_STVpp`; `pw_solver`
 accepts spin∧PBE energy; forces/stress still reject spin/smear; spin∧smear
 still rejects. One worker tip GH200-green but **not merged**
-(`device-collocate`; behind 7).
+(`device-collocate`; behind 8).
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
@@ -366,7 +366,7 @@ still rejects. One worker tip GH200-green but **not merged**
 | `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **cell stress (LSDA + PBE dual-gate)** + **collinear LSDA + spin-PBE energy** + **restricted metallic smear energy** | **landed** | **pending:** smear F/σ; spin F/σ / **spin-PBE F/σ** / spin+smear energy + **spin-smear F/σ** + **spin-smear-pbe** |
 
 **Staff order:** (1) **merge** remaining tip `device-collocate` (GH200 green;
-rebase onto current `dev` first — ahead 5 / behind 7) then GPW
+rebase onto current `dev` first — ahead 5 / behind 8) then GPW
 `pbe-product-gate` + `device-forces` + `multigrid-run` + `uks-gamma` **P1**;
 (2) `nondefault-stream` + `device-diis-eigen` + `product-h2o-gate` + `kpoints`
 + `stress` + remaining PW depth **P2**; (3) wave-4/5 joint paths
@@ -380,6 +380,10 @@ follow-on.
 
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
+
+**Assign wave 5 staff:** resume-only `cuda-gpw-device-collocate` (merge after
+rebase). NEW P1 held until that lands. Theme NEW (`device-forces` /
+`multigrid-run` / `uks-gamma` / `pbe-product-gate`) not staffed this wave.
 
 *Not pending this loop:*
 
@@ -406,14 +410,15 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 ## in_progress
 
-**GapCensus wave 5** (parent `dev` @ `4d375c3a`): Priority **[~] first** —
-one merge-ready resume remains (GH200 green on tip; **not on base**). Do
+**Assign wave 5** (parent `dev` @ `e5a20b4a`; GapCensus @ `4d375c3a` /
+refill `e5a20b4a`): Priority **[~] first** — staff **1** resume only.
+`cuda-gpw-device-collocate` is GH200-green on tip but **not on base**. Do
 **not** staff NEW P1 (`device-forces` / `multigrid-run` / `uks-gamma` /
-`pbe-product-gate`) until collocate merges. Theme held: GPW product depth;
-spin-PBE energy **already closed** (wave 4). No hybrid/GAPW; GH200 green
-required. Tip is **ahead 5 / behind 7** vs `dev` (spin-pbe merge + harness
-chore) — **rebase onto current `dev` before merge**. Base still host
-collocate/integrate.
+`pbe-product-gate`) until collocate merges (theme NEW deferred). PW
+`pbe-stress` + `spin-pbe` already [x]. No hybrid/GAPW; GH200 green required.
+Tip **ahead 5 / behind 8** vs `dev` (spin-pbe land + harness + GapCensus
+refill) — **rebase onto current `dev` before merge**. Base still host
+collocate/integrate. **new_assigned=0**; **incomplete_remaining=1**.
 
 - [~] `cuda-gpw-device-collocate` | **P1** method=cuda | **resume / merge-ready**
   | compose landed product_collocate/integrate into `GpwDft::run` (drop mid-SCF
@@ -421,10 +426,10 @@ collocate/integrate.
   E/F | gate: GH200; E 5e-6 Ha / F 5e-5 Ha/Bohr; fail-closed non-Γ until later
   depth | lever: `src/cuda/gpw/gpw_solver.cu` `build_H_and_energy` +
   `cuda/gpw/internal/` DeviceProduct/collint | tip `6a564562` (feat
-  `9864dce4`) on `wf/cuda-gpw-device-collocate` | ahead 5 / behind 7 vs `dev` |
-  GH200 **1124643** (post-rebase onto `44bd64bb`) / **1123960** / **1122743**
-  \|ΔE\|=**1.617e-7** Ha max\|ΔF\|=**2.332e-6** Ha/Bohr | spec on tip
-  `.claude/specs/cuda-gpw-device-collocate/SPEC.md`
+  `9864dce4`) on `wf/cuda-gpw-device-collocate` | ahead 5 / behind 8 vs `dev`
+  `e5a20b4a` | GH200 **1124643** (post-rebase onto `44bd64bb`) / **1123960** /
+  **1122743** \|ΔE\|=**1.617e-7** Ha max\|ΔF\|=**2.332e-6** Ha/Bohr | spec on
+  tip `.claude/specs/cuda-gpw-device-collocate/SPEC.md`
 
 ## blocked
 
