@@ -20,6 +20,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -983,13 +984,20 @@ GpwAtom::GpwAtom(const double pos[3], const GaussianBasis& basis,
 /// kinetic/nonlocal traces, DIIS B-matrix, and residual norms are Allreduced
 /// so every rank holds identical `e_total`. Setup matrices stay replicated
 /// (foothold; not full domain decomp). nprocs==1 is bit-identical to serial.
+// Multi-path DIIS stage drive: factory binds Ops to gate refs; Driver owns loop.
+using PathOpFactoryFn = std::function<std::tuple<
+    KsBuildStage::Op, MixStage::Op, DiagonalizeStage::Op, DensityStage::Op>(
+    bool& skip, double& e_total, double& err_norm, double& prev_energy)>;
+using StageDrive =
+    std::function<bool(PathOpFactoryFn factory, int max_iter, GpwResult& res)>;
+
 static GpwResult run_gpw_scf_kpoints(
     const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const std::vector<GridBasisFunction>& basis,
     const std::vector<double>& radii, const int mimg[3],
     const UniformGrid& grid, const std::vector<double>& n_ion,
     const std::vector<double>& v_locsr, double e_self, double e_d3,
-    const std::vector<internal::KPoint>& kpts,
+    const std::vector<internal::KPoint>& kpts, StageDrive stage_drive,
     const std::vector<linalg::CplxMatrix>* guess_P_k = nullptr) {
     using internal::CplxMatrix;
     using Cplx = std::complex<double>;
@@ -2165,137 +2173,163 @@ static GpwResult run_gpw_scf_kpoints(
         return res;
     }
 
-    for (int iter = 0; iter < cfg.max_iter; ++iter) {
-        const double e_total = build_k_energy(P_k);
-        res.iters = iter + 1;
-        res.e_total = e_total;
-        const double e_dftu = res.e_dftu;
+    // Multi-k RKS DIIS / linear-mix — Driver stages (gpw::Phase).
+    // Shared err buffer for mix Op (filled in ks_build).
+    auto err_k = std::make_shared<std::vector<CplxMatrix>>(
+        static_cast<std::size_t>(nk));
+    auto C_k_local = std::make_shared<std::vector<CplxMatrix>>(
+        static_cast<std::size_t>(nk));
+    auto evals_k = std::make_shared<std::vector<std::vector<double>>>(
+        static_cast<std::size_t>(nk));
 
-        // k-resolved commutator residual X^dag (H P S - S P H) X (local k).
-        std::vector<CplxMatrix> err(static_cast<std::size_t>(nk));
-        double err_norm = 0.0;
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            const CplxMatrix e =
-                internal::k_diis_error(H_k[static_cast<std::size_t>(ik)],
-                                       P_k[static_cast<std::size_t>(ik)],
-                                       S_k[static_cast<std::size_t>(ik)],
-                                       orth[static_cast<std::size_t>(ik)].X);
-            for (const Cplx v : e)
-                err_norm = std::max(err_norm, std::abs(v));
-            err[static_cast<std::size_t>(ik)] = e;
-        }
-#ifdef ATV_HAS_MPI
-        if (layout.active) {
-            double global_err = err_norm;
-            MPI_Allreduce(&err_norm, &global_err, 1, MPI_DOUBLE, MPI_MAX,
-                          MPI_COMM_WORLD);
-            err_norm = global_err;
-        }
-#endif
-
-        if (std::getenv("ATV_GPW_TRACE") && layout.rank == 0) {
-            if (use_smear)
-                std::fprintf(stderr,
-                             "[gpw k %2d] F=%.8f  T=%.4f loc=%.4f es=%.4f "
-                             "xc=%.4f U=%.4f  dE=%.2e err=%.2e mu=%.6f Ne=%.6f "
-                             "(nk=%d nlocal=%d nprocs=%d)\n",
-                             iter, e_total, res.e_kinetic, res.e_loc_sr,
-                             res.e_es, res.e_xc, e_dftu,
-                             std::abs(e_total - e_prev), err_norm, last_mu,
-                             last_n_elec, nk, n_kpts_local, layout.nprocs);
-            else
-                std::fprintf(stderr,
-                             "[gpw k %2d] E=%.8f  T=%.4f loc=%.4f es=%.4f "
-                             "xc=%.4f U=%.4f  dE=%.2e err=%.2e (nk=%d "
-                             "nlocal=%d nprocs=%d)\n",
-                             iter, e_total, res.e_kinetic, res.e_loc_sr,
-                             res.e_es, res.e_xc, e_dftu,
-                             std::abs(e_total - e_prev), err_norm, nk,
-                             n_kpts_local, layout.nprocs);
-        }
-
-        const double err_gate = do_dftu ? 5e-3 : kDiisErrTolK;
-        if (iter > 0 && std::abs(e_total - e_prev) < cfg.tol
-            && err_norm < err_gate) {
-            res.converged = true;
-            store_k_payload(rebuild_all_H(last_veff));
-            fold_dispersion_k(res, P_k);
-            return res;
-        }
-        e_prev = e_total;
-
-        if (use_diis) // extrapolated KS matrices drive the next density
-            H_k = diis.step(H_k, err);
-
-        // Diagonalize owned k; for metallic smear, gather the full spectrum
-        // and rebuild P_k with fractional occupations at a shared μ.
-        std::vector<std::vector<double>> evals_k(static_cast<std::size_t>(nk));
-        std::vector<CplxMatrix> C_k_local(static_cast<std::size_t>(nk));
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            auto [eps, C] =
-                internal::diagonalize_k(H_k[static_cast<std::size_t>(ik)],
-                                        orth[static_cast<std::size_t>(ik)]);
-            evals_k[static_cast<std::size_t>(ik)] = std::move(eps);
-            C_k_local[static_cast<std::size_t>(ik)] = std::move(C);
-        }
-#ifdef ATV_HAS_MPI
-        if (layout.active && use_smear) {
-            // Pack eigenvalues: variable m per k — pad to nb (upper bound).
-            std::vector<double> pack(static_cast<std::size_t>(nk * nb), 0.0);
-            std::vector<int> nband(static_cast<std::size_t>(nk), 0);
-            for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
-                nband[static_cast<std::size_t>(ik)] =
-                    static_cast<int>(ev.size());
-                for (std::size_t b = 0; b < ev.size(); ++b)
-                    pack[static_cast<std::size_t>(ik * nb) + b] = ev[b];
-            }
-            MPI_Allreduce(MPI_IN_PLACE, pack.data(), nk * nb, MPI_DOUBLE,
-                          MPI_SUM, MPI_COMM_WORLD);
-            MPI_Allreduce(MPI_IN_PLACE, nband.data(), nk, MPI_INT, MPI_SUM,
-                          MPI_COMM_WORLD);
-            for (int ik = 0; ik < nk; ++ik) {
-                const int m = nband[static_cast<std::size_t>(ik)];
-                evals_k[static_cast<std::size_t>(ik)].resize(
-                    static_cast<std::size_t>(m));
-                for (int b = 0; b < m; ++b)
-                    evals_k[static_cast<std::size_t>(ik)]
-                           [static_cast<std::size_t>(b)] =
-                               pack[static_cast<std::size_t>(ik * nb + b)];
-            }
-        }
-#endif
-        auto mix_density = [&](int ik, CplxMatrix P_new) {
-            if (use_diis) {
-                if (do_dftu) {
-                    const double a = std::min(std::max(cfg.mix, 0.15), 0.6);
-                    P_k[static_cast<std::size_t>(ik)] =
-                        (1.0 - a) * P_k[static_cast<std::size_t>(ik)]
-                        + a * P_new;
-                } else {
-                    P_k[static_cast<std::size_t>(ik)] = std::move(P_new);
+    const bool conv = stage_drive(
+        [&](bool& skip, double& e_total, double& err_norm,
+            double& prev_energy) {
+            KsBuildStage::Op ks = [&, err_k]() {
+                e_total = build_k_energy(P_k);
+                res.e_total = e_total;
+                // k-resolved commutator residual (local k).
+                err_norm = 0.0;
+                for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                    const CplxMatrix e = internal::k_diis_error(
+                        H_k[static_cast<std::size_t>(ik)],
+                        P_k[static_cast<std::size_t>(ik)],
+                        S_k[static_cast<std::size_t>(ik)],
+                        orth[static_cast<std::size_t>(ik)].X);
+                    for (const Cplx v : e)
+                        err_norm = std::max(err_norm, std::abs(v));
+                    (*err_k)[static_cast<std::size_t>(ik)] = e;
                 }
-            } else {
-                P_k[static_cast<std::size_t>(ik)] =
-                    (1.0 - cfg.mix) * P_k[static_cast<std::size_t>(ik)]
-                    + cfg.mix * P_new;
-            }
-        };
-        if (use_smear) {
-            auto occ_k =
-                fill_metallic(evals_k, last_mu, last_n_elec, last_entropy);
-            for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                mix_density(ik, density_from_occ(
-                                    C_k_local[static_cast<std::size_t>(ik)],
-                                    occ_k[static_cast<std::size_t>(ik)]));
-            }
-        } else {
-            for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                mix_density(ik, density_from_fixed(
-                                    C_k_local[static_cast<std::size_t>(ik)],
-                                    cfg.n_occ));
-            }
-        }
+#ifdef ATV_HAS_MPI
+                if (layout.active) {
+                    double global_err = err_norm;
+                    MPI_Allreduce(&err_norm, &global_err, 1, MPI_DOUBLE, MPI_MAX,
+                                  MPI_COMM_WORLD);
+                    err_norm = global_err;
+                }
+#endif
+                if (std::getenv("ATV_GPW_TRACE") && layout.rank == 0) {
+                    if (use_smear)
+                        std::fprintf(
+                            stderr,
+                            "[gpw k] F=%.8f  dE=%.2e err=%.2e mu=%.6f Ne=%.6f "
+                            "(nk=%d)\n",
+                            e_total,
+                            std::isnan(prev_energy)
+                                ? 0.0
+                                : std::abs(e_total - prev_energy),
+                            err_norm, last_mu, last_n_elec, nk);
+                    else
+                        std::fprintf(stderr,
+                                     "[gpw k] E=%.8f  dE=%.2e err=%.2e (nk=%d)\n",
+                                     e_total,
+                                     std::isnan(prev_energy)
+                                         ? 0.0
+                                         : std::abs(e_total - prev_energy),
+                                     err_norm, nk);
+                }
+                const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
+                const bool has_prev = !std::isnan(prev_energy);
+                const double dE =
+                    has_prev ? (e_total - prev_energy)
+                             : std::numeric_limits<double>::infinity();
+                const double err_gate = do_dftu ? 5e-3 : kDiisErrTolK;
+                skip = !no_stop && has_prev && std::abs(dE) < cfg.tol
+                       && err_norm < err_gate;
+                prev_energy = e_total;
+            };
+            MixStage::Op mix_op = [&, err_k]() {
+                if (use_diis)
+                    H_k = diis.step(H_k, *err_k);
+            };
+            DiagonalizeStage::Op diag_op = [&, evals_k, C_k_local]() {
+                for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                    auto [eps, C] = internal::diagonalize_k(
+                        H_k[static_cast<std::size_t>(ik)],
+                        orth[static_cast<std::size_t>(ik)]);
+                    (*evals_k)[static_cast<std::size_t>(ik)] = std::move(eps);
+                    (*C_k_local)[static_cast<std::size_t>(ik)] = std::move(C);
+                }
+#ifdef ATV_HAS_MPI
+                if (layout.active && use_smear) {
+                    std::vector<double> pack(static_cast<std::size_t>(nk * nb),
+                                             0.0);
+                    std::vector<int> nband(static_cast<std::size_t>(nk), 0);
+                    for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                        const auto& ev =
+                            (*evals_k)[static_cast<std::size_t>(ik)];
+                        nband[static_cast<std::size_t>(ik)] =
+                            static_cast<int>(ev.size());
+                        for (std::size_t b = 0; b < ev.size(); ++b)
+                            pack[static_cast<std::size_t>(ik * nb) + b] = ev[b];
+                    }
+                    MPI_Allreduce(MPI_IN_PLACE, pack.data(), nk * nb, MPI_DOUBLE,
+                                  MPI_SUM, MPI_COMM_WORLD);
+                    MPI_Allreduce(MPI_IN_PLACE, nband.data(), nk, MPI_INT,
+                                  MPI_SUM, MPI_COMM_WORLD);
+                    for (int ik = 0; ik < nk; ++ik) {
+                        const int m = nband[static_cast<std::size_t>(ik)];
+                        (*evals_k)[static_cast<std::size_t>(ik)].resize(
+                            static_cast<std::size_t>(m));
+                        for (int b = 0; b < m; ++b)
+                            (*evals_k)[static_cast<std::size_t>(ik)]
+                                      [static_cast<std::size_t>(b)] =
+                                          pack[static_cast<std::size_t>(ik * nb
+                                                                       + b)];
+                    }
+                }
+#endif
+            };
+            DensityStage::Op dens_op = [&, evals_k, C_k_local]() {
+                auto mix_density = [&](int ik, CplxMatrix P_new) {
+                    if (use_diis) {
+                        if (do_dftu) {
+                            const double a =
+                                std::min(std::max(cfg.mix, 0.15), 0.6);
+                            P_k[static_cast<std::size_t>(ik)] =
+                                (1.0 - a) * P_k[static_cast<std::size_t>(ik)]
+                                + a * P_new;
+                        } else {
+                            P_k[static_cast<std::size_t>(ik)] = std::move(P_new);
+                        }
+                    } else {
+                        P_k[static_cast<std::size_t>(ik)] =
+                            (1.0 - cfg.mix) * P_k[static_cast<std::size_t>(ik)]
+                            + cfg.mix * P_new;
+                    }
+                };
+                if (use_smear) {
+                    auto occ_k = fill_metallic(*evals_k, last_mu, last_n_elec,
+                                               last_entropy);
+                    for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                        mix_density(
+                            ik,
+                            density_from_occ(
+                                (*C_k_local)[static_cast<std::size_t>(ik)],
+                                occ_k[static_cast<std::size_t>(ik)]));
+                    }
+                } else {
+                    for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                        mix_density(
+                            ik,
+                            density_from_fixed(
+                                (*C_k_local)[static_cast<std::size_t>(ik)],
+                                cfg.n_occ));
+                    }
+                }
+            };
+            return std::make_tuple(std::move(ks), std::move(mix_op),
+                                   std::move(diag_op), std::move(dens_op));
+        },
+        cfg.max_iter, res);
+
+    if (conv) {
+        store_k_payload(rebuild_all_H(last_veff));
+        fold_dispersion_k(res, P_k);
+        res.e_fermi = use_smear ? last_mu : 0.0;
+        res.e_entropy = use_smear ? (-degauss_ha * last_entropy) : 0.0;
+        res.n_elec_occ = use_smear ? last_n_elec : n_elec;
+        return res;
     }
     // Budget exhausted: report the last state (converged stays false).
     if (!last_veff.empty())
@@ -2318,7 +2352,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
     const std::vector<double>& radii, const int mimg[3],
     const UniformGrid& grid, const std::vector<double>& n_ion,
     const std::vector<double>& v_locsr, double e_self, double e_d3,
-    const std::vector<internal::KPoint>& kpts,
+    const std::vector<internal::KPoint>& kpts, StageDrive stage_drive,
     const std::vector<linalg::CplxMatrix>* guess_Pa_k = nullptr,
     const std::vector<linalg::CplxMatrix>* guess_Pb_k = nullptr) {
     using internal::CplxMatrix;
@@ -3763,252 +3797,217 @@ static GpwResult run_gpw_scf_kpoints_uks(
         return res;
     }
 
-    for (int iter = 0; iter < cfg.max_iter; ++iter) {
-        // DIIS path: same shared fine-grid KS build as build_uks_k_energy.
-        const std::vector<double> rho_a = collocate_rho_spin_k(Pa_k);
-        const std::vector<double> rho_b = collocate_rho_spin_k(Pb_k);
-        const internal::KsGridUks ks = internal::ks_grid_build_uks(
-            grid, rho_a, rho_b, n_ion, v_locsr, cfg.xc, /*nonperiodic=*/false,
-            cfg.vdw_df, cfg.vdw_df2, cfg.rvv10);
-        const double e_locgrid = ks.e_locgrid;
-        const std::vector<double>& veff_a = ks.veff_a;
-        const std::vector<double>& veff_b = ks.veff_b;
-        last_veff_ab.resize(veff_a.size() + veff_b.size());
-        for (std::size_t g = 0; g < veff_a.size(); ++g) {
-            last_veff_ab[g] = veff_a[g];
-            last_veff_ab[g + veff_a.size()] = veff_b[g];
-        }
-        // Force assembly reuses dual V_eff + V_es (same functional as the SCF).
-        res.veff_a = veff_a;
-        res.veff_b = veff_b;
-        res.v_es = ks.v_es;
+    // Multi-k UKS DIIS / linear-mix — Driver stages (gpw::Phase).
+    auto err_a_k = std::make_shared<std::vector<CplxMatrix>>(
+        static_cast<std::size_t>(nk));
+    auto err_b_k = std::make_shared<std::vector<CplxMatrix>>(
+        static_cast<std::size_t>(nk));
+    auto evals_a = std::make_shared<std::vector<std::vector<double>>>(
+        static_cast<std::size_t>(nk));
+    auto evals_b = std::make_shared<std::vector<std::vector<double>>>(
+        static_cast<std::size_t>(nk));
+    auto Ca_local = std::make_shared<std::vector<CplxMatrix>>(
+        static_cast<std::size_t>(nk));
+    auto Cb_local = std::make_shared<std::vector<CplxMatrix>>(
+        static_cast<std::size_t>(nk));
 
-        std::vector<std::vector<double>> Vt_a, Vt_b;
-        if (use_mg) {
-            Vt_a = mg_vt_stack(veff_a);
-            Vt_b = mg_vt_stack(veff_b);
-        }
-        double e_kin = 0.0, e_nl = 0.0;
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            const double wk = weights[static_cast<std::size_t>(ik)];
-            const CplxMatrix Va =
-                use_mg ? mg_phase_V(Vt_a, ik)
-                       : internal::integrate_potential_k(kbg, ik, veff_a);
-            const CplxMatrix Vb =
-                use_mg ? mg_phase_V(Vt_b, ik)
-                       : internal::integrate_potential_k(kbg, ik, veff_b);
-            const CplxMatrix H0 = T_k[static_cast<std::size_t>(ik)]
-                                  + Vnl_k[static_cast<std::size_t>(ik)];
-            Ha_k[static_cast<std::size_t>(ik)] = H0 + Va;
-            Hb_k[static_cast<std::size_t>(ik)] = H0 + Vb;
-            const CplxMatrix Ptot = Pa_k[static_cast<std::size_t>(ik)]
-                                    + Pb_k[static_cast<std::size_t>(ik)];
-            e_kin += wk * ctrace(Ptot, T_k[static_cast<std::size_t>(ik)]);
-            e_nl += wk * ctrace(Ptot, Vnl_k[static_cast<std::size_t>(ik)]);
-        }
-        double e_dftu = 0.0;
-        if (do_dftu) {
-            e_dftu += internal::apply_dft_plus_u_k(
-                Ha_k, Pa_k, S_k, weights, layout.rank, layout.nprocs,
-                layout.active, ao_tags, z_of_atom, plus_u_slots, plus_u_z,
-                &Va_dftu);
-            e_dftu += internal::apply_dft_plus_u_k(
-                Hb_k, Pb_k, S_k, weights, layout.rank, layout.nprocs,
-                layout.active, ao_tags, z_of_atom, plus_u_slots, plus_u_z,
-                &Vb_dftu);
-            have_V_dftu = true;
-        }
-        res.e_dftu = e_dftu;
+    const bool conv = stage_drive(
+        [&](bool& skip, double& e_total, double& err_norm,
+            double& prev_energy) {
+            KsBuildStage::Op ks = [&, err_a_k, err_b_k]() {
+                // Same assembly as the historical inline DIIS body.
+                e_total = build_uks_k_energy(Pa_k, Pb_k);
+                res.e_total = e_total;
+                err_norm = 0.0;
+                for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                    const CplxMatrix ea = internal::k_diis_error(
+                        Ha_k[static_cast<std::size_t>(ik)],
+                        Pa_k[static_cast<std::size_t>(ik)],
+                        S_k[static_cast<std::size_t>(ik)],
+                        orth[static_cast<std::size_t>(ik)].X);
+                    const CplxMatrix eb = internal::k_diis_error(
+                        Hb_k[static_cast<std::size_t>(ik)],
+                        Pb_k[static_cast<std::size_t>(ik)],
+                        S_k[static_cast<std::size_t>(ik)],
+                        orth[static_cast<std::size_t>(ik)].X);
+                    for (const Cplx v : ea)
+                        err_norm = std::max(err_norm, std::abs(v));
+                    for (const Cplx v : eb)
+                        err_norm = std::max(err_norm, std::abs(v));
+                    (*err_a_k)[static_cast<std::size_t>(ik)] = ea;
+                    (*err_b_k)[static_cast<std::size_t>(ik)] = eb;
+                }
 #ifdef ATV_HAS_MPI
-        if (layout.active) {
-            MPI_Allreduce(MPI_IN_PLACE, &e_kin, 1, MPI_DOUBLE, MPI_SUM,
-                          MPI_COMM_WORLD);
-            MPI_Allreduce(MPI_IN_PLACE, &e_nl, 1, MPI_DOUBLE, MPI_SUM,
-                          MPI_COMM_WORLD);
-        }
+                if (layout.active) {
+                    double global_err = err_norm;
+                    MPI_Allreduce(&err_norm, &global_err, 1, MPI_DOUBLE, MPI_MAX,
+                                  MPI_COMM_WORLD);
+                    err_norm = global_err;
+                }
 #endif
-        res.e_kinetic = e_kin;
-        res.e_nonlocal = 0.0;
-        res.e_loc_sr = e_nl + e_locgrid;
-        res.e_es = ks.e_hartree - e_self;
-        res.e_xc = ks.e_xc;
-        // Mermin free energy when smearing: F = E_KS − σ S (+ DFT+U if on).
-        const double e_ks =
-            res.e_kinetic + res.e_loc_sr + res.e_es + res.e_xc + e_dftu;
-        const double e_ent = use_smear ? (-degauss_ha * last_entropy) : 0.0;
-        const double e_total = e_ks + e_ent;
-        res.iters = iter + 1;
-        res.e_total = e_total;
-        res.e_entropy = e_ent;
-        res.e_fermi = use_smear ? last_mu : 0.0;
-        res.n_elec_occ = use_smear ? last_n_elec : n_elec;
-
-        std::vector<CplxMatrix> err_a(static_cast<std::size_t>(nk));
-        std::vector<CplxMatrix> err_b(static_cast<std::size_t>(nk));
-        double err_norm = 0.0;
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            const CplxMatrix ea =
-                internal::k_diis_error(Ha_k[static_cast<std::size_t>(ik)],
-                                       Pa_k[static_cast<std::size_t>(ik)],
-                                       S_k[static_cast<std::size_t>(ik)],
-                                       orth[static_cast<std::size_t>(ik)].X);
-            const CplxMatrix eb =
-                internal::k_diis_error(Hb_k[static_cast<std::size_t>(ik)],
-                                       Pb_k[static_cast<std::size_t>(ik)],
-                                       S_k[static_cast<std::size_t>(ik)],
-                                       orth[static_cast<std::size_t>(ik)].X);
-            for (const Cplx v : ea)
-                err_norm = std::max(err_norm, std::abs(v));
-            for (const Cplx v : eb)
-                err_norm = std::max(err_norm, std::abs(v));
-            err_a[static_cast<std::size_t>(ik)] = ea;
-            err_b[static_cast<std::size_t>(ik)] = eb;
-        }
-#ifdef ATV_HAS_MPI
-        if (layout.active) {
-            double global_err = err_norm;
-            MPI_Allreduce(&err_norm, &global_err, 1, MPI_DOUBLE, MPI_MAX,
-                          MPI_COMM_WORLD);
-            err_norm = global_err;
-        }
-#endif
-
-        if (std::getenv("ATV_GPW_TRACE") && layout.rank == 0) {
-            if (use_smear)
-                std::fprintf(stderr,
-                             "[gpw k-UKS %2d] F=%.8f  T=%.4f loc=%.4f es=%.4f "
-                             "xc=%.4f U=%.4f  dE=%.2e err=%.2e mu=%.6f Ne=%.6f "
-                             "(nk=%d Na_seed=%d Nb_seed=%d)\n",
-                             iter, e_total, res.e_kinetic, res.e_loc_sr,
-                             res.e_es, res.e_xc, e_dftu,
-                             std::abs(e_total - e_prev), err_norm, last_mu,
-                             last_n_elec, nk, n_a, n_b);
-            else
-                std::fprintf(
-                    stderr,
-                    "[gpw k-UKS %2d] E=%.8f  T=%.4f loc=%.4f es=%.4f "
-                    "xc=%.4f U=%.4f  dE=%.2e err=%.2e (nk=%d Na=%d Nb=%d)\n",
-                    iter, e_total, res.e_kinetic, res.e_loc_sr, res.e_es,
-                    res.e_xc, e_dftu, std::abs(e_total - e_prev), err_norm, nk,
-                    n_a, n_b);
-        }
-
-        const double err_gate = do_dftu ? 5e-3 : kDiisErrTolK;
-        if (iter > 0 && std::abs(e_total - e_prev) < cfg.tol
-            && err_norm < err_gate) {
-            res.converged = true;
-            auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
-            store_k_payload(Ha_full, Hb_full);
-            // Fixed occupations ⇒ integer M = Nα−Nβ; smear ⇒ free M (seed only).
-            {
-                const double sz = 0.5 * static_cast<double>(n_a - n_b);
-                res.s2 = sz * (sz + 1.0) + static_cast<double>(n_b);
-            }
-            fold_dispersion_k_uks(res);
-            res.e_fermi = use_smear ? last_mu : 0.0;
-            res.e_entropy = use_smear ? (-degauss_ha * last_entropy) : 0.0;
-            res.n_elec_occ = use_smear ? last_n_elec : n_elec;
-            return res;
-        }
-        e_prev = e_total;
-
-        if (use_diis) {
-            Ha_k = diis_a.step(Ha_k, err_a);
-            Hb_k = diis_b.step(Hb_k, err_b);
-        }
-
-        // Diagonalize owned k; for metallic smear, gather full α+β spectrum
-        // and rebuild Pa/Pb with fractional occupations at a shared μ.
-        std::vector<std::vector<double>> evals_a(static_cast<std::size_t>(nk));
-        std::vector<std::vector<double>> evals_b(static_cast<std::size_t>(nk));
-        std::vector<CplxMatrix> Ca_local(static_cast<std::size_t>(nk));
-        std::vector<CplxMatrix> Cb_local(static_cast<std::size_t>(nk));
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            auto [epsa, Ca] =
-                internal::diagonalize_k(Ha_k[static_cast<std::size_t>(ik)],
-                                        orth[static_cast<std::size_t>(ik)]);
-            auto [epsb, Cb] =
-                internal::diagonalize_k(Hb_k[static_cast<std::size_t>(ik)],
-                                        orth[static_cast<std::size_t>(ik)]);
-            evals_a[static_cast<std::size_t>(ik)] = std::move(epsa);
-            evals_b[static_cast<std::size_t>(ik)] = std::move(epsb);
-            Ca_local[static_cast<std::size_t>(ik)] = std::move(Ca);
-            Cb_local[static_cast<std::size_t>(ik)] = std::move(Cb);
-        }
-#ifdef ATV_HAS_MPI
-        if (layout.active && use_smear) {
-            auto allreduce_evals =
-                [&](std::vector<std::vector<double>>& evals) {
-                    std::vector<double> pack(static_cast<std::size_t>(nk * nb),
-                                             0.0);
-                    std::vector<int> nband(static_cast<std::size_t>(nk), 0);
+                if (std::getenv("ATV_GPW_TRACE") && layout.rank == 0) {
+                    std::fprintf(stderr,
+                                 "[gpw k-UKS] E=%.8f  dE=%.2e err=%.2e "
+                                 "(nk=%d Na=%d Nb=%d)\n",
+                                 e_total,
+                                 std::isnan(prev_energy)
+                                     ? 0.0
+                                     : std::abs(e_total - prev_energy),
+                                 err_norm, nk, n_a, n_b);
+                }
+                const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
+                const bool has_prev = !std::isnan(prev_energy);
+                const double dE =
+                    has_prev ? (e_total - prev_energy)
+                             : std::numeric_limits<double>::infinity();
+                const double err_gate = do_dftu ? 5e-3 : kDiisErrTolK;
+                skip = !no_stop && has_prev && std::abs(dE) < cfg.tol
+                       && err_norm < err_gate;
+                prev_energy = e_total;
+            };
+            MixStage::Op mix_op = [&, err_a_k, err_b_k]() {
+                if (use_diis) {
+                    Ha_k = diis_a.step(Ha_k, *err_a_k);
+                    Hb_k = diis_b.step(Hb_k, *err_b_k);
+                }
+            };
+            DiagonalizeStage::Op diag_op =
+                [&, evals_a, evals_b, Ca_local, Cb_local]() {
                     for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                        const auto& ev = evals[static_cast<std::size_t>(ik)];
-                        nband[static_cast<std::size_t>(ik)] =
-                            static_cast<int>(ev.size());
-                        for (std::size_t b = 0; b < ev.size(); ++b)
-                            pack[static_cast<std::size_t>(ik * nb) + b] = ev[b];
+                        auto [epsa, Ca] = internal::diagonalize_k(
+                            Ha_k[static_cast<std::size_t>(ik)],
+                            orth[static_cast<std::size_t>(ik)]);
+                        auto [epsb, Cb] = internal::diagonalize_k(
+                            Hb_k[static_cast<std::size_t>(ik)],
+                            orth[static_cast<std::size_t>(ik)]);
+                        (*evals_a)[static_cast<std::size_t>(ik)] =
+                            std::move(epsa);
+                        (*evals_b)[static_cast<std::size_t>(ik)] =
+                            std::move(epsb);
+                        (*Ca_local)[static_cast<std::size_t>(ik)] =
+                            std::move(Ca);
+                        (*Cb_local)[static_cast<std::size_t>(ik)] =
+                            std::move(Cb);
                     }
-                    MPI_Allreduce(MPI_IN_PLACE, pack.data(), nk * nb,
-                                  MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-                    MPI_Allreduce(MPI_IN_PLACE, nband.data(), nk, MPI_INT,
-                                  MPI_SUM, MPI_COMM_WORLD);
-                    for (int ik = 0; ik < nk; ++ik) {
-                        const int m = nband[static_cast<std::size_t>(ik)];
-                        evals[static_cast<std::size_t>(ik)].resize(
-                            static_cast<std::size_t>(m));
-                        for (int b = 0; b < m; ++b)
-                            evals[static_cast<std::size_t>(
-                                ik)][static_cast<std::size_t>(b)] =
-                                pack[static_cast<std::size_t>(ik * nb + b)];
+#ifdef ATV_HAS_MPI
+                    if (layout.active && use_smear) {
+                        auto allreduce_evals =
+                            [&](std::vector<std::vector<double>>& evals) {
+                                std::vector<double> pack(
+                                    static_cast<std::size_t>(nk * nb), 0.0);
+                                std::vector<int> nband(
+                                    static_cast<std::size_t>(nk), 0);
+                                for (int ik = layout.rank; ik < nk;
+                                     ik += layout.nprocs) {
+                                    const auto& ev =
+                                        evals[static_cast<std::size_t>(ik)];
+                                    nband[static_cast<std::size_t>(ik)] =
+                                        static_cast<int>(ev.size());
+                                    for (std::size_t b = 0; b < ev.size(); ++b)
+                                        pack[static_cast<std::size_t>(ik * nb)
+                                             + b] = ev[b];
+                                }
+                                MPI_Allreduce(MPI_IN_PLACE, pack.data(),
+                                              nk * nb, MPI_DOUBLE, MPI_SUM,
+                                              MPI_COMM_WORLD);
+                                MPI_Allreduce(MPI_IN_PLACE, nband.data(), nk,
+                                              MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+                                for (int ik = 0; ik < nk; ++ik) {
+                                    const int m =
+                                        nband[static_cast<std::size_t>(ik)];
+                                    evals[static_cast<std::size_t>(ik)].resize(
+                                        static_cast<std::size_t>(m));
+                                    for (int b = 0; b < m; ++b)
+                                        evals[static_cast<std::size_t>(ik)]
+                                             [static_cast<std::size_t>(b)] =
+                                                 pack[static_cast<std::size_t>(
+                                                     ik * nb + b)];
+                                }
+                            };
+                        allreduce_evals(*evals_a);
+                        allreduce_evals(*evals_b);
+                    }
+#endif
+                };
+            DensityStage::Op dens_op =
+                [&, evals_a, evals_b, Ca_local, Cb_local]() {
+                    auto mix_density = [&](int ik, CplxMatrix Pa_new,
+                                           CplxMatrix Pb_new) {
+                        if (use_diis) {
+                            if (do_dftu) {
+                                const double a =
+                                    std::min(std::max(cfg.mix, 0.15), 0.6);
+                                Pa_k[static_cast<std::size_t>(ik)] =
+                                    (1.0 - a)
+                                        * Pa_k[static_cast<std::size_t>(ik)]
+                                    + a * Pa_new;
+                                Pb_k[static_cast<std::size_t>(ik)] =
+                                    (1.0 - a)
+                                        * Pb_k[static_cast<std::size_t>(ik)]
+                                    + a * Pb_new;
+                            } else {
+                                Pa_k[static_cast<std::size_t>(ik)] =
+                                    std::move(Pa_new);
+                                Pb_k[static_cast<std::size_t>(ik)] =
+                                    std::move(Pb_new);
+                            }
+                        } else {
+                            Pa_k[static_cast<std::size_t>(ik)] =
+                                (1.0 - cfg.mix)
+                                    * Pa_k[static_cast<std::size_t>(ik)]
+                                + cfg.mix * Pa_new;
+                            Pb_k[static_cast<std::size_t>(ik)] =
+                                (1.0 - cfg.mix)
+                                    * Pb_k[static_cast<std::size_t>(ik)]
+                                + cfg.mix * Pb_new;
+                        }
+                    };
+                    if (use_smear) {
+                        auto [occ_a, occ_b] = fill_metallic_uks(
+                            *evals_a, *evals_b, last_mu, last_n_elec,
+                            last_entropy);
+                        for (int ik = layout.rank; ik < nk;
+                             ik += layout.nprocs) {
+                            mix_density(
+                                ik,
+                                density_from_occ(
+                                    (*Ca_local)[static_cast<std::size_t>(ik)],
+                                    occ_a[static_cast<std::size_t>(ik)]),
+                                density_from_occ(
+                                    (*Cb_local)[static_cast<std::size_t>(ik)],
+                                    occ_b[static_cast<std::size_t>(ik)]));
+                        }
+                    } else {
+                        for (int ik = layout.rank; ik < nk;
+                             ik += layout.nprocs) {
+                            mix_density(
+                                ik,
+                                density_spin(
+                                    (*Ca_local)[static_cast<std::size_t>(ik)],
+                                    n_a),
+                                density_spin(
+                                    (*Cb_local)[static_cast<std::size_t>(ik)],
+                                    n_b));
+                        }
                     }
                 };
-            allreduce_evals(evals_a);
-            allreduce_evals(evals_b);
+            return std::make_tuple(std::move(ks), std::move(mix_op),
+                                   std::move(diag_op), std::move(dens_op));
+        },
+        cfg.max_iter, res);
+
+    if (conv) {
+        auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
+        store_k_payload(Ha_full, Hb_full);
+        {
+            const double sz = 0.5 * static_cast<double>(n_a - n_b);
+            res.s2 = sz * (sz + 1.0) + static_cast<double>(n_b);
         }
-#endif
-        auto mix_density = [&](int ik, CplxMatrix Pa_new, CplxMatrix Pb_new) {
-            if (use_diis) {
-                if (do_dftu) {
-                    const double a = std::min(std::max(cfg.mix, 0.15), 0.6);
-                    Pa_k[static_cast<std::size_t>(ik)] =
-                        (1.0 - a) * Pa_k[static_cast<std::size_t>(ik)]
-                        + a * Pa_new;
-                    Pb_k[static_cast<std::size_t>(ik)] =
-                        (1.0 - a) * Pb_k[static_cast<std::size_t>(ik)]
-                        + a * Pb_new;
-                } else {
-                    Pa_k[static_cast<std::size_t>(ik)] = std::move(Pa_new);
-                    Pb_k[static_cast<std::size_t>(ik)] = std::move(Pb_new);
-                }
-            } else {
-                Pa_k[static_cast<std::size_t>(ik)] =
-                    (1.0 - cfg.mix) * Pa_k[static_cast<std::size_t>(ik)]
-                    + cfg.mix * Pa_new;
-                Pb_k[static_cast<std::size_t>(ik)] =
-                    (1.0 - cfg.mix) * Pb_k[static_cast<std::size_t>(ik)]
-                    + cfg.mix * Pb_new;
-            }
-        };
-        if (use_smear) {
-            auto [occ_a, occ_b] = fill_metallic_uks(evals_a, evals_b, last_mu,
-                                                    last_n_elec, last_entropy);
-            for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                mix_density(
-                    ik,
-                    density_from_occ(Ca_local[static_cast<std::size_t>(ik)],
-                                     occ_a[static_cast<std::size_t>(ik)]),
-                    density_from_occ(Cb_local[static_cast<std::size_t>(ik)],
-                                     occ_b[static_cast<std::size_t>(ik)]));
-            }
-        } else {
-            for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                mix_density(
-                    ik,
-                    density_spin(Ca_local[static_cast<std::size_t>(ik)], n_a),
-                    density_spin(Cb_local[static_cast<std::size_t>(ik)], n_b));
-            }
-        }
+        fold_dispersion_k_uks(res);
+        res.e_fermi = use_smear ? last_mu : 0.0;
+        res.e_entropy = use_smear ? (-degauss_ha * last_entropy) : 0.0;
+        res.n_elec_occ = use_smear ? last_n_elec : n_elec;
+        return res;
     }
     // Budget exhausted: report the last state (converged stays false).
     if (!last_veff_ab.empty()) {
@@ -4242,16 +4241,26 @@ GpwResult GpwDft::run_impl_(
         if (cfg.is_uks()) {
             // Dual-spin multi-k XL: both channels or neither (partial
             // validated inside run_gpw_scf_kpoints_uks).
+            auto stage_drive = [this](PathOpFactoryFn factory, int max_iter,
+                                       GpwResult& r) {
+                return drive_path_diis_(std::move(factory), max_iter, r);
+            };
             return run_gpw_scf_kpoints_uks(atoms, cfg, basis, radii, mimg, grid,
                                            n_ion, v_locsr, e_self, e_d3, kpts,
-                                           guess_P_k, guess_P_k_beta);
+                                           stage_drive, guess_P_k,
+                                           guess_P_k_beta);
         }
         if (guess_P_k_beta != nullptr)
             throw std::invalid_argument(
                 "GpwDft::run: guess_P_k_beta is multi-k UKS-only "
                 "(closed-shell multi-k RKS takes total density on guess_P_k)");
+        auto stage_drive = [this](PathOpFactoryFn factory, int max_iter,
+                                   GpwResult& r) {
+            return drive_path_diis_(std::move(factory), max_iter, r);
+        };
         return run_gpw_scf_kpoints(atoms, cfg, basis, radii, mimg, grid, n_ion,
-                                   v_locsr, e_self, e_d3, kpts, guess_P_k);
+                                   v_locsr, e_self, e_d3, kpts, stage_drive,
+                                   guess_P_k);
     }
     if (guess_P_k != nullptr || guess_P_k_beta != nullptr)
         throw std::invalid_argument(
@@ -5258,99 +5267,35 @@ GpwResult GpwDft::run_impl_(
             return res;
         }
 
-        internal::GpwDiis diis_a(use_diis ? cfg.diis_depth : 1);
-        internal::GpwDiis diis_b(use_diis ? cfg.diis_depth : 1);
-
-        for (int iter = 0; iter < cfg.max_iter; ++iter) {
-            // Dual KS via shared builder (single-grid cbg or multigrid products).
-            auto [Ha, Hb, e_total] = build_uks_H(Pa, Pb);
-            res.iters = iter + 1;
-            res.e_total = e_total;
-
-            // Commutator residuals for both spins (DIIS-style convergence).
-            const RealMatrix err_a =
-                internal::gpw_diis_error(Ha, Pa, S, orth().X);
-            const RealMatrix err_b =
-                internal::gpw_diis_error(Hb, Pb, S, orth().X);
-            double err_norm = 0.0;
-            for (const double v : err_a)
-                err_norm = std::max(err_norm, std::abs(v));
-            for (const double v : err_b)
-                err_norm = std::max(err_norm, std::abs(v));
-
-            if (std::getenv("ATV_GPW_TRACE"))
-                std::fprintf(stderr,
-                             "[gpw UKS %2d] E=%.8f  T=%.4f loc=%.4f es=%.4f "
-                             "xc=%.4f  dE=%.2e err=%.2e\n",
-                             iter, e_total, res.e_kinetic, res.e_loc_sr,
-                             res.e_es, res.e_xc, std::abs(e_total - e_prev),
-                             err_norm);
-
-            // DFT+U softens the DIIS residual; require energy Δ and either the
-            // standard commutator tol or a looser residual when PLUS_U is on.
-            const double err_gate = do_dftu ? 5e-3 : kDiisErrTol;
-            if (iter > 0 && std::abs(e_total - e_prev) < cfg.tol
-                && err_norm < err_gate) {
-                res.converged = true;
-                store_converged_state_uks(res, Ha, Hb, orth().X, S, cfg.n_alpha,
-                                          cfg.n_beta, nb);
+        // Γ UKS DIIS / linear-mix — Driver stages (gpw::Phase).
+        {
+            const bool conv = drive_gamma_uks_diis_(
+                Pa, Pb, Ca_prev, Cb_prev, S, orth().X, cfg.n_alpha, cfg.n_beta,
+                nb, use_diis, cfg.mix, cfg.level_shift, cfg.max_iter, cfg.tol,
+                kDiisErrTol, cfg.diis_depth, do_dftu, build_uks_H, res);
+            if (conv) {
+                store_converged_state_uks(res, loop_H_, loop_H_ext_, orth().X, S,
+                                          cfg.n_alpha, cfg.n_beta, nb);
                 res.mulliken_spin = internal::mulliken_spin_populations(
                     Pa, Pb, S, ao_tags, static_cast<int>(atoms.size()));
-                // Hirshfeld uses total density ρ=ρα+ρβ (Pα+Pβ).
                 fold_dispersion(res, Pa + Pb);
                 return res;
             }
-            e_prev = e_total;
-
-            RealMatrix Ha_use = Ha;
-            RealMatrix Hb_use = Hb;
-            if (use_diis) {
-                Ha_use = diis_a.step(Ha, err_a);
-                Hb_use = diis_b.step(Hb, err_b);
+            // Budget exhausted: export full orbital state at the last mixed
+            // densities (partial-SCF / second-gen CP UKS corrector consumers).
+            {
+                const auto rebuilt = build_uks_H(Pa, Pb);
+                const RealMatrix& Ha_final = std::get<0>(rebuilt);
+                const RealMatrix& Hb_final = std::get<1>(rebuilt);
+                res.e_total = std::get<2>(rebuilt);
+                store_converged_state_uks(res, Ha_final, Hb_final, orth().X, S,
+                                          cfg.n_alpha, cfg.n_beta, nb);
             }
-            auto [eiga, Ca] = diagonalize_fock_shifted(
-                Ha_use, orth().X, S, Ca_prev, cfg.n_alpha, cfg.level_shift);
-            auto [eigb, Cb] = diagonalize_fock_shifted(
-                Hb_use, orth().X, S, Cb_prev, cfg.n_beta, cfg.level_shift);
-            (void)eiga;
-            (void)eigb;
-            Ca_prev = Ca;
-            Cb_prev = Cb;
-            RealMatrix Pa_new =
-                linalg::build_density_matrix(Ca, cfg.n_alpha, nb, 1.0);
-            RealMatrix Pb_new =
-                linalg::build_density_matrix(Cb, cfg.n_beta, nb, 1.0);
-            if (use_diis) {
-                // With DFT+U, pure DIIS can oscillate — damp with linear mix.
-                if (do_dftu) {
-                    const double a = std::min(std::max(cfg.mix, 0.15), 0.6);
-                    Pa = (1.0 - a) * Pa + a * Pa_new;
-                    Pb = (1.0 - a) * Pb + a * Pb_new;
-                } else {
-                    Pa = std::move(Pa_new);
-                    Pb = std::move(Pb_new);
-                }
-            } else {
-                Pa = (1.0 - cfg.mix) * Pa + cfg.mix * Pa_new;
-                Pb = (1.0 - cfg.mix) * Pb + cfg.mix * Pb_new;
-            }
+            res.mulliken_spin = internal::mulliken_spin_populations(
+                res.P, res.P_beta, S, ao_tags, static_cast<int>(atoms.size()));
+            fold_dispersion(res, res.P + res.P_beta);
+            return res;
         }
-        // Budget exhausted: export full orbital state at the last mixed
-        // densities (partial-SCF / second-gen CP UKS corrector consumers).
-        // Matches RKS: store_converged_state* fills P/C/eps; leave
-        // converged=false so the residual budget is honest.
-        {
-            const auto rebuilt = build_uks_H(Pa, Pb);
-            const RealMatrix& Ha_final = std::get<0>(rebuilt);
-            const RealMatrix& Hb_final = std::get<1>(rebuilt);
-            res.e_total = std::get<2>(rebuilt);
-            store_converged_state_uks(res, Ha_final, Hb_final, orth().X, S,
-                                      cfg.n_alpha, cfg.n_beta, nb);
-        }
-        res.mulliken_spin = internal::mulliken_spin_populations(
-            res.P, res.P_beta, S, ao_tags, static_cast<int>(atoms.size()));
-        fold_dispersion(res, res.P + res.P_beta);
-        return res;
     }
 
     // ── OT (orbital transformation) path ────────────────────────────────────
@@ -6050,7 +5995,7 @@ gpw_forces_fd(const std::vector<GpwAtom>& atoms, const GpwDft& cfg, double h) {
 
 
 
-// ── GpwDft Driver node: Γ RKS stages ────────────────────────────────────────
+// ── GpwDft Driver node: multi-path DIIS stages ──────────────────────────────
 
 void GpwDft::reset_built_driver_() {
     ks_build_stage_.reset();
@@ -6068,28 +6013,22 @@ void GpwDft::reset_built_driver_() {
     wired_self_ = nullptr;
 }
 
-void GpwDft::ensure_driver_built_(bool use_diis, double mix, int n_occ,
-                                  int n_basis, int diis_depth, double tol,
-                                  double diis_err_tol,
-                                  KsBuildStage::Builder builder,
-                                  DiagonalizeStage::DiagFn diag) {
+void GpwDft::ensure_path_stages_(KsBuildStage::Op ks, MixStage::Op mix,
+                                 DiagonalizeStage::Op diag,
+                                 DensityStage::Op dens) {
     if (driver_built_) {
         if (wired_self_ == this)
             return;
         reset_built_driver_();
     }
 
-    ks_build_stage_ = std::make_unique<KsBuildStage>(
-        std::move(builder), loop_P_, loop_S_, loop_X_, loop_H_, loop_err_,
-        loop_e_total_, loop_err_norm_, loop_prev_energy_, tol, diis_err_tol,
-        loop_skip_update_);
-    mix_stage_ = std::make_unique<MixStage>(use_diis, diis_depth, loop_H_,
-                                            loop_err_, loop_H_ext_,
-                                            loop_skip_update_);
-    diag_stage_ = std::make_unique<DiagonalizeStage>(
-        std::move(diag), loop_H_ext_, loop_C_, loop_skip_update_);
-    density_stage_ = std::make_unique<DensityStage>(
-        use_diis, mix, n_occ, n_basis, loop_C_, loop_P_, loop_skip_update_);
+    ks_build_stage_ = std::make_unique<KsBuildStage>(std::move(ks));
+    mix_stage_ =
+        std::make_unique<MixStage>(std::move(mix), loop_skip_update_);
+    diag_stage_ =
+        std::make_unique<DiagonalizeStage>(std::move(diag), loop_skip_update_);
+    density_stage_ =
+        std::make_unique<DensityStage>(std::move(dens), loop_skip_update_);
     converged_stage_ = std::make_unique<GpwConverged>(loop_skip_update_);
 
     this->on(ATV::gpw::Phase::ks_build).add_ref(*ks_build_stage_);
@@ -6104,32 +6043,10 @@ void GpwDft::ensure_driver_built_(bool use_diis, double mix, int n_occ,
     wired_self_ = this;
 }
 
-bool GpwDft::drive_gamma_rks_diis_(
-    linalg::RealMatrix P, const linalg::RealMatrix& S,
-    const linalg::RealMatrix& X, linalg::RealMatrix C_prev, int n_occ, int nb,
-    bool use_diis, double mix, double /*level_shift*/, int max_iter, double tol,
-    double diis_err_tol, int diis_depth, KsBuildStage::Builder build_H,
-    DiagonalizeStage::DiagFn diag, GpwResult& res) {
-    loop_P_ = std::move(P);
-    loop_S_ = S;
-    loop_X_ = X;
-    loop_C_ = std::move(C_prev);
-    loop_H_ = linalg::RealMatrix{};
-    loop_H_ext_ = linalg::RealMatrix{};
-    loop_err_ = linalg::RealMatrix{};
-    loop_e_total_ = 0;
-    loop_err_norm_ = 0;
-    loop_prev_energy_ = std::numeric_limits<double>::quiet_NaN();
-    loop_skip_update_ = false;
-
-    // Rebuild stages every run — builder/diag lambdas capture the prologue.
-    reset_built_driver_();
-    ensure_driver_built_(use_diis, mix, n_occ, nb, diis_depth, tol,
-                         diis_err_tol, std::move(build_H), std::move(diag));
+bool GpwDft::drive_stage_loop_(int max_iter, GpwResult& res) {
     mix_stage_->reset();
     converged_stage_->reset();
 
-    // Serial whole-molecule loop — empty Frame is fine under set_serial.
     cpu::Frame loop_frame;
     setup_pass(loop_frame);
 
@@ -6153,8 +6070,220 @@ bool GpwDft::drive_gamma_rks_diis_(
     const bool conv = this->converged() || loop_skip_update_;
     res.converged = conv;
     res.e_total = loop_e_total_;
-    // Caller (run_impl_, still in the anon TU) runs store_converged_state on
-    // loop_H_ when conv — keeps that helper internal-linkage.
+    return conv;
+}
+
+bool GpwDft::drive_path_diis_(PathOpFactory factory, int max_iter,
+                              GpwResult& res) {
+    loop_e_total_ = 0;
+    loop_err_norm_ = 0;
+    loop_prev_energy_ = std::numeric_limits<double>::quiet_NaN();
+    loop_skip_update_ = false;
+
+    reset_built_driver_();
+    auto [ks, mix, diag, dens] = factory(
+        loop_skip_update_, loop_e_total_, loop_err_norm_, loop_prev_energy_);
+    ensure_path_stages_(std::move(ks), std::move(mix), std::move(diag),
+                        std::move(dens));
+    return drive_stage_loop_(max_iter, res);
+}
+
+bool GpwDft::drive_gamma_rks_diis_(
+    linalg::RealMatrix P, const linalg::RealMatrix& S,
+    const linalg::RealMatrix& X, linalg::RealMatrix C_prev, int n_occ, int nb,
+    bool use_diis, double mix, double /*level_shift*/, int max_iter, double tol,
+    double diis_err_tol, int diis_depth,
+    std::function<void(const linalg::RealMatrix& P, linalg::RealMatrix& H,
+                       double& e_total)>
+        build_H,
+    std::function<std::pair<linalg::RealVector, linalg::RealMatrix>(
+        const linalg::RealMatrix& H_ext, const linalg::RealMatrix& C_prev)>
+        diag_fn,
+    GpwResult& res) {
+    loop_P_ = std::move(P);
+    loop_S_ = S;
+    loop_X_ = X;
+    loop_C_ = std::move(C_prev);
+    loop_H_ = linalg::RealMatrix{};
+    loop_H_ext_ = linalg::RealMatrix{};
+    loop_err_ = linalg::RealMatrix{};
+
+    // DIIS history lives in the mix Op (reset via MixStage::set_reset).
+    auto diis = std::make_shared<internal::GpwDiis>(use_diis ? diis_depth : 1);
+
+    const bool conv = drive_path_diis_(
+        [&, build_H = std::move(build_H), diag_fn = std::move(diag_fn), diis,
+         use_diis, mix, n_occ, nb, tol, diis_err_tol](
+            bool& skip, double& e_total, double& err_norm,
+            double& prev_energy) {
+            KsBuildStage::Op ks = [&, build_H]() {
+                build_H(loop_P_, loop_H_, e_total);
+                loop_err_ = internal::gpw_diis_error(loop_H_, loop_P_, loop_S_,
+                                                     loop_X_);
+                err_norm = 0.0;
+                for (const double v : loop_err_)
+                    err_norm = std::max(err_norm, std::abs(v));
+                const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
+                const bool has_prev = !std::isnan(prev_energy);
+                const double dE =
+                    has_prev ? (e_total - prev_energy)
+                             : std::numeric_limits<double>::infinity();
+                skip = !no_stop && has_prev && std::abs(dE) < tol
+                       && err_norm < diis_err_tol;
+                prev_energy = e_total;
+            };
+            MixStage::Op mix_op = [&, diis, use_diis]() {
+                if (use_diis)
+                    loop_H_ext_ = diis->step(loop_H_, loop_err_);
+                else
+                    loop_H_ext_ = loop_H_;
+            };
+            DiagonalizeStage::Op diag_op = [&, diag_fn]() {
+                auto [eig, C] = diag_fn(loop_H_ext_, loop_C_);
+                (void)eig;
+                loop_C_ = std::move(C);
+            };
+            DensityStage::Op dens_op = [&, use_diis, mix, n_occ, nb]() {
+                linalg::RealMatrix P_new =
+                    linalg::build_density_matrix(loop_C_, n_occ, nb, 2.0);
+                if (use_diis)
+                    loop_P_ = std::move(P_new);
+                else
+                    loop_P_ = (1.0 - mix) * loop_P_ + mix * P_new;
+            };
+            return std::make_tuple(std::move(ks), std::move(mix_op),
+                                   std::move(diag_op), std::move(dens_op));
+        },
+        max_iter, res);
+    return conv;
+}
+
+bool GpwDft::drive_gamma_uks_diis_(
+    linalg::RealMatrix& Pa, linalg::RealMatrix& Pb, linalg::RealMatrix& Ca_prev,
+    linalg::RealMatrix& Cb_prev, const linalg::RealMatrix& S,
+    const linalg::RealMatrix& X, int n_alpha, int n_beta, int nb, bool use_diis,
+    double mix, double level_shift, int max_iter, double tol,
+    double diis_err_tol, int diis_depth, bool do_dftu,
+    std::function<std::tuple<linalg::RealMatrix, linalg::RealMatrix, double>(
+        const linalg::RealMatrix& Pa, const linalg::RealMatrix& Pb)>
+        build_uks_H,
+    GpwResult& res) {
+    // Converged raw H (break-before-mix) for store_converged_state_uks.
+    auto Ha_raw = std::make_shared<linalg::RealMatrix>();
+    auto Hb_raw = std::make_shared<linalg::RealMatrix>();
+    auto diis_a =
+        std::make_shared<internal::GpwDiis>(use_diis ? diis_depth : 1);
+    auto diis_b =
+        std::make_shared<internal::GpwDiis>(use_diis ? diis_depth : 1);
+
+    // Keep S/X on members for residual (same as RKS).
+    loop_S_ = S;
+    loop_X_ = X;
+
+    const bool conv = drive_path_diis_(
+        [&, build_uks_H = std::move(build_uks_H), Ha_raw, Hb_raw, diis_a,
+         diis_b, use_diis, mix, n_alpha, n_beta, nb, tol, diis_err_tol, do_dftu,
+         level_shift, &Pa, &Pb, &Ca_prev, &Cb_prev](
+            bool& skip, double& e_total, double& err_norm,
+            double& prev_energy) {
+            KsBuildStage::Op ks = [&, build_uks_H, Ha_raw, Hb_raw, tol,
+                                   diis_err_tol, do_dftu]() {
+                auto [Ha, Hb, e] = build_uks_H(Pa, Pb);
+                *Ha_raw = Ha;
+                *Hb_raw = Hb;
+                e_total = e;
+                const RealMatrix err_a =
+                    internal::gpw_diis_error(Ha, Pa, loop_S_, loop_X_);
+                const RealMatrix err_b =
+                    internal::gpw_diis_error(Hb, Pb, loop_S_, loop_X_);
+                err_norm = 0.0;
+                for (const double v : err_a)
+                    err_norm = std::max(err_norm, std::abs(v));
+                for (const double v : err_b)
+                    err_norm = std::max(err_norm, std::abs(v));
+                if (std::getenv("ATV_GPW_TRACE"))
+                    std::fprintf(stderr,
+                                 "[gpw UKS] E=%.8f  dE=%.2e err=%.2e\n", e_total,
+                                 std::isnan(prev_energy)
+                                     ? 0.0
+                                     : std::abs(e_total - prev_energy),
+                                 err_norm);
+                const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
+                const bool has_prev = !std::isnan(prev_energy);
+                const double dE =
+                    has_prev ? (e_total - prev_energy)
+                             : std::numeric_limits<double>::infinity();
+                const double err_gate = do_dftu ? 5e-3 : diis_err_tol;
+                skip = !no_stop && has_prev && std::abs(dE) < tol
+                       && err_norm < err_gate;
+                prev_energy = e_total;
+                // Stash dual H for mix Op (reuse loop_H_ / loop_err_ not enough).
+                loop_H_ = std::move(Ha);
+                loop_H_ext_ = std::move(Hb); // temp: β raw H before mix
+            };
+            // Hold mixed H and dual err in shared slots via members:
+            // loop_H_ = Ha, loop_H_ext_ temporarily Hb then mixed Ha;
+            // use loop_err_ for err_a and loop_C_ unused until dens.
+            // Dedicated dual mix state:
+            MixStage::Op mix_op =
+                [&, diis_a, diis_b, use_diis, Ha_raw, Hb_raw]() {
+                    RealMatrix err_a = internal::gpw_diis_error(
+                        *Ha_raw, Pa, loop_S_, loop_X_);
+                    RealMatrix err_b = internal::gpw_diis_error(
+                        *Hb_raw, Pb, loop_S_, loop_X_);
+                    if (use_diis) {
+                        loop_H_ = diis_a->step(*Ha_raw, err_a);     // Ha_use
+                        loop_H_ext_ = diis_b->step(*Hb_raw, err_b); // Hb_use
+                    } else {
+                        loop_H_ = *Ha_raw;
+                        loop_H_ext_ = *Hb_raw;
+                    }
+                };
+            DiagonalizeStage::Op diag_op =
+                [&, n_alpha, n_beta, level_shift, &Ca_prev, &Cb_prev]() {
+                    auto [eiga, Ca] = diagonalize_fock_shifted(
+                        loop_H_, loop_X_, loop_S_, Ca_prev, n_alpha,
+                        level_shift);
+                    auto [eigb, Cb] = diagonalize_fock_shifted(
+                        loop_H_ext_, loop_X_, loop_S_, Cb_prev, n_beta,
+                        level_shift);
+                    (void)eiga;
+                    (void)eigb;
+                    Ca_prev = std::move(Ca);
+                    Cb_prev = std::move(Cb);
+                };
+            DensityStage::Op dens_op =
+                [&, use_diis, mix, n_alpha, n_beta, nb, do_dftu, &Pa, &Pb,
+                 &Ca_prev, &Cb_prev]() {
+                    RealMatrix Pa_new =
+                        linalg::build_density_matrix(Ca_prev, n_alpha, nb, 1.0);
+                    RealMatrix Pb_new =
+                        linalg::build_density_matrix(Cb_prev, n_beta, nb, 1.0);
+                    if (use_diis) {
+                        if (do_dftu) {
+                            const double a =
+                                std::min(std::max(mix, 0.15), 0.6);
+                            Pa = (1.0 - a) * Pa + a * Pa_new;
+                            Pb = (1.0 - a) * Pb + a * Pb_new;
+                        } else {
+                            Pa = std::move(Pa_new);
+                            Pb = std::move(Pb_new);
+                        }
+                    } else {
+                        Pa = (1.0 - mix) * Pa + mix * Pa_new;
+                        Pb = (1.0 - mix) * Pb + mix * Pb_new;
+                    }
+                };
+            return std::make_tuple(std::move(ks), std::move(mix_op),
+                                   std::move(diag_op), std::move(dens_op));
+        },
+        max_iter, res);
+
+    // Publish raw H into members for caller store when converged.
+    if (conv) {
+        loop_H_ = *Ha_raw;
+        loop_H_ext_ = *Hb_raw;
+    }
     return conv;
 }
 
