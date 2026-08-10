@@ -514,6 +514,21 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-ks-multigrid] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_mg})
         unset(_reg_gpw_mg)
+
+        # Public cuda::gpw::GpwDft first product: Γ RKS PADE energy + forces
+        # dual-gate vs same-settings CPU GpwDft (H2).
+        set(_reg_gpw_prod reg_cuda-gpw-full-product)
+        add_executable(${_reg_gpw_prod} gpw/cuda-gpw-full-product/${_reg_gpw_prod}.cu)
+        target_link_libraries(${_reg_gpw_prod} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_prod} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_prod}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_prod}> --device=both
+            DEPENDS ${_reg_gpw_prod}
+            COMMENT "regression [gpw/cuda-gpw-full-product] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_prod})
+        unset(_reg_gpw_prod)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)

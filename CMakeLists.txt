@@ -819,9 +819,10 @@ if(NOT ATV_DOCS_ONLY)
                     src/cuda/gpw/internal/spectral_fft.cu
                     src/cuda/gpw/internal/multigrid_transfer.cu
                     src/cuda/gpw/internal/ks_chain.cu
+                    src/cuda/gpw/gpw_solver.cu
                 )
                 target_link_libraries(atomiverse PUBLIC CUDA::cufft)
-                message(STATUS "GPW: CUDA Γ Poisson + Padé/PBE KS chain + multigrid transfer + ρ collocate/integrate enabled")
+                message(STATUS "GPW: CUDA Γ Poisson + Padé/PBE KS chain + multigrid + public GpwDft product enabled")
             endif()
         endif()
         # vdW-DF kernel tables ship zlib-compressed (float32); inflate at first use.
