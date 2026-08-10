@@ -820,6 +820,7 @@ if(NOT ATV_DOCS_ONLY)
                     src/cuda/gpw/internal/multigrid_transfer.cu
                     src/cuda/gpw/internal/ks_chain.cu
                     src/cuda/gpw/internal/gpw_forces.cu
+                    src/cuda/gpw/internal/ao_diis_eigen.cu
                     src/cuda/gpw/gpw_solver.cu
                 )
                 target_link_libraries(atomiverse PUBLIC CUDA::cufft)

@@ -2,11 +2,13 @@
 /// @brief `cuda::gpw::GpwDft` — product slice (Γ RKS/UKS DIIS + device KS).
 ///
 /// Hybrid composition (stated):
-///   * host — STVnl / product-list build / DIIS / diagonalize / acc scatter;
-///     force AO Pulay (W·dS, P·dT, P·dVnl)
+///   * host — STVnl / product-list build / P→weight pack / acc scatter;
+///     UKS host DIIS+eigen; force AO Pulay (W·dS, P·dT, P·dVnl)
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS `KsChainDevice::run`; multigrid RKS
 ///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
+///     **RKS mid-SCF Pulay DIIS + cuSOLVER eigen + density** via
+///     `internal::AoDiisEigenDevice` (cuda-gpw-device-diis-eigen);
 ///     force grid product (V_eff·dχ·Pχ + ionic HF + local-PP HF) on Γ RKS
 ///     single-grid free-fn path.
 /// Final KS still D2Hs V_eff/V_es for force reuse on the free-fn path.
@@ -24,6 +26,7 @@
 #include "atomiverse/cpu/gpw/internal/periodic.h"
 #include "atomiverse/cpu/linalg/density.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
+#include "atomiverse/cuda/gpw/internal/ao_diis_eigen.cuh"
 #include "atomiverse/cuda/gpw/internal/gpw_forces.cuh"
 #include "atomiverse/cuda/gpw/internal/ks_chain.cuh"
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
@@ -67,6 +70,7 @@ using cpu::linalg::RealMatrix;
 using cpu::linalg::RealVector;
 using cpu::linalg::build_density_matrix;
 using cpu::linalg::diagonalize_fock;
+using internal::AoDiisEigenDevice;
 using internal::CollocateGridDesc;
 using internal::DeviceProduct;
 using internal::KsChainDevice;
@@ -1054,9 +1058,21 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         throw std::invalid_argument(
             "cuda::gpw::GpwDft::run: guess_P_beta is UKS-only (set n_alpha/"
             "n_beta)");
-    RealMatrix C_prev = C0;
 
-    cpu::gpw::internal::GpwDiis diis(use_diis ? diis_depth : 1);
+    // Device Pulay DIIS + cuSOLVER eigen for RKS mid-SCF
+    // (cuda-gpw-device-diis-eigen). S/X fixed for the geometry; P refreshed.
+    const int n_mo = static_cast<int>(orth.X.shape(1));
+    AoDiisEigenDevice ao_scf;
+    ao_scf.build(stream, nb, n_mo, use_diis ? diis_depth : 0, n_occ,
+                 /*occ_factor=*/2.0, level_shift);
+    ao_scf.reset(); // clear DIIS history; does not touch S/X/P
+    ao_scf.upload_SX(S.data(), orth.X.data());
+    ao_scf.upload_P(P.data());
+    // Seed C for level-shift projector (CPU starts C_prev from C0).
+    if (static_cast<int>(C0.shape(0)) == nb
+        && static_cast<int>(C0.shape(1)) >= n_mo) {
+        ao_scf.upload_C(C0.data());
+    }
 
     auto build_H_and_energy =
         [&](const RealMatrix& Pin,
@@ -1215,11 +1231,8 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         auto [H, e_total] = build_H_and_energy(P, /*store_grids=*/false);
         H_raw = H;
         result_.e_total = e_total;
-        const RealMatrix err =
-            cpu::gpw::internal::gpw_diis_error(H, P, S, orth.X);
-        double err_norm = 0.0;
-        for (const double v : err)
-            err_norm = std::max(err_norm, std::abs(v));
+        // Device residual e = Xᵀ(HPS−SPH)X (twin of host gpw_diis_error).
+        const double err_norm = ao_scf.residual(H.data());
         const bool has_prev = !std::isnan(prev_energy);
         const double dE =
             has_prev ? (e_total - prev_energy)
@@ -1229,20 +1242,16 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             conv = true;
             break;
         }
-        RealMatrix H_ext;
-        if (use_diis)
-            H_ext = diis.step(H, err);
-        else
-            H_ext = H;
-        auto [eig, C] = diagonalize_fock_shifted(H_ext, orth.X, S, C_prev,
-                                                 n_occ, level_shift);
-        (void)eig;
-        C_prev = C;
-        RealMatrix P_new = build_density_matrix(C, n_occ, nb, 2.0);
-        if (use_diis)
-            P = std::move(P_new);
-        else
+        // Device DIIS + cuSOLVER eigen + density (RKS closed-shell).
+        ao_scf.advance();
+        if (use_diis) {
+            ao_scf.download_P(P.data());
+        } else {
+            RealMatrix P_new = xt::zeros<double>({nb, nb});
+            ao_scf.download_P(P_new.data());
             P = (1.0 - mix) * P + mix * P_new;
+            ao_scf.upload_P(P.data());
+        }
     }
     // Final KS at the last density: energy pieces + V_eff/V_es for forces.
     {

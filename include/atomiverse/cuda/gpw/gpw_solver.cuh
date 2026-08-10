@@ -9,14 +9,16 @@
 /// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
-///   * host — STVnl / product-list build / DIIS / diagonalize / acc scatter;
-///     force AO Pulay (W·dS / P·dT / P·dVnl)
+///   * host — STVnl / product-list build / P→weight pack / acc scatter;
+///     UKS host DIIS+eigen; force AO Pulay (W·dS / P·dT / P·dVnl)
 ///   * device — product collocate + KS + product integrate via
 ///     `internal::KsChainDevice::run` (RKS single-grid),
 ///     `internal::KsMultiGridChainDevice::run` (RKS multigrid: per-level
 ///     collocate, spectral prolong, fine Poisson/XC, spectral restrict,
 ///     per-level integrate), or `KsChainDevice::run_uks` (collinear UKS;
 ///     dual ρ → Poisson(total) → Padé LSD → dual V_eff → dual integrate).
+///     RKS mid-SCF Pulay DIIS + cuSOLVER dense eigen + density via
+///     `internal::AoDiisEigenDevice` (cuda-gpw-device-diis-eigen).
 ///     Mid-SCF does not H2D ρ or D2H V_eff for H.
 ///     Forces (Γ RKS single-grid first cut): device grid V_eff Pulay + ionic
 ///     HF + local-PP HF (UKS / multigrid force free-fns remain fail-closed).

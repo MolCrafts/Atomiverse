@@ -685,6 +685,20 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-nondefault-stream] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_stream})
         unset(_reg_gpw_stream)
+        # Device mid-SCF DIIS + eigen dual-gate (H2 Γ RKS PADE energy).
+        set(_reg_gpw_diis reg_cuda-gpw-device-diis-eigen)
+        add_executable(${_reg_gpw_diis}
+            gpw/cuda-gpw-device-diis-eigen/${_reg_gpw_diis}.cu)
+        target_link_libraries(${_reg_gpw_diis} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_diis} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_diis}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_diis}> --device=both
+            DEPENDS ${_reg_gpw_diis}
+            COMMENT "regression [gpw/cuda-gpw-device-diis-eigen] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_diis})
+        unset(_reg_gpw_diis)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)

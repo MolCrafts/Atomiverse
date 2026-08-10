@@ -1008,6 +1008,13 @@ if(ATV_BUILD_CUDA)
         if(TARGET test_cuda_gpw_forces)
             target_link_libraries(test_cuda_gpw_forces PRIVATE CUDA::cufft)
         endif()
+        # Device AO DIIS + cuSOLVER eigen vs host GpwDiis / diagonalize_fock
+        # (cuda-gpw-device-diis-eigen).
+        atv_add_test(test_cuda_gpw_diis_eigen cuda/gpw/test_diis_eigen.cu)
+        if(TARGET test_cuda_gpw_diis_eigen)
+            target_link_libraries(test_cuda_gpw_diis_eigen PRIVATE CUDA::cufft
+                                  CUDA::cublas CUDA::cusolver)
+        endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
