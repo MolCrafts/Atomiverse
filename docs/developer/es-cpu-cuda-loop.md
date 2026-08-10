@@ -39,6 +39,15 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-10 Assign wave 7 (parent `dev` @ `9f5a76ed`):** Priority `[~]`
+  first — capacity **3/3** already filled by wave-6 P1 tips not on base.
+  **Resume** (no new staff): `cuda-gpw-device-forces` (`wf/…` `0f70ad52`,
+  GH200 **1125926**), `cuda-gpw-multigrid-run` (`b9236f17`, **1125894**),
+  `cuda-gpw-uks-gamma` (`6deea27e`, **1125905**). **new_assigned=0**;
+  **incomplete_remaining=0** (tip green claims — Merge owns land). Held
+  pending P1 `pbe-product-gate` + P2/P3 + wave-7 joint rows. Theme for NEW
+  only N/A this wave. Queue **not** exhausted. No push.
+
 - **2026-08-10 GapCensus wave 7 (parent `dev` @ `d83de986`):** Re-diff
   tree/baseline/notes/roadmap vs base (tips not merged). Fair walls **held**
   MG MAIN **2.33×**; **cpu_pending=0**. Base product hybrid held (device

@@ -513,8 +513,13 @@ vdW / MT / metallic-GPW stay later same-capability follow-on.
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
 
-**Next Assign:** merge-ready tips first when green; else residual P1
-`pbe-product-gate` + P2 stack; wave-7 rows stay pending until parents land.
+**Next Assign (post-wave-7):** after Merge lands the three `[~]` P1 tips →
+residual P1 `pbe-product-gate` + P2 stack (`nondefault-stream` /
+`device-diis-eigen` / `product-h2o-gate` / `kpoints` / `stress` + PW
+`smear-forces` / `smear-stress` / `spin-forces` / `spin-stress` /
+`spin-smear` / `spin-kmesh` / `kmesh-forces` / `kmesh-stress`); wave-7 joint
+rows stay pending until parents land. Do **not** staff new while capacity is
+full with unmerged green tips.
 
 *Not pending this loop:*
 
@@ -542,34 +547,41 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 ## in_progress
 
-**Assign wave 6** (parent `dev` @ `d83de986`; still open after GapCensus wave
-7): collocate **merged** on base; **3** GPW P1 tips staffed, **not** merged.
-**in_progress=3**; **incomplete_remaining=0** (tips claim green evidence —
-Merge owns land). Held pending P1: `cuda-gpw-pbe-product-gate`. GapCensus
-wave 7 refilled pending only. Queue **not** exhausted.
+**Assign wave 7** (parent `dev` @ `9f5a76ed`; GapCensus wave 7 already
+refilled pending): priority **[~] first** — capacity **3/3** filled by wave-6
+P1 tips still **not** on base. **No new staff** this wave (held residual P1
+`cuda-gpw-pbe-product-gate` + P2 stack + wave-7 joint rows stay pending until
+parents merge). **in_progress=3**; **new_assigned=0**;
+**incomplete_remaining=0** (tips claim GH200 green — **Merge owns land**).
+Queue **not** exhausted.
 
 - [~] `cuda-gpw-device-forces` | **P1** Free-function forces call **CPU**
   `cpu::gpw::gpw_forces_from_scf` on **base** (no device force product).
   Track: **cuda**. Twin: same-settings CPU analytic forces + dual-gate vs
-  CUDA SCF density. Gate: GH200 + stated max\|ΔF\|; keep free-function public
-  shape. Lever: `gpw_forces_*` in `gpw_solver.cu` + device grid HF / Pulay
-  after landed `device-collocate`. Tip: `wf/cuda-gpw-device-forces`
-  (`5fa33be9` + `0f70ad52`); GH200 **1125926** acceptance_met tip claim —
+  CUDA SCF density. Gate: GH200 + stated max\|ΔF\| ≤ **5e-5** Ha/Bohr,
+  \|ΔE\| ≤ **5e-6** Ha; keep free-function public shape. Lever: `gpw_forces_*`
+  in `gpw_solver.cu` + device grid HF / Pulay after landed `device-collocate`.
+  Tip: `wf/cuda-gpw-device-forces` (`5fa33be9` + `0f70ad52`); GH200
+  **1125926** acceptance_met tip claim (max\|ΔF\|=**2.360e-6** Ha/Bohr) —
   not on base. Spec: `.claude/specs/cuda-gpw-device-forces/` (tip only).
+  Resume: `is_resume=true` from tip `0f70ad52`.
 - [~] `cuda-gpw-multigrid-run` | **P1** Lift `ngrids!=1` reject on public
   `GpwDft::run` — wire landed `KsMultiGridChainDevice` into product energy
   (stage unit green; **base** still single-grid). Track: **cuda**. Twin: CPU
-  Γ MG fragment / water-class MG. Gate: GH200 dual-gate V_eff/energy. Lever:
-  `validate_slice_` + product `run` compose `KsMultiGridChainDevice`. Tip:
-  `wf/cuda-gpw-multigrid-run` (`b9236f17`); GH200 **1125894** \|dE\|=1.587e-7
-  Ha tip claim — not on base. Spec: `.claude/specs/cuda-gpw-multigrid-run/`.
+  Γ MG fragment / water-class MG. Gate: GH200 dual-gate energy (tol class
+  **5e-6** Ha). Lever: `validate_slice_` + product `run` compose
+  `KsMultiGridChainDevice`. Tip: `wf/cuda-gpw-multigrid-run` (`b9236f17`);
+  GH200 **1125894** \|dE\|=**1.587e-7** Ha tip claim — not on base. Spec:
+  `.claude/specs/cuda-gpw-multigrid-run/` (tip only). Resume:
+  `is_resume=true` from tip `b9236f17`.
 - [~] `cuda-gpw-uks-gamma` | **P1** Lift collinear UKS reject
   (`n_alpha`/`n_beta`) on public product — Γ UKS DIIS **energy** (**base**
-  still RKS-only). Track: **cuda**. Twin: CPU `reg_gpw-uks-o2-gamma` / O₂
-  UKS PADE class. Gate: GH200 + stated CUDA↔CPU energy tol. Lever: dual-spin
-  density + `KsChainDevice::run_uks`. Tip: `wf/cuda-gpw-uks-gamma`
-  (`6deea27e`); GH200 **1125905** \|ΔE\|=4.760e-6 Ha tip claim — not on
-  base. Spec: `.claude/specs/cuda-gpw-uks-gamma/`.
+  still RKS-only). Track: **cuda**. Twin: CPU `reg_gpw-uks-o2-gamma` / O₂ /
+  high-spin H₂ UKS PADE class. Gate: GH200 + \|ΔE\| ≤ **5e-6** Ha. Lever:
+  dual-spin density + `KsChainDevice::run_uks`. Tip: `wf/cuda-gpw-uks-gamma`
+  (`6deea27e`); GH200 **1125905** \|ΔE\|=**4.760e-6** Ha tip claim — not on
+  base. Spec: `.claude/specs/cuda-gpw-uks-gamma/` (tip only). Resume:
+  `is_resume=true` from tip `6deea27e`.
 
 ## blocked
 
