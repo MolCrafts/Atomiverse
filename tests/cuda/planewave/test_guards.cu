@@ -97,10 +97,22 @@ TEST(CudaPWGuards, MultiplicityWithoutSpinThrows) {
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
-TEST(CudaPWGuards, SmearingThrows) {
+TEST(CudaPWGuards, SpinSmearingThrows) {
+    // Restricted metallic smear is landed; collinear + smear stays CPU-only.
+    auto frame = make_h_atom();
+    auto pw = make_supported();
+    pw.spin_polarized = true;
+    pw.multiplicity = 2; // H: n_elec=1 → N↑=1, N↓=0
+    pw.smearing = cuda::pw::Smearing::fermi_dirac;
+    pw.degauss = 0.02;
+    EXPECT_THROW(pw.run(frame), std::invalid_argument);
+}
+
+TEST(CudaPWGuards, SmearZeroDegaussThrows) {
     auto frame = make_h_atom();
     auto pw = make_supported();
     pw.smearing = cuda::pw::Smearing::fermi_dirac;
+    pw.degauss = 0.0;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 

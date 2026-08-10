@@ -337,6 +337,7 @@ void DeviceBandSolver::free_tables() {
     device_free(d_cp_all_);
     device_free(d_fg_all_);
     device_free(d_sub0_all_);
+    device_free(d_ritz_cache_);
     device_free(d_beta_);
     device_free(d_proj_c_);
     // Views into what was just freed.
@@ -344,6 +345,7 @@ void DeviceBandSolver::free_tables() {
     d_tg_ = nullptr;
     d_betad_ = nullptr;
     d_sub0_ = nullptr;
+    k_ritz_off_.clear();
     ng_ = 0;
     n_proj_ = 0;
     n_sub0_ = 0;
@@ -977,6 +979,92 @@ void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
             d_grid_, scale, nr_, rho_accum_);
         ATV_CUDA_CHECK(cudaGetLastError());
     }
+}
+
+void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
+                                          const AccReal* occ, int n_use) {
+    require_bound(rho_accum_, veff_r_);
+    if (!d_ritz_ || !d_idx_ || ng_ <= 0)
+        throw std::runtime_error(
+            "cuda::pw::internal::DeviceBandSolver::accumulate_density: "
+            "bind_kpoint()/solve() or load_ritz() must run first");
+    if (!occ)
+        throw std::invalid_argument(
+            "cuda::pw::internal::DeviceBandSolver::accumulate_density: "
+            "occ pointer is null");
+    if (n_use < 0 || n_use > n_bands_)
+        throw std::invalid_argument(
+            "cuda::pw::internal::DeviceBandSolver::accumulate_density: "
+            "n_use must be in [0, n_bands]");
+    if (n_use == 0)
+        return;
+    const double inv_omega = 1.0 / static_cast<double>(omega);
+    const double w = static_cast<double>(weight);
+    for (int b = 0; b < n_use; ++b) {
+        const double f = static_cast<double>(occ[b]);
+        if (std::abs(f) < 1e-14)
+            continue;
+        const double scale = w * f * inv_omega;
+        ATV_CUDA_CHECK(cudaMemsetAsync(
+            d_grid_, 0, nr_ * sizeof(cufftDoubleComplex), stream_));
+        k_scatter<<<n_blocks(ng_), kBlock, 0, stream_>>>(
+            d_ritz_ + static_cast<size_t>(b) * ng_, d_idx_, ng_, d_grid_);
+        check_cufft(cufftExecZ2Z(fft_plan_, d_grid_, d_grid_, CUFFT_INVERSE),
+                    "Z2Z inverse (density, fractional occ)");
+        k_accum_density<<<n_blocks(nr_), kBlock, 0, stream_>>>(
+            d_grid_, scale, nr_, rho_accum_);
+        ATV_CUDA_CHECK(cudaGetLastError());
+    }
+}
+
+void DeviceBandSolver::ensure_ritz_cache() {
+    if (d_ritz_cache_)
+        return;
+    if (n_kpts_ <= 0 || n_bands_ <= 0 || k_ng_.empty())
+        throw std::runtime_error(
+            "DeviceBandSolver::ensure_ritz_cache: build_kpoints() must run "
+            "first");
+    k_ritz_off_.assign(static_cast<std::size_t>(n_kpts_), 0);
+    std::size_t total = 0;
+    for (int ik = 0; ik < n_kpts_; ++ik) {
+        k_ritz_off_[static_cast<std::size_t>(ik)] = total;
+        total += static_cast<std::size_t>(k_ng_[static_cast<std::size_t>(ik)])
+                 * static_cast<std::size_t>(n_bands_);
+    }
+    if (total == 0)
+        throw std::runtime_error(
+            "DeviceBandSolver::ensure_ritz_cache: empty Ritz pack");
+    d_ritz_cache_ = device_alloc<cufftDoubleComplex>(total);
+}
+
+void DeviceBandSolver::stash_ritz() {
+    if (bound_k_ < 0 || !d_ritz_ || ng_ <= 0)
+        throw std::runtime_error(
+            "DeviceBandSolver::stash_ritz: bind_kpoint() and solve() must "
+            "run first");
+    ensure_ritz_cache();
+    const std::size_t n =
+        static_cast<std::size_t>(ng_) * static_cast<std::size_t>(n_bands_);
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        d_ritz_cache_ + k_ritz_off_[static_cast<std::size_t>(bound_k_)],
+        d_ritz_, n * sizeof(cufftDoubleComplex), cudaMemcpyDeviceToDevice,
+        stream_));
+}
+
+void DeviceBandSolver::load_ritz(int ik) {
+    if (ik < 0 || ik >= n_kpts_)
+        throw std::invalid_argument(
+            "DeviceBandSolver::load_ritz: ik out of range");
+    ensure_ritz_cache();
+    bind_kpoint(ik);
+    // solve() allocates d_ritz_ via ensure_subspace_capacity; unit tests that
+    // only stash/load still need a live buffer.
+    ensure_subspace_capacity(ng_, std::max(n_bands_ + 2, 2));
+    const std::size_t n =
+        static_cast<std::size_t>(ng_) * static_cast<std::size_t>(n_bands_);
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        d_ritz_, d_ritz_cache_ + k_ritz_off_[static_cast<std::size_t>(ik)],
+        n * sizeof(cufftDoubleComplex), cudaMemcpyDeviceToDevice, stream_));
 }
 
 void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,

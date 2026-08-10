@@ -152,6 +152,38 @@ class DeviceBandSolver {
         accumulate_density(weight, omega, n_bands_, 2.0);
     }
 
+    /// @brief Fractional occupations: ρ += Σ_b weight·occ[b]·|ψ_b|²/Ω.
+    ///
+    /// Restricted metallic smear uses `occ[b] ∈ [0, 2]`. Band wavefunctions
+    /// come from the most recent `solve()` or `load_ritz()`. Empty bands
+    /// (`|occ| < 1e-14`) skip the FFT.
+    ///
+    /// @param weight  k-point weight (dimensionless).
+    /// @param omega   Cell volume [Bohr³].
+    /// @param occ     Host array of length `n_use` (band occupations).
+    /// @param n_use   Number of bands to accumulate (`≤ n_bands`).
+    void accumulate_density(AccReal weight, AccReal omega, const AccReal* occ,
+                            int n_use);
+
+    /// @brief Allocate the per-k Ritz cache (metallic multi-k density rebuild).
+    ///
+    /// Call after `build_kpoints`. Size = Σ_k n_G(k)·n_bands complex doubles.
+    /// No-op if already allocated for this run.
+    void ensure_ritz_cache();
+
+    /// @brief Device→device stash of the bound k-point's Ritz vectors.
+    ///
+    /// After `solve()`, copies `d_ritz_` into the packed cache for
+    /// `bound_k_`. Occupations that depend on the full Brillouin zone need
+    /// every k's wavefunctions after the spectrum is known.
+    void stash_ritz();
+
+    /// @brief Restore cached Ritz vectors for k-point `ik` into `d_ritz_`.
+    ///
+    /// Also rebinds the k-tables (`bind_kpoint`) so `ng_` / `d_idx_` match.
+    /// @param ik k-point index (0-based).
+    void load_ritz(int ik);
+
     /// @brief Add Kleinman–Bylander nonlocal Hellmann–Feynman forces for the
     ///        most recent `solve()` on the bound k-point into a device force
     ///        buffer.
@@ -241,6 +273,11 @@ class DeviceBandSolver {
     double* d_cp_all_ = nullptr; ///< β column: atom position (3 per column).
     double* d_fg_all_ = nullptr; ///< concatenated radial f_G.
     cufftDoubleComplex* d_sub0_all_ = nullptr; ///< concatenated subspaces.
+
+    // Packed Ritz cache for multi-k metallic occupations (optional).
+    // Indexed by k_ritz_off_[ik]; each block is n_G(k) × n_bands column-major.
+    std::vector<std::size_t> k_ritz_off_;
+    cufftDoubleComplex* d_ritz_cache_ = nullptr;
 
     // Davidson buffers
     cufftDoubleComplex* d_sub_ = nullptr;   ///< subspace V (ng × cap_sub).
