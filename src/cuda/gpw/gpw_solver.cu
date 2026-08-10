@@ -27,6 +27,7 @@
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cuda_runtime.h>
 #include <limits>
@@ -1688,6 +1689,71 @@ gpw_forces_analytic(const std::vector<GpwAtom>& atoms, GpwDft& method) {
             "cuda::gpw::gpw_forces_analytic: SCF did not converge (iters="
             + std::to_string(scf.iters) + ")");
     return gpw_forces_from_scf(atoms, method, scf);
+}
+
+
+namespace {
+
+/// Map CUDA product members onto a CPU shell for fixed-P stress assembly.
+cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
+    cpu::gpw::GpwDft c;
+    for (int d = 0; d < 3; ++d)
+        c.cell[d] = m.cell[d];
+    c.cutoff_ry = m.cutoff_ry;
+    c.ngrids = m.ngrids;
+    c.rel_cutoff = m.rel_cutoff;
+    c.n_occ = m.n_occ;
+    c.n_alpha = m.n_alpha;
+    c.n_beta = m.n_beta;
+    c.max_iter = m.max_iter;
+    c.tol = m.tol;
+    c.eps_default = m.eps_default;
+    c.mix = m.mix;
+    c.diis_depth = m.diis_depth;
+    c.lindep_threshold = m.lindep_threshold;
+    c.level_shift = m.level_shift;
+    c.xc = m.xc;
+    c.nonperiodic = m.nonperiodic;
+    c.local_pp_on_grid = m.local_pp_on_grid;
+    c.use_ot = m.use_ot;
+    for (int d = 0; d < 3; ++d)
+        c.k_mesh[d] = m.k_mesh[d];
+    return c;
+}
+
+void validate_stress_slice(const GpwDft& method) {
+    if (method.k_mesh[0] != 1 || method.k_mesh[1] != 1 || method.k_mesh[2] != 1)
+        throw std::invalid_argument(
+            "cuda::gpw::gpw_stress: multi-k stress has no device product path "
+            "yet — keep k_mesh={1,1,1} or use cpu::gpw::gpw_stress");
+}
+
+} // namespace
+
+std::array<double, 6>
+gpw_stress(const std::vector<GpwAtom>& atoms, GpwDft& method, double h,
+           const std::array<bool, 3>& axes) {
+    validate_stress_slice(method);
+    const GpwResult& scf = method.run(atoms);
+    if (!scf.converged)
+        throw std::runtime_error(
+            "cuda::gpw::gpw_stress: SCF did not converge (iters="
+            + std::to_string(scf.iters) + ")");
+    return gpw_stress(atoms, method, scf, h, axes);
+}
+
+std::array<double, 6>
+gpw_stress(const std::vector<GpwAtom>& atoms, const GpwDft& method,
+           const GpwResult& scf, double h, const std::array<bool, 3>& axes) {
+    validate_stress_slice(method);
+    if (!scf.converged)
+        throw std::invalid_argument(
+            "cuda::gpw::gpw_stress: supplied state is not converged");
+    // First cut: host fixed-P analytic assembly at the CUDA density payload
+    // (mirrors early free-fn force hybrid — density from device SCF, stress
+    // assembly reuses CPU product twin). No silent re-SCF on CPU.
+    cpu::gpw::GpwDft shell = cpu_shell_from_cuda(method);
+    return cpu::gpw::gpw_stress(atoms, shell, scf, h, axes);
 }
 
 } // namespace gpw
