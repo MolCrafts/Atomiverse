@@ -10,6 +10,7 @@
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-.}"
+git submodule update --init --recursive molrs || true
 
 module load GPU/buildenv-gcccuda/2026.03-cu13.0
 export OPENBLAS_ROOT="${OPENBLASDIR:-}"

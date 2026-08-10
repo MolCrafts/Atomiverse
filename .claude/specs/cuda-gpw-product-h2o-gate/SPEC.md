@@ -35,10 +35,17 @@ Oracle: **CPU twin** (not CP2K for this correctness gate).
 
 `acceptance_met=true` only with GH200 dual-gate log.
 
-## GH200 evidence (job **1129294**, COMPLETED)
+## GH200 evidence
 
-- `test_cuda_gpw_full_product` — **100%** (incl. `WaterGammaPadeEnergyDualGate`)
+### Re-verify after rebase onto `dev` @ `bcb873e0` — job **1129720** (COMPLETED)
+
+- Node GH200 `n211`; `test_cuda_gpw_full_product` — **100%** (incl.
+  `WaterGammaPadeEnergyDualGate`)
 - `run_reg_cuda-gpw-product-h2o-gate`:
   - CPU E=−16.902354386489 Ha (7 iters); CUDA E=−16.902355139062 Ha (8 iters)
   - **|dE|=7.526e−07 Ha** (tol 5e−5); **max|dF|=3.213e−06 Ha/Bohr** (tol 5e−4)
   - PASS; **perf_exempt** small molecule
+
+### Prior tip evidence (job **1129294**, COMPLETED; same numbers)
+
+Same dual-gate result on pre-rebase tip `17b955ed`.
