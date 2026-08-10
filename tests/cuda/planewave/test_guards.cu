@@ -80,14 +80,17 @@ TEST(CudaPWGuards, PbeFamilyVariantsThrow) {
     }
 }
 
-TEST(CudaPWGuards, SpinPolarizedThrows) {
+TEST(CudaPWGuards, SpinPolarizedWithPbeThrows) {
+    // Collinear UKS on device is LSDA-only; PBE spin-GGA stays on CPU.
     auto frame = make_h_atom();
     auto pw = make_supported();
+    pw.xc = cpu::scf::XCType::PBE;
     pw.spin_polarized = true;
+    pw.multiplicity = 2; // H: n_elec=1 → N↑=1, N↓=0
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
-TEST(CudaPWGuards, MultiplicityThrows) {
+TEST(CudaPWGuards, MultiplicityWithoutSpinThrows) {
     auto frame = make_h_atom();
     auto pw = make_supported();
     pw.multiplicity = 2;

@@ -48,6 +48,7 @@
 #include "atomiverse/cuda/planewave/internal/pw_forces.cuh"
 #include "atomiverse/cuda/planewave/internal/pw_stress.cuh"
 
+#include <algorithm>
 #include <array>
 #include <complex>
 #include <cstdio>
@@ -71,20 +72,26 @@ void PW::validate_members() const {
             "cuda::pw::PW::run: xc has no device path — only XCType::LSDA "
             "(Slater + VWN5) and XCType::PBE are implemented on the GPU. Set "
             "pw.xc to one of those, or run this functional on cpu::pw::PW.");
-    if (spin_polarized)
+    // Collinear UKS on device is LSDA-only (spin-GGA not landed).
+    if (spin_polarized && xc != cpu::scf::XCType::LSDA)
         throw std::invalid_argument(
-            "cuda::pw::PW::run: spin_polarized=true has no device path — the "
-            "device density accumulator is fixed at nspin=1 with 2 electrons "
-            "per band. Use cpu::pw::PW for collinear spin.");
-    if (multiplicity != 1)
+            "cuda::pw::PW::run: spin_polarized requires XCType::LSDA on the "
+            "device path — collinear spin-GGA (PBE) is not implemented on "
+            "CUDA. Set pw.xc = LSDA, or use cpu::pw::PW for spin-PBE.");
+    if (spin_polarized && multiplicity < 1)
         throw std::invalid_argument(
-            "cuda::pw::PW::run: multiplicity != 1 requires spin_polarized, "
-            "which has no device path. Use cpu::pw::PW.");
+            "cuda::pw::PW::run: multiplicity must be >= 1 when "
+            "spin_polarized");
+    if (!spin_polarized && multiplicity != 1)
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: multiplicity != 1 requires spin_polarized. "
+            "Set spin_polarized=true for collinear UKS, or multiplicity=1.");
     if (smearing != Smearing::none)
         throw std::invalid_argument(
             "cuda::pw::PW::run: smearing has no device path — occupations are "
-            "fixed closed-shell on the GPU (degauss / mp_order / extra_bands "
-            "are inert here). Use cpu::pw::PW for metallic smearing.");
+            "fixed (closed-shell or integer collinear) on the GPU (degauss / "
+            "mp_order / extra_bands are inert here). Use cpu::pw::PW for "
+            "metallic smearing.");
     // k_mesh = 0 is the dangerous one: generate_mp_mesh loops zero times and
     // returns an empty grid without throwing, so run() would iterate over a
     // density that is never accumulated and report a converged e_band of 0.
@@ -143,12 +150,29 @@ PWResult& PW::run(const cpu::Frame& frame) {
                                         k_mesh, prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
 
-    if (prob.n_elec % 2 != 0)
-        throw std::invalid_argument(
-            "cuda::pw::PW::run: " + std::to_string(prob.n_elec)
-            + " valence electrons is not closed-shell — the device band "
-              "solver occupies every band with exactly 2 electrons. Use "
-              "cpu::pw::PW with smearing or spin_polarized.");
+    // Collinear occupation split: N↑ − N↓ = multiplicity − 1, N↑ + N↓ = n_elec.
+    const int n_elec = prob.n_elec;
+    int n_alpha = n_elec / 2;
+    int n_beta = n_elec - n_alpha;
+    if (spin_polarized) {
+        const int mag = multiplicity - 1;
+        if ((n_elec + mag) % 2 != 0 || mag > n_elec)
+            throw std::invalid_argument(
+                "cuda::pw::PW::run: n_elec and multiplicity have incompatible "
+                "parity (need N↑,N↓ non-negative integers)");
+        n_alpha = (n_elec + mag) / 2;
+        n_beta = (n_elec - mag) / 2;
+        result_.magnetization = static_cast<double>(mag);
+    } else {
+        if (n_elec % 2 != 0)
+            throw std::invalid_argument(
+                "cuda::pw::PW::run: " + std::to_string(n_elec)
+                + " valence electrons is not closed-shell — the restricted "
+                  "device path occupies every band with exactly 2 electrons. "
+                  "Use spin_polarized for open shell, or cpu::pw::PW with "
+                  "smearing.");
+        result_.magnetization = 0;
+    }
 
     // Mixing members are the method's, not the workspace defaults. The device
     // mixer reads them through DeviceDensity's constructor; the workspace
@@ -157,7 +181,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
     ws.pulay_depth = pulay_depth;
 
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    const int n_bands = prob.n_bands;
+    const int n_bands =
+        spin_polarized ? std::max(std::max(n_alpha, n_beta), 1) : prob.n_bands;
     const AccReal vol_bohr = prob.vol_bohr;
     // build_kpoints() leaves ws bound to the density sphere, so ws.omega is
     // stable for the whole run; the k-loop no longer touches ws at all.
@@ -171,7 +196,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
     // the atomic ρ(G) seed, then nothing scientific leaves the GPU. Density
     // owns the non-default SCF stream; the band solver borrows it so both
     // halves stay ordered without events (cuda-pw-nondefault-stream).
-    internal::DeviceDensity den(prob, mix_beta, pulay_depth, xc);
+    internal::DeviceDensity den(prob, mix_beta, pulay_depth, xc, spin_polarized,
+                                n_alpha, n_beta, n_elec);
     internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
                                       den.stream());
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
@@ -183,6 +209,61 @@ PWResult& PW::run(const cpu::Frame& frame) {
     // device reduces ‖ρ − ρ_old‖₂ itself, so feed the norm overload.
     cpu::pw::internal::ConvergenceCheck conv{AccReal(tol), 2};
 
+    if (spin_polarized) {
+        // ── Collinear fixed-occupation UKS (CPU twin in pw_solver.cpp) ──
+        const int n_occ[2] = {n_alpha, n_beta};
+        for (int iter = 0; iter < max_iter; ++iter) {
+            den.sync_total_rho();
+            den.hartree();
+            den.exchange_correlation_spin();
+
+            AccReal e_band = 0;
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                den.zero_accumulator();
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    const AccReal weight = prob.kg.weights[ik];
+                    for (int b = 0; b < n_occ[s]; ++b)
+                        e_band += weight * ws.eigenvalues[b]; // spin-orbital
+                    // f = 1 per occupied spin-orbital (CPU accumulate_kpoint).
+                    solver.accumulate_density(weight, omega_bohr, n_occ[s],
+                                              1.0);
+                }
+                den.collect_spin_out(s);
+            }
+
+            den.mix_spin_linear();
+            const auto s = den.reduce_spin(static_cast<double>(vol_bohr));
+            ws.E_xc = AccReal(s.e_xc);
+
+            // Spin energy: e_one = e_band − 2 e_h − ∫(ρ↑V↑+ρ↓V↓).
+            auto terms = cpu::pw::internal::combine_energy_terms(
+                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+                ws.E_xc, prob.ew_total, ws.E_aug);
+            terms.e_one =
+                e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
+            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
+                          + ws.E_aug;
+
+            cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
+                                                    iter);
+
+            result_.iterations = iter + 1;
+            result_.energy_ha = static_cast<double>(terms.total);
+            result_.energy =
+                result_.energy_ha / cpu::pw::qe_units::rydberg_to_hartree;
+
+            if (conv.step(AccReal(s.resid))) {
+                result_.converged = true;
+                break;
+            }
+        }
+        return result_;
+    }
+
+    // ── Restricted (spin-unpolarized) path ──
     for (int iter = 0; iter < max_iter; ++iter) {
         den.hartree();              // PoissonSolver::step
         den.exchange_correlation(); // XCBuilder::step(ws, xc)
@@ -245,6 +326,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                                                       const PW& method) {
     // Same gate as run(): reject unsupported members before any CUDA work.
     method.validate_members();
+    if (method.spin_polarized)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: spin_polarized has no force path "
+            "on device yet — use cpu::pw::pw_forces_analytic");
     if (frame.nlocal() <= 0)
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: frame has no atoms");
@@ -343,6 +428,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
                                 double* energy_ry_out) {
     method.validate_members();
+    if (method.spin_polarized)
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: spin_polarized has no stress path on "
+            "device yet — use cpu::pw::pw_stress");
     if (frame.nlocal() <= 0)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: frame has no atoms");

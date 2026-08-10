@@ -92,18 +92,27 @@ class DeviceDensity {
     /// @param xc          Functional `exchange_correlation()` evaluates. Only
     ///                    `XCType::LSDA` and `XCType::PBE` have device
     ///                    kernels; anything else throws (no fallback).
+    /// @param spin_polarized Collinear UKS (nspin=2). Requires `XCType::LSDA`
+    ///                    on the device path (spin-GGA not landed); seeds
+    ///                    ρ_↑/ρ_↓ from the atomic total density with
+    ///                    fractions n_alpha/n_elec and n_beta/n_elec.
+    /// @param n_alpha     Occupied ↑ bands (spin path only; may be 0).
+    /// @param n_beta      Occupied ↓ bands (spin path only; may be 0).
+    /// @param n_elec      Valence electron count used for the spin seed.
     /// @throws std::invalid_argument if `pulay_depth < 1`, the problem has
     ///         an empty G-sphere / FFT grid, or `xc` has no device kernel.
     /// @throws std::runtime_error on any CUDA / cuFFT / cuBLAS failure.
     DeviceDensity(const cpu::pw::internal::PWProblem& prob, double mix_beta,
-                  int pulay_depth, cpu::scf::XCType xc);
+                  int pulay_depth, cpu::scf::XCType xc,
+                  bool spin_polarized = false, int n_alpha = 0,
+                  int n_beta = 0, int n_elec = 0);
     ~DeviceDensity();
     DeviceDensity(const DeviceDensity&) = delete;
     DeviceDensity& operator=(const DeviceDensity&) = delete;
 
     /// @brief V_H(G) = 4π ρ(G)/|G|², G = 0 zeroed [Hartree].
     ///        Mirrors `cpu::pw::internal::PoissonSolver::step`, same
-    ///        |G|² < 1e-16 floor.
+    ///        |G|² < 1e-16 floor. Spin path: call `sync_total_rho()` first.
     void hartree();
 
     /// @brief ρ(G)→ρ(r), V_xc(r)/ε_xc(r), E_xc, then V_xc(G) [Hartree].
@@ -113,11 +122,21 @@ class DeviceDensity {
     ///        GGA passes in the same order: spectral ∇ρ from i G ρ(G), the
     ///        pointwise PBE evaluation with flux assembly, and
     ///        v_xc −= ∇·flux via three r2c + one c2r transform.
+    ///        Restricted path only — collinear uses `exchange_correlation_spin`.
     void exchange_correlation();
+
+    /// @brief Collinear LSDA: ρ_σ(G)→ρ_σ(r), V_xc^σ / ε_xc / E_xc /
+    ///        e_xc_int_spin, then V_xc_σ(G). Mirrors `XCBuilder::step_spin`
+    ///        for `XCType::LSDA` (no spin-GGA).
+    void exchange_correlation_spin();
 
     /// @brief V_eff(G) = V_loc + V_H + V_xc, then the UNNORMALIZED c2r to
     ///        V_eff(r) [Hartree]. Mirrors `VeffBuilder::step`.
     void assemble_veff();
+
+    /// @brief Collinear: V_eff_σ from V_loc + V_H + V_xc_σ, then V_eff(r).
+    /// @param spin 0 = α, 1 = β.
+    void assemble_veff_spin(int spin);
 
     /// @brief Zero the real-space density accumulator the band solver fills.
     ///        Mirrors `DensityBuilder::begin`.
@@ -125,8 +144,22 @@ class DeviceDensity {
 
     /// @brief ρ_old ← ρ (device-to-device), then ρ_acc(r) --r2c--> ρ(G)
     ///        scaled by 1/nr. Mirrors the first half of
-    ///        `DensityBuilder::finish`.
+    ///        `DensityBuilder::finish`. Restricted path only.
     void collect();
+
+    /// @brief Collinear: r2c ρ_acc → ρ_out_σ(G) into a scratch slot for spin
+    ///        `spin` (does not overwrite mixed ρ_σ yet). Call `mix_spin_linear`
+    ///        after both channels are collected.
+    void collect_spin_out(int spin);
+
+    /// @brief Collinear linear mix of both spin channels (CPU twin: no Pulay
+    ///        on the fixed-occupation collinear molecule path), then
+    ///        ρ_total = ρ_↑ + ρ_↓ and residual ‖Δρ_total‖₂.
+    void mix_spin_linear();
+
+    /// @brief Collinear: ρ_total(G) = ρ_↑(G) + ρ_↓(G) into d_rho_G_ for
+    ///        Poisson / energy. Call at the top of every SCF iteration.
+    void sync_total_rho();
 
     /// @brief Pulay/DIIS density mixing on the G-sphere.
     ///
@@ -152,6 +185,16 @@ class DeviceDensity {
     /// @param vol_bohr Cell volume Ω [Bohr³].
     /// @return Energy terms [Hartree] and the density-change L2 norm.
     IterationScalars reduce(double vol_bohr);
+
+    /// @brief Collinear energy + residual reductions.
+    ///
+    /// Hartree / local from total ρ; e_xc_int is the real-space spin integral
+    /// (`e_xc_int_spin`); residual is ‖Δρ_total‖₂ after `mix_spin_linear`.
+    /// @param vol_bohr Cell volume Ω [Bohr³].
+    IterationScalars reduce_spin(double vol_bohr);
+
+    /// @brief True when this object was constructed for collinear UKS.
+    bool spin_polarized() const { return spin_; }
 
     /// @brief Real-space density accumulator ρ_acc(r), nr doubles (device).
     ///        The band solver writes here; it never frees the buffer.
@@ -221,6 +264,7 @@ class DeviceDensity {
     double omega_ = 0;
     cpu::scf::XCType xc_ = cpu::scf::XCType::LSDA;
     bool gga_ = false;
+    bool spin_ = false;
     cudaStream_t stream_ = nullptr; ///< Non-default; owned.
     FFTPlan3D fft_;
     cublasHandle_t blas_ = nullptr;
@@ -236,6 +280,14 @@ class DeviceDensity {
     cufftDoubleComplex* d_V_xc_G_ = nullptr;
     cufftDoubleComplex* d_V_loc_G_ = nullptr;
     cufftDoubleComplex* d_V_eff_G_ = nullptr;
+
+    // Collinear spin channels (allocated only when spin_ == true).
+    cufftDoubleComplex* d_rho_spin_G_[2] = {nullptr, nullptr};
+    cufftDoubleComplex* d_rho_spin_G_old_[2] = {nullptr, nullptr};
+    cufftDoubleComplex* d_rho_spin_out_G_[2] = {nullptr, nullptr};
+    cufftDoubleComplex* d_V_xc_spin_G_[2] = {nullptr, nullptr};
+    double* d_rho_spin_r_[2] = {nullptr, nullptr};
+    double* d_V_xc_spin_r_[2] = {nullptr, nullptr};
 
     // Pulay history ring (depth_ × ng0_ each) + Gram / coefficients
     cufftDoubleComplex* d_res_hist_ = nullptr;

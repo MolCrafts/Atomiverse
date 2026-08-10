@@ -33,6 +33,24 @@ namespace internal {
 void xc_lsda_grid(const double* d_rho_r, double* d_vxc_r, double* d_exc_r,
                   int nr, cudaStream_t stream = nullptr);
 
+/// @brief Collinear LSDA XC on spin densities ρ_α(r), ρ_β(r).
+///
+/// Mirrors `cpu::scf::evaluate_xc(XCType::LSDA, ρ_α, ρ_β)` — Slater exchange +
+/// full VWN5 correlation with the spin-interpolation channel — including the
+/// total-density `ρ_α+ρ_β < 1e-12` cutoff and the per-spin floor at 1e-15 on
+/// the correlation inputs only (CPU parity).
+///
+/// @param d_rho_a  Real-space α density, nr reals [electrons/Bohr³].
+/// @param d_rho_b  Real-space β density, nr reals [electrons/Bohr³].
+/// @param d_vxc_a  Output V_xc^α(r), nr reals [Hartree].
+/// @param d_vxc_b  Output V_xc^β(r), nr reals [Hartree].
+/// @param d_exc_r  Output ε_xc(r) per electron, nr reals [Hartree].
+/// @param nr       Number of real-space grid points.
+/// @param stream   CUDA stream (default stream if null).
+void xc_lsda_spin_grid(const double* d_rho_a, const double* d_rho_b,
+                       double* d_vxc_a, double* d_vxc_b, double* d_exc_r,
+                       int nr, cudaStream_t stream = nullptr);
+
 /// @brief Stage-1 partial count of the `xc_energy` reduction — the required
 ///        length (in doubles) of the caller-owned scratch buffer.
 inline constexpr int kXcEnergyPartials = 256;
@@ -61,6 +79,23 @@ inline constexpr int kXcEnergyPartials = 256;
 /// @param stream   CUDA stream (default stream if null).
 void xc_energy(const double* d_rho_r, const double* d_exc_r, int nr, double dV,
                double* d_Exc, double* d_scratch, cudaStream_t stream = nullptr);
+
+/// @brief Collinear E_xc = dV · Σ_i (ρ_α + ρ_β)_i ε_xc(r)_i.
+///
+/// Mirrors `XCBuilder::step_spin`'s E_xc accumulation (floored densities are
+/// the caller's responsibility — same as the restricted path).
+void xc_energy_spin(const double* d_rho_a, const double* d_rho_b,
+                    const double* d_exc_r, int nr, double dV, double* d_Exc,
+                    double* d_scratch, cudaStream_t stream = nullptr);
+
+/// @brief Collinear double-counting ∫(ρ_α V_xc^α + ρ_β V_xc^β) dV.
+///
+/// Mirrors `ws.e_xc_int_spin` in `XCBuilder::step_spin` (real-space form used
+/// by the spin energy decomposition).
+void xc_int_spin(const double* d_rho_a, const double* d_rho_b,
+                 const double* d_vxc_a, const double* d_vxc_b, int nr,
+                 double dV, double* d_e_xc_int, double* d_scratch,
+                 cudaStream_t stream = nullptr);
 
 } // namespace internal
 } // namespace pw
