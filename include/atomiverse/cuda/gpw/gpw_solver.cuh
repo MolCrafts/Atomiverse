@@ -8,9 +8,10 @@
 /// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
-///   * host — STVnl / cbg collocate / integrate / DIIS / diagonalize
-///   * device — fine-grid KS via `internal::KsChainDevice::run_from_rho`
-///     (Poisson + Padé / PBE + V_eff assembly)
+///   * host — STVnl / product-list build / DIIS / diagonalize / acc scatter
+///   * device — product collocate + KS + product integrate via
+///     `internal::KsChainDevice::run` (ρ on device; Poisson + Padé/PBE +
+///     V_eff; shape integrate). Mid-SCF does not H2D ρ or D2H V_eff for H.
 ///
 /// Unsupported members throw with a how-to (no silent CPU-SCF fallback).
 /// Contract: `.claude/notes/cuda-gpw-public-shape.md`.
