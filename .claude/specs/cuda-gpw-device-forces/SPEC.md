@@ -22,3 +22,9 @@
 
 UKS / multi-k / multigrid / stress / PBE force dual-gate product (separate queue rows).
 OT / dispersion / DFT+U force fold.
+
+## Result
+
+**acceptance_met=true** (GH200 **1125926**): units 2/2 PASS;
+\|ΔE\|=**1.617e-7** Ha; max\|ΔF\|=**2.360e-6** Ha/Bohr; **perf_exempt**
+small cell. Commit `5fa33be9`.
