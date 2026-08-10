@@ -5,12 +5,14 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `fb2c2951` (product FF-merged)
+- **Parent:** `dev` @ `a6049f4f` (product FF-merged; queue land commit)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** Landed **`cuda-gpw-full-product`** first slice (GH200
-  **1120817** dual-gate green). Open = 13 CUDA depth rows (GPW compose +
-  device forces/stress + PW spin/PBE/smear depth). **cpu_pending=0**.
+- **Last action:** GapCensus re-diff 2026-08-10 — product first slice **held**
+  on tree (`cuda::gpw::GpwDft` + hybrid KS); **cpu_pending=0**; open = **13**
+  CUDA depth rows (GPW compose/forces/stress + PW spin/PBE/smear). Fair wall
+  MG MAIN **2.33×** still blocked pin-unsafe. Worktrees / `wf/*` / `build*`
+  empty.
 
 ## How to run
 
@@ -44,9 +46,9 @@ before exit.
 
 | Track | Residual | Action |
 | --- | --- | --- |
-| **cuda GPW** | host collocate; CPU-backed forces; no stress | staff P1 depth |
+| **cuda GPW** | host collocate + host integrate; CPU-backed forces; no stress | staff P1 depth |
 | **cuda GPW** | multigrid / UKS / multi-k reject | staff P1–P2 |
-| **cuda PW** | PBE stress; spin-PBE; spin/smear forces/stress | staff P1–P2 |
+| **cuda PW** | PBE stress dual-gate; spin-PBE; spin/smear forces/stress | staff P1–P2 |
 | **cpu** | MG MAIN **2.33×** | blocked pin-unsafe / not soft-tol |
 
 **Contract:** [.claude/notes/cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)

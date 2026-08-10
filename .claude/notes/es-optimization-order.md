@@ -55,7 +55,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 ### Active next — `es-cpu-cuda-opt` product depth (2026-08-10)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
-**landed** on `dev` @ `fb2c2951` (feat `31d24207`; GH200 **1120817**
+**landed** on `dev` @ `a6049f4f` (feat `31d24207`; GH200 **1120817**
 \|ΔE\|=4.8e-14 / max\|ΔF\|=2.6e-09). Staff **depth**, not re-merge P0.
 
 | Priority | slug | Goal |
@@ -95,7 +95,7 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (`dev` @ `fb2c2951`):** Landed: device s/p RHF + CDIIS +
+**CUDA open-gate (`dev` @ `a6049f4f`):** Landed: device s/p RHF + CDIIS +
 non-default stream D2H; Γ GPW footholds + LDA + closed-shell PBE `ks_chain` +
 **multi-grid product KS stage** + **first public `cuda::gpw::GpwDft`** (Γ RKS
 DIIS PADE/PBE; hybrid host cbg + device KS); `cuda::pw::PW` LSDA + closed-shell

@@ -19,8 +19,8 @@ footholds.
 | Layer | What exists |
 | --- | --- |
 | CPU method | `cpu::gpw::GpwDft` — multi-path **DIIS** on Driver stages; **OT** free-loop residual (same capability follow-on, not a block) |
-| CUDA stages | `cuda/gpw/internal/` only: Poisson, XC LDA, product collocate/integrate, composed `KsChainDevice` (LDA+PBE), `KsMultiGridChainDevice` |
-| CUDA public method | **none** — footholds ≠ product |
+| CUDA stages | `cuda/gpw/internal/`: Poisson, XC LDA, product collocate/integrate, composed `KsChainDevice` (LDA+PBE), `KsMultiGridChainDevice` |
+| CUDA public method | **first slice landed** (`cuda::gpw::GpwDft` Γ RKS DIIS PADE/PBE; host STVnl/cbg/collocate/integrate/DIIS + device KS; free-fn forces CPU-backed) — depth residual on queue |
 
 ## Frozen public shape (CUDA product must match)
 
@@ -72,12 +72,12 @@ staffed.
 
 ## Unlock condition for `cuda-gpw-full-product`
 
-| Gate | State on `dev` @ `0147fe02` |
+| Gate | State on `dev` @ `a6049f4f` |
 | --- | --- |
 | Multi-path DIIS CPU Driver | **green** (`arch-gpw-driver-paths`) |
-| Public-shape freeze | **green** (this note + `reg_arch-cuda-gpw-public-shape-freeze`; merge `0147fe02`) |
+| Public-shape freeze | **green** (this note; merge `0147fe02`) |
 | Stage footholds composed | **green** (ks-chain / GGA / MG units) |
-| Full method product | **staffable** under this contract — still needs GH200 log, CUDA↔CPU energy/force tols, scoped product slice; not “auto-landed” |
+| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate; depth residual (device collocate/forces, MG, UKS, multi-k, stress) stays on es-cpu-cuda queue |
 
 `cuda-gpw-full-product` is no longer blocked on “needs architecture freeze”.
 It remains a product implementation slug (compose internals → public method),

@@ -27,7 +27,7 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 - New electronic methods → `cp2k-method-loop` / `pyscf-method-loop`
 - Classical MD CUDA → OpenMM track
-- Full `cuda-gpw-full-product` before architecture freeze
+- New hybrid/GAPW/PAW/meta-GGA product (method loops); re-opening MG soft-tols
 
 ## Notes
 
@@ -80,3 +80,16 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
   Roadmap prose: freeze staffable (no ○→✓). Worktrees/`build*` empty. Staff
   next: product P0. Queue **not** exhausted. No push.
 
+
+- **2026-08-10 GapCensus bootstrap (parent `dev` @ `a6049f4f`):** Re-diff tree
+  (`cuda::gpw::GpwDft` public first slice **on base**; host collocate/integrate +
+  device `KsChainDevice`; forces CPU-backed; no CUDA GPW stress), PW reject
+  matrix (spin∧PBE energy; spin/smear forces/stress), notes (freeze green;
+  fair walls **2.33×** MG MAIN held), roadmap DFT CUDA GPW columns still ○ for
+  full RKS/UKS product depth. **cpu_pending=0**; **cuda_pending=13**;
+  **pending_count=13**; **gaps_remaining≈14** (no new slug invention — depth
+  rows already cover hybrid compose + PW spin/PBE residual). Spec
+  `cuda-gpw-full-product` closed (acceptance_met=true; deleted). Worktrees /
+  `wf/*` / `build*` empty. Staff next: P1 GPW device-collocate/forces +
+  multigrid-run/uks-gamma + PW pbe-stress/spin-pbe. Queue **not** exhausted.
+  No push.
