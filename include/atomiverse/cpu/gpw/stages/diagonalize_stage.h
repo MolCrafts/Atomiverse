@@ -4,36 +4,30 @@
 
 #include <functional>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
-#include "atomiverse/cpu/linalg/matrix.h"
 
 namespace ATV {
 namespace cpu {
 namespace gpw {
 
-/// @brief Generalized eigenproblem stage for the GPW Driver loop.
+/// @brief Eigenproblem stage for the GPW Driver loop (path-local Op).
 ///
-/// Calls a path-local diagonalizer (level-shift aware for Γ RKS) so the free
-/// helper `diagonalize_fock_shifted` stays the single implementation.
+/// Path Op diagonalizes the mixed KS matrix (Γ real, multi-k complex,
+/// dual-spin UKS). Honors `skip_update` so a just-converged iteration leaves
+/// orbitals untouched.
 class DiagonalizeStage : public cpu::Component {
   public:
-    /// @brief (eig, C) from the mixed KS matrix.
-    using DiagFn = std::function<std::pair<linalg::RealVector, linalg::RealMatrix>(
-        const linalg::RealMatrix& H_ext, const linalg::RealMatrix& C_prev)>;
+    /// @brief Path-local diagonalizer body.
+    using Op = std::function<void()>;
 
-    /// @param diag         Path-local diagonalizer.
-    /// @param H_ext        Mixed KS matrix (read).
-    /// @param C            MO coefficients (write); also previous C for shift.
+    /// @param op           Path-local diagonalize.
     /// @param skip_update  When true, leave C unchanged.
-    DiagonalizeStage(DiagFn diag, const linalg::RealMatrix& H_ext,
-                     linalg::RealMatrix& C, const bool& skip_update)
-        : diag_(std::move(diag)), H_ext_(H_ext), C_(C),
-          skip_update_(skip_update) {}
+    DiagonalizeStage(Op op, const bool& skip_update)
+        : op_(std::move(op)), skip_update_(skip_update) {}
 
     /// @brief Component name.
     /// @return `"gpw_diagonalize_stage"`.
@@ -45,22 +39,18 @@ class DiagonalizeStage : public cpu::Component {
         return {ATV::make_binding(ATV::gpw::Phase::diagonalize, 0)};
     }
 
-    /// @brief Diagonalize H_ext → C.
+    /// @brief Diagonalize unless skip_update.
     /// @param ctx Launch context; self-guards on `gpw::Phase::diagonalize`.
     void launch(const cpu::LaunchContext& ctx) override {
         if (!ctx.at(ATV::gpw::Phase::diagonalize))
             return;
         if (skip_update_)
             return;
-        auto [eig, C] = diag_(H_ext_, C_);
-        (void)eig;
-        C_ = std::move(C);
+        op_();
     }
 
   private:
-    DiagFn diag_;
-    const linalg::RealMatrix& H_ext_;
-    linalg::RealMatrix& C_;
+    Op op_;
     const bool& skip_update_;
 };
 

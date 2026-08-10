@@ -1037,6 +1037,7 @@ if(ATV_BUILD_PATH)
     atv_add_regression(path pimd_free_particle_estimators)
 endif()
 atv_add_regression(architecture harmonic_driver_matrix)
+atv_add_regression(architecture arch-gpw-driver-paths)
 atv_add_regression(architecture module_compile_defs)
 if(ATV_BUILD_PW)
     # arch-pw-driver-node: PW → cpu::Driver<pw::Phase> restricted fixed-occ;

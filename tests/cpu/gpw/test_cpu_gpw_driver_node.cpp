@@ -15,8 +15,6 @@
 #include "atomiverse/cpu/gpw/stages/gpw_converged.h"
 #include "atomiverse/cpu/gpw/stages/ks_build_stage.h"
 #include "atomiverse/cpu/gpw/stages/mix_stage.h"
-#include "atomiverse/cpu/linalg/matrix.h"
-#include <xtensor/containers/xtensor.hpp>
 
 using ATV::cpu::gpw::DiagonalizeStage;
 using ATV::cpu::gpw::DensityStage;
@@ -24,7 +22,6 @@ using ATV::cpu::gpw::GpwConverged;
 using ATV::cpu::gpw::GpwDft;
 using ATV::cpu::gpw::KsBuildStage;
 using ATV::cpu::gpw::MixStage;
-using ATV::cpu::linalg::RealMatrix;
 
 // GpwDft is the GPW self-consistency Driver node (MeanFieldMethod pattern).
 TEST(GpwDriverNode, InheritsCpuDriverGpwPhase) {
@@ -34,19 +31,14 @@ TEST(GpwDriverNode, InheritsCpuDriverGpwPhase) {
     EXPECT_EQ(ATV::gpw::kind_of(ATV::gpw::Phase{}), ATV::PhaseKind::SCF);
 }
 
-// Stage default bindings target the matching gpw::Phase slots.
+// Stage default bindings target the matching gpw::Phase slots (path-local Ops).
 TEST(GpwDriverNode, StageDefaultBindings) {
-    RealMatrix P, S, X, H, Herr, Hext, C;
-    double e = 0, errn = 0, prev = 0;
     bool skip = false;
-    auto builder = [](const RealMatrix&, RealMatrix&, double&) {};
-    auto diag = [](const RealMatrix&, const RealMatrix&) {
-        return std::make_pair(xt::xtensor<double, 1>{}, RealMatrix{});
-    };
-    KsBuildStage ks(builder, P, S, X, H, Herr, e, errn, prev, 1e-8, 1e-5, skip);
-    MixStage mix(true, 6, H, Herr, Hext, skip);
-    DiagonalizeStage d(diag, Hext, C, skip);
-    DensityStage dens(true, 0.5, 1, 2, C, P, skip);
+    auto nop = []() {};
+    KsBuildStage ks(nop);
+    MixStage mix(nop, skip);
+    DiagonalizeStage d(nop, skip);
+    DensityStage dens(nop, skip);
     GpwConverged crit(skip);
 
     auto bind0 = [](const auto& c) {
@@ -60,4 +52,22 @@ TEST(GpwDriverNode, StageDefaultBindings) {
     EXPECT_EQ(bind0(d), ATV::slot_of(ATV::gpw::Phase::diagonalize));
     EXPECT_EQ(bind0(dens), ATV::slot_of(ATV::gpw::Phase::density));
     EXPECT_EQ(bind0(crit), ATV::slot_of(ATV::gpw::Phase::check));
+}
+
+// Path-local Ops are the multi-path DIIS shape (Γ RKS/UKS + multi-k).
+TEST(GpwDriverNode, PathLocalOpsAreCallable) {
+    int hits = 0;
+    bool skip = false;
+    KsBuildStage ks([&]() { ++hits; });
+    MixStage mix([&]() { ++hits; }, skip);
+    DiagonalizeStage d([&]() { ++hits; }, skip);
+    DensityStage dens([&]() { ++hits; }, skip);
+
+    // Direct launch without phase context is guarded — Ops not run off-phase.
+    // Construction + binding surface is the unit gate (no full SCF).
+    EXPECT_EQ(ks.name(), "gpw_ks_build_stage");
+    EXPECT_EQ(mix.name(), "gpw_mix_stage");
+    EXPECT_EQ(d.name(), "gpw_diagonalize_stage");
+    EXPECT_EQ(dens.name(), "gpw_density_stage");
+    EXPECT_EQ(hits, 0);
 }

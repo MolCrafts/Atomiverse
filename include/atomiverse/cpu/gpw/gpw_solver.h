@@ -31,6 +31,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -298,11 +299,11 @@ struct GpwResult {
 /// Construction fixes the configuration; `build()` runs one-time fail-fast
 /// validation against a reference atom set (no-fallback); `run()` is
 /// re-entrant and rebuilds geometry-dependent structures per call (grids,
-/// lattice images, S/T/Vpp — same policy as `PW`). The Γ RKS DIIS/linear-mix
-/// self-consistency loop is owned as Driver stages
-/// (`ks_build → mix → diagonalize → density → check`); multi-k / UKS / OT
-/// residual paths still use free loops until the path-migration wave.
-/// Move-only. Public surface is members + `run`/`build` — no `*Config` bag.
+/// lattice images, S/T/Vpp — same policy as `PW`). All **DIIS** / linear-mix
+/// self-consistency paths (Γ RKS, Γ UKS, multi-k RKS, multi-k UKS) are owned
+/// as Driver stages (`ks_build → mix → diagonalize → density → check`) with
+/// path-local stage Ops. **OT** free loops remain residual (different control
+/// flow). Move-only. Public surface is members + `run`/`build` — no `*Config`.
 class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
   public:
     /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(atoms)`.
@@ -676,26 +677,66 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
                         const std::vector<linalg::CplxMatrix>* guess_P_k,
                         const std::vector<linalg::CplxMatrix>* guess_P_k_beta);
 
-    /// @brief Wire Γ RKS stages + compile Plan (idempotent; rebinds after move).
-    void ensure_driver_built_(bool use_diis, double mix, int n_occ, int n_basis,
-                              int diis_depth, double tol, double diis_err_tol,
-                              KsBuildStage::Builder builder,
-                              DiagonalizeStage::DiagFn diag);
+    /// @brief Wire path-local stage Ops + compile Plan (rebinds after move).
+    /// @param ks   `gpw::Phase::ks_build` body (residual gate sets skip_).
+    /// @param mix  `gpw::Phase::mix` body (skipped when skip_).
+    /// @param diag `gpw::Phase::diagonalize` body (skipped when skip_).
+    /// @param dens `gpw::Phase::density` body (skipped when skip_).
+    void ensure_path_stages_(KsBuildStage::Op ks, MixStage::Op mix,
+                             DiagonalizeStage::Op diag, DensityStage::Op dens);
+
+    /// @brief Path-local Op factory: receives DIIS gate refs, returns stage Ops.
+    using PathOpFactory = std::function<std::tuple<KsBuildStage::Op, MixStage::Op,
+                                                   DiagonalizeStage::Op,
+                                                   DensityStage::Op>(
+        bool& skip, double& e_total, double& err_norm, double& prev_energy)>;
+
+    /// @brief Wire factory Ops onto gate fields and run the Driver loop.
+    /// @param factory Builds path Ops bound to the shared DIIS gate.
+    /// @param max_iter SCF iteration budget (dimensionless).
+    /// @param res Result buffer (writes iters / e_total / converged).
+    /// @return true if the residual gate fired (Driver converged).
+    bool drive_path_diis_(PathOpFactory factory, int max_iter, GpwResult& res);
 
     /// @brief Drop wired stages / Plan / criteria so the next ensure rebinds.
     void reset_built_driver_();
 
+    /// @brief setup_pass → step_once × max_iter → poll_criteria → teardown.
+    /// @param max_iter SCF iteration budget (dimensionless).
+    /// @param res Result buffer (writes iters / e_total / converged).
+    /// @return true if the residual gate fired (Driver converged).
+    bool drive_stage_loop_(int max_iter, GpwResult& res);
+
     /// @brief Stages fixed by ensure; nothing user-suppliable.
     void validate_components() const override {}
 
-    /// @brief Seed loop matrices, wire stages, run Driver iterations, write res.
+    /// @brief Γ RKS DIIS: seed RealMatrix loop state, wire Ops, drive stages.
     /// @return true if the residual gate fired (Driver converged).
     bool drive_gamma_rks_diis_(
         linalg::RealMatrix P, const linalg::RealMatrix& S,
         const linalg::RealMatrix& X, linalg::RealMatrix C_prev, int n_occ,
         int nb, bool use_diis, double mix, double level_shift, int max_iter,
         double tol, double diis_err_tol, int diis_depth,
-        KsBuildStage::Builder build_H, DiagonalizeStage::DiagFn diag,
+        std::function<void(const linalg::RealMatrix& P, linalg::RealMatrix& H,
+                           double& e_total)>
+            build_H,
+        std::function<std::pair<linalg::RealVector, linalg::RealMatrix>(
+            const linalg::RealMatrix& H_ext, const linalg::RealMatrix& C_prev)>
+            diag,
+        GpwResult& res);
+
+    /// @brief Γ UKS DIIS: wire dual-spin Ops, drive stages.
+    /// @return true if the residual gate fired (Driver converged).
+    bool drive_gamma_uks_diis_(
+        linalg::RealMatrix& Pa, linalg::RealMatrix& Pb,
+        linalg::RealMatrix& Ca_prev, linalg::RealMatrix& Cb_prev,
+        const linalg::RealMatrix& S, const linalg::RealMatrix& X, int n_alpha,
+        int n_beta, int nb, bool use_diis, double mix, double level_shift,
+        int max_iter, double tol, double diis_err_tol, int diis_depth,
+        bool do_dftu,
+        std::function<std::tuple<linalg::RealMatrix, linalg::RealMatrix, double>(
+            const linalg::RealMatrix& Pa, const linalg::RealMatrix& Pb)>
+            build_uks_H,
         GpwResult& res);
 
     GpwResult result_;     ///< Owned result buffer (last run).
@@ -704,7 +745,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     G0W0Result g0w0_result_; ///< Owned G0W0 result buffer (last g0w0()).
     bool built_ = false;   ///< Whether build() validated the configuration.
 
-    // ── Γ RKS DIIS iteration state (wired into stages by reference) ─────
+    // ── Shared DIIS gate flag + Γ RKS loop matrices (path Ops capture) ──
     linalg::RealMatrix loop_P_;
     linalg::RealMatrix loop_S_;
     linalg::RealMatrix loop_X_;
