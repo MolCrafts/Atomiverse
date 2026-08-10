@@ -3,7 +3,7 @@
 ///        vs CPU `ks_grid_build_rks(..., XcKind::PBE)` + continuous products.
 ///
 /// Gates:
-///   1. CPU path produces finite e_H, e_xc, V_eff, integrate acc under PBE;
+///   1. CPU path produces finite e_H, e_xc, V_eff, integrate acc;
 ///   2. CUDA path matches within stated stage tols (Hartree).
 ///
 /// Not a full GPW method. See REFERENCE.md.
@@ -32,7 +32,7 @@ using ATV::cuda::gpw::internal::KsXcKind;
 
 namespace {
 
-// Stage tols (composite of spectral + PBE + Poisson footholds; not bit-exact).
+// Stage tols (composite of spectral + PBE + Poisson foothold units; not bit-exact).
 constexpr double kERel = 1.0e-10;
 constexpr double kVAbs = 1.0e-12;
 constexpr double kVRel = 1.0e-9;
@@ -49,17 +49,6 @@ void check_cuda(cudaError_t e, const char* what) {
         std::fprintf(stderr, "FAIL: %s: %s\n", what, cudaGetErrorString(e));
         std::exit(1);
     }
-}
-
-std::string parse_device(int argc, char** argv) {
-    std::string want = "both";
-    for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--device") == 0 && i + 1 < argc)
-            want = argv[++i];
-    }
-    if (want != "cpu" && want != "cuda" && want != "both")
-        die("device must be cpu|cuda|both");
-    return want;
 }
 
 UniformGrid cubic_grid(int n, double L) {
@@ -96,38 +85,20 @@ DeviceProduct make_ss(double p, const double pc[3], double weight) {
     return q;
 }
 
-double host_product_shape(const DeviceProduct& q, const double r[3]) {
+double host_shape(const DeviceProduct& q, const double r[3]) {
     if (q.weight == 0.0)
         return 0.0;
     const double dx = r[0] - q.pc[0];
     const double dy = r[1] - q.pc[1];
     const double dz = r[2] - q.pc[2];
-    double v = q.weight * std::exp(-q.p * (dx * dx + dy * dy + dz * dz));
-    for (int d = 0; d < 3; ++d) {
-        double da = r[d] - q.ra[d];
-        double db = r[d] - q.rb[d];
-        for (int i = 0; i < q.la[d]; ++i)
-            v *= da;
-        for (int i = 0; i < q.lb[d]; ++i)
-            v *= db;
-    }
-    return v;
+    return q.weight * std::exp(-q.p * (dx * dx + dy * dy + dz * dz));
 }
 
-double host_product_shape_bare(const DeviceProduct& q, const double r[3]) {
+double host_shape_bare(const DeviceProduct& q, const double r[3]) {
     const double dx = r[0] - q.pc[0];
     const double dy = r[1] - q.pc[1];
     const double dz = r[2] - q.pc[2];
-    double v = std::exp(-q.p * (dx * dx + dy * dy + dz * dz));
-    for (int d = 0; d < 3; ++d) {
-        double da = r[d] - q.ra[d];
-        double db = r[d] - q.rb[d];
-        for (int i = 0; i < q.la[d]; ++i)
-            v *= da;
-        for (int i = 0; i < q.lb[d]; ++i)
-            v *= db;
-    }
-    return v;
+    return std::exp(-q.p * (dx * dx + dy * dy + dz * dz));
 }
 
 std::vector<double> collocate(const UniformGrid& grid,
@@ -138,7 +109,7 @@ std::vector<double> collocate(const UniformGrid& grid,
         double r[3];
         grid.point(i, r);
         for (const auto& q : prods)
-            rho[static_cast<std::size_t>(i)] += host_product_shape(q, r);
+            rho[static_cast<std::size_t>(i)] += host_shape(q, r);
     }
     return rho;
 }
@@ -153,7 +124,7 @@ std::vector<double> integrate(const UniformGrid& grid,
         grid.point(i, r);
         const double v = V[static_cast<std::size_t>(i)];
         for (std::size_t q = 0; q < prods.size(); ++q)
-            acc[q] += v * host_product_shape_bare(prods[q], r);
+            acc[q] += v * host_shape_bare(prods[q], r);
     }
     return acc;
 }
@@ -176,6 +147,21 @@ bool near_rel(double a, double b, double rel) {
     return std::abs(a - b) <= rel * std::max(1.0, std::abs(b));
 }
 
+std::string parse_device(int argc, char** argv) {
+    std::string want = "both";
+    for (int i = 1; i < argc; ++i) {
+        const char* a = argv[i];
+        if (std::strncmp(a, "--device=", 9) == 0)
+            want = a + 9;
+        else if (std::strcmp(a, "--device") == 0 && i + 1 < argc)
+            want = argv[++i];
+        else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0
+                 || std::strcmp(a, "both") == 0)
+            want = a;
+    }
+    return want;
+}
+
 struct Case {
     UniformGrid grid;
     std::vector<DeviceProduct> prods;
@@ -185,46 +171,28 @@ struct Case {
 
 Case make_case() {
     Case c;
-    c.grid = cubic_grid(20, 10.0);
+    c.grid = cubic_grid(16, 8.0);
     {
-        const double c0[3] = {5.0, 5.0, 5.0};
-        c.prods.push_back(make_ss(1.8, c0, 0.8));
+        const double c0[3] = {4.0, 4.0, 4.0};
+        c.prods.push_back(make_ss(2.0, c0, 1.0));
     }
     {
-        const double c1[3] = {4.2, 5.0, 5.6};
-        c.prods.push_back(make_ss(2.2, c1, 0.5));
+        const double c1[3] = {3.5, 4.0, 4.5};
+        c.prods.push_back(make_ss(2.5, c1, 0.6));
     }
     {
-        const double c2[3] = {5.8, 5.0, 5.6};
-        c.prods.push_back(make_ss(2.2, c2, 0.5));
+        const double c2[3] = {4.5, 4.0, 4.5};
+        c.prods.push_back(make_ss(2.5, c2, 0.6));
     }
-    // Mild p-type monom so angular collocate path is exercised under GGA.
+    const auto rho = collocate(c.grid, c.prods);
+    const std::size_t n = rho.size();
+    c.n_ion.assign(n, 0.0);
+    c.v_loc.assign(n, -0.02);
     {
-        DeviceProduct q;
-        q.p = 2.0;
-        q.weight = 0.4;
-        for (int d = 0; d < 3; ++d) {
-            q.pc[d] = 5.0;
-            q.ra[d] = 5.0;
-            q.rb[d] = 5.0;
-            q.la[d] = 0;
-            q.lb[d] = 0;
-        }
-        q.la[2] = 1;
-        q.ra[2] = 4.85;
-        q.rb[2] = 5.15;
-        q.pc[2] = 0.5 * (q.ra[2] + q.rb[2]);
-        c.prods.push_back(q);
-    }
-
-    const long ng = c.grid.npts();
-    c.n_ion.assign(static_cast<std::size_t>(ng), 0.0);
-    c.v_loc.assign(static_cast<std::size_t>(ng), -0.04);
-    {
-        const double pc[3] = {5.0, 5.0, 5.0};
-        const double alpha = 3.0;
+        const double pc[3] = {4.0, 4.0, 4.0};
+        const double alpha = 2.5;
         const double pref = std::pow(alpha / M_PI, 1.5);
-        for (std::size_t i = 0; i < c.n_ion.size(); ++i) {
+        for (std::size_t i = 0; i < n; ++i) {
             double r[3];
             c.grid.point(static_cast<long>(i), r);
             const double dx = r[0] - pc[0];

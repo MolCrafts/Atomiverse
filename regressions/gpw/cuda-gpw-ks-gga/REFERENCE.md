@@ -2,42 +2,45 @@
 
 ## What
 
-Composed Γ-point CUDA GPW KS **stage** with closed-shell **PBE-GGA**:
-product collocate → Poisson → spectral ∇ρ → device PBE (local + flux) →
-−∇·flux → V_eff → product integrate. Dual-gate vs same-settings CPU
-`ks_grid_build_rks(..., XcKind::PBE)`.
+Composed CUDA GPW **KS stage unit** with closed-shell **PBE-GGA** (not a full
+method):
 
-**Not** a full `GpwDft` method product. No multigrid, no spin, no public method.
+```
+product collocate → n = ρ − n_ion → Poisson/FFT
+  → spectral ∇ρ → device PBE (local v_ρ + flux) → spectral −∇·flux
+  → V_eff = V_es + V_xc + V_loc → product integrate
+```
+
+Dual-gate vs same-settings CPU `ks_grid_build_rks(..., XcKind::PBE)` +
+continuous product collocate/integrate on a Γ 16³ / L=8 Bohr multi-s density.
 
 ## Oracle
 
-| Field | Value |
+| Item | Value |
 | --- | --- |
-| Oracle | same-settings CPU twin (`ks_grid_build_rks` + continuous product shapes) |
+| Oracle | `cpu-twin` (`ks_grid_build_rks` PBE + continuous product shapes) |
+| Literature | n/a (internal stage parity) |
 | Units | Hartree |
-| Stage tols | e_rel 1e-10; V_eff 1e-9·peak + 1e-12; acc 1e-9·peak + 1e-12 |
 
-## Build / run (GH200 only for CUDA)
+## Tols (stated)
+
+| Quantity | Tol |
+| --- | --- |
+| e_hartree, e_xc, e_locgrid | `1e-10 · max(1, \|ref\|)` |
+| max\|ΔV_eff\| | `1e-9 · max(1, peak) + 1e-12` |
+| max\|Δacc\| | `1e-9 · max(1, peak) + 1e-12` |
+
+Not bit-exact (cuFFT vs FFTW, atomic E_xc reduction).
+
+## Perf
+
+`perf_exempt` — tiny-grid correctness foothold; not a fair CP2K twin wall.
+
+## Run
 
 ```bash
-#!/bin/bash -l
-module load GPU/buildenv-gcccuda/2026.03-cu13.0
-# do NOT override RUSTUP on aarch64
-export OPENBLAS_ROOT="${OPENBLASDIR:-$OPENBLAS_ROOT}"
-export LD_LIBRARY_PATH="${LIBRARY_PATH}:${LD_LIBRARY_PATH}"
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON \
-  -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
-  -DATV_BUILD_GPW=ON -DATV_BUILD_CUDA=ON -DBLA_VENDOR=OpenBLAS
-cmake --build build -j$(nproc) --target atomiverse test_cuda_gpw_ks_gga \
-  reg_cuda-gpw-ks-gga
-ctest --test-dir build -R '^test_cuda_gpw_ks_gga$' --output-on-failure
+# On GH200 only (login has no CUDA toolkit)
+cmake --build build -j$(nproc) --target atomiverse test_cuda_gpw_ks_gga reg_cuda-gpw-ks-gga
+ctest --test-dir build -R 'test_cuda_gpw_ks_gga|test_cuda_gpw_ks_chain' --output-on-failure
 cmake --build build --target run_reg_cuda-gpw-ks-gga
 ```
-
-## Evidence (fill after GH200)
-
-| Field | Value |
-| --- | --- |
-| HEAD | (worker) |
-| Dual-gate | (PASS line) |
-| Log | (path) |

@@ -1,7 +1,7 @@
 /// @file tests/cuda/gpw/test_ks_gga.cu
-/// @brief CUDA GPW composed KS chain with closed-shell PBE-GGA vs CPU oracle.
+/// @brief CUDA GPW closed-shell PBE-GGA KS chain vs CPU `ks_grid_build_rks`.
 ///
-/// Unit only (Γ small grid): product collocate → Poisson → spectral PBE →
+/// Unit only (Γ small grid): product collocate → Poisson → spectral PBE-GGA →
 /// V_eff → integrate. Not a full GPW SCF product.
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/internal/collocate.h"
@@ -11,6 +11,7 @@
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 #include "atomiverse/cuda/gpw/internal/spectral_fft.cuh"
 
+#include <array>
 #include <cmath>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
@@ -18,8 +19,6 @@
 
 using ATV::cpu::gpw::UniformGrid;
 using ATV::cpu::gpw::XcKind;
-using ATV::cpu::gpw::divergence;
-using ATV::cpu::gpw::gradient;
 using ATV::cpu::gpw::internal::ks_grid_build_rks;
 using ATV::cuda::gpw::internal::CollocateGridDesc;
 using ATV::cuda::gpw::internal::DeviceProduct;
@@ -61,7 +60,7 @@ CollocateGridDesc to_desc(const UniformGrid& g) {
     return d;
 }
 
-GpwGridDesc to_gpw(const UniformGrid& g) {
+GpwGridDesc to_poisson(const UniformGrid& g) {
     GpwGridDesc d;
     for (int i = 0; i < 3; ++i) {
         d.n[i] = g.n[i];
@@ -234,78 +233,64 @@ ChainHost run_device(const UniformGrid& grid,
 
 } // namespace
 
-// ── Spectral ∇ / div vs CPU grid_fft ──────────────────────────────────────
-TEST(CudaGpwSpectralFft, GradientDivMatchCpu) {
+// ── Spectral ∇ / −∇· match CPU grid_fft on a smooth field ─────────────────
+TEST(CudaGpwKsGga, SpectralMatchesCpuGradientDiv) {
     UniformGrid grid = cubic_grid(16, 8.0);
     const long ng = grid.npts();
     std::vector<double> f(static_cast<std::size_t>(ng));
+    // Smooth periodic field so spectral derivatives are well-defined.
     for (long i = 0; i < ng; ++i) {
         double r[3];
         grid.point(i, r);
-        // Smooth periodic-ish blob (not exactly periodic at edges, but
-        // spectral convention must match CPU on the same samples).
-        const double dx = r[0] - 4.0;
-        const double dy = r[1] - 4.0;
-        const double dz = r[2] - 4.0;
         f[static_cast<std::size_t>(i)] =
-            std::exp(-1.5 * (dx * dx + dy * dy + dz * dz));
+            0.3 * std::cos(2.0 * M_PI * r[0] / grid.L[0])
+            + 0.2 * std::sin(2.0 * M_PI * r[1] / grid.L[1])
+            + 0.1 * std::cos(4.0 * M_PI * r[2] / grid.L[2]);
     }
 
-    const auto cpu_g = gradient(grid, f);
-    const auto cpu_div = divergence(grid, cpu_g);
+    const auto g_cpu = ATV::cpu::gpw::gradient(grid, f);
+    const std::array<std::vector<double>, 3> v = {g_cpu[0], g_cpu[1], g_cpu[2]};
+    const auto div_cpu = ATV::cpu::gpw::divergence(grid, v);
 
-    double* d_f = static_cast<double*>(
-        dmalloc(static_cast<size_t>(ng) * sizeof(double)));
-    double* d_gx = static_cast<double*>(
-        dmalloc(static_cast<size_t>(ng) * sizeof(double)));
-    double* d_gy = static_cast<double*>(
-        dmalloc(static_cast<size_t>(ng) * sizeof(double)));
-    double* d_gz = static_cast<double*>(
-        dmalloc(static_cast<size_t>(ng) * sizeof(double)));
-    double* d_div = static_cast<double*>(
-        dmalloc(static_cast<size_t>(ng) * sizeof(double)));
-    check_cuda(cudaMemcpy(d_f, f.data(),
-                          static_cast<size_t>(ng) * sizeof(double),
+    double* d_f = static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
+    double* d_gx = static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
+    double* d_gy = static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
+    double* d_gz = static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
+    double* d_div = static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
+    check_cuda(cudaMemcpy(d_f, f.data(), static_cast<size_t>(ng) * sizeof(double),
                           cudaMemcpyHostToDevice),
                "H2D f");
 
-    SpectralFftDevice spectral(to_gpw(grid));
-    spectral.gradient(d_f, d_gx, d_gy, d_gz);
-    spectral.divergence(d_gx, d_gy, d_gz, d_div);
+    SpectralFftDevice sp(to_poisson(grid));
+    sp.gradient(d_f, d_gx, d_gy, d_gz);
+    sp.divergence(d_gx, d_gy, d_gz, d_div);
+    check_cuda(cudaDeviceSynchronize(), "spectral sync");
 
-    std::vector<double> h_gx(static_cast<std::size_t>(ng));
-    std::vector<double> h_gy(static_cast<std::size_t>(ng));
-    std::vector<double> h_gz(static_cast<std::size_t>(ng));
-    std::vector<double> h_div(static_cast<std::size_t>(ng));
-    check_cuda(cudaMemcpy(h_gx.data(), d_gx,
-                          static_cast<size_t>(ng) * sizeof(double),
+    std::vector<double> gx(static_cast<std::size_t>(ng));
+    std::vector<double> gy(static_cast<std::size_t>(ng));
+    std::vector<double> gz(static_cast<std::size_t>(ng));
+    std::vector<double> div(static_cast<std::size_t>(ng));
+    check_cuda(cudaMemcpy(gx.data(), d_gx, static_cast<size_t>(ng) * sizeof(double),
                           cudaMemcpyDeviceToHost),
                "D2H gx");
-    check_cuda(cudaMemcpy(h_gy.data(), d_gy,
-                          static_cast<size_t>(ng) * sizeof(double),
+    check_cuda(cudaMemcpy(gy.data(), d_gy, static_cast<size_t>(ng) * sizeof(double),
                           cudaMemcpyDeviceToHost),
                "D2H gy");
-    check_cuda(cudaMemcpy(h_gz.data(), d_gz,
-                          static_cast<size_t>(ng) * sizeof(double),
+    check_cuda(cudaMemcpy(gz.data(), d_gz, static_cast<size_t>(ng) * sizeof(double),
                           cudaMemcpyDeviceToHost),
                "D2H gz");
-    check_cuda(cudaMemcpy(h_div.data(), d_div,
-                          static_cast<size_t>(ng) * sizeof(double),
+    check_cuda(cudaMemcpy(div.data(), d_div, static_cast<size_t>(ng) * sizeof(double),
                           cudaMemcpyDeviceToHost),
                "D2H div");
 
-    const double peak_g = std::max({max_abs(cpu_g[0]), max_abs(cpu_g[1]),
-                                    max_abs(cpu_g[2])});
-    ASSERT_GT(peak_g, 1e-8);
-    const double tol_g = 1e-10 * std::max(1.0, peak_g) + 1e-14;
-    EXPECT_LE(max_abs_diff(h_gx, cpu_g[0]), tol_g);
-    EXPECT_LE(max_abs_diff(h_gy, cpu_g[1]), tol_g);
-    EXPECT_LE(max_abs_diff(h_gz, cpu_g[2]), tol_g);
-
-    const double peak_d = max_abs(cpu_div);
-    const double tol_d = 1e-9 * std::max(1.0, peak_d) + 1e-12;
-    EXPECT_LE(max_abs_diff(h_div, cpu_div), tol_d)
-        << "max|Δdiv| peak=" << peak_d;
+    const double peak_g =
+        std::max({max_abs(g_cpu[0]), max_abs(g_cpu[1]), max_abs(g_cpu[2]), 1.0});
+    const double tol_g = 1e-10 * peak_g + 1e-12;
+    EXPECT_LE(max_abs_diff(gx, g_cpu[0]), tol_g);
+    EXPECT_LE(max_abs_diff(gy, g_cpu[1]), tol_g);
+    EXPECT_LE(max_abs_diff(gz, g_cpu[2]), tol_g);
+    const double peak_d = std::max(1.0, max_abs(div_cpu));
+    EXPECT_LE(max_abs_diff(div, div_cpu), 1e-10 * peak_d + 1e-12);
 
     cudaFree(d_f);
     cudaFree(d_gx);
@@ -314,7 +299,7 @@ TEST(CudaGpwSpectralFft, GradientDivMatchCpu) {
     cudaFree(d_div);
 }
 
-// ── Single s–s product: V_eff + energies vs ks_grid_build_rks(PBE) ────────
+// ── Single s–s product: V_eff + energies vs ks_grid_build_rks PBE ──────────
 TEST(CudaGpwKsGga, SSMatchesCpuKsGridPbe) {
     UniformGrid grid = cubic_grid(16, 8.0);
     const double pc[3] = {4.0, 4.0, 4.0};
@@ -328,8 +313,8 @@ TEST(CudaGpwKsGga, SSMatchesCpuKsGridPbe) {
         ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PBE,
                           /*nonperiodic=*/false, false, false, false);
 
-    const auto dev = run_device(grid, prods, n_ion, v_loc, /*integrate=*/true,
-                               KsXcKind::PBE);
+    const auto dev =
+        run_device(grid, prods, n_ion, v_loc, /*integrate=*/true, KsXcKind::PBE);
 
     EXPECT_NEAR(dev.e.e_hartree, cpu.e_hartree,
                 1e-10 * std::max(1.0, std::abs(cpu.e_hartree)));
@@ -351,7 +336,7 @@ TEST(CudaGpwKsGga, SSMatchesCpuKsGridPbe) {
     EXPECT_LE(max_da, tol_a) << "max|Δacc|=" << max_da << " peak=" << peak_a;
 }
 
-// ── Multi-center + n_ion + V_loc under PBE ────────────────────────────────
+// ── Multi-center + n_ion + V_loc under PBE ─────────────────────────────────
 TEST(CudaGpwKsGga, MultiWithIonAndVlocPbe) {
     UniformGrid grid = cubic_grid(20, 10.0);
     std::vector<DeviceProduct> prods;
@@ -389,8 +374,8 @@ TEST(CudaGpwKsGga, MultiWithIonAndVlocPbe) {
     const auto cpu =
         ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PBE, false, false,
                           false, false);
-    const auto dev = run_device(grid, prods, n_ion, v_loc, /*integrate=*/true,
-                               KsXcKind::PBE);
+    const auto dev =
+        run_device(grid, prods, n_ion, v_loc, /*integrate=*/true, KsXcKind::PBE);
 
     EXPECT_NEAR(dev.e.e_hartree, cpu.e_hartree,
                 1e-10 * std::max(1.0, std::abs(cpu.e_hartree)));
@@ -412,11 +397,11 @@ TEST(CudaGpwKsGga, MultiWithIonAndVlocPbe) {
     EXPECT_LE(max_da, tol_a) << "max|Δacc|=" << max_da;
 }
 
-// ── Default PADE path still matches (API regression) ──────────────────────
-TEST(CudaGpwKsGga, DefaultPadeStillMatches) {
-    UniformGrid grid = cubic_grid(16, 8.0);
-    const double pc[3] = {4.0, 4.0, 4.0};
-    std::vector<DeviceProduct> prods = {make_ss(2.5, pc, 1.3)};
+// ── Default PADE path still matches (API default) ─────────────────────────
+TEST(CudaGpwKsGga, DefaultPadeUnchanged) {
+    UniformGrid grid = cubic_grid(12, 6.0);
+    const double pc[3] = {3.0, 3.0, 3.0};
+    std::vector<DeviceProduct> prods = {make_ss(2.0, pc, 1.0)};
     const auto rho = host_collocate(grid, prods);
     const std::size_t n = rho.size();
     std::vector<double> n_ion(n, 0.0);
@@ -424,10 +409,11 @@ TEST(CudaGpwKsGga, DefaultPadeStillMatches) {
     const auto cpu =
         ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PADE, false, false,
                           false, false);
-    const auto dev = run_device(grid, prods, n_ion, v_loc, true, KsXcKind::PADE);
-
+    const auto dev =
+        run_device(grid, prods, n_ion, v_loc, /*integrate=*/false, KsXcKind::PADE);
     EXPECT_NEAR(dev.e.e_xc, cpu.e_xc,
                 1e-10 * std::max(1.0, std::abs(cpu.e_xc)));
+    const double peak_v = max_abs(cpu.veff);
     EXPECT_LE(max_abs_diff(dev.veff, cpu.veff),
-              1e-9 * std::max(1.0, max_abs(cpu.veff)) + 1e-12);
+              1e-9 * std::max(1.0, peak_v) + 1e-12);
 }

@@ -3,42 +3,141 @@
 #SBATCH -A naiss2026-4-715-gpu
 #SBATCH --gpus 1
 #SBATCH -t 01:00:00
-#SBATCH -c 8
+#SBATCH -c 16
 #SBATCH -J cuda-gpw-ks-gga
 #SBATCH -o .claude/cuda-gpw-ks-gga-%j.out
 #SBATCH -e .claude/cuda-gpw-ks-gga-%j.err
 
-set -euo pipefail
+# GH200 gate for slug cuda-gpw-ks-gga (closed-shell PBE-GGA KS chain stage).
+# Mirrors the proven cuda-gpw-ks-chain job: node-local build, SE/MD off (no
+# x86 libxtb), aarch64 Rust toolchain, wipe on exit.
+set -uo pipefail
 cd "${SLURM_SUBMIT_DIR:-.}"
 
+BUILD="${TMPDIR:-/tmp}/atv_ks_gga_${SLURM_JOB_ID:-$$}"
+
+wipe_builds() {
+  rm -rf "${BUILD}" 2>/dev/null || true
+  rm -rf build build-* build_cuda_gpw_ks_gga CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
+  rm -rf /tmp/atv-* 2>/dev/null || true
+  find . -maxdepth 2 -type d \( -name build -o -name 'build-*' -o -name 'build_*' \) \
+    -exec rm -rf {} + 2>/dev/null || true
+  echo "builds_wiped=true"
+  echo "BUILDS_WIPED"
+}
+trap wipe_builds EXIT
+
+if [ ! -f molrs/CMakeLists.txt ]; then
+  git submodule update --init --recursive molrs
+fi
+
 module load GPU/buildenv-gcccuda/2026.03-cu13.0
-# aarch64 GH200: do NOT override RUSTUP_TOOLCHAIN
-export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"
+export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/\.x86/' | grep -v '/\.cargo/bin' | paste -sd:)
+hash -r
 export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
-export OMP_NUM_THREADS=4
-export OPENBLAS_NUM_THREADS=1
+export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"
+export CC="${CC:-$(command -v gcc)}"
+export CXX="${CXX:-$(command -v g++)}"
+export CUDAHOSTCXX="${CUDAHOSTCXX:-$CXX}"
+# aarch64 GH200: do NOT override RUSTUP to x86
+unset RUSTUP_TOOLCHAIN || true
+export RUSTUP_TOOLCHAIN=stable-aarch64-unknown-linux-gnu
+export PATH="${HOME}/.rustup/toolchains/${RUSTUP_TOOLCHAIN}/bin:${PATH}"
+hash -r
 
-# Isolate build name so clearup wipe-shield does not race siblings.
-BUILD=build_cuda_gpw_ks_gga
-rm -rf "${BUILD}" CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
+echo "=== HOST $(hostname) arch $(uname -m) ==="
+echo "cmake=$(command -v cmake) ($($(command -v cmake) --version | head -1))"
+echo "CC=$CC CXX=$CXX"
+echo "rustc=$(command -v rustc) ($(rustc --version 2>/dev/null || echo fail))"
+nvcc --version | head -4 || true
+nvidia-smi -L || true
+echo "=== GIT ==="
+echo "HEAD=$(git rev-parse HEAD)"
+echo "branch=$(git rev-parse --abbrev-ref HEAD)"
+git log -1 --oneline
+echo "=== unstaged (test polish) ==="
+git status -sb || true
 
-echo "=== configure CUDA GPW KS-GGA @ $(hostname) $(date -Is) ==="
-cmake -B "${BUILD}" -DCMAKE_BUILD_TYPE=Release \
-  -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
-  -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
-  -DATV_BUILD_CUDA=ON -DBLA_VENDOR=OpenBLAS
+FFTW_HINT="${FFTW_ROOT:-${FFTWDIR:-${FFTW_HOME:-}}}"
+echo "BUILD_DIR=${BUILD}"
+rm -rf "${BUILD}"
+mkdir -p "${BUILD}"
+rm -rf CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
 
-echo "=== scoped build ==="
-cmake --build "${BUILD}" -j"$(nproc)" --target atomiverse \
-  test_cuda_gpw_ks_gga reg_cuda-gpw-ks-gga
+CFG_RC=1
+for attempt in 1 2 3; do
+  if cmake -S "${SLURM_SUBMIT_DIR}" -B "${BUILD}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER="${CC}" \
+    -DCMAKE_CXX_COMPILER="${CXX}" \
+    -DCMAKE_CUDA_HOST_COMPILER="${CXX}" \
+    -DCMAKE_CUDA_ARCHITECTURES=90 \
+    -DATV_BUILD_TESTS=ON \
+    -DATV_BUILD_REGRESSIONS=ON \
+    -DATV_BUILD_HF=ON \
+    -DATV_BUILD_CUDA=ON \
+    -DATV_BUILD_PW=ON \
+    -DATV_BUILD_GPW=ON \
+    -DATV_BUILD_SEMIEMPIRICAL=OFF \
+    -DATV_BUILD_MD=OFF \
+    -DATV_BUILD_MC=OFF \
+    -DATV_BUILD_MINIMIZER=OFF \
+    -DATV_BUILD_VIB=OFF \
+    -DATV_BUILD_PATH=OFF \
+    -DATV_BUILD_TORCH=OFF \
+    -DATV_USE_MPI=OFF \
+    -DBLA_VENDOR=OpenBLAS \
+    -DCMAKE_PREFIX_PATH="${FFTW_HINT};${OPENBLAS_ROOT}"; then
+    CFG_RC=0
+    break
+  fi
+  echo "cmake configure attempt ${attempt} failed — wipe and retry"
+  rm -rf "${BUILD}"
+  mkdir -p "${BUILD}"
+  sleep 5
+done
+if [ "${CFG_RC}" -ne 0 ]; then
+  echo "CMAKE_CONFIGURE_FAILED"
+  exit 1
+fi
 
-echo "=== unit test ==="
-ctest --test-dir "${BUILD}" -R '^test_cuda_gpw_ks_gga$' --output-on-failure
+NJ=$(( $(nproc) > 32 ? 32 : $(nproc) ))
+echo "=== STAGE 1: atomiverse (-j${NJ}) ==="
+cmake --build "${BUILD}" -j"${NJ}" --target atomiverse || {
+  echo "ATOMIVERSE_BUILD_FAILED"
+  exit 1
+}
 
-echo "=== dual-gate regression ==="
-cmake --build "${BUILD}" --target run_reg_cuda-gpw-ks-gga
+TARGETS=(
+  test_cuda_gpw_ks_gga
+  test_cuda_gpw_ks_chain
+  reg_cuda-gpw-ks-gga
+)
+echo "=== STAGE 2: scoped tests ==="
+for t in "${TARGETS[@]}"; do
+  echo "--- build ${t} ---"
+  cmake --build "${BUILD}" -j"${NJ}" --target "${t}" || {
+    echo "TARGET_BUILD_FAILED ${t}"
+    exit 1
+  }
+done
 
-echo "=== wipe build ==="
-rm -rf "${BUILD}" CMakeCache.txt CMakeFiles Testing .cache
-find . -maxdepth 3 -type d \( -name build -o -name 'build-*' -o -name 'build_*' \) 2>/dev/null || true
+export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
+TEST_RC=0
+echo "=== STAGE 3: ctest GGA + LDA chain ==="
+ctest --test-dir "${BUILD}" --output-on-failure \
+  -R '^(test_cuda_gpw_ks_gga|test_cuda_gpw_ks_chain)$' \
+  || TEST_RC=$?
+echo "CTEST_RC=${TEST_RC}"
+
+REG_RC=0
+echo "=== STAGE 4: run_reg_cuda-gpw-ks-gga ==="
+cmake --build "${BUILD}" --target run_reg_cuda-gpw-ks-gga || REG_RC=$?
+echo "REG_RC=${REG_RC}"
+
+if [ "${TEST_RC}" -ne 0 ] || [ "${REG_RC}" -ne 0 ]; then
+  echo "GPU_JOB_FAILED ctest=${TEST_RC} reg=${REG_RC}"
+  exit 1
+fi
+echo "GPU_JOB_OK"
 echo "DONE cuda-gpw-ks-gga $(date -Is)"
