@@ -9,10 +9,11 @@
 /// The device path is a strict subset of the CPU path. Members the GPU
 /// cannot honour make `run()` throw with a how-to — the class never
 /// silently degrades to a different Hamiltonian. Supported today:
-/// restricted (nspin = 1) with fixed closed-shell occupations and
+/// restricted (nspin = 1) with fixed closed-shell occupations **or**
+/// metallic smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton) and
 /// `XCType::LSDA` / `XCType::PBE`; collinear fixed-occupation UKS
 /// (`spin_polarized`, integer multiplicity) with **`XCType::LSDA` only**
-/// (collinear spin-GGA / metallic smearing stay on `cpu::pw::PW`).
+/// (collinear spin-GGA / spin+smear stay on `cpu::pw::PW`).
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -94,14 +95,16 @@ class PW {
     /// @brief Spin multiplicity 2S+1. With `spin_polarized`, sets
     ///        N↑ − N↓ = multiplicity − 1. Without spin, must stay 1.
     int multiplicity = 1;
-    /// @brief Metallic smearing kind. No device path — `!= none` throws.
+    /// @brief Metallic smearing kind. Restricted path only — with
+    ///        `spin_polarized` any value other than `none` throws.
     Smearing smearing = Smearing::none;
-    /// @brief Smearing width [Ry]. Inert: `smearing` is rejected first.
+    /// @brief Smearing width [Ry] (QE `degauss`). Required > 0 when
+    ///        `smearing != none`.
     double degauss = 0.02;
-    /// @brief Methfessel–Paxton order. Inert: `smearing` is rejected first.
+    /// @brief Methfessel–Paxton order \(N \ge 1\) (ignored for FD/Gaussian).
     int mp_order = 1;
-    /// @brief Extra bands beyond ceil(n_e/2). Inert: `smearing` is rejected
-    ///        first; the device path always solves exactly n_e/2 bands.
+    /// @brief Extra empty bands beyond \(\lceil n_e/2\rceil\) when smearing.
+    ///        Fixed-occupation runs ignore this (solve \(n_e/2\) bands).
     int extra_bands = 4;
 
     PW() = default;
@@ -136,11 +139,11 @@ class PW {
     /// @return Owned `PWResult` (valid until the next `run()`).
     /// @throws std::invalid_argument for an `xc` other than `XCType::LSDA` /
     ///         `XCType::PBE`, collinear spin with non-LSDA XC, multiplicity
-    ///         without spin, `smearing != Smearing::none`, non-positive
+    ///         without spin, spin+smear, `degauss ≤ 0` with smear, non-positive
     ///         `tol`/`mix_beta`, `pulay_depth < 1`, `max_iter < 1`,
-    ///         incompatible n_elec/multiplicity parity, or (restricted only)
-    ///         an odd valence-electron count. Every message names the member
-    ///         and the way out.
+    ///         incompatible n_elec/multiplicity parity, or (restricted fixed
+    ///         occupation only) an odd valence-electron count. Every message
+    ///         names the member and the way out.
     PWResult& run(const cpu::Frame& frame);
 
     /// @brief Most recent SCF result.

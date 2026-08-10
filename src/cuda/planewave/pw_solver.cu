@@ -41,6 +41,7 @@
 #include "atomiverse/cpu/planewave/internal/convergence.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
+#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
@@ -86,12 +87,16 @@ void PW::validate_members() const {
         throw std::invalid_argument(
             "cuda::pw::PW::run: multiplicity != 1 requires spin_polarized. "
             "Set spin_polarized=true for collinear UKS, or multiplicity=1.");
-    if (smearing != Smearing::none)
+    // Restricted metallic smear is landed; collinear + smear still CPU-only.
+    if (smearing != Smearing::none && spin_polarized)
         throw std::invalid_argument(
-            "cuda::pw::PW::run: smearing has no device path — occupations are "
-            "fixed (closed-shell or integer collinear) on the GPU (degauss / "
-            "mp_order / extra_bands are inert here). Use cpu::pw::PW for "
-            "metallic smearing.");
+            "cuda::pw::PW::run: metallic smearing with spin_polarized has no "
+            "device path yet — use restricted (spin_polarized=false) smear on "
+            "CUDA, or cpu::pw::PW for collinear UKS + smear.");
+    if (smearing != Smearing::none && !(degauss > 0.0))
+        throw std::invalid_argument(
+            "cuda::pw::PW::run: degauss must be > 0 [Ry] when smearing is "
+            "enabled");
     // k_mesh = 0 is the dangerous one: generate_mp_mesh loops zero times and
     // returns an empty grid without throwing, so run() would iterate over a
     // density that is never accumulated and report a converged e_band of 0.
@@ -152,6 +157,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
     // Collinear occupation split: N↑ − N↓ = multiplicity − 1, N↑ + N↓ = n_elec.
     const int n_elec = prob.n_elec;
+    const bool use_smear = (smearing != Smearing::none);
     int n_alpha = n_elec / 2;
     int n_beta = n_elec - n_alpha;
     if (spin_polarized) {
@@ -164,13 +170,15 @@ PWResult& PW::run(const cpu::Frame& frame) {
         n_beta = (n_elec - mag) / 2;
         result_.magnetization = static_cast<double>(mag);
     } else {
-        if (n_elec % 2 != 0)
+        // Fixed closed-shell occupations require even n_elec. Metallic smear
+        // fills fractional occupations and accepts odd valence counts (Al).
+        if (!use_smear && n_elec % 2 != 0)
             throw std::invalid_argument(
                 "cuda::pw::PW::run: " + std::to_string(n_elec)
                 + " valence electrons is not closed-shell — the restricted "
-                  "device path occupies every band with exactly 2 electrons. "
-                  "Use spin_polarized for open shell, or cpu::pw::PW with "
-                  "smearing.");
+                  "fixed-occupation path occupies every band with exactly 2 "
+                  "electrons. Use spin_polarized for open shell, or set "
+                  "smearing for metallic occupations.");
         result_.magnetization = 0;
     }
 
@@ -181,12 +189,29 @@ PWResult& PW::run(const cpu::Frame& frame) {
     ws.pulay_depth = pulay_depth;
 
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    const int n_bands =
+    // Band count: fixed occ uses n_elec/2 (or max spin channel); smear uses
+    // ceil(n_e/2) + extra_bands so empty states sit near E_F for the μ search.
+    int n_bands =
         spin_polarized ? std::max(std::max(n_alpha, n_beta), 1) : prob.n_bands;
+    if (use_smear && !spin_polarized) {
+        const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
+        n_bands = n_occ_ceil + std::max(extra_bands, 0);
+    }
     const AccReal vol_bohr = prob.vol_bohr;
     // build_kpoints() leaves ws bound to the density sphere, so ws.omega is
     // stable for the whole run; the k-loop no longer touches ws at all.
     const AccReal omega_bohr = ws.omega;
+
+    cpu::pw::internal::SmearKind smear_kind =
+        cpu::pw::internal::SmearKind::fermi_dirac;
+    if (smearing == Smearing::fermi_dirac)
+        smear_kind = cpu::pw::internal::SmearKind::fermi_dirac;
+    else if (smearing == Smearing::methfessel_paxton)
+        smear_kind = cpu::pw::internal::SmearKind::methfessel_paxton;
+    else if (smearing == Smearing::gaussian)
+        smear_kind = cpu::pw::internal::SmearKind::gaussian;
+    const AccReal degauss_ha =
+        AccReal(degauss) * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
 
     // No MPI k-point distribution on this backend: every rank owns every k.
     result_.n_kpts = n_kpts;
@@ -204,6 +229,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
     // Every per-k table (G→FFT map, T(G), q = k+G, KB descriptors, initial
     // Davidson subspace) is geometry — built and uploaded once, here.
     solver.build_kpoints(prob);
+    if (use_smear)
+        solver.ensure_ritz_cache();
 
     // Same convergence policy object the CPU backend uses (warmup = 2); the
     // device reduces ‖ρ − ρ_old‖₂ itself, so feed the norm overload.
@@ -263,7 +290,116 @@ PWResult& PW::run(const cpu::Frame& frame) {
         return result_;
     }
 
-    // ── Restricted (spin-unpolarized) path ──
+    if (use_smear) {
+        // ── Restricted metallic-smearing SCF (CPU twin in pw_solver.cpp) ──
+        // Pass 1: diagonalize every k, stash evals (host) + Ritz (device).
+        // μ from the full spectrum; Pass 2: fractional density accumulate.
+        std::vector<std::vector<AccReal>> evals_k(
+            static_cast<std::size_t>(n_kpts));
+        for (int iter = 0; iter < max_iter; ++iter) {
+            den.hartree();
+            den.exchange_correlation();
+            den.assemble_veff();
+
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                solver.bind_kpoint(ik);
+                solver.solve(ws, 40);
+                evals_k[static_cast<std::size_t>(ik)].assign(
+                    ws.eigenvalues.begin(), ws.eigenvalues.end());
+                if (static_cast<int>(
+                        evals_k[static_cast<std::size_t>(ik)].size())
+                    > n_bands)
+                    evals_k[static_cast<std::size_t>(ik)].resize(
+                        static_cast<std::size_t>(n_bands));
+                solver.stash_ritz();
+            }
+
+            std::vector<AccReal> all_evals;
+            std::vector<AccReal> all_weights;
+            all_evals.reserve(static_cast<std::size_t>(n_kpts * n_bands));
+            all_weights.reserve(static_cast<std::size_t>(n_kpts * n_bands));
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                for (int b = 0; b < n_bands && b < static_cast<int>(ev.size());
+                     ++b) {
+                    all_evals.push_back(ev[static_cast<std::size_t>(b)]);
+                    all_weights.push_back(w);
+                }
+            }
+
+            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+                all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
+                mp_order);
+
+            AccReal n_occ = AccReal(0);
+            AccReal entropy_sum = AccReal(0);
+            std::vector<std::vector<AccReal>> occ_k(
+                static_cast<std::size_t>(n_kpts));
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                std::vector<AccReal> w_one(ev.size(), w);
+                auto fill = cpu::pw::internal::fill_occupations(
+                    ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
+                occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
+                for (std::size_t b = 0; b < ev.size(); ++b)
+                    occ_k[static_cast<std::size_t>(ik)][b] =
+                        cpu::pw::internal::smear_f_band(
+                            ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
+                n_occ += fill.n_occ;
+                entropy_sum += fill.entropy;
+            }
+
+            den.zero_accumulator();
+            AccReal e_band = 0;
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                solver.load_ritz(ik);
+                const AccReal weight =
+                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                const auto& occ = occ_k[static_cast<std::size_t>(ik)];
+                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                const int nb = static_cast<int>(occ.size());
+                for (int b = 0; b < nb; ++b)
+                    e_band += weight * ev[static_cast<std::size_t>(b)]
+                              * occ[static_cast<std::size_t>(b)];
+                solver.accumulate_density(weight, omega_bohr, occ.data(), nb);
+            }
+
+            den.collect();
+            den.mix(iter);
+            const auto s = den.reduce(static_cast<double>(vol_bohr));
+            ws.E_xc = AccReal(s.e_xc);
+
+            const auto terms = cpu::pw::internal::combine_energy_terms(
+                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+                ws.E_xc, prob.ew_total, ws.E_aug);
+            // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).
+            const AccReal e_ent_ha = -degauss_ha * entropy_sum;
+            const AccReal e_ha = terms.total + e_ent_ha;
+
+            cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
+                                                    iter);
+
+            result_.iterations = iter + 1;
+            result_.energy_ha = static_cast<double>(e_ha);
+            result_.energy =
+                result_.energy_ha / cpu::pw::qe_units::rydberg_to_hartree;
+            result_.e_fermi = static_cast<double>(mu_ha)
+                              / cpu::pw::qe_units::rydberg_to_hartree;
+            result_.n_elec_occ = static_cast<double>(n_occ);
+            result_.e_entropy = static_cast<double>(e_ent_ha)
+                                / cpu::pw::qe_units::rydberg_to_hartree;
+
+            if (conv.step(AccReal(s.resid))) {
+                result_.converged = true;
+                break;
+            }
+        }
+        return result_;
+    }
+
+    // ── Restricted fixed closed-shell occupations ──
     for (int iter = 0; iter < max_iter; ++iter) {
         den.hartree();              // PoissonSolver::step
         den.exchange_correlation(); // XCBuilder::step(ws, xc)
@@ -330,6 +466,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: spin_polarized has no force path "
             "on device yet — use cpu::pw::pw_forces_analytic");
+    if (method.smearing != Smearing::none)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: metallic smearing has no force "
+            "path on device yet — use cpu::pw::pw_forces_analytic");
     if (frame.nlocal() <= 0)
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: frame has no atoms");
@@ -431,6 +571,10 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
     if (method.spin_polarized)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: spin_polarized has no stress path on "
+            "device yet — use cpu::pw::pw_stress");
+    if (method.smearing != Smearing::none)
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: metallic smearing has no stress path on "
             "device yet — use cpu::pw::pw_stress");
     if (frame.nlocal() <= 0)
         throw std::invalid_argument(
