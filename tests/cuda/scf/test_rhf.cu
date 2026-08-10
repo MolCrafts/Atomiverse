@@ -21,9 +21,10 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
+#include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/evaluate/evaluate.cuh"
 #include "atomiverse/cuda/evaluate/single_point.cuh"
-#include "atomiverse/cuda/scf/internal/scf_solver.cuh"
+#include "atomiverse/cuda/scf/internal/rhf_scf_cycle.cuh"
 #include "atomiverse/cuda/scf/rhf.cuh"
 #include "atomiverse/cuda/scf/scf_evaluator.cuh"
 
@@ -272,8 +273,8 @@ TEST(RHF, CPUDensityTrace) {
 }
 
 // ── Occupation guard (hf-robust-01 CUDA mirror) ──────────────────────
-// Host-side: the guard fires in the SCFSolver constructor before any
-// device work, so this runs without a GPU (like the CPU* tests above).
+// Guards live on the private RhfScfCycle (owned by RHF). Host-matrix path
+// throws before device work; device path rejects n_occ < 0.
 
 TEST(RHF, OddElectronThrowsHostIntegrals) {
     // Lone H atom / STO-3G: 1 electron — closed-shell RHF rejects odd count.
@@ -287,9 +288,9 @@ TEST(RHF, OddElectronThrowsHostIntegrals) {
         n_basis, n_electrons);
     ASSERT_EQ(n_electrons, 1);
 
-    EXPECT_THROW((cuda::scf::SCFSolver{std::move(S), std::move(Hcore),
-                                       std::move(ERI), V_nuc, n_electrons,
-                                       1e-10, 100}),
+    EXPECT_THROW((cuda::scf::internal::RhfScfCycle{
+                      std::move(S), std::move(Hcore), std::move(ERI), V_nuc,
+                      n_electrons, 1e-10, 100}),
                  std::invalid_argument);
 }
 
@@ -305,19 +306,18 @@ TEST(RHF, EvenElectronConstructsHostIntegrals) {
         n_basis, n_electrons);
     ASSERT_EQ(n_electrons, 2);
 
-    EXPECT_NO_THROW((cuda::scf::SCFSolver{std::move(S), std::move(Hcore),
-                                          std::move(ERI), V_nuc, n_electrons,
-                                          1e-10, 100}));
+    EXPECT_NO_THROW((cuda::scf::internal::RhfScfCycle{
+                         std::move(S), std::move(Hcore), std::move(ERI), V_nuc,
+                         n_electrons, 1e-10, 100}));
 }
 
 TEST(RHF, NegativeNoccThrowsDeviceIntegrals) {
     // Device-integrals path guards only non-negativity of n_occ.
-    // Contraction from the static STO-3G table (no retyped numbers).
     const auto& h1s = cpu::scf::basis_data::pure_s_sto3g_shell(/*Z=*/1);
     EXPECT_THROW(
-        (cuda::scf::SCFSolver{static_cast<int>(h1s.alpha.size()),
-                              h1s.alpha.data(), h1s.coeff.data(),
-                              /*n_occ=*/-1, 1e-10, 100}),
+        (cuda::scf::internal::RhfScfCycle{static_cast<int>(h1s.alpha.size()),
+                                          h1s.alpha.data(), h1s.coeff.data(),
+                                          /*n_occ=*/-1, 1e-10, 100}),
         std::invalid_argument);
 }
 
@@ -626,13 +626,31 @@ TEST(RHF, PublicRHFIsHFComponent) {
     EXPECT_EQ(rhf.role(), 0);
 }
 
-TEST(RHF, SCFSolverIsNotADriver) {
-    // ac-002: the RHF inner solver is a low-level class, not a Driver<>.
+TEST(RHF, PrivateCycleIsNotADriver) {
+    // RhfScfCycle is private machinery under RHF, not a Driver node.
+    // Full cuda::Driver<scf::Phase> for RHF waits on nested CUDA DriverNode
+    // (RHF stays Component for Evaluate/MD).
     static_assert(
         !std::is_base_of_v<Driver<ATV::evaluate::Phase, cuda::device_tag>,
-                           cuda::scf::SCFSolver>,
-        "cuda::scf::SCFSolver must not be a Driver<> subclass");
+                           cuda::scf::internal::RhfScfCycle>,
+        "RhfScfCycle must not be a Driver<> subclass");
+    static_assert(
+        !std::is_base_of_v<cuda::Driver<ATV::scf::Phase>,
+                           cuda::scf::internal::RhfScfCycle>,
+        "RhfScfCycle must not be cuda::Driver<scf::Phase>");
+    static_assert(std::is_base_of_v<cuda::Component, cuda::scf::RHF>,
+                  "RHF remains Component for outer nesting");
     SUCCEED();
+}
+
+TEST(RHF, ScfPhaseOrderMatchesMeanField) {
+    // Driver-like phase order frozen for the private cycle.
+    EXPECT_EQ(ATV::slot_of(ATV::scf::Phase::fock), 0);
+    EXPECT_EQ(ATV::slot_of(ATV::scf::Phase::mix), 1);
+    EXPECT_EQ(ATV::slot_of(ATV::scf::Phase::diagonalize), 2);
+    EXPECT_EQ(ATV::slot_of(ATV::scf::Phase::density), 3);
+    EXPECT_EQ(ATV::slot_of(ATV::scf::Phase::check), 4);
+    EXPECT_EQ(ATV::slot_count<ATV::scf::Phase>(), 5);
 }
 
 TEST(RHF, EvaluateRunAcceptsCPUFrameOnly) {

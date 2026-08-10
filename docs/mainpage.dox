@@ -118,7 +118,7 @@ Electronic-structure code exists in two complementary forms:
   `Driver<scf::Phase>` node in its own right, so `rhf.run(frame)` drives the
   self-consistency loop and nesting the same object at an outer force phase
   drives AIMD or geometry optimization
-- a device-resident CUDA inner solver `cuda::scf::SCFSolver`, wrapped by the
+- a device-resident private RHF cycle (`internal::RhfScfCycle`) owned by
   `cuda::scf::SCF` component and driven by `cuda::Evaluate`
 
 @code

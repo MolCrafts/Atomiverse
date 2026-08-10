@@ -45,7 +45,7 @@ namespace cuda {
 namespace scf {
 
 // Incomplete type — defined only in the .cu translation unit (private).
-class SCFSolver;
+namespace internal { class RhfScfCycle; }
 
 /// @brief Restricted Hartree–Fock on the CUDA backend.
 ///
@@ -81,7 +81,7 @@ class RHF : public cuda::Component, public cuda::HF {
                  int max_iter_in = 100, double level_shift_in = 0.0,
                  bool compute_force_in = true);
 
-    /// @brief Destroy owned internal solver (defined in .cu).
+    /// @brief Destroy owned private RHF SCF cycle (defined in .cu).
     ~RHF() override;
     /// @brief Move (const parameter fields are moved via construction).
     RHF(RHF&&) noexcept;
@@ -153,7 +153,7 @@ class RHF : public cuda::Component, public cuda::HF {
     /// path. Nested Component-only launches reuse the cache when sizes match.
     void cache_host_types(const cpu::Frame& frame);
 
-    std::unique_ptr<SCFSolver> solver_;
+    std::unique_ptr<internal::RhfScfCycle> cycle_;
     double energy_ha_ = 0.0;
     bool converged_ = false;
     int iterations_ = 0;

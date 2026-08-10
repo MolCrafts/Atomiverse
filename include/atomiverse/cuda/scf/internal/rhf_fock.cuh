@@ -2,7 +2,7 @@
 /// @brief internal::RHFFock — F = Hcore + G(P), F' = Xᵀ F X.
 ///
 /// Takes **discrete host matrices** (S, Hcore, ERI), not an integral pack/bag.
-/// Owned by `cuda::scf::SCFSolver` only.
+/// Owned by `the concrete method (cuda::scf::RHF) private cycle` only.
 #pragma once
 
 #include <vector>

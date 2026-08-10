@@ -2,7 +2,7 @@
 /// @brief internal::EigenSolver -- dense symmetric eigendecomposition via cuSOLVER.
 ///
 /// **Internal SCF helper.** Does NOT inherit `cuda::Component` and is
-/// never registered into a `Driver` Plan. Owned by `cuda::scf::SCFSolver`,
+/// never registered into a `Driver` Plan. Owned by `the concrete method (cuda::scf::RHF) private cycle`,
 /// which drives its `build` / `step` / `destroy` lifecycle directly.
 ///
 /// Diagonalizes the effective Hamiltonian H each SCF iteration:
@@ -11,7 +11,7 @@
 /// Uses cusolverDnSsyevd (float) or cusolverDnDsyevd (double) depending
 /// on compile-time precision.
 ///
-/// @see cuda::scf::SCFSolver for the inner solver that owns this helper
+/// @see the concrete method (cuda::scf::RHF) private cycle for the inner solver that owns this helper
 /// @see internal::Hamiltonian for the helper that builds H
 #pragma once
 

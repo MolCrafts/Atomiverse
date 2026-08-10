@@ -38,7 +38,7 @@
 #include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
-#include "atomiverse/cuda/scf/internal/scf_solver.cuh"
+#include "atomiverse/cuda/scf/internal/rhf_scf_cycle.cuh"
 
 namespace ATV {
 namespace cuda {
@@ -157,7 +157,7 @@ void write_forces_to_frame(cpu::Frame& frame,
 }
 
 /// @brief Transitional host fill of S/Hcore/ERI → device SCF (p shells).
-std::unique_ptr<SCFSolver>
+std::unique_ptr<internal::RhfScfCycle>
 make_host_integral_solver(const cpu::Frame& frame, cpu::scf::BasisSet basis,
                           int charge, double tol, int max_iter,
                           double level_shift) {
@@ -170,7 +170,7 @@ make_host_integral_solver(const cpu::Frame& frame, cpu::scf::BasisSet basis,
     cpu::scf::internal::IntegralWorkspace::fill_rhf_matrices(
         frame, basis, charge, /*compute_eri=*/true, S, Hcore, ERI, V_nuc,
         n_basis, n_electrons);
-    return std::make_unique<SCFSolver>(std::move(S), std::move(Hcore),
+    return std::make_unique<internal::RhfScfCycle>(std::move(S), std::move(Hcore),
                                        std::move(ERI), V_nuc, n_electrons, tol,
                                        max_iter, level_shift);
 }
@@ -180,7 +180,7 @@ make_host_integral_solver(const cpu::Frame& frame, cpu::scf::BasisSet basis,
 /// Builds a full-molecule shell list from `basis_data::sp_sto3g_shells(Z)`
 /// per atom (mixed Z OK). n_AO = Σ n_cart(L) with s→1, p→3.
 /// @param level_shift Virtual level shift λ [Hartree]; wired on device Fock.
-std::unique_ptr<SCFSolver>
+std::unique_ptr<internal::RhfScfCycle>
 make_device_sp_sto3g_solver(const int* h_Z, int natm, int charge, double tol,
                            int max_iter, double level_shift) {
     int n_electrons = -charge;
@@ -231,7 +231,7 @@ make_device_sp_sto3g_solver(const int* h_Z, int natm, int charge, double tol,
         }
     }
 
-    return std::make_unique<SCFSolver>(
+    return std::make_unique<internal::RhfScfCycle>(
         n_shells, n_ao, n_prim, alpha_mol.data(), coeff_mol.data(),
         L_mol.data(), atom_of.data(), n_occ, tol, max_iter, level_shift);
 }
@@ -246,7 +246,7 @@ RHF::~RHF() = default;
 RHF::RHF(RHF&& other) noexcept
     : basis(other.basis), charge(other.charge), tol(other.tol),
       max_iter(other.max_iter), level_shift(other.level_shift),
-      compute_force(other.compute_force), solver_(std::move(other.solver_)),
+      compute_force(other.compute_force), cycle_(std::move(other.cycle_)),
       energy_ha_(other.energy_ha_), converged_(other.converged_),
       iterations_(other.iterations_), built_(other.built_),
       last_force_device_(other.last_force_device_),
@@ -308,22 +308,22 @@ cpu::scf::GradientResult RHF::forces(cpu::Frame& frame) {
 }
 
 const SCFWorkspace& RHF::workspace() const {
-    if (!solver_) {
+    if (!cycle_) {
         throw std::runtime_error(
             "cuda::scf::RHF::workspace: call launch()/run() first");
     }
-    return solver_->workspace();
+    return cycle_->workspace();
 }
 
 void RHF::build(const BuildContext& ctx) {
-    // Readiness only — do not freeze build-time nuclei into SCFSolver/RHFFock.
+    // Readiness only — do not freeze build-time nuclei into RhfScfCycle/RHFFock.
     // Multi-step cuda::md::MD moves positions between force launches; the
     // private workspace + device Fock upload must track current geometry
     // (CPU twin: rebuild_integrals_ each nested run). Tear down any leftover
-    // solver from a prior teardown/rebuild cycle.
-    if (solver_) {
-        solver_->destroy(ctx.runtime.stream, ctx.frame);
-        solver_.reset();
+    // cycle from a prior teardown/rebuild cycle.
+    if (cycle_) {
+        cycle_->destroy(ctx.runtime.stream, ctx.frame);
+        cycle_.reset();
     }
     built_ = true;
     converged_ = false;
@@ -338,9 +338,9 @@ void RHF::launch(const LaunchContext& ctx) {
     }
 
     // Per-launch geometry rebuild (AIMD nuclei move between force phases).
-    if (solver_) {
-        solver_->destroy(ctx.runtime.stream, ctx.frame);
-        solver_.reset();
+    if (cycle_) {
+        cycle_->destroy(ctx.runtime.stream, ctx.frame);
+        cycle_.reset();
     }
 
     const int natm = ctx.frame.n_atoms();
@@ -369,25 +369,25 @@ void RHF::launch(const LaunchContext& ctx) {
     // Higher L or other bases: host fill + upload.
     last_device_sp_ = false;
     if (device_sp_sto3g_ok(basis, h_Z, natm)) {
-        solver_ = make_device_sp_sto3g_solver(h_Z, natm, charge, tol, max_iter,
+        cycle_ = make_device_sp_sto3g_solver(h_Z, natm, charge, tol, max_iter,
                                              level_shift);
         last_device_sp_ = true;
     } else {
         cpu::Frame host = host_frame_from_device(ctx.frame);
-        solver_ = make_host_integral_solver(host, basis, charge, tol, max_iter,
+        cycle_ = make_host_integral_solver(host, basis, charge, tol, max_iter,
                                             level_shift);
     }
-    solver_->build(ctx.runtime.stream, ctx.frame);
-    solver_->run(ctx.runtime.stream, ctx.frame);
-    iterations_ = solver_->iterations();
-    converged_ = solver_->workspace().converged;
+    cycle_->build(ctx.runtime.stream, ctx.frame);
+    cycle_->drive(ctx.runtime.stream, ctx.frame);
+    iterations_ = cycle_->iterations();
+    converged_ = cycle_->workspace().converged;
 
     // ── Forces on device (s/p l≤1) before any energy D2H ────────────────
     // Entire SCF + forces stay device-resident; host energy_ha_ is filled
     // once at the end (post-calculation bookkeeping only).
     last_force_device_ = false;
     if (compute_force) {
-        const auto& ws = solver_->workspace();
+        const auto& ws = cycle_->workspace();
         const bool device_forces =
             ws.device_sp_shells && ws.n > 0 && ws.P && ws.C && ws.eig
             && ws.d_shell_alpha && ws.d_shell_atom && ws.d_shell_L
@@ -459,9 +459,9 @@ void RHF::launch(const LaunchContext& ctx) {
 }
 
 void RHF::destroy(const DestroyContext& ctx) {
-    if (solver_) {
-        solver_->destroy(ctx.runtime.stream, ctx.frame);
-        solver_.reset();
+    if (cycle_) {
+        cycle_->destroy(ctx.runtime.stream, ctx.frame);
+        cycle_.reset();
     }
     built_ = false;
 }

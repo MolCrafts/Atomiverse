@@ -26,7 +26,7 @@
 
 #include "atomiverse/core/role.h"
 #include "atomiverse/cuda/component/component.cuh"
-#include "atomiverse/cuda/scf/internal/scf_solver.cuh"
+#include "atomiverse/cuda/scf/internal/synthetic_scf_cycle.cuh"
 #include "atomiverse/cuda/scf/scf_workspace.cuh"
 
 namespace ATV {
@@ -52,10 +52,10 @@ class SCF : public cuda::Component, public cuda::HF {
 
     /// @brief Converged density / MO workspace (observers after build).
     /// @return Device-resident SCF workspace.
-    const SCFWorkspace& workspace() const { return solver_->workspace(); }
+    const SCFWorkspace& workspace() const { return cycle_->workspace(); }
 
   private:
-    std::unique_ptr<SCFSolver> solver_;
+    std::unique_ptr<internal::SyntheticScfCycle> cycle_;
 };
 
 } // namespace scf

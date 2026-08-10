@@ -528,7 +528,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/scf/eigen_solver.cu
             src/cuda/scf/density_builder.cu
             src/cuda/scf/convergence_check.cu
-            src/cuda/scf/scf_solver.cu
+            src/cuda/scf/synthetic_scf_cycle.cu
             src/cuda/scf/scf_evaluator.cu
             src/cuda/longrange/ewald.cu
         )
@@ -723,6 +723,7 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_CUDA)
             target_sources(atomiverse PRIVATE
                 src/cuda/scf/rhf.cu
+                src/cuda/scf/rhf_scf_cycle.cu
                 src/cuda/scf/rhf_fock.cu
                 src/cuda/scf/rhf_density.cu
                 src/cuda/scf/diis_mixer.cu
