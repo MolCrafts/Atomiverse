@@ -63,8 +63,9 @@ Grok CUDA skills (not ad-hoc style):
 | Padé LDA XC grid foothold | **landed** (`cuda-gpw-xc-lda-foothold`) | `src/cuda/gpw/internal/xc_lda.{cu,cuh}`; `test_cuda_gpw_xc_lda` vs `cpu::xc::pade_lsd`; per-point ~1e-12, E ~1e-10 rel; **not** full GPW product |
 | product ρ collocate foothold | **landed** (`cuda-gpw-rho-collocate-foothold`) | `src/cuda/gpw/internal/product_collocate.{cu,cuh}`; `test_cuda_gpw_product_collocate` vs continuous host + `collint_collocate_product`; s/p + multi-s–s; **not** full GPW product |
 | product V·shape integrate foothold | **landed** (`cuda-gpw-product-integrate-foothold`) | `src/cuda/gpw/internal/product_integrate.{cu,cuh}`; reuses `DeviceProduct`/`CollocateGridDesc`; `test_cuda_gpw_product_integrate` vs continuous host + `collint_integrate_product`; s/p + multi-s–s; **not** full GPW product |
-| composed KS ρ→V_eff stage unit | **landed** (`cuda-gpw-ks-chain`) | `src/cuda/gpw/internal/ks_chain.{cu,cuh}` reuses collocate/Poisson/XC/integrate; `test_cuda_gpw_ks_chain` + dual-gate reg vs `ks_grid_build_rks`; GH200 **1049858**; **not** full GPW product |
+| composed KS ρ→V_eff stage unit | **landed** (`cuda-gpw-ks-chain`) | `src/cuda/gpw/internal/ks_chain.{cu,cuh}` reuses collocate/Poisson/XC/integrate; `test_cuda_gpw_ks_chain` + dual-gate reg vs `ks_grid_build_rks`; GH200 **1049858**; LDA single-grid only; **not** full GPW product |
 | **PW method slice** | **landed** (`cuda-pw-method-slice`) | `cuda::pw::PW` method object (`cuda/planewave/pw_solver.{cuh,cu}`) + `internal::DeviceDensity` — density side (ρ(G)→V_H→V_xc→V_eff(r)→Pulay→reductions) device-resident. See below. |
+| PW analytic ionic forces | **landed** (`cuda-pw-forces`) | `internal/pw_forces.{cu,cuh}` + `cuda::pw::pw_forces_analytic`; local HF + Ewald + KB; GH200 **1050105** max\|ΔF\|=2.86e-13 eV/Å vs CPU (LSDA reg); **not** stress/spin/smear |
 
 ### CUDA PW slice — envelope and evidence
 
@@ -148,7 +149,9 @@ PBE-GGA landed** (`cuda-pw-pbe-device`, GH200 **1048320** — dual-gate
 64-atom Si Γ LSDA, CUDA `run(frame)` **9.664 s** vs same-settings CPU **>5400 s**;
 216-atom CUDA **191 s**; slice sanity |ΔE|=1.243e-14 Ry. Detail:
 [cuda-pw-large-cell.md](cuda-pw-large-cell.md). 8-atom cells remain
-correctness-only. Next depth: device analytic forces (`cuda-pw-forces`).
+correctness-only. **Analytic ionic forces landed** (`cuda-pw-forces`, GH200
+**1050105**). Next depth: device analytic stress (`cuda-pw-stress`); spin /
+smear / PBE force dual-gate remain open.
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently

@@ -52,18 +52,18 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 3)
+### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 4)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
-`wf/escuda-<slug>` (or re-base existing `wf/<slug>`); no push; no `reset --hard`.
-Wipe `build` / `build-*` after every cmake/ctest and before every
-worker/clearup exit (`builds_wiped=false` fails the wave).
+`wf/escuda-<slug>`; no push; no `reset --hard`. Wipe `build` / `build-*` after
+every cmake/ctest and before every worker/clearup exit (`builds_wiped=false`
+fails the wave).
 
 | Track | Goal | Anchor / gate |
 | --- | --- | --- |
 | **cpu** | Cut wall on **landed** GPW/SCF vs real CP2K | \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) on matched twin, **1 MPI × OMP=4**; \(T_{\mathrm{cp2k}}\) from real `cp2k.psmp` (`source …/cp2k/install/env.sh`); provenance in [gpw-perf-baseline.md](gpw-perf-baseline.md) / [oracle-pin-provenance.md](oracle-pin-provenance.md). Pins green; FD-force if energy path moves. |
-| **cuda** | **Corresponding** CUDA for landed ES — PW method depth + GPW compose | CPU twin green; public `run`/`forces` stable; CUDA↔CPU energy/forces tols **stated**; device-only kernels (no host loops in `.cu` wrappers). Same-settings CPU (or external pin) is correctness oracle. Login has **no** toolkit — `sbatch -p gpu`, module `GPU/buildenv-gcccuda/2026.03-cu13.0`; never claim green without GPU log evidence. |
+| **cuda** | **Corresponding** CUDA for landed ES — PW method depth + GPW compose | CPU twin green; public `run`/`forces`/`stress` stable where owned; CUDA↔CPU tols **stated**; device-only kernels. Same-settings CPU is correctness oracle. Login has **no** toolkit — `sbatch -p gpu`, module `GPU/buildenv-gcccuda/2026.03-cu13.0`; never claim green without GPU log evidence. |
 
 **CPU rank (fair walls — baseline authority):**
 
@@ -75,23 +75,21 @@ worker/clearup exit (`builds_wiped=false` fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (GapCensus wave 3, `dev` @ `ce243d3c`):** Landed: device s/p
-RHF + CDIIS; Γ GPW unit footholds (no compose on `dev`); `cuda::pw::PW` LSDA +
-**device closed-shell PBE-GGA** (GH200 **1048320**) + residency polish +
-**non-default stream** (GH200 **1049681**, merge `8280ed89`); **large-cell
-wall measure** done (merge `948d0d86`; 64-at CUDA ~9.65 s / CPU >5400 s —
-\(T_{\mathrm{cu}}/T_{\mathrm{cp}} < 0.0018\)). **Pending depth:**
-`cuda-pw-forces` (P0), `cuda-gpw-ks-chain` (P1), `cuda-pw-stress` /
-spin/smear / `cuda-gpw-ks-gga` (P2), `cpu-simd-2center-setup` /
-`cuda-rhf-nondefault-stream` (P3). **Blocked:** `cuda-gpw-full-product`,
-`mg-main-structural`. WIP tips ≠ landed.
+**CUDA open-gate (GapCensus wave 4, `dev` @ `1ba1678f`):** Landed: device s/p
+RHF + CDIIS; Γ GPW footholds + **LDA `ks_chain`** (GH200 **1049858**);
+`cuda::pw::PW` LSDA + closed-shell PBE + residency + stream + large-cell walls
++ **analytic ionic forces** (GH200 **1050105**); pure-s 2-center SIMD.
+**Pending depth:** `cuda-pw-stress` (P0), `cuda-gpw-ks-gga` /
+`cuda-pw-collinear-spin` (P1), smear / PBE-force dual-gate / MG chain (P2),
+angular 2-center SIMD + RHF stream (P3). **Blocked:** `cuda-gpw-full-product`,
+`mg-main-structural`.
 
 **Queues (binding worklists):**
 
 - Dual-track queue: [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md)
 - CPU GPW wall detail: [gpw-perf-queue.md](../../docs/developer/gpw-perf-queue.md)
 - Architecture: [gpw-perf-architecture.md](gpw-perf-architecture.md)
-- CUDA RHF envelope: [cuda-rhf-device-only.md](cuda-rhf-device-only.md)
+- CUDA RHF / PW envelope: [cuda-rhf-device-only.md](cuda-rhf-device-only.md)
 
 **Forbidden:** hybrid/GAPW/PAW/meta-GGA product; classical MD CUDA; global
 `XTENSOR_USE_XSIMD`; arch intrinsics; soften tols / self-golden pins; leave

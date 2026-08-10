@@ -446,8 +446,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   (Slater + VWN5 device kernel) or **PBE** (device closed-shell GGA,
   `internal/xc_pbe.cu` — table **Periodic GGA** CUDA ✓ is this slice only),
   **restricted** closed-shell (`spin_polarized` / smearing throw),
-  **energy-only** (`run()`; no device forces or stress; large-cell wall
-  evidence on Si supercells — see es-cpu-cuda queue).
+  **energy** (`run()`) plus **analytic ionic forces**
+  (`cuda::pw::pw_forces_analytic` — local HF + Ewald + KB nonlocal; GH200
+  dual-gate vs CPU, LSDA reg green; PBE force dual-gate still open on the
+  es-cpu-cuda queue); **no device stress** yet; large-cell wall evidence on
+  Si supercells — see es-cpu-cuda queue.
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA
   (Padé) or **PBE / PBEsol / revPBE / RPBE / BLYP** (RKS + **Γ-UKS BLYP**
@@ -656,7 +659,7 @@ Which engine backs which ✓:
 
 | Method                                 | CPU | CUDA | Kokkos |
 | -------------------------------------- | :-: | :--: | :---: |
-| Periodic analytic forces               |  ✓  |   ○  |   ○  |
+| Periodic analytic forces               |  ✓  |   ◐  |   ○  |
 | Periodic analytic stress               |  ✓  |   ○  |   ○  |
 | Density-functional perturbation theory |  ✓  |   ○  |   ○  |
 | Finite-displacement phonons            |  ✓  |   ○  |   ○  |
@@ -667,6 +670,8 @@ Which engine backs which ✓:
   Γ-UKS `reg_gpw-uks-forces`, multi-k **RKS** `reg_gpw-kpoint-forces`,
   multi-k **UKS** `reg_gpw-kpoint-uks-forces`) and plane-wave **local HF +
   Ewald + KB nonlocal** (`pw_forces_analytic`). PW FD remains as oracle.
+  **CUDA ◐** = plane-wave only (`cuda::pw::pw_forces_analytic`; closed-shell
+  LSDA dual-gate landed); no CUDA GPW forces product.
 - **PW stress** is **Nielsen–Martin analytic** (`pw_stress` → Frame `kStress`;
   multi-SCF strain-FD oracle `pw_stress_fd`; `reg_pw-analytic-stress-si`).
   **GPW stress** is **analytic fixed-\(P\)+Pulay** product at Γ **RKS and

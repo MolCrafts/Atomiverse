@@ -67,7 +67,7 @@ FD-force on any energy-path land (collocate/integrate/Poisson/XC/V_eff/PP).
 ### P2 — scale-out + slab (not 1-MPI fair-wall levers)
 
 - [ ] `p2-mpi-product-grid` | Product/grid distribute across ranks (today only k RR + Allreduce density). Not a 1-MPI fair-wall lever; staff when worst fair twin ≤~1.1× | twin: `mpi-gpw-scaling-4rank` | files: `gpw_solver.cpp`, `multigrid.cpp`, MPI | gate: scaling wall ↓ + multi-k regs |
-- [ ] `p2-simd-2center-setup` | Portable **xsimd** analytic 2-center S/T (raw spans, scalar tail; no arch intrinsics; no global `XTENSOR_USE_XSIMD`) — slab-class only (invisible on four small twins; ST_k residual on MAIN is secondary after landed Hermite path). **Bit-exact plan:** default gate bit-identical vs current pins; if vectorized reduction reorders FP, land only with stated numeric tol vs CP2K pin **and** fresh FD-force check, documented in commit + queue row; never silent tol soften | twin: slab microbench | files: `one_electron.cpp` / overlap-kinetic | gate: setup ↓; four twins no regression |
+- [x] `p2-simd-2center-setup` | **done** 2026-08-10 via es-cpu-cuda `cpu-simd-2center-setup` (`e49e0757`) — portable xsimd **pure-s** analytic 2-center S/T (slab-class; mixed angular still Hermite scalar → optional follow-on `cpu-simd-2center-angular` on es-cpu-cuda queue). Not a 1-MPI fair-wall lever | twin: slab microbench + `reg_cpu-simd-2center-setup` | files: `one_electron.cpp` | gate: four twins no regression |
 
 ## in_progress
 

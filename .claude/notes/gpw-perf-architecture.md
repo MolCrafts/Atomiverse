@@ -99,7 +99,7 @@ collint tasks**; **integrate residual (wave 7)**.
    STVnl setup residual are merged.  
 9. products-default-k fresh A/B only if MAIN near parity; then MPI product/grid
 
-### CUDA GPW foothold (landed, not product)
+### CUDA GPW foothold + LDA stage (landed, not product)
 
 Thin Γ device slices under `src/cuda/gpw/internal/`:
 
@@ -109,9 +109,10 @@ Thin Γ device slices under `src/cuda/gpw/internal/`:
 | Padé LDA XC | `xc_lda.{cu,cuh}` | `cpu::xc::pade_lsd` / `xc_grid_pade` |
 | product ρ collocate | `product_collocate.{cu,cuh}` | `collint_collocate_product` continuous + collint |
 | product V·shape integrate | `product_integrate.{cu,cuh}` | `collint_integrate_product` continuous + collint |
+| composed KS chain (LDA) | `ks_chain.{cu,cuh}` | `ks_grid_build_rks` + continuous collint (GH200 **1049858**) |
 
-Unit oracle tols stated; **not** a full GPW method product. Full CUDA GPW
-remains blocked pending architecture freeze.
+Unit/stage oracle tols stated; single-grid Padé LDA only — **no** GGA/MG/public
+`GpwDft`. Full CUDA GPW remains blocked pending architecture freeze.
 
 ### Forbidden
 
