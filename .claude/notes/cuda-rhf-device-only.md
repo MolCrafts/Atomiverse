@@ -173,11 +173,13 @@ GH200 **1051119** dual-gate Al \|ΔE\|=1.24e-14 Ry). **RHF non-default stream
 D2H landed** (`cuda-rhf-nondefault-stream`, GH200 **1051227** 2/2 PASS).
 Residual open depth: spin+smear / spin forces / spin stress / **spin-PBE F/σ**
 (+ spin-smear F/σ after spin-smear energy; **spin multi-k dual-gate**;
-spin-smear-pbe F/σ); collinear spin-PBE **energy** landed (`cuda-pw-spin-pbe`,
-GH200 **1124645**). GPW first product + **device mid-SCF collocate** **landed**
-(GH200 **1125709**) + **product multigrid energy** (**1126433**) + **Γ UKS
-energy** (**1126430**) — depth residual on es-cpu-cuda queue (DIIS/eigen,
-device forces, MG/UKS F/σ + kpoints joint paths, …).
+spin-smear-pbe F/σ; **spin×kmesh×smear** joints); collinear spin-PBE
+**energy** landed (`cuda-pw-spin-pbe`, GH200 **1124645**). GPW first product +
+**device mid-SCF collocate** **landed** (GH200 **1125709**) + **product
+multigrid energy** (**1126433**) + **Γ UKS energy** (**1126430**) + **device
+RKS DIIS/eigen** (**1129719**) — depth residual on es-cpu-cuda queue (UKS
+device DIIS, weight-pack, water/multi-k tips, device forces depth, MG/UKS F/σ
++ kpoints joint paths, …).
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently
