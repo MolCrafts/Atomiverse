@@ -39,6 +39,17 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-10 harness wave 3 (parent `dev` @ `18663d13`):** 1 of staffed
+  → done [x]: `cuda-pw-pbe-stress` (closed-shell PBE Nielsen–Martin dual-gate;
+  merge `18663d13` / feat `b0523de0`; GH200 re-verify **1123959**
+  max‖Δσ‖=**5.585e-12** eV/Å³, E both −13.90403280 Ry; prior **1122705** /
+  **1122143**; **perf_exempt**). Spec closed (deleted
+  `.claude/specs/cuda-pw-pbe-stress/`). Keep other `[~]`:
+  `cuda-gpw-device-collocate`, `cuda-pw-spin-pbe`. Roadmap prose: closed-shell
+  PW stress LSDA+PBE landed (table remains ◐ — spin/smear/GPW open).
+  **cpu_pending=0**; **cuda_pending=20**; **gaps_remaining≈21**. Clearup
+  already ran. Queue **not** exhausted (GapCensus owns discovery). No push.
+
 - **2026-08-10 harness wave 1 (parent `dev` @ `948d0d86`):** 1 of staffed
   → done [x]: `cuda-pw-pbe-device` (device closed-shell PBE-GGA for
   `cuda::pw::PW`; merge `3f901034`; GH200 job **1048320** units 4/4 PASS +

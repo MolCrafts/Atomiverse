@@ -452,10 +452,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   collinear spin-PBE still open), **energy** (`run()`), **analytic ionic
   forces** (closed-shell **LSDA + PBE**; `cuda::pw::pw_forces_analytic` —
   local HF + Ewald + KB nonlocal; GH200 dual-gate), **analytic cell stress**
-  (closed-shell **LSDA** dual-gate pin; `cuda::pw::pw_stress` — closed-shell
-  **PBE** stress dual-gate still open on es-cpu-cuda queue), **collinear LSDA
-  spin** energy (fixed occupation; spin-PBE / spin forces / spin-PBE forces /
-  spin stress still reject on base), and **restricted metallic smear** energy
+  (closed-shell **LSDA + PBE** dual-gate pins; `cuda::pw::pw_stress` —
+  `reg_cuda-pw-stress` + `reg_cuda-pw-stress-pbe`; GH200 PBE max‖Δσ‖
+  **5.585e-12** eV/Å³ job **1123959**), **collinear LSDA spin** energy
+  (fixed occupation; spin-PBE / spin forces / spin-PBE forces / spin stress
+  still reject on base), and **restricted metallic smear** energy
   (FD/Gaussian/MP + `extra_bands` + Mermin free energy; spin+smear / smear
   forces / smear stress still reject); large-cell wall evidence on Si
   supercells — see es-cpu-cuda queue. **CUDA GPW first product slice landed:**
@@ -700,8 +701,9 @@ Which engine backs which ✓:
   still reject on device.
 - **PW stress** is **Nielsen–Martin analytic** (`pw_stress` → Frame `kStress`;
   multi-SCF strain-FD oracle `pw_stress_fd`; `reg_pw-analytic-stress-si`).
-  **CUDA ◐** = plane-wave closed-shell LSDA (`cuda::pw::pw_stress`; GH200
-  dual-gate); spin / smear / PBE stress still reject; no CUDA GPW stress.
+  **CUDA ◐** = plane-wave closed-shell **LSDA + PBE** (`cuda::pw::pw_stress`;
+  GH200 dual-gates `reg_cuda-pw-stress` + `reg_cuda-pw-stress-pbe`); spin /
+  smear stress still reject; no CUDA GPW stress.
   **GPW stress** is **analytic fixed-\(P\)+Pulay** product at Γ **RKS and
   UKS**, **k-points for closed-shell RKS**, **multi-k UKS**
   (`reg_gpw-kpoint-uks-stress`), and **Γ DFT+U** (`reg_gpw-dftu-stress`)
