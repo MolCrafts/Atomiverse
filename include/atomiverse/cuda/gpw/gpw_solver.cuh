@@ -151,6 +151,39 @@ std::vector<std::array<double, 3>>
 gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
                     const GpwResult& scf);
 
+
+/// @brief Analytic cell stress after a CUDA Γ SCF (free-function family).
+///
+/// Runs `method.run(atoms)` then assembles fixed-\(P\) orthorhombic stress
+/// from the converged `GpwResult` (first cut: host analytic twin via
+/// `cpu::gpw::gpw_stress` at the CUDA density payload — same shape as CPU
+/// free-fn stress). Voigt order xx,yy,zz,xy,xz,yz [Hartree/Bohr³].
+/// Fail-closed: multi-k (`k_mesh`≠Γ). UKS / multigrid use the same state
+/// path when energy is owned; deeper device stress assembly is residual.
+///
+/// @param atoms Geometry + basis/PP [Bohr].
+/// @param method CUDA method (members must match the SCF that will run).
+/// @param h Dimensionless strain step for fixed-\(P\) energy FD (default 2e-3).
+/// @param axes Per-axis mask (x,y,z); masked axes report exactly 0.
+/// @return Voigt stress [Hartree/Bohr³].
+/// @throws std::runtime_error if the SCF does not converge.
+std::array<double, 6>
+gpw_stress(const std::vector<GpwAtom>& atoms, GpwDft& method, double h = 2e-3,
+           const std::array<bool, 3>& axes = {true, true, true});
+
+/// @brief Analytic cell stress from a **converged** CUDA `GpwResult` (no second SCF).
+///
+/// @param atoms Geometry + basis/PP [Bohr].
+/// @param method Method whose members match the SCF that produced `scf`.
+/// @param scf Converged result (`converged` required).
+/// @param h Dimensionless strain step (default 2e-3).
+/// @param axes Per-axis mask (x,y,z).
+/// @return Voigt stress [Hartree/Bohr³].
+std::array<double, 6>
+gpw_stress(const std::vector<GpwAtom>& atoms, const GpwDft& method,
+           const GpwResult& scf, double h = 2e-3,
+           const std::array<bool, 3>& axes = {true, true, true});
+
 } // namespace gpw
 } // namespace cuda
 } // namespace ATV
