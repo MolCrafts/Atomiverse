@@ -5,9 +5,12 @@ Rewrite in place each harness wave.
 ## Status
 
 - **Parent:** `dev`
-- **Wave-1 done:** e2e-in-tests delete (78 sources) — see
-  [e2e-in-tests-campaign.md](e2e-in-tests-campaign.md)
-- **Next staff:** `arch-gpw-driver-node` (P0)
+- **Wave-1 done:** e2e-in-tests delete (78 sources)
+- **Wave-2 done:** `arch-gpw-driver-node` — GpwDft is `cpu::Driver<gpw::Phase>`;
+  Γ RKS DIIS driven by stages; residual multi-k/UKS/OT path migration staffed as
+  `arch-gpw-driver-paths`
+- **Next staff:** `arch-gpw-driver-paths` + `arch-pw-driver-node` (P0);
+  `arch-e2e-tests-wave2` (P2 independent)
 
 ## Run
 

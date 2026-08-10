@@ -60,7 +60,8 @@ step 1 — CPU architecture**, not more collint polish.
 
 | Priority | Slug | Goal |
 | --- | --- | --- |
-| P0 | `arch-gpw-driver-node` | `GpwDft` → `Driver<gpw::Phase>` (public `run`/`forces` stable) |
+| P0 | ~~`arch-gpw-driver-node`~~ **landed** | `GpwDft` → `Driver<gpw::Phase>`; residual paths → `arch-gpw-driver-paths` |
+| P0 | `arch-gpw-driver-paths` | UKS + multi-k DIIS onto same stages |
 | P0 | `arch-pw-driver-node` | `PW` same shape after GPW pattern |
 | P1 | `arch-cuda-scf-solver-fold` | fold `cuda::scf::SCFSolver` private under RHF |
 | P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product |
