@@ -411,6 +411,22 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-ks-chain] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_ks})
         unset(_reg_gpw_ks)
+
+        # Composed CUDA GPW KS stage under closed-shell PBE-GGA (spectral ∇ρ /
+        # −∇·flux + device PBE) vs same-settings CPU ks_grid_build_rks(PBE).
+        # Stage unit only — not full GpwDft product.
+        set(_reg_gpw_gga reg_cuda-gpw-ks-gga)
+        add_executable(${_reg_gpw_gga} gpw/cuda-gpw-ks-gga/${_reg_gpw_gga}.cu)
+        target_link_libraries(${_reg_gpw_gga} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_gga} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_gga}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_gga}> --device=both
+            DEPENDS ${_reg_gpw_gga}
+            COMMENT "regression [gpw/cuda-gpw-ks-gga] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_gga})
+        unset(_reg_gpw_gga)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)
