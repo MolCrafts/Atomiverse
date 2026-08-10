@@ -523,7 +523,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/frame/transfer.cu
             src/cuda/device/timer.cu
             src/cuda/driver/driver.cu
-            src/cuda/communication/multi_gpu.cu
             src/cuda/observe/stress.cu
             src/cuda/scf/hamiltonian.cu
             src/cuda/scf/eigen_solver.cu
@@ -537,7 +536,10 @@ if(NOT ATV_DOCS_ONLY)
             list(APPEND ATOMIVERSE_SRCS src/cuda/frame/molrs_exchange.cu)
         endif()
         if(ATV_BUILD_MD)
+            # multi_gpu.cu owns multi-rank NVE and links launch_nve_limit_*;
+            # must stay under MD (MD=OFF was a silent link hole vs nve_limit).
             list(APPEND ATOMIVERSE_SRCS
+                src/cuda/communication/multi_gpu.cu
                 src/cuda/dynamics/velocity_verlet.cu
                 src/cuda/dynamics/nve_limit.cu
                 src/cuda/dynamics/fix_langevin.cu
