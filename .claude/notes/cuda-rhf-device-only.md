@@ -65,19 +65,23 @@ Grok CUDA skills (not ad-hoc style):
 | product V·shape integrate foothold | **landed** (`cuda-gpw-product-integrate-foothold`) | `src/cuda/gpw/internal/product_integrate.{cu,cuh}`; reuses `DeviceProduct`/`CollocateGridDesc`; `test_cuda_gpw_product_integrate` vs continuous host + `collint_integrate_product`; s/p + multi-s–s; **not** full GPW product |
 | composed KS ρ→V_eff stage unit | **landed** (`cuda-gpw-ks-chain`) | `src/cuda/gpw/internal/ks_chain.{cu,cuh}` reuses collocate/Poisson/XC/integrate; `test_cuda_gpw_ks_chain` + dual-gate reg vs `ks_grid_build_rks`; GH200 **1049858**; LDA single-grid only; **not** full GPW product |
 | closed-shell PBE-GGA KS stage | **landed** (`cuda-gpw-ks-gga`) | `SpectralFftDevice` + `KsXcKind::PBE` reuses `xc_pbe_grid`; `test_cuda_gpw_ks_gga` + dual-gate vs `ks_grid_build_rks(PBE)`; GH200 **1050680** (rebased); **not** full GPW product |
+| multi-grid product KS stage | **landed** (`cuda-gpw-ks-multigrid`) | `MultigridTransferDevice` + `KsMultiGridChainDevice`; `test_cuda_gpw_ks_multigrid` + dual-gate reg; GH200 **1051042** max\|ΔV_eff\|=8.1e-10; **not** full GPW product |
 | **PW method slice** | **landed** (`cuda-pw-method-slice`) | `cuda::pw::PW` method object (`cuda/planewave/pw_solver.{cuh,cu}`) + `internal::DeviceDensity` — density side (ρ(G)→V_H→V_xc→V_eff(r)→Pulay→reductions) device-resident. See below. |
 | PW analytic ionic forces | **landed** (`cuda-pw-forces`) | `internal/pw_forces.{cu,cuh}` + `cuda::pw::pw_forces_analytic`; local HF + Ewald + KB; GH200 **1050105** max\|ΔF\|=2.86e-13 eV/Å vs CPU (LSDA reg); **not** spin/smear |
 | PW PBE analytic ionic forces | **landed** (`cuda-pw-forces-pbe`) | same public API under `XCType::PBE`; force path shares `den.stream()`; GH200 post-merge **1050801** max\|ΔF\|=2.63e-13 eV/Å (tol 5e-3); E both −13.89672028 Ry; **not** stress/spin/smear |
 | PW analytic cell stress | **landed** (`cuda-pw-stress`) | `internal/pw_stress.{cu,cuh}` + `cuda::pw::pw_stress`; Nielsen–Martin NSCF strain-FD + ρ·Ω₀/Ω remap; GH200 **1050604** max\|Δσ\|=1.36e-12 eV/Å³ vs CPU (LSDA Si; tol 5e-2); **not** spin/smear/multi-SCF FD product |
+| PW collinear LSDA spin | **landed** (`cuda-pw-collinear-spin`) | nspin=2 density + VWN5 spin XC + fixed-occupation UKS; GH200 **1051041** O₂ \|ΔE\|=1.07e-13 Ha (tol 2e-3); forces/stress reject spin; **not** spin-PBE / smear |
 
 ### CUDA PW slice — envelope and evidence
 
 Public shape mirrors `cpu::pw::PW`: public members → `build(frame)` →
 `run(frame)` → `PWResult`. The free function `cuda::pw::pw_scf` is **deleted**
 (no shim). Device envelope — everything else **throws** `std::invalid_argument`
-naming the member and the way out: restricted only (`spin_polarized=false`,
-`multiplicity=1`), `smearing=none`, `xc=XCType::LSDA` (Slater + VWN5), closed
-shell, `k_mesh>=1`, `ecut_ry>0`. k-points are **not** MPI-distributed here.
+naming the member and the way out: closed-shell **or collinear fixed-occupation
+UKS with `XCType::LSDA`** (`spin_polarized` + integer mag), `smearing=none`,
+`xc=XCType::LSDA` or closed-shell `XCType::PBE`, `k_mesh>=1`, `ecut_ry>0`.
+k-points are **not** MPI-distributed here. Spin-PBE, spin forces, and spin
+stress still reject.
 
 Per-iteration PCIe traffic, density side: Pulay Gram ≤ 1 KB (only once history
 ≥ 2) + ≤ 8 coefficients + 5 energy/residual doubles. **No O(N_G) / O(N_r)
@@ -157,8 +161,10 @@ correctness-only. **Analytic ionic forces landed** (`cuda-pw-forces`, GH200
 **1050801** max\|ΔF\|=2.63e-13 eV/Å). **Analytic cell stress landed**
 (`cuda-pw-stress`, GH200 **1050604** max\|Δσ\|=1.36e-12 eV/Å³, E both
 −13.86296636 Ry). **GPW closed-shell PBE KS stage landed**
-(`cuda-gpw-ks-gga`, GH200 **1050680** / post-merge **1050825**). Next depth:
-collinear spin / metallic smear / GPW multigrid stage remain open.
+(`cuda-gpw-ks-gga`, GH200 **1050680** / post-merge **1050825**). **GPW
+multi-grid product KS stage landed** (`cuda-gpw-ks-multigrid`, GH200
+**1051042**). **Collinear LSDA spin landed** (`cuda-pw-collinear-spin`, GH200
+**1051041**). Next depth: metallic smear / RHF non-default stream.
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently

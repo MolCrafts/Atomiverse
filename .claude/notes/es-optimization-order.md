@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 harness wave 5 closed)
+### Active next — dual track `es-cpu-cuda-opt` (2026-08-10 harness wave 6 closed)
 
 **Two tracks, one loop.** No new electronic methods (no hybrid / GAPW / PAW /
 meta-GGA product). No classical MD CUDA. Parent **`dev`**. Workers **only** on
@@ -75,14 +75,14 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (harness wave 5 close, `dev` @ `721ac286`):** Landed: device
-s/p RHF + CDIIS; Γ GPW footholds + LDA **and closed-shell PBE** `ks_chain`
-(GGA GH200 **1050680** / post-merge **1050825**); `cuda::pw::PW` LSDA +
-closed-shell PBE + residency + stream + large-cell + **analytic ionic forces
-(LSDA + PBE)** (PBE post-merge **1050801** max\|ΔF\|=2.63e-13 eV/Å) + **analytic
-cell stress** (LSDA GH200 **1050604**); pure-s + mixed-angular 2-center SIMD.
-**Pending depth:** `cuda-pw-collinear-spin` (P1), smear / MG chain (P2), RHF
-stream (P3). **Blocked:** `cuda-gpw-full-product`, `mg-main-structural`.
+**CUDA open-gate (harness wave 6 close, `dev` @ `61f873c9`):** Landed: device
+s/p RHF + CDIIS; Γ GPW footholds + LDA + closed-shell PBE `ks_chain` +
+**multi-grid product KS stage** (`KsMultiGridChainDevice`, GH200 **1051042**
+max\|ΔV_eff\|=8.1e-10); `cuda::pw::PW` LSDA + closed-shell PBE + residency +
+stream + large-cell + analytic ionic forces (LSDA + PBE) + analytic cell stress
+(LSDA) + **collinear LSDA spin** (GH200 **1051041** \|ΔE\|=1.07e-13 Ha on O₂).
+**Pending depth:** `cuda-pw-metallic-smear` (P2), `cuda-rhf-nondefault-stream`
+(P3). **Blocked:** `cuda-gpw-full-product`, `mg-main-structural`.
 **cpu_pending=0** — no pin-safe wall lever.
 
 **Queues (binding worklists):**

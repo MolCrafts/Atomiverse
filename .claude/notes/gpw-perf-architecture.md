@@ -110,10 +110,11 @@ Thin Γ device slices under `src/cuda/gpw/internal/`:
 | Padé LDA XC | `xc_lda.{cu,cuh}` | `cpu::xc::pade_lsd` / `xc_grid_pade` |
 | product ρ collocate | `product_collocate.{cu,cuh}` | `collint_collocate_product` continuous + collint |
 | product V·shape integrate | `product_integrate.{cu,cuh}` | `collint_integrate_product` continuous + collint |
-| composed KS chain (LDA) | `ks_chain.{cu,cuh}` | `ks_grid_build_rks` + continuous collint (GH200 **1049858**) |
+| composed KS chain (LDA + closed-shell PBE) | `ks_chain.{cu,cuh}` | `ks_grid_build_rks` + continuous collint (LDA GH200 **1049858**; GGA **1050680**) |
+| multi-grid product KS stage | `multigrid_transfer.{cu,cuh}` + `KsMultiGridChainDevice` | CPU Γ MG fragment dual-gate (GH200 **1051042** max\|ΔV_eff\|=8.1e-10) |
 
-Unit/stage oracle tols stated; single-grid Padé LDA only — **no** GGA/MG/public
-`GpwDft`. Full CUDA GPW remains blocked pending architecture freeze.
+Unit/stage oracle tols stated — **no** public `GpwDft`. Full CUDA GPW remains
+blocked pending architecture freeze.
 
 ### Forbidden
 
