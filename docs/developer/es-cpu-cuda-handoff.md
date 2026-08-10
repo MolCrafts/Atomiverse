@@ -5,14 +5,22 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ wave-9 merges (stress + nondefault-stream on base)
+- **Parent:** `dev` @ `e164b767` (land `cuda-gpw-device-diis-eigen`; prior
+  GapCensus wave 11 at `bcb873e0`; wave-9 stress **1128195** + stream
+  **1128196** still on base)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** Wave 9 GapCensus + staff 3; land **2**:
-  - `cuda-gpw-stress` GH200 **1128195** (merge on `dev`)
-  - `cuda-gpw-nondefault-stream` GH200 **1128196** (merge on `dev`)
-  - `cuda-gpw-product-h2o-gate` **no-land** — CUDA water RKS SCF non-convergence
-    (device KS residual; retries 1128194/1128217/1128269/1128295)
+- **Last action:** **Harness wave 2** — **1 of 3** Assign-wave-2 tips → done:
+  - [x] `cuda-gpw-device-diis-eigen` merge `e164b767` GH200 **1129719**
+    \|dE\|=**1.616e-07** Ha (prior **1129285**); spec closed
+  - [~] `cuda-gpw-product-h2o-gate` tip `a34ff0df` GH200 **1129720**
+    \|dE\|=**7.526e-07** max\|dF\|=**3.213e-06** — keep for Merge
+  - [~] `cuda-gpw-kpoints` tip `b61779f9` GH200 **1129721**
+    \|dE\|=**3.331e-14** — keep for Merge
+- **Next:** Merge remaining `[~]` (rebase onto `e164b767` if needed). When
+  slots free: PW P2 spin/smear/kmesh(+PBE E) or GPW residual (force-stream /
+  device-stress / device-stvnl). Do **not** re-staff landed collocate / MG /
+  UKS / PBE / forces / stress / stream / DIIS-eigen.
 
 ## How to run
 
@@ -23,14 +31,15 @@ args: {
   "staff_count": 3,
   "max_waves": 6,
   "target_branch": "dev",
-  "theme": "GPW P2 residual: device-diis-eigen (may unblock water), multi-k energy; product-h2o after DIIS; PW spin-forces + smear-forces; no soft tols"
+  "theme": "Merge product-h2o + kpoints; then PW spin-forces + smear-forces or GPW force-stream/device-stress; no soft tols"
 }
 agent_budget: 384+
 ```
 
-**Staff order:** `device-diis-eigen` first (host residual + may fix multi-center
-SCF stall), then `kpoints` + PW spin/smear F/σ. Re-staff `product-h2o-gate`
-only after device SCF residual improved. Prefer compose into `GpwDft`.
+**Staff order (when slots free after merge):** prefer one real product lift
+over joint-path matrix explosion. Next NEW theme: PW `spin-forces` /
+`smear-forces` (P2, independent) or deeper GPW residual (force-stream /
+device-stress / device-stvnl) — not hybrid/GAPW.
 
 ## Disk
 
@@ -40,8 +49,8 @@ Wipe `build` / `build-*` every wave. Drop ephemeral logs at clearup.
 
 | Track | Residual |
 | --- | --- |
-| **cuda GPW** | device DIIS/eigen; multi-k; water production dual-gate; MG/UKS F/σ; UKS-PBE |
-| **cuda PW** | spin forces/stress; smear forces/stress; spin+smear; multi-k PBE F/σ |
+| **cuda GPW** | **in_progress:** water gate + multi-k; then MG/UKS F/σ, force-stream, device-stress, STVnl/weight-pack, joints |
+| **cuda PW** | spin forces/stress; smear forces/stress; spin+smear; multi-k PBE energy/F/σ |
 | **cpu** | MG MAIN **2.33×** pin-unsafe blocked |
 
 **Contract:** [.claude/notes/cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)

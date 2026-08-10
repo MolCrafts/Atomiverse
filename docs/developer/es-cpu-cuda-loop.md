@@ -39,6 +39,29 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 2 (parent `dev` @ `e164b767`):** 1 of 3 staffed
+  → done [x]: `cuda-gpw-device-diis-eigen` (merge `e164b767` / feat
+  `e8170b10` + re-verify `5ed40df9`; GH200 **1129719** \|dE\|=**1.616e-07**
+  Ha H₂ Γ RKS PADE; prior tip **1129285**; **perf_exempt**). Keep other
+  `[~]`: `cuda-gpw-product-h2o-gate` tip `a34ff0df` (GH200 **1129720**
+  \|dE\|=**7.526e-07** max\|dF\|=**3.213e-06**) + `cuda-gpw-kpoints` tip
+  `b61779f9` (GH200 **1129721** \|dE\|=**3.331e-14**). Spec closed (deleted
+  `.claude/specs/cuda-gpw-device-diis-eigen/`). Roadmap prose: device RKS
+  DIIS/eigen landed (table full GPW remains ◐ — water / multi-k tip /
+  F·σ depth open — no ○→✓). **cpu_pending=0**; **cuda_pending=75**;
+  **in_progress=2**; **gaps_remaining=78**. Clearup already ran. Queue
+  **not** exhausted (GapCensus owns discovery). No push.
+
+- **2026-08-11 Assign wave 2 (parent `dev` @ `bcb873e0`):** Priority `[~]`
+  first — capacity **3/3** already filled by post–wave-11 recover tips not on
+  base. **Resume** (no new staff; theme-for-NEW N/A):
+  `cuda-gpw-device-diis-eigen` (`wf/…` `84096a1e`, GH200 **1129285**),
+  `cuda-gpw-product-h2o-gate` (`17b955ed`, **1129294** \|dE\|=**7.526e-07**
+  max\|dF\|=**3.213e-06**), `cuda-gpw-kpoints` (`14cd5d4e`, **1129276**).
+  **new_assigned=0**; **incomplete_remaining=0** (tip green claims — Merge
+  owns land). Held PW P2 spin/smear/kmesh + joint P3 matrix. Queue **not**
+  exhausted. No push.
+
 - **2026-08-11 harness wave 9 (parent `dev`):** 2 of 3 staffed → done [x]:
   `cuda-gpw-stress` (GH200 **1128195** \|dE\|=**1.617e-07** max\|dσ\|=**2.242e-10**)
   + `cuda-gpw-nondefault-stream` (GH200 **1128196** \|dE\|=**1.617e-07**

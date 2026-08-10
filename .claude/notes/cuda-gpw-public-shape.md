@@ -77,7 +77,7 @@ staffed.
 | Multi-path DIIS CPU Driver | **green** (`arch-gpw-driver-paths`) |
 | Public-shape freeze | **green** (this note; merge `0147fe02`) |
 | Stage footholds composed | **green** (ks-chain / GGA / MG units) |
-| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); device collocate **1125709**; MG energy **1126433**; Γ UKS **1126430** + O₂ **1127173**; device forces **1127167**; PBE H₂ **1127166**; stress **1128195**; non-default stream **1128196**; residual (H₂O e2e, DIIS/eigen, multi-k, MG/UKS F/σ + joints, force-stream / AO-Pulay, device STVnl) stays on es-cpu-cuda queue |
+| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); device collocate **1125709**; MG energy **1126433**; Γ UKS **1126430** + O₂ **1127173**; device forces **1127167**; PBE H₂ **1127166**; stress **1128195**; non-default stream **1128196**; device RKS DIIS/eigen **1129719** (merge `e164b767`); residual (H₂O e2e, multi-k, MG/UKS F/σ + joints, force-stream / AO-Pulay, device STVnl/weight-pack) stays on es-cpu-cuda queue |
 
 `cuda-gpw-full-product` is no longer blocked on “needs architecture freeze”.
 It remains a product implementation slug (compose internals → public method),

@@ -466,17 +466,19 @@ Two periodic DFT engines exist, with disjoint strengths:
   still reject); large-cell wall evidence on Si supercells — see es-cpu-cuda
   queue. **CUDA GPW first product slice landed:**
   public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE + **Γ UKS DIIS PADE** +
-  **multigrid energy**; host STVnl/DIIS/eigen + **device** product
+  **multigrid energy**; host STVnl + weight pack + **device** product
   collocate/KS/integrate via `KsChainDevice::run` / `run_uks` +
-  `KsMultiGridChainDevice` on **non-default stream** — collocate GH200
+  `KsMultiGridChainDevice` on **non-default stream** + **device RKS mid-SCF
+  Pulay DIIS + cuSOLVER eigen** (`AoDiisEigenDevice`) — collocate GH200
   **1125709**, MG **1126433**, UKS **1126430** / O₂ gate **1127173**, PBE H₂
-  **1127166**, stream **1128196**; free-fn forces = **host AO Pulay + device
-  grid HF** **1127167**; free-fn stress = **CUDA density + host fixed-\(P\)**
-  **1128195** H₂ dual-gate). Depth residual on es-cpu-cuda queue (DIIS/eigen,
-  water e2e F/σ, MG/UKS F/σ + joints, multi-k, force-stream / AO-Pulay, device
-  STVnl) — table CUDA for full GPW remains **◐** not ✓ (no ○→✓ while product
-  depth incomplete). Stage units under `cuda/gpw/internal/`; multi-path DIIS
-  CPU Driver + public-shape freeze **green**.
+  **1127166**, stream **1128196**, DIIS/eigen **1129719**; free-fn forces =
+  **host AO Pulay + device grid HF** **1127167**; free-fn stress = **CUDA
+  density + host fixed-\(P\)** **1128195** H₂ dual-gate). Depth residual on
+  es-cpu-cuda queue (water e2e F/σ tip, multi-k tip, MG/UKS F/σ + joints,
+  force-stream / AO-Pulay, device STVnl/weight-pack) — table CUDA for full
+  GPW remains **◐** not ✓ (no ○→✓ while product depth incomplete). Stage
+  units under `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape
+  freeze **green**.
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
   **multi-path DIIS** (Γ RKS/UKS + multi-k RKS/UKS landed; OT free-loop
   residual is same-capability follow-on, not a new slug). `cpu::pw::PW` is
@@ -609,11 +611,12 @@ Two periodic DFT engines exist, with disjoint strengths:
 Which engine backs which ✓:
 
 - **Γ-point periodic RKS** is GPW (`reg_gpw-water-pbe-mt`) on CPU **and** a
-  **first-slice CUDA product** (`cuda::gpw::GpwDft`; host STVnl/DIIS/eigen +
+  **first-slice CUDA product** (`cuda::gpw::GpwDft`; host STVnl + weight pack +
   device product collocate/KS/integrate via `KsChainDevice::run` + non-default
-  stream; PADE dual-gate `reg_cuda-gpw-full-product` / collocate GH200
-  **1125709** / PBE H₂ **1127166** / forces **1127167** / stress **1128195** —
-  table ◐ until H₂O gates + DIIS/eigen + force-stream/AO-Pulay depth land).
+  stream + device RKS DIIS/eigen; PADE dual-gate `reg_cuda-gpw-full-product` /
+  collocate GH200 **1125709** / PBE H₂ **1127166** / forces **1127167** /
+  stress **1128195** / DIIS-eigen **1129719** — table ◐ until H₂O gates +
+  multi-k + force-stream/AO-Pulay depth land).
   **Γ-point periodic UKS** is GPW PADE LSD on CPU (`reg_gpw-uks-o2-gamma`)
   **and** a **first-cut CUDA energy product** (`cuda-gpw-uks-gamma` /
   GH200 **1126430** H₂ + **1127173** O₂; device `KsChainDevice::run_uks` Padé
