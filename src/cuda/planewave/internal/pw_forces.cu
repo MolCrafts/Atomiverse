@@ -78,12 +78,12 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
                                     const double* d_gx, const double* d_gy,
                                     const double* d_gz, const double* d_vg,
                                     const double* d_pos, int ng, int n_atoms,
-                                    double omega, double* d_forces) {
+                                    double omega, double* d_forces,
+                                    cudaStream_t stream) {
     if (ng <= 0 || n_atoms <= 0)
         return;
-    k_local_hf_forces<<<n_blocks(ng), kBlock>>>(d_rho_G, d_gx, d_gy, d_gz,
-                                                d_vg, d_pos, ng, n_atoms, omega,
-                                                d_forces);
+    k_local_hf_forces<<<n_blocks(ng), kBlock, 0, stream>>>(
+        d_rho_G, d_gx, d_gy, d_gz, d_vg, d_pos, ng, n_atoms, omega, d_forces);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
@@ -157,8 +157,10 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                               static_cast<std::size_t>(3 * n) * sizeof(double),
                               cudaMemcpyHostToDevice));
 
+    // Local HF on the shared SCF stream (same as dens / band) so ρ(G) reads
+    // and atomicAdd into d_F order with the NL rebuild below.
     accumulate_local_forces_device(den.device_rho_G(), d_gx, d_gy, d_gz, d_vg,
-                                   d_pos, ng0, n, omega, d_F);
+                                   d_pos, ng0, n, omega, d_F, den.stream());
 
     // Nonlocal KB: rebuild V_eff from the final mixed density (CPU twin of
     // poisson.step + xc.step + veff.step after SCF), then re-solve bands.
@@ -177,6 +179,7 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
     }
 
     std::vector<double> h_F(static_cast<std::size_t>(3 * n));
+    ATV_CUDA_CHECK(cudaStreamSynchronize(den.stream()));
     ATV_CUDA_CHECK(cudaMemcpy(h_F.data(), d_F,
                               static_cast<std::size_t>(3 * n) * sizeof(double),
                               cudaMemcpyDeviceToHost));

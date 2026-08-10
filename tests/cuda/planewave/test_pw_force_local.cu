@@ -118,7 +118,8 @@ TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
     ATV_CUDA_CHECK(cudaMemset(d_F, 0, 3 * n_atoms * sizeof(double)));
 
     cuda::pw::internal::accumulate_local_forces_device(
-        d_rho, d_gx, d_gy, d_gz, d_vg, d_pos, ng, n_atoms, omega, d_F);
+        d_rho, d_gx, d_gy, d_gz, d_vg, d_pos, ng, n_atoms, omega, d_F,
+        /*stream=*/nullptr);
     ATV_CUDA_CHECK(cudaDeviceSynchronize());
 
     std::vector<double> F_dev(3 * n_atoms);
@@ -167,4 +168,27 @@ TEST(CudaPWForces, PublicApiRejectsSpin) {
     method.spin_polarized = true;
     method.xc = cpu::scf::XCType::LSDA;
     EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method), std::invalid_argument);
+}
+
+// PBE is on the force-path XC whitelist (DeviceDensity + xc_pbe). Empty-frame
+// still rejects before SCF; the message must not claim PBE is unsupported.
+TEST(CudaPWForces, PublicApiAcceptsPbeOnEmptyFrameGate) {
+    cpu::Frame f(0);
+    cuda::pw::PW method;
+    method.gth_name = "GTH-PBE-q1";
+    method.ecut_ry = 4.0;
+    method.k_mesh = 1;
+    method.tol = 1e-4;
+    method.max_iter = 4;
+    method.xc = cpu::scf::XCType::PBE;
+    try {
+        (void)cuda::pw::pw_forces_analytic(f, method);
+        FAIL() << "expected empty-frame throw";
+    } catch (const std::invalid_argument& e) {
+        const std::string msg = e.what();
+        EXPECT_NE(msg.find("no atoms"), std::string::npos)
+            << "msg=" << msg;
+        EXPECT_EQ(msg.find("no device path"), std::string::npos)
+            << "PBE must not hit the XC whitelist reject; msg=" << msg;
+    }
 }

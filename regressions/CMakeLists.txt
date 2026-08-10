@@ -222,6 +222,22 @@ if(ATV_BUILD_PW)
         add_dependencies(regressions run_${_reg_pw_forces})
         unset(_reg_pw_forces)
 
+        # Analytic ionic forces under device PBE-GGA (LSDA dual-gate is
+        # reg_cuda-pw-forces; energy PBE is reg_cuda-pw-pbe-device).
+        set(_reg_pw_forces_pbe reg_cuda-pw-forces-pbe)
+        add_executable(${_reg_pw_forces_pbe}
+            pw/cuda-pw-forces-pbe/${_reg_pw_forces_pbe}.cu)
+        target_link_libraries(${_reg_pw_forces_pbe} PRIVATE atomiverse)
+        set_target_properties(${_reg_pw_forces_pbe} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_pw_forces_pbe}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_pw_forces_pbe}> --device=both
+            DEPENDS ${_reg_pw_forces_pbe}
+            COMMENT "regression [pw/cuda-pw-forces-pbe] devices=both PBE (1t)")
+        add_dependencies(regressions run_${_reg_pw_forces_pbe})
+        unset(_reg_pw_forces_pbe)
+
         # Nielsen–Martin cell stress CUDA↔CPU dual-gate.
         set(_reg_pw_stress reg_cuda-pw-stress)
         add_executable(${_reg_pw_stress} pw/cuda-pw-stress/${_reg_pw_stress}.cu)
@@ -235,6 +251,7 @@ if(ATV_BUILD_PW)
             COMMENT "regression [pw/cuda-pw-stress] devices=both (1t)")
         add_dependencies(regressions run_${_reg_pw_stress})
         unset(_reg_pw_stress)
+
 
     endif()
     if(TARGET reg_pw-lda-si)

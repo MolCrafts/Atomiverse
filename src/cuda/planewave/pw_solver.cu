@@ -285,9 +285,14 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     const AccReal vol_bohr = prob.vol_bohr;
     const AccReal omega_bohr = ws.omega;
 
+    // Same stream coupling as PW::run: density owns the SCF stream; the band
+    // solver borrows it so V_eff / ρ_acc writes stay ordered without events.
+    // Creating a second stream here races the two halves and breaks PBE SCF
+    // (many more async FFTs on the density side than LSDA).
     internal::DeviceDensity den(prob, method.mix_beta, method.pulay_depth,
                                 method.xc);
-    internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands);
+    internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
+                                      den.stream());
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
     solver.build_kpoints(prob);
 
