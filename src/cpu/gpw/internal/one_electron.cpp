@@ -5,12 +5,20 @@
 /// recursion tree) and a fused prim_ST that shares 1D overlaps between S and T.
 /// Geometry-key reuse keeps tables live across consecutive prim pairs that share
 /// (α, center) — common for solid-harmonic cart terms and shell-mate AOs.
+///
+/// Pure s–s contracted work (dominant on H / s shells, and on slab image
+/// sweeps) is vectorized with portable xsimd over the ket-primitive axis
+/// (raw spans + scalar tail). Non-s angular work stays on the Hermite path.
+/// Image screening packs live T first so the ST kernel sees a short list.
 
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <vector>
+
+#include <xsimd/xsimd.hpp>
 
 namespace ATV {
 namespace cpu {
@@ -226,9 +234,346 @@ inline void st_ss(double a_alpha, double b_alpha, const double a_c[3],
     t_out = mu * (3.0 - 2.0 * mu * r2) * S;
 }
 
+/// True when every monom is pure s (l=0). Common for H / valence-s shells.
+inline bool basis_is_pure_s(const GridBasisFunction& f) {
+    for (const auto& p : f)
+        if (p.l[0] != 0 || p.l[1] != 0 || p.l[2] != 0)
+            return false;
+    return !f.empty();
+}
+
+/// Flatten pure-s monom pairs into (α_a, α_b, c_a·c_b, μ, pref) tables.
+/// Shared by fixed-geometry and multi-image SIMD paths.
+struct SsPairPack {
+    static constexpr int kMaxPairs = 64; // MOLOPT ≤ ~8×8
+    double aa[kMaxPairs];
+    double ab[kMaxPairs];
+    double mu[kMaxPairs];
+    double pref[kMaxPairs]; // c_a c_b (π/p)^{3/2}
+    int np = 0;
+
+    void build(const GridBasisFunction& a, const GridBasisFunction& b) {
+        np = 0;
+        for (const auto& pa : a) {
+            for (const auto& pb : b) {
+                if (np >= kMaxPairs)
+                    return; // caller falls back if truncated
+                const double p = pa.alpha + pb.alpha;
+                const double m = pa.alpha * pb.alpha / p;
+                const double pi_over_p = M_PI / p;
+                aa[np] = pa.alpha;
+                ab[np] = pb.alpha;
+                mu[np] = m;
+                pref[np] = pa.coeff * pb.coeff * pi_over_p * std::sqrt(pi_over_p);
+                ++np;
+            }
+        }
+    }
+};
+
+/// Portable xsimd s–s contracted ST for fixed centers (shared r²).
+/// Vectorizes the **flattened monom-pair** axis (na·nb), not the ket axis alone
+/// — MOLOPT 4×4 = 16 pairs fills two AVX-512 lanes of 8. Falls back to scalar
+/// `st_ss` when np < native width. Not bit-identical (xsimd::exp + reduce).
+inline void contracted_ST_ss_simd(const GridBasisFunction& a,
+                                  const GridBasisFunction& b,
+                                  const double bc[3], double& s_out,
+                                  double& t_out) {
+    using batch_t = xsimd::batch<double>;
+    constexpr int W = static_cast<int>(batch_t::size);
+
+    SsPairPack pack;
+    pack.build(a, b);
+    const int np = pack.np;
+    const int na = static_cast<int>(a.size());
+    const int nb = static_cast<int>(b.size());
+    // Truncation or tiny work → pure scalar (no SIMD tax).
+    if (np != na * nb || np < W) {
+        double s = 0.0, t = 0.0;
+        for (const auto& pa : a) {
+            for (const auto& pb : b) {
+                double s_p = 0.0, t_p = 0.0;
+                st_ss(pa.alpha, pb.alpha, pa.center, bc, pa.coeff, pb.coeff, s_p,
+                      t_p);
+                s += s_p;
+                t += t_p;
+            }
+        }
+        s_out = s;
+        t_out = t;
+        return;
+    }
+
+    const double* ac = a[0].center;
+    const double dx = ac[0] - bc[0];
+    const double dy = ac[1] - bc[1];
+    const double dz = ac[2] - bc[2];
+    const double r2 = dx * dx + dy * dy + dz * dz;
+    const batch_t r2_v(r2);
+    const batch_t three(3.0);
+    const batch_t two(2.0);
+
+    batch_t acc_s(0.0);
+    batch_t acc_t(0.0);
+    int ip = 0;
+    for (; ip + W <= np; ip += W) {
+        const batch_t mu_v = batch_t::load_unaligned(pack.mu + ip);
+        const batch_t pref_v = batch_t::load_unaligned(pack.pref + ip);
+        const batch_t S = pref_v * xsimd::exp(-mu_v * r2_v);
+        const batch_t T = mu_v * (three - two * mu_v * r2_v) * S;
+        acc_s += S;
+        acc_t += T;
+    }
+    double s_lane[16];
+    double t_lane[16];
+    acc_s.store_unaligned(s_lane);
+    acc_t.store_unaligned(t_lane);
+    double s = 0.0, t = 0.0;
+    for (int lane = 0; lane < W; ++lane) {
+        s += s_lane[lane];
+        t += t_lane[lane];
+    }
+    for (; ip < np; ++ip) {
+        const double S = pack.pref[ip] * std::exp(-pack.mu[ip] * r2);
+        s += S;
+        t += pack.mu[ip] * (3.0 - 2.0 * pack.mu[ip] * r2) * S;
+    }
+    s_out = s;
+    t_out = t;
+}
+
+inline bool image_in_reach(const double ac[3], const double bc[3],
+                           const double T[3], double reach2) {
+    const double dx = ac[0] - bc[0] - T[0];
+    const double dy = ac[1] - bc[1] - T[1];
+    const double dz = ac[2] - bc[2] - T[2];
+    return dx * dx + dy * dy + dz * dz <= reach2;
+}
+
+/// Pack live lattice images + precomputed r² into a caller buffer.
+/// @return number of live images written (≤ nmax).
+inline int pack_live_images_r2(const double ac[3], const double bc[3],
+                               const double L[3], const int m[3],
+                               double reach2, double* r2, int nmax) {
+    int n = 0;
+    for (int tx = -m[0]; tx <= m[0]; ++tx)
+        for (int ty = -m[1]; ty <= m[1]; ++ty)
+            for (int tz = -m[2]; tz <= m[2]; ++tz) {
+                const double dx = ac[0] - bc[0] - tx * L[0];
+                const double dy = ac[1] - bc[1] - ty * L[1];
+                const double dz = ac[2] - bc[2] - tz * L[2];
+                const double d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 > reach2)
+                    continue;
+                if (n >= nmax)
+                    return n; // truncated — caller falls back
+                r2[n++] = d2;
+            }
+    return n;
+}
+
+/// Scalar pure-s multi-image ST (no heap, no SIMD). Used when the live image
+/// count is below the SIMD break-even (≈ 2·native width on this host).
+inline void contracted_ST_ss_images_scalar(const GridBasisFunction& a,
+                                           const GridBasisFunction& b,
+                                           const double L[3], const int m[3],
+                                           double reach2, double& s_out,
+                                           double& t_out) {
+    const double* ac = a[0].center;
+    const double* bc0 = b[0].center;
+    double s = 0.0, t = 0.0;
+    for (int tx = -m[0]; tx <= m[0]; ++tx)
+        for (int ty = -m[1]; ty <= m[1]; ++ty)
+            for (int tz = -m[2]; tz <= m[2]; ++tz) {
+                const double dx = ac[0] - bc0[0] - tx * L[0];
+                const double dy = ac[1] - bc0[1] - ty * L[1];
+                const double dz = ac[2] - bc0[2] - tz * L[2];
+                const double r2 = dx * dx + dy * dy + dz * dz;
+                if (r2 > reach2)
+                    continue;
+                for (const auto& pa : a) {
+                    for (const auto& pb : b) {
+                        const double p = pa.alpha + pb.alpha;
+                        const double mu = pa.alpha * pb.alpha / p;
+                        const double pi_over_p = M_PI / p;
+                        const double S = pa.coeff * pb.coeff * pi_over_p
+                                         * std::sqrt(pi_over_p)
+                                         * std::exp(-mu * r2);
+                        s += S;
+                        t += mu * (3.0 - 2.0 * mu * r2) * S;
+                    }
+                }
+            }
+    s_out = s;
+    t_out = t;
+}
+
+/// Pure s–s multi-image ST with precomputed live r². Image-axis xsimd; monom
+/// pairs reuse each r² batch. Call only when nimg ≥ 2·W (slab-class).
+inline void contracted_ST_ss_images_simd(const GridBasisFunction& a,
+                                         const GridBasisFunction& b,
+                                         const double* r2, int nimg,
+                                         double& s_out, double& t_out) {
+    using batch_t = xsimd::batch<double>;
+    constexpr int W = static_cast<int>(batch_t::size);
+
+    SsPairPack pack;
+    pack.build(a, b);
+    const int np = pack.np;
+    const int na = static_cast<int>(a.size());
+    const int nb = static_cast<int>(b.size());
+    if (np != na * nb) {
+        double s = 0.0, t = 0.0;
+        for (int im = 0; im < nimg; ++im) {
+            const double r = r2[im];
+            for (const auto& pa : a) {
+                for (const auto& pb : b) {
+                    const double p = pa.alpha + pb.alpha;
+                    const double mu = pa.alpha * pb.alpha / p;
+                    const double pi_over_p = M_PI / p;
+                    const double S = pa.coeff * pb.coeff * pi_over_p
+                                     * std::sqrt(pi_over_p)
+                                     * std::exp(-mu * r);
+                    s += S;
+                    t += mu * (3.0 - 2.0 * mu * r) * S;
+                }
+            }
+        }
+        s_out = s;
+        t_out = t;
+        return;
+    }
+
+    const batch_t three(3.0);
+    const batch_t two(2.0);
+    batch_t acc_s(0.0);
+    batch_t acc_t(0.0);
+    int im = 0;
+    for (; im + W <= nimg; im += W) {
+        const batch_t r2_v = batch_t::load_unaligned(r2 + im);
+        for (int ip = 0; ip < np; ++ip) {
+            const batch_t mu_v(pack.mu[ip]);
+            const batch_t pref_v(pack.pref[ip]);
+            const batch_t S = pref_v * xsimd::exp(-mu_v * r2_v);
+            const batch_t T = mu_v * (three - two * mu_v * r2_v) * S;
+            acc_s += S;
+            acc_t += T;
+        }
+    }
+    double s_lane[16];
+    double t_lane[16];
+    acc_s.store_unaligned(s_lane);
+    acc_t.store_unaligned(t_lane);
+    double s = 0.0, t = 0.0;
+    for (int lane = 0; lane < W; ++lane) {
+        s += s_lane[lane];
+        t += t_lane[lane];
+    }
+    for (; im < nimg; ++im) {
+        const double r = r2[im];
+        for (int ip = 0; ip < np; ++ip) {
+            const double S = pack.pref[ip] * std::exp(-pack.mu[ip] * r);
+            s += S;
+            t += pack.mu[ip] * (3.0 - 2.0 * pack.mu[ip] * r) * S;
+        }
+    }
+    s_out = s;
+    t_out = t;
+}
+
+/// Fused S+T over all live lattice images. Pure s–s uses image-axis xsimd
+/// only on slab-class image counts; mixed angular uses contracted_ST_shift.
+inline void contracted_ST_periodic_impl(const GridBasisFunction& a,
+                                        const GridBasisFunction& b,
+                                        const double L[3], const int m[3],
+                                        double reach, double& s_out,
+                                        double& t_out) {
+    if (a.empty() || b.empty()) {
+        s_out = 0.0;
+        t_out = 0.0;
+        return;
+    }
+    const double* ac = a[0].center;
+    const double* bc = b[0].center;
+    const double reach2 = reach * reach;
+    using batch_t = xsimd::batch<double>;
+    // SIMD break-even: ≥ one full native vector of live images (slab-class).
+    constexpr int kSimdImgMin = static_cast<int>(batch_t::size);
+
+    if (basis_is_pure_s(a) && basis_is_pure_s(b)) {
+        const int nimg_est =
+            (2 * m[0] + 1) * (2 * m[1] + 1) * (2 * m[2] + 1);
+        // Tiny image windows (four fair twins): stay on scalar.
+        if (nimg_est < kSimdImgMin) {
+            contracted_ST_ss_images_scalar(a, b, L, m, reach2, s_out, t_out);
+            return;
+        }
+        // Stack pack — GPW image half-counts stay modest; 512 covers
+        // m ≤ (4,4,8) = 9·9·17. Truncation falls back to scalar.
+        constexpr int kR2Max = 512;
+        double r2_live[kR2Max];
+        const int nimg =
+            pack_live_images_r2(ac, bc, L, m, reach2, r2_live, kR2Max);
+        if (nimg == 0) {
+            s_out = 0.0;
+            t_out = 0.0;
+            return;
+        }
+        if (nimg >= kR2Max) {
+            // Truncated pack — full scalar (no partial image set).
+            contracted_ST_ss_images_scalar(a, b, L, m, reach2, s_out, t_out);
+            return;
+        }
+        if (nimg < kSimdImgMin) {
+            // Screened-down: scalar over the already-packed r² (do not rescreen).
+            SsPairPack pack;
+            pack.build(a, b);
+            double s = 0.0, t = 0.0;
+            for (int im = 0; im < nimg; ++im) {
+                const double r = r2_live[im];
+                for (int ip = 0; ip < pack.np; ++ip) {
+                    const double S =
+                        pack.pref[ip] * std::exp(-pack.mu[ip] * r);
+                    s += S;
+                    t += pack.mu[ip] * (3.0 - 2.0 * pack.mu[ip] * r) * S;
+                }
+            }
+            s_out = s;
+            t_out = t;
+            return;
+        }
+        contracted_ST_ss_images_simd(a, b, r2_live, nimg, s_out, t_out);
+        return;
+    }
+
+    // Mixed angular: per-image Hermite path (fill_upto + monom reuse).
+    double s = 0.0, t = 0.0;
+    for (int tx = -m[0]; tx <= m[0]; ++tx)
+        for (int ty = -m[1]; ty <= m[1]; ++ty)
+            for (int tz = -m[2]; tz <= m[2]; ++tz) {
+                const double T[3] = {tx * L[0], ty * L[1], tz * L[2]};
+                if (!image_in_reach(ac, bc, T, reach2))
+                    continue;
+                double s_im = 0.0, t_im = 0.0;
+                contracted_ST_shift(a, b, T, s_im, t_im);
+                s += s_im;
+                t += t_im;
+            }
+    s_out = s;
+    t_out = t;
+}
+
 } // namespace
 
 double prim_overlap(const GridPrimitive& a, const GridPrimitive& b) {
+    // Pure s–s: closed form (matches prim_ST).
+    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0
+        && b.l[1] == 0 && b.l[2] == 0) {
+        double s = 0.0, t = 0.0;
+        st_ss(a.alpha, b.alpha, a.center, b.center, a.coeff, b.coeff, s, t);
+        (void)t;
+        return s;
+    }
     thread_local HermiteTab hx, hy, hz;
     thread_local HermiteGeomKey key;
     hermite_ensure(hx, hy, hz, key, a.alpha, b.alpha, a.center, b.center);
@@ -237,6 +582,13 @@ double prim_overlap(const GridPrimitive& a, const GridPrimitive& b) {
 }
 
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b) {
+    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0
+        && b.l[1] == 0 && b.l[2] == 0) {
+        double s = 0.0, t = 0.0;
+        st_ss(a.alpha, b.alpha, a.center, b.center, a.coeff, b.coeff, s, t);
+        (void)s;
+        return t;
+    }
     thread_local HermiteTab hx, hy, hz;
     thread_local HermiteGeomKey key;
     hermite_ensure(hx, hy, hz, key, a.alpha, b.alpha, a.center, b.center);
@@ -269,6 +621,17 @@ void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
 void contracted_ST_shift(const GridBasisFunction& a,
                          const GridBasisFunction& b, const double T[3],
                          double& s_out, double& t_out) {
+    // Pure s–s: portable xsimd over flattened monom pairs (shared r²).
+    // Dominant on H shells and multi-k STVnl image sweeps that land on s.
+    if (basis_is_pure_s(a) && basis_is_pure_s(b)) {
+        // All monoms of a contracted s shell share the same center — shift
+        // once from b[0] (MOLOPT / CP2K convention).
+        const double bc[3] = {b[0].center[0] + T[0], b[0].center[1] + T[1],
+                              b[0].center[2] + T[2]};
+        contracted_ST_ss_simd(a, b, bc, s_out, t_out);
+        return;
+    }
+
     // Local Hermite + bottom-up fill per (α_a, α_b, geometry). Grouping monoms
     // that share exponents fills the E table once (kinetic needs j+2).
     HermiteTab hx, hy, hz;
@@ -276,7 +639,6 @@ void contracted_ST_shift(const GridBasisFunction& a,
     double s = 0.0, t = 0.0;
     const int na = static_cast<int>(a.size());
     const int nb = static_cast<int>(b.size());
-    // Track max angular per current geometry so fill_upto covers all monoms.
     for (int ia = 0; ia < na; ++ia) {
         const auto& pa = a[static_cast<std::size_t>(ia)];
         for (int ib = 0; ib < nb; ++ib) {
@@ -348,6 +710,12 @@ void contracted_ST_shift(const GridBasisFunction& a,
 
 
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b) {
+    if (basis_is_pure_s(a) && basis_is_pure_s(b)) {
+        double s = 0.0, t = 0.0;
+        contracted_ST_ss_simd(a, b, b[0].center, s, t);
+        (void)t;
+        return s;
+    }
     double s = 0.0;
     for (const auto& pa : a)
         for (const auto& pb : b)
@@ -356,6 +724,12 @@ double overlap(const GridBasisFunction& a, const GridBasisFunction& b) {
 }
 
 double kinetic(const GridBasisFunction& a, const GridBasisFunction& b) {
+    if (basis_is_pure_s(a) && basis_is_pure_s(b)) {
+        double s = 0.0, t = 0.0;
+        contracted_ST_ss_simd(a, b, b[0].center, s, t);
+        (void)s;
+        return t;
+    }
     double t = 0.0;
     for (const auto& pa : a)
         for (const auto& pb : b)
@@ -363,65 +737,26 @@ double kinetic(const GridBasisFunction& a, const GridBasisFunction& b) {
     return t;
 }
 
-namespace {
-inline bool image_in_reach(const double ac[3], const double bc[3],
-                           const double T[3], double reach2) {
-    const double dx = ac[0] - bc[0] - T[0];
-    const double dy = ac[1] - bc[1] - T[1];
-    const double dz = ac[2] - bc[2] - T[2];
-    return dx * dx + dy * dy + dz * dz <= reach2;
+void contracted_ST_periodic(const GridBasisFunction& a,
+                            const GridBasisFunction& b, const double L[3],
+                            const int m[3], double reach, double& s_out,
+                            double& t_out) {
+    contracted_ST_periodic_impl(a, b, L, m, reach, s_out, t_out);
 }
-} // namespace
 
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b,
                const double L[3], const int m[3], double reach) {
-    if (a.empty() || b.empty())
-        return 0.0;
-    const double* ac = a[0].center;
-    const double* bc = b[0].center;
-    const double reach2 = reach * reach;
-    double s = 0.0;
-    for (int tx = -m[0]; tx <= m[0]; ++tx)
-        for (int ty = -m[1]; ty <= m[1]; ++ty)
-            for (int tz = -m[2]; tz <= m[2]; ++tz) {
-                const double T[3] = {tx * L[0], ty * L[1], tz * L[2]};
-                if (!image_in_reach(ac, bc, T, reach2))
-                    continue;
-                for (const auto& pa : a)
-                    for (const auto& pb : b) {
-                        GridPrimitive q = pb;
-                        q.center[0] += T[0];
-                        q.center[1] += T[1];
-                        q.center[2] += T[2];
-                        s += prim_overlap(pa, q);
-                    }
-            }
+    double s = 0.0, t = 0.0;
+    contracted_ST_periodic_impl(a, b, L, m, reach, s, t);
+    (void)t;
     return s;
 }
 
 double kinetic(const GridBasisFunction& a, const GridBasisFunction& b,
                const double L[3], const int m[3], double reach) {
-    if (a.empty() || b.empty())
-        return 0.0;
-    const double* ac = a[0].center;
-    const double* bc = b[0].center;
-    const double reach2 = reach * reach;
-    double t = 0.0;
-    for (int tx = -m[0]; tx <= m[0]; ++tx)
-        for (int ty = -m[1]; ty <= m[1]; ++ty)
-            for (int tz = -m[2]; tz <= m[2]; ++tz) {
-                const double T[3] = {tx * L[0], ty * L[1], tz * L[2]};
-                if (!image_in_reach(ac, bc, T, reach2))
-                    continue;
-                for (const auto& pa : a)
-                    for (const auto& pb : b) {
-                        GridPrimitive q = pb;
-                        q.center[0] += T[0];
-                        q.center[1] += T[1];
-                        q.center[2] += T[2];
-                        t += prim_kinetic(pa, q);
-                    }
-            }
+    double s = 0.0, t = 0.0;
+    contracted_ST_periodic_impl(a, b, L, m, reach, s, t);
+    (void)s;
     return t;
 }
 

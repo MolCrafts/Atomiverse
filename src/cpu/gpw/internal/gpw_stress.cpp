@@ -783,10 +783,9 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 continue;
             const double reach = radii[static_cast<std::size_t>(mu)]
                                  + radii[static_cast<std::size_t>(nu)];
-            const double s =
-                overlap(basis[mu], basis[nu], cfg.cell, mimg, reach);
-            const double t =
-                kinetic(basis[mu], basis[nu], cfg.cell, mimg, reach);
+            double s = 0.0, t = 0.0;
+            contracted_ST_periodic(basis[mu], basis[nu], cfg.cell, mimg, reach,
+                                   s, t);
             const double vpp = vpp_images(basis[mu], basis[nu], all, cfg.cell,
                                           mimg, reach, analytic_loc);
             const double p_tot =
