@@ -61,6 +61,10 @@ CPU = CUDA \(E = -13.90403280\) Ry, stress-SCF **iter=7**,
 \(|\Delta E| = 4.441\times 10^{-14}\) Ry. Bound kept at design-time
 \(5\times 10^{-2}\).
 
+**Re-verify GH200 job 1122705** after rebase onto `dev@d701a1cd`: unit
+1/1 PASS; dual-gate max|Δσ| = \(5.585\times 10^{-12}\) eV/Å³; same E and
+|ΔE|; `BUILDS_WIPED_OK`.
+
 ## Dual gate
 
 | Gate | Criterion |
