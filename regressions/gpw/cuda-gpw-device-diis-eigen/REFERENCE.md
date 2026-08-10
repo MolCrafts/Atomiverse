@@ -19,3 +19,12 @@ binary (not a literature pin).
 
 **perf_exempt** — small-cell architectural foothold (device DIIS/eigen), not a
 fair-twin wall measurement.
+
+## Evidence (wave-2 resume)
+
+| Job | Node | Result |
+| --- | --- | --- |
+| GH200 **1129285** (orig tip) | n189 | unit + dual-gate PASS \|dE\|≈1.6e-7 Ha |
+| GH200 **1129719** (rebase on `bcb873e0`) | n194 | `test_cuda_gpw_diis_eigen` PASS; \|dE\|=**1.616e-07** Ha |
+
+Rebase: `84096a1e` → `e8170b10` onto wave-11 GapCensus parent.
