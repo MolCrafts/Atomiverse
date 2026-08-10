@@ -43,11 +43,12 @@ Collinear fixed-occupation UKS with **true spin-GGA PBE** on `cuda::pw::PW`
 
 | Job | Result |
 | --- | --- |
-| **1123961** (n454, exit 0) | wave-3 reconfirm after rebase onto `dev`@`4913b33b`; CPU/CUDA PBE both **−28.7585210635 Ha**, mag=2; \|ΔE\|=**1.14e-13 Ha**; \|E_PBE−E_LSDA\|_cpu=**0.129 Ha**; BUILD/UNIT/REG RCs 0 |
+| **1124645** (n40, exit 0) | wave-4 reconfirm after rebase onto `dev`@`44bd64bb`; CPU/CUDA PBE both **−28.7585210635 Ha**, mag=2; \|ΔE\|=**1.14e-13 Ha**; \|E_PBE−E_LSDA\|_cpu=**0.129 Ha**; BUILD/UNIT/REG RCs 0 |
+| **1123961** (n454, exit 0) | wave-3 reconfirm after rebase onto `dev`@`4913b33b`; same dual-gate numbers |
 | **1122874** (n416, exit 0) | same dual-gate numbers on pre-rebase tip |
 | prior **1122357** | first green on pre-rebase tip |
 
-Log path on staff tree: `.claude/cuda-pw-spin-pbe-1123961.out` (gitignored `*.out`).
+Log path on staff tree: `.claude/cuda-pw-spin-pbe-1124645.out` (gitignored `*.out`).
 
 ## Not claimed
 
