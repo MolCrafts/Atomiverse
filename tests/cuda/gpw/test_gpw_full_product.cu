@@ -88,12 +88,24 @@ TEST(CudaGpwFullProduct, FailClosedUnsupported) {
         EXPECT_THROW(m.build(atoms), std::invalid_argument);
     }
     {
+        // UKS+PBE still fail-closed (uks-pbe-gate deeper slug).
         ATV::cuda::gpw::GpwDft m;
         set_h2_cfg_cuda(m);
-        m.n_alpha = 1;
-        m.n_beta = 1;
+        m.n_alpha = 2;
+        m.n_beta = 0;
         m.n_occ = 0;
+        m.xc = XcKind::PBE;
         EXPECT_THROW(m.build(atoms), std::invalid_argument);
+    }
+    {
+        // UKS PADE is accepted (cuda-gpw-uks-gamma).
+        ATV::cuda::gpw::GpwDft m;
+        set_h2_cfg_cuda(m);
+        m.n_alpha = 2;
+        m.n_beta = 0;
+        m.n_occ = 0;
+        m.xc = XcKind::PADE;
+        EXPECT_NO_THROW(m.build(atoms));
     }
     {
         ATV::cuda::gpw::GpwDft m;
@@ -161,4 +173,49 @@ TEST(CudaGpwFullProduct, H2GammaPadeForcesDualGate) {
         for (int k = 0; k < 3; ++k)
             maxd = std::max(maxd, std::abs(Fg[a][k] - Fc[a][k]));
     EXPECT_LT(maxd, kFTol) << "max|dF|=" << maxd;
+}
+
+// High-spin H₂ Γ UKS PADE energy dual-gate (O₂-class collinear UKS path;
+// small cell correctness only — needs GPU).
+TEST(CudaGpwFullProduct, H2HighSpinUksPadeEnergyDualGate) {
+    auto atoms = h2_atoms();
+
+    auto set_uks = [](auto& m) {
+        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+        m.cutoff_ry = 80.0;
+        m.n_occ = 0;
+        m.n_alpha = 2;
+        m.n_beta = 0;
+        m.max_iter = 60;
+        m.tol = 1e-8;
+        m.diis_depth = 6;
+        m.xc = XcKind::PADE;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.use_ot = false;
+        m.ngrids = 1;
+        m.eps_default = 1e-8;
+    };
+
+    ATV::cpu::gpw::GpwDft cpu;
+    set_uks(cpu);
+    cpu.build(atoms);
+    const auto& rc = cpu.run(atoms);
+    ASSERT_TRUE(rc.converged) << "CPU UKS SCF failed iters=" << rc.iters;
+    ASSERT_TRUE(std::isfinite(rc.e_total));
+
+    ATV::cuda::gpw::GpwDft gpu;
+    set_uks(gpu);
+    gpu.build(atoms);
+    const auto& rg = gpu.run(atoms);
+    ASSERT_TRUE(rg.converged) << "CUDA UKS SCF failed iters=" << rg.iters;
+    ASSERT_TRUE(std::isfinite(rg.e_total));
+    EXPECT_FALSE(rg.P_beta.size() == 0 && gpu.n_beta > 0);
+    // High-spin: Sz=1 → s2 ≈ 2 for pure triplet (Löwdin).
+    EXPECT_GT(rg.s2, 1.5);
+
+    constexpr double kETolHa = 5.0e-6;
+    const double de = std::abs(rg.e_total - rc.e_total);
+    EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
+                           << " |dE|=" << de;
 }
