@@ -4,8 +4,8 @@
 
 | Field | Value |
 | --- | --- |
-| File | `src/cuda/gpw/gpw_solver.cu` (`gpw_forces_from_scf` / `gpw_forces_analytic`) + new `cuda/gpw/internal/gpw_forces.{cuh,cu}` |
-| Function | Free-fn forces currently call `cpu::gpw::gpw_forces_from_scf` (no device product) |
+| File | `src/cuda/gpw/gpw_solver.cu` (`gpw_forces_from_scf` / `gpw_forces_analytic`) + `cuda/gpw/internal/gpw_forces.{cuh,cu}` |
+| Function | Free-fn forces: host AO Pulay + device grid HF product (replaces CPU `gpw_forces_from_scf`) |
 | Metric | max\|F_cuda − F_cpu\| [Ha/Bohr] on H₂ Γ RKS PADE dual-gate; unit kernel vs host twin |
 
 ## Acceptance
@@ -25,7 +25,8 @@ OT / dispersion / DFT+U force fold.
 
 ## Result
 
-**acceptance_met=true** (post-rebase GH200 **1126434** / prior **1125926**):
-units 2/2 PASS; \|ΔE\|=**1.617e-7** Ha; max\|ΔF\|=**2.321e-6** Ha/Bohr
-(≤ 5e-5); **perf_exempt** small cell. Rebase onto `dev` @ `0bb5312b`
-clean; dual-gate re-verified.
+**acceptance_met=true** (wave-8 rebase GH200 **1127167** / prior **1126434**,
+**1125926**): units 2/2 PASS; \|ΔE\|=**1.617e-7** Ha; max\|ΔF\|=**2.056e-6**
+Ha/Bohr (≤ 5e-5); **perf_exempt** small cell. Rebase onto `dev` @
+`ee4059e9` (post multigrid-run + uks-gamma land) kept MG/UKS energy paths;
+device free-fn forces fail-closed on UKS + `ngrids!=1`.
