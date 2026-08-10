@@ -63,10 +63,10 @@ step 1 — CPU architecture**, not more collint polish.
 | P0 | ~~`arch-gpw-driver-node`~~ **landed** | `GpwDft` → `Driver<gpw::Phase>`; residual paths → `arch-gpw-driver-paths` |
 | P0 | ~~`arch-gpw-driver-paths`~~ **landed** | multi-path DIIS (Γ UKS + multi-k RKS/UKS) on stages; OT free-loop residual (not a new slug) — merge `e34ccf92` |
 | P0 | ~~`arch-pw-driver-node`~~ **landed** | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
-| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `e04ba781` (ahead=1 behind=0 vs `dev` @ `9271cae3`) |
+| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `e04ba781` (rebase onto current `dev` before gate) |
 | P1 | ~~`arch-cuda-scf-solver-fold`~~ **landed** | free-loop `SCFSolver` → private `RhfScfCycle`; nested CUDA Driver residual |
-| P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product — **unmerged tip** @ `a625c232` |
-| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× structural — **unmerged tip** @ `3d9a64ba` |
+| P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product — **unmerged tip** @ `a625c232` (rebase onto current `dev`) |
+| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× structural — **unmerged tip** @ `3d9a64ba` (rebase onto current `dev`; freeze-first if contention) |
 
 **GapCensus wave 8:** on `dev` @ `9271cae3`. Tree reconfirmed multi-path GPW
 DIIS + PW fixed-occ Driver + folded CUDA RHF + CUDA GPW stages≠product +

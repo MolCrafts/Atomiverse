@@ -33,8 +33,10 @@ scan `cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` —
 | e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear (none staffed this wave) |
 
 **Unmerged tips** (no isolation worktree; **not** on `dev` — keep `[~]`; do
-not mark done). All three rebased onto `9271cae3` and are **ahead=1
-behind=0** vs current `dev` (product claims advanced since wave-7 tip SHAs):
+not mark done). Product tips rebased onto pre-census `9271cae3`. Docs-only
+GapCensus/Assign chores on `dev` require **rebase onto current `dev` before
+gate**:
+
 
 | Tip | Claim (unverified until merge) |
 | --- | --- |
@@ -51,24 +53,25 @@ MG structural).
 ### P0 — ES loop residual paths (CPU)
 
 (none staffable unassigned — `arch-pw-driver-paths` remains `[~]`; tip
-advanced to `e04ba781`)
+`e04ba781`; rebase onto current `dev`)
 
 ### P1 — freeze product shape (CUDA GPW)
 
 (none staffable unassigned — `arch-cuda-gpw-public-shape-freeze` remains
-`[~]`; tip `a625c232`)
+`[~]`; tip `a625c232`; rebase onto current `dev`)
 
 ### P2 — MG structure (after Driver paths)
 
 (none staffable unassigned — `arch-mg-main-structural` remains `[~]`; tip
-`3d9a64ba`; prefer freeze-first among freeze/mg if contention at merge)
+`3d9a64ba`; prefer freeze-first among freeze/mg if contention at merge;
+rebase onto current `dev`)
 
 ## in_progress
 
-**Assign wave 7** (parent `dev` @ `9271cae3`) — **3** incomplete resumes
-(`[~]`); **new_assigned=0** (pending unheld=0; no open arch specs on `dev`;
-`new_slugs_added=0`). Tips rebased onto `9271cae3` and advanced product
-claims (**ahead=1 behind=0**). Unmerged tip ≠ done.
+**Assign wave 8** (parent `dev` @ `307eaaa9` post GapCensus wave-8) —
+**3** incomplete resumes (`[~]`); **new_assigned=0** (pending unheld=0; no
+open arch specs on `dev`; GapCensus `new_slugs_added=0`). Tips claim product;
+**rebase onto current `dev` before gate**. Unmerged tip ≠ done.
 **incomplete_remaining=3**. Pending unheld: 0. Blocked product: 1.
 **gaps_remaining=4**.
 
@@ -80,8 +83,8 @@ claims (**ahead=1 behind=0**). Unmerged tip ≠ done.
   pw-smearing-al, metallic DOS/bands) + `test_cpu_pw_driver_node` +
   `reg_arch-pw-driver-paths` (tip) | files: `pw_solver.cpp` free-loop arms,
   `planewave/stages/`, `drive_*` | gate: pins green; public surface stable;
-  wipe builds | **tip** `wf/arch-pw-driver-paths` @ `e04ba781` (ahead=1
-  behind=0 vs `dev` @ `9271cae3`; claim all product SCF paths on stages) |
+  wipe builds | **tip** `wf/arch-pw-driver-paths` @ `e04ba781` (claim all
+  product SCF paths on stages; rebase onto current `dev` before gate) |
   spec (tip): `.claude/specs/arch-pw-driver-paths/SPEC.md` |
 - [~] `arch-cuda-gpw-public-shape-freeze` | **P1** Document + enforce: full
   CUDA GPW method product **equals** CPU `GpwDft` public shape after
@@ -90,17 +93,16 @@ claims (**ahead=1 behind=0**). Unmerged tip ≠ done.
   not block the freeze doc | method=arch-doc | twin: n/a (harness) + tip
   `reg_arch-cuda-gpw-public-shape-freeze` | files: notes + queue unlock
   condition for `cuda-gpw-full-product` | **tip**
-  `wf/arch-cuda-gpw-public-shape-freeze` @ `a625c232` (ahead=1 behind=0 vs
-  `dev` @ `9271cae3`) | gate: freeze doc lands; unlock path for full product
+  `wf/arch-cuda-gpw-public-shape-freeze` @ `a625c232` (rebase onto current
+  `dev` before gate) | gate: freeze doc lands; unlock path for full product
   stated | spec (tip): `.claude/specs/arch-cuda-gpw-public-shape-freeze/` |
 - [~] `arch-mg-main-structural` | **P2** Task-list / products-default path
   rewrite toward MAIN ~1× (explicitly **not** pin-softening) — only after
   GPW Driver paths stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` +
   tip `reg_arch-mg-main-structural` | files: multigrid / products | gate:
   pins green; baseline note rewrite | **tip** `wf/arch-mg-main-structural`
-  @ `3d9a64ba` (ahead=1 behind=0 vs `dev` @ `9271cae3`; prefer after freeze
-  if both race the same surface) | spec (tip):
-  `.claude/specs/arch-mg-main-structural/` |
+  @ `3d9a64ba` (prefer freeze-first if contention; rebase onto current `dev`
+  before gate) | spec (tip): `.claude/specs/arch-mg-main-structural/` |
 
 ## blocked
 
