@@ -605,10 +605,12 @@ Two periodic DFT engines exist, with disjoint strengths:
 Which engine backs which ✓:
 
 - **Γ-point periodic RKS** is GPW (`reg_gpw-water-pbe-mt`) on CPU **and** a
-  **first-slice CUDA product** (`cuda::gpw::GpwDft`; hybrid host STVnl/cbg +
-  device KS; PADE dual-gate `reg_cuda-gpw-full-product` — table ◐ until device
-  collocate/forces + PBE product gate land). **Γ-point periodic UKS** is GPW
-  PADE LSD (`reg_gpw-uks-o2-gamma`) — CUDA product still rejects UKS.
+  **first-slice CUDA product** (`cuda::gpw::GpwDft`; host STVnl/DIIS/eigen +
+  device product collocate/KS/integrate via `KsChainDevice::run`; PADE dual-gate
+  `reg_cuda-gpw-full-product` / collocate GH200 **1125709** — table ◐ until
+  device forces + PBE + H₂O product gates + DIIS/eigen depth land). **Γ-point
+  periodic UKS** is GPW PADE LSD (`reg_gpw-uks-o2-gamma`) — CUDA product still
+  rejects UKS.
   **k-point periodic RKS** is the plane-wave solver (Monkhorst–Pack mesh) on
   both CPU and CUDA, **and** GPW on CPU — the Gaussian-basis k-point path
   (phased lattice sums, KB nonlocal, per-k DIIS; `reg_gpw-kpoints-si`, diamond
