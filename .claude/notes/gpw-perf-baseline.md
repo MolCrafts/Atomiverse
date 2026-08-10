@@ -8,7 +8,7 @@ binary differs.
 
 | | |
 | --- | --- |
-| Date | **2026-08-06** (cp2k-perf Baseline re-pin + harness wave-2 MG + wave-5 UKS ATV refresh, parent `dev`); **fair walls held through es-cpu-cuda-opt wave 4** (2026-08-10: pure-s + mixed-angular 2-center SIMD slab-class only — MAIN ratio still **2.33×**; no quiet CP2K re-pin) |
+| Date | **2026-08-06** (cp2k-perf Baseline re-pin + harness wave-2 MG + wave-5 UKS ATV refresh, parent `dev`); **fair walls held through es-cpu-cuda-opt wave 5** (2026-08-10: CUDA PBE forces + GPW GGA KS stage only — MAIN ratio still **2.33×**; no quiet CP2K re-pin; cpu_pending=0) |
 | Host | `arrhenius1` — AMD EPYC 9255 ×2, OMP=4, `OMP_PROC_BIND=close` `OMP_PLACES=cores` |
 | Build (ATV) | Release, HF+PW+GPW, CUDA OFF, OpenBLAS (`-DBLA_VENDOR=OpenBLAS`) |
 | Env | `ATV_GPW_PROF=1` for stage ms; fair walls without prof where noted |
