@@ -453,13 +453,14 @@ Two periodic DFT engines exist, with disjoint strengths:
   metallic smear** (FD/Gaussian/MP + `extra_bands` + Mermin free energy;
   spin+smear still rejects); large-cell wall evidence on Si supercells —
   see es-cpu-cuda queue. **No CUDA GPW method product** (stage footholds
-  only; blocked on arch-campaign multi-path Driver + public-shape freeze).
+  only; multi-path DIIS Driver landed; blocked on arch-campaign
+  public-shape freeze before `cuda-gpw-full-product`).
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
-  **Γ RKS DIIS only** (landed; multi-k / UKS / OT free-loop residual =
-  `arch-gpw-driver-paths`). `cpu::pw::PW` is `cpu::Driver<pw::Phase>` for
-  **restricted fixed-occ** (landed); collinear spin + metallic smearing
-  free-loop residual = `arch-pw-driver-paths`. Capability tables above are
-  product physics, not loop-shape closed.
+  **multi-path DIIS** (Γ RKS/UKS + multi-k RKS/UKS landed; OT free-loop
+  residual is same-capability follow-on, not a new slug). `cpu::pw::PW` is
+  `cpu::Driver<pw::Phase>` for **restricted fixed-occ** (landed); collinear
+  spin + metallic smearing free-loop residual = `arch-pw-driver-paths`.
+  Capability tables above are product physics, not loop-shape closed.
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA
   (Padé) or **PBE / PBEsol / revPBE / RPBE / BLYP** (RKS + **Γ-UKS BLYP**

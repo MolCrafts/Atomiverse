@@ -16,12 +16,11 @@ Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
 rows; foothold ≠ closed capability. **Unmerged tip ≠ done** — only green merge
 onto `dev` closes a slug.
 
-**Harness wave 5 (2026-08-10)** on `dev` @ `e34ccf92` (merge
-`wf/arch-gpw-driver-paths` / impl `42454014` + gate docs `2ba03049`). Re-diff
-CLAUDE iron laws + ES order, notes, arch/e2e/es queues, tree scan
-`cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` — **no new staffable residual
-slug** (`new_slugs_added=0`). Tree facts on `dev` (product source of truth;
-unmerged tips are claims only):
+**GapCensus wave 6 (2026-08-10)** on `dev` @ `9cbdc47b` (post harness wave-5
+merge `e34ccf92` + chore `9cbdc47b`). Re-diff CLAUDE iron laws + ES order,
+notes, arch/e2e/es queues, tree scan `cpu/{gpw,planewave,scf}` + `cuda/scf` +
+`tests/` — **no new staffable residual slug** (`new_slugs_added=0`). Tree
+facts on `dev` (product source of truth; unmerged tips are claims only):
 
 | Surface | On `dev` |
 | --- | --- |
@@ -39,7 +38,7 @@ Worktrees:
 
 | Tip | Claim (unverified until merge) |
 | --- | --- |
-| `wf/arch-pw-driver-paths` | collinear + metallic smear (+ collinear×smear) on same `pw::Phase` stages via path-local StepFns (`9edaa157`; ahead=1 behind=3 vs `dev` @ `e34ccf92`) |
+| `wf/arch-pw-driver-paths` | collinear + metallic smear (+ collinear×smear) on same `pw::Phase` stages via path-local StepFns (`9edaa157`; ahead=1 behind=4 vs `dev` @ `9cbdc47b`) |
 
 Open arch specs: none on `dev` after close of
 `.claude/specs/arch-gpw-driver-paths/` (acceptance was green on merge). PW
@@ -73,9 +72,10 @@ Assign wave 5; tip unmerged; rebase then Worktrees / merge gate)
 
 ## in_progress
 
-**Harness wave 5** closed `arch-gpw-driver-paths` → **done**. Keep other
-`[~]`: `arch-pw-driver-paths` only. **incomplete_remaining=1**. Pending
-unheld: freeze + mg-main (2). Blocked product: 1.
+**GapCensus wave 6** reconfirmed open set after harness wave-5 closed
+`arch-gpw-driver-paths` → **done**. Keep `[~]`: `arch-pw-driver-paths` only.
+**incomplete_remaining=1**. Pending unheld: freeze + mg-main (2). Blocked
+product: 1. **gaps_remaining=4**. **new_slugs_added=0**.
 
 - [~] `arch-pw-driver-paths` | **P0** Migrate collinear spin + metallic
   smearing free loops onto same `pw::Phase` stages
@@ -86,7 +86,7 @@ unheld: freeze + mg-main (2). Blocked product: 1.
   `reg_arch-pw-driver-paths` (tip) | files: `pw_solver.cpp` free-loop arms,
   `planewave/stages/`, `drive_*` | gate: pins green; public surface stable;
   wipe builds | **tip** `wf/arch-pw-driver-paths` @ `9edaa157` (ahead=1
-  behind=3 vs `dev` @ `e34ccf92`; **rebase onto `e34ccf92`** before gate;
+  behind=4 vs `dev` @ `9cbdc47b`; **rebase onto `9cbdc47b`** before gate;
   claim all product SCF paths on stages) | spec (tip):
   `.claude/specs/arch-pw-driver-paths/SPEC.md` |
 

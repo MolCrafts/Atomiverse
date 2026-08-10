@@ -4,7 +4,7 @@ Rewrite in place each harness wave.
 
 ## Status
 
-- **Parent:** `dev` @ `e34ccf92` (merge `wf/arch-gpw-driver-paths`)
+- **Parent:** `dev` @ `9cbdc47b` (post harness wave-5 merge `e34ccf92`)
 - **Wave-1 done:** e2e-in-tests delete (78 sources); `arch-gpw-driver-node`
 - **Wave-2 done:**
   - `arch-cuda-scf-solver-fold` — no free-loop `SCFSolver`; RHF owns
@@ -17,15 +17,18 @@ Rewrite in place each harness wave.
     fixed-occ stages; spin/smear free-loop residual; merge `f016215e` /
     impl `1bad527a`; unit `test_cpu_pw_driver_node` +
     `reg_arch-pw-driver-node`
-- **Wave-5 done (this harness):**
+- **Wave-5 done:**
   - `arch-gpw-driver-paths` — multi-path **DIIS** (Γ UKS + multi-k RKS/UKS)
     on `gpw::Phase` via path-local Ops + `drive_path_diis_` /
     `drive_stage_loop_`; OT free-loop residual documented (not a new slug);
     merge `e34ccf92` / impl `42454014` + gate docs `2ba03049`;
     `test_cpu_gpw_driver_node` + `reg_arch-gpw-driver-paths` +
     twin regs `gpw-uks-o2-gamma` / `gpw-kpoints-si`; spec closed
-- **Still `[~]`:** `arch-pw-driver-paths` @ `9edaa157` (ahead=1 behind=3;
-  **rebase onto `e34ccf92`** before gate). Unmerged tip ≠ done.
+- **GapCensus wave 6:** reconfirmed open set; **no new slugs**. Tree facts
+  match queue. Roadmap arch prose updated (multi-path DIIS landed; freeze
+  remains CUDA-GPW product gate).
+- **Still `[~]`:** `arch-pw-driver-paths` @ `9edaa157` (ahead=1 behind=4;
+  **rebase onto `9cbdc47b`** before gate). Unmerged tip ≠ done.
 - **Pending staffable (unheld):** `arch-cuda-gpw-public-shape-freeze` (P1)
   + `arch-mg-main-structural` (P2) — dep on GPW multi-path DIIS **satisfied**.
 - **Lever:** copy `MeanFieldMethod` + `scf/stages/` + landed multi-path
