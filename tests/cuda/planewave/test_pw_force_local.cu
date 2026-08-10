@@ -118,7 +118,8 @@ TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
     ATV_CUDA_CHECK(cudaMemset(d_F, 0, 3 * n_atoms * sizeof(double)));
 
     cuda::pw::internal::accumulate_local_forces_device(
-        d_rho, d_gx, d_gy, d_gz, d_vg, d_pos, ng, n_atoms, omega, d_F);
+        d_rho, d_gx, d_gy, d_gz, d_vg, d_pos, ng, n_atoms, omega, d_F,
+        /*stream=*/nullptr);
     ATV_CUDA_CHECK(cudaDeviceSynchronize());
 
     std::vector<double> F_dev(3 * n_atoms);

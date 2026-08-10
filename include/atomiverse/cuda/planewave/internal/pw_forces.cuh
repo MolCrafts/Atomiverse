@@ -23,11 +23,14 @@ namespace internal {
 ///
 /// Kernel twin of CPU `accumulate_local_forces`. Accumulates into
 /// `d_forces` [Hartree/Bohr] with atomicAdd. Caller zeros the buffer.
+/// @param stream CUDA stream for the launch (pass `DeviceDensity::stream()`
+///               so force kernels share the SCF stream).
 void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
                                     const double* d_gx, const double* d_gy,
                                     const double* d_gz, const double* d_vg,
                                     const double* d_pos, int ng, int n_atoms,
-                                    double omega, double* d_forces);
+                                    double omega, double* d_forces,
+                                    cudaStream_t stream = nullptr);
 
 /// @brief Analytic forces after a completed device SCF [eV/Å].
 ///
