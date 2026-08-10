@@ -16,13 +16,14 @@
 set -uo pipefail
 cd "${SLURM_SUBMIT_DIR}"
 
-BUILD=_ks_chain_work
+# Node-local build (proven green on GH200 job 1049806). Avoids NFS cargo
+# mid-write races seen under worktree `_ks_chain_work` (job 1049827).
+BUILD="${TMPDIR:-/tmp}/atv_ks_chain_${SLURM_JOB_ID:-$$}"
 
 wipe_builds() {
   rm -rf "${BUILD}" 2>/dev/null || true
-  rm -rf build build-* CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
+  rm -rf build build-* _ks_chain_work CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
   rm -rf /tmp/atv-* 2>/dev/null || true
-  # Also clear accidental work dirs
   find . -maxdepth 2 -type d \( -name build -o -name 'build-*' -o -name '_ks_chain_work' \) \
     -exec rm -rf {} + 2>/dev/null || true
   echo "builds_wiped=true"
@@ -59,14 +60,14 @@ echo "branch=$(git rev-parse --abbrev-ref HEAD)"
 git log -1 --oneline
 
 FFTW_HINT="${FFTW_ROOT:-${FFTWDIR:-${FFTW_HOME:-}}}"
-if [ "${ATV_FRESH:-1}" = "1" ]; then
-  rm -rf "${BUILD}"
-fi
+echo "BUILD_DIR=${BUILD}"
+rm -rf "${BUILD}"
+mkdir -p "${BUILD}"
 rm -rf CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
 
 CFG_RC=1
 for attempt in 1 2 3; do
-  if cmake -B "${BUILD}" \
+  if cmake -S "${SLURM_SUBMIT_DIR}" -B "${BUILD}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER="${CC}" \
     -DCMAKE_CXX_COMPILER="${CXX}" \
