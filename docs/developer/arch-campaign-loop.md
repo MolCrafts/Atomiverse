@@ -120,3 +120,20 @@ Wipe `build` / `build-*` under parent and every worktree every wave.
   held=2, blocked=1 staffable product (`cuda-gpw-full-product`). Lever:
   MeanFieldMethod + scf/stages + landed Γ-RKS GPW + PW fixed-occ (+ tip
   multi-path Ops). No push.
+- **2026-08-10 harness wave 5 (parent `dev` @ `e34ccf92`):** 1 of staffed →
+  done [x]: `arch-gpw-driver-paths` (merge `e34ccf92` / impl `42454014` +
+  gate docs `2ba03049` — multi-path **DIIS** Γ UKS + multi-k RKS/UKS via
+  path-local Ops + `drive_path_diis_` / `drive_stage_loop_`; public
+  `run`/`build`/`forces` stable; OT free-loop residual documented, not a
+  new slug; `test_cpu_gpw_driver_node` + `reg_arch-gpw-driver-paths` +
+  twins `gpw-uks-o2-gamma` / `gpw-kpoints-si`). Spec closed (deleted
+  `.claude/specs/arch-gpw-driver-paths/`). Keep other `[~]`:
+  `arch-pw-driver-paths` @ `9edaa157` (ahead=1 behind=3; rebase onto
+  `e34ccf92` before gate). Pending unheld **2** (shape-freeze + mg-main;
+  dep on GPW multi-path DIIS satisfied); blocked **1** staffable product
+  (`cuda-gpw-full-product` still needs freeze); **gaps_remaining=4**;
+  **new_slugs_added=0**. CLAUDE remaining-debt: GPW multi-path DIIS landed;
+  residual is OT free loops + PW spin/smear paths. Clearup already ran
+  (no isolation worktrees; build dirs empty). Roadmap: no ○ rows for these
+  arch slugs — no ○→✓. Queue **not** exhausted (GapCensus owns discovery).
+  No push.

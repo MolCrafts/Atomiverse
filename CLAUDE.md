@@ -430,9 +430,9 @@ written to Frame** — never Driver-level categories.
 `RhfScfCycle` (not yet `cuda::Driver<scf::Phase>` — needs nested CUDA
 DriverNode); `cpu::pw::PW` is `cpu::Driver<pw::Phase>` for restricted
 fixed-occ — collinear spin / metallic smearing free-loop residual
-(`arch-pw-driver-paths`); `GpwDft` is `cpu::Driver<gpw::Phase>` for Γ RKS
-DIIS — multi-k / UKS / OT path migration is residual
-(`arch-gpw-driver-paths`).
+(`arch-pw-driver-paths`); `GpwDft` is `cpu::Driver<gpw::Phase>` for
+multi-path DIIS (Γ RKS/UKS + multi-k RKS/UKS) — OT free-loop residual
+(same-capability follow-on, not a new slug).
 
 ### Component
 

@@ -16,55 +16,51 @@ Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
 rows; foothold ≠ closed capability. **Unmerged tip ≠ done** — only green merge
 onto `dev` closes a slug.
 
-**GapCensus harness wave 5 (2026-08-10)** on `dev` @ `26fb8328` (post
-GapCensus wave-4 chore; PW merge still `f016215e` / impl `1bad527a`; no new
-arch merge onto `dev` since wave-4). Re-diff CLAUDE iron laws + ES order,
-notes, arch/e2e/es queues, tree scan `cpu/{gpw,planewave,scf}` + `cuda/scf` +
-`tests/` — **no new staffable residual slug** (`new_slugs_added=0`). Tree
-facts on `dev` (product source of truth; tips are claims only):
+**Harness wave 5 (2026-08-10)** on `dev` @ `e34ccf92` (merge
+`wf/arch-gpw-driver-paths` / impl `42454014` + gate docs `2ba03049`). Re-diff
+CLAUDE iron laws + ES order, notes, arch/e2e/es queues, tree scan
+`cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` — **no new staffable residual
+slug** (`new_slugs_added=0`). Tree facts on `dev` (product source of truth;
+unmerged tips are claims only):
 
 | Surface | On `dev` |
 | --- | --- |
-| `GpwDft` | `cpu::Driver<gpw::Phase>` + `drive_gamma_rks_diis_` + `gpw/stages/*` for **Γ RKS DIIS only** |
-| GPW residual free loops | `run_gpw_scf_kpoints*` (RKS/UKS DIIS), Γ UKS DIIS, all **OT** (`use_ot`) |
+| `GpwDft` | `cpu::Driver<gpw::Phase>` + path-local Ops + `drive_path_diis_` / `drive_stage_loop_` for **multi-path DIIS** (Γ RKS/UKS + multi-k RKS/UKS) |
+| GPW residual free loops | all **OT** (`use_ot`) — Γ + multi-k; same-capability follow-on, **not** a new slug |
 | `cpu::pw::PW` | `cpu::Driver<pw::Phase>` + stages for **restricted fixed-occ**; collinear spin + metallic smearing free-loop residual |
 | `cuda::scf::RHF` | Component+HF + private `internal::RhfScfCycle` (`scf::Phase` order); **no** public/free-loop `SCFSolver` type |
 | Nested CUDA Driver | residual — full `cuda::Driver<scf::Phase>` needs nested CUDA DriverNode (**not** a separate staffable product slug yet) |
 | CUDA GPW | stage footholds only (`ks_chain` / MG / GGA); **no** public method product |
-| e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear (none staffed this census) |
+| e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear (none staffed this wave) |
 
-**Unmerged tips** (no isolation worktree; **not** on `dev` — keep `[~]`; do
-not mark done). Both tips base `26fb8328` + 1 feat; parent moved to
-`1c2d74d6` (GapCensus wave-5 chore) ⇒ **ahead=1 behind=1** each — rebase
-onto current `dev` before gate / Worktrees:
+**Unmerged tip** (no isolation worktree; **not** on `dev` — keep `[~]`; do
+not mark done). Tip is **behind** post-merge `dev` — rebase before gate /
+Worktrees:
 
 | Tip | Claim (unverified until merge) |
 | --- | --- |
-| `wf/arch-gpw-driver-paths` | multi-path **DIIS** on stages (`drive_path_diis_` / `drive_gamma_uks_diis_`); **OT free-loop residual** (`06bc94fb`; ahead=1 behind=1 vs `dev` @ `1c2d74d6`) |
-| `wf/arch-pw-driver-paths` | collinear + metallic smear (+ collinear×smear) on same `pw::Phase` stages via path-local StepFns (`98e98ed5`; ahead=1 behind=1 vs `dev` @ `1c2d74d6`) |
+| `wf/arch-pw-driver-paths` | collinear + metallic smear (+ collinear×smear) on same `pw::Phase` stages via path-local StepFns (`9edaa157`; ahead=1 behind=3 vs `dev` @ `e34ccf92`) |
 
-Open arch specs live **only on the tips** (not on `dev` tree
-`.claude/specs/` — still only unrelated `periodic-rhf-gamma` /
-`rsh-eri-cam-b3lyp`). Spec paths on tips:
-`.claude/specs/arch-gpw-driver-paths/SPEC.md`,
-`.claude/specs/arch-pw-driver-paths/SPEC.md` (tip claims
-`acceptance_met=true`; **unmerged tip ≠ done**). Lever still:
-`MeanFieldMethod` + `cpu/scf/stages/` + landed Γ RKS GPW stages + landed PW
-fixed-occ stages (+ tip multi-path Ops).
+Open arch specs: none on `dev` after close of
+`.claude/specs/arch-gpw-driver-paths/` (acceptance was green on merge). PW
+paths tip may still carry `.claude/specs/arch-pw-driver-paths/SPEC.md`. Lever:
+`MeanFieldMethod` + `cpu/scf/stages/` + landed multi-path GPW DIIS stages +
+landed PW fixed-occ stages (+ tip multi-path PW Ops).
 
 ### P0 — ES loop residual paths (CPU)
 
-(none staffable unassigned — both path residuals remain `[~]` from Assign
-wave 5; tips unmerged; rebase then Worktrees / merge gate)
+(none staffable unassigned — only `arch-pw-driver-paths` remains `[~]` from
+Assign wave 5; tip unmerged; rebase then Worktrees / merge gate)
 
 ### P1 — freeze product shape (CUDA GPW)
 
 - [ ] `arch-cuda-gpw-public-shape-freeze` | **P1** Document + enforce: full
   CUDA GPW method product **equals** CPU `GpwDft` public shape after
-  multi-path Driver (`arch-gpw-driver-paths`) lands; compose existing stage
-  footholds only | method=arch-doc | twin: n/a (harness) | files: notes +
-  queue unlock condition for `cuda-gpw-full-product` | **hold** until
-  `arch-gpw-driver-paths` merges |
+  multi-path DIIS Driver (`arch-gpw-driver-paths` **merged**); compose existing
+  stage footholds only; OT free-loop residual is documented on CPU and does
+  not block the freeze doc | method=arch-doc | twin: n/a (harness) | files:
+  notes + queue unlock condition for `cuda-gpw-full-product` | **staffable**
+  (dep on `arch-gpw-driver-paths` satisfied) |
 
 ### P2 — MG structure (after Driver paths)
 
@@ -72,25 +68,15 @@ wave 5; tips unmerged; rebase then Worktrees / merge gate)
   rewrite toward MAIN ~1× (explicitly **not** pin-softening) — only after
   GPW Driver paths stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` |
   files: multigrid / products | gate: pins green; baseline note rewrite |
-  **hold** until `arch-gpw-driver-paths` green on `dev` |
+  **staffable** (`arch-gpw-driver-paths` green on `dev`; prefer after freeze
+  if both staffed) |
 
 ## in_progress
 
-**Assign wave 5** (parent `dev` @ `1c2d74d6`) — **2** incomplete resumes
-(`[~]`); **new_assigned=0**. Skipped held P1 shape-freeze + P2 mg-main
-(dep on GPW paths merge). Unmerged tip ≠ done. Staff ≤4; only 2 staffable.
+**Harness wave 5** closed `arch-gpw-driver-paths` → **done**. Keep other
+`[~]`: `arch-pw-driver-paths` only. **incomplete_remaining=1**. Pending
+unheld: freeze + mg-main (2). Blocked product: 1.
 
-- [~] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS **DIIS**
-  onto same `gpw::Phase` stages (`ks_build → mix → diagonalize → density →
-  check`); OT free-loop residual may trail as same-capability follow-on (not a
-  separate method / not a new slug) | method=cpu-arch | twin:
-  `regressions/gpw/*` (uks-o2-gamma, multigrid-kpoints, kpoints-si) +
-  `reg_arch-gpw-driver-paths` (tip) | files: `gpw_solver.cpp`
-  `run_gpw_scf_kpoints*`, `gpw/stages/`, `drive_*` | gate: pins green; public
-  `run`/`forces` stable; wipe builds | **tip** `wf/arch-gpw-driver-paths` @
-  `06bc94fb` (ahead=1 behind=1 vs `dev`; **rebase onto `1c2d74d6`** before
-  gate; claim multi-path DIIS; OT residual) | spec (tip):
-  `.claude/specs/arch-gpw-driver-paths/SPEC.md` |
 - [~] `arch-pw-driver-paths` | **P0** Migrate collinear spin + metallic
   smearing free loops onto same `pw::Phase` stages
   (`veff → diagonalize → density → mix → check`) as restricted fixed-occ;
@@ -99,16 +85,16 @@ wave 5; tips unmerged; rebase then Worktrees / merge gate)
   pw-smearing-al, metallic DOS/bands) + `test_cpu_pw_driver_node` +
   `reg_arch-pw-driver-paths` (tip) | files: `pw_solver.cpp` free-loop arms,
   `planewave/stages/`, `drive_*` | gate: pins green; public surface stable;
-  wipe builds | **tip** `wf/arch-pw-driver-paths` @ `98e98ed5` (ahead=1
-  behind=1 vs `dev`; **rebase onto `1c2d74d6`** before gate; claim all
-  product SCF paths on stages) | spec (tip):
+  wipe builds | **tip** `wf/arch-pw-driver-paths` @ `9edaa157` (ahead=1
+  behind=3 vs `dev` @ `e34ccf92`; **rebase onto `e34ccf92`** before gate;
+  claim all product SCF paths on stages) | spec (tip):
   `.claude/specs/arch-pw-driver-paths/SPEC.md` |
 
 ## blocked
 
-- [!] `cuda-gpw-full-product` | blocked until `arch-gpw-driver-paths` (full
-  multi-path Driver) + public-shape freeze green — Γ RKS Driver foothold alone
-  is not full product shape freeze; CUDA stage units ≠ method product
+- [!] `cuda-gpw-full-product` | blocked until public-shape freeze green —
+  multi-path DIIS Driver is on `dev`; CUDA stage units ≠ method product;
+  freeze still required before full CUDA GPW product
 - [!] `mg-main-soft-tol` | never staff as soften tols / self-golden
 - [!] `hybrid-gapw-paw-metagga` | method loops, not this campaign
 
@@ -142,3 +128,10 @@ wave 5; tips unmerged; rebase then Worktrees / merge gate)
   `test_cpu_pw_driver_node` + `reg_arch-pw-driver-node` + `regressions/pw/*`;
   spec closed; residual paths staffed as `arch-pw-driver-paths` (GapCensus
   wave-4)
+- [x] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS **DIIS**
+  onto same `gpw::Phase` stages via path-local Ops + `drive_path_diis_` /
+  `drive_stage_loop_`; OT free-loop residual remains (same-capability
+  follow-on, not a new slug); public `run`/`build`/`forces` stable | merge:
+  `e34ccf92` / impl `42454014` + gate docs `2ba03049` | evidence:
+  `test_cpu_gpw_driver_node` + `reg_arch-gpw-driver-paths` +
+  `reg_gpw-uks-o2-gamma` + `reg_gpw-kpoints-si`; spec closed

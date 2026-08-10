@@ -61,18 +61,18 @@ step 1 — CPU architecture**, not more collint polish.
 | Priority | slug | Goal |
 | --- | --- | --- |
 | P0 | ~~`arch-gpw-driver-node`~~ **landed** | `GpwDft` → `Driver<gpw::Phase>`; residual paths → `arch-gpw-driver-paths` |
-| P0 | `arch-gpw-driver-paths` | UKS + multi-k DIIS onto same stages (OT trails) — **unmerged tip** @ `06bc94fb` |
+| P0 | ~~`arch-gpw-driver-paths`~~ **landed** | multi-path DIIS (Γ UKS + multi-k RKS/UKS) on stages; OT free-loop residual (not a new slug) — merge `e34ccf92` |
 | P0 | ~~`arch-pw-driver-node`~~ **landed** | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
-| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `98e98ed5` |
+| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `9edaa157` (rebase onto `e34ccf92`) |
 | P1 | ~~`arch-cuda-scf-solver-fold`~~ **landed** | free-loop `SCFSolver` → private `RhfScfCycle`; nested CUDA Driver residual |
-| P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product (**hold**) |
-| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× after Driver paths (**hold**) |
+| P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product (**staffable** — multi-path DIIS dep satisfied) |
+| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× after Driver paths (**staffable**) |
 
-**GapCensus wave 5:** on `dev` @ `26fb8328`; no arch product merge since
-wave-3; tree on `dev` still Γ-RKS-only / PW fixed-occ-only. Tips rebased
-onto `dev` (ahead=1 behind=0 each) but **unmerged tip ≠ done**.
-gaps_remaining=5, new_slugs=0; pending held=2 (shape-freeze + mg-main);
-in_progress=2. Queue:
+**Harness wave 5:** on `dev` @ `e34ccf92`; `arch-gpw-driver-paths` merged
+(multi-path DIIS; OT free loops remain). Keep `[~]` `arch-pw-driver-paths`.
+gaps_remaining=4, new_slugs=0; pending staffable=2 (shape-freeze + mg-main
+unheld); in_progress=1; blocked product=1 (`cuda-gpw-full-product` needs
+freeze). Queue:
 [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
 Workflow: `.grok/workflows/arch-campaign.rhai`.
 

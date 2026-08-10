@@ -4,8 +4,7 @@ Rewrite in place each harness wave.
 
 ## Status
 
-- **Parent:** `dev` @ `1c2d74d6` (GapCensus wave-5 chore; no arch product
-  merge since PW node `f016215e` / harness wave-3 `d24283d1`)
+- **Parent:** `dev` @ `e34ccf92` (merge `wf/arch-gpw-driver-paths`)
 - **Wave-1 done:** e2e-in-tests delete (78 sources); `arch-gpw-driver-node`
 - **Wave-2 done:**
   - `arch-cuda-scf-solver-fold` — no free-loop `SCFSolver`; RHF owns
@@ -18,27 +17,22 @@ Rewrite in place each harness wave.
     fixed-occ stages; spin/smear free-loop residual; merge `f016215e` /
     impl `1bad527a`; unit `test_cpu_pw_driver_node` +
     `reg_arch-pw-driver-node`
-- **GapCensus wave-5:** re-diff harness + notes + queues + tree vs
-  `dev` @ `26fb8328`. **Tree on `dev` unchanged** (Γ RKS DIIS only / PW
-  fixed-occ only / folded CUDA RHF / CUDA GPW stages≠product / HEAVY
-  `^$`). **No new slug.** Tips advanced onto `26fb8328` then parent moved
-  to `1c2d74d6` ⇒ tips **ahead=1 behind=1** — **unmerged tip ≠ done**.
-- **Assign wave-5:** staff **2** resumes only (`[~]`); **new_assigned=0**,
-  **incomplete_remaining=2**. Skipped held freeze + mg-main. Tips:
-  - `wf/arch-gpw-driver-paths` @ `06bc94fb` — claim multi-path DIIS;
-    OT residual; **rebase onto `1c2d74d6`** before Worktrees/gate; tip
-    spec `.claude/specs/arch-gpw-driver-paths/SPEC.md`
-  - `wf/arch-pw-driver-paths` @ `98e98ed5` — claim all product SCF paths
-    on stages; **rebase onto `1c2d74d6`**; tip spec
-    `.claude/specs/arch-pw-driver-paths/SPEC.md`
-  **pending held=2** (shape-freeze + mg-main), **in_progress=2**,
-  **gaps_remaining=5**. Blocked: `cuda-gpw-full-product` (until paths +
-  freeze).
-- **Lever:** copy `MeanFieldMethod` + `scf/stages/` + landed
-  `drive_gamma_rks_diis_` / `gpw/stages/*` + landed PW fixed-occ stages
-  (+ tip multi-path Ops) — do not invent a second SCF shape.
-- **gaps_remaining=5** (2 in_progress + 2 pending held + blocked full CUDA
-  GPW product).
+- **Wave-5 done (this harness):**
+  - `arch-gpw-driver-paths` — multi-path **DIIS** (Γ UKS + multi-k RKS/UKS)
+    on `gpw::Phase` via path-local Ops + `drive_path_diis_` /
+    `drive_stage_loop_`; OT free-loop residual documented (not a new slug);
+    merge `e34ccf92` / impl `42454014` + gate docs `2ba03049`;
+    `test_cpu_gpw_driver_node` + `reg_arch-gpw-driver-paths` +
+    twin regs `gpw-uks-o2-gamma` / `gpw-kpoints-si`; spec closed
+- **Still `[~]`:** `arch-pw-driver-paths` @ `9edaa157` (ahead=1 behind=3;
+  **rebase onto `e34ccf92`** before gate). Unmerged tip ≠ done.
+- **Pending staffable (unheld):** `arch-cuda-gpw-public-shape-freeze` (P1)
+  + `arch-mg-main-structural` (P2) — dep on GPW multi-path DIIS **satisfied**.
+- **Lever:** copy `MeanFieldMethod` + `scf/stages/` + landed multi-path
+  GPW DIIS + landed PW fixed-occ stages (+ tip PW multi-path Ops) — do not
+  invent a second SCF shape.
+- **gaps_remaining=4** (1 in_progress + 2 pending + blocked full CUDA GPW
+  product). **new_slugs_added=0**. Queue **not** exhausted.
 
 ## Run
 

@@ -65,7 +65,7 @@ CPU-only domains, absent (never renamed) on `cuda/`: `bias`, `electrodes`, `elec
 
 **cpu/planewave** (`ATV::cpu::pw`) — `PW : cpu::Driver<pw::Phase>` (members `upf_path`, `ecut_ry`, `k_mesh`, `tol`, `max_iter`, `mix_beta`, `pulay_depth`; `build(frame)`, `run(frame)`); restricted fixed-occ stages under `planewave/stages/` (`veff → diagonalize → density → mix → check`); collinear spin + metallic smearing free-loop residual; `PWResult`; `PWEvaluator`; `Bands`/`BandsResult`, `Dos`/`DosResult`, `DfptPhonon`/`DfptPhononResult`, `BerryPolarization`, `PeriodicWannier`; `qe_units.h`; `internal/` (Poisson/XC/Veff/Davidson/density builders).
 
-**cpu/gpw** — `GpwDft` (`cpu::Driver<gpw::Phase>` for Γ RKS DIIS), `GPWEvaluator`, `GpwResult`, `GpwAtom`, `Kind`, `PlusU`; lookup constructors `GthPotential(molrs::Element, name)`, `GaussianBasis(molrs::Element, name)`, `GaussianBasisSet`, `GthNonlocalChannel`; post-SCF `Mp2Result`, `RpaResult`, `G0W0Result`, `PeriodicWannier`; `basis_data/` static tables, `internal/` (29 headers).
+**cpu/gpw** — `GpwDft` (`cpu::Driver<gpw::Phase>` multi-path DIIS: Γ RKS/UKS + multi-k RKS/UKS via path-local Ops; OT free-loop residual), `GPWEvaluator`, `GpwResult`, `GpwAtom`, `Kind`, `PlusU`; lookup constructors `GthPotential(molrs::Element, name)`, `GaussianBasis(molrs::Element, name)`, `GaussianBasisSet`, `GthNonlocalChannel`; post-SCF `Mp2Result`, `RpaResult`, `G0W0Result`, `PeriodicWannier`; `basis_data/` static tables, `internal/` (29 headers).
 
 **cpu/electronic** — `Cpmd`/`CpmdCplx`, `CarParrinello`, `CarParrinelloMethod`, `SecondGenCp`, `XlBomd`/`XlBomdCplx`/`XlBomdForce`/`XlBomdMethod`, `ASPCPredictor`/`ASPCPredictorCplx`, `ElectronicThermostat`, `ScfElectronicThermostat`.
 
