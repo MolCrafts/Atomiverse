@@ -33,3 +33,11 @@ dual-gates).
 
 UKS forces/stress, UKS-PBE, multi-k UKS, multigrid UKS, OT UKS, MT, device
 DIIS/eigen residual.
+
+## GH200 evidence (re-verify 2026-08-10)
+
+Job **1126430** (after rebase onto wave-7 Assign): unit
+`test_cuda_gpw_full_product` PASS; dual-gate
+CPU E=−0.508766760868 Ha, CUDA E=−0.508771520730 Ha,
+\|ΔE\|=**4.760e-06** Ha (tol 5e-6), ⟨S²⟩=2.0 both. Prior **1125905** same
+numbers on pre-rebase tip.
