@@ -323,6 +323,25 @@ TEST(RHF, NegativeNoccThrowsDeviceIntegrals) {
 
 // ── CUDA RHF single-point tests (cuda::scf::RHF + Evaluate) ───────
 
+TEST(RHF, CUDANonDefaultStreamEnergyPath) {
+    // cuda-rhf-nondefault-stream: Evaluate owns a non-default main stream
+    // (cudaStreamCreate in driver.cu). Residual/V_nuc D2H after device s/p
+    // SCF is bound to that stream (not the null default stream). Physics
+    // tols unchanged from CUDASinglePointEnergy.
+    auto frame = make_h2();
+    double tol =
+        (sizeof(double) == sizeof(float)) ? double(1e-5) : double(1e-10);
+    cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
+    rhf.with_gradient(false);
+    cuda::Evaluate eval;
+    eval.on(ATV::evaluate::Phase::evaluate).add_ref(rhf);
+    eval.build();
+    eval.run(frame);
+    EXPECT_TRUE(rhf.converged());
+    EXPECT_TRUE(rhf.last_scf_on_device());
+    EXPECT_NEAR(meta_ha(frame), kH2Energy, 0.01);
+}
+
 TEST(RHF, CUDASinglePointEnergy) {
     // ac-006: single-point H2/STO-3G RHF through concrete cuda::scf::RHF
     // reproduces the textbook reference -1.1167 Ha (meta kEnergy is eV).

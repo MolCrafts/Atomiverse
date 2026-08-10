@@ -247,20 +247,26 @@ void SCFSolver::run(void* stream, cuda::Frame& frame) {
 
 #ifdef ATV_HAS_HF
     // Post-calculation: one stream fence + host mirrors (not mid-SCF).
+    // Use the SCF stream for residual / V_nuc D2H — never the default stream
+    // (cuda-rhf-nondefault-stream). Mapped h_converged is already host-visible
+    // after the last mid-iter fence.
     if (device_no_d2h) {
-        cudaStreamSynchronize(cu_stream);
         if (scf.h_converged_mapped)
             scf.converged = (*scf.h_converged_mapped != 0);
         if (scf.d_residual) {
             cuda::prec_t h_res = 0;
-            cudaMemcpy(&h_res, scf.d_residual, sizeof(cuda::prec_t),
-                       cudaMemcpyDeviceToHost);
+            cudaMemcpyAsync(&h_res, scf.d_residual, sizeof(cuda::prec_t),
+                            cudaMemcpyDeviceToHost, cu_stream);
+            cudaStreamSynchronize(cu_stream);
             scf.residual = static_cast<double>(h_res);
         }
         if (scf.d_V_nuc) {
-            cudaMemcpy(&scf.V_nuc, scf.d_V_nuc, sizeof(double),
-                       cudaMemcpyDeviceToHost);
+            cudaMemcpyAsync(&scf.V_nuc, scf.d_V_nuc, sizeof(double),
+                            cudaMemcpyDeviceToHost, cu_stream);
+            cudaStreamSynchronize(cu_stream);
         }
+        if (!scf.d_residual && !scf.d_V_nuc)
+            cudaStreamSynchronize(cu_stream);
     }
 #endif
 

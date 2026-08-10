@@ -430,15 +430,18 @@ void RHF::launch(const LaunchContext& ctx) {
                     hfy[static_cast<size_t>(A)] = static_cast<real_t>(fy[A]);
                     hfz[static_cast<size_t>(A)] = static_cast<real_t>(fz[A]);
                 }
-                cudaMemcpy(ctx.frame.atoms.fx, hfx.data(),
-                           sizeof(real_t) * static_cast<size_t>(natm),
-                           cudaMemcpyHostToDevice);
-                cudaMemcpy(ctx.frame.atoms.fy, hfy.data(),
-                           sizeof(real_t) * static_cast<size_t>(natm),
-                           cudaMemcpyHostToDevice);
-                cudaMemcpy(ctx.frame.atoms.fz, hfz.data(),
-                           sizeof(real_t) * static_cast<size_t>(natm),
-                           cudaMemcpyHostToDevice);
+                // Host force fallback still binds H2D to the runtime stream
+                // so Evaluate's non-default stream remains the only queue.
+                cudaMemcpyAsync(ctx.frame.atoms.fx, hfx.data(),
+                                sizeof(real_t) * static_cast<size_t>(natm),
+                                cudaMemcpyHostToDevice, stream);
+                cudaMemcpyAsync(ctx.frame.atoms.fy, hfy.data(),
+                                sizeof(real_t) * static_cast<size_t>(natm),
+                                cudaMemcpyHostToDevice, stream);
+                cudaMemcpyAsync(ctx.frame.atoms.fz, hfz.data(),
+                                sizeof(real_t) * static_cast<size_t>(natm),
+                                cudaMemcpyHostToDevice, stream);
+                cudaStreamSynchronize(stream);
             }
             energy_ha_ = gr.energy / units::kHartreeInEv;
             return;
