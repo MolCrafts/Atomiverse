@@ -232,6 +232,48 @@ k_build_beta(const double* __restrict__ gx, const double* __restrict__ gy,
     beta[static_cast<size_t>(j) * ng + i] = out;
 }
 
+/// work[i] = scale[i] * psi[i]  (real scale × complex).
+__global__ void k_mul_real_scale(const cufftDoubleComplex* __restrict__ psi,
+                                 const double* __restrict__ scale, int n,
+                                 cufftDoubleComplex* __restrict__ work) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        double s = scale[i];
+        work[i].x = s * psi[i].x;
+        work[i].y = s * psi[i].y;
+    }
+}
+
+/// F[ia] += 2 D pref Im(c* s_α) for each projector column (CPU twin).
+__global__ void k_nl_force_from_proj(const cufftDoubleComplex* __restrict__ c,
+                                     const cufftDoubleComplex* __restrict__ sx,
+                                     const cufftDoubleComplex* __restrict__ sy,
+                                     const cufftDoubleComplex* __restrict__ sz,
+                                     const double* __restrict__ D,
+                                     const int* __restrict__ atom,
+                                     double pref, int ncol,
+                                     double* __restrict__ forces) {
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if (j >= ncol)
+        return;
+    const double Dj = D[j];
+    if (fabs(Dj) < 1e-16)
+        return;
+    const int ia = atom[j];
+    if (ia < 0)
+        return;
+    // Im(conj(c) * s) = c.x * s.y - c.y * s.x
+    const cufftDoubleComplex cj = c[j];
+    const double scale = 2.0 * Dj * pref;
+    const cufftDoubleComplex sjx = sx[j], sjy = sy[j], sjz = sz[j];
+    atomicAdd(forces + 3 * ia + 0,
+              scale * (cj.x * sjx.y - cj.y * sjx.x));
+    atomicAdd(forces + 3 * ia + 1,
+              scale * (cj.x * sjy.y - cj.y * sjy.x));
+    atomicAdd(forces + 3 * ia + 2,
+              scale * (cj.x * sjz.y - cj.y * sjz.x));
+}
+
 template <typename T>
 void device_free(T*& p) {
     if (p) {
@@ -290,6 +332,7 @@ void DeviceBandSolver::free_tables() {
     device_free(d_cm_all_);
     device_free(d_co_all_);
     device_free(d_cn_all_);
+    device_free(d_cia_all_);
     device_free(d_cd_all_);
     device_free(d_cp_all_);
     device_free(d_fg_all_);
@@ -378,7 +421,7 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
 
     // Host staging, filled once for every k-point. These are the exact
     // arrays the old per-iteration set_kpoint() rebuilt from scratch.
-    std::vector<int> h_idx, h_cl, h_cm, h_co, h_cn;
+    std::vector<int> h_idx, h_cl, h_cm, h_co, h_cn, h_cia;
     std::vector<double> h_tg, h_qx, h_qy, h_qz, h_cd, h_cp, h_fg;
     std::vector<std::complex<AccReal>> h_sub0;
 
@@ -438,6 +481,7 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
                 for (int m = 0; m < nm; ++m) {
                     h_cl.push_back(proj.l);
                     h_cm.push_back(m);
+                    h_cia.push_back(static_cast<int>(ia));
                     h_cd.push_back(static_cast<double>(proj.d));
                     h_cp.push_back(pos[0]);
                     h_cp.push_back(pos[1]);
@@ -512,6 +556,7 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
     upload_i(h_cm, d_cm_all_);
     upload_i(h_co, d_co_all_);
     upload_i(h_cn, d_cn_all_);
+    upload_i(h_cia, d_cia_all_);
     upload_d(h_cd, d_cd_all_);
     upload_d(h_cp, d_cp_all_);
     upload_d(h_fg, d_fg_all_);
@@ -926,6 +971,79 @@ void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega) {
             d_grid_, scale, nr_, rho_accum_);
         ATV_CUDA_CHECK(cudaGetLastError());
     }
+}
+
+void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
+                                            double* d_forces) {
+    if (n_proj_ <= 0 || !d_beta_ || !d_betad_ || !d_cia_all_)
+        return; // pure-local potential (e.g. GTH-PBE-q1 H): F_nl = 0
+    if (!d_ritz_ || bound_k_ < 0 || ng_ <= 0)
+        throw std::runtime_error(
+            "cuda::pw::internal::DeviceBandSolver::accumulate_nl_forces: "
+            "bind_kpoint() and solve() must run first");
+    if (n_atoms <= 0 || !d_forces)
+        throw std::runtime_error(
+            "cuda::pw::internal::DeviceBandSolver::accumulate_nl_forces: "
+            "n_atoms must be > 0 and d_forces non-null");
+
+    // Ensure d_work_ is live (solve always allocates it via
+    // ensure_subspace_capacity; force a capacity if a unit test skips solve).
+    ensure_subspace_capacity(ng_, std::max(n_bands_ + 2, 2));
+
+    const std::size_t go = k_goff_[bound_k_];
+    const std::size_t co = k_coff_[bound_k_];
+    const double* qx = d_qx_all_ + go;
+    const double* qy = d_qy_all_ + go;
+    const double* qz = d_qz_all_ + go;
+    const int* cia = d_cia_all_ + co;
+
+    cufftDoubleComplex* d_c = device_alloc<cufftDoubleComplex>(n_proj_);
+    cufftDoubleComplex* d_sx = device_alloc<cufftDoubleComplex>(n_proj_);
+    cufftDoubleComplex* d_sy = device_alloc<cufftDoubleComplex>(n_proj_);
+    cufftDoubleComplex* d_sz = device_alloc<cufftDoubleComplex>(n_proj_);
+
+    const cuDoubleComplex one{1.0, 0.0}, zero{0.0, 0.0};
+    // pref = weight * occ with closed-shell f = 2 (CPU twin).
+    const double pref = weight * 2.0;
+
+    for (int b = 0; b < n_bands_; ++b) {
+        const cufftDoubleComplex* psi =
+            d_ritz_ + static_cast<size_t>(b) * ng_;
+
+        // c = βᴴ ψ
+        check_cublas(
+            cublasZgemv(blas_, CUBLAS_OP_C, ng_, n_proj_, &one,
+                        reinterpret_cast<const cuDoubleComplex*>(d_beta_), ng_,
+                        reinterpret_cast<const cuDoubleComplex*>(psi), 1, &zero,
+                        reinterpret_cast<cuDoubleComplex*>(d_c), 1),
+            "Zgemv beta^H psi (nl force c)");
+
+        // s_α = βᴴ (q_α ⊙ ψ)
+        auto proj_q = [&](const double* q, cufftDoubleComplex* s) {
+            k_mul_real_scale<<<n_blocks(ng_), kBlock>>>(psi, q, ng_, d_work_);
+            ATV_CUDA_CHECK(cudaGetLastError());
+            check_cublas(
+                cublasZgemv(
+                    blas_, CUBLAS_OP_C, ng_, n_proj_, &one,
+                    reinterpret_cast<const cuDoubleComplex*>(d_beta_), ng_,
+                    reinterpret_cast<const cuDoubleComplex*>(d_work_), 1,
+                    &zero, reinterpret_cast<cuDoubleComplex*>(s), 1),
+                "Zgemv beta^H (q*psi) (nl force s)");
+        };
+        proj_q(qx, d_sx);
+        proj_q(qy, d_sy);
+        proj_q(qz, d_sz);
+
+        k_nl_force_from_proj<<<n_blocks(n_proj_), kBlock>>>(
+            d_c, d_sx, d_sy, d_sz, d_betad_, cia, pref, n_proj_, d_forces);
+        ATV_CUDA_CHECK(cudaGetLastError());
+        (void)n_atoms; // bounds already enforced by column atom indices
+    }
+
+    device_free(d_c);
+    device_free(d_sx);
+    device_free(d_sy);
+    device_free(d_sz);
 }
 
 } // namespace internal

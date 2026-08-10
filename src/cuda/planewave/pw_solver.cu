@@ -45,8 +45,11 @@
 #include "atomiverse/cpu/planewave/qe_units.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
+#include "atomiverse/cuda/planewave/internal/pw_forces.cuh"
 
+#include <array>
 #include <complex>
+#include <cstdio>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -235,6 +238,100 @@ PWResult& PW::run(const cpu::Frame& frame) {
     }
 
     return result_;
+}
+
+std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
+                                                      const PW& method) {
+    // Same gate as run(): reject unsupported members before any CUDA work.
+    method.validate_members();
+    if (frame.nlocal() <= 0)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: frame has no atoms");
+
+    // Lazy build on a non-const view of the same public members. build() only
+    // sets built_ and validates the PP source — method is const, so replicate
+    // the PP gate without mutating the caller's object.
+    if (method.upf_path.empty() == method.gth_name.empty())
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: set exactly one of upf_path or "
+            "gth_name (same envelope as PW::build)");
+    if (!method.upf_path.empty()) {
+        (void)cpu::pw::internal::read_upf_v1(method.upf_path);
+    } else {
+        const int* sp_type = frame.span(kAtom_type);
+        if (frame.nlocal() > 0)
+            (void)cpu::gpw::GthPotential(
+                static_cast<molrs::Element>(sp_type[0]), method.gth_name);
+    }
+
+    cpu::pw::internal::PWProblem prob;
+    cpu::pw::internal::setup_pw_problem(frame, method.upf_path, method.gth_name,
+                                        method.ecut_ry, method.k_mesh, prob);
+    cpu::pw::internal::PWWorkspace& ws = prob.ws;
+
+    if (prob.n_elec % 2 != 0)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: "
+            + std::to_string(prob.n_elec)
+            + " valence electrons is not closed-shell — use cpu::pw for "
+              "open-shell / metallic paths");
+
+    ws.mix_beta = AccReal(method.mix_beta);
+    ws.pulay_depth = method.pulay_depth;
+
+    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_bands = prob.n_bands;
+    const AccReal vol_bohr = prob.vol_bohr;
+    const AccReal omega_bohr = ws.omega;
+
+    internal::DeviceDensity den(prob, method.mix_beta, method.pulay_depth,
+                                method.xc);
+    internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands);
+    solver.bind_grids(den.density_accumulator(), den.effective_potential());
+    solver.build_kpoints(prob);
+
+    cpu::pw::internal::ConvergenceCheck conv{AccReal(method.tol), 2};
+    AccReal last_energy_ha = AccReal(0);
+    int last_iter = 0;
+    for (int iter = 0; iter < method.max_iter; ++iter) {
+        den.hartree();
+        den.exchange_correlation();
+        den.assemble_veff();
+        den.zero_accumulator();
+
+        AccReal e_band = 0;
+        for (int ik = 0; ik < n_kpts; ++ik) {
+            solver.bind_kpoint(ik);
+            solver.solve(ws, 40);
+            const AccReal weight = prob.kg.weights[ik];
+            for (int b = 0; b < n_bands; ++b)
+                e_band += weight * ws.eigenvalues[b] * AccReal(2);
+            solver.accumulate_density(weight, omega_bohr);
+        }
+
+        den.collect();
+        den.mix(iter);
+        const auto s = den.reduce(static_cast<double>(vol_bohr));
+        ws.E_xc = AccReal(s.e_xc);
+        const auto terms = cpu::pw::internal::combine_energy_terms(
+            e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+            ws.E_xc, prob.ew_total, ws.E_aug);
+        last_energy_ha = terms.total;
+        last_iter = iter + 1;
+        if (conv.step(AccReal(s.resid)))
+            break;
+    }
+    // Host-visible breadcrumb: energy of the force-path SCF (Ry). Mirrors the
+    // CPU `forces-scf converged` line so dual-gate logs can compare. Do not
+    // include core/log.h from .cu (see file header); printf is enough.
+    std::printf("[pw] cuda forces-scf done iter=%d energy_ry=%.8f\n", last_iter,
+                static_cast<double>(last_energy_ha)
+                    / cpu::pw::qe_units::rydberg_to_hartree);
+
+    // Forces from the final mixed density + band re-solve at final V_eff.
+    return internal::pw_forces_analytic_impl(frame, method.upf_path,
+                                             method.gth_name, method.ecut_ry,
+                                             den, solver, prob, ws);
 }
 
 } // namespace pw
