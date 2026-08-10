@@ -1,10 +1,16 @@
 /// @file cuda/gpw/internal/ks_chain.cu
-/// @brief Composed device KS stage: collocate → Poisson → Padé XC → V_eff → integrate.
+/// @brief Composed device KS stage: collocate → Poisson → XC → V_eff → integrate.
 ///
 /// All scientific loops are device kernels. Host only owns the plan/workspace
-/// object and D2H of energy scalars at the end of `run`.
+/// object and D2H of energy scalars at the end of `run`. Closed-shell PBE-GGA
+/// reuses `cuda::pw::internal::xc_pbe_grid` and `SpectralFftDevice` (CPU
+/// `gradient` / `divergence` conventions).
 
 #include "atomiverse/cuda/gpw/internal/ks_chain.cuh"
+
+#if defined(ATV_HAS_PW)
+#include "atomiverse/cuda/planewave/internal/xc_pbe.cuh"
+#endif
 
 #include <stdexcept>
 #include <string>
@@ -67,6 +73,15 @@ assemble_veff_kernel(const double* __restrict__ v_es,
     }
 }
 
+/// @brief vxc[i] -= div[i]  (GGA: local v_ρ minus spectral ∇·flux).
+__global__ void vxc_sub_div_kernel(double* __restrict__ vxc,
+                                   const double* __restrict__ div, long nr) {
+    const long i =
+        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    if (i < nr)
+        vxc[i] -= div[i];
+}
+
 __global__ void scale_scalar_kernel(double* x, double factor) { *x *= factor; }
 
 GpwGridDesc to_poisson_grid(const CollocateGridDesc& c) {
@@ -86,7 +101,8 @@ KsChainDevice::KsChainDevice(const CollocateGridDesc& coll, cudaStream_t stream)
     , ntot_(coll.npts())
     , weight_(coll.weight())
     , stream_(stream)
-    , poisson_(poisson_grid_, stream) {
+    , poisson_(poisson_grid_, stream)
+    , spectral_(poisson_grid_, stream) {
     if (ntot_ <= 0)
         throw std::runtime_error("cuda::gpw KsChainDevice: empty grid");
     const size_t bytes = static_cast<size_t>(ntot_) * sizeof(double);
@@ -98,6 +114,10 @@ KsChainDevice::KsChainDevice(const CollocateGridDesc& coll, cudaStream_t stream)
     check_cuda(cudaMalloc(&d_veff_, bytes), "malloc veff");
     check_cuda(cudaMalloc(&d_e_xc_, sizeof(double)), "malloc e_xc");
     check_cuda(cudaMalloc(&d_e_loc_, sizeof(double)), "malloc e_loc");
+    check_cuda(cudaMalloc(&d_gx_, bytes), "malloc gx");
+    check_cuda(cudaMalloc(&d_gy_, bytes), "malloc gy");
+    check_cuda(cudaMalloc(&d_gz_, bytes), "malloc gz");
+    check_cuda(cudaMalloc(&d_div_, bytes), "malloc div");
 }
 
 KsChainDevice::~KsChainDevice() {
@@ -109,11 +129,15 @@ KsChainDevice::~KsChainDevice() {
     cudaFree(d_veff_);
     cudaFree(d_e_xc_);
     cudaFree(d_e_loc_);
+    cudaFree(d_gx_);
+    cudaFree(d_gy_);
+    cudaFree(d_gz_);
+    cudaFree(d_div_);
 }
 
 KsChainEnergies KsChainDevice::run(const DeviceProduct* d_prods, int nprod,
                                    const double* d_n_ion, const double* d_v_loc,
-                                   double* d_acc) {
+                                   double* d_acc, KsXcKind xc) {
     if (d_prods == nullptr || nprod <= 0)
         throw std::runtime_error(
             "cuda::gpw KsChainDevice::run: need ≥1 product");
@@ -133,10 +157,33 @@ KsChainEnergies KsChainDevice::run(const DeviceProduct* d_prods, int nprod,
     // 3. Poisson(n) → V_es, e_hartree (writes into Poisson internal scratch)
     poisson_.solve(d_n_tot_, d_v_es_);
 
-    // 4. Padé LDA on total ρ → V_xc, ε_xc; E_xc
+    // 4. XC → V_xc, ε_xc; E_xc
     const int nr = static_cast<int>(ntot_);
-    xc_lda_grid(d_rho_, d_vxc_, d_exc_, nr, stream_);
-    xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_, stream_);
+    if (xc == KsXcKind::PADE) {
+        xc_lda_grid(d_rho_, d_vxc_, d_exc_, nr, stream_);
+        xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_, stream_);
+    } else if (xc == KsXcKind::PBE) {
+#if defined(ATV_HAS_PW)
+        // Spectral ∇ρ (CPU grid_fft conventions via SpectralFftDevice).
+        spectral_.gradient(d_rho_, d_gx_, d_gy_, d_gz_);
+        // Closed-shell PBE: local v_ρ + ε_xc; overwrites gradients with flux.
+        ::ATV::cuda::pw::internal::xc_pbe_grid(d_rho_, d_gx_, d_gy_, d_gz_,
+                                               d_vxc_, d_exc_, nr, stream_);
+        xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_, stream_);
+        // V_xc = v_ρ − ∇·flux
+        spectral_.divergence(d_gx_, d_gy_, d_gz_, d_div_);
+        vxc_sub_div_kernel<<<grid_dim, kBlock, 0, stream_>>>(d_vxc_, d_div_,
+                                                             ntot_);
+        check_cuda(cudaGetLastError(), "vxc_sub_div_kernel");
+#else
+        throw std::runtime_error(
+            "cuda::gpw KsChainDevice::run: KsXcKind::PBE requires "
+            "ATV_BUILD_PW (shared cuda::pw::internal::xc_pbe_grid)");
+#endif
+    } else {
+        throw std::invalid_argument(
+            "cuda::gpw KsChainDevice::run: unsupported KsXcKind");
+    }
 
     // 5. Assemble V_eff; optional ∫ρ V_loc
     if (d_v_loc != nullptr)
