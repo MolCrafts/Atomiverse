@@ -168,3 +168,26 @@ TEST(CudaPWForces, PublicApiRejectsSpin) {
     method.xc = cpu::scf::XCType::LSDA;
     EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method), std::invalid_argument);
 }
+
+// PBE is on the force-path XC whitelist (DeviceDensity + xc_pbe). Empty-frame
+// still rejects before SCF; the message must not claim PBE is unsupported.
+TEST(CudaPWForces, PublicApiAcceptsPbeOnEmptyFrameGate) {
+    cpu::Frame f(0);
+    cuda::pw::PW method;
+    method.gth_name = "GTH-PBE-q1";
+    method.ecut_ry = 4.0;
+    method.k_mesh = 1;
+    method.tol = 1e-4;
+    method.max_iter = 4;
+    method.xc = cpu::scf::XCType::PBE;
+    try {
+        (void)cuda::pw::pw_forces_analytic(f, method);
+        FAIL() << "expected empty-frame throw";
+    } catch (const std::invalid_argument& e) {
+        const std::string msg = e.what();
+        EXPECT_NE(msg.find("no atoms"), std::string::npos)
+            << "msg=" << msg;
+        EXPECT_EQ(msg.find("no device path"), std::string::npos)
+            << "PBE must not hit the XC whitelist reject; msg=" << msg;
+    }
+}
