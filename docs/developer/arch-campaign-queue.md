@@ -27,7 +27,7 @@ reconfirmed:
 | `cpu::pw::PW` | plain class — **no** `pw::Phase`, no stages, free SCF in `pw_solver.cpp` |
 | `cuda::scf::SCFSolver` | free-loop internal under `RHF` (`unique_ptr<SCFSolver> solver_`); **not** Driver-like fold |
 | CUDA GPW | stage footholds only (`ks_chain` / MG / GGA); **no** public method product |
-| e2e iron law | wave-1 deleted 78 heavy sources; residual multi-iter still under `tests/` + fat `ATV_TEST_HEAVY_REGEX` safety net |
+| e2e iron law | wave-1 + wave-2 residual multi-iter out of `tests/`; `ATV_TEST_HEAVY_REGEX` empty (`^$`) on tip |
 
 Orphan **branch tips** (no isolation worktrees; **not** on `dev` — do not mark
 done; Assign may rebase/re-staff or discard):
@@ -37,7 +37,6 @@ done; Assign may rebase/re-staff or discard):
 | `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual |
 | `wf/arch-pw-driver-node` | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
 | `wf/arch-cuda-scf-solver-fold` | fold free-loop under RHF private cycle |
-| `wf/arch-e2e-tests-wave2` | residual multi-iter delete/migrate |
 
 No open arch specs under `.claude/specs/` (only unrelated
 `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`). Lever still:
@@ -72,18 +71,8 @@ No open arch specs under `.claude/specs/` (only unrelated
   footholds only | method=arch-doc | twin: n/a (harness) | files: notes +
   queue unlock condition for `cuda-gpw-full-product` |
 
-### P2 — test iron law residual + MG structure
+### P2 — MG structure (after Driver paths)
 
-- [ ] `arch-e2e-tests-wave2` | **P2** Residual audit of `tests/` for multi-iter
-  solves after wave-1 — migrate unique only to `regressions/`, else delete;
-  slim residual `ATV_TEST_HEAVY_REGEX` safety net | method=harness | twin:
-  ctest default gate seconds-scale | concrete residual on `dev` (not exhaustive):
-  `tests/cpu/gpw/test_cpu_gpw_vol_forces.cpp` (max_iter=60 full SCF),
-  `tests/cpu/scf/test_soscf.cpp` / `test_full_grid_alda.cpp` / many
-  `*.run(frame)` multi-iter helpers, `tests/cpu/multiscale/*` +
-  `tests/cpu/component/test_qm_engine.cpp` (max_iter 40–100),
-  `tests/mpi/test_gpw_kpoint.cpp` + `test_pw_kpoint.cpp` (max_iter 20–30) |
-  files: `tests/**`, `tests/CMakeLists.txt` HEAVY_REGEX |
 - [ ] `arch-mg-main-structural` | **P2** Task-list / products-default path
   rewrite toward MAIN ~1× (explicitly **not** pin-softening) — only after
   GPW Driver paths stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` |
@@ -91,7 +80,7 @@ No open arch specs under `.claude/specs/` (only unrelated
 
 ## in_progress
 
-*(empty — GapCensus only; Assign staffs ≤4 from pending)*
+*(none — `wf/arch-e2e-tests-wave2` tip ready for merge gate)*
 
 ## blocked
 
@@ -110,3 +99,9 @@ No open arch specs under `.claude/specs/` (only unrelated
 - [x] `arch-e2e-tests-wave1` | **P0** Delete 78 heavy e2e sources duplicated by
   regressions; ungate kernel unit regex tokens | merge: wave-1 | evidence:
   `docs/developer/e2e-in-tests-campaign.md`
+- [x] `arch-e2e-tests-wave2` | **P2** Residual multi-iter out of `tests/`
+  (TDA/NAC/ALDA/hessian/delta-SCF/MPI kpoint + GPW vol product SCF +
+  multiscale/qm_engine multi-iter); slim mixed units; empty
+  `ATV_TEST_HEAVY_REGEX`; harness `reg_arch-e2e-tests-wave2` | branch:
+  `wf/arch-e2e-tests-wave2` | evidence: `docs/developer/e2e-in-tests-campaign.md`
+  (merge still required onto `dev`)

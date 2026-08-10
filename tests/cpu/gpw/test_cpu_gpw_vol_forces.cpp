@@ -1,11 +1,10 @@
 /// @file tests/cpu/gpw/test_cpu_gpw_vol_forces.cpp
-/// @brief Fixed-volume (Hirshfeld-scaled) TS/MBD force dual-gates + product fold.
+/// @brief Fixed-volume (Hirshfeld-scaled) TS/MBD force dual-gates (geometry-only).
 ///
 /// Density-chain ∂v/∂R is out of scope: forces hold \(v_A\) fixed. Geometry-
-/// only FD duals stay unit-test class; product wiring uses a 2-electron H₂
-/// GPW cell (≤1 s). Full water-dimer product pin lives in
-/// `reg_gpw-hirshfeld-forces`; multi-k product pin in
-/// `reg_gpw-hirshfeld-kpoint-forces`.
+/// only FD duals stay unit-test class. Product-path Hirshfeld fold through
+/// `GpwDft::run` lives in `reg_gpw-hirshfeld-forces` /
+/// `reg_gpw-hirshfeld-kpoint-forces` (e2e-in-tests wave-2).
 
 #include <array>
 #include <cmath>
@@ -14,13 +13,8 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/cpu/gpw/gaussian_basis.h"
-#include "atomiverse/cpu/gpw/gpw_solver.h"
-#include "atomiverse/cpu/gpw/gth_potential.h"
-#include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 #include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/ts_dispersion.h"
-#include "atomiverse/molrs.hpp"
 
 using ATV::cpu::gpw::mbd_rsscs_pbe;
 using ATV::cpu::gpw::ts_pbe;
@@ -49,7 +43,6 @@ const std::vector<int> kZ = {8, 1, 1, 8, 1, 1};
 
 } // namespace
 
-// Fixed-volume-ratio MBD forces: product kernel vs independent central FD.
 TEST(GpwVolForces, VolumeScaledMbdForcesMatchFd) {
     auto pos = water_dimer_bohr();
     const double cell0[3] = {0.0, 0.0, 0.0};
@@ -120,250 +113,4 @@ TEST(GpwVolForces, VolumeScaledTsForcesMatchFd) {
     }
     std::printf("[Vol F TS] E=%.6e max|F-F_fd|=%.2e\n", r.energy, max_err);
     EXPECT_LT(max_err, 1e-6);
-}
-
-// Product path: Γ assemble must add Hirshfeld-scaled TS forces, not free-atom.
-TEST(GpwVolForces, ProductForcesFoldHirshfeldTs) {
-    using ATV::cpu::gpw::GaussianBasis;
-    using ATV::cpu::gpw::GpwAtom;
-    using ATV::cpu::gpw::GpwDft;
-    using ATV::cpu::gpw::GthPotential;
-    using ATV::cpu::gpw::XcKind;
-    using ATV::cpu::gpw::gpw_forces_from_scf;
-
-    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
-    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
-    const double rA[3] = {5.5, 6.0, 6.0};
-    const double rB[3] = {6.5, 6.0, 6.0};
-    std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
-                                  GpwAtom(rB, basis, pot, 1)};
-
-    auto make_cfg = [](bool with_ts, bool with_hirsh) {
-        GpwDft m;
-        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
-        m.cutoff_ry = 100.0;
-        m.n_occ = 1;
-        m.tol = 1e-8;
-        m.max_iter = 60;
-        m.nonperiodic = false;
-        m.local_pp_on_grid = true;
-        m.xc = XcKind::PADE;
-        m.eps_default = 1e-8;
-        m.ts = with_ts;
-        m.hirshfeld = with_hirsh;
-        return m;
-    };
-
-    GpwDft cfg = make_cfg(true, true);
-    cfg.build(atoms);
-    const auto& scf = cfg.run(atoms);
-    ASSERT_TRUE(scf.converged);
-    ASSERT_EQ(scf.volume_ratios.size(), 2u);
-    EXPECT_TRUE(std::isfinite(scf.e_disp));
-    EXPECT_LT(scf.e_disp, 0.0);
-
-    const auto F_h = gpw_forces_from_scf(atoms, cfg, scf);
-    GpwDft plain = make_cfg(false, false);
-    const auto F_plain = gpw_forces_from_scf(atoms, plain, scf);
-
-    std::vector<int> Z = {1, 1};
-    std::vector<std::array<double, 3>> pos = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
-    const double cell[3] = {12.0, 12.0, 12.0};
-    constexpr double kRcut = 50.0 * kAngToBohr;
-    const auto geom_h =
-        ts_pbe(Z, pos, cell, true, kRcut, 0.94, 20.0, scf.volume_ratios);
-    const auto geom_free = ts_pbe(Z, pos, cell, true, kRcut);
-
-    EXPECT_NEAR(scf.e_disp, geom_h.energy, 1e-10);
-    EXPECT_GT(std::abs(scf.e_disp - geom_free.energy), 1e-10)
-        << "Hirshfeld must move E_disp vs free-atom";
-
-    double max_h = 0.0, max_free = 0.0;
-    for (int a = 0; a < 2; ++a) {
-        for (int k = 0; k < 3; ++k) {
-            const double dF = F_h[static_cast<std::size_t>(a)][k]
-                              - F_plain[static_cast<std::size_t>(a)][k];
-            max_h = std::max(
-                max_h,
-                std::abs(dF - geom_h.forces[static_cast<std::size_t>(a)][k]));
-            max_free = std::max(
-                max_free,
-                std::abs(dF
-                         - geom_free.forces[static_cast<std::size_t>(a)][k]));
-        }
-    }
-    std::printf(
-        "[Vol F product TS] e_disp=%.6e  max|wire_h|=%.2e  max|wire_free|=%.2e\n",
-        scf.e_disp, max_h, max_free);
-    EXPECT_LT(max_h, 1e-8) << "assemble must add Hirshfeld-scaled TS forces";
-    EXPECT_GT(max_free, 1e-9);
-}
-
-// Multi-k product path: assemble_gpw_forces_kpoints must fold Hirshfeld TS.
-TEST(GpwVolForces, MultiKProductForcesFoldHirshfeldTs) {
-    using ATV::cpu::gpw::GaussianBasis;
-    using ATV::cpu::gpw::GpwAtom;
-    using ATV::cpu::gpw::GpwDft;
-    using ATV::cpu::gpw::GthPotential;
-    using ATV::cpu::gpw::XcKind;
-    using ATV::cpu::gpw::gpw_forces_from_scf;
-
-    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
-    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
-    const double rA[3] = {5.5, 6.0, 6.0};
-    const double rB[3] = {6.5, 6.0, 6.0};
-    std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
-                                  GpwAtom(rB, basis, pot, 1)};
-
-    auto make_cfg = [](bool with_ts, bool with_hirsh) {
-        GpwDft m;
-        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
-        m.cutoff_ry = 100.0;
-        m.n_occ = 1;
-        m.tol = 1e-8;
-        m.max_iter = 60;
-        m.nonperiodic = false;
-        m.local_pp_on_grid = true;
-        m.xc = XcKind::PADE;
-        m.eps_default = 1e-8;
-        m.k_mesh[0] = 1;
-        m.k_mesh[1] = 1;
-        m.k_mesh[2] = 2;
-        m.ts = with_ts;
-        m.hirshfeld = with_hirsh;
-        return m;
-    };
-
-    GpwDft cfg = make_cfg(true, true);
-    cfg.build(atoms);
-    const auto& scf = cfg.run(atoms);
-    ASSERT_TRUE(scf.converged);
-    ASSERT_GE(scf.n_kpts, 1);
-    ASSERT_FALSE(scf.C_occ_k.empty());
-    ASSERT_EQ(scf.volume_ratios.size(), 2u);
-    EXPECT_TRUE(std::isfinite(scf.e_disp));
-    EXPECT_LT(scf.e_disp, 0.0);
-
-    const auto F_h = gpw_forces_from_scf(atoms, cfg, scf);
-    GpwDft plain = make_cfg(false, false);
-    const auto F_plain = gpw_forces_from_scf(atoms, plain, scf);
-
-    std::vector<int> Z = {1, 1};
-    std::vector<std::array<double, 3>> pos = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
-    const double cell[3] = {12.0, 12.0, 12.0};
-    constexpr double kRcut = 50.0 * kAngToBohr;
-    const auto geom_h =
-        ts_pbe(Z, pos, cell, true, kRcut, 0.94, 20.0, scf.volume_ratios);
-    const auto geom_free = ts_pbe(Z, pos, cell, true, kRcut);
-
-    EXPECT_NEAR(scf.e_disp, geom_h.energy, 1e-10);
-    EXPECT_GT(std::abs(scf.e_disp - geom_free.energy), 1e-10)
-        << "Hirshfeld must move multi-k E_disp vs free-atom";
-
-    double max_h = 0.0, max_free = 0.0;
-    for (int a = 0; a < 2; ++a) {
-        for (int k = 0; k < 3; ++k) {
-            const double dF = F_h[static_cast<std::size_t>(a)][k]
-                              - F_plain[static_cast<std::size_t>(a)][k];
-            max_h = std::max(
-                max_h,
-                std::abs(dF - geom_h.forces[static_cast<std::size_t>(a)][k]));
-            max_free = std::max(
-                max_free,
-                std::abs(dF
-                         - geom_free.forces[static_cast<std::size_t>(a)][k]));
-        }
-    }
-    std::printf(
-        "[Vol F multi-k TS] e_disp=%.6e n_kpts=%d max|wire_h|=%.2e "
-        "max|wire_free|=%.2e\n",
-        scf.e_disp, scf.n_kpts, max_h, max_free);
-    EXPECT_LT(max_h, 1e-8)
-        << "k-path assemble must add Hirshfeld-scaled TS forces";
-    EXPECT_GT(max_free, 1e-9);
-}
-
-// Multi-k product path: MBD@rsSCS with SCF volume ratios (isolated MBD).
-TEST(GpwVolForces, MultiKProductForcesFoldHirshfeldMbd) {
-    using ATV::cpu::gpw::GaussianBasis;
-    using ATV::cpu::gpw::GpwAtom;
-    using ATV::cpu::gpw::GpwDft;
-    using ATV::cpu::gpw::GthPotential;
-    using ATV::cpu::gpw::XcKind;
-    using ATV::cpu::gpw::gpw_forces_from_scf;
-
-    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
-    const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
-    const double rA[3] = {5.5, 6.0, 6.0};
-    const double rB[3] = {6.5, 6.0, 6.0};
-    std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
-                                  GpwAtom(rB, basis, pot, 1)};
-
-    auto make_cfg = [](bool with_mbd, bool with_hirsh) {
-        GpwDft m;
-        m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
-        m.cutoff_ry = 100.0;
-        m.n_occ = 1;
-        m.tol = 1e-8;
-        m.max_iter = 60;
-        m.nonperiodic = false;
-        m.local_pp_on_grid = true;
-        m.xc = XcKind::PADE;
-        m.eps_default = 1e-8;
-        m.k_mesh[0] = 1;
-        m.k_mesh[1] = 1;
-        m.k_mesh[2] = 2;
-        m.mbd = with_mbd;
-        m.hirshfeld = with_hirsh;
-        return m;
-    };
-
-    GpwDft cfg = make_cfg(true, true);
-    cfg.build(atoms);
-    const auto& scf = cfg.run(atoms);
-    ASSERT_TRUE(scf.converged);
-    ASSERT_GE(scf.n_kpts, 1);
-    ASSERT_FALSE(scf.C_occ_k.empty());
-    ASSERT_EQ(scf.volume_ratios.size(), 2u);
-    EXPECT_LT(scf.e_disp, 0.0);
-
-    const auto F_h = gpw_forces_from_scf(atoms, cfg, scf);
-    GpwDft plain = make_cfg(false, false);
-    const auto F_plain = gpw_forces_from_scf(atoms, plain, scf);
-
-    std::vector<int> Z = {1, 1};
-    std::vector<std::array<double, 3>> pos = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
-    const double cell0[3] = {0.0, 0.0, 0.0};
-    const auto geom_h =
-        mbd_rsscs_pbe(Z, pos, cell0, /*periodic=*/false, 0.83, 6.0,
-                      scf.volume_ratios);
-    const auto geom_free = mbd_rsscs_pbe(Z, pos, cell0, /*periodic=*/false);
-
-    EXPECT_NEAR(scf.e_disp, geom_h.energy, 1e-10);
-    EXPECT_GT(std::abs(scf.e_disp - geom_free.energy), 1e-10);
-
-    double max_h = 0.0, max_free = 0.0;
-    for (int a = 0; a < 2; ++a) {
-        for (int k = 0; k < 3; ++k) {
-            const double dF = F_h[static_cast<std::size_t>(a)][k]
-                              - F_plain[static_cast<std::size_t>(a)][k];
-            max_h = std::max(
-                max_h,
-                std::abs(dF - geom_h.forces[static_cast<std::size_t>(a)][k]));
-            max_free = std::max(
-                max_free,
-                std::abs(dF
-                         - geom_free.forces[static_cast<std::size_t>(a)][k]));
-        }
-    }
-    std::printf(
-        "[Vol F multi-k MBD] e_disp=%.6e n_kpts=%d max|wire_h|=%.2e "
-        "max|wire_free|=%.2e\n",
-        scf.e_disp, scf.n_kpts, max_h, max_free);
-    EXPECT_LT(max_h, 1e-8)
-        << "k-path assemble must add Hirshfeld-scaled MBD forces";
-    EXPECT_GT(max_free, 1e-9);
 }

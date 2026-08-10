@@ -390,8 +390,9 @@ TEST(EcpIntegralWorkspace, LightMoleculeUnchangedAndUnknownNameThrows) {
 
 // ── ECP ↔ x2c per-element double-counting gate ─────────────────────────
 
-TEST(EcpX2cGate, ThrowsForEcpElementPassesAllElectron) {
+TEST(EcpX2cGate, ThrowsForEcpElement) {
     // I2 + x2c + def2-ECP: throws before any SCF work, naming the element.
+    // (e2e-in-tests wave-2: no multi-iter all-electron run under tests/.)
     auto frame = i2_frame();
     cpu::scf::RHF rhf;
     rhf.basis = BasisSet::Def2SVP;
@@ -405,23 +406,4 @@ TEST(EcpX2cGate, ThrowsForEcpElementPassesAllElectron) {
         EXPECT_NE(msg.find("I (Z=53)"), std::string::npos) << msg;
         EXPECT_NE(msg.find("x2c"), std::string::npos) << msg;
     }
-
-    // All-electron molecule with the same settings: the gate is
-    // per-element, so nothing throws (H2/STO-3G, milliseconds).
-    cpu::Frame h2(2);
-    h2.span(kAtom_type)[0] = 1;
-    h2.span(kAtom_x)[0] = 0.0;
-    h2.span(kAtom_y)[0] = 0.0;
-    h2.span(kAtom_z)[0] = 0.0;
-    h2.span(kAtom_type)[1] = 1;
-    h2.span(kAtom_x)[1] = 0.0;
-    h2.span(kAtom_y)[1] = 0.0;
-    h2.span(kAtom_z)[1] = 0.74;
-    h2.box = cpu::Box::cubic(20.0);
-    cpu::scf::RHF ok;
-    ok.basis = BasisSet::STO3G;
-    ok.ecp = "def2-ECP";
-    ok.x2c = true;
-    ok.max_iter = 3; // gate check only — not a converged solve
-    EXPECT_NO_THROW(ok.run(h2));
 }

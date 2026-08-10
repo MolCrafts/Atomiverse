@@ -1038,6 +1038,10 @@ if(ATV_BUILD_PATH)
 endif()
 atv_add_regression(architecture harmonic_driver_matrix)
 atv_add_regression(architecture module_compile_defs)
+if(ATV_BUILD_HF)
+    # e2e-in-tests wave-2 harness twin: residual multi-iter out of tests/.
+    atv_add_regression(architecture arch-e2e-tests-wave2)
+endif()
 if(ATV_BUILD_HF AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
     # esmm-contract-05-accumulate-switch (R1): the first ES x MM co-bound case.
     # One cpu::Evaluate over one Frame — a He pair under PairLJCut plus a

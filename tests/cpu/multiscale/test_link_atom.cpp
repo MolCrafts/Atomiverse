@@ -1,5 +1,8 @@
 /// @file tests/cpu/multiscale/test_link_atom.cpp
 /// @brief Unit tests for H link-atom placement and topology-derived cuts.
+///
+/// Full QMMM electrostatic launch/SCF: regressions/multiscale/qmmm_link_ch3oh
+/// (e2e-in-tests wave-2).
 #include <cmath>
 #include <gtest/gtest.h>
 #include <stdexcept>
@@ -58,7 +61,6 @@ TEST(LinkAtom, ForceProjectionPartition) {
 #ifdef ATV_HAS_HF
 TEST(LinkAtom, NoBondsMeansZeroLinks) {
     // LJ-style: mask only, no topology → 0 link cuts (still valid QM/MM).
-    // QM = H2 (even e−); MM = Ar; no bonds on the Frame.
     cpu::Frame f(3);
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
@@ -82,15 +84,9 @@ TEST(LinkAtom, NoBondsMeansZeroLinks) {
                              12.0};
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = 1e-8;
-    rhf.max_iter = 40;
     q.set_engine(std::move(rhf));
     q.build({ctx, f});
     EXPECT_EQ(q.last_n_links(), 0);
-    cpu::LaunchContext lc{ctx, f, 0, 0};
-    lc.forces_requested = false;
-    q.launch(lc);
-    EXPECT_TRUE(std::isfinite(q.last_qm_energy()));
 }
 
 TEST(LinkAtom, QmmmPlacesLinkHydrogenFromBond) {
@@ -122,16 +118,9 @@ TEST(LinkAtom, QmmmPlacesLinkHydrogenFromBond) {
     qm.link_scale() = 0.709;
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = 1e-8;
-    rhf.max_iter = 40;
     qm.set_engine(std::move(rhf));
     qm.build({ctx, f});
-    cpu::LaunchContext lc{ctx, f, 0, 0};
-    lc.forces_requested = false;
-    qm.launch(lc);
     EXPECT_EQ(qm.last_n_links(), 1);
-    EXPECT_TRUE(std::isfinite(f.meta.get(kEnergy)));
-    EXPECT_TRUE(std::isfinite(qm.last_qm_energy()));
 }
 
 TEST(LinkAtom, BothQmBondIsNotALink) {
@@ -154,8 +143,6 @@ TEST(LinkAtom, BothQmBondIsNotALink) {
     cpu::QmmmElectrostatic q{{{1, 1, 0.01, 3.4}}, 10.0, 12.0};
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = 1e-8;
-    rhf.max_iter = 40;
     q.set_engine(std::move(rhf));
     q.build({ctx, f});
     EXPECT_EQ(q.last_n_links(), 0);

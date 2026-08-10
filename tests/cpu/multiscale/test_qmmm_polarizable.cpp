@@ -1,24 +1,19 @@
 /// @file tests/cpu/multiscale/test_qmmm_polarizable.cpp
-/// @brief Unit tests for induced-dipole SCC and QmmmPolarizable.
+/// @brief Unit tests for induced-dipole SCC math.
+///
+/// Full QmmmPolarizable RHF launch energy pin: regressions/multiscale/qmmm_pol_h2o
+/// (e2e-in-tests wave-2).
 #include <cmath>
 #include <gtest/gtest.h>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
-#include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/component/context.h"
-#include "atomiverse/cpu/frame/column.h"
-#include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/multiscale/qm_mask.h"
 #include "atomiverse/cpu/multiscale/qmmm_polarizable.h"
-#include "atomiverse/cpu/scf/methods.h"
 
 using namespace ATV;
 
 TEST(InducedDipole, SingleSiteUniformField) {
-    // μ = α E for one site (no mutual terms).
     const double alpha = 1.5; // Å³
     const double e_perm[3] = {0.2, -0.1, 0.05};
     const double pos[3] = {0, 0, 0};
@@ -38,7 +33,6 @@ TEST(InducedDipole, SingleSiteUniformField) {
 }
 
 TEST(InducedDipole, SccThrowsWhenUnconverged) {
-    // Two close polarizable sites with huge α: force max_iter=1 then throw.
     const double pos[6] = {0, 0, 0, 0.5, 0, 0};
     const double alpha[2] = {50.0, 50.0};
     const double e_perm[6] = {1, 0, 0, -1, 0, 0};
@@ -47,62 +41,3 @@ TEST(InducedDipole, SccThrowsWhenUnconverged) {
                                             /*max_iter=*/1, mu),
                  std::runtime_error);
 }
-
-#ifdef ATV_HAS_HF
-TEST(QmmmPolarizable, PolarizationLowersEnergy) {
-    // H2 QM + one MM site; E(α>0) < E(α=0). Mask on Frame; engine via set_engine.
-    auto energy = [](double alpha) {
-        cpu::Frame f(3);
-        f.span(kAtom_x)[0] = 0;
-        f.span(kAtom_y)[0] = 0;
-        f.span(kAtom_z)[0] = 0;
-        f.span(kAtom_x)[1] = 0.74;
-        f.span(kAtom_y)[1] = 0;
-        f.span(kAtom_z)[1] = 0;
-        f.span(kAtom_x)[2] = 3.0;
-        f.span(kAtom_y)[2] = 0;
-        f.span(kAtom_z)[2] = 0;
-        f.span(kAtom_type)[0] = 1;
-        f.span(kAtom_type)[1] = 1;
-        f.span(kAtom_type)[2] = 18;
-        f.span(kAtom_tag)[0] = 1;
-        f.span(kAtom_tag)[1] = 2;
-        f.span(kAtom_tag)[2] = 3;
-        f.span(kAtom_charge)[0] = 0;
-        f.span(kAtom_charge)[1] = 0;
-        f.span(kAtom_charge)[2] = 0.5; // MM permanent charge for embed field
-        f.box = cpu::Box::cubic(20);
-        f.meta.get(kEnergy) = 0;
-        f.blocks.at("atoms").insert(
-            "qm_z",
-            cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                            kDynamicFieldId});
-        auto qm = f.span(cpu::kAtomQmZ);
-        qm[0] = 1;
-        qm[1] = 1;
-        qm[2] = 0;
-
-        cpu::Context ctx;
-        cpu::QmmmPolarizable pol{{{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 10.0,
-                                 12.0};
-        pol.alpha = alpha;
-        pol.thole_a = 0.39;
-        cpu::scf::RHF rhf;
-        rhf.basis = cpu::scf::BasisSet::STO3G;
-        rhf.tol = 1e-8;
-        rhf.max_iter = 40;
-        pol.set_engine(std::move(rhf));
-        pol.build({ctx, f});
-        cpu::LaunchContext lc{ctx, f, 0, 0};
-        lc.forces_requested = false;
-        pol.launch(lc);
-        return std::make_pair(f.meta.get(kEnergy), pol.last_pol_energy());
-    };
-    const auto [e0, p0] = energy(0.0);
-    const auto [e1, p1] = energy(2.0);
-    EXPECT_TRUE(std::isfinite(e0) && std::isfinite(e1));
-    EXPECT_NEAR(p0, 0.0, 1e-12);
-    EXPECT_LT(p1, 0.0);
-    EXPECT_LT(e1, e0);
-}
-#endif
