@@ -580,6 +580,8 @@ if(ATV_BUILD_GPW)
     # Multi-k RKS with CP2K REL_CUTOFF multigrid product collocation
     # (offline CP2K 2026.1 pin — gpw-multigrid-kpoints).
     atv_add_regression(gpw gpw-multigrid-kpoints THREADS 8)
+    # Portable xsimd pure-s 2-center S/T slab fragment (literature closed form).
+    atv_add_regression(gpw cpu-simd-2center-setup THREADS 1)
     # Multi-k collinear UKS with the same REL_CUTOFF multigrid product path
     # (per-spin Bloch D/V stacks — gpw-uks-multigrid-kpoints).
     atv_add_regression(gpw gpw-uks-multigrid-kpoints THREADS 8)
