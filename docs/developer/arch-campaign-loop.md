@@ -146,3 +146,12 @@ Wipe `build` / `build-*` under parent and every worktree every wave.
   **gaps_remaining=4**, **new_slugs_added=0**. Roadmap arch prose: GPW
   multi-path DIIS landed; freeze remains the CUDA-GPW product gate. No
   product-table ○→✓. Optional `chore(queue)` only. No push.
+- **2026-08-10 Assign wave 6 (parent `dev` @ `9b98b54f`):** staff **3** →
+  `[~]`: resume `arch-pw-driver-paths` (`9edaa157`, ahead=1 behind=5;
+  rebase onto `9b98b54f` before gate) + new
+  `arch-cuda-gpw-public-shape-freeze` (P1) + new `arch-mg-main-structural`
+  (P2; prefer freeze-first if contention). Dep on GPW multi-path DIIS
+  satisfied. **new_assigned=2**, **incomplete_remaining=3**, pending
+  unheld=0, blocked=1 staffable product (`cuda-gpw-full-product`). Lever:
+  MeanFieldMethod + scf/stages + multi-path GPW DIIS + PW fixed-occ (+ tip
+  multi-path PW Ops). No push.

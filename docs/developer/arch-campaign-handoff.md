@@ -4,7 +4,8 @@ Rewrite in place each harness wave.
 
 ## Status
 
-- **Parent:** `dev` @ `9cbdc47b` (post harness wave-5 merge `e34ccf92`)
+- **Parent:** `dev` @ `9b98b54f` (post GapCensus wave-6 chore; harness wave-5
+  merge `e34ccf92`)
 - **Wave-1 done:** e2e-in-tests delete (78 sources); `arch-gpw-driver-node`
 - **Wave-2 done:**
   - `arch-cuda-scf-solver-fold` — no free-loop `SCFSolver`; RHF owns
@@ -27,15 +28,19 @@ Rewrite in place each harness wave.
 - **GapCensus wave 6:** reconfirmed open set; **no new slugs**. Tree facts
   match queue. Roadmap arch prose updated (multi-path DIIS landed; freeze
   remains CUDA-GPW product gate).
-- **Still `[~]`:** `arch-pw-driver-paths` @ `9edaa157` (ahead=1 behind=4;
-  **rebase onto `9cbdc47b`** before gate). Unmerged tip ≠ done.
-- **Pending staffable (unheld):** `arch-cuda-gpw-public-shape-freeze` (P1)
-  + `arch-mg-main-structural` (P2) — dep on GPW multi-path DIIS **satisfied**.
+- **Assign wave 6:** staff **3** → `[~]`:
+  - resume `arch-pw-driver-paths` @ `9edaa157` (ahead=1 behind=5; **rebase
+    onto `9b98b54f`** before gate)
+  - new `arch-cuda-gpw-public-shape-freeze` (P1; dep satisfied)
+  - new `arch-mg-main-structural` (P2; prefer after freeze if contention)
+- **new_assigned=2**, **incomplete_remaining=3**, pending unheld=0, blocked
+  staffable product=1 (`cuda-gpw-full-product` still needs freeze).
 - **Lever:** copy `MeanFieldMethod` + `scf/stages/` + landed multi-path
   GPW DIIS + landed PW fixed-occ stages (+ tip PW multi-path Ops) — do not
-  invent a second SCF shape.
-- **gaps_remaining=4** (1 in_progress + 2 pending + blocked full CUDA GPW
-  product). **new_slugs_added=0**. Queue **not** exhausted.
+  invent a second SCF shape. Freeze is **doc/harness** (public shape =
+  CPU `GpwDft`); MG is structural MAIN path, not soft pins.
+- **gaps_remaining=4** (3 in_progress + blocked full CUDA GPW product).
+  **new_slugs_added=0**. Queue **not** exhausted.
 
 ## Run
 
