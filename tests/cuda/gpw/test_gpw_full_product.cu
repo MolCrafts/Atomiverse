@@ -1,9 +1,9 @@
 /// @file tests/cuda/gpw/test_gpw_full_product.cu
 /// @brief Unit: public `cuda::gpw::GpwDft` shape + fail-closed guards + H2 dual-gate.
 ///
-/// Product slice: Γ RKS DIIS PADE energy (and optional forces), multigrid RKS,
-/// and collinear UKS PADE vs same-settings CPU `GpwDft`. Device path required
-/// for energy dual-gates (GH200).
+/// Product slice: Γ RKS DIIS PADE/PBE energy (and optional forces), multigrid
+/// RKS, and collinear UKS PADE vs same-settings CPU `GpwDft`. Device path
+/// required for energy dual-gates (GH200).
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
@@ -24,6 +24,16 @@ namespace {
 std::vector<ATV::cpu::gpw::GpwAtom> h2_atoms() {
     const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
     const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
+    const double rA[3] = {5.5, 6.0, 6.0};
+    const double rB[3] = {6.5, 6.0, 6.0};
+    return {ATV::cpu::gpw::GpwAtom(rA, basis, pot, 1),
+            ATV::cpu::gpw::GpwAtom(rB, basis, pot, 1)};
+}
+
+// PBE product twin: same geometry + compact basis; GTH-PBE-q1 PP.
+std::vector<ATV::cpu::gpw::GpwAtom> h2_atoms_pbe() {
+    const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto pot = GthPotential(molrs::Element::H, "GTH-PBE-q1");
     const double rA[3] = {5.5, 6.0, 6.0};
     const double rB[3] = {6.5, 6.0, 6.0};
     return {ATV::cpu::gpw::GpwAtom(rA, basis, pot, 1),
@@ -53,6 +63,22 @@ void set_h2_cfg_cuda(ATV::cuda::gpw::GpwDft& m) {
     m.tol = 1e-8;
     m.diis_depth = 6;
     m.xc = XcKind::PADE;
+    m.nonperiodic = false;
+    m.local_pp_on_grid = true;
+    m.use_ot = false;
+    m.ngrids = 1;
+    m.eps_default = 1e-8;
+}
+
+template <typename Method>
+void set_h2_cfg_pbe(Method& m) {
+    m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+    m.cutoff_ry = 80.0;
+    m.n_occ = 1;
+    m.max_iter = 40;
+    m.tol = 1e-8;
+    m.diis_depth = 6;
+    m.xc = XcKind::PBE;
     m.nonperiodic = false;
     m.local_pp_on_grid = true;
     m.use_ot = false;
@@ -141,6 +167,13 @@ TEST(CudaGpwFullProduct, FailClosedUnsupported) {
         set_h2_cfg_cuda(m);
         m.xc = XcKind::BLYP;
         EXPECT_THROW(m.build(atoms), std::invalid_argument);
+    }
+    {
+        // Closed-shell RKS PBE is accepted (cuda-gpw-pbe-product-gate).
+        ATV::cuda::gpw::GpwDft m;
+        set_h2_cfg_cuda(m);
+        m.xc = XcKind::PBE;
+        EXPECT_NO_THROW(m.build(atoms));
     }
     {
         ATV::cuda::gpw::GpwDft m;
@@ -236,6 +269,54 @@ TEST(CudaGpwFullProduct, H2GammaPadeMultigridEnergyDualGate) {
     const double de = std::abs(rg.e_total - rc.e_total);
     EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
                            << " |dE|=" << de;
+}
+
+// Closed-shell H₂ Γ RKS PBE energy dual-gate (product PBE path gated e2e;
+// reuses KsChainDevice PBE stage — needs GPU).
+TEST(CudaGpwFullProduct, H2GammaPbeEnergyDualGate) {
+    auto atoms = h2_atoms_pbe();
+
+    ATV::cpu::gpw::GpwDft cpu;
+    set_h2_cfg_pbe(cpu);
+    cpu.build(atoms);
+    const auto& rc = cpu.run(atoms);
+    ASSERT_TRUE(rc.converged) << "CPU PBE SCF failed iters=" << rc.iters;
+    ASSERT_TRUE(std::isfinite(rc.e_total));
+
+    ATV::cuda::gpw::GpwDft gpu;
+    set_h2_cfg_pbe(gpu);
+    gpu.build(atoms);
+    const auto& rg = gpu.run(atoms);
+    ASSERT_TRUE(rg.converged) << "CUDA PBE SCF failed iters=" << rg.iters;
+    ASSERT_TRUE(std::isfinite(rg.e_total));
+
+    constexpr double kETolHa = 5.0e-6;
+    const double de = std::abs(rg.e_total - rc.e_total);
+    EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
+                           << " |dE|=" << de;
+}
+
+TEST(CudaGpwFullProduct, H2GammaPbeForcesDualGate) {
+    auto atoms = h2_atoms_pbe();
+
+    ATV::cpu::gpw::GpwDft cpu;
+    set_h2_cfg_pbe(cpu);
+    cpu.build(atoms);
+    const auto Fc = ATV::cpu::gpw::gpw_forces_analytic(atoms, cpu);
+    ASSERT_EQ(Fc.size(), 2u);
+
+    ATV::cuda::gpw::GpwDft gpu;
+    set_h2_cfg_pbe(gpu);
+    gpu.build(atoms);
+    const auto Fg = ATV::cuda::gpw::gpw_forces_analytic(atoms, gpu);
+    ASSERT_EQ(Fg.size(), 2u);
+
+    constexpr double kFTol = 5.0e-5; // Ha/Bohr
+    double maxd = 0.0;
+    for (int a = 0; a < 2; ++a)
+        for (int k = 0; k < 3; ++k)
+            maxd = std::max(maxd, std::abs(Fg[a][k] - Fc[a][k]));
+    EXPECT_LT(maxd, kFTol) << "max|dF|=" << maxd;
 }
 
 // High-spin H₂ Γ UKS PADE energy dual-gate (O₂-class collinear UKS path;

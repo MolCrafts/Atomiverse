@@ -611,6 +611,22 @@ if(ATV_BUILD_GPW)
         add_dependencies(regressions run_${_reg_gpw_uks})
         unset(_reg_gpw_uks)
 
+        # Public GpwDft Γ RKS PBE product dual-gate (energy + free-fn forces)
+        # vs same-settings CPU (H2, GTH-PBE-q1). Composes KsChainDevice PBE.
+        set(_reg_gpw_pbe reg_cuda-gpw-pbe-product-gate)
+        add_executable(${_reg_gpw_pbe}
+            gpw/cuda-gpw-pbe-product-gate/${_reg_gpw_pbe}.cu)
+        target_link_libraries(${_reg_gpw_pbe} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_pbe} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_pbe}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_pbe}> --device=both
+            DEPENDS ${_reg_gpw_pbe}
+            COMMENT "regression [gpw/cuda-gpw-pbe-product-gate] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_pbe})
+        unset(_reg_gpw_pbe)
+
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)
