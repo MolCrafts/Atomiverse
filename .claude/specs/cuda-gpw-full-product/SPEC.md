@@ -42,4 +42,7 @@ Stage footholds stay under `cuda/gpw/internal/` — **not** the user API.
 
 ## acceptance_met
 
-`false` until GH200 evidence + dual-gate green + shape freeze still holds.
+**true** — GH200 job **1120312**: `test_cuda_gpw_full_product` PASS;
+`reg_cuda-gpw-full-product` dual-gate \|ΔE\|=**9.992e-15** Ha,
+max\|ΔF\|=**3.610e-08** Ha/Bohr (tols 5e-6 / 5e-5); shape freeze held;
+**perf_exempt** small cell.
