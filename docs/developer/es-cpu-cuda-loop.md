@@ -39,6 +39,17 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-10 GapCensus wave 7 (parent `dev` @ `d83de986`):** Re-diff
+  tree/baseline/notes/roadmap vs base (tips not merged). Fair walls **held**
+  MG MAIN **2.33×**; **cpu_pending=0**. Base product hybrid held (device
+  collocate mid-SCF; forces CPU-backed; PADE H₂ dual-gate only). Three
+  `[~]` P1 tips remain (`device-forces` **1125926**, `multigrid-run`
+  **1125894**, `uks-gamma` **1125905**). Autonomous discovery opens **15**
+  deeper rows (GPW MG/UKS/PBE F·σ joint paths + path×PBE gates; PW
+  closed-shell multi-k F/σ + spin-kmesh-PBE/F/σ) → **pending_count=51**,
+  **in_progress=3**, **gaps_remaining≈55**. Roadmap full GPW CUDA stays
+  **◐** (no ○→✓). Queue **not** exhausted. No push.
+
 - **2026-08-10 harness wave 5 (parent `dev` @ `69296751`):** 1 of staffed
   → done [x]: `cuda-gpw-device-collocate` (device product collocate/integrate
   mid-SCF via `KsChainDevice::run`; merge `69296751` / feat `430a2268`;
