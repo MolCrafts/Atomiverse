@@ -1104,6 +1104,11 @@ if(ATV_BUILD_CUDA)
         atv_add_test(test_cuda_gpw_product_collocate cuda/gpw/test_product_collocate.cu)
         # CUDA GPW product V·shape integrate foothold — vs CPU collint oracle.
         atv_add_test(test_cuda_gpw_product_integrate cuda/gpw/test_product_integrate.cu)
+        # CUDA GPW composed KS chain stage — vs CPU ks_grid_build_rks.
+        atv_add_test(test_cuda_gpw_ks_chain cuda/gpw/test_ks_chain.cu)
+        if(TARGET test_cuda_gpw_ks_chain)
+            target_link_libraries(test_cuda_gpw_ks_chain PRIVATE CUDA::cufft)
+        endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)

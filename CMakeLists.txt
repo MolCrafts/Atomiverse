@@ -523,7 +523,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/frame/transfer.cu
             src/cuda/device/timer.cu
             src/cuda/driver/driver.cu
-            src/cuda/communication/multi_gpu.cu
             src/cuda/observe/stress.cu
             src/cuda/scf/hamiltonian.cu
             src/cuda/scf/eigen_solver.cu
@@ -537,7 +536,10 @@ if(NOT ATV_DOCS_ONLY)
             list(APPEND ATOMIVERSE_SRCS src/cuda/frame/molrs_exchange.cu)
         endif()
         if(ATV_BUILD_MD)
+            # multi_gpu.cu owns multi-rank NVE and links launch_nve_limit_*;
+            # must stay under MD (MD=OFF was a silent link hole vs nve_limit).
             list(APPEND ATOMIVERSE_SRCS
+                src/cuda/communication/multi_gpu.cu
                 src/cuda/dynamics/velocity_verlet.cu
                 src/cuda/dynamics/nve_limit.cu
                 src/cuda/dynamics/fix_langevin.cu
@@ -802,7 +804,8 @@ if(NOT ATV_DOCS_ONLY)
                 message(STATUS "GPW: FFTW3 OpenMP threading enabled (${FFTW3_OMP_LIB})")
             endif()
             # CUDA GPW foothold: Γ-point device Poisson/FFT + Padé LDA XC grid
-            # + product ρ collocate / V·shape integrate (not full method product).
+            # + product ρ collocate / V·shape integrate + composed KS chain
+            # stage (not full method product).
             # Gated on CUDA so OFF builds exclude sources entirely (iron law 8).
             if(ATV_BUILD_CUDA)
                 target_sources(atomiverse PRIVATE
@@ -810,9 +813,10 @@ if(NOT ATV_DOCS_ONLY)
                     src/cuda/gpw/internal/xc_lda.cu
                     src/cuda/gpw/internal/product_collocate.cu
                     src/cuda/gpw/internal/product_integrate.cu
+                    src/cuda/gpw/internal/ks_chain.cu
                 )
                 target_link_libraries(atomiverse PUBLIC CUDA::cufft)
-                message(STATUS "GPW: CUDA Γ Poisson + Padé LDA XC + ρ collocate/integrate foothold enabled")
+                message(STATUS "GPW: CUDA Γ Poisson + Padé LDA XC + ρ collocate/integrate + KS chain enabled")
             endif()
         endif()
         # vdW-DF kernel tables ship zlib-compressed (float32); inflate at first use.

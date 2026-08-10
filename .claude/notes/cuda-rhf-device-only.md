@@ -63,6 +63,7 @@ Grok CUDA skills (not ad-hoc style):
 | Padé LDA XC grid foothold | **landed** (`cuda-gpw-xc-lda-foothold`) | `src/cuda/gpw/internal/xc_lda.{cu,cuh}`; `test_cuda_gpw_xc_lda` vs `cpu::xc::pade_lsd`; per-point ~1e-12, E ~1e-10 rel; **not** full GPW product |
 | product ρ collocate foothold | **landed** (`cuda-gpw-rho-collocate-foothold`) | `src/cuda/gpw/internal/product_collocate.{cu,cuh}`; `test_cuda_gpw_product_collocate` vs continuous host + `collint_collocate_product`; s/p + multi-s–s; **not** full GPW product |
 | product V·shape integrate foothold | **landed** (`cuda-gpw-product-integrate-foothold`) | `src/cuda/gpw/internal/product_integrate.{cu,cuh}`; reuses `DeviceProduct`/`CollocateGridDesc`; `test_cuda_gpw_product_integrate` vs continuous host + `collint_integrate_product`; s/p + multi-s–s; **not** full GPW product |
+| composed KS ρ→V_eff stage unit | **landed** (`cuda-gpw-ks-chain`) | `src/cuda/gpw/internal/ks_chain.{cu,cuh}` reuses collocate/Poisson/XC/integrate; `test_cuda_gpw_ks_chain` + dual-gate reg vs `ks_grid_build_rks`; GH200 **1049858**; **not** full GPW product |
 | **PW method slice** | **landed** (`cuda-pw-method-slice`) | `cuda::pw::PW` method object (`cuda/planewave/pw_solver.{cuh,cu}`) + `internal::DeviceDensity` — density side (ρ(G)→V_H→V_xc→V_eff(r)→Pulay→reductions) device-resident. See below. |
 
 ### CUDA PW slice — envelope and evidence
