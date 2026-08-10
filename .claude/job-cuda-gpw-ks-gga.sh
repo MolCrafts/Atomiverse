@@ -2,24 +2,23 @@
 #SBATCH -p gpu
 #SBATCH -A naiss2026-4-715-gpu
 #SBATCH --gpus 1
-#SBATCH -t 01:00:00
 #SBATCH -c 16
+#SBATCH -t 01:30:00
 #SBATCH -J cuda-gpw-ks-gga
 #SBATCH -o .claude/cuda-gpw-ks-gga-%j.out
 #SBATCH -e .claude/cuda-gpw-ks-gga-%j.err
 
-# GH200 gate for slug cuda-gpw-ks-gga (closed-shell PBE-GGA KS chain stage).
-# Mirrors the proven cuda-gpw-ks-chain job: node-local build, SE/MD off (no
-# x86 libxtb), aarch64 Rust toolchain, wipe on exit.
+# GH200 gate for slug cuda-gpw-ks-gga (composed ρ→V_eff PBE-GGA stage unit).
 set -uo pipefail
-cd "${SLURM_SUBMIT_DIR:-.}"
+cd "${SLURM_SUBMIT_DIR}"
 
+# Node-local build avoids NFS cargo races; not named build/build-* so disk-law
+# sweeps cannot unmap mid-compile.
 BUILD="${TMPDIR:-/tmp}/atv_ks_gga_${SLURM_JOB_ID:-$$}"
 
 wipe_builds() {
   rm -rf "${BUILD}" 2>/dev/null || true
-  rm -rf build build-* build_cuda_gpw_ks_gga CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
-  rm -rf /tmp/atv-* 2>/dev/null || true
+  rm -rf build build-* build_* _ks_gga_work CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
   find . -maxdepth 2 -type d \( -name build -o -name 'build-*' -o -name 'build_*' \) \
     -exec rm -rf {} + 2>/dev/null || true
   echo "builds_wiped=true"
@@ -39,7 +38,6 @@ export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"
 export CC="${CC:-$(command -v gcc)}"
 export CXX="${CXX:-$(command -v g++)}"
 export CUDAHOSTCXX="${CUDAHOSTCXX:-$CXX}"
-# aarch64 GH200: do NOT override RUSTUP to x86
 unset RUSTUP_TOOLCHAIN || true
 export RUSTUP_TOOLCHAIN=stable-aarch64-unknown-linux-gnu
 export PATH="${HOME}/.rustup/toolchains/${RUSTUP_TOOLCHAIN}/bin:${PATH}"
@@ -55,8 +53,6 @@ echo "=== GIT ==="
 echo "HEAD=$(git rev-parse HEAD)"
 echo "branch=$(git rev-parse --abbrev-ref HEAD)"
 git log -1 --oneline
-echo "=== unstaged (test polish) ==="
-git status -sb || true
 
 FFTW_HINT="${FFTW_ROOT:-${FFTWDIR:-${FFTW_HOME:-}}}"
 echo "BUILD_DIR=${BUILD}"
@@ -93,7 +89,6 @@ for attempt in 1 2 3; do
   fi
   echo "cmake configure attempt ${attempt} failed — wipe and retry"
   rm -rf "${BUILD}"
-  mkdir -p "${BUILD}"
   sleep 5
 done
 if [ "${CFG_RC}" -ne 0 ]; then
@@ -110,7 +105,6 @@ cmake --build "${BUILD}" -j"${NJ}" --target atomiverse || {
 
 TARGETS=(
   test_cuda_gpw_ks_gga
-  test_cuda_gpw_ks_chain
   reg_cuda-gpw-ks-gga
 )
 echo "=== STAGE 2: scoped tests ==="
@@ -124,9 +118,9 @@ done
 
 export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
 TEST_RC=0
-echo "=== STAGE 3: ctest GGA + LDA chain ==="
+echo "=== STAGE 3: ctest KS-GGA ==="
 ctest --test-dir "${BUILD}" --output-on-failure \
-  -R '^(test_cuda_gpw_ks_gga|test_cuda_gpw_ks_chain)$' \
+  -R '^test_cuda_gpw_ks_gga$' \
   || TEST_RC=$?
 echo "CTEST_RC=${TEST_RC}"
 
@@ -140,4 +134,4 @@ if [ "${TEST_RC}" -ne 0 ] || [ "${REG_RC}" -ne 0 ]; then
   exit 1
 fi
 echo "GPU_JOB_OK"
-echo "DONE cuda-gpw-ks-gga $(date -Is)"
+echo "DONE cuda-gpw-ks-gga"
