@@ -73,12 +73,13 @@ void PW::validate_members() const {
             "cuda::pw::PW::run: xc has no device path — only XCType::LSDA "
             "(Slater + VWN5) and XCType::PBE are implemented on the GPU. Set "
             "pw.xc to one of those, or run this functional on cpu::pw::PW.");
-    // Collinear UKS on device is LSDA-only (spin-GGA not landed).
-    if (spin_polarized && xc != cpu::scf::XCType::LSDA)
+    // Collinear UKS: LSDA and true spin-GGA PBE are landed; other XC throw.
+    if (spin_polarized && xc != cpu::scf::XCType::LSDA
+        && xc != cpu::scf::XCType::PBE)
         throw std::invalid_argument(
-            "cuda::pw::PW::run: spin_polarized requires XCType::LSDA on the "
-            "device path — collinear spin-GGA (PBE) is not implemented on "
-            "CUDA. Set pw.xc = LSDA, or use cpu::pw::PW for spin-PBE.");
+            "cuda::pw::PW::run: spin_polarized supports XCType::LSDA and "
+            "XCType::PBE only on the device path — set pw.xc to one of those, "
+            "or use cpu::pw::PW for other spin functionals.");
     if (spin_polarized && multiplicity < 1)
         throw std::invalid_argument(
             "cuda::pw::PW::run: multiplicity must be >= 1 when "

@@ -92,10 +92,10 @@ class DeviceDensity {
     /// @param xc          Functional `exchange_correlation()` evaluates. Only
     ///                    `XCType::LSDA` and `XCType::PBE` have device
     ///                    kernels; anything else throws (no fallback).
-    /// @param spin_polarized Collinear UKS (nspin=2). Requires `XCType::LSDA`
-    ///                    on the device path (spin-GGA not landed); seeds
-    ///                    ρ_↑/ρ_↓ from the atomic total density with
-    ///                    fractions n_alpha/n_elec and n_beta/n_elec.
+    /// @param spin_polarized Collinear UKS (nspin=2). Supports `XCType::LSDA`
+    ///                    and `XCType::PBE` (true spin-GGA); seeds ρ_↑/ρ_↓
+    ///                    from the atomic total density with fractions
+    ///                    n_alpha/n_elec and n_beta/n_elec.
     /// @param n_alpha     Occupied ↑ bands (spin path only; may be 0).
     /// @param n_beta      Occupied ↓ bands (spin path only; may be 0).
     /// @param n_elec      Valence electron count used for the spin seed.
@@ -125,9 +125,10 @@ class DeviceDensity {
     ///        Restricted path only — collinear uses `exchange_correlation_spin`.
     void exchange_correlation();
 
-    /// @brief Collinear LSDA: ρ_σ(G)→ρ_σ(r), V_xc^σ / ε_xc / E_xc /
+    /// @brief Collinear spin XC: ρ_σ(G)→ρ_σ(r), V_xc^σ / ε_xc / E_xc /
     ///        e_xc_int_spin, then V_xc_σ(G). Mirrors `XCBuilder::step_spin`
-    ///        for `XCType::LSDA` (no spin-GGA).
+    ///        for `XCType::LSDA` and true spin-GGA `XCType::PBE` (spectral
+    ///        ∇ρ_σ + flux divergence).
     void exchange_correlation_spin();
 
     /// @brief V_eff(G) = V_loc + V_H + V_xc, then the UNNORMALIZED c2r to
@@ -304,15 +305,21 @@ class DeviceDensity {
     double* d_V_eff_r_ = nullptr;
 
     // GGA-only scratch (allocated only when is_gga(xc_); else null).
+    // Restricted PBE uses the α (unsigned) set only; collinear spin-GGA
+    // also allocates the β (dn) gradients / div.
     double* d_gx_ = nullptr; ///< Cartesian G_x per sphere entry [1/Bohr].
     double* d_gy_ = nullptr; ///< Cartesian G_y per sphere entry [1/Bohr].
     double* d_gz_ = nullptr; ///< Cartesian G_z per sphere entry [1/Bohr].
     cufftDoubleComplex* d_sph_ = nullptr; ///< ng0_ G-sphere staging
                                           ///< (i·G_d·ρ and flux_d(G)).
-    double* d_grad_x_r_ = nullptr; ///< ∂ρ/∂x, overwritten with flux_x.
-    double* d_grad_y_r_ = nullptr; ///< ∂ρ/∂y, overwritten with flux_y.
-    double* d_grad_z_r_ = nullptr; ///< ∂ρ/∂z, overwritten with flux_z.
-    double* d_div_r_ = nullptr;    ///< ∇·flux on the real grid.
+    double* d_grad_x_r_ = nullptr; ///< ∂ρ/∂x or ∂ρ_α/∂x → flux.
+    double* d_grad_y_r_ = nullptr;
+    double* d_grad_z_r_ = nullptr;
+    double* d_div_r_ = nullptr; ///< ∇·flux (restricted or α).
+    double* d_grad_dn_x_r_ = nullptr; ///< ∂ρ_β/∂x → flux_β (spin-GGA).
+    double* d_grad_dn_y_r_ = nullptr;
+    double* d_grad_dn_z_r_ = nullptr;
+    double* d_div_dn_r_ = nullptr; ///< ∇·flux_β (spin-GGA).
 
     // Reduction scratch and outputs
     double* d_partials_ = nullptr;    ///< 4 × kReduceBlocks stage-1 partials.

@@ -260,6 +260,23 @@ if(ATV_BUILD_PW)
         add_dependencies(regressions run_${_reg_pw_spin})
         unset(_reg_pw_spin)
 
+        # Collinear spin-GGA PBE (O2 triplet) dual-gate.
+        set(_reg_pw_spin_pbe reg_cuda-pw-spin-pbe)
+        add_executable(${_reg_pw_spin_pbe}
+            pw/cuda-pw-spin-pbe/${_reg_pw_spin_pbe}.cu)
+        target_link_libraries(${_reg_pw_spin_pbe} PRIVATE atomiverse)
+        set_target_properties(${_reg_pw_spin_pbe} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        target_compile_definitions(${_reg_pw_spin_pbe} PRIVATE
+            ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+        add_custom_target(run_${_reg_pw_spin_pbe}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_pw_spin_pbe}> --device=both
+            DEPENDS ${_reg_pw_spin_pbe}
+            COMMENT "regression [pw/cuda-pw-spin-pbe] devices=both PBE (1t)")
+        add_dependencies(regressions run_${_reg_pw_spin_pbe})
+        unset(_reg_pw_spin_pbe)
+
         # Restricted Fermi–Dirac metallic smear (FCC Al) dual-gate.
         set(_reg_pw_smear reg_cuda-pw-metallic-smear)
         add_executable(${_reg_pw_smear}

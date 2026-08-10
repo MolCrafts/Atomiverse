@@ -12,8 +12,8 @@
 /// restricted (nspin = 1) with fixed closed-shell occupations **or**
 /// metallic smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton) and
 /// `XCType::LSDA` / `XCType::PBE`; collinear fixed-occupation UKS
-/// (`spin_polarized`, integer multiplicity) with **`XCType::LSDA` only**
-/// (collinear spin-GGA / spin+smear stay on `cpu::pw::PW`).
+/// (`spin_polarized`, integer multiplicity) with **`XCType::LSDA` or
+/// `XCType::PBE`** (spin+smear and spin forces/stress stay on `cpu::pw::PW`).
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -90,7 +90,7 @@ class PW {
     /// constants the device kernel does not carry.
     cpu::scf::XCType xc = cpu::scf::XCType::PBE;
     /// @brief Collinear spin-polarized KS (fixed occupations). Device path
-    ///        is LSDA only — `true` with `XCType::PBE` throws.
+    ///        supports `XCType::LSDA` and true spin-GGA `XCType::PBE`.
     bool spin_polarized = false;
     /// @brief Spin multiplicity 2S+1. With `spin_polarized`, sets
     ///        N↑ − N↓ = multiplicity − 1. Without spin, must stay 1.
@@ -138,7 +138,7 @@ class PW {
     /// @param frame Atom positions [Å], types (Z), and simulation cell.
     /// @return Owned `PWResult` (valid until the next `run()`).
     /// @throws std::invalid_argument for an `xc` other than `XCType::LSDA` /
-    ///         `XCType::PBE`, collinear spin with non-LSDA XC, multiplicity
+    ///         `XCType::PBE`, collinear spin with non-LSDA/PBE XC, multiplicity
     ///         without spin, spin+smear, `degauss ≤ 0` with smear, non-positive
     ///         `tol`/`mix_beta`, `pulay_depth < 1`, `max_iter < 1`,
     ///         incompatible n_elec/multiplicity parity, or (restricted fixed

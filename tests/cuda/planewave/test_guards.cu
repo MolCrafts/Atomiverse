@@ -80,11 +80,12 @@ TEST(CudaPWGuards, PbeFamilyVariantsThrow) {
     }
 }
 
-TEST(CudaPWGuards, SpinPolarizedWithPbeThrows) {
-    // Collinear UKS on device is LSDA-only; PBE spin-GGA stays on CPU.
+TEST(CudaPWGuards, SpinPolarizedWithPbesolThrows) {
+    // Collinear spin-GGA on device is plain PBE only; PBEsol/revPBE/RPBE
+    // hard-wire different μ/κ/β and must still throw under spin.
     auto frame = make_h_atom();
     auto pw = make_supported();
-    pw.xc = cpu::scf::XCType::PBE;
+    pw.xc = cpu::scf::XCType::PBEsol;
     pw.spin_polarized = true;
     pw.multiplicity = 2; // H: n_elec=1 → N↑=1, N↓=0
     EXPECT_THROW(pw.run(frame), std::invalid_argument);

@@ -271,6 +271,310 @@ void xc_pbe_grid(const double* d_rho_r, double* d_gx_r, double* d_gy_r,
         d_rho_r, d_gx_r, d_gy_r, d_gz_r, d_vxc_r, d_exc_r, nr);
 }
 
+// ── Collinear spin-GGA PBE ────────────────────────────────────────────────
+// Full PW92 + PBE-H with ζ ≠ 0, transcribed from
+// src/cpu/scf/xc_functional.cpp (pw92_correlation + pbe_correlation +
+// evaluate_xc PBE branch) and the flux assembly of XCBuilder::step_spin.
+
+// PW92 ferromagnetic and spin-stiffness rows (paramagnetic already above).
+__device__ constexpr double kPwF_A = 0.01554535;
+__device__ constexpr double kPwF_Alpha1 = 0.20548;
+__device__ constexpr double kPwF_Beta1 = 14.1189;
+__device__ constexpr double kPwF_Beta2 = 6.1977;
+__device__ constexpr double kPwF_Beta3 = 3.3662;
+__device__ constexpr double kPwF_Beta4 = 0.62517;
+
+__device__ constexpr double kPwA_A = 0.0168869;
+__device__ constexpr double kPwA_Alpha1 = 0.11125;
+__device__ constexpr double kPwA_Beta1 = 10.357;
+__device__ constexpr double kPwA_Beta2 = 3.6231;
+__device__ constexpr double kPwA_Beta3 = 0.88026;
+__device__ constexpr double kPwA_Beta4 = 0.49671;
+
+// f''(0) = 4 / (9 (2^{1/3} − 1)) — same expression as the CPU
+// `kFppZero` (evaluated at runtime on both sides; not a magic literal).
+__device__ __forceinline__ double kFppZero() {
+    return 4.0 / (9.0 * (pow(2.0, 1.0 / 3.0) - 1.0));
+}
+
+__device__ __forceinline__ void pw92_G_row(double rs, double A, double alpha1,
+                                           double b1, double b2, double b3,
+                                           double b4, double& G,
+                                           double& dG_drs) {
+    const double sqrt_rs = sqrt(rs);
+    const double rs_3_2 = rs * sqrt_rs;
+    const double rs_p1 = rs * rs; // p = 1 → rs^{p+1} = rs²
+    const double rs_p = rs;
+
+    const double q1 =
+        2.0 * A * (b1 * sqrt_rs + b2 * rs + b3 * rs_3_2 + b4 * rs_p1);
+    const double dq1_drs =
+        2.0 * A
+        * (0.5 * b1 / sqrt_rs + b2 + 1.5 * b3 * sqrt_rs + 2.0 * b4 * rs_p);
+
+    const double q2 = log(1.0 + 1.0 / q1);
+    const double dq2_drs = -dq1_drs / (q1 * (q1 + 1.0));
+
+    const double prefactor = 1.0 + alpha1 * rs;
+    G = -2.0 * A * prefactor * q2;
+    dG_drs = -2.0 * A * (alpha1 * q2 + prefactor * dq2_drs);
+}
+
+__device__ __forceinline__ double spin_f_zeta(double zeta) {
+    const double denom = 2.0 * (pow(2.0, 1.0 / 3.0) - 1.0);
+    return (pow(1.0 + zeta, 4.0 / 3.0) + pow(1.0 - zeta, 4.0 / 3.0) - 2.0)
+           / denom;
+}
+
+__device__ __forceinline__ double spin_df_zeta(double zeta) {
+    const double denom = 2.0 * (pow(2.0, 1.0 / 3.0) - 1.0);
+    return (4.0 / 3.0)
+           * (pow(1.0 + zeta, 1.0 / 3.0) - pow(1.0 - zeta, 1.0 / 3.0))
+           / denom;
+}
+
+/// Full spin PW92 correlation — `pw92_correlation` on the CPU.
+__device__ __forceinline__ void pw92_correlation_spin(double rho_a,
+                                                       double rho_b,
+                                                       double& ec, double& vc_a,
+                                                       double& vc_b) {
+    rho_a = fmax(rho_a, kSpinDensMin);
+    rho_b = fmax(rho_b, kSpinDensMin);
+    const double rho = rho_a + rho_b;
+    const double rs = pow(3.0 / (4.0 * kPi * rho), 1.0 / 3.0);
+    const double zeta = (rho_a - rho_b) / rho;
+
+    double ecP, ecF, ac, decP_drs, decF_drs, dac_drs;
+    pw92_G_row(rs, kPwA, kPwAlpha1, kPwBeta1, kPwBeta2, kPwBeta3, kPwBeta4,
+               ecP, decP_drs);
+    pw92_G_row(rs, kPwF_A, kPwF_Alpha1, kPwF_Beta1, kPwF_Beta2, kPwF_Beta3,
+               kPwF_Beta4, ecF, decF_drs);
+    pw92_G_row(rs, kPwA_A, kPwA_Alpha1, kPwA_Beta1, kPwA_Beta2, kPwA_Beta3,
+               kPwA_Beta4, ac, dac_drs);
+    // Stiffness row stores −α_c; negate.
+    ac = -ac;
+    dac_drs = -dac_drs;
+
+    const double fz = spin_f_zeta(zeta);
+    const double z4 = zeta * zeta * zeta * zeta;
+
+    const double fpp0 = kFppZero();
+    ec = ecP + ac * fz / fpp0 * (1.0 - z4) + (ecF - ecP) * fz * z4;
+
+    const double dec_drs = decP_drs + dac_drs * fz / fpp0 * (1.0 - z4)
+                           + (decF_drs - decP_drs) * fz * z4;
+
+    const double dfz = spin_df_zeta(zeta);
+    const double dz4 = 4.0 * zeta * zeta * zeta;
+    const double dec_dz = ac / fpp0 * (dfz * (1.0 - z4) - fz * dz4)
+                          + (ecF - ecP) * (dfz * z4 + fz * dz4);
+
+    const double rs3_dec = (rs / 3.0) * dec_drs;
+    vc_a = ec - rs3_dec - (zeta - 1.0) * dec_dz;
+    vc_b = ec - rs3_dec - (zeta + 1.0) * dec_dz;
+}
+
+/// Full PBE H gradient correction — `pbe_correlation` on the CPU.
+__device__ __forceinline__ void
+pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
+                     double vc_lda_b, double sigma_aa, double sigma_ab,
+                     double sigma_bb, double& ec_pbe, double& vc_a, double& vc_b,
+                     double& vsigma_aa, double& vsigma_ab, double& vsigma_bb) {
+    const double rho = rho_a + rho_b;
+    double zeta = (rho_a - rho_b) / rho;
+    zeta = fmax(-1.0 + 1e-14, fmin(1.0 - 1e-14, zeta));
+
+    const double phi =
+        0.5 * (pow(1.0 + zeta, 2.0 / 3.0) + pow(1.0 - zeta, 2.0 / 3.0));
+    const double phi3 = phi * phi * phi;
+
+    const double kF = pow(3.0 * kPi * kPi * rho, 1.0 / 3.0);
+    const double ks = sqrt(4.0 * kF / kPi);
+
+    const double sigma_total = sigma_aa + 2.0 * sigma_ab + sigma_bb;
+    const double grad_rho = sqrt(fmax(sigma_total, 0.0));
+    const double t = grad_rho / (2.0 * phi * ks * rho);
+    const double t2 = t * t;
+
+    const double exp_arg = -ec_lda / (kGamma * phi3);
+    const double exp_val = exp(exp_arg);
+    const double A = (kBeta / kGamma) / (exp_val - 1.0);
+
+    const double At2 = A * t2;
+    const double numer = 1.0 + At2;
+    const double denom = 1.0 + At2 + A * A * t2 * t2;
+    const double ratio = (kBeta / kGamma) * t2 * numer / denom;
+    const double H = kGamma * phi3 * log(1.0 + ratio);
+
+    ec_pbe = ec_lda + H;
+
+    const double u = At2;
+    const double one_u = 1.0 + u;
+    const double one_u_u2 = 1.0 + u + u * u;
+    const double d_frac_du =
+        (1.0 * one_u_u2 - one_u * (1.0 + 2.0 * u)) / (one_u_u2 * one_u_u2);
+
+    const double dratio_dt2 =
+        (kBeta / kGamma) * (one_u / one_u_u2 + t2 * A * d_frac_du);
+    const double dH_dt2 = kGamma * phi3 / (1.0 + ratio) * dratio_dt2;
+
+    const double dt2_dsigma = 1.0 / (4.0 * phi * phi * ks * ks * rho * rho);
+    const double dH_dsigma_total = dH_dt2 * dt2_dsigma;
+
+    vsigma_aa = rho * dH_dsigma_total;
+    vsigma_ab = 2.0 * rho * dH_dsigma_total;
+    vsigma_bb = rho * dH_dsigma_total;
+
+    constexpr double kZetaThreshold = 2.2204460492503131e-16;
+    const double za = 1.0 + zeta;
+    const double zb = 1.0 - zeta;
+
+    double dphi_drho_a, dphi_drho_b;
+    {
+        const double term_a_da =
+            (za > kZetaThreshold)
+                ? (1.0 / 3.0) * pow(za, -1.0 / 3.0) * zb / rho
+                : 0.0;
+        const double term_b_da =
+            (zb > kZetaThreshold) ? -(1.0 / 3.0) * pow(zb, 2.0 / 3.0) / rho
+                                  : 0.0;
+        dphi_drho_a = term_a_da + term_b_da;
+
+        const double term_a_db =
+            (za > kZetaThreshold) ? -(1.0 / 3.0) * pow(za, 2.0 / 3.0) / rho
+                                  : 0.0;
+        const double term_b_db =
+            (zb > kZetaThreshold)
+                ? (1.0 / 3.0) * pow(zb, -1.0 / 3.0) * za / rho
+                : 0.0;
+        dphi_drho_b = term_a_db + term_b_db;
+    }
+
+    const double dt2_drho = -(7.0 / 3.0) * t2 / rho;
+    const double dt2_dphi = -2.0 * t2 / phi;
+
+    const double dA_dfactor = A * A * exp_val / (kBeta / kGamma);
+    const double dA_dec_lda = dA_dfactor / (kGamma * phi3);
+    const double dA_dphi =
+        dA_dfactor * (-3.0 * ec_lda / (kGamma * phi3 * phi));
+
+    const double dec_lda_drho_a = (vc_lda_a - ec_lda) / rho;
+    const double dec_lda_drho_b = (vc_lda_b - ec_lda) / rho;
+
+    const double d_frac_dA = -t2 * u * (2.0 + u) / (one_u_u2 * one_u_u2);
+    const double dratio_dA = (kBeta / kGamma) * t2 * d_frac_dA;
+    const double dH_dA = kGamma * phi3 / (1.0 + ratio) * dratio_dA;
+
+    const double dH_dphi_explicit =
+        3.0 * kGamma * phi * phi * log(1.0 + ratio);
+    const double dH_dphi_implicit = dH_dt2 * dt2_dphi;
+    const double dH_dphi_A = dH_dA * dA_dphi;
+    const double dH_dphi_total =
+        dH_dphi_explicit + dH_dphi_implicit + dH_dphi_A;
+
+    const double dH_drho_a =
+        dH_dt2 * dt2_drho + dH_dA * (dA_dec_lda * dec_lda_drho_a)
+        + dH_dphi_total * dphi_drho_a;
+    const double dH_drho_b =
+        dH_dt2 * dt2_drho + dH_dA * (dA_dec_lda * dec_lda_drho_b)
+        + dH_dphi_total * dphi_drho_b;
+
+    vc_a = vc_lda_a + H + rho * dH_drho_a;
+    vc_b = vc_lda_b + H + rho * dH_drho_b;
+}
+
+__global__ void
+xc_pbe_spin_kernel(const double* __restrict__ rho_a,
+                   const double* __restrict__ rho_b, double* __restrict__ gax,
+                   double* __restrict__ gay, double* __restrict__ gaz,
+                   double* __restrict__ gbx, double* __restrict__ gby,
+                   double* __restrict__ gbz, double* __restrict__ vxc_a,
+                   double* __restrict__ vxc_b, double* __restrict__ exc_r,
+                   int nr) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= nr)
+        return;
+
+    // Floor negatives from FFT ringing (CPU step_spin).
+    double ra = rho_a[i];
+    double rb = rho_b[i];
+    if (ra < 0.0)
+        ra = 0.0;
+    if (rb < 0.0)
+        rb = 0.0;
+    const double rtot = ra + rb;
+    if (rtot < kRhoMin) {
+        vxc_a[i] = 0.0;
+        vxc_b[i] = 0.0;
+        exc_r[i] = 0.0;
+        gax[i] = gay[i] = gaz[i] = 0.0;
+        gbx[i] = gby[i] = gbz[i] = 0.0;
+        return;
+    }
+
+    const double gax_i = gax[i];
+    const double gay_i = gay[i];
+    const double gaz_i = gaz[i];
+    const double gbx_i = gbx[i];
+    const double gby_i = gby[i];
+    const double gbz_i = gbz[i];
+
+    double saa = gax_i * gax_i + gay_i * gay_i + gaz_i * gaz_i;
+    double sbb = gbx_i * gbx_i + gby_i * gby_i + gbz_i * gbz_i;
+    double sab = gax_i * gbx_i + gay_i * gby_i + gaz_i * gbz_i;
+    saa = fmax(saa, 0.0);
+    sbb = fmax(sbb, 0.0);
+    const double s_ave = 0.5 * (saa + sbb);
+    sab = fmin(fmax(sab, -s_ave), +s_ave);
+
+    // PBE exchange per spin (per volume).
+    double ex_a, vrho_x_a, vsig_x_aa;
+    double ex_b, vrho_x_b, vsig_x_bb;
+    pbe_exchange_spin(ra, saa, ex_a, vrho_x_a, vsig_x_aa);
+    pbe_exchange_spin(rb, sbb, ex_b, vrho_x_b, vsig_x_bb);
+    const double ex_pbe = (ex_a + ex_b) / rtot;
+
+    // PW92 LSDA base + PBE H (full ζ).
+    double ec_lda, vc_lda_a, vc_lda_b;
+    pw92_correlation_spin(ra, rb, ec_lda, vc_lda_a, vc_lda_b);
+
+    double ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab, vsig_c_bb;
+    pbe_correlation_spin(ra, rb, ec_lda, vc_lda_a, vc_lda_b, saa, sab, sbb,
+                         ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab,
+                         vsig_c_bb);
+
+    exc_r[i] = ex_pbe + ec_pbe;
+    vxc_a[i] = vrho_x_a + vc_pbe_a;
+    vxc_b[i] = vrho_x_b + vc_pbe_b;
+
+    // flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β  (exchange contributes only to aa/bb)
+    const double v_aa = vsig_x_aa + vsig_c_aa;
+    const double v_bb = vsig_x_bb + vsig_c_bb;
+    const double v_ab = vsig_c_ab;
+    const double caa = 2.0 * v_aa;
+    const double cbb = 2.0 * v_bb;
+    const double cab = v_ab;
+    gax[i] = caa * gax_i + cab * gbx_i;
+    gay[i] = caa * gay_i + cab * gby_i;
+    gaz[i] = caa * gaz_i + cab * gbz_i;
+    gbx[i] = cbb * gbx_i + cab * gax_i;
+    gby[i] = cbb * gby_i + cab * gay_i;
+    gbz[i] = cbb * gbz_i + cab * gaz_i;
+}
+
+void xc_pbe_spin_grid(const double* d_rho_a, const double* d_rho_b,
+                      double* d_gax_r, double* d_gay_r, double* d_gaz_r,
+                      double* d_gbx_r, double* d_gby_r, double* d_gbz_r,
+                      double* d_vxc_a, double* d_vxc_b, double* d_exc_r,
+                      int nr, cudaStream_t stream) {
+    if (nr <= 0)
+        return;
+    xc_pbe_spin_kernel<<<::ATV::cuda::grid_size(nr, kBlock), kBlock, 0,
+                         stream>>>(d_rho_a, d_rho_b, d_gax_r, d_gay_r, d_gaz_r,
+                                   d_gbx_r, d_gby_r, d_gbz_r, d_vxc_a, d_vxc_b,
+                                   d_exc_r, nr);
+}
+
 } // namespace internal
 } // namespace pw
 } // namespace cuda
