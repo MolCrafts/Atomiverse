@@ -72,12 +72,12 @@ staffed.
 
 ## Unlock condition for `cuda-gpw-full-product`
 
-| Gate | State on `dev` @ `a6049f4f` |
+| Gate | State on `dev` @ `9c331b9d` |
 | --- | --- |
 | Multi-path DIIS CPU Driver | **green** (`arch-gpw-driver-paths`) |
 | Public-shape freeze | **green** (this note; merge `0147fe02`) |
 | Stage footholds composed | **green** (ks-chain / GGA / MG units) |
-| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate; depth residual (device collocate/forces, MG, UKS, multi-k, stress) stays on es-cpu-cuda queue |
+| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); depth residual (device collocate/forces, PBE product gate, MG, UKS, multi-k, stress, product stream) stays on es-cpu-cuda queue |
 
 `cuda-gpw-full-product` is no longer blocked on “needs architecture freeze”.
 It remains a product implementation slug (compose internals → public method),

@@ -453,10 +453,15 @@ Two periodic DFT engines exist, with disjoint strengths:
   spin-PBE / spin forces / spin stress still reject), and **restricted
   metallic smear** energy (FD/Gaussian/MP + `extra_bands` + Mermin free
   energy; spin+smear / smear forces / smear stress still reject); large-cell
-  wall evidence on Si supercells — see es-cpu-cuda queue. **No CUDA GPW
-  method product** (stage footholds only under `cuda/gpw/internal/`;
-  multi-path DIIS CPU Driver + public-shape freeze **green** — product is
-  staffable as `cuda-gpw-full-product`, not auto-landed).
+  wall evidence on Si supercells — see es-cpu-cuda queue. **CUDA GPW first
+  product slice landed:** public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE,
+  single-grid periodic; hybrid host STVnl/cbg collocate/integrate/DIIS +
+  device `KsChainDevice` KS; free-fn forces still **CPU-backed**; GH200 dual-gate
+  **1120817**). Depth residual on es-cpu-cuda queue (device collocate/forces,
+  MG run, UKS, multi-k, stress, PBE product dual-gate, product stream) —
+  table CUDA for full GPW remains **◐** not ✓. Stage units under
+  `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape freeze
+  **green**.
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
   **multi-path DIIS** (Γ RKS/UKS + multi-k RKS/UKS landed; OT free-loop
   residual is same-capability follow-on, not a new slug). `cpu::pw::PW` is
@@ -567,12 +572,12 @@ Two periodic DFT engines exist, with disjoint strengths:
 
 | Method                           | CPU | CUDA | Kokkos |
 | -------------------------------- | :-: | :--: | :---: |
-| Γ-point periodic RKS             |  ✓  |   ○  |   ○  |
+| Γ-point periodic RKS             |  ✓  |   ◐  |   ○  |
 | k-point periodic RKS             |  ✓  |   ✓  |   ○  |
 | Γ-point periodic UKS             |  ✓  |   ○  |   ○  |
 | k-point periodic UKS             |  ✓  |   ○  |   ○  |
 | Plane-wave DFT                   |  ✓  |   ✓  |   ○  |
-| Gaussian and plane-wave DFT, GPW |  ✓  |   ○  |   ○  |
+| Gaussian and plane-wave DFT, GPW |  ✓  |   ◐  |   ○  |
 | GAPW DFT                         |  ○  |   ○  |   ○  |
 | Periodic Gaussian-basis DFT      |  ✓  |   ○  |   ○  |
 | Periodic LDA                     |  ✓  |   ✓  |   ○  |
@@ -588,12 +593,15 @@ Two periodic DFT engines exist, with disjoint strengths:
 
 Which engine backs which ✓:
 
-- **Γ-point periodic RKS** is GPW (`reg_gpw-water-pbe-mt`). **Γ-point periodic
-  UKS** is GPW PADE LSD (`reg_gpw-uks-o2-gamma`). **k-point periodic RKS** is
-  the plane-wave solver (Monkhorst–Pack mesh) on both CPU and CUDA, **and**
-  GPW on CPU — the Gaussian-basis k-point path (phased lattice sums, KB
-  nonlocal, per-k DIIS; `reg_gpw-kpoints-si`, diamond Si vs CP2K Quickstep,
-  2026-07-25).
+- **Γ-point periodic RKS** is GPW (`reg_gpw-water-pbe-mt`) on CPU **and** a
+  **first-slice CUDA product** (`cuda::gpw::GpwDft`; hybrid host STVnl/cbg +
+  device KS; PADE dual-gate `reg_cuda-gpw-full-product` — table ◐ until device
+  collocate/forces + PBE product gate land). **Γ-point periodic UKS** is GPW
+  PADE LSD (`reg_gpw-uks-o2-gamma`) — CUDA product still rejects UKS.
+  **k-point periodic RKS** is the plane-wave solver (Monkhorst–Pack mesh) on
+  both CPU and CUDA, **and** GPW on CPU — the Gaussian-basis k-point path
+  (phased lattice sums, KB nonlocal, per-k DIIS; `reg_gpw-kpoints-si`, diamond
+  Si vs CP2K Quickstep, 2026-07-25); CUDA GPW multi-k still open.
   **k-point periodic UKS** is CPU PW collinear spin on a multi-k mesh
   (`reg_pw-uks-kmesh-fe`; O₂ twin) plus **bulk Fe UKS + metallic smearing**
   (`reg_pw-uks-fe-smearing`) **and** GPW collinear multi-k UKS
