@@ -47,12 +47,12 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 
 ## pending
 
-Dual-track **GapCensus wave 4** 2026-08-10 re-diff (`dev` @ `1ba1678f`;
-tree scan + notes + roadmap §10/§11 vs ATV). Wave-3 staff **landed** on
-`dev`: `cuda-pw-forces` (`1ba1678f`, GH200 **1050105**), `cuda-gpw-ks-chain`
-(`9b19991b`, GH200 **1049858**), `cpu-simd-2center-setup` (`e49e0757`).
-**Foothold ≠ closed** — forces ≠ stress/spin/smear; LDA chain ≠ GGA/MG/product.
-Staff only `wf/escuda-<slug>` off current `dev`. Do not invent
+Dual-track **GapCensus wave 4** 2026-08-10 re-diff (`dev` @ `f0b602f5`;
+tree scan + notes + roadmap §10/§11 vs ATV; post wave-3 close). Wave-3
+staff **landed** on `dev`: `cuda-pw-forces` (`1ba1678f`, GH200 **1050105**),
+`cuda-gpw-ks-chain` (`9b19991b`, GH200 **1049858**), `cpu-simd-2center-setup`
+(`e49e0757`). **Foothold ≠ closed** — forces ≠ stress/spin/smear; LDA chain ≠
+GGA/MG/product. Staff only `wf/escuda-<slug>` off current `dev`. Do not invent
 hybrid/GAPW/PAW/meta-GGA. Walls from
 [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md) only —
 never the superseded ~1.25× MAIN claim. Authority walls **unchanged** (no new
@@ -104,12 +104,13 @@ fair-wall lever).
 
 ### CUDA — corresponding ES (open-gate readiness × user value)
 
-**Wave-4 re-diff (`dev` @ `1ba1678f` tree + notes + roadmap):** wave-3 depth
+**Wave-4 re-diff (`dev` @ `f0b602f5` tree + notes + roadmap):** wave-3 depth
 slugs **on `dev`**. Confirmed present: `src/cuda/planewave/internal/pw_forces.*`,
 `src/cuda/gpw/internal/ks_chain.*`, pure-s xsimd in `one_electron.cpp`.
 Confirmed still open: **no** `pw_stress.*` on CUDA; `spin_polarized` /
 `smearing != none` still **throw** in `pw_solver.cu`; GPW chain is **Padé
-LDA single-grid only** (no GGA, no multigrid, no public `GpwDft`).
+LDA single-grid only** (no GGA, no multigrid, no public `GpwDft`);
+`reg_cuda-pw-forces` is **LSDA-only** (PBE energy green ≠ PBE force dual-gate).
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
@@ -158,7 +159,7 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 (empty — GapCensus wave 4 only; no staff. Next harness wave: prefer
 `cuda-pw-stress` P0 + `cuda-gpw-ks-gga` P1 + optional `cuda-pw-collinear-spin`
-on disjoint surfaces. Workers on `wf/escuda-<slug>` off `1ba1678f`+.)
+on disjoint surfaces. Workers on `wf/escuda-<slug>` off `f0b602f5`+.)
 
 **Foreign incomplete worktrees on parent (do not steal / do not force-merge):**
 
