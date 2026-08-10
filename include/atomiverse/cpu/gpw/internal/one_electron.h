@@ -58,7 +58,9 @@ double kinetic(const GridBasisFunction& a, const GridBasisFunction& b,
 
 /// @brief Fused Γ-point periodic S and T over the same live image set.
 ///        Prefer this when both operators are needed (avoids a second image
-///        sweep). Pure s–s pairs use portable xsimd on the image axis.
+///        sweep). Pure s–s and mixed-angular (L≤d, shell-centered) pairs use
+///        portable xsimd on the image axis when the live image count is
+///        slab-class; otherwise scalar Hermite via contracted_ST_shift.
 void contracted_ST_periodic(const GridBasisFunction& a,
                             const GridBasisFunction& b, const double L[3],
                             const int m[3], double reach, double& s_out,

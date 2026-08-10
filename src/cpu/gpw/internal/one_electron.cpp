@@ -7,8 +7,9 @@
 /// (α, center) — common for solid-harmonic cart terms and shell-mate AOs.
 ///
 /// Pure s–s contracted work (dominant on H / s shells, and on slab image
-/// sweeps) is vectorized with portable xsimd over the ket-primitive axis
-/// (raw spans + scalar tail). Non-s angular work stays on the Hermite path.
+/// sweeps) is vectorized with portable xsimd over the monom-pair / image axis
+/// (raw spans + scalar tail). Mixed-angular (p/d) multi-image ST uses the same
+/// image-axis xsimd over McMurchie–Davidson Hermite tables (L≤d, shell-centered).
 /// Image screening packs live T first so the ST kernel sees a short list.
 
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
@@ -372,6 +373,371 @@ inline int pack_live_images_r2(const double ac[3], const double bc[3],
     return n;
 }
 
+/// Pack live image displacements d = A − B − T (needed for Hermite xab per axis).
+/// @return number of live images written (≤ nmax); on truncation returns nmax.
+inline int pack_live_images_dxyz(const double ac[3], const double bc[3],
+                                 const double L[3], const int m[3],
+                                 double reach2, double* dx, double* dy,
+                                 double* dz, int nmax) {
+    int n = 0;
+    for (int tx = -m[0]; tx <= m[0]; ++tx)
+        for (int ty = -m[1]; ty <= m[1]; ++ty)
+            for (int tz = -m[2]; tz <= m[2]; ++tz) {
+                const double ddx = ac[0] - bc[0] - tx * L[0];
+                const double ddy = ac[1] - bc[1] - ty * L[1];
+                const double ddz = ac[2] - bc[2] - tz * L[2];
+                const double d2 = ddx * ddx + ddy * ddy + ddz * ddz;
+                if (d2 > reach2)
+                    continue;
+                if (n >= nmax)
+                    return n;
+                dx[n] = ddx;
+                dy[n] = ddy;
+                dz[n] = ddz;
+                ++n;
+            }
+    return n;
+}
+
+inline int basis_max_cart_l(const GridBasisFunction& f) {
+    int m = 0;
+    for (const auto& p : f)
+        m = std::max(m, std::max(p.l[0], std::max(p.l[1], p.l[2])));
+    return m;
+}
+
+inline bool basis_same_center(const GridBasisFunction& f) {
+    if (f.empty())
+        return true;
+    const double* c = f[0].center;
+    for (const auto& p : f)
+        if (p.center[0] != c[0] || p.center[1] != c[1] || p.center[2] != c[2])
+            return false;
+    return true;
+}
+
+// GPW MOLOPT ≤ d (l=2); kinetic needs j+2 ⇒ fill ≤ 4. Stack-sized Hermite
+// batches for portable image-axis xsimd; higher L → scalar fallback.
+constexpr int kHermSimdAng = 4;
+
+/// One-axis McMurchie–Davidson E_t^{i,j} as an xsimd batch over lattice images.
+struct HermiteAxisBatch {
+    using batch_t = xsimd::batch<double>;
+    batch_t memo[kHermSimdAng + 1][kHermSimdAng + 1][2 * kHermSimdAng + 1];
+    batch_t sqrt_pi_p;
+
+    void fill(const batch_t& xab, double a, double b, int imax, int jmax) {
+        imax = std::min(imax, kHermSimdAng);
+        jmax = std::min(jmax, kHermSimdAng);
+        const double p = a + b;
+        const double mu = a * b / p;
+        const double oo2p = 0.5 / p;
+        const batch_t xpa = batch_t(-b / p) * xab;
+        const batch_t xpb = batch_t(a / p) * xab;
+        sqrt_pi_p = batch_t(std::sqrt(M_PI / p));
+        memo[0][0][0] = xsimd::exp(batch_t(-mu) * xab * xab);
+        for (int i = 1; i <= imax; ++i) {
+            for (int t = 0; t <= i; ++t) {
+                batch_t v(0.0);
+                if (t - 1 >= 0 && t - 1 <= i - 1)
+                    v += batch_t(oo2p) * memo[i - 1][0][t - 1];
+                if (t <= i - 1)
+                    v += xpa * memo[i - 1][0][t];
+                if (t + 1 <= i - 1)
+                    v += batch_t(static_cast<double>(t + 1))
+                         * memo[i - 1][0][t + 1];
+                memo[i][0][t] = v;
+            }
+        }
+        for (int j = 1; j <= jmax; ++j) {
+            for (int i = 0; i <= imax; ++i) {
+                for (int t = 0; t <= i + j; ++t) {
+                    batch_t v(0.0);
+                    if (t - 1 >= 0 && t - 1 <= i + j - 1)
+                        v += batch_t(oo2p) * memo[i][j - 1][t - 1];
+                    if (t <= i + j - 1)
+                        v += xpb * memo[i][j - 1][t];
+                    if (t + 1 <= i + j - 1)
+                        v += batch_t(static_cast<double>(t + 1))
+                             * memo[i][j - 1][t + 1];
+                    memo[i][j][t] = v;
+                }
+            }
+        }
+    }
+
+    batch_t S1d(int i, int j) const {
+        if (i < 0 || j < 0)
+            return batch_t(0.0);
+        return memo[i][j][0] * sqrt_pi_p;
+    }
+
+    batch_t kinetic_1d(int i, int j, double b_exp) const {
+        batch_t tt = batch_t(-2.0 * b_exp * b_exp) * S1d(i, j + 2)
+                     + batch_t(b_exp * (2 * j + 1)) * S1d(i, j);
+        if (j >= 2)
+            tt -= batch_t(0.5 * j * (j - 1)) * S1d(i, j - 2);
+        return tt;
+    }
+};
+
+/// Mixed-angular multi-image ST: image-axis portable xsimd Hermite.
+/// Monoms that share (α_a, α_b) share one Hermite fill per image batch.
+/// Not bit-identical (xsimd::exp + reduce).
+inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
+                                              const GridBasisFunction& b,
+                                              const double* dx,
+                                              const double* dy,
+                                              const double* dz, int nimg,
+                                              double& s_out, double& t_out) {
+    using batch_t = xsimd::batch<double>;
+    constexpr int W = static_cast<int>(batch_t::size);
+
+    double s = 0.0, t = 0.0;
+    HermiteAxisBatch hx, hy, hz;
+    const batch_t three(3.0);
+    const batch_t two(2.0);
+    const int na = static_cast<int>(a.size());
+    const int nb = static_cast<int>(b.size());
+
+    for (int ia0 = 0; ia0 < na; ++ia0) {
+        const auto& pa0 = a[static_cast<std::size_t>(ia0)];
+        bool seen_a = false;
+        for (int ja = 0; ja < ia0; ++ja) {
+            if (a[static_cast<std::size_t>(ja)].alpha == pa0.alpha) {
+                seen_a = true;
+                break;
+            }
+        }
+        if (seen_a)
+            continue;
+        for (int ib0 = 0; ib0 < nb; ++ib0) {
+            const auto& pb0 = b[static_cast<std::size_t>(ib0)];
+            bool seen_b = false;
+            for (int jb = 0; jb < ib0; ++jb) {
+                if (b[static_cast<std::size_t>(jb)].alpha == pb0.alpha) {
+                    seen_b = true;
+                    break;
+                }
+            }
+            if (seen_b)
+                continue;
+
+            int ia_list[64], ib_list[64];
+            int na_g = 0, nb_g = 0;
+            int imax = 0, jmax_l = 0;
+            bool all_ss = true;
+            for (int ia = 0; ia < na; ++ia) {
+                const auto& pa = a[static_cast<std::size_t>(ia)];
+                if (pa.alpha != pa0.alpha)
+                    continue;
+                if (na_g < 64)
+                    ia_list[na_g++] = ia;
+                imax = std::max(
+                    imax, std::max(pa.l[0], std::max(pa.l[1], pa.l[2])));
+                if (pa.l[0] || pa.l[1] || pa.l[2])
+                    all_ss = false;
+            }
+            for (int ib = 0; ib < nb; ++ib) {
+                const auto& pb = b[static_cast<std::size_t>(ib)];
+                if (pb.alpha != pb0.alpha)
+                    continue;
+                if (nb_g < 64)
+                    ib_list[nb_g++] = ib;
+                jmax_l = std::max(
+                    jmax_l, std::max(pb.l[0], std::max(pb.l[1], pb.l[2])));
+                if (pb.l[0] || pb.l[1] || pb.l[2])
+                    all_ss = false;
+            }
+            if (na_g == 0 || nb_g == 0)
+                continue;
+
+            if (all_ss) {
+                for (int ka = 0; ka < na_g; ++ka) {
+                    const auto& pa = a[static_cast<std::size_t>(ia_list[ka])];
+                    for (int kb = 0; kb < nb_g; ++kb) {
+                        const auto& pb =
+                            b[static_cast<std::size_t>(ib_list[kb])];
+                        const double p = pa.alpha + pb.alpha;
+                        const double mu = pa.alpha * pb.alpha / p;
+                        const double pi_over_p = M_PI / p;
+                        const double pref = pa.coeff * pb.coeff * pi_over_p
+                                            * std::sqrt(pi_over_p);
+                        batch_t acc_s(0.0), acc_t(0.0);
+                        int im = 0;
+                        for (; im + W <= nimg; im += W) {
+                            const batch_t dx_v =
+                                batch_t::load_unaligned(dx + im);
+                            const batch_t dy_v =
+                                batch_t::load_unaligned(dy + im);
+                            const batch_t dz_v =
+                                batch_t::load_unaligned(dz + im);
+                            const batch_t r2_v =
+                                dx_v * dx_v + dy_v * dy_v + dz_v * dz_v;
+                            const batch_t S =
+                                batch_t(pref)
+                                * xsimd::exp(batch_t(-mu) * r2_v);
+                            const batch_t T = batch_t(mu)
+                                              * (three - two * batch_t(mu)
+                                                             * r2_v)
+                                              * S;
+                            acc_s += S;
+                            acc_t += T;
+                        }
+                        s += xsimd::reduce_add(acc_s);
+                        t += xsimd::reduce_add(acc_t);
+                        for (; im < nimg; ++im) {
+                            const double r2 = dx[im] * dx[im]
+                                              + dy[im] * dy[im]
+                                              + dz[im] * dz[im];
+                            const double S = pref * std::exp(-mu * r2);
+                            s += S;
+                            t += mu * (3.0 - 2.0 * mu * r2) * S;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            const int jmax = jmax_l + 2;
+            if (imax > kHermSimdAng || jmax > kHermSimdAng) {
+                for (int ka = 0; ka < na_g; ++ka) {
+                    const auto& pa =
+                        a[static_cast<std::size_t>(ia_list[ka])];
+                    for (int kb = 0; kb < nb_g; ++kb) {
+                        const auto& pb =
+                            b[static_cast<std::size_t>(ib_list[kb])];
+                        for (int im = 0; im < nimg; ++im) {
+                            const double bcs[3] = {pa.center[0] - dx[im],
+                                                   pa.center[1] - dy[im],
+                                                   pa.center[2] - dz[im]};
+                            HermiteTab hx_s, hy_s, hz_s;
+                            hx_s.init(pa.alpha, pb.alpha, pa.center[0],
+                                      bcs[0]);
+                            hy_s.init(pa.alpha, pb.alpha, pa.center[1],
+                                      bcs[1]);
+                            hz_s.init(pa.alpha, pb.alpha, pa.center[2],
+                                      bcs[2]);
+                            const int ifill = std::min(kMaxAng, imax);
+                            const int jfill = std::min(kMaxAng, jmax);
+                            hx_s.fill_upto(ifill, jfill);
+                            hy_s.fill_upto(ifill, jfill);
+                            hz_s.fill_upto(ifill, jfill);
+                            auto kin1d = [](const HermiteTab& h, int i, int j,
+                                            double b_exp) {
+                                double tt =
+                                    -2.0 * b_exp * b_exp
+                                        * h.S1d_filled(i, j + 2)
+                                    + b_exp * (2 * j + 1)
+                                          * h.S1d_filled(i, j);
+                                if (j >= 2)
+                                    tt -= 0.5 * j * (j - 1)
+                                          * h.S1d_filled(i, j - 2);
+                                return tt;
+                            };
+                            const double sx =
+                                hx_s.S1d_filled(pa.l[0], pb.l[0]);
+                            const double sy =
+                                hy_s.S1d_filled(pa.l[1], pb.l[1]);
+                            const double sz =
+                                hz_s.S1d_filled(pa.l[2], pb.l[2]);
+                            const double tx =
+                                kin1d(hx_s, pa.l[0], pb.l[0], pb.alpha);
+                            const double ty =
+                                kin1d(hy_s, pa.l[1], pb.l[1], pb.alpha);
+                            const double tz =
+                                kin1d(hz_s, pa.l[2], pb.l[2], pb.alpha);
+                            const double c = pa.coeff * pb.coeff;
+                            s += c * sx * sy * sz;
+                            t += c
+                                 * (tx * sy * sz + sx * ty * sz
+                                    + sx * sy * tz);
+                        }
+                    }
+                }
+                continue;
+            }
+
+            int im = 0;
+            for (; im + W <= nimg; im += W) {
+                const batch_t xab_x = batch_t::load_unaligned(dx + im);
+                const batch_t xab_y = batch_t::load_unaligned(dy + im);
+                const batch_t xab_z = batch_t::load_unaligned(dz + im);
+                hx.fill(xab_x, pa0.alpha, pb0.alpha, imax, jmax);
+                hy.fill(xab_y, pa0.alpha, pb0.alpha, imax, jmax);
+                hz.fill(xab_z, pa0.alpha, pb0.alpha, imax, jmax);
+                for (int ka = 0; ka < na_g; ++ka) {
+                    const auto& pa =
+                        a[static_cast<std::size_t>(ia_list[ka])];
+                    for (int kb = 0; kb < nb_g; ++kb) {
+                        const auto& pb =
+                            b[static_cast<std::size_t>(ib_list[kb])];
+                        const batch_t sx = hx.S1d(pa.l[0], pb.l[0]);
+                        const batch_t sy = hy.S1d(pa.l[1], pb.l[1]);
+                        const batch_t sz = hz.S1d(pa.l[2], pb.l[2]);
+                        const batch_t tx =
+                            hx.kinetic_1d(pa.l[0], pb.l[0], pb.alpha);
+                        const batch_t ty =
+                            hy.kinetic_1d(pa.l[1], pb.l[1], pb.alpha);
+                        const batch_t tz =
+                            hz.kinetic_1d(pa.l[2], pb.l[2], pb.alpha);
+                        const batch_t c(pa.coeff * pb.coeff);
+                        s += xsimd::reduce_add(c * sx * sy * sz);
+                        t += xsimd::reduce_add(
+                            c * (tx * sy * sz + sx * ty * sz + sx * sy * tz));
+                    }
+                }
+            }
+            for (; im < nimg; ++im) {
+                const double bcs[3] = {pa0.center[0] - dx[im],
+                                       pa0.center[1] - dy[im],
+                                       pa0.center[2] - dz[im]};
+                HermiteTab hx_s, hy_s, hz_s;
+                hx_s.init(pa0.alpha, pb0.alpha, pa0.center[0], bcs[0]);
+                hy_s.init(pa0.alpha, pb0.alpha, pa0.center[1], bcs[1]);
+                hz_s.init(pa0.alpha, pb0.alpha, pa0.center[2], bcs[2]);
+                hx_s.fill_upto(imax, jmax);
+                hy_s.fill_upto(imax, jmax);
+                hz_s.fill_upto(imax, jmax);
+                auto kin1d = [](const HermiteTab& h, int i, int j,
+                                double b_exp) {
+                    double tt = -2.0 * b_exp * b_exp * h.S1d_filled(i, j + 2)
+                                + b_exp * (2 * j + 1) * h.S1d_filled(i, j);
+                    if (j >= 2)
+                        tt -= 0.5 * j * (j - 1) * h.S1d_filled(i, j - 2);
+                    return tt;
+                };
+                for (int ka = 0; ka < na_g; ++ka) {
+                    const auto& pa =
+                        a[static_cast<std::size_t>(ia_list[ka])];
+                    for (int kb = 0; kb < nb_g; ++kb) {
+                        const auto& pb =
+                            b[static_cast<std::size_t>(ib_list[kb])];
+                        const double sx =
+                            hx_s.S1d_filled(pa.l[0], pb.l[0]);
+                        const double sy =
+                            hy_s.S1d_filled(pa.l[1], pb.l[1]);
+                        const double sz =
+                            hz_s.S1d_filled(pa.l[2], pb.l[2]);
+                        const double tx =
+                            kin1d(hx_s, pa.l[0], pb.l[0], pb.alpha);
+                        const double ty =
+                            kin1d(hy_s, pa.l[1], pb.l[1], pb.alpha);
+                        const double tz =
+                            kin1d(hz_s, pa.l[2], pb.l[2], pb.alpha);
+                        const double c = pa.coeff * pb.coeff;
+                        s += c * sx * sy * sz;
+                        t += c
+                             * (tx * sy * sz + sx * ty * sz + sx * sy * tz);
+                    }
+                }
+            }
+        }
+    }
+    s_out = s;
+    t_out = t;
+}
+
 /// Scalar pure-s multi-image ST (no heap, no SIMD). Used when the live image
 /// count is below the SIMD break-even (≈ 2·native width on this host).
 inline void contracted_ST_ss_images_scalar(const GridBasisFunction& a,
@@ -481,8 +847,8 @@ inline void contracted_ST_ss_images_simd(const GridBasisFunction& a,
     t_out = t;
 }
 
-/// Fused S+T over all live lattice images. Pure s–s uses image-axis xsimd
-/// only on slab-class image counts; mixed angular uses contracted_ST_shift.
+/// Fused S+T over all live lattice images. Pure s–s and mixed-angular (L≤d)
+/// use image-axis xsimd on slab-class image counts; otherwise scalar Hermite.
 inline void contracted_ST_periodic_impl(const GridBasisFunction& a,
                                         const GridBasisFunction& b,
                                         const double L[3], const int m[3],
@@ -546,7 +912,48 @@ inline void contracted_ST_periodic_impl(const GridBasisFunction& a,
         return;
     }
 
-    // Mixed angular: per-image Hermite path (fill_upto + monom reuse).
+    // Mixed angular: slab-class image-axis Hermite xsimd when L ≤ d and
+    // monoms share shell centers; otherwise per-image contracted_ST_shift.
+    const int nimg_est = (2 * m[0] + 1) * (2 * m[1] + 1) * (2 * m[2] + 1);
+    const int max_la = basis_max_cart_l(a);
+    const int max_lb = basis_max_cart_l(b);
+    const bool hermite_simd_ok =
+        nimg_est >= kSimdImgMin && max_la <= 2 && max_lb <= 2
+        && basis_same_center(a) && basis_same_center(b);
+
+    if (hermite_simd_ok) {
+        constexpr int kImgMax = 512;
+        double dx_live[kImgMax], dy_live[kImgMax], dz_live[kImgMax];
+        const int nimg = pack_live_images_dxyz(ac, bc, L, m, reach2, dx_live,
+                                               dy_live, dz_live, kImgMax);
+        if (nimg == 0) {
+            s_out = 0.0;
+            t_out = 0.0;
+            return;
+        }
+        if (nimg < kImgMax && nimg >= kSimdImgMin) {
+            contracted_ST_angular_images_simd(a, b, dx_live, dy_live, dz_live,
+                                              nimg, s_out, t_out);
+            return;
+        }
+        if (nimg < kImgMax) {
+            double s = 0.0, t = 0.0;
+            for (int im = 0; im < nimg; ++im) {
+                const double T[3] = {ac[0] - bc[0] - dx_live[im],
+                                     ac[1] - bc[1] - dy_live[im],
+                                     ac[2] - bc[2] - dz_live[im]};
+                double s_im = 0.0, t_im = 0.0;
+                contracted_ST_shift(a, b, T, s_im, t_im);
+                s += s_im;
+                t += t_im;
+            }
+            s_out = s;
+            t_out = t;
+            return;
+        }
+    }
+
+    // Per-image Hermite path (fill_upto + monom reuse).
     double s = 0.0, t = 0.0;
     for (int tx = -m[0]; tx <= m[0]; ++tx)
         for (int ty = -m[1]; ty <= m[1]; ++ty)

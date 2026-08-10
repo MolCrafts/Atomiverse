@@ -183,3 +183,72 @@ TEST(GpwOneElectron, ContractedSTPeriodicFusedMatchesImageSum) {
     EXPECT_NEAR(overlap(a, b, L, m, reach), s_fused, 1e-14);
     EXPECT_NEAR(kinetic(a, b, L, m, reach), t_fused, 1e-14);
 }
+
+// Mixed-angular (p/d) fused Γ periodic S+T vs independent prim_ST image sum.
+// Exercises image-axis Hermite xsimd (slab-class image count).
+TEST(GpwOneElectron, ContractedSTPeriodicAngularMatchesPrimImageSum) {
+    using ATV::cpu::gpw::contracted_ST_periodic;
+    using ATV::cpu::gpw::prim_kinetic;
+    using ATV::cpu::gpw::prim_overlap;
+    GridBasisFunction a = {
+        prim(0.55, 0.0, 0.0, 0.0, 1, 0, 0, 0.40),
+        prim(0.55, 0.0, 0.0, 0.0, 0, 1, 0, 0.35),
+        prim(0.55, 0.0, 0.0, 0.0, 0, 0, 1, 0.30),
+        prim(1.40, 0.0, 0.0, 0.0, 1, 0, 0, 0.25),
+    };
+    GridBasisFunction b = {
+        prim(0.70, 0.8, -0.2, 0.3, 1, 0, 0, 0.45),
+        prim(0.70, 0.8, -0.2, 0.3, 0, 1, 0, 0.40),
+        prim(0.70, 0.8, -0.2, 0.3, 0, 0, 1, 0.35),
+        prim(1.90, 0.8, -0.2, 0.3, 0, 1, 1, 0.20),
+    };
+    const double L[3] = {6.0, 6.0, 4.0};
+    const int m[3] = {2, 2, 4};
+    const double reach = 40.0;
+
+    double s_fused = 0.0, t_fused = 0.0;
+    contracted_ST_periodic(a, b, L, m, reach, s_fused, t_fused);
+
+    double s_ref = 0.0, t_ref = 0.0;
+    for (int tx = -m[0]; tx <= m[0]; ++tx)
+        for (int ty = -m[1]; ty <= m[1]; ++ty)
+            for (int tz = -m[2]; tz <= m[2]; ++tz) {
+                for (const auto& pa : a) {
+                    for (const auto& pb : b) {
+                        GridPrimitive bT = pb;
+                        bT.center[0] = pb.center[0] + tx * L[0];
+                        bT.center[1] = pb.center[1] + ty * L[1];
+                        bT.center[2] = pb.center[2] + tz * L[2];
+                        s_ref += prim_overlap(pa, bT);
+                        t_ref += prim_kinetic(pa, bT);
+                    }
+                }
+            }
+
+    EXPECT_NEAR(s_fused, s_ref, 1e-11 * std::max(1.0, std::abs(s_ref)));
+    EXPECT_NEAR(t_fused, t_ref, 1e-11 * std::max(1.0, std::abs(t_ref)));
+    EXPECT_NEAR(overlap(a, b, L, m, reach), s_fused, 1e-14);
+    EXPECT_NEAR(kinetic(a, b, L, m, reach), t_fused, 1e-14);
+}
+
+// Non-periodic mixed-angular contracted ST still matches prim double-sum.
+TEST(GpwOneElectron, ContractedAngularMatchesPrimSum) {
+    using ATV::cpu::gpw::contracted_ST_shift;
+    GridBasisFunction a = {prim(0.80, 0, 0, 0, 1, 0, 0, 0.5),
+                           prim(0.80, 0, 0, 0, 0, 1, 0, 0.4)};
+    GridBasisFunction b = {prim(1.10, 0.6, 0.1, -0.2, 0, 0, 1, 0.6),
+                           prim(1.10, 0.6, 0.1, -0.2, 1, 0, 0, 0.3)};
+    const double T0[3] = {0.0, 0.0, 0.0};
+    double s = 0.0, t = 0.0;
+    contracted_ST_shift(a, b, T0, s, t);
+    double s_ref = 0.0, t_ref = 0.0;
+    for (const auto& pa : a) {
+        for (const auto& pb : b) {
+            s_ref += prim_overlap(pa, pb);
+            t_ref += prim_kinetic(pa, pb);
+        }
+    }
+    EXPECT_NEAR(s, s_ref, 1e-13 * std::max(1.0, std::abs(s_ref)));
+    EXPECT_NEAR(t, t_ref, 1e-13 * std::max(1.0, std::abs(t_ref)));
+}
+
