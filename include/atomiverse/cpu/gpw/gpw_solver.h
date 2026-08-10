@@ -1,8 +1,8 @@
 /// @file cpu/gpw/gpw_solver.h
-/// @brief Self-contained GPW (Gaussian and Plane Waves) SCF solver.
+/// @brief Concrete GPW (Gaussian and Plane Waves) DFT method — Driver node.
 ///
-/// Structurally parallel to `cpu::scf::SCFSolver` and `cpu::pw::PW`: a
-/// self-contained inner solver for one electronic-structure method. The Kohn-Sham
+/// `GpwDft` is a `cpu::Driver<gpw::Phase>` (KS self-consistency loop node),
+/// structurally parallel to `cpu::scf::MeanFieldMethod` / `cpu::pw::PW`. The Kohn-Sham
 /// problem is solved in the contracted Gaussian AO basis (small dense generalized
 /// eigenproblem H C = S C ε), while the Hartree + XC + long-range local
 /// pseudopotential are evaluated on a uniform real-space grid (collocate / FFT
@@ -27,9 +27,21 @@
 
 #include <array>
 #include <complex>
+#include <functional>
+#include <limits>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/driver/driver.h"
+#include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/gpw/stages/diagonalize_stage.h"
+#include "atomiverse/cpu/gpw/stages/density_stage.h"
+#include "atomiverse/cpu/gpw/stages/gpw_converged.h"
+#include "atomiverse/cpu/gpw/stages/ks_build_stage.h"
+#include "atomiverse/cpu/gpw/stages/mix_stage.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h" // GaussianBasis
 #include "atomiverse/cpu/gpw/gth_potential.h" // GthPotential, GthNonlocalChannel
 #include "atomiverse/cpu/gpw/internal/collocate.h"
@@ -40,7 +52,6 @@
 #include "atomiverse/cpu/linalg/matrix.h" // RealMatrix
 #include "atomiverse/molrs.hpp"
 
-#include <memory>
 
 namespace ATV {
 namespace cpu {
@@ -282,18 +293,21 @@ struct GpwResult {
     /// @}
 };
 
-/// @brief Concrete GPW DFT method — members + build/run
-///        (mirrors `cpu::pw::PW` / `cpu::scf::SCFSolver`).
+/// @brief Concrete GPW DFT method — `cpu::Driver<gpw::Phase>` loop node.
 ///
-/// **NOT a `Driver<...>` subclass** — this is the inner solver behind
-/// `GPWEvaluator`. Construction fixes the configuration; `build()` runs
-/// the one-time fail-fast validation against a reference atom set (the
-/// no-fallback rule: invalid configuration throws instead of degrading);
-/// `run()` is re-entrant and rebuilds every geometry-dependent structure
-/// per call (grids, lattice images, S/T/Vpp — same policy as `PW`).
-/// Move-only, like the sibling solvers.
-class GpwDft {
+/// Construction fixes the configuration; `build()` runs one-time fail-fast
+/// validation against a reference atom set (no-fallback); `run()` is
+/// re-entrant and rebuilds geometry-dependent structures per call (grids,
+/// lattice images, S/T/Vpp — same policy as `PW`). The Γ RKS DIIS/linear-mix
+/// self-consistency loop is owned as Driver stages
+/// (`ks_build → mix → diagonalize → density → check`); multi-k / UKS / OT
+/// residual paths still use free loops until the path-migration wave.
+/// Move-only. Public surface is members + `run`/`build` — no `*Config` bag.
+class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
   public:
+    /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(atoms)`.
+    using cpu::Driver<ATV::gpw::Phase>::build;
+
     // ── Method parameters (were GpwConfig fields) ─────────────────────
     double cell[3] = {0, 0, 0}; ///< orthorhombic box lengths [Bohr].
     double cutoff_ry = 300.0;   ///< density grid cutoff [Ry].
@@ -448,8 +462,8 @@ class GpwDft {
     GpwDft() = default;
     GpwDft(const GpwDft&) = delete;
     GpwDft& operator=(const GpwDft&) = delete;
-    GpwDft(GpwDft&&) = default;
-    GpwDft& operator=(GpwDft&&) = default;
+    GpwDft(GpwDft&&) noexcept = default;
+    GpwDft& operator=(GpwDft&&) noexcept = default;
 
     /// @brief One-time fail-fast validation against a reference system.
     ///
@@ -654,11 +668,63 @@ class GpwDft {
     const G0W0Result& g0w0(const std::vector<GpwAtom>& atoms);
 
   private:
+    /// @brief Full SCF body (was free `run_gpw_scf_impl`); owns path dispatch.
+    GpwResult run_impl_(const std::vector<GpwAtom>& atoms,
+                        const linalg::RealMatrix* guess_C,
+                        const linalg::RealMatrix* guess_P,
+                        const linalg::RealMatrix* guess_P_beta,
+                        const std::vector<linalg::CplxMatrix>* guess_P_k,
+                        const std::vector<linalg::CplxMatrix>* guess_P_k_beta);
+
+    /// @brief Wire Γ RKS stages + compile Plan (idempotent; rebinds after move).
+    void ensure_driver_built_(bool use_diis, double mix, int n_occ, int n_basis,
+                              int diis_depth, double tol, double diis_err_tol,
+                              KsBuildStage::Builder builder,
+                              DiagonalizeStage::DiagFn diag);
+
+    /// @brief Drop wired stages / Plan / criteria so the next ensure rebinds.
+    void reset_built_driver_();
+
+    /// @brief Stages fixed by ensure; nothing user-suppliable.
+    void validate_components() const override {}
+
+    /// @brief Seed loop matrices, wire stages, run Driver iterations, write res.
+    /// @return true if the residual gate fired (Driver converged).
+    bool drive_gamma_rks_diis_(
+        linalg::RealMatrix P, const linalg::RealMatrix& S,
+        const linalg::RealMatrix& X, linalg::RealMatrix C_prev, int n_occ,
+        int nb, bool use_diis, double mix, double level_shift, int max_iter,
+        double tol, double diis_err_tol, int diis_depth,
+        KsBuildStage::Builder build_H, DiagonalizeStage::DiagFn diag,
+        GpwResult& res);
+
     GpwResult result_;     ///< Owned result buffer (last run).
     Mp2Result mp2_result_; ///< Owned MP2 result buffer (last mp2()).
     RpaResult rpa_result_; ///< Owned RPA result buffer (last direct_rpa()).
     G0W0Result g0w0_result_; ///< Owned G0W0 result buffer (last g0w0()).
     bool built_ = false;   ///< Whether build() validated the configuration.
+
+    // ── Γ RKS DIIS iteration state (wired into stages by reference) ─────
+    linalg::RealMatrix loop_P_;
+    linalg::RealMatrix loop_S_;
+    linalg::RealMatrix loop_X_;
+    linalg::RealMatrix loop_H_;
+    linalg::RealMatrix loop_H_ext_;
+    linalg::RealMatrix loop_err_;
+    linalg::RealMatrix loop_C_;
+    double loop_e_total_ = 0;
+    double loop_err_norm_ = 0;
+    double loop_prev_energy_ =
+        std::numeric_limits<double>::quiet_NaN();
+    bool loop_skip_update_ = false;
+    bool driver_built_ = false;
+    const void* wired_self_ = nullptr;
+
+    std::unique_ptr<KsBuildStage> ks_build_stage_;
+    std::unique_ptr<MixStage> mix_stage_;
+    std::unique_ptr<DiagonalizeStage> diag_stage_;
+    std::unique_ptr<DensityStage> density_stage_;
+    std::unique_ptr<GpwConverged> converged_stage_;
 };
 
 /// @brief Finite-difference forces F_a = -dE/dR_a via central differences.

@@ -171,6 +171,15 @@ struct PhaseTraits<ATV::scf::Phase> {
     static constexpr auto end_phase = ATV::scf::Phase::check;
 };
 
+/// GPW (`cpu::gpw::GpwDft : Driver<gpw::Phase>`): KS build is the energy slot;
+/// no neighbor list; end-of-iteration is `check` (convergence Criterion).
+template <>
+struct PhaseTraits<ATV::gpw::Phase> {
+    static constexpr auto eval_phase = ATV::gpw::Phase::ks_build;
+    static constexpr auto neighbor_phase = ATV::gpw::Phase::ks_build;
+    static constexpr auto end_phase = ATV::gpw::Phase::check;
+};
+
 /// @brief CPU-backend loop node — the one class every CPU preset derives from.
 template <typename PhaseEnum>
 class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,

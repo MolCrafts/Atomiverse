@@ -137,8 +137,8 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 /// is a staged loop with a termination criterion — exactly a Driver — so the
 /// gaussian-basis SCF iteration becomes a `cpu::Driver<scf::Phase>`, and the
 /// concrete methods (`RHF`/`UHF`/`RKS`/`UKS`) supply the components that fill its
-/// stages. (The CUDA and plane-wave paths stay inner solvers for now; this enum
-/// is CPU-only.)
+/// stages. CUDA SCF fold and `cpu::pw::PW` remain residual Driver debt;
+/// GPW uses `gpw::Phase` below. This enum is CPU-only.
 ///
 /// The phase order reflects what runs within one self-consistent iteration:
 /// build the Fock/Hamiltonian matrix (`fock`), extrapolate it in **Fock space**
@@ -178,6 +178,44 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 }
 
 } // namespace scf
+
+/// @brief Gaussian-and-plane-waves (GPW) KS self-consistency phases.
+///
+/// Same staged-loop shape as `scf::Phase`: the concrete method
+/// `cpu::gpw::GpwDft` is a `cpu::Driver<gpw::Phase>` whose stages build the
+/// KS Hamiltonian on the product grid, DIIS-mix in H-space, diagonalize,
+/// rebuild the density, and test convergence. Phase indices align with
+/// `scf::Phase` so a single mental model covers mean-field SCF and GPW.
+/// `kind_of` returns `PhaseKind::SCF` (self-consistency workflow class).
+namespace gpw {
+
+/// @brief Phase order for one GPW KS self-consistency iteration.
+enum class Phase {
+    ks_build,    ///< Collocate ρ → Poisson → XC → integrate → H + energy.
+    mix,         ///< DIIS extrapolation in KS-matrix space (precedes diagonalize).
+    diagonalize, ///< Solve the generalized eigenproblem for the orbitals.
+    density,     ///< Build the new density from the occupied orbitals.
+    check,       ///< Convergence test (|ΔE| / DIIS residual).
+    COUNT        ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the GPW phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in the same order as the enum values, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"ks_build", "mix", "diagonalize", "density", "check"};
+}
+
+/// @brief Workflow discriminant for `gpw::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF` (self-consistency loop class).
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace gpw
 
 /// @brief Vibrational-analysis (finite-difference response) phases.
 ///
