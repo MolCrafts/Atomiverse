@@ -2,8 +2,9 @@
 /// @brief Unit gates for CUDA plane-wave Nielsen–Martin cell stress.
 ///
 /// UNIT SCOPE: empty-frame / open-shell reject; CUDA↔CPU parity on a cheap
-/// closed-shell H₂ cell. Full Si dual-gate lives in
-/// regressions/pw/cuda-pw-stress — never under ctest as an e2e product.
+/// closed-shell H₂ cell (LSDA + PBE). Full Si dual-gates live in
+/// regressions/pw/cuda-pw-stress (LSDA) and cuda-pw-stress-pbe (PBE) —
+/// never under ctest as an e2e product.
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -116,6 +117,43 @@ TEST(CudaPWCellStress, H2ClosedShellCpuTwin) {
                               - s_cpu[static_cast<std::size_t>(k)]));
     }
     EXPECT_LT(max_abs, kTol) << "max|σ_cuda-σ_cpu|=" << max_abs
+                             << " cpu=(" << s_cpu[0] << "," << s_cpu[1] << ","
+                             << s_cpu[2] << ") cuda=(" << s_cuda[0] << ","
+                             << s_cuda[1] << "," << s_cuda[2] << ")";
+}
+
+/// Closed-shell H₂ under device PBE — stress path routes XCType through
+/// DeviceDensity (spectral GGA). Si e2e dual-gate is reg_cuda-pw-stress-pbe.
+TEST(CudaPWCellStress, H2ClosedShellPbeCpuTwin) {
+    auto frame = make_h2_cubic(6.0);
+
+    cpu::pw::PW cpu_m;
+    fill_cpu_method(cpu_m);
+    cpu_m.xc = cpu::scf::XCType::PBE;
+    cpu_m.build(frame);
+    const auto s_cpu = cpu::pw::pw_stress(frame, cpu_m);
+
+    cuda::pw::PW cuda_m;
+    fill_cuda_method(cuda_m);
+    cuda_m.xc = cpu::scf::XCType::PBE;
+    cuda_m.build(frame);
+    double e_ry = 0.0;
+    const auto s_cuda = cuda::pw::pw_stress(frame, cuda_m, &e_ry);
+
+    for (int k = 0; k < 6; ++k) {
+        EXPECT_TRUE(std::isfinite(s_cuda[static_cast<std::size_t>(k)])) << k;
+        EXPECT_TRUE(std::isfinite(s_cpu[static_cast<std::size_t>(k)])) << k;
+    }
+    EXPECT_TRUE(std::isfinite(e_ry));
+
+    constexpr double kTol = 5.0e-2;
+    double max_abs = 0.0;
+    for (int k = 0; k < 6; ++k) {
+        max_abs = std::max(
+            max_abs, std::abs(s_cuda[static_cast<std::size_t>(k)]
+                              - s_cpu[static_cast<std::size_t>(k)]));
+    }
+    EXPECT_LT(max_abs, kTol) << "PBE max|σ_cuda-σ_cpu|=" << max_abs
                              << " cpu=(" << s_cpu[0] << "," << s_cpu[1] << ","
                              << s_cpu[2] << ") cuda=(" << s_cuda[0] << ","
                              << s_cuda[1] << "," << s_cuda[2] << ")";

@@ -32,7 +32,8 @@ namespace internal {
 /// @param max_iter       Max SCF iterations.
 /// @param mix_beta       Density mixing parameter.
 /// @param pulay_depth    Pulay history depth.
-/// @param xc             XC functional (LSDA or PBE).
+/// @param xc             XC functional (`XCType::LSDA` or `XCType::PBE`;
+///                       device density path for both).
 /// @param energy_ry_out  Optional: reference SCF energy [Ry].
 /// @return Intensive stress [eV/Å³] Voigt.
 std::array<double, 6> pw_stress_analytic_impl(
