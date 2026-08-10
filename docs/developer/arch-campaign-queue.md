@@ -34,22 +34,28 @@ facts on `dev` (product source of truth; tips are claims only):
 | e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear (none staffed this census) |
 
 **Unmerged tips** (no isolation worktree; **not** on `dev` — keep `[~]`; do
-not mark done). Both tips rebased onto `26fb8328` (ahead=1 behind=0 each):
+not mark done). Both tips base `26fb8328` + 1 feat; parent moved to
+`1c2d74d6` (GapCensus wave-5 chore) ⇒ **ahead=1 behind=1** each — rebase
+onto current `dev` before gate / Worktrees:
 
 | Tip | Claim (unverified until merge) |
 | --- | --- |
-| `wf/arch-gpw-driver-paths` | multi-path **DIIS** on stages (`drive_path_diis_` / `drive_gamma_uks_diis_`); **OT free-loop residual** (`06bc94fb`; ahead=1 behind=0 vs `dev`) |
-| `wf/arch-pw-driver-paths` | collinear + metallic smear (+ collinear×smear) on same `pw::Phase` stages via path-local StepFns (`98e98ed5`; ahead=1 behind=0 vs `dev`) |
+| `wf/arch-gpw-driver-paths` | multi-path **DIIS** on stages (`drive_path_diis_` / `drive_gamma_uks_diis_`); **OT free-loop residual** (`06bc94fb`; ahead=1 behind=1 vs `dev` @ `1c2d74d6`) |
+| `wf/arch-pw-driver-paths` | collinear + metallic smear (+ collinear×smear) on same `pw::Phase` stages via path-local StepFns (`98e98ed5`; ahead=1 behind=1 vs `dev` @ `1c2d74d6`) |
 
 Open arch specs live **only on the tips** (not on `dev` tree
 `.claude/specs/` — still only unrelated `periodic-rhf-gamma` /
-`rsh-eri-cam-b3lyp`). Lever still: `MeanFieldMethod` + `cpu/scf/stages/` +
-landed Γ RKS GPW stages + landed PW fixed-occ stages (+ tip multi-path Ops).
+`rsh-eri-cam-b3lyp`). Spec paths on tips:
+`.claude/specs/arch-gpw-driver-paths/SPEC.md`,
+`.claude/specs/arch-pw-driver-paths/SPEC.md` (tip claims
+`acceptance_met=true`; **unmerged tip ≠ done**). Lever still:
+`MeanFieldMethod` + `cpu/scf/stages/` + landed Γ RKS GPW stages + landed PW
+fixed-occ stages (+ tip multi-path Ops).
 
 ### P0 — ES loop residual paths (CPU)
 
 (none staffable unassigned — both path residuals remain `[~]` from Assign
-wave 4; tips advanced/rebased but unmerged)
+wave 5; tips unmerged; rebase then Worktrees / merge gate)
 
 ### P1 — freeze product shape (CUDA GPW)
 
@@ -70,9 +76,9 @@ wave 4; tips advanced/rebased but unmerged)
 
 ## in_progress
 
-**Assign wave 4 tips advanced** (parent `dev` @ `26fb8328`) — **2**
-incomplete (`[~]`). Skipped held P1 shape-freeze + P2 mg-main (dep on GPW
-paths merge). Unmerged tip ≠ done.
+**Assign wave 5** (parent `dev` @ `1c2d74d6`) — **2** incomplete resumes
+(`[~]`); **new_assigned=0**. Skipped held P1 shape-freeze + P2 mg-main
+(dep on GPW paths merge). Unmerged tip ≠ done. Staff ≤4; only 2 staffable.
 
 - [~] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS **DIIS**
   onto same `gpw::Phase` stages (`ks_build → mix → diagonalize → density →
@@ -82,7 +88,9 @@ paths merge). Unmerged tip ≠ done.
   `reg_arch-gpw-driver-paths` (tip) | files: `gpw_solver.cpp`
   `run_gpw_scf_kpoints*`, `gpw/stages/`, `drive_*` | gate: pins green; public
   `run`/`forces` stable; wipe builds | **tip** `wf/arch-gpw-driver-paths` @
-  `06bc94fb` (ahead=1 behind=0 vs `dev`; claim multi-path DIIS; OT residual) |
+  `06bc94fb` (ahead=1 behind=1 vs `dev`; **rebase onto `1c2d74d6`** before
+  gate; claim multi-path DIIS; OT residual) | spec (tip):
+  `.claude/specs/arch-gpw-driver-paths/SPEC.md` |
 - [~] `arch-pw-driver-paths` | **P0** Migrate collinear spin + metallic
   smearing free loops onto same `pw::Phase` stages
   (`veff → diagonalize → density → mix → check`) as restricted fixed-occ;
@@ -92,7 +100,9 @@ paths merge). Unmerged tip ≠ done.
   `reg_arch-pw-driver-paths` (tip) | files: `pw_solver.cpp` free-loop arms,
   `planewave/stages/`, `drive_*` | gate: pins green; public surface stable;
   wipe builds | **tip** `wf/arch-pw-driver-paths` @ `98e98ed5` (ahead=1
-  behind=0 vs `dev`; claim all product SCF paths on stages) |
+  behind=1 vs `dev`; **rebase onto `1c2d74d6`** before gate; claim all
+  product SCF paths on stages) | spec (tip):
+  `.claude/specs/arch-pw-driver-paths/SPEC.md` |
 
 ## blocked
 

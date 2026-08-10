@@ -110,3 +110,13 @@ Wipe `build` / `build-*` under parent and every worktree every wave.
   tip ≠ done.** **pending=2** (held freeze + mg-main), **in_progress=2**,
   **gaps_remaining=5**, **new_slugs_added=0**. Roadmap: no ○→✓ (arch prose
   already accurate for `dev`). Optional `chore(queue)` only. No push.
+- **2026-08-10 Assign wave 5 (parent `dev` @ `1c2d74d6`):** staff **2**
+  resumes → `[~]`: `arch-gpw-driver-paths` (`06bc94fb`, ahead=1 behind=1;
+  rebase onto `1c2d74d6` before gate) + `arch-pw-driver-paths` (`98e98ed5`,
+  ahead=1 behind=1; rebase). Specs on tips only
+  (`.claude/specs/arch-{gpw,pw}-driver-paths/SPEC.md`). Skipped P1
+  `arch-cuda-gpw-public-shape-freeze` + P2 `arch-mg-main-structural` (dep on
+  GPW paths merge). **new_assigned=0**, **incomplete_remaining=2**, pending
+  held=2, blocked=1 staffable product (`cuda-gpw-full-product`). Lever:
+  MeanFieldMethod + scf/stages + landed Γ-RKS GPW + PW fixed-occ (+ tip
+  multi-path Ops). No push.

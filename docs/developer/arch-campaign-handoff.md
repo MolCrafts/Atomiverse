@@ -4,7 +4,7 @@ Rewrite in place each harness wave.
 
 ## Status
 
-- **Parent:** `dev` @ `26fb8328` (GapCensus wave-4 chore; no arch product
+- **Parent:** `dev` @ `1c2d74d6` (GapCensus wave-5 chore; no arch product
   merge since PW node `f016215e` / harness wave-3 `d24283d1`)
 - **Wave-1 done:** e2e-in-tests delete (78 sources); `arch-gpw-driver-node`
 - **Wave-2 done:**
@@ -21,17 +21,19 @@ Rewrite in place each harness wave.
 - **GapCensus wave-5:** re-diff harness + notes + queues + tree vs
   `dev` @ `26fb8328`. **Tree on `dev` unchanged** (Γ RKS DIIS only / PW
   fixed-occ only / folded CUDA RHF / CUDA GPW stages≠product / HEAVY
-  `^$`). **No new slug.** Tips advanced and rebased onto `26fb8328`
-  (ahead=1 behind=0 each) — **unmerged tip ≠ done**.
+  `^$`). **No new slug.** Tips advanced onto `26fb8328` then parent moved
+  to `1c2d74d6` ⇒ tips **ahead=1 behind=1** — **unmerged tip ≠ done**.
+- **Assign wave-5:** staff **2** resumes only (`[~]`); **new_assigned=0**,
+  **incomplete_remaining=2**. Skipped held freeze + mg-main. Tips:
   - `wf/arch-gpw-driver-paths` @ `06bc94fb` — claim multi-path DIIS;
-    OT residual
+    OT residual; **rebase onto `1c2d74d6`** before Worktrees/gate; tip
+    spec `.claude/specs/arch-gpw-driver-paths/SPEC.md`
   - `wf/arch-pw-driver-paths` @ `98e98ed5` — claim all product SCF paths
-    on stages
+    on stages; **rebase onto `1c2d74d6`**; tip spec
+    `.claude/specs/arch-pw-driver-paths/SPEC.md`
   **pending held=2** (shape-freeze + mg-main), **in_progress=2**,
-  **new_slugs_added=0**, **gaps_remaining=5**. Blocked:
-  `cuda-gpw-full-product` (until paths + freeze). Roadmap arch prose
-  already accurate (no ○→✓). Clearup not required this census (no
-  worktrees opened).
+  **gaps_remaining=5**. Blocked: `cuda-gpw-full-product` (until paths +
+  freeze).
 - **Lever:** copy `MeanFieldMethod` + `scf/stages/` + landed
   `drive_gamma_rks_diis_` / `gpw/stages/*` + landed PW fixed-occ stages
   (+ tip multi-path Ops) — do not invent a second SCF shape.
