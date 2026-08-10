@@ -51,5 +51,12 @@ Stage footholds stay under `cuda/gpw/internal/` — **not** the user API.
 
 `test_cuda_gpw_full_product` + `test_cuda_gpw_ks_chain` 2/2 PASS; reg
 `PASS: cuda-gpw-full-product` (tols 5e-6 / 5e-5); shape freeze held;
-**perf_exempt** small cell. Rebased tip commits: `9c59dd99` feat +
-`ce525145` docs (then reconfirm docs).
+**perf_exempt** small cell.
+
+### Wave-3 worker resume (2026-08-10)
+
+Rebased tip onto `dev` @ `06b98a2d` (queue-only parent delta after
+`ea6058d8`). Product tree (`gpw_solver.{cuh,cu}`, unit, reg, CMake) **byte-
+identical** to GH200-**1120817** tip — rebase **not dirty** → no re-submit.
+Tip HEAD after rebase: see `git rev-parse wf/cuda-gpw-full-product`.
+**Not landed until merge to `dev`.**
