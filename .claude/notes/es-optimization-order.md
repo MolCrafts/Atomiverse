@@ -52,21 +52,21 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 2)
+### Active next — `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 3)
 
 Arch residual **closed**; public-shape freeze **green**. Parent `dev` @
-`82d96ff0`. First-slice product tip `wf/cuda-gpw-full-product` @ `18612b18`
-(GH200 1120312) **unmerged** — still P0. Dual-track staffable set:
+`ea6058d8`. First-slice product tip `wf/cuda-gpw-full-product` @ `f18d593c`
+(rebased; GH200 **1120817**) **unmerged** — still P0. Dual-track staffable set:
 
 | Priority | slug | Goal |
 | --- | --- | --- |
 | P0 | `cuda-gpw-full-product` | Merge public `cuda::gpw::GpwDft` first slice to `dev` (Γ RKS DIIS energy+forces) |
-| P1 | `cuda-gpw-device-collocate` / `cuda-gpw-multigrid-run` / `cuda-gpw-uks-gamma` | GPW product depth after first slice (compose landed stages) |
+| P1 | `cuda-gpw-device-collocate` / `device-forces` / `multigrid-run` / `uks-gamma` | GPW product depth after first slice (compose + real force path) |
 | P1 | `cuda-pw-pbe-stress` / `cuda-pw-spin-pbe` | Closed-shell PBE stress dual-gate; collinear spin-PBE energy |
-| P2 | `cuda-gpw-kpoints` + PW smear/spin forces/stress/smear | Multi-k GPW + PW derivative depth |
+| P2 | `cuda-gpw-kpoints` / `cuda-gpw-stress` + PW smear/spin forces/stress/smear | Multi-k GPW + GPW stress + PW derivative depth |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=11**; **gaps_remaining≈13**. Contract:
+(not soft-tol). **pending_count=13**; **gaps_remaining≈15**. Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 
