@@ -46,6 +46,20 @@ still sets `skip_update` in the ks_build Op; `GpwConverged` only judges.
 - [x] Public API unchanged; wipe builds
 - [x] `acceptance_met=true`
 
+## Gate evidence (wave-5 resume)
+
+Rebased onto `dev` @ `8338cde3` → tip `42454014`. Scoped build+test:
+
+| Gate | Result |
+| --- | --- |
+| `test_cpu_gpw_driver_node` | PASS |
+| `run_reg_arch-gpw-driver-paths` | PASS (shape) |
+| `run_reg_gpw-uks-o2-gamma` | PASS — \|dE\|=1.26e-5 Ha vs CP2K pin (tol 1e-3) |
+| `run_reg_gpw-kpoints-si` | PASS — pin + TR/folding identities |
+
+Lever: `MeanFieldMethod` + `scf/stages` + path-local Ops + `drive_path_diis_` /
+`drive_stage_loop_`. OT free-loop residual stays documented (not a new slug).
+
 ## Out
 
 OT stage migration; collint micro-opt; soft tols; CUDA GPW product; MG MAIN rewrite
