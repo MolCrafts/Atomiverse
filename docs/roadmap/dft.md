@@ -176,14 +176,17 @@ XC on the device in the Gaussian path.
 | HCTH/407   |  ○  |   ○  |   ○  |
 | SOGGA      |  ○  |   ○  |   ○  |
 
-The PBE CUDA ✓ is **plane-wave, closed-shell only** (spin-PBE still open on
-es-cpu-cuda queue): the `cuda::pw::PW` density side runs device PBE
-(`cuda/planewave/internal/xc_pbe.cu` — PBE-X + PW92-based PBE-C at ζ = 0,
-spectral ∇ρ / divergence in `DeviceDensity`) against the CPU stage helpers as
-oracle. GPW has a device closed-shell PBE **KS stage** (`KsChainDevice` /
-`cuda-gpw-ks-gga`) composed into hybrid public `cuda::gpw::GpwDft` (product
-PBE dual-gate still open). No CUDA GGA on the molecular Gaussian path; the
-PBE-family variants (PBEsol/revPBE/RPBE) stay CPU-only.
+The PBE CUDA ✓ is **plane-wave** closed-shell **and collinear fixed-occupation
+spin-GGA energy** (`cuda-pw-spin-pbe` / `reg_cuda-pw-spin-pbe`; GH200
+**1124645** \|ΔE\|=1.14e-13 Ha) — spin-PBE **forces/stress** and PBE-family
+variants still open on es-cpu-cuda queue: the `cuda::pw::PW` density side runs
+device PBE (`cuda/planewave/internal/xc_pbe.cu` — PBE-X + PW92-based PBE-C;
+closed-shell ζ=0 + spin `xc_pbe_spin_grid`; spectral ∇ρ / divergence in
+`DeviceDensity`) against the CPU stage helpers as oracle. GPW has a device
+closed-shell PBE **KS stage** (`KsChainDevice` / `cuda-gpw-ks-gga`) composed
+into hybrid public `cuda::gpw::GpwDft` (product PBE dual-gate still open). No
+CUDA GGA on the molecular Gaussian path; the PBE-family variants
+(PBEsol/revPBE/RPBE) stay CPU-only.
 `XCType::BLYP` is pure B88+LYP (unit weights, no HF admixture); regression
 `reg_blyp-water-sto3g` pins H2O/STO-3G vs PySCF xc=blyp. **BLYP on GPW**
 ships as `XcKind::BLYP` (`reg_gpw-blyp-water`; dual-gate vs PBE). **PBEsol**
@@ -447,19 +450,20 @@ Two periodic DFT engines exist, with disjoint strengths:
   CELL_OPT**
   (`IsotropicCellRelax` + intensive `kStress`; `reg_pw-variable-cell-si`).
   CUDA is `cuda::pw::PW` — a strict subset of the CPU method: **LSDA**
-  (Slater + VWN5 device kernel) or **PBE** (device closed-shell GGA,
-  `internal/xc_pbe.cu` — table **Periodic GGA** CUDA ✓ is this slice only;
-  collinear spin-PBE still open), **energy** (`run()`), **analytic ionic
-  forces** (closed-shell **LSDA + PBE**; `cuda::pw::pw_forces_analytic` —
-  local HF + Ewald + KB nonlocal; GH200 dual-gate), **analytic cell stress**
-  (closed-shell **LSDA + PBE** dual-gate pins; `cuda::pw::pw_stress` —
-  `reg_cuda-pw-stress` + `reg_cuda-pw-stress-pbe`; GH200 PBE max‖Δσ‖
-  **5.585e-12** eV/Å³ job **1123959**), **collinear LSDA spin** energy
-  (fixed occupation; spin-PBE / spin forces / spin-PBE forces / spin stress
-  still reject on base), and **restricted metallic smear** energy
-  (FD/Gaussian/MP + `extra_bands` + Mermin free energy; spin+smear / smear
-  forces / smear stress still reject); large-cell wall evidence on Si
-  supercells — see es-cpu-cuda queue. **CUDA GPW first product slice landed:**
+  (Slater + VWN5 device kernel) or **PBE** (device closed-shell GGA **and**
+  collinear spin-GGA energy, `internal/xc_pbe.cu` — table **Periodic GGA**
+  CUDA ✓ is this energy slice; spin-PBE F/σ still open), **energy** (`run()`),
+  **analytic ionic forces** (closed-shell **LSDA + PBE**;
+  `cuda::pw::pw_forces_analytic` — local HF + Ewald + KB nonlocal; GH200
+  dual-gate), **analytic cell stress** (closed-shell **LSDA + PBE** dual-gate
+  pins; `cuda::pw::pw_stress` — `reg_cuda-pw-stress` + `reg_cuda-pw-stress-pbe`;
+  GH200 PBE max‖Δσ‖ **5.585e-12** eV/Å³ job **1123959**), **collinear spin**
+  energy (**LSDA** + **spin-PBE**; fixed occupation; GH200 spin-PBE
+  **1124645**; spin forces / spin-PBE forces / spin stress still reject on
+  base), and **restricted metallic smear** energy (FD/Gaussian/MP +
+  `extra_bands` + Mermin free energy; spin+smear / smear forces / smear stress
+  still reject); large-cell wall evidence on Si supercells — see es-cpu-cuda
+  queue. **CUDA GPW first product slice landed:**
   public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE, single-grid periodic;
   hybrid host STVnl/cbg collocate/integrate/DIIS + device `KsChainDevice` KS;
   free-fn forces still **CPU-backed**; GH200 dual-gate **1120817** PADE H₂).
@@ -624,8 +628,9 @@ Which engine backs which ✓:
   (`reg_gpw-rpbe-water` + UKS `reg_gpw-uks-rpbe`) / **BLYP**
   (`reg_gpw-blyp-water`) **and** CPU PW true PBE (`reg_pw-pbe-gga-si`) +
   **true collinear spin-GGA** (`reg_pw-spin-gga`) **and** CUDA PW
-  closed-shell device PBE (`cuda::pw::PW` / `reg_cuda-pw-pbe-device` —
-  table CUDA ✓; no spin / no PBE-family variants on device).
+  closed-shell device PBE (`cuda::pw::PW` / `reg_cuda-pw-pbe-device`) **and**
+  CUDA collinear spin-PBE energy (`reg_cuda-pw-spin-pbe` — table CUDA ✓ for
+  PBE energy; spin F/σ + PBE-family variants still open on device).
 - **Periodic DFT+U** is GPW Dudarev PLUS_U energy (`reg_gpw-dftu-nio`) **and
   analytic stress** (`reg_gpw-dftu-stress`) **and ionic forces**
   (`reg_gpw-dftu-forces`; full-6N FD dual-gate + CP2K ENERGY_FORCE energy

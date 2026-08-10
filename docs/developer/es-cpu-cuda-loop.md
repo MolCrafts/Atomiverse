@@ -39,6 +39,17 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-10 harness wave 4 (parent `dev` @ `118d3003`):** 1 of staffed
+  → done [x]: `cuda-pw-spin-pbe` (collinear spin-GGA PBE energy on device;
+  merge `118d3003` / feat `7949e29d`; GH200 **1124645** \|ΔE\|=**1.14e-13** Ha
+  O₂ both −28.7585210635 Ha mag=2; prior **1123961** / **1122874**;
+  **perf_exempt**). Spec closed (deleted `.claude/specs/cuda-pw-spin-pbe/`).
+  Keep other `[~]`: `cuda-gpw-device-collocate` tip `6a564562` (GH200
+  **1124643**). Roadmap prose: collinear spin-PBE energy landed (table PBE ✓
+  held; spin F/σ + GPW product still open — no ○→✓ for incomplete depth).
+  **cpu_pending=0**; **cuda_pending=23**; **gaps_remaining≈24**. Clearup
+  already ran. Queue **not** exhausted (GapCensus owns discovery). No push.
+
 - **2026-08-10 harness wave 3 (parent `dev` @ `18663d13`):** 1 of staffed
   → done [x]: `cuda-pw-pbe-stress` (closed-shell PBE Nielsen–Martin dual-gate;
   merge `18663d13` / feat `b0523de0`; GH200 re-verify **1123959**

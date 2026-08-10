@@ -70,7 +70,8 @@ Grok CUDA skills (not ad-hoc style):
 | PW analytic ionic forces | **landed** (`cuda-pw-forces`) | `internal/pw_forces.{cu,cuh}` + `cuda::pw::pw_forces_analytic`; local HF + Ewald + KB; GH200 **1050105** max\|ΔF\|=2.86e-13 eV/Å vs CPU (LSDA reg); **not** spin/smear |
 | PW PBE analytic ionic forces | **landed** (`cuda-pw-forces-pbe`) | same public API under `XCType::PBE`; force path shares `den.stream()`; GH200 post-merge **1050801** max\|ΔF\|=2.63e-13 eV/Å (tol 5e-3); E both −13.89672028 Ry; **not** stress/spin/smear |
 | PW analytic cell stress | **landed** (`cuda-pw-stress` + `cuda-pw-pbe-stress`) | `internal/pw_stress.{cu,cuh}` + `cuda::pw::pw_stress`; Nielsen–Martin NSCF strain-FD + ρ·Ω₀/Ω remap; GH200 **1050604** max\|Δσ\|=1.36e-12 eV/Å³ (LSDA Si) + **1123959** max\|Δσ\|=5.585e-12 eV/Å³ (PBE Si; `reg_cuda-pw-stress-pbe`); **not** spin/smear/multi-SCF FD product |
-| PW collinear LSDA spin | **landed** (`cuda-pw-collinear-spin`) | nspin=2 density + VWN5 spin XC + fixed-occupation UKS; GH200 **1051041** O₂ \|ΔE\|=1.07e-13 Ha (tol 2e-3); forces/stress reject spin; **not** spin-PBE / smear |
+| PW collinear LSDA spin | **landed** (`cuda-pw-collinear-spin`) | nspin=2 density + VWN5 spin XC + fixed-occupation UKS; GH200 **1051041** O₂ \|ΔE\|=1.07e-13 Ha (tol 2e-3); forces/stress reject spin; **not** smear |
+| PW collinear spin-PBE energy | **landed** (`cuda-pw-spin-pbe`) | true spin-GGA on device (`xc_pbe_spin_grid` + spectral ∇ρ_σ); GH200 **1124645** O₂ \|ΔE\|=1.14e-13 Ha (tol 2e-3); forces/stress/smear still reject |
 | PW restricted metallic smear | **landed** (`cuda-pw-metallic-smear`) | FD/Gaussian/MP + extra_bands + Ritz cache; GH200 **1051119** Al \|ΔE\|=1.24e-14 Ry; spin+smear / forces / stress reject |
 | RHF non-default stream D2H | **landed** (`cuda-rhf-nondefault-stream`) | residual/V_nuc async on Evaluate stream; GH200 **1051227** 2/2 PASS |
 
@@ -80,10 +81,11 @@ Public shape mirrors `cpu::pw::PW`: public members → `build(frame)` →
 `run(frame)` → `PWResult`. The free function `cuda::pw::pw_scf` is **deleted**
 (no shim). Device envelope — everything else **throws** `std::invalid_argument`
 naming the member and the way out: closed-shell **or collinear fixed-occupation
-UKS with `XCType::LSDA`** (`spin_polarized` + integer mag), restricted metallic
-smear (FD/Gaussian/MP; not with spin), `xc=XCType::LSDA` or closed-shell
-`XCType::PBE`, `k_mesh>=1`, `ecut_ry>0`. k-points are **not** MPI-distributed
-here. Spin-PBE, spin+smear, spin forces, and spin stress still reject.
+UKS with `XCType::LSDA` or `XCType::PBE`** (`spin_polarized` + integer mag),
+restricted metallic smear (FD/Gaussian/MP; not with spin), `xc=XCType::LSDA` or
+`XCType::PBE` (closed-shell or spin), `k_mesh>=1`, `ecut_ry>0`. k-points are
+**not** MPI-distributed here. Spin+smear, spin forces, and spin stress still
+reject.
 
 Per-iteration PCIe traffic, density side: Pulay Gram ≤ 1 KB (only once history
 ≥ 2) + ≤ 8 coefficients + 5 energy/residual doubles. **No O(N_G) / O(N_r)
@@ -169,8 +171,9 @@ multi-grid product KS stage landed** (`cuda-gpw-ks-multigrid`, GH200
 **1051041**). **Restricted metallic smear landed** (`cuda-pw-metallic-smear`,
 GH200 **1051119** dual-gate Al \|ΔE\|=1.24e-14 Ry). **RHF non-default stream
 D2H landed** (`cuda-rhf-nondefault-stream`, GH200 **1051227** 2/2 PASS).
-Residual open depth: spin+smear / spin forces / spin stress / spin-PBE
-(+ spin-smear F/σ after spin-smear energy); GPW first product **landed** —
+Residual open depth: spin+smear / spin forces / spin stress / **spin-PBE F/σ**
+(+ spin-smear F/σ after spin-smear energy); collinear spin-PBE **energy**
+landed (`cuda-pw-spin-pbe`, GH200 **1124645**). GPW first product **landed** —
 depth residual on es-cpu-cuda queue (device collocate tip, DIIS/eigen, forces,
 MG/UKS/kpoints, …).
 
