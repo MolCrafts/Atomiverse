@@ -5,6 +5,7 @@
 ///        VWN5 correlation — with the rho < 1e-12 cutoff.
 #include "atomiverse/cpu/scf/xc_functional.h"
 #include "atomiverse/cuda/planewave/internal/xc_lda.cuh"
+#include <algorithm>
 #include <cmath>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
@@ -174,6 +175,84 @@ TEST(CudaPWXcLda, EnergyReduction) {
     cudaFree(d_exc);
     cudaFree(d_E);
     cudaFree(d_scratch);
+}
+
+// Collinear LSDA: device vs evaluate_xc(LSDA, ρ_α, ρ_β) over a (ρ, ζ) grid.
+TEST(CudaPWXcLda, SpinMatchesCpuEvaluateXc) {
+    std::vector<double> rho_a, rho_b;
+    // Sub-cutoff total
+    rho_a.push_back(0.0);
+    rho_b.push_back(0.0);
+    rho_a.push_back(1e-14);
+    rho_b.push_back(1e-14);
+    // Polarized and unpolarized valence densities
+    const double rhos[] = {1e-4, 1e-3, 0.01, 0.05, 0.2, 0.5, 1.0, 2.0};
+    const double zetas[] = {0.0, 0.2, 0.5, 0.8, 0.99, -0.3, -0.7};
+    for (double r : rhos) {
+        for (double z : zetas) {
+            // ζ = (ρa − ρb)/ρ  ⇒  ρa = ρ(1+ζ)/2, ρb = ρ(1−ζ)/2
+            rho_a.push_back(r * (1.0 + z) * 0.5);
+            rho_b.push_back(r * (1.0 - z) * 0.5);
+        }
+    }
+    // One fully polarized limit (β floored by correlation)
+    rho_a.push_back(0.4);
+    rho_b.push_back(0.0);
+
+    const int nr = static_cast<int>(rho_a.size());
+    auto* d_ra = static_cast<double*>(dmalloc(nr * sizeof(double)));
+    auto* d_rb = static_cast<double*>(dmalloc(nr * sizeof(double)));
+    auto* d_va = static_cast<double*>(dmalloc(nr * sizeof(double)));
+    auto* d_vb = static_cast<double*>(dmalloc(nr * sizeof(double)));
+    auto* d_exc = static_cast<double*>(dmalloc(nr * sizeof(double)));
+    ASSERT_EQ(cudaMemcpy(d_ra, rho_a.data(), nr * sizeof(double),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(d_rb, rho_b.data(), nr * sizeof(double),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+
+    ATV::cuda::pw::internal::xc_lsda_spin_grid(d_ra, d_rb, d_va, d_vb, d_exc,
+                                               nr);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+
+    std::vector<double> va(nr), vb(nr), exc(nr);
+    cudaMemcpy(va.data(), d_va, nr * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(vb.data(), d_vb, nr * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(exc.data(), d_exc, nr * sizeof(double), cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < nr; ++i) {
+        double ra = std::max(0.0, rho_a[i]);
+        double rb = std::max(0.0, rho_b[i]);
+        double ref_va = 0, ref_vb = 0, ref_exc = 0;
+        if (ra + rb >= 1e-12) {
+            auto out = evaluate_xc(XCType::LSDA, ra, rb);
+            ref_va = out.vrho_alpha;
+            ref_vb = out.vrho_beta;
+            ref_exc = out.exc;
+        }
+        const double t = 1e-12 * std::fmax(1.0, std::abs(ref_exc));
+        const double ta = 1e-12 * std::fmax(1.0, std::abs(ref_va));
+        const double tb = 1e-12 * std::fmax(1.0, std::abs(ref_vb));
+        EXPECT_NEAR(exc[i], ref_exc, t)
+            << "exc at ra=" << rho_a[i] << " rb=" << rho_b[i];
+        EXPECT_NEAR(va[i], ref_va, ta)
+            << "vxc_a at ra=" << rho_a[i] << " rb=" << rho_b[i];
+        EXPECT_NEAR(vb[i], ref_vb, tb)
+            << "vxc_b at ra=" << rho_a[i] << " rb=" << rho_b[i];
+    }
+
+    // ζ = 0 must reproduce the restricted kernel (v_a == v_b).
+    for (int i = 0; i < nr; ++i) {
+        if (std::abs(rho_a[i] - rho_b[i]) < 1e-18 && rho_a[i] + rho_b[i] > 1e-12)
+            EXPECT_NEAR(va[i], vb[i], 1e-14);
+    }
+
+    cudaFree(d_ra);
+    cudaFree(d_rb);
+    cudaFree(d_va);
+    cudaFree(d_vb);
+    cudaFree(d_exc);
 }
 
 // The sub-cutoff points must be exactly zero (cutoff branch).

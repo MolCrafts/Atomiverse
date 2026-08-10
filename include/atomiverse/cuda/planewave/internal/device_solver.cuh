@@ -139,11 +139,18 @@ class DeviceBandSolver {
     /// @param max_iter Maximum Davidson expansion rounds (capped at 20).
     void solve(cpu::pw::internal::PWWorkspace& ws, int max_iter);
 
-    /// @brief rho_accum += weight·2·|ψ_b(r)|²/Ω over the bands of the most
-    /// recent solve() (occupations = 2, as on CPU). Writes the borrowed
-    /// accumulator; the buffer is zeroed by
-    /// `DeviceDensity::zero_accumulator()`.
-    void accumulate_density(AccReal weight, AccReal omega);
+    /// @brief rho_accum += weight·occ·|ψ_b(r)|²/Ω over the first `n_occ`
+    /// bands of the most recent solve(). Restricted closed-shell default is
+    /// `n_occ = n_bands`, `occ = 2`. Collinear spin uses `occ = 1` and
+    /// `n_occ = N_σ`. Writes the borrowed accumulator; the buffer is zeroed
+    /// by `DeviceDensity::zero_accumulator()`.
+    void accumulate_density(AccReal weight, AccReal omega, int n_occ,
+                            double occ = 2.0);
+
+    /// @brief Closed-shell convenience: occupy every band with f = 2.
+    void accumulate_density(AccReal weight, AccReal omega) {
+        accumulate_density(weight, omega, n_bands_, 2.0);
+    }
 
     /// @brief Add Kleinman–Bylander nonlocal Hellmann–Feynman forces for the
     ///        most recent `solve()` on the bound k-point into a device force

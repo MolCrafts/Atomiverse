@@ -9,8 +9,10 @@
 /// The device path is a strict subset of the CPU path. Members the GPU
 /// cannot honour make `run()` throw with a how-to — the class never
 /// silently degrades to a different Hamiltonian. Supported today:
-/// restricted (nspin = 1), fixed closed-shell occupations, `XCType::LSDA`
-/// and `XCType::PBE`.
+/// restricted (nspin = 1) with fixed closed-shell occupations and
+/// `XCType::LSDA` / `XCType::PBE`; collinear fixed-occupation UKS
+/// (`spin_polarized`, integer multiplicity) with **`XCType::LSDA` only**
+/// (collinear spin-GGA / metallic smearing stay on `cpu::pw::PW`).
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -86,9 +88,11 @@ class PW {
     /// including the PBE-family variants (PBEsol/revPBE/RPBE) whose
     /// constants the device kernel does not carry.
     cpu::scf::XCType xc = cpu::scf::XCType::PBE;
-    /// @brief Collinear spin-polarized KS. No device path — `true` throws.
+    /// @brief Collinear spin-polarized KS (fixed occupations). Device path
+    ///        is LSDA only — `true` with `XCType::PBE` throws.
     bool spin_polarized = false;
-    /// @brief Spin multiplicity 2S+1. No device path — `!= 1` throws.
+    /// @brief Spin multiplicity 2S+1. With `spin_polarized`, sets
+    ///        N↑ − N↓ = multiplicity − 1. Without spin, must stay 1.
     int multiplicity = 1;
     /// @brief Metallic smearing kind. No device path — `!= none` throws.
     Smearing smearing = Smearing::none;
@@ -131,12 +135,12 @@ class PW {
     /// @param frame Atom positions [Å], types (Z), and simulation cell.
     /// @return Owned `PWResult` (valid until the next `run()`).
     /// @throws std::invalid_argument for an `xc` other than `XCType::LSDA` /
-    ///         `XCType::PBE`, `spin_polarized`,
-    ///         `multiplicity != 1`, `smearing != Smearing::none`,
-    ///         non-positive `tol`/`mix_beta`, `pulay_depth < 1`,
-    ///         `max_iter < 1`, or an odd valence-electron count (the device
-    ///         density accumulator occupies every band with exactly 2
-    ///         electrons). Every message names the member and the way out.
+    ///         `XCType::PBE`, collinear spin with non-LSDA XC, multiplicity
+    ///         without spin, `smearing != Smearing::none`, non-positive
+    ///         `tol`/`mix_beta`, `pulay_depth < 1`, `max_iter < 1`,
+    ///         incompatible n_elec/multiplicity parity, or (restricted only)
+    ///         an odd valence-electron count. Every message names the member
+    ///         and the way out.
     PWResult& run(const cpu::Frame& frame);
 
     /// @brief Most recent SCF result.

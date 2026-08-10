@@ -947,7 +947,8 @@ void DeviceBandSolver::apply_h_host(const std::complex<AccReal>* psi,
     ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
 }
 
-void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega) {
+void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
+                                          int n_occ, double occ) {
     require_bound(rho_accum_, veff_r_);
     // require_bound covers the borrowed grids only. This method also reads
     // d_ritz_ / d_idx_, which stay null until bind_kpoint() + solve() have
@@ -958,9 +959,14 @@ void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega) {
             "cuda::pw::internal::DeviceBandSolver::accumulate_density: "
             "bind_kpoint() and solve() must run first (no Ritz vectors "
             "bound)");
-    double scale =
-        static_cast<double>(weight) * 2.0 / static_cast<double>(omega);
-    for (int b = 0; b < n_bands_; ++b) {
+    if (n_occ < 0 || n_occ > n_bands_)
+        throw std::invalid_argument(
+            "cuda::pw::internal::DeviceBandSolver::accumulate_density: "
+            "n_occ must be in [0, n_bands]");
+    if (n_occ == 0)
+        return;
+    double scale = static_cast<double>(weight) * occ / static_cast<double>(omega);
+    for (int b = 0; b < n_occ; ++b) {
         ATV_CUDA_CHECK(cudaMemsetAsync(
             d_grid_, 0, nr_ * sizeof(cufftDoubleComplex), stream_));
         k_scatter<<<n_blocks(ng_), kBlock, 0, stream_>>>(

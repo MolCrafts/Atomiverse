@@ -222,6 +222,23 @@ if(ATV_BUILD_PW)
         add_dependencies(regressions run_${_reg_pw_forces})
         unset(_reg_pw_forces)
 
+        # Collinear fixed-occupation UKS (O2 triplet, LSDA) dual-gate.
+        set(_reg_pw_spin reg_cuda-pw-collinear-spin)
+        add_executable(${_reg_pw_spin}
+            pw/cuda-pw-collinear-spin/${_reg_pw_spin}.cu)
+        target_link_libraries(${_reg_pw_spin} PRIVATE atomiverse)
+        set_target_properties(${_reg_pw_spin} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        target_compile_definitions(${_reg_pw_spin} PRIVATE
+            ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+        add_custom_target(run_${_reg_pw_spin}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_pw_spin}> --device=both
+            DEPENDS ${_reg_pw_spin}
+            COMMENT "regression [pw/cuda-pw-collinear-spin] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_pw_spin})
+        unset(_reg_pw_spin)
+
         # Analytic ionic forces under device PBE-GGA (LSDA dual-gate is
         # reg_cuda-pw-forces; energy PBE is reg_cuda-pw-pbe-device).
         set(_reg_pw_forces_pbe reg_cuda-pw-forces-pbe)
