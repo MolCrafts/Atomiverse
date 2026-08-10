@@ -62,4 +62,12 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
   `cuda-gpw-ks-chain` P1, spin/smear P2, simd/RHF-stream P3. Clearup this
   wave. Queue **not** exhausted. No push.
 
+- **2026-08-10 GapCensus (parent `dev` @ `0316e7d0`):** Bootstrap + re-diff
+  tree (`cuda/gpw` = internal only; no public `GpwDft`), notes (freeze green
+  `0147fe02`), arch-campaign residual closed (`arch-pw-driver-paths` /
+  `arch-mg-main-structural` merged), roadmap DFT CUDA GPW ○, fair walls
+  authority **2.33×** MG MAIN. Queue refilled: **cuda_pending=5**
+  (`cuda-gpw-full-product` P0 + four PW spin-depth rows); **cpu_pending=0**.
+  Spec-lite `.claude/specs/cuda-gpw-full-product/`. Worktrees/`wf/*`/`build*`
+  empty. Staff next: product only. Queue **not** exhausted. No push.
 

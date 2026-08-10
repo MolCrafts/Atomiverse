@@ -53,19 +53,56 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 
 ## pending
 
-**Harness wave 7 land** 2026-08-10 (`dev` @ `018dca0d` after merges
-`d2ccc627` / `018dca0d`). Staffed and landed both remaining CUDA pending
-slices; **cpu_pending=0** held (no pin-safe fair-wall lever). Fair walls
-**unchanged** (authority
-[gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md); worst_ratio
-**2.33×** MG MAIN). Confirmed open after land: restricted metallic smear
-landed; spin+smear / spin forces / spin stress / spin-PBE still reject;
-`KsMultiGridChainDevice` is **stage unit only** (no public `GpwDft`).
-Staff only `wf/escuda-<slug>` off current `dev`. Do not invent
-hybrid/GAPW/PAW/meta-GGA. **No gpw-perf-queue promote**.
-**new_slugs_added=0.** **pending_count=0**; **cpu_pending=0**;
-**cuda_pending=0**; **gaps_remaining=5**
-(residual-mass + blocked full-product / mg-main-structural — not staffable).
+**GapCensus 2026-08-10 (parent `dev` @ `0316e7d0`):** re-diff vs tree +
+arch-campaign close + notes + roadmap DFT CUDA/GPW columns.
+
+| Fact | Evidence |
+| --- | --- |
+| Public-shape freeze | **green** merge `0147fe02` / note [cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md) |
+| `arch-pw-driver-paths` + `arch-mg-main-structural` | **merged** (`8dcb5de0`, `aef1cd3b`) |
+| CUDA `gpw/` public method | **absent** — only `include/atomiverse/cuda/gpw/internal/*` stage units |
+| CPU fair walls | unchanged; authority [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md); worst **2.33×** MG MAIN |
+| Worktrees / `wf/*` / `build*` | empty on parent |
+
+**Counts:** **pending_count=5**; **cpu_pending=0**; **cuda_pending=5**;
+**gaps_remaining≈7** (1 product + 4 PW depth + residual MG mass + higher-L RHF
+out-of-scope). Staff only `wf/escuda-<slug>` off current `dev`. Do **not**
+invent hybrid/GAPW/PAW/meta-GGA. **No gpw-perf-queue promote**. Foothold ≠
+closed — full product still the capability gap.
+
+### CUDA — product (open gate) — **staff first**
+
+- [ ] `cuda-gpw-full-product` | **P0** Compose landed stage units under public
+  `cuda::gpw::GpwDft` matching CPU `GpwDft` shape (members + `build`/`run`/
+  `last_result` + forces family; no Config bag; stages stay
+  `cuda/gpw/internal/`). **First slice:** Γ closed-shell DIIS RKS (LDA and/or
+  PBE), energy + forces; multi-k / UKS / OT / vdW optional depth. Track:
+  **cuda**. Twin: same-settings CPU `GpwDft` oracle + unit stage suite.
+  Gate: GH200 log + stated CUDA↔CPU energy/force tols; fail-closed device path.
+  Contract: [cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md).
+  **Not** foothold-as-product; **not** auto-land without GPU evidence.
+  Lever (research): public type under `include/atomiverse/cuda/gpw/` composing
+  `KsChainDevice` / `KsMultiGridChainDevice` + CPU-side STVnl/DIIS twin path as
+  needed for first Γ RKS energy; forces via device/CPU dual-gate pin.
+
+### CUDA — PW depth (landed surface still rejects) — after product or parallel staff
+
+Discovered by tree scan of `pw_solver.cu` / force / stress guards on `dev`:
+
+- [ ] `cuda-pw-spin-pbe` | **P1** Lift collinear `spin_polarized` + `XCType::PBE`
+  reject on `cuda::pw::PW::run` — device spin-GGA energy path (CPU twin oracle).
+  Track: **cuda**. Not forces/stress/smear. Twin: O₂ or spin-PBE unit + dual-gate
+  reg. Gate: GH200 + stated CUDA↔CPU energy tol.
+- [ ] `cuda-pw-spin-forces` | **P2** Analytic ionic forces under collinear LSDA
+  spin (currently forces reject spin). Track: **cuda**. Twin: CPU
+  `pw_forces_analytic` + dual-gate. Gate: GH200; fail-closed non-spin path
+  unchanged.
+- [ ] `cuda-pw-spin-stress` | **P2** Cell stress under collinear LSDA spin
+  (currently stress reject spin). Track: **cuda**. Twin: CPU `pw_stress`.
+  Gate: GH200.
+- [ ] `cuda-pw-spin-smear` | **P2** Collinear spin + metallic smear free energy
+  (currently spin∧smear throws). Track: **cuda**. Twin: CPU spin+smear pin.
+  Gate: GH200; optional after spin-PBE / energy spin path stable.
 
 ### Fair-wall rank (1 MPI × OMP=4; worst residual first)
 
@@ -83,7 +120,8 @@ MG budget (ngrid=37800, ~13 SCF): setup STVnl+products ~0.42 s once +
 ~13×(coll 30 + int 48 + XC/Poisson ~5) ≈ **1.5 s** → matches 1.6 s pin. CP2K
 coll/int alone ~13×(14.5+17.1) ≈ **0.41 s**. Closing MAIN is **blocked**
 `mg-main-structural` (non-pin-safe windows or task-list rewrite) — not more
-collint micro-opts (`cpu-collint-int-residual-2` wave-8 **no-land**).
+collint micro-opts (`cpu-collint-int-residual-2` wave-8 **no-land**). Arch
+campaign landed single-owner multi-level path; **fair-wall ~1× still residual**.
 
 ### CPU — wall vs CP2K (contribution to worst ratio)
 
@@ -98,7 +136,7 @@ CPU polish staffed here without a pin-safe wall lever. **No promote** from
 | Row | Why not pending |
 | --- | --- |
 | `cpu-collint-int-residual-2` | wave-8 **no-land** — fused segment accumulate noise-flat; CP2K-style per-chunk hsum **regressed** |
-| MG MAIN → ~1× (`mg-main-structural`) | **blocked** — pin-safe collint/structure/sphere campaigns closed; needs non-pin-safe windows or task-list rewrite |
+| MG MAIN → ~1× (`mg-main-structural`) | **blocked** — pin-safe collint/structure/sphere campaigns closed; arch single-owner path landed; needs non-pin-safe windows or task-list rewrite beyond pin law |
 | `p1-products-default-k` | stay on gpw-perf-queue; A/B only after MG nearer parity + products ≤ dense |
 | `p2-mpi-product-grid` | multi-rank; not 1-MPI fair-wall lever |
 | OT / UKS further polish | water OT ~1.20× / SCF body ≤1.0×; UKS DIIS 1.077× closed; OT UKS ≤3× met |
@@ -111,19 +149,18 @@ CPU polish staffed here without a pin-safe wall lever. **No promote** from
 
 ### CUDA — corresponding ES (open-gate readiness × user value)
 
-**Tree fact on `dev` @ `018dca0d` (wave-7 land):** Confirmed present: prior
-wave-6 surface **plus** restricted metallic smear on `cuda::pw::PW` (FD/Gaussian/MP
-occupations + extra_bands + Mermin free energy) **and** RHF residual/V_nuc D2H
-on Evaluate non-default stream. **cuda_pending = 0.**
+**Tree fact on `dev` @ `0316e7d0` (post arch residual close):** stage units +
+PW depth landings confirmed; **no** `cuda::gpw::GpwDft` public type.
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
-| RHF s/p energy + forces + level_shift + path-select + device CDIIS + **non-default stream D2H** | **landed** | higher-L host-fill remains |
-| Γ GPW Poisson/FFT + Padé LDA XC + product collocate/integrate + **composed `KsChainDevice`** (LDA + **closed-shell PBE**) + **`KsMultiGridChainDevice`** | **landed** stage units (MG GH200 **1051042** max\|ΔV_eff\|=8.1e-10) | stage only — **≠** full method product |
-| `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **analytic cell stress** + **collinear LSDA spin** + **restricted metallic smear** | **landed** energy (+ spin energy + restricted free energy); closed-shell forces/stress | spin+smear / spin-PBE / spin forces / spin stress still reject |
+| RHF s/p energy + forces + level_shift + path-select + device CDIIS + **non-default stream D2H** | **landed** | higher-L host-fill remains (out of product scope) |
+| Γ GPW Poisson/FFT + Padé LDA XC + product collocate/integrate + **composed `KsChainDevice`** (LDA + **closed-shell PBE**) + **`KsMultiGridChainDevice`** | **landed** stage units only | **≠** full method product → **staff `cuda-gpw-full-product`** |
+| `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **analytic cell stress** + **collinear LSDA spin** + **restricted metallic smear** | **landed** energy (+ spin energy + restricted free energy); closed-shell forces/stress | **pending depth:** spin-PBE / spin forces / spin stress / spin+smear |
 
-**Staff order:** queue empty for pin-safe / open-gate CUDA depth in this loop.
-Full GPW product stays **blocked**. Higher-L RHF stays product-out-of-scope.
+**Staff order:** (1) `cuda-gpw-full-product` **P0**; (2) PW spin-depth rows P1–P2.
+Do not staff lone new GPW kernel footholds (compose product instead). Higher-L
+RHF stays product-out-of-scope.
 
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
@@ -132,7 +169,6 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 | Row | Why |
 | --- | --- |
-| `cuda-gpw-full-product` | **staffable** (freeze green on `dev` @ `0147fe02`) — public shape = CPU `GpwDft` ([cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)); footholds / ks-chain / GGA / MG compose under that product; not auto-landed; GH200 + CUDA↔CPU tols |
 | CUDA d-shell / higher-L RHF product | out of loop product scope (host-fill remains for non-s/p STO-3G) |
 | Further lone GPW kernel footholds | collocate↔integrate + LDA + GGA + MG chain complete; depth is product — not another lone foothold |
 | `cuda-pw-pbe-large-cell` | large-cell LSDA ladder **closed**; optional PBE remeasure not a correctness gap |
@@ -152,22 +188,21 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 ## in_progress
 
-(empty — harness wave 7 closed. Staffable cuda/cpu pending empty; residual
-gaps are blocked structural / out-of-scope.)
+(empty — GapCensus wave ready to Assign. Staff **`cuda-gpw-full-product`** first
+on `wf/escuda-cuda-gpw-full-product` off `dev` @ `0316e7d0`.)
 
 **Foreign incomplete worktrees on parent (do not steal / do not force-merge):**
 
 | Worktree branch | Loop ownership | Note |
 | --- | --- | --- |
-| `wf/cuda-md-first-regression` | **OpenMM / MD** — not this loop | leave alone |
-| stale `wf/cuda-pw-collinear-spin` (pre-rebase tip) | **superseded** by landed `escuda-cuda-pw-collinear-spin` | delete only if fully-merged or abandoned; no re-staff |
-| stale merged `wf/escuda-*` tips | **merged** on `dev` | clearup-owned prune |
+| *(none listed)* | — | parent worktree list clean 2026-08-10 GapCensus |
 
 ## blocked
 
 - [!] `global-xtensor-xsimd` | never enable global `XTENSOR_USE_XSIMD`
-- [!] `cuda-gpw-full-product` | product implement under freeze contract (CPU `GpwDft` public shape) — foothold + LDA/GGA/MG `ks_chain` green ≠ method product; freeze **merged** (`0147fe02` / `aea603bb`); staffable under contract; GH200 + stated CUDA↔CPU tols; still a large product slug
 - [!] `mg-main-structural` | MG MAIN **2.33×** residual after pin-safe collint + structure + sphere campaigns; further cut needs non-pin-safe windows or task-list rewrite beyond this loop’s pin law — do not staff as soft-tol or self-golden
+  (arch-campaign landed single-owner multi-level path `arch-mg-main-structural`;
+  fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 
 ## done
 

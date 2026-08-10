@@ -52,34 +52,25 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — architecture campaign `arch-campaign` (2026-08-10)
+### Active next — `es-cpu-cuda-opt` product (2026-08-10)
 
-Pin-safe dual-track `es-cpu-cuda-opt` **exhausted** staffable open-gate rows
-(CPU lever empty; CUDA corresponding slices landed). Binding next is **ES order
-step 1 — CPU architecture**, not more collint polish.
+Arch-campaign residual **closed** on `dev` @ `0316e7d0`
+(`arch-pw-driver-paths`, `arch-mg-main-structural`, public-shape freeze).
+Binding staffable work returns to dual-track opt:
 
 | Priority | slug | Goal |
 | --- | --- | --- |
-| P0 | ~~`arch-gpw-driver-node`~~ **landed** | `GpwDft` → `Driver<gpw::Phase>`; residual paths → `arch-gpw-driver-paths` |
-| P0 | ~~`arch-gpw-driver-paths`~~ **landed** | multi-path DIIS (Γ UKS + multi-k RKS/UKS) on stages; OT free-loop residual (not a new slug) — merge `e34ccf92` |
-| P0 | ~~`arch-pw-driver-node`~~ **landed** | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
-| P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `c20bb04f` (rebase onto `0147fe02` before gate) |
-| P1 | ~~`arch-cuda-scf-solver-fold`~~ **landed** | free-loop `SCFSolver` → private `RhfScfCycle`; nested CUDA Driver residual |
-| P1 | ~~`arch-cuda-gpw-public-shape-freeze`~~ **landed** | freeze CUDA product public shape = CPU `GpwDft` ([cuda-gpw-public-shape.md](cuda-gpw-public-shape.md)); unlocks `cuda-gpw-full-product` under that contract — merge `0147fe02` / docs `aea603bb` |
-| P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× structural — **unmerged tip** @ `9ee9f49e` (feat `1f62a117`; rebase onto `0147fe02` before gate) |
+| P0 | `cuda-gpw-full-product` | Public `cuda::gpw::GpwDft` = CPU shape; first slice Γ RKS DIIS energy+forces; GH200 |
+| P1 | `cuda-pw-spin-pbe` | Collinear spin + PBE energy (lift reject) |
+| P2 | `cuda-pw-spin-forces` / `spin-stress` / `spin-smear` | PW spin depth |
 
-**Harness wave 8:** on `dev` @ `0147fe02`; `arch-cuda-gpw-public-shape-freeze`
-merged (freeze note + shape harness; product not auto-landed). Keep `[~]`
-`arch-pw-driver-paths` + `arch-mg-main-structural`. **gaps_remaining=3**,
-**new_slugs=0**; pending unheld=0; in_progress=2; blocked product=1
-(`cuda-gpw-full-product` staffable under freeze contract; GH200 + CUDA↔CPU
-tols). Queue:
-[arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
-Workflow: `.grok/workflows/arch-campaign.rhai`.
+**cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
+(not soft-tol). Contract:
+[cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
+[es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 
-**Forbidden this campaign:** soft tols; invent hybrid/GAPW; staff
-`cuda-gpw-full-product` with a public shape other than CPU `GpwDft` (freeze
-contract in [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md)); leave `build*`.
+**Forbidden:** soft tols; invent hybrid/GAPW; staff product with non-CPU public
+shape; leave `build*`.
 
 ### Superseded focus — dual track `es-cpu-cuda-opt` (closed staffable set 2026-08-10)
 
