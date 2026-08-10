@@ -455,8 +455,10 @@ Two periodic DFT engines exist, with disjoint strengths:
   see es-cpu-cuda queue. **No CUDA GPW method product** (stage footholds
   only; blocked on arch-campaign multi-path Driver + public-shape freeze).
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
-  **Γ RKS DIIS only** (landed); multi-k / UKS / OT free-loop residual and
-  `cpu::pw::PW` not-yet-Driver remain pending — capability tables above are
+  **Γ RKS DIIS only** (landed; multi-k / UKS / OT free-loop residual =
+  `arch-gpw-driver-paths`). `cpu::pw::PW` is `cpu::Driver<pw::Phase>` for
+  **restricted fixed-occ** (landed); collinear spin + metallic smearing
+  free-loop residual = `arch-pw-driver-paths`. Capability tables above are
   product physics, not loop-shape closed.
 - **GPW**, Gaussian and plane waves (`cpu::gpw::GpwDft` / `GPWEvaluator`) —
   Gaussian basis collocated on a uniform grid, GTH pseudopotentials, LDA

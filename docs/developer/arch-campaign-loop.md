@@ -84,3 +84,11 @@ Wipe `build` / `build-*` under parent and every worktree every wave.
   GPW multi-path. Clearup already ran (no isolation worktrees; build dirs
   empty). Roadmap: no ○ rows for these arch slugs — no ○→✓. Queue **not**
   exhausted (GapCensus owns discovery). No push.
+- **2026-08-10 GapCensus wave 4 (parent `dev` @ `d24283d1`):** re-diff only —
+  tree reconfirmed Γ-RKS-only GPW Driver, PW restricted fixed-occ Driver +
+  spin/smear free loops, folded CUDA RHF, CUDA GPW stages≠product, HEAVY
+  `^$`. **Staffed residual** `arch-pw-driver-paths` (parent node landed
+  wave-3; foothold ≠ closed). **pending=3**, **gaps_remaining=5**,
+  **new_slugs_added=1**. Roadmap arch prose: drop "PW not-yet-Driver"; name
+  both path residuals. Keep `[~]` `wf/arch-gpw-driver-paths` @ `cca084b6`
+  (ahead=1 behind=3; rebase). Optional `chore(queue)` only. No push.

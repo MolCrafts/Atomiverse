@@ -16,11 +16,11 @@ Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
 rows; foothold ≠ closed capability. **Unmerged tip ≠ done** — only green merge
 onto `dev` closes a slug.
 
-**GapCensus harness wave 3 (2026-08-10)** on `dev` @ `f016215e` (post merge
-`arch-pw-driver-node` `f016215e` / impl `1bad527a`; prior Assign tip
-`1eb6fca2`). Re-diff CLAUDE iron laws + ES order, notes, arch/e2e/es queues,
-tree scan `cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` — **no new
-staffable arch slugs**. Tree facts:
+**GapCensus harness wave 4 (2026-08-10)** on `dev` @ `d24283d1` (post harness
+wave-3 chore; PW merge still `f016215e` / impl `1bad527a`). Re-diff CLAUDE
+iron laws + ES order, notes, arch/e2e/es queues, tree scan
+`cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` — **1 new staffable residual
+slug** (`arch-pw-driver-paths`). Tree facts:
 
 | Surface | On `dev` |
 | --- | --- |
@@ -33,21 +33,28 @@ staffable arch slugs**. Tree facts:
 | e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear (none staffed this census) |
 
 **Unmerged tip** (no isolation worktree; **not** on `dev` — keep `[~]`; do not
-mark done). Tip rebased onto Assign base `1eb6fca2` (ahead of pre-PW `dev`;
-behind current `dev` by the PW merge):
+mark done). Tip base is pre-PW `1eb6fca2`; **rebase onto `d24283d1` before
+gate** (ahead=1 behind=3 vs `dev`):
 
 | Tip | Claim (unverified until merge) |
 | --- | --- |
-| `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual (`cca084b6`, base `1eb6fca2`; ahead=1 behind=2 vs `dev` @ `f016215e`) |
+| `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual (`cca084b6`, base `1eb6fca2`; ahead=1 behind=3 vs `dev` @ `d24283d1`) |
 
-No open arch specs under `.claude/specs/` after this harness closes
-`arch-pw-driver-node` (only unrelated `periodic-rhf-gamma` /
+No open arch specs under `.claude/specs/` (only unrelated `periodic-rhf-gamma` /
 `rsh-eri-cam-b3lyp`). Lever still: `MeanFieldMethod` + `cpu/scf/stages/` +
-landed Γ RKS GPW stages + landed PW fixed-occ stages.
+landed Γ RKS GPW stages + landed PW fixed-occ stages (+ tip multi-path Ops).
 
-### P0 — ES loop nodes (CPU)
+### P0 — ES loop residual paths (CPU)
 
-*(staffed → in_progress; PW closed this harness)*
+- [ ] `arch-pw-driver-paths` | **P0** Migrate collinear spin + metallic
+  smearing free loops onto same `pw::Phase` stages
+  (`veff → diagonalize → density → mix → check`) as restricted fixed-occ;
+  keep public `build`/`run`/`forces`/`stress` stable | method=cpu-arch |
+  twin: `regressions/pw/*` (spin-gga, uks-kmesh-fe, uks-fe-smearing,
+  metallic DOS/bands) + `test_cpu_pw_driver_node` | files: `pw_solver.cpp`
+  free-loop arms, `planewave/stages/`, `drive_*` | gate: pins green; public
+  surface stable; wipe builds | **new** this census (parent node landed
+  wave-3; residual free loops still on `dev`) |
 
 ### P1 — freeze product shape (CUDA GPW)
 
@@ -68,8 +75,8 @@ landed Γ RKS GPW stages + landed PW fixed-occ stages.
 
 ## in_progress
 
-**Assign wave 3 residual (2026-08-10)** after harness closed
-`arch-pw-driver-node`. Keep **1** incomplete staff:
+**Assign wave 3 residual (still open after harness wave-3 / GapCensus wave-4)**
+— keep **1** incomplete staff:
 
 - [~] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS **DIIS**
   onto same `gpw::Phase` stages (`ks_build → mix → diagonalize → density →
@@ -78,8 +85,8 @@ landed Γ RKS GPW stages + landed PW fixed-occ stages.
   `regressions/gpw/*` (uks-o2-gamma, multigrid-kpoints, kpoints-si) | files:
   `gpw_solver.cpp` `run_gpw_scf_kpoints*`, `gpw/stages/`, `drive_*` | gate:
   pins green; public `run`/`forces` stable; wipe builds | **resume**
-  `wf/arch-gpw-driver-paths` @ `cca084b6` (ahead=1 behind=2 vs `dev`; rebase
-  onto `f016215e` before gate) |
+  `wf/arch-gpw-driver-paths` @ `cca084b6` (ahead=1 behind=3 vs `dev`; rebase
+  onto `d24283d1` before gate) |
 
 ## blocked
 
@@ -117,4 +124,5 @@ landed Γ RKS GPW stages + landed PW fixed-occ stages.
   `build`/`run`/`forces`/`stress` stable; collinear spin + metallic smear
   free-loop residual | merge: `f016215e` / impl `1bad527a` | evidence:
   `test_cpu_pw_driver_node` + `reg_arch-pw-driver-node` + `regressions/pw/*`;
-  spec closed
+  spec closed; residual paths staffed as `arch-pw-driver-paths` (GapCensus
+  wave-4)
