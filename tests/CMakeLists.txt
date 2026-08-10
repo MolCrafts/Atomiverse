@@ -937,6 +937,8 @@ if(ATV_BUILD_CUDA)
         target_link_libraries(test_cuda_pw_xc_lda PRIVATE CUDA::cufft)
         atv_add_test(test_cuda_pw_xc_pbe cuda/planewave/test_xc_pbe.cu)
         target_link_libraries(test_cuda_pw_xc_pbe PRIVATE CUDA::cufft)
+        atv_add_test(test_cuda_pw_xc_pbe_spin cuda/planewave/test_xc_pbe_spin.cu)
+        target_link_libraries(test_cuda_pw_xc_pbe_spin PRIVATE CUDA::cufft)
         atv_add_test(test_cuda_pw_veff cuda/planewave/test_veff.cu)
         target_link_libraries(test_cuda_pw_veff PRIVATE CUDA::cufft)
         # cuda::pw::PW surface + honesty guards. No SCF, no device work:

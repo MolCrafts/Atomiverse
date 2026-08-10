@@ -48,6 +48,36 @@ void xc_pbe_grid(const double* d_rho_r, double* d_gx_r, double* d_gy_r,
                  double* d_gz_r, double* d_vxc_r, double* d_exc_r, int nr,
                  cudaStream_t stream = nullptr);
 
+/// @brief Collinear spin-GGA PBE on ρ_α(r), ρ_β(r) and spectral ∇ρ_σ.
+///
+/// Mirrors `cpu::scf::evaluate_xc(XCType::PBE, ρ_α, ρ_β, σ_αα, σ_αβ, σ_ββ)`
+/// plus the spin flux assembly of `XCBuilder::step_spin`:
+///   flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β
+///   flux_β = 2 vσ_ββ ∇ρ_β + vσ_αβ ∇ρ_α
+/// Gradient arrays are OVERWRITTEN with the fluxes. Local v_ρ only — the
+/// caller subtracts ∇·flux_σ after its own FFT pass. Floors negatives of
+/// each spin density to 0 (FFT ringing) and zeroes all outputs when
+/// ρ_α+ρ_β < 1e-12, matching the CPU grid loop.
+///
+/// @param d_rho_a   Real-space α density [electrons/Bohr³].
+/// @param d_rho_b   Real-space β density [electrons/Bohr³].
+/// @param d_gax_r   In: ∂ρ_α/∂x; out: flux_α,x.
+/// @param d_gay_r   In: ∂ρ_α/∂y; out: flux_α,y.
+/// @param d_gaz_r   In: ∂ρ_α/∂z; out: flux_α,z.
+/// @param d_gbx_r   In: ∂ρ_β/∂x; out: flux_β,x.
+/// @param d_gby_r   In: ∂ρ_β/∂y; out: flux_β,y.
+/// @param d_gbz_r   In: ∂ρ_β/∂z; out: flux_β,z.
+/// @param d_vxc_a   Output local v_ρ^α(r) [Hartree].
+/// @param d_vxc_b   Output local v_ρ^β(r) [Hartree].
+/// @param d_exc_r   Output ε_xc(r) per electron [Hartree].
+/// @param nr        Number of real-space grid points.
+/// @param stream    CUDA stream (default stream if null).
+void xc_pbe_spin_grid(const double* d_rho_a, const double* d_rho_b,
+                      double* d_gax_r, double* d_gay_r, double* d_gaz_r,
+                      double* d_gbx_r, double* d_gby_r, double* d_gbz_r,
+                      double* d_vxc_a, double* d_vxc_b, double* d_exc_r,
+                      int nr, cudaStream_t stream = nullptr);
+
 } // namespace internal
 } // namespace pw
 } // namespace cuda
