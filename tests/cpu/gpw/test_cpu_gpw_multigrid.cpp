@@ -504,3 +504,139 @@ TEST(GpwMultigridCells, MatchesKpointBasisGridPath) {
                         1e-9 * (std::abs(Vk(i, j)) + 1.0));
         }
 }
+
+// ── Multi-level MAIN product path (arch-mg-main-structural) ──────────────────
+// Shared helpers `multigrid_collocate_rho*` / `multigrid_integrate_veff*` own
+// the multi-level composition that SCF runners used to fork inline.
+
+using ATV::cpu::gpw::multigrid_collocate_rho;
+using ATV::cpu::gpw::multigrid_collocate_rho_cells;
+using ATV::cpu::gpw::multigrid_integrate_veff;
+using ATV::cpu::gpw::multigrid_integrate_veff_cells;
+
+// Multi-level Γ collocate/integrate must equal the hand-rolled per-level sum
+// (regression against the pre-extract forked loop shape).
+TEST(GpwMultigridMainPath, GammaMatchesManualLevelLoop) {
+    const double cell[3] = {6.0, 6.0, 6.0};
+    MultiGrid mg = make_multigrid(cell, 60.0, 2, 12.0);
+    const auto basis = cells_toy_basis(cell[0]);
+    const int nb = static_cast<int>(basis.size());
+    const ProductSet ps =
+        build_products(mg, basis, cell, 12.0, 1e-12, /*periodic=*/true);
+    ASSERT_EQ(mg.levels.size(), 2u);
+    ASSERT_GT(ps.by_level[0].size(), 0u);
+    ASSERT_GT(ps.by_level[1].size(), 0u);
+
+    std::vector<double> P = cells_rand(static_cast<std::size_t>(nb) * nb, 5u);
+    for (int i = 0; i < nb; ++i)
+        for (int j = 0; j < i; ++j) {
+            const double s = 0.5
+                             * (P[static_cast<std::size_t>(i) * nb + j]
+                                + P[static_cast<std::size_t>(j) * nb + i]);
+            P[static_cast<std::size_t>(i) * nb + j] = s;
+            P[static_cast<std::size_t>(j) * nb + i] = s;
+        }
+
+    // Manual multi-level composition (the old forked loop).
+    std::vector<double> rho_manual(
+        static_cast<std::size_t>(mg.levels[0].npts()), 0.0);
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        std::vector<double> rho_l = collocate_products(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, P, 1e-12);
+        if (l == 0) {
+            rho_manual = std::move(rho_l);
+        } else {
+#ifdef ATV_GPW_HAS_FFT
+            const std::vector<double> up =
+                prolong_fft(mg.levels[l], mg.levels[0], rho_l, true);
+            for (std::size_t g = 0; g < rho_manual.size(); ++g)
+                rho_manual[g] += up[g];
+#else
+            GTEST_SKIP() << "FFT required for multi-level spectral transfer";
+#endif
+        }
+    }
+    const auto rho = multigrid_collocate_rho(mg, ps, nb, P, 1e-12);
+    ASSERT_EQ(rho.size(), rho_manual.size());
+    for (std::size_t g = 0; g < rho.size(); ++g)
+        EXPECT_NEAR(rho[g], rho_manual[g], 1e-14 * (std::abs(rho_manual[g]) + 1.0));
+
+    const auto V_r =
+        cells_rand(static_cast<std::size_t>(mg.levels[0].npts()), 17u);
+    std::vector<double> V_manual(static_cast<std::size_t>(nb) * nb, 0.0);
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        std::vector<double> V_l;
+        if (l == 0) {
+            V_l = V_r;
+        } else {
+#ifdef ATV_GPW_HAS_FFT
+            V_l = restrict_fft(mg.levels[0], mg.levels[l], V_r, true);
+#else
+            GTEST_SKIP() << "FFT required for multi-level spectral transfer";
+#endif
+        }
+        const auto Vl = integrate_products(mg.levels[l], ps.by_level[l],
+                                           ps.tasks_by_level[l], ps.prims,
+                                           ps.contribs, nb, V_l, 1e-12);
+        for (std::size_t e = 0; e < V_manual.size(); ++e)
+            V_manual[e] += Vl[e];
+    }
+    const auto V = multigrid_integrate_veff(mg, ps, nb, V_r, 1e-12);
+    ASSERT_EQ(V.size(), V_manual.size());
+    for (std::size_t e = 0; e < V.size(); ++e)
+        EXPECT_NEAR(V[e], V_manual[e], 1e-14 * (std::abs(V_manual[e]) + 1.0));
+}
+
+// Multi-level integrate is the exact adjoint of multi-level collocate (MAIN
+// path variational property across spectral prolong/restrict).
+TEST(GpwMultigridMainPath, IntegrateIsAdjointOfCollocate) {
+#ifndef ATV_GPW_HAS_FFT
+    GTEST_SKIP() << "FFT required for multi-level spectral transfer";
+#else
+    const double cell[3] = {6.0, 6.0, 6.0};
+    MultiGrid mg = make_multigrid(cell, 60.0, 2, 12.0);
+    const auto basis = cells_toy_basis(cell[0]);
+    const int nb = static_cast<int>(basis.size());
+    const ProductSet ps =
+        build_products(mg, basis, cell, 12.0, 1e-12, /*periodic=*/true);
+
+    std::vector<double> P = cells_rand(static_cast<std::size_t>(nb) * nb, 9u);
+    for (int i = 0; i < nb; ++i)
+        for (int j = 0; j < i; ++j) {
+            const double s = 0.5
+                             * (P[static_cast<std::size_t>(i) * nb + j]
+                                + P[static_cast<std::size_t>(j) * nb + i]);
+            P[static_cast<std::size_t>(i) * nb + j] = s;
+            P[static_cast<std::size_t>(j) * nb + i] = s;
+        }
+    const auto V_r =
+        cells_rand(static_cast<std::size_t>(mg.levels[0].npts()), 23u);
+
+    const auto rho = multigrid_collocate_rho(mg, ps, nb, P, 1e-12);
+    const auto Vks = multigrid_integrate_veff(mg, ps, nb, V_r, 1e-12);
+
+    double lhs = 0.0; // <V, ρ>_fine
+    for (std::size_t g = 0; g < rho.size(); ++g)
+        lhs += mg.levels[0].weight() * V_r[g] * rho[g];
+    double rhs = 0.0; // <P, Vks>_F
+    for (std::size_t e = 0; e < P.size(); ++e)
+        rhs += P[e] * Vks[e];
+    EXPECT_NEAR(lhs, rhs, 1e-9 * (std::abs(lhs) + 1.0))
+        << "MAIN multigrid integrate is not the adjoint of collocate";
+
+    // Cells path with uniform D-stack must match Γ path (fine-grid total).
+    const std::vector<std::vector<double>> D(ps.cells.size(), P);
+    const auto rho_c = multigrid_collocate_rho_cells(mg, ps, nb, D, 1e-12);
+    ASSERT_EQ(rho_c.size(), rho.size());
+    for (std::size_t g = 0; g < rho.size(); ++g)
+        EXPECT_NEAR(rho_c[g], rho[g], 1e-12 * (std::abs(rho[g]) + 1.0));
+    const auto Vt = multigrid_integrate_veff_cells(mg, ps, nb, V_r, 1e-12);
+    for (std::size_t e = 0; e < Vks.size(); ++e) {
+        double s = 0.0;
+        for (const auto& Vc : Vt)
+            s += Vc[e];
+        EXPECT_NEAR(s, Vks[e], 1e-12 * (std::abs(Vks[e]) + 1.0));
+    }
+#endif
+}

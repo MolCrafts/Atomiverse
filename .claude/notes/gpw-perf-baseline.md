@@ -144,8 +144,11 @@ CP2K same twin quiet: collocate ~14.5 ms/call, integrate ~17.1 ms/call
 
 **worst_ratio = 2.33** (`gpw-multigrid-kpoints` MAIN) vs this host’s quiet
 CP2K 0.688 s (integrate still ~2.8× CP2K per-call class; STVnl setup residual
-landed; pin-safe collint levers exhausted — residual owned by
-`mg-main-structural`, blocked). OT water **closed**: OT-only ~2.99 s / ~1.20×
+landed; pin-safe collint levers exhausted). **Structure:** multi-level MAIN
+product path is single-owner (`multigrid_collocate_rho*` /
+`multigrid_integrate_veff*` via `arch-mg-main-structural`) — forked Γ/k
+lambdas gone; wall number unchanged until a non-pin-safe work-reduction
+lever on that shared path. OT water **closed**: OT-only ~2.99 s / ~1.20×
 post `p0-ot-cp2k-match`, SCF body ~1.57 s / ≤1.0× class post
 `p0-ot-match-residual`. UKS O₂ **1.077×** (post `p0-uks-o2-scf-wall`; ≤1.2×
 gate closed). Dense-χ^k MAIN **~1.2×**. See

@@ -57,7 +57,8 @@ Files: `internal/product_collint.{h,cpp}` + wire in `multigrid.cpp`.
 | products_mg geometry-batch build_products | **landed** (wave 5) |
 | shell-level task list (`CollintTask` once in build_products) | **landed** (wave 6) |
 | integrate residual (width-4 / Ltot / short seg) | **landed** (wave 7) |
-| further int residual toward CP2K ~20 ms | **blocked** (`mg-main-structural` / non-pin-safe) |
+| further int residual toward CP2K ~20 ms | open after MAIN path single-owner (`arch-mg-main-structural`); not pin-safe micro-opt |
+| multi-level MAIN product composition | **landed** (`arch-mg-main-structural`) — `multigrid_collocate_rho*` / `multigrid_integrate_veff*` single owner for Γ+multi-k; wall residual still open |
 | pure-s + mixed-angular 2-center S/T xsimd | **landed** (slab-class; not fair-wall lever) |
 
 Algorithm after CP2K `src/grid/cpu/grid_cpu_collint.h` (BSD-3, Ole Schuett).
@@ -96,9 +97,13 @@ collint tasks**; **integrate residual (wave 7)**.
 5. ~~products_mg setup geometry-batch~~ **landed**  
 6. ~~shell-level collint tasks~~ **landed**  
 7. ~~integrate residual~~ **landed** (wave 7; thin kernel residual-2 **exhausted** wave-8)  
-8. **now:** MG MAIN non-kernel structure (2.33×→~1×). OT CP2K match and
-   STVnl setup residual are merged.  
-9. products-default-k fresh A/B only if MAIN near parity; then MPI product/grid
+8. ~~MG MAIN multi-level product composition single-owner~~ **landed**
+   (`arch-mg-main-structural`: `multigrid_collocate_rho*` /
+   `multigrid_integrate_veff*` — forked solver lambdas deleted; wall still
+   ~2.33× until non-pin-safe sphere/window or deeper task rewrite)  
+9. products-default-k fresh A/B only if MAIN near parity; then MPI product/grid  
+10. **now (wall residual):** integrate/collocate work reduction on the shared
+    MAIN path only — no second forked loop.
 
 ### CUDA GPW foothold + LDA stage (landed, not product)
 

@@ -1038,6 +1038,12 @@ if(ATV_BUILD_PATH)
 endif()
 atv_add_regression(architecture harmonic_driver_matrix)
 atv_add_regression(architecture arch-gpw-driver-paths)
+# arch-mg-main-structural: multi-level MAIN product path single owner
+# (multigrid_collocate_rho* / multigrid_integrate_veff*); twin energy pin
+# is gpw-multigrid-kpoints. Requires GPW (+ FFT) product sources.
+if(ATV_BUILD_GPW)
+    atv_add_regression(architecture arch-mg-main-structural)
+endif()
 atv_add_regression(architecture module_compile_defs)
 if(ATV_BUILD_GPW)
     # arch-cuda-gpw-public-shape-freeze: CUDA full GPW product must mirror CPU

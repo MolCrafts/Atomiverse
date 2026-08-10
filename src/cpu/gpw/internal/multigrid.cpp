@@ -1506,6 +1506,109 @@ std::vector<std::vector<double>> integrate_products_cells(
     return V;
 }
 
+// ── Multi-level MAIN product path ─────────────────────────────────────────
+
+std::vector<double> multigrid_collocate_rho(const MultiGrid& mg,
+                                            const ProductSet& products, int nb,
+                                            const std::vector<double>& P,
+                                            double eps) {
+    if (mg.levels.empty())
+        return {};
+    std::vector<double> rho(static_cast<std::size_t>(mg.levels[0].npts()), 0.0);
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        std::vector<double> rho_l = collocate_products(
+            mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+            products.prims, products.contribs, nb, P, eps);
+        if (l == 0) {
+            rho = std::move(rho_l);
+        } else {
+            const std::vector<double> up =
+                prolong_fft(mg.levels[l], mg.levels[0], rho_l,
+                            /*spectral*/ true);
+            for (std::size_t g = 0; g < rho.size(); ++g)
+                rho[g] += up[g];
+        }
+    }
+    return rho;
+}
+
+std::vector<double> multigrid_collocate_rho_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<std::vector<double>>& D, double eps) {
+    if (mg.levels.empty())
+        return {};
+    std::vector<double> rho(static_cast<std::size_t>(mg.levels[0].npts()), 0.0);
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        std::vector<double> rho_l = collocate_products_cells(
+            mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+            products.prims, products.contribs, nb, D, eps);
+        if (l == 0) {
+            rho = std::move(rho_l);
+        } else {
+            const std::vector<double> up =
+                prolong_fft(mg.levels[l], mg.levels[0], rho_l,
+                            /*spectral*/ true);
+            for (std::size_t g = 0; g < rho.size(); ++g)
+                rho[g] += up[g];
+        }
+    }
+    return rho;
+}
+
+std::vector<double> multigrid_integrate_veff(const MultiGrid& mg,
+                                             const ProductSet& products, int nb,
+                                             const std::vector<double>& veff,
+                                             double eps) {
+    std::vector<double> V_ks(static_cast<std::size_t>(nb) * static_cast<std::size_t>(nb),
+                             0.0);
+    if (mg.levels.empty())
+        return V_ks;
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        std::vector<double> V_l;
+        if (l == 0) {
+            V_l = veff;
+        } else {
+            // Exact adjoint of the spectral prolongation used for density.
+            V_l = restrict_fft(mg.levels[0], mg.levels[l], veff,
+                               /*spectral*/ true);
+        }
+        const std::vector<double> Vl_ks = integrate_products(
+            mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+            products.prims, products.contribs, nb, V_l, eps);
+        for (std::size_t kk = 0; kk < V_ks.size(); ++kk)
+            V_ks[kk] += Vl_ks[kk];
+    }
+    return V_ks;
+}
+
+std::vector<std::vector<double>> multigrid_integrate_veff_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<double>& veff, double eps) {
+    const std::size_t n_tcells = products.cells.size();
+    std::vector<std::vector<double>> Vt(
+        n_tcells,
+        std::vector<double>(static_cast<std::size_t>(nb) * static_cast<std::size_t>(nb),
+                            0.0));
+    if (mg.levels.empty() || n_tcells == 0)
+        return Vt;
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        std::vector<double> V_l;
+        if (l == 0) {
+            V_l = veff;
+        } else {
+            V_l = restrict_fft(mg.levels[0], mg.levels[l], veff,
+                               /*spectral*/ true);
+        }
+        const auto Vt_l = integrate_products_cells(
+            mg.levels[l], products.by_level[l], products.tasks_by_level[l],
+            products.prims, products.contribs, nb, V_l, n_tcells, eps);
+        for (std::size_t c = 0; c < n_tcells; ++c)
+            for (std::size_t e = 0; e < Vt[c].size(); ++e)
+                Vt[c][e] += Vt_l[c][e];
+    }
+    return Vt;
+}
+
 } // namespace gpw
 } // namespace cpu
 } // namespace ATV
