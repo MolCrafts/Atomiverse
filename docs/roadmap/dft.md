@@ -587,7 +587,7 @@ Two periodic DFT engines exist, with disjoint strengths:
 | -------------------------------- | :-: | :--: | :---: |
 | Γ-point periodic RKS             |  ✓  |   ◐  |   ○  |
 | k-point periodic RKS             |  ✓  |   ✓  |   ○  |
-| Γ-point periodic UKS             |  ✓  |   ○  |   ○  |
+| Γ-point periodic UKS             |  ✓  |   ◐  |   ○  |
 | k-point periodic UKS             |  ✓  |   ○  |   ○  |
 | Plane-wave DFT                   |  ✓  |   ✓  |   ○  |
 | Gaussian and plane-wave DFT, GPW |  ✓  |   ◐  |   ○  |
@@ -611,8 +611,11 @@ Which engine backs which ✓:
   device product collocate/KS/integrate via `KsChainDevice::run`; PADE dual-gate
   `reg_cuda-gpw-full-product` / collocate GH200 **1125709** — table ◐ until
   device forces + PBE + H₂O product gates + DIIS/eigen depth land). **Γ-point
-  periodic UKS** is GPW PADE LSD (`reg_gpw-uks-o2-gamma`) — CUDA product still
-  rejects UKS.
+  periodic UKS** is GPW PADE LSD on CPU (`reg_gpw-uks-o2-gamma`) **and** a
+  **first-cut CUDA energy product** (`cuda-gpw-uks-gamma` / GH200 **1126430**
+  high-spin H₂; device `KsChainDevice::run_uks` Padé LSD only; table **◐** —
+  O₂ production dual-gate, UKS forces/stress, UKS-PBE, UKS-MG still open on
+  es-cpu-cuda queue).
   **k-point periodic RKS** is the plane-wave solver (Monkhorst–Pack mesh) on
   both CPU and CUDA, **and** GPW on CPU — the Gaussian-basis k-point path
   (phased lattice sums, KB nonlocal, per-k DIIS; `reg_gpw-kpoints-si`, diamond
