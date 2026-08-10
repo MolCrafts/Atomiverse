@@ -45,5 +45,8 @@ cmake --build build --target run_reg_cuda-gpw-ks-chain
 
 | Item | Value |
 | --- | --- |
-| GH200 job | *(filled after sbatch)* |
-| Log | `.claude/cuda-gpw-ks-chain-<jobid>.out` |
+| GH200 job | **1049858** (`GPU_JOB_OK`, exit 0) |
+| HEAD | `ce4e2944` on `wf/escuda-cuda-gpw-ks-chain` |
+| Unit | 5/5 PASS (`test_cuda_gpw_ks_chain` + 4 footholds) |
+| Dual-gate | `PASS cuda-gpw-ks-chain dual-gate` — e_H/e_xc/e_loc ~1e-15; max\|ΔV_eff\|=4.4e-16; max\|Δacc\|=6.9e-14 |
+| Log | `.claude/worktrees/wf_escuda_cuda_gpw_ks_chain/.claude/cuda-gpw-ks-chain-1049858.out` |
