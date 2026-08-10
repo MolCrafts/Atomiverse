@@ -31,7 +31,9 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
+#include <array>
 #include <string>
+#include <vector>
 
 namespace ATV {
 namespace cuda {
@@ -144,12 +146,28 @@ class PW {
     const PWResult& last_result() const { return result_; }
 
   private:
+    friend std::vector<std::array<double, 3>>
+    pw_forces_analytic(const cpu::Frame& frame, const PW& method);
     /// @brief Reject every member with no device path (throws, never warns).
     void validate_members() const;
 
     bool built_ = false;
     PWResult result_;
 };
+
+/// @brief Analytic ionic forces [eV/Å] after a full device SCF.
+///
+/// CUDA twin of `cpu::pw::pw_forces_analytic`: local Hellmann–Feynman +
+/// Ewald + Kleinman–Bylander nonlocal. Local and nonlocal force kernels
+/// run on the device; Ewald is the shared host classical sum. Rejects the
+/// same unsupported members as `PW::run` (spin, smear, non-LSDA/PBE).
+///
+/// @param frame  Geometry [Å], types (Z), cell; not mutated.
+/// @param method Plane-wave method members (upf/gth, ecut, k_mesh, tol, …).
+/// @return Forces [eV/Å], one xyz triple per atom.
+/// @throws std::invalid_argument for empty frame or unsupported members.
+std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
+                                                      const PW& method);
 
 } // namespace pw
 } // namespace cuda

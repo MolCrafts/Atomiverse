@@ -161,6 +161,17 @@ class DeviceDensity {
     ///        The band solver reads here; it never frees the buffer.
     const double* effective_potential() const { return d_V_eff_r_; }
 
+    /// @brief Mixed density ρ(G) on the density sphere (device), ng0 entries.
+    ///        Used by analytic ionic forces after SCF; never freed by the
+    ///        caller. Valid after the last `mix()` of a completed run.
+    const cufftDoubleComplex* device_rho_G() const { return d_rho_G_; }
+
+    /// @brief Density-sphere G-count (`prob.gv0.count()`).
+    int n_g0() const { return ng0_; }
+
+    /// @brief Cell volume Ω [Bohr³] used by the density side.
+    double omega() const { return omega_; }
+
     /// @brief Diagnostic readback of one G-sphere array (device-to-host).
     ///        Never called inside the SCF loop — tests and diagnostics only.
     /// @param which Field selector.

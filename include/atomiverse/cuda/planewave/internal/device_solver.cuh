@@ -145,6 +145,22 @@ class DeviceBandSolver {
     /// `DeviceDensity::zero_accumulator()`.
     void accumulate_density(AccReal weight, AccReal omega);
 
+    /// @brief Add Kleinman–Bylander nonlocal Hellmann–Feynman forces for the
+    ///        most recent `solve()` on the bound k-point into a device force
+    ///        buffer.
+    ///
+    /// Mirrors `cpu::pw::internal` `accumulate_nl_forces_k`: closed-shell
+    /// occupation 2, weight = Monkhorst–Pack k-weight.
+    /// \(F_{I\alpha} += 2 D\, w\, f \,\mathrm{Im}(c^* s_\alpha)\) with
+    /// \(c=\sum_G \beta^* \psi\), \(s_\alpha=\sum_G q_\alpha \beta^* \psi\).
+    ///
+    /// @param weight   k-point weight (dimensionless).
+    /// @param n_atoms  Atom count; must match the problem geometry.
+    /// @param d_forces Device buffer of length `3 * n_atoms` [Hartree/Bohr],
+    ///                 accumulated with `atomicAdd` (caller zeros once).
+    /// @throws std::runtime_error if no k-point is bound or no Ritz vectors.
+    void accumulate_nl_forces(double weight, int n_atoms, double* d_forces);
+
     /// @brief Test hook: H·ψ for one host vector on the bound k-point
     /// (H2D → apply_h → D2H). Used by the band-parity diagnostics to
     /// compute residual norms of candidate eigenpairs.
@@ -213,6 +229,7 @@ class DeviceBandSolver {
     int* d_cm_all_ = nullptr;  ///< β column: m.
     int* d_co_all_ = nullptr;  ///< β column: offset into this k's f_G block.
     int* d_cn_all_ = nullptr;  ///< β column: length of its f_G run.
+    int* d_cia_all_ = nullptr; ///< β column: atom index (force reduction).
     double* d_cd_all_ = nullptr; ///< β column: KB strength D.
     double* d_cp_all_ = nullptr; ///< β column: atom position (3 per column).
     double* d_fg_all_ = nullptr; ///< concatenated radial f_G.

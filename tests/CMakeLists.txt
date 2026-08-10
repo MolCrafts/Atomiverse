@@ -1092,6 +1092,13 @@ if(ATV_BUILD_CUDA)
         if(TARGET test_cuda_pw_density)
             target_link_libraries(test_cuda_pw_density PRIVATE CUDA::cufft)
         endif()
+        # Device local HF force kernel + public API symmetry (unit-only).
+        # Name avoids ATV_TEST_HEAVY_REGEX `pw_forces` (that is the full SCF
+        # analytic path on CPU); this is a kernel/API unit gate.
+        atv_add_test(test_cuda_pw_force_local cuda/planewave/test_pw_force_local.cu)
+        if(TARGET test_cuda_pw_force_local)
+            target_link_libraries(test_cuda_pw_force_local PRIVATE CUDA::cufft)
+        endif()
     endif()
     # CUDA GPW Γ Poisson foothold — needs CPU solve_poisson oracle (GPW+PW)
     # and device kernels. Name avoids ATV_TEST_HEAVY_REGEX `gpw_poisson`.
