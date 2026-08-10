@@ -52,21 +52,20 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` (2026-08-10 GapCensus wave 3)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-10)
 
-Arch residual **closed**; public-shape freeze **green**. Parent `dev` @
-`ea6058d8`. First-slice product tip `wf/cuda-gpw-full-product` @ `f18d593c`
-(rebased; GH200 **1120817**) **unmerged** — still P0. Dual-track staffable set:
+Arch residual **closed**; public-shape freeze **green**. First-slice product
+**landed** on `dev` @ `fb2c2951` (feat `31d24207`; GH200 **1120817**
+\|ΔE\|=4.8e-14 / max\|ΔF\|=2.6e-09). Staff **depth**, not re-merge P0.
 
 | Priority | slug | Goal |
 | --- | --- | --- |
-| P0 | `cuda-gpw-full-product` | Merge public `cuda::gpw::GpwDft` first slice to `dev` (Γ RKS DIIS energy+forces) |
-| P1 | `cuda-gpw-device-collocate` / `device-forces` / `multigrid-run` / `uks-gamma` | GPW product depth after first slice (compose + real force path) |
+| P1 | `cuda-gpw-device-collocate` / `device-forces` / `multigrid-run` / `uks-gamma` | GPW product depth (compose + real force path) |
 | P1 | `cuda-pw-pbe-stress` / `cuda-pw-spin-pbe` | Closed-shell PBE stress dual-gate; collinear spin-PBE energy |
 | P2 | `cuda-gpw-kpoints` / `cuda-gpw-stress` + PW smear/spin forces/stress/smear | Multi-k GPW + GPW stress + PW derivative depth |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=13**; **gaps_remaining≈15**. Contract:
+(not soft-tol). **pending_count=13**; **gaps_remaining≈14**. Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 
@@ -96,15 +95,16 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (`dev` @ `82d96ff0`):** Landed: device s/p RHF + CDIIS +
+**CUDA open-gate (`dev` @ `fb2c2951`):** Landed: device s/p RHF + CDIIS +
 non-default stream D2H; Γ GPW footholds + LDA + closed-shell PBE `ks_chain` +
-**multi-grid product KS stage**; `cuda::pw::PW` LSDA + closed-shell PBE +
-residency + stream + large-cell + forces (LSDA+PBE) + cell stress (LSDA pin) +
-collinear LSDA spin energy + **restricted metallic smear energy**. **Pending:**
-`cuda-gpw-full-product` P0 (tip green, unmerged); GPW product depth (device
-collocate / multigrid run / UKS Γ / multi-k); PW closed-shell + spin depth
-(see queue). **Blocked structural:** `mg-main-structural`. Public-shape freeze
-**green** (`0147fe02`). **cpu_pending=0** — no pin-safe wall lever.
+**multi-grid product KS stage** + **first public `cuda::gpw::GpwDft`** (Γ RKS
+DIIS PADE/PBE; hybrid host cbg + device KS); `cuda::pw::PW` LSDA + closed-shell
+PBE + residency + stream + large-cell + forces (LSDA+PBE) + cell stress (LSDA
+pin) + collinear LSDA spin energy + **restricted metallic smear energy**.
+**Pending:** GPW product depth (device collocate/forces / multigrid run / UKS Γ
+/ multi-k / stress); PW closed-shell + spin depth (see queue). **Blocked
+structural:** `mg-main-structural`. Public-shape freeze **green** (`0147fe02`).
+**cpu_pending=0** — no pin-safe wall lever.
 
 **Queues (binding worklists):**
 

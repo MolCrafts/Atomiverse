@@ -5,14 +5,12 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `8122eb0e` (post prior GapCensus + arch residual close)
+- **Parent:** `dev` @ `fb2c2951` (product FF-merged)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** GapCensus re-diff 2026-08-10 — tree/notes/baseline/roadmap vs
-  `dev`. Confirmed **no** `cuda::gpw::GpwDft` (internal stages only). Fair walls
-  authority **2.33×** MG MAIN; **cpu_pending=0**. Pending **8**: product P0 +
-  closed-shell PW depth (PBE stress, smear forces/stress) + collinear spin
-  depth (spin-PBE, spin forces/stress/smear). Worktrees/`build*`/`wf/*` clean.
+- **Last action:** Landed **`cuda-gpw-full-product`** first slice (GH200
+  **1120817** dual-gate green). Open = 13 CUDA depth rows (GPW compose +
+  device forces/stress + PW spin/PBE/smear depth). **cpu_pending=0**.
 
 ## How to run
 
@@ -20,19 +18,21 @@ wave; do not append history.
 workflow name=es-cpu-cuda-opt
 args: {
   "mode": "exhaust",
-  "staff_count": 1,
-  "max_waves": 6,
+  "staff_count": 3,
+  "max_waves": 8,
   "target_branch": "dev",
-  "theme": "cuda-gpw-full-product under freeze contract (GpwDft public shape)"
+  "theme": "GPW product depth (device-collocate, device-forces, multigrid-run, uks-gamma) + PW pbe-stress + spin-pbe; GH200 green; no soft tols"
 }
-agent_budget: 256+
+agent_budget: 384+
 ```
 
-**Staff order:** (1) **`cuda-gpw-full-product` (P0)** only until landed;
-(2) `cuda-pw-pbe-stress` + `cuda-pw-spin-pbe` (P1); (3) remaining PW depth P2.
-Workers only `wf/escuda-<slug>` off current `dev`. First product slice = Γ
-closed-shell DIIS RKS energy+forces; compose `cuda/gpw/internal/*`; GH200
-required for green.
+**Staff order (P1 first):**
+1. `cuda-gpw-device-collocate` + `cuda-gpw-device-forces`
+2. `cuda-gpw-multigrid-run` + `cuda-gpw-uks-gamma`
+3. `cuda-pw-pbe-stress` + `cuda-pw-spin-pbe`
+4. P2: kpoints / stress / smear-forces / spin-forces / spin-stress / spin-smear
+
+Workers only `wf/escuda-<slug>` or `wf/<slug>` off current `dev`.
 
 ## Disk
 
@@ -44,10 +44,9 @@ before exit.
 
 | Track | Residual | Action |
 | --- | --- | --- |
-| **cuda** | no public `GpwDft` | **staff** `cuda-gpw-full-product` |
-| **cuda** | PBE stress dual-gate; smear forces/stress | pending P1–P2 |
-| **cuda** | PW spin-PBE / spin forces / spin stress / spin+smear | pending P1–P2 |
+| **cuda GPW** | host collocate; CPU-backed forces; no stress | staff P1 depth |
+| **cuda GPW** | multigrid / UKS / multi-k reject | staff P1–P2 |
+| **cuda PW** | PBE stress; spin-PBE; spin/smear forces/stress | staff P1–P2 |
 | **cpu** | MG MAIN **2.33×** | blocked pin-unsafe / not soft-tol |
-| **cuda** | higher-L RHF product | out of loop product scope |
 
 **Contract:** [.claude/notes/cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)
