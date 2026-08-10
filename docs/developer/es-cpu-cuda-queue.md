@@ -55,34 +55,41 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 
 ## pending
 
-**Harness wave 4 2026-08-10 (`dev` @ `118d3003` / feat `7949e29d`):** Land
-**`cuda-pw-spin-pbe`** on base (merge `118d3003`; GH200 **1124645**
-\|ΔE\|=**1.14e-13** Ha O₂ spin-PBE; prior **1123961** / **1122874**). Spec
-closed (deleted). Fair walls **held** (**2.33×** MG MAIN; **cpu_pending=0**).
-Public `cuda::gpw::GpwDft` first slice **held** (feat `31d24207`; GH200
-**1120817**). Base hybrid product re-confirmed in `gpw_solver.cu`: host
-`collocate_density` / `integrate_potential` / `build_STVpp` / `GpwDiis` /
+**GapCensus wave 5 2026-08-10 (`dev` @ `4d375c3a` / spin-pbe land
+`118d3003`):** Re-diff baselines + notes + roadmap + tree vs ATV. Fair walls
+**held** (authority [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md)):
+MG MAIN **2.33×** worst; OT water SCF body **≤1.0×** / OT-only ~**1.20×**;
+UKS DIIS **1.077×** closed; k-si MAIN **1.18×** hold. **cpu_pending=0** —
+pin-safe collint/structure/sphere **exhausted**; no promote from
+[gpw-perf-queue.md](gpw-perf-queue.md). Public `cuda::gpw::GpwDft` first slice
+**held** (feat `31d24207`; GH200 **1120817**). Tree re-confirm base hybrid in
+`src/cuda/gpw/gpw_solver.cu`: host `collocate_density` /
+`integrate_potential` / `build_STVpp` / `GpwDiis` /
 `diagonalize_fock_shifted` + device `KsChainDevice::run_from_rho`
 (**stream=`nullptr`**); free-fn forces **CPU-backed**; **no**
-`cuda::gpw::gpw_stress`. Dual-gate unit/reg still **PADE H₂ only**. PW on base
-now accepts collinear **LSDA + PBE** energy; forces/stress still reject
-spin/smear; spin∧smear still rejects. One staffed tip remains **not on base**:
+`cuda::gpw::gpw_stress`. Dual-gate unit/reg still **PADE H₂ only** (PBE
+accepted, ungated). PW on base: collinear **LSDA + PBE** energy landed
+(`cuda-pw-spin-pbe` / GH200 **1124645**); forces/stress still reject
+spin/smear; spin∧smear still rejects. One staffed tip **not on base**:
 `wf/cuda-gpw-device-collocate` tip `6a564562` (GH200 **1124643** /
-**1123960** / **1122743**).
+**1123960** / **1122743**; **ahead 5 / behind 7** vs `dev` — rebase before
+merge).
 
-**GapCensus re-diff (post spin-pbe land):** tree confirms
-`DeviceDensity::exchange_correlation_spin` PBE branch + `xc_pbe_spin_grid` on
-base; residual PW depth is F/σ (LSDA spin + spin-PBE + smear + joint) and
-spin-smear energy. GPW product depth unchanged (host collocate on base). Held
-deeper rows from wave-4 census (no new invention this harness — parents now
-partially closed): after collocate → `device-diis-eigen` (incl. P→weight);
-after `multigrid-run` → `multigrid-forces`; after `uks-gamma` → `uks-forces` +
-`uks-pbe-gate`; after `kpoints` → `kpoint-forces`; after spin-pbe energy →
-`spin-pbe-forces` / `spin-pbe-stress` (now unblocked for staffing after
-merge-of-parent); after `spin-smear` → `spin-smear-forces` /
-`spin-smear-stress`. Foothold / first energy ≠ capability closed. Staff
-`wf/<slug>` off current `dev`. Do **not** invent hybrid/GAPW/PAW/meta-GGA.
-**No gpw-perf-queue promote**.
+**Autonomous discovery (wave 5 — foothold ≠ closed):** Prior wave-4 parents
+still open on base; first-slice product + stage units leave **joint-path**
+and **setup residual** depth unstaffed. **New (7):** after `uks-gamma` +
+`stress` → `uks-stress`; after `kpoints` + `stress` → `kpoint-stress`; after
+`uks-gamma` + `kpoints` → `uks-kpoints`; after `uks-gamma` + `multigrid-run`
+→ `uks-multigrid`; after `multigrid-run` + `kpoints` → `multigrid-kpoints`
+(mirrors CPU worst-twin class energy); after `device-diis-eigen` →
+`device-stvnl` (host `build_STVpp` residual once-per-run); after
+`spin-smear` → `spin-smear-pbe` (LSDA joint free-E alone leaves spin∧smear∧PBE
+open). Held deeper rows from wave 4: collocate → diis-eigen; MG run → MG
+forces; UKS → forces + pbe-gate; kpoints → kpoint-forces; spin-pbe energy →
+spin-pbe F/σ; spin-smear → spin-smear F/σ. Do **not** invent
+hybrid/GAPW/PAW/meta-GGA; OT/MT/vdW stay same-capability follow-on after DIIS
+spine (not pending this wave). **No gpw-perf-queue promote**. Staff
+`wf/<slug>` off current `dev`.
 
 | Fact | Evidence |
 | --- | --- |
@@ -93,19 +100,19 @@ merge-of-parent); after `spin-smear` → `spin-smear-forces` /
 | Claimed-but-ungated | product `XcKind::PBE` accepted; only PADE H₂ dual-gate reg on base |
 | Closed-shell PW stress | **LSDA + PBE** dual-gate **landed** (`cuda-pw-stress` + `cuda-pw-pbe-stress`) |
 | Collinear spin-PBE energy | **landed** merge `118d3003` / GH200 **1124645** |
-| Staffed tips (not base) | collocate `6a564562` / GH200 **1124643** |
+| Staffed tips (not base) | collocate `6a564562` / GH200 **1124643** (behind 7) |
 
-**Counts:** **pending_count=22**; **in_progress=1**; **cpu_pending=0**;
-**cuda_pending=23** (1 staffed + 22 open); **gaps_remaining≈24** (14 GPW
-depth + 9 PW depth + MG residual). **new_slugs_added=0** this harness
-(deeper rows already present from GapCensus wave 4).
+**Counts:** **pending_count=29**; **in_progress=1**; **cpu_pending=0**;
+**cuda_pending=30** (1 staffed + 29 open); **gaps_remaining≈31** (20 GPW
+depth + 10 PW depth + MG residual). **new_slugs_added=7** this GapCensus
+(wave 5 joint-path + setup residual).
 
 ### CUDA — GPW product depth (product on base — staff depth)
 
 method=cuda throughout. Product is **on base** — staff depth into public
 `GpwDft`. Do **not** open lone new kernel footholds — compose landed stage units.
 
-**Compose / path lifts (held + re-ranked):**
+**Compose / path lifts (held + re-ranked + wave-5 joint paths):**
 
 - [~] `cuda-gpw-device-collocate` | **P1** Replace host `collocate_density` /
   `integrate_potential` in `cuda::gpw::GpwDft::run` (`build_H_and_energy`) with
@@ -116,9 +123,9 @@ method=cuda throughout. Product is **on base** — staff depth into public
   Lever: `gpw_solver.cu` SCF loop + `DeviceProduct` / collint descriptors in
   `cuda/gpw/internal/` (stage units green). **staffed** tip `6a564562`
   (GH200 **1124643** / **1123960** / **1122743** \|ΔE\|=1.617e-7 Ha
-  max\|ΔF\|=2.332e-6 Ha/Bohr; **not on base**). Residual after merge still
-  host weight pack + D2H acc + host DIIS/eigen → `device-diis-eigen` (not
-  closed by this slug).
+  max\|ΔF\|=2.332e-6 Ha/Bohr; **not on base**; **ahead 5 / behind 7**). Residual
+  after merge still host weight pack + D2H acc + host DIIS/eigen →
+  `device-diis-eigen` (not closed by this slug).
 - [ ] `cuda-gpw-pbe-product-gate` | **P1** Public product accepts `XcKind::PBE`
   but e2e dual-gate is **PADE-only** H₂ (unit + `reg_cuda-gpw-full-product`).
   Track: **cuda**. Twin: same-settings CPU Γ RKS PBE (H₂/water class, GTH-PBE).
@@ -172,7 +179,7 @@ method=cuda throughout. Product is **on base** — staff depth into public
   `k_mesh=={1,1,1}` reject). Track: **cuda**. Twin: CPU `reg_gpw-kpoints-si`
   class. Gate: GH200 dual-gate energy. Lever: phased STVnl/products host or
   device compose; not OT / not UKS multi-k in this slug. Forces are
-  `kpoint-forces` after energy.
+  `kpoint-forces` after energy; joint MG multi-k is `multigrid-kpoints`.
 - [ ] `cuda-gpw-stress` | **P2** Public cell-stress twin missing entirely on
   CUDA GPW (CPU `gpw_stress` / Frame evaluator product). Track: **cuda**.
   Twin: CPU Γ RKS fixed-\(P\) stress + dual-gate. Gate: GH200 + stated
@@ -191,23 +198,58 @@ method=cuda throughout. Product is **on base** — staff depth into public
   fragment / water-class MG forces + dual-gate. Gate: GH200 after
   `multigrid-run`. Lever: multi-level veff/cbg force path on free-fn after MG
   `run` lands.
-- [ ] `cuda-gpw-uks-pbe-gate` | **P3** **new (wave 4)** — Γ UKS product dual-gate
-  under **PBE** after `uks-gamma` energy (PADE O₂ twin alone leaves spin-GGA
-  product un-gated; CPU `reg_gpw-uks-pbe` is true UKS-PBE). Track: **cuda**.
-  Twin: CPU Γ UKS PBE energy dual-gate. Gate: GH200 + stated CUDA↔CPU energy
-  tol; **perf_exempt** small cell; fail-closed non-PBE UKS path if split.
-  Lever: product UKS density + device spin/GGA KS path already used by PW
-  spin-PBE + GPW `KsChainDevice` PBE; extend unit/reg only — no new foothold.
-- [ ] `cuda-gpw-kpoint-forces` | **P3** **new (wave 4)** — Analytic free-fn
-  forces under multi-k RKS product after `kpoints` energy (energy slug does
-  not own forces; base free-fn is Γ RKS CPU-backed). Track: **cuda**. Twin:
-  CPU `reg_gpw-kpoint-forces` class + dual-gate. Gate: GH200 + stated max\|ΔF\|
+- [ ] `cuda-gpw-uks-pbe-gate` | **P3** Γ UKS product dual-gate under **PBE**
+  after `uks-gamma` energy (PADE O₂ twin alone leaves spin-GGA product
+  un-gated; CPU `reg_gpw-uks-pbe` is true UKS-PBE). Track: **cuda**. Twin:
+  CPU Γ UKS PBE energy dual-gate. Gate: GH200 + stated CUDA↔CPU energy tol;
+  **perf_exempt** small cell; fail-closed non-PBE UKS path if split. Lever:
+  product UKS density + device spin/GGA KS path already used by PW spin-PBE
+  + GPW `KsChainDevice` PBE; extend unit/reg only — no new foothold.
+- [ ] `cuda-gpw-kpoint-forces` | **P3** Analytic free-fn forces under multi-k
+  RKS product after `kpoints` energy (energy slug does not own forces; base
+  free-fn is Γ RKS CPU-backed). Track: **cuda**. Twin: CPU
+  `reg_gpw-kpoint-forces` class + dual-gate. Gate: GH200 + stated max\|ΔF\|
   after multi-k energy green. Lever: phased cbg/kbg force assembly on free-fn
   (compose `device-forces` patterns with multi-k SCF density).
+- [ ] `cuda-gpw-uks-stress` | **P3** **new (wave 5)** — Cell stress under Γ
+  UKS product after `uks-gamma` energy + `stress` RKS pattern (energy/force
+  alone leave UKS σ open; CPU `reg_gpw-uks-stress`). Track: **cuda**. Twin:
+  CPU Γ UKS fixed-\(P\) stress dual-gate. Gate: GH200 + stated max‖Δσ‖ after
+  UKS energy. Lever: `cuda::gpw::gpw_stress` dual-spin payload after RKS
+  stress lands.
+- [ ] `cuda-gpw-kpoint-stress` | **P3** **new (wave 5)** — Cell stress under
+  multi-k RKS product after `kpoints` + `stress` (CPU
+  `reg_gpw-kpoint-stress`). Track: **cuda**. Twin: CPU multi-k RKS stress
+  dual-gate. Gate: GH200 after multi-k energy. Lever: k-summed fixed-\(P_k\)
+  stress assembly on free-fn / Frame path.
+- [ ] `cuda-gpw-uks-kpoints` | **P3** **new (wave 5)** — Multi-k collinear UKS
+  DIIS **energy** after `uks-gamma` + `kpoints` (each axis alone leaves joint
+  open; CPU `reg_gpw-kpoints-uks`). Track: **cuda**. Twin: CPU multi-k UKS
+  energy dual-gate. Gate: GH200 + stated energy tol; **perf_exempt** small
+  cell. Lever: dual-spin phased STVnl/products compose on product `run`; not
+  forces/stress in this slug.
+- [ ] `cuda-gpw-uks-multigrid` | **P3** **new (wave 5)** — Γ UKS **multigrid**
+  product energy after `uks-gamma` + `multigrid-run` (CPU
+  `reg_gpw-uks-multigrid`). Track: **cuda**. Twin: CPU Γ UKS MG fragment +
+  dual-gate. Gate: GH200 after both parents. Lever: dual-spin +
+  `KsMultiGridChainDevice` compose on product.
+- [ ] `cuda-gpw-multigrid-kpoints` | **P3** **new (wave 5)** — Multi-k **MG**
+  RKS DIIS product energy after `multigrid-run` + `kpoints` (CPU worst-twin
+  class `reg_gpw-multigrid-kpoints`; stage MG + multi-k energy alone leave
+  joint open). Track: **cuda**. Twin: CPU multi-k MG energy dual-gate. Gate:
+  GH200; **perf_exempt** small cell (not fair-wall claim). Lever: product
+  compose multi-level products × k-mesh; not forces in this slug.
+- [ ] `cuda-gpw-device-stvnl` | **P3** **new (wave 5)** — Host residual after
+  collocate + diis-eigen spine: product still runs host `build_STVpp` +
+  Löwdin orth once per `run` (`gpw_solver.cu`). Track: **cuda**. Twin:
+  same-settings CPU Γ RKS energy dual-gate. Gate: GH200 after
+  `device-diis-eigen`; stated energy tol. Lever: device Hermite / contracted
+  S/T/Vnl + orth upload once (or device orth); compose not a lone foothold
+  kernel campaign. Does **not** own mid-SCF collocate/DIIS.
 
 ### CUDA — PW depth (landed surface incomplete) — parallel staff OK
 
-Reject matrix re-confirmed on `dev` @ `118d3003` (method=cuda throughout):
+Reject matrix re-confirmed on `dev` @ `4d375c3a` (method=cuda throughout):
 
 **Closed-shell axis** (energy/forces/PBE-stress landings green; smear depth open):
 
@@ -240,19 +282,27 @@ Reject matrix re-confirmed on `dev` @ `118d3003` (method=cuda throughout):
 - [ ] `cuda-pw-spin-smear` | **P2** Collinear spin + metallic smear free energy
   (currently spin∧smear throws). Track: **cuda**. Twin: CPU
   `reg_pw-uks-fe-smearing` class. Gate: GH200; optional after spin-PBE /
-  energy spin path stable. Forces/stress are separate deeper rows.
-- [ ] `cuda-pw-spin-smear-forces` | **P3** **new (wave 4)** — Analytic ionic
-  forces under collinear spin **+** metallic smear after `spin-smear` energy
-  (restricted smear forces and LSDA spin forces alone leave the joint path
-  open). Track: **cuda**. Twin: CPU UKS+smear forces class + dual-gate. Gate:
-  GH200 after `spin-smear` energy. Lever: `pw_forces_analytic` joint gate lift
-  + fractional occ force assembly.
-- [ ] `cuda-pw-spin-smear-stress` | **P3** **new (wave 4)** — Cell stress under
-  collinear spin + metallic smear after `spin-smear` energy (same joint-path
-  gap as forces). Track: **cuda**. Twin: CPU UKS+smear `pw_stress` + dual-gate.
-  Gate: GH200 after `spin-smear` energy (prefer after LSDA spin-stress /
-  restricted smear-stress patterns). Lever: `pw_stress` joint gate + Mermin
-  free-energy stress terms.
+  energy spin path stable. Forces/stress are separate deeper rows; spin∧smear∧PBE
+  is `spin-smear-pbe`.
+- [ ] `cuda-pw-spin-smear-forces` | **P3** Analytic ionic forces under collinear
+  spin **+** metallic smear after `spin-smear` energy (restricted smear forces
+  and LSDA spin forces alone leave the joint path open). Track: **cuda**. Twin:
+  CPU UKS+smear forces class + dual-gate. Gate: GH200 after `spin-smear`
+  energy. Lever: `pw_forces_analytic` joint gate lift + fractional occ force
+  assembly.
+- [ ] `cuda-pw-spin-smear-stress` | **P3** Cell stress under collinear spin +
+  metallic smear after `spin-smear` energy (same joint-path gap as forces).
+  Track: **cuda**. Twin: CPU UKS+smear `pw_stress` + dual-gate. Gate: GH200
+  after `spin-smear` energy (prefer after LSDA spin-stress / restricted
+  smear-stress patterns). Lever: `pw_stress` joint gate + Mermin free-energy
+  stress terms.
+- [ ] `cuda-pw-spin-smear-pbe` | **P3** **new (wave 5)** — Collinear spin +
+  metallic smear free energy under **PBE** after `spin-smear` (first joint
+  energy may be LSDA-only; CPU `reg_pw-uks-fe-smearing` / spin-GGA class leaves
+  spin∧smear∧PBE open on device). Track: **cuda**. Twin: CPU UKS+smear PBE
+  free energy dual-gate. Gate: GH200 after `spin-smear` energy; stated tol;
+  **perf_exempt** small cell. Lever: `pw_solver` joint gate +
+  `DeviceDensity` spin-PBE XC already landed for fixed-occ.
 
 ### Fair-wall rank (1 MPI × OMP=4; worst residual first)
 
@@ -300,27 +350,30 @@ twins). No further CPU polish staffed here without a pin-safe wall lever.
 
 ### CUDA — corresponding ES (open-gate readiness × user value)
 
-**Tree fact on `dev` @ `118d3003`:** stage units + PW landings + first public
+**Tree fact on `dev` @ `4d375c3a`:** stage units + PW landings + first public
 `cuda::gpw::GpwDft` + closed-shell **PBE stress** + **collinear spin-PBE
 energy** dual-gates confirmed. `gpw_solver.cu` still host collocate/integrate
-+ device KS stream-null + host DIIS/eigen; `pw_solver` accepts spin∧PBE
-energy; forces/stress still reject spin/smear; spin∧smear still rejects.
-One worker tip GH200-green but **not merged** (`device-collocate`).
++ device KS stream-null + host DIIS/eigen + host `build_STVpp`; `pw_solver`
+accepts spin∧PBE energy; forces/stress still reject spin/smear; spin∧smear
+still rejects. One worker tip GH200-green but **not merged**
+(`device-collocate`; behind 7).
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
 | RHF s/p energy + forces + level_shift + path-select + device CDIIS + **non-default stream D2H** | **landed** | higher-L host-fill remains (out of product scope) |
 | Γ GPW stage units (Poisson/FFT + Padé LDA + product collocate/integrate + `KsChainDevice` LDA/PBE + `KsMultiGridChainDevice`) | **landed** | stage ≠ full product depth |
-| Public `cuda::gpw::GpwDft` first slice (Γ RKS DIIS PADE/PBE; host cbg collocate/integrate + DIIS/eigen; device KS stream-null; CPU force free fn) | **landed** (`31d24207` / **1120817**) | **pending:** device collocate+integrate, **PBE product dual-gate**, **H₂O product dual-gate**, device forces, multigrid run + **MG forces**, UKS Γ + **UKS forces** + **UKS-PBE gate**, multi-k + **kpoint forces**, stress, **product non-default stream**, **device DIIS/eigen** (post-collocate residual incl. P→weight) |
-| `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **cell stress (LSDA + PBE dual-gate)** + **collinear LSDA + spin-PBE energy** + **restricted metallic smear energy** | **landed** | **pending:** smear F/σ; spin F/σ / **spin-PBE F/σ** / spin+smear energy + **spin-smear F/σ** |
+| Public `cuda::gpw::GpwDft` first slice (Γ RKS DIIS PADE/PBE; host cbg collocate/integrate/DIIS/eigen; device KS stream-null; CPU force free fn) | **landed** (`31d24207` / **1120817**) | **pending:** device collocate+integrate, **PBE + H₂O product dual-gates**, device forces, multigrid run + **MG forces**, UKS Γ + **UKS forces/stress** + **UKS-PBE gate**, multi-k + **kpoint forces/stress**, **UKS multi-k**, **UKS MG**, **multi-k MG**, stress, **product stream**, **device DIIS/eigen** (+ P→weight), **device STVnl** residual |
+| `cuda::pw::PW` LSDA + device PBE-GGA + residency + stream + large-cell + **forces (LSDA+PBE)** + **cell stress (LSDA + PBE dual-gate)** + **collinear LSDA + spin-PBE energy** + **restricted metallic smear energy** | **landed** | **pending:** smear F/σ; spin F/σ / **spin-PBE F/σ** / spin+smear energy + **spin-smear F/σ** + **spin-smear-pbe** |
 
 **Staff order:** (1) **merge** remaining tip `device-collocate` (GH200 green;
-rebase onto current `dev` first — ahead 5 / behind 6) then GPW
+rebase onto current `dev` first — ahead 5 / behind 7) then GPW
 `pbe-product-gate` + `device-forces` + `multigrid-run` + `uks-gamma` **P1**;
 (2) `nondefault-stream` + `device-diis-eigen` + `product-h2o-gate` + `kpoints`
-+ `stress` + remaining PW depth **P2**; (3) `uks-forces` / `uks-pbe-gate` /
-`multigrid-forces` / `kpoint-forces` / `spin-pbe-forces` /
-`spin-pbe-stress` / `spin-smear-forces` / `spin-smear-stress` **P3** after
++ `stress` + remaining PW depth **P2**; (3) wave-4/5 joint paths
+(`uks-forces` / `uks-pbe-gate` / `uks-stress` / `uks-kpoints` /
+`uks-multigrid` / `multigrid-forces` / `multigrid-kpoints` / `kpoint-forces` /
+`kpoint-stress` / `device-stvnl` / `spin-pbe-forces` / `spin-pbe-stress` /
+`spin-smear-forces` / `spin-smear-stress` / `spin-smear-pbe`) **P3** after
 parent energy rows. Do **not** staff lone new GPW kernel footholds. Higher-L
 RHF stays product-out-of-scope. OT / vdW / MT stay later same-capability
 follow-on.
@@ -353,14 +406,14 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 ## in_progress
 
-**Harness wave 4 post-land** (parent `dev` @ `118d3003`): Priority **[~]
-first** — one merge-ready resume remains (GH200 green on tip; **not on base**).
-Do **not** staff NEW P1 (`device-forces` / `multigrid-run` / `uks-gamma` /
+**GapCensus wave 5** (parent `dev` @ `4d375c3a`): Priority **[~] first** —
+one merge-ready resume remains (GH200 green on tip; **not on base**). Do
+**not** staff NEW P1 (`device-forces` / `multigrid-run` / `uks-gamma` /
 `pbe-product-gate`) until collocate merges. Theme held: GPW product depth;
-spin-PBE energy **closed** this wave. No hybrid/GAPW; GH200 green required.
-Tip is **ahead 5 / behind 6** vs `dev` (spin-pbe merge + docs) — **rebase onto
-current `dev` before merge**. Base still host collocate/integrate; spin-PBE
-energy dual-gate is **landed**.
+spin-PBE energy **already closed** (wave 4). No hybrid/GAPW; GH200 green
+required. Tip is **ahead 5 / behind 7** vs `dev` (spin-pbe merge + harness
+chore) — **rebase onto current `dev` before merge**. Base still host
+collocate/integrate.
 
 - [~] `cuda-gpw-device-collocate` | **P1** method=cuda | **resume / merge-ready**
   | compose landed product_collocate/integrate into `GpwDft::run` (drop mid-SCF
@@ -368,7 +421,7 @@ energy dual-gate is **landed**.
   E/F | gate: GH200; E 5e-6 Ha / F 5e-5 Ha/Bohr; fail-closed non-Γ until later
   depth | lever: `src/cuda/gpw/gpw_solver.cu` `build_H_and_energy` +
   `cuda/gpw/internal/` DeviceProduct/collint | tip `6a564562` (feat
-  `9864dce4`) on `wf/cuda-gpw-device-collocate` | ahead 5 / behind 6 vs `dev` |
+  `9864dce4`) on `wf/cuda-gpw-device-collocate` | ahead 5 / behind 7 vs `dev` |
   GH200 **1124643** (post-rebase onto `44bd64bb`) / **1123960** / **1122743**
   \|ΔE\|=**1.617e-7** Ha max\|ΔF\|=**2.332e-6** Ha/Bohr | spec on tip
   `.claude/specs/cuda-gpw-device-collocate/SPEC.md`
