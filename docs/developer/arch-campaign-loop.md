@@ -63,3 +63,24 @@ Wipe `build` / `build-*` under parent and every worktree every wave.
   **new_slugs_added=0**. No roadmap ○→✓ (capability tables are product
   physics; arch prose already accurate). Optional `chore(queue)` only. No
   push.
+- **2026-08-10 Assign wave 3 (parent `dev` @ `1eb6fca2`):** staff **2**
+  resumes → `[~]`: `arch-gpw-driver-paths` (`6553a036`, ahead=1 behind=7) +
+  `arch-pw-driver-node` (`42842e25`, ahead=1 behind=7). Skipped P1
+  `arch-cuda-gpw-public-shape-freeze` + P2 `arch-mg-main-structural` (dep on
+  paths). **new_assigned=0**, **incomplete_remaining=2**, pending held=2,
+  blocked=1 staffable product. No push.
+- **2026-08-10 harness wave 3 (parent `dev` @ `f016215e`):** 1 of staffed →
+  done [x]: `arch-pw-driver-node` (merge `f016215e` / impl `1bad527a` —
+  `PW` → `cpu::Driver<pw::Phase>` restricted fixed-occ
+  `veff→diagonalize→density→mix→check` + `PwConverged`; public
+  `build`/`run`/`forces`/`stress` stable; spin/smear free-loop residual;
+  `test_cpu_pw_driver_node` + `reg_arch-pw-driver-node`). Spec closed
+  (deleted `.claude/specs/arch-pw-driver-node/`). Keep other `[~]`:
+  `arch-gpw-driver-paths` @ `cca084b6` (ahead=1 behind=2; rebase onto
+  `f016215e` before gate). Pending held **2** (shape-freeze + mg-main);
+  blocked **1** staffable product (`cuda-gpw-full-product`);
+  **gaps_remaining=4**; **new_slugs_added=0**. CLAUDE remaining-debt:
+  drop "PW not yet a Driver node"; residual is spin/smear free loops +
+  GPW multi-path. Clearup already ran (no isolation worktrees; build dirs
+  empty). Roadmap: no ○ rows for these arch slugs — no ○→✓. Queue **not**
+  exhausted (GapCensus owns discovery). No push.

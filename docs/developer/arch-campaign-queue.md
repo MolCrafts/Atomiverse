@@ -16,49 +16,38 @@ Staff only `wf/arch-<slug>` off current `dev`. GapCensus every wave may deepen
 rows; foothold ≠ closed capability. **Unmerged tip ≠ done** — only green merge
 onto `dev` closes a slug.
 
-**GapCensus wave 3 (2026-08-10)** on `dev` @ `350644ca` (post harness wave-2
-chore after merges of `arch-cuda-scf-solver-fold` + `arch-e2e-tests-wave2`).
-Re-diff of CLAUDE iron laws + ES order, notes, arch/e2e/es queues, and tree
-scan of `cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` — **no new staffable
-arch slugs**. Tree facts reconfirmed:
+**GapCensus harness wave 3 (2026-08-10)** on `dev` @ `f016215e` (post merge
+`arch-pw-driver-node` `f016215e` / impl `1bad527a`; prior Assign tip
+`1eb6fca2`). Re-diff CLAUDE iron laws + ES order, notes, arch/e2e/es queues,
+tree scan `cpu/{gpw,planewave,scf}` + `cuda/scf` + `tests/` — **no new
+staffable arch slugs**. Tree facts:
 
 | Surface | On `dev` |
 | --- | --- |
 | `GpwDft` | `cpu::Driver<gpw::Phase>` + `drive_gamma_rks_diis_` + `gpw/stages/*` for **Γ RKS DIIS only** |
 | GPW residual free loops | `run_gpw_scf_kpoints*` (RKS/UKS DIIS), Γ UKS DIIS, all **OT** (`use_ot`) |
-| `cpu::pw::PW` | plain class — **no** `pw::Phase`, no stages; free SCF in `internal/scf_loop` + `pw_solver` |
+| `cpu::pw::PW` | `cpu::Driver<pw::Phase>` + stages for **restricted fixed-occ**; collinear spin + metallic smearing free-loop residual |
 | `cuda::scf::RHF` | Component+HF + private `internal::RhfScfCycle` (`scf::Phase` order); **no** public/free-loop `SCFSolver` type |
 | Nested CUDA Driver | residual — full `cuda::Driver<scf::Phase>` needs nested CUDA DriverNode (**not** a separate staffable product slug yet) |
 | CUDA GPW | stage footholds only (`ks_chain` / MG / GGA); **no** public method product |
 | e2e iron law | wave-1 + wave-2 **merged**; `ATV_TEST_HEAVY_REGEX` empty (`^$`); optional wave-3 only if unique pin gaps appear (none staffed this census) |
 
-Orphan **branch tips** (no isolation worktrees; **not** on `dev` — do not mark
-done; Assign may rebase/re-staff or discard):
+**Unmerged tip** (no isolation worktree; **not** on `dev` — keep `[~]`; do not
+mark done). Tip rebased onto Assign base `1eb6fca2` (ahead of pre-PW `dev`;
+behind current `dev` by the PW merge):
 
 | Tip | Claim (unverified until merge) |
 | --- | --- |
-| `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual (`6553a036`, base `9c421cc0`) |
-| `wf/arch-pw-driver-node` | `PW` → `Driver<pw::Phase>` restricted fixed-occ (`42842e25`, base `9c421cc0`) |
+| `wf/arch-gpw-driver-paths` | multi-path DIIS on stages; OT residual (`cca084b6`, base `1eb6fca2`; ahead=1 behind=2 vs `dev` @ `f016215e`) |
 
-No open arch specs under `.claude/specs/` (only unrelated
-`periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`). Lever still:
-`MeanFieldMethod` + `cpu/scf/stages/` + landed Γ RKS GPW stages.
+No open arch specs under `.claude/specs/` after this harness closes
+`arch-pw-driver-node` (only unrelated `periodic-rhf-gamma` /
+`rsh-eri-cam-b3lyp`). Lever still: `MeanFieldMethod` + `cpu/scf/stages/` +
+landed Γ RKS GPW stages + landed PW fixed-occ stages.
 
 ### P0 — ES loop nodes (CPU)
 
-- [ ] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS **DIIS**
-  onto same `gpw::Phase` stages (`ks_build → mix → diagonalize → density →
-  check`); OT free-loop residual may trail as same-capability follow-on (not a
-  separate method / not a new slug) | method=cpu-arch | twin:
-  `regressions/gpw/*` (uks-o2-gamma, multigrid-kpoints, kpoints-si) | files:
-  `gpw_solver.cpp` `run_gpw_scf_kpoints*`, `gpw/stages/`, `drive_*` | gate:
-  pins green; public `run`/`forces` stable; wipe builds |
-- [ ] `arch-pw-driver-node` | **P0** Reshape `cpu::pw::PW` →
-  `cpu::Driver<pw::Phase>` after (or parallel once) GPW stage pattern is clear
-  | method=cpu-arch | twin: `regressions/pw/*` (lda-si baseline) | files:
-  `pw_solver.*`, new `pw/stages/`, `core/stage.h` `pw::Phase` | gate: public
-  `run`/`forces`/`stress` stable; spin/smear may remain free-loop residual if
-  restricted fixed-occ lands first |
+*(staffed → in_progress; PW closed this harness)*
 
 ### P1 — freeze product shape (CUDA GPW)
 
@@ -66,7 +55,8 @@ No open arch specs under `.claude/specs/` (only unrelated
   CUDA GPW method product **equals** CPU `GpwDft` public shape after
   multi-path Driver (`arch-gpw-driver-paths`) lands; compose existing stage
   footholds only | method=arch-doc | twin: n/a (harness) | files: notes +
-  queue unlock condition for `cuda-gpw-full-product` |
+  queue unlock condition for `cuda-gpw-full-product` | **hold** until
+  `arch-gpw-driver-paths` merges |
 
 ### P2 — MG structure (after Driver paths)
 
@@ -74,10 +64,22 @@ No open arch specs under `.claude/specs/` (only unrelated
   rewrite toward MAIN ~1× (explicitly **not** pin-softening) — only after
   GPW Driver paths stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` |
   files: multigrid / products | gate: pins green; baseline note rewrite |
+  **hold** until `arch-gpw-driver-paths` green on `dev` |
 
 ## in_progress
 
-*(none)*
+**Assign wave 3 residual (2026-08-10)** after harness closed
+`arch-pw-driver-node`. Keep **1** incomplete staff:
+
+- [~] `arch-gpw-driver-paths` | **P0** Migrate Γ UKS + multi-k RKS/UKS **DIIS**
+  onto same `gpw::Phase` stages (`ks_build → mix → diagonalize → density →
+  check`); OT free-loop residual may trail as same-capability follow-on (not a
+  separate method / not a new slug) | method=cpu-arch | twin:
+  `regressions/gpw/*` (uks-o2-gamma, multigrid-kpoints, kpoints-si) | files:
+  `gpw_solver.cpp` `run_gpw_scf_kpoints*`, `gpw/stages/`, `drive_*` | gate:
+  pins green; public `run`/`forces` stable; wipe builds | **resume**
+  `wf/arch-gpw-driver-paths` @ `cca084b6` (ahead=1 behind=2 vs `dev`; rebase
+  onto `f016215e` before gate) |
 
 ## blocked
 
@@ -109,3 +111,10 @@ No open arch specs under `.claude/specs/` (only unrelated
   `42b8982c` / impl `49d03074` + polish `c6b623be` | evidence:
   `docs/developer/e2e-in-tests-campaign.md` +
   `regressions/architecture/arch-e2e-tests-wave2`; spec closed
+- [x] `arch-pw-driver-node` | **P0** `PW` → `cpu::Driver<pw::Phase>`;
+  restricted fixed-occ via stages
+  (`veff → diagonalize → density → mix → check`) + `PwConverged`; public
+  `build`/`run`/`forces`/`stress` stable; collinear spin + metallic smear
+  free-loop residual | merge: `f016215e` / impl `1bad527a` | evidence:
+  `test_cpu_pw_driver_node` + `reg_arch-pw-driver-node` + `regressions/pw/*`;
+  spec closed
