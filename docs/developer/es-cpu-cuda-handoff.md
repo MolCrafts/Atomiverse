@@ -5,17 +5,15 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `118d3003` (landed `cuda-pw-spin-pbe`; queue harness bookkeeping)
+- **Parent:** `dev` @ `69296751` (landed `cuda-gpw-device-collocate`; queue harness bookkeeping)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** Harness wave 4 2026-08-10 — mark **`cuda-pw-spin-pbe`**
-  done [x] (feat `7949e29d` / land `118d3003`; GH200 **1124645**
-  \|ΔE\|=**1.14e-13** Ha O₂ spin-PBE). Keep other [~]:
-  `cuda-gpw-device-collocate` tip `6a564562` (GH200 **1124643**). Spec closed
-  (deleted). **cpu_pending=0**; **cuda_pending=23**; **gaps_remaining≈24**.
-  Fair wall MG MAIN **2.33×** still blocked pin-unsafe. Clearup already ran;
-  worktrees empty; `wf/cuda-gpw-device-collocate` remains open tip (ahead 5 /
-  behind 6 — rebase before merge).
+- **Last action:** Harness wave 5 2026-08-10 — mark **`cuda-gpw-device-collocate`**
+  done [x] (feat `430a2268` / land `69296751`; GH200 **1125709**
+  \|ΔE\|=**1.617e-7** Ha max\|ΔF\|=**2.137e-6** Ha/Bohr H₂ Γ RKS PADE).
+  No other [~]. Spec closed (deleted). **cpu_pending=0**; **cuda_pending=29**;
+  **gaps_remaining≈30**. Fair wall MG MAIN **2.33×** still blocked pin-unsafe.
+  Clearup already ran; worktrees empty; no open `wf/*` tips.
 
 ## How to run
 
@@ -26,16 +24,15 @@ args: {
   "staff_count": 2,
   "max_waves": 8,
   "target_branch": "dev",
-  "theme": "merge device-collocate; then GPW product depth (forces, multigrid-run, uks-gamma, pbe-product-gate) + PW spin F/σ; GH200 green; no soft tols"
+  "theme": "GPW P1 depth (device-forces, multigrid-run, uks-gamma, pbe-product-gate) + PW spin F/σ; GH200 green; no soft tols"
 }
 agent_budget: 384+
 ```
 
 **Staff order (P1 first):**
-1. **merge** `cuda-gpw-device-collocate` (tip GH200-green; rebase onto `dev`)
-2. `cuda-gpw-device-forces` + `cuda-gpw-multigrid-run` + `cuda-gpw-uks-gamma` + `cuda-gpw-pbe-product-gate`
-3. P2: kpoints / stress / smear-forces / spin-forces / spin-stress / spin-smear / nondefault-stream / diis-eigen / h2o-gate
-4. P3 after parents: spin-pbe-forces / spin-pbe-stress / uks-forces / uks-pbe-gate / multigrid-forces / kpoint-forces / spin-smear F/σ
+1. `cuda-gpw-device-forces` + `cuda-gpw-multigrid-run` + `cuda-gpw-uks-gamma` + `cuda-gpw-pbe-product-gate`
+2. P2: kpoints / stress / smear-forces / spin-forces / spin-stress / spin-smear / nondefault-stream / diis-eigen / h2o-gate
+3. P3 after parents: spin-pbe-forces / spin-pbe-stress / uks-forces / uks-pbe-gate / multigrid-forces / kpoint-forces / spin-smear F/σ / joint-path rows
 
 Workers only `wf/escuda-<slug>` or `wf/<slug>` off current `dev`.
 
@@ -49,7 +46,7 @@ before exit.
 
 | Track | Residual | Action |
 | --- | --- | --- |
-| **cuda GPW** | host collocate + host integrate; CPU-backed forces; no stress | merge collocate tip then staff P1 depth |
+| **cuda GPW** | device collocate **landed**; host DIIS/eigen + weight pack; CPU-backed forces; no stress | staff P1 depth |
 | **cuda GPW** | multigrid / UKS / multi-k reject | staff P1–P2 |
 | **cuda PW** | spin-PBE energy **landed**; spin/smear F/σ + spin-smear energy open | staff P2–P3 depth |
 | **cpu** | MG MAIN **2.33×** | blocked pin-unsafe / not soft-tol |

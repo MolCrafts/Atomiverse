@@ -465,10 +465,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   still reject); large-cell wall evidence on Si supercells — see es-cpu-cuda
   queue. **CUDA GPW first product slice landed:**
   public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE, single-grid periodic;
-  hybrid host STVnl/cbg collocate/integrate/DIIS + device `KsChainDevice` KS;
-  free-fn forces still **CPU-backed**; GH200 dual-gate **1120817** PADE H₂).
-  Depth residual on es-cpu-cuda queue (device collocate/forces, DIIS/eigen,
-  MG run, UKS, multi-k, stress, PBE + H₂O product dual-gates, product stream)
+  host STVnl/DIIS/eigen + **device** product collocate/KS/integrate via
+  `KsChainDevice::run` — collocate depth GH200 **1125709**; free-fn forces
+  still **CPU-backed**; first-slice dual-gate **1120817** PADE H₂).
+  Depth residual on es-cpu-cuda queue (device forces, DIIS/eigen, MG run,
+  UKS, multi-k, stress, PBE + H₂O product dual-gates, product stream)
   — table CUDA for full GPW remains **◐** not ✓. Stage units under
   `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape freeze
   **green**.

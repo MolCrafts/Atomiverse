@@ -39,6 +39,18 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-10 harness wave 5 (parent `dev` @ `69296751`):** 1 of staffed
+  → done [x]: `cuda-gpw-device-collocate` (device product collocate/integrate
+  mid-SCF via `KsChainDevice::run`; merge `69296751` / feat `430a2268`;
+  GH200 **1125709** \|ΔE\|=**1.617e-7** Ha max\|ΔF\|=**2.137e-6** Ha/Bohr
+  H₂ Γ RKS PADE; prior **1124643** / **1123960** / **1122743**;
+  **perf_exempt**). Spec closed (deleted
+  `.claude/specs/cuda-gpw-device-collocate/`). No other `[~]`. Roadmap prose:
+  device mid-SCF collocate landed (table full GPW remains ◐ — forces / MG /
+  UKS / multi-k / stress / DIIS depth open — no ○→✓ for incomplete product).
+  **cpu_pending=0**; **cuda_pending=29**; **gaps_remaining≈30**. Clearup
+  already ran. Queue **not** exhausted (GapCensus owns discovery). No push.
+
 - **2026-08-10 harness wave 4 (parent `dev` @ `118d3003`):** 1 of staffed
   → done [x]: `cuda-pw-spin-pbe` (collinear spin-GGA PBE energy on device;
   merge `118d3003` / feat `7949e29d`; GH200 **1124645** \|ΔE\|=**1.14e-13** Ha
