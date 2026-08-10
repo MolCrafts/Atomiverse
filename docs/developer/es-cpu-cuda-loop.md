@@ -39,6 +39,21 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-10 harness wave 7 (parent `dev` @ `f679807c`):** 2 of staffed
+  → done [x]: `cuda-gpw-multigrid-run` (feat `2d780cff` / `e201a6cb`; GH200
+  **1126433** \|dE\|=**1.587e-7** Ha H₂ Γ RKS PADE ngrids=4; prior
+  **1125894**; **perf_exempt**) + `cuda-gpw-uks-gamma` (feat `f679807c` /
+  `254ff67c`; GH200 **1126430** \|ΔE\|=**4.760e-6** Ha high-spin H₂ UKS
+  PADE ⟨S²⟩=2.0; prior **1125905**; **perf_exempt**). Keep other `[~]`:
+  `cuda-gpw-device-forces` tip `9ec138dc` (GH200 **1126434** max\|ΔF\|=
+  **2.321e-6** Ha/Bohr). Specs closed (deleted
+  `.claude/specs/cuda-gpw-multigrid-run/`,
+  `.claude/specs/cuda-gpw-uks-gamma/`). Roadmap prose: product MG + Γ UKS
+  energy landed (table full GPW remains ◐ — forces / multi-k / stress /
+  DIIS depth open — no ○→✓ for incomplete product). **cpu_pending=0**;
+  **cuda_pending=51**; **in_progress=1**; **gaps_remaining≈53**. Clearup
+  already ran. Queue **not** exhausted (GapCensus owns discovery). No push.
+
 - **2026-08-10 Assign wave 7 (parent `dev` @ `9f5a76ed`):** Priority `[~]`
   first — capacity **3/3** already filled by wave-6 P1 tips not on base.
   **Resume** (no new staff): `cuda-gpw-device-forces` (`wf/…` `0f70ad52`,

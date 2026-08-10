@@ -175,8 +175,9 @@ Residual open depth: spin+smear / spin forces / spin stress / **spin-PBE F/σ**
 (+ spin-smear F/σ after spin-smear energy; **spin multi-k dual-gate**;
 spin-smear-pbe F/σ); collinear spin-PBE **energy** landed (`cuda-pw-spin-pbe`,
 GH200 **1124645**). GPW first product + **device mid-SCF collocate** **landed**
-(GH200 **1125709**) — depth residual on es-cpu-cuda queue (DIIS/eigen, forces,
-MG/UKS/kpoints joint paths, …).
+(GH200 **1125709**) + **product multigrid energy** (**1126433**) + **Γ UKS
+energy** (**1126430**) — depth residual on es-cpu-cuda queue (DIIS/eigen,
+device forces, MG/UKS F/σ + kpoints joint paths, …).
 
 Three latent defects were found and fixed **in the pre-existing** foothold
 kernels while wiring them in — all three would have made the SCF silently

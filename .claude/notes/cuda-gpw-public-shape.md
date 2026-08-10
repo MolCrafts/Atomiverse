@@ -20,7 +20,7 @@ footholds.
 | --- | --- |
 | CPU method | `cpu::gpw::GpwDft` — multi-path **DIIS** on Driver stages; **OT** free-loop residual (same capability follow-on, not a block) |
 | CUDA stages | `cuda/gpw/internal/`: Poisson, XC LDA, product collocate/integrate, composed `KsChainDevice` (LDA+PBE), `KsMultiGridChainDevice` |
-| CUDA public method | **product landed** (`cuda::gpw::GpwDft` Γ RKS DIIS PADE/PBE + **Γ UKS DIIS PADE**; host STVnl/DIIS + device product collocate/KS/integrate via `KsChainDevice::run` / `run_uks`; free-fn forces CPU-backed) — depth residual on queue |
+| CUDA public method | **product landed** (`cuda::gpw::GpwDft` Γ RKS DIIS PADE/PBE + **Γ UKS DIIS PADE** + **multigrid energy** via `KsMultiGridChainDevice`; host STVnl/DIIS + device product collocate/KS/integrate via `KsChainDevice::run` / `run_uks`; free-fn forces CPU-backed) — depth residual on queue |
 
 ## Frozen public shape (CUDA product must match)
 
@@ -77,7 +77,7 @@ staffed.
 | Multi-path DIIS CPU Driver | **green** (`arch-gpw-driver-paths`) |
 | Public-shape freeze | **green** (this note; merge `0147fe02`) |
 | Stage footholds composed | **green** (ks-chain / GGA / MG units) |
-| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); device mid-SCF collocate/integrate **landed** (`cuda-gpw-device-collocate` merge `69296751` / feat `430a2268`; GH200 **1125709**); **Γ UKS energy** staffed as `cuda-gpw-uks-gamma` (Padé LSD); residual (device forces, PBE product gate, MG, UKS forces/PBE, multi-k, stress, product stream, DIIS/eigen) stays on es-cpu-cuda queue |
+| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); device mid-SCF collocate/integrate **landed** (`cuda-gpw-device-collocate` merge `69296751` / feat `430a2268`; GH200 **1125709**); **product multigrid energy landed** (`cuda-gpw-multigrid-run` feat `2d780cff`; GH200 **1126433**); **Γ UKS energy landed** (`cuda-gpw-uks-gamma` feat `f679807c`; GH200 **1126430** Padé LSD); residual (device forces, PBE product gate, MG/UKS F/σ + joints, multi-k, stress, product stream, DIIS/eigen) stays on es-cpu-cuda queue |
 
 `cuda-gpw-full-product` is no longer blocked on “needs architecture freeze”.
 It remains a product implementation slug (compose internals → public method),
