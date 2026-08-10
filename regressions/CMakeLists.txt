@@ -1039,6 +1039,12 @@ endif()
 atv_add_regression(architecture harmonic_driver_matrix)
 atv_add_regression(architecture arch-gpw-driver-paths)
 atv_add_regression(architecture module_compile_defs)
+if(ATV_BUILD_GPW)
+    # arch-cuda-gpw-public-shape-freeze: CUDA full GPW product must mirror CPU
+    # GpwDft public shape (members + build/run/last_result). Shape-only harness;
+    # unlocks staffing of cuda-gpw-full-product after merge.
+    atv_add_regression(architecture arch-cuda-gpw-public-shape-freeze)
+endif()
 if(ATV_BUILD_PW)
     # arch-pw-driver-node: PW → cpu::Driver<pw::Phase> restricted fixed-occ;
     # public run still hits the offline ABINIT-class Si LDA band.

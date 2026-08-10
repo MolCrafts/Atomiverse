@@ -132,7 +132,7 @@ Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 
 | Row | Why |
 | --- | --- |
-| `cuda-gpw-full-product` | **blocked** — footholds / ks-chain / GGA / MG stages ≠ method product; needs architecture freeze |
+| `cuda-gpw-full-product` | **staffable after freeze merge** — public shape = CPU `GpwDft` ([cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)); footholds / ks-chain / GGA / MG compose under that product; not auto-landed |
 | CUDA d-shell / higher-L RHF product | out of loop product scope (host-fill remains for non-s/p STO-3G) |
 | Further lone GPW kernel footholds | collocate↔integrate + LDA + GGA + MG chain complete; depth is product — not another lone foothold |
 | `cuda-pw-pbe-large-cell` | large-cell LSDA ladder **closed**; optional PBE remeasure not a correctness gap |
@@ -166,7 +166,7 @@ gaps are blocked structural / out-of-scope.)
 ## blocked
 
 - [!] `global-xtensor-xsimd` | never enable global `XTENSOR_USE_XSIMD`
-- [!] `cuda-gpw-full-product` | blocked until architecture freeze for GPW public shape — foothold units + LDA/GGA/MG `ks_chain` green ≠ method product; full product still out of scope for this loop
+- [!] `cuda-gpw-full-product` | product implement under freeze contract (CPU `GpwDft` public shape) — foothold + LDA/GGA/MG `ks_chain` green ≠ method product; staff after `arch-cuda-gpw-public-shape-freeze` merges; GH200 + stated CUDA↔CPU tols; still a large product slug
 - [!] `mg-main-structural` | MG MAIN **2.33×** residual after pin-safe collint + structure + sphere campaigns; further cut needs non-pin-safe windows or task-list rewrite beyond this loop’s pin law — do not staff as soft-tol or self-golden
 
 ## done

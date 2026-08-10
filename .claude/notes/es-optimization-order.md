@@ -65,7 +65,7 @@ step 1 — CPU architecture**, not more collint polish.
 | P0 | ~~`arch-pw-driver-node`~~ **landed** | `PW` → `Driver<pw::Phase>` restricted fixed-occ |
 | P0 | `arch-pw-driver-paths` | collinear spin + metallic smear free loops onto same `pw::Phase` stages — **unmerged tip** @ `e04ba781` (rebase onto current `dev` before gate) |
 | P1 | ~~`arch-cuda-scf-solver-fold`~~ **landed** | free-loop `SCFSolver` → private `RhfScfCycle`; nested CUDA Driver residual |
-| P1 | `arch-cuda-gpw-public-shape-freeze` | unlock condition for full CUDA GPW product — **unmerged tip** @ `a625c232` (rebase onto current `dev`) |
+| P1 | `arch-cuda-gpw-public-shape-freeze` | freeze CUDA product public shape = CPU `GpwDft` ([cuda-gpw-public-shape.md](cuda-gpw-public-shape.md)); unlocks `cuda-gpw-full-product` staffing after merge — **unmerged tip** (rebased onto current `dev`) |
 | P2 | ~~`arch-e2e-tests-wave2`~~ **landed** / `arch-mg-main-structural` | iron law residual closed; MG ~1× structural — **unmerged tip** @ `3d9a64ba` (rebase onto current `dev`; freeze-first if contention) |
 
 **GapCensus wave 8:** on `dev` @ `9271cae3`. Tree reconfirmed multi-path GPW
@@ -78,7 +78,8 @@ Queue: [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md).
 Workflow: `.grok/workflows/arch-campaign.rhai`.
 
 **Forbidden this campaign:** soft tols; invent hybrid/GAPW; staff
-`cuda-gpw-full-product` before multi-path Driver + freeze; leave `build*`.
+`cuda-gpw-full-product` with a public shape other than CPU `GpwDft` (freeze
+contract in [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md)); leave `build*`.
 
 ### Superseded focus — dual track `es-cpu-cuda-opt` (closed staffable set 2026-08-10)
 
@@ -110,7 +111,9 @@ max\|ΔV_eff\|=8.1e-10); `cuda::pw::PW` LSDA + closed-shell PBE + residency +
 stream + large-cell + analytic ionic forces (LSDA + PBE) + analytic cell stress
 (LSDA) + **collinear LSDA spin** (GH200 **1051041** \|ΔE\|=1.07e-13 Ha on O₂).
 **Pending depth:** `cuda-pw-metallic-smear` (P2), `cuda-rhf-nondefault-stream`
-(P3). **Blocked:** `cuda-gpw-full-product`, `mg-main-structural`.
+(P3). **Blocked structural:** `mg-main-structural`. **`cuda-gpw-full-product`:**
+public-shape freeze tip green under contract — staffable after freeze merge
+(compose stages → `GpwDft`-shaped product; not auto-landed).
 **cpu_pending=0** — no pin-safe wall lever.
 
 **Queues (binding worklists):**

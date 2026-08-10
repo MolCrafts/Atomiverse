@@ -9,7 +9,9 @@
 /// product density assembly of CPU Γ multigrid (collocate per level → spectral
 /// prolong to fine → KS on fine → spectral restrict → integrate per level).
 /// **Not** a full GPW method product: no k-points, no spin/vdW, no public
-/// `GpwDft` surface.
+/// `GpwDft` surface. Full CUDA GPW product public shape is frozen to equal
+/// CPU `GpwDft` (see `.claude/notes/cuda-gpw-public-shape.md`); this stage
+/// unit is composed under that product, never promoted to user API.
 #pragma once
 
 #include "atomiverse/cuda/gpw/internal/multigrid_transfer.cuh"

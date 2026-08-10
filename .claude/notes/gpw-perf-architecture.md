@@ -113,8 +113,12 @@ Thin Γ device slices under `src/cuda/gpw/internal/`:
 | composed KS chain (LDA + closed-shell PBE) | `ks_chain.{cu,cuh}` | `ks_grid_build_rks` + continuous collint (LDA GH200 **1049858**; GGA **1050680**) |
 | multi-grid product KS stage | `multigrid_transfer.{cu,cuh}` + `KsMultiGridChainDevice` | CPU Γ MG fragment dual-gate (GH200 **1051042** max\|ΔV_eff\|=8.1e-10) |
 
-Unit/stage oracle tols stated — **no** public `GpwDft`. Full CUDA GPW remains
-blocked pending architecture freeze.
+Unit/stage oracle tols stated — **no** public `GpwDft`. Public shape for the
+full method product is **frozen** to equal CPU `GpwDft` — see
+[cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Stage units stay
+`internal/` and are composed under that product; OT residual does not block.
+`cuda-gpw-full-product` is staffable under that contract after freeze merge
+(still a product implement, not auto-landed).
 
 ### Forbidden
 
