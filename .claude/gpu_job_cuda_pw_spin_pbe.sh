@@ -16,13 +16,17 @@ export OPENBLAS_ROOT="${OPENBLASDIR:-}"
 export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
 # aarch64 GH200: do NOT override RUSTUP_TOOLCHAIN
 
+# Worktrees need the molrs pin present (not auto-checked out).
+if [ ! -f molrs/Cargo.toml ]; then
+  git submodule update --init --recursive molrs
+fi
+
 BUILD=build-gpu-spin-pbe
 rm -rf "${BUILD}" CMakeCache.txt CMakeFiles Testing .cache 2>/dev/null || true
 
 cmake -B "${BUILD}" -DCMAKE_BUILD_TYPE=Release \
   -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
   -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=OFF \
-
   -DATV_BUILD_CUDA=ON -DBLA_VENDOR=OpenBLAS
 
 cmake --build "${BUILD}" -j"$(nproc)" --target \
