@@ -90,12 +90,13 @@ open arch specs on `dev`; GapCensus `new_slugs_added=0`). Tips claim product;
   CUDA GPW method product **equals** CPU `GpwDft` public shape after
   multi-path DIIS Driver (`arch-gpw-driver-paths` **merged**); compose existing
   stage footholds only; OT free-loop residual is documented on CPU and does
-  not block the freeze doc | method=arch-doc | twin: n/a (harness) + tip
-  `reg_arch-cuda-gpw-public-shape-freeze` | files: notes + queue unlock
-  condition for `cuda-gpw-full-product` | **tip**
-  `wf/arch-cuda-gpw-public-shape-freeze` @ `a625c232` (rebase onto current
-  `dev` before gate) | gate: freeze doc lands; unlock path for full product
-  stated | spec (tip): `.claude/specs/arch-cuda-gpw-public-shape-freeze/` |
+  not block the freeze doc | method=arch-doc | twin: harness
+  `reg_arch-cuda-gpw-public-shape-freeze` | files: note
+  `.claude/notes/cuda-gpw-public-shape.md` + queue unlock for
+  `cuda-gpw-full-product` | **tip** `wf/arch-cuda-gpw-public-shape-freeze`
+  (rebased onto current `dev`; freeze doc + shape harness; unmerged ≠ done) |
+  gate: freeze doc lands; unlock path for full product stated | spec:
+  `.claude/specs/arch-cuda-gpw-public-shape-freeze/SPEC.md` |
 - [~] `arch-mg-main-structural` | **P2** Task-list / products-default path
   rewrite toward MAIN ~1× (explicitly **not** pin-softening) — only after
   GPW Driver paths stable | method=cpu-arch | twin: `gpw-multigrid-kpoints` +
@@ -106,9 +107,12 @@ open arch specs on `dev`; GapCensus `new_slugs_added=0`). Tips claim product;
 
 ## blocked
 
-- [!] `cuda-gpw-full-product` | blocked until public-shape freeze green —
-  multi-path DIIS Driver is on `dev`; CUDA stage units ≠ method product;
-  freeze still required before full CUDA GPW product
+- [!] `cuda-gpw-full-product` | **implement product** under freeze contract
+  (not staffed this campaign wave) — multi-path DIIS Driver on `dev`; stage
+  footholds green; public shape = CPU `GpwDft` (freeze tip
+  `wf/arch-cuda-gpw-public-shape-freeze` + note
+  `cuda-gpw-public-shape.md`). Staff only after freeze merges; compose
+  `internal/` stages → public method; GH200 + CUDA↔CPU tols required
 - [!] `mg-main-soft-tol` | never staff as soften tols / self-golden
 - [!] `hybrid-gapw-paw-metagga` | method loops, not this campaign
 

@@ -304,6 +304,11 @@ struct GpwResult {
 /// as Driver stages (`ks_build → mix → diagonalize → density → check`) with
 /// path-local stage Ops. **OT** free loops remain residual (different control
 /// flow). Move-only. Public surface is members + `run`/`build` — no `*Config`.
+///
+/// **CUDA product freeze:** a full CUDA GPW method must present this same
+/// public shape (members + `build`/`run`/`last_result` + forces/stress family);
+/// stage footholds under `cuda/gpw/internal/` compose under it and are never
+/// the user API. Contract: `.claude/notes/cuda-gpw-public-shape.md`.
 class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
   public:
     /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(atoms)`.

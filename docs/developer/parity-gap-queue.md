@@ -83,7 +83,9 @@ pin — `harness` marks docs-only truth repairs (no build, no pin).
 
 ## blocked
 
-- `cuda-gpw-full-product` — gate: GPW CPU public-shape architecture freeze
+- `cuda-gpw-full-product` — gate: public-shape freeze
+  ([cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md);
+  tip `wf/arch-cuda-gpw-public-shape-freeze`) then product implement
   (`docs/developer/es-cpu-cuda-queue.md:97`). Owner: `es-cpu-cuda-opt`. The
   four footholds are green; the product is out of this loop's scope until the
   gate lifts.
