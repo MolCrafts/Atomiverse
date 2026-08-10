@@ -184,9 +184,10 @@ device PBE (`cuda/planewave/internal/xc_pbe.cu` — PBE-X + PW92-based PBE-C;
 closed-shell ζ=0 + spin `xc_pbe_spin_grid`; spectral ∇ρ / divergence in
 `DeviceDensity`) against the CPU stage helpers as oracle. GPW has a device
 closed-shell PBE **KS stage** (`KsChainDevice` / `cuda-gpw-ks-gga`) composed
-into hybrid public `cuda::gpw::GpwDft` (product PBE dual-gate still open). No
-CUDA GGA on the molecular Gaussian path; the PBE-family variants
-(PBEsol/revPBE/RPBE) stay CPU-only.
+into hybrid public `cuda::gpw::GpwDft` (product PBE H₂ dual-gate **landed**
+`cuda-gpw-pbe-product-gate` / GH200 **1127166**; water×PBE + path×PBE F/σ
+still open). No CUDA GGA on the molecular Gaussian path; the PBE-family
+variants (PBEsol/revPBE/RPBE) stay CPU-only.
 `XCType::BLYP` is pure B88+LYP (unit weights, no HF admixture); regression
 `reg_blyp-water-sto3g` pins H2O/STO-3G vs PySCF xc=blyp. **BLYP on GPW**
 ships as `XcKind::BLYP` (`reg_gpw-blyp-water`; dual-gate vs PBE). **PBEsol**
@@ -467,14 +468,15 @@ Two periodic DFT engines exist, with disjoint strengths:
   public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE + **Γ UKS DIIS PADE** +
   **multigrid energy**; host STVnl/DIIS/eigen + **device** product
   collocate/KS/integrate via `KsChainDevice::run` / `run_uks` +
-  `KsMultiGridChainDevice` — collocate GH200 **1125709**, MG **1126433**,
-  UKS **1126430**; free-fn forces still **CPU-backed**; first-slice dual-gate
-  **1120817** PADE H₂). Depth residual on es-cpu-cuda queue (device forces,
-  DIIS/eigen, MG/UKS F/σ + joints, multi-k, stress, PBE + H₂O product
-  dual-gates, product stream) — table CUDA for full GPW remains **◐** not ✓
-  (no ○→✓ while product depth incomplete). Stage units under
-  `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape freeze
-  **green**.
+  `KsMultiGridChainDevice` on **non-default stream** — collocate GH200
+  **1125709**, MG **1126433**, UKS **1126430** / O₂ gate **1127173**, PBE H₂
+  **1127166**, stream **1128196**; free-fn forces = **host AO Pulay + device
+  grid HF** **1127167**; free-fn stress = **CUDA density + host fixed-\(P\)**
+  **1128195** H₂ dual-gate). Depth residual on es-cpu-cuda queue (DIIS/eigen,
+  water e2e F/σ, MG/UKS F/σ + joints, multi-k, force-stream / AO-Pulay, device
+  STVnl) — table CUDA for full GPW remains **◐** not ✓ (no ○→✓ while product
+  depth incomplete). Stage units under `cuda/gpw/internal/`; multi-path DIIS
+  CPU Driver + public-shape freeze **green**.
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
   **multi-path DIIS** (Γ RKS/UKS + multi-k RKS/UKS landed; OT free-loop
   residual is same-capability follow-on, not a new slug). `cpu::pw::PW` is
@@ -608,13 +610,14 @@ Which engine backs which ✓:
 
 - **Γ-point periodic RKS** is GPW (`reg_gpw-water-pbe-mt`) on CPU **and** a
   **first-slice CUDA product** (`cuda::gpw::GpwDft`; host STVnl/DIIS/eigen +
-  device product collocate/KS/integrate via `KsChainDevice::run`; PADE dual-gate
-  `reg_cuda-gpw-full-product` / collocate GH200 **1125709** — table ◐ until
-  device forces + PBE + H₂O product gates + DIIS/eigen depth land). **Γ-point
-  periodic UKS** is GPW PADE LSD on CPU (`reg_gpw-uks-o2-gamma`) **and** a
-  **first-cut CUDA energy product** (`cuda-gpw-uks-gamma` / GH200 **1126430**
-  high-spin H₂; device `KsChainDevice::run_uks` Padé LSD only; table **◐** —
-  O₂ production dual-gate, UKS forces/stress, UKS-PBE, UKS-MG still open on
+  device product collocate/KS/integrate via `KsChainDevice::run` + non-default
+  stream; PADE dual-gate `reg_cuda-gpw-full-product` / collocate GH200
+  **1125709** / PBE H₂ **1127166** / forces **1127167** / stress **1128195** —
+  table ◐ until H₂O gates + DIIS/eigen + force-stream/AO-Pulay depth land).
+  **Γ-point periodic UKS** is GPW PADE LSD on CPU (`reg_gpw-uks-o2-gamma`)
+  **and** a **first-cut CUDA energy product** (`cuda-gpw-uks-gamma` /
+  GH200 **1126430** H₂ + **1127173** O₂; device `KsChainDevice::run_uks` Padé
+  LSD only; table **◐** — UKS forces/stress, UKS-PBE, UKS-MG still open on
   es-cpu-cuda queue).
   **k-point periodic RKS** is the plane-wave solver (Monkhorst–Pack mesh) on
   both CPU and CUDA, **and** GPW on CPU — the Gaussian-basis k-point path
@@ -709,14 +712,17 @@ Which engine backs which ✓:
   Γ-UKS `reg_gpw-uks-forces`, multi-k **RKS** `reg_gpw-kpoint-forces`,
   multi-k **UKS** `reg_gpw-kpoint-uks-forces`) and plane-wave **local HF +
   Ewald + KB nonlocal** (`pw_forces_analytic`). PW FD remains as oracle.
-  **CUDA ◐** = plane-wave only (`cuda::pw::pw_forces_analytic`; closed-shell
-  LSDA + PBE dual-gate landed); no CUDA GPW forces product; spin forces
-  still reject on device.
+  **CUDA ◐** = plane-wave closed-shell LSDA+PBE (`cuda::pw::pw_forces_analytic`)
+  **and** CUDA GPW free-fn first slice (host AO Pulay + device grid HF;
+  `reg_cuda-gpw-device-forces` H₂; UKS/MG free-fn still reject); spin forces
+  still reject on PW device path.
 - **PW stress** is **Nielsen–Martin analytic** (`pw_stress` → Frame `kStress`;
   multi-SCF strain-FD oracle `pw_stress_fd`; `reg_pw-analytic-stress-si`).
   **CUDA ◐** = plane-wave closed-shell **LSDA + PBE** (`cuda::pw::pw_stress`;
-  GH200 dual-gates `reg_cuda-pw-stress` + `reg_cuda-pw-stress-pbe`); spin /
-  smear stress still reject; no CUDA GPW stress.
+  GH200 dual-gates `reg_cuda-pw-stress` + `reg_cuda-pw-stress-pbe`) **and**
+  CUDA GPW free-fn first slice (CUDA density + host fixed-\(P\);
+  `reg_cuda-gpw-stress` H₂); spin / smear stress still reject on PW; GPW
+  multi-k / UKS / water σ depth still open on es-cpu-cuda queue.
   **GPW stress** is **analytic fixed-\(P\)+Pulay** product at Γ **RKS and
   UKS**, **k-points for closed-shell RKS**, **multi-k UKS**
   (`reg_gpw-kpoint-uks-stress`), and **Γ DFT+U** (`reg_gpw-dftu-stress`)
