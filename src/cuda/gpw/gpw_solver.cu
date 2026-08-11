@@ -17,6 +17,8 @@
 ///     (cuda-gpw-kpoint-device-integrate; V_eff stays resident mid-SCF) +
 ///     **device H_k = H0_k + Vmat fuse** (cuda-gpw-kpoint-h-assemble;
 ///     H0_k = T_k+Vnl_k uploaded once; mid-SCF no host T+Vnl+Vg) +
+///     **device H residency into DIIS residual** (cuda-gpw-kpoint-h-residency;
+///     mid-SCF no full \(H_k\) D2H→re-H2D for residual; D2D RM→CM ingest) +
 ///     **multi-k mid-SCF Pulay DIIS + cuSOLVER zheevd + density** via
 ///     `internal::KpointDiisEigenDevice` (cuda-gpw-kpoint-device-diis);
 ///     **Γ mid-SCF Pulay DIIS + cuSOLVER eigen + density** via
@@ -569,10 +571,11 @@ struct DeviceBuf {
 // (cuda-gpw-kpoint-device-stvnl); host χ^k build once; device mid-SCF density
 // collocate via KpointCollocateDevice; device Poisson+XC via
 // KsChainDevice::run_from_rho; device V→Vmat + H_k=H0+Vmat fuse via
-// KpointIntegrateDevice (cuda-gpw-kpoint-h-assemble); device multi-k Pulay
-// DIIS + zheevd + density via KpointDiisEigenDevice
-// (cuda-gpw-kpoint-device-diis). Fixed occupations, single-grid, no smear /
-// OT / MG / UKS.
+// KpointIntegrateDevice (cuda-gpw-kpoint-h-assemble); device H residual path
+// (no mid-SCF full H_k D2H) via ingest_H_k_device_rm + residual_from_device
+// (cuda-gpw-kpoint-h-residency); device multi-k Pulay DIIS + zheevd + density
+// via KpointDiisEigenDevice (cuda-gpw-kpoint-device-diis). Fixed occupations,
+// single-grid, no smear / OT / MG / UKS.
 
 using cpu::gpw::internal::CplxMatrix;
 using cpu::gpw::internal::KOrth;
@@ -783,8 +786,9 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     const bool use_diis = cfg.diis_depth > 0;
 
     // Device χ^k integrate + H_k assemble: χ and H0_k = T_k+Vnl_k uploaded
-    // once; mid-SCF keeps V_eff resident, fuses H_k on device, D2Hs H only
-    // for residual host KDiis/diag (cuda-gpw-kpoint-h-assemble).
+    // once; mid-SCF keeps V_eff resident and fuses H_k on device
+    // (cuda-gpw-kpoint-h-assemble). Residual path keeps H device-resident
+    // (cuda-gpw-kpoint-h-residency); payload still D2Hs H for host re-diag.
     KpointIntegrateDevice kint;
     kint.build(stream, nb, npts, nk);
     for (int ik = 0; ik < nk; ++ik) {
@@ -815,13 +819,18 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
         kdiis.upload_P_k(ik, P_k[static_cast<std::size_t>(ik)].data());
     }
 
-    // Integrate V→Vmat then fuse H = H0 + Vmat on device; download H_k
-    // (cuda-gpw-kpoint-h-assemble). Residual/DIIS still consume host H_k.
-    auto assemble_Hk_device = [&](int ik) -> CplxMatrix {
+    // Mid-SCF: integrate + fuse H on device, D2D-ingest into DIIS (no H D2H).
+    auto assemble_Hk_into_diis = [&](int ik) {
+        kint.integrate(ks.d_veff(), kbg.weight, ik);
+        kint.assemble_H(ik);
+        kdiis.ingest_H_k_device_rm(ik, kint.d_H());
+    };
+    // Payload / host re-diag: same fuse then D2H assembled H (child
+    // kpoint-payload-device drops this path later).
+    auto assemble_Hk_host = [&](int ik) -> CplxMatrix {
         kint.integrate(ks.d_veff(), kbg.weight, ik);
         kint.assemble_H(ik);
         CplxMatrix Hk = xt::zeros<Cplx>({nb, nb});
-        // Row-major CplxMatrix: data()[u*nb+t] == H(u,t).
         kint.download_H(Hk.data());
         return Hk;
     };
@@ -832,7 +841,6 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     res.scf_kbg = std::make_shared<KpointBasisGrid>(kbg);
     res.scf_cbg_valid = false;
 
-    std::vector<CplxMatrix> H_k(static_cast<std::size_t>(nk));
     std::vector<double> last_veff;
     std::vector<double> last_v_es;
 
@@ -853,8 +861,9 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
             d_rho, dev.d_n_ion, dev.d_v_loc, /*d_prods=*/nullptr,
             /*nprod=*/0, /*d_acc=*/nullptr, kxc);
 
-        // Mid-SCF: V_eff stays on device; integrate χ^k† V χ^k → V_μν^k.
-        // Final store_grids still D2Hs V_eff/V_es for force free-fn reuse.
+        // Mid-SCF: V_eff stays on device; integrate χ^k† V χ^k → V_μν^k and
+        // fuse H into DIIS buffers (no full H_k D2H). Final store_grids still
+        // D2Hs V_eff/V_es for force free-fn reuse.
         if (store_grids) {
             std::vector<double> veff(static_cast<std::size_t>(npts));
             std::vector<double> v_es(static_cast<std::size_t>(npts));
@@ -872,7 +881,7 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
         double e_kin = 0.0, e_nl = 0.0;
         for (int ik = 0; ik < nk; ++ik) {
             const double wk = weights[static_cast<std::size_t>(ik)];
-            H_k[static_cast<std::size_t>(ik)] = assemble_Hk_device(ik);
+            assemble_Hk_into_diis(ik);
             e_kin += wk
                      * ctrace_k(Pk[static_cast<std::size_t>(ik)],
                                 T_k[static_cast<std::size_t>(ik)], nb);
@@ -908,7 +917,7 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
             res.k_weights.push_back(kp.weight);
             // Rebuild H from device-resident last V_eff + H0 (same fuse as
             // mid-SCF) so payload matches final density.
-            const CplxMatrix Hfull = assemble_Hk_device(ik);
+            const CplxMatrix Hfull = assemble_Hk_host(ik);
             auto [eps, C] = cpu::gpw::internal::diagonalize_k(
                 Hfull, orth[static_cast<std::size_t>(ik)]);
             res.eps_k.push_back(eps);
@@ -934,16 +943,13 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     double prev_energy = std::numeric_limits<double>::quiet_NaN();
     bool conv = false;
     int it = 0;
-    std::vector<const Cplx*> H_ptrs(static_cast<std::size_t>(nk), nullptr);
     for (it = 0; it < cfg.max_iter; ++it) {
         const double e_total = build_k_energy(P_k, /*store_grids=*/false);
         res.e_total = e_total;
 
-        // Device residual e^k = X†(HPS−SPH)X (twin of host k_diis_error).
-        for (int ik = 0; ik < nk; ++ik)
-            H_ptrs[static_cast<std::size_t>(ik)] =
-                H_k[static_cast<std::size_t>(ik)].data();
-        const double err_norm = kdiis.residual(H_ptrs);
+        // Device residual e^k = X†(HPS−SPH)X from device-resident H
+        // (cuda-gpw-kpoint-h-residency; no mid-SCF H D2H→H2D).
+        const double err_norm = kdiis.residual_from_device();
         const bool has_prev = !std::isnan(prev_energy);
         const double dE = has_prev ? (e_total - prev_energy)
                                    : std::numeric_limits<double>::infinity();

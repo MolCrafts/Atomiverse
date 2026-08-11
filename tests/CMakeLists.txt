@@ -1063,6 +1063,15 @@ if(ATV_BUILD_CUDA)
             target_link_libraries(test_cuda_gpw_kpoint_stvnl
                                   PRIVATE CUDA::cufft)
         endif()
+        # Device H residual residency: assemble → ingest → residual_from_device
+        # (cuda-gpw-kpoint-h-residency).
+        atv_add_test(test_cuda_gpw_kpoint_h_residency
+                     cuda/gpw/test_kpoint_h_residency.cu)
+        if(TARGET test_cuda_gpw_kpoint_h_residency)
+            target_link_libraries(test_cuda_gpw_kpoint_h_residency
+                                  PRIVATE CUDA::cufft CUDA::cublas
+                                          CUDA::cusolver)
+        endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)

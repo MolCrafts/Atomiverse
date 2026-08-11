@@ -164,3 +164,62 @@ TEST(CudaGpwKpointDiisEigen, TwoKSharedDiisAdvances) {
 
     cudaStreamDestroy(stream);
 }
+
+TEST(CudaGpwKpointDiisEigen, ResidualFromDeviceMatchesHost) {
+    // cuda-gpw-kpoint-h-residency: device RM H → ingest → residual_from_device
+    // must match host residual(H) path (no full H D2H required in product).
+    CplxMatrix S, H, P;
+    int n_occ = 0;
+    make_toy(S, H, P, n_occ);
+    const int n = 2;
+    KOrth orth(S, 1e-10);
+    const int m = static_cast<int>(orth.X.shape(1));
+
+    // Slightly different second-k H so multi-k residual is non-degenerate.
+    CplxMatrix H2 = H;
+    H2(0, 0) = -0.75;
+    H2(1, 1) = -0.35;
+    H2(0, 1) = Cplx(-0.08, 0.04);
+    H2(1, 0) = std::conj(H2(0, 1));
+
+    cudaStream_t stream;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+    KpointDiisEigenDevice host_path;
+    const std::vector<double> w = {0.4, 0.6};
+    host_path.build(stream, /*nk=*/2, n, m, /*max_vectors=*/4, n_occ, 2.0, w);
+    for (int ik = 0; ik < 2; ++ik) {
+        host_path.upload_SX_k(ik, S.data(), orth.X.data(), m);
+        host_path.upload_P_k(ik, P.data());
+    }
+    std::vector<const Cplx*> Hs = {H.data(), H2.data()};
+    const double err_host = host_path.residual(Hs);
+
+    KpointDiisEigenDevice dev_path;
+    dev_path.build(stream, /*nk=*/2, n, m, /*max_vectors=*/4, n_occ, 2.0, w);
+    for (int ik = 0; ik < 2; ++ik) {
+        dev_path.upload_SX_k(ik, S.data(), orth.X.data(), m);
+        dev_path.upload_P_k(ik, P.data());
+    }
+    // Upload row-major H to device and ingest (simulate assemble_H d_H).
+    Cplx* d_Hrm[2] = {nullptr, nullptr};
+    const size_t bytes = static_cast<size_t>(n * n) * sizeof(Cplx);
+    for (int ik = 0; ik < 2; ++ik) {
+        ASSERT_EQ(cudaMalloc(&d_Hrm[ik], bytes), cudaSuccess);
+        const Cplx* src = (ik == 0) ? H.data() : H2.data();
+        ASSERT_EQ(cudaMemcpyAsync(d_Hrm[ik], src, bytes, cudaMemcpyHostToDevice,
+                                  stream),
+                  cudaSuccess);
+        dev_path.ingest_H_k_device_rm(ik, d_Hrm[ik]);
+    }
+    ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+    const double err_dev = dev_path.residual_from_device();
+
+    EXPECT_NEAR(err_dev, err_host, 1e-12)
+        << "residual_from_device vs residual(host) |derr|="
+        << std::abs(err_dev - err_host);
+
+    for (int ik = 0; ik < 2; ++ik)
+        cudaFree(d_Hrm[ik]);
+    cudaStreamDestroy(stream);
+}

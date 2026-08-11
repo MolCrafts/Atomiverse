@@ -21,9 +21,10 @@
 ///     per-level integrate), `KsChainDevice::run_uks` (collinear UKS;
 ///     dual ρ → Poisson(total) → Padé LSD → dual V_eff → dual integrate),
 ///     or multi-k: **device phased STVnl** (`KpointStvnlDevice`) + device χ^k
-///     collocate + `run_from_rho` + device V→H_k integrate +
+///     collocate + `run_from_rho` + device V→H_k integrate + H0+Vmat fuse +
+///     **device H residual residency** (cuda-gpw-kpoint-h-residency) +
 ///     **`KpointDiisEigenDevice`** mid-SCF Pulay DIIS + zheevd
-///     (cuda-gpw-kpoint-device-stvnl / collocate / integrate / diis).
+///     (cuda-gpw-kpoint-device-stvnl / collocate / integrate / h-residency / diis).
 ///     Γ mid-SCF Pulay DIIS + cuSOLVER dense eigen + density via
 ///     `internal::AoDiisEigenDevice` — RKS one channel
 ///     (cuda-gpw-device-diis-eigen); UKS dual α/β channels

@@ -70,9 +70,29 @@ class KpointDiisEigenDevice {
     /// @return max |e_ij^k| over all k and elements [Hartree].
     double residual(const std::vector<const std::complex<double>*>& H_hosts);
 
+    /// @brief Ingest device-resident H_k (row-major, integrate layout) into
+    ///        per-k DIIS column-major `d_H_[ik]` via device transpose (D2D).
+    ///
+    /// Used by product mid-SCF after `KpointIntegrateDevice::assemble_H` so
+    /// residual does not D2H full \(H_k\) (cuda-gpw-kpoint-h-residency).
+    ///
+    /// @param ik       k-index in [0, nk).
+    /// @param d_H_rm   Device pointer to n×n complex row-major H [Ha]
+    ///                 (same layout as `KpointIntegrateDevice::d_H()`).
+    void ingest_H_k_device_rm(int ik, const void* d_H_rm);
+
+    /// @brief Form DIIS residuals from already-resident device H_k buffers.
+    ///
+    /// Call after `ingest_H_k_device_rm` for every k (or after host
+    /// `residual` which also fills `d_H_`). No host H traffic.
+    ///
+    /// @return max |e_ij^k| over all k and elements [Hartree].
+    double residual_from_device();
+
     /// @brief DIIS extrapolate + eigen + rebuild density for every k.
     ///
-    /// Call after `residual` when the SCF iteration is not yet converged.
+    /// Call after `residual` / `residual_from_device` when the SCF iteration
+    /// is not yet converged.
     void advance();
 
     /// @brief residual() then advance() — convenience for tests.
