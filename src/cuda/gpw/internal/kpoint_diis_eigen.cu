@@ -129,6 +129,20 @@ __global__ void weighted_sum_cplx_hist_kernel(cuDoubleComplex* __restrict__ y,
     y[idx] = make_cuDoubleComplex(re, im);
 }
 
+/// Device row-major → column-major transpose for n×n (or rows×cols) complex.
+/// One thread per element: cm[i + j*rows] = rm[i*cols + j].
+__global__ void cplx_rm_to_cm_kernel(const cuDoubleComplex* __restrict__ rm,
+                                     cuDoubleComplex* __restrict__ cm,
+                                     int rows, int cols) {
+    const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    const int nn = rows * cols;
+    if (idx >= nn)
+        return;
+    const int i = idx / cols;
+    const int j = idx % cols;
+    cm[i + j * rows] = rm[i * cols + j];
+}
+
 void rm_to_cm_host(const Cplx* rm, Cplx* cm, int rows, int cols) {
     for (int j = 0; j < cols; ++j)
         for (int i = 0; i < rows; ++i)
@@ -472,6 +486,26 @@ double KpointDiisEigenDevice::residual(
                            d_H_[static_cast<size_t>(ik)], n_, n_);
         form_error_k_(ik);
     }
+    return err_norm_from_device_();
+}
+
+void KpointDiisEigenDevice::ingest_H_k_device_rm(int ik, const void* d_H_rm) {
+    ensure_built_();
+    ensure_ik_(ik);
+    if (d_H_rm == nullptr)
+        throw std::invalid_argument(
+            "KpointDiisEigenDevice::ingest_H_k_device_rm: null d_H_rm");
+    const int nn = n_ * n_;
+    const int blocks = grid_size(nn, kDefaultBlock);
+    cplx_rm_to_cm_kernel<<<blocks, kDefaultBlock, 0, stream_>>>(
+        as_z(d_H_rm), as_z(d_H_[static_cast<size_t>(ik)]), n_, n_);
+    check_cuda(cudaGetLastError(), "cplx_rm_to_cm_kernel");
+}
+
+double KpointDiisEigenDevice::residual_from_device() {
+    ensure_built_();
+    for (int ik = 0; ik < nk_; ++ik)
+        form_error_k_(ik);
     return err_norm_from_device_();
 }
 
