@@ -742,11 +742,13 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
     if (method.spin_polarized)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: spin_polarized has no stress path on "
-            "device yet — use cpu::pw::pw_stress");
-    if (method.smearing != Smearing::none)
+            "device yet — use cpu::pw::pw_stress (or restricted metallic "
+            "smear without spin)");
+    // Restricted metallic smear stress is landed; spin∧smear stays closed.
+    if (method.smearing != Smearing::none && !(method.degauss > 0.0))
         throw std::invalid_argument(
-            "cuda::pw::pw_stress: metallic smearing has no stress path on "
-            "device yet — use cpu::pw::pw_stress");
+            "cuda::pw::pw_stress: degauss must be > 0 [Ry] when smearing is "
+            "enabled");
     if (frame.nlocal() <= 0)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: frame has no atoms");
@@ -770,7 +772,8 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
     return internal::pw_stress_analytic_impl(
         frame, method.upf_path, method.gth_name, method.ecut_ry, method.k_mesh,
         method.tol, method.max_iter, method.mix_beta, method.pulay_depth,
-        method.xc, energy_ry_out);
+        method.xc, method.smearing, method.degauss, method.mp_order,
+        method.extra_bands, energy_ry_out);
 }
 
 } // namespace pw

@@ -122,6 +122,37 @@ TEST(CudaPWCellStress, H2ClosedShellCpuTwin) {
                              << s_cuda[1] << "," << s_cuda[2] << ")";
 }
 
+TEST(CudaPWCellStress, SmearZeroDegaussThrows) {
+    auto frame = make_h2_cubic(6.0);
+    cuda::pw::PW method;
+    fill_cuda_method(method);
+    method.smearing = cuda::pw::Smearing::fermi_dirac;
+    method.degauss = 0.0;
+    method.build(frame);
+    EXPECT_THROW(cuda::pw::pw_stress(frame, method), std::invalid_argument);
+}
+
+/// Restricted FD metallic smear: monatomic H (odd valence) is accepted —
+/// finite free-energy stress. Full CUDA↔CPU dual-gate is
+/// regressions/pw/cuda-pw-smear-stress (never under ctest as e2e product).
+/// CUDA-only to stay inside the 10 s unit-timeout budget (dual SCF twin
+/// would push the suite over the hard TIMEOUT).
+TEST(CudaPWCellStress, HSmearRestrictedFinite) {
+    auto frame = make_h_cubic(6.0);
+    cuda::pw::PW cuda_m;
+    fill_cuda_method(cuda_m);
+    cuda_m.smearing = cuda::pw::Smearing::fermi_dirac;
+    cuda_m.degauss = 0.02;
+    cuda_m.extra_bands = 2;
+    cuda_m.max_iter = 12;
+    cuda_m.build(frame);
+    double e_ry = 0.0;
+    const auto s_cuda = cuda::pw::pw_stress(frame, cuda_m, &e_ry);
+    for (int k = 0; k < 6; ++k)
+        EXPECT_TRUE(std::isfinite(s_cuda[static_cast<std::size_t>(k)])) << k;
+    EXPECT_TRUE(std::isfinite(e_ry));
+}
+
 /// Closed-shell H₂ under device PBE — stress path routes XCType through
 /// DeviceDensity (spectral GGA). Si e2e dual-gate is reg_cuda-pw-stress-pbe.
 TEST(CudaPWCellStress, H2ClosedShellPbeCpuTwin) {

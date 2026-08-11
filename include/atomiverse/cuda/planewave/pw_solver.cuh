@@ -13,8 +13,9 @@
 /// metallic smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton) and
 /// `XCType::LSDA` / `XCType::PBE`; collinear fixed-occupation UKS
 /// (`spin_polarized`, integer multiplicity) with **`XCType::LSDA` or
-/// `XCType::PBE`**. Restricted smear forces are on device; spin+smear,
-/// spin-PBE forces, and spin stress stay on `cpu::pw::PW`.
+/// `XCType::PBE`**. Restricted smear forces and restricted smear cell stress
+/// are on device; spin+smear, spin-PBE forces, and spin stress stay on
+/// `cpu::pw::PW`.
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -186,13 +187,17 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 /// @brief Nielsen–Martin analytic cell stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
 ///
 /// CUDA twin of `cpu::pw::pw_stress`: one device SCF + Hellmann–Feynman
-/// strain-FD of the non-self-consistent total energy under remapped density.
-/// Mechanical / CP2K sign: \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\).
-/// Rejects the same unsupported members as `PW::run`.
+/// strain-FD of the non-self-consistent total / free energy under remapped
+/// density. Mechanical / CP2K sign:
+/// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\). Restricted metallic
+/// smear uses the Mermin free energy \(F=E_{\mathrm{KS}}-TS\). Supports
+/// restricted fixed closed shell (LSDA/PBE) and restricted metallic smear
+/// (FD/Gaussian/MP). Rejects spin_polarized and other members `PW::run`
+/// rejects.
 ///
 /// @param frame         Geometry [Å], types (Z), cell; not mutated.
 /// @param method        Plane-wave method members.
-/// @param energy_ry_out Optional: reference SCF total energy [Ry].
+/// @param energy_ry_out Optional: reference SCF free/total energy [Ry].
 /// @return Intensive stress [eV/Å³] Voigt.
 /// @throws std::invalid_argument for empty frame, bad cell, or unsupported
 ///         members.
