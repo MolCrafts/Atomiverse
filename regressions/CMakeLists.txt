@@ -860,6 +860,21 @@ if(ATV_BUILD_GPW)
         add_dependencies(regressions run_${_reg_gpw_simg})
         unset(_reg_gpw_simg)
 
+        # Device monom multi-level KS mid-SCF (cuda-gpw-multigrid-device-ks).
+        set(_reg_gpw_devmg reg_cuda-gpw-multigrid-device-ks)
+        add_executable(${_reg_gpw_devmg}
+            gpw/cuda-gpw-multigrid-device-ks/${_reg_gpw_devmg}.cu)
+        target_link_libraries(${_reg_gpw_devmg} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_devmg} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_devmg}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_devmg}> --device=both
+            DEPENDS ${_reg_gpw_devmg}
+            COMMENT "regression [gpw/cuda-gpw-multigrid-device-ks] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_devmg})
+        unset(_reg_gpw_devmg)
+
         # PBC product collocate + SG device KS (cuda-gpw-product-collocate-pbc).
         set(_reg_gpw_pbc reg_cuda-gpw-product-collocate-pbc)
         add_executable(${_reg_gpw_pbc}

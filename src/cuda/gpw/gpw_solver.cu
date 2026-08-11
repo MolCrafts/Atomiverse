@@ -9,12 +9,11 @@
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS device product KS (`KsChainDevice` + PBC min-image
 ///     collocate/integrate — cuda-gpw-product-collocate-pbc) + device
-///     H=H0+V / DIIS; multigrid RKS mid-SCF uses **host collint product
-///     multigrid** (`multigrid_collocate_rho` + `ks_grid_build_rks` +
-///     `multigrid_integrate_veff`) then device H=H0+V / DIIS — Si
-///     monom-device multi-level under-corrects vs collint by ~0.4 mHa
-///     (cuda-gpw-multigrid-si-energy-path; residual true device monom MG
-///     → deeper slug); collinear UKS `KsChainDevice::run_uks`;
+///     H=H0+V / DIIS; multigrid RKS mid-SCF uses **device monom multi-level**
+///     pack→`KsMultiGridChainDevice`→scatter with collint-faithful group-max
+///     window mag + eps_win (cuda-gpw-multigrid-device-ks; kills host collint
+///     mid-path P/V DH). Optional `ATV_GPW_CUDA_HOST_MG=1` forces host collint
+///     multi-level twin for debug; collinear UKS `KsChainDevice::run_uks`;
 ///     multi-k **device phased STVnl** via `KpointStvnlDevice`
 ///     (cuda-gpw-kpoint-device-stvnl; S/T device; Vnl zero or host-KB H2D);
 ///     multi-k **device χ^k density collocate** via
@@ -139,6 +138,9 @@ constexpr double kDiisAscentResetHa = 1.0e-3;
 /// Matches CPU product mass-margin drop (multigrid.cpp); drop monoms below
 /// `eps * kProductMassMargin` when packing live density weights.
 constexpr double kProductMassMargin = 1.0e-4;
+/// Matches CPU collint sphere window eps factor (multigrid.cpp
+/// `kProductWindowEps`): radius uses `eps * kProductWindowEps`, not mass margin.
+constexpr double kProductWindowEps = 2.0e-2;
 
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
@@ -420,7 +422,7 @@ void store_converged_state_uks(GpwResult& res, const RealMatrix& Ha,
     res.s2 = sz * (sz + 1.0) + static_cast<double>(n_beta) - ov;
 }
 
-CollocateGridDesc to_coll(const UniformGrid& g) {
+CollocateGridDesc to_coll(const UniformGrid& g, double eps_win = 2.0e-9) {
     CollocateGridDesc d;
     for (int i = 0; i < 3; ++i) {
         d.n[i] = g.n[i];
@@ -430,6 +432,8 @@ CollocateGridDesc to_coll(const UniformGrid& g) {
     // CUDA GPW product rejects nonperiodic; collocate/integrate always
     // sphere-window PBC (cuda-gpw-product-collocate-pbc).
     d.periodic = true;
+    // CPU collint kProductWindowEps class (multigrid.cpp): eps * 0.02.
+    d.eps_win = eps_win;
     return d;
 }
 
@@ -1187,6 +1191,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     result_ = GpwResult{};
     const bool periodic = true;
     const double eps = eps_default;
+    const double eps_win = eps * kProductWindowEps; // collint sphere class
     const bool uks = is_uks();
 
     const std::vector<GridBasisFunction> basis = flatten_basis(atoms);
@@ -1330,14 +1335,55 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         mg_desc.levels.resize(static_cast<std::size_t>(nlevels));
         for (int l = 0; l < nlevels; ++l)
             mg_desc.levels[static_cast<std::size_t>(l)] =
-                to_coll(mg.levels[static_cast<std::size_t>(l)]);
+                to_coll(mg.levels[static_cast<std::size_t>(l)], eps_win);
         ks_mg = std::make_unique<KsMultiGridChainDevice>(mg_desc, stream);
         mg_prods.resize_levels(nlevels);
         for (int l = 0; l < nlevels; ++l)
             mg_prods.ensure_level(l, nprod_by_level[static_cast<std::size_t>(l)]);
     } else {
-        ks_sg = std::make_unique<KsChainDevice>(to_coll(grid), stream);
+        ks_sg = std::make_unique<KsChainDevice>(to_coll(grid, eps_win), stream);
         dev.ensure_prods(nprod_geom, uks);
+    }
+
+    // Collint task ranges (geometry groups) → device for group-max window mag.
+    // Built once from ProductSet::tasks_by_level (same order as by_level monoms).
+    std::vector<DeviceBuf> task_beg_bufs(static_cast<std::size_t>(nlevels));
+    std::vector<DeviceBuf> task_end_bufs(static_cast<std::size_t>(nlevels));
+    std::vector<int*> d_task_beg(static_cast<std::size_t>(nlevels), nullptr);
+    std::vector<int*> d_task_end(static_cast<std::size_t>(nlevels), nullptr);
+    std::vector<int> ntask_by_level(static_cast<std::size_t>(nlevels), 0);
+    for (int l = 0; l < nlevels; ++l) {
+        const auto& tasks = pset.tasks_by_level[static_cast<std::size_t>(l)];
+        const int nt = static_cast<int>(tasks.size());
+        ntask_by_level[static_cast<std::size_t>(l)] = nt;
+        if (nt <= 0)
+            continue;
+        std::vector<int> h_beg(static_cast<std::size_t>(nt));
+        std::vector<int> h_end(static_cast<std::size_t>(nt));
+        for (int t = 0; t < nt; ++t) {
+            h_beg[static_cast<std::size_t>(t)] = tasks[static_cast<std::size_t>(t)].beg;
+            h_end[static_cast<std::size_t>(t)] = tasks[static_cast<std::size_t>(t)].end;
+        }
+        check_cuda(cudaMalloc(&task_beg_bufs[static_cast<std::size_t>(l)].p,
+                              static_cast<size_t>(nt) * sizeof(int)),
+                   "malloc task_beg");
+        check_cuda(cudaMalloc(&task_end_bufs[static_cast<std::size_t>(l)].p,
+                              static_cast<size_t>(nt) * sizeof(int)),
+                   "malloc task_end");
+        d_task_beg[static_cast<std::size_t>(l)] =
+            task_beg_bufs[static_cast<std::size_t>(l)].as<int>();
+        d_task_end[static_cast<std::size_t>(l)] =
+            task_end_bufs[static_cast<std::size_t>(l)].as<int>();
+        check_cuda(cudaMemcpyAsync(d_task_beg[static_cast<std::size_t>(l)],
+                                   h_beg.data(),
+                                   static_cast<size_t>(nt) * sizeof(int),
+                                   cudaMemcpyHostToDevice, stream),
+                   "H2D task_beg");
+        check_cuda(cudaMemcpyAsync(d_task_end[static_cast<std::size_t>(l)],
+                                   h_end.data(),
+                                   static_cast<size_t>(nt) * sizeof(int),
+                                   cudaMemcpyHostToDevice, stream),
+                   "H2D task_end");
     }
 
     // ── Device weight pack tables (cuda-gpw-device-weight-pack) ───────────
@@ -1501,6 +1547,12 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                                eps_drop);
             wpack.pack_weights(d_Pb_use, d_geom0, dev.d_prods_b, nprod_geom,
                                eps_drop);
+            if (ntask_by_level[0] > 0) {
+                wpack.apply_group_max_mag(dev.d_prods, d_task_beg[0],
+                                          d_task_end[0], ntask_by_level[0]);
+                wpack.apply_group_max_mag(dev.d_prods_b, d_task_beg[0],
+                                          d_task_end[0], ntask_by_level[0]);
+            }
 
             const KsChainEnergies e = ks_sg->run_uks(
                 dev.d_prods, nprod_geom, dev.d_prods_b, nprod_geom, dev.d_n_ion,
@@ -1669,6 +1721,9 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             // CompactBasisGrid retained only for force free-fn / payload.
             wpack.pack_weights(d_P_use, d_geom0, dev.d_prods, nprod_geom,
                                eps_drop);
+            if (ntask_by_level[0] > 0)
+                wpack.apply_group_max_mag(dev.d_prods, d_task_beg[0],
+                                          d_task_end[0], ntask_by_level[0]);
             e = ks_sg->run(dev.d_prods, nprod_geom, dev.d_n_ion, d_vloc_arg,
                            dev.d_acc, kxc);
             if (std::getenv("ATV_GPW_CUDA_TRACE") != nullptr) {
@@ -1703,19 +1758,14 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                 result_.v_es = std::move(v_es);
             }
         } else {
-            // Multigrid product KS: host collint multi-level twin (CPU MAIN
-            // path: multigrid_collocate_rho + ks_grid_build_rks +
-            // multigrid_integrate_veff). Device monom pack→KsMultiGridChain
-            // under-corrects Si multi-level by ~4e-4 Ha vs collint (GH200
-            // 1180025: CUDA MG ≈ SG energy while CPU MG shifts −15.1523 →
-            // −15.1519). H₂ monom MG stays green because s-only products.
-            // Mid-path P D2H + V H2D here is residual (iron-law P2) until a
-            // collint-faithful device multi-level restore — same pattern as
-            // product-si host cbg before product-collocate-pbc.
-            // Optional ATV_GPW_CUDA_DEVICE_MG=1 forces monom device path.
-            const bool force_device_mg =
-                std::getenv("ATV_GPW_CUDA_DEVICE_MG") != nullptr;
-            if (!force_device_mg) {
+            // Multigrid product KS: default device monom multi-level
+            // pack→KsMultiGridChain→scatter with collint-faithful group-max
+            // window mag + eps_win (cuda-gpw-multigrid-device-ks). Optional
+            // ATV_GPW_CUDA_HOST_MG=1 forces host collint multi-level twin
+            // (mid-path P D2H + V H2D — debug only; iron-law defect).
+            const bool force_host_mg =
+                std::getenv("ATV_GPW_CUDA_HOST_MG") != nullptr;
+            if (force_host_mg) {
                 RealMatrix P_host = xt::zeros<double>({nb, nb});
                 // d_P is column-major (xtensor RealMatrix / AoDiis).
                 check_cuda(cudaMemcpyAsync(P_host.data(), d_P_use, mat_bytes,
@@ -1778,6 +1828,12 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                     wpack.pack_weights(
                         d_P_use, d_geom_by_level[static_cast<std::size_t>(l)],
                         d_prods_l, np, eps_drop);
+                    if (ntask_by_level[static_cast<std::size_t>(l)] > 0)
+                        wpack.apply_group_max_mag(
+                            d_prods_l,
+                            d_task_beg[static_cast<std::size_t>(l)],
+                            d_task_end[static_cast<std::size_t>(l)],
+                            ntask_by_level[static_cast<std::size_t>(l)]);
                     d_prods_ptr[static_cast<std::size_t>(l)] = d_prods_l;
                     d_acc_ptr[static_cast<std::size_t>(l)] =
                         mg_prods.d_acc[static_cast<std::size_t>(l)];
