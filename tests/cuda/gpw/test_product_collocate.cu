@@ -82,7 +82,8 @@ GridProduct to_grid_product(const DeviceProduct& q) {
     return g;
 }
 
-/// Host continuous product shape (same formula as the device kernel).
+/// Host continuous product shape — raw displacements (no PBC). Used to prove
+/// edge under-count vs collint/device min-image.
 double host_product_shape(const DeviceProduct& q, const double r[3]) {
     if (q.weight == 0.0)
         return 0.0;
@@ -93,6 +94,30 @@ double host_product_shape(const DeviceProduct& q, const double r[3]) {
     for (int d = 0; d < 3; ++d) {
         double da = r[d] - q.ra[d];
         double db = r[d] - q.rb[d];
+        for (int i = 0; i < q.la[d]; ++i)
+            v *= da;
+        for (int i = 0; i < q.lb[d]; ++i)
+            v *= db;
+    }
+    return v;
+}
+
+/// Host continuous product shape with orthorhombic min-image (device twin).
+double host_product_shape_pbc(const DeviceProduct& q, const double r[3],
+                              const double L[3]) {
+    if (q.weight == 0.0)
+        return 0.0;
+    auto mi = [](double d, double len) {
+        return d - len * std::nearbyint(d / len);
+    };
+    double dx = mi(r[0] - q.pc[0], L[0]);
+    double dy = mi(r[1] - q.pc[1], L[1]);
+    double dz = mi(r[2] - q.pc[2], L[2]);
+    double v = q.weight * std::exp(-q.p * (dx * dx + dy * dy + dz * dz));
+    const double dr[3] = {dx, dy, dz};
+    for (int d = 0; d < 3; ++d) {
+        double da = dr[d] + (q.pc[d] - q.ra[d]);
+        double db = dr[d] + (q.pc[d] - q.rb[d]);
         for (int i = 0; i < q.la[d]; ++i)
             v *= da;
         for (int i = 0; i < q.lb[d]; ++i)
@@ -172,9 +197,10 @@ double max_abs(const std::vector<double>& a) {
 
 } // namespace
 
-// ── s–s product: device matches continuous host + CPU collint ─────────────
+// ── s–s product: device matches continuous host (PBC) + CPU collint ───────
 TEST(CudaGpwProductCollocate, SSMatchesHostAndCollint) {
     // Small Γ grid; tight Gaussian so collint support covers significant mass.
+    // Center well inside the cell ⇒ min-image ≡ raw displacement.
     UniformGrid grid = cubic_grid(16, 8.0);
     const double pc[3] = {4.0, 4.0, 4.0};
     std::vector<DeviceProduct> prods = {make_ss(/*p=*/2.5, pc, /*w=*/1.3)};
@@ -183,7 +209,7 @@ TEST(CudaGpwProductCollocate, SSMatchesHostAndCollint) {
     const auto rho_host = host_collocate(grid, prods);
     const auto rho_cpu = cpu_collint(grid, prods, /*eps=*/1e-16);
 
-    // Continuous formula: device ≡ host (bit-identical arithmetic path, ~1e-15).
+    // Continuous formula: device ≡ host when center is interior (min-image ≡ raw).
     const double max_h = max_abs_diff(rho_dev, rho_host);
     EXPECT_LE(max_h, 1e-14) << "device vs continuous host max|Δρ|=" << max_h;
 
@@ -249,7 +275,10 @@ TEST(CudaGpwProductCollocate, PTypeMatchesCollint) {
     const auto rho_host = host_collocate(grid, prods);
     const auto rho_cpu = cpu_collint(grid, prods, /*eps=*/1e-16);
 
-    EXPECT_LE(max_abs_diff(rho_dev, rho_host), 1e-14);
+    // Sphere-window PBC collocate truncates vs full continuous host (fp tails).
+    const double peak_h = max_abs(rho_host);
+    ASSERT_GT(peak_h, 1e-6);
+    EXPECT_LE(max_abs_diff(rho_dev, rho_host), 1e-12 * peak_h + 1e-13);
 
     const double peak = max_abs(rho_cpu);
     ASSERT_GT(peak, 1e-6);
@@ -299,6 +328,53 @@ TEST(CudaGpwProductCollocate, IntegrateRhoMatchesHost) {
     cudaFree(d_prods);
     cudaFree(d_rho);
     cudaFree(d_sum);
+}
+
+// ── Edge-centered s–s: PBC min-image vs collint (product-collocate-pbc) ───
+// Without wrap, charge on the far face is lost (~half for a tight Gaussian
+// near a face). With min-image, device matches collint charge and ρ peak.
+TEST(CudaGpwProductCollocate, EdgeCenteredPbcMatchesCollint) {
+    UniformGrid grid = cubic_grid(24, 8.0);
+    // Center near the x=0 face; Gaussian support crosses the PBC boundary.
+    const double pc[3] = {0.15, 4.0, 4.0};
+    std::vector<DeviceProduct> prods = {make_ss(/*p=*/3.0, pc, /*w=*/1.0)};
+
+    const auto rho_dev = run_device(grid, prods);
+    const auto rho_cpu = cpu_collint(grid, prods, /*eps=*/1e-16);
+
+    double sum_dev = 0.0, sum_cpu = 0.0;
+    for (std::size_t i = 0; i < rho_dev.size(); ++i) {
+        sum_dev += rho_dev[i];
+        sum_cpu += rho_cpu[i];
+    }
+    sum_dev *= grid.weight();
+    sum_cpu *= grid.weight();
+
+    // Analytic ∫ exp(−p r²) d³r = (π/p)^{3/2} for weight=1 s–s (infinite space).
+    const double charge_exact =
+        std::pow(3.14159265358979323846 / 3.0, 1.5);
+    // Collint + device must recover nearly full charge (PBC wrap).
+    EXPECT_NEAR(sum_cpu, charge_exact, 2e-3 * charge_exact)
+        << "collint charge=" << sum_cpu << " exact=" << charge_exact;
+    EXPECT_NEAR(sum_dev, sum_cpu, 5e-4 * std::abs(sum_cpu) + 1e-12)
+        << "device charge=" << sum_dev << " collint=" << sum_cpu;
+
+    // No-wrap continuous host under-counts vs collint when center is on edge.
+    const auto rho_nowrap = host_collocate(grid, prods);
+    double sum_nowrap = 0.0;
+    for (double v : rho_nowrap)
+        sum_nowrap += v;
+    sum_nowrap *= grid.weight();
+    EXPECT_LT(sum_nowrap, 0.85 * sum_cpu)
+        << "sanity: no-wrap charge should miss boundary mass; nowrap="
+        << sum_nowrap << " collint=" << sum_cpu;
+
+    const double peak = max_abs(rho_cpu);
+    ASSERT_GT(peak, 1e-6);
+    const double max_c = max_abs_diff(rho_dev, rho_cpu);
+    const double tol = 1e-8 * peak + 1e-12;
+    EXPECT_LE(max_c, tol) << "edge PBC max|Δρ|=" << max_c << " peak=" << peak
+                          << " tol=" << tol;
 }
 
 // ── Zero weight / empty product list are no-ops ───────────────────────────

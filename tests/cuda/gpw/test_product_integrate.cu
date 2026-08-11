@@ -82,7 +82,7 @@ GridProduct to_grid_product(const DeviceProduct& q) {
     return g;
 }
 
-/// Host continuous bare product shape (same formula as the device kernel).
+/// Host continuous bare product shape — raw (no PBC); interior centers only.
 double host_product_shape_bare(const DeviceProduct& q, const double r[3]) {
     const double dx = r[0] - q.pc[0];
     const double dy = r[1] - q.pc[1];
@@ -91,6 +91,28 @@ double host_product_shape_bare(const DeviceProduct& q, const double r[3]) {
     for (int d = 0; d < 3; ++d) {
         double da = r[d] - q.ra[d];
         double db = r[d] - q.rb[d];
+        for (int i = 0; i < q.la[d]; ++i)
+            v *= da;
+        for (int i = 0; i < q.lb[d]; ++i)
+            v *= db;
+    }
+    return v;
+}
+
+/// Host bare shape with orthorhombic min-image (device integrate twin).
+double host_product_shape_bare_pbc(const DeviceProduct& q, const double r[3],
+                                   const double L[3]) {
+    auto mi = [](double d, double len) {
+        return d - len * std::nearbyint(d / len);
+    };
+    double dx = mi(r[0] - q.pc[0], L[0]);
+    double dy = mi(r[1] - q.pc[1], L[1]);
+    double dz = mi(r[2] - q.pc[2], L[2]);
+    double v = std::exp(-q.p * (dx * dx + dy * dy + dz * dz));
+    const double dr[3] = {dx, dy, dz};
+    for (int d = 0; d < 3; ++d) {
+        double da = dr[d] + (q.pc[d] - q.ra[d]);
+        double db = dr[d] + (q.pc[d] - q.rb[d]);
         for (int i = 0; i < q.la[d]; ++i)
             v *= da;
         for (int i = 0; i < q.lb[d]; ++i)
@@ -341,12 +363,52 @@ TEST(CudaGpwProductIntegrate, SingleProductWrapper) {
 
     std::vector<DeviceProduct> prods = {q};
     const auto acc_host = host_integrate(grid, prods, V2);
+    // Sphere-window PBC integrate vs full continuous host: tail truncation.
     EXPECT_NEAR(acc_dev, acc_host[0],
-                1e-12 * std::abs(acc_host[0]) + 1e-14);
+                1e-10 * std::abs(acc_host[0]) + 1e-12);
 
     cudaFree(d_prod);
     cudaFree(d_V);
     cudaFree(d_acc);
+}
+
+// ── Edge-centered integrate: PBC min-image vs collint ─────────────────────
+TEST(CudaGpwProductIntegrate, EdgeCenteredPbcMatchesCollint) {
+    UniformGrid grid = cubic_grid(24, 8.0);
+    const double pc[3] = {0.15, 4.0, 4.0};
+    std::vector<DeviceProduct> prods = {make_ss(/*p=*/3.0, pc)};
+    const long ng = grid.npts();
+    std::vector<double> V(static_cast<std::size_t>(ng));
+    for (long i = 0; i < ng; ++i) {
+        double r[3];
+        grid.point(i, r);
+        V[static_cast<std::size_t>(i)] = 0.5 + 0.02 * r[0];
+    }
+
+    const auto acc_dev = run_device(grid, prods, V);
+    const auto acc_cpu = cpu_collint_integrate(grid, prods, V, /*eps=*/1e-16);
+    // Host PBC continuous twin.
+    std::vector<double> acc_pbc(1, 0.0);
+    const double L[3] = {grid.L[0], grid.L[1], grid.L[2]};
+    for (long i = 0; i < ng; ++i) {
+        double r[3];
+        grid.point(i, r);
+        acc_pbc[0] +=
+            V[static_cast<std::size_t>(i)]
+            * host_product_shape_bare_pbc(prods[0], r, L);
+    }
+
+    const double peak = std::max(std::abs(acc_cpu[0]), std::abs(acc_pbc[0]));
+    ASSERT_GT(peak, 1e-8);
+    EXPECT_NEAR(acc_dev[0], acc_pbc[0], 1e-12 * peak + 1e-14)
+        << "device vs host-PBC acc";
+    EXPECT_NEAR(acc_dev[0], acc_cpu[0], 1e-8 * peak + 1e-12)
+        << "device vs collint acc edge PBC";
+
+    // No-wrap host should differ when the product sits on the boundary.
+    const auto acc_nowrap = host_integrate(grid, prods, V);
+    EXPECT_GT(std::abs(acc_nowrap[0] - acc_cpu[0]), 1e-4 * peak)
+        << "sanity: no-wrap integrate should miss boundary mass";
 }
 
 // ── nprod = 0 is a no-op (buffer untouched) ───────────────────────────────

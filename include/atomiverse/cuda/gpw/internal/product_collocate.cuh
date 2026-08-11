@@ -4,9 +4,11 @@
 /// Mirrors the continuous product density that CPU `collint_collocate_product`
 /// (CP2K collint) samples on `UniformGrid`:
 ///   shape(r) = weight · (r−ra)^{la} (r−rb)^{lb} · exp(−p |r−pc|²)
-/// Device kernels evaluate the formula at every grid point (z-fast layout
-/// matching `cpu::gpw::UniformGrid::point`). Not a full GPW SCF product: no
-/// multigrid, no P-scatter, no integrate transpose, no geometry batching.
+/// Periodic orthorhombic cells use a **sphere-window** collocate matching CPU
+/// `collocate_one` / collint wrap: evaluate at unwrapped r near the product
+/// center, wrap the storage index (cuda-gpw-product-collocate-pbc). Device
+/// kernels; non-periodic foothold still walks the full primary grid. Not a
+/// full GPW SCF product: no multigrid, no P-scatter, no geometry batching.
 #pragma once
 
 #include <cuda_runtime.h>
@@ -24,6 +26,9 @@ struct CollocateGridDesc {
     int n[3] = {0, 0, 0};         ///< points per axis (n0, n1, n2).
     double L[3] = {0, 0, 0};      ///< box lengths [Bohr].
     double origin[3] = {0, 0, 0}; ///< lower corner [Bohr].
+    /// @brief When true, collocate/integrate use sphere-window PBC wrap.
+    /// Default true — CUDA GPW product rejects Martyna–Tuckerman.
+    bool periodic = true;
 
     /// @brief Total real-space points.
     long npts() const {

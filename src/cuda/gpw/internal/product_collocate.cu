@@ -1,9 +1,10 @@
 /// @file cuda/gpw/internal/product_collocate.cu
-/// @brief Device product-Gaussian collocation foothold for GPW density.
+/// @brief Device product-Gaussian collocation for GPW density.
 ///
-/// Continuous product formula matching the collint shape used by
-/// `cpu::gpw::internal::collint_collocate_product`. All scientific loops are
-/// device kernels — no host loops over grid points or products in the hot path.
+/// Periodic path: sphere-window collocate matching CPU `collocate_one` /
+/// collint wrap — evaluate at **unwrapped** r near the product center, wrap
+/// the storage index into the primary cell (cuda-gpw-product-collocate-pbc).
+/// Non-periodic: full-grid raw continuous formula (tests / foothold).
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 
 namespace ATV {
@@ -13,7 +14,6 @@ namespace internal {
 
 namespace {
 
-/// @brief Integer power x^n for n ≥ 0 (n = 0 → 1).
 __device__ __forceinline__ double ipow_nonneg(double x, int n) {
     double v = 1.0;
     for (int i = 0; i < n; ++i)
@@ -21,9 +21,24 @@ __device__ __forceinline__ double ipow_nonneg(double x, int n) {
     return v;
 }
 
-/// @brief One product shape at Cartesian r (Bohr).
-__device__ __forceinline__ double product_shape(const DeviceProduct& q,
-                                               const double r[3]) {
+/// @brief Radius [Bohr] where |mag| r^L exp(-p r²) drops below eps.
+/// Twin of CPU `product_radius` / collint `shape_radius`.
+__device__ __forceinline__ double product_radius_dev(double mag, double p,
+                                                    int Ltot, double eps) {
+    if (!(mag > 0.0) || !(p > 0.0) || !(eps > 0.0))
+        return 0.0;
+    const double lc = log(fmax(mag, 1e-300));
+    const double leps = log(fmax(eps, 1e-300));
+    double r2 = fmax(0.0, (lc - leps) / p);
+    for (int it = 0; it < 4; ++it) {
+        const double r = sqrt(fmax(r2, 1e-30));
+        r2 = fmax(0.0, (lc + static_cast<double>(Ltot) * log(r) - leps) / p);
+    }
+    return sqrt(fmax(r2, 0.0));
+}
+
+__device__ __forceinline__ double product_shape_raw(const DeviceProduct& q,
+                                                   const double r[3]) {
     if (q.weight == 0.0)
         return 0.0;
     const double dx = r[0] - q.pc[0];
@@ -31,7 +46,6 @@ __device__ __forceinline__ double product_shape(const DeviceProduct& q,
     const double dz = r[2] - q.pc[2];
     const double r2 = dx * dx + dy * dy + dz * dz;
     double v = q.weight * exp(-q.p * r2);
-    // (r−ra)^la (r−rb)^lb per axis.
     for (int d = 0; d < 3; ++d) {
         const double da = r[d] - q.ra[d];
         const double db = r[d] - q.rb[d];
@@ -40,39 +54,109 @@ __device__ __forceinline__ double product_shape(const DeviceProduct& q,
     return v;
 }
 
-/// @brief Collocate products: one thread per grid point (z-fast).
-///
-/// Indexing matches `cpu::gpw::UniformGrid::point`:
-///   idx = (i * n1 + j) * n2 + k
-///   r[d] = origin[d] + L[d] * index[d] / n[d]
-__global__ void collocate_products_kernel(const DeviceProduct* __restrict__ prods,
-                                          int nprod, int n0, int n1, int n2,
-                                          double L0, double L1, double L2,
-                                          double o0, double o1, double o2,
-                                          double* __restrict__ rho) {
+__device__ __forceinline__ long wrap_idx(long i, int n) {
+    long m = i % n;
+    if (m < 0)
+        m += n;
+    return m;
+}
+
+/// @brief Full-grid continuous (non-periodic / foothold).
+__global__ void collocate_products_fullgrid_kernel(
+    const DeviceProduct* __restrict__ prods, int nprod, int n0, int n1, int n2,
+    double L0, double L1, double L2, double o0, double o1, double o2,
+    double* __restrict__ rho) {
     const long ntot =
         static_cast<long>(n0) * static_cast<long>(n1) * static_cast<long>(n2);
     const long idx = static_cast<long>(blockIdx.x) * blockDim.x
                      + static_cast<long>(threadIdx.x);
     if (idx >= ntot)
         return;
-
     const int k = static_cast<int>(idx % n2);
     const long t = idx / n2;
     const int j = static_cast<int>(t % n1);
     const int i = static_cast<int>(t / n1);
-
     const double r[3] = {o0 + L0 * static_cast<double>(i) / static_cast<double>(n0),
                          o1 + L1 * static_cast<double>(j) / static_cast<double>(n1),
                          o2 + L2 * static_cast<double>(k) / static_cast<double>(n2)};
-
     double acc = 0.0;
     for (int q = 0; q < nprod; ++q)
-        acc += product_shape(prods[q], r);
+        acc += product_shape_raw(prods[q], r);
     rho[idx] += acc;
 }
 
-/// @brief Block-reduce Σ ρ, atomic-accumulate into *acc.
+/// @brief Sphere-window PBC collocate: one thread per product.
+///
+/// Unwrapped evaluation + wrap storage (CPU collocate_one).
+/// Launch: grid-stride over products, block=128 (choose-launch-configuration —
+/// product-parallel; many zero-weight early-outs). atomicAdd on rho
+/// (optimize-global-memory-access tradeoff for sparse windows).
+__global__ void collocate_products_sphere_kernel(
+    const DeviceProduct* __restrict__ prods, int nprod, int n0, int n1, int n2,
+    double L0, double L1, double L2, double o0, double o1, double o2,
+    double eps, double* __restrict__ rho) {
+    // Grid-stride over products (handle-boundary-conditions for partial tiles).
+    for (int ip = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+         ip < nprod;
+         ip += static_cast<int>(blockDim.x * gridDim.x)) {
+        const DeviceProduct q = prods[ip];
+        if (q.weight == 0.0)
+            continue;
+        const int Ltot = q.la[0] + q.la[1] + q.la[2] + q.lb[0] + q.lb[1]
+                         + q.lb[2];
+        const double rc =
+            product_radius_dev(fabs(q.weight), q.p, Ltot, eps);
+        if (!(rc > 0.0))
+            continue;
+
+        const double dx0 = L0 / static_cast<double>(n0);
+        const double dx1 = L1 / static_cast<double>(n1);
+        const double dx2 = L2 / static_cast<double>(n2);
+        const long ih0 = static_cast<long>(ceil(rc / dx0));
+        const long ih1 = static_cast<long>(ceil(rc / dx1));
+        const long ih2 = static_cast<long>(ceil(rc / dx2));
+        const long ic0 = static_cast<long>(floor(q.pc[0] / dx0));
+        const long ic1 = static_cast<long>(floor(q.pc[1] / dx1));
+        const long ic2 = static_cast<long>(floor(q.pc[2] / dx2));
+        const long lo0 = ic0 - ih0, hi0 = ic0 + ih0;
+        const long lo1 = ic1 - ih1, hi1 = ic1 + ih1;
+        const long lo2 = ic2 - ih2, hi2 = ic2 + ih2;
+        const double rc2 = rc * rc;
+
+        for (long i = lo0; i <= hi0; ++i) {
+            const long ii = wrap_idx(i, n0);
+            const double r0 =
+                o0 + L0 * static_cast<double>(i) / static_cast<double>(n0);
+            const double d0 = r0 - q.pc[0];
+            for (long j = lo1; j <= hi1; ++j) {
+                const long jj = wrap_idx(j, n1);
+                const double r1 =
+                    o1 + L1 * static_cast<double>(j) / static_cast<double>(n1);
+                const double d1 = r1 - q.pc[1];
+                const double d01 = d0 * d0 + d1 * d1;
+                if (d01 > rc2)
+                    continue;
+                const long base =
+                    (ii * static_cast<long>(n1) + jj) * static_cast<long>(n2);
+                for (long k = lo2; k <= hi2; ++k) {
+                    const double r2c =
+                        o2
+                        + L2 * static_cast<double>(k) / static_cast<double>(n2);
+                    const double d2 = r2c - q.pc[2];
+                    if (d01 + d2 * d2 > rc2)
+                        continue;
+                    const double r[3] = {r0, r1, r2c};
+                    const double val = product_shape_raw(q, r);
+                    if (val == 0.0)
+                        continue;
+                    const long kk = wrap_idx(k, n2);
+                    atomicAdd(rho + base + kk, val);
+                }
+            }
+        }
+    }
+}
+
 __global__ void integrate_rho_kernel(const double* __restrict__ rho, long nr,
                                      double* __restrict__ acc) {
     __shared__ double s[256];
@@ -101,12 +185,32 @@ void collocate_products(const CollocateGridDesc& grid,
     const long ntot = grid.npts();
     if (ntot <= 0)
         return;
-    constexpr int kBlock = 256;
-    const int grid_dim =
-        static_cast<int>((ntot + kBlock - 1) / static_cast<long>(kBlock));
-    collocate_products_kernel<<<grid_dim, kBlock, 0, stream>>>(
-        d_prods, nprod, grid.n[0], grid.n[1], grid.n[2], grid.L[0], grid.L[1],
-        grid.L[2], grid.origin[0], grid.origin[1], grid.origin[2], d_rho);
+
+    if (grid.periodic) {
+        // Sphere-window PBC (cuda-gpw-product-collocate-pbc).
+        // eps: value threshold for radius; use collint-class default with
+        // product mass margin so integrated charge is not dropped.
+        constexpr double kEps = 1e-10 * 1e-4; // eps_default·kProductMassMargin class
+        constexpr int kBlock = 128;
+        // Occupy SMs: ~min( nprod/block, 256 ) blocks (choose-launch-configuration).
+        int grid_dim = (nprod + kBlock - 1) / kBlock;
+        if (grid_dim > 256)
+            grid_dim = 256;
+        if (grid_dim < 1)
+            grid_dim = 1;
+        collocate_products_sphere_kernel<<<grid_dim, kBlock, 0, stream>>>(
+            d_prods, nprod, grid.n[0], grid.n[1], grid.n[2], grid.L[0],
+            grid.L[1], grid.L[2], grid.origin[0], grid.origin[1],
+            grid.origin[2], kEps, d_rho);
+    } else {
+        constexpr int kBlock = 256;
+        const int grid_dim =
+            static_cast<int>((ntot + kBlock - 1) / static_cast<long>(kBlock));
+        collocate_products_fullgrid_kernel<<<grid_dim, kBlock, 0, stream>>>(
+            d_prods, nprod, grid.n[0], grid.n[1], grid.n[2], grid.L[0],
+            grid.L[1], grid.L[2], grid.origin[0], grid.origin[1],
+            grid.origin[2], d_rho);
+    }
 }
 
 void collocate_product(const CollocateGridDesc& grid,
