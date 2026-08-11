@@ -794,6 +794,22 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-kpoints] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_kpts})
         unset(_reg_gpw_kpts)
+
+        # Multi-k device χ^k density collocate dual-gate
+        # (cuda-gpw-kpoint-device-collocate).
+        set(_reg_gpw_kcoll reg_cuda-gpw-kpoint-device-collocate)
+        add_executable(${_reg_gpw_kcoll}
+            gpw/cuda-gpw-kpoint-device-collocate/${_reg_gpw_kcoll}.cu)
+        target_link_libraries(${_reg_gpw_kcoll} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_kcoll} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_kcoll}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_kcoll}> --device=both
+            DEPENDS ${_reg_gpw_kcoll}
+            COMMENT "regression [gpw/cuda-gpw-kpoint-device-collocate] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_kcoll})
+        unset(_reg_gpw_kcoll)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)
