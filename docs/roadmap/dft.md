@@ -473,10 +473,12 @@ Two periodic DFT engines exist, with disjoint strengths:
   **1125709**, MG **1126433**, UKS **1126430** / O₂ gate **1127173**, PBE H₂
   **1127166**, stream **1128196**, DIIS/eigen **1129719**; free-fn forces =
   **host AO Pulay + device grid HF** **1127167**; free-fn stress = **CUDA
-  density + host fixed-\(P\)** **1128195** H₂ dual-gate). Depth residual on
-  es-cpu-cuda queue (water e2e F/σ tip, multi-k tip, MG/UKS F/σ + joints,
-  force-stream / AO-Pulay, device STVnl/weight-pack) — table CUDA for full
-  GPW remains **◐** not ✓ (no ○→✓ while product depth incomplete). Stage
+  density + host fixed-\(P\)** **1128195** H₂ dual-gate; water Γ RKS **E+F**
+  dual-gate **1130195**). Depth residual on es-cpu-cuda queue (water σ +
+  water×PBE, multi-k host residual spine + Si/water multi-k energy + F/σ, MG
+  production + F/σ, UKS F/σ + UKS-PBE + joints, force-stream / AO-Pulay,
+  device STVnl/weight-pack/UKS-DIIS) — table CUDA for full GPW remains **◐**
+  not ✓ (no ○→✓ while product depth incomplete). Stage
   units under `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape
   freeze **green**.
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
