@@ -45,8 +45,11 @@ Parents: KB Vnl@Γ (`product-si-gate`), PBC collocate (`product-collocate-pbc`).
 
 ## Status
 
-**acceptance_met=true** — GH200 **1180409** (tip `a58d90e1`):
-CPU E=−15.151890096614 Ha iters=9; CUDA E=−15.151890075311 Ha iters=9;
-\|dE\|=**2.130e-08** Ha (tol 5e-5). Holds: ks_multigrid unit, full_product,
-multigrid-run \|dE\|=**1.082e-11**, product-si \|dE\|=**3.504e-05**.
-Prior fail **1180025** device monom \|dE\|=**4.296e-04**.
+**acceptance_met=true** — GH200 **1180883** (rebased tip `40a63395` on
+GapCensus wave-4 base `213d794d`): CPU E=−15.151890096614 Ha iters=9;
+CUDA E=−15.151890075311 Ha iters=9; \|dE\|=**2.130e-08** Ha (tol 5e-5).
+Holds: ks_multigrid unit, full_product, multigrid-run \|dE\|=**1.308e-11**,
+product-si \|dE\|=**3.504e-05**. Prior dual-gate **1180409** (pre-rebase
+`a58d90e1`) same \|dE\|. Prior fail **1180025** device monom
+\|dE\|=**4.296e-04**. Iron-law residual mid-path P/V DH → child
+`cuda-gpw-multigrid-device-ks` (do not re-open monom path here).
