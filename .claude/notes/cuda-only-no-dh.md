@@ -36,12 +36,13 @@ destroys any large-system story and is not “CUDA product”.
 | P0 | Multi-k residual H | **fixed earlier** — `ingest_H_k_device_rm` + `residual_from_device` |
 | P0 | Γ RKS single-grid KS | **fixed** — device product KS + PBC min-image collocate/integrate (`product-collocate-pbc`); cbg retained force-only |
 | P1 | Forces free-fn | open — full grid re-H2D + host densify ρ + host AO Pulay (`force-device-handoff` / `device-ao-pulay`) |
-| P1 | Γ / multi-k payload | Γ RKS **landed** (`device-payload` merge `d476ee7a` / harness `d39b979a` / GH200 **1182615**); open — UKS/multi-k host re-diag (`uks-payload-device` / `kpoint-payload-device` / cold-start twins) |
+| P1 | Γ payload | **fixed** — RKS `device-payload` (**1182615**); UKS `uks-payload-device` merge `f2be952a` / **1186414** dual `eigen_from_device` |
+| P1 | Multi-k payload / cold-start | open — host re-diag / densify (`kpoint-payload-device` / `kpoint-device-cold-start` / `device-cold-start`) |
 | P1 | Multi-k setup residency | open — host χ / Löwdin / KB Vnl / H0 rematerialize (`kpoint-device-chi` / `orth` / `vnl` / `h0-residency`) |
 | P1 | DIIS residual | **fixed** — device max-\|e\| scalar only |
 | P2 | Stress free-fn | open — host assembly shell (`device-stress`) |
-| P2 | Si MG energy dual-gate | **landed** on base (`88d8ec59` / GH200 **1180883**) via **host collint multi-level** mid-SCF — dual-gate ≠ iron-law closed |
-| P2 | Si MG device monom KS | **fixed** `multigrid-device-ks` — group max\|w\| + group Ltot (`L_win`); fine mass-margin / coarse collint 0.02; device MG default; GH200 **1186912** \|dE\|=**8.65e-06** |
+| P2 | Si MG energy dual-gate | **landed** (`88d8ec59` / **1180883**); iron-law mid-path closed by monom default |
+| P2 | Si MG device monom KS | **fixed** `multigrid-device-ks` merge `3730ada7` / **1186912** — device pack→MG chain→scatter default; host collint opt-in `ATV_GPW_CUDA_HOST_MG=1` only |
 
 RHF s/p and PW density-side residency are the **acceptance bar**.
 

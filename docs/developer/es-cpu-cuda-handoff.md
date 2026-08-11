@@ -8,7 +8,7 @@ Rewrite in place each harness wave.
   `.grok/workflows/es-cpu-cuda-opt.rhai` (iron laws + kernel skills +
   residency staff order + mid-path DH gate).
 - **Law:** [.claude/notes/cuda-only-no-dh.md](../../.claude/notes/cuda-only-no-dh.md)
-- **HEAD:** `f2be952a` (post serial merge of wave-6 green tips).
+- **HEAD:** `783e9a55` (wave-6 green tips merged; harness sync next).
 
 ## Landed on `dev` this loop (high-signal)
 

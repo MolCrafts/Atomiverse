@@ -52,38 +52,28 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 6)
+### Active next — `es-cpu-cuda-opt` product depth (post wave-6 merge clearup)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
-**landed**. Device mid-SCF collocate/integrate (**sphere-window PBC**), MG
-energy (**H₂ + Si host-collint dual-gate on base**), Γ UKS (+ O₂), device grid
-forces, PBE H₂, product stress, SCF + **force** non-default stream, device
-RKS/UKS DIIS/eigen, weight pack, water E+F, multi-k H₂ spine, **Γ/UKS device H
-assemble**, **UKS + multi-k P residency**, **multi-k device e_kin/e_nl**, **Si
-Γ ngrids=1 product-si-gate**, **SG device product KS**, **Si Γ ngrids=4 MG
-energy-path**, **Γ RKS device final payload eigen**, spin F/σ, smear F/σ (Γ)
-**on base** (`dev` @ `d39b979a`; device-payload `d476ee7a` / harness
-`d39b979a` / **1182615**; si-energy-path `88d8ec59` / **1180883**;
-collocate-pbc **1173564**/`cfb246d1` + product-si `a158848f` / **1167099** +
-residency `5a5076d0` / force-stream `61b91971` / **1158949**;
-kpoint-h-residency `e2bcb05e` / **1142864**). Wave-6 re-audit: **no new
-mid-path DH slug** — keep **`multigrid-device-ks`** (device monom under-correct
-**1180025**; host collint default mid-path P/V DH). Multi-k residual **held:**
-host χ / Löwdin / KB Vnl / H0 + payload/cold-start. Γ residual:
-**uks-payload-device** / **device-cold-start** + Γ STVnl + product residency +
-hybrid free-fn. Water **σ** + multi-k/MG×PBE + PW spin×kmesh×smear held.
-**new_slugs_added=0**.
+**landed**. Device mid-SCF: SG product KS (**PBC sphere-window**), MG **device
+monom** default (host collint debug-only), Γ RKS/UKS H=H0+V + DIIS + final
+payload eigen, multi-k H₂ spine (collocate/integrate/H-residency/DIIS),
+product-si + Si MG energy dual-gates, water E+F, forces stream, spin/smear F/σ
+(Γ) **on base** (`dev` @ `783e9a55` after merges `3730ada7` monom /
+`f2be952a` uks-payload). **in_progress=0** residual tips. Multi-k residual
+**held:** host χ / Löwdin / KB Vnl / H0 + payload/cold-start. Γ residual:
+**device-cold-start** + host STVnl setup + hybrid free-fn AO Pulay. Free next:
+`multigrid-si-gate` + multi-k depth + force handoff. Water **σ** +
+multi-k/MG×PBE + PW spin×kmesh×smear held.
 
 | Priority | slug | Goal |
 | --- | --- | --- |
-| P1 | *(closed)* device-forces + pbe-product-gate + stress + stream + h2o-gate (E+F) | on base |
-| P2 | **landed** device-diis-eigen + uks-device-diis + weight-pack + kpoints + spin/smear F/σ + kpoint spine + **h-residency** + **product-si-gate** + **device-h-assemble / uks-h-assemble / uks-p-residency / kpoint-p-residency / kpoint-device-energy / force-stream** + **product-collocate-pbc** + **multigrid-si-energy-path** + **device-payload** | Si SG PBC + Si MG host-collint dual-gate + residency P0 + Γ RKS final payload |
-| P2 | **`[~]`** **`multigrid-device-ks`** (iron-law monom restore) + free `multigrid-si-gate` | monom residual **1180025** |
-| P2→P3 | **uks-payload-device / device-cold-start** + multi-k **payload / cold-start / χ / orth / vnl / h0** + production multi-k/MG/UKS×PBE matrix + PW **smear-stress-al2** + spin×kmesh×smear | after device MG |
+| P1 | *(closed)* device-forces + pbe + stress + stream + h2o + residency P0 + collocate-pbc + product-si + si-energy-path + device-payload + **multigrid-device-ks** + **uks-payload-device** | on base |
+| P2 | free **`multigrid-si-gate`** + **`device-cold-start`** | production dual-gate / densify |
+| P2→P3 | multi-k **payload / cold-start / χ / orth / vnl / h0** + production multi-k/MG/UKS×PBE matrix + force AO-Pulay / stress device + PW **smear-stress-al2** + spin×kmesh×smear | depth |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=131**; **in_progress=1**; **cuda_pending=131**;
-**gaps_remaining=133**. Contract:
+(not soft-tol). Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 

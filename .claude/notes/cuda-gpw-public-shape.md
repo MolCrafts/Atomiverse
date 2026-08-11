@@ -19,8 +19,8 @@ footholds.
 | Layer | What exists |
 | --- | --- |
 | CPU method | `cpu::gpw::GpwDft` — multi-path **DIIS** on Driver stages; **OT** free-loop residual (same capability follow-on, not a block) |
-| CUDA stages | `cuda/gpw/internal/`: Poisson, XC LDA, product collocate/integrate, composed `KsChainDevice` (LDA+PBE), `KsMultiGridChainDevice` |
-| CUDA public method | **product landed** (`cuda::gpw::GpwDft` Γ RKS DIIS PADE/PBE + **Γ UKS DIIS PADE** + **multigrid energy** + **water dual-gate** + **multi-k RKS DIIS energy** H₂ foothold; device RKS DIIS/eigen + product collocate/KS; UKS host dual GpwDiis; multi-k host χ^k residual; free-fn forces hybrid) — depth residual on queue |
+| CUDA stages | `cuda/gpw/internal/`: Poisson, XC LDA/GGA, product collocate/integrate (PBC sphere-window), weight pack, `KsChainDevice` / `KsMultiGridChainDevice`, `AoDiisEigenDevice`, multi-k collocate/integrate/STVnl/DIIS |
+| CUDA public method | **product landed** — `cuda::gpw::GpwDft` members + `build`/`run`/`last_result` + free-fn forces/stress. Slice: Γ RKS (SG + MG monom device KS, PADE/PBE) + Γ UKS PADE + multi-k RKS H₂ spine; mid-SCF device H/DIIS/payload (RKS+UKS); Si dual-gates green. Depth residual: multi-k χ/orth/vnl/payload, cold-start, free-fn AO Pulay/stress device, MG F/σ, `cuda::Driver<gpw::Phase>` nest (same class as CUDA SCF fold residual) |
 
 ## Frozen public shape (CUDA product must match)
 

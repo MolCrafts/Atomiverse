@@ -11,33 +11,16 @@
 /// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
-///   * host — Γ STVnl / product-list build; multi-k χ^k build once;
-///     multi-k residual energy ctrace / payload diag / cold-start;
+///   * host — Γ STVnl / product-list build (once); multi-k χ^k build once;
+///     multi-k residual: energy ctrace pieces / payload diag / cold-start;
 ///     force AO Pulay (W·dS / P·dT / P·dVnl) on Γ free-fn path
-///   * device — product collocate + KS + product integrate via
-///     `internal::KsChainDevice::run` (RKS single-grid),
-///     `internal::KsMultiGridChainDevice::run` (RKS multigrid: per-level
-///     collocate, spectral prolong, fine Poisson/XC, spectral restrict,
-///     per-level integrate), `KsChainDevice::run_uks` (collinear UKS;
-///     dual ρ → Poisson(total) → Padé LSD → dual V_eff → dual integrate),
-///     or multi-k: **device phased STVnl** (`KpointStvnlDevice`) + device χ^k
-///     collocate + `run_from_rho` + device V→H_k integrate + H0+Vmat fuse +
-///     **device H residual residency** (cuda-gpw-kpoint-h-residency) +
-///     **`KpointDiisEigenDevice`** mid-SCF Pulay DIIS + zheevd
-///     (cuda-gpw-kpoint-device-stvnl / collocate / integrate / h-residency / diis).
-///     Γ mid-SCF Pulay DIIS + cuSOLVER dense eigen + density via
-///     `internal::AoDiisEigenDevice` — RKS one channel
-///     (cuda-gpw-device-diis-eigen); UKS dual α/β channels
-///     (cuda-gpw-uks-device-diis). Γ RKS final C/ε payload from device
-///     eigen of assembled H (cuda-gpw-device-payload; no host re-diag).
-///     Device P→weight + acc→V_AO scatter via
-///     `internal::ProductWeightPackDevice` (cuda-gpw-device-weight-pack);
-///     RKS DIIS keeps P resident mid-SCF (no per-iter download_P for packing).
-///     Mid-SCF does not H2D ρ or D2H V_eff for H on the Γ product path.
-///     Forces (Γ RKS single-grid first cut): device grid V_eff Pulay + ionic
-///     HF + local-PP HF (UKS / multigrid / multi-k force free-fns fail-closed).
-///     Product SCF owns a non-default CUDA stream for mid-SCF transfers
-///     and KS chain work (default stream is not used for the SCF body).
+///   * device mid-SCF — SG: product pack→PBC collocate→KS→integrate→scatter;
+///     MG: monom multi-level pack→`KsMultiGridChainDevice`→scatter (host collint
+///     only if `ATV_GPW_CUDA_HOST_MG=1`); UKS: dual pack + `run_uks`; multi-k:
+///     device STVnl S/T, χ collocate, `run_from_rho`, V→H_k, H0+V fuse, H
+///     residency into DIIS, `KpointDiisEigenDevice`. Γ RKS/UKS: device H=H0+V,
+///     `AoDiisEigenDevice` DIIS/eigen/density, final `eigen_from_device`
+///     payload (no host re-diag). Non-default stream for SCF body.
 ///
 /// Unsupported members throw with a how-to (no silent CPU-SCF fallback).
 /// Contract: `.claude/notes/cuda-gpw-public-shape.md`.
