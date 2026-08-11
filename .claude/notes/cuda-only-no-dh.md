@@ -34,7 +34,7 @@ destroys any large-system story and is not “CUDA product”.
 | P0 | Γ UKS mid-SCF | **fixed** — pack from `d_P`, device dual \(H\), no mid-SCF P D2H |
 | P0 | Multi-k collocate/P | **fixed** — `collocate_k_device_cm` + no P ping-pong; device Re⟨P,T/Vnl⟩ |
 | P0 | Multi-k residual H | **fixed earlier** — `ingest_H_k_device_rm` + `residual_from_device` |
-| P0 | Γ RKS single-grid KS | **debt** — host CompactBasisGrid twin mid-SCF (product-si-gate `a158848f` / GH200 **1167099**); continuous product collocate lacks PBC wrap → **`product-collocate-pbc`** |
+| P0 | Γ RKS single-grid KS | **fixed** — device product KS + PBC min-image collocate/integrate (`product-collocate-pbc`); cbg retained force-only |
 | P1 | Forces free-fn | open — full grid re-H2D + host AO Pulay + per-call malloc |
 | P1 | Multi-k payload | open — host re-diag after final `download_H` (boundary-ish) |
 | P1 | DIIS residual | **fixed** — device max-\|e\| scalar only |

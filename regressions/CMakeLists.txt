@@ -829,6 +829,21 @@ if(ATV_BUILD_GPW)
         add_dependencies(regressions run_${_reg_gpw_si})
         unset(_reg_gpw_si)
 
+        # PBC product collocate + SG device KS (cuda-gpw-product-collocate-pbc).
+        set(_reg_gpw_pbc reg_cuda-gpw-product-collocate-pbc)
+        add_executable(${_reg_gpw_pbc}
+            gpw/cuda-gpw-product-collocate-pbc/${_reg_gpw_pbc}.cu)
+        target_link_libraries(${_reg_gpw_pbc} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_pbc} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_pbc}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_pbc}> --device=both
+            DEPENDS ${_reg_gpw_pbc}
+            COMMENT "regression [gpw/cuda-gpw-product-collocate-pbc] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_pbc})
+        unset(_reg_gpw_pbc)
+
         # Multi-k RKS DIIS energy dual-gate (H2 k_mesh=2x1x1 PADE).
         set(_reg_gpw_kpts reg_cuda-gpw-kpoints)
         add_executable(${_reg_gpw_kpts}

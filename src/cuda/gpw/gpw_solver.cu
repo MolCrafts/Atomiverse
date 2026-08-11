@@ -7,9 +7,9 @@
 ///     multi-k host residual: energy ctrace, payload diag, cold-start;
 ///     force AO Pulay on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
-///     single-grid RKS host collint KS twin (product-si-gate; continuous
-///     collocate lacks PBC wrap — sibling product-collocate-pbc) + device
-///     H=H0+V / DIIS; multigrid RKS still device continuous (Si MG residual
+///     single-grid RKS device product KS (`KsChainDevice` + PBC min-image
+///     collocate/integrate — cuda-gpw-product-collocate-pbc) + device
+///     H=H0+V / DIIS; multigrid RKS device continuous (Si MG residual
 ///     multigrid-si-energy-path); collinear UKS `KsChainDevice::run_uks`;
 ///     multi-k **device phased STVnl** via `KpointStvnlDevice`
 ///     (cuda-gpw-kpoint-device-stvnl; S/T device; Vnl zero or host-KB H2D);
@@ -107,6 +107,7 @@ using cpu::linalg::build_density_matrix;
 using cpu::linalg::diagonalize_fock;
 using internal::AoDiisEigenDevice;
 using internal::CollocateGridDesc;
+using internal::collocate_integrate_rho;
 using internal::DevicePrimContrib;
 using internal::DevicePrimRef;
 using internal::DeviceProduct;
@@ -426,6 +427,9 @@ CollocateGridDesc to_coll(const UniformGrid& g) {
         d.L[i] = g.L[i];
         d.origin[i] = g.origin[i];
     }
+    // CUDA GPW product rejects nonperiodic; collocate/integrate always
+    // sphere-window PBC (cuda-gpw-product-collocate-pbc).
+    d.periodic = true;
     return d;
 }
 
@@ -1659,48 +1663,44 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         KsChainEnergies e{};
 
         if (!use_mg) {
-            // Single-grid host cbg KS twin (cuda-gpw-product-si-gate):
-            // CPU ngrids==1 uses CompactBasisGrid collocate/integrate — not
-            // products (use_prod=use_mg only). Continuous device product
-            // collocate lacks collint PBC wrap (product-collocate-pbc); host
-            // product multigrid_collocate at ngrids=1 still differed from cbg
-            // by ~4.7e-4 Ha (GH200 1166526). Match CPU: cbg + ks_grid_build_rks
-            // + integrate_potential; V H2D for device H=H0+V / residual;
-            // device DIIS/eigen retained.
-            if (!result_.scf_cbg_valid)
-                throw std::runtime_error(
-                    "cuda::gpw::GpwDft: scf_cbg required for SG host twin");
-            RealMatrix P_host = xt::zeros<double>({nb, nb});
-            check_cuda(cudaMemcpyAsync(P_host.data(), d_P_use,
-                                       static_cast<size_t>(nb) * nb
-                                           * sizeof(double),
-                                       cudaMemcpyDeviceToHost, stream),
-                       "D2H P for SG host cbg KS");
-            check_cuda(cudaStreamSynchronize(stream), "sync P D2H SG");
-            // Column-major RealMatrix → row-major flat (CPU mat_to_vec shape).
-            const std::vector<double> Pvec = mat_to_vec(P_host, nb);
-            const std::vector<double> rho =
-                collocate_density(result_.scf_cbg, nb, Pvec);
-            const cpu::gpw::internal::KsGridRks ks =
-                cpu::gpw::internal::ks_grid_build_rks(
-                    grid, rho, n_ion, v_locsr, xc, /*nonperiodic=*/false,
-                    /*vdw_df=*/false, /*vdw_df2=*/false, /*rvv10=*/false);
-            e.e_hartree = ks.e_hartree;
-            e.e_xc = ks.e_xc;
-            e.e_locgrid = ks.e_locgrid;
-            const std::vector<double> Vvec =
-                integrate_potential(result_.scf_cbg, nb, ks.veff);
-            // Vvec is row-major; RealMatrix + device expect column-major.
-            RealMatrix Vgrid = xt::zeros<double>({nb, nb});
-            for (int i = 0; i < nb; ++i)
-                for (int j = 0; j < nb; ++j)
-                    Vgrid(i, j) =
-                        Vvec[static_cast<std::size_t>(i) * nb
-                             + static_cast<std::size_t>(j)];
-            wpack.upload_matrix(Vgrid.data(), wpack.d_V());
+            // Single-grid device product KS (cuda-gpw-product-collocate-pbc):
+            // pack P→weights → sphere-window PBC collocate → Poisson/XC →
+            // integrate → scatter V_AO. No mid-SCF P/ρ/V_AO DH (iron law).
+            // CompactBasisGrid retained only for force free-fn / payload.
+            wpack.pack_weights(d_P_use, d_geom0, dev.d_prods, nprod_geom,
+                               eps_drop);
+            e = ks_sg->run(dev.d_prods, nprod_geom, dev.d_n_ion, d_vloc_arg,
+                           dev.d_acc, kxc);
+            if (std::getenv("ATV_GPW_CUDA_TRACE") != nullptr) {
+                // Diagnostic: ∫ρ after device product collocate (PBC check).
+                DeviceBuf chg;
+                check_cuda(cudaMalloc(&chg.p, sizeof(double)), "malloc chg");
+                collocate_integrate_rho(ks_sg->d_rho(), npts, w_grid,
+                                        chg.as<double>(), stream);
+                double q_el = 0.0;
+                check_cuda(cudaMemcpyAsync(&q_el, chg.as<double>(),
+                                           sizeof(double),
+                                           cudaMemcpyDeviceToHost, stream),
+                           "D2H charge diag");
+                check_cuda(cudaStreamSynchronize(stream), "sync chg");
+                std::fprintf(stderr,
+                             "[cuda gpw sg] nprod=%d  Q_el=%.6f  "
+                             "eH=%.6f eXC=%.6f\n",
+                             nprod_geom, q_el, e.e_hartree, e.e_xc);
+            }
+            wpack.scatter_acc(d_geom0, dev.d_acc, nprod_geom, w_grid);
             if (store_grids) {
-                result_.veff = ks.veff;
-                result_.v_es = ks.v_es;
+                std::vector<double> veff(static_cast<std::size_t>(npts));
+                std::vector<double> v_es(static_cast<std::size_t>(npts));
+                check_cuda(cudaMemcpyAsync(veff.data(), ks_sg->d_veff(), bytes,
+                                           cudaMemcpyDeviceToHost, stream),
+                           "D2H veff SG boundary");
+                check_cuda(cudaMemcpyAsync(v_es.data(), ks_sg->d_v_es(), bytes,
+                                           cudaMemcpyDeviceToHost, stream),
+                           "D2H v_es SG boundary");
+                check_cuda(cudaStreamSynchronize(stream), "sync SG veff D2H");
+                result_.veff = std::move(veff);
+                result_.v_es = std::move(v_es);
             }
         } else {
             std::vector<DeviceProduct*> d_prods_ptr(
