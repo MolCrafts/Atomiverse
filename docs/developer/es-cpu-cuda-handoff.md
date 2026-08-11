@@ -5,19 +5,17 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `1733535f` (post harness wave 4: kpoint-device-collocate + integrate)
+- **Parent:** `dev` @ `eec0b266` (post GapCensus wave 13; Assign wave 5 tip-green)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** Harness wave 4 — land multi-k device spine half:
-  - [x] `cuda-gpw-kpoint-device-collocate` — multi-k mid-SCF χ^k density
-    collocate device-side; merge `355bcc42` / feat `47c2c16e`; GH200
-    **1130716** \|dE\|=**3.353e-14** Ha (prior **1130429**); **perf_exempt**
-  - [x] `cuda-gpw-kpoint-device-integrate` — multi-k mid-SCF V→H_k integrate
-    device-side; merge `1733535f` / feat `a73c2281` / docs `d98c2093`; GH200
-    **1130717** \|dE\|=**3.397e-14** Ha; **perf_exempt**
-  - [~] none remaining
-- **Counts:** pending=123; in_progress=0; cpu_pending=0; cuda_pending=123;
-  gaps_remaining=124 (incl. blocked `mg-main-structural`). Queue **not**
+- **Last action:** GapCensus wave 13 — re-diff + deepen pending (+4):
+  - [~] `cuda-pw-smear-stress` tip `aa84caba` / GH200 **1132266** (tip-green)
+  - [~] `cuda-gpw-kpoint-h-assemble` tip `5b64229b` / **1132528** (tip-green)
+  - [~] `cuda-gpw-kpoint-device-diis` tip `6fa3bba5` / **1132761** (tip-green)
+  - **new:** `kpoint-h-residency` / `kpoint-device-energy` /
+    `kpoint-payload-device` / `smear-stress-al2-gate`
+- **Counts:** pending=133; in_progress=3; cpu_pending=0; cuda_pending=136;
+  gaps_remaining=137 (incl. blocked `mg-main-structural`). Queue **not**
   exhausted.
 
 ## How to run
@@ -38,10 +36,10 @@ agent_budget: 384+
 
 | Track | Residual |
 | --- | --- |
-| **cuda GPW (staffed done)** | multi-k device **collocate + integrate** **landed** (H₂ k-class) |
-| **cuda GPW (next)** | multi-k device **DIIS/STVnl**; Si/water multi-k gates; device-product-residency; device-h-assemble; device-stvnl (Γ); water σ; device-stress; MG/UKS F/σ |
-| **cuda PW (staffed done)** | restricted metallic-smear **forces** **landed** |
-| **cuda PW (next)** | smear-stress; smear-PBE; spin-stress; multi-k PBE F/σ; spin+smear; kmesh-smear F/σ |
+| **cuda GPW (staffed now)** | multi-k **`kpoint-h-assemble`** + **`kpoint-device-diis`** tip-green (Merge) |
+| **cuda GPW (next after)** | `kpoint-h-residency` / `kpoint-device-energy` / `kpoint-payload-device` / `kpoint-p-residency` / `kpoint-device-stvnl`; Si/water multi-k gates; device-h-assemble; uks-h-assemble; water σ; device-stress; MG/UKS F/σ |
+| **cuda PW (staffed now)** | **`smear-stress`** tip-green GH200 **1132266** (Merge) |
+| **cuda PW (next after)** | `smear-stress-al2-gate`; smear-PBE; spin-stress; multi-k PBE F/σ; spin+smear; kmesh-smear F/σ |
 | **cpu** | MG MAIN **2.33×** pin-unsafe blocked |
 
 **Contract:** [.claude/notes/cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)

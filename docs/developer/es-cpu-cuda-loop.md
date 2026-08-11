@@ -39,6 +39,28 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 GapCensus wave 13 (parent `dev` @ `eec0b266`):** Re-diff
+  baselines/notes/roadmap/tree vs base; fair walls **held** MG MAIN **2.33×**;
+  **cpu_pending=0**; no gpw-perf promote. Staffed tips **tip-green not base**
+  (smear-stress **1132266**; kpoint-h-assemble **1132528**; kpoint-device-diis
+  **1132761**). **new_slugs_added=4**: multi-k post-tip residual
+  `kpoint-h-residency` / `kpoint-device-energy` / `kpoint-payload-device` +
+  production `smear-stress-al2-gate`. **pending_count=133**;
+  **in_progress=3**; **cuda_pending=136**; **gaps_remaining=137**. Queue
+  **not** exhausted. Roadmap CUDA columns unchanged (depth incomplete). No
+  push.
+
+- **2026-08-11 Assign wave 5 (parent `dev` @ `eec0b266`):** Priority `[~]`
+  first — capacity **0/3** free after harness wave 4. Incomplete tip
+  `wf/cuda-pw-smear-stress` (now tip-green `aa84caba` / GH200 **1132266**) →
+  **RESUME**. **NEW×2** multi-k product spine (theme: real product lift after
+  collocate+integrate; no dual-gate matrix explosion; no re-staff landed):
+  `cuda-gpw-kpoint-h-assemble` + `cuda-gpw-kpoint-device-diis`. Held:
+  stvnl / device-h-assemble / product-residency / spin-stress /
+  kmesh-smear-forces / production dual-gate matrix. **new_assigned=2**;
+  **incomplete_remaining=1**; **in_progress=3**. Queue **not** exhausted.
+  No push.
+
 - **2026-08-11 GapCensus wave 12 (parent `dev` @ `4d9bbdaa`):** Re-diff
   baselines/notes/roadmap/tree vs base post harness wave 4 multi-k device
   collocate+integrate. Fair walls **held** MG MAIN **2.33×**; **cpu_pending=0**;
