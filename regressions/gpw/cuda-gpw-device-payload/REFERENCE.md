@@ -29,7 +29,8 @@ D2D H → device dsyevd → boundary D2H C/ε/H_ks; DIIS P kept for energy densi
 
 | Job | Node | Result |
 | --- | --- | --- |
-| GH200 **1178026** | n34 | unit `test_cuda_gpw_diis_eigen` PASS (incl. `EigenFromDeviceMatchesHost`); dual-gate \|dE\|=**1.252e-08** Ha max\|deps\|=**1.722e-06** Ha (E_cpu −1.040591553127; E_cuda −1.040591565649; iters 5/8) |
+| GH200 **1178026** | n34 | tip green (pre-rebase): unit PASS; dual-gate \|dE\|=**1.252e-08** max\|deps\|=**1.722e-06** Ha |
+| GH200 **1180932** | n552 | rebased on wave-4 `dev` `213d794d`: unit `test_cuda_gpw_diis_eigen` PASS; dual-gate \|dE\|=**1.252e-08** Ha max\|deps\|=**1.899e-06** Ha (E_cpu −1.040591553127; E_cuda −1.040591565649; iters 5/8); `BUILDS_WIPED_OK` |
 
 Skills applied: **av-perf** (residency — boundary-only D2H of C/ε/H_ks; mid-path D2D H); **write-numerically-stable-kernel** + **optimize-global-memory-access** (reuse existing cuSOLVER `dsyevd` / cublas gemm path in `diagonalize_and_density_`; no new ad-hoc kernels).
 
