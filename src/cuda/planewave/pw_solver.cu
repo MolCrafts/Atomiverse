@@ -461,16 +461,27 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
 std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                                                       const PW& method) {
-    // Same gate as run(): reject unsupported members before any CUDA work.
+    // Gate unsupported force surface before any CUDA work. Collinear LSDA
+    // fixed-occ forces are landed; spin-PBE / smear / joint paths stay closed.
     method.validate_members();
-    if (method.spin_polarized)
+    if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA)
         throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: spin_polarized has no force path "
-            "on device yet — use cpu::pw::pw_forces_analytic");
+            "cuda::pw::pw_forces_analytic: spin_polarized force path is "
+            "XCType::LSDA only — spin-PBE forces are a deeper product row, "
+            "or use cpu::pw::pw_forces_analytic");
+    if (method.spin_polarized && method.smearing != Smearing::none)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: spin_polarized with metallic "
+            "smearing has no force path on device yet — use "
+            "cpu::pw::pw_forces_analytic");
     if (method.smearing != Smearing::none)
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: metallic smearing has no force "
             "path on device yet — use cpu::pw::pw_forces_analytic");
+    if (method.spin_polarized && method.multiplicity < 1)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: multiplicity must be >= 1 when "
+            "spin_polarized");
     if (frame.nlocal() <= 0)
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: frame has no atoms");
@@ -496,27 +507,40 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                                         method.ecut_ry, method.k_mesh, prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
 
-    if (prob.n_elec % 2 != 0)
+    const int n_elec = prob.n_elec;
+    int n_alpha = -1;
+    int n_beta = -1;
+    if (method.spin_polarized) {
+        const int mag = method.multiplicity - 1;
+        if ((n_elec + mag) % 2 != 0 || mag > n_elec)
+            throw std::invalid_argument(
+                "cuda::pw::pw_forces_analytic: n_elec and multiplicity have "
+                "incompatible parity (need N↑,N↓ non-negative integers)");
+        n_alpha = (n_elec + mag) / 2;
+        n_beta = (n_elec - mag) / 2;
+    } else if (n_elec % 2 != 0) {
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: "
-            + std::to_string(prob.n_elec)
-            + " valence electrons is not closed-shell — use cpu::pw for "
-              "open-shell / metallic paths");
+            + std::to_string(n_elec)
+            + " valence electrons is not closed-shell — use spin_polarized "
+              "for open shell, or cpu::pw for metallic paths");
+    }
 
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
 
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    const int n_bands = prob.n_bands;
+    const int n_bands = method.spin_polarized
+                            ? std::max(std::max(n_alpha, n_beta), 1)
+                            : prob.n_bands;
     const AccReal vol_bohr = prob.vol_bohr;
     const AccReal omega_bohr = ws.omega;
 
     // Same stream coupling as PW::run: density owns the SCF stream; the band
     // solver borrows it so V_eff / ρ_acc writes stay ordered without events.
-    // Creating a second stream here races the two halves and breaks PBE SCF
-    // (many more async FFTs on the density side than LSDA).
     internal::DeviceDensity den(prob, method.mix_beta, method.pulay_depth,
-                                method.xc);
+                                method.xc, method.spin_polarized, n_alpha,
+                                n_beta, n_elec);
     internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
                                       den.stream());
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
@@ -525,45 +549,88 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     cpu::pw::internal::ConvergenceCheck conv{AccReal(method.tol), 2};
     AccReal last_energy_ha = AccReal(0);
     int last_iter = 0;
-    for (int iter = 0; iter < method.max_iter; ++iter) {
-        den.hartree();
-        den.exchange_correlation();
-        den.assemble_veff();
-        den.zero_accumulator();
 
-        AccReal e_band = 0;
-        for (int ik = 0; ik < n_kpts; ++ik) {
-            solver.bind_kpoint(ik);
-            solver.solve(ws, 40);
-            const AccReal weight = prob.kg.weights[ik];
-            for (int b = 0; b < n_bands; ++b)
-                e_band += weight * ws.eigenvalues[b] * AccReal(2);
-            solver.accumulate_density(weight, omega_bohr);
+    if (method.spin_polarized) {
+        // Collinear fixed-occupation UKS force-path SCF (CPU twin).
+        const int n_occ[2] = {n_alpha, n_beta};
+        for (int iter = 0; iter < method.max_iter; ++iter) {
+            den.sync_total_rho();
+            den.hartree();
+            den.exchange_correlation_spin();
+
+            AccReal e_band = 0;
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                den.zero_accumulator();
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    const AccReal weight = prob.kg.weights[ik];
+                    for (int b = 0; b < n_occ[s]; ++b)
+                        e_band += weight * ws.eigenvalues[b];
+                    solver.accumulate_density(weight, omega_bohr, n_occ[s],
+                                              1.0);
+                }
+                den.collect_spin_out(s);
+            }
+
+            den.mix_spin_linear();
+            const auto s = den.reduce_spin(static_cast<double>(vol_bohr));
+            ws.E_xc = AccReal(s.e_xc);
+            auto terms = cpu::pw::internal::combine_energy_terms(
+                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+                ws.E_xc, prob.ew_total, ws.E_aug);
+            terms.e_one =
+                e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
+            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
+                          + ws.E_aug;
+            last_energy_ha = terms.total;
+            last_iter = iter + 1;
+            if (conv.step(AccReal(s.resid)))
+                break;
         }
+    } else {
+        for (int iter = 0; iter < method.max_iter; ++iter) {
+            den.hartree();
+            den.exchange_correlation();
+            den.assemble_veff();
+            den.zero_accumulator();
 
-        den.collect();
-        den.mix(iter);
-        const auto s = den.reduce(static_cast<double>(vol_bohr));
-        ws.E_xc = AccReal(s.e_xc);
-        const auto terms = cpu::pw::internal::combine_energy_terms(
-            e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-            ws.E_xc, prob.ew_total, ws.E_aug);
-        last_energy_ha = terms.total;
-        last_iter = iter + 1;
-        if (conv.step(AccReal(s.resid)))
-            break;
+            AccReal e_band = 0;
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                solver.bind_kpoint(ik);
+                solver.solve(ws, 40);
+                const AccReal weight = prob.kg.weights[ik];
+                for (int b = 0; b < n_bands; ++b)
+                    e_band += weight * ws.eigenvalues[b] * AccReal(2);
+                solver.accumulate_density(weight, omega_bohr);
+            }
+
+            den.collect();
+            den.mix(iter);
+            const auto s = den.reduce(static_cast<double>(vol_bohr));
+            ws.E_xc = AccReal(s.e_xc);
+            const auto terms = cpu::pw::internal::combine_energy_terms(
+                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+                ws.E_xc, prob.ew_total, ws.E_aug);
+            last_energy_ha = terms.total;
+            last_iter = iter + 1;
+            if (conv.step(AccReal(s.resid)))
+                break;
+        }
     }
     // Host-visible breadcrumb: energy of the force-path SCF (Ry). Mirrors the
-    // CPU `forces-scf converged` line so dual-gate logs can compare. Do not
-    // include core/log.h from .cu (see file header); printf is enough.
-    std::printf("[pw] cuda forces-scf done iter=%d energy_ry=%.8f\n", last_iter,
+    // CPU `forces-scf converged` line so dual-gate logs can compare.
+    std::printf("[pw] cuda forces-scf done iter=%d energy_ry=%.8f%s\n",
+                last_iter,
                 static_cast<double>(last_energy_ha)
-                    / cpu::pw::qe_units::rydberg_to_hartree);
+                    / cpu::pw::qe_units::rydberg_to_hartree,
+                method.spin_polarized ? " spin=1" : "");
 
     // Forces from the final mixed density + band re-solve at final V_eff.
-    return internal::pw_forces_analytic_impl(frame, method.upf_path,
-                                             method.gth_name, method.ecut_ry,
-                                             den, solver, prob, ws);
+    return internal::pw_forces_analytic_impl(
+        frame, method.upf_path, method.gth_name, method.ecut_ry, den, solver,
+        prob, ws, n_alpha, n_beta);
 }
 
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,

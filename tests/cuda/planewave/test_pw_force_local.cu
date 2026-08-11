@@ -157,7 +157,9 @@ TEST(CudaPWForces, PublicApiRejectsEmptyFrame) {
     EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method), std::invalid_argument);
 }
 
-TEST(CudaPWForces, PublicApiRejectsSpin) {
+// Collinear LSDA fixed-occ forces are product; spin-PBE forces stay fail-closed
+// (child slug cuda-pw-spin-pbe-forces). Gate must fire before SCF work.
+TEST(CudaPWForces, PublicApiRejectsSpinPbeForces) {
     cpu::Frame f(1);
     f.span(kAtom_type)[0] = 1;
     f.span(kAtom_mass)[0] = 1.008;
@@ -166,6 +168,29 @@ TEST(CudaPWForces, PublicApiRejectsSpin) {
     cuda::pw::PW method;
     method.gth_name = "GTH-PBE-q1";
     method.spin_polarized = true;
+    method.multiplicity = 2;
+    method.xc = cpu::scf::XCType::PBE;
+    try {
+        (void)cuda::pw::pw_forces_analytic(f, method);
+        FAIL() << "expected spin-PBE force reject";
+    } catch (const std::invalid_argument& e) {
+        const std::string msg = e.what();
+        EXPECT_NE(msg.find("LSDA only"), std::string::npos) << "msg=" << msg;
+    }
+}
+
+TEST(CudaPWForces, PublicApiRejectsSpinSmearForces) {
+    cpu::Frame f(1);
+    f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_mass)[0] = 1.008;
+    f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
+    f.box = cpu::Box::cubic(4.5);
+    cuda::pw::PW method;
+    method.gth_name = "GTH-PBE-q1";
+    method.spin_polarized = true;
+    method.multiplicity = 2;
+    method.smearing = cuda::pw::Smearing::fermi_dirac;
+    method.degauss = 0.01;
     method.xc = cpu::scf::XCType::LSDA;
     EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method), std::invalid_argument);
 }
