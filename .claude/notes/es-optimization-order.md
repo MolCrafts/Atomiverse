@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 20)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 21)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
 **landed** on `dev`. Device mid-SCF collocate/integrate, MG energy (**H₂
@@ -61,12 +61,13 @@ only**), Γ UKS (+ O₂), device grid forces, PBE H₂, product stress, SCF +
 E+F, multi-k H₂ spine (collocate/integrate/H/KDiis/STVnl S/T/H residual),
 **Γ/UKS device H assemble**, **UKS + multi-k P residency**, **multi-k device
 e_kin/e_nl**, **Si Γ ngrids=1 product-si-gate**, spin F/σ, smear F/σ (Γ) **on
-base** (`1662f768` after product-si `a158848f` / **1167099** + residency
+base** (`7bb23845` after product-si `a158848f` / **1167099** + residency
 `5a5076d0` / force-stream `61b91971` / **1158949**; kpoint-h-residency
-`e2bcb05e` / **1142864**). **Wave 20 GapCensus:** re-diff marks residency P0 +
-force-stream done; **staff `[~]` `product-collocate-pbc`** (SG host cbg hybrid
-+ continuous collocate no PBC wrap — iron-law debt). Si MG tips **dropped** /
-**blocked** on collocate-pbc. Multi-k residual **held:** host χ / Löwdin /
+`e2bcb05e` / **1142864**). **Wave 21 GapCensus:** no new base lands; **resume
+`[~]` `product-collocate-pbc`** tip `wf/…` @ `6173d562` / claimed GH200
+**1171568** (sphere-window + SG device KS) — **not on base** (host cbg + no
+PBC still live on `dev`). Si MG tips **dropped** / **blocked** until
+collocate-pbc **on base**. Multi-k residual **held:** host χ / Löwdin /
 KB Vnl / H0 rematerialize + payload/cold-start. Γ residual: **device-payload**
 / **uks-payload-device** / **device-cold-start** + Γ STVnl + product geometry
 residency + hybrid free-fn depth. Water **σ** + multi-k/MG×PBE matrix + PW
@@ -76,7 +77,7 @@ spin×kmesh×smear held. **new_slugs_added=0**.
 | --- | --- | --- |
 | P1 | *(closed)* device-forces + pbe-product-gate + stress + stream + h2o-gate (E+F) | on base |
 | P2 | **landed** device-diis-eigen + uks-device-diis + weight-pack + kpoints + spin/smear F/σ + kpoint spine + **h-residency** + **product-si-gate** + **device-h-assemble / uks-h-assemble / uks-p-residency / kpoint-p-residency / kpoint-device-energy / force-stream** | Si SG + residency P0 |
-| P0→P3 | **`product-collocate-pbc`** `[~]` then **`multigrid-si-energy-path`** / **`multigrid-si-gate`** (blocked) + **device-payload / uks-payload-device / device-cold-start** + multi-k **payload / cold-start / χ / orth / vnl / h0** + production multi-k/MG/UKS×PBE matrix + PW **smear-stress-al2** + spin×kmesh×smear | after collocate PBC |
+| P0→P3 | **`product-collocate-pbc`** `[~]` resume tip → merge, then **`multigrid-si-energy-path`** / **`multigrid-si-gate`** (blocked) + **device-payload / uks-payload-device / device-cold-start** + multi-k **payload / cold-start / χ / orth / vnl / h0** + production multi-k/MG/UKS×PBE matrix + PW **smear-stress-al2** + spin×kmesh×smear | after collocate PBC on base |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
 (not soft-tol). **pending_count=133**; **in_progress=1**; **cuda_pending=134**;

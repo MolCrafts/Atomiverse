@@ -58,10 +58,10 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 
 ## pending
 
-**GapCensus wave 20** (session GapCensus wave 1; parent `dev` @ `1662f768`
-after product-si-gate land `a158848f` / GH200 **1167099** + residency P0
-`5a5076d0` / force-stream `61b91971` / dual-gate **1158949**; no unmerged
-`wf/*`):** Fair walls **held** (authority
+**GapCensus wave 21** (session GapCensus wave 2; parent `dev` @ `7bb23845`
+after wave-20 queue chore; base still carries product-si `a158848f` /
+**1167099** + residency P0 `5a5076d0` / force-stream `61b91971` /
+**1158949**):** Fair walls **held** (authority
 [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md)): MG MAIN
 **2.33×** worst; OT water SCF body **≤1.0×** / OT-only ~**1.20×**; UKS DIIS
 **1.077×** closed; k-si MAIN **1.18×** hold. **cpu_pending=0** — pin-safe
@@ -70,42 +70,40 @@ collint/structure/sphere **exhausted**; no promote from
 closed; `src/cuda/gpw/gpw_solver.cu` + `kpoint_{stvnl,diis_eigen,collocate,integrate}.*`
 + `product_collocate.cu` + `src/cuda/planewave/pw_solver.cu` / `pw_stress.cu`):
 
-(1) **Landed since wave 19:** **`product-si-gate`** (Si Γ ngrids=1 dual-gate
-\|dE\|=**2.130e-08**; KB Vnl via `add_nonlocal_kb_k`@Γ); residency P0
-**`device-h-assemble` / `uks-h-assemble` / `uks-p-residency` /
-`kpoint-p-residency` / `kpoint-device-energy`** (`5a5076d0` + **1158949** —
-device \(H=H_0+V\), pack from `d_P`, multi-k `collocate_k_device_cm` + device
-Re⟨P,T/Vnl⟩); **`force-stream`** (`61b91971` — free-fn ScfStream, boundary-only
-force D2H). (2) **P0 residual after product-si (iron-law debt):** SG mid-SCF
-still **host CompactBasisGrid** KS twin + mid-path **P D2H**
-(`gpw_solver.cu` ngrids=1 path) because continuous device product collocate
-**lacks collint PBC wrap** (charge ~0.5 on Si; no wrap in
-`product_collocate.cu`) — staffed **`product-collocate-pbc`** `[~]`; drop host
-cbg when device collocate/integrate match collint. (3) **Si MG** still
-**broken / blocked** on collocate-pbc (`multigrid-si-energy-path` then
-`multigrid-si-gate`; tips **dropped**). H0/KB class **closed** on SG via
-product-si; MG residual is device KS restore after PBC. (4) Multi-k residual
-**held:** host χ / Löwdin orth / KB Vnl / H0 rematerialize + payload /
-cold-start (`kpoint-device-chi` / `orth` / `vnl` / `h0-residency` /
-`kpoint-payload-device` / `kpoint-device-cold-start`) + production Si/water
-E+F/σ + multi-k×PBE. (5) Γ residual after device DIIS: **payload host re-diag**
-+ **cold-start densify** + Γ **device-stvnl** + **device-product-residency** +
-hybrid free-fn (AO Pulay / stress / handoffs). (6) UKS F/σ + path×PBE + O₂
-joints + PW smear-σ Al₂ + spin×kmesh×smear **held**. **No new method
-domains. No new dual-gate joints this GapCensus.** Queue **not** exhausted.
+(1) **No new lands on `dev` since wave 20** — HEAD is queue chore only
+(`7bb23845`); product-si + residency P0 + force-stream remain the last
+feat lands on base. (2) **P0 iron-law residual still on base:** SG mid-SCF
+**host CompactBasisGrid** KS twin + mid-path **P D2H**
+(`gpw_solver.cu` ngrids=1 ~L1662–1700) because continuous device product
+collocate **lacks collint PBC sphere-window** on base (no wrap in
+`product_collocate.cu` on `dev`). (3) **Tip progress (not base):** unmerged
+`wf/cuda-gpw-product-collocate-pbc` @ **`6173d562`** claims GH200 **1171568**
+(reg_cuda-gpw-product-collocate-pbc PASS; product-si-gate \|dE\|=**3.504e-05**
+Ha ≤ 5e-5; full-product hold) — sphere-window collocate/integrate + restore
+SG device pack→`KsChain`→scatter. **Staff `[~]` resume tip → merge to `dev`**
+(not create; not mark done until on base). (4) **Si MG** still **blocked** on
+collocate-pbc-on-base (`multigrid-si-energy-path` then `multigrid-si-gate`).
+(5) Multi-k residual **held:** host χ / Löwdin orth / KB Vnl / H0 rematerialize
++ payload / cold-start + production Si/water E+F/σ + multi-k×PBE. (6) Γ residual:
+**payload host re-diag** + **cold-start densify** + Γ **device-stvnl** +
+**device-product-residency** + hybrid free-fn (AO Pulay / stress / handoffs).
+(7) UKS F/σ + path×PBE + O₂ joints + PW smear-σ Al₂ + spin×kmesh×smear **held**.
+**No new method domains. No new dual-gate joints. Max-3 CUDA slug gate unused
+(no unqueued mid-path DH / kernel-order defect).** Queue **not** exhausted.
 
-**Autonomous discovery residual (wave 20 — foothold ≠ closed):**
-(1) **product-si green ≠ CUDA-only SG mid-path** — host cbg hybrid is
-**stated debt** → staff **`product-collocate-pbc`** (PBC wrap + restore device
-product KS; unblocks Si MG);
-(2) **H₂ MG green ≠ Si MG** — still blocked on collocate-pbc;
-(3) residency P0 mid-H/P **landed** but payload/cold-start / multi-k χ·orth·vnl·h0 /
-Γ STVnl / product geometry residency **held**;
-(4) force **stream landed** ≠ device AO Pulay / stress / handoff depth;
-(5) production multi-k/MG/UKS×PBE matrix + PW spin×kmesh×smear **held**.
+**Autonomous discovery residual (wave 21 — foothold ≠ closed):**
+(1) **tip green ≠ base closed** — collocate-pbc remains P0 on `dev` until
+merge; do **not** promote Si MG or flip iron-law table on base;
+(2) **product-si green ≠ CUDA-only SG mid-path** on base (host cbg still
+live);
+(3) **H₂ MG green ≠ Si MG** — blocked until collocate-pbc on base;
+(4) residency P0 mid-H/P **landed** but payload/cold-start / multi-k
+χ·orth·vnl·h0 / Γ STVnl / product geometry residency **held**;
+(5) force **stream landed** ≠ device AO Pulay / stress / handoff depth;
+(6) production multi-k/MG/UKS×PBE matrix + PW spin×kmesh×smear **held**.
 Do **not** invent hybrid/GAPW/PAW/meta-GGA; OT/MT/vdW/metallic-GPW stay
 same-capability follow-on. **No gpw-perf-queue promote**.
-**new_slugs_added=0** this GapCensus (re-diff lands + staff reorder only).
+**new_slugs_added=0** this GapCensus (re-diff tip + staff resume only).
 
 | Fact | Evidence |
 | --- | --- |
@@ -135,31 +133,31 @@ same-capability follow-on. **No gpw-perf-queue promote**.
 | Γ RKS/UKS device H assemble + UKS P residency | **landed** `5a5076d0` / GH200 **1158949** (device \(H=H_0+V\); pack from `d_P`) |
 | Restricted metallic-smear forces | **landed** feat `891baefc` — GH200 **1130427** (Γ Al₂) |
 | Restricted metallic-smear stress | **landed** merge `b46875bf` / feat `098f690d` — GH200 **1133111** (Al 1-atom); production multi-atom → `smear-stress-al2-gate` |
-| Si-class Γ single-grid product | **landed** merge `a158848f` / GH200 **1167099** \|dE\|=**2.130e-08** — residual **SG host cbg hybrid** → `product-collocate-pbc` |
-| Product hybrid (base) | host Γ STVnl; **device** RKS/UKS DIIS/eigen + weight pack + **device H=H0+V** (MG + UKS; residual scalar only); multi-k **device** χ collocate from `d_P` + ρ→V_eff + V→H_k + KDiis + phased STVnl S/T + H residual + device e_kin/e_nl; **SG RKS mid-SCF host CompactBasisGrid KS + P D2H** (product-si debt); **final Γ payload host re-diag** + **Γ cold-start host densify**; multi-k residual host χ setup / Löwdin / KB Vnl / H0 rematerialize + payload/cold-start; forces hybrid (stream landed; host AO Pulay + force-setup H2D handoff); stress **full host**; continuous collocate **no PBC wrap** (~0.5 Si charge) |
+| Si-class Γ single-grid product | **landed** merge `a158848f` / GH200 **1167099** \|dE\|=**2.130e-08** — residual **SG host cbg hybrid** on base → `product-collocate-pbc` (tip **1171568** unmerged) |
+| Product hybrid (base) | host Γ STVnl; **device** RKS/UKS DIIS/eigen + weight pack + **device H=H0+V** (MG + UKS; residual scalar only); multi-k **device** χ collocate from `d_P` + ρ→V_eff + V→H_k + KDiis + phased STVnl S/T + H residual + device e_kin/e_nl; **SG RKS mid-SCF host CompactBasisGrid KS + P D2H** (product-si debt on base); **final Γ payload host re-diag** + **Γ cold-start host densify**; multi-k residual host χ setup / Löwdin / KB Vnl / H0 rematerialize + payload/cold-start; forces hybrid (stream landed; host AO Pulay + force-setup H2D handoff); stress **full host**; continuous collocate **no PBC wrap on base** (~0.5 Si charge) |
 | Fail-closed (base) | OT / MT / non-PADE-PBE / `local_pp_on_grid=false`; multi-k UKS / multi-k MG; UKS free-fn F; multi-k free-fn F; MG free-fn F; multi-k stress; `run_uks` Padé only |
-| Claimed-but-ungated | multi-k H₂ → Si/water E+F/σ + multi-k×PBE; **continuous collocate PBC** (`product-collocate-pbc`); MG H₂ → **Si energy path** (`multigrid-si-energy-path` blocked on PBC) + water/Si MG F/σ + MG×PBE + multi-k MG×PBE + multigrid-kpoints-si-*; **device-product-residency** / **device-payload** / **uks-payload-device** / **device-cold-start** / **kpoint-payload-device** / **kpoint-device-cold-start** / **kpoint-device-chi** / **orth** / **vnl** / **h0-residency** / **uks-o2-forces/stress** / **uks-o2-pbe-*** / **uks-o2-multigrid/kpoints** / Γ device STVnl / AO-Pulay / **device-stress** / handoffs; water **σ** + water×PBE; path×PBE + 4-way; PW multi-k PBE + **spin-PBE F/σ** + **smear-stress-al2-gate** + smear-PBE + **kmesh-smear F/σ** (+ PBE) + **spin×kmesh×smear** |
+| Claimed-but-ungated | multi-k H₂ → Si/water E+F/σ + multi-k×PBE; **continuous collocate PBC** (`product-collocate-pbc` tip green / base open); MG H₂ → **Si energy path** (`multigrid-si-energy-path` blocked until collocate-pbc **on base**) + water/Si MG F/σ + MG×PBE + multi-k MG×PBE + multigrid-kpoints-si-*; **device-product-residency** / **device-payload** / **uks-payload-device** / **device-cold-start** / **kpoint-payload-device** / **kpoint-device-cold-start** / **kpoint-device-chi** / **orth** / **vnl** / **h0-residency** / **uks-o2-forces/stress** / **uks-o2-pbe-*** / **uks-o2-multigrid/kpoints** / Γ device STVnl / AO-Pulay / **device-stress** / handoffs; water **σ** + water×PBE; path×PBE + 4-way; PW multi-k PBE + **spin-PBE F/σ** + **smear-stress-al2-gate** + smear-PBE + **kmesh-smear F/σ** (+ PBE) + **spin×kmesh×smear** |
 | Closed-shell PW stress | **LSDA + PBE** dual-gate **landed** (Γ-class; multi-k F/σ + multi-k PBE energy open) |
 | Collinear spin-PBE energy | **landed** merge `118d3003` / GH200 **1124645** (Γ dual-gate only) |
-| Staffed tips | **GapCensus wave 20** — `[~]` ×1: **`cuda-gpw-product-collocate-pbc`** (P0 iron-law: PBC wrap + drop SG host cbg; no tip — create spec at assign). **Blocked:** `multigrid-si-energy-path` → `multigrid-si-gate` (on collocate-pbc); `mg-main-structural` |
+| Staffed tips | **GapCensus wave 21** — `[~]` ×1: **`cuda-gpw-product-collocate-pbc`** (P0 iron-law; **resume** `wf/cuda-gpw-product-collocate-pbc` @ `6173d562` / claimed GH200 **1171568** → merge to `dev`). **Blocked:** `multigrid-si-energy-path` → `multigrid-si-gate` (on collocate-pbc-on-base); `mg-main-structural` |
 
-**Counts (GapCensus wave 20 on `dev` @ `1662f768` after product-si +
-residency P0 re-diff):**
+**Counts (GapCensus wave 21 on `dev` @ `7bb23845`; tip unmerged):**
 **pending_count=133**; **in_progress=1**;
 **cpu_pending=0**; **cuda_pending=134** (1 held `[~]` + 133 pending);
 **gaps_remaining=135** (pending + in_progress + blocked MG fair-wall
 `mg-main-structural`). Queue **not** exhausted.
-**new_slugs_added=0** this GapCensus. Prior land:
+**new_slugs_added=0** this GapCensus. Prior land on base:
 **`cuda-gpw-product-si-gate`** (`a158848f` / **1167099**); residency
 **`5a5076d0` / force-stream `61b91971` / GH200 **1158949**; prior
 **`cuda-gpw-kpoint-h-residency`** (`e2bcb05e` / **1142864**).
-**Staffed `[~]`:** **`cuda-gpw-product-collocate-pbc`** (P0). Free staff held:
+**Staffed `[~]`:** **`cuda-gpw-product-collocate-pbc`** (P0 — resume tip).
+Free staff held after collocate-pbc-on-base: `multigrid-si-energy-path` then
 `device-payload` / `uks-payload-device` / `device-cold-start` /
 `kpoint-payload-device` / `kpoint-device-cold-start` /
 **`kpoint-device-chi`** / **`kpoint-device-orth`** / **`kpoint-device-vnl`** /
 **`kpoint-h0-residency`** / `device-product-residency` / `device-stvnl` /
 PW `smear-stress-al2-gate` / `kmesh-smear-forces` (no dual-gate matrix
-explosion; Si MG after collocate-pbc only).
+explosion; Si MG only after collocate-pbc on base).
 
 ### CUDA — GPW product depth (product on base — staff depth)
 
@@ -544,25 +542,20 @@ wave 2).
   DIIS residual under Si — compose not a lone foothold. Prefer staff **before
   or with** `multigrid-si-energy-path` (same H0 residual; MG multiplies load).
   Does **not** own MG / multi-k / F/σ (child rows).
-- [~] `cuda-gpw-product-collocate-pbc` | **P0** **new (wave 19)**; **staffed wave 20
-  after product-si-gate land** — Continuous device product collocate
-  **under-counts** vs collint on Si (sample charge ratio ~**0.47–0.54**; **no
-  PBC window wrap** — tip research GH200 **1144059** + product-si GH200
-  **1166099**/**1166106**). **Landed** `product-si-gate` (`a158848f` /
-  **1167099**) left **stated hybrid debt**: SG mid-SCF host CompactBasisGrid
-  KS twin (`gpw_solver.cu`) + iron-law mid-path DH of P — restore device
-  continuous collocate/integrate with collint PBC wrap and drop host cbg.
-  Track: **cuda**. Twin: same-settings CPU collint product collocate / Si Γ
-  ngrids=1 energy dual-gate (`reg_cuda-gpw-product-si-gate` must hold) + Si
-  MG fragment charge/energy when MG path restored. Gate: GH200; stated
-  charge/energy tol; **perf_exempt**. Lever: `product_collocate.cu` (+
-  integrate twin) PBC wrap / collint sphere parity with CPU
-  `collint_collocate_product`; compose into product packs /
-  `KsMultiGridChainDevice`; remove SG host cbg mid-SCF path. Does **not**
-  own H0/KB (landed on base) or MG F/σ. Unblocks `multigrid-si-energy-path`.
+- [~] `cuda-gpw-product-collocate-pbc` | **P0** **new (wave 19)**; staffed wave 20;
+  **resume wave 21** — Continuous device product collocate **under-counts** vs
+  collint on Si on **base** (charge ~0.5; no PBC sphere-window). **Landed**
+  `product-si-gate` left **stated hybrid debt** on base: SG mid-SCF host
+  CompactBasisGrid KS + mid-path P D2H. **Tip** `wf/cuda-gpw-product-collocate-pbc`
+  @ **`6173d562`** claims GH200 **1171568** (sphere-window collocate/integrate
+  + SG device pack→KsChain; product-si \|dE\|=**3.504e-05**; reg PASS) — **not
+  on `dev`**. Track: **cuda**. Twin: collint + `reg_cuda-gpw-product-si-gate`.
+  Gate: merge to `dev` + GH200 hold; **perf_exempt**. Lever: tip files
+  `product_collocate.cu` / `product_integrate.cu` / `gpw_solver.cu` SG branch.
+  Unblocks `multigrid-si-energy-path` **only after base merge**.
 - [ ] `cuda-gpw-multigrid-si-energy-path` | **P2** **new (wave 18)**; **re-scoped
-  wave 19**; **blocked** on `product-collocate-pbc` (tips dropped after
-  product-si land — no unmerged `wf/*`) — Fix Si-class GTH Γ `ngrids>1`
+  wave 19**; **blocked** on `product-collocate-pbc` **on base** (collocate-pbc
+  tip unmerged; Si MG research tips dropped) — Fix Si-class GTH Γ `ngrids>1`
   product **energy path** after H₂ `multigrid-run` foothold green but
   production Si dual-gate **non-convergent**. Prior tip GH200
   **1144059**/**1144870**: continuous collocate charge ~0.5 (→ parent
@@ -1162,23 +1155,25 @@ twins). No further CPU polish staffed here without a pin-safe wall lever.
 
 ### CUDA — corresponding ES (open-gate readiness × user value)
 
-**Tree fact on `dev` @ `1662f768` (GapCensus wave 20; product-si + residency P0
-+ force-stream on base):** stage units + PW landings + public
-`cuda::gpw::GpwDft` + device mid-SCF collocate/integrate + multigrid energy
-(**H₂ only green**) + Γ UKS PADE (+ O₂) + device grid forces + product stress +
-SCF + **force** non-default stream + device RKS/UKS DIIS/eigen + weight pack +
-water E+F + multi-k energy (H₂) + multi-k device collocate/integrate/H
+**Tree fact on `dev` @ `7bb23845` (GapCensus wave 21; product-si + residency P0
++ force-stream on base; collocate-pbc tip unmerged):** stage units + PW landings
++ public `cuda::gpw::GpwDft` + device mid-SCF collocate/integrate + multigrid
+energy (**H₂ only green**) + Γ UKS PADE (+ O₂) + device grid forces + product
+stress + SCF + **force** non-default stream + device RKS/UKS DIIS/eigen + weight
+pack + water E+F + multi-k energy (H₂) + multi-k device collocate/integrate/H
 assemble/KDiis/STVnl S/T/H residual + **device H assemble (Γ RKS/UKS)** +
 **UKS/multi-k P residency** + **multi-k device e_kin/e_nl** + **Si Γ ngrids=1
 product dual-gate** + spin F/σ + smear F/σ (Γ) **on base**.
-`gpw_solver.cu` residual: **SG host CompactBasisGrid KS + P D2H** (product-si
-debt → `product-collocate-pbc`); continuous collocate **no PBC wrap**; host Γ
-STVnl; **final Γ host re-diag payload** + **Γ host cold-start densify**; multi-k
-host χ / Löwdin / KB Vnl / H0 rematerialize + payload/cold-start; free-fn host
-AO Pulay + force-setup grid H2D handoff; stress **full host**; Si MG energy
-**blocked** on collocate-pbc. PW: multi-k PBE energy dual-gate missing;
+`gpw_solver.cu` residual on base: **SG host CompactBasisGrid KS + P D2H**
+(product-si debt → `product-collocate-pbc`); continuous collocate **no PBC
+sphere-window on base**; host Γ STVnl; **final Γ host re-diag payload** +
+**Γ host cold-start densify**; multi-k host χ / Löwdin / KB Vnl / H0
+rematerialize + payload/cold-start; free-fn host AO Pulay + force-setup grid
+H2D handoff; stress **full host**; Si MG energy **blocked** until
+collocate-pbc **on base**. Tip `6173d562` claims PBC + SG device KS (GH200
+**1171568**) — not base. PW: multi-k PBE energy dual-gate missing;
 smear-σ Al₂ production ungated; spin×kmesh×smear open.
-**Staff `[~]` (wave 20):** **`cuda-gpw-product-collocate-pbc`** only.
+**Staff `[~]` (wave 21):** **`cuda-gpw-product-collocate-pbc`** only (resume tip).
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
@@ -1187,11 +1182,11 @@ smear-σ Al₂ production ungated; spin×kmesh×smear open.
 | Public `cuda::gpw::GpwDft` + device collocate + MG energy (H₂) + Γ UKS + device forces + stress + streams + **device RKS+UKS DIIS/eigen** + weight pack + **device H assemble** + **UKS/multi-k P residency** + **multi-k device energy pieces** + **water E+F** + **multi-k H₂ spine** + **Si Γ ngrids=1 product-si-gate** | **landed** (product-si **1167099**/`a158848f`; residency **1158949**/`5a5076d0`; force-stream `61b91971`; kpoint-h-residency **1142864**; …) | **pending:** **`product-collocate-pbc`** (P0) + **`multigrid-si-energy-path`** (blocked) + **`device-payload` / `uks-payload-device` / `device-cold-start`** + **`kpoint-payload-device` / `kpoint-device-cold-start`** / **χ / orth / vnl / h0** + production multi-k/MG/UKS×PBE matrix + hybrid free-fn depth (AO Pulay / stress / handoffs) + **device-stvnl (Γ)** / **device-product-residency** |
 | `cuda::pw::PW` LSDA + PBE + residency + stream + large-cell + forces (LSDA+PBE Γ) + stress (LSDA+PBE) + collinear LSDA + spin-PBE energy + **spin LSDA forces + stress** + restricted metallic smear energy + **restricted metallic-smear forces + stress (Γ)** | **landed** | **pending:** multi-k F/σ + **multi-k PBE energy** (+ multi-k PBE F/σ); **`smear-stress-al2-gate`** + smear-PBE E+F/σ + **multi-k smear F/σ** (+ PBE); spin-PBE F/σ / spin multi-k (+ spin-kmesh-PBE F/σ) / spin+smear (+ spin-smear-pbe F/σ) / **spin×kmesh×smear** (+ PBE F/σ) |
 
-**Staff order (GapCensus wave 20 residual):** (1) **P0 iron-law** — staffed
-**`product-collocate-pbc`** `[~]` (PBC wrap + drop SG host cbg mid-SCF; restore
-device product KS); (2) **Si MG** — `multigrid-si-energy-path` then
-`multigrid-si-gate` **blocked** until collocate-pbc green; (3) free high-value
-after residency P0 — **`device-payload` / `uks-payload-device` /
+**Staff order (GapCensus wave 21 residual):** (1) **P0 iron-law** — **resume**
+**`product-collocate-pbc`** tip → merge to `dev` (claimed **1171568**; base
+still host cbg); (2) **Si MG** — `multigrid-si-energy-path` then
+`multigrid-si-gate` **blocked** until collocate-pbc **on base**; (3) free
+high-value after base merge — **`device-payload` / `uks-payload-device` /
 `device-cold-start`** + multi-k **`kpoint-payload-device` /
 `kpoint-device-cold-start` / χ / orth / vnl / h0-residency** +
 `device-product-residency` / `device-stvnl` + PW **`smear-stress-al2-gate`** /
@@ -1202,10 +1197,12 @@ kernel footholds. Higher-L RHF out of scope. OT / vdW / MT / metallic-GPW later.
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
 
-**Harness residual (GapCensus wave 20 on `dev` @ `1662f768`):**
-**in_progress=1** — **`cuda-gpw-product-collocate-pbc`** (create
-`.claude/specs/cuda-gpw-product-collocate-pbc/` at assign; no `wf/*` tip).
-Free staff held: `device-payload` / `uks-payload-device` / `device-cold-start` /
+**Harness residual (GapCensus wave 21 on `dev` @ `7bb23845`):**
+**in_progress=1** — **`cuda-gpw-product-collocate-pbc`** (**resume**
+`wf/cuda-gpw-product-collocate-pbc` @ `6173d562`; spec on tip; claimed GH200
+**1171568** — merge/harness only; not base-done).
+Free staff held after base land: `multigrid-si-energy-path` /
+`device-payload` / `uks-payload-device` / `device-cold-start` /
 `kpoint-payload-device` / `kpoint-device-cold-start` /
 **`kpoint-device-chi`** / **`kpoint-device-orth`** / **`kpoint-device-vnl`** /
 **`kpoint-h0-residency`** / `device-product-residency` / `device-stvnl` / PW
@@ -1249,21 +1246,21 @@ uks-device-diis/weight-pack/smear-forces/**kpoint-device-collocate**/
 
 ## in_progress
 
-GapCensus wave 20 on `dev` @ `1662f768` (after product-si + residency P0
-re-diff; Si MG tips **dropped**; no unmerged `wf/*`):
+GapCensus wave 21 on `dev` @ `7bb23845` (product-si + residency P0 on base;
+Si MG tips **dropped**; **unmerged** `wf/cuda-gpw-product-collocate-pbc`):
 
-- [~] `cuda-gpw-product-collocate-pbc` | method=cuda | **P0** | **staff**
-  (not resume — no tip/spec). Stated iron-law debt after product-si: SG
-  mid-SCF host CompactBasisGrid collocate/KS/integrate + P D2H
-  (`gpw_solver.cu`); continuous device collocate lacks collint PBC wrap
-  (`product_collocate.cu` — charge ~0.5 on Si). Twin: same-settings CPU
-  collint + Si Γ ngrids=1 dual-gate hold (`reg_cuda-gpw-product-si-gate`).
-  Oracle: same-settings CPU. Gate: GH200 — product-si dual-gate holds +
-  no mid-SCF scientific DH on SG path + charge/energy tol stated;
-  **perf_exempt**. Lever: PBC wrap / sphere parity in product collocate
-  (+ integrate); drop host cbg mid-SCF; restore device KS. Spec: create
-  `.claude/specs/cuda-gpw-product-collocate-pbc/` at assign. Unblocks
-  multigrid-si-energy-path.
+- [~] `cuda-gpw-product-collocate-pbc` | method=cuda | **P0** | **resume**
+  tip `wf/cuda-gpw-product-collocate-pbc` @ **`6173d562`** (claimed GH200
+  **1171568**: reg PASS; product-si \|dE\|=**3.504e-05**; full-product hold;
+  skills: choose-launch-configuration, optimize-global-memory-access,
+  boundary wrap, av-perf). **Base debt still live:** SG mid-SCF host
+  CompactBasisGrid + P D2H (`gpw_solver.cu`); no PBC sphere-window on base
+  `product_collocate.cu`. Twin: collint + `reg_cuda-gpw-product-si-gate`.
+  Oracle: same-settings CPU. Gate: **merge to `dev`** + GH200 hold on base;
+  no mid-SCF scientific DH on SG path; **perf_exempt**. Lever: tip
+  sphere-window collocate/integrate + drop host cbg mid-SCF. Spec on tip
+  under `.claude/specs/cuda-gpw-product-collocate-pbc/`. Unblocks
+  multigrid-si-energy-path **only after base merge**.
 
 
 ## blocked
@@ -1273,9 +1270,9 @@ re-diff; Si MG tips **dropped**; no unmerged `wf/*`):
   (arch-campaign landed single-owner multi-level path `arch-mg-main-structural`;
   fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 - [!] `cuda-gpw-multigrid-si-energy-path` | **blocked** on `product-collocate-pbc`
-  (+ re-gate after H0/KB already on base via product-si). Prior research tips
-  deleted (`0656b2e8`); first-iter charge ~0.5 without PBC wrap. Do not staff
-  until collocate-pbc green.
+  **on base** (+ re-gate after H0/KB already on base via product-si). Prior
+  research tips deleted (`0656b2e8`); tip collocate-pbc claims PBC fix but is
+  unmerged. Do not staff until collocate-pbc merges.
 - [!] `cuda-gpw-multigrid-si-gate` | **blocked** on parent
   `multigrid-si-energy-path`. Prior tip `fe048ad7` dropped.
 
