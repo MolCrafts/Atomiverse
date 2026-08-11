@@ -62,3 +62,12 @@ cmake --build build -j$(nproc) --target atomiverse \
 ctest --test-dir build -R '^test_cuda_gpw_full_product$' --output-on-failure
 cmake --build build --target run_reg_cuda-gpw-product-h2o-gate
 ```
+
+## GH200 evidence (authority: SPEC)
+
+| Job | Node | \|dE\| Ha | max\|dF\| Ha/Bohr | Note |
+| --- | --- | ---: | ---: | --- |
+| **1130195** | n46 | **7.526e−07** | **3.213e−06** | Assign wave-5 base `7f8da1f0` |
+| 1130140 | n193 | 7.526e−07 | 3.213e−06 | Assign wave-4 base |
+
+`acceptance_met=true` — both SCF converge; tols held; **perf_exempt**.
