@@ -39,6 +39,24 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 2 (parent `dev` @ `cfb246d1`):** 1 of 1 staffed
+  → done [x]: `cuda-gpw-product-collocate-pbc` (merge `cfb246d1` / feat
+  `5648608f`; GH200 **1173564** edge rel=**5.2e-14** H₂ \|dE\|=**1.252e-08**
+  product-si \|dE\|=**3.504e-05**; **1177100** full-product \|dE\|=**1.252e-08**
+  max\|dF\|=**3.181e-06**; prior **1171568**; sphere-window PBC collocate/
+  integrate + SG device pack→`KsChain`→scatter; mid-path P D2H closed;
+  skills: choose-launch-configuration, optimize-global-memory-access,
+  handle-boundary-conditions, av-perf; **perf_exempt**). Keep other `[~]`:
+  **none** (only staffed slug this wave). Spec closed (deleted
+  `.claude/specs/cuda-gpw-product-collocate-pbc/`). Roadmap prose: PBC
+  collocate + SG device KS landed (table CUDA GPW remains **◐** — Si MG
+  energy path + payload/cold-start + multi-k χ/orth/vnl/h0 + production
+  matrix open — no ○→✓). `multigrid-si-energy-path` **unblocked**.
+  GapCensus wave 21 residual held; **cpu_pending=0**; **new_slugs_added=0**
+  this harness. **pending_count=133**; **cuda_pending=133**;
+  **in_progress=0**; **gaps_remaining=134**. Clearup already ran. Queue
+  **not** exhausted (GapCensus owns discovery). No push.
+
 - **2026-08-11 Worktrees wave 5 (parent `dev` @ `1946a983`):** Staffed
   **`cuda-gpw-product-si-gate`** on `wf/cuda-gpw-product-si-gate` @ **`85d4ce33`**
   (feat `fea102a7`…`a30c675d`). Lever: (1) Γ Vnl `add_nonlocal_kb_k@κ=0` replaces

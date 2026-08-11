@@ -8,40 +8,44 @@ Rewrite in place each harness wave.
   `.grok/workflows/es-cpu-cuda-opt.rhai` — iron laws + kernel skills +
   residency staff order + acceptance gate (grep mid-path DH).
 - **Law:** [.claude/notes/cuda-only-no-dh.md](../../.claude/notes/cuda-only-no-dh.md)
-- **GapCensus wave 20** on `dev` @ `1662f768`: pending **133** / in_progress **1**
-  / gaps **135**; **cpu_pending=0**; **new_slugs_added=0**.
+- **Harness wave 2** on `dev` @ `cfb246d1`: pending **133** / in_progress **0**
+  / gaps **134**; **cpu_pending=0**; **new_slugs_added=0**.
 - **Residency P0:** Γ RKS / UKS / multi-k mid-SCF landed (`5a5076d0` + force
   stream `61b91971`). GH200 residency dual-gates **1158949** — queue marks
   `device-h-assemble` / `uks-h-assemble` / `uks-p-residency` /
   `kpoint-p-residency` / `kpoint-device-energy` / `force-stream` **done**.
 - **Si product gate:** **landed** on `dev` (`a158848f`). GH200 **1167099**
-  Si Γ ngrids=1 \|dE\|=**2.130e-08** Ha; H2/water hold.
-- **Staffed:** `product-collocate-pbc` `[~]` only (no `wf/*`).
+  Si Γ ngrids=1 \|dE\|=**2.130e-08** Ha; post-collocate-pbc hold **1173564**
+  \|dE\|=**3.504e-05** Ha.
+- **PBC collocate + SG device KS:** **landed** merge `cfb246d1` / feat
+  `5648608f`. GH200 **1173564** / **1177100**.
+- **Staffed:** none (`[~]` empty).
 
-## Landed this serial clearup
+## Landed this harness
 
 | Item | Evidence |
 | --- | --- |
-| `cuda-gpw-product-si-gate` | merge `a158848f`; KB Vnl via `add_nonlocal_kb_k`@Γ + SG host **CompactBasisGrid** KS twin (CPU ngrids=1 path) |
-| residency P0 + force-stream (queue re-diff) | `5a5076d0` / `61b91971` / GH200 **1158949** |
-| Worktrees / `wf/cuda-gpw-*` residual tips | **none** — product-si merged+deleted; multigrid-si-{energy-path,gate} **dropped** (blocked) |
+| `cuda-gpw-product-collocate-pbc` | merge `cfb246d1` / feat `5648608f`; sphere-window PBC collocate/integrate + SG pack→`KsChain`→scatter; GH200 **1173564** edge rel=**5.2e-14** H₂ \|dE\|=**1.252e-08** product-si \|dE\|=**3.504e-05**; **1177100** full-product hold; skills: choose-launch-configuration, optimize-global-memory-access, handle-boundary-conditions, av-perf |
+| prior product-si + residency P0 | `a158848f` / **1167099**; `5a5076d0` / `61b91971` / **1158949** |
 
 ## Residual (do not soft-land)
 
 | Slug | Status |
 | --- | --- |
-| `product-collocate-pbc` | **`[~]` staffed** — restore device continuous product collocate with collint PBC wrap; remove SG mid-SCF host cbg hybrid (iron-law debt) |
-| `multigrid-si-energy-path` | **blocked** on product-collocate-pbc (+ re-gate after H0/KB on base). Prior research tip deleted; first-iter charge ~0.5 on continuous MG without wrap |
-| `multigrid-si-gate` | **blocked** parent energy-path |
+| `multigrid-si-energy-path` | **unblocked** — staff next (PBC collocate + H0/KB on base) |
+| `multigrid-si-gate` | **blocked** on parent energy-path |
+| `device-payload` / `uks-payload-device` / `device-cold-start` | open (Γ host re-diag / cold densify) |
+| multi-k χ / orth / vnl / h0 / payload / cold-start | open |
 | force free-fn | host AO Pulay residual (P1); stream **landed** |
+| stress free-fn | full host |
 
-## Stated hybrid (product-si)
+## Stated hybrid residual
 
-Single-grid `cuda::gpw::GpwDft` mid-SCF currently uses **host** `collocate_density` /
-`ks_grid_build_rks` / `integrate_potential` on CompactBasisGrid (CPU twin), with
-P/V boundary copies per iter. Device DIIS/eigen + \(H=H_0+V\) retained.
-**Not** CUDA-only mid-path — staff `product-collocate-pbc` next; do not open more
-energy dual-gates that rely on this hybrid.
+Single-grid `cuda::gpw::GpwDft` mid-SCF is **device** product KS with
+sphere-window PBC collocate/integrate (iron-law P0 SG closed). CompactBasisGrid
+retained **force-only** / payload boundary. Remaining hybrid: host Γ STVnl,
+final payload host re-diag, cold-start densify, multi-k χ·orth·vnl·h0,
+host AO Pulay forces, full-host stress.
 
 ## Launch
 
@@ -53,7 +57,7 @@ args: {
   "max_waves": 4,
   "do_perf": false,
   "target_branch": "dev",
-  "theme": "product-collocate-pbc (device continuous + PBC wrap); then multigrid-si-energy-path; drop SG host cbg hybrid"
+  "theme": "multigrid-si-energy-path (Si ngrids>1 after PBC collocate); then multigrid-si-gate / device-payload"
 }
 agent_budget: 256
 ```

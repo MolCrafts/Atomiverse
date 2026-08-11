@@ -488,16 +488,17 @@ Two periodic DFT engines exist, with disjoint strengths:
   host fixed-\(P\)** **1128195** H₂ dual-gate; water Γ RKS **E+F** dual-gate
   **1130195**). On base also: **Si Γ ngrids=1 product-si-gate** (**1167099**),
   **device H assemble / UKS+multi-k P residency / multi-k device e_kin/e_nl /
-  force-stream** (**1158949**). Depth residual on es-cpu-cuda queue (**P0**
-  `product-collocate-pbc` on base — SG host cbg hybrid; tip claimed **1171568**
-  unmerged; Si MG blocked until base merge; water σ + water×PBE E+F/σ; Γ
-  **device-payload / uks-payload-device / device-cold-start**; multi-k
-  **payload/cold-start/χ/orth/vnl/h0** + Si/water multi-k E+F/σ + multi-k×PBE;
-  MG production water/Si F/σ + Si MG×PBE; UKS F/σ + UKS-PBE + O₂ joints;
-  AO-Pulay / device-stress / handoffs; Γ device-STVnl + product-residency) —
-  table CUDA for full GPW remains **◐** not ✓ (no ○→✓ while product depth
-  incomplete). Stage units under `cuda/gpw/internal/`; multi-path DIIS CPU
-  Driver + public-shape freeze **green**.
+  force-stream** (**1158949**), **sphere-window PBC product collocate + SG
+  device product KS** (`product-collocate-pbc` **1173564**/`cfb246d1`). Depth
+  residual on es-cpu-cuda queue (**`multigrid-si-energy-path` unblocked**; water
+  σ + water×PBE E+F/σ; Γ **device-payload / uks-payload-device /
+  device-cold-start**; multi-k **payload/cold-start/χ/orth/vnl/h0** +
+  Si/water multi-k E+F/σ + multi-k×PBE; MG production water/Si F/σ + Si MG×PBE;
+  UKS F/σ + UKS-PBE + O₂ joints; AO-Pulay / device-stress / handoffs; Γ
+  device-STVnl + product-residency) — table CUDA for full GPW remains **◐**
+  not ✓ (no ○→✓ while product depth incomplete). Stage units under
+  `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape freeze
+  **green**.
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
   **multi-path DIIS** (Γ RKS/UKS + multi-k RKS/UKS landed; OT free-loop
   residual is same-capability follow-on, not a new slug). `cpu::pw::PW` is
