@@ -76,7 +76,7 @@ held; **wave 8 opens** **Si** MG F/σ (`multigrid-si-forces` /
 `multigrid-si-stress`) + Si MG×PBE energy (`multigrid-si-pbe-gate`) —
 water MG F/σ alone leaves MP-class Si multi-level F/σ ungated; MG PADE
 production ≠ MG×PBE production. (4) Mid-SCF re-H2Ds full `DeviceProduct`
-packs → `device-product-residency` after staffed `device-weight-pack`.
+packs → `device-product-residency` after **landed** `device-weight-pack`.
 (5) UKS free-fn F **reject**; stress free-fn host fixed-\(P\); O₂ PADE
 energy green → `uks-forces` / `uks-o2-forces` / `uks-stress` /
 `uks-o2-stress` held. (6) **UKS-PBE** product still Padé-only (`run_uks`
@@ -85,15 +85,14 @@ production O₂ UKS-PBE **F/σ** (`uks-o2-pbe-forces` / `uks-o2-pbe-stress`)
 — H₂/O₂ energy gates alone leave production spin-GGA F/σ ungated.
 (7) Water Γ RKS **E+F** dual-gate green (`product-h2o-gate`); residual
 water **σ** + water×PBE energy held; **wave 8 opens** water×PBE **F/σ**
-(`product-h2o-pbe-forces` / `product-h2o-pbe-stress`). (8) Staffed `[~]`
-tips now **have feat commits** (not on base): `uks-device-diis`
-`549d2abe` GH200 **1130279**; `device-weight-pack` `94256cf0` GH200
-**1130344**; `smear-forces` `bafa9c3f` GH200 **1130359** — keep `[~]`;
-Merge owns land; do **not** re-assign. Residual after tips: host STVnl +
-`device-product-residency` + force hybrid depth. (9) PW: spin LSDA forces
-**on base**; residual spin-stress / spin-PBE F/σ / smear F/σ (staffed tip)
-/ spin∧smear / multi-k F/σ + multi-k PBE / **spin×kmesh×smear** held.
-**No new method domains.** Queue **not** exhausted.
+(`product-h2o-pbe-forces` / `product-h2o-pbe-stress`). (8) Harness wave 2 lands `uks-device-diis` + `device-weight-pack` on
+base (feat `6df76cf7` / merge `4ad9a172` + re-verify **1130402**; weight-pack
+merge `ce0a0c6f` / feat `94256cf0` GH200 **1130344**). Keep `[~]` only
+`smear-forces` tip `bafa9c3f` GH200 **1130359** (unmerged). Residual after
+lands: host STVnl + `device-product-residency` + force hybrid depth. (9) PW:
+spin LSDA forces **on base**; residual spin-stress / spin-PBE F/σ / smear
+F/σ (staffed tip) / spin∧smear / multi-k F/σ + multi-k PBE /
+**spin×kmesh×smear** held. **No new method domains.** Queue **not** exhausted.
 
 **GapCensus wave 7 on `dev` @ `c149a80a` / `31405991`:** production multi-k/MG
 F/σ residual + close `product-h2o-forces` — **held**; detail in git
@@ -110,8 +109,8 @@ leave **production multi-k ×PBE** open → **`kpoint-si-pbe-gate` /
 energy → **`multigrid-si-pbe-gate`** (new); (8) UKS-PBE O₂ energy alone
 leaves production spin-GGA F/σ open → **`uks-o2-pbe-forces` /
 `uks-o2-pbe-stress`** (new); (9) water×PBE energy alone leaves F/σ open →
-**`product-h2o-pbe-forces` / `product-h2o-pbe-stress`** (new); (10) staffed
-spine `[~]` feat tips (GH200 evidence) still unmerged; (11) hybrid free-fn
+**`product-h2o-pbe-forces` / `product-h2o-pbe-stress`** (new); (10) staffed spine residual `[~]` **smear-forces** only (uks-diis +
+weight-pack **landed** harness wave 2); (11) hybrid free-fn
 + path×PBE + 4-way + PW spin×kmesh×smear. Do **not** invent
 hybrid/GAPW/PAW/meta-GGA; OT/MT/vdW/metallic-GPW stay same-capability
 follow-on. **No gpw-perf-queue promote**.
@@ -130,24 +129,22 @@ follow-on. **No gpw-perf-queue promote**.
 | Water product dual-gate | **landed** FF `30bb49b4` / feat `9124615d` — GH200 **1130195** \|dE\|=**7.5e-7** max\|dF\|=**3.2e-6** (**E+F**; σ separate) |
 | Multi-k RKS DIIS energy | **landed** merge `adc7c7d7` / feat `b2778a83` — GH200 **1130141** \|dE\|=**3.375e-14** (H₂ k=2×1×1; host residual spine) |
 | Collinear LSDA spin forces | **landed** merge `ab7a95e1` / feat `44995ff6` — GH200 **1130196** max\|ΔF\|=**9.25e-13** eV/Å |
-| Product hybrid (base) | host STVnl + weight pack + scatter; **device** RKS DIIS/eigen + product KS (RKS+UKS+MG; non-default stream); multi-k **host** χ^k + device ρ→V_eff; UKS host dual GpwDiis; forces hybrid + H2D handoff; stress host assembly (multi-k stress reject only) |
-| Fail-closed (base) | OT / MT / non-PADE-PBE / `local_pp_on_grid=false`; multi-k UKS / multi-k MG; UKS free-fn F; multi-k free-fn F; MG free-fn F; multi-k stress; UKS still host dual GpwDiis; `run_uks` Padé only |
-| Claimed-but-ungated | multi-k H₂ → Si/water energy + F/σ + **Si/water multi-k×PBE**; MG H₂ → Si/water energy + **water/Si MG F/σ** + **Si MG×PBE**; **uks-device-diis** / **device-weight-pack** / **device-product-residency** / **kpoint-device-*** / **uks-o2-forces/stress** / **uks-o2-pbe-gate** + **uks-o2-pbe F/σ** / device STVnl/AO-Pulay/**stress**/handoffs/force-stream; water **σ** + water×PBE **E+F/σ**; path×PBE + 4-way; PW multi-k PBE + spin-stress + smear F/σ + **spin×kmesh×smear** |
+| Product hybrid (base) | host STVnl; **device** RKS/UKS DIIS/eigen (`AoDiisEigenDevice` dual-spin UKS) + **device** weight pack/scatter (`ProductWeightPackDevice`) + product KS (RKS+UKS+MG; non-default stream); multi-k **host** χ^k + device ρ→V_eff; forces hybrid + H2D handoff; stress host assembly (multi-k stress reject only) |
+| Fail-closed (base) | OT / MT / non-PADE-PBE / `local_pp_on_grid=false`; multi-k UKS / multi-k MG; UKS free-fn F; multi-k free-fn F; MG free-fn F; multi-k stress; `run_uks` Padé only |
+| Claimed-but-ungated | multi-k H₂ → Si/water energy + F/σ + **Si/water multi-k×PBE**; MG H₂ → Si/water energy + **water/Si MG F/σ** + **Si MG×PBE**; **device-product-residency** / **kpoint-device-*** / **uks-o2-forces/stress** / **uks-o2-pbe-gate** + **uks-o2-pbe F/σ** / device STVnl/AO-Pulay/**stress**/handoffs/force-stream; water **σ** + water×PBE **E+F/σ**; path×PBE + 4-way; PW multi-k PBE + spin-stress + smear F/σ + **spin×kmesh×smear** |
 | Closed-shell PW stress | **LSDA + PBE** dual-gate **landed** (Γ-class coverage; multi-k F/σ + multi-k PBE energy open) |
 | Collinear spin-PBE energy | **landed** merge `118d3003` / GH200 **1124645** (Γ dual-gate only) |
-| Staffed tips (not base) | Assign wave 6 `[~]` **feat tips**: `uks-device-diis` `549d2abe` GH200 **1130279**; `device-weight-pack` `94256cf0` GH200 **1130344**; `smear-forces` `bafa9c3f` GH200 **1130359** — unmerged |
+| Staffed tips (not base) | Assign wave 6 residual `[~]`: `smear-forces` `bafa9c3f` GH200 **1130359** — unmerged; **landed** `uks-device-diis` + `device-weight-pack` (harness wave 2) |
 
-**Counts (post GapCensus wave 8):** **pending_count=105**; **in_progress=3**
-(`uks-device-diis` + `device-weight-pack` + `smear-forces`);
-**cpu_pending=0**; **cuda_pending=108** (pending + in_progress);
-**gaps_remaining=109** (pending + in_progress + blocked MG fair-wall
+**Counts (post harness wave 2 land of uks-device-diis + device-weight-pack):**
+**pending_count=105**; **in_progress=1** (`smear-forces`);
+**cpu_pending=0**; **cuda_pending=106** (pending + in_progress);
+**gaps_remaining=107** (pending + in_progress + blocked MG fair-wall
 `mg-main-structural`). Queue **not** exhausted.
-**new_slugs_added=9** this GapCensus wave 8 (`kpoint-si-pbe-gate` +
-`kpoint-h2o-pbe-gate` + `multigrid-si-forces` + `multigrid-si-stress` +
-`multigrid-si-pbe-gate` + `uks-o2-pbe-forces` + `uks-o2-pbe-stress` +
-`product-h2o-pbe-forces` + `product-h2o-pbe-stress`).
-**Assign wave 6 staff still live** (feat tips green — Merge owns land) —
-do not re-assign until Worktrees returns.
+**new_slugs_added=9** this GapCensus wave 8 (unchanged discovery set).
+**Assign wave 6 residual:** keep `[~]` `smear-forces` only — do **not**
+re-assign; Merge owns land when tip green on base.
+**Landed this harness:** `cuda-gpw-uks-device-diis` + `cuda-gpw-device-weight-pack`.
 
 ### CUDA — GPW product depth (product on base — staff depth)
 
@@ -157,13 +154,21 @@ method=cuda throughout. Product is **on base** — staff depth into public
 **Compose / path lifts (held + re-ranked + wave-5 joint paths):**
 
 `cuda-gpw-device-collocate` **landed** (merge `69296751` / GH200 **1125709**)
-— mid-SCF device product collocate/integrate on base; residual host weight
-pack + D2H acc → deeper pack/`device-stvnl`; DIIS/eigen → **landed**.
+— mid-SCF device product collocate/integrate on base; weight pack + DIIS/eigen
+**landed**; residual host STVnl → `device-stvnl`; pack re-H2D →
+`device-product-residency`.
 
 `cuda-gpw-device-diis-eigen` **landed** (merge `e164b767` / GH200 **1129719**)
-— RKS mid-SCF Pulay DIIS + cuSOLVER eigen via `AoDiisEigenDevice`; residual
-host weight pack + scatter + STVnl; UKS host dual GpwDiis →
-**`uks-device-diis`** + **`device-weight-pack`** + `device-stvnl` child rows.
+— RKS mid-SCF Pulay DIIS + cuSOLVER eigen via `AoDiisEigenDevice`.
+
+`cuda-gpw-uks-device-diis` **landed** (feat `6df76cf7` / merge `4ad9a172` /
+re-verify GH200 **1130402** / tip **1130279**) — dual `AoDiisEigenDevice`
+on Γ UKS product; residual UKS F/σ + UKS-PBE stay child rows.
+
+`cuda-gpw-device-weight-pack` **landed** (merge `ce0a0c6f` / feat `94256cf0`
+/ GH200 **1130344**) — mid-SCF device P→weight + acc→V scatter; residual
+host STVnl → `device-stvnl`; geometry pack re-H2D residual →
+`device-product-residency`.
 
 `cuda-gpw-multigrid-run` **landed** (feat `2d780cff` / GH200 **1126433**) —
 product `ngrids>1` energy via `KsMultiGridChainDevice`; residual MG F/σ +
@@ -171,10 +176,8 @@ MG×PBE / multi-k MG → child rows.
 
 `cuda-gpw-uks-gamma` **landed** (feat `f679807c` / GH200 **1126430**) — Γ
 UKS DIIS PADE energy via `KsChainDevice::run_uks`; residual UKS F/σ +
-UKS-PBE + joint paths → child rows; UKS **host** DIIS residual →
-`uks-device-diis` (wave 3).
-
-
+UKS-PBE + joint paths → child rows; UKS device DIIS **landed** (harness
+wave 2).
 
 - [ ] `cuda-gpw-uks-forces` | **P3** Analytic free-fn forces under Γ UKS
   product after `uks-gamma` energy (energy slug does not own forces; base
@@ -271,24 +274,7 @@ UKS-PBE + joint paths → child rows; UKS **host** DIIS residual →
   S/T/Vnl + orth upload once (or device orth); compose not a lone foothold
   kernel campaign. Does **not** own mid-SCF collocate/DIIS; mid-SCF pack is
   `device-weight-pack` (wave 3).
-- [~] `cuda-gpw-uks-device-diis` | **P2** **new (wave 3)** — Γ UKS product still
-  runs **host dual** `cpu::gpw::internal::GpwDiis` + host eigen after RKS
-  `AoDiisEigenDevice` landed (`gpw_solver.cu` UKS branch — foothold energy ≠
-  device SCF spine). Track: **cuda**. Twin: same-settings CPU Γ UKS PADE
-  energy dual-gate (H₂/O₂ class). Gate: GH200 after `device-diis-eigen` +
-  `uks-gamma` / `uks-o2-gate`; stated energy tol; **perf_exempt** small cell.
-  Lever: dual-spin device Pulay DIIS + cuSOLVER eigen compose
-  `AoDiisEigenDevice` pattern on product UKS path; not forces/stress/PBE in
-  this slug (those stay child rows).
-- [~] `cuda-gpw-device-weight-pack` | **P2** **new (wave 3)** — Mid-SCF every
-  iter still host `product_density_weight` + H2D `DeviceProduct` pack + D2H
-  integrate acc + host `scatter_product_acc` + `download_P` after device DIIS
-  (`build_H_and_energy` in `gpw_solver.cu` — distinct from one-shot STVnl).
-  Track: **cuda**. Twin: same-settings CPU Γ RKS energy dual-gate. Gate:
-  GH200 after `device-diis-eigen`; stated energy tol; **perf_exempt**. Lever:
-  device P→weight (+ dual-spin for UKS path) and/or device acc→V_AO scatter
-  keeping P resident; compose not a lone foothold campaign. Does **not** own
-  STVnl setup (`device-stvnl`) or DIIS/eigen.
+
 - [ ] `cuda-gpw-device-product-residency` | **P3** **new (wave 5)** — Mid-SCF
   still re-H2Ds full `DeviceProduct` packs every iter while product geometry
   is fixed for the run (only density weights change — residual after
@@ -681,7 +667,6 @@ Reject matrix re-confirmed on `dev` @ `e13cdb91` (method=cuda throughout):
 
 **Collinear spin axis** (LSDA + **spin-PBE energy** landed; derivatives open):
 
-
 - [ ] `cuda-pw-spin-pbe-forces` | **P3** Analytic ionic forces under collinear
   **spin-PBE** (energy parent **landed** `cuda-pw-spin-pbe`; LSDA spin-forces
   alone leaves GGA force depth open). Track: **cuda**. Twin: CPU spin-PBE
@@ -895,39 +880,39 @@ twins). No further CPU polish staffed here without a pin-safe wall lever.
 
 ### CUDA — corresponding ES (open-gate readiness × user value)
 
-**Tree fact on `dev` @ `31405991`:** stage units + PW landings + public
-`cuda::gpw::GpwDft` + device mid-SCF collocate/integrate + multigrid energy
-+ Γ UKS PADE energy (+ O₂ gate) + device grid forces + **product stress** +
-**product non-default stream** + **device mid-SCF RKS DIIS/eigen** +
-**water Γ RKS E+F dual-gate** + **multi-k RKS DIIS energy (H₂ foothold)** +
-closed-shell PW PBE stress + collinear spin-PBE energy + **collinear LSDA
-spin forces** **on base**. No feat land on base after opt-3. `gpw_solver.cu`:
-device KS chain + MG on owned stream + **`AoDiisEigenDevice`** (RKS only);
-host weight pack + D2H acc scatter + `build_STVpp`; UKS host dual `GpwDiis`;
-multi-k branch host χ^k collocate/integrate + H2D ρ + `run_from_rho` + host
-`KDiis` + phased STVnl; free-fn forces hybrid (host AO Pulay + device grid
-HF; **default-stream blocking packs** + **H2D re-upload** after SCF
-store_grids); stress free-fn = **full host** fixed-\(P\) (reject multi-k
-only); `run_uks` Padé LSD only; multi-k UKS / multi-k MG / UKS+MG / free-fn
-UKS F / multi-k F / MG F reject. PW: spin∧PBE energy OK; **spin LSDA forces
-OK**; stress reject spin/smear; smear forces reject on base; spin dual-gates
-Γ-only; closed-shell F dual-gate `k_mesh=1`; multi-k PBE energy dual-gate
-missing; spin×kmesh×smear joint open. **Staff `[~]` Assign wave 6 (feat
-tips, unmerged):** `uks-device-diis` **1130279** + `device-weight-pack`
-**1130344** + `smear-forces` **1130359**.
+**Tree fact on `dev` @ harness wave 2 (`ce0a0c6f`):** stage units + PW
+landings + public `cuda::gpw::GpwDft` + device mid-SCF collocate/integrate +
+multigrid energy + Γ UKS PADE energy (+ O₂ gate) + device grid forces +
+**product stress** + **product non-default stream** + **device mid-SCF RKS
+DIIS/eigen** + **device mid-SCF dual UKS DIIS/eigen** + **device weight pack
+/ scatter** + **water Γ RKS E+F dual-gate** + **multi-k RKS DIIS energy (H₂
+foothold)** + closed-shell PW PBE stress + collinear spin-PBE energy +
+**collinear LSDA spin forces** **on base**. `gpw_solver.cu`: device KS chain
++ MG on owned stream + **`AoDiisEigenDevice`** (RKS + dual-spin UKS) +
+**`ProductWeightPackDevice`**; residual host `build_STVpp`; multi-k branch
+host χ^k collocate/integrate + H2D ρ + `run_from_rho` + host `KDiis` +
+phased STVnl; free-fn forces hybrid (host AO Pulay + device grid HF;
+**default-stream blocking packs** + **H2D re-upload** after SCF store_grids);
+stress free-fn = **full host** fixed-\(P\) (reject multi-k only); `run_uks`
+Padé LSD only; multi-k UKS / multi-k MG / UKS+MG / free-fn UKS F / multi-k
+F / MG F reject. PW: spin∧PBE energy OK; **spin LSDA forces OK**; stress
+reject spin/smear; smear forces reject on base; spin dual-gates Γ-only;
+closed-shell F dual-gate `k_mesh=1`; multi-k PBE energy dual-gate missing;
+spin×kmesh×smear joint open. **Staff `[~]` residual:** `smear-forces`
+**1130359** only.
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
 | RHF s/p energy + forces + level_shift + path-select + device CDIIS + **non-default stream D2H** | **landed** | higher-L host-fill remains (out of product scope) |
 | Γ GPW stage units (Poisson/FFT + Padé LDA + product collocate/integrate + `KsChainDevice` LDA/PBE + `KsMultiGridChainDevice`) | **landed** | stage ≠ full product depth |
-| Public `cuda::gpw::GpwDft` + device collocate + MG energy + Γ UKS + device forces + stress + non-default stream + **device RKS DIIS/eigen** + **water E+F dual-gate** + **multi-k energy (H₂)** (Γ RKS DIIS PADE/PBE; host STVnl + weight pack; hybrid F/σ free-fns; multi-k host residual spine) | **landed** (through opt-3: h2o **1130195**, kpoints **1130141**, spin-forces **1130196**; diis-eigen **1129719**) | **pending:** **`kpoint-device-*` + `kpoint-si/h2o-gate` + water/Si multi-k F/σ + multi-k×PBE production**, **`multigrid-si/h2o-gate` + water/Si MG F/σ + Si MG×PBE**, **`uks-device-diis` + `device-weight-pack` + `device-product-residency`**, **`uks-o2-forces/stress` + `uks-o2-pbe-gate` + O₂ UKS-PBE F/σ**, **force-stream + handoffs + AO-Pulay + device-stress**, **water σ + water×PBE E+F/σ**, **PBE F/σ + MG/UKS F/σ + joints + 4-way**, **device STVnl** |
+| Public `cuda::gpw::GpwDft` + device collocate + MG energy + Γ UKS + device forces + stress + non-default stream + **device RKS+UKS DIIS/eigen** + **device weight pack** + **water E+F dual-gate** + **multi-k energy (H₂)** (Γ RKS/UKS DIIS PADE; host STVnl residual; hybrid F/σ free-fns; multi-k host residual spine) | **landed** (through harness wave 2: uks-diis **1130402**/`6df76cf7`; weight-pack **1130344**/`ce0a0c6f`; prior h2o **1130195**, kpoints **1130141**, spin-forces **1130196**; diis-eigen **1129719**) | **pending:** **`kpoint-device-*` + `kpoint-si/h2o-gate` + water/Si multi-k F/σ + multi-k×PBE production**, **`multigrid-si/h2o-gate` + water/Si MG F/σ + Si MG×PBE**, **`device-product-residency`**, **`uks-o2-forces/stress` + `uks-o2-pbe-gate` + O₂ UKS-PBE F/σ**, **force-stream + handoffs + AO-Pulay + device-stress**, **water σ + water×PBE E+F/σ**, **PBE F/σ + MG/UKS F/σ + joints + 4-way**, **device STVnl** |
 | `cuda::pw::PW` LSDA + PBE + residency + stream + large-cell + forces (LSDA+PBE Γ) + stress (LSDA+PBE) + collinear LSDA + spin-PBE energy + **spin LSDA forces** + restricted metallic smear energy | **landed** | **pending:** multi-k F/σ + **multi-k PBE energy** (+ multi-k PBE F/σ); smear F/σ (tip **1130359**) + smear-PBE; spin-stress + spin-PBE F/σ / spin multi-k (+ spin-kmesh-PBE F/σ) / spin+smear (+ spin-smear-pbe F/σ) / **spin×kmesh×smear** (+ PBE F/σ) |
 
-**Staff order:** (1) Merge Assign wave 6 P2 product lifts — `uks-device-diis`
-+ `device-weight-pack` + PW `smear-forces` (staffed `[~]` **feat tips**);
-(2) remaining **P2** PW (`smear-stress` / `smear-pbe` / `spin-stress` /
-`spin-smear` / `spin-kmesh` / `kmesh-forces` / `kmesh-stress` /
-**`kmesh-pbe`**); (3) multi-k device spine + production energy gates
+**Staff order:** (1) Finish Assign wave 6 residual — PW `smear-forces`
+(staffed `[~]` feat tip; uks-diis + weight-pack **landed**); (2) remaining
+**P2** PW (`smear-stress` / `smear-pbe` / `spin-stress` / `spin-smear` /
+`spin-kmesh` / `kmesh-forces` / `kmesh-stress` / **`kmesh-pbe`**); (3)
+multi-k device spine + production energy gates
 (`kpoint-si/h2o-gate`, `multigrid-si/h2o-gate`) then **production multi-k/MG
 F/σ** + **production multi-k/MG×PBE** + **water×PBE F/σ** +
 **O₂ UKS-PBE F/σ** + hybrid free-fn depth + joints + **4-way** + PW
@@ -939,12 +924,12 @@ follow-on.
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
 
-**Assign wave 6 (parent `dev` @ `d03327a8`):** capacity **3/3** free after
-opt-3 land → **NEW×3** (theme: real product spine lifts, not dual-gate
-matrix). Staff: `cuda-gpw-uks-device-diis`, `cuda-gpw-device-weight-pack`,
-`cuda-pw-smear-forces`. Held next free-slot: multi-k device collocate /
-integrate, spin-stress, product-h2o-forces. Do **not** re-staff landed
-collocate/MG/UKS/PBE/forces/stress/stream/DIIS-eigen/h2o/kpoints/spin-forces.
+**Assign wave 6 residual (post harness wave 2):** capacity **1/3** live —
+keep `[~]` `cuda-pw-smear-forces` only. **Landed:** `cuda-gpw-uks-device-diis`
++ `cuda-gpw-device-weight-pack`. Held next free-slot: multi-k device
+collocate / integrate, spin-stress, `device-product-residency`. Do **not**
+re-staff landed collocate/MG/UKS/PBE/forces/stress/stream/DIIS-eigen/h2o/
+kpoints/spin-forces/uks-device-diis/weight-pack.
 
 *Not pending this loop:*
 
@@ -972,22 +957,19 @@ collocate/MG/UKS/PBE/forces/stress/stream/DIIS-eigen/h2o/kpoints/spin-forces.
 **`cuda-gpw-uks-gamma`**, **`cuda-gpw-device-forces`**,
 **`cuda-gpw-pbe-product-gate`**, **`cuda-gpw-uks-o2-gate`**,
 **`cuda-gpw-stress`**, **`cuda-gpw-nondefault-stream`**,
-**`cuda-gpw-device-diis-eigen`**, **`cuda-gpw-product-h2o-gate`**, **`cuda-gpw-kpoints`**, **`cuda-pw-spin-forces`**.
+**`cuda-gpw-device-diis-eigen`**, **`cuda-gpw-uks-device-diis`**, **`cuda-gpw-device-weight-pack`**, **`cuda-gpw-product-h2o-gate`**, **`cuda-gpw-kpoints`**, **`cuda-pw-spin-forces`**.
 
 ## in_progress
 
-Assign wave 6 (parent `dev` @ `d03327a8`; still live after GapCensus wave 8)
-— capacity 3/3; **feat tips green, unmerged** (Merge owns land):
+Assign wave 6 residual (post harness wave 2 land of uks-device-diis +
+device-weight-pack) — capacity **1/3** live; **feat tip green, unmerged**
+(Merge owns land):
 
 | slug | track | tip branch | tip SHA / GH200 |
 | --- | --- | --- | --- |
-| `cuda-gpw-uks-device-diis` | cuda | `wf/cuda-gpw-uks-device-diis` | `549d2abe` / **1130279** \|dE\|=**4.760e-6** Ha |
-| `cuda-gpw-device-weight-pack` | cuda | `wf/cuda-gpw-device-weight-pack` | `94256cf0` / **1130344** \|dE\|=**1.616e-7** Ha |
 | `cuda-pw-smear-forces` | cuda | `wf/cuda-pw-smear-forces` | `bafa9c3f` / **1130359** max\|ΔF\|=**1.36e-11** eV/Å |
 
-Rows marked `[~]` in `## pending` above; do **not** re-assign.
-
-
+Row marked `[~]` in `## pending` above; do **not** re-assign.
 
 ## blocked
 
@@ -998,6 +980,12 @@ Rows marked `[~]` in `## pending` above; do **not** re-assign.
 
 ## done
 
+Harness wave 2 land 2026-08-11 (`dev` @ `ce0a0c6f` after uks-diis + weight-pack):
+
+- [x] `cuda-gpw-uks-device-diis` | **P2** Dual `AoDiisEigenDevice` mid-SCF Pulay DIIS + cuSOLVER eigen on Γ UKS product (α/β channels, `occ_factor=1`; no ascent DIIS reset) | track cuda | twin: H₂ high-spin Γ UKS PADE energy dual-gate + `reg_cuda-gpw-uks-device-diis` + unit UKS channel | files: `gpw_solver.{cu,cuh}`, `ao_diis_eigen.{cu,cuh}`, unit, reg, REFERENCE | feat: `6df76cf7` / merge `4ad9a172` + re-verify `8919faae` | evidence: GH200 **1130279** / re-verify **1130402** |dE|=**4.760e-06** Ha (tol 5e-6); **perf_exempt** small cell; residual UKS F/σ + UKS-PBE → child rows |
+- [x] `cuda-gpw-device-weight-pack` | **P2** Mid-SCF device P→`DeviceProduct.weight` + acc→V_AO scatter (`ProductWeightPackDevice`); geometry meta/prims once; RKS P resident under DIIS | track cuda | twin: H₂ Γ RKS PADE energy dual-gate + `reg_cuda-gpw-device-weight-pack` + unit weight_pack | files: `product_weight_pack.{cu,cuh}`, `gpw_solver.{cu,cuh}`, unit, reg, REFERENCE | merge: `ce0a0c6f` / feat `94256cf0` | evidence: GH200 **1130344** |dE|=**1.616e-07** Ha (tol 5e-6); units weight_pack + full_product + diis_eigen green; **perf_exempt**; residual host STVnl → `device-stvnl`; pack re-H2D geometry residual → `device-product-residency` |
+
+
 GapCensus wave 7 close (no feat land — dual-gate already met):
 
 - [x] `cuda-gpw-product-h2o-forces` | **P3** Water Γ RKS PADE free-fn force dual-gate — **met by** `product-h2o-gate` reg (GH200 **1130195** max\|dF\|=**3.2e-6** Ha/Bohr; E+F in one gate). Closed wave 7; residual water **σ** stays `product-h2o-stress`; hybrid force depth (stream / AO-Pulay / handoff) stays separate rows
@@ -1007,7 +995,6 @@ Post-opt-3 land 2026-08-11 (`dev` after tip merges):
 - [x] `cuda-gpw-product-h2o-gate` | **P1** Water Γ RKS PADE production dual-gate (**E+F**) | GH200 **1130195** / **1130140** \|dE\|=**7.5e-7** max\|dF\|=**3.2e-6** | FF `30bb49b4` / feat `9124615d`
 - [x] `cuda-gpw-kpoints` | **P2** Multi-k RKS DIIS energy (H₂ k=2×1×1) | GH200 **1130141** \|dE\|=**3.375e-14** | merge `adc7c7d7` / feat `b2778a83` | residual host integrate/DIIS/STVnl
 - [x] `cuda-pw-spin-forces` | **P2** Collinear LSDA spin analytic ionic forces | GH200 **1130196** / **1130145** max\|ΔF\|=**9.25e-13** eV/Å | merge spin-forces / feat `44995ff6`
-
 
 Harness wave 2 land 2026-08-11 (`dev` @ `e164b767`):
 
@@ -1025,7 +1012,6 @@ Post-wave-8 land 2026-08-10/11 (`dev` @ `4f78d716`):
 - [x] `cuda-gpw-device-forces` | **P1** Device grid force product on free-fn forces (host AO Pulay + device HF grid) | GH200 **1127167** max\|ΔF\|=**2.056e-6** Ha/Bohr \|ΔE\|=**1.617e-7** Ha | FF `81b74dec` / feat `d6eee397`
 - [x] `cuda-gpw-pbe-product-gate` | **P1** H₂ Γ RKS **PBE** e2e dual-gate on public GpwDft | GH200 **1127166** \|dE\|=**1.658e-7** max\|dF\|=**5.232e-7** | merge `d38eb0e5` / feat `37c663c2`
 - [x] `cuda-gpw-uks-o2-gate` | **P2** O₂ Γ UKS PADE production dual-gate after H₂ foothold | GH200 **1127173** \|dE\|=**3.52e-6** Ha | merge `4f78d716` / feat `dbb07ad3`
-
 
 Harness wave 7 land 2026-08-10 (`dev` @ `f679807c`):
 

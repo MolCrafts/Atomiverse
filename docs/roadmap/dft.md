@@ -468,19 +468,21 @@ Two periodic DFT engines exist, with disjoint strengths:
   on Si supercells — see es-cpu-cuda queue. **CUDA GPW first product slice
   landed:** public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE + **Γ UKS DIIS
   PADE** + **multigrid energy** + **multi-k RKS DIIS energy H₂ foothold**;
-  host STVnl + weight pack + **device** product collocate/KS/integrate via
+  host STVnl residual + **device** product collocate/KS/integrate via
   `KsChainDevice::run` / `run_uks` + `KsMultiGridChainDevice` on **non-default
   stream** + **device RKS mid-SCF Pulay DIIS + cuSOLVER eigen**
-  (`AoDiisEigenDevice`) — collocate GH200 **1125709**, MG **1126433**, UKS
-  **1126430** / O₂ gate **1127173**, PBE H₂ **1127166**, stream **1128196**,
-  DIIS/eigen **1129719**, multi-k **1130141**; free-fn forces = **host AO
+  (`AoDiisEigenDevice` RKS + **dual-spin UKS**) + **device weight pack**
+  (`ProductWeightPackDevice`) — collocate GH200 **1125709**, MG **1126433**,
+  UKS **1126430** / O₂ gate **1127173**, PBE H₂ **1127166**, stream
+  **1128196**, DIIS/eigen **1129719**, multi-k **1130141**, UKS-DIIS
+  **1130402**, weight-pack **1130344**; free-fn forces = **host AO
   Pulay + device grid HF** **1127167**; free-fn stress = **CUDA density +
   host fixed-\(P\)** **1128195** H₂ dual-gate; water Γ RKS **E+F** dual-gate
   **1130195**). Depth residual on es-cpu-cuda queue (water σ + water×PBE
   E+F/σ, multi-k host residual spine + Si/water multi-k energy + F/σ +
   multi-k×PBE production, MG production + water/Si F/σ + Si MG×PBE, UKS F/σ
   + UKS-PBE + O₂ UKS-PBE F/σ + joints, force-stream / AO-Pulay, device
-  STVnl/weight-pack/UKS-DIIS) — table CUDA for full GPW remains **◐** not ✓
+  STVnl + product-residency) — table CUDA for full GPW remains **◐** not ✓
   (no ○→✓ while product depth incomplete). Stage
   units under `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape
   freeze **green**.

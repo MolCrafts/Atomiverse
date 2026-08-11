@@ -39,6 +39,21 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 2 (parent `dev` @ `ce0a0c6f`):** 2 of 3 staffed
+  → done [x]: `cuda-gpw-uks-device-diis` (feat `6df76cf7` / merge `4ad9a172` +
+  re-verify `8919faae`; GH200 **1130279** / **1130402** \|dE\|=**4.760e-06** Ha
+  H₂ high-spin Γ UKS PADE dual device DIIS; **perf_exempt**) +
+  `cuda-gpw-device-weight-pack` (merge `ce0a0c6f` / feat `94256cf0`; GH200
+  **1130344** \|dE\|=**1.616e-07** Ha H₂ Γ RKS PADE device P→weight +
+  acc→V scatter; **perf_exempt**). Keep other `[~]`: `cuda-pw-smear-forces`
+  tip `bafa9c3f` (GH200 **1130359** max\|ΔF\|=**1.36e-11** eV/Å). Specs closed
+  (deleted `.claude/specs/cuda-gpw-uks-device-diis/`,
+  `.claude/specs/cuda-gpw-device-weight-pack/`). Roadmap prose: UKS device
+  DIIS + weight pack landed (table full GPW remains ◐ — multi-k host residual
+  / F·σ depth / STVnl open — no ○→✓). **cpu_pending=0**; **cuda_pending=106**;
+  **in_progress=1**; **gaps_remaining=107**. Clearup already ran. Queue
+  **not** exhausted (GapCensus owns discovery). No push.
+
 - **2026-08-11 GapCensus wave 8 (parent `dev` @ `31405991`):** Re-diff
   baselines/notes/roadmap/tree vs base after wave-7 queue. Fair walls
   **held** MG MAIN **2.33×**; **cpu_pending=0**. No feat land on base since

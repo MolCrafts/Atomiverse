@@ -52,31 +52,31 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 8)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 harness wave 2)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
 **landed** on `dev` (feat `31d24207`; GH200 **1120817**). Device mid-SCF
 collocate/integrate, MG energy, Γ UKS (+ O₂ gate), device grid forces, PBE H₂
 gate, product stress, product non-default stream, **device RKS DIIS/eigen**,
-**water Γ RKS E+F dual-gate**, **multi-k RKS DIIS energy (H₂)**, **collinear
-LSDA spin forces** **on base** (opt-3 land; queue tip @ `31405991`).
-Multi-k residual on base: host χ^k collocate/integrate + host KDiis + phased
-STVnl. Water free-fn **forces** dual-gated on `product-h2o-gate`; residual
-water **σ**. **Wave 8 opens** production Si MG F/σ + Si/water multi-k×PBE +
-water×PBE F/σ + O₂ UKS-PBE F/σ + Si MG×PBE. Staffed `[~]` **feat tips**
-(unmerged): `uks-device-diis` **1130279** + `device-weight-pack` **1130344**
-+ `smear-forces` **1130359**. Held: multi-k device spine + production energy
-gates + hybrid free-fn + path×PBE + 4-way + PW spin×kmesh×smear.
+**device dual UKS DIIS/eigen**, **device weight pack/scatter**, **water Γ RKS
+E+F dual-gate**, **multi-k RKS DIIS energy (H₂)**, **collinear LSDA spin
+forces** **on base** (harness wave 2 @ `ce0a0c6f`). Multi-k residual on base:
+host χ^k collocate/integrate + host KDiis + phased STVnl. Water free-fn
+**forces** dual-gated on `product-h2o-gate`; residual water **σ**. Wave 8
+production dual-gate residual rows still open. Staffed `[~]` residual:
+`smear-forces` **1130359** only. Held: multi-k device spine + production
+energy gates + `device-product-residency` + hybrid free-fn + path×PBE + 4-way
++ PW spin×kmesh×smear.
 
 | Priority | slug | Goal |
 | --- | --- | --- |
 | P1 | *(closed)* device-forces + pbe-product-gate + stress + stream + h2o-gate (E+F) | on base |
-| P2 | **landed** device-diis-eigen + kpoints + spin-forces; **`[~]` uks-device-diis + device-weight-pack + smear-forces** (feat tips); PW smear/spin/kmesh(+PBE E) residual | post-diis spine + PW depth |
-| P3 | multi-k depth + MG production F/σ (water+**Si**) + multi-k/MG×PBE production + water×PBE F/σ + O₂ UKS-PBE F/σ + joints + device-stvnl + PW spin×kmesh×smear | after parent energy rows |
+| P2 | **landed** device-diis-eigen + uks-device-diis + device-weight-pack + kpoints + spin-forces; **`[~]` smear-forces** (feat tip); PW smear/spin/kmesh(+PBE E) residual | post-diis spine + PW depth |
+| P3 | multi-k depth + MG production F/σ (water+**Si**) + multi-k/MG×PBE production + water×PBE F/σ + O₂ UKS-PBE F/σ + joints + device-stvnl + device-product-residency + PW spin×kmesh×smear | after parent energy rows |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=105**; **in_progress=3**; **cuda_pending=108**;
-**gaps_remaining=109**. Contract:
+(not soft-tol). **pending_count=105**; **in_progress=1**; **cuda_pending=106**;
+**gaps_remaining=107**. Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 
@@ -117,13 +117,12 @@ forces (LSDA+PBE) + cell stress (LSDA+PBE) + collinear LSDA + spin-PBE energy
 + restricted metallic smear energy. **Pending:** GPW product depth (H₂O
 energy/F/σ tip + multi-k tip + **kpoint-device-*** incl. **integrate** +
 **kpoint-si-gate** + **multigrid-si-gate** + **uks-o2-forces/stress** +
-**device-product-residency** + **uks-device-diis** + **device-weight-pack** +
-force-stream/handoffs + device AO Pulay + device-stress + MG/UKS F/σ +
-path×PBE + 4-way + device STVnl); PW spin-forces tip + smear + multi-k PBE +
-**spin×kmesh×smear** F/σ depth (see queue). **Keep `[~]`:** `product-h2o-gate`
-(**1130140**) + `kpoints` (**1130141**) + `spin-forces` (**1130145**).
-**Blocked structural:** `mg-main-structural`. Public-shape freeze **green**
-(`0147fe02`). **cpu_pending=0** — no pin-safe wall lever.
+**device-product-residency** + force-stream/handoffs + device AO Pulay +
+device-stress + MG/UKS F/σ + path×PBE + 4-way + device STVnl); PW smear F
+tip + multi-k PBE + **spin×kmesh×smear** F/σ depth (see queue). **Keep `[~]`:**
+`smear-forces` (**1130359**) only after harness wave 2 land of uks-diis +
+weight-pack. **Blocked structural:** `mg-main-structural`. Public-shape freeze
+**green** (`0147fe02`). **cpu_pending=0** — no pin-safe wall lever.
 
 **Queues (binding worklists):**
 
