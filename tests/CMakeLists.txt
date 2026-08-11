@@ -1023,6 +1023,14 @@ if(ATV_BUILD_CUDA)
         if(TARGET test_cuda_gpw_kpoints)
             target_link_libraries(test_cuda_gpw_kpoints PRIVATE CUDA::cufft)
         endif()
+        # Device multi-k χ^k density collocate vs host collocate_density_k
+        # (cuda-gpw-kpoint-device-collocate).
+        atv_add_test(test_cuda_gpw_kpoint_collocate
+                     cuda/gpw/test_kpoint_collocate.cu)
+        if(TARGET test_cuda_gpw_kpoint_collocate)
+            target_link_libraries(test_cuda_gpw_kpoint_collocate
+                                  PRIVATE CUDA::cufft)
+        endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)

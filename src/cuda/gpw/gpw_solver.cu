@@ -3,13 +3,16 @@
 ///
 /// Hybrid composition (stated):
 ///   * host — STVnl / product-list build;
-///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k collocate/integrate,
+///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k build (once),
+///     host `integrate_potential_k` (V→H_k; deeper slug kpoint-device-integrate),
 ///     KDiis + complex Hermitian diagonalize;
 ///     force AO Pulay (W·dS, P·dT, P·dVnl) on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS `KsChainDevice::run`; multigrid RKS
 ///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
-///     multi-k `KsChainDevice::run_from_rho` (host ρ → device Poisson/XC);
+///     multi-k **device χ^k density collocate** via
+///     `internal::KpointCollocateDevice` (cuda-gpw-kpoint-device-collocate)
+///     then `KsChainDevice::run_from_rho` (ρ resident; no mid-SCF H2D ρ);
 ///     **Γ mid-SCF Pulay DIIS + cuSOLVER eigen + density** via
 ///     `internal::AoDiisEigenDevice` — RKS one channel
 ///     (cuda-gpw-device-diis-eigen); UKS dual α/β
@@ -36,6 +39,7 @@
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cuda/gpw/internal/ao_diis_eigen.cuh"
 #include "atomiverse/cuda/gpw/internal/gpw_forces.cuh"
+#include "atomiverse/cuda/gpw/internal/kpoint_collocate.cuh"
 #include "atomiverse/cuda/gpw/internal/ks_chain.cuh"
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 #include "atomiverse/cuda/gpw/internal/product_weight_pack.cuh"
@@ -87,6 +91,7 @@ using internal::DevicePrimContrib;
 using internal::DevicePrimRef;
 using internal::DeviceProduct;
 using internal::DeviceProductGeom;
+using internal::KpointCollocateDevice;
 using internal::KsChainDevice;
 using internal::KsChainEnergies;
 using internal::KsMultiGridChainDevice;
@@ -547,10 +552,12 @@ struct DeviceBuf {
     }
 };
 
-// ── Multi-k RKS DIIS (cuda-gpw-kpoints) ───────────────────────────────────
-// Host phased STVnl + χ^k collocate/integrate (CPU kpoints internals);
-// device Poisson+XC via KsChainDevice::run_from_rho. Fixed occupations,
-// single-grid, no smear / OT / MG / UKS (validated by the caller).
+// ── Multi-k RKS DIIS (cuda-gpw-kpoints + kpoint-device-collocate) ───────────
+// Host phased STVnl + χ^k build once; device mid-SCF density collocate via
+// KpointCollocateDevice (no host collocate_density_k / H2D ρ); device
+// Poisson+XC via KsChainDevice::run_from_rho; host integrate_potential_k
+// (V→H_k residual → kpoint-device-integrate). Fixed occupations, single-grid,
+// no smear / OT / MG / UKS (validated by the caller).
 
 using cpu::gpw::internal::CplxMatrix;
 using cpu::gpw::internal::KDiis;
@@ -597,7 +604,7 @@ double ctrace_k(const CplxMatrix& P, const CplxMatrix& M, int nb) {
     return s;
 }
 
-/// Multi-k closed-shell RKS DIIS energy (device KS from host ρ).
+/// Multi-k closed-shell RKS DIIS energy (device ρ collocate + device KS).
 GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
                                const GpwDft& cfg) {
     const std::vector<GridBasisFunction> basis = flatten_basis(atoms);
@@ -710,6 +717,20 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
         }
     } rho_guard{d_rho};
 
+    // Device multi-k density collocate (cuda-gpw-kpoint-device-collocate):
+    // χ^k uploaded once; each SCF iter only H2Ds small P_k and accumulates ρ
+    // on device — no host collocate_density_k / mid-SCF H2D of full ρ.
+    KpointCollocateDevice kcoll;
+    kcoll.build(stream, nk, nb, npts);
+    for (int ik = 0; ik < nk; ++ik) {
+        const auto& chi = kbg.chi[static_cast<std::size_t>(ik)];
+        if (static_cast<long>(chi.size()) != npts * nb)
+            throw std::runtime_error(
+                "cuda::gpw::GpwDft multi-k: chi size mismatch at k #"
+                + std::to_string(ik));
+        kcoll.upload_chi(ik, chi.data());
+    }
+
     KsChainDevice ks(to_coll(grid), stream);
     const KsXcKind kxc = to_ks_xc(cfg.xc);
     const bool use_diis = cfg.diis_depth > 0;
@@ -725,21 +746,19 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     std::vector<double> last_veff;
     std::vector<double> last_v_es;
 
-    auto collocate_rho = [&](const std::vector<CplxMatrix>& Pk) {
-        std::vector<double> rho(static_cast<std::size_t>(npts), 0.0);
-        for (int ik = 0; ik < nk; ++ik)
-            cpu::gpw::internal::collocate_density_k(
-                kbg, ik, Pk[static_cast<std::size_t>(ik)],
-                weights[static_cast<std::size_t>(ik)], rho);
-        return rho;
-    };
-
     auto build_k_energy = [&](const std::vector<CplxMatrix>& Pk,
                               bool store_grids) -> double {
-        const std::vector<double> rho = collocate_rho(Pk);
-        check_cuda(cudaMemcpyAsync(d_rho, rho.data(), bytes,
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D rho multi-k");
+        kcoll.zero_rho(d_rho);
+        for (int ik = 0; ik < nk; ++ik) {
+            const CplxMatrix& Pk_i = Pk[static_cast<std::size_t>(ik)];
+            if (static_cast<int>(Pk_i.shape(0)) != nb
+                || static_cast<int>(Pk_i.shape(1)) != nb)
+                throw std::runtime_error(
+                    "cuda::gpw::GpwDft multi-k: P_k shape mismatch at k #"
+                    + std::to_string(ik));
+            kcoll.collocate_k(ik, Pk_i.data(),
+                              weights[static_cast<std::size_t>(ik)], d_rho);
+        }
         const KsChainEnergies e = ks.run_from_rho(
             d_rho, dev.d_n_ion, dev.d_v_loc, /*d_prods=*/nullptr,
             /*nprod=*/0, /*d_acc=*/nullptr, kxc);
