@@ -11,7 +11,7 @@
 /// inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
-///   * host — STVnl / product-list build / P→weight pack / acc scatter;
+///   * host — STVnl / product-list build;
 ///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k collocate/integrate,
 ///     KDiis + complex Hermitian diagonalize;
 ///     force AO Pulay (W·dS / P·dT / P·dVnl) on Γ free-fn path
@@ -26,6 +26,9 @@
 ///     `internal::AoDiisEigenDevice` — RKS one channel
 ///     (cuda-gpw-device-diis-eigen); UKS dual α/β channels
 ///     (cuda-gpw-uks-device-diis).
+///     Device P→weight + acc→V_AO scatter via
+///     `internal::ProductWeightPackDevice` (cuda-gpw-device-weight-pack);
+///     RKS DIIS keeps P resident mid-SCF (no per-iter download_P for packing).
 ///     Mid-SCF does not H2D ρ or D2H V_eff for H on the Γ product path.
 ///     Forces (Γ RKS single-grid first cut): device grid V_eff Pulay + ionic
 ///     HF + local-PP HF (UKS / multigrid / multi-k force free-fns fail-closed).

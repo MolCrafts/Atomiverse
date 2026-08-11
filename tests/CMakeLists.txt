@@ -1015,6 +1015,9 @@ if(ATV_BUILD_CUDA)
             target_link_libraries(test_cuda_gpw_diis_eigen PRIVATE CUDA::cufft
                                   CUDA::cublas CUDA::cusolver)
         endif()
+        # Device P→weight + acc→V scatter vs host oracles
+        # (cuda-gpw-device-weight-pack).
+        atv_add_test(test_cuda_gpw_weight_pack cuda/gpw/test_weight_pack.cu)
         # Multi-k RKS DIIS energy dual-gate (cuda-gpw-kpoints).
         atv_add_test(test_cuda_gpw_kpoints cuda/gpw/test_gpw_kpoints.cu)
         if(TARGET test_cuda_gpw_kpoints)
