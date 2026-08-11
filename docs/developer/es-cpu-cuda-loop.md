@@ -39,6 +39,18 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 GapCensus wave 8 (parent `dev` @ `31405991`):** Re-diff
+  baselines/notes/roadmap/tree vs base after wave-7 queue. Fair walls
+  **held** MG MAIN **2.33×**; **cpu_pending=0**. No feat land on base since
+  opt-3. Staffed `[~]` tips now have GH200 feat commits (unmerged):
+  `uks-device-diis` **1130279**, `device-weight-pack` **1130344**,
+  `smear-forces` **1130359**. Autonomous discovery opens **9** deeper
+  production dual-gate rows (Si MG F/σ + Si MG×PBE + Si/water multi-k×PBE +
+  water×PBE F/σ + O₂ UKS-PBE F/σ). **pending_count=105**; **in_progress=3**;
+  **cuda_pending=108**; **gaps_remaining=109**. Roadmap prose refreshed
+  (spin LSDA forces + multi-k H₂ foothold; table CUDA GPW remains **◐** —
+  no ○→✓). Queue **not** exhausted. No push.
+
 - **2026-08-11 GapCensus+Assign wave 6 (parent `dev` @ `557a1921`):** Re-diff
   post opt-3 tip land (h2o-gate **1130195** + kpoints **1130141** +
   spin-forces **1130196**). Fair walls **held** MG MAIN **2.33×**;

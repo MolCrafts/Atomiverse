@@ -460,25 +460,28 @@ Two periodic DFT engines exist, with disjoint strengths:
   pins; `cuda::pw::pw_stress` — `reg_cuda-pw-stress` + `reg_cuda-pw-stress-pbe`;
   GH200 PBE max‖Δσ‖ **5.585e-12** eV/Å³ job **1123959**), **collinear spin**
   energy (**LSDA** + **spin-PBE**; fixed occupation; GH200 spin-PBE
-  **1124645**; spin forces / spin-PBE forces / spin stress still reject on
-  base), and **restricted metallic smear** energy (FD/Gaussian/MP +
+  **1124645**) + **collinear LSDA spin forces** (`cuda-pw-spin-forces` /
+  GH200 **1130196**; spin-PBE forces / spin stress / spin+smear still reject
+  on base), and **restricted metallic smear** energy (FD/Gaussian/MP +
   `extra_bands` + Mermin free energy; spin+smear / smear forces / smear stress
-  still reject); large-cell wall evidence on Si supercells — see es-cpu-cuda
-  queue. **CUDA GPW first product slice landed:**
-  public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE + **Γ UKS DIIS PADE** +
-  **multigrid energy**; host STVnl + weight pack + **device** product
-  collocate/KS/integrate via `KsChainDevice::run` / `run_uks` +
-  `KsMultiGridChainDevice` on **non-default stream** + **device RKS mid-SCF
-  Pulay DIIS + cuSOLVER eigen** (`AoDiisEigenDevice`) — collocate GH200
-  **1125709**, MG **1126433**, UKS **1126430** / O₂ gate **1127173**, PBE H₂
-  **1127166**, stream **1128196**, DIIS/eigen **1129719**; free-fn forces =
-  **host AO Pulay + device grid HF** **1127167**; free-fn stress = **CUDA
-  density + host fixed-\(P\)** **1128195** H₂ dual-gate; water Γ RKS **E+F**
-  dual-gate **1130195**). Depth residual on es-cpu-cuda queue (water σ +
-  water×PBE, multi-k host residual spine + Si/water multi-k energy + F/σ, MG
-  production + F/σ, UKS F/σ + UKS-PBE + joints, force-stream / AO-Pulay,
-  device STVnl/weight-pack/UKS-DIIS) — table CUDA for full GPW remains **◐**
-  not ✓ (no ○→✓ while product depth incomplete). Stage
+  still reject on base — smear-forces tip unmerged); large-cell wall evidence
+  on Si supercells — see es-cpu-cuda queue. **CUDA GPW first product slice
+  landed:** public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE + **Γ UKS DIIS
+  PADE** + **multigrid energy** + **multi-k RKS DIIS energy H₂ foothold**;
+  host STVnl + weight pack + **device** product collocate/KS/integrate via
+  `KsChainDevice::run` / `run_uks` + `KsMultiGridChainDevice` on **non-default
+  stream** + **device RKS mid-SCF Pulay DIIS + cuSOLVER eigen**
+  (`AoDiisEigenDevice`) — collocate GH200 **1125709**, MG **1126433**, UKS
+  **1126430** / O₂ gate **1127173**, PBE H₂ **1127166**, stream **1128196**,
+  DIIS/eigen **1129719**, multi-k **1130141**; free-fn forces = **host AO
+  Pulay + device grid HF** **1127167**; free-fn stress = **CUDA density +
+  host fixed-\(P\)** **1128195** H₂ dual-gate; water Γ RKS **E+F** dual-gate
+  **1130195**). Depth residual on es-cpu-cuda queue (water σ + water×PBE
+  E+F/σ, multi-k host residual spine + Si/water multi-k energy + F/σ +
+  multi-k×PBE production, MG production + water/Si F/σ + Si MG×PBE, UKS F/σ
+  + UKS-PBE + O₂ UKS-PBE F/σ + joints, force-stream / AO-Pulay, device
+  STVnl/weight-pack/UKS-DIIS) — table CUDA for full GPW remains **◐** not ✓
+  (no ○→✓ while product depth incomplete). Stage
   units under `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape
   freeze **green**.
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for
@@ -617,8 +620,8 @@ Which engine backs which ✓:
   device product collocate/KS/integrate via `KsChainDevice::run` + non-default
   stream + device RKS DIIS/eigen; PADE dual-gate `reg_cuda-gpw-full-product` /
   collocate GH200 **1125709** / PBE H₂ **1127166** / forces **1127167** /
-  stress **1128195** / DIIS-eigen **1129719** — table ◐ until H₂O gates +
-  multi-k + force-stream/AO-Pulay depth land).
+  stress **1128195** / DIIS-eigen **1129719** / water E+F **1130195** — table
+  ◐ until water σ + multi-k depth + force-stream/AO-Pulay land).
   **Γ-point periodic UKS** is GPW PADE LSD on CPU (`reg_gpw-uks-o2-gamma`)
   **and** a **first-cut CUDA energy product** (`cuda-gpw-uks-gamma` /
   GH200 **1126430** H₂ + **1127173** O₂; device `KsChainDevice::run_uks` Padé
@@ -627,7 +630,10 @@ Which engine backs which ✓:
   **k-point periodic RKS** is the plane-wave solver (Monkhorst–Pack mesh) on
   both CPU and CUDA, **and** GPW on CPU — the Gaussian-basis k-point path
   (phased lattice sums, KB nonlocal, per-k DIIS; `reg_gpw-kpoints-si`, diamond
-  Si vs CP2K Quickstep, 2026-07-25); CUDA GPW multi-k still open.
+  Si vs CP2K Quickstep, 2026-07-25); CUDA GPW multi-k has **H₂ energy
+  foothold** (`cuda-gpw-kpoints` GH200 **1130141**; host χ^k residual) —
+  Si/water production + device spine + F/σ still open (table PW k-RKS ✓ is
+  plane-wave, not GPW depth).
   **k-point periodic UKS** is CPU PW collinear spin on a multi-k mesh
   (`reg_pw-uks-kmesh-fe`; O₂ twin) plus **bulk Fe UKS + metallic smearing**
   (`reg_pw-uks-fe-smearing`) **and** GPW collinear multi-k UKS
