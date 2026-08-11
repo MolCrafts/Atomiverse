@@ -2,12 +2,14 @@
 /// @brief `cuda::gpw::GpwDft` — product slice (Γ RKS/UKS + multi-k RKS DIIS).
 ///
 /// Hybrid composition (stated):
-///   * host — STVnl / product-list build;
-///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k build (once);
-///     host H_k assemble residual; force AO Pulay on Γ free-fn path
+///   * host — Γ STVnl / product-list build; multi-k χ^k build (once);
+///     multi-k host residual: energy ctrace, payload diag, cold-start;
+///     force AO Pulay on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS `KsChainDevice::run`; multigrid RKS
 ///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
+///     multi-k **device phased STVnl** via `KpointStvnlDevice`
+///     (cuda-gpw-kpoint-device-stvnl; S/T device; Vnl zero or host-KB H2D);
 ///     multi-k **device χ^k density collocate** via
 ///     `internal::KpointCollocateDevice` (cuda-gpw-kpoint-device-collocate)
 ///     then `KsChainDevice::run_from_rho` (ρ resident; no mid-SCF H2D ρ) +
@@ -46,6 +48,7 @@
 #include "atomiverse/cuda/gpw/internal/kpoint_collocate.cuh"
 #include "atomiverse/cuda/gpw/internal/kpoint_diis_eigen.cuh"
 #include "atomiverse/cuda/gpw/internal/kpoint_integrate.cuh"
+#include "atomiverse/cuda/gpw/internal/kpoint_stvnl.cuh"
 #include "atomiverse/cuda/gpw/internal/ks_chain.cuh"
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 #include "atomiverse/cuda/gpw/internal/product_weight_pack.cuh"
@@ -100,6 +103,7 @@ using internal::DeviceProductGeom;
 using internal::KpointCollocateDevice;
 using internal::KpointDiisEigenDevice;
 using internal::KpointIntegrateDevice;
+using internal::KpointStvnlDevice;
 using internal::KsChainDevice;
 using internal::KsChainEnergies;
 using internal::KsMultiGridChainDevice;
@@ -560,13 +564,15 @@ struct DeviceBuf {
     }
 };
 
-// ── Multi-k RKS DIIS (collocate + integrate + H assemble + device DIIS) ──
-// Host phased STVnl + χ^k build once; device mid-SCF density collocate via
-// KpointCollocateDevice; device Poisson+XC via KsChainDevice::run_from_rho;
-// device V→Vmat + H_k=H0+Vmat fuse via KpointIntegrateDevice
-// (cuda-gpw-kpoint-h-assemble); device multi-k Pulay DIIS + zheevd + density
-// via KpointDiisEigenDevice (cuda-gpw-kpoint-device-diis). Fixed occupations,
-// single-grid, no smear / OT / MG / UKS.
+// ── Multi-k RKS DIIS (STVnl + collocate + integrate + H assemble + DIIS) ──
+// Device phased STVnl once via KpointStvnlDevice
+// (cuda-gpw-kpoint-device-stvnl); host χ^k build once; device mid-SCF density
+// collocate via KpointCollocateDevice; device Poisson+XC via
+// KsChainDevice::run_from_rho; device V→Vmat + H_k=H0+Vmat fuse via
+// KpointIntegrateDevice (cuda-gpw-kpoint-h-assemble); device multi-k Pulay
+// DIIS + zheevd + density via KpointDiisEigenDevice
+// (cuda-gpw-kpoint-device-diis). Fixed occupations, single-grid, no smear /
+// OT / MG / UKS.
 
 using cpu::gpw::internal::CplxMatrix;
 using cpu::gpw::internal::KOrth;
@@ -643,14 +649,47 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
         weights[static_cast<std::size_t>(ik)] =
             kpts[static_cast<std::size_t>(ik)].weight;
 
-    // Phased analytic matrices (host; same CPU kpoints internals as twin).
-    std::vector<CplxMatrix> S_k, T_k;
-    cpu::gpw::internal::build_overlap_kinetic_k(
-        basis, radii, cfg.cell, mimg, kBuildScreen, kpts, S_k, T_k);
-    std::vector<CplxMatrix> Vnl_k(static_cast<std::size_t>(nk),
-                                  CplxMatrix(xt::zeros<Cplx>({nb, nb})));
-    cpu::gpw::internal::add_nonlocal_kb_k(Vnl_k, basis, atoms, radii, cfg.cell,
-                                          mimg, kBuildScreen, kpts);
+    // Phased analytic STVnl on device (cuda-gpw-kpoint-device-stvnl). D2H for
+    // host Löwdin orth / energy ctrace residual; H0 uploaded to integrate.
+    std::vector<double> k_frac_flat(static_cast<std::size_t>(nk) * 3);
+    for (int ik = 0; ik < nk; ++ik) {
+        k_frac_flat[static_cast<std::size_t>(ik) * 3 + 0] =
+            kpts[static_cast<std::size_t>(ik)].frac[0];
+        k_frac_flat[static_cast<std::size_t>(ik) * 3 + 1] =
+            kpts[static_cast<std::size_t>(ik)].frac[1];
+        k_frac_flat[static_cast<std::size_t>(ik) * 3 + 2] =
+            kpts[static_cast<std::size_t>(ik)].frac[2];
+    }
+    KpointStvnlDevice stvnl;
+    // Stream not yet created; null stream for setup (geometry-fixed once).
+    stvnl.compute(/*stream=*/nullptr, basis, radii, atoms, cfg.cell, mimg,
+                  kBuildScreen, k_frac_flat.data(), nk);
+    std::vector<Cplx> S_flat(static_cast<std::size_t>(nk)
+                             * static_cast<std::size_t>(nb)
+                             * static_cast<std::size_t>(nb));
+    std::vector<Cplx> T_flat(S_flat.size());
+    std::vector<Cplx> Vnl_flat(S_flat.size());
+    stvnl.download_S(S_flat.data());
+    stvnl.download_T(T_flat.data());
+    stvnl.download_Vnl(Vnl_flat.data());
+    std::vector<CplxMatrix> S_k(static_cast<std::size_t>(nk));
+    std::vector<CplxMatrix> T_k(static_cast<std::size_t>(nk));
+    std::vector<CplxMatrix> Vnl_k(static_cast<std::size_t>(nk));
+    for (int ik = 0; ik < nk; ++ik) {
+        S_k[static_cast<std::size_t>(ik)] = xt::zeros<Cplx>({nb, nb});
+        T_k[static_cast<std::size_t>(ik)] = xt::zeros<Cplx>({nb, nb});
+        Vnl_k[static_cast<std::size_t>(ik)] = xt::zeros<Cplx>({nb, nb});
+        for (int u = 0; u < nb; ++u)
+            for (int t = 0; t < nb; ++t) {
+                const std::size_t idx =
+                    static_cast<std::size_t>(ik) * nb * nb
+                    + static_cast<std::size_t>(u) * nb
+                    + static_cast<std::size_t>(t);
+                S_k[static_cast<std::size_t>(ik)](u, t) = S_flat[idx];
+                T_k[static_cast<std::size_t>(ik)](u, t) = T_flat[idx];
+                Vnl_k[static_cast<std::size_t>(ik)](u, t) = Vnl_flat[idx];
+            }
+    }
 
     std::vector<KOrth> orth;
     orth.reserve(static_cast<std::size_t>(nk));

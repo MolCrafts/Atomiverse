@@ -874,6 +874,22 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-kpoint-h-assemble] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_kh})
         unset(_reg_gpw_kh)
+
+        # Multi-k device phased STVnl product dual-gate
+        # (cuda-gpw-kpoint-device-stvnl).
+        set(_reg_gpw_kstvnl reg_cuda-gpw-kpoint-device-stvnl)
+        add_executable(${_reg_gpw_kstvnl}
+            gpw/cuda-gpw-kpoint-device-stvnl/${_reg_gpw_kstvnl}.cu)
+        target_link_libraries(${_reg_gpw_kstvnl} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_kstvnl} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_kstvnl}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_kstvnl}> --device=both
+            DEPENDS ${_reg_gpw_kstvnl}
+            COMMENT "regression [gpw/cuda-gpw-kpoint-device-stvnl] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_kstvnl})
+        unset(_reg_gpw_kstvnl)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)

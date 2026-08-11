@@ -1056,6 +1056,13 @@ if(ATV_BUILD_CUDA)
             target_link_libraries(test_cuda_gpw_kpoint_h_assemble
                                   PRIVATE CUDA::cufft)
         endif()
+        # Multi-k device phased STVnl (cuda-gpw-kpoint-device-stvnl).
+        atv_add_test(test_cuda_gpw_kpoint_stvnl
+                     cuda/gpw/test_kpoint_stvnl.cu)
+        if(TARGET test_cuda_gpw_kpoint_stvnl)
+            target_link_libraries(test_cuda_gpw_kpoint_stvnl
+                                  PRIVATE CUDA::cufft)
+        endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
