@@ -188,17 +188,21 @@ class DeviceBandSolver {
     ///        most recent `solve()` on the bound k-point into a device force
     ///        buffer.
     ///
-    /// Mirrors `cpu::pw::internal` `accumulate_nl_forces_k`: closed-shell
-    /// occupation 2, weight = Monkhorst–Pack k-weight.
+    /// Mirrors `cpu::pw::internal` `accumulate_nl_forces_k`.
     /// \(F_{I\alpha} += 2 D\, w\, f \,\mathrm{Im}(c^* s_\alpha)\) with
     /// \(c=\sum_G \beta^* \psi\), \(s_\alpha=\sum_G q_\alpha \beta^* \psi\).
+    /// Restricted closed shell: `n_occ = n_bands`, `occ = 2`. Collinear
+    /// spin: call once per channel with `n_occ = N_σ` and `occ = 1`.
     ///
     /// @param weight   k-point weight (dimensionless).
     /// @param n_atoms  Atom count; must match the problem geometry.
     /// @param d_forces Device buffer of length `3 * n_atoms` [Hartree/Bohr],
     ///                 accumulated with `atomicAdd` (caller zeros once).
+    /// @param n_occ    Occupied bands to include (`≤ n_bands`); default all.
+    /// @param occ      Band occupation factor (2 restricted / 1 spin-orbital).
     /// @throws std::runtime_error if no k-point is bound or no Ritz vectors.
-    void accumulate_nl_forces(double weight, int n_atoms, double* d_forces);
+    void accumulate_nl_forces(double weight, int n_atoms, double* d_forces,
+                              int n_occ = -1, double occ = 2.0);
 
     /// @brief Test hook: H·ψ for one host vector on the bound k-point
     /// (H2D → apply_h → D2H). Used by the band-parity diagnostics to

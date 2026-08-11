@@ -92,7 +92,8 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                         const std::string& gth_name, double ecut_ry,
                         DeviceDensity& den, DeviceBandSolver& solver,
                         cpu::pw::internal::PWProblem& prob,
-                        cpu::pw::internal::PWWorkspace& ws) {
+                        cpu::pw::internal::PWWorkspace& ws, int n_alpha,
+                        int n_beta) {
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument(
@@ -103,6 +104,15 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
     if (ng0 <= 0 || !(omega > 0.0))
         throw std::runtime_error(
             "cuda::pw::pw_forces_analytic: density sphere empty or omega=0");
+
+    const bool spin = (n_alpha >= 0);
+    if (spin && !den.spin_polarized())
+        throw std::runtime_error(
+            "cuda::pw::pw_forces_analytic: spin occupations require a spin "
+            "DeviceDensity");
+    if (spin && n_beta < 0)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: n_beta must be >= 0 on spin path");
 
     double* d_F = device_alloc<double>(static_cast<std::size_t>(3 * n));
     ATV_CUDA_CHECK(
@@ -157,24 +167,45 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                               static_cast<std::size_t>(3 * n) * sizeof(double),
                               cudaMemcpyHostToDevice));
 
-    // Local HF on the shared SCF stream (same as dens / band) so ρ(G) reads
-    // and atomicAdd into d_F order with the NL rebuild below.
+    // Local HF uses total ρ (restricted or ρ↑+ρ↓ after spin mix).
+    if (spin)
+        den.sync_total_rho();
     accumulate_local_forces_device(den.device_rho_G(), d_gx, d_gy, d_gz, d_vg,
                                    d_pos, ng0, n, omega, d_F, den.stream());
 
-    // Nonlocal KB: rebuild V_eff from the final mixed density (CPU twin of
-    // poisson.step + xc.step + veff.step after SCF), then re-solve bands.
+    // Nonlocal KB: rebuild V_eff from the final mixed density, then re-solve.
+    // Restricted: one V_eff, f=2. Collinear: V_eff_σ per channel, f=1, N_σ.
     if (!prob.kb_proj_k.empty()) {
-        den.hartree();
-        den.exchange_correlation();
-        den.assemble_veff();
         const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-        for (int ik = 0; ik < n_kpts; ++ik) {
-            solver.bind_kpoint(ik);
-            solver.solve(ws, 40);
-            const double weight = static_cast<double>(
-                prob.kg.weights[static_cast<std::size_t>(ik)]);
-            solver.accumulate_nl_forces(weight, n, d_F);
+        if (spin) {
+            den.sync_total_rho();
+            den.hartree();
+            den.exchange_correlation_spin();
+            const int n_occ[2] = {n_alpha, n_beta};
+            for (int s = 0; s < 2; ++s) {
+                if (n_occ[s] <= 0)
+                    continue;
+                den.assemble_veff_spin(s);
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    const double weight = static_cast<double>(
+                        prob.kg.weights[static_cast<std::size_t>(ik)]);
+                    solver.accumulate_nl_forces(weight, n, d_F, n_occ[s],
+                                                /*occ=*/1.0);
+                }
+            }
+        } else {
+            den.hartree();
+            den.exchange_correlation();
+            den.assemble_veff();
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                solver.bind_kpoint(ik);
+                solver.solve(ws, 40);
+                const double weight = static_cast<double>(
+                    prob.kg.weights[static_cast<std::size_t>(ik)]);
+                solver.accumulate_nl_forces(weight, n, d_F);
+            }
         }
     }
 

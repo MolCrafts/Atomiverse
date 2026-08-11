@@ -35,7 +35,9 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// @brief Analytic forces after a completed device SCF [eV/Å].
 ///
 /// Local HF + KB nonlocal on device; Ewald on host. Re-solves bands at the
-/// final V_eff for each k (CPU force-path twin).
+/// final V_eff for each k (CPU force-path twin). Restricted: one V_eff and
+/// closed-shell f=2. Collinear spin (`n_alpha ≥ 0`): local HF from total ρ;
+/// NL re-solves each spin channel with f=1 and N_σ occupations.
 ///
 /// @param frame     Geometry [Å]; not mutated.
 /// @param upf_path  UPF path (empty if gth_name is set).
@@ -45,12 +47,15 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// @param solver    Band solver bound to den grids, k-tables built.
 /// @param prob      Assembled problem (same run as SCF).
 /// @param ws        Workspace used for band solves (eigenvalues sink).
+/// @param n_alpha   Occupied ↑ bands (−1 = restricted closed shell).
+/// @param n_beta    Occupied ↓ bands (spin path only).
 std::vector<std::array<double, 3>>
 pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                         const std::string& gth_name, double ecut_ry,
                         DeviceDensity& den, DeviceBandSolver& solver,
                         cpu::pw::internal::PWProblem& prob,
-                        cpu::pw::internal::PWWorkspace& ws);
+                        cpu::pw::internal::PWWorkspace& ws,
+                        int n_alpha = -1, int n_beta = -1);
 
 } // namespace internal
 } // namespace pw

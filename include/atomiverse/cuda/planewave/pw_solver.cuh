@@ -169,8 +169,10 @@ class PW {
 ///
 /// CUDA twin of `cpu::pw::pw_forces_analytic`: local Hellmann–Feynman +
 /// Ewald + Kleinman–Bylander nonlocal. Local and nonlocal force kernels
-/// run on the device; Ewald is the shared host classical sum. Rejects the
-/// same unsupported members as `PW::run` (spin, smear, non-LSDA/PBE).
+/// run on the device; Ewald is the shared host classical sum. Supports
+/// restricted closed shell (LSDA/PBE) and collinear fixed-occupation UKS
+/// under **LSDA** only. Rejects metallic smear, spin∧PBE forces, and other
+/// unsupported members with a how-to.
 ///
 /// @param frame  Geometry [Å], types (Z), cell; not mutated.
 /// @param method Plane-wave method members (upf/gth, ecut, k_mesh, tol, …).
