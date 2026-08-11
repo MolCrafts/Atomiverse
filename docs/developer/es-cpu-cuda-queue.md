@@ -135,16 +135,16 @@ follow-on. **No gpw-perf-queue promote**.
 | Claimed-but-ungated | water e2e tip (**1130140**); multi-k tip (`18ba6fc5` host ρ/integrate/KDiis); spin-forces tip (`a5e941f2`); path×PBE F/σ + **4-way**; **uks-device-diis** / **device-weight-pack** / **device-product-residency** / **kpoint-device-*** (+ **integrate**) / **kpoint-si-gate** / **multigrid-si-gate** / **uks-o2-forces/stress** / device STVnl/AO-Pulay/**stress**/handoffs/force-stream; PW multi-k PBE + **spin×kmesh×smear** |
 | Closed-shell PW stress | **LSDA + PBE** dual-gate **landed** (Γ-class coverage; multi-k F/σ + multi-k PBE energy open) |
 | Collinear spin-PBE energy | **landed** merge `118d3003` / GH200 **1124645** (Γ dual-gate only) |
-| Staffed tips (not base) | Keep `[~]` Assign wave 4 resume (re-verify on `e13cdb91`): `product-h2o-gate` (**`8fe0edec`** / **1130140**) + `kpoints` (**`18ba6fc5`** / **1130141**) + `cuda-pw-spin-forces` (**`a5e941f2`** / **1130145**) |
+| Staffed tips (not base) | Keep `[~]` Assign wave 5 resume (tips re-verified on `e13cdb91`; parent now `e2198619` GapCensus-only chore): `product-h2o-gate` (**`8fe0edec`** / **1130140**) + `kpoints` (**`18ba6fc5`** / **1130141**) + `cuda-pw-spin-forces` (**`a5e941f2`** / **1130145**) |
 
-**Counts:** **pending_count=92**; **in_progress=3** (Assign wave 4 resume
+**Counts:** **pending_count=92**; **in_progress=3** (Assign wave 5 resume
 `product-h2o-gate` + `kpoints` + `cuda-pw-spin-forces` — tip green, Merge);
 **cpu_pending=0**; **cuda_pending=92**;
 **gaps_remaining=96** (pending + in_progress + blocked MG fair-wall
 `mg-main-structural`). Queue **not** exhausted.
 **new_slugs_added=5** this GapCensus wave 5 (`kpoint-device-integrate` +
 `device-product-residency` + `multigrid-si-gate` + `uks-o2-forces` +
-`uks-o2-stress`). **Assign wave 4 new_assigned=0** (held).
+`uks-o2-stress`). **Assign wave 5 new_assigned=0** (held; tip-green capacity).
 
 ### CUDA — GPW product depth (product on base — staff depth)
 
@@ -834,29 +834,33 @@ missing; spin×kmesh×smear joint open. **Keep/staff `[~]`:**
 | `cuda::pw::PW` LSDA + PBE + residency + stream + large-cell + forces (LSDA+PBE Γ) + stress (LSDA+PBE) + collinear LSDA + spin-PBE energy + restricted metallic smear energy | **landed** | **pending:** multi-k F/σ + **multi-k PBE energy** (+ multi-k PBE F/σ); smear F/σ + smear-PBE; spin F/σ tip + spin-PBE F/σ / spin multi-k (+ spin-kmesh-PBE F/σ) / spin+smear (+ spin-smear-pbe F/σ) / **spin×kmesh×smear** (+ PBE F/σ) |
 
 **Staff order:** (1) Finish/merge remaining `[~]` `product-h2o-gate` +
-`kpoints` + `cuda-pw-spin-forces` (tips re-verified on `e13cdb91`; Merge owns
-land); (2) remaining **P2** post-diis spine `uks-device-diis` +
-`device-weight-pack` + PW (`smear-forces` / `smear-stress` / `smear-pbe` /
-`spin-stress` / `spin-smear` / `spin-kmesh` / `kmesh-forces` /
-`kmesh-stress` / **`kmesh-pbe`**); (3) wave-4/5 multi-k depth
-(`kpoint-device-collocate` / **`kpoint-device-integrate`** /
-`kpoint-device-diis` / `kpoint-device-stvnl` / `kpoint-si-gate`) + wave-5
-production gates (`multigrid-si-gate` / `uks-o2-forces` / `uks-o2-stress` /
-`device-product-residency`) + wave-4…3 joint paths (UKS/MG/k F+σ + multi-k
-MG/UKS + triple + **4-way** + path×PBE + water F/σ + force-stream +
-force/stress-device-handoff + device-ao-pulay + device-stress + stress-stream
-+ device-stvnl + PW spin/smear/multi-k + **spin×kmesh×smear**) **P3** after
-parent energy rows. Do **not** staff lone new GPW kernel footholds. Higher-L
-RHF stays product-out-of-scope. OT / vdW / MT / metallic-GPW stay later
-same-capability follow-on.
+`kpoints` + `cuda-pw-spin-forces` (Assign wave 5 resume — tips green on
+`e13cdb91`; parent `e2198619` is queue chore only; Merge owns land); (2)
+remaining **P2** post-diis spine `uks-device-diis` + `device-weight-pack` +
+PW (`smear-forces` / `smear-stress` / `smear-pbe` / `spin-stress` /
+`spin-smear` / `spin-kmesh` / `kmesh-forces` / `kmesh-stress` /
+**`kmesh-pbe`**); (3) wave-4/5 multi-k depth (`kpoint-device-collocate` /
+**`kpoint-device-integrate`** / `kpoint-device-diis` / `kpoint-device-stvnl` /
+`kpoint-si-gate`) + wave-5 production gates (`multigrid-si-gate` /
+`uks-o2-forces` / `uks-o2-stress` / `device-product-residency`) + wave-4…3
+joint paths (UKS/MG/k F+σ + multi-k MG/UKS + triple + **4-way** + path×PBE +
+water F/σ + force-stream + force/stress-device-handoff + device-ao-pulay +
+device-stress + stress-stream + device-stvnl + PW spin/smear/multi-k +
+**spin×kmesh×smear**) **P3** after parent energy rows. Do **not** staff lone
+new GPW kernel footholds. Higher-L RHF stays product-out-of-scope. OT / vdW /
+MT / metallic-GPW stay later same-capability follow-on.
 
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
 
-**GapCensus wave 5 (parent `dev` @ `e13cdb91`):** re-diff tips + base spine;
-**+5** pending (multi-k integrate + product residency + MG Si gate + UKS O₂
-F/σ production gates); keep `[~]` h2o + kpoints + spin-forces (re-verify
-**1130140** / **1130141** / **1130145**). Do **not** claim queue exhausted.
+**Assign wave 5 (parent `dev` @ `e2198619`):** Priority `[~]` first —
+capacity **3/3** tip-green not on base → **resume only**, **new_assigned=0**.
+Theme-for-NEW N/A this wave (slots full). Keep
+`product-h2o-gate` / `kpoints` / `cuda-pw-spin-forces` (GH200 **1130140** /
+**1130141** / **1130145**). Next free-slot NEW (when Merge frees capacity):
+prefer one real product lift — `uks-device-diis` / `device-weight-pack` /
+`smear-forces` — not dual-gate matrix explosion; not re-staff landed
+collocate/MG/UKS/PBE/forces/stress/stream/DIIS-eigen.
 
 *Not pending this loop:*
 
@@ -888,15 +892,17 @@ F/σ production gates); keep `[~]` h2o + kpoints + spin-forces (re-verify
 
 ## in_progress
 
-**Assign wave 4** 2026-08-11 (parent `dev` @ `e13cdb91` post tip re-verify;
-GapCensus wave 5 does **not** re-Assign): capacity **3/3** filled by
-tip-green `[~]` not on base — **resume only**, **new_assigned=0**. All three
-tips GH200 green on `e13cdb91` → **Merge owns land**. Held pending P2 for
+**Assign wave 5** 2026-08-11 (parent `dev` @ `e2198619` post GapCensus wave 5;
+queue-only parent delta vs tip base `e13cdb91`): capacity **3/3** filled by
+tip-green `[~]` not on base — **resume only**, **new_assigned=0**. Theme for
+NEW N/A (slots full). All three tips GH200 green on `e13cdb91` → **Merge owns
+land** (rebase onto `e2198619` if needed — chore-only). Held pending P2 for
 later free slots: `uks-device-diis` / `device-weight-pack` / `smear-forces` /
 `spin-stress` / kmesh-* + wave-4/5 multi-k depth (`kpoint-device-*` incl.
-**integrate** / `kpoint-si-gate`) + wave-5 production gates. Do **not**
-re-staff landed collocate / MG / UKS / PBE / forces / stress / stream /
-DIIS-eigen. **in_progress=3**.
+**integrate** / `kpoint-si-gate`) + wave-5 production gates. Prefer one real
+product lift over dual-gate matrix explosion. Do **not** re-staff landed
+collocate / MG / UKS / PBE / forces / stress / stream / DIIS-eigen.
+**in_progress=3**.
 
 - [~] `cuda-gpw-product-h2o-gate` | **P2** Water-class Γ RKS PADE dual-gate
   (production AO/grid after H₂ foothold; DIIS ascent clear) | track **cuda** |

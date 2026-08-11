@@ -39,6 +39,21 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 Assign wave 5 (parent `dev` @ `e2198619`):** Priority `[~]`
+  first — capacity **3/3** already filled by tip-green branches not on
+  base (post GapCensus wave 5). **Resume only** (theme-for-NEW N/A):
+  `cuda-gpw-product-h2o-gate` (`8fe0edec`, GH200 **1130140**
+  \|dE\|=**7.526e-07** max\|dF\|=**3.213e-06**), `cuda-gpw-kpoints`
+  (`18ba6fc5`, GH200 **1130141** \|dE\|=**3.375e-14**),
+  `cuda-pw-spin-forces` (`a5e941f2`, GH200 **1130145**
+  max\|ΔF\|=**9.25e-13** eV/Å). **new_assigned=0**;
+  **incomplete_remaining=0** (tip green claims — Merge owns land). Held
+  pending P2: `smear-forces` / `uks-device-diis` / `device-weight-pack` /
+  multi-k depth (`kpoint-device-*` + integrate) / production gates. Do
+  **not** re-staff landed collocate/MG/UKS/PBE/forces/stress/stream/
+  DIIS-eigen. Prefer product lift over dual-gate matrix when slots free.
+  Queue **not** exhausted. No push.
+
 - **2026-08-11 Assign wave 4 (parent `dev` @ `3bfe1d14`):** Priority `[~]`
   first — capacity **3/3** already filled by tip-green branches not on
   base (post GapCensus wave 4). **Resume only** (theme-for-NEW N/A):
