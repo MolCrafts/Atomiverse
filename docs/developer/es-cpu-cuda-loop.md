@@ -39,6 +39,23 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 4 (parent `dev` @ `88d8ec59`):** 1 of 2 staffed
+  → done [x]: `cuda-gpw-multigrid-si-energy-path` (merge `88d8ec59` / feat
+  `c99f4622` / fix `c2084efe` / re-verify `60c77321`; GH200 **1180883**
+  \|dE\|=**2.130e-08** Ha Si Γ RKS PADE ngrids=4 host collint multi-level +
+  device H/DIIS; prior **1180409** same \|dE\|; device monom residual
+  **1180025** \|dE\|=**4.3e-4** → child **`multigrid-device-ks`**;
+  **perf_exempt**). Keep other `[~]`: **`cuda-gpw-device-payload`** (tip
+  **1178026** unmerged). Spec closed: none open under
+  `.claude/specs/cuda-gpw-multigrid-si-energy-path/` (never staged; method-loop
+  specs only). Roadmap prose: Si MG energy path landed (table CUDA GPW remains
+  **◐** — device monom MG + payload/cold-start + multi-k χ/orth/vnl/h0 +
+  production matrix open — no ○→✓). `multigrid-si-gate` **unblocked**.
+  GapCensus wave 4 residual held; **cpu_pending=0**; **new_slugs_added=0**
+  this harness. **pending_count=132**; **cuda_pending=132**;
+  **in_progress=1**; **gaps_remaining=134**. Clearup already ran. Queue
+  **not** exhausted (GapCensus owns discovery). No push.
+
 - **2026-08-11 harness wave 2 (parent `dev` @ `cfb246d1`):** 1 of 1 staffed
   → done [x]: `cuda-gpw-product-collocate-pbc` (merge `cfb246d1` / feat
   `5648608f`; GH200 **1173564** edge rel=**5.2e-14** H₂ \|dE\|=**1.252e-08**
