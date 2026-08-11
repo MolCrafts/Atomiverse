@@ -28,7 +28,8 @@
 ///     Γ mid-SCF Pulay DIIS + cuSOLVER dense eigen + density via
 ///     `internal::AoDiisEigenDevice` — RKS one channel
 ///     (cuda-gpw-device-diis-eigen); UKS dual α/β channels
-///     (cuda-gpw-uks-device-diis).
+///     (cuda-gpw-uks-device-diis). Γ RKS final C/ε payload from device
+///     eigen of assembled H (cuda-gpw-device-payload; no host re-diag).
 ///     Device P→weight + acc→V_AO scatter via
 ///     `internal::ProductWeightPackDevice` (cuda-gpw-device-weight-pack);
 ///     RKS DIIS keeps P resident mid-SCF (no per-iter download_P for packing).

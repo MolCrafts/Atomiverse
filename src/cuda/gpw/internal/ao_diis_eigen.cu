@@ -315,6 +315,28 @@ void AoDiisEigenDevice::download_P(double* P_host) const {
     check_cuda(cudaStreamSynchronize(stream_), "sync D2H P");
 }
 
+void AoDiisEigenDevice::download_C(double* C_host) const {
+    ensure_built_();
+    if (C_host == nullptr)
+        throw std::invalid_argument("AoDiisEigenDevice::download_C: null");
+    check_cuda(cudaMemcpyAsync(C_host, d_C_,
+                               static_cast<size_t>(n_) * m_ * sizeof(double),
+                               cudaMemcpyDeviceToHost, stream_),
+               "D2H C");
+    check_cuda(cudaStreamSynchronize(stream_), "sync D2H C");
+}
+
+void AoDiisEigenDevice::download_eig(double* eig_host) const {
+    ensure_built_();
+    if (eig_host == nullptr)
+        throw std::invalid_argument("AoDiisEigenDevice::download_eig: null");
+    check_cuda(cudaMemcpyAsync(eig_host, d_eig_,
+                               static_cast<size_t>(m_) * sizeof(double),
+                               cudaMemcpyDeviceToHost, stream_),
+               "D2H eig");
+    check_cuda(cudaStreamSynchronize(stream_), "sync D2H eig");
+}
+
 void AoDiisEigenDevice::reset() {
     hist_count_ = 0;
     hist_start_ = 0;
@@ -608,6 +630,44 @@ void AoDiisEigenDevice::eigen_to_host(const double* H_host, double* eig_host,
                                cudaMemcpyDeviceToHost, stream_),
                "D2H C");
     check_cuda(cudaStreamSynchronize(stream_), "sync eigen");
+}
+
+void AoDiisEigenDevice::eigen_from_device(const double* d_H, double* eig_host,
+                                          double* C_host) {
+    ensure_built_();
+    if (d_H == nullptr)
+        throw std::invalid_argument(
+            "AoDiisEigenDevice::eigen_from_device: null d_H");
+    const size_t bytes =
+        static_cast<size_t>(n_) * static_cast<size_t>(n_) * sizeof(double);
+    if (d_H != d_H_) {
+        check_cuda(cudaMemcpyAsync(d_H_, d_H, bytes, cudaMemcpyDeviceToDevice,
+                                   stream_),
+                   "D2D H eigen");
+    }
+    // Payload eigen of raw KS H: no DIIS, no level shift (matches host
+    // store_converged_state → diagonalize_fock without Saunders–Hillier).
+    const double saved_shift = level_shift_;
+    const bool saved_have = have_C_;
+    level_shift_ = 0.0;
+    have_C_ = false;
+    diagonalize_and_density_();
+    level_shift_ = saved_shift;
+    have_C_ = saved_have;
+    // Boundary D2H only (post-convergence payload).
+    if (eig_host != nullptr) {
+        check_cuda(cudaMemcpyAsync(eig_host, d_eig_,
+                                   static_cast<size_t>(m_) * sizeof(double),
+                                   cudaMemcpyDeviceToHost, stream_),
+                   "D2H eig payload");
+    }
+    if (C_host != nullptr) {
+        check_cuda(cudaMemcpyAsync(C_host, d_C_,
+                                   static_cast<size_t>(n_) * m_ * sizeof(double),
+                                   cudaMemcpyDeviceToHost, stream_),
+                   "D2H C payload");
+    }
+    check_cuda(cudaStreamSynchronize(stream_), "sync eigen_from_device");
 }
 
 } // namespace internal

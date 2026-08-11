@@ -768,6 +768,22 @@ if(ATV_BUILD_GPW)
         add_dependencies(regressions run_${_reg_gpw_diis})
         unset(_reg_gpw_diis)
 
+        # Device final Γ RKS payload eigen (no host re-diag) dual-gate.
+        set(_reg_gpw_payload reg_cuda-gpw-device-payload)
+        add_executable(${_reg_gpw_payload}
+            gpw/cuda-gpw-device-payload/${_reg_gpw_payload}.cu)
+        target_link_libraries(${_reg_gpw_payload} PRIVATE atomiverse
+                              CUDA::cufft CUDA::cublas CUDA::cusolver)
+        set_target_properties(${_reg_gpw_payload} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_payload}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_payload}> --device=both
+            DEPENDS ${_reg_gpw_payload}
+            COMMENT "regression [gpw/cuda-gpw-device-payload] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_payload})
+        unset(_reg_gpw_payload)
+
         # Γ UKS dual-spin device DIIS + eigen energy dual-gate (H2 high-spin).
         set(_reg_gpw_uks_diis reg_cuda-gpw-uks-device-diis)
         add_executable(${_reg_gpw_uks_diis}
