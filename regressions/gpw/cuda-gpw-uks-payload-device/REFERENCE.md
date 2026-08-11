@@ -43,7 +43,9 @@ cold-start densify (`device-cold-start`).
 
 | Job | Node | Result |
 | --- | --- | --- |
-| GH200 *(pending)* | | dual-gate after impl |
+| GH200 **1186414** | n514 | unit `test_cuda_gpw_diis_eigen` PASS; dual-gate \|dE\|=**4.163e-09** Ha max\|deps\|=**1.481e-06** Ha (E_cpu −0.508766760868; E_cuda −0.508766756705; iters 8/6; ⟨S²⟩=2); smoke `uks-device-diis` same \|dE\|; `GPU_JOB_OK`; `BUILDS_WIPED_OK` |
+
+Skills applied: **av-perf** (residency — boundary-only D2H of dual C/ε/H_ks; mid-path D2D H); **write-numerically-stable-kernel** + **optimize-global-memory-access** (reuse existing cuSOLVER `dsyevd` / cublas gemm path in `diagonalize_and_density_`; no new ad-hoc kernels).
 
 Mid-path scientific matrix DH in diff: **zero** (payload D2H only after
 convergence).
