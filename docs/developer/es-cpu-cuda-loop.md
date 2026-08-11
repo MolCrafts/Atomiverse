@@ -39,6 +39,17 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 GapCensus wave 12 (parent `dev` @ `4d9bbdaa`):** Re-diff
+  baselines/notes/roadmap/tree vs base post harness wave 4 multi-k device
+  collocate+integrate. Fair walls **held** MG MAIN **2.33×**; **cpu_pending=0**;
+  no gpw-perf promote. Autonomous discovery opens **9** deeper rows: multi-k
+  host H_k assemble + \(P_k\) residency after device integrate (`kpoint-h-assemble`,
+  `kpoint-p-residency`); UKS dual host H assemble (`uks-h-assemble`); production
+  Si multi-k MG dual-gate matrix (`multigrid-kpoints-si-gate` + F/σ + Si×PBE
+  E+F/σ). **pending_count=132**; **in_progress=0**; **cuda_pending=132**;
+  **gaps_remaining=133**. Roadmap table CUDA GPW remains **◐** (no ○→✓ —
+  foothold ≠ capability closed). Queue **not** exhausted. No push.
+
 - **2026-08-11 harness wave 4 (parent `dev` @ `1733535f`):** 2 of 2 staffed
   → done [x]: `cuda-gpw-kpoint-device-collocate` (merge `355bcc42` / feat
   `47c2c16e`; GH200 **1130716** \|dE\|=**3.353e-14** Ha H₂ multi-k RKS PADE
