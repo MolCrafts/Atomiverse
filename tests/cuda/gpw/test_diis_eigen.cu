@@ -163,3 +163,88 @@ TEST(CudaGpwDiisEigen, DiisStepAdvancesHistory) {
 
     cudaStreamDestroy(stream);
 }
+
+// ── UKS single-channel (occ_factor=1; cuda-gpw-uks-device-diis) ────────────
+
+TEST(CudaGpwDiisEigen, UksChannelErrorAndDensityMatchHost) {
+    RealMatrix S, H, P_rks;
+    int n_occ_rks = 0;
+    make_toy(S, H, P_rks, n_occ_rks);
+    (void)P_rks;
+    const int n = 3;
+    const int n_alpha = 2; // open-shell-ish channel on toy
+    CanonicalOrth orth(S, 1e-10);
+    const int m = static_cast<int>(orth.X.shape(1));
+    auto [eig_h, C_h] = diagonalize_fock(H, orth.X);
+    (void)eig_h;
+    RealMatrix P_a = build_density_matrix(C_h, n_alpha, n, 1.0);
+
+    const RealMatrix e_host =
+        ATV::cpu::gpw::internal::gpw_diis_error(H, P_a, S, orth.X);
+
+    cudaStream_t stream;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+    AoDiisEigenDevice dev;
+    dev.build(stream, n, m, /*max_vectors=*/4, n_alpha, /*occ=*/1.0,
+              /*level_shift=*/0.0);
+    dev.upload_SX(S.data(), orth.X.data());
+    dev.upload_P(P_a.data());
+
+    std::vector<double> e_dev(static_cast<size_t>(m * m));
+    dev.error_to_host(H.data(), e_dev.data());
+    const double de =
+        max_abs_diff(e_host.data(), e_dev.data(), m * m);
+    EXPECT_LE(de, 1e-10) << "max|e_dev-e_host| UKS=" << de;
+
+    // Eigen + density with occ_factor=1.
+    RealMatrix P_host = build_density_matrix(C_h, n_alpha, n, 1.0);
+    std::vector<double> eig_d(static_cast<size_t>(m));
+    std::vector<double> C_d(static_cast<size_t>(n * m));
+    // Fresh device for eigen-only path (no DIIS).
+    AoDiisEigenDevice eigen_dev;
+    eigen_dev.build(stream, n, m, /*max_vectors=*/0, n_alpha, 1.0, 0.0);
+    eigen_dev.upload_SX(S.data(), orth.X.data());
+    eigen_dev.upload_P(P_a.data());
+    eigen_dev.eigen_to_host(H.data(), eig_d.data(), C_d.data());
+    RealMatrix P_d = xt::zeros<double>({n, n});
+    eigen_dev.download_P(P_d.data());
+    const double dP = max_abs_diff(P_host.data(), P_d.data(), n * n);
+    EXPECT_LE(dP, 1e-10) << "max|P_dev-P_host| UKS factor-1=" << dP;
+
+    double trPS = 0.0;
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            trPS += P_d(i, j) * S(j, i);
+    EXPECT_NEAR(trPS, 1.0 * n_alpha, 1e-8);
+
+    cudaStreamDestroy(stream);
+}
+
+TEST(CudaGpwDiisEigen, UksEmptyBetaChannelZeroDensity) {
+    // High-spin channel with n_occ=0 must yield P=0 and zero residual.
+    RealMatrix S, H, P_rks;
+    int n_occ_rks = 0;
+    make_toy(S, H, P_rks, n_occ_rks);
+    const int n = 3;
+    CanonicalOrth orth(S, 1e-10);
+    const int m = static_cast<int>(orth.X.shape(1));
+    RealMatrix P0 = xt::zeros<double>({n, n});
+
+    cudaStream_t stream;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+    AoDiisEigenDevice beta;
+    beta.build(stream, n, m, /*max_vectors=*/4, /*n_occ=*/0, 1.0, 0.0);
+    beta.upload_SX(S.data(), orth.X.data());
+    beta.upload_P(P0.data());
+    beta.reset();
+
+    const double err = beta.step(H.data());
+    EXPECT_NEAR(err, 0.0, 1e-12);
+
+    RealMatrix P_out = xt::zeros<double>({n, n});
+    beta.download_P(P_out.data());
+    for (int i = 0; i < n * n; ++i)
+        EXPECT_NEAR(P_out.data()[i], 0.0, 1e-14);
+
+    cudaStreamDestroy(stream);
+}

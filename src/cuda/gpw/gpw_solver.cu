@@ -3,15 +3,17 @@
 ///
 /// Hybrid composition (stated):
 ///   * host — STVnl / product-list build / P→weight pack / acc scatter;
-///     UKS host DIIS+eigen; multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\),
-///     χ^k collocate/integrate, KDiis + complex Hermitian diagonalize;
+///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k collocate/integrate,
+///     KDiis + complex Hermitian diagonalize;
 ///     force AO Pulay (W·dS, P·dT, P·dVnl) on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS `KsChainDevice::run`; multigrid RKS
 ///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
 ///     multi-k `KsChainDevice::run_from_rho` (host ρ → device Poisson/XC);
-///     **RKS mid-SCF Pulay DIIS + cuSOLVER eigen + density** via
-///     `internal::AoDiisEigenDevice` (cuda-gpw-device-diis-eigen);
+///     **Γ mid-SCF Pulay DIIS + cuSOLVER eigen + density** via
+///     `internal::AoDiisEigenDevice` — RKS one channel
+///     (cuda-gpw-device-diis-eigen); UKS dual α/β
+///     (cuda-gpw-uks-device-diis);
 ///     force grid product (V_eff·dχ·Pχ + ionic HF + local-PP HF) on Γ RKS
 ///     single-grid free-fn path.
 /// Final KS still D2Hs V_eff/V_es for force reuse on the free-fn path.
@@ -74,7 +76,6 @@ using cpu::gpw::make_uniform_grid;
 using cpu::gpw::pair_image_counts;
 using cpu::linalg::CanonicalOrth;
 using cpu::linalg::RealMatrix;
-using cpu::linalg::RealVector;
 using cpu::linalg::build_density_matrix;
 using cpu::linalg::diagonalize_fock;
 using internal::AoDiisEigenDevice;
@@ -315,31 +316,6 @@ double trace_product(const RealMatrix& P, const RealMatrix& M, int n) {
         for (int j = 0; j < n; ++j)
             t += P(i, j) * M(i, j);
     return t;
-}
-
-std::pair<RealVector, RealMatrix>
-diagonalize_fock_shifted(const RealMatrix& F, const RealMatrix& X,
-                         const RealMatrix& S, const RealMatrix& C_prev,
-                         int n_occ, double shift) {
-    if (shift <= 0.0 || C_prev.size() == 0 || n_occ <= 0)
-        return diagonalize_fock(F, X);
-
-    const int m = static_cast<int>(X.shape(1));
-    RealMatrix Fp = xt::linalg::dot(xt::transpose(X), xt::linalg::dot(F, X));
-    const RealMatrix C_occ = xt::view(C_prev, xt::all(), xt::range(0, n_occ));
-    const RealMatrix Cp_occ =
-        xt::linalg::dot(xt::transpose(X), xt::linalg::dot(S, C_occ));
-    const RealMatrix Pocc = xt::linalg::dot(Cp_occ, xt::transpose(Cp_occ));
-    for (int i = 0; i < m; ++i) {
-        Fp(i, i) += shift;
-        for (int j = 0; j < m; ++j)
-            Fp(i, j) -= shift * Pocc(i, j);
-    }
-    auto [eig, Cp] = xt::linalg::eigh(Fp);
-    RealMatrix C = xt::linalg::dot(X, Cp);
-    for (int i = n_occ; i < m; ++i)
-        eig(i) -= shift;
-    return {eig, C};
 }
 
 void store_converged_state(GpwResult& res, const RealMatrix& H,
@@ -1241,7 +1217,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         }
     };
 
-    // ── Collinear UKS (Padé LSD + dual DIIS; single-grid only) ────────────
+    // ── Collinear UKS (Padé LSD + dual device DIIS; single-grid only) ─────
     if (uks) {
         // use_mg is impossible after validate_slice_; ks_sg is live.
         RealMatrix Pa = build_density_matrix(C0, n_alpha, nb, 1.0);
@@ -1265,11 +1241,28 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             throw std::invalid_argument(
                 "cuda::gpw::GpwDft::run: guess_P_beta without guess_P");
         }
-        RealMatrix Ca_prev = C0;
-        RealMatrix Cb_prev = C0;
 
-        cpu::gpw::internal::GpwDiis diis_a(use_diis ? diis_depth : 1);
-        cpu::gpw::internal::GpwDiis diis_b(use_diis ? diis_depth : 1);
+        // Dual-spin device Pulay DIIS + cuSOLVER eigen
+        // (cuda-gpw-uks-device-diis). S/X shared; one channel per spin.
+        const int n_mo_uks = static_cast<int>(orth.X.shape(1));
+        AoDiisEigenDevice ao_a;
+        AoDiisEigenDevice ao_b;
+        ao_a.build(stream, nb, n_mo_uks, use_diis ? diis_depth : 0, n_alpha,
+                   /*occ_factor=*/1.0, level_shift);
+        ao_b.build(stream, nb, n_mo_uks, use_diis ? diis_depth : 0, n_beta,
+                   /*occ_factor=*/1.0, level_shift);
+        ao_a.reset();
+        ao_b.reset();
+        ao_a.upload_SX(S.data(), orth.X.data());
+        ao_b.upload_SX(S.data(), orth.X.data());
+        ao_a.upload_P(Pa.data());
+        ao_b.upload_P(Pb.data());
+        // Seed C for level-shift projector (CPU starts C_prev from C0).
+        if (static_cast<int>(C0.shape(0)) == nb
+            && static_cast<int>(C0.shape(1)) >= n_mo_uks) {
+            ao_a.upload_C(C0.data());
+            ao_b.upload_C(C0.data());
+        }
 
         auto build_uks_H =
             [&](const RealMatrix& Pa_in, const RealMatrix& Pb_in,
@@ -1365,56 +1358,49 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         RealMatrix Ha_raw, Hb_raw;
         bool conv = false;
         int it = 0;
+        const bool scf_trace_uks =
+            std::getenv("ATV_GPW_CUDA_TRACE") != nullptr;
         for (it = 0; it < max_iter; ++it) {
             auto [Ha, Hb, e_total] =
                 build_uks_H(Pa, Pb, /*store_grids=*/false);
             Ha_raw = Ha;
             Hb_raw = Hb;
             result_.e_total = e_total;
-            const RealMatrix err_a =
-                cpu::gpw::internal::gpw_diis_error(Ha, Pa, S, orth.X);
-            const RealMatrix err_b =
-                cpu::gpw::internal::gpw_diis_error(Hb, Pb, S, orth.X);
-            double err_norm = 0.0;
-            for (const double v : err_a)
-                err_norm = std::max(err_norm, std::abs(v));
-            for (const double v : err_b)
-                err_norm = std::max(err_norm, std::abs(v));
+            // Device residual e = Xᵀ(HPS−SPH)X per spin (twin host gpw_diis).
+            const double err_a = ao_a.residual(Ha.data());
+            const double err_b = ao_b.residual(Hb.data());
+            const double err_norm = std::max(err_a, err_b);
             const bool has_prev = !std::isnan(prev_energy);
             const double dE =
                 has_prev ? (e_total - prev_energy)
                          : std::numeric_limits<double>::infinity();
             // UKS: do not reset DIIS on energy ascent — dual-channel O₂ thrashing.
             // RKS multi-center residual uses kDiisAscentResetHa in the RKS loop.
+            if (scf_trace_uks)
+                std::fprintf(stderr,
+                             "[cuda gpw uks %3d] E=%.10f  dE=%.3e  "
+                             "err_a=%.3e err_b=%.3e\n",
+                             it, e_total, has_prev ? dE : 0.0, err_a, err_b);
             prev_energy = e_total;
             if (has_prev && std::abs(dE) < tol && err_norm < kDiisErrTol) {
                 conv = true;
                 break;
             }
-            RealMatrix Ha_use, Hb_use;
+            // Device DIIS + cuSOLVER eigen + density (dual spin).
+            ao_a.advance();
+            ao_b.advance();
             if (use_diis) {
-                Ha_use = diis_a.step(Ha, err_a);
-                Hb_use = diis_b.step(Hb, err_b);
+                ao_a.download_P(Pa.data());
+                ao_b.download_P(Pb.data());
             } else {
-                Ha_use = Ha;
-                Hb_use = Hb;
-            }
-            auto [eiga, Ca] = diagonalize_fock_shifted(
-                Ha_use, orth.X, S, Ca_prev, n_alpha, level_shift);
-            auto [eigb, Cb] = diagonalize_fock_shifted(
-                Hb_use, orth.X, S, Cb_prev, n_beta, level_shift);
-            (void)eiga;
-            (void)eigb;
-            Ca_prev = std::move(Ca);
-            Cb_prev = std::move(Cb);
-            RealMatrix Pa_new = build_density_matrix(Ca_prev, n_alpha, nb, 1.0);
-            RealMatrix Pb_new = build_density_matrix(Cb_prev, n_beta, nb, 1.0);
-            if (use_diis) {
-                Pa = std::move(Pa_new);
-                Pb = std::move(Pb_new);
-            } else {
+                RealMatrix Pa_new = xt::zeros<double>({nb, nb});
+                RealMatrix Pb_new = xt::zeros<double>({nb, nb});
+                ao_a.download_P(Pa_new.data());
+                ao_b.download_P(Pb_new.data());
                 Pa = (1.0 - mix) * Pa + mix * Pa_new;
                 Pb = (1.0 - mix) * Pb + mix * Pb_new;
+                ao_a.upload_P(Pa.data());
+                ao_b.upload_P(Pb.data());
             }
         }
         {

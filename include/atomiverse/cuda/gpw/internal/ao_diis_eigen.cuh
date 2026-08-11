@@ -1,5 +1,5 @@
 /// @file cuda/gpw/internal/ao_diis_eigen.cuh
-/// @brief Device Pulay DIIS + cuSOLVER dense eigen for GPW Γ RKS mid-SCF.
+/// @brief Device Pulay DIIS + cuSOLVER dense eigen for GPW Γ RKS/UKS mid-SCF.
 ///
 /// CUDA twin of host `cpu::gpw::internal::GpwDiis` + `diagonalize_fock` /
 /// `diagonalize_fock_shifted` + `build_density_matrix` used inside
@@ -12,6 +12,10 @@
 /// is solved on host (depth ≤ 8). Matrices are column-major doubles matching
 /// `cpu::linalg::RealMatrix`.
 ///
+/// One instance is one spin channel: RKS uses a single device with
+/// `occ_factor=2`; collinear UKS composes two (`n_alpha`/`n_beta`,
+/// `occ_factor=1` each) — cuda-gpw-uks-device-diis.
+///
 /// Domain-local to `cuda::gpw::internal` — does not consume `cuda::scf`
 /// helpers (GPW isolation). Public method surface stays `GpwDft`.
 #pragma once
@@ -23,7 +27,7 @@ namespace cuda {
 namespace gpw {
 namespace internal {
 
-/// @brief Device AO DIIS + eigen + density for one closed-shell spin channel.
+/// @brief Device AO DIIS + eigen + density for one spin channel (RKS or UKS).
 class AoDiisEigenDevice {
   public:
     AoDiisEigenDevice() = default;

@@ -1,5 +1,5 @@
 /// @file cuda/gpw/internal/ao_diis_eigen.cu
-/// @brief Device Pulay DIIS + cuSOLVER eigen for GPW Γ RKS mid-SCF.
+/// @brief Device Pulay DIIS + cuSOLVER eigen for GPW Γ RKS/UKS mid-SCF.
 
 #include "atomiverse/cuda/gpw/internal/ao_diis_eigen.cuh"
 
