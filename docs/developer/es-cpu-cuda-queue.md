@@ -888,43 +888,11 @@ collocate/MG/UKS/PBE/forces/stress/stream/DIIS-eigen.
 **`cuda-gpw-uks-gamma`**, **`cuda-gpw-device-forces`**,
 **`cuda-gpw-pbe-product-gate`**, **`cuda-gpw-uks-o2-gate`**,
 **`cuda-gpw-stress`**, **`cuda-gpw-nondefault-stream`**,
-**`cuda-gpw-device-diis-eigen`**.
+**`cuda-gpw-device-diis-eigen`**, **`cuda-gpw-product-h2o-gate`**, **`cuda-gpw-kpoints`**, **`cuda-pw-spin-forces`**.
 
 ## in_progress
 
-**Assign wave 5** 2026-08-11 (parent `dev` @ `e2198619` post GapCensus wave 5;
-queue-only parent delta vs tip base `e13cdb91`): capacity **3/3** filled by
-tip-green `[~]` not on base — **resume only**, **new_assigned=0**. Theme for
-NEW N/A (slots full). All three tips GH200 green on `e13cdb91` → **Merge owns
-land** (rebase onto `e2198619` if needed — chore-only). Held pending P2 for
-later free slots: `uks-device-diis` / `device-weight-pack` / `smear-forces` /
-`spin-stress` / kmesh-* + wave-4/5 multi-k depth (`kpoint-device-*` incl.
-**integrate** / `kpoint-si-gate`) + wave-5 production gates. Prefer one real
-product lift over dual-gate matrix explosion. Do **not** re-staff landed
-collocate / MG / UKS / PBE / forces / stress / stream / DIIS-eigen.
-**in_progress=3**.
-
-- [~] `cuda-gpw-product-h2o-gate` | **P2** Water-class Γ RKS PADE dual-gate
-  (production AO/grid after H₂ foothold; DIIS ascent clear) | track **cuda** |
-  twin: CPU water SZV/DZV GTH-PADE | tip **`8fe0edec`** | GH200 **1130140**
-  re-verify on Assign wave-4 base (prior **1130066** / **1129720**
-  \|dE\|=**7.526e-07** max\|dF\|=**3.213e-06**) | **resume** (Merge owns land)
-  | spec on tip `.claude/specs/cuda-gpw-product-h2o-gate/SPEC.md`
-- [~] `cuda-gpw-kpoints` | **P2** Multi-k RKS DIIS product energy (lift
-  `k_mesh=={1,1,1}` reject; tip = host phased STVnl/χ^k + device
-  `run_from_rho` + host integrate + host KDiis) | track **cuda** | twin: CPU
-  `reg_gpw-kpoints-si` class / H₂ k=2×1×1 TR-off | tip **`18ba6fc5`** |
-  GH200 **1130141** \|dE\|=**3.375e-14** | **resume** (Merge owns land;
-  residual → `kpoint-device-*` incl. **integrate** / `kpoint-si-gate`) | spec
-  on tip `.claude/specs/cuda-gpw-kpoints/SPEC.md`
-- [~] `cuda-pw-spin-forces` | **P2** Analytic ionic forces under collinear
-  **LSDA** spin (lift forces reject spin) | track **cuda** | twin: CPU
-  `pw_forces_analytic` spin dual-gate (O₂ class) | tip **`a5e941f2`** |
-  GH200 **1130145** max\|ΔF\|=**9.25e-13** eV/Å | Gate: fail-closed non-spin
-  path unchanged; not spin-PBE forces / stress / smear | lever:
-  `pw_forces_analytic` spin path after landed `cuda-pw-collinear-spin`
-  energy | **resume** (Merge owns land) | spec on tip
-  `.claude/specs/cuda-pw-spin-forces/SPEC.md`
+*(empty — h2o-gate + kpoints + spin-forces landed on `dev`)*
 
 
 ## blocked
@@ -935,6 +903,13 @@ collocate / MG / UKS / PBE / forces / stress / stream / DIIS-eigen.
   fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 
 ## done
+
+Post-opt-3 land 2026-08-11 (`dev` after tip merges):
+
+- [x] `cuda-gpw-product-h2o-gate` | **P1** Water Γ RKS PADE production dual-gate | GH200 **1130195** / **1130140** \|dE\|=**7.5e-7** max\|dF\|=**3.2e-6** | FF `30bb49b4` / feat `9124615d`
+- [x] `cuda-gpw-kpoints` | **P2** Multi-k RKS DIIS energy (H₂ k=2×1×1) | GH200 **1130141** \|dE\|=**3.375e-14** | merge `adc7c7d7` / feat `b2778a83` | residual host integrate/DIIS/STVnl
+- [x] `cuda-pw-spin-forces` | **P2** Collinear LSDA spin analytic ionic forces | GH200 **1130196** / **1130145** max\|ΔF\|=**9.25e-13** eV/Å | merge spin-forces / feat `44995ff6`
+
 
 Harness wave 2 land 2026-08-11 (`dev` @ `e164b767`):
 
