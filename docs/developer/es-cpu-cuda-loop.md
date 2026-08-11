@@ -39,6 +39,36 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 6 (parent `dev` @ `5319a282`):** 1 of 3 staffed
+  → done [x]: `cuda-gpw-kpoint-device-diis` (merge `5319a282` / feat
+  `f3f55dc2` / re-verify `8511a1fb`; GH200 **1133110** \|dE\|=**3.419e-14** Ha
+  H₂ multi-k RKS PADE device KDiis+zheevd; prior tip **1132761**
+  \|dE\|=**3.331e-14**; **perf_exempt**). Keep other `[~]`:
+  `cuda-pw-smear-stress` tip `4c9a7b62` (GH200 **1132266** / re-verify
+  **1133111** max‖Δσ‖=**7.25e-11** eV/Å³) + `cuda-gpw-kpoint-h-assemble` tip
+  `5b64229b` (GH200 **1132528** \|dE\|=**3.397e-14**). Spec closed (deleted
+  `.claude/specs/cuda-gpw-kpoint-device-diis/`). Roadmap prose: multi-k device
+  DIIS landed (table CUDA GPW remains **◐** — host H assemble / residency /
+  STVnl + Si/water multi-k gates + F/σ depth open — no ○→✓). GapCensus wave 13
+  residual held; **cpu_pending=0**; **new_slugs_added=0** this harness.
+  **cuda_pending=135**; **in_progress=2**; **gaps_remaining=136**. Clearup
+  already ran. Queue **not** exhausted (GapCensus owns discovery). No push.
+
+- **2026-08-11 Assign wave 6 (parent `dev` @ `eec0b266` / `85c6c5eb`):** Priority
+  `[~]` first — capacity **3/3** already filled by Assign wave 5 tip-green
+  branches not on base (post GapCensus wave 13). **Resume only**
+  (theme-for-NEW N/A; no dual-gate matrix staff; no re-staff landed
+  h2o/kpoints/spin-forces/DIIS/weight-pack/smear-forces/collocate/integrate):
+  `cuda-pw-smear-stress` (`aa84caba`, GH200 **1132266** max‖Δσ‖=**7.25e-11**
+  eV/Å³), `cuda-gpw-kpoint-h-assemble` (`5b64229b`, **1132528**
+  ‖dE‖=**3.397e-14**), `cuda-gpw-kpoint-device-diis` (`6fa3bba5`, **1132761**
+  ‖dE‖=**3.331e-14**). **new_assigned=0**; **incomplete_remaining=0**
+  (tip-green claims — Merge owns land). Held free-slot residual after land:
+  `kpoint-h-residency` / `kpoint-device-energy` / `kpoint-payload-device` /
+  `kpoint-p-residency` / `kpoint-device-stvnl` / `device-h-assemble` / PW
+  `smear-stress-al2-gate` / `spin-stress` / `kmesh-smear-forces`. Queue
+  **not** exhausted. No push.
+
 - **2026-08-11 GapCensus wave 13 (parent `dev` @ `eec0b266`):** Re-diff
   baselines/notes/roadmap/tree vs base; fair walls **held** MG MAIN **2.33×**;
   **cpu_pending=0**; no gpw-perf promote. Staffed tips **tip-green not base**

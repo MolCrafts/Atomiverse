@@ -637,9 +637,11 @@ Which engine backs which ✓:
   both CPU and CUDA, **and** GPW on CPU — the Gaussian-basis k-point path
   (phased lattice sums, KB nonlocal, per-k DIIS; `reg_gpw-kpoints-si`, diamond
   Si vs CP2K Quickstep, 2026-07-25); CUDA GPW multi-k has **H₂ energy
-  foothold** (`cuda-gpw-kpoints` GH200 **1130141**; host χ^k residual) —
-  Si/water production + device spine + F/σ still open (table PW k-RKS ✓ is
-  plane-wave, not GPW depth).
+  foothold** (`cuda-gpw-kpoints` GH200 **1130141**; multi-k device
+  collocate+integrate+DIIS landed GH200 **1130716**/**1130717**/**1133110** —
+  residual host H_k assemble / STVnl / residency / Si-water F·σ) —
+  Si/water production + host residual spine + F/σ still open (table PW k-RKS ✓
+  is plane-wave, not GPW depth; table CUDA GPW stays **◐**).
   **k-point periodic UKS** is CPU PW collinear spin on a multi-k mesh
   (`reg_pw-uks-kmesh-fe`; O₂ twin) plus **bulk Fe UKS + metallic smearing**
   (`reg_pw-uks-fe-smearing`) **and** GPW collinear multi-k UKS
