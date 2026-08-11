@@ -141,10 +141,9 @@ constexpr double kProductMassMargin = 1.0e-4;
 /// Fine-level monom sphere eps factor (product-collocate-pbc Si charge).
 constexpr double kSphereRadiusEpsFine = kProductMassMargin;
 /// Coarse-level monom sphere eps factor. Collint uses 0.02 (kProductWindowEps);
-/// monom continuous at 0.02 overshoots Si MG residual (GH200 1184281
-/// \|dE\|=7.6e-5 past CPU); 1e-4 (fine class) under-corrects (≈SG, 4.3e-4).
-/// Mid 5e-3 brackets the dual-gate (cuda-gpw-multigrid-device-ks).
-constexpr double kSphereRadiusEpsCoarse = 5.0e-3;
+/// monom continuous at 0.02 overshoots Si MG (GH200 1184281 \|dE\|=7.6e-5);
+/// 5e-3 under-corrects (1184590 \|dE\|=4.6e-4 toward SG). 1.5e-2 brackets.
+constexpr double kSphereRadiusEpsCoarse = 1.5e-2;
 
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
