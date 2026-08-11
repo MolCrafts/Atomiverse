@@ -43,17 +43,22 @@ device-diis-eigen (`dev` ≥ `e164b767`).
 
 ## GH200 evidence
 
-### Re-verify after rebase onto `dev` @ `46d65433` (device RKS DIIS/eigen) — job **1130066** (COMPLETED)
+### Re-verify after rebase onto `dev` @ `e13cdb91` (Assign wave 4 base) — job **1130140** (COMPLETED)
 
-- Node GH200 `n210`; `test_cuda_gpw_full_product` — **100%** (incl.
+- Node GH200 `n193`; `test_cuda_gpw_full_product` — **100%** (incl.
   `WaterGammaPadeEnergyDualGate`)
 - `run_reg_cuda-gpw-product-h2o-gate`:
   - CPU E=−16.902354386489 Ha (7 iters); CUDA E=−16.902355139062 Ha (8 iters)
   - **|dE|=7.526e−07 Ha** (tol 5e−5); **max|dF|=3.213e−06 Ha/Bohr** (tol 5e−4)
   - PASS; **perf_exempt** small molecule
-- Lever on tip: `AoDiisEigenDevice::reset()` on ascent (not host `GpwDiis`)
+- Lever: `AoDiisEigenDevice::reset()` on ascent (`kDiisAscentResetHa`); no new
+  kernel. **acceptance_met=true**.
+
+### Prior re-verify on `dev` @ `46d65433` — job **1130066** (COMPLETED)
+
+Same dual-gate numbers (n210). Superseded by **1130140** after rebase onto
+Assign wave 4 base.
 
 ### Prior (pre device-diis land) — jobs **1129720** / **1129294**
 
-Same dual-gate numbers on host-GpwDiis RKS tip (`bcb873e0` base). Superseded
-by **1130066** on diis land.
+Same dual-gate numbers on host-GpwDiis RKS tip (`bcb873e0` base).
