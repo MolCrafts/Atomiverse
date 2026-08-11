@@ -20,7 +20,7 @@ footholds.
 | --- | --- |
 | CPU method | `cpu::gpw::GpwDft` — multi-path **DIIS** on Driver stages; **OT** free-loop residual (same capability follow-on, not a block) |
 | CUDA stages | `cuda/gpw/internal/`: Poisson, XC LDA, product collocate/integrate, composed `KsChainDevice` (LDA+PBE), `KsMultiGridChainDevice` |
-| CUDA public method | **product landed** (`cuda::gpw::GpwDft` Γ RKS DIIS PADE/PBE + **Γ UKS DIIS PADE** + **multigrid energy** via `KsMultiGridChainDevice`; host STVnl/DIIS + device product collocate/KS/integrate via `KsChainDevice::run` / `run_uks`; free-fn forces CPU-backed) — depth residual on queue |
+| CUDA public method | **product landed** (`cuda::gpw::GpwDft` Γ RKS DIIS PADE/PBE + **Γ UKS DIIS PADE** + **multigrid energy** + **water dual-gate** + **multi-k RKS DIIS energy** H₂ foothold; device RKS DIIS/eigen + product collocate/KS; UKS host dual GpwDiis; multi-k host χ^k residual; free-fn forces hybrid) — depth residual on queue |
 
 ## Frozen public shape (CUDA product must match)
 
@@ -77,7 +77,7 @@ staffed.
 | Multi-path DIIS CPU Driver | **green** (`arch-gpw-driver-paths`) |
 | Public-shape freeze | **green** (this note; merge `0147fe02`) |
 | Stage footholds composed | **green** (ks-chain / GGA / MG units) |
-| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); device collocate **1125709**; MG energy **1126433**; Γ UKS **1126430** + O₂ **1127173**; device forces **1127167**; PBE H₂ **1127166**; stress **1128195**; non-default stream **1128196**; device RKS DIIS/eigen **1129719** (merge `e164b767`); residual (H₂O e2e, multi-k, MG/UKS F/σ + joints, force-stream / AO-Pulay, device STVnl/weight-pack) stays on es-cpu-cuda queue |
+| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); device collocate **1125709**; MG energy **1126433**; Γ UKS **1126430** + O₂ **1127173**; device forces **1127167**; PBE H₂ **1127166**; stress **1128195**; non-default stream **1128196**; device RKS DIIS/eigen **1129719**; water dual-gate **1130195**; multi-k energy **1130141** (H₂ host residual); residual (multi-k device spine + Si/water multi-k gates, MG/UKS F/σ + joints, force-stream / AO-Pulay, device STVnl/weight-pack/uks-diis) stays on es-cpu-cuda queue |
 
 `cuda-gpw-full-product` is no longer blocked on “needs architecture freeze”.
 It remains a product implementation slug (compose internals → public method),

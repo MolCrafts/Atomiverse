@@ -39,6 +39,16 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 GapCensus+Assign wave 6 (parent `dev` @ `557a1921`):** Re-diff
+  post opt-3 tip land (h2o-gate **1130195** + kpoints **1130141** +
+  spin-forces **1130196**). Fair walls **held** MG MAIN **2.33×**;
+  **cpu_pending=0**. Multi-k residual spine **on base** (host χ^k /
+  integrate / KDiis / STVnl). Autonomous discovery opens **1** deeper row
+  `kpoint-h2o-gate` (H₂ multi-k ≠ water multi-k). Staff **3** NEW P2:
+  `uks-device-diis`, `device-weight-pack`, `smear-forces`. **pending_count=90**;
+  **in_progress=3**; **cuda_pending=93**; **gaps_remaining=94**. Specs for
+  landed tips closed. Queue **not** exhausted. No push.
+
 - **2026-08-11 Assign wave 5 (parent `dev` @ `e2198619`):** Priority `[~]`
   first — capacity **3/3** already filled by tip-green branches not on
   base (post GapCensus wave 5). **Resume only** (theme-for-NEW N/A):
