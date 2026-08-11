@@ -25,12 +25,19 @@ Si nonlocal × multi-level device KS continuous path.
 
 ## Lever
 
-Mid-SCF MG branch in `gpw_solver.cu` `build_energy_device`: per-level
-`ProductWeightPackDevice::pack_weights` → `KsMultiGridChainDevice::run`
-(sphere-window PBC collocate + spectral prolong/restrict + fine Poisson/XC +
-per-level integrate) → `scatter_acc` / `scatter_acc_add` → device \(H=H_0+V\)
-/ DIIS. Parents: KB Vnl@Γ (`product-si-gate`), PBC collocate
-(`product-collocate-pbc`). Path surgery only if dual-gate fails.
+Mid-SCF MG branch in `gpw_solver.cu` `build_energy_device`:
+
+1. **Default (production path for this slug):** host collint multi-level twin
+   `multigrid_collocate_rho` + `ks_grid_build_rks` + `multigrid_integrate_veff`
+   (same MAIN as CPU), then device \(H=H_0+V\) / DIIS. Mid-path P D2H + V H2D
+   residual (iron-law P2) — same pattern as product-si host cbg before
+   `product-collocate-pbc`.
+2. **Device monom residual:** `ATV_GPW_CUDA_DEVICE_MG=1` forces
+   pack→`KsMultiGridChainDevice`→scatter. GH200 **1180025**: monom multi-level
+   under-corrects Si (CUDA MG E ≈ SG −15.1523 vs CPU MG −15.15189,
+   \|dE\|=**4.3e-4**). H₂ monom MG stays green (s-only). Deeper restore later.
+
+Parents: KB Vnl@Γ (`product-si-gate`), PBC collocate (`product-collocate-pbc`).
 
 ## Perf
 
@@ -38,4 +45,4 @@ per-level integrate) → `scatter_acc` / `scatter_acc_add` → device \(H=H_0+V\
 
 ## Status
 
-pending GH200 dual-gate.
+pending GH200 dual-gate after host-collint MG path.

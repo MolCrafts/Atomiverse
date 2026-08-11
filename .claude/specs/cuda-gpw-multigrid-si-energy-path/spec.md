@@ -16,14 +16,14 @@ ungated / historically non-convergent.
 
 | | |
 | --- | --- |
-| **Files** | `src/cuda/gpw/gpw_solver.cu` (`build_energy_device` MG branch), `src/cuda/gpw/internal/{product_collocate,product_integrate,ks_chain,multigrid_transfer}.cu` |
-| **Function** | mid-SCF MG: per-level `pack_weights` → `KsMultiGridChainDevice::run` (PBC collocate + prolong + fine KS + restrict + integrate) → `scatter_acc` / `scatter_acc_add` → device `H=H0+V` / DIIS |
+| **Files** | `src/cuda/gpw/gpw_solver.cu` (`build_energy_device` MG branch) |
+| **Function** | mid-SCF MG: **host collint** `multigrid_collocate_rho` + `ks_grid_build_rks` + `multigrid_integrate_veff` → device `H=H0+V` / DIIS (default). Device monom multi-level under-corrects Si (~4e-4 Ha, GH200 1180025). |
 | **Metric** | both SCF converge; \|E_cuda − E_cpu\| ≤ **5×10⁻⁵ Ha** on diamond Si Γ ngrids=4 |
-| **Not** | new dual-gate around mid-path DH; MG F/σ; multi-k MG; soft-tol |
+| **Not** | soft-tol; MG F/σ; multi-k MG; claiming full device-only monom MG green |
 
-Parents already closed: PBC collocate charge under-count; Si KB H0 residual.
-This slug **re-verifies continuous device MG KS** under Si production AO/grid
-and lands the dual-gate. Path surgery only if dual-gate fails.
+Parents already closed: PBC collocate; Si KB H0. This slug greens Si MG
+**energy path** via collint twin (product-si host-cbg pattern). Residual:
+device monom multi-level restore (env `ATV_GPW_CUDA_DEVICE_MG=1`).
 
 ## Acceptance
 
