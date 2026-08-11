@@ -4,8 +4,7 @@
 /// Hybrid composition (stated):
 ///   * host — STVnl / product-list build;
 ///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k build (once);
-///     KDiis + complex Hermitian diagonalize;
-///     force AO Pulay (W·dS, P·dT, P·dVnl) on Γ free-fn path
+///     host H_k assemble residual; force AO Pulay on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS `KsChainDevice::run`; multigrid RKS
 ///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
@@ -13,7 +12,9 @@
 ///     `internal::KpointCollocateDevice` (cuda-gpw-kpoint-device-collocate)
 ///     then `KsChainDevice::run_from_rho` (ρ resident; no mid-SCF H2D ρ) +
 ///     **device χ^k V→H_k integrate** via `KpointIntegrateDevice`
-///     (cuda-gpw-kpoint-device-integrate; V_eff stays resident mid-SCF);
+///     (cuda-gpw-kpoint-device-integrate; V_eff stays resident mid-SCF) +
+///     **multi-k mid-SCF Pulay DIIS + cuSOLVER zheevd + density** via
+///     `internal::KpointDiisEigenDevice` (cuda-gpw-kpoint-device-diis);
 ///     **Γ mid-SCF Pulay DIIS + cuSOLVER eigen + density** via
 ///     `internal::AoDiisEigenDevice` — RKS one channel
 ///     (cuda-gpw-device-diis-eigen); UKS dual α/β
@@ -41,6 +42,7 @@
 #include "atomiverse/cuda/gpw/internal/ao_diis_eigen.cuh"
 #include "atomiverse/cuda/gpw/internal/gpw_forces.cuh"
 #include "atomiverse/cuda/gpw/internal/kpoint_collocate.cuh"
+#include "atomiverse/cuda/gpw/internal/kpoint_diis_eigen.cuh"
 #include "atomiverse/cuda/gpw/internal/kpoint_integrate.cuh"
 #include "atomiverse/cuda/gpw/internal/ks_chain.cuh"
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
@@ -94,6 +96,7 @@ using internal::DevicePrimRef;
 using internal::DeviceProduct;
 using internal::DeviceProductGeom;
 using internal::KpointCollocateDevice;
+using internal::KpointDiisEigenDevice;
 using internal::KpointIntegrateDevice;
 using internal::KsChainDevice;
 using internal::KsChainEnergies;
@@ -555,15 +558,14 @@ struct DeviceBuf {
     }
 };
 
-// ── Multi-k RKS DIIS (kpoints + device collocate + device integrate) ─────
+// ── Multi-k RKS DIIS (collocate + integrate + device DIIS/eigen) ──────────
 // Host phased STVnl + χ^k build once; device mid-SCF density collocate via
-// KpointCollocateDevice (no host collocate_density_k / H2D ρ); device
-// Poisson+XC via KsChainDevice::run_from_rho; device V→H_k via
-// KpointIntegrateDevice (V_eff resident mid-SCF). Fixed occupations,
-// single-grid, no smear / OT / MG / UKS (validated by the caller).
+// KpointCollocateDevice; device Poisson+XC via KsChainDevice::run_from_rho;
+// device V→H_k via KpointIntegrateDevice; device multi-k Pulay DIIS +
+// zheevd + density via KpointDiisEigenDevice (cuda-gpw-kpoint-device-diis).
+// Fixed occupations, single-grid, no smear / OT / MG / UKS.
 
 using cpu::gpw::internal::CplxMatrix;
-using cpu::gpw::internal::KDiis;
 using cpu::gpw::internal::KOrth;
 using cpu::gpw::internal::KPoint;
 using cpu::gpw::internal::KpointBasisGrid;
@@ -737,7 +739,6 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     KsChainDevice ks(to_coll(grid), stream);
     const KsXcKind kxc = to_ks_xc(cfg.xc);
     const bool use_diis = cfg.diis_depth > 0;
-    KDiis diis(use_diis ? cfg.diis_depth : 1, weights);
 
     // Device χ^k integrate: upload once; mid-SCF keeps V_eff resident
     // (cuda-gpw-kpoint-device-integrate). Host collocate residual stays on
@@ -747,6 +748,26 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     for (int ik = 0; ik < nk; ++ik)
         kint.upload_chi(ik, kbg.chi[static_cast<std::size_t>(ik)].data());
     check_cuda(cudaStreamSynchronize(stream), "sync multi-k chi H2D");
+
+    // Multi-k device Pulay DIIS + cuSOLVER zheevd + density
+    // (cuda-gpw-kpoint-device-diis). S/X uploaded once; P refreshed each iter
+    // (P residency for collocate is a deeper slug).
+    int max_m = 0;
+    for (int ik = 0; ik < nk; ++ik)
+        max_m = std::max(max_m,
+                         static_cast<int>(orth[static_cast<std::size_t>(ik)]
+                                              .X.shape(1)));
+    KpointDiisEigenDevice kdiis;
+    kdiis.build(stream, nk, nb, max_m, use_diis ? cfg.diis_depth : 0,
+                cfg.n_occ, /*occ_factor=*/2.0, weights);
+    kdiis.reset();
+    for (int ik = 0; ik < nk; ++ik) {
+        const int mk =
+            static_cast<int>(orth[static_cast<std::size_t>(ik)].X.shape(1));
+        kdiis.upload_SX_k(ik, S_k[static_cast<std::size_t>(ik)].data(),
+                          orth[static_cast<std::size_t>(ik)].X.data(), mk);
+        kdiis.upload_P_k(ik, P_k[static_cast<std::size_t>(ik)].data());
+    }
 
     auto integrate_Vg_device = [&](int ik) -> CplxMatrix {
         kint.integrate(ks.d_veff(), kbg.weight, ik);
@@ -870,22 +891,16 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     double prev_energy = std::numeric_limits<double>::quiet_NaN();
     bool conv = false;
     int it = 0;
+    std::vector<const Cplx*> H_ptrs(static_cast<std::size_t>(nk), nullptr);
     for (it = 0; it < cfg.max_iter; ++it) {
         const double e_total = build_k_energy(P_k, /*store_grids=*/false);
         res.e_total = e_total;
 
-        std::vector<CplxMatrix> err_k(static_cast<std::size_t>(nk));
-        double err_norm = 0.0;
-        for (int ik = 0; ik < nk; ++ik) {
-            err_k[static_cast<std::size_t>(ik)] =
-                cpu::gpw::internal::k_diis_error(
-                    H_k[static_cast<std::size_t>(ik)],
-                    P_k[static_cast<std::size_t>(ik)],
-                    S_k[static_cast<std::size_t>(ik)],
-                    orth[static_cast<std::size_t>(ik)].X);
-            for (const Cplx v : err_k[static_cast<std::size_t>(ik)])
-                err_norm = std::max(err_norm, std::abs(v));
-        }
+        // Device residual e^k = X†(HPS−SPH)X (twin of host k_diis_error).
+        for (int ik = 0; ik < nk; ++ik)
+            H_ptrs[static_cast<std::size_t>(ik)] =
+                H_k[static_cast<std::size_t>(ik)].data();
+        const double err_norm = kdiis.residual(H_ptrs);
         const bool has_prev = !std::isnan(prev_energy);
         const double dE = has_prev ? (e_total - prev_energy)
                                    : std::numeric_limits<double>::infinity();
@@ -895,22 +910,20 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
             break;
         }
 
-        std::vector<CplxMatrix> H_use = H_k;
-        if (use_diis)
-            H_use = diis.step(H_k, err_k);
-
+        // Device DIIS + zheevd + density (cuda-gpw-kpoint-device-diis).
+        kdiis.advance();
         for (int ik = 0; ik < nk; ++ik) {
-            auto [eps, C] = cpu::gpw::internal::diagonalize_k(
-                H_use[static_cast<std::size_t>(ik)],
-                orth[static_cast<std::size_t>(ik)]);
-            (void)eps;
-            CplxMatrix P_new = density_from_fixed_k(C, cfg.n_occ, nb);
+            CplxMatrix P_new = xt::zeros<Cplx>({nb, nb});
+            kdiis.download_P_k(ik, P_new.data());
             if (use_diis)
                 P_k[static_cast<std::size_t>(ik)] = std::move(P_new);
             else
                 P_k[static_cast<std::size_t>(ik)] =
                     (1.0 - cfg.mix) * P_k[static_cast<std::size_t>(ik)]
                     + cfg.mix * P_new;
+            // Collocate still H2Ds host P_k; re-upload so next residual sees
+            // the same P the energy path will collocate (p-residency later).
+            kdiis.upload_P_k(ik, P_k[static_cast<std::size_t>(ik)].data());
         }
     }
 

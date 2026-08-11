@@ -1039,6 +1039,15 @@ if(ATV_BUILD_CUDA)
             target_link_libraries(test_cuda_gpw_kpoint_integrate
                                   PRIVATE CUDA::cufft)
         endif()
+        # Multi-k device Pulay DIIS + zheevd vs host KDiis/diagonalize_k
+        # (cuda-gpw-kpoint-device-diis).
+        atv_add_test(test_cuda_gpw_kpoint_diis_eigen
+                     cuda/gpw/test_kpoint_diis_eigen.cu)
+        if(TARGET test_cuda_gpw_kpoint_diis_eigen)
+            target_link_libraries(test_cuda_gpw_kpoint_diis_eigen
+                                  PRIVATE CUDA::cufft CUDA::cublas
+                                          CUDA::cusolver)
+        endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)

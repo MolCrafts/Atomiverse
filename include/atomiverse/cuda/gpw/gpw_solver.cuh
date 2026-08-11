@@ -12,8 +12,8 @@
 ///
 /// Hybrid composition (stated, not silent):
 ///   * host — STVnl / product-list build;
-///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k collocate/integrate,
-///     KDiis + complex Hermitian diagonalize;
+///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\) + χ^k build once;
+///     host H_k = T+Vnl+Vg assemble residual after device integrate;
 ///     force AO Pulay (W·dS / P·dT / P·dVnl) on Γ free-fn path
 ///   * device — product collocate + KS + product integrate via
 ///     `internal::KsChainDevice::run` (RKS single-grid),
@@ -21,7 +21,9 @@
 ///     collocate, spectral prolong, fine Poisson/XC, spectral restrict,
 ///     per-level integrate), `KsChainDevice::run_uks` (collinear UKS;
 ///     dual ρ → Poisson(total) → Padé LSD → dual V_eff → dual integrate),
-///     or `KsChainDevice::run_from_rho` (multi-k: host ρ → device Poisson/XC).
+///     or multi-k: device χ^k collocate + `run_from_rho` + device V→H_k
+///     integrate + **`KpointDiisEigenDevice`** mid-SCF Pulay DIIS + zheevd
+///     (cuda-gpw-kpoint-device-diis).
 ///     Γ mid-SCF Pulay DIIS + cuSOLVER dense eigen + density via
 ///     `internal::AoDiisEigenDevice` — RKS one channel
 ///     (cuda-gpw-device-diis-eigen); UKS dual α/β channels
