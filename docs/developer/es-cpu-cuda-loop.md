@@ -39,6 +39,24 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 GapCensus wave 19 / session wave 5 (parent `dev` @
+  `15c07dc8`):** Re-diff fair walls held (MG MAIN **2.33×** worst;
+  cpu_pending=0; no gpw-perf promote). Tree: kpoint-h-residency **landed**
+  (**1142864**/`e2bcb05e`); multi-k energy/payload/cold-start/χ/orth/vnl/h0
+  residual held. **Autonomous discovery from tip research
+  `wf/cuda-gpw-multigrid-si-energy-path` @ `0656b2e8` GH200 **1144059**/
+  **1144870**:** continuous collocate charge ~0.5 (no PBC wrap) → **new**
+  `cuda-gpw-product-collocate-pbc`; full host collint KS bit-identical hybrid
+  but first-iter E still −36.35 vs CPU −14.97 → primary residual
+  **H0/STVpp/DIIS under Si nonlocal** → re-scope
+  `cuda-gpw-multigrid-si-energy-path` + **new** `cuda-gpw-product-si-gate`
+  (Si Γ single-grid isolate; H₂/water product gates hide Si GTH). Keep `[~]`
+  energy-path + multigrid-si-gate (acceptance_met=false). Roadmap not updated
+  (CUDA GPW/PW stay ◐; no capability closed this census).
+  **new_slugs_added=2**; **pending_count=139**; **in_progress=2**;
+  **cpu_pending=0**; **cuda_pending=141**; **gaps_remaining=142**. Queue
+  **not** exhausted. No push.
+
 - **2026-08-11 harness wave 4 (parent `dev` @ `e2bcb05e`):** 1 of 3 staffed
   → done [x]: `cuda-gpw-kpoint-h-residency` (merge `e2bcb05e` / feat
   `068d7784` / re-verify `ed832fce`; GH200 **1142864** \|dE\|=**3.331e-14** Ha
