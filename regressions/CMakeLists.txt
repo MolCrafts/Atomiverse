@@ -825,6 +825,23 @@ if(ATV_BUILD_GPW)
             COMMENT "regression [gpw/cuda-gpw-kpoint-device-integrate] devices=both (1t)")
         add_dependencies(regressions run_${_reg_gpw_kint})
         unset(_reg_gpw_kint)
+
+        # Multi-k device Pulay DIIS + zheevd product dual-gate
+        # (cuda-gpw-kpoint-device-diis).
+        set(_reg_gpw_kdiis reg_cuda-gpw-kpoint-device-diis)
+        add_executable(${_reg_gpw_kdiis}
+            gpw/cuda-gpw-kpoint-device-diis/${_reg_gpw_kdiis}.cu)
+        target_link_libraries(${_reg_gpw_kdiis} PRIVATE atomiverse
+                              CUDA::cufft CUDA::cublas CUDA::cusolver)
+        set_target_properties(${_reg_gpw_kdiis} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_kdiis}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_kdiis}> --device=both
+            DEPENDS ${_reg_gpw_kdiis}
+            COMMENT "regression [gpw/cuda-gpw-kpoint-device-diis] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_kdiis})
+        unset(_reg_gpw_kdiis)
     endif()
     atv_add_regression(gpw gpw-pbe-d3bj-ice THREADS 8)
     atv_add_regression(gpw gpw-d3-atm THREADS 8)
