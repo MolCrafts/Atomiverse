@@ -478,3 +478,59 @@ TEST(CudaGpwFullProduct, O2UksPadeEnergyDualGate) {
     EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
                            << " |dE|=" << de;
 }
+
+// Diamond Si bct 4-atom Γ RKS PADE single-grid energy dual-gate
+// (cuda-gpw-product-si-gate — Si nonlocal GTH isolate; ngrids=1).
+// Isolates H0/STVpp residual under GTH-PBE-q4 without multigrid load.
+TEST(CudaGpwFullProduct, SiGammaPadeSingleGridEnergyDualGate) {
+    constexpr double kA2B = 1.0 / 0.52917720859;
+    const double a = 5.43 * kA2B;
+    const double at = a / std::sqrt(2.0);
+    const auto bas = GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH");
+    const auto pot = GthPotential(molrs::Element::Si, "GTH-PBE-q4");
+    const double frac[4][3] = {
+        {0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}, {0.5, 0.0, 0.25}, {0.0, 0.5, 0.75}};
+    std::vector<ATV::cpu::gpw::GpwAtom> atoms;
+    for (int i = 0; i < 4; ++i) {
+        const double pos[3] = {frac[i][0] * at, frac[i][1] * at,
+                               frac[i][2] * a};
+        atoms.emplace_back(pos, bas, pot, 14);
+    }
+
+    auto set_si = [&](auto& m) {
+        m.cell[0] = m.cell[1] = at;
+        m.cell[2] = a;
+        m.cutoff_ry = 40.0;
+        m.ngrids = 1;
+        m.n_occ = 8;
+        m.max_iter = 60;
+        m.tol = 1e-8;
+        m.diis_depth = 6;
+        m.xc = XcKind::PADE;
+        m.nonperiodic = false;
+        m.local_pp_on_grid = true;
+        m.use_ot = false;
+        m.eps_default = 1e-7;
+    };
+
+    ATV::cpu::gpw::GpwDft cpu;
+    set_si(cpu);
+    cpu.build(atoms);
+    const auto& rc = cpu.run(atoms);
+    ASSERT_TRUE(rc.converged) << "CPU Si Γ SCF failed iters=" << rc.iters;
+    ASSERT_TRUE(std::isfinite(rc.e_total));
+
+    ATV::cuda::gpw::GpwDft gpu;
+    set_si(gpu);
+    gpu.build(atoms);
+    const auto& rg = gpu.run(atoms);
+    ASSERT_TRUE(rg.converged) << "CUDA Si Γ SCF failed iters=" << rg.iters
+                              << " E=" << rg.e_total;
+    ASSERT_TRUE(std::isfinite(rg.e_total));
+
+    // Si p/d-shell + nonlocal GTH (product-si-gate; not soft-tol).
+    constexpr double kETolHa = 5.0e-5;
+    const double de = std::abs(rg.e_total - rc.e_total);
+    EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
+                           << " |dE|=" << de;
+}

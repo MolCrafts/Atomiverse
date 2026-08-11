@@ -2,7 +2,8 @@
 /// @brief `cuda::gpw::GpwDft` — product slice (Γ RKS/UKS + multi-k RKS DIIS).
 ///
 /// Hybrid composition (stated):
-///   * host — Γ STVnl / product-list build; multi-k χ^k build (once);
+///   * host — Γ STVnl (S/T + KB Vnl via add_nonlocal_kb_k@Γ) / product-list
+///     build; multi-k χ^k build (once);
 ///     multi-k host residual: energy ctrace, payload diag, cold-start;
 ///     force AO Pulay on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
@@ -271,9 +272,15 @@ std::vector<double> ionic_density(const UniformGrid& grid,
     return n;
 }
 
-// Contracted nonlocal GTH (local_pp_on_grid ⇒ local SR is on the grid, not here).
-// First-slice H GTH has empty nonlocal — this is a no-op then. When channels
-// exist, sums lattice images of the ket against each projector channel.
+// Γ nonlocal GTH onto Vpp when local_pp_on_grid (local SR is on the grid).
+//
+// Uses the same separable Kleinman–Bylander assembly as CPU Γ
+// (`add_nonlocal_kb`) via the shared multi-k path at κ=0. The previous
+// per-pair `gth_nonlocal` form only lattice-imaged the ket and missed
+// bra-image / Bloch projector sums — H₂ (empty NL) and large-cell water
+// hid it; Si-class GTH nonlocal first-iter E was ~2× CPU (tip GH200
+// 1144059 / 1144870; primary residual for product-si-gate +
+// multigrid-si-energy-path).
 void add_nonlocal_contracted(RealMatrix& Vpp,
                              const std::vector<GridBasisFunction>& basis,
                              const std::vector<GpwAtom>& atoms,
@@ -289,60 +296,20 @@ void add_nonlocal_contracted(RealMatrix& Vpp,
         return;
 
     const int nb = static_cast<int>(basis.size());
+    cpu::gpw::internal::KPoint g{};
+    g.frac[0] = g.frac[1] = g.frac[2] = 0.0;
+    g.weight = 1.0;
+    const std::vector<cpu::gpw::internal::KPoint> kpts{g};
+    using Cplx = std::complex<double>;
+    using CplxMatrix = cpu::gpw::internal::CplxMatrix;
+    std::vector<CplxMatrix> V_k(1, xt::zeros<Cplx>({nb, nb}));
+    cpu::gpw::internal::add_nonlocal_kb_k(V_k, basis, atoms, radii, cell, mimg,
+                                          kBuildScreen, kpts);
+    const CplxMatrix& Vk = V_k[0];
     for (int i = 0; i < nb; ++i) {
-        if (basis[static_cast<std::size_t>(i)].empty())
-            continue;
-        for (int j = i; j < nb; ++j) {
-            if (basis[static_cast<std::size_t>(j)].empty())
-                continue;
-            if (pair_overlap_bound(basis[static_cast<std::size_t>(i)],
-                                   basis[static_cast<std::size_t>(j)])
-                < kBuildScreen)
-                continue;
-            const double reach = radii[static_cast<std::size_t>(i)]
-                                 + radii[static_cast<std::size_t>(j)];
-            double v = 0.0;
-            for (const auto& at : atoms) {
-                if (at.nonlocal.empty())
-                    continue;
-                for (const auto& pa : basis[static_cast<std::size_t>(i)]) {
-                    Prim A;
-                    A.alpha = pa.alpha;
-                    A.center[0] = pa.center[0];
-                    A.center[1] = pa.center[1];
-                    A.center[2] = pa.center[2];
-                    A.l[0] = pa.l[0];
-                    A.l[1] = pa.l[1];
-                    A.l[2] = pa.l[2];
-                    for (const auto& pb : basis[static_cast<std::size_t>(j)]) {
-                        for (int tx = -mimg[0]; tx <= mimg[0]; ++tx)
-                            for (int ty = -mimg[1]; ty <= mimg[1]; ++ty)
-                                for (int tz = -mimg[2]; tz <= mimg[2]; ++tz) {
-                                    Prim B;
-                                    B.alpha = pb.alpha;
-                                    B.center[0] = pb.center[0] + tx * cell[0];
-                                    B.center[1] = pb.center[1] + ty * cell[1];
-                                    B.center[2] = pb.center[2] + tz * cell[2];
-                                    B.l[0] = pb.l[0];
-                                    B.l[1] = pb.l[1];
-                                    B.l[2] = pb.l[2];
-                                    const double dx = A.center[0] - B.center[0];
-                                    const double dy = A.center[1] - B.center[1];
-                                    const double dz = A.center[2] - B.center[2];
-                                    const double r2 =
-                                        dx * dx + dy * dy + dz * dz;
-                                    if (r2 > reach * reach)
-                                        continue;
-                                    for (const auto& ch : at.nonlocal)
-                                        v += pa.coeff * pb.coeff
-                                             * gth_nonlocal(A, B, at.pos, ch);
-                                }
-                    }
-                }
-            }
-            Vpp(i, j) += v;
-            if (i != j)
-                Vpp(j, i) += v;
+        for (int j = 0; j < nb; ++j) {
+            // Γ: Hermitian real; imag part is numerical noise only.
+            Vpp(i, j) += Vk(i, j).real();
         }
     }
 }
