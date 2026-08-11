@@ -59,6 +59,9 @@ CollocateGridDesc to_desc(const UniformGrid& g) {
         d.L[i] = g.L[i];
         d.origin[i] = g.origin[i];
     }
+    // Continuous full-grid foothold (host_collocate oracle is non-sphere).
+    // Production product path sets periodic=true (sphere-window PBC).
+    d.periodic = false;
     return d;
 }
 

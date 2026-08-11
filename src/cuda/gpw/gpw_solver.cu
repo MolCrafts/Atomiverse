@@ -9,8 +9,12 @@
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS device product KS (`KsChainDevice` + PBC min-image
 ///     collocate/integrate — cuda-gpw-product-collocate-pbc) + device
-///     H=H0+V / DIIS; multigrid RKS device continuous (Si MG residual
-///     multigrid-si-energy-path); collinear UKS `KsChainDevice::run_uks`;
+///     H=H0+V / DIIS; multigrid RKS mid-SCF uses **host collint product
+///     multigrid** (`multigrid_collocate_rho` + `ks_grid_build_rks` +
+///     `multigrid_integrate_veff`) then device H=H0+V / DIIS — Si
+///     monom-device multi-level under-corrects vs collint by ~0.4 mHa
+///     (cuda-gpw-multigrid-si-energy-path; residual true device monom MG
+///     → deeper slug); collinear UKS `KsChainDevice::run_uks`;
 ///     multi-k **device phased STVnl** via `KpointStvnlDevice`
 ///     (cuda-gpw-kpoint-device-stvnl; S/T device; Vnl zero or host-KB H2D);
 ///     multi-k **device χ^k density collocate** via
@@ -1703,63 +1707,153 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                 result_.v_es = std::move(v_es);
             }
         } else {
-            std::vector<DeviceProduct*> d_prods_ptr(
-                static_cast<std::size_t>(nlevels), nullptr);
-            std::vector<double*> d_acc_ptr(
-                static_cast<std::size_t>(nlevels), nullptr);
-            for (int l = 0; l < nlevels; ++l) {
-                const int np = nprod_by_level[static_cast<std::size_t>(l)];
-                if (np <= 0)
-                    continue;
-                DeviceProduct* d_prods_l =
-                    mg_prods.d_prods[static_cast<std::size_t>(l)];
-                wpack.pack_weights(d_P_use,
-                                   d_geom_by_level[static_cast<std::size_t>(l)],
-                                   d_prods_l, np, eps_drop);
-                d_prods_ptr[static_cast<std::size_t>(l)] = d_prods_l;
-                d_acc_ptr[static_cast<std::size_t>(l)] =
-                    mg_prods.d_acc[static_cast<std::size_t>(l)];
-            }
-            e = ks_mg->run(d_prods_ptr.data(), nprod_by_level.data(),
-                           dev.d_n_ion, d_vloc_arg, d_acc_ptr.data(), kxc);
-            bool first = true;
-            for (int l = 0; l < nlevels; ++l) {
-                const int np = nprod_by_level[static_cast<std::size_t>(l)];
-                if (np <= 0)
-                    continue;
-                const double w_l =
-                    mg.levels[static_cast<std::size_t>(l)].weight();
-                if (first) {
-                    wpack.scatter_acc(
-                        d_geom_by_level[static_cast<std::size_t>(l)],
-                        mg_prods.d_acc[static_cast<std::size_t>(l)], np, w_l);
-                    first = false;
-                } else {
-                    wpack.scatter_acc_add(
-                        d_geom_by_level[static_cast<std::size_t>(l)],
-                        mg_prods.d_acc[static_cast<std::size_t>(l)], np, w_l);
+            // Multigrid product KS: host collint multi-level twin (CPU MAIN
+            // path: multigrid_collocate_rho + ks_grid_build_rks +
+            // multigrid_integrate_veff). Device monom pack→KsMultiGridChain
+            // under-corrects Si multi-level by ~4e-4 Ha vs collint (GH200
+            // 1180025: CUDA MG ≈ SG energy while CPU MG shifts −15.1523 →
+            // −15.1519). H₂ monom MG stays green because s-only products.
+            // Mid-path P D2H + V H2D here is residual (iron-law P2) until a
+            // collint-faithful device multi-level restore — same pattern as
+            // product-si host cbg before product-collocate-pbc.
+            // Optional ATV_GPW_CUDA_DEVICE_MG=1 forces monom device path.
+            const bool force_device_mg =
+                std::getenv("ATV_GPW_CUDA_DEVICE_MG") != nullptr;
+            if (!force_device_mg) {
+                RealMatrix P_host = xt::zeros<double>({nb, nb});
+                // d_P is column-major (xtensor RealMatrix / AoDiis).
+                check_cuda(cudaMemcpyAsync(P_host.data(), d_P_use, mat_bytes,
+                                           cudaMemcpyDeviceToHost, stream),
+                           "D2H P for host MG KS");
+                check_cuda(cudaStreamSynchronize(stream), "sync P D2H MG");
+                // Row-major Pvec for CPU product_density_weight.
+                std::vector<double> Pvec(static_cast<std::size_t>(nb) * nb);
+                for (int i = 0; i < nb; ++i)
+                    for (int j = 0; j < nb; ++j)
+                        Pvec[static_cast<std::size_t>(i) * nb + j] =
+                            P_host(i, j);
+                std::vector<double> rho = multigrid_collocate_rho(
+                    mg, pset, nb, Pvec, eps);
+                const cpu::gpw::internal::KsGridRks ks =
+                    cpu::gpw::internal::ks_grid_build_rks(
+                        grid, rho, n_ion, v_locsr, xc, /*nonperiodic=*/false,
+                        false, false, false);
+                e.e_hartree = ks.e_hartree;
+                e.e_xc = ks.e_xc;
+                e.e_locgrid = ks.e_locgrid;
+                const std::vector<double> Vflat = multigrid_integrate_veff(
+                    mg, pset, nb, ks.veff, eps);
+                RealMatrix Vgrid = xt::zeros<double>({nb, nb});
+                for (int i = 0; i < nb; ++i)
+                    for (int j = 0; j < nb; ++j)
+                        Vgrid(i, j) =
+                            Vflat[static_cast<std::size_t>(i) * nb + j];
+                wpack.upload_matrix(Vgrid.data(), wpack.d_V());
+                if (store_grids) {
+                    result_.veff = ks.veff;
+                    result_.v_es = ks.v_es;
                 }
-            }
-            if (first) {
-                check_cuda(cudaMemsetAsync(wpack.d_V(), 0, mat_bytes, stream),
-                           "zero empty V");
-            }
-            if (store_grids) {
-                std::vector<double> veff(static_cast<std::size_t>(npts));
-                std::vector<double> v_es(static_cast<std::size_t>(npts));
-                check_cuda(cudaMemcpyAsync(veff.data(),
-                                           ks_mg->fine_chain().d_veff(),
-                                           bytes, cudaMemcpyDeviceToHost,
-                                           stream),
-                           "D2H veff fine (boundary)");
-                check_cuda(cudaMemcpyAsync(v_es.data(),
-                                           ks_mg->fine_chain().d_v_es(),
-                                           bytes, cudaMemcpyDeviceToHost,
-                                           stream),
-                           "D2H v_es fine (boundary)");
-                check_cuda(cudaStreamSynchronize(stream), "sync mg veff D2H");
-                result_.veff = std::move(veff);
-                result_.v_es = std::move(v_es);
+                if (std::getenv("ATV_GPW_CUDA_TRACE") != nullptr) {
+                    double q_el = 0.0;
+                    for (double v : rho)
+                        q_el += v;
+                    q_el *= w_fine;
+                    int nprod_sum = 0;
+                    for (int l = 0; l < nlevels; ++l)
+                        nprod_sum +=
+                            nprod_by_level[static_cast<std::size_t>(l)];
+                    std::fprintf(stderr,
+                                 "[cuda gpw mg host-collint] nlev=%d "
+                                 "nprod=%d  Q_el=%.6f  eH=%.6f eXC=%.6f\n",
+                                 nlevels, nprod_sum, q_el, e.e_hartree,
+                                 e.e_xc);
+                }
+            } else {
+                std::vector<DeviceProduct*> d_prods_ptr(
+                    static_cast<std::size_t>(nlevels), nullptr);
+                std::vector<double*> d_acc_ptr(
+                    static_cast<std::size_t>(nlevels), nullptr);
+                for (int l = 0; l < nlevels; ++l) {
+                    const int np = nprod_by_level[static_cast<std::size_t>(l)];
+                    if (np <= 0)
+                        continue;
+                    DeviceProduct* d_prods_l =
+                        mg_prods.d_prods[static_cast<std::size_t>(l)];
+                    wpack.pack_weights(
+                        d_P_use, d_geom_by_level[static_cast<std::size_t>(l)],
+                        d_prods_l, np, eps_drop);
+                    d_prods_ptr[static_cast<std::size_t>(l)] = d_prods_l;
+                    d_acc_ptr[static_cast<std::size_t>(l)] =
+                        mg_prods.d_acc[static_cast<std::size_t>(l)];
+                }
+                e = ks_mg->run(d_prods_ptr.data(), nprod_by_level.data(),
+                               dev.d_n_ion, d_vloc_arg, d_acc_ptr.data(),
+                               kxc);
+                if (std::getenv("ATV_GPW_CUDA_TRACE") != nullptr) {
+                    DeviceBuf chg;
+                    check_cuda(cudaMalloc(&chg.p, sizeof(double)),
+                               "malloc mg chg");
+                    collocate_integrate_rho(ks_mg->fine_chain().d_rho(), npts,
+                                            w_fine, chg.as<double>(), stream);
+                    double q_el = 0.0;
+                    check_cuda(cudaMemcpyAsync(&q_el, chg.as<double>(),
+                                               sizeof(double),
+                                               cudaMemcpyDeviceToHost, stream),
+                               "D2H mg charge diag");
+                    check_cuda(cudaStreamSynchronize(stream), "sync mg chg");
+                    int nprod_sum = 0;
+                    for (int l = 0; l < nlevels; ++l)
+                        nprod_sum +=
+                            nprod_by_level[static_cast<std::size_t>(l)];
+                    std::fprintf(stderr,
+                                 "[cuda gpw mg device-monom] nlev=%d "
+                                 "nprod=%d  Q_el=%.6f  eH=%.6f eXC=%.6f\n",
+                                 nlevels, nprod_sum, q_el, e.e_hartree,
+                                 e.e_xc);
+                }
+                bool first = true;
+                for (int l = 0; l < nlevels; ++l) {
+                    const int np = nprod_by_level[static_cast<std::size_t>(l)];
+                    if (np <= 0)
+                        continue;
+                    const double w_l =
+                        mg.levels[static_cast<std::size_t>(l)].weight();
+                    if (first) {
+                        wpack.scatter_acc(
+                            d_geom_by_level[static_cast<std::size_t>(l)],
+                            mg_prods.d_acc[static_cast<std::size_t>(l)], np,
+                            w_l);
+                        first = false;
+                    } else {
+                        wpack.scatter_acc_add(
+                            d_geom_by_level[static_cast<std::size_t>(l)],
+                            mg_prods.d_acc[static_cast<std::size_t>(l)], np,
+                            w_l);
+                    }
+                }
+                if (first) {
+                    check_cuda(
+                        cudaMemsetAsync(wpack.d_V(), 0, mat_bytes, stream),
+                        "zero empty V");
+                }
+                if (store_grids) {
+                    std::vector<double> veff(static_cast<std::size_t>(npts));
+                    std::vector<double> v_es(static_cast<std::size_t>(npts));
+                    check_cuda(cudaMemcpyAsync(veff.data(),
+                                               ks_mg->fine_chain().d_veff(),
+                                               bytes, cudaMemcpyDeviceToHost,
+                                               stream),
+                               "D2H veff fine (boundary)");
+                    check_cuda(cudaMemcpyAsync(v_es.data(),
+                                               ks_mg->fine_chain().d_v_es(),
+                                               bytes, cudaMemcpyDeviceToHost,
+                                               stream),
+                               "D2H v_es fine (boundary)");
+                    check_cuda(cudaStreamSynchronize(stream),
+                               "sync mg veff D2H");
+                    result_.veff = std::move(veff);
+                    result_.v_es = std::move(v_es);
+                }
             }
         }
 
