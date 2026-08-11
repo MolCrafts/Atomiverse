@@ -51,6 +51,11 @@ and \(\max |F^{\mathrm{cpu}}| > 0.05\) eV/Å (non-vacuous).
 (CPU = CUDA \(\max|F| = 12.491950\) eV/Å; CUDA force-path SCF energy
 \(-56.33636038\) Ry, iter=10). Bound kept at design-time \(5\times 10^{-3}\).
 
+**Re-verify GH200 job 1130145** (tip rebased onto Assign wave-4 `dev`
+@ `e13cdb91`, feat HEAD `87f08dec`): \(\max|\Delta F| = 9.25\times 10^{-13}\)
+eV/Å; same \(\max|F|=12.491950\) eV/Å; energy \(-56.33636038\) Ry, iter=10;
+`test_cuda_pw_force_local` + dual-gate PASS; BUILD/UNIT/REG_RC=0.
+
 ## Dual gate
 
 | Gate | Criterion |
