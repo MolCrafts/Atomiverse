@@ -35,13 +35,16 @@ matrix DH). Optional `ATV_GPW_CUDA_HOST_MG=1` keeps host collint for debug only.
 
 ## Acceptance
 
-| Gate | Tol |
-| --- | ---: |
-| Si MG dual-gate \|dE\| | ≤ **5×10⁻⁵** Ha (hold energy-path) |
-| Both SCF converged | required |
-| Mid-path scientific matrix DH | **zero** (scalar residual OK) |
-| Skills named | choose-launch-configuration, optimize-global-memory-access, handle-boundary-conditions, av-perf |
-| Soft-tol | **forbidden** |
+| Gate | Tol | Wave result |
+| --- | ---: | --- |
+| Si MG dual-gate \|dE\| | ≤ **5×10⁻⁵** Ha | **not met** — best **7.6e-5** (GH200 **1184281**) |
+| Both SCF converged | required | met |
+| Mid-path scientific matrix DH | **zero** on claimed device path | device path opt-in only |
+| Skills named | choose-launch-configuration, optimize-global-memory-access, handle-boundary-conditions, av-perf | met |
+| Soft-tol / pin-unsafe eps | **forbidden** | held |
+
+**acceptance_met=false**. Production default remains host collint (energy green).
+Device monom: `ATV_GPW_CUDA_DEVICE_MG=1`. Next: device collint/cmax (not eps fit).
 
 **perf_exempt** — iron-law residency / correctness dual-gate (not fair-wall vs CP2K).
 
