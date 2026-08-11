@@ -48,17 +48,18 @@ extra_law += "DUAL TRACK: every queue row carries method=cpu|cuda (use the metho
 // ── CUDA IRON LAWS (binding; fail wave if violated) ───────────────────
 extra_law += "CUDA-ONLY IRON LAW (.claude/notes/cuda-only-no-dh.md): CUDA product mid-path is device-resident. FORBIDDEN in mid-SCF / force-body of a claimed CUDA path: cudaMemcpy DeviceToHost or HostToDevice of scientific fields (ρ, V_eff, V_AO, H, P, C, ε, forces, stress tensors, χ packs used each iter); host for-loops that reimplement device science; silent CPU SCF fallback. ALLOWED only at explicit boundaries: once before first SCF iter (geometry/setup H2D) and once after convergence for Frame/last_result payload D2H. Any mid-iter download_V_host / P ping-pong / residual full-matrix D2H is a defect — staff residency fix, do not add dual-gates around it. ";
 extra_law += "CUDA KERNEL SKILLS (mandatory before writing or editing any .cu/.cuh kernel or launch): workers MUST load and follow the matching Grok CUDA skills — choose-launch-configuration; optimize-global-memory-access; optimize-shared-memory-tiling when shared mem used; choose-tile-size-and-work-partitioning for tiled work; avoid-warp-divergence when branching; handle-boundary-conditions for partial tiles; write-numerically-stable-kernel for reductions/softening; debug-cuda-kernel-correctness after numerical fails. Also av-perf for residency anti-patterns. Worker summary MUST name which skills were applied and the lever (file+fn+metric). Ad-hoc kernel style without skill reference fails review. ";
-extra_law += "CUDA STAFF ORDER: (1) residency / kill mid-path DH — device-h-assemble, p-residency, payload-device, force buffer reuse; (2) Si MG energy correctness if multigrid claimed; (3) sphere/task collocate+integrate rewrite; (4) large-cell wall only after 1–3. Prefer one real product lift over dual-gate matrix. GapCensus max 3 new CUDA slugs/wave and only if each names a mid-path DH or kernel-order defect. ";
+extra_law += "CUDA STAFF ORDER (only these until P0 closed): (1) kill mid-path DH — Γ RKS device-h-assemble (landed), uks-device-h, kpoint-p-residency / device ctrace, force buffer reuse; (2) Si MG energy correctness if multigrid claimed; (3) sphere/task collocate+integrate rewrite; (4) large-cell wall only after 1–3. GapCensus max 3 new CUDA slugs/wave and ONLY if each names a mid-path DH or kernel-order defect. FORBIDDEN: new dual-gate joints, production matrix explosion, soft tols. ";
+extra_law += "ACCEPTANCE GATE for CUDA green: (a) GH200 dual-gate PASS with stated tols; (b) worker greps own diff for mid-path DeviceToHost/HostToDevice of scientific matrices — must be zero (scalar residual/energy D2H OK); (c) skills applied named in summary. Missing (b) or (c) fails the wave even if dual-gate green. ";
 extra_law += "CUDA RUNTIME: same-settings CPU is correctness oracle; stated CUDA↔CPU tols; green requires GH200 log. Login has NO toolkit — sbatch -p gpu -A naiss2026-4-715-gpu --gpus 1 -t 01:00:00 -c 8; job #!/bin/bash -l; module load GPU/buildenv-gcccuda/2026.03-cu13.0; do NOT override RUSTUP on aarch64 GH200. ";
 extra_law += "AUTONOMOUS DISCOVERY: GapCensus every wave RE-DIFF vs target_branch; foothold ≠ closed; never claim exhausted from a short seed list — but DO NOT invent dual-gate joints that leave mid-path DH in place. ";
 extra_law += "RESEARCH-THEN-IMPL: before coding, read twin baseline + notes + hot path; state lever + acceptance; load CUDA skills above; then implement. Spec-lite under .claude/specs/<slug>/ when local. ";
 extra_law += "Branches: workers only on wf/<slug> off target_branch; no push; no reset --hard. ";
 extra_law += "DISK HARDENING: after EVERY cmake/build/ctest and before exit: rm -rf build build-* CMakeCache.txt CMakeFiles Testing .cache; wipe worktree builds on clearup; re-scan must be empty; builds_wiped lies fail the wave. ";
 extra_law += "FD-FORCE: energy-path change ⇒ re-run FD force oracle. SIMD: portable xsimd only. ES order: .claude/notes/es-optimization-order.md binding. ";
-// Defaults
-let default_staff_count = 3;
-let default_do_perf = true;
-let default_require_perf = false;   // residency/correctness first; perf_exempt only for pure correctness gates with stated tols
+// Defaults — residency纠偏 mode
+let default_staff_count = 2;
+let default_do_perf = false;         // wall optional until mid-path DH gone
+let default_require_perf = false;
 let default_write_tutorials = false;
 let default_skip_recover = false;
 // ────────────────────────────────────────────────────────────────────────

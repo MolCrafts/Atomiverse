@@ -109,6 +109,20 @@ void KpointCollocateDevice::zero_rho(double* d_rho) const {
                "memset d_rho");
 }
 
+/// @brief dest_rm[i*n+j] = src_cm[j*n+i] (complex double2).
+__global__ void transpose_cm_to_rm_kernel(const double2* __restrict__ src_cm,
+                                          double2* __restrict__ dest_rm,
+                                          int n) {
+    const int idx = static_cast<int>(blockIdx.x) * static_cast<int>(blockDim.x)
+                    + static_cast<int>(threadIdx.x);
+    const int nn = n * n;
+    if (idx >= nn)
+        return;
+    const int i = idx / n;
+    const int j = idx - i * n;
+    dest_rm[i * n + j] = src_cm[j * n + i];
+}
+
 void KpointCollocateDevice::collocate_k(int ik,
                                         const std::complex<double>* P_host,
                                         double wk, double* d_rho) {
@@ -135,6 +149,33 @@ void KpointCollocateDevice::collocate_k(int ik,
     collocate_density_k_kernel<<<grid, kBlock, 0, stream_>>>(
         chi_k, d_P_, nb_, npts_, wk, d_rho);
     check_cuda(cudaGetLastError(), "collocate_density_k_kernel launch");
+}
+
+void KpointCollocateDevice::collocate_k_device_cm(int ik, const void* d_P_cm,
+                                                  double wk, double* d_rho) {
+    if (!built_)
+        throw std::runtime_error(
+            "KpointCollocateDevice::collocate_k_device_cm: not built");
+    if (ik < 0 || ik >= nk_)
+        throw std::invalid_argument(
+            "KpointCollocateDevice::collocate_k_device_cm: ik out of range");
+    if (!d_P_cm || !d_rho)
+        throw std::invalid_argument(
+            "KpointCollocateDevice::collocate_k_device_cm: null d_P_cm or "
+            "d_rho");
+    const int nn = nb_ * nb_;
+    constexpr int kBlock = 256;
+    const int tgrid = (nn + kBlock - 1) / kBlock;
+    transpose_cm_to_rm_kernel<<<tgrid, kBlock, 0, stream_>>>(
+        static_cast<const double2*>(d_P_cm), d_P_, nb_);
+    check_cuda(cudaGetLastError(), "transpose_cm_to_rm_kernel");
+    const size_t nchi = static_cast<size_t>(npts_) * static_cast<size_t>(nb_);
+    const double2* chi_k = d_chi_ + static_cast<size_t>(ik) * nchi;
+    const int grid =
+        static_cast<int>((npts_ + kBlock - 1) / static_cast<long>(kBlock));
+    collocate_density_k_kernel<<<grid, kBlock, 0, stream_>>>(
+        chi_k, d_P_, nb_, npts_, wk, d_rho);
+    check_cuda(cudaGetLastError(), "collocate_density_k_kernel device-P");
 }
 
 void KpointCollocateDevice::destroy() {

@@ -28,14 +28,16 @@ destroys any large-system story and is not “CUDA product”.
 
 ## Audit hotspots (known debt — fix order)
 
-| Priority | Surface | Defect class |
+| Priority | Surface | Status |
 | --- | --- | --- |
-| P0 | Γ RKS `gpw_solver.cu` mid-SCF | `download_V_host` every iter → host \(H=H_0+V\) → residual H2D |
-| P0 | Γ UKS same file | dual \(V\) D2H + \(P_{\alpha/\beta}\) re-upload |
-| P0 | Multi-k | host \(P_k\) ping-pong; host ctrace; payload host re-diag |
-| P1 | Forces free-fn | full grid re-H2D + host AO Pulay + per-call malloc |
-| P1 | DIIS residual | full error-matrix D2H for max-norm |
-| P2 | Stress free-fn | host assembly shell (must not be marketed as device stress) |
+| P0 | Γ RKS mid-SCF | **fixed** — device \(H=H_0+V\), `residual_device`, no V_AO D2H |
+| P0 | Γ UKS mid-SCF | **fixed** — pack from `d_P`, device dual \(H\), no mid-SCF P D2H |
+| P0 | Multi-k collocate/P | **fixed** — `collocate_k_device_cm` + no P ping-pong; device Re⟨P,T/Vnl⟩ |
+| P0 | Multi-k residual H | **fixed earlier** — `ingest_H_k_device_rm` + `residual_from_device` |
+| P1 | Forces free-fn | open — full grid re-H2D + host AO Pulay + per-call malloc |
+| P1 | Multi-k payload | open — host re-diag after final `download_H` (boundary-ish) |
+| P1 | DIIS residual | **fixed** — device max-\|e\| scalar only |
+| P2 | Stress free-fn | open — host assembly shell |
 
 RHF s/p and PW density-side residency are the **acceptance bar**.
 

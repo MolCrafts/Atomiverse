@@ -60,8 +60,22 @@ class KpointCollocateDevice {
     ///               (`CplxMatrix` / xtensor default).
     /// @param wk     k-point quadrature weight.
     /// @param d_rho  Device density, length npts (accumulated).
+    /// @note Prefer `collocate_k_device_cm` mid-SCF (no H2D of P).
     void collocate_k(int ik, const std::complex<double>* P_host, double wk,
                      double* d_rho);
+
+    /// @brief Accumulate w_k · ρ_k from **device col-major** P (DIIS layout).
+    ///
+    /// Transposes CM→RM into internal scratch (D2D only), then same kernel
+    /// as `collocate_k`. CUDA-only iron law path for multi-k mid-SCF.
+    ///
+    /// @param ik       k index.
+    /// @param d_P_cm   Device Hermitian density, **column-major** nb×nb
+    ///                 complex (matches `KpointDiisEigenDevice::d_P(ik)`).
+    /// @param wk       k-point weight.
+    /// @param d_rho    Device density, length npts (accumulated).
+    void collocate_k_device_cm(int ik, const void* d_P_cm, double wk,
+                               double* d_rho);
 
     /// @brief Free device memory.
     void destroy();
