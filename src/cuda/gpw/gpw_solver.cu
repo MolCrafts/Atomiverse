@@ -9,8 +9,11 @@
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS device product KS (`KsChainDevice` + PBC min-image
 ///     collocate/integrate — cuda-gpw-product-collocate-pbc) + device
-///     H=H0+V / DIIS; multigrid RKS device continuous (Si MG residual
-///     multigrid-si-energy-path); collinear UKS `KsChainDevice::run_uks`;
+///     H=H0+V / DIIS; multigrid RKS device continuous via
+///     `KsMultiGridChainDevice` (PBC collocate per level + spectral
+///     prolong/restrict — Si production dual-gate
+///     cuda-gpw-multigrid-si-energy-path); collinear UKS
+///     `KsChainDevice::run_uks`;
 ///     multi-k **device phased STVnl** via `KpointStvnlDevice`
 ///     (cuda-gpw-kpoint-device-stvnl; S/T device; Vnl zero or host-KB H2D);
 ///     multi-k **device χ^k density collocate** via
@@ -1722,6 +1725,26 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             }
             e = ks_mg->run(d_prods_ptr.data(), nprod_by_level.data(),
                            dev.d_n_ion, d_vloc_arg, d_acc_ptr.data(), kxc);
+            if (std::getenv("ATV_GPW_CUDA_TRACE") != nullptr) {
+                // Diagnostic: ∫ρ_fine after multi-level collocate+prolong.
+                DeviceBuf chg;
+                check_cuda(cudaMalloc(&chg.p, sizeof(double)), "malloc mg chg");
+                collocate_integrate_rho(ks_mg->fine_chain().d_rho(), npts,
+                                        w_fine, chg.as<double>(), stream);
+                double q_el = 0.0;
+                check_cuda(cudaMemcpyAsync(&q_el, chg.as<double>(),
+                                           sizeof(double),
+                                           cudaMemcpyDeviceToHost, stream),
+                           "D2H mg charge diag");
+                check_cuda(cudaStreamSynchronize(stream), "sync mg chg");
+                int nprod_sum = 0;
+                for (int l = 0; l < nlevels; ++l)
+                    nprod_sum += nprod_by_level[static_cast<std::size_t>(l)];
+                std::fprintf(stderr,
+                             "[cuda gpw mg] nlev=%d nprod=%d  Q_el=%.6f  "
+                             "eH=%.6f eXC=%.6f\n",
+                             nlevels, nprod_sum, q_el, e.e_hartree, e.e_xc);
+            }
             bool first = true;
             for (int l = 0; l < nlevels; ++l) {
                 const int np = nprod_by_level[static_cast<std::size_t>(l)];
