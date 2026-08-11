@@ -39,6 +39,42 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 5 (parent `dev` @ `d476ee7a`):** 1 of 2 staffed
+  → done [x]: `cuda-gpw-device-payload` (merge `d476ee7a` / feat `d4a00181` /
+  re-verify `61c2dfd3`; GH200 **1182615** \|dE\|=**1.252e-08** max\|deps\|=
+  **1.888e-06** Ha H₂ Γ RKS PADE device final payload eigen via
+  `AoDiisEigenDevice::eigen_from_device`; prior **1180932** /
+  **1178026**; mid-path scientific matrix DH **zero**; skills: av-perf
+  residency + write-numerically-stable-kernel / optimize-global-memory-access
+  (reuse dsyevd/gemm); **perf_exempt**). Keep other `[~]`:
+  **`cuda-gpw-multigrid-device-ks`** (Assign wave 5 NEW iron-law monom
+  restore; GH200 **1180025** monom \|dE\|=**4.3e-4**). Spec closed (deleted
+  `.claude/specs/cuda-gpw-device-payload/`); dropped
+  `job-cuda-gpw-device-payload.sh`. Roadmap prose: Γ RKS device final payload
+  landed (table CUDA GPW remains **◐** — device monom MG + UKS/multi-k
+  payload/cold-start + multi-k χ/orth/vnl/h0 + production matrix open — no
+  ○→✓). GapCensus wave 5 residual held; **cpu_pending=0**;
+  **new_slugs_added=0** this harness. **pending_count=131**;
+  **cuda_pending=131**; **in_progress=1**; **gaps_remaining=133**. Clearup
+  already ran. Queue **not** exhausted (GapCensus owns discovery). No push.
+
+- **2026-08-11 Assign wave 5 (parent `dev` @ `d3c6c5dc` / GapCensus @
+  `6595ef11`):** Priority `[~]` first — **RESUME**
+  `cuda-gpw-device-payload` (tip **1180932** \|dE\|=**1.252e-08**
+  max\|deps\|=**1.899e-06**; branch `wf/cuda-gpw-device-payload` unmerged —
+  merge job). Open es-cpu-cuda specs: none (method-loop only:
+  `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`). Theme NEW (cuda-only-no-dh
+  residual mid-path DH only — no dual-gate matrix invent; no soft tols;
+  GH200): **NEW** `cuda-gpw-multigrid-device-ks` (P2 Si MG monom restore /
+  kill host collint mid-path P/V DH; GH200 **1180025** monom
+  \|dE\|=**4.3e-4** after energy-path on base). Held free-slot residual:
+  `multigrid-si-gate` / `uks-payload-device` / `device-cold-start` /
+  kpoint payload/cold-start/χ/orth/vnl/h0 / force-handoff / AO-Pulay.
+  **new_assigned=1**; **incomplete_remaining=1** (payload tip green —
+  Merge-owned land). **pending_count=131**; **in_progress=2**;
+  **cpu_pending=0**; **gaps_remaining=134**. Queue **not** exhausted. No
+  push.
+
 - **2026-08-11 harness wave 4 (parent `dev` @ `88d8ec59`):** 1 of 2 staffed
   → done [x]: `cuda-gpw-multigrid-si-energy-path` (merge `88d8ec59` / feat
   `c99f4622` / fix `c2084efe` / re-verify `60c77321`; GH200 **1180883**

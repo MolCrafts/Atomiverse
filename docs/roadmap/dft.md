@@ -491,9 +491,10 @@ Two periodic DFT engines exist, with disjoint strengths:
   force-stream** (**1158949**), **sphere-window PBC product collocate + SG
   device product KS** (`product-collocate-pbc` **1173564**/`cfb246d1`). Depth
   residual on es-cpu-cuda queue (**`multigrid-si-energy-path` landed** host
-  collint multi-level GH200 **1180883**; iron-law monom restore →
+  collint multi-level GH200 **1180883**; **`device-payload` landed** GH200
+  **1182615**/`d476ee7a` Γ RKS final device eigen; iron-law monom restore →
   **`multigrid-device-ks`**; `multigrid-si-gate` unblocked; water σ + water×PBE
-  E+F/σ; Γ **device-payload / uks-payload-device / device-cold-start**; multi-k
+  E+F/σ; Γ **uks-payload-device / device-cold-start**; multi-k
   **payload/cold-start/χ/orth/vnl/h0** + Si/water multi-k E+F/σ + multi-k×PBE;
   MG production water/Si F/σ + Si MG×PBE; UKS F/σ + UKS-PBE + O₂ joints;
   AO-Pulay / device-stress / handoffs; Γ device-STVnl + product-residency) —
