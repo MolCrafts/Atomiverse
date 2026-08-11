@@ -39,6 +39,19 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 GapCensus wave 18 (parent `dev` @ `5aa19d6c`):** Re-diff fair
+  walls held (MG MAIN **2.33×** worst; cpu_pending=0; no gpw-perf promote).
+  Tree: STVnl + LSDA spin stress on base; multi-k Vnl/H0/χ/orth residual held.
+  **Autonomous discovery:** tip `wf/cuda-gpw-multigrid-si-gate` GH200
+  **1137743**/**1139046** — H₂ MG foothold green but Si Γ ngrids=4 CUDA
+  first-iter E ~**2×** CPU, residual stuck → **new**
+  `cuda-gpw-multigrid-si-energy-path` (P2 product path fix; parent of green
+  Si dual-gate). Keep `[~]` h-residency tip-green `44a4c5c5` + multigrid-si
+  tip blocked. Roadmap not updated (GPW/PW CUDA stay ◐; spin LSDA σ already
+  prose-landed). **new_slugs_added=1**; **pending_count=138**;
+  **in_progress=2**; **cpu_pending=0**; **cuda_pending=140**;
+  **gaps_remaining=141**. Queue **not** exhausted. No push.
+
 - **2026-08-11 harness wave 3 (parent `dev` @ `79d617ca`):** 1 of 3 staffed
   → done [x]: `cuda-pw-spin-stress` (merge `79d617ca` / feat `841ac78f`;
   GH200 **1135756** / prior **1133857** max‖Δσ‖=**1.435e-11** eV/Å³ O₂
