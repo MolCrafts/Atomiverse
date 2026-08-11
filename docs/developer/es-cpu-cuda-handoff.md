@@ -30,8 +30,9 @@ agent_budget: 256
 
 | Slug | Status |
 | --- | --- |
-| Γ RKS `device-h-assemble` | landed / in-tree |
-| UKS device H + pack from `d_P` | fix in progress |
-| multi-k collocate from `d_P` (no P ping-pong) | fix in progress |
-| force free-fn buffer reuse | open |
+| Γ RKS `device-h-assemble` | landed |
+| UKS device H + pack from `d_P` | landed (`5a5076d0`) |
+| multi-k collocate from `d_P` (no P ping-pong) | landed (`5a5076d0`) |
+| force free-fn non-default stream | landed (`61b91971`); host AO Pulay residual |
+| GH200 retest | **job 1158949** `tools/gpu_job_cuda_gpw_residency.sh` |
 | Si MG energy path | open (correctness) |
