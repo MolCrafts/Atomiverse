@@ -56,7 +56,7 @@ class KpointIntegrateDevice {
     /// @param ik   k index.
     void integrate(const double* d_V, double w, int ik);
 
-    /// @brief Download last integrated Vmat (nb×nb column-major complex).
+    /// @brief Download last integrated Vmat (nb×nb row-major: out[u*nb+t]=V(u,t)).
     ///
     /// @param out  Host buffer length nb·nb.
     void download_Vmat(std::complex<double>* out) const;
