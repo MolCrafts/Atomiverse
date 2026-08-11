@@ -45,4 +45,8 @@ Parents: KB Vnl@Γ (`product-si-gate`), PBC collocate (`product-collocate-pbc`).
 
 ## Status
 
-pending GH200 dual-gate after host-collint MG path.
+**acceptance_met=true** — GH200 **1180409** (tip `a58d90e1`):
+CPU E=−15.151890096614 Ha iters=9; CUDA E=−15.151890075311 Ha iters=9;
+\|dE\|=**2.130e-08** Ha (tol 5e-5). Holds: ks_multigrid unit, full_product,
+multigrid-run \|dE\|=**1.082e-11**, product-si \|dE\|=**3.504e-05**.
+Prior fail **1180025** device monom \|dE\|=**4.296e-04**.
