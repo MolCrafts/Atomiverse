@@ -35,10 +35,12 @@ destroys any large-system story and is not “CUDA product”.
 | P0 | Multi-k collocate/P | **fixed** — `collocate_k_device_cm` + no P ping-pong; device Re⟨P,T/Vnl⟩ |
 | P0 | Multi-k residual H | **fixed earlier** — `ingest_H_k_device_rm` + `residual_from_device` |
 | P0 | Γ RKS single-grid KS | **fixed** — device product KS + PBC min-image collocate/integrate (`product-collocate-pbc`); cbg retained force-only |
-| P1 | Forces free-fn | open — full grid re-H2D + host AO Pulay + per-call malloc |
-| P1 | Multi-k payload | open — host re-diag after final `download_H` (boundary-ish) |
+| P1 | Forces free-fn | open — full grid re-H2D + host densify ρ + host AO Pulay (`force-device-handoff` / `device-ao-pulay`) |
+| P1 | Γ / multi-k payload | open — host re-diag after mid-SCF device eigen (`device-payload` / `kpoint-payload-device` / cold-start twins) |
+| P1 | Multi-k setup residency | open — host χ / Löwdin / KB Vnl / H0 rematerialize (`kpoint-device-chi` / `orth` / `vnl` / `h0-residency`) |
 | P1 | DIIS residual | **fixed** — device max-\|e\| scalar only |
-| P2 | Stress free-fn | open — host assembly shell |
+| P2 | Stress free-fn | open — host assembly shell (`device-stress`) |
+| P2 | Si MG energy path | open after PBC land — `multigrid-si-energy-path` (not a new dual-gate around DH) |
 
 RHF s/p and PW density-side residency are the **acceptance bar**.
 

@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 harness wave 2)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 3)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
 **landed** on `dev`. Device mid-SCF collocate/integrate (**sphere-window
@@ -61,15 +61,17 @@ product stress, SCF + **force** non-default stream, device RKS/UKS DIIS/eigen,
 weight pack, water E+F, multi-k H₂ spine (collocate/integrate/H/KDiis/STVnl
 S/T/H residual), **Γ/UKS device H assemble**, **UKS + multi-k P residency**,
 **multi-k device e_kin/e_nl**, **Si Γ ngrids=1 product-si-gate**, **SG device
-product KS**, spin F/σ, smear F/σ (Γ) **on base** (`cfb246d1` after
-collocate-pbc **1173564** + product-si `a158848f` / **1167099** + residency
-`5a5076d0` / force-stream `61b91971` / **1158949**; kpoint-h-residency
-`e2bcb05e` / **1142864**). **`product-collocate-pbc` landed** — Si MG
-**unblocked** (`multigrid-si-energy-path` next). Multi-k residual **held:**
-host χ / Löwdin / KB Vnl / H0 rematerialize + payload/cold-start. Γ residual:
-**device-payload** / **uks-payload-device** / **device-cold-start** + Γ STVnl
-+ product geometry residency + hybrid free-fn depth. Water **σ** +
-multi-k/MG×PBE matrix + PW spin×kmesh×smear held. **new_slugs_added=0**.
+product KS**, spin F/σ, smear F/σ (Γ) **on base** (`908ae0d1` after
+collocate-pbc **1173564**/`cfb246d1` + product-si `a158848f` / **1167099** +
+residency `5a5076d0` / force-stream `61b91971` / **1158949**;
+kpoint-h-residency `e2bcb05e` / **1142864**). **`product-collocate-pbc` on
+base** — Si MG **unblocked** (`multigrid-si-energy-path` **P2 next**).
+Multi-k residual **held:** host χ / Löwdin / KB Vnl / H0 rematerialize +
+payload/cold-start. Γ residual: **device-payload** / **uks-payload-device** /
+**device-cold-start** + Γ STVnl + product geometry residency + hybrid free-fn
+depth. Water **σ** + multi-k/MG×PBE matrix + PW spin×kmesh×smear held.
+Wave-3 tree audit: no new P0 mid-path DH beyond named rows;
+**new_slugs_added=0** (max-3 CUDA budget unused).
 
 | Priority | slug | Goal |
 | --- | --- | --- |
