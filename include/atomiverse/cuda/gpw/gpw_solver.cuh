@@ -121,7 +121,8 @@ class GpwDft {
     /// multi-k RKS when `uses_kpath()`. Re-entrant: geometry-dependent
     /// structures are rebuilt per call. Multigrid (`ngrids>1 && rel_cutoff>0`)
     /// is Γ RKS-only. UKS and multi-k require single-grid. Multi-k energy:
-    /// host χ^k density + device `run_from_rho` Poisson/XC.
+    /// device χ collocate from resident \(P_k\) + `run_from_rho` (χ tables
+    /// built on host once).
     /// @param atoms Atom set at the current geometry [Bohr].
     /// @param guess_C Optional warm-start MO coefficients (nb × nb) — Γ only.
     /// @param guess_P Optional initial density (RKS closed-shell, or UKS α) — Γ.
