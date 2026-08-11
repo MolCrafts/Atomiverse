@@ -5,15 +5,14 @@
 /// Γ-point DIIS RKS (Padé LDA or PBE-GGA) with single-grid (`ngrids==1`) **or**
 /// REL_CUTOFF multigrid (`ngrids>1` + `rel_cutoff>0`), **or collinear UKS
 /// (Padé LSD, single-grid only)**, **or multi-k RKS DIIS** (single-grid,
-/// Monkhorst–Pack / explicit list; host phased STVnl + χ^k, device Poisson/XC),
-/// periodic Poisson. Parameters are public members (no `*Config` bag, no
-/// `make_*` factory). Stage footholds under `cuda/gpw/internal/` are composed
-/// inside `run()` and are never the user API.
+/// Monkhorst–Pack / explicit list; device phased STVnl + host χ^k,
+/// device Poisson/XC), periodic Poisson. Parameters are public members (no
+/// `*Config` bag, no `make_*` factory). Stage footholds under
+/// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
-///   * host — STVnl / product-list build;
-///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\) + χ^k build once;
-///     host H_k = T+Vnl+Vg assemble residual after device integrate;
+///   * host — Γ STVnl / product-list build; multi-k χ^k build once;
+///     multi-k residual energy ctrace / payload diag / cold-start;
 ///     force AO Pulay (W·dS / P·dT / P·dVnl) on Γ free-fn path
 ///   * device — product collocate + KS + product integrate via
 ///     `internal::KsChainDevice::run` (RKS single-grid),
@@ -21,9 +20,10 @@
 ///     collocate, spectral prolong, fine Poisson/XC, spectral restrict,
 ///     per-level integrate), `KsChainDevice::run_uks` (collinear UKS;
 ///     dual ρ → Poisson(total) → Padé LSD → dual V_eff → dual integrate),
-///     or multi-k: device χ^k collocate + `run_from_rho` + device V→H_k
-///     integrate + **`KpointDiisEigenDevice`** mid-SCF Pulay DIIS + zheevd
-///     (cuda-gpw-kpoint-device-diis).
+///     or multi-k: **device phased STVnl** (`KpointStvnlDevice`) + device χ^k
+///     collocate + `run_from_rho` + device V→H_k integrate +
+///     **`KpointDiisEigenDevice`** mid-SCF Pulay DIIS + zheevd
+///     (cuda-gpw-kpoint-device-stvnl / collocate / integrate / diis).
 ///     Γ mid-SCF Pulay DIIS + cuSOLVER dense eigen + density via
 ///     `internal::AoDiisEigenDevice` — RKS one channel
 ///     (cuda-gpw-device-diis-eigen); UKS dual α/β channels
