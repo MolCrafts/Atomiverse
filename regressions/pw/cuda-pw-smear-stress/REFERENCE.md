@@ -53,5 +53,6 @@ Davidson trajectory.
 
 | Job | max\|Δσ\| | notes |
 | --- | ---: | --- |
-| **1131116** | **7.25e-11** eV/Å³ | dual-gate both; mean\|diag_cpu\|=3.493; \|ΔE\|=1.6e-13 Ry |
+| **1132266** | **7.252e-11** eV/Å³ | dual-gate both; mean\|diag_cpu\|=3.493; \|ΔE\|=1.63e-13 Ry; units green |
+| 1131116 | — | exit 127 (job-script wipe mid-run); not a product fail |
 | 1130720 | — | unit suite timeout (pre unit-gate trim); not a product fail |
