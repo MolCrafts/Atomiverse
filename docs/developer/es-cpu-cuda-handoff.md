@@ -8,8 +8,9 @@ Rewrite in place each harness wave.
   `.grok/workflows/es-cpu-cuda-opt.rhai` — iron laws + kernel skills +
   residency staff order + acceptance gate (grep mid-path DH).
 - **Law:** [.claude/notes/cuda-only-no-dh.md](../../.claude/notes/cuda-only-no-dh.md)
-- **Harness wave 2** on `dev` @ `cfb246d1`: pending **133** / in_progress **0**
-  / gaps **134**; **cpu_pending=0**; **new_slugs_added=0**.
+- **GapCensus wave 4** on `dev` @ `5216ecda`: pending **132** / in_progress
+  **2** / gaps **135**; **cpu_pending=0**; **new_slugs_added=1**
+  (`cuda-gpw-multigrid-device-ks`).
 - **Residency P0:** Γ RKS / UKS / multi-k mid-SCF landed (`5a5076d0` + force
   stream `61b91971`). GH200 residency dual-gates **1158949** — queue marks
   `device-h-assemble` / `uks-h-assemble` / `uks-p-residency` /
@@ -19,7 +20,9 @@ Rewrite in place each harness wave.
   \|dE\|=**3.504e-05** Ha.
 - **PBC collocate + SG device KS:** **landed** merge `cfb246d1` / feat
   `5648608f`. GH200 **1173564** / **1177100**.
-- **Staffed:** none (`[~]` empty).
+- **Staffed `[~]`:** `cuda-gpw-multigrid-si-energy-path` (tip **1180409**
+  host-collint green unmerged) + `cuda-gpw-device-payload` (tip **1178026**
+  unmerged).
 
 ## Landed this harness
 
@@ -32,9 +35,11 @@ Rewrite in place each harness wave.
 
 | Slug | Status |
 | --- | --- |
-| `multigrid-si-energy-path` | **unblocked** — staff next (PBC collocate + H0/KB on base) |
-| `multigrid-si-gate` | **blocked** on parent energy-path |
-| `device-payload` / `uks-payload-device` / `device-cold-start` | open (Γ host re-diag / cold densify) |
+| `multigrid-si-energy-path` | **`[~]`** tip **1180409** unmerged — host collint multi-level mid-SCF |
+| `device-payload` | **`[~]`** tip **1178026** unmerged — boundary payload eigen |
+| `multigrid-device-ks` | **new wave 4** — restore device monom MG mid-path (iron-law; **1180025** monom fail) |
+| `multigrid-si-gate` | **blocked** on parent energy-path on base |
+| `uks-payload-device` / `device-cold-start` | open (Γ UKS payload / cold densify) |
 | multi-k χ / orth / vnl / h0 / payload / cold-start | open |
 | force free-fn | host AO Pulay residual (P1); stream **landed** |
 | stress free-fn | full host |
@@ -44,8 +49,9 @@ Rewrite in place each harness wave.
 Single-grid `cuda::gpw::GpwDft` mid-SCF is **device** product KS with
 sphere-window PBC collocate/integrate (iron-law P0 SG closed). CompactBasisGrid
 retained **force-only** / payload boundary. Remaining hybrid: host Γ STVnl,
-final payload host re-diag, cold-start densify, multi-k χ·orth·vnl·h0,
-host AO Pulay forces, full-host stress.
+final payload host re-diag (tip only for device payload), cold-start densify,
+multi-k χ·orth·vnl·h0, host AO Pulay forces, full-host stress; Si MG tip
+defaults to **host collint multi-level** until `multigrid-device-ks`.
 
 ## Launch
 
@@ -57,7 +63,7 @@ args: {
   "max_waves": 4,
   "do_perf": false,
   "target_branch": "dev",
-  "theme": "multigrid-si-energy-path (Si ngrids>1 after PBC collocate); then multigrid-si-gate / device-payload"
+  "theme": "merge si-energy-path + device-payload tips; staff multigrid-device-ks (mid-path DH monom restore)"
 }
 agent_budget: 256
 ```
