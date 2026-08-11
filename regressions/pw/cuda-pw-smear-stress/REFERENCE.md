@@ -53,6 +53,7 @@ Davidson trajectory.
 
 | Job | max\|Δσ\| | notes |
 | --- | ---: | --- |
-| **1132266** | **7.252e-11** eV/Å³ | dual-gate both; mean\|diag_cpu\|=3.493; \|ΔE\|=1.63e-13 Ry; units green |
+| **1133111** | **7.252e-11** eV/Å³ | re-verify after rebase onto GapCensus wave 13 @ 85c6c5eb; dual-gate both; mean\|diag_cpu\|=3.493; \|ΔE\|=1.63e-13 Ry; units green |
+| 1132266 | 7.252e-11 eV/Å³ | prior tip-green pre-rebase |
 | 1131116 | — | exit 127 (job-script wipe mid-run); not a product fail |
 | 1130720 | — | unit suite timeout (pre unit-gate trim); not a product fail |
