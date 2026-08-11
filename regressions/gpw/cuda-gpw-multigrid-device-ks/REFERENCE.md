@@ -15,30 +15,38 @@ Same as `cuda-gpw-multigrid-si-energy-path` (CPU diamond Si Γ PADE ngrids=4).
 
 | Gate | Tol | Status |
 | --- | ---: | --- |
-| Energy \|dE\| | **5×10⁻⁵ Ha** | pending GH200 |
-| Soft-tol / pin-unsafe eps fit | **forbidden** | held |
+| Energy \|dE\| | **5×10⁻⁵ Ha** | **PASS** — GH200 **1186912** \|dE\|=**8.652e-06** |
+| Soft-tol / pin-unsafe eps fit | **forbidden** | held (coarse uses host collint `kProductWindowEps=0.02`) |
 | Mid-path scientific matrix DH | **zero** | device default |
 
 ## Lever
 
-1. Group max\|w\| → `DeviceProduct.mag` (prior wave).
-2. **Group max Ltot → `DeviceProduct.L_win`** (this wave) — collint
-   `group_angular_max` twin; monom continuous spheres no longer under-size
-   s-monoms in mixed p/d geometry groups.
-3. Device MG production default; `ATV_GPW_CUDA_HOST_MG=1` host collint debug.
-
-Prior pin-unsafe coarse eps brackets (0.005–0.02, best **7.6e-5** on **1184281**)
-abandoned.
+1. Group max\|w\| → `DeviceProduct.mag`.
+2. **Group max Ltot → `DeviceProduct.L_win`** — collint `group_angular_max` twin.
+3. Fine mass-margin (product-si hold); coarse collint-class `eps·0.02`.
+4. Device MG production default; `ATV_GPW_CUDA_HOST_MG=1` host collint debug.
 
 ## Skills
 
 choose-launch-configuration, optimize-global-memory-access,
 handle-boundary-conditions, av-perf (group-task launch; sphere window; residency).
 
+## Evidence (GH200)
+
+| Job | Config | \|dE\| | Note |
+| --- | --- | ---: | --- |
+| 1180025 | monom default (pre-slug) | 4.3e-4 | SG-like |
+| 1184281 | coarse 0.02, no group L | 7.6e-5 | best pre-L |
+| 1186579 | group L + mass-margin all | 4.29e-4 | SG-like |
+| **1186912** | **group L + fine MM / coarse 0.02** | **8.65e-06** | **PASS** |
+
+Holds on **1186912**: `reg_cuda-gpw-multigrid-run` \|dE\|=9.8e-09;
+`reg_cuda-gpw-product-si-gate` \|dE\|=3.53e-05; unit collocate/integrate/ks_multigrid 3/3.
+
 ## Perf
 
 **perf_exempt**.
 
-## Evidence
+## Status
 
-GH200 job id filled after dual-gate run.
+**acceptance_met=true**

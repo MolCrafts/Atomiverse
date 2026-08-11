@@ -41,7 +41,7 @@ destroys any large-system story and is not “CUDA product”.
 | P1 | DIIS residual | **fixed** — device max-\|e\| scalar only |
 | P2 | Stress free-fn | open — host assembly shell (`device-stress`) |
 | P2 | Si MG energy dual-gate | **landed** on base (`88d8ec59` / GH200 **1180883**) via **host collint multi-level** mid-SCF — dual-gate ≠ iron-law closed |
-| P2 | Si MG device monom KS | **staffing** `multigrid-device-ks` — group max\|w\| + **group Ltot** (`DeviceProduct.L_win`); device MG default (host collint `ATV_GPW_CUDA_HOST_MG=1` only); GH200 dual-gate pending |
+| P2 | Si MG device monom KS | **fixed** `multigrid-device-ks` — group max\|w\| + group Ltot (`L_win`); fine mass-margin / coarse collint 0.02; device MG default; GH200 **1186912** \|dE\|=**8.65e-06** |
 
 RHF s/p and PW density-side residency are the **acceptance bar**.
 
