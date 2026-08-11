@@ -1048,6 +1048,14 @@ if(ATV_BUILD_CUDA)
                                   PRIVATE CUDA::cufft CUDA::cublas
                                           CUDA::cusolver)
         endif()
+        # Device multi-k H_k = H0 + Vmat assemble
+        # (cuda-gpw-kpoint-h-assemble).
+        atv_add_test(test_cuda_gpw_kpoint_h_assemble
+                     cuda/gpw/test_kpoint_h_assemble.cu)
+        if(TARGET test_cuda_gpw_kpoint_h_assemble)
+            target_link_libraries(test_cuda_gpw_kpoint_h_assemble
+                                  PRIVATE CUDA::cufft)
+        endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)

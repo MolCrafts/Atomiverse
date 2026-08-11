@@ -1,0 +1,37 @@
+***************************************************
+You have loaded a buildenv module
+***************************************************
+This buildenv-gcccuda module makes available:
+ - Compilers:
+   + GCC 14.3: gcc, g++ and gfortran
+ - CUDA SDK 13.0
+ - CUDA capable MPI (GPU aware) library with mpi-wrapped compilers:
+   + MPICH v. 4.3.2 with mpicc, mpifort, etc.
+ - NCCL 2.29.7 (with ofi net plugin)
+ - NVSHMEM 3.4.5
+ - Numerical CPU libraries optimised for the Grace CPU:
+   + OpenBLAS 0.3.32 with BLAS, LAPACK
+   + ScaLAPACK 2.2.2
+   + FFTW 3.3.11
+ - Numerical GPU libraries optimised for the Hopper GPU:
+   + cuFFTMp 12.1.3
+   + CUDA SDK math libraries
+
+Access to the libraries are contained within the standard
+environment variables CPATH (headers) and LIBRARY_PATH (libs)
+which are picked up by default by the compilers. In addition
+relevant variables for `cmake` and `pkg-config` are also set.
+
+/home/jicli594/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc: /home/jicli594/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc: cannot execute binary file
+CMake Warning (dev) at build-cuda-pw-smear-stress/_deps/corrosion-src/cmake/FindRust.cmake:381 (message):
+  Unexpected output from `rustc --version` for Toolchain
+  `stable-x86_64-unknown-linux-gnu`: ``.
+
+  Ignoring this toolchain (Path:
+  `/home/jicli594/.rustup/toolchains/stable-x86_64-unknown-linux-gnu`).
+Call Stack (most recent call first):
+  build-cuda-pw-smear-stress/_deps/corrosion-src/cmake/Corrosion.cmake:47 (find_package)
+  build-cuda-pw-smear-stress/_deps/corrosion-src/CMakeLists.txt:30 (include)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+/home/jicli594/.cargo/bin/cxxbridge: /home/jicli594/.cargo/bin/cxxbridge: cannot execute binary file
