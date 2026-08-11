@@ -30,3 +30,4 @@ Free-fn UKS forces/stress, UKS-PBE, multi-k UKS, device weight-pack.
 | Job | Node | Result |
 | --- | --- | --- |
 | GH200 **1130279** | n24 | `test_cuda_gpw_diis_eigen` PASS; \|dE\|=**4.760e-06** Ha (tol 5e-6); uks-gamma smoke PASS same \|dE\| |
+| GH200 **1130402** | n502 | re-verify on wave-8 parent `dev` @ `01bfcf9b` (feat tip `6df76cf7`); unit PASS; \|dE\|=**4.760e-06** Ha; uks-gamma smoke PASS same \|dE\|; `GPU_JOB_OK` |
