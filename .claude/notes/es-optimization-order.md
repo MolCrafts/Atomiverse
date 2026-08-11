@@ -52,33 +52,33 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 9)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 11)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
-**landed** on `dev` (feat `31d24207`; GH200 **1120817**). Device mid-SCF
-collocate/integrate, MG energy, Γ UKS (+ O₂ gate), device grid forces, PBE H₂
-gate, product stress, product non-default stream, **device RKS DIIS/eigen**,
-**device dual UKS DIIS/eigen**, **device weight pack/scatter**, **water Γ RKS
-E+F dual-gate**, **multi-k RKS DIIS energy (H₂)**, **collinear LSDA spin
-forces** **on base** (harness wave 2 @ `dccb127a` / `ce0a0c6f`). Multi-k
-residual on base: host χ^k collocate/integrate + host KDiis + phased STVnl +
-host complex Hermitian diagonalize. Water free-fn **forces** dual-gated on
-`product-h2o-gate`; residual water **σ**. Wave 9 opens production dual-gate
-depth after wave-8 energy parents (multi-k/MG×PBE **F/σ**, water MG×PBE,
-multi-k MG×PBE F/σ, O₂ UKS-MG/k energy). Staffed `[~]` residual:
-`smear-forces` **1130359** only. Held: multi-k device spine + production
-energy gates + `device-product-residency` + hybrid free-fn + path×PBE + 4-way
-+ PW spin×kmesh×smear.
+**landed** on `dev`. Device mid-SCF collocate/integrate, MG energy, Γ UKS (+
+O₂ gate), device grid forces, PBE H₂ gate, product stress, product non-default
+stream, **device RKS DIIS/eigen**, **device dual UKS DIIS/eigen**, **device
+weight pack/scatter**, **water Γ RKS E+F dual-gate**, **multi-k RKS DIIS
+energy (H₂)**, **collinear LSDA spin forces**, **restricted metallic-smear
+forces (Γ)** **on base** (harness wave 3 @ `58861e2a` / feat `629aca3b`).
+Multi-k residual on base: host χ^k collocate/integrate + host KDiis + phased
+STVnl + host complex Hermitian diagonalize. Mid-SCF residual after weight-pack:
+**host H = H0+V** (`device-h-assemble`); UKS **host Pa/Pb re-upload**
+(`uks-p-residency`). Water free-fn **forces** dual-gated on `product-h2o-gate`;
+residual water **σ**. Smear forces dual-gate is **Γ Al₂**; multi-k smear energy
+already gated — open **`kmesh-smear-forces/stress`** (+ PBE). Staffed `[~]`
+residual: **none**. Held wave-8/9/10 production dual-gate matrix + hybrid
+free-fn + path×PBE + 4-way + PW spin×kmesh×smear.
 
 | Priority | slug | Goal |
 | --- | --- | --- |
 | P1 | *(closed)* device-forces + pbe-product-gate + stress + stream + h2o-gate (E+F) | on base |
-| P2 | **landed** device-diis-eigen + uks-device-diis + device-weight-pack + kpoints + spin-forces; **`[~]` smear-forces** (feat tip); PW smear/spin/kmesh(+PBE E) residual | post-diis spine + PW depth |
-| P3 | multi-k depth + MG production F/σ (water+**Si**) + multi-k/MG×PBE **E+F/σ** (wave 9) + water×PBE F/σ + O₂ UKS-PBE F/σ + **uks-o2-multigrid/kpoints** + joints + device-stvnl + device-product-residency + PW spin×kmesh×smear | after parent energy rows |
+| P2 | **landed** device-diis-eigen + uks-device-diis + device-weight-pack + kpoints + spin-forces + **smear-forces**; residual PW `smear-stress` / `kmesh-smear-forces` / spin/kmesh(+PBE E) | post-diis spine + PW depth |
+| P3 | multi-k depth + MG production F/σ + multi-k/MG×PBE E+F/σ + water×PBE F/σ + O₂ UKS joints + **device-h-assemble** / **uks-p-residency** / product-residency + device-stvnl + PW spin×kmesh×smear + **kmesh×smear** | after parent energy rows |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=118**; **in_progress=1**; **cuda_pending=119**;
-**gaps_remaining=120**. Contract:
+(not soft-tol). **pending_count=125**; **in_progress=0**; **cuda_pending=125**;
+**gaps_remaining=126**. Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 
