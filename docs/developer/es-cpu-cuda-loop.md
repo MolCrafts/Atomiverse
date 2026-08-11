@@ -39,6 +39,31 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 GapCensus wave 16 (parent `dev` @ `00dc6a51`):** Re-diff fair
+  walls held (MG MAIN **2.33×**; cpu_pending=0; no gpw-perf promote) + CUDA
+  `gpw_solver.cu` / `pw_solver.cu` + unmerged Assign wave 1 tips
+  (`wf/cuda-gpw-kpoint-h-residency`, `wf/cuda-gpw-kpoint-device-stvnl`,
+  `wf/cuda-pw-spin-stress`). Foothold ≠ closed: device STVnl tip still D2H S
+  for host Löwdin + host `build_kpoint_basis_grid` χ remains → **NEW×2**
+  `cuda-gpw-kpoint-device-chi` + `cuda-gpw-kpoint-device-orth`. Held wave-15
+  Γ payload/cold-start + multi-k energy/payload/cold-start/P + production
+  dual-gate matrix + PW spin×kmesh×smear. **new_slugs_added=2**;
+  **pending_count=136**; **in_progress=3**; **cpu_pending=0**;
+  **gaps_remaining=140**. Roadmap not updated. Queue **not** exhausted. No push.
+
+- **2026-08-11 Assign wave 1 (parent `dev` @ `00dc6a51`):** Priority `[~]`
+  first — empty after GapCensus wave 15. Open es-cpu-cuda specs: none.
+  Theme NEW residual after smear-stress + kpoint-h-assemble (product spine;
+  **no** dual-gate matrix; no soft tols; GH200): **NEW×3**
+  `cuda-pw-spin-stress` (P2 lift spin reject on `pw_stress`) +
+  `cuda-gpw-kpoint-h-residency` (drop mid-SCF \(H_k\) D2H into KDiis residual) +
+  `cuda-gpw-kpoint-device-stvnl` (device phased STVnl^k once per multi-k run).
+  Held: `multigrid-si-gate` (theme alt; dual-gate matrix) + wave-15 payload /
+  cold-start + kpoint energy/payload/cold-start/P + device-h-assemble +
+  smear-stress-al2 / kmesh-smear-forces. **new_assigned=3**;
+  **incomplete_remaining=0**; **in_progress=3**; **pending_count=134**;
+  **cpu_pending=0**; **gaps_remaining=138**. Queue **not** exhausted. No push.
+
 - **2026-08-11 GapCensus wave 14 (parent `dev` @ `689f772b`):** Re-diff after
   opt-4 land of `cuda-pw-smear-stress` (merge `b46875bf` / GH200 **1133111**)
   + `cuda-gpw-kpoint-h-assemble` (merge `0ef79db9` / GH200 **1132528**). Fair
