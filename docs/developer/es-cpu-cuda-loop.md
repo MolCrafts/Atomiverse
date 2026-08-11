@@ -39,6 +39,34 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 2 (parent `dev` @ `b88b2fd2`):** 1 of 3 staffed
+  → done [x]: `cuda-gpw-kpoint-device-stvnl` (merge `b88b2fd2` / feat
+  `ec578d7b`; GH200 **1133851** \|dE\|=**3.331e-14** Ha H₂ multi-k RKS PADE
+  device phased STVnl via `KpointStvnlDevice`; **perf_exempt**). Keep other
+  `[~]`: `cuda-pw-spin-stress` tip `6617710e` + `cuda-gpw-kpoint-h-residency`
+  tip `181a81c3` (GH200 **1133843** \|dE\|=**3.442e-14**). Spec closed
+  (deleted `.claude/specs/cuda-gpw-kpoint-device-stvnl/`). Roadmap prose:
+  multi-k device STVnl landed (table CUDA GPW remains **◐** — χ/orth + H
+  residency + payload/cold-start + Si/water multi-k F/σ open — no ○→✓).
+  GapCensus wave 16 residual held; **cpu_pending=0**; **new_slugs_added=0**
+  this harness. **pending_count=136**; **cuda_pending=138**; **in_progress=2**;
+  **gaps_remaining=139**. Clearup already ran. Queue **not** exhausted
+  (GapCensus owns discovery). No push.
+
+- **2026-08-11 Assign wave 2 (parent `dev` @ `00dc6a51`):** Priority `[~]`
+  first — capacity **3/3** already filled by Assign wave 1 unmerged tips (post
+  GapCensus wave 16). Open es-cpu-cuda specs: none (method-loop only:
+  `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`). Theme-for-NEW N/A — **resume
+  only** (no dual-gate matrix staff; no soft tols; no re-staff landed
+  h-assemble/smear-stress/kpoint DIIS/collocate/integrate):
+  `cuda-pw-spin-stress` (`6617710e`), `cuda-gpw-kpoint-h-residency`
+  (`18064c6c`, GH200 **1133843** \|dE\|=**3.442e-14** tip-green),
+  `cuda-gpw-kpoint-device-stvnl` (`ec578d7b`). **new_assigned=0**;
+  **incomplete_remaining=0** (tip claims — Merge owns land). Held free-slot
+  residual: `device-payload` / cold-start / kpoint energy/payload/cold-start/P /
+  **chi** / **orth** / `device-h-assemble` / `smear-stress-al2-gate` /
+  `kmesh-smear-forces` / `multigrid-si-gate`. Queue **not** exhausted. No push.
+
 - **2026-08-11 GapCensus wave 16 (parent `dev` @ `00dc6a51`):** Re-diff fair
   walls held (MG MAIN **2.33×**; cpu_pending=0; no gpw-perf promote) + CUDA
   `gpw_solver.cu` / `pw_solver.cu` + unmerged Assign wave 1 tips
