@@ -1389,6 +1389,11 @@ keep Si MG `[~]` + tip research re-scope):
 
 ## done
 
+Harness wave 5 land 2026-08-11 (`dev` @ `a158848f` after cuda-gpw-product-si-gate):
+
+- [x] `cuda-gpw-product-si-gate` | **P2** Si Γ RKS PADE ngrids=1 dual-gate | KB Vnl@Γ + host cbg KS twin | merge `a158848f` / tip `85d4ce33` | GH200 **1167099** \|dE\|=**2.130e-08** Ha | residual mid-SCF host cbg → `product-collocate-pbc`; Si MG → energy-path
+
+
 Harness wave 4 land 2026-08-11 (`dev` @ `e2bcb05e` after cuda-gpw-kpoint-h-residency):
 
 - [x] `cuda-gpw-kpoint-h-residency` | **P3** Multi-k mid-SCF device H residual residency (`KpointDiisEigenDevice::ingest_H_k_device_rm` + `residual_from_device`; no mid-SCF full \(H_k\) D2H → residual H2D after h-assemble + device DIIS) | track cuda | twin: same-settings CPU multi-k RKS energy dual-gate H₂ k=2×1×1 TR-off | files: `kpoint_diis_eigen.{cu,cuh}`, `gpw_solver.cu`, unit `test_kpoint_h_residency`, reg `reg_cuda-gpw-kpoint-h-residency`, REFERENCE | merge: `e2bcb05e` / feat `068d7784` / re-verify `ed832fce` | evidence: GH200 **1142864** \|dE\|=**3.331e-14** Ha (tol 5e-6; E both −1.040581477089 Ha; prior **1136613** \|dE\|=**3.264e-14** / **1133843** \|dE\|=**3.442e-14**); residual multi-k energy/payload/cold-start/P/χ/orth/vnl/h0 → child rows; **perf_exempt** small cell |

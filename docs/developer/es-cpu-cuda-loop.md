@@ -39,6 +39,20 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 Worktrees wave 5 (parent `dev` @ `1946a983`):** Staffed
+  **`cuda-gpw-product-si-gate`** on `wf/cuda-gpw-product-si-gate` @ **`85d4ce33`**
+  (feat `fea102a7`…`a30c675d`). Lever: (1) Γ Vnl `add_nonlocal_kb_k@κ=0` replaces
+  ket-only `gth_nonlocal`; (2) single-grid mid-SCF host **cbg** KS twin
+  (`collocate_density` + `ks_grid_build_rks` + `integrate_potential`) — CPU
+  ngrids=1 is cbg not products; continuous device collocate PBC residual →
+  `product-collocate-pbc`. GH200 **1167099** `PRODUCT_SI_GATE_PASS`
+  \|dE\|=**2.130e-08** Ha (Si diamond Γ PADE ngrids=1); hold full-product +
+  product-h2o. **acceptance_met=true**. Prior fails: 1166099/1166106
+  non-convergent (pre-cbg); 1166526 \|dE\|~4.7e-4 (product host twin≠cbg).
+  **cpu_pending=0**; Si MG tips still blocked until merge+rebase.
+  Queue **not** exhausted. No push. No merge this wave (document only).
+
+
 - **2026-08-11 GapCensus wave 19 / session wave 5 (parent `dev` @
   `15c07dc8`):** Re-diff fair walls held (MG MAIN **2.33×** worst;
   cpu_pending=0; no gpw-perf promote). Tree: kpoint-h-residency **landed**
