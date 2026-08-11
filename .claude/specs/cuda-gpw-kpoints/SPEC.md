@@ -32,6 +32,18 @@
 | --- | ---: |
 | \(\lvert E_{\mathrm{cuda}}-E_{\mathrm{cpu}}\rvert\) | \(5\times10^{-6}\) Ha (H₂ pure-s multi-k) |
 
+## Gate evidence (wave-5 resume re-verify)
+
+| | |
+| --- | --- |
+| **GH200 job** | **1130194** (n210, COMPLETED 0:0, 6:52) |
+| **HEAD** | `b2778a83` feat on `wf/cuda-gpw-kpoints` (rebased onto `dev` @ `7f8da1f0` Assign wave 5) |
+| **Unit** | `test_cuda_gpw_kpoints` Passed 1.15 s |
+| **Regression** | `reg_cuda-gpw-kpoints` dual-gate \|dE\|=**3.308e-14** Ha (nk=2, TR-off, PADE) |
+| **Prior tips** | job **1130141** \|dE\|=3.375e-14; **1130067** 3.286e-14; **1129721** / **1129276** |
+| **acceptance_met** | **true** |
+| **perf_exempt** | yes — small multi-k energy foothold; not a fair twin wall cut |
+
 ## Gate evidence (wave-4 resume re-verify)
 
 | | |
