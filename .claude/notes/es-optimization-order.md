@@ -52,7 +52,7 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 harness wave 5)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 6)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
 **landed**. Device mid-SCF collocate/integrate (**sphere-window PBC**), MG
@@ -62,16 +62,17 @@ RKS/UKS DIIS/eigen, weight pack, water E+F, multi-k H₂ spine, **Γ/UKS device 
 assemble**, **UKS + multi-k P residency**, **multi-k device e_kin/e_nl**, **Si
 Γ ngrids=1 product-si-gate**, **SG device product KS**, **Si Γ ngrids=4 MG
 energy-path**, **Γ RKS device final payload eigen**, spin F/σ, smear F/σ (Γ)
-**on base** (`dev` @ `d476ee7a`; device-payload `d476ee7a` / **1182615**;
-si-energy-path `88d8ec59` / **1180883**; collocate-pbc **1173564**/`cfb246d1` +
-product-si `a158848f` / **1167099** + residency `5a5076d0` / force-stream
-`61b91971` / **1158949**; kpoint-h-residency `e2bcb05e` / **1142864**).
-Wave-5 re-audit: **no new mid-path DH slug** — keep **`multigrid-device-ks`**
-(device monom under-correct **1180025**; host collint default mid-path P/V DH).
-Multi-k residual **held:** host χ / Löwdin / KB Vnl / H0 + payload/cold-start.
-Γ residual: **uks-payload-device** / **device-cold-start** + Γ STVnl + product
-residency + hybrid free-fn. Water **σ** + multi-k/MG×PBE + PW spin×kmesh×smear
-held. **new_slugs_added=0**.
+**on base** (`dev` @ `d39b979a`; device-payload `d476ee7a` / harness
+`d39b979a` / **1182615**; si-energy-path `88d8ec59` / **1180883**;
+collocate-pbc **1173564**/`cfb246d1` + product-si `a158848f` / **1167099** +
+residency `5a5076d0` / force-stream `61b91971` / **1158949**;
+kpoint-h-residency `e2bcb05e` / **1142864**). Wave-6 re-audit: **no new
+mid-path DH slug** — keep **`multigrid-device-ks`** (device monom under-correct
+**1180025**; host collint default mid-path P/V DH). Multi-k residual **held:**
+host χ / Löwdin / KB Vnl / H0 + payload/cold-start. Γ residual:
+**uks-payload-device** / **device-cold-start** + Γ STVnl + product residency +
+hybrid free-fn. Water **σ** + multi-k/MG×PBE + PW spin×kmesh×smear held.
+**new_slugs_added=0**.
 
 | Priority | slug | Goal |
 | --- | --- | --- |

@@ -36,7 +36,7 @@ destroys any large-system story and is not “CUDA product”.
 | P0 | Multi-k residual H | **fixed earlier** — `ingest_H_k_device_rm` + `residual_from_device` |
 | P0 | Γ RKS single-grid KS | **fixed** — device product KS + PBC min-image collocate/integrate (`product-collocate-pbc`); cbg retained force-only |
 | P1 | Forces free-fn | open — full grid re-H2D + host densify ρ + host AO Pulay (`force-device-handoff` / `device-ao-pulay`) |
-| P1 | Γ / multi-k payload | Γ RKS **landed** (`device-payload` merge `d476ee7a` / GH200 **1182615**); open — UKS/multi-k host re-diag (`uks-payload-device` / `kpoint-payload-device` / cold-start twins) |
+| P1 | Γ / multi-k payload | Γ RKS **landed** (`device-payload` merge `d476ee7a` / harness `d39b979a` / GH200 **1182615**); open — UKS/multi-k host re-diag (`uks-payload-device` / `kpoint-payload-device` / cold-start twins) |
 | P1 | Multi-k setup residency | open — host χ / Löwdin / KB Vnl / H0 rematerialize (`kpoint-device-chi` / `orth` / `vnl` / `h0-residency`) |
 | P1 | DIIS residual | **fixed** — device max-\|e\| scalar only |
 | P2 | Stress free-fn | open — host assembly shell (`device-stress`) |
