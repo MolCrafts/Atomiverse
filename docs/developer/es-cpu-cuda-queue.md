@@ -55,7 +55,7 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 
 ## pending
 
-**GapCensus wave 6 on `dev` @ `557a1921` (post opt-3 tip land
+**GapCensus wave 6 on `dev` @ `d03327a8` (post opt-3 tip land
 `h2o-gate` + `kpoints` + `spin-forces`):** Fair walls **held** (authority
 [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md)): MG MAIN
 **2.33×** worst; OT water SCF body **≤1.0×** / OT-only ~**1.20×**; UKS DIIS
@@ -789,7 +789,7 @@ twins). No further CPU polish staffed here without a pin-safe wall lever.
 
 ### CUDA — corresponding ES (open-gate readiness × user value)
 
-**Tree fact on `dev` @ `557a1921`:** stage units + PW landings + public
+**Tree fact on `dev` @ `d03327a8`:** stage units + PW landings + public
 `cuda::gpw::GpwDft` + device mid-SCF collocate/integrate + multigrid energy
 + Γ UKS PADE energy (+ O₂ gate) + device grid forces + **product stress** +
 **product non-default stream** + **device mid-SCF RKS DIIS/eigen** +
@@ -835,7 +835,7 @@ OT / vdW / MT / metallic-GPW stay later same-capability follow-on.
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
 
-**Assign wave 6 (parent `dev` @ `557a1921`):** capacity **3/3** free after
+**Assign wave 6 (parent `dev` @ `d03327a8`):** capacity **3/3** free after
 opt-3 land → **NEW×3** (theme: real product spine lifts, not dual-gate
 matrix). Staff: `cuda-gpw-uks-device-diis`, `cuda-gpw-device-weight-pack`,
 `cuda-pw-smear-forces`. Held next free-slot: multi-k device collocate /
@@ -872,7 +872,7 @@ collocate/MG/UKS/PBE/forces/stress/stream/DIIS-eigen/h2o/kpoints/spin-forces.
 
 ## in_progress
 
-Assign wave 6 (parent `dev` @ `557a1921`) — capacity 3/3 NEW:
+Assign wave 6 (parent `dev` @ `d03327a8`) — capacity 3/3 NEW:
 
 | slug | track | tip branch |
 | --- | --- | --- |

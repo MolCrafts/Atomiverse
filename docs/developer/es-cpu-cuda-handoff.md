@@ -5,7 +5,7 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `557a1921` (post opt-3 tip land h2o + kpoints + spin-forces)
+- **Parent:** `dev` @ `d03327a8` (post opt-3 tip land h2o + kpoints + spin-forces)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
 - **Last action:** GapCensus+Assign wave 6 — re-diff after tip land; open
