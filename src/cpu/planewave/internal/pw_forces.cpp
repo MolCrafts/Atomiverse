@@ -16,6 +16,7 @@
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
 #include "atomiverse/cpu/planewave/internal/restricted_scf.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
+#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
@@ -30,6 +31,7 @@
 #include <complex>
 #include <stdexcept>
 #include <vector>
+#include <xtensor/containers/xarray.hpp>
 
 namespace ATV {
 namespace cpu {
@@ -115,12 +117,14 @@ void accumulate_local_forces(const PWWorkspace& ws, const GVectorList& gv,
 
 /// Nonlocal KB forces for one k-point (ws.wfc, ws.kb_proj, ws.gvec bound).
 ///
-/// E_nl = Σ_{b,a,lm} w_k f_b D_l |c_lm|^{2} with f_b = `occ` (2 closed shell,
-/// 1 per collinear spin-orbital), c = Σ_G β* ψ, β ∝ exp(−i q·R).
+/// E_nl = Σ_{b,a,lm} w_k f_b D_l |c_lm|^{2} with f_b = `occ_b` (scalar `occ`
+/// for fixed closed shell / spin, or per-band metallic occupations in
+/// \([0,2]\)), c = Σ_G β* ψ, β ∝ exp(−i q·R).
 /// F_Iα = −∂E/∂R_Iα = −Σ 2 D Re(c* ∂c/∂R_α),  ∂c/∂R_α = i Σ q_α β* ψ.
 void accumulate_nl_forces_k(const PWWorkspace& ws, AccReal weight, int n_bands,
-                            AccReal occ, std::vector<Vec3>& F_ha_bohr) {
-    if (ws.kb_proj.empty() || !ws.gvec)
+                            const AccReal* occ_per_band,
+                            std::vector<Vec3>& F_ha_bohr) {
+    if (ws.kb_proj.empty() || !ws.gvec || !occ_per_band)
         return;
 
     const int ng = ws.n_g;
@@ -130,7 +134,10 @@ void accumulate_nl_forces_k(const PWWorkspace& ws, AccReal weight, int n_bands,
     auto& gv = *ws.gvec;
 
     for (int b = 0; b < nb; ++b) {
-        const AccReal pref = weight * occ;
+        const AccReal f_b = occ_per_band[static_cast<std::size_t>(b)];
+        if (std::abs(f_b) < AccReal(1e-14))
+            continue;
+        const AccReal pref = weight * f_b;
         for (size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
             const auto& atom_proj = ws.kb_proj[ia];
             AccReal ax = ws.atom_pos_bohr[ia][0];
@@ -203,6 +210,14 @@ void accumulate_nl_forces_k(const PWWorkspace& ws, AccReal weight, int n_bands,
     }
 }
 
+/// Scalar-occupation convenience (fixed closed shell f=2 / spin-orbital f=1).
+void accumulate_nl_forces_k(const PWWorkspace& ws, AccReal weight, int n_bands,
+                            AccReal occ, std::vector<Vec3>& F_ha_bohr) {
+    const int nb = std::max(n_bands, 0);
+    std::vector<AccReal> occ_v(static_cast<std::size_t>(nb), occ);
+    accumulate_nl_forces_k(ws, weight, nb, occ_v.data(), F_ha_bohr);
+}
+
 } // namespace
 
 std::vector<std::array<double, 3>>
@@ -214,6 +229,11 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
         throw std::invalid_argument(
             "pw_forces_analytic: spin_polarized with metallic smearing has "
             "no force path yet");
+    const bool use_smear = (method.smearing != Smearing::none);
+    if (use_smear && !(method.degauss > 0.0))
+        throw std::invalid_argument(
+            "pw_forces_analytic: degauss must be > 0 [Ry] when smearing is "
+            "enabled");
 
     int n_elec = 0;
     {
@@ -239,6 +259,16 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
         n_alpha = (n_elec + mag) / 2;
         n_beta = (n_elec - mag) / 2;
         n_bands = std::max(std::max(n_alpha, n_beta), 1);
+    } else if (use_smear) {
+        // Empty states near E_F: ceil(N_e/2) + extra_bands (energy twin).
+        const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
+        n_bands = n_occ_ceil + std::max(method.extra_bands, 0);
+    } else if (n_elec % 2 != 0) {
+        throw std::invalid_argument(
+            "pw_forces_analytic: "
+            + std::to_string(n_elec)
+            + " valence electrons is not closed-shell — use spin_polarized "
+              "for open shell, or set smearing for metallic occupations");
     }
 
     PoissonSolver poisson;
@@ -255,6 +285,12 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
         // the NL V_eff rebuild below.
         xc.prepare(scf_prob.ws);
         veff.prepare(scf_prob.ws);
+    } else if (use_smear) {
+        DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1),
+                                40};
+        res = run_scf_smear_restricted(frame, method, scf_prob, poisson, xc,
+                                       veff, density, davidson, n_bands,
+                                       "forces");
     } else {
         DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1),
                                 40};
@@ -367,6 +403,119 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
                     ws.gvec = saved_gvec;
                     ws.n_g = scf_prob.gv0.count();
                 }
+            }
+        } else if (use_smear) {
+            // Restricted metallic smear: rebuild V_eff, re-solve bands, fill
+            // fractional occupations from a shared μ, then NL with f_b∈[0,2].
+            poisson.step(ws);
+            xc.step(ws, method.xc);
+            veff.step(ws);
+
+            SmearKind smear_kind = SmearKind::fermi_dirac;
+            if (method.smearing == Smearing::methfessel_paxton)
+                smear_kind = SmearKind::methfessel_paxton;
+            else if (method.smearing == Smearing::gaussian)
+                smear_kind = SmearKind::gaussian;
+            const AccReal degauss_ha =
+                static_cast<AccReal>(method.degauss) * AccReal(0.5);
+            const int mp_order = method.mp_order;
+
+            std::vector<std::vector<AccReal>> evals_k(
+                static_cast<std::size_t>(n_kpts));
+            std::vector<xt::xarray<std::complex<AccReal>>> wfc_k(
+                static_cast<std::size_t>(n_kpts));
+
+            for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                auto& gvk = scf_prob.gv_k[static_cast<std::size_t>(ik)];
+                ws.gvec = &gvk;
+                ws.n_g = gvk.count();
+                ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
+                for (int ig = 0; ig < ws.n_g; ++ig)
+                    ws.T_G[ig] = gvk.ekin[ig];
+                ws.kb_proj = scf_prob.kb_proj_k[static_cast<std::size_t>(ik)];
+                if (!scf_prob.atom_wfc_k.empty())
+                    ws.atom_wfc =
+                        scf_prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+
+                davidson.step(ws);
+
+                evals_k[static_cast<std::size_t>(ik)].assign(
+                    ws.eigenvalues.begin(),
+                    ws.eigenvalues.begin()
+                        + std::min(n_bands,
+                                   static_cast<int>(ws.eigenvalues.size())));
+                if (static_cast<int>(evals_k[static_cast<std::size_t>(ik)].size())
+                    > n_bands)
+                    evals_k[static_cast<std::size_t>(ik)].resize(
+                        static_cast<std::size_t>(n_bands));
+                wfc_k[static_cast<std::size_t>(ik)] = ws.wfc;
+
+                ws.gvec = saved_gvec;
+                ws.n_g = scf_prob.gv0.count();
+            }
+
+#ifdef ATV_HAS_MPI
+            if (layout.active) {
+                std::vector<AccReal> pack(
+                    static_cast<std::size_t>(n_kpts * n_bands), AccReal(0));
+                for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                    const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                    for (int b = 0;
+                         b < n_bands && b < static_cast<int>(ev.size()); ++b)
+                        pack[static_cast<std::size_t>(ik * n_bands + b)] =
+                            ev[static_cast<std::size_t>(b)];
+                }
+                MPI_Allreduce(MPI_IN_PLACE, pack.data(), n_kpts * n_bands,
+                              mpi_real_type(), MPI_SUM, MPI_COMM_WORLD);
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    evals_k[static_cast<std::size_t>(ik)].resize(
+                        static_cast<std::size_t>(n_bands));
+                    for (int b = 0; b < n_bands; ++b)
+                        evals_k[static_cast<std::size_t>(ik)][b] =
+                            pack[static_cast<std::size_t>(ik * n_bands + b)];
+                }
+            }
+#endif
+
+            std::vector<AccReal> all_evals;
+            std::vector<AccReal> all_weights;
+            all_evals.reserve(static_cast<std::size_t>(n_kpts * n_bands));
+            all_weights.reserve(static_cast<std::size_t>(n_kpts * n_bands));
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                const AccReal w =
+                    scf_prob.kg.weights[static_cast<std::size_t>(ik)];
+                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                for (int b = 0; b < n_bands && b < static_cast<int>(ev.size());
+                     ++b) {
+                    all_evals.push_back(ev[static_cast<std::size_t>(b)]);
+                    all_weights.push_back(w);
+                }
+            }
+            const AccReal mu_ha =
+                find_fermi_level(all_evals, all_weights, AccReal(n_elec),
+                                 degauss_ha, smear_kind, mp_order);
+
+            for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                auto& gvk = scf_prob.gv_k[static_cast<std::size_t>(ik)];
+                ws.gvec = &gvk;
+                ws.n_g = gvk.count();
+                ws.kb_proj = scf_prob.kb_proj_k[static_cast<std::size_t>(ik)];
+                ws.wfc = wfc_k[static_cast<std::size_t>(ik)];
+
+                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                const int nb = static_cast<int>(ev.size());
+                std::vector<AccReal> occ(static_cast<std::size_t>(nb));
+                for (int b = 0; b < nb; ++b)
+                    occ[static_cast<std::size_t>(b)] = smear_f_band(
+                        ev[static_cast<std::size_t>(b)], mu_ha, degauss_ha,
+                        smear_kind, mp_order);
+
+                const AccReal weight =
+                    scf_prob.kg.weights[static_cast<std::size_t>(ik)];
+                accumulate_nl_forces_k(ws, weight, nb, occ.data(), F_nl);
+
+                ws.gvec = saved_gvec;
+                ws.n_g = scf_prob.gv0.count();
             }
         } else {
             // Rebuild V_eff from the final mixed density with the SAME XC the

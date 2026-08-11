@@ -9,6 +9,7 @@
 #include "atomiverse/core/vec3.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
+#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cuda/device/error.cuh"
 
 #include <cmath>
@@ -93,7 +94,9 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                         DeviceDensity& den, DeviceBandSolver& solver,
                         cpu::pw::internal::PWProblem& prob,
                         cpu::pw::internal::PWWorkspace& ws, int n_alpha,
-                        int n_beta) {
+                        int n_beta, bool use_smear, int n_elec,
+                        cpu::pw::internal::SmearKind smear_kind,
+                        double degauss_ha, int mp_order) {
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument(
@@ -106,6 +109,10 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
             "cuda::pw::pw_forces_analytic: density sphere empty or omega=0");
 
     const bool spin = (n_alpha >= 0);
+    if (spin && use_smear)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: spin_polarized with metallic "
+            "smearing has no force path on device yet");
     if (spin && !den.spin_polarized())
         throw std::runtime_error(
             "cuda::pw::pw_forces_analytic: spin occupations require a spin "
@@ -113,6 +120,14 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
     if (spin && n_beta < 0)
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: n_beta must be >= 0 on spin path");
+    if (use_smear && !(degauss_ha > 0.0))
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: degauss must be > 0 for smear force "
+            "path");
+    if (use_smear && n_elec <= 0)
+        throw std::invalid_argument(
+            "cuda::pw::pw_forces_analytic: n_elec must be > 0 on smear force "
+            "path");
 
     double* d_F = device_alloc<double>(static_cast<std::size_t>(3 * n));
     ATV_CUDA_CHECK(
@@ -174,7 +189,8 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                                    d_pos, ng0, n, omega, d_F, den.stream());
 
     // Nonlocal KB: rebuild V_eff from the final mixed density, then re-solve.
-    // Restricted: one V_eff, f=2. Collinear: V_eff_σ per channel, f=1, N_σ.
+    // Restricted fixed: one V_eff, f=2. Restricted smear: fractional f_b.
+    // Collinear: V_eff_σ per channel, f=1, N_σ.
     if (!prob.kb_proj_k.empty()) {
         const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
         if (spin) {
@@ -194,6 +210,50 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                     solver.accumulate_nl_forces(weight, n, d_F, n_occ[s],
                                                 /*occ=*/1.0);
                 }
+            }
+        } else if (use_smear) {
+            den.hartree();
+            den.exchange_correlation();
+            den.assemble_veff();
+
+            std::vector<std::vector<AccReal>> evals_k(
+                static_cast<std::size_t>(n_kpts));
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                solver.bind_kpoint(ik);
+                solver.solve(ws, 40);
+                evals_k[static_cast<std::size_t>(ik)].assign(
+                    ws.eigenvalues.begin(), ws.eigenvalues.end());
+                solver.stash_ritz();
+            }
+
+            std::vector<AccReal> all_evals;
+            std::vector<AccReal> all_weights;
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                const AccReal w =
+                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                for (std::size_t b = 0; b < ev.size(); ++b) {
+                    all_evals.push_back(ev[b]);
+                    all_weights.push_back(w);
+                }
+            }
+            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+                all_evals, all_weights, AccReal(n_elec), AccReal(degauss_ha),
+                smear_kind, mp_order);
+
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                solver.load_ritz(ik);
+                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
+                const int nb = static_cast<int>(ev.size());
+                std::vector<double> occ(static_cast<std::size_t>(nb));
+                for (int b = 0; b < nb; ++b)
+                    occ[static_cast<std::size_t>(b)] = static_cast<double>(
+                        cpu::pw::internal::smear_f_band(
+                            ev[static_cast<std::size_t>(b)], mu_ha,
+                            AccReal(degauss_ha), smear_kind, mp_order));
+                const double weight = static_cast<double>(
+                    prob.kg.weights[static_cast<std::size_t>(ik)]);
+                solver.accumulate_nl_forces(weight, n, d_F, occ.data(), nb);
             }
         } else {
             den.hartree();
