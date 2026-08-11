@@ -138,13 +138,13 @@ constexpr double kDiisAscentResetHa = 1.0e-3;
 /// Matches CPU product mass-margin drop (multigrid.cpp); drop monoms below
 /// `eps * kProductMassMargin` when packing live density weights.
 constexpr double kProductMassMargin = 1.0e-4;
-/// Fine-level monom sphere eps factor (product-collocate-pbc Si charge).
+/// Fine-level monom sphere eps factor (product-collocate-pbc Si charge hold).
 constexpr double kSphereRadiusEpsFine = kProductMassMargin;
-/// Coarse-level monom sphere eps factor. Collint window uses kProductWindowEps
-/// = 0.02 with cmax refine; monom continuous needs mass-margin class radii
-/// plus collint **group Ltot** (not per-monom L) for multi-level Si. Pin-unsafe
-/// coarse eps brackets (0.005–0.02) abandoned — lever is group L_win.
-constexpr double kSphereRadiusEpsCoarse = kProductMassMargin;
+/// Coarse-level monom sphere eps factor. Matches CPU collint `kProductWindowEps`
+/// (multigrid.cpp) — monom continuous lacks cmax refine, so fine stays
+/// mass-margin (product-si); coarse uses collint-class 0.02 with group mag +
+/// group Ltot (L_win). Not an eps-fit scan: same constant as host collint.
+constexpr double kSphereRadiusEpsCoarse = 2.0e-2;
 
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
