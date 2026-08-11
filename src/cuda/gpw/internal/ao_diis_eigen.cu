@@ -494,17 +494,41 @@ void AoDiisEigenDevice::diagonalize_and_density_() {
                  "gemm P=Cocc Coccᵀ");
 }
 
+namespace {
+
+/// @brief Grid-stride max |x_i| into *out (single block; m*m small for GPW).
+__global__ void max_abs_kernel(const double* __restrict__ x, int n,
+                               double* __restrict__ out) {
+    __shared__ double s[256];
+    double local = 0.0;
+    for (int i = static_cast<int>(threadIdx.x); i < n;
+         i += static_cast<int>(blockDim.x))
+        local = fmax(local, fabs(x[i]));
+    s[threadIdx.x] = local;
+    __syncthreads();
+    for (int stride = static_cast<int>(blockDim.x) / 2; stride > 0;
+         stride >>= 1) {
+        if (static_cast<int>(threadIdx.x) < stride)
+            s[threadIdx.x] = fmax(s[threadIdx.x], s[threadIdx.x + stride]);
+        __syncthreads();
+    }
+    if (threadIdx.x == 0)
+        *out = s[0];
+}
+
+} // namespace
+
 double AoDiisEigenDevice::err_norm_from_device_() const {
+    // Device max-|e| (no full-matrix D2H). Single scalar D2H for host stop.
     const int mm = m_ * m_;
-    std::vector<double> e(static_cast<size_t>(mm));
-    check_cuda(cudaMemcpyAsync(e.data(), d_err_,
-                               static_cast<size_t>(mm) * sizeof(double),
-                               cudaMemcpyDeviceToHost, stream_),
-               "D2H err");
-    check_cuda(cudaStreamSynchronize(stream_), "sync err");
+    double* d_nrm = d_t1_; // reuse scratch (first double only)
+    max_abs_kernel<<<1, 256, 0, stream_>>>(d_err_, mm, d_nrm);
+    check_cuda(cudaGetLastError(), "max_abs_kernel");
     double nrm = 0.0;
-    for (double v : e)
-        nrm = std::max(nrm, std::abs(v));
+    check_cuda(cudaMemcpyAsync(&nrm, d_nrm, sizeof(double),
+                               cudaMemcpyDeviceToHost, stream_),
+               "D2H residual scalar");
+    check_cuda(cudaStreamSynchronize(stream_), "sync residual scalar");
     return nrm;
 }
 
@@ -514,6 +538,21 @@ double AoDiisEigenDevice::residual(const double* H_host) {
                                static_cast<size_t>(n_) * n_ * sizeof(double),
                                cudaMemcpyHostToDevice, stream_),
                "H2D H");
+    form_error_();
+    return err_norm_from_device_();
+}
+
+double AoDiisEigenDevice::residual_device(const double* d_H) {
+    ensure_built_();
+    if (d_H == nullptr)
+        throw std::invalid_argument("AoDiisEigenDevice::residual_device: null d_H");
+    const size_t bytes =
+        static_cast<size_t>(n_) * static_cast<size_t>(n_) * sizeof(double);
+    if (d_H != d_H_) {
+        check_cuda(cudaMemcpyAsync(d_H_, d_H, bytes, cudaMemcpyDeviceToDevice,
+                                   stream_),
+                   "D2D H");
+    }
     form_error_();
     return err_norm_from_device_();
 }

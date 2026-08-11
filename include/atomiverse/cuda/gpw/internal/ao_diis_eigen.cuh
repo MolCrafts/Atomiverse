@@ -66,11 +66,20 @@ class AoDiisEigenDevice {
     /// @brief Clear DIIS history (call once per `GpwDft::run`).
     void reset();
 
-    /// @brief Upload H and form DIIS residual (no history push / no density).
+    /// @brief Upload H from **host** and form DIIS residual (tests / oracle).
     ///
     /// @param H_host Column-major KS matrix [Hartree], length n*n.
     /// @return max |e_ij| of `e = Xᵀ (HPS−SPH) X` [Hartree].
+    /// @note Production mid-SCF must use `residual_device` (no H2D of H).
     double residual(const double* H_host);
+
+    /// @brief Form DIIS residual from a **device-resident** H (D2D into `d_H_`).
+    ///
+    /// CUDA-only iron law path: mid-SCF never H2Ds the KS matrix.
+    ///
+    /// @param d_H Device column-major H [Hartree], length n*n (may alias `d_H_`).
+    /// @return max |e_ij| of the commutator residual [Hartree] (device max-reduce).
+    double residual_device(const double* d_H);
 
     /// @brief DIIS extrapolate current `d_H_` + eigen + rebuild density.
     ///
