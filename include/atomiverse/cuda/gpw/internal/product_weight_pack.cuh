@@ -75,7 +75,8 @@ class ProductWeightPackDevice {
     /// @brief From device P (nb×nb column-major), write `d_prods[0..nprod)`.
     ///
     /// Weight w = k · Σ_ij ca_i P_μν cb_j; |w| < eps_drop → 0. Geometry
-    /// fields are copied from `d_geom` (device-resident).
+    /// fields are copied from `d_geom` (device-resident). Sets `mag = |w|`
+    /// (per-monom); call `apply_group_max_mag` for collint group windows.
     ///
     /// @param d_P      Device density, length nb*nb, column-major [e].
     /// @param d_geom   Device product geometry, length nprod.
@@ -84,6 +85,21 @@ class ProductWeightPackDevice {
     /// @param eps_drop Drop threshold on |w| (same as host mass margin).
     void pack_weights(const double* d_P, const DeviceProductGeom* d_geom,
                       DeviceProduct* d_prods, int nprod, double eps_drop);
+
+    /// @brief Set each monom's `mag` + `L_win` to collint group maxima.
+    ///
+    /// Twin of CPU collint group window sizing: max live \|w\| and max monom
+    /// Ltot on a geometry batch (same pol table). Without group L, monom
+    /// continuous spheres under-size s-character monoms in mixed p/d groups
+    /// vs collint `group_angular_max` (cuda-gpw-multigrid-device-ks residual).
+    /// Tasks from `ProductSet::tasks_by_level`; uploaded once per run.
+    ///
+    /// @param d_prods    Device products (weight already packed).
+    /// @param d_task_beg Device task begin indices, length ntask.
+    /// @param d_task_end Device task end indices (exclusive), length ntask.
+    /// @param ntask      Number of collint geometry tasks.
+    void apply_group_max_mag(DeviceProduct* d_prods, const int* d_task_beg,
+                             const int* d_task_end, int ntask);
 
     /// @brief Zero internal V then scatter product integrals into V_μν.
     ///

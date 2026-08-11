@@ -62,6 +62,9 @@ __global__ void pack_weights_kernel(const double* __restrict__ P,
     DeviceProduct q;
     q.p = g.p;
     q.weight = w;
+    // Per-monom default; apply_group_max_mag lifts mag + L_win to group max.
+    q.mag = fabs(w);
+    q.L_win = g.la[0] + g.la[1] + g.la[2] + g.lb[0] + g.lb[1] + g.lb[2];
     for (int d = 0; d < 3; ++d) {
         q.pc[d] = g.pc[d];
         q.ra[d] = g.ra[d];
@@ -70,6 +73,39 @@ __global__ void pack_weights_kernel(const double* __restrict__ P,
         q.lb[d] = g.lb[d];
     }
     prods[ip] = q;
+}
+
+/// @brief Contiguous geometry-group max\|weight\| + max Ltot → mag/L_win.
+///
+/// Products on each level are sorted by collint geometry; a task [beg,end)
+/// shares one pol table. One block per task (choose-launch-configuration —
+/// few tasks, sequential monom walk per block is fine).
+__global__ void group_max_mag_kernel(DeviceProduct* __restrict__ prods,
+                                     const int* __restrict__ task_beg,
+                                     const int* __restrict__ task_end,
+                                     int ntask) {
+    const int t = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    if (t >= ntask)
+        return;
+    const int beg = task_beg[t];
+    const int end = task_end[t];
+    if (end <= beg)
+        return;
+    double m = 0.0;
+    int Lmax = 0;
+    for (int i = beg; i < end; ++i) {
+        m = fmax(m, fabs(prods[i].weight));
+        const int Lm = prods[i].la[0] + prods[i].la[1] + prods[i].la[2]
+                       + prods[i].lb[0] + prods[i].lb[1] + prods[i].lb[2];
+        if (Lm > Lmax)
+            Lmax = Lm;
+        if (prods[i].L_win > Lmax)
+            Lmax = prods[i].L_win;
+    }
+    for (int i = beg; i < end; ++i) {
+        prods[i].mag = m;
+        prods[i].L_win = Lmax;
+    }
 }
 
 /// @brief Sequential product loop matching host scatter order.
@@ -185,6 +221,20 @@ void ProductWeightPackDevice::pack_weights(const double* d_P,
     pack_weights_kernel<<<blocks, kBlock, 0, stream_>>>(
         d_P, d_geom, d_prims_, d_contribs_, d_prods, nprod, nb_, eps_drop);
     check_cuda(cudaGetLastError(), "pack_weights_kernel");
+}
+
+void ProductWeightPackDevice::apply_group_max_mag(DeviceProduct* d_prods,
+                                                  const int* d_task_beg,
+                                                  const int* d_task_end,
+                                                  int ntask) {
+    ensure_built_();
+    if (ntask <= 0 || d_prods == nullptr || d_task_beg == nullptr
+        || d_task_end == nullptr)
+        return;
+    const int blocks = (ntask + kBlock - 1) / kBlock;
+    group_max_mag_kernel<<<blocks, kBlock, 0, stream_>>>(
+        d_prods, d_task_beg, d_task_end, ntask);
+    check_cuda(cudaGetLastError(), "group_max_mag_kernel");
 }
 
 void ProductWeightPackDevice::scatter_acc_(const DeviceProductGeom* d_geom,

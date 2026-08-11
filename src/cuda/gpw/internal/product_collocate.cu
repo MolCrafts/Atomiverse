@@ -91,6 +91,8 @@ __global__ void collocate_products_fullgrid_kernel(
 /// Launch: grid-stride over products, block=128 (choose-launch-configuration —
 /// product-parallel; many zero-weight early-outs). atomicAdd on rho
 /// (optimize-global-memory-access tradeoff for sparse windows).
+/// Radius uses collint group `mag` (fallback \|weight\|) with eps_win — not
+/// mass-margin eps (cuda-gpw-multigrid-device-ks).
 __global__ void collocate_products_sphere_kernel(
     const DeviceProduct* __restrict__ prods, int nprod, int n0, int n1, int n2,
     double L0, double L1, double L2, double o0, double o1, double o2,
@@ -102,10 +104,13 @@ __global__ void collocate_products_sphere_kernel(
         const DeviceProduct q = prods[ip];
         if (q.weight == 0.0)
             continue;
-        const int Ltot = q.la[0] + q.la[1] + q.la[2] + q.lb[0] + q.lb[1]
-                         + q.lb[2];
-        const double rc =
-            product_radius_dev(fabs(q.weight), q.p, Ltot, eps);
+        const int L_monom = q.la[0] + q.la[1] + q.la[2] + q.lb[0] + q.lb[1]
+                            + q.lb[2];
+        // Collint twin: window mag = group max|w|; L = group max Ltot
+        // (apply_group_max_mag). Value still uses per-monom weight.
+        const int Ltot = (q.L_win >= 0) ? q.L_win : L_monom;
+        const double win_mag = (q.mag > 0.0) ? q.mag : fabs(q.weight);
+        const double rc = product_radius_dev(win_mag, q.p, Ltot, eps);
         if (!(rc > 0.0))
             continue;
 
@@ -188,9 +193,10 @@ void collocate_products(const CollocateGridDesc& grid,
 
     if (grid.periodic) {
         // Sphere-window PBC (cuda-gpw-product-collocate-pbc).
-        // eps: value threshold for radius; use collint-class default with
-        // product mass margin so integrated charge is not dropped.
-        constexpr double kEps = 1e-10 * 1e-4; // eps_default·kProductMassMargin class
+        // Large eps_win (mass-margin class) for monom continuous charge
+        // recovery; collint window mag is group max|w| on DeviceProduct.mag.
+        const double eps =
+            (grid.eps_win > 0.0) ? grid.eps_win : 1.0e-14;
         constexpr int kBlock = 128;
         // Occupy SMs: ~min( nprod/block, 256 ) blocks (choose-launch-configuration).
         int grid_dim = (nprod + kBlock - 1) / kBlock;
@@ -201,7 +207,7 @@ void collocate_products(const CollocateGridDesc& grid,
         collocate_products_sphere_kernel<<<grid_dim, kBlock, 0, stream>>>(
             d_prods, nprod, grid.n[0], grid.n[1], grid.n[2], grid.L[0],
             grid.L[1], grid.L[2], grid.origin[0], grid.origin[1],
-            grid.origin[2], kEps, d_rho);
+            grid.origin[2], eps, d_rho);
     } else {
         constexpr int kBlock = 256;
         const int grid_dim =

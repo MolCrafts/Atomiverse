@@ -29,6 +29,12 @@ struct CollocateGridDesc {
     /// @brief When true, collocate/integrate use sphere-window PBC wrap.
     /// Default true — CUDA GPW product rejects Martyna–Tuckerman.
     bool periodic = true;
+    /// @brief Sphere window eps for product_radius.
+    /// Default mass-margin class (eps_default·1e-4) matches product-collocate-pbc
+    /// Si charge recovery; group-max `DeviceProduct.mag` carries collint window
+    /// mag (cuda-gpw-multigrid-device-ks). Do not use collint `eps·0.02` here —
+    /// that under-sizes monom continuous spheres vs collint cxyz refine.
+    double eps_win = 1.0e-14;
 
     /// @brief Total real-space points.
     long npts() const {
@@ -54,6 +60,13 @@ struct DeviceProduct {
     int la[3] = {0, 0, 0};    ///< bra Cartesian powers.
     int lb[3] = {0, 0, 0};    ///< ket Cartesian powers.
     double weight = 0.0;      ///< density weight (includes k · P · coeffs).
+    /// @brief Window magnitude for sphere radius (collint group max\|w\|).
+    /// Zero ⇒ collocate falls back to \|weight\| (foothold / unit tests).
+    double mag = 0.0;
+    /// @brief Angular L for sphere radius (collint group max Ltot).
+    /// Pack sets monom L; `apply_group_max_mag` lifts to group max (collint
+    /// twin). Negative ⇒ collocate/integrate recompute monom L from la+lb.
+    int L_win = -1;
 };
 
 /// @brief Collocate product Gaussians onto ρ (device path).
