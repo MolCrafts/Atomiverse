@@ -1070,16 +1070,26 @@ void DeviceBandSolver::load_ritz(int ik) {
 void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
                                             double* d_forces, int n_occ,
                                             double occ) {
+    const int nb = (n_occ < 0) ? n_bands_ : std::min(n_occ, n_bands_);
+    if (nb <= 0)
+        return;
+    std::vector<double> occ_v(static_cast<std::size_t>(nb), occ);
+    accumulate_nl_forces(weight, n_atoms, d_forces, occ_v.data(), nb);
+}
+
+void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
+                                            double* d_forces, const double* occ,
+                                            int n_use) {
     if (n_proj_ <= 0 || !d_beta_ || !d_betad_ || !d_cia_all_)
         return; // pure-local potential (e.g. GTH-PBE-q1 H): F_nl = 0
     if (!d_ritz_ || bound_k_ < 0 || ng_ <= 0)
         throw std::runtime_error(
             "cuda::pw::internal::DeviceBandSolver::accumulate_nl_forces: "
             "bind_kpoint() and solve() must run first");
-    if (n_atoms <= 0 || !d_forces)
+    if (n_atoms <= 0 || !d_forces || !occ)
         throw std::runtime_error(
             "cuda::pw::internal::DeviceBandSolver::accumulate_nl_forces: "
-            "n_atoms must be > 0 and d_forces non-null");
+            "n_atoms must be > 0 and d_forces/occ non-null");
 
     // Ensure d_work_ is live (solve always allocates it via
     // ensure_subspace_capacity; force a capacity if a unit test skips solve).
@@ -1098,12 +1108,14 @@ void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
     cufftDoubleComplex* d_sz = device_alloc<cufftDoubleComplex>(n_proj_);
 
     const cuDoubleComplex one{1.0, 0.0}, zero{0.0, 0.0};
-    // pref = weight * occ: restricted f=2; collinear spin-orbital f=1.
-    const double pref = weight * occ;
-    const int nb =
-        (n_occ < 0) ? n_bands_ : std::min(n_occ, n_bands_);
+    const int nb = std::min(std::max(n_use, 0), n_bands_);
 
     for (int b = 0; b < nb; ++b) {
+        const double f_b = occ[static_cast<std::size_t>(b)];
+        if (std::abs(f_b) < 1e-14)
+            continue;
+        // pref = weight * f_b: restricted smear f∈[0,2]; fixed f=2; spin f=1.
+        const double pref = weight * f_b;
         const cufftDoubleComplex* psi =
             d_ritz_ + static_cast<size_t>(b) * ng_;
 

@@ -193,6 +193,7 @@ class DeviceBandSolver {
     /// \(c=\sum_G \beta^* \psi\), \(s_\alpha=\sum_G q_\alpha \beta^* \psi\).
     /// Restricted closed shell: `n_occ = n_bands`, `occ = 2`. Collinear
     /// spin: call once per channel with `n_occ = N_σ` and `occ = 1`.
+    /// Metallic smear: use the per-band overload with \(f_b\in[0,2]\).
     ///
     /// @param weight   k-point weight (dimensionless).
     /// @param n_atoms  Atom count; must match the problem geometry.
@@ -203,6 +204,19 @@ class DeviceBandSolver {
     /// @throws std::runtime_error if no k-point is bound or no Ritz vectors.
     void accumulate_nl_forces(double weight, int n_atoms, double* d_forces,
                               int n_occ = -1, double occ = 2.0);
+
+    /// @brief Nonlocal forces with per-band occupations \(f_b\) (metallic smear).
+    ///
+    /// Same KB Hellmann–Feynman form as the scalar overload; each band uses
+    /// `pref = weight · occ[b]`. Bands with `|occ[b]| < 1e-14` are skipped.
+    ///
+    /// @param weight   k-point weight (dimensionless).
+    /// @param n_atoms  Atom count.
+    /// @param d_forces Device force buffer [Hartree/Bohr].
+    /// @param occ      Host array of length `n_use` with \(f_b\in[0,2]\).
+    /// @param n_use    Number of bands (≤ `n_bands`).
+    void accumulate_nl_forces(double weight, int n_atoms, double* d_forces,
+                              const double* occ, int n_use);
 
     /// @brief Test hook: H·ψ for one host vector on the bound k-point
     /// (H2D → apply_h → D2H). Used by the band-parity diagnostics to

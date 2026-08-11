@@ -13,7 +13,8 @@
 /// metallic smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton) and
 /// `XCType::LSDA` / `XCType::PBE`; collinear fixed-occupation UKS
 /// (`spin_polarized`, integer multiplicity) with **`XCType::LSDA` or
-/// `XCType::PBE`** (spin+smear and spin forces/stress stay on `cpu::pw::PW`).
+/// `XCType::PBE`**. Restricted smear forces are on device; spin+smear,
+/// spin-PBE forces, and spin stress stay on `cpu::pw::PW`.
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -170,8 +171,9 @@ class PW {
 /// CUDA twin of `cpu::pw::pw_forces_analytic`: local Hellmann–Feynman +
 /// Ewald + Kleinman–Bylander nonlocal. Local and nonlocal force kernels
 /// run on the device; Ewald is the shared host classical sum. Supports
-/// restricted closed shell (LSDA/PBE) and collinear fixed-occupation UKS
-/// under **LSDA** only. Rejects metallic smear, spin∧PBE forces, and other
+/// restricted closed shell (LSDA/PBE), restricted metallic smear
+/// (FD/Gaussian/MP fractional occupations), and collinear fixed-occupation
+/// UKS under **LSDA** only. Rejects spin∧smear, spin∧PBE forces, and other
 /// unsupported members with a how-to.
 ///
 /// @param frame  Geometry [Å], types (Z), cell; not mutated.

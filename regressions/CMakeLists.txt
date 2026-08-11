@@ -311,6 +311,23 @@ if(ATV_BUILD_PW)
         add_dependencies(regressions run_${_reg_pw_smear})
         unset(_reg_pw_smear)
 
+        # Restricted metallic-smear analytic ionic forces CUDA↔CPU dual-gate.
+        set(_reg_pw_smear_f reg_cuda-pw-smear-forces)
+        add_executable(${_reg_pw_smear_f}
+            pw/cuda-pw-smear-forces/${_reg_pw_smear_f}.cu)
+        target_link_libraries(${_reg_pw_smear_f} PRIVATE atomiverse)
+        set_target_properties(${_reg_pw_smear_f} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        target_compile_definitions(${_reg_pw_smear_f} PRIVATE
+            ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+        add_custom_target(run_${_reg_pw_smear_f}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_pw_smear_f}> --device=both
+            DEPENDS ${_reg_pw_smear_f}
+            COMMENT "regression [pw/cuda-pw-smear-forces] devices=both FD smear F (1t)")
+        add_dependencies(regressions run_${_reg_pw_smear_f})
+        unset(_reg_pw_smear_f)
+
         # Analytic ionic forces under device PBE-GGA (LSDA dual-gate is
         # reg_cuda-pw-forces; energy PBE is reg_cuda-pw-pbe-device).
         set(_reg_pw_forces_pbe reg_cuda-pw-forces-pbe)
