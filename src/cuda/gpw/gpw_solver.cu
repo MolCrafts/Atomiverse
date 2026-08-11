@@ -7,8 +7,10 @@
 ///     multi-k host residual: energy ctrace, payload diag, cold-start;
 ///     force AO Pulay on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
-///     single-grid RKS `KsChainDevice::run`; multigrid RKS
-///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
+///     single-grid RKS host collint KS twin (product-si-gate; continuous
+///     collocate lacks PBC wrap — sibling product-collocate-pbc) + device
+///     H=H0+V / DIIS; multigrid RKS still device continuous (Si MG residual
+///     multigrid-si-energy-path); collinear UKS `KsChainDevice::run_uks`;
 ///     multi-k **device phased STVnl** via `KpointStvnlDevice`
 ///     (cuda-gpw-kpoint-device-stvnl; S/T device; Vnl zero or host-KB H2D);
 ///     multi-k **device χ^k density collocate** via
@@ -41,6 +43,7 @@
 #include "atomiverse/cpu/gpw/internal/diis.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/kpoints.h"
+#include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 #include "atomiverse/cpu/gpw/internal/local_pp.h"
 #include "atomiverse/cpu/gpw/internal/multigrid.h"
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
@@ -93,6 +96,8 @@ using cpu::gpw::gth_nonlocal;
 using cpu::gpw::local_pp_grid;
 using cpu::gpw::make_multigrid;
 using cpu::gpw::make_uniform_grid;
+using cpu::gpw::multigrid_collocate_rho;
+using cpu::gpw::multigrid_integrate_veff;
 using cpu::gpw::pair_image_counts;
 using cpu::linalg::CanonicalOrth;
 using cpu::linalg::RealMatrix;
@@ -1652,23 +1657,52 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         KsChainEnergies e{};
 
         if (!use_mg) {
-            wpack.pack_weights(d_P_use, d_geom0, dev.d_prods, nprod_geom,
-                               eps_drop);
-            e = ks_sg->run(dev.d_prods, nprod_geom, dev.d_n_ion, d_vloc_arg,
-                           dev.d_acc, kxc);
-            wpack.scatter_acc(d_geom0, dev.d_acc, nprod_geom, w_fine);
+            // Single-grid host collint KS twin (cuda-gpw-product-si-gate):
+            // continuous device product collocate has no collint PBC window
+            // wrap — H₂/water large-cell footholds hid it; Si MOLOPT tight
+            // cell under-counts density (sibling product-collocate-pbc).
+            // Host collint ρ + ks_grid_build_rks + integrate, then V H2D for
+            // device H=H0+V / residual. Device DIIS/eigen retained.
+            RealMatrix P_host = xt::zeros<double>({nb, nb});
+            check_cuda(cudaMemcpyAsync(P_host.data(), d_P_use,
+                                       static_cast<size_t>(nb) * nb
+                                           * sizeof(double),
+                                       cudaMemcpyDeviceToHost, stream),
+                       "D2H P for SG host collint KS");
+            check_cuda(cudaStreamSynchronize(stream), "sync P D2H SG");
+            // Device P is column-major; collint wants row-major Pvec.
+            std::vector<double> Pvec(static_cast<std::size_t>(nb) * nb);
+            for (int i = 0; i < nb; ++i)
+                for (int j = 0; j < nb; ++j)
+                    Pvec[static_cast<std::size_t>(i) * nb
+                         + static_cast<std::size_t>(j)] =
+                        P_host.data()[static_cast<std::size_t>(i)
+                                      + static_cast<std::size_t>(j) * nb];
+            const std::vector<double> rho =
+                multigrid_collocate_rho(mg, pset, nb, Pvec, eps);
+            const cpu::gpw::internal::KsGridRks ks =
+                cpu::gpw::internal::ks_grid_build_rks(
+                    grid, rho, n_ion, v_locsr, xc, /*nonperiodic=*/false,
+                    /*vdw_df=*/false, /*vdw_df2=*/false, /*rvv10=*/false);
+            e.e_hartree = ks.e_hartree;
+            e.e_xc = ks.e_xc;
+            e.e_locgrid = ks.e_locgrid;
+            const std::vector<double> Vvec =
+                multigrid_integrate_veff(mg, pset, nb, ks.veff, eps);
+            // Upload V column-major for device H=H0+V.
+            {
+                std::vector<double> Vcol(static_cast<std::size_t>(nb) * nb);
+                for (int i = 0; i < nb; ++i)
+                    for (int j = 0; j < nb; ++j)
+                        Vcol[static_cast<std::size_t>(i)
+                             + static_cast<std::size_t>(j) * nb] =
+                            Vvec[static_cast<std::size_t>(i) * nb
+                                 + static_cast<std::size_t>(j)];
+                wpack.upload_matrix(Vcol.data(), wpack.d_V());
+            }
             if (store_grids) {
-                std::vector<double> veff(static_cast<std::size_t>(npts));
-                std::vector<double> v_es(static_cast<std::size_t>(npts));
-                check_cuda(cudaMemcpyAsync(veff.data(), ks_sg->d_veff(), bytes,
-                                           cudaMemcpyDeviceToHost, stream),
-                           "D2H veff (boundary)");
-                check_cuda(cudaMemcpyAsync(v_es.data(), ks_sg->d_v_es(), bytes,
-                                           cudaMemcpyDeviceToHost, stream),
-                           "D2H v_es (boundary)");
-                check_cuda(cudaStreamSynchronize(stream), "sync rks veff D2H");
-                result_.veff = std::move(veff);
-                result_.v_es = std::move(v_es);
+                result_.veff = ks.veff;
+                result_.v_es = ks.v_es;
             }
         } else {
             std::vector<DeviceProduct*> d_prods_ptr(
