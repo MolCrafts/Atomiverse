@@ -14,8 +14,9 @@
 /// `XCType::LSDA` / `XCType::PBE`; collinear fixed-occupation UKS
 /// (`spin_polarized`, integer multiplicity) with **`XCType::LSDA` or
 /// `XCType::PBE`**. Restricted smear forces and restricted smear cell stress
-/// are on device; spin+smear, spin-PBE forces, and spin stress stay on
-/// `cpu::pw::PW`.
+/// are on device; collinear LSDA spin forces **and** LSDA spin cell stress
+/// are on device. spin+smear and spin-PBE forces/stress stay on
+/// `cpu::pw::PW` (or deeper CUDA product rows).
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -191,9 +192,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 /// density. Mechanical / CP2K sign:
 /// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\). Restricted metallic
 /// smear uses the Mermin free energy \(F=E_{\mathrm{KS}}-TS\). Supports
-/// restricted fixed closed shell (LSDA/PBE) and restricted metallic smear
-/// (FD/Gaussian/MP). Rejects spin_polarized and other members `PW::run`
-/// rejects.
+/// restricted fixed closed shell (LSDA/PBE), restricted metallic smear
+/// (FD/Gaussian/MP), and collinear fixed-occupation UKS under **LSDA**
+/// (remaps both \(\rho_\uparrow\) and \(\rho_\downarrow\)). Rejects spin∧smear,
+/// spin∧PBE stress, and other members `PW::run` rejects.
 ///
 /// @param frame         Geometry [Å], types (Z), cell; not mutated.
 /// @param method        Plane-wave method members.

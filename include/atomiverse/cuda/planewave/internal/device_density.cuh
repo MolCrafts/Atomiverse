@@ -249,6 +249,29 @@ class DeviceDensity {
     /// @param scale  Volume remap Ω₀/Ω (dimensionless).
     void load_rho_r_scaled(const double* rho_r0, int nr0, double scale);
 
+    /// @brief Real-space collinear spin density ρ_σ(r) via c2r of ρ_σ(G).
+    ///
+    /// Used by Nielsen–Martin spin stress after the reference SCF. Mutates
+    /// staging buffers; not on the SCF hot path.
+    ///
+    /// @param spin 0 = α, 1 = β.
+    /// @param out  Host buffer of `nr()` doubles [Bohr⁻³].
+    /// @throws std::invalid_argument if not a spin density object.
+    void fetch_rho_spin_r(int spin, double* out);
+
+    /// @brief Overwrite both spin ρ_σ(G) and total ρ from real-space densities.
+    ///
+    /// Twin of CPU `load_rho_spin_real_scaled`: ρ'_σ(r) = ρ_σ0(r)·scale then
+    /// r2c / gather, then ρ_total = ρ_↑ + ρ_↓.
+    ///
+    /// @param rho_a0 Host ρ_↑ [Bohr⁻³], length `nr0`.
+    /// @param rho_b0 Host ρ_↓ [Bohr⁻³], length `nr0`.
+    /// @param nr0    Length of each host buffer.
+    /// @param scale  Volume remap Ω₀/Ω (dimensionless).
+    /// @throws std::invalid_argument if not a spin density object.
+    void load_rho_spin_r_scaled(const double* rho_a0, const double* rho_b0,
+                                int nr0, double scale);
+
     /// @brief Non-default CUDA stream every density stage executes on.
     ///
     /// Never null after a successful constructor. Pass to

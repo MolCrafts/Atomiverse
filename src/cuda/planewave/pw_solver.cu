@@ -739,11 +739,22 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
                                 double* energy_ry_out) {
     method.validate_members();
-    if (method.spin_polarized)
+    // Collinear LSDA fixed-occ stress is landed; spin-PBE / spin∧smear stay
+    // closed (deeper product rows).
+    if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA)
         throw std::invalid_argument(
-            "cuda::pw::pw_stress: spin_polarized has no stress path on "
-            "device yet — use cpu::pw::pw_stress (or restricted metallic "
-            "smear without spin)");
+            "cuda::pw::pw_stress: spin_polarized stress path is XCType::LSDA "
+            "only — spin-PBE stress is a deeper product row, or use "
+            "cpu::pw::pw_stress");
+    if (method.spin_polarized && method.smearing != Smearing::none)
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: spin_polarized with metallic smearing has "
+            "no stress path on device yet — use "
+            "cpu::pw::pw_stress_fd or fixed-occupation collinear stress");
+    if (method.spin_polarized && method.multiplicity < 1)
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: multiplicity must be >= 1 when "
+            "spin_polarized");
     // Restricted metallic smear stress is landed; spin∧smear stays closed.
     if (method.smearing != Smearing::none && !(method.degauss > 0.0))
         throw std::invalid_argument(
@@ -773,7 +784,8 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
         frame, method.upf_path, method.gth_name, method.ecut_ry, method.k_mesh,
         method.tol, method.max_iter, method.mix_beta, method.pulay_depth,
         method.xc, method.smearing, method.degauss, method.mp_order,
-        method.extra_bands, energy_ry_out);
+        method.extra_bands, method.spin_polarized, method.multiplicity,
+        energy_ry_out);
 }
 
 } // namespace pw

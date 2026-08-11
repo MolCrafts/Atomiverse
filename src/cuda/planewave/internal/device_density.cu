@@ -870,6 +870,76 @@ void DeviceDensity::load_rho_r_scaled(const double* rho_r0, int nr0,
         cudaMemcpyDeviceToDevice, stream_));
 }
 
+void DeviceDensity::fetch_rho_spin_r(int spin, double* out) {
+    if (!spin_)
+        throw std::invalid_argument(
+            "cuda::pw::internal::DeviceDensity::fetch_rho_spin_r: not a spin "
+            "density object");
+    if (spin < 0 || spin > 1)
+        throw std::invalid_argument(
+            "cuda::pw::internal::DeviceDensity::fetch_rho_spin_r: spin must "
+            "be 0 or 1");
+    if (out == nullptr)
+        throw std::invalid_argument(
+            "cuda::pw::internal::DeviceDensity::fetch_rho_spin_r: out is null");
+    const int nx = fft_.nx(), ny = fft_.ny(), nz = fft_.nz();
+    scatter_g_to_halfcomplex(d_rho_spin_G_[spin], d_h_, d_k_, d_l_, ng0_,
+                             d_half_, nx, ny, nz, stream_);
+    fft_.c2r(d_half_, d_rho_r_in_);
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
+    ATV_CUDA_CHECK(cudaMemcpy(out, d_rho_r_in_,
+                              static_cast<size_t>(nr_) * sizeof(double),
+                              cudaMemcpyDeviceToHost));
+}
+
+void DeviceDensity::load_rho_spin_r_scaled(const double* rho_a0,
+                                           const double* rho_b0, int nr0,
+                                           double scale) {
+    if (!spin_)
+        throw std::invalid_argument(
+            "cuda::pw::internal::DeviceDensity::load_rho_spin_r_scaled: not a "
+            "spin density object");
+    auto load_one = [&](const double* rho0, cufftDoubleComplex* d_rho_G) {
+        std::vector<double> rho_r(static_cast<size_t>(nr_), 0.0);
+        if (nr0 == nr_ && rho0 != nullptr) {
+            for (int i = 0; i < nr_; ++i)
+                rho_r[static_cast<size_t>(i)] =
+                    rho0[static_cast<size_t>(i)] * scale;
+        } else {
+            double mean = 0.0;
+            if (rho0 != nullptr && nr0 > 0) {
+                for (int i = 0; i < nr0; ++i)
+                    mean += rho0[static_cast<size_t>(i)];
+                mean /= static_cast<double>(nr0);
+            }
+            const double v = mean * scale;
+            for (int i = 0; i < nr_; ++i)
+                rho_r[static_cast<size_t>(i)] = v;
+        }
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_r_acc_, rho_r.data(),
+                                       static_cast<size_t>(nr_) * sizeof(double),
+                                       cudaMemcpyHostToDevice, stream_));
+        fft_.r2c(d_rho_r_acc_, d_half_);
+        gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_rho_G,
+                                fft_.nx(), fft_.ny(), fft_.nz(),
+                                1.0 / static_cast<double>(nr_), stream_);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(
+            // keep spin old in sync for residual hygiene
+            (d_rho_G == d_rho_spin_G_[0]) ? d_rho_spin_G_old_[0]
+                                          : d_rho_spin_G_old_[1],
+            d_rho_G, static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+            cudaMemcpyDeviceToDevice, stream_));
+    };
+    load_one(rho_a0, d_rho_spin_G_[0]);
+    load_one(rho_b0, d_rho_spin_G_[1]);
+    sync_total_rho();
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        d_rho_G_old_, d_rho_G_,
+        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+        cudaMemcpyDeviceToDevice, stream_));
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
+
 // ── Collinear spin path ──────────────────────────────────────────────────
 
 namespace {

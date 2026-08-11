@@ -26,7 +26,9 @@ namespace internal {
 /// evaluations under ±h symmetric strain (density remapped Ω₀/Ω). Frame is
 /// not mutated. Restricted metallic smear (when `smearing != none`) uses
 /// fractional occupations and the Mermin free energy on both the reference
-/// SCF and the NSCF strain samples.
+/// SCF and the NSCF strain samples. Collinear fixed-occupation UKS
+/// (`spin_polarized`) remaps both ρ_↑ and ρ_↓ (LSDA product; spin-PBE stress
+/// is a deeper row gated by the public API).
 ///
 /// @param frame          Geometry [Å], types (Z), cell.
 /// @param upf_path       UPF path (empty if gth_name is set).
@@ -42,6 +44,8 @@ namespace internal {
 /// @param degauss        Smear width [Ry] (required > 0 when smearing).
 /// @param mp_order       Methfessel–Paxton order (ignored for FD/Gaussian).
 /// @param extra_bands    Empty bands beyond ceil(n_e/2) when smearing.
+/// @param spin_polarized Collinear fixed-occupation UKS (nspin=2).
+/// @param multiplicity   2S+1 when spin_polarized (else 1).
 /// @param energy_ry_out  Optional: reference SCF free/total energy [Ry].
 /// @return Intensive stress [eV/Å³] Voigt.
 std::array<double, 6> pw_stress_analytic_impl(
@@ -49,6 +53,7 @@ std::array<double, 6> pw_stress_analytic_impl(
     const std::string& gth_name, double ecut_ry, int k_mesh, double tol,
     int max_iter, double mix_beta, int pulay_depth, cpu::scf::XCType xc,
     cpu::pw::Smearing smearing, double degauss, int mp_order, int extra_bands,
+    bool spin_polarized = false, int multiplicity = 1,
     double* energy_ry_out = nullptr);
 
 } // namespace internal

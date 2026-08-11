@@ -212,8 +212,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 /// occupations, or of the Mermin free energy \(F=E_{\mathrm{KS}}-TS\) when
 /// restricted metallic `smearing` is set. Mechanical / CP2K sign:
 /// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\) (positive when
-/// compressed — drives `IsotropicCellRelax` to expand). Restricted paths
-/// only; collinear spin analytic stress is a separate product row.
+/// compressed — drives `IsotropicCellRelax` to expand). Supports restricted
+/// fixed closed shell, restricted metallic smear, and collinear
+/// fixed-occupation UKS (remaps both \(\rho_\uparrow\) and \(\rho_\downarrow\));
+/// spin∧smear analytic stress remains a deeper product row (`pw_stress_fd`).
 ///
 /// @param energy_ry_out Optional: free/total energy [Ry] from the production
 ///        SCF (avoids a second SCF when the evaluator also needs energy).

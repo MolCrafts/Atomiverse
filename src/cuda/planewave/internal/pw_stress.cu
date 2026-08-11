@@ -1,8 +1,8 @@
 /// @file cuda/planewave/internal/pw_stress.cu
 /// @brief Device Nielsen–Martin analytic cell stress (one SCF + NSCF strain-FD).
 ///
-/// Restricted fixed closed shell and restricted metallic smear (Mermin free
-/// energy). Collinear spin stress is a separate product row.
+/// Restricted fixed closed shell, restricted metallic smear (Mermin free
+/// energy), and collinear fixed-occupation LSDA spin (ρ_↑/ρ_↓ remap).
 
 #include "atomiverse/cuda/planewave/internal/pw_stress.cuh"
 
@@ -74,40 +74,64 @@ cpu::pw::internal::SmearKind to_smear_kind(cpu::pw::Smearing s) {
 }
 
 /// Device SCF at `frame`; fills free/total energy and returns host ρ(r) + Ω.
+/// Collinear spin: rho_r is unused; rho_a / rho_b hold the spin channels.
 struct RefScf {
     std::vector<double> rho_r;
+    std::vector<double> rho_a;
+    std::vector<double> rho_b;
     double omega_bohr = 0;
     double energy_ry = 0;
     int nr = 0;
     int iterations = 0;
     bool converged = false;
+    bool spin = false;
+    int n_alpha = 0;
+    int n_beta = 0;
 };
 
 RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
                      const std::string& gth_name, double ecut_ry, int k_mesh,
                      double tol, int max_iter, double mix_beta, int pulay_depth,
                      cpu::scf::XCType xc, cpu::pw::Smearing smearing,
-                     double degauss, int mp_order, int extra_bands) {
+                     double degauss, int mp_order, int extra_bands,
+                     bool spin_polarized, int multiplicity) {
     cpu::pw::internal::PWProblem prob;
     cpu::pw::internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry,
                                         k_mesh, prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
     const int n_elec = prob.n_elec;
     const bool use_smear = (smearing != cpu::pw::Smearing::none);
-    if (!use_smear && n_elec % 2 != 0)
+
+    int n_alpha = 0;
+    int n_beta = 0;
+    if (spin_polarized) {
+        if (use_smear)
+            throw std::invalid_argument(
+                "cuda::pw::pw_stress: spin_polarized with metallic smearing "
+                "has no stress path on device yet");
+        const int mag = multiplicity - 1;
+        if ((n_elec + mag) % 2 != 0 || mag > n_elec)
+            throw std::invalid_argument(
+                "cuda::pw::pw_stress: n_elec and multiplicity have "
+                "incompatible parity");
+        n_alpha = (n_elec + mag) / 2;
+        n_beta = (n_elec - mag) / 2;
+    } else if (!use_smear && n_elec % 2 != 0) {
         throw std::invalid_argument(
             "cuda::pw::pw_stress: "
             + std::to_string(n_elec)
             + " valence electrons is not closed-shell — use restricted "
               "metallic smearing for open-shell / metallic paths, or "
-              "cpu::pw for collinear spin");
+              "spin_polarized for collinear spin");
+    }
 
     ws.mix_beta = AccReal(mix_beta);
     ws.pulay_depth = pulay_depth;
 
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    int n_bands = prob.n_bands;
-    if (use_smear) {
+    int n_bands = spin_polarized ? std::max(std::max(n_alpha, n_beta), 1)
+                                 : prob.n_bands;
+    if (use_smear && !spin_polarized) {
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
         n_bands = n_occ_ceil + std::max(extra_bands, 0);
     }
@@ -118,12 +142,13 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
     const AccReal degauss_ha =
         AccReal(degauss) * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
 
-    DeviceDensity den(prob, mix_beta, pulay_depth, xc);
+    DeviceDensity den(prob, mix_beta, pulay_depth, xc, spin_polarized, n_alpha,
+                      n_beta, n_elec);
     DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
                             den.stream());
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
     solver.build_kpoints(prob);
-    if (use_smear)
+    if (use_smear && !spin_polarized)
         solver.ensure_ritz_cache();
 
     cpu::pw::internal::ConvergenceCheck conv{AccReal(tol), 2};
@@ -131,7 +156,47 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
     int last_iter = 0;
     bool converged = false;
 
-    if (use_smear) {
+    if (spin_polarized) {
+        const int n_occ[2] = {n_alpha, n_beta};
+        for (int iter = 0; iter < max_iter; ++iter) {
+            den.sync_total_rho();
+            den.hartree();
+            den.exchange_correlation_spin();
+
+            AccReal e_band = 0;
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                den.zero_accumulator();
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    const AccReal weight = prob.kg.weights[ik];
+                    for (int b = 0; b < n_occ[s]; ++b)
+                        e_band += weight * ws.eigenvalues[b];
+                    solver.accumulate_density(weight, omega_bohr, n_occ[s],
+                                              1.0);
+                }
+                den.collect_spin_out(s);
+            }
+
+            den.mix_spin_linear();
+            const auto s = den.reduce_spin(static_cast<double>(vol_bohr));
+            ws.E_xc = AccReal(s.e_xc);
+            auto terms = cpu::pw::internal::combine_energy_terms(
+                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+                ws.E_xc, prob.ew_total, ws.E_aug);
+            terms.e_one =
+                e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
+            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
+                          + ws.E_aug;
+            last_energy_ha = terms.total;
+            last_iter = iter + 1;
+            if (conv.step(AccReal(s.resid))) {
+                converged = true;
+                break;
+            }
+        }
+    } else if (use_smear) {
         std::vector<std::vector<AccReal>> evals_k(
             static_cast<std::size_t>(n_kpts));
         for (int iter = 0; iter < max_iter; ++iter) {
@@ -252,8 +317,18 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
     RefScf out;
     out.nr = den.nr();
     out.omega_bohr = den.omega();
-    out.rho_r.resize(static_cast<std::size_t>(out.nr));
-    den.fetch_rho_r(out.rho_r.data());
+    out.spin = spin_polarized;
+    out.n_alpha = n_alpha;
+    out.n_beta = n_beta;
+    if (spin_polarized) {
+        out.rho_a.resize(static_cast<std::size_t>(out.nr));
+        out.rho_b.resize(static_cast<std::size_t>(out.nr));
+        den.fetch_rho_spin_r(0, out.rho_a.data());
+        den.fetch_rho_spin_r(1, out.rho_b.data());
+    } else {
+        out.rho_r.resize(static_cast<std::size_t>(out.nr));
+        den.fetch_rho_r(out.rho_r.data());
+    }
     out.energy_ry = static_cast<double>(last_energy_ha)
                     / cpu::pw::qe_units::rydberg_to_hartree;
     out.iterations = last_iter;
@@ -266,8 +341,10 @@ double nscf_energy_ry(const cpu::Frame& frame, const std::string& upf_path,
                       const std::string& gth_name, double ecut_ry, int k_mesh,
                       double mix_beta, int pulay_depth, cpu::scf::XCType xc,
                       cpu::pw::Smearing smearing, double degauss, int mp_order,
-                      int extra_bands, const std::vector<double>& rho_r0,
-                      double omega0_bohr) {
+                      int extra_bands, bool spin_polarized, int n_alpha,
+                      int n_beta, const std::vector<double>& rho_r0,
+                      const std::vector<double>& rho_a0,
+                      const std::vector<double>& rho_b0, double omega0_bohr) {
     cpu::pw::internal::PWProblem prob;
     cpu::pw::internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry,
                                         k_mesh, prob);
@@ -278,19 +355,55 @@ double nscf_energy_ry(const cpu::Frame& frame, const std::string& upf_path,
     const int n_elec = prob.n_elec;
     const bool use_smear = (smearing != cpu::pw::Smearing::none);
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    int n_bands = prob.n_bands;
-    if (use_smear) {
+    int n_bands = spin_polarized ? std::max(std::max(n_alpha, n_beta), 1)
+                                 : prob.n_bands;
+    if (use_smear && !spin_polarized) {
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
         n_bands = n_occ_ceil + std::max(extra_bands, 0);
     }
     const AccReal vol_bohr = prob.vol_bohr;
     const double scale = omega0_bohr / static_cast<double>(ws.omega);
 
-    DeviceDensity den(prob, mix_beta, pulay_depth, xc);
+    DeviceDensity den(prob, mix_beta, pulay_depth, xc, spin_polarized, n_alpha,
+                      n_beta, n_elec);
     DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
                             den.stream());
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
     solver.build_kpoints(prob);
+
+    if (spin_polarized) {
+        den.load_rho_spin_r_scaled(rho_a0.data(), rho_b0.data(),
+                                   static_cast<int>(rho_a0.size()), scale);
+        den.hartree();
+        den.exchange_correlation_spin();
+
+        const int n_occ[2] = {n_alpha, n_beta};
+        AccReal e_band = 0;
+        for (int s = 0; s < 2; ++s) {
+            if (n_occ[s] <= 0)
+                continue;
+            den.assemble_veff_spin(s);
+            for (int ik = 0; ik < n_kpts; ++ik) {
+                solver.bind_kpoint(ik);
+                solver.solve(ws, 40);
+                const AccReal weight = prob.kg.weights[ik];
+                for (int b = 0; b < n_occ[s]; ++b)
+                    e_band += weight * ws.eigenvalues[b];
+            }
+        }
+
+        const auto s = den.reduce_spin(static_cast<double>(vol_bohr));
+        auto terms = cpu::pw::internal::combine_energy_terms(
+            e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+            AccReal(s.e_xc), prob.ew_total, ws.E_aug);
+        terms.e_one =
+            e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
+        terms.total =
+            terms.e_one + AccReal(s.e_h) + AccReal(s.e_xc) + prob.ew_total
+            + ws.E_aug;
+        return static_cast<double>(terms.total)
+               / cpu::pw::qe_units::rydberg_to_hartree;
+    }
 
     den.load_rho_r_scaled(rho_r0.data(), static_cast<int>(rho_r0.size()),
                           scale);
@@ -382,7 +495,7 @@ std::array<double, 6> pw_stress_analytic_impl(
     const std::string& gth_name, double ecut_ry, int k_mesh, double tol,
     int max_iter, double mix_beta, int pulay_depth, cpu::scf::XCType xc,
     cpu::pw::Smearing smearing, double degauss, int mp_order, int extra_bands,
-    double* energy_ry_out) {
+    bool spin_polarized, int multiplicity, double* energy_ry_out) {
     if (frame.nlocal() <= 0)
         throw std::invalid_argument("cuda::pw::pw_stress: frame has no atoms");
     if (frame.box.volume() <= 0)
@@ -392,11 +505,19 @@ std::array<double, 6> pw_stress_analytic_impl(
         throw std::invalid_argument(
             "cuda::pw::pw_stress: degauss must be > 0 [Ry] when smearing is "
             "enabled");
+    if (spin_polarized && smearing != cpu::pw::Smearing::none)
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: spin_polarized with metallic smearing has "
+            "no stress path on device yet");
+    if (spin_polarized && multiplicity < 1)
+        throw std::invalid_argument(
+            "cuda::pw::pw_stress: multiplicity must be >= 1 when "
+            "spin_polarized");
 
     const RefScf ref =
         run_device_scf(frame, upf_path, gth_name, ecut_ry, k_mesh, tol,
                       max_iter, mix_beta, pulay_depth, xc, smearing, degauss,
-                      mp_order, extra_bands);
+                      mp_order, extra_bands, spin_polarized, multiplicity);
     if (energy_ry_out)
         *energy_ry_out = ref.energy_ry;
     if (!ref.converged) {
@@ -405,8 +526,9 @@ std::array<double, 6> pw_stress_analytic_impl(
                     "using last density for HF stress (E=%.8f Ry)\n",
                     ref.iterations, ref.energy_ry);
     } else {
-        std::printf("[pw] cuda stress-scf done iter=%d energy_ry=%.8f%s\n",
+        std::printf("[pw] cuda stress-scf done iter=%d energy_ry=%.8f%s%s\n",
                     ref.iterations, ref.energy_ry,
+                    spin_polarized ? " spin=1" : "",
                     smearing != cpu::pw::Smearing::none ? " smear=1" : "");
     }
 
@@ -436,11 +558,13 @@ std::array<double, 6> pw_stress_analytic_impl(
 
         const double ep_ry = nscf_energy_ry(
             fp, upf_path, gth_name, ecut_ry, k_mesh, mix_beta, pulay_depth, xc,
-            smearing, degauss, mp_order, extra_bands, ref.rho_r,
+            smearing, degauss, mp_order, extra_bands, spin_polarized,
+            ref.n_alpha, ref.n_beta, ref.rho_r, ref.rho_a, ref.rho_b,
             ref.omega_bohr);
         const double em_ry = nscf_energy_ry(
             fm, upf_path, gth_name, ecut_ry, k_mesh, mix_beta, pulay_depth, xc,
-            smearing, degauss, mp_order, extra_bands, ref.rho_r,
+            smearing, degauss, mp_order, extra_bands, spin_polarized,
+            ref.n_alpha, ref.n_beta, ref.rho_r, ref.rho_a, ref.rho_b,
             ref.omega_bohr);
         const double dE_dev = (ep_ry - em_ry) * ry_to_ev / (2.0 * h);
         // Mechanical / CP2K: σ = −(1/Ω) ∂E/∂ε (E = F under smear).
