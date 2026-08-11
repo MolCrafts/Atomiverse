@@ -86,11 +86,13 @@ class ProductWeightPackDevice {
     void pack_weights(const double* d_P, const DeviceProductGeom* d_geom,
                       DeviceProduct* d_prods, int nprod, double eps_drop);
 
-    /// @brief Set each monom's `mag` to max\|weight\| over its collint task.
+    /// @brief Set each monom's `mag` + `L_win` to collint group maxima.
     ///
-    /// Twin of CPU collint group window mag (max live \|w\| on a geometry
-    /// batch). Tasks are host-side ranges into the same product array (from
-    /// `ProductSet::tasks_by_level`); uploaded once and reused each SCF iter.
+    /// Twin of CPU collint group window sizing: max live \|w\| and max monom
+    /// Ltot on a geometry batch (same pol table). Without group L, monom
+    /// continuous spheres under-size s-character monoms in mixed p/d groups
+    /// vs collint `group_angular_max` (cuda-gpw-multigrid-device-ks residual).
+    /// Tasks from `ProductSet::tasks_by_level`; uploaded once per run.
     ///
     /// @param d_prods    Device products (weight already packed).
     /// @param d_task_beg Device task begin indices, length ntask.

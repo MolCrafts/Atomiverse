@@ -104,9 +104,11 @@ __global__ void collocate_products_sphere_kernel(
         const DeviceProduct q = prods[ip];
         if (q.weight == 0.0)
             continue;
-        const int Ltot = q.la[0] + q.la[1] + q.la[2] + q.lb[0] + q.lb[1]
-                         + q.lb[2];
-        // Collint twin: window mag is group max|w|; value still uses weight.
+        const int L_monom = q.la[0] + q.la[1] + q.la[2] + q.lb[0] + q.lb[1]
+                            + q.lb[2];
+        // Collint twin: window mag = group max|w|; L = group max Ltot
+        // (apply_group_max_mag). Value still uses per-monom weight.
+        const int Ltot = (q.L_win >= 0) ? q.L_win : L_monom;
         const double win_mag = (q.mag > 0.0) ? q.mag : fabs(q.weight);
         const double rc = product_radius_dev(win_mag, q.p, Ltot, eps);
         if (!(rc > 0.0))

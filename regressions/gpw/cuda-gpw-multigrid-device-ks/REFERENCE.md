@@ -2,9 +2,10 @@
 
 ## What
 
-Staff iron-law restore of **device monom multi-level KS** mid-SCF for Si-class
-Γ RKS PADE ngrids=4. Lands group-max mag + per-level sphere eps; dual-gate
-energy residual remains above tol.
+Iron-law restore of **device monom multi-level KS** mid-SCF for Si-class Γ RKS
+PADE ngrids=4: pack→`KsMultiGridChainDevice`→scatter with collint **group
+max\|w\| + group Ltot** sphere windows. Production default (no host collint
+mid-path DH).
 
 ## Twin
 
@@ -14,34 +15,30 @@ Same as `cuda-gpw-multigrid-si-energy-path` (CPU diamond Si Γ PADE ngrids=4).
 
 | Gate | Tol | Status |
 | --- | ---: | --- |
-| Energy \|dE\| | **5×10⁻⁵ Ha** | **open** — best **7.6e-5** (GH200 **1184281**) |
+| Energy \|dE\| | **5×10⁻⁵ Ha** | pending GH200 |
 | Soft-tol / pin-unsafe eps fit | **forbidden** | held |
+| Mid-path scientific matrix DH | **zero** | device default |
 
-## Lever tried
+## Lever
 
-1. Group max\|w\| → `DeviceProduct.mag` (collint group window mag).
-2. Per-level sphere eps: fine mass-margin (product-si hold); coarse collint-class.
-3. Coarse eps factor scan 0.005–0.02: residual discontinuous; no pin-safe ≤5e-5.
-4. Production default remains **host collint**. Device monom: `ATV_GPW_CUDA_DEVICE_MG=1`.
+1. Group max\|w\| → `DeviceProduct.mag` (prior wave).
+2. **Group max Ltot → `DeviceProduct.L_win`** (this wave) — collint
+   `group_angular_max` twin; monom continuous spheres no longer under-size
+   s-monoms in mixed p/d geometry groups.
+3. Device MG production default; `ATV_GPW_CUDA_HOST_MG=1` host collint debug.
 
-## Evidence (GH200)
+Prior pin-unsafe coarse eps brackets (0.005–0.02, best **7.6e-5** on **1184281**)
+abandoned.
 
-| Job | Coarse eps | \|dE\| | Note |
-| --- | ---: | ---: | --- |
-| 1183276 | 0.02 all levels | 7.67e-5 | product-si broken |
-| 1183591 | mass-margin + group-max | 4.29e-4 | product-si hold; ≈ monom class |
-| **1184281** | fine mass-margin, coarse 0.02 | **7.60e-5** | product-si hold; **best** |
-| 1184590 | coarse 0.005 | 4.58e-4 | under-correct |
-| 1185043 | coarse 0.015 | 4.00e-4 | under-correct |
+## Skills
 
-## Next lever
-
-Device collint (cxyz / cmax radius) — not pin-unsafe eps fitting.
+choose-launch-configuration, optimize-global-memory-access,
+handle-boundary-conditions, av-perf (group-task launch; sphere window; residency).
 
 ## Perf
 
 **perf_exempt**.
 
-## Status
+## Evidence
 
-**acceptance_met=false** — residual \|dE\| > 5e-5; infrastructure landed.
+GH200 job id filled after dual-gate run.

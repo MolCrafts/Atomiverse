@@ -90,9 +90,9 @@ std::string parse_device(int argc, char** argv) {
 } // namespace
 
 int main(int argc, char** argv) {
-    // Device monom multi-level is default; host collint is opt-in debug only.
-    // Probe device monom multi-level (default production is host collint).
-    ::setenv("ATV_GPW_CUDA_DEVICE_MG", "1", 1);
+    // Device monom multi-level is production default (group mag + group Ltot).
+    // Ensure host-collint debug env is off so dual-gate exercises device path.
+    ::unsetenv("ATV_GPW_CUDA_HOST_MG");
     const std::string device = parse_device(argc, argv);
     const bool run_cpu = (device == "cpu" || device == "both");
     const bool run_cuda = (device == "cuda" || device == "both");

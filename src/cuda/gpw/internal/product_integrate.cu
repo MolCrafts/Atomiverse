@@ -101,10 +101,12 @@ __global__ void integrate_products_sphere_kernel(
     if (ip >= nprod)
         return;
     const DeviceProduct q = prods[ip];
-    // Integrate is shape-only; unit mag + mass-margin eps sizes support
-    // (weight applied only on collocate / scatter k). Group mag is for collocate.
-    const int Ltot =
+    // Shape-only integrate (weight on scatter). Support uses unit bare-shape
+    // mag=1 (collint integrate uses geom_mag·max|V| separately) + group Ltot
+    // when set by apply_group_max_mag (same L as collocate sphere).
+    const int L_monom =
         q.la[0] + q.la[1] + q.la[2] + q.lb[0] + q.lb[1] + q.lb[2];
+    const int Ltot = (q.L_win >= 0) ? q.L_win : L_monom;
     const double mag = 1.0;
     const double rc = product_radius_dev(mag, q.p, Ltot, eps);
     if (!(rc > 0.0)) {

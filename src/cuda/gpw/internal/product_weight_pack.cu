@@ -62,8 +62,9 @@ __global__ void pack_weights_kernel(const double* __restrict__ P,
     DeviceProduct q;
     q.p = g.p;
     q.weight = w;
-    // Per-monom default; apply_group_max_mag overwrites with collint group max.
+    // Per-monom default; apply_group_max_mag lifts mag + L_win to group max.
     q.mag = fabs(w);
+    q.L_win = g.la[0] + g.la[1] + g.la[2] + g.lb[0] + g.lb[1] + g.lb[2];
     for (int d = 0; d < 3; ++d) {
         q.pc[d] = g.pc[d];
         q.ra[d] = g.ra[d];
@@ -74,7 +75,7 @@ __global__ void pack_weights_kernel(const double* __restrict__ P,
     prods[ip] = q;
 }
 
-/// @brief Contiguous geometry-group max\|weight\| → mag (collint twin).
+/// @brief Contiguous geometry-group max\|weight\| + max Ltot → mag/L_win.
 ///
 /// Products on each level are sorted by collint geometry; a task [beg,end)
 /// shares one pol table. One block per task (choose-launch-configuration —
@@ -91,10 +92,20 @@ __global__ void group_max_mag_kernel(DeviceProduct* __restrict__ prods,
     if (end <= beg)
         return;
     double m = 0.0;
-    for (int i = beg; i < end; ++i)
+    int Lmax = 0;
+    for (int i = beg; i < end; ++i) {
         m = fmax(m, fabs(prods[i].weight));
-    for (int i = beg; i < end; ++i)
+        const int Lm = prods[i].la[0] + prods[i].la[1] + prods[i].la[2]
+                       + prods[i].lb[0] + prods[i].lb[1] + prods[i].lb[2];
+        if (Lm > Lmax)
+            Lmax = Lm;
+        if (prods[i].L_win > Lmax)
+            Lmax = prods[i].L_win;
+    }
+    for (int i = beg; i < end; ++i) {
         prods[i].mag = m;
+        prods[i].L_win = Lmax;
+    }
 }
 
 /// @brief Sequential product loop matching host scatter order.

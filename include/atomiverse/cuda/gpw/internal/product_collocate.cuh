@@ -63,6 +63,10 @@ struct DeviceProduct {
     /// @brief Window magnitude for sphere radius (collint group max\|w\|).
     /// Zero ⇒ collocate falls back to \|weight\| (foothold / unit tests).
     double mag = 0.0;
+    /// @brief Angular L for sphere radius (collint group max Ltot).
+    /// Pack sets monom L; `apply_group_max_mag` lifts to group max (collint
+    /// twin). Negative ⇒ collocate/integrate recompute monom L from la+lb.
+    int L_win = -1;
 };
 
 /// @brief Collocate product Gaussians onto ρ (device path).
