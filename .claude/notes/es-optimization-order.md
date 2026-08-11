@@ -52,37 +52,35 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 13)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 14)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
 **landed** on `dev`. Device mid-SCF collocate/integrate, MG energy, Γ UKS (+
 O₂ gate), device grid forces, PBE H₂ gate, product stress, product non-default
 stream, **device RKS DIIS/eigen**, **device dual UKS DIIS/eigen**, **device
 weight pack/scatter**, **water Γ RKS E+F dual-gate**, **multi-k RKS DIIS
-energy (H₂)**, **multi-k device χ^k collocate + V→H_k integrate**, **collinear
-LSDA spin forces**, **restricted metallic-smear forces (Γ)** **on base**
-(harness wave 4 @ `1733535f` / chore `4d9bbdaa`). Multi-k residual **on base**:
-host **Vmat D2H + H_k assemble** + host KDiis + phased STVnl + host complex
-Hermitian diagonalize + host \(P_k\) H2D. **Tip-green not base** (Assign wave
-5): `kpoint-h-assemble` (GH200 **1132528**), `kpoint-device-diis` (**1132761**),
-`smear-stress` (**1132266** Al FCC 1-atom). Wave 13 residual after tip re-diff:
-**`kpoint-h-residency`** (H still D2H into residual ptrs) +
-**`kpoint-device-energy`** (host ctrace e_kin/e_nl) +
-**`kpoint-payload-device`** (host final diag) + production
-**`smear-stress-al2-gate`**. Mid-SCF residual after weight-pack: **host H =
+energy (H₂)**, **multi-k device χ^k collocate + V→H_k integrate + H_k fuse**,
+**multi-k device KDiis/zheevd**, **collinear LSDA spin forces**, **restricted
+metallic-smear forces + stress (Γ)** **on base** (opt-4 land @ `689f772b`;
+h-assemble GH200 **1132528**, smear-stress **1133111**; prior wave 6 DIIS
+**1133110**). Multi-k residual **on base after parents**: host **H D2H into
+residual** (`kpoint-h-residency`) + host **ctrace e_kin/e_nl**
+(`kpoint-device-energy`) + host **payload re-diag** (`kpoint-payload-device`) +
+host **cold-start densify** (`kpoint-device-cold-start` **new wave 14**) + host
+\(P_k\) H2D + phased STVnl. Mid-SCF residual after weight-pack: **host H =
 H0+V** (`device-h-assemble`); UKS dual host H + **host Pa/Pb re-upload**. Water
 **σ** + multi-k/MG production matrix + path×PBE + PW spin×kmesh×smear held.
-Staffed `[~]` tip-green: three Assign wave 5 tips (Merge owns land).
+**in_progress=0** — Assign owns free high-value residual.
 
 | Priority | slug | Goal |
 | --- | --- | --- |
 | P1 | *(closed)* device-forces + pbe-product-gate + stress + stream + h2o-gate (E+F) | on base |
-| P2 | **landed** device-diis-eigen + uks-device-diis + device-weight-pack + kpoints + spin-forces + **smear-forces** + kpoint collocate/integrate; tip-green PW `smear-stress` + multi-k h-assemble/device-diis | Merge then PW/multi-k residual |
-| P3 | multi-k depth after tips (**h-residency / device-energy / payload** + p-residency/stvnl) + MG production F/σ + **Si multi-k MG** + multi-k/MG×PBE E+F/σ + O₂ UKS joints + **device-h-assemble** / **uks-h-assemble** + PW **smear-stress-al2** + spin×kmesh×smear + **kmesh×smear** | after parent energy rows |
+| P2 | **landed** device-diis-eigen + uks-device-diis + device-weight-pack + kpoints + spin-forces + **smear-forces + smear-stress** + kpoint collocate/integrate/h-assemble/device-diis | free multi-k / PW residual |
+| P3 | multi-k depth (**h-residency / device-energy / payload / cold-start** + p-residency/stvnl) + MG production F/σ + **Si multi-k MG** + multi-k/MG×PBE E+F/σ + O₂ UKS joints + **device-h-assemble** / **uks-h-assemble** + PW **smear-stress-al2** + spin×kmesh×smear + **kmesh×smear** | after parent energy rows |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=133**; **in_progress=3**; **cuda_pending=136**;
-**gaps_remaining=137**. Contract:
+(not soft-tol). **pending_count=134**; **in_progress=0**; **cuda_pending=134**;
+**gaps_remaining=135**. Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 

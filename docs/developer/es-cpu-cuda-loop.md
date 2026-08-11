@@ -39,6 +39,17 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 GapCensus wave 14 (parent `dev` @ `689f772b`):** Re-diff after
+  opt-4 land of `cuda-pw-smear-stress` (merge `b46875bf` / GH200 **1133111**)
+  + `cuda-gpw-kpoint-h-assemble` (merge `0ef79db9` / GH200 **1132528**). Fair
+  walls **held** MG MAIN **2.33×**; **cpu_pending=0**; no gpw-perf promote.
+  Cleared all `[~]` (in_progress=0). Tree residual multi-k H residency /
+  energy / payload / **new cold-start** / P / STVnl; Γ device-h-assemble;
+  PW production `smear-stress-al2-gate` + spin-stress / kmesh-smear matrix.
+  **new_slugs_added=1** (`kpoint-device-cold-start`). **pending_count=134**;
+  **cuda_pending=134**; **gaps_remaining=135**. Queue **not** exhausted.
+  Worktrees empty; builds empty. No push.
+
 - **2026-08-11 harness wave 6 (parent `dev` @ `5319a282`):** 1 of 3 staffed
   → done [x]: `cuda-gpw-kpoint-device-diis` (merge `5319a282` / feat
   `f3f55dc2` / re-verify `8511a1fb`; GH200 **1133110** \|dE\|=**3.419e-14** Ha

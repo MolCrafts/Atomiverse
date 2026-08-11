@@ -5,14 +5,15 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ post opt-4 tip merges (smear-stress + kpoint-h-assemble)
+- **Parent:** `dev` @ `689f772b` (post opt-4 tip merges + GapCensus wave 14)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** `es-cpu-cuda-opt-4` auto-merged **6** (uks-device-diis,
-  weight-pack, smear-forces, kpoint collocate/integrate, kpoint-device-diis).
-  Operator merged residual green tips:
-  - `cuda-pw-smear-stress` (GH200 **1133111**)
-  - `cuda-gpw-kpoint-h-assemble` (GH200 **1132528**; kept with device DIIS)
+- **Last action:** GapCensus wave 14 — re-diff after opt-4 land of
+  **`cuda-pw-smear-stress`** (merge `b46875bf` / GH200 **1133111**) +
+  **`cuda-gpw-kpoint-h-assemble`** (merge `0ef79db9` / GH200 **1132528**).
+  Cleared all `[~]`; **new_slugs_added=1** (`kpoint-device-cold-start`).
+  **cpu_pending=0**; **pending_count=134**; **in_progress=0**;
+  **gaps_remaining=135**. No live worktrees / `wf/*`.
 
 ## How to run
 
@@ -23,7 +24,7 @@ args: {
   "staff_count": 3,
   "max_waves": 6,
   "target_branch": "dev",
-  "theme": "High-value residual only: kpoint-h-residency / kpoint-device-stvnl / spin-stress / multigrid-si-gate / device-stress; prefer product lift; NO dual-gate matrix explosion; no soft tols"
+  "theme": "High-value residual only: kpoint-h-residency / kpoint-device-energy / kpoint-payload-device / kpoint-device-cold-start / kpoint-p-residency / kpoint-device-stvnl / device-h-assemble / smear-stress-al2-gate / spin-stress / kmesh-smear-forces; prefer product lift; NO dual-gate matrix explosion; no soft tols"
 }
 agent_budget: 384+
 ```
@@ -32,8 +33,8 @@ agent_budget: 384+
 
 | Track | Residual |
 | --- | --- |
-| **cuda GPW** | multi-k H residency / payload / STVnl / P residency; Si production gates; device-stress; MG/UKS F/σ |
-| **cuda PW** | spin-stress; smear-stress multi-atom gate; spin+smear; multi-k PBE F/σ |
+| **cuda GPW** | multi-k H residency / device energy / payload / cold-start / P residency / STVnl; Si/water production gates; Γ device-h-assemble + UKS dual; device-stress; MG/UKS F/σ |
+| **cuda PW** | smear-stress-al2 production gate; spin-stress; smear-PBE; multi-k F/σ + multi-k PBE; spin×kmesh×smear |
 | **cpu** | MG MAIN **2.33×** pin-unsafe blocked |
 
 **Contract:** [.claude/notes/cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)
