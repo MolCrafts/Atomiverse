@@ -138,10 +138,12 @@ constexpr double kDiisAscentResetHa = 1.0e-3;
 /// Matches CPU product mass-margin drop (multigrid.cpp); drop monoms below
 /// `eps * kProductMassMargin` when packing live density weights.
 constexpr double kProductMassMargin = 1.0e-4;
-/// Sphere radius eps factor for monom continuous PBC (product-collocate-pbc):
-/// `eps * kProductMassMargin` recovers Si charge; collint `eps·0.02` under-sizes
-/// monom spheres. Group-max mag supplies collint-faithful window magnitude.
-constexpr double kSphereRadiusEpsFactor = kProductMassMargin;
+/// Fine-level monom sphere eps factor (product-collocate-pbc Si charge).
+constexpr double kSphereRadiusEpsFine = kProductMassMargin;
+/// Coarse-level monom sphere eps factor — collint window class (multigrid.cpp
+/// `kProductWindowEps`) so multi-level residual matches CPU collint MG under
+/// Si PBC (cuda-gpw-multigrid-device-ks). Fine stays mass-margin.
+constexpr double kSphereRadiusEpsCoarse = 2.0e-2;
 
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
@@ -1191,9 +1193,10 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     result_ = GpwResult{};
     const bool periodic = true;
     const double eps = eps_default;
-    // Monom continuous sphere radius eps (mass-margin class); group-max mag
-    // handles collint-faithful window sizing (cuda-gpw-multigrid-device-ks).
-    const double eps_win = eps * kSphereRadiusEpsFactor;
+    // Fine monom: mass-margin class (Si SG charge). Coarse monom: collint
+    // window class so multi-level residual matches CPU collint MG.
+    const double eps_win_fine = eps * kSphereRadiusEpsFine;
+    const double eps_win_coarse = eps * kSphereRadiusEpsCoarse;
     const bool uks = is_uks();
 
     const std::vector<GridBasisFunction> basis = flatten_basis(atoms);
@@ -1335,15 +1338,19 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     MultigridDesc mg_desc;
     if (use_mg) {
         mg_desc.levels.resize(static_cast<std::size_t>(nlevels));
-        for (int l = 0; l < nlevels; ++l)
+        for (int l = 0; l < nlevels; ++l) {
+            // l==0 finest: large monom windows; l>0: collint-class windows.
+            const double ew = (l == 0) ? eps_win_fine : eps_win_coarse;
             mg_desc.levels[static_cast<std::size_t>(l)] =
-                to_coll(mg.levels[static_cast<std::size_t>(l)], eps_win);
+                to_coll(mg.levels[static_cast<std::size_t>(l)], ew);
+        }
         ks_mg = std::make_unique<KsMultiGridChainDevice>(mg_desc, stream);
         mg_prods.resize_levels(nlevels);
         for (int l = 0; l < nlevels; ++l)
             mg_prods.ensure_level(l, nprod_by_level[static_cast<std::size_t>(l)]);
     } else {
-        ks_sg = std::make_unique<KsChainDevice>(to_coll(grid, eps_win), stream);
+        ks_sg = std::make_unique<KsChainDevice>(to_coll(grid, eps_win_fine),
+                                                stream);
         dev.ensure_prods(nprod_geom, uks);
     }
 
