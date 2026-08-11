@@ -2,12 +2,15 @@
 /// @brief `cuda::gpw::GpwDft` — product slice (Γ RKS/UKS + multi-k RKS DIIS).
 ///
 /// Hybrid composition (stated):
-///   * host — Γ STVnl / product-list build; multi-k χ^k build (once);
+///   * host — Γ STVnl (S/T + KB Vnl via add_nonlocal_kb_k@Γ) / product-list
+///     build; multi-k χ^k build (once);
 ///     multi-k host residual: energy ctrace, payload diag, cold-start;
 ///     force AO Pulay on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
-///     single-grid RKS `KsChainDevice::run`; multigrid RKS
-///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
+///     single-grid RKS host collint KS twin (product-si-gate; continuous
+///     collocate lacks PBC wrap — sibling product-collocate-pbc) + device
+///     H=H0+V / DIIS; multigrid RKS still device continuous (Si MG residual
+///     multigrid-si-energy-path); collinear UKS `KsChainDevice::run_uks`;
 ///     multi-k **device phased STVnl** via `KpointStvnlDevice`
 ///     (cuda-gpw-kpoint-device-stvnl; S/T device; Vnl zero or host-KB H2D);
 ///     multi-k **device χ^k density collocate** via
@@ -40,6 +43,7 @@
 #include "atomiverse/cpu/gpw/internal/diis.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/kpoints.h"
+#include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 #include "atomiverse/cpu/gpw/internal/local_pp.h"
 #include "atomiverse/cpu/gpw/internal/multigrid.h"
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
@@ -86,12 +90,16 @@ using cpu::gpw::ProductSet;
 using cpu::gpw::UniformGrid;
 using cpu::gpw::basis_function_radius;
 using cpu::gpw::build_compact_basis_grid;
+using cpu::gpw::collocate_density;
+using cpu::gpw::integrate_potential;
 using cpu::gpw::build_products;
 using cpu::gpw::contracted_ST_periodic;
 using cpu::gpw::gth_nonlocal;
 using cpu::gpw::local_pp_grid;
 using cpu::gpw::make_multigrid;
 using cpu::gpw::make_uniform_grid;
+using cpu::gpw::multigrid_collocate_rho;
+using cpu::gpw::multigrid_integrate_veff;
 using cpu::gpw::pair_image_counts;
 using cpu::linalg::CanonicalOrth;
 using cpu::linalg::RealMatrix;
@@ -271,9 +279,15 @@ std::vector<double> ionic_density(const UniformGrid& grid,
     return n;
 }
 
-// Contracted nonlocal GTH (local_pp_on_grid ⇒ local SR is on the grid, not here).
-// First-slice H GTH has empty nonlocal — this is a no-op then. When channels
-// exist, sums lattice images of the ket against each projector channel.
+// Γ nonlocal GTH onto Vpp when local_pp_on_grid (local SR is on the grid).
+//
+// Uses the same separable Kleinman–Bylander assembly as CPU Γ
+// (`add_nonlocal_kb`) via the shared multi-k path at κ=0. The previous
+// per-pair `gth_nonlocal` form only lattice-imaged the ket and missed
+// bra-image / Bloch projector sums — H₂ (empty NL) and large-cell water
+// hid it; Si-class GTH nonlocal first-iter E was ~2× CPU (tip GH200
+// 1144059 / 1144870; primary residual for product-si-gate +
+// multigrid-si-energy-path).
 void add_nonlocal_contracted(RealMatrix& Vpp,
                              const std::vector<GridBasisFunction>& basis,
                              const std::vector<GpwAtom>& atoms,
@@ -289,60 +303,20 @@ void add_nonlocal_contracted(RealMatrix& Vpp,
         return;
 
     const int nb = static_cast<int>(basis.size());
+    cpu::gpw::internal::KPoint g{};
+    g.frac[0] = g.frac[1] = g.frac[2] = 0.0;
+    g.weight = 1.0;
+    const std::vector<cpu::gpw::internal::KPoint> kpts{g};
+    using Cplx = std::complex<double>;
+    using CplxMatrix = cpu::gpw::internal::CplxMatrix;
+    std::vector<CplxMatrix> V_k(1, xt::zeros<Cplx>({nb, nb}));
+    cpu::gpw::internal::add_nonlocal_kb_k(V_k, basis, atoms, radii, cell, mimg,
+                                          kBuildScreen, kpts);
+    const CplxMatrix& Vk = V_k[0];
     for (int i = 0; i < nb; ++i) {
-        if (basis[static_cast<std::size_t>(i)].empty())
-            continue;
-        for (int j = i; j < nb; ++j) {
-            if (basis[static_cast<std::size_t>(j)].empty())
-                continue;
-            if (pair_overlap_bound(basis[static_cast<std::size_t>(i)],
-                                   basis[static_cast<std::size_t>(j)])
-                < kBuildScreen)
-                continue;
-            const double reach = radii[static_cast<std::size_t>(i)]
-                                 + radii[static_cast<std::size_t>(j)];
-            double v = 0.0;
-            for (const auto& at : atoms) {
-                if (at.nonlocal.empty())
-                    continue;
-                for (const auto& pa : basis[static_cast<std::size_t>(i)]) {
-                    Prim A;
-                    A.alpha = pa.alpha;
-                    A.center[0] = pa.center[0];
-                    A.center[1] = pa.center[1];
-                    A.center[2] = pa.center[2];
-                    A.l[0] = pa.l[0];
-                    A.l[1] = pa.l[1];
-                    A.l[2] = pa.l[2];
-                    for (const auto& pb : basis[static_cast<std::size_t>(j)]) {
-                        for (int tx = -mimg[0]; tx <= mimg[0]; ++tx)
-                            for (int ty = -mimg[1]; ty <= mimg[1]; ++ty)
-                                for (int tz = -mimg[2]; tz <= mimg[2]; ++tz) {
-                                    Prim B;
-                                    B.alpha = pb.alpha;
-                                    B.center[0] = pb.center[0] + tx * cell[0];
-                                    B.center[1] = pb.center[1] + ty * cell[1];
-                                    B.center[2] = pb.center[2] + tz * cell[2];
-                                    B.l[0] = pb.l[0];
-                                    B.l[1] = pb.l[1];
-                                    B.l[2] = pb.l[2];
-                                    const double dx = A.center[0] - B.center[0];
-                                    const double dy = A.center[1] - B.center[1];
-                                    const double dz = A.center[2] - B.center[2];
-                                    const double r2 =
-                                        dx * dx + dy * dy + dz * dz;
-                                    if (r2 > reach * reach)
-                                        continue;
-                                    for (const auto& ch : at.nonlocal)
-                                        v += pa.coeff * pb.coeff
-                                             * gth_nonlocal(A, B, at.pos, ch);
-                                }
-                    }
-                }
-            }
-            Vpp(i, j) += v;
-            if (i != j)
-                Vpp(j, i) += v;
+        for (int j = 0; j < nb; ++j) {
+            // Γ: Hermitian real; imag part is numerical noise only.
+            Vpp(i, j) += Vk(i, j).real();
         }
     }
 }
@@ -1685,23 +1659,48 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         KsChainEnergies e{};
 
         if (!use_mg) {
-            wpack.pack_weights(d_P_use, d_geom0, dev.d_prods, nprod_geom,
-                               eps_drop);
-            e = ks_sg->run(dev.d_prods, nprod_geom, dev.d_n_ion, d_vloc_arg,
-                           dev.d_acc, kxc);
-            wpack.scatter_acc(d_geom0, dev.d_acc, nprod_geom, w_fine);
+            // Single-grid host cbg KS twin (cuda-gpw-product-si-gate):
+            // CPU ngrids==1 uses CompactBasisGrid collocate/integrate — not
+            // products (use_prod=use_mg only). Continuous device product
+            // collocate lacks collint PBC wrap (product-collocate-pbc); host
+            // product multigrid_collocate at ngrids=1 still differed from cbg
+            // by ~4.7e-4 Ha (GH200 1166526). Match CPU: cbg + ks_grid_build_rks
+            // + integrate_potential; V H2D for device H=H0+V / residual;
+            // device DIIS/eigen retained.
+            if (!result_.scf_cbg_valid)
+                throw std::runtime_error(
+                    "cuda::gpw::GpwDft: scf_cbg required for SG host twin");
+            RealMatrix P_host = xt::zeros<double>({nb, nb});
+            check_cuda(cudaMemcpyAsync(P_host.data(), d_P_use,
+                                       static_cast<size_t>(nb) * nb
+                                           * sizeof(double),
+                                       cudaMemcpyDeviceToHost, stream),
+                       "D2H P for SG host cbg KS");
+            check_cuda(cudaStreamSynchronize(stream), "sync P D2H SG");
+            // Column-major RealMatrix → row-major flat (CPU mat_to_vec shape).
+            const std::vector<double> Pvec = mat_to_vec(P_host, nb);
+            const std::vector<double> rho =
+                collocate_density(result_.scf_cbg, nb, Pvec);
+            const cpu::gpw::internal::KsGridRks ks =
+                cpu::gpw::internal::ks_grid_build_rks(
+                    grid, rho, n_ion, v_locsr, xc, /*nonperiodic=*/false,
+                    /*vdw_df=*/false, /*vdw_df2=*/false, /*rvv10=*/false);
+            e.e_hartree = ks.e_hartree;
+            e.e_xc = ks.e_xc;
+            e.e_locgrid = ks.e_locgrid;
+            const std::vector<double> Vvec =
+                integrate_potential(result_.scf_cbg, nb, ks.veff);
+            // Vvec is row-major; RealMatrix + device expect column-major.
+            RealMatrix Vgrid = xt::zeros<double>({nb, nb});
+            for (int i = 0; i < nb; ++i)
+                for (int j = 0; j < nb; ++j)
+                    Vgrid(i, j) =
+                        Vvec[static_cast<std::size_t>(i) * nb
+                             + static_cast<std::size_t>(j)];
+            wpack.upload_matrix(Vgrid.data(), wpack.d_V());
             if (store_grids) {
-                std::vector<double> veff(static_cast<std::size_t>(npts));
-                std::vector<double> v_es(static_cast<std::size_t>(npts));
-                check_cuda(cudaMemcpyAsync(veff.data(), ks_sg->d_veff(), bytes,
-                                           cudaMemcpyDeviceToHost, stream),
-                           "D2H veff (boundary)");
-                check_cuda(cudaMemcpyAsync(v_es.data(), ks_sg->d_v_es(), bytes,
-                                           cudaMemcpyDeviceToHost, stream),
-                           "D2H v_es (boundary)");
-                check_cuda(cudaStreamSynchronize(stream), "sync rks veff D2H");
-                result_.veff = std::move(veff);
-                result_.v_es = std::move(v_es);
+                result_.veff = ks.veff;
+                result_.v_es = ks.v_es;
             }
         } else {
             std::vector<DeviceProduct*> d_prods_ptr(

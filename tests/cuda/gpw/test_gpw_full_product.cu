@@ -478,3 +478,4 @@ TEST(CudaGpwFullProduct, O2UksPadeEnergyDualGate) {
     EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
                            << " |dE|=" << de;
 }
+
