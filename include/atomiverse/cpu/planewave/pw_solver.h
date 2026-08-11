@@ -208,12 +208,15 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 /// @brief Nielsen–Martin analytic cell stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
 ///
 /// One SCF + Hellmann–Feynman cell derivatives (kinetic, Hartree, local PP,
-/// Ewald, LDA XC, KB nonlocal). Matches strain-FD of the total energy.
-/// Mechanical / CP2K sign: \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\)
-/// (positive when compressed — drives `IsotropicCellRelax` to expand).
+/// Ewald, XC, KB nonlocal). Matches strain-FD of the total energy for fixed
+/// occupations, or of the Mermin free energy \(F=E_{\mathrm{KS}}-TS\) when
+/// restricted metallic `smearing` is set. Mechanical / CP2K sign:
+/// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\) (positive when
+/// compressed — drives `IsotropicCellRelax` to expand). Restricted paths
+/// only; collinear spin analytic stress is a separate product row.
 ///
-/// @param energy_ry_out Optional: total energy [Ry] from the production SCF
-///        (avoids a second SCF when the evaluator also needs energy).
+/// @param energy_ry_out Optional: free/total energy [Ry] from the production
+///        SCF (avoids a second SCF when the evaluator also needs energy).
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
                                 double* energy_ry_out = nullptr);
 
