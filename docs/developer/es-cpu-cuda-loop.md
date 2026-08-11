@@ -39,6 +39,19 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 3 (parent `dev` @ `629aca3b`):** 1 of 1 staffed
+  residual → done [x]: `cuda-pw-smear-forces` (feat `891baefc` / tip
+  `629aca3b` rebased wave-9; GH200 **1130427** max\|ΔF\|=**1.36e-11** eV/Å
+  Al₂ restricted FD dual-gate; prior **1130401** / **1130359**; **perf_exempt**).
+  Keep other `[~]`: none. Spec closed (deleted
+  `.claude/specs/cuda-pw-smear-forces/`). Roadmap prose: restricted metallic-
+  smear **forces** landed (Smearing for metals stays **◐** — spin+smear /
+  smear stress / CUDA GPW smear still open — no ○→✓). GapCensus wave 10:
+  fair walls held MG MAIN **2.33×**; **cpu_pending=0**; **new_slugs_added=0**
+  (wave-9 residual set held). **cuda_pending=118**; **in_progress=0**;
+  **gaps_remaining=119**. Clearup already ran. Queue **not** exhausted
+  (GapCensus owns discovery). No push.
+
 - **2026-08-11 harness wave 2 (parent `dev` @ `ce0a0c6f`):** 2 of 3 staffed
   → done [x]: `cuda-gpw-uks-device-diis` (feat `6df76cf7` / merge `4ad9a172` +
   re-verify `8919faae`; GH200 **1130279** / **1130402** \|dE\|=**4.760e-06** Ha

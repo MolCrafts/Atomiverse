@@ -463,9 +463,11 @@ Two periodic DFT engines exist, with disjoint strengths:
   **1124645**) + **collinear LSDA spin forces** (`cuda-pw-spin-forces` /
   GH200 **1130196**; spin-PBE forces / spin stress / spin+smear still reject
   on base), and **restricted metallic smear** energy (FD/Gaussian/MP +
-  `extra_bands` + Mermin free energy; spin+smear / smear forces / smear stress
-  still reject on base — smear-forces tip unmerged); large-cell wall evidence
-  on Si supercells — see es-cpu-cuda queue. **CUDA GPW first product slice
+  `extra_bands` + Mermin free energy) **+ restricted metallic-smear analytic
+  ionic forces** (`cuda-pw-smear-forces` / GH200 **1130427** max\|ΔF\|=
+  **1.36e-11** eV/Å; spin+smear / smear stress still reject on base);
+  large-cell wall evidence on Si supercells — see es-cpu-cuda queue.
+  **CUDA GPW first product slice
   landed:** public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE + **Γ UKS DIIS
   PADE** + **multigrid energy** + **multi-k RKS DIIS energy H₂ foothold**;
   host STVnl residual + **device** product collocate/KS/integrate via
@@ -837,8 +839,10 @@ Which engine backs which ✓:
 + `degauss` [Ry] + `extra_bands` (`reg_pw-smearing-al`) **and GPW** multi-k RKS
 FD/MP (`reg_gpw-metallic-smearing`) **and multi-k UKS** (`reg_gpw-uks-smearing`).
 **CUDA ◐** = restricted PW path only (`cuda::pw::PW` FD/Gaussian/MP +
-`extra_bands` + Mermin free energy; `reg_cuda-pw-metallic-smear`); spin+smear
-still rejects; no CUDA GPW smear product.
+`extra_bands` + Mermin free energy; `reg_cuda-pw-metallic-smear`) **+
+restricted smear analytic ionic forces** (`reg_cuda-pw-smear-forces`; GH200
+**1130427**); spin+smear / smear stress still reject; no CUDA GPW smear
+product.
 GPW free-energy **analytic ionic forces under smear** are product for multi-k
 RKS and UKS (`reg_gpw-metallic-forces` / `reg_gpw-uks-metallic-forces`;
 fractional \(P_k/W_k\) payload). Multi-k free-energy **stress under smear**
