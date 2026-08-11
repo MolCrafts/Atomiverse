@@ -39,6 +39,22 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 4 (parent `dev` @ `1733535f`):** 2 of 2 staffed
+  → done [x]: `cuda-gpw-kpoint-device-collocate` (merge `355bcc42` / feat
+  `47c2c16e`; GH200 **1130716** \|dE\|=**3.353e-14** Ha H₂ multi-k RKS PADE
+  device χ^k collocate; prior **1130429**; **perf_exempt**) +
+  `cuda-gpw-kpoint-device-integrate` (merge `1733535f` / feat `a73c2281` /
+  docs `d98c2093`; GH200 **1130717** \|dE\|=**3.397e-14** Ha H₂ multi-k
+  device V→H_k integrate; **perf_exempt**). Keep other `[~]`: none. Specs
+  closed (deleted `.claude/specs/cuda-gpw-kpoint-device-collocate/`,
+  `.claude/specs/cuda-gpw-kpoint-device-integrate/`). Roadmap prose: multi-k
+  device collocate+integrate landed (table CUDA GPW remains **◐** — host
+  KDiis/STVnl + Si/water multi-k gates + F/σ depth open — no ○→✓).
+  GapCensus wave 11 residual held; **cpu_pending=0**; **new_slugs_added=0**
+  this harness. **cuda_pending=123**; **in_progress=0**;
+  **gaps_remaining=124**. Clearup already ran. Queue **not** exhausted
+  (GapCensus owns discovery). No push.
+
 - **2026-08-11 harness wave 3 (parent `dev` @ `629aca3b`):** 1 of 1 staffed
   residual → done [x]: `cuda-pw-smear-forces` (feat `891baefc` / tip
   `629aca3b` rebased wave-9; GH200 **1130427** max\|ΔF\|=**1.36e-11** eV/Å
