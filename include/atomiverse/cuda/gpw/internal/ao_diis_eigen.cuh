@@ -63,6 +63,12 @@ class AoDiisEigenDevice {
     /// @brief Download current density P (n×n, column-major).
     void download_P(double* P_host) const;
 
+    /// @brief Download MO coefficients C (n×m, column-major). Valid after eigen.
+    void download_C(double* C_host) const;
+
+    /// @brief Download eigenvalues ε (length m). Valid after eigen.
+    void download_eig(double* eig_host) const;
+
     /// @brief Clear DIIS history (call once per `GpwDft::run`).
     void reset();
 
@@ -118,6 +124,17 @@ class AoDiisEigenDevice {
     /// @param eig_host length m eigenvalues [Hartree] ascending.
     /// @param C_host  n×m column-major MO coefficients in AO basis.
     void eigen_to_host(const double* H_host, double* eig_host, double* C_host);
+
+    /// @brief Device eigen of **device-resident** H (no DIIS, no level shift).
+    ///
+    /// CUDA-only payload path (`cuda-gpw-device-payload`): final Γ RKS C/ε
+    /// from device `dsyevd` without host `diagonalize_fock` re-diag. D2D
+    /// into `d_H_`, then boundary D2H of eig + C (and densified `d_P_`).
+    ///
+    /// @param d_H     Device column-major H [Hartree], length n*n.
+    /// @param eig_host length m eigenvalues [Hartree] ascending (may be null).
+    /// @param C_host  n×m column-major MOs (may be null).
+    void eigen_from_device(const double* d_H, double* eig_host, double* C_host);
 
   private:
     void ensure_built_() const;

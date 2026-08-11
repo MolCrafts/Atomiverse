@@ -125,6 +125,60 @@ TEST(CudaGpwDiisEigen, EigenAndDensityMatchHost) {
     cudaStreamDestroy(stream);
 }
 
+/// Device-resident H → eigen payload (cuda-gpw-device-payload). No H2D of H.
+TEST(CudaGpwDiisEigen, EigenFromDeviceMatchesHost) {
+    RealMatrix S, H, P0;
+    int n_occ = 0;
+    make_toy(S, H, P0, n_occ);
+    const int n = 3;
+    CanonicalOrth orth(S, 1e-10);
+    const int m = static_cast<int>(orth.X.shape(1));
+
+    auto [eig_h, C_h] = diagonalize_fock(H, orth.X);
+    RealMatrix P_h = build_density_matrix(C_h, n_occ, n, 2.0);
+
+    cudaStream_t stream;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+    AoDiisEigenDevice dev;
+    dev.build(stream, n, m, /*max_vectors=*/0, n_occ, 2.0, 0.0);
+    dev.upload_SX(S.data(), orth.X.data());
+    dev.upload_P(P0.data());
+
+    // Upload H once to a device buffer (setup boundary), then eigen_from_device.
+    double* d_H = nullptr;
+    ASSERT_EQ(cudaMalloc(&d_H, static_cast<size_t>(n * n) * sizeof(double)),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpyAsync(d_H, H.data(),
+                              static_cast<size_t>(n * n) * sizeof(double),
+                              cudaMemcpyHostToDevice, stream),
+              cudaSuccess);
+
+    std::vector<double> eig_d(static_cast<size_t>(m));
+    std::vector<double> C_d(static_cast<size_t>(n * m));
+    dev.eigen_from_device(d_H, eig_d.data(), C_d.data());
+
+    double de = 0.0;
+    for (int i = 0; i < m; ++i)
+        de = std::max(de, std::abs(eig_d[static_cast<size_t>(i)] - eig_h(i)));
+    EXPECT_LE(de, 1e-9) << "max|eig_from_device-host|=" << de;
+
+    RealMatrix P_d = xt::zeros<double>({n, n});
+    dev.download_P(P_d.data());
+    const double dP = max_abs_diff(P_h.data(), P_d.data(), n * n);
+    EXPECT_LE(dP, 1e-10) << "max|P_from_device-host|=" << dP;
+
+    // download_eig / download_C boundary helpers match eigen_from_device buffers.
+    std::vector<double> eig2(static_cast<size_t>(m));
+    std::vector<double> C2(static_cast<size_t>(n * m));
+    dev.download_eig(eig2.data());
+    dev.download_C(C2.data());
+    EXPECT_LE(max_abs_diff(eig_d.data(), eig2.data(), m), 0.0);
+    EXPECT_LE(max_abs_diff(C_d.data(), C2.data(), n * m), 0.0);
+
+    cudaFree(d_H);
+    cudaStreamDestroy(stream);
+}
+
 TEST(CudaGpwDiisEigen, DiisStepAdvancesHistory) {
     // Two steps with DIIS depth 4: second advance must not throw and P stays
     // symmetric positive-ish (trace ≈ 2 * n_occ for RKS factor 2).

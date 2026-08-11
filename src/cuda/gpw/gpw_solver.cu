@@ -31,6 +31,8 @@
 ///     **Γ RKS mid-SCF H=H0+V on device** (cuda-gpw-device-h-assemble; no
 ///     mid-iter V_AO D2H) + Pulay DIIS + cuSOLVER eigen + density via
 ///     `internal::AoDiisEigenDevice` (cuda-gpw-device-diis-eigen);
+///     **Γ RKS final payload C/ε from device eigen** (cuda-gpw-device-payload;
+///     no host re-diag of H at the SCF boundary; D2H C/eps/P/H once);
 ///     UKS dual α/β still residual host H path (cuda-gpw-uks-device-h);
 ///     (cuda-gpw-uks-device-diis);
 ///     **device P→weight + acc→V_AO scatter** via
@@ -383,14 +385,8 @@ double trace_product(const RealMatrix& P, const RealMatrix& M, int n) {
     return t;
 }
 
-void store_converged_state(GpwResult& res, const RealMatrix& H,
-                           const RealMatrix& X, int n_occ, int nb) {
-    auto [eig, C] = diagonalize_fock(H, X);
-    res.C = std::move(C);
-    res.eps.assign(eig.begin(), eig.end());
-    res.P = build_density_matrix(res.C, n_occ, nb, 2.0);
-    res.H_ks = H;
-}
+// Γ RKS final payload uses AoDiisEigenDevice::eigen_from_device (device-payload).
+// Host re-diag store_converged_state removed for the RKS product path.
 
 void store_converged_state_uks(GpwResult& res, const RealMatrix& Ha,
                                const RealMatrix& Hb, const RealMatrix& X,
@@ -1895,7 +1891,6 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             "(default), or use cpu::gpw::GpwDft.");
 
     double prev_energy = std::numeric_limits<double>::quiet_NaN();
-    RealMatrix H_raw;
     bool conv = false;
     int it = 0;
     const bool scf_trace = std::getenv("ATV_GPW_CUDA_TRACE") != nullptr;
@@ -1924,14 +1919,24 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         ao_scf.advance();
     }
     // Final KS at the last density: energy pieces + V_eff/V_es for forces.
-    // Boundary D2H only (payload).
+    // Boundary D2H only (payload). Device eigen of assembled H replaces host
+    // store_converged_state → diagonalize_fock (cuda-gpw-device-payload).
     {
-        ao_scf.download_P(P.data());
+        ao_scf.download_P(P.data()); // DIIS density used for final energy
         const double e_final =
             build_energy_device(ao_scf.d_P(), /*store_grids=*/true);
         result_.e_total = e_final;
-        H_raw = H0 + download_V_host();
-        store_converged_state(result_, H_raw, orth.X, n_occ, nb);
+        // Device eigen of d_H_work = H0 + V (already assembled mid final KS).
+        // Boundary D2H of C/ε; densified d_P_ is not the SCF energy density.
+        result_.C = xt::zeros<double>({nb, n_mo});
+        result_.eps.assign(static_cast<std::size_t>(n_mo), 0.0);
+        ao_scf.eigen_from_device(d_H_work, result_.eps.data(), result_.C.data());
+        // H_ks: boundary D2H of assembled device H (no host H0+V rebuild).
+        result_.H_ks = xt::zeros<double>({nb, nb});
+        check_cuda(cudaMemcpyAsync(result_.H_ks.data(), d_H_work,
+                                   mat_bytes, cudaMemcpyDeviceToHost, stream),
+                   "D2H H_ks payload");
+        check_cuda(cudaStreamSynchronize(stream), "sync H_ks payload");
         result_.P = P;
         result_.S = S;
         result_.converged = conv;
