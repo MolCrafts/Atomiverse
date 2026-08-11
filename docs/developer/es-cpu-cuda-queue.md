@@ -575,7 +575,7 @@ wave 2).
   PADE MG fragment + dual-gate. Gate: GH200 E (+ F if free-fn);
   **perf_exempt**. Lever: extend unit/reg only — no new kernel. Production
   water MG F/σ → `multigrid-h2o-forces` / `multigrid-h2o-stress` (wave 7).
-- [ ] `cuda-gpw-product-si-gate` | **P2** **new (wave 19)** — Production
+- [x] `cuda-gpw-product-si-gate` | **P2** **landed** merge `a158848f` / GH200 **1167099** \|dE\|=**2.130e-08** — was Production
   **Si-class Γ RKS PADE single-grid** (`ngrids=1`) energy dual-gate after
   H₂ full-product + water product-h2o gates (those footholds are H /
   O+H GTH — Si DZVP-MOLOPT + GTH-PBE-q4 nonlocal production **ungated**; tip
