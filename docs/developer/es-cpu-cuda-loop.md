@@ -39,6 +39,24 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 4 (parent `dev` @ `e2bcb05e`):** 1 of 3 staffed
+  → done [x]: `cuda-gpw-kpoint-h-residency` (merge `e2bcb05e` / feat
+  `068d7784` / re-verify `ed832fce`; GH200 **1142864** \|dE\|=**3.331e-14** Ha
+  H₂ multi-k RKS PADE device H residual residency via
+  `ingest_H_k_device_rm` + `residual_from_device`; prior **1136613**
+  \|dE\|=**3.264e-14** / **1133843** \|dE\|=**3.442e-14**; **perf_exempt**).
+  Keep other `[~]`: **`cuda-gpw-multigrid-si-energy-path`** (Assign wave 4 NEW
+  P2) + `cuda-gpw-multigrid-si-gate` (tip `fe048ad7`; GH200
+  **1137743**/**1139046** product path BLOCKED until energy-path). Spec closed
+  (deleted `.claude/specs/cuda-gpw-kpoint-h-residency/`). Roadmap prose:
+  multi-k device H residual residency landed (table CUDA GPW remains **◐** —
+  energy / payload / cold-start / P / χ/orth / vnl / h0 + Si/water multi-k F/σ
+  + Si MG path open — no ○→✓). GapCensus wave 18 residual held;
+  **cpu_pending=0**; **new_slugs_added=0** this harness.
+  **pending_count=137**; **cuda_pending=139**; **in_progress=2**;
+  **gaps_remaining=140**. Clearup already ran. Queue **not** exhausted
+  (GapCensus owns discovery). No push.
+
 - **2026-08-11 GapCensus wave 18 (parent `dev` @ `5aa19d6c`):** Re-diff fair
   walls held (MG MAIN **2.33×** worst; cpu_pending=0; no gpw-perf promote).
   Tree: STVnl + LSDA spin stress on base; multi-k Vnl/H0/χ/orth residual held.

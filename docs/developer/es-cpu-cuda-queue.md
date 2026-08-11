@@ -53,26 +53,29 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 | `reg_cuda-pw-collinear-spin` | CUDA↔CPU collinear LSDA O₂ dual-gate (fixed occupation; no smear) |
 | `reg_cuda-pw-spin-pbe` | CUDA↔CPU collinear **spin-PBE** O₂ dual-gate (fixed occupation; energy only) |
 | `reg_cuda-pw-spin-stress` | CUDA↔CPU collinear LSDA spin cell stress (O₂ triplet Γ; fixed occupation) |
+| `reg_cuda-gpw-kpoint-h-residency` | CUDA↔CPU multi-k RKS energy after device H residual residency (H₂ k=2×1×1) |
 
 ## pending
 
-**GapCensus wave 18 on `dev` @ `5aa19d6c` (sequential after harness wave 3 land
-`cuda-pw-spin-stress` merge `79d617ca` / chore `5aa19d6c`; prior GapCensus wave
-17 @ `0f56cbca`; keep `wf/cuda-gpw-kpoint-h-residency` /
-`wf/cuda-gpw-multigrid-si-gate` **unmerged**):** Fair walls **held** (authority
+**GapCensus wave 18 then **Harness wave 4** land `cuda-gpw-kpoint-h-residency`
+merge `e2bcb05e` / feat `068d7784` / re-verify `ed832fce` (prior GapCensus wave 18
+@ `7f131816` / Assign wave 4; prior wave 17 @ `0f56cbca`; keep
+`wf/cuda-gpw-multigrid-si-energy-path` / `wf/cuda-gpw-multigrid-si-gate`
+**unmerged**):** Fair walls **held** (authority
 [gpw-perf-baseline.md](../../.claude/notes/gpw-perf-baseline.md)): MG MAIN
 **2.33×** worst; OT water SCF body **≤1.0×** / OT-only ~**1.20×**; UKS DIIS
 **1.077×** closed; k-si MAIN **1.18×** hold. **cpu_pending=0** — pin-safe
 collint/structure/sphere **exhausted**; no promote from
 [gpw-perf-queue.md](gpw-perf-queue.md). Tree re-diff vs `dev` (foothold ≠
 closed; `src/cuda/gpw/gpw_solver.cu` + `src/cuda/gpw/internal/kpoint_stvnl.cu`
-+ `src/cuda/planewave/pw_solver.cu` / `pw_stress.cu` @ `5aa19d6c` — **STVnl +
-LSDA spin stress on base**; residual host KB Vnl + H0 host round-trip + χ/orth
-+ mid-SCF H/P/energy/payload + **Si MG product energy path**):
++ `src/cuda/planewave/pw_solver.cu` / `pw_stress.cu` @ `e2bcb05e` — **STVnl +
+LSDA spin stress + multi-k device H residual residency on base**; residual host
+KB Vnl + H0 host round-trip + χ/orth + mid-SCF P/energy/payload + **Si MG
+product energy path**):
 
 (1) Multi-k residual **held** after **landed** device phased STVnl (S/T) +
-h-assemble + device-diis on base: `kpoint-h-residency` `[~]` tip
-`44a4c5c5` / `kpoint-device-energy` / `kpoint-payload-device` /
+h-assemble + device-diis + **device H residual residency** (harness wave 4
+**1142864**): `kpoint-device-energy` / `kpoint-payload-device` /
 `kpoint-device-cold-start` / `kpoint-p-residency` / **`kpoint-device-chi`** /
 **`kpoint-device-orth`** / **`kpoint-device-vnl`** / **`kpoint-h0-residency`**
 + production multi-k Si/water E+F/σ + multi-k×PBE. Wave-17 Vnl/H0 residual
@@ -100,8 +103,8 @@ dual-gate close after path fix (acceptance_met=false on tip);
 (2) wave-17 multi-k **STVnl Vnl/H0 residual held** (`kpoint-device-vnl` /
 `kpoint-h0-residency`); wave-16 χ/orth **held**;
 (3) Γ payload / cold-start / h-assemble / UKS dual residual **held** (wave 15);
-(4) multi-k free residual held (`kpoint-h-residency` `[~]` tip `44a4c5c5` /
-energy / payload / cold-start / p-residency / χ / orth / vnl / h0) +
+(4) multi-k free residual held (energy / payload / cold-start / p-residency /
+χ / orth / vnl / h0; **H residency landed** harness wave 4) +
 production multi-k F/σ + multi-k×PBE;
 (5) MG production + path×PBE + UKS O₂ joints + hybrid free-fn depth held;
 (6) PW production smear-σ Al₂ + spin×kmesh×smear matrix held (spin LSDA σ
@@ -127,36 +130,37 @@ metallic-GPW stay same-capability follow-on. **No gpw-perf-queue promote**.
 | Multi-k device DIIS + eigen | **landed** merge `5319a282` / feat `f3f55dc2` / re-verify `8511a1fb` / harness wave 6 — GH200 **1133110** \|dE\|=**3.419e-14** Ha |
 | Multi-k device H_k assemble | **landed** merge `0ef79db9` / feat `5b64229b` / opt-4 land — GH200 **1132528** \|dE\|=**3.397e-14** Ha |
 | Multi-k device phased STVnl | **landed** merge `b88b2fd2` / feat `ec578d7b` / harness wave 2 — GH200 **1133851** \|dE\|=**3.331e-14** Ha |
+| Multi-k device H residual residency | **landed** merge `e2bcb05e` / feat `068d7784` / re-verify `ed832fce` / harness wave 4 — GH200 **1142864** \|dE\|=**3.331e-14** Ha |
 | Collinear LSDA spin forces | **landed** merge `ab7a95e1` / feat `44995ff6` — GH200 **1130196** max\|ΔF\|=**9.25e-13** eV/Å |
 | Collinear LSDA spin stress | **landed** merge `79d617ca` / feat `841ac78f` / harness wave 3 — GH200 **1135756** / **1133857** max\|Δσ\|=**1.435e-11** eV/Å³ |
 | Device mid-SCF dual UKS DIIS | **landed** feat `6df76cf7` / merge `4ad9a172` / re-verify **1130402** — harness wave 2 |
 | Device weight pack/scatter | **landed** merge `ce0a0c6f` / feat `94256cf0` — GH200 **1130344**; residual residency + host H assemble |
 | Restricted metallic-smear forces | **landed** feat `891baefc` / tip `629aca3b` / harness `58861e2a` — GH200 **1130427** max\|ΔF\|=**1.36e-11** eV/Å (Γ Al₂) |
 | Restricted metallic-smear stress | **landed** merge `b46875bf` / feat `098f690d` / opt-4 land — GH200 **1133111** / **1132266** max\|Δσ\|=**7.25e-11** eV/Å³ (Al 1-atom FD); production multi-atom → `smear-stress-al2-gate` |
-| Product hybrid (base) | host Γ STVnl; **device** RKS/UKS DIIS/eigen + **device** weight pack/scatter + product KS (RKS+UKS+MG; non-default stream); mid-SCF still **host H = H0+V** after V D2H (Γ RKS + UKS dual); UKS still **host Pa/Pb upload** each KS; **final Γ payload host re-diag** + **Γ cold-start host densify**; multi-k **device** χ^k collocate + device ρ→V_eff + **device** V→H_k + **device H_k fuse** + **device KDiis/zheevd** + **device phased STVnl S/T** (Vnl host-KB when nonlocal); residual multi-k **H D2H into residual** + host ctrace energy + host payload diag + cold-start host diag + host \(P_k\) H2D + D2H S for host Löwdin + **host χ^k build** + **host Löwdin from S_k** + **host KB Vnl** + **H0 host rematerialize into integrate**; forces hybrid + H2D handoff; stress host assembly (multi-k stress reject only) |
+| Product hybrid (base) | host Γ STVnl; **device** RKS/UKS DIIS/eigen + **device** weight pack/scatter + product KS (RKS+UKS+MG; non-default stream); mid-SCF still **host H = H0+V** after V D2H (Γ RKS + UKS dual); UKS still **host Pa/Pb upload** each KS; **final Γ payload host re-diag** + **Γ cold-start host densify**; multi-k **device** χ^k collocate + device ρ→V_eff + **device** V→H_k + **device H_k fuse** + **device KDiis/zheevd** + **device phased STVnl S/T** (Vnl host-KB when nonlocal); multi-k **device H residual residency** (`ingest_H_k_device_rm` + `residual_from_device`); residual multi-k host ctrace energy + host payload diag + cold-start host diag + host \(P_k\) H2D + D2H S for host Löwdin + **host χ^k build** + **host Löwdin from S_k** + **host KB Vnl** + **H0 host rematerialize into integrate**; forces hybrid + H2D handoff; stress host assembly (multi-k stress reject only) |
 | Fail-closed (base) | OT / MT / non-PADE-PBE / `local_pp_on_grid=false`; multi-k UKS / multi-k MG; UKS free-fn F; multi-k free-fn F; MG free-fn F; multi-k stress; `run_uks` Padé only |
-| Claimed-but-ungated | multi-k H₂ → Si/water energy + F/σ + **Si/water multi-k×PBE E+F/σ**; MG H₂ green → **Si energy path broken** (`multigrid-si-energy-path`) + water/Si MG F/σ + Si/water MG×PBE E+F/σ + multi-k MG H₂→Si production + Si F/σ + Si×PBE E+F/σ + multi-k MG×PBE F/σ; **device-product-residency** / **device-h-assemble** / **uks-h-assemble** / **uks-p-residency** / **device-payload** / **uks-payload-device** / **device-cold-start** / **kpoint-h-residency** / **kpoint-device-energy** / **kpoint-payload-device** / **kpoint-device-cold-start** / **kpoint-p-residency** / **kpoint-device-chi** / **kpoint-device-orth** / **kpoint-device-vnl** / **kpoint-h0-residency** / **uks-o2-forces/stress** / **uks-o2-pbe-*** / **uks-o2-multigrid/kpoints** / Γ device STVnl/AO-Pulay/**stress**/handoffs/force-stream; water **σ** + water×PBE **E+F/σ**; path×PBE + 4-way; PW multi-k PBE + **spin-PBE F/σ** + **smear-stress-al2-gate** + smear-PBE + **kmesh-smear F/σ** (+ PBE) + **spin×kmesh×smear** |
+| Claimed-but-ungated | multi-k H₂ → Si/water energy + F/σ + **Si/water multi-k×PBE E+F/σ**; MG H₂ green → **Si energy path broken** (`multigrid-si-energy-path`) + water/Si MG F/σ + Si/water MG×PBE E+F/σ + multi-k MG H₂→Si production + Si F/σ + Si×PBE E+F/σ + multi-k MG×PBE F/σ; **device-product-residency** / **device-h-assemble** / **uks-h-assemble** / **uks-p-residency** / **device-payload** / **uks-payload-device** / **device-cold-start** / **kpoint-device-energy** / **kpoint-payload-device** / **kpoint-device-cold-start** / **kpoint-p-residency** / **kpoint-device-chi** / **kpoint-device-orth** / **kpoint-device-vnl** / **kpoint-h0-residency** / **uks-o2-forces/stress** / **uks-o2-pbe-*** / **uks-o2-multigrid/kpoints** / Γ device STVnl/AO-Pulay/**stress**/handoffs/force-stream; water **σ** + water×PBE **E+F/σ**; path×PBE + 4-way; PW multi-k PBE + **spin-PBE F/σ** + **smear-stress-al2-gate** + smear-PBE + **kmesh-smear F/σ** (+ PBE) + **spin×kmesh×smear** |
 | Closed-shell PW stress | **LSDA + PBE** dual-gate **landed** (Γ-class coverage; multi-k F/σ + multi-k PBE energy open) |
 | Collinear spin-PBE energy | **landed** merge `118d3003` / GH200 **1124645** (Γ dual-gate only) |
-| Staffed tips | **GapCensus wave 18** — keep `[~]` ×2 (unmerged):
-  `cuda-gpw-kpoint-h-residency` (`44a4c5c5` / prior `181a81c3`, GH200
-  **1133843** \|dE\|=**3.442e-14** tip-green), `cuda-gpw-multigrid-si-gate`
-  (tip `fe048ad7`; GH200 **1137743**/**1139046** **product path BLOCKED** —
-  staff **`multigrid-si-energy-path`** first) |
+| Staffed tips | **Harness wave 4** — keep `[~]` ×2 (unmerged):
+  **`cuda-gpw-multigrid-si-energy-path`** (Assign wave 4 NEW P2; parent of Si
+  MG dual-gate), `cuda-gpw-multigrid-si-gate` (tip `fe048ad7`; GH200
+  **1137743**/**1139046** **product path BLOCKED** until energy-path) |
 
-**Counts (GapCensus wave 18 on `dev` @ `5aa19d6c` after land `cuda-pw-spin-stress`):**
-**pending_count=138**; **in_progress=2**;
-**cpu_pending=0**; **cuda_pending=140** (2 held `[~]` + 138 pending);
-**gaps_remaining=141** (pending + in_progress + blocked MG fair-wall
+**Counts (Harness wave 4 on `dev` @ `e2bcb05e` after land
+`cuda-gpw-kpoint-h-residency`):**
+**pending_count=137**; **in_progress=2**;
+**cpu_pending=0**; **cuda_pending=139** (2 held `[~]` + 137 pending);
+**gaps_remaining=140** (pending + in_progress + blocked MG fair-wall
 `mg-main-structural`). Queue **not** exhausted.
-**new_slugs_added=1** this GapCensus (`multigrid-si-energy-path`). Prior land:
-**`cuda-pw-spin-stress`** (merge `79d617ca` / feat `841ac78f` / GH200
-**1135756** max‖Δσ‖=**1.435e-11** eV/Å³). Prior STVnl: merge `b88b2fd2` /
-GH200 **1133851**.
-**Staffed `[~]`:** `cuda-gpw-kpoint-h-residency` (RESUME tip-green — Merge
-owns land) + `cuda-gpw-multigrid-si-gate` (RESUME tip harness; dual-gate
-blocked until energy-path). Free staff held:
-**`multigrid-si-energy-path`** (P2 after Si MG block) /
+**new_slugs_added=0** this harness. Prior land:
+**`cuda-gpw-kpoint-h-residency`** (merge `e2bcb05e` / feat `068d7784` /
+re-verify `ed832fce` / GH200 **1142864** \|dE\|=**3.331e-14** Ha; prior
+**1136613**/**1133843**). Prior spin-stress: merge `79d617ca` / GH200
+**1135756**. Prior STVnl: merge `b88b2fd2` / GH200 **1133851**.
+**Staffed `[~]`:** **`cuda-gpw-multigrid-si-energy-path`** (NEW P2 path fix) +
+`cuda-gpw-multigrid-si-gate` (RESUME tip harness; dual-gate after energy-path).
+Free staff held:
 `device-payload` / `uks-payload-device` / `device-cold-start` /
 `kpoint-device-energy` / `kpoint-payload-device` / `kpoint-device-cold-start` /
 `kpoint-p-residency` / **`kpoint-device-chi`** / **`kpoint-device-orth`** /
@@ -559,7 +563,7 @@ wave 2).
   PADE MG fragment + dual-gate. Gate: GH200 E (+ F if free-fn);
   **perf_exempt**. Lever: extend unit/reg only — no new kernel. Production
   water MG F/σ → `multigrid-h2o-forces` / `multigrid-h2o-stress` (wave 7).
-- [ ] `cuda-gpw-multigrid-si-energy-path` | **P2** **new (wave 18)** — Fix
+- [~] `cuda-gpw-multigrid-si-energy-path` | **P2** **new (wave 18)** — Fix
   device multi-level product **KS/density energy path** under **Si-class
   GTH Γ ngrids>1** after H₂ `multigrid-run` foothold green but production
   Si dual-gate **non-convergent** (tip GH200 **1137743**/**1139046**: CUDA
@@ -574,6 +578,7 @@ wave 2).
   beyond unit/reg-only (H₂ green hides it). Does **not** own water MG,
   multi-k MG, MG F/σ, or Si×PBE (child rows after energy green). Parent of
   green `multigrid-si-gate` dual-gate close.
+  **Assign wave 4** — NEW staff (P2 path fix before Si MG dual-gate close).
 - [~] `cuda-gpw-multigrid-si-gate` | **P3** **new (wave 5)** — Production
   **Si-class** product multigrid dual-gate after `multigrid-run` (e2e is
   H₂ ngrids=4 only; water-class is `multigrid-h2o-gate` — Si/MP production
@@ -585,7 +590,7 @@ wave 2).
   harness already on tip `fe048ad7`; dual-gate blocked until energy-path.
   Production Si MG F/σ → `multigrid-si-forces` / `multigrid-si-stress`; Si
   MG×PBE → `multigrid-si-pbe-gate` (wave 8).
-  **Assign wave 3 / GapCensus wave 18** — RESUME tip harness; GH200
+  **Assign wave 4** — RESUME tip harness; GH200
   **1137743**/**1139046** acceptance_met=**false** (product residual →
   `multigrid-si-energy-path`).
 - [ ] `cuda-gpw-multigrid-si-forces` | **P3** **new (wave 8)** — Analytic forces
@@ -785,18 +790,10 @@ wave 2).
   density/grids device-resident into stress free-fn (or zero-copy handoff) —
   drop stress-path re-upload; no new physics kernel.
 
-- [~] `cuda-gpw-kpoint-h-residency` | **P3** **new (wave 13)** — After
-  **landed** `kpoint-h-assemble` + `kpoint-device-diis`: mid-SCF still
-  `download_H` → host `H_k` → `KpointDiisEigenDevice::residual(H_ptrs)`
-  (API host-only; `KpointIntegrateDevice::d_H()` exists but single-slot
-  overwrite per ik — residual re-H2Ds) — fuse/DIIS ≠ device-resident H product.
-  Track: **cuda**. Twin: same-settings CPU multi-k RKS energy dual-gate. Gate:
-  GH200 after both parents (on base); stated energy tol; **perf_exempt**.
-  Lever: residual/advance consume device H (per-k `d_H` buffers or sequential
-  form_error on live assemble) without per-iter full \(H_k\) D2H; compose not
-  a lone foothold. Does **not** own P residency, STVnl, energy-trace, or payload.
-  **Assign wave 3** — RESUME unmerged tip `wf/cuda-gpw-kpoint-h-residency`
-  (`181a81c3`; GH200 **1133843** \|dE\|=**3.442e-14** tip-green — Merge owns land).
+`cuda-gpw-kpoint-h-residency` **landed** (merge `e2bcb05e` / feat
+`068d7784` / re-verify `ed832fce` / harness wave 4 — GH200 **1142864** \|dE\|=**3.331e-14** Ha H₂ multi-k RKS PADE) — mid-SCF device H residual via
+`ingest_H_k_device_rm` + `residual_from_device`; residual multi-k energy /
+payload / cold-start / P / χ / orth / vnl / h0.
 - [ ] `cuda-gpw-kpoint-device-energy` | **P3** **new (wave 13)** — Multi-k
   mid-SCF still host `ctrace_k` e_kin/e_nl on host \(T_k/V_{\mathrm{nl}}^k/P_k\)
   after device H assemble / device DIIS (energy pieces stay host even when H/P
@@ -1216,7 +1213,7 @@ dual-spin UKS) + **`ProductWeightPackDevice`**; residual host Γ
 `build_STVpp`; **final Γ host re-diag payload** + **Γ host cold-start densify**;
 multi-k branch **device** `KpointCollocateDevice` + `run_from_rho` + **device**
 `KpointIntegrateDevice` (H fuse) + **device `KpointDiisEigenDevice`** +
-**device `KpointStvnlDevice` S/T**; residual **H D2H into residual** + host
+**device `KpointStvnlDevice` S/T** + **device H residual residency**; residual host
 ctrace energy + host payload/cold-start diag + host \(P_k\) H2D + **host
 `build_kpoint_basis_grid` χ** + **host Löwdin from \(S_k\)** + **host KB Vnl
 when nonlocal** + **H0 host rematerialize into integrate**; free-fn forces
@@ -1230,32 +1227,32 @@ spin stress OK** (`reg_cuda-pw-spin-stress` **1135756**); **restricted smear
 forces + stress OK** (`reg_cuda-pw-smear-forces` **1130427**;
 `reg_cuda-pw-smear-stress` **1133111** 1-atom); spin dual-gates Γ-only;
 closed-shell F dual-gate `k_mesh=1`; multi-k PBE energy dual-gate missing;
-spin×kmesh×smear joint open. **Staff `[~]` (unmerged):**
-`cuda-gpw-kpoint-h-residency` (`44a4c5c5`) + `cuda-gpw-multigrid-si-gate`
-(tip blocked product — staff energy-path).
+spin×kmesh×smear joint open. **Staff `[~]` (Harness wave 4):**
+**`cuda-gpw-multigrid-si-energy-path`** (Assign wave 4 NEW P2) +
+`cuda-gpw-multigrid-si-gate` (tip blocked product until energy-path).
 
 | Slice on `dev` | Status | Depth gap |
 | --- | --- | --- |
 | RHF s/p energy + forces + level_shift + path-select + device CDIIS + **non-default stream D2H** | **landed** | higher-L host-fill remains (out of product scope) |
 | Γ GPW stage units (Poisson/FFT + Padé LDA + product collocate/integrate + `KsChainDevice` LDA/PBE + `KsMultiGridChainDevice`) | **landed** | stage ≠ full product depth |
-| Public `cuda::gpw::GpwDft` + device collocate + MG energy (H₂) + Γ UKS + device forces + stress + non-default stream + **device RKS+UKS DIIS/eigen** + **device weight pack** + **water E+F dual-gate** + **multi-k energy (H₂)** + **multi-k device collocate+integrate+H assemble+KDiis/zheevd+phased STVnl S/T** (Γ RKS/UKS DIIS PADE; host Γ STVnl residual; Γ host H assemble residual RKS+UKS; **Γ final payload host re-diag + cold-start host densify**; multi-k H residency / energy / payload / cold-start / \(P_k\) / **χ setup** / **Löwdin orth** / **host KB Vnl** / **H0 host rematerialize** residual; hybrid F/σ free-fns; **Si MG product energy path broken**) | **landed** (through STVnl on base: kpoint-device-stvnl **1133851**/`b88b2fd2`; spin-stress **1135756**/`79d617ca`; opt-4 kpoint-h-assemble **1132528**/`0ef79db9` + smear-stress **1133111**/`b46875bf`; harness wave 6 kpoint-device-diis **1133110**/`5319a282`; wave 4 collocate **1130716** + integrate **1130717**; wave 3 smear-forces **1130427**; wave 2 uks-diis **1130402**; weight-pack **1130344**; prior h2o **1130195**, kpoints **1130141**, spin-forces **1130196**; diis-eigen **1129719**) | **pending:** **`multigrid-si-energy-path`** (P2 Si MG product fix) + **`device-payload` / `uks-payload-device` / `device-cold-start`** + **`kpoint-h-residency` / `kpoint-device-energy` / `kpoint-payload-device` / `kpoint-device-cold-start`** + `kpoint-p-residency` / **`kpoint-device-chi`** / **`kpoint-device-orth`** / **`kpoint-device-vnl`** / **`kpoint-h0-residency`** + `kpoint-si/h2o-gate` + water/Si multi-k F/σ + multi-k×PBE E+F/σ, **`multigrid-si/h2o-gate` + water/Si MG F/σ + Si/water MG×PBE E+F/σ + multi-k MG×PBE F/σ + multigrid-kpoints-si-* production**, **`device-product-residency` / `device-h-assemble` / `uks-h-assemble` / `uks-p-residency`**, **`uks-o2-forces/stress` + `uks-o2-pbe-*` + `uks-o2-multigrid/kpoints`**, **force-stream + handoffs + AO-Pulay + device-stress**, **water σ + water×PBE E+F/σ**, **PBE F/σ + MG/UKS F/σ + joints + 4-way**, **device STVnl (Γ)** |
+| Public `cuda::gpw::GpwDft` + device collocate + MG energy (H₂) + Γ UKS + device forces + stress + non-default stream + **device RKS+UKS DIIS/eigen** + **device weight pack** + **water E+F dual-gate** + **multi-k energy (H₂)** + **multi-k device collocate+integrate+H assemble+KDiis/zheevd+phased STVnl S/T + H residual residency** (Γ RKS/UKS DIIS PADE; host Γ STVnl residual; Γ host H assemble residual RKS+UKS; **Γ final payload host re-diag + cold-start host densify**; multi-k energy / payload / cold-start / \(P_k\) / **χ setup** / **Löwdin orth** / **host KB Vnl** / **H0 host rematerialize** residual; hybrid F/σ free-fns; **Si MG product energy path broken**) | **landed** (through H residency on base: kpoint-h-residency **1142864**/`e2bcb05e`; kpoint-device-stvnl **1133851**/`b88b2fd2`; spin-stress **1135756**/`79d617ca`; opt-4 kpoint-h-assemble **1132528**/`0ef79db9` + smear-stress **1133111**/`b46875bf`; harness wave 6 kpoint-device-diis **1133110**/`5319a282`; wave 4 collocate **1130716** + integrate **1130717**; wave 3 smear-forces **1130427**; wave 2 uks-diis **1130402**; weight-pack **1130344**; prior h2o **1130195**, kpoints **1130141**, spin-forces **1130196**; diis-eigen **1129719**) | **pending:** **`multigrid-si-energy-path`** (P2 Si MG product fix) + **`device-payload` / `uks-payload-device` / `device-cold-start`** + **`kpoint-device-energy` / `kpoint-payload-device` / `kpoint-device-cold-start`** + `kpoint-p-residency` / **`kpoint-device-chi`** / **`kpoint-device-orth`** / **`kpoint-device-vnl`** / **`kpoint-h0-residency`** + `kpoint-si/h2o-gate` + water/Si multi-k F/σ + multi-k×PBE E+F/σ, **`multigrid-si/h2o-gate` + water/Si MG F/σ + Si/water MG×PBE E+F/σ + multi-k MG×PBE F/σ + multigrid-kpoints-si-* production**, **`device-product-residency` / `device-h-assemble` / `uks-h-assemble` / `uks-p-residency`**, **`uks-o2-forces/stress` + `uks-o2-pbe-*` + `uks-o2-multigrid/kpoints`**, **force-stream + handoffs + AO-Pulay + device-stress**, **water σ + water×PBE E+F/σ**, **PBE F/σ + MG/UKS F/σ + joints + 4-way**, **device STVnl (Γ)** |
 | `cuda::pw::PW` LSDA + PBE + residency + stream + large-cell + forces (LSDA+PBE Γ) + stress (LSDA+PBE) + collinear LSDA + spin-PBE energy + **spin LSDA forces + stress** + restricted metallic smear energy + **restricted metallic-smear forces + stress (Γ)** | **landed** | **pending:** multi-k F/σ + **multi-k PBE energy** (+ multi-k PBE F/σ); **`smear-stress-al2-gate`** + smear-PBE E+F/σ + **multi-k smear F/σ** (+ PBE); spin-PBE F/σ / spin multi-k (+ spin-kmesh-PBE F/σ) / spin+smear (+ spin-smear-pbe F/σ) / **spin×kmesh×smear** (+ PBE F/σ) |
 
-**Staff order:** (1) **P2 Si MG product residual** **`multigrid-si-energy-path`**
-(H₂ MG foothold ≠ Si capability; unblocks `multigrid-si-gate`); (2) Free
-high-value Γ residual after device DIIS — **`device-payload`** /
+**Staff order (Harness wave 4 residual):** (1) **P2 Si MG product residual**
+**`multigrid-si-energy-path`** **staffed `[~]`** (H₂ MG foothold ≠ Si
+capability; unblocks `multigrid-si-gate`); (2) free high-value residual after
+device DIIS + **landed H residency** — **`device-payload`** /
 **`uks-payload-device`** / **`device-cold-start`** + multi-k residual
-**`kpoint-h-residency`** / **`kpoint-device-energy`** /
-**`kpoint-payload-device`** / **`kpoint-device-cold-start`** /
-`kpoint-p-residency` / **`kpoint-device-chi`** /
+**`kpoint-device-energy`** / **`kpoint-payload-device`** /
+**`kpoint-device-cold-start`** / `kpoint-p-residency` / **`kpoint-device-chi`** /
 **`kpoint-device-orth`** / **`kpoint-device-vnl`** /
 **`kpoint-h0-residency`** + Γ `device-h-assemble` / `uks-h-assemble` + PW
 **`smear-stress-al2-gate`** / `kmesh-smear-forces` /
 `smear-pbe`; (3) production energy gates (`kpoint-si/h2o-gate`,
-`multigrid-si/h2o-gate` after energy-path, **`multigrid-kpoints-si-gate`**,
-**`uks-o2-multigrid/kpoints`**) then production multi-k/MG F/σ + path×PBE
-E+F/σ + hybrid free-fn depth + joints + **4-way** + PW spin×kmesh×smear **P3**
-after parent energy rows.
+`multigrid-si-gate` dual-gate after energy-path / `multigrid-h2o-gate`,
+**`multigrid-kpoints-si-gate`**, **`uks-o2-multigrid/kpoints`**) then
+production multi-k/MG F/σ + path×PBE E+F/σ + hybrid free-fn depth + joints +
+**4-way** + PW spin×kmesh×smear **P3** after parent energy rows.
 Do **not** staff lone new GPW kernel footholds. Higher-L RHF stays
 product-out-of-scope. OT / vdW / MT / metallic-GPW stay later same-capability
 follow-on.
@@ -1263,14 +1260,13 @@ follow-on.
 Open gate: CPU twin green + public `run`/`forces`/`stress` stable where owned
 + stated CUDA↔CPU tols + device-only kernels + **GH200 log evidence**.
 
-**Harness residual (GapCensus wave 18 on `dev` @ `5aa19d6c`; after land
-`cuda-pw-spin-stress`):**
-**in_progress=2** — keep unmerged tips: `cuda-gpw-kpoint-h-residency`
-(`44a4c5c5` / prior `181a81c3`, GH200 **1133843** \|dE\|=**3.442e-14**
-tip-green — Merge owns land) + `cuda-gpw-multigrid-si-gate` (tip
-`fe048ad7`; GH200 **1137743**/**1139046** product path BLOCKED — staff
-**`multigrid-si-energy-path`** before dual-gate close).
-Free staff held: **`multigrid-si-energy-path`** / `device-payload` /
+**Harness residual (Harness wave 4 on `dev` @ `e2bcb05e`; after land
+`cuda-gpw-kpoint-h-residency`):**
+**in_progress=2** — **`cuda-gpw-multigrid-si-energy-path`** (**NEW** P2 Si MG
+product path fix) + `cuda-gpw-multigrid-si-gate` (tip `fe048ad7`; GH200
+**1137743**/**1139046** product path BLOCKED — dual-gate close after
+energy-path).
+Free staff held: `device-payload` /
 `uks-payload-device` / `device-cold-start` / `kpoint-device-energy` /
 `kpoint-payload-device` / `kpoint-device-cold-start` / `kpoint-p-residency` /
 **`kpoint-device-chi`** / **`kpoint-device-orth`** / **`kpoint-device-vnl`** /
@@ -1280,7 +1276,7 @@ Do **not** re-staff landed
 collocate/MG-H₂/UKS/PBE/forces/stress/stream/DIIS-eigen/h2o/kpoints/spin-forces/
 uks-device-diis/weight-pack/smear-forces/**kpoint-device-collocate**/
 **kpoint-device-integrate**/**kpoint-device-diis**/**kpoint-h-assemble**/
-**smear-stress**/**kpoint-device-stvnl**/**spin-stress**.
+**smear-stress**/**kpoint-device-stvnl**/**spin-stress**/**kpoint-h-residency**.
 
 *Not pending this loop:*
 
@@ -1309,23 +1305,23 @@ uks-device-diis/weight-pack/smear-forces/**kpoint-device-collocate**/
 **`cuda-gpw-pbe-product-gate`**, **`cuda-gpw-uks-o2-gate`**,
 **`cuda-gpw-stress`**, **`cuda-gpw-nondefault-stream`**,
 **`cuda-gpw-device-diis-eigen`**, **`cuda-gpw-uks-device-diis`**, **`cuda-gpw-device-weight-pack`**, **`cuda-gpw-product-h2o-gate`**, **`cuda-gpw-kpoints`**, **`cuda-pw-spin-forces`**,
-**`cuda-pw-smear-forces`**, **`cuda-gpw-kpoint-device-collocate`**, **`cuda-gpw-kpoint-device-integrate`**, **`cuda-gpw-kpoint-device-diis`**, **`cuda-gpw-kpoint-h-assemble`**, **`cuda-pw-smear-stress`**, **`cuda-gpw-kpoint-device-stvnl`**, **`cuda-pw-spin-stress`**.
+**`cuda-pw-smear-forces`**, **`cuda-gpw-kpoint-device-collocate`**, **`cuda-gpw-kpoint-device-integrate`**, **`cuda-gpw-kpoint-device-diis`**, **`cuda-gpw-kpoint-h-assemble`**, **`cuda-pw-smear-stress`**, **`cuda-gpw-kpoint-device-stvnl`**, **`cuda-pw-spin-stress`**, **`cuda-gpw-kpoint-h-residency`**.
 
 ## in_progress
 
-GapCensus wave 18 on `dev` @ `5aa19d6c` (after land `cuda-pw-spin-stress`;
-keep Assign wave 3 `[~]`; Merge owns tip-green h-residency; Si MG dual-gate
-blocked on product path):
+Harness wave 4 on `dev` @ `e2bcb05e` (after land `cuda-gpw-kpoint-h-residency`;
+keep Assign wave 4 Si MG `[~]`):
 
-- [~] `cuda-gpw-kpoint-h-residency` | method=cuda | **P3** | **RESUME** tip
-  `wf/cuda-gpw-kpoint-h-residency` @ `44a4c5c5` (prior `181a81c3`; tip-green
-  GH200 **1133843** \|dE\|=**3.442e-14** Ha). Drop mid-SCF full \(H_k\) D2H
-  into `KpointDiisEigenDevice::residual` after landed `kpoint-h-assemble` +
-  `kpoint-device-diis` (`ingest_H_k_device_rm` + `residual_from_device`). Twin:
-  CPU multi-k RKS energy dual-gate (H₂ k=2×1×1). Oracle: same-settings CPU.
-  Gate: GH200 + stated energy tol; **perf_exempt**. Lever: `gpw_solver.cu`
-  multi-k loop + `kpoint_diis_eigen` device-H residual path. Spec:
-  `.claude/specs/cuda-gpw-kpoint-h-residency/` (on tip).
+- [~] `cuda-gpw-multigrid-si-energy-path` | method=cuda | **P2** | **NEW**
+  Assign wave 4 — Fix device multi-level product KS/density energy path under
+  Si-class GTH Γ `ngrids>1` (tip GH200 **1137743**/**1139046**: CUDA first-iter
+  E ~2× CPU; residual stuck; 1.39e6 monoms vs H₂ ~248). Twin: same-settings
+  CPU diamond Si Γ PADE ngrids=4 (E ≈ −15.151890 Ha). Oracle: same-settings CPU.
+  Gate: GH200 — both SCF converge + \|dE\| ≤ 5e-5 Ha; **not** soft-tol /
+  self-golden; **perf_exempt**. Lever: `gpw_solver.cu` + `KsMultiGridChainDevice`
+  / per-level packs / ρ accumulate / integrate under heavy Si multi-level load.
+  Parent of green `multigrid-si-gate`. Spec:
+  `.claude/specs/cuda-gpw-multigrid-si-energy-path/` (create on worker).
 - [~] `cuda-gpw-multigrid-si-gate` | method=cuda | **P3** | **RESUME** tip
   `wf/cuda-gpw-multigrid-si-gate` @ `fe048ad7` — harness unit/reg landed;
   GH200 **1137743**/**1139046** **acceptance_met=false** (CUDA first-iter E
@@ -1345,6 +1341,10 @@ blocked on product path):
   fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 
 ## done
+
+Harness wave 4 land 2026-08-11 (`dev` @ `e2bcb05e` after cuda-gpw-kpoint-h-residency):
+
+- [x] `cuda-gpw-kpoint-h-residency` | **P3** Multi-k mid-SCF device H residual residency (`KpointDiisEigenDevice::ingest_H_k_device_rm` + `residual_from_device`; no mid-SCF full \(H_k\) D2H → residual H2D after h-assemble + device DIIS) | track cuda | twin: same-settings CPU multi-k RKS energy dual-gate H₂ k=2×1×1 TR-off | files: `kpoint_diis_eigen.{cu,cuh}`, `gpw_solver.cu`, unit `test_kpoint_h_residency`, reg `reg_cuda-gpw-kpoint-h-residency`, REFERENCE | merge: `e2bcb05e` / feat `068d7784` / re-verify `ed832fce` | evidence: GH200 **1142864** \|dE\|=**3.331e-14** Ha (tol 5e-6; E both −1.040581477089 Ha; prior **1136613** \|dE\|=**3.264e-14** / **1133843** \|dE\|=**3.442e-14**); residual multi-k energy/payload/cold-start/P/χ/orth/vnl/h0 → child rows; **perf_exempt** small cell |
 
 Harness wave 3 land 2026-08-11 (`dev` @ `79d617ca` after cuda-pw-spin-stress):
 

@@ -474,7 +474,7 @@ Two periodic DFT engines exist, with disjoint strengths:
   **CUDA GPW first product slice
   landed:** public `cuda::gpw::GpwDft` (Γ RKS DIIS PADE/PBE + **Γ UKS DIIS
   PADE** + **multigrid energy** + **multi-k RKS DIIS energy H₂ foothold** +
-  **multi-k device χ^k collocate + V→H_k integrate + H_k fuse + KDiis/zheevd + phased STVnl** mid-SCF;
+  **multi-k device χ^k collocate + V→H_k integrate + H_k fuse + KDiis/zheevd + phased STVnl + H residual residency** mid-SCF;
   residual host χ^k + host Löwdin from S + **device** product collocate/KS/integrate via
   `KsChainDevice::run` / `run_uks` + `KsMultiGridChainDevice` on **non-default
   stream** + **device RKS mid-SCF Pulay DIIS + cuSOLVER eigen**
@@ -488,7 +488,7 @@ Two periodic DFT engines exist, with disjoint strengths:
   host fixed-\(P\)** **1128195** H₂ dual-gate; water Γ RKS **E+F** dual-gate
   **1130195**). Depth residual on es-cpu-cuda queue (water σ + water×PBE
   E+F/σ, Γ **device-payload / uks-payload-device / device-cold-start**, multi-k
-  **H residency/energy/payload/cold-start/χ/orth** + Si/water multi-k energy + F/σ +
+  **energy/payload/cold-start/χ/orth/vnl/h0** + Si/water multi-k energy + F/σ +
   multi-k×PBE production, MG production + water/Si F/σ + Si MG×PBE, UKS F/σ
   + UKS-PBE + O₂ UKS-PBE F/σ + joints, force-stream / AO-Pulay, device
   Γ device-STVnl + product-residency + device-h-assemble) — table CUDA for full GPW
@@ -643,8 +643,9 @@ Which engine backs which ✓:
   (phased lattice sums, KB nonlocal, per-k DIIS; `reg_gpw-kpoints-si`, diamond
   Si vs CP2K Quickstep, 2026-07-25); CUDA GPW multi-k has **H₂ energy
   foothold** (`cuda-gpw-kpoints` GH200 **1130141**; multi-k device
-  collocate+integrate+DIIS+STVnl landed GH200 **1130716**/**1130717**/**1133110**/**1133851** —
-  residual H residency / energy / payload / cold-start / χ / orth / Si-water F·σ) —
+  collocate+integrate+DIIS+STVnl+H-residency landed GH200
+  **1130716**/**1130717**/**1133110**/**1133851**/**1142864** —
+  residual energy / payload / cold-start / χ / orth / vnl / h0 / Si-water F·σ) —
   Si/water production + host residual spine + F/σ still open (table PW k-RKS ✓
   is plane-wave, not GPW depth; table CUDA GPW stays **◐**).
   **k-point periodic UKS** is CPU PW collinear spin on a multi-k mesh
