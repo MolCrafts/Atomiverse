@@ -345,6 +345,23 @@ if(ATV_BUILD_PW)
         add_dependencies(regressions run_${_reg_pw_smear_s})
         unset(_reg_pw_smear_s)
 
+        # Collinear LSDA spin Nielsen–Martin cell stress CUDA↔CPU dual-gate.
+        set(_reg_pw_spin_s reg_cuda-pw-spin-stress)
+        add_executable(${_reg_pw_spin_s}
+            pw/cuda-pw-spin-stress/${_reg_pw_spin_s}.cu)
+        target_link_libraries(${_reg_pw_spin_s} PRIVATE atomiverse)
+        set_target_properties(${_reg_pw_spin_s} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        target_compile_definitions(${_reg_pw_spin_s} PRIVATE
+            ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+        add_custom_target(run_${_reg_pw_spin_s}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_pw_spin_s}> --device=both
+            DEPENDS ${_reg_pw_spin_s}
+            COMMENT "regression [pw/cuda-pw-spin-stress] devices=both LSDA spin σ (1t)")
+        add_dependencies(regressions run_${_reg_pw_spin_s})
+        unset(_reg_pw_spin_s)
+
         # Analytic ionic forces under device PBE-GGA (LSDA dual-gate is
         # reg_cuda-pw-forces; energy PBE is reg_cuda-pw-pbe-device).
         set(_reg_pw_forces_pbe reg_cuda-pw-forces-pbe)
