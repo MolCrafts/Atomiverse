@@ -34,5 +34,15 @@ agent_budget: 256
 | UKS device H + pack from `d_P` | landed (`5a5076d0`) |
 | multi-k collocate from `d_P` (no P ping-pong) | landed (`5a5076d0`) |
 | force free-fn non-default stream | landed (`61b91971`); host AO Pulay residual |
-| GH200 retest | **job 1158949** `tools/gpu_job_cuda_gpw_residency.sh` |
+| GH200 retest | **GREEN job 1158949** — `RESIDENCY_DUAL_GATES_PASS` @ `856e7448` |
 | Si MG energy path | open (correctness) |
+
+### GH200 1158949 evidence (2026-08-11)
+
+| Gate | Result |
+| --- | --- |
+| `reg_cuda-gpw-full-product` | PASS \|dE\|=**1.616e-07** max\|dF\|=**2.787e-06** |
+| `reg_cuda-gpw-device-forces` | PASS \|dE\|=**1.616e-07** max\|dF\|=**3.068e-06** |
+| `reg_cuda-gpw-uks-o2-gate` | PASS \|dE\|=**3.520e-06** |
+| `reg_cuda-gpw-kpoints` | PASS \|dE\|=**3.086e-14** nk=2 |
+| ctest `test_cuda_gpw_(full_product\|diis_eigen\|kpoints\|forces)` | PASS (log) |
