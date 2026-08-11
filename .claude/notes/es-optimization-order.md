@@ -52,20 +52,22 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 4)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 5)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
 **landed** on `dev` (feat `31d24207`; GH200 **1120817**). Device mid-SCF
 collocate/integrate, MG energy, Γ UKS (+ O₂ gate), device grid forces, PBE H₂
 gate, product stress, product non-default stream, **device RKS DIIS/eigen**
-**on base** (merge `e164b767` / GH200 **1129719**) — no new base land since.
-Keep `[~]`: `product-h2o-gate` (**`5731b00c`** / **1130066**), `kpoints`
-(**`14368bf3`**), `cuda-pw-spin-forces` (**`b6b01efe`**). Wave-10/11 held
-force-stream + device-ao-pulay + product-h2o F/σ + device-stress + handoff +
-4-way + kmesh-pbe. Wave-3 post-diis spine held. **Wave-4 GapCensus opens**
-multi-k tip residual spine: `kpoint-device-collocate`, `kpoint-device-diis`,
-`kpoint-device-stvnl`, `kpoint-si-gate` (tip host χ^k ρ/`run_from_rho` + host
-KDiis + phased STVnl; H₂ foothold ≠ Si production gate). Residual: multi-k
+**on base** (merge `e164b767` / GH200 **1129719**) — no new base land since
+diis-eigen. Keep `[~]`: `product-h2o-gate` (**`8fe0edec`** / **1130140**),
+`kpoints` (**`18ba6fc5`** / **1130141**), `cuda-pw-spin-forces`
+(**`a5e941f2`** / **1130145**). Wave-10/11 held force-stream + device-ao-pulay
++ product-h2o F/σ + device-stress + handoff + 4-way + kmesh-pbe. Wave-3
+post-diis spine held. Wave-4 multi-k tip residual spine held. **Wave-5
+GapCensus opens:** `kpoint-device-integrate` (host V·χ^k after
+`run_from_rho`), `device-product-residency` (geometry pack re-H2D),
+`multigrid-si-gate` (H₂ MG e2e ≠ Si production), `uks-o2-forces` /
+`uks-o2-stress` (H₂ UKS F/σ foothold ≠ O₂ production). Residual: multi-k
 depth after tip land, water e2e, MG/UKS F/σ, path×PBE + 4-way, device
 stress/handoffs/STVnl/weight-pack, PW spin/smear/multi-k + spin×kmesh×smear.
 
@@ -73,11 +75,11 @@ stress/handoffs/STVnl/weight-pack, PW spin/smear/multi-k + spin×kmesh×smear.
 | --- | --- | --- |
 | P1 | *(closed wave-8/9)* device-forces + pbe-product-gate + stress + stream | on base |
 | P2 | **landed** device-diis-eigen; `[~]` product-h2o-gate + kpoints + spin-forces; **uks-device-diis** + **device-weight-pack**; PW smear/spin/kmesh(+PBE E) F/σ | water + multi-k + post-diis spine + PW depth |
-| P3 | wave-4 multi-k depth (`kpoint-device-*` + `kpoint-si-gate`) + wave-4…3 joint paths (UKS/MG/k F+σ + multi-k joints + path×PBE + 4-way + force-stream/handoffs + device-ao-pulay + device-stress + product-h2o F/σ + device-stvnl + PW spin/smear/multi-k + spin×kmesh×smear) | after parent energy rows |
+| P3 | wave-4/5 multi-k depth (`kpoint-device-*` incl. **integrate** + `kpoint-si-gate`) + wave-5 production gates (`multigrid-si-gate` / `uks-o2-forces` / `uks-o2-stress` / `device-product-residency`) + wave-4…3 joint paths (UKS/MG/k F+σ + multi-k joints + path×PBE + 4-way + force-stream/handoffs + device-ao-pulay + device-stress + product-h2o F/σ + device-stvnl + PW spin/smear/multi-k + spin×kmesh×smear) | after parent energy rows |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=87**; **in_progress=3**; **cuda_pending=87**;
-**gaps_remaining=91**. Contract:
+(not soft-tol). **pending_count=92**; **in_progress=3**; **cuda_pending=92**;
+**gaps_remaining=96**. Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 
@@ -107,7 +109,7 @@ fails the wave).
 | `gpw-uks-o2-gamma` | **1.077** | gate closed — do not re-open dual-spin fuse |
 | `gpw-kpoints-si` MAIN | **1.18** | hold products vs dense A/B until MG moves |
 
-**CUDA open-gate (`dev` @ `46d65433`):** Landed: device s/p RHF + CDIIS +
+**CUDA open-gate (`dev` @ `e13cdb91`):** Landed: device s/p RHF + CDIIS +
 non-default stream D2H; Γ GPW footholds + LDA + closed-shell PBE `ks_chain` +
 multi-grid product KS stage + public `cuda::gpw::GpwDft` + device mid-SCF
 collocate/integrate + multigrid energy + Γ UKS DIIS PADE (+ O₂ gate) + device
@@ -116,11 +118,13 @@ gate + **device RKS DIIS/eigen** (`e164b767` / GH200 **1129719**);
 `cuda::pw::PW` LSDA + closed-shell PBE + residency + stream + large-cell +
 forces (LSDA+PBE) + cell stress (LSDA+PBE) + collinear LSDA + spin-PBE energy
 + restricted metallic smear energy. **Pending:** GPW product depth (H₂O
-energy/F/σ tip + multi-k tip + **kpoint-device-*** + **kpoint-si-gate** +
-**uks-device-diis** + **device-weight-pack** + force-stream/handoffs + device
-AO Pulay + device-stress + MG/UKS F/σ + path×PBE + 4-way + device STVnl); PW
-spin-forces tip + smear + multi-k PBE + **spin×kmesh×smear** F/σ depth (see
-queue). **Keep `[~]`:** `product-h2o-gate` + `kpoints` + `spin-forces`.
+energy/F/σ tip + multi-k tip + **kpoint-device-*** incl. **integrate** +
+**kpoint-si-gate** + **multigrid-si-gate** + **uks-o2-forces/stress** +
+**device-product-residency** + **uks-device-diis** + **device-weight-pack** +
+force-stream/handoffs + device AO Pulay + device-stress + MG/UKS F/σ +
+path×PBE + 4-way + device STVnl); PW spin-forces tip + smear + multi-k PBE +
+**spin×kmesh×smear** F/σ depth (see queue). **Keep `[~]`:** `product-h2o-gate`
+(**1130140**) + `kpoints` (**1130141**) + `spin-forces` (**1130145**).
 **Blocked structural:** `mg-main-structural`. Public-shape freeze **green**
 (`0147fe02`). **cpu_pending=0** — no pin-safe wall lever.
 
