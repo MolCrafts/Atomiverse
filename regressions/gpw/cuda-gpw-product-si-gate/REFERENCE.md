@@ -39,4 +39,6 @@ nonlocal KB) after H₂/water product footholds hide Si nonlocal production.
 
 ## Status
 
-GH200 dual-gate pending after host-collint hybrid + KB fix.
+**acceptance_met=true** — GH200 **1167099** (tip `a30c675d`):
+CPU E=−15.152328573401 Ha iters=7; CUDA E=−15.152328552099 Ha iters=7;
+\|dE\|=**2.130e-08** Ha (tol 5e-5). Hold: full-product + product-h2o green.
