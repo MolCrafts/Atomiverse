@@ -2104,6 +2104,9 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
     }
 
     // ── Device grid product: V_eff grid + ionic HF + local-PP HF ──────────
+    // Force free-fn is a **post-SCF boundary**: one setup H2D of SCF payload
+    // + tables, then device kernels on a non-default stream (no default-stream
+    // cudaDeviceSynchronize). Host AO Pulay above remains hybrid residual.
     UniformGrid grid = make_uniform_grid(method.cell, method.cutoff_ry);
     const long ng = grid.npts();
     if (static_cast<long>(scf.veff.size()) != ng
@@ -2131,7 +2134,6 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
     if (scf.force_cbgd_valid && scf.force_cbgd.npts == ng) {
         cbgd_ptr = &scf.force_cbgd;
     } else {
-        // Mutable cache on GpwResult when available.
         GpwResult& scf_mut = const_cast<GpwResult&>(scf);
         scf_mut.force_cbgd =
             build_compact_basis_grid(grid, dflat, periodic, eps);
@@ -2141,18 +2143,21 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
     const CompactBasisGrid& cbgd = *cbgd_ptr;
 
     const std::vector<double> Pvec = mat_to_vec(P, nb);
+    // Host densify is force-setup (geometry CSR + P); device kernels own
+    // the O(N_grid) HF. Prefer scf.rho if ever cached (not yet).
     const std::vector<double> rho = collocate_density(cbg, nb, Pvec);
 
-    // g → cbg active index.
     std::vector<int> g2a(static_cast<std::size_t>(ng), -1);
     for (std::size_t a = 0; a < cbg.gidx.size(); ++a)
         g2a[static_cast<std::size_t>(cbg.gidx[a])] = static_cast<int>(a);
 
-    // Pack device buffers.
     const int n_act = static_cast<int>(cbg.gidx.size());
     const int n_act_d = static_cast<int>(cbgd.gidx.size());
     const std::size_t nnz = cbg.fu.size();
     const std::size_t nnz_d = cbgd.fu.size();
+
+    ScfStream force_stream;
+    const cudaStream_t stream = force_stream;
 
     double* d_veff = d_alloc<double>(static_cast<std::size_t>(ng));
     double* d_v_es = d_alloc<double>(static_cast<std::size_t>(ng));
@@ -2195,55 +2200,64 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
 
     try {
         const size_t bytes_g = static_cast<size_t>(ng) * sizeof(double);
-        check_cuda(cudaMemcpy(d_veff, scf.veff.data(), bytes_g,
-                              cudaMemcpyHostToDevice),
-                   "H2D veff");
-        check_cuda(cudaMemcpy(d_v_es, scf.v_es.data(), bytes_g,
-                              cudaMemcpyHostToDevice),
-                   "H2D v_es");
-        check_cuda(cudaMemcpy(d_rho, rho.data(), bytes_g, cudaMemcpyHostToDevice),
-                   "H2D rho");
-        check_cuda(cudaMemcpy(d_P, Pvec.data(), Pvec.size() * sizeof(double),
-                              cudaMemcpyHostToDevice),
-                   "H2D P");
-        check_cuda(cudaMemset(d_forces, 0, static_cast<size_t>(3 * na) * sizeof(double)),
+        // Force-setup H2D (boundary for free-fn), all async on force stream.
+        check_cuda(cudaMemcpyAsync(d_veff, scf.veff.data(), bytes_g,
+                                   cudaMemcpyHostToDevice, stream),
+                   "H2D veff force-setup");
+        check_cuda(cudaMemcpyAsync(d_v_es, scf.v_es.data(), bytes_g,
+                                   cudaMemcpyHostToDevice, stream),
+                   "H2D v_es force-setup");
+        check_cuda(cudaMemcpyAsync(d_rho, rho.data(), bytes_g,
+                                   cudaMemcpyHostToDevice, stream),
+                   "H2D rho force-setup");
+        check_cuda(cudaMemcpyAsync(d_P, Pvec.data(),
+                                   Pvec.size() * sizeof(double),
+                                   cudaMemcpyHostToDevice, stream),
+                   "H2D P force-setup");
+        check_cuda(cudaMemsetAsync(
+                       d_forces, 0,
+                       static_cast<size_t>(3 * na) * sizeof(double), stream),
                    "zero forces");
-        check_cuda(cudaMemcpy(d_owner, owner.data(),
-                              static_cast<size_t>(nb) * sizeof(int),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(d_owner, owner.data(),
+                                   static_cast<size_t>(nb) * sizeof(int),
+                                   cudaMemcpyHostToDevice, stream),
                    "H2D owner");
-        check_cuda(cudaMemcpy(d_cbg_gidx, cbg.gidx.data(),
-                              static_cast<size_t>(n_act) * sizeof(long),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(d_cbg_gidx, cbg.gidx.data(),
+                                   static_cast<size_t>(n_act) * sizeof(long),
+                                   cudaMemcpyHostToDevice, stream),
                    "H2D cbg.gidx");
-        check_cuda(cudaMemcpy(d_cbg_off, cbg.off.data(),
-                              (static_cast<size_t>(n_act) + 1) * sizeof(std::size_t),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(
+                       d_cbg_off, cbg.off.data(),
+                       (static_cast<size_t>(n_act) + 1) * sizeof(std::size_t),
+                       cudaMemcpyHostToDevice, stream),
                    "H2D cbg.off");
-        check_cuda(cudaMemcpy(d_cbg_fu, cbg.fu.data(), nnz * sizeof(int),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(d_cbg_fu, cbg.fu.data(), nnz * sizeof(int),
+                                   cudaMemcpyHostToDevice, stream),
                    "H2D cbg.fu");
-        check_cuda(cudaMemcpy(d_cbg_fv, cbg.fv.data(), nnz * sizeof(double),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(d_cbg_fv, cbg.fv.data(),
+                                   nnz * sizeof(double), cudaMemcpyHostToDevice,
+                                   stream),
                    "H2D cbg.fv");
-        check_cuda(cudaMemcpy(d_cbgd_gidx, cbgd.gidx.data(),
-                              static_cast<size_t>(n_act_d) * sizeof(long),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(d_cbgd_gidx, cbgd.gidx.data(),
+                                   static_cast<size_t>(n_act_d) * sizeof(long),
+                                   cudaMemcpyHostToDevice, stream),
                    "H2D cbgd.gidx");
-        check_cuda(
-            cudaMemcpy(d_cbgd_off, cbgd.off.data(),
+        check_cuda(cudaMemcpyAsync(
+                       d_cbgd_off, cbgd.off.data(),
                        (static_cast<size_t>(n_act_d) + 1) * sizeof(std::size_t),
-                       cudaMemcpyHostToDevice),
-            "H2D cbgd.off");
-        check_cuda(cudaMemcpy(d_cbgd_fu, cbgd.fu.data(), nnz_d * sizeof(int),
-                              cudaMemcpyHostToDevice),
+                       cudaMemcpyHostToDevice, stream),
+                   "H2D cbgd.off");
+        check_cuda(cudaMemcpyAsync(d_cbgd_fu, cbgd.fu.data(),
+                                   nnz_d * sizeof(int), cudaMemcpyHostToDevice,
+                                   stream),
                    "H2D cbgd.fu");
-        check_cuda(cudaMemcpy(d_cbgd_fv, cbgd.fv.data(), nnz_d * sizeof(double),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(d_cbgd_fv, cbgd.fv.data(),
+                                   nnz_d * sizeof(double),
+                                   cudaMemcpyHostToDevice, stream),
                    "H2D cbgd.fv");
-        check_cuda(cudaMemcpy(d_g2a, g2a.data(),
-                              static_cast<size_t>(ng) * sizeof(int),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(d_g2a, g2a.data(),
+                                   static_cast<size_t>(ng) * sizeof(int),
+                                   cudaMemcpyHostToDevice, stream),
                    "H2D g2a");
 
         std::vector<internal::DeviceForceAtom> h_atoms(
@@ -2262,9 +2276,11 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
             for (int k = 0; k < da.n_cloc; ++k)
                 da.cloc[k] = A.cloc[static_cast<std::size_t>(k)];
         }
-        check_cuda(cudaMemcpy(d_atoms, h_atoms.data(),
-                              static_cast<size_t>(na) * sizeof(internal::DeviceForceAtom),
-                              cudaMemcpyHostToDevice),
+        check_cuda(cudaMemcpyAsync(
+                       d_atoms, h_atoms.data(),
+                       static_cast<size_t>(na)
+                           * sizeof(internal::DeviceForceAtom),
+                       cudaMemcpyHostToDevice, stream),
                    "H2D atoms");
 
         internal::DeviceCbgView cbg_view;
@@ -2287,19 +2303,21 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
 
         const CollocateGridDesc coll = to_coll(grid);
         internal::accumulate_grid_veff_forces_device(
-            coll, cbg_view, cbgd_view, d_veff, d_P, nb, d_owner, d_forces);
-        internal::accumulate_ionic_hf_forces_device(coll, d_atoms, na, d_v_es,
-                                                    periodic, d_forces);
+            coll, cbg_view, cbgd_view, d_veff, d_P, nb, d_owner, d_forces,
+            stream);
+        internal::accumulate_ionic_hf_forces_device(
+            coll, d_atoms, na, d_v_es, periodic, d_forces, stream);
         if (method.local_pp_on_grid)
             internal::accumulate_local_pp_hf_forces_device(
-                coll, d_atoms, na, d_rho, periodic, d_forces);
+                coll, d_atoms, na, d_rho, periodic, d_forces, stream);
 
-        check_cuda(cudaDeviceSynchronize(), "force kernel sync");
+        // Boundary D2H of force vector only (not full grids).
         std::vector<double> h_f(static_cast<std::size_t>(3 * na), 0.0);
-        check_cuda(cudaMemcpy(h_f.data(), d_forces,
-                              static_cast<size_t>(3 * na) * sizeof(double),
-                              cudaMemcpyDeviceToHost),
-                   "D2H forces");
+        check_cuda(cudaMemcpyAsync(h_f.data(), d_forces,
+                                   static_cast<size_t>(3 * na) * sizeof(double),
+                                   cudaMemcpyDeviceToHost, stream),
+                   "D2H forces boundary");
+        check_cuda(cudaStreamSynchronize(stream), "force stream fence");
         for (int a = 0; a < na; ++a)
             for (int k = 0; k < 3; ++k)
                 forces[static_cast<std::size_t>(a)][k] +=
