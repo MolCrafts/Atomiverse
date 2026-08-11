@@ -96,15 +96,9 @@ done
 export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 
-echo "=== UNIT Si dual-gate (direct gtest filter; no ctest 10s default) ==="
-UNIT_BIN="${BUILD}/tests/test_cuda_gpw_full_product"
-if [ ! -x "${UNIT_BIN}" ]; then
-  echo "UNIT_BIN_MISSING"
-  exit 1
-fi
-# Si DZVP-MOLOPT SCF can exceed ctest default 10s wall.
-"${UNIT_BIN}" --gtest_filter='*SiGammaPadeSingleGridEnergyDualGate' || {
-  echo "UNIT_SI_FAILED"
+echo "=== CTEST unit suite (no Si e2e; iron-law 10s) ==="
+ctest --test-dir "${BUILD}" --output-on-failure -R 'test_cuda_gpw_full_product' || {
+  echo "CTEST_FAILED"
   exit 1
 }
 
@@ -122,6 +116,7 @@ run_reg() {
   }
 }
 
+# Primary gate for this slug (Si diamond e2e lives here, not in tests/)
 run_reg reg_cuda-gpw-product-si-gate
 run_reg reg_cuda-gpw-full-product
 run_reg reg_cuda-gpw-product-h2o-gate
