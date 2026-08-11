@@ -4,63 +4,51 @@ Rewrite in place each harness wave.
 
 ## Status
 
-- **Workflow:** `es-cpu-cuda-opt` script
-  `.grok/workflows/es-cpu-cuda-opt.rhai` — iron laws + kernel skills +
-  residency staff order + acceptance gate (grep mid-path DH).
+- **Workflow:** `es-cpu-cuda-opt-6` **complete** (~6h36m). Script
+  `.grok/workflows/es-cpu-cuda-opt.rhai` (iron laws + kernel skills +
+  residency staff order + mid-path DH gate).
 - **Law:** [.claude/notes/cuda-only-no-dh.md](../../.claude/notes/cuda-only-no-dh.md)
-- **Harness wave 5** on `dev` @ `d476ee7a` (after Assign wave 5 @
-  `d3c6c5dc` / GapCensus @ `6595ef11`): pending **131** / in_progress **1** /
-  gaps **133**; **cpu_pending=0**; **new_slugs_added=0** this harness.
-- **Residency P0:** Γ RKS / UKS / multi-k mid-SCF landed (`5a5076d0` + force
-  stream `61b91971`). GH200 residency dual-gates **1158949** — queue marks
-  `device-h-assemble` / `uks-h-assemble` / `uks-p-residency` /
-  `kpoint-p-residency` / `kpoint-device-energy` / `force-stream` **done**.
-- **Si product gate:** **landed** on `dev` (`a158848f`). GH200 **1167099**
-  Si Γ ngrids=1 \|dE\|=**2.130e-08** Ha; post-collocate-pbc hold **1173564**
-  \|dE\|=**3.504e-05** Ha.
-- **PBC collocate + SG device KS:** **landed** merge `cfb246d1` / feat
-  `5648608f`. GH200 **1173564** / **1177100**.
-- **Si MG energy path:** **landed** merge `88d8ec59` / feat `c99f4622` + fix
-  `c2084efe`. GH200 **1180883** \|dE\|=**2.130e-08** Ha (host collint
-  multi-level mid-SCF + device H/DIIS). Iron-law mid-path P/V →
-  **`multigrid-device-ks` staffed `[~]`**.
-- **Γ RKS device final payload:** **landed** merge `d476ee7a` / feat
-  `d4a00181` + GH200 **1182615** / **1180932**. Boundary D2H only
-  (`eigen_from_device`); no host re-diag.
-- **Staffed `[~]` (remain):** `cuda-gpw-multigrid-device-ks` only (iron-law
-  monom restore). Free next: `multigrid-si-gate` (unblocked) /
-  `uks-payload-device` / `device-cold-start` / force handoff.
+- **HEAD:** `f2be952a` (post serial merge of wave-6 green tips).
 
-## Landed this harness
+## Landed on `dev` this loop (high-signal)
 
-| Item | Evidence |
+| Item | Merge / evidence |
 | --- | --- |
-| `cuda-gpw-device-payload` | merge `d476ee7a` / feat `d4a00181` / re-verify `61c2dfd3`; `AoDiisEigenDevice::eigen_from_device` of assembled H; GH200 **1182615** \|dE\|=**1.252e-08** max\|deps\|=**1.888e-06** Ha (prior **1180932** / **1178026**); mid-path scientific matrix DH **zero**; skills: av-perf + write-numerically-stable-kernel / optimize-global-memory-access; **perf_exempt** |
-| prior si-energy-path + collocate-pbc + product-si + residency P0 | `88d8ec59` / **1180883**; `cfb246d1` / **1173564**; `a158848f` / **1167099**; `5a5076d0` / `61b91971` / **1158949** |
+| residency P0 (Γ RKS/UKS/multi-k) | `5a5076d0` + force stream `61b91971` / GH200 **1158949** |
+| product-si-gate | `a158848f` / **1167099** |
+| product-collocate-pbc + SG device KS | `cfb246d1` / **1173564** |
+| multigrid-si-energy-path | `88d8ec59` / **1180883** |
+| device-payload (Γ RKS final eigen) | `d476ee7a` / **1182615** |
+| **multigrid-device-ks** | `3730ada7` / tip **1186912** \|dE\|=**8.652e-06** (device monom MG default) |
+| **uks-payload-device** | `f2be952a` / tip **1186414** \|dE\|=**4.163e-09** max\|deps\|=**1.481e-06** |
+
+## Clearup
+
+- Residual `wf/*` branches: **none**
+- Worktrees: **none** (main tree only)
+- Stale uncommitted Assign-wave-6 queue draft discarded (superseded by tip-green + merge)
 
 ## Residual (do not soft-land)
 
 | Slug | Status |
 | --- | --- |
-| `multigrid-device-ks` | **`[~]`** Assign wave 5 — restore device monom MG mid-path (iron-law; **1180025** monom fail) |
-| `multigrid-si-gate` | **unblocked** after energy-path on base (staff free after monom) |
-| `uks-payload-device` / `device-cold-start` | open (Γ UKS payload / cold densify) |
+| `multigrid-si-gate` | free staff — production dual-gate after monom on base |
+| `device-cold-start` | open (Γ densify still host) |
 | multi-k χ / orth / vnl / h0 / payload / cold-start | open |
-| force free-fn | host AO Pulay residual (P1); stream **landed** |
+| force free-fn AO Pulay / force-handoff | open (stream landed) |
 | stress free-fn | full host |
+| MG MAIN fair-wall **2.33×** | blocked pin-unsafe (`mg-main-structural`) |
+| **cpu_pending=0** | no promote from gpw-perf-queue |
 
 ## Stated hybrid residual
 
-Single-grid `cuda::gpw::GpwDft` mid-SCF is **device** product KS with
-sphere-window PBC collocate/integrate (iron-law P0 SG closed). Γ RKS final
-payload is **device eigen** (boundary C/ε/H D2H). Si MG default on base is
-**host collint multi-level** mid-SCF (energy dual-gate green) until
-`multigrid-device-ks` restores device pack→`KsMultiGridChainDevice`→scatter.
-CompactBasisGrid retained **force-only**. Remaining hybrid: host Γ STVnl,
-UKS/multi-k final payload host re-diag, cold-start densify, multi-k
-χ·orth·vnl·h0, host AO Pulay forces, full-host stress.
+- Γ RKS/UKS mid-SCF: device H + DIIS; MG mid-SCF: **device monom** default
+  (after multigrid-device-ks).
+- Final payload: RKS + UKS **device eigen** (boundary C/ε/H D2H).
+- Still hybrid: host Γ STVnl setup, cold-start densify, multi-k payload /
+  χ/orth/vnl/h0, force AO Pulay.
 
-## Launch
+## Launch next
 
 ```text
 workflow name=es-cpu-cuda-opt
@@ -70,7 +58,7 @@ args: {
   "max_waves": 4,
   "do_perf": false,
   "target_branch": "dev",
-  "theme": "Harness wave 5 residual: staff multigrid-device-ks monom restore (zero mid-path matrix DH; GH200; no dual-gate invent); free uks-payload / cold-start / multigrid-si-gate after monom"
+  "theme": "multigrid-si-gate dual-gate; device-cold-start; kpoint payload/chi/orth/vnl/h0; force AO-Pulay"
 }
 agent_budget: 256
 ```
