@@ -191,10 +191,10 @@ void collocate_products(const CollocateGridDesc& grid,
 
     if (grid.periodic) {
         // Sphere-window PBC (cuda-gpw-product-collocate-pbc).
-        // eps_win: CPU collint kProductWindowEps class (not mass-margin) so
-        // multi-level residual matches collint (cuda-gpw-multigrid-device-ks).
+        // Large eps_win (mass-margin class) for monom continuous charge
+        // recovery; collint window mag is group max|w| on DeviceProduct.mag.
         const double eps =
-            (grid.eps_win > 0.0) ? grid.eps_win : 2.0e-9;
+            (grid.eps_win > 0.0) ? grid.eps_win : 1.0e-14;
         constexpr int kBlock = 128;
         // Occupy SMs: ~min( nprod/block, 256 ) blocks (choose-launch-configuration).
         int grid_dim = (nprod + kBlock - 1) / kBlock;

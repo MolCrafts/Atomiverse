@@ -101,12 +101,11 @@ __global__ void integrate_products_sphere_kernel(
     if (ip >= nprod)
         return;
     const DeviceProduct q = prods[ip];
-    // Integrate is shape-only; radius from collint-class window mag (group
-    // max|w| when set) floored at 1 so support covers the significant Gaussian
-    // (weight applied only on collocate / scatter k).
+    // Integrate is shape-only; unit mag + mass-margin eps sizes support
+    // (weight applied only on collocate / scatter k). Group mag is for collocate.
     const int Ltot =
         q.la[0] + q.la[1] + q.la[2] + q.lb[0] + q.lb[1] + q.lb[2];
-    const double mag = (q.mag > 0.0) ? fmax(q.mag, 1.0) : 1.0;
+    const double mag = 1.0;
     const double rc = product_radius_dev(mag, q.p, Ltot, eps);
     if (!(rc > 0.0)) {
         if (threadIdx.x == 0)
@@ -190,9 +189,9 @@ void integrate_products(const CollocateGridDesc& grid,
     }
     constexpr int kBlock = 256;
     if (grid.periodic) {
-        // Collint eps_win class (cuda-gpw-multigrid-device-ks) — not mass-margin.
+        // Mass-margin class default (Si charge); mag field carries group max.
         const double eps =
-            (grid.eps_win > 0.0) ? grid.eps_win : 2.0e-9;
+            (grid.eps_win > 0.0) ? grid.eps_win : 1.0e-14;
         integrate_products_sphere_kernel<<<nprod, kBlock, 0, stream>>>(
             d_prods, nprod, grid.n[0], grid.n[1], grid.n[2], grid.L[0],
             grid.L[1], grid.L[2], grid.origin[0], grid.origin[1],

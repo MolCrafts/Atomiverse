@@ -138,9 +138,10 @@ constexpr double kDiisAscentResetHa = 1.0e-3;
 /// Matches CPU product mass-margin drop (multigrid.cpp); drop monoms below
 /// `eps * kProductMassMargin` when packing live density weights.
 constexpr double kProductMassMargin = 1.0e-4;
-/// Matches CPU collint sphere window eps factor (multigrid.cpp
-/// `kProductWindowEps`): radius uses `eps * kProductWindowEps`, not mass margin.
-constexpr double kProductWindowEps = 2.0e-2;
+/// Sphere radius eps factor for monom continuous PBC (product-collocate-pbc):
+/// `eps * kProductMassMargin` recovers Si charge; collint `eps·0.02` under-sizes
+/// monom spheres. Group-max mag supplies collint-faithful window magnitude.
+constexpr double kSphereRadiusEpsFactor = kProductMassMargin;
 
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
@@ -422,7 +423,7 @@ void store_converged_state_uks(GpwResult& res, const RealMatrix& Ha,
     res.s2 = sz * (sz + 1.0) + static_cast<double>(n_beta) - ov;
 }
 
-CollocateGridDesc to_coll(const UniformGrid& g, double eps_win = 2.0e-9) {
+CollocateGridDesc to_coll(const UniformGrid& g, double eps_win = 1.0e-14) {
     CollocateGridDesc d;
     for (int i = 0; i < 3; ++i) {
         d.n[i] = g.n[i];
@@ -432,7 +433,6 @@ CollocateGridDesc to_coll(const UniformGrid& g, double eps_win = 2.0e-9) {
     // CUDA GPW product rejects nonperiodic; collocate/integrate always
     // sphere-window PBC (cuda-gpw-product-collocate-pbc).
     d.periodic = true;
-    // CPU collint kProductWindowEps class (multigrid.cpp): eps * 0.02.
     d.eps_win = eps_win;
     return d;
 }
@@ -1191,7 +1191,9 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     result_ = GpwResult{};
     const bool periodic = true;
     const double eps = eps_default;
-    const double eps_win = eps * kProductWindowEps; // collint sphere class
+    // Monom continuous sphere radius eps (mass-margin class); group-max mag
+    // handles collint-faithful window sizing (cuda-gpw-multigrid-device-ks).
+    const double eps_win = eps * kSphereRadiusEpsFactor;
     const bool uks = is_uks();
 
     const std::vector<GridBasisFunction> basis = flatten_basis(atoms);

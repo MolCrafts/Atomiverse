@@ -29,10 +29,12 @@ struct CollocateGridDesc {
     /// @brief When true, collocate/integrate use sphere-window PBC wrap.
     /// Default true — CUDA GPW product rejects Martyna–Tuckerman.
     bool periodic = true;
-    /// @brief Sphere window eps (CPU collint `eps * kProductWindowEps` class).
-    /// Sizes product radius; mass-margin eps over-inflates spheres and is wrong
-    /// for multi-level residual (cuda-gpw-multigrid-device-ks).
-    double eps_win = 2.0e-9;
+    /// @brief Sphere window eps for product_radius.
+    /// Default mass-margin class (eps_default·1e-4) matches product-collocate-pbc
+    /// Si charge recovery; group-max `DeviceProduct.mag` carries collint window
+    /// mag (cuda-gpw-multigrid-device-ks). Do not use collint `eps·0.02` here —
+    /// that under-sizes monom continuous spheres vs collint cxyz refine.
+    double eps_win = 1.0e-14;
 
     /// @brief Total real-space points.
     long npts() const {
