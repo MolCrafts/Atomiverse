@@ -5,24 +5,14 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `5319a282` (harness wave 6 after `cuda-gpw-kpoint-device-diis`)
+- **Parent:** `dev` @ post opt-4 tip merges (smear-stress + kpoint-h-assemble)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** Harness wave 6 — **1 of 3** staffed → done [x]:
-  - [x] `cuda-gpw-kpoint-device-diis` merge `5319a282` / feat `f3f55dc2` /
-    re-verify `8511a1fb` — GH200 **1133110** \|dE\|=**3.419e-14** Ha
-    (prior tip **1132761**; H₂ multi-k RKS PADE device KDiis+zheevd;
-    **perf_exempt**)
-  - [~] `cuda-pw-smear-stress` tip `4c9a7b62` / GH200 **1132266** /
-    re-verify **1133111** (tip-green not base)
-  - [~] `cuda-gpw-kpoint-h-assemble` tip `5b64229b` / **1132528**
-    (tip-green not base)
-  - Spec closed: deleted `.claude/specs/cuda-gpw-kpoint-device-diis/`
-- **Counts:** pending=133; in_progress=2; cpu_pending=0; cuda_pending=135;
-  gaps_remaining=136 (incl. blocked `mg-main-structural`). Queue **not**
-  exhausted.
-- **Roadmap:** table CUDA GPW remains **◐** (no ○→✓ — H assemble / residency /
-  STVnl / Si-water multi-k F·σ depth open). Prose: multi-k device DIIS landed.
+- **Last action:** `es-cpu-cuda-opt-4` auto-merged **6** (uks-device-diis,
+  weight-pack, smear-forces, kpoint collocate/integrate, kpoint-device-diis).
+  Operator merged residual green tips:
+  - `cuda-pw-smear-stress` (GH200 **1133111**)
+  - `cuda-gpw-kpoint-h-assemble` (GH200 **1132528**; kept with device DIIS)
 
 ## How to run
 
@@ -33,7 +23,7 @@ args: {
   "staff_count": 3,
   "max_waves": 6,
   "target_branch": "dev",
-  "theme": "High-value residual only: multi-k device H assemble / H residency / energy / payload / STVnl or device-product-residency / device-h-assemble / smear-stress / spin-stress; no dual-gate matrix explosion; no soft tols"
+  "theme": "High-value residual only: kpoint-h-residency / kpoint-device-stvnl / spin-stress / multigrid-si-gate / device-stress; prefer product lift; NO dual-gate matrix explosion; no soft tols"
 }
 agent_budget: 384+
 ```
@@ -42,10 +32,8 @@ agent_budget: 384+
 
 | Track | Residual |
 | --- | --- |
-| **cuda GPW (staffed now)** | multi-k **`kpoint-h-assemble`** tip-green (Merge) |
-| **cuda GPW (next after)** | `kpoint-h-residency` / `kpoint-device-energy` / `kpoint-payload-device` / `kpoint-p-residency` / `kpoint-device-stvnl`; Si/water multi-k gates; device-h-assemble; uks-h-assemble; water σ; device-stress; MG/UKS F/σ |
-| **cuda PW (staffed now)** | **`smear-stress`** tip-green GH200 **1132266** / **1133111** (Merge) |
-| **cuda PW (next after)** | `smear-stress-al2-gate`; smear-PBE; spin-stress; multi-k PBE F/σ; spin+smear; kmesh-smear F/σ |
+| **cuda GPW** | multi-k H residency / payload / STVnl / P residency; Si production gates; device-stress; MG/UKS F/σ |
+| **cuda PW** | spin-stress; smear-stress multi-atom gate; spin+smear; multi-k PBE F/σ |
 | **cpu** | MG MAIN **2.33×** pin-unsafe blocked |
 
 **Contract:** [.claude/notes/cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)

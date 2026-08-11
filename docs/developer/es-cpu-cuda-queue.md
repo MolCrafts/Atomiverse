@@ -1206,19 +1206,8 @@ uks-device-diis/weight-pack/smear-forces/**kpoint-device-collocate**/
 
 ## in_progress
 
-**Harness wave 6 residual** (parent `dev` @ `5319a282` after
-`kpoint-device-diis` land; capacity **2/3**; Merge owns remaining tips):
+*(empty — smear-stress + kpoint-h-assemble landed on `dev`)*
 
-- [~] `cuda-pw-smear-stress` | **P2** | method=cuda | tip
-  `wf/cuda-pw-smear-stress` @ `4c9a7b62` (feat `098f690d`) — GH200 **1132266**
-  / re-verify **1133111** max\|Δσ\|=**7.25e-11** eV/Å³ (tol 5e-2; Al FCC
-  **1-atom** FD Mermin); units+reg PASS; **perf_exempt**. Production
-  multi-atom residual → `smear-stress-al2-gate`.
-- [~] `cuda-gpw-kpoint-h-assemble` | **P3** | method=cuda | tip
-  `wf/cuda-gpw-kpoint-h-assemble` @ `5b64229b` — GH200 **1132528**
-  \|dE\|=**3.397e-14** Ha (H₂ k=2×1×1). Residual after land →
-  `kpoint-h-residency`. Spec-lite:
-  `.claude/specs/cuda-gpw-kpoint-h-assemble/`.
 
 ## blocked
 
@@ -1228,6 +1217,12 @@ uks-device-diis/weight-pack/smear-forces/**kpoint-device-collocate**/
   fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 
 ## done
+
+Post-opt-4 land 2026-08-11 (`dev` after tip merges):
+
+- [x] `cuda-pw-smear-stress` | **P2** Restricted metallic-smear Nielsen–Martin cell stress | GH200 **1133111** / **1132266** max\|Δσ\|=**7.25e-11** eV/Å³ (Al 1-atom FD) | merge smear-stress / feat `098f690d`
+- [x] `cuda-gpw-kpoint-h-assemble` | **P3** Multi-k device H_k=H0+Vmat fuse mid-SCF | GH200 **1132528** \|dE\|=**3.397e-14** Ha | merge `0ef79db9` / feat `5b64229b` | keep kpoint-device-diis
+
 
 Harness wave 6 land 2026-08-11 (`dev` @ `5319a282` after kpoint-device-diis):
 
