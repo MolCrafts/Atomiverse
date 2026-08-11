@@ -56,6 +56,11 @@ and \(\max |F^{\mathrm{cpu}}| > 0.05\) eV/Å (non-vacuous).
 eV/Å; same \(\max|F|=12.491950\) eV/Å; energy \(-56.33636038\) Ry, iter=10;
 `test_cuda_pw_force_local` + dual-gate PASS; BUILD/UNIT/REG_RC=0.
 
+**Re-verify GH200 job 1130196** (tip rebased onto Assign wave-5 `dev`
+@ `7f8da1f0`, HEAD `e927d822`): \(\max|\Delta F| = 1.56\times 10^{-12}\)
+eV/Å; same \(\max|F|=12.491950\) eV/Å; energy \(-56.33636038\) Ry, iter=10;
+`test_cuda_pw_force_local` + dual-gate PASS; BUILD/UNIT/REG_RC=0.
+
 ## Dual gate
 
 | Gate | Criterion |
