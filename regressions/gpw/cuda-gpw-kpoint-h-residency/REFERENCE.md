@@ -35,9 +35,9 @@ payload re-diag.
 
 | | |
 | --- | --- |
-| Job | **1136613** (n30 aarch64 GH200) |
-| HEAD | `wf/cuda-gpw-kpoint-h-residency` rebased on GapCensus wave-17 `dev` @ `0f56cbca` (STVnl on base); dual-gate binary at feat tip (REFERENCE evidence amend only after green) |
-| Unit | `test_cuda_gpw_kpoint_h_residency` + hold `test_cuda_gpw_kpoint_diis_eigen` / `test_cuda_gpw_kpoint_h_assemble` / `test_cuda_gpw_kpoints` **PASS** |
-| Dual-gate | `E_cpu = E_cuda = -1.040581477089` Ha; `\|dE\| = 3.264e-14` Ha; nk=2; both conv 5 iters; parent `reg_cuda-gpw-kpoints` hold `\|dE\|=3.153e-14` |
-| Log | `.claude/cuda-gpw-kpoint-h-residency-1136613.out` → `GPU_JOB_OK` |
-| Prior tip | **1133843** \|dE\|=**3.442e-14** on pre-STVnl base (superseded by re-verify) |
+| Job | **1142864** (n505 aarch64 GH200) |
+| HEAD | `wf/cuda-gpw-kpoint-h-residency` @ `068d7784` rebased on GapCensus wave-18 `dev` @ `7f131816` (STVnl + spin-stress on base) |
+| Unit | `test_cuda_gpw_kpoint_h_residency` + hold `test_cuda_gpw_kpoint_diis_eigen` / `test_cuda_gpw_kpoint_h_assemble` / `test_cuda_gpw_kpoints` **PASS** (4/4) |
+| Dual-gate | `E_cpu = E_cuda = -1.040581477089` Ha; `\|dE\| = 3.331e-14` Ha; nk=2; both conv 5 iters |
+| Log | `.claude/cuda-gpw-kpoint-h-residency-1142864.out` → `GPU_JOB_OK` / `BUILDS_WIPED` |
+| Prior tip | **1136613** \|dE\|=**3.264e-14** on wave-17 base (superseded); **1133843** \|dE\|=**3.442e-14** pre-STVnl (superseded) |
