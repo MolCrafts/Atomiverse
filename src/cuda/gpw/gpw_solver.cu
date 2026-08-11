@@ -9,11 +9,13 @@
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS device product KS (`KsChainDevice` + PBC min-image
 ///     collocate/integrate — cuda-gpw-product-collocate-pbc) + device
-///     H=H0+V / DIIS; multigrid RKS mid-SCF uses **device monom multi-level**
-///     pack→`KsMultiGridChainDevice`→scatter with collint-faithful group-max
-///     window mag + eps_win (cuda-gpw-multigrid-device-ks; kills host collint
-///     mid-path P/V DH). Optional `ATV_GPW_CUDA_HOST_MG=1` forces host collint
-///     multi-level twin for debug; collinear UKS `KsChainDevice::run_uks`;
+///     H=H0+V / DIIS; multigrid RKS mid-SCF defaults to **host collint
+///     multi-level** (energy dual-gate green) — monom device
+///     pack→`KsMultiGridChainDevice`→scatter with group-max mag + per-level
+///     eps is opt-in via `ATV_GPW_CUDA_DEVICE_MG=1` (cuda-gpw-multigrid-device-ks:
+///     best GH200 \|dE\|=**7.6e-5** still > 5e-5; residual needs device collint
+///     / cmax refine, not pin-unsafe eps tuning); collinear UKS
+///     `KsChainDevice::run_uks`;
 ///     multi-k **device phased STVnl** via `KpointStvnlDevice`
 ///     (cuda-gpw-kpoint-device-stvnl; S/T device; Vnl zero or host-KB H2D);
 ///     multi-k **device χ^k density collocate** via
@@ -1767,14 +1769,14 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                 result_.v_es = std::move(v_es);
             }
         } else {
-            // Multigrid product KS: default device monom multi-level
-            // pack→KsMultiGridChain→scatter with collint-faithful group-max
-            // window mag + eps_win (cuda-gpw-multigrid-device-ks). Optional
-            // ATV_GPW_CUDA_HOST_MG=1 forces host collint multi-level twin
-            // (mid-path P D2H + V H2D — debug only; iron-law defect).
-            const bool force_host_mg =
-                std::getenv("ATV_GPW_CUDA_HOST_MG") != nullptr;
-            if (force_host_mg) {
+            // Multigrid product KS: default host collint multi-level (energy
+            // dual-gate green; mid-path P/V DH residual). Device monom
+            // pack→KsMultiGridChain→scatter with group-max mag + per-level
+            // eps is opt-in ATV_GPW_CUDA_DEVICE_MG=1 — GH200 best \|dE\|=7.6e-5
+            // still > 5e-5 (cuda-gpw-multigrid-device-ks; needs device collint).
+            const bool force_device_mg =
+                std::getenv("ATV_GPW_CUDA_DEVICE_MG") != nullptr;
+            if (!force_device_mg) {
                 RealMatrix P_host = xt::zeros<double>({nb, nb});
                 // d_P is column-major (xtensor RealMatrix / AoDiis).
                 check_cuda(cudaMemcpyAsync(P_host.data(), d_P_use, mat_bytes,

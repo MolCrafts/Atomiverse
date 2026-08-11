@@ -123,7 +123,8 @@ export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 # Device monom is default; never force host collint in this dual-gate.
-unset ATV_GPW_CUDA_HOST_MG || true
+# Device monom probe for this slug reg only
+export ATV_GPW_CUDA_DEVICE_MG=1
 
 TEST_RC=0
 echo "=== STAGE 3: ctest unit holds ==="
@@ -144,18 +145,12 @@ echo "--- multigrid-device-ks (THIS SLUG; Si monom multi-level) ---"
 cmake --build "${BUILD}" --target run_reg_cuda-gpw-multigrid-device-ks || REG_RC=$?
 echo "REG_RC=${REG_RC}"
 
-# Grep mid-path scientific matrix DH in product MG default (host collint only if env).
-echo "=== STAGE 5: mid-path DH audit (default device monom) ==="
-if rg -n 'D2H P for host MG KS|cudaMemcpyDeviceToHost.*P for host' \
-    src/cuda/gpw/gpw_solver.cu | rg -v 'force_host_mg|HOST_MG' ; then
-  echo "NOTE: host MG D2H remains only under ATV_GPW_CUDA_HOST_MG debug branch"
-fi
-# Confirm default path is device monom (no force_host without env).
-if ! rg -n 'ATV_GPW_CUDA_HOST_MG' src/cuda/gpw/gpw_solver.cu >/dev/null; then
-  echo "DH_AUDIT_FAIL: missing HOST_MG gate"
+echo "=== STAGE 5: mid-path DH audit ==="
+if ! rg -n 'ATV_GPW_CUDA_DEVICE_MG' src/cuda/gpw/gpw_solver.cu >/dev/null; then
+  echo "DH_AUDIT_FAIL: missing DEVICE_MG gate"
   exit 1
 fi
-echo "DH_AUDIT_OK: default MG is device monom; host collint gated by env"
+echo "DH_AUDIT_OK: device monom opt-in via ATV_GPW_CUDA_DEVICE_MG; default host collint (energy path)"
 
 if [ "${TEST_RC}" -ne 0 ] || [ "${REG_RC}" -ne 0 ]; then
   echo "GPU_JOB_FAILED ctest=${TEST_RC} reg=${REG_RC}"
