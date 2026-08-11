@@ -3,8 +3,7 @@
 ///
 /// Hybrid composition (stated):
 ///   * host — STVnl / product-list build;
-///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k build (once),
-///     host `integrate_potential_k` (V→H_k; deeper slug kpoint-device-integrate),
+///     multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k build (once);
 ///     KDiis + complex Hermitian diagonalize;
 ///     force AO Pulay (W·dS, P·dT, P·dVnl) on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
@@ -12,7 +11,9 @@
 ///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
 ///     multi-k **device χ^k density collocate** via
 ///     `internal::KpointCollocateDevice` (cuda-gpw-kpoint-device-collocate)
-///     then `KsChainDevice::run_from_rho` (ρ resident; no mid-SCF H2D ρ);
+///     then `KsChainDevice::run_from_rho` (ρ resident; no mid-SCF H2D ρ) +
+///     **device χ^k V→H_k integrate** via `KpointIntegrateDevice`
+///     (cuda-gpw-kpoint-device-integrate; V_eff stays resident mid-SCF);
 ///     **Γ mid-SCF Pulay DIIS + cuSOLVER eigen + density** via
 ///     `internal::AoDiisEigenDevice` — RKS one channel
 ///     (cuda-gpw-device-diis-eigen); UKS dual α/β
@@ -40,6 +41,7 @@
 #include "atomiverse/cuda/gpw/internal/ao_diis_eigen.cuh"
 #include "atomiverse/cuda/gpw/internal/gpw_forces.cuh"
 #include "atomiverse/cuda/gpw/internal/kpoint_collocate.cuh"
+#include "atomiverse/cuda/gpw/internal/kpoint_integrate.cuh"
 #include "atomiverse/cuda/gpw/internal/ks_chain.cuh"
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 #include "atomiverse/cuda/gpw/internal/product_weight_pack.cuh"
@@ -92,6 +94,7 @@ using internal::DevicePrimRef;
 using internal::DeviceProduct;
 using internal::DeviceProductGeom;
 using internal::KpointCollocateDevice;
+using internal::KpointIntegrateDevice;
 using internal::KsChainDevice;
 using internal::KsChainEnergies;
 using internal::KsMultiGridChainDevice;
@@ -552,12 +555,12 @@ struct DeviceBuf {
     }
 };
 
-// ── Multi-k RKS DIIS (cuda-gpw-kpoints + kpoint-device-collocate) ───────────
+// ── Multi-k RKS DIIS (kpoints + device collocate + device integrate) ─────
 // Host phased STVnl + χ^k build once; device mid-SCF density collocate via
 // KpointCollocateDevice (no host collocate_density_k / H2D ρ); device
-// Poisson+XC via KsChainDevice::run_from_rho; host integrate_potential_k
-// (V→H_k residual → kpoint-device-integrate). Fixed occupations, single-grid,
-// no smear / OT / MG / UKS (validated by the caller).
+// Poisson+XC via KsChainDevice::run_from_rho; device V→H_k via
+// KpointIntegrateDevice (V_eff resident mid-SCF). Fixed occupations,
+// single-grid, no smear / OT / MG / UKS (validated by the caller).
 
 using cpu::gpw::internal::CplxMatrix;
 using cpu::gpw::internal::KDiis;
@@ -604,7 +607,7 @@ double ctrace_k(const CplxMatrix& P, const CplxMatrix& M, int nb) {
     return s;
 }
 
-/// Multi-k closed-shell RKS DIIS energy (device ρ collocate + device KS).
+/// Multi-k closed-shell RKS DIIS energy (device ρ collocate + KS + V→H_k).
 GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
                                const GpwDft& cfg) {
     const std::vector<GridBasisFunction> basis = flatten_basis(atoms);
@@ -736,6 +739,23 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     const bool use_diis = cfg.diis_depth > 0;
     KDiis diis(use_diis ? cfg.diis_depth : 1, weights);
 
+    // Device χ^k integrate: upload once; mid-SCF keeps V_eff resident
+    // (cuda-gpw-kpoint-device-integrate). Host collocate residual stays on
+    // kpoint-device-collocate.
+    KpointIntegrateDevice kint;
+    kint.build(stream, nb, npts, nk);
+    for (int ik = 0; ik < nk; ++ik)
+        kint.upload_chi(ik, kbg.chi[static_cast<std::size_t>(ik)].data());
+    check_cuda(cudaStreamSynchronize(stream), "sync multi-k chi H2D");
+
+    auto integrate_Vg_device = [&](int ik) -> CplxMatrix {
+        kint.integrate(ks.d_veff(), kbg.weight, ik);
+        CplxMatrix Vg = xt::zeros<Cplx>({nb, nb});
+        // Row-major CplxMatrix: data()[u*nb+t] == V(u,t).
+        kint.download_Vmat(Vg.data());
+        return Vg;
+    };
+
     GpwResult res;
     res.n_kpts = nk;
     res.n_kpts_local = nk;
@@ -763,27 +783,26 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
             d_rho, dev.d_n_ion, dev.d_v_loc, /*d_prods=*/nullptr,
             /*nprod=*/0, /*d_acc=*/nullptr, kxc);
 
-        std::vector<double> veff(static_cast<std::size_t>(npts));
-        check_cuda(cudaMemcpyAsync(veff.data(), ks.d_veff(), bytes,
-                                   cudaMemcpyDeviceToHost, stream),
-                   "D2H veff multi-k");
+        // Mid-SCF: V_eff stays on device; integrate χ^k† V χ^k → V_μν^k.
+        // Final store_grids still D2Hs V_eff/V_es for force free-fn reuse.
         if (store_grids) {
+            std::vector<double> veff(static_cast<std::size_t>(npts));
             std::vector<double> v_es(static_cast<std::size_t>(npts));
+            check_cuda(cudaMemcpyAsync(veff.data(), ks.d_veff(), bytes,
+                                       cudaMemcpyDeviceToHost, stream),
+                       "D2H veff multi-k final");
             check_cuda(cudaMemcpyAsync(v_es.data(), ks.d_v_es(), bytes,
                                        cudaMemcpyDeviceToHost, stream),
-                       "D2H v_es multi-k");
-            check_cuda(cudaStreamSynchronize(stream), "sync multi-k veff");
+                       "D2H v_es multi-k final");
+            check_cuda(cudaStreamSynchronize(stream), "sync multi-k final grids");
+            last_veff = std::move(veff);
             last_v_es = std::move(v_es);
-        } else {
-            check_cuda(cudaStreamSynchronize(stream), "sync multi-k veff");
         }
-        last_veff = std::move(veff);
 
         double e_kin = 0.0, e_nl = 0.0;
         for (int ik = 0; ik < nk; ++ik) {
             const double wk = weights[static_cast<std::size_t>(ik)];
-            const CplxMatrix Vg = cpu::gpw::internal::integrate_potential_k(
-                kbg, ik, last_veff);
+            const CplxMatrix Vg = integrate_Vg_device(ik);
             H_k[static_cast<std::size_t>(ik)] =
                 T_k[static_cast<std::size_t>(ik)]
                 + Vnl_k[static_cast<std::size_t>(ik)] + Vg;
@@ -820,9 +839,9 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
             const auto& kp = kpts[static_cast<std::size_t>(ik)];
             res.k_frac.push_back({kp.frac[0], kp.frac[1], kp.frac[2]});
             res.k_weights.push_back(kp.weight);
-            // Rebuild H from last_veff so payload matches final density.
-            const CplxMatrix Vg = cpu::gpw::internal::integrate_potential_k(
-                kbg, ik, last_veff);
+            // Rebuild H from device-resident last V_eff so payload matches
+            // final density (same integrate as mid-SCF).
+            const CplxMatrix Vg = integrate_Vg_device(ik);
             const CplxMatrix Hfull = T_k[static_cast<std::size_t>(ik)]
                                      + Vnl_k[static_cast<std::size_t>(ik)]
                                      + Vg;
