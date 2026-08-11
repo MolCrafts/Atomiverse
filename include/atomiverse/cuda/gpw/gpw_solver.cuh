@@ -4,24 +4,29 @@
 /// Public twin of `cpu::gpw::GpwDft` for the **landed product slice**:
 /// Γ-point DIIS RKS (Padé LDA or PBE-GGA) with single-grid (`ngrids==1`) **or**
 /// REL_CUTOFF multigrid (`ngrids>1` + `rel_cutoff>0`), **or collinear UKS
-/// (Padé LSD, single-grid only)**, periodic Poisson. Parameters are public
-/// members (no `*Config` bag, no `make_*` factory). Stage footholds under
-/// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
+/// (Padé LSD, single-grid only)**, **or multi-k RKS DIIS** (single-grid,
+/// Monkhorst–Pack / explicit list; host phased STVnl + χ^k, device Poisson/XC),
+/// periodic Poisson. Parameters are public members (no `*Config` bag, no
+/// `make_*` factory). Stage footholds under `cuda/gpw/internal/` are composed
+/// inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
 ///   * host — STVnl / product-list build / P→weight pack / acc scatter;
-///     UKS host DIIS+eigen; force AO Pulay (W·dS / P·dT / P·dVnl)
+///     UKS host DIIS+eigen; multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\),
+///     χ^k collocate/integrate, KDiis + complex Hermitian diagonalize;
+///     force AO Pulay (W·dS / P·dT / P·dVnl) on Γ free-fn path
 ///   * device — product collocate + KS + product integrate via
 ///     `internal::KsChainDevice::run` (RKS single-grid),
 ///     `internal::KsMultiGridChainDevice::run` (RKS multigrid: per-level
 ///     collocate, spectral prolong, fine Poisson/XC, spectral restrict,
-///     per-level integrate), or `KsChainDevice::run_uks` (collinear UKS;
-///     dual ρ → Poisson(total) → Padé LSD → dual V_eff → dual integrate).
+///     per-level integrate), `KsChainDevice::run_uks` (collinear UKS;
+///     dual ρ → Poisson(total) → Padé LSD → dual V_eff → dual integrate),
+///     or `KsChainDevice::run_from_rho` (multi-k: host ρ → device Poisson/XC).
 ///     RKS mid-SCF Pulay DIIS + cuSOLVER dense eigen + density via
 ///     `internal::AoDiisEigenDevice` (cuda-gpw-device-diis-eigen).
-///     Mid-SCF does not H2D ρ or D2H V_eff for H.
+///     Mid-SCF does not H2D ρ or D2H V_eff for H on the Γ product path.
 ///     Forces (Γ RKS single-grid first cut): device grid V_eff Pulay + ionic
-///     HF + local-PP HF (UKS / multigrid force free-fns remain fail-closed).
+///     HF + local-PP HF (UKS / multigrid / multi-k force free-fns fail-closed).
 ///     Product SCF owns a non-default CUDA stream for mid-SCF transfers
 ///     and KS chain work (default stream is not used for the SCF body).
 ///
@@ -33,6 +38,7 @@
 ///   m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
 ///   m.cutoff_ry = 100.0;
 ///   m.n_alpha = 2; m.n_beta = 0;   // or n_occ = 1 for RKS
+///   m.k_mesh[0] = 2;               // multi-k RKS (optional)
 ///   m.xc = cpu::gpw::XcKind::PADE;
 ///   m.build(atoms);
 ///   const auto& res = m.run(atoms);   // energy [Hartree]
@@ -61,8 +67,9 @@ using GpwAtom = ::ATV::cpu::gpw::GpwAtom;
 ///        `last_result`.
 ///
 /// Product slice: Γ DIIS RKS (`n_occ`, PADE/PBE, single grid or REL_CUTOFF
-/// multigrid) or collinear UKS (`n_alpha`/`n_beta`, PADE LSD first cut,
-/// single grid only), periodic, fixed occupations. Move-only.
+/// multigrid), collinear UKS (`n_alpha`/`n_beta`, PADE LSD, single grid), or
+/// multi-k RKS DIIS (`k_mesh` / `k_points`, single grid, fixed occ), periodic.
+/// Move-only.
 class GpwDft {
   public:
     // ── Method parameters (mirror CPU GpwDft product-slice members) ──────
@@ -79,12 +86,20 @@ class GpwDft {
     double mix = 0.5;           ///< linear density mixing when diis_depth==0.
     int diis_depth = 6;         ///< Pulay DIIS history depth.
     double lindep_threshold = 1e-8; ///< S-eigenvalue keep threshold.
-    double level_shift = 0.0;       ///< virtual level shift [Hartree].
+    double level_shift = 0.0;       ///< virtual level shift [Hartree] (Γ path).
     XcKind xc = XcKind::PADE;       ///< RKS: PADE or PBE; UKS: PADE only (first cut).
     bool nonperiodic = false;       ///< MT Poisson — not on device (throws).
     bool local_pp_on_grid = true;   ///< collocate GTH local SR PP on grid.
     bool use_ot = false;            ///< OT — not on device product (throws).
-    int k_mesh[3] = {1, 1, 1};      ///< must stay Γ for product slice.
+    /// @brief Monkhorst–Pack subdivisions (CP2K convention). `{1,1,1}` is Γ
+    ///        product path; any \(N_d>1\) selects multi-k RKS DIIS (single-grid).
+    int k_mesh[3] = {1, 1, 1};
+    /// @brief Explicit fractional k list (overrides `k_mesh` when non-empty).
+    std::vector<std::array<double, 3>> k_points;
+    /// @brief Weights for `k_points` (must match length; Σ = 1).
+    std::vector<double> k_point_weights;
+    /// @brief Time-reversal fold of the Monkhorst–Pack mesh (CPU twin default).
+    bool k_time_reversal = true;
 
     GpwDft() = default;
     ~GpwDft() = default;
@@ -102,17 +117,22 @@ class GpwDft {
     /// @return true when configured for UKS (`n_alpha+n_beta>0`).
     bool is_uks() const { return n_alpha + n_beta > 0; }
 
-    /// @brief Γ DIIS SCF at the given geometry (device KS, single- or multi-grid).
+    /// @return true when multi-k sampling is requested (non-Γ mesh or explicit list).
+    bool uses_kpath() const {
+        return !k_points.empty() || k_mesh[0] != 1 || k_mesh[1] != 1
+               || k_mesh[2] != 1;
+    }
+
+    /// @brief DIIS SCF at the given geometry (device KS).
     ///
-    /// RKS when `n_occ` set; collinear UKS when `n_alpha`/`n_beta` set.
-    /// Re-entrant: geometry-dependent structures are rebuilt per call.
-    /// Multigrid (`ngrids>1 && rel_cutoff>0`) is RKS-only: collocates products
-    /// per level, prolongs to the fine grid for Poisson/XC, restricts V_eff,
-    /// and integrates per level — twin of CPU `multigrid_collocate_rho` /
-    /// integrate. UKS requires single-grid.
+    /// RKS when `n_occ` set; collinear UKS when `n_alpha`/`n_beta` set;
+    /// multi-k RKS when `uses_kpath()`. Re-entrant: geometry-dependent
+    /// structures are rebuilt per call. Multigrid (`ngrids>1 && rel_cutoff>0`)
+    /// is Γ RKS-only. UKS and multi-k require single-grid. Multi-k energy:
+    /// host χ^k density + device `run_from_rho` Poisson/XC.
     /// @param atoms Atom set at the current geometry [Bohr].
-    /// @param guess_C Optional warm-start MO coefficients (nb × nb).
-    /// @param guess_P Optional initial density (RKS closed-shell, or UKS α).
+    /// @param guess_C Optional warm-start MO coefficients (nb × nb) — Γ only.
+    /// @param guess_P Optional initial density (RKS closed-shell, or UKS α) — Γ.
     /// @param guess_P_beta Optional UKS β density (required with `guess_P` on UKS).
     /// @return Owned result (valid until the next `run()`).
     /// @throws std::logic_error when called before `build()`.

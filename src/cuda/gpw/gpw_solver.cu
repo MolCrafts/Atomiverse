@@ -1,12 +1,15 @@
 /// @file cuda/gpw/gpw_solver.cu
-/// @brief `cuda::gpw::GpwDft` — product slice (Γ RKS/UKS DIIS + device KS).
+/// @brief `cuda::gpw::GpwDft` — product slice (Γ RKS/UKS + multi-k RKS DIIS).
 ///
 /// Hybrid composition (stated):
 ///   * host — STVnl / product-list build / P→weight pack / acc scatter;
-///     UKS host DIIS+eigen; force AO Pulay (W·dS, P·dT, P·dVnl)
+///     UKS host DIIS+eigen; multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\),
+///     χ^k collocate/integrate, KDiis + complex Hermitian diagonalize;
+///     force AO Pulay (W·dS, P·dT, P·dVnl) on Γ free-fn path
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS `KsChainDevice::run`; multigrid RKS
 ///     `KsMultiGridChainDevice::run`; collinear UKS `KsChainDevice::run_uks`;
+///     multi-k `KsChainDevice::run_from_rho` (host ρ → device Poisson/XC);
 ///     **RKS mid-SCF Pulay DIIS + cuSOLVER eigen + density** via
 ///     `internal::AoDiisEigenDevice` (cuda-gpw-device-diis-eigen);
 ///     force grid product (V_eff·dχ·Pχ + ionic HF + local-PP HF) on Γ RKS
@@ -20,6 +23,7 @@
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/diis.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
+#include "atomiverse/cpu/gpw/internal/kpoints.h"
 #include "atomiverse/cpu/gpw/internal/local_pp.h"
 #include "atomiverse/cpu/gpw/internal/multigrid.h"
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
@@ -34,6 +38,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <cuda_runtime.h>
@@ -577,6 +582,346 @@ RealMatrix scatter_product_acc(const std::vector<GridProduct>& prods,
     return V;
 }
 
+// ── Multi-k RKS DIIS (cuda-gpw-kpoints) ───────────────────────────────────
+// Host phased STVnl + χ^k collocate/integrate (CPU kpoints internals);
+// device Poisson+XC via KsChainDevice::run_from_rho. Fixed occupations,
+// single-grid, no smear / OT / MG / UKS (validated by the caller).
+
+using cpu::gpw::internal::CplxMatrix;
+using cpu::gpw::internal::KDiis;
+using cpu::gpw::internal::KOrth;
+using cpu::gpw::internal::KPoint;
+using cpu::gpw::internal::KpointBasisGrid;
+using Cplx = std::complex<double>;
+
+std::vector<KPoint> sampled_kpoints_cuda(const GpwDft& cfg) {
+    std::vector<KPoint> kpts;
+    if (!cfg.k_points.empty()) {
+        for (std::size_t i = 0; i < cfg.k_points.size(); ++i) {
+            KPoint kp;
+            kp.frac[0] = cfg.k_points[i][0];
+            kp.frac[1] = cfg.k_points[i][1];
+            kp.frac[2] = cfg.k_points[i][2];
+            kp.weight = cfg.k_point_weights[i];
+            kpts.push_back(kp);
+        }
+        return kpts;
+    }
+    return cpu::gpw::internal::monkhorst_pack(cfg.k_mesh, cfg.k_time_reversal);
+}
+
+CplxMatrix density_from_fixed_k(const CplxMatrix& C, int n_occ, int nb) {
+    CplxMatrix P = xt::zeros<Cplx>({nb, nb});
+    const int m = static_cast<int>(C.shape(1));
+    const int nfill = std::min(m, n_occ);
+    for (int o = 0; o < nfill; ++o) {
+        for (int i = 0; i < nb; ++i) {
+            const Cplx ci = 2.0 * C(i, o);
+            for (int j = 0; j < nb; ++j)
+                P(i, j) += ci * std::conj(C(j, o));
+        }
+    }
+    return P;
+}
+
+double ctrace_k(const CplxMatrix& P, const CplxMatrix& M, int nb) {
+    double s = 0.0;
+    for (int i = 0; i < nb; ++i)
+        for (int j = 0; j < nb; ++j)
+            s += (P(i, j) * M(j, i)).real();
+    return s;
+}
+
+/// Multi-k closed-shell RKS DIIS energy (device KS from host ρ).
+GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
+                               const GpwDft& cfg) {
+    const std::vector<GridBasisFunction> basis = flatten_basis(atoms);
+    const int nb = static_cast<int>(basis.size());
+    if (nb < 1)
+        throw std::invalid_argument(
+            "cuda::gpw::GpwDft::run: empty AO basis (multi-k)");
+
+    std::vector<double> radii(static_cast<std::size_t>(nb), 0.0);
+    double rmax = 0.0;
+    for (int i = 0; i < nb; ++i) {
+        radii[static_cast<std::size_t>(i)] =
+            basis_function_radius(basis[static_cast<std::size_t>(i)],
+                                  cfg.eps_default);
+        rmax = std::max(rmax, radii[static_cast<std::size_t>(i)]);
+    }
+    int mimg[3] = {0, 0, 0};
+    pair_image_counts(cfg.cell, /*periodic=*/true, 2.0 * rmax, mimg);
+
+    const std::vector<KPoint> kpts = sampled_kpoints_cuda(cfg);
+    const int nk = static_cast<int>(kpts.size());
+    if (nk < 1)
+        throw std::runtime_error(
+            "cuda::gpw::GpwDft: multi-k sampling produced zero k-points");
+
+    std::vector<double> weights(static_cast<std::size_t>(nk));
+    for (int ik = 0; ik < nk; ++ik)
+        weights[static_cast<std::size_t>(ik)] =
+            kpts[static_cast<std::size_t>(ik)].weight;
+
+    // Phased analytic matrices (host; same CPU kpoints internals as twin).
+    std::vector<CplxMatrix> S_k, T_k;
+    cpu::gpw::internal::build_overlap_kinetic_k(
+        basis, radii, cfg.cell, mimg, kBuildScreen, kpts, S_k, T_k);
+    std::vector<CplxMatrix> Vnl_k(static_cast<std::size_t>(nk),
+                                  CplxMatrix(xt::zeros<Cplx>({nb, nb})));
+    cpu::gpw::internal::add_nonlocal_kb_k(Vnl_k, basis, atoms, radii, cfg.cell,
+                                          mimg, kBuildScreen, kpts);
+
+    std::vector<KOrth> orth;
+    orth.reserve(static_cast<std::size_t>(nk));
+    for (int ik = 0; ik < nk; ++ik) {
+        orth.emplace_back(S_k[static_cast<std::size_t>(ik)],
+                          cfg.lindep_threshold);
+        const int m = static_cast<int>(orth.back().X.shape(1));
+        if (cfg.n_occ > m)
+            throw std::runtime_error(
+                "cuda::gpw::GpwDft multi-k: n_occ=" + std::to_string(cfg.n_occ)
+                + " exceeds the " + std::to_string(m)
+                + " independent basis directions at k #" + std::to_string(ik));
+    }
+
+    // Single-grid density grid + ion / local-PP (same Γ setup).
+    const MultiGrid mg = make_multigrid(cfg.cell, cfg.cutoff_ry, /*nlev=*/1,
+                                        cfg.cutoff_ry);
+    if (mg.levels.empty())
+        throw std::runtime_error(
+            "cuda::gpw::GpwDft multi-k: make_multigrid returned empty levels");
+    const UniformGrid& grid = mg.levels[0];
+    for (int d = 0; d < 3; ++d)
+        if (grid.n[d] % 2 != 0)
+            throw std::runtime_error(
+                "cuda::gpw::GpwDft multi-k: grid axis " + std::to_string(d)
+                + " has odd n=" + std::to_string(grid.n[d])
+                + " (device Poisson requires even n)");
+
+    const std::vector<double> n_ion =
+        ionic_density(grid, atoms, /*periodic=*/true);
+    double e_self = 0.0;
+    for (const auto& a : atoms)
+        e_self += core_self_energy(a);
+    const std::vector<double> v_locsr =
+        local_pp_grid(grid, atoms, /*periodic=*/true);
+
+    const KpointBasisGrid kbg = cpu::gpw::internal::build_kpoint_basis_grid(
+        grid, basis, kpts, cfg.eps_default);
+
+    // Cold-start densities from H0_k = T_k + Vnl_k.
+    std::vector<CplxMatrix> P_k(static_cast<std::size_t>(nk));
+    for (int ik = 0; ik < nk; ++ik) {
+        const CplxMatrix H0k = T_k[static_cast<std::size_t>(ik)]
+                               + Vnl_k[static_cast<std::size_t>(ik)];
+        auto [eps0, C0k] = cpu::gpw::internal::diagonalize_k(
+            H0k, orth[static_cast<std::size_t>(ik)]);
+        (void)eps0;
+        P_k[static_cast<std::size_t>(ik)] =
+            density_from_fixed_k(C0k, cfg.n_occ, nb);
+    }
+
+    ScfStream scf_stream;
+    const cudaStream_t stream = scf_stream;
+    const long npts = grid.npts();
+    const size_t bytes = static_cast<size_t>(npts) * sizeof(double);
+    DeviceKsBuffers dev;
+    dev.alloc_grids(npts);
+    check_cuda(cudaMemcpyAsync(dev.d_n_ion, n_ion.data(), bytes,
+                               cudaMemcpyHostToDevice, stream),
+               "H2D n_ion multi-k");
+    check_cuda(cudaMemcpyAsync(dev.d_v_loc, v_locsr.data(), bytes,
+                               cudaMemcpyHostToDevice, stream),
+               "H2D v_loc multi-k");
+    double* d_rho = nullptr;
+    check_cuda(cudaMalloc(&d_rho, bytes), "malloc d_rho multi-k");
+    // RAII for d_rho
+    struct RhoGuard {
+        double* p = nullptr;
+        ~RhoGuard() {
+            if (p)
+                cudaFree(p);
+        }
+    } rho_guard{d_rho};
+
+    KsChainDevice ks(to_coll(grid), stream);
+    const KsXcKind kxc = to_ks_xc(cfg.xc);
+    const bool use_diis = cfg.diis_depth > 0;
+    KDiis diis(use_diis ? cfg.diis_depth : 1, weights);
+
+    GpwResult res;
+    res.n_kpts = nk;
+    res.n_kpts_local = nk;
+    res.scf_kbg = std::make_shared<KpointBasisGrid>(kbg);
+    res.scf_cbg_valid = false;
+
+    std::vector<CplxMatrix> H_k(static_cast<std::size_t>(nk));
+    std::vector<double> last_veff;
+    std::vector<double> last_v_es;
+
+    auto collocate_rho = [&](const std::vector<CplxMatrix>& Pk) {
+        std::vector<double> rho(static_cast<std::size_t>(npts), 0.0);
+        for (int ik = 0; ik < nk; ++ik)
+            cpu::gpw::internal::collocate_density_k(
+                kbg, ik, Pk[static_cast<std::size_t>(ik)],
+                weights[static_cast<std::size_t>(ik)], rho);
+        return rho;
+    };
+
+    auto build_k_energy = [&](const std::vector<CplxMatrix>& Pk,
+                              bool store_grids) -> double {
+        const std::vector<double> rho = collocate_rho(Pk);
+        check_cuda(cudaMemcpyAsync(d_rho, rho.data(), bytes,
+                                   cudaMemcpyHostToDevice, stream),
+                   "H2D rho multi-k");
+        const KsChainEnergies e = ks.run_from_rho(
+            d_rho, dev.d_n_ion, dev.d_v_loc, /*d_prods=*/nullptr,
+            /*nprod=*/0, /*d_acc=*/nullptr, kxc);
+
+        std::vector<double> veff(static_cast<std::size_t>(npts));
+        check_cuda(cudaMemcpyAsync(veff.data(), ks.d_veff(), bytes,
+                                   cudaMemcpyDeviceToHost, stream),
+                   "D2H veff multi-k");
+        if (store_grids) {
+            std::vector<double> v_es(static_cast<std::size_t>(npts));
+            check_cuda(cudaMemcpyAsync(v_es.data(), ks.d_v_es(), bytes,
+                                       cudaMemcpyDeviceToHost, stream),
+                       "D2H v_es multi-k");
+            check_cuda(cudaStreamSynchronize(stream), "sync multi-k veff");
+            last_v_es = std::move(v_es);
+        } else {
+            check_cuda(cudaStreamSynchronize(stream), "sync multi-k veff");
+        }
+        last_veff = std::move(veff);
+
+        double e_kin = 0.0, e_nl = 0.0;
+        for (int ik = 0; ik < nk; ++ik) {
+            const double wk = weights[static_cast<std::size_t>(ik)];
+            const CplxMatrix Vg = cpu::gpw::internal::integrate_potential_k(
+                kbg, ik, last_veff);
+            H_k[static_cast<std::size_t>(ik)] =
+                T_k[static_cast<std::size_t>(ik)]
+                + Vnl_k[static_cast<std::size_t>(ik)] + Vg;
+            e_kin += wk
+                     * ctrace_k(Pk[static_cast<std::size_t>(ik)],
+                                T_k[static_cast<std::size_t>(ik)], nb);
+            e_nl += wk
+                    * ctrace_k(Pk[static_cast<std::size_t>(ik)],
+                               Vnl_k[static_cast<std::size_t>(ik)], nb);
+        }
+        res.e_kinetic = e_kin;
+        res.e_nonlocal = 0.0;
+        res.e_loc_sr = e_nl + e.e_locgrid;
+        res.e_es = e.e_hartree - e_self;
+        res.e_xc = e.e_xc;
+        if (store_grids) {
+            res.veff = last_veff;
+            res.v_es = last_v_es;
+        }
+        return res.e_kinetic + res.e_loc_sr + res.e_es + res.e_xc;
+    };
+
+    auto store_payload = [&]() {
+        res.k_frac.clear();
+        res.k_weights.clear();
+        res.eps_k.clear();
+        res.C_k.clear();
+        res.C_occ_k.clear();
+        res.P_k.clear();
+        res.C_k.reserve(static_cast<std::size_t>(nk));
+        res.C_occ_k.resize(static_cast<std::size_t>(nk));
+        res.P_k.resize(static_cast<std::size_t>(nk));
+        for (int ik = 0; ik < nk; ++ik) {
+            const auto& kp = kpts[static_cast<std::size_t>(ik)];
+            res.k_frac.push_back({kp.frac[0], kp.frac[1], kp.frac[2]});
+            res.k_weights.push_back(kp.weight);
+            // Rebuild H from last_veff so payload matches final density.
+            const CplxMatrix Vg = cpu::gpw::internal::integrate_potential_k(
+                kbg, ik, last_veff);
+            const CplxMatrix Hfull = T_k[static_cast<std::size_t>(ik)]
+                                     + Vnl_k[static_cast<std::size_t>(ik)]
+                                     + Vg;
+            auto [eps, C] = cpu::gpw::internal::diagonalize_k(
+                Hfull, orth[static_cast<std::size_t>(ik)]);
+            res.eps_k.push_back(eps);
+            res.C_k.push_back(cpu::linalg::CplxMatrix(C));
+            std::vector<Cplx> occ(static_cast<std::size_t>(nb)
+                                  * static_cast<std::size_t>(cfg.n_occ));
+            for (int mu = 0; mu < nb; ++mu)
+                for (int o = 0; o < cfg.n_occ; ++o)
+                    occ[static_cast<std::size_t>(mu) * cfg.n_occ
+                        + static_cast<std::size_t>(o)] = C(mu, o);
+            res.C_occ_k[static_cast<std::size_t>(ik)] = std::move(occ);
+            res.P_k[static_cast<std::size_t>(ik)] =
+                density_from_fixed_k(C, cfg.n_occ, nb);
+        }
+        res.n_elec_occ = 2.0 * static_cast<double>(cfg.n_occ);
+    };
+
+    if (cfg.max_iter == 0)
+        throw std::invalid_argument(
+            "cuda::gpw::GpwDft multi-k: max_iter==0 fixed-density path is not "
+            "on the first multi-k product slice — set max_iter>0");
+
+    double prev_energy = std::numeric_limits<double>::quiet_NaN();
+    bool conv = false;
+    int it = 0;
+    for (it = 0; it < cfg.max_iter; ++it) {
+        const double e_total = build_k_energy(P_k, /*store_grids=*/false);
+        res.e_total = e_total;
+
+        std::vector<CplxMatrix> err_k(static_cast<std::size_t>(nk));
+        double err_norm = 0.0;
+        for (int ik = 0; ik < nk; ++ik) {
+            err_k[static_cast<std::size_t>(ik)] =
+                cpu::gpw::internal::k_diis_error(
+                    H_k[static_cast<std::size_t>(ik)],
+                    P_k[static_cast<std::size_t>(ik)],
+                    S_k[static_cast<std::size_t>(ik)],
+                    orth[static_cast<std::size_t>(ik)].X);
+            for (const Cplx v : err_k[static_cast<std::size_t>(ik)])
+                err_norm = std::max(err_norm, std::abs(v));
+        }
+        const bool has_prev = !std::isnan(prev_energy);
+        const double dE = has_prev ? (e_total - prev_energy)
+                                   : std::numeric_limits<double>::infinity();
+        prev_energy = e_total;
+        if (has_prev && std::abs(dE) < cfg.tol && err_norm < kDiisErrTol) {
+            conv = true;
+            break;
+        }
+
+        std::vector<CplxMatrix> H_use = H_k;
+        if (use_diis)
+            H_use = diis.step(H_k, err_k);
+
+        for (int ik = 0; ik < nk; ++ik) {
+            auto [eps, C] = cpu::gpw::internal::diagonalize_k(
+                H_use[static_cast<std::size_t>(ik)],
+                orth[static_cast<std::size_t>(ik)]);
+            (void)eps;
+            CplxMatrix P_new = density_from_fixed_k(C, cfg.n_occ, nb);
+            if (use_diis)
+                P_k[static_cast<std::size_t>(ik)] = std::move(P_new);
+            else
+                P_k[static_cast<std::size_t>(ik)] =
+                    (1.0 - cfg.mix) * P_k[static_cast<std::size_t>(ik)]
+                    + cfg.mix * P_new;
+        }
+    }
+
+    // Final KS at the last density (energy pieces + V_eff for force follow-on).
+    {
+        const double e_final = build_k_energy(P_k, /*store_grids=*/true);
+        res.e_total = e_final;
+        store_payload();
+        res.converged = conv;
+        res.iters = conv ? (it + 1) : cfg.max_iter;
+    }
+    return res;
+}
+
 } // namespace
 
 void GpwDft::validate_slice_() const {
@@ -627,10 +972,31 @@ void GpwDft::validate_slice_() const {
             + std::to_string(ngrids) + ", rel_cutoff="
             + std::to_string(rel_cutoff)
             + "). Set rel_cutoff (CP2K REL_CUTOFF [Ry]) or ngrids=1.");
-    if (k_mesh[0] != 1 || k_mesh[1] != 1 || k_mesh[2] != 1)
+    // Multi-k RKS DIIS (cuda-gpw-kpoints): single-grid closed-shell only.
+    // Joint paths (UKS×k, MG×k) are deeper slugs.
+    if (k_points.size() != k_point_weights.size())
         throw std::invalid_argument(
-            "cuda::gpw::GpwDft: k-point sampling has no device product path "
-            "yet — keep k_mesh={1,1,1} (Γ) or use cpu::gpw::GpwDft.");
+            "cuda::gpw::GpwDft: k_points and k_point_weights must have the "
+            "same length (got " + std::to_string(k_points.size()) + " vs "
+            + std::to_string(k_point_weights.size()) + ")");
+    for (int d = 0; d < 3; ++d)
+        if (k_mesh[d] < 1)
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft: k_mesh subdivision must be >= 1 (axis "
+                + std::to_string(d) + " got " + std::to_string(k_mesh[d])
+                + ")");
+    if (uses_kpath()) {
+        if (is_uks())
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft: multi-k UKS is not on the device product "
+                "path yet — keep k_mesh={1,1,1} / empty k_points for UKS, or "
+                "use cpu::gpw::GpwDft (deeper slug cuda-gpw-uks-kpoints).");
+        if (ngrids > 1)
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft: multi-k multigrid is not on the device "
+                "product path yet — set ngrids=1 for multi-k RKS, or use "
+                "cpu::gpw::GpwDft (deeper slug cuda-gpw-multigrid-kpoints).");
+    }
     if (xc != XcKind::PADE && xc != XcKind::PBE)
         throw std::invalid_argument(
             "cuda::gpw::GpwDft: only XcKind::PADE and XcKind::PBE have device "
@@ -674,6 +1040,18 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     if (atoms.empty())
         throw std::invalid_argument(
             "cuda::gpw::GpwDft::run: empty atom set");
+
+    // Multi-k RKS DIIS branch (cuda-gpw-kpoints): host χ^k + device ρ→V_eff.
+    // Γ product path (guess_C/P) is not used here — multi-k cold-starts H0.
+    if (uses_kpath()) {
+        if (guess_C != nullptr || guess_P != nullptr || guess_P_beta != nullptr)
+            throw std::invalid_argument(
+                "cuda::gpw::GpwDft::run: multi-k path ignores real Γ "
+                "guess_C/guess_P; pass nullptr (complex P_k warm-start is a "
+                "deeper slug)");
+        result_ = run_cuda_kpoints_rks(atoms, *this);
+        return result_;
+    }
 
     result_ = GpwResult{};
     const bool periodic = true;
@@ -1417,11 +1795,16 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
         throw std::runtime_error(
             "cuda::gpw::gpw_forces_from_scf: SCF did not converge");
     // First-slice guards: RKS Γ single-grid local-on-grid device product.
-    // UKS / multigrid free-fn forces are deeper slugs (cpu twin still ok).
+    // UKS / multigrid / multi-k free-fn forces are deeper slugs.
     if (method.is_uks())
         throw std::invalid_argument(
             "cuda::gpw::gpw_forces_from_scf: UKS forces not on device first "
             "slice — use cpu::gpw::gpw_forces_from_scf");
+    if (method.uses_kpath())
+        throw std::invalid_argument(
+            "cuda::gpw::gpw_forces_from_scf: multi-k forces not on device "
+            "first slice — keep k_mesh={1,1,1} or use "
+            "cpu::gpw::gpw_forces_from_scf (deeper slug cuda-gpw-kpoint-forces)");
     if (method.ngrids != 1)
         throw std::invalid_argument(
             "cuda::gpw::gpw_forces_from_scf: multigrid forces not on device "
@@ -1786,10 +2169,11 @@ cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
 }
 
 void validate_stress_slice(const GpwDft& method) {
-    if (method.k_mesh[0] != 1 || method.k_mesh[1] != 1 || method.k_mesh[2] != 1)
+    if (method.uses_kpath())
         throw std::invalid_argument(
             "cuda::gpw::gpw_stress: multi-k stress has no device product path "
-            "yet — keep k_mesh={1,1,1} or use cpu::gpw::gpw_stress");
+            "yet — keep k_mesh={1,1,1} / empty k_points or use "
+            "cpu::gpw::gpw_stress (deeper slug cuda-gpw-kpoint-stress)");
 }
 
 } // namespace

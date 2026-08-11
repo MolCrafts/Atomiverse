@@ -1015,6 +1015,11 @@ if(ATV_BUILD_CUDA)
             target_link_libraries(test_cuda_gpw_diis_eigen PRIVATE CUDA::cufft
                                   CUDA::cublas CUDA::cusolver)
         endif()
+        # Multi-k RKS DIIS energy dual-gate (cuda-gpw-kpoints).
+        atv_add_test(test_cuda_gpw_kpoints cuda/gpw/test_gpw_kpoints.cu)
+        if(TARGET test_cuda_gpw_kpoints)
+            target_link_libraries(test_cuda_gpw_kpoints PRIVATE CUDA::cufft)
+        endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
