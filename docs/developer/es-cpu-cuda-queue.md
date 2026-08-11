@@ -120,15 +120,15 @@ promote**.
 | Claimed-but-ungated | water e2e tip (**1130066**); multi-k tip (`14368bf3` host ρ/KDiis); spin-forces tip (`b6b01efe`); path×PBE F/σ + **4-way**; **uks-device-diis** / **device-weight-pack** / **kpoint-device-*** / **kpoint-si-gate** / device STVnl/AO-Pulay/**stress**/handoffs/force-stream; PW multi-k PBE + **spin×kmesh×smear** |
 | Closed-shell PW stress | **LSDA + PBE** dual-gate **landed** (Γ-class coverage; multi-k F/σ + multi-k PBE energy open) |
 | Collinear spin-PBE energy | **landed** merge `118d3003` / GH200 **1124645** (Γ dual-gate only) |
-| Staffed tips (not base) | Keep `[~]`: `product-h2o-gate` (**`5731b00c`** / **1130066**) + `kpoints` (**`14368bf3`**) + `cuda-pw-spin-forces` (**`b6b01efe`**) |
+| Staffed tips (not base) | Keep `[~]` Assign wave 4 resume: `product-h2o-gate` (**`5731b00c`** / **1130066**) + `kpoints` (**`14368bf3`** / **1130067**) + `cuda-pw-spin-forces` (**`b6b01efe`** / **1130077**) |
 
-**Counts:** **pending_count=87**; **in_progress=3** (keep `[~]`:
-`product-h2o-gate` + `kpoints` + `cuda-pw-spin-forces`);
+**Counts:** **pending_count=87**; **in_progress=3** (Assign wave 4 resume
+`product-h2o-gate` + `kpoints` + `cuda-pw-spin-forces` — tip green, Merge);
 **cpu_pending=0**; **cuda_pending=87**;
 **gaps_remaining=91** (pending + in_progress + blocked MG fair-wall
 `mg-main-structural`). Queue **not** exhausted.
 **new_slugs_added=4** this GapCensus wave 4 (3 multi-k tip residual spine +
-1 multi-k Si production gate).
+1 multi-k Si production gate). **Assign wave 4 new_assigned=0**.
 
 ### CUDA — GPW product depth (product on base — staff depth)
 
@@ -824,13 +824,17 @@ Do **not** claim queue exhausted.
 
 ## in_progress
 
-**GapCensus wave 4** 2026-08-11 (parent `dev` @ `46d65433`): keep three
-`[~]` tips for Merge — no new Assign this census (census only). Tips
-advanced past wave-3 SHAs; multi-k tip residual spine staffed into
-**pending** as `kpoint-device-*` + `kpoint-si-gate`. Held deeper P2
-(`uks-device-diis` / `device-weight-pack` / `smear-forces` / `spin-stress`
-/ kmesh-*) for later Worktrees slots. Deferred PySCF specs out of this
-loop. **in_progress=3**.
+**Assign wave 4** 2026-08-11 (parent `dev` @ `3bfe1d14` post GapCensus
+wave 4): capacity **3/3** already filled by tip-green `[~]` not on base —
+**resume only**, **new_assigned=0**. Theme-for-NEW N/A (slots full; theme
+targets stress / multi-k energy / nondefault-stream / device-diis-eigen /
+spin-forces / smear-forces — first four landed or already staffed; no free
+slot for `smear-forces`). All three tips GH200 green → **Merge owns land**
+(rebase onto `3bfe1d14` if behind). Held pending P2 for later free slots:
+`uks-device-diis` / `device-weight-pack` / `smear-forces` / `spin-stress` /
+kmesh-* + wave-4 multi-k depth (`kpoint-device-*` / `kpoint-si-gate`). Do
+**not** re-staff landed collocate / MG / UKS / PBE / forces / stress /
+stream / DIIS-eigen. **in_progress=3**.
 
 - [~] `cuda-gpw-product-h2o-gate` | **P2** Water-class Γ RKS PADE dual-gate
   (production AO/grid after H₂ foothold; DIIS ascent clear) | track **cuda** |
@@ -842,15 +846,16 @@ loop. **in_progress=3**.
   `k_mesh=={1,1,1}` reject; tip = host phased STVnl/χ^k + device
   `run_from_rho` + host KDiis) | track **cuda** | twin: CPU
   `reg_gpw-kpoints-si` class / H₂ k=2×1×1 TR-off | tip **`14368bf3`** |
-  **resume** (Merge owns land; residual → `kpoint-device-*` /
-  `kpoint-si-gate`) | spec on tip `.claude/specs/cuda-gpw-kpoints/SPEC.md`
+  GH200 **1130067** \|dE\|=**3.286e-14** | **resume** (Merge owns land;
+  residual → `kpoint-device-*` / `kpoint-si-gate`) | spec on tip
+  `.claude/specs/cuda-gpw-kpoints/SPEC.md`
 - [~] `cuda-pw-spin-forces` | **P2** Analytic ionic forces under collinear
   **LSDA** spin (lift forces reject spin) | track **cuda** | twin: CPU
   `pw_forces_analytic` spin dual-gate (O₂ class) | tip **`b6b01efe`** |
-  Gate: GH200 + stated max\|ΔF\|; fail-closed non-spin path unchanged; not
-  spin-PBE forces / stress / smear | lever: `pw_forces_analytic` spin path
-  after landed `cuda-pw-collinear-spin` energy | **resume** (feat tip;
-  Merge owns GH200 dual-gate land) | spec on tip
+  GH200 **1130077** max\|ΔF\|=**8.51e-13** eV/Å | Gate: fail-closed non-spin
+  path unchanged; not spin-PBE forces / stress / smear | lever:
+  `pw_forces_analytic` spin path after landed `cuda-pw-collinear-spin`
+  energy | **resume** (Merge owns land) | spec on tip
   `.claude/specs/cuda-pw-spin-forces/SPEC.md`
 
 

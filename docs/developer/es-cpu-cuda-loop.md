@@ -39,6 +39,30 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 Assign wave 4 (parent `dev` @ `3bfe1d14`):** Priority `[~]`
+  first — capacity **3/3** already filled by tip-green branches not on
+  base (post GapCensus wave 4). **Resume only** (theme-for-NEW N/A):
+  `cuda-gpw-product-h2o-gate` (`5731b00c`, GH200 **1130066**
+  \|dE\|=**7.526e-07** max\|dF\|=**3.213e-06**), `cuda-gpw-kpoints`
+  (`14368bf3`, GH200 **1130067** \|dE\|=**3.286e-14**),
+  `cuda-pw-spin-forces` (`b6b01efe`, GH200 **1130077**
+  max\|ΔF\|=**8.51e-13** eV/Å). **new_assigned=0**;
+  **incomplete_remaining=0** (tip green claims — Merge owns land). Held
+  pending P2: `smear-forces` / `uks-device-diis` / `device-weight-pack` /
+  multi-k depth. Do **not** re-staff landed collocate/MG/UKS/PBE/forces/
+  stress/stream/DIIS-eigen. Queue **not** exhausted. No push.
+
+- **2026-08-11 Assign wave 3 (parent `dev` @ `46d65433`):** Priority `[~]`
+  first — capacity **2/3** keep tip-green for Merge, free **1** → NEW.
+  **Resume:** `cuda-gpw-product-h2o-gate` (`a34ff0df`, GH200 **1129720**
+  \|dE\|=**7.526e-07** max\|dF\|=**3.213e-06**) + `cuda-gpw-kpoints`
+  (`b61779f9`, GH200 **1129721** \|dE\|=**3.331e-14**). **NEW:**
+  `cuda-pw-spin-forces` (P2 collinear LSDA spin ionic forces; theme one
+  real product lift; not joint matrix / not re-staff landed GPW gates).
+  Held: `uks-device-diis` / `device-weight-pack` / `smear-forces` / deeper
+  PW. **new_assigned=1**; **incomplete_remaining=3**; **in_progress=3**.
+  Queue **not** exhausted. No push.
+
 - **2026-08-11 harness wave 2 (parent `dev` @ `e164b767`):** 1 of 3 staffed
   → done [x]: `cuda-gpw-device-diis-eigen` (merge `e164b767` / feat
   `e8170b10` + re-verify `5ed40df9`; GH200 **1129719** \|dE\|=**1.616e-07**
