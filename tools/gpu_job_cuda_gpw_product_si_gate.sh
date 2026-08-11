@@ -96,12 +96,15 @@ done
 export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 
-echo "=== CTEST Si unit dual-gate filter ==="
-ctest --test-dir "${BUILD}" --output-on-failure \
-  -R 'test_cuda_gpw_full_product' --extra-args \
-  --gtest_filter='*SiGammaPadeSingleGrid*' 2>/dev/null || \
-ctest --test-dir "${BUILD}" --output-on-failure -R 'test_cuda_gpw_full_product' || {
-  echo "CTEST_FAILED"
+echo "=== UNIT Si dual-gate (direct gtest filter; no ctest 10s default) ==="
+UNIT_BIN="${BUILD}/tests/test_cuda_gpw_full_product"
+if [ ! -x "${UNIT_BIN}" ]; then
+  echo "UNIT_BIN_MISSING"
+  exit 1
+fi
+# Si DZVP-MOLOPT SCF can exceed ctest default 10s wall.
+"${UNIT_BIN}" --gtest_filter='*SiGammaPadeSingleGridEnergyDualGate' || {
+  echo "UNIT_SI_FAILED"
   exit 1
 }
 
