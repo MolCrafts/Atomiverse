@@ -52,42 +52,35 @@ Strict sequence on the existing gpw-perf queue — no mega-spec spanning CUDA:
 > authority: MG MAIN **1.6 s ATV / 0.688 s CP2K = 2.33×** (worst fair ratio
 > after OT water closed ≤1.1×). Do not quote older ~1.25× MAIN figures.
 
-### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 19)
+### Active next — `es-cpu-cuda-opt` product depth (2026-08-11 GapCensus wave 20)
 
 Arch residual **closed**; public-shape freeze **green**. First-slice product
 **landed** on `dev`. Device mid-SCF collocate/integrate, MG energy (**H₂
-only**), Γ UKS (+ O₂ gate), device grid forces, PBE H₂ gate, product stress,
-product non-default stream, **device RKS DIIS/eigen**, **device dual UKS
-DIIS/eigen**, **device weight pack/scatter**, **water Γ RKS E+F dual-gate**,
-**multi-k RKS DIIS energy (H₂)**, **multi-k device χ^k collocate + V→H_k
-integrate + H_k fuse**, **multi-k device KDiis/zheevd**, **multi-k device
-phased STVnl S/T**, **multi-k device H residual residency**, **collinear LSDA
-spin forces + stress**, **restricted metallic-smear forces + stress (Γ)** **on
-base** (`15c07dc8` after kpoint-h-residency `e2bcb05e` / GH200 **1142864**;
-spin-stress `79d617ca` / **1135756**; STVnl `b88b2fd2` / **1133851**). Multi-k
-residual **held**: host **ctrace e_kin/e_nl** (`kpoint-device-energy`) + host
-**payload re-diag** (`kpoint-payload-device`) + host **cold-start densify**
-(`kpoint-device-cold-start`) + host \(P_k\) H2D + host χ/orth + **host KB Vnl
-when nonlocal** + **H0 host rematerialize**. **Wave 19→serial clearup:** Si product dual-gate **landed**
-(`product-si-gate` merge `a158848f`, GH200 **1167099** \|dE\|=2.13e-08): KB Vnl
-via `add_nonlocal_kb_k`@Γ + SG host CompactBasisGrid KS twin. Multigrid Si
-research tips **dropped** without merge (blocked). Residual: continuous
-product collocate charge ~0.5 without PBC wrap → **`product-collocate-pbc`**
-(remove SG host hybrid; re-open **`multigrid-si-energy-path`** after). **Γ
-residual after device DIIS:** final **host payload re-diag** →
-**`device-payload`** / **`uks-payload-device`**; **host cold-start densify** →
-**`device-cold-start`**. Water **σ** + multi-k/MG production matrix + path×PBE
-+ PW spin×kmesh×smear held. **in_progress=0** for the three residual tips.
+only**), Γ UKS (+ O₂), device grid forces, PBE H₂, product stress, SCF +
+**force** non-default stream, device RKS/UKS DIIS/eigen, weight pack, water
+E+F, multi-k H₂ spine (collocate/integrate/H/KDiis/STVnl S/T/H residual),
+**Γ/UKS device H assemble**, **UKS + multi-k P residency**, **multi-k device
+e_kin/e_nl**, **Si Γ ngrids=1 product-si-gate**, spin F/σ, smear F/σ (Γ) **on
+base** (`1662f768` after product-si `a158848f` / **1167099** + residency
+`5a5076d0` / force-stream `61b91971` / **1158949**; kpoint-h-residency
+`e2bcb05e` / **1142864**). **Wave 20 GapCensus:** re-diff marks residency P0 +
+force-stream done; **staff `[~]` `product-collocate-pbc`** (SG host cbg hybrid
++ continuous collocate no PBC wrap — iron-law debt). Si MG tips **dropped** /
+**blocked** on collocate-pbc. Multi-k residual **held:** host χ / Löwdin /
+KB Vnl / H0 rematerialize + payload/cold-start. Γ residual: **device-payload**
+/ **uks-payload-device** / **device-cold-start** + Γ STVnl + product geometry
+residency + hybrid free-fn depth. Water **σ** + multi-k/MG×PBE matrix + PW
+spin×kmesh×smear held. **new_slugs_added=0**.
 
 | Priority | slug | Goal |
 | --- | --- | --- |
 | P1 | *(closed)* device-forces + pbe-product-gate + stress + stream + h2o-gate (E+F) | on base |
-| P2 | **landed** device-diis-eigen + uks-device-diis + device-weight-pack + kpoints + spin-forces + **smear-forces + smear-stress** + **spin-stress** + kpoint collocate/integrate/h-assemble/device-diis/**stvnl S/T** + **h-residency** + **product-si-gate** (KB Vnl + SG host cbg twin) | Si-class single-grid |
-| P3 | **`product-collocate-pbc`** then **`multigrid-si-energy-path`** / **`multigrid-si-gate`** + Γ **device-payload / uks-payload-device / device-cold-start** + multi-k depth (**device-energy / payload / cold-start** + p-residency + **χ / orth / vnl / h0-residency**) + MG production F/σ after Si energy-path + **Si multi-k MG** + multi-k/MG×PBE E+F/σ + O₂ UKS joints + PW **smear-stress-al2** + spin×kmesh×smear + **kmesh×smear** | after collocate PBC |
+| P2 | **landed** device-diis-eigen + uks-device-diis + weight-pack + kpoints + spin/smear F/σ + kpoint spine + **h-residency** + **product-si-gate** + **device-h-assemble / uks-h-assemble / uks-p-residency / kpoint-p-residency / kpoint-device-energy / force-stream** | Si SG + residency P0 |
+| P0→P3 | **`product-collocate-pbc`** `[~]` then **`multigrid-si-energy-path`** / **`multigrid-si-gate`** (blocked) + **device-payload / uks-payload-device / device-cold-start** + multi-k **payload / cold-start / χ / orth / vnl / h0** + production multi-k/MG/UKS×PBE matrix + PW **smear-stress-al2** + spin×kmesh×smear | after collocate PBC |
 
 **cpu_pending=0** — MG MAIN **2.33×** remains blocked pin-unsafe residual
-(not soft-tol). **pending_count=139**; **in_progress=2**; **cuda_pending=141**;
-**gaps_remaining=142**. Contract:
+(not soft-tol). **pending_count=133**; **in_progress=1**; **cuda_pending=134**;
+**gaps_remaining=135**. Contract:
 [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md). Queue:
 [es-cpu-cuda-queue.md](../../docs/developer/es-cpu-cuda-queue.md).
 
