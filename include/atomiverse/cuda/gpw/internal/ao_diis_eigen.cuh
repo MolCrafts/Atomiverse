@@ -127,9 +127,10 @@ class AoDiisEigenDevice {
 
     /// @brief Device eigen of **device-resident** H (no DIIS, no level shift).
     ///
-    /// CUDA-only payload path (`cuda-gpw-device-payload`): final Γ RKS C/ε
-    /// from device `dsyevd` without host `diagonalize_fock` re-diag. D2D
-    /// into `d_H_`, then boundary D2H of eig + C (and densified `d_P_`).
+    /// CUDA-only payload path: final Γ RKS (`cuda-gpw-device-payload`) and
+    /// dual-spin Γ UKS (`cuda-gpw-uks-payload-device`) C/ε from device
+    /// `dsyevd` without host `diagonalize_fock` re-diag. D2D into `d_H_`,
+    /// then boundary D2H of eig + C (and densified `d_P_`).
     ///
     /// @param d_H     Device column-major H [Hartree], length n*n.
     /// @param eig_host length m eigenvalues [Hartree] ascending (may be null).

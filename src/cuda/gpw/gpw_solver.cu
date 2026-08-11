@@ -33,8 +33,10 @@
 ///     `internal::AoDiisEigenDevice` (cuda-gpw-device-diis-eigen);
 ///     **Γ RKS final payload C/ε from device eigen** (cuda-gpw-device-payload;
 ///     no host re-diag of H at the SCF boundary; D2H C/eps/P/H once);
-///     UKS dual α/β still residual host H path (cuda-gpw-uks-device-h);
-///     (cuda-gpw-uks-device-diis);
+///     **Γ UKS final dual payload C/ε from dual device eigen**
+///     (cuda-gpw-uks-payload-device; no host dual diagonalize_fock);
+///     UKS dual α/β mid-SCF H on device (cuda-gpw-uks-h-assemble) + dual
+///     DIIS (cuda-gpw-uks-device-diis);
 ///     **device P→weight + acc→V_AO scatter** via
 ///     `internal::ProductWeightPackDevice` (cuda-gpw-device-weight-pack);
 ///     force grid product (V_eff·dχ·Pχ + ionic HF + local-PP HF) on Γ RKS
@@ -385,30 +387,20 @@ double trace_product(const RealMatrix& P, const RealMatrix& M, int n) {
     return t;
 }
 
-// Γ RKS final payload uses AoDiisEigenDevice::eigen_from_device (device-payload).
-// Host re-diag store_converged_state removed for the RKS product path.
+// Γ RKS final payload: AoDiisEigenDevice::eigen_from_device (device-payload).
+// Γ UKS final payload: dual eigen_from_device (uks-payload-device) — no host
+// diagonalize_fock re-diag of Ha/Hb.
 
-void store_converged_state_uks(GpwResult& res, const RealMatrix& Ha,
-                               const RealMatrix& Hb, const RealMatrix& X,
-                               const RealMatrix& S, int n_alpha, int n_beta,
-                               int nb) {
-    auto [eiga, Ca] = diagonalize_fock(Ha, X);
-    auto [eigb, Cb] = diagonalize_fock(Hb, X);
-    res.C = Ca;
-    res.C_beta = Cb;
-    res.eps.assign(eiga.begin(), eiga.end());
-    res.eps_beta.assign(eigb.begin(), eigb.end());
-    res.P = build_density_matrix(Ca, n_alpha, nb, 1.0);
-    res.P_beta = build_density_matrix(Cb, n_beta, nb, 1.0);
-    res.H_ks = Ha;
-    res.H_ks_beta = Hb;
-
+/// @brief ⟨S²⟩ from boundary-downloaded α/β MO coefficients (payload only).
+double spin_contamination_s2(const RealMatrix& Ca, const RealMatrix& Cb,
+                             const RealMatrix& S, int n_alpha, int n_beta) {
     const double sz = 0.5 * static_cast<double>(n_alpha - n_beta);
     double ov = 0.0;
     if (n_alpha > 0 && n_beta > 0) {
         const RealMatrix Ca_occ =
             xt::view(Ca, xt::all(), xt::range(0, n_alpha));
-        const RealMatrix Cb_occ = xt::view(Cb, xt::all(), xt::range(0, n_beta));
+        const RealMatrix Cb_occ =
+            xt::view(Cb, xt::all(), xt::range(0, n_beta));
         const RealMatrix Sab =
             xt::linalg::dot(xt::transpose(Ca_occ), xt::linalg::dot(S, Cb_occ));
         for (int i = 0; i < n_alpha; ++i)
@@ -417,7 +409,7 @@ void store_converged_state_uks(GpwResult& res, const RealMatrix& Ha,
                 ov += s * s;
             }
     }
-    res.s2 = sz * (sz + 1.0) + static_cast<double>(n_beta) - ov;
+    return sz * (sz + 1.0) + static_cast<double>(n_beta) - ov;
 }
 
 CollocateGridDesc to_coll(const UniformGrid& g) {
@@ -1574,7 +1566,6 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                 "mid-path");
 
         double prev_energy = std::numeric_limits<double>::quiet_NaN();
-        RealMatrix Ha_raw, Hb_raw;
         bool conv = false;
         int it = 0;
         const bool scf_trace_uks =
@@ -1604,19 +1595,36 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             ao_b.advance();
             // P stays on device under DIIS (no mid-SCF download_P).
         }
+        // Final KS at last density: energy + veff boundary + dual device eigen
+        // payload. Device eigen of d_Ha/d_Hb replaces host store_converged_state_uks
+        // → dual diagonalize_fock (cuda-gpw-uks-payload-device).
         {
-            // Boundary: payload D2H of P and H.
             ao_a.download_P(Pa.data());
             ao_b.download_P(Pb.data());
             const double e_final = build_uks_energy_device(
                 ao_a.d_P(), ao_b.d_P(), /*store_grids=*/true);
             result_.e_total = e_final;
-            wpack.scatter_acc(d_geom0, dev.d_acc, nprod_geom, w_grid);
-            Ha_raw = H0 + download_V_host();
-            wpack.scatter_acc(d_geom0, dev.d_acc_b, nprod_geom, w_grid);
-            Hb_raw = H0 + download_V_host();
-            store_converged_state_uks(result_, Ha_raw, Hb_raw, orth.X, S,
-                                      n_alpha, n_beta, nb);
+            // Device eigen of assembled H = H0+V (already on d_Ha/d_Hb).
+            // Boundary D2H of dual C/ε; densified d_P is not SCF energy density.
+            result_.C = xt::zeros<double>({nb, n_mo_uks});
+            result_.C_beta = xt::zeros<double>({nb, n_mo_uks});
+            result_.eps.assign(static_cast<std::size_t>(n_mo_uks), 0.0);
+            result_.eps_beta.assign(static_cast<std::size_t>(n_mo_uks), 0.0);
+            ao_a.eigen_from_device(d_Ha, result_.eps.data(), result_.C.data());
+            ao_b.eigen_from_device(d_Hb, result_.eps_beta.data(),
+                                  result_.C_beta.data());
+            // H_ks: boundary D2H of assembled device H (no host H0+V rebuild).
+            result_.H_ks = xt::zeros<double>({nb, nb});
+            result_.H_ks_beta = xt::zeros<double>({nb, nb});
+            check_cuda(cudaMemcpyAsync(result_.H_ks.data(), d_Ha, mat_bytes,
+                                       cudaMemcpyDeviceToHost, stream),
+                       "D2H H_ks alpha payload");
+            check_cuda(cudaMemcpyAsync(result_.H_ks_beta.data(), d_Hb, mat_bytes,
+                                       cudaMemcpyDeviceToHost, stream),
+                       "D2H H_ks beta payload");
+            check_cuda(cudaStreamSynchronize(stream), "sync UKS H_ks payload");
+            result_.s2 = spin_contamination_s2(result_.C, result_.C_beta, S,
+                                               n_alpha, n_beta);
             result_.P = Pa;
             result_.P_beta = Pb;
             result_.S = S;
