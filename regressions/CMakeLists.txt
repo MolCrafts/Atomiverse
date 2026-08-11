@@ -717,6 +717,21 @@ if(ATV_BUILD_GPW)
         add_dependencies(regressions run_${_reg_gpw_diis})
         unset(_reg_gpw_diis)
 
+        # Device mid-SCF P→weight + acc→V dual-gate (H2 Γ RKS PADE energy).
+        set(_reg_gpw_wpack reg_cuda-gpw-device-weight-pack)
+        add_executable(${_reg_gpw_wpack}
+            gpw/cuda-gpw-device-weight-pack/${_reg_gpw_wpack}.cu)
+        target_link_libraries(${_reg_gpw_wpack} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_wpack} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_wpack}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_wpack}> --device=both
+            DEPENDS ${_reg_gpw_wpack}
+            COMMENT "regression [gpw/cuda-gpw-device-weight-pack] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_wpack})
+        unset(_reg_gpw_wpack)
+
         # Production water Γ RKS PADE dual-gate (multi-species after H2 foothold).
         set(_reg_gpw_h2o reg_cuda-gpw-product-h2o-gate)
         add_executable(${_reg_gpw_h2o}

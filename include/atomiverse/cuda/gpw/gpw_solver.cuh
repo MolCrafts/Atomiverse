@@ -11,10 +11,10 @@
 /// inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
-///   * host — STVnl / product-list build / P→weight pack / acc scatter;
-///     UKS host DIIS+eigen; multi-k: phased \(S_k/T_k/V_{\mathrm{nl}}^k\),
-///     χ^k collocate/integrate, KDiis + complex Hermitian diagonalize;
-///     force AO Pulay (W·dS / P·dT / P·dVnl) on Γ free-fn path
+///   * host — STVnl / product-list build; UKS host DIIS+eigen; multi-k:
+///     phased \(S_k/T_k/V_{\mathrm{nl}}^k\), χ^k collocate/integrate, KDiis
+///     + complex Hermitian diagonalize; force AO Pulay (W·dS / P·dT /
+///     P·dVnl) on Γ free-fn path
 ///   * device — product collocate + KS + product integrate via
 ///     `internal::KsChainDevice::run` (RKS single-grid),
 ///     `internal::KsMultiGridChainDevice::run` (RKS multigrid: per-level
@@ -24,6 +24,9 @@
 ///     or `KsChainDevice::run_from_rho` (multi-k: host ρ → device Poisson/XC).
 ///     RKS mid-SCF Pulay DIIS + cuSOLVER dense eigen + density via
 ///     `internal::AoDiisEigenDevice` (cuda-gpw-device-diis-eigen).
+///     Device P→weight + acc→V_AO scatter via
+///     `internal::ProductWeightPackDevice` (cuda-gpw-device-weight-pack);
+///     RKS DIIS keeps P resident mid-SCF (no per-iter download_P for packing).
 ///     Mid-SCF does not H2D ρ or D2H V_eff for H on the Γ product path.
 ///     Forces (Γ RKS single-grid first cut): device grid V_eff Pulay + ionic
 ///     HF + local-PP HF (UKS / multigrid / multi-k force free-fns fail-closed).
