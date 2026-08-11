@@ -800,6 +800,22 @@ if(ATV_BUILD_GPW)
         add_dependencies(regressions run_${_reg_gpw_uks_diis})
         unset(_reg_gpw_uks_diis)
 
+        # Γ UKS dual final payload eigen (no host re-diag) dual-gate.
+        set(_reg_gpw_uks_payload reg_cuda-gpw-uks-payload-device)
+        add_executable(${_reg_gpw_uks_payload}
+            gpw/cuda-gpw-uks-payload-device/${_reg_gpw_uks_payload}.cu)
+        target_link_libraries(${_reg_gpw_uks_payload} PRIVATE atomiverse
+                              CUDA::cufft CUDA::cublas CUDA::cusolver)
+        set_target_properties(${_reg_gpw_uks_payload} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_uks_payload}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_uks_payload}> --device=both
+            DEPENDS ${_reg_gpw_uks_payload}
+            COMMENT "regression [gpw/cuda-gpw-uks-payload-device] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_uks_payload})
+        unset(_reg_gpw_uks_payload)
+
         # Device mid-SCF P→weight + acc→V dual-gate (H2 Γ RKS PADE energy).
         set(_reg_gpw_wpack reg_cuda-gpw-device-weight-pack)
         add_executable(${_reg_gpw_wpack}

@@ -646,7 +646,8 @@ void AoDiisEigenDevice::eigen_from_device(const double* d_H, double* eig_host,
                    "D2D H eigen");
     }
     // Payload eigen of raw KS H: no DIIS, no level shift (matches host
-    // store_converged_state → diagonalize_fock without Saunders–Hillier).
+    // store_converged_state / store_converged_state_uks → diagonalize_fock
+    // without Saunders–Hillier; RKS device-payload + UKS uks-payload-device).
     const double saved_shift = level_shift_;
     const bool saved_have = have_C_;
     level_shift_ = 0.0;
