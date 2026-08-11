@@ -90,6 +90,8 @@ using cpu::gpw::ProductSet;
 using cpu::gpw::UniformGrid;
 using cpu::gpw::basis_function_radius;
 using cpu::gpw::build_compact_basis_grid;
+using cpu::gpw::collocate_density;
+using cpu::gpw::integrate_potential;
 using cpu::gpw::build_products;
 using cpu::gpw::contracted_ST_periodic;
 using cpu::gpw::gth_nonlocal;
@@ -1657,29 +1659,28 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         KsChainEnergies e{};
 
         if (!use_mg) {
-            // Single-grid host collint KS twin (cuda-gpw-product-si-gate):
-            // continuous device product collocate has no collint PBC window
-            // wrap — H₂/water large-cell footholds hid it; Si MOLOPT tight
-            // cell under-counts density (sibling product-collocate-pbc).
-            // Host collint ρ + ks_grid_build_rks + integrate, then V H2D for
-            // device H=H0+V / residual. Device DIIS/eigen retained.
+            // Single-grid host cbg KS twin (cuda-gpw-product-si-gate):
+            // CPU ngrids==1 uses CompactBasisGrid collocate/integrate — not
+            // products (use_prod=use_mg only). Continuous device product
+            // collocate lacks collint PBC wrap (product-collocate-pbc); host
+            // product multigrid_collocate at ngrids=1 still differed from cbg
+            // by ~4.7e-4 Ha (GH200 1166526). Match CPU: cbg + ks_grid_build_rks
+            // + integrate_potential; V H2D for device H=H0+V / residual;
+            // device DIIS/eigen retained.
+            if (!result_.scf_cbg_valid)
+                throw std::runtime_error(
+                    "cuda::gpw::GpwDft: scf_cbg required for SG host twin");
             RealMatrix P_host = xt::zeros<double>({nb, nb});
             check_cuda(cudaMemcpyAsync(P_host.data(), d_P_use,
                                        static_cast<size_t>(nb) * nb
                                            * sizeof(double),
                                        cudaMemcpyDeviceToHost, stream),
-                       "D2H P for SG host collint KS");
+                       "D2H P for SG host cbg KS");
             check_cuda(cudaStreamSynchronize(stream), "sync P D2H SG");
-            // Device P is column-major; collint wants row-major Pvec.
-            std::vector<double> Pvec(static_cast<std::size_t>(nb) * nb);
-            for (int i = 0; i < nb; ++i)
-                for (int j = 0; j < nb; ++j)
-                    Pvec[static_cast<std::size_t>(i) * nb
-                         + static_cast<std::size_t>(j)] =
-                        P_host.data()[static_cast<std::size_t>(i)
-                                      + static_cast<std::size_t>(j) * nb];
+            // Column-major RealMatrix → row-major flat (CPU mat_to_vec shape).
+            const std::vector<double> Pvec = mat_to_vec(P_host, nb);
             const std::vector<double> rho =
-                multigrid_collocate_rho(mg, pset, nb, Pvec, eps);
+                collocate_density(result_.scf_cbg, nb, Pvec);
             const cpu::gpw::internal::KsGridRks ks =
                 cpu::gpw::internal::ks_grid_build_rks(
                     grid, rho, n_ion, v_locsr, xc, /*nonperiodic=*/false,
@@ -1688,18 +1689,15 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             e.e_xc = ks.e_xc;
             e.e_locgrid = ks.e_locgrid;
             const std::vector<double> Vvec =
-                multigrid_integrate_veff(mg, pset, nb, ks.veff, eps);
-            // Upload V column-major for device H=H0+V.
-            {
-                std::vector<double> Vcol(static_cast<std::size_t>(nb) * nb);
-                for (int i = 0; i < nb; ++i)
-                    for (int j = 0; j < nb; ++j)
-                        Vcol[static_cast<std::size_t>(i)
-                             + static_cast<std::size_t>(j) * nb] =
-                            Vvec[static_cast<std::size_t>(i) * nb
-                                 + static_cast<std::size_t>(j)];
-                wpack.upload_matrix(Vcol.data(), wpack.d_V());
-            }
+                integrate_potential(result_.scf_cbg, nb, ks.veff);
+            // Vvec is row-major; RealMatrix + device expect column-major.
+            RealMatrix Vgrid = xt::zeros<double>({nb, nb});
+            for (int i = 0; i < nb; ++i)
+                for (int j = 0; j < nb; ++j)
+                    Vgrid(i, j) =
+                        Vvec[static_cast<std::size_t>(i) * nb
+                             + static_cast<std::size_t>(j)];
+            wpack.upload_matrix(Vgrid.data(), wpack.d_V());
             if (store_grids) {
                 result_.veff = ks.veff;
                 result_.v_es = ks.v_es;
