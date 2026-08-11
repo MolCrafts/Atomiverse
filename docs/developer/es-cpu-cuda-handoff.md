@@ -5,24 +5,25 @@ wave; do not append history.
 
 ## Status
 
-- **Parent:** `dev` @ `b88b2fd2` (land `cuda-gpw-kpoint-device-stvnl`)
+- **Parent:** `dev` @ `79d617ca` (land `cuda-pw-spin-stress`)
 - **Queue:** [es-cpu-cuda-queue.md](es-cpu-cuda-queue.md)
 - **Script:** `.grok/workflows/es-cpu-cuda-opt.rhai`
-- **Last action:** **Harness wave 2** — 1 of 3 staffed → done [x]:
-  `cuda-gpw-kpoint-device-stvnl` (merge `b88b2fd2` / feat `ec578d7b`; GH200
-  **1133851** \|dE\|=**3.331e-14** Ha H₂ multi-k RKS PADE device phased STVnl;
-  **perf_exempt**). Keep other `[~]`: `cuda-pw-spin-stress` (`6617710e`) +
+- **Last action:** **Harness wave 3** — 1 of 3 staffed → done [x]:
+  `cuda-pw-spin-stress` (merge `79d617ca` / feat `841ac78f`; GH200
+  **1135756** / prior **1133857** max‖Δσ‖=**1.435e-11** eV/Å³ O₂ triplet Γ
+  collinear LSDA spin cell stress; **perf_exempt**). Keep other `[~]`:
   `cuda-gpw-kpoint-h-residency` (`181a81c3`, GH200 **1133843**
-  \|dE\|=**3.442e-14**). Spec closed (deleted
-  `.claude/specs/cuda-gpw-kpoint-device-stvnl/`). Roadmap prose: multi-k device
-  STVnl landed (table CUDA GPW remains **◐** — χ/orth + H residency +
-  payload/cold-start + Si/water multi-k F/σ depth open — no ○→✓).
-  **pending_count=136**; **in_progress=2**; **cpu_pending=0**;
-  **cuda_pending=138**; **gaps_remaining=139**; **new_slugs_added=0** this
+  \|dE\|=**3.442e-14**) + `cuda-gpw-multigrid-si-gate` (Assign wave 3 NEW).
+  Spec closed (deleted `.claude/specs/cuda-pw-spin-stress/`); dropped
+  `job-cuda-pw-spin-stress.sh`. Roadmap prose: collinear LSDA spin stress
+  landed (table CUDA PW remains **◐** — spin-PBE F/σ + smear-PBE + multi-k
+  F/σ + spin×kmesh×smear open — no ○→✓).
+  **pending_count=137**; **in_progress=2**; **cpu_pending=0**;
+  **cuda_pending=139**; **gaps_remaining=140**; **new_slugs_added=0** this
   harness. Free staff held: device-payload / uks-payload / device-cold-start /
-  multi-k energy/payload/cold-start/P / **chi/orth** / device-h-assemble /
-  smear-stress-al2 / kmesh-smear-forces / multigrid-si-gate. Clearup already
-  ran. Queue **not** exhausted. No push.
+  multi-k energy/payload/cold-start/P / **chi/orth/vnl/h0** / device-h-assemble /
+  smear-stress-al2 / kmesh-smear-forces. Clearup already ran. Queue **not**
+  exhausted. No push.
 
 ## How to run
 
@@ -33,7 +34,7 @@ args: {
   "staff_count": 3,
   "max_waves": 6,
   "target_branch": "dev",
-  "theme": "High-value residual: cuda-pw-spin-stress OR cuda-gpw-kpoint-h-residency OR kpoint-device-chi/orth OR device-payload; max 3 NEW; forbid dual-gate matrix explosion; no soft tols; GH200 green"
+  "theme": "High-value residual: cuda-gpw-kpoint-h-residency OR cuda-gpw-multigrid-si-gate OR kpoint-device-chi/orth/vnl/h0 OR device-payload; max 3 NEW; forbid dual-gate matrix explosion; no soft tols; GH200 green"
 }
 agent_budget: 384+
 ```
@@ -42,10 +43,9 @@ agent_budget: 384+
 
 | Track | Residual |
 | --- | --- |
-| **cuda GPW [~]** | `kpoint-h-residency` (staffed; unmerged) |
-| **cuda PW [~]** | `spin-stress` (staffed; unmerged) |
-| **cuda GPW free** | device-payload / uks-payload / device-cold-start; multi-k energy/payload/cold-start/P; **kpoint-device-chi** / **kpoint-device-orth**; device-h-assemble; multigrid-si-gate held |
-| **cuda PW free** | smear-stress-al2-gate; kmesh-smear-forces; smear-PBE; multi-k F/σ |
+| **cuda GPW [~]** | `kpoint-h-residency` (staffed; unmerged) + `multigrid-si-gate` (staffed NEW) |
+| **cuda GPW free** | device-payload / uks-payload / device-cold-start; multi-k energy/payload/cold-start/P; **kpoint-device-chi** / **orth** / **vnl** / **h0-residency**; device-h-assemble |
+| **cuda PW free** | smear-stress-al2-gate; kmesh-smear-forces; smear-PBE; spin-PBE F/σ; multi-k F/σ; spin×kmesh×smear |
 | **cpu** | MG MAIN **2.33×** pin-unsafe blocked |
 
 **Contract:** [.claude/notes/cuda-gpw-public-shape.md](../../.claude/notes/cuda-gpw-public-shape.md)

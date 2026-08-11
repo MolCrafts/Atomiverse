@@ -461,8 +461,9 @@ Two periodic DFT engines exist, with disjoint strengths:
   GH200 PBE max‖Δσ‖ **5.585e-12** eV/Å³ job **1123959**), **collinear spin**
   energy (**LSDA** + **spin-PBE**; fixed occupation; GH200 spin-PBE
   **1124645**) + **collinear LSDA spin forces** (`cuda-pw-spin-forces` /
-  GH200 **1130196**; spin-PBE forces / spin stress / spin+smear still reject
-  on base), and **restricted metallic smear** energy (FD/Gaussian/MP +
+  GH200 **1130196**) + **collinear LSDA spin stress** (`cuda-pw-spin-stress` /
+  GH200 **1135756** max‖Δσ‖=**1.435e-11** eV/Å³; spin-PBE F/σ / spin+smear
+  still reject on base), and **restricted metallic smear** energy (FD/Gaussian/MP +
   `extra_bands` + Mermin free energy) **+ restricted metallic-smear analytic
   ionic forces** (`cuda-pw-smear-forces` / GH200 **1130427** max\|ΔF\|=
   **1.36e-11** eV/Å) **+ restricted metallic-smear cell stress**
@@ -744,11 +745,12 @@ Which engine backs which ✓:
   multi-SCF strain-FD oracle `pw_stress_fd`; `reg_pw-analytic-stress-si`).
   **CUDA ◐** = plane-wave closed-shell **LSDA + PBE** (`cuda::pw::pw_stress`;
   GH200 dual-gates `reg_cuda-pw-stress` + `reg_cuda-pw-stress-pbe`) **+
+  collinear LSDA spin stress** (`cuda-pw-spin-stress`; GH200 **1135756**) **+
   restricted metallic-smear stress** (`cuda-pw-smear-stress`; Al 1-atom;
   production multi-atom residual) **and** CUDA GPW free-fn first slice
-  (CUDA density + host fixed-\(P\); `reg_cuda-gpw-stress` H₂); spin stress
-  still reject on PW; GPW multi-k / UKS / water σ depth still open on
-  es-cpu-cuda queue.
+  (CUDA density + host fixed-\(P\); `reg_cuda-gpw-stress` H₂); spin-PBE σ /
+  spin+smear σ still reject on PW; GPW multi-k / UKS / water σ depth still open
+  on es-cpu-cuda queue.
   **GPW stress** is **analytic fixed-\(P\)+Pulay** product at Γ **RKS and
   UKS**, **k-points for closed-shell RKS**, **multi-k UKS**
   (`reg_gpw-kpoint-uks-stress`), and **Γ DFT+U** (`reg_gpw-dftu-stress`)

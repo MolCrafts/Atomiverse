@@ -39,6 +39,38 @@ GapCensus → Assign → Worktrees → Merge? → Clearup → Harness? → Tutor
 
 (autonomous harness appends lines here)
 
+- **2026-08-11 harness wave 3 (parent `dev` @ `79d617ca`):** 1 of 3 staffed
+  → done [x]: `cuda-pw-spin-stress` (merge `79d617ca` / feat `841ac78f`;
+  GH200 **1135756** / prior **1133857** max‖Δσ‖=**1.435e-11** eV/Å³ O₂
+  triplet Γ collinear LSDA spin cell stress dual-gate; **perf_exempt**).
+  Keep other `[~]`: `cuda-gpw-kpoint-h-residency` tip `181a81c3` (GH200
+  **1133843** \|dE\|=**3.442e-14**) + `cuda-gpw-multigrid-si-gate` (Assign
+  wave 3 NEW). Spec closed (deleted `.claude/specs/cuda-pw-spin-stress/`);
+  dropped `job-cuda-pw-spin-stress.sh`. Roadmap prose: LSDA spin stress
+  landed (table CUDA PW remains **◐** — spin-PBE F/σ + multi-k / smear-PBE
+  / spin×kmesh×smear open — no ○→✓). GapCensus wave 17 residual held;
+  **cpu_pending=0**; **new_slugs_added=0** this harness.
+  **pending_count=137**; **cuda_pending=139**; **in_progress=2**;
+  **gaps_remaining=140**. Clearup already ran. Queue **not** exhausted
+  (GapCensus owns discovery). No push.
+
+- **2026-08-11 Assign wave 3 (parent `dev` @ `0f56cbca`):** Priority `[~]`
+  first — capacity **2/3** filled by unmerged tip-green claims after
+  GapCensus wave 17 + STVnl land. Open es-cpu-cuda specs: none (method-loop
+  only: `periodic-rhf-gamma` / `rsh-eri-cam-b3lyp`). Free slot theme NEW
+  after smear-stress + kpoint-h-assemble (no dual-gate matrix explosion; no
+  soft tols; GH200): RESUME `cuda-pw-spin-stress` (`6617710e`, GH200
+  **1133857** max‖Δσ‖=**1.435e-11** eV/Å³) + RESUME
+  `cuda-gpw-kpoint-h-residency` (`181a81c3`, GH200 **1133843**
+  \|dE\|=**3.442e-14**) + **NEW** `cuda-gpw-multigrid-si-gate` (Si-class Γ
+  MG production dual-gate). **new_assigned=1**; **incomplete_remaining=0**
+  (tip claims Merge-owned; NEW starts clean). Held free-slot residual:
+  `device-payload` / cold-start / kpoint energy/payload/cold-start/P /
+  **chi** / **orth** / **vnl** / **h0-residency** / `device-h-assemble` /
+  `smear-stress-al2-gate` / `kmesh-smear-forces`. **pending_count=137**;
+  **in_progress=3**; **cpu_pending=0**; **gaps_remaining=141**. Queue **not**
+  exhausted. No push.
+
 - **2026-08-11 harness wave 2 (parent `dev` @ `b88b2fd2`):** 1 of 3 staffed
   → done [x]: `cuda-gpw-kpoint-device-stvnl` (merge `b88b2fd2` / feat
   `ec578d7b`; GH200 **1133851** \|dE\|=**3.331e-14** Ha H₂ multi-k RKS PADE
