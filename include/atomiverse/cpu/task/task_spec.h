@@ -265,6 +265,109 @@ inline bool operator==(const BerendsenBarostatParams& a,
            && a.bulk_modulus == b.bulk_modulus;
 }
 
+/// @brief Wire mirror of `cpu::PairCoulCut(cutoff)` — truncated Coulomb.
+///
+/// LAMMPS `pair_style coul/cut`: the bare `q_i q_j / r_ij` sum over the
+/// neighbor list, hard-cut at `cutoff`. Self-contained — unlike
+/// `CoulLongParams` it takes no reciprocal-space partner, so it is the whole
+/// electrostatic model of the task that names it.
+///
+/// Charges are Frame data, not a parameter: the style reads the per-atom
+/// `charge` column [e] of the Frame it is launched on.
+///
+/// Not mirrored: `set_special_bonds` (the 1-2 / 1-3 / 1-4 weights — the
+/// per-pair scale factors LAMMPS applies to atoms one, two or three bonds
+/// apart). A launcher-dispatched run gets the C++ defaults, i.e. every
+/// weight 1.
+struct PairCoulCutParams {
+    /// Real-space cutoff [Å]. The neighbor list must be built with a cutoff
+    /// ≥ this value.
+    double cutoff;
+};
+inline bool operator==(const PairCoulCutParams& a, const PairCoulCutParams& b) {
+    return a.cutoff == b.cutoff;
+}
+
+/// @brief Wire mirror of `cpu::CoulLong(alpha, cutoff)` — the real-space
+///        half of an Ewald/PME split.
+///
+/// An *Ewald split* rewrites the conditionally convergent periodic Coulomb
+/// sum as two absolutely convergent ones: a screened short-range part that
+/// decays fast enough to truncate at a cutoff, plus a smooth long-range
+/// part that converges quickly in reciprocal (Fourier) space. The splitting
+/// parameter α [1/Å] sets where the boundary between the two falls.
+///
+/// This mirror is the short-range half: `q_i q_j · erfc(α r_ij) / r_ij`
+/// summed over the neighbor list (LAMMPS `pair_style coul/long`), where
+/// `erfc` is the complementary error function — 1 at r = 0, decaying to 0
+/// as α r grows. The complementary smooth part is summed by the matching
+/// `KSpacePmeParams` entry of the same task. α is therefore not this
+/// component's private knob: it must equal the reciprocal partner's α, and
+/// the driver enforces the matched real/reciprocal pair at `build()`
+/// (`Driver::validate_long_range_contract_`). A payload naming only this
+/// half fails loudly there instead of running half an electrostatic model.
+///
+/// Charges are Frame data: the per-atom `charge` column [e] of the Frame.
+///
+/// Not mirrored: `set_special_bonds` (real-space 1-2 / 1-3 / 1-4 weights);
+/// the C++ defaults apply on the launcher path.
+struct CoulLongParams {
+    /// Ewald splitting parameter α [1/Å]. Larger α screens the real-space
+    /// term harder, moving work out of the neighbor-list sum into the
+    /// reciprocal one. The LAMMPS rule of thumb is α ≈ 3.5 / cutoff, at
+    /// which the screened pair term has fallen to erfc(3.5) ≈ 7e-7 of the
+    /// bare one at the cutoff (`regressions/md/npt_pme_nacl/REFERENCE.md`).
+    double alpha;
+    /// Real-space cutoff [Å]. The neighbor list must be built with a cutoff
+    /// ≥ this value.
+    double cutoff;
+};
+inline bool operator==(const CoulLongParams& a, const CoulLongParams& b) {
+    return a.alpha == b.alpha && a.cutoff == b.cutoff;
+}
+
+/// @brief Wire mirror of `cpu::KSpacePME(alpha, grid_spacing, order)` — the
+///        reciprocal-space half of the same Ewald/PME split.
+///
+/// Smooth Particle-Mesh Ewald (Essmann et al., J. Chem. Phys. 103, 8577
+/// (1995)) evaluates the long-range half on a grid instead of by an O(N²)
+/// double sum: each point charge is smeared onto nearby mesh points with
+/// B-spline weights (piecewise-polynomial interpolation weights that sum to
+/// one), the mesh is transformed by a fast Fourier transform (FFT),
+/// multiplied point-by-point by the *influence function* — the
+/// reciprocal-space kernel `exp(−π²m²/α²)/m²` of the smooth Ewald term,
+/// times a B-spline de-convolution factor, so it depends only on the cell,
+/// α and the spline order — and transformed back. That is O(N log N)
+/// instead of O(N²).
+///
+/// The solver needs `ATV_BUILD_KSPACE` (FFTW3), but this mirror does not:
+/// the wire layer is always compiled, so a payload naming PME stays
+/// decodable on a build without the solver and is rejected with a how-to
+/// when `TaskMaterializer` tries to construct it.
+///
+/// No field is defaulted here: every wire payload states `grid_spacing` and
+/// `order` explicitly. The C++ defaults (1.0 Å, order 6) are supplied by
+/// whoever builds this struct (e.g. the Python binding), not by the wire
+/// layer. `cpu::KSpacePME`'s constructor throws on `alpha <= 0`,
+/// `grid_spacing <= 0` or `order < 3`, so an out-of-range payload fails at
+/// materialization rather than producing a wrong reciprocal sum.
+struct KSpacePmeParams {
+    /// Ewald splitting parameter α [1/Å] — must equal the `CoulLongParams`
+    /// α of the same task, or the driver refuses to build.
+    double alpha;
+    /// Target real-space grid spacing [Å]. The mesh itself is derived from
+    /// the box and rounded to FFT-friendly sizes, so a smaller spacing buys
+    /// a finer mesh and a more accurate — costlier — reciprocal sum.
+    double grid_spacing;
+    /// B-spline interpolation order [count; ≥ 3] — the width, in mesh
+    /// points per dimension, of the stencil each charge is spread over.
+    int order;
+};
+inline bool operator==(const KSpacePmeParams& a, const KSpacePmeParams& b) {
+    return a.alpha == b.alpha && a.grid_spacing == b.grid_spacing
+           && a.order == b.order;
+}
+
 struct AM1EvaluatorParams {
     int charge = 0;
     int multiplicity = 1;
@@ -326,6 +429,13 @@ enum class ComponentId : std::uint16_t {
     NoseHooverNPT = 13,
     ParrinelloRahmanNPT = 14,
     BerendsenBarostat = 15,
+    // Electrostatics. `PairCoulCut` is a complete model on its own;
+    // `CoulLong` (real space) and `KSpacePME` (reciprocal space) are the two
+    // halves of one Ewald split and are only ever legal together, at a
+    // shared α — see `CoulLongParams`.
+    PairCoulCut = 16, ///< Truncated Coulomb — `cpu::PairCoulCut`.
+    CoulLong = 17,    ///< Ewald/PME real-space half — `cpu::CoulLong`.
+    KSpacePME = 18,   ///< Ewald/PME reciprocal half — `cpu::KSpacePME`.
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -362,6 +472,12 @@ inline const char* component_name(ComponentId id) noexcept {
         return "ParrinelloRahmanNPT";
     case ComponentId::BerendsenBarostat:
         return "BerendsenBarostat";
+    case ComponentId::PairCoulCut:
+        return "PairCoulCut";
+    case ComponentId::CoulLong:
+        return "CoulLong";
+    case ComponentId::KSpacePME:
+        return "KSpacePME";
     }
     return "unknown";
 }
@@ -372,7 +488,8 @@ using MDComponentParams =
                  VelocityVerletParams, InitVelocityParams, NoseHooverParams,
                  ThermoParams, FixLangevinParams, FixCsvrParams,
                  NoseHooverNptParams, ParrinelloRahmanNptParams,
-                 BerendsenBarostatParams>;
+                 BerendsenBarostatParams, PairCoulCutParams, CoulLongParams,
+                 KSpacePmeParams>;
 
 using MinimizeComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, LBFGSParams>;
@@ -414,6 +531,12 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::ParrinelloRahmanNPT;
             else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
                 return ComponentId::BerendsenBarostat;
+            else if constexpr (std::is_same_v<P, PairCoulCutParams>)
+                return ComponentId::PairCoulCut;
+            else if constexpr (std::is_same_v<P, CoulLongParams>)
+                return ComponentId::CoulLong;
+            else if constexpr (std::is_same_v<P, KSpacePmeParams>)
+                return ComponentId::KSpacePME;
             else
                 static_assert(detail::unsupported_component_v<P>);
         },
@@ -520,8 +643,10 @@ class TaskSpec {
     /// per-axis and ramp fields). Adding the `ParrinelloRahmanNPT` and
     /// `BerendsenBarostat` component IDs did not by itself force a bump — a
     /// new ID only ever appears in payloads that use it — but both land
-    /// under v4. No v2 or v3 decoder exists: an older payload is an error,
-    /// never a best-effort read.
+    /// under v4, and so do the electrostatic IDs (`PairCoulCut`, `CoulLong`,
+    /// `KSpacePME`) for the same reason: appended IDs with fresh payloads
+    /// leave every existing byte layout untouched. No v2 or v3 decoder
+    /// exists: an older payload is an error, never a best-effort read.
     static constexpr std::uint32_t kWireVersion = 4;
 
     explicit TaskSpec(MDTask task);

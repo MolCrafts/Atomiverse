@@ -168,6 +168,16 @@ void write(Writer& w, const BerendsenBarostatParams& p) {
     w.f64(p.dt);
     w.f64(p.bulk_modulus);
 }
+void write(Writer& w, const PairCoulCutParams& p) { w.f64(p.cutoff); }
+void write(Writer& w, const CoulLongParams& p) {
+    w.f64(p.alpha);
+    w.f64(p.cutoff);
+}
+void write(Writer& w, const KSpacePmeParams& p) {
+    w.f64(p.alpha);
+    w.f64(p.grid_spacing);
+    w.i32(p.order);
+}
 void write(Writer& w, const AM1EvaluatorParams& p) {
     w.i32(p.charge);
     w.i32(p.multiplicity);
@@ -227,6 +237,12 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::ParrinelloRahmanNPT;
     case 15:
         return ComponentId::BerendsenBarostat;
+    case 16:
+        return ComponentId::PairCoulCut;
+    case 17:
+        return ComponentId::CoulLong;
+    case 18:
+        return ComponentId::KSpacePME;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -290,6 +306,12 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
                                          r.f64()};
     case ComponentId::BerendsenBarostat:
         return BerendsenBarostatParams{r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::PairCoulCut:
+        return PairCoulCutParams{r.f64()};
+    case ComponentId::CoulLong:
+        return CoulLongParams{r.f64(), r.f64()};
+    case ComponentId::KSpacePME:
+        return KSpacePmeParams{r.f64(), r.f64(), r.i32()};
     case ComponentId::AM1Evaluator:
     case ComponentId::LBFGS:
         wrong_task(id, TaskKind::MD);

@@ -23,11 +23,16 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <stdexcept>
+#include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "atomiverse/core/stage.h"
@@ -41,10 +46,15 @@
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/molrs_exchange.h"
+#ifdef ATV_HAS_KSPACE
+#include "atomiverse/cpu/longrange/pme.h"
+#endif
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
+#include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
+#include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/thermo.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
@@ -61,6 +71,45 @@ using cpu::task::MDBinding;
 using cpu::task::MDComponentEntry;
 
 namespace {
+
+/// @brief Does `block` of a molrs Frame carry the column `key`?
+///
+/// The molrs boundary is the only place where a column's *absence* is still
+/// visible: `cpu::from_molrs` allocates every optional per-atom column and
+/// leaves an absent one zero-filled, so a Coulomb evaluator downstream cannot
+/// tell "no charges were given" from "every charge is 0 e".
+///
+/// @param frame Borrowed molrs Frame handle.
+/// @param block Block name, e.g. `"atoms"`.
+/// @param key   Column name, e.g. `"charge"`.
+/// @return True when that block carries that column.
+bool has_molrs_column(const molrs::FrameRef& frame, const char* block,
+                      std::string_view key) {
+    for (const ::rust::String& raw : molrs::frame_block_columns(frame, block))
+        if (std::string_view{raw.data(), raw.size()} == key)
+            return true;
+    return false;
+}
+
+/// @brief Is this mirror entry an electrostatic evaluator?
+///
+/// Every Coulomb style reads per-atom charge: the truncated pair style, the
+/// real-space Ewald half and the reciprocal PME half alike. The PME mirror is
+/// always compiled (the wire layer does not need `ATV_HAS_KSPACE`), so no
+/// build gate belongs here.
+///
+/// @param entry One recorded MD registration.
+/// @return True for `PairCoulCut` / `CoulLong` / `KSpacePME` entries.
+bool is_coulomb_entry(const MDComponentEntry& entry) {
+    return std::visit(
+        [](const auto& p) {
+            using P = std::decay_t<decltype(p)>;
+            return std::is_same_v<P, cpu::task::PairCoulCutParams>
+                   || std::is_same_v<P, cpu::task::CoulLongParams>
+                   || std::is_same_v<P, cpu::task::KSpacePmeParams>;
+        },
+        entry.params);
+}
 
 /// Bound MD driver + TaskSpec mirror of its registrations.
 struct MdHandle {
@@ -85,9 +134,17 @@ struct MdHandle {
         if constexpr (std::is_same_v<P, cpu::task::PairLJCutParams>
                       || std::is_same_v<P, cpu::task::BondHarmonicParams>
                       || std::is_same_v<P, cpu::task::AngleHarmonicParams>
+                      || std::is_same_v<P, cpu::task::PairCoulCutParams>
+                      || std::is_same_v<P, cpu::task::CoulLongParams>
                       || std::is_same_v<P,
                                         cpu::task::DihedralMultiHarmonicParams>)
             driver.set_evaluator(std::move(comp));
+#ifdef ATV_HAS_KSPACE
+        else if constexpr (std::is_same_v<P, cpu::task::KSpacePmeParams>)
+            // Move-only (it owns FFTW plans), so the component arrives here
+            // already moved from the setter's prvalue.
+            driver.set_evaluator(std::move(comp));
+#endif
         else if constexpr (std::is_same_v<P, cpu::task::NeighborListParams>)
             driver.set_neighbor(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::VelocityVerletParams>
@@ -132,6 +189,40 @@ struct MdHandle {
         mirror.push_back(MDComponentEntry{p, binding});
     }
 
+    /// @brief Reject a chargeless frame before an electrostatic run starts.
+    ///
+    /// The two boundaries deliberately differ:
+    ///
+    /// - At the **C++ boundary** `charge` is an *optional* per-atom column.
+    ///   `cpu::from_molrs` allocates it either way and zero-fills it when the
+    ///   molrs Frame did not carry it, because a C++ caller that hands over a
+    ///   frame with no charges is stating a neutral system on purpose.
+    /// - At the **Python boundary** that same silence is the common mistake:
+    ///   an all-zero charge column and a forgotten charge column produce
+    ///   identical, plausible-looking output (energy finite, forces finite,
+    ///   electrostatics simply absent), and by the time `from_molrs` has run
+    ///   the difference is gone. So the binding checks the molrs Frame — the
+    ///   last place where absence is still visible — and throws with a how-to
+    ///   instead of running a Coulomb model on charges nobody supplied.
+    ///
+    /// Intentional zeros stay expressible: insert an explicit zero `charge`
+    /// column and the check passes.
+    ///
+    /// @param frame Borrowed molrs Frame about to be advanced.
+    /// @throws std::runtime_error when a Coulomb evaluator is registered and
+    ///         the frame's `atoms` block has no `charge` column.
+    void require_charge_column(const molrs::FrameRef& frame) const {
+        const bool coulomb =
+            std::any_of(mirror.begin(), mirror.end(), is_coulomb_entry);
+        if (!coulomb || has_molrs_column(frame, "atoms", "charge"))
+            return;
+        throw std::runtime_error(
+            "this MD run registers a Coulomb evaluator but the molrs.Frame "
+            "has no per-atom 'charge' column, so every charge would be taken "
+            "as 0 e. Add the charges [e] before run(), e.g. "
+            "frame[\"atoms\"].insert(\"charge\", q).");
+    }
+
     void run(nb::object frame_obj, int n_steps) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
@@ -144,6 +235,7 @@ struct MdHandle {
             for (auto& langevin : langevin_owned)
                 langevin->set_run_span(nfirst, nlast);
             auto frame = borrow_molrs_frame(frame_obj);
+            require_charge_column(*frame);
             {
                 nb::gil_scoped_release release;
                 driver.run(*frame, n_steps);
@@ -155,6 +247,7 @@ struct MdHandle {
         cpu::task::TaskSpec spec(
             cpu::task::MDTask{mirror, static_cast<std::int64_t>(n_steps)});
         auto fref = borrow_molrs_frame(frame_obj);
+        require_charge_column(*fref);
         cpu::Frame work = cpu::from_molrs(*fref);
         cpu::Frame result(0);
         {
@@ -379,6 +472,84 @@ void bind_md(nb::module_& m) {
             nb::arg("epsilon"), nb::arg("sigma"), nb::arg("cutoff"),
             "Construct with epsilon [eV], sigma [A], and cutoff [A].");
 
+    nb::class_<cpu::task::PairCoulCutParams>(
+        m, "PairCoulCut",
+        "Truncated Coulomb pair style (LAMMPS `pair_style coul/cut`).\n\n"
+        "The bare q_i q_j / r sum over the neighbor list, hard-cut at "
+        "cutoff. It is self-contained: unlike CoulLong it takes no "
+        "reciprocal-space partner, so it is the whole electrostatic model of "
+        "the run that installs it. Charges come from the per-atom 'charge' "
+        "column [e] of the molrs.Frame; a frame without that column is "
+        "rejected by run() instead of being read as neutral.")
+        .def(
+            "__init__",
+            [](cpu::task::PairCoulCutParams* p, double cutoff) {
+                new (p) cpu::task::PairCoulCutParams{cutoff};
+            },
+            nb::arg("cutoff"),
+            "Construct with the real-space cutoff [A]. The neighbor list "
+            "must be built with a cutoff >= this value.");
+
+    nb::class_<cpu::task::CoulLongParams>(
+        m, "CoulLong",
+        "Real-space half of an Ewald/PME split (LAMMPS `pair_style "
+        "coul/long`).\n\n"
+        "Sums erfc(alpha r) q_i q_j / r over the neighbor list; the "
+        "complementary smooth part is summed in reciprocal space by the "
+        "matched KSpacePME evaluator of the same run. alpha is therefore not "
+        "a private knob — it must equal the reciprocal partner's alpha, and "
+        "build() refuses a run that installs only one of the two halves.")
+        .def(
+            "__init__",
+            [](cpu::task::CoulLongParams* p, double alpha, double cutoff) {
+                new (p) cpu::task::CoulLongParams{alpha, cutoff};
+            },
+            nb::arg("alpha"), nb::arg("cutoff"),
+            "Construct with the Ewald splitting parameter alpha [1/A] — "
+            "which must equal the KSpacePME alpha — and the real-space "
+            "cutoff [A]. The neighbor list must be built with a cutoff >= "
+            "this value.\n\n"
+            "alpha sets where the split between the two halves falls: "
+            "larger alpha screens the real-space term harder and moves work "
+            "out of the neighbor-list sum into the reciprocal one. The "
+            "LAMMPS rule of thumb is alpha ~ 3.5 / cutoff, at which the "
+            "screened pair term has fallen to erfc(3.5) ~ 7e-7 of the bare "
+            "one at the cutoff.");
+
+#ifdef ATV_HAS_KSPACE
+    nb::class_<cpu::task::KSpacePmeParams>(
+        m, "KSpacePME",
+        "Reciprocal-space half of the same Ewald/PME split — smooth "
+        "Particle-Mesh Ewald (Essmann et al., J. Chem. Phys. 103, 8577 "
+        "(1995)).\n\n"
+        "Rather than a direct O(N^2) double sum, each charge is spread onto "
+        "nearby points of a mesh with B-spline weights, the mesh is "
+        "Fourier-transformed (FFT), multiplied point-by-point by an "
+        "influence function fixed by the cell, alpha and order, and "
+        "transformed back — O(N log N). It is not a Hamiltonian on its own: "
+        "install it together with CoulLong at the SAME alpha, or build() "
+        "raises.\n\n"
+        "This type exists only in an extension built with "
+        "ATV_BUILD_KSPACE=ON (the solver needs FFTW3).")
+        .def(
+            "__init__",
+            [](cpu::task::KSpacePmeParams* p, double alpha, double grid_spacing,
+               int order) {
+                new (p) cpu::task::KSpacePmeParams{alpha, grid_spacing, order};
+            },
+            nb::arg("alpha"), nb::arg("grid_spacing") = double(1),
+            nb::arg("order") = 6,
+            "Construct with the Ewald splitting parameter alpha [1/A], which "
+            "must equal the CoulLong alpha.\n\n"
+            "  grid_spacing  target real-space mesh spacing [A] (default "
+            "1.0). The mesh is derived from the box and rounded to "
+            "FFT-friendly sizes, so a smaller spacing buys a finer mesh and "
+            "a more accurate — costlier — reciprocal sum.\n"
+            "  order         B-spline interpolation order [count, >= 3; "
+            "default 6] — the width of the charge-spreading stencil per "
+            "dimension.");
+#endif
+
     nb::class_<cpu::task::NeighborListParams>(
         m, "NeighborList", "Cell-list based neighbor list component.")
         .def(
@@ -512,32 +683,81 @@ void bind_md(nb::module_& m) {
                     p, cpu::md::InitVelocity{p.temperature, p.seed});
             },
             nb::arg("comp"), "LAMMPS-style set_observer (e.g. InitVelocity).")
+        // The set_evaluator slot is plural: every call appends another
+        // energy/force source and they are summed. The typed spellings below
+        // are what Python's single `MD.set_evaluator` dispatches to by
+        // component type.
         .def(
             "set_evaluator_pair_lj_cut",
             [](MdHandle& self, const cpu::task::PairLJCutParams& p) {
                 self.set_categorical(
                     p, cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
             },
-            nb::arg("comp"))
+            nb::arg("comp"),
+            "Append the Lennard-Jones 12-6 pair evaluator. Needs a "
+            "NeighborList whose cutoff is >= the LJ cutoff.")
+        .def(
+            "set_evaluator_pair_coul_cut",
+            [](MdHandle& self, const cpu::task::PairCoulCutParams& p) {
+                self.set_categorical(p, cpu::PairCoulCut{p.cutoff});
+            },
+            nb::arg("comp"),
+            "Append the truncated Coulomb pair evaluator. Self-contained — "
+            "it takes no reciprocal-space partner, so do NOT combine it with "
+            "CoulLong or KSpacePME. Needs a NeighborList whose cutoff is >= "
+            "the Coulomb cutoff, and a per-atom 'charge' column [e] on the "
+            "frame handed to run().")
+        .def(
+            "set_evaluator_coul_long",
+            [](MdHandle& self, const cpu::task::CoulLongParams& p) {
+                self.set_categorical(p, cpu::CoulLong{p.alpha, p.cutoff});
+            },
+            nb::arg("comp"),
+            "Append the real-space half of an Ewald/PME split. Half a "
+            "Hamiltonian on its own: build() requires exactly one "
+            "reciprocal-space partner (KSpacePME) at the SAME alpha [1/A]. "
+            "Needs a NeighborList whose cutoff is >= the Coulomb cutoff, and "
+            "a per-atom 'charge' column [e] on the frame handed to run().")
+#ifdef ATV_HAS_KSPACE
+        .def(
+            "set_evaluator_kspace_pme",
+            [](MdHandle& self, const cpu::task::KSpacePmeParams& p) {
+                // Move-only (it owns FFTW plans): the prvalue goes straight
+                // into the sink parameter, no named local to move from.
+                self.set_categorical(
+                    p, cpu::KSpacePME{p.alpha, p.grid_spacing, p.order});
+            },
+            nb::arg("comp"),
+            "Append the reciprocal-space half of the same Ewald/PME split. "
+            "build() requires exactly one real-space partner (CoulLong) at "
+            "the SAME alpha [1/A]. Bound only on an extension built with "
+            "ATV_BUILD_KSPACE=ON.")
+#endif
         .def(
             "set_evaluator_bond_harmonic",
             [](MdHandle& self, const cpu::task::BondHarmonicParams& p) {
                 self.set_categorical(p, cpu::BondHarmonic{p.K, p.r0});
             },
-            nb::arg("comp"))
+            nb::arg("comp"),
+            "Append the harmonic bond evaluator. Reads the frame's bond "
+            "topology; parameters are indexed by bond type.")
         .def(
             "set_evaluator_angle_harmonic",
             [](MdHandle& self, const cpu::task::AngleHarmonicParams& p) {
                 self.set_categorical(p, cpu::AngleHarmonic{p.K, p.theta0});
             },
-            nb::arg("comp"))
+            nb::arg("comp"),
+            "Append the harmonic angle evaluator. Reads the frame's angle "
+            "topology; parameters are indexed by angle type.")
         .def(
             "set_evaluator_dihedral_multi_harmonic",
             [](MdHandle& self,
                const cpu::task::DihedralMultiHarmonicParams& p) {
                 self.set_categorical(p, cpu::DihedralMultiHarmonic{p.Cn});
             },
-            nb::arg("comp"))
+            nb::arg("comp"),
+            "Append the multi-harmonic dihedral evaluator. Reads the frame's "
+            "dihedral topology; coefficients are indexed by dihedral type.")
         .def(
             "set_neighbor",
             [](MdHandle& self, const cpu::task::NeighborListParams& p) {
@@ -574,7 +794,12 @@ void bind_md(nb::module_& m) {
         .def("run", &MdHandle::run, nb::arg("frame"), nb::arg("n_steps"),
              "Run MD on a molrs.Frame for n_steps. GIL released during "
              "compute; under the MPI launcher this dispatches ONE task to "
-             "every rank and writes the gathered result back.")
+             "every rank and writes the gathered result back.\n\n"
+             "Raises RuntimeError before any compute if a Coulomb evaluator "
+             "is registered and the frame's 'atoms' block carries no "
+             "'charge' column [e] — a forgotten column is indistinguishable "
+             "from deliberate zeros once the frame reaches C++, so it is "
+             "caught here. Insert an explicit zero column to mean zero.")
         .def("enable_timing",
              [](MdHandle& self) { self.driver.enable_timing(); })
         .def("summary", [](MdHandle& self) { return self.driver.summary(); });

@@ -17,17 +17,43 @@
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#ifdef ATV_HAS_KSPACE
+#include "atomiverse/cpu/longrange/pme.h"
+#endif
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
+#include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
+#include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/thermo.h"
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 
 namespace ATV::cpu::task {
 namespace {
+
+#ifndef ATV_HAS_KSPACE
+/// @brief Reject a `KSpacePmeParams` entry in a build without the PME solver.
+///
+/// PME is smooth Particle-Mesh Ewald, the reciprocal-space half of the
+/// Ewald-split Coulomb sum; its solver needs FFTW3 and is therefore behind
+/// the `ATV_BUILD_KSPACE` build flag, while the wire mirror
+/// `KSpacePmeParams` is compiled unconditionally. A payload naming PME
+/// therefore still *decodes* on a build without the solver and has to be
+/// refused here, at the point where the component would be constructed.
+///
+/// Both replay paths — explicit binding and categorical setter — hit the same
+/// wall when the reciprocal solver was compiled out; one thrower is what keeps
+/// the two diagnostics from drifting apart.
+///
+/// @throws std::runtime_error Always, naming the flag to rebuild with.
+[[noreturn]] void throw_kspace_not_built() {
+    throw std::runtime_error("KSpacePME requires ATV_BUILD_KSPACE=ON (PME "
+                             "reciprocal solver not compiled in)");
+}
+#endif
 
 /// @brief Build a `FixLangevin` with its temperature-ramp span installed.
 ///
@@ -86,6 +112,13 @@ cpu::md::NoseHooverNPT ramped_nose_hoover_npt(const NoseHooverNptParams& p,
 /// that a ramping component cannot reach only one of the two with its run
 /// span installed.
 ///
+/// Nothing is cross-validated here: this function replays one entry and
+/// knows nothing about the others. The rule that `CoulLong` and
+/// `KSpacePME` are the two halves of one Ewald split — exactly one of each,
+/// at the same splitting parameter α — is checked once by `md_->build()`
+/// in the `TaskMaterializer` constructor, so a payload naming only one half
+/// registers cleanly and then fails at build with a named diagnostic.
+///
 /// @param driver  Target MD driver.
 /// @param entry   Typed params + optional explicit phase binding.
 /// @param n_steps Step budget of the owning MDTask — the ramp span
@@ -112,7 +145,19 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 else if constexpr (std::is_same_v<P,
                                                   DihedralMultiHarmonicParams>)
                     bind(cpu::DihedralMultiHarmonic{p.Cn});
-                else if constexpr (std::is_same_v<P, VelocityVerletParams>)
+                else if constexpr (std::is_same_v<P, PairCoulCutParams>)
+                    bind(cpu::PairCoulCut{p.cutoff});
+                else if constexpr (std::is_same_v<P, CoulLongParams>)
+                    bind(cpu::CoulLong{p.alpha, p.cutoff});
+                else if constexpr (std::is_same_v<P, KSpacePmeParams>) {
+#ifdef ATV_HAS_KSPACE
+                    // Move-only (it owns FFTW plans): the prvalue goes
+                    // straight into the sink, no named local to move from.
+                    bind(cpu::KSpacePME{p.alpha, p.grid_spacing, p.order});
+#else
+                    throw_kspace_not_built();
+#endif
+                } else if constexpr (std::is_same_v<P, VelocityVerletParams>)
                     bind(cpu::md::VelocityVerlet{p.dt});
                 else if constexpr (std::is_same_v<P, InitVelocityParams>)
                     bind(cpu::md::InitVelocity{p.temperature, p.seed});
@@ -149,7 +194,20 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 driver.set_evaluator(cpu::AngleHarmonic{p.K, p.theta0});
             else if constexpr (std::is_same_v<P, DihedralMultiHarmonicParams>)
                 driver.set_evaluator(cpu::DihedralMultiHarmonic{p.Cn});
-            else if constexpr (std::is_same_v<P, VelocityVerletParams>)
+            else if constexpr (std::is_same_v<P, PairCoulCutParams>)
+                driver.set_evaluator(cpu::PairCoulCut{p.cutoff});
+            else if constexpr (std::is_same_v<P, CoulLongParams>)
+                driver.set_evaluator(cpu::CoulLong{p.alpha, p.cutoff});
+            else if constexpr (std::is_same_v<P, KSpacePmeParams>) {
+#ifdef ATV_HAS_KSPACE
+                // Move-only (it owns FFTW plans): the prvalue goes straight
+                // into the owning setter, no named local to move from.
+                driver.set_evaluator(
+                    cpu::KSpacePME{p.alpha, p.grid_spacing, p.order});
+#else
+                throw_kspace_not_built();
+#endif
+            } else if constexpr (std::is_same_v<P, VelocityVerletParams>)
                 driver.set_integrator(cpu::md::VelocityVerlet{p.dt});
             else if constexpr (std::is_same_v<P, InitVelocityParams>)
                 driver.set_observer(

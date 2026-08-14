@@ -85,6 +85,9 @@ ATV_BUILD_BENCHMARKS = "OFF"
 ATV_BUILD_EXAMPLES   = "OFF"
 ATV_BUILD_PW         = {env = "ATV_BUILD_PW",  default = "OFF"}
 ATV_BUILD_HF        = {env = "ATV_BUILD_HF", default = "ON"}
+# Reciprocal-space electrostatics (PME, needs FFTW3): ON so the shipped
+# wheel can run charged periodic systems (CoulLong + KSpacePME).
+ATV_BUILD_KSPACE     = {env = "ATV_BUILD_KSPACE", default = "ON"}
 
 # Optional backends: driven by environment variable with a safe default
 # Override: ATV_BUILD_CUDA=ON pip install .

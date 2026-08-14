@@ -10,6 +10,11 @@ legacy C++ frame type is exposed and atomiverse._convert no longer exists.
 Imports use the deep canonical namespaces (spec python-api-namespaces-am1);
 ``TestTopLevelConvenience`` keeps ONE full run on the top-level re-exports
 to prove the two spellings drive the same objects.
+
+``TestCoulombPme`` (spec py-coulomb-pme) covers charged systems: the
+``CoulCut`` pair style and the matched ``CoulLong`` + ``KSpacePME`` pair.
+Those names are imported INSIDE the test bodies so that this module keeps
+collecting on a build whose extension does not bind them yet.
 """
 
 import importlib
@@ -19,6 +24,7 @@ import pytest
 import molrs
 
 import atomiverse as av
+from atomiverse._binding import _cpp, extension_available
 from atomiverse.md import MD, InitVelocity
 from atomiverse.md.barostat import BerendsenBarostat
 from atomiverse.md.integrator import NoseHooverNPT, ParrinelloRahmanNPT, VelocityVerlet
@@ -26,6 +32,11 @@ from atomiverse.md.thermostat import CSVR, Langevin, NoseHoover
 from atomiverse.neighbor import NeighborList
 from atomiverse.potentials.pair import LJCut
 from atomiverse.recorder import Thermo
+
+#: The reciprocal-space solver is compile-optional (``ATV_BUILD_KSPACE``),
+#: exactly like PW: the binding is present iff the extension carries it.
+#: ``CoulCut`` / ``CoulLong`` are unconditional and are never gated here.
+_HAS_KSPACE: bool = extension_available() and hasattr(_cpp, "KSpacePME")
 
 
 # ── Component construction (deep canonical paths) ───────────────────
@@ -71,9 +82,7 @@ class TestMDDriverBuild:
 
     def test_phase_escape_hatch(self):
         sim = MD(dt=0.001)
-        sim.on("force").add(NeighborList(8.5), order=-10).add(
-            LJCut(0.0104, 3.4, 8.5)
-        )
+        sim.on("force").add(NeighborList(8.5), order=-10).add(LJCut(0.0104, 3.4, 8.5))
         sim.build()
 
     def test_invalid_phase_raises(self):
@@ -432,6 +441,195 @@ class TestThermostatsAndNpt:
         )
         sim.run(argon_frame, 5)
         assert np.isfinite(argon_frame.meta["energy"])
+
+
+# ── py-coulomb-pme: charged systems ─────────────────────────────────
+#
+# Geometry and Ewald settings mirror regressions/md/npt_pme_nacl exactly
+# (reg_npt_pme_nacl.cpp `nacl()` / `electrostatic_energy()`): 4³ = 64 ions
+# on a rock-salt lattice with alternating (-1)^(i+j+k) site charges, so the
+# cell is neutral; nearest-neighbour spacing d = a₀/2 at the experimental
+# a₀ = 5.6402 Å; real-space cutoff 5.0 Å, deliberately below L/2 = 5.64 Å
+# for the minimum-image convention; α = 3.5/r_c (erfc(3.5) ≈ 7e-7); PME
+# grid spacing 0.5 Å at B-spline order 6.
+
+_NACL_SIDE: int = 4
+_NACL_D: float = 2.8201  # nearest-neighbour spacing [Å]
+_NACL_CUTOFF: float = 5.0  # real-space cutoff [Å]
+_NACL_ALPHA: float = 3.5 / _NACL_CUTOFF  # Ewald splitting [1/Å]
+_PME_SPACING: float = 0.5  # [Å]
+_PME_ORDER: int = 6
+
+#: [1/Å], Ewald rule-of-thumb for the 3.0 Å Ar cutoff — the chargeless-frame
+#: cases reuse the α = 3.5/r_c rule on the Ar fixture's smaller cell.
+_ARGON_ALPHA: float = 3.5 / 3.0
+
+#: HARD-CODED GOLDEN — Madelung constant of the rock-salt lattice, from
+#: regressions/md/npt_pme_nacl/REFERENCE.md §1 (Ziman, *Principles of the
+#: Theory of Solids*, 2nd ed., Cambridge 1972, §2.3). Not measured here.
+_MADELUNG: float = 1.747564594633182
+
+#: HARD-CODED GOLDEN — the engine's Coulomb conversion, `units::coulomb`
+#: in core/units.h (LAMMPS `qqr2e`): E [eV] = k_e q_i q_j / r, q in e, r in Å.
+_COULOMB_EV_A: float = 14.399645
+
+
+def _nacl_frame(d: float = _NACL_D) -> "molrs.Frame":
+    """Rock-salt NaCl mini cell with a per-atom ``charge`` column.
+
+    @param d: Nearest-neighbour spacing [Å]; the cubic cell edge is 4·d.
+    @return A neutral 64-ion molrs.Frame (Na⁺ = +1 e, Cl⁻ = −1 e).
+    """
+    xs: list[float] = []
+    ys: list[float] = []
+    zs: list[float] = []
+    charges: list[float] = []
+    masses: list[float] = []
+    numbers: list[int] = []
+    for i in range(_NACL_SIDE):
+        for j in range(_NACL_SIDE):
+            for k in range(_NACL_SIDE):
+                sodium = (i + j + k) % 2 == 0
+                xs.append(i * d)
+                ys.append(j * d)
+                zs.append(k * d)
+                charges.append(1.0 if sodium else -1.0)
+                masses.append(22.9898 if sodium else 35.453)
+                numbers.append(11 if sodium else 17)
+    atoms = molrs.Block()
+    atoms.insert("x", np.array(xs, dtype=np.float64))
+    atoms.insert("y", np.array(ys, dtype=np.float64))
+    atoms.insert("z", np.array(zs, dtype=np.float64))
+    atoms.insert("charge", np.array(charges, dtype=np.float64))
+    atoms.insert("mass", np.array(masses, dtype=np.float64))
+    atoms.insert("atomic_number", np.array(numbers, dtype=np.uint32))
+    frame = molrs.Frame()
+    frame["atoms"] = atoms
+    frame.box = molrs.Box.cube(_NACL_SIDE * d)
+    return frame
+
+
+@pytest.fixture
+def nacl_frame() -> "molrs.Frame":
+    """Neutral rock-salt NaCl mini cell at the experimental spacing."""
+    return _nacl_frame()
+
+
+class TestCoulombPme:
+    """Charged periodic MD from Python (spec py-coulomb-pme).
+
+    The new names are imported inside each test body: until the bindings
+    land the import IS the failure, and the rest of this module still
+    collects. ``KSpacePME`` cases are capability-gated on the extension
+    like PW; ``CoulCut`` / ``CoulLong`` are unconditional.
+    """
+
+    @staticmethod
+    def _md_with(*evaluators: object, cutoff: float = _NACL_CUTOFF) -> MD:
+        """MD carrying *evaluators* plus the regression's neighbor list.
+
+        The integrator is a 0.001 fs VelocityVerlet with no InitVelocity:
+        perfect rock salt has zero net force on every ion by symmetry, so
+        one step is a static single point on stationary atoms.
+        """
+        sim = MD()
+        sim.set_integrator(VelocityVerlet(0.001))
+        sim.set_neighbor(NeighborList(cutoff, 0.3))
+        for evaluator in evaluators:
+            sim.set_evaluator(evaluator)
+        return sim
+
+    @pytest.mark.skipif(
+        not _HAS_KSPACE, reason="extension built without ATV_BUILD_KSPACE"
+    )
+    def test_nacl_pme_matches_madelung(self, nacl_frame: "molrs.Frame") -> None:
+        """CoulLong + KSpacePME reproduce the Madelung lattice energy.
+
+        E = −½ N M k_e / d with the hard-coded constants above; tolerance
+        5e-4 relative is the PME discretization budget pinned by
+        regressions/md/npt_pme_nacl/REFERENCE.md §1 (measured there: 3.8e-8).
+        """
+        from atomiverse.longrange import CoulLong, KSpacePME
+
+        sim = self._md_with(
+            CoulLong(_NACL_ALPHA, _NACL_CUTOFF),
+            KSpacePME(_NACL_ALPHA, _PME_SPACING, _PME_ORDER),
+        )
+        sim.run(nacl_frame, 1)
+        energy = float(nacl_frame.meta["energy"])
+        n_ions = _NACL_SIDE**3
+        e_ref = -0.5 * n_ions * _MADELUNG * _COULOMB_EV_A / _NACL_D
+        assert abs(energy / e_ref - 1.0) <= 5e-4, (
+            f"electrostatic energy {energy!r} eV is more than 5e-4 from the "
+            f"Madelung reference {e_ref!r} eV"
+        )
+
+    def test_coul_cut_smoke(self, nacl_frame: "molrs.Frame") -> None:
+        """The truncated Coulomb pair style needs no reciprocal partner and
+        returns a finite, attractive lattice energy."""
+        from atomiverse.potentials.pair import CoulCut
+
+        sim = self._md_with(CoulCut(_NACL_CUTOFF))
+        sim.run(nacl_frame, 1)
+        energy = float(nacl_frame.meta["energy"])
+        assert np.isfinite(energy)
+        assert energy < 0.0, f"a neutral rock-salt lattice binds; got E = {energy!r} eV"
+
+    def test_coul_cut_missing_charge_raises(self, argon_frame: "molrs.Frame") -> None:
+        """A Coulomb evaluator on a frame with no ``charge`` column fails
+        loud instead of silently zero-filling the charges.
+
+        The Ar fixture carries no charge column; the cutoff is 3.0 Å so the
+        6.8 Å cell still satisfies the minimum-image convention and the
+        missing column is the only defect in the setup.
+        """
+        from atomiverse.potentials.pair import CoulCut
+
+        assert "charge" not in argon_frame["atoms"].keys(), (
+            "fixture drift: this case needs a frame WITHOUT a charge column"
+        )
+        sim = self._md_with(CoulCut(3.0), cutoff=3.0)
+        with pytest.raises(RuntimeError, match="charge"):
+            sim.run(argon_frame, 1)
+
+    @pytest.mark.skipif(
+        not _HAS_KSPACE, reason="extension built without ATV_BUILD_KSPACE"
+    )
+    def test_pme_missing_charge_raises(self, argon_frame: "molrs.Frame") -> None:
+        """The Ewald pair fails the same way on a chargeless frame."""
+        from atomiverse.longrange import CoulLong, KSpacePME
+
+        assert "charge" not in argon_frame["atoms"].keys(), (
+            "fixture drift: this case needs a frame WITHOUT a charge column"
+        )
+        sim = self._md_with(
+            CoulLong(_ARGON_ALPHA, 3.0),
+            KSpacePME(_ARGON_ALPHA, _PME_SPACING, _PME_ORDER),
+            cutoff=3.0,
+        )
+        with pytest.raises(RuntimeError, match="charge"):
+            sim.run(argon_frame, 1)
+
+    @pytest.mark.skipif(
+        not _HAS_KSPACE, reason="extension built without ATV_BUILD_KSPACE"
+    )
+    def test_pme_without_real_partner_raises(self) -> None:
+        """Reciprocal space alone is not a Hamiltonian: the driver requires
+        exactly one matched real-space partner."""
+        from atomiverse.longrange import KSpacePME
+
+        sim = self._md_with(KSpacePME(_NACL_ALPHA, _PME_SPACING, _PME_ORDER))
+        with pytest.raises(RuntimeError, match="requires exactly one"):
+            sim.build()
+
+    def test_coul_long_without_reciprocal_raises(self) -> None:
+        """Real space alone is not a Hamiltonian either: the damped
+        short-range Ewald term requires its reciprocal partner."""
+        from atomiverse.longrange import CoulLong
+
+        sim = self._md_with(CoulLong(_NACL_ALPHA, _NACL_CUTOFF))
+        with pytest.raises(RuntimeError, match="requires exactly one"):
+            sim.build()
 
 
 class TestMolrsFrameV2Boundary:

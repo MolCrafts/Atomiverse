@@ -18,6 +18,7 @@
 
 #include <array>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,10 +35,15 @@
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
+#ifdef ATV_HAS_KSPACE
+#include "atomiverse/cpu/longrange/pme.h"
+#endif
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
+#include "atomiverse/cpu/potentials/coul_long.h"
+#include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/task/task_materializer.h"
@@ -77,6 +83,16 @@ constexpr double kTinit = 10.0;  // [K]
 constexpr unsigned kSeed = 42u;
 constexpr int kNSteps = 5;
 
+// Electrostatics. α is the Ewald splitting parameter [1/Å]: it must be
+// IDENTICAL on the real-space (`CoulLong`) and reciprocal-space
+// (`KSpacePME`) halves or the driver refuses to build, so both the TaskSpec
+// entries and the hand-built twin read it from here. 3.5/r_c is the LAMMPS
+// rule of thumb: erfc(3.5) ≈ 7e-7, i.e. the screened real-space pair term
+// is negligible by the cutoff (regressions/md/npt_pme_nacl/REFERENCE.md).
+constexpr double kAlpha = 3.5 / kCutoff; // [1/Å]
+constexpr double kPmeSpacing = 1.0;      // [Å] target PME grid spacing
+constexpr int kPmeOrder = 6;             // B-spline interpolation order
+
 /// @brief Deterministic 10-atom LJ cluster (two rows of five along x) in a
 ///        30 Å cubic box — literals only, so two constructions are bitwise
 ///        identical (the test_bcast_frame reference-frame pattern).
@@ -94,6 +110,19 @@ cpu::Frame make_lj_frame() {
         frame.span(ATV::kAtom_type)[i] = 18;
     }
     frame.box = ATV::cpu::Box::cubic(30.0);
+    return frame;
+}
+
+/// @brief `make_lj_frame()` with alternating ±1 e on the charge column.
+///
+/// Ten atoms, so the cell is net neutral — which is what the Ewald split
+/// assumes (a charged cell would be silently neutralized by the PME
+/// background and the comparison would be about that, not electrostatics).
+/// Literals only, so two constructions stay bitwise identical.
+cpu::Frame make_charged_lj_frame() {
+    cpu::Frame frame = make_lj_frame();
+    for (int i = 0; i < frame.nlocal(); ++i)
+        frame.span(ATV::kAtom_charge)[i] = (i % 2 == 0) ? 1.0 : -1.0;
     return frame;
 }
 
@@ -414,6 +443,133 @@ TEST(TaskMaterializer, MdBerendsenRunMatchesHandBuiltDriverBitwise) {
         << "fixture produced zero LJ energy — the equivalence check would "
            "be vacuous";
     expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+// ── (b′) Electrostatics through the plural categorical evaluator slot ────
+//
+// Every Coulomb component is materialized categorically (`std::nullopt`
+// binding → `set_evaluator`), which binds at the MD eval phase order 0 —
+// the same slot PairLJCut already occupies. That is deliberate: the
+// evaluator slot is plural, so the Coulomb style JOINS the pair style
+// instead of replacing it. Equal-order ops keep registration order
+// (`Plan` stable_sort), so the hand-built twin registers in exactly the
+// entry order of the spec — a different order sums the force
+// contributions in a different sequence and the bitwise claim would fail
+// for a reason that has nothing to do with fidelity.
+
+TEST(TaskMaterializer, MdCoulCutRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{PairCoulCutParams{kCutoff}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_charged_lj_frame();
+    TaskMaterializer mat(spec);
+    EXPECT_EQ(mat.kind(), TaskKind::MD);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_charged_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_evaluator(cpu::PairCoulCut{kCutoff});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero energy — the equivalence check would "
+           "be vacuous";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+#ifdef ATV_HAS_KSPACE
+// CoulLong + KSpacePME is ONE physical model split across two components,
+// and the driver enforces that: exactly one real-space participant, exactly
+// one reciprocal-space participant, matching α. Both halves therefore have
+// to survive the wire round the same way — dropping either in the
+// materializer is a build error, and mis-ordering them is a bitwise
+// mismatch here.
+TEST(TaskMaterializer, MdCoulLongPmeRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{CoulLongParams{kAlpha, kCutoff}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        KSpacePmeParams{kAlpha, kPmeSpacing, kPmeOrder}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_charged_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_charged_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_evaluator(cpu::CoulLong{kAlpha, kCutoff});
+    // KSpacePME is move-only (it owns FFTW plans), so the prvalue goes
+    // straight into the owning setter — no named local to move from.
+    sim.set_evaluator(cpu::KSpacePME{kAlpha, kPmeSpacing, kPmeOrder});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero energy — the equivalence check would "
+           "be vacuous";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+#endif // ATV_HAS_KSPACE
+
+// The matched-pair rule is the driver's, not the materializer's, but the
+// materializer is what a launcher payload reaches it through: a spec that
+// names only the real-space half must fail loudly at build time (the
+// TaskMaterializer constructor calls `MD::build()`), never run half an
+// electrostatic model. CoulLong alone needs no ATV_HAS_KSPACE guard — it
+// is a plain potential, built whenever POTENTIALS is.
+TEST(TaskMaterializer, MdCoulLongWithoutReciprocalThrowsOnBuild) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{CoulLongParams{kAlpha, kCutoff}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    try {
+        TaskMaterializer mat(spec);
+        cpu::Frame frame = make_charged_lj_frame();
+        (void)mat.run(frame);
+        FAIL() << "a real-space-only electrostatic spec was accepted";
+    } catch (const std::runtime_error& err) {
+        EXPECT_NE(std::string(err.what())
+                      .find("requires exactly one reciprocal-space partner"),
+                  std::string::npos)
+            << err.what();
+    }
 }
 
 // ── (c) SinglePoint AM1 equivalence on H2 ───────────────────────────────

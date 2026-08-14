@@ -15,7 +15,7 @@ pip install atomiverse
 
 This installs the Python API shell and CLI only — **no C++ compile**, no
 prebuilt `_atomiverse` binary. Requires Python ≥ 3.9, NumPy, and
-`molcrafts-molrs==0.13.0` (frame schema v2; other molrs releases are rejected).
+`molcrafts-molrs==0.13.1` (frame schema v2; other molrs releases are rejected).
 This must match the vendored submodule pin in `.gitmodules` / `molrs/Cargo.toml`.
 
 After phase 1 you can run:
@@ -103,10 +103,14 @@ Current surface:
   `ParrinelloRahmanNPT`, `InitVelocity`, `NoseHoover`, `Langevin`, `CSVR`,
   `BerendsenBarostat`, `PairLJCut`, `NeighborList`, `BondHarmonic`,
   `AngleHarmonic`, `DihedralMultiHarmonic`, `Thermo`.
+- **Electrostatics** — `PairCoulCut` (truncated Coulomb) and the Ewald
+  split `CoulLong` + `KSpacePME`. The reciprocal solver needs FFTW3, so
+  `KSpacePME` is present only on wheels built with `ATV_BUILD_KSPACE=ON`
+  (the default).
 - **Geometry optimization** — CPU `minimizer.Minimize` with the `LBFGS`
   optimizer component and independent `ForceConverged` loop policy.
-- **Plane-wave DFT** — `PW` / `PW` / `PWResult` (PW-enabled
-  wheels only; PW types are absent from wheels built without the backend).
+- **Plane-wave DFT** — `PW` / `PWResult` (PW-enabled wheels only; PW types
+  are absent from wheels built without the backend).
 
 GPU minimization fails loud and remains deferred. Gaussian-SCF Python
 bindings remain a later CPU breadth slice.
@@ -181,6 +185,73 @@ The full mapping table lives in `help(atomiverse)`.
 Backend selection is a `device=` constructor parameter (PyTorch-style),
 never a namespace: `av.md.MD(dt=0.001, device="cpu")` is the default;
 `device="cuda"` raises `ValueError` until the CUDA bindings land.
+
+## Charged systems: Coulomb and PME
+
+Charges are **Frame data**: add a per-atom `charge` column [e] to the
+`atoms` block, the same way you added `x`, `mass` and `atomic_number`. On an
+existing frame the block is a live view, so this writes through:
+
+```python
+frame["atoms"].insert("charge", np.array(q, dtype=np.float64))   # [e]
+```
+
+A run that registers a Coulomb evaluator on a frame without that column
+raises instead of reading every charge as zero. That asymmetry is
+deliberate: a forgotten charge column and an intentionally neutral system
+look identical once the frame reaches C++, and the forgotten one produces
+finite, plausible, silently wrong numbers. If you really do mean zero,
+insert an explicit zero column and the check passes.
+
+Two electrostatic models, and they do not mix:
+
+```python
+# 1. Truncated Coulomb — self-contained, no reciprocal partner.
+sim.set_evaluator(av.PairCoulCut(cutoff))
+
+# 2. Ewald/PME split — BOTH halves, at the SAME alpha.
+alpha = 3.5 / cutoff        # [1/Å]; see below
+sim.set_evaluator(av.CoulLong(alpha, cutoff))
+sim.set_evaluator(av.KSpacePME(alpha, grid_spacing=0.5, order=6))
+```
+
+Both models read the neighbor list, so both need
+`sim.set_neighbor(av.NeighborList(cutoff))` with a neighbor cutoff at least
+as large as the Coulomb cutoff — nothing checks this for you.
+
+**Why a split at all.** In a periodic cell the plain `q_i q_j / r` sum
+converges only conditionally: `1/r` decays too slowly to truncate. An
+*Ewald split* rewrites it as a screened short-range part,
+`erfc(alpha·r) q_i q_j / r`, which *does* decay fast enough to cut off, plus
+a smooth remainder that converges in a few Fourier components. `alpha`
+[1/Å] sets where that boundary falls: larger `alpha` screens the real-space
+term harder and moves work into the reciprocal sum. The LAMMPS rule of
+thumb `alpha = 3.5 / cutoff` puts the screened pair term at
+`erfc(3.5) ≈ 7e-7` of the bare one by the time it reaches the cutoff.
+
+The split is a matched pair: the driver requires exactly one real-space and
+one reciprocal-space participant, so installing `CoulLong` or `KSpacePME`
+alone raises at `build()`. On the reciprocal side, `KSpacePME` is *smooth
+Particle-Mesh Ewald* — charges are spread onto a mesh, the mesh is
+Fourier-transformed, multiplied by a kernel fixed by the cell, `alpha` and
+`order`, and transformed back. `grid_spacing` [Å] sets how fine that
+mesh is (smaller = more accurate and costlier) and `order` is the B-spline
+interpolation order — the width in mesh points of the stencil each charge
+is spread over (≥ 3, default 6).
+
+Deep paths: `av.potentials.pair.CoulCut`, `av.longrange.CoulLong`,
+`av.longrange.KSpacePME`.
+
+**How this is checked.** `python/tests/test_md.py` builds a rock-salt NaCl
+cell (64 ions, `charge` = ±1 e, nearest-neighbour spacing d = 2.8201 Å,
+cutoff 5.0 Å) and compares the PME energy against the analytic *Madelung*
+lattice energy — the exact electrostatic energy of an infinite ionic
+lattice, `E = −½·N·M·k_e/d`, where `N` is the ion count, `M = 1.7475646` is
+the rock-salt Madelung constant (a purely geometric lattice sum),
+`k_e = 14.399645 eV·Å/e²` is the Coulomb constant in these units, and `d` is
+the nearest-neighbour spacing. The Python gate is 5e-4 relative, which is
+the PME discretization budget at 0.5 Å / order 6; the equivalent C++ case
+`regressions/md/npt_pme_nacl` measures 3.8e-8 on the same settings.
 
 ## AM1 semiempirical single point
 
@@ -257,6 +328,9 @@ Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
 | `set_barostat` | `BerendsenBarostat(P, tau_P, dt, bulk_modulus=1.0)` | Berendsen isotropic barostat (`fix press/berendsen iso`) — installed *alongside* `VelocityVerlet` + a thermostat |
 | `set_neighbor` | `NeighborList(cutoff, skin=-1)` | Cell-list pair builder |
 | `set_evaluator` | `PairLJCut(ε, σ, cutoff)` | Lennard-Jones 12-6 |
+| `set_evaluator` | `PairCoulCut(cutoff)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
+| `set_evaluator` | `CoulLong(alpha, cutoff)` | Ewald/PME **real-space** half; `alpha` [1/Å] must match its reciprocal partner |
+| `set_evaluator` | `KSpacePME(alpha, grid_spacing=1.0, order=6)` | Ewald/PME **reciprocal-space** half; only on `ATV_BUILD_KSPACE=ON` wheels |
 | `set_evaluator` | `BondHarmonic(K, r0)` | Bond stretching |
 | `set_evaluator` | `AngleHarmonic(K, θ0)` | Angle bending |
 | `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral potential |

@@ -37,10 +37,17 @@ _PHASE_MAP: dict[str, object] = {
 # Evaluator types → typed C++ setter (plural set_evaluator)
 _EVALUATOR_DISPATCH: dict[type, str] = {
     _cpp.PairLJCut: "set_evaluator_pair_lj_cut",
+    _cpp.PairCoulCut: "set_evaluator_pair_coul_cut",
+    _cpp.CoulLong: "set_evaluator_coul_long",
     _cpp.BondHarmonic: "set_evaluator_bond_harmonic",
     _cpp.AngleHarmonic: "set_evaluator_angle_harmonic",
     _cpp.DihedralMultiHarmonic: "set_evaluator_dihedral_multi_harmonic",
 }
+
+# The PME reciprocal solver is compile-optional (ATV_BUILD_KSPACE / FFTW3),
+# so it joins the allow-list only on an extension that carries it.
+if hasattr(_cpp, "KSpacePME"):
+    _EVALUATOR_DISPATCH[_cpp.KSpacePME] = "set_evaluator_kspace_pme"
 
 # Escape-hatch phase builder dispatch
 _PHASE_DISPATCH: dict[type, str] = {
@@ -191,7 +198,23 @@ class MD:
         return self
 
     def set_evaluator(self, component: object) -> MD:
-        """Register an energy/force source (``Driver::set_evaluator``, plural)."""
+        """Register an energy/force source (``Driver::set_evaluator``, plural).
+
+        The slot is plural: each call appends another term and the driver
+        sums them, so a full force field is several calls (a pair style, a
+        bond style, an electrostatic model, …). The accepted component
+        types are whatever this extension binds; an unsupported one raises
+        ``TypeError`` listing them.
+
+        Two electrostatic caveats, because they are the ones this dispatch
+        cannot catch for you:
+
+        * ``CoulLong`` and ``KSpacePME`` are the two halves of one Ewald
+          split. Register both, with the same ``alpha`` — the driver
+          rejects a lone half at :meth:`build`, not here.
+        * every Coulomb style reads the per-atom ``charge`` column [e] of
+          the frame, and :meth:`run` refuses a frame that has none.
+        """
         method_name = _EVALUATOR_DISPATCH.get(type(component))
         if method_name is None:
             supported = ", ".join(t.__name__ for t in _EVALUATOR_DISPATCH)
@@ -258,6 +281,12 @@ class MD:
         *frame* is a ``molrs.Frame``. The C++ driver borrows it, materializes
         a transient execution frame, advances it, and writes
         positions / velocities / forces / energy back into *frame* in place.
+
+        Raises ``RuntimeError`` before any compute if an electrostatic
+        evaluator is registered and *frame* has no per-atom ``charge``
+        column [e]: once the frame reaches C++ a missing column is
+        indistinguishable from deliberate zeros, so it is caught here.
+        Insert an explicit zero column to mean zero.
         """
         if not self._built:
             self.build()

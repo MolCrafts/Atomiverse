@@ -28,6 +28,9 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``minimizer.LBFGS``                   ``LBFGS``                   ``cpu::minimizer::LBFGS``
 ``neighbor.NeighborList``             ``NeighborList``            ``cpu::md::NeighborList<>``
 ``potentials.pair.LJCut``             ``PairLJCut``               ``cpu::PairLJCut``
+``potentials.pair.CoulCut``           ``PairCoulCut``             ``cpu::PairCoulCut``
+``longrange.CoulLong``                ``CoulLong``                ``cpu::CoulLong``
+``longrange.KSpacePME``               ``KSpacePME``               ``cpu::KSpacePME``
 ``potentials.bond.Harmonic``          ``BondHarmonic``            ``cpu::BondHarmonic``
 ``potentials.angle.Harmonic``         ``AngleHarmonic``           ``cpu::AngleHarmonic``
 ``potentials.dihedral.MultiHarmonic`` ``DihedralMultiHarmonic``   ``cpu::DihedralMultiHarmonic``
@@ -39,6 +42,11 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``semiempirical.AM1Result``           ``AM1Result``               ``cpu::semiempirical::AM1Result``
 ``driver.single_point``               ``single_point``            ``cpu::single_point``
 =====================================  ==========================  =========================
+
+Compile-optional rows — ``PW`` / ``PWResult`` (``ATV_BUILD_PW``) and
+``KSpacePME`` (``ATV_BUILD_KSPACE``) — resolve only on an extension that
+was built with that backend and otherwise raise ``AttributeError`` naming
+the flag, so they stay out of ``__all__``.
 
 Drivers use the same **categorical setters** as C++ (not phase-only
 ``add`` as the primary path)::
@@ -87,6 +95,9 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "MinimizeResult": ("atomiverse.minimizer", "MinimizeResult"),
     "NeighborList": ("atomiverse.neighbor", "NeighborList"),
     "PairLJCut": ("atomiverse.potentials.pair", "LJCut"),
+    "PairCoulCut": ("atomiverse.potentials.pair", "CoulCut"),
+    "CoulLong": ("atomiverse.longrange", "CoulLong"),
+    "KSpacePME": ("atomiverse.longrange", "KSpacePME"),
     "BondHarmonic": ("atomiverse.potentials.bond", "Harmonic"),
     "AngleHarmonic": ("atomiverse.potentials.angle", "Harmonic"),
     "DihedralMultiHarmonic": ("atomiverse.potentials.dihedral", "MultiHarmonic"),
@@ -114,6 +125,8 @@ __all__ = [
     "ForceConverged",
     "MinimizeResult",
     "PairLJCut",
+    "PairCoulCut",
+    "CoulLong",
     "NeighborList",
     "BondHarmonic",
     "AngleHarmonic",
@@ -136,7 +149,15 @@ def __getattr__(name: str) -> Any:
     if name in ("PW", "PWResult") and not hasattr(_cpp, "PW"):
         raise AttributeError(
             f"module {__name__!r} has no attribute {name!r} "
-            "(plane-wave backend not built into this extension)"
+            "(plane-wave backend not built into this extension; "
+            "rebuild with ATV_BUILD_PW=ON)"
+        )
+    # So is the PME reciprocal solver (needs FFTW3).
+    if name == "KSpacePME" and not hasattr(_cpp, "KSpacePME"):
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r} "
+            "(reciprocal-space electrostatics not built into this "
+            "extension; rebuild with ATV_BUILD_KSPACE=ON)"
         )
     import importlib
 

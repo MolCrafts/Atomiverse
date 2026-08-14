@@ -6,6 +6,8 @@ import json
 import sys
 import textwrap
 from pathlib import Path
+from types import ModuleType
+from typing import Optional
 
 import pytest
 
@@ -18,7 +20,6 @@ from atomiverse.cli.build import (  # noqa: E402
     build_cmake_configure_command,
     build_cmake_install_command,
     dry_run_defines,
-    write_install_state,
 )
 from atomiverse.cli.config import (  # noqa: E402
     BINDING_TABLE,
@@ -35,12 +36,37 @@ from atomiverse.cli.main import main  # noqa: E402
 from atomiverse.cli.source import (  # noqa: E402
     default_tarball_url,
     package_version,
-    resolve_source,
     verify_source_version,
 )
 from atomiverse.cli.status import format_status, run_status  # noqa: E402
 
 _REPO = _SRC.parents[1]  # Atomiverse root when layout is repo/python/src
+_PYPROJECT = _SRC.parent / "pyproject.toml"  # python/pyproject.toml
+
+
+def _try_import_tomllib() -> Optional[ModuleType]:
+    """Return a TOML reader module, or None when the environment has none.
+
+    Same optional-dependency shape as ``atomiverse.cli.config._load_toml``:
+    ``tomllib`` is stdlib on py>=3.11, and 3.9/3.10 fall back to the optional
+    ``tomli`` backport. Each branch binds one name once and returns it, so the
+    absent case is a plain None rather than a re-bound module name.
+    """
+    try:
+        import tomllib as mod
+
+        return mod
+    except ModuleNotFoundError:  # pragma: no cover - exercised on 3.9/3.10
+        pass
+    try:
+        import tomli as mod
+
+        return mod
+    except ModuleNotFoundError:
+        return None
+
+
+_tomllib: Optional[ModuleType] = _try_import_tomllib()
 
 
 # ── mutual exclusion / empty ─────────────────────────────────────────────────
@@ -122,6 +148,47 @@ def test_md_closure() -> None:
     assert defines["ATV_BUILD_POTENTIALS"] == "ON"
     assert defines["ATV_BUILD_NEIGHBOR"] == "ON"
     assert defines["ATV_BUILD_PW"] == "OFF"
+    # md does not drag the reciprocal-space module in: kspace is its own
+    # product module (one-way DAG kspace → potentials, never md → kspace).
+    assert defines["ATV_BUILD_KSPACE"] == "OFF"
+
+
+def test_kspace_closure() -> None:
+    cfg = InstallConfig(modules={"kspace": True})
+    defines = resolve_defines(cfg)
+    assert defines["ATV_BUILD_KSPACE"] == "ON"
+    assert defines["ATV_BUILD_POTENTIALS"] == "ON"
+
+
+def test_wheel_define_block_enables_kspace() -> None:
+    """The wheel carries reciprocal-space electrostatics by default.
+
+    ``python -m atomiverse config …`` resolves defines from the module DAG
+    (above), but a plain ``pip install .`` never touches that path — the
+    wheel's own capability set is the scikit-build-core define block in
+    python/pyproject.toml. Spec py-coulomb-pme pins
+    ``ATV_BUILD_KSPACE = {env = "ATV_BUILD_KSPACE", default = "ON"}`` there,
+    so PME-charged MD is reachable from the shipped wheel and can still be
+    switched off from the environment.
+    """
+    if _tomllib is None:  # pragma: no cover - py3.9/3.10 without tomli
+        pytest.skip("no TOML reader (need py>=3.11 or the tomli package)")
+    if not _PYPROJECT.is_file():
+        pytest.skip("not in monorepo checkout")
+    with _PYPROJECT.open("rb") as fh:
+        pyproject = _tomllib.load(fh)
+    defines = pyproject["tool"]["scikit-build"]["cmake"]["define"]
+    assert "ATV_BUILD_KSPACE" in defines, (
+        "python/pyproject.toml [tool.scikit-build.cmake.define] carries no "
+        "ATV_BUILD_KSPACE entry: the wheel cannot do PME electrostatics"
+    )
+    entry = defines["ATV_BUILD_KSPACE"]
+    assert isinstance(entry, dict), (
+        "ATV_BUILD_KSPACE must be env-overridable "
+        '({env = "ATV_BUILD_KSPACE", default = "ON"}), not a fixed string'
+    )
+    assert entry["env"] == "ATV_BUILD_KSPACE"
+    assert entry["default"] == "ON"
 
 
 def test_path_closure() -> None:
@@ -298,8 +365,6 @@ def test_default_tarball_url() -> None:
 
 
 def test_write_install_state(tmp_path: Path, monkeypatch) -> None:
-    import atomiverse
-
     # write next to a temp package path is hard; just exercise helper on defines
     defines = dry_run_defines(InstallConfig(modules={"md": True}))
     # Don't clobber real install state — unit-test content shape only

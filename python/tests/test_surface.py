@@ -19,6 +19,10 @@ namespace (pinned per row in test_namespaces.py):
   PW types are present only when the extension was
   built with ``ATV_BUILD_PW=ON``; the deleted functional entry is absent on
   every build.
+* Electrostatics (spec py-coulomb-pme): ``PairCoulCut`` and ``CoulLong``
+  are unconditional top-level names; ``KSpacePME`` is compile-optional
+  (``ATV_BUILD_KSPACE``) and therefore reachable only through the lazy
+  attribute + ``atomiverse.longrange``, never through ``__all__``.
 * A tree grep gate keeps dead references from creeping back anywhere
   under ``python/``. Forbidden tokens are assembled by string
   concatenation so this file never contains one literally.
@@ -44,6 +48,7 @@ import atomiverse as av
 from atomiverse._binding import _cpp
 
 _HAS_PW: bool = hasattr(_cpp, "PW")
+_HAS_KSPACE: bool = hasattr(_cpp, "KSpacePME")
 
 # ── Shared surface definitions ──────────────────────────────────────
 
@@ -54,8 +59,13 @@ _CANONICAL_NEW_NAMES: tuple[str, ...] = (
     "DihedralMultiHarmonic",
 )
 
-# Exact honest top-level surface. The three PW object types exist only in a
-# PW-enabled extension.
+# Exact honest top-level surface — STATIC on every build. Compile-optional
+# object types (``PW`` / ``PWResult``, ``KSpacePME``) are NOT in ``__all__``:
+# they are reachable through the lazy ``__getattr__`` + their deep module
+# when the extension carries them, and raise a build-flag-naming
+# AttributeError when it does not. Keying this set off a capability probe
+# was a latent bug — ``__all__`` is a static list, so the equality assert
+# below failed on any PW-enabled build.
 _CANONICAL_ALL: frozenset[str] = frozenset(
     {
         "MD",
@@ -72,6 +82,8 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "ForceConverged",
         "MinimizeResult",
         "PairLJCut",
+        "PairCoulCut",
+        "CoulLong",
         "NeighborList",
         "BondHarmonic",
         "AngleHarmonic",
@@ -82,7 +94,6 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "AM1Result",
         "single_point",
     }
-    | ({"PW", "PWResult"} if _HAS_PW else set())
 )
 
 _DEAD_PACKAGE_ATTRS: tuple[str, ...] = (
@@ -154,8 +165,12 @@ class TestCanonicalSurface:
         assert hasattr(av, name), f"canonical component atomiverse.{name} is missing"
 
     def test_all_is_exactly_the_honest_surface(self) -> None:
-        """__all__ equals the MD + AM1 base plus optional PW object types."""
-        assert len(_CANONICAL_ALL) == (25 if _HAS_PW else 23)
+        """__all__ is the static MD + electrostatics + AM1 surface.
+
+        Same 25 names on every build: compile-optional types live behind
+        the lazy ``__getattr__``, never in ``__all__``.
+        """
+        assert len(_CANONICAL_ALL) == 25
         assert set(av.__all__) == set(_CANONICAL_ALL)
 
 
@@ -265,6 +280,60 @@ class TestPWSurface:
         assert not hasattr(av, "pw_scf")
         assert not hasattr(importlib.import_module("atomiverse.pw"), "pw_scf")
         assert not hasattr(_cpp, "pw_scf")
+
+
+# ── Electrostatics surface (spec py-coulomb-pme) ────────────────────
+
+
+class TestCoulombSurface:
+    """``CoulCut`` / ``CoulLong`` are unconditional; only the reciprocal
+    solver is compile-optional."""
+
+    def test_pair_coul_cut_is_identity_reexport(self) -> None:
+        """``av.PairCoulCut`` IS ``potentials.pair.CoulCut``."""
+        from atomiverse.potentials.pair import CoulCut
+
+        assert av.PairCoulCut is CoulCut
+
+    def test_coul_long_is_identity_reexport(self) -> None:
+        """``av.CoulLong`` IS ``longrange.CoulLong``."""
+        from atomiverse.longrange import CoulLong
+
+        assert av.CoulLong is CoulLong
+
+    def test_longrange_module_exports_track_the_build(self) -> None:
+        """``atomiverse.longrange`` imports on every build and always
+        exports ``CoulLong``; ``KSpacePME`` appears iff it was compiled."""
+        longrange = importlib.import_module("atomiverse.longrange")
+        assert "CoulLong" in longrange.__all__
+        assert ("KSpacePME" in longrange.__all__) is _HAS_KSPACE
+
+
+# ── KSpace gate (mirrors the PW capability contract) ────────────────
+
+
+class TestKSpaceSurface:
+    @pytest.mark.skipif(
+        not _HAS_KSPACE, reason="extension built without ATV_BUILD_KSPACE"
+    )
+    def test_kspace_pme_reachable(self) -> None:
+        """A KSPACE-enabled wheel resolves the reciprocal solver by both
+        spellings, as one object."""
+        from atomiverse.longrange import KSpacePME
+
+        assert av.KSpacePME is KSpacePME
+
+    @pytest.mark.skipif(_HAS_KSPACE, reason="extension built with ATV_BUILD_KSPACE")
+    def test_kspace_pme_absent_names_the_build_flag(self) -> None:
+        """Without the backend the name fails loud and says which flag to
+        turn on — no pretend reciprocal solver."""
+        with pytest.raises(AttributeError, match="ATV_BUILD_KSPACE"):
+            getattr(av, "KSpacePME")
+        assert not hasattr(_cpp, "KSpacePME")
+
+    def test_kspace_pme_is_never_in_all(self) -> None:
+        """Compile-optional types stay out of the static ``__all__``."""
+        assert "KSpacePME" not in av.__all__
 
 
 # ── In-tree dead-reference grep gate ────────────────────────────────

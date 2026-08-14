@@ -71,6 +71,17 @@ TaskSpec make_md_spec() {
         std::nullopt});
     entries.push_back(MDComponentEntry{
         BerendsenBarostatParams{1e-4, 1000.0, 0.5, 2.0}, std::nullopt});
+    // Electrostatics. All three ride the categorical (`std::nullopt`)
+    // evaluator slot — it is plural, so cut-off Coulomb and the matched
+    // Ewald real/reciprocal pair join the pair styles rather than replace
+    // them. α is spelled identically on `CoulLongParams` and
+    // `KSpacePmeParams`: an unmatched α is a driver-level build error, so
+    // the wire mirror has to carry the number twice, exactly.
+    entries.push_back(MDComponentEntry{PairCoulCutParams{6.0}, std::nullopt});
+    entries.push_back(MDComponentEntry{CoulLongParams{0.5833333333333334, 6.0},
+                                       std::nullopt});
+    entries.push_back(MDComponentEntry{
+        KSpacePmeParams{0.5833333333333334, 0.5, 6}, std::nullopt});
     entries.push_back(MDComponentEntry{
         ThermoParams{100}, MDBinding{ATV::md::Phase::end_of_step, 50}});
     return TaskSpec(MDTask{std::move(entries), 7});
@@ -112,10 +123,22 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::ParrinelloRahmanNPT),
               14u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::BerendsenBarostat), 15u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairCoulCut), 16u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::CoulLong), 17u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::KSpacePME), 18u);
     EXPECT_EQ(component_id(MDComponentParams{VelocityVerletParams{}}),
               ComponentId::VelocityVerlet);
     EXPECT_EQ(component_id(MinimizeComponentParams{LBFGSParams{}}),
               ComponentId::LBFGS);
+    // The three electrostatic params are structurally similar (doubles, and
+    // two of them lead with α), so pin the variant→ID map as well as the
+    // numbers: a swapped arm is otherwise invisible on the wire.
+    EXPECT_EQ(component_id(MDComponentParams{PairCoulCutParams{}}),
+              ComponentId::PairCoulCut);
+    EXPECT_EQ(component_id(MDComponentParams{CoulLongParams{}}),
+              ComponentId::CoulLong);
+    EXPECT_EQ(component_id(MDComponentParams{KSpacePmeParams{}}),
+              ComponentId::KSpacePME);
 }
 
 // v4: the NoseHooverNptParams payload grew (drag / mtchain / mpchain /
