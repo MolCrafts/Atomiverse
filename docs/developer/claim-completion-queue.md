@@ -6,6 +6,12 @@ bar on CPU, complete the three delivery surfaces — **CUDA**, **docs**,
 **latest** (molrs 0.13.1 submodule `95dde84`, molpy 0.13.x). Release
 engineering is out of scope for this queue.
 
+Every open row below has a live spec under `.claude/specs/<slug>/`
+(see `.claude/specs/INDEX.md`, claim-completion campaign); the two Track D
+rows `docs-python-examples` + `docs-python-nav` are covered by the single
+spec `docs-python-surface`. CUDA specs are `deferred: true` (GH200 batch +
+CUDA ES open gate).
+
 ## Claim bars (binding for this queue)
 
 A domain claim requires all of:

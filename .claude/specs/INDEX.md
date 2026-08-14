@@ -3,6 +3,42 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Live — claim-completion campaign (2026-08-14, 16 specs)
+
+Operator directive 2026-08-14: complete CUDA / docs / Python for the
+domains that reached their claim bar. Queue + claim bars:
+`docs/developer/claim-completion-queue.md`. Landed before spec-out:
+molrs→0.13.1 alignment, torch removal, Langevin/CSVR/NoseHooverNPT binding
+slice (commit `334b6de4`).
+
+**Track P — Python bindings** (implementable on the login node):
+
+| Spec | One-line |
+| ---- | -------- |
+| [py-md-npt](py-md-npt/spec.md) | PR + Berendsen barostats, NPT knob tail (residual of the landed slice) |
+| [py-coulomb-pme](py-coulomb-pme/spec.md) | CoulCut/CoulLong + PME KSpace; charged systems from Python |
+| [py-pair-styles](py-pair-styles/spec.md) | Buck/Born/Yukawa/WCA/DPD + FENE/CHARMM/improper |
+| [py-recorder-xyz](py-recorder-xyz/spec.md) | XYZ trajectory Recorder (IO-gating decision first) |
+| [py-minimize-full](py-minimize-full/spec.md) | CG/FIRE/cell-relax + shared evaluator dispatch |
+| [py-mc](py-mc/spec.md) | MC presets NVT/NPT/GCMC from Python |
+| [py-vib](py-vib/spec.md) | FD Hessian + RRHO from Python |
+| [py-scf-single-point](py-scf-single-point/spec.md) | RHF/UHF/RKS/UKS energy+forces; lift CLI --hf rejection |
+| [py-am1-forces](py-am1-forces/spec.md) | AM1 gradients + AM1 BOMD under the MD driver |
+| [py-pw-forces](py-pw-forces/spec.md) | PW forces/stress accessors + PW BOMD; PW `__all__` bug |
+
+**Track D — docs**: [docs-python-surface](docs-python-surface/spec.md) —
+examples (MD/minimize/AM1) + publish the Python guide in the site nav.
+
+**Track C — CUDA** (all `deferred: true`; GH200 batch + CUDA ES open gate):
+
+| Spec | One-line |
+| ---- | -------- |
+| [cuda-md-lj-bench](cuda-md-lj-bench/spec.md) | restore the LJ perf benchmark backing the sole ⚡ |
+| [cuda-md-npt](cuda-md-npt/spec.md) | device MTK NPT, externally anchored CUDA leg |
+| [cuda-scf-gradient](cuda-scf-gradient/spec.md) | device RHF gradients (unblocks GPU AIMD) |
+| [cuda-pw-spin-pbe](cuda-pw-spin-pbe/spec.md) | lift device spin-PBE force/stress rejections |
+| [cuda-gpw-product](cuda-gpw-product/spec.md) | finish the frozen CUDA GPW matrix; kill self-anchors |
+
 ## Closed — GPW structure (ES policy first cut)
 
 | Spec | Shipped |
