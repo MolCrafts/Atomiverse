@@ -12,8 +12,10 @@ from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional,
 
 # ── Module flags (CLI / [modules] section) → product ATV_BUILD_* ──────────
 # Names match the user-facing CLI surface. ``am1`` maps to SEMIEMPIRICAL;
-# ``minimize`` maps to MINIMIZER. ``neighbor`` is optional-explicit (also
-# pulled in by the auto-enable closure).
+# ``minimize`` maps to MINIMIZER; ``hf`` is Gaussian-basis SCF (self-consistent
+# field), i.e. the molecular Hartree-Fock and Kohn-Sham DFT methods.
+# ``neighbor`` is optional-explicit (also pulled in by the auto-enable
+# closure).
 
 MODULE_TO_DEFINE: Dict[str, str] = {
     "md": "ATV_BUILD_MD",
@@ -22,6 +24,7 @@ MODULE_TO_DEFINE: Dict[str, str] = {
     "evaluate": "ATV_BUILD_EVALUATE",
     "vib": "ATV_BUILD_VIB",
     "path": "ATV_BUILD_PATH",
+    "hf": "ATV_BUILD_HF",
     "pw": "ATV_BUILD_PW",
     "gpw": "ATV_BUILD_GPW",
     "am1": "ATV_BUILD_SEMIEMPIRICAL",
@@ -39,6 +42,7 @@ PRODUCT_MODULES: tuple[str, ...] = tuple(MODULE_TO_DEFINE.keys())
 #   MD, MC, MINIMIZER → POTENTIALS + NEIGHBOR
 #   PATH → MINIMIZER  (then inherits minimizer → potentials+neighbor)
 #   KSPACE → POTENTIALS
+# HF has no product-module edge (its only dependency, MOLRS, is derived).
 AUTO_ENABLE: Dict[str, tuple[str, ...]] = {
     "md": ("potentials", "neighbor"),
     "mc": ("potentials", "neighbor"),
@@ -75,11 +79,6 @@ BOUND_DEFINES: Set[str] = set(BINDING_TABLE.values()) | {"ATV_BUILD_PYTHON"}
 
 _BOOL_TRUE = frozenset({"yes", "true", "on", "1"})
 _BOOL_FALSE = frozenset({"no", "false", "off", "0"})
-
-HF_REJECT_MSG = (
-    "HF/SCF Python bindings are not available yet. "
-    "Remove --hf / modules.hf until SCF bindings ship."
-)
 
 
 class ConfigError(ValueError):
@@ -130,7 +129,7 @@ def load_toml_config(path: Path | str) -> InstallConfig:
 
     @param path: Path to a ``.toml`` file.
     @return Parsed :class:`InstallConfig`.
-    @raises ConfigError: on unknown sections/keys, hf enable, bound-as-unbound.
+    @raises ConfigError: on unknown sections/keys or bound-as-unbound.
     """
     p = Path(path)
     if not p.is_file():
@@ -143,10 +142,6 @@ def load_toml_config(path: Path | str) -> InstallConfig:
         raise ConfigError("[modules] must be a table")
     for name, enabled in modules_tbl.items():
         name = str(name)
-        if name == "hf":
-            if enabled:
-                raise ConfigError(HF_REJECT_MSG)
-            continue
         if name == "global":
             raise ConfigError("'global' is not a product module; use [global]")
         if name not in MODULE_TO_DEFINE:
@@ -178,8 +173,6 @@ def load_toml_config(path: Path | str) -> InstallConfig:
     for section, body in data.items():
         if section in ("modules", "global", "cmake"):
             continue
-        if section == "hf":
-            raise ConfigError(HF_REJECT_MSG)
         if section not in MODULE_TO_DEFINE:
             raise ConfigError(f"unknown config section [{section}]")
         if not isinstance(body, Mapping):
@@ -206,13 +199,10 @@ def _stringify_cmake_value(value: Any) -> str:
     return str(value)
 
 
-def _set_bound_option(
-    cfg: InstallConfig, key: str, value: Any, *, where: str
-) -> None:
+def _set_bound_option(cfg: InstallConfig, key: str, value: Any, *, where: str) -> None:
     if key not in BINDING_TABLE:
         raise ConfigError(
-            f"unknown bound key {key!r} in {where}; "
-            f"known keys: {sorted(BINDING_TABLE)}"
+            f"unknown bound key {key!r} in {where}; known keys: {sorted(BINDING_TABLE)}"
         )
     # module names used as options are not valid under [global]/module]
     if key in MODULE_TO_DEFINE:
@@ -262,12 +252,9 @@ def apply_cli_modules(
         name = str(name).strip()
         if not name:
             continue
-        if name == "hf":
-            raise ConfigError(HF_REJECT_MSG)
         if name not in MODULE_TO_DEFINE:
             raise ConfigError(
-                f"unknown module {name!r}; "
-                f"known: {sorted(MODULE_TO_DEFINE)}"
+                f"unknown module {name!r}; known: {sorted(MODULE_TO_DEFINE)}"
             )
         cfg.modules[name] = True
     if options:
@@ -309,8 +296,6 @@ def resolve_defines(cfg: InstallConfig) -> Dict[str, str]:
     """
     modules: Dict[str, bool] = {m: False for m in PRODUCT_MODULES}
     for name, on in cfg.modules.items():
-        if name == "hf" and on:
-            raise ConfigError(HF_REJECT_MSG)
         if name not in MODULE_TO_DEFINE:
             raise ConfigError(f"unknown module {name!r}")
         modules[name] = bool(on)
@@ -366,23 +351,25 @@ def validate_mode(
     hf: bool,
     has_cli_options: bool = False,
 ) -> None:
-    """Enforce XOR of ``--config`` vs positional modules; reject ``--hf`` / empty.
+    """Enforce XOR of ``--config`` vs positional modules; reject an empty request.
 
     Global CLI options (``--mpi``, ``--real-storage``, …) may accompany either
     mode. They are **not** per-module.
 
     @param config_path: Path from ``--config``, or None.
     @param modules: Positional module names (scheme B).
-    @param hf: Whether ``--hf`` was passed.
+    @param hf: Whether ``--hf`` was passed. It is the flag spelling of the
+        ``hf`` product module (Gaussian SCF), so it counts as a module for
+        both the XOR and the empty check: ``config --hf`` alone is a valid,
+        non-empty request, and ``config --config r.toml --hf`` is a conflict.
     @param has_cli_options: True if any global CLI option was set. Alone
         (without modules or --config) still counts as empty.
 
-    @raises ConfigError: on mutual exclusion, empty config, or --hf.
+    @raises ConfigError: on mutual exclusion or an empty config.
     """
-    if hf:
-        raise ConfigError(HF_REJECT_MSG)
-
     mod_list = [m for m in modules if m]
+    if hf and "hf" not in mod_list:
+        mod_list.append("hf")
     if config_path and mod_list:
         raise ConfigError(
             "mutual exclusion: use either --config PATH.toml or CLI modules "

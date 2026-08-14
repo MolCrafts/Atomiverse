@@ -119,7 +119,7 @@ def config_cmd(
         None,
         help=(
             "product modules to enable: md, minimize, mc, evaluate, vib, path, "
-            "pw, gpw, am1, cuda, kspace, potentials, neighbor"
+            "hf, pw, gpw, am1, cuda, kspace, potentials, neighbor"
         ),
         metavar="MODULE",
     ),
@@ -153,7 +153,10 @@ def config_cmd(
     hf: bool = typer.Option(
         False,
         "--hf",
-        help="(rejected) HF/SCF bindings are not available yet",
+        help=(
+            "enable Gaussian SCF — molecular Hartree-Fock / Kohn-Sham DFT, "
+            "ATV_BUILD_HF; the flag spelling of the `hf` module"
+        ),
     ),
     src: Optional[Path] = typer.Option(
         None,
@@ -187,8 +190,11 @@ def config_cmd(
 ) -> None:
     """Configure the native build (``cmake -S -B -D…``). Streams raw cmake output."""
     mod_list = list(modules or [])
+    if hf and "hf" not in mod_list:
+        # --hf is the flag spelling of the `hf` product module.
+        mod_list.append("hf")
     for m in mod_list:
-        if m not in MODULE_TO_DEFINE and m != "hf":
+        if m not in MODULE_TO_DEFINE:
             typer.echo(
                 f"error: unknown module {m!r}; known: {sorted(MODULE_TO_DEFINE)}",
                 err=True,
@@ -219,8 +225,7 @@ def config_cmd(
             merge_unbound_cli(cfg, define)
         if src is None and url is None:
             raise ConfigError(
-                "config requires --src /path/to/Atomiverse "
-                "(staged cmake pipeline)"
+                "config requires --src /path/to/Atomiverse (staged cmake pipeline)"
             )
         source = resolve_source(
             src=str(src) if src is not None else None,

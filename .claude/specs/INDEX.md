@@ -3,7 +3,7 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
-## Live — claim-completion campaign (2026-08-14, 13 specs live)
+## Live — claim-completion campaign (2026-08-14, 12 specs live)
 
 Operator directive 2026-08-14: complete CUDA / docs / Python for the
 domains that reached their claim bar. Queue + claim bars:
@@ -19,7 +19,6 @@ slice (commit `334b6de4`).
 | [py-minimize-full](py-minimize-full/spec.md) | CG/FIRE/cell-relax + shared evaluator dispatch |
 | [py-mc](py-mc/spec.md) | MC presets NVT/NPT/GCMC from Python |
 | [py-vib](py-vib/spec.md) | FD Hessian + RRHO from Python |
-| [py-scf-single-point](py-scf-single-point/spec.md) | RHF/UHF/RKS/UKS energy+forces; lift CLI --hf rejection |
 | [py-am1-forces](py-am1-forces/spec.md) | AM1 gradients + AM1 BOMD under the MD driver |
 | [py-pw-forces](py-pw-forces/spec.md) | PW forces/stress accessors + PW BOMD; PW `__all__` bug |
 

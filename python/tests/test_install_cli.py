@@ -86,11 +86,21 @@ def test_empty_config_fails() -> None:
     assert rc != 0
 
 
-def test_hf_rejected() -> None:
-    with pytest.raises(ConfigError, match="HF/SCF|not available"):
-        validate_mode(config_path=None, modules=["md"], hf=True)
-    rc = main(["config", "md", "--hf", "--src", str(_REPO)])
-    assert rc != 0
+def test_hf_is_a_normal_module() -> None:
+    """``hf`` configures Gaussian SCF like any other product module.
+
+    Spec py-scf-single-point ships the ``atomiverse.scf`` bindings, so the
+    old hard rejection is gone: ``hf`` maps to ``ATV_BUILD_HF`` in the same
+    table as every other module (mirrors test_kspace_closure).
+    """
+    cfg = InstallConfig(modules={"hf": True})
+    defines = resolve_defines(cfg)
+    assert defines["ATV_BUILD_HF"] == "ON"
+
+
+def test_hf_flag_no_longer_rejected() -> None:
+    """``--hf`` beside a module passes validation (no ConfigError left)."""
+    validate_mode(config_path=None, modules=["md"], hf=True)
 
 
 def test_mpi_is_global_option_not_module_section(tmp_path: Path) -> None:

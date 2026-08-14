@@ -46,7 +46,8 @@ python -m atomiverse status
 ```
 
 **Modules** are positional on `config` only: `md`, `minimize`, `mc`, `evaluate`,
-`vib`, `path`, `pw`, `gpw`, `am1`, `cuda`, `kspace`, `potentials`, `neighbor`.  
+`vib`, `path`, `hf`, `pw`, `gpw`, `am1`, `cuda`, `kspace`, `potentials`,
+`neighbor`.  
 Enabling `md` / `mc` / `minimize` auto-enables `potentials` + `neighbor`.
 
 **Global options** (on `config`, never under a module name):
@@ -75,7 +76,8 @@ mpi = true
 real_storage = "double"
 ```
 
-**`--hf` is rejected** until SCF Python bindings land.
+**`--hf`** is the flag spelling of the `hf` module: it configures Gaussian
+SCF (`ATV_BUILD_HF=ON`) exactly like every other product module.
 
 **Version lock:** checkout `python/pyproject.toml` must match the installed
 package version. **`--src` is required** for the staged cmake pipeline.
@@ -111,9 +113,12 @@ Current surface:
   optimizer component and independent `ForceConverged` loop policy.
 - **Plane-wave DFT** — `PW` / `PWResult` (PW-enabled wheels only; PW types
   are absent from wheels built without the backend).
+- **Gaussian SCF** — the concrete mean-field methods `RHF`, `UHF`, `RKS`,
+  `UKS` for molecular Hartree-Fock and Kohn-Sham DFT. Needs
+  `ATV_BUILD_HF=ON`, which the shipped wheel sets by default; on a wheel
+  built without it the four names are absent.
 
-GPU minimization fails loud and remains deferred. Gaussian-SCF Python
-bindings remain a later CPU breadth slice.
+GPU minimization fails loud and remains deferred.
 
 ## Quickstart: Argon MD
 
@@ -256,15 +261,138 @@ the PME discretization budget at 0.5 Å / order 6; the equivalent C++ case
 ## AM1 semiempirical single point
 
 `AM1Evaluator` computes energy [eV] and Mulliken charges [e] in one
-`single_point` pass (`type` column = atomic number Z; no AM1 forces yet):
+`single_point` pass (the `atomic_number` column carries Z; no AM1 forces yet):
 
 ```python
+import numpy as np
+import atomiverse as av
+
+# `frame` is a molrs.Frame with x/y/z + atomic_number columns.
 ev = av.AM1Evaluator(charge=0)
 av.single_point(frame, ev)                     # energy + charges onto frame
 q = np.asarray(frame["atoms"]["charge"])       # Mulliken charges [e]
 res = ev.last_result()                         # Hartree / kcal-mol detail
 print(res.heat_of_formation_kcal_mol, res.iterations)
 ```
+
+## Gaussian SCF single point and forces
+
+**SCF** stands for *self-consistent field*, and it names the loop these
+methods run. Each is a **mean-field** model of the electrons: instead of
+tracking every electron's repulsion of every other one, each electron is
+taken to move in the *averaged* field of all the rest. That averaged field
+is built from the orbitals it determines, so the equations cannot be solved
+in one shot — you guess, build the field, diagonalize, rebuild, and repeat
+until the energy stops moving. The orbitals themselves are expanded in a
+fixed set of Gaussian functions, the **basis set**; a larger basis is more
+accurate and more expensive.
+
+Four methods, named by two choices. **R**estricted means the spin-up (α) and
+spin-down (β) electrons share one set of spatial orbitals — a closed shell,
+every occupied orbital doubly filled — while **U**nrestricted gives the two
+spin channels their own orbitals, which is what a system with unpaired
+electrons (a radical, an ion, triplet O₂) needs. **HF** is Hartree-Fock:
+electron exchange exactly, electron correlation not at all. **KS** is
+Kohn-Sham density-functional theory, which replaces both by an approximate
+*exchange-correlation functional* — a recipe turning the electron density
+into an energy — that you name with the `functional` argument.
+
+The Python surface is the **concrete method** — `RHF`, `UHF`, `RKS`, `UKS`.
+There is no `SCF` facade and no config bag: basis, charge, multiplicity,
+tolerance and iteration cap are constructor arguments.
+
+```python
+import numpy as np
+import atomiverse as av
+
+# `frame` is a molrs.Frame carrying x/y/z + atomic_number — the worked
+# example at the end of this section builds one from scratch.
+rhf = av.RHF(basis="STO-3G", charge=0, tol=1e-9, max_iter=100)
+rhf.run(frame)                        # frame.meta["energy"] is eV
+print(rhf.energy(), rhf.converged(), rhf.iterations())   # Hartree / flag / count
+
+forces = rhf.forces(frame)            # (N, 3) numpy array [eV/Å]
+fz = np.asarray(frame["atoms"]["fz"]) # same values written back to the frame
+```
+
+The four constructors and their defaults:
+
+| Method | Signature |
+| --- | --- |
+| `RHF` | `RHF(basis="STO-3G", charge=0, tol=1e-9, max_iter=100)` |
+| `UHF` | `UHF(basis="STO-3G", charge=0, multiplicity=1, tol=1e-8, max_iter=100)` |
+| `RKS` | `RKS(functional="PBE", basis="STO-3G", charge=0, tol=1e-9, max_iter=100)` |
+| `UKS` | `UKS(functional="LSDA", basis="STO-3G", charge=0, multiplicity=1, tol=1e-8, max_iter=100)` |
+
+`basis` is one of `STO-3G`, `6-31G`, `6-31G*`, `6-31+G*`, `def2-SVP`,
+`def2-TZVP`, `aug-cc-pVDZ`; `functional` is one of `LSDA`, `PBE`, `PBEsol`,
+`RevPBE`, `RPBE`, `BLYP`, `OptB88VdW`, `B3LYP`, `PBE0`, `B2PLYP`. An
+unsupported name raises `ValueError` listing the supported ones — there is
+no fallback basis or functional.
+
+**Units.** `charge` [e], `tol` [Hartree]. `energy()` is Hartree — the atomic
+unit of energy the solver works in, 1 Ha = 27.211386 eV — while
+`frame.meta["energy"]` is the same number in eV (the public Frame currency);
+`forces()` is eV/Å and also writes `fx`/`fy`/`fz` back to the frame, the same
+write-back contract as MD. `run()` computes **no** forces: after it, a
+frame's `fx`/`fy`/`fz` are whatever they were on the way in (zeros for a
+fresh frame), so call `forces()` when you want them.
+
+**When is it converged?** `tol` is the threshold on |ΔE|, the change in total
+energy between two successive iterations. `converged()` is `True` only when
+that *and* a second measure are met: the Frobenius norm of the DIIS error
+matrix below √`tol`. DIIS — *direct inversion of the iterative subspace* — is
+the standard accelerator for this loop, and its error matrix is the natural
+residual: it measures how far the current electron density is from being
+self-consistent with the field it generates. Hitting `max_iter` first ends
+the loop with `converged()` `False` rather than raising, so check the flag
+before trusting the energy.
+
+**Open shells.** For `UHF` / `UKS` the α/β split is resolved at `run` /
+`forces` time from N_e = ΣZ − charge and the multiplicity M = 2S + 1 (S is
+the total spin: M = 1 singlet, 2 doublet, 3 triplet), as
+n_α = (N_e + M − 1)/2 and n_β = (N_e − M + 1)/2. Those are whole numbers
+only for an even N_e with an odd M or an odd N_e with an even M, so a parity
+mismatch (e.g. a doublet with an even electron count) raises `ValueError`
+there rather than at construction.
+
+Deep path: `av.scf.RHF`, … . These methods drive their own SCF loop, so they
+are used directly; `single_point(frame, rhf)` accepts them and simply calls
+`run`.
+
+**Worked example — water, RHF/STO-3G.**
+
+```python
+import math
+import numpy as np
+import molrs
+import atomiverse as av
+
+r_oh, half = 0.95, 0.5 * math.radians(104.5)        # Å, half of ∠HOH
+hx, hz = r_oh * math.sin(half), r_oh * math.cos(half)
+
+frame = molrs.Frame()
+atoms = molrs.Block()
+atoms.insert("x", np.array([0.0, hx, -hx]))
+atoms.insert("y", np.zeros(3))
+atoms.insert("z", np.array([0.0, hz, hz]))
+atoms.insert("mass", np.array([15.999, 1.008, 1.008]))
+atoms.insert("atomic_number", np.array([8, 1, 1], dtype=np.uint32))
+frame["atoms"] = atoms
+frame.box = molrs.Box.cube(20.0)                    # gas phase
+
+rhf = av.RHF()                                      # STO-3G defaults
+rhf.run(frame)
+assert rhf.converged()
+print(rhf.energy())        # total energy [Hartree]
+```
+
+The printed energy reproduces **−74.961754 Ha**, the value
+`regressions/scf/h2o_rhf_sto3g` pins at exactly this geometry (LibreTexts
+*Live Textbook of Physical Chemistry* §28.2, cross-checked against PySCF
+2.13), inside that case's stated **1 × 10⁻³ Ha** window —
+see `regressions/scf/h2o_rhf_sto3g/REFERENCE.md`. `python/tests/test_scf.py`
+grades this same geometry against the same number and window.
 
 ## CPU geometry minimization
 

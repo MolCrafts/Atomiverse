@@ -38,16 +38,25 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``recorder.XYZ``                      ``XYZ``                     ``cpu::XyzRecorder``
 ``pw.PW``                             ``PW``                      ``cpu::pw::PW``
 ``pw.PWResult``                       ``PWResult``                ``cpu::pw::PWResult``
+``scf.RHF``                           ``RHF``                     ``cpu::scf::RHF``
+``scf.UHF``                           ``UHF``                     ``cpu::scf::UHF``
+``scf.RKS``                           ``RKS``                     ``cpu::scf::RKS``
+``scf.UKS``                           ``UKS``                     ``cpu::scf::UKS``
 ``semiempirical.AM1``                 ``AM1``                     ``cpu::semiempirical::AM1``
 ``semiempirical.AM1Evaluator``        ``AM1Evaluator``            ``cpu::semiempirical::AM1Evaluator``
 ``semiempirical.AM1Result``           ``AM1Result``               ``cpu::semiempirical::AM1Result``
 ``driver.single_point``               ``single_point``            ``cpu::single_point``
 =====================================  ==========================  =========================
 
-Compile-optional rows — ``PW`` / ``PWResult`` (``ATV_BUILD_PW``) and
-``KSpacePME`` (``ATV_BUILD_KSPACE``) — resolve only on an extension that
-was built with that backend and otherwise raise ``AttributeError`` naming
-the flag, so they stay out of ``__all__``.
+``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` are the four Gaussian-basis SCF
+(self-consistent field) methods — restricted / unrestricted Hartree-Fock and
+Kohn-Sham DFT; ``help(atomiverse.scf)`` explains the naming and the units.
+
+Compile-optional rows — ``PW`` / ``PWResult`` (``ATV_BUILD_PW``),
+``KSpacePME`` (``ATV_BUILD_KSPACE``) and the Gaussian SCF methods
+``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` (``ATV_BUILD_HF``) — resolve only on
+an extension that was built with that backend and otherwise raise
+``AttributeError`` naming the flag, so they stay out of ``__all__``.
 
 Drivers use the same **categorical setters** as C++ (not phase-only
 ``add`` as the primary path)::
@@ -73,7 +82,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from atomiverse._binding import _cpp, extension_available, require_cpp
+from atomiverse._binding import _cpp, require_cpp
 
 __version__ = "0.1.0"
 
@@ -110,7 +119,15 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "single_point": ("atomiverse.driver", "single_point"),
     "PW": ("atomiverse.pw", "PW"),
     "PWResult": ("atomiverse.pw", "PWResult"),
+    "RHF": ("atomiverse.scf", "RHF"),
+    "UHF": ("atomiverse.scf", "UHF"),
+    "RKS": ("atomiverse.scf", "RKS"),
+    "UKS": ("atomiverse.scf", "UKS"),
 }
+
+# Gaussian SCF methods are compile-optional (ATV_BUILD_HF); probed as a
+# group on the one symbol the extension always carries when HF is on.
+_SCF_METHODS: tuple[str, ...] = ("RHF", "UHF", "RKS", "UKS")
 
 __all__ = [
     "MD",
@@ -155,6 +172,13 @@ def __getattr__(name: str) -> Any:
             "(plane-wave backend not built into this extension; "
             "rebuild with ATV_BUILD_PW=ON)"
         )
+    # So are the Gaussian SCF methods.
+    if name in _SCF_METHODS and not hasattr(_cpp, "RHF"):
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r} "
+            "(Gaussian SCF not built into this extension; "
+            "rebuild with ATV_BUILD_HF=ON)"
+        )
     # So is the PME reciprocal solver (needs FFTW3).
     if name == "KSpacePME" and not hasattr(_cpp, "KSpacePME"):
         raise AttributeError(
@@ -172,6 +196,4 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> list[str]:
     names = list(globals().keys()) + list(_COMPUTE_EXPORTS.keys())
-    if extension_available() and hasattr(_cpp, "PW"):
-        pass  # PW names already in _COMPUTE_EXPORTS
     return sorted(set(names))

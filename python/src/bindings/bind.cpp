@@ -24,6 +24,9 @@ void bind_pw(nb::module_& m);
 #ifdef ATV_HAS_SEMIEMPIRICAL
 void bind_semiempirical(nb::module_& m);
 #endif
+#ifdef ATV_HAS_HF
+void bind_scf(nb::module_& m);
+#endif
 
 NB_MODULE(_atomiverse, m) {
     m.doc() = "Atomiverse: molecular simulation compute backend";
@@ -40,5 +43,7 @@ NB_MODULE(_atomiverse, m) {
 #ifdef ATV_HAS_SEMIEMPIRICAL
     bind_semiempirical(m);
 #endif
-    // Gaussian SCF bindings remain a separate CPU breadth slice.
+#ifdef ATV_HAS_HF
+    bind_scf(m);
+#endif
 }

@@ -27,7 +27,14 @@ import pytest
 import molrs
 
 import atomiverse as av
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, extension_available
+
+# Short-circuited on ``extension_available()``: the missing-extension
+# sentinel raises ImportError from ``__getattr__``, so a bare
+# ``hasattr(_cpp, ...)`` would break collection on a pure-Python wheel
+# instead of letting conftest skip the file (idiom from test_md.py).
+_HAS_PW: bool = extension_available() and hasattr(_cpp, "PW")
+_HAS_HF: bool = extension_available() and hasattr(_cpp, "RHF")
 
 # ── Spec mapping table: (top-level name, deep module, deep name) ────
 # One row per entry of the compiled public mapping table.
@@ -54,11 +61,28 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
 )
 
 _PW_MAPPING: tuple[tuple[str, str, str], ...] = (
-    ("PW", "atomiverse.pw", "PW"),
-    ("PWResult", "atomiverse.pw", "PWResult"),
-) if hasattr(_cpp, "PW") else ()
+    (
+        ("PW", "atomiverse.pw", "PW"),
+        ("PWResult", "atomiverse.pw", "PWResult"),
+    )
+    if _HAS_PW
+    else ()
+)
 
-_MAPPING = _BASE_MAPPING + _PW_MAPPING
+# Gaussian SCF (spec py-scf-single-point): four concrete methods, present
+# only on an ``ATV_BUILD_HF=ON`` extension.
+_SCF_MAPPING: tuple[tuple[str, str, str], ...] = (
+    (
+        ("RHF", "atomiverse.scf", "RHF"),
+        ("UHF", "atomiverse.scf", "UHF"),
+        ("RKS", "atomiverse.scf", "RKS"),
+        ("UKS", "atomiverse.scf", "UKS"),
+    )
+    if _HAS_HF
+    else ()
+)
+
+_MAPPING = _BASE_MAPPING + _PW_MAPPING + _SCF_MAPPING
 
 _DEEP_MODULES: tuple[str, ...] = (
     "atomiverse.md",
@@ -75,6 +99,7 @@ _DEEP_MODULES: tuple[str, ...] = (
     "atomiverse.driver",
     "atomiverse.semiempirical",
     "atomiverse.pw",
+    "atomiverse.scf",
 )
 
 
@@ -93,8 +118,10 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 18 entries and a PW build contributes two types (PW, PWResult)."""
-        assert len(_MAPPING) == (20 if hasattr(_cpp, "PW") else 18)
+        """The base has 18 entries; a PW build contributes two types (PW,
+        PWResult) and an HF build the four concrete SCF methods."""
+        expected = 18 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(
         "top_name,deep_module,deep_name",

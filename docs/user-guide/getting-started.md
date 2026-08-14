@@ -21,7 +21,7 @@ Requires **C++20** and **CMake ≥ 3.18**.
 
 | Option | Turns on |
 |---|---|
-| `ATV_BUILD_HF` | Gaussian SCF (RHF / UHF / UKS) |
+| `ATV_BUILD_HF` | Gaussian SCF (RHF / UHF / RKS / UKS) |
 | `ATV_BUILD_PW` | Plane-wave DFT (needs FFTW3) |
 | `ATV_BUILD_GPW` | GPW DFT (needs RHF + PW) |
 | `ATV_BUILD_CUDA` | CUDA backend |

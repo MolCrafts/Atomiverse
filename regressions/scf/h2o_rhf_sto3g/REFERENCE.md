@@ -31,13 +31,19 @@ O–H bonds subtend the reference angle:
 - R(O–H) = 0.95 Å
 - ∠H–O–H = 104.5°
 
-Derived Cartesian coordinates [Å] (half-angle = 52.25°):
+Derived Cartesian coordinates [Å], with the half-angle θ = 52.25° and
+x_H = R sin θ, z_H = R cos θ — the same two formulas `reg_h2o_rhf_sto3g.cpp`
+evaluates:
 
 | Atom | x | y | z |
 |---|---|---|---|
-| O | 0.00000 | 0.0 | 0.00000 |
-| H | +0.75126 | 0.0 | 0.58151 |
-| H | −0.75126 | 0.0 | 0.58151 |
+| O | 0.000000 | 0.0 | 0.000000 |
+| H | +0.751155 | 0.0 | 0.581606 |
+| H | −0.751155 | 0.0 | 0.581606 |
+
+These are rounded for reading only. The case computes them in double
+precision from R and the angle (0.7511550950566511 / 0.5816064160327268);
+do not retype the rounded table into a consumer.
 
 The molecule sits in a 20 Å cubic box (gas-phase; the box only supplies a
 non-degenerate cell and does not enter the isolated-molecule SCF).

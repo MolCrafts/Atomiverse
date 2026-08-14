@@ -35,11 +35,15 @@ if "$PYTHON" -m atomiverse config --config "$HERE/fixtures/minimal_ok.toml" md -
 fi
 echo "ok: --config + md rejected"
 
-if "$PYTHON" -m atomiverse config md --hf --src "$REPO" >/dev/null 2>&1; then
-    echo "FAIL: expected --hf rejection"
-    exit 1
+# --hf is a normal module (spec py-scf-single-point): it resolves
+# ATV_BUILD_HF=ON like every other module instead of being rejected.
+if [[ -f "$REPO/CMakeLists.txt" ]]; then
+    OUT="$("$PYTHON" -m atomiverse config md --hf --src "$REPO" --dry-run 2>&1)" || {
+        echo "FAIL: config md --hf"; echo "$OUT"; exit 1
+    }
+    echo "$OUT" | grep -q 'ATV_BUILD_HF=ON' || { echo "FAIL: HF define"; echo "$OUT"; exit 1; }
+    echo "ok: --hf configures ATV_BUILD_HF=ON"
 fi
-echo "ok: --hf rejected"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

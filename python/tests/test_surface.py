@@ -11,10 +11,16 @@ namespace (pinned per row in test_namespaces.py):
   and no deprecation shims.
 * The AM1 semiempirical single-point trio (``AM1``, ``AM1Evaluator``,
   ``AM1Result``) plus the ``single_point`` entry point.
-* The dead SCF / old ``optimizer`` facade is gone and FAILS LOUD:
-  ``atomiverse.scf`` / ``atomiverse.optimizer`` no longer import, dead
-  package attributes raise ``AttributeError``, and the ``_cpp`` extension
-  carries none of the never-bound SCF / legacy optimizer symbols.
+* The old ``optimizer`` facade is gone and FAILS LOUD:
+  ``atomiverse.optimizer`` no longer imports, dead package attributes raise
+  ``AttributeError``, and the ``_cpp`` extension carries none of the
+  never-bound SCF-bag / legacy optimizer symbols (``SCFConfig``, ``XCType``,
+  ``scf_gradient``, ...) — the SCF surface is the concrete methods, never a
+  config bag.
+* Gaussian SCF (spec py-scf-single-point) exposes the concrete methods
+  ``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` through ``atomiverse.scf``. They are
+  compile-optional (``ATV_BUILD_HF``) and therefore reachable only through
+  the lazy attribute + the deep module, never through ``__all__``.
 * Plane-wave DFT uses the concrete ``PW`` method (members → build → run).
   PW types are present only when the extension was
   built with ``ATV_BUILD_PW=ON``; the deleted functional entry is absent on
@@ -48,10 +54,19 @@ import pytest
 import molrs
 
 import atomiverse as av
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, extension_available
 
-_HAS_PW: bool = hasattr(_cpp, "PW")
-_HAS_KSPACE: bool = hasattr(_cpp, "KSpacePME")
+# Capability probes are short-circuited on ``extension_available()``: the
+# missing-extension sentinel raises ImportError (not AttributeError) from
+# ``__getattr__``, so a bare ``hasattr(_cpp, ...)`` would blow up at import
+# time on a pure-Python wheel instead of letting conftest skip the file.
+# Same idiom as test_md.py.
+_HAS_PW: bool = extension_available() and hasattr(_cpp, "PW")
+_HAS_KSPACE: bool = extension_available() and hasattr(_cpp, "KSpacePME")
+_HAS_HF: bool = extension_available() and hasattr(_cpp, "RHF")
+
+# The concrete Gaussian SCF methods (spec py-scf-single-point).
+_SCF_METHODS: tuple[str, ...] = ("RHF", "UHF", "RKS", "UKS")
 
 # ── Shared surface definitions ──────────────────────────────────────
 
@@ -101,10 +116,6 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
 )
 
 _DEAD_PACKAGE_ATTRS: tuple[str, ...] = (
-    "SCF",
-    "RHF",
-    "UHF",
-    "UKS",
     "GeometryOptimizer",
     "Frame",
     "Block",
@@ -220,11 +231,6 @@ class TestCanonicalMDSmoke:
 
 
 class TestDeadSurfaceFailsLoud:
-    def test_scf_module_gone(self) -> None:
-        """atomiverse.scf must not exist at all (not merely broken)."""
-        with pytest.raises(ModuleNotFoundError):
-            importlib.import_module("atomiverse.scf")
-
     def test_optimizer_module_gone(self) -> None:
         """atomiverse.optimizer must not exist at all."""
         with pytest.raises(ModuleNotFoundError):
@@ -286,6 +292,51 @@ class TestPWSurface:
         assert not hasattr(av, "pw_scf")
         assert not hasattr(importlib.import_module("atomiverse.pw"), "pw_scf")
         assert not hasattr(_cpp, "pw_scf")
+
+
+# ── Gaussian SCF gate (spec py-scf-single-point) ────────────────────
+
+
+class TestScfSurface:
+    """The concrete methods are the surface — never a bag.
+
+    Same capability contract as PW / KSpacePME: reachable by both spellings
+    on an ``ATV_BUILD_HF=ON`` extension, a flag-naming ``AttributeError``
+    otherwise, and out of the static ``__all__`` on every build.
+    """
+
+    @pytest.mark.skipif(not _HAS_HF, reason="extension built without ATV_BUILD_HF")
+    @pytest.mark.parametrize("name", _SCF_METHODS)
+    def test_scf_method_is_identity_reexport(self, name: str) -> None:
+        """``av.RHF`` IS ``atomiverse.scf.RHF`` (one object, two spellings)."""
+        scf = importlib.import_module("atomiverse.scf")
+        assert getattr(av, name) is getattr(scf, name)
+
+    @pytest.mark.skipif(not _HAS_HF, reason="extension built without ATV_BUILD_HF")
+    def test_scf_module_exports_the_four_methods(self) -> None:
+        """``atomiverse.scf.__all__`` is exactly the four concrete methods."""
+        scf = importlib.import_module("atomiverse.scf")
+        assert set(scf.__all__) == set(_SCF_METHODS)
+
+    @pytest.mark.skipif(_HAS_HF, reason="extension built with ATV_BUILD_HF")
+    @pytest.mark.parametrize("name", _SCF_METHODS)
+    def test_scf_method_absent_names_the_build_flag(self, name: str) -> None:
+        """Without the backend the name fails loud and says which flag to
+        turn on — no pretend mean-field method."""
+        with pytest.raises(AttributeError, match="ATV_BUILD_HF"):
+            getattr(av, name)
+        assert not hasattr(_cpp, name)
+
+    @pytest.mark.parametrize("name", _SCF_METHODS)
+    def test_scf_method_is_never_in_all(self, name: str) -> None:
+        """Compile-optional types stay out of the static ``__all__``."""
+        assert name not in av.__all__
+
+    def test_no_scf_facade_name(self) -> None:
+        """There is no ``SCF`` facade / solver bag on either surface — the
+        public API is the concrete method (CLAUDE.md: no `SCFSolver`)."""
+        assert not hasattr(av, "SCF")
+        assert not hasattr(_cpp, "SCF")
 
 
 # ── Electrostatics surface (spec py-coulomb-pme) ────────────────────
@@ -380,11 +431,10 @@ _SKIP_DIR_NAMES: frozenset[str] = frozenset(
     {"build", "_skbuild", "dist", "venv", "node_modules", "__pycache__"}
 )
 
+# ``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` are NOT scanned for: spec
+# py-scf-single-point makes them live names, so ``av.RHF`` is a legitimate
+# reference throughout python/ (docs included).
 _DEAD_AV_ATTRS: tuple[str, ...] = (
-    "SCF",
-    "RHF",
-    "UHF",
-    "UKS",
     "GeometryOptimizer",
     "Frame",
     "Block",
