@@ -23,6 +23,9 @@ constexpr std::size_t kVersionOffset = 4;
 constexpr std::size_t kTaskKindOffset = 8;
 constexpr std::size_t kFirstComponentIdOffset = 13;
 constexpr std::size_t kFirstPhaseOffset = 16;
+// SinglePoint carries no entry-count word: its single component ID follows
+// the task-kind byte directly (magic 4 + version 4 + kind 1).
+constexpr std::size_t kSinglePointComponentIdOffset = 9;
 
 template <typename T>
 void write_scalar(std::vector<std::byte>& bytes, std::size_t offset, T value) {
@@ -90,6 +93,15 @@ TaskSpec make_md_spec() {
     // categorical (`std::nullopt`) recorder slot, as `set_record` does.
     entries.push_back(
         MDComponentEntry{XyzRecorderParams{"traj.xyz", 100}, std::nullopt});
+    // AM1 is MD-legal as well as SinglePoint-legal (py-am1-forces): the
+    // evaluator slot is plural, so a semiempirical force source rides the
+    // categorical (`std::nullopt`) evaluator slot exactly like the pair
+    // styles above and gives BOMD from a launcher payload. The byte layout
+    // is the one `SinglePointTask` already writes (i32 charge, i32
+    // multiplicity, i32 max_iter, f64 density_tol, f64 energy_tol) — the
+    // widening is append-only, so `kWireVersion` stays 4.
+    entries.push_back(MDComponentEntry{
+        AM1EvaluatorParams{-1, 2, 50, 1e-6, 1e-8}, std::nullopt});
     return TaskSpec(MDTask{std::move(entries), 7});
 }
 
@@ -151,6 +163,12 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     // arm would otherwise decode a filename out of a Thermo frequency.
     EXPECT_EQ(component_id(MDComponentParams{XyzRecorderParams{}}),
               ComponentId::XyzRecorder);
+    // One params struct, one ID, two legal homes: `AM1EvaluatorParams` now
+    // sits in BOTH the MD and the SinglePoint payload, and both must map to
+    // the same wire ID 9 — a second ID for the MD arm would make the same
+    // component decode differently depending on the task that carries it.
+    EXPECT_EQ(component_id(MDComponentParams{AM1EvaluatorParams{}}),
+              ComponentId::AM1Evaluator);
 }
 
 // v4: the NoseHooverNptParams payload grew (drag / mtchain / mpchain /
@@ -215,6 +233,28 @@ TEST(TaskCodec, CrossKindComponentsNameSourceAndTarget) {
         min_bytes, kFirstComponentIdOffset,
         static_cast<std::uint16_t>(ComponentId::VelocityVerlet));
     expect_runtime_error(min_bytes, "belongs to MD, not Minimize");
+
+    // AM1 has TWO legal homes (MD and SinglePoint) and one illegal one, so
+    // its diagnostic names both — the dual "MD/Minimize" shape PairLJCut and
+    // NeighborList already use. A single-home string here would tell a user
+    // rebuilding a Minimize payload that AM1 is SinglePoint-only, which is
+    // no longer true.
+    auto min_am1_bytes = pack(make_minimize_spec());
+    write_scalar<std::uint16_t>(
+        min_am1_bytes, kFirstComponentIdOffset,
+        static_cast<std::uint16_t>(ComponentId::AM1Evaluator));
+    expect_runtime_error(min_am1_bytes,
+                         "belongs to MD/SinglePoint, not Minimize");
+
+    // The reverse direction of the same rule: SinglePoint carries exactly one
+    // component and it is AM1. Widening AM1 into MD must not widen the
+    // SinglePoint payload into an anything-goes slot — any other ID there is
+    // still refused, naming where that component does belong.
+    auto sp_bytes = pack(TaskSpec(SinglePointTask{AM1EvaluatorParams{}}));
+    write_scalar<std::uint16_t>(
+        sp_bytes, kSinglePointComponentIdOffset,
+        static_cast<std::uint16_t>(ComponentId::VelocityVerlet));
+    expect_runtime_error(sp_bytes, "belongs to MD, not SinglePoint");
 }
 
 TEST(TaskCodec, EachPhaseSlotIsCheckedAgainstItsOwnDomain) {

@@ -49,6 +49,13 @@ _EVALUATOR_DISPATCH: dict[type, str] = {
 if hasattr(_cpp, "KSpacePME"):
     _EVALUATOR_DISPATCH[_cpp.KSpacePME] = "set_evaluator_kspace_pme"
 
+# AM1 is the semiempirical force source (ATV_BUILD_SEMIEMPIRICAL) — with it
+# registered the MD loop is Born-Oppenheimer dynamics. Capability-probed for
+# the same reason as KSpacePME: the wheel builds it, a hand-configured
+# extension need not.
+if hasattr(_cpp, "AM1Evaluator"):
+    _EVALUATOR_DISPATCH[_cpp.AM1Evaluator] = "set_evaluator_am1"
+
 # Recorder types accepted by MD.set_record. Both are unconditional: the
 # wheel forces ATV_BUILD_IO=ON through the CMake module DAG, so the
 # trajectory writer is never capability-probed (unlike KSpacePME above).
@@ -210,6 +217,13 @@ class MD:
         bond style, an electrostatic model, …). The accepted component
         types are whatever this extension binds; an unsupported one raises
         ``TypeError`` listing them.
+
+        ``AM1Evaluator`` belongs here too: registering it makes the run
+        Born-Oppenheimer molecular dynamics — one semiempirical SCF solve
+        per step, forces from it. It needs no ``NeighborList`` (AM1 is
+        molecular, not a pair style) and the driver installs its own
+        gradient-enabled copy, so results land on the frame rather than on
+        the object you passed.
 
         Two electrostatic caveats, because they are the ones this dispatch
         cannot catch for you:

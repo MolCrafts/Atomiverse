@@ -39,14 +39,14 @@
 /// molrs.Frame boundary when a required column is missing or has the wrong
 /// dtype.
 
+#include "force_array.h"
 #include "molrs_frame_bridge.h"
 
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
 
 #ifdef ATV_HAS_HF
-#include <cstddef>
-#include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -64,9 +64,6 @@ namespace {
 
 using ATV::cpu::scf::BasisSet;
 using ATV::cpu::scf::XCType;
-
-/// @brief Forces returned to Python: a fresh (N, 3) double array [eV/Å].
-using ForceArray = nb::ndarray<nb::numpy, double, nb::shape<-1, 3>>;
 
 /// @brief Basis-set name → `BasisSet` (names verbatim from `basis_set_name`).
 /// @param name Basis-set name, e.g. "STO-3G" or "def2-SVP".
@@ -226,15 +223,11 @@ class MethodHandle {
         }
         ATV::cpu::to_molrs(work, *fref);
 
-        const std::size_t n_atoms = result.forces.shape()[0];
-        auto buffer = std::make_unique<double[]>(n_atoms * 3u);
-        for (std::size_t a = 0; a < n_atoms; ++a)
-            for (std::size_t d = 0; d < 3u; ++d)
-                buffer[a * 3u + d] = result.forces(a, d);
-        nb::capsule owner(buffer.get(), [](void* p) noexcept {
-            delete[] static_cast<double*>(p);
-        });
-        return ForceArray(buffer.release(), {n_atoms, std::size_t{3}}, owner);
+        // `result.forces` is a row-major [n_atoms, 3] container, so its flat
+        // storage is already the (fx0, fy0, fz0, …) layout to_force_array
+        // copies from.
+        return to_force_array(std::span<const double>(result.forces.data(),
+                                                      result.forces.size()));
     }
 
   private:

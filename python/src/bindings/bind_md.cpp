@@ -58,6 +58,9 @@
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/thermo.h"
 #include "atomiverse/cpu/record/xyz_recorder.h"
+#ifdef ATV_HAS_SEMIEMPIRICAL
+#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#endif
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -140,6 +143,12 @@ struct MdHandle {
         else if constexpr (std::is_same_v<P, cpu::task::KSpacePmeParams>)
             // Move-only (it owns FFTW plans), so the component arrives here
             // already moved from the setter's prvalue.
+            driver.set_evaluator(std::move(comp));
+#endif
+#ifdef ATV_HAS_SEMIEMPIRICAL
+        else if constexpr (std::is_same_v<P, cpu::task::AM1EvaluatorParams>)
+            // A semiempirical force source rides the same plural evaluator
+            // slot as the pair styles — that is what makes an MD run BOMD.
             driver.set_evaluator(std::move(comp));
 #endif
         else if constexpr (std::is_same_v<P, cpu::task::NeighborListParams>)
@@ -776,6 +785,45 @@ void bind_md(nb::module_& m) {
             "build() requires exactly one real-space partner (CoulLong) at "
             "the SAME alpha [1/A]. Bound only on an extension built with "
             "ATV_BUILD_KSPACE=ON.")
+#endif
+#ifdef ATV_HAS_SEMIEMPIRICAL
+        .def(
+            "set_evaluator_am1",
+            [](MdHandle& self,
+               const cpu::semiempirical::AM1Evaluator& evaluator) {
+                // The only evaluator setter handed a LIVE component rather
+                // than a params mirror: AM1Evaluator is bound for its own
+                // single_point / forces surface, so Python already has the
+                // real thing. Read the five SCF parameters back off the
+                // owned method — the same five the MPI launcher path copies
+                // in bind_semiempirical.cpp — and let set_categorical build
+                // the driver's own copy from them, so the wire mirror and
+                // the registered component cannot disagree.
+                const cpu::semiempirical::AM1& method = evaluator.method();
+                const cpu::task::AM1EvaluatorParams p{
+                    method.charge, method.multiplicity, method.max_iter,
+                    method.density_tol, method.energy_tol};
+                self.set_categorical(p,
+                                     cpu::semiempirical::AM1Evaluator{
+                                         p.charge, p.multiplicity, p.max_iter,
+                                         p.density_tol, p.energy_tol}
+                                         .with_gradient(true));
+            },
+            nb::arg("comp"),
+            "Append the AM1 semiempirical evaluator as an MD force source — "
+            "Born-Oppenheimer dynamics, meaning the electrons are "
+            "re-converged at every geometry the nuclei reach: one "
+            "self-consistent-field (SCF) solve per step, with forces from the "
+            "fixed-density central finite difference (step 1e-4 A). Takes no "
+            "NeighborList (AM1 is molecular, not a pair style) and reads the "
+            "frame's 'atomic_number' column [Z]. Like any MD run it also "
+            "needs a per-atom 'mass' column [amu] — the integrator divides by "
+            "it.\n\n"
+            "The driver installs a FRESH gradient-enabled copy of the five "
+            "SCF parameters: the object you pass keeps its own state, so "
+            "last_result() on it is NOT populated by run() — per-step "
+            "results (energy [eV], charges [e], forces [eV/A]) land on the "
+            "frame.")
 #endif
         .def(
             "set_evaluator_bond_harmonic",

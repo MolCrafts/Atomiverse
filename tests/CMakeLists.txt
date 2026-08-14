@@ -440,8 +440,8 @@ atv_add_cpp_test(test_cpu_molrs_contract                  cpu/test_molrs_contrac
 
 # cpu/task infrastructure cluster (mpi-launcher-embedded-python-02-codec):
 # TaskSpec data model + MPI-free byte codec + rank-agnostic materializer.
-# Serial, no mpirun; the AM1 single point is the ms-scale H2 solve already
-# established by test_cpu_am1_scaffold.
+# Serial, no mpirun; the AM1 single point and the 3-step AM1 BOMD both run on
+# the ms-scale H2 fixture this file owns (mirrored by test_mpi_serial_on_replica).
 atv_add_cpp_test(test_cpu_task_codec                      cpu/test_task_codec.cpp)
 atv_add_cpp_test(test_cpu_task_materializer               cpu/test_task_materializer.cpp)
 

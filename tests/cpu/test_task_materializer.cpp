@@ -5,10 +5,10 @@
 /// Spec: .claude/specs/mpi-launcher-embedded-python-02-codec.md. The fidelity
 /// contract under test: the driver materialized from a TaskSpec, consumed via
 /// the single task-kind-agnostic `run(frame)` entry, is THE SAME object a user
-/// would hand-build — so a 5-step LJ MD run and an AM1 single point must agree
-/// BITWISE (EXPECT_EQ, no tolerance) with directly-built `cpu::md::MD` /
-/// `cpu::Evaluate` pipelines on identically constructed frames. Serial,
-/// sub-second, no MPI, no I/O.
+/// would hand-build — so a 5-step LJ MD run, a 3-step AM1 BOMD run and an AM1
+/// single point must agree BITWISE (EXPECT_EQ, no tolerance) with
+/// directly-built `cpu::md::MD` / `cpu::Evaluate` pipelines on identically
+/// constructed frames. Serial, sub-second, no MPI, no I/O.
 
 #include <gtest/gtest.h>
 
@@ -17,6 +17,7 @@
 #endif
 
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -713,9 +714,10 @@ TEST(TaskMaterializer, MdXyzRecorderWithoutIoBuildThrows) {
 
 // ── (c) SinglePoint AM1 equivalence on H2 ───────────────────────────────
 
-/// @brief Fixed-geometry H2 (0.74 Å, 20 Å box) — the exact fixture shape of
-///        tests/cpu/semiempirical/test_am1_scaffold.cpp
-///        `RunConvergesClosedShellH2AgainstReferenceChargeOracle`.
+/// @brief Fixed-geometry H2 (0.74 Å, 20 Å box) — the ms-scale AM1 fixture
+///        this file owns; tests/mpi/test_serial_on_replica.cpp mirrors it
+///        literal for literal so every rank builds a bitwise-identical
+///        replica. Literals only, so two constructions here are identical too.
 cpu::Frame make_h2_frame() {
     cpu::Frame frame(2);
     frame.span(ATV::kAtom_type)[0] = 1; // Z = 1 (hydrogen)
@@ -766,6 +768,82 @@ TEST(TaskMaterializer, SinglePointAm1H2MatchesHandBuiltEvaluateBitwise) {
         EXPECT_EQ(materialized_frame.span(ATV::kAtom_charge)[i],
                   direct_frame.span(ATV::kAtom_charge)[i]);
     }
+}
+
+// ── (c′) MD with an AM1 force source — semiempirical BOMD ───────────────
+
+/// @brief `make_h2_frame()` with hydrogen masses on the mass column.
+///
+/// The single-point fixture leaves `mass` at its zero default — AM1 never
+/// reads it. Dynamics does: VelocityVerlet divides the force by the mass, so
+/// a massless frame integrates to non-finite positions and the bitwise claim
+/// below would be a comparison of NaNs. Derived from the shared fixture (the
+/// `make_charged_lj_frame` pattern) rather than by editing it, so the
+/// single-point fixture and its tests/mpi mirror stay untouched.
+cpu::Frame make_h2_bomd_frame() {
+    cpu::Frame frame = make_h2_frame();
+    for (int i = 0; i < frame.nlocal(); ++i)
+        frame.span(ATV::kAtom_mass)[i] = 1.008; // [amu]
+    return frame;
+}
+
+// AM1 as an MD force source (py-am1-forces ac-002): the same
+// `AM1EvaluatorParams` payload that drives a SinglePoint task is legal in an
+// MDTask, where it rides the categorical (`std::nullopt`) evaluator slot —
+// `set_evaluator`, which binds at md::Phase::force order 0, the same slot
+// `on(force).add(evaluator)` fills in
+// regressions/semiempirical/am1_water_bomd. Three steps: each one is a full
+// AM1 SCF solve, and the fidelity claim needs no more than one force
+// re-evaluation to catch a materializer arm that drops the gradient flag or
+// swaps a tolerance.
+TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
+    constexpr double kBomdDt = 0.25;      // [fs] conservative for bare H–H
+    constexpr int kBomdSteps = 3;         // AM1 SCF per step — keep it short
+    constexpr double kBomdT = 10.0;       // [K] gentle KE, SCF-stable
+    constexpr unsigned kBomdSeed = 7u;    // matches the BOMD regression
+    constexpr int kBomdMaxIter = 300;     // tighter SCF than the AM1 defaults
+    constexpr double kBomdDensTol = 1e-7; // so a dropped tolerance shows up
+    constexpr double kBomdEnergyTol = 1e-9;
+
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kBomdDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kBomdT, kBomdSeed}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        AM1EvaluatorParams{0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol},
+        std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kBomdSteps});
+
+    cpu::Frame materialized_frame = make_h2_bomd_frame();
+    TaskMaterializer mat(spec);
+    EXPECT_EQ(mat.kind(), TaskKind::MD);
+    mat.run(materialized_frame);
+
+    // Hand-built twin, registered in the spec's entry order. `with_gradient`
+    // is spelled explicitly on both sides: forces are what makes the
+    // evaluator an MD force source, so the materializer arm must ask for
+    // them rather than inherit the component default.
+    cpu::Frame direct_frame = make_h2_bomd_frame();
+    cpu::md::MD sim;
+    sim.set_integrator(cpu::md::VelocityVerlet{kBomdDt});
+    sim.set_observer(cpu::md::InitVelocity{kBomdT, kBomdSeed});
+    sim.set_evaluator(cpu::semiempirical::AM1Evaluator{
+        0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol}
+                          .with_gradient(true));
+    sim.build();
+    sim.run(direct_frame, kBomdSteps);
+
+    const double direct_energy = direct_frame.meta.get(ATV::kEnergy);
+    ASSERT_NE(direct_energy, 0.0)
+        << "AM1 H2 BOMD produced zero energy — the equivalence check would "
+           "be vacuous";
+    ASSERT_TRUE(std::isfinite(direct_energy))
+        << "AM1 H2 BOMD produced a non-finite energy (" << direct_energy
+        << ") — bitwise equality of two NaNs would be meaningless";
+    // The run actually integrated: the bond length left its fixture value.
+    ASSERT_NE(direct_frame.span(ATV::kAtom_z)[1], 0.74);
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
 }
 
 // ── (d) kind() accessor ─────────────────────────────────────────────────

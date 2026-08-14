@@ -258,10 +258,21 @@ the nearest-neighbour spacing. The Python gate is 5e-4 relative, which is
 the PME discretization budget at 0.5 Å / order 6; the equivalent C++ case
 `regressions/md/npt_pme_nacl` measures 3.8e-8 on the same settings.
 
-## AM1 semiempirical single point
+## AM1 semiempirical single point, forces and BOMD
 
-`AM1Evaluator` computes energy [eV] and Mulliken charges [e] in one
-`single_point` pass (the `atomic_number` column carries Z; no AM1 forces yet):
+**AM1** — *Austin Model 1* — is a **semiempirical** electronic-structure
+method: it solves an approximate quantum model of the valence electrons in
+which most of the expensive electron-electron integrals are dropped (the NDDO
+approximation, *neglect of diatomic differential overlap*) and the survivors
+are replaced by numbers fitted once per chemical element. It costs far less
+than the Gaussian-basis Hartree-Fock of the next section and far more than a
+classical force field, and it is only as good as its fit.
+
+`AM1Evaluator` computes energy [eV], Mulliken charges [e] — per-atom partial
+charges obtained by splitting each electron's population among the orbitals it
+occupies — and nuclear forces [eV/Å]. The `atomic_number` column carries the
+atomic number Z, which is how the evaluator knows which element parameters to
+use:
 
 ```python
 import numpy as np
@@ -274,6 +285,62 @@ q = np.asarray(frame["atoms"]["charge"])       # Mulliken charges [e]
 res = ev.last_result()                         # Hartree / kcal-mol detail
 print(res.heat_of_formation_kcal_mol, res.iterations)
 ```
+
+`forces(frame)` runs the same solve and *returns* the gradient as an
+`(n_atoms, 3)` array [eV/Å], writing the same numbers into the frame's
+fx/fy/fz columns:
+
+```python
+f = ev.forces(frame)          # (n_atoms, 3) [eV/Å]
+print(f.sum(axis=0))          # exactly 0 — see below, this is not a check
+```
+
+The gradient is a **central finite difference of the energy at fixed
+density**, with a step of `h = 1e-4` Å per Cartesian component. The SCF loop —
+*self-consistent field*, the iteration that re-solves the electrons in the
+averaged field they themselves generate, until the two agree — is run once;
+then its converged electron density `P` is held while the energy is
+re-evaluated at the displaced geometries and differenced.
+
+Holding `P` fixed is not where the approximation lives. At convergence the
+energy is stationary against any change of the density that keeps the electron
+count, so the density-response part of `dE/dR` drops out; and NDDO treats its
+orbital basis as orthonormal, so there is no basis-derivative ("Pulay") term to
+recover either. What is approximate is the difference quotient itself, which
+reproduces the exact NDDO gradient to `O(h²)` plus round-off. Closed-form NDDO
+derivatives are a separate engine queue.
+
+One consequence worth knowing before you use it as a sanity check: only
+`3·(n_atoms − 1)` differences are actually taken, and the force on the last
+atom is filled in as minus the sum of all the others — exact for an isolated
+molecule, since a rigid translation cannot change `E`. So `f.sum(axis=0)` is
+zero *by construction* and tells you nothing about the quality of the gradient.
+
+### Born-Oppenheimer MD
+
+The same evaluator in the MD evaluator slot makes the run **BOMD** —
+Born-Oppenheimer molecular dynamics: the electrons are re-converged at every
+geometry the nuclei reach, one AM1 SCF solve per step, and the nuclei are
+integrated on the forces from it. No `NeighborList` is involved — AM1 is
+molecular, not a pair style. The frame needs one column the single point above
+did not: a per-atom `mass` [amu], which the integrator divides by.
+
+```python
+# one f64 mass per atom [amu] — a water frame shown
+frame["atoms"].insert("mass", np.array([15.999, 1.008, 1.008]))
+
+sim = av.MD()
+sim.set_integrator(av.VelocityVerlet(0.25))    # [fs] — light atoms, short dt
+sim.set_observer(av.InitVelocity(300.0, 42))   # [K], seed
+sim.set_evaluator(av.AM1Evaluator(charge=0))
+sim.run(frame, 100)
+
+print(frame.meta["energy"], frame.meta["kinetic"])   # [eV]
+```
+
+The driver installs its own gradient-enabled copy of the evaluator's five SCF
+parameters, so `ev.last_result()` is *not* updated by `run()`; the per-step
+results (energy, charges, forces) land on the frame.
 
 ## Gaussian SCF single point and forces
 

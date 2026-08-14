@@ -9,7 +9,8 @@ criteria:
       forces(frame) returns finite forces with sum-zero translation
       invariance and writes fx/fy/fz back; values equal the C++ force path
       (same fixture as the C++ unit gate).
-    status: pending
+    status: verified
+    last_checked: 2026-08-15
   - id: ac-002
     summary: AM1 BOMD runs under the Python MD driver
     type: runtime
@@ -17,7 +18,8 @@ criteria:
       set_evaluator(AM1Evaluator) registers on MD; 5-step H2 NVE smoke
       passes; task codec/materializer parity tests cover AM1-in-MD and the
       cross-kind table is consistent.
-    status: pending
+    status: verified
+    last_checked: 2026-08-15
   - id: ac-003
     summary: Future-spec markers removed honestly
     type: docs

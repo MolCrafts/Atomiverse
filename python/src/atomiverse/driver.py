@@ -39,7 +39,13 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
         ``Evaluate`` pass; a Gaussian SCF method owns its own SCF loop, so
         it is driven by ``evaluator.run(frame)`` instead (read the Hartree
         energy / loop state off the method afterwards with ``energy()`` /
-        ``converged()`` / ``iterations()``). Neither path computes forces.
+        ``converged()`` / ``iterations()``).
+
+        Forces differ between the two paths. The ``Evaluate`` pass requests
+        gradients, so ``AM1Evaluator`` publishes fx/fy/fz [eV/Å] here as
+        well; ``AM1Evaluator.forces(frame)`` is the entry that also *returns*
+        them as an (N, 3) array. A Gaussian SCF ``run`` computes no forces —
+        call that method's own ``forces(frame)`` for those.
     device : str, optional
         Execution backend, PyTorch-style. v1 accepts only ``"cpu"``; any
         other value raises ``ValueError`` before any compute.

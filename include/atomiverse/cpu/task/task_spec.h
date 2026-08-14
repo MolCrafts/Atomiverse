@@ -394,11 +394,29 @@ inline bool operator==(const KSpacePmeParams& a, const KSpacePmeParams& b) {
            && a.order == b.order;
 }
 
+/// @brief Mirrors the `cpu::semiempirical::AM1Evaluator` constructor exactly.
+///
+/// One params struct with two legal homes. As a `SinglePointTask` payload it
+/// is the whole task; as an `MDComponentParams` alternative it makes the
+/// semiempirical method an MD force source — Born-Oppenheimer molecular
+/// dynamics — either through the categorical evaluator slot (entry binding
+/// `std::nullopt`) or with an explicit `MDBinding`, since `task_materializer`
+/// replays both paths through the same gradient-enabled builder. Both homes
+/// decode from wire ID 9 with the byte layout written here, so they can never
+/// disagree about what an AM1 payload contains.
 struct AM1EvaluatorParams {
+    /// @brief Total molecular charge [e].
     int charge = 0;
+    /// @brief Spin multiplicity 2S+1 (dimensionless).
     int multiplicity = 1;
+    /// @brief Cap on SCF iterations; overrunning it throws (dimensionless count).
     int max_iter = 200;
+    /// @brief Convergence threshold on the largest absolute change of any
+    ///        density-matrix element between two SCF iterations
+    ///        (dimensionless).
     double density_tol = 1e-8;
+    /// @brief Convergence threshold on |ΔE| between two SCF iterations [eV].
+    ///        Meeting *either* tolerance ends the loop.
     double energy_tol = 1e-10;
 };
 inline bool operator==(const AM1EvaluatorParams& a,
@@ -517,8 +535,8 @@ using MDComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, BondHarmonicParams,
                  AngleHarmonicParams, DihedralMultiHarmonicParams,
                  VelocityVerletParams, InitVelocityParams, NoseHooverParams,
-                 ThermoParams, FixLangevinParams, FixCsvrParams,
-                 NoseHooverNptParams, ParrinelloRahmanNptParams,
+                 ThermoParams, AM1EvaluatorParams, FixLangevinParams,
+                 FixCsvrParams, NoseHooverNptParams, ParrinelloRahmanNptParams,
                  BerendsenBarostatParams, PairCoulCutParams, CoulLongParams,
                  KSpacePmeParams, XyzRecorderParams>;
 
@@ -552,6 +570,8 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::NoseHoover;
             else if constexpr (std::is_same_v<P, ThermoParams>)
                 return ComponentId::Thermo;
+            else if constexpr (std::is_same_v<P, AM1EvaluatorParams>)
+                return ComponentId::AM1Evaluator;
             else if constexpr (std::is_same_v<P, FixLangevinParams>)
                 return ComponentId::FixLangevin;
             else if constexpr (std::is_same_v<P, FixCsvrParams>)
@@ -680,6 +700,13 @@ class TaskSpec {
     /// `KSpacePME`) and `XyzRecorder` for the same reason: appended IDs with
     /// fresh payloads leave every existing byte layout untouched. No v2 or v3
     /// decoder exists: an older payload is an error, never a best-effort read.
+    ///
+    /// Admitting `AM1EvaluatorParams` into the MD payload likewise stays at
+    /// v4: the widening is append-only in the *alternative set*, not in the
+    /// bytes. ID 9 already existed and its five fields are written by the one
+    /// shared `write`/`read_am1` pair, so every previously encodable MD
+    /// payload encodes to the identical bytes and a v4 decoder written before
+    /// this change reads them unchanged.
     static constexpr std::uint32_t kWireVersion = 4;
 
     explicit TaskSpec(MDTask task);

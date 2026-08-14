@@ -1,17 +1,32 @@
 /// @file python/src/bindings/bind_semiempirical.cpp
-/// @brief AM1 semiempirical single-point bindings: AM1, AM1Evaluator,
-///        AM1Result, and the `single_point` entry.
+/// @brief AM1 semiempirical bindings: AM1, AM1Evaluator, AM1Result, the
+///        `single_point` entry and `AM1Evaluator.forces`.
 ///
-/// Single-point only — `AM1Evaluator` carries `Energy | Charge |
-/// DensityMatrix` (no Force), so it binds to `cpu::single_point` and never
-/// to the MD driver. Energy [eV] lands on the frame's scalar channel;
-/// Mulliken charges [e] write back into the borrowed molrs.Frame per the
-/// pinned to_molrs round-trip contract (charge is in the write-back set).
+/// AM1 — *Austin Model 1* — is a **semiempirical** electronic-structure
+/// method: it solves an approximate quantum-mechanical model of the valence
+/// electrons in which most of the expensive electron-electron integrals are
+/// dropped (the NDDO approximation, *neglect of diatomic differential
+/// overlap*) and the survivors are replaced by numbers fitted once per
+/// chemical element. That buys a cost between a classical force field and a
+/// Gaussian-basis Hartree-Fock solve, at the price of transferability.
+///
+/// `AM1Evaluator` publishes energy [eV], Mulliken charges [e] and nuclear
+/// forces [eV/Å], so it serves two workflows: `cpu::single_point` for a
+/// one-shot solve, and the MD driver as a force source — semiempirical
+/// Born-Oppenheimer dynamics, wired on the Python side through
+/// `MD.set_evaluator` (`bind_md.cpp`, `set_evaluator_am1`).
+///
+/// Every result channel writes back into the borrowed molrs.Frame per the
+/// pinned to_molrs round-trip contract: energy onto typed meta, charges onto
+/// the atoms charge column, forces onto fx/fy/fz.
 
+#include "force_array.h"
 #include "molrs_frame_bridge.h"
 
 #include <utility>
+#include <vector>
 
+#include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
@@ -29,62 +44,195 @@
 
 using namespace ATV;
 
+namespace {
+
+/// @brief Run one AM1 solve with gradients and hand the forces to Python.
+///
+/// Goes through `cpu::single_point` — one `Evaluate` pass over the borrowed
+/// evaluator, the same pass `regressions/semiempirical/am1_water_force` pins
+/// against a re-converged finite difference — so the numbers returned here
+/// are the C++ numbers and not a second force recipe: the `Evaluate` preset
+/// zeroes forces/energy first, the evaluator unwraps the molecule across
+/// periodic images, and AM1 publishes energy [eV], Mulliken charges [e] and
+/// forces [eV/Å] onto the transient frame, which is then written back into
+/// the borrowed molrs.Frame.
+///
+/// Local to this process: unlike `single_point`, no MPI launcher task
+/// carries a force request, so an active launcher gate is irrelevant here
+/// and the solve runs on the calling rank (the `bind_scf.cpp` convention).
+///
+/// @param evaluator Borrowed evaluator; its `last_result()` is populated.
+/// @param frame_obj A `molrs.Frame`; energy [eV], charges [e] and fx/fy/fz
+///                  [eV/Å] land on it.
+/// @return Nuclear forces F = −∂E/∂R [eV/Å], shape (n_atoms, 3).
+/// @throws std::runtime_error (Python `RuntimeError`) when the SCF does not
+///         converge within `max_iter`, or when the frame carries an element
+///         AM1 has no parameters for.
+ForceArray am1_forces(cpu::semiempirical::AM1Evaluator& evaluator,
+                      nb::object frame_obj) {
+    auto fref = borrow_molrs_frame(frame_obj);
+    cpu::Frame work = cpu::from_molrs(*fref);
+    {
+        nb::gil_scoped_release release;
+        cpu::single_point(work, evaluator);
+    }
+    cpu::to_molrs(work, *fref);
+
+    // `forces_ev_a` is the flat (fx0, fy0, fz0, …) buffer the evaluator reuses
+    // on the next solve, so the returned array must own a copy.
+    return to_force_array(evaluator.last_result().forces_ev_a);
+}
+
+} // namespace
+
 void bind_semiempirical(nb::module_& m) {
     using cpu::semiempirical::AM1;
     using cpu::semiempirical::AM1Evaluator;
     using cpu::semiempirical::AM1Result;
 
     // ── AM1 concrete method (parameters assigned in the constructor) ──
-    nb::class_<AM1>(m, "AM1", "AM1 semiempirical method (members + run).")
+    nb::class_<AM1>(m, "AM1",
+                    "AM1 (Austin Model 1) semiempirical method — an NDDO "
+                    "(neglect of diatomic differential overlap) valence "
+                    "Hamiltonian with per-element fitted parameters. Its SCF "
+                    "settings are constructor arguments and writable "
+                    "members. This class carries the settings; the solve is "
+                    "driven through AM1Evaluator (single_point / forces / "
+                    "MD.set_evaluator), which owns one of these and hands it "
+                    "back from method().")
         .def(nb::init<int, int, int, double, double>(), nb::arg("charge") = 0,
              nb::arg("multiplicity") = 1, nb::arg("max_iter") = 200,
              nb::arg("density_tol") = 1.0e-8, nb::arg("energy_tol") = 1.0e-10,
-             "Construct with total charge [e], spin multiplicity, SCF "
-             "iteration cap, density residual (dimensionless), energy "
+             "Construct with total charge [e], spin multiplicity, and the "
+             "three SCF (self-consistent field) loop settings: iteration "
+             "cap, density-change tolerance (dimensionless) and energy "
              "tolerance [eV].")
         .def_rw("charge", &AM1::charge, "Total molecular charge [e].")
-        .def_rw("multiplicity", &AM1::multiplicity, "Spin multiplicity.")
-        .def_rw("max_iter", &AM1::max_iter, "SCF iteration cap.")
+        .def_rw("multiplicity", &AM1::multiplicity,
+                "Spin multiplicity 2S + 1, where S is the total electron "
+                "spin: 1 = singlet (all electrons paired), 2 = doublet, "
+                "3 = triplet.")
+        .def_rw("max_iter", &AM1::max_iter,
+                "Iteration cap for the SCF loop; overrunning it raises "
+                "RuntimeError rather than returning an unconverged result.")
         .def_rw("density_tol", &AM1::density_tol,
-                "Density residual threshold (dimensionless).")
+                "Convergence threshold on the largest absolute change of any "
+                "density-matrix element between two successive SCF "
+                "iterations (dimensionless).")
         .def_rw("energy_tol", &AM1::energy_tol,
-                "Energy convergence threshold [eV].");
+                "Convergence threshold on |dE| between two successive SCF "
+                "iterations [eV].");
 
     // ── AM1Result (= NDDOResult) ──
     nb::class_<AM1Result>(m, "AM1Result",
                           "Converged AM1 solve results (read-only).")
         .def_ro("converged", &AM1Result::converged,
-                "True when the SCF met both tolerances.")
+                "True when the SCF met EITHER tolerance — density_tol or "
+                "energy_tol, not both. A run that meets neither within "
+                "max_iter raises RuntimeError instead of returning, so on a "
+                "result you can actually read this is always True.")
         .def_ro("iterations", &AM1Result::iterations,
                 "SCF iterations performed.")
         .def_ro("electronic_energy_hartree",
                 &AM1Result::electronic_energy_hartree,
-                "Electronic energy [Hartree].")
+                "Total energy [Hartree] — electrons plus core-core "
+                "repulsion, i.e. the SAME quantity as total_energy_ev in the "
+                "atomic unit of energy (1 Hartree = 27.211386 eV). The field "
+                "name says 'electronic' for historical reasons; it is not an "
+                "electrons-only energy.")
         .def_ro("heat_of_formation_kcal_mol",
                 &AM1Result::heat_of_formation_kcal_mol,
-                "Heat of formation [kcal/mol].")
+                "Heat of formation [kcal/mol]: the energy released or "
+                "consumed in forming this molecule from its elements in "
+                "their standard states — the quantity AM1 was parameterized "
+                "against, built here from the total energy by the MOPAC "
+                "recipe (subtract the tabulated isolated-atom energies, add "
+                "the experimental atomic heats of formation).")
+        .def_ro("total_energy_ev", &AM1Result::total_energy_ev,
+                "Total energy [eV] — the number AM1 writes to "
+                "frame.meta['energy'].")
         .def_ro("mulliken_charges", &AM1Result::mulliken_charges,
-                "Per-atom Mulliken charges [e] (double precision).")
+                "Per-atom partial charges [e] by Mulliken population "
+                "analysis — each electron's population is split among the "
+                "atomic orbitals it occupies and summed per atom, then "
+                "subtracted from the atom's valence-electron count. Always "
+                "double precision, unlike the frame's charge column.")
+        .def_ro("forces_ev_a", &AM1Result::forces_ev_a,
+                "Nuclear forces [eV/A], flat (fx0, fy0, fz0, fx1, ...) over "
+                "3 * n_atoms. Empty until a force evaluation ran on THIS "
+                "object: AM1Evaluator.forces(frame), or single_point(frame, "
+                "evaluator) — the Evaluate pass requests gradients, so it "
+                "fills this too. An MD run does NOT fill it: MD.set_evaluator "
+                "installs the driver's own copy of the evaluator, and that "
+                "copy's per-step forces go to the frame's fx/fy/fz.")
         .def_ro("reference", &AM1Result::reference,
                 "Literature reference for the parameterization.");
 
     // ── AM1Evaluator ──
     nb::class_<AM1Evaluator>(
         m, "AM1Evaluator",
-        "AM1 single-point Evaluator (Energy | Charge | DensityMatrix; no "
-        "forces — plugs into single_point, never into MD).")
-        .def(nb::init<>(), "Default construct.")
+        "AM1 Evaluator: energy [eV], Mulliken charges [e] and nuclear forces "
+        "[eV/A]. Plugs into single_point(frame, evaluator) for one solve, "
+        "into forces(frame) for the gradient, and into MD.set_evaluator as a "
+        "force source — Born-Oppenheimer dynamics, meaning the electrons are "
+        "re-converged at every geometry the nuclei reach and the nuclei move "
+        "on the resulting energy surface.")
+        .def(nb::init<>(),
+             "Construct with the default AM1 settings: neutral (charge 0), "
+             "singlet, max_iter 200, density_tol 1e-8, energy_tol 1e-10 eV.")
         .def(nb::init<int, int, int, double, double>(), nb::arg("charge") = 0,
              nb::arg("multiplicity") = 1, nb::arg("max_iter") = 200,
              nb::arg("density_tol") = 1.0e-8, nb::arg("energy_tol") = 1.0e-10,
-             "Construct owned AM1 with SCF parameters.")
-        .def(nb::init<AM1>(), nb::arg("method"), "Own a concrete AM1 method.")
+             "Construct the owned AM1 method from the same five settings the "
+             "AM1 constructor takes.")
+        .def(nb::init<AM1>(), nb::arg("method"),
+             "Take ownership of an already-configured AM1 (its settings are "
+             "copied in; the object you pass is not aliased).")
         .def("last_result", &AM1Evaluator::last_result,
              nb::rv_policy::reference_internal,
-             "Results of the most recent solve (AM1Result).")
+             "AM1Result of the most recent solve driven through THIS "
+             "evaluator (forces() or single_point()). Borrowed, not copied: "
+             "the next solve overwrites it.")
         .def("method", nb::overload_cast<>(&AM1Evaluator::method),
              nb::rv_policy::reference_internal,
-             "Owned concrete AM1 method (parameters as members).");
+             "The owned AM1 method, borrowed — assigning to its members "
+             "(charge, max_iter, ...) reconfigures the next solve, since "
+             "every single_point / forces call rebuilds the solver from "
+             "them.")
+        .def("forces", &am1_forces, nb::arg("frame"),
+             "Solve the AM1 SCF at the frame's geometry and return the "
+             "nuclear forces F = -dE/dR as an (n_atoms, 3) array [eV/A].\n\n"
+             "The gradient is a FIXED-DENSITY central finite difference: the "
+             "SCF is converged once, then its electron density P is held "
+             "fixed while the energy is re-evaluated at geometries displaced "
+             "by +/- h and differenced, with h = 1e-4 A per Cartesian "
+             "component. Holding P is not the approximation. At convergence "
+             "the energy is stationary against any change of the density "
+             "that preserves the electron count, so the density-response "
+             "term of dE/dR drops out; and NDDO treats its orbital basis as "
+             "orthonormal (no overlap matrix, hence no basis-derivative "
+             "'Pulay' term), so nothing else is left over either. The "
+             "approximation is the difference quotient itself: it reproduces "
+             "the exact NDDO gradient to O(h^2) plus floating-point "
+             "round-off. Closed-form NDDO derivatives are a separate engine "
+             "queue.\n\n"
+             "Only 3 * (n_atoms - 1) differences are taken. The force on the "
+             "last atom is filled in as minus the sum of all the others, "
+             "which is exact for an isolated molecule because a rigid "
+             "translation of the whole system cannot change its energy. So "
+             "forces.sum(axis=0) is zero BY CONSTRUCTION and is not an "
+             "independent check of the gradient.\n\n"
+             "The same values are written back to the frame's fx/fy/fz "
+             "columns, alongside the energy [eV] on frame.meta['energy'] and "
+             "the Mulliken charges [e] on the atoms charge column — one "
+             "solve, every channel published. Read "
+             "last_result().forces_ev_a for the same numbers in the flat "
+             "(fx0, fy0, fz0, fx1, ...) layout. The global interpreter lock "
+             "(Python's one-thread-at-a-time execution lock) is released for "
+             "the duration of the solve, so other Python threads keep "
+             "running. Raises RuntimeError if the SCF does not converge "
+             "within max_iter, or for an element AM1 has no parameters "
+             "for.");
 
     // ── single_point: one Evaluate pass over a borrowed molrs.Frame ──
     m.def(
@@ -98,9 +246,10 @@ void bind_semiempirical(nb::module_& m) {
                     nb::gil_scoped_release release;
                     cpu::single_point(work, evaluator);
                 }
-                // Unlike the PW path, AM1 declares Capability::Charge —
-                // the per-atom charges must return to the SAME molrs.Frame
-                // via the pinned to_molrs round-trip contract.
+                // Unlike the PW path, AM1 writes a per-atom output (the
+                // Mulliken charge column, plus fx/fy/fz), so the work frame
+                // must return to the SAME molrs.Frame via the pinned
+                // to_molrs round-trip contract.
                 cpu::to_molrs(work, *fref);
                 return;
             }
@@ -130,9 +279,15 @@ void bind_semiempirical(nb::module_& m) {
 #endif
         },
         nb::arg("frame"), nb::arg("evaluator"),
-        "Run one AM1 single-point on a molrs.Frame: energy [eV] onto the "
-        "frame scalars, Mulliken charges [e] onto the atoms charge column. "
-        "GIL released during compute; read evaluator.last_result() for "
-        "Hartree/kcal-mol detail (serial path only — under the MPI "
-        "launcher the results arrive via the Frame).");
+        "Run one AM1 single-point — one SCF solve at the geometry the frame "
+        "already holds, with nothing moved afterwards. Results land back on "
+        "the same molrs.Frame: total energy [eV] on frame.meta['energy'], "
+        "Mulliken charges [e] on the atoms charge column, and nuclear forces "
+        "[eV/A] on fx/fy/fz (the Evaluate pass requests gradients, so this "
+        "entry computes them too — AM1Evaluator.forces(frame) is the one "
+        "that also RETURNS them as an array). The global interpreter lock is "
+        "released during compute; read evaluator.last_result() for the "
+        "Hartree / kcal-mol detail (serial path only — under the MPI "
+        "launcher the solve runs on the worker ranks and only the Frame "
+        "comes back).");
 }

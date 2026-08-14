@@ -264,12 +264,29 @@ ComponentId decode_component_id(std::uint16_t raw) {
     if (id == ComponentId::LBFGS)
         source = "Minimize";
     else if (id == ComponentId::AM1Evaluator)
-        source = "SinglePoint";
+        // Two legal homes: the whole of a SinglePoint task, and an evaluator
+        // entry of an MD task (semiempirical Born-Oppenheimer dynamics).
+        source = "MD/SinglePoint";
     else if (id == ComponentId::PairLJCut || id == ComponentId::NeighborList)
         source = "MD/Minimize";
     throw std::runtime_error(std::string("task_codec: component ")
                              + component_name(id) + " belongs to " + source
                              + ", not " + task_kind_name(target));
+}
+
+/// @brief Read the five AM1 fields in the order `write` laid them down.
+///
+/// Declared ahead of both readers because ID 9 decodes into two payloads —
+/// the whole of a `SinglePointTask` and an evaluator entry of an `MDTask` —
+/// and one reader is what keeps their field lists from drifting apart.
+AM1EvaluatorParams read_am1(Reader& r) {
+    AM1EvaluatorParams p;
+    p.charge = r.i32();
+    p.multiplicity = r.i32();
+    p.max_iter = r.i32();
+    p.density_tol = r.f64();
+    p.energy_tol = r.f64();
+    return p;
 }
 
 MDComponentParams read_md_params(Reader& r, ComponentId id) {
@@ -327,6 +344,7 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
     case ComponentId::KSpacePME:
         return KSpacePmeParams{r.f64(), r.f64(), r.i32()};
     case ComponentId::AM1Evaluator:
+        return read_am1(r);
     case ComponentId::LBFGS:
         wrong_task(id, TaskKind::MD);
     }
@@ -344,16 +362,6 @@ MinimizeComponentParams read_minimize_params(Reader& r, ComponentId id) {
     default:
         wrong_task(id, TaskKind::Minimize);
     }
-}
-
-AM1EvaluatorParams read_am1(Reader& r) {
-    AM1EvaluatorParams p;
-    p.charge = r.i32();
-    p.multiplicity = r.i32();
-    p.max_iter = r.i32();
-    p.density_tol = r.f64();
-    p.energy_tol = r.f64();
-    return p;
 }
 
 ForceConvergedParams read_convergence(Reader& r) {

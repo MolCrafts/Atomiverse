@@ -1,13 +1,16 @@
 /// @file regressions/semiempirical/am1_water_force/reg_am1_water_force.cpp
-/// @brief AM1 water: literature ΔHf-scale energy + analytic force self-consistency.
+/// @brief AM1 water: literature ΔHf-scale energy + force self-consistency.
 ///
 /// Literature / textbook anchors:
 /// - Dewar, Zoebisch, Healy, Stewart, J. Am. Chem. Soc. 107, 3902 (1985)
 ///   (AM1 parameterization). Water experimental ΔHf(gas) ≈ −57.8 kcal/mol;
 ///   AM1 reproduces small-molecule thermochemistry to a few kcal/mol.
-/// - Force check: SCF analytic gradient (fixed-density Hellmann–Feynman NDDO
-///   force) must match re-SCF central finite-difference of the total energy
-///   (Pulay response vanishes at SCF stationarity for variational methods).
+/// - Force check: the published force — a central finite difference of the
+///   energy at FIXED converged density — must match a RE-CONVERGED central
+///   finite difference of the total energy. It does because the
+///   density-response term of dE/dR vanishes at SCF stationarity, and NDDO's
+///   orthonormal (zero-differential-overlap) basis carries no
+///   basis-derivative "Pulay" term.
 ///
 /// Units: energy compared after converting total electronic+nuclear energy to
 /// a heat-of-formation proxy is NOT used here — we pin the **force** identity
@@ -124,8 +127,8 @@ int main() {
         std::printf("ΔHf(H2O) = %.3f kcal/mol (AM1, MOPAC-style)\n", hof);
     }
 
-    // Analytic vs re-SCF energy finite difference (literature identity:
-    // variational SCF gradient ≡ energy derivative).
+    // Fixed-density force vs re-SCF energy finite difference (literature
+    // identity: variational SCF gradient ≡ energy derivative).
     {
         auto f0 = make_water();
         cpu::semiempirical::AM1Solver solver;

@@ -19,6 +19,10 @@ collecting on a build whose extension does not bind them yet.
 ``TestXyzRecorder`` (spec py-recorder-xyz) covers trajectory output: an
 ``XYZ`` recorder installed through ``MD.set_record``, parsed back off
 disk. Same in-body import discipline.
+
+``TestAm1Bomd`` (spec py-am1-forces) covers semiempirical Born-Oppenheimer
+MD: ``MD.set_evaluator(AM1Evaluator(...))``, i.e. an electronic-structure
+method in the force slot instead of a classical pair style.
 """
 
 import importlib
@@ -771,6 +775,154 @@ class TestXyzRecorder:
         sim = MD()
         with pytest.raises(TypeError, match="XYZ"):
             sim.set_record(object())
+
+
+# ── py-am1-forces: semiempirical Born-Oppenheimer MD ────────────────
+#
+# The C++ twin is regressions/semiempirical/am1_water_bomd
+# (reg_am1_water_bomd.cpp): MD + VelocityVerlet{0.25 fs} + InitVelocity{10 K,
+# seed 7} + a gradient-enabled AM1Evaluator carrying max_iter = 300,
+# density_tol = 1e-7, energy_tol = 1e-9 — tighter than the AM1 defaults
+# because BOMD needs the force to be consistent from step to step. Those
+# five numbers are reused verbatim here; only the molecule differs.
+#
+# H2 instead of the C++ case's water: two atoms and two electrons is the
+# cheapest closed-shell AM1 system, and 5 steps is a smoke, not a
+# conservation test. The bond is the experimental 0.741 Å, which is NOT
+# AM1's own H2 minimum, so there is a real force to integrate from step 0.
+
+_H2_BOND_ANGSTROM: float = 0.741
+_H2_BOX_ANGSTROM: float = 20.0  # isolation only; AM1 here is non-periodic
+_AM1_BOMD_DT: float = 0.25  # [fs]
+_AM1_BOMD_T0: float = 10.0  # [K]
+_AM1_BOMD_SEED: int = 7
+_AM1_BOMD_STEPS: int = 5
+
+
+def _h2_frame() -> "molrs.Frame":
+    """H2 along z at the experimental bond length.
+
+    Columns match the Ar fixture's set (x/y/z/mass/atomic_number): the
+    driver materializes velocities itself and ``InitVelocity`` seeds them,
+    so no vx/vy/vz column is required on the way in.
+
+    @return A two-atom molrs.Frame in a 20 Å cubic cell.
+    """
+    half = 0.5 * _H2_BOND_ANGSTROM
+    frame = molrs.Frame()
+    atoms = molrs.Block()
+    atoms.insert("x", np.zeros(2, dtype=np.float64))
+    atoms.insert("y", np.zeros(2, dtype=np.float64))
+    atoms.insert("z", np.array([-half, half], dtype=np.float64))
+    atoms.insert("mass", np.full(2, 1.008, dtype=np.float64))
+    atoms.insert("atomic_number", np.full(2, 1, dtype=np.uint32))
+    frame["atoms"] = atoms
+    frame.box = molrs.Box.cube(_H2_BOX_ANGSTROM)
+    return frame
+
+
+class TestAm1Bomd:
+    """AM1 forces driving the MD loop (spec py-am1-forces).
+
+    ``AM1Evaluator`` is imported inside the test bodies for the same
+    build-capability reason as ``TestCoulombPme`` / ``TestXyzRecorder`` —
+    the name is absent on an extension built with
+    ``ATV_BUILD_SEMIEMPIRICAL=OFF``.
+
+    No neighbor list is installed — AM1 is not a ``NeighborConsumer`` and the
+    C++ BOMD regression does not install one either.
+    """
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def bomd_h2() -> tuple["molrs.Frame", "np.ndarray"]:
+        """One 5-step AM1 NVE run on H2; returns the frame and its starting
+        z column (the frame itself is advanced in place)."""
+        from atomiverse.semiempirical import AM1Evaluator
+
+        frame = _h2_frame()
+        z_before = np.asarray(frame["atoms"]["z"], dtype=np.float64).copy()
+        sim = MD()
+        sim.set_integrator(VelocityVerlet(_AM1_BOMD_DT))
+        sim.set_observer(InitVelocity(_AM1_BOMD_T0, _AM1_BOMD_SEED))
+        sim.set_evaluator(
+            AM1Evaluator(
+                charge=0,
+                multiplicity=1,
+                max_iter=300,
+                density_tol=1.0e-7,
+                energy_tol=1.0e-9,
+            )
+        )
+        sim.run(frame, _AM1_BOMD_STEPS)
+        return frame, z_before
+
+    def test_set_evaluator_accepts_am1(self) -> None:
+        """The dispatch keyed on the live component type must accept the
+        semiempirical evaluator — this is the whole point of the spec, and
+        it is checked without running so the failure is unambiguous."""
+        from atomiverse.semiempirical import AM1Evaluator
+
+        sim = MD()
+        sim.set_integrator(VelocityVerlet(_AM1_BOMD_DT))
+        sim.set_evaluator(AM1Evaluator())
+
+    def test_potential_energy_finite_and_bound(
+        self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]
+    ) -> None:
+        """PE is finite and negative after the run — the same gate as
+        reg_am1_water_bomd.cpp:80-87 (a bound molecule, not a blow-up)."""
+        frame, _ = bomd_h2
+        energy = frame.meta["energy"]
+        assert isinstance(energy, float)
+        assert np.isfinite(energy)
+        assert energy < 0.0
+
+    def test_kinetic_energy_finite_and_positive(
+        self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]
+    ) -> None:
+        """KE is finite and non-negative (reg_am1_water_bomd.cpp:88-91):
+        InitVelocity seeded it, so it is strictly positive here."""
+        frame, _ = bomd_h2
+        kinetic = frame.meta["kinetic"]
+        assert isinstance(kinetic, float)
+        assert np.isfinite(kinetic)
+        assert kinetic > 0.0
+
+    def test_positions_advanced(
+        self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]
+    ) -> None:
+        """The atoms actually moved and the new positions came back into the
+        SAME molrs.Frame — AM1 forces reached the integrator."""
+        frame, z_before = bomd_h2
+        z_after = np.asarray(frame["atoms"]["z"], dtype=np.float64)
+        assert not np.allclose(z_before, z_after)
+
+    def test_velocities_finite(
+        self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]
+    ) -> None:
+        """No NaN/inf leaked into the velocity columns."""
+        frame, _ = bomd_h2
+        atoms = frame["atoms"]
+        for component in ("vx", "vy", "vz"):
+            values = np.asarray(atoms[component], dtype=np.float64)
+            assert np.all(np.isfinite(values)), f"{component} is not finite"
+
+    def test_forces_finite(self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]) -> None:
+        """The AM1 forces written back on the last step are finite and, at
+        the non-equilibrium bond length, not identically zero."""
+        frame, _ = bomd_h2
+        fz = np.asarray(frame["atoms"]["fz"], dtype=np.float64)
+        assert np.all(np.isfinite(fz))
+        assert np.any(fz != 0.0)
+
+    def test_set_evaluator_still_rejects_unknown_type(self) -> None:
+        """Growing the dispatch table must not turn it into an accept-all:
+        an unsupported object still raises, and the message names the
+        supported types (which now include AM1Evaluator)."""
+        sim = MD()
+        with pytest.raises(TypeError, match="AM1Evaluator"):
+            sim.set_evaluator(object())
 
 
 class TestMolrsFrameV2Boundary:

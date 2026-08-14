@@ -2,7 +2,8 @@
 /// @brief AM1 semiempirical single-point, force check, and short Minimize.
 ///
 /// Teaches: Semiempirical kind + AM1Evaluator (no SE Driver); energy, ΔHf,
-/// analytic forces; geometry step on Minimize. See docs/tutorial/ch17.
+/// nuclear forces (a central finite difference of the energy at fixed
+/// converged density); geometry step on Minimize. See docs/tutorial/ch17.
 ///
 /// Build: -DATV_BUILD_EXAMPLES=ON (no RHF/PW gate — AM1 is always in the CPU
 /// library).

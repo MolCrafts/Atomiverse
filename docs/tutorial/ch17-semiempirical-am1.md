@@ -38,10 +38,24 @@ Heat of formation follows the openmopac definition:
 with \(e_\mathrm{isol}\) from the AM1 parameter table and \(E_\mathrm{atom}\)
 the experimental gas-phase atomic heats at 298 K.
 
-Forces are the **SCF analytic gradient**: at a stationary density \(P\),
-displace nuclei at fixed \(P\) and differentiate the energy functional
-(Hellmann–Feynman for variational NDDO). They match re-SCF energy finite
-differences; regressions live under `regressions/semiempirical/`.
+Forces are a **central finite difference of the energy functional at fixed
+density**: converge the SCF once, then displace one nucleus by \(\pm h\)
+(\(h = 10^{-4}\) Å by default), rebuild the geometry-dependent integrals and
+core–core repulsion with the density \(P\) unchanged, and difference the two
+energies.
+
+Freezing \(P\) costs no accuracy. At convergence the energy is stationary with
+respect to density variations that conserve the electron count, so the response
+term \((\partial E/\partial P)(dP/dR)\) vanishes; and NDDO's
+zero-differential-overlap approximation makes the orbital basis orthonormal, so
+there is no basis-derivative ("Pulay") term either. The approximation is the
+difference quotient, which equals the exact NDDO gradient to \(O(h^{2})\) plus
+round-off — which is why these forces match re-SCF energy finite differences.
+Regressions live under `regressions/semiempirical/`.
+
+Only \(3(N-1)\) differences are evaluated: the force on the last atom is set to
+minus the sum of the others, exact because a rigid translation cannot change
+\(E\). The forces therefore sum to zero by construction.
 
 ## Example code
 

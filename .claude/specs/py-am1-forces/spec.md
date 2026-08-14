@@ -1,6 +1,6 @@
 ---
 slug: py-am1-forces
-status: approved
+status: code-complete
 created: 2026-08-14
 domain: python-bindings / semiempirical
 queue: claim-completion
@@ -14,8 +14,9 @@ grilled: false
 
 ## Summary
 
-Python AM1 is energy + Mulliken only (`semiempirical/__init__.py` names
-gradients a future spec). Expose the C++ AM1 force path
+Python AM1 was energy + Mulliken only (shipped by this spec: `forces()` +
+MD dispatch; the stale "future spec" markers are gone). Expose the C++ AM1
+force path
 (fixed-density FD per the roadmap; closed-form derivatives are a separate
 engine queue `nddo-closed-form-forces`) and let `AM1Evaluator` serve as an
 MD force source — semiempirical BOMD from Python.
@@ -43,12 +44,12 @@ MD force source — semiempirical BOMD from Python.
 
 ## Tasks
 
-- [ ] Bind forces(frame) on AM1; write-back parity with the C++ path
-- [ ] AM1EvaluatorParams into the MD task variant + codec/materializer +
+- [x] Bind forces(frame) on AM1; write-back parity with the C++ path
+- [x] AM1EvaluatorParams into the MD task variant + codec/materializer +
       parity tests (cross-kind rejection table in task_codec must be
       updated: AM1 is now MD-legal AND SinglePoint-legal)
-- [ ] MD dispatch + pytest AM1-BOMD smoke
-- [ ] Docstring/docs cleanup; surface bookkeeping; gates green
+- [x] MD dispatch + pytest AM1-BOMD smoke
+- [x] Docstring/docs cleanup; surface bookkeeping; gates green
 
 ## Testing
 

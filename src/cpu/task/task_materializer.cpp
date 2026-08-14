@@ -125,6 +125,33 @@ cpu::md::NoseHooverNPT ramped_nose_hoover_npt(const NoseHooverNptParams& p,
     return nh;
 }
 
+/// @brief Build an `AM1Evaluator` that computes nuclear forces.
+///
+/// The same `AM1EvaluatorParams` payload serves a `SinglePointTask`, where the
+/// caller reads back energy and Mulliken charges, and an `MDTask`, where the
+/// evaluator is a *force* source — Born-Oppenheimer molecular dynamics, one
+/// SCF solve per step with the nuclei moving on the resulting energy surface.
+/// Forces are the point of the MD home, so the flag is spelled out here
+/// rather than inherited from the component default: were that default to
+/// flip, an MD run would keep integrating a frame the SCF never pushed on —
+/// silently, since a force-free evaluator still publishes a plausible
+/// energy.
+///
+/// Both replay paths (explicit binding and categorical setter) go through
+/// this one builder, so neither can drift into registering a gradient-less
+/// AM1 behind the other's back.
+///
+/// @param p Typed AM1 params (charge [e], multiplicity, SCF iteration cap,
+///          density residual tolerance, energy tolerance [eV]).
+/// @return Evaluator with gradients enabled, ready for either registration
+///         path.
+cpu::semiempirical::AM1Evaluator gradient_am1(const AM1EvaluatorParams& p) {
+    cpu::semiempirical::AM1Evaluator evaluator{
+        p.charge, p.multiplicity, p.max_iter, p.density_tol, p.energy_tol};
+    evaluator.with_gradient(true);
+    return evaluator;
+}
+
 /// @brief Replay one typed MD entry onto the driver.
 ///
 /// Two registration paths, chosen by whether the entry carries a binding:
@@ -199,6 +226,8 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
                     bind(cpu::md::Barostat{p.P_target, p.tau_P, p.dt,
                                            p.bulk_modulus});
+                else if constexpr (std::is_same_v<P, AM1EvaluatorParams>)
+                    bind(gradient_am1(p));
                 else if constexpr (std::is_same_v<P, ThermoParams>)
                     bind(cpu::Thermo{p.freq});
                 else if constexpr (std::is_same_v<P, XyzRecorderParams>) {
@@ -258,6 +287,8 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
             else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
                 driver.set_barostat(cpu::md::Barostat{p.P_target, p.tau_P, p.dt,
                                                       p.bulk_modulus});
+            else if constexpr (std::is_same_v<P, AM1EvaluatorParams>)
+                driver.set_evaluator(gradient_am1(p));
             else if constexpr (std::is_same_v<P, ThermoParams>)
                 driver.set_thermo(p.freq);
             else if constexpr (std::is_same_v<P, XyzRecorderParams>) {
