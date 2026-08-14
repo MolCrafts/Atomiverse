@@ -163,7 +163,7 @@ class TestDeviceParameter:
         sim.set_neighbor(NeighborList(cutoff))
         sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
         sim.run(argon_frame, 5)
-        energy = float(argon_frame.meta["energy"].value)
+        energy = float(argon_frame.meta["energy"])
         assert np.isfinite(energy)
 
     def test_md_cuda_device_raises_value_error(self) -> None:

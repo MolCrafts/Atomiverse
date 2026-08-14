@@ -19,7 +19,7 @@ never `expected := what_ATV_measured`. Four wave-1..3 pins were self-golden
 Thole; see `.claude/notes/oracle-pin-provenance.md`. "No binary" is no longer a
 valid reason for `literature` or `perf_exempt`.
 
-**Build rule:** workers use **MD-only** cmake (HF/PW/GPW/CUDA/Torch **OFF**,
+**Build rule:** workers use **MD-only** cmake (HF/PW/GPW/CUDA **OFF**,
 MD+KSPACE+TESTS+REGRESSIONS **ON**). See `metalwalls-method-loop.md`.
 
 Census source: `.claude/notes/metalwalls-capability-map.md` slices **E1–E12**,
@@ -157,4 +157,3 @@ active queue no longer tracks them:
 | [x] `nanoporous-carbon-const-pot` | `regressions/md/nanoporous-carbon-const-pot` | metalwalls (slit-pore composition) | perf_exempt |
 | [x] `maze-molten-salt-al` | `regressions/md/maze-molten-salt-al` | metalwalls (MaZe + Fumi–Tosi product) | perf_exempt |
 | [x] `thermo-integration-capacitance` | `regressions/md/thermo-integration-capacitance` | literature (Reed/Scalfi C; Beutler TI) | perf_exempt |
-

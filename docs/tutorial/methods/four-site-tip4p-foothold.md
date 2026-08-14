@@ -122,7 +122,7 @@ const double E = frame.meta.get(kEnergy);   // [eV]
 ```
 
 ```bash
-# MD-only configure (this loop — do not enable HF/PW/GPW/CUDA/Torch)
+# MD-only configure (this loop — do not enable HF/PW/GPW/CUDA)
 bash -lc '
   module load buildenv-gcc/2026.03-mpich
   export OPENBLAS_ROOT="$OPENBLASDIR"
@@ -132,7 +132,7 @@ bash -lc '
         -DATV_BUILD_MD=ON -DATV_BUILD_KSPACE=ON \
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF \
-        -DATV_BUILD_CUDA=OFF -DATV_BUILD_TORCH=OFF \
+        -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
   cmake --build build --target reg_four-site-tip4p-foothold -j$(nproc)
 '

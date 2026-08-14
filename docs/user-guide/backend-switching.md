@@ -2,9 +2,9 @@
 
 This chapter explains a practical rule that appears all over Atomiverse: the
 problem description stays on the CPU side, while the execution backend changes.
-If you understand that one rule, moving between the tutorial examples, the CUDA
-drivers, and the LibTorch backend stops feeling like a rewrite and starts
-feeling like a change of execution model.
+If you understand that one rule, moving between the tutorial examples and the
+CUDA drivers stops feeling like a rewrite and starts feeling like a change of
+execution model.
 
 ## The Stable Part: `cpu::Frame`
 
@@ -64,22 +64,11 @@ This progression keeps two concerns separate. First, you confirm that the
 method and the inputs are right. Second, you change the backend and check that
 the execution model still reproduces the same physics.
 
-## Where LibTorch Fits
-
-The LibTorch backend is not another version of the chemistry tutorial track. It
-is a tensor-backed execution layer for differentiable operators. In that path
-you still start from CPU-side problem description when needed, but the next step
-is a transfer into `ATV::torch::Frame` through functions such as `from_cpu` or
-`to_torch`, depending on whether you are starting from host data or an existing
-CUDA frame.
-
-So the three backend modes serve different purposes:
+So the two backend modes serve different purposes:
 
 - CPU solvers are the clearest reference path.
 - CUDA drivers are the staged high-performance execution path.
-- LibTorch is the differentiable tensor-backed path for optimization and
-  interop.
 
-The important thing is that you do not need three mental models of the
-underlying system. You need one model of the physical problem and three ways to
+The important thing is that you do not need two mental models of the
+underlying system. You need one model of the physical problem and two ways to
 execute it.

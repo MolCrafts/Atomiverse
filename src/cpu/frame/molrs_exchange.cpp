@@ -54,12 +54,14 @@ void validate_exchange_schema(const molrs::FrameRef& src) {
     // molrs 0.13 split the two meanings that used to share `atoms.type`:
     // `atomic_number` (UInt) carries Z, while `type` is a String force-field
     // label the caller owns. Atomiverse keys on Z, so it reads and writes
-    // `atomic_number`; `type` stays in the allow-list — a frame arriving from a
-    // molrs tool may legitimately carry one — but is not imported.
+    // `atomic_number`; `type` and `element` (the String symbol column
+    // molpy's Atomistic.to_frame() exports) stay in the allow-list — a frame
+    // arriving from a molrs tool may legitimately carry them — but are not
+    // imported.
     validate_columns(src, "atoms",
                      {"x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "mass",
-                      "charge", "atomic_number", "type", "tag", "ix", "iy",
-                      "iz"});
+                      "charge", "atomic_number", "type", "element", "tag", "ix",
+                      "iy", "iz"});
     validate_columns(src, "bonds", {"atomi", "atomj", "type_id", "type"});
     validate_columns(src, "angles",
                      {"atomi", "atomj", "atomk", "type_id", "type"});
@@ -88,7 +90,7 @@ bool has_column(const molrs::FrameRef& src, const char* block,
 }
 
 ::rust::Vec<std::uint32_t> require_u32(const molrs::FrameRef& src,
-                                      const char* block, const char* col) {
+                                       const char* block, const char* col) {
     auto values = molrs::frame_column_u32(src, block, col);
     if (values.empty())
         throw std::runtime_error("cpu::from_molrs: required field '"
@@ -152,8 +154,8 @@ std::vector<int> topology_column(const molrs::FrameRef& src, const char* block,
     auto values = molrs::frame_column_u32(src, block, key);
     if (static_cast<int>(values.size()) != n)
         throw std::runtime_error(
-            "cpu::from_molrs: topology field '" + std::string(block) + "."
-            + key + "' is missing or has the wrong dtype/row count");
+            "cpu::from_molrs: topology field '" + std::string(block) + "." + key
+            + "' is missing or has the wrong dtype/row count");
     std::vector<int> out(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i)
         out[static_cast<std::size_t>(i)] = static_cast<int>(values[i]);

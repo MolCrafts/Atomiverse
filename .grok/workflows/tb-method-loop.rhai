@@ -8,7 +8,7 @@
 //
 // BUILD SURFACE (binding): every configure/verify compiles ONLY the
 // semiempirical product + Evaluate + always-on core (frame/driver/component/linalg).
-// Never HF / PW / GPW / MD / MC / PATH / VIB / CUDA / TORCH / KSPACE.
+// Never HF / PW / GPW / MD / MC / PATH / VIB / CUDA / KSPACE.
 
 let meta = #{
     name: "tb-method-loop",
@@ -41,7 +41,7 @@ let specs_index = ".claude/specs/INDEX.md";
 let regression_hint = "regressions/semiempirical/<slug>/";
 // SE-only product surface: SEMIEMPIRICAL + EVALUATE + always-on core.
 // Explicit OFF for every other product so bare mistakes still cannot pull HF/MD/CUDA.
-let cmake_flags = "-DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_SEMIEMPIRICAL=ON -DATV_BUILD_EVALUATE=ON -DATV_BUILD_MD=OFF -DATV_BUILD_MC=OFF -DATV_BUILD_MINIMIZER=OFF -DATV_BUILD_VIB=OFF -DATV_BUILD_PATH=OFF -DATV_BUILD_POTENTIALS=OFF -DATV_BUILD_NEIGHBOR=OFF -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF -DATV_BUILD_KSPACE=OFF -DATV_BUILD_CUDA=OFF -DATV_BUILD_TORCH=OFF -DBLA_VENDOR=OpenBLAS";
+let cmake_flags = "-DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_SEMIEMPIRICAL=ON -DATV_BUILD_EVALUATE=ON -DATV_BUILD_MD=OFF -DATV_BUILD_MC=OFF -DATV_BUILD_MINIMIZER=OFF -DATV_BUILD_VIB=OFF -DATV_BUILD_PATH=OFF -DATV_BUILD_POTENTIALS=OFF -DATV_BUILD_NEIGHBOR=OFF -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF -DATV_BUILD_KSPACE=OFF -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS";
 // Merge-gate domain suite: SE unit tests only (never full ctest).
 // Workers build/run ONLY the test binaries they touched + reg_<slug>.
 let test_filter = "^test_cpu_(am1|rm1|dftb2|xtb_gfn0|nddo_)";
@@ -55,7 +55,7 @@ extra_law += "FORBIDDEN: OpenMOPAC as DFTB reference; DFTB+ as PM6/PM7 reference
 extra_law += "ARCH ONLY (no energy pins): SCINE Sparrow = unified NDDO+TB API shape; CP2K = Evaluate/MD/opt embed patterns. ";
 extra_law += "ASSIGN LADDER: DFTB0 → DFTB2 depth (analytic F) → DFTB3 → spin-DFTB → NDDO PM ladder → GFN-xTB last. ";
 extra_law += "SE-ONLY cmake (cmake_flags): ON = SEMIEMPIRICAL + EVALUATE + TESTS + REGRESSIONS; ";
-extra_law += "FORBIDDEN ON by default: HF PW GPW CUDA TORCH MD MC MINIMIZER VIB PATH KSPACE POTENTIALS NEIGHBOR. ";
+extra_law += "FORBIDDEN ON by default: HF PW GPW CUDA MD MC MINIMIZER VIB PATH KSPACE POTENTIALS NEIGHBOR. ";
 extra_law += "EXCEPTION: slugs se-analytic-hessian / gfn-xtb-analytic-hessian may add -DATV_BUILD_VIB=ON only for their tree; never HF/MD/CUDA. ";
 extra_law += "Always-on core (frame/driver/component/io/linalg) is the only base stack. ";
 extra_law += "Default delivery: Evaluate + Semiempirical Component; no public *Config; no make_*/build_*; static in-tree tables only. ";

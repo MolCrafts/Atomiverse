@@ -11,4 +11,9 @@ from atomiverse._binding import _cpp
 #: Symplectic velocity-Verlet integrator — ``cpu::md::VelocityVerlet(dt [fs])``.
 VelocityVerlet = _cpp.VelocityVerlet
 
-__all__ = ["VelocityVerlet"]
+#: MTK Nose-Hoover NPT integrator (LAMMPS ``fix npt``) —
+#: ``cpu::md::NoseHooverNPT(T_target [K], tau_T [fs], P_target [eV/Å³],
+#: tau_P [fs], dt [fs])``. Replaces the plain integrator.
+NoseHooverNPT = _cpp.NoseHooverNPT
+
+__all__ = ["VelocityVerlet", "NoseHooverNPT"]

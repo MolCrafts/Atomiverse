@@ -100,7 +100,6 @@ do not override it there.
 | `ATV_BUILD_PW` | OFF | Plane-wave DFT (FFTW3) |
 | `ATV_BUILD_GPW` | OFF | GPW (needs HF + PW) |
 | `ATV_BUILD_KSPACE` | OFF | PME reciprocal-space electrostatics (FFTW3) |
-| `ATV_BUILD_TORCH` | OFF | LibTorch backend (`ATV_HAS_TORCH`) |
 | `ATV_BUILD_TESTS` / `ATV_BUILD_REGRESSIONS` / `ATV_BUILD_EXAMPLES` | OFF | target groups |
 | `ATV_REAL_STORAGE` / `ATV_REAL_WORK` | `double` | per-atom storage / kernel-work precision |
 | `ATV_ID_SIZE` | `bigbig` | 64-bit `TagInt` (`smallbig` = 32-bit) |
@@ -206,7 +205,7 @@ Adding a method domain means adding its flag in the same change. A domain whose
 sources compile unconditionally is a defect. The working configuration for a
 single-domain task is that domain plus its DAG closure, everything else OFF —
 e.g. the SE-only build (`SEMIEMPIRICAL` + `EVALUATE` ON; HF/PW/GPW/MD/MC/
-MINIMIZER/VIB/PATH/KSPACE/CUDA/TORCH OFF).
+MINIMIZER/VIB/PATH/KSPACE/CUDA OFF).
 
 molrs is a **derived** dependency: product flags force `ATV_BUILD_MOLRS=ON`,
 never the inverse (`FATAL_ERROR "X requires MOLRS"` is the banned shape). A
@@ -251,8 +250,8 @@ or member.
 ## Architecture
 
 Three pillars: **Driver** (owns the loop), **Component** (one single-step
-operation), **Frame** (device-resident state). Three backends (`cpu/`, `cuda/`,
-`torch/`) sit behind one CUDA-free contract layer in `core/`. There is **no
+operation), **Frame** (device-resident state). Two backends (`cpu/`, `cuda/`)
+sit behind one CUDA-free contract layer in `core/`. There is **no
 backward compatibility** in this layout — no shims, no alias headers, no
 deprecated forwarding, no `#error` tombstones.
 
@@ -507,7 +506,6 @@ three regions: named typed **blocks**, exact-dtype **meta**, and **box**.
 | `molrs.Frame` | flat typed Block columns + typed `MetaValue` map + box (schema v2) | flat bonds/angles/dihedrals |
 | `cpu::Frame` | exactly `BlockMap blocks; MetaMap meta; Box box;` | per-atom LAMMPS columns (`num_bond`/`bond_atom`, global-tag partners) |
 | `cuda::Frame` | raw device pointers + host-cached counts | dual: single-GPU flat lists; multi-GPU per-atom SoA |
-| `torch::Frame` | `at::Tensor` blocks (autograd-capable) | flat sub-structs |
 
 Conversion points, each owning exactly one boundary:
 
@@ -517,7 +515,6 @@ Conversion points, each owning exactly one boundary:
   (checked i32 narrowing — overflow throws) and every serializable typed-meta
   value; type, mass, topology and box are static run inputs and are not written.
 - `cpu::to_cuda()` / `cuda::to_cpu()` — host ⇄ device.
-- `torch::transfer` — cpu ⇄ torch.
 
 Precision tiers map 1:1 across backends: `StorageReal`/`WorkReal`/`AccReal`
 (accumulators always double) ⇄ `real_t`/`work_t`/`prec_t`. Integer IDs by

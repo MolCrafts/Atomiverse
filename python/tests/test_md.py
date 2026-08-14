@@ -20,8 +20,8 @@ import molrs
 
 import atomiverse as av
 from atomiverse.md import MD, InitVelocity
-from atomiverse.md.integrator import VelocityVerlet
-from atomiverse.md.thermostat import NoseHoover
+from atomiverse.md.integrator import NoseHooverNPT, VelocityVerlet
+from atomiverse.md.thermostat import CSVR, Langevin, NoseHoover
 from atomiverse.neighbor import NeighborList
 from atomiverse.potentials.pair import LJCut
 from atomiverse.recorder import Thermo
@@ -114,18 +114,14 @@ class TestMDRunOnMolrsFrame:
         assert "scalars" not in argon_frame.keys()
         assert "stress" not in argon_frame.keys()
         assert molrs.FRAME_SCHEMA_VERSION == 2
-        energy_meta = argon_frame.meta["energy"]
-        kinetic_meta = argon_frame.meta["kinetic"]
-        stress_meta = argon_frame.meta["stress"]
-        stress_kinetic_meta = argon_frame.meta["stress_kinetic"]
-        assert energy_meta.dtype == "f64"
-        assert kinetic_meta.dtype == "f64"
-        assert stress_meta.dtype == "f64x6"
-        assert stress_kinetic_meta.dtype == "f64x6"
-        assert len(stress_meta.value) == 6
-        assert len(stress_kinetic_meta.value) == 6
-        energy = float(energy_meta.value)
-        kinetic = float(kinetic_meta.value)
+        energy = argon_frame.meta["energy"]
+        kinetic = argon_frame.meta["kinetic"]
+        stress = argon_frame.meta["stress"]
+        stress_kinetic = argon_frame.meta["stress_kinetic"]
+        assert isinstance(energy, float)
+        assert isinstance(kinetic, float)
+        assert len(stress) == 6
+        assert len(stress_kinetic) == 6
         assert np.isfinite(energy)
         assert np.isfinite(kinetic)
         assert kinetic > 0.0
@@ -180,7 +176,7 @@ class TestTopLevelConvenience:
         sim.run(argon_frame, 10)
         x_after = np.asarray(argon_frame["atoms"]["x"])
         assert not np.allclose(x_before, x_after)
-        energy = float(argon_frame.meta["energy"].value)
+        energy = float(argon_frame.meta["energy"])
         assert np.isfinite(energy)
 
 
@@ -212,6 +208,51 @@ class TestFrameBindingRemoved:
             importlib.import_module("atomiverse._device")
 
 
+class TestThermostatsAndNpt:
+    """NVT via Langevin/CSVR and NPT via NoseHooverNPT (LAMMPS `fix npt`)."""
+
+    def _lj_nvt(self, thermostat) -> MD:
+        cutoff = 8.5
+        sim = MD()
+        sim.set_integrator(VelocityVerlet(0.001))
+        sim.set_observer(InitVelocity(10.0, 42))
+        sim.set_thermostat(thermostat)
+        sim.set_neighbor(NeighborList(cutoff))
+        sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
+        return sim
+
+    def test_langevin_nvt_smoke(self, argon_frame):
+        sim = self._lj_nvt(Langevin(10.0, 10.0, 100.0, 0.001, 7))
+        sim.run(argon_frame, 5)
+        assert np.isfinite(argon_frame.meta["energy"])
+        assert argon_frame.meta["kinetic"] > 0.0
+
+    def test_csvr_nvt_smoke(self, argon_frame):
+        sim = self._lj_nvt(CSVR(10.0, 50.0, 0.001, 7))
+        sim.run(argon_frame, 5)
+        assert np.isfinite(argon_frame.meta["energy"])
+        assert argon_frame.meta["kinetic"] > 0.0
+
+    def test_npt_smoke(self, argon_frame):
+        cutoff = 8.5
+        sim = MD()
+        sim.set_integrator(NoseHooverNPT(10.0, 100.0, 0.0, 1000.0, 0.001))
+        sim.set_observer(InitVelocity(10.0, 42))
+        sim.set_neighbor(NeighborList(cutoff))
+        sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
+        sim.run(argon_frame, 5)
+        assert np.isfinite(argon_frame.meta["energy"])
+
+    def test_set_thermostat_rejects_unknown_type(self, argon_frame):
+        sim = MD()
+        with pytest.raises(TypeError, match="NoseHoover, Langevin, or CSVR"):
+            sim.set_thermostat(VelocityVerlet(0.001))
+
+    def test_set_integrator_accepts_npt(self):
+        sim = MD()
+        sim.set_integrator(NoseHooverNPT(300.0, 100.0, 0.0, 1000.0, 0.5))
+
+
 class TestMolrsFrameV2Boundary:
     def test_exact_frame_schema_version(self):
         assert molrs.FRAME_SCHEMA_VERSION == 2
@@ -221,8 +262,9 @@ class TestMolrsFrameV2Boundary:
         assert not hasattr(argon_frame, "simbox")
 
     def test_untyped_metadata_is_rejected(self, argon_frame):
+        """Non-primitive meta values fail loud at the molrs boundary."""
         with pytest.raises(TypeError, match="MetaValue"):
-            argon_frame.meta = {"energy": 0.0}
+            argon_frame.meta["bad"] = object()
 
     @pytest.mark.parametrize("legacy_block_name", ("scalars", "stress"))
     def test_synthetic_result_block_is_rejected(

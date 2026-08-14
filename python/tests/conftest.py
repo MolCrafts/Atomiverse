@@ -82,7 +82,7 @@ def argon_frame(n_atoms: int) -> "molrs.Frame":
     atoms.insert("y", ys)
     atoms.insert("z", zs)
     atoms.insert("mass", np.full(n_atoms, 39.948, dtype=np.float64))
-    atoms.insert("type", np.zeros(n_atoms, dtype=np.int32))
+    atoms.insert("atomic_number", np.full(n_atoms, 18, dtype=np.uint32))
     frame["atoms"] = atoms
     frame.box = molrs.Box.cube(box_len)
     return frame

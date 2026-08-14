@@ -135,7 +135,7 @@ atoms.insert("x", xs)
 atoms.insert("y", ys)
 atoms.insert("z", zs)
 atoms.insert("mass", np.full(n, 39.948))   # Ar [amu]
-atoms.insert("type", np.zeros(n, dtype=np.int32))
+atoms.insert("atomic_number", np.full(n, 18, dtype=np.uint32))
 frame["atoms"] = atoms
 frame.box = molrs.Box.cube(n_cells * a0)
 
@@ -154,10 +154,8 @@ sim.run(frame, 1000)
 
 # 4. Read results back from the SAME molrs.Frame
 x = np.asarray(frame["atoms"]["x"])
-energy = frame.meta["energy"]               # molrs.MetaValue(dtype="f64")
-kinetic = frame.meta["kinetic"]
-pe = float(energy.value)
-ke = float(kinetic.value)
+pe = frame.meta["energy"]                   # float [eV]
+ke = frame.meta["kinetic"]                  # float [eV]
 print(f"PE = {pe:.4f} eV,  KE = {ke:.4f} eV,  x[0] = {x[0]:.3f} Å")
 ```
 
@@ -220,14 +218,15 @@ build or compute; GPU materialization is explicitly deferred.
 
 ### molrs.Frame in, molrs.Frame out
 
-The frame must carry an `atoms` block with `x, y, z, type` columns (`mass`
-required for MD). After `run()` the frame holds updated `x/y/z`, `vx/vy/vz`,
-and `fx/fy/fz`. Global results are exact-dtype `molrs.MetaValue` entries in
-`frame.meta`: `energy`, `kinetic`, and `conserved` are `f64`; `stress` and
-`stress_kinetic` are `f64x6`. There is no synthetic `scalars` or `stress`
-block. Read the payload through `.value` and inspect `.dtype` when the exact
-wire type matters. Missing required fields fail loud with a `RuntimeError`
-naming the field.
+The frame must carry an `atoms` block with `x, y, z, atomic_number` columns
+(`mass` required for MD; `atomic_number` [uint] carries Z — the string
+`type` column is a force-field label Atomiverse does not read). After
+`run()` the frame holds updated `x/y/z`, `vx/vy/vz`, and `fx/fy/fz`. Global
+results are exact-dtype typed metadata in `frame.meta`, read back as plain
+Python values: `energy`, `kinetic`, and `conserved` are `float` (`f64` on
+the wire); `stress` and `stress_kinetic` are 6-element sequences (`f64x6`).
+There is no synthetic `scalars` or `stress` block. Missing required fields
+fail loud with a `RuntimeError` naming the field.
 
 ### MD driver
 
@@ -246,8 +245,11 @@ Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
 | Setter | Component | Description |
 |--------|-----------|-------------|
 | `set_integrator` | `VelocityVerlet(dt)` | Symplectic integrator |
+| `set_integrator` | `NoseHooverNPT(T, tau_T, P, tau_P, dt)` | MTK NPT (`fix npt`) — replaces the plain integrator |
 | `set_observer` | `InitVelocity(T, seed)` | Maxwell-Boltzmann init |
 | `set_thermostat` | `NoseHoover(T, tau_T, dt)` | NVT thermostat |
+| `set_thermostat` | `Langevin(T_start, T_stop, damp, dt, seed)` | Langevin thermostat |
+| `set_thermostat` | `CSVR(T, tau, dt, seed)` | Bussi velocity rescale |
 | `set_neighbor` | `NeighborList(cutoff, skin=-1)` | Cell-list pair builder |
 | `set_evaluator` | `PairLJCut(ε, σ, cutoff)` | Lennard-Jones 12-6 |
 | `set_evaluator` | `BondHarmonic(K, r0)` | Bond stretching |

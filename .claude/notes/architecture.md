@@ -16,7 +16,7 @@ existence is noted).
 
 **Contract layer**
 - `include/atomiverse/core` — 23 headers, no subdirectories
-- `include/atomiverse/molrs.hpp` + molrs bridge points (`core/molrs_contract.h`, `cpu/frame/molrs_exchange.h`, `cuda/frame/molrs_exchange.cuh`, `torch/frame/molrs_exchange.cuh`, `cpu/io/frame_writer.h`, `cpu/observe/trajectory_metrics.h`)
+- `include/atomiverse/molrs.hpp` + molrs bridge points (`core/molrs_contract.h`, `cpu/frame/molrs_exchange.h`, `cuda/frame/molrs_exchange.cuh`, `cpu/io/frame_writer.h`, `cpu/observe/trajectory_metrics.h`)
 
 **CPU backend** (`include/atomiverse/cpu/`, 30 directories, no loose files at root)
 - `frame` (8) · `driver` (8) · `component` (27) · `evaluate` (2)
@@ -33,15 +33,13 @@ existence is noted).
 
 CPU-only domains, absent (never renamed) on `cuda/`: `bias`, `electrodes`, `electronic`, `io`, `linalg`, `montecarlo`, `multiscale`, `path`, `replica`, `semiempirical`, `task`, `vibration`, `xc`. `gpw` is no longer absent — `cuda/gpw/internal/` carries unit-tested kernel footholds (no public method yet). Full CUDA GPW product public shape is **frozen** to equal CPU `GpwDft` ([cuda-gpw-public-shape.md](cuda-gpw-public-shape.md); freeze merge `0147fe02`); `cuda-gpw-full-product` is staffable under that contract (not auto-landed; GH200 + CUDA↔CPU tols).
 
-**Torch backend** (`include/atomiverse/torch/`, 5 directories, 8 headers) — `frame`, `component`, `device`, `neighbor`, `potentials`. Partial backend: no driver/, no evaluate/.
-
-`src/` mirrors `core/`, `cpu/`, `cuda/`, `torch/` 1:1.
+`src/` mirrors `core/`, `cpu/`, `cuda/` 1:1.
 
 ### Public surface
 
 **core** (`core/*.h`) — `StorageReal`/`WorkReal`/`AccReal`, `LocalInt`/`TagInt`/`ImageInt`/`BigInt` (`precision.h`); `ColKey<T>`, `MetaKey<T>`, `ColDType`, `ColStride`, `ColGroup`, `FieldSpec`, `AtomFieldId`, `kAtom_*` column keys, `kNLocal`/`kEnergy`/`kKinetic`/`kStress`/`kDipole`/… meta keys (`frame_schema.h`); `Mat3`, `Vec3`, `SystemScalars`; `Plan`, `Operation`, `StageSlot`, `PlanBuilder` (`plan.h`); `md::Phase`, `minimizer::Phase`, `evaluate::Phase`, `scf::Phase`, `vib::Phase`, `sampling::Phase`, `path::Phase`, `slot_of`, `slot_count<P>`, `make_binding`, `kind_of`, `phase_names` (`stage.h`); `PhaseKind`, `DefaultBinding` (`binding.h`); `RoleFlag`/`Role`/`has_role`/`loop_required` (`role.h`); `Verdict`, `worse_of`, `Outcome`, `ConvergenceMetrics` (`verdict.h`); `IterationStatus`; `Driver<PhaseEnum, DeviceTag>`, `PhaseBuilder` (`driver_template.h`); `backend_traits<DeviceTag>`, `cpu::device_tag`/`cuda::device_tag`; `PairList` field constants; `Length`/`Energy`/`Force`/`Angle` + `k*` constants (`units.h`); `TimerRegistry`, `ScopedTimer`; `Table`, `Csv` (`report.h`); `LogConfig`, `logger()` (`log.h`); `gto_norm`, `boys_fn` (`gto.h`); `real_solid_harmonics` (`real_harmonics.h`); `molrs::expected_api_version/validate/require_compatible` (`molrs_contract.h`).
 
-**molrs bridge** — `molrs.hpp` (only include for CXX-generated code; callers use `molrs::Element` directly); `cpu::from_molrs(const molrs::FrameRef&)` / `cpu::to_molrs(const Frame&, molrs::FrameRef&)`; `cuda::from_molrs`/`to_molrs`; `torch::from_molrs`/`to_molrs`; `cpu::write_frame_xyz` / `write_frame_zarr` (`io/frame_writer.h`); `cpu::compute::{MSD, EinsteinDiffusion, VACF, RDF, RDFAccumulator, MSDAccumulator, VACFAccumulator}` (PIMPL, `observe/trajectory_metrics.h`).
+**molrs bridge** — `molrs.hpp` (only include for CXX-generated code; callers use `molrs::Element` directly); `cpu::from_molrs(const molrs::FrameRef&)` / `cpu::to_molrs(const Frame&, molrs::FrameRef&)`; `cuda::from_molrs`/`to_molrs`; `cpu::write_frame_xyz` / `write_frame_zarr` (`io/frame_writer.h`); `cpu::compute::{MSD, EinsteinDiffusion, VACF, RDF, RDFAccumulator, MSDAccumulator, VACFAccumulator}` (PIMPL, `observe/trajectory_metrics.h`).
 
 **cpu/frame** — `Frame` (`blocks`/`meta`/`box`; `span(ColKey<T>)`, `block()`, `has()`, `nlocal()/nghost()/capacity()/n_total()`, `set_nlocal`, `grow`, `copy_row`, `acquire_tag`, `reserve_topology`, resolution-window instrumentation); `Block`, `BlockMap`, `Column`, `Span<T>`, `ResolutionWindow`, `column_error`, `stale_handle_error`; `MetaMap`, `MetaRef<T>`, `meta_error`; `Box` (`cubic`, `orthorhombic`, `length`, `volume`, `min_image`, `wrap_axis`, `scale_*`, `set_cell`), `min_image_batch<B>` (`box_simd.h`); `to_cuda(frame, capacity)`.
 
@@ -87,7 +85,6 @@ CPU-only domains, absent (never renamed) on `cuda/`: `bias`, `electrodes`, `elec
 
 **cuda** — `Frame` (device pointers + `Atoms`, flat `BondList`/`AngleList`/`DihedralList`), `Box`, `real_t`/`work_t`/`prec_t` (`frame/types.cuh`), `to_cpu`, `destroy`, `materialize_per_atom_bonded` · `Driver<P>`, `Backend`, `Criterion`, `LoopState`, `ForceConverged`, `StopOnNaN` · `Component`, `Context` + `DynamicsServices`/`LoopServices`, `BuildContext`/`LaunchContext`/`DestroyContext`, kinds `Potential`/`HF`/`Integrator`/`Thermostat`/`Barostat`/`Optimizer`, protocols `HaloParticipant`, `NeighborConsumer`/`NeighborProvider` · presets `Evaluate`, `md::MD`, `minimizer::Minimize` · `VelocityVerlet`, `NVELimit`, `NoseHoover`, `NoseHooverNPT`, `Barostat`, `FixLangevin`, `InitVelocity`, `ZeroForces/Energy/Kinetic/Momentum`, `KineticEnergy`, `Deform` · `LBFGS`, `CG`, `SteepestDescent`, `ConvCheck` · `PairLJCut`, `CoulLong`, `BondHarmonic`, `AngleHarmonic`, `DihedralMultiHarmonic` + kernels (`lj_kernel.cuh`, `pair_kernel.h`) · `KSpace`, `KSpaceEwald`, `KSpacePME` · `NeighborList`, `PairList` · `RDF`, `MullikenObs`, `Virial` · `Thermo`, `Recorder`, `DensityRecorder` · `DeviceManager`, `Timer`, `launch.cuh`, `error.cuh`, `log_callback.h` · `DomainDecomposition`, `MultiGpu` · `AsyncBridge`, `AsyncRecordBase`, `HostWorker` · `scf::RHF{basis, …}` with `run(cpu::Frame&)` / `forces(cpu::Frame&)` / `energy()` / `converged()` / `iterations()` / `with_gradient()`, `scf::SCF` evaluator, `SCFWorkspace`, `device_integrals.cuh`; `scf/internal/` holds `RhfScfCycle` / `SyntheticScfCycle` + `SolverContext` · `pw::PW{upf_path, ecut_ry, k_mesh, tol, max_iter, mix_beta, pulay_depth, xc, spin_polarized, multiplicity, smearing, degauss, mp_order, extra_bands}` with `build(const cpu::Frame&)` / `run(const cpu::Frame&) -> PWResult&` / `last_result()`, sharing `cpu::pw::PWResult`/`Smearing`; device envelope = `XCType::LSDA` + restricted + fixed occupations + no MPI k-distribution, everything else throws `std::invalid_argument` with a how-to; `planewave/internal/` holds `DeviceBandSolver` (band side; borrows both real-space grids via `bind_grids`) and `DeviceDensity` (density side: `hartree`/`exchange_correlation`/`assemble_veff`/`zero_accumulator`/`collect`/`mix`/`reduce`, owning ρ(G)/V_H/V_xc/V_loc/V_eff, the Pulay ring and the fused reductions) over the `fft`/`poisson`/`grid_map`/`veff`/`xc_lda` device launchers. Per SCF iteration nothing O(N_G)/O(N_r) crosses PCIe — only the ≤8×8 Pulay Gram, its coefficients and 5 energy/residual doubles; the Pulay coefficient solve is the shared host `cpu::pw::internal::solve_pulay_coefficients`.
 
-**torch** — `torch::Frame` (`at::Tensor` blocks), `Context`, `StreamGuard`, `NeighborList` + `neighbor_list(frame, cutoff, skin)`, `lj(...)`, `harmonic_bond(...)`, `to_torch`/`to_cuda`/`to_cpu`/`from_cpu`/`destroy`, `from_molrs`/`to_molrs`.
 
 ### Style summary
 
@@ -99,19 +96,18 @@ CPU-only domains, absent (never renamed) on `cuda/`: `bias`, `electrodes`, `elec
 - **cpu/dynamics, potentials, longrange, minimize, montecarlo, path, observe, record**: LAMMPS-style names; all-positional ctor args (`PairLJCut{eps, sigma, cutoff}`, `VelocityVerlet{dt}`, `MC{T_K, seed}`, `LBFGS{m, alpha0, max_ls}`); categorical setters; throw in `build()` on missing neighbor list / unmatched long-range pair.
 - **cpu/communication, device, asynchronous, neighbor, replica, task, io, linalg, xc**: infra nouns (`DomainRuntime`, `DeviceRuntime`, `AnalysisRuntime`); engine-side, Runtime-owned; MPI-lockstep status folding in `task/`, throw elsewhere.
 - **cuda/**: mirrors CPU one-for-one; same ctor-arg shape; `.cuh`/`.cu` except deliberately CUDA-free `device/log_callback.h`, `device/timer.h`, `potentials/pair_kernel.h`; `error.cuh` check macros + host-side throws; `cuda::scf::RHF` takes `cpu::Frame&` at its boundary.
-- **torch/**: lowercase free functions for operators (`lj`, `harmonic_bond`, `neighbor_list`) — the one backend where free-function operator style is the convention; tensor-in/tensor-out.
 
 ### Layer roles
 
-- `core` — CUDA-free contract layer (shared by all three backends)
+- `core` — CUDA-free contract layer (shared by both backends)
 - molrs bridge — external-exchange boundary (FFI); one conversion point per boundary
-- `cpu/frame`, `cuda/frame`, `torch/frame` — **Frame pillar**
+- `cpu/frame`, `cuda/frame` — **Frame pillar**
 - `cpu/driver`, `cuda/driver` — **Driver pillar** (loop node, Runtime, criteria, OutcomePolicy)
-- `cpu/component`, `cuda/component`, `torch/component` — **Component pillar** (base, kinds, Context slices, opt-in protocols)
+- `cpu/component`, `cuda/component` — **Component pillar** (base, kinds, Context slices, opt-in protocols)
 - `cpu/evaluate`, `cuda/evaluate` — Evaluate preset + `single_point` (Driver-pillar preset)
-- `cpu/device`, `cuda/device`, `torch/device` — infra cluster (DeviceRuntime / streams / timing)
+- `cpu/device`, `cuda/device` — infra cluster (DeviceRuntime / streams / timing)
 - `cpu/communication`, `cuda/communication` — infra cluster (domain decomposition, halo, migration, reductions)
-- `cpu/neighbor`, `cuda/neighbor`, `torch/neighbor` — infra cluster (cell/Verlet + published PairList)
+- `cpu/neighbor`, `cuda/neighbor` — infra cluster (cell/Verlet + published PairList)
 - `cpu/asynchronous`, `cuda/asynchronous` — infra cluster (AnalysisRuntime, snapshot ring, D2H bridge)
 - `cpu/linalg` — infra cluster, CPU-only (shared dense LA)
 - `cpu/replica` — infra cluster, CPU-only (ReplicaSet / ReplicaExpansion)
@@ -129,7 +125,7 @@ CPU-only domains, absent (never renamed) on `cuda/`: `bias`, `electrodes`, `elec
 - `cpu/xc` — method domain, shared XC pieces
 - `cpu/vibration` — method domain, CPU-only (FD Hessian, phonons, thermochemistry)
 - `cpu/longrange`, `cuda/longrange` — method domain (reciprocal-space electrostatics + its own operator math)
-- `cpu/potentials`, `cuda/potentials`, `torch/potentials` — method domain (real-space pair + bonded evaluators)
+- `cpu/potentials`, `cuda/potentials` — method domain (real-space pair + bonded evaluators)
 - `cpu/bias` — method domain, CPU-only (CVs, harmonic bias, metadynamics)
 - `cpu/multiscale` — method domain, CPU-only (QM/MM connection-layer evaluators)
 - `cpu/electrodes` — method domain, CPU-only (electrode charge dynamics/work)
@@ -142,10 +138,9 @@ CPU-only domains, absent (never renamed) on `cuda/`: `bias`, `electrodes`, `elec
 - Concrete CPU methods `RHF`/`UHF`/`RKS`/`UKS`/`ROHF`/`ROKS`/`GHF` all derive `MeanFieldMethod<Self>`; `methods.h` keeps one alias `SCF = RKS`.
 - `cuda::scf::RHF` presents the same shape: `RHF{basis}` ctor, `run(cpu::Frame&)`, `forces(cpu::Frame&)` (`include/atomiverse/cuda/scf/rhf.cuh`). Owns private `internal::RhfScfCycle` (scf::Phase order: fock→mix→diag→density→check). No free-loop `SCFSolver` type; nested `cuda::Driver<scf::Phase>` residual until nested CUDA DriverNode exists.
 - No tombstone headers remain: the only `#error` in `include/` + `src/` is the CMake-version guard in `src/core/molrs_contract.cpp`.
-- `tests/` contains zero `.sh` files — no shell/grep gate scripts remain in the test tree (subdirs: `app`, `core`, `cpu`, `cuda`, `data`, `mpi`, `torch`).
+- `tests/` contains zero `.sh` files — no shell/grep gate scripts remain in the test tree (subdirs: `app`, `core`, `cpu`, `cuda`, `data`, `mpi`).
 - `regressions/` holds 392 case directories across 18 domains: `architecture`, `dynamics`, `forcefield`, `gpw`, `launcher`, `layout`, `longrange`, `mc`, `md`, `minimizer`, `multiscale`, `path`, `pw`, `python`, `response`, `sampling`, `scf`, `semiempirical`.
 - `internal/` subtrees exist under `cpu/scf`, `cpu/gpw`, `cpu/planewave`, `cpu/semiempirical`, `cpu/multiscale`, `cuda/scf`, `cuda/planewave`. Static data tables live in `cpu/scf/basis_data`, `cpu/gpw/basis_data`, `cpu/semiempirical/basis_data`, `cpu/potentials/eam_data`, `cpu/potentials/sw_data`.
 - `Context` ships seven service slices (`DynamicsServices`, `SamplingServices`, `OptimizeServices`, `PathServices`, `LoopServices`, `ExecServices`, `AnalysisServices`).
-- Torch is a partial backend (5 dirs, 8 headers): Frame/Context/StreamGuard/NeighborList + two operator free functions; no driver or evaluate layer.
 
 <!-- mol:map:managed end -->

@@ -80,7 +80,7 @@ for attempt in 1 2 3; do
     -DATV_BUILD_MINIMIZER=OFF \
     -DATV_BUILD_VIB=OFF \
     -DATV_BUILD_PATH=OFF \
-    -DATV_BUILD_TORCH=OFF \
+    \
     -DATV_USE_MPI=OFF \
     -DBLA_VENDOR=OpenBLAS \
     -DCMAKE_PREFIX_PATH="${FFTW_HINT};${OPENBLAS_ROOT}"; then

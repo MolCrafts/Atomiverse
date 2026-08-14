@@ -60,8 +60,11 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
     {
         "MD",
         "VelocityVerlet",
+        "NoseHooverNPT",
         "InitVelocity",
         "NoseHoover",
+        "Langevin",
+        "CSVR",
         "Minimize",
         "LBFGS",
         "ForceConverged",
@@ -133,7 +136,7 @@ def silicon_frame() -> "molrs.Frame":
     atoms.insert("y", np.array([0.0, a / 4.0], dtype=np.float64))
     atoms.insert("z", np.array([0.0, a / 4.0], dtype=np.float64))
     atoms.insert("mass", np.full(2, 28.0855, dtype=np.float64))
-    atoms.insert("type", np.full(2, 14, dtype=np.int32))
+    atoms.insert("atomic_number", np.full(2, 14, dtype=np.uint32))
     frame["atoms"] = atoms
     frame.box = molrs.Box.cube(a)
     return frame
@@ -150,7 +153,7 @@ class TestCanonicalSurface:
 
     def test_all_is_exactly_the_honest_surface(self) -> None:
         """__all__ equals the MD + AM1 base plus optional PW object types."""
-        assert len(_CANONICAL_ALL) == (20 if _HAS_PW else 18)
+        assert len(_CANONICAL_ALL) == (23 if _HAS_PW else 21)
         assert set(av.__all__) == set(_CANONICAL_ALL)
 
 
@@ -176,9 +179,8 @@ class TestCanonicalMDSmoke:
         canonical_lj_md.run(argon_frame, 10)
         assert "scalars" not in argon_frame.keys()
         assert "stress" not in argon_frame.keys()
-        energy_meta = argon_frame.meta["energy"]
-        assert energy_meta.dtype == "f64"
-        energy = float(energy_meta.value)
+        energy = argon_frame.meta["energy"]
+        assert isinstance(energy, float)
         assert np.isfinite(energy)
 
     def test_kinetic_positive(
@@ -186,7 +188,7 @@ class TestCanonicalMDSmoke:
     ) -> None:
         """InitVelocity(10 K, seed 42) yields kinetic energy > 0."""
         canonical_lj_md.run(argon_frame, 10)
-        kinetic = float(argon_frame.meta["kinetic"].value)
+        kinetic = float(argon_frame.meta["kinetic"])
         assert np.isfinite(kinetic)
         assert kinetic > 0.0
 
@@ -293,7 +295,8 @@ def _forbidden_tokens() -> tuple[str, ...]:
     tokens.append("Cpu" + "Frame")
     tokens.extend("av" + "." + name for name in _DEAD_AV_ATTRS)
     tokens.extend("atomiverse" + "." + name for name in ("Frame", "Block"))
-    tokens.extend("molpy" + "." + name for name in ("Frame", "Block"))
+    # molpy >= 0.13 re-exports molrs.Frame / molrs.Block by identity, so
+    # `molpy.Frame` is no longer a dead reference and is not scanned for.
     return tuple(tokens)
 
 

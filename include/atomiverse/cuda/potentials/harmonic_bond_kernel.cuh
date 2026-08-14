@@ -1,5 +1,5 @@
 /// @file cuda/potentials/harmonic_bond_kernel.cuh
-/// @brief Pointer-level harmonic bond kernel -- shared between cuda component and torch backend.
+/// @brief Pointer-level harmonic bond kernel -- shared pointer-level kernel for the cuda component.
 ///
 /// V(r) = K (r - r0)^2,  F = -2K(r - r0) r_hat
 ///

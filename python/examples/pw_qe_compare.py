@@ -70,7 +70,7 @@ def build_si_diamond(a_lat: float = 5.43) -> "molrs.Frame":
     atoms.insert("x", np.array([0.0, a4]))
     atoms.insert("y", np.array([0.0, a4]))
     atoms.insert("z", np.array([0.0, a4]))
-    atoms.insert("type", np.array([14, 14], dtype=np.int32))
+    atoms.insert("atomic_number", np.array([14, 14], dtype=np.uint32))
     atoms.insert("mass", np.full(2, 28.0855))
     frame["atoms"] = atoms
 

@@ -114,7 +114,7 @@ bash -lc '
         -DATV_BUILD_MD=ON -DATV_BUILD_KSPACE=ON \
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF \
-        -DATV_BUILD_CUDA=OFF -DATV_BUILD_TORCH=OFF -DBLA_VENDOR=OpenBLAS
+        -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
   cmake --build build --target reg_extended-lagrangian-dipoles -j"$(nproc)"
   ./build/regressions/reg_extended-lagrangian-dipoles
 '

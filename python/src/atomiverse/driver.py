@@ -18,10 +18,10 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     Parameters
     ----------
     frame : molrs.Frame
-        System state (``atoms`` block with ``x, y, z, type``; for
-        semiempirical methods ``type`` is the atomic number Z). Results use
-        ``molrs.MetaValue`` entries, for example
-        ``frame.meta["energy"].value`` with dtype ``"f64"``.
+        System state (``atoms`` block with ``x, y, z, atomic_number``; the
+        ``atomic_number`` column [uint] carries Z). Results land as typed
+        metadata read back as plain values, for example
+        ``frame.meta["energy"]`` is a ``float`` [eV].
     evaluator : atomiverse.AM1Evaluator
         The evaluator component (v1: AM1 only; SCF/PW single-point
         wrappers are future specs).

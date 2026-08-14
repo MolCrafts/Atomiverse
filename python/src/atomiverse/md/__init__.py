@@ -14,8 +14,8 @@ Mirrors the C++ categorical API on ``cpu::md::MD`` (headers under
 The driver borrows the ``molrs.Frame`` for the duration of :meth:`MD.run`:
 the C++ side materializes a transient execution frame, advances it, and
 writes positions / velocities / forces / energy back into the *same*
-``molrs.Frame``. Global results use exact-dtype ``molrs.MetaValue`` entries
-in ``frame.meta``.
+``molrs.Frame``. Global results are exact-dtype typed metadata entries in
+``frame.meta``, read back as plain Python values.
 """
 
 from __future__ import annotations
@@ -119,11 +119,15 @@ class MD:
     # ------------------------------------------------------------------
 
     def set_integrator(self, component: object) -> MD:
-        """Install the time integrator (``cpu::md::MD::set_integrator``)."""
-        if type(component) is not _cpp.VelocityVerlet:
+        """Install the time integrator (``cpu::md::MD::set_integrator``).
+
+        ``VelocityVerlet`` for NVE/NVT; ``NoseHooverNPT`` (LAMMPS ``fix
+        npt``) replaces the plain integrator for NPT.
+        """
+        if type(component) not in (_cpp.VelocityVerlet, _cpp.NoseHooverNPT):
             raise TypeError(
-                f"set_integrator expects VelocityVerlet, got "
-                f"{type(component).__name__}"
+                f"set_integrator expects VelocityVerlet or NoseHooverNPT, "
+                f"got {type(component).__name__}"
             )
         self._cpp.set_integrator(component)
         self._built = False
@@ -131,9 +135,9 @@ class MD:
 
     def set_thermostat(self, component: object) -> MD:
         """Install a thermostat (``cpu::md::MD::set_thermostat``)."""
-        if type(component) is not _cpp.NoseHoover:
+        if type(component) not in (_cpp.NoseHoover, _cpp.Langevin, _cpp.CSVR):
             raise TypeError(
-                f"set_thermostat expects NoseHoover, got "
+                f"set_thermostat expects NoseHoover, Langevin, or CSVR, got "
                 f"{type(component).__name__}"
             )
         self._cpp.set_thermostat(component)

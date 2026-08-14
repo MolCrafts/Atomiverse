@@ -116,7 +116,7 @@ const double meta_L = frame.meta.get(kElectrodeCharge)[0];
 const double meta_R = frame.meta.get(kElectrodeCharge)[1];
 ```
 
-Build and run the regression (MD-only flags; never enable HF/PW/GPW/CUDA/Torch
+Build and run the regression (MD-only flags; never enable HF/PW/GPW/CUDA
 for this loop):
 
 ```bash
@@ -129,7 +129,7 @@ bash -lc '
         -DATV_BUILD_MD=ON -DATV_BUILD_KSPACE=ON \
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF \
-        -DATV_BUILD_CUDA=OFF -DATV_BUILD_TORCH=OFF \
+        -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
   cmake --build build --target reg_const-pot-charge-observer -j$(nproc)
   ./build/regressions/reg_const-pot-charge-observer

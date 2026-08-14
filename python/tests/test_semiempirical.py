@@ -47,7 +47,7 @@ def _make_ch4_frame() -> "molrs.Frame":
         "mass",
         np.array([12.011, 1.008, 1.008, 1.008, 1.008], dtype=np.float64),
     )
-    atoms.insert("type", np.array([6, 1, 1, 1, 1], dtype=np.int32))
+    atoms.insert("atomic_number", np.array([6, 1, 1, 1, 1], dtype=np.uint32))
     frame["atoms"] = atoms
     frame.box = molrs.Box.cube(20.0)
     return frame
@@ -130,9 +130,8 @@ class TestAM1SinglePointCH4:
         frame, _ = am1_ch4
         assert "scalars" not in frame.keys()
         assert "stress" not in frame.keys()
-        energy_meta = frame.meta["energy"]
-        assert energy_meta.dtype == "f64"
-        energy = float(energy_meta.value)
+        energy = frame.meta["energy"]
+        assert isinstance(energy, float)
         assert np.isfinite(energy)
         assert energy < 0.0
 
@@ -192,7 +191,7 @@ class TestUnsupportedElement:
         atoms.insert("y", np.array([0.0], dtype=np.float64))
         atoms.insert("z", np.array([0.0], dtype=np.float64))
         atoms.insert("mass", np.array([252.0], dtype=np.float64))
-        atoms.insert("type", np.array([99], dtype=np.int32))
+        atoms.insert("atomic_number", np.array([99], dtype=np.uint32))
         frame["atoms"] = atoms
         frame.box = molrs.Box.cube(20.0)
 

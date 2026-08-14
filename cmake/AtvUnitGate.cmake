@@ -274,7 +274,7 @@ endif()
 
 if(_FORCE_ALL)
   # Full classical unit suite + optional modules that tests may need.
-  # Still no CUDA/Torch. HF/PW/GPW/KSPACE ON so registered slices exist.
+  # Still no CUDA. HF/PW/GPW/KSPACE ON so registered slices exist.
   set(_want_hf TRUE)
   set(_want_pw TRUE)
   set(_want_gpw TRUE)
@@ -343,7 +343,6 @@ execute_process(
     -B "${_BUILD_DIR}"
     -DCMAKE_BUILD_TYPE=Release
     -DATV_BUILD_CUDA=OFF
-    -DATV_BUILD_TORCH=OFF
     -DATV_BUILD_TESTS=ON
     -DATV_BUILD_EXAMPLES=OFF
     -DATV_BUILD_REGRESSIONS=OFF

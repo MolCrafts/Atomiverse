@@ -6,7 +6,7 @@ Census rewrites **pending** from `docs/roadmap/semiempirical.md` ○ rows that
 done / blocked / in_progress.
 
 **Build rule:** SE-only cmake (`SEMIEMPIRICAL` + `EVALUATE` + TESTS/REGRESSIONS
-**ON**; HF/PW/GPW/MD/MC/MINIMIZER/VIB/PATH/KSPACE/CUDA/TORCH **OFF**).
+**ON**; HF/PW/GPW/MD/MC/MINIMIZER/VIB/PATH/KSPACE/CUDA **OFF**).
 See `tb-method-loop.md`.
 
 **Oracle rule (family-locked):**

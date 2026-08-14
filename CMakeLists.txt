@@ -114,7 +114,6 @@ if(NOT ATV_DOCS_ONLY)
     option(ATV_BUILD_PW "Build plane-wave DFT module (requires FFTW3)" OFF)
     option(ATV_BUILD_GPW "Build GPW DFT module (Gaussian + uniform-grid Hartree/XC + GTH PP)" OFF)
     option(ATV_BUILD_KSPACE "Build Particle-Mesh Ewald (PME) electrostatics (CPU: FFTW3, CUDA: cuFFT)" OFF)
-    option(ATV_BUILD_TORCH "Build LibTorch backend (requires LibTorch)" OFF)
     option(ATV_BUILD_XC_ORACLE
            "Build libxc-backed XC oracle (test-only scaffolding; deletable after native parity is locked in)"
            OFF)
@@ -954,42 +953,6 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_CUDA)
             target_link_libraries(atomiverse PUBLIC CUDA::cufft)
         endif()
-    endif()
-
-    if(ATV_BUILD_TORCH)
-        # The torch backend is CUDA-only: every source hardcodes
-        # `::torch::kCUDA` and test_transfer.cu calls cudaStreamCreate. With
-        # CUDA disabled, `enable_language(CUDA)` never ran, and CMake then
-        # SILENTLY DROPS every .cu source from the build — no warning, no
-        # error. The library ends up with zero torch objects, every
-        # test_torch_* binary links to an empty gtest_main, runs "0 tests from
-        # 0 test suites", exits 0, and ctest reports a full green. A build
-        # configuration that cannot possibly work must fail at configure time,
-        # not hand back a passing test suite that tested nothing.
-        if(NOT ATV_BUILD_CUDA)
-            message(FATAL_ERROR
-                "ATV_BUILD_TORCH=ON requires ATV_BUILD_CUDA=ON: the torch "
-                "backend is a CUDA-only differentiable layer (it hardcodes "
-                "torch::kCUDA and calls the CUDA runtime), and with the CUDA "
-                "language disabled CMake silently excludes every .cu source — "
-                "producing a library with no torch code and test binaries with "
-                "no tests, which then report PASS. Build it on the GPU node "
-                "with a CUDA-enabled LibTorch.")
-        endif()
-        find_package(Torch REQUIRED)
-        target_sources(atomiverse PRIVATE
-            src/torch/frame/transfer.cu
-            src/torch/device/stream_guard.cu
-            src/torch/potentials/lj.cu
-            src/torch/neighbor/neighbor_list.cu
-            src/torch/potentials/harmonic_bond.cu
-        )
-        if(ATV_BUILD_MOLRS)
-            target_sources(atomiverse PRIVATE src/torch/frame/molrs_exchange.cu)
-        endif()
-        target_link_libraries(atomiverse PUBLIC ${TORCH_LIBRARIES})
-        target_include_directories(atomiverse PUBLIC ${TORCH_INCLUDE_DIRS})
-        target_compile_definitions(atomiverse PUBLIC ATV_HAS_TORCH)
     endif()
 
 

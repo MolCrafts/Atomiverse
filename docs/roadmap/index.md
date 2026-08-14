@@ -22,6 +22,7 @@ fallback is not counted as CUDA/Kokkos support.
 | Symbol | Meaning                                 |
 | ------ | --------------------------------------- |
 | ○      | Not implemented                         |
+| ◐      | Partial on that backend                 |
 | ✓      | Implemented and numerically correct     |
 | ⚡      | Numerically correct and fully optimized |
 
@@ -59,6 +60,12 @@ LAMMPS/Kokkos (`/* benchmarks removed; re-add later */ lj/performance/`).
 Everything else that is correct but has no standing performance gate is a ✓,
 including code that is fast in practice. No Kokkos ⚡ yet (backend ○).
 
+**◐** means partial: an implementation exists on that backend, but the
+domain's product depth or independent anchor is incomplete — a foothold, a
+restricted sub-case, or a pin that is still self-consistency rather than an
+external number. A row never jumps ○→✓ while so marked; the chapter prose
+states what is missing.
+
 **○** means not implemented. It does not distinguish "planned" from "not
 planned"; the sections below are a method census, not a commitment schedule.
 
@@ -78,9 +85,11 @@ is a section of the DFT chapter, periodic HF a section of the Hartree–Fock one
 | [Semiempirical and Tight Binding](semiempirical.md) | NDDO/AM1, DFTB, extended tight binding (xTB) |
 | [Force Fields](force-fields.md) | Bonded, nonbonded, electrostatics, polarizable, many-body/reactive, coarse-grained, machine-learning potentials |
 | [Molecular Dynamics](molecular-dynamics.md) | Integrators, thermostats, barostats, ensembles, constraints, nonequilibrium MD, AIMD, nuclear quantum, nonadiabatic, vibrations |
+| [Electrodes and Electrochemistry](electrodes.md) | Constant-potential / constant-charge electrodes, MaZe, Thomas–Fermi metallicity, piston, polarizable coupling, electrode observers |
 | [Geometry Optimization](optimization.md) | Minimizers, transition states, reaction paths |
 | [Sampling and Free Energy](sampling.md) | Monte Carlo, enhanced sampling, free-energy methods |
 | [Multiscale and Properties](multiscale.md) | Atomic charges, implicit solvent, QM/MM, embedding, relativistic, intermolecular interactions |
+| [Observables and Analysis](observables.md) | The `cpu/observe/` census: trajectory metrics, densities, stress, population/ESP charges, electrode observers, molrs bridges |
 
 ## Campaign principle (CPU method-first)
 

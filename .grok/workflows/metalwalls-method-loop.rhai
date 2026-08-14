@@ -35,7 +35,7 @@ let tutorial_root = "docs/tutorial/methods/";
 let specs_root = ".claude/specs/";
 let specs_index = ".claude/specs/INDEX.md";
 let regression_hint = "regressions/{md,forcefield}/<slug>/";
-let cmake_flags = "-DCMAKE_BUILD_TYPE=Release -DATV_BUILD_MD=ON -DATV_BUILD_KSPACE=ON -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF -DATV_BUILD_CUDA=OFF -DATV_BUILD_TORCH=OFF -DBLA_VENDOR=OpenBLAS";
+let cmake_flags = "-DCMAKE_BUILD_TYPE=Release -DATV_BUILD_MD=ON -DATV_BUILD_KSPACE=ON -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS";
 // ctest -R regex bounding THIS loop's domain suite. Merge gate only.
 // Workers build/run ONLY the test binaries they touched + reg_<slug>.
 let test_filter = "^test_cpu_(md|mc|pair|fix|observer|ewald|pme|pppm|slab|gaussian_charge|bond|dihedral|improper|eam|sw|pim|charging|classical)";
@@ -45,7 +45,7 @@ let gap_sources = map_path + "; docs/roadmap/force-fields.md; docs/roadmap/molec
 let extra_law = "";
 extra_law += "ORACLE PRIORITY: if feature also exists in LAMMPS, offline pin + fair bench MUST use LAMMPS; MetalWalls only for MW-only physics. ";
 extra_law += "REFERENCE.md must state oracle: lammps|metalwalls|literature and oracle_version. ";
-extra_law += "MD-ONLY build (cmake_flags); FORBIDDEN: ATV_BUILD_HF/PW/GPW/CUDA/TORCH=ON. ";
+extra_law += "MD-ONLY build (cmake_flags); FORBIDDEN: ATV_BUILD_HF/PW/GPW/CUDA=ON. ";
 extra_law += "Arch: electrodes/const-pot = Components on cpu::md::MD; never new Driver category; never charge solve inside KSpace*. ";
 extra_law += "Temps: /tmp/atv-* /tmp/lammps_oracle_* /tmp/mw_oracle_*. Map: " + map_path + ". ";
 let default_staff_count = 10;

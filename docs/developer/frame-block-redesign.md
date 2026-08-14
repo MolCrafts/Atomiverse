@@ -12,7 +12,7 @@ class cpu::Frame {
 ```
 
 这三个成员就是完整表示，不存在平行存储、代理 view、旧名称 alias、双读双写
-或 fallback decoder。CUDA 和 Torch 的物理切换单独 deferred；它们不改变 CPU
+或 fallback decoder。CUDA 的物理切换单独 deferred；它们不改变 CPU
 的当前 API，也不能要求 CPU 保留过渡表面。
 
 ## 1. 两级映射
@@ -196,7 +196,7 @@ CPU hard cut 的 source/compile-negative gates 至少保证：
   `span(ColKey)`、typed meta 与 `box`；
 - MPI payload 没有 double funnel，runtime columns/topology 参与 schema plan；
 - molrs typed meta ID/版本与 CXX 边界精确一致；
-- CUDA/Torch 仍明确 deferred，且 CPU 不因它们保留任何兼容表面。
+- CUDA 仍明确 deferred，且 CPU 不因它保留任何兼容表面。
 
 验收与删除清单见
 `.claude/specs/frame-block-04-delete-compatibility.md`；该 spec 描述 hard-cut

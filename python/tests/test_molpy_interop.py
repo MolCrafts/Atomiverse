@@ -28,29 +28,32 @@ from atomiverse.potentials.pair import LJCut  # noqa: E402
 
 def _molpy_argon_frame() -> "molrs.Frame":
     """2x2x2 simple-cubic Ar built through molpy's Atomistic API and
-    exported to the shared molrs.Frame (atv needs an int32 ``type``
-    column and a box, which Atomistic atom attrs do not carry)."""
+    exported to the shared molrs.Frame (atv needs a uint ``atomic_number``
+    column and a box, which Atomistic atom attrs do not carry; the string
+    ``element`` column molpy exports rides along un-imported)."""
     scale = 3.4  # ~sigma_Ar [A]
     system = molpy.Atomistic()
     for ix in range(2):
         for iy in range(2):
             for iz in range(2):
                 system.def_atom(
-                    symbol="Ar",
-                    xyz=[ix * scale, iy * scale, iz * scale],
+                    element="Ar",
+                    x=ix * scale,
+                    y=iy * scale,
+                    z=iz * scale,
                     mass=39.948,
                 )
     frame = system.to_frame()
-    frame["atoms"].insert("type", np.zeros(8, dtype=np.int32))
+    frame["atoms"].insert("atomic_number", np.full(8, 18, dtype=np.uint32))
     frame.box = molrs.Box.cube(2 * scale)
     return frame
 
 
 class TestMolpyInterop:
-    def test_molpy_does_not_reexport_frame(self) -> None:
-        """The exchange type has one owner: callers import it from molrs."""
-        assert not hasattr(molpy, "Frame")
-        assert not hasattr(molpy, "Block")
+    def test_molpy_reexports_the_molrs_frame_type(self) -> None:
+        """The exchange type has one owner: molpy.Frame IS molrs.Frame."""
+        assert molpy.Frame is molrs.Frame
+        assert molpy.Block is molrs.Block
 
     def test_molpy_core_frame_compatibility_module_is_deleted(self) -> None:
         with pytest.raises(ModuleNotFoundError):
@@ -76,7 +79,6 @@ class TestMolpyInterop:
         sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
         sim.run(frame, 10)
         assert "scalars" not in frame.keys()
-        energy_meta = frame.meta["energy"]
-        assert energy_meta.dtype == "f64"
-        energy = float(energy_meta.value)
+        energy = frame.meta["energy"]
+        assert isinstance(energy, float)
         assert np.isfinite(energy)

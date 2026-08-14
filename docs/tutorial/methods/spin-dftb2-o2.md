@@ -155,7 +155,7 @@ bash -lc '
         -DATV_BUILD_VIB=OFF -DATV_BUILD_PATH=OFF -DATV_BUILD_POTENTIALS=OFF \
         -DATV_BUILD_NEIGHBOR=OFF -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF \
         -DATV_BUILD_GPW=OFF -DATV_BUILD_KSPACE=OFF -DATV_BUILD_CUDA=OFF \
-        -DATV_BUILD_TORCH=OFF -DBLA_VENDOR=OpenBLAS
+        -DBLA_VENDOR=OpenBLAS
   # SCOPED — never bare cmake --build build
   cmake --build build -j$(nproc) --target atomiverse reg_spin-dftb2-o2
   ./build/regressions/reg_spin-dftb2-o2

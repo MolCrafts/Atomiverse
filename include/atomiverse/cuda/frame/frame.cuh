@@ -6,7 +6,7 @@
 /// CUDA-free header (contains only pointer declarations).
 ///
 /// One backend, one Frame type: this is `cuda::Frame`, not a shared layout
-/// with CPU. The SEMANTIC field set mirrors `cpu::Frame` / `torch::Frame`
+/// with CPU. The SEMANTIC field set mirrors `cpu::Frame`
 /// (same physical quantities), but the topology REPRESENTATION is
 /// deliberately dual on this backend: the single-GPU path uses the flat
 /// `BondList/AngleList/DihedralList` device arrays (transfer-friendly;

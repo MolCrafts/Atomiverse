@@ -27,9 +27,12 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/dynamics/fix_csvr.h"
+#include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/molrs_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
@@ -69,9 +72,12 @@ struct MdHandle {
             driver.set_evaluator(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::NeighborListParams>)
             driver.set_neighbor(std::move(comp));
-        else if constexpr (std::is_same_v<P, cpu::task::VelocityVerletParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::VelocityVerletParams>
+                           || std::is_same_v<P, cpu::task::NoseHooverNptParams>)
             driver.set_integrator(std::move(comp));
-        else if constexpr (std::is_same_v<P, cpu::task::NoseHooverParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::NoseHooverParams>
+                           || std::is_same_v<P, cpu::task::FixLangevinParams>
+                           || std::is_same_v<P, cpu::task::FixCsvrParams>)
             driver.set_thermostat(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::InitVelocityParams>)
             driver.set_observer(std::move(comp));
@@ -166,6 +172,50 @@ void bind_md(nb::module_& m) {
             "Construct with target temperature [K], coupling time "
             "tau_T [fs] (LAMMPS `Tdamp`), and timestep [fs].");
 
+    nb::class_<cpu::task::FixLangevinParams>(
+        m, "Langevin", "Langevin thermostat (LAMMPS `fix langevin`).")
+        .def(
+            "__init__",
+            [](cpu::task::FixLangevinParams* p, double T_start, double T_stop,
+               double damp, double dt, unsigned seed) {
+                new (p) cpu::task::FixLangevinParams{T_start, T_stop, damp, dt,
+                                                     seed};
+            },
+            nb::arg("T_start"), nb::arg("T_stop"), nb::arg("damp"),
+            nb::arg("dt"), nb::arg("seed"),
+            "Construct with ramp temperatures T_start/T_stop [K], damping "
+            "time damp [fs] (LAMMPS `damp`), timestep dt [fs], and RNG seed.");
+
+    nb::class_<cpu::task::FixCsvrParams>(
+        m, "CSVR",
+        "Bussi canonical-sampling velocity-rescale thermostat (CP2K CSVR).")
+        .def(
+            "__init__",
+            [](cpu::task::FixCsvrParams* p, double T_start, double tau,
+               double dt, unsigned seed) {
+                new (p) cpu::task::FixCsvrParams{T_start, tau, dt, seed};
+            },
+            nb::arg("T_start"), nb::arg("tau"), nb::arg("dt"), nb::arg("seed"),
+            "Construct with target temperature [K], coupling time tau [fs] "
+            "(CP2K `TIMECON`), timestep dt [fs], and RNG seed.");
+
+    nb::class_<cpu::task::NoseHooverNptParams>(
+        m, "NoseHooverNPT",
+        "MTK Nose-Hoover NPT integrator (LAMMPS `fix npt`); replaces the "
+        "time integrator — install via set_integrator, not alongside "
+        "VelocityVerlet.")
+        .def(
+            "__init__",
+            [](cpu::task::NoseHooverNptParams* p, double T_target, double tau_T,
+               double P_target, double tau_P, double dt) {
+                new (p) cpu::task::NoseHooverNptParams{T_target, tau_T,
+                                                       P_target, tau_P, dt};
+            },
+            nb::arg("T_target"), nb::arg("tau_T"), nb::arg("P_target"),
+            nb::arg("tau_P"), nb::arg("dt"),
+            "Construct with target temperature [K], tau_T [fs], target "
+            "pressure [eV/A^3], tau_P [fs], and timestep dt [fs].");
+
     nb::class_<cpu::task::PairLJCutParams>(m, "PairLJCut",
                                            "Lennard-Jones 12-6 pair potential.")
         .def(
@@ -243,12 +293,37 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("comp"), "LAMMPS-style set_integrator (VelocityVerlet).")
         .def(
+            "set_integrator",
+            [](MdHandle& self, const cpu::task::NoseHooverNptParams& p) {
+                self.set_categorical(
+                    p, cpu::md::NoseHooverNPT{p.T_target, p.tau_T, p.P_target,
+                                              p.tau_P, p.dt});
+            },
+            nb::arg("comp"),
+            "LAMMPS-style set_integrator (NoseHooverNPT — `fix npt` "
+            "replaces the plain integrator).")
+        .def(
             "set_thermostat",
             [](MdHandle& self, const cpu::task::NoseHooverParams& p) {
                 self.set_categorical(
                     p, cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});
             },
             nb::arg("comp"), "LAMMPS-style set_thermostat (NoseHoover).")
+        .def(
+            "set_thermostat",
+            [](MdHandle& self, const cpu::task::FixLangevinParams& p) {
+                self.set_categorical(p, cpu::md::FixLangevin{p.T_start,
+                                                             p.T_stop, p.damp,
+                                                             p.dt, p.seed});
+            },
+            nb::arg("comp"), "LAMMPS-style set_thermostat (Langevin).")
+        .def(
+            "set_thermostat",
+            [](MdHandle& self, const cpu::task::FixCsvrParams& p) {
+                self.set_categorical(
+                    p, cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
+            },
+            nb::arg("comp"), "LAMMPS-style set_thermostat (CSVR).")
         .def(
             "set_observer",
             [](MdHandle& self, const cpu::task::InitVelocityParams& p) {

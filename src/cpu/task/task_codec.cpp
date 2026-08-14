@@ -129,6 +129,26 @@ void write(Writer& w, const NoseHooverParams& p) {
     w.f64(p.dt);
 }
 void write(Writer& w, const ThermoParams& p) { w.i32(p.freq); }
+void write(Writer& w, const FixLangevinParams& p) {
+    w.f64(p.T_start);
+    w.f64(p.T_stop);
+    w.f64(p.damp);
+    w.f64(p.dt);
+    w.u32(p.seed);
+}
+void write(Writer& w, const FixCsvrParams& p) {
+    w.f64(p.T_start);
+    w.f64(p.tau);
+    w.f64(p.dt);
+    w.u32(p.seed);
+}
+void write(Writer& w, const NoseHooverNptParams& p) {
+    w.f64(p.T_target);
+    w.f64(p.tau_T);
+    w.f64(p.P_target);
+    w.f64(p.tau_P);
+    w.f64(p.dt);
+}
 void write(Writer& w, const AM1EvaluatorParams& p) {
     w.i32(p.charge);
     w.i32(p.multiplicity);
@@ -178,6 +198,12 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::AM1Evaluator;
     case 10:
         return ComponentId::LBFGS;
+    case 11:
+        return ComponentId::FixLangevin;
+    case 12:
+        return ComponentId::FixCSVR;
+    case 13:
+        return ComponentId::NoseHooverNPT;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -226,6 +252,12 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return NoseHooverParams{r.f64(), r.f64(), r.f64()};
     case ComponentId::Thermo:
         return ThermoParams{r.i32()};
+    case ComponentId::FixLangevin:
+        return FixLangevinParams{r.f64(), r.f64(), r.f64(), r.f64(), r.u32()};
+    case ComponentId::FixCSVR:
+        return FixCsvrParams{r.f64(), r.f64(), r.f64(), r.u32()};
+    case ComponentId::NoseHooverNPT:
+        return NoseHooverNptParams{r.f64(), r.f64(), r.f64(), r.f64(), r.f64()};
     case ComponentId::AM1Evaluator:
     case ComponentId::LBFGS:
         wrong_task(id, TaskKind::MD);

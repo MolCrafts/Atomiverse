@@ -24,10 +24,6 @@ Scientific methods (RHF theory, ensembles, basis sets, …) live in the
     <strong>Backend switching</strong>
     <em>CPU vs CUDA: same Frame API, explicit transfers.</em>
   </a>
-  <a href="libtorch-backend/">
-    <strong>LibTorch backend</strong>
-    <em>Optional Torch path for differentiable workflows.</em>
-  </a>
   <a href="launcher/">
     <strong>MPI launcher</strong>
     <em>The installable Atomiverse executable and Python driver notes.</em>

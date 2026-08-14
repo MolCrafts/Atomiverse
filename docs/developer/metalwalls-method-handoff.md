@@ -136,7 +136,7 @@ Parent stays on **`dev`**. No GapCensus wave required to “clear” these.
 ## Build (workers)
 
 MD-only flags: `ATV_BUILD_MD=ON`, `ATV_BUILD_KSPACE=ON`, `ATV_BUILD_TESTS=ON`,
-`ATV_BUILD_REGRESSIONS=ON`, **HF/PW/GPW/CUDA/Torch OFF**.
+`ATV_BUILD_REGRESSIONS=ON`, **HF/PW/GPW/CUDA OFF**.
 
 ## History (compact)
 

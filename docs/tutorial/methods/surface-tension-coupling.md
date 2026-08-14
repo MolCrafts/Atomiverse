@@ -165,7 +165,7 @@ bash -lc '
         -DATV_BUILD_MD=ON -DATV_BUILD_KSPACE=ON \
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF \
-        -DATV_BUILD_CUDA=OFF -DATV_BUILD_TORCH=OFF -DBLA_VENDOR=OpenBLAS
+        -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
   cmake --build build --target reg_surface-tension-coupling -j"$(nproc)"
   ./build/regressions/reg_surface-tension-coupling
 '
@@ -266,7 +266,7 @@ REFERENCE / handoff.
 - **Single public front.** `SurfaceTensionNPT` is couple-\(xy\) + \(\gamma\)
   only; fully anisotropic NPH / other couple modes are out of scope for this
   slug.
-- **CPU classical MD path.** CUDA parity and torch backends are not claimed.
+- **CPU classical MD path.** CUDA parity is not claimed.
 - **Scope of wave-3 MD coupling only** for this page: electrode const-pot,
   pistons, continuum walls are sibling slugs with their own pages.
 

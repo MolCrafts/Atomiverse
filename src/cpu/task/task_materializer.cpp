@@ -8,8 +8,11 @@
 #include <utility>
 
 #include "atomiverse/cpu/driver/criteria.h"
+#include "atomiverse/cpu/dynamics/fix_csvr.h"
+#include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
@@ -40,7 +43,8 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry) {
                     bind(cpu::BondHarmonic{p.K, p.r0});
                 else if constexpr (std::is_same_v<P, AngleHarmonicParams>)
                     bind(cpu::AngleHarmonic{p.K, p.theta0});
-                else if constexpr (std::is_same_v<P, DihedralMultiHarmonicParams>)
+                else if constexpr (std::is_same_v<P,
+                                                  DihedralMultiHarmonicParams>)
                     bind(cpu::DihedralMultiHarmonic{p.Cn});
                 else if constexpr (std::is_same_v<P, VelocityVerletParams>)
                     bind(cpu::md::VelocityVerlet{p.dt});
@@ -48,6 +52,14 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry) {
                     bind(cpu::md::InitVelocity{p.temperature, p.seed});
                 else if constexpr (std::is_same_v<P, NoseHooverParams>)
                     bind(cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});
+                else if constexpr (std::is_same_v<P, FixLangevinParams>)
+                    bind(cpu::md::FixLangevin{p.T_start, p.T_stop, p.damp, p.dt,
+                                              p.seed});
+                else if constexpr (std::is_same_v<P, FixCsvrParams>)
+                    bind(cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
+                else if constexpr (std::is_same_v<P, NoseHooverNptParams>)
+                    bind(cpu::md::NoseHooverNPT{p.T_target, p.tau_T, p.P_target,
+                                                p.tau_P, p.dt});
                 else if constexpr (std::is_same_v<P, ThermoParams>)
                     bind(cpu::Thermo{p.freq});
                 return;
@@ -72,6 +84,15 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry) {
             else if constexpr (std::is_same_v<P, NoseHooverParams>)
                 driver.set_thermostat(
                     cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});
+            else if constexpr (std::is_same_v<P, FixLangevinParams>)
+                driver.set_thermostat(cpu::md::FixLangevin{
+                    p.T_start, p.T_stop, p.damp, p.dt, p.seed});
+            else if constexpr (std::is_same_v<P, FixCsvrParams>)
+                driver.set_thermostat(
+                    cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
+            else if constexpr (std::is_same_v<P, NoseHooverNptParams>)
+                driver.set_integrator(cpu::md::NoseHooverNPT{
+                    p.T_target, p.tau_T, p.P_target, p.tau_P, p.dt});
             else if constexpr (std::is_same_v<P, ThermoParams>)
                 driver.set_thermo(p.freq);
         },

@@ -19,7 +19,7 @@
 #   KSPACE → POTENTIALS
 #   PYTHON → IO (exchange for nanobind)
 #   ANALYSIS | IO | PYTHON | GPW | HF | PW | SEMIEMPIRICAL → MOLRS (derived)
-# GPW → HF ∧ PW, TORCH → CUDA, LAUNCHER → MPI∧PYTHON remain FATAL elsewhere.
+# GPW → HF ∧ PW, LAUNCHER → MPI∧PYTHON remain FATAL elsewhere.
 
 option(ATV_BUILD_MD "Build classical MD domain (cpu/dynamics, cuda/dynamics)" ON)
 option(ATV_BUILD_MC "Build Monte Carlo domain (cpu/montecarlo)" ON)

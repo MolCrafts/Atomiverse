@@ -301,7 +301,7 @@ that post-solve refresh.
 - Design / queue / handoff: `docs/developer/metalwalls-method-*.md`
 - Oracle: `tools/metalwalls_oracle/` — **LAMMPS first** when feature overlaps;
   MetalWalls only for MW-only physics
-- Build: **MD-only** (`ATV_BUILD_MD`+`KSPACE`+tests/regressions; HF/PW/GPW/CUDA/Torch OFF)
+- Build: **MD-only** (`ATV_BUILD_MD`+`KSPACE`+tests/regressions; HF/PW/GPW/CUDA OFF)
 - Default parallel workers: **staff_count=10**
 
 ### References (stable)

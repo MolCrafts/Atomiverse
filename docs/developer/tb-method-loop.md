@@ -85,7 +85,7 @@ bash -lc '
         -DATV_BUILD_VIB=OFF -DATV_BUILD_PATH=OFF -DATV_BUILD_POTENTIALS=OFF \
         -DATV_BUILD_NEIGHBOR=OFF -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF \
         -DATV_BUILD_GPW=OFF -DATV_BUILD_KSPACE=OFF -DATV_BUILD_CUDA=OFF \
-        -DATV_BUILD_TORCH=OFF -DBLA_VENDOR=OpenBLAS
+ -DBLA_VENDOR=OpenBLAS
   # SCOPED — never bare cmake --build build
   cmake --build build -j$(nproc) --target atomiverse <test_*> reg_<slug>
   ctest --test-dir build -R "^(test_...)$" --output-on-failure
@@ -93,7 +93,7 @@ bash -lc '
 '
 ```
 
-**Forbidden ON:** HF, PW, GPW, CUDA, TORCH, MD, MC, MINIMIZER, VIB, PATH,
+**Forbidden ON:** HF, PW, GPW, CUDA, MD, MC, MINIMIZER, VIB, PATH,
 KSPACE, POTENTIALS, NEIGHBOR.
 
 **Do NOT build** `reg_am1_water_bomd` / `reg_am1_water_minimize` (need MD /

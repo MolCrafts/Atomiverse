@@ -64,7 +64,7 @@ for attempt in 1 2 3; do
     -DATV_BUILD_GPW=OFF \
     -DATV_BUILD_PW=ON \
     -DATV_BUILD_SEMIEMPIRICAL=OFF \
-    -DATV_BUILD_TORCH=OFF \
+    \
     -DBLA_VENDOR=OpenBLAS \
     -DCMAKE_PREFIX_PATH="${OPENBLAS_ROOT}"; then
     break

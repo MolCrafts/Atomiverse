@@ -251,9 +251,18 @@ def test_cli_import_no_extension() -> None:
         for k in list(sys.modules):
             if k == "atomiverse" or k.startswith("atomiverse.") or k == "_atomiverse":
                 del sys.modules[k]
+        # None entries make `import _atomiverse` raise ImportError, so the
+        # no-extension contract holds even when a dev PYTHONPATH carries the
+        # built extension.
+        sys.modules["_atomiverse"] = None
+        sys.modules["atomiverse._atomiverse"] = None
         import atomiverse.cli.main
         import atomiverse.cli.build
-        bad = [k for k in sys.modules if k in ("_atomiverse", "atomiverse._atomiverse")]
+        bad = [
+            k
+            for k in ("_atomiverse", "atomiverse._atomiverse")
+            if sys.modules.get(k) is not None
+        ]
         assert not bad, bad
         print("OK")
         """

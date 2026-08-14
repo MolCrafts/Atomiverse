@@ -10,11 +10,10 @@ name = "atomiverse"
 version = "0.1.0"
 description = "Molecular simulation compute backend (CPU + optional CUDA)"
 requires-python = ">=3.9"
-dependencies = ["numpy", "molcrafts-molrs==0.13.0", "typer>=0.12"]
+dependencies = ["numpy", "molcrafts-molrs==0.13.1", "typer>=0.12"]
 
 [project.optional-dependencies]
-molpy    = ["molcrafts-molpy==0.7.0"]
-torch    = ["torch"]
+molpy    = ["molcrafts-molpy==0.13.1"]
 dev      = ["pytest", "pytest-cov", "numpy"]
 # Native extension build (nanobind). Not required for the pure wheel.
 native   = ["nanobind>=2.4"]
@@ -30,7 +29,7 @@ docs     = [
 # Do not add matplotlib or ASE here — use the MolCrafts stack only.
 examples = [
   "molcrafts-molplot>=0.1.2",
-  "molcrafts-molpy==0.7.0",
+  "molcrafts-molpy==0.13.1",
 ]
 
 [tool.pytest.ini_options]
@@ -94,7 +93,6 @@ ATV_BUILD_CUDA  = {env = "ATV_BUILD_CUDA",  default = "OFF"}
 # binary is environment-bound, never manylinux-distributable):
 #   ATV_BUILD_LAUNCHER=ON pip install .
 ATV_BUILD_LAUNCHER = {env = "ATV_BUILD_LAUNCHER", default = "OFF"}
-ATV_BUILD_TORCH = {env = "ATV_BUILD_TORCH", default = "OFF"}
 ATV_USE_LIBXC   = {env = "ATV_USE_LIBXC",  default = "OFF"}
 
 # Precision: float (default) or double

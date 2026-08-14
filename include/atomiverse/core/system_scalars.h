@@ -3,7 +3,7 @@
 ///        scalars (energy, kinetic, conserved, stress, kinetic stress).
 ///
 /// Extracted from `cpu::Frame` so the same shape is reused verbatim by the
-/// CUDA and Torch frames (rust-frame-lowering chain step -04). The struct
+/// CUDA frame (rust-frame-lowering chain step -04). The struct
 /// is a plain aggregate of POD fields with no behaviour -- it carries only
 /// fundamental result quantities, never derived caches.
 #pragma once

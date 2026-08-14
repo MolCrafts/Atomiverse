@@ -22,9 +22,11 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -200,6 +202,67 @@ TEST(TaskMaterializer, MdBondedThermostattedRunMatchesHandBuiltDriverBitwise) {
     sim.set_integrator(cpu::md::VelocityVerlet{kDt});
     sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
     sim.set_thermostat(cpu::md::NoseHoover{kTinit, 100.0, kDt});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+TEST(TaskMaterializer, MdLangevinRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        FixLangevinParams{kTinit, kTinit, 100.0, kDt, kSeed}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_bonded_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_bonded_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_thermostat(cpu::md::FixLangevin{kTinit, kTinit, 100.0, kDt, kSeed});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+TEST(TaskMaterializer, MdNptRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        NoseHooverNptParams{kTinit, 100.0, 0.0, 1000.0, kDt}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_bonded_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_bonded_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::NoseHooverNPT{kTinit, 100.0, 0.0, 1000.0, kDt});
     sim.build();
     sim.run(direct_frame, kNSteps);
 

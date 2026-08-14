@@ -144,12 +144,12 @@ sim.run(frame, 1000);
 ```
 
 ```bash
-# MD-only configure (binding for this loop): HF/PW/GPW/CUDA/Torch OFF
+# MD-only configure (binding for this loop): HF/PW/GPW/CUDA OFF
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
   -DATV_BUILD_MD=ON -DATV_BUILD_KSPACE=ON \
   -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
   -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF \
-  -DATV_BUILD_CUDA=OFF -DATV_BUILD_TORCH=OFF -DBLA_VENDOR=OpenBLAS
+  -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
 cmake --build build --target reg_freeze-electrode-atoms -j"$(nproc)"
 ./build/regressions/reg_freeze-electrode-atoms
 ```

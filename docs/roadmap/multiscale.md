@@ -31,15 +31,15 @@ path, no SMD/GB, and no picture-change / DKH / SOC stack.
 | Method                                 | CPU | CUDA | Kokkos |
 | -------------------------------------- | :-: | :--: | :---: |
 | Mulliken charges                       |  ✓  |   ✓  |   ○  |
-| Löwdin charges                         |  ○  |   ○  |   ○  |
+| Löwdin charges                         |  ✓  |   ○  |   ○  |
 | Natural population analysis            |  ○  |   ○  |   ○  |
 | Hirshfeld charges                      |  ○  |   ○  |   ○  |
 | Iterative Hirshfeld charges            |  ○  |   ○  |   ○  |
 | CM5 charges                            |  ○  |   ○  |   ○  |
 | Bader charges                          |  ○  |   ○  |   ○  |
 | DDEC charges                           |  ○  |   ○  |   ○  |
-| Merz–Kollman ESP charges               |  ○  |   ○  |   ○  |
-| CHELPG charges                         |  ○  |   ○  |   ○  |
+| Merz–Kollman ESP charges               |  ✓  |   ○  |   ○  |
+| CHELPG charges                         |  ✓  |   ○  |   ○  |
 | RESP charges                           |  ○  |   ○  |   ○  |
 | RESP2 charges                          |  ○  |   ○  |   ○  |
 | AM1-BCC charges                        |  ✓  |   ○  |   ○  |
@@ -48,10 +48,14 @@ path, no SMD/GB, and no picture-change / DKH / SOC stack.
 | QEq charges                            |  ○  |   ○  |   ○  |
 | EQeq charges                           |  ○  |   ○  |   ○  |
 
-Löwdin is ○ deliberately: the Löwdin **orthogonalization** (S^(−1/2)) is used
-inside the SCF, but no Löwdin *population analysis* is exposed. Charges are
-Observer / method outputs written to Frame, never Drivers — there is no
-"charge driver".
+Löwdin population analysis (`lowdin_charge` / `lowdin_spin`,
+`cpu/observe/lowdin.h`) and grid-fitted ESP charges — Merz–Kollman shells and
+CHELPG cube grid (`MKCharges` / `ChelpgCharges`, `cpu/observe/esp_charges.h`)
+— are gated by `regressions/scf/h2o_charges_pyscf` (PySCF 2.14.0; Löwdin
+≤ 1e-6 e, MK/CHELPG ≤ 1e-3 e). RESP is the missing next rung on the ESP
+ladder (restraints on top of the existing MK grid). Charges are Observer /
+method outputs written to Frame, never Drivers — there is no "charge
+driver".
 
 ## 2. Implicit-Solvent Methods
 

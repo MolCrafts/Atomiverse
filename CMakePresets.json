@@ -15,7 +15,6 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "ATV_BUILD_CUDA": "OFF",
-        "ATV_BUILD_TORCH": "OFF",
         "ATV_BUILD_TESTS": "ON",
         "ATV_BUILD_EXAMPLES": "OFF",
         "ATV_BUILD_REGRESSIONS": "OFF",

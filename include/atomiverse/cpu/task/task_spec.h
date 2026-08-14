@@ -117,6 +117,46 @@ inline bool operator==(const ThermoParams& a, const ThermoParams& b) {
     return a.freq == b.freq;
 }
 
+/// @brief Mirrors `cpu::md::FixLangevin(T_start, T_stop, damp, dt, seed)`.
+struct FixLangevinParams {
+    double T_start;
+    double T_stop;
+    double damp;
+    double dt;
+    std::uint32_t seed;
+};
+inline bool operator==(const FixLangevinParams& a, const FixLangevinParams& b) {
+    return a.T_start == b.T_start && a.T_stop == b.T_stop && a.damp == b.damp
+           && a.dt == b.dt && a.seed == b.seed;
+}
+
+/// @brief Mirrors `cpu::md::FixCSVR(T_start, tau, dt, seed)`.
+struct FixCsvrParams {
+    double T_start;
+    double tau;
+    double dt;
+    std::uint32_t seed;
+};
+inline bool operator==(const FixCsvrParams& a, const FixCsvrParams& b) {
+    return a.T_start == b.T_start && a.tau == b.tau && a.dt == b.dt
+           && a.seed == b.seed;
+}
+
+/// @brief Mirrors the five leading `cpu::md::NoseHooverNPT` constructor
+///        arguments (drag/chain/couple/T_stop stay at their C++ defaults).
+struct NoseHooverNptParams {
+    double T_target;
+    double tau_T;
+    double P_target;
+    double tau_P;
+    double dt;
+};
+inline bool operator==(const NoseHooverNptParams& a,
+                       const NoseHooverNptParams& b) {
+    return a.T_target == b.T_target && a.tau_T == b.tau_T
+           && a.P_target == b.P_target && a.tau_P == b.tau_P && a.dt == b.dt;
+}
+
 struct AM1EvaluatorParams {
     int charge = 0;
     int multiplicity = 1;
@@ -169,6 +209,9 @@ enum class ComponentId : std::uint16_t {
     Thermo = 8,
     AM1Evaluator = 9,
     LBFGS = 10,
+    FixLangevin = 11,
+    FixCSVR = 12,
+    NoseHooverNPT = 13,
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -195,6 +238,12 @@ inline const char* component_name(ComponentId id) noexcept {
         return "AM1Evaluator";
     case ComponentId::LBFGS:
         return "LBFGS";
+    case ComponentId::FixLangevin:
+        return "FixLangevin";
+    case ComponentId::FixCSVR:
+        return "FixCSVR";
+    case ComponentId::NoseHooverNPT:
+        return "NoseHooverNPT";
     }
     return "unknown";
 }
@@ -203,7 +252,8 @@ using MDComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, BondHarmonicParams,
                  AngleHarmonicParams, DihedralMultiHarmonicParams,
                  VelocityVerletParams, InitVelocityParams, NoseHooverParams,
-                 ThermoParams>;
+                 ThermoParams, FixLangevinParams, FixCsvrParams,
+                 NoseHooverNptParams>;
 
 using MinimizeComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, LBFGSParams>;
@@ -235,6 +285,12 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::NoseHoover;
             else if constexpr (std::is_same_v<P, ThermoParams>)
                 return ComponentId::Thermo;
+            else if constexpr (std::is_same_v<P, FixLangevinParams>)
+                return ComponentId::FixLangevin;
+            else if constexpr (std::is_same_v<P, FixCsvrParams>)
+                return ComponentId::FixCSVR;
+            else if constexpr (std::is_same_v<P, NoseHooverNptParams>)
+                return ComponentId::NoseHooverNPT;
             else
                 static_assert(detail::unsupported_component_v<P>);
         },

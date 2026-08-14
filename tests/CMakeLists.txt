@@ -1091,16 +1091,6 @@ if(ATV_BUILD_CUDA)
 endif()
 
 
-# ── Torch backend tests ─────────────────────────────────────────────
-
-if(ATV_BUILD_TORCH)
-    atv_add_test(test_torch_frame          torch/test_frame.cu)
-    atv_add_test(test_torch_materialize    torch/test_materialize.cu)
-    atv_add_test(test_torch_transfer       torch/test_transfer.cu)
-    atv_add_test(test_torch_lj             torch/test_lj.cu)
-    atv_add_test(test_torch_harmonic_bond  torch/test_harmonic_bond.cu)
-    atv_add_test(test_torch_neighbor_list  torch/test_neighbor_list.cu)
-endif()
 
 # Diagnostic helper (not registered as a test): fixed-V_eff band parity.
 if(ATV_BUILD_CUDA AND ATV_BUILD_PW)
