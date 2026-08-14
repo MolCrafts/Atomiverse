@@ -421,6 +421,10 @@ atv_add_cpp_test(test_cpu_dynamics_full_budget            cpu/test_dynamics_full
 atv_add_cpp_test(test_cpu_install_infra_hook              cpu/test_install_infra_hook.cpp)
 atv_add_cpp_test(test_cpu_md_set_api                      cpu/dynamics/test_md_set_api.cpp)
 atv_add_cpp_test(test_cpu_md_plan_equivalence             cpu/dynamics/test_md_plan_equivalence.cpp)
+# `MD::run(molrs::FrameRef&, n)` independence contract: consecutive calls are
+# separate simulations (step index restarts at 0), NOT a continued trajectory —
+# the cpu::Frame& overload is the continuable one. 2 x 3 steps of 4-atom LJ, ms.
+atv_add_cpp_test(test_cpu_md_molrs_run                    cpu/dynamics/test_md_molrs_run.cpp)
 # TimestepProvider/TimestepConsumer opt-in protocol + the MD build-time push
 # (esmm-cpmd-02-timestep-protocol): dt is single-sourced from the integrator,
 # conflicting/absent/invalid publications throw at build. Local stubs only —
@@ -465,6 +469,15 @@ target_include_directories(test_app_interpreter_locator PRIVATE
 
 # ExtXYZ loading through molrs — inline fixtures only, no external file.
 atv_add_cpp_test(test_cpu_io_extxyz                       cpu/io/test_cpu_io_extxyz.cpp)
+
+# cpu::XyzRecorder (py-recorder-xyz, ac-003): stride cadence, truncate-then-
+# append, frame content. The component itself is compiled only in the
+# ATV_BUILD_IO source block and the test drives it through cpu::md::MD, so the
+# registration is gated on both domains (iron law 8: OFF excludes the tests
+# too) — an IO-less / SE-only build must not try to link cpu::XyzRecorder.
+if(ATV_BUILD_IO AND ATV_BUILD_MD)
+    atv_add_cpp_test(test_cpu_xyz_recorder                cpu/record/test_xyz_recorder.cpp)
+endif()
 
 # Unreadable input paths must throw std::runtime_error, not abort in Rust.
 atv_add_cpp_test(test_cpu_io_missing_file                 cpu/io/test_cpu_io_missing_file.cpp)

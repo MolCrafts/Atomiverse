@@ -40,8 +40,9 @@ You will learn:
    never stalls the integrator, and backed by molrs for the actual math.
 3. **The C++ API.** `set_observer` / `set_observer_ref` attach an observer;
    `ATV::RDF`, `ATV::MSD`, and `ATV::VACF` are the three ready-made ones.
-   `cpu::XYZ` dumps the raw trajectory, but it is a plain writer you drive
-   yourself, not a Recorder component.
+   `set_record` attaches a Recorder — `cpu::XyzRecorder` dumps the raw
+   trajectory on a step stride, with `cpu::XYZ` remaining the bare writer
+   beneath it for frames you persist by hand.
 4. **The expected result.** g(r) with a first peak at the nearest-neighbour
    distance; a linear MSD(t) whose slope is the self-diffusion coefficient; a
    VACF that decays from ⟨v²⟩ and rings.
@@ -173,36 +174,67 @@ timestep. This is a **physical-approximation** result: you validate it as a
 bounded energy drift over the run, and it is the standard first check that an
 integrator and force field are wired correctly.
 
-### Dumping the trajectory: `cpu::XYZ` (no Recorder yet)
+### Dumping the trajectory: the `cpu::XyzRecorder` component
 
 When you want the frames themselves — for external analysis or visualisation —
-you write them yourself. **`cpu::XYZ` is a plain writer, not a Component**: it
-exposes `write(frame)` and `append(frame)` and inherits from nothing, so it
-cannot be handed to `set_record(...)` or `on(phase).add(...)`. As of today
-**there is no MD trajectory Recorder in the tree** — `cpu/record/` ships
-`Thermo` (a real `Recorder`), the two cube writers, and the timing report, and
-that is all.
-
-Until one lands, segment the run and append between segments:
+register a **Recorder**. A Recorder is the Component kind whose only job is
+writing outside the process; it is Atomiverse's answer to the LAMMPS `dump`
+command. The trajectory Recorder is `cpu::XyzRecorder`, and you install it with
+`set_record`:
 
 ```cpp
-cpu::XYZ traj{"trajectory.xyz"};
-traj.write(frame);                       // first frame: truncate/create
-for (int chunk = 0; chunk < 1000; ++chunk) {
-    sim.run(frame, 1000);                // continuable — one trajectory
-    traj.append(frame);                  // one frame per 1000 steps
-}
+sim.set_record(cpu::XyzRecorder{"trajectory.xyz", /*freq=*/1000});
+sim.build();
+sim.run(frame, 1'000'000);   // one frame every 1000 steps
 ```
 
-Consecutive `run()` calls on the same `cpu::Frame&` extend a single trajectory
-rather than restarting it, so the only cost is the per-segment run summary.
-Keep dumps sparse regardless: the point of the observers below is that you
+It binds itself to `md::Phase::end_of_step` (order +10, i.e. behind the
+observers that publish per-step quantities), so you never name a phase unless
+you want a different one — `on(phase).add(...)` still works if you do.
+
+Three details decide what ends up in the file:
+
+- **The cadence is a stride on the step index.** A frame is written whenever
+  `step % freq == 0`, and the driver counts steps from zero
+  (`0, 1, …, n-1` for `run(frame, n)`), cumulatively across consecutive
+  `run(cpu::Frame&, …)` calls. So a 10-step run at `freq=5` writes **two**
+  frames — steps 0 and 5 — not three: there is no extra end-of-run write at
+  step 10.
+- **The first write truncates, later writes append.** One recorder therefore
+  owns one trajectory file, and a freshly constructed recorder on the same path
+  starts that file over instead of extending the previous run's.
+- **Under MPI it is collective.** Every rank evaluates the same gate and joins
+  the owner gather; only rank 0 writes, and what it writes is the complete,
+  tag-ordered geometry rather than its own slice.
+
+`set_record` takes an rvalue and *owns* the recorder. If you want to ask the
+recorder afterwards how many frames it wrote, declare it first and borrow it —
+the same ownership pair as the observers above:
+
+```cpp
+cpu::XyzRecorder traj{"trajectory.xyz", /*freq=*/1000};   // declared BEFORE sim
+cpu::md::MD sim;
+// … evaluator / neighbour list / integrator exactly as above …
+sim.set_record_ref(traj);                // borrow: traj must outlive sim
+sim.build();
+sim.run(frame, 1'000'000);
+const int n_frames = traj.n_frames_written();   // rank 0
+```
+
+The element symbol on each atom line comes from the frame's per-atom `type`
+column, which the writer hands to molrs as an atomic number $Z$ — type 18 is
+written as `Ar`. Frames typed with LAMMPS-style `1..N` type indices will
+therefore carry the element names of those small $Z$ values, which is a
+labelling artefact, not a physics one.
+
+Underneath the Recorder sits `cpu::XYZ`, a plain writer with `write(frame)` and
+`append(frame)` and no Component base. Use it directly when the frames are not
+coming from a driver loop at all — dumping one final geometry, say — and use
+the Recorder inside a run.
+
+Keep dumps sparse either way: the point of the observers below is that you
 rarely need the full trajectory on disk — the observable is computed as the run
 proceeds.
-
-> **Not-yet-supported.** A `Recorder`-kind trajectory dump (LAMMPS `dump`,
-> reachable through `set_record`) does not exist. Do not write
-> `sim.set_record(cpu::XYZ{...})`; it does not compile.
 
 ### Structure: the radial distribution function `ATV::RDF`
 

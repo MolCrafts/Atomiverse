@@ -84,6 +84,12 @@ TaskSpec make_md_spec() {
         KSpacePmeParams{0.5833333333333334, 0.5, 6}, std::nullopt});
     entries.push_back(MDComponentEntry{
         ThermoParams{100}, MDBinding{ATV::md::Phase::end_of_step, 50}});
+    // The first payload carrying a VARIABLE-LENGTH field (the filename): a
+    // codec that writes a fixed-size struct blob, or that forgets the length
+    // prefix, cannot survive the field-exact roundtrip below. Rides the
+    // categorical (`std::nullopt`) recorder slot, as `set_record` does.
+    entries.push_back(
+        MDComponentEntry{XyzRecorderParams{"traj.xyz", 100}, std::nullopt});
     return TaskSpec(MDTask{std::move(entries), 7});
 }
 
@@ -126,6 +132,7 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairCoulCut), 16u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::CoulLong), 17u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::KSpacePME), 18u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::XyzRecorder), 19u);
     EXPECT_EQ(component_id(MDComponentParams{VelocityVerletParams{}}),
               ComponentId::VelocityVerlet);
     EXPECT_EQ(component_id(MinimizeComponentParams{LBFGSParams{}}),
@@ -139,6 +146,11 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
               ComponentId::CoulLong);
     EXPECT_EQ(component_id(MDComponentParams{KSpacePmeParams{}}),
               ComponentId::KSpacePME);
+    // XyzRecorder is the only MD recorder besides Thermo and both are
+    // `{… , int freq}`-shaped, so pin the variant→ID map here too: a swapped
+    // arm would otherwise decode a filename out of a Thermo frequency.
+    EXPECT_EQ(component_id(MDComponentParams{XyzRecorderParams{}}),
+              ComponentId::XyzRecorder);
 }
 
 // v4: the NoseHooverNptParams payload grew (drag / mtchain / mpchain /

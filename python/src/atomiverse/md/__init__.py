@@ -49,6 +49,11 @@ _EVALUATOR_DISPATCH: dict[type, str] = {
 if hasattr(_cpp, "KSpacePME"):
     _EVALUATOR_DISPATCH[_cpp.KSpacePME] = "set_evaluator_kspace_pme"
 
+# Recorder types accepted by MD.set_record. Both are unconditional: the
+# wheel forces ATV_BUILD_IO=ON through the CMake module DAG, so the
+# trajectory writer is never capability-probed (unlike KSpacePME above).
+_RECORDER_TYPES: tuple[type, ...] = (_cpp.Thermo, _cpp.XYZ)
+
 # Escape-hatch phase builder dispatch
 _PHASE_DISPATCH: dict[type, str] = {
     _cpp.PairLJCut: "add_pair_lj_cut",
@@ -243,14 +248,23 @@ class MD:
         return self
 
     def set_record(self, component: object) -> MD:
-        """Install a recorder. v1: ``Thermo`` maps to ``set_thermo(freq)``."""
-        if type(component) is _cpp.Thermo:
-            # Thermo is constructed as Thermo(freq); extract via set_record
-            # binding which re-applies set_thermo.
+        """Install a recorder (``Driver::set_record``, plural).
+
+        Two recorders are bound: ``Thermo(freq)``, which maps to the
+        driver's ``set_thermo(freq)`` print cadence, and ``XYZ(filename,
+        freq)``, the trajectory writer that binds at ``end_of_step`` and
+        owns its own stride gate. An unsupported component raises
+        ``TypeError`` naming both.
+        """
+        if type(component) in _RECORDER_TYPES:
             self._cpp.set_record(component)
             self._built = False
             return self
-        raise TypeError(f"set_record expects Thermo, got {type(component).__name__}")
+        supported = ", ".join(t.__name__ for t in _RECORDER_TYPES)
+        raise TypeError(
+            f"set_record does not support {type(component).__name__}. "
+            f"Supported: {supported}"
+        )
 
     def on(self, phase: str) -> PhaseBuilder:
         """Escape hatch: explicit phase binding.

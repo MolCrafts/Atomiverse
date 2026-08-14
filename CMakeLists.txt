@@ -324,6 +324,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/io/frame_writer.cpp
             src/cpu/io/extxyz.cpp
             src/cpu/record/xyz.cpp
+            src/cpu/record/xyz_recorder.cpp
         )
     endif()
     if(ATV_BUILD_ANALYSIS)
@@ -466,8 +467,16 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/minimize/anisotropic_cell_relax.cpp
             src/cpu/minimize/triclinic_cell_relax.cpp
             src/cpu/minimize/joint_cell_relax.cpp
-            src/cpu/minimize/trajectory_writer.cpp
             src/cpu/minimize/opt_log.cpp
+        )
+    endif()
+    # The two geometry-writing minimizer recorders construct `cpu::XYZ`, whose
+    # implementation (src/cpu/record/xyz.cpp) compiles only under
+    # ATV_BUILD_IO — listing them under MINIMIZER alone left an IO-less
+    # minimizer build carrying undefined references to it.
+    if(ATV_BUILD_MINIMIZER AND ATV_BUILD_IO)
+        list(APPEND ATOMIVERSE_SRCS
+            src/cpu/minimize/trajectory_writer.cpp
             src/cpu/minimize/final_geometry.cpp
         )
     endif()

@@ -17,9 +17,13 @@
 #endif
 
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -45,6 +49,9 @@
 #include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#ifdef ATV_HAS_IO
+#include "atomiverse/cpu/record/xyz_recorder.h"
+#endif
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/task/task_materializer.h"
 #include "atomiverse/cpu/task/task_spec.h"
@@ -571,6 +578,138 @@ TEST(TaskMaterializer, MdCoulLongWithoutReciprocalThrowsOnBuild) {
             << err.what();
     }
 }
+
+// ── (b″) Recorder through the categorical recorder slot ─────────────────
+
+#ifdef ATV_HAS_IO
+/// @brief Per-frame atom lines of an XYZ trajectory ("symbol x y z" each).
+///
+/// The comment line is deliberately dropped: it carries typed meta rendered
+/// from a molrs hash map, so its field ORDER is not reproducible between two
+/// runs even when the physics is bit-identical. The count line and the atom
+/// lines are.
+std::vector<std::vector<std::string>>
+read_xyz_atom_lines(const std::string& path) {
+    std::ifstream is(path);
+    if (!is)
+        throw std::runtime_error("read_xyz_atom_lines: cannot open " + path);
+    std::vector<std::vector<std::string>> frames;
+    std::string line;
+    while (std::getline(is, line)) {
+        int n = 0;
+        std::istringstream head(line);
+        if (!(head >> n))
+            throw std::runtime_error("read_xyz_atom_lines: bad count line: '"
+                                     + line + "'");
+        if (!std::getline(is, line)) // comment line
+            throw std::runtime_error("read_xyz_atom_lines: truncated frame");
+        auto& atoms = frames.emplace_back();
+        atoms.reserve(static_cast<std::size_t>(n));
+        for (int i = 0; i < n; ++i) {
+            if (!std::getline(is, line))
+                throw std::runtime_error(
+                    "read_xyz_atom_lines: truncated at atom "
+                    + std::to_string(i));
+            atoms.push_back(line);
+        }
+    }
+    return frames;
+}
+
+// An XyzRecorder entry rides the categorical (`std::nullopt`) recorder slot —
+// `set_record`, which binds it at md::Phase::end_of_step. The recorder is
+// FrameImmutable, so the two runs' PHYSICS must stay bit-identical (that is
+// the fidelity claim), and their two trajectory FILES must agree frame for
+// frame and atom line for atom line: same cadence, same geometry, one file
+// per path.
+TEST(TaskMaterializer, MdXyzRecorderRunMatchesHandBuiltDriverBitwise) {
+    const auto path_a =
+        (std::filesystem::temp_directory_path() / "atv_task_xyz_spec.xyz")
+            .string();
+    const auto path_b =
+        (std::filesystem::temp_directory_path() / "atv_task_xyz_direct.xyz")
+            .string();
+    std::error_code ec;
+    std::filesystem::remove(path_a, ec);
+    std::filesystem::remove(path_b, ec);
+
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{XyzRecorderParams{path_a, 2}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_record(cpu::XyzRecorder{path_b, 2});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero LJ energy — the equivalence check would "
+           "be vacuous";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+
+    ASSERT_TRUE(std::filesystem::exists(path_a));
+    ASSERT_TRUE(std::filesystem::exists(path_b));
+    const auto frames_a = read_xyz_atom_lines(path_a);
+    const auto frames_b = read_xyz_atom_lines(path_b);
+    // kNSteps = 5 → ctx.step ∈ {0…4}; the freq-2 gate opens on 0, 2, 4.
+    EXPECT_EQ(frames_a.size(), 3u);
+    ASSERT_EQ(frames_a.size(), frames_b.size());
+    for (std::size_t f = 0; f < frames_a.size(); ++f) {
+        SCOPED_TRACE("frame " + std::to_string(f));
+        EXPECT_EQ(frames_a[f], frames_b[f]);
+    }
+
+    std::filesystem::remove(path_a, ec);
+    std::filesystem::remove(path_b, ec);
+}
+#else
+// Gating contract (py-recorder-xyz ac-001): the params struct and the wire ID
+// are unconditional, so an IO-less build still DECODES a payload naming the
+// recorder — and must then refuse it loudly at materialize time rather than
+// running a trajectory-less MD. Same shape as `throw_kspace_not_built`.
+TEST(TaskMaterializer, MdXyzRecorderWithoutIoBuildThrows) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{XyzRecorderParams{"traj.xyz", 2}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    try {
+        TaskMaterializer mat(spec);
+        cpu::Frame frame = make_lj_frame();
+        mat.run(frame);
+        FAIL() << "an XyzRecorder payload was accepted in an IO-less build";
+    } catch (const std::runtime_error& err) {
+        EXPECT_NE(std::string(err.what()).find("ATV_BUILD_IO"),
+                  std::string::npos)
+            << err.what();
+    }
+}
+#endif // ATV_HAS_IO
 
 // ── (c) SinglePoint AM1 equivalence on H2 ───────────────────────────────
 

@@ -15,9 +15,14 @@ to prove the two spellings drive the same objects.
 ``CoulCut`` pair style and the matched ``CoulLong`` + ``KSpacePME`` pair.
 Those names are imported INSIDE the test bodies so that this module keeps
 collecting on a build whose extension does not bind them yet.
+
+``TestXyzRecorder`` (spec py-recorder-xyz) covers trajectory output: an
+``XYZ`` recorder installed through ``MD.set_record``, parsed back off
+disk. Same in-body import discipline.
 """
 
 import importlib
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -630,6 +635,142 @@ class TestCoulombPme:
         sim = self._md_with(CoulLong(_NACL_ALPHA, _NACL_CUTOFF))
         with pytest.raises(RuntimeError, match="requires exactly one"):
             sim.build()
+
+
+# ── py-recorder-xyz: trajectory output ──────────────────────────────
+#
+# The XYZ recorder is the first Python-visible trajectory writer. The name
+# is STATIC, not capability-gated: the wheel forces ATV_BUILD_IO=ON through
+# the CMake module DAG, so a wheel without it is not a supported build.
+# ``XYZ`` is still imported inside each test body (the module-level import
+# list is the pre-existing surface): until the binding lands the import IS
+# the failure and the rest of this file keeps collecting.
+
+_XYZ_STEPS: int = 10
+_XYZ_FREQ: int = 5  # [steps]
+
+#: Frames a ``_XYZ_STEPS``-step run at ``_XYZ_FREQ`` leaves in the file.
+#: ``ctx.step`` runs 0..n-1, so the stride gate opens at steps 0 and 5
+#: only — 2 frames, empirically pinned by the C++ unit test
+#: (tests/cpu/record/test_xyz_recorder.cpp), which owns the authoritative
+#: cadence; if it measures a different count, flip this one constant.
+_EXPECTED_FRAMES: int = 2
+
+
+def _lj_md_with_record(recorder: object) -> MD:
+    """The conftest ``full_lj_md`` Ar recipe plus *recorder*.
+
+    Spelled out here rather than taken from the fixture because the
+    truncate case needs two independent drivers writing the same path
+    inside one test.
+
+    @param recorder: Recorder component handed to ``MD.set_record``.
+    @return An unbuilt MD ready to ``run`` on the Ar fixture frame.
+    """
+    cutoff = 8.5  # [Å]
+    sim = MD()
+    sim.set_integrator(VelocityVerlet(0.001))
+    sim.set_observer(InitVelocity(10.0, 42))
+    sim.set_neighbor(NeighborList(cutoff))
+    sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
+    sim.set_record(recorder)
+    return sim
+
+
+def _xyz_frame_atom_counts(path: Path) -> list[int]:
+    """Per-frame atom counts parsed out of an XYZ trajectory file.
+
+    Standard XYZ: every frame block is an atom-count line, a comment line,
+    then exactly that many ``element x y z`` lines. A short or malformed
+    block raises instead of being silently reported as a frame, so a
+    truncated write can never pass as a correct frame count.
+
+    @param path: Trajectory file written by the recorder.
+    @return One atom count per frame block, in file order.
+    """
+    lines: list[str] = path.read_text(encoding="utf-8").splitlines()
+    counts: list[int] = []
+    index = 0
+    while index < len(lines):
+        if not lines[index].strip():
+            index += 1
+            continue
+        count = int(lines[index].strip())
+        body = lines[index + 2 : index + 2 + count]
+        if len(body) != count:
+            raise AssertionError(
+                f"{path.name}: frame {len(counts)} declares {count} atoms but "
+                f"the file holds only {len(body)} coordinate lines"
+            )
+        for offset, line in enumerate(body):
+            fields = line.split()
+            if len(fields) < 4:
+                raise AssertionError(
+                    f"{path.name}: frame {len(counts)} atom line {offset} is "
+                    f"not 'element x y z': {line!r}"
+                )
+            for value in fields[1:4]:
+                float(value)
+        counts.append(count)
+        index += 2 + count
+    return counts
+
+
+class TestXyzRecorder:
+    """XYZ trajectory output from Python (spec py-recorder-xyz)."""
+
+    def test_xyz_writes_trajectory(
+        self, argon_frame: "molrs.Frame", n_atoms: int, tmp_path: Path
+    ) -> None:
+        """An MD run with ``XYZ(path, freq)`` leaves a parseable trajectory
+        whose every frame carries the whole system."""
+        from atomiverse.recorder import XYZ
+
+        path = tmp_path / "traj.xyz"
+        sim = _lj_md_with_record(XYZ(str(path), _XYZ_FREQ))
+        sim.run(argon_frame, _XYZ_STEPS)
+
+        assert path.exists(), f"no trajectory written to {path}"
+        counts = _xyz_frame_atom_counts(path)
+        assert counts, f"{path.name} holds no frame blocks"
+        assert set(counts) == {n_atoms}, (
+            f"every frame must hold all {n_atoms} atoms; got counts {counts!r}"
+        )
+        assert len(counts) == _EXPECTED_FRAMES, (
+            f"{_XYZ_STEPS} steps at freq {_XYZ_FREQ} must write "
+            f"{_EXPECTED_FRAMES} frames; got {len(counts)}"
+        )
+
+    def test_xyz_second_run_truncates(
+        self, argon_frame: "molrs.Frame", tmp_path: Path
+    ) -> None:
+        """A fresh recorder on an existing path starts the file over.
+
+        Cadence appends *within* one run; a new run truncates. Without that
+        the second run would double the frame count.
+        """
+        from atomiverse.recorder import XYZ
+
+        path = tmp_path / "traj.xyz"
+        first = _lj_md_with_record(XYZ(str(path), _XYZ_FREQ))
+        first.run(argon_frame, _XYZ_STEPS)
+        frames_first = len(_xyz_frame_atom_counts(path))
+
+        second = _lj_md_with_record(XYZ(str(path), _XYZ_FREQ))
+        second.run(argon_frame, _XYZ_STEPS)
+        frames_second = len(_xyz_frame_atom_counts(path))
+
+        assert frames_first == _EXPECTED_FRAMES
+        assert frames_second == frames_first, (
+            f"a second run must truncate, not append: {frames_first} frames "
+            f"after run 1 but {frames_second} after run 2"
+        )
+
+    def test_set_record_rejects_unknown_type(self) -> None:
+        """``set_record`` names its supported recorders on refusal."""
+        sim = MD()
+        with pytest.raises(TypeError, match="XYZ"):
+            sim.set_record(object())
 
 
 class TestMolrsFrameV2Boundary:

@@ -578,12 +578,19 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     }
 
     /// @brief Flush the deferred component `destroy()` of a live continuable run.
-    ///        Called from a continuable preset's destructor; the base `~Driver()` shuts
+    ///        Called from a continuable preset's destructor, and from any entry point
+    ///        whose frame does not outlive the call (the `molrs::FrameRef&` overloads,
+    ///        which materialize a transient working frame); the base `~Driver()` shuts
     ///        the backend down afterwards.
+    ///
+    /// Clears `frame_ptr_` too: the frame this run was bound to may be about to die, and
+    /// a stale address here would make the next `begin_run_` compare against — or even
+    /// dereference — freed storage if the next frame lands in the same slot.
     void flush_live_() {
         if (live_ && this->backend_)
             this->backend_->destroy_components();
         live_ = false;
+        frame_ptr_ = nullptr;
     }
 
     /// @brief The cumulative step index across every `run()` call, then advance it.

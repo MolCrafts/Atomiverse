@@ -129,6 +129,14 @@ void write(Writer& w, const NoseHooverParams& p) {
     w.f64(p.dt);
 }
 void write(Writer& w, const ThermoParams& p) { w.i32(p.freq); }
+// The only MD payload with a text field (the numeric `vec` fields above are
+// already variable-length): `string` writes a u64 byte-count prefix followed
+// by the raw bytes, so the reader knows where the filename ends and the
+// cadence begins.
+void write(Writer& w, const XyzRecorderParams& p) {
+    w.string(p.filename);
+    w.i32(p.freq);
+}
 void write(Writer& w, const FixLangevinParams& p) {
     w.f64(p.T_start);
     w.f64(p.T_stop);
@@ -243,6 +251,8 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::CoulLong;
     case 18:
         return ComponentId::KSpacePME;
+    case 19:
+        return ComponentId::XyzRecorder;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -291,6 +301,10 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return NoseHooverParams{r.f64(), r.f64(), r.f64()};
     case ComponentId::Thermo:
         return ThermoParams{r.i32()};
+    case ComponentId::XyzRecorder:
+        // Braced init: the field reads are sequenced left to right, so the
+        // length-prefixed filename is consumed before the cadence.
+        return XyzRecorderParams{r.string(), r.i32()};
     case ComponentId::FixLangevin:
         return FixLangevinParams{r.f64(), r.f64(), r.f64(), r.f64(), r.u32()};
     case ComponentId::FixCSVR:

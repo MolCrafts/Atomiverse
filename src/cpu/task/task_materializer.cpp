@@ -29,6 +29,9 @@
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/thermo.h"
+#ifdef ATV_HAS_IO
+#include "atomiverse/cpu/record/xyz_recorder.h"
+#endif
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 
 namespace ATV::cpu::task {
@@ -52,6 +55,26 @@ namespace {
 [[noreturn]] void throw_kspace_not_built() {
     throw std::runtime_error("KSpacePME requires ATV_BUILD_KSPACE=ON (PME "
                              "reciprocal solver not compiled in)");
+}
+#endif
+
+#ifndef ATV_HAS_IO
+/// @brief Reject an `XyzRecorderParams` entry in a build without the writer.
+///
+/// `cpu::XyzRecorder` writes through molrs and is therefore behind the
+/// `ATV_BUILD_IO` build flag, while the wire mirror `XyzRecorderParams` and
+/// its component ID are compiled unconditionally. A payload naming the
+/// recorder therefore still *decodes* on an IO-less build and has to be
+/// refused here, at the point where the component would be constructed —
+/// running a trajectory-less MD instead would be a silent no-op.
+///
+/// Both replay paths — explicit binding and categorical setter — hit the same
+/// wall; one thrower is what keeps the two diagnostics from drifting apart.
+///
+/// @throws std::runtime_error Always, naming the flag to rebuild with.
+[[noreturn]] void throw_io_not_built() {
+    throw std::runtime_error("XyzRecorder requires ATV_BUILD_IO=ON "
+                             "(trajectory writer not compiled in)");
 }
 #endif
 
@@ -178,7 +201,13 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                                            p.bulk_modulus});
                 else if constexpr (std::is_same_v<P, ThermoParams>)
                     bind(cpu::Thermo{p.freq});
-                else
+                else if constexpr (std::is_same_v<P, XyzRecorderParams>) {
+#ifdef ATV_HAS_IO
+                    bind(cpu::XyzRecorder{p.filename, p.freq});
+#else
+                    throw_io_not_built();
+#endif
+                } else
                     static_assert(detail::unsupported_component_v<P>);
                 return;
             }
@@ -231,7 +260,13 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                                                       p.bulk_modulus});
             else if constexpr (std::is_same_v<P, ThermoParams>)
                 driver.set_thermo(p.freq);
-            else
+            else if constexpr (std::is_same_v<P, XyzRecorderParams>) {
+#ifdef ATV_HAS_IO
+                driver.set_record(cpu::XyzRecorder{p.filename, p.freq});
+#else
+                throw_io_not_built();
+#endif
+            } else
                 static_assert(detail::unsupported_component_v<P>);
         },
         entry.params);

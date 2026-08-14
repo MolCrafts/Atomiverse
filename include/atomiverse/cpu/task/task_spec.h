@@ -118,6 +118,32 @@ inline bool operator==(const ThermoParams& a, const ThermoParams& b) {
     return a.freq == b.freq;
 }
 
+/// @brief Wire mirror of `cpu::XyzRecorder(filename, freq)` — the MD
+///        trajectory sink.
+///
+/// The recorder itself needs `ATV_BUILD_IO` (its writer goes through molrs),
+/// but this mirror does not: the wire layer is always compiled, so a payload
+/// naming the recorder stays decodable on a build without the writer and is
+/// refused with a how-to when `TaskMaterializer` tries to construct it —
+/// exactly the `KSpacePmeParams` arrangement.
+///
+/// This is the first payload carrying a **text** field. Variable-length
+/// numeric fields already existed (`BondHarmonicParams` and friends write
+/// length-prefixed `double` vectors), so the codec reuses that shape for
+/// `filename`: a `u64` byte count followed by the raw bytes.
+struct XyzRecorderParams {
+    /// Output XYZ path. Truncated on the recorder's first write, appended to
+    /// afterwards. This mirror is a plain aggregate and validates nothing;
+    /// an empty path is rejected later, by `cpu::XyzRecorder`'s constructor.
+    std::string filename;
+    /// Write cadence [steps; >= 1] — one frame whenever `step % freq == 0`.
+    /// Also checked by `cpu::XyzRecorder`, not here.
+    int freq;
+};
+inline bool operator==(const XyzRecorderParams& a, const XyzRecorderParams& b) {
+    return a.filename == b.filename && a.freq == b.freq;
+}
+
 /// @brief Mirrors `cpu::md::FixLangevin(T_start, T_stop, damp, dt, seed)`.
 struct FixLangevinParams {
     double T_start;
@@ -436,6 +462,9 @@ enum class ComponentId : std::uint16_t {
     PairCoulCut = 16, ///< Truncated Coulomb — `cpu::PairCoulCut`.
     CoulLong = 17,    ///< Ewald/PME real-space half — `cpu::CoulLong`.
     KSpacePME = 18,   ///< Ewald/PME reciprocal half — `cpu::KSpacePME`.
+    /// XYZ trajectory sink — `cpu::XyzRecorder`. Decodable everywhere;
+    /// materializable only where `ATV_BUILD_IO` compiled the writer in.
+    XyzRecorder = 19,
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -478,6 +507,8 @@ inline const char* component_name(ComponentId id) noexcept {
         return "CoulLong";
     case ComponentId::KSpacePME:
         return "KSpacePME";
+    case ComponentId::XyzRecorder:
+        return "XyzRecorder";
     }
     return "unknown";
 }
@@ -489,7 +520,7 @@ using MDComponentParams =
                  ThermoParams, FixLangevinParams, FixCsvrParams,
                  NoseHooverNptParams, ParrinelloRahmanNptParams,
                  BerendsenBarostatParams, PairCoulCutParams, CoulLongParams,
-                 KSpacePmeParams>;
+                 KSpacePmeParams, XyzRecorderParams>;
 
 using MinimizeComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, LBFGSParams>;
@@ -537,6 +568,8 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::CoulLong;
             else if constexpr (std::is_same_v<P, KSpacePmeParams>)
                 return ComponentId::KSpacePME;
+            else if constexpr (std::is_same_v<P, XyzRecorderParams>)
+                return ComponentId::XyzRecorder;
             else
                 static_assert(detail::unsupported_component_v<P>);
         },
@@ -644,9 +677,9 @@ class TaskSpec {
     /// `BerendsenBarostat` component IDs did not by itself force a bump — a
     /// new ID only ever appears in payloads that use it — but both land
     /// under v4, and so do the electrostatic IDs (`PairCoulCut`, `CoulLong`,
-    /// `KSpacePME`) for the same reason: appended IDs with fresh payloads
-    /// leave every existing byte layout untouched. No v2 or v3 decoder
-    /// exists: an older payload is an error, never a best-effort read.
+    /// `KSpacePME`) and `XyzRecorder` for the same reason: appended IDs with
+    /// fresh payloads leave every existing byte layout untouched. No v2 or v3
+    /// decoder exists: an older payload is an error, never a best-effort read.
     static constexpr std::uint32_t kWireVersion = 4;
 
     explicit TaskSpec(MDTask task);

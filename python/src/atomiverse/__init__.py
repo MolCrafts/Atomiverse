@@ -35,6 +35,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``potentials.angle.Harmonic``         ``AngleHarmonic``           ``cpu::AngleHarmonic``
 ``potentials.dihedral.MultiHarmonic`` ``DihedralMultiHarmonic``   ``cpu::DihedralMultiHarmonic``
 ``recorder.Thermo``                   ``Thermo``                  ``cpu::Thermo``
+``recorder.XYZ``                      ``XYZ``                     ``cpu::XyzRecorder``
 ``pw.PW``                             ``PW``                      ``cpu::pw::PW``
 ``pw.PWResult``                       ``PWResult``                ``cpu::pw::PWResult``
 ``semiempirical.AM1``                 ``AM1``                     ``cpu::semiempirical::AM1``
@@ -102,6 +103,7 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "AngleHarmonic": ("atomiverse.potentials.angle", "Harmonic"),
     "DihedralMultiHarmonic": ("atomiverse.potentials.dihedral", "MultiHarmonic"),
     "Thermo": ("atomiverse.recorder", "Thermo"),
+    "XYZ": ("atomiverse.recorder", "XYZ"),
     "AM1": ("atomiverse.semiempirical", "AM1"),
     "AM1Evaluator": ("atomiverse.semiempirical", "AM1Evaluator"),
     "AM1Result": ("atomiverse.semiempirical", "AM1Result"),
@@ -132,6 +134,7 @@ __all__ = [
     "AngleHarmonic",
     "DihedralMultiHarmonic",
     "Thermo",
+    "XYZ",
     "AM1",
     "AM1Evaluator",
     "AM1Result",

@@ -19,6 +19,9 @@ namespace (pinned per row in test_namespaces.py):
   PW types are present only when the extension was
   built with ``ATV_BUILD_PW=ON``; the deleted functional entry is absent on
   every build.
+* Trajectory output (spec py-recorder-xyz): ``XYZ`` is an unconditional
+  top-level name beside ``Thermo`` — the wheel forces ``ATV_BUILD_IO=ON``
+  through the CMake module DAG, so it is never capability-probed.
 * Electrostatics (spec py-coulomb-pme): ``PairCoulCut`` and ``CoulLong``
   are unconditional top-level names; ``KSpacePME`` is compile-optional
   (``ATV_BUILD_KSPACE``) and therefore reachable only through the lazy
@@ -89,6 +92,7 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "AngleHarmonic",
         "DihedralMultiHarmonic",
         "Thermo",
+        "XYZ",
         "AM1",
         "AM1Evaluator",
         "AM1Result",
@@ -165,12 +169,14 @@ class TestCanonicalSurface:
         assert hasattr(av, name), f"canonical component atomiverse.{name} is missing"
 
     def test_all_is_exactly_the_honest_surface(self) -> None:
-        """__all__ is the static MD + electrostatics + AM1 surface.
+        """__all__ is the static MD + electrostatics + recorder + AM1 surface.
 
-        Same 25 names on every build: compile-optional types live behind
-        the lazy ``__getattr__``, never in ``__all__``.
+        Same 26 names on every build: compile-optional types live behind
+        the lazy ``__getattr__``, never in ``__all__``. ``XYZ`` is static
+        because the wheel forces ``ATV_BUILD_IO=ON`` through the CMake
+        module DAG — it is never capability-probed.
         """
-        assert len(_CANONICAL_ALL) == 25
+        assert len(_CANONICAL_ALL) == 26
         assert set(av.__all__) == set(_CANONICAL_ALL)
 
 
@@ -307,6 +313,31 @@ class TestCoulombSurface:
         longrange = importlib.import_module("atomiverse.longrange")
         assert "CoulLong" in longrange.__all__
         assert ("KSpacePME" in longrange.__all__) is _HAS_KSPACE
+
+
+# ── Recorder surface (spec py-recorder-xyz) ─────────────────────────
+
+
+class TestRecorderSurface:
+    """``Thermo`` and ``XYZ`` are both unconditional top-level names.
+
+    Unlike PW / KSpacePME there is no capability probe here: the Python
+    wheel forces ``ATV_BUILD_IO=ON`` through the CMake module DAG, so the
+    trajectory recorder is present on every wheel and belongs in the
+    static ``__all__``.
+    """
+
+    def test_xyz_is_identity_reexport(self) -> None:
+        """``av.XYZ`` IS ``recorder.XYZ``."""
+        from atomiverse.recorder import XYZ
+
+        assert av.XYZ is XYZ
+
+    def test_recorder_module_exports_xyz(self) -> None:
+        """``atomiverse.recorder`` publishes both recorders."""
+        recorder = importlib.import_module("atomiverse.recorder")
+        assert "Thermo" in recorder.__all__
+        assert "XYZ" in recorder.__all__
 
 
 # ── KSpace gate (mirrors the PW capability contract) ────────────────

@@ -57,6 +57,7 @@
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/thermo.h"
+#include "atomiverse/cpu/record/xyz_recorder.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -120,10 +121,6 @@ struct MdHandle {
     // component outlives the driver that references it.
     std::optional<cpu::md::NoseHooverNPT> npt_owned;
     std::vector<std::unique_ptr<cpu::md::FixLangevin>> langevin_owned;
-    /// Cumulative MD steps already run — `LaunchContext::step` keeps counting
-    /// across chunked `run()` calls, while each `run()` re-ramps over its own
-    /// span (LAMMPS `run` command semantics).
-    std::int64_t steps_done = 0;
 
     cpu::md::MD driver;
     std::vector<MDComponentEntry> mirror;
@@ -153,8 +150,8 @@ struct MdHandle {
             // Neither carries a temperature ramp — no span to install.
             driver.set_integrator(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::NoseHooverNptParams>) {
-            // Borrowed, not transferred: `run()` re-ramps the setpoint over
-            // its own span before every launch. A second NPT keeps the first
+            // Borrowed, not transferred: `run()` re-installs the `[0,
+            // n_steps]` span before every launch. A second NPT keeps the first
             // (the singular slot is idempotent on the same component name),
             // so the borrowed storage is never rebuilt underneath the driver.
             if (!npt_owned)
@@ -177,6 +174,11 @@ struct MdHandle {
         else if constexpr (std::is_same_v<P, cpu::task::ThermoParams>)
             driver.set_thermo(
                 static_cast<const cpu::task::ThermoParams&>(p).freq);
+        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>)
+            // The trajectory sink owns its file handle and its own stride
+            // gate, so it goes in whole through the recorder slot (plural)
+            // rather than through a driver-level cadence like Thermo's.
+            driver.set_record(std::move(comp));
         else
             static_assert(cpu::task::detail::unsupported_component_v<P>);
         mirror.push_back(MDComponentEntry{p, std::nullopt});
@@ -226,21 +228,26 @@ struct MdHandle {
     void run(nb::object frame_obj, int n_steps) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
-            // Every ramping component gets THIS run's span, mirroring the
-            // launcher path (`TaskMaterializer` installs `[0, n_steps]`).
-            const std::int64_t nfirst = steps_done;
-            const std::int64_t nlast = steps_done + n_steps;
+            // Every ramping component gets THIS run's span `[0, n_steps]`,
+            // identical to what `TaskMaterializer` installs on the launcher
+            // path. Each `run()` is an independent simulation — the molrs
+            // overload of `cpu::md::MD::run` tears its run down before
+            // returning, so the next call's `LaunchContext::step` restarts at
+            // 0 and a span carried over from an earlier call would put the
+            // ramp fraction permanently past 1. One continuous temperature
+            // ramp is therefore ONE `run()` with the full step budget, not a
+            // chunked sequence of them.
+            const std::int64_t nlast = n_steps;
             if (npt_owned)
-                npt_owned->set_run_span(nfirst, nlast);
+                npt_owned->set_run_span(0, nlast);
             for (auto& langevin : langevin_owned)
-                langevin->set_run_span(nfirst, nlast);
+                langevin->set_run_span(0, nlast);
             auto frame = borrow_molrs_frame(frame_obj);
             require_charge_column(*frame);
             {
                 nb::gil_scoped_release release;
                 driver.run(*frame, n_steps);
             }
-            steps_done = nlast;
             return;
         }
 #ifdef ATV_HAS_MPI
@@ -389,8 +396,9 @@ void bind_md(nb::module_& m) {
             "across the run span, as in LAMMPS. Any value >= 0 is taken as "
             "the ramp end (equal to T_target means a constant setpoint); "
             "< 0 folds to T_target. The run span itself is wired "
-            "automatically by run(), which ramps over each call's own "
-            "[steps_done, steps_done + n_steps].");
+            "automatically by run(), which ramps over [0, n_steps]: every "
+            "run() is an independent simulation, so one continuous ramp is "
+            "one run() with the full step budget.");
 
     nb::class_<cpu::task::ParrinelloRahmanNptParams>(
         m, "ParrinelloRahmanNPT",
@@ -606,6 +614,42 @@ void bind_md(nb::module_& m) {
             nb::arg("freq"),
             "Construct with output frequency (every N steps).");
 
+    // Unconditional: the wheel forces ATV_BUILD_IO=ON through the CMake
+    // module DAG (ATV_BUILD_PYTHON -> ATV_BUILD_IO), so the trajectory
+    // writer is present on every extension and needs no capability probe.
+    nb::class_<cpu::task::XyzRecorderParams>(
+        m, "XYZ",
+        "XYZ trajectory output at end_of_step.\n\n"
+        "Writes one frame — element symbol plus x y z [A] per atom, under a "
+        "comment line carrying the cell and the typed frame metadata — every "
+        "`freq` steps. The symbol is derived from the frame's per-atom "
+        "`atomic_number` column (Z), so Z=18 is written as Ar.\n\n"
+        "The first write of a given recorder truncates the file and every "
+        "later write of that same recorder appends, so handing a NEW "
+        "XYZ(path, freq) to a second run starts the trajectory over instead "
+        "of extending it.\n\n"
+        "Within one run() call the step index runs 0..n_steps-1, so the "
+        "stride gate opens on the steps 0, freq, 2*freq, ... below n_steps: "
+        "a 10-step run at freq=5 writes 2 frames (steps 0 and 5), never 3. "
+        "Each run() call advances a freshly materialized working frame, so "
+        "chunked run() calls are not one continued trajectory — do not rely "
+        "on the step index carrying over between them.")
+        .def(
+            "__init__",
+            [](cpu::task::XyzRecorderParams* p, std::string filename,
+               int freq) {
+                new (p) cpu::task::XyzRecorderParams{std::move(filename), freq};
+            },
+            nb::arg("filename"), nb::arg("freq") = 1,
+            "Construct with the output path and the write cadence.\n\n"
+            "  filename  output XYZ path (truncated on the first write, "
+            "appended to afterwards).\n"
+            "  freq      write cadence [steps, >= 1; default 1] — one frame "
+            "whenever step % freq == 0.\n\n"
+            "This object is a plain parameter record; the values are checked "
+            "when the recorder is built, so an empty path or freq < 1 raises "
+            "ValueError from MD.set_record(...), not from here.");
+
     // ── MD driver (categorical setters) ──
     nb::class_<MdHandle>(m, "MD", "Molecular dynamics driver (CPU backend).")
         .def(nb::init<>())
@@ -781,6 +825,15 @@ void bind_md(nb::module_& m) {
             nb::arg("comp"),
             "Register a recorder; Thermo is installed via set_thermo cadence.")
         .def(
+            "set_record",
+            [](MdHandle& self, const cpu::task::XyzRecorderParams& p) {
+                self.set_categorical(p, cpu::XyzRecorder{p.filename, p.freq});
+            },
+            nb::arg("comp"),
+            "Register the XYZ trajectory recorder (LAMMPS `dump`). Binds at "
+            "end_of_step and writes one frame every freq steps; raises "
+            "ValueError on an empty path or freq < 1.")
+        .def(
             "on",
             [](MdHandle& self, md::Phase phase) {
                 return MdPhaseBuilder{&self, phase};
@@ -795,6 +848,10 @@ void bind_md(nb::module_& m) {
              "Run MD on a molrs.Frame for n_steps. GIL released during "
              "compute; under the MPI launcher this dispatches ONE task to "
              "every rank and writes the gathered result back.\n\n"
+             "Each call is an INDEPENDENT simulation starting from the "
+             "frame's current state: the step index restarts at 0 and any "
+             "temperature ramp is re-installed over [0, n_steps]. A single "
+             "continuous ramp is one run() with the full step budget.\n\n"
              "Raises RuntimeError before any compute if a Coulomb evaluator "
              "is registered and the frame's 'atoms' block carries no "
              "'charge' column [e] — a forgotten column is indistinguishable "

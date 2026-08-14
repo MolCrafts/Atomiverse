@@ -99,7 +99,8 @@ Start with these types:
 - [`cpu::write_frame_xyz` / `cpu::write_frame_zarr` (molrs-backed frame writers)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/io/frame_writer.h)
 - [`ATV::RDF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/rdf.h)
 - [trajectory analysis (`cpu::compute::*` batch computes + streaming accumulators)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/trajectory_metrics.h)
-- [`cpu::XYZ`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/xyz.h)
+- [`cpu::XyzRecorder` (MD trajectory Recorder — `set_record`, step stride)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/xyz_recorder.h)
+- [`cpu::XYZ` (bare XYZ writer beneath the Recorder)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/xyz.h)
 - [`mulliken_charge` and related helpers](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/mulliken.h)
 - [`DensityGrid`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/density.h)
 

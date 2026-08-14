@@ -143,8 +143,16 @@ class MD : public Driver<ATV::md::Phase> {
     ///
     /// Each call to this overload materializes a fresh `cpu::Frame`, so consecutive
     /// `run(molrs::FrameRef&, …)` calls are independent simulations (no trajectory
-    /// continuation). For a continued trajectory materialize once and use the
-    /// `cpu::Frame&` overload.
+    /// continuation): every call hands its components the step indices 0 … n_steps-1.
+    /// For a continued trajectory materialize once and use the `cpu::Frame&` overload.
+    ///
+    /// The independence is **structural**: the live run is torn down here, before the
+    /// working frame dies, so `Driver::begin_run_` never compares the next call's frame
+    /// address against a dangling pointer into this call's destroyed stack local. The
+    /// teardown fires component `destroy()` and ends the live run, so the next call
+    /// re-runs `setup_pass` from a zeroed step counter — no stateful integrator,
+    /// thermostat ramp or recorder cadence carries over.
+    ///
     /// @param frame molrs.Frame handle (input geometry + output sink).
     /// @param n_steps Step budget.
     /// @return Number of iterations actually executed.
@@ -152,6 +160,7 @@ class MD : public Driver<ATV::md::Phase> {
         cpu::Frame work = cpu::from_molrs(frame);
         const int iterations = run(work, n_steps);
         cpu::to_molrs(work, frame);
+        this->flush_live_();
         return iterations;
     }
 

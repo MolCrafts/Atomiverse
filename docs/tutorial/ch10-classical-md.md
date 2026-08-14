@@ -404,25 +404,29 @@ $g(r)$ to disk. Note that `set_observer` takes an **rvalue**; to keep the
 observer around and read `rdf.gr()` after the run, declare it first and borrow
 it with `set_observer_ref(rdf)`.
 
-**Trajectory output — not yet a Recorder.** `cpu::XYZ` is a plain writer
-(`write` / `append`), not a Component, so it cannot be handed to
-`on(phase).add(...)` or `set_record(...)`. There is currently **no MD
-trajectory Recorder in the tree**. Until one lands, dump frames by segmenting
-the run yourself:
+**Trajectory output is a Recorder.** A *Recorder* is the Component kind whose
+only job is writing outside the process — the LAMMPS `dump` slot. For
+trajectories that component is `cpu::XyzRecorder`, and it goes in through
+`set_record`:
 
 ```cpp
-cpu::XYZ traj{"traj.xyz"};
-traj.write(frame);                       // first frame: truncate/create
-for (int chunk = 0; chunk < 100; ++chunk) {
-    sim.run(frame, 100);                 // continuable: extends one trajectory
-    traj.append(frame);                  // one frame every 100 steps
-}
+sim.set_record(cpu::XyzRecorder{"traj.xyz", /*freq=*/100});
 ```
 
-Consecutive `run()` calls on a `cpu::Frame&` extend a single trajectory, so
-this costs nothing beyond the per-segment run summary. (`cpu::minimizer::
-TrajectoryWriter` *is* a real Component, but it is bound to the minimizer
-phases and does not serve MD.)
+It binds itself at `end_of_step @ +10` and writes one XYZ frame whenever
+`step % freq == 0`. Step indices start at 0 and keep counting across
+consecutive `run(frame, n)` calls on the same `cpu::Frame`, so a 1000-step run
+at `freq=100` writes frames for steps 0, 100, …, 900 — ten of them, with no
+extra write at step 1000. The recorder truncates the file on its first write
+and appends afterwards, so one recorder owns one trajectory file; MPI runs
+gather to rank 0, which writes the complete tag-ordered geometry.
+
+`set_record` takes an rvalue and owns the recorder; use `set_record_ref` to
+borrow one you declared yourself when you want to read `n_frames_written()`
+after the run. Underneath it, `cpu::XYZ` is still a plain writer (`write` /
+`append`) you can drive by hand for one-off geometries, and
+`cpu::minimizer::TrajectoryWriter` is the sibling Recorder bound to the
+minimizer phases.
 
 ## When the Force Producer Changes
 

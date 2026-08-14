@@ -102,7 +102,7 @@ Current surface:
   (LAMMPS-style) names: `VelocityVerlet`, `NoseHooverNPT`,
   `ParrinelloRahmanNPT`, `InitVelocity`, `NoseHoover`, `Langevin`, `CSVR`,
   `BerendsenBarostat`, `PairLJCut`, `NeighborList`, `BondHarmonic`,
-  `AngleHarmonic`, `DihedralMultiHarmonic`, `Thermo`.
+  `AngleHarmonic`, `DihedralMultiHarmonic`, `Thermo`, `XYZ`.
 - **Electrostatics** — `PairCoulCut` (truncated Coulomb) and the Ewald
   split `CoulLong` + `KSpacePME`. The reciprocal solver needs FFTW3, so
   `KSpacePME` is present only on wheels built with `ATV_BUILD_KSPACE=ON`
@@ -313,6 +313,9 @@ Components register through **categorical setters**, mirroring the C++
 - `sim.set_neighbor(NeighborList(cutoff, skin=-1))`
 - `sim.set_evaluator(PairLJCut / BondHarmonic / …)` — plural energy sources
 - `sim.set_thermo(N)` — LAMMPS-style print cadence
+- `sim.set_record(XYZ(path, freq))` — trajectory output (LAMMPS `dump`):
+  one XYZ frame every `freq` steps, element symbols taken from the frame's
+  per-atom `atomic_number` column
 
 Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
 
@@ -336,6 +339,7 @@ Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
 | `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral potential |
 | `set_thermo` | `N` (int) | Thermo print every N steps |
 | `Thermo(freq)` | end_of_step | Thermodynamic output |
+| `set_record` | `XYZ(filename, freq=1)` | XYZ trajectory at end_of_step — one frame whenever `step % freq == 0`. Within a `run()` call `step` is zero-based (`0 … n_steps-1`), so 10 steps at `freq=5` write 2 frames (steps 0 and 5), never 3. A recorder truncates the file on its first write and appends afterwards, so give a second run its own `XYZ(...)` |
 
 #### Constant pressure: NPT
 
