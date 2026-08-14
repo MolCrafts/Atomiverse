@@ -3,7 +3,7 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
-## Live — claim-completion campaign (2026-08-14, 16 specs)
+## Live — claim-completion campaign (2026-08-14, 15 specs live)
 
 Operator directive 2026-08-14: complete CUDA / docs / Python for the
 domains that reached their claim bar. Queue + claim bars:
@@ -15,7 +15,6 @@ slice (commit `334b6de4`).
 
 | Spec | One-line |
 | ---- | -------- |
-| [py-md-npt](py-md-npt/spec.md) | PR + Berendsen barostats, NPT knob tail (residual of the landed slice) |
 | [py-coulomb-pme](py-coulomb-pme/spec.md) | CoulCut/CoulLong + PME KSpace; charged systems from Python |
 | [py-pair-styles](py-pair-styles/spec.md) | Buck/Born/Yukawa/WCA/DPD + FENE/CHARMM/improper |
 | [py-recorder-xyz](py-recorder-xyz/spec.md) | XYZ trajectory Recorder (IO-gating decision first) |

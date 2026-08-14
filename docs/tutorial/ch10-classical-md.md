@@ -244,23 +244,78 @@ sim.set_thermostat(cpu::md::NoseHoover{T_target, tau_T, dt});
 sim.set_barostat  (cpu::md::Barostat{P_target, tau_P, dt});
 ```
 
-`Barostat` reads the global virial sum from `frame.meta.get(kStress)`, computes the
-instantaneous pressure $P = -(\sigma_{xx} + \sigma_{yy} + \sigma_{zz})/(3V)$,
-and rescales the box edge length and every owned atom's position by
-$\mu = (1 - (\Delta t/\tau_P)(P - P_{\mathrm{target}}))^{1/3}$. It is bound at
-`end_of_step @ -45`, just after the global energy reduction, so the
-virial it sees is the same on every MPI rank and the box update is
-collective without any extra communication.
+`Barostat` needs the instantaneous pressure, and it builds that from *two*
+stress accumulators on the Frame. The configurational part is the pair
+virial $\sigma$ in `frame.meta.get(kStress)`, accumulated by the force
+evaluators as $\sigma = \sum_{i<j} \mathbf{r}_{ij}\otimes\mathbf{f}_{ij}$
+with $\mathbf{r}_{ij}$ the pair separation and $\mathbf{f}_{ij}$ the force
+it carries. The kinetic part is $\sigma^{\mathrm{kin}}$ in
+`frame.meta.get(kStressKinetic)`, written by the `Virial` observer as
+$\sum_i m_i \mathbf{v}_i\otimes\mathbf{v}_i$, so its trace is twice the
+kinetic energy. Neither is divided by volume when stored, so the barostat
+does that division itself, with $V$ the cell volume:
+
+$$
+P \;=\; \frac{\mathrm{tr}\,\sigma + \mathrm{tr}\,\sigma^{\mathrm{kin}}}{3V}
+  \;=\; \frac{2\,\mathrm{KE} + \sum_{i<j}\mathbf{r}_{ij}\cdot\mathbf{f}_{ij}}{3V}.
+$$
+
+That plus sign matters: it is LAMMPS's `compute pressure` convention, in
+which a positive $P$ is a system pushing outwards on its box, so holding it
+requires compression. Every pressure quantity in Atomiverse — `Virial`,
+`Barostat`, `NoseHooverNPT` — uses this one convention, and a `P_target`
+you pass anywhere carries the same sign.
+
+The box edges and every atom position (owned rows *and* their ghost copies,
+so neighbour separations stay consistent until the next halo refresh) are
+then multiplied by the Berendsen dilation factor
+
+$$
+\mu \;=\; \left[\,1 - \frac{\Delta t}{\tau_P\,\beta}
+                 \bigl(P_{\mathrm{target}} - P\bigr)\right]^{1/3},
+$$
+
+where $\beta$ is the `bulk_modulus` constructor argument (LAMMPS `modulus`)
+— a tunable stiffness that divides the correction, so a larger $\beta$ gives
+a gentler per-step rescale. Atomiverse defaults it to $1.0$, deliberately
+*not* LAMMPS's $10.0$; pass `10.0` explicitly for LAMMPS-identical
+relaxation. Read the sign off the formula: if the system is over-pressurised
+($P > P_{\mathrm{target}}$) the bracket exceeds 1, $\mu > 1$, and the box
+expands — which is what relieves the pressure. The bracket is clamped to
+$[0.5, 2]$ before the cube root so one pathological step (a force spike at
+step 0, say) cannot collapse or explode the cell.
+
+It is bound at `end_of_step @ -45`, just after the global reduction at
+`-50`, so the stresses it sees are already summed across MPI ranks: every
+rank computes the same $\mu$ from the same $P$ and $V$, and the box update
+stays consistent without any extra communication.
 
 For pressure target conversions: the project's stress is in
 $\mathrm{eV}/\textrm{Å}^3$. Using $1\,\mathrm{bar} \approx 6.24 \times 10^{-7}\,\mathrm{eV}/\textrm{Å}^3$,
 1 atm and ambient room pressure both round to about $6 \times 10^{-7}$
 in code units.
 
-There is no Parrinello-Rahman or fully flexible-cell barostat in the CPU
-backend yet; the box stays cubic / diagonal. The `Barostat::set_enabled`
-toggle and `set_P_target` setter are intended for multi-stage protocols
-that mix NVT and NPT segments under a single driver instance.
+This Berendsen barostat is *isotropic*: one scalar $\mu$ multiplies the
+whole cell matrix, so the cell keeps its shape and only changes size. It is
+also not a rigorous NPT method — it relaxes the pressure towards the target
+without sampling the correct constant-pressure distribution, which makes it
+a good equilibrator and a poor production ensemble. The CPU backend does
+have the rigorous alternatives: `cpu::md::NoseHooverNPT`
+(`include/atomiverse/cpu/dynamics/nose_hoover_npt.h`), which can also
+barostat individual axes, and `cpu::md::ParrinelloRahmanNPT`
+(`include/atomiverse/cpu/dynamics/parrinello_rahman_npt.h`), whose full
+cell matrix lets the box shear as well as breathe. Both are integrators
+that *replace* `VelocityVerlet` + thermostat + barostat rather than joining
+them. [Chapter 11](ch11-ensembles.md) is where the NPT ensemble is worked
+through properly — when Berendsen is enough, how `NoseHooverNPT` is
+configured, and the conserved-quantity trace that tells you an NPT run is
+actually correct; `ParrinelloRahmanNPT` takes the same arguments in the
+order `(T_target, P_target, tau_T, tau_P, dt)` and is documented in its
+header.
+
+The `Barostat::set_enabled` toggle and `set_P_target` setter are intended
+for multi-stage protocols that mix NVT and NPT segments under a single
+driver instance.
 
 ## Bonded Force Fields
 

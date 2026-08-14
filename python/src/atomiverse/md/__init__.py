@@ -121,13 +121,23 @@ class MD:
     def set_integrator(self, component: object) -> MD:
         """Install the time integrator (``cpu::md::MD::set_integrator``).
 
-        ``VelocityVerlet`` for NVE/NVT; ``NoseHooverNPT`` (LAMMPS ``fix
-        npt``) replaces the plain integrator for NPT.
+        Exactly one integrator advances positions and velocities.
+        ``VelocityVerlet`` covers NVE (fixed particle number, volume and
+        energy) and, with a thermostat added, NVT (fixed temperature
+        instead of energy). For NPT (fixed pressure instead of volume),
+        ``NoseHooverNPT`` (LAMMPS ``fix npt``) and ``ParrinelloRahmanNPT``
+        (the same scheme with a full, shearable cell matrix) *replace* the
+        plain integrator — they integrate, thermostat and barostat in one
+        step, so do not add a separate thermostat or barostat with them.
         """
-        if type(component) not in (_cpp.VelocityVerlet, _cpp.NoseHooverNPT):
+        if type(component) not in (
+            _cpp.VelocityVerlet,
+            _cpp.NoseHooverNPT,
+            _cpp.ParrinelloRahmanNPT,
+        ):
             raise TypeError(
-                f"set_integrator expects VelocityVerlet or NoseHooverNPT, "
-                f"got {type(component).__name__}"
+                f"set_integrator expects VelocityVerlet, NoseHooverNPT, or "
+                f"ParrinelloRahmanNPT, got {type(component).__name__}"
             )
         self._cpp.set_integrator(component)
         self._built = False
@@ -144,6 +154,29 @@ class MD:
         self._built = False
         return self
 
+    def set_barostat(self, component: object) -> MD:
+        """Install a barostat (``cpu::md::MD::set_barostat``).
+
+        A barostat holds the system at a target pressure by rescaling the
+        periodic cell. ``BerendsenBarostat`` rides *alongside* the
+        integrator and a thermostat, so a Berendsen NPT run is
+        ``set_integrator(VelocityVerlet(dt))`` +
+        ``set_thermostat(...)`` + ``set_barostat(BerendsenBarostat(...))``.
+        The NPT integrators (``NoseHooverNPT``, ``ParrinelloRahmanNPT``)
+        replace the integrator instead and take no separate barostat.
+
+        Pressure targets are in eV/Å³ (positive means compressive);
+        1 bar ≈ 6.2415e-7 eV/Å³.
+        """
+        if type(component) not in (_cpp.BerendsenBarostat,):
+            raise TypeError(
+                f"set_barostat expects BerendsenBarostat, got "
+                f"{type(component).__name__}"
+            )
+        self._cpp.set_barostat(component)
+        self._built = False
+        return self
+
     def set_observer(self, component: object) -> MD:
         """Install an observer (``Driver::set_observer``).
 
@@ -151,8 +184,7 @@ class MD:
         """
         if type(component) is not _cpp.InitVelocity:
             raise TypeError(
-                f"set_observer expects InitVelocity, got "
-                f"{type(component).__name__}"
+                f"set_observer expects InitVelocity, got {type(component).__name__}"
             )
         self._cpp.set_observer(component)
         self._built = False
@@ -175,8 +207,7 @@ class MD:
         """Install the neighbor list (``Driver::set_neighbor``)."""
         if type(component) is not _cpp.NeighborList:
             raise TypeError(
-                f"set_neighbor expects NeighborList, got "
-                f"{type(component).__name__}"
+                f"set_neighbor expects NeighborList, got {type(component).__name__}"
             )
         self._cpp.set_neighbor(component)
         self._built = False
@@ -196,9 +227,7 @@ class MD:
             self._cpp.set_record(component)
             self._built = False
             return self
-        raise TypeError(
-            f"set_record expects Thermo, got {type(component).__name__}"
-        )
+        raise TypeError(f"set_record expects Thermo, got {type(component).__name__}")
 
     def on(self, phase: str) -> PhaseBuilder:
         """Escape hatch: explicit phase binding.
@@ -247,8 +276,9 @@ class MD:
         return f"MD({state})"
 
 
-# InitVelocity lives next to MD (cpu/dynamics/init.h); integrators and
-# thermostats live in sibling modules.
+# InitVelocity lives next to MD (cpu/dynamics/init.h); integrators,
+# thermostats and barostats live in the sibling modules `md.integrator`,
+# `md.thermostat` and `md.barostat`.
 InitVelocity = _cpp.InitVelocity
 
 __all__ = ["MD", "InitVelocity", "PhaseBuilder"]

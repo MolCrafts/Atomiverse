@@ -3,16 +3,19 @@
 
 #include "atomiverse/cpu/task/task_materializer.h"
 
+#include <cstdint>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
 
 #include "atomiverse/cpu/driver/criteria.h"
+#include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
@@ -26,7 +29,70 @@
 namespace ATV::cpu::task {
 namespace {
 
-void register_md_entry(md::MD& driver, const MDComponentEntry& entry) {
+/// @brief Build a `FixLangevin` with its temperature-ramp span installed.
+///
+/// A *temperature ramp* moves the thermostat setpoint linearly from
+/// `T_start` to `T_stop` over a *run span* — the first and last MD step
+/// index of the run, which is what LAMMPS reads from
+/// `update->beginstep`/`endstep`. The component cannot know that span from
+/// its constructor arguments, so whoever owns the step budget installs it:
+/// this materializer on the launcher path, `MdHandle::run` on the Python
+/// path, and the caller itself in hand-written C++.
+///
+/// The span is installed unconditionally: `T_stop < 0` folds to `T_start` in
+/// the constructor, so a span on a component that was never asked to ramp
+/// interpolates between two equal temperatures and is inert.
+///
+/// @param p       Typed Langevin params (temperatures [K], damp/dt [fs]).
+/// @param n_steps Step budget of the owning MDTask — ramp span `[0, n_steps]`.
+/// @return Thermostat with its ramp span wired, ready for either
+///         registration path (explicit binding or categorical setter).
+cpu::md::FixLangevin ramped_fix_langevin(const FixLangevinParams& p,
+                                         std::int64_t n_steps) {
+    cpu::md::FixLangevin lang{p.T_start, p.T_stop, p.damp, p.dt, p.seed};
+    lang.set_run_span(0, n_steps);
+    return lang;
+}
+
+/// @brief Build a `NoseHooverNPT` with its temperature-ramp span installed.
+///
+/// Same unconditional span as `ramped_fix_langevin`, for the same reason:
+/// `T_stop < 0` folds to `T_target` in the constructor, so the span is inert
+/// unless a ramp was actually requested. The constructor argument order is
+/// the ten-argument one mirrored by `NoseHooverNptParams`; passing the
+/// fields positionally is what keeps the two in step.
+///
+/// @param p       Typed Martyna-Tobias-Klein NPT params (temperatures [K],
+///                pressure [eV/Å³], coupling times and timestep [fs]).
+/// @param n_steps Step budget of the owning MDTask — ramp span `[0, n_steps]`.
+/// @return Integrator with its ramp span wired, ready for either
+///         registration path (explicit binding or categorical setter).
+cpu::md::NoseHooverNPT ramped_nose_hoover_npt(const NoseHooverNptParams& p,
+                                              std::int64_t n_steps) {
+    cpu::md::NoseHooverNPT nh{p.T_target,    p.tau_T, p.P_target, p.tau_P,
+                              p.dt,          p.drag,  p.mtchain,  p.mpchain,
+                              p.couple_axis, p.T_stop};
+    nh.set_run_span(0, n_steps);
+    return nh;
+}
+
+/// @brief Replay one typed MD entry onto the driver.
+///
+/// Two registration paths, chosen by whether the entry carries a binding:
+/// with one, the component goes to `on(phase).add(component, order)`;
+/// without one, to the categorical setter for its kind (`set_integrator`,
+/// `set_thermostat`, `set_barostat`, …). Both paths construct the same
+/// component from the same fields — the span-wiring helpers above exist so
+/// that a ramping component cannot reach only one of the two with its run
+/// span installed.
+///
+/// @param driver  Target MD driver.
+/// @param entry   Typed params + optional explicit phase binding.
+/// @param n_steps Step budget of the owning MDTask — the ramp span
+///                `[0, n_steps]` handed to the temperature-ramping
+///                components (LAMMPS `update->beginstep`/`endstep`).
+void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
+                       std::int64_t n_steps) {
     std::visit(
         [&](const auto& p) {
             using P = std::decay_t<decltype(p)>;
@@ -53,15 +119,22 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry) {
                 else if constexpr (std::is_same_v<P, NoseHooverParams>)
                     bind(cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});
                 else if constexpr (std::is_same_v<P, FixLangevinParams>)
-                    bind(cpu::md::FixLangevin{p.T_start, p.T_stop, p.damp, p.dt,
-                                              p.seed});
+                    bind(ramped_fix_langevin(p, n_steps));
                 else if constexpr (std::is_same_v<P, FixCsvrParams>)
                     bind(cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
                 else if constexpr (std::is_same_v<P, NoseHooverNptParams>)
-                    bind(cpu::md::NoseHooverNPT{p.T_target, p.tau_T, p.P_target,
-                                                p.tau_P, p.dt});
+                    bind(ramped_nose_hoover_npt(p, n_steps));
+                else if constexpr (std::is_same_v<P, ParrinelloRahmanNptParams>)
+                    // No temperature ramp on PR-NPT — no span to install.
+                    bind(cpu::md::ParrinelloRahmanNPT{p.T_target, p.P_target,
+                                                      p.tau_T, p.tau_P, p.dt});
+                else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
+                    bind(cpu::md::Barostat{p.P_target, p.tau_P, p.dt,
+                                           p.bulk_modulus});
                 else if constexpr (std::is_same_v<P, ThermoParams>)
                     bind(cpu::Thermo{p.freq});
+                else
+                    static_assert(detail::unsupported_component_v<P>);
                 return;
             }
             // Categorical path — no public Driver::add
@@ -85,20 +158,34 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry) {
                 driver.set_thermostat(
                     cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});
             else if constexpr (std::is_same_v<P, FixLangevinParams>)
-                driver.set_thermostat(cpu::md::FixLangevin{
-                    p.T_start, p.T_stop, p.damp, p.dt, p.seed});
+                driver.set_thermostat(ramped_fix_langevin(p, n_steps));
             else if constexpr (std::is_same_v<P, FixCsvrParams>)
                 driver.set_thermostat(
                     cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
             else if constexpr (std::is_same_v<P, NoseHooverNptParams>)
-                driver.set_integrator(cpu::md::NoseHooverNPT{
-                    p.T_target, p.tau_T, p.P_target, p.tau_P, p.dt});
+                driver.set_integrator(ramped_nose_hoover_npt(p, n_steps));
+            else if constexpr (std::is_same_v<P, ParrinelloRahmanNptParams>)
+                // No temperature ramp on PR-NPT — no span to install.
+                driver.set_integrator(cpu::md::ParrinelloRahmanNPT{
+                    p.T_target, p.P_target, p.tau_T, p.tau_P, p.dt});
+            else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
+                driver.set_barostat(cpu::md::Barostat{p.P_target, p.tau_P, p.dt,
+                                                      p.bulk_modulus});
             else if constexpr (std::is_same_v<P, ThermoParams>)
                 driver.set_thermo(p.freq);
+            else
+                static_assert(detail::unsupported_component_v<P>);
         },
         entry.params);
 }
 
+/// @brief Replay one typed Minimize entry onto the driver.
+///
+/// Same two paths as `register_md_entry`, minus the ramp wiring: no
+/// minimizer component carries a temperature setpoint, so none needs a span.
+///
+/// @param driver Target minimizer driver.
+/// @param entry  Typed params + optional explicit phase binding.
 void register_minimize_entry(minimizer::Minimize& driver,
                              const MinimizeComponentEntry& entry) {
     std::visit(
@@ -115,6 +202,8 @@ void register_minimize_entry(minimizer::Minimize& driver,
                     bind(cpu::md::NeighborList<>{p.cutoff, p.skin});
                 else if constexpr (std::is_same_v<P, LBFGSParams>)
                     bind(cpu::minimizer::LBFGS{p.memory, p.alpha0, p.max_ls});
+                else
+                    static_assert(detail::unsupported_component_v<P>);
                 return;
             }
             if constexpr (std::is_same_v<P, PairLJCutParams>)
@@ -125,6 +214,8 @@ void register_minimize_entry(minimizer::Minimize& driver,
             else if constexpr (std::is_same_v<P, LBFGSParams>)
                 driver.set_optimizer(
                     cpu::minimizer::LBFGS{p.memory, p.alpha0, p.max_ls});
+            else
+                static_assert(detail::unsupported_component_v<P>);
         },
         entry.params);
 }
@@ -137,7 +228,7 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
         budget_ = static_cast<int>(task.n_steps);
         md_.emplace();
         for (const auto& entry : task.entries)
-            register_md_entry(*md_, entry);
+            register_md_entry(*md_, entry, task.n_steps);
         md_->build();
         return;
     }

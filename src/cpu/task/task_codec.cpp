@@ -1,5 +1,5 @@
 /// @file cpu/task/task_codec.cpp
-/// @brief TaskSpec v3 typed-sum codec; no historic decoder.
+/// @brief TaskSpec v4 typed-sum codec; no historic decoder.
 
 #include "atomiverse/cpu/task/task_codec.h"
 
@@ -148,6 +148,25 @@ void write(Writer& w, const NoseHooverNptParams& p) {
     w.f64(p.P_target);
     w.f64(p.tau_P);
     w.f64(p.dt);
+    w.f64(p.drag);
+    w.i32(p.mtchain);
+    w.i32(p.mpchain);
+    for (bool axis : p.couple_axis)
+        w.u8(axis ? 1 : 0);
+    w.f64(p.T_stop);
+}
+void write(Writer& w, const ParrinelloRahmanNptParams& p) {
+    w.f64(p.T_target);
+    w.f64(p.P_target);
+    w.f64(p.tau_T);
+    w.f64(p.tau_P);
+    w.f64(p.dt);
+}
+void write(Writer& w, const BerendsenBarostatParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.tau_P);
+    w.f64(p.dt);
+    w.f64(p.bulk_modulus);
 }
 void write(Writer& w, const AM1EvaluatorParams& p) {
     w.i32(p.charge);
@@ -204,6 +223,10 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::FixCSVR;
     case 13:
         return ComponentId::NoseHooverNPT;
+    case 14:
+        return ComponentId::ParrinelloRahmanNPT;
+    case 15:
+        return ComponentId::BerendsenBarostat;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -257,7 +280,16 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
     case ComponentId::FixCSVR:
         return FixCsvrParams{r.f64(), r.f64(), r.f64(), r.u32()};
     case ComponentId::NoseHooverNPT:
-        return NoseHooverNptParams{r.f64(), r.f64(), r.f64(), r.f64(), r.f64()};
+        return NoseHooverNptParams{
+            r.f64(), r.f64(), r.f64(),
+            r.f64(), r.f64(), r.f64(),
+            r.i32(), r.i32(), {r.u8() != 0, r.u8() != 0, r.u8() != 0},
+            r.f64()};
+    case ComponentId::ParrinelloRahmanNPT:
+        return ParrinelloRahmanNptParams{r.f64(), r.f64(), r.f64(), r.f64(),
+                                         r.f64()};
+    case ComponentId::BerendsenBarostat:
+        return BerendsenBarostatParams{r.f64(), r.f64(), r.f64(), r.f64()};
     case ComponentId::AM1Evaluator:
     case ComponentId::LBFGS:
         wrong_task(id, TaskKind::MD);

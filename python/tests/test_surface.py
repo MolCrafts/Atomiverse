@@ -61,6 +61,8 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "MD",
         "VelocityVerlet",
         "NoseHooverNPT",
+        "ParrinelloRahmanNPT",
+        "BerendsenBarostat",
         "InitVelocity",
         "NoseHoover",
         "Langevin",
@@ -153,7 +155,7 @@ class TestCanonicalSurface:
 
     def test_all_is_exactly_the_honest_surface(self) -> None:
         """__all__ equals the MD + AM1 base plus optional PW object types."""
-        assert len(_CANONICAL_ALL) == (23 if _HAS_PW else 21)
+        assert len(_CANONICAL_ALL) == (25 if _HAS_PW else 23)
         assert set(av.__all__) == set(_CANONICAL_ALL)
 
 

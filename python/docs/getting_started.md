@@ -99,9 +99,10 @@ and writes positions / velocities / forces / energy back into the same
 Current surface:
 
 - **MD** — the `MD` driver and its components under the canonical C++
-  (LAMMPS-style) names: `VelocityVerlet`, `InitVelocity`, `NoseHoover`,
-  `PairLJCut`, `NeighborList`, `BondHarmonic`, `AngleHarmonic`,
-  `DihedralMultiHarmonic`, `Thermo`.
+  (LAMMPS-style) names: `VelocityVerlet`, `NoseHooverNPT`,
+  `ParrinelloRahmanNPT`, `InitVelocity`, `NoseHoover`, `Langevin`, `CSVR`,
+  `BerendsenBarostat`, `PairLJCut`, `NeighborList`, `BondHarmonic`,
+  `AngleHarmonic`, `DihedralMultiHarmonic`, `Thermo`.
 - **Geometry optimization** — CPU `minimizer.Minimize` with the `LBFGS`
   optimizer component and independent `ForceConverged` loop policy.
 - **Plane-wave DFT** — `PW` / `PW` / `PWResult` (PW-enabled
@@ -235,6 +236,8 @@ Components register through **categorical setters**, mirroring the C++
 
 - `sim.set_integrator(VelocityVerlet(dt))`
 - `sim.set_thermostat(NoseHoover(T, tau_T, dt))`
+- `sim.set_barostat(BerendsenBarostat(P, tau_P, dt))` — rides alongside the
+  integrator (see *Constant pressure: NPT* below)
 - `sim.set_observer(InitVelocity(T, seed))`
 - `sim.set_neighbor(NeighborList(cutoff, skin=-1))`
 - `sim.set_evaluator(PairLJCut / BondHarmonic / …)` — plural energy sources
@@ -245,11 +248,13 @@ Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
 | Setter | Component | Description |
 |--------|-----------|-------------|
 | `set_integrator` | `VelocityVerlet(dt)` | Symplectic integrator |
-| `set_integrator` | `NoseHooverNPT(T, tau_T, P, tau_P, dt)` | MTK NPT (`fix npt`) — replaces the plain integrator |
+| `set_integrator` | `NoseHooverNPT(T, tau_T, P, tau_P, dt, drag=0, mtchain=3, mpchain=3, couple_axis=(True,True,True), T_stop=-1)` | MTK NPT (`fix npt`) — replaces the plain integrator |
+| `set_integrator` | `ParrinelloRahmanNPT(T, P, tau_T, tau_P, dt)` | Full-cell MTK NPT — cell tilts evolve; replaces the plain integrator (note the argument order) |
 | `set_observer` | `InitVelocity(T, seed)` | Maxwell-Boltzmann init |
 | `set_thermostat` | `NoseHoover(T, tau_T, dt)` | NVT thermostat |
 | `set_thermostat` | `Langevin(T_start, T_stop, damp, dt, seed)` | Langevin thermostat |
 | `set_thermostat` | `CSVR(T, tau, dt, seed)` | Bussi velocity rescale |
+| `set_barostat` | `BerendsenBarostat(P, tau_P, dt, bulk_modulus=1.0)` | Berendsen isotropic barostat (`fix press/berendsen iso`) — installed *alongside* `VelocityVerlet` + a thermostat |
 | `set_neighbor` | `NeighborList(cutoff, skin=-1)` | Cell-list pair builder |
 | `set_evaluator` | `PairLJCut(ε, σ, cutoff)` | Lennard-Jones 12-6 |
 | `set_evaluator` | `BondHarmonic(K, r0)` | Bond stretching |
@@ -257,6 +262,83 @@ Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
 | `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral potential |
 | `set_thermo` | `N` (int) | Thermo print every N steps |
 | `Thermo(freq)` | end_of_step | Thermodynamic output |
+
+#### Constant pressure: NPT
+
+An *ensemble* is the set of macroscopic quantities held fixed while the atoms
+move. Bare `VelocityVerlet` holds particle number, cell volume and total
+energy fixed (NVE). Adding a *thermostat* — a component that couples the atoms
+to a notional heat bath so their mean kinetic energy tracks a target
+temperature `T` [K] — gives NVT. NPT goes one step further: the simulation
+cell is allowed to change size so that the internal pressure tracks a target
+`P`, and the component that rescales the cell is the *barostat*. Pressure is
+in eV/Å³ with the LAMMPS sign (positive ⇔ compressive), so **1 bar ≈
+6.2415e-7 eV/Å³**; pass `0.0` for a zero-pressure run. Every route below
+derives the pressure from the stress tensor, and the driver auto-installs the
+virial (stress) observer that supplies it — you never register that yourself.
+
+There are two routes, and they are mutually exclusive.
+
+**Berendsen — a barostat beside the integrator.** Keep `VelocityVerlet` and a
+thermostat, then add `set_barostat(BerendsenBarostat(P, tau_P, dt))`. Once per
+step it rescales the cell edges and every atom position by one isotropic
+factor that drives the instantaneous pressure toward `P` with relaxation time
+`tau_P` [fs] (LAMMPS `Pdamp`). The optional `bulk_modulus` (β [eV/Å³], LAMMPS
+`modulus`) divides that factor, so a larger β means a smaller per-step rescale
+and slower relaxation. Its default is **1.0 eV/Å³**, deliberately *not*
+LAMMPS's `10.0`; pass `10.0` explicitly for LAMMPS-identical relaxation.
+Berendsen relaxes pressure smoothly and is a good equilibration tool, but it
+does not sample a rigorous NPT distribution.
+
+**MTK — an NPT integrator in place of the plain one.** `NoseHooverNPT` and
+`ParrinelloRahmanNPT` are Martyna-Tobias-Klein integrators: the position and
+velocity update, a Nose-Hoover thermostat and a barostat are fused into a
+single time step. They therefore *replace* `VelocityVerlet` and go in through
+`set_integrator` — do not also install a plain integrator, a separate
+thermostat, or a barostat. `NoseHooverNPT` keeps the cell axis-aligned (only
+the edge lengths move); `ParrinelloRahmanNPT` propagates the full cell matrix,
+so the off-diagonal tilt factors move too — the choice when the *shape* of the
+cell, not just its size, has to relax. Mind the argument order: `NoseHooverNPT`
+pairs each setpoint with its own coupling time, `ParrinelloRahmanNPT` takes
+both setpoints first. Keyword names are `T_target` / `P_target` (the table
+above abbreviates them).
+
+```python
+# Rigorous NPT — one component covers integration, thermostat and barostat
+sim.set_integrator(av.NoseHooverNPT(
+    300.0,        # T_target [K]
+    100.0,        # tau_T    [fs]
+    6.2415e-7,    # P_target [eV/Å³] ≈ 1 bar
+    1000.0,       # tau_P    [fs]
+    0.5,          # dt       [fs]
+))
+
+# Full-cell NPT — same physics, tilt factors free.
+# Argument order here is T, P, tau_T, tau_P, dt.
+sim.set_integrator(av.ParrinelloRahmanNPT(300.0, 6.2415e-7, 100.0, 1000.0, 0.5))
+
+# Berendsen equilibration — barostat rides alongside integrator + thermostat
+sim.set_integrator(av.VelocityVerlet(0.5))
+sim.set_thermostat(av.NoseHoover(300.0, 100.0, 0.5))
+sim.set_barostat(av.BerendsenBarostat(6.2415e-7, 1000.0, 0.5))
+```
+
+`NoseHooverNPT` additionally exposes the LAMMPS `fix npt` knob tail, each
+argument optional and already at its C++ default:
+
+- `drag` — empirical extra damping on the Nose-Hoover chains; `0` disables it.
+- `mtchain` / `mpchain` — length of the thermostat chain attached to the atoms
+  and to the barostat. A *chain* is a cascade of fictitious thermostat
+  variables, each one thermostatting the previous; 3 is the standard choice.
+- `couple_axis` — per-axis barostat enable `(x, y, z)`. Setting
+  `couple_axis[i] = False` freezes cell axis `i`: that edge never rescales,
+  e.g. `(False, False, True)` lets only the z edge relax (uniaxial coupling).
+- `T_stop` — end temperature [K] of a LAMMPS-style linear temperature ramp.
+  With `T_stop >= 0` the setpoint moves linearly from `T` to `T_stop` across
+  the span of the run; the span is wired automatically for each `run()` call,
+  so every `run(frame, n_steps)` performs one complete ramp over its own
+  steps. The default `T_stop = -1` (any negative value) folds back to `T`,
+  i.e. no ramp.
 
 ### Units
 

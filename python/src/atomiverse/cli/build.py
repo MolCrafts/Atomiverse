@@ -12,7 +12,6 @@ There is **no** home-directory cache.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field

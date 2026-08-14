@@ -1,5 +1,5 @@
 /// @file cpu/task/task_spec.cpp
-/// @brief Task-specific invariant validation for TaskSpec v3.
+/// @brief Task-specific invariant validation for TaskSpec v4.
 
 #include "atomiverse/cpu/task/task_spec.h"
 

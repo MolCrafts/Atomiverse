@@ -13,8 +13,14 @@
 /// Plus the arch-refactor-06-frame Design §2 to_molrs field contract
 /// (golden round-trip): image (int8 -> i32 ix/iy/iz widen-back) and tag
 /// (TagInt -> i32 checked narrowing, overflow throws) ARE written back;
-/// type / mass / topology / box are designated non-write-back and must keep
-/// their pre-materialize molrs values.
+/// type / mass / topology are static run inputs, designated non-write-back,
+/// and must keep their pre-materialize molrs values.
+///
+/// The **box is a write-back field** (py-md-npt ac-002): barostats
+/// (Parrinello-Rahman / Berendsen / Nose-Hoover NPT) make the cell an output
+/// of a run, so a cpu::Frame whose Box was mutated must present that cell on
+/// the molrs.Frame after to_molrs, or a Python caller can never observe a
+/// barostatted cell.
 
 #include <gtest/gtest.h>
 
@@ -105,8 +111,7 @@ namespace {
         *fr, "bonds", "type_id",
         ::rust::Slice<const std::uint32_t>(bt.data(), bt.size()));
 
-    const std::vector<std::uint32_t> ai = {10}, aj = {11}, ak = {12},
-                                     at = {1};
+    const std::vector<std::uint32_t> ai = {10}, aj = {11}, ak = {12}, at = {1};
     molrs::frame_set_column_u32(
         *fr, "angles", "atomi",
         ::rust::Slice<const std::uint32_t>(ai.data(), ai.size()));
@@ -121,7 +126,7 @@ namespace {
         ::rust::Slice<const std::uint32_t>(at.data(), at.size()));
 
     const std::vector<std::uint32_t> di = {10}, dj = {11}, dk = {12}, dl = {12},
-                                    dt = {1};
+                                     dt = {1};
     molrs::frame_set_column_u32(
         *fr, "dihedrals", "atomi",
         ::rust::Slice<const std::uint32_t>(di.data(), di.size()));
@@ -486,9 +491,10 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
     EXPECT_FALSE(molrs::frame_has_block(*fr, "scalars"));
 }
 
-// Non-contract fields (type / mass / topology blocks / box) are designated
-// non-write-back: mutating them on the cpu::Frame must NOT leak into the
-// molrs.Frame — every such column keeps its pre-materialize value.
+// Non-contract fields (type / mass / topology blocks) are static run inputs
+// and designated non-write-back: mutating them on the cpu::Frame must NOT
+// leak into the molrs.Frame — every such column keeps its pre-materialize
+// value. The box is NOT in this set (see the box write-back tests below).
 TEST(WriteBackContract, NonContractFieldsUntouched) {
     auto fr = make_contract_frame();
 
@@ -498,7 +504,6 @@ TEST(WriteBackContract, NonContractFieldsUntouched) {
     // Mutate NON-contract fields...
     cf.span(ATV::kAtom_type)[0] = 99;
     cf.span(ATV::kAtom_mass)[1] = 999.9;
-    cf.box.set_cell(ATV::Mat3::cubic(42.0));
     // ...plus one contract sentinel proving to_molrs actually ran.
     cf.span(ATV::kAtom_x)[0] = 8.5;
 
@@ -537,13 +542,94 @@ TEST(WriteBackContract, NonContractFieldsUntouched) {
     auto dl = molrs::frame_column_u32(*fr, "dihedrals", "atoml");
     ASSERT_EQ(dl.size(), 1u);
     EXPECT_EQ(dl[0], 12);
+}
 
-    // Box keeps the pre-materialize 20 A cube despite the cpu-side 42 A cell.
+// py-md-npt ac-002: a barostatted cell is an OUTPUT of a run, so a Box
+// mutated on the cpu::Frame must reach the molrs.Frame through to_molrs —
+// exact doubles, no rescaling, no rounding.
+TEST(WriteBackContract, MutatedBoxWritesBack) {
+    auto fr = make_full_frame();
+
+    Frame cf = from_molrs(*fr);
+    ASSERT_EQ(cf.nlocal(), 3);
+    ASSERT_DOUBLE_EQ(cf.box.length(0), 20.0); // anchor the read side
+
+    // Barostat-shaped mutation: isotropic volume scale h <- 1.1 h.
+    cf.box.scale_isotropic(1.1);
+    // ...plus a second contract field, to prove the box write does not
+    // displace the established per-atom write set.
+    cf.span(ATV::kAtom_x)[1] = 6.75;
+
+    to_molrs(cf, *fr);
+
+    const double scaled = 20.0 * 1.1;
     auto h = molrs::frame_box(*fr);
     ASSERT_EQ(h.size(), 9u);
-    EXPECT_DOUBLE_EQ(h[0], 20.0) << "box is non-write-back";
-    EXPECT_DOUBLE_EQ(h[4], 20.0);
-    EXPECT_DOUBLE_EQ(h[8], 20.0);
+    EXPECT_DOUBLE_EQ(h[0], scaled)
+        << "a barostatted cell must reach the molrs box; without this a "
+           "Python caller can never observe the NPT cell";
+    EXPECT_DOUBLE_EQ(h[4], scaled);
+    EXPECT_DOUBLE_EQ(h[8], scaled);
+    EXPECT_DOUBLE_EQ(h[1], 0.0);
+    EXPECT_DOUBLE_EQ(h[2], 0.0);
+    EXPECT_DOUBLE_EQ(h[3], 0.0);
+    EXPECT_DOUBLE_EQ(h[5], 0.0);
+    EXPECT_DOUBLE_EQ(h[6], 0.0);
+    EXPECT_DOUBLE_EQ(h[7], 0.0);
+
+    // Positions still round-trip through the same call.
+    auto rx = molrs::frame_column_f64(*fr, "atoms", "x");
+    ASSERT_EQ(rx.size(), 3u);
+    EXPECT_DOUBLE_EQ(rx[0], cf.span(ATV::kAtom_x)[0]);
+    EXPECT_DOUBLE_EQ(rx[1], 6.75);
+    EXPECT_DOUBLE_EQ(rx[2], cf.span(ATV::kAtom_x)[2]);
+
+    // to_molrs is a read-only export: the engine-side Box is unchanged.
+    EXPECT_DOUBLE_EQ(cf.box.length(0), scaled);
+    EXPECT_DOUBLE_EQ(cf.box.cell()(0, 1), 0.0);
+}
+
+// The same write-back for a triclinic cell: all nine entries cross, in
+// molrs' row-major H order (the cell below is deliberately asymmetric, so a
+// transposed write cannot pass).
+TEST(WriteBackContract, TriclinicBoxWritesBack) {
+    auto fr = make_full_frame();
+
+    Frame cf = from_molrs(*fr);
+    ASSERT_EQ(cf.nlocal(), 3);
+    ASSERT_TRUE(cf.box.is_orthorhombic());
+
+    ATV::Mat3 cell;
+    cell(0, 0) = 12.0;
+    cell(0, 1) = 0.0;
+    cell(0, 2) = 0.0;
+    cell(1, 0) = 3.5;
+    cell(1, 1) = 11.0;
+    cell(1, 2) = 0.0;
+    cell(2, 0) = -1.25;
+    cell(2, 1) = 2.75;
+    cell(2, 2) = 13.5;
+    cf.box.set_cell(cell);
+    ASSERT_FALSE(cf.box.is_orthorhombic());
+
+    to_molrs(cf, *fr);
+
+    auto h = molrs::frame_box(*fr);
+    ASSERT_EQ(h.size(), 9u);
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            EXPECT_DOUBLE_EQ(h[i * 3 + j],
+                             static_cast<double>(cf.box.cell()(i, j)))
+                << "triclinic H(" << i << "," << j
+                << ") must cross to molrs row-major";
+
+    // Symmetric with the read side: materializing the written frame gives
+    // back the same cell.
+    Frame back = from_molrs(*fr);
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            EXPECT_DOUBLE_EQ(static_cast<double>(back.box.cell()(i, j)),
+                             static_cast<double>(cf.box.cell()(i, j)));
 }
 
 // A tag that does not fit i32 must fail loud (std::runtime_error naming the
@@ -573,7 +659,10 @@ TEST(WriteBackContract, TagOverflowThrows) {
 }
 
 // Boundary: a minimal frame (required columns only, no box / topology /
-// tag / image columns) survives to_molrs without throwing.
+// tag / image columns) survives to_molrs without throwing. Note for the box
+// write-back: this frame's Box is default-constructed (cell = 0, singular),
+// and molrs' frame_set_box rejects a singular cell — so the write-back must
+// skip a degenerate cell rather than push it across.
 TEST(WriteBackContract, MinimalFrameWriteBackDoesNotThrow) {
     auto fr = make_minimal_frame();
     Frame cf = from_molrs(*fr);

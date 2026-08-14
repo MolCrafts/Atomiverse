@@ -1,5 +1,5 @@
 /// @file tests/cpu/test_task_codec.cpp
-/// @brief TaskSpec v3 typed-payload and exact-wire contract tests.
+/// @brief TaskSpec v4 typed-payload and exact-wire contract tests.
 
 #include <gtest/gtest.h>
 
@@ -53,8 +53,24 @@ TaskSpec make_md_spec() {
         FixLangevinParams{300.0, 250.0, 100.0, 0.5, 97u}, std::nullopt});
     entries.push_back(
         MDComponentEntry{FixCsvrParams{300.0, 50.0, 0.5, 13u}, std::nullopt});
+    // Every NPT knob is spelled with a NON-default value so the roundtrip
+    // cannot pass by accident on a codec that drops the tail fields.
+    entries.push_back(MDComponentEntry{NoseHooverNptParams{300.0,
+                                                           100.0,
+                                                           6.2e-7,
+                                                           1000.0,
+                                                           0.5,
+                                                           0.2,
+                                                           4,
+                                                           5,
+                                                           {true, false, true},
+                                                           350.0},
+                                       std::nullopt});
     entries.push_back(MDComponentEntry{
-        NoseHooverNptParams{300.0, 100.0, 6.2e-7, 1000.0, 0.5}, std::nullopt});
+        ParrinelloRahmanNptParams{300.0, 1e-4, 100.0, 1000.0, 0.5},
+        std::nullopt});
+    entries.push_back(MDComponentEntry{
+        BerendsenBarostatParams{1e-4, 1000.0, 0.5, 2.0}, std::nullopt});
     entries.push_back(MDComponentEntry{
         ThermoParams{100}, MDBinding{ATV::md::Phase::end_of_step, 50}});
     return TaskSpec(MDTask{std::move(entries), 7});
@@ -93,13 +109,19 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::FixLangevin), 11u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::FixCSVR), 12u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::NoseHooverNPT), 13u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::ParrinelloRahmanNPT),
+              14u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::BerendsenBarostat), 15u);
     EXPECT_EQ(component_id(MDComponentParams{VelocityVerletParams{}}),
               ComponentId::VelocityVerlet);
     EXPECT_EQ(component_id(MinimizeComponentParams{LBFGSParams{}}),
               ComponentId::LBFGS);
 }
 
-TEST(TaskCodec, WireVersionIsThree) { EXPECT_EQ(TaskSpec::kWireVersion, 3u); }
+// v4: the NoseHooverNptParams payload grew (drag / mtchain / mpchain /
+// couple_axis / T_stop), so a v3 payload is no longer readable — the
+// exact-match version gate in `unpack` is what makes that break loud.
+TEST(TaskCodec, WireVersionIsFour) { EXPECT_EQ(TaskSpec::kWireVersion, 4u); }
 
 TEST(TaskCodec, MdRoundtripIsFieldExact) {
     const TaskSpec spec = make_md_spec();

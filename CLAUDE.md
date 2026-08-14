@@ -512,8 +512,9 @@ Conversion points, each owning exactly one boundary:
 - `from_molrs()` / `to_molrs()` — strict schema-v2 boundary, run once per
   `run()`, never in a step loop. Unknown blocks/columns, wrong dtypes and wrong
   row counts fail immediately. `to_molrs` writes back x/v/f, charge, image, tag
-  (checked i32 narrowing — overflow throws) and every serializable typed-meta
-  value; type, mass, topology and box are static run inputs and are not written.
+  (checked i32 narrowing — overflow throws), the box (the cell is an output
+  under barostats / cell relax) and every serializable typed-meta value; type,
+  mass and topology are static run inputs and are not written.
 - `cpu::to_cuda()` / `cuda::to_cpu()` — host ⇄ device.
 
 Precision tiers map 1:1 across backends: `StorageReal`/`WorkReal`/`AccReal`

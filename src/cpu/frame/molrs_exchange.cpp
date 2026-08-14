@@ -3,6 +3,8 @@
 
 #include "atomiverse/cpu/frame/molrs_exchange.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
@@ -325,6 +327,22 @@ void to_molrs(const Frame& src, molrs::FrameRef& dst) {
     set_i32("iy", iy);
     set_i32("iz", iz);
     set_i32("tag", tag_values);
+
+    // The cell is an OUTPUT of a run under a barostat / cell relaxation, so
+    // it crosses back in the same molrs row-major H order the read side uses
+    // (h[i * 3 + j] == cell(i, j)). A degenerate cell (default-constructed
+    // Box, det == 0) describes no periodic system and molrs rejects it as a
+    // singular matrix, so it is skipped rather than pushed across.
+    if (src.box.volume() > 0.0) {
+        const Mat3& cell = src.box.cell();
+        std::array<double, 9> h{};
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                h[static_cast<std::size_t>(i * 3 + j)] =
+                    static_cast<double>(cell(i, j));
+        molrs::frame_set_box(dst,
+                             ::rust::Slice<const double>(h.data(), h.size()));
+    }
 
     auto entries = internal::encode_molrs_meta(src.meta);
     for (auto& entry : entries)

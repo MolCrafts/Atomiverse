@@ -17,7 +17,12 @@ Canonical deep path                   Top-level re-export         C++ symbol
 =====================================  ==========================  =========================
 ``md.MD``                             ``MD``                      ``cpu::md::MD``
 ``md.integrator.VelocityVerlet``      ``VelocityVerlet``          ``cpu::md::VelocityVerlet``
+``md.integrator.NoseHooverNPT``       ``NoseHooverNPT``           ``cpu::md::NoseHooverNPT``
+``md.integrator.ParrinelloRahmanNPT`` ``ParrinelloRahmanNPT``     ``cpu::md::ParrinelloRahmanNPT``
 ``md.thermostat.NoseHoover``          ``NoseHoover``              ``cpu::md::NoseHoover``
+``md.thermostat.Langevin``            ``Langevin``                ``cpu::md::FixLangevin``
+``md.thermostat.CSVR``                ``CSVR``                    ``cpu::md::FixCSVR``
+``md.barostat.BerendsenBarostat``     ``BerendsenBarostat``       ``cpu::md::Barostat``
 ``md.InitVelocity``                   ``InitVelocity``            ``cpu::md::InitVelocity``
 ``minimizer.Minimize``                ``Minimize``                ``cpu::minimizer::Minimize``
 ``minimizer.LBFGS``                   ``LBFGS``                   ``cpu::minimizer::LBFGS``
@@ -71,9 +76,11 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "InitVelocity": ("atomiverse.md", "InitVelocity"),
     "VelocityVerlet": ("atomiverse.md.integrator", "VelocityVerlet"),
     "NoseHooverNPT": ("atomiverse.md.integrator", "NoseHooverNPT"),
+    "ParrinelloRahmanNPT": ("atomiverse.md.integrator", "ParrinelloRahmanNPT"),
     "NoseHoover": ("atomiverse.md.thermostat", "NoseHoover"),
     "Langevin": ("atomiverse.md.thermostat", "Langevin"),
     "CSVR": ("atomiverse.md.thermostat", "CSVR"),
+    "BerendsenBarostat": ("atomiverse.md.barostat", "BerendsenBarostat"),
     "Minimize": ("atomiverse.minimizer", "Minimize"),
     "LBFGS": ("atomiverse.minimizer", "LBFGS"),
     "ForceConverged": ("atomiverse.minimizer", "ForceConverged"),
@@ -96,10 +103,12 @@ __all__ = [
     "MD",
     "VelocityVerlet",
     "NoseHooverNPT",
+    "ParrinelloRahmanNPT",
     "InitVelocity",
     "NoseHoover",
     "Langevin",
     "CSVR",
+    "BerendsenBarostat",
     "Minimize",
     "LBFGS",
     "ForceConverged",

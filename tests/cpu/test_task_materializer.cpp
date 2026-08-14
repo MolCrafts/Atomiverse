@@ -16,17 +16,21 @@
 #include <omp.h>
 #endif
 
+#include <array>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -218,6 +222,10 @@ TEST(TaskMaterializer, MdLangevinRunMatchesHandBuiltDriverBitwise) {
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
     entries.push_back(
         MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    // T_start == T_stop, so the ramp span the materializer installs
+    // (`set_run_span(0, n_steps)`) is inert — T_live = T_start + delta·0 —
+    // and the hand-built twin needs no matching call. Give this entry a
+    // real ramp and the twin must gain `lang.set_run_span(0, kNSteps)`.
     entries.push_back(MDComponentEntry{
         FixLangevinParams{kTinit, kTinit, 100.0, kDt, kSeed}, std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), kNSteps});
@@ -248,8 +256,22 @@ TEST(TaskMaterializer, MdNptRunMatchesHandBuiltDriverBitwise) {
                                        MDBinding{ATV::md::Phase::force, 0}});
     entries.push_back(
         MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
-    entries.push_back(MDComponentEntry{
-        NoseHooverNptParams{kTinit, 100.0, 0.0, 1000.0, kDt}, std::nullopt});
+    // The knob tail is spelled out with the *C++ constructor defaults*
+    // ({} would value-initialize couple_axis to {false,false,false} and
+    // T_stop to 0.0, neither of which is the hand-built twin's behaviour).
+    // T_stop < 0 folds to T_target, so the materializer's set_run_span is
+    // inert here and the twin needs none.
+    entries.push_back(MDComponentEntry{NoseHooverNptParams{kTinit,
+                                                           100.0,
+                                                           0.0,
+                                                           1000.0,
+                                                           kDt,
+                                                           0.0,
+                                                           3,
+                                                           3,
+                                                           {true, true, true},
+                                                           -1.0},
+                                       std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), kNSteps});
 
     cpu::Frame materialized_frame = make_bonded_lj_frame();
@@ -266,6 +288,131 @@ TEST(TaskMaterializer, MdNptRunMatchesHandBuiltDriverBitwise) {
     sim.build();
     sim.run(direct_frame, kNSteps);
 
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+// The NPT tail knobs (drag, chain lengths, per-axis couple, T_stop ramp)
+// must reach the constructor — every one is set to a non-default value, and
+// the ramp span the materializer installs (`set_run_span(0, n_steps)`) is
+// live because T_stop != T_target.
+TEST(TaskMaterializer, MdNptKnobsRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(MDComponentEntry{NoseHooverNptParams{kTinit,
+                                                           100.0,
+                                                           0.0,
+                                                           1000.0,
+                                                           kDt,
+                                                           0.5,
+                                                           4,
+                                                           4,
+                                                           {true, true, false},
+                                                           50.0},
+                                       std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_bonded_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_bonded_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    cpu::md::NoseHooverNPT nh{
+        kTinit, 100.0, 0.0, 1000.0, kDt, 0.5, 4, 4, {true, true, false}, 50.0};
+    nh.set_run_span(0, kNSteps);
+    sim.set_integrator(std::move(nh));
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero LJ energy — the equivalence check would "
+           "be vacuous";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+// ParrinelloRahmanNPT is an Integrator (it replaces VelocityVerlet, like
+// NoseHooverNPT). Note the constructor order T, P, tau_T, tau_P, dt — it
+// differs from NoseHooverNPT's T, tau_T, P, tau_P, dt, so a swapped
+// materializer arm would show up as a bitwise mismatch here.
+TEST(TaskMaterializer, MdPrNptRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        ParrinelloRahmanNptParams{kTinit, 0.0, 100.0, 1000.0, kDt},
+        std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_bonded_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_bonded_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    // No ramp on PR-NPT — no set_run_span on either side.
+    sim.set_integrator(
+        cpu::md::ParrinelloRahmanNPT{kTinit, 0.0, 100.0, 1000.0, kDt});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero LJ energy — the equivalence check would "
+           "be vacuous";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+// The Berendsen barostat is a Barostat kind: it rides alongside a plain
+// VelocityVerlet integrator via `set_barostat`, unlike the NPT integrators
+// above which replace it.
+TEST(TaskMaterializer, MdBerendsenRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        BerendsenBarostatParams{0.0, 1000.0, kDt, 2.0}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_bonded_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_bonded_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_barostat(cpu::md::Barostat{0.0, 1000.0, kDt, 2.0});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero LJ energy — the equivalence check would "
+           "be vacuous";
     expect_frames_bitwise_equal(materialized_frame, direct_frame);
 }
 
