@@ -117,6 +117,11 @@ class MD:
         sim.set_thermo(200)
         sim.build()
         sim.run(frame, 1000)
+
+    Configuration is one-shot: the execution plan is compiled exactly once,
+    so after the first completed :meth:`run` every setter and :meth:`on`
+    raises ``RuntimeError``. Chunked runs of the *same* configuration stay
+    legal — a different configuration means a new ``MD`` object.
     """
 
     def __init__(self, dt: float | None = None, device: str = "cpu") -> None:
@@ -286,13 +291,20 @@ class MD:
         Prefer categorical setters. *phase* is one of:
         ``initial_integrate``, ``pre_force``, ``force``, ``post_force``,
         ``final_integrate``, ``end_of_step``.
+
+        Raises ``RuntimeError`` once :meth:`run` has completed: ``on`` is the
+        registration entry point, so the refusal lands here rather than at
+        ``PhaseBuilder.add``.
         """
         cpp_phase = _PHASE_MAP.get(phase)
         if cpp_phase is None:
             valid = ", ".join(f'"{p}"' for p in _PHASE_MAP)
             raise ValueError(f"Unknown phase {phase!r}. Valid phases: {valid}")
+        # The handle owns the already-run guard and is asked FIRST: a refused
+        # registration must leave this object's build state untouched.
+        cpp_builder = self._cpp.on(cpp_phase)
         self._built = False
-        return PhaseBuilder(self._cpp.on(cpp_phase))
+        return PhaseBuilder(cpp_builder)
 
     # ------------------------------------------------------------------
     # Execution
@@ -315,6 +327,11 @@ class MD:
         column [e]: once the frame reaches C++ a missing column is
         indistinguishable from deliberate zeros, so it is caught here.
         Insert an explicit zero column to mean zero.
+
+        The plan is compiled on the FIRST call only. A completed run freezes
+        the configuration (every setter refuses afterwards), so calling
+        ``run`` again re-runs that same compiled plan on the frame's current
+        state — it never recompiles.
         """
         if not self._built:
             self.build()

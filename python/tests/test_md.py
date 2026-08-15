@@ -174,6 +174,138 @@ class TestMDRunOnMolrsFrame:
             full_lj_md.run(object(), 1)
 
 
+# ── Late reconfiguration is refused (the MC late-setter contract) ───
+#
+# `Driver::build()` consumes its pending registrations, so a re-build is
+# not a repeatable operation: everything registered before the first
+# `run()` is gone from the driver's pending list afterwards. A setter
+# called after `run()` therefore cannot reach the compiled plan, and the
+# facade's "re-build because a setter ran" path (md/__init__.py: every
+# `set_*` clears `_built`) recompiles from whatever happens to be left.
+#
+# MC already ships the contract this pins for MD — bind_mc.cpp
+# `require_configurable_`: a setter after the first `run()` raises
+# std::runtime_error naming the setter and telling the caller to build a
+# new object. MD must refuse the same way, and the facade's
+# re-build-after-run path goes away with it.
+#
+# Whether the guard lands in the Python facade or in bind_md.cpp is the
+# implementer's call: nanobind maps std::runtime_error to RuntimeError,
+# so these cases read the same either way.
+
+#: Contract substring pinned for the implementer. The refusal message
+#: must contain this phrase; cases 1-3 additionally require it to name
+#: the refused setter, exactly as `require_configurable_` does
+#: (bind_mc.cpp:269 — `std::string(setter) + ": ..."`). Everything else
+#: in the message (the "construct a new MD" how-to) is free text.
+_LATE_SETTER_MATCH: str = r"already run"
+
+
+class TestMdLateSetters:
+    """Reconfiguring an MD after its first ``run()`` fails loud.
+
+    Measured on dev before the fix (none of 1-4 refuses):
+
+    * ``set_evaluator`` — the setter itself is accepted and silently
+      dropped; the *next* ``run()`` dies in the re-build with
+      ``"MD::build(): component 'lj' is a NeighborConsumer but no
+      neighbor list was registered"`` — loud, but blaming a neighbor
+      list the caller did register.
+    * ``set_integrator`` / ``set_thermo`` / ``set_observer`` /
+      ``set_neighbor`` — same shape, and the next ``run()`` dies with
+      ``"driver build: missing required Integrator"``. Re-calling
+      ``set_integrator`` does not repair it: the categorical slot is
+      consumed too, so the message names the one component the caller
+      just installed.
+    * ``on(phase)`` and ``on(phase).add(...)`` are accepted with no
+      error at all.
+
+    So today the observable is a misleading component-validation error
+    (or silence), never the configuration contract.
+    """
+
+    _STEPS: int = 2
+
+    def test_late_set_evaluator_raises(
+        self, argon_frame: "molrs.Frame", full_lj_md: MD
+    ) -> None:
+        """A force term added after the run cannot reach the plan."""
+        full_lj_md.run(argon_frame, self._STEPS)
+        with pytest.raises(RuntimeError, match=_LATE_SETTER_MATCH) as excinfo:
+            full_lj_md.set_evaluator(LJCut(0.0104, 3.4, 8.5))
+        assert "set_evaluator" in str(excinfo.value), (
+            "the refusal must name the setter it refused, like bind_mc.cpp's "
+            "require_configurable_"
+        )
+
+    def test_late_set_integrator_raises(
+        self, argon_frame: "molrs.Frame", full_lj_md: MD
+    ) -> None:
+        """Swapping the integrator mid-chain is a new configuration.
+
+        This is the mirror of the evaluator case and the reason the
+        refusal cannot be left to build-time validation: a re-build that
+        happens to satisfy its component checks would run *something*,
+        just not the Hamiltonian the caller configured.
+        """
+        full_lj_md.run(argon_frame, self._STEPS)
+        with pytest.raises(RuntimeError, match=_LATE_SETTER_MATCH) as excinfo:
+            full_lj_md.set_integrator(VelocityVerlet(0.001))
+        assert "set_integrator" in str(excinfo.value)
+
+    def test_late_set_thermo_raises(
+        self, argon_frame: "molrs.Frame", full_lj_md: MD
+    ) -> None:
+        """Even a harmless-looking cadence change is a reconfiguration.
+
+        ``set_thermo`` changes no physics, which is exactly why it must
+        refuse: today it is the cheapest way to detonate the next
+        ``run()`` with an error about a missing integrator.
+        """
+        full_lj_md.run(argon_frame, self._STEPS)
+        with pytest.raises(RuntimeError, match=_LATE_SETTER_MATCH) as excinfo:
+            full_lj_md.set_thermo(100)
+        assert "set_thermo" in str(excinfo.value)
+
+    def test_late_on_phase_raises(
+        self, argon_frame: "molrs.Frame", full_lj_md: MD
+    ) -> None:
+        """The escape hatch refuses at ``on()``, not at ``add()``.
+
+        PINNED FOR THE IMPLEMENTER: ``on(phase)`` is the registration
+        entry point and today it is also what clears ``_built``, so it is
+        the earliest and cleanest observable — a caller who has already
+        run gets the contract before touching a component, and
+        ``PhaseBuilder`` needs no guard of its own. Naming the entry
+        point in the message is expected but not asserted here.
+        """
+        full_lj_md.run(argon_frame, self._STEPS)
+        with pytest.raises(RuntimeError, match=_LATE_SETTER_MATCH):
+            full_lj_md.on("force")
+
+    def test_two_runs_same_config_still_work(
+        self, argon_frame: "molrs.Frame", full_lj_md: MD
+    ) -> None:
+        """Chunked runs stay legal: the refusal is about *changing* the
+        configuration, never about running again.
+
+        The second leg must also still advance the frame — a guard that
+        turned ``run()`` itself into a one-shot would pass the four cases
+        above and break this one.
+        """
+        full_lj_md.run(argon_frame, self._STEPS)
+        x_mid = np.asarray(argon_frame["atoms"]["x"], dtype=np.float64).copy()
+
+        full_lj_md.run(argon_frame, self._STEPS)
+        x_after = np.asarray(argon_frame["atoms"]["x"], dtype=np.float64)
+
+        assert np.any(x_after != x_mid), (
+            "the second run() of an unchanged configuration must keep "
+            "advancing the same compiled plan"
+        )
+        assert np.isfinite(float(argon_frame.meta["energy"]))
+
+
 # ── Top-level convenience spelling: same objects, same physics ──────
 
 

@@ -270,8 +270,8 @@ struct McHandle {
         if (built_)
             throw std::runtime_error(
                 std::string(setter)
-                + ": the Markov chain has already started and the execution "
-                  "plan is compiled once, so this would silently do nothing. "
+                + ": the sampler has already run and the execution plan is "
+                  "compiled once, so this would silently do nothing. "
                   "Configure the sampler fully before the first run(); a "
                   "different configuration means a new sampler object, which "
                   "is also what starts a fresh chain.");

@@ -29,6 +29,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -128,8 +129,30 @@ struct MdHandle {
     cpu::md::MD driver;
     std::vector<MDComponentEntry> mirror;
 
+    /// @brief Refuse a configuration change once the driver has run.
+    ///
+    /// The execution plan is compiled exactly once (`Driver::build()` consumes
+    /// its pending list, so a re-build is not a repeatable operation), which
+    /// means a setter called after the first `run()` cannot reach the compiled
+    /// plan. Left unchecked it is either silently dropped or detonates the
+    /// next `run()` with a component-validation error naming the wrong
+    /// culprit, so it fails loud here instead. The same refusal applies on the
+    /// MPI launcher path, where the mirror IS re-sent per run: one script must
+    /// mean one configuration whether or not it runs under the launcher.
+    ///
+    /// @param setter Name of the setter being refused, for the message.
+    /// @throws std::runtime_error once `run()` has completed.
+    void require_configurable_(const char* setter) const {
+        if (ran_)
+            throw std::runtime_error(
+                std::string(setter)
+                + ": MD has already run; construct a new MD to change the "
+                  "configuration.");
+    }
+
     template <typename Params, typename Component>
-    void set_categorical(const Params& p, Component comp) {
+    void set_categorical(const char* setter, const Params& p, Component comp) {
+        require_configurable_(setter);
         using P = std::decay_t<Params>;
         if constexpr (std::is_same_v<P, cpu::task::PairLJCutParams>
                       || std::is_same_v<P, cpu::task::BondHarmonicParams>
@@ -196,6 +219,7 @@ struct MdHandle {
     /// Escape hatch: explicit phase + order (maps to Driver::on(phase).add).
     template <typename Params, typename Component>
     void add_on_phase(const Params& p, Component comp, MDBinding binding) {
+        require_configurable_("on(phase).add");
         driver.on(binding.phase).add(std::move(comp), binding.order);
         mirror.push_back(MDComponentEntry{p, binding});
     }
@@ -257,6 +281,10 @@ struct MdHandle {
                 nb::gil_scoped_release release;
                 driver.run(*frame, n_steps);
             }
+            // Armed only on a COMPLETED run: a run that threw (missing
+            // integrator, chargeless frame, ...) left no compiled plan behind,
+            // so the caller must still be able to finish configuring.
+            ran_ = true;
             return;
         }
 #ifdef ATV_HAS_MPI
@@ -274,8 +302,13 @@ struct MdHandle {
             result = dispatcher.dispatch(spec, std::move(work)).frame;
         }
         cpu::to_molrs(result, *fref);
+        ran_ = true;
 #endif
     }
+
+  private:
+    /// True once a `run()` has completed; see `require_configurable_`.
+    bool ran_ = false;
 };
 
 struct MdPhaseBuilder {
@@ -660,19 +693,26 @@ void bind_md(nb::module_& m) {
             "ValueError from MD.set_record(...), not from here.");
 
     // ── MD driver (categorical setters) ──
-    nb::class_<MdHandle>(m, "MD", "Molecular dynamics driver (CPU backend).")
+    nb::class_<MdHandle>(
+        m, "MD",
+        "Molecular dynamics driver (CPU backend).\n\n"
+        "Configure it fully before the first run(): the execution plan is "
+        "compiled exactly once, so every setter — and on(phase) — raises "
+        "RuntimeError afterwards. A different configuration means a new MD "
+        "object. Running again with the same configuration stays legal.")
         .def(nb::init<>())
         .def(
             "set_integrator",
             [](MdHandle& self, const cpu::task::VelocityVerletParams& p) {
-                self.set_categorical(p, cpu::md::VelocityVerlet{p.dt});
+                self.set_categorical("set_integrator", p,
+                                     cpu::md::VelocityVerlet{p.dt});
             },
             nb::arg("comp"), "LAMMPS-style set_integrator (VelocityVerlet).")
         .def(
             "set_integrator",
             [](MdHandle& self, const cpu::task::NoseHooverNptParams& p) {
                 self.set_categorical(
-                    p,
+                    "set_integrator", p,
                     cpu::md::NoseHooverNPT{p.T_target, p.tau_T, p.P_target,
                                            p.tau_P, p.dt, p.drag, p.mtchain,
                                            p.mpchain, p.couple_axis, p.T_stop});
@@ -686,8 +726,9 @@ void bind_md(nb::module_& m) {
             "set_integrator",
             [](MdHandle& self, const cpu::task::ParrinelloRahmanNptParams& p) {
                 self.set_categorical(
-                    p, cpu::md::ParrinelloRahmanNPT{p.T_target, p.P_target,
-                                                    p.tau_T, p.tau_P, p.dt});
+                    "set_integrator", p,
+                    cpu::md::ParrinelloRahmanNPT{p.T_target, p.P_target,
+                                                 p.tau_T, p.tau_P, p.dt});
             },
             nb::arg("comp"),
             "LAMMPS-style set_integrator. ParrinelloRahmanNPT is the "
@@ -696,7 +737,7 @@ void bind_md(nb::module_& m) {
         .def(
             "set_barostat",
             [](MdHandle& self, const cpu::task::BerendsenBarostatParams& p) {
-                self.set_categorical(p,
+                self.set_categorical("set_barostat", p,
                                      cpu::md::Barostat{p.P_target, p.tau_P,
                                                        p.dt, p.bulk_modulus});
             },
@@ -711,29 +752,33 @@ void bind_md(nb::module_& m) {
             "set_thermostat",
             [](MdHandle& self, const cpu::task::NoseHooverParams& p) {
                 self.set_categorical(
-                    p, cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});
+                    "set_thermostat", p,
+                    cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});
             },
             nb::arg("comp"), "LAMMPS-style set_thermostat (NoseHoover).")
         .def(
             "set_thermostat",
             [](MdHandle& self, const cpu::task::FixLangevinParams& p) {
-                self.set_categorical(p, cpu::md::FixLangevin{p.T_start,
-                                                             p.T_stop, p.damp,
-                                                             p.dt, p.seed});
+                self.set_categorical("set_thermostat", p,
+                                     cpu::md::FixLangevin{p.T_start, p.T_stop,
+                                                          p.damp, p.dt,
+                                                          p.seed});
             },
             nb::arg("comp"), "LAMMPS-style set_thermostat (Langevin).")
         .def(
             "set_thermostat",
             [](MdHandle& self, const cpu::task::FixCsvrParams& p) {
                 self.set_categorical(
-                    p, cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
+                    "set_thermostat", p,
+                    cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
             },
             nb::arg("comp"), "LAMMPS-style set_thermostat (CSVR).")
         .def(
             "set_observer",
             [](MdHandle& self, const cpu::task::InitVelocityParams& p) {
                 self.set_categorical(
-                    p, cpu::md::InitVelocity{p.temperature, p.seed});
+                    "set_observer", p,
+                    cpu::md::InitVelocity{p.temperature, p.seed});
             },
             nb::arg("comp"), "LAMMPS-style set_observer (e.g. InitVelocity).")
         // The set_evaluator slot is plural: every call appends another
@@ -744,7 +789,8 @@ void bind_md(nb::module_& m) {
             "set_evaluator_pair_lj_cut",
             [](MdHandle& self, const cpu::task::PairLJCutParams& p) {
                 self.set_categorical(
-                    p, cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                    "set_evaluator", p,
+                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
             },
             nb::arg("comp"),
             "Append the Lennard-Jones 12-6 pair evaluator. Needs a "
@@ -752,7 +798,8 @@ void bind_md(nb::module_& m) {
         .def(
             "set_evaluator_pair_coul_cut",
             [](MdHandle& self, const cpu::task::PairCoulCutParams& p) {
-                self.set_categorical(p, cpu::PairCoulCut{p.cutoff});
+                self.set_categorical("set_evaluator", p,
+                                     cpu::PairCoulCut{p.cutoff});
             },
             nb::arg("comp"),
             "Append the truncated Coulomb pair evaluator. Self-contained — "
@@ -763,7 +810,8 @@ void bind_md(nb::module_& m) {
         .def(
             "set_evaluator_coul_long",
             [](MdHandle& self, const cpu::task::CoulLongParams& p) {
-                self.set_categorical(p, cpu::CoulLong{p.alpha, p.cutoff});
+                self.set_categorical("set_evaluator", p,
+                                     cpu::CoulLong{p.alpha, p.cutoff});
             },
             nb::arg("comp"),
             "Append the real-space half of an Ewald/PME split. Half a "
@@ -778,7 +826,8 @@ void bind_md(nb::module_& m) {
                 // Move-only (it owns FFTW plans): the prvalue goes straight
                 // into the sink parameter, no named local to move from.
                 self.set_categorical(
-                    p, cpu::KSpacePME{p.alpha, p.grid_spacing, p.order});
+                    "set_evaluator", p,
+                    cpu::KSpacePME{p.alpha, p.grid_spacing, p.order});
             },
             nb::arg("comp"),
             "Append the reciprocal-space half of the same Ewald/PME split. "
@@ -803,7 +852,7 @@ void bind_md(nb::module_& m) {
                 const cpu::task::AM1EvaluatorParams p{
                     method.charge, method.multiplicity, method.max_iter,
                     method.density_tol, method.energy_tol};
-                self.set_categorical(p,
+                self.set_categorical("set_evaluator", p,
                                      cpu::semiempirical::AM1Evaluator{
                                          p.charge, p.multiplicity, p.max_iter,
                                          p.density_tol, p.energy_tol}
@@ -828,7 +877,8 @@ void bind_md(nb::module_& m) {
         .def(
             "set_evaluator_bond_harmonic",
             [](MdHandle& self, const cpu::task::BondHarmonicParams& p) {
-                self.set_categorical(p, cpu::BondHarmonic{p.K, p.r0});
+                self.set_categorical("set_evaluator", p,
+                                     cpu::BondHarmonic{p.K, p.r0});
             },
             nb::arg("comp"),
             "Append the harmonic bond evaluator. Reads the frame's bond "
@@ -836,7 +886,8 @@ void bind_md(nb::module_& m) {
         .def(
             "set_evaluator_angle_harmonic",
             [](MdHandle& self, const cpu::task::AngleHarmonicParams& p) {
-                self.set_categorical(p, cpu::AngleHarmonic{p.K, p.theta0});
+                self.set_categorical("set_evaluator", p,
+                                     cpu::AngleHarmonic{p.K, p.theta0});
             },
             nb::arg("comp"),
             "Append the harmonic angle evaluator. Reads the frame's angle "
@@ -845,7 +896,8 @@ void bind_md(nb::module_& m) {
             "set_evaluator_dihedral_multi_harmonic",
             [](MdHandle& self,
                const cpu::task::DihedralMultiHarmonicParams& p) {
-                self.set_categorical(p, cpu::DihedralMultiHarmonic{p.Cn});
+                self.set_categorical("set_evaluator", p,
+                                     cpu::DihedralMultiHarmonic{p.Cn});
             },
             nb::arg("comp"),
             "Append the multi-harmonic dihedral evaluator. Reads the frame's "
@@ -853,14 +905,15 @@ void bind_md(nb::module_& m) {
         .def(
             "set_neighbor",
             [](MdHandle& self, const cpu::task::NeighborListParams& p) {
-                self.set_categorical(p,
+                self.set_categorical("set_neighbor", p,
                                      cpu::md::NeighborList<>{p.cutoff, p.skin});
             },
             nb::arg("comp"), "LAMMPS-style set_neighbor.")
         .def(
             "set_thermo",
             [](MdHandle& self, int every) {
-                self.set_categorical(cpu::task::ThermoParams{every},
+                self.set_categorical("set_thermo",
+                                     cpu::task::ThermoParams{every},
                                      cpu::Thermo{every});
             },
             nb::arg("every"), "LAMMPS-style set_thermo(N) print cadence.")
@@ -868,14 +921,15 @@ void bind_md(nb::module_& m) {
             "set_record",
             [](MdHandle& self, const cpu::task::ThermoParams& p) {
                 // Thermo as a record/observer-style component via set_thermo.
-                self.set_categorical(p, cpu::Thermo{p.freq});
+                self.set_categorical("set_record", p, cpu::Thermo{p.freq});
             },
             nb::arg("comp"),
             "Register a recorder; Thermo is installed via set_thermo cadence.")
         .def(
             "set_record",
             [](MdHandle& self, const cpu::task::XyzRecorderParams& p) {
-                self.set_categorical(p, cpu::XyzRecorder{p.filename, p.freq});
+                self.set_categorical("set_record", p,
+                                     cpu::XyzRecorder{p.filename, p.freq});
             },
             nb::arg("comp"),
             "Register the XYZ trajectory recorder (LAMMPS `dump`). Binds at "
@@ -884,6 +938,10 @@ void bind_md(nb::module_& m) {
         .def(
             "on",
             [](MdHandle& self, md::Phase phase) {
+                // Refused HERE rather than at the builder's add(): on() is the
+                // registration entry point, so a caller who has already run
+                // gets the contract before constructing a component.
+                self.require_configurable_("on");
                 return MdPhaseBuilder{&self, phase};
             },
             nb::arg("phase"),
@@ -900,6 +958,10 @@ void bind_md(nb::module_& m) {
              "frame's current state: the step index restarts at 0 and any "
              "temperature ramp is re-installed over [0, n_steps]. A single "
              "continuous ramp is one run() with the full step budget.\n\n"
+             "A completed run() freezes the configuration: the plan is "
+             "compiled once, so every setter and on(phase) raises "
+             "RuntimeError from here on. Running again is still allowed and "
+             "re-runs that same plan.\n\n"
              "Raises RuntimeError before any compute if a Coulomb evaluator "
              "is registered and the frame's 'atoms' block carries no "
              "'charge' column [e] — a forgotten column is indistinguishable "
