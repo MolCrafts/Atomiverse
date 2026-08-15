@@ -49,6 +49,20 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("LBFGS", "atomiverse.minimizer", "LBFGS"),
     ("ForceConverged", "atomiverse.minimizer", "ForceConverged"),
     ("MinimizeResult", "atomiverse.minimizer", "MinimizeResult"),
+    # Geometry optimization (spec py-minimize-full): unconditional,
+    # ATV_BUILD_MINIMIZER defaults ON. `cpu/minimize/` is one backend-root
+    # directory, so all eight share the `atomiverse.minimizer` deep module —
+    # the criteria included, even though C++ files them under
+    # `cpu/driver/criteria.h` beside ForceConverged, which is already
+    # re-exported from here.
+    ("CG", "atomiverse.minimizer", "CG"),
+    ("FIRE", "atomiverse.minimizer", "FIRE"),
+    ("IsotropicCellRelax", "atomiverse.minimizer", "IsotropicCellRelax"),
+    ("AnisotropicCellRelax", "atomiverse.minimizer", "AnisotropicCellRelax"),
+    ("TriclinicCellRelax", "atomiverse.minimizer", "TriclinicCellRelax"),
+    ("JointIsotropicRelax", "atomiverse.minimizer", "JointIsotropicRelax"),
+    ("PressureConverged", "atomiverse.minimizer", "PressureConverged"),
+    ("StressConverged", "atomiverse.minimizer", "StressConverged"),
     ("NeighborList", "atomiverse.neighbor", "NeighborList"),
     ("PairLJCut", "atomiverse.potentials.pair", "LJCut"),
     ("BondHarmonic", "atomiverse.potentials.bond", "Harmonic"),
@@ -134,11 +148,12 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 27 entries (18 + the 7 unconditional Monte Carlo
+        """The base has 35 entries (18 + the 7 unconditional Monte Carlo
         rows of spec py-mc + the 2 unconditional vibration rows of spec
-        py-vib); a PW build contributes two types (PW, PWResult) and an HF
-        build the four concrete SCF methods."""
-        expected = 27 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        py-vib + the 8 unconditional geometry-optimization rows of spec
+        py-minimize-full); a PW build contributes two types (PW, PWResult)
+        and an HF build the four concrete SCF methods."""
+        expected = 35 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
         assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(

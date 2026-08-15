@@ -1,5 +1,5 @@
 /// @file cpu/task/task_codec.cpp
-/// @brief TaskSpec v4 typed-sum codec; no historic decoder.
+/// @brief TaskSpec v5 typed-sum codec; no historic decoder.
 
 #include "atomiverse/cpu/task/task_codec.h"
 
@@ -218,6 +218,51 @@ void write(Writer& w, const LBFGSParams& p) {
     w.f64(p.alpha0);
     w.i32(p.max_ls);
 }
+// The six remaining minimize optimizers. Field order is each mirror's
+// declaration order, which is also the member declaration order of the C++
+// class the materializer replays — so a reordered struct is a wire break, and
+// is caught by the field-exact roundtrip.
+void write(Writer& w, const CGParams& p) { w.f64(p.alpha0); }
+void write(Writer& w, const FIREParams& p) {
+    w.f64(p.dt0);
+    w.f64(p.dt_max);
+    w.i32(p.n_min);
+    w.f64(p.f_inc);
+    w.f64(p.f_dec);
+    w.f64(p.alpha0);
+    w.f64(p.f_alpha);
+    w.f64(p.max_step);
+}
+void write(Writer& w, const IsotropicCellRelaxParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.alpha0);
+    w.f64(p.max_scale);
+    w.f64(p.bulk_mod);
+}
+void write(Writer& w, const AnisotropicCellRelaxParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.alpha0);
+    w.f64(p.max_scale);
+    w.f64(p.bulk_mod);
+    // One byte per axis, in x/y/z order — the `NoseHooverNptParams` couple
+    // mask precedent. A single byte for all three would survive a symmetric
+    // payload and silently mangle an asymmetric one.
+    w.u8(p.relax_x ? 1 : 0);
+    w.u8(p.relax_y ? 1 : 0);
+    w.u8(p.relax_z ? 1 : 0);
+}
+void write(Writer& w, const TriclinicCellRelaxParams& p) {
+    w.f64(p.alpha0);
+    w.f64(p.max_strain);
+    w.f64(p.bulk_mod);
+}
+void write(Writer& w, const JointIsotropicRelaxParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.atom_step);
+    w.f64(p.alpha0);
+    w.f64(p.max_scale);
+    w.f64(p.bulk_mod);
+}
 void write(Writer& w, const ForceConvergedParams& p) {
     w.f64(p.ftol);
     w.f64(p.rms_ftol);
@@ -225,10 +270,35 @@ void write(Writer& w, const ForceConvergedParams& p) {
     w.f64(p.rms_dtol);
     w.f64(p.etol);
 }
+void write(Writer& w, const PressureConvergedParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.ptol);
+}
+void write(Writer& w, const StressConvergedParams& p) {
+    w.f64(p.sigma_target);
+    w.f64(p.stol);
+    w.u8(p.check_x ? 1 : 0);
+    w.u8(p.check_y ? 1 : 0);
+    w.u8(p.check_z ? 1 : 0);
+}
 
 template <typename Variant>
 void write_variant(Writer& w, const Variant& params) {
     std::visit([&](const auto& p) { write(w, p); }, params);
+}
+
+/// @brief Write the `MinimizeTask` stop policy: id then payload.
+///
+/// The criterion is the LAST thing the Minimize packer lays down, so the id
+/// has to precede its fields — a decoder reading a fixed five doubles there
+/// ends up short or long, and `require_end()` is what turns that into an error
+/// instead of a silently wrong tolerance.
+///
+/// @param w         Byte sink.
+/// @param criterion The typed stop policy of the task being packed.
+void write_criterion(Writer& w, const MinimizeCriterionParams& criterion) {
+    w.u16(static_cast<std::uint16_t>(criterion_id(criterion)));
+    std::visit([&](const auto& c) { write(w, c); }, criterion);
 }
 
 ComponentId decode_component_id(std::uint16_t raw) {
@@ -275,15 +345,49 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::XyzRecorder;
     case 20:
         return ComponentId::PWEvaluator;
+    case 21:
+        return ComponentId::CG;
+    case 22:
+        return ComponentId::FIRE;
+    case 23:
+        return ComponentId::IsotropicCellRelax;
+    case 24:
+        return ComponentId::AnisotropicCellRelax;
+    case 25:
+        return ComponentId::TriclinicCellRelax;
+    case 26:
+        return ComponentId::JointIsotropicRelax;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
     }
 }
 
+/// @brief Is this component id a Minimize-only one?
+///
+/// Seven optimizers share one home, so `wrong_task` asks this rather than
+/// spelling seven `||` arms at the point where it builds the diagnostic.
+///
+/// @param id A decoded component id.
+/// @return True for the optimizers `MinimizeTask` alone may carry.
+bool is_minimize_only(ComponentId id) noexcept {
+    switch (id) {
+    case ComponentId::LBFGS:
+    case ComponentId::CG:
+    case ComponentId::FIRE:
+    case ComponentId::IsotropicCellRelax:
+    case ComponentId::AnisotropicCellRelax:
+    case ComponentId::TriclinicCellRelax:
+    case ComponentId::JointIsotropicRelax:
+        return true;
+    default:
+        return false;
+    }
+}
+
 [[noreturn]] void wrong_task(ComponentId id, TaskKind target) {
     const char* source = "MD";
-    if (id == ComponentId::LBFGS)
+    if (is_minimize_only(id))
         source = "Minimize";
     else if (id == ComponentId::AM1Evaluator)
         // Two legal homes: the whole of a SinglePoint task, and an evaluator
@@ -396,7 +500,15 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return read_am1(r);
     case ComponentId::PWEvaluator:
         return read_pw(r);
+    // Every Minimize-only optimizer shares one refusal arm: naming one in an
+    // MD payload is a wrong-home error, not an unknown component.
     case ComponentId::LBFGS:
+    case ComponentId::CG:
+    case ComponentId::FIRE:
+    case ComponentId::IsotropicCellRelax:
+    case ComponentId::AnisotropicCellRelax:
+    case ComponentId::TriclinicCellRelax:
+    case ComponentId::JointIsotropicRelax:
         wrong_task(id, TaskKind::MD);
     }
     throw std::runtime_error("task_codec: invalid MD component id");
@@ -410,13 +522,52 @@ MinimizeComponentParams read_minimize_params(Reader& r, ComponentId id) {
         return NeighborListParams{r.f64(), r.f64()};
     case ComponentId::LBFGS:
         return LBFGSParams{r.i32(), r.f64(), r.i32()};
+    case ComponentId::CG:
+        return CGParams{r.f64()};
+    case ComponentId::FIRE:
+        return FIREParams{r.f64(), r.f64(), r.i32(), r.f64(),
+                          r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::IsotropicCellRelax:
+        return IsotropicCellRelaxParams{r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::AnisotropicCellRelax:
+        return AnisotropicCellRelaxParams{r.f64(),    r.f64(),     r.f64(),
+                                          r.f64(),    r.u8() != 0, r.u8() != 0,
+                                          r.u8() != 0};
+    case ComponentId::TriclinicCellRelax:
+        return TriclinicCellRelaxParams{r.f64(), r.f64(), r.f64()};
+    case ComponentId::JointIsotropicRelax:
+        return JointIsotropicRelaxParams{r.f64(), r.f64(), r.f64(), r.f64(),
+                                         r.f64()};
     default:
         wrong_task(id, TaskKind::Minimize);
     }
 }
 
-ForceConvergedParams read_convergence(Reader& r) {
-    return ForceConvergedParams{r.f64(), r.f64(), r.f64(), r.f64(), r.f64()};
+/// @brief Read the `MinimizeTask` stop policy written by `write_criterion`.
+///
+/// Dispatches on the leading `u16`: `PressureConverged` and the first two
+/// `ForceConverged` tolerances are both "two doubles", so an id that was
+/// written but ignored would decode a pressure test back as a force test with
+/// entirely plausible numbers.
+///
+/// @param r Byte source, positioned at the criterion id.
+/// @return The decoded criterion alternative.
+/// @throws std::runtime_error On an unknown criterion id.
+MinimizeCriterionParams read_criterion(Reader& r) {
+    const std::uint16_t raw = r.u16();
+    switch (raw) {
+    case 0:
+        return ForceConvergedParams{r.f64(), r.f64(), r.f64(), r.f64(),
+                                    r.f64()};
+    case 1:
+        return PressureConvergedParams{r.f64(), r.f64()};
+    case 2:
+        return StressConvergedParams{r.f64(), r.f64(), r.u8() != 0, r.u8() != 0,
+                                     r.u8() != 0};
+    default:
+        throw std::runtime_error("task_codec: unknown minimize criterion_id "
+                                 + std::to_string(raw));
+    }
 }
 
 template <typename Phase>
@@ -487,7 +638,7 @@ std::vector<std::byte> pack(const TaskSpec& spec) {
             write_variant(w, entry.params);
         }
         w.i64(task.max_iter);
-        write(w, task.convergence);
+        write_criterion(w, task.convergence);
     }
     return out;
 }
@@ -542,7 +693,7 @@ TaskSpec unpack(const std::byte* data, std::size_t size) {
             MinimizeComponentEntry{read_minimize_params(r, id), binding});
     }
     task.max_iter = r.i64();
-    task.convergence = read_convergence(r);
+    task.convergence = read_criterion(r);
     r.require_end();
     return TaskSpec(std::move(task));
 }

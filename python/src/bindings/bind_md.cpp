@@ -17,6 +17,7 @@
 /// launcher TaskSpec path stays byte-compatible. ``MdHandle`` materializes the
 /// real C++ components on each setter and records the mirror entry.
 
+#include "evaluator_setters.h"
 #include "molrs_frame_bridge.h"
 
 #include <nanobind/stl/array.h>
@@ -47,26 +48,15 @@
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/molrs_exchange.h"
-#ifdef ATV_HAS_KSPACE
-#include "atomiverse/cpu/longrange/pme.h"
-#endif
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#ifdef ATV_HAS_PW
-// `copy_pw_params` is the one definition of "the same method, no state".
-#include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
-#endif
+// The nine force sources this file used to spell out are registered from
+// `evaluator_setters.h`, which owns their headers and their build gates.
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
-#include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
-#include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/thermo.h"
 #include "atomiverse/cpu/record/xyz_recorder.h"
-#ifdef ATV_HAS_SEMIEMPIRICAL
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
-#endif
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -705,14 +695,14 @@ void bind_md(nb::module_& m) {
             "ValueError from MD.set_record(...), not from here.");
 
     // ── MD driver (categorical setters) ──
-    nb::class_<MdHandle>(
+    nb::class_<MdHandle> md(
         m, "MD",
         "Molecular dynamics driver (CPU backend).\n\n"
         "Configure it fully before the first run(): the execution plan is "
         "compiled exactly once, so every setter — and on(phase) — raises "
         "RuntimeError afterwards. A different configuration means a new MD "
-        "object. Running again with the same configuration stays legal.")
-        .def(nb::init<>())
+        "object. Running again with the same configuration stays legal.");
+    md.def(nb::init<>())
         .def(
             "set_integrator",
             [](MdHandle& self, const cpu::task::VelocityVerletParams& p) {
@@ -792,193 +782,58 @@ void bind_md(nb::module_& m) {
                     "set_observer", p,
                     cpu::md::InitVelocity{p.temperature, p.seed});
             },
-            nb::arg("comp"), "LAMMPS-style set_observer (e.g. InitVelocity).")
-        // The set_evaluator slot is plural: every call appends another
-        // energy/force source and they are summed. The typed spellings below
-        // are what Python's single `MD.set_evaluator` dispatches to by
-        // component type.
-        .def(
-            "set_evaluator_pair_lj_cut",
-            [](MdHandle& self, const cpu::task::PairLJCutParams& p) {
-                self.set_categorical(
-                    "set_evaluator", p,
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
-            },
-            nb::arg("comp"),
-            "Append the Lennard-Jones 12-6 pair evaluator. Needs a "
-            "NeighborList whose cutoff is >= the LJ cutoff.")
-        .def(
-            "set_evaluator_pair_coul_cut",
-            [](MdHandle& self, const cpu::task::PairCoulCutParams& p) {
-                self.set_categorical("set_evaluator", p,
-                                     cpu::PairCoulCut{p.cutoff});
-            },
-            nb::arg("comp"),
-            "Append the truncated Coulomb pair evaluator. Self-contained — "
-            "it takes no reciprocal-space partner, so do NOT combine it with "
-            "CoulLong or KSpacePME. Needs a NeighborList whose cutoff is >= "
-            "the Coulomb cutoff, and a per-atom 'charge' column [e] on the "
-            "frame handed to run().")
-        .def(
-            "set_evaluator_coul_long",
-            [](MdHandle& self, const cpu::task::CoulLongParams& p) {
-                self.set_categorical("set_evaluator", p,
-                                     cpu::CoulLong{p.alpha, p.cutoff});
-            },
-            nb::arg("comp"),
-            "Append the real-space half of an Ewald/PME split. Half a "
-            "Hamiltonian on its own: build() requires exactly one "
-            "reciprocal-space partner (KSpacePME) at the SAME alpha [1/A]. "
-            "Needs a NeighborList whose cutoff is >= the Coulomb cutoff, and "
-            "a per-atom 'charge' column [e] on the frame handed to run().")
-#ifdef ATV_HAS_KSPACE
-        .def(
-            "set_evaluator_kspace_pme",
-            [](MdHandle& self, const cpu::task::KSpacePmeParams& p) {
-                // Move-only (it owns FFTW plans): the prvalue goes straight
-                // into the sink parameter, no named local to move from.
-                self.set_categorical(
-                    "set_evaluator", p,
-                    cpu::KSpacePME{p.alpha, p.grid_spacing, p.order});
-            },
-            nb::arg("comp"),
-            "Append the reciprocal-space half of the same Ewald/PME split. "
-            "build() requires exactly one real-space partner (CoulLong) at "
-            "the SAME alpha [1/A]. Bound only on an extension built with "
-            "ATV_BUILD_KSPACE=ON.")
-#endif
-#ifdef ATV_HAS_SEMIEMPIRICAL
-        .def(
-            "set_evaluator_am1",
-            [](MdHandle& self,
-               const cpu::semiempirical::AM1Evaluator& evaluator) {
-                // The only evaluator setter handed a LIVE component rather
-                // than a params mirror: AM1Evaluator is bound for its own
-                // single_point / forces surface, so Python already has the
-                // real thing. Read the five SCF parameters back off the
-                // owned method — the same five the MPI launcher path copies
-                // in bind_semiempirical.cpp — and let set_categorical build
-                // the driver's own copy from them, so the wire mirror and
-                // the registered component cannot disagree.
-                const cpu::semiempirical::AM1& method = evaluator.method();
-                const cpu::task::AM1EvaluatorParams p{
-                    method.charge, method.multiplicity, method.max_iter,
-                    method.density_tol, method.energy_tol};
-                self.set_categorical("set_evaluator", p,
-                                     cpu::semiempirical::AM1Evaluator{
-                                         p.charge, p.multiplicity, p.max_iter,
-                                         p.density_tol, p.energy_tol}
-                                         .with_gradient(true));
-            },
-            nb::arg("comp"),
-            "Append the AM1 semiempirical evaluator as an MD force source — "
-            "Born-Oppenheimer dynamics, meaning the electrons are "
-            "re-converged at every geometry the nuclei reach: one "
-            "self-consistent-field (SCF) solve per step, with forces from the "
-            "fixed-density central finite difference (step 1e-4 A). Takes no "
-            "NeighborList (AM1 is molecular, not a pair style) and reads the "
-            "frame's 'atomic_number' column [Z]. Like any MD run it also "
-            "needs a per-atom 'mass' column [amu] — the integrator divides by "
-            "it.\n\n"
-            "The driver installs a FRESH gradient-enabled copy of the five "
-            "SCF parameters: the object you pass keeps its own state, so "
-            "last_result() on it is NOT populated by run() — per-step "
-            "results (energy [eV], charges [e], forces [eV/A]) land on the "
-            "frame.")
-#endif
-#ifdef ATV_HAS_PW
-        .def(
-            "set_evaluator_pw",
-            [](MdHandle& self, const cpu::pw::PWEvaluator& evaluator) {
-                // Handed a LIVE component, like set_evaluator_am1 and for the
-                // same reason: PWEvaluator is bound in bind_pw.cpp so Python
-                // already holds the real thing. Read the fifteen method
-                // members back off the owned solver — the same fifteen the
-                // MPI launcher payload carries — and let set_categorical
-                // build the driver's own copy from them, so the wire mirror
-                // and the registered component cannot disagree.
-                const cpu::pw::PW& method = evaluator.method();
-                // The two enum members cross the wire as their integer
-                // values: `cpu::task::PwEvaluatorParams` is compiled without
-                // the plane-wave headers those enums live in.
-                const cpu::task::PwEvaluatorParams p{
-                    method.upf_path,
-                    method.gth_name,
-                    method.ecut_ry,
-                    method.k_mesh,
-                    method.tol,
-                    method.max_iter,
-                    method.mix_beta,
-                    method.pulay_depth,
-                    static_cast<int>(method.xc),
-                    method.spin_polarized,
-                    method.multiplicity,
-                    static_cast<int>(method.smearing),
-                    method.degauss,
-                    method.mp_order,
-                    method.extra_bands};
-                self.set_categorical(
-                    "set_evaluator", p,
-                    cpu::pw::PWEvaluator{
-                        cpu::pw::internal::copy_pw_params(method)}
-                        .with_gradient(true));
-            },
-            nb::arg("comp"),
-            "Append the plane-wave DFT evaluator as an MD force source — "
-            "Born-Oppenheimer dynamics on a plane-wave Hamiltonian, meaning "
-            "the electrons are re-converged at every geometry the nuclei "
-            "reach, with analytic ionic forces (local Hellmann-Feynman + "
-            "Ewald + Kleinman-Bylander) taken at the converged density. "
-            "Takes no NeighborList (a plane-wave Hamiltonian is not a pair "
-            "style) and reads the frame's 'atomic_number' column [Z]. Like "
-            "any MD run it needs a per-atom 'mass' column [amu], and like "
-            "any plane-wave run it needs a box.\n\n"
-            "Budget it deliberately: a step costs TWO self-consistent-field "
-            "solves — the energy solve, then the analytic force path's own — "
-            "and each is seconds of work at production settings, so a Python "
-            "smoke run wants a small cell, a low ecut_ry and a modest "
-            "max_iter.\n\n"
-            "The driver installs a FRESH gradient-enabled copy of the "
-            "fifteen method parameters: the object you pass keeps its own "
-            "state, so last_result() on it is NOT populated by run() — "
-            "per-step results (energy [eV], forces [eV/A]) land on the "
-            "frame.")
-#endif
-        .def(
-            "set_evaluator_bond_harmonic",
-            [](MdHandle& self, const cpu::task::BondHarmonicParams& p) {
-                self.set_categorical("set_evaluator", p,
-                                     cpu::BondHarmonic{p.K, p.r0});
-            },
-            nb::arg("comp"),
-            "Append the harmonic bond evaluator. Reads the frame's bond "
-            "topology; parameters are indexed by bond type.")
-        .def(
-            "set_evaluator_angle_harmonic",
-            [](MdHandle& self, const cpu::task::AngleHarmonicParams& p) {
-                self.set_categorical("set_evaluator", p,
-                                     cpu::AngleHarmonic{p.K, p.theta0});
-            },
-            nb::arg("comp"),
-            "Append the harmonic angle evaluator. Reads the frame's angle "
-            "topology; parameters are indexed by angle type.")
-        .def(
-            "set_evaluator_dihedral_multi_harmonic",
-            [](MdHandle& self,
-               const cpu::task::DihedralMultiHarmonicParams& p) {
-                self.set_categorical("set_evaluator", p,
-                                     cpu::DihedralMultiHarmonic{p.Cn});
-            },
-            nb::arg("comp"),
-            "Append the multi-harmonic dihedral evaluator. Reads the frame's "
-            "dihedral topology; coefficients are indexed by dihedral type.")
-        .def(
-            "set_neighbor",
-            [](MdHandle& self, const cpu::task::NeighborListParams& p) {
-                self.set_categorical("set_neighbor", p,
-                                     cpu::md::NeighborList<>{p.cutoff, p.skin});
-            },
-            nb::arg("comp"), "LAMMPS-style set_neighbor.")
+            nb::arg("comp"), "LAMMPS-style set_observer (e.g. InitVelocity).");
+
+    // The set_evaluator slot is plural: every call appends another
+    // energy/force source and they are summed. The typed spellings are what
+    // Python's single `MD.set_evaluator` dispatches to by component type —
+    // registered from `evaluator_setters.h`, the one place that knows the nine
+    // force sources, because `Minimize` exposes the very same nine names.
+    bind_evaluator_setters(
+        md,
+        // set_evaluator_am1 — the MD reading of the same component.
+        "Append the AM1 semiempirical evaluator as an MD force source — "
+        "Born-Oppenheimer dynamics, meaning the electrons are "
+        "re-converged at every geometry the nuclei reach: one "
+        "self-consistent-field (SCF) solve per step, with forces from the "
+        "fixed-density central finite difference (step 1e-4 A). Takes no "
+        "NeighborList (AM1 is molecular, not a pair style) and reads the "
+        "frame's 'atomic_number' column [Z]. Like any MD run it also "
+        "needs a per-atom 'mass' column [amu] — the integrator divides by "
+        "it.\n\n"
+        "The driver installs a FRESH gradient-enabled copy of the five "
+        "SCF parameters: the object you pass keeps its own state, so "
+        "last_result() on it is NOT populated by run() — per-step "
+        "results (energy [eV], charges [e], forces [eV/A]) land on the "
+        "frame.",
+        // set_evaluator_pw — the MD reading of the same component.
+        "Append the plane-wave DFT evaluator as an MD force source — "
+        "Born-Oppenheimer dynamics on a plane-wave Hamiltonian, meaning "
+        "the electrons are re-converged at every geometry the nuclei "
+        "reach, with analytic ionic forces (local Hellmann-Feynman + "
+        "Ewald + Kleinman-Bylander) taken at the converged density. "
+        "Takes no NeighborList (a plane-wave Hamiltonian is not a pair "
+        "style) and reads the frame's 'atomic_number' column [Z]. Like "
+        "any MD run it needs a per-atom 'mass' column [amu], and like "
+        "any plane-wave run it needs a box.\n\n"
+        "Budget it deliberately: a step costs TWO self-consistent-field "
+        "solves — the energy solve, then the analytic force path's own — "
+        "and each is seconds of work at production settings, so a Python "
+        "smoke run wants a small cell, a low ecut_ry and a modest "
+        "max_iter.\n\n"
+        "The driver installs a FRESH gradient-enabled copy of the "
+        "fifteen method parameters: the object you pass keeps its own "
+        "state, so last_result() on it is NOT populated by run() — "
+        "per-step results (energy [eV], forces [eV/A]) land on the "
+        "frame.");
+
+    md.def(
+          "set_neighbor",
+          [](MdHandle& self, const cpu::task::NeighborListParams& p) {
+              self.set_categorical("set_neighbor", p,
+                                   cpu::md::NeighborList<>{p.cutoff, p.skin});
+          },
+          nb::arg("comp"), "LAMMPS-style set_neighbor.")
         .def(
             "set_thermo",
             [](MdHandle& self, int every) {

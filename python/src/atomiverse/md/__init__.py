@@ -21,6 +21,10 @@ writes positions / velocities / forces / energy back into the *same*
 from __future__ import annotations
 
 from atomiverse._binding import _cpp
+from atomiverse._dispatch import (
+    EVALUATOR_DISPATCH as _EVALUATOR_DISPATCH,
+    unsupported_evaluator_message as _unsupported_evaluator_message,
+)
 
 # ---------------------------------------------------------------------------
 # Phase name → C++ enum (escape hatch for on(phase).add)
@@ -34,34 +38,11 @@ _PHASE_MAP: dict[str, object] = {
     "end_of_step": _cpp.Phase.end_of_step,
 }
 
-# Evaluator types → typed C++ setter (plural set_evaluator)
-_EVALUATOR_DISPATCH: dict[type, str] = {
-    _cpp.PairLJCut: "set_evaluator_pair_lj_cut",
-    _cpp.PairCoulCut: "set_evaluator_pair_coul_cut",
-    _cpp.CoulLong: "set_evaluator_coul_long",
-    _cpp.BondHarmonic: "set_evaluator_bond_harmonic",
-    _cpp.AngleHarmonic: "set_evaluator_angle_harmonic",
-    _cpp.DihedralMultiHarmonic: "set_evaluator_dihedral_multi_harmonic",
-}
-
-# The PME reciprocal solver is compile-optional (ATV_BUILD_KSPACE / FFTW3),
-# so it joins the allow-list only on an extension that carries it.
-if hasattr(_cpp, "KSpacePME"):
-    _EVALUATOR_DISPATCH[_cpp.KSpacePME] = "set_evaluator_kspace_pme"
-
-# AM1 is the semiempirical force source (ATV_BUILD_SEMIEMPIRICAL) — with it
-# registered the MD loop is Born-Oppenheimer dynamics. Capability-probed for
-# the same reason as KSpacePME: the wheel builds it, a hand-configured
-# extension need not.
-if hasattr(_cpp, "AM1Evaluator"):
-    _EVALUATOR_DISPATCH[_cpp.AM1Evaluator] = "set_evaluator_am1"
-
-# Plane-wave DFT is the other Born-Oppenheimer force source
-# (ATV_BUILD_PW / FFTW3): analytic ionic forces from a re-converged density,
-# two SCF solves per force-producing step. Capability-probed like the two
-# above.
-if hasattr(_cpp, "PWEvaluator"):
-    _EVALUATOR_DISPATCH[_cpp.PWEvaluator] = "set_evaluator_pw"
+# Evaluator types → typed C++ setter (plural set_evaluator). Imported, not
+# built here: `atomiverse._dispatch` owns THE table and `atomiverse.minimizer`
+# imports the same object, so a force source bound for one driver is bound for
+# both. A second copy would be free to drift, accepting a component here and
+# refusing it there.
 
 # Recorder types accepted by MD.set_record. Both are unconditional: the
 # wheel forces ATV_BUILD_IO=ON through the CMake module DAG, so the
@@ -257,11 +238,7 @@ class MD:
         """
         method_name = _EVALUATOR_DISPATCH.get(type(component))
         if method_name is None:
-            supported = ", ".join(t.__name__ for t in _EVALUATOR_DISPATCH)
-            raise TypeError(
-                f"set_evaluator does not support {type(component).__name__}. "
-                f"Supported: {supported}"
-            )
+            raise TypeError(_unsupported_evaluator_message(component))
         getattr(self._cpp, method_name)(component)
         self._built = False
         return self

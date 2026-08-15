@@ -37,6 +37,15 @@ namespace (pinned per row in test_namespaces.py):
   are unconditional top-level names beside the Monte Carlo surface —
   ``ATV_BUILD_VIB`` defaults ON, so like ``XYZ`` and the MC names they are
   never capability-probed and belong in the static ``__all__``.
+* Geometry optimization (spec py-minimize-full): beside ``LBFGS`` /
+  ``ForceConverged`` the surface carries the two other optimizers (``CG``,
+  ``FIRE``), the four variable-cell relaxers (``IsotropicCellRelax``,
+  ``AnisotropicCellRelax``, ``TriclinicCellRelax``,
+  ``JointIsotropicRelax``) and the two cell-relax criteria
+  (``PressureConverged``, ``StressConverged``). All eight are
+  unconditional: ``ATV_BUILD_MINIMIZER`` defaults ON, so like the MC and
+  vibration names they are never capability-probed and belong in the
+  static ``__all__``.
 * Electrostatics (spec py-coulomb-pme): ``PairCoulCut`` and ``CoulLong``
   are unconditional top-level names; ``KSpacePME`` is compile-optional
   (``ATV_BUILD_KSPACE``) and therefore reachable only through the lazy
@@ -106,7 +115,15 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "CSVR",
         "Minimize",
         "LBFGS",
+        "CG",
+        "FIRE",
+        "IsotropicCellRelax",
+        "AnisotropicCellRelax",
+        "TriclinicCellRelax",
+        "JointIsotropicRelax",
         "ForceConverged",
+        "PressureConverged",
+        "StressConverged",
         "MinimizeResult",
         "PairLJCut",
         "PairCoulCut",
@@ -148,6 +165,21 @@ _MC_NAMES: tuple[str, ...] = (
 #: The vibrational-analysis surface (spec py-vib): the finite-difference
 #: Hessian driver and its result type, both unconditional.
 _VIB_NAMES: tuple[str, ...] = ("Hessian", "HessianResult")
+
+#: The geometry-optimization growth of spec py-minimize-full: the two new
+#: optimizers, the four variable-cell relaxers and the two cell-relax
+#: criteria. C++ class names verbatim (``cpu::minimizer::*`` /
+#: ``cpu::PressureConverged``), all unconditional.
+_MINIMIZE_NEW_NAMES: tuple[str, ...] = (
+    "CG",
+    "FIRE",
+    "IsotropicCellRelax",
+    "AnisotropicCellRelax",
+    "TriclinicCellRelax",
+    "JointIsotropicRelax",
+    "PressureConverged",
+    "StressConverged",
+)
 
 _DEAD_PACKAGE_ATTRS: tuple[str, ...] = (
     "GeometryOptimizer",
@@ -214,20 +246,22 @@ class TestCanonicalSurface:
         assert hasattr(av, name), f"canonical component atomiverse.{name} is missing"
 
     def test_all_is_exactly_the_honest_surface(self) -> None:
-        """__all__ is the static MD + electrostatics + recorder + MC + AM1
-        surface.
+        """__all__ is the static MD + minimize + electrostatics + recorder
+        + MC + AM1 surface.
 
-        Same 35 names on every build: compile-optional types live behind
+        Same 43 names on every build: compile-optional types live behind
         the lazy ``__getattr__``, never in ``__all__``. ``XYZ`` is static
         because ``ATV_BUILD_PYTHON`` forces ``ATV_BUILD_IO=ON`` through the
         CMake module DAG (``cmake/AtvProductModules.cmake:68``); the seven
         Monte Carlo names are static because ``ATV_BUILD_MC`` is ON by
-        default (``:25``) and the wheel does not override it, and the two
+        default (``:25``) and the wheel does not override it, the two
         vibration names (spec py-vib) are static for the same reason
-        (``ATV_BUILD_VIB`` ON at ``:27``). None of them is
+        (``ATV_BUILD_VIB`` ON at ``:27``), and the eight new geometry
+        optimization names (spec py-minimize-full) because
+        ``ATV_BUILD_MINIMIZER`` is ON by default too. None of them is
         capability-probed.
         """
-        assert len(_CANONICAL_ALL) == 35
+        assert len(_CANONICAL_ALL) == 43
         assert set(av.__all__) == set(_CANONICAL_ALL)
 
 
@@ -493,6 +527,33 @@ class TestVibrationSurface:
 
     @pytest.mark.parametrize("name", _VIB_NAMES)
     def test_vib_name_is_in_all(self, name: str) -> None:
+        """Unconditional names belong in the static ``__all__``."""
+        assert name in av.__all__
+
+
+# ── Minimize surface growth (spec py-minimize-full) ─────────────────
+
+
+class TestMinimizerSurface:
+    """The two extra optimizers, four cell relaxers and two criteria.
+
+    Same contract as the Monte Carlo / vibration surfaces, not the PW one:
+    ``ATV_BUILD_MINIMIZER`` defaults ON
+    (``cmake/AtvProductModules.cmake:26``) and the wheel never turns it
+    off, so there is no capability probe here. Class names are the C++
+    ones verbatim — ``CG`` and ``FIRE`` are ``cpu::minimizer::CG`` /
+    ``FIRE``, and the criteria are ``cpu::PressureConverged`` /
+    ``cpu::StressConverged``.
+    """
+
+    @pytest.mark.parametrize("name", _MINIMIZE_NEW_NAMES)
+    def test_minimize_name_is_identity_reexport(self, name: str) -> None:
+        """``av.<Name>`` IS ``atomiverse.minimizer.<Name>``."""
+        minimizer = importlib.import_module("atomiverse.minimizer")
+        assert getattr(av, name) is getattr(minimizer, name)
+
+    @pytest.mark.parametrize("name", _MINIMIZE_NEW_NAMES)
+    def test_minimize_name_is_in_all(self, name: str) -> None:
         """Unconditional names belong in the static ``__all__``."""
         assert name in av.__all__
 

@@ -281,6 +281,9 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/task/task_spec.cpp
         src/cpu/task/task_codec.cpp
         src/cpu/task/task_materializer.cpp
+        # Typed Minimize params -> components/criterion, shared by the
+        # materializer replay and the Python Minimize handle.
+        src/cpu/task/internal/minimize_builders.cpp
         src/cpu/task/task_protocol.cpp
         src/cpu/task/launcher_gate.cpp
         src/cpu/asynchronous/analysis_executor.cpp

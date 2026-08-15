@@ -7,8 +7,8 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
-#include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
@@ -20,6 +20,7 @@
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
 #endif
+#include "atomiverse/cpu/minimize/cg.h"
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #ifdef ATV_HAS_PW
@@ -36,6 +37,7 @@
 #include "atomiverse/cpu/record/xyz_recorder.h"
 #endif
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/task/internal/minimize_builders.h"
 
 namespace ATV::cpu::task {
 namespace {
@@ -411,6 +413,19 @@ void register_minimize_entry(minimizer::Minimize& driver,
                     bind(cpu::md::NeighborList<>{p.cutoff, p.skin});
                 else if constexpr (std::is_same_v<P, LBFGSParams>)
                     bind(cpu::minimizer::LBFGS{p.memory, p.alpha0, p.max_ls});
+                else if constexpr (std::is_same_v<P, CGParams>)
+                    bind(cpu::minimizer::CG{p.alpha0});
+                else if constexpr (std::is_same_v<P, FIREParams>)
+                    bind(internal::tuned_fire(p));
+                else if constexpr (std::is_same_v<P, IsotropicCellRelaxParams>)
+                    bind(internal::tuned_isotropic_cell_relax(p));
+                else if constexpr (std::is_same_v<P,
+                                                  AnisotropicCellRelaxParams>)
+                    bind(internal::tuned_anisotropic_cell_relax(p));
+                else if constexpr (std::is_same_v<P, TriclinicCellRelaxParams>)
+                    bind(internal::tuned_triclinic_cell_relax(p));
+                else if constexpr (std::is_same_v<P, JointIsotropicRelaxParams>)
+                    bind(internal::tuned_joint_isotropic_relax(p));
                 else
                     static_assert(detail::unsupported_component_v<P>);
                 return;
@@ -423,6 +438,18 @@ void register_minimize_entry(minimizer::Minimize& driver,
             else if constexpr (std::is_same_v<P, LBFGSParams>)
                 driver.set_optimizer(
                     cpu::minimizer::LBFGS{p.memory, p.alpha0, p.max_ls});
+            else if constexpr (std::is_same_v<P, CGParams>)
+                driver.set_optimizer(cpu::minimizer::CG{p.alpha0});
+            else if constexpr (std::is_same_v<P, FIREParams>)
+                driver.set_optimizer(internal::tuned_fire(p));
+            else if constexpr (std::is_same_v<P, IsotropicCellRelaxParams>)
+                driver.set_optimizer(internal::tuned_isotropic_cell_relax(p));
+            else if constexpr (std::is_same_v<P, AnisotropicCellRelaxParams>)
+                driver.set_optimizer(internal::tuned_anisotropic_cell_relax(p));
+            else if constexpr (std::is_same_v<P, TriclinicCellRelaxParams>)
+                driver.set_optimizer(internal::tuned_triclinic_cell_relax(p));
+            else if constexpr (std::is_same_v<P, JointIsotropicRelaxParams>)
+                driver.set_optimizer(internal::tuned_joint_isotropic_relax(p));
             else
                 static_assert(detail::unsupported_component_v<P>);
         },
@@ -457,9 +484,7 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
     const auto& task = spec.minimize();
     budget_ = static_cast<int>(task.max_iter);
     minimize_.emplace();
-    const auto& c = task.convergence;
-    minimize_->add_criterion(cpu::ForceConverged{c.ftol, c.rms_ftol, c.max_dtol,
-                                                 c.rms_dtol, c.etol});
+    internal::add_minimize_criterion(*minimize_, task.convergence);
     for (const auto& entry : task.entries)
         register_minimize_entry(*minimize_, entry);
     minimize_->build();

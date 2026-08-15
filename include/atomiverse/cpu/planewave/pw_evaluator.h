@@ -46,7 +46,13 @@ class PWEvaluator : public cpu::PlaneWave {
     /// @brief True when forces will be written on launch.
     bool compute_forces() const noexcept { return compute_forces_; }
 
-    /// @brief Enable/disable cell stress write to `kStress` [eV/Å³].
+    /// @brief Enable/disable the cell stress write to `kStress`.
+    ///
+    /// `pw_stress` returns the intensive stress σ [eV/Å³]; the launch path
+    /// multiplies it by the cell volume before accumulating, because `kStress`
+    /// is the **extensive** Voigt virial [eV] for every producer
+    /// (`core/frame_schema.h`). Default **false**.
+    /// @param enabled When true, `launch()` also accumulates σ·V [eV].
     PWEvaluator& with_stress(bool enabled) & noexcept {
         compute_stress_ = enabled;
         return *this;

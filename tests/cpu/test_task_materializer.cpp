@@ -43,6 +43,10 @@
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
 #endif
+#include "atomiverse/cpu/driver/criteria.h"
+#include "atomiverse/cpu/minimize/cell_relax.h"
+#include "atomiverse/cpu/minimize/cg.h"
+#include "atomiverse/cpu/minimize/fire.h"
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
@@ -163,6 +167,24 @@ void expect_frames_bitwise_equal(const cpu::Frame& got,
         EXPECT_EQ(got.span(ATV::kAtom_y)[i], want.span(ATV::kAtom_y)[i]);
         EXPECT_EQ(got.span(ATV::kAtom_z)[i], want.span(ATV::kAtom_z)[i]);
     }
+}
+
+/// @brief Bitwise cell agreement — all nine `Mat3` entries.
+///
+/// `expect_frames_bitwise_equal` covers energy and coordinates only, which is
+/// everything a fixed-cell run can change. A variable-cell optimizer moves
+/// the BOX as well, and it is the only state a cell relaxer writes that is
+/// not a coordinate — so a materializer arm that dropped, say, `bulk_mod`
+/// would still show identical atoms (they scale affinely with the cell) and
+/// a different cell. Full matrix, not just `length(d)`: a triclinic relaxer
+/// writes the off-diagonals.
+void expect_boxes_bitwise_equal(const cpu::Box& got, const cpu::Box& want) {
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) {
+            SCOPED_TRACE("cell(" + std::to_string(i) + "," + std::to_string(j)
+                         + ")");
+            EXPECT_EQ(got.cell()(i, j), want.cell()(i, j));
+        }
 }
 
 std::vector<std::vector<std::string>>
@@ -1058,6 +1080,259 @@ TEST(TaskMaterializer, MinimizePlanMatchesDirectTypedConstruction) {
 
     EXPECT_EQ(plan_signature(materialized.plan()),
               plan_signature(direct.plan()));
+}
+
+// ── (e) Minimize run equivalence: CG, FIRE and isotropic cell relax ─────
+//
+// `MinimizePlanMatchesDirectTypedConstruction` above compares PLANS, which
+// catches a wrong slot but not a wrong constructor argument: two optimizers
+// built from different numbers produce the identical plan signature. These
+// three RUN the loop, so a dropped or swapped parameter lands as a different
+// geometry (or a different cell) and the bitwise claim fails.
+
+/// @brief Ten-atom LJ cluster compressed to 3.2 Å spacing.
+///
+/// The MD fixture sits at 3.8 Å ≈ r_min = 2^(1/6)σ = 3.816 Å, i.e. already
+/// at the minimum: an optimizer started there has nothing to do, converges
+/// on its first metrics publication and the "two pipelines agree" claim
+/// becomes a comparison of two untouched frames. 3.2 Å is inside the
+/// repulsive wall (|F| ≈ 0.2 eV/Å per atom), so five iterations demonstrably
+/// move it. Literals only, so two constructions are bitwise identical.
+cpu::Frame make_compressed_lj_frame() {
+    constexpr int n = 10;
+    constexpr double spacing = 3.2; // [Å]
+    cpu::Frame frame(n);
+    for (int i = 0; i < n; ++i) {
+        const int col = i % 5;
+        const int row = i / 5;
+        frame.span(ATV::kAtom_x)[i] = 8.0 + spacing * static_cast<double>(col);
+        frame.span(ATV::kAtom_y)[i] = 10.0 + spacing * static_cast<double>(row);
+        frame.span(ATV::kAtom_z)[i] = 15.0;
+        frame.span(ATV::kAtom_mass)[i] = 39.948;
+        frame.span(ATV::kAtom_type)[i] = 0;
+        frame.span(ATV::kAtom_tag)[i] = i + 1;
+    }
+    frame.box = ATV::cpu::Box::cubic(30.0);
+    return frame;
+}
+
+// Tolerances an order of magnitude below the `ForceConverged` defaults: the
+// claim under test is that both pipelines take the SAME five steps, so
+// neither may stop early. Same numbers on the spec and on the twin.
+constexpr double kMinFtol = 1e-4;    // [eV/Å]
+constexpr double kMinRmsFtol = 5e-5; // [eV/Å]
+constexpr double kMinMaxDtol = 1e-4; // [Å]
+constexpr double kMinRmsDtol = 5e-5; // [Å]
+constexpr double kMinEtol = 1e-9;    // [eV]
+constexpr int kMinIters = 5;
+constexpr double kCgAlpha0 = 0.05; // [Å²/eV], non-default (CG default 0.01)
+
+TEST(TaskMaterializer, MinimizeCgRunMatchesHandBuiltDriverBitwise) {
+    const ForceConvergedParams convergence{kMinFtol, kMinRmsFtol, kMinMaxDtol,
+                                           kMinRmsDtol, kMinEtol};
+    std::vector<MinimizeComponentEntry> entries;
+    entries.push_back(MinimizeComponentEntry{
+        NeighborListParams{kCutoff, kSkin},
+        MinimizeBinding{ATV::minimizer::Phase::force, -10}});
+    entries.push_back(MinimizeComponentEntry{
+        PairLJCutParams{kEps, kSigma, kCutoff},
+        MinimizeBinding{ATV::minimizer::Phase::force, 0}});
+    // Categorical (`std::nullopt`) optimizer entry → `set_optimizer`, which
+    // is where CG's own `default_bindings()` (search_direction, line_search,
+    // convergence_check) take effect — three slots, one of which LBFGS
+    // shares and none of which the plan test can tell apart by argument.
+    entries.push_back(
+        MinimizeComponentEntry{CGParams{kCgAlpha0}, std::nullopt});
+    const TaskSpec spec(
+        MinimizeTask{std::move(entries), kMinIters, convergence});
+
+    cpu::Frame materialized_frame = make_compressed_lj_frame();
+    TaskMaterializer mat(spec);
+    EXPECT_EQ(mat.kind(), TaskKind::Minimize);
+    mat.run(materialized_frame);
+
+    // Hand-built twin: criterion first, then the entries in spec order —
+    // the materializer's own sequence.
+    cpu::Frame direct_frame = make_compressed_lj_frame();
+    cpu::minimizer::Minimize direct;
+    direct.add_criterion(cpu::ForceConverged{kMinFtol, kMinRmsFtol, kMinMaxDtol,
+                                             kMinRmsDtol, kMinEtol});
+    direct.on(ATV::minimizer::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10)
+        .add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    direct.set_optimizer(cpu::minimizer::CG{kCgAlpha0});
+    direct.build();
+    direct.run(direct_frame, kMinIters);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero LJ energy — the equivalence check would "
+           "be vacuous";
+    // The optimizer actually stepped: atom 1 left its fixture coordinate.
+    ASSERT_NE(direct_frame.span(ATV::kAtom_x)[1], 8.0 + 3.2)
+        << "CG converged before moving anything — the equivalence check "
+           "would compare two untouched frames";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+TEST(TaskMaterializer, MinimizeFireRunMatchesHandBuiltDriverBitwise) {
+    // The LJ-tuned FIRE 1.0 knobs of regressions/minimizer/fire_lj_dimer:
+    // ASE's dt0 = 0.1 assumes O(1) forces, and an LJ residual is ≪ 1 eV/Å,
+    // so the pseudo-timestep and its ceiling are raised. Both are live
+    // within five iterations (dt grows after n_min accelerating steps), and
+    // alpha0 mixes the velocity on the very first one — a materializer arm
+    // that dropped any of the three shows up as a different geometry here.
+    // Field-EXACTNESS across the wire is the codec test's job
+    // (`make_minimize_spec` spells all eight non-default).
+    constexpr double kFireDt0 = 1.0;     // [fs]
+    constexpr double kFireDtMax = 20.0;  // [fs]
+    constexpr int kFireNMin = 5;         // Bitzek N_min
+    constexpr double kFireFInc = 1.1;    // Δt growth
+    constexpr double kFireFDec = 0.5;    // Δt shrink
+    constexpr double kFireAlpha0 = 0.1;  // α_start
+    constexpr double kFireFAlpha = 0.99; // α decay
+    constexpr double kFireMaxStep = 0.2; // [Å]
+
+    const ForceConvergedParams convergence{kMinFtol, kMinRmsFtol, kMinMaxDtol,
+                                           kMinRmsDtol, kMinEtol};
+    std::vector<MinimizeComponentEntry> entries;
+    entries.push_back(MinimizeComponentEntry{
+        NeighborListParams{kCutoff, kSkin},
+        MinimizeBinding{ATV::minimizer::Phase::force, -10}});
+    entries.push_back(MinimizeComponentEntry{
+        PairLJCutParams{kEps, kSigma, kCutoff},
+        MinimizeBinding{ATV::minimizer::Phase::force, 0}});
+    entries.push_back(MinimizeComponentEntry{
+        FIREParams{kFireDt0, kFireDtMax, kFireNMin, kFireFInc, kFireFDec,
+                   kFireAlpha0, kFireFAlpha, kFireMaxStep},
+        std::nullopt});
+    const TaskSpec spec(
+        MinimizeTask{std::move(entries), kMinIters, convergence});
+
+    cpu::Frame materialized_frame = make_compressed_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    // FIRE has no constructor arguments — the knobs are public members with
+    // ASE-aligned defaults, so the twin assigns them in DECLARATION order,
+    // which is the order the params mirror and the codec use.
+    cpu::Frame direct_frame = make_compressed_lj_frame();
+    cpu::minimizer::FIRE fire;
+    fire.dt0 = kFireDt0;
+    fire.dt_max = kFireDtMax;
+    fire.n_min = kFireNMin;
+    fire.f_inc = kFireFInc;
+    fire.f_dec = kFireFDec;
+    fire.alpha0 = kFireAlpha0;
+    fire.f_alpha = kFireFAlpha;
+    fire.max_step = kFireMaxStep;
+
+    cpu::minimizer::Minimize direct;
+    direct.add_criterion(cpu::ForceConverged{kMinFtol, kMinRmsFtol, kMinMaxDtol,
+                                             kMinRmsDtol, kMinEtol});
+    direct.on(ATV::minimizer::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10)
+        .add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+    direct.set_optimizer(std::move(fire));
+    direct.build();
+    direct.run(direct_frame, kMinIters);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero LJ energy — the equivalence check would "
+           "be vacuous";
+    ASSERT_NE(direct_frame.span(ATV::kAtom_x)[1], 8.0 + 3.2)
+        << "FIRE converged before moving anything — the equivalence check "
+           "would compare two untouched frames";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+/// @brief Two LJ atoms 3.0 Å apart in a 6 Å cubic cell — the fixture of
+///        regressions/minimizer/cell_lj_pressure, scaled to a unit-test
+///        iteration budget.
+///
+/// Compressed on both counts: the pair sits inside r_min AND the cell is
+/// small enough that the virial pressure is far from zero, so an isotropic
+/// relaxer has a real scale step to take on every one of the four
+/// iterations below. `PairLJCut` computes the virial by default, which is
+/// what puts `kStress` on the Frame for the relaxer and for
+/// `PressureConverged` to read — no wire knob is involved.
+cpu::Frame make_compressed_cell_frame() {
+    cpu::Frame frame(2);
+    frame.span(ATV::kAtom_x)[0] = 0.0;
+    frame.span(ATV::kAtom_y)[0] = 0.0;
+    frame.span(ATV::kAtom_z)[0] = 0.0;
+    frame.span(ATV::kAtom_x)[1] = 3.0;
+    frame.span(ATV::kAtom_y)[1] = 0.0;
+    frame.span(ATV::kAtom_z)[1] = 0.0;
+    for (int i = 0; i < 2; ++i) {
+        frame.span(ATV::kAtom_mass)[i] = 39.948;
+        frame.span(ATV::kAtom_type)[i] = 0;
+        frame.span(ATV::kAtom_tag)[i] = i + 1;
+    }
+    frame.box = ATV::cpu::Box::cubic(6.0);
+    return frame;
+}
+
+TEST(TaskMaterializer, MinimizeCellRelaxRunMatchesHandBuiltDriverBitwise) {
+    constexpr double kCellRc = 2.5 * kSigma; // [Å] the regression's cutoff
+    constexpr double kCellL0 = 6.0;          // [Å] starting edge
+    constexpr int kCellIters = 4;
+    constexpr double kCellPTarget = 0.0;   // [eV/Å³] relaxed cell
+    constexpr double kCellAlpha0 = 0.08;   // scale gain (default 0.05)
+    constexpr double kCellMaxScale = 0.08; // |s−1| cap (default 0.05)
+    constexpr double kCellBulkMod = 0.5;   // [eV/Å³] (default 1.0)
+    constexpr double kCellPtol = 5e-4;     // [eV/Å³] (default 1e-5)
+
+    std::vector<MinimizeComponentEntry> entries;
+    entries.push_back(MinimizeComponentEntry{
+        NeighborListParams{kCellRc, kSkin},
+        MinimizeBinding{ATV::minimizer::Phase::force, -10}});
+    entries.push_back(MinimizeComponentEntry{
+        PairLJCutParams{kEps, kSigma, kCellRc},
+        MinimizeBinding{ATV::minimizer::Phase::force, 0}});
+    entries.push_back(MinimizeComponentEntry{
+        IsotropicCellRelaxParams{kCellPTarget, kCellAlpha0, kCellMaxScale,
+                                 kCellBulkMod},
+        std::nullopt});
+    // A variable-cell run does NOT terminate on forces: the criterion is the
+    // pressure test, which is exactly why `MinimizeTask::convergence` had to
+    // become a variant. `Minimize::install_defaults` only supplies its
+    // `ForceConverged` default when no criterion was added, so naming this
+    // one replaces it on both sides.
+    const TaskSpec spec(
+        MinimizeTask{std::move(entries), kCellIters,
+                     PressureConvergedParams{kCellPTarget, kCellPtol}});
+
+    cpu::Frame materialized_frame = make_compressed_cell_frame();
+    TaskMaterializer mat(spec);
+    EXPECT_EQ(mat.kind(), TaskKind::Minimize);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_compressed_cell_frame();
+    cpu::minimizer::Minimize direct;
+    direct.add_criterion(cpu::PressureConverged{kCellPTarget, kCellPtol});
+    direct.on(ATV::minimizer::Phase::force)
+        .add(cpu::md::NeighborList<>{kCellRc, kSkin}, -10)
+        .add(cpu::PairLJCut{kEps, kSigma, kCellRc}, 0);
+    // Two of the four knobs are constructor arguments and two are public
+    // members, so the twin spells the ctor first and then assigns the rest
+    // in declaration order — the shape the materializer arm has to use, and
+    // the one regressions/minimizer/cell_lj_pressure uses.
+    cpu::minimizer::IsotropicCellRelax cell(kCellPTarget, kCellAlpha0);
+    cell.max_scale = kCellMaxScale;
+    cell.bulk_mod = kCellBulkMod;
+    direct.set_optimizer(std::move(cell));
+    direct.build();
+    direct.run(direct_frame, kCellIters);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero LJ energy — the equivalence check would "
+           "be vacuous";
+    // The relaxer actually scaled the cell: a compressed start expands.
+    ASSERT_GT(direct_frame.box.length(0), kCellL0)
+        << "cell never expanded — the equivalence check would compare two "
+           "untouched boxes";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+    expect_boxes_bitwise_equal(materialized_frame.box, direct_frame.box);
 }
 
 TEST(TaskMaterializer, KindReportsTaskKindOfTheSpec) {

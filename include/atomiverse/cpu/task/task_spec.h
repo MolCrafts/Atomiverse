@@ -512,21 +512,238 @@ inline bool operator==(const PwEvaluatorParams& a, const PwEvaluatorParams& b) {
 }
 
 /// @brief Mirrors the `cpu::minimizer::LBFGS` constructor exactly.
+///
+/// L-BFGS (limited-memory Broyden-Fletcher-Goldfarb-Shanno) is a quasi-Newton
+/// optimizer: instead of building the full second-derivative matrix it
+/// reconstructs its action on the gradient from the last `memory`
+/// displacement/gradient-change pairs, then backtracks along that direction
+/// until the energy has dropped enough (the Armijo condition).
+///
+/// Convergence tolerances are absent for the same reason as in `CGParams`:
+/// they belong to the criterion, not the algorithm.
 struct LBFGSParams {
+    /// @brief Number of stored correction pairs [count]. More memory buys a
+    ///        better curvature estimate at a linear cost in storage and work.
     int memory = 5;
+    /// @brief Initial step size α₀ [Å²/eV] — the trial displacement per unit
+    ///        force, before the line search backtracks.
     double alpha0 = 0.01;
+    /// @brief Cap on backtracking attempts within one step [count].
     int max_ls = 10;
 };
 inline bool operator==(const LBFGSParams& a, const LBFGSParams& b) {
     return a.memory == b.memory && a.alpha0 == b.alpha0 && a.max_ls == b.max_ls;
 }
 
+/// @brief Wire mirror of the one `cpu::minimizer::CG` constructor argument.
+///
+/// `CG` is the Polak-Ribière⁺ conjugate-gradient Optimizer: the search
+/// direction is steepest descent plus a β-weighted memory of the previous
+/// direction, with β clamped at zero so an ill-conditioned region restarts
+/// into plain steepest descent.
+///
+/// Convergence tolerances are deliberately absent — they belong to the
+/// criterion (`ForceConvergedParams` and friends), which is exactly what lets
+/// one stop policy judge `LBFGS`, `CG` and `FIRE` alike.
+///
+/// Not mirrored: `CG::line_search(mode, c1, c2, max_step, min_alpha)`. It is a
+/// post-construction selector rather than a constructor argument, so a
+/// launcher-dispatched CG run gets the C++ defaults (StrongWolfe, c1 = 1e-4,
+/// c2 = 0.1, max_step = 0.2 Å, min_alpha = 1e-8) — the documented-omission
+/// arrangement `PairCoulCutParams` already uses for `set_special_bonds`.
+struct CGParams {
+    /// @brief Step size α₀ [Å²/eV] — the trial step along the conjugate
+    ///        direction, before the line search refines it.
+    double alpha0 = 0.01;
+};
+inline bool operator==(const CGParams& a, const CGParams& b) {
+    return a.alpha0 == b.alpha0;
+}
+
+/// @brief Wire mirror of the eight public members of `cpu::minimizer::FIRE`.
+///
+/// The Fast Inertial Relaxation Engine (Bitzek et al., Phys. Rev. Lett. 97,
+/// 170201 (2006)) is damped dynamics rather than a line-search method: it
+/// integrates a fictitious unit-mass trajectory, mixes the velocity towards
+/// the force direction by α, grows the pseudo-timestep while the power `F·v`
+/// stays positive, and zeroes the velocity outright when it turns negative.
+///
+/// `FIRE` has NO constructor arguments — every knob is a public member with an
+/// ASE-aligned FIRE-1.0 default — so the field order here is the member
+/// DECLARATION order of `cpu/minimize/fire.h`, which is also what `task_codec`
+/// writes and what `task_materializer` assigns.
+struct FIREParams {
+    /// @brief Initial pseudo-timestep [fs].
+    double dt0 = 0.1;
+    /// @brief Ceiling on the pseudo-timestep [fs].
+    double dt_max = 1.0;
+    /// @brief Accelerating steps required before Δt grows (Bitzek `N_min`)
+    ///        [count].
+    int n_min = 5;
+    /// @brief Δt growth factor while accelerating (dimensionless).
+    double f_inc = 1.1;
+    /// @brief Δt shrink factor when the power `F·v` turns non-positive
+    ///        (dimensionless).
+    double f_dec = 0.5;
+    /// @brief Initial velocity-mixing parameter α_start (dimensionless).
+    double alpha0 = 0.1;
+    /// @brief Decay factor applied to α while accelerating (dimensionless).
+    double f_alpha = 0.99;
+    /// @brief Cap on the per-atom displacement of one step [Å].
+    double max_step = 0.2;
+};
+inline bool operator==(const FIREParams& a, const FIREParams& b) {
+    return a.dt0 == b.dt0 && a.dt_max == b.dt_max && a.n_min == b.n_min
+           && a.f_inc == b.f_inc && a.f_dec == b.f_dec && a.alpha0 == b.alpha0
+           && a.f_alpha == b.f_alpha && a.max_step == b.max_step;
+}
+
+/// @brief Wire mirror of the four public members of
+///        `cpu::minimizer::IsotropicCellRelax`.
+///
+/// A *variable-cell* optimizer: it reads the Voigt virial from `kStress`,
+/// forms the isotropic pressure `tr(σ)/(3V)`, and scales the whole cell — the
+/// atom coordinates riding along affinely — towards `P_target`. It never moves
+/// an atom relative to the cell, so a run that must also relax the geometry
+/// pairs it with a force optimizer or uses `JointIsotropicRelaxParams`.
+///
+/// A variable-cell run does not terminate on forces: name
+/// `PressureConvergedParams` (the extensive-virial convention every classical
+/// evaluator writes) or `StressConvergedParams` as the task's criterion.
+///
+/// Two of the four fields are constructor arguments (`P_target`, `alpha0`) and
+/// two are member-only knobs, so the field order here is the member
+/// DECLARATION order — what `task_codec` writes and what `task_materializer`
+/// replays as construct-then-assign.
+struct IsotropicCellRelaxParams {
+    /// @brief Target pressure [eV/Å³]; 0 is a relaxed (zero-stress) cell.
+    double P_target = 0.0;
+    /// @brief Relative scale-step gain (dimensionless) — the proportionality
+    ///        between the pressure residual and the requested `|s−1|`.
+    double alpha0 = 0.05;
+    /// @brief Cap on `|s−1|` per step (dimensionless): how far one iteration
+    ///        may breathe the cell.
+    double max_scale = 0.05;
+    /// @brief Soft bulk modulus [eV/Å³] dividing the step; larger means a
+    ///        gentler cell change per iteration.
+    double bulk_mod = 1.0;
+};
+inline bool operator==(const IsotropicCellRelaxParams& a,
+                       const IsotropicCellRelaxParams& b) {
+    return a.P_target == b.P_target && a.alpha0 == b.alpha0
+           && a.max_scale == b.max_scale && a.bulk_mod == b.bulk_mod;
+}
+
+/// @brief Wire mirror of the seven public members of
+///        `cpu::minimizer::AnisotropicCellRelax`.
+///
+/// The orthorhombic variant of `IsotropicCellRelaxParams`: the three box edges
+/// scale independently from their own diagonal stress components, so the cell
+/// changes shape as well as volume. The tilt factors stay put — shear is
+/// `TriclinicCellRelaxParams`.
+///
+/// The per-axis mask is the CP2K `CELL_OPT` / `CONSTRAINT` twin: a `false`
+/// axis is never scaled and never enters the residual, so a constrained
+/// direction's reaction stress cannot block convergence.
+struct AnisotropicCellRelaxParams {
+    /// @brief Target pressure [eV/Å³], the same on every relaxed axis.
+    double P_target = 0.0;
+    /// @brief Per-axis relative scale gain (dimensionless).
+    double alpha0 = 0.05;
+    /// @brief Cap on `|s−1|` per axis per step (dimensionless).
+    double max_scale = 0.05;
+    /// @brief Soft bulk modulus [eV/Å³] dividing the step.
+    double bulk_mod = 1.0;
+    /// @brief Relax the x box edge; `false` freezes it.
+    bool relax_x = true;
+    /// @brief Relax the y box edge; `false` freezes it.
+    bool relax_y = true;
+    /// @brief Relax the z box edge; `false` freezes it.
+    bool relax_z = true;
+};
+inline bool operator==(const AnisotropicCellRelaxParams& a,
+                       const AnisotropicCellRelaxParams& b) {
+    return a.P_target == b.P_target && a.alpha0 == b.alpha0
+           && a.max_scale == b.max_scale && a.bulk_mod == b.bulk_mod
+           && a.relax_x == b.relax_x && a.relax_y == b.relax_y
+           && a.relax_z == b.relax_z;
+}
+
+/// @brief Wire mirror of the three public members of
+///        `cpu::minimizer::TriclinicCellRelax`.
+///
+/// The full-cell variant: a Voigt strain tensor ε ∝ σ is formed from the whole
+/// stress, off-diagonals included, and the cell matrix is updated as
+/// `h ← (I + ε) h`, so the cell may shear. Hence `max_strain` rather than the
+/// cubic relaxers' `max_scale` — the capped quantity is a strain component,
+/// not a length ratio.
+///
+/// There is no `P_target`: this relaxer drives the cell towards ZERO stress
+/// (the 0 K geometry), which is why its matching criterion is
+/// `StressConvergedParams` rather than `PressureConvergedParams`.
+struct TriclinicCellRelaxParams {
+    /// @brief Strain gain (dimensionless) — the proportionality between the
+    ///        stress residual and the requested strain.
+    double alpha0 = 0.02;
+    /// @brief Cap on `|ε_αβ|` per step (dimensionless).
+    double max_strain = 0.05;
+    /// @brief Soft modulus [eV/Å³] dividing the step.
+    double bulk_mod = 1.0;
+};
+inline bool operator==(const TriclinicCellRelaxParams& a,
+                       const TriclinicCellRelaxParams& b) {
+    return a.alpha0 == b.alpha0 && a.max_strain == b.max_strain
+           && a.bulk_mod == b.bulk_mod;
+}
+
+/// @brief Wire mirror of the five public members of
+///        `cpu::minimizer::JointIsotropicRelax`.
+///
+/// *Joint* means each iteration does both halves of a variable-cell
+/// optimization: a steepest-descent atom step along the unit force, then an
+/// isotropic cell scale from the virial pressure. `atom_step` is the field
+/// that makes it joint; the other four are `IsotropicCellRelaxParams`'.
+///
+/// Terminating it honestly therefore wants both a force and a pressure test.
+/// `MinimizeTask::convergence` carries one criterion, so a launcher payload
+/// names the binding one and leaves the other to the iteration budget.
+struct JointIsotropicRelaxParams {
+    /// @brief Target pressure [eV/Å³].
+    double P_target = 0.0;
+    /// @brief Atom displacement along the unit force per iteration [Å].
+    double atom_step = 0.01;
+    /// @brief Relative cell-scale gain (dimensionless).
+    double alpha0 = 0.05;
+    /// @brief Cap on `|s−1|` per step (dimensionless).
+    double max_scale = 0.05;
+    /// @brief Soft bulk modulus [eV/Å³] dividing the cell step.
+    double bulk_mod = 1.0;
+};
+inline bool operator==(const JointIsotropicRelaxParams& a,
+                       const JointIsotropicRelaxParams& b) {
+    return a.P_target == b.P_target && a.atom_step == b.atom_step
+           && a.alpha0 == b.alpha0 && a.max_scale == b.max_scale
+           && a.bulk_mod == b.bulk_mod;
+}
+
 /// @brief Mirrors all five `cpu::ForceConverged` constructor tolerances.
+///
+/// The fixed-cell stop policy, and the one a `MinimizeTask` carries unless it
+/// says otherwise. **All five** tests must hold at once for the criterion to
+/// report convergence: a geometry is converged when the forces are small, the
+/// last step moved almost nothing, and the energy stopped changing. The
+/// displacement pair is skipped on an iteration where no previous geometry
+/// exists to difference against.
 struct ForceConvergedParams {
+    /// @brief Largest per-atom force magnitude allowed [eV/Å].
     double ftol = 0.05;
+    /// @brief Root-mean-square force over all atoms allowed [eV/Å].
     double rms_ftol = 0.03;
+    /// @brief Largest per-atom displacement of the last step allowed [Å].
     double max_dtol = 0.002;
+    /// @brief Root-mean-square displacement of the last step allowed [Å].
     double rms_dtol = 0.001;
+    /// @brief Energy change between the last two iterations allowed [eV].
     double etol = 1e-5;
 };
 inline bool operator==(const ForceConvergedParams& a,
@@ -535,6 +752,87 @@ inline bool operator==(const ForceConvergedParams& a,
            && a.max_dtol == b.max_dtol && a.rms_dtol == b.rms_dtol
            && a.etol == b.etol;
 }
+
+/// @brief Mirrors both `cpu::PressureConverged` constructor arguments.
+///
+/// The termination test of an isotropic variable-cell run: it reads the
+/// extensive Voigt virial `kStress` [eV] plus the box volume, forms
+/// `P = tr(W)/(3V)` [eV/Å³], and declares convergence once `|P − P_target|`
+/// falls below `ptol`. Every producer writes that same extensive convention
+/// (`core/frame_schema.h`); `StressConvergedParams` reads the identical key
+/// and divides by the identical volume, and differs only in judging each
+/// diagonal component separately instead of their mean.
+///
+/// Only the TOLERANCE carries an invariant: `cpu::PressureConverged` throws on
+/// `ptol <= 0` and on nothing else, so a negative target (a tensile setpoint)
+/// is a perfectly legal payload while a non-positive tolerance is refused at
+/// `TaskSpec` construction rather than at materialization.
+struct PressureConvergedParams {
+    /// @brief Target pressure [eV/Å³]; 0 is a relaxed cell.
+    double P_target = 0.0;
+    /// @brief Absolute pressure tolerance [eV/Å³]; must be > 0.
+    double ptol = 1e-5;
+};
+inline bool operator==(const PressureConvergedParams& a,
+                       const PressureConvergedParams& b) {
+    return a.P_target == b.P_target && a.ptol == b.ptol;
+}
+
+/// @brief Mirrors all five `cpu::StressConverged` constructor arguments.
+///
+/// The per-axis termination test: it reads the same extensive Voigt virial
+/// `kStress` [eV] as `PressureConvergedParams` and judges the intensive
+/// diagonal stress `σ_dd = W_dd/V` [eV/Å³] of every UNMASKED axis against
+/// `sigma_target`, which is what pairs it with
+/// `AnisotropicCellRelaxParams::relax_*` — mask the same
+/// axes on both and a constrained direction's reaction stress cannot block
+/// convergence (the CP2K `CELL_OPT` `CONSTRAINT` twin).
+///
+/// Two invariants, both `cpu::StressConverged`'s own and both mirrored at
+/// `TaskSpec` construction: `stol > 0`, and at least one axis judged — an
+/// all-masked criterion would test nothing and declare victory.
+struct StressConvergedParams {
+    /// @brief Target diagonal stress [eV/Å³]; 0 is a relaxed cell.
+    double sigma_target = 0.0;
+    /// @brief Absolute stress tolerance [eV/Å³]; must be > 0.
+    double stol = 1e-4;
+    /// @brief Judge σ_xx.
+    bool check_x = true;
+    /// @brief Judge σ_yy.
+    bool check_y = true;
+    /// @brief Judge σ_zz.
+    bool check_z = true;
+};
+inline bool operator==(const StressConvergedParams& a,
+                       const StressConvergedParams& b) {
+    return a.sigma_target == b.sigma_target && a.stol == b.stol
+           && a.check_x == b.check_x && a.check_y == b.check_y
+           && a.check_z == b.check_z;
+}
+
+/// @brief The stop policy a `MinimizeTask` carries — one criterion, typed.
+///
+/// A fixed-cell run terminates on forces; a variable-cell run terminates on
+/// pressure or on stress. `MinimizeTask::convergence` was a bare
+/// `ForceConvergedParams` blob until the cell relaxers landed, which made a
+/// pressure-terminated payload inexpressible. The default alternative stays
+/// `ForceConvergedParams`, so a default-constructed `MinimizeTask` still means
+/// what it always did.
+using MinimizeCriterionParams =
+    std::variant<ForceConvergedParams, PressureConvergedParams,
+                 StressConvergedParams>;
+
+/// @brief Stable wire IDs for the criterion alternatives.
+///
+/// A separate space from `ComponentId`: a criterion is not a plan entry, it is
+/// the singular tail field of a `MinimizeTask`, and its id is read by
+/// `read_criterion` alone. Append-only, exactly like `ComponentId` — the VALUE
+/// is what crosses the wire.
+enum class MinimizeCriterionId : std::uint16_t {
+    ForceConverged = 0,    ///< `cpu::ForceConverged` — the fixed-cell default.
+    PressureConverged = 1, ///< `cpu::PressureConverged` — isotropic cell.
+    StressConverged = 2,   ///< `cpu::StressConverged` — per-axis stress.
+};
 
 /// @brief Stable wire IDs, independent of variant ordering.
 ///
@@ -572,6 +870,20 @@ enum class ComponentId : std::uint16_t {
     /// everywhere; materializable only where `ATV_BUILD_PW` compiled the
     /// plane-wave solver in.
     PWEvaluator = 20,
+    // The rest of the CPU minimize domain. `CG` and `FIRE` are fixed-cell
+    // alternatives to `LBFGS`; the four relaxers below them move the BOX and
+    // terminate on `PressureConverged` / `StressConverged` rather than on
+    // forces. All six are Minimize-only.
+    CG = 21,   ///< Polak-Ribière⁺ conjugate gradient — `cpu::minimizer::CG`.
+    FIRE = 22, ///< Bitzek FIRE 1.0 — `cpu::minimizer::FIRE`.
+    /// Isotropic variable-cell relax — `cpu::minimizer::IsotropicCellRelax`.
+    IsotropicCellRelax = 23,
+    /// Orthorhombic per-axis relax — `cpu::minimizer::AnisotropicCellRelax`.
+    AnisotropicCellRelax = 24,
+    /// Full-cell (shearable) strain relax — `cpu::minimizer::TriclinicCellRelax`.
+    TriclinicCellRelax = 25,
+    /// Joint atom + isotropic cell relax — `cpu::minimizer::JointIsotropicRelax`.
+    JointIsotropicRelax = 26,
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -618,6 +930,51 @@ inline const char* component_name(ComponentId id) noexcept {
         return "XyzRecorder";
     case ComponentId::PWEvaluator:
         return "PWEvaluator";
+    case ComponentId::CG:
+        return "CG";
+    case ComponentId::FIRE:
+        return "FIRE";
+    case ComponentId::IsotropicCellRelax:
+        return "IsotropicCellRelax";
+    case ComponentId::AnisotropicCellRelax:
+        return "AnisotropicCellRelax";
+    case ComponentId::TriclinicCellRelax:
+        return "TriclinicCellRelax";
+    case ComponentId::JointIsotropicRelax:
+        return "JointIsotropicRelax";
+    }
+    return "unknown";
+}
+
+/// @brief Map a criterion alternative to its stable wire id.
+/// @param criterion The typed stop policy of a `MinimizeTask`.
+/// @return The `MinimizeCriterionId` written ahead of its payload.
+inline MinimizeCriterionId
+criterion_id(const MinimizeCriterionParams& criterion) noexcept {
+    return std::visit(
+        [](const auto& c) -> MinimizeCriterionId {
+            using C = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<C, ForceConvergedParams>)
+                return MinimizeCriterionId::ForceConverged;
+            else if constexpr (std::is_same_v<C, PressureConvergedParams>)
+                return MinimizeCriterionId::PressureConverged;
+            else
+                return MinimizeCriterionId::StressConverged;
+        },
+        criterion);
+}
+
+/// @brief Human-readable name of a criterion wire id, for diagnostics.
+/// @param id A decoded criterion id.
+/// @return The C++ class name, or `"unknown"`.
+inline const char* criterion_name(MinimizeCriterionId id) noexcept {
+    switch (id) {
+    case MinimizeCriterionId::ForceConverged:
+        return "ForceConverged";
+    case MinimizeCriterionId::PressureConverged:
+        return "PressureConverged";
+    case MinimizeCriterionId::StressConverged:
+        return "StressConverged";
     }
     return "unknown";
 }
@@ -632,7 +989,10 @@ using MDComponentParams =
                  KSpacePmeParams, XyzRecorderParams, PwEvaluatorParams>;
 
 using MinimizeComponentParams =
-    std::variant<PairLJCutParams, NeighborListParams, LBFGSParams>;
+    std::variant<PairLJCutParams, NeighborListParams, LBFGSParams, CGParams,
+                 FIREParams, IsotropicCellRelaxParams,
+                 AnisotropicCellRelaxParams, TriclinicCellRelaxParams,
+                 JointIsotropicRelaxParams>;
 
 namespace detail {
 template <typename>
@@ -700,6 +1060,18 @@ component_id(const MinimizeComponentParams& params) noexcept {
                 return ComponentId::NeighborList;
             else if constexpr (std::is_same_v<P, LBFGSParams>)
                 return ComponentId::LBFGS;
+            else if constexpr (std::is_same_v<P, CGParams>)
+                return ComponentId::CG;
+            else if constexpr (std::is_same_v<P, FIREParams>)
+                return ComponentId::FIRE;
+            else if constexpr (std::is_same_v<P, IsotropicCellRelaxParams>)
+                return ComponentId::IsotropicCellRelax;
+            else if constexpr (std::is_same_v<P, AnisotropicCellRelaxParams>)
+                return ComponentId::AnisotropicCellRelax;
+            else if constexpr (std::is_same_v<P, TriclinicCellRelaxParams>)
+                return ComponentId::TriclinicCellRelax;
+            else if constexpr (std::is_same_v<P, JointIsotropicRelaxParams>)
+                return ComponentId::JointIsotropicRelax;
             else
                 static_assert(detail::unsupported_component_v<P>);
         },
@@ -754,10 +1126,18 @@ inline bool operator==(const SinglePointTask& a, const SinglePointTask& b) {
     return a.evaluator == b.evaluator;
 }
 
+/// @brief One launcher-dispatchable geometry optimization: what to build,
+///        how long to iterate, and when to stop.
 struct MinimizeTask {
+    /// Every component of the run — the optimizer, the neighbor list and the
+    /// force sources — each with an optional explicit phase binding.
     std::vector<MinimizeComponentEntry> entries;
+    /// Iteration budget [count]; the loop stops here even if no criterion has
+    /// fired.
     std::int64_t max_iter;
-    ForceConvergedParams convergence;
+    /// The single stop policy of this run. A variant since v5: a fixed-cell
+    /// run judges forces, a variable-cell run judges pressure or stress.
+    MinimizeCriterionParams convergence;
 };
 inline bool operator==(const MinimizeTask& a, const MinimizeTask& b) {
     return a.entries == b.entries && a.max_iter == b.max_iter
@@ -800,7 +1180,15 @@ class TaskSpec {
     /// shared `write`/`read_am1` pair, so every previously encodable MD
     /// payload encodes to the identical bytes and a v4 decoder written before
     /// this change reads them unchanged.
-    static constexpr std::uint32_t kWireVersion = 4;
+    ///
+    /// v5 is a LAYOUT change, which is why it is a bump where the six appended
+    /// minimize component IDs (21-26) would not have been: `MinimizeTask`'s
+    /// tail stopped being five bare `ForceConverged` doubles and became a
+    /// criterion variant — a `u16` id followed by that criterion's own fields.
+    /// A v4 payload's doubles would decode as an id followed by garbage, so
+    /// the exact-match version gate in `unpack` is what makes the break loud.
+    /// Same reasoning as the v4 `NoseHooverNptParams` bump.
+    static constexpr std::uint32_t kWireVersion = 5;
 
     explicit TaskSpec(MDTask task);
     explicit TaskSpec(SinglePointTask task);

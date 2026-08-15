@@ -8,9 +8,10 @@ evaluator — LJ, bonded, SCF, GPW — can be relaxed by any minimizer. FIRE 1.0
 ships as `cpu::minimizer::FIRE`. **Variable-cell** ships isotropic, joint
 isotropic atom+cell, **anisotropic**, and **triclinic** stress relax
 (`IsotropicCellRelax`, `JointIsotropicRelax`, `AnisotropicCellRelax`,
-`TriclinicCellRelax` + `PressureConverged`). The convergence rule is a
-`ForceConverged` or `PressureConverged` criterion — a different stopping
-rule costs a criterion, not an optimizer.
+`TriclinicCellRelax`). The convergence rule is a `ForceConverged`
+(fixed cell), `PressureConverged` (isotropic) or `StressConverged` (per-axis,
+maskable) criterion — a different stopping rule costs a criterion, not an
+optimizer.
 
 **Paths:** CI-NEB, dimer, **string**, **IRC** ship. Still absent:
 eigenvector-following TS.
@@ -54,9 +55,13 @@ Notes:
   `reg_gpw-stress-water`). **GPW CELL_OPT is productized**:
   `AnisotropicCellRelax` re-targets the GPW evaluator with a stress axes mask
   + `StressConverged` (`reg_gpw-variable-cell-ice` vs CP2K CELL_OPT,
-  2026-07-25). **PW CELL_OPT is productized**: `IsotropicCellRelax` with
-  intensive `kStress` + `StressConverged` on diamond Si NC-UPF
-  (`reg_pw-variable-cell-si`, 2026-07-25). No internal coordinates. **PR NPT
+  2026-07-25). **PW CELL_OPT is productized**: `IsotropicCellRelax` +
+  `StressConverged` on diamond Si NC-UPF (`reg_pw-variable-cell-si`,
+  2026-07-25). `kStress` is the **extensive** Voigt virial [eV] for every
+  producer (`core/frame_schema.h`): PW/GPW multiply their intensive σ by the
+  cell volume at the Frame write, and every consumer — the four relaxers,
+  `PressureConverged` and `StressConverged` — divides by \(V\).
+  No internal coordinates. **PR NPT
   dynamics** lives under [Molecular Dynamics](molecular-dynamics.md)
   (`ParrinelloRahmanNPT`), not here.
 

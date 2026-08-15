@@ -109,8 +109,12 @@ Current surface:
   split `CoulLong` + `KSpacePME`. The reciprocal solver needs FFTW3, so
   `KSpacePME` is present only on wheels built with `ATV_BUILD_KSPACE=ON`
   (the default).
-- **Geometry optimization** — CPU `minimizer.Minimize` with the `LBFGS`
-  optimizer component and independent `ForceConverged` loop policy.
+- **Geometry optimization** — CPU `minimizer.Minimize` with three fixed-cell
+  optimizers (`LBFGS`, `CG`, `FIRE`), four variable-cell relaxers
+  (`IsotropicCellRelax`, `AnisotropicCellRelax`, `TriclinicCellRelax`,
+  `JointIsotropicRelax`) and independent loop policies — `ForceConverged`
+  for a fixed cell, `PressureConverged` / `StressConverged` for a variable
+  one. Any force source `MD` accepts is accepted here.
 - **Vibrational analysis** — `Hessian` (central finite differences over any
   registered force source) and `HessianResult` (wavenumbers, normal modes,
   RRHO thermochemistry). `ATV_BUILD_VIB` defaults ON, so these are on the
@@ -489,6 +493,134 @@ opt.set_evaluator(av.PairLJCut(epsilon, sigma, cutoff))
 result = opt.run(frame, max_iter=100)
 print(result.iterations, result.converged, result.stop_reason)
 ```
+
+Configuration is one-shot, exactly as for `MD`: the plan is compiled once, so
+every setter raises `RuntimeError` after the first completed `run()`. Calling
+`run()` again is still legal and re-optimizes from the frame's current state,
+which is how you interleave analysis with chunks of optimization.
+
+### Choosing an optimizer
+
+The optimizer slot is singular — the three fixed-cell algorithms are
+alternatives, not a stack:
+
+| Optimizer | Shape | Use it when |
+| --- | --- | --- |
+| `LBFGS(memory, alpha0, max_ls)` | quasi-Newton with a line search | the default; fastest near a minimum |
+| `CG(alpha0)` | Polak-Ribière⁺ conjugate gradient | low memory, or L-BFGS curvature keeps getting discarded |
+| `FIRE(dt0, dt_max, …)` | damped dynamics, no line search | far from the minimum, or the force source is noisy |
+
+`memory` and `max_ls` are counts; `alpha0` is a step size in Å²/eV for `LBFGS`
+and `CG` — the trial displacement per unit force — but a dimensionless
+velocity-mixing fraction for `FIRE`, whose own step scale is `dt0` / `dt_max`
+in fs.
+
+Tolerances are **not** an optimizer argument. An optimizer publishes force /
+displacement / energy metrics and a *criterion* judges them, which is what
+makes the three interchangeable under one `ForceConverged`:
+
+```python
+opt.set_optimizer(av.CG())                          # or FIRE(dt0=1.0, dt_max=20.0)
+opt.add_criterion(av.ForceConverged(ftol=0.01, rms_ftol=0.005))
+```
+
+`FIRE`'s defaults are ASE's and assume O(1) eV/Å forces. A soft system — an Ar
+Lennard-Jones dimer has a residual of ~10⁻² eV/Å — needs a longer pseudo-time
+scale, hence the `dt0=1.0, dt_max=20.0` retune above
+(`regressions/minimizer/fire_lj_dimer`).
+
+`ForceConverged` has five tolerances and **all five** must hold at once: the
+largest per-atom force `ftol` and the RMS force `rms_ftol` (both eV/Å), the
+largest and RMS displacement of the last step `max_dtol` / `rms_dtol` (Å), and
+the energy change `etol` (eV).
+
+Any force source `MD.set_evaluator` accepts works here too — the two facades
+read one dispatch table — so a bonded force field, an Ewald split
+(`CoulLong` + `KSpacePME` at the same `alpha`), `AM1Evaluator` or
+`PWEvaluator` all drive an optimization.
+
+One iteration is free, whichever optimizer you choose: the minimizer phase
+order runs `search_direction` before `force`, so iteration 0 has no force
+evaluation of its own and steps from whatever the frame arrived with — zero on
+a freshly built frame, i.e. no move at all. Budget the extra iteration rather
+than reading a 1-iteration run as a no-op.
+
+### Variable-cell relaxation
+
+The four relaxers move the periodic **box** rather than the atoms within it,
+reading the virial the evaluators wrote to the frame:
+
+| Relaxer | Degrees of freedom |
+| --- | --- |
+| `IsotropicCellRelax(P_target, alpha0, max_scale, bulk_mod)` | one scale factor — volume only |
+| `AnisotropicCellRelax(…, relax_x, relax_y, relax_z)` | three independent box edges, maskable per axis |
+| `TriclinicCellRelax(alpha0, max_strain, bulk_mod)` | full symmetric strain, so the cell may shear |
+| `JointIsotropicRelax(P_target, atom_step, …)` | volume **and** a steepest-descent atom step |
+
+Match the criterion to the algorithm: a cell relaxer can sit at zero force
+while far from the target pressure, so `ForceConverged` would declare victory
+on an unrelaxed cell — and it fails quietly, because the relaxer publishes its
+pressure residual into the very metric slot `ForceConverged` reads as a force.
+Use `PressureConverged` (the isotropic mean) or, per axis, `StressConverged` —
+and if you masked an axis on `AnisotropicCellRelax`, mask the same axis on
+`StressConverged`, or that direction's reaction stress blocks convergence
+forever. Both criteria read the same `stress` entry and divide by the same
+volume; they differ only in judging the mean versus each diagonal component.
+
+Two more gates the API cannot check for you.
+
+**The evaluator must write the virial.** The classical styles (`PairLJCut`,
+`PairCoulCut`, `CoulLong` + `KSpacePME`, the bonded terms) do by default, but
+`AM1Evaluator` writes none — it is a molecular method with no cell — and
+`PWEvaluator` is installed by this facade as a gradient-only copy. With a zero
+virial the cell never moves and `PressureConverged(P_target=0.0, …)` reports
+success on the untouched cell. (`PW.stress(frame)` still returns the
+plane-wave cell stress as a Voigt 6-vector in eV/Å³; it just does not feed a
+relaxer.)
+
+**And the first iteration is free.** The step uses the stress the previous
+iteration's force pass left behind, and iteration 0 has none of its own — it
+reads whatever the frame arrived with, zero on a freshly built one, so at
+`P_target = 0` its scale factor is exactly 1 and the cell starts moving on
+iteration 1.
+
+```python
+opt = av.Minimize()
+opt.set_optimizer(
+    av.IsotropicCellRelax(P_target=0.0, alpha0=0.08, max_scale=0.08, bulk_mod=0.5)
+)
+opt.add_criterion(av.PressureConverged(P_target=0.0, ptol=5e-4))
+opt.set_neighbor(av.NeighborList(cutoff, 0.3))
+opt.set_evaluator(av.PairLJCut(epsilon, sigma, cutoff))
+
+opt.run(frame, max_iter=1000)
+length = float(np.asarray(frame.box.lengths)[0])       # relaxed cell edge [A]
+stress = np.asarray(frame.meta["stress"])              # extensive Voigt virial [eV]
+pressure = (stress[0] + stress[1] + stress[2]) / (3.0 * frame.box.volume())
+```
+
+Read the units carefully: `frame.meta["stress"]` is the **extensive** Voigt
+virial in eV for every classical evaluator, which is why the pressure above
+divides by the cell volume — `PressureConverged` uses the same formula.
+Pressure targets are in eV/Å³, LAMMPS sign (positive is compressive);
+1 bar ≈ 6.2415×10⁻⁷ eV/Å³.
+
+Set expectations from what the C++ regression actually measures. Two Ar atoms
+3.0 Å apart in a 6.0 Å cube — compressed well inside the Lennard-Jones
+minimum — expand to L ≈ 6.32 Å with |P| ≈ 1.1×10⁻³ eV/Å³ after 200 iterations,
+and reach |P| < 5×10⁻⁴ eV/Å³ after 559
+(`regressions/minimizer/cell_lj_pressure`). These are steepest-descent
+skeletons with a soft modulus, not equation-of-state solvers: budget iterations
+generously and check `result.converged` rather than assuming the budget was
+enough.
+
+Under `atomiverse-launcher` (a multi-rank MPI world hosting the interpreter)
+the whole configuration is re-sent to the worker ranks as a task payload on
+every `run()`, and that payload's vocabulary is narrower than what the facade
+accepts: `PairLJCut`, the `NeighborList` and the seven optimizers. A run
+configured with any other force source raises `RuntimeError` naming the
+components it cannot carry, rather than optimizing with a term silently
+missing. Single-process runs are unaffected.
 
 Only the CPU backend is active for this surface. `device="cuda"` fails before
 build or compute; GPU materialization is explicitly deferred.

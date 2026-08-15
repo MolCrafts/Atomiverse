@@ -1,5 +1,5 @@
 /// @file cpu/task/task_spec.cpp
-/// @brief Task-specific invariant validation for TaskSpec v4.
+/// @brief Task-specific invariant validation for TaskSpec v5.
 
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -7,7 +7,9 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace ATV::cpu::task {
 namespace {
@@ -78,12 +80,40 @@ TaskSpec::TaskSpec(MinimizeTask task) : payload_(std::move(task)) {
         }
     }
 
-    const auto& c = min_task.convergence;
-    require_positive_finite("Minimize", "ForceConverged ftol", c.ftol);
-    require_positive_finite("Minimize", "ForceConverged rms_ftol", c.rms_ftol);
-    require_positive_finite("Minimize", "ForceConverged max_dtol", c.max_dtol);
-    require_positive_finite("Minimize", "ForceConverged rms_dtol", c.rms_dtol);
-    require_positive_finite("Minimize", "ForceConverged etol", c.etol);
+    // The criterion is a variant since v5, so the tolerance checks have to
+    // reach INTO the alternative. Each arm mirrors exactly what the C++
+    // criterion's own constructor refuses (`cpu/driver/criteria.h`), so a
+    // payload can never smuggle past the wire only to throw at materialization.
+    std::visit(
+        [](const auto& c) {
+            using C = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<C, ForceConvergedParams>) {
+                require_positive_finite("Minimize", "ForceConverged ftol",
+                                        c.ftol);
+                require_positive_finite("Minimize", "ForceConverged rms_ftol",
+                                        c.rms_ftol);
+                require_positive_finite("Minimize", "ForceConverged max_dtol",
+                                        c.max_dtol);
+                require_positive_finite("Minimize", "ForceConverged rms_dtol",
+                                        c.rms_dtol);
+                require_positive_finite("Minimize", "ForceConverged etol",
+                                        c.etol);
+            } else if constexpr (std::is_same_v<C, PressureConvergedParams>) {
+                // Only the tolerance: `PressureConverged` throws on
+                // `ptol <= 0` and on nothing else, so a negative target
+                // (a tensile setpoint) stays a legal payload.
+                require_positive_finite("Minimize", "PressureConverged ptol",
+                                        c.ptol);
+            } else {
+                require_positive_finite("Minimize", "StressConverged stol",
+                                        c.stol);
+                if (!c.check_x && !c.check_y && !c.check_z)
+                    throw std::invalid_argument(
+                        "task_spec: Minimize StressConverged has every axis "
+                        "masked — it would judge nothing and declare victory");
+            }
+        },
+        min_task.convergence);
 }
 
 TaskKind TaskSpec::kind() const noexcept {

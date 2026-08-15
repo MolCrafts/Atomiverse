@@ -26,6 +26,16 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``md.InitVelocity``                   ``InitVelocity``            ``cpu::md::InitVelocity``
 ``minimizer.Minimize``                ``Minimize``                ``cpu::minimizer::Minimize``
 ``minimizer.LBFGS``                   ``LBFGS``                   ``cpu::minimizer::LBFGS``
+``minimizer.CG``                      ``CG``                      ``cpu::minimizer::CG``
+``minimizer.FIRE``                    ``FIRE``                    ``cpu::minimizer::FIRE``
+``minimizer.IsotropicCellRelax``      ``IsotropicCellRelax``      ``cpu::minimizer::IsotropicCellRelax``
+``minimizer.AnisotropicCellRelax``    ``AnisotropicCellRelax``    ``cpu::minimizer::AnisotropicCellRelax``
+``minimizer.TriclinicCellRelax``      ``TriclinicCellRelax``      ``cpu::minimizer::TriclinicCellRelax``
+``minimizer.JointIsotropicRelax``     ``JointIsotropicRelax``     ``cpu::minimizer::JointIsotropicRelax``
+``minimizer.ForceConverged``          ``ForceConverged``          ``cpu::ForceConverged``
+``minimizer.PressureConverged``       ``PressureConverged``       ``cpu::PressureConverged``
+``minimizer.StressConverged``         ``StressConverged``         ``cpu::StressConverged``
+``minimizer.MinimizeResult``          ``MinimizeResult``          ``cpu::task::TaskResult``
 ``neighbor.NeighborList``             ``NeighborList``            ``cpu::md::NeighborList<>``
 ``potentials.pair.LJCut``             ``PairLJCut``               ``cpu::PairLJCut``
 ``potentials.pair.CoulCut``           ``PairCoulCut``             ``cpu::PairCoulCut``
@@ -90,6 +100,20 @@ must supply yourself, and the units. Like Monte Carlo it is CPU-only, takes
 no ``device=``, and stays in ``__all__`` because ``ATV_BUILD_VIB`` is ON by
 default.
 
+``LBFGS`` / ``CG`` / ``FIRE`` are the three fixed-cell geometry optimizers
+and ``IsotropicCellRelax`` / ``AnisotropicCellRelax`` /
+``TriclinicCellRelax`` / ``JointIsotropicRelax`` the four variable-cell
+relaxers — they move the periodic *box* (isotropically, per axis, with shear,
+or jointly with the atoms) towards a target pressure. The optimizer slot is
+singular, so these seven are alternatives. Termination is a separate,
+composable object: an optimizer publishes metrics and a criterion judges them,
+which is ``ForceConverged`` for a fixed cell and ``PressureConverged`` /
+``StressConverged`` for a variable one. A relaxer additionally needs a force
+source that writes the cell virial, which the classical evaluators do and the
+electronic-structure ones bound here do not; ``help(atomiverse.minimizer)``
+gives that gate, the pairing rules and the units. ``ATV_BUILD_MINIMIZER`` is
+ON by default, so all of them stay in ``__all__``.
+
 Compile-optional rows — ``PW`` / ``PWResult`` / ``PWEvaluator``
 (``ATV_BUILD_PW``),
 ``KSpacePME`` (``ATV_BUILD_KSPACE``) and the Gaussian SCF methods
@@ -140,7 +164,15 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "BerendsenBarostat": ("atomiverse.md.barostat", "BerendsenBarostat"),
     "Minimize": ("atomiverse.minimizer", "Minimize"),
     "LBFGS": ("atomiverse.minimizer", "LBFGS"),
+    "CG": ("atomiverse.minimizer", "CG"),
+    "FIRE": ("atomiverse.minimizer", "FIRE"),
+    "IsotropicCellRelax": ("atomiverse.minimizer", "IsotropicCellRelax"),
+    "AnisotropicCellRelax": ("atomiverse.minimizer", "AnisotropicCellRelax"),
+    "TriclinicCellRelax": ("atomiverse.minimizer", "TriclinicCellRelax"),
+    "JointIsotropicRelax": ("atomiverse.minimizer", "JointIsotropicRelax"),
     "ForceConverged": ("atomiverse.minimizer", "ForceConverged"),
+    "PressureConverged": ("atomiverse.minimizer", "PressureConverged"),
+    "StressConverged": ("atomiverse.minimizer", "StressConverged"),
     "MinimizeResult": ("atomiverse.minimizer", "MinimizeResult"),
     "NeighborList": ("atomiverse.neighbor", "NeighborList"),
     "PairLJCut": ("atomiverse.potentials.pair", "LJCut"),
@@ -209,7 +241,15 @@ __all__ = [
     "BerendsenBarostat",
     "Minimize",
     "LBFGS",
+    "CG",
+    "FIRE",
+    "IsotropicCellRelax",
+    "AnisotropicCellRelax",
+    "TriclinicCellRelax",
+    "JointIsotropicRelax",
     "ForceConverged",
+    "PressureConverged",
+    "StressConverged",
     "MinimizeResult",
     "PairLJCut",
     "PairCoulCut",
