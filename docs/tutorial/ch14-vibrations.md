@@ -21,10 +21,10 @@ cpu::vib::HessianResult H = vib.run(frame);
 > ```
 
 Frequencies are only as good as the underlying forces: validate analytic vs FD
-forces ([Chapter 1](ch01-foundations.md)) before trusting thermochemistry.
-Literature IR frequencies for small molecules (e.g. H₂O) are the acceptance
-recorded once a dedicated vibrational regression is
-added.
+forces ([Chapter 1](ch01-foundations.md)) before trusting thermochemistry. The
+in-tree acceptance for this driver is
+`regressions/scf/h2o_rhf_freq`, which pins the three H₂O HF/6-31G* harmonic
+wavenumbers against PySCF 2.14.0 (see "The Validation" below).
 
 A geometry optimization ([Chapter 12](ch12-geometry-optimization.md)) finds a
 stationary point on the potential-energy surface, but it cannot tell you
@@ -47,7 +47,7 @@ The six questions:
    `Thermochem` public members / constructor args.
 4. **The expected result.** `3N−6` real frequencies at a minimum, and a
    Gibbs free-energy correction.
-5. **The validation.** Frequencies and thermochemistry against PySCF.
+5. **The validation.** Frequencies against PySCF — and what is *not* pinned.
 6. **The recurring pattern.** Another loop that reuses any force evaluator,
    exactly like MD and minimization.
 
@@ -176,9 +176,9 @@ Two API details that decide whether your result is meaningful:
 
 ### Thermochemistry
 
-Thermochemistry runs automatically as part of the Response loop; you supply
-the conditions as plain constructor arguments on `Hessian` — there is no
-config bag to fill in:
+Thermochemistry runs automatically as one of the driver's own phases
+(`thermochem`); you supply the conditions as plain constructor arguments on
+`Hessian` — there is no config bag to fill in:
 
 ```cpp
 cpu::vib::Hessian driver{
@@ -198,21 +198,43 @@ double s_tot     = H.s_tot;      // total entropy [Hartree/K]
 ```
 
 The thermochemistry is a faithful port of PySCF's `thermo()`, reporting the
-electronic / translational / rotational / vibrational contributions to
-internal energy, enthalpy, entropy, and Gibbs free energy — each in Hartree
-(or Hartree/K), consistent with PySCF. The default constructor uses standard
-conditions (298.15 K, 1 atm, closed-shell singlet, σ = 1); the four-argument
-overload above lets you set temperature, pressure, spin multiplicity, and the
-rotational symmetry number. Note that σ is **supplied**, not auto-detected —
+translational / rotational / vibrational contributions to internal energy,
+enthalpy, entropy, and Gibbs free energy — plus the electronic contribution
+to the *entropy*, $S_\mathrm{elec} = R \ln M$ for spin multiplicity $M$ —
+each in Hartree (or Hartree/K), consistent with PySCF. The default
+constructor uses standard conditions (298.15 K, 1 atm, closed-shell singlet,
+σ = 1); the four-argument overload above lets you set temperature, pressure,
+spin multiplicity, and the rotational symmetry number. Note that σ is **supplied**, not auto-detected —
 you provide the molecule's point-group rotational symmetry number (2 for
-water, 3 for ammonia, 12 for methane). A third constructor,
-`Hessian(T, P, mult, sigma, frequency_tsv, mode_xyz_prefix)`, additionally routes a frequency TSV report
-and per-mode XYZ animations to disk.
+water, 3 for ammonia, 12 for methane).
+
+**The electronic energy $E_0$ is carried as zero** inside the port
+([`thermochem.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/src/cpu/vibration/thermochem.cpp)):
+`u_tot`, `h_tot` and `g_tot` are the *thermal* parts of $U$, $H$ and $G$, and
+`g_tot == g_thermal` as a result. Add your own SCF total energy to obtain an
+absolute quantity.
 
 The single most-compared quantity is `g_thermal` — the thermal correction to
 the Gibbs free energy, $G(T) - E_0$ — because it is independent of the
 electronic energy $E_0$ and therefore isolates the harmonic/statistical part
 that this module owns.
+
+### File output: on by default in C++, off in Python
+
+The six-argument constructor
+`Hessian(T, P, mult, sigma, frequency_tsv, mode_xyz_prefix)` routes a
+tab-separated frequency report and one `<prefix>_mode<k>.xyz` animation per
+*real* mode to disk. The other C++ constructors do not leave this off — they
+default to `"frequencies.tsv"` and prefix `"mode"`, so a plain
+`cpu::vib::Hessian driver;` writes those files into the process's working
+directory. An **empty** path (or prefix) is the explicit "write nothing"
+spelling that both Recorders honour, which is what the Python binding
+(`atomiverse.vibration.Hessian`) passes by default:
+
+```cpp
+cpu::vib::Hessian quiet{298.15, 101325.0, 1, 2, /*frequency_tsv=*/"",
+                        /*mode_xyz_prefix=*/""};   // no files at all
+```
 
 ## The Expected Result: Real Frequencies and a Free-Energy Correction
 
@@ -236,26 +258,38 @@ same geometry and basis* is a **numerical-tolerance** claim (finite-difference
 truncation only); Atomiverse frequencies vs *experiment* is a
 **physical-approximation** claim (the harmonic and method errors).
 
-## The Validation: Frequencies and Thermochemistry vs PySCF
+## The Validation: Frequencies vs PySCF
 
-The Response driver is pinned against PySCF two ways, both using reference
-data from genuine PySCF 2.x runs checked in as headers (so the parity tests
-run in CI without PySCF):
+Vibrational analysis is an end-to-end calculation, so its acceptance lives in
+`regressions/`, not in `tests/` (the unit suite holds only single-component
+checks such as the force-accumulator zeroing). One regression owns the
+frequency claim:
 
-- **Frequencies.** The finite-difference Hessian frequencies are compared,
-  mode by mode, against PySCF's *analytic* Hessian `harmonic_analysis` at the
-  **same** optimized geometry — so the only gap is finite-difference
-  truncation. Water, ammonia, and methane agree to **≤ 5 cm⁻¹**. The
-  independent-oracle logic here is elegant: the numerical Hessian is itself a
-  finite-difference check on the analytic *gradient*, and PySCF's analytic
-  Hessian is a check on the numerical one.
-- **Thermochemistry.** The Gibbs thermal correction `g_thermal` is compared
-  against PySCF's `thermo()` on the same molecules, matching the
-  electronic-energy-independent part to tight tolerance.
+- **Frequencies —
+  [`regressions/scf/h2o_rhf_freq`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_freq/reg_h2o_rhf_freq.cpp).**
+  H₂O at HF/6-31G\*, two gates at **1 cm⁻¹**: the full finite-difference
+  pipeline (`Hessian::run` over `cpu::scf::RHF`) against the analytic CPHF
+  Hessian routed through `Hessian::run_from_cartesian`, and that analytic
+  result against pinned PySCF 2.14.0 `hessian.RHF` wavenumbers
+  (1843.7084 / 4036.1737 / 4146.3782 cm⁻¹; provenance in its `REFERENCE.md`).
+  The logic is pleasingly circular in the useful direction: the numerical
+  Hessian is a finite-difference check on the analytic *gradient*, and the
+  analytic Hessian is a check on the numerical one.
+- **Structure —
+  [`regressions/semiempirical/se-analytic-hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/semiempirical/se-analytic-hessian/reg_se-analytic-hessian.cpp).**
+  The same driver over DFTB2 forces on H₂: the Hessian is symmetric to
+  1e-8 eV/Å², the projected mode count is **exactly** 1 (3N−5 for a linear
+  diatomic — a bit-precise property no tolerance applies to), and the stretch
+  is real. The absolute wavenumber is not pinned there.
 
-Both suites also assert structural exactness (**exact** class): the projected
-mode count is exactly `3N−6` for a nonlinear molecule, a bit-precise property
-that no tolerance applies to.
+**Thermochemistry has no in-tree oracle pin.** The RRHO port is a faithful
+transcription of PySCF `thermo()`, but nothing in the repository currently
+compares `g_thermal` or `s_tot` against a PySCF run; the closest live check is
+the Python suite's closed-form zero-point energy on an LJ dimer
+([`python/tests/test_vib.py`](https://github.com/MolCrafts/Atomiverse/blob/dev/python/tests/test_vib.py),
+`0.5 h c ν̃` to 1e-9 Hartree), which validates the constant set rather than the
+statistical mechanics. Treat the thermochemistry as unpinned until that
+regression exists.
 
 ## The Recurring Pattern: Another Loop, Same Evaluator
 
@@ -282,7 +316,7 @@ opt.on(minimizer::Phase::force).add(cpu::scf::RHF{basis});
 opt.build();  opt.run(frame, 100);
 
 // 2. Characterize at the optimized geometry — same method, same basis
-cpu::vib::Hessian vib{tc};
+cpu::vib::Hessian vib{298.15, 101325.0, /*multiplicity=*/1, /*sigma=*/2};
 vib.on(ATV::vib::Phase::force).add(cpu::scf::RHF{basis});
 vib.build();  auto H = vib.run(frame);
 ```
@@ -296,12 +330,13 @@ empirical or quantum — which is exactly the invariant
 
 ## Validation Reference
 
-Vibrational frequencies are validated against PySCF's analytic Hessian in
-[`tests/cpu/vibration/test_frequencies_vs_pyscf.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/vibration/test_frequencies_vs_pyscf.cpp)
-(H₂O / NH₃ / CH₄ to **≤ 5 cm⁻¹**, plus the exact `3N−6` mode-count assertion),
-thermochemistry against PySCF `thermo()` in
-[`tests/cpu/vibration/test_thermochem_vs_pyscf.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/vibration/test_thermochem_vs_pyscf.cpp),
-the raw numerical Hessian and translation/rotation projection in
-[`tests/cpu/vibration/test_numerical_hessian.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/vibration/test_numerical_hessian.cpp)
-and `test_tr_projection.cpp`. Reference data provenance is recorded alongside
-each generator under `tests/cpu/vibration/reference/`.
+| What | Where | Gate |
+| --- | --- | --- |
+| H₂O HF/6-31G\* wavenumbers, FD pipeline vs analytic CPHF vs PySCF 2.14.0 | [`regressions/scf/h2o_rhf_freq`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_freq/reg_h2o_rhf_freq.cpp) | 1 cm⁻¹ on both gates |
+| H₂ over DFTB2 forces: symmetry, exact 3N−5 mode count, real stretch | [`regressions/semiempirical/se-analytic-hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/semiempirical/se-analytic-hessian/reg_se-analytic-hessian.cpp) | 1e-8 eV/Å² asymmetry; ω > 100 cm⁻¹ |
+| Ar₂ stretch vs the closed-form LJ well curvature, and the ZPE closed form | [`python/tests/test_vib.py`](https://github.com/MolCrafts/Atomiverse/blob/dev/python/tests/test_vib.py) | 1e-3 relative; 1e-9 Hartree |
+| Force-accumulator zeroing across the 6N displacement passes (unit) | [`tests/cpu/vibration/test_hessian_zeroing.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/vibration/test_hessian_zeroing.cpp) | exact |
+
+Pin provenance for the PySCF wavenumbers is recorded in the regression's
+`REFERENCE.md`. The RRHO thermochemistry is not pinned against an external
+code anywhere in the tree — see the note at the end of "The Validation".

@@ -14,6 +14,12 @@ namespace vib {
 void FrequencyReport::launch(const cpu::LaunchContext& ctx) {
     if (ws_ == nullptr)
         return; // test-only role-check ctor.
+    // An empty path DISABLES the report. Stated here rather than left to
+    // `std::ofstream("")` failing its open: a caller who wants no TSV must be
+    // able to say so, and the Python binding defaults to exactly this so that
+    // importing a driver never litters the interpreter's working directory.
+    if (path_.empty())
+        return;
     const int dim = 3 * ws_->n_atoms;
     if (ctx.step < 2 * dim)
         return; // not the finalize pass yet.

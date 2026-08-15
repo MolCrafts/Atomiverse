@@ -20,6 +20,12 @@ namespace vib {
 void NormalModeWriter::launch(const cpu::LaunchContext& ctx) {
     if (ws_ == nullptr)
         return; // test-only role-check ctor.
+    // An empty prefix DISABLES the animations. Without this the prefix is
+    // simply concatenated and mode k lands in "_mode<k>.xyz" in the process's
+    // working directory — files nobody asked for. The Python binding
+    // (`atomiverse.vibration.Hessian`) defaults to the empty prefix.
+    if (prefix_.empty())
+        return;
     const int n = ws_->n_atoms;
     const int dim = 3 * n;
     if (ctx.step < 2 * dim)

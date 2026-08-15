@@ -9,6 +9,14 @@
 /// The table is keyed by atomic number `Z`. `mass_amu(Z)` throws on an
 /// unsupported element rather than returning a fallback, per the
 /// project's no-fallback convention.
+///
+/// Both lookups throw `std::invalid_argument`, not `std::out_of_range`: `Z`
+/// is a *value* the caller supplied that this table cannot honour, not an
+/// index into a container the caller may probe. The distinction is load-
+/// bearing at the Python boundary, where nanobind maps `invalid_argument` to
+/// `ValueError` (a bad argument) and `out_of_range` to `IndexError` (a bad
+/// subscript) — a frame carrying an unsupported element must surface as the
+/// former.
 #pragma once
 
 #include <stdexcept>
@@ -27,7 +35,8 @@ namespace vib {
 ///
 /// @param Z Atomic number (1 = H, 6 = C, ...).
 /// @return Isotope-averaged standard atomic weight [amu].
-/// @throws std::out_of_range if `Z` is outside the supported range.
+/// @throws std::invalid_argument if `Z` is outside the supported range
+///         (Python `ValueError`).
 inline double mass_amu(int Z) {
     switch (Z) {
     case 1:
@@ -67,7 +76,7 @@ inline double mass_amu(int Z) {
     case 18:
         return 39.948; // Ar
     default:
-        throw std::out_of_range(
+        throw std::invalid_argument(
             "cpu::vib::mass_amu: unsupported atomic number Z="
             + std::to_string(Z) + " (IUPAC-2013 table covers Z=1..18)");
     }
@@ -83,7 +92,8 @@ inline double mass_amu(int Z) {
 ///
 /// @param Z Atomic number (1 = H, 6 = C, ...).
 /// @return IUPAC element symbol (e.g. `"C"`).
-/// @throws std::out_of_range if `Z` is outside the supported range.
+/// @throws std::invalid_argument if `Z` is outside the supported range
+///         (Python `ValueError`).
 inline std::string element_symbol(int Z) {
     switch (Z) {
     case 1:
@@ -123,9 +133,9 @@ inline std::string element_symbol(int Z) {
     case 18:
         return "Ar";
     default:
-        throw std::out_of_range(
+        throw std::invalid_argument(
             "cpu::vib::element_symbol: unsupported atomic number Z="
-            + std::to_string(Z) + " (table covers Z=1..18)");
+            + std::to_string(Z) + " (symbol table covers Z=1..18)");
     }
 }
 

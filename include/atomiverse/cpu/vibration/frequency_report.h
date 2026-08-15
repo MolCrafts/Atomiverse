@@ -12,6 +12,11 @@
 ///
 /// Single responsibility (CLAUDE.md): this component performs I/O only —
 /// it computes nothing. All numbers come straight from the workspace.
+///
+/// An **empty path disables the report**: `launch()` returns without opening
+/// anything. That is what lets a host choose "no file" explicitly instead of
+/// writing into whatever directory the process happens to sit in — the Python
+/// binding (`atomiverse.vibration.Hessian`) defaults to it for that reason.
 #pragma once
 
 #include <string>
@@ -34,7 +39,8 @@ class FrequencyReport : public cpu::Recorder {
   public:
     /// @brief Construct bound to a driver-owned workspace.
     /// @param ws   Non-owning pointer to the shared Hessian workspace.
-    /// @param path Output TSV path (default `"frequencies.tsv"`).
+    /// @param path Output TSV path (default `"frequencies.tsv"`); empty
+    ///             disables the report entirely.
     explicit FrequencyReport(HessianWorkspace* ws,
                              std::string path = "frequencies.tsv")
         : ws_(ws), path_(std::move(path)) {}
@@ -63,7 +69,8 @@ class FrequencyReport : public cpu::Recorder {
     /// @brief Write the frequency TSV on the finalize pass.
     ///
     /// Gates on `ctx.step == 6N` so it fires exactly once, after
-    /// `Thermochem` has run. No-op on every displacement pass.
+    /// `Thermochem` has run. No-op on every displacement pass, and a no-op
+    /// altogether when the configured path is empty (report disabled).
     ///
     /// @param ctx Launch context; `ctx.step` is the displacement index.
     void launch(const cpu::LaunchContext& ctx) override;

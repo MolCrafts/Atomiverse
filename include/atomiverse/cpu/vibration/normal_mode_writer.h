@@ -12,6 +12,11 @@
 /// The eigenvectors are taken from the shared workspace; un-mass-
 /// weighting (`dx_i = mode_i / sqrt(m_i)`) is the only arithmetic, and
 /// is the standard Cartesian-displacement form PySCF `norm_mode` uses.
+///
+/// An **empty prefix disables the animations**: `launch()` returns without
+/// opening anything, rather than concatenating to `"_mode<k>.xyz"` in the
+/// process's working directory. The Python binding
+/// (`atomiverse.vibration.Hessian`) defaults to it for that reason.
 #pragma once
 
 #include <string>
@@ -35,7 +40,8 @@ class NormalModeWriter : public cpu::Recorder {
     /// @brief Construct bound to a driver-owned workspace.
     /// @param ws     Non-owning pointer to the shared Hessian workspace.
     /// @param prefix Output path prefix; mode `k` is written to
-    ///               `"<prefix>_mode<k>.xyz"` (default `"mode"`).
+    ///               `"<prefix>_mode<k>.xyz"` (default `"mode"`). An empty
+    ///               prefix disables the animations entirely.
     /// @param amplitude Peak Cartesian displacement amplitude [Angstrom]
     ///               of the sinusoidal sweep (default `0.5`).
     /// @param n_frames Number of animation frames per period (default 20).
@@ -80,7 +86,7 @@ class NormalModeWriter : public cpu::Recorder {
     ///
     /// Gates on `ctx.step == 6N` so it fires exactly once, after
     /// `HessianDiagonalizer` has run. One XYZ file per real mode; imaginary
-    /// modes are skipped.
+    /// modes are skipped, and an empty prefix writes nothing at all.
     ///
     /// @param ctx Launch context; `ctx.step` is the displacement index.
     void launch(const cpu::LaunchContext& ctx) override;

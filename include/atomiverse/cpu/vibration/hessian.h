@@ -144,7 +144,12 @@ class Hessian : public Driver<ATV::vib::Phase> {
     /// @param frame Equilibrium geometry [Å].
     /// @param hessian_ev_ang2 Dense symmetric `[3N,3N]` Hessian [eV/Å²].
     /// @return Frequencies [cm⁻¹], normal modes, etc. on `HessianResult`
-    ///         (Cartesian `hessian` field copies the input).
+    ///         (Cartesian `hessian` field copies the input). This path runs
+    ///         no `thermochem` pass, so EVERY thermochemistry field comes
+    ///         back 0.0 — `zpe`, `u_tot`, `h_tot`, `g_tot`, `g_thermal` and
+    ///         all four entropies. Those are not physical zeros; use the
+    ///         full `run()` (or a driver constructed with thermochemistry
+    ///         inputs) when they are wanted.
     /// @throws std::invalid_argument on empty frame or shape mismatch.
     HessianResult run_from_cartesian(cpu::Frame& frame,
                                      xt::xtensor<double, 2> hessian_ev_ang2);
@@ -158,8 +163,8 @@ class Hessian : public Driver<ATV::vib::Phase> {
   private:
     /// @brief Register the full vib component chain via bind_defaults / on().
     void wire_full_chain_(HessianWorkspace* ws, double temperature,
-                          double pressure, int multiplicity, int symmetry_number,
-                          const std::string& frequency_tsv,
+                          double pressure, int multiplicity,
+                          int symmetry_number, const std::string& frequency_tsv,
                           const std::string& mode_xyz_prefix);
 
   protected:

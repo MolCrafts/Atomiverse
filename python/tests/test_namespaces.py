@@ -67,6 +67,11 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("AM1Evaluator", "atomiverse.semiempirical", "AM1Evaluator"),
     ("AM1Result", "atomiverse.semiempirical", "AM1Result"),
     ("single_point", "atomiverse.driver", "single_point"),
+    # Vibrational analysis (spec py-vib): unconditional, ATV_BUILD_VIB
+    # defaults ON. `cpu/vibration/` is a backend-root directory, so the
+    # deep module is `atomiverse.vibration` — not a member of `md/`.
+    ("Hessian", "atomiverse.vibration", "Hessian"),
+    ("HessianResult", "atomiverse.vibration", "HessianResult"),
 )
 
 _PW_MAPPING: tuple[tuple[str, str, str], ...] = (
@@ -110,6 +115,7 @@ _DEEP_MODULES: tuple[str, ...] = (
     "atomiverse.semiempirical",
     "atomiverse.pw",
     "atomiverse.scf",
+    "atomiverse.vibration",
 )
 
 
@@ -128,10 +134,11 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 25 entries (18 + the 7 unconditional Monte Carlo
-        rows of spec py-mc); a PW build contributes two types (PW,
-        PWResult) and an HF build the four concrete SCF methods."""
-        expected = 25 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        """The base has 27 entries (18 + the 7 unconditional Monte Carlo
+        rows of spec py-mc + the 2 unconditional vibration rows of spec
+        py-vib); a PW build contributes two types (PW, PWResult) and an HF
+        build the four concrete SCF methods."""
+        expected = 27 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
         assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(

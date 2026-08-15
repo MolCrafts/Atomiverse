@@ -21,6 +21,9 @@ void bind_mc(nb::module_& m);
 #ifdef ATV_HAS_MINIMIZER
 void bind_minimizer(nb::module_& m);
 #endif
+#ifdef ATV_HAS_VIB
+void bind_vib(nb::module_& m);
+#endif
 #ifdef ATV_HAS_PW
 void bind_pw(nb::module_& m);
 #endif
@@ -42,6 +45,9 @@ NB_MODULE(_atomiverse, m) {
 #endif
 #ifdef ATV_HAS_MINIMIZER
     bind_minimizer(m);
+#endif
+#ifdef ATV_HAS_VIB
+    bind_vib(m);
 #endif
 #ifdef ATV_HAS_PW
     bind_pw(m);

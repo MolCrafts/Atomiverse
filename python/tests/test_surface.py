@@ -33,6 +33,10 @@ namespace (pinned per row in test_namespaces.py):
   ``InsertDeleteMove``, ``MoveSelector``) are unconditional top-level names
   beside the MD surface — ``ATV_BUILD_MC`` defaults ON, so like ``XYZ`` they
   are never capability-probed and belong in the static ``__all__``.
+* Vibrational analysis (spec py-vib): ``Hessian`` and ``HessianResult``
+  are unconditional top-level names beside the Monte Carlo surface —
+  ``ATV_BUILD_VIB`` defaults ON, so like ``XYZ`` and the MC names they are
+  never capability-probed and belong in the static ``__all__``.
 * Electrostatics (spec py-coulomb-pme): ``PairCoulCut`` and ``CoulLong``
   are unconditional top-level names; ``KSpacePME`` is compile-optional
   (``ATV_BUILD_KSPACE``) and therefore reachable only through the lazy
@@ -124,6 +128,8 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "AM1Evaluator",
         "AM1Result",
         "single_point",
+        "Hessian",
+        "HessianResult",
     }
 )
 
@@ -138,6 +144,10 @@ _MC_NAMES: tuple[str, ...] = (
     "InsertDeleteMove",
     "MoveSelector",
 )
+
+#: The vibrational-analysis surface (spec py-vib): the finite-difference
+#: Hessian driver and its result type, both unconditional.
+_VIB_NAMES: tuple[str, ...] = ("Hessian", "HessianResult")
 
 _DEAD_PACKAGE_ATTRS: tuple[str, ...] = (
     "GeometryOptimizer",
@@ -207,15 +217,17 @@ class TestCanonicalSurface:
         """__all__ is the static MD + electrostatics + recorder + MC + AM1
         surface.
 
-        Same 33 names on every build: compile-optional types live behind
+        Same 35 names on every build: compile-optional types live behind
         the lazy ``__getattr__``, never in ``__all__``. ``XYZ`` is static
         because ``ATV_BUILD_PYTHON`` forces ``ATV_BUILD_IO=ON`` through the
         CMake module DAG (``cmake/AtvProductModules.cmake:68``); the seven
         Monte Carlo names are static because ``ATV_BUILD_MC`` is ON by
-        default (``:25``) and the wheel does not override it. Neither is
+        default (``:25``) and the wheel does not override it, and the two
+        vibration names (spec py-vib) are static for the same reason
+        (``ATV_BUILD_VIB`` ON at ``:27``). None of them is
         capability-probed.
         """
-        assert len(_CANONICAL_ALL) == 33
+        assert len(_CANONICAL_ALL) == 35
         assert set(av.__all__) == set(_CANONICAL_ALL)
 
 
@@ -450,6 +462,37 @@ class TestMonteCarloSurface:
 
     @pytest.mark.parametrize("name", _MC_NAMES)
     def test_mc_name_is_in_all(self, name: str) -> None:
+        """Unconditional names belong in the static ``__all__``."""
+        assert name in av.__all__
+
+
+# ── Vibration surface (spec py-vib) ─────────────────────────────────
+
+
+class TestVibrationSurface:
+    """``Hessian`` / ``HessianResult`` are unconditional names.
+
+    Same contract as the Monte Carlo surface, not the PW one:
+    ``ATV_BUILD_VIB`` defaults ON (``cmake/AtvProductModules.cmake:27``)
+    and the wheel never turns it off, so there is no capability probe here.
+    A staged CLI install that leaves ``vib`` out is the same caveat the MC
+    block documents.
+    """
+
+    @pytest.mark.parametrize("name", _VIB_NAMES)
+    def test_vib_name_is_identity_reexport(self, name: str) -> None:
+        """``av.<Name>`` IS ``atomiverse.vibration.<Name>``."""
+        vibration = importlib.import_module("atomiverse.vibration")
+        assert getattr(av, name) is getattr(vibration, name)
+
+    def test_vibration_module_exports_the_two_names(self) -> None:
+        """``atomiverse.vibration.__all__`` is exactly the driver and its
+        result type — no workspace, no component chain, no config bag."""
+        vibration = importlib.import_module("atomiverse.vibration")
+        assert set(vibration.__all__) == set(_VIB_NAMES)
+
+    @pytest.mark.parametrize("name", _VIB_NAMES)
+    def test_vib_name_is_in_all(self, name: str) -> None:
         """Unconditional names belong in the static ``__all__``."""
         assert name in av.__all__
 

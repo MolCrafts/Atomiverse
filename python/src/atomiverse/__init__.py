@@ -52,6 +52,8 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``semiempirical.AM1``                 ``AM1``                     ``cpu::semiempirical::AM1``
 ``semiempirical.AM1Evaluator``        ``AM1Evaluator``            ``cpu::semiempirical::AM1Evaluator``
 ``semiempirical.AM1Result``           ``AM1Result``               ``cpu::semiempirical::AM1Result``
+``vibration.Hessian``                 ``Hessian``                 ``cpu::vib::Hessian``
+``vibration.HessianResult``           ``HessianResult``           ``cpu::vib::HessianResult``
 ``driver.single_point``               ``single_point``            ``cpu::single_point``
 =====================================  ==========================  =========================
 
@@ -73,6 +75,19 @@ These four movers and three presets are CPU-only and take no ``device=``.
 ``ATV_BUILD_MC`` is ON by default, so they stay in ``__all__``; only a
 staged install that leaves ``mc`` out drops them, and then they raise
 ``AttributeError`` naming the flag like the compile-optional rows below.
+
+``Hessian`` / ``HessianResult`` are the harmonic vibrational analysis: the
+central finite-difference Hessian over any registered force source, plus the
+normal modes and the rigid-rotor/harmonic-oscillator (RRHO) thermochemistry
+it diagonalizes into. Translations and rotations are projected out, so
+``frequencies`` holds exactly ``3N-6`` entries (``3N-5`` when linear, none
+at all for a lone atom) in cm⁻¹, and the thermochemistry is reported in
+Hartree relative to an electronic energy of zero.
+``help(atomiverse.vibration)`` gives the frame contract (masses come from
+the ``atomic_number`` column, Z = 1..18), the rotational symmetry number you
+must supply yourself, and the units. Like Monte Carlo it is CPU-only, takes
+no ``device=``, and stays in ``__all__`` because ``ATV_BUILD_VIB`` is ON by
+default.
 
 Compile-optional rows — ``PW`` / ``PWResult`` (``ATV_BUILD_PW``),
 ``KSpacePME`` (``ATV_BUILD_KSPACE``) and the Gaussian SCF methods
@@ -145,6 +160,8 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "AM1": ("atomiverse.semiempirical", "AM1"),
     "AM1Evaluator": ("atomiverse.semiempirical", "AM1Evaluator"),
     "AM1Result": ("atomiverse.semiempirical", "AM1Result"),
+    "Hessian": ("atomiverse.vibration", "Hessian"),
+    "HessianResult": ("atomiverse.vibration", "HessianResult"),
     "single_point": ("atomiverse.driver", "single_point"),
     "PW": ("atomiverse.pw", "PW"),
     "PWResult": ("atomiverse.pw", "PWResult"),
@@ -171,6 +188,11 @@ _MC_NAMES: tuple[str, ...] = (
     "InsertDeleteMove",
     "MoveSelector",
 )
+
+# Vibrational analysis defaults to ON (ATV_BUILD_VIB), so these stay in
+# __all__ — same staged-CLI caveat as the Monte Carlo group. Probed on
+# `Hessian`, the driver bind_vib.cpp always registers when the domain is built.
+_VIB_NAMES: tuple[str, ...] = ("Hessian", "HessianResult")
 
 __all__ = [
     "MD",
@@ -205,6 +227,8 @@ __all__ = [
     "AM1",
     "AM1Evaluator",
     "AM1Result",
+    "Hessian",
+    "HessianResult",
     "single_point",
 ]
 
@@ -237,6 +261,15 @@ def __getattr__(name: str) -> Any:
             "(Monte Carlo not built into this extension; rebuild with "
             "ATV_BUILD_MC=ON, or include `mc` in the staged install: "
             "python -m atomiverse config md mc ...)"
+        )
+    # Vibrational analysis is likewise on by default, so a miss means a staged
+    # install that deselected the domain — name the flag rather than fail bare.
+    if name in _VIB_NAMES and not hasattr(_cpp, "Hessian"):
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r} "
+            "(vibrational analysis not built into this extension; rebuild "
+            "with ATV_BUILD_VIB=ON, or include `vib` in the staged install: "
+            "python -m atomiverse config md vib ...)"
         )
     # So is the PME reciprocal solver (needs FFTW3).
     if name == "KSpacePME" and not hasattr(_cpp, "KSpacePME"):

@@ -32,6 +32,7 @@
 #ifdef ATV_HAS_MC
 
 #include "molrs_frame_bridge.h"
+#include "owned_buffer.h"
 
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/optional.h>
@@ -39,8 +40,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -99,9 +100,13 @@ Verb verb_from_name(std::string_view name) {
 
 /// @brief Copy one Frame column into a fresh, numpy-owned 1-D array.
 ///
-/// The array owns its buffer through a capsule deleter: molrs copies the data
-/// into its own column storage on `Block.insert`, and the engine's working
-/// frame keeps evolving afterwards, so nothing may alias either side.
+/// The array owns its buffer through the shared `to_owned_array()` primitive
+/// (`owned_buffer.h`): molrs copies the data into its own column storage on
+/// `Block.insert`, and the engine's working frame keeps evolving afterwards,
+/// so nothing may alias either side. This wrapper adds the engine-column
+/// spelling (pointer + row count) and the dtype conversion the molrs schema
+/// asks for — the one call site that needs a non-`double` element type, which
+/// is why it cannot go through `result_array.h`.
 ///
 /// @tparam Out numpy element type of the produced array (`double` /
 ///         `std::uint32_t`) — the dtype the molrs schema declares for that
@@ -112,13 +117,8 @@ Verb verb_from_name(std::string_view name) {
 /// @return A 1-D numpy array of length `n` holding its own buffer.
 template <typename Out, typename In>
 nb::object numpy_column(const In* src, std::size_t n) {
-    auto buffer = std::make_unique<Out[]>(n);
-    for (std::size_t i = 0; i < n; ++i)
-        buffer[i] = static_cast<Out>(src[i]);
-    nb::capsule owner(buffer.get(),
-                      [](void* p) noexcept { delete[] static_cast<Out*>(p); });
-    Out* raw = buffer.release();
-    return nb::ndarray<nb::numpy, Out, nb::ndim<1>>(raw, {n}, owner).cast();
+    using Column = nb::ndarray<nb::numpy, Out, nb::ndim<1>>;
+    return to_owned_array<Column>(std::span<const In>(src, n), {n}).cast();
 }
 
 /// @brief One bound Monte Carlo preset: the driver, its working frame, and the

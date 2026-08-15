@@ -111,6 +111,11 @@ Current surface:
   (the default).
 - **Geometry optimization** — CPU `minimizer.Minimize` with the `LBFGS`
   optimizer component and independent `ForceConverged` loop policy.
+- **Vibrational analysis** — `Hessian` (central finite differences over any
+  registered force source) and `HessianResult` (wavenumbers, normal modes,
+  RRHO thermochemistry). `ATV_BUILD_VIB` defaults ON, so these are on the
+  shipped wheel; a staged CLI build must list `vib`
+  (`python -m atomiverse config md vib …`).
 - **Monte Carlo** — the three ensemble presets `MC` (NVT), `NptMC` and
   `GCMC` with their movers `TranslateMove`, `VolumeMove`,
   `InsertDeleteMove` and `MoveSelector`. `ATV_BUILD_MC` defaults ON, so
@@ -486,6 +491,139 @@ print(result.iterations, result.converged, result.stop_reason)
 
 Only the CPU backend is active for this surface. `device="cuda"` fails before
 build or compute; GPU materialization is explicitly deferred.
+
+## Vibrational analysis: frequencies and thermochemistry
+
+Near a stationary point the energy surface is well approximated by a
+quadratic form, and the matrix of its second derivatives with respect to the
+nuclear Cartesian coordinates — the **Hessian** — is what turns a single
+geometry into a spectrum. `Hessian` builds it by central finite differences:
+it displaces every Cartesian coordinate by ±h (h = 1e-3 Å), differences the
+forces the registered evaluator returns, symmetrizes, mass-weights, projects
+out the translations and rotations and diagonalizes the rest. That is **6N
+force evaluations** for N atoms, so the cost is the force source's.
+
+Minimize first. The harmonic approximation only means anything at a
+stationary point; on a non-stationary geometry the driver does not fail, it
+silently returns the curvature of a slope, usually with spurious imaginary
+modes.
+
+The mode count is the **projected** one: `frequencies` has exactly 3N−6
+entries (3N−5 for a linear molecule, and none at all for a lone atom), never
+3N with five near-zero values to filter out. Imaginary modes — directions in
+which the energy curves *down*, so the geometry is a saddle point — come back
+as **negative** wavenumbers, the universal `imaginary_freq=False` chemistry
+convention, and `n_imaginary` counts them.
+
+Two Argon atoms at the Lennard-Jones minimum are the smallest system with a
+closed-form answer, so it is worth running once to see the shape:
+
+```python
+import numpy as np
+import molrs
+import atomiverse as av
+
+eps, sigma, cutoff = 0.0104, 3.4, 8.5        # [eV], [Å], [Å]
+r_min = 2.0 ** (1.0 / 6.0) * sigma           # 3.81637 Å
+
+frame = molrs.Frame()
+atoms = molrs.Block()
+atoms.insert("x", np.zeros(2))
+atoms.insert("y", np.zeros(2))
+atoms.insert("z", np.array([0.0, r_min]))
+atoms.insert("atomic_number", np.full(2, 18, dtype=np.uint32))   # Ar
+frame["atoms"] = atoms
+frame.box = molrs.Box.cube(40.0)             # > 2 × cutoff: isolated dimer
+
+driver = av.Hessian()                        # 298.15 K, 1 atm, singlet, σ = 1
+driver.set_evaluator(av.PairLJCut(eps, sigma, cutoff))
+driver.set_neighbor(av.NeighborList(cutoff, 1.0))
+
+result = driver.run(frame)
+print(result.frequencies)     # ≈ [26.4564] — one mode: 3N-5 = 1 for a diatomic
+print(result.is_linear, result.n_imaginary)     # True 0
+print(result.hessian.shape, result.normal_modes.shape)   # (6, 6) (6, 1)
+print(result.zpe, result.g_thermal)             # [Hartree]
+print(result.s_tot)                             # [Hartree/K]
+```
+
+`run()` also writes the frame back: the positions return to the equilibrium
+geometry they arrived with, and the force columns hold the forces evaluated
+there.
+
+The one frequency is the analytic well curvature: with
+`k = V''(r_min) = 72 ε / (2^(1/3) σ²)` and the reduced mass μ = m_Ar/2, the
+stretch is `ν̃ = √(k/μ) / (2πc) = 26.456348 cm⁻¹`. The only error budget
+between that closed form and the printed number is the central-difference
+truncation at h = 1e-3 Å, which is 2.1 × 10⁻⁶ relative.
+`python/tests/test_vib.py` derives the 26.456348 cm⁻¹ from the engine's own
+CODATA-2014 constants by two independent unit paths (they agree to ~1e-16)
+and grades the driver against it at 1e-3 relative — loose enough to also
+cover a single-precision (`ATV_REAL_STORAGE=float`) wheel.
+
+**Masses come from Z, not from the `mass` column.** The analysis reads each
+atom's `atomic_number` [Z] and looks the IUPAC-2013 standard atomic weight up
+per element, so editing a per-atom `mass` cannot move a frequency (a mass
+mismatch shifts every wavenumber, ν ~ m^−1/2). The table covers **Z = 1..18**
+(H..Ar) and has no fallback: anything else raises `ValueError` naming the
+atomic number.
+
+The force slot takes any bound source and has **no default** — a run with
+nothing registered raises `RuntimeError`, because the Hessian of no potential
+is not a physical zero. A pair style needs a `NeighborList`; an
+electronic-structure evaluator does not:
+
+```python
+# `h2` is a molrs.Frame of two H atoms (atomic_number = 1) in a large cell.
+driver = av.Hessian()
+driver.set_evaluator(av.AM1Evaluator())    # 6N SCF solves, no neighbor list
+result = driver.run(h2)
+```
+
+Configure the driver fully before the first `run()`: the execution plan is
+compiled exactly once, so every setter raises `RuntimeError` afterwards, and
+a different configuration means a new `Hessian` object.
+
+**File output is opt-in.** `frequency_tsv` and `mode_xyz_prefix` default to
+the empty string, which writes nothing at all — pass a path to opt in:
+
+```python
+driver = av.Hessian(
+    temperature=298.15,      # [K]
+    pressure=101325.0,       # [Pa] — enters the translational entropy only
+    multiplicity=1,          # 2S+1; contributes R ln(M) to the entropy
+    symmetry_number=2,       # rotational σ (2 for H2O, 3 for NH3, 12 for C6H6)
+    frequency_tsv="freq.tsv",
+    mode_xyz_prefix="anim",  # writes anim_mode0.xyz, anim_mode1.xyz, …
+)
+```
+
+The TSV is one row per mode (`index`, `frequency_cm-1`, `type`) with a `#`
+trailer carrying the mode counts, the ZPE and the Gibbs terms; one XYZ
+animation is written per **real** mode (imaginary modes are not animated),
+named `<prefix>_mode<k>.xyz` after that mode's index in `frequencies`. Each
+animation is one sinusoidal period in 20 frames with a 0.5 Å peak
+displacement — C++ defaults, not exposed on the Python constructor.
+Nothing derives `symmetry_number` for you — leaving it at 1 for a symmetric
+molecule overestimates the rotational entropy by R ln σ, and so
+under-estimates `g_tot`.
+
+Units on the result: frequencies [cm⁻¹]; Hessian [eV/Å²]; `zpe`, `u_tot`,
+`h_tot`, `g_tot`, `g_thermal` [Hartree]; `s_tot`, `s_trans`, `s_rot`,
+`s_vib`, `s_elec` [Hartree/K]. The thermochemistry is in atomic units
+because it is a faithful port of PySCF's `thermo()`; 1 Hartree = 27.211386 eV.
+
+The electronic energy `E0` is carried as **zero** throughout that port, so
+`u_tot`, `h_tot` and `g_tot` are the *thermal* parts of U, H and G — add
+your own electronic energy for an absolute one — and `g_tot` and
+`g_thermal` therefore hold the same number. `g_thermal` is the one to
+compare against another code, because it does not require the two codes to
+agree on an electronic energy first.
+
+This is *molecular* vibrational analysis — free-molecule translations and
+rotations are projected out. Periodic phonons are a different calculation and
+are not on this surface, and neither are analytic (non-finite-difference)
+Hessians.
 
 ## Monte Carlo: NVT, NPT and μVT
 

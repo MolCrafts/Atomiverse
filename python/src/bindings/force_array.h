@@ -8,20 +8,22 @@
 /// (`AM1Result::forces_ev_a`) or a temporary (`GradientResult::forces`), so
 /// the array Python keeps must own its buffer.
 ///
-/// `to_force_array()` is that copy: it allocates, copies, and attaches an
-/// `nb::capsule` deleter so the buffer's lifetime follows the numpy array and
-/// nothing in the engine has to outlive the call.
+/// `to_force_array()` is that copy: it adds the force-specific size check and
+/// shape to the shared `to_owned_array()` primitive (`owned_buffer.h`), which
+/// allocates, copies and attaches the `nb::capsule` deleter so the buffer's
+/// lifetime follows the numpy array and nothing in the engine has to outlive
+/// the call.
 ///
 /// This is deliberately *not* in `molrs_frame_bridge.h`, whose charter is the
 /// molrs.Frame capsule boundary; a numpy return currency is a different
 /// concern with a different dependency (`nanobind/ndarray.h`).
 #pragma once
 
+#include "owned_buffer.h"
+
 #include <nanobind/ndarray.h>
 
-#include <algorithm>
 #include <cstddef>
-#include <memory>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -55,10 +57,5 @@ inline ForceArray to_force_array(std::span<const double> forces_ev_a) {
             + " is not a multiple of 3; expected 3 Cartesian components "
               "[eV/Å] per atom");
     const std::size_t n_atoms = forces_ev_a.size() / 3u;
-    auto buffer = std::make_unique<double[]>(forces_ev_a.size());
-    std::copy(forces_ev_a.begin(), forces_ev_a.end(), buffer.get());
-    nb::capsule owner(buffer.get(), [](void* p) noexcept {
-        delete[] static_cast<double*>(p);
-    });
-    return ForceArray(buffer.release(), {n_atoms, std::size_t{3}}, owner);
+    return to_owned_array<ForceArray>(forces_ev_a, {n_atoms, std::size_t{3}});
 }
