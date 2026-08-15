@@ -27,17 +27,27 @@
 #include "atomiverse/cpu/planewave/pw_evaluator.h"
 #endif
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
+#include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
+#include "atomiverse/cpu/potentials/dihedral_charmm.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
+#include "atomiverse/cpu/potentials/improper_harmonic.h"
+#include "atomiverse/cpu/potentials/pair_born.h"
+#include "atomiverse/cpu/potentials/pair_buck.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
+#include "atomiverse/cpu/potentials/pair_dpd.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/pair_morse.h"
+#include "atomiverse/cpu/potentials/pair_wca.h"
+#include "atomiverse/cpu/potentials/pair_yukawa.h"
 #include "atomiverse/cpu/record/thermo.h"
 #ifdef ATV_HAS_IO
 #include "atomiverse/cpu/record/xyz_recorder.h"
 #endif
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/task/internal/minimize_builders.h"
+#include "atomiverse/cpu/task/internal/potential_builders.h"
 
 namespace ATV::cpu::task {
 namespace {
@@ -270,6 +280,32 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 else if constexpr (std::is_same_v<P,
                                                   DihedralMultiHarmonicParams>)
                     bind(cpu::DihedralMultiHarmonic{p.Cn});
+                else if constexpr (std::is_same_v<P, PairMorseParams>)
+                    bind(cpu::PairMorse{p.D, p.alpha, p.r0, p.cutoff});
+                else if constexpr (std::is_same_v<P, PairBuckParams>)
+                    bind(cpu::PairBuck{p.A, p.rho, p.C, p.cutoff});
+                else if constexpr (std::is_same_v<P, PairBornParams>)
+                    // Parallel vectors transposed back into the coefficient
+                    // rows the C++ constructor takes; the multi-type
+                    // constructor covers the single-type one as a one-row
+                    // table.
+                    bind(cpu::PairBorn{internal::born_table(p), p.cutoff});
+                else if constexpr (std::is_same_v<P, PairYukawaParams>)
+                    bind(cpu::PairYukawa{p.A, p.kappa, p.cutoff});
+                else if constexpr (std::is_same_v<P, PairWcaParams>)
+                    // No cutoff argument: WCA derives it as 2^(1/6)·sigma.
+                    bind(cpu::PairWCA{p.epsilon, p.sigma});
+                else if constexpr (std::is_same_v<P, PairDpdParams>)
+                    // The scalar-amplitude constructor; the multi-component
+                    // `a_matrix` one has no wire mirror.
+                    bind(cpu::PairDpd{p.a, p.gamma, p.temperature, p.cutoff,
+                                      p.dt, p.seed});
+                else if constexpr (std::is_same_v<P, BondFeneParams>)
+                    bind(cpu::BondFene{p.K, p.R0});
+                else if constexpr (std::is_same_v<P, DihedralCharmmParams>)
+                    bind(cpu::DihedralCharmm{p.K, p.n, p.delta});
+                else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
+                    bind(cpu::ImproperHarmonic{p.K, p.chi0});
                 else if constexpr (std::is_same_v<P, PairCoulCutParams>)
                     bind(cpu::PairCoulCut{p.cutoff});
                 else if constexpr (std::is_same_v<P, CoulLongParams>)
@@ -333,6 +369,27 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 driver.set_evaluator(cpu::AngleHarmonic{p.K, p.theta0});
             else if constexpr (std::is_same_v<P, DihedralMultiHarmonicParams>)
                 driver.set_evaluator(cpu::DihedralMultiHarmonic{p.Cn});
+            else if constexpr (std::is_same_v<P, PairMorseParams>)
+                driver.set_evaluator(
+                    cpu::PairMorse{p.D, p.alpha, p.r0, p.cutoff});
+            else if constexpr (std::is_same_v<P, PairBuckParams>)
+                driver.set_evaluator(cpu::PairBuck{p.A, p.rho, p.C, p.cutoff});
+            else if constexpr (std::is_same_v<P, PairBornParams>)
+                driver.set_evaluator(
+                    cpu::PairBorn{internal::born_table(p), p.cutoff});
+            else if constexpr (std::is_same_v<P, PairYukawaParams>)
+                driver.set_evaluator(cpu::PairYukawa{p.A, p.kappa, p.cutoff});
+            else if constexpr (std::is_same_v<P, PairWcaParams>)
+                driver.set_evaluator(cpu::PairWCA{p.epsilon, p.sigma});
+            else if constexpr (std::is_same_v<P, PairDpdParams>)
+                driver.set_evaluator(cpu::PairDpd{p.a, p.gamma, p.temperature,
+                                                  p.cutoff, p.dt, p.seed});
+            else if constexpr (std::is_same_v<P, BondFeneParams>)
+                driver.set_evaluator(cpu::BondFene{p.K, p.R0});
+            else if constexpr (std::is_same_v<P, DihedralCharmmParams>)
+                driver.set_evaluator(cpu::DihedralCharmm{p.K, p.n, p.delta});
+            else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
+                driver.set_evaluator(cpu::ImproperHarmonic{p.K, p.chi0});
             else if constexpr (std::is_same_v<P, PairCoulCutParams>)
                 driver.set_evaluator(cpu::PairCoulCut{p.cutoff});
             else if constexpr (std::is_same_v<P, CoulLongParams>)

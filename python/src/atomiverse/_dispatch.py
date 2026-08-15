@@ -39,6 +39,18 @@ EVALUATOR_DISPATCH: dict[type, str] = {
     _cpp.BondHarmonic: "set_evaluator_bond_harmonic",
     _cpp.AngleHarmonic: "set_evaluator_angle_harmonic",
     _cpp.DihedralMultiHarmonic: "set_evaluator_dihedral_multi_harmonic",
+    # The widened real-space catalogue: six pair styles and three bonded
+    # ones. Unconditional like the six above — a real-space style is part of
+    # ATV_BUILD_POTENTIALS with no build flag of its own, so no probe.
+    _cpp.PairMorse: "set_evaluator_pair_morse",
+    _cpp.PairBuck: "set_evaluator_pair_buck",
+    _cpp.PairBorn: "set_evaluator_pair_born",
+    _cpp.PairYukawa: "set_evaluator_pair_yukawa",
+    _cpp.PairWCA: "set_evaluator_pair_wca",
+    _cpp.PairDpd: "set_evaluator_pair_dpd",
+    _cpp.BondFene: "set_evaluator_bond_fene",
+    _cpp.DihedralCharmm: "set_evaluator_dihedral_charmm",
+    _cpp.ImproperHarmonic: "set_evaluator_improper_harmonic",
 }
 
 # The PME reciprocal solver is compile-optional (ATV_BUILD_KSPACE / FFTW3),

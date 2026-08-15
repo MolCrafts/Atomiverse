@@ -51,8 +51,8 @@ void PairYukawa::compute(const LaunchContext& ctx) {
             const double e = std::exp(-kappa_ * r);
             const double inv_r = 1.0 / r;
             const double v = A_ * e * inv_r - v_shift_;
-            // dU/dr (unshifted) = −A e (−κ/r + 1/r²) wait:
-            // U = A e^{−κr}/r → dU/dr = A e (−κ/r − 1/r²) = −A e (κ/r + 1/r²)
+            // The shift is a constant, so it drops out of the derivative:
+            // U = A e^{−κr}/r ⇒ dU/dr = −A e^{−κr}(κ/r + 1/r²).
             const double dUdr = -A_ * e * (kappa_ * inv_r + inv_r * inv_r);
             const double fpair =
                 -dUdr / r; // F on i from j: fpair * r_ij with r_ij = r_j-r_i

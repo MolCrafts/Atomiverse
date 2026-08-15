@@ -227,14 +227,20 @@ class MD:
         path's own), so size the cell, ``ecut_ry`` and ``max_iter`` for the
         number of steps you actually want.
 
-        Two electrostatic caveats, because they are the ones this dispatch
-        cannot catch for you:
+        Three caveats, because they are the ones this dispatch cannot catch
+        for you:
 
         * ``CoulLong`` and ``KSpacePME`` are the two halves of one Ewald
           split. Register both, with the same ``alpha`` — the driver
           rejects a lone half at :meth:`build`, not here.
         * every Coulomb style reads the per-atom ``charge`` column [e] of
           the frame, and :meth:`run` refuses a frame that has none.
+        * ``PairDpd`` is a thermostat as well as a potential — its
+          dissipative and random terms are what hold the temperature — so
+          register it *instead of* ``NoseHoover`` / ``Langevin`` / ``CSVR``,
+          and give it the same ``dt`` as the integrator. Nothing here
+          refuses a second thermostat beside it; the result is simply
+          double-thermostatted.
         """
         method_name = _EVALUATOR_DISPATCH.get(type(component))
         if method_name is None:

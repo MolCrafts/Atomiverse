@@ -138,6 +138,100 @@ TaskSpec make_md_spec() {
                                            /*mp_order=*/2,
                                            /*extra_bands=*/6},
                          std::nullopt});
+    // ── The widened real-space catalogue (py-pair-styles) ────────────────
+    //
+    // Nine appended IDs (27-35) with fresh payloads, so `kWireVersion` stays
+    // 5: no existing byte layout moves. All nine ride the categorical
+    // (`std::nullopt`) evaluator slot — the slot is plural, so a pair style
+    // JOINS `PairLJCut` above rather than replacing it, and the three bonded
+    // styles join it the way `BondHarmonic` already does.
+    //
+    // The house rule applies throughout: EVERY field of every mirror is
+    // spelled with a non-default, mutually distinct value. Six of the nine
+    // are "some doubles then a cutoff" and would decode into each other's
+    // shapes unnoticed otherwise.
+
+    // `PairMorseParams` — D [eV], α [Å⁻¹], r₀ [Å], cutoff [Å]. Four doubles,
+    // the same arity as `PairBuckParams` below, so the two are told apart
+    // only by their IDs; the values differ by orders of magnitude here so a
+    // swapped arm is a visible diff and not a plausible one.
+    entries.push_back(MDComponentEntry{
+        PairMorseParams{/*D=*/0.35, /*alpha=*/1.4, /*r0=*/2.9, /*cutoff=*/7.0},
+        std::nullopt});
+    // `PairBuckParams` — A [eV], ρ [Å], C [eV·Å⁶], cutoff [Å].
+    entries.push_back(MDComponentEntry{PairBuckParams{/*A=*/1500.0,
+                                                      /*rho=*/0.29,
+                                                      /*C=*/25.0,
+                                                      /*cutoff=*/8.0},
+                                       std::nullopt});
+    // `PairBornParams` — the MULTI-TYPE Fumi-Tosi table, mirrored as PARALLEL
+    // VECTORS (the `BondHarmonicParams` shape) rather than as a vector of
+    // `BornTypeCoeff`: the codec's variable-length primitive is a
+    // length-prefixed run of one scalar type, so a vector-of-struct has no
+    // layout. The single-type C++ constructor stays expressible as one-row
+    // vectors — that is what the materializer parity test uses.
+    //
+    // TWO rows, keyed by the atomic numbers a real frame carries in
+    // `kAtom_type` (Na = 11, Cl = 17 — the Z-keying reality, not 0/1): a
+    // Na-Cl row and a Cl-Cl row. `type_i` and `type_j` therefore differ from
+    // each other AND row to row, so a codec that swapped the two integer
+    // vectors, or wrote one row twice, cannot survive the roundtrip. Five
+    // parallel double vectors on top of that is the widest parallel-vector
+    // payload on the wire.
+    entries.push_back(MDComponentEntry{PairBornParams{/*type_i=*/{11, 17},
+                                                      /*type_j=*/{17, 17},
+                                                      /*A=*/{0.2637, 1.6},
+                                                      /*rho=*/{0.317, 0.338},
+                                                      /*sigma=*/{2.755, 3.170},
+                                                      /*C=*/{1.05, 72.4},
+                                                      /*D=*/{0.499, 145.4},
+                                                      /*cutoff=*/9.0},
+                                       std::nullopt});
+    // `PairYukawaParams` — A [eV·Å], κ [Å⁻¹], cutoff [Å].
+    entries.push_back(MDComponentEntry{
+        PairYukawaParams{/*A=*/2.5, /*kappa=*/0.8, /*cutoff=*/7.5},
+        std::nullopt});
+    // `PairWcaParams` — ε [eV], σ [Å] and NOTHING ELSE: WCA's cutoff is
+    // derived (2^(1/6)·σ), not chosen, so the mirror is the only two-double
+    // pair payload on the wire. A codec that appended a cutoff "for
+    // symmetry" would be caught by `require_end()`, not by these values.
+    entries.push_back(MDComponentEntry{
+        PairWcaParams{/*epsilon=*/0.0125, /*sigma=*/3.15}, std::nullopt});
+    // `PairDpdParams` — a [eV/Å], γ, T [K], cutoff [Å], dt [fs], seed.
+    // The seed is a **u64** (`cpu::PairDpd`'s own type), where `FixLangevin`
+    // and `FixCSVR` carry u32 ones: 99 is deliberately small so a codec that
+    // wrote it through the existing `u32` helper would still roundtrip the
+    // VALUE — the width is pinned by the layout, and the field-exact
+    // roundtrip plus `require_end()` is what catches four missing bytes.
+    entries.push_back(MDComponentEntry{PairDpdParams{/*a=*/25.0,
+                                                     /*gamma=*/4.5,
+                                                     /*temperature=*/300.0,
+                                                     /*cutoff=*/2.5,
+                                                     /*dt=*/0.5,
+                                                     /*seed=*/99u},
+                                       std::nullopt});
+    // `BondFeneParams` — per-bond-type K [eV/Å²] and R₀ [Å]. Same two-vector
+    // shape as `BondHarmonicParams`, hence its own ID and two rows here: a
+    // swapped arm would decode a maximum extension as an equilibrium length.
+    entries.push_back(MDComponentEntry{
+        BondFeneParams{/*K=*/{30.0, 21.5}, /*R0=*/{1.5, 2.0}}, std::nullopt});
+    // `DihedralCharmmParams` — K [eV], multiplicity n (≥ 1), δ [rad]. The
+    // FIRST payload on the wire carrying a variable-length INTEGER vector;
+    // the existing `vec` helper is f64-only, so `n` needs its own
+    // length-prefixed run. Two types with DIFFERENT multiplicities, because
+    // an implementation that pushed `n` through the double vector would
+    // roundtrip {1, 3} unharmed as doubles and only differ in bytes.
+    entries.push_back(MDComponentEntry{
+        DihedralCharmmParams{/*K=*/{0.25, 0.6},
+                             /*n=*/{1, 3},
+                             /*delta=*/{3.141592653589793, 0.7853981633974483}},
+        std::nullopt});
+    // `ImproperHarmonicParams` — K [eV/rad²], χ₀ [rad]. Two-vector shape
+    // again, so distinct values in both rows and both vectors.
+    entries.push_back(MDComponentEntry{
+        ImproperHarmonicParams{/*K=*/{0.4, 0.9},
+                               /*chi0=*/{1.5707963267948966, 0.2}},
+        std::nullopt});
     return TaskSpec(MDTask{std::move(entries), 7});
 }
 
@@ -274,6 +368,44 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(
         component_id(MinimizeComponentParams{JointIsotropicRelaxParams{}}),
         ComponentId::JointIsotropicRelax);
+    // The widened real-space catalogue (py-pair-styles): nine mirrors
+    // appended after `JointIsotropicRelax`, in the spec's declared order.
+    // The VALUE is what crosses the wire, so these nine numbers are frozen
+    // the moment they ship — a renumbering is a decoder change, not a
+    // refactor.
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairMorse), 27u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairBuck), 28u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairBorn), 29u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairYukawa), 30u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairWCA), 31u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairDpd), 32u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::BondFene), 33u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::DihedralCharmm), 34u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::ImproperHarmonic), 35u);
+    // …and the variant→ID map for each, for the reason the cell relaxers
+    // above already demonstrate: `PairMorseParams` and `PairBuckParams` are
+    // both four doubles, `PairYukawaParams` is three, and the three bonded
+    // mirrors are all "two vectors" (`BondFeneParams` /
+    // `ImproperHarmonicParams` identically so). A swapped arm still decodes
+    // — into the wrong potential, with entirely plausible numbers.
+    EXPECT_EQ(component_id(MDComponentParams{PairMorseParams{}}),
+              ComponentId::PairMorse);
+    EXPECT_EQ(component_id(MDComponentParams{PairBuckParams{}}),
+              ComponentId::PairBuck);
+    EXPECT_EQ(component_id(MDComponentParams{PairBornParams{}}),
+              ComponentId::PairBorn);
+    EXPECT_EQ(component_id(MDComponentParams{PairYukawaParams{}}),
+              ComponentId::PairYukawa);
+    EXPECT_EQ(component_id(MDComponentParams{PairWcaParams{}}),
+              ComponentId::PairWCA);
+    EXPECT_EQ(component_id(MDComponentParams{PairDpdParams{}}),
+              ComponentId::PairDpd);
+    EXPECT_EQ(component_id(MDComponentParams{BondFeneParams{}}),
+              ComponentId::BondFene);
+    EXPECT_EQ(component_id(MDComponentParams{DihedralCharmmParams{}}),
+              ComponentId::DihedralCharmm);
+    EXPECT_EQ(component_id(MDComponentParams{ImproperHarmonicParams{}}),
+              ComponentId::ImproperHarmonic);
     // The three electrostatic params are structurally similar (doubles, and
     // two of them lead with α), so pin the variant→ID map as well as the
     // numbers: a swapped arm is otherwise invisible on the wire.

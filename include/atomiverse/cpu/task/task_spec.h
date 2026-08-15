@@ -511,6 +511,288 @@ inline bool operator==(const PwEvaluatorParams& a, const PwEvaluatorParams& b) {
            && a.extra_bands == b.extra_bands;
 }
 
+/// @brief Wire mirror of `cpu::PairMorse(D, alpha, r0, cutoff)`.
+///
+/// Morse \(V(r)=D\,(1-e^{-\alpha(r-r_0)})^2\), shifted so \(V(r_c)=0\).
+///
+/// The Morse form is the textbook model of a chemical bond: a minimum at
+/// \(r_0\), harmonic for small displacements, and — unlike a spring —
+/// flattening out to the finite *dissociation energy* \(D\) as \(r\) grows, so
+/// the bond can break. \(\alpha\) sets how fast that flattening happens; a
+/// large \(\alpha\) is a narrow, stiff well.
+///
+/// The style walks all pairs O(N²) and withdraws its `NeighborConsumer`
+/// (`cpu/potentials/pair_morse.h`), so a task naming it needs no
+/// `NeighborListParams` entry — and must not be pointed at a bulk system.
+/// It is the tree's "a new pair style costs two files" demonstration; the
+/// mirror carries that caveat rather than hiding it.
+struct PairMorseParams {
+    /// @brief Well depth D [eV].
+    double D = 0.0;
+    /// @brief Width parameter α [Å⁻¹].
+    double alpha = 0.0;
+    /// @brief Equilibrium separation r₀ [Å].
+    double r0 = 0.0;
+    /// @brief Pair cutoff [Å] (> 0); the potential is shifted to zero there.
+    double cutoff = 0.0;
+};
+inline bool operator==(const PairMorseParams& a, const PairMorseParams& b) {
+    return a.D == b.D && a.alpha == b.alpha && a.r0 == b.r0
+           && a.cutoff == b.cutoff;
+}
+
+/// @brief Wire mirror of `cpu::PairBuck(A, rho, C, cutoff)`.
+///
+/// Buckingham \(U(r)=A e^{-r/\rho}-C/r^{6}\), shifted at the cutoff (LAMMPS
+/// `pair_style buck` with `pair_modify shift yes`).
+///
+/// The two terms are the two physical effects of a closed-shell pair. The
+/// *Born-Mayer* exponential is Pauli repulsion — the energy cost of forcing two
+/// filled electron clouds to overlap, which falls off over the softness length
+/// ρ. The \(-C/r^{6}\) term is *London dispersion*, the attraction between the
+/// instantaneous dipoles two polarizable atoms induce in each other.
+///
+/// Same arity as `PairMorseParams`, so the two are told apart on the wire by
+/// their IDs alone. O(N²) all-pairs, like every style of this group.
+struct PairBuckParams {
+    /// @brief Born-Mayer prefactor A [eV] (≥ 0).
+    double A = 0.0;
+    /// @brief Softness length ρ [Å] (> 0).
+    double rho = 0.0;
+    /// @brief Dispersion coefficient C [eV·Å⁶] (≥ 0).
+    double C = 0.0;
+    /// @brief Pair cutoff [Å] (> 0).
+    double cutoff = 0.0;
+};
+inline bool operator==(const PairBuckParams& a, const PairBuckParams& b) {
+    return a.A == b.A && a.rho == b.rho && a.C == b.C && a.cutoff == b.cutoff;
+}
+
+/// @brief Wire mirror of the MULTI-TYPE `cpu::PairBorn(coeffs, cutoff)`
+///        constructor — Born-Mayer-Huggins / Fumi-Tosi.
+///
+/// \(U(r)=A e^{(\sigma-r)/\rho}-C/r^{6}+D/r^{8}\), shifted at the cutoff.
+///
+/// The C++ constructor takes a `std::vector<cpu::BornTypeCoeff>`, i.e. a
+/// vector of STRUCTS, which the codec's variable-length primitive cannot
+/// express: its only such primitive is a length-prefixed run of one scalar
+/// type. So the table crosses as PARALLEL VECTORS — the `BondHarmonicParams`
+/// shape, one row per index across all seven vectors — and the materializer
+/// rebuilds the coefficient structs from them.
+///
+/// The SINGLE-TYPE C++ constructor `PairBorn(A, rho, sigma, C, D, cutoff)` is
+/// deliberately not mirrored separately: it is expressible here as one-row
+/// vectors keyed on the frame's own type value, which is what the
+/// materializer parity test uses. That equivalence is ENERGETIC, not
+/// algorithmic — a one-row mirror still materializes the multi-type arm of
+/// `cpu::PairBorn`, which walks all pairs O(N²) instead of taking the
+/// single-type arm's `ctx.md.pair_list` fast path.
+///
+/// Type keys are frame `kAtom_type` values as-is. In this tree that column
+/// carries the ATOMIC NUMBER (`cpu::from_molrs` fills it from molrs
+/// `atomic_number`), so a Na-Cl row is `{11, 17}` and an argon dimer is
+/// `{18, 18}` — not a 0-based dense index. Every interacting pair must be
+/// listed; unlisted pairs do not interact (Fumi-Tosi parameters are not
+/// Lorentz-Berthelot, so there is no silent mixing).
+struct PairBornParams {
+    /// @brief First type of each row (frame `kAtom_type`, i.e. Z).
+    std::vector<int> type_i;
+    /// @brief Second type of each row; the table is symmetric in (i, j).
+    std::vector<int> type_j;
+    /// @brief Born-Mayer prefactor A per row [eV].
+    std::vector<double> A;
+    /// @brief Softness length ρ per row [Å] (> 0).
+    std::vector<double> rho;
+    /// @brief Ionic-pair radius parameter σ per row [Å].
+    std::vector<double> sigma;
+    /// @brief Dispersion coefficient C per row [eV·Å⁶].
+    std::vector<double> C;
+    /// @brief \(r^{-8}\) coefficient D per row [eV·Å⁸].
+    std::vector<double> D;
+    /// @brief Interaction cutoff [Å] (> 0), shared by every row.
+    double cutoff = 0.0;
+};
+inline bool operator==(const PairBornParams& a, const PairBornParams& b) {
+    return a.type_i == b.type_i && a.type_j == b.type_j && a.A == b.A
+           && a.rho == b.rho && a.sigma == b.sigma && a.C == b.C && a.D == b.D
+           && a.cutoff == b.cutoff;
+}
+
+/// @brief Wire mirror of `cpu::PairYukawa(A, kappa, cutoff)`.
+///
+/// Screened Coulomb \(U(r)=A e^{-\kappa r}/r\), shifted at the cutoff.
+///
+/// *Screening* is what a cloud of mobile opposite charges (counter-ions around
+/// a colloid, electrons in a plasma) does to a bare charge: it neutralizes it
+/// beyond a distance \(1/\kappa\), turning the \(1/r\) Coulomb tail into an
+/// exponentially cut one. \(\kappa = 0\) recovers unscreened \(A/r\).
+///
+/// Charges are NOT read: the amplitude is the whole interaction strength,
+/// which is what separates this style from `PairCoulCutParams`.
+struct PairYukawaParams {
+    /// @brief Amplitude A [eV·Å]; positive is repulsive.
+    double A = 0.0;
+    /// @brief Screening wavenumber κ [Å⁻¹] (≥ 0).
+    double kappa = 0.0;
+    /// @brief Pair cutoff [Å] (> 0).
+    double cutoff = 0.0;
+};
+inline bool operator==(const PairYukawaParams& a, const PairYukawaParams& b) {
+    return a.A == b.A && a.kappa == b.kappa && a.cutoff == b.cutoff;
+}
+
+/// @brief Wire mirror of `cpu::PairWCA(epsilon, sigma)`.
+///
+/// Weeks-Chandler-Andersen: Lennard-Jones 12-6 cut and shifted at
+/// \(r_c = 2^{1/6}\sigma\), so \(U(r_c)=F(r_c)=0\) and the style is purely
+/// repulsive.
+///
+/// There is NO cutoff field, deliberately: the cutoff is derived from σ, not
+/// chosen, which is the whole point of the style. This is therefore the only
+/// two-double pair payload on the wire.
+struct PairWcaParams {
+    /// @brief Well depth of the parent LJ, ε [eV].
+    double epsilon = 0.0;
+    /// @brief Length scale σ [Å].
+    double sigma = 0.0;
+};
+inline bool operator==(const PairWcaParams& a, const PairWcaParams& b) {
+    return a.epsilon == b.epsilon && a.sigma == b.sigma;
+}
+
+/// @brief Wire mirror of the SINGLE-TYPE
+///        `cpu::PairDpd(a, gamma, temperature, cutoff, dt, seed)`.
+///
+/// Dissipative particle dynamics (Groot-Warren 1997): a soft conservative
+/// force \(F^C = a\,w(r)\hat r\), \(w = 1 - r/r_c\), plus a pairwise
+/// dissipative/random thermostat with \(\sigma^2 = 2\gamma k_B T\).
+///
+/// The seed is a `std::uint64_t` — `cpu::PairDpd`'s own type — where
+/// `FixLangevinParams` and `FixCsvrParams` carry `std::uint32_t` ones. It is
+/// written through the `u64` codec primitive, so the layout is eight bytes
+/// and not four.
+///
+/// Not mirrored: the MULTI-COMPONENT constructor taking a square
+/// `a_matrix[t_i][t_j]`. A vector-of-vectors has no codec primitive (the same
+/// reason `PairBornParams` is parallel vectors), and unlike the Born table it
+/// is a DENSE square matrix rather than a list of keyed rows, so it is not
+/// expressible as one flat run either. Its indices are frame `kAtom_type`
+/// values as-is — atomic numbers in this tree — so a faithful mirror would
+/// also have to carry max(Z) + 1 rows of mostly-unused amplitudes.
+///
+/// Two behaviours a caller has to know, both documented on the C++ class:
+/// `kStress` carries the CONSERVATIVE virial only (the thermostat terms have
+/// zero mean and \(F^R\propto1/\sqrt{dt}\)), and the random force is redrawn
+/// every loop step from the `{seed, step, i, j}` stream, `i`/`j` being atom
+/// INDICES — so a run is reproducible for a given seed, step budget and atom
+/// ordering, and a single point is not reproducible across different steps
+/// unless γ = 0.
+struct PairDpdParams {
+    /// @brief Soft repulsion amplitude a [eV/Å].
+    double a = 0.0;
+    /// @brief Dissipative friction γ [eV·fs/Å²]; 0 switches the dissipative
+    ///        AND random terms off (σ = √(2γk_BT)).
+    double gamma = 0.0;
+    /// @brief Thermostat temperature T [K] (> 0).
+    double temperature = 0.0;
+    /// @brief Pair cutoff r_c [Å] (> 0).
+    double cutoff = 0.0;
+    /// @brief Timestep [fs] (> 0) — the random force scales as 1/√dt, so it
+    ///        must be the timestep the integrator actually uses.
+    double dt = 0.0;
+    /// @brief Random-stream seed; 64-bit, unlike the thermostat mirrors'.
+    std::uint64_t seed = 1;
+};
+inline bool operator==(const PairDpdParams& a, const PairDpdParams& b) {
+    return a.a == b.a && a.gamma == b.gamma && a.temperature == b.temperature
+           && a.cutoff == b.cutoff && a.dt == b.dt && a.seed == b.seed;
+}
+
+/// @brief Wire mirror of `cpu::BondFene(K, R0)` — the Kremer-Grest bond.
+///
+/// \(U = -\tfrac12 K R_0^2 \ln(1-(r/R_0)^2)\), *finitely extensible*: the
+/// energy diverges as the bond approaches the maximum extension \(R_0\), so
+/// unlike a harmonic spring the bond cannot be stretched arbitrarily far. The
+/// component THROWS at \(r \ge R_0\) rather than reporting an infinite energy,
+/// so a payload whose R₀ is shorter than the frame's bonds fails loudly at the
+/// first launch.
+///
+/// The standard coarse-grained polymer bond, and the reason it is standard:
+/// paired with a repulsive WCA pair style, the hard ceiling on bond length
+/// plus the hard floor on non-bonded approach makes it geometrically
+/// impossible for two chains to pass through each other.
+///
+/// Same two-parallel-vector shape as `BondHarmonicParams`, indexed by bond
+/// type — hence its own ID: a swapped arm would read a maximum extension as
+/// an equilibrium length.
+struct BondFeneParams {
+    /// @brief Spring constants per bond type [eV/Å²].
+    std::vector<double> K;
+    /// @brief Maximum extensions per bond type [Å].
+    std::vector<double> R0;
+};
+inline bool operator==(const BondFeneParams& a, const BondFeneParams& b) {
+    return a.K == b.K && a.R0 == b.R0;
+}
+
+/// @brief Wire mirror of `cpu::DihedralCharmm(K, n, delta)`.
+///
+/// Periodic Fourier torsion \(V = K\,(1 + \cos(n\varphi - \delta))\)
+/// (LAMMPS `dihedral_style charmm` without the 1-4 pair weights, which stay
+/// on the pair styles via `special_bonds`).
+///
+/// The FIRST payload on the wire carrying a variable-length INTEGER vector:
+/// the multiplicity `n` is an `int` in the C++ constructor and is checked
+/// against `n >= 1` there, so pushing it through the f64 `vec` primitive
+/// would roundtrip the values while changing the byte layout and the type.
+/// The codec gives it its own length-prefixed i32 run.
+///
+/// Not mirrored: `DihedralCharmm::set_compute_stress(bool)`. It is a
+/// post-construction performance selector (skip the per-torsion virial when
+/// no barostat reads it), not a constructor argument, so a launcher- or
+/// Python-dispatched run gets the C++ default `true` — the
+/// documented-omission arrangement `PairCoulCutParams` uses for
+/// `set_special_bonds`.
+struct DihedralCharmmParams {
+    /// @brief Force constants per dihedral type [eV].
+    std::vector<double> K;
+    /// @brief Multiplicities per type — the number of energy minima the
+    ///        torsion has per full 360° turn (dimensionless, ≥ 1). n = 3 is
+    ///        the threefold barrier of an sp³-sp³ bond.
+    std::vector<int> n;
+    /// @brief Phase shifts per type δ [rad] — where those minima sit.
+    std::vector<double> delta;
+};
+inline bool operator==(const DihedralCharmmParams& a,
+                       const DihedralCharmmParams& b) {
+    return a.K == b.K && a.n == b.n && a.delta == b.delta;
+}
+
+/// @brief Wire mirror of `cpu::ImproperHarmonic(K, chi0)`.
+///
+/// \(V = K(\chi - \chi_0)^2\) over the improper 4-tuples of the frame
+/// (LAMMPS `improper_style harmonic`), χ being the angle between the two
+/// planes of the tuple.
+///
+/// An *improper* is a 4-tuple that is not a chain, unlike a proper dihedral:
+/// it measures how far a centre has buckled out of the plane of its three
+/// neighbours, so \(\chi_0 = 0\) with a stiff K is the restraint that keeps an
+/// sp² centre or an aromatic ring flat. It travels in the frame's own
+/// `impropers` block, separate from `dihedrals`.
+///
+/// Two parallel vectors indexed by improper type — the same shape as
+/// `BondFeneParams`, hence its own ID.
+struct ImproperHarmonicParams {
+    /// @brief Force constants per improper type [eV/rad²].
+    std::vector<double> K;
+    /// @brief Equilibrium improper angles per type χ₀ [rad].
+    std::vector<double> chi0;
+};
+inline bool operator==(const ImproperHarmonicParams& a,
+                       const ImproperHarmonicParams& b) {
+    return a.K == b.K && a.chi0 == b.chi0;
+}
+
 /// @brief Mirrors the `cpu::minimizer::LBFGS` constructor exactly.
 ///
 /// L-BFGS (limited-memory Broyden-Fletcher-Goldfarb-Shanno) is a quasi-Newton
@@ -884,6 +1166,22 @@ enum class ComponentId : std::uint16_t {
     TriclinicCellRelax = 25,
     /// Joint atom + isotropic cell relax — `cpu::minimizer::JointIsotropicRelax`.
     JointIsotropicRelax = 26,
+    // The widened real-space force-field catalogue. Six pair styles and three
+    // bonded ones, all MD-legal force sources on the plural evaluator slot —
+    // they JOIN `PairLJCut` and `BondHarmonic` rather than replacing them. All
+    // six pair styles walk pairs O(N²) and withdraw their `NeighborConsumer`,
+    // so none of them requires a `NeighborList` entry beside it.
+    PairMorse = 27,  ///< Morse pair — `cpu::PairMorse`.
+    PairBuck = 28,   ///< Buckingham pair — `cpu::PairBuck`.
+    PairBorn = 29,   ///< Born-Mayer-Huggins pair table — `cpu::PairBorn`.
+    PairYukawa = 30, ///< Screened Coulomb pair — `cpu::PairYukawa`.
+    PairWCA = 31,    ///< Purely repulsive WCA pair — `cpu::PairWCA`.
+    PairDpd = 32,    ///< Groot-Warren DPD pair — `cpu::PairDpd`.
+    BondFene = 33,   ///< Kremer-Grest FENE bond — `cpu::BondFene`.
+    /// CHARMM periodic torsion — `cpu::DihedralCharmm`.
+    DihedralCharmm = 34,
+    /// Harmonic improper torsion — `cpu::ImproperHarmonic`.
+    ImproperHarmonic = 35,
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -942,6 +1240,24 @@ inline const char* component_name(ComponentId id) noexcept {
         return "TriclinicCellRelax";
     case ComponentId::JointIsotropicRelax:
         return "JointIsotropicRelax";
+    case ComponentId::PairMorse:
+        return "PairMorse";
+    case ComponentId::PairBuck:
+        return "PairBuck";
+    case ComponentId::PairBorn:
+        return "PairBorn";
+    case ComponentId::PairYukawa:
+        return "PairYukawa";
+    case ComponentId::PairWCA:
+        return "PairWCA";
+    case ComponentId::PairDpd:
+        return "PairDpd";
+    case ComponentId::BondFene:
+        return "BondFene";
+    case ComponentId::DihedralCharmm:
+        return "DihedralCharmm";
+    case ComponentId::ImproperHarmonic:
+        return "ImproperHarmonic";
     }
     return "unknown";
 }
@@ -986,7 +1302,10 @@ using MDComponentParams =
                  ThermoParams, AM1EvaluatorParams, FixLangevinParams,
                  FixCsvrParams, NoseHooverNptParams, ParrinelloRahmanNptParams,
                  BerendsenBarostatParams, PairCoulCutParams, CoulLongParams,
-                 KSpacePmeParams, XyzRecorderParams, PwEvaluatorParams>;
+                 KSpacePmeParams, XyzRecorderParams, PwEvaluatorParams,
+                 PairMorseParams, PairBuckParams, PairBornParams,
+                 PairYukawaParams, PairWcaParams, PairDpdParams, BondFeneParams,
+                 DihedralCharmmParams, ImproperHarmonicParams>;
 
 using MinimizeComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, LBFGSParams, CGParams,
@@ -1043,6 +1362,24 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::XyzRecorder;
             else if constexpr (std::is_same_v<P, PwEvaluatorParams>)
                 return ComponentId::PWEvaluator;
+            else if constexpr (std::is_same_v<P, PairMorseParams>)
+                return ComponentId::PairMorse;
+            else if constexpr (std::is_same_v<P, PairBuckParams>)
+                return ComponentId::PairBuck;
+            else if constexpr (std::is_same_v<P, PairBornParams>)
+                return ComponentId::PairBorn;
+            else if constexpr (std::is_same_v<P, PairYukawaParams>)
+                return ComponentId::PairYukawa;
+            else if constexpr (std::is_same_v<P, PairWcaParams>)
+                return ComponentId::PairWCA;
+            else if constexpr (std::is_same_v<P, PairDpdParams>)
+                return ComponentId::PairDpd;
+            else if constexpr (std::is_same_v<P, BondFeneParams>)
+                return ComponentId::BondFene;
+            else if constexpr (std::is_same_v<P, DihedralCharmmParams>)
+                return ComponentId::DihedralCharmm;
+            else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
+                return ComponentId::ImproperHarmonic;
             else
                 static_assert(detail::unsupported_component_v<P>);
         },
@@ -1188,6 +1525,12 @@ class TaskSpec {
     /// A v4 payload's doubles would decode as an id followed by garbage, so
     /// the exact-match version gate in `unpack` is what makes the break loud.
     /// Same reasoning as the v4 `NoseHooverNptParams` bump.
+    ///
+    /// The nine real-space catalogue IDs (27-35) land under v5 without a bump,
+    /// for the reason IDs 21-26 would not have forced one: an appended ID with
+    /// a fresh payload leaves every existing byte layout untouched, so a v5
+    /// decoder written before them reads every previously encodable payload
+    /// unchanged. Only a LAYOUT change is a bump.
     static constexpr std::uint32_t kWireVersion = 5;
 
     explicit TaskSpec(MDTask task);

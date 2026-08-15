@@ -3,7 +3,7 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
-## Live — claim-completion campaign (2026-08-14, 7 specs live)
+## Live — claim-completion campaign (2026-08-14, 6 specs live)
 
 Operator directive 2026-08-14: complete CUDA / docs / Python for the
 domains that reached their claim bar. Queue + claim bars:
@@ -15,7 +15,6 @@ slice (commit `334b6de4`).
 
 | Spec | One-line |
 | ---- | -------- |
-| [py-pair-styles](py-pair-styles/spec.md) | Buck/Born/Yukawa/WCA/DPD + FENE/CHARMM/improper |
 
 **Track D — docs**: [docs-python-surface](docs-python-surface/spec.md) —
 examples (MD/minimize/AM1) + publish the Python guide in the site nav.

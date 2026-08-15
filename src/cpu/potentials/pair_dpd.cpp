@@ -2,6 +2,7 @@
 #include "atomiverse/cpu/potentials/pair_dpd.h"
 
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
@@ -86,9 +87,20 @@ void PairDpd::compute(const LaunchContext& ctx) {
     AccReal* __restrict fy = f.span(kAtom_fy);
     AccReal* __restrict fz = f.span(kAtom_fz);
 
+    // The stream index of THIS launch. `LaunchContext::step` is the only step
+    // a Component sees once a Driver owns the loop, and nothing in the engine
+    // calls `set_step` — so keying the stream on a stored member alone froze
+    // every random force of a driven run at one draw. F^R is what injects the
+    // energy F^D removes, so a frozen stream is a constant kick and the run
+    // heats or cools monotonically instead of sampling `temperature_`.
+    // `stream_origin_` only SHIFTS this, so a chunked run can continue the
+    // stream its predecessor ended on (`set_step`).
+    const std::int64_t stream_step =
+        static_cast<std::int64_t>(stream_origin_) + ctx.step;
+
     auto theta = [&](int i, int j) {
         std::uint64_t s = seed_;
-        s ^= static_cast<std::uint64_t>(step_) * 0x9e3779b97f4a7c15ULL;
+        s ^= static_cast<std::uint64_t>(stream_step) * 0x9e3779b97f4a7c15ULL;
         s ^= static_cast<std::uint64_t>(i) * 0xbf58476d1ce4e5b9ULL;
         s ^= static_cast<std::uint64_t>(j) * 0x94d049bb133111ebULL;
         s = (s ^ (s >> 30)) * 0xbf58476d1ce4e5b9ULL;

@@ -147,7 +147,38 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "single_point",
         "Hessian",
         "HessianResult",
+        # Force-field catalogue growth (spec py-pair-styles): six pair
+        # styles and three bonded styles, all unconditional — they are
+        # plain `cpu/potentials/` components with no build flag of their
+        # own, exactly like PairLJCut / BondHarmonic beside them.
+        "PairMorse",
+        "PairBuck",
+        "PairBorn",
+        "PairYukawa",
+        "PairWCA",
+        "PairDpd",
+        "BondFene",
+        "DihedralCharmm",
+        "ImproperHarmonic",
     }
+)
+
+#: The force-field catalogue growth of spec py-pair-styles. C++ class
+#: names verbatim (``cpu::PairMorse``, ``cpu::PairBuck``, ``cpu::PairBorn``,
+#: ``cpu::PairYukawa``, ``cpu::PairWCA``, ``cpu::PairDpd``,
+#: ``cpu::BondFene``, ``cpu::DihedralCharmm``, ``cpu::ImproperHarmonic``) —
+#: including the capitalization: ``PairWCA`` and ``PairDpd`` are spelled the
+#: way their headers spell them, not normalized to ``PairWca`` / ``PairDPD``.
+_PAIR_STYLE_NAMES: tuple[str, ...] = (
+    "PairMorse",
+    "PairBuck",
+    "PairBorn",
+    "PairYukawa",
+    "PairWCA",
+    "PairDpd",
+    "BondFene",
+    "DihedralCharmm",
+    "ImproperHarmonic",
 )
 
 #: The Monte Carlo surface (spec py-mc): three ensemble presets + four
@@ -249,7 +280,7 @@ class TestCanonicalSurface:
         """__all__ is the static MD + minimize + electrostatics + recorder
         + MC + AM1 surface.
 
-        Same 43 names on every build: compile-optional types live behind
+        Same 52 names on every build: compile-optional types live behind
         the lazy ``__getattr__``, never in ``__all__``. ``XYZ`` is static
         because ``ATV_BUILD_PYTHON`` forces ``ATV_BUILD_IO=ON`` through the
         CMake module DAG (``cmake/AtvProductModules.cmake:68``); the seven
@@ -258,10 +289,13 @@ class TestCanonicalSurface:
         vibration names (spec py-vib) are static for the same reason
         (``ATV_BUILD_VIB`` ON at ``:27``), and the eight new geometry
         optimization names (spec py-minimize-full) because
-        ``ATV_BUILD_MINIMIZER`` is ON by default too. None of them is
-        capability-probed.
+        ``ATV_BUILD_MINIMIZER`` is ON by default too. The nine
+        force-field styles of spec py-pair-styles are static for the
+        plainest reason of all — a pair or bonded style is part of
+        ``ATV_BUILD_POTENTIALS`` with no flag of its own, just like
+        ``PairLJCut``. None of them is capability-probed.
         """
-        assert len(_CANONICAL_ALL) == 43
+        assert len(_CANONICAL_ALL) == 52
         assert set(av.__all__) == set(_CANONICAL_ALL)
 
 
@@ -556,6 +590,34 @@ class TestMinimizerSurface:
     def test_minimize_name_is_in_all(self, name: str) -> None:
         """Unconditional names belong in the static ``__all__``."""
         assert name in av.__all__
+
+
+# ── Force-field catalogue growth (spec py-pair-styles) ──────────────
+
+
+class TestPairStyleSurface:
+    """The six pair styles and three bonded styles are static names.
+
+    No capability probe and no build-flag ``AttributeError`` path: a
+    real-space style is part of ``ATV_BUILD_POTENTIALS``
+    (``cmake/AtvProductModules.cmake:30``, ON by default) together with
+    ``PairLJCut`` / ``BondHarmonic``, which are already unconditional
+    here. Their deep spellings are pinned row by row in
+    test_namespaces.py; this class only guards the top-level surface
+    list.
+    """
+
+    @pytest.mark.parametrize("name", _PAIR_STYLE_NAMES)
+    def test_pair_style_name_is_in_all(self, name: str) -> None:
+        """Unconditional names belong in the static ``__all__``."""
+        assert name in av.__all__
+
+    @pytest.mark.parametrize("name", _PAIR_STYLE_NAMES)
+    def test_pair_style_is_bound_by_the_extension(self, name: str) -> None:
+        """The compiled extension carries the C++-spelled class itself —
+        a Python-level alias of an already-bound style would satisfy
+        ``__all__`` while binding no new physics."""
+        assert hasattr(_cpp, name)
 
 
 # ── KSpace gate (mirrors the PW capability contract) ────────────────

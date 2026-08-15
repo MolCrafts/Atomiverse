@@ -38,6 +38,20 @@ struct Writer {
         for (double value : values)
             f64(value);
     }
+    /// @brief Length-prefixed run of `i32`s — `vec`'s integer twin.
+    ///
+    /// `vec` is f64-only, and a per-type INTEGER (`DihedralCharmmParams::n`,
+    /// `PairBornParams::type_i` / `type_j`) is not a small double: the
+    /// multiplicity is an `int` in the C++ constructor and the type keys index
+    /// a table, so widening them through the double run would change both the
+    /// layout and the type while roundtripping the values unharmed.
+    ///
+    /// @param values Integer run to write; the `u64` count precedes it.
+    void vec_i32(const std::vector<int>& values) {
+        u64(values.size());
+        for (int value : values)
+            i32(value);
+    }
     void string(const std::string& value) {
         u64(value.size());
         const std::size_t at = out.size();
@@ -77,6 +91,24 @@ struct Reader {
         values.reserve(static_cast<std::size_t>(n));
         for (std::uint64_t i = 0; i < n; ++i)
             values.push_back(f64());
+        return values;
+    }
+    /// @brief Read a length-prefixed `i32` run written by `Writer::vec_i32`.
+    ///
+    /// The count is bounds-checked against the remaining bytes before any
+    /// allocation, exactly as `vec` does: a corrupted length must fail as a
+    /// truncation error, not as a multi-gigabyte reserve.
+    ///
+    /// @return The decoded integer run.
+    /// @throws std::runtime_error When the declared count cannot fit.
+    std::vector<int> vec_i32() {
+        const std::uint64_t n = u64();
+        if (n > (size - at) / sizeof(std::int32_t))
+            throw std::runtime_error("task_codec: truncated vector payload");
+        std::vector<int> values;
+        values.reserve(static_cast<std::size_t>(n));
+        for (std::uint64_t i = 0; i < n; ++i)
+            values.push_back(i32());
         return values;
     }
     std::string string() {
@@ -212,6 +244,76 @@ void write(Writer& w, const PwEvaluatorParams& p) {
     w.f64(p.degauss);
     w.i32(p.mp_order);
     w.i32(p.extra_bands);
+}
+// The widened real-space catalogue. Field order is each mirror's declaration
+// order, which is also the constructor-argument order the materializer
+// replays — so a reordered struct is a wire break and the field-exact
+// roundtrip catches it. Six of the nine are "some doubles then a cutoff", so
+// nothing but the component ID tells them apart on the wire.
+void write(Writer& w, const PairMorseParams& p) {
+    w.f64(p.D);
+    w.f64(p.alpha);
+    w.f64(p.r0);
+    w.f64(p.cutoff);
+}
+void write(Writer& w, const PairBuckParams& p) {
+    w.f64(p.A);
+    w.f64(p.rho);
+    w.f64(p.C);
+    w.f64(p.cutoff);
+}
+// The widest parallel-vector payload on the wire: two integer runs (the type
+// keys) followed by five double runs (the row coefficients), then the one
+// shared cutoff. Each run carries its own length, so a table of N rows is
+// seven counts and 7N values — redundant, and deliberately so: the reader
+// checks each run independently instead of trusting one leading N.
+void write(Writer& w, const PairBornParams& p) {
+    w.vec_i32(p.type_i);
+    w.vec_i32(p.type_j);
+    w.vec(p.A);
+    w.vec(p.rho);
+    w.vec(p.sigma);
+    w.vec(p.C);
+    w.vec(p.D);
+    w.f64(p.cutoff);
+}
+void write(Writer& w, const PairYukawaParams& p) {
+    w.f64(p.A);
+    w.f64(p.kappa);
+    w.f64(p.cutoff);
+}
+// Two doubles and NOTHING else — WCA's cutoff is derived (2^(1/6)·σ), not
+// chosen. An appended cutoff "for symmetry" is caught by `require_end()`.
+void write(Writer& w, const PairWcaParams& p) {
+    w.f64(p.epsilon);
+    w.f64(p.sigma);
+}
+// The seed goes through `u64`, not `u32`: `cpu::PairDpd` takes a 64-bit one
+// where `FixLangevin` and `FixCSVR` take 32-bit ones, so the four extra bytes
+// are part of the layout even when the value is small.
+void write(Writer& w, const PairDpdParams& p) {
+    w.f64(p.a);
+    w.f64(p.gamma);
+    w.f64(p.temperature);
+    w.f64(p.cutoff);
+    w.f64(p.dt);
+    w.u64(p.seed);
+}
+void write(Writer& w, const BondFeneParams& p) {
+    w.vec(p.K);
+    w.vec(p.R0);
+}
+// The one payload mixing a double run and an integer run: the multiplicity
+// `n` is an `int` per dihedral type, so it takes `vec_i32` between the two
+// double runs.
+void write(Writer& w, const DihedralCharmmParams& p) {
+    w.vec(p.K);
+    w.vec_i32(p.n);
+    w.vec(p.delta);
+}
+void write(Writer& w, const ImproperHarmonicParams& p) {
+    w.vec(p.K);
+    w.vec(p.chi0);
 }
 void write(Writer& w, const LBFGSParams& p) {
     w.i32(p.memory);
@@ -357,6 +459,24 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::TriclinicCellRelax;
     case 26:
         return ComponentId::JointIsotropicRelax;
+    case 27:
+        return ComponentId::PairMorse;
+    case 28:
+        return ComponentId::PairBuck;
+    case 29:
+        return ComponentId::PairBorn;
+    case 30:
+        return ComponentId::PairYukawa;
+    case 31:
+        return ComponentId::PairWCA;
+    case 32:
+        return ComponentId::PairDpd;
+    case 33:
+        return ComponentId::BondFene;
+    case 34:
+        return ComponentId::DihedralCharmm;
+    case 35:
+        return ComponentId::ImproperHarmonic;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -442,6 +562,27 @@ PwEvaluatorParams read_pw(Reader& r) {
     return p;
 }
 
+/// @brief Read the eight Born fields in the order `write` laid them down.
+///
+/// Statement per field rather than one braced aggregate, for the same reason
+/// as `read_pw`: seven length-prefixed runs in a row are where a swapped pair
+/// is hardest to see, and the two INTEGER runs sit next to five double ones.
+///
+/// @param r Byte source, positioned at the first type-key run.
+/// @return The decoded parallel-vector coefficient table.
+PairBornParams read_born(Reader& r) {
+    PairBornParams p;
+    p.type_i = r.vec_i32();
+    p.type_j = r.vec_i32();
+    p.A = r.vec();
+    p.rho = r.vec();
+    p.sigma = r.vec();
+    p.C = r.vec();
+    p.D = r.vec();
+    p.cutoff = r.f64();
+    return p;
+}
+
 MDComponentParams read_md_params(Reader& r, ComponentId id) {
     switch (id) {
     case ComponentId::PairLJCut:
@@ -500,6 +641,28 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return read_am1(r);
     case ComponentId::PWEvaluator:
         return read_pw(r);
+    // The widened real-space catalogue. Braced init throughout: the field
+    // reads of a braced-init-list are sequenced left to right, so the
+    // declaration order below IS the byte order `write` laid down.
+    case ComponentId::PairMorse:
+        return PairMorseParams{r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::PairBuck:
+        return PairBuckParams{r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::PairBorn:
+        return read_born(r);
+    case ComponentId::PairYukawa:
+        return PairYukawaParams{r.f64(), r.f64(), r.f64()};
+    case ComponentId::PairWCA:
+        return PairWcaParams{r.f64(), r.f64()};
+    case ComponentId::PairDpd:
+        return PairDpdParams{r.f64(), r.f64(), r.f64(),
+                             r.f64(), r.f64(), r.u64()};
+    case ComponentId::BondFene:
+        return BondFeneParams{r.vec(), r.vec()};
+    case ComponentId::DihedralCharmm:
+        return DihedralCharmmParams{r.vec(), r.vec_i32(), r.vec()};
+    case ComponentId::ImproperHarmonic:
+        return ImproperHarmonicParams{r.vec(), r.vec()};
     // Every Minimize-only optimizer shares one refusal arm: naming one in an
     // MD payload is a wrong-home error, not an unknown component.
     case ComponentId::LBFGS:

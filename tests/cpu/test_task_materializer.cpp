@@ -18,6 +18,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -55,10 +56,19 @@
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 #endif
+#include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
+#include "atomiverse/cpu/potentials/dihedral_charmm.h"
+#include "atomiverse/cpu/potentials/improper_harmonic.h"
+#include "atomiverse/cpu/potentials/pair_born.h"
+#include "atomiverse/cpu/potentials/pair_buck.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
+#include "atomiverse/cpu/potentials/pair_dpd.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/pair_morse.h"
+#include "atomiverse/cpu/potentials/pair_wca.h"
+#include "atomiverse/cpu/potentials/pair_yukawa.h"
 #ifdef ATV_HAS_IO
 #include "atomiverse/cpu/record/xyz_recorder.h"
 #endif
@@ -605,6 +615,260 @@ TEST(TaskMaterializer, MdCoulLongWithoutReciprocalThrowsOnBuild) {
                   std::string::npos)
             << err.what();
     }
+}
+
+// ── (b‴) The widened real-space catalogue (py-pair-styles) ──────────────
+//
+// Nine styles land in one change and the materializer replays all nine the
+// SAME way — categorical `std::nullopt` entry → `set_evaluator`. Three
+// parity runs therefore cover the breadth: the pipeline is uniform, so what
+// each run has to catch is a per-style CONSTRUCTOR mistake (a dropped
+// argument, a swapped pair, a vector rebuilt in the wrong order), which
+// lands as a different geometry after a few steps and fails bitwise.
+//
+// All six pair styles here withdraw their `NeighborConsumer` (O(N²)
+// all-pairs walks), so none of these runs registers a NeighborList — the
+// MD driver requires an Integrator and one force writer, nothing else
+// (`cpu::md::MD::validate_components`).
+
+// Three steps is enough: every claim below is "the two pipelines diverge if
+// any constructor argument differs", and divergence is visible on step one.
+constexpr int kCatalogueSteps = 3;
+
+// Buckingham A·exp(−r/ρ) − C/r⁶ [A in eV, ρ in Å, C in eV·Å⁶]. ρ = 0.35 Å
+// puts the Born-Mayer wall at ~0.1 eV for the fixture's 3.8 Å spacing —
+// small, but the whole point is that it is NOT zero.
+constexpr double kBuckA = 5000.0;
+constexpr double kBuckRho = 0.35;
+constexpr double kBuckC = 20.0;
+constexpr double kBuckCutoff = 8.0;
+// Screened Coulomb A·exp(−κr)/r [A in eV·Å, κ in Å⁻¹].
+constexpr double kYukawaA = 2.0;
+constexpr double kYukawaKappa = 0.5;
+constexpr double kYukawaCutoff = 7.0;
+// WCA takes ε and σ ONLY — its cutoff is derived (2^(1/6)·σ), not chosen.
+// σ = 3.6 Å puts that derived cutoff at 4.04 Å, outside the 3.8 Å fixture
+// spacing, so the repulsive core is live; σ = kSigma would place it at
+// 3.816 Å, a hair outside, and the style would contribute ~nothing.
+constexpr double kWcaEps = 0.0125;
+constexpr double kWcaSigma = 3.6;
+
+TEST(TaskMaterializer, MdBuckYukawaWcaRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    // Three pair styles on the plural evaluator slot at once. Equal-order
+    // ops keep registration order (`Plan` stable_sort), so the hand-built
+    // twin below registers in exactly this sequence — a different order
+    // sums the force contributions differently and the bitwise claim would
+    // fail for a reason that has nothing to do with fidelity.
+    entries.push_back(MDComponentEntry{
+        PairBuckParams{kBuckA, kBuckRho, kBuckC, kBuckCutoff}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PairYukawaParams{kYukawaA, kYukawaKappa, kYukawaCutoff}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{PairWcaParams{kWcaEps, kWcaSigma}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kCatalogueSteps});
+
+    cpu::Frame materialized_frame = make_lj_frame();
+    TaskMaterializer mat(spec);
+    EXPECT_EQ(mat.kind(), TaskKind::MD);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_lj_frame();
+    cpu::md::MD sim;
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_evaluator(cpu::PairBuck{kBuckA, kBuckRho, kBuckC, kBuckCutoff});
+    sim.set_evaluator(cpu::PairYukawa{kYukawaA, kYukawaKappa, kYukawaCutoff});
+    sim.set_evaluator(cpu::PairWCA{kWcaEps, kWcaSigma});
+    sim.build();
+    sim.run(direct_frame, kCatalogueSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero energy — the equivalence check would "
+           "be vacuous";
+    // The run actually moved something: a materializer that built all three
+    // styles with zero parameters would still agree bitwise with a twin
+    // that did the same, on a frame nothing ever pushed on.
+    ASSERT_NE(direct_frame.span(ATV::kAtom_x)[0], 8.0)
+        << "no atom moved — the equivalence check would compare two "
+           "untouched frames";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+// Morse D(1 − e^{−α(r − r₀)})² [D in eV, α in Å⁻¹, r₀ in Å].
+constexpr double kMorseD = 0.35;
+constexpr double kMorseAlpha = 1.4;
+constexpr double kMorseR0 = 3.9;
+constexpr double kMorseCutoff = 6.0;
+// Born-Mayer-Huggins, keyed on the value `make_lj_frame` actually writes to
+// `kAtom_type`: 18, argon's atomic number. Frame type columns are Z-keyed in
+// this tree, not 0-based dense indices, which is exactly why the wire mirror
+// carries the type pair explicitly instead of implying it from a row index.
+// One row, i.e. the single-type C++ constructor expressed as length-1
+// vectors — the shape the multi-type mirror has to keep expressible.
+constexpr int kBornType = 18;
+constexpr double kBornA = 1.0;
+constexpr double kBornRho = 0.3;
+constexpr double kBornSigma = 3.0;
+constexpr double kBornC = 1.0;
+constexpr double kBornD = 0.5;
+constexpr double kBornCutoff = 6.0;
+// DPD: γ > 0 on purpose. γ = 0 would switch the dissipative AND random
+// terms off (σ = √(2γk_BT)) and the parity claim would then say nothing
+// about the stochastic half of the style. Both sides run the same seed over
+// the same steps, so the two streams are identical and the comparison stays
+// bitwise.
+constexpr double kDpdA = 12.0;
+constexpr double kDpdGamma = 0.5;
+constexpr double kDpdCutoff = 4.5;
+constexpr std::uint64_t kDpdSeed = 7u;
+
+TEST(TaskMaterializer, MdMorseBornDpdRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PairMorseParams{kMorseD, kMorseAlpha, kMorseR0, kMorseCutoff},
+        std::nullopt});
+    entries.push_back(MDComponentEntry{PairBornParams{/*type_i=*/{kBornType},
+                                                      /*type_j=*/{kBornType},
+                                                      /*A=*/{kBornA},
+                                                      /*rho=*/{kBornRho},
+                                                      /*sigma=*/{kBornSigma},
+                                                      /*C=*/{kBornC},
+                                                      /*D=*/{kBornD},
+                                                      /*cutoff=*/kBornCutoff},
+                                       std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PairDpdParams{kDpdA, kDpdGamma, kTinit, kDpdCutoff, kDt, kDpdSeed},
+        std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kCatalogueSteps});
+
+    cpu::Frame materialized_frame = make_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_lj_frame();
+    cpu::md::MD sim;
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_evaluator(
+        cpu::PairMorse{kMorseD, kMorseAlpha, kMorseR0, kMorseCutoff});
+    // The parallel-vector mirror rebuilt into the coefficient-struct vector
+    // the C++ constructor takes — the one place the wire layout and the
+    // engine's `BornTypeCoeff` have to agree field for field.
+    sim.set_evaluator(cpu::PairBorn{
+        std::vector<cpu::BornTypeCoeff>{{kBornType, kBornType, kBornA, kBornRho,
+                                         kBornSigma, kBornC, kBornD}},
+        kBornCutoff});
+    sim.set_evaluator(
+        cpu::PairDpd{kDpdA, kDpdGamma, kTinit, kDpdCutoff, kDt, kDpdSeed});
+    sim.build();
+    sim.run(direct_frame, kCatalogueSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero energy — the equivalence check would "
+           "be vacuous";
+    ASSERT_NE(direct_frame.span(ATV::kAtom_x)[0], 8.0)
+        << "no atom moved — the equivalence check would compare two "
+           "untouched frames";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
+/// @brief Four atoms carrying one bond, one dihedral and one improper.
+///
+/// `make_bonded_lj_frame` above carries a BOND only, so the three bonded
+/// styles of this slice have no topology to walk there. This is the
+/// orthogonal-bond geometry the bonded unit tests use (φ = χ = π/2 exactly):
+/// r₀=(0,0,0), r₁=(1,0,0), r₂=(1,1,0), r₃=(1,1,1), scaled by nothing —
+/// literals only, so two constructions are bitwise identical. Default tags
+/// are the identity (`kColIdentityTail`), which is what lets `add_*` resolve
+/// 0/1/2/3 after the tag index is rebuilt.
+cpu::Frame make_torsion_frame() {
+    constexpr int n = 4;
+    cpu::Frame frame(n);
+    const double px[n] = {0.0, 1.0, 1.0, 1.0};
+    const double py[n] = {0.0, 0.0, 1.0, 1.0};
+    const double pz[n] = {0.0, 0.0, 0.0, 1.0};
+    for (int i = 0; i < n; ++i) {
+        frame.span(ATV::kAtom_x)[i] = 10.0 + px[i];
+        frame.span(ATV::kAtom_y)[i] = 10.0 + py[i];
+        frame.span(ATV::kAtom_z)[i] = 10.0 + pz[i];
+        frame.span(ATV::kAtom_mass)[i] = 12.0;
+        frame.span(ATV::kAtom_type)[i] = 0;
+    }
+    frame.box = ATV::cpu::Box::cubic(40.0);
+    frame.clear_tag_index();
+    frame.rebuild_tag_index(0, frame.nlocal());
+    frame.add_bond(/*ti=*/0, /*tj=*/1, /*type=*/0);
+    frame.add_dihedral(/*ti=*/0, /*tj=*/1, /*tk=*/2, /*tl=*/3, /*type=*/0);
+    frame.add_improper(/*ti=*/0, /*tj=*/1, /*tk=*/2, /*tl=*/3, /*type=*/0);
+    frame.build_special_list();
+    return frame;
+}
+
+// FENE −½KR₀²ln(1 − (r/R₀)²) [K in eV/Å², R₀ in Å]. R₀ = 2.0 Å against a
+// 1.0 Å bond leaves plenty of headroom: `BondFene` THROWS at r ≥ R₀, and
+// three steps of this pull shorten the bond by ~0.02 Å.
+constexpr double kFeneK = 5.0;
+constexpr double kFeneR0 = 2.0;
+// CHARMM K(1 + cos(nφ − δ)) [K in eV, n dimensionless ≥ 1, δ in rad]. n = 2
+// with a non-zero phase: n is the integer vector the wire mirror has to
+// carry as integers, and δ ≠ 0 is what makes a dropped phase visible.
+constexpr double kCharmmK = 0.3;
+constexpr int kCharmmN = 2;
+constexpr double kCharmmDelta = 0.5;
+// Harmonic improper K(χ − χ₀)² [K in eV/rad², χ₀ in rad]. χ₀ = 0 against the
+// fixture's χ = π/2 gives a live restoring torque from step one.
+constexpr double kImproperK = 0.5;
+constexpr double kImproperChi0 = 0.0;
+
+TEST(TaskMaterializer, MdBondedFullRunMatchesHandBuiltDriverBitwise) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        BondFeneParams{/*K=*/{kFeneK}, /*R0=*/{kFeneR0}}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{DihedralCharmmParams{/*K=*/{kCharmmK},
+                                              /*n=*/{kCharmmN},
+                                              /*delta=*/{kCharmmDelta}},
+                         std::nullopt});
+    entries.push_back(MDComponentEntry{
+        ImproperHarmonicParams{/*K=*/{kImproperK}, /*chi0=*/{kImproperChi0}},
+        std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kCatalogueSteps});
+
+    cpu::Frame materialized_frame = make_torsion_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_torsion_frame();
+    cpu::md::MD sim;
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_evaluator(cpu::BondFene{{kFeneK}, {kFeneR0}});
+    sim.set_evaluator(
+        cpu::DihedralCharmm{{kCharmmK}, {kCharmmN}, {kCharmmDelta}});
+    sim.set_evaluator(cpu::ImproperHarmonic{{kImproperK}, {kImproperChi0}});
+    sim.build();
+    sim.run(direct_frame, kCatalogueSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
+        << "fixture produced zero bonded energy — the topology never "
+           "resolved and the equivalence check would be vacuous";
+    ASSERT_NE(direct_frame.span(ATV::kAtom_x)[0], 10.0)
+        << "no atom moved — the equivalence check would compare two "
+           "untouched frames";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
 }
 
 // ── (b″) Recorder through the categorical recorder slot ─────────────────

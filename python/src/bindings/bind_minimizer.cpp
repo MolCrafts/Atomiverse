@@ -36,8 +36,8 @@
 #include "atomiverse/cpu/frame/molrs_exchange.h"
 // LBFGS and CG are constructed here because their fields ARE their
 // constructor arguments; FIRE, the four cell relaxers and the three criteria
-// come from `task/internal/minimize_builders.h`, and the nine force sources
-// from `evaluator_setters.h` — each header owns the components it builds.
+// come from `task/internal/minimize_builders.h`, and the eighteen force
+// sources from `evaluator_setters.h` — each header owns what it builds.
 #include "atomiverse/cpu/minimize/cg.h"
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/minimize/minimize.h"
@@ -134,7 +134,23 @@ struct MinimizeHandle {
                       || std::is_same_v<P, cpu::task::BondHarmonicParams>
                       || std::is_same_v<P, cpu::task::AngleHarmonicParams>
                       || std::is_same_v<P,
-                                        cpu::task::DihedralMultiHarmonicParams>)
+                                        cpu::task::DihedralMultiHarmonicParams>
+                      // The widened real-space catalogue. `Minimize` takes
+                      // every force source `MD` takes — but the Minimize WIRE
+                      // carries none of these nine (`MinimizeComponentParams`
+                      // has no such alternative), so each lands in
+                      // `unmirrored_` above and a launcher-dispatched run
+                      // naming one is refused by name instead of silently
+                      // optimizing a Hamiltonian short a term.
+                      || std::is_same_v<P, cpu::task::PairMorseParams>
+                      || std::is_same_v<P, cpu::task::PairBuckParams>
+                      || std::is_same_v<P, cpu::task::PairBornParams>
+                      || std::is_same_v<P, cpu::task::PairYukawaParams>
+                      || std::is_same_v<P, cpu::task::PairWcaParams>
+                      || std::is_same_v<P, cpu::task::PairDpdParams>
+                      || std::is_same_v<P, cpu::task::BondFeneParams>
+                      || std::is_same_v<P, cpu::task::DihedralCharmmParams>
+                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>)
             driver.set_evaluator(std::move(component));
 #ifdef ATV_HAS_KSPACE
         else if constexpr (std::is_same_v<P, cpu::task::KSpacePmeParams>)
@@ -224,7 +240,7 @@ struct MinimizeHandle {
     /// @brief Reject a chargeless frame before an electrostatic run starts.
     ///
     /// Same guard, same rationale as `MdHandle::require_charge_column`
-    /// (`bind_md.cpp`), because both handles take the same nine force sources:
+    /// (`bind_md.cpp`), because both handles take the same eighteen sources:
     /// `charge` is an *optional* per-atom column at the C++ boundary, and
     /// `cpu::from_molrs` zero-fills an absent one, so past that point a
     /// forgotten charge column is indistinguishable from a deliberately

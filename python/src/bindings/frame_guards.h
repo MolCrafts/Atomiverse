@@ -5,7 +5,7 @@
 /// Two questions every driver facade asks before it starts a run — "did the
 /// user register an electrostatic model?" and "does the frame carry the column
 /// that model reads?" — and both answers must be identical whichever loop
-/// asks. `MdHandle` and `MinimizeHandle` share the nine force-source setters
+/// asks. `MdHandle` and `MinimizeHandle` share the force-source setters
 /// (`evaluator_setters.h`), so they inherit the same failure mode: a Coulomb
 /// evaluator on a frame with no `charge` column. The predicates live here so
 /// the two guards cannot drift; the refusal message itself stays on each

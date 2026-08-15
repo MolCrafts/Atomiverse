@@ -88,6 +88,77 @@ def argon_frame(n_atoms: int) -> "molrs.Frame":
     return frame
 
 
+#: Bonded-fixture geometry — the C++ unit tests' right-angle 4-tuple
+#: (tests/cpu/potentials/test_dihedral_charmm.cpp
+#: `make_right_angle_dihedral` / test_improper_harmonic.cpp
+#: `make_right_angle_improper`): r1=(0,0,0), r2=(1,0,0), r3=(1,1,0),
+#: r4=(1,1,1). Successive bond vectors are mutually orthogonal, so the
+#: proper dihedral φ and the improper χ are both exactly π/2 and every
+#: torsion energy below is a closed form with no geometry solve.
+#: Bond 0-1 is exactly 1.0 Å, which is what makes the FENE check analytic.
+_BONDED_XYZ: tuple[tuple[float, float, float], ...] = (
+    (0.0, 0.0, 0.0),
+    (1.0, 0.0, 0.0),
+    (1.0, 1.0, 0.0),
+    (1.0, 1.0, 1.0),
+)
+
+#: Cubic cell edge [Å] for the bonded fixture — large enough that no
+#: minimum-image wrap can touch a 1 Å bond.
+_BONDED_BOX: float = 20.0
+
+
+@pytest.fixture
+def bonded_frame() -> "molrs.Frame":
+    """Four carbons carrying one bond, one dihedral and one improper.
+
+    Topology travels as molrs blocks: ``bonds`` (atomi/atomj/type_id),
+    ``dihedrals`` and ``impropers`` (atomi..atoml/type_id), all
+    ``np.uint32`` — the dtypes ``cpu::from_molrs`` requires
+    (src/cpu/frame/molrs_exchange.cpp:147-165, :240-276; connectivity
+    columns are read as u32, kinds as ``type_id``).
+
+    Deliberately **no** ``atoms.tag`` column: without one the CPU frame
+    keeps its default identity tags, and the 0-based row indices in the
+    topology blocks resolve as written. Supplying tags would silently
+    re-key the tuples.
+
+    All four sites are carbon (``atomic_number`` = 6, mass 12.011 amu);
+    the element is inert here — no bonded style keys on species — but a
+    single real element keeps the frame physical.
+
+    @return A 4-atom molrs.Frame in a 20 Å cubic cell with φ = χ = π/2.
+    """
+    n = len(_BONDED_XYZ)
+    atoms = molrs.Block()
+    for axis, name in enumerate(("x", "y", "z")):
+        atoms.insert(
+            name, np.array([site[axis] for site in _BONDED_XYZ], dtype=np.float64)
+        )
+    atoms.insert("mass", np.full(n, 12.011, dtype=np.float64))
+    atoms.insert("atomic_number", np.full(n, 6, dtype=np.uint32))
+
+    bonds = molrs.Block()
+    bonds.insert("atomi", np.array([0], dtype=np.uint32))
+    bonds.insert("atomj", np.array([1], dtype=np.uint32))
+    bonds.insert("type_id", np.array([0], dtype=np.uint32))
+
+    def _four_tuple() -> "molrs.Block":
+        block = molrs.Block()
+        for column, row in (("atomi", 0), ("atomj", 1), ("atomk", 2), ("atoml", 3)):
+            block.insert(column, np.array([row], dtype=np.uint32))
+        block.insert("type_id", np.array([0], dtype=np.uint32))
+        return block
+
+    frame = molrs.Frame()
+    frame["atoms"] = atoms
+    frame["bonds"] = bonds
+    frame["dihedrals"] = _four_tuple()
+    frame["impropers"] = _four_tuple()
+    frame.box = molrs.Box.cube(_BONDED_BOX)
+    return frame
+
+
 @pytest.fixture
 def full_lj_md():
     """Full LJ MD via categorical setters (mirrors examples/07_md_lj.cpp)."""

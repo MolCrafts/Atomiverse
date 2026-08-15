@@ -17,8 +17,11 @@ namespace cpu {
 
 /// @brief One Born–Mayer–Huggins type-pair coefficient entry.
 ///
-/// Frame `kAtom_type` values are used as-is (0-based). Symmetric table: (i,j)
-/// and (j,i) share the same parameters.
+/// Frame `kAtom_type` values are used as-is and are never renumbered. In this
+/// tree that column carries the ATOMIC NUMBER — `cpu::from_molrs` fills it from
+/// the molrs `atomic_number` column — so a Na–Cl row is `{11, 17}` and an argon
+/// dimer is `{18, 18}`, not a 0-based dense index. Symmetric table: (i,j) and
+/// (j,i) share the same parameters.
 struct BornTypeCoeff {
     int type_i;   ///< first atom type (frame `kAtom_type`)
     int type_j;   ///< second atom type
@@ -42,9 +45,17 @@ struct BornTypeCoeff {
 /// \(\mathrm{d}U/\mathrm{d}r=-(A/\rho)\,e^{(\sigma-r)/\rho}+6C/r^{7}-8D/r^{9}\)
 /// (unshifted; shift is constant).
 ///
-/// Prefer neighbor list when `ctx.md.pair_list` is published (production
-/// bulk path); otherwise O(N²) all-pairs (textbook foothold). Coulomb is a
-/// separate component (`PairCoulCut` / `CoulLong` + a reciprocal partner).
+/// Two walks, and which one runs is decided by the CONSTRUCTOR, not only by
+/// what the run publishes: the SINGLE-TYPE arm uses `ctx.md.pair_list` when a
+/// `NeighborList` published one (the production bulk path) and falls back to an
+/// O(N²) all-pairs walk otherwise, while the MULTI-TYPE table arm is always
+/// O(N²) — it has no per-type list to walk. So a one-row table is not a
+/// performance substitute for the single-type constructor, only an energetic
+/// one. Either way `as_neighbor_consumer()` returns null, so no run is ever
+/// REQUIRED to install a `NeighborList` for this style.
+///
+/// Coulomb is a separate component (`PairCoulCut` / `CoulLong` + a reciprocal
+/// partner).
 ///
 /// Writes energy to `kEnergy` + `kEnergyPair` and the pair virial
 /// \(\sum \Delta r \otimes f\) to `kStress` (Voigt xx yy zz xy xz yz [eV],

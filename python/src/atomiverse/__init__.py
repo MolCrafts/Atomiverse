@@ -39,11 +39,20 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``neighbor.NeighborList``             ``NeighborList``            ``cpu::md::NeighborList<>``
 ``potentials.pair.LJCut``             ``PairLJCut``               ``cpu::PairLJCut``
 ``potentials.pair.CoulCut``           ``PairCoulCut``             ``cpu::PairCoulCut``
+``potentials.pair.Morse``             ``PairMorse``               ``cpu::PairMorse``
+``potentials.pair.Buck``              ``PairBuck``                ``cpu::PairBuck``
+``potentials.pair.Born``              ``PairBorn``                ``cpu::PairBorn``
+``potentials.pair.Yukawa``            ``PairYukawa``              ``cpu::PairYukawa``
+``potentials.pair.WCA``               ``PairWCA``                 ``cpu::PairWCA``
+``potentials.pair.Dpd``               ``PairDpd``                 ``cpu::PairDpd``
 ``longrange.CoulLong``                ``CoulLong``                ``cpu::CoulLong``
 ``longrange.KSpacePME``               ``KSpacePME``               ``cpu::KSpacePME``
 ``potentials.bond.Harmonic``          ``BondHarmonic``            ``cpu::BondHarmonic``
+``potentials.bond.Fene``              ``BondFene``                ``cpu::BondFene``
 ``potentials.angle.Harmonic``         ``AngleHarmonic``           ``cpu::AngleHarmonic``
 ``potentials.dihedral.MultiHarmonic`` ``DihedralMultiHarmonic``   ``cpu::DihedralMultiHarmonic``
+``potentials.dihedral.Charmm``        ``DihedralCharmm``          ``cpu::DihedralCharmm``
+``potentials.improper.Harmonic``      ``ImproperHarmonic``        ``cpu::ImproperHarmonic``
 ``recorder.Thermo``                   ``Thermo``                  ``cpu::Thermo``
 ``recorder.XYZ``                      ``XYZ``                     ``cpu::XyzRecorder``
 ``montecarlo.MC``                     ``MC``                      ``cpu::mc::MC``
@@ -114,6 +123,28 @@ electronic-structure ones bound here do not; ``help(atomiverse.minimizer)``
 gives that gate, the pairing rules and the units. ``ATV_BUILD_MINIMIZER`` is
 ON by default, so all of them stay in ``__all__``.
 
+The real-space force-field catalogue is the ``set_evaluator`` slot's menu,
+and the slot is plural: a full force field is several calls. Pair styles are
+``PairLJCut`` (Lennard-Jones), ``PairMorse`` (a bonded-pair well),
+``PairBuck`` / ``PairBorn`` (Born-Mayer repulsion, the latter as a per-type
+Fumi-Tosi table with a +D/r⁸ core), ``PairYukawa`` (screened, chargeless),
+``PairWCA`` (purely repulsive, cutoff derived from σ) and ``PairDpd``
+(dissipative particle dynamics — a thermostat as well as a potential, so it
+replaces rather than joins one). Bonded styles are ``BondHarmonic`` /
+``BondFene``, ``AngleHarmonic``, ``DihedralMultiHarmonic`` /
+``DihedralCharmm`` and ``ImproperHarmonic``, each reading the matching
+topology block of the frame and indexing its parameters by that block's
+type. Three practical notes. Among the *pair* styles only ``PairLJCut`` and
+the electrostatic ones consume a ``NeighborList``; the other six walk all
+pairs O(N²) and need none, so size the system accordingly (the bonded styles
+walk topology tuples, not pairs, and never take a neighbor list either).
+``PairBorn``'s type keys are ATOMIC NUMBERS, because that is what the frame's
+per-atom type column carries. And ``PairDpd`` thermostats as well as
+interacts, so it *replaces* ``NoseHoover`` / ``Langevin`` / ``CSVR`` instead
+of joining them. All of them are unconditional — a real-space style has no
+build flag of its own — and ``help(atomiverse.potentials)`` gives the deep
+spellings and the units.
+
 Compile-optional rows — ``PW`` / ``PWResult`` / ``PWEvaluator``
 (``ATV_BUILD_PW``),
 ``KSpacePME`` (``ATV_BUILD_KSPACE``) and the Gaussian SCF methods
@@ -177,11 +208,20 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "NeighborList": ("atomiverse.neighbor", "NeighborList"),
     "PairLJCut": ("atomiverse.potentials.pair", "LJCut"),
     "PairCoulCut": ("atomiverse.potentials.pair", "CoulCut"),
+    "PairMorse": ("atomiverse.potentials.pair", "Morse"),
+    "PairBuck": ("atomiverse.potentials.pair", "Buck"),
+    "PairBorn": ("atomiverse.potentials.pair", "Born"),
+    "PairYukawa": ("atomiverse.potentials.pair", "Yukawa"),
+    "PairWCA": ("atomiverse.potentials.pair", "WCA"),
+    "PairDpd": ("atomiverse.potentials.pair", "Dpd"),
     "CoulLong": ("atomiverse.longrange", "CoulLong"),
     "KSpacePME": ("atomiverse.longrange", "KSpacePME"),
     "BondHarmonic": ("atomiverse.potentials.bond", "Harmonic"),
+    "BondFene": ("atomiverse.potentials.bond", "Fene"),
     "AngleHarmonic": ("atomiverse.potentials.angle", "Harmonic"),
     "DihedralMultiHarmonic": ("atomiverse.potentials.dihedral", "MultiHarmonic"),
+    "DihedralCharmm": ("atomiverse.potentials.dihedral", "Charmm"),
+    "ImproperHarmonic": ("atomiverse.potentials.improper", "Harmonic"),
     "Thermo": ("atomiverse.recorder", "Thermo"),
     "XYZ": ("atomiverse.recorder", "XYZ"),
     "MC": ("atomiverse.montecarlo", "MC"),
@@ -253,11 +293,20 @@ __all__ = [
     "MinimizeResult",
     "PairLJCut",
     "PairCoulCut",
+    "PairMorse",
+    "PairBuck",
+    "PairBorn",
+    "PairYukawa",
+    "PairWCA",
+    "PairDpd",
     "CoulLong",
     "NeighborList",
     "BondHarmonic",
+    "BondFene",
     "AngleHarmonic",
     "DihedralMultiHarmonic",
+    "DihedralCharmm",
+    "ImproperHarmonic",
     "Thermo",
     "XYZ",
     "MC",

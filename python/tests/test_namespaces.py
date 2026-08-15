@@ -86,6 +86,21 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     # deep module is `atomiverse.vibration` — not a member of `md/`.
     ("Hessian", "atomiverse.vibration", "Hessian"),
     ("HessianResult", "atomiverse.vibration", "HessianResult"),
+    # Force-field catalogue (spec py-pair-styles): unconditional, part of
+    # ATV_BUILD_POTENTIALS like PairLJCut / BondHarmonic above. The deep
+    # name drops the category prefix the top-level composite name carries
+    # (`PairBuck` -> `potentials.pair.Buck`), exactly as `PairLJCut` ->
+    # `potentials.pair.LJCut`; `improper` is a NEW deep module, the fourth
+    # bonded category beside bond / angle / dihedral.
+    ("PairMorse", "atomiverse.potentials.pair", "Morse"),
+    ("PairBuck", "atomiverse.potentials.pair", "Buck"),
+    ("PairBorn", "atomiverse.potentials.pair", "Born"),
+    ("PairYukawa", "atomiverse.potentials.pair", "Yukawa"),
+    ("PairWCA", "atomiverse.potentials.pair", "WCA"),
+    ("PairDpd", "atomiverse.potentials.pair", "Dpd"),
+    ("BondFene", "atomiverse.potentials.bond", "Fene"),
+    ("DihedralCharmm", "atomiverse.potentials.dihedral", "Charmm"),
+    ("ImproperHarmonic", "atomiverse.potentials.improper", "Harmonic"),
 )
 
 _PW_MAPPING: tuple[tuple[str, str, str], ...] = (
@@ -123,6 +138,7 @@ _DEEP_MODULES: tuple[str, ...] = (
     "atomiverse.potentials.bond",
     "atomiverse.potentials.angle",
     "atomiverse.potentials.dihedral",
+    "atomiverse.potentials.improper",
     "atomiverse.recorder",
     "atomiverse.montecarlo",
     "atomiverse.driver",
@@ -148,12 +164,13 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 35 entries (18 + the 7 unconditional Monte Carlo
+        """The base has 44 entries (18 + the 7 unconditional Monte Carlo
         rows of spec py-mc + the 2 unconditional vibration rows of spec
         py-vib + the 8 unconditional geometry-optimization rows of spec
-        py-minimize-full); a PW build contributes two types (PW, PWResult)
+        py-minimize-full + the 9 unconditional force-field rows of spec
+        py-pair-styles); a PW build contributes two types (PW, PWResult)
         and an HF build the four concrete SCF methods."""
-        expected = 35 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        expected = 44 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
         assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(

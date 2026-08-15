@@ -103,8 +103,13 @@ Current surface:
 - **MD** — the `MD` driver and its components under the canonical C++
   (LAMMPS-style) names: `VelocityVerlet`, `NoseHooverNPT`,
   `ParrinelloRahmanNPT`, `InitVelocity`, `NoseHoover`, `Langevin`, `CSVR`,
-  `BerendsenBarostat`, `PairLJCut`, `NeighborList`, `BondHarmonic`,
-  `AngleHarmonic`, `DihedralMultiHarmonic`, `Thermo`, `XYZ`.
+  `BerendsenBarostat`, `NeighborList`, `Thermo`, `XYZ`.
+- **Real-space force field** — the plural `set_evaluator` menu. Pair styles
+  `PairLJCut`, `PairMorse`, `PairBuck`, `PairBorn`, `PairYukawa`, `PairWCA`
+  and `PairDpd`; bonded styles `BondHarmonic`, `BondFene`, `AngleHarmonic`,
+  `DihedralMultiHarmonic`, `DihedralCharmm` and `ImproperHarmonic`. A
+  real-space style has no build flag of its own, so all of them are on every
+  wheel. The table under *MD driver* below gives the signatures and units.
 - **Electrostatics** — `PairCoulCut` (truncated Coulomb) and the Ewald
   split `CoulLong` + `KSpacePME`. The reciprocal solver needs FFTW3, so
   `KSpacePME` is present only on wheels built with `ATV_BUILD_KSPACE=ON`
@@ -569,9 +574,12 @@ volume; they differ only in judging the mean versus each diagonal component.
 
 Two more gates the API cannot check for you.
 
-**The evaluator must write the virial.** The classical styles (`PairLJCut`,
-`PairCoulCut`, `CoulLong` + `KSpacePME`, the bonded terms) do by default, but
-`AM1Evaluator` writes none — it is a molecular method with no cell — and
+**The evaluator must write the virial.** Every classical style does by
+default — the pair styles (`PairLJCut`, `PairCoulCut`, `CoulLong` +
+`KSpacePME`, `PairMorse`, `PairBuck`, `PairBorn`, `PairYukawa`, `PairWCA`,
+`PairDpd`) and the bonded ones alike; `PairDpd` contributes its *conservative*
+virial only, which is the term a pressure is built from. `AM1Evaluator` writes
+none — it is a molecular method with no cell — and
 `PWEvaluator` is installed by this facade as a gradient-only copy. With a zero
 virial the cell never moves and `PressureConverged(P_target=0.0, …)` reports
 success on the untouched cell. (`PW.stress(frame)` still returns the
@@ -703,8 +711,9 @@ atomic number.
 
 The force slot takes any bound source and has **no default** — a run with
 nothing registered raises `RuntimeError`, because the Hessian of no potential
-is not a physical zero. A pair style needs a `NeighborList`; an
-electronic-structure evaluator does not:
+is not a physical zero. `PairLJCut` and the Coulomb styles need a
+`NeighborList`; the O(N²) pair styles and the electronic-structure evaluators
+do not:
 
 ```python
 # `h2` is a molrs.Frame of two H atoms (atomic_number = 1) in a large cell.
@@ -960,7 +969,32 @@ Components register through **categorical setters**, mirroring the C++
   one XYZ frame every `freq` steps, element symbols taken from the frame's
   per-atom `atomic_number` column
 
-Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
+Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`. It
+covers exactly the six components listed under `_PHASE_DISPATCH` in
+`atomiverse/md/__init__.py` — `PairLJCut`, `NeighborList`, `BondHarmonic`,
+`AngleHarmonic`, `DihedralMultiHarmonic` and `Thermo` — and raises `TypeError`
+naming that list for anything else, including every style of the widened
+catalogue below. Those go through `set_evaluator`, which is where phase and
+order are the driver's business anyway.
+
+The `set_evaluator` slot is plural, so a force field is several calls. Only
+`PairLJCut` and the electrostatic styles consume a `NeighborList` — every
+other pair style in the table below walks all pairs O(N²) and needs none, so
+size the system accordingly. A bonded style reads the matching topology
+block of the frame (`bonds`, `angles`, `dihedrals`, `impropers`) and indexes
+its parameters by that block's `type_id`.
+
+Every pair style is truncated at a cutoff `r_c` [Å] — pairs farther apart are
+skipped — and `r_c` is an explicit argument everywhere except `PairWCA`, which
+derives it from `sigma`. "**Shifted at the cutoff**" in the table below means the
+style subtracts the constant `U(r_c)` from every pair energy it does count, so
+the energy reaches zero *continuously* at `r_c` rather than jumping there. A
+constant has zero derivative, so this leaves the force untouched — the force
+still steps at `r_c`, which over a long run is a slow source of energy drift.
+`PairWCA` and `PairDpd` are the two that avoid even that, by construction
+rather than by subtraction: WCA cuts exactly at the Lennard-Jones minimum where
+the force is already zero, and DPD's weight `1 − r/r_c` vanishes there on its
+own.
 
 | Setter | Component | Description |
 |--------|-----------|-------------|
@@ -977,9 +1011,18 @@ Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`.
 | `set_evaluator` | `PairCoulCut(cutoff)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
 | `set_evaluator` | `CoulLong(alpha, cutoff)` | Ewald/PME **real-space** half; `alpha` [1/Å] must match its reciprocal partner |
 | `set_evaluator` | `KSpacePME(alpha, grid_spacing=1.0, order=6)` | Ewald/PME **reciprocal-space** half; only on `ATV_BUILD_KSPACE=ON` wheels |
-| `set_evaluator` | `BondHarmonic(K, r0)` | Bond stretching |
-| `set_evaluator` | `AngleHarmonic(K, θ0)` | Angle bending |
-| `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral potential |
+| `set_evaluator` | `PairMorse(D, alpha, r0, cutoff)` | Morse well `D(1−e^{−α(r−r₀)})²`, shifted at the cutoff. `D` [eV], `alpha` [1/Å], `r0` [Å], `cutoff` [Å] |
+| `set_evaluator` | `PairBuck(A, rho, C, cutoff)` | Buckingham `A e^{−r/ρ} − C/r⁶`, shifted at the cutoff. `A` [eV], `rho` [Å], `C` [eV·Å⁶], `cutoff` [Å] |
+| `set_evaluator` | `PairBorn(type_i, type_j, A, rho, sigma, C, D, cutoff)` | Born-Mayer-Huggins / Fumi-Tosi table, one entry per row across the parallel sequences; type keys are **atomic numbers**, unlisted pairs do not interact. `A` [eV], `rho` [Å], `sigma` [Å], `C` [eV·Å⁶], `D` [eV·Å⁸], `cutoff` [Å] |
+| `set_evaluator` | `PairYukawa(A, kappa, cutoff)` | Screened Coulomb `A e^{−κr}/r` — reads no `charge` column; `A` [eV·Å] is the whole strength. `kappa` [1/Å], `cutoff` [Å] |
+| `set_evaluator` | `PairWCA(epsilon, sigma)` | Purely repulsive LJ, cut and shifted at `2^(1/6)·σ` — the cutoff is **derived**, not an argument. `epsilon` [eV], `sigma` [Å] |
+| `set_evaluator` | `PairDpd(a, gamma, temperature, cutoff, dt, seed=1)` | Groot-Warren DPD — a *thermostat* as well as a potential, so install it instead of one; stress carries the conservative virial only and the random force is redrawn every step. `a` [eV/Å] (a force), `gamma` [eV·fs/Å²], `temperature` [K], `cutoff` [Å], `dt` [fs] and must equal the integrator's |
+| `set_evaluator` | `BondHarmonic(K, r0)` | Bond stretching `K(r − r₀)²`. `K` [eV/Å²], `r0` [Å], per bond type |
+| `set_evaluator` | `BondFene(K, R0)` | Kremer-Grest FENE bond `−½KR₀²ln(1 − (r/R₀)²)`; `r ≥ R0` raises `RuntimeError` rather than reporting an infinite energy. `K` [eV/Å²], `R0` [Å], per bond type |
+| `set_evaluator` | `AngleHarmonic(K, θ0)` | Angle bending `K(θ − θ₀)²`. `K` [eV/rad²], `θ0` [rad], per angle type |
+| `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral `Σₙ Cₙ cosⁿφ`. `Cn` [eV], one coefficient list per dihedral type |
+| `set_evaluator` | `DihedralCharmm(K, n, delta)` | CHARMM periodic torsion `K(1 + cos(nφ − δ))`. `K` [eV], `n` an integer multiplicity ≥ 1 (minima per full turn), `delta` [rad], per dihedral type |
+| `set_evaluator` | `ImproperHarmonic(K, chi0)` | Harmonic out-of-plane torsion `K(χ − χ₀)²`; reads the frame's `impropers` block. `K` [eV/rad²], `chi0` [rad], per improper type |
 | `set_thermo` | `N` (int) | Thermo print every N steps |
 | `Thermo(freq)` | end_of_step | Thermodynamic output |
 | `set_record` | `XYZ(filename, freq=1)` | XYZ trajectory at end_of_step — one frame whenever `step % freq == 0`. Within a `run()` call `step` is zero-based (`0 … n_steps-1`), so 10 steps at `freq=5` write 2 frames (steps 0 and 5), never 3. A recorder truncates the file on its first write and appends afterwards, so give a second run its own `XYZ(...)` |

@@ -48,8 +48,10 @@
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/molrs_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-// The nine force sources this file used to spell out are registered from
-// `evaluator_setters.h`, which owns their headers and their build gates.
+// The eighteen force sources this file used to spell out are registered from
+// `evaluator_setters.h`, which owns their build gates. The four headers below
+// are still included HERE because the `PhaseBuilder` escape hatch at the
+// bottom of this file constructs those same four components directly.
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
@@ -115,7 +117,19 @@ struct MdHandle {
                       || std::is_same_v<P, cpu::task::PairCoulCutParams>
                       || std::is_same_v<P, cpu::task::CoulLongParams>
                       || std::is_same_v<P,
-                                        cpu::task::DihedralMultiHarmonicParams>)
+                                        cpu::task::DihedralMultiHarmonicParams>
+                      // The widened real-space catalogue: six pair styles and
+                      // three bonded ones, all on the same plural evaluator
+                      // slot — they JOIN the styles above, never replace them.
+                      || std::is_same_v<P, cpu::task::PairMorseParams>
+                      || std::is_same_v<P, cpu::task::PairBuckParams>
+                      || std::is_same_v<P, cpu::task::PairBornParams>
+                      || std::is_same_v<P, cpu::task::PairYukawaParams>
+                      || std::is_same_v<P, cpu::task::PairWcaParams>
+                      || std::is_same_v<P, cpu::task::PairDpdParams>
+                      || std::is_same_v<P, cpu::task::BondFeneParams>
+                      || std::is_same_v<P, cpu::task::DihedralCharmmParams>
+                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>)
             driver.set_evaluator(std::move(comp));
 #ifdef ATV_HAS_KSPACE
         else if constexpr (std::is_same_v<P, cpu::task::KSpacePmeParams>)
@@ -484,6 +498,260 @@ void bind_md(nb::module_& m) {
             nb::arg("epsilon"), nb::arg("sigma"), nb::arg("cutoff"),
             "Construct with epsilon [eV], sigma [A], and cutoff [A].");
 
+    // ── The widened real-space catalogue ──
+    //
+    // Six pair styles and three bonded ones, all unconditional: a real-space
+    // style is part of ATV_BUILD_POTENTIALS with no flag of its own, exactly
+    // like PairLJCut / BondHarmonic. None of the six pair styles is a
+    // NeighborConsumer, and each as constructed from these mirrors walks all
+    // pairs O(N^2) — including PairBorn, whose only neighbor-list-aware arm is
+    // the single-type C++ constructor the table mirror never reaches. So a run
+    // that installs only these needs no NeighborList at all.
+
+    nb::class_<cpu::task::PairMorseParams>(
+        m, "PairMorse",
+        "Morse pair potential V = D(1 - exp(-alpha(r - r0)))^2, shifted to "
+        "zero at the cutoff.\n\n"
+        "The textbook model of a chemical bond: a minimum at r0, harmonic for "
+        "small displacements, and — unlike a spring — flattening out to the "
+        "finite dissociation energy D as r grows, so the bond can break. "
+        "alpha sets how fast that flattening happens; a large alpha is a "
+        "narrow, stiff well.\n\n"
+        "The tree's demonstration that a new pair style costs two files and "
+        "no registry, written for readability rather than speed: it walks "
+        "every pair O(N^2) with no neighbor list. Use it at the scale where "
+        "that is honest — a dimer, a small cluster, a teaching example.")
+        .def(
+            "__init__",
+            [](cpu::task::PairMorseParams* p, double D, double alpha, double r0,
+               double cutoff) {
+                new (p) cpu::task::PairMorseParams{D, alpha, r0, cutoff};
+            },
+            nb::arg("D"), nb::arg("alpha"), nb::arg("r0"), nb::arg("cutoff"),
+            "Construct with well depth D [eV], width alpha [1/A], "
+            "equilibrium separation r0 [A], and cutoff [A].");
+
+    nb::class_<cpu::task::PairBuckParams>(
+        m, "PairBuck",
+        "Buckingham pair potential U = A exp(-r/rho) - C/r^6, shifted at the "
+        "cutoff (LAMMPS `pair_style buck` with `pair_modify shift yes`).\n\n"
+        "The two terms are the two physical effects of a closed-shell pair. "
+        "The Born-Mayer exponential is Pauli repulsion — the energy cost of "
+        "forcing two filled electron clouds to overlap, falling off over the "
+        "softness length rho. The -C/r^6 term is London dispersion, the "
+        "attraction between the instantaneous dipoles two polarizable atoms "
+        "induce in each other.\n\n"
+        "Single-type: one (A, rho, C) applies to every pair. Mind the short-"
+        "range limit — the Born-Mayer wall is finite while -C/r^6 is not, so "
+        "Buckingham has a spurious attractive collapse as r -> 0 that "
+        "PairBorn's +D/r^8 term cures.")
+        .def(
+            "__init__",
+            [](cpu::task::PairBuckParams* p, double A, double rho, double C,
+               double cutoff) {
+                new (p) cpu::task::PairBuckParams{A, rho, C, cutoff};
+            },
+            nb::arg("A"), nb::arg("rho"), nb::arg("C"), nb::arg("cutoff"),
+            "Construct with Born-Mayer prefactor A [eV], softness length "
+            "rho [A], dispersion coefficient C [eV*A^6], and cutoff [A].");
+
+    nb::class_<cpu::task::PairBornParams>(
+        m, "PairBorn",
+        "Born-Mayer-Huggins pair table U = A exp((sigma - r)/rho) - C/r^6 + "
+        "D/r^8, shifted at the cutoff (LAMMPS `pair_style born`) — the "
+        "Fumi-Tosi short-range half of a molten-salt model. Add the Coulomb "
+        "term as a separate evaluator.\n\n"
+        "The table is per TYPE PAIR and the keys are ATOMIC NUMBERS: the "
+        "frame's per-atom type column is filled from the molrs "
+        "`atomic_number` column, so a sodium-chloride row is type_i=11, "
+        "type_j=17 and an argon dimer is 18, 18 — not a 0-based index.\n\n"
+        "Every interacting pair must be listed, and the table is symmetric in "
+        "(i, j). An unlisted pair does NOT interact: Fumi-Tosi parameters are "
+        "not Lorentz-Berthelot, so there is no mixing rule to fall back on.")
+        .def(
+            "__init__",
+            [](cpu::task::PairBornParams* p, std::vector<int> type_i,
+               std::vector<int> type_j, std::vector<double> A,
+               std::vector<double> rho, std::vector<double> sigma,
+               std::vector<double> C, std::vector<double> D, double cutoff) {
+                new (p) cpu::task::PairBornParams{
+                    std::move(type_i), std::move(type_j),
+                    std::move(A),      std::move(rho),
+                    std::move(sigma),  std::move(C),
+                    std::move(D),      cutoff};
+            },
+            nb::arg("type_i"), nb::arg("type_j"), nb::arg("A"), nb::arg("rho"),
+            nb::arg("sigma"), nb::arg("C"), nb::arg("D"), nb::arg("cutoff"),
+            "Construct from PARALLEL sequences, one entry per table row: "
+            "type_i / type_j (atomic numbers), A [eV], rho [A], sigma [A], "
+            "C [eV*A^6], D [eV*A^8], plus the one shared cutoff [A].\n\n"
+            "All seven sequences are one table seen column-wise and must have "
+            "the same length. A single-type model is one row, e.g. "
+            "type_i=[18], type_j=[18], A=[1000.0], ...\n\n"
+            "This object is a plain parameter record and validates nothing; "
+            "the table is transposed into coefficient rows when the evaluator "
+            "is installed, so a length mismatch raises ValueError from "
+            "MD.set_evaluator(...), not from here — the same arrangement as "
+            "XYZ and MD.set_record(...).");
+
+    nb::class_<cpu::task::PairYukawaParams>(
+        m, "PairYukawa",
+        "Screened-Coulomb (Yukawa) pair potential U = A exp(-kappa r)/r, "
+        "shifted at the cutoff.\n\n"
+        "SCREENING is what a cloud of mobile opposite charges — counter-ions "
+        "around a colloid, electrons in a plasma — does to a bare charge: it "
+        "neutralizes it beyond a distance 1/kappa, turning the 1/r Coulomb "
+        "tail into an exponentially cut one. kappa = 0 recovers unscreened "
+        "A/r.\n\n"
+        "Despite the name it reads NO per-atom charge column: the amplitude A "
+        "is the whole interaction strength, which is what makes this a "
+        "colloid / screened-plasma model rather than an electrostatic one. "
+        "For real charges use PairCoulCut, or CoulLong + KSpacePME.")
+        .def(
+            "__init__",
+            [](cpu::task::PairYukawaParams* p, double A, double kappa,
+               double cutoff) {
+                new (p) cpu::task::PairYukawaParams{A, kappa, cutoff};
+            },
+            nb::arg("A"), nb::arg("kappa"), nb::arg("cutoff"),
+            "Construct with amplitude A [eV*A] (positive is repulsive), "
+            "screening wavenumber kappa [1/A], and cutoff [A].");
+
+    nb::class_<cpu::task::PairWcaParams>(
+        m, "PairWCA",
+        "Weeks-Chandler-Andersen pair potential: Lennard-Jones 12-6 cut and "
+        "shifted at r_c = 2^(1/6) sigma, so U(r_c) = F(r_c) = 0 and the style "
+        "is purely repulsive.\n\n"
+        "There is no cutoff argument, deliberately: the cutoff is DERIVED "
+        "from sigma (the LJ minimum), not chosen — that is the definition of "
+        "the style. Beyond it the contribution is exactly zero, not merely "
+        "small.")
+        .def(
+            "__init__",
+            [](cpu::task::PairWcaParams* p, double epsilon, double sigma) {
+                new (p) cpu::task::PairWcaParams{epsilon, sigma};
+            },
+            nb::arg("epsilon"), nb::arg("sigma"),
+            "Construct with the parent LJ well depth epsilon [eV] and length "
+            "scale sigma [A].");
+
+    nb::class_<cpu::task::PairDpdParams>(
+        m, "PairDpd",
+        "Groot-Warren dissipative particle dynamics (DPD).\n\n"
+        "DPD is a COARSE-GRAINED method: a particle stands for a blob of "
+        "fluid rather than an atom, so the pair force is soft (finite at "
+        "r = 0) and the degrees of freedom that were coarsened away come back "
+        "as a pairwise thermostat. The conservative half is "
+        "F^C = a w(r) rhat with w = 1 - r/r_c, rhat the unit vector along "
+        "r_i - r_j; the energy reported for it is U^C = a r_c w^2 / 2 [eV]. "
+        "The thermostat half is a matched dissipative/random pair with "
+        "sigma^2 = 2 gamma k_B T.\n\n"
+        "It is a THERMOSTAT as well as a potential — install it instead of, "
+        "not beside, NoseHoover / Langevin / CSVR, and give it the same dt "
+        "the integrator uses (the random force scales as 1/sqrt(dt)). It does "
+        "NOT replace the integrator: VelocityVerlet still advances the "
+        "positions.\n\n"
+        "Single-amplitude only: the C++ class also has a multi-component "
+        "constructor taking a square a_matrix[type_i][type_j], and that one is "
+        "NOT bound here (it has no wire mirror either — it is a dense matrix "
+        "indexed by atomic number, not a list of keyed rows like PairBorn's "
+        "table). One `a` applies to every pair.\n\n"
+        "Two consequences worth knowing before reading a number off a run:\n"
+        "  * the reported stress carries the CONSERVATIVE virial only. The "
+        "dissipative and random forces are thermostat terms with zero mean at "
+        "equilibrium, and the random one diverges as 1/sqrt(dt), so tallying "
+        "them would put timestep-dependent noise into every pressure without "
+        "changing its average.\n"
+        "  * the random force is REDRAWN every step from the {seed, step, i, "
+        "j} stream, where i and j are atom INDICES. A run is reproducible for "
+        "a given seed, step budget and atom ordering; a single point is not "
+        "reproducible across different steps unless gamma = 0, which switches "
+        "both thermostat terms off and leaves the conservative half alone.")
+        .def(
+            "__init__",
+            [](cpu::task::PairDpdParams* p, double a, double gamma,
+               double temperature, double cutoff, double dt,
+               std::uint64_t seed) {
+                new (p) cpu::task::PairDpdParams{a,      gamma, temperature,
+                                                 cutoff, dt,    seed};
+            },
+            nb::arg("a"), nb::arg("gamma"), nb::arg("temperature"),
+            nb::arg("cutoff"), nb::arg("dt"),
+            nb::arg("seed") = std::uint64_t(1),
+            "Construct with soft repulsion amplitude a [eV/A] — a FORCE, the "
+            "value of F^C at contact, not an energy — dissipative friction "
+            "gamma [eV*fs/A^2], thermostat temperature [K], cutoff r_c [A], "
+            "timestep dt [fs], and the random-stream seed "
+            "(dimensionless).\n\n"
+            "gamma = 0 switches BOTH the dissipative and the random term off "
+            "(sigma = sqrt(2 gamma k_B T)), leaving the conservative soft "
+            "repulsion alone — which is the only way to get a reproducible "
+            "single point out of this style.");
+
+    nb::class_<cpu::task::BondFeneParams>(
+        m, "BondFene",
+        "Kremer-Grest FENE bond U = -K R0^2 ln(1 - (r/R0)^2) / 2.\n\n"
+        "FENE is Finitely Extensible Nonlinear Elastic: the energy diverges "
+        "as the bond length approaches the maximum extension R0, so unlike a "
+        "harmonic spring the bond cannot be stretched arbitrarily far. And it "
+        "says so — a bond at or beyond R0 raises RuntimeError from run() "
+        "rather than reporting an infinite energy.\n\n"
+        "The standard coarse-grained polymer bond, and the reason it is "
+        "standard: paired with a repulsive WCA pair style, the hard ceiling "
+        "on bond length plus the hard floor on non-bonded approach makes it "
+        "geometrically impossible for two chains to pass through each other.")
+        .def(
+            "__init__",
+            [](cpu::task::BondFeneParams* p, std::vector<double> K,
+               std::vector<double> R0) {
+                new (p) cpu::task::BondFeneParams{std::move(K), std::move(R0)};
+            },
+            nb::arg("K"), nb::arg("R0"),
+            "Construct with spring constants K [eV/A^2] and maximum "
+            "extensions R0 [A] per bond type.");
+
+    nb::class_<cpu::task::DihedralCharmmParams>(
+        m, "DihedralCharmm",
+        "CHARMM periodic torsion V = K(1 + cos(n phi - delta)).\n\n"
+        "This is LAMMPS `dihedral_style charmm` WITHOUT the optional 1-4 "
+        "LJ/Coulomb weight factors — those belong to the pair styles via "
+        "special-bonds weights, not to the torsion. The C++ class also "
+        "exposes a stress-skipping performance switch (`set_compute_stress`); "
+        "it is not bound and stays at its default, so the torsion always "
+        "contributes to the virial.")
+        .def(
+            "__init__",
+            [](cpu::task::DihedralCharmmParams* p, std::vector<double> K,
+               std::vector<int> n, std::vector<double> delta) {
+                new (p) cpu::task::DihedralCharmmParams{
+                    std::move(K), std::move(n), std::move(delta)};
+            },
+            nb::arg("K"), nb::arg("n"), nb::arg("delta"),
+            "Construct with force constants K [eV], multiplicities n "
+            "(integers >= 1) and phase shifts delta [rad] per dihedral type. "
+            "n is the number of minima per full turn, so n = 3 is the "
+            "threefold barrier of an sp3-sp3 bond; delta shifts where those "
+            "minima sit.");
+
+    nb::class_<cpu::task::ImproperHarmonicParams>(
+        m, "ImproperHarmonic",
+        "Harmonic improper torsion V = K(chi - chi0)^2 (LAMMPS "
+        "`improper_style harmonic`), where chi is the angle between the two "
+        "planes of the 4-tuple.\n\n"
+        "Reads the frame's IMPROPER topology — a separate block from "
+        "`dihedrals`, holding the out-of-plane tuples that keep a group "
+        "planar (an sp2 centre, an aromatic ring).")
+        .def(
+            "__init__",
+            [](cpu::task::ImproperHarmonicParams* p, std::vector<double> K,
+               std::vector<double> chi0) {
+                new (p) cpu::task::ImproperHarmonicParams{std::move(K),
+                                                          std::move(chi0)};
+            },
+            nb::arg("K"), nb::arg("chi0"),
+            "Construct with force constants K [eV/rad^2] and equilibrium "
+            "angles chi0 [rad] per improper type.");
+
     nb::class_<cpu::task::PairCoulCutParams>(
         m, "PairCoulCut",
         "Truncated Coulomb pair style (LAMMPS `pair_style coul/cut`).\n\n"
@@ -582,8 +850,9 @@ void bind_md(nb::module_& m) {
                     cpu::task::BondHarmonicParams{std::move(K), std::move(r0)};
             },
             nb::arg("K"), nb::arg("r0"),
-            "Construct with force constants K and equilibrium distances r0 "
-            "per bond type.");
+            "Construct with force constants K [eV/A^2] and equilibrium "
+            "distances r0 [A], one entry per bond type. The bond type is the "
+            "frame's `bonds` block `type_id` column.");
 
     nb::class_<cpu::task::AngleHarmonicParams>(
         m, "AngleHarmonic", "Harmonic angle potential V = K(theta - theta0)^2.")
@@ -595,18 +864,25 @@ void bind_md(nb::module_& m) {
                                                        std::move(theta0)};
             },
             nb::arg("K"), nb::arg("theta0"),
-            "Construct with force constants K and equilibrium angles theta0 "
-            "per angle type.");
+            "Construct with force constants K [eV/rad^2] and equilibrium "
+            "angles theta0 [rad], one entry per angle type (the frame's "
+            "`angles` block `type_id` column).");
 
     nb::class_<cpu::task::DihedralMultiHarmonicParams>(
-        m, "DihedralMultiHarmonic", "Multi-harmonic dihedral potential.")
+        m, "DihedralMultiHarmonic",
+        "Multi-harmonic (Ryckaert-Bellemans) dihedral potential "
+        "V = sum_n C_n cos^n(phi), where phi is the torsion angle about the "
+        "central bond of the 4-tuple (LAMMPS `dihedral_style "
+        "multi/harmonic`).")
         .def(
             "__init__",
             [](cpu::task::DihedralMultiHarmonicParams* p,
                std::vector<std::vector<double>> Cn) {
                 new (p) cpu::task::DihedralMultiHarmonicParams{std::move(Cn)};
             },
-            nb::arg("Cn"), "Construct with coefficients Cn per dihedral type.");
+            nb::arg("Cn"),
+            "Construct with the coefficients Cn [eV] — one inner sequence per "
+            "dihedral type, its k-th entry multiplying cos^k(phi).");
 
     nb::class_<cpu::task::ThermoParams>(m, "Thermo",
                                         "Thermodynamic output at end_of_step.")
@@ -747,8 +1023,8 @@ void bind_md(nb::module_& m) {
     // The set_evaluator slot is plural: every call appends another
     // energy/force source and they are summed. The typed spellings are what
     // Python's single `MD.set_evaluator` dispatches to by component type —
-    // registered from `evaluator_setters.h`, the one place that knows the nine
-    // force sources, because `Minimize` exposes the very same nine names.
+    // registered from `evaluator_setters.h`, the one place that knows the
+    // eighteen force sources, because `Minimize` exposes the very same names.
     bind_evaluator_setters(
         md,
         // set_evaluator_am1 — the MD reading of the same component.
@@ -831,7 +1107,12 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("phase"),
             "Escape hatch: explicit phase binding (prefer categorical "
-            "setters).")
+            "setters). The returned builder carries add_* methods for six "
+            "components only — PairLJCut, NeighborList, BondHarmonic, "
+            "AngleHarmonic, DihedralMultiHarmonic and Thermo. Every other "
+            "force source, including the whole widened real-space catalogue, "
+            "goes through set_evaluator, where phase and order are the "
+            "driver's business.")
         .def(
             "build", [](MdHandle& self) { self.driver.build(); },
             "Compile the execution plan.")

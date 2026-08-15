@@ -23,9 +23,17 @@ disk. Same in-body import discipline.
 ``TestAm1Bomd`` (spec py-am1-forces) covers semiempirical Born-Oppenheimer
 MD: ``MD.set_evaluator(AM1Evaluator(...))``, i.e. an electronic-structure
 method in the force slot instead of a classical pair style.
+
+``TestPairStyleCatalogue`` (spec py-pair-styles) covers the nine styles
+that widen the bound force-field catalogue — Morse, Buck, Born, Yukawa,
+WCA, Dpd, BondFene, DihedralCharmm, ImproperHarmonic — each against a
+closed-form energy written out in the test. Same in-body import
+discipline.
 """
 
 import importlib
+import math
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -771,6 +779,476 @@ class TestCoulombPme:
         sim = self._md_with(CoulLong(_NACL_ALPHA, _NACL_CUTOFF))
         with pytest.raises(RuntimeError, match="requires exactly one"):
             sim.build()
+
+
+# ── py-pair-styles: the wider pair / bonded catalogue ───────────────
+#
+# Nine styles widen the bound catalogue: the pair styles Morse, Buck,
+# Born, Yukawa, WCA and Dpd, and the bonded styles BondFene,
+# DihedralCharmm and ImproperHarmonic. Every case here is a STATIC
+# single point against a closed form written out in the test — the
+# spec's ac-002 — never a value read back off ATV.
+#
+# Two structural facts these cases rely on:
+#
+# * None of the six pair styles is a ``NeighborConsumer`` (each header
+#   withdraws the consumer view: pair_morse.h:43, pair_buck.h:39,
+#   pair_born.h:83, pair_yukawa.h:25, pair_wca.h:23, pair_dpd.h:42), so
+#   no ``NeighborList`` is installed anywhere below. A style that started
+#   demanding one would fail these tests at build, loudly.
+# * ``atoms.atomic_number`` is what becomes the CPU frame's per-atom type
+#   (src/cpu/frame/molrs_exchange.cpp:185, :201). Type keys handed to
+#   ``Born`` from Python are therefore ATOMIC NUMBERS: an Ar dimer keys
+#   {18, 18}, and a real Na/Cl table would key {11, 17}.
+#
+# The new names are imported inside the test bodies, like TestCoulombPme:
+# until the bindings land the import IS the failure and this module keeps
+# collecting.
+
+#: Cubic cell edge [Å] for the two-atom pair fixture. Every cutoff used
+#: below is ≤ L/2 = 10 Å, so the single pair is counted exactly once
+#: under the minimum-image convention.
+_PAIR_BOX: float = 20.0
+
+#: Argon: the fixture's element. Z is the value the Born table keys on.
+_PAIR_Z: int = 18
+_PAIR_MASS: float = 39.948  # [amu]
+
+#: Timestep [fs] of the static single point. The frame arrives with no
+#: velocity and no force column, so ``initial_integrate`` moves nothing
+#: and the force phase sees the geometry exactly as built; the timestep
+#: only has to be small enough that the trailing half-kick cannot matter
+#: to the energy already recorded.
+_STATIC_DT: float = 1.0e-6
+
+#: Absolute energy tolerance [eV] for the closed forms. The kernels and
+#: the tests evaluate the same double-precision expression in a slightly
+#: different association order, which is a ~1e-13 eV effect on the
+#: largest value here (509 eV); the C++ twins of these cases assert 1e-12
+#: on their own frames.
+_ENERGY_TOL: float = 1.0e-9
+
+
+def _pair_frame(r: float) -> "molrs.Frame":
+    """Two argon atoms separated by *r* along +x in a 20 Å cubic cell.
+
+    No velocity, force or charge column: the driver materializes what it
+    needs, and leaving them out is what makes the run a static single
+    point at the geometry written here.
+
+    @param r: Separation [Å] of the two atoms.
+    @return A 2-atom molrs.Frame (atomic_number 18, mass 39.948 amu).
+    """
+    atoms = molrs.Block()
+    atoms.insert("x", np.array([0.0, r], dtype=np.float64))
+    atoms.insert("y", np.zeros(2, dtype=np.float64))
+    atoms.insert("z", np.zeros(2, dtype=np.float64))
+    atoms.insert("mass", np.full(2, _PAIR_MASS, dtype=np.float64))
+    atoms.insert("atomic_number", np.full(2, _PAIR_Z, dtype=np.uint32))
+    frame = molrs.Frame()
+    frame["atoms"] = atoms
+    frame.box = molrs.Box.cube(_PAIR_BOX)
+    return frame
+
+
+#: The nine styles of this spec, by top-level Python name. Used by the
+#: accept-level Minimize case; the energy cases construct their own
+#: instance with the parameters their closed form needs.
+_CATALOGUE_NAMES: tuple[str, ...] = (
+    "PairMorse",
+    "PairBuck",
+    "PairBorn",
+    "PairYukawa",
+    "PairWCA",
+    "PairDpd",
+    "BondFene",
+    "DihedralCharmm",
+    "ImproperHarmonic",
+)
+
+
+def _build_style(name: str) -> object:
+    """Construct one catalogue style with throwaway-but-valid parameters.
+
+    Deep canonical spellings only (the single source of truth); the
+    top-level ``av.PairMorse`` re-exports are pinned in test_namespaces.
+
+    @param name: Top-level Python name of the style.
+    @return A freshly constructed component instance.
+    """
+    from atomiverse.potentials import bond, dihedral, improper, pair
+
+    builders: dict[str, Callable[[], object]] = {
+        "PairMorse": lambda: pair.Morse(D=0.5, alpha=1.5, r0=2.0, cutoff=6.0),
+        "PairBuck": lambda: pair.Buck(A=1000.0, rho=0.3, C=50.0, cutoff=8.0),
+        "PairBorn": lambda: pair.Born(
+            type_i=[_PAIR_Z],
+            type_j=[_PAIR_Z],
+            A=[1000.0],
+            rho=[3.0],
+            sigma=[1.0],
+            C=[50.0],
+            D=[20.0],
+            cutoff=8.0,
+        ),
+        "PairYukawa": lambda: pair.Yukawa(A=2.0, kappa=0.5, cutoff=10.0),
+        "PairWCA": lambda: pair.WCA(epsilon=1.0, sigma=1.0),
+        "PairDpd": lambda: pair.Dpd(
+            a=25.0, gamma=0.0, temperature=1.0, cutoff=2.5, dt=0.01, seed=1
+        ),
+        "BondFene": lambda: bond.Fene(K=[30.0], R0=[1.5]),
+        "DihedralCharmm": lambda: dihedral.Charmm(K=[0.25], n=[1], delta=[0.0]),
+        "ImproperHarmonic": lambda: improper.Harmonic(K=[0.4], chi0=[0.0]),
+    }
+    return builders[name]()
+
+
+class TestPairStyleCatalogue:
+    """Closed-form energies for the nine newly bound styles.
+
+    Every constant below is the C++ unit test's own parameter set, cited
+    per case, so a Python number that disagrees with its C++ twin is a
+    binding defect and nothing else.
+    """
+
+    @staticmethod
+    def _energy(frame: "molrs.Frame", evaluator: object) -> float:
+        """Total potential energy [eV] of one static single point.
+
+        One VelocityVerlet step with no ``InitVelocity`` and no
+        ``NeighborList``: velocities and forces start at zero, so the
+        force phase evaluates the frame's own geometry and
+        ``frame.meta["energy"]`` is that geometry's energy.
+
+        @param frame: molrs.Frame to evaluate (advanced in place).
+        @param evaluator: The single force source to install.
+        @return ``frame.meta["energy"]`` after the step [eV].
+        """
+        sim = MD()
+        sim.set_integrator(VelocityVerlet(_STATIC_DT))
+        sim.set_evaluator(evaluator)
+        sim.run(frame, 1)
+        return float(frame.meta["energy"])
+
+    # ── pair styles ────────────────────────────────────────────────
+
+    def test_buck_energy(self) -> None:
+        """Buckingham U = A e^{-r/ρ} − C/r⁶, shifted to zero at the cutoff.
+
+        Parameters and separation are PairBuck.AnalyticEnergyAndForce
+        (tests/cpu/potentials/test_pair_buck.cpp): A = 1000 eV,
+        ρ = 0.3 Å, C = 50 eV·Å⁶, r_c = 8 Å, r = 2.5 Å.
+        Closed form → 0.035760208659701… eV.
+        """
+        from atomiverse.potentials.pair import Buck
+
+        a, rho, c, cutoff, r = 1000.0, 0.3, 50.0, 8.0, 2.5
+
+        def u(distance: float) -> float:
+            return a * math.exp(-distance / rho) - c / distance**6
+
+        expected = u(r) - u(cutoff)
+        energy = self._energy(_pair_frame(r), Buck(A=a, rho=rho, C=c, cutoff=cutoff))
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+
+    def test_yukawa_energy(self) -> None:
+        """Screened Coulomb U = A e^{−κr}/r, shifted at the cutoff
+        (cpu/potentials/pair_yukawa.cpp:20-21).
+
+        A = 2 eV·Å, κ = 0.5 Å⁻¹, r_c = 10 Å, r = 3 Å →
+        0.147405850699136… eV. The cutoff is exactly L/2 of the fixture
+        cell, which is the largest value the minimum-image convention
+        allows there.
+        """
+        from atomiverse.potentials.pair import Yukawa
+
+        amplitude, kappa, cutoff, r = 2.0, 0.5, 10.0, 3.0
+
+        def u(distance: float) -> float:
+            return amplitude * math.exp(-kappa * distance) / distance
+
+        expected = u(r) - u(cutoff)
+        energy = self._energy(
+            _pair_frame(r), Yukawa(A=amplitude, kappa=kappa, cutoff=cutoff)
+        )
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+
+    def test_wca_energy(self) -> None:
+        """WCA is LJ 12-6 cut and shifted at r_c = 2^{1/6} σ, so the shift
+        is exactly +ε (cpu/potentials/pair_wca.cpp:19-20).
+
+        ε = 1 eV, σ = 1 Å, r = 0.95 Å → 4(0.95⁻¹² − 0.95⁻⁶) + 1 =
+        2.960974656887… eV. The cutoff is internal: WCA takes no cutoff
+        argument, which is the whole point of the style.
+        """
+        from atomiverse.potentials.pair import WCA
+
+        epsilon, sigma, r = 1.0, 1.0, 0.95
+        expected = 4.0 * epsilon * ((sigma / r) ** 12 - (sigma / r) ** 6) + epsilon
+        energy = self._energy(_pair_frame(r), WCA(epsilon=epsilon, sigma=sigma))
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+
+    def test_wca_zero_beyond_internal_cutoff(self) -> None:
+        """Beyond r_c = 2^{1/6} σ ≈ 1.1225 Å the style contributes exactly
+        nothing — the purely repulsive contract. r = 1.5 Å, ε = σ = 1."""
+        from atomiverse.potentials.pair import WCA
+
+        energy = self._energy(_pair_frame(1.5), WCA(epsilon=1.0, sigma=1.0))
+        assert energy == 0.0, (
+            "WCA must vanish identically outside 2^(1/6)·sigma, not merely "
+            f"become small; got {energy!r} eV"
+        )
+
+    def test_morse_energy(self) -> None:
+        """Morse U = D(1 − e^{−α(r−r₀)})², shifted to zero at the cutoff
+        (cpu/potentials/pair_morse.cpp:17-19).
+
+        D = 0.5 eV, α = 1.5 Å⁻¹, r₀ = 2 Å, r_c = 6 Å, r = 2.5 Å →
+        −0.358325792596… eV (the shift is larger than the well term at
+        this separation, so the shifted value is negative).
+
+        Morse is the tree's "one new pair style = two files"
+        demonstration and walks all pairs O(N²) by design
+        (cpu/potentials/pair_morse.h:1-15) — a two-atom energy is
+        exactly the scale that claim is honest at, and the binding's own
+        docstring is expected to carry the same caveat.
+        """
+        from atomiverse.potentials.pair import Morse
+
+        depth, alpha, r0, cutoff, r = 0.5, 1.5, 2.0, 6.0, 2.5
+
+        def u(distance: float) -> float:
+            return depth * (1.0 - math.exp(-alpha * (distance - r0))) ** 2
+
+        expected = u(r) - u(cutoff)
+        energy = self._energy(
+            _pair_frame(r), Morse(D=depth, alpha=alpha, r0=r0, cutoff=cutoff)
+        )
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+
+    def test_born_single_pair_energy(self) -> None:
+        """Born–Mayer–Huggins U = A e^{(σ−r)/ρ} − C/r⁶ + D/r⁸, shifted.
+
+        The LAMMPS dimer coefficients of
+        PairBorn.AnalyticEnergyAndForceLammpsDimer
+        (tests/cpu/potentials/test_pair_born.cpp): A = 1000 eV,
+        ρ = 3 Å, σ = 1 Å, C = 50 eV·Å⁶, D = 20 eV·Å⁸, r_c = 8 Å,
+        r = 2.5 Å → 509.367188590998… eV.
+
+        The one-row table keys {18, 18} because the fixture is argon and
+        molrs ``atomic_number`` is what the type column carries.
+        """
+        from atomiverse.potentials.pair import Born
+
+        a, rho, sigma, c, d = 1000.0, 3.0, 1.0, 50.0, 20.0
+        cutoff, r = 8.0, 2.5
+
+        def u(distance: float) -> float:
+            return (
+                a * math.exp((sigma - distance) / rho)
+                - c / distance**6
+                + d / distance**8
+            )
+
+        expected = u(r) - u(cutoff)
+        energy = self._energy(
+            _pair_frame(r),
+            Born(
+                type_i=[_PAIR_Z],
+                type_j=[_PAIR_Z],
+                A=[a],
+                rho=[rho],
+                sigma=[sigma],
+                C=[c],
+                D=[d],
+                cutoff=cutoff,
+            ),
+        )
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+
+    def test_born_unlisted_pair_no_interaction(self) -> None:
+        """A type pair absent from the table does not interact.
+
+        "Every interacting type pair must be listed. Unlisted pairs do
+        not interact (no silent mixing — Fumi–Tosi parameters are not
+        Lorentz–Berthelot)" — cpu/potentials/pair_born.h:68-71.
+
+        The table keys the Na/Cl pair {11, 17} while the frame is an
+        argon (Z = 18) dimer, so the correct answer is exactly zero: a
+        binding that mixed, folded or clamped the type key would instead
+        produce the huge repulsive number of the case above.
+        """
+        from atomiverse.potentials.pair import Born
+
+        energy = self._energy(
+            _pair_frame(2.5),
+            Born(
+                type_i=[11],
+                type_j=[17],
+                A=[1000.0],
+                rho=[3.0],
+                sigma=[1.0],
+                C=[50.0],
+                D=[20.0],
+                cutoff=8.0,
+            ),
+        )
+        assert energy == 0.0, (
+            "an Ar-Ar pair absent from a Na/Cl Born table must contribute "
+            f"exactly zero, not {energy!r} eV"
+        )
+
+    def test_dpd_conservative_energy(self) -> None:
+        """Groot–Warren conservative term U = ½ a r_c (1 − r/r_c)².
+
+        PairDpd.SoftConservativeEnergy
+        (tests/cpu/potentials/test_pair_dpd.cpp): a = 25 eV/Å,
+        γ = 0, T = 1 K, r_c = 2.5 Å, dt = 0.01 fs, r = 1.25 Å →
+        w = ½ and U = 0.5·25·2.5·0.25 = 7.8125 eV exactly.
+
+        γ = 0 removes the dissipative and random terms, which is what
+        makes a DPD single point reproducible at all: the random force
+        draws a fresh pairwise stream every step and only the
+        conservative half is tallied into the virial (pair_dpd.h:22-26).
+        r_c ≠ 1 deliberately — the missing r_c factor the C++ case exists
+        to catch is invisible at r_c = 1.
+        """
+        from atomiverse.potentials.pair import Dpd
+
+        amplitude, cutoff, r = 25.0, 2.5, 1.25
+        weight = 1.0 - r / cutoff
+        expected = 0.5 * amplitude * cutoff * weight**2
+        energy = self._energy(
+            _pair_frame(r),
+            Dpd(
+                a=amplitude,
+                gamma=0.0,
+                temperature=1.0,
+                cutoff=cutoff,
+                dt=0.01,
+                seed=1,
+            ),
+        )
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+        assert expected == 7.8125
+
+    # ── bonded styles (the four-atom bonded_frame) ─────────────────
+
+    def test_bond_fene_energy(self, bonded_frame: "molrs.Frame") -> None:
+        """FENE U = −½ K R₀² ln(1 − (r/R₀)²) on the fixture's 1 Å bond.
+
+        BondFene.AnalyticEnergy (tests/cpu/potentials/test_bond_fene.cpp):
+        K = 30 eV/Å², R₀ = 1.5 Å, r = 1 Å → 19.837799940446… eV.
+
+        Asserted on the TOTAL ``energy``: with a bond as the only force
+        source the total is the bond term, and ``energy_bond`` (the
+        serializable ``kEnergyBond``, core/frame_schema.h:228) carries the
+        same number — pinned here too, since a style that forgot its own
+        per-term channel would still pass the total.
+        """
+        from atomiverse.potentials.bond import Fene
+
+        k, r0, r = 30.0, 1.5, 1.0
+        expected = -0.5 * k * r0**2 * math.log(1.0 - (r / r0) ** 2)
+        energy = self._energy(bonded_frame, Fene(K=[k], R0=[r0]))
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+        assert float(bonded_frame.meta["energy_bond"]) == pytest.approx(
+            expected, abs=_ENERGY_TOL
+        )
+
+    def test_fene_overstretch_raises(self, bonded_frame: "molrs.Frame") -> None:
+        """r ≥ R₀ is past the finite extension and must fail loud.
+
+        BondFene.ThrowsAtOrBeyondR0 (test_bond_fene.cpp): the C++
+        ``launch`` throws ``std::runtime_error("BondFene: bond length ≥
+        R0")`` (src/cpu/potentials/bond_fene.cpp:143), which nanobind
+        surfaces as ``RuntimeError``. R₀ = 0.9 Å against the fixture's
+        1 Å bond. The message is pinned on ``R0`` so this case cannot be
+        satisfied by the style's *other* throw ("bond type out of
+        range").
+        """
+        from atomiverse.potentials.bond import Fene
+
+        with pytest.raises(RuntimeError, match="R0"):
+            self._energy(bonded_frame, Fene(K=[30.0], R0=[0.9]))
+
+    def test_dihedral_charmm_energy(self, bonded_frame: "molrs.Frame") -> None:
+        """CHARMM torsion V = K(1 + cos(nφ − δ)) at φ = π/2.
+
+        DihedralCharmm.RightAngleEnergy
+        (tests/cpu/potentials/test_dihedral_charmm.cpp): K = 0.25 eV,
+        n = 1, δ = 0 → V = K(1 + cos(π/2)) = K = 0.25 eV exactly.
+        """
+        from atomiverse.potentials.dihedral import Charmm
+
+        k = 0.25
+        expected = k * (1.0 + math.cos(1 * (math.pi / 2.0) - 0.0))
+        energy = self._energy(bonded_frame, Charmm(K=[k], n=[1], delta=[0.0]))
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+        assert expected == pytest.approx(k, abs=_ENERGY_TOL)
+
+    def test_dihedral_charmm_multiplicity_two_cancels(
+        self, bonded_frame: "molrs.Frame"
+    ) -> None:
+        """The same geometry with n = 2 sits at the cosine's zero.
+
+        V = K(1 + cos(2·π/2)) = K(1 + cos π) = 0
+        (test_dihedral_charmm.cpp, the n = 2 leg), which is what proves
+        the multiplicity reaches the C++ ctor rather than being dropped
+        to a default of 1.
+        """
+        from atomiverse.potentials.dihedral import Charmm
+
+        energy = self._energy(bonded_frame, Charmm(K=[0.25], n=[2], delta=[0.0]))
+        assert energy == pytest.approx(0.0, abs=_ENERGY_TOL)
+
+    def test_improper_harmonic_at_equilibrium(
+        self, bonded_frame: "molrs.Frame"
+    ) -> None:
+        """V = K(χ − χ₀)² vanishes when χ₀ is the fixture's own χ = π/2.
+
+        ImproperHarmonic.RightAngleEnergy
+        (tests/cpu/potentials/test_improper_harmonic.cpp): K = 0.4
+        eV/rad², χ₀ = π/2 → 0.
+        """
+        from atomiverse.potentials.improper import Harmonic
+
+        energy = self._energy(bonded_frame, Harmonic(K=[0.4], chi0=[math.pi / 2.0]))
+        assert energy == pytest.approx(0.0, abs=_ENERGY_TOL)
+
+    def test_improper_harmonic_offset_energy(self, bonded_frame: "molrs.Frame") -> None:
+        """χ₀ = 0 against χ = π/2 gives K(π/2)².
+
+        test_improper_harmonic.cpp (the chi0 = 0 leg) with K = 0.4 eV/rad² →
+        0.986960440108… eV, and the same number lands in the
+        ``energy_improper`` channel (core/frame_schema.h:231).
+        """
+        from atomiverse.potentials.improper import Harmonic
+
+        k = 0.4
+        expected = k * (math.pi / 2.0) ** 2
+        energy = self._energy(bonded_frame, Harmonic(K=[k], chi0=[0.0]))
+        assert energy == pytest.approx(expected, abs=_ENERGY_TOL)
+        assert float(bonded_frame.meta["energy_improper"]) == pytest.approx(
+            expected, abs=_ENERGY_TOL
+        )
+
+    # ── the shared evaluator slot ──────────────────────────────────
+
+    @pytest.mark.parametrize("name", _CATALOGUE_NAMES)
+    def test_style_accepted_by_minimize(self, name: str) -> None:
+        """Every new style is legal in ``Minimize.set_evaluator`` too.
+
+        MD and Minimize share ONE dispatch table
+        (``atomiverse._dispatch.EVALUATOR_DISPATCH``), and a force source
+        is a force source: registering nine styles for dynamics and eight
+        for optimization is exactly the drift that table exists to
+        prevent. Accept-level on purpose — no ``build()``, so a missing
+        optimizer cannot mask a missing dispatch entry.
+        """
+        from atomiverse.minimizer import Minimize
+
+        Minimize().set_evaluator(_build_style(name))
 
 
 # ── py-recorder-xyz: trajectory output ──────────────────────────────
