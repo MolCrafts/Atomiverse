@@ -147,7 +147,7 @@ class GcmcMetropolis : public OutcomePolicy {
 ///   mc.set_neighbor(cpu::md::NeighborList<>{cutoff, skin, 1, 0, true});
 ///   mc.set_mover(cpu::mc::MoveSelector{}
 ///                    .add(cpu::mc::TranslateMove{0.2}, 0.5)
-///                    .add(cpu::mc::InsertDeleteMove{1, 39.948}, 0.5));
+///                    .add(cpu::mc::InsertDeleteMove{18, 39.948}, 0.5));
 ///   mc.build();
 ///   mc.run(frame, 200000);
 ///   double n_avg = ...; // observe frame.nlocal() along the chain

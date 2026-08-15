@@ -36,13 +36,31 @@ void TranslateMove::launch(const cpu::LaunchContext& ctx) {
             "published — TranslateMove must run under cpu::mc::MC");
     }
 
+    const int n = ctx.frame.nlocal();
+    if (n == 0) {
+        // Reachable under GCMC: a chain at a very negative μ can delete its way
+        // to an empty cell, and the shared MoveSelector still hands the next
+        // trial to this move. There is no atom to pick, so this is an empty
+        // proposal — stamp `Verb::None`, exactly as InsertDeleteMove does for a
+        // deletion drawn on N = 0 (insert_delete_move.cpp), and let the
+        // OutcomePolicy dispose of the trial with no Boltzmann draw.
+        //
+        // Without the guard `pick(0, n - 1)` below is built with a > b, whose
+        // precondition the standard leaves undefined: the draw is unspecified
+        // and is then used as a row index. A draw landing inside a frame that
+        // still has spare capacity from earlier insertions would snapshot and
+        // displace a dead row — a trial move on an atom that is not in the
+        // system, judged and possibly committed, with no diagnostic at all.
+        txn->begin(Transaction::Verb::None, ctx.frame);
+        return;
+    }
+
     // Hoisted once at the launch boundary (the 13.7x rule) -- dominates both
     // the read below and the wrapped write-back.
     StorageReal* __restrict sp_x = ctx.frame.span(kAtom_x);
     StorageReal* __restrict sp_y = ctx.frame.span(kAtom_y);
     StorageReal* __restrict sp_z = ctx.frame.span(kAtom_z);
 
-    const int n = ctx.frame.nlocal();
     std::uniform_int_distribution<int> pick(0, n - 1);
     std::uniform_real_distribution<double> disp(-delta_, delta_);
 

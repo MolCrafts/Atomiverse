@@ -28,6 +28,11 @@ namespace (pinned per row in test_namespaces.py):
 * Trajectory output (spec py-recorder-xyz): ``XYZ`` is an unconditional
   top-level name beside ``Thermo`` — the wheel forces ``ATV_BUILD_IO=ON``
   through the CMake module DAG, so it is never capability-probed.
+* Monte Carlo (spec py-mc): the three presets ``MC`` / ``NptMC`` / ``GCMC``
+  and their four movers (``TranslateMove``, ``VolumeMove``,
+  ``InsertDeleteMove``, ``MoveSelector``) are unconditional top-level names
+  beside the MD surface — ``ATV_BUILD_MC`` defaults ON, so like ``XYZ`` they
+  are never capability-probed and belong in the static ``__all__``.
 * Electrostatics (spec py-coulomb-pme): ``PairCoulCut`` and ``CoulLong``
   are unconditional top-level names; ``KSpacePME`` is compile-optional
   (``ATV_BUILD_KSPACE``) and therefore reachable only through the lazy
@@ -108,11 +113,30 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "DihedralMultiHarmonic",
         "Thermo",
         "XYZ",
+        "MC",
+        "NptMC",
+        "GCMC",
+        "TranslateMove",
+        "VolumeMove",
+        "InsertDeleteMove",
+        "MoveSelector",
         "AM1",
         "AM1Evaluator",
         "AM1Result",
         "single_point",
     }
+)
+
+#: The Monte Carlo surface (spec py-mc): three ensemble presets + four
+#: movers, all unconditional.
+_MC_NAMES: tuple[str, ...] = (
+    "MC",
+    "NptMC",
+    "GCMC",
+    "TranslateMove",
+    "VolumeMove",
+    "InsertDeleteMove",
+    "MoveSelector",
 )
 
 _DEAD_PACKAGE_ATTRS: tuple[str, ...] = (
@@ -180,14 +204,18 @@ class TestCanonicalSurface:
         assert hasattr(av, name), f"canonical component atomiverse.{name} is missing"
 
     def test_all_is_exactly_the_honest_surface(self) -> None:
-        """__all__ is the static MD + electrostatics + recorder + AM1 surface.
+        """__all__ is the static MD + electrostatics + recorder + MC + AM1
+        surface.
 
-        Same 26 names on every build: compile-optional types live behind
+        Same 33 names on every build: compile-optional types live behind
         the lazy ``__getattr__``, never in ``__all__``. ``XYZ`` is static
-        because the wheel forces ``ATV_BUILD_IO=ON`` through the CMake
-        module DAG — it is never capability-probed.
+        because ``ATV_BUILD_PYTHON`` forces ``ATV_BUILD_IO=ON`` through the
+        CMake module DAG (``cmake/AtvProductModules.cmake:68``); the seven
+        Monte Carlo names are static because ``ATV_BUILD_MC`` is ON by
+        default (``:25``) and the wheel does not override it. Neither is
+        capability-probed.
         """
-        assert len(_CANONICAL_ALL) == 26
+        assert len(_CANONICAL_ALL) == 33
         assert set(av.__all__) == set(_CANONICAL_ALL)
 
 
@@ -389,6 +417,41 @@ class TestRecorderSurface:
         recorder = importlib.import_module("atomiverse.recorder")
         assert "Thermo" in recorder.__all__
         assert "XYZ" in recorder.__all__
+
+
+# ── Monte Carlo surface (spec py-mc) ────────────────────────────────
+
+
+class TestMonteCarloSurface:
+    """The three MC presets and their movers are unconditional names.
+
+    Same contract as the recorder surface, not the PW one: ``ATV_BUILD_MC``
+    defaults ON and the wheel never turns it off, so there is no capability
+    probe and no build-flag ``AttributeError`` path to test.
+
+    Caveat, deliberately not asserted here: a staged CLI install selects its
+    modules explicitly (``python -m atomiverse config md`` sets
+    ``ATV_BUILD_MC=OFF``), and on such an extension these names surface a
+    bare ``AttributeError`` rather than the flag-naming message ``PW`` /
+    ``RHF`` / ``KSpacePME`` get.
+    """
+
+    @pytest.mark.parametrize("name", _MC_NAMES)
+    def test_mc_name_is_identity_reexport(self, name: str) -> None:
+        """``av.<Name>`` IS ``atomiverse.montecarlo.<Name>``."""
+        montecarlo = importlib.import_module("atomiverse.montecarlo")
+        assert getattr(av, name) is getattr(montecarlo, name)
+
+    def test_montecarlo_module_exports_the_seven_names(self) -> None:
+        """``atomiverse.montecarlo.__all__`` is exactly the presets +
+        movers — no policy classes, no transaction bag."""
+        montecarlo = importlib.import_module("atomiverse.montecarlo")
+        assert set(montecarlo.__all__) == set(_MC_NAMES)
+
+    @pytest.mark.parametrize("name", _MC_NAMES)
+    def test_mc_name_is_in_all(self, name: str) -> None:
+        """Unconditional names belong in the static ``__all__``."""
+        assert name in av.__all__
 
 
 # ── KSpace gate (mirrors the PW capability contract) ────────────────

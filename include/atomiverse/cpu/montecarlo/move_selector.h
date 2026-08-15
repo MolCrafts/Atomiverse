@@ -1,5 +1,5 @@
 /// @file cpu/mc/move_selector.h
-/// @brief cpu::mc::MoveSelector — draws ONE trial-move type per sweep.
+/// @brief cpu::mc::MoveSelector — draws ONE trial-move type per trial.
 #pragma once
 
 #include <memory>
@@ -17,11 +17,11 @@ namespace ATV {
 namespace cpu {
 namespace mc {
 
-/// @brief A Mover of Movers: each sweep it draws which child move type to
+/// @brief A Mover of Movers: each trial it draws which child move type to
 ///        attempt, with the configured weights, and fires exactly that one.
 ///
 /// Registering two Movers side by side on the `propose` phase would fire BOTH
-/// every sweep — one trial per iteration is the Monte Carlo contract, so a
+/// every trial — one trial per iteration is the Monte Carlo contract, so a
 /// mixed-move ensemble (NPT: displacements + volume moves; μVT: displacements
 /// + insert/delete) goes through this selector instead:
 ///

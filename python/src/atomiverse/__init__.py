@@ -36,6 +36,13 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``potentials.dihedral.MultiHarmonic`` ``DihedralMultiHarmonic``   ``cpu::DihedralMultiHarmonic``
 ``recorder.Thermo``                   ``Thermo``                  ``cpu::Thermo``
 ``recorder.XYZ``                      ``XYZ``                     ``cpu::XyzRecorder``
+``montecarlo.MC``                     ``MC``                      ``cpu::mc::MC``
+``montecarlo.NptMC``                  ``NptMC``                   ``cpu::mc::NptMc``
+``montecarlo.GCMC``                   ``GCMC``                    ``cpu::mc::Gcmc``
+``montecarlo.TranslateMove``          ``TranslateMove``           ``cpu::mc::TranslateMove``
+``montecarlo.VolumeMove``             ``VolumeMove``              ``cpu::mc::VolumeMove``
+``montecarlo.InsertDeleteMove``       ``InsertDeleteMove``        ``cpu::mc::InsertDeleteMove``
+``montecarlo.MoveSelector``           ``MoveSelector``            ``cpu::mc::MoveSelector``
 ``pw.PW``                             ``PW``                      ``cpu::pw::PW``
 ``pw.PWResult``                       ``PWResult``                ``cpu::pw::PWResult``
 ``scf.RHF``                           ``RHF``                     ``cpu::scf::RHF``
@@ -51,6 +58,21 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` are the four Gaussian-basis SCF
 (self-consistent field) methods — restricted / unrestricted Hartree-Fock and
 Kohn-Sham DFT; ``help(atomiverse.scf)`` explains the naming and the units.
+
+``MC`` / ``NptMC`` / ``GCMC`` are the three Monte Carlo ensemble presets:
+canonical NVT (fixed particle number N, volume V, temperature T),
+isothermal-isobaric NPT (fixed N, pressure P, T — the volume is sampled)
+and grand-canonical muVT (fixed chemical potential mu, V, T — the particle
+number is sampled). Monte Carlo samples configurations by proposing a
+random trial move and accepting or rejecting it, instead of integrating
+equations of motion, so a sampler takes a *mover* (``TranslateMove``,
+``VolumeMove``, ``InsertDeleteMove``, or a weighted ``MoveSelector`` mix)
+where MD takes an integrator, and never produces forces.
+``help(atomiverse.montecarlo)`` gives the acceptance rules and the units.
+These four movers and three presets are CPU-only and take no ``device=``.
+``ATV_BUILD_MC`` is ON by default, so they stay in ``__all__``; only a
+staged install that leaves ``mc`` out drops them, and then they raise
+``AttributeError`` naming the flag like the compile-optional rows below.
 
 Compile-optional rows — ``PW`` / ``PWResult`` (``ATV_BUILD_PW``),
 ``KSpacePME`` (``ATV_BUILD_KSPACE``) and the Gaussian SCF methods
@@ -113,6 +135,13 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "DihedralMultiHarmonic": ("atomiverse.potentials.dihedral", "MultiHarmonic"),
     "Thermo": ("atomiverse.recorder", "Thermo"),
     "XYZ": ("atomiverse.recorder", "XYZ"),
+    "MC": ("atomiverse.montecarlo", "MC"),
+    "NptMC": ("atomiverse.montecarlo", "NptMC"),
+    "GCMC": ("atomiverse.montecarlo", "GCMC"),
+    "TranslateMove": ("atomiverse.montecarlo", "TranslateMove"),
+    "VolumeMove": ("atomiverse.montecarlo", "VolumeMove"),
+    "InsertDeleteMove": ("atomiverse.montecarlo", "InsertDeleteMove"),
+    "MoveSelector": ("atomiverse.montecarlo", "MoveSelector"),
     "AM1": ("atomiverse.semiempirical", "AM1"),
     "AM1Evaluator": ("atomiverse.semiempirical", "AM1Evaluator"),
     "AM1Result": ("atomiverse.semiempirical", "AM1Result"),
@@ -128,6 +157,20 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
 # Gaussian SCF methods are compile-optional (ATV_BUILD_HF); probed as a
 # group on the one symbol the extension always carries when HF is on.
 _SCF_METHODS: tuple[str, ...] = ("RHF", "UHF", "RKS", "UKS")
+
+# Monte Carlo defaults to ON (ATV_BUILD_MC), so these stay in __all__ — but a
+# staged CLI install picks its modules explicitly and can leave `mc` out.
+# Probed as a group on `MC`, the preset bind_mc.cpp always registers when the
+# domain is built.
+_MC_NAMES: tuple[str, ...] = (
+    "MC",
+    "NptMC",
+    "GCMC",
+    "TranslateMove",
+    "VolumeMove",
+    "InsertDeleteMove",
+    "MoveSelector",
+)
 
 __all__ = [
     "MD",
@@ -152,6 +195,13 @@ __all__ = [
     "DihedralMultiHarmonic",
     "Thermo",
     "XYZ",
+    "MC",
+    "NptMC",
+    "GCMC",
+    "TranslateMove",
+    "VolumeMove",
+    "InsertDeleteMove",
+    "MoveSelector",
     "AM1",
     "AM1Evaluator",
     "AM1Result",
@@ -178,6 +228,15 @@ def __getattr__(name: str) -> Any:
             f"module {__name__!r} has no attribute {name!r} "
             "(Gaussian SCF not built into this extension; "
             "rebuild with ATV_BUILD_HF=ON)"
+        )
+    # Monte Carlo is on by default, so a miss here means a staged install that
+    # deselected the domain — say so instead of raising a bare AttributeError.
+    if name in _MC_NAMES and not hasattr(_cpp, "MC"):
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r} "
+            "(Monte Carlo not built into this extension; rebuild with "
+            "ATV_BUILD_MC=ON, or include `mc` in the staged install: "
+            "python -m atomiverse config md mc ...)"
         )
     # So is the PME reciprocal solver (needs FFTW3).
     if name == "KSpacePME" and not hasattr(_cpp, "KSpacePME"):

@@ -26,7 +26,10 @@ namespace mc {
 /// is reproducible from one seed), mutates the frame in place, and records the
 /// changeset into `Context::proposal` for the driver to commit or roll back.
 /// On the driver's energy-only bootstrap pass (`step < 0`) it proposes nothing
-/// so the evaluator sees the unperturbed initial configuration.
+/// so the evaluator sees the unperturbed initial configuration. On an empty
+/// cell (`nlocal() == 0`, reachable under GCMC once the chain has deleted its
+/// way down to N = 0) there is no atom to pick, so it proposes nothing either
+/// and stamps `Transaction::Verb::None` for the policy to reject.
 ///
 /// Role `Mover`, capabilities `None` (it moves atoms; it writes no energy /
 /// force field).

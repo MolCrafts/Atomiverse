@@ -2,10 +2,11 @@
 
 The atomiverse package mirrors the C++ backend directory layering as deep
 canonical namespaces (``atv.potentials.pair.LJCut``,
-``atv.md.integrator.VelocityVerlet``, ``atv.neighbor.NeighborList``, ...).
-The deep path is the single source of truth; the top-level LAMMPS-style
-composite names (``atv.PairLJCut``, ...) are identity re-exports of the
-SAME class object — ``atv.PairLJCut is atv.potentials.pair.LJCut``.
+``atv.md.integrator.VelocityVerlet``, ``atv.neighbor.NeighborList``,
+``atv.montecarlo.GCMC``, ...). The deep path is the single source of truth;
+the top-level LAMMPS-style composite names (``atv.PairLJCut``, ...) are
+identity re-exports of the SAME class object —
+``atv.PairLJCut is atv.potentials.pair.LJCut``.
 
 Also pins the user ruling that backend selection is a ``device=``
 constructor parameter (PyTorch convention), never a namespace axis:
@@ -54,6 +55,14 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("AngleHarmonic", "atomiverse.potentials.angle", "Harmonic"),
     ("DihedralMultiHarmonic", "atomiverse.potentials.dihedral", "MultiHarmonic"),
     ("Thermo", "atomiverse.recorder", "Thermo"),
+    # Monte Carlo (spec py-mc): unconditional, ATV_BUILD_MC defaults ON.
+    ("MC", "atomiverse.montecarlo", "MC"),
+    ("NptMC", "atomiverse.montecarlo", "NptMC"),
+    ("GCMC", "atomiverse.montecarlo", "GCMC"),
+    ("TranslateMove", "atomiverse.montecarlo", "TranslateMove"),
+    ("VolumeMove", "atomiverse.montecarlo", "VolumeMove"),
+    ("InsertDeleteMove", "atomiverse.montecarlo", "InsertDeleteMove"),
+    ("MoveSelector", "atomiverse.montecarlo", "MoveSelector"),
     ("AM1", "atomiverse.semiempirical", "AM1"),
     ("AM1Evaluator", "atomiverse.semiempirical", "AM1Evaluator"),
     ("AM1Result", "atomiverse.semiempirical", "AM1Result"),
@@ -96,6 +105,7 @@ _DEEP_MODULES: tuple[str, ...] = (
     "atomiverse.potentials.angle",
     "atomiverse.potentials.dihedral",
     "atomiverse.recorder",
+    "atomiverse.montecarlo",
     "atomiverse.driver",
     "atomiverse.semiempirical",
     "atomiverse.pw",
@@ -118,9 +128,10 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 18 entries; a PW build contributes two types (PW,
+        """The base has 25 entries (18 + the 7 unconditional Monte Carlo
+        rows of spec py-mc); a PW build contributes two types (PW,
         PWResult) and an HF build the four concrete SCF methods."""
-        expected = 18 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        expected = 25 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
         assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(

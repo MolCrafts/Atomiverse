@@ -131,7 +131,7 @@ class NptMetropolis : public OutcomePolicy {
 ///   cpu::mc::NptMc mc{300.0, /*P [eV/Å³]=*/1e-4, /*seed=*/7u};
 ///   mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
 ///   mc.set_neighbor(cpu::md::NeighborList<>{cutoff, skin, 1, 0, true});
-///   mc.set_mover(cpu::mc::MoveSelector{rig}
+///   mc.set_mover(cpu::mc::MoveSelector{}
 ///                    .add(cpu::mc::TranslateMove{0.2}, 0.9)
 ///                    .add(cpu::mc::VolumeMove{50.0}, 0.1));
 ///   mc.build();

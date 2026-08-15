@@ -35,7 +35,7 @@ namespace mc {
 ///        everything ensemble-agnostic — the trial loop, the RNG stream, the
 ///        `Transaction` changeset, rollback, and the per-verb tallies.
 ///
-/// Per sweep (phases `propose` → `energy` → `end_of_step`):
+/// Per trial (phases `propose` → `energy` → `end_of_step`):
 ///   1. `propose` — a Mover mutates the frame in place and records the
 ///      changeset (a Frame patch) into `ctx.mc.proposal`.
 ///   2. `energy` — ZeroEnergy (bound here, order −999), then the registered
@@ -56,13 +56,17 @@ class McBase : public Driver<ATV::sampling::Phase> {
     /// @brief Flush the deferred component `destroy()` of a live chain.
     ~McBase() { this->flush_live_(); }
 
-    /// @brief Advance the system by `n_sweeps` Monte Carlo trial moves.
+    /// @brief Advance the system by `n_trials` Monte Carlo trial moves.
     ///
     /// **Continuable.** Consecutive calls on the same frame extend one Markov
     /// chain — the standard `run(equilibrate); run(sample); …` pattern.
+    ///
+    /// The count is single trial moves, NOT sweeps: each one is one proposal
+    /// plus one accept/reject decision, so an N-atom system needs roughly N
+    /// times more trials here than it would "one move per particle" sweeps.
     /// @param frame Host-resident system state, updated in place.
-    /// @param n_sweeps Number of trial moves to attempt.
-    void run(cpu::Frame& frame, int n_sweeps) {
+    /// @param n_trials Number of trial moves to attempt.
+    void run(cpu::Frame& frame, int n_trials) {
         if (this->begin_run_(frame)) {
             // Publish the per-move changeset + the RNG so a Mover can reach
             // them (mirrors NeighborList publishing pair_list). Addresses are
@@ -73,15 +77,23 @@ class McBase : public Driver<ATV::sampling::Phase> {
             this->start_outcome_(frame); // seed the policy's reference state
         }
 
-        for (int s = 0; s < n_sweeps; ++s) {
+        for (int s = 0; s < n_trials; ++s) {
             this->mutable_outer_status().reset();
             // frame.meta.get(kEnergy) still holds the LAST ACCEPTED energy here
             // (the trial evaluator hasn't run yet) — save it for rollback.
             const AccReal e_before = frame.meta.get(kEnergy);
-            const int sweep = this->next_step_();
-            this->step_once(sweep); // propose (mutate + record) → energy
+            const int trial = this->next_step_();
+            // ONE Transaction serves the whole chain, and only a Mover that
+            // calls `begin()` clears it. Open every trial on a well-formed
+            // EMPTY proposal so a Mover that proposes nothing (nothing left to
+            // move, a draw it refuses) cannot leave the policy judging — and
+            // the rollback splicing — the PREVIOUS trial's verb and patch.
+            // `begin(None, …)` is two stores and a clear: it compiles no pack
+            // plan, and any Mover that does propose re-begins over it.
+            proposal_.begin(Transaction::Verb::None, frame);
+            this->step_once(trial); // propose (mutate + record) → energy
             const Transaction::Verb verb = proposal_.verb;
-            const Outcome outcome = this->decide_outcome_(frame, sweep);
+            const Outcome outcome = this->decide_outcome_(frame, trial);
             tally_(verb, outcome);
             if (outcome == Outcome::Rollback) {
                 proposal_.rollback(frame);
@@ -179,7 +191,7 @@ class McBase : public Driver<ATV::sampling::Phase> {
     /// A trial move is scored, then kept or discarded — the Metropolis test
     /// reads an energy and never a gradient, so every force assembled at
     /// `energy` is wasted work. For a nested QM method it is the *dominant* cost
-    /// of the sweep, and the veto ANDs down into that method's own stages
+    /// of the trial, and the veto ANDs down into that method's own stages
     /// (`ExecServices::forces_requested`), so it skips its whole gradient.
     ///
     /// Per SLOT, not per driver: `propose` stays force-capable (a Mover may bias

@@ -15,6 +15,9 @@ namespace nb = nanobind;
 #ifdef ATV_HAS_MD
 void bind_md(nb::module_& m);
 #endif
+#ifdef ATV_HAS_MC
+void bind_mc(nb::module_& m);
+#endif
 #ifdef ATV_HAS_MINIMIZER
 void bind_minimizer(nb::module_& m);
 #endif
@@ -33,6 +36,9 @@ NB_MODULE(_atomiverse, m) {
 
 #ifdef ATV_HAS_MD
     bind_md(m);
+#endif
+#ifdef ATV_HAS_MC
+    bind_mc(m);
 #endif
 #ifdef ATV_HAS_MINIMIZER
     bind_minimizer(m);

@@ -390,6 +390,11 @@ atv_add_cpp_test(test_cpu_driver_nesting  cpu/driver/test_driver_nesting.cpp)
 # no consumer yet.
 atv_add_cpp_test(test_cpu_scf_phase_plumbing cpu/driver/test_scf_phase_plumbing.cpp)
 atv_add_cpp_test(test_cpu_component_ownership cpu/driver/test_component_ownership.cpp)
+# Mirrors include/atomiverse/cpu/driver/outcome_policy.h — cpu::Metropolis'
+# verb contract (the canonical policy owns Displace/None and refuses the
+# Box/Insert/Delete trials that need the NptMc / Gcmc presets). Formula-level,
+# hand-built LoopState, microseconds.
+atv_add_cpp_test(test_cpu_outcome_policy cpu/driver/test_outcome_policy.cpp)
 # esmm-contract-04-forces-requested: `forces_requested` as a compiled Plan-slot
 # property — MC's energy phase is energy-only, MD/Minimize/Evaluate still ask for
 # forces, and the veto ANDs through a nested driver's own slots. Stubs only, no

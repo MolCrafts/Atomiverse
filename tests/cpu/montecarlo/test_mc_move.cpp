@@ -108,6 +108,82 @@ TEST(TranslateMoveUnit, BootstrapPassIsNoOp) {
     EXPECT_EQ(frame.span(ATV::kAtom_x)[1], before.span(ATV::kAtom_x)[1]);
 }
 
+TEST(TranslateMoveUnit, EmptyFrameProposesNothing) {
+    // GCMC can empty the cell (μ very negative), and the shared MoveSelector
+    // still hands the trial to TranslateMove. With `nlocal() == 0` the move has
+    // no atom to pick: it must stamp `Verb::None` — the same "empty proposal"
+    // shape InsertDeleteMove already uses for a deletion from N = 0
+    // (src/cpu/montecarlo/insert_delete_move.cpp:103) — so the OutcomePolicy
+    // rejects the trial without a Boltzmann draw.
+    //
+    // PRE-FIX THIS IS UNDEFINED BEHAVIOUR, not merely a wrong verb:
+    // src/cpu/montecarlo/translate_move.cpp:46 builds
+    // `std::uniform_int_distribution<int> pick(0, n - 1)` with n == 0, whose
+    // precondition is a <= b, then indexes the frame with the garbage draw.
+    // Observed pre-fix on this Release build: the garbage index escapes as
+    // std::out_of_range("Frame pack row is outside capacity") from
+    // src/cpu/communication/atom_pack.cpp:182 — a capacity guard, not a
+    // memory-safety guarantee (see the capacity > 0 case below).
+    cpu::Frame frame(0);
+    frame.box.set_cell(Mat3::diagonal(20.0, 20.0, 20.0));
+
+    std::mt19937_64 rng(7u);
+    cpu::mc::Transaction txn;
+    // The driver reuses ONE Transaction across trials, so the verb read by the
+    // policy is whatever the last trial left behind. Seed a stale `Displace` to
+    // prove the guard actively stamps `None` rather than leaving the default.
+    txn.verb = cpu::mc::Transaction::Verb::Displace;
+    cpu::Context ctx;
+    ctx.mc.rng = &rng;
+    ctx.mc.proposal = &txn;
+
+    cpu::mc::TranslateMove mv{0.5};
+    cpu::LaunchContext lctx{ctx, frame, /*stage=*/0, /*step=*/0};
+    mv.launch(lctx);
+
+    EXPECT_EQ(txn.verb, cpu::mc::Transaction::Verb::None);
+    EXPECT_EQ(txn.size(), 0u);    // nothing touched, nothing to roll back
+    EXPECT_EQ(frame.nlocal(), 0); // and the population is untouched
+}
+
+TEST(TranslateMoveUnit, EmptiedFrameWithSpareCapacityProposesNothing) {
+    // The shape GCMC actually reaches: the chain grew the frame, then deleted
+    // its way down to N = 0, so `capacity() > 0` while `nlocal() == 0` and row
+    // 0 still holds the last deleted atom's stale data.
+    //
+    // Pre-fix the index comes from `pick(0, -1)`, whose value is unspecified:
+    // on this build it lands past the capacity and surfaces as the packer's
+    // std::out_of_range, but nothing bounds it to the used rows. A draw that
+    // falls inside a larger capacity is snapshotted, displaced and stamped
+    // `Displace` — a trial move on an atom that is not in the system, judged
+    // and possibly committed by the policy, with no diagnostic at all.
+    cpu::Frame frame(1);
+    frame.box.set_cell(Mat3::diagonal(20.0, 20.0, 20.0));
+    frame.span(ATV::kAtom_x)[0] = 1.0;
+    frame.span(ATV::kAtom_y)[0] = 2.0;
+    frame.span(ATV::kAtom_z)[0] = 3.0;
+    frame.set_nlocal(0); // the last atom was deleted; the row is stale
+
+    std::mt19937_64 rng(11u);
+    cpu::mc::Transaction txn;
+    txn.verb = cpu::mc::Transaction::Verb::Displace; // stale verb, as above
+    cpu::Context ctx;
+    ctx.mc.rng = &rng;
+    ctx.mc.proposal = &txn;
+
+    cpu::mc::TranslateMove mv{0.5};
+    cpu::LaunchContext lctx{ctx, frame, /*stage=*/0, /*step=*/0};
+    mv.launch(lctx);
+
+    EXPECT_EQ(txn.verb, cpu::mc::Transaction::Verb::None);
+    EXPECT_EQ(txn.size(), 0u);
+    EXPECT_EQ(frame.nlocal(), 0);
+    // The out-of-system row must not have been touched either.
+    EXPECT_EQ(frame.span(ATV::kAtom_x)[0], 1.0);
+    EXPECT_EQ(frame.span(ATV::kAtom_y)[0], 2.0);
+    EXPECT_EQ(frame.span(ATV::kAtom_z)[0], 3.0);
+}
+
 TEST(TranslateMoveUnit, RejectsNonPositiveDelta) {
     EXPECT_THROW((cpu::mc::TranslateMove{0.0}), std::invalid_argument);
     EXPECT_THROW((cpu::mc::TranslateMove{-0.1}), std::invalid_argument);

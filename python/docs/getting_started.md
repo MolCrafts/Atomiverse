@@ -111,6 +111,12 @@ Current surface:
   (the default).
 - **Geometry optimization** — CPU `minimizer.Minimize` with the `LBFGS`
   optimizer component and independent `ForceConverged` loop policy.
+- **Monte Carlo** — the three ensemble presets `MC` (NVT), `NptMC` and
+  `GCMC` with their movers `TranslateMove`, `VolumeMove`,
+  `InsertDeleteMove` and `MoveSelector`. `ATV_BUILD_MC` defaults ON, so
+  these are on the shipped wheel; a staged CLI build selects its modules
+  explicitly, so list `mc` there (`python -m atomiverse config md mc …`) or
+  the extension is built without them.
 - **Plane-wave DFT** — `PW` / `PWResult` (PW-enabled wheels only; PW types
   are absent from wheels built without the backend).
 - **Gaussian SCF** — the concrete mean-field methods `RHF`, `UHF`, `RKS`,
@@ -480,6 +486,177 @@ print(result.iterations, result.converged, result.stop_reason)
 
 Only the CPU backend is active for this surface. `device="cuda"` fails before
 build or compute; GPU materialization is explicitly deferred.
+
+## Monte Carlo: NVT, NPT and μVT
+
+The MD driver above moves atoms by integrating Newton's equations. Monte
+Carlo instead produces configurations by a guided random walk and never
+computes a force. The walk is a *Markov chain* — each configuration is
+proposed from the previous one and from nothing else — and one step of it
+is a **trial**: a *mover* proposes a small random change, the registered
+energy sources score the changed configuration, and the proposal is either
+**accepted** (kept) or **rejected** (undone). Accepting with probability
+`min(1, exp(-ΔE / k_BT))` — the *Metropolis* rule, `ΔE` [eV] being the trial
+energy minus the last accepted energy — is what makes the visited
+configurations Boltzmann-distributed, so a plain average along the chain is
+an ensemble average. Downhill trials are always accepted; uphill ones are
+accepted often enough that the chain can climb out of a local minimum.
+
+An *ensemble* is the set of macroscopic quantities held fixed, and it is the
+acceptance rule that decides which one you are sampling: `MC` is canonical
+NVT (fixed particle number, volume, temperature), `NptMC` is
+isothermal-isobaric NPT (fixed N, pressure, temperature — the volume is
+sampled) and `GCMC` is grand-canonical μVT (fixed chemical potential μ,
+volume, temperature — the particle number is sampled).
+
+The handle takes the same categorical setters as MD, minus everything that
+only makes sense with dynamics: `set_evaluator` (plural — energy sources are
+summed), `set_neighbor`, and the MC-only `set_mover` (singular). There is no
+integrator, no thermostat, no `set_thermo`/`set_record`, and no explicit
+`build()`. Units are the package's own — temperature [K], pressure [eV/Å³]
+(LAMMPS sign, positive = compressive), chemical potential [eV], mass [amu],
+displacement [Å], volume [Å³], energy [eV].
+
+```python
+import atomiverse as av
+
+# `frame` is the Argon molrs.Frame from the quickstart above:
+# 500 atoms in a cubic cell of L = 5 × 5.26 Å = 26.3 Å.
+cutoff, skin = 8.5, 1.0                            # [Å]
+sim = av.MC(300.0, seed=42)                        # temperature [K]
+sim.set_evaluator(av.PairLJCut(0.0104, 3.4, cutoff))
+sim.set_neighbor(av.NeighborList(cutoff, skin))
+sim.set_mover(av.TranslateMove(0.3))               # half-width [Å]
+
+sim.run(frame, 20_000)                             # equilibrate
+sim.run(frame, 100_000)                            # sample — SAME chain
+
+print(sim.acceptance_ratio())    # aim for ~0.3-0.5; tune the half-width
+print(sim.current_energy())      # [eV] == float(frame.meta["energy"])
+```
+
+`n_trials` counts **single trial moves**, not sweeps: each count is one
+proposal and one accept/reject decision, so 500 atoms need ~500× more
+trials here than they would "one attempted move per particle" sweeps.
+
+Two sizing rules are yours to keep, because nothing checks them. The
+neighbor cutoff must be at least the pair potential's cutoff, or pairs
+inside the potential's range are never enumerated. And `cutoff + skin` must
+stay **below half the shortest box edge**, since pair distances are taken
+under the minimum-image convention — each pair is seen only through its
+nearest periodic copy. The snippet above sits at 8.5 + 1.0 = 9.5 Å against
+L/2 = 13.15 Å. Under `NptMC` the cell moves, so the margin has to hold at
+the smallest volume the chain visits, not just at the starting cell.
+
+After every `run()` the frame holds the current positions, the box and the
+last accepted energy in `frame.meta["energy"]`. It does **not** hold forces:
+Monte Carlo scores energies only and never assembles a gradient, so
+`fx`/`fy`/`fz` come back zeroed. Velocities are left untouched — nothing
+here moves in time.
+
+Consecutive `run()` calls **continue one Markov chain**: the tallies
+accumulate and the configuration carries over, which is what makes the
+`run(equilibrate); run(sample)` pattern above mean what it says. The frame
+is materialized once, on the first call — edits made to the `molrs.Frame`
+between calls are ignored, and a fresh chain means a fresh sampler object.
+
+The execution plan is compiled on that same first call, so a `set_*` call
+afterwards could not affect the running chain; rather than silently doing
+nothing it raises `RuntimeError`. Configure the sampler completely before
+the first `run()`, and start a new sampler when you want a new setup.
+
+Statistics are sampler accessors (there are no acceptance keys on the
+frame). `attempts()`, `accepts()` and `acceptance_ratio()` aggregate over
+every move type; pass a *verb* — the kind of move a trial turned out to be,
+one of `"displace"`, `"box"`, `"insert"`, `"delete"` — for one of them. An
+unknown name raises `ValueError`. The aggregate also counts trials that
+ended with no verb at all (a deletion drawn on an empty cell, a volume draw
+that would take V ≤ 0; both always rejected), so `attempts()` is exactly the
+number of trials run while the four named verbs can sum to less.
+
+`set_neighbor` takes the ordinary `NeighborList(cutoff, skin)` but builds it
+in the MC-correct form (`every=1, delay=0, check=yes`): an accepted trial
+move can cross the skin at any trial, so unlike MD the rebuild check is
+never deferred.
+
+### Mixed ensembles: one move per trial
+
+A trial is one proposal, so a mixed ensemble goes through a `MoveSelector`
+— it draws exactly one child per trial with the given relative weights.
+Registering two movers side by side would fire both every trial, which is
+not a Monte Carlo trial at all.
+
+```python
+# NPT-MC: displacements + isotropic volume moves, 50/50.
+npt = av.NptMC(180.0, pressure=5.0e-5, seed=1337)   # P [eV/Å³]
+npt.set_evaluator(av.PairLJCut(0.0104, 3.4, 6.8))
+npt.set_neighbor(av.NeighborList(6.8, 1.0))
+npt.set_mover(
+    av.MoveSelector()
+    .add(av.TranslateMove(1.0), 0.5)
+    .add(av.VolumeMove(400.0), 0.5)                 # ΔV half-width [Å³]
+)
+npt.run(frame, 200_000)
+print(npt.current_volume(), frame.box.volume())     # [Å³], the same cell
+print(npt.acceptance_ratio("box"))                  # volume moves alone
+```
+
+```python
+# μVT (GCMC): displacements + insertion/deletion of one species.
+gcmc = av.GCMC(180.0, mu=-0.177, mass=39.948, seed=97)  # μ [eV], m [amu]
+gcmc.set_evaluator(av.PairLJCut(0.0104, 3.4, 8.5))
+gcmc.set_neighbor(av.NeighborList(8.5, 1.0))
+gcmc.set_mover(
+    av.MoveSelector()
+    .add(av.TranslateMove(1.36), 0.5)
+    .add(av.InsertDeleteMove(18, 39.948), 0.5)      # z = 18 (Ar), m [amu]
+)
+
+gcmc.run(frame, 50_000)                             # equilibrate
+population = []
+for _ in range(1000):
+    gcmc.run(frame, 10)                             # decorrelate
+    population.append(gcmc.n_atoms())
+print(sum(population) / len(population))            # ⟨N⟩
+```
+
+**What μ means here.** `mu` is the *total* chemical potential — the
+ideal-gas part included, not the excess part alone. It reaches the
+acceptance rule only through the *activity* z = e^{βμ}/Λ³ [1/Å³], where
+β = 1/k_BT and Λ = h/√(2πmk_BT) [Å] is the thermal de Broglie wavelength,
+the quantum length scale of a free particle of mass m at temperature T. For
+an ideal gas z *is* the number density, so μ = k_BT·ln(zΛ³) turns a target
+density into the number you pass. The −0.177 eV above is exactly that:
+zσ³ = 0.05 for argon (m = 39.948 amu, σ = 3.4 Å) at T = 180 K. This is the
+convention of `regressions/mc/gcmc_lj/REFERENCE.md` (Frenkel & Smit
+eq. 5.6.9), which is what its ⟨N⟩(z) pin measures.
+
+**Match the mass.** The `InsertDeleteMove` mass **must** be the mass `GCMC`
+built Λ from — two different masses mean the sampled chemical potential is
+not the one you asked for, and nothing compares them.
+
+Because N fluctuates, `run()` **rebuilds** the frame's `atoms` block
+whenever the population changed: every column comes back at the new N,
+including `mass` and `atomic_number`, which the fixed-N path treats as
+immutable inputs and never writes.
+
+Monte Carlo is single-rank by design — no MC task exists in the MPI
+launcher protocol — so `run()` raises `RuntimeError` under
+`atomiverse-launcher` instead of silently sampling one independent chain
+per rank.
+
+The quantitative ensemble physics is pinned in the C++ regressions, not
+here: `regressions/mc/npt_lj` grades ⟨V⟩ against the exact finite-N result
+⟨V⟩ = (N+1)k_BT/P + N·B₂ (Frenkel & Smit, *Understanding Molecular
+Simulation* 2nd ed. §5.4) — it lands 0.05 % off, inside a tolerance of
+3 blocked standard errors plus 0.2 % for the virial truncation, and it also
+grades the ensemble *width* σ_V = √(N+1)·k_BT/P — and
+`regressions/mc/gcmc_lj` grades ⟨N⟩(z) at two activities against the Mayer
+expansion ρ = z − 2B₂z² (Hill, *An Introduction to Statistical
+Thermodynamics* §15-3). B₂ is the second virial coefficient, the leading
+correction to ideal-gas behaviour, evaluated by quadrature for exactly the
+cut-and-shifted potential the engine samples. Read their `REFERENCE.md`
+before choosing a state point.
 
 ## Key concepts
 
