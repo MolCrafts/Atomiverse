@@ -18,11 +18,13 @@
 /// geometry optimization.
 
 #include "evaluator_setters.h"
+#include "frame_guards.h"
 #include "molrs_frame_bridge.h"
 
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -116,8 +118,15 @@ struct MinimizeHandle {
         using P = std::decay_t<Params>;
         // Named BEFORE the move, and only for the types the wire cannot
         // carry — `if constexpr` keeps the common path free of the string.
-        if constexpr (!wire_carries_v<P>)
+        if constexpr (!wire_carries_v<P>) {
             unmirrored_.push_back(component.name());
+            // The mirror is the charge guard's evidence, and an unmirrored
+            // registration leaves none behind — so an electrostatic one is
+            // remembered here as a typed fact, not re-derived from that
+            // display name. See `require_charge_column`.
+            if constexpr (is_coulomb_params_v<P>)
+                unmirrored_coulomb_ = true;
+        }
 
         if constexpr (std::is_same_v<P, cpu::task::PairLJCutParams>
                       || std::is_same_v<P, cpu::task::PairCoulCutParams>
@@ -212,10 +221,49 @@ struct MinimizeHandle {
               "force source the Minimize payload mirrors (PairLJCut).");
     }
 
+    /// @brief Reject a chargeless frame before an electrostatic run starts.
+    ///
+    /// Same guard, same rationale as `MdHandle::require_charge_column`
+    /// (`bind_md.cpp`), because both handles take the same nine force sources:
+    /// `charge` is an *optional* per-atom column at the C++ boundary, and
+    /// `cpu::from_molrs` zero-fills an absent one, so past that point a
+    /// forgotten charge column is indistinguishable from a deliberately
+    /// neutral system — the optimization converges instantly on a Hamiltonian
+    /// with no electrostatics in it. The molrs Frame is the last place the
+    /// absence is visible, so the refusal happens here, with a how-to.
+    ///
+    /// Intentional zeros stay expressible: insert an explicit zero `charge`
+    /// column and the check passes.
+    ///
+    /// Both registration paths count. The mirror is the whole story on the MD
+    /// side, but `MinimizeComponentParams` carries no Coulomb alternative, so
+    /// every electrostatic evaluator bound here lands in `unmirrored_` and is
+    /// remembered by `unmirrored_coulomb_` instead — a CoulLong the launcher
+    /// would refuse must still trip this guard on the serial path, which is
+    /// the path that actually ran it.
+    ///
+    /// @param frame Borrowed molrs Frame about to be optimized.
+    /// @throws std::runtime_error when a Coulomb evaluator is registered and
+    ///         the frame's `atoms` block has no `charge` column.
+    void require_charge_column(const molrs::FrameRef& frame) const {
+        const bool coulomb =
+            unmirrored_coulomb_
+            || std::any_of(mirror.begin(), mirror.end(),
+                           is_coulomb_entry<MinimizeComponentEntry>);
+        if (!coulomb || has_molrs_column(frame, "atoms", "charge"))
+            return;
+        throw std::runtime_error(
+            "this Minimize run registers a Coulomb evaluator but the "
+            "molrs.Frame has no per-atom 'charge' column, so every charge "
+            "would be taken as 0 e. Add the charges [e] before run(), e.g. "
+            "frame[\"atoms\"].insert(\"charge\", q).");
+    }
+
     TaskResult run(nb::object frame_obj, int max_iter) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
             auto frame = borrow_molrs_frame(frame_obj);
+            require_charge_column(*frame);
             int iterations = 0;
             {
                 nb::gil_scoped_release release;
@@ -237,6 +285,7 @@ struct MinimizeHandle {
         const cpu::task::TaskSpec spec{cpu::task::MinimizeTask{
             mirror, static_cast<std::int64_t>(max_iter), conv}};
         auto frame = borrow_molrs_frame(frame_obj);
+        require_charge_column(*frame);
         cpu::Frame work = cpu::from_molrs(*frame);
         cpu::task::DispatchResult dispatched{cpu::Frame(0), {}};
         {
@@ -259,6 +308,9 @@ struct MinimizeHandle {
     /// `Component::name()` of every registration the Minimize wire cannot
     /// mirror; see `require_wire_representable_`.
     std::vector<std::string> unmirrored_;
+    /// True once an unmirrored registration was electrostatic; see
+    /// `require_charge_column`.
+    bool unmirrored_coulomb_ = false;
     /// True once a `run()` has completed; see `require_configurable_`.
     bool ran_ = false;
 };

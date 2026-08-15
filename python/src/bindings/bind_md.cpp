@@ -18,6 +18,7 @@
 /// real C++ components on each setter and records the mirror entry.
 
 #include "evaluator_setters.h"
+#include "frame_guards.h"
 #include "molrs_frame_bridge.h"
 
 #include <nanobind/stl/array.h>
@@ -31,10 +32,8 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "atomiverse/core/stage.h"
@@ -71,45 +70,6 @@ using cpu::task::MDBinding;
 using cpu::task::MDComponentEntry;
 
 namespace {
-
-/// @brief Does `block` of a molrs Frame carry the column `key`?
-///
-/// The molrs boundary is the only place where a column's *absence* is still
-/// visible: `cpu::from_molrs` allocates every optional per-atom column and
-/// leaves an absent one zero-filled, so a Coulomb evaluator downstream cannot
-/// tell "no charges were given" from "every charge is 0 e".
-///
-/// @param frame Borrowed molrs Frame handle.
-/// @param block Block name, e.g. `"atoms"`.
-/// @param key   Column name, e.g. `"charge"`.
-/// @return True when that block carries that column.
-bool has_molrs_column(const molrs::FrameRef& frame, const char* block,
-                      std::string_view key) {
-    for (const ::rust::String& raw : molrs::frame_block_columns(frame, block))
-        if (std::string_view{raw.data(), raw.size()} == key)
-            return true;
-    return false;
-}
-
-/// @brief Is this mirror entry an electrostatic evaluator?
-///
-/// Every Coulomb style reads per-atom charge: the truncated pair style, the
-/// real-space Ewald half and the reciprocal PME half alike. The PME mirror is
-/// always compiled (the wire layer does not need `ATV_HAS_KSPACE`), so no
-/// build gate belongs here.
-///
-/// @param entry One recorded MD registration.
-/// @return True for `PairCoulCut` / `CoulLong` / `KSpacePME` entries.
-bool is_coulomb_entry(const MDComponentEntry& entry) {
-    return std::visit(
-        [](const auto& p) {
-            using P = std::decay_t<decltype(p)>;
-            return std::is_same_v<P, cpu::task::PairCoulCutParams>
-                   || std::is_same_v<P, cpu::task::CoulLongParams>
-                   || std::is_same_v<P, cpu::task::KSpacePmeParams>;
-        },
-        entry.params);
-}
 
 /// Bound MD driver + TaskSpec mirror of its registrations.
 struct MdHandle {
@@ -249,8 +209,8 @@ struct MdHandle {
     /// @throws std::runtime_error when a Coulomb evaluator is registered and
     ///         the frame's `atoms` block has no `charge` column.
     void require_charge_column(const molrs::FrameRef& frame) const {
-        const bool coulomb =
-            std::any_of(mirror.begin(), mirror.end(), is_coulomb_entry);
+        const bool coulomb = std::any_of(mirror.begin(), mirror.end(),
+                                         is_coulomb_entry<MDComponentEntry>);
         if (!coulomb || has_molrs_column(frame, "atoms", "charge"))
             return;
         throw std::runtime_error(

@@ -554,6 +554,54 @@ def test_set_evaluator_still_rejects_unknown_type() -> None:
         Minimize().set_evaluator(object())
 
 
+# ── A chargeless frame under a Coulomb model is refused ─────────────
+#
+# ONE dispatch table (ac-003 above) means Minimize accepts every force
+# source MD accepts — including the three Coulomb styles. It does NOT yet
+# mean Minimize *guards* them: `MdHandle::require_charge_column`
+# (python/src/bindings/bind_md.cpp) rejects a molrs Frame with no `charge`
+# column before an electrostatic MD run, and `MinimizeHandle::run`
+# (python/src/bindings/bind_minimizer.cpp:215) has no equivalent. The
+# consequence is the exact failure mode that guard was written for:
+# `cpu::from_molrs` allocates the optional `charge` column and zero-fills
+# it, so a forgotten charge column and a deliberately neutral system are
+# indistinguishable by the time the optimizer runs — the geometry relaxes
+# under LJ (or under nothing) while the electrostatics the caller asked
+# for is silently absent, and the result looks plausible.
+#
+# The refusal belongs to the SAME boundary for both drivers: the molrs
+# Frame is the last place where a column's absence is visible.
+
+
+class TestMinimizeFailsLoud:
+    """Minimize refuses setups whose silence would look like a result."""
+
+    def test_coulomb_minimize_missing_charge_raises(
+        self, argon_frame: "molrs.Frame"
+    ) -> None:
+        """A Coulomb evaluator on a chargeless frame must not optimize.
+
+        Twin of test_md.py::TestCoulombPme::test_coul_cut_missing_charge_raises,
+        same fixture and same 3.0 A cutoff: the Ar fixture's cell edge is
+        6.8 A, so L/2 = 3.4 A still satisfies the minimum-image convention
+        and the missing `charge` column is the only defect in the setup.
+
+        Accept-level on the message: `match="charge"` pins WHAT was wrong,
+        not the wording, exactly as the MD twin does.
+        """
+        assert "charge" not in argon_frame["atoms"].keys(), (
+            "fixture drift: this case needs a frame WITHOUT a charge column"
+        )
+
+        opt = Minimize()
+        opt.set_optimizer(LBFGS())
+        opt.set_neighbor(NeighborList(3.0, 0.5))
+        opt.set_evaluator(CoulCut(3.0))
+
+        with pytest.raises(RuntimeError, match="charge"):
+            opt.run(argon_frame, 1)
+
+
 # ── Late reconfiguration is refused (the MD/MC late-setter contract) ─
 #
 # Mirror of test_md.py::TestMdLateSetters, which documents the underlying
