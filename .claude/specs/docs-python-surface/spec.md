@@ -1,6 +1,6 @@
 ---
 slug: docs-python-surface
-status: approved
+status: code-complete
 created: 2026-08-14
 domain: docs / python
 queue: claim-completion
@@ -50,10 +50,10 @@ guide into the published site nav.
 
 ## Tasks
 
-- [ ] Three example scripts, each self-checking
-- [ ] Publish the Python guide in the site nav (one canonical location)
-- [ ] Smoke-run all examples against the dev build; fix drift
-- [ ] getting_started Examples section names them
+- [x] Three example scripts, each self-checking
+- [x] Publish the Python guide in the site nav (one canonical location)
+- [x] Smoke-run all examples against the dev build; fix drift
+- [x] getting_started Examples section names them
 
 ## Testing
 

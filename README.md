@@ -20,7 +20,7 @@ Methods include:
 Everything in this README and in `docs/` targets the **C++ API**. For the
 Python package (pure `pip install` + on-demand native build via
 `python -m atomiverse install`), see
-[`python/docs/getting_started.md`](python/docs/getting_started.md).
+[`docs/user-guide/python.md`](docs/user-guide/python.md).
 
 ## Quickstart: build and run your first calculation
 

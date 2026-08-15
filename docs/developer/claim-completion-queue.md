@@ -38,16 +38,16 @@ with mirrored `python/tests/` coverage and a `getting_started` section.
 | Slug | Domain | Deliverable | Gate |
 | ---- | ------ | ----------- | ---- |
 | py-schema-molrs-0131 | all | **DONE 2026-08-14** — fixtures/tests/docs on `atomic_number` (uint) + plain-value meta; pins molrs==0.13.1, molpy==0.13.1; `element` column rides the C++ allow-list | python suite green (176 pass) |
-| py-md-npt | MD | **first slice DONE 2026-08-14** — `Langevin`/`CSVR` thermostats + MTK `NoseHooverNPT` via `set_integrator`, full task-spec/codec/materializer mirror (wire IDs 11–13, bitwise materializer parity tests); residual: Berendsen / Parrinello–Rahman / per-axis couple + drag/chain knobs | python suite green (181); gate 223/223 |
-| py-coulomb-pme | MD | bind `coul_cut`/`coul_long` + KSpace PME (`ATV_BUILD_KSPACE` wheel define + capability gate) | NaCl PME energy matches `md/npt_pme_nacl` pin from Python |
-| py-pair-styles | MD | bind morse/buckingham/born/yukawa/wca/dpd + FENE bond, CHARMM dihedral, harmonic improper | ctor/energy smoke per style |
-| py-recorder-xyz | MD | bind an XYZ trajectory Recorder — trajectory output from Python. **Design gate first:** `cpu::XYZ` is molrs-backed and `ATV_BUILD_IO`-gated while the task layer (`task_spec`/`materializer`) compiles unconditionally, so a task-mirrored XyzRecorder either moves behind the IO gate cleanly or stays a local-only (non-launcher) component — decide before binding | file written + row count |
-| py-minimize-full | Minimize | bind CG + FIRE + cell-relax variants; evaluator dispatch beyond LJ (any bound Potential) | r_min invariant + cell smoke |
-| py-mc | MC | bind `mc::MC` preset + movers (NVT/NPT/GCMC) | analytic ⟨N⟩/⟨V⟩ smoke vs `mc/` pins |
-| py-vib | Vibration | bind `vib::Hessian` + RRHO thermochem read-back | frequency smoke vs `scf` freq pin |
-| py-scf-single-point | SCF | RHF/UHF/RKS/UKS single-point + forces wrappers (the `driver.py` "future spec") | energy vs PySCF-pinned regression value |
-| py-am1-forces | SE | expose AM1 gradients + AM1 evaluator in MD (AIMD from Python) | force vs CPU pin; NVE drift smoke |
-| py-pw-forces | PW | PW forces/stress accessors; PW as MD evaluator | force accessor vs CPU pin |
+| py-md-npt | MD | **DONE 2026-08-15** (residual barostat/knob tail landed; first slice 08-14) — `Langevin`/`CSVR` thermostats + MTK `NoseHooverNPT` via `set_integrator`, full task-spec/codec/materializer mirror (wire IDs 11–13, bitwise materializer parity tests); residual: Berendsen / Parrinello–Rahman / per-axis couple + drag/chain knobs | python suite green (181); gate 223/223 |
+| py-coulomb-pme | MD | **DONE 2026-08-15** — bind `coul_cut`/`coul_long` + KSpace PME (`ATV_BUILD_KSPACE` wheel define + capability gate) | NaCl PME energy matches `md/npt_pme_nacl` pin from Python |
+| py-pair-styles | MD | **DONE 2026-08-15** — bind morse/buckingham/born/yukawa/wca/dpd + FENE bond, CHARMM dihedral, harmonic improper | ctor/energy smoke per style |
+| py-recorder-xyz | MD | **DONE 2026-08-15** (gating shape (a): wire unconditional, materializer #ifdef refusal) — bind an XYZ trajectory Recorder — trajectory output from Python. **Design gate first:** `cpu::XYZ` is molrs-backed and `ATV_BUILD_IO`-gated while the task layer (`task_spec`/`materializer`) compiles unconditionally, so a task-mirrored XyzRecorder either moves behind the IO gate cleanly or stays a local-only (non-launcher) component — decide before binding | file written + row count |
+| py-minimize-full | Minimize | **DONE 2026-08-15** — bind CG + FIRE + cell-relax variants; evaluator dispatch beyond LJ (any bound Potential) | r_min invariant + cell smoke |
+| py-mc | MC | **DONE 2026-08-15** — bind `mc::MC` preset + movers (NVT/NPT/GCMC) | analytic ⟨N⟩/⟨V⟩ smoke vs `mc/` pins |
+| py-vib | Vibration | **DONE 2026-08-15** — bind `vib::Hessian` + RRHO thermochem read-back | frequency smoke vs `scf` freq pin |
+| py-scf-single-point | SCF | **DONE 2026-08-15** — RHF/UHF/RKS/UKS single-point + forces wrappers (the `driver.py` "future spec") | energy vs PySCF-pinned regression value |
+| py-am1-forces | SE | **DONE 2026-08-15** — expose AM1 gradients + AM1 evaluator in MD (AIMD from Python) | force vs CPU pin; NVE drift smoke |
+| py-pw-forces | PW | **DONE 2026-08-15** — PW forces/stress accessors; PW as MD evaluator | force accessor vs CPU pin |
 
 Order: py-md-npt → py-coulomb-pme → py-recorder-xyz first (they complete the
 "classical MD from Python" story); then py-scf-single-point / py-am1-forces;
@@ -62,8 +62,8 @@ independent.
 | docs-roadmap-observe | observables census (RDF/MSD/VACF/density/profiles/charges/Voronoi/Widom/WHAM) with anchoring status per observable | registered in roadmap index |
 | docs-multiscale-stale-rows | flip Löwdin / ESP(MK) / CHELPG rows ○→✓ (already shipped: `cpu/observe/lowdin.h`, `esp_charges.h`, gated by `regressions/scf/h2o_charges_pyscf`) | rows match tree |
 | docs-roadmap-legend | define ◐ in the legend; re-point the LJ ⚡ evidence at a live benchmark (see cuda-md-lj-bench) | legend complete |
-| docs-python-examples | `python/examples/` gets MD-LJ, minimize, AM1 scripts (today only `pw_qe_compare.py`, for the OFF-by-default backend) | scripts run under the dev build |
-| docs-python-nav | register `python/docs/getting_started.md` in `zensical.toml` nav (currently outside `docs_dir`, unpublished) | page in site nav |
+| docs-python-examples | **DONE 2026-08-15** — `python/examples/{md_lj_argon,minimize_lj_dimer,am1_ch4}.py`, each self-checking, smoke-run exit 0 | scripts run under the dev build |
+| docs-python-nav | **DONE 2026-08-15** — guide moved to `docs/user-guide/python.md`, in nav + index card (site build verified) | page in site nav |
 
 ## Track C — CUDA
 

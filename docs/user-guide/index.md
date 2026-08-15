@@ -12,6 +12,10 @@ Scientific methods (RHF theory, ensembles, basis sets, …) live in the
     <strong>Getting started</strong>
     <em>Toolchain, CMake flags, first build and first run.</em>
   </a>
+  <a href="python/">
+    <strong>Python package</strong>
+    <em>pip install, staged native build, and the bound driver surface.</em>
+  </a>
   <a href="concepts/">
     <strong>Core concepts</strong>
     <em>Driver, Component, Frame, Criterion — the vocabulary every run uses.</em>

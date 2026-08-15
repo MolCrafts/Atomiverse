@@ -8,7 +8,8 @@ criteria:
     pass_when: |
       md_lj_argon.py, minimize_lj_dimer.py, am1_ch4.py each run to exit 0
       against the dev build and self-check their result.
-    status: pending
+    status: verified
+    last_checked: 2026-08-15
   - id: ac-002
     summary: Python guide is published
     type: docs

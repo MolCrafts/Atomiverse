@@ -1,4 +1,10 @@
-# Getting Started
+# Python Package
+
+Install, configure and run Atomiverse from Python: `pip install atomiverse`
+for the pure-Python shell, then an on-demand native build. The C++
+toolchain, CMake flags and first C++ run are a separate page —
+[Getting started](getting-started.md) — and the Driver / Component / Frame
+vocabulary these bindings mirror is in [Core concepts](concepts.md).
 
 ## Installation
 
@@ -1260,12 +1266,51 @@ sim.run(frame, 1000)
 print(sim.summary())   # per-phase wall-clock breakdown
 ```
 
+## Examples
+
+`python/examples/` holds four scripts. They use the MolCrafts stack only —
+molrs, numpy, and (for the plane-wave one) molplot — never ASE or
+matplotlib.
+
+Three of them run on any wheel, need no external program, finish in
+seconds, and **exit nonzero** when their own sanity check fails, so they
+can be smoke-run:
+
+| Script | What it demonstrates |
+|--------|----------------------|
+| `md_lj_argon.py` | NVT molecular dynamics: 64 Lennard-Jones argon atoms, `VelocityVerlet` + `Langevin`, 200 steps; reads potential and kinetic energy back from `frame.meta`. Checks the energies are finite, the kinetic energy positive and the atoms moved. |
+| `minimize_lj_dimer.py` | L-BFGS geometry optimization of an Ar dimer onto the analytic minimum `r* = 2^(1/6)·sigma`, with `ForceConverged` as the separate stop policy. Checks \|r − r\*\| < 0.01 Å and that the criterion — not the iteration budget — ended the run. |
+| `am1_ch4.py` | AM1 semiempirical single point on methane: total energy [eV], heat of formation [kcal/mol] and Mulliken charges [e] written back to the frame's `charge` column. Checks the SCF converged, the charges sum to zero and carbon is negative. |
+
+```bash
+cd /path/to/Atomiverse
+# Development tree; an installed wheel needs no PYTHONPATH at all.
+export PYTHONPATH="$PWD/build-py:$PWD/python/src"
+
+python python/examples/md_lj_argon.py
+python python/examples/minimize_lj_dimer.py
+python python/examples/am1_ch4.py
+```
+
+The fourth, `pw_qe_compare.py`, is a plane-wave DFT convergence study of Si
+diamond (energy vs cutoff, k-mesh and lattice constant) against Quantum
+ESPRESSO on the same norm-conserving UPF. It is **not** smoke-runnable
+alongside the three above, for three reasons: plane waves are OFF by default
+(`ATV_BUILD_PW`), so `av.PW` is absent from a stock wheel; the reference half
+needs a `pw.x` binary at the path in the script header, and `--skip-qe` runs
+the Atomiverse side alone; and the figures need the `examples` extra. It
+sweeps 26 SCF solves, so budget minutes rather than seconds.
+
+```bash
+pip install -e './python[examples]'          # molcrafts-molplot + molcrafts-molpy
+python -m atomiverse config pw --src /path/to/Atomiverse   # ATV_BUILD_PW=ON
+python -m atomiverse compile -j 8
+python -m atomiverse install
+python python/examples/pw_qe_compare.py --skip-qe --sweep ecut
+```
+
 ## Next steps
 
-- **Examples** — `python/examples/pw_qe_compare.py` (plane-wave DFT vs
-  Quantum ESPRESSO for Si diamond). Install extras with
-  `pip install -e './python[examples]'` (`molcrafts-molplot` + `molcrafts-molpy`;
-  not matplotlib / ASE).
 - **Benchmarks** — `python/benchmarks/bench_md.py` for system-size scaling.
 - **Tests** — `python/tests/test_surface.py` documents the exact exported
   surface and its fail-loud contract.

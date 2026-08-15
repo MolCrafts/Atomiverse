@@ -13,4 +13,4 @@ Expected exit semantics (no full native compile required):
 
 CLI shape (scheme B): `install md pw --mpi --real-storage double` — no k:v strings.
 
-Canonical product docs: `python/docs/getting_started.md`.
+Canonical product docs: `docs/user-guide/python.md`.

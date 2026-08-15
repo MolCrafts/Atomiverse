@@ -28,6 +28,7 @@ nav = [
   { "User Guide" = [
     "user-guide/index.md",
     "user-guide/getting-started.md",
+    "user-guide/python.md",
     "user-guide/concepts.md",
     "user-guide/methods.md",
     "user-guide/backend-switching.md",
