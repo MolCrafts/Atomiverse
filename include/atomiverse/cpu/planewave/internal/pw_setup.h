@@ -50,6 +50,26 @@ struct PWProblem {
 ///        (H..Ar) when no UPF pseudopotential supplies it.
 int valence_from_z(int z);
 
+/// @brief Refuse an odd valence-electron count on the restricted,
+///        fixed-occupation path.
+///
+/// That path occupies every band with exactly two electrons, so `n_elec / 2`
+/// bands hold `n_elec` electrons only when `n_elec` is even. On an odd count
+/// the integer division silently drops one electron and the run reports a
+/// converged energy for the wrong system — which is why this is a throw, not
+/// a clamp, and why `PW::run`, `pw_forces_analytic` and `pw_stress` all call
+/// it: an energy the force path refuses to differentiate is not an energy the
+/// energy path may quietly report.
+///
+/// Not called on the spin-polarized path (the α/β split has its own parity
+/// rule) nor with metallic smearing (fractional occupations accept an odd
+/// count — aluminium's three valence electrons are the standard case).
+///
+/// @param n_elec Valence-electron count of the cell (dimensionless).
+/// @param where  Entry-point name used as the message prefix, e.g. "PW::run".
+/// @throws std::invalid_argument when @p n_elec is odd.
+void require_closed_shell(int n_elec, const char* where);
+
 /// @brief Resolve a run's pseudopotential to `UPFData`, from either source.
 ///
 /// Exactly one of @p upf_path / @p gth_name must be set — a plane-wave run
@@ -62,6 +82,13 @@ int valence_from_z(int z);
 /// `setup_pw_problem` and the analytic force path both call it: when the
 /// force path answered that question on its own it looked only for a UPF
 /// *file*, so GTH runs silently fell back to bare nuclear Coulomb.
+///
+/// **Single species, both branches.** One `UPFData` is returned for the whole
+/// cell and `setup_pw_problem` gives every atom that potential's `z_val`, so
+/// a multi-species frame is outside the model either way. Only the GTH branch
+/// says so today — it throws on mixed atomic numbers; the UPF branch does not
+/// check, and a mixed frame there is silently treated as the file's own
+/// element throughout.
 ///
 /// @param frame     Geometry; supplies the atomic numbers (single species).
 /// @param upf_path  Norm-conserving UPF file, or empty to use @p gth_name.
@@ -127,8 +154,7 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 /// @param kfrac    Fractional (crystal) k-coordinates.
 void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
                       const std::string& upf_path, const std::string& gth_name,
-                      double ecut_ry,
-                      const std::vector<Vec3>& kfrac);
+                      double ecut_ry, const std::vector<Vec3>& kfrac);
 
 /// @brief Solve the Pulay/DIIS constrained least-squares coefficients.
 ///

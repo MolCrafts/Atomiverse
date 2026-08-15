@@ -259,7 +259,9 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   `reg_dfpt-metallic-si` / `reg_dfpt-spin-incommensurate` /
   `reg_dfpt-finite-q-smearing` / `reg_dfpt-spin-smearing`). CUDA PW remains
   LDA / spin-unpolarized.
-- Norm-conserving UPF only (no USPP/PAW). Empty UPF = toy V_loc.
+- Norm-conserving UPF only (no USPP/PAW), or the in-tree analytic GTH tables
+  (`gth_name`). Exactly one of the two, single-species; neither/both throws —
+  there is no toy V_loc fallback any more.
 - CUDA: H·ψ / FFT / Poisson / V_eff / LDA on device; Ritz + SCF control on host.
 
 ### GPW

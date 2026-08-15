@@ -5,8 +5,21 @@
 Born–Oppenheimer molecular dynamics (BOMD) with plane-wave DFT forces:
 
 - Outer loop: `cpu::md::MD` + `VelocityVerlet` (NVE; no thermostat)
+- Spin: one valence electron is a doublet (\(S=1/2\)), so the SCF is collinear
+  spin-polarized (`spin_polarized = true`, `multiplicity = 2` ⇒
+  \(N_\uparrow=1\), \(N_\downarrow=0\)). The restricted, fixed-occupation path
+  rejects an odd electron count outright — `internal::require_closed_shell`
+  (`src/cpu/planewave/internal/pw_setup.cpp`), the one gate `PW::run`,
+  `pw_forces_analytic` and `pw_stress` all call. The default
+  `multiplicity = 1` fails a *different* guard, the collinear path's parity
+  check: \(N_e + (M-1)\) must be even, which 1 + 0 is not.
 - Force/energy: `cpu::pw::PWEvaluator` with `with_gradient(true)`
-  (analytic local Hellmann–Feynman + Ewald). The pseudopotential is the
+  (analytic local Hellmann–Feynman + Ewald). A force-producing step is **two**
+  SCF solves on today's code path — `PW::run` publishes the energy, then
+  `pw_forces_analytic` converges its own density for the forces
+  (`src/cpu/planewave/pw_evaluator.cpp`) — so the "5 iterations per step"
+  measured below is per solve, and a step pays for two of them. The
+  pseudopotential is the
   published analytic **GTH-PBE-q1** parameterization for hydrogen, evaluated
   in-tree from `cpu/gpw/basis_data/gpw_tables.h` — no external file. That
   entry carries no nonlocal projectors, so the KB term is legitimately zero
@@ -43,6 +56,7 @@ This is **not** a golden snapshot of Atomiverse total energy. The pin is the
 | \(E_\mathrm{cut}\) | 5 Ry |
 | k-mesh | Γ-only (`k_mesh = 1`) |
 | SCF | `tol = 1e-4`, `max_iter = 12`, `mix_beta = 0.5` |
+| Spin | collinear `spin_polarized = true`, `multiplicity = 2` (doublet) |
 | Ensemble | NVE |
 | `dt` | 0.5 fs |
 | Initial velocity | \(v_x = 0.002\) Å/fs (hand-set; `InitVelocity` COM-zeros N=1) |
@@ -82,6 +96,12 @@ Additional gates:
 - PE finite; KE finite and \(\ge 0\)
 - All coordinates finite
 - \(|F| < 0.5\) eV/Å after warm-up (symmetry residual)
+
+Measured 2026-08-15 (spin-polarized doublet, 4 OpenMP threads):
+\(\delta = 2.17\times10^{-8}\) (tol 0.05), \(|F_0| = 1.13\times10^{-6}\) eV/Å
+(tol 0.5), \(E_0 = -12.0275\) eV (\(E_\mathrm{pot,0} = -12.0277\) eV,
+\(E_\mathrm{kin,0} = 2.089\times10^{-4}\) eV); SCF converges in 5 iterations
+per step with \(m = 1\).
 
 ## Perf gate
 

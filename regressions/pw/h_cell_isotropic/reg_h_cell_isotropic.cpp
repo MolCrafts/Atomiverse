@@ -38,6 +38,12 @@ int main() {
     cfg.tol = 1e-4;
     cfg.max_iter = 10;
     cfg.mix_beta = 0.5;
+    // One valence electron is open-shell: the restricted stress path rejects an
+    // odd electron count (src/cpu/planewave/internal/pw_stress.cpp:625). A lone
+    // H is a doublet (S = 1/2), so N↑−N↓ = 1 ⇒ multiplicity 2; the default 1
+    // would fail the parity check in the same guard.
+    cfg.spin_polarized = true;
+    cfg.multiplicity = 2;
 
     // Direct stress at L0
     const auto s0 = cpu::pw::pw_stress(frame, cfg);

@@ -46,6 +46,10 @@
 #include <nanobind/stl/string.h>
 
 #ifdef ATV_HAS_HF
+// The functional-name table is shared with the plane-wave binding (`PW.xc`),
+// so it lives in its own header rather than twice in this file.
+#include "xc_names.h"
+
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -63,7 +67,6 @@
 namespace {
 
 using ATV::cpu::scf::BasisSet;
-using ATV::cpu::scf::XCType;
 
 /// @brief Basis-set name → `BasisSet` (names verbatim from `basis_set_name`).
 /// @param name Basis-set name, e.g. "STO-3G" or "def2-SVP".
@@ -90,31 +93,6 @@ BasisSet basis_from_name(const std::string& name) {
     }
     throw std::invalid_argument("unknown basis set '" + name
                                 + "'; supported: " + supported);
-}
-
-/// @brief Functional name → `XCType`.
-/// @param name Exchange–correlation functional name, e.g. "PBE" or "B3LYP".
-/// @return The matching enumerator.
-/// @throws std::invalid_argument (Python `ValueError`) on an unsupported
-///         name, listing every supported functional — no fallback.
-XCType xc_from_name(const std::string& name) {
-    static constexpr std::pair<const char*, XCType> kTable[] = {
-        {"LSDA", XCType::LSDA},           {"PBE", XCType::PBE},
-        {"PBEsol", XCType::PBEsol},       {"RevPBE", XCType::RevPBE},
-        {"RPBE", XCType::RPBE},           {"BLYP", XCType::BLYP},
-        {"OptB88VdW", XCType::OptB88VdW}, {"B3LYP", XCType::B3LYP},
-        {"PBE0", XCType::PBE0},           {"B2PLYP", XCType::B2PLYP},
-    };
-    std::string supported;
-    for (const auto& [key, value] : kTable) {
-        if (name == key)
-            return value;
-        if (!supported.empty())
-            supported += ", ";
-        supported += key;
-    }
-    throw std::invalid_argument("unknown exchange-correlation functional '"
-                                + name + "'; supported: " + supported);
 }
 
 /// @brief Electron count N_e = Σ_A Z_A − q of a materialized Frame: the

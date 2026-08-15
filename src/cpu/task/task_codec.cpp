@@ -193,6 +193,26 @@ void write(Writer& w, const AM1EvaluatorParams& p) {
     w.f64(p.density_tol);
     w.f64(p.energy_tol);
 }
+// The widest MD payload (fifteen fields) and the second one leading with a
+// text field. Field order is the struct's declaration order; `bool` crosses
+// as a single byte and both enum mirrors as i32, matching `read_pw` below.
+void write(Writer& w, const PwEvaluatorParams& p) {
+    w.string(p.upf_path);
+    w.string(p.gth_name);
+    w.f64(p.ecut_ry);
+    w.i32(p.k_mesh);
+    w.f64(p.tol);
+    w.i32(p.max_iter);
+    w.f64(p.mix_beta);
+    w.i32(p.pulay_depth);
+    w.i32(p.xc);
+    w.u8(p.spin_polarized ? 1 : 0);
+    w.i32(p.multiplicity);
+    w.i32(p.smearing);
+    w.f64(p.degauss);
+    w.i32(p.mp_order);
+    w.i32(p.extra_bands);
+}
 void write(Writer& w, const LBFGSParams& p) {
     w.i32(p.memory);
     w.f64(p.alpha0);
@@ -253,6 +273,8 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::KSpacePME;
     case 19:
         return ComponentId::XyzRecorder;
+    case 20:
+        return ComponentId::PWEvaluator;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -286,6 +308,33 @@ AM1EvaluatorParams read_am1(Reader& r) {
     p.max_iter = r.i32();
     p.density_tol = r.f64();
     p.energy_tol = r.f64();
+    return p;
+}
+
+/// @brief Read the fifteen plane-wave fields in the order `write` laid them
+///        down.
+///
+/// Statement per field rather than one braced aggregate: the widest payload
+/// on the wire is also the one where a silently swapped field is hardest to
+/// see, and a named assignment beside its reader makes the byte layout
+/// legible at the point it is decoded.
+PwEvaluatorParams read_pw(Reader& r) {
+    PwEvaluatorParams p;
+    p.upf_path = r.string();
+    p.gth_name = r.string();
+    p.ecut_ry = r.f64();
+    p.k_mesh = r.i32();
+    p.tol = r.f64();
+    p.max_iter = r.i32();
+    p.mix_beta = r.f64();
+    p.pulay_depth = r.i32();
+    p.xc = r.i32();
+    p.spin_polarized = r.u8() != 0;
+    p.multiplicity = r.i32();
+    p.smearing = r.i32();
+    p.degauss = r.f64();
+    p.mp_order = r.i32();
+    p.extra_bands = r.i32();
     return p;
 }
 
@@ -345,6 +394,8 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return KSpacePmeParams{r.f64(), r.f64(), r.i32()};
     case ComponentId::AM1Evaluator:
         return read_am1(r);
+    case ComponentId::PWEvaluator:
+        return read_pw(r);
     case ComponentId::LBFGS:
         wrong_task(id, TaskKind::MD);
     }

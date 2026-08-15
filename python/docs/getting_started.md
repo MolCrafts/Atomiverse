@@ -122,8 +122,9 @@ Current surface:
   these are on the shipped wheel; a staged CLI build selects its modules
   explicitly, so list `mc` there (`python -m atomiverse config md mc …`) or
   the extension is built without them.
-- **Plane-wave DFT** — `PW` / `PWResult` (PW-enabled wheels only; PW types
-  are absent from wheels built without the backend).
+- **Plane-wave DFT** — `PW` / `PWResult` / `PWEvaluator`, i.e. energy,
+  forces, cell stress and plane-wave Born-Oppenheimer MD (PW-enabled wheels
+  only; PW types are absent from wheels built without the backend).
 - **Gaussian SCF** — the concrete mean-field methods `RHF`, `UHF`, `RKS`,
   `UKS` for molecular Hartree-Fock and Kohn-Sham DFT. Needs
   `ATV_BUILD_HF=ON`, which the shipped wheel sets by default; on a wheel
@@ -952,6 +953,107 @@ print(result.energy)      # [Ry]
 print(result.converged, result.iterations)
 ```
 
+A plane-wave basis *is* the set of plane waves commensurate with the
+simulation cell, so `frame.box` is not optional: every entry point
+(`build`, `run`, `forces`, `stress`) raises `RuntimeError` naming the box
+rather than iterating to a NaN energy.
+
+`result` also carries `energy_ha` [Hartree], `magnetization` [electrons],
+`e_fermi` [Ry], `n_elec_occ`, `e_entropy` [Ry] and `n_kpts`. The last four
+are the metallic-smearing channels — with fixed occupations `e_fermi`,
+`n_elec_occ` and `e_entropy` stay 0, because that path runs no Fermi-level
+search and fractional occupations are what carry an electronic entropy.
+
+### Forces and cell stress
+
+```python
+forces = pw.forces(frame)   # (n_atoms, 3) [eV/Å]; also writes fx/fy/fz
+print(frame.meta["energy"])  # [eV] — the SCF that produced those forces
+stress = pw.stress(frame)   # Voigt xx, yy, zz, xy, xz, yz [eV/Å³]
+```
+
+`forces` are analytic — local Hellmann-Feynman + Ewald ion-ion +
+Kleinman-Bylander nonlocal, evaluated at the converged density rather than
+by differencing energies — and are written back to the frame's `fx`/`fy`/`fz`
+columns along with that SCF's total energy in eV. `stress` is the
+Nielsen-Martin cell derivative in the mechanical (CP2K) sign,
+σ = −(1/V)·∂E/∂ε, so a cell compressed below its equilibrium lattice
+constant returns a positive diagonal; it reports on the cell and writes
+nothing back. Each call runs its own SCF (the stress adds twelve
+non-self-consistent strained diagonalizations on top of it) and neither
+updates `last_result`, which stays the result of the last `run`.
+
+Note the unit split: `PWResult` keeps the solver's Rydberg — 1 Ry = ½
+Hartree, spelled 1 Ry = 13.605693 eV in the engine
+(`cpu::pw::qe_units::rydberg_to_ev`, the Quantum ESPRESSO-rounded value) —
+while everything reaching the frame is in engine units: eV, eV/Å, eV/Å³.
+
+### Spin, functionals and metals
+
+```python
+pw.xc = "LSDA"              # name, not an enum; unknown names raise ValueError
+pw.spin_polarized = True    # collinear; needed for an odd electron count
+pw.multiplicity = 2         # fixed occupations: N↑ − N↓ = M − 1 exactly
+pw.smearing = "gaussian"    # or "none" (default), "fermi_dirac",
+pw.degauss = 0.01           #    "methfessel_paxton"; width [Ry]
+pw.extra_bands = 8          # empty states above E_F for the μ search
+```
+
+`xc` takes the same functional names as `RKS(functional=...)`: `"LSDA"`,
+`"PBE"` (default), `"PBEsol"`, `"RevPBE"`, `"RPBE"`, `"BLYP"`,
+`"OptB88VdW"`, `"B3LYP"`, `"PBE0"`, `"B2PLYP"`. There is no fallback — an
+unknown name raises `ValueError` listing them.
+
+The default restricted path doubly occupies every band, so it needs an even
+valence-electron count and refuses an odd one with `ValueError` (a single H
+atom in a box is the standard case: set `spin_polarized = True` and
+`multiplicity = 2`). Metallic smearing accepts an odd count instead, by
+letting the occupations be fractional. The two are not yet combinable on the
+derivative paths: `spin_polarized` together with a `smearing` gives a valid
+`run`, but `forces` and `stress` raise `ValueError` — that analytic path is
+not implemented.
+
+A pinned example: Si₂ in the fcc primitive cell at *a* = 5.43 Å with one atom
+displaced +0.08 Å along *x*, `GTH-PBE-q4`, `ecut_ry = 8`, Γ-only
+(`k_mesh = 1`), `tol = 1e-6`, `max_iter = 40`, `xc = "LSDA"` gives
+max|F| = 2.517979 eV/Å — the CPU number
+`regressions/pw/cuda-pw-forces/REFERENCE.md` pins (GH200 job 1050105), where
+it is the oracle for the CUDA twin.
+
+### Plane-wave Born-Oppenheimer MD
+
+```python
+from atomiverse.md import MD
+from atomiverse.md.integrator import VelocityVerlet
+from atomiverse.pw import PW, PWEvaluator
+
+pw = PW()
+pw.gth_name = "GTH-PBE-q4"
+pw.ecut_ry = 8.0
+pw.k_mesh = 1
+pw.tol = 1e-4
+pw.max_iter = 12            # one step is two whole SCFs — budget it
+
+sim = MD()
+sim.set_integrator(VelocityVerlet(0.5))    # dt [fs]
+sim.set_evaluator(PWEvaluator(pw))
+sim.run(frame, 3)
+print(frame.meta["energy"])  # [eV]
+```
+
+`PWEvaluator` rides the same plural `set_evaluator` slot as the pair styles
+and `AM1Evaluator`; registering it makes the loop Born-Oppenheimer dynamics —
+the electrons re-converged at every geometry the nuclei reach, with analytic
+forces from the converged density. It takes no `NeighborList` (a plane-wave
+Hamiltonian is not a pair style), needs the frame's `atomic_number` [Z] and
+`mass` [amu] columns and a box, and — like the AM1 evaluator — the driver
+installs its own gradient-enabled copy of the parameters, so per-step results
+land on the frame rather than on the object you passed. Cost is the thing to
+plan around: a step is *two* SCF solves, the energy solve and then the
+analytic force path's own, each seconds of work at production settings. A
+Python-side run therefore wants a small cell, a low `ecut_ry` and a modest
+`max_iter`.
+
 ### Pseudopotential: exactly one of two, and there is no default
 
 | Member | What it takes |
@@ -964,6 +1066,12 @@ files are rejected when read: the plane-wave path applies no augmentation
 charge, so integrating one would be wrong by an unbounded amount. There is
 no toy/bare-Coulomb fallback either — a bare valence-charge potential is not
 representable in a plane-wave basis at any finite cutoff.
+
+Either source makes the run single-species: one potential and one valence
+count are applied to every atom. `gth_name` enforces that (a frame mixing
+atomic numbers raises `ValueError`); `upf_path` does not check, so a
+mixed-species frame there is silently treated as the file's own element
+throughout. Multi-species plane-wave runs are not implemented.
 
 On a default wheel (`ATV_BUILD_PW=OFF`) the PW types are not exported;
 rebuild with `ATV_BUILD_PW=ON` to use this API.

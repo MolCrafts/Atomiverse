@@ -44,6 +44,12 @@ int main() {
     pw.tol = 1e-4;
     pw.max_iter = 12;
     pw.mix_beta = 0.5;
+    // One valence electron is open-shell: the restricted force path rejects an
+    // odd electron count (src/cpu/planewave/internal/pw_forces.cpp:266). A lone
+    // H is a doublet (S = 1/2), so N↑−N↓ = 1 ⇒ multiplicity 2; the default 1
+    // would fail the parity check in the same guard.
+    pw.spin_polarized = true;
+    pw.multiplicity = 2;
 
     constexpr double dt = 0.5; // fs
     constexpr int n_prod = 10;

@@ -45,6 +45,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``montecarlo.MoveSelector``           ``MoveSelector``            ``cpu::mc::MoveSelector``
 ``pw.PW``                             ``PW``                      ``cpu::pw::PW``
 ``pw.PWResult``                       ``PWResult``                ``cpu::pw::PWResult``
+``pw.PWEvaluator``                    ``PWEvaluator``             ``cpu::pw::PWEvaluator``
 ``scf.RHF``                           ``RHF``                     ``cpu::scf::RHF``
 ``scf.UHF``                           ``UHF``                     ``cpu::scf::UHF``
 ``scf.RKS``                           ``RKS``                     ``cpu::scf::RKS``
@@ -89,7 +90,8 @@ must supply yourself, and the units. Like Monte Carlo it is CPU-only, takes
 no ``device=``, and stays in ``__all__`` because ``ATV_BUILD_VIB`` is ON by
 default.
 
-Compile-optional rows — ``PW`` / ``PWResult`` (``ATV_BUILD_PW``),
+Compile-optional rows — ``PW`` / ``PWResult`` / ``PWEvaluator``
+(``ATV_BUILD_PW``),
 ``KSpacePME`` (``ATV_BUILD_KSPACE``) and the Gaussian SCF methods
 ``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` (``ATV_BUILD_HF``) — resolve only on
 an extension that was built with that backend and otherwise raise
@@ -165,6 +167,7 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "single_point": ("atomiverse.driver", "single_point"),
     "PW": ("atomiverse.pw", "PW"),
     "PWResult": ("atomiverse.pw", "PWResult"),
+    "PWEvaluator": ("atomiverse.pw", "PWEvaluator"),
     "RHF": ("atomiverse.scf", "RHF"),
     "UHF": ("atomiverse.scf", "UHF"),
     "RKS": ("atomiverse.scf", "RKS"),
@@ -240,7 +243,7 @@ def __getattr__(name: str) -> Any:
     require_cpp()
     mod_name, attr = _COMPUTE_EXPORTS[name]
     # PW types are compile-optional.
-    if name in ("PW", "PWResult") and not hasattr(_cpp, "PW"):
+    if name in ("PW", "PWResult", "PWEvaluator") and not hasattr(_cpp, "PW"):
         raise AttributeError(
             f"module {__name__!r} has no attribute {name!r} "
             "(plane-wave backend not built into this extension; "

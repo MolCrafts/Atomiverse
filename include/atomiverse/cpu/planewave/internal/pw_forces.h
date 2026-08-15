@@ -24,9 +24,12 @@ namespace internal {
 ///
 /// @param frame Geometry [Å]; not mutated.
 /// @param cfg   Plane-wave configuration.
+/// @param energy_ry_out Optional: total (or Mermin free) energy [Ry] of the
+///        SCF run here, so a caller needing both quantities pays for one SCF.
 /// @return Forces [eV/Å], one xyz triple per atom.
 std::vector<std::array<double, 3>>
-pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method);
+pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
+                        double* energy_ry_out = nullptr);
 
 } // namespace internal
 } // namespace pw

@@ -46,6 +46,11 @@
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
+#ifdef ATV_HAS_PW
+#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
+#include "atomiverse/cpu/scf/xc_functional.h"
+#endif
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
@@ -845,6 +850,181 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
     ASSERT_NE(direct_frame.span(ATV::kAtom_z)[1], 0.74);
     expect_frames_bitwise_equal(materialized_frame, direct_frame);
 }
+
+// ── (c″) MD with a plane-wave force source — PW BOMD ────────────────────
+
+#ifdef ATV_HAS_PW
+/// @brief Two silicon atoms in a 4.5 Å cubic cell — the diamond two-atom
+///        basis (0,0,0) and (a/4,a/4,a/4), masses on the mass column.
+///
+/// Same shape as `make_h2_bomd_frame`: literals only, so two constructions
+/// are bitwise identical, and the mass column is filled because dynamics
+/// divides the force by it. Silicon rather than hydrogen because the
+/// in-tree analytic GTH parameterization used below is `GTH-PBE-q4`, i.e.
+/// four valence electrons per atom: two atoms give eight, an even count,
+/// which is what the restricted (`spin_polarized = false`) plane-wave force
+/// path requires — the single-H BOMD regression has to go collinear doublet
+/// for exactly that reason.
+///
+/// The cell is 4.5 Å, not silicon's 5.43 Å: plane-wave cost scales with the
+/// cell volume through the density FFT grid, and this fixture is sized for
+/// the millisecond budget of `tests/`, not for silicon physics (measured:
+/// ~87 ms per BOMD step here, ~440 ms at 5.43 Å). Nothing downstream reads
+/// the number as a lattice constant — the claim under test is that two
+/// pipelines agree bit for bit.
+cpu::Frame make_si2_bomd_frame() {
+    cpu::Frame frame(2);
+    for (int i = 0; i < 2; ++i) {
+        frame.span(ATV::kAtom_type)[i] = 14;      // Z = 14 (silicon)
+        frame.span(ATV::kAtom_mass)[i] = 28.0855; // [amu]
+    }
+    frame.span(ATV::kAtom_x)[0] = 0.0;
+    frame.span(ATV::kAtom_y)[0] = 0.0;
+    frame.span(ATV::kAtom_z)[0] = 0.0;
+    frame.span(ATV::kAtom_x)[1] = 1.125; // a/4 [Å]
+    frame.span(ATV::kAtom_y)[1] = 1.125;
+    frame.span(ATV::kAtom_z)[1] = 1.125;
+    frame.box = ATV::cpu::Box::cubic(4.5); // [Å]
+    return frame;
+}
+
+// PW as an MD force source (py-pw-forces): the `PwEvaluatorParams` payload
+// rides the categorical (`std::nullopt`) evaluator slot — `set_evaluator`,
+// which binds at md::Phase::force order 0, the same slot
+// `on(force).add(PWEvaluator{…}.with_gradient(true))` fills in
+// regressions/pw/pw-bomd-h. Two steps, each one a full plane-wave SCF plus
+// analytic forces.
+//
+// The SCF settings are deliberately CHEAP, not converged: 2 Ry is an order
+// of magnitude below a production silicon cutoff, `k_mesh = 1` is Γ-only,
+// and `max_iter = 2` stops the loop long before `tol` is met. That is sound
+// here because the claim under test is FIDELITY — the materialized driver
+// must reproduce the hand-built one bit for bit — and two pipelines running
+// the same unconverged SCF must still agree exactly. Converging it would
+// buy nothing and cost seconds per step, which `tests/` does not have.
+TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
+    constexpr double kPwDt = 0.5;      // [fs]
+    constexpr int kPwSteps = 2;        // PW SCF per step — keep it short
+    constexpr double kPwT = 10.0;      // [K] gentle KE
+    constexpr unsigned kPwSeed = 7u;   // matches the BOMD regression
+    constexpr double kPwEcut = 2.0;    // [Ry] cheap on purpose (see above)
+    constexpr int kPwKMesh = 1;        // Γ only
+    constexpr double kPwTol = 1e-4;    // never reached at max_iter = 2
+    constexpr int kPwMaxIter = 2;      // cost cap, not a convergence claim
+    constexpr double kPwMixBeta = 0.7; // cpu::pw::PW default
+    constexpr int kPwPulayDepth = 5;   // cpu::pw::PW default
+    constexpr double kPwDegauss = 0.02;
+    constexpr int kPwMpOrder = 1;
+    constexpr int kPwExtraBands = 4;
+
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kPwDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kPwT, kPwSeed}, std::nullopt});
+    // `xc = 0` is LSDA, NOT the `XCType::PBE` default: the wire carries the
+    // functional as an i32, so a materializer arm that forgot the cast (or
+    // ignored the field) would silently run PBE and the twin below — which
+    // names the enumerator — would disagree. It is also the cheaper
+    // functional, no gradient corrections.
+    entries.push_back(
+        MDComponentEntry{PwEvaluatorParams{/*upf_path=*/"",
+                                           /*gth_name=*/"GTH-PBE-q4",
+                                           /*ecut_ry=*/kPwEcut,
+                                           /*k_mesh=*/kPwKMesh,
+                                           /*tol=*/kPwTol,
+                                           /*max_iter=*/kPwMaxIter,
+                                           /*mix_beta=*/kPwMixBeta,
+                                           /*pulay_depth=*/kPwPulayDepth,
+                                           /*xc=*/0,
+                                           /*spin_polarized=*/false,
+                                           /*multiplicity=*/1,
+                                           /*smearing=*/0,
+                                           /*degauss=*/kPwDegauss,
+                                           /*mp_order=*/kPwMpOrder,
+                                           /*extra_bands=*/kPwExtraBands},
+                         std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kPwSteps});
+
+    cpu::Frame materialized_frame = make_si2_bomd_frame();
+    TaskMaterializer mat(spec);
+    EXPECT_EQ(mat.kind(), TaskKind::MD);
+    mat.run(materialized_frame);
+
+    // Hand-built twin, registered in the spec's entry order. Every one of
+    // the fifteen knobs is assigned in the params' declaration order — the
+    // order the codec writes and the materializer replays — so a dropped or
+    // swapped field shows up as a bitwise mismatch rather than as a silent
+    // default. `with_gradient` is spelled explicitly on both sides: forces
+    // are what makes the evaluator an MD force source, and the component
+    // default is false.
+    cpu::Frame direct_frame = make_si2_bomd_frame();
+    cpu::pw::PW pw;
+    pw.upf_path = "";
+    pw.gth_name = "GTH-PBE-q4";
+    pw.ecut_ry = kPwEcut;
+    pw.k_mesh = kPwKMesh;
+    pw.tol = kPwTol;
+    pw.max_iter = kPwMaxIter;
+    pw.mix_beta = kPwMixBeta;
+    pw.pulay_depth = kPwPulayDepth;
+    pw.xc = cpu::scf::XCType::LSDA;
+    pw.spin_polarized = false;
+    pw.multiplicity = 1;
+    pw.smearing = cpu::pw::Smearing::none;
+    pw.degauss = kPwDegauss;
+    pw.mp_order = kPwMpOrder;
+    pw.extra_bands = kPwExtraBands;
+
+    cpu::md::MD sim;
+    sim.set_integrator(cpu::md::VelocityVerlet{kPwDt});
+    sim.set_observer(cpu::md::InitVelocity{kPwT, kPwSeed});
+    // `PW` is move-only (it owns FFTW plans and SCF workspaces), so the
+    // solver moves into the evaluator and the evaluator prvalue moves into
+    // the owning setter — no named local to copy from.
+    sim.set_evaluator(cpu::pw::PWEvaluator{std::move(pw)}.with_gradient(true));
+    sim.build();
+    sim.run(direct_frame, kPwSteps);
+
+    const double direct_energy = direct_frame.meta.get(ATV::kEnergy);
+    ASSERT_NE(direct_energy, 0.0)
+        << "PW Si2 BOMD produced zero energy — the equivalence check would "
+           "be vacuous";
+    ASSERT_TRUE(std::isfinite(direct_energy))
+        << "PW Si2 BOMD produced a non-finite energy (" << direct_energy
+        << ") — bitwise equality of two NaNs would be meaningless";
+    // The run actually integrated: atom 1 left its fixture coordinate.
+    ASSERT_NE(direct_frame.span(ATV::kAtom_z)[1], 1.125);
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+#else
+// Gating contract (py-pw-forces): the params struct and the wire ID are
+// unconditional, so a build without the plane-wave solver still DECODES a
+// payload naming PW — and must then refuse it loudly at materialize time
+// rather than running an MD with no force source. Same shape as
+// `throw_kspace_not_built` / `throw_io_not_built`.
+TEST(TaskMaterializer, MdPwEvaluatorWithoutPwBuildThrows) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{PwEvaluatorParams{"", "GTH-PBE-q4", 2.0, 1, 1e-4, 2,
+                                           0.7, 5, 0, false, 1, 0, 0.02, 1, 4},
+                         std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), 1});
+
+    try {
+        TaskMaterializer mat(spec);
+        cpu::Frame frame = make_lj_frame();
+        mat.run(frame);
+        FAIL() << "a PWEvaluator payload was accepted in a PW-less build";
+    } catch (const std::runtime_error& err) {
+        EXPECT_NE(std::string(err.what()).find("ATV_BUILD_PW"),
+                  std::string::npos)
+            << err.what();
+    }
+}
+#endif // ATV_HAS_PW
 
 // ── (d) kind() accessor ─────────────────────────────────────────────────
 

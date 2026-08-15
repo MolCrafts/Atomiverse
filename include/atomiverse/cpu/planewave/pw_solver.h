@@ -147,13 +147,35 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
 
-    /// @brief One-time setup: parses the UPF (if any) and validates Z.
-    /// @param reference Frame used only to validate atom types.
+    /// @brief One-time setup: allocate the step helpers and resolve the
+    ///        pseudopotential up front, so a bad file or an unknown GTH name
+    ///        fails here rather than mid-SCF. `run()` calls it lazily.
+    /// @param reference Frame used only to validate atom types (the first
+    ///        atom's Z selects the GTH entry).
+    /// @throws std::invalid_argument when neither or both of `upf_path` /
+    ///         `gth_name` are set — a plane-wave run has no default
+    ///         pseudopotential — or when the named potential does not
+    ///         resolve.
     void build(const cpu::Frame& reference);
 
     /// @brief Plane-wave SCF at the frame's current geometry.
+    ///
+    /// Lazily calls `build(frame)` when it has not run yet. Exhausting
+    /// `max_iter` is **not** an error: the returned result carries
+    /// `converged == false` and the last density's energy, so callers must
+    /// read the flag.
+    ///
     /// @param frame Atom positions [Å], types (Z), and simulation cell.
     /// @return Owned `PWResult` (valid until next `run()`).
+    /// @throws std::invalid_argument when the restricted, fixed-occupation
+    ///         path is handed an odd valence-electron count
+    ///         (`internal::require_closed_shell`, the same gate
+    ///         `pw_forces_analytic` and `pw_stress` apply — an energy the
+    ///         gradient paths refuse is not one this path may report); when
+    ///         `spin_polarized` is set with `multiplicity < 1` or with a
+    ///         multiplicity whose parity contradicts the electron count; and
+    ///         from `build()` when the pseudopotential source is missing,
+    ///         doubly set, or unresolvable.
     PWResult& run(const cpu::Frame& frame);
 
     /// @brief Most recent SCF result.
@@ -161,7 +183,8 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
 
   private:
     /// @brief Wire path-local stage StepFns + compile Plan (rebuilds each drive).
-    void ensure_driver_built_(VeffStage::StepFn veff, DiagonalizeStage::StepFn diag,
+    void ensure_driver_built_(VeffStage::StepFn veff,
+                              DiagonalizeStage::StepFn diag,
                               DensityStage::StepFn dens, MixStage::StepFn mix);
 
     /// @brief Drop wired stages / Plan / criteria so the next ensure rebinds.
@@ -198,27 +221,84 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
 };
 
 /// @brief Finite-difference ionic forces [eV/Å] (oracle for analytic).
+///
+/// Central differences of the SCF total energy in each Cartesian coordinate:
+/// \(F_{i\alpha} = -[E(R_{i\alpha}+h) - E(R_{i\alpha}-h)] / 2h\), with \(E\)
+/// converted from the solver's Ry to eV by `qe_units::rydberg_to_ev` so the
+/// result is in the engine's eV/Å. That is \(6N\) full SCF solves for \(N\)
+/// atoms, so this is the correctness oracle for `pw_forces_analytic`, never
+/// the production path.
+///
+/// @param frame  Geometry [Å]; not mutated (each solve runs on a displaced
+///               copy).
+/// @param method Plane-wave method members; copied per displacement via
+///               `internal::copy_pw_params`.
+/// @param h_ang  Displacement step [Å], default 1e-3. Must be > 0: too small
+///               and the SCF tolerance dominates, too large and the cubic
+///               truncation error does.
+/// @return Per-atom force triples \((F_x, F_y, F_z)\) [eV/Å], one per atom
+///         in Frame order.
+/// @throws std::invalid_argument when @p h_ang <= 0 or the frame has no
+///         atoms, plus anything the \(6N\) `PW::run` calls themselves throw.
 std::vector<std::array<double, 3>>
 pw_forces_fd(const cpu::Frame& frame, const PW& method, double h_ang = 1e-3);
 
 /// @brief Analytic ionic forces [eV/Å] (local HF + Ewald + KB nonlocal).
-std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
-                                                      const PW& method);
+///
+/// Runs its OWN SCF and assembles \(\mathbf{F}_i = -\partial E/\partial
+/// \mathbf{R}_i\) from the converged density — local Hellmann-Feynman,
+/// Ewald ion-ion and Kleinman-Bylander nonlocal terms — rather than
+/// differencing energies. `PW::last_result()` is left untouched.
+///
+/// @param frame Geometry [Å]; not mutated.
+/// @param method Plane-wave method members.
+/// @param energy_ry_out Optional: free/total energy [Ry] of the SCF this
+///        force evaluation ran, same out-parameter shape as `pw_stress` and
+///        for the same reason — a caller that also needs the energy would
+///        otherwise pay for a second, redundant SCF. Written before the
+///        force assembly, and written even when that SCF hit `max_iter`
+///        without converging (a warning is logged; the last density is
+///        used).
+/// @return Per-atom force triples [eV/Å], one per atom in Frame order.
+/// @throws std::invalid_argument on an empty frame; on `spin_polarized`
+///         combined with metallic `smearing` (no force path yet); on
+///         `degauss <= 0` with smearing on; on a `multiplicity` incompatible
+///         with the electron count; and, on the restricted fixed-occupation
+///         path, on an odd valence-electron count
+///         (`internal::require_closed_shell`).
+std::vector<std::array<double, 3>>
+pw_forces_analytic(const cpu::Frame& frame, const PW& method,
+                   double* energy_ry_out = nullptr);
 
 /// @brief Nielsen–Martin analytic cell stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
 ///
 /// One SCF + Hellmann–Feynman cell derivatives (kinetic, Hartree, local PP,
-/// Ewald, XC, KB nonlocal). Matches strain-FD of the total energy for fixed
-/// occupations, or of the Mermin free energy \(F=E_{\mathrm{KS}}-TS\) when
-/// restricted metallic `smearing` is set. Mechanical / CP2K sign:
+/// Ewald, XC, KB nonlocal), evaluated as central differences of the
+/// *non-self-consistent* energy under symmetric strain at the converged
+/// density: ~1 SCF + 12 Davidson diagonalizations, not 12 SCFs (that is
+/// `pw_stress_fd`). Matches strain-FD of the total energy for fixed
+/// occupations, or of the Mermin free energy \(F=E_{\mathrm{KS}}-TS\) — with
+/// \(T\) the fictitious electronic temperature set by `degauss` [Ry] and
+/// \(S\) the occupation entropy — when restricted metallic `smearing` is
+/// set. Mechanical / CP2K sign:
 /// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\) (positive when
 /// compressed — drives `IsotropicCellRelax` to expand). Supports restricted
 /// fixed closed shell, restricted metallic smear, and collinear
 /// fixed-occupation UKS (remaps both \(\rho_\uparrow\) and \(\rho_\downarrow\));
 /// spin∧smear analytic stress remains a deeper product row (`pw_stress_fd`).
 ///
+/// @param frame  Geometry [Å] and cell; not mutated.
+/// @param method Plane-wave method members.
 /// @param energy_ry_out Optional: free/total energy [Ry] from the production
 ///        SCF (avoids a second SCF when the evaluator also needs energy).
+/// @return Voigt stress \((\sigma_{xx},\sigma_{yy},\sigma_{zz},\sigma_{xy},
+///         \sigma_{xz},\sigma_{yz})\) [eV/Å³].
+/// @throws std::invalid_argument on an empty frame or non-positive cell
+///         volume; on `spin_polarized` combined with metallic `smearing`
+///         (no analytic path yet — use `pw_stress_fd`); on `degauss <= 0`
+///         with smearing on; on a `multiplicity` incompatible with the
+///         electron count; and, on the restricted fixed-occupation path, on
+///         an odd valence-electron count (`internal::require_closed_shell`).
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
                                 double* energy_ry_out = nullptr);
 

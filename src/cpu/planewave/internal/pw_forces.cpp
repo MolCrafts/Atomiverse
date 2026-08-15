@@ -85,8 +85,7 @@ std::complex<AccReal> im_l_factor(int l) {
 /// @param n_atoms Atom count (form factor is per-species, not per-atom).
 /// @param upf_vg  Radial local form factor v(G) [Hartree], one per G.
 void accumulate_local_forces(const PWWorkspace& ws, const GVectorList& gv,
-                             int n_atoms,
-                             const std::vector<AccReal>& upf_vg,
+                             int n_atoms, const std::vector<AccReal>& upf_vg,
                              std::vector<Vec3>& F_ha_bohr) {
     const AccReal omega = ws.omega;
 
@@ -221,7 +220,8 @@ void accumulate_nl_forces_k(const PWWorkspace& ws, AccReal weight, int n_bands,
 } // namespace
 
 std::vector<std::array<double, 3>>
-pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
+pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
+                        double* energy_ry_out) {
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument("pw_forces_analytic: frame has no atoms");
@@ -263,12 +263,8 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
         // Empty states near E_F: ceil(N_e/2) + extra_bands (energy twin).
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
         n_bands = n_occ_ceil + std::max(method.extra_bands, 0);
-    } else if (n_elec % 2 != 0) {
-        throw std::invalid_argument(
-            "pw_forces_analytic: "
-            + std::to_string(n_elec)
-            + " valence electrons is not closed-shell — use spin_polarized "
-              "for open shell, or set smearing for metallic occupations");
+    } else {
+        require_closed_shell(n_elec, "pw_forces_analytic");
     }
 
     PoissonSolver poisson;
@@ -288,9 +284,9 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
     } else if (use_smear) {
         DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1),
                                 40};
-        res = run_scf_smear_restricted(frame, method, scf_prob, poisson, xc,
-                                       veff, density, davidson, n_bands,
-                                       "forces");
+        res =
+            run_scf_smear_restricted(frame, method, scf_prob, poisson, xc, veff,
+                                     density, davidson, n_bands, "forces");
     } else {
         DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1),
                                 40};
@@ -302,6 +298,11 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
                  "forces use last density",
                  res.iterations);
     }
+    // Published before the force assembly so the number a caller reads is the
+    // energy of exactly the density these forces are the gradient of — not of
+    // a second, separately converged SCF.
+    if (energy_ry_out != nullptr)
+        *energy_ry_out = res.energy;
 
     PWWorkspace& ws = scf_prob.ws;
     ws.gvec = &scf_prob.gv0;
@@ -444,7 +445,8 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
                     ws.eigenvalues.begin()
                         + std::min(n_bands,
                                    static_cast<int>(ws.eigenvalues.size())));
-                if (static_cast<int>(evals_k[static_cast<std::size_t>(ik)].size())
+                if (static_cast<int>(
+                        evals_k[static_cast<std::size_t>(ik)].size())
                     > n_bands)
                     evals_k[static_cast<std::size_t>(ik)].resize(
                         static_cast<std::size_t>(n_bands));
@@ -506,9 +508,9 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method) {
                 const int nb = static_cast<int>(ev.size());
                 std::vector<AccReal> occ(static_cast<std::size_t>(nb));
                 for (int b = 0; b < nb; ++b)
-                    occ[static_cast<std::size_t>(b)] = smear_f_band(
-                        ev[static_cast<std::size_t>(b)], mu_ha, degauss_ha,
-                        smear_kind, mp_order);
+                    occ[static_cast<std::size_t>(b)] =
+                        smear_f_band(ev[static_cast<std::size_t>(b)], mu_ha,
+                                     degauss_ha, smear_kind, mp_order);
 
                 const AccReal weight =
                     scf_prob.kg.weights[static_cast<std::size_t>(ik)];

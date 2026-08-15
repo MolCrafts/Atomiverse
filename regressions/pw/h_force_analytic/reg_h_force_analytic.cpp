@@ -20,8 +20,9 @@ int main() {
     // eV/Å. A single atom at the origin of a cubic cell: the force is zero by
     // point symmetry, not by convergence, so this is a machine-precision
     // identity and NOT an SCF-quality bound — it holds even though the 8-iter
-    // SCF below stops short of `cfg.tol`. Measured with GTH-PBE-q1 at
-    // ecut_ry=5: |F| = 3.9e-15 for both the analytic and the evaluator path.
+    // SCF below stops short of `cfg.tol`. Measured 2026-08-15 with GTH-PBE-q1
+    // at ecut_ry=5, spin-polarized doublet: |F| = 6.6e-16 for both the
+    // analytic and the evaluator path.
     // (The pre-GTH value of 0.5 was sized for the deleted toy potential and
     // was ~14 orders of magnitude too loose to detect a broken force term.)
     const double tol = 1e-9;
@@ -41,6 +42,12 @@ int main() {
     cfg.tol = 1e-4;
     cfg.max_iter = 8;
     cfg.mix_beta = 0.5;
+    // One valence electron is open-shell: the restricted force path rejects an
+    // odd electron count (src/cpu/planewave/internal/pw_forces.cpp:266). A lone
+    // H is a doublet (S = 1/2), so N↑−N↓ = 1 ⇒ multiplicity 2; the default 1
+    // would fail the parity check in the same guard.
+    cfg.spin_polarized = true;
+    cfg.multiplicity = 2;
 
     const auto F = pw_forces_analytic(frame, cfg);
     if (F.size() != 1u) {

@@ -426,6 +426,91 @@ inline bool operator==(const AM1EvaluatorParams& a,
            && a.energy_tol == b.energy_tol;
 }
 
+/// @brief Wire mirror of the fifteen public members of `cpu::pw::PW` — the
+///        plane-wave DFT method as an MD force source (plane-wave BOMD).
+///
+/// Like `AM1EvaluatorParams` it rides the categorical evaluator slot, so a
+/// launcher payload can drive Born-Oppenheimer dynamics on a plane-wave
+/// Hamiltonian — the electrons re-converged at every geometry the nuclei
+/// reach. Budget two SCF solves per force-producing step, not one: the
+/// evaluator runs the energy SCF and then the analytic force path, which
+/// converges its own density (`cpu/planewave/pw_evaluator.cpp`).
+///
+/// The solver itself needs `ATV_BUILD_PW` (FFTW3 + the plane-wave sources),
+/// but this mirror does not: the wire layer is always compiled, so a payload
+/// naming PW stays decodable on a build without the solver and is refused
+/// with a how-to when `TaskMaterializer` tries to construct it — exactly the
+/// `KSpacePmeParams` / `XyzRecorderParams` arrangement.
+///
+/// Two members cross the wire as plain `int` rather than as their C++ enums
+/// (`cpu::scf::XCType`, `cpu::pw::Smearing`): those enums live in headers
+/// behind the build flag, and this struct is compiled unconditionally. The
+/// materializer casts them back on the way in, so the enumerator VALUES are
+/// part of the wire contract.
+///
+/// Field order is the declaration order below, which is what `task_codec`
+/// writes and `task_materializer` replays; this declaration therefore doubles
+/// as the byte layout. Defaults are `cpu::pw::PW`'s own, member for member.
+struct PwEvaluatorParams {
+    /// @brief Norm-conserving UPF (Unified Pseudopotential Format) file — a
+    ///        pseudopotential replaces the nucleus plus core electrons by an
+    ///        effective potential, which is what makes the plane-wave
+    ///        expansion affordable. Mutually exclusive with `gth_name`;
+    ///        exactly one must be set (checked by `cpu::pw::PW::build`, not
+    ///        here — a plane-wave run has no default pseudopotential).
+    std::string upf_path;
+    /// @brief In-tree analytic Goedecker-Teter-Hutter parameterization, e.g.
+    ///        "GTH-PBE-q4". Needs no external file. Mutually exclusive with
+    ///        `upf_path`. One potential serves the whole cell, so a frame
+    ///        mixing atomic numbers is refused at run time.
+    std::string gth_name;
+    /// @brief Wavefunction cutoff [Ry] — plane waves with kinetic energy
+    ///        above it are dropped, so this sets basis size and cost.
+    double ecut_ry = 30.0;
+    /// @brief Monkhorst-Pack mesh size per dimension (dimensionless); the
+    ///        Brillouin zone is sampled on `k_mesh`³ equally weighted points,
+    ///        1 meaning the Gamma point alone.
+    int k_mesh = 4;
+    /// @brief SCF tolerance on the density-change L2 norm (dimensionless).
+    double tol = 1e-6;
+    /// @brief Maximum SCF iterations (dimensionless count).
+    int max_iter = 50;
+    /// @brief Density mixing parameter (QE `mixing_beta`, dimensionless).
+    double mix_beta = 0.7;
+    /// @brief Pulay mixing history window (dimensionless count).
+    int pulay_depth = 5;
+    /// @brief Exchange-correlation functional as the integer value of
+    ///        `cpu::scf::XCType` (0 = LSDA, 1 = PBE = the C++ default, …).
+    int xc = 1;
+    /// @brief Collinear spin-polarized KS (nspin = 2); false = restricted.
+    bool spin_polarized = false;
+    /// @brief Spin multiplicity 2S+1, read only when `spin_polarized`.
+    int multiplicity = 1;
+    /// @brief Metallic smearing kind as the integer value of
+    ///        `cpu::pw::Smearing` (0 = none = fixed occupations, 1 =
+    ///        Fermi-Dirac, 2 = Methfessel-Paxton, 3 = Gaussian).
+    int smearing = 0;
+    /// @brief Smearing width [Ry] (QE `degauss`); must be > 0 when smearing
+    ///        is on.
+    double degauss = 0.02;
+    /// @brief Methfessel-Paxton order N, read only by that smearing arm
+    ///        (dimensionless).
+    int mp_order = 1;
+    /// @brief Extra empty bands beyond ceil(N_e/2) when smearing is on
+    ///        (dimensionless count, per spin channel when collinear).
+    int extra_bands = 4;
+};
+inline bool operator==(const PwEvaluatorParams& a, const PwEvaluatorParams& b) {
+    return a.upf_path == b.upf_path && a.gth_name == b.gth_name
+           && a.ecut_ry == b.ecut_ry && a.k_mesh == b.k_mesh && a.tol == b.tol
+           && a.max_iter == b.max_iter && a.mix_beta == b.mix_beta
+           && a.pulay_depth == b.pulay_depth && a.xc == b.xc
+           && a.spin_polarized == b.spin_polarized
+           && a.multiplicity == b.multiplicity && a.smearing == b.smearing
+           && a.degauss == b.degauss && a.mp_order == b.mp_order
+           && a.extra_bands == b.extra_bands;
+}
+
 /// @brief Mirrors the `cpu::minimizer::LBFGS` constructor exactly.
 struct LBFGSParams {
     int memory = 5;
@@ -483,6 +568,10 @@ enum class ComponentId : std::uint16_t {
     /// XYZ trajectory sink — `cpu::XyzRecorder`. Decodable everywhere;
     /// materializable only where `ATV_BUILD_IO` compiled the writer in.
     XyzRecorder = 19,
+    /// Plane-wave DFT force source — `cpu::pw::PWEvaluator`. Decodable
+    /// everywhere; materializable only where `ATV_BUILD_PW` compiled the
+    /// plane-wave solver in.
+    PWEvaluator = 20,
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -527,6 +616,8 @@ inline const char* component_name(ComponentId id) noexcept {
         return "KSpacePME";
     case ComponentId::XyzRecorder:
         return "XyzRecorder";
+    case ComponentId::PWEvaluator:
+        return "PWEvaluator";
     }
     return "unknown";
 }
@@ -538,7 +629,7 @@ using MDComponentParams =
                  ThermoParams, AM1EvaluatorParams, FixLangevinParams,
                  FixCsvrParams, NoseHooverNptParams, ParrinelloRahmanNptParams,
                  BerendsenBarostatParams, PairCoulCutParams, CoulLongParams,
-                 KSpacePmeParams, XyzRecorderParams>;
+                 KSpacePmeParams, XyzRecorderParams, PwEvaluatorParams>;
 
 using MinimizeComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, LBFGSParams>;
@@ -590,6 +681,8 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::KSpacePME;
             else if constexpr (std::is_same_v<P, XyzRecorderParams>)
                 return ComponentId::XyzRecorder;
+            else if constexpr (std::is_same_v<P, PwEvaluatorParams>)
+                return ComponentId::PWEvaluator;
             else
                 static_assert(detail::unsupported_component_v<P>);
         },

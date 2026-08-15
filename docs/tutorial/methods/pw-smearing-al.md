@@ -119,8 +119,9 @@ const PWResult& r = pw.run(f);
 ```
 
 `PWResult` fields used by the gate: `energy`, `e_fermi`, `n_elec_occ`,
-`e_entropy`, `converged`, `iterations`. Empty `upf_path` still runs a toy
-\(V_{\mathrm{loc}}\) path (unphysical energy; occupations still exercise).
+`e_entropy`, `converged`, `iterations`. A pseudopotential is not optional:
+leaving both `upf_path` and `gth_name` empty throws at `build()` — the
+bare-Coulomb "toy" fallback that once ran here has been deleted.
 
 ```bash
 # configure (login shell + Lmod — see AGENTS.md)
@@ -223,8 +224,8 @@ same-Hamiltonian throughput claim. Handoff records ratio **0.008**
 - **CUDA PW smearing** out of scope.
 - **Forces under smear** may inherit the occupation path; not an acceptance
   pin for this slug.
-- **Toy UPF path** (empty `upf_path`) exercises occupations but is
-  unphysical for the energy pin.
+- **No pseudopotential-free path.** Empty `upf_path` *and* empty `gth_name`
+  throws at `build()`; the old bare-Coulomb "toy" fallback is gone.
 - **Speed.** \(r\approx 0.008\) on the documented dual; no multi-system
   standing CP2K perf suite in ctest.
 

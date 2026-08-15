@@ -136,7 +136,8 @@ void PW::reset_built_driver_() {
     wired_self_ = nullptr;
 }
 
-void PW::ensure_driver_built_(VeffStage::StepFn veff, DiagonalizeStage::StepFn diag,
+void PW::ensure_driver_built_(VeffStage::StepFn veff,
+                              DiagonalizeStage::StepFn diag,
                               DensityStage::StepFn dens, MixStage::StepFn mix) {
     if (driver_built_) {
         if (wired_self_ == this)
@@ -210,8 +211,8 @@ void PW::build(const cpu::Frame& reference) {
     } else {
         const int* __restrict sp_type = reference.span(kAtom_type);
         if (reference.nlocal() > 0)
-            (void)gpw::GthPotential(
-                static_cast<molrs::Element>(sp_type[0]), gth_name);
+            (void)gpw::GthPotential(static_cast<molrs::Element>(sp_type[0]),
+                                    gth_name);
     }
     built_ = true;
 }
@@ -251,6 +252,11 @@ PWResult& PW::run(const cpu::Frame& frame) {
     ws.mix_beta = AccReal(mix_beta);
     ws.pulay_depth = pulay_depth;
 
+    // Declared here rather than beside the band count below because the
+    // occupation split needs it: metallic smearing is what makes an odd
+    // valence-electron count legal on the restricted path.
+    const bool use_smear = (smearing != Smearing::none);
+
     // Collinear occupation split: N↑ − N↓ = multiplicity − 1, N↑ + N↓ = n_elec.
     int n_alpha = n_elec / 2;
     int n_beta = n_elec - n_alpha;
@@ -285,6 +291,13 @@ PWResult& PW::run(const cpu::Frame& frame) {
             ws.rho_spin_G_old[1][ig] = ws.rho_spin_G[1][ig];
         }
     } else {
+        // Same gate the force and stress paths apply, for the same reason:
+        // without smearing the restricted path derives its band count as
+        // n_elec / 2, so an odd count would drop an electron and converge on
+        // a different system than the one asked for. Refusing an energy the
+        // gradient paths already refuse is what keeps the three in step.
+        if (!use_smear)
+            internal::require_closed_shell(n_elec, "PW::run");
         ws.nspin = 1;
         result_.magnetization = 0;
     }
@@ -295,7 +308,6 @@ PWResult& PW::run(const cpu::Frame& frame) {
         spin_polarized ? std::max(n_bands_a, n_bands_b) : prob.n_bands;
     // Restricted band count stays n_elec/2 from setup.
     const int n_bands_r = spin_polarized ? n_bands : prob.n_bands;
-    const bool use_smear = (smearing != Smearing::none);
     if (use_smear && !(degauss > 0.0))
         throw std::invalid_argument(
             "PW::run: degauss must be > 0 [Ry] when smearing is enabled");
@@ -323,9 +335,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                  "k_mesh={} ranks={} spin={} mult={} Na={} Nb={} smear={}",
                  frame.nlocal(), n_elec, n_bands_eff, ecut_ry,
                  upf_path.empty() ? gth_name.c_str() : "upf", k_mesh,
-                 layout.nprocs,
-                 spin_polarized ? 2 : 1, multiplicity, n_alpha, n_beta,
-                 use_smear ? 1 : 0);
+                 layout.nprocs, spin_polarized ? 2 : 1, multiplicity, n_alpha,
+                 n_beta, use_smear ? 1 : 0);
 
     // ── Step-helper preparation (grid-sized scratch) ──
     xc_->prepare(ws);
@@ -390,7 +401,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                         ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
                     veff_->step(ws);
 
-                    for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                    for (int ik = layout.rank; ik < n_kpts;
+                         ik += layout.nprocs) {
                         auto& gvk = prob.gv_k[ik];
                         ws.gvec = &gvk;
                         ws.n_g = gvk.count();
@@ -419,14 +431,16 @@ PWResult& PW::run(const cpu::Frame& frame) {
 #ifdef ATV_HAS_MPI
                 if (layout.active) {
                     std::vector<AccReal> pack(
-                        static_cast<std::size_t>(2 * n_kpts * n_bs), AccReal(0));
+                        static_cast<std::size_t>(2 * n_kpts * n_bs),
+                        AccReal(0));
                     for (int s = 0; s < 2; ++s) {
                         for (int ik = layout.rank; ik < n_kpts;
                              ik += layout.nprocs) {
-                            const auto& ev =
-                                evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                            const auto& ev = evals_sk[static_cast<std::size_t>(
+                                s * n_kpts + ik)];
                             for (int b = 0;
-                                 b < n_bs && b < static_cast<int>(ev.size()); ++b)
+                                 b < n_bs && b < static_cast<int>(ev.size());
+                                 ++b)
                                 pack[static_cast<std::size_t>(
                                     (s * n_kpts + ik) * n_bs + b)] = ev[b];
                         }
@@ -435,8 +449,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                                   mpi_real_type(), MPI_SUM, MPI_COMM_WORLD);
                     for (int s = 0; s < 2; ++s) {
                         for (int ik = 0; ik < n_kpts; ++ik) {
-                            auto& ev =
-                                evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                            auto& ev = evals_sk[static_cast<std::size_t>(
+                                s * n_kpts + ik)];
                             ev.resize(static_cast<std::size_t>(n_bs));
                             for (int b = 0; b < n_bs; ++b)
                                 ev[static_cast<std::size_t>(b)] =
@@ -453,7 +467,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 std::vector<AccReal> all_evals;
                 std::vector<AccReal> all_weights;
                 all_evals.reserve(static_cast<std::size_t>(2 * n_kpts * n_bs));
-                all_weights.reserve(static_cast<std::size_t>(2 * n_kpts * n_bs));
+                all_weights.reserve(
+                    static_cast<std::size_t>(2 * n_kpts * n_bs));
                 for (int s = 0; s < 2; ++s) {
                     for (int ik = 0; ik < n_kpts; ++ik) {
                         const AccReal w =
@@ -462,7 +477,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                             evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                         for (int b = 0;
                              b < n_bs && b < static_cast<int>(ev.size()); ++b) {
-                            all_evals.push_back(ev[static_cast<std::size_t>(b)]);
+                            all_evals.push_back(
+                                ev[static_cast<std::size_t>(b)]);
                             all_weights.push_back(w);
                         }
                     }
@@ -506,7 +522,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 e_band = 0;
                 for (int s = 0; s < 2; ++s) {
                     density_->begin(ws);
-                    for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                    for (int ik = layout.rank; ik < n_kpts;
+                         ik += layout.nprocs) {
                         auto& gvk = prob.gv_k[ik];
                         ws.gvec = &gvk;
                         ws.n_g = gvk.count();
@@ -574,8 +591,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 result_.e_fermi =
                     static_cast<double>(mu_ha) / qe_units::rydberg_to_hartree;
 
-                auto terms = internal::iteration_energy(ws, e_band, prob.ew_total,
-                                                        vol_bohr);
+                auto terms = internal::iteration_energy(
+                    ws, e_band, prob.ew_total, vol_bohr);
                 terms.e_one =
                     e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
                 terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total
@@ -585,9 +602,10 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 result_.energy_ha = static_cast<double>(terms.total);
                 result_.energy =
                     result_.energy_ha / qe_units::rydberg_to_hartree;
-                result_.e_entropy =
-                    static_cast<double>(e_ent_ha) / qe_units::rydberg_to_hartree;
-                internal::log_iteration_energy(terms, ws, prob.ew_total, iter_log);
+                result_.e_entropy = static_cast<double>(e_ent_ha)
+                                    / qe_units::rydberg_to_hartree;
+                internal::log_iteration_energy(terms, ws, prob.ew_total,
+                                               iter_log);
                 ++iter_log;
             });
 
@@ -655,17 +673,20 @@ PWResult& PW::run(const cpu::Frame& frame) {
 #ifdef ATV_HAS_MPI
                 if (layout.active) {
                     std::vector<AccReal> pack(
-                        static_cast<std::size_t>(n_kpts * n_bands_eff), AccReal(0));
-                    for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                        static_cast<std::size_t>(n_kpts * n_bands_eff),
+                        AccReal(0));
+                    for (int ik = layout.rank; ik < n_kpts;
+                         ik += layout.nprocs) {
                         const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                         for (int b = 0;
                              b < n_bands_eff && b < static_cast<int>(ev.size());
                              ++b)
-                            pack[static_cast<std::size_t>(ik * n_bands_eff + b)] =
-                                ev[b];
+                            pack[static_cast<std::size_t>(ik * n_bands_eff
+                                                          + b)] = ev[b];
                     }
-                    MPI_Allreduce(MPI_IN_PLACE, pack.data(), n_kpts * n_bands_eff,
-                                  mpi_real_type(), MPI_SUM, MPI_COMM_WORLD);
+                    MPI_Allreduce(MPI_IN_PLACE, pack.data(),
+                                  n_kpts * n_bands_eff, mpi_real_type(),
+                                  MPI_SUM, MPI_COMM_WORLD);
                     for (int ik = 0; ik < n_kpts; ++ik) {
                         evals_k[static_cast<std::size_t>(ik)].resize(
                             static_cast<std::size_t>(n_bands_eff));
@@ -682,14 +703,18 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 auto* saved_gvec = ws.gvec;
                 std::vector<AccReal> all_evals;
                 std::vector<AccReal> all_weights;
-                all_evals.reserve(static_cast<std::size_t>(n_kpts * n_bands_eff));
-                all_weights.reserve(static_cast<std::size_t>(n_kpts * n_bands_eff));
+                all_evals.reserve(
+                    static_cast<std::size_t>(n_kpts * n_bands_eff));
+                all_weights.reserve(
+                    static_cast<std::size_t>(n_kpts * n_bands_eff));
 
                 for (int ik = 0; ik < n_kpts; ++ik) {
-                    const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                    const AccReal w =
+                        prob.kg.weights[static_cast<std::size_t>(ik)];
                     const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                     for (int b = 0;
-                         b < n_bands_eff && b < static_cast<int>(ev.size()); ++b) {
+                         b < n_bands_eff && b < static_cast<int>(ev.size());
+                         ++b) {
                         all_evals.push_back(ev[static_cast<std::size_t>(b)]);
                         all_weights.push_back(w);
                     }
@@ -760,21 +785,23 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 density_->finish(ws);
                 loop_converged_ = convergence.step(ws);
 
-                const auto terms =
-                    internal::iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+                const auto terms = internal::iteration_energy(
+                    ws, e_band, prob.ew_total, vol_bohr);
                 AccReal e_ha = terms.total;
                 AccReal e_ent_ha = AccReal(0);
                 e_ent_ha = -degauss_ha * entropy_sum;
                 e_ha += e_ent_ha;
                 result_.energy_ha = static_cast<double>(e_ha);
-                result_.energy = result_.energy_ha / qe_units::rydberg_to_hartree;
-                result_.e_fermi = static_cast<double>(mu_ha)
-                                  / qe_units::rydberg_to_hartree;
+                result_.energy =
+                    result_.energy_ha / qe_units::rydberg_to_hartree;
+                result_.e_fermi =
+                    static_cast<double>(mu_ha) / qe_units::rydberg_to_hartree;
                 result_.n_elec_occ = static_cast<double>(n_occ);
-                result_.e_entropy =
-                    static_cast<double>(e_ent_ha) / qe_units::rydberg_to_hartree;
+                result_.e_entropy = static_cast<double>(e_ent_ha)
+                                    / qe_units::rydberg_to_hartree;
 
-                internal::log_iteration_energy(terms, ws, prob.ew_total, iter_log);
+                internal::log_iteration_energy(terms, ws, prob.ew_total,
+                                               iter_log);
                 ++iter_log;
             });
 
@@ -822,7 +849,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                     veff_->step(ws);
 
                     density_->begin(ws);
-                    for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                    for (int ik = layout.rank; ik < n_kpts;
+                         ik += layout.nprocs) {
                         auto& gvk = prob.gv_k[ik];
                         ws.gvec = &gvk;
                         ws.n_g = gvk.count();
@@ -840,7 +868,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
                         for (int b = 0; b < n_occ[s]; ++b)
                             e_band += weight * ws.eigenvalues[b];
 
-                        density_->accumulate_kpoint(ws, weight, n_occ[s], AccReal(1));
+                        density_->accumulate_kpoint(ws, weight, n_occ[s],
+                                                    AccReal(1));
 
                         ws.gvec = saved_gvec;
                         ws.n_g = gv0.count();
@@ -848,8 +877,9 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
 #ifdef ATV_HAS_MPI
                     if (layout.active) {
-                        MPI_Allreduce(MPI_IN_PLACE, density_->accumulation(), ws.nr,
-                                      mpi_real_type(), MPI_SUM, MPI_COMM_WORLD);
+                        MPI_Allreduce(MPI_IN_PLACE, density_->accumulation(),
+                                      ws.nr, mpi_real_type(), MPI_SUM,
+                                      MPI_COMM_WORLD);
                     }
 #endif
                     density_->extract(ws, rho_out[s]);
@@ -889,15 +919,17 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 }
                 loop_converged_ = (std::sqrt(dr) < AccReal(tol));
 
-                auto terms =
-                    internal::iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+                auto terms = internal::iteration_energy(
+                    ws, e_band, prob.ew_total, vol_bohr);
                 terms.e_one =
                     e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
                 terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total
                               + ws.E_aug;
                 result_.energy_ha = static_cast<double>(terms.total);
-                result_.energy = result_.energy_ha / qe_units::rydberg_to_hartree;
-                internal::log_iteration_energy(terms, ws, prob.ew_total, iter_log);
+                result_.energy =
+                    result_.energy_ha / qe_units::rydberg_to_hartree;
+                internal::log_iteration_energy(terms, ws, prob.ew_total,
+                                               iter_log);
                 ++iter_log;
             });
 
@@ -905,7 +937,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
         if (conv) {
             if (log_rank0)
                 ATV_INFO("[pw] converged iter={} energy_ry={:.8f} mag={}",
-                         result_.iterations, result_.energy, result_.magnetization);
+                         result_.iterations, result_.energy,
+                         result_.magnetization);
         } else if (log_rank0) {
             ATV_WARN("[pw] not converged after {} iters energy_ry={:.8f}",
                      max_iter, result_.energy);
@@ -996,10 +1029,10 @@ PWResult& PW::run(const cpu::Frame& frame) {
     return result_;
 }
 
-
 std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
-                                                      const PW& method) {
-    return internal::pw_forces_analytic_impl(frame, method);
+                                                      const PW& method,
+                                                      double* energy_ry_out) {
+    return internal::pw_forces_analytic_impl(frame, method, energy_ry_out);
 }
 
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,

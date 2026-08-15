@@ -4,13 +4,13 @@
 
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 
-#include "atomiverse/cpu/gpw/gth_potential.h"
-#include "atomiverse/cpu/planewave/internal/gth_upf.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
+#include "atomiverse/cpu/planewave/internal/gth_upf.h"
 #include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 
@@ -67,7 +67,6 @@ void setup_upf_vloc(PWWorkspace& ws, const internal::GVectorList& gv,
         ws.V_loc_G[ig] = vg[ig] * std::complex<AccReal>(s_re, s_im);
     }
 }
-
 
 std::vector<Vec3> pos_to_bohr(const cpu::Frame& frame) {
     AccReal a2b = AccReal(1.8897259886);
@@ -406,6 +405,15 @@ int valence_from_z(int z) {
     }
 }
 
+void require_closed_shell(int n_elec, const char* where) {
+    if (n_elec % 2 == 0)
+        return;
+    throw std::invalid_argument(
+        std::string(where) + ": " + std::to_string(n_elec)
+        + " valence electrons is not closed-shell — use spin_polarized "
+          "for open shell, or set smearing for metallic occupations");
+}
+
 UPFData load_pseudopotential(const cpu::Frame& frame,
                              const std::string& upf_path,
                              const std::string& gth_name) {
@@ -469,8 +477,8 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
     const int* __restrict sp_type = frame.span(kAtom_type);
     for (int i = 0; i < n_atoms; ++i) {
         int z = sp_type[i];
-        int v = has_upf ? static_cast<int>(std::lround(static_cast<double>(
-                              upf_early.z_val)))
+        int v = has_upf ? static_cast<int>(
+                              std::lround(static_cast<double>(upf_early.z_val)))
                         : valence_from_z(z);
         n_elec += v;
         valence_charges.push_back(static_cast<AccReal>(v));
@@ -718,8 +726,7 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 
 void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
                       const std::string& upf_path, const std::string& gth_name,
-                      double ecut_ry,
-                      const std::vector<Vec3>& kfrac) {
+                      double ecut_ry, const std::vector<Vec3>& kfrac) {
     if (kfrac.empty())
         throw std::invalid_argument("rebuild_k_tables: empty k-list");
 

@@ -25,9 +25,9 @@ int main() {
     // bounds instead of one blanket number:
     //   * tol_fd    — central differences with the 5e-3 Å step below, so the
     //                 floor is set by the FD step and the 1e-4 SCF tolerance,
-    //                 not by machine epsilon. Measured: 8.3e-7.
+    //                 not by machine epsilon. Measured 2026-08-15: 1.4e-11.
     //   * tol_eval  — the evaluator path returns the analytic gradient here.
-    //                 Measured: 3.9e-15.
+    //                 Measured 2026-08-15: 6.6e-16.
     // The pre-GTH value of 0.5 was sized for the deleted toy potential and was
     // far too loose to detect a dropped or asymmetric force term.
     const double tol_fd = 1e-4;
@@ -48,6 +48,12 @@ int main() {
     cfg.tol = 1e-4;
     cfg.max_iter = 8;
     cfg.mix_beta = 0.5;
+    // One valence electron is open-shell: the restricted force path rejects an
+    // odd electron count (src/cpu/planewave/internal/pw_forces.cpp:266). A lone
+    // H is a doublet (S = 1/2), so N↑−N↓ = 1 ⇒ multiplicity 2; the default 1
+    // would fail the parity check in the same guard.
+    cfg.spin_polarized = true;
+    cfg.multiplicity = 2;
 
     const auto F = pw_forces_fd(frame, cfg, 5e-3);
     if (F.size() != 1u) {

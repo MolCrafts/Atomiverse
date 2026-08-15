@@ -1,7 +1,8 @@
 # Chapter 8. Plane-Wave DFT
 
-API: concrete `cpu::pw::PW` (members) + `PWEvaluator` for Driver binding. Empty UPF path is a toy
-\(V_\mathrm{loc}\); real Si UPF lives in the regression data tree.
+API: concrete `cpu::pw::PW` (members) + `PWEvaluator` for Driver binding. A run needs exactly one
+pseudopotential — `upf_path` (a norm-conserving UPF file; the Si one lives in `tests/data/pw/`) or
+`gth_name` (an in-tree analytic GTH parameterization, no file). Setting neither, or both, throws.
 
 ## Live Result: Silicon Diamond
 
@@ -214,10 +215,13 @@ solver.build(frame);
 const cpu::pw::PWResult& r = solver.run(frame);
 ```
 
-If `upf_path` is empty, the solver falls back to a toy local potential
-(\f$V_{\mathrm{loc}}\propto -1/G^2\f$): the SCF loop still runs and returns a
-finite number, useful for exercising the infrastructure, but the energy is not
-physically meaningful. Use a real UPF for real numbers.
+There is no fallback potential. Leaving both `upf_path` and `gth_name` empty
+throws at `build()`, and so does setting both: a plane-wave run has no default
+pseudopotential, and the bare valence-charge Coulomb potential an earlier
+version fell back to is not representable in a plane-wave basis at any finite
+cutoff — it produced finite numbers that never converged with `ecut_ry`. The
+file-free option is `gth_name` (for example `"GTH-PBE-q4"` for silicon), whose
+published parameters ship in the tree.
 
 ## Build and run the example
 

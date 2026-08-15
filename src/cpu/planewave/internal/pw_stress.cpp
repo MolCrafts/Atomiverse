@@ -129,9 +129,9 @@ double scf_energy_ry(const cpu::Frame& frame, const PW& method) {
 ///
 /// Used for total ρ (restricted) and for each collinear spin channel
 /// ρ_σ before Nielsen–Martin strain remapping.
-std::vector<AccReal> rho_channel_g_to_real(
-    const PWWorkspace& ws,
-    const xt::xarray<std::complex<AccReal>>& rho_G) {
+std::vector<AccReal>
+rho_channel_g_to_real(const PWWorkspace& ws,
+                      const xt::xarray<std::complex<AccReal>>& rho_G) {
     std::vector<AccReal> rho_r(static_cast<std::size_t>(ws.nr), AccReal(0));
     if (!ws.fft || ws.nr <= 0 || !ws.gvec)
         return rho_r;
@@ -353,8 +353,7 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
     auto terms = iteration_energy(ws, e_band, prob.ew_total, prob.vol_bohr);
     // Collinear: replace Parseval ∫ρ V_xc (last channel) with e_xc_int_spin.
     terms.e_one = e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
-    terms.total =
-        terms.e_one + terms.e_h + ws.E_xc + prob.ew_total + ws.E_aug;
+    terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total + ws.E_aug;
     return static_cast<double>(terms.total) / qe_units::rydberg_to_hartree;
 }
 
@@ -369,9 +368,8 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
                       PoissonSolver& poisson, XCBuilder& xc, VeffBuilder& veff,
                       DavidsonSolver& davidson, int n_bands) {
     PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, method.k_mesh,
-                     prob);
+    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
+                     method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
@@ -444,8 +442,8 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
                 static_cast<std::size_t>(n_kpts * n_bands), AccReal(0));
             for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
-                for (int b = 0;
-                     b < n_bands && b < static_cast<int>(ev.size()); ++b)
+                for (int b = 0; b < n_bands && b < static_cast<int>(ev.size());
+                     ++b)
                     pack[static_cast<std::size_t>(ik * n_bands + b)] =
                         ev[static_cast<std::size_t>(b)];
             }
@@ -486,8 +484,8 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
                                          smear_kind, mp_order);
             entropy_sum += fill.entropy;
             for (std::size_t b = 0; b < ev.size(); ++b) {
-                const AccReal f_b =
-                    smear_f_band(ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
+                const AccReal f_b = smear_f_band(ev[b], mu_ha, degauss_ha,
+                                                 smear_kind, mp_order);
                 e_band += w * ev[b] * f_b;
             }
         }
@@ -507,7 +505,8 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
 
             davidson.step(ws);
 
-            const AccReal weight = prob.kg.weights[static_cast<std::size_t>(ik)];
+            const AccReal weight =
+                prob.kg.weights[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands; ++b)
                 e_band += weight * ws.eigenvalues[b] * AccReal(2);
 
@@ -622,11 +621,8 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
     } else if (use_smear) {
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
         n_bands = n_occ_ceil + std::max(method.extra_bands, 0);
-    } else if (n_elec % 2 != 0) {
-        throw std::invalid_argument(
-            "pw_stress: " + std::to_string(n_elec)
-            + " valence electrons is not closed-shell — use spin_polarized "
-              "for open shell, or set smearing for metallic occupations");
+    } else {
+        require_closed_shell(n_elec, "pw_stress");
     }
 
     PoissonSolver poisson;
@@ -645,9 +641,9 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
         veff.prepare(scf_prob.ws);
         davidson.prepare(scf_prob.ws);
     } else if (use_smear) {
-        res = run_scf_smear_restricted(frame, method, scf_prob, poisson, xc,
-                                       veff, density, davidson, n_bands,
-                                       "stress");
+        res =
+            run_scf_smear_restricted(frame, method, scf_prob, poisson, xc, veff,
+                                     density, davidson, n_bands, "stress");
     } else {
         res = run_scf_fixed_occ(frame, method, scf_prob, poisson, xc, veff,
                                 density, davidson, "stress");
@@ -715,10 +711,10 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
                                         poisson, xc, veff, davidson, n_bands,
                                         n_alpha, n_beta);
         } else {
-            ep_ry = nscf_energy_ry(fp, method, rho_r0, omega0, poisson, xc, veff,
-                                   davidson, n_bands);
-            em_ry = nscf_energy_ry(fm, method, rho_r0, omega0, poisson, xc, veff,
-                                   davidson, n_bands);
+            ep_ry = nscf_energy_ry(fp, method, rho_r0, omega0, poisson, xc,
+                                   veff, davidson, n_bands);
+            em_ry = nscf_energy_ry(fm, method, rho_r0, omega0, poisson, xc,
+                                   veff, davidson, n_bands);
         }
         const double dE_dev = (ep_ry - em_ry) * ry_to_ev / (2.0 * h);
         // Mechanical / CP2K: σ = −(1/Ω) ∂E/∂ε (matches GPW cell relax).

@@ -14,6 +14,15 @@ pseudopotential; the bare-Coulomb "toy" potential this case originally used has
 been deleted from the tree), \(E_\mathrm{cut}=5\) Ry,
 Γ-only, short SCF.
 
+**Open shell, not closed shell.** One valence electron is a doublet
+(\(S=1/2\)), so the run is collinear spin-polarized with `spin_polarized = true`
+and `multiplicity = 2` (\(N_\uparrow=1\), \(N_\downarrow=0\)). The restricted,
+fixed-occupation path rejects an odd electron count outright —
+`internal::require_closed_shell` (`src/cpu/planewave/internal/pw_setup.cpp`),
+which `pw_stress` calls exactly as `PW::run` and `pw_forces_analytic` do. The
+default `multiplicity = 1` fails a *different* guard, the collinear path's
+parity check: \(N_e + (M-1)\) must be even, which 1 + 0 is not.
+
 ## Pin
 
 By cubic symmetry, off-diagonal Voigt components (xy, xz, yz) vanish within
@@ -36,8 +45,9 @@ each *diagonal* component comes from an independent central-difference
 evaluation inside `pw_stress`, so its floor is set by the FD step and the
 1e-4 / 8-iteration SCF.
 
-Measured 2026-08-09 with GTH-PBE-q1: off-diagonals \(\le 1.1\times10^{-14}\);
-\(\sigma_{xx}=-0.011384554\), \(\sigma_{yy}=-0.011384539\),
-\(\sigma_{zz}=-0.011384546\), i.e. spread \(1.5\times10^{-8}\) against a
-signal of \(0.01138\) (\(1.3\times10^{-6}\) relative). Bit-identical at 1, 4
-and 8 OpenMP threads.
+Measured 2026-08-15 with GTH-PBE-q1, spin-polarized doublet: off-diagonals
+\(\le 1.049\times10^{-14}\); \(\sigma_{xx}=-0.0050847238\),
+\(\sigma_{yy}=-0.005084722912\), \(\sigma_{zz}=-0.005084722795\), i.e. spread
+\(1.006\times10^{-9}\) against a signal of \(0.005085\)
+(\(2.0\times10^{-7}\) relative). Identical to the printed 10 significant
+digits at 1, 4 and 8 OpenMP threads.

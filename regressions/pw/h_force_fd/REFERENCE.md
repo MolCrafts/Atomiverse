@@ -20,6 +20,16 @@ One hydrogen atom (Z=1) at the origin of a cubic cell \(L=6\) Å. Settings:
 (analytic Goedecker–Teter–Hutter pseudopotential). The bare-Coulomb "toy"
 local potential this case originally used has been deleted from the tree.
 
+**Open shell, not closed shell.** One valence electron is a doublet
+(\(S=1/2\)), so the run is collinear spin-polarized with `spin_polarized = true`
+and `multiplicity = 2` (\(N_\uparrow=1\), \(N_\downarrow=0\)). The restricted,
+fixed-occupation path rejects an odd electron count outright —
+`internal::require_closed_shell` (`src/cpu/planewave/internal/pw_setup.cpp`),
+called by `PW::run` (which is what the \(6N\) FD solves go through) and by
+`pw_forces_analytic` (the evaluator half of this case) alike. The default
+`multiplicity = 1` fails a *different* guard, the collinear path's parity
+check: \(N_e + (M-1)\) must be even, which 1 + 0 is not.
+
 ## Pin
 
 By lattice symmetry the ionic force on a single atom at a high-symmetry site is
@@ -35,8 +45,9 @@ numerical noise survives, and the two paths have different floors:
 
 The FD bound is set by the \(h=5\times10^{-3}\) Å step and the 1e-4 SCF
 tolerance, not by machine epsilon; the evaluator returns the analytic gradient.
-Measured 2026-08-09 with GTH-PBE-q1: \(|F|_\mathrm{FD}=8.3\times10^{-7}\),
-\(|F|_\mathrm{evaluator}=3.9\times10^{-15}\).
+Measured 2026-08-15 with GTH-PBE-q1, spin-polarized doublet:
+\(|F|_\mathrm{FD}=1.4\times10^{-11}\),
+\(|F|_\mathrm{evaluator}=6.58\times10^{-16}\) (\(E=-12.0277\) eV).
 
 Public `PWEvaluator::with_gradient(true)` must write a finite energy and a force
 vector satisfying the evaluator bound.

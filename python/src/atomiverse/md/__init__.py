@@ -56,6 +56,13 @@ if hasattr(_cpp, "KSpacePME"):
 if hasattr(_cpp, "AM1Evaluator"):
     _EVALUATOR_DISPATCH[_cpp.AM1Evaluator] = "set_evaluator_am1"
 
+# Plane-wave DFT is the other Born-Oppenheimer force source
+# (ATV_BUILD_PW / FFTW3): analytic ionic forces from a re-converged density,
+# two SCF solves per force-producing step. Capability-probed like the two
+# above.
+if hasattr(_cpp, "PWEvaluator"):
+    _EVALUATOR_DISPATCH[_cpp.PWEvaluator] = "set_evaluator_pw"
+
 # Recorder types accepted by MD.set_record. Both are unconditional: the
 # wheel forces ATV_BUILD_IO=ON through the CMake module DAG, so the
 # trajectory writer is never capability-probed (unlike KSpacePME above).
@@ -229,6 +236,15 @@ class MD:
         molecular, not a pair style) and the driver installs its own
         gradient-enabled copy, so results land on the frame rather than on
         the object you passed.
+
+        ``PWEvaluator`` is the same story on a plane-wave Hamiltonian:
+        registering it makes the run plane-wave Born-Oppenheimer dynamics,
+        with analytic ionic forces from the converged density. It likewise
+        takes no ``NeighborList``, and it additionally needs the frame to
+        carry a ``box`` — a plane-wave basis is defined by the cell. Each
+        step costs *two* SCF solves (the energy solve, then the force
+        path's own), so size the cell, ``ecut_ry`` and ``max_iter`` for the
+        number of steps you actually want.
 
         Two electrostatic caveats, because they are the ones this dispatch
         cannot catch for you:

@@ -51,6 +51,11 @@
 #include "atomiverse/cpu/longrange/pme.h"
 #endif
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
+#ifdef ATV_HAS_PW
+// `copy_pw_params` is the one definition of "the same method, no state".
+#include "atomiverse/cpu/planewave/internal/scf_loop.h"
+#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#endif
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
@@ -172,6 +177,13 @@ struct MdHandle {
         else if constexpr (std::is_same_v<P, cpu::task::AM1EvaluatorParams>)
             // A semiempirical force source rides the same plural evaluator
             // slot as the pair styles — that is what makes an MD run BOMD.
+            driver.set_evaluator(std::move(comp));
+#endif
+#ifdef ATV_HAS_PW
+        else if constexpr (std::is_same_v<P, cpu::task::PwEvaluatorParams>)
+            // Plane-wave DFT is the other force source that makes the loop
+            // Born-Oppenheimer; move-only (it owns FFTW plans), so the
+            // component arrives here already moved from the setter.
             driver.set_evaluator(std::move(comp));
 #endif
         else if constexpr (std::is_same_v<P, cpu::task::NeighborListParams>)
@@ -872,6 +884,64 @@ void bind_md(nb::module_& m) {
             "SCF parameters: the object you pass keeps its own state, so "
             "last_result() on it is NOT populated by run() — per-step "
             "results (energy [eV], charges [e], forces [eV/A]) land on the "
+            "frame.")
+#endif
+#ifdef ATV_HAS_PW
+        .def(
+            "set_evaluator_pw",
+            [](MdHandle& self, const cpu::pw::PWEvaluator& evaluator) {
+                // Handed a LIVE component, like set_evaluator_am1 and for the
+                // same reason: PWEvaluator is bound in bind_pw.cpp so Python
+                // already holds the real thing. Read the fifteen method
+                // members back off the owned solver — the same fifteen the
+                // MPI launcher payload carries — and let set_categorical
+                // build the driver's own copy from them, so the wire mirror
+                // and the registered component cannot disagree.
+                const cpu::pw::PW& method = evaluator.method();
+                // The two enum members cross the wire as their integer
+                // values: `cpu::task::PwEvaluatorParams` is compiled without
+                // the plane-wave headers those enums live in.
+                const cpu::task::PwEvaluatorParams p{
+                    method.upf_path,
+                    method.gth_name,
+                    method.ecut_ry,
+                    method.k_mesh,
+                    method.tol,
+                    method.max_iter,
+                    method.mix_beta,
+                    method.pulay_depth,
+                    static_cast<int>(method.xc),
+                    method.spin_polarized,
+                    method.multiplicity,
+                    static_cast<int>(method.smearing),
+                    method.degauss,
+                    method.mp_order,
+                    method.extra_bands};
+                self.set_categorical(
+                    "set_evaluator", p,
+                    cpu::pw::PWEvaluator{
+                        cpu::pw::internal::copy_pw_params(method)}
+                        .with_gradient(true));
+            },
+            nb::arg("comp"),
+            "Append the plane-wave DFT evaluator as an MD force source — "
+            "Born-Oppenheimer dynamics on a plane-wave Hamiltonian, meaning "
+            "the electrons are re-converged at every geometry the nuclei "
+            "reach, with analytic ionic forces (local Hellmann-Feynman + "
+            "Ewald + Kleinman-Bylander) taken at the converged density. "
+            "Takes no NeighborList (a plane-wave Hamiltonian is not a pair "
+            "style) and reads the frame's 'atomic_number' column [Z]. Like "
+            "any MD run it needs a per-atom 'mass' column [amu], and like "
+            "any plane-wave run it needs a box.\n\n"
+            "Budget it deliberately: a step costs TWO self-consistent-field "
+            "solves — the energy solve, then the analytic force path's own — "
+            "and each is seconds of work at production settings, so a Python "
+            "smoke run wants a small cell, a low ecut_ry and a modest "
+            "max_iter.\n\n"
+            "The driver installs a FRESH gradient-enabled copy of the "
+            "fifteen method parameters: the object you pass keeps its own "
+            "state, so last_result() on it is NOT populated by run() — "
+            "per-step results (energy [eV], forces [eV/A]) land on the "
             "frame.")
 #endif
         .def(

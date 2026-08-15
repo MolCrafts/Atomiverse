@@ -102,6 +102,41 @@ TaskSpec make_md_spec() {
     // widening is append-only, so `kWireVersion` stays 4.
     entries.push_back(MDComponentEntry{
         AM1EvaluatorParams{-1, 2, 50, 1e-6, 1e-8}, std::nullopt});
+    // Plane-wave DFT as an MD force source (py-pw-forces): like AM1 above it
+    // rides the categorical (`std::nullopt`) evaluator slot, giving
+    // plane-wave BOMD from a launcher payload. Wire ID 20 with a fresh
+    // payload, so `kWireVersion` stays 4 (append-only).
+    //
+    // Fifteen fields — the widest mirror on the wire — so every one is
+    // spelled with a NON-DEFAULT value (the NPT house rule): a codec that
+    // drops a tail field would otherwise decode back into the `cpu::pw::PW`
+    // default and the roundtrip would pass on a hole. Two traps that make
+    // the rule concrete here:
+    //   * `xc = 0` is LSDA. `XCType::PBE == 1` is the default, so a `1`
+    //     here would be exactly the silent-drop hole this entry closes.
+    //   * `smearing = 2` is Methfessel-Paxton (`Smearing::none == 0` is the
+    //     default), and `mp_order = 2` is the order that only that arm
+    //     reads — both enums cross the wire as i32.
+    // `upf_path` stays empty on purpose: it is mutually exclusive with
+    // `gth_name`, so "both non-default" is not a legal payload. Emptiness is
+    // a value the string codec has to survive too (zero-length prefix).
+    entries.push_back(
+        MDComponentEntry{PwEvaluatorParams{/*upf_path=*/"",
+                                           /*gth_name=*/"GTH-PBE-q4",
+                                           /*ecut_ry=*/4.0,
+                                           /*k_mesh=*/2,
+                                           /*tol=*/1e-4,
+                                           /*max_iter=*/3,
+                                           /*mix_beta=*/0.5,
+                                           /*pulay_depth=*/3,
+                                           /*xc=*/0,
+                                           /*spin_polarized=*/true,
+                                           /*multiplicity=*/2,
+                                           /*smearing=*/2,
+                                           /*degauss=*/0.05,
+                                           /*mp_order=*/2,
+                                           /*extra_bands=*/6},
+                         std::nullopt});
     return TaskSpec(MDTask{std::move(entries), 7});
 }
 
@@ -145,6 +180,7 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::CoulLong), 17u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::KSpacePME), 18u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::XyzRecorder), 19u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PWEvaluator), 20u);
     EXPECT_EQ(component_id(MDComponentParams{VelocityVerletParams{}}),
               ComponentId::VelocityVerlet);
     EXPECT_EQ(component_id(MinimizeComponentParams{LBFGSParams{}}),
@@ -169,6 +205,13 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     // component decode differently depending on the task that carries it.
     EXPECT_EQ(component_id(MDComponentParams{AM1EvaluatorParams{}}),
               ComponentId::AM1Evaluator);
+    // `PwEvaluatorParams` is the second payload that LEADS with a string
+    // (`XyzRecorderParams` was the first), so pin its variant→ID map too: a
+    // swapped arm would decode a trajectory filename as a pseudopotential
+    // name and vice versa, which the length-prefixed string codec cannot
+    // notice on its own.
+    EXPECT_EQ(component_id(MDComponentParams{PwEvaluatorParams{}}),
+              ComponentId::PWEvaluator);
 }
 
 // v4: the NoseHooverNptParams payload grew (drag / mtchain / mpchain /

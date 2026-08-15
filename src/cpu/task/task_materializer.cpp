@@ -22,6 +22,9 @@
 #endif
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
+#ifdef ATV_HAS_PW
+#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#endif
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
@@ -75,6 +78,27 @@ namespace {
 [[noreturn]] void throw_io_not_built() {
     throw std::runtime_error("XyzRecorder requires ATV_BUILD_IO=ON "
                              "(trajectory writer not compiled in)");
+}
+#endif
+
+#ifndef ATV_HAS_PW
+/// @brief Reject a `PwEvaluatorParams` entry in a build without the solver.
+///
+/// `cpu::pw::PW` is plane-wave density-functional theory — the electronic
+/// structure is expanded in plane waves, which needs FFTW3, so the whole
+/// domain sits behind the `ATV_BUILD_PW` build flag while the wire mirror
+/// `PwEvaluatorParams` and its component ID are compiled unconditionally. A
+/// payload naming PW therefore still *decodes* on a PW-less build and has to
+/// be refused here, at the point where the component would be constructed:
+/// the alternative is an MD run whose only force source silently vanished.
+///
+/// Both replay paths — explicit binding and categorical setter — hit the same
+/// wall; one thrower is what keeps the two diagnostics from drifting apart.
+///
+/// @throws std::runtime_error Always, naming the flag to rebuild with.
+[[noreturn]] void throw_pw_not_built() {
+    throw std::runtime_error("PWEvaluator requires ATV_BUILD_PW=ON "
+                             "(plane-wave solver not compiled in)");
 }
 #endif
 
@@ -152,6 +176,55 @@ cpu::semiempirical::AM1Evaluator gradient_am1(const AM1EvaluatorParams& p) {
     return evaluator;
 }
 
+#ifdef ATV_HAS_PW
+/// @brief Build a `PWEvaluator` that computes nuclear forces.
+///
+/// Plane-wave Born-Oppenheimer dynamics: the electronic structure is
+/// re-converged at every geometry the nuclei reach, and the ionic forces are
+/// analytic (local Hellmann-Feynman + Ewald + Kleinman-Bylander) at the
+/// converged density rather than differenced from energies. A force-producing
+/// step costs two self-consistent-field solves, not one — the energy solve
+/// (`PW::run`), then the force path's own (`pw_forces_analytic`), which is
+/// what publishes the forces.
+///
+/// Gradients are spelled out here rather than inherited from the component
+/// default (`false`) for the same reason as `gradient_am1`: a force-free
+/// evaluator still publishes a plausible energy, so the MD would integrate a
+/// frame nothing ever pushed on.
+///
+/// The fifteen members are assigned in the params' DECLARATION order — the
+/// order the codec writes and a hand-built twin spells — so a dropped or
+/// swapped field is a visible diff rather than a silent C++ default. The two
+/// enum mirrors are cast back from their wire integers here, the one place
+/// that knows both the flag-gated enums and the flagless wire struct.
+///
+/// @param p Typed plane-wave params (cutoff [Ry], k-mesh, SCF tolerance and
+///          cap, mixing, functional, spin, smearing [Ry]).
+/// @return Evaluator owning a freshly configured solver, gradients enabled,
+///         ready for either registration path.
+cpu::pw::PWEvaluator gradient_pw(const PwEvaluatorParams& p) {
+    cpu::pw::PW pw;
+    pw.upf_path = p.upf_path;
+    pw.gth_name = p.gth_name;
+    pw.ecut_ry = p.ecut_ry;
+    pw.k_mesh = p.k_mesh;
+    pw.tol = p.tol;
+    pw.max_iter = p.max_iter;
+    pw.mix_beta = p.mix_beta;
+    pw.pulay_depth = p.pulay_depth;
+    pw.xc = static_cast<cpu::scf::XCType>(p.xc);
+    pw.spin_polarized = p.spin_polarized;
+    pw.multiplicity = p.multiplicity;
+    pw.smearing = static_cast<cpu::pw::Smearing>(p.smearing);
+    pw.degauss = p.degauss;
+    pw.mp_order = p.mp_order;
+    pw.extra_bands = p.extra_bands;
+    // `PW` is move-only (it owns FFTW plans and SCF workspaces), so the
+    // solver moves into the evaluator.
+    return cpu::pw::PWEvaluator{std::move(pw)}.with_gradient(true);
+}
+#endif
+
 /// @brief Replay one typed MD entry onto the driver.
 ///
 /// Two registration paths, chosen by whether the entry carries a binding:
@@ -228,7 +301,13 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                                            p.bulk_modulus});
                 else if constexpr (std::is_same_v<P, AM1EvaluatorParams>)
                     bind(gradient_am1(p));
-                else if constexpr (std::is_same_v<P, ThermoParams>)
+                else if constexpr (std::is_same_v<P, PwEvaluatorParams>) {
+#ifdef ATV_HAS_PW
+                    bind(gradient_pw(p));
+#else
+                    throw_pw_not_built();
+#endif
+                } else if constexpr (std::is_same_v<P, ThermoParams>)
                     bind(cpu::Thermo{p.freq});
                 else if constexpr (std::is_same_v<P, XyzRecorderParams>) {
 #ifdef ATV_HAS_IO
@@ -289,7 +368,13 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                                                       p.bulk_modulus});
             else if constexpr (std::is_same_v<P, AM1EvaluatorParams>)
                 driver.set_evaluator(gradient_am1(p));
-            else if constexpr (std::is_same_v<P, ThermoParams>)
+            else if constexpr (std::is_same_v<P, PwEvaluatorParams>) {
+#ifdef ATV_HAS_PW
+                driver.set_evaluator(gradient_pw(p));
+#else
+                throw_pw_not_built();
+#endif
+            } else if constexpr (std::is_same_v<P, ThermoParams>)
                 driver.set_thermo(p.freq);
             else if constexpr (std::is_same_v<P, XyzRecorderParams>) {
 #ifdef ATV_HAS_IO
