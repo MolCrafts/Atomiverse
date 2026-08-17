@@ -57,17 +57,18 @@ stability analysis over the orbital Hessian is implemented (internal channel
 
 | Method                | CPU | CUDA | Kokkos |
 | --------------------- | :-: | :--: | :---: |
-| Γ-point periodic RHF  |  ○  |   ○  |   ○  |
+| Γ-point periodic RHF  |  ✓  |   ○  |   ○  |
 | k-point periodic RHF  |  ○  |   ○  |   ○  |
 | Γ-point periodic UHF  |  ○  |   ○  |   ○  |
 | k-point periodic UHF  |  ○  |   ○  |   ○  |
 
-Exact exchange under periodic boundary conditions is not implemented in any
-engine. The periodic solvers (plane-wave, GPW) are pure/semi-local DFT only —
-see [Periodic DFT](dft.md#10-periodic-kohnsham-methods). The Γ-point lattice sum
-for one-electron integrals (overlap, kinetic, pseudopotential) *does* exist in
-GPW and is validated to machine precision, so the infrastructure a periodic HF
-would need is partly in place; the four-index periodic exchange is not.
+Γ-point closed-shell periodic RHF is a truncated-lattice foothold
+(`RHF.periodic = true`): J, K, S, T, V and E_nn share
+`m_d = floor(rcut/L_d)`. A cell larger than the Gaussian pair reach has
+only T = 0 and recovers molecular RHF (`regressions/scf/periodic-rhf-gamma`).
+Bare 1/r image sums are not cutoff-stable (need Ewald); the unit gate uses
+short-range erfc. k-point / UHF / Ewald are follow-ons. PW/GPW product
+paths remain semi-local DFT — see [Periodic DFT](dft.md#10-periodic-kohnsham-methods).
 
 ## 3. SCF infrastructure
 

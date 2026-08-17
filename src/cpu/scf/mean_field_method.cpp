@@ -24,9 +24,9 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/electronic/aspc_predictor.h"
-#include "atomiverse/cpu/observe/mulliken.h"
 #include "atomiverse/cpu/linalg/density.h" // build_density_matrix (CPMD fixed-density step)
 #include "atomiverse/cpu/linalg/eigensolve.h" // CanonicalOrth, build_orthogonalization_matrix
+#include "atomiverse/cpu/observe/mulliken.h"
 #include "atomiverse/cpu/scf/ecp_potential.h"
 #include "atomiverse/cpu/scf/internal/casci_pack.h"
 #include "atomiverse/cpu/scf/internal/casscf_pack.h"
@@ -48,8 +48,10 @@
 #include "atomiverse/cpu/scf/internal/mp4_pack.h"
 #include "atomiverse/cpu/scf/internal/nevpt2_pack.h"
 #include "atomiverse/cpu/scf/internal/pcm.h"
+#include "atomiverse/cpu/scf/internal/periodic_hf.h"
 #include "atomiverse/cpu/scf/internal/point_charges.h"
 #include "atomiverse/cpu/scf/internal/sap_guess.h"
+#include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/internal/x2c.h"
 #include "atomiverse/cpu/scf/scf_guess.h"     // apply_homo_lumo_mixing
 #include "atomiverse/cpu/scf/spin_analysis.h" // compute_spin_contamination
@@ -381,7 +383,8 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
         opts.nested = true;
         opts.forces = true; // CP nuclei need Born-Oppenheimer forces at t = 0
         opts.write_energy = true;
-        opts.accumulate = true; // in-plan: the driver zeroed; we are a co-author
+        opts.accumulate =
+            true; // in-plan: the driver zeroed; we are a co-author
         if (budget > 0)
             opts.max_iter = budget;
         drive_scf_(f, nullptr, opts);
@@ -674,8 +677,40 @@ template <typename D>
 internal::IntegralView
 MeanFieldMethod<D>::rebuild_integrals_(const Frame& frame, bool compute_pvp) {
     // Fill into a temporary, then move into method-owned **fields** (no bag kept).
-    internal::IntegralWorkspace fill{frame, basis, charge, compute_eri, ecp, ghost_atoms,
-                                     compute_pvp};
+    internal::IntegralWorkspace fill{
+        frame, basis, charge, compute_eri, ecp, ghost_atoms, compute_pvp};
+    if constexpr (requires { static_cast<const D*>(this)->periodic; }) {
+        if (static_cast<const D*>(this)->periodic) {
+            if (method_ != MeanFieldType::HF || spin_ != SpinType::Restricted)
+                throw std::invalid_argument(
+                    "periodic=true is Γ-point closed-shell RHF only — "
+                    "use cpu::scf::RHF and clear periodic on KS/UHF");
+            if (!frame.box.is_orthorhombic())
+                throw std::invalid_argument(
+                    "RHF.periodic=true requires an orthorhombic Frame.box");
+            if (fill.spherical())
+                throw std::invalid_argument(
+                    "RHF.periodic=true v1 is Cartesian only (e.g. "
+                    "BasisSet::STO3G)");
+            const double L[3] = {
+                units::convert(frame.box.length(0), units::Length::Angstrom,
+                               units::Length::Bohr),
+                units::convert(frame.box.length(1), units::Length::Angstrom,
+                               units::Length::Bohr),
+                units::convert(frame.box.length(2), units::Length::Angstrom,
+                               units::Length::Bohr),
+            };
+            const auto spec = internal::lattice_spec(
+                L, internal::shell_pair_rcut(fill.shells));
+            if (spec.has_extra()) {
+                const auto blocks = blocks_from_shells(fill.shells);
+                const auto n = static_cast<std::size_t>(fill.n_basis);
+                fill.ERI = xt::zeros<double>({n, n, n, n});
+                internal::fill_eri_lattice(blocks, spec, fill.ERI);
+                internal::apply_gamma_images(fill, spec);
+            }
+        }
+    }
     ints_S_ = std::move(fill.S);
     ints_T_ = std::move(fill.T);
     ints_V_ = std::move(fill.V);
@@ -731,7 +766,8 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
             "Kohn-Sham (RKS/UKS) — ghost / counterpoise support is pure HF "
             "only in this link. Use RHF/UHF, or clear ghost_atoms.");
 
-    const internal::IntegralView ints = rebuild_integrals_(frame, /*compute_pvp=*/x2c);
+    const internal::IntegralView ints =
+        rebuild_integrals_(frame, /*compute_pvp=*/x2c);
     // x2c-1e: replace the non-relativistic core Hamiltonian with the
     // one-step exact-two-component h^X2C. S / ERI / Fock loop are untouched
     // (two-electron integrals stay non-relativistic by definition of
@@ -1278,8 +1314,8 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         // Fresh view after env (embed/field/solvent) was written onto storage —
         // IntegralView scalars (V_nuc, embed_self_energy, …) are by value and
         // the prologue view is stale for those; refs alone are not enough.
-        last_grad_ = gradient.compute(frame, integral_view_(), *det_sp_,
-                                      e_total_);
+        last_grad_ =
+            gradient.compute(frame, integral_view_(), *det_sp_, e_total_);
         // Republish embedding-site forces for the public accessor.
         embed_site_forces_.clear();
         if (last_grad_.embedding_forces.size() > 0) {
@@ -1731,8 +1767,8 @@ MP2Result MeanFieldMethod<D>::mp2(Frame& frame, const SCFInitialGuess* guess) {
     if (spin_ == SpinType::Unrestricted)
         return ump2_energy(integral_view_(), *det_sp_, e_total_, mp2_os_scale,
                            mp2_ss_scale);
-    return mp2_energy(integral_view_(), *det_sp_, e_total_, frozen, mp2_os_scale,
-                      mp2_ss_scale);
+    return mp2_energy(integral_view_(), *det_sp_, e_total_, frozen,
+                      mp2_os_scale, mp2_ss_scale);
 }
 
 template <typename D>
@@ -2246,7 +2282,8 @@ void MeanFieldMethod<D>::evaluate(const cpu::LaunchContext& qm_ctx) {
         const int n = static_cast<int>(qm_ctx.frame.nlocal());
         const int nc = static_cast<int>(charges.size());
         for (int i = 0; i < n && i < nc; ++i)
-            q[i] = static_cast<StorageReal>(charges[static_cast<std::size_t>(i)]);
+            q[i] =
+                static_cast<StorageReal>(charges[static_cast<std::size_t>(i)]);
     }
 }
 

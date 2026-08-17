@@ -6,6 +6,8 @@ then paste numbers into REFERENCE.md and hard-coded regression asserts.
 
 Examples:
   python tools/pyscf_oracle/pin_scf.py rhf --geom water --basis sto-3g
+  # Γ-point PBC RHF (offline only): pyscf.pbc gto+scf on the same geom/cell
+  # as regressions/scf/periodic-rhf-gamma/REFERENCE.md
   python tools/pyscf_oracle/pin_scf.py uhf --geom o2 --basis sto-3g --spin 2
   python tools/pyscf_oracle/pin_scf.py ump2 --geom o2 --basis sto-3g --spin 2
   python tools/pyscf_oracle/pin_scf.py romp2 --geom o2 --basis sto-3g --spin 2

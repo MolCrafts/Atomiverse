@@ -31,14 +31,14 @@ missing method flag). Dropped from this queue (not PySCF twins): `td-dftb`,
 `gfn2-xtb`, `pm6-pm7`, `caspt2` — revive under DFTB+/xTB/MOPAC/OpenMolcas if
 needed.
 
-Deferred specs (approved, implement later — not auto-impl):
-`.claude/specs/periodic-rhf-gamma/`.
+Deferred PySCF engine-gap specs: none (CAM + Γ periodic RHF closed 2026-08-17).
 
 - [x] `cam-b3lyp` | done — `rys_eri_erf_block` + `XCType::CAMB3LYP` + RSH Fock mix; `regressions/scf/cam-b3lyp-h2-sto3g` (composed PySCF 2.14.0 pin, |dE|=2.5e-11 Ha)
-- [!] `periodic-rhf-gamma` | blocked — no periodic exact exchange; PW/GPW are semi-local DFT only; PySCF `pbc.scf` can oracle once four-index PBC HF-X exists — **spec:** `.claude/specs/periodic-rhf-gamma/`
+- [x] `periodic-rhf-gamma` | done — `RHF.periodic` + truncated Γ lattice; `regressions/scf/periodic-rhf-gamma` (20 Å H2 STO-3G, molecular-limit pin)
 
 ## done
 
+- [x] `periodic-rhf-gamma` | Γ-point periodic RHF | regressions/scf/periodic-rhf-gamma | H2/STO-3G cart 20 Å cube; truncated lattice m=0; E=-1.116759307396 Ha; `RHF.periodic=true`; tol 1e-5 Ha
 - [x] `cam-b3lyp` | CAM-B3LYP RSH | regressions/scf/cam-b3lyp-h2-sto3g | H2/STO-3G cart; composed PySCF 2.14.0 E=-1.3067931936345114 Ha; `RKS{CAMB3LYP}` + erf K; tol 1e-6 Ha
 - [x] `nevpt2-h2-sto3g` | SC-NEVPT2 | regressions/scf/nevpt2-h2-sto3g | H2 CASSCF(2,2)/STO-3G cart SC-NEVPT2; PySCF 2.14.0 mrpt.NEVPT e_corr=0 (ncore=nvirt=0); `RHF::nevpt2`; tol 1e-6 Ha; ratio 0.072; tutorial: methods/nevpt2-h2-sto3g.md
 - [x] `uks-hessian-o2-sto3g` | UKS nuclear Hessian | regressions/scf/uks-hessian-o2-sto3g | O2 UKS-LSDA/STO-3G FD-of-forces Hessian; PySCF 2.14.0 FD twin H_zz~128.46 eV/Å²; `UKS::hessian`; tol 2e-2 eV/Å²; ratio 2.13 (vs FD twin); tutorial: methods/uks-hessian-o2-sto3g.md

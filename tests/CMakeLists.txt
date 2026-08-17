@@ -796,6 +796,8 @@ if(ATV_BUILD_HF)
     atv_add_cpp_test(test_cpu_scf_rys_roots     cpu/scf/test_rys_roots.cpp)
     atv_add_cpp_test(test_cpu_scf_rys_eri       cpu/scf/test_rys_eri.cpp)
     atv_add_cpp_test(test_cpu_scf_rys_eri_erf   cpu/scf/test_rys_eri_erf.cpp)
+    atv_add_cpp_test(test_cpu_scf_periodic_exchange_lattice
+                     cpu/scf/test_periodic_exchange_lattice.cpp)
     atv_add_cpp_test(test_cpu_scf_xc_cam_b3lyp_params cpu/scf/test_xc_cam_b3lyp_params.cpp)
     # scf-review-06-scf-perf: fused one-sweep jk_rhf vs two-pass g_rhf+k
     # (≤1e-12 Ha F gate, d-shell fixture) + coulomb_exchange_fused thread

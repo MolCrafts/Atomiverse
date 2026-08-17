@@ -570,13 +570,7 @@ The libcint/C++20 sweep gate was cleared by committing it (2026-07-26).
 Approved for **later** implementation (do **not** auto `/mol:impl` until
 scheduled). Unblock `docs/developer/pyscf-method-queue.md` blocked rows.
 
-| Spec | Status | Unblocks | One-line |
-| ---- | ------ | -------- | -------- |
-| [periodic-rhf-gamma](periodic-rhf-gamma/spec.md) | approved, deferred | `periodic-rhf-gamma` | Γ-point periodic RHF energy (lattice HF-X) foothold |
-
-Acceptance: `periodic-rhf-gamma/acceptance.md`.
-`rsh-eri-cam-b3lyp` closed 2026-08-17 (`regressions/scf/cam-b3lyp-h2-sto3g`).
-Roadmap: `docs/roadmap/hartree-fock.md` §2.
+_(empty — `rsh-eri-cam-b3lyp` and `periodic-rhf-gamma` closed 2026-08-17.)_
 
 ## Closed — SCF review remediation chain (2026-07-24, all 8 done)
 
@@ -597,9 +591,7 @@ to green. Specs deleted on close; history in git (commits f9a6443a..HEAD).
 
 ## Live — deferred PySCF only (after harness wave 12)
 
-| Spec | Branch / track | Status |
-| ---- | -------------- | ------ |
-| [periodic-rhf-gamma](periodic-rhf-gamma/) | pyscf / HF periodic | open (deferred) |
+_(empty — both PySCF engine-gap specs closed 2026-08-17.)_
 
 Open CP2K specs on `dev` = **0** (wave-8 residual closed 2026-08-04). Stock
 VV10 is **blocked**. Pending residual for wave-7/8 staff = **0**; GapCensus

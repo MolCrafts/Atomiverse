@@ -86,6 +86,13 @@ class RHF : public MeanFieldMethod<RHF> {
 
     std::string name() const { return "rhf"; }
 
+    /// @brief Γ-point periodic RHF. Default false keeps the molecular
+    ///        engine bit-identical. When true, Frame.box must be
+    ///        orthorhombic; J, K, S, T, V and E_nn share one truncated
+    ///        lattice-image window (no Ewald). A cell larger than the
+    ///        Gaussian pair reach has only T = 0 and recovers molecular RHF.
+    bool periodic = false;
+
     /// @brief Seeger-Pople stability analysis of the most recent `run()`:
     ///        lowest eigenvalue of the singlet (internal, RHF→RHF) and
     ///        triplet (external, RHF→UHF) (A + B) orbital-Hessian blocks,
