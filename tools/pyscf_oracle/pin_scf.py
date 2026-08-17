@@ -23,6 +23,7 @@ Examples:
   python tools/pyscf_oracle/pin_scf.py eom-ip-ccsd --geom water --basis sto-3g --nstates 1
   python tools/pyscf_oracle/pin_scf.py b2plyp --geom water --basis sto-3g
   python tools/pyscf_oracle/pin_scf.py rks --geom water --basis 6-31g* --xc b3lyp
+  # CAM-B3LYP v1 mix (B3LYP sl + Yanai HF): --xc '0.19*HF + 0.46*LR_HF(0.33) + 0.08*LDA_X + 0.72*GGA_X_B88 + 0.19*LDA_C_VWN_RPA + 0.81*GGA_C_LYP'
   python tools/pyscf_oracle/pin_scf.py roks --geom o2 --basis sto-3g --spin 2 --xc LDA,VWN
   python tools/pyscf_oracle/pin_scf.py tda --geom h2co --basis 6-31g* --nstates 3
   python tools/pyscf_oracle/pin_scf.py cisd --geom h2co --basis sto-3g --nstates 3

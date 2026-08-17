@@ -245,7 +245,7 @@ SCF runs — but not in GPW or plane waves.
 
 | Functional                                 | CPU | CUDA | Kokkos |
 | ------------------------------------------ | :-: | :--: | :---: |
-| CAM-B3LYP                                  |  ○  |   ○  |   ○  |
+| CAM-B3LYP                                  |  ✓  |   ○  |   ○  |
 | LC-ωPBE                                    |  ○  |   ○  |   ○  |
 | LC-BLYP                                    |  ○  |   ○  |   ○  |
 | ωB97                                       |  ○  |   ○  |   ○  |
@@ -257,8 +257,12 @@ SCF runs — but not in GPW or plane waves.
 | HSE06                                      |  ○  |   ○  |   ○  |
 | Optimally tuned range-separated hybrid DFT |  ○  |   ○  |   ○  |
 
-Range separation would need short/long-range-partitioned ERIs (an `erf`-attenuated
-integral engine); the Rys kernel has no attenuation parameter.
+CAM-B3LYP is a closed-shell RKS energy foothold (`XCType::CAMB3LYP`):
+`rys_eri_erf_block` supplies \(K[\mathrm{erf}(\mu r)/r]\) and the Fock builder
+mixes \(\alpha K[1/r]+\beta K[\mathrm{erf}]\) with Yanai
+\((\alpha,\beta,\mu)=(0.19,0.46,0.33)\). Semi-local XC reuses the B3LYP
+kernels (not libxc ITYH). Pin: `regressions/scf/cam-b3lyp-h2-sto3g`.
+Other RSH functionals still need the same engine with new catalog rows.
 
 ## 7. Double-Hybrid Functionals
 

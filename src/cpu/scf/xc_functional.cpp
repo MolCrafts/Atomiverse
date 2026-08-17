@@ -688,8 +688,20 @@ double hybrid_exchange_fraction(XCType type) {
         return 0.25; // libxc XC_HYB_GGA_XC_PBEH
     case XCType::B2PLYP:
         return 0.53; // Grimme B2PLYP a_x (JCP 124, 034108 (2006))
+    case XCType::CAMB3LYP:
+        return 0.19; // Yanai α (short-range / bare-Coulomb HF weight)
     }
     return 0.0;
+}
+
+RshExchangeParams rsh_exchange_params(XCType type) {
+    RshExchangeParams p;
+    p.alpha = hybrid_exchange_fraction(type);
+    if (type == XCType::CAMB3LYP) {
+        p.beta = 0.46; // Yanai β (erf-Coulomb HF weight)
+        p.mu = 0.33;   // Yanai μ [1/Bohr]
+    }
+    return p;
 }
 
 double hybrid_pt2_fraction(XCType type) {
@@ -705,6 +717,7 @@ double hybrid_pt2_fraction(XCType type) {
     case XCType::OptB88VdW:
     case XCType::B3LYP:
     case XCType::PBE0:
+    case XCType::CAMB3LYP:
         return 0.0;
     }
     return 0.0;
@@ -732,6 +745,8 @@ bool is_gga(XCType type) {
         return true;
     case XCType::B2PLYP:
         return true; // B88 + LYP semi-local GGA
+    case XCType::CAMB3LYP:
+        return true; // same B3LYP semi-local GGA mix
     }
     return false;
 }
@@ -869,8 +884,8 @@ void b2plyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
 constexpr double kOptB88_beta = 0.003368671161034469;
 constexpr double kOptB88_gamma = 6.981317007977318;
 
-void optb88_vdw_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
-                          double sigma_bb, XCOutput& out) {
+void optb88_vdw_semilocal(double ra, double rb, double sigma_aa,
+                          double sigma_ab, double sigma_bb, XCOutput& out) {
     const double rho = ra + rb;
     double sa = std::max(sigma_aa, 0.0);
     double sb = std::max(sigma_bb, 0.0);
@@ -1016,9 +1031,11 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
     } else if (type == XCType::OptB88VdW) {
         // optB88 exchange + PW92 LDA-C (nonlocal DRSLL via GPW vdw_df).
         optb88_vdw_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
-    } else if (type == XCType::B3LYP) {
-        // B3LYP semi-local part only; HF-exchange admixture (alpha=0.20)
-        // is added by the Fock builder.
+    } else if (type == XCType::B3LYP || type == XCType::CAMB3LYP) {
+        // B3LYP / CAM-B3LYP v1 share the same semi-local mix
+        // (0.08 Slater + 0.72 B88 + 0.19 VWN-RPA + 0.81 LYP). CAM
+        // additionally mixes erf-attenuated HF exchange in the Fock
+        // builder (`rsh_exchange_params`).
         b3lyp_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
     } else if (type == XCType::PBE0) {
         // PBE0 semi-local part only; HF-exchange admixture (alpha=0.25)
@@ -1113,10 +1130,11 @@ void evaluate_xc_batch(XCType type, int n, const double* rho_a_arr,
             vsigma_bb_arr[g] = vsig_x_bb + vsig_c_bb;
         } else if (type == XCType::BLYP || type == XCType::OptB88VdW
                    || type == XCType::B3LYP || type == XCType::PBE0
-                   || type == XCType::B2PLYP) {
-            // Pure BLYP / OptB88VdW, global hybrids, and B2PLYP share the GGA
-            // semi-local path. HF-exchange admixture (hybrids / double hybrids)
-            // is applied by the Fock builder, not here; PT2 is post-SCF.
+                   || type == XCType::B2PLYP || type == XCType::CAMB3LYP) {
+            // Pure BLYP / OptB88VdW, global hybrids, CAM-B3LYP, and B2PLYP
+            // share the GGA semi-local path. HF-exchange admixture (hybrids
+            // / RSH / double hybrids) is applied by the Fock builder, not
+            // here; PT2 is post-SCF.
             double sa = sigma_aa_arr ? sigma_aa_arr[g] : 0.0;
             double sab = sigma_ab_arr ? sigma_ab_arr[g] : 0.0;
             double sb = sigma_bb_arr ? sigma_bb_arr[g] : 0.0;
@@ -1125,7 +1143,7 @@ void evaluate_xc_batch(XCType type, int n, const double* rho_a_arr,
                 blyp_pure(ra, rb, sa, sab, sb, out);
             else if (type == XCType::OptB88VdW)
                 optb88_vdw_semilocal(ra, rb, sa, sab, sb, out);
-            else if (type == XCType::B3LYP)
+            else if (type == XCType::B3LYP || type == XCType::CAMB3LYP)
                 b3lyp_semilocal(ra, rb, sa, sab, sb, out);
             else if (type == XCType::B2PLYP)
                 b2plyp_semilocal(ra, rb, sa, sab, sb, out);

@@ -11,12 +11,9 @@ domains that reached their claim bar. Queue + claim bars:
 molrs→0.13.1 alignment, torch removal, Langevin/CSVR/NoseHooverNPT binding
 slice (commit `334b6de4`).
 
-**Track P — Python bindings** (implementable on the login node):
+**Track P — Python bindings** (closed 2026-08-15 on `dev`; specs deleted):
 
-| Spec | One-line |
-| ---- | -------- |
-
-examples (MD/minimize/AM1) + publish the Python guide in the site nav.
+All 11 Python + docs slugs shipped (`886f6632`…`e56b0a66`). No live Track P specs.
 
 **Track C — CUDA** (all `deferred: true`; GH200 batch + CUDA ES open gate):
 
@@ -575,11 +572,11 @@ scheduled). Unblock `docs/developer/pyscf-method-queue.md` blocked rows.
 
 | Spec | Status | Unblocks | One-line |
 | ---- | ------ | -------- | -------- |
-| [rsh-eri-cam-b3lyp](rsh-eri-cam-b3lyp/spec.md) | approved, deferred | `cam-b3lyp` | erf-attenuated ERI + CAM-B3LYP RKS energy foothold |
 | [periodic-rhf-gamma](periodic-rhf-gamma/spec.md) | approved, deferred | `periodic-rhf-gamma` | Γ-point periodic RHF energy (lattice HF-X) foothold |
 
-Acceptance: `rsh-eri-cam-b3lyp/acceptance.md`, `periodic-rhf-gamma/acceptance.md`.
-Independent — no cross-deps. Roadmap: `docs/roadmap/dft.md` §6, `hartree-fock.md` §2.
+Acceptance: `periodic-rhf-gamma/acceptance.md`.
+`rsh-eri-cam-b3lyp` closed 2026-08-17 (`regressions/scf/cam-b3lyp-h2-sto3g`).
+Roadmap: `docs/roadmap/hartree-fock.md` §2.
 
 ## Closed — SCF review remediation chain (2026-07-24, all 8 done)
 
@@ -603,7 +600,6 @@ to green. Specs deleted on close; history in git (commits f9a6443a..HEAD).
 | Spec | Branch / track | Status |
 | ---- | -------------- | ------ |
 | [periodic-rhf-gamma](periodic-rhf-gamma/) | pyscf / HF periodic | open (deferred) |
-| [rsh-eri-cam-b3lyp](rsh-eri-cam-b3lyp/) | pyscf / RSH | open (deferred) |
 
 Open CP2K specs on `dev` = **0** (wave-8 residual closed 2026-08-04). Stock
 VV10 is **blocked**. Pending residual for wave-7/8 staff = **0**; GapCensus

@@ -48,6 +48,7 @@ inline constexpr std::pair<const char*, ATV::cpu::scf::XCType> kXCNames[] = {
     {"B3LYP", ATV::cpu::scf::XCType::B3LYP},
     {"PBE0", ATV::cpu::scf::XCType::PBE0},
     {"B2PLYP", ATV::cpu::scf::XCType::B2PLYP},
+    {"CAMB3LYP", ATV::cpu::scf::XCType::CAMB3LYP},
 };
 
 /// @brief Functional name → `XCType`.

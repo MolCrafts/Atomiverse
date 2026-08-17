@@ -53,7 +53,8 @@ struct ShellPairList {
     /// @param ints Non-owning view (shells, shell_data, atoms).
     /// @param thr  Cauchy-Schwarz screening threshold [Hartree^(1/2),
     ///             default 1e-10].
-    explicit ShellPairList(const internal::IntegralView& ints, double thr = 1e-10);
+    explicit ShellPairList(const internal::IntegralView& ints,
+                           double thr = 1e-10);
 
     /// @brief Direct RHF G = J - 0.5*K via on-the-fly ERI with 8-fold symmetry
     ///        and Cauchy-Schwarz screening.
@@ -131,7 +132,8 @@ struct ShellBlockPairList {
     /// @param ints Non-owning integral view.
     /// @param thr  Cauchy-Schwarz screening threshold [Hartree^(1/2),
     ///             default 1e-10].
-    explicit ShellBlockPairList(const internal::IntegralView& ints, double thr = 1e-10);
+    explicit ShellBlockPairList(const internal::IntegralView& ints,
+                                double thr = 1e-10);
 
     /// @brief Shell-block direct RHF G = J - 0.5*K (libcint/PySCF approach).
     ///
@@ -167,6 +169,17 @@ struct ShellBlockPairList {
     /// @param P Total RHF density matrix P = 2*P_occ [n x n, unitless].
     /// @param[out] K Exchange matrix [n x n, Hartree], symmetric, no 0.5 factor.
     void k(const RealMatrix& P, RealMatrix& K) const;
+
+    /// @brief Exchange matrix from the erf-attenuated operator erf(ω r)/r.
+    ///
+    /// Same normalization as `k()` (bare K, no 0.5, no α/β). `omega == 0`
+    /// is the bare-Coulomb identity (`k()`). Used by the CAM-B3LYP Fock
+    /// mix \(K = \alpha K[1/r] + \beta K[\mathrm{erf}]\).
+    ///
+    /// @param P     Total RHF density [n x n, unitless].
+    /// @param omega Range-separation parameter [1/Bohr]; must be ≥ 0.
+    /// @param[out] K Exchange matrix [n x n, Hartree].
+    void k_erf(const RealMatrix& P, double omega, RealMatrix& K) const;
 
     /// @brief Fused one-sweep restricted J and K from a single shell-block
     ///        ERI quartet scan.

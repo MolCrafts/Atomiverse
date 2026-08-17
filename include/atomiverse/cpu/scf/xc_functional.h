@@ -48,10 +48,12 @@ namespace scf {
 /// `LSDA`, `PBE`, `PBEsol`, `RevPBE`, `RPBE`, `BLYP` and `OptB88VdW` are pure
 /// (semi-local) functionals. `B3LYP` and `PBE0` are global hybrids: their semi-local part
 /// is evaluated by `evaluate_xc` while a fixed fraction of exact HF exchange
-/// (`hybrid_exchange_fraction`) is added by the Fock builder. `B2PLYP` is
-/// a **double hybrid**: same hybrid-KS build with a_x=0.53 plus a PT2
-/// correlation scale a_c=0.27 applied by the MP2 path (see
-/// `hybrid_pt2_fraction`).
+/// (`hybrid_exchange_fraction`) is added by the Fock builder. `CAMB3LYP` is
+/// a range-separated hybrid: the same B3LYP semi-local mix plus
+/// \(\alpha K[1/r] + \beta K[\mathrm{erf}(\mu r)/r]\) (see
+/// `rsh_exchange_params`). `B2PLYP` is a **double hybrid**: same hybrid-KS
+/// build with a_x=0.53 plus a PT2 correlation scale a_c=0.27 applied by
+/// the MP2 path (see `hybrid_pt2_fraction`).
 enum class XCType {
     LSDA,
     PBE,
@@ -62,8 +64,29 @@ enum class XCType {
     OptB88VdW, ///< optB88 exchange + PW92 LDA-C (use with GPW vdw_df for full).
     B3LYP,
     PBE0,
-    B2PLYP
+    B2PLYP,
+    CAMB3LYP ///< Yanai CAM-B3LYP; RSH params via `rsh_exchange_params`.
 };
+
+/// @brief Range-separated hybrid (RSH) exact-exchange parameters.
+///
+/// The Fock builder mixes
+/// \(K = \alpha\,K[1/r] + \beta\,K[\mathrm{erf}(\mu r)/r]\).
+/// Pure functionals and global hybrids return `beta = 0` and `mu = 0`
+/// (single-operator path). CAM-B3LYP returns the Yanai / PySCF / Gaussian
+/// set \((\alpha,\beta,\mu) = (0.19, 0.46, 0.33\,\mathrm{Bohr}^{-1})\).
+struct RshExchangeParams {
+    double alpha = 0; ///< Bare-Coulomb HF weight (dimensionless).
+    double beta = 0;  ///< erf-Coulomb HF weight (dimensionless).
+    double mu = 0;    ///< Range-separation parameter [1/Bohr].
+};
+
+/// @brief RSH exact-exchange parameters for a functional.
+///
+/// @param type XC functional type.
+/// @return CAM-B3LYP: (0.19, 0.46, 0.33); every other type: (α_hf, 0, 0)
+///         with α_hf from `hybrid_exchange_fraction`.
+RshExchangeParams rsh_exchange_params(XCType type);
 
 /// @brief Fraction of exact Hartree-Fock exchange (`alpha_hf`) for a functional.
 ///

@@ -18,8 +18,8 @@ namespace cpu {
 namespace scf {
 namespace internal {
 
-void HamiltonianBuilder::prepare(const internal::IntegralView& integrals, bool is_hf,
-                                 GridLevel grid_level, int n_radial,
+void HamiltonianBuilder::prepare(const internal::IntegralView& integrals,
+                                 bool is_hf, GridLevel grid_level, int n_radial,
                                  int n_angular, const MolecularGrid* fixed_grid,
                                  RI ri, AuxBasis aux_basis, Coulomb coulomb,
                                  int cfmm_order, double cfmm_threshold) {
@@ -261,11 +261,12 @@ FockResult HamiltonianBuilder::step(const internal::IntegralView& integrals,
         // applied at exactly ONE site below: the bare K matrix is scaled
         // by alpha_hf once, and both the Fock term (-alpha_hf*K) and the
         // energy term (alpha_hf*E_K) consume that single scaled matrix.
+        const RshExchangeParams rsh = rsh_exchange_params(xc_type);
         const double alpha_hf = (hybrid_alpha_override >= double(0))
                                     ? hybrid_alpha_override
-                                    : hybrid_exchange_fraction(xc_type);
-        const bool is_hybrid =
-            (alpha_hf > double(0)) || (hybrid_alpha_override >= double(0));
+                                    : rsh.alpha;
+        const bool is_hybrid = (alpha_hf > double(0)) || (rsh.beta > double(0))
+                               || (hybrid_alpha_override >= double(0));
 
         // Geometry-fixed AO-on-grid cache: build Phi/dPhi once per geometry
         // (first KS iteration, or when the LDA/GGA flavor changes) and reuse
@@ -350,13 +351,29 @@ FockResult HamiltonianBuilder::step(const internal::IntegralView& integrals,
                 // basis-invariant, so compute in engine space BEFORE the
                 // spherical bridge. The hybrid contribution is alpha_hf*E_K.
                 const double E_K = double(-0.25) * xt::sum(P_total_J * K)();
-                out.E_exact_exchange = alpha_hf * E_K;
-                to_ao(J_eng);
-                to_ao(K);
-                out.J = J_eng; // Coulomb-only, for E_J
-                out.F_alpha =
-                    Hcore + J_eng - double(0.5) * alpha_hf * K + xc.Vxc_alpha;
-                out.F_beta = out.F_alpha;
+                if (rsh.beta == double(0)) {
+                    out.E_exact_exchange = alpha_hf * E_K;
+                    to_ao(J_eng);
+                    to_ao(K);
+                    out.J = J_eng; // Coulomb-only, for E_J
+                    out.F_alpha = Hcore + J_eng - double(0.5) * alpha_hf * K
+                                  + xc.Vxc_alpha;
+                    out.F_beta = out.F_alpha;
+                } else {
+                    // CAM / RSH: F -= 0.5 (α K[1/r] + β K[erf]).
+                    RealMatrix K_erf;
+                    sp_block_.k_erf(P_total_J, rsh.mu, K_erf);
+                    const double E_K_erf =
+                        double(-0.25) * xt::sum(P_total_J * K_erf)();
+                    out.E_exact_exchange = alpha_hf * E_K + rsh.beta * E_K_erf;
+                    RealMatrix K_mix = alpha_hf * K + rsh.beta * K_erf;
+                    to_ao(J_eng);
+                    to_ao(K_mix);
+                    out.J = J_eng;
+                    out.F_alpha =
+                        Hcore + J_eng - double(0.5) * K_mix + xc.Vxc_alpha;
+                    out.F_beta = out.F_alpha;
+                }
             }
         } else if (is_hybrid) {
             // Unrestricted KS hybrid (open-shell). Out of the closed-shell

@@ -28,7 +28,7 @@ class RKS : public MeanFieldMethod<RKS> {
     RKS();
     /// @brief Construct RKS with an explicit exchange–correlation functional.
     /// @param xc Functional to use (e.g. LSDA, PBE, BLYP, B3LYP, PBE0,
-    ///           B2PLYP). For double hybrids, call `mp2(frame)` with
+    ///           CAMB3LYP, B2PLYP). For double hybrids, call `mp2(frame)` with
     ///           `mp2_os_scale = mp2_ss_scale = hybrid_pt2_fraction(xc)`
     ///           after/for the PT2 term (KS SCF alone is not the full energy).
     explicit RKS(XCType xc);
