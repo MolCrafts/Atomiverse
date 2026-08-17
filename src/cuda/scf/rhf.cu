@@ -7,8 +7,10 @@
 /// Hcore / ERI on host then upload.
 ///
 /// **Forces path (Wave 6):** STO-3G s/p (l ≤ 1, H…O, e.g. H₂O) analytic on
-/// device (`launch_rhf_forces_sp`). Higher L / other bases still use host
-/// `cpu::scf::RHF::forces`. Use `with_gradient(false)` for energy-only.
+/// device (`launch_rhf_forces_sp`). Out-of-coverage (`compute_force` on a
+/// higher-L / other basis) throws with a how-to — no silent host fallback.
+/// Use `with_gradient(false)` for energy-only, or `cpu::scf::RHF` for
+/// other bases.
 
 #ifdef ATV_HAS_HF
 
@@ -79,12 +81,12 @@ cpu::Frame host_frame_from_device(const cuda::Frame& dframe) {
     std::vector<real_t> hy(static_cast<size_t>(n));
     std::vector<real_t> hz(static_cast<size_t>(n));
     std::vector<int> htype(static_cast<size_t>(n));
-    cudaMemcpy(hx.data(), dframe.atoms.x, sizeof(real_t) * static_cast<size_t>(n),
-               cudaMemcpyDeviceToHost);
-    cudaMemcpy(hy.data(), dframe.atoms.y, sizeof(real_t) * static_cast<size_t>(n),
-               cudaMemcpyDeviceToHost);
-    cudaMemcpy(hz.data(), dframe.atoms.z, sizeof(real_t) * static_cast<size_t>(n),
-               cudaMemcpyDeviceToHost);
+    cudaMemcpy(hx.data(), dframe.atoms.x,
+               sizeof(real_t) * static_cast<size_t>(n), cudaMemcpyDeviceToHost);
+    cudaMemcpy(hy.data(), dframe.atoms.y,
+               sizeof(real_t) * static_cast<size_t>(n), cudaMemcpyDeviceToHost);
+    cudaMemcpy(hz.data(), dframe.atoms.z,
+               sizeof(real_t) * static_cast<size_t>(n), cudaMemcpyDeviceToHost);
     cudaMemcpy(htype.data(), dframe.atoms.type,
                sizeof(int) * static_cast<size_t>(n), cudaMemcpyDeviceToHost);
 
@@ -114,8 +116,8 @@ void download_mo(const SCFWorkspace& ws, cpu::scf::RealMatrix& C,
     }
     std::vector<prec_t> C_dev(static_cast<size_t>(n) * static_cast<size_t>(n));
     std::vector<prec_t> e_dev(static_cast<size_t>(n));
-    cudaMemcpy(C_dev.data(), ws.C,
-               sizeof(prec_t) * C_dev.size(), cudaMemcpyDeviceToHost);
+    cudaMemcpy(C_dev.data(), ws.C, sizeof(prec_t) * C_dev.size(),
+               cudaMemcpyDeviceToHost);
     cudaMemcpy(e_dev.data(), ws.eig, sizeof(prec_t) * e_dev.size(),
                cudaMemcpyDeviceToHost);
 
@@ -140,22 +142,6 @@ cpu::scf::RealVector restricted_occupation(int n_mo, int n_occ) {
     return f;
 }
 
-/// @brief Overwrite Frame force columns + meta energy (standalone forces path).
-void write_forces_to_frame(cpu::Frame& frame,
-                           const cpu::scf::GradientResult& gr) {
-    const int natm = static_cast<int>(frame.nlocal());
-    AccReal* __restrict fx = frame.span(kAtom_fx);
-    AccReal* __restrict fy = frame.span(kAtom_fy);
-    AccReal* __restrict fz = frame.span(kAtom_fz);
-    for (int A = 0; A < natm; ++A) {
-        fx[A] = gr.forces(A, 0);
-        fy[A] = gr.forces(A, 1);
-        fz[A] = gr.forces(A, 2);
-    }
-    frame.meta.get(kEnergy) = gr.energy;
-    frame.meta.get(kEnergyElectronic) = gr.energy;
-}
-
 /// @brief Transitional host fill of S/Hcore/ERI → device SCF (p shells).
 std::unique_ptr<internal::RhfScfCycle>
 make_host_integral_solver(const cpu::Frame& frame, cpu::scf::BasisSet basis,
@@ -170,9 +156,9 @@ make_host_integral_solver(const cpu::Frame& frame, cpu::scf::BasisSet basis,
     cpu::scf::internal::IntegralWorkspace::fill_rhf_matrices(
         frame, basis, charge, /*compute_eri=*/true, S, Hcore, ERI, V_nuc,
         n_basis, n_electrons);
-    return std::make_unique<internal::RhfScfCycle>(std::move(S), std::move(Hcore),
-                                       std::move(ERI), V_nuc, n_electrons, tol,
-                                       max_iter, level_shift);
+    return std::make_unique<internal::RhfScfCycle>(
+        std::move(S), std::move(Hcore), std::move(ERI), V_nuc, n_electrons, tol,
+        max_iter, level_shift);
 }
 
 /// @brief CUDA-only RHF: molecular s/p STO-3G → device 1e/ERI + SCF (Wave 4).
@@ -182,7 +168,7 @@ make_host_integral_solver(const cpu::Frame& frame, cpu::scf::BasisSet basis,
 /// @param level_shift Virtual level shift λ [Hartree]; wired on device Fock.
 std::unique_ptr<internal::RhfScfCycle>
 make_device_sp_sto3g_solver(const int* h_Z, int natm, int charge, double tol,
-                           int max_iter, double level_shift) {
+                            int max_iter, double level_shift) {
     int n_electrons = -charge;
     for (int i = 0; i < natm; ++i)
         n_electrons += h_Z[i];
@@ -209,8 +195,8 @@ make_device_sp_sto3g_solver(const int* h_Z, int natm, int charge, double tol,
         }
     }
 
-    std::vector<double> alpha_mol(
-        static_cast<std::size_t>(n_shells) * static_cast<std::size_t>(n_prim));
+    std::vector<double> alpha_mol(static_cast<std::size_t>(n_shells)
+                                  * static_cast<std::size_t>(n_prim));
     std::vector<double> coeff_mol(alpha_mol.size());
     std::vector<int> L_mol(static_cast<std::size_t>(n_shells));
     std::vector<int> atom_of(static_cast<std::size_t>(n_shells));
@@ -222,8 +208,7 @@ make_device_sp_sto3g_solver(const int* h_Z, int natm, int charge, double tol,
             L_mol[static_cast<std::size_t>(s)] = sh.l;
             atom_of[static_cast<std::size_t>(s)] = a;
             for (int p = 0; p < n_prim; ++p) {
-                const std::size_t k =
-                    static_cast<std::size_t>(s * n_prim + p);
+                const std::size_t k = static_cast<std::size_t>(s * n_prim + p);
                 alpha_mol[k] = sh.alpha[static_cast<std::size_t>(p)];
                 coeff_mol[k] = sh.coeff[static_cast<std::size_t>(p)];
             }
@@ -284,9 +269,9 @@ void RHF::run(cpu::Frame& frame) {
 }
 
 cpu::scf::GradientResult RHF::forces(cpu::Frame& frame) {
-    // Wave 6: s/p device path via run()+launch; higher L falls back to host
-    // inside launch(). Always enable force assembly for this call.
-    // host_Z_ seeded in run() via cache_host_types.
+    // Wave 6: s/p device path via run()+launch. Out-of-coverage throws
+    // inside launch() (no silent host fallback). Always enable force
+    // assembly for this call. host_Z_ seeded in run() via cache_host_types.
     const bool prev = compute_force;
     compute_force = true;
     run(frame);
@@ -363,10 +348,20 @@ void RHF::launch(const LaunchContext& ctx) {
     }
     const int* h_Z = host_Z_.data();
 
+    // Forces: device s/p only. Throw before any host-fill SCF so an
+    // out-of-coverage `forces()` / AIMD evaluator cannot silently grade
+    // a CPU gradient as CUDA.
+    if (compute_force && !device_sp_sto3g_ok(basis, h_Z, natm)) {
+        throw std::invalid_argument(
+            "cuda::scf::RHF::forces: device analytic gradients cover "
+            "STO-3G l<=1 (H-O) only. Use cpu::scf::RHF{basis}.forces(frame) "
+            "for other bases or higher angular momentum.");
+    }
+
     // ── Energy: CUDA-only HF when device s/p kernels cover the molecule ─
     // STO-3G with l≤1 (H…O, mixed Z OK): device S/T/V + ERI + SCF (no host
     // ERI), including virtual level shift λ on the orthonormal Fock.
-    // Higher L or other bases: host fill + upload.
+    // Higher L or other bases: host fill + upload (energy-only).
     last_device_sp_ = false;
     if (device_sp_sto3g_ok(basis, h_Z, natm)) {
         cycle_ = make_device_sp_sto3g_solver(h_Z, natm, charge, tol, max_iter,
@@ -375,7 +370,7 @@ void RHF::launch(const LaunchContext& ctx) {
     } else {
         cpu::Frame host = host_frame_from_device(ctx.frame);
         cycle_ = make_host_integral_solver(host, basis, charge, tol, max_iter,
-                                            level_shift);
+                                           level_shift);
     }
     cycle_->build(ctx.runtime.stream, ctx.frame);
     cycle_->drive(ctx.runtime.stream, ctx.frame);
@@ -414,37 +409,9 @@ void RHF::launch(const LaunchContext& ctx) {
                 cudaFree(d_W);
             }
         } else {
-            cpu::Frame host = host_frame_from_device(ctx.frame);
-            cpu::scf::RHF host_rhf{basis, charge, tol, max_iter};
-            cpu::scf::GradientResult gr = host_rhf.forces(host);
-            write_forces_to_frame(host, gr);
-            if (ctx.frame.atoms.fx && ctx.frame.atoms.fy && ctx.frame.atoms.fz) {
-                std::vector<real_t> hfx(static_cast<size_t>(natm));
-                std::vector<real_t> hfy(static_cast<size_t>(natm));
-                std::vector<real_t> hfz(static_cast<size_t>(natm));
-                auto fx = host.span(kAtom_fx);
-                auto fy = host.span(kAtom_fy);
-                auto fz = host.span(kAtom_fz);
-                for (int A = 0; A < natm; ++A) {
-                    hfx[static_cast<size_t>(A)] = static_cast<real_t>(fx[A]);
-                    hfy[static_cast<size_t>(A)] = static_cast<real_t>(fy[A]);
-                    hfz[static_cast<size_t>(A)] = static_cast<real_t>(fz[A]);
-                }
-                // Host force fallback still binds H2D to the runtime stream
-                // so Evaluate's non-default stream remains the only queue.
-                cudaMemcpyAsync(ctx.frame.atoms.fx, hfx.data(),
-                                sizeof(real_t) * static_cast<size_t>(natm),
-                                cudaMemcpyHostToDevice, stream);
-                cudaMemcpyAsync(ctx.frame.atoms.fy, hfy.data(),
-                                sizeof(real_t) * static_cast<size_t>(natm),
-                                cudaMemcpyHostToDevice, stream);
-                cudaMemcpyAsync(ctx.frame.atoms.fz, hfz.data(),
-                                sizeof(real_t) * static_cast<size_t>(natm),
-                                cudaMemcpyHostToDevice, stream);
-                cudaStreamSynchronize(stream);
-            }
-            energy_ha_ = gr.energy / units::kHartreeInEv;
-            return;
+            throw std::runtime_error(
+                "cuda::scf::RHF::launch: compute_force is set but the device "
+                "s/p force workspace is incomplete (P/C/eig/shell maps).");
         }
     }
 

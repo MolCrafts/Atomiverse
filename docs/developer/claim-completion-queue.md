@@ -77,7 +77,7 @@ CUDA row** — that is layout, not debt.
 | ---- | ------ | ----------- | ---- |
 | cuda-md-lj-bench | MD | restore `lj/performance/` benchmark so the roadmap's only ⚡ has runnable evidence (A/B methodology: `.claude/notes/cuda-openmm-md-perf.md`) | benchmark runs on GH200; ⚡ evidence path live |
 | cuda-md-npt | MD | device NPH/PR barostat path (CPU parity + LAMMPS pin, tile engine unchanged) | CUDA↔CPU trajectory tolerance stated; LAMMPS pin green |
-| cuda-scf-gradient | SCF | device RHF gradient kernels (unblocks GPU AIMD; today "CUDA SCF has no gradient kernel") — after the nested `cuda::Driver<scf::Phase>` fold residual | force vs CPU ≤ stated tol; CPU PySCF pins green |
+| cuda-scf-gradient | SCF | device RHF s/p forces + GPU BOMD — GH200 **1332540** green (H2O grad max\|Δ\|=3.87e-11 Ha/Bohr; H2 AIMD PE=−1.117098 Ha). Out-of-coverage now throws. Nested `cuda::Driver<scf::Phase>` fold still residual. | force vs CPU ≤ stated tol; CPU PySCF pins green |
 | cuda-pw-spin-pbe | PW | device spin-PBE forces/stress (today rejects), then spin+smear | dual-gate vs CPU + QE-class anchor |
 | cuda-gpw-product | GPW | continue the frozen public shape (`.claude/notes/cuda-gpw-public-shape.md`): water σ, multi-k F/σ, UKS F/σ, MG production; independent anchors per claim bar 3 (◐→✓ only then) | es-cpu-cuda queue gates |
 

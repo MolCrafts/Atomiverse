@@ -6,6 +6,7 @@
 #include <cmath>
 #include <gtest/gtest.h>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 
 #include <xtensor-blas/xlinalg.hpp>
@@ -15,13 +16,13 @@
 #include "atomiverse/core/driver_template.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/basis_data/accessors.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/rhf.h"
-#include "atomiverse/core/units.h"
+#include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
-#include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/evaluate/evaluate.cuh"
 #include "atomiverse/cuda/evaluate/single_point.cuh"
 #include "atomiverse/cuda/scf/internal/rhf_scf_cycle.cuh"
@@ -115,7 +116,8 @@ CpuRhfRef cpu_rhf_reference(cpu::Frame& frame, int charge = 0) {
 
 TEST(RHF, IntegralSymmetry) {
     auto frame = make_h2();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto integrals =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
 
     int n = integrals.n_basis;
     EXPECT_EQ(n, 2);
@@ -136,7 +138,8 @@ TEST(RHF, IntegralSymmetry) {
 
 TEST(RHF, NuclearRepulsion) {
     auto frame = make_h2();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto integrals =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // V_nuc = Z_A * Z_B / R_AB (in Bohr) = 1*1 / (0.74 * 1.8897) ~ 0.7151
     EXPECT_NEAR(static_cast<double>(integrals.V_nuc), kH2Vnuc, 0.01);
 }
@@ -145,7 +148,8 @@ TEST(RHF, NuclearRepulsion) {
 
 TEST(RHF, Orthogonalization) {
     auto frame = make_h2();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto integrals =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     int n = integrals.n_basis;
 
     // Compute X = S^{-1/2} the same way the RHF orthogonalization does
@@ -174,8 +178,8 @@ TEST(RHF, Orthogonalization) {
 
 TEST(RHF, FockBuild) {
     auto frame = make_h2();
-    auto integrals =
-        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0, true};
+    auto integrals = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0, true};
     int n = integrals.n_basis;
 
     // Use zero density -> G(0) = 0 -> F = Hcore
@@ -257,7 +261,8 @@ TEST(RHF, CPUConvergence) {
 
 TEST(RHF, CPUDensityTrace) {
     auto frame = make_h2();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto integrals =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
 
     // Converged density from the concrete cpu::scf::RHF method.
     const double tol_cpu =
@@ -289,8 +294,8 @@ TEST(RHF, OddElectronThrowsHostIntegrals) {
     ASSERT_EQ(n_electrons, 1);
 
     EXPECT_THROW((cuda::scf::internal::RhfScfCycle{
-                      std::move(S), std::move(Hcore), std::move(ERI), V_nuc,
-                      n_electrons, 1e-10, 100}),
+                     std::move(S), std::move(Hcore), std::move(ERI), V_nuc,
+                     n_electrons, 1e-10, 100}),
                  std::invalid_argument);
 }
 
@@ -307,8 +312,8 @@ TEST(RHF, EvenElectronConstructsHostIntegrals) {
     ASSERT_EQ(n_electrons, 2);
 
     EXPECT_NO_THROW((cuda::scf::internal::RhfScfCycle{
-                         std::move(S), std::move(Hcore), std::move(ERI), V_nuc,
-                         n_electrons, 1e-10, 100}));
+        std::move(S), std::move(Hcore), std::move(ERI), V_nuc, n_electrons,
+        1e-10, 100}));
 }
 
 TEST(RHF, NegativeNoccThrowsDeviceIntegrals) {
@@ -374,11 +379,13 @@ TEST(RHF, CUDALevelShiftEnergyInvariant) {
     double tol =
         (sizeof(double) == sizeof(float)) ? double(1e-5) : double(1e-10);
 
-    cuda::scf::RHF rhf0{cpu::scf::BasisSet::STO3G, 0, tol, 100, /*level_shift=*/0.0};
+    cuda::scf::RHF rhf0{cpu::scf::BasisSet::STO3G, 0, tol, 100,
+                        /*level_shift=*/0.0};
     rhf0.with_gradient(false);
     rhf0.run(frame0);
 
-    cuda::scf::RHF rhf5{cpu::scf::BasisSet::STO3G, 0, tol, 100, /*level_shift=*/0.5};
+    cuda::scf::RHF rhf5{cpu::scf::BasisSet::STO3G, 0, tol, 100,
+                        /*level_shift=*/0.5};
     rhf5.with_gradient(false);
     rhf5.run(frame5);
 
@@ -510,7 +517,8 @@ constexpr double kLiHEnergy = -7.8634; // LiH/STO-3G/RHF [Hartree]
 
 TEST(RHF, HeAtom) {
     auto frame = make_he();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto integrals =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     EXPECT_EQ(integrals.n_basis, 1);
     EXPECT_EQ(integrals.n_electrons, 2);
     auto ref = cpu_rhf_reference(frame);
@@ -520,8 +528,8 @@ TEST(RHF, HeAtom) {
 
 TEST(RHF, HeHPlus) {
     auto frame = make_heh_plus();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G,
-                                            1}; // charge = +1
+    auto integrals = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 1}; // charge = +1
     EXPECT_EQ(integrals.n_basis, 2);
     EXPECT_EQ(integrals.n_electrons, 2); // He(2) + H(1) - 1 = 2
     EXPECT_EQ(integrals.n_occ(), 1);
@@ -532,7 +540,8 @@ TEST(RHF, HeHPlus) {
 
 TEST(RHF, LiH) {
     auto frame = make_lih();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto integrals =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     EXPECT_EQ(integrals.n_basis,
               6); // Li: 1s+2s+2p(x,y,z)=5, H: 1s=1 -> total 6
     EXPECT_EQ(integrals.n_electrons, 4);
@@ -634,10 +643,9 @@ TEST(RHF, PrivateCycleIsNotADriver) {
         !std::is_base_of_v<Driver<ATV::evaluate::Phase, cuda::device_tag>,
                            cuda::scf::internal::RhfScfCycle>,
         "RhfScfCycle must not be a Driver<> subclass");
-    static_assert(
-        !std::is_base_of_v<cuda::Driver<ATV::scf::Phase>,
-                           cuda::scf::internal::RhfScfCycle>,
-        "RhfScfCycle must not be cuda::Driver<scf::Phase>");
+    static_assert(!std::is_base_of_v<cuda::Driver<ATV::scf::Phase>,
+                                     cuda::scf::internal::RhfScfCycle>,
+                  "RhfScfCycle must not be cuda::Driver<scf::Phase>");
     static_assert(std::is_base_of_v<cuda::Component, cuda::scf::RHF>,
                   "RHF remains Component for outer nesting");
     SUCCEED();
@@ -664,8 +672,9 @@ TEST(RHF, PrivateIntegralWorkspaceIsHostOnly) {
     // Internal integral workspace (not a public API type) is host xtensor
     // storage — unit tests may include internal/integrals.h; users must not.
     static_assert(
-        std::is_same_v<decltype(std::declval<cpu::scf::internal::IntegralWorkspace>().S),
-                       xt::xtensor<double, 2>>,
+        std::is_same_v<
+            decltype(std::declval<cpu::scf::internal::IntegralWorkspace>().S),
+            xt::xtensor<double, 2>>,
         "private integral workspace S must be host xtensor");
 }
 
@@ -705,8 +714,8 @@ TEST(RHF, CUDAForcesMatchCPU_H2_STO3G) {
     const double e_bar =
         (sizeof(double) == sizeof(float)) ? ha_to_ev(1e-4) : ha_to_ev(1e-6);
     EXPECT_NEAR(g_cuda.energy, g_cpu.energy, e_bar);
-    EXPECT_NEAR(static_cast<double>(frame_cuda.meta.get(kEnergy)), g_cuda.energy,
-                1e-9);
+    EXPECT_NEAR(static_cast<double>(frame_cuda.meta.get(kEnergy)),
+                g_cuda.energy, 1e-9);
     EXPECT_NEAR(static_cast<double>(frame_cuda.meta.get(kEnergy)),
                 static_cast<double>(frame_cpu.meta.get(kEnergy)), e_bar);
 
@@ -847,6 +856,21 @@ TEST(RHF, WithGradientChain) {
     EXPECT_TRUE(rhf.compute_force);
 }
 
+TEST(RHF, OutOfCoverageForcesThrowHowto) {
+    // def2-SVP is outside the device s/p STO-3G envelope. Must throw a
+    // how-to, not silently grade cpu::scf::RHF::forces as CUDA.
+    auto frame = make_h2o();
+    cuda::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP, 0, 1e-8, 20};
+    try {
+        (void)rhf.forces(frame);
+        FAIL() << "expected invalid_argument for def2-SVP device forces";
+    } catch (const std::invalid_argument& e) {
+        const std::string msg(e.what());
+        EXPECT_NE(msg.find("cpu::scf::RHF"), std::string::npos) << msg;
+        EXPECT_NE(msg.find("STO-3G"), std::string::npos) << msg;
+    }
+}
+
 // ── AIMD milestone (wave-3): multi-step MD + per-launch geometry rebuild ─
 // CPU twin: MethodDriverWire.NestedMultiStepAimd / MdAcceptsNestedRhfForce.
 // No AimdDriver; composition is cuda::md::MD + set_evaluator(RHF) + VV.
@@ -859,8 +883,9 @@ TEST(RHF, NestedMultiStepAimd) {
 
     cuda::md::MD sim;
     sim.set_integrator(cuda::md::VelocityVerlet{0.5});
-    sim.set_evaluator(cuda::scf::RHF{cpu::scf::BasisSet::STO3G, 0, 1e-9, 100, 0.0,
-                                    /*compute_force=*/true});
+    sim.set_evaluator(cuda::scf::RHF{cpu::scf::BasisSet::STO3G, 0, 1e-9, 100,
+                                     0.0,
+                                     /*compute_force=*/true});
     EXPECT_NO_THROW(sim.build());
     sim.run(frame, 3);
 

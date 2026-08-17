@@ -4,19 +4,18 @@
 ///
 /// Public RHF + Frame only. Frame + concrete method only; no SCFSolver / *Config.
 ///
-/// **The CUDA leg is a DOCUMENTED host fallback** (REFERENCE.md §Device
+/// **The CUDA leg is a negative envelope gate** (REFERENCE.md §Device
 /// legs): def2-SVP carries d shells, outside the device s/p STO-3G envelope,
-/// so `cuda::scf::RHF::forces` delegates the gradient to `cpu::scf::RHF`.
-/// The leg asserts exactly that (`last_scf_on_device()` and
-/// `last_force_on_device()` both false), so it can never masquerade as a
-/// device-gradient result, and fails loudly the day the envelope grows —
-/// forcing an honest re-documentation with device tolerances. The device
-/// s/p gradient e2e is `scf/h2o_rhf_sto3g_grad`.
+/// so `cuda::scf::RHF::forces` must throw a how-to pointing at
+/// `cpu::scf::RHF`. The day the envelope grows this must fail loudly —
+/// rewrite with device tolerances. The device s/p gradient e2e is
+/// `scf/h2o_rhf_sto3g_grad`.
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #include <string>
 
 #include "atomiverse/core/units.h"
@@ -28,18 +27,18 @@
 namespace {
 
 enum class Device { Cpu, Cuda };
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
     for (int i = 1; i < argc; ++i) {
         const char* a = argv[i];
-        if (std::strncmp(a, "--device=", 9) == 0) want = a + 9;
-        else if (std::strcmp(a, "--device") == 0 && i + 1 < argc) want = argv[++i];
-        else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0 ||
-                 std::strcmp(a, "both") == 0)
+        if (std::strncmp(a, "--device=", 9) == 0)
+            want = a + 9;
+        else if (std::strcmp(a, "--device") == 0 && i + 1 < argc)
+            want = argv[++i];
+        else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0
+                 || std::strcmp(a, "both") == 0)
             want = a;
     }
     return want;
@@ -76,28 +75,26 @@ int run_on_device(Device dev) {
         converged = rhf.converged();
     } else {
         cuda::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP, 0, 1e-12, 200};
-        res = rhf.forces(frame);
-        converged = rhf.converged();
-
-        // Honesty gate (REFERENCE.md §Device legs): def2-SVP is outside the
-        // device s/p STO-3G envelope (`device_sp_sto3g_ok`), so this leg is a
-        // documented host fallback — the graded gradient is
-        // cpu::scf::RHF::forces reached through the cuda::scf::RHF envelope.
-        // If the device path ever covers def2-SVP this must fail loudly:
-        // re-document the leg with device tolerances instead of silently
-        // relabeling a host result as CUDA (or the reverse).
-        if (rhf.last_scf_on_device() || rhf.last_force_on_device()) {
+        try {
+            res = rhf.forces(frame);
             std::fprintf(stderr,
-                         "FAIL [cuda]: def2-SVP ran on the device path "
-                         "(scf_on_device=%d force_on_device=%d) but this leg "
-                         "is documented as HOST FALLBACK — update REFERENCE.md "
-                         "and retighten this leg for the device envelope\n",
-                         rhf.last_scf_on_device() ? 1 : 0,
-                         rhf.last_force_on_device() ? 1 : 0);
+                         "FAIL [cuda]: def2-SVP forces returned instead of "
+                         "throwing — envelope grew or host fallback returned; "
+                         "update REFERENCE.md and retighten this leg\n");
             return 1;
+        } catch (const std::invalid_argument& e) {
+            const std::string msg(e.what());
+            if (msg.find("cpu::scf::RHF") == std::string::npos
+                || msg.find("STO-3G") == std::string::npos) {
+                std::fprintf(stderr, "FAIL [cuda]: throw missing how-to: %s\n",
+                             e.what());
+                return 1;
+            }
+            std::printf("[cuda] path=throw (def2-SVP d shells outside the "
+                        "device s/p STO-3G envelope)\n");
+            std::printf("PASS [cuda]\n");
+            return 0;
         }
-        std::printf("[cuda] path=host-fallback (documented: def2-SVP d shells "
-                    "outside the device s/p STO-3G envelope)\n");
     }
 
     if (!converged) {
@@ -112,10 +109,9 @@ int run_on_device(Device dev) {
     };
 
     // PySCF 2.14.0 analytic gradient [Ha/Bohr] — REFERENCE.md
-    const double want[3][3] = {
-        {0.0, 0.0, 1.804450607022e-02},
-        {0.0, 1.107031890619e-02, -9.022253035110e-03},
-        {0.0, -1.107031890619e-02, -9.022253035110e-03}};
+    const double want[3][3] = {{0.0, 0.0, 1.804450607022e-02},
+                               {0.0, 1.107031890619e-02, -9.022253035110e-03},
+                               {0.0, -1.107031890619e-02, -9.022253035110e-03}};
     const double tol = 1e-6;
 
     double max_err = 0.0;
@@ -155,7 +151,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     int rc = 0;
-    if (want == "cpu" || want == "both") rc |= run_on_device(Device::Cpu);
-    if (want == "cuda" || want == "both") rc |= run_on_device(Device::Cuda);
+    if (want == "cpu" || want == "both")
+        rc |= run_on_device(Device::Cpu);
+    if (want == "cuda" || want == "both")
+        rc |= run_on_device(Device::Cuda);
     return rc;
 }

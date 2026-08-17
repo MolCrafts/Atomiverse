@@ -179,9 +179,11 @@ watch out for in the ones that do. Snapshot: **2026-07-23** on `dev`.
   (semi-numerical forces), x2c-1e energy (forces throw), counterpoise, RHF
   TDA/TDHF (`RHF::tda` / `RHF::tdhf`), APT/IR dipole derivatives. Hard gates /
   docs honesty for some of these are still in the `hf-parity` parking lot.
-- **CUDA SCF is still a restricted-HF energy engine.** Device Fock/density/
-  diagonalization; no DIIS, no UHF/KS, **no gradients** → no GPU AIMD.
-  Device-native integrals are s-type only.
+- **CUDA SCF is still a restricted-HF engine.** Device Fock/density/
+  diagonalization and CDIIS; no UHF/KS. Device-native integrals **and
+  analytic forces** cover STO-3G s/p (l ≤ 1, H…O). GPU BOMD exists as
+  `cuda::md::MD` + `cuda::scf::RHF` (`reg_h2_rhf_sto3g_aimd`, GH200
+  **1332540**). Out-of-coverage `forces()` throws — use `cpu::scf::RHF`.
 - **MINAO guess covers H, C, N, O, F only**; other elements fall back to Hcore.
 
 ### Post-Hartree–Fock

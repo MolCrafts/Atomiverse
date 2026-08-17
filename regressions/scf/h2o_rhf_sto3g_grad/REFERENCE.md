@@ -10,8 +10,8 @@ previously had only unit coverage (`tests/cuda/scf/test_rhf.cu`). This is its
 e2e regression. The CUDA leg is **fail-closed**: it asserts
 `last_scf_on_device()` *and* `last_force_on_device()`, so a silent host
 fallback (grading `cpu::scf::RHF::forces` under a "cuda" banner) fails the
-case instead of passing it. The documented-host-fallback counterpart for a
-basis *outside* the device envelope is `scf/h2o_rhf_def2svp_grad`.
+case instead of passing it. The out-of-coverage counterpart
+(`scf/h2o_rhf_def2svp_grad` CUDA leg) asserts that `forces()` **throws**.
 
 Oracle protocol: docs/tutorial/appendix-pyscf-oracle.md (external run, pinned).
 

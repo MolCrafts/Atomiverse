@@ -8,7 +8,7 @@
 ///
 /// **Energy (CUDA-only HF for STO-3G s/p):** device integral kernels + SCF
 /// (`launch_*_sp`) — no host ERI. **Forces:** s/p device analytic
-/// (`launch_rhf_forces_sp`); higher L still host.
+/// (`launch_rhf_forces_sp`); out-of-coverage throws (use `cpu::scf::RHF`).
 ///
 /// Multi-step BOMD: `cuda::md::MD` + `set_evaluator(RHF{…})` + VelocityVerlet.
 ///
@@ -45,7 +45,9 @@ namespace cuda {
 namespace scf {
 
 // Incomplete type — defined only in the .cu translation unit (private).
-namespace internal { class RhfScfCycle; }
+namespace internal {
+class RhfScfCycle;
+}
 
 /// @brief Restricted Hartree–Fock on the CUDA backend.
 ///
@@ -77,9 +79,8 @@ class RHF : public cuda::Component, public cuda::HF {
     /// @param level_shift_in Virtual level shift [Hartree].
     /// @param compute_force_in Nested force assembly default.
     explicit RHF(cpu::scf::BasisSet basis_in = cpu::scf::BasisSet::STO3G,
-                 int charge_in = 0, double tol_in = 1e-9,
-                 int max_iter_in = 100, double level_shift_in = 0.0,
-                 bool compute_force_in = true);
+                 int charge_in = 0, double tol_in = 1e-9, int max_iter_in = 100,
+                 double level_shift_in = 0.0, bool compute_force_in = true);
 
     /// @brief Destroy owned private RHF SCF cycle (defined in .cu).
     ~RHF() override;
@@ -125,7 +126,8 @@ class RHF : public cuda::Component, public cuda::HF {
     int iterations() const { return iterations_; }
 
     /// @brief True when the most recent force assembly used device kernels
-    ///        (s/p STO-3G path). False for host fallback or energy-only.
+    ///        (s/p STO-3G path). False for energy-only. Out-of-coverage
+    ///        `forces()` throws instead of a host fallback.
     bool last_force_on_device() const { return last_force_device_; }
 
     /// @brief True when the most recent SCF used device s/p integrals

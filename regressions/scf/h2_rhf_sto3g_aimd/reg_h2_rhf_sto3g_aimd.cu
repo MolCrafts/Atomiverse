@@ -21,24 +21,24 @@
 namespace {
 
 enum class Device { Cpu, Cuda };
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
     for (int i = 1; i < argc; ++i) {
         const char* a = argv[i];
-        if (std::strncmp(a, "--device=", 9) == 0) want = a + 9;
-        else if (std::strcmp(a, "--device") == 0 && i + 1 < argc) want = argv[++i];
-        else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0 ||
-                 std::strcmp(a, "both") == 0)
+        if (std::strncmp(a, "--device=", 9) == 0)
+            want = a + 9;
+        else if (std::strcmp(a, "--device") == 0 && i + 1 < argc)
+            want = argv[++i];
+        else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0
+                 || std::strcmp(a, "both") == 0)
             want = a;
     }
     return want;
 }
 
-cpu::Frame make_h2() {
+ATV::cpu::Frame make_h2() {
     using namespace ATV;
     cpu::Frame frame(2);
     frame.span(kAtom_x)[0] = 0.0;
@@ -80,8 +80,7 @@ int run_on_device(Device dev) {
     const double pe_ev = static_cast<double>(frame.meta.get(kEnergy));
     const double pe_ha = pe_ev / units::kHartreeInEv;
     if (!std::isfinite(pe_ev) || pe_ev >= 0.0) {
-        std::fprintf(stderr,
-                     "FAIL [%s]: BOMD PE not finite/bound: %.6f eV\n",
+        std::fprintf(stderr, "FAIL [%s]: BOMD PE not finite/bound: %.6f eV\n",
                      device_name(dev), pe_ev);
         return 1;
     }
@@ -107,7 +106,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     int rc = 0;
-    if (want == "cpu" || want == "both") rc |= run_on_device(Device::Cpu);
-    if (want == "cuda" || want == "both") rc |= run_on_device(Device::Cuda);
+    if (want == "cpu" || want == "both")
+        rc |= run_on_device(Device::Cpu);
+    if (want == "cuda" || want == "both")
+        rc |= run_on_device(Device::Cuda);
     return rc;
 }

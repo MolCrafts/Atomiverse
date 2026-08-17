@@ -107,7 +107,8 @@ is device-resident: Fock and density builds, cuSOLVER diagonalization, device
 CDIIS (Pulay) Fock mixing (history on device; only the tiny (m+1) Pulay solve
 runs on host), and the Saunders–Hillier level shift on the device Fock path.
 Device-native integrals **and analytic nuclear forces** cover s/p shells
-(l ≤ 1, STO-3G class — mixed Z up to O); higher angular momentum and other
-basis sets fall back to a host-built integral pack (SCF loop still on device,
-analytic forces on host). Still missing on CUDA: UHF and any Gaussian-basis
-Kohn–Sham path.
+(l ≤ 1, STO-3G class — mixed Z up to O). Energy on other bases still
+host-fills S/Hcore/ERI and uploads (SCF loop on device). Requesting
+forces outside that envelope **throws** — use `cpu::scf::RHF`. GPU BOMD
+smoke: `reg_h2_rhf_sto3g_aimd` (GH200 **1332540**). Still missing on
+CUDA: UHF and any Gaussian-basis Kohn–Sham path.

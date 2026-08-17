@@ -250,7 +250,10 @@ AIMD works by binding a force-providing method/component to `md::Phase::force`
 - `cpu::semiempirical::AM1Evaluator` with `with_gradient(true)` (default) writes
   nuclear forces (eV/Å). Semiempirical BOMD is pinned by
   `regressions/semiempirical/am1_water_bomd`.
-- CUDA SCF has no gradient kernel — **there is no GPU AIMD**.
+- GPU BOMD for STO-3G s/p (l ≤ 1): `cuda::md::MD` +
+  `set_evaluator(cuda::scf::RHF{…})` + VelocityVerlet
+  (`reg_h2_rhf_sto3g_aimd --device=cuda`, GH200 **1332540**,
+  PE = −30.397789 eV). Out-of-coverage device forces throw.
 
 **XL-BOMD** (Niklasson dissipative auxiliary density) ships as
 `cpu::electronic::XlBomd` + `GPWEvaluator::{xl_bomd, xl_bomd_k}` on closed-shell
