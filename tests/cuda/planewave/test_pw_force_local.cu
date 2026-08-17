@@ -105,14 +105,14 @@ TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
     ATV_CUDA_CHECK(cudaMemcpy(d_rho, rho.data(),
                               ng * sizeof(cufftDoubleComplex),
                               cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(
-        cudaMemcpy(d_gx, gx.data(), ng * sizeof(double), cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(
-        cudaMemcpy(d_gy, gy.data(), ng * sizeof(double), cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(
-        cudaMemcpy(d_gz, gz.data(), ng * sizeof(double), cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(
-        cudaMemcpy(d_vg, vg.data(), ng * sizeof(double), cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(d_gx, gx.data(), ng * sizeof(double),
+                              cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(d_gy, gy.data(), ng * sizeof(double),
+                              cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(d_gz, gz.data(), ng * sizeof(double),
+                              cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(d_vg, vg.data(), ng * sizeof(double),
+                              cudaMemcpyHostToDevice));
     ATV_CUDA_CHECK(cudaMemcpy(d_pos, pos.data(), 3 * n_atoms * sizeof(double),
                               cudaMemcpyHostToDevice));
     ATV_CUDA_CHECK(cudaMemset(d_F, 0, 3 * n_atoms * sizeof(double)));
@@ -128,8 +128,9 @@ TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
 
     double max_diff = 0.0;
     for (int i = 0; i < 3 * n_atoms; ++i) {
-        max_diff = std::max(max_diff, std::abs(F_dev[static_cast<std::size_t>(i)]
-                                               - F_host[static_cast<std::size_t>(i)]));
+        max_diff =
+            std::max(max_diff, std::abs(F_dev[static_cast<std::size_t>(i)]
+                                        - F_host[static_cast<std::size_t>(i)]));
     }
     // Bit-level for a pure arithmetic kernel (atomicAdd order on 2 atoms
     // is deterministic enough at double for this tiny ng).
@@ -154,17 +155,15 @@ TEST(CudaPWForces, PublicApiRejectsEmptyFrame) {
     method.tol = 1e-4;
     method.max_iter = 4;
     method.xc = cpu::scf::XCType::LSDA;
-    EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method), std::invalid_argument);
+    EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method),
+                 std::invalid_argument);
 }
 
-// Collinear LSDA fixed-occ forces are product; spin-PBE forces stay fail-closed
-// (child slug cuda-pw-spin-pbe-forces). Gate must fire before SCF work.
-TEST(CudaPWForces, PublicApiRejectsSpinPbeForces) {
-    cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 1;
-    f.span(kAtom_mass)[0] = 1.008;
-    f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
-    f.box = cpu::Box::cubic(4.5);
+// Spin-PBE forces are on the device whitelist (exchange_correlation_spin
+// already runs xc_pbe_spin_grid). Empty-frame still rejects before SCF;
+// the message must not claim PBE is unsupported.
+TEST(CudaPWForces, PublicApiAcceptsSpinPbeOnEmptyFrameGate) {
+    cpu::Frame f(0);
     cuda::pw::PW method;
     method.gth_name = "GTH-PBE-q1";
     method.spin_polarized = true;
@@ -172,10 +171,12 @@ TEST(CudaPWForces, PublicApiRejectsSpinPbeForces) {
     method.xc = cpu::scf::XCType::PBE;
     try {
         (void)cuda::pw::pw_forces_analytic(f, method);
-        FAIL() << "expected spin-PBE force reject";
+        FAIL() << "expected empty-frame throw";
     } catch (const std::invalid_argument& e) {
         const std::string msg = e.what();
-        EXPECT_NE(msg.find("LSDA only"), std::string::npos) << "msg=" << msg;
+        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
+        EXPECT_EQ(msg.find("LSDA only"), std::string::npos)
+            << "spin-PBE must not hit the XC reject; msg=" << msg;
     }
 }
 
@@ -192,7 +193,8 @@ TEST(CudaPWForces, PublicApiRejectsSpinSmearForces) {
     method.smearing = cuda::pw::Smearing::fermi_dirac;
     method.degauss = 0.01;
     method.xc = cpu::scf::XCType::LSDA;
-    EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method), std::invalid_argument);
+    EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method),
+                 std::invalid_argument);
 }
 
 // PBE is on the force-path XC whitelist (DeviceDensity + xc_pbe). Empty-frame
@@ -211,8 +213,7 @@ TEST(CudaPWForces, PublicApiAcceptsPbeOnEmptyFrameGate) {
         FAIL() << "expected empty-frame throw";
     } catch (const std::invalid_argument& e) {
         const std::string msg = e.what();
-        EXPECT_NE(msg.find("no atoms"), std::string::npos)
-            << "msg=" << msg;
+        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
         EXPECT_EQ(msg.find("no device path"), std::string::npos)
             << "PBE must not hit the XC whitelist reject; msg=" << msg;
     }

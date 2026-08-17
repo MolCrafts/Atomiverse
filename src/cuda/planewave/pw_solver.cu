@@ -426,8 +426,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
             solver.accumulate_density(weight, omega_bohr);
         }
 
-        den.collect();  // DensityBuilder::finish, first half
-        den.mix(iter);  // pulay_mix (host solve of the ≤ 8×8 DIIS system)
+        den.collect(); // DensityBuilder::finish, first half
+        den.mix(iter); // pulay_mix (host solve of the ≤ 8×8 DIIS system)
         const auto s = den.reduce(static_cast<double>(vol_bohr));
 
         // The shared logger reads ws.E_xc; every other host density-side
@@ -462,14 +462,15 @@ PWResult& PW::run(const cpu::Frame& frame) {
 std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                                                       const PW& method) {
     // Gate unsupported force surface before any CUDA work. Restricted fixed
-    // + restricted metallic smear + collinear LSDA fixed-occ forces landed;
-    // spin-PBE / spin∧smear stay closed.
+    // + restricted metallic smear + collinear LSDA/PBE fixed-occ forces
+    // landed; spin∧smear stays closed.
     method.validate_members();
-    if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA)
+    if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA
+        && method.xc != cpu::scf::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: spin_polarized force path is "
-            "XCType::LSDA only — spin-PBE forces are a deeper product row, "
-            "or use cpu::pw::pw_forces_analytic");
+            "XCType::LSDA or XCType::PBE only — use "
+            "cpu::pw::pw_forces_analytic for other XC");
     if (method.spin_polarized && method.smearing != Smearing::none)
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: spin_polarized with metallic "
@@ -522,8 +523,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
         n_beta = (n_elec - mag) / 2;
     } else if (!use_smear && n_elec % 2 != 0) {
         throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: "
-            + std::to_string(n_elec)
+            "cuda::pw::pw_forces_analytic: " + std::to_string(n_elec)
             + " valence electrons is not closed-shell — use spin_polarized "
               "for open shell, or set smearing for metallic occupations");
     }
@@ -532,9 +532,8 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     ws.pulay_depth = method.pulay_depth;
 
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    int n_bands = method.spin_polarized
-                      ? std::max(std::max(n_alpha, n_beta), 1)
-                      : prob.n_bands;
+    int n_bands = method.spin_polarized ? std::max(std::max(n_alpha, n_beta), 1)
+                                        : prob.n_bands;
     cpu::pw::internal::SmearKind smear_kind =
         cpu::pw::internal::SmearKind::fermi_dirac;
     AccReal degauss_ha = AccReal(0);
@@ -722,12 +721,11 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     }
     // Host-visible breadcrumb: energy of the force-path SCF (Ry). Mirrors the
     // CPU `forces-scf converged` line so dual-gate logs can compare.
-    std::printf("[pw] cuda forces-scf done iter=%d energy_ry=%.8f%s%s\n",
-                last_iter,
-                static_cast<double>(last_energy_ha)
-                    / cpu::pw::qe_units::rydberg_to_hartree,
-                method.spin_polarized ? " spin=1" : "",
-                use_smear ? " smear=1" : "");
+    std::printf(
+        "[pw] cuda forces-scf done iter=%d energy_ry=%.8f%s%s\n", last_iter,
+        static_cast<double>(last_energy_ha)
+            / cpu::pw::qe_units::rydberg_to_hartree,
+        method.spin_polarized ? " spin=1" : "", use_smear ? " smear=1" : "");
 
     // Forces from the final mixed density + band re-solve at final V_eff.
     return internal::pw_forces_analytic_impl(
@@ -739,13 +737,12 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
                                 double* energy_ry_out) {
     method.validate_members();
-    // Collinear LSDA fixed-occ stress is landed; spin-PBE / spin∧smear stay
-    // closed (deeper product rows).
-    if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA)
+    // Collinear LSDA/PBE fixed-occ stress is landed; spin∧smear stays closed.
+    if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA
+        && method.xc != cpu::scf::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: spin_polarized stress path is XCType::LSDA "
-            "only — spin-PBE stress is a deeper product row, or use "
-            "cpu::pw::pw_stress");
+            "or XCType::PBE only — use cpu::pw::pw_stress for other XC");
     if (method.spin_polarized && method.smearing != Smearing::none)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: spin_polarized with metallic smearing has "
@@ -761,8 +758,7 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
             "cuda::pw::pw_stress: degauss must be > 0 [Ry] when smearing is "
             "enabled");
     if (frame.nlocal() <= 0)
-        throw std::invalid_argument(
-            "cuda::pw::pw_stress: frame has no atoms");
+        throw std::invalid_argument("cuda::pw::pw_stress: frame has no atoms");
     if (frame.box.volume() <= 0)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: non-positive cell volume");

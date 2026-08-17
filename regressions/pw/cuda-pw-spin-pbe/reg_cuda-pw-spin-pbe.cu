@@ -5,10 +5,13 @@
 /// Twin of `pw-spin-gga` on the device surface. Public API only.
 /// Requires ATV_BUILD_PW + ATV_BUILD_CUDA. See REFERENCE.md.
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -38,9 +41,7 @@ constexpr double kBondAng = 1.2075;
 
 enum class Device { Cpu, Cuda };
 
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
@@ -167,12 +168,12 @@ int main(int argc, char** argv) {
         cpu_lsda = run_one(Device::Cpu, frame, upf, cpu::scf::XCType::LSDA);
         ok = check_one(cpu_lsda, Device::Cpu, "LSDA") && ok;
         if (ok) {
-            const double de =
-                std::fabs(cpu_pbe.energy_ha - cpu_lsda.energy_ha);
+            const double de = std::fabs(cpu_pbe.energy_ha - cpu_lsda.energy_ha);
             std::printf("|E_PBE - E_LSDA|_cpu = %.6e Ha (floor %.1e)\n", de,
                         kDeFloorHa);
             if (de <= kDeFloorHa) {
-                std::printf("FAIL: GGA activation |ΔE| too small on CPU twin\n");
+                std::printf(
+                    "FAIL: GGA activation |ΔE| too small on CPU twin\n");
                 ok = false;
             }
         }
@@ -193,6 +194,92 @@ int main(int argc, char** argv) {
 
     if (!ok)
         return 1;
-    std::printf("PASS: cuda-pw-spin-pbe (mag + spin-GGA dual-gate)\n");
+
+    // Force + stress dual-gate on a stretched bond (non-vacuous |F|, |σ|).
+    // Same XC / UPF / ecut as the energy gate. Spin∧smear stays rejected.
+    auto frame_f = make_o2();
+    frame_f.span(kAtom_z)[1] = 1.30;
+    constexpr double kForceTolEvA = 5.0e-3;
+    constexpr double kStressTolEvA3 = 5.0e-2;
+
+    auto fill_pbe = [&](auto& pw) {
+        pw.upf_path = upf;
+        pw.ecut_ry = kEcutRy;
+        pw.k_mesh = 1;
+        pw.tol = 5e-4;
+        pw.max_iter = 60;
+        pw.mix_beta = 0.3;
+        pw.pulay_depth = 5;
+        pw.spin_polarized = true;
+        pw.multiplicity = 3;
+        pw.xc = cpu::scf::XCType::PBE;
+    };
+
+    std::vector<std::array<double, 3>> F_cpu, F_cuda;
+    std::array<double, 6> S_cpu{}, S_cuda{};
+    if (want == "cpu" || want == "both") {
+        cpu::pw::PW pw;
+        fill_pbe(pw);
+        pw.build(frame_f);
+        F_cpu = cpu::pw::pw_forces_analytic(frame_f, pw);
+        S_cpu = cpu::pw::pw_stress(frame_f, pw);
+    }
+    if (want == "cuda" || want == "both") {
+        cuda::pw::PW pw;
+        fill_pbe(pw);
+        pw.build(frame_f);
+        F_cuda = cuda::pw::pw_forces_analytic(frame_f, pw);
+        S_cuda = cuda::pw::pw_stress(frame_f, pw);
+    }
+    if (want == "both") {
+        double max_df = 0.0;
+        double max_f = 0.0;
+        for (int ia = 0; ia < 2; ++ia) {
+            for (int k = 0; k < 3; ++k) {
+                const double fc = F_cpu[static_cast<std::size_t>(ia)]
+                                       [static_cast<std::size_t>(k)];
+                const double fg = F_cuda[static_cast<std::size_t>(ia)]
+                                        [static_cast<std::size_t>(k)];
+                if (!std::isfinite(fc) || !std::isfinite(fg)) {
+                    std::printf("FAIL: non-finite spin-PBE force\n");
+                    return 1;
+                }
+                max_df = std::max(max_df, std::abs(fc - fg));
+                max_f = std::max(max_f, std::abs(fc));
+            }
+        }
+        double max_ds = 0.0;
+        double max_s = 0.0;
+        for (int k = 0; k < 6; ++k) {
+            if (!std::isfinite(S_cpu[static_cast<std::size_t>(k)])
+                || !std::isfinite(S_cuda[static_cast<std::size_t>(k)])) {
+                std::printf("FAIL: non-finite spin-PBE stress\n");
+                return 1;
+            }
+            max_ds = std::max(max_ds,
+                              std::abs(S_cpu[static_cast<std::size_t>(k)]
+                                       - S_cuda[static_cast<std::size_t>(k)]));
+            max_s =
+                std::max(max_s, std::abs(S_cpu[static_cast<std::size_t>(k)]));
+        }
+        std::printf("spin-PBE F  max|Δ|=%.6e eV/A  (tol %.1e)  max|F|=%.6f\n",
+                    max_df, kForceTolEvA, max_f);
+        std::printf("spin-PBE σ  max|Δ|=%.6e eV/A3 (tol %.1e)  max|σ|=%.6f\n",
+                    max_ds, kStressTolEvA3, max_s);
+        if (!(max_f > 0.05)) {
+            std::printf("FAIL: spin-PBE force vacuous\n");
+            return 1;
+        }
+        if (max_df > kForceTolEvA) {
+            std::printf("FAIL: spin-PBE force parity\n");
+            return 1;
+        }
+        if (max_ds > kStressTolEvA3) {
+            std::printf("FAIL: spin-PBE stress parity\n");
+            return 1;
+        }
+    }
+
+    std::printf("PASS: cuda-pw-spin-pbe (mag + spin-GGA + F/σ dual-gate)\n");
     return 0;
 }

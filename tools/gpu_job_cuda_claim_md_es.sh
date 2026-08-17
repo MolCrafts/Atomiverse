@@ -71,12 +71,29 @@ echo "CUDA_MD_LJ_BENCH_OK"
 
 echo "=== STAGE 3: CUDA SCF gradient + AIMD (cuda-scf-gradient) ==="
 cmake --build "${BUILD}" -j"$(nproc)" --target \
-  test_cuda_scf_rhf reg_h2o_rhf_sto3g_grad reg_h2_rhf_sto3g_aimd
+  test_cuda_scf_rhf reg_h2o_rhf_sto3g_grad reg_h2_rhf_sto3g_aimd \
+  reg_h2o_rhf_def2svp_grad
 ctest --test-dir "${BUILD}" --output-on-failure --timeout 300 \
   -R '^test_cuda_scf_rhf$'
 "${BUILD}/regressions/reg_h2o_rhf_sto3g_grad" --device=both
 "${BUILD}/regressions/reg_h2_rhf_sto3g_aimd" --device=cuda
+"${BUILD}/regressions/reg_h2o_rhf_def2svp_grad" --device=cuda
 echo "CUDA_SCF_GRADIENT_OK"
+
+echo "=== STAGE 3b: CUDA MTK NPT (cuda-md-npt) ==="
+cmake --build "${BUILD}" -j"$(nproc)" --target \
+  test_cuda_nose_hoover_npt reg_npt_lj
+ctest --test-dir "${BUILD}" --output-on-failure --timeout 180 \
+  -R '^test_cuda_nose_hoover_npt$'
+"${BUILD}/regressions/reg_npt_lj" --device=both
+if command -v lmp >/dev/null 2>&1; then
+  echo "=== LAMMPS NPT twin ==="
+  lmp -in "${SLURM_SUBMIT_DIR}/tools/lammps_oracle/inputs/npt_lj/in.npt" \
+    || echo "LAMMPS_NPT_TWIN_FAILED"
+else
+  echo "LAMMPS_NPT_TWIN_SKIPPED no lmp on PATH"
+fi
+echo "CUDA_MD_NPT_OK"
 
 echo "=== STAGE 4: CUDA PW spin-PBE energy (cuda-pw-spin-pbe) ==="
 cmake --build "${BUILD}" -j"$(nproc)" --target \

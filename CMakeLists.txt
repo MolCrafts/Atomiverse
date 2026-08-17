@@ -1267,10 +1267,8 @@ if(NOT ATV_DOCS_ONLY)
         add_subdirectory(regressions)
     endif()
 
-    # Benchmarks tree removed (rebuild later under a fresh layout).
-    # option ATV_BUILD_BENCHMARKS kept OFF-only so existing CI scripts don't break.
     if(ATV_BUILD_BENCHMARKS)
-        message(WARNING "ATV_BUILD_BENCHMARKS=ON but benchmarks/ was removed; skipping.")
+        add_subdirectory(benchmarks/lj)
     endif()
 
     if(ATV_BUILD_EXAMPLES)

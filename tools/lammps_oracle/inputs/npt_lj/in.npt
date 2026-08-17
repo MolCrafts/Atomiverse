@@ -1,0 +1,28 @@
+# Twin of regressions/md/npt_lj — 64-atom LJ MTK NPT.
+# density=0.8, cut=2.5, skin=0.3, dt=0.005, T=1, P=0, 80 steps.
+units           lj
+atom_style      atomic
+boundary        p p p
+
+variable        nside equal 4
+variable        a0 equal (1.0/0.8)^(1.0/3.0)
+
+lattice         sc ${a0}
+region          box block 0 ${nside} 0 ${nside} 0 ${nside}
+create_box      1 box
+create_atoms    1 box
+mass            1 1.0
+
+velocity        all create 1.0 87287 loop geom
+
+pair_style      lj/cut 2.5
+pair_coeff      1 1 1.0 1.0 2.5
+neighbor        0.3 bin
+neigh_modify    delay 0 every 1 check yes
+
+fix             1 all npt temp 1.0 1.0 0.1 iso 0.0 0.0 1.0
+timestep        0.005
+thermo          20
+thermo_style    custom step temp press vol etotal
+
+run             80

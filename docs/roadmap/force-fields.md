@@ -10,8 +10,11 @@ dihedrals, harmonic improper) plus EAM/SW many-body — still thin relative to
 LAMMPS, but no longer "one pair style and nothing else".
 
 The Lennard–Jones 12-6 pair style is the only ⚡ in the roadmap: SIMD on CPU
-(xsimd, `-march=native`) and a CUDA device kernel (historical LAMMPS/Kokkos
-comparison suite under `/* benchmarks removed; re-add later */ lj/performance/`).
+(xsimd, `-march=native`) and the CUDA OpenMM tile engine. Standing bench:
+`benchmarks/lj/` + `tools/cuda_nonbonded_style_bench`. GH200 **1332540**:
+`96.997 Matom*step/s` (N=10648, 80 steps). LAMMPS twin deck:
+`tools/bench_lj_vs_lammps/in.lj_nve.kk`. Keep ⚡ only while a same-node
+LAMMPS Kokkos ratio still supports it.
 **Kokkos backend: ○** (planned portable path; no in-tree Kokkos port yet).
 
 ## 1. Classical Bonded Potentials

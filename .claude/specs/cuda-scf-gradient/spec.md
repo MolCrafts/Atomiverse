@@ -1,6 +1,6 @@
 ---
 slug: cuda-scf-gradient
-status: approved
+status: code-complete
 created: 2026-08-14
 domain: cuda / scf
 queue: claim-completion
@@ -49,10 +49,10 @@ smoke becomes possible.
 
 ## Tasks
 
-- [ ] Verify current `forces` behavior + wave order vs the cuda-rhf note
-- [ ] Derivative kernels (overlap/kinetic/nuclear/ERI, l ≤ 1) on device
-- [ ] CPU↔CUDA parity units at stated tolerance; PySCF-pinned regression leg
-- [ ] GPU BOMD smoke (few NVE steps, H₂/H₂O class); roadmap §7 update
+- [x] Verify current `forces` behavior + wave order vs the cuda-rhf note
+- [x] Derivative kernels (overlap/kinetic/nuclear/ERI, l ≤ 1) on device
+- [x] CPU↔CUDA parity units at stated tolerance; PySCF-pinned regression leg
+- [x] GPU BOMD smoke (few NVE steps, H₂/H₂O class); roadmap §7 update
 
 ## Testing
 

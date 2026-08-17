@@ -121,6 +121,22 @@ if(ATV_BUILD_MD)
     atv_add_regression(md electrode-charge-predictor)
     atv_add_regression(md pr_npt_lj)
     atv_add_regression(md nph_lj)
+    if(ATV_BUILD_CUDA)
+        set(_reg_npt_lj reg_npt_lj)
+        add_executable(${_reg_npt_lj} md/npt_lj/${_reg_npt_lj}.cu)
+        target_link_libraries(${_reg_npt_lj} PRIVATE atomiverse)
+        set_target_properties(${_reg_npt_lj} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_npt_lj}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_npt_lj}> --device=both
+            DEPENDS ${_reg_npt_lj}
+            COMMENT "regression [md/npt_lj] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_npt_lj})
+        unset(_reg_npt_lj)
+    else()
+        atv_add_regression(md npt_lj)
+    endif()
     atv_add_regression(md surface-tension-coupling)
     atv_add_regression(md pe_bonded_nve)
     atv_add_regression(md eam_cu)
