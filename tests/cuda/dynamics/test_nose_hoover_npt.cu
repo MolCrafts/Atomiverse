@@ -87,3 +87,38 @@ TEST(NoseHooverNPT, OneStepVolumeParityVsCpu) {
     // virial). 1e-8 relative is still far tighter than a dead barostat.
     EXPECT_NEAR(Vg, Vc, 1e-8 * std::max(1.0, std::abs(Vc)));
 }
+
+TEST(NoseHooverNPT, TwoStepStillTracksCpu) {
+    // Step 1 box update uses the previous (zero) virial on both backends.
+    // Step 2 is the first update that sees pair stress — this is what
+    // 80-step 1335298 failed when requires_system_stress was missing.
+    constexpr double kDt = 0.005;
+    constexpr double kCut = 2.5;
+    constexpr double kSkin = 0.3;
+    auto cpu_f = make_lj_cube(6);
+    auto cuda_f = make_lj_cube(6);
+
+    {
+        cpu::md::MD sim;
+        sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin});
+        sim.set_evaluator(cpu::PairLJCut{1.0, 1.0, kCut});
+        sim.set_integrator(cpu::md::NoseHooverNPT{1.0, 0.1, 0.0, 1.0, kDt});
+        sim.set_observer(cpu::md::Virial{});
+        sim.build();
+        sim.run(cpu_f, 2);
+    }
+    {
+        cuda::md::MD sim;
+        sim.set_neighbor(cuda::NeighborList{kCut, kSkin});
+        sim.set_evaluator(cuda::PairLJCut{1.0, 1.0, kCut});
+        sim.set_integrator(cuda::md::NoseHooverNPT{1.0, 0.1, 0.0, 1.0, kDt});
+        sim.build();
+        sim.run(cuda_f, 2);
+    }
+
+    const double Vc = cpu_f.box.volume();
+    const double Vg = cuda_f.box.volume();
+    ASSERT_TRUE(std::isfinite(Vc));
+    ASSERT_TRUE(std::isfinite(Vg));
+    EXPECT_NEAR(Vg, Vc, 1e-6 * std::max(1.0, std::abs(Vc)));
+}

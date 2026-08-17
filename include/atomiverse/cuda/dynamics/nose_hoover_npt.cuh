@@ -74,6 +74,9 @@ class NoseHooverNPT : public cuda::Integrator {
     double T_target() const noexcept { return T_live_; }
 
     std::string name() const override { return "nose_hoover_npt"; }
+    /// @brief Pair/bonded virial must be on — otherwise P = 2KE/V only
+    ///        and the cell explodes (GH200 1335298, +28% in 80 steps).
+    bool requires_system_stress() const override { return true; }
     /* role via Integrator base */
     /// @brief Write-set: MTK: propagates x and v, and scales the cell.
     /// @brief Reads — consumes `Stress` to drive ε̇ via `update_eps_dot_`.
