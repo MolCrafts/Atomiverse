@@ -82,10 +82,10 @@ echo "CUDA_SCF_GRADIENT_OK"
 
 echo "=== STAGE 3b: CUDA MTK NPT (cuda-md-npt) ==="
 cmake --build "${BUILD}" -j"$(nproc)" --target \
-  test_cuda_nose_hoover_npt reg_npt_lj
+  test_cuda_nose_hoover_npt reg_npt_lj_mtk
 ctest --test-dir "${BUILD}" --output-on-failure --timeout 180 \
   -R '^test_cuda_nose_hoover_npt$'
-"${BUILD}/regressions/reg_npt_lj" --device=both
+"${BUILD}/regressions/reg_npt_lj_mtk" --device=both
 if command -v lmp >/dev/null 2>&1; then
   echo "=== LAMMPS NPT twin ==="
   lmp -in "${SLURM_SUBMIT_DIR}/tools/lammps_oracle/inputs/npt_lj/in.npt" \

@@ -1,4 +1,4 @@
-/// @file regressions/md/npt_lj/reg_npt_lj.cpp
+/// @file regressions/md/npt_lj_mtk/reg_npt_lj_mtk.cpp
 /// @brief CPU-only MTK NPT on 64-atom LJ (CUDA builds use the .cu twin).
 #include <cmath>
 #include <cstdio>

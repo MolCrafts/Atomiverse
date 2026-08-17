@@ -1,6 +1,7 @@
 # npt_lj — MTK NoseHooverNPT on a 64-atom LJ liquid
 
-**One case, multi-device:** `reg_npt_lj --device=cpu|cuda|both`.
+**One case, multi-device:** `reg_npt_lj_mtk --device=cpu|cuda|both`.
+Named `npt_lj_mtk` so the binary does not collide with `mc/npt_lj`.
 
 Public API only: `MD` + `NoseHooverNPT{T, tau_T, P, tau_P, dt}` + `PairLJCut`
 + `NeighborList`. No per-atom Verlet on CUDA.

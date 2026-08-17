@@ -1,5 +1,6 @@
-/// @file regressions/md/npt_lj/reg_npt_lj.cu
+/// @file regressions/md/npt_lj_mtk/reg_npt_lj_mtk.cu
 /// @brief Short LJ MTK NPT — one case, `--device=cpu|cuda|both`.
+///        Named npt_lj_mtk so the binary does not collide with mc/npt_lj.
 ///
 /// Gates (REFERENCE.md):
 ///   1. conserved H finite after 80 steps;
