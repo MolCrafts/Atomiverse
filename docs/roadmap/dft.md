@@ -177,9 +177,10 @@ XC on the device in the Gaussian path.
 | SOGGA      |  ○  |   ○  |   ○  |
 
 The PBE CUDA ✓ is **plane-wave** closed-shell **and collinear fixed-occupation
-spin-GGA energy** (`cuda-pw-spin-pbe` / `reg_cuda-pw-spin-pbe`; GH200
-**1124645** \|ΔE\|=1.14e-13 Ha) — spin-PBE **forces/stress** and PBE-family
-variants still open on es-cpu-cuda queue: the `cuda::pw::PW` density side runs
+spin-GGA energy + forces + stress** (`cuda-pw-spin-pbe` / `reg_cuda-pw-spin-pbe`;
+GH200 **1335945** \|ΔE\|=1.14e-13 Ha, max\|ΔF\|=2.0e-12 eV/Å,
+max‖Δσ‖=4.9e-12 eV/Å³). Spin×smear and PBE-family variants remain open:
+the `cuda::pw::PW` density side runs
 device PBE (`cuda/planewave/internal/xc_pbe.cu` — PBE-X + PW92-based PBE-C;
 closed-shell ζ=0 + spin `xc_pbe_spin_grid`; spectral ∇ρ / divergence in
 `DeviceDensity`) against the CPU stage helpers as oracle. GPW has a device
@@ -457,7 +458,7 @@ Two periodic DFT engines exist, with disjoint strengths:
   CUDA is `cuda::pw::PW` — a strict subset of the CPU method: **LSDA**
   (Slater + VWN5 device kernel) or **PBE** (device closed-shell GGA **and**
   collinear spin-GGA energy, `internal/xc_pbe.cu` — table **Periodic GGA**
-  CUDA ✓ is this energy slice; spin-PBE F/σ still open), **energy** (`run()`),
+  CUDA ✓ is this energy+F/σ slice; spin×smear still closed), **energy** (`run()`),
   **analytic ionic forces** (closed-shell **LSDA + PBE**;
   `cuda::pw::pw_forces_analytic` — local HF + Ewald + KB nonlocal; GH200
   dual-gate), **analytic cell stress** (closed-shell **LSDA + PBE** dual-gate
@@ -466,8 +467,8 @@ Two periodic DFT engines exist, with disjoint strengths:
   energy (**LSDA** + **spin-PBE**; fixed occupation; GH200 spin-PBE
   **1124645**) + **collinear LSDA spin forces** (`cuda-pw-spin-forces` /
   GH200 **1130196**) + **collinear LSDA spin stress** (`cuda-pw-spin-stress` /
-  GH200 **1135756** max‖Δσ‖=**1.435e-11** eV/Å³; spin-PBE F/σ / spin+smear
-  still reject on base), and **restricted metallic smear** energy (FD/Gaussian/MP +
+  GH200 **1135756** max‖Δσ‖=**1.435e-11** eV/Å³; **spin-PBE F/σ landed**
+  GH200 **1335945**; spin+smear still rejects), and **restricted metallic smear** energy (FD/Gaussian/MP +
   `extra_bands` + Mermin free energy) **+ restricted metallic-smear analytic
   ionic forces** (`cuda-pw-smear-forces` / GH200 **1130427** max\|ΔF\|=
   **1.36e-11** eV/Å) **+ restricted metallic-smear cell stress**

@@ -13,7 +13,8 @@ Public API only: `MD` + `NoseHooverNPT{T, tau_T, P, tau_P, dt}` + `PairLJCut`
 | Steps | 80 |
 | CPU↔CUDA | \|V_cuda − V_cpu\| / V < 1e-4 |
 
-External LAMMPS twin deck: `tools/lammps_oracle/inputs/npt_lj/in.npt`.
-The GH200 job records `lmp` version + printed volume line when a LAMMPS
-binary is on PATH. Until that line is captured, the dual-gate is CPU↔CUDA
-only (◐, not ✓).
+GH200 **1335945**: CPU and CUDA both `V=269.213535` (`|ΔV|/V = 0`).
+LAMMPS 4 Jul 2026 (`develop d3b14f6`) ran the twin deck and printed
+`Volume=282.54148` at step 80 — **not** same-settings (LAMMPS
+`velocity create 1.0`; ATV uses a deterministic lattice kick at T=1 K,
+ε=1 eV). Equal-settings LAMMPS pin is still owed.

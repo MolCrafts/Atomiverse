@@ -3,7 +3,7 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
-## Live — claim-completion campaign (2026-08-14, 3 specs live — CUDA track deferred)
+## Live — claim-completion campaign (2026-08-14, 1 spec live — CUDA track deferred)
 
 Operator directive 2026-08-14: complete CUDA / docs / Python for the
 domains that reached their claim bar. Queue + claim bars:
@@ -19,8 +19,6 @@ All 11 Python + docs slugs shipped (`886f6632`…`e56b0a66`). No live Track P sp
 
 | Spec | One-line |
 | ---- | -------- |
-| [cuda-md-npt](cuda-md-npt/spec.md) | device MTK NPT, externally anchored CUDA leg |
-| [cuda-pw-spin-pbe](cuda-pw-spin-pbe/spec.md) | lift device spin-PBE force/stress rejections |
 | [cuda-gpw-product](cuda-gpw-product/spec.md) | finish the frozen CUDA GPW matrix; kill self-anchors |
 
 ## Closed — GPW structure (ES policy first cut)
