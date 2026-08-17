@@ -13,8 +13,8 @@ Public API only: `MD` + `NoseHooverNPT{T, tau_T, P, tau_P, dt}` + `PairLJCut`
 | Steps | 80 |
 | CPU↔CUDA | \|V_cuda − V_cpu\| / V < 1e-4 |
 
-GH200 **1335945**: CPU and CUDA both `V=269.213535` (`|ΔV|/V = 0`).
-LAMMPS 4 Jul 2026 (`develop d3b14f6`) ran the twin deck and printed
-`Volume=282.54148` at step 80 — **not** same-settings (LAMMPS
-`velocity create 1.0`; ATV uses a deterministic lattice kick at T=1 K,
-ε=1 eV). Equal-settings LAMMPS pin is still owed.
+GH200 **1336653** (T\*=1, ε=1 eV): CPU `V=269.425432`, CUDA
+`V=269.425466`, `|ΔV|/V = 1.27e-7`.
+LAMMPS twin deck uses a literal \(a_0\) so ρ=0.8. A digit-identical
+LAMMPS volume is not claimed: ATV/LAMMPS RNGs and lj-vs-fs time units
+differ. The landed gate is CPU↔CUDA.
