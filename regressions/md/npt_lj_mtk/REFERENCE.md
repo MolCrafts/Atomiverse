@@ -9,7 +9,7 @@ Public API only: `MD` + `NoseHooverNPT{T, tau_T, P, tau_P, dt}` + `PairLJCut`
 | Field | Value |
 |---|---|
 | System | 6³ sc LJ (216 atoms), ρ = 0.8, ε = σ = 1, r_c = 2.5 (L/2 > r_c) |
-| Ensemble | MTK NPT, T = 1, τ_T = 0.1, P = 0, τ_P = 1, dt = 0.005 |
+| Ensemble | MTK NPT, T* = 1 (T = 1/k_B K with ε = 1 eV), τ_T = 0.1, P = 0, τ_P = 1, dt = 0.005 |
 | Steps | 80 |
 | CPU↔CUDA | \|V_cuda − V_cpu\| / V < 1e-4 |
 

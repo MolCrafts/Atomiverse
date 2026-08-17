@@ -42,14 +42,12 @@ void device_free(T*& p) {
 
 /// Local Hellmann–Feynman: one thread per G; loops atoms.
 /// F_ia += Ω v(G) (ρ_r sin φ + ρ_i cos φ) G  for G ≠ 0.
-__global__ void k_local_hf_forces(const cufftDoubleComplex* __restrict__ rho,
-                                  const double* __restrict__ gx,
-                                  const double* __restrict__ gy,
-                                  const double* __restrict__ gz,
-                                  const double* __restrict__ vg,
-                                  const double* __restrict__ pos, int ng,
-                                  int n_atoms, double omega,
-                                  double* __restrict__ forces) {
+__global__ void
+k_local_hf_forces(const cufftDoubleComplex* __restrict__ rho,
+                  const double* __restrict__ gx, const double* __restrict__ gy,
+                  const double* __restrict__ gz, const double* __restrict__ vg,
+                  const double* __restrict__ pos, int ng, int n_atoms,
+                  double omega, double* __restrict__ forces) {
     const int ig = blockIdx.x * blockDim.x + threadIdx.x;
     if (ig >= ng)
         return;
@@ -88,15 +86,13 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
-std::vector<std::array<double, 3>>
-pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
-                        const std::string& gth_name, double ecut_ry,
-                        DeviceDensity& den, DeviceBandSolver& solver,
-                        cpu::pw::internal::PWProblem& prob,
-                        cpu::pw::internal::PWWorkspace& ws, int n_alpha,
-                        int n_beta, bool use_smear, int n_elec,
-                        cpu::pw::internal::SmearKind smear_kind,
-                        double degauss_ha, int mp_order) {
+std::vector<std::array<double, 3>> pw_forces_analytic_impl(
+    const cpu::Frame& frame, const std::string& upf_path,
+    const std::string& gth_name, double ecut_ry, DeviceDensity& den,
+    DeviceBandSolver& solver, cpu::pw::internal::PWProblem& prob,
+    cpu::pw::internal::PWWorkspace& ws, int n_alpha, int n_beta, bool use_smear,
+    int n_elec, cpu::pw::internal::SmearKind smear_kind, double degauss_ha,
+    int mp_order) {
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument(
@@ -109,10 +105,6 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
             "cuda::pw::pw_forces_analytic: density sphere empty or omega=0");
 
     const bool spin = (n_alpha >= 0);
-    if (spin && use_smear)
-        throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: spin_polarized with metallic "
-            "smearing has no force path on device yet");
     if (spin && !den.spin_polarized())
         throw std::runtime_error(
             "cuda::pw::pw_forces_analytic: spin occupations require a spin "
@@ -193,7 +185,58 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
     // Collinear: V_eff_σ per channel, f=1, N_σ.
     if (!prob.kb_proj_k.empty()) {
         const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-        if (spin) {
+        if (spin && use_smear) {
+            den.sync_total_rho();
+            den.hartree();
+            den.exchange_correlation_spin();
+            std::vector<std::vector<AccReal>> evals_sk(
+                static_cast<std::size_t>(2 * n_kpts));
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    evals_sk[static_cast<std::size_t>(s * n_kpts + ik)].assign(
+                        ws.eigenvalues.begin(), ws.eigenvalues.end());
+                }
+            }
+            std::vector<AccReal> all_evals;
+            std::vector<AccReal> all_weights;
+            for (int s = 0; s < 2; ++s) {
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    const AccReal w =
+                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                    const auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    for (AccReal e : ev) {
+                        all_evals.push_back(e);
+                        all_weights.push_back(w);
+                    }
+                }
+            }
+            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+                all_evals, all_weights, AccReal(n_elec), AccReal(degauss_ha),
+                smear_kind, mp_order, AccReal(1));
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    const auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    const int nb = static_cast<int>(ev.size());
+                    std::vector<double> occ(static_cast<std::size_t>(nb));
+                    for (int b = 0; b < nb; ++b)
+                        occ[static_cast<std::size_t>(b)] = static_cast<double>(
+                            cpu::pw::internal::smear_f_spinor(
+                                ev[static_cast<std::size_t>(b)], mu_ha,
+                                AccReal(degauss_ha), smear_kind, mp_order));
+                    const double weight = static_cast<double>(
+                        prob.kg.weights[static_cast<std::size_t>(ik)]);
+                    solver.accumulate_nl_forces(weight, n, d_F, occ.data(), nb);
+                }
+            }
+        } else if (spin) {
             den.sync_total_rho();
             den.hartree();
             den.exchange_correlation_spin();
@@ -229,8 +272,7 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
             std::vector<AccReal> all_evals;
             std::vector<AccReal> all_weights;
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                 for (std::size_t b = 0; b < ev.size(); ++b) {
                     all_evals.push_back(ev[b]);
@@ -247,8 +289,8 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                 const int nb = static_cast<int>(ev.size());
                 std::vector<double> occ(static_cast<std::size_t>(nb));
                 for (int b = 0; b < nb; ++b)
-                    occ[static_cast<std::size_t>(b)] = static_cast<double>(
-                        cpu::pw::internal::smear_f_band(
+                    occ[static_cast<std::size_t>(b)] =
+                        static_cast<double>(cpu::pw::internal::smear_f_band(
                             ev[static_cast<std::size_t>(b)], mu_ha,
                             AccReal(degauss_ha), smear_kind, mp_order));
                 const double weight = static_cast<double>(
@@ -290,9 +332,9 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
     const StorageReal* sy = frame.span(kAtom_y);
     const StorageReal* sz = frame.span(kAtom_z);
     for (int i = 0; i < n; ++i)
-        pos_ang[static_cast<std::size_t>(i)] = {
-            static_cast<AccReal>(sx[i]), static_cast<AccReal>(sy[i]),
-            static_cast<AccReal>(sz[i])};
+        pos_ang[static_cast<std::size_t>(i)] = {static_cast<AccReal>(sx[i]),
+                                                static_cast<AccReal>(sy[i]),
+                                                static_cast<AccReal>(sz[i])};
 
     const AccReal ecut_ht = static_cast<AccReal>(ecut_ry) * AccReal(0.5);
     cpu::pw::internal::EwaldSummation ewald(pos_ang, ion_charges, frame.box,
@@ -313,8 +355,10 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
     std::vector<std::array<double, 3>> out(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         out[static_cast<std::size_t>(i)] = {
-            h_F[static_cast<std::size_t>(3 * i + 0)] * ha_per_bohr_to_ev_per_ang,
-            h_F[static_cast<std::size_t>(3 * i + 1)] * ha_per_bohr_to_ev_per_ang,
+            h_F[static_cast<std::size_t>(3 * i + 0)]
+                * ha_per_bohr_to_ev_per_ang,
+            h_F[static_cast<std::size_t>(3 * i + 1)]
+                * ha_per_bohr_to_ev_per_ang,
             h_F[static_cast<std::size_t>(3 * i + 2)]
                 * ha_per_bohr_to_ev_per_ang};
     }

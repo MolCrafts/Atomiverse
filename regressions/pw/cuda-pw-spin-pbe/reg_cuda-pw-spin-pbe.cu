@@ -280,6 +280,46 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::printf("PASS: cuda-pw-spin-pbe (mag + spin-GGA + F/σ dual-gate)\n");
+    // Collinear spin × FD smear (energy + forces). Same O2 / UPF / ecut.
+    {
+        cpu::pw::PW cpu_s;
+        cuda::pw::PW cuda_s;
+        fill_pbe(cpu_s);
+        fill_pbe(cuda_s);
+        cpu_s.smearing = cpu::pw::Smearing::fermi_dirac;
+        cuda_s.smearing = cuda::pw::Smearing::fermi_dirac;
+        cpu_s.degauss = 0.02;
+        cuda_s.degauss = 0.02;
+        cpu_s.extra_bands = 4;
+        cuda_s.extra_bands = 4;
+        cpu_s.build(frame_f);
+        cuda_s.build(frame_f);
+        const auto rc = cpu_s.run(frame_f);
+        const auto rg = cuda_s.run(frame_f);
+        const double de = std::fabs(rg.energy_ha - rc.energy_ha);
+        std::printf("spin×smear E  |Δ|=%.6e Ha  mag_cpu=%.4f mag_cuda=%.4f\n",
+                    de, rc.magnetization, rg.magnetization);
+        if (!rc.converged || !rg.converged || de > kParityTolHa) {
+            std::printf("FAIL: spin×smear energy\n");
+            return 1;
+        }
+        auto Fc = cpu::pw::pw_forces_analytic(frame_f, cpu_s);
+        auto Fg = cuda::pw::pw_forces_analytic(frame_f, cuda_s);
+        double max_df = 0.0;
+        for (int ia = 0; ia < 2; ++ia)
+            for (int k = 0; k < 3; ++k)
+                max_df = std::max(max_df,
+                                  std::abs(Fc[static_cast<std::size_t>(ia)]
+                                             [static_cast<std::size_t>(k)]
+                                           - Fg[static_cast<std::size_t>(ia)]
+                                               [static_cast<std::size_t>(k)]));
+        std::printf("spin×smear F  max|Δ|=%.6e eV/A\n", max_df);
+        if (max_df > kForceTolEvA) {
+            std::printf("FAIL: spin×smear force parity\n");
+            return 1;
+        }
+    }
+
+    std::printf("PASS: cuda-pw-spin-pbe (mag + spin-GGA + F/σ + spin×smear)\n");
     return 0;
 }

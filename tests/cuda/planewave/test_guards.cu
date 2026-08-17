@@ -71,9 +71,8 @@ TEST(CudaPWGuards, PbeFamilyVariantsThrow) {
     auto frame = make_h_atom();
     // PBEsol/revPBE/RPBE differ from PBE by μ/κ/β constants the device
     // kernel hard-wires; accepting them would silently compute plain PBE.
-    for (const auto xc :
-         {cpu::scf::XCType::PBEsol, cpu::scf::XCType::RevPBE,
-          cpu::scf::XCType::RPBE}) {
+    for (const auto xc : {cpu::scf::XCType::PBEsol, cpu::scf::XCType::RevPBE,
+                          cpu::scf::XCType::RPBE}) {
         auto pw = make_supported();
         pw.xc = xc;
         EXPECT_THROW(pw.run(frame), std::invalid_argument);
@@ -98,14 +97,13 @@ TEST(CudaPWGuards, MultiplicityWithoutSpinThrows) {
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
-TEST(CudaPWGuards, SpinSmearingThrows) {
-    // Restricted metallic smear is landed; collinear + smear stays CPU-only.
+TEST(CudaPWGuards, SpinSmearZeroDegaussThrows) {
     auto frame = make_h_atom();
     auto pw = make_supported();
     pw.spin_polarized = true;
-    pw.multiplicity = 2; // H: n_elec=1 → N↑=1, N↓=0
+    pw.multiplicity = 2;
     pw.smearing = cuda::pw::Smearing::fermi_dirac;
-    pw.degauss = 0.02;
+    pw.degauss = 0.0;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 

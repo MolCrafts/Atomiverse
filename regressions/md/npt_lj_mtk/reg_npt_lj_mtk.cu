@@ -12,6 +12,7 @@
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -84,7 +85,10 @@ Out run_on_device(Device dev) {
         cpu::md::MD sim;
         sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin});
         sim.set_evaluator(cpu::PairLJCut{1.0, 1.0, kCut});
-        sim.set_integrator(cpu::md::NoseHooverNPT{1.0, 0.1, 0.0, 1.0, kDt});
+        // T* = 1 with ε = 1 eV → T = 1/kB [K]. Same deterministic kick
+        // on both backends (InitVelocity RNGs differ, so not used here).
+        const double T = 1.0 / units::kB_ev_per_k;
+        sim.set_integrator(cpu::md::NoseHooverNPT{T, 0.1, 0.0, 1.0, kDt});
         sim.set_observer(cpu::md::Virial{});
         sim.enable_timing(false);
         sim.build();
@@ -93,7 +97,8 @@ Out run_on_device(Device dev) {
         cuda::md::MD sim;
         sim.set_neighbor(cuda::NeighborList{kCut, kSkin});
         sim.set_evaluator(cuda::PairLJCut{1.0, 1.0, kCut});
-        sim.set_integrator(cuda::md::NoseHooverNPT{1.0, 0.1, 0.0, 1.0, kDt});
+        const double T = 1.0 / units::kB_ev_per_k;
+        sim.set_integrator(cuda::md::NoseHooverNPT{T, 0.1, 0.0, 1.0, kDt});
         sim.build();
         sim.run(frame, 80);
     }

@@ -88,12 +88,6 @@ void PW::validate_members() const {
         throw std::invalid_argument(
             "cuda::pw::PW::run: multiplicity != 1 requires spin_polarized. "
             "Set spin_polarized=true for collinear UKS, or multiplicity=1.");
-    // Restricted metallic smear is landed; collinear + smear still CPU-only.
-    if (smearing != Smearing::none && spin_polarized)
-        throw std::invalid_argument(
-            "cuda::pw::PW::run: metallic smearing with spin_polarized has no "
-            "device path yet — use restricted (spin_polarized=false) smear on "
-            "CUDA, or cpu::pw::PW for collinear UKS + smear.");
     if (smearing != Smearing::none && !(degauss > 0.0))
         throw std::invalid_argument(
             "cuda::pw::PW::run: degauss must be > 0 [Ry] when smearing is "
@@ -194,9 +188,9 @@ PWResult& PW::run(const cpu::Frame& frame) {
     // ceil(n_e/2) + extra_bands so empty states sit near E_F for the μ search.
     int n_bands =
         spin_polarized ? std::max(std::max(n_alpha, n_beta), 1) : prob.n_bands;
-    if (use_smear && !spin_polarized) {
+    if (use_smear) {
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
-        n_bands = n_occ_ceil + std::max(extra_bands, 0);
+        n_bands = std::max({n_bands, n_occ_ceil + std::max(extra_bands, 0), 1});
     }
     const AccReal vol_bohr = prob.vol_bohr;
     // build_kpoints() leaves ws bound to the density sphere, so ws.omega is
@@ -236,6 +230,115 @@ PWResult& PW::run(const cpu::Frame& frame) {
     // Same convergence policy object the CPU backend uses (warmup = 2); the
     // device reduces ‖ρ − ρ_old‖₂ itself, so feed the norm overload.
     cpu::pw::internal::ConvergenceCheck conv{AccReal(tol), 2};
+
+    if (spin_polarized && use_smear) {
+        // Collinear UKS + metallic smear: shared μ over spin-orbitals,
+        // f∈[0,1] (CPU twin in pw_solver.cpp). Ritz cache is per-k only,
+        // so pass 2 re-solves after μ (Γ dual-gate cost; not a new kernel).
+        const int n_bs = n_bands;
+        const int mp_order = this->mp_order;
+        std::vector<std::vector<AccReal>> evals_sk(
+            static_cast<std::size_t>(2 * n_kpts));
+        for (int iter = 0; iter < max_iter; ++iter) {
+            den.sync_total_rho();
+            den.hartree();
+            den.exchange_correlation_spin();
+
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    ev.assign(ws.eigenvalues.begin(), ws.eigenvalues.end());
+                    if (static_cast<int>(ev.size()) > n_bs)
+                        ev.resize(static_cast<std::size_t>(n_bs));
+                }
+            }
+
+            std::vector<AccReal> all_evals;
+            std::vector<AccReal> all_weights;
+            all_evals.reserve(static_cast<std::size_t>(2 * n_kpts * n_bs));
+            all_weights.reserve(static_cast<std::size_t>(2 * n_kpts * n_bs));
+            for (int s = 0; s < 2; ++s) {
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    const AccReal w =
+                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                    const auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    for (int b = 0; b < n_bs && b < static_cast<int>(ev.size());
+                         ++b) {
+                        all_evals.push_back(ev[static_cast<std::size_t>(b)]);
+                        all_weights.push_back(w);
+                    }
+                }
+            }
+            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+                all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
+                mp_order, AccReal(1));
+
+            AccReal e_band = 0;
+            AccReal entropy_sum = 0;
+            AccReal n_up = 0;
+            AccReal n_dn = 0;
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                den.zero_accumulator();
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    const AccReal w =
+                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                    const auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    std::vector<AccReal> w_one(ev.size(), w);
+                    auto fill = cpu::pw::internal::fill_occupations(
+                        ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
+                        AccReal(1));
+                    entropy_sum += fill.entropy;
+                    AccReal n_s = 0;
+                    const int nb = static_cast<int>(fill.occ.size());
+                    for (int b = 0; b < nb; ++b) {
+                        e_band += w * ev[static_cast<std::size_t>(b)]
+                                  * fill.occ[static_cast<std::size_t>(b)];
+                        n_s += w * fill.occ[static_cast<std::size_t>(b)];
+                    }
+                    if (s == 0)
+                        n_up += n_s;
+                    else
+                        n_dn += n_s;
+                    solver.accumulate_density(w, omega_bohr, fill.occ.data(),
+                                              nb);
+                }
+                den.collect_spin_out(s);
+            }
+
+            den.mix_spin_linear();
+            const auto s = den.reduce_spin(static_cast<double>(vol_bohr));
+            ws.E_xc = AccReal(s.e_xc);
+            auto terms = cpu::pw::internal::combine_energy_terms(
+                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
+                ws.E_xc, prob.ew_total, ws.E_aug);
+            terms.e_one =
+                e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
+            const AccReal e_ent_ha = -degauss_ha * entropy_sum;
+            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
+                          + ws.E_aug + e_ent_ha;
+            cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
+                                                    iter);
+            result_.iterations = iter + 1;
+            result_.energy_ha = static_cast<double>(terms.total);
+            result_.energy =
+                result_.energy_ha / cpu::pw::qe_units::rydberg_to_hartree;
+            result_.magnetization = static_cast<double>(n_up - n_dn);
+            if (conv.step(AccReal(s.resid))) {
+                result_.converged = true;
+                break;
+            }
+        }
+        return result_;
+    }
 
     if (spin_polarized) {
         // ── Collinear fixed-occupation UKS (CPU twin in pw_solver.cpp) ──
@@ -471,11 +574,6 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
             "cuda::pw::pw_forces_analytic: spin_polarized force path is "
             "XCType::LSDA or XCType::PBE only — use "
             "cpu::pw::pw_forces_analytic for other XC");
-    if (method.spin_polarized && method.smearing != Smearing::none)
-        throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: spin_polarized with metallic "
-            "smearing has no force path on device yet — use "
-            "cpu::pw::pw_forces_analytic");
     const bool use_smear = (method.smearing != Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
@@ -537,14 +635,16 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     cpu::pw::internal::SmearKind smear_kind =
         cpu::pw::internal::SmearKind::fermi_dirac;
     AccReal degauss_ha = AccReal(0);
-    if (use_smear && !method.spin_polarized) {
+    if (use_smear) {
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
-        n_bands = n_occ_ceil + std::max(method.extra_bands, 0);
+        n_bands = std::max(
+            {n_bands, n_occ_ceil + std::max(method.extra_bands, 0), 1});
         if (method.smearing == Smearing::methfessel_paxton)
             smear_kind = cpu::pw::internal::SmearKind::methfessel_paxton;
         else if (method.smearing == Smearing::gaussian)
             smear_kind = cpu::pw::internal::SmearKind::gaussian;
-        degauss_ha = AccReal(method.degauss) * AccReal(0.5);
+        degauss_ha = AccReal(method.degauss)
+                     * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
     }
     const AccReal vol_bohr = prob.vol_bohr;
     const AccReal omega_bohr = ws.omega;
@@ -730,8 +830,8 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     // Forces from the final mixed density + band re-solve at final V_eff.
     return internal::pw_forces_analytic_impl(
         frame, method.upf_path, method.gth_name, method.ecut_ry, den, solver,
-        prob, ws, n_alpha, n_beta, use_smear && !method.spin_polarized, n_elec,
-        smear_kind, static_cast<double>(degauss_ha), method.mp_order);
+        prob, ws, n_alpha, n_beta, use_smear, n_elec, smear_kind,
+        static_cast<double>(degauss_ha), method.mp_order);
 }
 
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
@@ -743,11 +843,6 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
         throw std::invalid_argument(
             "cuda::pw::pw_stress: spin_polarized stress path is XCType::LSDA "
             "or XCType::PBE only — use cpu::pw::pw_stress for other XC");
-    if (method.spin_polarized && method.smearing != Smearing::none)
-        throw std::invalid_argument(
-            "cuda::pw::pw_stress: spin_polarized with metallic smearing has "
-            "no stress path on device yet — use "
-            "cpu::pw::pw_stress_fd or fixed-occupation collinear stress");
     if (method.spin_polarized && method.multiplicity < 1)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: multiplicity must be >= 1 when "

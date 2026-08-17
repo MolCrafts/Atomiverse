@@ -20,6 +20,7 @@
 #include <cufft.h>
 #include <gtest/gtest.h>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace ATV;
@@ -180,12 +181,8 @@ TEST(CudaPWForces, PublicApiAcceptsSpinPbeOnEmptyFrameGate) {
     }
 }
 
-TEST(CudaPWForces, PublicApiRejectsSpinSmearForces) {
-    cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 1;
-    f.span(kAtom_mass)[0] = 1.008;
-    f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
-    f.box = cpu::Box::cubic(4.5);
+TEST(CudaPWForces, PublicApiAcceptsSpinSmearOnEmptyFrameGate) {
+    cpu::Frame f(0);
     cuda::pw::PW method;
     method.gth_name = "GTH-PBE-q1";
     method.spin_polarized = true;
@@ -193,8 +190,14 @@ TEST(CudaPWForces, PublicApiRejectsSpinSmearForces) {
     method.smearing = cuda::pw::Smearing::fermi_dirac;
     method.degauss = 0.01;
     method.xc = cpu::scf::XCType::LSDA;
-    EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method),
-                 std::invalid_argument);
+    try {
+        (void)cuda::pw::pw_forces_analytic(f, method);
+        FAIL() << "expected empty-frame throw";
+    } catch (const std::invalid_argument& e) {
+        const std::string msg = e.what();
+        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
+        EXPECT_EQ(msg.find("no force path"), std::string::npos) << msg;
+    }
 }
 
 // PBE is on the force-path XC whitelist (DeviceDensity + xc_pbe). Empty-frame

@@ -98,7 +98,7 @@ class PW {
     /// @brief Spin multiplicity 2S+1. With `spin_polarized`, sets
     ///        N↑ − N↓ = multiplicity − 1. Without spin, must stay 1.
     int multiplicity = 1;
-    /// @brief Metallic smearing kind. Restricted path only — with
+    /// @brief Metallic smearing kind. Restricted and collinear UKS — with
     ///        `spin_polarized` any value other than `none` throws.
     Smearing smearing = Smearing::none;
     /// @brief Smearing width [Ry] (QE `degauss`). Required > 0 when
@@ -158,9 +158,8 @@ class PW {
   private:
     friend std::vector<std::array<double, 3>>
     pw_forces_analytic(const cpu::Frame& frame, const PW& method);
-    friend std::array<double, 6> pw_stress(const cpu::Frame& frame,
-                                           const PW& method,
-                                           double* energy_ry_out);
+    friend std::array<double, 6>
+    pw_stress(const cpu::Frame& frame, const PW& method, double* energy_ry_out);
     /// @brief Reject every member with no device path (throws, never warns).
     void validate_members() const;
 
