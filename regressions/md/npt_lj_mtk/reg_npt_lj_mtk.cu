@@ -78,7 +78,7 @@ Out run_on_device(Device dev) {
     constexpr double kCut = 2.5;
     constexpr double kSkin = 0.3;
     constexpr double kDt = 0.005;
-    auto frame = make_lj(4); // 64 atoms
+    auto frame = make_lj(6); // 216 atoms; L/2 > r_c
     const double V0 = frame.box.volume();
     if (dev == Device::Cpu) {
         cpu::md::MD sim;
@@ -86,6 +86,7 @@ Out run_on_device(Device dev) {
         sim.set_evaluator(cpu::PairLJCut{1.0, 1.0, kCut});
         sim.set_integrator(cpu::md::NoseHooverNPT{1.0, 0.1, 0.0, 1.0, kDt});
         sim.set_observer(cpu::md::Virial{});
+        sim.enable_timing(false);
         sim.build();
         sim.run(frame, 80);
     } else {

@@ -4,7 +4,7 @@ units           lj
 atom_style      atomic
 boundary        p p p
 
-variable        nside equal 4
+variable        nside equal 6
 variable        a0 equal (1.0/0.8)^(1.0/3.0)
 
 lattice         sc ${a0}

@@ -73,7 +73,7 @@ boundary
 | RKS device payload | **1182615** / `d476ee7a` |
 | UKS device payload | **1186414** / `f2be952a` |
 | Si / H2 / H2O product dual-gate | **1331963** (`GPU_JOB_OK`, Si \|dE\|=3.529e-05 Ha) |
-| full-product H2 energy+F | **1331962** reg PASS (\|dE\|=1.205e-08, max\|dF\|=3.175e-06); unit `MultiWithIonAndVloc` V_eff pointwise 1.95e-7 (tol now 1e-6·peak) |
+| full-product H2 energy+F | **1332946** `GPU_JOB_OK` (ks_chain + product + reg; \|dE\|=1.205e-08, max\|dF\|=3.230e-06). Prior 1331962 unit-only V_eff fail, now 1e-6·peak. |
 
 ## Open depth (do not soft-land)
 

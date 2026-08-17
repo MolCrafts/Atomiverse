@@ -55,8 +55,9 @@ TEST(NoseHooverNPT, OneStepVolumeParityVsCpu) {
     constexpr double kDt = 0.005;
     constexpr double kCut = 2.5;
     constexpr double kSkin = 0.3;
-    auto cpu_f = make_lj_cube(2);
-    auto cuda_f = make_lj_cube(2);
+    // n_side=6 → L≈6.46 Å, L/2 > r_c=2.5 (n=8 at ρ=0.8 is L≈2.15, illegal).
+    auto cpu_f = make_lj_cube(6);
+    auto cuda_f = make_lj_cube(6);
     const double V0 = cpu_f.box.volume();
 
     {

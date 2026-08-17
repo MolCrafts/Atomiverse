@@ -14,7 +14,7 @@
 using namespace ATV;
 
 int main() {
-    constexpr int n_side = 4;
+    constexpr int n_side = 6;
     const int n = n_side * n_side * n_side;
     const double density = 0.8;
     const double box_len = std::cbrt(double(n) / density);
@@ -42,6 +42,7 @@ int main() {
     sim.set_evaluator(cpu::PairLJCut{1.0, 1.0, 2.5});
     sim.set_integrator(cpu::md::NoseHooverNPT{1.0, 0.1, 0.0, 1.0, 0.005});
     sim.set_observer(cpu::md::Virial{});
+    sim.enable_timing(false);
     sim.build();
     sim.run(frame, 80);
 
