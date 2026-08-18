@@ -303,22 +303,34 @@ int main(int argc, char** argv) {
             std::printf("FAIL: spin×smear energy\n");
             return 1;
         }
-        // CPU pw_forces_analytic still rejects spin×smear. Energy is the
-        // dual-gate; CUDA forces are a finite smoke only.
+        auto Fc = cpu::pw::pw_forces_analytic(frame_f, cpu_s);
         auto Fg = cuda::pw::pw_forces_analytic(frame_f, cuda_s);
+        double max_df = 0.0;
         double max_f = 0.0;
         for (int ia = 0; ia < 2; ++ia) {
             for (int k = 0; k < 3; ++k) {
-                const double v = Fg[static_cast<std::size_t>(ia)]
-                                   [static_cast<std::size_t>(k)];
-                if (!std::isfinite(v)) {
-                    std::printf("FAIL: non-finite CUDA spin×smear force\n");
+                const double fc = Fc[static_cast<std::size_t>(ia)]
+                                    [static_cast<std::size_t>(k)];
+                const double fg = Fg[static_cast<std::size_t>(ia)]
+                                    [static_cast<std::size_t>(k)];
+                if (!std::isfinite(fc) || !std::isfinite(fg)) {
+                    std::printf("FAIL: non-finite spin×smear force\n");
                     return 1;
                 }
-                max_f = std::max(max_f, std::abs(v));
+                max_df = std::max(max_df, std::abs(fc - fg));
+                max_f = std::max(max_f, std::abs(fc));
             }
         }
-        std::printf("spin×smear F  CUDA max|F|=%.6e eV/A\n", max_f);
+        std::printf("spin×smear F  max|Δ|=%.6e eV/A  (tol %.1e)  max|F|=%.6f\n",
+                    max_df, kForceTolEvA, max_f);
+        if (!(max_f > 0.05)) {
+            std::printf("FAIL: spin×smear force vacuous\n");
+            return 1;
+        }
+        if (max_df > kForceTolEvA) {
+            std::printf("FAIL: spin×smear force parity\n");
+            return 1;
+        }
     }
 
     std::printf("PASS: cuda-pw-spin-pbe (mag + spin-GGA + F/σ + spin×smear)\n");

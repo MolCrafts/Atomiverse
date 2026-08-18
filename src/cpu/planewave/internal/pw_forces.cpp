@@ -225,10 +225,6 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument("pw_forces_analytic: frame has no atoms");
-    if (method.spin_polarized && method.smearing != Smearing::none)
-        throw std::invalid_argument(
-            "pw_forces_analytic: spin_polarized with metallic smearing has "
-            "no force path yet");
     const bool use_smear = (method.smearing != Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
@@ -259,6 +255,11 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
         n_alpha = (n_elec + mag) / 2;
         n_beta = (n_elec - mag) / 2;
         n_bands = std::max(std::max(n_alpha, n_beta), 1);
+        if (use_smear) {
+            const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
+            n_bands = std::max(
+                {n_bands, n_occ_ceil + std::max(method.extra_bands, 0), 1});
+        }
     } else if (use_smear) {
         // Empty states near E_F: ceil(N_e/2) + extra_bands (energy twin).
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
@@ -274,7 +275,11 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
 
     PWProblem scf_prob;
     PWResult res{};
-    if (spin) {
+    if (spin && use_smear) {
+        res = run_collinear_smear_scf(frame, method, scf_prob, n_bands);
+        xc.prepare(scf_prob.ws);
+        veff.prepare(scf_prob.ws);
+    } else if (spin) {
         // Collinear fixed-occupation UKS (shared helper with bands/Berry).
         res = run_collinear_scf(frame, method, scf_prob, n_alpha, n_beta);
         // Local builders inside run_collinear_scf are gone; prepare ours for
@@ -364,7 +369,101 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
         const int n_kpts = static_cast<int>(scf_prob.kg.kpoints.size());
         auto* saved_gvec = ws.gvec;
 
-        if (spin) {
+        if (spin && use_smear) {
+            for (int ig = 0; ig < ws.n_g; ++ig)
+                ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
+            poisson.step(ws);
+            xc.step_spin(ws, method.xc);
+
+            SmearKind smear_kind = SmearKind::fermi_dirac;
+            if (method.smearing == Smearing::methfessel_paxton)
+                smear_kind = SmearKind::methfessel_paxton;
+            else if (method.smearing == Smearing::gaussian)
+                smear_kind = SmearKind::gaussian;
+            const AccReal degauss_ha =
+                static_cast<AccReal>(method.degauss) * AccReal(0.5);
+            const int mp_order = method.mp_order;
+
+            std::vector<std::vector<AccReal>> evals_sk(
+                static_cast<std::size_t>(2 * n_kpts));
+            for (int s = 0; s < 2; ++s) {
+                for (int ig = 0; ig < scf_prob.gv0.count(); ++ig)
+                    ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
+                ws.gvec = saved_gvec;
+                ws.n_g = scf_prob.gv0.count();
+                veff.step(ws);
+                for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                    auto& gvk = scf_prob.gv_k[static_cast<std::size_t>(ik)];
+                    ws.gvec = &gvk;
+                    ws.n_g = gvk.count();
+                    ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
+                    for (int ig = 0; ig < ws.n_g; ++ig)
+                        ws.T_G[ig] = gvk.ekin[ig];
+                    ws.kb_proj =
+                        scf_prob.kb_proj_k[static_cast<std::size_t>(ik)];
+                    if (!scf_prob.atom_wfc_k.empty())
+                        ws.atom_wfc =
+                            scf_prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                    davidson.step(ws);
+                    evals_sk[static_cast<std::size_t>(s * n_kpts + ik)].assign(
+                        ws.eigenvalues.begin(), ws.eigenvalues.end());
+                    ws.gvec = saved_gvec;
+                    ws.n_g = scf_prob.gv0.count();
+                }
+            }
+
+            std::vector<AccReal> all_evals;
+            std::vector<AccReal> all_weights;
+            for (int s = 0; s < 2; ++s) {
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    const AccReal w =
+                        scf_prob.kg.weights[static_cast<std::size_t>(ik)];
+                    for (AccReal e :
+                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)]) {
+                        all_evals.push_back(e);
+                        all_weights.push_back(w);
+                    }
+                }
+            }
+            const AccReal mu_ha =
+                find_fermi_level(all_evals, all_weights, AccReal(n_elec),
+                                 degauss_ha, smear_kind, mp_order, AccReal(1));
+
+            for (int s = 0; s < 2; ++s) {
+                for (int ig = 0; ig < scf_prob.gv0.count(); ++ig)
+                    ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
+                ws.gvec = saved_gvec;
+                ws.n_g = scf_prob.gv0.count();
+                veff.step(ws);
+                for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
+                    auto& gvk = scf_prob.gv_k[static_cast<std::size_t>(ik)];
+                    ws.gvec = &gvk;
+                    ws.n_g = gvk.count();
+                    ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
+                    for (int ig = 0; ig < ws.n_g; ++ig)
+                        ws.T_G[ig] = gvk.ekin[ig];
+                    ws.kb_proj =
+                        scf_prob.kb_proj_k[static_cast<std::size_t>(ik)];
+                    if (!scf_prob.atom_wfc_k.empty())
+                        ws.atom_wfc =
+                            scf_prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                    davidson.step(ws);
+                    const auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    const int nb = static_cast<int>(ev.size());
+                    std::vector<AccReal> occ(static_cast<std::size_t>(nb));
+                    for (int b = 0; b < nb; ++b)
+                        occ[static_cast<std::size_t>(b)] = smear_f_spinor(
+                            ev[static_cast<std::size_t>(b)], mu_ha, degauss_ha,
+                            smear_kind, mp_order);
+                    const AccReal weight =
+                        scf_prob.kg.weights[static_cast<std::size_t>(ik)];
+                    accumulate_nl_forces_k(ws, weight, nb, occ.data(), F_nl);
+                    ws.gvec = saved_gvec;
+                    ws.n_g = scf_prob.gv0.count();
+                }
+            }
+        } else if (spin) {
             // Rebuild Hartree from total ρ + spin XC; per-channel V_eff.
             // run_collinear_scf already left poisson/XC frozen; re-run so
             // NL re-solve matches CUDA (and is independent of last β V_eff).

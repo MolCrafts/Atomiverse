@@ -260,8 +260,7 @@ pw_forces_fd(const cpu::Frame& frame, const PW& method, double h_ang = 1e-3);
 ///        without converging (a warning is logged; the last density is
 ///        used).
 /// @return Per-atom force triples [eV/Å], one per atom in Frame order.
-/// @throws std::invalid_argument on an empty frame; on `spin_polarized`
-///         combined with metallic `smearing` (no force path yet); on
+/// @throws std::invalid_argument on an empty frame; on
 ///         `degauss <= 0` with smearing on; on a `multiplicity` incompatible
 ///         with the electron count; and, on the restricted fixed-occupation
 ///         path, on an odd valence-electron count
