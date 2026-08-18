@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
@@ -225,7 +225,7 @@ class TestDeviceParameter:
 
         assert MD(dt=0.001, device="cpu") is not None
 
-    def test_md_cpu_device_runs_lj_smoke(self, argon_frame: "molrs.Frame") -> None:
+    def test_md_cpu_device_runs_lj_smoke(self, argon_frame: "molpy.Frame") -> None:
         """MD(device="cpu") runs the conftest LJ smoke to a finite energy."""
         from atomiverse.md import MD, InitVelocity
         from atomiverse.neighbor import NeighborList
@@ -258,7 +258,7 @@ class TestDeviceParameter:
             Minimize(device="cuda")
 
     def test_single_point_cuda_device_raises_before_compute(
-        self, argon_frame: "molrs.Frame"
+        self, argon_frame: "molpy.Frame"
     ) -> None:
         """single_point(..., device="cuda") raises ValueError BEFORE any
         compute: the argon frame (type=0) would itself fail AM1 evaluation

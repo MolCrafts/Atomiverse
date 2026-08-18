@@ -270,7 +270,7 @@ struct MinimizeHandle {
             return;
         throw std::runtime_error(
             "this Minimize run registers a Coulomb evaluator but the "
-            "molrs.Frame has no per-atom 'charge' column, so every charge "
+            "molpy.Frame has no per-atom 'charge' column, so every charge "
             "would be taken as 0 e. Add the charges [e] before run(), e.g. "
             "frame[\"atoms\"].insert(\"charge\", q).");
     }
@@ -856,7 +856,7 @@ void bind_minimizer(nb::module_& m) {
             "The `atomiverse.minimizer.Minimize` facade calls this for you "
             "before the first run(); at this level it is explicit.")
         .def("run", &MinimizeHandle::run, nb::arg("frame"), nb::arg("max_iter"),
-             "Optimize a molrs.Frame for at most max_iter iterations. GIL "
+             "Optimize a molpy.Frame for at most max_iter iterations. GIL "
              "released during compute.\n\n"
              "Geometry, energy, forces, the stress entry and — for a "
              "variable-cell run — the box are written back into the frame you "

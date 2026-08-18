@@ -87,6 +87,15 @@ atv_add_regression(layout core_contract_includes)
 atv_add_regression(layout backend_owned_longrange)
 
 if(ATV_BUILD_MD)
+    if(ATV_BUILD_CLI)
+        add_custom_target(run_reg_cli_lj
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:atomiverse_cli> -in
+                    ${CMAKE_SOURCE_DIR}/examples/in.lj
+            DEPENDS atomiverse_cli
+            COMMENT "regression [md/cli_lj] native atomiverse -in")
+        add_dependencies(regressions run_reg_cli_lj)
+    endif()
     # Layout: full-word backend include paths (backend-mirror-03-paths).
     atv_add_regression(layout path_words)
     atv_add_regression(layout driver_names)

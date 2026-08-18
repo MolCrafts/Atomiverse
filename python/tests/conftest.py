@@ -1,7 +1,7 @@
 """Shared pytest fixtures for Atomiverse Python binding tests.
 
-Atomiverse drivers operate directly on a ``molrs.Frame`` — there is no
-separate Atomiverse Frame type. Fixtures build ``molrs.Frame`` instances.
+Atomiverse drivers operate directly on a ``molpy.Frame`` — there is no
+separate Atomiverse Frame type. Fixtures build ``molpy.Frame`` instances.
 
 Fixtures import from the deep canonical namespaces (the single source of
 truth per spec python-api-namespaces-am1); the top-level convenience
@@ -10,7 +10,7 @@ re-exports are exercised separately in test_md.py / test_namespaces.py.
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 from atomiverse._binding import extension_available
 
@@ -73,18 +73,18 @@ def n_atoms() -> int:
 
 
 @pytest.fixture
-def argon_frame(n_atoms: int) -> "molrs.Frame":
-    """Single-type Ar molrs.Frame on a simple cubic lattice."""
+def argon_frame(n_atoms: int) -> "molpy.Frame":
+    """Single-type Ar molpy.Frame on a simple cubic lattice."""
     xs, ys, zs, box_len = _argon_columns(n_atoms)
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", xs)
     atoms.insert("y", ys)
     atoms.insert("z", zs)
     atoms.insert("mass", np.full(n_atoms, 39.948, dtype=np.float64))
     atoms.insert("atomic_number", np.full(n_atoms, 18, dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(box_len)
+    frame.box = molpy.Box.cube(box_len)
     return frame
 
 
@@ -109,7 +109,7 @@ _BONDED_BOX: float = 20.0
 
 
 @pytest.fixture
-def bonded_frame() -> "molrs.Frame":
+def bonded_frame() -> "molpy.Frame":
     """Four carbons carrying one bond, one dihedral and one improper.
 
     Topology travels as molrs blocks: ``bonds`` (atomi/atomj/type_id),
@@ -127,10 +127,10 @@ def bonded_frame() -> "molrs.Frame":
     the element is inert here — no bonded style keys on species — but a
     single real element keeps the frame physical.
 
-    @return A 4-atom molrs.Frame in a 20 Å cubic cell with φ = χ = π/2.
+    @return A 4-atom molpy.Frame in a 20 Å cubic cell with φ = χ = π/2.
     """
     n = len(_BONDED_XYZ)
-    atoms = molrs.Block()
+    atoms = molpy.Block()
     for axis, name in enumerate(("x", "y", "z")):
         atoms.insert(
             name, np.array([site[axis] for site in _BONDED_XYZ], dtype=np.float64)
@@ -138,24 +138,24 @@ def bonded_frame() -> "molrs.Frame":
     atoms.insert("mass", np.full(n, 12.011, dtype=np.float64))
     atoms.insert("atomic_number", np.full(n, 6, dtype=np.uint32))
 
-    bonds = molrs.Block()
+    bonds = molpy.Block()
     bonds.insert("atomi", np.array([0], dtype=np.uint32))
     bonds.insert("atomj", np.array([1], dtype=np.uint32))
     bonds.insert("type_id", np.array([0], dtype=np.uint32))
 
-    def _four_tuple() -> "molrs.Block":
-        block = molrs.Block()
+    def _four_tuple() -> "molpy.Block":
+        block = molpy.Block()
         for column, row in (("atomi", 0), ("atomj", 1), ("atomk", 2), ("atoml", 3)):
             block.insert(column, np.array([row], dtype=np.uint32))
         block.insert("type_id", np.array([0], dtype=np.uint32))
         return block
 
-    frame = molrs.Frame()
+    frame = molpy.Frame()
     frame["atoms"] = atoms
     frame["bonds"] = bonds
     frame["dihedrals"] = _four_tuple()
     frame["impropers"] = _four_tuple()
-    frame.box = molrs.Box.cube(_BONDED_BOX)
+    frame.box = molpy.Box.cube(_BONDED_BOX)
     return frame
 
 

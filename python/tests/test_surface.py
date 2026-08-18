@@ -69,7 +69,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
@@ -252,18 +252,18 @@ def canonical_lj_md() -> "av.MD":
 
 
 @pytest.fixture
-def silicon_frame() -> "molrs.Frame":
-    """Tiny 2-atom Si molrs.Frame in a cubic cell (type = Z = 14)."""
+def silicon_frame() -> "molpy.Frame":
+    """Tiny 2-atom Si molpy.Frame in a cubic cell (type = Z = 14)."""
     a = 5.43  # Si lattice constant [A]
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, a / 4.0], dtype=np.float64))
     atoms.insert("y", np.array([0.0, a / 4.0], dtype=np.float64))
     atoms.insert("z", np.array([0.0, a / 4.0], dtype=np.float64))
     atoms.insert("mass", np.full(2, 28.0855, dtype=np.float64))
     atoms.insert("atomic_number", np.full(2, 14, dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(a)
+    frame.box = molpy.Box.cube(a)
     return frame
 
 
@@ -304,7 +304,7 @@ class TestCanonicalSurface:
 
 class TestCanonicalMDSmoke:
     def test_positions_change(
-        self, argon_frame: "molrs.Frame", canonical_lj_md: "av.MD"
+        self, argon_frame: "molpy.Frame", canonical_lj_md: "av.MD"
     ) -> None:
         """10 canonical-name LJ steps move the Ar atoms."""
         x_before = np.asarray(argon_frame["atoms"]["x"]).copy()
@@ -315,7 +315,7 @@ class TestCanonicalMDSmoke:
         )
 
     def test_energy_finite(
-        self, argon_frame: "molrs.Frame", canonical_lj_md: "av.MD"
+        self, argon_frame: "molpy.Frame", canonical_lj_md: "av.MD"
     ) -> None:
         """Total energy is exact typed meta, with no result block."""
         canonical_lj_md.run(argon_frame, 10)
@@ -326,7 +326,7 @@ class TestCanonicalMDSmoke:
         assert np.isfinite(energy)
 
     def test_kinetic_positive(
-        self, argon_frame: "molrs.Frame", canonical_lj_md: "av.MD"
+        self, argon_frame: "molpy.Frame", canonical_lj_md: "av.MD"
     ) -> None:
         """InitVelocity(10 K, seed 42) yields kinetic energy > 0."""
         canonical_lj_md.run(argon_frame, 10)
@@ -362,7 +362,7 @@ class TestDeadSurfaceFailsLoud:
 
 class TestPWSurface:
     @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
-    def test_explicit_solver_gth_smoke(self, silicon_frame: "molrs.Frame") -> None:
+    def test_explicit_solver_gth_smoke(self, silicon_frame: "molpy.Frame") -> None:
         """The analytic in-tree GTH path runs from Python and returns a
         finite energy [Ry] — 'runs, underconverged' contract at ecut 8 Ry
         and one k-point, no new reference values."""
@@ -378,7 +378,7 @@ class TestPWSurface:
         assert np.isfinite(result.energy)
 
     @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
-    def test_no_pseudopotential_raises(self, silicon_frame: "molrs.Frame") -> None:
+    def test_no_pseudopotential_raises(self, silicon_frame: "molpy.Frame") -> None:
         """A plane-wave run has no default pseudopotential: leaving both
         `gth_name` and `upf_path` empty fails loud instead of running a
         bare valence-charge potential that no cutoff converges."""
@@ -676,7 +676,7 @@ def _forbidden_tokens() -> tuple[str, ...]:
     tokens.append("Cpu" + "Frame")
     tokens.extend("av" + "." + name for name in _DEAD_AV_ATTRS)
     tokens.extend("atomiverse" + "." + name for name in ("Frame", "Block"))
-    # molpy >= 0.13 re-exports molrs.Frame / molrs.Block by identity, so
+    # molpy >= 0.13 re-exports molpy.Frame / molpy.Block by identity, so
     # `molpy.Frame` is no longer a dead reference and is not scanned for.
     return tuple(tokens)
 

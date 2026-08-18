@@ -6,7 +6,7 @@ no optional build flag (AM1 ships on every wheel):
 
 * ``single_point(frame, evaluator)`` — one solve at one fixed geometry,
   the counterpart of C++ ``cpu::single_point``;
-* the two result channels: the public ``molrs.Frame`` (total energy [eV]
+* the two result channels: the public ``molpy.Frame`` (total energy [eV]
   in ``frame.meta``, per-atom Mulliken charges [e] written back into the
   ``charge`` column) and the solver-internal detail on
   ``evaluator.last_result()`` (Hartree / kcal·mol⁻¹, iteration count);
@@ -19,7 +19,7 @@ grades these same charges against that pinned MOPAC reference. This script
 only checks the physics that must hold for any neutral closed-shell
 molecule, so it stays a demonstration and not a second copy of the pin.
 
-MolCrafts stack only (molrs + numpy) — no ASE, no matplotlib. Headless,
+MolCrafts stack only (molpy + numpy) — no ASE, no matplotlib. Headless,
 single process, well under a second. It self-checks its own result and
 **exits nonzero** when a check fails, so it can be smoke-run.
 
@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import sys
 
-import molrs
+import molpy
 import numpy as np
 
 import atomiverse as av
@@ -66,8 +66,8 @@ _BOX: float = 20.0  # [Å]
 _TOL_NEUTRALITY: float = 1e-6  # [e]
 
 
-def build_ch4_frame() -> "molrs.Frame":
-    """Tetrahedral methane as a ``molrs.Frame``.
+def build_ch4_frame() -> "molpy.Frame":
+    """Tetrahedral methane as a ``molpy.Frame``.
 
     The ``atomic_number`` column [Z] is how the evaluator knows which
     element's AM1 parameters to apply; ``mass`` is carried so the same
@@ -75,16 +75,16 @@ def build_ch4_frame() -> "molrs.Frame":
 
     @return A five-atom frame in a cubic cell of edge ``_BOX``.
     """
-    atoms = molrs.Block()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, _H, -_H, -_H, _H], dtype=np.float64))
     atoms.insert("y", np.array([0.0, _H, -_H, _H, -_H], dtype=np.float64))
     atoms.insert("z", np.array([0.0, _H, _H, -_H, -_H], dtype=np.float64))
     atoms.insert("mass", np.array(_MASSES, dtype=np.float64))
     atoms.insert("atomic_number", np.array(_ATOMIC_NUMBERS, dtype=np.uint32))
 
-    frame = molrs.Frame()
+    frame = molpy.Frame()
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_BOX)
+    frame.box = molpy.Box.cube(_BOX)
     return frame
 
 

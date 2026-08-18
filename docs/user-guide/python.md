@@ -21,14 +21,16 @@ pip install atomiverse
 
 This installs the Python API shell and CLI only — **no C++ compile**, no
 prebuilt `_atomiverse` binary. Requires Python ≥ 3.9, NumPy, and
-`molcrafts-molrs==0.13.1` (frame schema v2; other molrs releases are rejected).
-This must match the vendored submodule pin in `.gitmodules` / `molrs/Cargo.toml`.
+`molcrafts-molpy` (the only user-facing Frame type). **Do not `import molrs`**
+from user code — molrs is an engine-private schema, pulled transitively
+by molpy.
 
 After phase 1 you can run:
 
 ```bash
 python -m atomiverse          # shows version + install guidance
 python -m atomiverse status  # no native build yet
+python -m atomiverse run script.py   # after a native install
 ```
 
 Importing compute symbols (`atomiverse.MD`, …) without a native extension
@@ -49,6 +51,10 @@ python -m atomiverse compile -j 8
 python -m atomiverse install
 
 python -m atomiverse status
+
+# 4) run a script (same CLI)
+python -m atomiverse run python/examples/md_lj_argon.py
+python -m atomiverse python/examples/md_lj_argon.py
 ```
 
 **Modules** are positional on `config` only: `md`, `minimize`, `mc`, `evaluate`,
@@ -99,10 +105,10 @@ python -m atomiverse install --dry-run
 ## What this package exposes (and what it doesn't)
 
 Atomiverse binds **drivers and components only** — there is no Atomiverse
-Frame type. Simulation state crosses the boundary as a **`molrs.Frame`**:
+Frame type. Simulation state crosses the boundary as a **`molpy.Frame`**:
 each `run()` borrows the frame, advances a transient execution frame in C++,
 and writes positions / velocities / forces / energy back into the same
-`molrs.Frame`.
+`molpy.Frame`.
 
 Current surface:
 
@@ -151,10 +157,10 @@ GPU minimization fails loud and remains deferred.
 
 ```python
 import numpy as np
-import molrs
+import molpy
 import atomiverse as av
 
-# 1. Build an FCC lattice of 500 Ar atoms as a molrs.Frame
+# 1. Build an FCC lattice of 500 Ar atoms as a molpy.Frame
 n_cells = 5
 a0 = 5.26        # lattice constant [Å]
 basis = [(0, 0, 0), (0.5, 0.5, 0), (0.5, 0, 0.5), (0, 0.5, 0.5)]
@@ -166,15 +172,15 @@ positions = [
 n = len(positions)
 xs, ys, zs = (np.array(c, dtype=np.float64) for c in zip(*positions))
 
-frame = molrs.Frame()
-atoms = molrs.Block()
+frame = molpy.Frame()
+atoms = molpy.Block()
 atoms.insert("x", xs)
 atoms.insert("y", ys)
 atoms.insert("z", zs)
 atoms.insert("mass", np.full(n, 39.948))   # Ar [amu]
 atoms.insert("atomic_number", np.full(n, 18, dtype=np.uint32))
 frame["atoms"] = atoms
-frame.box = molrs.Box.cube(n_cells * a0)
+frame.box = molpy.Box.cube(n_cells * a0)
 
 # 2. Configure the MD driver (categorical setters — same as C++)
 epsilon, sigma, cutoff = 0.0104, 3.4, 8.5   # LJ-Ar [eV, Å, Å]
@@ -189,7 +195,7 @@ sim.set_thermo(100)
 # 3. Run (build() is called automatically)
 sim.run(frame, 1000)
 
-# 4. Read results back from the SAME molrs.Frame
+# 4. Read results back from the SAME molpy.Frame
 x = np.asarray(frame["atoms"]["x"])
 pe = frame.meta["energy"]                   # float [eV]
 ke = frame.meta["kinetic"]                  # float [eV]
@@ -305,7 +311,7 @@ use:
 import numpy as np
 import atomiverse as av
 
-# `frame` is a molrs.Frame with x/y/z + atomic_number columns.
+# `frame` is a molpy.Frame with x/y/z + atomic_number columns.
 ev = av.AM1Evaluator(charge=0)
 av.single_point(frame, ev)                     # energy + charges onto frame
 q = np.asarray(frame["atoms"]["charge"])       # Mulliken charges [e]
@@ -399,7 +405,7 @@ tolerance and iteration cap are constructor arguments.
 import numpy as np
 import atomiverse as av
 
-# `frame` is a molrs.Frame carrying x/y/z + atomic_number — the worked
+# `frame` is a molpy.Frame carrying x/y/z + atomic_number — the worked
 # example at the end of this section builds one from scratch.
 rhf = av.RHF(basis="STO-3G", charge=0, tol=1e-9, max_iter=100)
 rhf.run(frame)                        # frame.meta["energy"] is eV
@@ -459,21 +465,21 @@ are used directly; `single_point(frame, rhf)` accepts them and simply calls
 ```python
 import math
 import numpy as np
-import molrs
+import molpy
 import atomiverse as av
 
 r_oh, half = 0.95, 0.5 * math.radians(104.5)        # Å, half of ∠HOH
 hx, hz = r_oh * math.sin(half), r_oh * math.cos(half)
 
-frame = molrs.Frame()
-atoms = molrs.Block()
+frame = molpy.Frame()
+atoms = molpy.Block()
 atoms.insert("x", np.array([0.0, hx, -hx]))
 atoms.insert("y", np.zeros(3))
 atoms.insert("z", np.array([0.0, hz, hz]))
 atoms.insert("mass", np.array([15.999, 1.008, 1.008]))
 atoms.insert("atomic_number", np.array([8, 1, 1], dtype=np.uint32))
 frame["atoms"] = atoms
-frame.box = molrs.Box.cube(20.0)                    # gas phase
+frame.box = molpy.Box.cube(20.0)                    # gas phase
 
 rhf = av.RHF()                                      # STO-3G defaults
 rhf.run(frame)
@@ -491,7 +497,7 @@ grades this same geometry against the same number and window.
 ## CPU geometry minimization
 
 Minimize uses the same typed component composition as C++. The optimizer and
-termination policy are separate objects; state stays in one `molrs.Frame` and
+termination policy are separate objects; state stays in one `molpy.Frame` and
 the return value carries only loop control metadata:
 
 ```python
@@ -667,20 +673,20 @@ closed-form answer, so it is worth running once to see the shape:
 
 ```python
 import numpy as np
-import molrs
+import molpy
 import atomiverse as av
 
 eps, sigma, cutoff = 0.0104, 3.4, 8.5        # [eV], [Å], [Å]
 r_min = 2.0 ** (1.0 / 6.0) * sigma           # 3.81637 Å
 
-frame = molrs.Frame()
-atoms = molrs.Block()
+frame = molpy.Frame()
+atoms = molpy.Block()
 atoms.insert("x", np.zeros(2))
 atoms.insert("y", np.zeros(2))
 atoms.insert("z", np.array([0.0, r_min]))
 atoms.insert("atomic_number", np.full(2, 18, dtype=np.uint32))   # Ar
 frame["atoms"] = atoms
-frame.box = molrs.Box.cube(40.0)             # > 2 × cutoff: isolated dimer
+frame.box = molpy.Box.cube(40.0)             # > 2 × cutoff: isolated dimer
 
 driver = av.Hessian()                        # 298.15 K, 1 atm, singlet, σ = 1
 driver.set_evaluator(av.PairLJCut(eps, sigma, cutoff))
@@ -722,7 +728,7 @@ is not a physical zero. `PairLJCut` and the Coulomb styles need a
 do not:
 
 ```python
-# `h2` is a molrs.Frame of two H atoms (atomic_number = 1) in a large cell.
+# `h2` is a molpy.Frame of two H atoms (atomic_number = 1) in a large cell.
 driver = av.Hessian()
 driver.set_evaluator(av.AM1Evaluator())    # 6N SCF solves, no neighbor list
 result = driver.run(h2)
@@ -806,7 +812,7 @@ displacement [Å], volume [Å³], energy [eV].
 ```python
 import atomiverse as av
 
-# `frame` is the Argon molrs.Frame from the quickstart above:
+# `frame` is the Argon molpy.Frame from the quickstart above:
 # 500 atoms in a cubic cell of L = 5 × 5.26 Å = 26.3 Å.
 cutoff, skin = 8.5, 1.0                            # [Å]
 sim = av.MC(300.0, seed=42)                        # temperature [K]
@@ -843,7 +849,7 @@ here moves in time.
 Consecutive `run()` calls **continue one Markov chain**: the tallies
 accumulate and the configuration carries over, which is what makes the
 `run(equilibrate); run(sample)` pattern above mean what it says. The frame
-is materialized once, on the first call — edits made to the `molrs.Frame`
+is materialized once, on the first call — edits made to the `molpy.Frame`
 between calls are ignored, and a fresh chain means a fresh sampler object.
 
 The execution plan is compiled on that same first call, so a `set_*` call
@@ -946,7 +952,7 @@ before choosing a state point.
 
 ## Key concepts
 
-### molrs.Frame in, molrs.Frame out
+### molpy.Frame in, molpy.Frame out
 
 The frame must carry an `atoms` block with `x, y, z, atomic_number` columns
 (`mass` required for MD; `atomic_number` [uint] carries Z — the string
@@ -1269,7 +1275,7 @@ print(sim.summary())   # per-phase wall-clock breakdown
 ## Examples
 
 `python/examples/` holds four scripts. They use the MolCrafts stack only —
-molrs, numpy, and (for the plane-wave one) molplot — never ASE or
+molpy, numpy, and (for the plane-wave one) molplot — never ASE or
 matplotlib.
 
 Three of them run on any wheel, need no external program, finish in

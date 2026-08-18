@@ -42,7 +42,7 @@ coordinates with the same trigonometry as the C++ case (C2v frame: O at the
 origin, H1 on +x, H2 in the xy plane at the full HOH angle), never
 transcribed from a rounded Cartesian table.
 
-Tolerances: the molrs.Frame ``charge`` column is checked to 2.5e-3 e
+Tolerances: the molpy.Frame ``charge`` column is checked to 2.5e-3 e
 (covers single-precision storage on an ``ATV_REAL_STORAGE=float`` wheel);
 ``last_result().mulliken_charges`` is always double and is checked to
 5.0e-5 e, mirroring the C++ unit test's own tolerance. Force columns
@@ -61,7 +61,7 @@ import math
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 import atomiverse as av
 
@@ -75,12 +75,12 @@ _TOL_FRAME_CHARGE = 2.5e-3  # [e] float-storage wheel tolerance
 _TOL_RESULT_CHARGE = 5.0e-5  # [e] mirrors the C++ EXPECT_NEAR tolerance
 
 
-def _make_ch4_frame() -> "molrs.Frame":
-    """Tetrahedral CH4 molrs.Frame (type = atomic number Z; C at origin,
+def _make_ch4_frame() -> "molpy.Frame":
+    """Tetrahedral CH4 molpy.Frame (type = atomic number Z; C at origin,
     H along the body diagonals) — the geometry the MOPAC pin was taken at,
     also spelled out in regressions/launcher/lj_parity/atv_am1.py:17."""
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, _H, -_H, -_H, _H], dtype=np.float64))
     atoms.insert("y", np.array([0.0, _H, -_H, _H, -_H], dtype=np.float64))
     atoms.insert("z", np.array([0.0, _H, _H, -_H, -_H], dtype=np.float64))
@@ -90,12 +90,12 @@ def _make_ch4_frame() -> "molrs.Frame":
     )
     atoms.insert("atomic_number", np.array([6, 1, 1, 1, 1], dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(20.0)
+    frame.box = molpy.Box.cube(20.0)
     return frame
 
 
 @pytest.fixture
-def ch4_frame() -> "molrs.Frame":
+def ch4_frame() -> "molpy.Frame":
     return _make_ch4_frame()
 
 
@@ -123,7 +123,7 @@ _MIN_FORCE_SQ_EV_A = 1.0e-10  # [(eV/Å)²]
 #: at this window, which covers an ATV_REAL_STORAGE=float wheel.
 _TOL_FRAME_FORCE_EV_A = 1.0e-4  # [eV/Å]
 #: frame.meta['energy'] and AM1Result fields are double on both sides of the
-#: molrs boundary — no narrowing, so the exact-energy tier applies.
+#: molpy boundary — no narrowing, so the exact-energy tier applies.
 _TOL_ENERGY_EV = 1.0e-10  # [eV]
 #: O-H stretch used for the displacement-response case (well above the SCF
 #: energy tolerance, well below anharmonicity).
@@ -153,26 +153,26 @@ def _c2v_water_coords(oh_angstrom: float, hoh_degrees: float) -> "np.ndarray":
     )
 
 
-def _make_water_frame(coords: "np.ndarray", box_angstrom: float) -> "molrs.Frame":
-    """Water molrs.Frame (O, H, H) at *coords* in a cubic cell.
+def _make_water_frame(coords: "np.ndarray", box_angstrom: float) -> "molpy.Frame":
+    """Water molpy.Frame (O, H, H) at *coords* in a cubic cell.
 
     @param coords: (3, 3) positions [Å]; row 0 = O, rows 1-2 = H.
     @param box_angstrom: Cubic cell edge [Å]; isolation only.
-    @return molrs.Frame with x/y/z/mass/atomic_number columns.
+    @return molpy.Frame with x/y/z/mass/atomic_number columns.
     """
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     for axis, key in enumerate(("x", "y", "z")):
         atoms.insert(key, np.ascontiguousarray(coords[:, axis], dtype=np.float64))
     atoms.insert("mass", np.array([15.999, 1.008, 1.008], dtype=np.float64))
     atoms.insert("atomic_number", np.array([8, 1, 1], dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(box_angstrom)
+    frame.box = molpy.Box.cube(box_angstrom)
     return frame
 
 
 @pytest.fixture(scope="module")
-def am1_ch4() -> tuple["molrs.Frame", "av.AM1Evaluator"]:
+def am1_ch4() -> tuple["molpy.Frame", "av.AM1Evaluator"]:
     """One converged AM1 CH4 single point, shared read-only by the
     oracle assertions below."""
     frame = _make_ch4_frame()
@@ -249,7 +249,7 @@ class TestAM1SinglePointCH4:
         assert energy < 0.0
 
     def test_frame_charge_column_matches_oracle(self, am1_ch4) -> None:
-        """The molrs.Frame charge column carries the 5 Mulliken charges
+        """The molpy.Frame charge column carries the 5 Mulliken charges
         within the float-storage tolerance (write_back contract)."""
         frame, _ = am1_ch4
         charges = np.asarray(frame["atoms"]["charge"], dtype=np.float64)
@@ -306,7 +306,7 @@ class TestAM1Forces:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def ch4_forces() -> tuple["molrs.Frame", "np.ndarray", "av.AM1Evaluator"]:
+    def ch4_forces() -> tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]:
         """One AM1 force evaluation on the pinned CH4 geometry."""
         frame = _make_ch4_frame()
         evaluator = av.AM1Evaluator()
@@ -315,7 +315,7 @@ class TestAM1Forces:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def water_optimum() -> tuple["molrs.Frame", "np.ndarray"]:
+    def water_optimum() -> tuple["molpy.Frame", "np.ndarray"]:
         """AM1 forces at MOPAC's published AM1 optimum for water."""
         frame = _make_water_frame(
             _c2v_water_coords(_R_OH_MOPAC, _HOH_MOPAC_DEG), _BOX_MOPAC
@@ -325,7 +325,7 @@ class TestAM1Forces:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def water_stretched() -> tuple["molrs.Frame", "np.ndarray"]:
+    def water_stretched() -> tuple["molpy.Frame", "np.ndarray"]:
         """The same optimum with H1 pushed +0.01 Å along its own O-H axis.
 
         H1 sits on +x with O at the origin, so the O->H1 unit vector IS +x
@@ -340,7 +340,7 @@ class TestAM1Forces:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def water_distorted() -> tuple["molrs.Frame", "np.ndarray"]:
+    def water_distorted() -> tuple["molpy.Frame", "np.ndarray"]:
         """The distorted fixture of reg_am1_water_force.cpp:36-46."""
         coords = np.array(
             [[0.0, 0.0, 0.0], [1.05, 0.0, 0.0], [-0.26, 1.0, 0.0]],
@@ -353,21 +353,21 @@ class TestAM1Forces:
     # ── shape / finiteness / write-back ──
 
     def test_returns_n_by_three_array(
-        self, ch4_forces: tuple["molrs.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
     ) -> None:
         _, forces, _ = ch4_forces
         assert forces.shape == (5, 3)
 
     def test_forces_finite(
-        self, ch4_forces: tuple["molrs.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
     ) -> None:
         _, forces, _ = ch4_forces
         assert np.all(np.isfinite(forces))
 
     def test_force_columns_written_back(
-        self, ch4_forces: tuple["molrs.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
     ) -> None:
-        """forces() publishes fx/fy/fz on the SAME molrs.Frame, matching the
+        """forces() publishes fx/fy/fz on the SAME molpy.Frame, matching the
         returned array (the write-back contract MD and SCF already keep).
 
         CH4 is pinned at C-H = 1.0897 Å, which is not AM1's own methane
@@ -385,7 +385,7 @@ class TestAM1Forces:
         assert fz == pytest.approx(forces[:, 2], abs=_TOL_FRAME_FORCE_EV_A)
 
     def test_energy_written_back_finite_negative(
-        self, ch4_forces: tuple["molrs.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
     ) -> None:
         """forces() also lands the total energy [eV]: bound, so negative
         (the same gate as reg_am1_water_force.cpp:77-81)."""
@@ -396,7 +396,7 @@ class TestAM1Forces:
         assert energy < 0.0
 
     def test_forces_translation_invariance(
-        self, ch4_forces: tuple["molrs.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
     ) -> None:
         """Σ_A F_A = 0 per component, at the C++ case's own net-force gate
         (reg_am1_water_force.cpp:101, 1e-5 eV/Å): a rigid translation of an
@@ -407,7 +407,7 @@ class TestAM1Forces:
     # ── AM1Result force / energy fields ──
 
     def test_result_forces_field(
-        self, ch4_forces: tuple["molrs.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
     ) -> None:
         """last_result().forces_ev_a is the flat (fx0, fy0, fz0, fx1, …)
         layout of NDDOResult, holding exactly the doubles that were
@@ -418,7 +418,7 @@ class TestAM1Forces:
         assert np.asarray(flat, dtype=np.float64).tolist() == forces.ravel().tolist()
 
     def test_result_total_energy_ev_matches_frame_meta(
-        self, ch4_forces: tuple["molrs.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
     ) -> None:
         """AM1Result.total_energy_ev is the number AM1 writes to
         frame.meta['energy'] (src/cpu/semiempirical/am1_solver.cpp:88-92);
@@ -431,7 +431,7 @@ class TestAM1Forces:
     # ── Physics: stationarity, non-triviality, displacement response ──
 
     def test_forces_stationary_at_mopac_optimum(
-        self, water_optimum: tuple["molrs.Frame", "np.ndarray"]
+        self, water_optimum: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """MOPAC's AM1 optimum is stationary on ATV's AM1 surface too.
 
@@ -448,7 +448,7 @@ class TestAM1Forces:
         )
 
     def test_forces_do_not_vanish_off_optimum(
-        self, water_distorted: tuple["molrs.Frame", "np.ndarray"]
+        self, water_distorted: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """The distorted fixture keeps the stationarity gate honest.
 
@@ -464,7 +464,7 @@ class TestAM1Forces:
         )
 
     def test_distorted_forces_translation_invariance(
-        self, water_distorted: tuple["molrs.Frame", "np.ndarray"]
+        self, water_distorted: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """Σ_A F_A = 0 on the distorted fixture — this is exactly the check
         reg_am1_water_force.cpp:100-106 runs, at its own 1e-5 eV/Å gate."""
@@ -473,8 +473,8 @@ class TestAM1Forces:
 
     def test_stretched_bond_raises_energy(
         self,
-        water_optimum: tuple["molrs.Frame", "np.ndarray"],
-        water_stretched: tuple["molrs.Frame", "np.ndarray"],
+        water_optimum: tuple["molpy.Frame", "np.ndarray"],
+        water_stretched: tuple["molpy.Frame", "np.ndarray"],
     ) -> None:
         """E(optimum + 0.01 Å O-H stretch) > E(optimum).
 
@@ -489,7 +489,7 @@ class TestAM1Forces:
         assert stretched_frame.meta["energy"] > optimum_frame.meta["energy"]
 
     def test_stretched_bond_force_points_back_at_oxygen(
-        self, water_stretched: tuple["molrs.Frame", "np.ndarray"]
+        self, water_stretched: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """The stretched H is pulled back toward O: F(H1)·d̂ < 0.
 
@@ -514,15 +514,15 @@ class TestUnsupportedElement:
     def test_z99_raises_runtime_error(self) -> None:
         """Z=99 has no AM1 parameters — single_point raises RuntimeError
         across the binding boundary (no fallback, no crash)."""
-        frame = molrs.Frame()
-        atoms = molrs.Block()
+        frame = molpy.Frame()
+        atoms = molpy.Block()
         atoms.insert("x", np.array([0.0], dtype=np.float64))
         atoms.insert("y", np.array([0.0], dtype=np.float64))
         atoms.insert("z", np.array([0.0], dtype=np.float64))
         atoms.insert("mass", np.array([252.0], dtype=np.float64))
         atoms.insert("atomic_number", np.array([99], dtype=np.uint32))
         frame["atoms"] = atoms
-        frame.box = molrs.Box.cube(20.0)
+        frame.box = molpy.Box.cube(20.0)
 
         with pytest.raises(RuntimeError):
             av.single_point(frame, av.AM1Evaluator())

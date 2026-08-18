@@ -68,7 +68,7 @@ import math
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 from atomiverse.montecarlo import (
     GCMC,
@@ -117,7 +117,7 @@ _NVT_SEED: int = 42
 _NVT_T_K: float = 300.0
 
 #: frame.meta['energy'] and the handle's own bookkeeping are both AccReal
-#: (double) on either side of the molrs boundary — no narrowing, so the
+#: (double) on either side of the molpy boundary — no narrowing, so the
 #: exact-energy tier applies (same reasoning as test_semiempirical.py:127).
 _TOL_ENERGY_EV: float = 1.0e-10
 
@@ -191,8 +191,8 @@ _MIN_ACCEPTANCE: float = 0.01
 # ── Helpers ─────────────────────────────────────────────────────────
 
 
-def _cubic_lattice_frame(n_atoms: int, box_len: float) -> "molrs.Frame":
-    """Simple-cubic Ar ``molrs.Frame``: *n_atoms* rows in a cubic cell.
+def _cubic_lattice_frame(n_atoms: int, box_len: float) -> "molpy.Frame":
+    """Simple-cubic Ar ``molpy.Frame``: *n_atoms* rows in a cubic cell.
 
     A lattice start (never a random one) is deliberate and is the same
     choice ``reg_gcmc_lj.cpp:92`` documents: random placement can overlap
@@ -201,7 +201,7 @@ def _cubic_lattice_frame(n_atoms: int, box_len: float) -> "molrs.Frame":
 
     @param n_atoms Number of Ar atoms to place.
     @param box_len Cubic cell edge [Å].
-    @return A molrs.Frame carrying x/y/z [Å], mass [amu] and atomic_number.
+    @return A molpy.Frame carrying x/y/z [Å], mass [amu] and atomic_number.
     """
     # Smallest side with side³ >= n_atoms, by integer search: floating cube
     # roots land on either side of an exact cube (math.cbrt(27) is
@@ -216,15 +216,15 @@ def _cubic_lattice_frame(n_atoms: int, box_len: float) -> "molrs.Frame":
         coords[i, 0] = (i % side + 0.5) * spacing
         coords[i, 1] = ((i // side) % side + 0.5) * spacing
         coords[i, 2] = (i // (side * side) + 0.5) * spacing
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.ascontiguousarray(coords[:, 0]))
     atoms.insert("y", np.ascontiguousarray(coords[:, 1]))
     atoms.insert("z", np.ascontiguousarray(coords[:, 2]))
     atoms.insert("mass", np.full(n_atoms, _MASS_AMU, dtype=np.float64))
     atoms.insert("atomic_number", np.full(n_atoms, _Z_ARGON, dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(box_len)
+    frame.box = molpy.Box.cube(box_len)
     return frame
 
 
@@ -327,7 +327,7 @@ class TestNvtMc:
         return _NVT_N_ATOMS
 
     def test_acceptance_ratio_strictly_inside_unit_interval(
-        self, argon_frame: "molrs.Frame"
+        self, argon_frame: "molpy.Frame"
     ) -> None:
         """The chain neither freezes nor accepts everything.
 
@@ -347,7 +347,7 @@ class TestNvtMc:
         assert 0.0 < ratio < 1.0
 
     def test_acceptance_ratio_matches_the_tallies(
-        self, argon_frame: "molrs.Frame"
+        self, argon_frame: "molpy.Frame"
     ) -> None:
         """``acceptance_ratio()`` is exactly accepts/attempts."""
         sim = _nvt_handle()
@@ -357,7 +357,7 @@ class TestNvtMc:
         )
 
     def test_displace_verb_carries_every_trial(
-        self, argon_frame: "molrs.Frame"
+        self, argon_frame: "molpy.Frame"
     ) -> None:
         """A translate-only ensemble tallies every trial under
         ``"displace"``, and the verb-less call is the aggregate."""
@@ -367,7 +367,7 @@ class TestNvtMc:
         assert sim.attempts("displace") == sim.attempts()
         assert sim.accepts("displace") == sim.accepts()
 
-    def test_current_energy_is_finite(self, argon_frame: "molrs.Frame") -> None:
+    def test_current_energy_is_finite(self, argon_frame: "molpy.Frame") -> None:
         sim = _nvt_handle()
         sim.run(argon_frame, _NVT_TRIALS)
         energy = sim.current_energy()
@@ -375,7 +375,7 @@ class TestNvtMc:
         assert np.isfinite(energy)
 
     def test_frame_meta_energy_is_the_chain_energy(
-        self, argon_frame: "molrs.Frame"
+        self, argon_frame: "molpy.Frame"
     ) -> None:
         """The molrs Frame carries the LAST ACCEPTED energy, bit-identical
         to the handle's own bookkeeping — a rejected trial's energy must
@@ -386,8 +386,8 @@ class TestNvtMc:
         assert np.isfinite(meta_energy)
         assert meta_energy == pytest.approx(sim.current_energy(), abs=_TOL_ENERGY_EV)
 
-    def test_positions_written_back(self, argon_frame: "molrs.Frame") -> None:
-        """Accepted displacements land in the SAME molrs.Frame."""
+    def test_positions_written_back(self, argon_frame: "molpy.Frame") -> None:
+        """Accepted displacements land in the SAME molpy.Frame."""
         x_before = np.asarray(argon_frame["atoms"]["x"]).copy()
         sim = _nvt_handle()
         sim.run(argon_frame, _NVT_TRIALS)
@@ -397,7 +397,7 @@ class TestNvtMc:
             "accepted trial moves must change the positions in the frame"
         )
 
-    def test_atom_count_is_conserved(self, argon_frame: "molrs.Frame") -> None:
+    def test_atom_count_is_conserved(self, argon_frame: "molpy.Frame") -> None:
         """NVT is fixed-N: nothing is inserted or deleted."""
         sim = _nvt_handle()
         sim.run(argon_frame, _NVT_TRIALS)
@@ -419,7 +419,7 @@ class TestChainContinuation:
     def n_atoms(self) -> int:
         return _NVT_N_ATOMS
 
-    def test_attempts_accumulate_across_runs(self, argon_frame: "molrs.Frame") -> None:
+    def test_attempts_accumulate_across_runs(self, argon_frame: "molpy.Frame") -> None:
         sim = _nvt_handle()
         sim.run(argon_frame, _NVT_TRIALS // 2)
         first = sim.attempts()
@@ -429,7 +429,7 @@ class TestChainContinuation:
             "run() must continue the chain, not restart it"
         )
 
-    def test_accepts_accumulate_across_runs(self, argon_frame: "molrs.Frame") -> None:
+    def test_accepts_accumulate_across_runs(self, argon_frame: "molpy.Frame") -> None:
         sim = _nvt_handle()
         sim.run(argon_frame, _NVT_TRIALS // 2)
         first_accepts = sim.accepts()
@@ -462,7 +462,7 @@ def _npt_handle() -> "NptMC":
 
 
 @pytest.fixture
-def npt_frame() -> "molrs.Frame":
+def npt_frame() -> "molpy.Frame":
     """125 Ar atoms on a 5³ lattice at ρσ³ = 0.6."""
     return _cubic_lattice_frame(_NPT_N_ATOMS, _npt_box_length())
 
@@ -470,7 +470,7 @@ def npt_frame() -> "molrs.Frame":
 class TestNptMc:
     """The volume degree of freedom is sampled and written back."""
 
-    def test_both_verbs_are_attempted(self, npt_frame: "molrs.Frame") -> None:
+    def test_both_verbs_are_attempted(self, npt_frame: "molpy.Frame") -> None:
         """The MoveSelector fires exactly one child per trial, and both
         children are drawn — registering two movers side by side would
         instead fire BOTH every trial."""
@@ -482,7 +482,7 @@ class TestNptMc:
         assert sim.attempts() == _NPT_TRIALS
 
     def test_displacement_acceptance_strictly_inside_unit_interval(
-        self, npt_frame: "molrs.Frame"
+        self, npt_frame: "molpy.Frame"
     ) -> None:
         sim = _npt_handle()
         sim.run(npt_frame, _NPT_TRIALS)
@@ -492,7 +492,7 @@ class TestNptMc:
         )
         assert 0.0 < sim.acceptance_ratio("displace") < 1.0
 
-    def test_volume_moves_are_accepted(self, npt_frame: "molrs.Frame") -> None:
+    def test_volume_moves_are_accepted(self, npt_frame: "molpy.Frame") -> None:
         """A rejected-forever volume move is the classic symptom of a
         broken box rollback or a missing N·k_BT·ln(V'/V) Jacobian."""
         sim = _npt_handle()
@@ -500,7 +500,7 @@ class TestNptMc:
         assert sim.acceptance_ratio("box") > 0.0
 
     def test_current_volume_is_finite_and_positive(
-        self, npt_frame: "molrs.Frame"
+        self, npt_frame: "molpy.Frame"
     ) -> None:
         sim = _npt_handle()
         sim.run(npt_frame, _NPT_TRIALS)
@@ -509,7 +509,7 @@ class TestNptMc:
         assert np.isfinite(volume)
         assert volume > 0.0
 
-    def test_box_written_back(self, npt_frame: "molrs.Frame") -> None:
+    def test_box_written_back(self, npt_frame: "molpy.Frame") -> None:
         """The accepted box lands in the molrs Frame, not only in the
         handle's bookkeeping."""
         volume_before = npt_frame.box.volume()
@@ -522,7 +522,7 @@ class TestNptMc:
         )
         assert volume_after == pytest.approx(sim.current_volume(), rel=1.0e-10)
 
-    def test_no_grand_canonical_verbs(self, npt_frame: "molrs.Frame") -> None:
+    def test_no_grand_canonical_verbs(self, npt_frame: "molpy.Frame") -> None:
         """Insert/delete belong to μVT — NPT never proposes them."""
         sim = _npt_handle()
         sim.run(npt_frame, _NPT_TRIALS)
@@ -548,7 +548,7 @@ def _gcmc_handle() -> "GCMC":
 
 
 @pytest.fixture
-def gcmc_frame() -> "molrs.Frame":
+def gcmc_frame() -> "molpy.Frame":
     """8 well-separated Ar atoms in the 6σ cell — BELOW ⟨N⟩ ≈ 10.8, so the
     chain must climb to the answer and a frozen chain cannot fake a pass."""
     return _cubic_lattice_frame(_GCMC_N_START, _GCMC_BOX_A)
@@ -571,7 +571,7 @@ class TestGcmc:
         assert mu == pytest.approx(_GCMC_MU_EV, rel=1.0e-12)
 
     def test_insert_and_delete_are_both_accepted(
-        self, gcmc_frame: "molrs.Frame"
+        self, gcmc_frame: "molpy.Frame"
     ) -> None:
         """The regression's own frozen-chain gate (reg_gcmc_lj.cpp:147):
         both μVT verbs must actually get through, or ⟨N⟩ below is just the
@@ -584,7 +584,7 @@ class TestGcmc:
         assert sim.acceptance_ratio("delete") > _MIN_ACCEPTANCE
 
     def test_mean_population_inside_the_ideal_gas_band(
-        self, gcmc_frame: "molrs.Frame"
+        self, gcmc_frame: "molpy.Frame"
     ) -> None:
         """⟨N⟩ sits within [0.2×, 5×] of the ideal-gas z·V = 10.80.
 
@@ -609,7 +609,7 @@ class TestGcmc:
             f"around z*V = {_GCMC_N_IDEAL:.2f}"
         )
 
-    def test_population_actually_varies(self, gcmc_frame: "molrs.Frame") -> None:
+    def test_population_actually_varies(self, gcmc_frame: "molpy.Frame") -> None:
         """N is a fluctuating observable in μVT — a constant N over the
         whole chain means insert/delete never committed."""
         sim = _gcmc_handle()
@@ -622,7 +622,7 @@ class TestGcmc:
         )
 
     def test_atoms_block_rebuilt_at_the_new_population(
-        self, gcmc_frame: "molrs.Frame"
+        self, gcmc_frame: "molpy.Frame"
     ) -> None:
         """Write-back contract (spec py-mc DECIDED #2): ``to_molrs``
         rejects a changed row count, so the binding rebuilds the molrs
@@ -651,7 +651,7 @@ class TestGcmc:
         )
 
     def test_inserted_atoms_carry_the_configured_species(
-        self, gcmc_frame: "molrs.Frame"
+        self, gcmc_frame: "molpy.Frame"
     ) -> None:
         """``InsertDeleteMove(z, mass)`` stamps the species onto every
         inserted row — the mass MUST be the one GCMC built Λ from."""
@@ -662,7 +662,7 @@ class TestGcmc:
         assert masses.size > 0, "the chain emptied the cell — nothing to check"
         assert masses == pytest.approx(np.full(sim.n_atoms(), _MASS_AMU), abs=1.0e-6)
 
-    def test_current_energy_is_finite(self, gcmc_frame: "molrs.Frame") -> None:
+    def test_current_energy_is_finite(self, gcmc_frame: "molpy.Frame") -> None:
         sim = _gcmc_handle()
         sim.run(gcmc_frame, _GCMC_EQUILIBRATE)
         assert np.isfinite(sim.current_energy())
@@ -681,7 +681,7 @@ class TestMcErrors:
     def n_atoms(self) -> int:
         return _NVT_N_ATOMS
 
-    def test_no_mover_raises(self, argon_frame: "molrs.Frame") -> None:
+    def test_no_mover_raises(self, argon_frame: "molpy.Frame") -> None:
         """There is no default trial move — without a Mover the loop has
         nothing to propose."""
         sim = MC(_NVT_T_K, _NVT_SEED)
@@ -690,7 +690,7 @@ class TestMcErrors:
         with pytest.raises(RuntimeError, match="(?i)mover"):
             sim.run(argon_frame, 1)
 
-    def test_no_evaluator_raises(self, argon_frame: "molrs.Frame") -> None:
+    def test_no_evaluator_raises(self, argon_frame: "molpy.Frame") -> None:
         """Metropolis scores an energy; with no energy source there is
         nothing to score."""
         sim = MC(_NVT_T_K, _NVT_SEED)
@@ -699,7 +699,7 @@ class TestMcErrors:
             sim.run(argon_frame, 1)
 
     def test_pair_evaluator_without_neighbor_raises(
-        self, argon_frame: "molrs.Frame"
+        self, argon_frame: "molpy.Frame"
     ) -> None:
         """A pair style is a NeighborConsumer; the error names the setter
         that fixes it."""
@@ -709,21 +709,21 @@ class TestMcErrors:
         with pytest.raises(RuntimeError, match="set_neighbor"):
             sim.run(argon_frame, 1)
 
-    def test_npt_no_mover_raises(self, npt_frame: "molrs.Frame") -> None:
+    def test_npt_no_mover_raises(self, npt_frame: "molpy.Frame") -> None:
         sim = NptMC(_T_MC_K, _NPT_P_RED * _EPS_EV / _SIGMA_A**3, _NPT_SEED)
         sim.set_evaluator(_lj(_NPT_CUTOFF_A))
         sim.set_neighbor(NeighborList(_NPT_CUTOFF_A, _NPT_SKIN_A))
         with pytest.raises(RuntimeError, match="(?i)mover"):
             sim.run(npt_frame, 1)
 
-    def test_gcmc_no_mover_raises(self, gcmc_frame: "molrs.Frame") -> None:
+    def test_gcmc_no_mover_raises(self, gcmc_frame: "molpy.Frame") -> None:
         sim = GCMC(_T_MC_K, _GCMC_MU_EV, _MASS_AMU, _GCMC_SEED)
         sim.set_evaluator(_lj(_GCMC_CUTOFF_A))
         sim.set_neighbor(NeighborList(_GCMC_CUTOFF_A, _GCMC_SKIN_A))
         with pytest.raises(RuntimeError, match="(?i)mover"):
             sim.run(gcmc_frame, 1)
 
-    def test_unknown_verb_raises(self, argon_frame: "molrs.Frame") -> None:
+    def test_unknown_verb_raises(self, argon_frame: "molpy.Frame") -> None:
         """The statistics accessors take a verb name, not free text."""
         sim = _nvt_handle()
         sim.run(argon_frame, 1)

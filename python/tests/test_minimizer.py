@@ -35,7 +35,7 @@ from collections.abc import Callable
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
@@ -126,7 +126,7 @@ _DIMER_BOX: float = 40.0  # [A]
 _R_TOL: float = 0.01  # [A]
 
 
-def _dimer_frame(separation: float, box_length: float = _DIMER_BOX) -> "molrs.Frame":
+def _dimer_frame(separation: float, box_length: float = _DIMER_BOX) -> "molpy.Frame":
     """Two Ar atoms *separation* A apart along x in a cubic cell.
 
     Column set matches the conftest Ar fixture (x/y/z/mass/atomic_number):
@@ -135,27 +135,27 @@ def _dimer_frame(separation: float, box_length: float = _DIMER_BOX) -> "molrs.Fr
 
     @param separation: Initial interatomic distance [A].
     @param box_length: Cubic cell edge [A].
-    @return A two-atom molrs.Frame.
+    @return A two-atom molpy.Frame.
     """
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, separation], dtype=np.float64))
     atoms.insert("y", np.zeros(2, dtype=np.float64))
     atoms.insert("z", np.zeros(2, dtype=np.float64))
     atoms.insert("mass", np.full(2, _MASS_AR, dtype=np.float64))
     atoms.insert("atomic_number", np.full(2, _Z_AR, dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(box_length)
+    frame.box = molpy.Box.cube(box_length)
     return frame
 
 
-def _separation(frame: "molrs.Frame") -> float:
+def _separation(frame: "molpy.Frame") -> float:
     """Distance between the two atoms of a dimer frame [A].
 
     Plain Euclidean, no minimum image: the dimer sits at ~4 A inside a
     40 A cell, so the direct distance IS the nearest image.
 
-    @param frame: Two-atom molrs.Frame.
+    @param frame: Two-atom molpy.Frame.
     @return Interatomic distance [A].
     """
     atoms = frame["atoms"]
@@ -269,15 +269,15 @@ _CELL_MIN_EXPANSION: float = 0.05  # [A]
 _CELL_MAX_ABS_P: float = 5e-2  # [eV/A^3]
 
 
-def _compressed_cell_frame() -> "molrs.Frame":
+def _compressed_cell_frame() -> "molpy.Frame":
     """The cell_lj_pressure starting state: 2 Ar atoms in a 6 A cube.
 
-    @return A two-atom molrs.Frame under compressive virial pressure.
+    @return A two-atom molpy.Frame under compressive virial pressure.
     """
     return _dimer_frame(_CELL_DX, box_length=_CELL_L0)
 
 
-def _pressure(frame: "molrs.Frame") -> float:
+def _pressure(frame: "molpy.Frame") -> float:
     """Isotropic virial pressure P = tr(sigma) / (3V) [eV/A^3].
 
     ``kStress`` is the EXTENSIVE Voigt virial [eV] for every classical
@@ -313,7 +313,7 @@ def test_cell_relax_expands_compressed_cell() -> None:
 
     Both gates are the regression's own
     (regressions/minimizer/cell_lj_pressure/REFERENCE.md "Pass"), read off
-    the molrs.Frame the Python facade hands back: the relaxed cell is
+    the molpy.Frame the Python facade hands back: the relaxed cell is
     written into ``frame.box`` and the virial into ``frame.meta["stress"]``
     by the same ``to_molrs`` boundary MD's NPT cases rely on.
 
@@ -577,7 +577,7 @@ class TestMinimizeFailsLoud:
     """Minimize refuses setups whose silence would look like a result."""
 
     def test_coulomb_minimize_missing_charge_raises(
-        self, argon_frame: "molrs.Frame"
+        self, argon_frame: "molpy.Frame"
     ) -> None:
         """A Coulomb evaluator on a chargeless frame must not optimize.
 

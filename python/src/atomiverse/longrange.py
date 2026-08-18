@@ -42,7 +42,7 @@ into the reciprocal sum; smaller ``grid_spacing`` [Å] or larger ``order``
 makes that reciprocal sum finer and costlier.
 
 Charges are Frame data: every style here reads the per-atom ``charge``
-column [e] of the ``molrs.Frame``, and ``run()`` rejects a frame that has
+column [e] of the ``molpy.Frame``, and ``run()`` rejects a frame that has
 no such column instead of treating the system as neutral. A genuinely
 neutral system is still expressible — insert an explicit zero column.
 

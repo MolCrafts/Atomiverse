@@ -228,7 +228,7 @@ struct MdHandle {
         if (!coulomb || has_molrs_column(frame, "atoms", "charge"))
             return;
         throw std::runtime_error(
-            "this MD run registers a Coulomb evaluator but the molrs.Frame "
+            "this MD run registers a Coulomb evaluator but the molpy.Frame "
             "has no per-atom 'charge' column, so every charge would be taken "
             "as 0 e. Add the charges [e] before run(), e.g. "
             "frame[\"atoms\"].insert(\"charge\", q).");
@@ -759,7 +759,7 @@ void bind_md(nb::module_& m) {
         "cutoff. It is self-contained: unlike CoulLong it takes no "
         "reciprocal-space partner, so it is the whole electrostatic model of "
         "the run that installs it. Charges come from the per-atom 'charge' "
-        "column [e] of the molrs.Frame; a frame without that column is "
+        "column [e] of the molpy.Frame; a frame without that column is "
         "rejected by run() instead of being read as neutral.")
         .def(
             "__init__",
@@ -1117,7 +1117,7 @@ void bind_md(nb::module_& m) {
             "build", [](MdHandle& self) { self.driver.build(); },
             "Compile the execution plan.")
         .def("run", &MdHandle::run, nb::arg("frame"), nb::arg("n_steps"),
-             "Run MD on a molrs.Frame for n_steps. GIL released during "
+             "Run MD on a molpy.Frame for n_steps. GIL released during "
              "compute; under the MPI launcher this dispatches ONE task to "
              "every rank and writes the gathered result back.\n\n"
              "Each call is an INDEPENDENT simulation starting from the "

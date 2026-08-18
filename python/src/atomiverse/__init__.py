@@ -1,9 +1,9 @@
-"""Atomiverse: molecular simulation compute backend for molrs.
+"""Atomiverse: molecular simulation compute backend for molpy.
 
 Atomiverse binds drivers and components only — it does not bind a Frame
-data type. Simulation state crosses the boundary as a ``molrs.Frame``;
+data type. Simulation state crosses the boundary as a ``molpy.Frame``;
 each driver ``run()`` borrows it and writes results back in place. Global
-results use the exact typed ``molrs.Frame.meta`` v2 contract.
+results use the exact typed ``molpy.Frame.meta`` v2 contract.
 
 Namespaces
 ----------

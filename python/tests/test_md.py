@@ -1,7 +1,7 @@
-"""Python integration tests for the MD driver running on a molrs.Frame.
+"""Python integration tests for the MD driver running on a molpy.Frame.
 
 Covers rust-frame-lowering-03 ac-002: a Python MD run starts from a
-molrs.Frame end to end — the driver borrows the molrs.Frame, advances it,
+molpy.Frame end to end — the driver borrows the molpy.Frame, advances it,
 and writes positions / velocities / energy back into that same frame.
 
 Also asserts ac-001's structural deliverable from the Python side: no
@@ -38,7 +38,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
@@ -116,21 +116,21 @@ class TestMDDriverBuild:
         assert "built" in repr(sim)
 
 
-# ── ac-002: MD on a molrs.Frame, end to end ─────────────────────────
+# ── ac-002: MD on a molpy.Frame, end to end ─────────────────────────
 
 
 class TestMDRunOnMolrsFrame:
     def test_positions_written_back(self, argon_frame, full_lj_md):
-        """Positions update in the SAME molrs.Frame after run()."""
+        """Positions update in the SAME molpy.Frame after run()."""
         x_before = np.asarray(argon_frame["atoms"]["x"]).copy()
         full_lj_md.run(argon_frame, 10)
         x_after = np.asarray(argon_frame["atoms"]["x"])
         assert not np.allclose(x_before, x_after), (
-            "positions should move and be written back into the molrs.Frame"
+            "positions should move and be written back into the molpy.Frame"
         )
 
     def test_velocities_written_back(self, argon_frame, full_lj_md):
-        """InitVelocity-seeded velocities land back in the molrs.Frame."""
+        """InitVelocity-seeded velocities land back in the molpy.Frame."""
         full_lj_md.run(argon_frame, 1)
         vx = np.asarray(argon_frame["atoms"]["vx"])
         assert np.any(vx != 0.0), "velocities should be initialized and written back"
@@ -168,8 +168,8 @@ class TestMDRunOnMolrsFrame:
         full_lj_md.run(argon_frame, 0)
 
     def test_missing_required_field_raises(self):
-        """A molrs.Frame without atom positions fails loud."""
-        frame = molrs.Frame()
+        """A molpy.Frame without atom positions fails loud."""
+        frame = molpy.Frame()
         sim = MD(dt=0.001)
         sim.set_neighbor(NeighborList(8.5))
         sim.set_evaluator(LJCut(0.0104, 3.4, 8.5))
@@ -177,8 +177,8 @@ class TestMDRunOnMolrsFrame:
             sim.run(frame, 1)
 
     def test_non_frame_argument_raises(self, full_lj_md):
-        """Passing a non-molrs.Frame object fails with a clear message."""
-        with pytest.raises(RuntimeError, match="molrs.Frame"):
+        """Passing a non-molpy.Frame object fails with a clear message."""
+        with pytest.raises(RuntimeError, match="molpy.Frame"):
             full_lj_md.run(object(), 1)
 
 
@@ -235,7 +235,7 @@ class TestMdLateSetters:
     _STEPS: int = 2
 
     def test_late_set_evaluator_raises(
-        self, argon_frame: "molrs.Frame", full_lj_md: MD
+        self, argon_frame: "molpy.Frame", full_lj_md: MD
     ) -> None:
         """A force term added after the run cannot reach the plan."""
         full_lj_md.run(argon_frame, self._STEPS)
@@ -247,7 +247,7 @@ class TestMdLateSetters:
         )
 
     def test_late_set_integrator_raises(
-        self, argon_frame: "molrs.Frame", full_lj_md: MD
+        self, argon_frame: "molpy.Frame", full_lj_md: MD
     ) -> None:
         """Swapping the integrator mid-chain is a new configuration.
 
@@ -262,7 +262,7 @@ class TestMdLateSetters:
         assert "set_integrator" in str(excinfo.value)
 
     def test_late_set_thermo_raises(
-        self, argon_frame: "molrs.Frame", full_lj_md: MD
+        self, argon_frame: "molpy.Frame", full_lj_md: MD
     ) -> None:
         """Even a harmless-looking cadence change is a reconfiguration.
 
@@ -276,7 +276,7 @@ class TestMdLateSetters:
         assert "set_thermo" in str(excinfo.value)
 
     def test_late_on_phase_raises(
-        self, argon_frame: "molrs.Frame", full_lj_md: MD
+        self, argon_frame: "molpy.Frame", full_lj_md: MD
     ) -> None:
         """The escape hatch refuses at ``on()``, not at ``add()``.
 
@@ -292,7 +292,7 @@ class TestMdLateSetters:
             full_lj_md.on("force")
 
     def test_two_runs_same_config_still_work(
-        self, argon_frame: "molrs.Frame", full_lj_md: MD
+        self, argon_frame: "molpy.Frame", full_lj_md: MD
     ) -> None:
         """Chunked runs stay legal: the refusal is about *changing* the
         configuration, never about running again.
@@ -370,25 +370,25 @@ class TestFrameBindingRemoved:
 # ── NPT helpers (module level: shared by the barostat/ramp cases) ───
 
 
-def _independent_argon_frame(reference: "molrs.Frame") -> "molrs.Frame":
-    """Build a fresh molrs.Frame from *reference*'s atoms and cubic cell.
+def _independent_argon_frame(reference: "molpy.Frame") -> "molpy.Frame":
+    """Build a fresh molpy.Frame from *reference*'s atoms and cubic cell.
 
-    ``molrs.Frame.copy()`` hands out column storage that is still shared
+    ``molpy.Frame.copy()`` hands out column storage that is still shared
     with its source, so a two-leg comparison rebuilds the columns instead
     — the two frames must be advanced completely independently.
     """
     src = reference["atoms"]
-    atoms = molrs.Block()
+    atoms = molpy.Block()
     for key in ("x", "y", "z", "mass"):
         atoms.insert(key, np.array(src[key], dtype=np.float64))
     atoms.insert("atomic_number", np.array(src["atomic_number"], dtype=np.uint32))
-    frame = molrs.Frame()
+    frame = molpy.Frame()
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(float(np.asarray(reference.box.lengths)[0]))
+    frame.box = molpy.Box.cube(float(np.asarray(reference.box.lengths)[0]))
     return frame
 
 
-def _kinetic_from_columns(frame: "molrs.Frame") -> float:
+def _kinetic_from_columns(frame: "molpy.Frame") -> float:
     """Kinetic energy from the frame's own mass/velocity columns.
 
     Units are amu·Å²/fs² (the eV factor is deliberately not applied): the
@@ -488,7 +488,7 @@ class TestThermostatsAndNpt:
         assert volume_after > 0.0
         assert abs(volume_after - volume_before) > 1e-9 * volume_before, (
             "NPT ran but frame.box is unchanged — the barostatted cell must "
-            "be written back into the molrs.Frame"
+            "be written back into the molpy.Frame"
         )
 
     def test_berendsen_smoke(self, argon_frame):
@@ -623,11 +623,11 @@ _MADELUNG: float = 1.747564594633182
 _COULOMB_EV_A: float = 14.399645
 
 
-def _nacl_frame(d: float = _NACL_D) -> "molrs.Frame":
+def _nacl_frame(d: float = _NACL_D) -> "molpy.Frame":
     """Rock-salt NaCl mini cell with a per-atom ``charge`` column.
 
     @param d: Nearest-neighbour spacing [Å]; the cubic cell edge is 4·d.
-    @return A neutral 64-ion molrs.Frame (Na⁺ = +1 e, Cl⁻ = −1 e).
+    @return A neutral 64-ion molpy.Frame (Na⁺ = +1 e, Cl⁻ = −1 e).
     """
     xs: list[float] = []
     ys: list[float] = []
@@ -645,21 +645,21 @@ def _nacl_frame(d: float = _NACL_D) -> "molrs.Frame":
                 charges.append(1.0 if sodium else -1.0)
                 masses.append(22.9898 if sodium else 35.453)
                 numbers.append(11 if sodium else 17)
-    atoms = molrs.Block()
+    atoms = molpy.Block()
     atoms.insert("x", np.array(xs, dtype=np.float64))
     atoms.insert("y", np.array(ys, dtype=np.float64))
     atoms.insert("z", np.array(zs, dtype=np.float64))
     atoms.insert("charge", np.array(charges, dtype=np.float64))
     atoms.insert("mass", np.array(masses, dtype=np.float64))
     atoms.insert("atomic_number", np.array(numbers, dtype=np.uint32))
-    frame = molrs.Frame()
+    frame = molpy.Frame()
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_NACL_SIDE * d)
+    frame.box = molpy.Box.cube(_NACL_SIDE * d)
     return frame
 
 
 @pytest.fixture
-def nacl_frame() -> "molrs.Frame":
+def nacl_frame() -> "molpy.Frame":
     """Neutral rock-salt NaCl mini cell at the experimental spacing."""
     return _nacl_frame()
 
@@ -691,7 +691,7 @@ class TestCoulombPme:
     @pytest.mark.skipif(
         not _HAS_KSPACE, reason="extension built without ATV_BUILD_KSPACE"
     )
-    def test_nacl_pme_matches_madelung(self, nacl_frame: "molrs.Frame") -> None:
+    def test_nacl_pme_matches_madelung(self, nacl_frame: "molpy.Frame") -> None:
         """CoulLong + KSpacePME reproduce the Madelung lattice energy.
 
         E = −½ N M k_e / d with the hard-coded constants above; tolerance
@@ -713,7 +713,7 @@ class TestCoulombPme:
             f"Madelung reference {e_ref!r} eV"
         )
 
-    def test_coul_cut_smoke(self, nacl_frame: "molrs.Frame") -> None:
+    def test_coul_cut_smoke(self, nacl_frame: "molpy.Frame") -> None:
         """The truncated Coulomb pair style needs no reciprocal partner and
         returns a finite, attractive lattice energy."""
         from atomiverse.potentials.pair import CoulCut
@@ -724,7 +724,7 @@ class TestCoulombPme:
         assert np.isfinite(energy)
         assert energy < 0.0, f"a neutral rock-salt lattice binds; got E = {energy!r} eV"
 
-    def test_coul_cut_missing_charge_raises(self, argon_frame: "molrs.Frame") -> None:
+    def test_coul_cut_missing_charge_raises(self, argon_frame: "molpy.Frame") -> None:
         """A Coulomb evaluator on a frame with no ``charge`` column fails
         loud instead of silently zero-filling the charges.
 
@@ -744,7 +744,7 @@ class TestCoulombPme:
     @pytest.mark.skipif(
         not _HAS_KSPACE, reason="extension built without ATV_BUILD_KSPACE"
     )
-    def test_pme_missing_charge_raises(self, argon_frame: "molrs.Frame") -> None:
+    def test_pme_missing_charge_raises(self, argon_frame: "molpy.Frame") -> None:
         """The Ewald pair fails the same way on a chargeless frame."""
         from atomiverse.longrange import CoulLong, KSpacePME
 
@@ -829,7 +829,7 @@ _STATIC_DT: float = 1.0e-6
 _ENERGY_TOL: float = 1.0e-9
 
 
-def _pair_frame(r: float) -> "molrs.Frame":
+def _pair_frame(r: float) -> "molpy.Frame":
     """Two argon atoms separated by *r* along +x in a 20 Å cubic cell.
 
     No velocity, force or charge column: the driver materializes what it
@@ -837,17 +837,17 @@ def _pair_frame(r: float) -> "molrs.Frame":
     point at the geometry written here.
 
     @param r: Separation [Å] of the two atoms.
-    @return A 2-atom molrs.Frame (atomic_number 18, mass 39.948 amu).
+    @return A 2-atom molpy.Frame (atomic_number 18, mass 39.948 amu).
     """
-    atoms = molrs.Block()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, r], dtype=np.float64))
     atoms.insert("y", np.zeros(2, dtype=np.float64))
     atoms.insert("z", np.zeros(2, dtype=np.float64))
     atoms.insert("mass", np.full(2, _PAIR_MASS, dtype=np.float64))
     atoms.insert("atomic_number", np.full(2, _PAIR_Z, dtype=np.uint32))
-    frame = molrs.Frame()
+    frame = molpy.Frame()
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_PAIR_BOX)
+    frame.box = molpy.Box.cube(_PAIR_BOX)
     return frame
 
 
@@ -912,7 +912,7 @@ class TestPairStyleCatalogue:
     """
 
     @staticmethod
-    def _energy(frame: "molrs.Frame", evaluator: object) -> float:
+    def _energy(frame: "molpy.Frame", evaluator: object) -> float:
         """Total potential energy [eV] of one static single point.
 
         One VelocityVerlet step with no ``InitVelocity`` and no
@@ -920,7 +920,7 @@ class TestPairStyleCatalogue:
         force phase evaluates the frame's own geometry and
         ``frame.meta["energy"]`` is that geometry's energy.
 
-        @param frame: molrs.Frame to evaluate (advanced in place).
+        @param frame: molpy.Frame to evaluate (advanced in place).
         @param evaluator: The single force source to install.
         @return ``frame.meta["energy"]`` after the step [eV].
         """
@@ -1134,7 +1134,7 @@ class TestPairStyleCatalogue:
 
     # ── bonded styles (the four-atom bonded_frame) ─────────────────
 
-    def test_bond_fene_energy(self, bonded_frame: "molrs.Frame") -> None:
+    def test_bond_fene_energy(self, bonded_frame: "molpy.Frame") -> None:
         """FENE U = −½ K R₀² ln(1 − (r/R₀)²) on the fixture's 1 Å bond.
 
         BondFene.AnalyticEnergy (tests/cpu/potentials/test_bond_fene.cpp):
@@ -1156,7 +1156,7 @@ class TestPairStyleCatalogue:
             expected, abs=_ENERGY_TOL
         )
 
-    def test_fene_overstretch_raises(self, bonded_frame: "molrs.Frame") -> None:
+    def test_fene_overstretch_raises(self, bonded_frame: "molpy.Frame") -> None:
         """r ≥ R₀ is past the finite extension and must fail loud.
 
         BondFene.ThrowsAtOrBeyondR0 (test_bond_fene.cpp): the C++
@@ -1172,7 +1172,7 @@ class TestPairStyleCatalogue:
         with pytest.raises(RuntimeError, match="R0"):
             self._energy(bonded_frame, Fene(K=[30.0], R0=[0.9]))
 
-    def test_dihedral_charmm_energy(self, bonded_frame: "molrs.Frame") -> None:
+    def test_dihedral_charmm_energy(self, bonded_frame: "molpy.Frame") -> None:
         """CHARMM torsion V = K(1 + cos(nφ − δ)) at φ = π/2.
 
         DihedralCharmm.RightAngleEnergy
@@ -1188,7 +1188,7 @@ class TestPairStyleCatalogue:
         assert expected == pytest.approx(k, abs=_ENERGY_TOL)
 
     def test_dihedral_charmm_multiplicity_two_cancels(
-        self, bonded_frame: "molrs.Frame"
+        self, bonded_frame: "molpy.Frame"
     ) -> None:
         """The same geometry with n = 2 sits at the cosine's zero.
 
@@ -1203,7 +1203,7 @@ class TestPairStyleCatalogue:
         assert energy == pytest.approx(0.0, abs=_ENERGY_TOL)
 
     def test_improper_harmonic_at_equilibrium(
-        self, bonded_frame: "molrs.Frame"
+        self, bonded_frame: "molpy.Frame"
     ) -> None:
         """V = K(χ − χ₀)² vanishes when χ₀ is the fixture's own χ = π/2.
 
@@ -1216,7 +1216,7 @@ class TestPairStyleCatalogue:
         energy = self._energy(bonded_frame, Harmonic(K=[0.4], chi0=[math.pi / 2.0]))
         assert energy == pytest.approx(0.0, abs=_ENERGY_TOL)
 
-    def test_improper_harmonic_offset_energy(self, bonded_frame: "molrs.Frame") -> None:
+    def test_improper_harmonic_offset_energy(self, bonded_frame: "molpy.Frame") -> None:
         """χ₀ = 0 against χ = π/2 gives K(π/2)².
 
         test_improper_harmonic.cpp (the chi0 = 0 leg) with K = 0.4 eV/rad² →
@@ -1334,7 +1334,7 @@ class TestXyzRecorder:
     """XYZ trajectory output from Python (spec py-recorder-xyz)."""
 
     def test_xyz_writes_trajectory(
-        self, argon_frame: "molrs.Frame", n_atoms: int, tmp_path: Path
+        self, argon_frame: "molpy.Frame", n_atoms: int, tmp_path: Path
     ) -> None:
         """An MD run with ``XYZ(path, freq)`` leaves a parseable trajectory
         whose every frame carries the whole system."""
@@ -1356,7 +1356,7 @@ class TestXyzRecorder:
         )
 
     def test_xyz_second_run_truncates(
-        self, argon_frame: "molrs.Frame", tmp_path: Path
+        self, argon_frame: "molpy.Frame", tmp_path: Path
     ) -> None:
         """A fresh recorder on an existing path starts the file over.
 
@@ -1409,25 +1409,25 @@ _AM1_BOMD_SEED: int = 7
 _AM1_BOMD_STEPS: int = 5
 
 
-def _h2_frame() -> "molrs.Frame":
+def _h2_frame() -> "molpy.Frame":
     """H2 along z at the experimental bond length.
 
     Columns match the Ar fixture's set (x/y/z/mass/atomic_number): the
     driver materializes velocities itself and ``InitVelocity`` seeds them,
     so no vx/vy/vz column is required on the way in.
 
-    @return A two-atom molrs.Frame in a 20 Å cubic cell.
+    @return A two-atom molpy.Frame in a 20 Å cubic cell.
     """
     half = 0.5 * _H2_BOND_ANGSTROM
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.zeros(2, dtype=np.float64))
     atoms.insert("y", np.zeros(2, dtype=np.float64))
     atoms.insert("z", np.array([-half, half], dtype=np.float64))
     atoms.insert("mass", np.full(2, 1.008, dtype=np.float64))
     atoms.insert("atomic_number", np.full(2, 1, dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_H2_BOX_ANGSTROM)
+    frame.box = molpy.Box.cube(_H2_BOX_ANGSTROM)
     return frame
 
 
@@ -1445,7 +1445,7 @@ class TestAm1Bomd:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def bomd_h2() -> tuple["molrs.Frame", "np.ndarray"]:
+    def bomd_h2() -> tuple["molpy.Frame", "np.ndarray"]:
         """One 5-step AM1 NVE run on H2; returns the frame and its starting
         z column (the frame itself is advanced in place)."""
         from atomiverse.semiempirical import AM1Evaluator
@@ -1478,7 +1478,7 @@ class TestAm1Bomd:
         sim.set_evaluator(AM1Evaluator())
 
     def test_potential_energy_finite_and_bound(
-        self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]
+        self, bomd_h2: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """PE is finite and negative after the run — the same gate as
         reg_am1_water_bomd.cpp:80-87 (a bound molecule, not a blow-up)."""
@@ -1489,7 +1489,7 @@ class TestAm1Bomd:
         assert energy < 0.0
 
     def test_kinetic_energy_finite_and_positive(
-        self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]
+        self, bomd_h2: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """KE is finite and non-negative (reg_am1_water_bomd.cpp:88-91):
         InitVelocity seeded it, so it is strictly positive here."""
@@ -1500,16 +1500,16 @@ class TestAm1Bomd:
         assert kinetic > 0.0
 
     def test_positions_advanced(
-        self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]
+        self, bomd_h2: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """The atoms actually moved and the new positions came back into the
-        SAME molrs.Frame — AM1 forces reached the integrator."""
+        SAME molpy.Frame — AM1 forces reached the integrator."""
         frame, z_before = bomd_h2
         z_after = np.asarray(frame["atoms"]["z"], dtype=np.float64)
         assert not np.allclose(z_before, z_after)
 
     def test_velocities_finite(
-        self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]
+        self, bomd_h2: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """No NaN/inf leaked into the velocity columns."""
         frame, _ = bomd_h2
@@ -1518,7 +1518,7 @@ class TestAm1Bomd:
             values = np.asarray(atoms[component], dtype=np.float64)
             assert np.all(np.isfinite(values)), f"{component} is not finite"
 
-    def test_forces_finite(self, bomd_h2: tuple["molrs.Frame", "np.ndarray"]) -> None:
+    def test_forces_finite(self, bomd_h2: tuple["molpy.Frame", "np.ndarray"]) -> None:
         """The AM1 forces written back on the last step are finite and, at
         the non-equilibrium bond length, not identically zero."""
         frame, _ = bomd_h2
@@ -1544,7 +1544,7 @@ class TestMolrsFrameV2Boundary:
         assert not hasattr(argon_frame, "simbox")
 
     def test_untyped_metadata_is_rejected(self, argon_frame):
-        """Non-primitive meta values fail loud at the molrs boundary."""
+        """Non-primitive meta values fail loud at the molpy boundary."""
         with pytest.raises(TypeError, match="MetaValue"):
             argon_frame.meta["bad"] = object()
 
@@ -1552,7 +1552,7 @@ class TestMolrsFrameV2Boundary:
     def test_synthetic_result_block_is_rejected(
         self, argon_frame, full_lj_md, legacy_block_name
     ):
-        legacy = molrs.Block()
+        legacy = molpy.Block()
         legacy.insert("energy", np.array([0.0], dtype=np.float64))
         argon_frame[legacy_block_name] = legacy
         with pytest.raises(RuntimeError, match=legacy_block_name):

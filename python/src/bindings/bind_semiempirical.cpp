@@ -16,7 +16,7 @@
 /// Born-Oppenheimer dynamics, wired on the Python side through
 /// `MD.set_evaluator` (`bind_md.cpp`, `set_evaluator_am1`).
 ///
-/// Every result channel writes back into the borrowed molrs.Frame per the
+/// Every result channel writes back into the borrowed molpy.Frame per the
 /// pinned to_molrs round-trip contract: energy onto typed meta, charges onto
 /// the atoms charge column, forces onto fx/fy/fz.
 
@@ -55,14 +55,14 @@ namespace {
 /// zeroes forces/energy first, the evaluator unwraps the molecule across
 /// periodic images, and AM1 publishes energy [eV], Mulliken charges [e] and
 /// forces [eV/Å] onto the transient frame, which is then written back into
-/// the borrowed molrs.Frame.
+/// the borrowed molpy.Frame.
 ///
 /// Local to this process: unlike `single_point`, no MPI launcher task
 /// carries a force request, so an active launcher gate is irrelevant here
 /// and the solve runs on the calling rank (the `bind_scf.cpp` convention).
 ///
 /// @param evaluator Borrowed evaluator; its `last_result()` is populated.
-/// @param frame_obj A `molrs.Frame`; energy [eV], charges [e] and fx/fy/fz
+/// @param frame_obj A `molpy.Frame`; energy [eV], charges [e] and fx/fy/fz
 ///                  [eV/Å] land on it.
 /// @return Nuclear forces F = −∂E/∂R [eV/Å], shape (n_atoms, 3).
 /// @throws std::runtime_error (Python `RuntimeError`) when the SCF does not
@@ -234,7 +234,7 @@ void bind_semiempirical(nb::module_& m) {
              "within max_iter, or for an element AM1 has no parameters "
              "for.");
 
-    // ── single_point: one Evaluate pass over a borrowed molrs.Frame ──
+    // ── single_point: one Evaluate pass over a borrowed molpy.Frame ──
     m.def(
         "single_point",
         [](nb::object frame_obj, AM1Evaluator& evaluator) {
@@ -248,7 +248,7 @@ void bind_semiempirical(nb::module_& m) {
                 }
                 // Unlike the PW path, AM1 writes a per-atom output (the
                 // Mulliken charge column, plus fx/fy/fz), so the work frame
-                // must return to the SAME molrs.Frame via the pinned
+                // must return to the SAME molpy.Frame via the pinned
                 // to_molrs round-trip contract.
                 cpu::to_molrs(work, *fref);
                 return;
@@ -281,7 +281,7 @@ void bind_semiempirical(nb::module_& m) {
         nb::arg("frame"), nb::arg("evaluator"),
         "Run one AM1 single-point — one SCF solve at the geometry the frame "
         "already holds, with nothing moved afterwards. Results land back on "
-        "the same molrs.Frame: total energy [eV] on frame.meta['energy'], "
+        "the same molpy.Frame: total energy [eV] on frame.meta['energy'], "
         "Mulliken charges [e] on the atoms charge column, and nuclear forces "
         "[eV/A] on fx/fy/fz (the Evaluate pass requests gradients, so this "
         "entry computes them too — AM1Evaluator.forces(frame) is the one "

@@ -26,7 +26,7 @@
 /// C++ enums (unknown names throw `ValueError` listing the supported ones —
 /// no silent fallback).
 ///
-/// `run(frame)` writes the total energy [eV] to the borrowed molrs.Frame's
+/// `run(frame)` writes the total energy [eV] to the borrowed molpy.Frame's
 /// typed meta and leaves fx/fy/fz untouched; `forces(frame)` additionally
 /// returns an (N, 3) array [eV/Å] and writes fx/fy/fz back. Both are
 /// **local** to this process: unlike the AM1 `single_point` entry there is
@@ -36,7 +36,7 @@
 /// Error surface seen from Python: `ValueError` for an unknown basis /
 /// functional name (at construction) and for an α/β occupation the electron
 /// count cannot support (at `run` / `forces`); `RuntimeError` from the
-/// molrs.Frame boundary when a required column is missing or has the wrong
+/// molpy.Frame boundary when a required column is missing or has the wrong
 /// dtype.
 
 #include "force_array.h"
@@ -164,8 +164,8 @@ class MethodHandle {
         method.max_iter = max_iter;
     }
 
-    /// @brief Run one SCF on a borrowed molrs.Frame.
-    /// @param frame_obj A `molrs.Frame`; total energy [eV] lands on its meta.
+    /// @brief Run one SCF on a borrowed molpy.Frame.
+    /// @param frame_obj A `molpy.Frame`; total energy [eV] lands on its meta.
     ///        Forces are not computed here — fx/fy/fz round-trip unchanged.
     /// @throws std::runtime_error (Python `RuntimeError`) from the Frame
     ///         boundary on a missing / wrong-dtype column.
@@ -187,7 +187,7 @@ class MethodHandle {
     ///        difference of energies).
     ///
     /// Same error surface as `run`.
-    /// @param frame_obj A `molrs.Frame`; energy [eV] and fx/fy/fz [eV/Å] land
+    /// @param frame_obj A `molpy.Frame`; energy [eV] and fx/fy/fz [eV/Å] land
     ///                  on it.
     /// @return Forces [eV/Å], shape (n_atoms, 3).
     ForceArray forces(nb::object frame_obj) {

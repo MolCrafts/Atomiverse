@@ -190,7 +190,7 @@ struct McHandle {
     /// compiles the plan; every later call continues the same chain, so edits
     /// made to the molrs Frame between calls are ignored.
     ///
-    /// @param frame_obj A `molrs.Frame`; results are written back into it.
+    /// @param frame_obj A `molpy.Frame`; results are written back into it.
     /// @param n_trials Number of trial moves to attempt in this call.
     /// @throws std::runtime_error under the MPI launcher, or from `build()`
     ///         when a required component (Mover / energy source / neighbor
@@ -305,7 +305,7 @@ struct McHandle {
     /// then fills x/v/f, charge, image, tag, the box and the typed metadata as
     /// on every other driver path.
     ///
-    /// @param frame_obj The `molrs.Frame` (needed for the Python-API rebuild).
+    /// @param frame_obj The `molpy.Frame` (needed for the Python-API rebuild).
     /// @param fref The same frame borrowed as a CXX handle.
     void write_back_(nb::object frame_obj, molrs::FrameRef& fref) {
         const auto rows = molrs::frame_block_nrows(fref, "atoms");
@@ -324,7 +324,7 @@ struct McHandle {
     /// them (per-run immutable inputs on the fixed-N path); after an insertion
     /// they are outputs, stamped on the new row by `InsertDeleteMove`.
     ///
-    /// @param frame_obj The `molrs.Frame` whose `atoms` block is replaced.
+    /// @param frame_obj The `molpy.Frame` whose `atoms` block is replaced.
     void rebuild_atoms_block_(nb::object frame_obj) {
         const auto n = static_cast<std::size_t>(work_.nlocal());
         nb::object block = nb::module_::import_("molrs").attr("Block")();
@@ -445,7 +445,7 @@ void bind_mc_common(nb::class_<McHandle<Preset>>& cls) {
             "Carlo contract, and it is why a mixed ensemble goes through a "
             "MoveSelector instead of two set_mover calls.")
         .def("run", &Handle::run, nb::arg("frame"), nb::arg("n_trials"),
-             "Attempt n_trials trial moves on a molrs.Frame. GIL released "
+             "Attempt n_trials trial moves on a molpy.Frame. GIL released "
              "during sampling.\n\n"
              "n_trials counts SINGLE TRIAL MOVES, not sweeps: each count is "
              "one proposal (one atom displaced, or one volume change, or one "
@@ -457,9 +457,9 @@ void bind_mc_common(nb::class_<McHandle<Preset>>& cls) {
              "run(equilibrate); run(sample) pattern — so the tallies "
              "accumulate and the configuration carries over. The frame is "
              "materialized once, on the first call: edits made to the "
-             "molrs.Frame between calls are ignored, and a fresh chain means "
+             "molpy.Frame between calls are ignored, and a fresh chain means "
              "a fresh sampler object.\n\n"
-             "Results are written back into the SAME molrs.Frame after every "
+             "Results are written back into the SAME molpy.Frame after every "
              "call: positions [A], the box, and the energy of the last "
              "accepted configuration in frame.meta['energy'] [eV]. When the "
              "trial moves changed the particle number the 'atoms' block is "

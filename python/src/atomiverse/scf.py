@@ -10,7 +10,7 @@ expanded in a fixed set of Gaussian functions, the *basis set*.
 The surface is the **concrete method** — ``RHF``, ``UHF``, ``RKS``, ``UKS``.
 There is no ``SCF`` facade, no ``SCFConfig`` bag and no factory: every
 parameter is a constructor argument, and the only I/O currency is a
-``molrs.Frame``.
+``molpy.Frame``.
 
 Two letters name each method. ``R`` (restricted) means the spin-up (alpha)
 and spin-down (beta) electrons share one set of spatial orbitals, i.e. a

@@ -9,7 +9,7 @@
 ///   driver = Hessian()                       # standard conditions
 ///   driver.set_evaluator(PairLJCut(eps, sigma, cutoff))
 ///   driver.set_neighbor(NeighborList(cutoff, skin))
-///   result = driver.run(frame)               # molrs.Frame in, result out
+///   result = driver.run(frame)               # molpy.Frame in, result out
 ///   result.frequencies                       # [cm^-1], 3N-6 / 3N-5 entries
 /// @endcode
 ///
@@ -164,12 +164,12 @@ struct VibHandle {
     }
 #endif
 
-    /// @brief Assemble the 6N-displacement Hessian on a borrowed molrs.Frame.
+    /// @brief Assemble the 6N-displacement Hessian on a borrowed molpy.Frame.
     ///
     /// The plan is compiled here on the first call — `validate_components()`
     /// needs the force source, which is only known once the setters have run.
     ///
-    /// @param frame_obj A `molrs.Frame`; the equilibrium geometry is restored
+    /// @param frame_obj A `molpy.Frame`; the equilibrium geometry is restored
     ///        before it is written back, and the force columns come back
     ///        carrying the forces [eV/A] evaluated at that geometry.
     /// @return The Hessian, frequencies, normal modes and RRHO thermochemistry.

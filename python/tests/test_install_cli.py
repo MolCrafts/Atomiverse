@@ -379,3 +379,36 @@ def test_write_install_state(tmp_path: Path, monkeypatch) -> None:
     defines = dry_run_defines(InstallConfig(modules={"md": True}))
     # Don't clobber real install state — unit-test content shape only
     assert defines["ATV_BUILD_PYTHON"] == "ON"
+
+
+def test_run_script_implicit(tmp_path: Path, capsys) -> None:
+    script = tmp_path / "hello.py"
+    script.write_text("print('hello-atv')\n", encoding="utf-8")
+    rc = main([str(script)])
+    assert rc == 0
+    assert "hello-atv" in capsys.readouterr().out
+
+
+def test_run_script_missing() -> None:
+    rc = main(["/no/such/script.py"])
+    assert rc == 2
+
+
+def test_run_subcommand(tmp_path: Path, capsys) -> None:
+    script = tmp_path / "hello.py"
+    script.write_text("print('hello-run')\n", encoding="utf-8")
+    rc = main(["run", str(script)])
+    assert rc == 0
+    assert "hello-run" in capsys.readouterr().out
+
+
+def test_user_sources_do_not_import_molrs() -> None:
+    """Python users must import molpy, never molrs."""
+    roots = [_SRC / "atomiverse", _SRC.parent / "examples"]
+    hits = []
+    for root in roots:
+        for path in root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            if "import molrs" in text or "from molrs" in text:
+                hits.append(str(path))
+    assert hits == []

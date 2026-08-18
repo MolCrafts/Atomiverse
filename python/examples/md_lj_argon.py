@@ -4,7 +4,7 @@
 Demonstrates the always-available classical-MD surface of the Python
 package, end to end and with no optional build flag:
 
-* building system state as a ``molrs.Frame`` — the only public currency
+* building system state as a ``molpy.Frame`` — the only public currency
   across the binding boundary (x/y/z, ``mass``, ``atomic_number``, box);
 * assembling the ``MD`` driver from components with the categorical
   setters (``set_integrator`` / ``set_observer`` / ``set_thermostat`` /
@@ -13,7 +13,7 @@ package, end to end and with no optional build flag:
 * reading results back out of the *same* frame afterwards: potential and
   kinetic energy from ``frame.meta``, moved atoms from the x/y/z columns.
 
-MolCrafts stack only (molrs + numpy) — no ASE, no matplotlib. Headless,
+MolCrafts stack only (molpy + numpy) — no ASE, no matplotlib. Headless,
 single process, well under a second of compute. It self-checks its own
 result and **exits nonzero** when a check fails, so it can be smoke-run.
 
@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import sys
 
-import molrs
+import molpy
 import numpy as np
 
 import atomiverse as av
@@ -81,8 +81,8 @@ _KB_EV_PER_K: float = 8.617333262e-5  # [eV/K]
 _MIN_DISPLACEMENT: float = 0.01  # [Å]
 
 
-def build_argon_frame() -> "molrs.Frame":
-    """Simple-cubic argon lattice as a ``molrs.Frame``.
+def build_argon_frame() -> "molpy.Frame":
+    """Simple-cubic argon lattice as a ``molpy.Frame``.
 
     @return A 64-atom frame with x/y/z [Å], ``mass`` [amu] and
             ``atomic_number`` [Z] columns in a cubic cell.
@@ -91,23 +91,23 @@ def build_argon_frame() -> "molrs.Frame":
     xs, ys, zs = (axis.ravel() for axis in np.meshgrid(grid, grid, grid, indexing="ij"))
     n_atoms = xs.size
 
-    atoms = molrs.Block()
+    atoms = molpy.Block()
     atoms.insert("x", np.ascontiguousarray(xs))
     atoms.insert("y", np.ascontiguousarray(ys))
     atoms.insert("z", np.ascontiguousarray(zs))
     atoms.insert("mass", np.full(n_atoms, _MASS_AR, dtype=np.float64))
     atoms.insert("atomic_number", np.full(n_atoms, _Z_AR, dtype=np.uint32))
 
-    frame = molrs.Frame()
+    frame = molpy.Frame()
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_BOX)
+    frame.box = molpy.Box.cube(_BOX)
     return frame
 
 
-def positions(frame: "molrs.Frame") -> "np.ndarray":
+def positions(frame: "molpy.Frame") -> "np.ndarray":
     """Read the x/y/z columns of *frame* as an (N, 3) array [Å].
 
-    @param frame: Any molrs.Frame carrying an ``atoms`` block.
+    @param frame: Any molpy.Frame carrying an ``atoms`` block.
     @return (N, 3) positions [Å], as stored — the integrator keeps them
             wrapped into the primary cell.
     """
@@ -135,7 +135,7 @@ def main() -> int:
 
     sim.run(frame, _N_STEPS)
 
-    # Results come back on the SAME molrs.Frame the driver borrowed.
+    # Results come back on the SAME molpy.Frame the driver borrowed.
     potential = frame.meta["energy"]  # [eV]
     kinetic = frame.meta["kinetic"]  # [eV]
     temperature = 2.0 * kinetic / (3.0 * n_atoms * _KB_EV_PER_K)  # [K]

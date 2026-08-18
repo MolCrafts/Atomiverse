@@ -48,7 +48,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-import molrs
+import molpy
 import numpy as np
 
 # ── Paths ──
@@ -62,11 +62,11 @@ QE_BIN = "/tmp/qe-install/bin/pw.x"
 # ── Si diamond structure builder ──
 
 
-def build_si_diamond(a_lat: float = 5.43) -> "molrs.Frame":
-    """Build the Si diamond primitive FCC cell (2 atoms) as a molrs.Frame."""
+def build_si_diamond(a_lat: float = 5.43) -> "molpy.Frame":
+    """Build the Si diamond primitive FCC cell (2 atoms) as a molpy.Frame."""
     a4 = a_lat / 4.0
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, a4]))
     atoms.insert("y", np.array([0.0, a4]))
     atoms.insert("z", np.array([0.0, a4]))
@@ -75,7 +75,7 @@ def build_si_diamond(a_lat: float = 5.43) -> "molrs.Frame":
     frame["atoms"] = atoms
 
     h = a_lat / 2.0
-    frame.box = molrs.Box(
+    frame.box = molpy.Box(
         np.array(
             [
                 [0.0, h, h],

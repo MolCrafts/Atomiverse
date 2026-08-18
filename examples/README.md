@@ -13,6 +13,7 @@ order.
 | 05 | `05_geom_opt.cpp` | Geometry optimization: `Minimize + LBFGS + cpu::scf::RHF` (RHF/STO-3G forces) | `ATV_BUILD_HF` |
 | 06 | `06_aimd.cpp` | Ab-initio MD: `MD + VelocityVerlet + NoseHoover + cpu::scf::RHF` | `ATV_BUILD_HF` |
 | 07 | `07_md_lj.cpp` / `07_md_lj.cu` | Classical MD (NVE LJ argon): `md::MD + NeighborList + PairLJCut` (CPU canonical; CUDA twin = `07_md_lj_cuda`) | — (`.cu` needs `ATV_BUILD_CUDA`) |
+| — | `in.lj` | Same LJ argon through the native `atomiverse -in` CLI | `ATV_BUILD_CLI` (default ON with MD) |
 | 08 | `08_pw.cpp` | Plane-wave DFT for a periodic crystal: `Evaluate + pw::PWEvaluator` (silicon) | `ATV_BUILD_PW` |
 | 09 | `09_gpw.cpp` | Gaussian-and-plane-waves DFT single point: `cpu::gpw::GPWEvaluator` | `ATV_BUILD_GPW` |
 | 11 | `11_koopmans.cpp` | Koopmans' theorem: HOMO energy → vertical IP via `scf::OrbitalInfoObserver` (5×2 basis sweep) | `ATV_BUILD_HF` |

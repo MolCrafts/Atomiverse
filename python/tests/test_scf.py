@@ -1,7 +1,7 @@
 """Gaussian SCF single-point Python surface tests (spec: py-scf-single-point).
 
 Binds the concrete mean-field methods ``RHF`` / ``UHF`` / ``RKS`` / ``UKS``
-as single-point evaluators over a ``molrs.Frame``: ``run(frame)`` writes the
+as single-point evaluators over a ``molpy.Frame``: ``run(frame)`` writes the
 total energy [eV] into ``frame.meta["energy"]``, ``forces(frame)`` returns an
 (N, 3) array [eV/Å] and writes ``fx``/``fy``/``fz`` back to the frame, and
 ``energy()`` / ``converged()`` / ``iterations()`` report the last run
@@ -57,7 +57,7 @@ import math
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 from atomiverse._binding import _cpp, extension_available
 
@@ -120,28 +120,28 @@ def _make_frame(
     atomic_numbers: list[int],
     masses: list[float],
     xyz: list[tuple[float, float, float]],
-) -> "molrs.Frame":
-    """Build a gas-phase molecular ``molrs.Frame`` in a 20 Å cubic cell.
+) -> "molpy.Frame":
+    """Build a gas-phase molecular ``molpy.Frame`` in a 20 Å cubic cell.
 
     @param atomic_numbers: Nuclear charge Z per atom (the SCF species column).
     @param masses: Atomic masses [amu] per atom.
     @param xyz: Cartesian positions [Å] per atom.
-    @return A ``molrs.Frame`` carrying the x/y/z/mass/atomic_number columns.
+    @return A ``molpy.Frame`` carrying the x/y/z/mass/atomic_number columns.
     """
     assert len(atomic_numbers) == len(masses) == len(xyz)
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([p[0] for p in xyz], dtype=np.float64))
     atoms.insert("y", np.array([p[1] for p in xyz], dtype=np.float64))
     atoms.insert("z", np.array([p[2] for p in xyz], dtype=np.float64))
     atoms.insert("mass", np.array(masses, dtype=np.float64))
     atoms.insert("atomic_number", np.array(atomic_numbers, dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_BOX_ANGSTROM)
+    frame.box = molpy.Box.cube(_BOX_ANGSTROM)
     return frame
 
 
-def _h2o_libretexts_frame() -> "molrs.Frame":
+def _h2o_libretexts_frame() -> "molpy.Frame":
     """Water at R(O–H) = 0.95 Å / ∠HOH = 104.5° (LibreTexts pin geometry)."""
     return _make_frame(
         [8, 1, 1],
@@ -150,7 +150,7 @@ def _h2o_libretexts_frame() -> "molrs.Frame":
     )
 
 
-def _h2o_pyscf_frame() -> "molrs.Frame":
+def _h2o_pyscf_frame() -> "molpy.Frame":
     """Water at the PySCF oracle preset geometry (`pin_scf.py --geom water`)."""
     return _make_frame(
         [8, 1, 1],
@@ -163,18 +163,18 @@ def _h2o_pyscf_frame() -> "molrs.Frame":
     )
 
 
-def _n2_frame() -> "molrs.Frame":
+def _n2_frame() -> "molpy.Frame":
     """N₂ at the experimental bond length 1.0977 Å (n2_ionization geometry)."""
     return _make_frame([7, 7], [14.007, 14.007], [(0.0, 0.0, 0.0), (0.0, 0.0, 1.0977)])
 
 
-def _o2_frame() -> "molrs.Frame":
+def _o2_frame() -> "molpy.Frame":
     """O₂ at 1.2075 Å — the triplet ground state, an open-shell UKS smoke."""
     return _make_frame([8, 8], [15.999, 15.999], [(0.0, 0.0, 0.0), (0.0, 0.0, 1.2075)])
 
 
 @pytest.fixture
-def n2_frame() -> "molrs.Frame":
+def n2_frame() -> "molpy.Frame":
     return _n2_frame()
 
 
@@ -201,7 +201,7 @@ def test_scf_module_exports_track_the_build() -> None:
 class TestRHF:
     @pytest.fixture(scope="class")
     @staticmethod
-    def rhf_h2o() -> tuple["molrs.Frame", "RHF"]:
+    def rhf_h2o() -> tuple["molpy.Frame", "RHF"]:
         """One RHF/STO-3G water single point, shared read-only below.
 
         Constructor arguments only (iron law 3): ``RHF()`` carries the
@@ -212,18 +212,18 @@ class TestRHF:
         method.run(frame)
         return frame, method
 
-    def test_converged(self, rhf_h2o: tuple["molrs.Frame", "RHF"]) -> None:
+    def test_converged(self, rhf_h2o: tuple["molpy.Frame", "RHF"]) -> None:
         """The SCF loop reports convergence (no silent non-stationary read)."""
         _, method = rhf_h2o
         assert method.converged() is True
 
-    def test_iterations_positive(self, rhf_h2o: tuple["molrs.Frame", "RHF"]) -> None:
+    def test_iterations_positive(self, rhf_h2o: tuple["molpy.Frame", "RHF"]) -> None:
         """``iterations()`` reports the loop count of the last run."""
         _, method = rhf_h2o
         assert method.iterations() > 0
 
     def test_frame_meta_energy_matches_libretexts_pin(
-        self, rhf_h2o: tuple["molrs.Frame", "RHF"]
+        self, rhf_h2o: tuple["molpy.Frame", "RHF"]
     ) -> None:
         """``run()`` writes the total energy [eV] to ``frame.meta["energy"]``;
         converted to Hartree it reproduces the −74.961754 Ha pin of
@@ -236,7 +236,7 @@ class TestRHF:
         assert energy_ha == pytest.approx(_E_RHF_H2O_STO3G_HA, abs=_TOL_RHF_H2O_HA)
 
     def test_energy_accessor_is_hartree(
-        self, rhf_h2o: tuple["molrs.Frame", "RHF"]
+        self, rhf_h2o: tuple["molpy.Frame", "RHF"]
     ) -> None:
         """``energy()`` is the same total energy in **Hartree** (the C++
         ``MeanFieldMethod::energy()`` currency), not eV."""
@@ -246,7 +246,7 @@ class TestRHF:
         )
 
     def test_no_result_blocks_on_frame(
-        self, rhf_h2o: tuple["molrs.Frame", "RHF"]
+        self, rhf_h2o: tuple["molpy.Frame", "RHF"]
     ) -> None:
         """Global results ride typed meta — no invented result block."""
         frame, _ = rhf_h2o
@@ -313,7 +313,7 @@ class TestRKS:
 class TestUKS:
     @pytest.fixture(scope="class")
     @staticmethod
-    def uks_o2_triplet() -> tuple["molrs.Frame", "UKS"]:
+    def uks_o2_triplet() -> tuple["molpy.Frame", "UKS"]:
         """Triplet O₂ / LSDA / STO-3G. Smoke only — no pinned oracle for
         this combination exists in-tree, so nothing numeric is asserted."""
         frame = _o2_frame()
@@ -321,12 +321,12 @@ class TestUKS:
         method.run(frame)
         return frame, method
 
-    def test_converged(self, uks_o2_triplet: tuple["molrs.Frame", "UKS"]) -> None:
+    def test_converged(self, uks_o2_triplet: tuple["molpy.Frame", "UKS"]) -> None:
         _, method = uks_o2_triplet
         assert method.converged() is True
 
     def test_energy_finite_and_negative(
-        self, uks_o2_triplet: tuple["molrs.Frame", "UKS"]
+        self, uks_o2_triplet: tuple["molpy.Frame", "UKS"]
     ) -> None:
         _, method = uks_o2_triplet
         energy = method.energy()
@@ -334,7 +334,7 @@ class TestUKS:
         assert energy < 0.0
 
     def test_frame_meta_energy_written(
-        self, uks_o2_triplet: tuple["molrs.Frame", "UKS"]
+        self, uks_o2_triplet: tuple["molpy.Frame", "UKS"]
     ) -> None:
         """Open-shell KS writes the same typed meta channel [eV] as RHF."""
         frame, method = uks_o2_triplet
@@ -350,7 +350,7 @@ class TestUKS:
 class TestScfForces:
     @pytest.fixture(scope="class")
     @staticmethod
-    def rhf_forces_h2o() -> tuple["molrs.Frame", np.ndarray]:
+    def rhf_forces_h2o() -> tuple["molpy.Frame", np.ndarray]:
         """RHF/STO-3G analytic forces at the pinned-gradient geometry.
 
         tol/max_iter mirror regressions/scf/h2o_rhf_sto3g_grad
@@ -363,21 +363,21 @@ class TestScfForces:
         return frame, np.asarray(forces, dtype=np.float64)
 
     def test_returns_n_by_three_array(
-        self, rhf_forces_h2o: tuple["molrs.Frame", np.ndarray]
+        self, rhf_forces_h2o: tuple["molpy.Frame", np.ndarray]
     ) -> None:
         _, forces = rhf_forces_h2o
         assert forces.shape == (3, 3)
 
     def test_forces_finite(
-        self, rhf_forces_h2o: tuple["molrs.Frame", np.ndarray]
+        self, rhf_forces_h2o: tuple["molpy.Frame", np.ndarray]
     ) -> None:
         _, forces = rhf_forces_h2o
         assert np.all(np.isfinite(forces))
 
     def test_force_columns_written_back(
-        self, rhf_forces_h2o: tuple["molrs.Frame", np.ndarray]
+        self, rhf_forces_h2o: tuple["molpy.Frame", np.ndarray]
     ) -> None:
-        """``forces()`` publishes fx/fy/fz on the molrs.Frame, matching the
+        """``forces()`` publishes fx/fy/fz on the molpy.Frame, matching the
         returned array (same write-back contract as MD)."""
         frame, forces = rhf_forces_h2o
         fx = np.asarray(frame["atoms"]["fx"], dtype=np.float64)
@@ -390,7 +390,7 @@ class TestScfForces:
         assert fz == pytest.approx(forces[:, 2], abs=_TOL_FORCE_EV_PER_ANGSTROM)
 
     def test_oxygen_z_force_matches_pinned_gradient(
-        self, rhf_forces_h2o: tuple["molrs.Frame", np.ndarray]
+        self, rhf_forces_h2o: tuple["molpy.Frame", np.ndarray]
     ) -> None:
         """F_z(O) = −∂E/∂z(O) at the PySCF pin: −(−6.142775911808e-02 Ha/Bohr)
         = +3.158742374 eV/Å (regressions/scf/h2o_rhf_sto3g_grad/REFERENCE.md:34;
@@ -401,7 +401,7 @@ class TestScfForces:
         )
 
     def test_forces_sum_to_zero(
-        self, rhf_forces_h2o: tuple["molrs.Frame", np.ndarray]
+        self, rhf_forces_h2o: tuple["molpy.Frame", np.ndarray]
     ) -> None:
         """Translational invariance: Σ_A F_A = 0 (the C++ case grades the
         equivalent gradient sum at 1e-8 Ha/Bohr ≈ 5e-7 eV/Å)."""
@@ -428,7 +428,7 @@ class TestScfFailsLoud:
         with pytest.raises(ValueError, match="B3LYP"):
             RKS(functional="M06-2X")
 
-    def test_bad_multiplicity_raises_at_run(self, n2_frame: "molrs.Frame") -> None:
+    def test_bad_multiplicity_raises_at_run(self, n2_frame: "molpy.Frame") -> None:
         """A multiplicity of the wrong parity for the electron count is only
         detectable once N_e = ΣZ − charge is known, so it fails at ``run``:
         neutral N₂ has 14 electrons and cannot be a doublet."""

@@ -57,7 +57,7 @@ Buck = _cpp.PairBuck
 #: ``Born(type_i, type_j, A [eV], rho [Å], sigma [Å], C [eV·Å⁶], D [eV·Å⁸],
 #: cutoff [Å])`` — the seven sequences are one table seen column-wise and must
 #: share a length, checked when the evaluator is installed rather than here.
-#: The type keys are ATOMIC NUMBERS (the frame's type column comes from molrs
+#: The type keys are ATOMIC NUMBERS (the frame's type column comes from molpy
 #: ``atomic_number``), so an Na-Cl row is ``11, 17``. Every interacting pair
 #: must be listed and unlisted pairs do not interact — Fumi-Tosi parameters
 #: are not Lorentz-Berthelot, so there is no mixing rule to fall back on.

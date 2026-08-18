@@ -135,8 +135,10 @@ if(NOT ATV_DOCS_ONLY)
         "Build end-to-end textbook regression cases (regressions/)" OFF)
     option(ATV_BUILD_BENCHMARKS "Build benchmarks" OFF)
     option(ATV_BUILD_EXAMPLES "Build examples" OFF)
+    option(ATV_BUILD_CLI
+           "Build the atomiverse command-line driver (native -in + optional Python host)" ON)
     option(ATV_BUILD_LAUNCHER
-           "Build the atomiverse MPI launcher executable (rank-0 embedded CPython)" OFF)
+           "Embed MPI Python hosting in the atomiverse CLI (rank-0 CPython)" OFF)
 
     # Product-module gates (MD/MC/… + ANALYSIS/IO/MOLRS DAG).
     # Must run after ATV_BUILD_KSPACE / HF / GPW / PYTHON are declared.
@@ -1225,7 +1227,10 @@ if(NOT ATV_DOCS_ONLY)
         install(DIRECTORY include/atomiverse TYPE INCLUDE)
     endif()
 
-    # ── MPI launcher executable (rank-0 embedded CPython) ──
+    # ── atomiverse CLI (native -in always; MPI Python host optional) ──
+    if(ATV_BUILD_LAUNCHER AND NOT ATV_BUILD_CLI)
+        set(ATV_BUILD_CLI ON)
+    endif()
     if(ATV_BUILD_LAUNCHER)
         if(NOT ATV_USE_MPI)
             message(FATAL_ERROR
@@ -1240,6 +1245,14 @@ if(NOT ATV_DOCS_ONLY)
                 "launcher hosts the Python bindings built from this tree. "
                 "Configure with -DATV_BUILD_PYTHON=ON or drop "
                 "-DATV_BUILD_LAUNCHER.")
+        endif()
+    endif()
+    if(ATV_BUILD_CLI)
+        if(NOT ATV_BUILD_MD)
+            message(FATAL_ERROR
+                "ATV_BUILD_CLI=ON requires ATV_BUILD_MD=ON (native -in runs "
+                "classical MD). Configure with -DATV_BUILD_MD=ON or "
+                "-DATV_BUILD_CLI=OFF.")
         endif()
         add_subdirectory(app/atomiverse)
     endif()

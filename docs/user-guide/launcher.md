@@ -1,11 +1,20 @@
-# The `atomiverse` MPI launcher
+# The `atomiverse` driver
 
-One Python script, two hostings — same physics:
+The compiled `atomiverse` binary is a **LAMMPS-shaped CLI**. Native input
+needs no Python:
 
 ```bash
-python atv.py                          # serial: Python hosts Atomiverse
-mpirun -np 128 atomiverse atv.py       # MPI: Atomiverse hosts Python
-srun  -n  128 atomiverse atv.py        # Slurm, same thing
+atomiverse -in examples/in.lj
+atomiverse -in examples/in.lj -log log.atv
+```
+
+Python scripts (after a native wheel / `python -m atomiverse install`):
+
+```bash
+python -m atomiverse run atv.py        # serial, no MPI
+python -m atomiverse atv.py
+mpirun -np 128 atomiverse atv.py       # MPI host (ATV_BUILD_LAUNCHER)
+srun  -n  128 atomiverse atv.py
 ```
 
 Under the launcher every rank starts the native `atomiverse` executable.
@@ -15,7 +24,7 @@ MD/Minimize driver `run()` (and each AM1 `single_point`) becomes ONE task-granul
 in-memory broadcast: the task description plus the Frame go out, every
 rank computes natively (MPI domain decomposition for MD and Minimize; full-replica
 solves for whole-molecule methods like AM1), and the gathered result is
-written back into the same `molrs.Frame` your script holds. There is no
+written back into the same `molpy.Frame` your script holds. There is no
 intermediate file and no visible IR.
 
 Semantics to know:
@@ -34,7 +43,7 @@ Semantics to know:
 - **Minimize returns control metadata separately from state**:
   `iterations`, `converged`, and `stop_reason` are the returned
   `MinimizeResult`; coordinates, forces, energy, box, and topology remain in
-  the caller's same `molrs.Frame`.
+  the caller's same `molpy.Frame`.
 - Subprocesses spawned by your script (multiprocessing workers, shelled
   `python`) import atomiverse in plain serial mode automatically.
 

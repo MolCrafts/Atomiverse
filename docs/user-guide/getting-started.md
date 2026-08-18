@@ -66,6 +66,15 @@ Add `-DATV_BUILD_PW=ON` for plane-wave, `-DATV_BUILD_TESTS=ON` for tests.
 
 ## 4. Run a first example
 
+Native CLI (LAMMPS-shaped input, no Python):
+
+```bash
+cmake --build build --target atomiverse_cli
+./build/app/atomiverse/atomiverse -in examples/in.lj
+```
+
+Or a compiled example:
+
 ```bash
 ./build/examples/02_rhf
 ```
@@ -82,6 +91,9 @@ one is gated behind (e.g. `08_pw` needs `ATV_BUILD_PW`, `09_gpw` needs
 `ATV_BUILD_GPW`); a target that is not configured simply does not exist.
 
 Full catalog and scientific context: [Tutorial index](../tutorial/).
+
+The `atomiverse` binary itself is the LAMMPS-shaped driver (`-in`), not
+only an example wrapper. See [The atomiverse driver](launcher.md).
 
 ## 5. Minimal user code shape
 

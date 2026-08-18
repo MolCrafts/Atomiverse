@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 
 import numpy as np
-import molrs
+import molpy
 
 import atomiverse as av
 
@@ -30,8 +30,8 @@ import atomiverse as av
 _FCC_BASIS = [(0, 0, 0), (0.5, 0.5, 0), (0.5, 0, 0.5), (0, 0.5, 0.5)]
 
 
-def make_fcc_frame(n_cells: int, a0: float = 5.26) -> "molrs.Frame":
-    """Return an FCC argon molrs.Frame with n_cells^3 * 4 atoms."""
+def make_fcc_frame(n_cells: int, a0: float = 5.26) -> "molpy.Frame":
+    """Return an FCC argon molpy.Frame with n_cells^3 * 4 atoms."""
     atoms = [
         ((ix + bx) * a0, (iy + by) * a0, (iz + bz) * a0)
         for ix in range(n_cells)
@@ -42,15 +42,15 @@ def make_fcc_frame(n_cells: int, a0: float = 5.26) -> "molrs.Frame":
     n = len(atoms)
     xs, ys, zs = (np.array(c, dtype=np.float64) for c in zip(*atoms))
 
-    frame = molrs.Frame()
-    block = molrs.Block()
+    frame = molpy.Frame()
+    block = molpy.Block()
     block.insert("x", xs)
     block.insert("y", ys)
     block.insert("z", zs)
     block.insert("mass", np.full(n, 39.948, dtype=np.float64))
     block.insert("atomic_number", np.full(n, 18, dtype=np.uint32))
     frame["atoms"] = block
-    frame.box = molrs.Box.cube(float(n_cells * a0))
+    frame.box = molpy.Box.cube(float(n_cells * a0))
     return frame
 
 
@@ -105,7 +105,7 @@ class BenchResult:
 
 def run_bench(
     label: str,
-    frame: "molrs.Frame",
+    frame: "molpy.Frame",
     sim: av.MD,
     n_steps: int = 100,
     warmup: int = 20,

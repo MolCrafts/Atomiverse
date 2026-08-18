@@ -16,7 +16,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
 
     Energy lands in the frame's typed ``meta`` map [eV]; charge-capable
     evaluators (AM1) write per-atom charges [e] back into the same
-    ``molrs.Frame``. The evaluator is borrowed — inspect
+    ``molpy.Frame``. The evaluator is borrowed — inspect
     ``evaluator.last_result()`` afterwards for solver-internal quantities.
 
     Two dispatch paths, one call shape. A component-style evaluator such as
@@ -29,7 +29,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
 
     Parameters
     ----------
-    frame : molrs.Frame
+    frame : molpy.Frame
         System state (``atoms`` block with ``x, y, z, atomic_number``; the
         ``atomic_number`` column [uint] carries Z). Results land as typed
         metadata read back as plain values, for example

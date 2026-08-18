@@ -122,7 +122,7 @@ std::string smearing_name(Smearing smearing) {
         + " has no name in the Python binding table (bind_pw.cpp)");
 }
 
-/// @brief Materialize a borrowed molrs.Frame and refuse a non-periodic one.
+/// @brief Materialize a borrowed molpy.Frame and refuse a non-periodic one.
 ///
 /// A plane-wave basis is *defined* by the cell: the basis functions are the
 /// plane waves commensurate with it, and the cutoff `ecut_ry` selects them by
@@ -135,7 +135,7 @@ std::string smearing_name(Smearing smearing) {
 /// because that is where "no box at all" and "a box with zero volume" become
 /// the same, well-defined question.
 ///
-/// @param src Borrowed molrs.Frame.
+/// @param src Borrowed molpy.Frame.
 /// @return The materialized execution Frame (positions [Å], Z, cell).
 /// @throws std::runtime_error (Python `RuntimeError`) when the frame carries
 ///         no cell, naming the attribute to set.
@@ -143,7 +143,7 @@ ATV::cpu::Frame periodic_frame(const molrs::FrameRef& src) {
     ATV::cpu::Frame work = ATV::cpu::from_molrs(src);
     if (!(work.box.volume() > 0.0))
         throw std::runtime_error(
-            "plane-wave DFT requires a periodic cell, but this molrs.Frame "
+            "plane-wave DFT requires a periodic cell, but this molpy.Frame "
             "has no box (or one of zero volume). Set frame.box before "
             "build()/run()/forces()/stress(), e.g. "
             "frame.box = molrs.Box.cube(10.0).");
@@ -171,7 +171,7 @@ flatten_forces(const std::vector<std::array<double, 3>>& forces) {
 }
 
 /// @brief Run one plane-wave SCF, take the analytic ionic forces, and write
-///        both back to the borrowed molrs.Frame.
+///        both back to the borrowed molpy.Frame.
 ///
 /// The energy published on the frame is the one belonging to *this* SCF —
 /// `pw_forces_analytic` reports it through its out-parameter — so the number
@@ -181,7 +181,7 @@ flatten_forces(const std::vector<std::array<double, 3>>& forces) {
 ///
 /// @param solver    Configured plane-wave method (already built, or built
 ///                  lazily inside the force path).
-/// @param frame_obj A `molrs.Frame`; fx/fy/fz [eV/Å] and energy [eV] land on
+/// @param frame_obj A `molpy.Frame`; fx/fy/fz [eV/Å] and energy [eV] land on
 ///                  it.
 /// @return Forces [eV/Å], shape (n_atoms, 3).
 /// @throws std::runtime_error (Python `RuntimeError`) on a frame with no
@@ -231,7 +231,7 @@ ForceArray pw_forces(PW& solver, nb::object frame_obj) {
 /// compression.
 ///
 /// @param solver    Configured plane-wave method.
-/// @param frame_obj A `molrs.Frame`; read only.
+/// @param frame_obj A `molpy.Frame`; read only.
 /// @return Voigt stress (xx, yy, zz, xy, xz, yz) [eV/Å³].
 /// @throws std::runtime_error (Python `RuntimeError`) on a frame with no
 ///         cell.

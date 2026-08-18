@@ -75,7 +75,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
@@ -205,15 +205,15 @@ _MIN_SE_FREQ_CM1: float = 100.0
 # ── Fixtures ──────────────────────────────────────────────────────────
 
 
-def _ar_dimer_frame(atomic_number: int = _Z_AR) -> "molrs.Frame":
+def _ar_dimer_frame(atomic_number: int = _Z_AR) -> "molpy.Frame":
     """Two Ar atoms on the z axis at exactly the LJ minimum separation.
 
     @param atomic_number Z written to the ``atomic_number`` column (the
            engine's atom type, and the key of the mass lookup).
-    @return A molrs.Frame with x/y/z [Å], mass [amu] and atomic_number.
+    @return A molpy.Frame with x/y/z [Å], mass [amu] and atomic_number.
     """
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.zeros(2, dtype=np.float64))
     atoms.insert("y", np.zeros(2, dtype=np.float64))
     atoms.insert("z", np.array([0.0, _R_MIN_A], dtype=np.float64))
@@ -222,12 +222,12 @@ def _ar_dimer_frame(atomic_number: int = _Z_AR) -> "molrs.Frame":
     atoms.insert("mass", np.full(2, _MASS_AR_AMU, dtype=np.float64))
     atoms.insert("atomic_number", np.full(2, atomic_number, dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_BOX_A)
+    frame.box = molpy.Box.cube(_BOX_A)
     return frame
 
 
 @pytest.fixture
-def ar_dimer_frame() -> "molrs.Frame":
+def ar_dimer_frame() -> "molpy.Frame":
     """Ar2 at r_min — the analytic-frequency fixture."""
     return _ar_dimer_frame()
 
@@ -246,7 +246,7 @@ def _lj_hessian(**kwargs: str) -> "Hessian":
 
 
 @pytest.fixture
-def ar_dimer_result(ar_dimer_frame: "molrs.Frame") -> "HessianResult":
+def ar_dimer_result(ar_dimer_frame: "molpy.Frame") -> "HessianResult":
     """The finite-difference result for Ar2 at the LJ minimum."""
     return _lj_hessian().run(ar_dimer_frame)
 
@@ -300,7 +300,7 @@ class TestArDimerFrequencies:
         assert ar_dimer_result.is_linear is True
         assert ar_dimer_result.n_imaginary == 0
 
-    def test_last_result_matches_run(self, ar_dimer_frame: "molrs.Frame") -> None:
+    def test_last_result_matches_run(self, ar_dimer_frame: "molpy.Frame") -> None:
         """``run()`` returns the result AND caches it on the driver."""
         driver = _lj_hessian()
         returned = driver.run(ar_dimer_frame)
@@ -375,7 +375,7 @@ class TestHessianMatrix:
 class TestFileOutputs:
     def test_no_files_written_by_default(
         self,
-        ar_dimer_frame: "molrs.Frame",
+        ar_dimer_frame: "molpy.Frame",
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -395,7 +395,7 @@ class TestFileOutputs:
         assert stray == [], f"default Hessian() littered the CWD: {stray}"
 
     def test_frequency_tsv_written_when_path_given(
-        self, ar_dimer_frame: "molrs.Frame", tmp_path: Path
+        self, ar_dimer_frame: "molpy.Frame", tmp_path: Path
     ) -> None:
         """A non-empty ``frequency_tsv`` writes the TSV, and it parses with
         the header + one row per mode + ``#`` trailer that
@@ -425,7 +425,7 @@ class TestFileOutputs:
         assert float(trailer["zpe_hartree"]) == pytest.approx(result.zpe, rel=1.0e-12)
 
     def test_one_mode_xyz_per_real_mode(
-        self, ar_dimer_frame: "molrs.Frame", tmp_path: Path
+        self, ar_dimer_frame: "molpy.Frame", tmp_path: Path
     ) -> None:
         """A non-empty ``mode_xyz_prefix`` writes one animation per REAL
         mode, named ``<prefix>_mode<k>.xyz``
@@ -472,15 +472,15 @@ class TestSemiempiricalForceSource:
         structural gate reg_se-analytic-hessian.cpp:92-108 applies to its
         DFTB2 twin (soft floor 100 cm^-1; the absolute wavenumber is not
         pinned here, the SE oracle loop owns that)."""
-        frame = molrs.Frame()
-        atoms = molrs.Block()
+        frame = molpy.Frame()
+        atoms = molpy.Block()
         atoms.insert("x", np.array([0.0, 0.74], dtype=np.float64))
         atoms.insert("y", np.zeros(2, dtype=np.float64))
         atoms.insert("z", np.zeros(2, dtype=np.float64))
         atoms.insert("mass", np.full(2, 1.008, dtype=np.float64))
         atoms.insert("atomic_number", np.ones(2, dtype=np.uint32))
         frame["atoms"] = atoms
-        frame.box = molrs.Box.cube(20.0)
+        frame.box = molpy.Box.cube(20.0)
 
         driver = Hessian()
         driver.set_evaluator(av.AM1Evaluator())

@@ -1,4 +1,4 @@
-"""OOP Molecular Dynamics driver — operates directly on a ``molrs.Frame``.
+"""OOP Molecular Dynamics driver — operates directly on a ``molpy.Frame``.
 
 Mirrors the C++ categorical API on ``cpu::md::MD`` (headers under
 ``cpu/dynamics/``)::
@@ -11,10 +11,10 @@ Mirrors the C++ categorical API on ``cpu::md::MD`` (headers under
     sim.build()
     sim.run(frame, 1000)
 
-The driver borrows the ``molrs.Frame`` for the duration of :meth:`MD.run`:
+The driver borrows the ``molpy.Frame`` for the duration of :meth:`MD.run`:
 the C++ side materializes a transient execution frame, advances it, and
 writes positions / velocities / forces / energy back into the *same*
-``molrs.Frame``. Global results are exact-dtype typed metadata entries in
+``molpy.Frame``. Global results are exact-dtype typed metadata entries in
 ``frame.meta``, read back as plain Python values.
 """
 
@@ -317,7 +317,7 @@ class MD:
     def run(self, frame: object, n_steps: int) -> None:
         """Run *n_steps* of MD on *frame*.
 
-        *frame* is a ``molrs.Frame``. The C++ driver borrows it, materializes
+        *frame* is a ``molpy.Frame``. The C++ driver borrows it, materializes
         a transient execution frame, advances it, and writes
         positions / velocities / forces / energy back into *frame* in place.
 

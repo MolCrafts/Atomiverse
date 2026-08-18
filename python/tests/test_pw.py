@@ -73,7 +73,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import molrs
+import molpy
 
 from atomiverse._binding import _cpp, extension_available
 
@@ -162,8 +162,8 @@ _SMEARING_NAMES: tuple[str, ...] = (
 # ── Frame / method builders ──────────────────────────────────────────
 
 
-def _si2_frame(stretch: float, with_box: bool = True) -> "molrs.Frame":
-    """Two-atom Si fcc primitive cell as a ``molrs.Frame``.
+def _si2_frame(stretch: float, with_box: bool = True) -> "molpy.Frame":
+    """Two-atom Si fcc primitive cell as a ``molpy.Frame``.
 
     Same cell and basis as reg_cuda-pw-forces.cu:60-83: rows
     [[0,a/2,a/2],[a/2,0,a/2],[a/2,a/2,0]] (symmetric, so the row/column
@@ -175,10 +175,10 @@ def _si2_frame(stretch: float, with_box: bool = True) -> "molrs.Frame":
     @param with_box: When false the cell is left unset — the reachable
         degenerate case for the fail-loud gate (molrs itself refuses a
         singular cell matrix, raising ValueError("SingularCell")).
-    @return molrs.Frame with x/y/z [Å], mass [amu] and atomic_number columns.
+    @return molpy.Frame with x/y/z [Å], mass [amu] and atomic_number columns.
     """
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, _A / 4.0 + stretch], dtype=np.float64))
     atoms.insert("y", np.array([0.0, _A / 4.0], dtype=np.float64))
     atoms.insert("z", np.array([0.0, _A / 4.0], dtype=np.float64))
@@ -187,7 +187,7 @@ def _si2_frame(stretch: float, with_box: bool = True) -> "molrs.Frame":
     frame["atoms"] = atoms
     if with_box:
         half = _A / 2.0
-        frame.box = molrs.Box(
+        frame.box = molpy.Box(
             np.array(
                 [[0.0, half, half], [half, 0.0, half], [half, half, 0.0]],
                 dtype=np.float64,
@@ -216,17 +216,17 @@ def _si2_bomd_method() -> "PW":
     return pw
 
 
-def _h_atom_frame() -> "molrs.Frame":
+def _h_atom_frame() -> "molpy.Frame":
     """One H atom at the origin of a 6 Å cube (reg_pw-bomd-h.cpp:28-38)."""
-    frame = molrs.Frame()
-    atoms = molrs.Block()
+    frame = molpy.Frame()
+    atoms = molpy.Block()
     atoms.insert("x", np.zeros(1, dtype=np.float64))
     atoms.insert("y", np.zeros(1, dtype=np.float64))
     atoms.insert("z", np.zeros(1, dtype=np.float64))
     atoms.insert("mass", np.full(1, 1.008, dtype=np.float64))
     atoms.insert("atomic_number", np.full(1, 1, dtype=np.uint32))
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_H_BOX_A)
+    frame.box = molpy.Box.cube(_H_BOX_A)
     return frame
 
 
@@ -324,7 +324,7 @@ class TestPwForces:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def default_forces() -> tuple["molrs.Frame", "np.ndarray"]:
+    def default_forces() -> tuple["molpy.Frame", "np.ndarray"]:
         """Forces on the stretched Si2 cell with the default functional."""
         frame = _si2_frame(_STRETCH)
         pw = _si2_method()
@@ -334,7 +334,7 @@ class TestPwForces:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def lsda_forces() -> tuple["molrs.Frame", "np.ndarray"]:
+    def lsda_forces() -> tuple["molpy.Frame", "np.ndarray"]:
         """The pinned run: same cell, ``xc = LSDA`` (REFERENCE.md settings)."""
         frame = _si2_frame(_STRETCH)
         pw = _si2_method()
@@ -344,20 +344,20 @@ class TestPwForces:
         return frame, forces
 
     def test_returns_n_by_three_array(
-        self, default_forces: tuple["molrs.Frame", "np.ndarray"]
+        self, default_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """One row per atom, three Cartesian components [eV/Å]."""
         _, forces = default_forces
         assert forces.shape == (2, 3)
 
     def test_forces_finite(
-        self, default_forces: tuple["molrs.Frame", "np.ndarray"]
+        self, default_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         _, forces = default_forces
         assert np.all(np.isfinite(forces))
 
     def test_forces_translation_invariance(
-        self, default_forces: tuple["molrs.Frame", "np.ndarray"]
+        self, default_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """Σ_i F_i = 0 per component: a rigid translation of the whole basis
         through a periodic cell cannot change the energy. Graded at the
@@ -367,7 +367,7 @@ class TestPwForces:
         assert forces.sum(axis=0) == pytest.approx(np.zeros(3), abs=_TOL_NET_FORCE_EV_A)
 
     def test_forces_non_vacuous(
-        self, default_forces: tuple["molrs.Frame", "np.ndarray"]
+        self, default_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """The +0.08 Å stretch must produce a real force — the same
         non-vacuity floor the CUDA parity regression uses
@@ -377,9 +377,9 @@ class TestPwForces:
         assert max_force > _MIN_MAX_FORCE_EV_A
 
     def test_force_columns_written_back(
-        self, default_forces: tuple["molrs.Frame", "np.ndarray"]
+        self, default_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
-        """fx/fy/fz land on the SAME molrs.Frame and match the returned
+        """fx/fy/fz land on the SAME molpy.Frame and match the returned
         array — the write-back contract the SCF and AM1 bindings keep."""
         frame, forces = default_forces
         atoms = frame["atoms"]
@@ -393,7 +393,7 @@ class TestPwForces:
         assert fz == pytest.approx(forces[:, 2], abs=_TOL_FRAME_FORCE_EV_A)
 
     def test_energy_written_back_finite(
-        self, default_forces: tuple["molrs.Frame", "np.ndarray"]
+        self, default_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """forces() runs its own SCF, so it also lands the total energy
         [eV] as typed frame metadata: finite and bound (negative)."""
@@ -404,7 +404,7 @@ class TestPwForces:
         assert energy < 0.0
 
     def test_lsda_max_force_matches_cpu_pin(
-        self, lsda_forces: tuple["molrs.Frame", "np.ndarray"]
+        self, lsda_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """HARD-CODED GOLDEN: max|F| = 2.517979 eV/Å on this fixture with
         xc = LSDA (regressions/pw/cuda-pw-forces/REFERENCE.md:44-46, GH200
@@ -415,7 +415,7 @@ class TestPwForces:
         assert max_force == pytest.approx(_PIN_MAX_FORCE_EV_A, abs=_TOL_FORCE_PIN_EV_A)
 
     def test_lsda_force_path_energy_matches_cpu_pin(
-        self, lsda_forces: tuple["molrs.Frame", "np.ndarray"]
+        self, lsda_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """HARD-CODED GOLDEN: the force path's SCF total energy is
         -13.85556302 Ry (same REFERENCE.md:46 line), read back in eV from
@@ -438,7 +438,7 @@ class TestPwStress:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def ideal_stress() -> tuple["molrs.Frame", "np.ndarray", "np.ndarray"]:
+    def ideal_stress() -> tuple["molpy.Frame", "np.ndarray", "np.ndarray"]:
         """Stress on ideal diamond Si; also returns the x column recorded
         before the call, for the immutability check."""
         frame = _si2_frame(0.0)
@@ -449,20 +449,20 @@ class TestPwStress:
         return frame, stress, x_before
 
     def test_returns_voigt_six_vector(
-        self, ideal_stress: tuple["molrs.Frame", "np.ndarray", "np.ndarray"]
+        self, ideal_stress: tuple["molpy.Frame", "np.ndarray", "np.ndarray"]
     ) -> None:
         """Voigt order xx, yy, zz, xy, xz, yz."""
         _, stress, _ = ideal_stress
         assert stress.shape == (6,)
 
     def test_stress_finite(
-        self, ideal_stress: tuple["molrs.Frame", "np.ndarray", "np.ndarray"]
+        self, ideal_stress: tuple["molpy.Frame", "np.ndarray", "np.ndarray"]
     ) -> None:
         _, stress, _ = ideal_stress
         assert np.all(np.isfinite(stress))
 
     def test_offdiagonal_vanishes_by_symmetry(
-        self, ideal_stress: tuple["molrs.Frame", "np.ndarray", "np.ndarray"]
+        self, ideal_stress: tuple["molpy.Frame", "np.ndarray", "np.ndarray"]
     ) -> None:
         """σ_xy = σ_xz = σ_yz = 0 for cubic diamond Si; graded at the
         regression's soft window kSymTol = 0.025 eV/Å³
@@ -472,7 +472,7 @@ class TestPwStress:
         assert stress[3:] == pytest.approx(np.zeros(3), abs=_TOL_STRESS_SYM_EV_A3)
 
     def test_diagonal_is_isotropic(
-        self, ideal_stress: tuple["molrs.Frame", "np.ndarray", "np.ndarray"]
+        self, ideal_stress: tuple["molpy.Frame", "np.ndarray", "np.ndarray"]
     ) -> None:
         """σ_xx = σ_yy = σ_zz: the three cubic axes are equivalent, so the
         hydrostatic stress cannot single one out. Same soft window."""
@@ -481,7 +481,7 @@ class TestPwStress:
         assert float(np.max(diagonal) - np.min(diagonal)) <= _TOL_STRESS_SYM_EV_A3
 
     def test_diagonal_is_positive_under_compression(
-        self, ideal_stress: tuple["molrs.Frame", "np.ndarray", "np.ndarray"]
+        self, ideal_stress: tuple["molpy.Frame", "np.ndarray", "np.ndarray"]
     ) -> None:
         """Mechanical / CP2K sign σ = −(1/Ω)∂E/∂ε: a = 5.43 Å sits below the
         PseudoDojo EOS a0 ≈ 5.468 Å (pw-analytic-stress-si/REFERENCE.md), so
@@ -492,7 +492,7 @@ class TestPwStress:
         assert float(np.min(stress[:3])) > _MIN_STRESS_EV_A3
 
     def test_stress_does_not_move_the_atoms(
-        self, ideal_stress: tuple["molrs.Frame", "np.ndarray", "np.ndarray"]
+        self, ideal_stress: tuple["molpy.Frame", "np.ndarray", "np.ndarray"]
     ) -> None:
         """stress() reports a cell derivative; it writes no geometry back."""
         frame, _, x_before = ideal_stress
@@ -595,7 +595,7 @@ class TestPwFailsLoud:
     the box."""
 
     @staticmethod
-    def _boxless_case() -> tuple["molrs.Frame", "PW"]:
+    def _boxless_case() -> tuple["molpy.Frame", "PW"]:
         """The Si2 basis with ``frame.box`` left unset. ``max_iter`` is cut
         to 2 so that a binding which does *not* guard fails fast (today it
         runs the SCF anyway and reports a NaN energy)."""
@@ -643,7 +643,7 @@ class TestPwBomd:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def bomd_si2() -> tuple["molrs.Frame", "np.ndarray"]:
+    def bomd_si2() -> tuple["molpy.Frame", "np.ndarray"]:
         """One 3-step plane-wave BOMD run; returns the advanced frame and
         the x column it started from."""
         from atomiverse.md import MD
@@ -671,7 +671,7 @@ class TestPwBomd:
         sim.set_evaluator(PWEvaluator(_si2_bomd_method()))
 
     def test_potential_energy_finite_and_bound(
-        self, bomd_si2: tuple["molrs.Frame", "np.ndarray"]
+        self, bomd_si2: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """PE [eV] after the run is finite and negative (bound crystal, not
         a blow-up) — same gate as reg_pw-bomd-h.cpp:66-72."""
@@ -682,17 +682,17 @@ class TestPwBomd:
         assert energy < 0.0
 
     def test_positions_advanced(
-        self, bomd_si2: tuple["molrs.Frame", "np.ndarray"]
+        self, bomd_si2: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """The atoms moved and the new positions came back into the SAME
-        molrs.Frame. Velocities start at zero here, so motion is possible
+        molpy.Frame. Velocities start at zero here, so motion is possible
         only if plane-wave forces actually reached the integrator."""
         frame, x_before = bomd_si2
         x_after = np.asarray(frame["atoms"]["x"], dtype=np.float64)
         assert not np.allclose(x_before, x_after)
 
     def test_velocities_finite(
-        self, bomd_si2: tuple["molrs.Frame", "np.ndarray"]
+        self, bomd_si2: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """No NaN/inf leaked into the velocity columns."""
         atoms = bomd_si2[0]["atoms"]
@@ -701,7 +701,7 @@ class TestPwBomd:
             assert np.all(np.isfinite(values)), f"{component} is not finite"
 
     def test_forces_finite_and_non_zero(
-        self, bomd_si2: tuple["molrs.Frame", "np.ndarray"]
+        self, bomd_si2: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """The forces written back on the last step are finite and, on the
         stretched cell, not identically zero."""

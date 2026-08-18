@@ -8,7 +8,7 @@ Demonstrates the always-available geometry-optimization surface:
   judges itself), ``set_neighbor`` and ``set_evaluator``;
 * the loop-control metadata a run returns (``iterations``, ``converged``,
   ``stop_reason``), as opposed to the physics, which is written back into
-  the ``molrs.Frame``;
+  the ``molpy.Frame``;
 * a result with a closed-form answer: the 12-6 Lennard-Jones pair
   potential has its minimum at r* = 2^(1/6)·σ, so the optimized bond
   length can be checked against arithmetic instead of a stored number.
@@ -17,7 +17,7 @@ Recipe and gates are those of the C++ end-to-end case
 ``regressions/minimizer/lj_dimer``: start at 1.2 r*, L-BFGS(10, 0.05, 20),
 200 iterations, |r − r*| < 0.01 Å.
 
-MolCrafts stack only (molrs + numpy) — no ASE, no matplotlib. Headless,
+MolCrafts stack only (molpy + numpy) — no ASE, no matplotlib. Headless,
 single process, well under a second. It self-checks its own result and
 **exits nonzero** when a check fails, so it can be smoke-run.
 
@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import sys
 
-import molrs
+import molpy
 import numpy as np
 
 import atomiverse as av
@@ -69,8 +69,8 @@ _MAX_ITER: int = 200
 _R_TOL: float = 0.01  # [Å]
 
 
-def build_dimer_frame(separation: float) -> "molrs.Frame":
-    """Two argon atoms *separation* Å apart along x, as a ``molrs.Frame``.
+def build_dimer_frame(separation: float) -> "molpy.Frame":
+    """Two argon atoms *separation* Å apart along x, as a ``molpy.Frame``.
 
     Geometry optimization needs no velocities: the driver evaluates the
     forces itself and walks downhill on them.
@@ -78,26 +78,26 @@ def build_dimer_frame(separation: float) -> "molrs.Frame":
     @param separation: Initial interatomic distance [Å].
     @return A two-atom frame in a cubic cell of edge ``_BOX``.
     """
-    atoms = molrs.Block()
+    atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, separation], dtype=np.float64))
     atoms.insert("y", np.zeros(2, dtype=np.float64))
     atoms.insert("z", np.zeros(2, dtype=np.float64))
     atoms.insert("mass", np.full(2, _MASS_AR, dtype=np.float64))
     atoms.insert("atomic_number", np.full(2, _Z_AR, dtype=np.uint32))
 
-    frame = molrs.Frame()
+    frame = molpy.Frame()
     frame["atoms"] = atoms
-    frame.box = molrs.Box.cube(_BOX)
+    frame.box = molpy.Box.cube(_BOX)
     return frame
 
 
-def separation(frame: "molrs.Frame") -> float:
+def separation(frame: "molpy.Frame") -> float:
     """Distance between the two atoms of a dimer frame [Å].
 
     Plain Euclidean, no minimum image: the dimer sits at ~4 Å inside a
     40 Å cell, so the direct distance is already the nearest image.
 
-    @param frame: Two-atom molrs.Frame.
+    @param frame: Two-atom molpy.Frame.
     @return Interatomic distance [Å].
     """
     atoms = frame["atoms"]

@@ -147,7 +147,7 @@ Chain continuation
 Consecutive ``run()`` calls on one sampler extend ONE Markov chain — the
 standard ``run(equilibrate); run(sample)`` pattern — so the tallies
 accumulate and the configuration carries over. The frame is materialized
-once, on the first call: edits made to the ``molrs.Frame`` between calls
+once, on the first call: edits made to the ``molpy.Frame`` between calls
 are ignored, and a fresh chain means a fresh sampler object.
 
 The execution plan is likewise compiled once, on that first call, so a
@@ -172,7 +172,7 @@ run while the four named verbs can sum to less.
 
 What comes back on the frame
 ---------------------------
-After every ``run()`` the same ``molrs.Frame`` holds the current
+After every ``run()`` the same ``molpy.Frame`` holds the current
 configuration: positions [A], the box, and the last accepted energy in
 ``frame.meta["energy"]`` [eV] (bit-identical to ``current_energy()`` — a
 rejected trial's energy never survives). Because the sampler scores

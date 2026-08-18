@@ -1115,6 +1115,14 @@ endif()
 
 
 
+if(ATV_BUILD_CLI)
+    atv_add_cpp_test(test_app_input_script
+        app/test_input_script.cpp
+        ${CMAKE_SOURCE_DIR}/app/atomiverse/input_script.cpp)
+    target_include_directories(test_app_input_script PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/atomiverse)
+endif()
+
 # Diagnostic helper (not registered as a test): fixed-V_eff band parity.
 if(ATV_BUILD_CUDA AND ATV_BUILD_PW)
     add_executable(diag_band_parity cuda/planewave/diag_band_parity.cu)
