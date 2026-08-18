@@ -20,4 +20,5 @@ Same-settings CPU `cpu::gpw::GpwDft` / `gpw_stress` as
 | max‖Δσ‖ (xx,yy,zz) | **5×10⁻⁵ Ha/Bohr³** |
 | Off-diagonal | **1×10⁻⁸** |
 
-**perf_exempt** — small-molecule correctness-only.
+**Claim: ◐** — CPU-twin dual-gate; not an independent CP2K pin (CUDA
+rejects Martyna–Tuckerman). **perf_exempt** — small-molecule correctness-only.

@@ -11,7 +11,7 @@
 # GH200 dual-gate for cuda-gpw-product matrix:
 #   water σ, UKS F/σ, multi-k F/σ, plus force/stress unit guards.
 #   sbatch tools/gpu_job_cuda_gpw_product.sh
-set -uo pipefail
+set -euo pipefail
 cd "${SLURM_SUBMIT_DIR}"
 
 BUILD="${TMPDIR:-/tmp}/atv_gpw_product_${SLURM_JOB_ID:-$$}"
@@ -71,18 +71,23 @@ echo "=== STAGE 1: atomiverse ==="
 cmake --build "${BUILD}" -j"${NJ}" --target atomiverse
 
 echo "=== STAGE 2: units + regs ==="
-cmake --build "${BUILD}" -j"${NJ}" --target \
-  test_cuda_gpw_forces test_cuda_gpw_stress \
-  reg_cuda-gpw-product-h2o-stress \
-  reg_cuda-gpw-uks-o2-forces \
-  reg_cuda-gpw-kpoint-forces
+for t in test_cuda_gpw_forces test_cuda_gpw_stress \
+         reg_cuda-gpw-product-h2o-stress \
+         reg_cuda-gpw-uks-o2-forces \
+         reg_cuda-gpw-kpoint-forces; do
+  echo "--- build ${t} ---"
+  cmake --build "${BUILD}" -j"${NJ}" --target "${t}"
+done
 
 ctest --test-dir "${BUILD}" --output-on-failure --timeout 180 \
   -R '^test_cuda_gpw_forces$|^test_cuda_gpw_stress$'
 
 export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
+echo "=== water σ ==="
 "${BUILD}/regressions/reg_cuda-gpw-product-h2o-stress" --device=both
+echo "=== UKS F/σ ==="
 "${BUILD}/regressions/reg_cuda-gpw-uks-o2-forces" --device=both
+echo "=== multi-k F/σ ==="
 "${BUILD}/regressions/reg_cuda-gpw-kpoint-forces" --device=both
 
 echo "GPU_JOB_OK"

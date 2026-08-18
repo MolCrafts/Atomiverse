@@ -14,6 +14,7 @@
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
+#include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 #include "atomiverse/cuda/gpw/gpw_solver.cuh"
 
 using ATV::cpu::gpw::GaussianBasis;

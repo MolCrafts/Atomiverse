@@ -18,4 +18,5 @@ Same-settings CPU H₂ DZV-GTH-PADE, 12 Bohr, 80 Ry, Padé, `n_occ=1`.
 | max\|ΔF\| | **5×10⁻⁵ Ha/Bohr** |
 | max‖Δσ‖ | **5×10⁻⁵ Ha/Bohr³** |
 
+**Claim: ◐** — CPU-twin dual-gate; not an independent CP2K pin.
 **perf_exempt**.

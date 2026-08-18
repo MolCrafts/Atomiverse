@@ -19,4 +19,5 @@ Padé LSD). Oracle: CPU twin.
 | max\|ΔF\| | **5×10⁻⁴ Ha/Bohr** |
 | max‖Δσ‖ | **5×10⁻⁵ Ha/Bohr³** |
 
+**Claim: ◐** — CPU-twin dual-gate; not an independent CP2K pin.
 **perf_exempt**.
