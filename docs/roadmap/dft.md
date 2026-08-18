@@ -458,8 +458,9 @@ Two periodic DFT engines exist, with disjoint strengths:
   CUDA is `cuda::pw::PW` — a strict subset of the CPU method: **LSDA**
   (Slater + VWN5 device kernel) or **PBE** (device closed-shell GGA **and**
   collinear spin-GGA energy, `internal/xc_pbe.cu` — table **Periodic GGA**
-  CUDA ✓ is this energy+F/σ slice; spin×smear **energy** landed, CPU
-  spin×smear forces still closed), **energy** (`run()`),
+  CUDA ✓ is this energy+F/σ slice; collinear spin×smear **energy and
+  analytic forces** compose on CPU and CUDA — shared μ, \(f\in[0,1]\);
+  dual-gate `reg_cuda-pw-spin-pbe`; spin×smear **stress** still closed), **energy** (`run()`),
   **analytic ionic forces** (closed-shell **LSDA + PBE**;
   `cuda::pw::pw_forces_analytic` — local HF + Ewald + KB nonlocal; GH200
   dual-gate), **analytic cell stress** (closed-shell **LSDA + PBE** dual-gate
@@ -470,7 +471,8 @@ Two periodic DFT engines exist, with disjoint strengths:
   GH200 **1130196**) + **collinear LSDA spin stress** (`cuda-pw-spin-stress` /
   GH200 **1135756** max‖Δσ‖=**1.435e-11** eV/Å³; **spin-PBE F/σ landed**
   GH200 **1335945**; **collinear spin×smear energy** GH200 **1336653**
-  \|ΔE\|=1.10e-13 Ha, mag=1.6682; CPU spin×smear **forces** still reject), and **restricted metallic smear** energy (FD/Gaussian/MP +
+  \|ΔE\|=1.10e-13 Ha, mag=1.6682; CPU+CUDA spin×smear **forces** compose
+  in `pw_forces_analytic` / `reg_cuda-pw-spin-pbe`), and **restricted metallic smear** energy (FD/Gaussian/MP +
   `extra_bands` + Mermin free energy) **+ restricted metallic-smear analytic
   ionic forces** (`cuda-pw-smear-forces` / GH200 **1130427** max\|ΔF\|=
   **1.36e-11** eV/Å) **+ restricted metallic-smear cell stress**
@@ -755,7 +757,8 @@ Which engine backs which ✓:
   **+ collinear LSDA spin forces** (`cuda-pw-spin-forces`) **+ restricted
   metallic-smear forces** (`cuda-pw-smear-forces`) **and** CUDA GPW free-fn
   first slice (host AO Pulay + device grid HF; `reg_cuda-gpw-device-forces`
-  H₂; UKS/MG free-fn still reject); spin-PBE F / spin+smear F still reject.
+  H₂; UKS/MG free-fn still reject); spin-PBE F landed; spin×smear F
+  composes on CPU+CUDA (`reg_cuda-pw-spin-pbe`).
 - **PW stress** is **Nielsen–Martin analytic** (`pw_stress` → Frame `kStress`;
   multi-SCF strain-FD oracle `pw_stress_fd`; `reg_pw-analytic-stress-si`).
   **CUDA ◐** = plane-wave closed-shell **LSDA + PBE** (`cuda::pw::pw_stress`;

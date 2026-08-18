@@ -11,12 +11,14 @@
 /// silently degrades to a different Hamiltonian. Supported today:
 /// restricted (nspin = 1) with fixed closed-shell occupations **or**
 /// metallic smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton) and
-/// `XCType::LSDA` / `XCType::PBE`; collinear fixed-occupation UKS
-/// (`spin_polarized`, integer multiplicity) with **`XCType::LSDA` or
-/// `XCType::PBE`**. Restricted smear forces and restricted smear cell stress
-/// are on device; collinear LSDA spin forces **and** LSDA spin cell stress
-/// are on device. spin+smear and spin-PBE forces/stress stay on
-/// `cpu::pw::PW` (or deeper CUDA product rows).
+/// `XCType::LSDA` / `XCType::PBE`; collinear UKS (`spin_polarized`,
+/// integer multiplicity) with **`XCType::LSDA` or `XCType::PBE`**,
+/// fixed occupation **or** metallic smear (shared μ, \(f\in[0,1]\)).
+/// Restricted smear forces and restricted smear cell stress are on
+/// device; collinear LSDA/PBE spin forces (fixed-occ **and** smear)
+/// and LSDA/PBE spin cell stress (fixed-occ) are on device.
+/// spin∧smear analytic stress stays on `cpu::pw::pw_stress_fd` (or a
+/// deeper CUDA product row).
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -173,9 +175,9 @@ class PW {
 /// Ewald + Kleinman–Bylander nonlocal. Local and nonlocal force kernels
 /// run on the device; Ewald is the shared host classical sum. Supports
 /// restricted closed shell (LSDA/PBE), restricted metallic smear
-/// (FD/Gaussian/MP fractional occupations), and collinear fixed-occupation
-/// UKS under **LSDA** only. Rejects spin∧smear, spin∧PBE forces, and other
-/// unsupported members with a how-to.
+/// (FD/Gaussian/MP fractional occupations), collinear fixed-occupation
+/// UKS (LSDA/PBE), and collinear spin×smear (shared μ, \(f\in[0,1]\)).
+/// Rejects unsupported XC / members with a how-to.
 ///
 /// @param frame  Geometry [Å], types (Z), cell; not mutated.
 /// @param method Plane-wave method members (upf/gth, ecut, k_mesh, tol, …).
@@ -192,9 +194,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 /// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\). Restricted metallic
 /// smear uses the Mermin free energy \(F=E_{\mathrm{KS}}-TS\). Supports
 /// restricted fixed closed shell (LSDA/PBE), restricted metallic smear
-/// (FD/Gaussian/MP), and collinear fixed-occupation UKS under **LSDA**
-/// (remaps both \(\rho_\uparrow\) and \(\rho_\downarrow\)). Rejects spin∧smear,
-/// spin∧PBE stress, and other members `PW::run` rejects.
+/// (FD/Gaussian/MP), and collinear fixed-occupation UKS under **LSDA/PBE**
+/// (remaps both \(\rho_\uparrow\) and \(\rho_\downarrow\)). Rejects
+/// spin∧smear analytic stress (use `cpu::pw::pw_stress_fd`) and other
+/// members `PW::run` rejects.
 ///
 /// @param frame         Geometry [Å], types (Z), cell; not mutated.
 /// @param method        Plane-wave method members.

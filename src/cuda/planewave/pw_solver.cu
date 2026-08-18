@@ -565,8 +565,9 @@ PWResult& PW::run(const cpu::Frame& frame) {
 std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                                                       const PW& method) {
     // Gate unsupported force surface before any CUDA work. Restricted fixed
-    // + restricted metallic smear + collinear LSDA/PBE fixed-occ forces
-    // landed; spin∧smear stays closed.
+    // + restricted metallic smear + collinear LSDA/PBE fixed-occ + collinear
+    // spin×smear (shared μ, f∈[0,1]) forces landed; spin∧smear stress stays
+    // closed on both backends.
     method.validate_members();
     if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA
         && method.xc != cpu::scf::XCType::PBE)
@@ -663,7 +664,90 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     AccReal last_energy_ha = AccReal(0);
     int last_iter = 0;
 
-    if (method.spin_polarized) {
+    if (method.spin_polarized && use_smear) {
+        // Same SCF as PW::run: shared μ over spin-orbitals, f∈[0,1].
+        // Must not fall through to the fixed-occ UKS branch (that SCF
+        // energy is the spin-PBE closed-shell value, not the Mermin F).
+        const int n_bs = n_bands;
+        const int mp_order = method.mp_order;
+        std::vector<std::vector<AccReal>> evals_sk(
+            static_cast<std::size_t>(2 * n_kpts));
+        for (int iter = 0; iter < method.max_iter; ++iter) {
+            den.sync_total_rho();
+            den.hartree();
+            den.exchange_correlation_spin();
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    ev.assign(ws.eigenvalues.begin(), ws.eigenvalues.end());
+                    if (static_cast<int>(ev.size()) > n_bs)
+                        ev.resize(static_cast<std::size_t>(n_bs));
+                }
+            }
+            std::vector<AccReal> all_evals;
+            std::vector<AccReal> all_weights;
+            for (int s = 0; s < 2; ++s) {
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    const AccReal w =
+                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                    const auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    for (int b = 0; b < n_bs && b < static_cast<int>(ev.size());
+                         ++b) {
+                        all_evals.push_back(ev[static_cast<std::size_t>(b)]);
+                        all_weights.push_back(w);
+                    }
+                }
+            }
+            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+                all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
+                mp_order, AccReal(1));
+            AccReal e_band = 0;
+            AccReal entropy_sum = 0;
+            for (int s = 0; s < 2; ++s) {
+                den.assemble_veff_spin(s);
+                den.zero_accumulator();
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    const AccReal w =
+                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                    const auto& ev =
+                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
+                    std::vector<AccReal> w_one(ev.size(), w);
+                    auto fill = cpu::pw::internal::fill_occupations(
+                        ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
+                        AccReal(1));
+                    entropy_sum += fill.entropy;
+                    const int nb = static_cast<int>(fill.occ.size());
+                    for (int b = 0; b < nb; ++b)
+                        e_band += w * ev[static_cast<std::size_t>(b)]
+                                  * fill.occ[static_cast<std::size_t>(b)];
+                    solver.accumulate_density(w, omega_bohr, fill.occ.data(),
+                                              nb);
+                }
+                den.collect_spin_out(s);
+            }
+            den.mix_spin_linear();
+            const auto red = den.reduce_spin(static_cast<double>(vol_bohr));
+            ws.E_xc = AccReal(red.e_xc);
+            auto terms = cpu::pw::internal::combine_energy_terms(
+                e_band, AccReal(red.e_h), AccReal(red.e_xc_int),
+                AccReal(red.e_loc), ws.E_xc, prob.ew_total, ws.E_aug);
+            terms.e_one = e_band - AccReal(2.0) * AccReal(red.e_h)
+                          - AccReal(red.e_xc_int);
+            last_energy_ha = terms.e_one + AccReal(red.e_h) + ws.E_xc
+                             + prob.ew_total + ws.E_aug
+                             - degauss_ha * entropy_sum;
+            last_iter = iter + 1;
+            if (conv.step(AccReal(red.resid)))
+                break;
+        }
+    } else if (method.spin_polarized) {
         // Collinear fixed-occupation UKS force-path SCF (CPU twin).
         const int n_occ[2] = {n_alpha, n_beta};
         for (int iter = 0; iter < method.max_iter; ++iter) {

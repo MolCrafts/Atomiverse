@@ -189,9 +189,8 @@ flatten_forces(const std::vector<std::array<double, 3>>& forces) {
 ///         the atom count.
 /// @throws std::invalid_argument (Python `ValueError`) from
 ///         `pw_forces_analytic`: odd valence-electron count on the
-///         restricted fixed-occupation path, `spin_polarized` with metallic
-///         smearing (no force path), incompatible multiplicity parity, empty
-///         frame.
+///         restricted fixed-occupation path, incompatible multiplicity
+///         parity, empty frame.
 ForceArray pw_forces(PW& solver, nb::object frame_obj) {
     auto fref = borrow_molrs_frame(frame_obj);
     ATV::cpu::Frame work = periodic_frame(*fref);
@@ -480,8 +479,7 @@ void bind_pw(nb::module_& m) {
              "Raises RuntimeError on a frame with no box, and ValueError "
              "when the restricted fixed-occupation path is asked for an odd "
              "valence-electron count (set spin_polarized, or a smearing), "
-             "when spin_polarized and a smearing are combined (that force "
-             "path is not implemented), or when the frame has no atoms.")
+             "or when the frame has no atoms.")
         .def("stress", &pw_cell_stress, nb::arg("frame"),
              "Run one SCF and return the analytic Nielsen-Martin cell stress "
              "as a Voigt 6-vector (xx, yy, zz, xy, xz, yz) [eV/A^3]. "

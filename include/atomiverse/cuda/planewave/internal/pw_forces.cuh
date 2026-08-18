@@ -40,7 +40,8 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// V_eff and closed-shell f=2. Restricted metallic smear (`use_smear`): one
 /// V_eff and per-band \(f_b\in[0,2]\) from a shared \(\mu\). Collinear spin
 /// (`n_alpha ≥ 0`): local HF from total ρ; NL re-solves each spin channel
-/// with f=1 and N_σ occupations (spin∧smear rejected upstream).
+/// with f=1 and N_σ occupations. spin∧smear: shared μ over spin-orbitals,
+/// \(f\in[0,1]\) via `smear_f_spinor`.
 ///
 /// @param frame     Geometry [Å]; not mutated.
 /// @param upf_path  UPF path (empty if gth_name is set).

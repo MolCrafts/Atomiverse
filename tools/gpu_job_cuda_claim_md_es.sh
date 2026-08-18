@@ -12,7 +12,7 @@
 # compile+run on device (not GPW product — that is a sibling job):
 #   cuda-md-lj-bench   — OpenMM tile LJ wall (cuda_nonbonded_style_bench)
 #   cuda-scf-gradient  — RHF forces + H2 AIMD smoke
-#   cuda-pw-spin-pbe   — existing energy dual-gate (forces still reject)
+#   cuda-pw-spin-pbe   — energy + analytic-force dual-gate (incl. spin×smear)
 #
 #   sbatch tools/gpu_job_cuda_claim_md_es.sh
 set -euo pipefail
@@ -95,13 +95,13 @@ else
 fi
 echo "CUDA_MD_NPT_OK"
 
-echo "=== STAGE 4: CUDA PW spin-PBE energy (cuda-pw-spin-pbe) ==="
+echo "=== STAGE 4: CUDA PW spin-PBE energy + forces (cuda-pw-spin-pbe) ==="
 cmake --build "${BUILD}" -j"$(nproc)" --target \
   test_cuda_pw_xc_pbe test_cuda_pw_force_local reg_cuda-pw-spin-pbe
 ctest --test-dir "${BUILD}" --output-on-failure --timeout 300 \
   -R '^test_cuda_pw_xc_pbe$|^test_cuda_pw_force_local$'
 "${BUILD}/regressions/reg_cuda-pw-spin-pbe" --device=both
-echo "CUDA_PW_SPIN_PBE_ENERGY_OK"
+echo "CUDA_PW_SPIN_PBE_OK"
 
 echo "=== STAGE 5: wipe ==="
 rm -rf "${BUILD}"
