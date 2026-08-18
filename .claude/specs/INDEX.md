@@ -3,7 +3,12 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
-## Live — claim-completion campaign (2026-08-14, 1 spec live — CUDA track deferred)
+**Live count: 0.** No `*/spec.md` remains. Claim-completion Track P
+(Python) closed 2026-08-15; Track C (`cuda-gpw-product`) closed
+2026-08-18. Sections below that still say “Live” are campaign history
+(specs already deleted).
+
+## Closed — claim-completion campaign (2026-08-14)
 
 Operator directive 2026-08-14: complete CUDA / docs / Python for the
 domains that reached their claim bar. Queue + claim bars:
