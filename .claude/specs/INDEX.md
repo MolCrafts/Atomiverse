@@ -3,8 +3,22 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
-**Live count: 0.** No `*/spec.md` remains. Claim-completion Track P
-(Python) closed 2026-08-15; Track C (`cuda-gpw-product`) closed
+## Live — component-plugin chain (2026-08-18)
+
+Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / 宿主。CUDA 镜像后置。
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [component-plugin-01-probe](component-plugin-01-probe.md) | — | `provides_energy` / `provides_force` 落基类与 kind；FixLangevin 唯一具体覆盖 [approved] |
+| [component-plugin-02-wrap](component-plugin-02-wrap.md) | 01 | `NestedLoopAdapter`：DriverNode → Component，内环对外不透明 [approved] |
+| [component-plugin-03-slot](component-plugin-03-slot.md) | 02 | Plan / pending 只持 `Component*`；`add(DriverNode)` 自动包装 [approved] |
+| [component-plugin-04-match](component-plugin-04-match.md) | 01, 03 | preset `validate_components` 缩成 `require_*`；删族清单与 `name()==langevin` [approved] |
+| [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
+| [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
+
+**Live count: 6.**
+
+Claim-completion Track P (Python) closed 2026-08-15; Track C (`cuda-gpw-product`) closed
 2026-08-18. Sections below that still say “Live” are campaign history
 (specs already deleted).
 

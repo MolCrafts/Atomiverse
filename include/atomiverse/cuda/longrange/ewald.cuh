@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/precision.h"
 #include "atomiverse/cuda/longrange/kspace.cuh"
 
 namespace ATV {
@@ -27,6 +28,10 @@ class KSpaceEwald : public KSpace {
     ~KSpaceEwald() override;
 
     std::string name() const override { return "ewald"; }
+    LongRangeContract long_range_contract() const override {
+        return {LongRangeRole::ReciprocalSpace, AccReal(alpha_), AccReal(0),
+                AccReal(accuracy_)};
+    }
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;

@@ -33,20 +33,19 @@ namespace cuda {
 /// former hand-rolled integer-species format with a per-frame `Step` comment.
 ///
 /// @code{.cpp}
-/// sim.on(md::Phase::end_of_step).add(Recorder{"traj.xyz", 10});
+/// sim.on(md::Phase::end_of_step).add(XyzRecorder{"traj.xyz", 10});
 /// @endcode
-class Recorder : public AsyncBridge {
+class XyzRecorder : public AsyncRecorder {
   public:
-    Recorder(std::string filename, int every = 1)
+    XyzRecorder(std::string filename, int every = 1)
         : filename_(std::move(filename)), every_(every) {}
 
-    ~Recorder() override = default;
-    Recorder(Recorder&&) noexcept = default;
-    Recorder& operator=(Recorder&&) noexcept = default;
+    ~XyzRecorder() override = default;
+    XyzRecorder(XyzRecorder&&) noexcept = default;
+    XyzRecorder& operator=(XyzRecorder&&) noexcept = default;
 
-    std::string name() const override { return "recorder"; }
-    /// @brief Recorder — writes XYZ trajectory frames.
-    /* role via Recorder base */
+    std::string name() const override { return "xyz_recorder"; }
+    /* role via AsyncRecorder / Recorder */
     int frequency() const override { return every_; }
 
   protected:

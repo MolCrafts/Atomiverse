@@ -56,9 +56,7 @@ TEST(CPUDriverRoleValidation, DynamicsThrowsWithoutEnergyForceKind) {
         d.build();
         FAIL() << "expected throw — MD missing Potential / Bias / HF / …";
     } catch (const std::runtime_error& e) {
-        EXPECT_TRUE(message_mentions(e, "Potential")
-                    || message_mentions(e, "Bias") || message_mentions(e, "HF"))
-            << e.what();
+        EXPECT_TRUE(message_mentions(e, "force source")) << e.what();
     }
 }
 
@@ -98,9 +96,7 @@ TEST(CPUDriverRoleValidation, OptimizeThrowsWithoutEnergyOrForceKind) {
         o.build();
         FAIL() << "expected throw — Minimize missing Potential / Bias / HF / …";
     } catch (const std::runtime_error& e) {
-        EXPECT_TRUE(message_mentions(e, "Potential")
-                    || message_mentions(e, "Bias") || message_mentions(e, "HF"))
-            << e.what();
+        EXPECT_TRUE(message_mentions(e, "energy or force source")) << e.what();
     }
 }
 
@@ -125,9 +121,7 @@ TEST(CPUDriverRoleValidation, EvaluateThrowsWithoutEnergyKind) {
         e.build();
         FAIL() << "expected throw — Evaluate missing Potential / Bias / HF / …";
     } catch (const std::runtime_error& ex) {
-        EXPECT_TRUE(message_mentions(ex, "Potential")
-                    || message_mentions(ex, "Bias")
-                    || message_mentions(ex, "HF"))
+        EXPECT_TRUE(message_mentions(ex, "energy or force source"))
             << ex.what();
     }
 }

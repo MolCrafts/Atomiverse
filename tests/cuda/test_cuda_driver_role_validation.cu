@@ -130,9 +130,7 @@ TEST(CUDADriverRoleValidation, MDThrowsWithoutForceEvaluator) {
         d.build();
         FAIL() << "expected throw — MD missing Force-capable evaluator";
     } catch (const std::runtime_error& e) {
-        EXPECT_TRUE(message_mentions(e, "Potential")
-                    || message_mentions(e, "Bias") || message_mentions(e, "HF"))
-            << e.what();
+        EXPECT_TRUE(message_mentions(e, "force source")) << e.what();
     }
 }
 
@@ -185,9 +183,7 @@ TEST(CUDADriverRoleValidation, MinimizeThrowsWithoutEnergyOrForceEvaluator) {
         o.build();
         FAIL() << "expected throw — Minimize missing Energy/Force evaluator";
     } catch (const std::runtime_error& e) {
-        EXPECT_TRUE(message_mentions(e, "Potential")
-                    || message_mentions(e, "Bias") || message_mentions(e, "HF"))
-            << e.what();
+        EXPECT_TRUE(message_mentions(e, "energy or force source")) << e.what();
     }
 }
 
@@ -240,9 +236,7 @@ TEST(CUDADriverRoleValidation, EvaluateThrowsWithoutEvaluator) {
         e.build();
         FAIL() << "expected throw — Evaluate missing Evaluator";
     } catch (const std::runtime_error& ex) {
-        EXPECT_TRUE(message_mentions(ex, "Potential")
-                    || message_mentions(ex, "Bias")
-                    || message_mentions(ex, "HF"))
+        EXPECT_TRUE(message_mentions(ex, "energy or force source"))
             << ex.what();
     }
 }

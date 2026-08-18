@@ -82,15 +82,9 @@ void Runtime::set_frame(cpu::Frame& frame) {
     if (plan_) {
         for (const auto& slot : plan_->slots) {
             for (const auto& op : slot.ops) {
-                if (op.is_driver()) {
-                    const auto* nested =
-                        static_cast<const cpu::DriverNode*>(op.nested_driver);
-                    needs_tag_index =
-                        needs_tag_index || (nested && nested->requires_tag_index());
-                } else if (op.component) {
+                if (op.component)
                     needs_tag_index =
                         needs_tag_index || op.component->requires_tag_index();
-                }
                 if (needs_tag_index)
                     break;
             }
@@ -119,15 +113,6 @@ void Runtime::build_components() {
         auto& slot = plan_->slots[s];
         op_handle_[s].reserve(slot.ops.size());
         for (auto& op : slot.ops) {
-            if (op.is_driver()) {
-                auto* nested = static_cast<cpu::DriverNode*>(op.nested_driver);
-                ATV_DEBUG("building nested driver");
-                nested->build_on(*this);
-                op_handle_[s].push_back(timing.register_op(TimerKey{
-                    "nested_driver", slot.phase,
-                    static_cast<int>(md::StepTiming::Category::Other), ""}));
-                continue;
-            }
             const std::string nm = op.component->name();
             ATV_DEBUG("building component '{}'", nm);
             op.component->build(ctx);
@@ -156,30 +141,6 @@ void Runtime::step(int step_idx) {
             LaunchContext ctx{context_, *frame_, slot.phase, step_idx,
                               /*forces_requested=*/slot.forces_requested
                                   && context_.exec.forces_requested};
-            if (op.is_driver()) {
-                auto* nested = static_cast<cpu::DriverNode*>(op.nested_driver);
-                const auto t0 = timing && have_handles
-                                    ? std::chrono::steady_clock::now()
-                                    : std::chrono::steady_clock::time_point{};
-                // The nested node runs its OWN slots, stamped by ITS
-                // phase_wants_forces — so an energy-only outer phase has to hand
-                // the veto down the Context. AND (never assign): the same node
-                // under MD's force phase must still assemble its gradient.
-                // Restored after the dispatch, so a later phase of this step is
-                // unaffected.
-                const bool saved_forces = context_.exec.forces_requested;
-                context_.exec.forces_requested =
-                    saved_forces && slot.forces_requested;
-                nested->run_nested_erased(context_, *frame_, op.nested_budget);
-                context_.exec.forces_requested = saved_forces;
-                if (timing && have_handles) {
-                    const auto t1 = std::chrono::steady_clock::now();
-                    timing_reg.record(
-                        op_handle_[s][o],
-                        std::chrono::duration<double>(t1 - t0).count());
-                }
-                continue;
-            }
             // Resolution-discipline window (frame-block-01): a component that
             // looks mapping keys up inside a loop blows the budget and throws.
             frame_->begin_resolution_window(kResolveBudgetPerLaunch);
@@ -245,11 +206,6 @@ void Runtime::build_plan(const Plan<cpu::Component>& plan) {
     BuildContext ctx{context_, *frame_};
     for (const auto& slot : plan.slots) {
         for (const auto& op : slot.ops) {
-            if (op.is_driver()) {
-                static_cast<cpu::DriverNode*>(op.nested_driver)
-                    ->build_on(*this);
-                continue;
-            }
             ATV_DEBUG("building nested component '{}'", op.component->name());
             op.component->build(ctx);
         }
@@ -263,23 +219,6 @@ void Runtime::step_plan(const Plan<cpu::Component>& plan, int step_idx) {
         for (const auto& op : slot.ops) {
             if (op.frequency > 0 && step_idx % op.frequency != 0)
                 continue;
-            if (op.is_driver()) {
-                // Step-level state for the node (no active window), caller's
-                // window back untouched — see the section note above. Same
-                // save/AND/restore for the force-request veto: `step_plan` reads
-                // the NESTED plan's slots, so ANDing the outer flag into the
-                // Context here is what carries one veto through arbitrary depth.
-                const auto saved = frame_->resolution_window();
-                const bool saved_forces = context_.exec.forces_requested;
-                frame_->restore_resolution_window(ResolutionWindow{});
-                context_.exec.forces_requested =
-                    saved_forces && slot.forces_requested;
-                static_cast<cpu::DriverNode*>(op.nested_driver)
-                    ->run_nested_erased(context_, *frame_, op.nested_budget);
-                context_.exec.forces_requested = saved_forces;
-                frame_->restore_resolution_window(saved);
-                continue;
-            }
             LaunchContext ctx{context_, *frame_, slot.phase, step_idx,
                               /*forces_requested=*/slot.forces_requested
                                   && context_.exec.forces_requested};
@@ -298,11 +237,6 @@ void Runtime::destroy_plan(const Plan<cpu::Component>& plan) {
         const auto& slot = plan.slots[s];
         for (int o = static_cast<int>(slot.ops.size()) - 1; o >= 0; --o) {
             const auto& op = slot.ops[o];
-            if (op.is_driver()) {
-                static_cast<cpu::DriverNode*>(op.nested_driver)
-                    ->destroy_on(*this);
-                continue;
-            }
             ATV_DEBUG("destroying nested component '{}'", op.component->name());
             op.component->destroy(ctx);
         }
@@ -329,18 +263,6 @@ void Runtime::run_slot_(int slot_index, int step_idx) {
         if (slot.phase != slot_index)
             continue;
         for (auto& op : slot.ops) {
-            if (op.is_driver()) {
-                const auto saved = frame_->resolution_window();
-                const bool saved_forces = context_.exec.forces_requested;
-                frame_->restore_resolution_window(ResolutionWindow{});
-                context_.exec.forces_requested =
-                    saved_forces && slot.forces_requested;
-                static_cast<cpu::DriverNode*>(op.nested_driver)
-                    ->run_nested_erased(context_, *frame_, op.nested_budget);
-                context_.exec.forces_requested = saved_forces;
-                frame_->restore_resolution_window(saved);
-                continue;
-            }
             LaunchContext ctx{context_, *frame_, slot.phase, step_idx,
                               /*forces_requested=*/slot.forces_requested
                                   && context_.exec.forces_requested};
@@ -369,8 +291,6 @@ Runtime::collect_component_memory() const {
         std::vector<const cpu::Component*> seen;
         for (const auto& slot : plan_->slots) {
             for (const auto& op : slot.ops) {
-                if (op.is_driver())
-                    continue;
                 const cpu::Component* c = op.component;
                 if (!c || std::find(seen.begin(), seen.end(), c) != seen.end())
                     continue;
@@ -400,11 +320,6 @@ void Runtime::destroy_components() {
         auto& slot = plan_->slots[s];
         for (int o = static_cast<int>(slot.ops.size()) - 1; o >= 0; --o) {
             auto& op = slot.ops[o];
-            if (op.is_driver()) {
-                static_cast<cpu::DriverNode*>(op.nested_driver)
-                    ->destroy_on(*this);
-                continue;
-            }
             ATV_DEBUG("destroying component '{}'", op.component->name());
             op.component->destroy(ctx);
         }

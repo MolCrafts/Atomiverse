@@ -1,33 +1,25 @@
 /// @file tests/cuda/test_driver_binding_kind.cu
-/// @brief arch-refactor-01-bindings — CUDA mirror of the registration-time
-///        `PhaseKind` gate in `Driver::add()`.
+/// @brief PhaseKind gate on CUDA categorical setters (mirrors the CPU
+///        `test_driver_binding_kind` `set_observer` / `set_evaluator` cases).
 ///
-/// Covers:
-///   - `cuda::md::MD::add(cuda::scf::SCF{...})` throws — the
-///     evaluator loses its hardcoded `default_bindings()` and falls onto
-///     the existing "no default bindings. Use .on(phase).add()." path;
-///   - `cuda::Evaluate::add(cuda::md::VelocityVerlet{...})` throws with an
-///     error naming BOTH workflows ("MD" and "Evaluate").
-///
-/// `add()` only registers pending bindings — no device work — so these
-/// tests need no CUDA device (mirrors
-/// tests/cuda/test_cuda_driver_role_validation.cu).
-///
-/// Tests target the FINAL API of the spec; on the pre-refactor tree the
-/// cross-workflow `add()` calls do NOT throw (silent phase-index misbind),
-/// so this file presents RED as assertion failures once compiled on a CUDA
-/// node.
-///
-/// Spec: `.claude/specs/arch-refactor-01-bindings.md` (Files E).
+/// `on(phase).add` is explicit and is not gated. Cross-workflow default
+/// bindings are rejected when they arrive through `set_observer` /
+/// `bind_defaults`.
 
 #include <gtest/gtest.h>
 
 #include <stdexcept>
 #include <string>
+#include <vector>
 
+#include "atomiverse/core/binding.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cuda/component/component.cuh"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #include "atomiverse/cuda/evaluate/evaluate.cuh"
+#include "atomiverse/cuda/minimize/minimize.cuh"
+#include "atomiverse/cuda/minimize/sd.cuh"
 #include "atomiverse/cuda/scf/scf_evaluator.cuh"
 
 namespace {
@@ -36,28 +28,27 @@ bool message_mentions(const std::runtime_error& e, const std::string& needle) {
     return std::string(e.what()).find(needle) != std::string::npos;
 }
 
-// ─── Violating evaluator: cuda SCF loses default_bindings() ────
-//
-// Regression target: pre-refactor, `md.set_evaluator(SCF{...})` silently
-// landed the evaluator on `md::Phase::post_integrate` (the erased int `1`
-// of `evaluate::Phase::evaluate`). Post-refactor the override is deleted,
-// so `add()` takes the existing "has no default bindings" rejection path.
+class EvaluateKindProbe : public ATV::cuda::Component {
+  public:
+    std::string name() const override { return "evaluate_kind_probe"; }
+    std::vector<ATV::DefaultBinding> default_bindings() const override {
+        return {ATV::make_binding(ATV::evaluate::Phase::evaluate, 0)};
+    }
+    void launch(const ATV::cuda::LaunchContext&) override {}
+};
 
-TEST(CudaDriverBindingKind, MdAddScfEvaluatorThrows) {
+} // namespace
+
+TEST(CudaDriverBindingKind, MdSetEvaluatorScfNoThrow) {
     ATV::cuda::md::MD md;
-    // Synthetic-path constructor (n_occ, alpha, tol, max_iter) — available
-    // with or without ATV_HAS_HF.
-    EXPECT_THROW(md.set_evaluator(ATV::cuda::scf::SCF{2, 0.1, 1e-6, 100}),
-                 std::runtime_error);
+    EXPECT_NO_THROW(md.set_evaluator(ATV::cuda::scf::SCF{2, 0.1, 1e-6, 100}));
 }
 
-// ─── Kind gate: error names BOTH workflows ──────────────────────────────
-
-TEST(CudaDriverBindingKind, EvaluateAddVelocityVerletThrowsWithBothKinds) {
+TEST(CudaDriverBindingKind,
+     EvaluateSetObserverVelocityVerletThrowsWithBothKinds) {
     ATV::cuda::Evaluate ev;
     try {
-        // rvalue `add()` branch.
-        ev.add(ATV::cuda::md::VelocityVerlet{0.01});
+        ev.set_observer(ATV::cuda::md::VelocityVerlet{0.01});
         FAIL() << "expected throw — MD-kind default bindings registered "
                   "into a cuda::Evaluate driver";
     } catch (const std::runtime_error& e) {
@@ -66,4 +57,38 @@ TEST(CudaDriverBindingKind, EvaluateAddVelocityVerletThrowsWithBothKinds) {
     }
 }
 
-} // namespace
+TEST(CudaDriverBindingKind,
+     MinimizeSetObserverVelocityVerletThrowsWithBothKinds) {
+    ATV::cuda::minimizer::Minimize opt;
+    try {
+        opt.set_observer(ATV::cuda::md::VelocityVerlet{0.01});
+        FAIL() << "expected throw — MD-kind default bindings registered "
+                  "into a cuda::Minimize driver";
+    } catch (const std::runtime_error& e) {
+        EXPECT_TRUE(message_mentions(e, "MD")) << e.what();
+        EXPECT_TRUE(message_mentions(e, "Minimizer")) << e.what();
+    }
+}
+
+TEST(CudaDriverBindingKind, MdSetObserverEvaluateKindProbeThrows) {
+    ATV::cuda::md::MD md;
+    try {
+        md.set_observer(EvaluateKindProbe{});
+        FAIL() << "expected throw — Evaluate-kind default bindings "
+                  "registered into an MD driver";
+    } catch (const std::runtime_error& e) {
+        EXPECT_TRUE(message_mentions(e, "Evaluate")) << e.what();
+        EXPECT_TRUE(message_mentions(e, "MD")) << e.what();
+    }
+}
+
+TEST(CudaDriverBindingKind, MdSetIntegratorSameKindNoThrow) {
+    ATV::cuda::md::MD md;
+    EXPECT_NO_THROW(md.set_integrator(ATV::cuda::md::VelocityVerlet{0.01}));
+}
+
+TEST(CudaDriverBindingKind, MinimizeSetOptimizerSameKindNoThrow) {
+    ATV::cuda::minimizer::Minimize opt;
+    EXPECT_NO_THROW(
+        opt.set_optimizer(ATV::cuda::minimizer::SteepestDescent{0.01}));
+}

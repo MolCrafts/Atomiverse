@@ -8,7 +8,11 @@ namespace ATV {
 namespace cpu {
 
 /// @brief Gaussian-and-plane-waves DFT electronic structure.
-class GPW : public Component {};
+class GPW : public Component {
+  public:
+    bool provides_energy() const override { return true; }
+    bool provides_force() const override { return true; }
+};
 
 } // namespace cpu
 } // namespace ATV

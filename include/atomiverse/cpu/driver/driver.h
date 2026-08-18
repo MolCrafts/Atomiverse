@@ -81,8 +81,12 @@
 #include "atomiverse/cpu/component/constraint_protocol.h"
 #include "atomiverse/cpu/component/criterion.h"
 #include "atomiverse/cpu/component/halo_participant.h"
+#include "atomiverse/cpu/component/hf.h"
+#include "atomiverse/cpu/component/integrator.h"
 #include "atomiverse/cpu/component/long_range_protocol.h"
+#include "atomiverse/cpu/component/mover.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
+#include "atomiverse/cpu/component/optimizer.h"
 #include "atomiverse/cpu/component/pair_evaluator.h"
 #include "atomiverse/cpu/driver/backend_traits.h"
 #include "atomiverse/cpu/driver/dof.h"
@@ -209,13 +213,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         bind_halo_participants_();
         validate_long_range_contract_();
         validate_components();
-        // Capture the Constraint components NOW, while `pending_` still holds them:
-        // `Base::build()` consumes the pending list into the compiled Plan, so a scan
-        // in setup_pass() would find an empty list and publish Ndof = 3N-3 with zero
-        // constraints. That is not hypothetical — it shipped, and the rigid-water
-        // regression caught it: the geometry was rigid but the thermostat drove the
-        // system to the UNCONSTRAINED kinetic target, landing at 447 K against a
-        // 300 K setpoint. The count itself still has to wait for setup_pass, because
+        // Capture Constraint components from the live mount table. Plan is a
+        // snapshot of that table; `pending_` is no longer cleared by Base::build().
+        // The count itself still has to wait for setup_pass, because
         // it depends on the frame, which is not bound yet.
         // Dedup by pointer: `for_each_pending` walks BINDINGS, not unique components,
         // and FixRattle declares three (snapshot / positions / velocities). Counting
@@ -284,6 +284,77 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         this->backend_->set_threads(n);
     }
 
+    /// @brief Unmount one plugin by `name()` (LAMMPS `unfix`).
+    ///
+    /// Destroys the node if it has been built, drops it from the live table,
+    /// recompiles the Plan, and re-runs the same closure as `build()`.
+    /// Call between steps or `run()` chunks, not from `launch()`.
+    /// @param name_or_id Exact `Component::name()`.
+    /// @throws std::runtime_error if none / several match, if called during
+    ///         launch, or if the remaining set fails `validate_components`.
+    void unfix(std::string_view name_or_id) {
+        if (launching_) {
+            throw std::runtime_error(
+                "unfix: cannot unfix from inside launch(). Unfix between "
+                "steps or run() chunks.");
+        }
+        std::vector<std::size_t> hits;
+        for (std::size_t i = 0; i < this->pending_.size(); ++i) {
+            cpu::Component* c = this->pending_[i].component;
+            if (c && c->name() == name_or_id)
+                hits.push_back(i);
+        }
+        if (hits.empty()) {
+            std::string have;
+            for (const auto& pb : this->pending_) {
+                if (!pb.component)
+                    continue;
+                if (!have.empty())
+                    have += ", ";
+                have += pb.component->name();
+            }
+            throw std::runtime_error(
+                "unfix: no plugin named '" + std::string(name_or_id)
+                + "'. mounted: [" + have
+                + "]. Remount with on(phase).add / set_evaluator.");
+        }
+        if (hits.size() > 1) {
+            throw std::runtime_error(
+                "unfix: name '" + std::string(name_or_id)
+                + "' is not unique. Give plugins distinct name() values.");
+        }
+        cpu::Component* c = this->pending_[hits[0]].component;
+        if (live_ && this->backend_ && built_plugins_.count(c)) {
+            Plan<cpu::Component> one;
+            one.slots.resize(1);
+            one.slots[0].phase = 0;
+            Operation<cpu::Component> op;
+            op.component = c;
+            one.slots[0].ops.push_back(op);
+            this->backend_->destroy_plan(one);
+            built_plugins_.erase(c);
+        }
+        this->pending_.erase(this->pending_.begin()
+                             + static_cast<std::ptrdiff_t>(hits[0]));
+        this->owned_components_.erase(
+            std::remove_if(this->owned_components_.begin(),
+                           this->owned_components_.end(),
+                           [c](const std::unique_ptr<cpu::Component>& p) {
+                               return p.get() == c;
+                           }),
+            this->owned_components_.end());
+        auto clear_slot = [&](std::optional<std::string>& slot) {
+            if (slot && *slot == name_or_id)
+                slot.reset();
+        };
+        clear_slot(neighbor_set_);
+        clear_slot(pair_set_);
+        clear_slot(bond_set_);
+        clear_slot(angle_set_);
+        clear_slot(dihedral_set_);
+        rebind_from_live_table_();
+    }
+
     /// @brief Run serially on a full-replica frame even under multi-rank
     /// MPI (Backend::set_serial_on_replica passthrough): the Backend skips
     /// DD topology, so `set_frame` never partitions. For molecular
@@ -335,51 +406,38 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// per binding — duplicate-tolerant predicates expected.
     template <typename Fn>
     void for_each_pending(Fn&& fn) const {
-        for (const auto& pb : this->pending_) {
-            if (pb.is_driver())
-                continue;
+        for (const auto& pb : this->pending_)
             fn(*pb.component);
-        }
     }
 
-    /// @brief Mutable component walk (driver-nodes skipped).
+    /// @brief Mutable component walk.
     template <typename Fn>
     void for_each_pending_mut(Fn&& fn) {
-        for (auto& pb : this->pending_) {
-            if (pb.is_driver())
-                continue;
+        for (auto& pb : this->pending_)
             fn(*pb.component);
-        }
     }
 
-    /// @brief Node-aware pending walk: components and nested drivers.
+    /// @brief Node-aware pending walk: components and wrapped nested drivers.
     ///
-    /// Used by outer `validate_components` so a method-driver (pure `HF` tag,
-    /// not a Component) is recognised as an energy/force source via
-    /// `dynamic_cast<const HF*>(driver_ptr)`.
+    /// A `NestedLoopAdapter` is unwrapped so a method-driver (pure `HF` tag)
+    /// is still recognised via `dynamic_cast<const HF*>(driver_ptr)`.
     template <typename CompFn, typename DrvFn>
     void for_each_pending_kind(CompFn&& cfn, DrvFn&& dfn) const {
         for (const auto& pb : this->pending_) {
-            if (pb.is_driver())
-                dfn(static_cast<const cpu::DriverNode*>(pb.nested_driver));
+            if (const auto* ad =
+                    dynamic_cast<const cpu::NestedLoopAdapter*>(pb.component))
+                dfn(ad->inner());
             else
                 cfn(*pb.component);
         }
     }
 
-    /// @brief Mutable node-aware pending walk: components and nested drivers.
-    ///
-    /// The mutable twin of @ref for_each_pending_kind, for build-time wiring
-    /// that must *write* to a node rather than inspect it (pushing the
-    /// integrator timestep into a `TimestepConsumer`, whose nested-driver
-    /// half is reached by `dynamic_cast<cpu::TimestepConsumer*>`). Components
-    /// with multiple `default_bindings()` entries appear once per binding —
-    /// deduplicate by pointer when the visit has an effect.
+    /// @brief Mutable node-aware pending walk: components and wrapped drivers.
     template <typename CompFn, typename DrvFn>
     void for_each_pending_kind_mut(CompFn&& cfn, DrvFn&& dfn) {
         for (auto& pb : this->pending_) {
-            if (pb.is_driver())
-                dfn(static_cast<cpu::DriverNode*>(pb.nested_driver));
+            if (auto* ad = dynamic_cast<cpu::NestedLoopAdapter*>(pb.component))
+                dfn(ad->inner());
             else
                 cfn(*pb.component);
         }
@@ -396,8 +454,6 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         std::vector<cpu::HaloParticipant*> endpoints;
         std::unordered_set<const cpu::Component*> seen;
         for (auto& pb : this->pending_) {
-            if (pb.is_driver())
-                continue;
             cpu::Component* c = pb.component;
             if (!seen.insert(c).second)
                 continue;
@@ -539,7 +595,14 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
 
     /// @brief Single iteration through the compiled Plan.
     /// @param iter_index Index of the iteration to execute (0-based).
-    void step_once(int iter_index) { this->backend_->step(iter_index); }
+    void step_once(int iter_index) {
+        struct Guard {
+            bool& flag;
+            explicit Guard(bool& f) : flag(f) { flag = true; }
+            ~Guard() { flag = false; }
+        } guard(launching_);
+        this->backend_->step(iter_index);
+    }
 
     // ── Continuation (MD and MC; the other presets run fresh each call) ─────
     //
@@ -567,10 +630,14 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         if (live_ && frame_ptr_ != &frame) {
             this->backend_->destroy_components();
             live_ = false;
+            built_plugins_.clear();
         }
-        if (live_)
+        if (live_) {
+            flush_new_mounts_();
             return false;
+        }
         setup_pass(frame);
+        mark_built_from_pending_();
         frame_ptr_ = &frame;
         step_counter_ = 0;
         live_ = true;
@@ -591,6 +658,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             this->backend_->destroy_components();
         live_ = false;
         frame_ptr_ = nullptr;
+        built_plugins_.clear();
     }
 
     /// @brief The cumulative step index across every `run()` call, then advance it.
@@ -777,15 +845,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
                 needed = needed || (d && d->requires_tag_index());
             });
         for (const auto& slot : this->plan().slots)
-            for (const auto& op : slot.ops) {
-                if (op.is_driver()) {
-                    const auto* nested =
-                        static_cast<const cpu::DriverNode*>(op.nested_driver);
-                    needed = needed || (nested && nested->requires_tag_index());
-                } else if (op.component) {
+            for (const auto& op : slot.ops)
+                if (op.component)
                     needed = needed || op.component->requires_tag_index();
-                }
-            }
         return needed;
     }
 
@@ -1114,6 +1176,12 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         bool has_halo_recv = false;  ///< A HaloRecv is already registered.
         bool has_charge_updater =
             false; ///< A component rewrites owned charges mid-step.
+        bool has_energy = false;     ///< Some plugin provides_energy().
+        bool has_force = false;      ///< Some plugin provides_force().
+        bool has_integrator = false; ///< An Integrator kind is registered.
+        bool has_optimizer = false;  ///< An Optimizer kind is registered.
+        bool has_mover = false;      ///< A Mover kind is registered.
+        bool has_hessian = false;    ///< Some plugin provides_hessian().
         std::string neighbor_consumer_name; ///< First `NeighborConsumer`.
         std::optional<AccReal>
             neighbor_consumer_cutoff; ///< Set when it declares a cutoff > 0.
@@ -1142,62 +1210,171 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// exists. Non-owning: the Plan owns the components.
     std::vector<const cpu::ConstraintProvider*> constraint_providers_;
 
-    /// @brief Walk the pending list once, collect everything install_defaults
-    /// rules might need.
+    /// @brief Const scan: provide/require facts plus const protocol probes.
     ///
-    /// Keyed entirely on capability-typed probes (`reads()`,
-    /// `capabilities()`, `role()`, the `as_neighbor_consumer()` /
-    /// `as_neighbor_provider()` protocol accessors, and the
-    /// `halo_participant()`/`halo_endpoint()` protocol accessor) — no
-    /// `name()` string matching and no RTTI cast, so user-supplied
-    /// neighbor structures / stress providers / halo endpoints participate
-    /// in auto-injection whatever their `name()`. Same pattern as
-    /// `cuda::md::MD::install_infra_`. Non-const because the halo probe is
-    /// non-const (its other caller, the bind pass, mutates endpoints).
-    /// @return The collected facts about the pending component set.
-    InfraScan scan_pending_infra_() {
+    /// Energy/force come from `provides_*` (adapters forward HF). Integrator /
+    /// Optimizer / Mover stay kind probes. Nested DriverNodes contribute only
+    /// via a single `HF` cross-cast. No family type list, no `name()==langevin`.
+    InfraScan scan_pending_infra_() const {
         InfraScan s;
+        for_each_pending_kind(
+            [&](const cpu::Component& c) {
+                if (c.provides_energy())
+                    s.has_energy = true;
+                if (c.provides_force())
+                    s.has_force = true;
+                if (c.provides_hessian())
+                    s.has_hessian = true;
+                if (dynamic_cast<const cpu::Integrator*>(&c))
+                    s.has_integrator = true;
+                if (dynamic_cast<const cpu::Optimizer*>(&c))
+                    s.has_optimizer = true;
+                if (dynamic_cast<const cpu::Mover*>(&c))
+                    s.has_mover = true;
+                if (c.requires_system_stress())
+                    s.needs_stress = true;
+                if (c.provides_system_stress())
+                    s.has_virial_stress = true;
+                if (c.as_neighbor_provider())
+                    s.has_neighbor_list = true;
+                if (c.as_constraint())
+                    s.has_constraint = true;
+                if (c.updates_owned_charges())
+                    s.has_charge_updater = true;
+                if (const cpu::NeighborConsumer* nc =
+                        c.as_neighbor_consumer()) {
+                    if (s.neighbor_consumer_name.empty())
+                        s.neighbor_consumer_name = c.name();
+                    const AccReal hc = nc->halo_cutoff();
+                    if (hc > AccReal(0)
+                        && (!s.neighbor_consumer_cutoff
+                            || hc > *s.neighbor_consumer_cutoff))
+                        s.neighbor_consumer_cutoff = hc;
+                }
+            },
+            [&](const cpu::DriverNode* d) {
+                const auto* hf = dynamic_cast<const cpu::HF*>(d);
+                if (!hf)
+                    return;
+                if (hf->provides_energy())
+                    s.has_energy = true;
+                if (hf->provides_force())
+                    s.has_force = true;
+            });
+        return s;
+    }
+
+    /// @brief Mutable scan: const facts plus halo endpoints.
+    InfraScan scan_pending_infra_() {
+        InfraScan s =
+            static_cast<const Driver<PhaseEnum>*>(this)->scan_pending_infra_();
         for_each_pending_mut([&](cpu::Component& c) {
-            if (c.requires_system_stress())
-                s.needs_stress = true;
-            if (c.provides_system_stress())
-                s.has_virial_stress = true;
-            if (c.as_neighbor_provider())
-                s.has_neighbor_list = true;
-            if (c.as_constraint())
-                s.has_constraint = true;
-            if (c.updates_owned_charges())
-                s.has_charge_updater = true;
-            if (cpu::HaloParticipant* hp = c.halo_participant()) {
-                if (hp->halo_endpoint() == cpu::HaloParticipant::Endpoint::send)
-                    s.has_halo_send = true;
-                if (hp->halo_endpoint() == cpu::HaloParticipant::Endpoint::recv)
-                    s.has_halo_recv = true;
-            }
-            if (const cpu::NeighborConsumer* nc = c.as_neighbor_consumer()) {
-                if (s.neighbor_consumer_name.empty())
-                    s.neighbor_consumer_name = c.name();
-                // MAX over every consumer, not the first one that happens to be
-                // scanned. The halo has to satisfy all of them at once: a plan with
-                // PairLJCut (8 A) and CoulLong (12 A) used to size its ghost shell
-                // from whichever landed first in the pending list. And a many-body
-                // style asks for MORE than its interaction cutoff — EAM needs a
-                // ghost-of-ghost shell of 2 r_c to complete rho on ghosts (see
-                // NeighborConsumer::halo_cutoff).
-                const AccReal hc = nc->halo_cutoff();
-                if (hc > AccReal(0)
-                    && (!s.neighbor_consumer_cutoff
-                        || hc > *s.neighbor_consumer_cutoff))
-                    s.neighbor_consumer_cutoff = hc;
-            }
+            cpu::HaloParticipant* hp = c.halo_participant();
+            if (!hp)
+                return;
+            if (hp->halo_endpoint() == cpu::HaloParticipant::Endpoint::send)
+                s.has_halo_send = true;
+            if (hp->halo_endpoint() == cpu::HaloParticipant::Endpoint::recv)
+                s.has_halo_recv = true;
         });
         return s;
+    }
+
+    /// @brief Throw unless some plugin provides energy.
+    void require_energy() const {
+        if (!scan_pending_infra_().has_energy)
+            throw_missing("energy source");
+    }
+    /// @brief Throw unless some plugin provides force.
+    void require_force() const {
+        if (!scan_pending_infra_().has_force)
+            throw_missing("force source");
+    }
+    /// @brief Throw unless some plugin provides energy or force.
+    void require_energy_or_force() const {
+        const InfraScan s = scan_pending_infra_();
+        if (!s.has_energy && !s.has_force)
+            throw_missing("energy or force source");
+    }
+    /// @brief Throw unless an Integrator is registered.
+    void require_integrator() const {
+        if (!scan_pending_infra_().has_integrator)
+            throw_missing("Integrator");
+    }
+    /// @brief Throw unless an Optimizer is registered.
+    void require_optimizer() const {
+        if (!scan_pending_infra_().has_optimizer)
+            throw_missing("Optimizer");
+    }
+    /// @brief Throw unless a Mover is registered.
+    void require_mover() const {
+        if (!scan_pending_infra_().has_mover)
+            throw_missing("Mover");
+    }
+    /// @brief Throw unless some plugin assembles Hessian rows.
+    void require_hessian() const {
+        if (!scan_pending_infra_().has_hessian)
+            throw_missing("hessian accumulator");
     }
 
     /// @brief Shared missing-NL check. `setter_help` is the
     /// driver-specific instruction printed in the throw message
     /// (`set_evaluator` is the same, but the variable name differs:
     /// `sim` / `opt` / `eval`).
+    bool pending_named_(std::string_view n) const {
+        bool found = false;
+        for_each_pending([&](const cpu::Component& c) {
+            if (c.name() == n)
+                found = true;
+        });
+        return found;
+    }
+
+    void mark_built_from_pending_() {
+        built_plugins_.clear();
+        for_each_pending_mut(
+            [&](cpu::Component& c) { built_plugins_.insert(&c); });
+    }
+
+    void flush_new_mounts_() {
+        if (!this->backend_)
+            return;
+        for (auto& pb : this->pending_) {
+            cpu::Component* c = pb.component;
+            if (!c || built_plugins_.count(c))
+                continue;
+            Plan<cpu::Component> one;
+            one.slots.resize(1);
+            one.slots[0].phase = 0;
+            Operation<cpu::Component> op;
+            op.component = c;
+            one.slots[0].ops.push_back(op);
+            this->backend_->build_plan(one);
+            built_plugins_.insert(c);
+        }
+        rebind_from_live_table_();
+    }
+
+    void rebind_from_live_table_() {
+        PlanBuilder<cpu::Component> builder;
+        for (auto& pb : this->pending_) {
+            typename PlanBuilder<cpu::Component>::Entry e;
+            e.phase = pb.phase;
+            e.order = pb.order;
+            e.component = pb.component;
+            builder.add(e);
+        }
+        this->plan_ = builder.build(ATV::slot_count<PhaseEnum>());
+        for (auto& s : this->plan_.slots)
+            s.forces_requested =
+                phase_wants_forces(static_cast<PhaseEnum>(s.phase));
+        if (this->backend_)
+            this->backend_->load(this->plan());
+        bind_halo_participants_();
+        validate_long_range_contract_();
+        validate_components();
+    }
+
     void throw_if_missing_neighbor_list_(const InfraScan& s,
                                          const char* driver_name,
                                          const char* setter_help) const {
@@ -1246,9 +1423,11 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     std::unique_ptr<cpu::OutcomePolicy> outcome_;
 
     // Continuation bookkeeping — shared by the time-like presets (MD, MC).
-    bool live_ = false; ///< Backend live between first run() and teardown.
+    bool live_ = false;      ///< Backend live between first run() and teardown.
+    bool launching_ = false; ///< True only inside `step_once`.
     cpu::Frame* frame_ptr_ = nullptr; ///< Frame bound by the live run.
     int step_counter_ = 0; ///< Cumulative step index across run() calls.
+    std::unordered_set<cpu::Component*> built_plugins_;
 
   private:
     // ── Categorical setter slots ────────────────────────────────────

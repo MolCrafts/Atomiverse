@@ -38,14 +38,9 @@ namespace md {
 /// Auto-binds to end_of_step at order -100 (after ZeroKinetic at -1000,
 /// before user observers at order >= 0).
 ///
-/// `role()` stays `None` and `capabilities()` stays `None` (the
-/// `Component` defaults), mirroring `cpu::md::KineticEnergy`:
-/// kinetic energy is written to `frame.scalars->kinetic`, which is **not** one of
-/// the `Capability` bits (those cover potential `Energy`, `Force`,
-/// `Stress`, charge / density / orbital fields). It is a structural
-/// diagnostic, not a force/energy producer, so `cuda::md::MD`
-/// validation does not count it toward the `Capability::Force`
-/// requirement.
+/// `provides_energy()` / `provides_force()` stay false: kinetic energy
+/// is a structural diagnostic, not a plugin energy/force source, so
+/// `cuda::md::MD` validation does not count it toward `require_force()`.
 class KineticEnergy : public Component {
   public:
     /// @brief Component name.

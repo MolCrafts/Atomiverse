@@ -114,9 +114,12 @@ class FixLangevin : public cpu::Thermostat {
 
     std::string name() const override { return "fix_langevin"; }
     /* role via Thermostat base */
+    /// @brief Writes drag + random forces; the Thermostat kind stays
+    ///        energy/force-false so only this concrete overrides.
+    bool provides_force() const override { return true; }
     /// @brief Langevin's role is Thermostat, but it functionally writes
     /// drag + random forces into fx/fy/fz — so it advertises
-    /// Capability::Force. This lets a pure Langevin run (no LJ / bonded
+    /// `provides_force()`. This lets a pure Langevin run (no LJ / bonded
     /// evaluator) satisfy `cpu::md::MD::validate_components()`'s "something
     /// writes forces" contract.
     std::vector<DefaultBinding> default_bindings() const override {

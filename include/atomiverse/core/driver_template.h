@@ -5,9 +5,8 @@
 /// All method bodies are defined inline (template class). Explicit
 /// instantiations live in src/cpu/driver/driver.cpp and src/cuda/driver/driver.cu.
 ///
-/// Plan slots hold a Component* **or** a nested-driver binding (CPU only).
-/// Nested drivers are registered via `on(phase).add(driver, order, budget)` /
-/// `add_ref` and erased as `cpu::DriverNode*` (stored as void* in pending/plan).
+/// Plan slots hold a Component*. A nested CPU loop is wrapped as
+/// `cpu::NestedLoopAdapter` at `on(phase).add` / `add_ref`.
 #pragma once
 
 #include <memory>
@@ -23,6 +22,7 @@
 #include "atomiverse/core/plan.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/driver/driver_node.h"
+#include "atomiverse/cpu/driver/nested_loop_adapter.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/device/timer.h"
 
@@ -31,20 +31,24 @@ namespace ATV {
 /// @brief GPU profiler type held by `Driver` (CUDA-free PIMPL facade).
 using Timer = cuda::Timer;
 
+/// @brief Instance identity of a mounted plugin (pointer, not type or name).
+struct PluginIdentity {
+    const void* instance = nullptr;
+    bool operator==(PluginIdentity o) const noexcept {
+        return instance == o.instance;
+    }
+};
+
 namespace detail {
 /// @brief Unresolved binding collected before `Driver::build()`.
-///
-/// Exactly one of `component` / `nested_driver` is non-null.
 template <typename Component>
 struct PendingBinding {
     int phase = 0; ///< Target phase index.
     int order = 0; ///< Ordering within the phase (lower runs earlier).
-    Component* component = nullptr; ///< Component node.
-    void* nested_driver = nullptr; ///< Nested-driver node (`cpu::DriverNode*`).
-    int nested_budget = 0;         ///< Budget for nested-driver nodes.
+    Component* component = nullptr; ///< Plugin occupying this slot.
 
-    /// @brief True when this binding is a nested driver.
-    bool is_driver() const { return nested_driver != nullptr; }
+    /// @brief Identity of the plugin instance on this row.
+    PluginIdentity identity() const noexcept { return {component}; }
 };
 } // namespace detail
 
@@ -65,7 +69,7 @@ class PhaseBuilder {
         auto ptr = std::make_unique<C>(std::forward<Comp>(comp));
         auto* raw = ptr.get();
         owned_->push_back(std::move(ptr));
-        bindings_->push_back({ATV::slot_of(phase_), order, raw, nullptr, 0});
+        bindings_->push_back({ATV::slot_of(phase_), order, raw});
         return *this;
     }
 
@@ -77,7 +81,7 @@ class PhaseBuilder {
             throw std::invalid_argument("PhaseBuilder::add: null component");
         Component* raw = comp.get();
         owned_->push_back(std::move(comp));
-        bindings_->push_back({ATV::slot_of(phase_), order, raw, nullptr, 0});
+        bindings_->push_back({ATV::slot_of(phase_), order, raw});
         return *this;
     }
 
@@ -88,16 +92,17 @@ class PhaseBuilder {
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>, int> = 0>
     PhaseBuilder& add_ref(Comp& comp, int order = 0) {
-        bindings_->push_back({ATV::slot_of(phase_), order, &comp, nullptr, 0});
+        bindings_->push_back({ATV::slot_of(phase_), order, &comp});
         return *this;
     }
 
     /// @brief Own a nested driver on this phase (CPU only).
     ///
-    /// Moves `child` into the parent's `owned_drivers_`. `budget < 0` uses
-    /// `child.default_budget()`. Disabled for types that are also Components
-    /// (e.g. transitional MeanFieldMethod = HF + Driver) so they keep
-    /// binding as force/energy components until 04b drops the dual identity.
+    /// Wraps `child` in `cpu::NestedLoopAdapter` (owned by this driver).
+    /// `@param order` Binding order within the phase (lower runs earlier).
+    /// `@param budget` Dimensionless inner-loop iterations; `< 0` uses
+    /// `child.default_budget()`. Dual-identity Component+DriverNode types
+    /// keep the Component overload.
     template <typename Nested,
               std::enable_if_t<
                   std::is_same_v<DeviceTag, cpu::device_tag>
@@ -109,30 +114,32 @@ class PhaseBuilder {
                   int> = 0>
     PhaseBuilder& add(Nested&& child, int order = 0, int budget = -1) {
         using N = std::remove_reference_t<Nested>;
-        auto ptr = std::make_unique<N>(std::forward<Nested>(child));
-        cpu::DriverNode* raw = ptr.get();
-        const int b = (budget < 0) ? raw->default_budget() : budget;
-        owned_drivers_->push_back(std::move(ptr));
-        bindings_->push_back(
-            {ATV::slot_of(phase_), order, nullptr, static_cast<void*>(raw), b});
+        auto node = std::make_unique<N>(std::forward<Nested>(child));
+        auto adapter =
+            std::make_unique<cpu::NestedLoopAdapter>(std::move(node), budget);
+        Component* raw = adapter.get();
+        owned_->push_back(std::move(adapter));
+        bindings_->push_back({ATV::slot_of(phase_), order, raw});
         return *this;
     }
 
     /// @brief Borrow a nested driver on this phase (CPU only).
     ///
-    /// Non-owning: the caller may inspect `child.converged()` after the parent
-    /// run. `budget < 0` uses `child.default_budget()`. See rvalue `add` for
-    /// the Component dual-identity exclusion.
+    /// The adapter is owned by this driver; `child` stays with the caller
+    /// so `child.converged()` remains readable after `run`.
+    /// `@param order` Binding order within the phase (lower runs earlier).
+    /// `@param budget` Dimensionless inner-loop iterations; `< 0` uses
+    /// `child.default_budget()`.
     template <typename Nested,
               std::enable_if_t<std::is_same_v<DeviceTag, cpu::device_tag>
                                    && std::is_base_of_v<cpu::DriverNode, Nested>
                                    && !std::is_base_of_v<Component, Nested>,
                                int> = 0>
     PhaseBuilder& add_ref(Nested& child, int order = 0, int budget = -1) {
-        cpu::DriverNode* raw = &child;
-        const int b = (budget < 0) ? raw->default_budget() : budget;
-        bindings_->push_back(
-            {ATV::slot_of(phase_), order, nullptr, static_cast<void*>(raw), b});
+        auto adapter = std::make_unique<cpu::NestedLoopAdapter>(child, budget);
+        Component* raw = adapter.get();
+        owned_->push_back(std::move(adapter));
+        bindings_->push_back({ATV::slot_of(phase_), order, raw});
         return *this;
     }
 
@@ -206,18 +213,29 @@ class Driver {
     /// @brief Read-only access to the compiled Plan (after `build()`).
     const Plan<Component>& plan() const { return plan_; }
 
-    /// @brief Compile the execution Plan.
+    /// @brief Compile the execution Plan from the live mount table.
+    ///
+    /// `pending_` stays populated so a second `build()` / `compile()` can
+    /// rewrite `plan_` without reconstructing the driver.
     void build() {
         PlanBuilder<Component> builder;
-        for (auto& pb : pending_) {
-            if (pb.is_driver())
-                builder.add({pb.phase, pb.order, nullptr, pb.nested_driver,
-                             pb.nested_budget});
-            else
-                builder.add({pb.phase, pb.order, pb.component, nullptr, 0});
-        }
-        pending_.clear();
+        for (auto& pb : pending_)
+            builder.add({pb.phase, pb.order, pb.component});
         plan_ = builder.build(ATV::slot_count<PhaseEnum>());
+    }
+
+    /// @brief Live mount table (survives `build()`).
+    const std::vector<detail::PendingBinding<Component>>& mounted() const {
+        return pending_;
+    }
+
+    /// @brief True if `id` is currently mounted (instance pointer, not name).
+    bool is_mounted(PluginIdentity id) const {
+        for (const auto& pb : pending_) {
+            if (pb.identity() == id)
+                return true;
+        }
+        return false;
     }
 
     /// @brief Run the full simulation lifecycle.
@@ -262,7 +280,8 @@ class Driver {
               std::enable_if_t<std::is_base_of_v<Component, Comp>, int> = 0>
     void bind_defaults(std::unique_ptr<Comp> comp) {
         if (!comp)
-            throw std::invalid_argument("Driver::bind_defaults: null component");
+            throw std::invalid_argument(
+                "Driver::bind_defaults: null component");
         auto bindings = comp->default_bindings();
         if (bindings.empty())
             throw std::runtime_error(
@@ -272,7 +291,7 @@ class Driver {
         Component* raw = comp.get();
         owned_components_.push_back(std::move(comp));
         for (const auto& db : bindings)
-            pending_.push_back({db.phase, db.order, raw, nullptr, 0});
+            pending_.push_back({db.phase, db.order, raw});
     }
 
     /// @brief Borrow a component via its `default_bindings()`.
@@ -288,7 +307,7 @@ class Driver {
                 + "' has no default bindings. Use .on(phase).add_ref().");
         validate_binding_kinds_(comp.name(), bindings);
         for (const auto& db : bindings)
-            pending_.push_back({db.phase, db.order, &comp, nullptr, 0});
+            pending_.push_back({db.phase, db.order, &comp});
     }
 
     std::vector<detail::PendingBinding<Component>> pending_;

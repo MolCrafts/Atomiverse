@@ -56,7 +56,7 @@ namespace cuda {
 /// device-ring slot on the compute stream (before a subsequent SCF solve in an
 /// AIMD loop could overwrite it) and bringing it back to host via the async D2H
 /// bridge.
-class MullikenObs : public AsyncBridge {
+class MullikenObs : public AsyncObserver {
   public:
     /// @brief Construct a Mulliken observer.
     /// @param ints      Non-owning view (S, shells, atoms); field storage must
@@ -64,15 +64,14 @@ class MullikenObs : public AsyncBridge {
     /// @param evaluator SCF evaluator whose converged workspace supplies the
     ///                  density matrix (borrowed -- must outlive this observer).
     /// @param every     Sampling stride in steps (1 = every step).
-    MullikenObs(cpu::scf::internal::IntegralView ints, const scf::SCF& evaluator,
-                int every = 1)
+    MullikenObs(cpu::scf::internal::IntegralView ints,
+                const scf::SCF& evaluator, int every = 1)
         : integrals_(ints), evaluator_(&evaluator), every_(every) {}
 
     ~MullikenObs() override = default;
 
     std::string name() const override { return "mulliken"; }
-    /// @brief Observer — derives Mulliken charges from SCF density (no I/O).
-    /* role via Observer base */
+    /* role via AsyncObserver / Observer */
     int frequency() const override { return every_; }
 
     const std::vector<double>& charges() const { return charges_; }
@@ -157,7 +156,8 @@ class MullikenObs : public AsyncBridge {
     }
 
   private:
-    cpu::scf::internal::IntegralView integrals_; ///< Refs into method-owned fields.
+    cpu::scf::internal::IntegralView
+        integrals_; ///< Refs into method-owned fields.
     const scf::SCF* evaluator_ =
         nullptr; ///< Borrowed SCF evaluator (density source).
     int every_;

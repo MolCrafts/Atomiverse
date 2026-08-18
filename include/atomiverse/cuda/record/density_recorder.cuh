@@ -39,7 +39,7 @@ namespace cuda {
 /// eval.on(evaluate::Phase::finalize).add(
 ///     DensityRecorder{"density.zarr", scf, 20, 20, 20});
 /// @endcode
-class DensityRecorder : public AsyncBridge {
+class DensityRecorder : public AsyncRecorder {
   public:
     /// @brief Construct an electron-density grid recorder.
     /// @param store_path Output store path.
@@ -58,8 +58,7 @@ class DensityRecorder : public AsyncBridge {
     DensityRecorder& operator=(DensityRecorder&&) noexcept = default;
 
     std::string name() const override { return "density_recorder"; }
-    /// @brief Recorder — writes electron-density grid to Zarr store.
-    /* role via Recorder base */
+    /* role via AsyncRecorder / Recorder */
     int frequency() const override { return every_; }
 
   protected:

@@ -41,6 +41,7 @@
 /// @see .claude/specs/async-analysis-snapshot-ring-02-device-ring.md
 #pragma once
 
+#include "atomiverse/core/role.h"
 #include "atomiverse/cuda/component/component.cuh"
 
 namespace ATV {
@@ -160,6 +161,23 @@ class AsyncBridge : public Component {
     /// (`cudaHostFn_t`) can reach the static dispatch without friend
     /// declarations. Not part of the user-extension API.
     static void cuda_callback_(void* user_data);
+};
+
+/// @brief Async observer — `Observer` role + defer-stream sidecar.
+class AsyncObserver : public AsyncBridge {
+  public:
+    Role role() const override {
+        return RoleFlag::FrameImmutable | RoleFlag::Deferred;
+    }
+};
+
+/// @brief Async recorder — `Recorder` role + defer-stream sidecar.
+class AsyncRecorder : public AsyncBridge {
+  public:
+    Role role() const override {
+        return RoleFlag::FrameImmutable | RoleFlag::Deferred
+               | RoleFlag::ExternalIO;
+    }
 };
 
 } // namespace cuda

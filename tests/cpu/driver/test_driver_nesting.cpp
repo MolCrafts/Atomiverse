@@ -16,6 +16,7 @@
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/driver/driver.h"
+#include "atomiverse/cpu/driver/nested_loop_adapter.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 #include "cpu/driver_test_helpers.h"
@@ -314,4 +315,33 @@ TEST(DriverNesting, DefaultBudgetWhenUnspecified) {
 
     // 2 outer × 10 inner default budget
     EXPECT_EQ(inner_comp.calls, 20);
+}
+
+TEST(DriverNesting, AddRefInnerOccupiesAdapterSlot) {
+    InnerLoop inner;
+    OuterLoop outer;
+    outer.on(ATV::md::Phase::end_of_step).add_ref(inner);
+    outer.build();
+    const auto& ops =
+        outer.plan().slots[ATV::slot_of(ATV::md::Phase::end_of_step)].ops;
+    ASSERT_EQ(ops.size(), 1u);
+    auto* adapter =
+        dynamic_cast<cpu::NestedLoopAdapter*>(ops.front().component);
+    ASSERT_NE(adapter, nullptr);
+    EXPECT_EQ(adapter->inner(), static_cast<cpu::DriverNode*>(&inner));
+}
+
+TEST(DriverNesting, AddRvalueInnerOccupiesAdapterSlot) {
+    OuterLoop outer;
+    outer.on(ATV::md::Phase::end_of_step)
+        .add(InnerLoop{}, /*order=*/0,
+             /*budget=*/4);
+    outer.build();
+    const auto& ops =
+        outer.plan().slots[ATV::slot_of(ATV::md::Phase::end_of_step)].ops;
+    ASSERT_EQ(ops.size(), 1u);
+    auto* adapter =
+        dynamic_cast<cpu::NestedLoopAdapter*>(ops.front().component);
+    ASSERT_NE(adapter, nullptr);
+    EXPECT_NE(adapter->inner(), nullptr);
 }

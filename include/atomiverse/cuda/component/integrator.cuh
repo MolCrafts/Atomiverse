@@ -1,6 +1,6 @@
 /// @file cuda/component/integrator.cuh
 /// @brief cuda::Integrator — time integration (x, v). Kind tag mirroring
-///        cpu::Integrator; presets recognise it via dynamic_cast.
+///        cpu::Integrator; `require_integrator()` probes this kind.
 #pragma once
 
 #include "atomiverse/cuda/component/component.cuh"

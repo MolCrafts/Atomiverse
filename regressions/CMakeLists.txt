@@ -1634,6 +1634,12 @@ if(ATV_BUILD_PATH)
     atv_add_regression(path pimd_free_particle_estimators)
 endif()
 atv_add_regression(architecture harmonic_driver_matrix)
+atv_add_regression(architecture component-plugin-01-probe)
+atv_add_regression(architecture component-plugin-02-wrap)
+atv_add_regression(architecture component-plugin-03-slot)
+atv_add_regression(architecture component-plugin-04-match)
+atv_add_regression(architecture component-plugin-05-live)
+atv_add_regression(architecture component-plugin-06-unmount)
 atv_add_regression(architecture arch-gpw-driver-paths)
 # arch-mg-main-structural: multi-level MAIN product path single owner
 # (multigrid_collocate_rho* / multigrid_integrate_veff*); twin energy pin

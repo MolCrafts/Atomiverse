@@ -140,6 +140,7 @@ atv_add_cpp_test(test_cpu_chunked_range cpu/device/test_chunked_range.cpp)
 # defaults, trivially-copyable / non-polymorphic guards. Layout-only, no
 # physics.
 atv_add_cpp_test(test_cpu_component_context_slices cpu/component/test_context_slices.cpp)
+atv_add_cpp_test(test_cpu_component_provides_probes cpu/component/test_provides_probes.cpp)
 if(ATV_BUILD_HF)
     atv_add_cpp_test(test_cpu_qm_engine cpu/component/test_qm_engine.cpp)
     # Bit-for-bit erased-vs-direct RHF comparison: OMP reduction order must be
@@ -390,6 +391,10 @@ atv_add_cpp_test(test_cpu_driver_nesting  cpu/driver/test_driver_nesting.cpp)
 # no consumer yet.
 atv_add_cpp_test(test_cpu_scf_phase_plumbing cpu/driver/test_scf_phase_plumbing.cpp)
 atv_add_cpp_test(test_cpu_component_ownership cpu/driver/test_component_ownership.cpp)
+atv_add_cpp_test(test_cpu_nested_loop_adapter cpu/driver/test_nested_loop_adapter.cpp)
+atv_add_cpp_test(test_cpu_require_match cpu/driver/test_require_match.cpp)
+atv_add_cpp_test(test_driver_live_table cpu/driver/test_driver_live_table.cpp)
+atv_add_cpp_test(test_cpu_driver_unfix cpu/driver/test_unfix.cpp)
 # Mirrors include/atomiverse/cpu/driver/outcome_policy.h — cpu::Metropolis'
 # verb contract (the canonical policy owns Displace/None and refuses the
 # Box/Insert/Delete trials that need the NptMc / Gcmc presets). Formula-level,
@@ -1102,6 +1107,12 @@ if(ATV_BUILD_CUDA)
     # CPU/CUDA PW parity is an end-to-end SCF solve: it lives in
     # regressions/pw/pw-cuda-lda-si (--device=both), never under ctest.
     atv_add_test(test_cuda_driver_role_validation cuda/test_cuda_driver_role_validation.cu)
+    atv_add_test(test_cuda_component_provides_probes
+        cuda/component/test_provides_probes.cu)
+    atv_add_test(test_cuda_driver_require_match cuda/driver/test_require_match.cu)
+    atv_add_test(test_cuda_driver_unfix cuda/driver/test_unfix.cu)
+    atv_add_test(test_cuda_driver_live_table cuda/driver/test_driver_live_table.cu)
+    atv_add_test(test_cuda_driver_long_range cuda/driver/test_long_range_contract.cu)
     # Registration-time PhaseKind gate, CUDA mirror
     # (arch-refactor-01-bindings). add()-only — needs no CUDA device.
     atv_add_test(test_cuda_driver_binding_kind cuda/test_driver_binding_kind.cu)

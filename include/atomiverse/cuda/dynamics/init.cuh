@@ -71,6 +71,16 @@ class ZeroEnergy : public Component {
     void launch(const LaunchContext& ctx) override;
 };
 
+/// @brief Zeros the pair/bonded virial tensor `stress[6]`.
+///
+/// Phase-agnostic — MD binds at `pre_force @ -998`, Minimize at
+/// `force @ -998`, Evaluate at `prepare @ -998`. Mirrors `cpu::ZeroStress`.
+class ZeroStress : public Component {
+  public:
+    std::string name() const override { return "zero_stress"; }
+    void launch(const LaunchContext& ctx) override;
+};
+
 /// @brief Zeros kinetic energy scalar on device using cudaMemsetAsync.
 ///
 /// Phase-agnostic infrastructure component — the driver binds it to its
@@ -181,13 +191,8 @@ class ZeroMomentum : public Component {
 /// `role()` stays `None` — it is a one-shot setup component, not a loop slot
 /// (Integrator / Thermostat / …).
 ///
-/// `capabilities()` is `Velocity`, mirroring `cpu::md::InitVelocity`. It seeds the
-/// Maxwell distribution in `build()` rather than in `launch()`, and that used to be
-/// the argument for declaring `None` — but Capability is the WRITE-SET, not a
-/// per-step-writer flag. A component that writes `v` declares `v`, whichever
-/// lifecycle hook it does the writing in. (Both backends declared `None` here while
-/// writing the most fundamental field in the frame; that hole is what the
-/// Position/Velocity bits closed.)
+/// One-shot setup: seeds Maxwell velocities in `build()`. It is not an
+/// energy/force plugin (`provides_energy()` / `provides_force()` stay false).
 ///
 /// @par Units
 /// Temperature in Kelvin. Velocities in Angstrom/fs.

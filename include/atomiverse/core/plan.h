@@ -5,10 +5,8 @@
 /// PlanBuilder resolves bindings into sorted StageSlots. Built once,
 /// executed many times.
 ///
-/// Nodes are either a Component* or a nested-driver binding
-/// (`nested_driver` + `nested_budget`). Nested drivers are type-erased as
-/// `void*` here so this header stays free of `cpu::DriverNode`; the CPU backend
-/// casts to `cpu::DriverNode*`. CUDA never populates driver nodes.
+/// Every slot holds a Component*. Nested loops enter as a Component adapter
+/// at registration; this header never names a loop-node type.
 ///
 /// @see Driver::build() for how Plans are created
 /// @see Backend::step() for how Plans are executed
@@ -27,15 +25,9 @@ namespace ATV {
 /// @tparam Component Component base type (cpu::Component or cuda::Component).
 template <typename Component>
 struct Operation {
-    Component* component = nullptr; ///< Non-null for a component node.
-    void* nested_driver = nullptr;  ///< Non-null for a nested-driver node.
-    int nested_budget = 0;          ///< Budget for a nested-driver node.
-    Scheduling scheduling =
-        Scheduling::blocking; ///< Cached scheduling (component nodes).
-    int frequency = 0;        ///< Cached frequency (0 = every step).
-
-    /// @brief True when this op is a nested driver (not a Component).
-    bool is_driver() const { return nested_driver != nullptr; }
+    Component* component = nullptr; ///< Plugin occupying this slot.
+    Scheduling scheduling = Scheduling::blocking; ///< Cached scheduling.
+    int frequency = 0; ///< Cached frequency (0 = every step).
 };
 
 /// @brief All operations for one phase, sorted by order.
@@ -73,7 +65,7 @@ struct Plan {
 
 /// @brief Compiles bindings into a Plan.
 ///
-/// Collects binding entries (phase + order + component|driver), then sorts
+/// Collects binding entries (phase + order + component), then sorts
 /// operations within each phase by order value (stable sort).
 ///
 /// @tparam Component Component base type.
@@ -85,10 +77,7 @@ class PlanBuilder {
     struct Entry {
         int phase; ///< Target phase index.
         int order; ///< Ordering within phase (lower = earlier).
-        Component* component = nullptr; ///< Component node (xor nested_driver).
-        void* nested_driver =
-            nullptr;           ///< Nested-driver node (cpu::DriverNode*).
-        int nested_budget = 0; ///< Budget for nested-driver nodes.
+        Component* component = nullptr; ///< Plugin occupying the slot.
     };
 
     /// @brief Register a binding entry.
@@ -113,24 +102,20 @@ class PlanBuilder {
 
         for (auto& e : entries_) {
             if (e.phase < 0 || e.phase >= phase_count) {
-                const std::string who = e.component
-                                            ? e.component->name()
-                                            : std::string("nested_driver");
+                const std::string who =
+                    e.component ? e.component->name() : std::string("plugin");
                 throw std::runtime_error("Node '" + who
                                          + "' binds to invalid phase "
                                          + std::to_string(e.phase));
             }
-            Operation<Component> op;
-            if (e.nested_driver) {
-                op.nested_driver = e.nested_driver;
-                op.nested_budget = e.nested_budget;
-                op.scheduling = Scheduling::blocking;
-                op.frequency = 0;
-            } else {
-                op.component = e.component;
-                op.scheduling = e.component->scheduling();
-                op.frequency = e.component->frequency();
+            if (!e.component) {
+                throw std::runtime_error("PlanBuilder: null component at phase "
+                                         + std::to_string(e.phase));
             }
+            Operation<Component> op;
+            op.component = e.component;
+            op.scheduling = e.component->scheduling();
+            op.frequency = e.component->frequency();
             slot_entries[e.phase].push_back({e.order, op});
         }
 

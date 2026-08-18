@@ -32,12 +32,17 @@ void ZeroForces::launch(const LaunchContext& ctx) {
 void ZeroEnergy::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
-    // Zero `energy` + 4 per-term fields and the 6-component pair/bonded
-    // virial tensor `stress[6]`. Without the stress clear, force kernels
-    // (LJ + bond/angle/dihedral) accumulate across steps and
-    // `NoseHooverNPT` reads runaway pressure → barostat blowup → stage-2
-    // collapse.
+    // Zero `energy` + 4 per-term fields. The pair/bonded virial lives on
+    // `ZeroStress` (same split as `cpu::ZeroEnergy` / `cpu::ZeroStress`).
     cudaMemsetAsync(&frame.scalars->energy, 0, 5 * sizeof(double), stream);
+}
+
+void ZeroStress::launch(const LaunchContext& ctx) {
+    auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
+    auto& frame = ctx.frame;
+    // Without this clear, force kernels (LJ + bond/angle/dihedral)
+    // accumulate virial across steps and `NoseHooverNPT` reads runaway
+    // pressure.
     cudaMemsetAsync(&frame.scalars->stress[0], 0, 6 * sizeof(double), stream);
 }
 

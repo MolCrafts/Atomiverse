@@ -10,8 +10,8 @@
 /// `cuda::Evaluate + cuda::scf::RHF` (preferred) or the synthetic
 /// `cuda::scf::SCF` test path.
 ///
-/// Validation rule (build-time): at least one hot-path energy/force
-/// Component (Role flags; no Capability bitset).
+/// Validation rule (build-time): at least one plugin that
+/// `provides_energy()` or `provides_force()`.
 ///
 /// **No handler.** One pass is not a termination policy — there is no loop to terminate.
 ///
@@ -21,10 +21,8 @@
 /// once" is a *budget of one*, not a taxonomy.
 ///
 /// @code{.cpp}
-///   cuda::scf::RHF rhf;
-///   rhf.basis = cpu::scf::BasisSet::STO3G;
 ///   cuda::Evaluate eval;
-///   eval.on(evaluate::Phase::evaluate).add(std::move(rhf));
+///   eval.set_evaluator(cuda::scf::RHF{cpu::scf::BasisSet::STO3G});
 ///   eval.build();
 ///   eval.run(frame);            // frame.meta.get(kEnergy) [eV]
 /// @endcode
@@ -32,20 +30,27 @@
 /// @see cuda::single_point for the free-function single-evaluator helper
 #pragma once
 
-#include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cuda/component/component.cuh"
-#include "atomiverse/cuda/component/hf.cuh"
-#include "atomiverse/cuda/component/potential.cuh"
 #include "atomiverse/cuda/driver/driver.cuh"
+#include "atomiverse/cuda/dynamics/init.cuh"
 
 namespace ATV {
 namespace cuda {
 
 /// @brief One-pass CUDA evaluator preset.
+///
+/// Categorical setters (`set_evaluator` / `set_neighbor` / `set_observer` /
+/// `set_record`) come from `cuda::Driver`. Constructor binds ZeroForces /
+/// ZeroEnergy / ZeroStress at `prepare`, matching `cpu::Evaluate`.
 class Evaluate : public Driver<ATV::evaluate::Phase> {
   public:
+    Evaluate() {
+        this->on(ATV::evaluate::Phase::prepare).add(md::ZeroForces{}, -1000);
+        this->on(ATV::evaluate::Phase::prepare).add(md::ZeroEnergy{}, -999);
+        this->on(ATV::evaluate::Phase::prepare).add(md::ZeroStress{}, -998);
+    }
+
     /// @brief Run a single evaluation pass through the compiled Plan.
     /// @param frame Host-resident system state; transferred H2D, evaluated
     ///        on the device, retrieved D2H, updated in place.
@@ -56,17 +61,16 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
     }
 
   protected:
-    /// @brief Require at least one hot-physics energy/force source.
+    void install_defaults() override {
+        const auto s = this->scan_pending_infra_();
+        this->throw_if_missing_neighbor_list_(
+            s, "cuda::Evaluate",
+            "Add `eval.set_neighbor(cuda::NeighborList{cutoff})`.");
+    }
+
+    /// @brief Require at least one energy or force plugin.
     void validate_components() const override {
-        bool found = false;
-        for_each_pending([&](const cuda::Component& c) {
-            if (dynamic_cast<const cuda::Potential*>(&c)
-                || dynamic_cast<const cuda::HF*>(&c))
-                found = true;
-        });
-        if (!found)
-            throw_missing(
-                "Potential / Bias / HF / Semiempirical / PlaneWave / GPW");
+        this->require_energy_or_force();
     }
 };
 

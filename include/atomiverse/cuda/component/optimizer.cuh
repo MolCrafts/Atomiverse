@@ -1,6 +1,6 @@
 /// @file cuda/component/optimizer.cuh
 /// @brief cuda::Optimizer — geometry optimization step. Kind tag mirroring
-///        cpu::Optimizer; presets recognise it via dynamic_cast.
+///        cpu::Optimizer; `require_optimizer()` probes this kind.
 #pragma once
 
 #include "atomiverse/cuda/component/component.cuh"

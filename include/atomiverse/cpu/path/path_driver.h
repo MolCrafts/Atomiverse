@@ -171,30 +171,8 @@ class PathDriver : public Driver<ATV::path::Phase> {
     /// run, and refusing it would mean this driver knew what NEB is. Nested
     /// method-drivers count as HF force sources via cross-cast.
     void validate_components() const override {
-        bool has_optimizer = false;
-        bool has_force = false;
-        for_each_pending_kind(
-            [&](const cpu::Component& c) {
-                if (dynamic_cast<const Optimizer*>(&c))
-                    has_optimizer = true;
-                if (dynamic_cast<const Potential*>(&c)
-                    || dynamic_cast<const Bias*>(&c)
-                    || dynamic_cast<const PathCoupling*>(&c)
-                    || dynamic_cast<const HF*>(&c)
-                    || dynamic_cast<const Semiempirical*>(&c)
-                    || dynamic_cast<const PlaneWave*>(&c)
-                    || dynamic_cast<const GPW*>(&c))
-                    has_force = true;
-            },
-            [&](const cpu::DriverNode* d) {
-                if (dynamic_cast<const HF*>(d))
-                    has_force = true;
-            });
-        if (!has_force)
-            throw_missing(
-                "Potential / Bias / HF / Semiempirical / PlaneWave / GPW");
-        if (!has_optimizer)
-            throw_missing("Optimizer");
+        this->require_force();
+        this->require_optimizer();
     }
 };
 

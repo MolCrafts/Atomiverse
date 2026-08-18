@@ -33,8 +33,7 @@ namespace vib {
 ///        differencing the evaluator-produced forces.
 ///
 /// Role is the default (required). `cpu::vib::Hessian` identifies this
-/// component by `name() == "vib_hessian_accumulator"` at build-time
-/// validation — it is the canonical Hessian-producing structural piece.
+/// component by `provides_hessian()` at build-time validation.
 class HessianAccumulator : public cpu::Component {
   public:
     /// @brief Construct bound to a driver-owned workspace.
@@ -42,6 +41,7 @@ class HessianAccumulator : public cpu::Component {
     explicit HessianAccumulator(HessianWorkspace* ws) : ws_(ws) {}
 
     std::string name() const override { return "vib_hessian_accumulator"; }
+    bool provides_hessian() const override { return true; }
     /* role default default role 0 */
 
     /// @brief Default binding: `vib::Phase::accumulate` @ 0.

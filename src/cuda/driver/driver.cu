@@ -104,6 +104,22 @@ void Backend::build_components() {
         timer_->impl()->flush();
 }
 
+void Backend::build_plan(const Plan<Component>& plan) {
+    BuildContext ctx{context_, frame_};
+    for (auto& slot : plan.slots)
+        for (auto& op : slot.ops)
+            op.component->build(ctx);
+}
+
+void Backend::destroy_plan(const Plan<Component>& plan) {
+    DestroyContext ctx{context_, frame_};
+    for (int s = static_cast<int>(plan.slots.size()) - 1; s >= 0; --s) {
+        auto& slot = plan.slots[static_cast<std::size_t>(s)];
+        for (int o = static_cast<int>(slot.ops.size()) - 1; o >= 0; --o)
+            slot.ops[static_cast<std::size_t>(o)].component->destroy(ctx);
+    }
+}
+
 void Backend::step(int step_idx) {
     for (auto& slot : plan_->slots) {
         if (slot.ops.empty())

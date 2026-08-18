@@ -39,7 +39,7 @@ namespace cuda {
 /// @code{.cpp}
 /// sim.on(md::Phase::end_of_step).add(RDF{3.0, 100, "rdf.dat"});
 /// @endcode
-class RDF : public AsyncBridge {
+class RDF : public AsyncObserver {
   public:
     /// @param r_max upper edge of the last bin [Å] (> 0). @param n_bins radial
     /// bin count (>= 1). @param filename g(r) output path.
@@ -54,9 +54,7 @@ class RDF : public AsyncBridge {
     RDF& operator=(RDF&&) noexcept = default;
 
     std::string name() const override { return "rdf"; }
-    /// @brief Observer — streams frames into the molrs accumulator (no I/O
-    /// per step).
-    /* role via Observer base */
+    /* role via AsyncObserver / Observer */
 
   protected:
     void on_build(const BuildContext& ctx) override {

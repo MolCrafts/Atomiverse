@@ -3,7 +3,7 @@
 ///
 /// `MD` is the CUDA molecular-dynamics preset: a `cuda::Driver<md::Phase>` that owns
 /// a continuable `run(frame, n_steps)` and a build-time `validate_components()` contract
-/// (≥ 1 `Integrator`-role component and ≥ 1 component carrying `Capability::Force`).
+/// (≥ 1 `Integrator` and ≥ 1 plugin that `provides_force()`).
 ///
 /// There is no `cuda::DynamicsDriver` category above it any more. **The step budget IS
 /// the termination**, so MD attaches no default `Criterion` — but it honours every
@@ -17,6 +17,7 @@
 /// `md::Phase` via `on(phase).add()`:
 /// - ZeroForces at pre_force (order -1000) -- zeros fx, fy, fz.
 /// - ZeroEnergy at pre_force (order -999) -- zeros potential energy.
+/// - ZeroStress at pre_force (order -998) -- zeros the virial tensor.
 /// - ZeroKinetic at end_of_step (order -1000) -- zeros kinetic energy.
 /// - KineticEnergy at end_of_step (order -100) -- accumulates KE.
 ///
@@ -52,16 +53,12 @@
 ///
 /// `MD::install_defaults()` runs *before* `validate_components()` (the order
 /// `Driver::build()` fixes), so auto-injected components count toward validation.
-/// Single-GPU subset of the CPU rules, keyed on capability-typed virtuals (no string
-/// proxies, no RTTI casts):
+/// Single-GPU subset of the CPU rules, keyed on `requires_system_stress` /
+/// `provides_system_stress` and the neighbor protocol accessors:
 ///
-/// - **Virial** — if any pending component declares
-///   `(reads() & Capability::Stress) != None` and no pending component
-///   already advertises `(capabilities() & Capability::Stress) != None`
-///   with `role() == Observer`, a fresh `cuda::Virial{}` is
-///   added at `post_force @ -50`. Covers both `cuda::md::Barostat`
-///   (Berendsen, `role()==Barostat`) and `cuda::md::NoseHooverNPT`
-///   (MTK NPT, `role()==Integrator`) uniformly via `reads()`.
+/// - **Virial** — if any pending component `requires_system_stress()` and
+///   none `provides_system_stress()`, a fresh `cuda::Virial{}` is added at
+///   `post_force @ -50`.
 /// - **NeighborList missing** — if any pending component reports
 ///   itself as a `NeighborConsumer` (pair-style evaluators do, via
 ///   `cuda::Pair`) without a registered `cuda::NeighborList`,
@@ -97,13 +94,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cuda/component/component.cuh"
-#include "atomiverse/cuda/component/hf.cuh"
-#include "atomiverse/cuda/component/integrator.cuh"
-#include "atomiverse/cuda/component/potential.cuh"
 #include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
 #include "atomiverse/cuda/dynamics/kinetic_energy.cuh"
@@ -130,6 +122,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     MD() {
         on(ATV::md::Phase::pre_force).add(ZeroForces{}, -1000);
         on(ATV::md::Phase::pre_force).add(ZeroEnergy{}, -999);
+        on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
         on(ATV::md::Phase::end_of_step).add(ZeroKinetic{}, -1000);
         on(ATV::md::Phase::end_of_step).add(KineticEnergy{}, -100);
     }
@@ -169,6 +162,8 @@ class MD : public cuda::Driver<ATV::md::Phase> {
             frame_ptr_ = &frame;
             step_counter_ = 0;
             live_ = true;
+        } else {
+            this->flush_new_mounts_();
         }
         for (int s = 0; s < n_steps; ++s) {
             this->mutable_outer_status().reset();
@@ -188,17 +183,9 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     }
 
     // ─── Categorical setter API (LAMMPS-shaped) ─────────────────────
-
-    /// @brief Configure the pair-cutoff force evaluator (LAMMPS
-    ///        `pair_style`). Bound at `md::Phase::force @ 0`.
-    /// @tparam P Pair evaluator type (e.g. `cuda::PairLJCut`).
-    /// @param p Pair evaluator (passed by forwarding reference).
-    /// @brief Register an energy/force source at force @ 0 (plural).
-    template <typename P>
-    MD& set_evaluator(P&& p) {
-        this->on(ATV::md::Phase::force).add(std::forward<P>(p), /*order=*/0);
-        return *this;
-    }
+    //
+    // set_evaluator / set_neighbor / set_observer / set_record come from
+    // cuda::Driver (PhaseTraits<md::Phase>).
 
     /// @brief Configure the bond force evaluator (LAMMPS `bond_style`).
     ///        Bound at `md::Phase::force @ 0`.
@@ -224,18 +211,6 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     MD& set_dihedral(D&& d) {
         set_singular_at_(std::forward<D>(d), dihedral_set_, "set_dihedral",
                          ATV::md::Phase::force, 0);
-        return *this;
-    }
-
-    /// @brief Configure the neighbor list (LAMMPS `neighbor`).
-    ///        Bound at the dedicated `md::Phase::neighbor @ -10`, which
-    ///        runs just before `pre_force` (force/energy zeroing) and the
-    ///        `force` phase — mirroring the CPU `cpu::md::MD` neighbor
-    ///        placement (`PhaseTraits<md::Phase>::neighbor_phase`).
-    template <typename N>
-    MD& set_neighbor(N&& n_comp) {
-        set_singular_at_(std::forward<N>(n_comp), neighbor_set_, "set_neighbor",
-                         ATV::md::Phase::neighbor, -10);
         return *this;
     }
 
@@ -266,20 +241,6 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         return *this;
     }
 
-    /// @brief Add a derived-quantity observer (LAMMPS `compute`). Plural.
-    template <typename Obs>
-    MD& set_observer(Obs&& obs) {
-        this->bind_defaults(std::forward<Obs>(obs));
-        return *this;
-    }
-
-    /// @brief Add a recorder / I/O sink (LAMMPS `dump`). Plural.
-    template <typename R>
-    MD& set_record(R&& r) {
-        this->bind_defaults(std::forward<R>(r));
-        return *this;
-    }
-
     /// @brief Configure the thermo print cadence (LAMMPS `thermo N`).
     /// Singular: re-call with a different cadence throws.
     /// Binds `cuda::Thermo{every}` at `end_of_step @ +20`.
@@ -300,37 +261,21 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     }
 
   protected:
-    /// @brief Integrator + hot-path force source (Role flags).
+    /// @brief Integrator + force plugin (`provides_force()`, including Langevin).
     void validate_components() const override {
-        bool has_integrator = false;
-        bool has_force_writer = false;
-        for_each_pending([&](const cuda::Component& c) {
-            if (dynamic_cast<const cuda::Integrator*>(&c))
-                has_integrator = true;
-            // Energy/force sources are kinds; Langevin is a Thermostat that
-            // also writes force, matched by name exactly as on CPU.
-            if (dynamic_cast<const cuda::Potential*>(&c)
-                || dynamic_cast<const cuda::HF*>(&c) || c.name() == "langevin"
-                || c.name() == "fix_langevin")
-                has_force_writer = true;
-        });
-        if (!has_integrator)
-            throw_missing("Integrator");
-        if (!has_force_writer)
-            throw_missing("Potential / Bias / HF / Semiempirical / PlaneWave / "
-                          "GPW (or Langevin)");
+        this->require_integrator();
+        this->require_force();
     }
 
     /// @brief Auto-injection pass — single-GPU subset of the CPU rules.
     ///
     /// Runs before `validate_components()` (see `Driver::build()`). Two checks,
-    /// both keyed on capability-typed probes (`reads()`, `capabilities()`, and the
-    /// `as_neighbor_consumer()` / `as_neighbor_provider()` protocol accessors) — no
-    /// `name()` string matching, no RTTI cast:
-    ///   1. If any pending component declares `(reads() & Stress) != None`
-    ///      AND no pending component already declares
-    ///      `(capabilities() & Stress) != None && role()==Observer`,
-    ///      add a fresh `cuda::Virial{}` at `post_force @ -50`.
+    /// both keyed on `requires_system_stress` / `provides_system_stress` and
+    /// the `as_neighbor_consumer()` / `as_neighbor_provider()` protocol
+    /// accessors — no `name()` string matching, no family type list:
+    ///   1. If any pending component `requires_system_stress()` and none
+    ///      `provides_system_stress()`, add a fresh `cuda::Virial{}` at
+    ///      `post_force @ -50`.
     ///   2. If any pending component is a `NeighborConsumer` without any
     ///      pending component being a `NeighborProvider`, throw naming
     ///      the first offender.
@@ -338,24 +283,9 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     /// **No default handler.** A time budget is not a policy — MD stops when the steps
     /// run out, and anything else the user wants is a `Criterion` they attach.
     void install_defaults() override {
-        bool needs_stress_input = false;
-        bool has_stress_producer = false;
-        bool has_neighbor_list = false;
-        std::string neighbor_consumer_name; // first NeighborConsumer
-        this->for_each_pending([&](const cuda::Component& c) {
-            if (c.requires_system_stress())
-                needs_stress_input = true;
-            if (c.provides_system_stress())
-                has_stress_producer = true;
-            if (c.as_neighbor_consumer()) {
-                if (neighbor_consumer_name.empty())
-                    neighbor_consumer_name = c.name();
-            }
-            if (c.as_neighbor_provider())
-                has_neighbor_list = true;
-        });
+        const auto s = this->scan_pending_infra_();
 
-        if (needs_stress_input && !has_stress_producer) {
+        if (s.needs_stress && !s.has_virial_stress) {
             // `cuda::Virial` has no default_bindings(); bind it
             // explicitly to `post_force @ -50` — the slot the CPU
             // sibling `cpu::md::Virial::default_bindings()` uses,
@@ -368,8 +298,8 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         // Per-run virial gating: tell every virial-producing evaluator whether
         // its stress/virial contribution is consumed downstream. The pair virial
         // is needed iff either (a) some component reads stress directly (barostat
-        // / NPT — `needs_stress_input`), or (b) a `cuda::Virial` observer is
-        // present (`has_stress_producer`): that observer AGGREGATES the pair
+        // / NPT — `needs_stress`), or (b) a `cuda::Virial` observer is
+        // present (`has_virial_stress`): that observer AGGREGATES the pair
         // virial into the reported stress tensor, so its presence — whether
         // user-added or auto-injected above — means the pair must produce it.
         // In a plain NVE plan (neither holds) this disables the pair kernel's
@@ -377,18 +307,25 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         // frees the accumulator registers (ncu: ~80M->0 spill requests; measured
         // +8% @1M / +33% @4M atoms on a single GH200). Mirrors the multi-GPU NVE
         // path, which already gates its default pair off.
-        const bool stress_consumed = needs_stress_input || has_stress_producer;
+        const bool stress_consumed = s.needs_stress || s.has_virial_stress;
         this->for_each_pending_mut([&](cuda::Component& c) {
             c.set_stress_required(stress_consumed);
         });
 
-        if (!neighbor_consumer_name.empty() && !has_neighbor_list) {
-            throw std::runtime_error(
-                std::string("cuda::md::MD::build(): component '")
-                + neighbor_consumer_name
-                + "' is a pair evaluator but no neighbor list was registered. "
-                  "Add `sim.set_neighbor(cuda::NeighborList{cutoff})`.");
-        }
+        this->throw_if_missing_neighbor_list_(
+            s, "cuda::md::MD",
+            "Add `sim.set_neighbor(cuda::NeighborList{cutoff})`.");
+    }
+
+    void clear_singular_on_unfix_(std::string_view name_or_id) override {
+        auto clear_slot = [&](std::optional<std::string>& slot) {
+            if (slot && *slot == name_or_id)
+                slot.reset();
+        };
+        clear_slot(bond_set_);
+        clear_slot(angle_set_);
+        clear_slot(dihedral_set_);
+        clear_slot(integrator_set_);
     }
 
     // ── Singular-setter helpers (CUDA side, mirroring cpu::Driver) ──
@@ -430,11 +367,9 @@ class MD : public cuda::Driver<ATV::md::Phase> {
 
   private:
     // ── Categorical setter slots ────────────────────────────────────
-    std::optional<std::string> pair_set_;
     std::optional<std::string> bond_set_;
     std::optional<std::string> angle_set_;
     std::optional<std::string> dihedral_set_;
-    std::optional<std::string> neighbor_set_;
     std::optional<std::string> integrator_set_;
     std::optional<int> thermo_every_;
 

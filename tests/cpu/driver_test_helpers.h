@@ -58,6 +58,22 @@ class StubBareInfra : public ATV::cpu::Component {
     void launch(const ATV::cpu::LaunchContext&) override {}
 };
 
+/// Probe-only energy source: not on the old kind list.
+class StubProbeEnergy : public ATV::cpu::Component {
+  public:
+    std::string name() const override { return "stub_probe_energy"; }
+    bool provides_energy() const override { return true; }
+    void launch(const ATV::cpu::LaunchContext&) override {}
+};
+
+/// Probe-only force source: not on the old kind list.
+class StubProbeForce : public ATV::cpu::Component {
+  public:
+    std::string name() const override { return "stub_probe_force"; }
+    bool provides_force() const override { return true; }
+    void launch(const ATV::cpu::LaunchContext&) override {}
+};
+
 inline ATV::cpu::Frame make_trivial_frame(int n = 1) {
     ATV::cpu::Frame f(n);
     for (int i = 0; i < n; ++i) {

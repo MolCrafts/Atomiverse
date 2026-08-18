@@ -14,19 +14,22 @@
 /// header except for the component base it extends.
 #pragma once
 
-#include "atomiverse/cuda/component/potential.cuh"
-
 #include "atomiverse/cuda/component/component.cuh"
+#include "atomiverse/cuda/component/long_range_protocol.cuh"
+#include "atomiverse/cuda/component/potential.cuh"
 
 namespace ATV {
 namespace cuda {
 
 /// @brief Abstract base for reciprocal-space electrostatics styles (CUDA).
-class KSpace : public cuda::Potential {
+class KSpace : public cuda::Potential, public LongRangeParticipant {
   public:
     ~KSpace() override = default;
 
     /* role via Potential/kind base */
+    const LongRangeParticipant* as_long_range_participant() const final {
+        return this;
+    }
 
     /// @brief Framework dispatch — `final`, calls `compute()` (mirrors
     ///        `cuda::Pair` / `cuda::Bond`).

@@ -22,10 +22,8 @@
 ///     pressure observers).
 ///
 /// This component's residual responsibilities are:
-///   - **Capability declaration** (`role()==Observer`,
-///     `capabilities()==Stress`) so `cuda::md::MD::install_infra_`
-///     auto-injects it whenever any peer component reports
-///     `reads()==Stress` (NPT, Barostat).
+///   - **`provides_system_stress()`** so `cuda::md::MD::install_defaults()`
+///     can skip a second Virial when one is already mounted.
 ///   - **Zeroing** the `stress_kinetic[6]` accumulator on its
 ///     `post_force @ -50` slot so `KineticEnergy` at
 ///     `end_of_step @ -100` can atomic-add into a known-zero buffer.
@@ -38,14 +36,14 @@
 #include <memory>
 #include <string>
 
-#include "atomiverse/cuda/component/component.cuh"
+#include "atomiverse/cuda/component/observer.cuh"
 
 namespace ATV {
 namespace cuda {
 
 /// @brief Capability-declaring zeroing shim for the kinetic-stress
 ///        accumulator. See file-level docstring for the producer split.
-class Virial : public Component {
+class Virial : public Observer {
   public:
     Virial();
     ~Virial() override;
@@ -53,19 +51,11 @@ class Virial : public Component {
     Virial& operator=(Virial&&) noexcept;
 
     std::string name() const override { return "virial"; }
-    Role role() const override {
-        return RoleFlag::FrameImmutable | RoleFlag::Deferred;
-    }
     bool provides_system_stress() const override { return true; }
-    /// @brief Structural role — Observer. Triggers
-    /// `cuda::md::MD::install_infra_` to dedupe duplicate virial-stress
-    /// components via capability matching instead of `name()` strings.
-    /* role via Observer base */
-    /// @brief Declares the `Stress` capability so any peer component
-    /// reporting `reads()==Stress` (e.g. NoseHooverNPT, Barostat) auto-
-    /// injects this component. The actual `stress_kinetic[]` writes are
-    /// emitted by `cuda::md::KineticEnergy` at end_of_step; this
-    /// component only zeroes the buffer at post_force.
+    /* role via Observer */
+    /// @brief Zero the kinetic-stress accumulator. Pair/bonded virial
+    ///        writes stay on the force kernels; this Observer only
+    ///        declares `provides_system_stress()`.
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;

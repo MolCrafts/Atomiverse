@@ -3,8 +3,8 @@
 ///
 /// `Minimize` is the single user-facing CUDA minimizer: a
 /// `cuda::Driver<minimizer::Phase>` that owns a `run(frame, max_iter)` loop and a
-/// build-time `validate_components()` contract (≥ 1 `Optimizer`-role component and ≥ 1
-/// `Evaluator` carrying `Capability::Energy` or `Capability::Force`).
+/// build-time `validate_components()` contract (≥ 1 `Optimizer` and ≥ 1
+/// plugin that `provides_energy()` or `provides_force()`).
 ///
 /// There is no `cuda::OptimizeDriver` category above it any more. "Stop when converged"
 /// is not a *kind of driver*, it is a **policy**: `install_defaults()` attaches a
@@ -35,13 +35,15 @@
 /// @see minimizer::Phase for the minimizer phase sequence
 #pragma once
 
-#include "atomiverse/core/role.h"
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cuda/component/component.cuh"
-#include "atomiverse/cuda/component/hf.cuh"
-#include "atomiverse/cuda/component/optimizer.cuh"
-#include "atomiverse/cuda/component/potential.cuh"
 #include "atomiverse/cuda/driver/criterion.cuh"
 #include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
@@ -56,14 +58,14 @@ namespace minimizer {
 /// `minimizer::Phase::force`:
 /// - ZeroForces at force phase (order -1000) — zeros fx, fy, fz.
 /// - ZeroEnergy at force phase (order -999) — zeros potential energy.
+/// - ZeroStress at force phase (order -998) — zeros the virial tensor.
 ///
 /// Usage:
 /// @code{.cpp}
 /// cuda::minimizer::Minimize min;
 /// min.set_optimizer(cuda::minimizer::SteepestDescent{0.01});
-/// min.on(minimizer::Phase::force)
-///    .add(cuda::NeighborList{3.0}, -10)
-///    .add(cuda::PairLJCut{1.0, 1.0, 3.0});
+/// min.set_neighbor(cuda::NeighborList{3.0});
+/// min.set_evaluator(cuda::PairLJCut{1.0, 1.0, 3.0});
 /// min.build();          // install_defaults() → validate_components() → compile Plan
 /// int iters = min.run(frame, 500);
 /// bool ok = min.converged();          // the LOOP knows — not the optimizer
@@ -78,6 +80,7 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
     Minimize() {
         on(ATV::minimizer::Phase::force).add(md::ZeroForces{}, -1000);
         on(ATV::minimizer::Phase::force).add(md::ZeroEnergy{}, -999);
+        on(ATV::minimizer::Phase::force).add(md::ZeroStress{}, -998);
     }
 
     /// @brief Iterate to convergence, or up to `max_iter` iterations.
@@ -104,23 +107,47 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
         return iters;
     }
 
+    /// set_evaluator / set_neighbor / set_observer / set_record come from
+    /// cuda::Driver.
+
+    /// @brief Configure the optimization algorithm (LAMMPS `min_style`).
+    template <typename O,
+              std::enable_if_t<!std::is_lvalue_reference_v<O>, int> = 0>
+    Minimize& set_optimizer(O&& o) {
+        const std::string n = o.name();
+        if (optimizer_set_) {
+            if (*optimizer_set_ == n)
+                return *this;
+            throw std::invalid_argument(
+                "set_optimizer already configured with '" + *optimizer_set_
+                + "', rejected re-call with '" + n + "'");
+        }
+        optimizer_set_ = n;
+        this->bind_defaults(std::forward<O>(o));
+        return *this;
+    }
+    template <typename O>
+    Minimize& set_optimizer_ref(O& o) {
+        const std::string n = o.name();
+        if (optimizer_set_) {
+            if (*optimizer_set_ == n)
+                return *this;
+            throw std::invalid_argument(
+                "set_optimizer already configured with '" + *optimizer_set_
+                + "', rejected re-call with '" + n + "'");
+        }
+        optimizer_set_ = n;
+        this->bind_defaults_ref(o);
+        return *this;
+    }
+    template <typename O>
+    Minimize& set_optimizer(O&) = delete;
+
   protected:
-    /// @brief Optimizer + hot-path energy/force source.
+    /// @brief Optimizer + energy or force plugin.
     void validate_components() const override {
-        bool has_optimizer = false;
-        bool has_energy_or_force = false;
-        for_each_pending([&](const cuda::Component& c) {
-            if (dynamic_cast<const cuda::Optimizer*>(&c))
-                has_optimizer = true;
-            if (dynamic_cast<const cuda::Potential*>(&c)
-                || dynamic_cast<const cuda::HF*>(&c))
-                has_energy_or_force = true;
-        });
-        if (!has_optimizer)
-            throw_missing("Optimizer");
-        if (!has_energy_or_force)
-            throw_missing(
-                "Potential / Bias / HF / Semiempirical / PlaneWave / GPW");
+        this->require_optimizer();
+        this->require_energy_or_force();
     }
 
     /// @brief Attach the default termination policy, if the user attached none.
@@ -134,7 +161,19 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
     void install_defaults() override {
         if (!this->has_handler())
             this->add_criterion(cuda::ForceConverged{});
+        const auto s = this->scan_pending_infra_();
+        this->throw_if_missing_neighbor_list_(
+            s, "cuda::minimizer::Minimize",
+            "Add `min.set_neighbor(cuda::NeighborList{cutoff})`.");
     }
+
+    void clear_singular_on_unfix_(std::string_view name_or_id) override {
+        if (optimizer_set_ && *optimizer_set_ == name_or_id)
+            optimizer_set_.reset();
+    }
+
+  private:
+    std::optional<std::string> optimizer_set_;
 };
 
 } // namespace minimizer

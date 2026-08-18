@@ -94,6 +94,16 @@ class Component {
     virtual bool requires_system_stress() const { return false; }
     /// @brief Writes system stress meta (kinetic and/or assembled virial).
     virtual bool provides_system_stress() const { return false; }
+
+    /// @brief True when this plugin contributes a system energy term.
+    /// @return Dimensionless predicate. Default false; energy kinds override.
+    virtual bool provides_energy() const { return false; }
+    /// @brief True when this plugin contributes a force / gradient term.
+    /// @return Dimensionless predicate. Default false; force kinds override.
+    virtual bool provides_force() const { return false; }
+    /// @brief True when this plugin assembles Hessian rows.
+    /// @return Dimensionless predicate. Default false.
+    virtual bool provides_hessian() const { return false; }
     /// @brief Rewrites owned per-atom charges mid-step (constant-potential
     /// electrode solvers). Under MPI DD the MD driver auto-injects a
     /// `comm::HaloRefresh{Field::charges}` after the charge-solve slot so

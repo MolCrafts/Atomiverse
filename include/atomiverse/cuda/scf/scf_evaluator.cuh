@@ -46,6 +46,11 @@ class SCF : public cuda::Component, public cuda::HF {
     std::string name() const override { return "scf_evaluator"; }
     Role role() const override { return 0; }
 
+    /// @brief Resolves the Component / HF dual-inheritance probe.
+    bool provides_energy() const override { return true; }
+    /// @brief Resolves the Component / HF dual-inheritance probe.
+    bool provides_force() const override { return true; }
+
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;

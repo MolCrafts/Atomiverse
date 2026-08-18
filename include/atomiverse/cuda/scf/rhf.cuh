@@ -107,6 +107,11 @@ class RHF : public cuda::Component, public cuda::HF {
 
     Role role() const override { return 0; }
 
+    /// @brief Resolves the Component / HF dual-inheritance probe.
+    bool provides_energy() const override { return true; }
+    /// @brief Force probe follows `compute_force` (`with_gradient`).
+    bool provides_force() const override { return compute_force; }
+
     /// @brief One-shot SCF on a host Frame (H2D → solve → D2H via Evaluate).
     /// @param frame System state [Å, Z]; energy written back [eV on meta].
     void run(cpu::Frame& frame);

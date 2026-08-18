@@ -101,30 +101,8 @@ class Phonon : public Driver<ATV::vib::Phase> {
     }
 
     void validate_components() const override {
-        bool has_force = false;
-        bool has_acc = false;
-        for_each_pending_kind(
-            [&](const cpu::Component& c) {
-                if (dynamic_cast<const Potential*>(&c)
-                    || dynamic_cast<const Bias*>(&c)
-                    || dynamic_cast<const PathCoupling*>(&c)
-                    || dynamic_cast<const HF*>(&c)
-                    || dynamic_cast<const Semiempirical*>(&c)
-                    || dynamic_cast<const PlaneWave*>(&c)
-                    || dynamic_cast<const GPW*>(&c))
-                    has_force = true;
-                if (c.name() == "vib_hessian_accumulator")
-                    has_acc = true;
-            },
-            [&](const cpu::DriverNode* d) {
-                if (dynamic_cast<const HF*>(d))
-                    has_force = true;
-            });
-        if (!has_force)
-            throw_missing(
-                "Potential / Bias / HF / Semiempirical / PlaneWave / GPW");
-        if (!has_acc)
-            throw_missing("vib_hessian_accumulator");
+        this->require_force();
+        this->require_hessian();
     }
 
   private:

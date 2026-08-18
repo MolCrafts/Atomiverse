@@ -8,7 +8,11 @@ namespace ATV {
 namespace cpu {
 
 /// @brief Semiempirical electronic structure (AM1, …).
-class Semiempirical : public Component {};
+class Semiempirical : public Component {
+  public:
+    bool provides_energy() const override { return true; }
+    bool provides_force() const override { return true; }
+};
 
 } // namespace cpu
 } // namespace ATV

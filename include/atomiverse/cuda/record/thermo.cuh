@@ -27,14 +27,13 @@ namespace cuda {
 /// sim.on(md::Phase::end_of_step).add(Thermo{100});               // stdout only
 /// sim.on(md::Phase::end_of_step).add(Thermo{100, "thermo.dat"}); // stdout + file
 /// @endcode
-class Thermo : public AsyncBridge {
+class Thermo : public AsyncRecorder {
   public:
     explicit Thermo(int every = 1, std::string filename = "")
         : every_(every), filename_(std::move(filename)) {}
 
     std::string name() const override { return "thermo"; }
-    /// @brief Recorder — writes thermo line to stdout (and optional file).
-    /* role via Recorder base */
+    /* role via AsyncRecorder / Recorder */
     int frequency() const override { return every_; }
 
   protected:

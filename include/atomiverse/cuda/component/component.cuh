@@ -30,6 +30,8 @@ namespace cuda {
 class HaloParticipant;  // opt-in halo protocol (halo_participant.cuh)
 class NeighborConsumer; // opt-in neighbor protocols (neighbor_protocol.cuh)
 class NeighborProvider;
+class
+    LongRangeParticipant; // opt-in long-range protocol (long_range_protocol.cuh)
 
 /// @brief Context for one-time component build (after Runtime + DeviceFrame exist).
 ///
@@ -104,18 +106,28 @@ class Component {
     virtual bool requires_system_stress() const { return false; }
     virtual bool provides_system_stress() const { return false; }
 
+    /// @brief True when this plugin contributes a system energy term.
+    /// @return Dimensionless predicate. Default false; energy kinds override.
+    virtual bool provides_energy() const { return false; }
+    /// @brief True when this plugin contributes a force / gradient term.
+    /// @return Dimensionless predicate. Default false; force kinds override.
+    virtual bool provides_force() const { return false; }
+    /// @brief True when this plugin assembles Hessian rows.
+    /// @return Dimensionless predicate. Default false.
+    virtual bool provides_hessian() const { return false; }
+
     /// @brief Per-run hint: does any component downstream consume this
     ///        evaluator's stress/virial contribution?
     ///
-    /// `cuda::md::MD::install_infra_` calls this on every pending component
-    /// with the plan-level verdict (`needs_stress_input` — true iff some
-    /// component declares `reads() & Stress`). Virial-producing evaluators
-    /// (pair / bonded) override it to gate their per-step virial accumulation:
-    /// in a plain NVE run (no barostat/stress observer) the pair kernel then
-    /// skips the 6 inner-loop virial products and the stress reduction, and
-    /// frees the accumulator registers under its launch-bounds budget. Default
-    /// no-op: components that produce no virial ignore it. Capability-typed,
-    /// no `dynamic_cast` / `name()` matching — same pattern as `reads()`.
+    /// `cuda::md::MD::install_defaults()` calls this on every pending
+    /// component with the plan-level verdict (`needs_stress` — true iff
+    /// some component `requires_system_stress()`). Virial-producing
+    /// evaluators (pair / bonded) override it to gate their per-step virial
+    /// accumulation: in a plain NVE run (no barostat/stress observer) the
+    /// pair kernel then skips the 6 inner-loop virial products and the
+    /// stress reduction, and frees the accumulator registers under its
+    /// launch-bounds budget. Default no-op: components that produce no
+    /// virial ignore it. No `dynamic_cast` / `name()` matching.
     /// @param required true iff a downstream consumer needs the virial.
     virtual void set_stress_required(bool /*required*/) {}
 
@@ -136,6 +148,11 @@ class Component {
     ///        not a provider.
     /// @return The provider view of this component, or `nullptr`.
     virtual const NeighborProvider* as_neighbor_provider() const {
+        return nullptr;
+    }
+    /// @brief Typed accessor for split long-range electrostatics.
+    ///        `cuda::CoulLong` / `cuda::KSpace` return `this`. Default: none.
+    virtual const LongRangeParticipant* as_long_range_participant() const {
         return nullptr;
     }
 

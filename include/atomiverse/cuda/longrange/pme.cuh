@@ -11,6 +11,7 @@
 #include <array>
 #include <string>
 
+#include "atomiverse/core/precision.h"
 #include "atomiverse/cuda/longrange/kspace.cuh"
 
 namespace ATV {
@@ -26,6 +27,10 @@ class KSpacePME : public KSpace {
     ~KSpacePME() override;
 
     std::string name() const override { return "pme"; }
+    LongRangeContract long_range_contract() const override {
+        return {LongRangeRole::ReciprocalSpace, AccReal(alpha_), AccReal(0),
+                AccReal(0)};
+    }
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;

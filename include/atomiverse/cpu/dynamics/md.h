@@ -377,42 +377,18 @@ class MD : public Driver<ATV::md::Phase> {
     }
 
   protected:
-    /// @brief Integrator + energy/force kind (Potential / Bias / HF / …).
-    ///        Nested method-drivers count as HF force sources via cross-cast.
     void validate_components() const override {
-        bool has_integrator = false;
-        bool has_force_writer = false;
-        for_each_pending_kind(
-            [&](const cpu::Component& c) {
-                if (dynamic_cast<const Integrator*>(&c))
-                    has_integrator = true;
-                if (dynamic_cast<const Potential*>(&c)
-                    || dynamic_cast<const Bias*>(&c)
-                    || dynamic_cast<const PathCoupling*>(&c)
-                    || dynamic_cast<const HF*>(&c)
-                    || dynamic_cast<const Semiempirical*>(&c)
-                    || dynamic_cast<const PlaneWave*>(&c)
-                    || dynamic_cast<const GPW*>(&c) || c.name() == "langevin"
-                    || c.name() == "fix_langevin")
-                    has_force_writer = true;
-            },
-            [&](const cpu::DriverNode* d) {
-                if (dynamic_cast<const HF*>(d))
-                    has_force_writer = true;
-            });
-        if (!has_integrator)
-            throw_missing("Integrator");
-        if (!has_force_writer)
-            throw_missing("Potential / Bias / HF / Semiempirical / PlaneWave / "
-                          "GPW (or Langevin)");
+        this->require_integrator();
+        this->require_force();
     }
 
     void install_defaults() override {
         const auto s = this->scan_pending_infra_();
 
-        // Global scalar reduction (single-rank no-op). Injected here rather
-        // than in the ctor so set_scalar_reduce_every() can set the cadence.
-        this->bind_defaults(mpi::Reduce{scalar_reduce_every_});
+        // Global scalar reduction (single-rank no-op). Same on().add path
+        // as any plugin; skip if a previous build already mounted one.
+        if (!this->pending_named_("reduce"))
+            this->bind_defaults(mpi::Reduce{scalar_reduce_every_});
 
         if (s.needs_stress && !s.has_virial_stress)
             this->bind_defaults(Virial{});

@@ -118,7 +118,7 @@ TEST(PathValidation, StillThrowsWithNoForceSource) {
         band.build();
         FAIL() << "expected throw — the band has no force source";
     } catch (const std::runtime_error& e) {
-        EXPECT_TRUE(mentions(e, "Potential") || mentions(e, "HF")) << e.what();
+        EXPECT_TRUE(mentions(e, "force source")) << e.what();
     }
 }
 

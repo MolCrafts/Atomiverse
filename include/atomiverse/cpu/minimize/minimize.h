@@ -79,7 +79,7 @@ namespace minimizer {
 /// documented in the file header (single-rank: structural no-ops).
 ///
 /// `validate_components()` requires ≥ 1 `Optimizer` component (e.g. `LBFGS`,
-/// `CG`) and ≥ 1 `Evaluator` with `Capability::Energy` or `Capability::Force`
+/// `CG`) and ≥ 1 plugin that `provides_energy()` or `provides_force()`
 /// (e.g. `SCF`).
 ///
 /// Inheritance: Minimize → Driver<minimizer::Phase> →
@@ -180,32 +180,9 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     }
 
   protected:
-    /// @brief Optimizer + energy/force kind.
     void validate_components() const override {
-        bool has_optimizer = false;
-        bool has_energy_or_force = false;
-        for_each_pending_kind(
-            [&](const cpu::Component& c) {
-                if (dynamic_cast<const Optimizer*>(&c))
-                    has_optimizer = true;
-                if (dynamic_cast<const Potential*>(&c)
-                    || dynamic_cast<const Bias*>(&c)
-                    || dynamic_cast<const PathCoupling*>(&c)
-                    || dynamic_cast<const HF*>(&c)
-                    || dynamic_cast<const Semiempirical*>(&c)
-                    || dynamic_cast<const PlaneWave*>(&c)
-                    || dynamic_cast<const GPW*>(&c))
-                    has_energy_or_force = true;
-            },
-            [&](const cpu::DriverNode* d) {
-                if (dynamic_cast<const HF*>(d))
-                    has_energy_or_force = true;
-            });
-        if (!has_optimizer)
-            throw_missing("Optimizer");
-        if (!has_energy_or_force)
-            throw_missing(
-                "Potential / Bias / HF / Semiempirical / PlaneWave / GPW");
+        this->require_optimizer();
+        this->require_energy_or_force();
     }
 
     void install_defaults() override {
