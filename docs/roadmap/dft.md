@@ -496,20 +496,19 @@ Two periodic DFT engines exist, with disjoint strengths:
   **1133851**, UKS-DIIS **1130402**, weight-pack **1130344**; free-fn forces = **host AO
   Pulay + device grid HF** **1127167**; free-fn stress = **CUDA density +
   host fixed-\(P\)** **1128195** H₂ dual-gate; water Γ RKS **E+F** dual-gate
-  **1130195**). On base also: **Si Γ ngrids=1 product-si-gate** (**1167099**),
+  **1130195**; water **σ** + Γ UKS **F/σ** + multi-k **F/σ** GH200
+  **1363408**, **◐** CPU-twin). On base also: **Si Γ ngrids=1 product-si-gate** (**1167099**),
   **device H assemble / UKS+multi-k P residency / multi-k device e_kin/e_nl /
   force-stream** (**1158949**), **sphere-window PBC product collocate + SG
   device product KS** (`product-collocate-pbc` **1173564**/`cfb246d1`). Depth
   residual on es-cpu-cuda queue (**`multigrid-si-energy-path` landed** host
   collint multi-level GH200 **1180883**; **`device-payload` landed** GH200
   **1182615**/`d476ee7a` Γ RKS final device eigen; iron-law monom restore →
-  **`multigrid-device-ks`**; `multigrid-si-gate` unblocked; water σ + water×PBE
-  E+F/σ; Γ **uks-payload-device / device-cold-start**; multi-k
-  **payload/cold-start/χ/orth/vnl/h0** + Si/water multi-k E+F/σ + multi-k×PBE;
-  MG production water/Si F/σ + Si MG×PBE; UKS F/σ + UKS-PBE + O₂ joints;
-  AO-Pulay / device-stress / handoffs; Γ device-STVnl + product-residency) —
-  table CUDA for full GPW remains **◐** not ✓ (no ○→✓ while product depth
-  incomplete). Stage units under
+  **`multigrid-device-ks`**; Si MG energy path **landed**; water σ / UKS F/σ
+  / multi-k F/σ **landed** **1363408**; residual: water×PBE; device-cold-start;
+  multi-k payload/χ/orth/vnl/h0; Si/water multi-k production; MG F/σ; UKS-PBE
+  joints; device AO-Pulay / device-stress) —
+  table CUDA for full GPW remains **◐** not ✓ (CPU-twin gates, no CP2K pin). Stage units under
   `cuda/gpw/internal/`; multi-path DIIS CPU Driver + public-shape freeze
   **green**.
   **CPU arch (arch-campaign):** `GpwDft` is `cpu::Driver<gpw::Phase>` for

@@ -172,19 +172,9 @@ UKS DIIS PADE energy via `KsChainDevice::run_uks`; residual UKS F/σ +
 UKS-PBE + joint paths → child rows; UKS device DIIS **landed** (harness
 wave 2).
 
-- [ ] `cuda-gpw-uks-forces` | **P3** Analytic free-fn forces under Γ UKS
-  product after `uks-gamma` energy (energy slug does not own forces; base
-  free-fn is RKS CPU-backed only). Track: **cuda**. Twin: CPU
-  `reg_gpw-uks-forces` / O₂ UKS forces + dual-gate. Gate: GH200 + stated
-  max\|ΔF\| after UKS energy green. Lever: dual-spin density + force assembly
-  on product force free-fn (compose with `device-forces` patterns).
-- [ ] `cuda-gpw-uks-o2-forces` | **P3** **new (wave 5)** — Production **O₂**
-  dual-gate for Γ UKS free-fn forces after `uks-forces` (H₂-class force
-  foothold alone leaves production AO/grid × spin F ungated; mirror
-  `uks-o2-gate` after `uks-gamma` energy). Track: **cuda**. Twin: CPU
-  `reg_gpw-uks-forces` O₂ class + dual-gate. Gate: GH200 after `uks-forces`;
-  stated max\|ΔF\|; **perf_exempt**. Lever: extend unit/reg under O₂ UKS —
-  no new kernel.
+`cuda-gpw-uks-forces` / `cuda-gpw-uks-o2-forces` **landed** (feat `b26439b8`
+/ GH200 **1363408**) — Γ UKS O₂ F+σ host assembly at CUDA density;
+max\|ΔF\|=**4.16e-05** Ha/Bohr max‖Δσ‖=**3.61e-08**; **◐** CPU-twin.
 - [ ] `cuda-gpw-multigrid-forces` | **P3** Analytic forces under product
   multigrid energy after `multigrid-run` (stage MG KS green; product forces
   still single-grid / CPU-backed). Track: **cuda**. Twin: CPU MG force
@@ -219,29 +209,11 @@ wave 2).
   `uks-pbe-stress` (same production gap as forces for σ). Track: **cuda**.
   Twin: CPU Γ UKS PBE stress O₂ class + dual-gate. Gate: GH200 after parents;
   stated max‖Δσ‖; **perf_exempt**. Lever: extend unit/reg only.
-- [ ] `cuda-gpw-kpoint-forces` | **P3** Analytic free-fn forces under multi-k
-  RKS product after `kpoints` energy (energy slug does not own forces; base
-  free-fn is Γ RKS CPU-backed). Track: **cuda**. Twin: CPU
-  `reg_gpw-kpoint-forces` class + dual-gate. Gate: GH200 + stated max\|ΔF\|
-  after multi-k energy green. Lever: phased cbg/kbg force assembly on free-fn
-  (compose `device-forces` patterns with multi-k SCF density).
-- [ ] `cuda-gpw-uks-stress` | **P3** **new (wave 5)** — Cell stress under Γ
-  UKS product after `uks-gamma` energy + `stress` RKS pattern (energy/force
-  alone leave UKS σ open; CPU `reg_gpw-uks-stress`). Track: **cuda**. Twin:
-  CPU Γ UKS fixed-\(P\) stress dual-gate. Gate: GH200 + stated max‖Δσ‖ after
-  UKS energy. Lever: `cuda::gpw::gpw_stress` dual-spin payload after RKS
-  stress lands.
-- [ ] `cuda-gpw-uks-o2-stress` | **P3** **new (wave 5)** — Production **O₂**
-  dual-gate for Γ UKS cell stress after `uks-stress` (H₂-class stress
-  foothold alone leaves production spin σ ungated; mirror `uks-o2-gate` /
-  `uks-o2-forces`). Track: **cuda**. Twin: CPU `reg_gpw-uks-stress` O₂
-  class + dual-gate. Gate: GH200 after `uks-stress`; stated max‖Δσ‖;
-  **perf_exempt**. Lever: extend unit/reg under O₂ UKS — no new kernel.
-- [ ] `cuda-gpw-kpoint-stress` | **P3** **new (wave 5)** — Cell stress under
-  multi-k RKS product after `kpoints` + `stress` (CPU
-  `reg_gpw-kpoint-stress`). Track: **cuda**. Twin: CPU multi-k RKS stress
-  dual-gate. Gate: GH200 after multi-k energy. Lever: k-summed fixed-\(P_k\)
-  stress assembly on free-fn / Frame path.
+`cuda-gpw-kpoint-forces` / `cuda-gpw-kpoint-stress` **landed** (feat
+`b26439b8` / GH200 **1363408**) — H₂ k=2 F+σ host assembly;
+max\|ΔF\|=**4.33e-15** max‖Δσ‖=**6.42e-17**; **◐** CPU-twin.
+`cuda-gpw-uks-stress` / `cuda-gpw-uks-o2-stress` **landed** same job
+(O₂ UKS σ in `reg_cuda-gpw-uks-o2-forces`).
 - [ ] `cuda-gpw-uks-kpoints` | **P3** **new (wave 5)** — Multi-k collinear UKS
   DIIS **energy** after `uks-gamma` + `kpoints` (each axis alone leaves joint
   open; CPU `reg_gpw-kpoints-uks`). Track: **cuda**. Twin: CPU multi-k UKS
@@ -695,12 +667,9 @@ wave 2).
   after `device-stvnl` Hermite reuse patterns); stated max\|ΔF\|. Lever: device
   Hermite/derivative STVnl force assembly on free-fn; compose not a lone
   foothold campaign.
-- [ ] `cuda-gpw-product-h2o-stress` | **P3** **new (wave 10)** — Product stress
-  dual-gate is **H₂ only** (`reg_cuda-gpw-stress`); production water σ ungated
-  (water **F** already dual-gated on `product-h2o-gate` — σ is the residual).
-  Track: **cuda**. Twin: CPU water Γ RKS PADE stress + dual-gate. Gate: GH200
-  after `product-h2o-gate` + landed `stress`; **perf_exempt**; stated max‖Δσ‖.
-  Lever: extend unit/reg only — host fixed-\(P\) free-fn already on base.
+`cuda-gpw-product-h2o-stress` **landed** (feat `b26439b8` / GH200 **1363408**
++ prior **1360554**) — water Γ RKS PADE σ max‖Δσ‖=**1.13e-09** Ha/Bohr³;
+**◐** CPU-twin.
 - [ ] `cuda-gpw-device-stress` | **P3** **new (wave 11)** — Free-fn stress is
   still **100% host** `cpu::gpw::gpw_stress` after CUDA SCF density payload
   (`gpw_solver.cu` `gpw_stress` — foothold hybrid ≠ device stress product).
@@ -1206,6 +1175,12 @@ dual-gate matrix explosion. No soft tols.**
   fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 
 ## done
+
+Claim-completion 2026-08-18 (`dev` @ `5da9e31f` / feat `b26439b8`):
+
+- [x] `cuda-gpw-product-h2o-stress` | water Γ RKS PADE σ | GH200 **1363408** max‖Δσ‖=**1.13e-09** | **◐** CPU-twin
+- [x] `cuda-gpw-uks-forces` / `uks-o2-forces` / `uks-stress` / `uks-o2-stress` | Γ UKS O₂ F+σ | **1363408** max\|ΔF\|=**4.16e-05** max‖Δσ‖=**3.61e-08** | **◐**
+- [x] `cuda-gpw-kpoint-forces` / `kpoint-stress` | H₂ k=2 F+σ | **1363408** max\|ΔF\|=**4.33e-15** max‖Δσ‖=**6.42e-17** | **◐**
 
 Claim-completion 2026-08-18 (`dev` @ `9da1f7ec`):
 

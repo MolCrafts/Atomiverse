@@ -74,15 +74,16 @@ boundary
 | UKS device payload | **1186414** / `f2be952a` |
 | Si / H2 / H2O product dual-gate | **1331963** (`GPU_JOB_OK`, Si \|dE\|=3.529e-05 Ha) |
 | full-product H2 energy+F | **1332946** `GPU_JOB_OK` (ks_chain + product + reg; \|dE\|=1.205e-08, max\|dF\|=3.230e-06). Prior 1331962 unit-only V_eff fail, now 1e-6·peak. |
+| water σ + UKS F/σ + multi-k F/σ | **1363408** water max‖Δσ‖=**1.13e-09**; O₂ UKS max\|ΔF\|=**4.16e-05** max‖Δσ‖=**3.61e-08**; H₂ k=2 max\|ΔF\|=**4.33e-15** max‖Δσ‖=**6.42e-17**. **Claim ◐** (CPU-twin, not CP2K). |
 
 ## Open depth (do not soft-land)
 
-1. `multigrid-si-gate` — production dual-gate after monom on base  
-2. `device-cold-start` — densify still host  
-3. Multi-k: χ / orth / vnl / h0 residency + payload/cold-start  
-4. Force AO-Pulay / force-handoff; stress device  
-5. Production multi-k/MG/UKS×PBE + MG F/σ matrix  
-6. Nested `cuda::Driver<gpw::Phase>` (shape-preserving fold only)
+1. `device-cold-start` — densify still host  
+2. Multi-k: χ / orth / vnl / h0 residency + payload/cold-start  
+3. Device-native AO Pulay / force-handoff; device stress kernels  
+4. Production multi-k/MG/UKS×PBE joints + Si MG F/σ  
+5. Nested `cuda::Driver<gpw::Phase>` (shape-preserving fold only)  
+6. Independent CP2K pins to promote ◐ → ✓ (GapCensus / claim bar 3)
 
 ## Verdict
 

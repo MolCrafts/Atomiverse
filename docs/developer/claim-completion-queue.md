@@ -79,7 +79,7 @@ CUDA row** — that is layout, not debt.
 | cuda-md-npt | MD | device NPH/PR barostat path (CPU parity + LAMMPS pin, tile engine unchanged) | CUDA↔CPU trajectory tolerance stated; LAMMPS pin green |
 | cuda-scf-gradient | SCF | device RHF s/p forces + GPU BOMD — GH200 **1332540** green (H2O grad max\|Δ\|=3.87e-11 Ha/Bohr; H2 AIMD PE=−1.117098 Ha). Out-of-coverage now throws. Nested `cuda::Driver<scf::Phase>` fold still residual. | force vs CPU ≤ stated tol; CPU PySCF pins green |
 | cuda-pw-spin-pbe | PW | device spin-PBE forces/stress (today rejects), then spin+smear | dual-gate vs CPU + QE-class anchor |
-| cuda-gpw-product | GPW | continue the frozen public shape (`.claude/notes/cuda-gpw-public-shape.md`): water σ, multi-k F/σ, UKS F/σ, MG production; independent anchors per claim bar 3 (◐→✓ only then) | es-cpu-cuda queue gates |
+| cuda-gpw-product | GPW | **DONE 2026-08-18** — frozen-shape matrix: water σ + Γ UKS F/σ + multi-k F/σ (GH200 **1363408**); Si MG energy already on base. Claim stays **◐** (CPU-twin; CP2K ✓ is GapCensus). Device AO-Pulay / UKS-PBE / multi-k residency remain queue depth. | GH200 **1363408** dual-gates green; no ✓ on self-anchor |
 
 ## Non-goals
 

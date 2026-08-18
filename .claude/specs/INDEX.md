@@ -15,11 +15,10 @@ slice (commit `334b6de4`).
 
 All 11 Python + docs slugs shipped (`886f6632`…`e56b0a66`). No live Track P specs.
 
-**Track C — CUDA** (all `deferred: true`; GH200 batch + CUDA ES open gate):
+**Track C — CUDA** (closed 2026-08-18 on `dev`; specs deleted):
 
-| Spec | One-line |
-| ---- | -------- |
-| [cuda-gpw-product](cuda-gpw-product/spec.md) | finish the frozen CUDA GPW matrix; kill self-anchors |
+`cuda-gpw-product` shipped: water σ + UKS F/σ + multi-k F/σ dual-gates
+(GH200 **1363408**); claim stays **◐** (CPU-twin, not CP2K ✓).
 
 ## Closed — GPW structure (ES policy first cut)
 
