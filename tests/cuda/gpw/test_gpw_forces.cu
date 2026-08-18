@@ -18,6 +18,7 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using ATV::cpu::gpw::GaussianBasis;
@@ -230,4 +231,25 @@ TEST(CudaGpwForces, FreeFnRejectsMissingGrids) {
     auto atoms = std::vector<GpwAtom>{};
     EXPECT_THROW(ATV::cuda::gpw::gpw_forces_from_scf(atoms, m, scf),
                  std::runtime_error);
+}
+
+TEST(CudaGpwForces, UksDoesNotHitFirstSliceReject) {
+    ATV::cuda::gpw::GpwDft m;
+    m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
+    m.cutoff_ry = 80.0;
+    m.n_occ = 0;
+    m.n_alpha = 1;
+    m.n_beta = 0;
+    m.xc = XcKind::PADE;
+    ATV::cuda::gpw::GpwResult scf;
+    scf.converged = true;
+    auto atoms = std::vector<GpwAtom>{};
+    try {
+        (void)ATV::cuda::gpw::gpw_forces_from_scf(atoms, m, scf);
+        FAIL() << "expected host-assembly throw";
+    } catch (const std::exception& e) {
+        const std::string msg = e.what();
+        EXPECT_EQ(msg.find("UKS forces not on device"), std::string::npos)
+            << msg;
+    }
 }

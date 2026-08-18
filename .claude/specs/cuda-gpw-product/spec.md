@@ -1,6 +1,6 @@
 ---
 slug: cuda-gpw-product
-status: approved
+status: in-progress
 created: 2026-08-14
 domain: cuda / gpw
 queue: claim-completion

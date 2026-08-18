@@ -26,7 +26,7 @@ std::vector<ATV::cpu::gpw::GpwAtom> h2_atoms() {
 
 } // namespace
 
-TEST(CudaGpwStress, FailClosedMultiK) {
+TEST(CudaGpwStress, MultiKBuildIsOnProductPath) {
     auto atoms = h2_atoms();
     ATV::cuda::gpw::GpwDft m;
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
@@ -36,12 +36,12 @@ TEST(CudaGpwStress, FailClosedMultiK) {
     m.k_mesh[0] = 2;
     m.k_mesh[1] = 1;
     m.k_mesh[2] = 1;
-    // build itself rejects multi-k; stress also guards.
-    EXPECT_THROW(m.build(atoms), std::invalid_argument);
+    m.k_time_reversal = false;
+    EXPECT_NO_THROW(m.build(atoms));
     ATV::cpu::gpw::GpwResult fake;
     fake.converged = true;
-    EXPECT_THROW(ATV::cuda::gpw::gpw_stress(atoms, m, fake),
-                 std::invalid_argument);
+    // Host assembly needs the multi-k payload from a real SCF.
+    EXPECT_THROW(ATV::cuda::gpw::gpw_stress(atoms, m, fake), std::exception);
 }
 
 TEST(CudaGpwStress, FailClosedUnconvergedState) {

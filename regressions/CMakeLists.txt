@@ -862,6 +862,53 @@ if(ATV_BUILD_GPW)
         add_dependencies(regressions run_${_reg_gpw_h2o})
         unset(_reg_gpw_h2o)
 
+        # Water Γ RKS PADE cell-stress dual-gate (cuda-gpw-product-h2o-stress).
+        set(_reg_gpw_h2os reg_cuda-gpw-product-h2o-stress)
+        add_executable(${_reg_gpw_h2os}
+            gpw/cuda-gpw-product-h2o-stress/${_reg_gpw_h2os}.cu)
+        target_link_libraries(${_reg_gpw_h2os} PRIVATE atomiverse CUDA::cufft)
+        set_target_properties(${_reg_gpw_h2os} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_h2os}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_h2os}> --device=both
+            DEPENDS ${_reg_gpw_h2os}
+            COMMENT "regression [gpw/cuda-gpw-product-h2o-stress] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_h2os})
+        unset(_reg_gpw_h2os)
+
+        # Γ UKS O₂ forces + stress (cuda-gpw-uks-o2-forces).
+        set(_reg_gpw_uksf reg_cuda-gpw-uks-o2-forces)
+        add_executable(${_reg_gpw_uksf}
+            gpw/cuda-gpw-uks-o2-forces/${_reg_gpw_uksf}.cu)
+        target_link_libraries(${_reg_gpw_uksf} PRIVATE atomiverse
+                              CUDA::cufft CUDA::cublas CUDA::cusolver)
+        set_target_properties(${_reg_gpw_uksf} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_uksf}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_uksf}> --device=both
+            DEPENDS ${_reg_gpw_uksf}
+            COMMENT "regression [gpw/cuda-gpw-uks-o2-forces] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_uksf})
+        unset(_reg_gpw_uksf)
+
+        # Multi-k RKS H₂ forces + stress (cuda-gpw-kpoint-forces).
+        set(_reg_gpw_kf reg_cuda-gpw-kpoint-forces)
+        add_executable(${_reg_gpw_kf}
+            gpw/cuda-gpw-kpoint-forces/${_reg_gpw_kf}.cu)
+        target_link_libraries(${_reg_gpw_kf} PRIVATE atomiverse
+                              CUDA::cufft CUDA::cublas CUDA::cusolver)
+        set_target_properties(${_reg_gpw_kf} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_${_reg_gpw_kf}
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:${_reg_gpw_kf}> --device=both
+            DEPENDS ${_reg_gpw_kf}
+            COMMENT "regression [gpw/cuda-gpw-kpoint-forces] devices=both (1t)")
+        add_dependencies(regressions run_${_reg_gpw_kf})
+        unset(_reg_gpw_kf)
+
         # Si-class Γ RKS PADE single-grid dual-gate (cuda-gpw-product-si-gate).
         set(_reg_gpw_si reg_cuda-gpw-product-si-gate)
         add_executable(${_reg_gpw_si}

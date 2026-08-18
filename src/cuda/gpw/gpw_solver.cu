@@ -48,6 +48,7 @@
 
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/diis.h"
+#include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/kpoints.h"
 #include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
@@ -2141,6 +2142,36 @@ T* d_alloc(std::size_t n) {
     return p;
 }
 
+/// Map CUDA product members onto a CPU shell for host force/stress assembly.
+cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
+    cpu::gpw::GpwDft c;
+    for (int d = 0; d < 3; ++d)
+        c.cell[d] = m.cell[d];
+    c.cutoff_ry = m.cutoff_ry;
+    c.ngrids = m.ngrids;
+    c.rel_cutoff = m.rel_cutoff;
+    c.n_occ = m.n_occ;
+    c.n_alpha = m.n_alpha;
+    c.n_beta = m.n_beta;
+    c.max_iter = m.max_iter;
+    c.tol = m.tol;
+    c.eps_default = m.eps_default;
+    c.mix = m.mix;
+    c.diis_depth = m.diis_depth;
+    c.lindep_threshold = m.lindep_threshold;
+    c.level_shift = m.level_shift;
+    c.xc = m.xc;
+    c.nonperiodic = m.nonperiodic;
+    c.local_pp_on_grid = m.local_pp_on_grid;
+    c.use_ot = m.use_ot;
+    c.k_time_reversal = m.k_time_reversal;
+    c.k_points = m.k_points;
+    c.k_point_weights = m.k_point_weights;
+    for (int d = 0; d < 3; ++d)
+        c.k_mesh[d] = m.k_mesh[d];
+    return c;
+}
+
 } // namespace
 
 std::vector<std::array<double, 3>>
@@ -2149,21 +2180,14 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
     if (!scf.converged)
         throw std::runtime_error(
             "cuda::gpw::gpw_forces_from_scf: SCF did not converge");
-    // First-slice guards: RKS Γ single-grid local-on-grid device product.
-    // UKS / multigrid / multi-k free-fn forces are deeper slugs.
-    if (method.is_uks())
-        throw std::invalid_argument(
-            "cuda::gpw::gpw_forces_from_scf: UKS forces not on device first "
-            "slice — use cpu::gpw::gpw_forces_from_scf");
-    if (method.uses_kpath())
-        throw std::invalid_argument(
-            "cuda::gpw::gpw_forces_from_scf: multi-k forces not on device "
-            "first slice — keep k_mesh={1,1,1} or use "
-            "cpu::gpw::gpw_forces_from_scf (deeper slug cuda-gpw-kpoint-forces)");
-    if (method.ngrids != 1)
-        throw std::invalid_argument(
-            "cuda::gpw::gpw_forces_from_scf: multigrid forces not on device "
-            "first slice — set ngrids=1 or use cpu::gpw::gpw_forces_from_scf");
+    // Γ RKS single-grid: device grid HF + host AO Pulay (below).
+    // UKS / multi-k / multigrid: CUDA SCF density payload + CPU force
+    // assembly (same hybrid as gpw_stress). Device-native AO Pulay is a
+    // deeper slug.
+    if (method.is_uks() || method.uses_kpath() || method.ngrids != 1) {
+        cpu::gpw::GpwDft shell = cpu_shell_from_cuda(method);
+        return cpu::gpw::gpw_forces_from_scf(atoms, shell, scf);
+    }
     if (method.n_occ < 1)
         throw std::invalid_argument(
             "cuda::gpw::gpw_forces_from_scf: n_occ must be >= 1");
@@ -2512,49 +2536,9 @@ gpw_forces_analytic(const std::vector<GpwAtom>& atoms, GpwDft& method) {
 }
 
 
-namespace {
-
-/// Map CUDA product members onto a CPU shell for fixed-P stress assembly.
-cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
-    cpu::gpw::GpwDft c;
-    for (int d = 0; d < 3; ++d)
-        c.cell[d] = m.cell[d];
-    c.cutoff_ry = m.cutoff_ry;
-    c.ngrids = m.ngrids;
-    c.rel_cutoff = m.rel_cutoff;
-    c.n_occ = m.n_occ;
-    c.n_alpha = m.n_alpha;
-    c.n_beta = m.n_beta;
-    c.max_iter = m.max_iter;
-    c.tol = m.tol;
-    c.eps_default = m.eps_default;
-    c.mix = m.mix;
-    c.diis_depth = m.diis_depth;
-    c.lindep_threshold = m.lindep_threshold;
-    c.level_shift = m.level_shift;
-    c.xc = m.xc;
-    c.nonperiodic = m.nonperiodic;
-    c.local_pp_on_grid = m.local_pp_on_grid;
-    c.use_ot = m.use_ot;
-    for (int d = 0; d < 3; ++d)
-        c.k_mesh[d] = m.k_mesh[d];
-    return c;
-}
-
-void validate_stress_slice(const GpwDft& method) {
-    if (method.uses_kpath())
-        throw std::invalid_argument(
-            "cuda::gpw::gpw_stress: multi-k stress has no device product path "
-            "yet — keep k_mesh={1,1,1} / empty k_points or use "
-            "cpu::gpw::gpw_stress (deeper slug cuda-gpw-kpoint-stress)");
-}
-
-} // namespace
-
 std::array<double, 6>
 gpw_stress(const std::vector<GpwAtom>& atoms, GpwDft& method, double h,
            const std::array<bool, 3>& axes) {
-    validate_stress_slice(method);
     const GpwResult& scf = method.run(atoms);
     if (!scf.converged)
         throw std::runtime_error(
@@ -2566,7 +2550,6 @@ gpw_stress(const std::vector<GpwAtom>& atoms, GpwDft& method, double h,
 std::array<double, 6>
 gpw_stress(const std::vector<GpwAtom>& atoms, const GpwDft& method,
            const GpwResult& scf, double h, const std::array<bool, 3>& axes) {
-    validate_stress_slice(method);
     if (!scf.converged)
         throw std::invalid_argument(
             "cuda::gpw::gpw_stress: supplied state is not converged");

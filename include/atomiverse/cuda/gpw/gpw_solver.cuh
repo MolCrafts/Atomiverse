@@ -147,9 +147,10 @@ class GpwDft {
 /// @brief Analytic ionic forces after a CUDA Γ SCF (free-function family).
 ///
 /// Runs `method.run(atoms)` then assembles forces from the converged
-/// `GpwResult`: host AO Pulay + device grid HF product on SCF V_eff / V_es
-/// (Γ RKS single-grid first cut). Forces match the density that produced
-/// `method.last_result().e_total`. UKS / multigrid free-fn forces fail-closed.
+/// `GpwResult`: Γ RKS single-grid uses host AO Pulay + device grid HF.
+/// UKS / multi-k / multigrid assemble on the host at the CUDA density
+/// payload (same hybrid as `gpw_stress`). Forces match the density that
+/// produced `method.last_result().e_total`.
 ///
 /// @param atoms Geometry + basis/PP [Bohr].
 /// @param method CUDA method (members must match the SCF that will run).
@@ -175,8 +176,8 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
 /// from the converged `GpwResult` (first cut: host analytic twin via
 /// `cpu::gpw::gpw_stress` at the CUDA density payload — same shape as CPU
 /// free-fn stress). Voigt order xx,yy,zz,xy,xz,yz [Hartree/Bohr³].
-/// Fail-closed: multi-k (`k_mesh`≠Γ). UKS / multigrid use the same state
-/// path when energy is owned; deeper device stress assembly is residual.
+/// Γ / UKS / multi-k / multigrid use the same host fixed-\(P\) path when
+/// energy is owned; deeper device stress assembly is residual.
 ///
 /// @param atoms Geometry + basis/PP [Bohr].
 /// @param method CUDA method (members must match the SCF that will run).
