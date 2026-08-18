@@ -51,7 +51,7 @@ quote superseded ~1.25× MAIN figures from wave-7 claims.
 | `tests/cuda/gpw/test_ks_gga.cu` + `reg_cuda-gpw-ks-gga` | composed ρ→V_eff **PBE-GGA** stage vs CPU `ks_grid_build_rks(PBE)` |
 | `tests/cuda/gpw/test_ks_multigrid.cu` + `reg_cuda-gpw-ks-multigrid` | multi-grid product collocate/integrate KS stage vs CPU Γ MG fragment |
 | `reg_cuda-pw-collinear-spin` | CUDA↔CPU collinear LSDA O₂ dual-gate (fixed occupation; no smear) |
-| `reg_cuda-pw-spin-pbe` | CUDA↔CPU collinear **spin-PBE** O₂ dual-gate (fixed occupation; energy only) |
+| `reg_cuda-pw-spin-pbe` | CUDA↔CPU collinear **spin-PBE** O₂ dual-gate (fixed-occ E/F/σ + spin×smear E+F) |
 | `reg_cuda-pw-spin-stress` | CUDA↔CPU collinear LSDA spin cell stress (O₂ triplet Γ; fixed occupation) |
 | `reg_cuda-gpw-kpoint-h-residency` | CUDA↔CPU multi-k RKS energy after device H residual residency (H₂ k=2×1×1) |
 | `reg_cuda-gpw-product-si-gate` | CUDA↔CPU Si Γ RKS PADE ngrids=1 product energy (KB Vnl@Γ; SG device product KS after collocate-pbc) |
@@ -924,48 +924,20 @@ Reject matrix re-confirmed on `dev` @ `e13cdb91` (method=cuda throughout):
   multi-k restricted smear PBE `pw_stress` dual-gate. Gate: GH200. Lever:
   `pw_stress` joint gate + Mermin terms + PBE XC on NSCF strain-FD.
 
-**Collinear spin axis** (LSDA + **spin-PBE energy** landed; derivatives open):
+**Collinear spin axis** (LSDA + spin-PBE E/F/σ + spin×smear E+F landed;
+spin×smear **stress** and multi-k spin still open):
 
-- [ ] `cuda-pw-spin-pbe-forces` | **P3** Analytic ionic forces under collinear
-  **spin-PBE** (energy parent **landed** `cuda-pw-spin-pbe`; LSDA spin-forces
-  alone leaves GGA force depth open). Track: **cuda**. Twin: CPU spin-PBE
-  forces + dual-gate. Gate: GH200. Lever: `pw_forces_analytic` spin path +
-  device PBE spin XC reuse.
 `cuda-pw-spin-stress` **landed** (merge `79d617ca` / feat `841ac78f` /
 harness wave 3 — GH200 **1135756** / prior **1133857** max‖Δσ‖=**1.435e-11**
 eV/Å³ O₂ triplet Γ LSDA) — lift spin reject on `cpu`/`cuda` `pw_stress` for
-fixed-occ collinear LSDA; dual-spin ρ remap NSCF strain-FD; residual spin-PBE
-σ → `spin-pbe-stress`; spin∧smear σ → `spin-smear-stress`.
-- [ ] `cuda-pw-spin-pbe-stress` | **P3** Cell stress under collinear
-  **spin-PBE** (energy parent **landed**; LSDA spin-stress **landed** —
-  GGA stress depth open). Track: **cuda**. Twin:
-  CPU spin-PBE `pw_stress` + dual-gate. Gate: GH200 (after
-  `spin-stress` LSDA pattern on base). Lever: `pw_stress` spin path + device PBE spin
-  XC on NSCF strain-FD density remap.
-- [ ] `cuda-pw-spin-smear` | **P2** Collinear spin + metallic smear free energy
-  (currently spin∧smear throws). Track: **cuda**. Twin: CPU
-  `reg_pw-uks-fe-smearing` class. Gate: GH200; optional after spin-PBE /
-  energy spin path stable. Forces/stress are separate deeper rows; spin∧smear∧PBE
-  is `spin-smear-pbe`.
-- [ ] `cuda-pw-spin-smear-forces` | **P3** Analytic ionic forces under collinear
-  spin **+** metallic smear after `spin-smear` energy (restricted smear forces
-  and LSDA spin forces alone leave the joint path open). Track: **cuda**. Twin:
-  CPU UKS+smear forces class + dual-gate. Gate: GH200 after `spin-smear`
-  energy. Lever: `pw_forces_analytic` joint gate lift + fractional occ force
-  assembly.
+fixed-occ collinear LSDA; dual-spin ρ remap NSCF strain-FD; residual
+spin∧smear σ → `spin-smear-stress`.
 - [ ] `cuda-pw-spin-smear-stress` | **P3** Cell stress under collinear spin +
-  metallic smear after `spin-smear` energy (same joint-path gap as forces).
-  Track: **cuda**. Twin: CPU UKS+smear `pw_stress` + dual-gate. Gate: GH200
-  after `spin-smear` energy (prefer after LSDA spin-stress / restricted
-  smear-stress patterns). Lever: `pw_stress` joint gate + Mermin free-energy
-  stress terms.
-- [ ] `cuda-pw-spin-smear-pbe` | **P3** **new (wave 5)** — Collinear spin +
-  metallic smear free energy under **PBE** after `spin-smear` (first joint
-  energy may be LSDA-only; CPU `reg_pw-uks-fe-smearing` / spin-GGA class leaves
-  spin∧smear∧PBE open on device). Track: **cuda**. Twin: CPU UKS+smear PBE
-  free energy dual-gate. Gate: GH200 after `spin-smear` energy; stated tol;
-  **perf_exempt** small cell. Lever: `pw_solver` joint gate +
-  `DeviceDensity` spin-PBE XC already landed for fixed-occ.
+  metallic smear after `spin-smear` energy (E+F landed; joint free-energy
+  stress still closed on both backends). Track: **cuda**. Twin: CPU
+  UKS+smear `pw_stress` + dual-gate. Gate: GH200 after LSDA spin-stress /
+  restricted smear-stress patterns. Lever: `pw_stress` joint gate + Mermin
+  free-energy stress terms.
 - [ ] `cuda-pw-spin-kmesh` | **P2** **new (wave 6)** — Multi-k collinear
   fixed-occ UKS **energy dual-gate** (device `run()` already accepts
   `k_mesh`×`spin_polarized` for LSDA/PBE; production dual-gates are **Γ-only**
@@ -974,12 +946,6 @@ fixed-occ collinear LSDA; dual-spin ρ remap NSCF strain-FD; residual spin-PBE
   dual-gate. Gate: GH200 + stated energy tol; **perf_exempt** small cell;
   not forces/stress/smear. Lever: unit/reg under `k_mesh>1` + spin; no new
   XC kernel.
-- [ ] `cuda-pw-spin-smear-pbe-forces` | **P3** **new (wave 6)** — Analytic
-  ionic forces under collinear spin + metallic smear + **PBE** after
-  `spin-smear-pbe` energy (LSDA spin-smear forces alone leave GGA joint F
-  open). Track: **cuda**. Twin: CPU UKS+smear PBE forces + dual-gate. Gate:
-  GH200 after `spin-smear-pbe` energy. Lever: `pw_forces_analytic` triple
-  gate lift + device spin-PBE XC reuse.
 - [ ] `cuda-pw-spin-smear-pbe-stress` | **P3** **new (wave 6)** — Cell stress
   under collinear spin + metallic smear + **PBE** after `spin-smear-pbe`
   energy (same triple joint gap as forces). Track: **cuda**. Twin: CPU
@@ -1209,7 +1175,10 @@ uks-payload-device / residency P0.
 **`cuda-gpw-stress`**, **`cuda-gpw-nondefault-stream`**,
 **`cuda-gpw-device-diis-eigen`**, **`cuda-gpw-uks-device-diis`**, **`cuda-gpw-device-weight-pack`**, **`cuda-gpw-product-h2o-gate`**, **`cuda-gpw-kpoints`**, **`cuda-pw-spin-forces`**,
 **`cuda-pw-smear-forces`**, **`cuda-gpw-kpoint-device-collocate`**, **`cuda-gpw-kpoint-device-integrate`**, **`cuda-gpw-kpoint-device-diis`**, **`cuda-gpw-kpoint-h-assemble`**, **`cuda-pw-smear-stress`**, **`cuda-gpw-kpoint-device-stvnl`**, **`cuda-pw-spin-stress`**, **`cuda-gpw-kpoint-h-residency`**, **`cuda-gpw-product-si-gate`**, **`cuda-gpw-device-h-assemble`**, **`cuda-gpw-uks-h-assemble`**, **`cuda-gpw-uks-p-residency`**, **`cuda-gpw-kpoint-p-residency`**, **`cuda-gpw-kpoint-device-energy`**, **`cuda-gpw-force-stream`**, **`cuda-gpw-product-collocate-pbc`**, **`cuda-gpw-multigrid-si-energy-path`**,
-**`cuda-gpw-device-payload`**.
+**`cuda-gpw-device-payload`**, **`cuda-pw-spin-pbe-forces`**,
+**`cuda-pw-spin-pbe-stress`**, **`cuda-pw-spin-smear`**,
+**`cuda-pw-spin-smear-forces`**, **`cuda-pw-spin-smear-pbe`**,
+**`cuda-pw-spin-smear-pbe-forces`**.
 
 ## in_progress
 
@@ -1237,6 +1206,12 @@ dual-gate matrix explosion. No soft tols.**
   fair-wall ~1× is still a **perf** residual, not a soft-tol staff)
 
 ## done
+
+Claim-completion 2026-08-18 (`dev` @ `9da1f7ec`):
+
+- [x] `cuda-pw-spin-smear` / `cuda-pw-spin-smear-pbe` | Collinear spin + FD smear **energy** (shared μ, \(f\in[0,1]\); PBE O₂) | `reg_cuda-pw-spin-pbe` | GH200 **1336653** \|ΔE\|=**1.10e-13** Ha mag=1.6682
+- [x] `cuda-pw-spin-smear-forces` / `cuda-pw-spin-smear-pbe-forces` | Same settings **analytic forces** — force-path SCF must be Mermin F, not fixed-occ | feat `7d9ff37a` (CPU) + `9da1f7ec` (CUDA force SCF) | GH200 **1357414** max\|ΔF\|=**1.92e-12** eV/Å; energy_ry=**−57.57643373** smear=1; residual spin×smear **σ** → `spin-smear-stress`
+- [x] `cuda-pw-spin-pbe-forces` / `cuda-pw-spin-pbe-stress` | Fixed-occ spin-PBE F/σ dual-gate | GH200 **1335945** / reconfirm **1357414** max\|ΔF\|=**1.98e-12** eV/Å max\|Δσ\|=**4.86e-12** eV/Å³
 
 Harness wave 4 land 2026-08-11 (`dev` @ `88d8ec59` after cuda-gpw-multigrid-si-energy-path):
 
@@ -1290,7 +1265,7 @@ Harness wave 4 land 2026-08-11 (`dev` @ `1733535f` after kpoint-device-collocate
 
 Harness wave 3 land 2026-08-11 (`dev` @ `629aca3b` after smear-forces):
 
-- [x] `cuda-pw-smear-forces` | **P2** Lift restricted `smearing != none` reject on `pw_forces_analytic`; force-path SCF with FD/MP/Gaussian fractional occupations + per-band KB NL Hellmann–Feynman; CPU oracle `run_scf_smear_restricted` + fractional NL | track cuda | twin: same-settings CPU metallic-smear forces dual-gate Al₂ FD | files: `pw_solver.cu`, `internal/pw_forces.{cu,cuh}`, `internal/device_solver.{cu,cuh}`, CPU `pw_forces.cpp`, `reg_cuda-pw-smear-forces`, REFERENCE | feat: `891baefc` / tip `629aca3b` (rebased wave-9) | evidence: GH200 **1130427** max\|ΔF\|=**1.36e-11** eV/Å (tol 5e-3; prior **1130401** / **1130359** same class); units 2/2; spin∧smear F / smear stress still reject → child rows; **perf_exempt** small cell |
+- [x] `cuda-pw-smear-forces` | **P2** Lift restricted `smearing != none` reject on `pw_forces_analytic`; force-path SCF with FD/MP/Gaussian fractional occupations + per-band KB NL Hellmann–Feynman; CPU oracle `run_scf_smear_restricted` + fractional NL | track cuda | twin: same-settings CPU metallic-smear forces dual-gate Al₂ FD | files: `pw_solver.cu`, `internal/pw_forces.{cu,cuh}`, `internal/device_solver.{cu,cuh}`, CPU `pw_forces.cpp`, `reg_cuda-pw-smear-forces`, REFERENCE | feat: `891baefc` / tip `629aca3b` (rebased wave-9) | evidence: GH200 **1130427** max\|ΔF\|=**1.36e-11** eV/Å (tol 5e-3; prior **1130401** / **1130359** same class); units 2/2; spin∧smear F **landed** **1357414**; smear stress residual → `smear-stress-al2-gate`; **perf_exempt** small cell |
 
 Harness wave 2 land 2026-08-11 (`dev` @ `ce0a0c6f` after uks-diis + weight-pack):
 
@@ -1368,8 +1343,8 @@ Harness wave 4 land 2026-08-10 (`dev` @ `118d3003`):
   `pw_solver.{cu,cuh}`, unit, reg, job | merge: `118d3003` / feat `7949e29d` |
   evidence: GH200 **1124645** \|ΔE\|=**1.14e-13** Ha (tol 2e-3); E both
   **−28.7585210635** Ha mag=2; \|E_PBE−E_LSDA\|_cpu=**0.129** Ha; prior
-  **1123961** / **1122874**; **perf_exempt** small cell; not forces/stress/
-  spin-smear |
+  **1123961** / **1122874**; **perf_exempt** small cell; F/σ + spin-smear
+  E+F landed 2026-08-18 (`9da1f7ec` / **1357414**) |
 
 Harness wave 3 land 2026-08-10 (`dev` @ `18663d13`):
 

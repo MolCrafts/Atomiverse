@@ -71,8 +71,9 @@ Grok CUDA skills (not ad-hoc style):
 | PW PBE analytic ionic forces | **landed** (`cuda-pw-forces-pbe`) | same public API under `XCType::PBE`; force path shares `den.stream()`; GH200 post-merge **1050801** max\|ΔF\|=2.63e-13 eV/Å (tol 5e-3); E both −13.89672028 Ry; **not** stress/spin/smear |
 | PW analytic cell stress | **landed** (`cuda-pw-stress` + `cuda-pw-pbe-stress`) | `internal/pw_stress.{cu,cuh}` + `cuda::pw::pw_stress`; Nielsen–Martin NSCF strain-FD + ρ·Ω₀/Ω remap; GH200 **1050604** max\|Δσ\|=1.36e-12 eV/Å³ (LSDA Si) + **1123959** max\|Δσ\|=5.585e-12 eV/Å³ (PBE Si; `reg_cuda-pw-stress-pbe`); **not** spin/smear/multi-SCF FD product |
 | PW collinear LSDA spin | **landed** (`cuda-pw-collinear-spin`) | nspin=2 density + VWN5 spin XC + fixed-occupation UKS; GH200 **1051041** O₂ \|ΔE\|=1.07e-13 Ha (tol 2e-3); forces/stress reject spin; **not** smear |
-| PW collinear spin-PBE energy | **landed** (`cuda-pw-spin-pbe`) | true spin-GGA on device (`xc_pbe_spin_grid` + spectral ∇ρ_σ); GH200 **1124645** O₂ \|ΔE\|=1.14e-13 Ha (tol 2e-3); forces/stress/smear still reject |
-| PW restricted metallic smear | **landed** (`cuda-pw-metallic-smear`) | FD/Gaussian/MP + extra_bands + Ritz cache; GH200 **1051119** Al \|ΔE\|=1.24e-14 Ry; spin+smear / forces / stress reject |
+| PW collinear spin-PBE energy | **landed** (`cuda-pw-spin-pbe`) | true spin-GGA on device (`xc_pbe_spin_grid` + spectral ∇ρ_σ); GH200 **1124645** O₂ \|ΔE\|=1.14e-13 Ha (tol 2e-3); F/σ **1335945** |
+| PW collinear spin×smear energy+forces | **landed** | shared μ, \(f\in[0,1]\); GH200 **1336653** \|ΔE\|=1.10e-13 Ha; **1357414** max\|ΔF\|=1.92e-12 eV/Å (Mermin force-path SCF); spin×smear **stress** still reject |
+| PW restricted metallic smear | **landed** (`cuda-pw-metallic-smear`) | FD/Gaussian/MP + extra_bands + Ritz cache; GH200 **1051119** Al \|ΔE\|=1.24e-14 Ry; restricted smear F/σ landed; spin+smear F landed **1357414** |
 | RHF non-default stream D2H | **landed** (`cuda-rhf-nondefault-stream`) | residual/V_nuc async on Evaluate stream; GH200 **1051227** 2/2 PASS |
 
 ### CUDA PW slice — envelope and evidence
@@ -82,10 +83,10 @@ Public shape mirrors `cpu::pw::PW`: public members → `build(frame)` →
 (no shim). Device envelope — everything else **throws** `std::invalid_argument`
 naming the member and the way out: closed-shell **or collinear fixed-occupation
 UKS with `XCType::LSDA` or `XCType::PBE`** (`spin_polarized` + integer mag),
-restricted metallic smear (FD/Gaussian/MP; not with spin), `xc=XCType::LSDA` or
-`XCType::PBE` (closed-shell or spin), `k_mesh>=1`, `ecut_ry>0`. k-points are
-**not** MPI-distributed here. Spin+smear, spin forces, and spin stress still
-reject.
+fixed occupation **or** metallic smear (shared μ, \(f\in[0,1]\)),
+`xc=XCType::LSDA` or `XCType::PBE` (closed-shell or spin), `k_mesh>=1`,
+`ecut_ry>0`. k-points are **not** MPI-distributed here. Spin×smear
+**stress** still rejects.
 
 Per-iteration PCIe traffic, density side: Pulay Gram ≤ 1 KB (only once history
 ≥ 2) + ≤ 8 coefficients + 5 energy/residual doubles. **No O(N_G) / O(N_r)
@@ -171,10 +172,10 @@ multi-grid product KS stage landed** (`cuda-gpw-ks-multigrid`, GH200
 **1051041**). **Restricted metallic smear landed** (`cuda-pw-metallic-smear`,
 GH200 **1051119** dual-gate Al \|ΔE\|=1.24e-14 Ry). **RHF non-default stream
 D2H landed** (`cuda-rhf-nondefault-stream`, GH200 **1051227** 2/2 PASS).
-Residual open depth: spin+smear / spin forces / spin stress / **spin-PBE F/σ**
-(+ spin-smear F/σ after spin-smear energy; **spin multi-k dual-gate**;
-spin-smear-pbe F/σ; **spin×kmesh×smear** joints); collinear spin-PBE
-**energy** landed (`cuda-pw-spin-pbe`, GH200 **1124645**). GPW first product +
+Residual open depth: spin×smear **stress**; **spin multi-k dual-gate**;
+**spin×kmesh×smear** joints. Collinear spin-PBE **energy** landed
+(`cuda-pw-spin-pbe`, GH200 **1124645**); F/σ **1335945**; spin×smear E+F
+**1357414**. GPW first product +
 **device mid-SCF collocate** **landed** (GH200 **1125709**) + **product
 multigrid energy** (**1126433**) + **Γ UKS energy** (**1126430**) + **device
 RKS DIIS/eigen** (**1129719**) — depth residual on es-cpu-cuda queue (UKS

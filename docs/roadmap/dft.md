@@ -471,8 +471,9 @@ Two periodic DFT engines exist, with disjoint strengths:
   GH200 **1130196**) + **collinear LSDA spin stress** (`cuda-pw-spin-stress` /
   GH200 **1135756** max‖Δσ‖=**1.435e-11** eV/Å³; **spin-PBE F/σ landed**
   GH200 **1335945**; **collinear spin×smear energy** GH200 **1336653**
-  \|ΔE\|=1.10e-13 Ha, mag=1.6682; CPU+CUDA spin×smear **forces** compose
-  in `pw_forces_analytic` / `reg_cuda-pw-spin-pbe`), and **restricted metallic smear** energy (FD/Gaussian/MP +
+  \|ΔE\|=1.10e-13 Ha, mag=1.6682; **spin×smear forces** GH200 **1357414**
+  max\|ΔF\|=**1.92e-12** eV/Å, force-path SCF energy_ry=**−57.57643373**
+  smear=1), and **restricted metallic smear** energy (FD/Gaussian/MP +
   `extra_bands` + Mermin free energy) **+ restricted metallic-smear analytic
   ionic forces** (`cuda-pw-smear-forces` / GH200 **1130427** max\|ΔF\|=
   **1.36e-11** eV/Å) **+ restricted metallic-smear cell stress**
@@ -758,7 +759,7 @@ Which engine backs which ✓:
   metallic-smear forces** (`cuda-pw-smear-forces`) **and** CUDA GPW free-fn
   first slice (host AO Pulay + device grid HF; `reg_cuda-gpw-device-forces`
   H₂; UKS/MG free-fn still reject); spin-PBE F landed; spin×smear F
-  composes on CPU+CUDA (`reg_cuda-pw-spin-pbe`).
+  landed GH200 **1357414** (`reg_cuda-pw-spin-pbe`).
 - **PW stress** is **Nielsen–Martin analytic** (`pw_stress` → Frame `kStress`;
   multi-SCF strain-FD oracle `pw_stress_fd`; `reg_pw-analytic-stress-si`).
   **CUDA ◐** = plane-wave closed-shell **LSDA + PBE** (`cuda::pw::pw_stress`;
@@ -874,7 +875,8 @@ FD/MP (`reg_gpw-metallic-smearing`) **and multi-k UKS** (`reg_gpw-uks-smearing`)
 restricted smear analytic ionic forces** (`reg_cuda-pw-smear-forces`; GH200
 **1130427**) **+ restricted smear cell stress** (`reg_cuda-pw-smear-stress`;
 GH200 **1133111** Al 1-atom; multi-atom residual on es-cpu-cuda queue);
-spin+smear still reject; no CUDA GPW smear product.
+spin×smear **energy + forces** landed (`reg_cuda-pw-spin-pbe`; GH200
+**1357414**); spin×smear **stress** still reject; no CUDA GPW smear product.
 GPW free-energy **analytic ionic forces under smear** are product for multi-k
 RKS and UKS (`reg_gpw-metallic-forces` / `reg_gpw-uks-metallic-forces`;
 fractional \(P_k/W_k\) payload). Multi-k free-energy **stress under smear**
