@@ -457,22 +457,107 @@ Named here per the iron law; belongs to that loop's owner to fix.
 **Staff `dftb-gamma-units-fix` first** — every MioSketch pin below it is
 provisional until it lands.
 
+## GapCensus — 2026-08-25 wave-6 (parent `dev`)
+
+**Branch:** `dev` @ `cea5b9cc`. **Live SE/TB spec files:** none (INDEX still
+lists a GFN2-CHON chain as "code-complete"; those spec paths and
+`src/cpu/semiempirical/gfn2.cpp` are **absent** — a stale INDEX, not Recover).
+**TB `wf/*` tips / isolation worktrees:** none. **incomplete `[~]`:** 0.
+Parent working tree is dirty with concurrent non-TB work; census reads the
+committed SE surface at HEAD.
+
+### Sources re-diffed
+
+| Source | Finding |
+| ------ | ------- |
+| `docs/roadmap/semiempirical.md` ○ | PM3/6/7/OM3; closed-form NDDO F; GFN1/2/IPEA/spin/PBC/analytic G/H; GFN-FF; sTDA; noncollinear / SOC |
+| `include/atomiverse/cpu/semiempirical/` | Public: `AM1`/`RM1` (+evaluators), `DFTB0`, `DFTB2`, `DFTB3`, `TdDftbResult`. **No** `PM*` / `XtbGfn0` / `GFN1` / `GFN2` |
+| `SemiEmpiricalMethod` | **AM1\|RM1 only** |
+| `XtbGfn0` / `reg_h2o_gfn0` | **deleted** `bc14dabd` (hygiene; INDEX GFN2-05 said "toy GFN0 deleted; TB pause") |
+| CMake | `if(EXISTS gfn2.cpp)` / `test_gfn2_params.cpp` stubs — sources missing |
+| `NDDOSolver::compute_forces` | still **fixed-P central FD** |
+| `DFTB2` | analytic F+σ on Mio (restricted, collinear, multi-k) and ThreeOb; ThreeOb **multi-k throws**; D3 molecular + orthorhombic periodic; Elstner γ |
+| `DFTB3` | energy + analytic F + **Γ-PBC lattice-image F**; no k-mesh, no `with_stress`, no open shell, no ThreeOb, no D3 |
+| `tools/tb_oracle/` | mopac AM1/RM1 water twins; dftbplus twins; **xtb 6.7.1 twins on disk** (`inputs/xtb/{h2o,ch4,nh3,ch3oh}_gfn2` + off-eq grad) but `*.out` is gitignored |
+| OpenMOPAC surface | MNDO / AM1 / PM3 / RM1 / PM6 / PM7 / MNDO-d — **not** OM3, **not** DFTB |
+| DFTB+ surface | DFTB0/2/3, spin, PBC/k, F/σ, TD-DFTB, +U, SOC, D3, … |
+| xtb surface | GFN0/1/2, IPEA, analytic G; GFN-FF classical (scope-out) |
+
+### Tree vs roadmap (wave-6)
+
+| Capability | Roadmap | Tree on `dev` HEAD | Verdict |
+| ---------- | ------- | ------------------ | ------- |
+| AM1 / RM1 + mopac H₂O pins | ✓ | ship | deepen: CO₂/CO discriminator still ○ |
+| NDDO closed-form F | ○ | fixed-P FD | **gap** |
+| PM3 / PM6 / PM7 | ○ | no types | Phase B **oracle=mopac** |
+| DFTB0 / DFTB2 E+F+σ / Γ / multi-k | ✓ | product | ThreeOb multi-k still throws |
+| DFTB3 E+F + Γ-PBC F | ✓ | molecular + Γ F | deepen: **no k / stress / open shell / ThreeOb / D3** |
+| γ_AB Elstner | ✓ | `internal/dftb_gamma.h` | **closed** (wave-5 head landed) |
+| TD-DFTB | ✓ foothold | Casida + \(f\) | no excited-state F, no LC |
+| GFN0-xTB | was ✓ toy | **absent** (deleted) | flip ○; Phase C first row |
+| GFN1/2 | ○ | absent (INDEX claims are not on-tree) | **gaps** (late; ladder = NDDO first) |
+
+### Foothold ≠ closed (wave-6)
+
+- DFTB3 Γ-PBC F ships; **cell stress / k-mesh** still missing → new
+  `dftb3-analytic-stress`, `dftb3-kpoints`.
+- ThreeOb energy/F/σ ship; **multi-k throws** → new `dftb2-threeob-multi-k`.
+- Water mopac pins ship; RM1 ΔHf(H₂O) is 0.06 kcal/mol from experiment —
+  **does not discriminate the method** → keep `nddo-sharp-discriminator`
+  (OpenMOPAC accuracy table: RM1 CO₂ error **+12.50** kcal/mol on
+  ΔHf_exp = −94.05 → RM1 = **−81.55**).
+- GFN2 CHON campaign never merged; do **not** Recover from missing specs.
+  Staff GFN only after NDDO PM or `theme=gfn\|xtb`.
+
+### gaps_remaining (wave-6 census snapshot)
+
+**18** pending + **0** incomplete + **9** blocked → **nonzero; continue loop.**
+`new_slugs_added=3` (`dftb3-analytic-stress`, `dftb3-kpoints`,
+`dftb2-threeob-multi-k`). Roadmap: GFN0 ✓toy → ○ (deleted). **Queue not
+exhausted.** Ladder this wave: **NDDO PM** (DFTB0/2/3 product + γ fix landed).
+
+## Assign — 2026-08-25 wave 6 (parent `dev` @ `cea5b9cc`)
+
+**Priority:** incomplete `[~]` (0) ≫ open SE specs (none) ≫ pending Phase B
+NDDO then remaining DFTB3/ThreeOb deepens. **Staff = 5** (user cap 3–5).
+No TB `wf/*` / no isolation worktrees to recover.
+
+| # | Slug | Kind | Action |
+| - | ---- | ---- | ------ |
+| 1 | `nddo-sharp-discriminator` | **new** | RM1 CO₂ ΔHf vs OpenMOPAC accuracy table (−81.55 vs exp −94.05) |
+| 2 | `pm3-organic-energy` | **new** | PM3 tables + `SemiEmpiricalMethod::PM3` + mopac pin |
+| 3 | `nddo-closed-form-forces` | **new** | closed-form NDDO multipole dI/dR; replace fixed-P FD |
+| 4 | `dftb3-analytic-stress` | **new** | DFTB3 closed-form cell virial (Γ); DFTB2 already has it |
+| 5 | `dftb2-threeob-multi-k` | **new** | lift ThreeOb multi-k throw; Bloch F/σ like MioSketch |
+
+**Skipped this wave:** `pm6-*` / `pm7-*` (after PM3 table pipeline);
+`dftb3-kpoints` (after DFTB3 stress); all Phase C GFN (ladder; no `theme=gfn`);
+blocked (9).
+
+**After staff:** incomplete `[~]` = **5**; pending = **13**; blocked = **9**.
+Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**;
+SE-only cmake; offline pins only. **No push.** File split: sharp-discriminator
+= regression + mopac twin; PM3 = param tables/enum; closed-form F =
+`nddo_solver`/`nddo_two_electron`; DFTB3 stress = `dftb3.cpp`; ThreeOb k =
+`dftb2.cpp` ThreeOb path.
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
 
-Staff these before NDDO product depth and before GFN-xTB.
+Product DFTB0/2/3 + γ Elstner + Γ-PBC F landed. Remaining are **deepens**.
 **Prefer Recover of `## in_progress` over new pending.**
 
-- [ ] `nddo-sharp-discriminator` | Water is a mild NDDO gate (RM1 sits 0.06 kcal/mol from experiment). Add CO₂ (RM1 −81.55 vs exp −94.05) or CO (−13.87 vs −26.42) so the pin discriminates the *method*, not thermochemistry | nddo | CO2 / CO | ΔHf | **oracle=mopac**; OpenMOPAC ships an RM1 CO₂ transcript
+- [ ] `dftb3-analytic-stress` | DFTB3 closed-form cell stress (pair virial, Γ); DFTB2 already has no strain-FD path | dftb3 | C-chain / H2O cell | σ vs strain-FD | **oracle=dftb+** (formula)
+- [ ] `dftb3-kpoints` | DFTB3 Monkhorst–Pack energy (+ F later) | dftb3 | C-chain | E | **oracle=dftb+**; after Γ stress
+- [ ] `dftb2-threeob-multi-k` | ThreeOb currently throws on `k_mesh≠{1,1,1}` | dftb2 | CH4 / C-chain 3ob | E/F | **oracle=dftb+**
 
 ### Phase B — NDDO product depth (oracle = OpenMOPAC)
 
-AM1/RM1 energy footholds ship. Forces are fixed-density FD — deepen with
-OpenMOPAC pins and closed-form integrals. Do **not** use DFTB+ for these rows.
-Seed `tools/tb_oracle/inputs/mopac/` with the first hard pin (assign-w4 staffs
-`am1-water-mopac-energy` + `rm1-water-mopac-energy`).
+AM1/RM1 energy footholds + water mopac pins ship. Forces are still
+fixed-density FD. Do **not** use DFTB+ for these rows.
 
+- [ ] `nddo-sharp-discriminator` | Water is a mild NDDO gate (RM1 sits 0.06 kcal/mol from experiment). Add CO₂ (RM1 −81.55 vs exp −94.05) so the pin discriminates the *method*, not thermochemistry | nddo | CO2 | ΔHf | **oracle=mopac**; OpenMOPAC accuracy table RM1 error +12.50 kcal/mol
 - [ ] `nddo-closed-form-forces` | Closed-form multipole / integral-derivative NDDO nuclear forces (replace fixed-P FD) | nddo | H2O off-eq | F vs mopac + FD | **oracle=mopac**
 - [ ] `pm3-organic-energy` | PM3 (or MNDO) on NDDO ladder for table pipeline | nddo | small organic | E | **oracle=mopac**; bridge MNDO→PM6; extend `SemiEmpiricalMethod`
 - [ ] `pm6-water-energy` | PM6 energy vs OpenMOPAC | nddo/pm6 | H2O | E | **oracle=mopac**
@@ -481,12 +566,14 @@ Seed `tools/tb_oracle/inputs/mopac/` with the first hard pin (assign-w4 staffs
 
 ### Phase C — GFN-xTB (oracle = xtb) — product ladder open
 
-xTB is **not** DFTB3++. Prefer after DFTB γ fix + DFTB3 PBC if possible, but
-operator may force `theme=gfn|xtb`. Seed `tools/tb_oracle/inputs/xtb/`.
+xTB is **not** DFTB3++. Toy `XtbGfn0` was deleted (`bc14dabd`); GFN2 CHON
+never landed on `dev` (stale INDEX). Offline xtb 6.7.1 twins exist on disk
+under `tools/tb_oracle/inputs/xtb/` (`*.out` gitignored). Staff after NDDO PM
+unless `theme=gfn|xtb`.
 **Staff order:** `gfn0-beyond-toy` → `gfn1` / `gfn2-water` → forces → then
-`gfn-xtb-analytic-hessian` / `stda-xtb` (unlocked after production GFN energy).
+`gfn-xtb-analytic-hessian` / `stda-xtb`.
 
-- [ ] `gfn0-beyond-toy` | Lift GFN0 past H/C/O sketch tables toward production GFN0 (+ REFERENCE/`oracle:` line; `h2o_gfn0` still lacks REFERENCE) | xtb | multi-element | E | **oracle=xtb|literature**
+- [ ] `gfn0-beyond-toy` | Production GFN0 (toy type deleted; restore as product or skip to GFN2) | xtb | multi-element | E | **oracle=xtb**
 - [ ] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | small organic | E [eV] | **oracle=xtb**
 - [ ] `gfn2-xtb-water` | Production GFN2-xTB energy | xtb | H2O | E [eV] | **oracle=xtb**
 - [ ] `gfn2-xtb-forces` | GFN2-xTB analytic forces | xtb | H2O off-eq | F | **oracle=xtb**
@@ -541,7 +628,7 @@ _(footholds + wave-1/2/3/4 product depth on `dev`)_
 - [x] `dftb2-analytic-forces-threeob` | Closed-form nuclear F on `DftbSkSet::ThreeOb` | `reg_dftb2-analytic-forces-threeob` | **oracle=dftb+** (formula)
 - [x] `dftb2-spin-analytic-forces` | Closed-form collinear open-shell nuclear F (MioSketch) | `reg_dftb2-spin-analytic-forces` | **oracle=dftb+** (formula)
 - [x] `dftb2-analytic-stress` | Restricted MioSketch analytic cell stress (pair virial); open-shell/ThreeOb strain-FD | `reg_dftb2-analytic-stress` | **oracle=dftb+** (formula)
-- [x] `dftb2-dftbplus-energy-pin` | Offline DFTB+ 24.1 H₂ total-energy pin on mio-1-1 H–H static SK (`dftb_mio_hh_sk.h`) | `reg_dftb2-dftbplus-energy-pin` | **oracle=dftb+**
+- [x] `dftb2-dftbplus-energy-pin` | Offline DFTB+ 24.1 H₂ total-energy pin on mio-1-1 H–H static SK (`dftb_mio_sk_tables.h`) | `reg_dftb2-dftbplus-energy-pin` | **oracle=dftb+**
 - [x] `dftb2-periodic-gamma` | Γ-point periodic SCC-DFTB2 lattice-sum energy (H⁰/S, γ, repulsive) | `reg_dftb2-periodic-gamma` | **oracle=literature** (+ family dftb+)
 - [x] `dftb2-3ob-organic` | Static 3ob-3-1 organic CHNO SK (`DftbSkSet::ThreeOb`) + CH4 DFTB+ 24.1 pin | `reg_dftb2-3ob-organic` | **oracle=dftb+**
 - [x] `dftb2-analytic-forces` | Closed-form DFTB2 nuclear gradient (HF+Pulay+SCC γ+repulsive); replace re-SCC FD on restricted MioSketch | `reg_dftb2-analytic-forces` | **oracle=dftb+** (formula / module boundary)

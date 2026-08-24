@@ -27,7 +27,7 @@ open. AM1-BCC charge assignment still uses the energy/charge path (see
 **SCC-DFTB2** multi-element H/C/N/O (`DFTB2`) ships with static in-tree
 **mio-style sketch** SK tables (`reg_h2_dftb2`, `reg_h2o_dftb2_mio`),
 **mio-1-1 H–H** radial grids for the absolute DFTB+ energy pin
-(`dftb_mio_hh_sk.h`, `reg_dftb2-dftbplus-energy-pin`), and production
+(`dftb_mio_sk_tables.h`, `reg_dftb2-dftbplus-energy-pin`), and production
 **3ob-3-1** organic CHNO tables (`DftbSkSet::ThreeOb`, `reg_dftb2-3ob-organic`).
 **Nuclear forces** are analytic on MioSketch for closed shell **and collinear
 open shell** (Hellmann–Feynman + Pulay + SCC γ + repulsive;
@@ -45,12 +45,13 @@ Bloch-sum image-resolved densities (`reg_dftb2-multi-k-forces`). Opt-in
 and as a **Γ-PBC lattice sum** (`DFTB2::d3`, `d3_periodic`, `d3_cutoff`;
 `reg_dftb2-dispersion-d3`, `reg_dftb2-dispersion-d3-periodic`), each with its
 own analytic gradient and virial. Non-SCC **DFTB0** ships (`reg_dftb0-h2`).
-**GFN0-xTB toy** (`XtbGfn0`, `reg_h2o_gfn0`) remains a sketch. **DFTB3** ships
-energy (`reg_dftb3-water-mio`) — after its third-order potential was corrected
-to be the derivative of its own energy — **and closed-form nuclear forces**
-including ∂Γ/∂R (`reg_dftb3-analytic-forces`), with the re-SCC finite
-difference deleted; DFTB3 is still **molecular min-image only** (no PBC,
-k-mesh, stress, open shell, ThreeOb or D3 on that path). **Analytic stress**
+**GFN0-xTB toy** was deleted (`XtbGfn0` / `reg_h2o_gfn0` gone as of
+`bc14dabd`); production GFN stays ○. **DFTB3** ships energy
+(`reg_dftb3-water-mio`) — after its third-order potential was corrected to be
+the derivative of its own energy — **and closed-form nuclear forces** including
+∂Γ/∂R (`reg_dftb3-analytic-forces`), plus **Γ-PBC lattice-image forces**
+(`reg_dftb3-periodic-forces`); DFTB3 still has no k-mesh, cell stress, open
+shell, ThreeOb or D3. **Analytic stress**
 ships as the closed-form pair virial on **every** DFTB2 product path —
 restricted MioSketch, collinear open shell, ThreeOb 3ob-3-1, and multi-k
 (`reg_dftb2-analytic-stress`, `reg_dftb2-spin-analytic-stress`,
@@ -107,7 +108,7 @@ multipole derivatives stay ○. Analytic Hessian remains finite-difference via
 | TD-DFTB                   |  ✓  |   ○  |   ○  |
 
 DFTB2 is multi-element H/C/N/O with static SK tables (`dftb_mio_tables.h` sketch
-+ `dftb_mio_hh_sk.h` mio-1-1 H–H + `dftb_3ob_tables.h` 3ob-3-1 organics).
++ `dftb_mio_sk_tables.h` mio-1-1 H–H + `dftb_3ob_tables.h` 3ob-3-1 organics).
 Collinear spin (`multiplicity`) and **analytic nuclear forces**
 (HF+Pulay+γ+rep; **open shell included** on MioSketch; **ThreeOb** closed-form
 F ships) are product paths. **Analytic stress** ships as the closed-form pair
@@ -140,7 +141,7 @@ depth → DFTB3 F → TD → NDDO PM → GFN late.
 
 | Method                    | CPU | CUDA | Kokkos |
 | ------------------------- | :-: | :--: | :---: |
-| GFN0-xTB                  |  ✓  |   ○  |   ○  |
+| GFN0-xTB                  |  ○  |   ○  |   ○  |
 | GFN1-xTB                  |  ○  |   ○  |   ○  |
 | GFN2-xTB                  |  ○  |   ○  |   ○  |
 | Spin-polarized GFN-xTB    |  ○  |   ○  |   ○  |
@@ -151,7 +152,7 @@ depth → DFTB3 F → TD → NDDO PM → GFN late.
 | GFN-FF                    |  ○  |   ○  |   ○  |
 | sTDA-xTB                  |  ○  |   ○  |   ○  |
 
-GFN0 is a **toy** H/C/O skeleton (`XtbGfn0`) — not production GFN0 parameters
-or xtb parity. GFN-xTB is **not** a DFTB3 successor; schedule after the DFTB
-ladder (oracle = **xtb**). GFN-FF is classical force-field territory (scope-out
+GFN0/1/2 product types are **absent** (the H/C/O `XtbGfn0` sketch was deleted;
+INDEX GFN2-CHON rows are stale — sources never landed on `dev`). GFN-xTB is
+**not** a DFTB3 successor; schedule after the NDDO PM ladder (oracle = **xtb**). GFN-FF is classical force-field territory (scope-out
 of the electronic SE/TB capability loop).
