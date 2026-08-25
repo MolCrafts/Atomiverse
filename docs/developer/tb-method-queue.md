@@ -619,6 +619,40 @@ fixes (open-shell strain-FD gone; mopac H₂O/CO₂ pins landed). **Queue not
 exhausted.** Ladder this wave: **NDDO PM** then remaining DFTB3/ThreeOb
 deepens; skip LC and Phase C GFN unless `theme=`.
 
+## Assign — 2026-08-25 wave 7 (this-shift wave 1, parent `dev` @ `c05f6b45`)
+
+**Priority:** incomplete `[~]` (0) ≫ open SE specs (none; component-plugin is
+another loop) ≫ pending. **Staff = 3** (cap 5). Operator **`theme=gfn`**
+overrides the NDDO-first ladder for **NEW** slugs only. No TB `wf/*` / no
+isolation worktrees to recover. Re-diff at HEAD (census commit only since
+wave-7) — SE product surface unchanged: still no `PM*` / `XtbGfn0` / `GFN1` /
+`GFN2` types; `if(EXISTS gfn2.cpp)` stub still empty; xtb 6.7.1 GFN2 twins on
+disk (`h2o`/`ch4`/`nh3`/`ch3oh` + off-eq grad).
+
+Staff **Phase C energy footholds** in published order
+(`gfn0-beyond-toy` → `gfn1` / `gfn2-water`). Skip same-file dependents this
+wave (`gfn2-xtb-forces`, `alpb-xtb`, Hessian, sTDA, IPEA, PBC, spin) so three
+workers do not collide on one Hamiltonian. Native static tables — do **not**
+wrap `libxtb` (CMake `ATV_XTB_ROOT` is leftover from the never-landed CHON
+campaign).
+
+| # | Slug | Kind | Action |
+| - | ---- | ---- | ------ |
+| 1 | `gfn0-beyond-toy` | **new** | Production GFN0 (toy type deleted `bc14dabd`); multi-element E vs xtb `--gfn 0` |
+| 2 | `gfn1-xtb-organic` | **new** | GFN1-xTB energy on small organic vs xtb `--gfn 1` |
+| 3 | `gfn2-xtb-water` | **new** | Production GFN2-xTB energy; pin from on-disk xtb 6.7.1 `h2o_gfn2` (−5.070383095219 Eh) |
+
+**Skipped this wave:** Phase A DFTB deepens + Phase B NDDO (`theme=gfn`);
+`gfn2-xtb-forces` / `alpb-xtb` / `ipea-xtb-small` / `periodic-gfn-xtb` /
+`spin-gfn-xtb` / `stda-xtb` / `gfn-xtb-analytic-hessian` (need a landed GFN
+GS); blocked (5). Two staff slots left empty rather than parallelize
+dependents onto `gfn2.cpp`.
+
+**After staff:** incomplete `[~]` = **3**; pending = **23**; blocked = **5**.
+Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**
+`.claude/specs/<slug>/`; SE-only cmake (incl. CLI=OFF); offline **xtb** pins
+only. **No push.**
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
@@ -658,10 +692,7 @@ unless `theme=gfn|xtb`.
 **Staff order:** `gfn0-beyond-toy` → `gfn1` / `gfn2-water` → forces / ALPB → then
 `gfn-xtb-analytic-hessian` / `stda-xtb`.
 
-- [ ] `gfn0-beyond-toy` | Production GFN0 (toy type deleted; restore as product or skip to GFN2) | xtb | multi-element | E | **oracle=xtb**
-- [ ] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | small organic | E [eV] | **oracle=xtb**
-- [ ] `gfn2-xtb-water` | Production GFN2-xTB energy | xtb | H2O | E [eV] | **oracle=xtb**
-- [ ] `gfn2-xtb-forces` | GFN2-xTB analytic forces | xtb | H2O off-eq | F | **oracle=xtb**
+- [ ] `gfn2-xtb-forces` | GFN2-xTB analytic forces | xtb | H2O off-eq | F | **oracle=xtb**; after `gfn2-xtb-water`
 - [ ] `alpb-xtb` | xtb ALPB/GBSA implicit solvent on production GFN2 | xtb | H2O / small organic | E | **oracle=xtb**; after `gfn2-xtb-water`
 - [ ] `gfn-xtb-analytic-hessian` | GFN FD Hessian via `cpu::vib::Hessian` once product GFN forces exist | xtb/vib | small | ω | **oracle=xtb**; VIB=ON exception like `se-analytic-hessian`; after `gfn2-xtb-forces`
 - [ ] `stda-xtb` | sTDA-xTB excitations on production GFN ground state | xtb | small organic | ω_exc | **oracle=xtb|literature**; after `gfn2-xtb-water`
@@ -671,7 +702,9 @@ unless `theme=gfn|xtb`.
 
 ## in_progress
 
-_(empty)_
+- [~] `gfn0-beyond-toy` | Production GFN0 (toy deleted `bc14dabd`); multi-element E | xtb | CH3OH | E [eV] | **oracle=xtb** (generate `--gfn 0` twin; GFN2 CH3OH transcript is not a GFN0 pin)
+- [~] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | CH4 | E [eV] | **oracle=xtb** (generate `--gfn 1` twin; on-disk `ch4_gfn2` is GFN2-only)
+- [~] `gfn2-xtb-water` | Production GFN2-xTB energy | xtb | H2O | E [eV] | **oracle=xtb** 6.7.1 `inputs/xtb/h2o_gfn2` −5.070383095219 Eh
 
 ## permanent rules / scope-out (never pending)
 
