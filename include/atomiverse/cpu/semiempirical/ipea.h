@@ -1,5 +1,5 @@
 /// @file cpu/semiempirical/ipea.h
-/// @brief IPEA-xTB energy, analytic nuclear forces, and FD Hessian (organic H/C/N/O, CPU).
+/// @brief IPEA-xTB energy, analytic nuclear forces, FD Hessian, and ΔSCC VIP/VEA (organic H/C/N/O, CPU).
 #pragma once
 
 #include <string>
@@ -12,7 +12,8 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief IPEA-xTB total energy, analytic nuclear forces, and FD Hessian for H/C/N/O.
+/// @brief IPEA-xTB total energy, analytic nuclear forces, FD Hessian, and
+///        vertical IP/EA for H/C/N/O.
 ///
 /// Special-purpose GFN1 reparametrization for ionization potentials and
 /// electron affinities (Ásgeirsson, Bauer, Grimme, *Chem. Sci.* **8**, 4879
@@ -25,13 +26,18 @@ namespace semiempirical {
 /// Closed-form \(F=-\nabla E\) (Hellmann–Feynman + Pulay, CN/shell-poly
 /// chains, \(\partial\gamma/\partial R\), pair repulsion, D3). The nuclear
 /// Hessian is a 6N central FD of that analytic \(G\) via `cpu::vib::Hessian`
-/// (`with_forces = true`). Closed shell only. Units on the public surface:
-/// energy [eV], positions [Å], forces [eV/Å], Hessian [eV/Å²].
+/// (`with_forces = true`). N-electron ground state is closed shell only.
+/// Vertical IP/EA (`compute_vip` / `compute_vea`) are xtb `--vip`/`--vea`
+/// ΔSCC at charge ±1 with degenerate-shell occupations (xtb 300 K Fermi
+/// on a Td-degenerate t2) plus `kIpeaShiftEv`.
+/// Units on the public surface: energy [eV], positions [Å], forces [eV/Å],
+/// Hessian [eV/Å²], IP/EA [eV].
 ///
 /// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pins:
 /// `regressions/semiempirical/ipea-xtb-small/` (energy),
 /// `regressions/semiempirical/ipea-xtb-forces/` (forces),
-/// `regressions/semiempirical/ipea-xtb-analytic-hessian/` (FD Hessian).
+/// `regressions/semiempirical/ipea-xtb-analytic-hessian/` (FD Hessian),
+/// `regressions/semiempirical/ipea-xtb-vip/` (ΔSCC IP/EA).
 ///
 /// @code
 ///   cpu::Evaluate eval;
@@ -53,6 +59,12 @@ class IPEA : public cpu::Semiempirical, public cpu::QmEngine {
     int multiplicity = 1;
     /// @brief When true, write analytic forces F=−∇E [eV/Å] on launch.
     bool with_forces = false;
+    /// @brief When true, run the N−1 electron SCC and store IP_v [eV]
+    ///        (`E(N-1)-E(N)` minus `kIpeaShiftEv`; xtb `--vip`).
+    bool compute_vip = false;
+    /// @brief When true, run the N+1 electron SCC and store EA_v [eV]
+    ///        (`E(N)-E(N+1)` minus `kIpeaShiftEv`; xtb `--vea`).
+    bool compute_vea = false;
 
     IPEA() = default;
 
@@ -69,13 +81,19 @@ class IPEA : public cpu::Semiempirical, public cpu::QmEngine {
     double last_energy() const { return energy_; }
     /// @brief Last SCC residual max|Δq| [e].
     double last_scc_residual() const { return scc_residual_; }
-    /// @brief SCC iterations of the last solve.
+    /// @brief SCC iterations of the last N-electron solve.
     int last_scc_iterations() const { return scc_iterations_; }
+    /// @brief Last vertical IP [eV] (0 if `compute_vip` was false).
+    double last_vip() const { return vip_; }
+    /// @brief Last vertical EA [eV] (0 if `compute_vea` was false).
+    double last_vea() const { return vea_; }
 
   private:
     double energy_ = 0;
     double scc_residual_ = 0;
     int scc_iterations_ = 0;
+    double vip_ = 0;
+    double vea_ = 0;
 };
 
 } // namespace semiempirical

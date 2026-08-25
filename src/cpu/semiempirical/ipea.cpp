@@ -1,5 +1,5 @@
 /// @file src/cpu/semiempirical/ipea.cpp
-/// IPEA-xTB energy and analytic nuclear forces (organic H/C/N/O).
+/// IPEA-xTB energy, analytic nuclear forces, and ΔSCC VIP/VEA (organic H/C/N/O).
 #include "atomiverse/cpu/semiempirical/ipea.h"
 
 #include <algorithm>
@@ -37,6 +37,8 @@ using basis_data::kIpeaKs;
 using basis_data::kIpeaKsp;
 using basis_data::kIpeaNElements;
 using basis_data::kIpeaRepKExp;
+using basis_data::kIpeaEtempK;
+using basis_data::kIpeaShiftEv;
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kA2Bohr = units::kAngstromInBohr;
@@ -324,6 +326,7 @@ struct IpeaSystem {
     int n_at = 0;
     int n_ao = 0;
     int n_sh = 0;
+    int n_elec = 0;
     int n_occ = 0;
     std::vector<const IpeaElement*> el;
     std::vector<std::array<double, 3>> xyz; // Bohr
@@ -352,12 +355,11 @@ IpeaSystem build_system(const StorageReal* x, const StorageReal* y,
             static_cast<double>(y[a]) * kA2Bohr,
             static_cast<double>(z[a]) * kA2Bohr};
     }
-    if (n_elec < 0.5 || std::fabs(n_elec - std::round(n_elec)) > 1e-9
-        || static_cast<int>(std::lround(n_elec)) % 2 != 0)
+    if (n_elec < 0.5 || std::fabs(n_elec - std::round(n_elec)) > 1e-9)
         throw std::runtime_error(
-            "IPEA: odd/non-integer valence electron count not supported "
-            "(closed-shell energy foothold; open shell is spin-gfn-xtb)");
-    sys.n_occ = static_cast<int>(std::lround(n_elec)) / 2;
+            "IPEA: non-integer valence electron count not supported");
+    sys.n_elec = static_cast<int>(std::lround(n_elec));
+    sys.n_occ = sys.n_elec / 2;
 
     sys.cn.assign(static_cast<std::size_t>(n_at), 0.0);
     for (int a = 0; a < n_at; ++a) {
@@ -514,6 +516,72 @@ double dispersion_e(const IpeaSystem& sys, const int* type) {
     return d3.energy;
 }
 
+/// Aufbau (kT=0) or degenerate-shell sharing (ionized ΔSCC).
+///
+/// xtb `--vip` Fermi-smears the CH4 cation t2 hole to 5/3 each at 300 K
+/// because its integrals keep Td degeneracy. ATV's Stewart/intcut residual
+/// splits that t2 by ≫ kT, so 300 K Fermi collapses to 2+2+1 and drops
+/// E(N-1) by ~0.1 eV. Sharing remaining electrons equally across MOs
+/// within `deg_tol` (0.05 Eh, between intra-t2 noise and the ~0.23 Eh
+/// a1–t2 gap) recovers xtb's 1.6667 occupations.
+std::vector<double> occupations(const linalg::RealVector& eps, int n_ao,
+                                int n_elec, double kT_ha) {
+    std::vector<double> n(static_cast<std::size_t>(n_ao), 0.0);
+    if (n_elec < 0 || n_elec > 2 * n_ao)
+        throw std::runtime_error(
+            "IPEA: n_elec out of range for the AO basis (n_elec="
+            + std::to_string(n_elec) + ", n_ao=" + std::to_string(n_ao) + ")");
+    if (!(kT_ha > 1e-12)) {
+        const int nd = n_elec / 2;
+        const int rem = n_elec % 2;
+        for (int i = 0; i < nd; ++i)
+            n[static_cast<std::size_t>(i)] = 2.0;
+        if (rem)
+            n[static_cast<std::size_t>(nd)] = 1.0;
+        return n;
+    }
+    constexpr double deg_tol = 0.05; // Hartree
+    int remaining = n_elec;
+    int i = 0;
+    while (remaining > 0 && i < n_ao) {
+        int j = i + 1;
+        while (j < n_ao && std::fabs(eps(j) - eps(i)) < deg_tol)
+            ++j;
+        const int nlev = j - i;
+        const int cap = 2 * nlev;
+        const int take = std::min(remaining, cap);
+        const double per =
+            static_cast<double>(take) / static_cast<double>(nlev);
+        for (int k = i; k < j; ++k)
+            n[static_cast<std::size_t>(k)] = per;
+        remaining -= take;
+        i = j;
+    }
+    return n;
+}
+
+void accumulate_density(const linalg::RealVector& eps,
+                        const linalg::RealMatrix& C, int n_ao, int n_elec,
+                        double kT_ha, linalg::RealMatrix& P,
+                        linalg::RealMatrix* W) {
+    const std::vector<double> nocc = occupations(eps, n_ao, n_elec, kT_ha);
+    P = xt::zeros<double>({n_ao, n_ao});
+    if (W)
+        *W = xt::zeros<double>({n_ao, n_ao});
+    for (int o = 0; o < n_ao; ++o) {
+        const double ni = nocc[static_cast<std::size_t>(o)];
+        if (ni < 1e-16)
+            continue;
+        for (int mu = 0; mu < n_ao; ++mu)
+            for (int nu = 0; nu < n_ao; ++nu) {
+                const double cc = C(mu, o) * C(nu, o);
+                P(mu, nu) += ni * cc;
+                if (W)
+                    (*W)(mu, nu) += ni * eps(o) * cc;
+            }
+    }
+}
+
 struct SccOut {
     double energy_eh = 0;
     double residual = 0;
@@ -525,7 +593,7 @@ struct SccOut {
 };
 
 SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
-                  double mix_beta) {
+                  double mix_beta, double kT_ha) {
     std::vector<double> q(static_cast<std::size_t>(sys.n_sh), 0.0);
     internal::ChargeMixer mixer(mix_beta, 6);
     bool converged = false;
@@ -566,11 +634,9 @@ SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
         }
         sol = linalg::diagonalize_fock_generalized(H, sys.S);
         const auto& C = sol.second;
-        linalg::RealMatrix P = xt::zeros<double>({sys.n_ao, sys.n_ao});
-        for (int o = 0; o < sys.n_occ; ++o)
-            for (int mu = 0; mu < sys.n_ao; ++mu)
-                for (int nu = 0; nu < sys.n_ao; ++nu)
-                    P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
+        linalg::RealMatrix P;
+        accumulate_density(sol.first, C, sys.n_ao, sys.n_elec, kT_ha, P,
+                           nullptr);
         std::vector<double> q_out(static_cast<std::size_t>(sys.n_sh), 0.0);
         for (int i = 0; i < sys.n_sh; ++i) {
             const Shell& si = sys.sh[static_cast<std::size_t>(i)];
@@ -600,17 +666,9 @@ SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
             + " e > scc_tol " + std::to_string(scc_tol)
             + "); raise max_scc or lower mix_beta");
 
-    const auto& eps = sol.first;
     const auto& C = sol.second;
-    out.P = xt::zeros<double>({sys.n_ao, sys.n_ao});
-    out.W = xt::zeros<double>({sys.n_ao, sys.n_ao});
-    for (int o = 0; o < sys.n_occ; ++o)
-        for (int mu = 0; mu < sys.n_ao; ++mu)
-            for (int nu = 0; nu < sys.n_ao; ++nu) {
-                const double cc = C(mu, o) * C(nu, o);
-                out.P(mu, nu) += 2.0 * cc;
-                out.W(mu, nu) += 2.0 * eps(o) * cc;
-            }
+    accumulate_density(sol.first, C, sys.n_ao, sys.n_elec, kT_ha, out.P,
+                       &out.W);
 
     double e_h0 = 0;
     for (int mu = 0; mu < sys.n_ao; ++mu)
@@ -873,9 +931,9 @@ struct TotalOut {
 TotalOut total_energy_eV(const StorageReal* x, const StorageReal* y,
                          const StorageReal* z, const int* type, int n_at,
                          int charge, double scc_tol, int max_scc,
-                         double mix_beta, bool want_grad) {
+                         double mix_beta, bool want_grad, double kT_ha) {
     const IpeaSystem sys = build_system(x, y, z, type, n_at, charge);
-    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta);
+    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta, kT_ha);
     const double e_rep = repulsive_e(sys);
     const double e_disp = dispersion_e(sys, type);
     TotalOut out;
@@ -901,7 +959,8 @@ void IPEA::launch(const LaunchContext& ctx) {
     if (multiplicity != 1)
         throw std::runtime_error(
             "IPEA: open shell (multiplicity!=1) is not a product path; "
-            "closed-shell only (see queue spin-gfn-xtb)");
+            "closed-shell only (see queue spin-gfn-xtb). VIP/VEA start from "
+            "a closed-shell N-electron state (set compute_vip/compute_vea)");
     const auto type = f.span(kAtom_type);
     const StorageReal* x = f.span(kAtom_x);
     const StorageReal* y = f.span(kAtom_y);
@@ -913,12 +972,37 @@ void IPEA::launch(const LaunchContext& ctx) {
     const bool do_f = with_forces && ctx.forces_requested;
     const TotalOut out =
         total_energy_eV(x, y, z, type, n_at, charge, scc_tol, max_scc,
-                        mix_beta, do_f);
+                        mix_beta, do_f, 0.0);
     energy_ = out.energy_ev;
     scc_residual_ = out.residual;
     scc_iterations_ = out.iterations;
+    vip_ = 0;
+    vea_ = 0;
     f.meta.get(kEnergy) += energy_;
     f.meta.get(kEnergyElectronic) += energy_;
+
+    if (compute_vip || compute_vea) {
+        // N-electron must be even; ionized ΔSCC shares degenerate shells.
+        const IpeaSystem sys0 = build_system(x, y, z, type, n_at, charge);
+        if (sys0.n_elec % 2 != 0)
+            throw std::runtime_error(
+                "IPEA: VIP/VEA require a closed-shell N-electron state "
+                "(even valence count); odd ground state is spin-gfn-xtb");
+        const double kT_ha =
+            units::kB_ev_per_k * kIpeaEtempK / units::kHartreeInEv;
+        if (compute_vip) {
+            const TotalOut cat =
+                total_energy_eV(x, y, z, type, n_at, charge + 1, scc_tol,
+                                max_scc, mix_beta, false, kT_ha);
+            vip_ = (cat.energy_ev - energy_) - kIpeaShiftEv;
+        }
+        if (compute_vea) {
+            const TotalOut an =
+                total_energy_eV(x, y, z, type, n_at, charge - 1, scc_tol,
+                                max_scc, mix_beta, false, kT_ha);
+            vea_ = (energy_ - an.energy_ev) - kIpeaShiftEv;
+        }
+    }
 
     if (do_f) {
         const double fac = units::kHartreePerBohrInEvPerAngstrom;
