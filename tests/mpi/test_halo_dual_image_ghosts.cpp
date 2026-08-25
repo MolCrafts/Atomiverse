@@ -18,9 +18,13 @@
 #include <mpi.h>
 
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
+#include <string>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -91,11 +95,110 @@ double brute_force_energy(const cpu::Frame& frame, double cutoff) {
 /// Build the standard LJ MD pipeline and run one frozen step.
 void run_one_frozen_step(cpu::Frame& frame, double cutoff) {
     cpu::md::MD sim;
-    sim.set_integrator(cpu::md::VelocityVerlet{0.0}); // dt = 0: positions frozen
+    sim.set_integrator(
+        cpu::md::VelocityVerlet{0.0}); // dt = 0: positions frozen
     sim.on(ATV::md::Phase::force).add(cpu::md::NeighborList<>{cutoff}, -10);
     sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, cutoff});
     sim.build();
     sim.run(frame, 1);
+}
+
+// ── narrow-subdomain (multi-hop) support ───────────────────────────────
+//
+// Spec `.claude/specs/comm-topology-02-multihop.md`: with the ghost shell
+// wider than one subdomain the halo must fill it by forwarding ghosts over
+// several rounds instead of refusing the decomposition.
+
+/// @brief Scoped `ATV_FORCE_DIMS` override — the single parse point is
+/// `DomainDecomposition::choose_dims` (`src/cpu/communication/domain.cpp:74`),
+/// read when the runtime builds its topology, so the variable must be set
+/// before the `MD` is built and cleared afterwards (an early `ASSERT_*`
+/// return must not leak it into the next TEST). In-tree precedent:
+/// `regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp:200`.
+class ForcedDims {
+  public:
+    explicit ForcedDims(const char* grid) {
+        ::setenv("ATV_FORCE_DIMS", grid, 1);
+    }
+    ~ForcedDims() { ::unsetenv("ATV_FORCE_DIMS"); }
+    ForcedDims(const ForcedDims&) = delete;
+    ForcedDims& operator=(const ForcedDims&) = delete;
+};
+
+/// @brief Reads this rank's owned / ghost counts out of the decomposition
+/// after the halo has run. `dd` is engine-private, so the user-extension
+/// path (a `Component` reading `ctx.runtime.md.dd`) is how a test observes
+/// it — same shape as the const-pot regression's `GhostChargeChecker`.
+class GhostCountProbe : public cpu::Component {
+  public:
+    std::string name() const override { return "ghost_count_probe"; }
+
+    void launch(const cpu::LaunchContext& ctx) override {
+        const auto* dd = ctx.runtime.md.dd;
+        if (dd == nullptr)
+            return;
+        n_local = dd->n_local;
+        n_ghost = dd->n_ghost;
+        ++launches;
+    }
+
+    int n_local = -1; ///< owned rows on this rank at the last launch
+    int n_ghost = -1; ///< ghost rows on this rank at the last launch
+    int launches = 0;
+};
+
+/// Same pipeline as `run_one_frozen_step`, with the probe bound after the
+/// pair kernel so it sees the post-halo counts of the step it reports on.
+void run_one_frozen_step(cpu::Frame& frame, double cutoff,
+                         GhostCountProbe& probe) {
+    cpu::md::MD sim;
+    sim.set_integrator(
+        cpu::md::VelocityVerlet{0.0}); // dt = 0: positions frozen
+    sim.on(ATV::md::Phase::force).add(cpu::md::NeighborList<>{cutoff}, -10);
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, cutoff});
+    sim.on(ATV::md::Phase::force).add_ref(probe, +500);
+    sim.build();
+    sim.run(frame, 1);
+}
+
+/// @brief One narrow-subdomain case: force `grid`, run one frozen step of
+/// the 3^3 / 15.78 A lattice at cutoff 6 A, and check the energy against
+/// the in-file O(N^2) minimum-image oracle.
+///
+/// Every rank runs the same geometry, so the checks are collective by
+/// construction: `n_local` is summed (the lattice must be conserved across
+/// the decomposition, including ranks that own nothing) and `n_ghost` is
+/// max-reduced (a rank with zero owners still receives ghosts, but the
+/// meaningful statement is that the shell is not empty anywhere).
+void expect_narrow_subdomain_matches_brute_force(const char* grid) {
+    ForcedDims forced{grid};
+
+    cpu::Frame frame = make_sc_lattice(3, 5.26);
+    const cpu::Frame ref = frame; // pristine copy for the oracle
+    const int n_atoms = ref.nlocal();
+    const double e_bf = brute_force_energy(ref, 6.0);
+    ASSERT_GT(std::abs(e_bf), 1e-9);
+
+    GhostCountProbe probe;
+    run_one_frozen_step(frame, 6.0, probe);
+    ASSERT_EQ(probe.launches, 1) << "the probe never ran: test is vacuous";
+
+    const double rel =
+        std::abs(frame.meta.get(ATV::kEnergy) - e_bf) / std::abs(e_bf);
+    EXPECT_LT(rel, kEnergyRelativeTolerance)
+        << "ATV_FORCE_DIMS=" << grid << ": distributed "
+        << frame.meta.get(ATV::kEnergy) << " vs brute force " << e_bf;
+
+    int owned_total = 0;
+    MPI_Allreduce(&probe.n_local, &owned_total, 1, MPI_INT, MPI_SUM,
+                  MPI_COMM_WORLD);
+    EXPECT_EQ(owned_total, n_atoms)
+        << "atoms lost or duplicated by the narrow decomposition";
+
+    int ghost_max = 0;
+    MPI_Allreduce(&probe.n_ghost, &ghost_max, 1, MPI_INT, MPI_MAX,
+                  MPI_COMM_WORLD);
+    EXPECT_GT(ghost_max, 0) << "no ghosts: the multi-hop shell is empty";
 }
 
 } // namespace
@@ -146,6 +249,42 @@ TEST(HaloDualImageGhosts, NonOverlappingGeometryStillMatchesBruteForce) {
     EXPECT_LT(rel, kEnergyRelativeTolerance)
         << "distributed " << frame.meta.get(ATV::kEnergy) << " vs brute force "
         << e_bf;
+}
+
+// ── narrow subdomains: the ghost shell spans several ranks ─────────────
+//
+// Same 3^3 lattice and same 6 A cutoff (auto halo 6.6 A) as the dims == 2
+// case above, cut finer along x. The shell is now WIDER than a subdomain,
+// so filling it needs ghosts forwarded through intermediate ranks —
+// `max_hops = ceil(6.6 / sub)` rounds per direction. Until
+// `comm-topology-02` lands, `SwapList::setup` refuses the geometry
+// (`src/cpu/communication/swap_list.cpp:75`, reached from
+// `HaloSend::build` / `HaloSend::launch`) and these two cases die on the
+// throw. The `1e-9` oracle window is the same one the n1 / n2 cases use:
+// spatial decomposition may not move the total energy at all.
+
+// 4 ranks: sub = 15.78 / 4 = 3.945 A < 6.6 A => max_hops = 2 along x.
+TEST(HaloDualImageGhosts, NarrowSubdomainFourRanksMatchBruteForce) {
+    int world = 0;
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    if (world != 4)
+        GTEST_SKIP() << "narrow 4-rank x split; needs exactly 4 ranks";
+
+    expect_narrow_subdomain_matches_brute_force("4,1,1");
+}
+
+// 8 ranks: sub = 15.78 / 8 = 1.9725 A => max_hops = 4 along x, still inside
+// the minimum-image bound (4 <= dims - 1 = 7). 27 atoms over 8 ranks also
+// covers the zero-owned-rank edge: the x planes of the lattice sit at
+// 2.63 / 7.89 / 13.15 A, so several slabs own nothing and must still take
+// part in every swap round.
+TEST(HaloDualImageGhosts, NarrowSubdomainEightRanksMatchBruteForce) {
+    int world = 0;
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    if (world != 8)
+        GTEST_SKIP() << "narrow 8-rank x split; needs exactly 8 ranks";
+
+    expect_narrow_subdomain_matches_brute_force("8,1,1");
 }
 
 // ── Custom main that initializes MPI before/after GoogleTest ────────────

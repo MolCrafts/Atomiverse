@@ -197,6 +197,7 @@ atv_add_cpp_test(test_cpu_md_charge_updater_probe cpu/dynamics/test_charge_updat
 atv_add_cpp_test(test_cpu_comm_halo_refresh_charges cpu/communication/test_halo_refresh_charges.cpp)
 atv_add_cpp_test(test_cpu_comm_tag_index_lifetime cpu/communication/test_tag_index_lifetime.cpp)
 atv_add_cpp_test(test_cpu_comm_swap_list          cpu/communication/test_swap_list.cpp)
+atv_add_cpp_test(test_cpu_comm_swap_list_maxneed  cpu/communication/test_swap_list_maxneed.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_ffield     cpu/dynamics/test_const_pot_ffield.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_maze_symplectic cpu/dynamics/test_const_pot_maze_symplectic.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_site_volume cpu/dynamics/test_const_pot_site_volume.cpp)
@@ -368,6 +369,7 @@ atv_add_cpp_test(test_cpu_md_pe_energy_xcheck     cpu/dynamics/test_pe_energy_xc
 atv_add_cpp_test(test_cpu_md_neighbor_list_arena  cpu/dynamics/test_neighbor_list_arena.cpp)
 atv_add_cpp_test(test_cpu_md_full_neighbor_list  cpu/dynamics/test_full_neighbor_list.cpp)
 atv_add_cpp_test(test_cpu_md_cell_list_grid_stale  cpu/dynamics/test_cell_list_grid_stale.cpp)
+atv_add_cpp_test(test_cpu_md_cell_list_halo_pad  cpu/dynamics/test_cell_list_halo_pad.cpp)
 atv_add_cpp_test(test_cpu_atom_variable_n  cpu/test_atom_variable_n.cpp)
 atv_add_cpp_test(test_cpu_frame_registry  cpu/frame/test_frame_registry.cpp)
 # EAM/SW table lookups key on molrs::Element; sources excluded when MOLRS off.
@@ -561,6 +563,10 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
     atv_add_mpi_exec(test_mpi_halo_dual_image_ghosts mpi/test_halo_dual_image_ghosts.cpp)
     atv_add_mpi_run(test_mpi_halo_dual_image_ghosts_n1 test_mpi_halo_dual_image_ghosts 1)
     atv_add_mpi_run(test_mpi_halo_dual_image_ghosts_n2 test_mpi_halo_dual_image_ghosts 2)
+    # Narrow subdomains (ghost shell wider than one slab => multi-hop swaps,
+    # spec comm-topology-02): sub = 3.945 A at n4, 1.9725 A at n8.
+    atv_add_mpi_run(test_mpi_halo_dual_image_ghosts_n4 test_mpi_halo_dual_image_ghosts 4)
+    atv_add_mpi_run(test_mpi_halo_dual_image_ghosts_n8 test_mpi_halo_dual_image_ghosts 8)
 
     atv_add_mpi_exec(test_mpi_bcast_frame mpi/test_bcast_frame.cpp)
     atv_add_mpi_run(test_mpi_bcast_frame_n1 test_mpi_bcast_frame 1)

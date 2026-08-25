@@ -1,6 +1,6 @@
 ---
 title: 多跳 halo — maxneed 展开与窄子域正确性
-status: approved
+status: in-progress
 created: 2026-08-25
 grilled: true
 deps: comm-topology-01-swaplist
@@ -129,11 +129,11 @@ maxneed_d ≤ dims_d − 1        等价于   need_d ≤ L_d − w_d(self)
 
 ## Tasks
 
-- [ ] Write failing unit tests for SwapList hop derivation (tests/cpu/communication/test_swap_list_maxneed.cpp → TestSwapListMaxneed; register in tests/CMakeLists.txt)
+- [x] Write failing unit tests for SwapList hop derivation (tests/cpu/communication/test_swap_list_maxneed.cpp → TestSwapListMaxneed; register in tests/CMakeLists.txt)
 - [ ] Implement uniform + non-uniform hop derivation and `setup()` re-derivation in `SwapList` (include/atomiverse/cpu/communication/swap_list.h, src/cpu/communication/swap_list.cpp)
-- [ ] Write failing unit tests for the halo-coupled cell grid pad (tests/cpu/dynamics/test_cell_list_halo_pad.cpp → TestCellListHaloPad; register in tests/CMakeLists.txt)
+- [x] Write failing unit tests for the halo-coupled cell grid pad (tests/cpu/dynamics/test_cell_list_halo_pad.cpp → TestCellListHaloPad; register in tests/CMakeLists.txt)
 - [ ] Generalize `CellList::init_extended`/`compute_grid`/`grid_stale` to pad extended axes by `max(cutoff+skin, ghost_shell_width)` (src/cpu/neighbor/cell_list.cpp, include/atomiverse/cpu/neighbor/cell_list.h), add `ghost_shell_width` to include/atomiverse/cpu/communication/domain.h and pass it at include/atomiverse/cpu/neighbor/neighbor_list.h:315
-- [ ] Write failing narrow-subdomain MPI cases in tests/mpi/test_halo_dual_image_ghosts.cpp (ATV_FORCE_DIMS 4,1,1 and 8,1,1) and register `_n4` / `_n8` via `atv_add_mpi_run` in tests/CMakeLists.txt
+- [x] Write failing narrow-subdomain MPI cases in tests/mpi/test_halo_dual_image_ghosts.cpp (ATV_FORCE_DIMS 4,1,1 and 8,1,1) and register `_n4` / `_n8` via `atv_add_mpi_run` in tests/CMakeLists.txt
 - [ ] Implement multi-round forward swaps with ghost forwarding and reverse-order accumulation in `HaloSend`/`HaloRecv` (src/cpu/communication/halo_exchange.cpp, include/atomiverse/cpu/communication/halo_exchange.h)
 - [ ] Generalize the two `HaloSend` geometry guards (src/cpu/communication/halo_exchange.cpp:499-517 and :1032-1043) into `SwapList::setup()` re-derivation, keeping only the `maxneed > dims-1` minimum-image throw
 - [ ] Add regression example regressions/md/comm-topology-multihop/ (reg_comm-topology-multihop.cpp + REFERENCE.md; register in regressions/CMakeLists.txt) with hard-coded tolerances and an in-file O(N²) oracle

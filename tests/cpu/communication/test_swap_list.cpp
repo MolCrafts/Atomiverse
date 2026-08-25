@@ -14,8 +14,12 @@
 ///   * `sendself` on non-decomposed axes (a **skip**, not a local memcpy),
 ///   * the **half-open** `slablo/slabhi` eligibility band,
 ///   * `commit_recv` as the ghost-slot prefix-sum invariant,
-///   * the `need_d > 1` refusal (no silent ghost truncation) and the
-///     undecomposed-axis exemption from that refusal,
+///   * the undecomposed-axis exemption from every width check
+///     (the `need_d > 1` refusal itself is superseded by
+///     `.claude/specs/comm-topology-02-multihop.md`: a decomposed axis now
+///     derives multi-hop rounds, and only the minimum-image bound refuses
+///     — see `DerivesMultiHopWhenNeedExceedsSub` below and
+///     `test_swap_list_maxneed.cpp` for the hop counts),
 ///   * `invalidate()` clearing indices while keeping the swap geometry.
 
 #include <gtest/gtest.h>
@@ -309,26 +313,49 @@ TEST(TestSwapList, CommitRecvPrefixSum) {
     EXPECT_EQ(list.total_recv(), 5);
 }
 
-// ── 6. refusal instead of silent truncation ───────────────────────────
+// ── 6. multi-hop derivation instead of silent truncation ──────────────
 
-/// A ghost shell deeper than one sub-slab would need atoms two hops away.
-/// They never arrive, so the shell used to be silently truncated and the
-/// forces came out wrong. `setup` refuses, with the how-to in the message.
-TEST(TestSwapList, ThrowsWhenNeedExceedsSub) {
-    const DomainDecomposition dd = split_x_dd(/*rank=*/0);
+/// **Superseded by `.claude/specs/comm-topology-02-multihop.md`.**
+///
+/// `-01` refused a decomposed axis whose ghost shell was deeper than the
+/// rank's own sub-slab ("use a larger box, fewer ranks along that axis, or
+/// a smaller cutoff"), because the halo exchanged with immediate
+/// neighbours only. `-02` derives the extra hops instead — the shell is
+/// filled by forwarding each round's ghosts one rank further — so
+/// `need > sub` is no longer a refusal.
+///
+/// The remaining refusal is the **minimum-image** bound
+/// `max_hops(d) <= dims[d] - 1` (`need <= L - w_self`); the second half of
+/// this test keeps the `-01` geometry, which happens to sit exactly beyond
+/// it (10.5 A shell on a 20 A box whose 2-rank slab is 10 A wide), and
+/// pins that it still throws — for the new reason. The hop counts
+/// themselves live in `tests/cpu/communication/test_swap_list_maxneed.cpp`.
+TEST(TestSwapList, DerivesMultiHopWhenNeedExceedsSub) {
+    // 20 A box split 4 ways: sub = 5 A, shell 6 A => ceil(1.2) = 2 hops,
+    // and 2 <= dims - 1 = 3, so the minimum-image bound is satisfied.
+    DomainDecomposition four_way;
+    four_way.dims[0] = 4;
+    four_way.dims[1] = 1;
+    four_way.dims[2] = 1;
+    four_way.coords[0] = 1;
+    four_way.sublo[0] = 5.0;
+    four_way.subhi[0] = 10.0;
+    four_way.sublo[1] = 0.0;
+    four_way.subhi[1] = 10.0;
+    four_way.sublo[2] = 0.0;
+    four_way.subhi[2] = 16.0;
+    four_way.face_neighbors = std::array<int, 6>{0, 2, 1, 1, 1, 1};
+
     cpu::comm::SwapList list;
-    // sub-slab along x is 10 A; 10.5 A needs need_0 = 2.
-    EXPECT_THROW(list.setup(dd, test_box(), 10.5, /*my_rank=*/0),
-                 std::runtime_error);
+    ASSERT_NO_THROW(list.setup(four_way, test_box(), 6.0, /*my_rank=*/1));
+    EXPECT_EQ(list.max_hops(0), 2);
 
-    std::string message;
-    try {
-        list.setup(dd, test_box(), 10.5, /*my_rank=*/0);
-    } catch (const std::runtime_error& e) {
-        message = e.what();
-    }
-    EXPECT_NE(message.find("larger box"), std::string::npos) << message;
-    EXPECT_NE(message.find("smaller cutoff"), std::string::npos) << message;
+    // Minimum-image bound: 10.5 A > L - w_self = 20 - 10 A. Still refused,
+    // and no longer with the "fewer ranks" how-to.
+    const DomainDecomposition dd = split_x_dd(/*rank=*/0);
+    cpu::comm::SwapList over;
+    EXPECT_THROW(over.setup(dd, test_box(), 10.5, /*my_rank=*/0),
+                 std::runtime_error);
 }
 
 /// The ceil convention keeps `r_halo == sub_width` a **single** hop, which
