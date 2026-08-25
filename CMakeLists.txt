@@ -379,7 +379,10 @@ if(NOT ATV_DOCS_ONLY)
                 src/cpu/multiscale/qmmm_polarizable.cpp
             )
         endif()
-        list(APPEND ATOMIVERSE_SRCS src/cpu/semiempirical/gfn2.cpp)
+        list(APPEND ATOMIVERSE_SRCS
+            src/cpu/semiempirical/gfn1.cpp
+            src/cpu/semiempirical/gfn2.cpp
+        )
         # Grimme D3 (DFTB2::d3) and D4 (GFN2) under SE-only cmake.
         # When HF is on, the same sources are listed under ATV_BUILD_HF — do
         # not double-compile.

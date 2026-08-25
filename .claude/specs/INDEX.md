@@ -28,6 +28,14 @@ Merged to `dev` (`07f5c188`, `dee2e8ce`); specs deleted; history is git.
 | `gfn0-beyond-toy` | `GFN0` H/C/N/O energy; `reg_gfn0-beyond-toy` vs xtb 6.7.1 methanol |
 | `gfn2-xtb-water` | `GFN2` H/C/N/O energy; `reg_gfn2-xtb-water` vs xtb 6.7.1 H₂O |
 
+## Live — tb-method-loop (2026-08-25)
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [gfn1-xtb-organic](gfn1-xtb-organic/gfn1-xtb-organic.md) | — | GFN1-xTB organic (H/C/N/O) energy vs xtb `--gfn 1` CH4 [in-progress] |
+
+**Live TB count: 1.**
+
 Claim-completion Track P (Python) closed 2026-08-15; Track C (`cuda-gpw-product`) closed
 2026-08-18. Sections below that still say “Live” are campaign history
 (specs already deleted).

@@ -835,7 +835,7 @@ then Hessian / sTDA / beyond-CHNO. AES before GFN2 F (xtb force pin).
 
 ## in_progress
 
-- [~] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | CH4 | E [eV] | **oracle=xtb** (twin `ch4_gfn1` on the tip); `wf/gfn1-xtb-organic` @ `30510fc0` (ahead=1 behind=6)
+- [~] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | CH4 | E [eV] | **oracle=xtb** (twin `ch4_gfn1`); recovering on `wf/gfn1-xtb-organic`
 - [~] `gfn0-xtb-forces` | Replace GFN0 central-FD F with analytic G vs xtb `--gfn 0` | xtb | methanol / H2O off-eq | F | **oracle=xtb**; energy already ships
 - [~] `gfn2-quadrupole-aes` | GFN2 quadrupole AES (closes the 1.45 meV H₂O residual vs xtb 6.7.1; foothold is charge–dipole + dipole–dipole + AXC only) | xtb | H2O | E | **oracle=xtb**
 - [~] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | small | E | **oracle=xtb**; after GFN2 energy

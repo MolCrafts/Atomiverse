@@ -79,6 +79,7 @@ Start with these CPU headers:
 - [`scf_guess.h` — SCFInitialGuess](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/scf_guess.h)
 - [`gradient_result.h` — GradientResult (the `forces()` return)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/gradient_result.h)
 - [`XCType`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)
+- [`cpu::semiempirical::GFN1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/gfn1.h) — GFN1-xTB organic energy (H/C/N/O; Evaluate)
 
 ### Run SCF workflows on the CUDA backend
 

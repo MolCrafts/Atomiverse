@@ -163,7 +163,7 @@ NDDO PM → GFN late.
 | Method                    | CPU | CUDA | Kokkos |
 | ------------------------- | :-: | :--: | :---: |
 | GFN0-xTB                  |  ✓  |   ○  |   ○  |
-| GFN1-xTB                  |  ○  |   ○  |   ○  |
+| GFN1-xTB                  |  ✓  |   ○  |   ○  |
 | GFN2-xTB                  |  ✓  |   ○  |   ○  |
 | Spin-polarized GFN-xTB    |  ○  |   ○  |   ○  |
 | IPEA-xTB                  |  ○  |   ○  |   ○  |
@@ -175,14 +175,15 @@ NDDO PM → GFN late.
 | GFN-xTB ALPB/GBSA solvent |  ○  |   ○  |   ○  |
 | GFN-xTB CPCM-X / ddCOSMO  |  ○  |   ○  |   ○  |
 
-**GFN0-xTB** and **GFN2-xTB** energy footholds ship for H/C/N/O
-(`cpu::semiempirical::GFN0` / `GFN2`; `reg_gfn0-beyond-toy` methanol vs xtb
-6.7.1 −7.597234498685 Eh; `reg_gfn2-xtb-water` H₂O vs xtb 6.7.1
-−5.070383095219 Eh). GFN0 `with_forces` is central FD of E; GFN2 forces throw
-(`gfn0-xtb-forces` / `gfn2-xtb-forces`). GFN2's 1.45 meV H₂O residual is the
-missing quadrupole AES (`gfn2-quadrupole-aes`). Tables are CHNO-only
-(`gfn2-beyond-chno`). GFN1 is still ○ (unmerged `wf/gfn1-xtb-organic`). The
-H/C/O `XtbGfn0` sketch stays deleted. GFN-xTB is **not** a DFTB3 successor
-(oracle = **xtb**). Analytic gradient, Hessian, IPEA, PBC, spin, sTDA,
-ALPB/GBSA, and CPCM-X/ddCOSMO remain ○. GFN-FF is classical force-field
-territory (scope-out of the electronic SE/TB capability loop).
+**GFN0-xTB**, **GFN1-xTB**, and **GFN2-xTB** energy footholds ship for H/C/N/O
+(`cpu::semiempirical::GFN0` / `GFN1` / `GFN2`; `reg_gfn0-beyond-toy` methanol
+vs xtb 6.7.1 −7.597234498685 Eh; `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1
+`--gfn 1` −4.274232224875 Eh; `reg_gfn2-xtb-water` H₂O vs xtb 6.7.1
+−5.070383095219 Eh). GFN0 `with_forces` is central FD of E; GFN1/GFN2 forces
+throw (`gfn0-xtb-forces` / `gfn2-xtb-forces`). GFN2's 1.45 meV H₂O residual is
+the missing quadrupole AES (`gfn2-quadrupole-aes`). Tables are CHNO-only
+(`gfn2-beyond-chno`). The H/C/O `XtbGfn0` sketch stays deleted. GFN-xTB is
+**not** a DFTB3 successor (oracle = **xtb**). Analytic gradient, Hessian,
+IPEA, PBC, spin, sTDA, ALPB/GBSA, and CPCM-X/ddCOSMO remain ○. GFN-FF is
+classical force-field territory (scope-out of the electronic SE/TB
+capability loop).
