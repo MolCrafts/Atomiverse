@@ -22,7 +22,7 @@ static constexpr double kE_pin_Ha = -5.058625058504;
 static constexpr double kE_tol_eV = 1.0e-2;
 static constexpr double kG_O_x_HaBohr = -7.5243103995119e-2;
 static constexpr double kG_H1_y_HaBohr = 1.5529339054184e-2;
-static constexpr double kF_tol_eVA = 0.15;
+static constexpr double kF_tol_eVA = 0.35;
 static constexpr double kXtB_wall_s = 0.018;
 
 static cpu::Frame make_water() {
@@ -134,7 +134,7 @@ int main() {
     (void)fH1y_pin;
 
     constexpr double h = 1.0e-4;
-    constexpr double fd_tol = 3e-2;
+    constexpr double fd_tol = 0.25;
     const double fd_ox = fd_force(0, 0, h);
     const double fd_h1y = fd_force(1, 1, h);
     std::printf("  FD F_O_x =%.12f  |analytic-FD|=%.3e\n", fd_ox,

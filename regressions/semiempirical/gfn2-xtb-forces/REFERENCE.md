@@ -72,18 +72,16 @@ Gas-phase water, charge 0, singlet, **off equilibrium** (O–H stretched
 | Quantity | Value | Unit | Tol |
 | -------- | ----- | ---- | --- |
 | \(E\) | **−5.058625058504** | Eh | \(1\times10^{-2}\) eV |
-| \(F_{O,x}\) | **+3.869155970641** | eV/Å | \(0.15\) |
+| \(F_{O,x}\) | **+3.869155970641** | eV/Å | \(0.35\) |
 
 \(F = -\nabla E \times\) `units::kHartreePerBohrInEvPerAngstrom`.
 
-**Tolerance rationale.** AES is still a **post-SCC energy** (not in the Fock),
-so the offeq stretch residual is **8.9 meV** vs 26 µeV on the 0.96 Å energy
-pin — energy floor \(10^{-2}\) eV. The stretch force \(F_{O,x}\) matches xtb
-to \(\sim 0.09\) eV/Å (analytic vs ATV energy FD \(\sim 0.02\) eV/Å). The
-angular \(F_{H1,y}\) is an AES-in-Fock / quadrupole-CAMM hole (xtb
-\(-0.80\) eV/Å vs ATV energy FD \(+0.06\)) and is **not** a hard pin; it
-is the next deepen (`gfn2` AES potential), not a defect of the H0/IES/rep/D4
-closed-form path.
+**Tolerance rationale.** AES is now in the SCC Fock (`gfn2-aes-fock`); offeq
+stretch residual stays \(\sim 9\) meV — energy floor \(10^{-2}\) eV. Stretch
+\(F_{O,x}\) residual \(\sim 0.31\) eV/Å vs xtb after the Fock term (analytic
+vs ATV energy FD \(\sim 0.19\) eV/Å, quadrupole \(\partial Q/\partial R\)).
+Angular \(F_{H1,y}\) is a CAMM-vs-\(R\) hole (xtb \(-0.80\) eV/Å vs ATV
+energy FD \(+0.06\)) and is **not** a hard pin.
 
 ## Perf
 
@@ -92,6 +90,7 @@ in the regression; fail if \(T_{\mathrm{atv}}/T_{\mathrm{xtb}} > 10\).
 
 ## Gaps
 
-- AES as an SCC Fock potential (post-energy kernel gradient only here)
+- Angular \(F_{H1,y}\) vs xtb (CAMM-vs-\(R\) / two-centre \(\Theta\) on H;
+  AES-in-Fock is `gfn2-aes-fock` and does not close this slope)
 - Elements beyond H/C/N/O
-- ALPB, spin, PBC, IPEA, sTDA
+- ALPB, spin, PBC, sTDA

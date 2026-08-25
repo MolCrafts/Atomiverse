@@ -172,6 +172,18 @@ void traceless_quad(const double Q[6], double T[6]) {
     T[5] = 1.5 * Q[5] - tr;
 }
 
+void origin_shift_quad(const double Q[6], const double D[3], const double* R,
+                       double s, double tq[6]) {
+    double qs[6];
+    qs[0] = Q[0] - 2.0 * R[0] * D[0] + R[0] * R[0] * s;
+    qs[1] = Q[1] - R[0] * D[1] - R[1] * D[0] + R[0] * R[1] * s;
+    qs[2] = Q[2] - 2.0 * R[1] * D[1] + R[1] * R[1] * s;
+    qs[3] = Q[3] - R[0] * D[2] - R[2] * D[0] + R[0] * R[2] * s;
+    qs[4] = Q[4] - R[1] * D[2] - R[2] * D[1] + R[1] * R[2] * s;
+    qs[5] = Q[5] - 2.0 * R[2] * D[2] + R[2] * R[2] * s;
+    traceless_quad(qs, tq);
+}
+
 // Overlap, dipole, and Cartesian quadrupole (origin 0) between two
 // contracted Cartesian s/p shells. Packed Q: xx, xy, yy, xz, yz, zz.
 void shell_ints(const Shell& si, const double Ai[3], const Shell& sj,
@@ -752,7 +764,93 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
         return e;
     };
 
+    auto fill_aes_pot = [&](std::vector<double>& vat, std::vector<Grad3>& vdp,
+                            std::vector<std::array<double, 6>>& vqp) {
+        vat.assign(static_cast<std::size_t>(n_at), 0.0);
+        vdp.assign(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
+        vqp.assign(static_cast<std::size_t>(n_at),
+                   std::array<double, 6>{0, 0, 0, 0, 0, 0});
+        for (int a = 0; a < n_at; ++a) {
+            const auto& ea = *el[static_cast<std::size_t>(a)];
+            const auto& mua = dipat[static_cast<std::size_t>(a)];
+            const auto& tha = quadat[static_cast<std::size_t>(a)];
+            vdp[static_cast<std::size_t>(a)] = {2.0 * ea.dkernel * mua[0],
+                                                2.0 * ea.dkernel * mua[1],
+                                                2.0 * ea.dkernel * mua[2]};
+            vqp[static_cast<std::size_t>(a)] = {
+                2.0 * ea.qkernel * tha[0], 4.0 * ea.qkernel * tha[1],
+                2.0 * ea.qkernel * tha[2], 4.0 * ea.qkernel * tha[3],
+                4.0 * ea.qkernel * tha[4], 2.0 * ea.qkernel * tha[5]};
+            const double* ra = xyz[static_cast<std::size_t>(a)].data();
+            const double arg =
+                cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
+            const double t1 = std::exp(-kGfn2AesKexp * arg);
+            const double radA =
+                ea.mprad + (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
+            for (int b = 0; b < n_at; ++b) {
+                if (a == b)
+                    continue;
+                const auto& eb = *el[static_cast<std::size_t>(b)];
+                const double* rb = xyz[static_cast<std::size_t>(b)].data();
+                const auto& mub = dipat[static_cast<std::size_t>(b)];
+                const double qb = -qat[static_cast<std::size_t>(b)];
+                double vec[3] = {ra[0] - rb[0], ra[1] - rb[1], ra[2] - rb[2]};
+                const double r1 = std::sqrt(vec[0] * vec[0] + vec[1] * vec[1]
+                                            + vec[2] * vec[2]);
+                if (r1 < 1e-12)
+                    continue;
+                const double argb =
+                    cn[static_cast<std::size_t>(b)] - eb.mpvcn - kGfn2AesShift;
+                const double t1b = std::exp(-kGfn2AesKexp * argb);
+                const double radB =
+                    eb.mprad + (kGfn2AesRmax - eb.mprad) / (1.0 + t1b);
+                const double g1 = 1.0 / r1;
+                const double g3 = g1 * g1 * g1;
+                const double g5 = g3 * g1 * g1;
+                const double rrd = 0.5 * (radA + radB) * g1;
+                const double fdmp3 =
+                    1.0 / (1.0 + 6.0 * std::pow(rrd, kGfn2AesDmp3));
+                const double fdmp5 =
+                    1.0 / (1.0 + 6.0 * std::pow(rrd, kGfn2AesDmp5));
+                const double sd =
+                    (mua[0] * vec[0] + mua[1] * vec[1] + mua[2] * vec[2]) * g3
+                    * fdmp3;
+                for (int k = 0; k < 3; ++k)
+                    vdp[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                        qb * vec[k] * g3 * fdmp3;
+                vat[static_cast<std::size_t>(b)] += -sd;
+                const double mub_r =
+                    mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2];
+                for (int k = 0; k < 3; ++k)
+                    vdp[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                        mub[k] * g3 * fdmp5
+                        - 3.0 * vec[k] * mub_r * g5 * fdmp5;
+                const double rrq =
+                    tha[0] * vec[0] * vec[0] + 2.0 * tha[1] * vec[0] * vec[1]
+                    + tha[2] * vec[1] * vec[1] + 2.0 * tha[3] * vec[0] * vec[2]
+                    + 2.0 * tha[4] * vec[1] * vec[2]
+                    + tha[5] * vec[2] * vec[2];
+                const double sq = -rrq * g5 * fdmp5 / 3.0;
+                const double facq = qb * (-g5 * fdmp5 / 3.0);
+                auto& vqa = vqp[static_cast<std::size_t>(a)];
+                vqa[0] += facq * vec[0] * vec[0];
+                vqa[1] += facq * 2.0 * vec[0] * vec[1];
+                vqa[2] += facq * vec[1] * vec[1];
+                vqa[3] += facq * 2.0 * vec[0] * vec[2];
+                vqa[4] += facq * 2.0 * vec[1] * vec[2];
+                vqa[5] += facq * vec[2] * vec[2];
+                vat[static_cast<std::size_t>(b)] += -sq;
+            }
+        }
+    };
+
+    std::vector<double> vat(static_cast<std::size_t>(n_at), 0.0);
+    std::vector<Grad3> vdp(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
+    std::vector<std::array<double, 6>> vqp(
+        static_cast<std::size_t>(n_at), std::array<double, 6>{0, 0, 0, 0, 0, 0});
+
     for (int it = 0; it < max_scc; ++it) {
+        fill_aes_pot(vat, vdp, vqp);
         for (int ish = 0; ish < n_sh; ++ish) {
             double s = 0;
             for (int jsh = 0; jsh < n_sh; ++jsh)
@@ -762,16 +860,58 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             s += gam3[static_cast<std::size_t>(ish)]
                  * qsh[static_cast<std::size_t>(ish)]
                  * qsh[static_cast<std::size_t>(ish)];
-            vsh[static_cast<std::size_t>(ish)] = s;
+            const int a = shells[static_cast<std::size_t>(ish)].atom;
+            vsh[static_cast<std::size_t>(ish)] =
+                s + vat[static_cast<std::size_t>(a)];
         }
         linalg::RealMatrix H = H0;
         for (int mu = 0; mu < n_ao; ++mu) {
             const int ish = ao_shell[static_cast<std::size_t>(mu)];
+            const int a = ao_atom[static_cast<std::size_t>(mu)];
+            const double* Ra = xyz[static_cast<std::size_t>(a)].data();
+            const bool qa = el[static_cast<std::size_t>(a)]->n_shell > 1;
             for (int nu = 0; nu < n_ao; ++nu) {
                 const int jsh = ao_shell[static_cast<std::size_t>(nu)];
-                H(mu, nu) += 0.5 * S(mu, nu)
+                const int b = ao_atom[static_cast<std::size_t>(nu)];
+                const double* Rb = xyz[static_cast<std::size_t>(b)].data();
+                const double sij = S(mu, nu);
+                H(mu, nu) += 0.5 * sij
                              * (vsh[static_cast<std::size_t>(ish)]
                                 + vsh[static_cast<std::size_t>(jsh)]);
+                for (int k = 0; k < 3; ++k) {
+                    const double d = D(k, mu, nu);
+                    H(mu, nu) +=
+                        0.5
+                        * (vdp[static_cast<std::size_t>(a)]
+                              [static_cast<std::size_t>(k)]
+                               * (d - Ra[k] * sij)
+                           + vdp[static_cast<std::size_t>(b)]
+                                [static_cast<std::size_t>(k)]
+                                 * (d - Rb[k] * sij));
+                }
+                if (qa || el[static_cast<std::size_t>(b)]->n_shell > 1) {
+                    const double q0[6] = {Q(0, mu, nu), Q(1, mu, nu),
+                                          Q(2, mu, nu), Q(3, mu, nu),
+                                          Q(4, mu, nu), Q(5, mu, nu)};
+                    const double d0[3] = {D(0, mu, nu), D(1, mu, nu),
+                                          D(2, mu, nu)};
+                    if (qa) {
+                        double tq[6];
+                        origin_shift_quad(q0, d0, Ra, sij, tq);
+                        const auto& va = vqp[static_cast<std::size_t>(a)];
+                        for (int k = 0; k < 6; ++k)
+                            H(mu, nu) += 0.5 * va[static_cast<std::size_t>(k)]
+                                         * tq[k];
+                    }
+                    if (el[static_cast<std::size_t>(b)]->n_shell > 1) {
+                        double tq[6];
+                        origin_shift_quad(q0, d0, Rb, sij, tq);
+                        const auto& vb = vqp[static_cast<std::size_t>(b)];
+                        for (int k = 0; k < 6; ++k)
+                            H(mu, nu) += 0.5 * vb[static_cast<std::size_t>(k)]
+                                         * tq[k];
+                    }
+                }
             }
         }
         auto sol = linalg::diagonalize_fock_generalized(H, S);
@@ -811,7 +951,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const bool has_p = e.n_shell > 1;
             // Mulliken: bra on A (same partition as the dipole foothold).
             // s-only centres (H) get no CAMM quadrupole — the overlap blob
-            // about a 1s origin is not the GFN2 atomic Θ.
+            // about a 1s origin is not the GFN2 atomic Θ (xtb mmompop).
             for (int u = 0; u < na; ++u) {
                 for (int b2 = 0; b2 < n_at; ++b2) {
                     const int ib = ao0[static_cast<std::size_t>(b2)];
