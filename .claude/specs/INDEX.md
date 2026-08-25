@@ -16,31 +16,26 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-**Live count: 7.** (component-plugin chain + TB `gfn0-xtb-forces`)
+**Live count: 9.** (component-plugin chain 6 + TB wave 8: `gfn0-xtb-forces`, `gfn1-xtb-organic`, `gfn2-quadrupole-aes`)
 
 ## Live — TB loop wave 8 (2026-08-25)
+
+Merged to `dev` (wave-2 merge). Specs kept on `dev`.
 
 | Spec | Deps | One-line |
 | ---- | ---- | -------- |
 | [gfn0-xtb-forces](gfn0-xtb-forces/gfn0-xtb-forces.md) | `gfn0-beyond-toy` | Analytic GFN0 G; replace central FD vs xtb `--gfn 0` |
+| [gfn1-xtb-organic](gfn1-xtb-organic/gfn1-xtb-organic.md) | — | GFN1-xTB organic (H/C/N/O) energy vs xtb `--gfn 1` CH4 |
+| [gfn2-quadrupole-aes](gfn2-quadrupole-aes/spec.md) | `gfn2-xtb-water` | GFN2 charge–quadrupole AES + qkernel AXC; close 1.45 meV H₂O vs xtb 6.7.1 |
 
 ## Closed — TB harness wave 7 (2026-08-25)
 
 Merged to `dev` (`07f5c188`, `dee2e8ce`); specs deleted; history is git.
-`gfn1-xtb-organic` stays `[~]` on `wf/gfn1-xtb-organic`.
 
 | Spec | Shipped |
 | ---- | ------- |
 | `gfn0-beyond-toy` | `GFN0` H/C/N/O energy; `reg_gfn0-beyond-toy` vs xtb 6.7.1 methanol |
 | `gfn2-xtb-water` | `GFN2` H/C/N/O energy; `reg_gfn2-xtb-water` vs xtb 6.7.1 H₂O |
-
-## Live — tb-method-loop (2026-08-25)
-
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [gfn1-xtb-organic](gfn1-xtb-organic/gfn1-xtb-organic.md) | — | GFN1-xTB organic (H/C/N/O) energy vs xtb `--gfn 1` CH4 [in-progress] |
-
-**Live TB count: 1.**
 
 Claim-completion Track P (Python) closed 2026-08-15; Track C (`cuda-gpw-product`) closed
 2026-08-18. Sections below that still say “Live” are campaign history

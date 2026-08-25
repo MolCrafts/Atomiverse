@@ -816,13 +816,13 @@ DFTB+ for these rows.
 
 ### Phase C — GFN-xTB (oracle = xtb) — product ladder open
 
-xTB is **not** DFTB3++. **GFN0** and **GFN2** energy footholds ship on `dev`
-(H/C/N/O; `reg_gfn0-beyond-toy`, `reg_gfn2-xtb-water`; oracle=xtb 6.7.1).
-GFN1 is `[~]` (`wf/gfn1-xtb-organic`). Wave-8 assign also staffed GFN0
-analytic G, GFN2 quadrupole AES, and IPEA (`## in_progress`). Toy `XtbGfn0`
-was deleted (`bc14dabd`).
-**Staff order:** Recover GFN1 → GFN0/GFN2 forces / quadrupole AES / ALPB →
-then Hessian / sTDA / beyond-CHNO. AES before GFN2 F (xtb force pin).
+xTB is **not** DFTB3++. **GFN0** energy + analytic G, **GFN1** energy, and
+**GFN2** energy + quadrupole AES ship on `dev` (H/C/N/O;
+`reg_gfn0-beyond-toy`, `reg_gfn0-xtb-forces`, `reg_gfn1-xtb-organic`,
+`reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`; oracle=xtb 6.7.1). IPEA
+remains `[~]` (`wf/ipea-xtb-small`). Toy `XtbGfn0` was deleted (`bc14dabd`).
+**Staff order:** IPEA recover → GFN2 forces / ALPB → Hessian / sTDA /
+beyond-CHNO. AES before GFN2 F (xtb force pin) is done.
 
 - [ ] `gfn2-xtb-forces` | GFN2-xTB analytic forces (`with_forces` currently throws) | xtb | H2O off-eq | F | **oracle=xtb**; after `gfn2-quadrupole-aes`; on-disk `h2o_gfn2_offeq_grad`
 - [ ] `gfn2-beyond-chno` | GFN2 static tables beyond H/C/N/O (xtb is all-element; GFN0 same shape after) | xtb | small hetero | E | **oracle=xtb**; after CHNO F
@@ -835,9 +835,6 @@ then Hessian / sTDA / beyond-CHNO. AES before GFN2 F (xtb force pin).
 
 ## in_progress
 
-- [~] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | CH4 | E [eV] | **oracle=xtb** (twin `ch4_gfn1`); recovering on `wf/gfn1-xtb-organic`
-- [~] `gfn0-xtb-forces` | Replace GFN0 central-FD F with analytic G vs xtb `--gfn 0` | xtb | methanol / H2O off-eq | F | **oracle=xtb**; energy already ships
-- [~] `gfn2-quadrupole-aes` | GFN2 quadrupole AES (closes the 1.45 meV H₂O residual vs xtb 6.7.1; foothold is charge–dipole + dipole–dipole + AXC only) | xtb | H2O | E | **oracle=xtb**
 - [~] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | small | E | **oracle=xtb**; after GFN2 energy
 
 ## permanent rules / scope-out (never pending)
@@ -857,8 +854,11 @@ Not work items — see `.claude/notes/tb-blocked-capabilities.md`.
 
 _(footholds + wave-1/2/3/4 product depth on `dev`)_
 
+- [x] `gfn0-xtb-forces` | Analytic GFN0 G (HF+Pulay, EEQ/CN, repulsion, D4, SRB); off-eq water vs xtb 6.7.1 `--gfn 0 --grad` | `reg_gfn0-xtb-forces` | **oracle=xtb**
+- [x] `gfn1-xtb-organic` | GFN1-xTB organic energy (H/C/N/O); CH4 vs xtb 6.7.1 `--gfn 1` (−4.274232224875 Eh; 10.2 meV) | `reg_gfn1-xtb-organic` | **oracle=xtb**
+- [x] `gfn2-quadrupole-aes` | GFN2 charge–quadrupole AES + qkernel AXC; H₂O vs xtb 6.7.1 −5.070383095219 Eh (dE ≈ −26 µeV) | `reg_gfn2-quadrupole-aes` | **oracle=xtb**
 - [x] `gfn0-beyond-toy` | Production GFN0-xTB energy (H/C/N/O); methanol vs xtb 6.7.1 −7.597234498685 Eh | `reg_gfn0-beyond-toy` | **oracle=xtb**
-- [x] `gfn2-xtb-water` | Production GFN2-xTB energy (H/C/N/O); H₂O vs xtb 6.7.1 −5.070383095219 Eh (forces throw; residual 1.45 meV) | `reg_gfn2-xtb-water` | **oracle=xtb**
+- [x] `gfn2-xtb-water` | Production GFN2-xTB energy (H/C/N/O); H₂O vs xtb 6.7.1 −5.070383095219 Eh (forces throw; AES residual closed by `gfn2-quadrupole-aes`) | `reg_gfn2-xtb-water` | **oracle=xtb**
 - [x] `nddo-sharp-discriminator` | RM1 CO₂/CO ΔHf vs PARAM survey (−81.55 / −13.87 kcal/mol; r=1.173 / 1.138 Å); water is 0.06 from exp, these are 12.5 | `reg_nddo-sharp-discriminator` | **oracle=mopac**
 - [x] `se-analytic-hessian` | `cpu::vib::Hessian` + DFTB2 forces on H₂; symmetric H, linear ω≈4500 cm⁻¹ | `reg_se-analytic-hessian` | **oracle=literature** (structural); needs `ATV_BUILD_VIB=ON`
 - [x] `dftb-plus-u` | DFTB2 Dudarev equal-filling \(E_U\) on O water; formula identity; forces throw | `reg_dftb-plus-u` | design `.claude/notes/dftb-plus-u.md`

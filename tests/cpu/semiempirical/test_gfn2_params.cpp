@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/basis_data/gfn2_xtb_tables.h"
@@ -55,6 +56,19 @@ TEST(Gfn2Params, TablesCoverHCNO) {
     EXPECT_TRUE(mask & (1 << 8));
 }
 
+TEST(Gfn2Params, OxygenQkernelIsTabulated) {
+    using namespace basis_data;
+    bool found = false;
+    for (std::size_t i = 0; i < kGfn2NElements; ++i) {
+        if (kGfn2Elements[i].z != 8)
+            continue;
+        found = true;
+        EXPECT_NE(kGfn2Elements[i].qkernel, 0.0);
+        EXPECT_NE(kGfn2Elements[i].dkernel, 0.0);
+    }
+    EXPECT_TRUE(found);
+}
+
 TEST(Gfn2Params, UnsupportedElementThrows) {
     cpu::Frame f(1);
     f.span(kAtom_type)[0] = 9; // F — not in the H/C/N/O foothold
@@ -91,4 +105,6 @@ TEST(Gfn2Params, WaterEnergyFiniteAndSccConverged) {
     EXPECT_LT(gfn2.last_scc_residual(), gfn2.scc_tol);
     EXPECT_GT(gfn2.last_scc_iterations(), 0);
     EXPECT_EQ(gfn2.last_mulliken_dq().size(), 3u);
+    const double pin = -5.070383095219 * units::kHartreeInEv;
+    EXPECT_LT(std::fabs(e - pin), 1.0e-3);
 }

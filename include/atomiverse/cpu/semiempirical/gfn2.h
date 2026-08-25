@@ -17,9 +17,10 @@ namespace semiempirical {
 ///
 /// Molecular closed-shell energy: STO-*n*G valence basis, CN-shifted H⁰,
 /// shell-resolved isotropic SCC, on-site third-order, anisotropic
-/// electrostatics + AXC, screened repulsion, Grimme D4 (GFN2 damping).
+/// electrostatics (charge–dipole, dipole–dipole, charge–quadrupole) +
+/// dipole/quadrupole AXC, screened repulsion, Grimme D4 (GFN2 damping).
 /// Parameters are static in-tree tables — there is no `libxtb` kernel.
-/// Oracle: **xtb** 6.7.1 (`reg_gfn2-xtb-water`). Units: energy [eV],
+/// Oracle: **xtb** 6.7.1 (`reg_gfn2-quadrupole-aes`). Units: energy [eV],
 /// positions [Å]. Forces are not this slug (`gfn2-xtb-forces`).
 ///
 /// @code
