@@ -9,7 +9,7 @@
 | Public API | `cpu::semiempirical::IPEA` (`with_forces = true`) on `cpu::vib::Hessian` at `vib::Phase::force` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md); [Ch. 14 Vibrations](../ch14-vibrations.md); [ipea-xtb-forces](ipea-xtb-forces.md) |
 | Queue | TB method loop — wave 12 done (`c7db3d8f` / `f5e7c78a`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB analytic Hessian ✓; `--vip`/`--vea` stays ○ |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB analytic Hessian ✓; VIP/VEA is [`ipea-xtb-vip`](ipea-xtb-vip.md) |
 | Oracle | **xtb 6.7.1** (compiled 2026-06-09) only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -107,9 +107,9 @@ the xtb printout, with tols that absorb the path mismatch.
 
 **Not included.** Closed-form \(\partial^2 E/\partial R_i\partial R_j\)
 (CPHF / IPEA second-derivative kernel). IR intensities from an APT (FD
-driver does not solve CPHF). xtb `--vip` / `--vea` ΔSCC IP/EA. PBC / spin
-/ solvent. GFN-FF (classical). Polar-molecule water Hessian (0.5 eV energy
-hole vs xtb).
+driver does not solve CPHF). xtb `--vip` / `--vea` is
+[`ipea-xtb-vip`](ipea-xtb-vip.md). PBC / spin / solvent. GFN-FF
+(classical). Polar-molecule water Hessian (0.5 eV energy hole vs xtb).
 
 **Twin settings (binding for this page / regression):**
 
@@ -151,8 +151,8 @@ xtb reports Td, gradient norm \(7.87\times10^{-4}\) Eh/\(a_0\),
 - **GFN0 / GFN1 / GFN2 Hessian** — siblings
   [`gfn0-xtb-analytic-hessian`](gfn0-xtb-analytic-hessian.md) /
   [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
-- xtb **`--vip` / `--vea`** ΔSCC IP/EA — queue `ipea-xtb-vip` (empirical
-  shift; not this closed-shell Hessian).
+- xtb **`--vip` / `--vea`** ΔSCC IP/EA — sibling [`ipea-xtb-vip`](ipea-xtb-vip.md)
+  (empirical shift; not this closed-shell Hessian).
 - Polar **water** vs xtb — polar Δq still carries a ~0.5 eV kernel hole
   (named in `reg_ipea-xtb-small` Gaps). Not this pin.
 - PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is
@@ -383,8 +383,8 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   same D3/intcut/mixer mismatch as `reg_ipea-xtb-small`; it does not move
   \(\omega\) past 10 cm⁻¹. Polar-molecule residual vs water (~0.5 eV) is
   an energy-path hole, not a Hessian defect, and is **not** this pin.
-- **No `--vip` / `--vea` / PBC / spin / solvent / IR** on this page —
-  `--vip`/`--vea` is queue `ipea-xtb-vip`. GFN-FF is classical
+- **No PBC / spin / solvent / IR** on this page —
+  `--vip`/`--vea` is [`ipea-xtb-vip`](ipea-xtb-vip.md). GFN-FF is classical
   (never pending on this loop).
 - **GFN0 / GFN1 / GFN2 Hessian.** Siblings
   [`gfn0-xtb-analytic-hessian`](gfn0-xtb-analytic-hessian.md) /
@@ -397,8 +397,8 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   `reg_am1_water_minimize` under this configure.
 - Family lock: **xtb only** for IPEA / GFN rows — never DFTB+ or OpenMOPAC as
   an IPEA oracle; never treat GFN-xTB as a DFTB3 successor.
-- Foothold ≠ closed: IPEA energy + \(G\) + FD \(H\) is not the GFN product
-  closed (`--vip`/`--vea`, ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO,
+- Foothold ≠ closed: IPEA energy + \(G\) + FD \(H\) + VIP/VEA is not the GFN
+  product closed (ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO, extra-Z IPEA,
   CAMM-vs-\(R\) remain).
 
 ## References
@@ -410,6 +410,8 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   `regressions/semiempirical/ipea-xtb-small/REFERENCE.md`
 - Force sibling: [`ipea-xtb-forces.md`](ipea-xtb-forces.md) /
   `regressions/semiempirical/ipea-xtb-forces/REFERENCE.md`
+- VIP/VEA sibling: [`ipea-xtb-vip.md`](ipea-xtb-vip.md) /
+  `regressions/semiempirical/ipea-xtb-vip/REFERENCE.md`
 - GFN Hessian siblings: [`gfn0-xtb-analytic-hessian.md`](gfn0-xtb-analytic-hessian.md),
   [`gfn-xtb-analytic-hessian.md`](gfn-xtb-analytic-hessian.md)
 - SE Hessian foothold (DFTB2/H₂, structural): `regressions/semiempirical/se-analytic-hessian/REFERENCE.md`

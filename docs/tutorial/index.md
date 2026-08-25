@@ -230,6 +230,20 @@ Full index: [methods/README](methods/README.md).
 |--------|------|------------|--------|
 | IPEA-xTB FD Hessian of analytic \(G\) (Td CH₄) | [ipea-xtb-analytic-hessian](methods/ipea-xtb-analytic-hessian.md) | `regressions/semiempirical/ipea-xtb-analytic-hessian` | xtb 6.7.1 (ratio **≈ 0.061**) |
 
+### TB / SE capability wave 13 (semiempirical + tight-binding)
+
+Offline OpenMOPAC / DFTB+ / xtb pins only — see
+[tb-method-handoff](../developer/tb-method-handoff.md) and `tools/tb_oracle/`.
+Family-locked oracles: NDDO → OpenMOPAC; DFTB* → DFTB+; GFN-xTB / IPEA → xtb.
+Harness wave 13 (2026-08-25) closed IPEA-xTB ΔSCC vertical IP/EA
+(`ipeashift` 4.8455 eV). Extra-Z IPEA tables stay ○. GFN2 CAMM-vs-\(R\)
+remains incomplete.
+Full index: [methods/README](methods/README.md).
+
+| Method | Page | Regression | Oracle |
+|--------|------|------------|--------|
+| IPEA-xTB ΔSCC vertical IP/EA (Td CH₄, `ipeashift`) | [ipea-xtb-vip](methods/ipea-xtb-vip.md) | `regressions/semiempirical/ipea-xtb-vip` | xtb 6.7.1 (ratio **2.0**) |
+
 ### MetalWalls capability wave 1 (classical electrochem + LAMMPS-overlap MD)
 
 Offline LAMMPS / MetalWalls / literature pins only — see

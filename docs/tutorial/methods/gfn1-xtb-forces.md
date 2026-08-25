@@ -138,9 +138,10 @@ energy-only** FD of ATV’s own \(E\) (\(h=10^{-4}\) Å) as an identity gate.
   pinned here).
 - **GFN0 / GFN2** forces — siblings `gfn0-xtb-forces`, `gfn2-xtb-forces`.
 - GFN-xTB **Hessian** is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
-  IPEA energy / \(G\) / FD Hessian are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  IPEA energy / \(G\) / FD Hessian / VIP/VEA are [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
-  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md); AES-in-Fock is
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
+  [`ipea-xtb-vip`](ipea-xtb-vip.md); AES-in-Fock is
   [`gfn2-aes-fock`](gfn2-aes-fock.md). PBC, spin, sTDA, ALPB/GBSA,
   CPCM-X — other queue rows. GFN-FF is classical (scope-out of this loop).
 - Halogen-bond correction (xtb term; identically 0 on H₂O; not implemented).
@@ -342,7 +343,8 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
   IPEA is [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
-  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). GFN-FF is
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
+  [`ipea-xtb-vip`](ipea-xtb-vip.md). GFN-FF is
   classical (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
   for the TB product gate; do not build `reg_am1_water_bomd` /

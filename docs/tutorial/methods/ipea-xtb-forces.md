@@ -9,7 +9,7 @@
 | Public API | `cpu::semiempirical::IPEA` (`with_forces = true`); `cpu::Evaluate` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md) (SE product surface; IPEA is a GFN-xTB sibling) |
 | Queue | TB method loop — wave 11 done (`b7388af2` / `ae6b48df`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB energy **and** analytic \(G\) ✓; FD Hessian is [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md); `--vip` stays ○ |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB energy **and** analytic \(G\) ✓; FD Hessian is [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md); VIP/VEA is [`ipea-xtb-vip`](ipea-xtb-vip.md) |
 | Oracle | **xtb 6.7.1** only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -158,8 +158,8 @@ scaled so \(r(\mathrm{C{-}H1})=1.20\) Å.
   pinned here).
 - **GFN0 / GFN1 / GFN2** forces — siblings `gfn0-xtb-forces`,
   `gfn1-xtb-forces`, `gfn2-xtb-forces`.
-- xtb **`--vip` / `--vea`** ΔSCC IP/EA — queue `ipea-xtb-vip` (empirical
-  shift; not this closed-shell gradient).
+- xtb **`--vip` / `--vea`** ΔSCC IP/EA — sibling [`ipea-xtb-vip`](ipea-xtb-vip.md)
+  (empirical shift; not this closed-shell gradient).
 - Off-eq **water** vs xtb — polar Δq still carries a ~0.5 eV kernel hole
   (named in `reg_ipea-xtb-small` Gaps). Analytic \(F\) on water is gated by
   ATV energy FD in `test_cpu_xtb_ipea`, not this product pin.
@@ -373,18 +373,17 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   analytic vs ATV energy FD is \(<2\times10^{-8}\) eV/Å. Polar-molecule
   residual vs water (~0.5 eV) is an energy-path hole, not a gradient
   defect.
-- **No Hessian / PBC / spin / solvent / `--vip` / halogen** on this page —
+- **No Hessian / PBC / spin / solvent / halogen** on this page —
   FD Hessian is [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md);
-  `--vip`/`--vea` is queue `ipea-xtb-vip`. GFN-FF is classical
+  `--vip`/`--vea` is [`ipea-xtb-vip`](ipea-xtb-vip.md). GFN-FF is classical
   (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
   for the TB product gate; do not build `reg_am1_water_bomd` /
   `reg_am1_water_minimize` under this configure.
 - Family lock: **xtb only** for IPEA / GFN rows — never DFTB+ or OpenMOPAC as
   an IPEA oracle; never treat GFN-xTB as a DFTB3 successor.
-- Foothold ≠ closed: IPEA energy + IPEA \(G\) + FD Hessian is not the GFN
-  product closed (`--vip`/`--vea`, ALPB, CPCM-X, PBC, spin, sTDA,
-  beyond-CHNO remain).
+- Foothold ≠ closed: IPEA energy + IPEA \(G\) + FD Hessian + VIP/VEA is not
+  the GFN product closed (ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO remain).
 
 ## References
 
@@ -392,6 +391,9 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - Twin: `tools/tb_oracle/inputs/xtb/ch4_ipea_offeq_grad/` (`mol.xyz`,
   `xtb.out.txt`, `gradient.txt`)
 - Energy sibling: `regressions/semiempirical/ipea-xtb-small/REFERENCE.md`
+- Hessian sibling: [`ipea-xtb-analytic-hessian.md`](ipea-xtb-analytic-hessian.md)
+- VIP/VEA sibling: [`ipea-xtb-vip.md`](ipea-xtb-vip.md) /
+  `regressions/semiempirical/ipea-xtb-vip/REFERENCE.md`
 - Oracle README: `tools/tb_oracle/README.md`
 - Queue / handoff / loop: `docs/developer/tb-method-queue.md`,
   `docs/developer/tb-method-handoff.md`,

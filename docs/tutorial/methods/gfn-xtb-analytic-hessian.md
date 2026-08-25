@@ -129,9 +129,10 @@ mismatch.
 **Not included.** Closed-form \(\partial^2 E/\partial R_i\partial R_j\)
 (CPHF / GFN second-derivative kernel). IR intensities from an APT (FD
 driver does not solve CPHF). PBC / spin / solvent. GFN-FF (classical).
-IPEA energy / \(G\) / FD Hessian are [`ipea-xtb-small`](ipea-xtb-small.md) /
+IPEA energy / \(G\) / FD Hessian / VIP/VEA are [`ipea-xtb-small`](ipea-xtb-small.md) /
 [`ipea-xtb-forces`](ipea-xtb-forces.md) /
-[`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). AES-in-Fock is
+[`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
+[`ipea-xtb-vip`](ipea-xtb-vip.md). AES-in-Fock is
 [`gfn2-aes-fock`](gfn2-aes-fock.md).
 
 **Twin settings (binding for this page / regression):**
@@ -176,9 +177,10 @@ vibrational eigenvalues are real.
 - AES-in-Fock — sibling [`gfn2-aes-fock`](gfn2-aes-fock.md). GFN2
   \(\omega\) tols on this page **absorb** the remaining CAMM-vs-\(R\)
   hole; they are not a close of that slope.
-- IPEA energy / \(G\) / FD Hessian — [`ipea-xtb-small`](ipea-xtb-small.md) /
+- IPEA energy / \(G\) / FD Hessian / VIP/VEA — [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
-  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). PBC, spin,
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
+  [`ipea-xtb-vip`](ipea-xtb-vip.md). PBC, spin,
   sTDA, ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical
   (scope-out of this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
@@ -406,9 +408,10 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - **GFN0 Hessian.** Sibling [`gfn0-xtb-analytic-hessian`](gfn0-xtb-analytic-hessian.md).
   This page closes GFN1 (primary) + GFN2 (family, with stated hole) FD \(H\).
 - **No PBC / spin / solvent / IR** on this page — see Phase C queue.
-  IPEA energy / \(G\) / FD Hessian are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  IPEA energy / \(G\) / FD Hessian / VIP/VEA are [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
-  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). GFN-FF is
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
+  [`ipea-xtb-vip`](ipea-xtb-vip.md). GFN-FF is
   classical (never pending on this loop).
 - **VIB exception.** This slug (and `se-analytic-hessian` /
   `gfn0-xtb-analytic-hessian` / `ipea-xtb-analytic-hessian`) may set
@@ -418,8 +421,8 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - Family lock: **xtb only** for GFN rows — never DFTB+ or OpenMOPAC as a
   GFN oracle; never treat GFN-xTB as a DFTB3 successor.
 - Foothold ≠ closed: GFN CHNO energy + analytic \(G\) + family FD \(H\) +
-  AES-in-Fock + IPEA E+\(G\)+\(H\) is not the GFN product closed
-  (CAMM-vs-\(R\), ALPB, PBC, spin, sTDA, `--vip` remain).
+  AES-in-Fock + IPEA E+\(G\)+\(H\)+VIP is not the GFN product closed
+  (CAMM-vs-\(R\), ALPB, PBC, spin, sTDA remain).
 
 ## References
 
@@ -435,6 +438,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   `regressions/semiempirical/gfn2-xtb-water/REFERENCE.md`
 - GFN0 Hessian sibling: [`gfn0-xtb-analytic-hessian.md`](gfn0-xtb-analytic-hessian.md)
 - IPEA Hessian sibling: [`ipea-xtb-analytic-hessian.md`](ipea-xtb-analytic-hessian.md)
+- IPEA VIP/VEA sibling: [`ipea-xtb-vip.md`](ipea-xtb-vip.md)
 - SE Hessian foothold (DFTB2/H₂, structural): `regressions/semiempirical/se-analytic-hessian/REFERENCE.md`
 - Oracle README: `tools/tb_oracle/README.md`
 - Queue / handoff / loop: `docs/developer/tb-method-queue.md`,

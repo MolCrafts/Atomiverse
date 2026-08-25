@@ -9,7 +9,7 @@
 | Public API | `cpu::semiempirical::IPEA` + `cpu::Evaluate` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md) (SE product surface; IPEA is a GFN-family sibling, not NDDO) |
 | Queue | TB method loop — harness wave 10 done (`50066df7` / `4c278a20`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB energy ✓; analytic \(G\) is [`ipea-xtb-forces`](ipea-xtb-forces.md); FD Hessian is [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md); `--vip` stays ○ |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB energy ✓; analytic \(G\) is [`ipea-xtb-forces`](ipea-xtb-forces.md); FD Hessian is [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md); VIP/VEA is [`ipea-xtb-vip`](ipea-xtb-vip.md) |
 | Oracle | **xtb 6.7.1** (compiled 2026-06-09) only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -137,8 +137,8 @@ xtb `--vip` is a **multi-step ΔSCC IP** with an empirical shift; it is
 **Key exclusions (non-goals of this slug)**
 
 - Analytic nuclear forces (`with_forces` throws; queue deepen).
-- xtb `--vip` / `--vea` ΔSCC ionization / affinity (cation/anion; empirical
-  shift). Not this closed-shell energy.
+- xtb `--vip` / `--vea` ΔSCC ionization / affinity — sibling
+  [`ipea-xtb-vip`](ipea-xtb-vip.md). Not this closed-shell energy.
 - Open shell (`multiplicity != 1` throws; queue `spin-gfn-xtb`).
 - Halogen-bond correction (xtb term; identically 0 on CH₄; not implemented).
 - ALPB/GBSA, CPCM-X/ddCOSMO, PBC, sTDA.
@@ -325,18 +325,19 @@ unless `perf_exempt`.
   (`gfn2-beyond-chno` is the beyond-CHNO deepen, on GFN2 first).
 - 8.90 meV residual vs xtb is accepted by the 50 meV gate; not
   bit-identical (D3 C6, integral cutoff, mixer).
-- `--vip` ΔSCC IP/EA, halogen correction, continuum solvent, PBC, sTDA:
+- `--vip` ΔSCC IP/EA ships on [`ipea-xtb-vip`](ipea-xtb-vip.md) (not this
+  closed-shell energy). Halogen correction, continuum solvent, PBC, sTDA:
   out of this slug. AES-in-Fock is [`gfn2-aes-fock`](gfn2-aes-fock.md).
 - Cross-oracle misuse forbidden: do not re-pin this energy with OpenMOPAC or
   DFTB+, and do not treat IPEA / GFN-xTB as a DFTB3 successor.
-- Follow-ons (queue): `ipea-xtb-vip`; then ALPB / beyond-CHNO / sTDA /
-  PBC / spin.
+- Follow-ons (queue): ALPB / beyond-CHNO / sTDA / PBC / spin.
 
 Foothold ≠ closed: IPEA CHNO energy is ✓; IPEA \(G\) is ✓
 ([`ipea-xtb-forces`](ipea-xtb-forces.md)); IPEA FD Hessian is ✓
-([`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md)); `--vip`,
-solvent, PBC, and spin stay ○. GFN CHNO energy + analytic G + family
-FD Hessian + AES-in-Fock + IPEA E+\(G\)+\(H\) is not the GFN product closed.
+([`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md)); IPEA VIP/VEA
+is ✓ ([`ipea-xtb-vip`](ipea-xtb-vip.md)); solvent, PBC, extra-Z, and spin
+stay ○. GFN CHNO energy + analytic G + family FD Hessian + AES-in-Fock +
+IPEA E+\(G\)+\(H\)+VIP is not the GFN product closed.
 
 ## References
 
@@ -359,6 +360,7 @@ FD Hessian + AES-in-Fock + IPEA E+\(G\)+\(H\) is not the GFN product closed.
   (NDDO/AM1; different family — OpenMOPAC oracle)
 - Siblings: [`ipea-xtb-forces`](ipea-xtb-forces.md) (analytic \(G\)),
   [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) (FD Hessian),
+  [`ipea-xtb-vip`](ipea-xtb-vip.md) (ΔSCC IP/EA),
   `gfn1-xtb-organic` (same CH₄, GFN1 Hamiltonian),
   `gfn0-beyond-toy` (GFN0 energy), `gfn2-xtb-water` /
   `gfn2-quadrupole-aes` (GFN2 energy)

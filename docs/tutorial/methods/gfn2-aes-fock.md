@@ -223,9 +223,10 @@ Eh/\(a_0\).
 - **GFN0 / GFN1** forces — siblings `gfn0-xtb-forces`, `gfn1-xtb-forces`.
 - GFN-xTB **Hessian** is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md)
   (GFN2 \(\omega\) still carries the CAMM hole). IPEA energy / \(G\) / FD
-  Hessian are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  Hessian / VIP/VEA are [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
-  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md).
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
+  [`ipea-xtb-vip`](ipea-xtb-vip.md).
   PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is
   classical (scope-out of this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
@@ -422,7 +423,8 @@ wall; the regression fails if the ratio exceeds 10.
   (GFN2 \(\omega\) still carries the CAMM hole); IPEA is
   [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
-  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). GFN-FF is
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
+  [`ipea-xtb-vip`](ipea-xtb-vip.md). GFN-FF is
   classical (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
   for the TB product gate; do not build `reg_am1_water_bomd` /
@@ -444,6 +446,7 @@ wall; the regression fails if the ratio exceeds 10.
   AES was post-SCC there)
 - Hessian sibling: [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md)
 - IPEA Hessian sibling: [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md)
+- IPEA VIP/VEA sibling: [`ipea-xtb-vip`](ipea-xtb-vip.md)
 - Oracle README: `tools/tb_oracle/README.md`
 - Queue / handoff / loop: `docs/developer/tb-method-queue.md`,
   `docs/developer/tb-method-handoff.md`,

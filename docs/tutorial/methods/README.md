@@ -207,6 +207,20 @@ incomplete.
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |
 | IPEA-xTB FD Hessian of analytic \(G\) (Td CH₄) | [ipea-xtb-analytic-hessian](ipea-xtb-analytic-hessian.md) | `regressions/semiempirical/ipea-xtb-analytic-hessian` | xtb 6.7.1 | **≈ 0.061** |
 
+## Index — TB / SE capability wave 13 (2026-08-25)
+
+Offline family-locked pins only — see
+[tb-method-handoff](../../developer/tb-method-handoff.md) and
+`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
+OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
+REFERENCE (`ratio` or `perf_exempt`). Harness wave 13 closed IPEA ΔSCC
+VIP/VEA (`reg_ipea-xtb-vip`). Extra-Z IPEA tables stay ○. GFN2
+CAMM-vs-\(R\) remains incomplete.
+
+| Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
+| ------ | ---- | ---------- | ------ | --------------------------------------------- |
+| IPEA-xTB ΔSCC vertical IP/EA (Td CH₄, `ipeashift`) | [ipea-xtb-vip](ipea-xtb-vip.md) | `regressions/semiempirical/ipea-xtb-vip` | xtb 6.7.1 | **2.0** |
+
 ## Index — MetalWalls capability wave 1 (2026-07-23)
 
 Classical electrochemical MD + LAMMPS-overlap MD (map E1–E3, E8–E9). Offline
