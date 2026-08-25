@@ -1020,6 +1020,42 @@ cluster PBC. Family Hessian stays ○. **Queue not exhausted.** Ladder:
 **Recover `ipea-xtb-small` first**; without `theme=gfn` staff Phase B NDDO /
 DFTB3/ThreeOb deepens, not GFN dependents.
 
+## Assign — 2026-08-25 wave 10 (this-shift wave 4, parent `dev` @ `2a557824`)
+
+**Priority:** incomplete `[~]` (1) ≫ open SE specs (none; component-plugin is
+another loop) ≫ pending. **Staff = 3** (cap 5). Operator **`theme=gfn`**
+overrides the NDDO-first ladder for **NEW** slugs only. Census refresh at
+HEAD: SE product surface unchanged since wave-10 (`GFN0` G+H + `GFN1`/`GFN2`
+E+G CHNO; AES still post-SCC; no `IPEA` / `PM*` on `dev`). **TB `wf/*`:**
+`wf/ipea-xtb-small` @ `054f6c8e` (ahead=2 behind=9). Isolation worktrees:
+none. No new pending from this assign-time re-diff.
+
+Staff **Recover IPEA** then Phase C deepens on **distinct files**:
+GFN2 AES-in-Fock (`gfn2.cpp`; angular \(F_{H1,y}\) hole), GFN1/2 FD Hessian
+(`cpu::vib::Hessian`, VIB=ON exception — GFN1/2 F already ship). Skip
+same-file GFN2 dependents (`alpb-xtb`, `gfn2-beyond-chno`, sTDA) so the
+Fock potential can close the angular \(F\) hole **before** solvent /
+extra-Z tables. Skip PBC/spin (would touch GFN0/1/2). Native static
+tables — do **not** wrap `libxtb`. Two staff slots left empty rather than
+collide on `gfn2.cpp`.
+
+| # | Slug | Kind | Action |
+| - | ---- | ---- | ------ |
+| 1 | `ipea-xtb-small` | resume | Rebase `wf/ipea-xtb-small` (ahead=2 behind=9) onto `dev`; dual-gate CH4 vs xtb IPEA-xTB (−4.670476737294 Eh). Spec lives on the tip. |
+| 2 | `gfn2-aes-fock` | **new** | Put GFN2 AES (charge–dipole/quadrupole + AXC) in the SCC Fock, not post-SCC energy; pin angular \(F_{H1,y}\) vs xtb `--gfn 2 --grad` (off-eq H₂O twin already on disk) |
+| 3 | `gfn-xtb-analytic-hessian` | **new** | GFN1/2 FD Hessian via `cpu::vib::Hessian` (analytic G already ships; GFN0 H already ships); VIB=ON exception like `se-analytic-hessian`. Primary pin GFN1 water vs xtb `--gfn 1 --hess`; GFN2 ω after AES-in-Fock or with the stated Fock hole |
+
+**Skipped this wave:** Phase A DFTB + Phase B NDDO (`theme=gfn`);
+`alpb-xtb` / `gfn2-beyond-chno` / `stda-xtb` (same-file as AES-in-Fock);
+`periodic-gfn-xtb` / `spin-gfn-xtb` (would collide on GFN0/1/2);
+`cpcm-x-xtb` (after ALPB); blocked (5).
+
+**After staff:** incomplete `[~]` = **3**; pending = **28**; blocked = **5**.
+Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**
+`.claude/specs/<slug>/`; resume rebases the existing spec; SE-only cmake
+(incl. CLI=OFF; `gfn-xtb-analytic-hessian` may add `ATV_BUILD_VIB=ON` only);
+offline **xtb** pins only. **No push.**
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
@@ -1064,23 +1100,23 @@ energy + analytic G, and **GFN2** energy + quadrupole AES + analytic G ship
 on `dev` (H/C/N/O; `reg_gfn0-beyond-toy`, `reg_gfn0-xtb-forces`,
 `reg_gfn0-xtb-analytic-hessian`, `reg_gfn1-xtb-organic`, `reg_gfn1-xtb-forces`,
 `reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`, `reg_gfn2-xtb-forces`;
-oracle=xtb 6.7.1). IPEA remains `[~]` (`wf/ipea-xtb-small` @ `054f6c8e`).
-Toy `XtbGfn0` was deleted (`bc14dabd`). **Staff order:** IPEA recover →
-AES-in-Fock / ALPB / beyond-CHNO / family Hessian / sTDA / PBC / spin.
-GFN1/2 analytic G landed; family Hessian is GFN1/2 (`gfn-xtb-analytic-hessian`).
+oracle=xtb 6.7.1). IPEA + AES-in-Fock + family Hessian are `[~]` (wave-10
+staff). Toy `XtbGfn0` was deleted (`bc14dabd`). **Staff order after this
+wave:** ALPB / beyond-CHNO / sTDA / PBC / spin (AES-in-Fock + family Hessian
+in progress).
 
-- [ ] `gfn2-aes-fock` | Put GFN2 AES (charge–dipole/quadrupole + AXC) in the SCC Fock, not post-SCC energy. Angular \(F_{H1,y}\) vs xtb is the Fock hole (`reg_gfn2-xtb-forces` Gaps) | xtb | off-eq H2O | F | **oracle=xtb**; CHNO F already ships
-- [ ] `gfn2-beyond-chno` | GFN2 static tables beyond H/C/N/O (xtb is all-element; GFN0/GFN1 same shape after) | xtb | small hetero | E | **oracle=xtb**; after CHNO F
-- [ ] `alpb-xtb` | xtb ALPB/GBSA implicit solvent on production GFN2 | xtb | H2O / small organic | E | **oracle=xtb**; after `gfn2-xtb-water`
+- [ ] `gfn2-beyond-chno` | GFN2 static tables beyond H/C/N/O (xtb is all-element; GFN0/GFN1 same shape after) | xtb | small hetero | E | **oracle=xtb**; after CHNO F / AES-in-Fock
+- [ ] `alpb-xtb` | xtb ALPB/GBSA implicit solvent on production GFN2 | xtb | H2O / small organic | E | **oracle=xtb**; after `gfn2-aes-fock`
 - [ ] `cpcm-x-xtb` | xtb ddCOSMO / CPCM-X continuum solvent on production GFN2 (Stahn 2023; banner on xtb 6.7.1) | xtb | H2O / small | E | **oracle=xtb**; after `alpb-xtb`
-- [ ] `gfn-xtb-analytic-hessian` | GFN1/2 FD Hessian via `cpu::vib::Hessian` (product GFN1/2 forces now exist; GFN0 H already ships) | xtb/vib | small | ω | **oracle=xtb**; VIB=ON exception like `se-analytic-hessian`
-- [ ] `stda-xtb` | sTDA-xTB excitations on production GFN ground state | xtb | small organic | ω_exc | **oracle=xtb|literature**; after `gfn2-xtb-water`
+- [ ] `stda-xtb` | sTDA-xTB excitations on production GFN ground state | xtb | small organic | ω_exc | **oracle=xtb|literature**; after `gfn2-aes-fock`
 - [ ] `periodic-gfn-xtb` | Periodic GFN-xTB Γ / PBC energy | xtb | small cell | E | **oracle=xtb**
 - [ ] `spin-gfn-xtb` | Spin-polarized GFN-xTB | xtb | open shell | E / spin | **oracle=xtb**; after GFN2
 
 ## in_progress
 
-- [~] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | CH4 r=1.09 Å | E | **oracle=xtb**; `wf/ipea-xtb-small` @ `054f6c8e` (ahead=2 behind=8)
+- [~] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | CH4 r=1.09 Å | E | **oracle=xtb**; `wf/ipea-xtb-small` @ `054f6c8e` (ahead=2 behind=9)
+- [~] `gfn2-aes-fock` | Put GFN2 AES in the SCC Fock (angular \(F_{H1,y}\) hole) | xtb | off-eq H2O | F | **oracle=xtb**; CHNO F already ships
+- [~] `gfn-xtb-analytic-hessian` | GFN1/2 FD Hessian via `cpu::vib::Hessian` | xtb/vib | water | ω | **oracle=xtb**; VIB=ON exception; GFN0 H already ships
 
 ## permanent rules / scope-out (never pending)
 

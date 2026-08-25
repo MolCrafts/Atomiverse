@@ -1,12 +1,12 @@
 # TB / SE method loop — handoff
 
-Last assign: **2026-08-25 wave 9** (this-shift wave 3, `theme=gfn`) on
-parent `dev` @ `7bc52489`.
-Last GapCensus: **2026-08-25 wave 9** (refresh at assign HEAD).
+Last assign: **2026-08-25 wave 10** (this-shift wave 4, `theme=gfn`) on
+parent `dev` @ `2a557824`.
+Last GapCensus: **2026-08-25 wave 10** (refresh at assign HEAD).
 Last harness: **wave 9** — `gfn1-xtb-forces` + `gfn2-xtb-forces` +
 `gfn0-xtb-analytic-hessian` merged (`276c7353` / `b8e86743` / `d4582d31`).
-Keep `ipea-xtb-small` `[~]`.
-**incomplete_remaining=1. pending=28. blocked=5.**
+Staff `ipea-xtb-small` (resume) + `gfn2-aes-fock` + `gfn-xtb-analytic-hessian`.
+**incomplete_remaining=3. pending=28. blocked=5.**
 **Queue not exhausted.**
 
 ## Workflow order (binding)
@@ -22,7 +22,7 @@ Worktrees (**spec-first**) → Merge → Clearup → Harness → Tutorial. See
 | `gfn1-xtb-forces` | **merged → done** — analytic GFN1 \(F=-\nabla E\) (HF+Pulay, CN/shell-poly, \(\partial\gamma/\partial R\), rep, D3); off-eq water vs xtb 6.7.1 `--gfn 1 --grad` (`reg_gfn1-xtb-forces`; \(E\) −5.768641651774 Eh, \(F_{O,x}\) 1.87e-3 eV/Å); twin `tools/tb_oracle/inputs/xtb/h2o_gfn1_offeq_grad/` |
 | `gfn2-xtb-forces` | **merged → done** — analytic GFN2 \(F=-\nabla E\) (HF+Pulay, IES, rep, D4, AES kernel at frozen CAMM); off-eq water vs xtb 6.7.1 `--gfn 2 --grad` (`reg_gfn2-xtb-forces`; \(E\) **−5.058625058504 Eh**); AES still post-SCC (angular \(F_{H1,y}\) hole) |
 | `gfn0-xtb-analytic-hessian` | **merged → done** — GFN0 FD Hessian via `cpu::vib::Hessian`; water ω vs xtb 6.7.1 `--gfn 0 --hess` (`reg_gfn0-xtb-analytic-hessian`; 1563.14 / 3497.87 / 3505.03 cm⁻¹); twin `tools/tb_oracle/inputs/xtb/h2o_gfn0_hess/` |
-| `ipea-xtb-small` | **keep `[~]`** — unmerged `wf/ipea-xtb-small` @ `054f6c8e` (ahead=2 behind=6); spec lives on the tip |
+| `ipea-xtb-small` | **keep `[~]`** — unmerged `wf/ipea-xtb-small` @ `054f6c8e` (ahead=2 behind=9); spec lives on the tip |
 
 Specs closed (deleted: `gfn1-xtb-forces`, `gfn2-xtb-forces`,
 `gfn0-xtb-analytic-hessian`). Isolation worktrees: **none** (Clearup already ran).
@@ -34,17 +34,18 @@ GFN1/2 is `gfn-xtb-analytic-hessian`). IPEA stays ○.
 Foothold ≠ closed: ALPB, CPCM-X, PBC, spin, sTDA, family Hessian,
 beyond-CHNO, IPEA, GFN2 AES-in-Fock.
 
-## Start here next wave
+## Start here (wave-10 staff)
 
-**Recover `ipea-xtb-small` first** (`incomplete ≫ pending`). Rebase
-`wf/ipea-xtb-small` onto current `dev` before gate. Then, if `theme=gfn|xtb`
-still holds, staff GFN2 dependents (`alpb-xtb`, `gfn2-beyond-chno`) or
-family Hessian (`gfn-xtb-analytic-hessian` — GFN1/2 F now exist). Without
-theme, ladder returns to Phase B NDDO (`pm3-organic-energy`,
-`nddo-closed-form-forces`) and DFTB3/ThreeOb deepens.
+Workers on `wf/<slug>` isolation worktrees (nobackup). Spec-first.
+
+| slug | Kind | Note |
+| ---- | ---- | ---- |
+| `ipea-xtb-small` | resume | Rebase `wf/ipea-xtb-small` @ `054f6c8e` onto `dev` @ `2a557824` before gate. Spec + twin already on the tip. |
+| `gfn2-aes-fock` | new | AES into SCC Fock (`gfn2.cpp`). Pin angular \(F_{H1,y}\) vs on-disk `h2o_gfn2_offeq_grad`. Do **not** wrap `libxtb`. |
+| `gfn-xtb-analytic-hessian` | new | GFN1/2 FD H via `cpu::vib::Hessian`. May add `-DATV_BUILD_VIB=ON` only. Primary pin GFN1 `--gfn 1 --hess`. |
 
 Do **not** treat GFN CHNO energy + analytic G + GFN0 Hessian as the GFN
-product closed.
+product closed. Skip same-file GFN2 dependents until AES-in-Fock lands.
 
 ## Oracle / build (binding)
 
@@ -62,7 +63,8 @@ product closed.
 
 ## Next
 
-1. Recover/merge `ipea-xtb-small` (rebase onto current `dev` @ `d4582d31`).
-2. Spec-first workers on `wf/<slug>`; SE-only cmake **including CLI=OFF**.
+1. Isolation worktrees for the three `[~]` slugs; resume rebases IPEA onto `dev` @ `2a557824`.
+2. Spec-first workers on `wf/<slug>`; SE-only cmake **including CLI=OFF**
+   (`gfn-xtb-analytic-hessian` may add `ATV_BUILD_VIB=ON` only).
 3. **No push.** Wipe builds; Clearup worktrees same wave. `git worktree remove`
    of a tree with `molrs` needs `--force`.
