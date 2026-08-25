@@ -601,8 +601,7 @@ void IPEA::launch(const LaunchContext& ctx) {
     if (with_forces)
         throw std::runtime_error(
             "IPEA: nuclear forces are not implemented on this energy "
-            "foothold; set with_forces=false (later slug gfn-xtb analytic "
-            "gradient / gfn2-xtb-forces)");
+            "foothold; set with_forces=false");
 
     const auto type = f.span(kAtom_type);
     const StorageReal* x = f.span(kAtom_x);

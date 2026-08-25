@@ -67,7 +67,7 @@ xtb summary (same transcript):
 | **total** | **−4.670476737294** |
 
 Measured ATV residual at this geometry (Release, dual-gate after rebase
-onto `dev` @ `0df56074`): **8.90 meV** (`E = −127.08124904` eV vs pin
+onto `dev` @ `e276a49d`): **8.90 meV** (`E = −127.08124904` eV vs pin
 `−127.09014645` eV). The 0.05 eV window is the same kernel-residual floor
 as `reg_gfn1-xtb-organic` (D3 CN vs xtb ncoord, Stewart contraction vs
 `intcut`, Anderson vs Broyden).

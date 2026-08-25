@@ -86,7 +86,7 @@ eval.run(frame);   // frame.meta.get(kEnergy) [eV]
 - `regressions/semiempirical/ipea-xtb-small/reg_ipea-xtb-small.cpp`
 - `regressions/semiempirical/ipea-xtb-small/REFERENCE.md`
 - `regressions/CMakeLists.txt`
-- `tools/tb_oracle/inputs/xtb/h2o_ipea/` (mol.xyz + transcript)
+- `tools/tb_oracle/inputs/xtb/ch4_ipea/` (mol.xyz + transcript)
 - `tools/tb_oracle/README.md` (twin row)
 
 ## Tasks
