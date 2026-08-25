@@ -16,25 +16,18 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-## Live — TB / SE (`gfn1-xtb-forces`, 2026-08-25)
+**Live count: 6.** (component-plugin chain only)
 
-| Spec | One-line |
-| ---- | -------- |
-| [gfn1-xtb-forces](gfn1-xtb-forces/gfn1-xtb-forces.md) | Replace GFN1 `with_forces` throw with analytic G vs xtb `--gfn 1 --grad` |
+## Closed — TB harness wave 9 (2026-08-25)
 
-**Live count: 7.** (component-plugin chain + gfn1-xtb-forces)
+Merged to `dev` (`276c7353`, `b8e86743`, `d4582d31`); specs deleted; history is git.
+`ipea-xtb-small` stays `[~]` on `wf/ipea-xtb-small`.
 
-## Live — TB `gfn2-xtb-forces` (2026-08-25)
-
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [gfn2-xtb-forces](gfn2-xtb-forces/gfn2-xtb-forces.md) | gfn2-quadrupole-aes | GFN2 analytic \(F=-\nabla E\) vs xtb 6.7.1 `--gfn 2 --grad` |
-
-## Live — TB wave 9 worker (2026-08-25)
-
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [gfn0-xtb-analytic-hessian](gfn0-xtb-analytic-hessian/gfn0-xtb-analytic-hessian.md) | `gfn0-xtb-forces` | GFN0 FD Hessian via `cpu::vib::Hessian`; pin ω vs xtb 6.7.1 `--gfn 0 --hess` [implemented] |
+| Spec | Shipped |
+| ---- | ------- |
+| `gfn1-xtb-forces` | Analytic GFN1 G; `reg_gfn1-xtb-forces` off-eq water vs xtb 6.7.1 `--gfn 1 --grad` |
+| `gfn2-xtb-forces` | Analytic GFN2 G; `reg_gfn2-xtb-forces` off-eq water vs xtb 6.7.1 `--gfn 2 --grad` (−5.058625058504 Eh) |
+| `gfn0-xtb-analytic-hessian` | GFN0 FD Hessian via `cpu::vib::Hessian`; `reg_gfn0-xtb-analytic-hessian` ω vs xtb 6.7.1 `--gfn 0 --hess` |
 
 ## Closed — TB harness wave 8 (2026-08-25)
 
