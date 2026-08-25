@@ -217,6 +217,19 @@ Full index: [methods/README](methods/README.md).
 | GFN2-xTB AES in the SCC Fock (off-eq H₂O) | [gfn2-aes-fock](methods/gfn2-aes-fock.md) | `regressions/semiempirical/gfn2-aes-fock` | xtb 6.7.1 (**asserted ≤ 10**, xtb wall 0.018 s) |
 | IPEA-xTB analytic nuclear forces (off-eq CH₄) | [ipea-xtb-forces](methods/ipea-xtb-forces.md) | `regressions/semiempirical/ipea-xtb-forces` | xtb 6.7.1 (ratio **≈ 0.26**) |
 
+### TB / SE capability wave 12 (semiempirical + tight-binding)
+
+Offline OpenMOPAC / DFTB+ / xtb pins only — see
+[tb-method-handoff](../developer/tb-method-handoff.md) and `tools/tb_oracle/`.
+Family-locked oracles: NDDO → OpenMOPAC; DFTB* → DFTB+; GFN-xTB / IPEA → xtb.
+IPEA FD Hessian via `cpu::vib::Hessian` (`-DATV_BUILD_VIB=ON` exception).
+`--vip`/`--vea` stays ○.
+Full index: [methods/README](methods/README.md).
+
+| Method | Page | Regression | Oracle |
+|--------|------|------------|--------|
+| IPEA-xTB FD Hessian of analytic \(G\) (Td CH₄) | [ipea-xtb-analytic-hessian](methods/ipea-xtb-analytic-hessian.md) | `regressions/semiempirical/ipea-xtb-analytic-hessian` | xtb 6.7.1 (ratio **≈ 0.061**) |
+
 ### MetalWalls capability wave 1 (classical electrochem + LAMMPS-overlap MD)
 
 Offline LAMMPS / MetalWalls / literature pins only — see
