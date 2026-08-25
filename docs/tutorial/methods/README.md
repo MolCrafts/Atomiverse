@@ -129,6 +129,20 @@ section must then say so explicitly and the case ships structural gates only.
 | AM1 H₂O ΔHf / E / charges | — | `regressions/semiempirical/am1-water-mopac-energy` | **OpenMOPAC** transcript (Dewar 1985) (`perf_exempt`) |
 | RM1 H₂O ΔHf at the RM1 optimum | — | `regressions/semiempirical/rm1-water-mopac-energy` | **OpenMOPAC** PARAM survey + Scientia Plena 2016 (`perf_exempt`) |
 
+## Index — TB / SE capability wave 8 (2026-08-25)
+
+Offline family-locked pins only — see
+[tb-method-handoff](../../developer/tb-method-handoff.md) and
+`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB rows (never OpenMOPAC /
+DFTB+; GFN is not a DFTB3 successor). Fair walls from REFERENCE (`ratio`
+or `perf_exempt`).
+
+| Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
+| ------ | ---- | ---------- | ------ | --------------------------------------------- |
+| GFN0-xTB analytic nuclear forces (off-eq H₂O) | [gfn0-xtb-forces](gfn0-xtb-forces.md) | `regressions/semiempirical/gfn0-xtb-forces` | xtb 6.7.1 | **≈ 0.092** |
+| GFN1-xTB organic energy (CH₄, H/C/N/O) | [gfn1-xtb-organic](gfn1-xtb-organic.md) | `regressions/semiempirical/gfn1-xtb-organic` | xtb 6.7.1 | **0.5** |
+| GFN2-xTB charge–quadrupole AES + \(q_{\mathrm{kernel}}\) AXC (H₂O) | [gfn2-quadrupole-aes](gfn2-quadrupole-aes.md) | `regressions/semiempirical/gfn2-quadrupole-aes` | xtb 6.7.1 | **perf_exempt** |
+
 ## Index — MetalWalls capability wave 1 (2026-07-23)
 
 Classical electrochemical MD + LAMMPS-overlap MD (map E1–E3, E8–E9). Offline
