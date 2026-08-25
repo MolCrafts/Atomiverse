@@ -276,6 +276,10 @@ atv_add_cpp_test(test_cpu_scc_mixer               cpu/semiempirical/test_scc_mix
 if(ATV_BUILD_SEMIEMPIRICAL)
     atv_add_cpp_test(test_cpu_xtb_gfn0            cpu/semiempirical/test_xtb_gfn0.cpp)
     atv_add_cpp_test(test_cpu_xtb_gfn1            cpu/semiempirical/test_xtb_gfn1.cpp)
+    if(ATV_BUILD_VIB)
+        atv_add_cpp_test(test_cpu_xtb_gfn0_hessian
+            cpu/semiempirical/test_xtb_gfn0_hessian.cpp)
+    endif()
 endif()
 
 # GPW module tests. All of them run unconditionally on the in-tree GTH + MOLOPT +

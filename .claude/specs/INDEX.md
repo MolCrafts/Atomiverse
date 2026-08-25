@@ -30,6 +30,12 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | ---- | ---- | -------- |
 | [gfn2-xtb-forces](gfn2-xtb-forces/gfn2-xtb-forces.md) | gfn2-quadrupole-aes | GFN2 analytic \(F=-\nabla E\) vs xtb 6.7.1 `--gfn 2 --grad` |
 
+## Live — TB wave 9 worker (2026-08-25)
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [gfn0-xtb-analytic-hessian](gfn0-xtb-analytic-hessian/gfn0-xtb-analytic-hessian.md) | `gfn0-xtb-forces` | GFN0 FD Hessian via `cpu::vib::Hessian`; pin ω vs xtb 6.7.1 `--gfn 0 --hess` [implemented] |
+
 ## Closed — TB harness wave 8 (2026-08-25)
 
 Merged to `dev` (`d214f365`, `e870f86d`, `a48f0ee3`); specs deleted; history is git.
