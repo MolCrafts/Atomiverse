@@ -157,6 +157,7 @@ remains post-SCC (angular \(F\) hole).
 | Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |
 | GFN1-xTB analytic nuclear forces (off-eq H₂O) | [gfn1-xtb-forces](gfn1-xtb-forces.md) | `regressions/semiempirical/gfn1-xtb-forces` | xtb 6.7.1 | **≈ 0.16** |
+| IPEA-xTB analytic nuclear forces (off-eq CH4) | [ipea-xtb-forces](ipea-xtb-forces.md) | `regressions/semiempirical/ipea-xtb-forces` | xtb 6.7.1 | **≈ 0.26** |
 | GFN2-xTB analytic nuclear forces (off-eq H₂O) | [gfn2-xtb-forces](gfn2-xtb-forces.md) | `regressions/semiempirical/gfn2-xtb-forces` | xtb 6.7.1 | **asserted ≤ 10** (xtb wall 0.018 s) |
 | GFN0-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn0-xtb-analytic-hessian](gfn0-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn0-xtb-analytic-hessian` | xtb 6.7.1 | **≈ 0.06** |
 

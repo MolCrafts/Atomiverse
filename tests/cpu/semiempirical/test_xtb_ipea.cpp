@@ -1,5 +1,6 @@
 /// @file tests/cpu/semiempirical/test_xtb_ipea.cpp
-/// Unit tests for IPEA-xTB static tables and H2O energy path.
+/// Unit tests for IPEA-xTB (tables, throws, FD identity). Pins live in
+/// regressions/semiempirical/ipea-xtb-small and ipea-xtb-forces.
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -83,13 +84,67 @@ TEST(XtbIpea, UnsupportedElementThrows) {
     }
 }
 
-TEST(XtbIpea, WithForcesThrows) {
+TEST(XtbIpea, ProvidesForceTrue) {
+    IPEA ipea;
+    EXPECT_TRUE(ipea.provides_force());
+    EXPECT_TRUE(ipea.provides_energy());
+}
+
+TEST(XtbIpea, AnalyticForceMatchesCentralFD) {
     auto f = make_water();
     cpu::Context ctx;
     IPEA ipea;
     ipea.with_forces = true;
     ipea.build({ctx, f});
-    EXPECT_THROW(ipea.launch({ctx, f, 0, 0}), std::runtime_error);
+    ipea.launch({ctx, f, 0, 0});
+    const double fx0 = static_cast<double>(f.span(kAtom_fx)[0]);
+    const double fy1 = static_cast<double>(f.span(kAtom_fy)[1]);
+    EXPECT_GT(std::fabs(fx0) + std::fabs(fy1), 1e-4);
+
+    auto energy_only = [](cpu::Frame gframe) {
+        gframe.meta.get(kEnergy) = 0;
+        for (int i = 0; i < 3; ++i)
+            gframe.span(kAtom_fx)[i] = gframe.span(kAtom_fy)[i] =
+                gframe.span(kAtom_fz)[i] = 0;
+        cpu::Context c;
+        IPEA m;
+        m.with_forces = false;
+        m.build({c, gframe});
+        m.launch({c, gframe, 0, 0});
+        return gframe.meta.get(kEnergy);
+    };
+    auto fd = [&](int atom, int k, double h) {
+        auto shifted = [&](double s) {
+            cpu::Frame gframe = make_water();
+            StorageReal* col = (k == 0)   ? gframe.span(kAtom_x)
+                               : (k == 1) ? gframe.span(kAtom_y)
+                                          : gframe.span(kAtom_z);
+            col[atom] += static_cast<StorageReal>(s);
+            return energy_only(gframe);
+        };
+        return -(shifted(h) - shifted(-h)) / (2.0 * h);
+    };
+    constexpr double h = 1.0e-4;
+    EXPECT_NEAR(fx0, fd(0, 0, h), 3e-5);
+    EXPECT_NEAR(fy1, fd(1, 1, h), 3e-5);
+}
+
+TEST(XtbIpea, AnalyticForceTranslationallyInvariant) {
+    auto f = make_water();
+    cpu::Context ctx;
+    IPEA ipea;
+    ipea.with_forces = true;
+    ipea.build({ctx, f});
+    ipea.launch({ctx, f, 0, 0});
+    double net[3] = {0, 0, 0};
+    for (int i = 0; i < 3; ++i) {
+        net[0] += static_cast<double>(f.span(kAtom_fx)[i]);
+        net[1] += static_cast<double>(f.span(kAtom_fy)[i]);
+        net[2] += static_cast<double>(f.span(kAtom_fz)[i]);
+    }
+    EXPECT_NEAR(net[0], 0.0, 1e-10);
+    EXPECT_NEAR(net[1], 0.0, 1e-10);
+    EXPECT_NEAR(net[2], 0.0, 1e-10);
 }
 
 TEST(XtbIpea, WaterEnergyFiniteAndSccConverged) {
@@ -105,5 +160,5 @@ TEST(XtbIpea, WaterEnergyFiniteAndSccConverged) {
     EXPECT_GT(std::fabs(e), 1.0);
     EXPECT_LT(ipea.last_scc_residual(), ipea.scc_tol);
     EXPECT_GT(ipea.last_scc_iterations(), 0);
-    EXPECT_FALSE(ipea.provides_force());
+    EXPECT_TRUE(ipea.provides_force());
 }

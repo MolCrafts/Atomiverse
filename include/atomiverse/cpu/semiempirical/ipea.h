@@ -1,5 +1,5 @@
 /// @file cpu/semiempirical/ipea.h
-/// @brief IPEA-xTB energy (organic H/C/N/O, static in-tree tables, CPU).
+/// @brief IPEA-xTB energy and analytic nuclear forces (organic H/C/N/O, CPU).
 #pragma once
 
 #include <string>
@@ -12,7 +12,7 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief IPEA-xTB total energy for H/C/N/O.
+/// @brief IPEA-xTB total energy and analytic nuclear forces for H/C/N/O.
 ///
 /// Special-purpose GFN1 reparametrization for ionization potentials and
 /// electron affinities (Ásgeirsson, Bauer, Grimme, *Chem. Sci.* **8**, 4879
@@ -22,16 +22,19 @@ namespace semiempirical {
 /// damping set. Not GFN1, not GFN2, not DFTB. Static tables in
 /// `basis_data/ipea_tables.h` cover Z = 1, 6, 7, 8 only.
 ///
-/// Energy foothold: `with_forces` defaults false and throws if set true.
-/// Closed shell only. Units on the public surface: energy [eV], positions [Å].
+/// Closed-form \(F=-\nabla E\) (Hellmann–Feynman + Pulay, CN/shell-poly
+/// chains, \(\partial\gamma/\partial R\), pair repulsion, D3). Closed shell
+/// only. Units on the public surface: energy [eV], positions [Å], forces
+/// [eV/Å].
 ///
-/// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pin:
-/// `regressions/semiempirical/ipea-xtb-small/`.
+/// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pins:
+/// `regressions/semiempirical/ipea-xtb-small/` (energy),
+/// `regressions/semiempirical/ipea-xtb-forces/` (forces).
 ///
 /// @code
 ///   cpu::Evaluate eval;
 ///   cpu::semiempirical::IPEA ipea;
-///   ipea.with_forces = false;
+///   ipea.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(ipea));
 /// @endcode
 class IPEA : public cpu::Semiempirical, public cpu::QmEngine {
@@ -46,14 +49,12 @@ class IPEA : public cpu::Semiempirical, public cpu::QmEngine {
     int charge = 0;
     /// @brief Spin multiplicity 2S+1. Only 1 (closed shell) is supported.
     int multiplicity = 1;
-    /// @brief When true, throw — nuclear forces are not a product path yet.
+    /// @brief When true, write analytic forces F=−∇E [eV/Å] on launch.
     bool with_forces = false;
 
     IPEA() = default;
 
     std::string name() const override { return "ipea"; }
-
-    bool provides_force() const override { return false; }
 
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
