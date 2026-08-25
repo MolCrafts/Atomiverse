@@ -535,11 +535,10 @@ No TB `wf/*` / no isolation worktrees to recover.
 blocked (9).
 
 **After staff:** incomplete `[~]` = **5**; pending = **13**; blocked = **9**.
-Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**;
-SE-only cmake; offline pins only. **No push.** File split: sharp-discriminator
-= regression + mopac twin; PM3 = param tables/enum; closed-form F =
-`nddo_solver`/`nddo_two_electron`; DFTB3 stress = `dftb3.cpp`; ThreeOb k =
-`dftb2.cpp` ThreeOb path.
+**Harness wave 6 (partial):** `nddo-sharp-discriminator` merged → done
+(`6f161e8d`); remaining four staffed slugs were **not started** (no `wf/*`
+tips) → return to pending. After harness: incomplete=0; pending=17;
+blocked=9. **Queue not exhausted.**
 
 ## pending
 
@@ -557,7 +556,6 @@ Product DFTB0/2/3 + γ Elstner + Γ-PBC F landed. Remaining are **deepens**.
 AM1/RM1 energy footholds + water mopac pins ship. Forces are still
 fixed-density FD. Do **not** use DFTB+ for these rows.
 
-- [ ] `nddo-sharp-discriminator` | Water is a mild NDDO gate (RM1 sits 0.06 kcal/mol from experiment). Add CO₂ (RM1 −81.55 vs exp −94.05) so the pin discriminates the *method*, not thermochemistry | nddo | CO2 | ΔHf | **oracle=mopac**; OpenMOPAC accuracy table RM1 error +12.50 kcal/mol
 - [ ] `nddo-closed-form-forces` | Closed-form multipole / integral-derivative NDDO nuclear forces (replace fixed-P FD) | nddo | H2O off-eq | F vs mopac + FD | **oracle=mopac**
 - [ ] `pm3-organic-energy` | PM3 (or MNDO) on NDDO ladder for table pipeline | nddo | small organic | E | **oracle=mopac**; bridge MNDO→PM6; extend `SemiEmpiricalMethod`
 - [ ] `pm6-water-energy` | PM6 energy vs OpenMOPAC | nddo/pm6 | H2O | E | **oracle=mopac**
@@ -604,6 +602,7 @@ Not work items — see `.claude/notes/tb-blocked-capabilities.md`.
 
 _(footholds + wave-1/2/3/4 product depth on `dev`)_
 
+- [x] `nddo-sharp-discriminator` | RM1 CO₂/CO ΔHf vs PARAM survey (−81.55 / −13.87 kcal/mol; r=1.173 / 1.138 Å); water is 0.06 from exp, these are 12.5 | `reg_nddo-sharp-discriminator` | **oracle=mopac**
 - [x] `se-analytic-hessian` | `cpu::vib::Hessian` + DFTB2 forces on H₂; symmetric H, linear ω≈4500 cm⁻¹ | `reg_se-analytic-hessian` | **oracle=literature** (structural); needs `ATV_BUILD_VIB=ON`
 - [x] `dftb-plus-u` | DFTB2 Dudarev equal-filling \(E_U\) on O water; formula identity; forces throw | `reg_dftb-plus-u` | design `.claude/notes/dftb-plus-u.md`
 - [x] `dftb-gamma-units-fix` / Elstner γ | eV·Å units then full DFTB+ Elstner `expGamma` (`internal/dftb_gamma.h`); H₂O/CH₄ DFTB+ pins closed; equal-U ∂γ/∂U for DFTB3 F | 2026-07-29 | note: `.claude/notes/dftb-vs-dftbplus-cleanup.md`
