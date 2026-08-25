@@ -3,27 +3,37 @@
 ///
 /// Orthorhombic, LAMMPS CommBrick forward comm over an ordered swap table
 /// (`comm::SwapList`, owned by `HaloSend`): the swaps of one axis form one
-/// stage, and the stages run in axis order (`x`, then `y`, then `z`). Both
-/// swaps of a stage are dispatched **concurrently** (`Isend`/`Irecv` +
-/// one `Waitall`): at `dims[d] == 2` a rank's low and high neighbour along
-/// `d` are the same rank, and two sequential exchanges cross their tags and
-/// deadlock.
+/// stage, the stages run in axis order (`x`, then `y`, then `z`), and inside
+/// a stage the `(lo, hi)` swap pair of each **forwarding round** runs in hop
+/// order. Both swaps of a round are dispatched **concurrently**
+/// (`Isend`/`Irecv` + one `Waitall`): at `dims[d] == 2` a rank's low and high
+/// neighbour along `d` are the same rank, and two sequential exchanges cross
+/// their tags and deadlock. Consecutive rounds are strictly serialized —
+/// round `r` ships what round `r - 1` received.
 ///
-/// The key invariant is that a stage's send lists scan
-/// `[0, n_local + n_ghost_accumulated_so_far)` — so ghosts received from an
-/// earlier axis are eligible to be **forwarded** to a later-axis neighbor.
-/// After three stages every rank has the owned-atom plus 1-, 2- and
-/// 3-axis-shifted ghost copies it needs, which reaches all 26 cartesian
-/// neighbors via cascade (6 face + 12 edge + 8 corner). A single-round
-/// 6-face exchange drops every edge/corner ghost, which silently drops
-/// bonded tuples whose partner lives diagonally — see
-/// `.claude/notes/cpu_mpi_halo_edge_corner_bug_2026-05-27.md`.
+/// Two cascades, one per nesting level:
 ///
-/// Ghost slots are appended in swap order, i.e. face order
-/// `{-x, +x, -y, +y, -z, +z}`, and recorded as each swap's
-/// `firstrecv`/`nrecv` by `SwapList::commit_recv`; `HaloRecv` mirrors that
-/// layout and processes the stages in reverse order so the cascade plays
-/// backwards.
+///   * **across axes** — round 1 of a stage scans
+///     `[0, n_local + n_ghost_accumulated_so_far)`, so ghosts received from
+///     an earlier axis are eligible to be forwarded to a later-axis
+///     neighbour. After three stages every rank has the owned-atom plus 1-,
+///     2- and 3-axis-shifted ghost copies it needs, reaching all 26 cartesian
+///     neighbours (6 face + 12 edge + 8 corner). A single 6-face exchange
+///     drops every edge/corner ghost, which silently drops bonded tuples
+///     whose partner lives diagonally — see
+///     `.claude/notes/cpu_mpi_halo_edge_corner_bug_2026-05-27.md`.
+///   * **inside an axis** — a ghost shell deeper than one subdomain
+///     (`SwapList::max_hops(d) > 1`, the narrow-box / high-rank-count case)
+///     is filled by forwarding: round `r > 1` of a face ships exactly the
+///     ghosts round `r - 1` delivered on the OPPOSITE face of the same axis,
+///     so rank `c - r`'s atoms arrive through the `r - 1` ranks in between.
+///     Nothing is ever sent directly to a rank two hops away.
+///
+/// Ghost slots are appended in swap order — axis, then hop, then face
+/// `{lo, hi}` — and recorded as each swap's `firstrecv`/`nrecv` by
+/// `SwapList::commit_recv`; `HaloRecv` mirrors that layout and walks it
+/// exactly backwards (last axis first, deepest hop first) so both cascades
+/// play in reverse.
 
 #include "atomiverse/cpu/communication/halo_exchange.h"
 
@@ -290,13 +300,13 @@ namespace {
 
 using detail::FaceBufs;
 
-/// @brief End of the stage starting at `begin`: the half-open run of swaps
-/// that cross the same axis.
+/// @brief End of the axis stage starting at `begin`: the half-open run of
+/// swaps that cross the same axis.
 ///
 /// The swaps of one axis are contiguous in the table (`SwapList::setup`
-/// expands `(0,lo), (0,hi), (1,lo), (1,hi), …`), and a stage is exactly one
-/// such run — the unit that must be dispatched concurrently and whose send
-/// lists share a scan bound.
+/// expands axis-major, then round, then face), and a stage is exactly one
+/// such run — the unit whose round 1 shares a scan bound (owners plus the
+/// ghosts every earlier axis delivered).
 /// @param swaps Published swap table.
 /// @param begin First swap of the stage.
 /// @return One past the stage's last swap.
@@ -309,18 +319,80 @@ int stage_end(const SwapList& swaps, int begin) {
     return end;
 }
 
-/// @brief The swap of the same stage pointing the other way.
+/// @brief End of the forwarding round starting at `begin`: the `(lo, hi)`
+/// swap pair of one hop of one axis.
+///
+/// The round — not the axis stage — is the transport unit. Its two swaps go
+/// out **concurrently** (at `dims[d] == 2` the low and high neighbour are the
+/// same rank, and two sequential exchanges cross their tags and deadlock),
+/// while consecutive rounds are strictly **serialized**: round `r` ships what
+/// round `r - 1` received, so it cannot be posted before that arrived.
+/// @param swaps Published swap table.
+/// @param begin First swap of the round.
+/// @return One past the round's last swap.
+int round_end(const SwapList& swaps, int begin) {
+    const int nswap = static_cast<int>(swaps.size());
+    const int dim = swaps[begin].dim;
+    const int round = swaps[begin].round;
+    int end = begin;
+    while (end < nswap && swaps[end].dim == dim && swaps[end].round == round)
+        ++end;
+    return end;
+}
+
+/// @brief First swap of the forwarding round that ends at `end`.
+/// The reverse pass walks rounds backwards, deepest hop first.
+/// @param swaps Published swap table.
+/// @param end One past the round's last swap.
+/// @return First swap of that round.
+int round_begin(const SwapList& swaps, int end) {
+    int begin = end - 1;
+    while (begin > 0 && swaps[begin - 1].dim == swaps[begin].dim
+           && swaps[begin - 1].round == swaps[begin].round)
+        --begin;
+    return begin;
+}
+
+/// @brief The swap of the same round pointing the other way.
 ///
 /// A message this rank sends on swap `iswap` arrives at the partner as its
-/// opposite-facing swap of the same axis, so the receive tag is derived from
-/// the mirrored index — the swap-table spelling of the old
-/// `opposite_face(f) == f ^ 1`.
-/// @param begin First swap of the stage.
-/// @param end One past the stage's last swap.
+/// opposite-facing swap of the same axis and the same round, so the receive
+/// tag is derived from the mirrored index — the swap-table spelling of the
+/// old `opposite_face(f) == f ^ 1`.
+/// @param begin First swap of the round.
+/// @param end One past the round's last swap.
 /// @param iswap Swap whose partner-side index is wanted.
 /// @return Mirrored swap index within `[begin, end)`.
 inline int mirror_swap(int begin, int end, int iswap) {
     return begin + (end - 1) - iswap;
+}
+
+/// @brief Which exchange a halo message belongs to. One tag stride each, so
+/// a table deeper than the old fixed six swaps cannot alias a count
+/// handshake onto a payload.
+enum class HaloTagKind : int {
+    count = 0,
+    forward = 1,
+    reverse = 2,
+    refresh = 3
+};
+
+/// Swaps a single stride may address. A multi-hop table holds
+/// `2 * sum_d maxneed_d` swaps — up to `2 * (dims - 1)` on a narrow axis —
+/// so the stride is sized for a thousands-of-ranks axis while four strides
+/// still fit the 32767 tag range MPI guarantees.
+constexpr int kHaloTagStride = 4096;
+
+/// @brief MPI tag for one swap's message of one kind.
+/// @param kind Which of the four halo exchanges the message belongs to.
+/// @param iswap Swap index in the published table.
+/// @return Tag, unique across kinds and swaps.
+/// @throws std::overflow_error if the table is deeper than one tag stride.
+inline int halo_tag(HaloTagKind kind, int iswap) {
+    if (iswap < 0 || iswap >= kHaloTagStride)
+        throw std::overflow_error(
+            "halo: swap table deeper than the MPI tag stride");
+    return static_cast<int>(kind) * kHaloTagStride + iswap;
 }
 
 /// @brief Periodic image displacement this swap applies at pack time [Å].
@@ -503,6 +575,50 @@ void prealloc_bufs(FaceBufs& b, int initial_cap, std::size_t border_row_bytes,
         buf.reserve(reverse_bytes);
 }
 
+/// @brief Re-derive the swap table against the current geometry, with a
+/// **rank-uniform** round count.
+///
+/// `SwapList::derive_hops` is pure and per-rank, and its answer is not
+/// automatically the same on every rank: a non-uniform (RCB) partition has a
+/// different partner-slab chain per rank, and a non-periodic axis truncates
+/// its chain at the global boundary. The transport cannot tolerate that —
+/// every round is a matched pair of messages, so a rank that stops one round
+/// early leaves its partner posting a receive nobody answers. Hence the one
+/// `MPI_Allreduce(MAX)` the spec calls for; it also carries the refusal flag,
+/// so a minimum-image violation only some ranks can see throws on **all** of
+/// them instead of hanging the rest.
+///
+/// @param swaps Table to rebuild in place.
+/// @param dd This rank's decomposition (current `sublo/subhi` [Angstrom]).
+/// @param box Current simulation box; edge lengths [Angstrom].
+/// @param shell Ghost shell width [Angstrom],
+///        `max(pair cutoff, bonded extension)`.
+/// @param my_rank This rank's id in the Cartesian communicator.
+/// @param comm Cartesian communicator the halo runs on.
+/// @throws std::runtime_error if any rank refuses the geometry.
+void setup_swaps(SwapList& swaps, const md::mpi::DomainDecomposition& dd,
+                 const Box& box, double shell, int my_rank, MPI_Comm comm) {
+    int reduced[4] = {0, 0, 0, 0}; // rounds per axis, then the refusal flag
+    std::string refusal;
+    try {
+        const SwapList::HopNeed hops = SwapList::derive_hops(dd, box, shell);
+        for (int d = 0; d < 3; ++d)
+            reduced[d] = std::max(hops.minus[d], hops.plus[d]);
+    } catch (const std::runtime_error& error) {
+        refusal = error.what();
+        reduced[3] = 1;
+    }
+    MPI_Allreduce(MPI_IN_PLACE, reduced, 4, MPI_INT, MPI_MAX, comm);
+    if (reduced[3] != 0)
+        throw std::runtime_error(
+            refusal.empty()
+                ? std::string("halo: another rank refused the ghost-shell "
+                              "geometry (minimum-image bound); its message "
+                              "names the axis and the bound.")
+                : refusal);
+    swaps.setup(dd, box, shell, my_rank, reduced);
+}
+
 } // namespace
 
 void HaloSend::build(const cpu::BuildContext& ctx) {
@@ -530,20 +646,23 @@ void HaloSend::build(const cpu::BuildContext& ctx) {
     int my_rank = 0;
     MPI_Comm_rank(dd->cart_comm, &my_rank);
 
+    // Publish how deep a legitimate ghost may sit, BEFORE any consumer sizes
+    // itself against it: `CellList` pads every decomposed axis of its bin
+    // grid by this width, and a ghost outside that window is silently clamped
+    // into the edge cell (wrong cell membership, no error, wrong pairs).
+    dd->ghost_shell_width = halo_cutoff();
+
     // Derive the swap table now, so the geometry contract is checked at
     // build time (as it always was) and the published table is non-null
-    // from the first launch of any consumer. `SwapList::setup` throws when
-    // a decomposed axis would need more than one hop, i.e. exactly when the
-    // ghost shell is wider than this rank's subdomain: the halo exchanges
-    // with IMMEDIATE neighbour ranks only, so a deeper shell would need
-    // atoms from a rank two hops away, and those simply never arrive. That
-    // used to fail SILENTLY — the ghost region was quietly truncated and
-    // the forces came out wrong. It surfaced the first time a component
-    // asked for a ghost-of-ghost halo (EAM, halo = 2*cutoff): on a box big
-    // enough for a normal pair halo but not for a doubled one, the
-    // decomposed forces differed from a brute-force reference by 1.6 eV/A,
-    // with no diagnostic of any kind.
-    swaps_.setup(*dd, ctx.frame.box, halo_cutoff(), my_rank);
+    // from the first launch of any consumer. A shell wider than this rank's
+    // subdomain is NOT a refusal: `SwapList` derives the extra hops and the
+    // forward pass fills the shell by forwarding each round's ghosts one
+    // rank further (spec `comm-topology-02`). The one geometry that still
+    // throws is the minimum-image bound `shell <= L_d - w_self` — past it an
+    // atom would interact with its own periodic image, which no number of
+    // hops can fix.
+    setup_swaps(swaps_, *dd, ctx.frame.box, halo_cutoff(), my_rank,
+                dd->cart_comm);
     ctx.runtime.md.swap_list = &swaps_;
 
     // `setup` keeps the swap geometry and drops every stored row index, so
@@ -568,39 +687,45 @@ void HaloSend::build(const cpu::BuildContext& ctx) {
                   plan_row_bytes(bufs_->reverse_plan));
 }
 
-// Per-axis stage helper for the forward path. Both the full rebuild and
-// the position-only refresh walk the same stages of the same table; what
+// Per-round helper for the forward path. Both the full rebuild and the
+// position-only refresh walk the same rounds of the same table; what
 // differs is whether send lists are rebuilt and whether the tag column is
-// included in the packet. Encapsulating one stage as a single function
+// included in the packet. Encapsulating one round as a single function
 // keeps the orchestrator readable.
 namespace {
 
-/// @brief Drive one axis stage — the swaps `[begin, end)` crossing the same
-/// axis — of the cascading forward halo.
+/// @brief Drive one forwarding round — the `(lo, hi)` swap pair
+/// `[begin, end)` of one hop of one axis — of the cascading forward halo.
 ///
-/// Both swaps of the stage go out concurrently (`Isend`/`Irecv` +
+/// Both swaps of the round go out concurrently (`Isend`/`Irecv` +
 /// `Waitall`), never as two sequential exchanges: at `dims[d] == 2` the low
 /// and high neighbour of the axis are the SAME rank, and a sequential pair
 /// crosses its tags — each side blocks sending its first swap while waiting
 /// to receive the second. It deadlocks, and it deadlocked.
 ///
 /// `slot_in_out` is the running ghost-slot write cursor: on entry it is
-/// the next row to write (`n_local` before the first stage; after every
-/// stage it advances by the ghosts that stage received). `frame_cap` is
+/// the next row to write (`n_local` before the first round; after every
+/// round it advances by the ghosts that round received). `frame_cap` is
 /// the per-atom array capacity used for the overflow guard. When
-/// `full_rebuild`, the function rescans `[0, sources_end)` for ghost
-/// candidates, packs positions+tag, registers each received tag in
-/// `tag_to_local` / `ghost_tags`, and commits each swap's `nrecv` /
-/// `firstrecv`. When `!full_rebuild`, send lists and receive counts are
-/// replayed from the table and only positions get refreshed.
+/// `full_rebuild`, the function rescans each swap's own window
+/// `[win_first[k], win_last[k])` for ghost candidates, packs positions+tag,
+/// registers each received tag in `tag_to_local` / `ghost_tags`, and commits
+/// each swap's `nrecv` / `firstrecv`. When `!full_rebuild`, send lists and
+/// receive counts are replayed from the table and only positions get
+/// refreshed.
 ///
 /// `xfields` is the flattened list of declared extra forward fields; their
 /// payload rides both message shapes (border and position-only refresh)
 /// after the intrinsic columns.
-inline void forward_stage(Frame& frame, md::mpi::DomainDecomposition& dd,
+///
+/// @param win_first Per-swap inclusive lower scan bound, indexed by
+///        `s - begin`; unused when `!full_rebuild`.
+/// @param win_last Per-swap exclusive upper scan bound, same indexing.
+inline void forward_round(Frame& frame, md::mpi::DomainDecomposition& dd,
                           SwapList& swaps, FaceBufs& bufs, int begin, int end,
-                          int sources_end, bool full_rebuild, int& frame_cap,
-                          int my_rank, int& slot_in_out,
+                          const int* win_first, const int* win_last,
+                          bool full_rebuild, int& frame_cap, int my_rank,
+                          int& slot_in_out,
                           const std::vector<CommField>& xfields,
                           PackPlan& plan) {
     // A silent swap (no partner, or the partner is this rank) ships and
@@ -608,7 +733,8 @@ inline void forward_stage(Frame& frame, md::mpi::DomainDecomposition& dd,
     if (full_rebuild) {
         for (int s = begin; s < end; ++s)
             if (!swap_is_silent(swaps[s]))
-                swaps.rebuild_sendlist(s, frame, sources_end);
+                swaps.rebuild_sendlist(s, frame, win_first[s - begin],
+                                       win_last[s - begin]);
     }
 
     for (int s = begin; s < end; ++s) {
@@ -624,10 +750,12 @@ inline void forward_stage(Frame& frame, md::mpi::DomainDecomposition& dd,
             if (swap_is_silent(swaps[s]))
                 continue;
             MPI_Isend(&bufs.send_count[static_cast<std::size_t>(s)], 1, MPI_INT,
-                      swaps[s].sendproc, s, dd.cart_comm,
+                      swaps[s].sendproc, halo_tag(HaloTagKind::count, s),
+                      dd.cart_comm,
                       &bufs.requests[static_cast<std::size_t>(n_creqs++)]);
             MPI_Irecv(&bufs.recv_count[static_cast<std::size_t>(s)], 1, MPI_INT,
-                      swaps[s].recvproc, mirror_swap(begin, end, s),
+                      swaps[s].recvproc,
+                      halo_tag(HaloTagKind::count, mirror_swap(begin, end, s)),
                       dd.cart_comm,
                       &bufs.requests[static_cast<std::size_t>(n_creqs++)]);
         }
@@ -661,14 +789,16 @@ inline void forward_stage(Frame& frame, md::mpi::DomainDecomposition& dd,
         if (bufs.send_count[static_cast<std::size_t>(s)] > 0) {
             MPI_Isend(sbuf.data(),
                       checked_mpi_byte_count(sbuf.size(), "halo forward send"),
-                      MPI_BYTE, swaps[s].sendproc, 100 + s, dd.cart_comm,
+                      MPI_BYTE, swaps[s].sendproc,
+                      halo_tag(HaloTagKind::forward, s), dd.cart_comm,
                       &bufs.requests[static_cast<std::size_t>(n_preqs++)]);
         }
         if (bufs.recv_count[static_cast<std::size_t>(s)] > 0) {
             MPI_Irecv(
                 rbuf.data(),
                 checked_mpi_byte_count(rbuf.size(), "halo forward receive"),
-                MPI_BYTE, swaps[s].recvproc, 100 + mirror_swap(begin, end, s),
+                MPI_BYTE, swaps[s].recvproc,
+                halo_tag(HaloTagKind::forward, mirror_swap(begin, end, s)),
                 dd.cart_comm,
                 &bufs.requests[static_cast<std::size_t>(n_preqs++)]);
         }
@@ -677,19 +807,21 @@ inline void forward_stage(Frame& frame, md::mpi::DomainDecomposition& dd,
         MPI_Waitall(n_preqs, bufs.requests.data(), MPI_STATUSES_IGNORE);
 
     if (full_rebuild) {
-        // Capacity guard for this stage. Ranks no longer hold the global-N
+        // Capacity guard for this round. Ranks no longer hold the global-N
         // backing store (partition_atoms shrinks to owned + headroom to avoid
         // per-rank memory scaling with the total system size), so a thin
-        // subdomain can legitimately need more ghost rows than the headroom.
-        // Grow on demand (explicit-copy realloc preserving the live rows)
-        // instead of aborting; update the shared capacity mirrors and the
-        // by-ref `frame_cap` so the remaining stages see the new size.
+        // subdomain can legitimately need more ghost rows than the headroom —
+        // and a multi-hop shell fills several rounds of them. Grow on demand
+        // (explicit-copy realloc preserving the live rows) instead of
+        // aborting; update the shared capacity mirrors and the by-ref
+        // `frame_cap` so the remaining rounds see the new size.
         int new_ghosts = 0;
         for (int s = begin; s < end; ++s)
             new_ghosts += bufs.recv_count[static_cast<std::size_t>(s)];
         if (slot_in_out + new_ghosts > frame_cap) {
             const int needed = slot_in_out + new_ghosts;
-            // 50% slack so a cascade of small overflows doesn't realloc each stage.
+            // 50% slack so a cascade of small overflows doesn't realloc
+            // each round.
             const std::int64_t requested =
                 static_cast<std::int64_t>(needed) + needed / 2 + 1024;
             if (requested > std::numeric_limits<int>::max())
@@ -701,8 +833,9 @@ inline void forward_stage(Frame& frame, md::mpi::DomainDecomposition& dd,
             plan = make_border_plan(frame);
             require_schema_fingerprint(plan, fingerprint, plan.version);
             ATV_DEBUG("halo_exchange: rank {} grew ghost capacity to {} "
-                      "(needed {}) at axis {}",
-                      my_rank, frame_cap, needed, swaps[begin].dim);
+                      "(needed {}) at axis {} round {}",
+                      my_rank, frame_cap, needed, swaps[begin].dim,
+                      swaps[begin].round);
         }
     }
 
@@ -747,6 +880,79 @@ inline void forward_stage(Frame& frame, md::mpi::DomainDecomposition& dd,
         }
     }
     slot_in_out = slot;
+}
+
+/// @brief Run the whole forward cascade over the published table.
+///
+/// Two nested walks, both in table order:
+///
+///   * **axis stages** — axis 0, then 1, then 2. Round 1 of an axis scans
+///     `[0, slot)`, i.e. owners plus every ghost the earlier axes already
+///     delivered, so a ghost gets *forwarded* to a later-axis neighbour and
+///     the 12 edge / 8 corner neighbours are reached without ever addressing
+///     them directly.
+///   * **forwarding rounds inside an axis** — hop 1, then 2, … Round `r > 1`
+///     of a face ships exactly what round `r - 1` delivered on the
+///     **opposite** face of the same axis: the ghosts my high neighbour gave
+///     me are what my low neighbour is missing at depth `r`, and vice versa.
+///     That is the whole multi-hop shell — the same per-round shape
+///     `Migrate::exchange_along_dim` uses for owners
+///     (`src/cpu/communication/atom_migration.cpp:154`). Feeding a round the
+///     owners again instead would re-ship them to the same rank at the same
+///     periodic image and double-count every boundary pair.
+///
+/// Rounds are serialized (round `r` cannot be packed before round `r - 1`
+/// arrived); the two faces of one round go out concurrently.
+///
+/// @param slot_in_out Ghost-slot write cursor; `n_local` on entry, one past
+///        the last ghost row on return.
+inline void forward_cascade(Frame& frame, md::mpi::DomainDecomposition& dd,
+                            SwapList& swaps, FaceBufs& bufs, bool full_rebuild,
+                            int& frame_cap, int my_rank, int& slot_in_out,
+                            const std::vector<CommField>& xfields,
+                            PackPlan& plan) {
+    const int nswap = static_cast<int>(swaps.size());
+    for (int begin = 0; begin < nswap;) {
+        const int stop = stage_end(swaps, begin);
+        const int sources_end = slot_in_out;
+        // Slot range each face of the PREVIOUS round of this axis received.
+        int prev_first[2] = {0, 0};
+        int prev_last[2] = {0, 0};
+
+        for (int rbegin = begin; rbegin < stop;) {
+            const int rend = round_end(swaps, rbegin);
+            const int width = rend - rbegin;
+            if (width > 2)
+                throw std::logic_error(
+                    "halo: a swap-table round holds more than its (lo, hi) "
+                    "pair");
+
+            int win_first[2] = {0, 0};
+            int win_last[2] = {0, 0};
+            for (int k = 0; k < width; ++k) {
+                if (swaps[rbegin].round <= 1) {
+                    win_first[k] = 0;
+                    win_last[k] = sources_end;
+                } else {
+                    const int opposite = width - 1 - k;
+                    win_first[k] = prev_first[opposite];
+                    win_last[k] = prev_last[opposite];
+                }
+            }
+
+            forward_round(frame, dd, swaps, bufs, rbegin, rend, win_first,
+                          win_last, full_rebuild, frame_cap, my_rank,
+                          slot_in_out, xfields, plan);
+
+            for (int k = 0; k < width; ++k) {
+                prev_first[k] = swaps[rbegin + k].firstrecv;
+                prev_last[k] =
+                    swaps[rbegin + k].firstrecv + swaps[rbegin + k].nrecv;
+            }
+            rbegin = rend;
+        }
+        begin = stop;
+    }
 }
 
 std::size_t reverse_payload_bytes(const PackPlan& plan, int count,
@@ -1037,7 +1243,7 @@ void HaloSend::launch(const cpu::LaunchContext& ctx) {
 
     const double halo_cut =
         (cutoff_ > bonded_extension_) ? cutoff_ : bonded_extension_;
-    // Mutable: forward_stage grows the frame (and bumps frame_cap) when a
+    // Mutable: forward_round grows the frame (and bumps frame_cap) when a
     // shrunk rank needs more ghost rows than its headroom.
     int frame_cap = frame.capacity();
 
@@ -1062,36 +1268,34 @@ void HaloSend::launch(const cpu::LaunchContext& ctx) {
 
         frame.set_nghost(0);
 
-        // Re-derive the swap table against the CURRENT subdomain and box:
-        // an NPT / deform run can shrink the subdomain AFTER build()
-        // validated it, and the slab bands are box-dependent. `setup` is
-        // therefore also the re-check of the geometry contract — it throws
-        // when the ghost shell no longer fits this rank's subdomain, same
-        // fail-loud contract as build().
+        // Re-derive the swap table against the CURRENT subdomain and box.
+        // This IS the geometry re-check that used to be a second rejection
+        // point: an NPT / deform run can shrink the subdomain after build()
+        // sized the table, and the slab bands are box-dependent. A shrink
+        // that pushes the shell past one subdomain now simply raises the
+        // round count (`SwapList::max_hops`) and the shell is filled by
+        // forwarding — never a refusal, never a silently truncated shell.
+        // The only refusal left is the minimum-image bound, which no number
+        // of rounds can satisfy.
         //
         // Effective halo = max(pair cutoff, bonded skin): the wider of
         // the two is sufficient for both pair partners and bonded-tuple
-        // members near the boundary.
-        swaps_.setup(*dd, frame.box, halo_cut, my_rank);
+        // members near the boundary. Republished on `dd` so the neighbor
+        // grid pads its decomposed axes by the shell that is actually about
+        // to be built, before it consumes the ghost rows.
+        dd->ghost_shell_width = halo_cut;
+        setup_swaps(swaps_, *dd, frame.box, halo_cut, my_rank, dd->cart_comm);
         bufs.resize_swaps(swaps_.size());
 
         for (auto t : dd->ghost_tags)
             dd->tag_to_local.erase(t);
         dd->ghost_tags.clear();
 
-        // One stage per axis; each stage's send lists scan [0, slot) so
-        // atoms received in earlier axes get *forwarded* to later-axis
-        // neighbors. After the z stage, each rank has all 26 cartesian
-        // neighbor ghosts via cascade.
-        const int nswap = static_cast<int>(swaps_.size());
+        // One stage per axis, and inside an axis one forwarding round per
+        // hop; see `forward_cascade` for both walks.
         int slot = dd->n_local;
-        for (int begin = 0; begin < nswap;) {
-            const int end = stage_end(swaps_, begin);
-            forward_stage(frame, *dd, swaps_, bufs, begin, end,
-                          /*sources_end=*/slot, /*full_rebuild=*/true,
-                          frame_cap, my_rank, slot, fwd_fields_, forward_plan);
-            begin = end;
-        }
+        forward_cascade(frame, *dd, swaps_, bufs, /*full_rebuild=*/true,
+                        frame_cap, my_rank, slot, fwd_fields_, forward_plan);
         dd->n_ghost = slot - dd->n_local;
         frame.set_nghost(dd->n_ghost);
 
@@ -1113,19 +1317,14 @@ void HaloSend::launch(const cpu::LaunchContext& ctx) {
         return;
     }
 
-    // Position-only refresh path (no reneighbor). The same stages of the
-    // same table play out; ghost positions must be refreshed in stage
-    // order so a later axis sees the up-to-date forwarded ghosts (a
-    // later-axis send list may reference an earlier-axis ghost slot).
-    const int nswap = static_cast<int>(swaps_.size());
+    // Position-only refresh path (no reneighbor). The same axes and the same
+    // rounds of the same table play out, in the same order: a send list may
+    // reference a ghost slot filled by an earlier axis OR by the previous
+    // round of this axis, and both must already hold this step's positions
+    // when it is packed.
     int slot = dd->n_local;
-    for (int begin = 0; begin < nswap;) {
-        const int end = stage_end(swaps_, begin);
-        forward_stage(frame, *dd, swaps_, bufs, begin, end, /*sources_end=*/0,
-                      /*full_rebuild=*/false, frame_cap, my_rank, slot,
-                      fwd_fields_, forward_plan);
-        begin = end;
-    }
+    forward_cascade(frame, *dd, swaps_, bufs, /*full_rebuild=*/false, frame_cap,
+                    my_rank, slot, fwd_fields_, forward_plan);
     zero_ghost_forces(frame, *dd, bufs.reverse_plan, rev_fields_);
 }
 
@@ -1163,11 +1362,14 @@ void HaloRefresh::launch(const cpu::LaunchContext& ctx) {
     const auto columns = refresh_columns(plan, field_);
 
     // Replay the swap table EXACTLY as the last full rebuild laid it out:
-    // stage by stage in table order, and within a stage the lo swap then the
-    // hi swap, each unpacking at its own `firstrecv`. Replaying the table
-    // instead of re-deriving anything is what makes this a refresh rather
-    // than a second, conflicting halo.
-    // Both swaps of a stage go out CONCURRENTLY (Isend/Irecv + Waitall), never as
+    // round by round in table order (axis 0's hop 1, hop 2, …, then axis 1's,
+    // …), and within a round the lo swap then the hi swap, each unpacking at
+    // its own `firstrecv`. Replaying the table instead of re-deriving anything
+    // is what makes this a refresh rather than a second, conflicting halo, and
+    // walking it FORWARD is what keeps a forwarding round's send list — which
+    // names ghost rows the previous round filled — reading this step's values
+    // rather than the last step's.
+    // Both swaps of a round go out CONCURRENTLY (Isend/Irecv + Waitall), never as
     // two sequential Sendrecv calls. With two ranks the lo and hi neighbour of an
     // axis are the SAME rank, and a sequential pair crosses its tags — each side
     // blocks sending the first swap while waiting to receive the second. It
@@ -1179,7 +1381,7 @@ void HaloRefresh::launch(const cpu::LaunchContext& ctx) {
     std::vector<MPI_Request> reqs(2 * static_cast<std::size_t>(nswap));
 
     for (int begin = 0; begin < nswap;) {
-        const int end = stage_end(*swaps, begin);
+        const int end = round_end(*swaps, begin);
         int n_req = 0;
 
         for (int s = begin; s < end; ++s) {
@@ -1206,13 +1408,14 @@ void HaloRefresh::launch(const cpu::LaunchContext& ctx) {
                 MPI_Isend(
                     sb.data(),
                     checked_mpi_byte_count(sb.size(), "halo refresh send"),
-                    MPI_BYTE, swap.sendproc, s, dd->cart_comm,
-                    &reqs[static_cast<std::size_t>(n_req++)]);
+                    MPI_BYTE, swap.sendproc, halo_tag(HaloTagKind::refresh, s),
+                    dd->cart_comm, &reqs[static_cast<std::size_t>(n_req++)]);
             if (swap.nrecv > 0)
                 MPI_Irecv(
                     rb.data(),
                     checked_mpi_byte_count(rb.size(), "halo refresh receive"),
-                    MPI_BYTE, swap.recvproc, mirror_swap(begin, end, s),
+                    MPI_BYTE, swap.recvproc,
+                    halo_tag(HaloTagKind::refresh, mirror_swap(begin, end, s)),
                     dd->cart_comm, &reqs[static_cast<std::size_t>(n_req++)]);
         }
         if (n_req > 0)
@@ -1297,17 +1500,23 @@ void HaloRecv::launch(const cpu::LaunchContext& ctx) {
                 "halo reverse ghost layout disagrees with Frame capacity");
     }
 
-    // Reverse the cascade: last stage first (z, then y, then x). Forces
-    // accumulated on a ghost row by a later-axis reverse stage are then sent
-    // back further down the cascade in earlier-axis stages. Because the
-    // forward stage's send lists referenced rows in [0, n_local + ghosts
-    // received so far), the reverse accumulates correctly into rows that
-    // are either owned (first stage) or earlier-axis ghosts (later ones).
-    // By the time the x stage finishes, all force has flowed back to owners.
+    // Reverse the cascade EXACTLY backwards: the last round of the last axis
+    // first, then its earlier rounds, then the previous axis. Both orders
+    // matter and for the same reason — a swap's send list names rows that an
+    // EARLIER step of the forward pass filled:
+    //
+    //   * across axes, a later axis' send list may name an earlier axis'
+    //     ghost rows, so z must give back before y and y before x;
+    //   * inside an axis, a forwarding round's send list names the ghost rows
+    //     the PREVIOUS round received, so the deepest hop must give back
+    //     first: its ghost-row forces land on the intermediate rank's own
+    //     ghost rows, which the next (shallower) round then carries one rank
+    //     further, until round 1 hands everything to the owners.
+    //
+    // Run a round too early and its contribution is packed before it exists —
+    // silently dropped force, not an error.
     for (int end = nswap; end > 0;) {
-        int begin = end - 1;
-        while (begin > 0 && (*swaps)[begin - 1].dim == (*swaps)[begin].dim)
-            --begin;
+        const int begin = round_begin(*swaps, end);
 
         // For a swap's reverse: we send its ghost rows' forces back to the
         // rank that owns them (the same rank we exchanged with going
@@ -1336,14 +1545,16 @@ void HaloRecv::launch(const cpu::LaunchContext& ctx) {
                 MPI_Isend(
                     sbuf.data(),
                     checked_mpi_byte_count(sbuf.size(), "halo reverse send"),
-                    MPI_BYTE, swap.recvproc, 200 + s, dd->cart_comm,
+                    MPI_BYTE, swap.recvproc, halo_tag(HaloTagKind::reverse, s),
+                    dd->cart_comm,
                     &bufs.requests[static_cast<std::size_t>(n_reqs++)]);
             }
             if (!swap.sendlist.empty()) {
                 MPI_Irecv(
                     rbuf.data(),
                     checked_mpi_byte_count(rbuf.size(), "halo reverse receive"),
-                    MPI_BYTE, swap.sendproc, 200 + mirror_swap(begin, end, s),
+                    MPI_BYTE, swap.sendproc,
+                    halo_tag(HaloTagKind::reverse, mirror_swap(begin, end, s)),
                     dd->cart_comm,
                     &bufs.requests[static_cast<std::size_t>(n_reqs++)]);
             }
@@ -1352,12 +1563,13 @@ void HaloRecv::launch(const cpu::LaunchContext& ctx) {
             MPI_Waitall(n_reqs, bufs.requests.data(), MPI_STATUSES_IGNORE);
 
         // Accumulate received forces into the send-list indices, in table
-        // order within the stage: the two swaps of an axis can name the
+        // order within the round: the two swaps of a round can name the
         // same owner row (a thin subdomain has atoms in both bands), and
         // floating-point addition is not associative.  Critical: past the
-        // first stage these indices may include ghost-row indices from
-        // earlier axes — those forces are re-packed and sent further along
-        // the cascade in the next (earlier-axis) iteration of this loop.
+        // first round of the first axis these indices may include ghost-row
+        // indices — from an earlier axis, or from the previous round of this
+        // axis — and those forces are re-packed and sent further along the
+        // cascade in the next iteration of this loop.
         for (int s = begin; s < end; ++s) {
             if (swap_is_silent((*swaps)[s]))
                 continue;

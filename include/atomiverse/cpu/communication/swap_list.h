@@ -245,10 +245,11 @@ class SwapList {
     /// truncating the ghost shell. It is idempotent for identical arguments.
     ///
     /// The derivation is **per rank and serial** — `SwapList` performs no
-    /// MPI. Making the round count rank-uniform under a non-uniform
-    /// partition (the `MPI_Allreduce(MAX)` of the spec) is the transport
-    /// caller's job (`HaloSend`); what is stored here is this rank's own
-    /// maximum over the two send directions.
+    /// MPI. What is stored here is this rank's own maximum over the two send
+    /// directions; a transport caller that needs the round count to be
+    /// rank-uniform (the `MPI_Allreduce(MAX)` of the spec, required whenever
+    /// the partition is non-uniform or the axis non-periodic) reduces it and
+    /// calls the five-argument overload instead.
     ///
     /// Rebuilds the table in place, preserving the send lists' heap
     /// capacity. On a throw the previous table is left untouched.
@@ -270,6 +271,39 @@ class SwapList {
     void setup(const md::mpi::DomainDecomposition& dd, const Box& box,
                double halo_cutoff, int my_rank);
 
+    /// @brief Derive the swap table against an externally reconciled round
+    /// count.
+    ///
+    /// Same expansion as the four-argument `setup`, except that axis `d`
+    /// contributes `max(locally derived hops, rounds[d])` `(lo, hi)` pairs
+    /// (clamped to `dims[d] - 1`, beyond which a further round reaches no new
+    /// rank, and to 0 on an undecomposed axis).
+    ///
+    /// This is the entry point of a **transport** caller. Rounds are matched
+    /// `Sendrecv` pairs: a rank that stops one round earlier than its partner
+    /// leaves that partner posting a receive nobody answers. The locally
+    /// derived count is not automatically rank-uniform — a non-uniform (RCB)
+    /// partition has different partner-slab chains per rank, and a
+    /// non-periodic axis truncates its chain at the global boundary — so the
+    /// caller reduces it (`MPI_Allreduce(MAX)`, the spec's reconciliation)
+    /// and hands the result back here. The extra rounds are not wasted: they
+    /// carry exactly what the deepest rank on that axis still needs.
+    ///
+    /// `SwapList` performs no MPI; the reduction stays with the caller
+    /// (`HaloSend`).
+    ///
+    /// @param dd This rank's decomposition, as for the four-argument form.
+    /// @param box Current simulation box; edge lengths [Angstrom].
+    /// @param halo_cutoff Ghost shell width [Angstrom].
+    /// @param my_rank This rank's id in the Cartesian communicator.
+    /// @param rounds Reconciled hop count per axis, one entry per axis;
+    ///        negative entries are read as 0.
+    /// @throws std::runtime_error under the same conditions as the
+    ///         four-argument form — the minimum-image bound is re-checked
+    ///         here, so an imposed round count cannot buy past it.
+    void setup(const md::mpi::DomainDecomposition& dd, const Box& box,
+               double halo_cutoff, int my_rank, const int rounds[3]);
+
     /// @brief Refill one swap's send list from the current positions.
     ///
     /// Scans rows `[0, sources_end)` of the frame's `x`/`y`/`z` column for
@@ -287,6 +321,26 @@ class SwapList {
     /// @throws std::runtime_error if `iswap` or `sources_end` is out of
     ///         range.
     void rebuild_sendlist(int iswap, const Frame& frame, int sources_end);
+
+    /// @brief Refill one swap's send list from a bounded row window.
+    ///
+    /// The same band predicate over rows `[first, last)` instead of
+    /// `[0, last)`. The lower bound is what a **forwarding round** needs:
+    /// round `r > 1` of a face ships exactly the ghosts round `r - 1`
+    /// delivered on the *opposite* face of the same axis — one contiguous
+    /// slot range, `[firstrecv, firstrecv + nrecv)` of that swap — and must
+    /// not re-ship the owners round 1 already sent, which would land the same
+    /// atom twice at the same periodic image on the partner. Those rows carry
+    /// the open band of a `round > 1` swap, so the window alone selects them.
+    ///
+    /// @param iswap Swap index in `[0, size())`.
+    /// @param frame Frame holding the positions [Angstrom] to scan.
+    /// @param first Inclusive lower row bound of the scan.
+    /// @param last Exclusive upper row bound of the scan.
+    /// @throws std::runtime_error if `iswap` is out of range, if the window is
+    ///         inverted (`first > last`), or if it leaves the frame's
+    ///         allocated rows.
+    void rebuild_sendlist(int iswap, const Frame& frame, int first, int last);
 
     /// @brief Record one swap's received ghost count and its first slot.
     ///
@@ -362,6 +416,20 @@ class SwapList {
     }
 
   private:
+    /// @brief Expand a per-axis round count into the swap table.
+    ///
+    /// The shared tail of both `setup` entry points: validates this rank's
+    /// slab widths, records the round counts and rewrites `swaps_` in axis /
+    /// round / face order, preserving send-list heap capacity.
+    ///
+    /// @param dd This rank's decomposition (`sublo/subhi` [Angstrom],
+    ///        `coords`, `dims`, `face_neighbors`).
+    /// @param halo_cutoff Ghost shell width [Angstrom]; the round-1 band edge.
+    /// @param my_rank This rank's id in the Cartesian communicator.
+    /// @param rounds Hops to expand per axis (already reconciled and clamped).
+    void expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
+                int my_rank, const int rounds[3]);
+
     std::vector<Swap> swaps_;
     /// Reduced hops per axis (`max` of the two send directions); 0 = none.
     int hops_[3] = {0, 0, 0};

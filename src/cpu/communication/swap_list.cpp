@@ -104,6 +104,21 @@ ChainWalk walk_chain(const std::vector<double>& cuts, int dims, int coords,
           "asks for a ghost-of-ghost shell of 2*cutoff.)");
 }
 
+/// @brief Reject a shell width that is not a usable length, for either
+/// `setup` entry point.
+/// @param halo_cutoff Ghost shell width [Angstrom] the caller passed.
+void check_shell_width(double halo_cutoff) {
+    if (!(halo_cutoff >= 0.0)) {
+        throw std::runtime_error(
+            "SwapList::setup: halo cutoff must be a non-negative width in "
+            "Angstrom, got "
+            + std::to_string(halo_cutoff)
+            + ". It is max(pair cutoff, bonded extension) and is derived by "
+              "HaloSend; a negative or NaN value means the caller never "
+              "computed it.");
+    }
+}
+
 /// @brief Range-check an axis index for the per-axis accessors.
 /// @param what Accessor name, for the message.
 /// @param d Axis index that must lie in `[0, 3)`.
@@ -202,21 +217,49 @@ SwapList::HopNeed SwapList::derive_hops(const md::mpi::DomainDecomposition& dd,
 
 void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
                      double halo_cutoff, int my_rank) {
-    if (!(halo_cutoff >= 0.0)) {
-        throw std::runtime_error(
-            "SwapList::setup: halo cutoff must be a non-negative width in "
-            "Angstrom, got "
-            + std::to_string(halo_cutoff)
-            + ". It is max(pair cutoff, bonded extension) and is derived by "
-              "HaloSend; a negative or NaN value means the caller never "
-              "computed it.");
-    }
+    check_shell_width(halo_cutoff);
 
     // Derive every hop count first: a refusal must leave the previous table
     // intact rather than half-rewritten.
     const HopNeed hops = derive_hops(dd, box, halo_cutoff);
 
     int rounds[3];
+    for (int d = 0; d < 3; ++d) {
+        // This rank's own round count on the axis is the deeper of its two
+        // send directions.
+        rounds[d] = std::max(hops.minus[d], hops.plus[d]);
+    }
+    expand(dd, halo_cutoff, my_rank, rounds);
+}
+
+void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
+                     double halo_cutoff, int my_rank, const int rounds[3]) {
+    check_shell_width(halo_cutoff);
+
+    // Re-derive locally anyway: the minimum-image bound and the cut-table
+    // validation are properties of this rank's geometry, and an imposed round
+    // count must not buy past them.
+    const HopNeed hops = derive_hops(dd, box, halo_cutoff);
+
+    int reconciled[3];
+    for (int d = 0; d < 3; ++d) {
+        if (dd.dims[d] <= 1) {
+            // Undecomposed: no partner, hence no round, whatever a peer asked
+            // for. Its periodicity is the pair kernel's minimum image.
+            reconciled[d] = 0;
+            continue;
+        }
+        const int local = std::max(hops.minus[d], hops.plus[d]);
+        const int imposed = (rounds[d] > 0) ? rounds[d] : 0;
+        // `dims - 1` is the last round that can reach a rank this one has not
+        // already covered; past it a round would wrap onto this rank itself.
+        reconciled[d] = std::min(std::max(local, imposed), dd.dims[d] - 1);
+    }
+    expand(dd, halo_cutoff, my_rank, reconciled);
+}
+
+void SwapList::expand(const md::mpi::DomainDecomposition& dd,
+                      double halo_cutoff, int my_rank, const int rounds[3]) {
     int pairs[3];
     for (int d = 0; d < 3; ++d) {
         if (dd.dims[d] > 1) {
@@ -232,11 +275,6 @@ void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
             }
         }
 
-        // This rank's own round count on the axis is the deeper of its two
-        // send directions; making it uniform across ranks (the spec's
-        // MPI_Allreduce(MAX) under a non-uniform partition) is the transport
-        // caller's job — SwapList performs no MPI.
-        rounds[d] = std::max(hops.minus[d], hops.plus[d]);
         // An axis needing no hop at all (undecomposed, or a zero-width shell)
         // still keeps one `sendself` placeholder pair, so every axis owns a
         // contiguous, non-empty run of swaps.
@@ -314,19 +352,27 @@ void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
 
 void SwapList::rebuild_sendlist(int iswap, const Frame& frame,
                                 int sources_end) {
+    rebuild_sendlist(iswap, frame, /*first=*/0, /*last=*/sources_end);
+}
+
+void SwapList::rebuild_sendlist(int iswap, const Frame& frame, int first,
+                                int last) {
     if (iswap < 0 || static_cast<std::size_t>(iswap) >= swaps_.size()) {
         throw std::runtime_error(
             "SwapList::rebuild_sendlist: swap index " + std::to_string(iswap)
             + " is outside the table of " + std::to_string(swaps_.size())
             + " swaps. Call setup() first and iterate [0, size()).");
     }
-    if (sources_end < 0 || sources_end > frame.capacity()) {
+    if (first < 0 || last < first || last > frame.capacity()) {
         throw std::runtime_error(
-            "SwapList::rebuild_sendlist: scan bound "
-            + std::to_string(sources_end) + " is outside the frame's "
+            "SwapList::rebuild_sendlist: scan window [" + std::to_string(first)
+            + ", " + std::to_string(last)
+            + ") is not an ascending range inside " + "the frame's "
             + std::to_string(frame.capacity())
-            + " allocated rows. Pass n_local for the first axis stage and "
-              "n_local + ghosts received so far for later ones.");
+            + " allocated rows. Pass [0, n_local) for the first round of an "
+              "axis, [0, n_local + ghosts from earlier axes) for a later axis, "
+              "and the previous round's received slot range for a forwarding "
+              "round.");
     }
 
     Swap& swap = swaps_[static_cast<std::size_t>(iswap)];
@@ -338,7 +384,7 @@ void SwapList::rebuild_sendlist(int iswap, const Frame& frame,
     const double lo = swap.slablo;
     const double hi = swap.slabhi;
     swap.sendlist.clear();
-    for (int i = 0; i < sources_end; ++i) {
+    for (int i = first; i < last; ++i) {
         const double qi = static_cast<double>(q[i]);
         if (lo < qi && qi < hi)
             swap.sendlist.push_back(i);

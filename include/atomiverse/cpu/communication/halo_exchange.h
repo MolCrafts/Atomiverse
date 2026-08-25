@@ -6,14 +6,25 @@
 /// re-derivation:
 ///   - `HaloSend::launch` re-derives the table at every full rebuild
 ///     (`setup` + borders: refill each swap's send list from current
-///     positions, exchange counts, pack owned rows with the swap's PBC
-///     image shift, `MPI_Isend/Irecv` both swaps of an axis concurrently,
+///     positions, exchange counts, pack rows with the swap's PBC image
+///     shift, `MPI_Isend/Irecv` both swaps of one round concurrently,
 ///     unpack received ghosts into `atoms` Block rows
 ///     `[n_local, n_local+n_ghost)` and commit each swap's ghost slots).
 ///     In between rebuilds it replays the same table, refreshing ghost
 ///     rows only.
 ///   - `HaloRecv::launch` walks the same table backwards, reducing
 ///     ghost-row `fx/fy/fz` contributions back onto the owners.
+///
+/// **A ghost shell deeper than one subdomain is not a refusal.** When the
+/// shell is wider than this rank's slab (narrow box, many ranks on one axis,
+/// an NPT / deform shrink, or a bonded span wider than the pair cutoff) the
+/// table carries `SwapList::max_hops(d) > 1` **forwarding rounds** per axis,
+/// and round `r > 1` of a face ships exactly what round `r - 1` delivered on
+/// the OPPOSITE face of the same axis — so rank `c - r`'s atoms arrive
+/// through the ranks in between, never as a direct message to a rank two
+/// hops away. Rounds are serialized; the two faces of a round are not. The
+/// only geometry still refused is the minimum-image bound
+/// (`shell <= L_d - w_self`), which no number of hops can satisfy.
 ///
 /// Each endpoint owns its per-swap MPI buffers (`detail::FaceBufs`,
 /// per-instance PIMPL). The swap table itself is **owned by `HaloSend`**
@@ -70,17 +81,36 @@ struct FaceBufs;
 /// @brief Forward pass: owned positions → ghost rows on face neighbors.
 ///
 /// Owns the halo's `comm::SwapList` and publishes it as `ctx.md.swap_list`.
-/// The table is re-derived on every full rebuild (so an NPT / deform box
-/// rescale is picked up), and each swap's send list is refilled from the
-/// current owned positions; packed buffers are allocated once in `build()`
-/// based on a generous initial estimate (no `launch()` realloc on the
-/// steady-state path). Single-rank (`runtime.mpi_size == 1`) and
-/// `cutoff == 0` both early-return, leaving the published pointer null.
+/// The table is re-derived on every full rebuild — so an NPT / deform box
+/// rescale is picked up, including a shrink that raises the per-axis round
+/// count — and each swap's send list is refilled from the current positions;
+/// packed buffers are allocated once in `build()` based on a generous
+/// initial estimate (no `launch()` realloc on the steady-state path).
+/// Single-rank (`runtime.mpi_size == 1`) and `cutoff == 0` both early-return,
+/// leaving the published pointer null.
 ///
 /// Atoms within `cutoff` of a face plane are flagged as ghosts to the
-/// corresponding face neighbor. PBC: atoms sent across the periodic edge of
-/// the global box are shifted by `±L_d` on the way out so the receiver sees
-/// them in its own coordinate frame.
+/// corresponding face neighbor, and a deeper shell is filled by forwarding
+/// each round's ghosts one rank further. PBC: rows sent across the periodic
+/// edge of the global box are shifted by `±L_d` on the way out so the
+/// receiver sees them in its own coordinate frame; a forwarded row already
+/// carries the shifts of the hops it has taken, and each link adds its own.
+///
+/// It also publishes the shell it is about to build as
+/// `DomainDecomposition::ghost_shell_width` [Angstrom] — at `build()` and at
+/// every full rebuild, before any consumer reads it. `CellList` pads the
+/// decomposed axes of its bin grid by that width; a multi-hop ghost outside
+/// the window would be clamped into the edge cell silently.
+///
+/// The published width is the shell that is *asked for*,
+/// `max(cutoff, bonded_extension)`. A forwarding round carries the open band
+/// of `Swap::slablo` (the LAMMPS `ineed >= 2` convention), so the last round
+/// of an axis can also deliver rows up to one partner slab **past** that
+/// width — surplus, never a missing ghost: those rows are farther from every
+/// owner than the shell itself, so no pair kernel and no neighbour list ever
+/// reaches them, and the grid's edge clamp on them changes nothing. Trimming
+/// them would mean giving rounds `> 1` the round-1 band, which is a
+/// `SwapList` geometry decision, not a transport one.
 class HaloSend : public cpu::Component, public cpu::HaloParticipant {
   public:
     /// @brief No-op default constructor (cutoff = 0).
@@ -215,10 +245,13 @@ class HaloSend : public cpu::Component, public cpu::HaloParticipant {
 ///
 /// Pairs with the most recent `HaloSend` exchange through the published
 /// swap table (`ctx.md.swap_list`), walked in reverse so the forward
-/// cascade plays backwards. Ghost forces in `kAtom_fx/fy/fz` are packed per
-/// swap from `[firstrecv, firstrecv + nrecv)`, `MPI_Isend/Irecv` to the
-/// originating ranks, and added into the owners' local force arrays at the
-/// indices in that swap's send list.
+/// cascade plays backwards: last axis first, and inside an axis the deepest
+/// forwarding round first, so a hop's ghost forces land on the intermediate
+/// rank's own ghost rows before that rank passes them further. Ghost forces
+/// in `kAtom_fx/fy/fz` are packed per swap from
+/// `[firstrecv, firstrecv + nrecv)`, `MPI_Isend/Irecv` to the originating
+/// ranks, and added into the owners' (or the next hop's) force array rows at
+/// the indices in that swap's send list.
 ///
 /// @see HaloSend for the matching producer of the table; a null
 ///      `ctx.md.swap_list` (no halo in this run) makes the whole pass a
