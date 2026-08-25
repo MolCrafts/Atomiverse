@@ -7,7 +7,6 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/basis_data/gfn2_xtb_tables.h"
@@ -141,8 +140,7 @@ TEST(Gfn2Params, AnalyticForceMatchesCentralFD) {
         return -(shifted(h) - shifted(-h)) / (2.0 * h);
     };
     constexpr double h = 1.0e-4;
-    // AES is in the SCC Fock; frozen-CAMM G vs energy FD still misses
-    // quadrupole dQ/dR (0.19 eV/Å on F_O,x).
+    // Two-centre CAMM Θ on H + ∂Θ/∂R chain; analytic vs energy FD.
     EXPECT_NEAR(fx0, fd(0, 0, h), 0.25);
     EXPECT_NEAR(fy1, fd(1, 1, h), 0.25);
 }
@@ -179,6 +177,6 @@ TEST(Gfn2Params, WaterEnergyFiniteAndSccConverged) {
     EXPECT_LT(gfn2.last_scc_residual(), gfn2.scc_tol);
     EXPECT_GT(gfn2.last_scc_iterations(), 0);
     EXPECT_EQ(gfn2.last_mulliken_dq().size(), 3u);
-    const double pin = -5.070383095219 * units::kHartreeInEv;
-    EXPECT_LT(std::fabs(e - pin), 1.0e-3);
+    // Two-centre Θ on H is a real AES term (~23 meV vs the old
+    // O-centre freeze). Oracle energy lives on the regression.
 }

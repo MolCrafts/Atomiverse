@@ -20,11 +20,14 @@ namespace semiempirical {
 /// shell-resolved isotropic SCC, on-site third-order, anisotropic
 /// electrostatics (charge–dipole, dipole–dipole, charge–quadrupole) +
 /// dipole/quadrupole AXC **in the SCC Fock**, screened repulsion, Grimme D4
-/// (GFN2 damping). Parameters are static in-tree tables — there is no
-/// `libxtb` kernel. Oracle: **xtb** 6.7.1 (`reg_gfn2-aes-fock`,
-/// `reg_gfn2-xtb-forces`, `reg_gfn-xtb-analytic-hessian`). Units: energy
-/// [eV], positions [Å], forces [eV/Å]. Angular \(F_{H1,y}\) remains a
-/// CAMM-vs-\(R\) hole (two-centre \(\Theta\) on H).
+/// (GFN2 damping). CAMM quadrupole uses tblite `shift_operator`
+/// \(\langle(r-R)(r-R)\rangle\) on **every** centre (including s-only H)
+/// and analytic \(G\) chains frozen-\(P\) \(\partial\Theta/\partial R\).
+/// Angular \(F_{H1,y}\) vs xtb remains open: this operator is not xtb
+/// `mmompop` (minus-RRS from opab4-signed Q breaks SCC). Parameters are
+/// static in-tree tables — there is no `libxtb` kernel. Oracle: **xtb**
+/// 6.7.1 (`reg_gfn2-camm-r`, `reg_gfn2-aes-fock`). Units: energy [eV],
+/// positions [Å], forces [eV/Å].
 ///
 /// @code
 ///   cpu::semiempirical::GFN2 gfn2;

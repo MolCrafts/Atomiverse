@@ -174,6 +174,9 @@ void traceless_quad(const double Q[6], double T[6]) {
 
 void origin_shift_quad(const double Q[6], const double D[3], const double* R,
                        double s, double tq[6]) {
+    // tblite shift_operator / physical ⟨(r−R)(r−R)⟩. Minus-RRS (xtb
+    // mmompop with opab4-signed Q plugged into unsigned ATV Q) breaks
+    // SCC (residual stuck 7e-6, ΔE ~ 0.67 eV).
     double qs[6];
     qs[0] = Q[0] - 2.0 * R[0] * D[0] + R[0] * R[0] * s;
     qs[1] = Q[1] - R[0] * D[1] - R[1] * D[0] + R[0] * R[1] * s;
@@ -416,6 +419,207 @@ void shell_sd_grad(const Shell& si, const double Ai[3], int ui, const Shell& sj,
                     dD_dAi[k][m] += c * dDp[k][m];
             }
         }
+    }
+}
+
+// Cartesian quadrupole <r_a r_b> at origin 0 and d/dA (s/p primitives).
+void cartesian_rr_grad(int ia, int ib, const double P[3], const double dS00[3],
+                       double S00, double dAi0, double dAj0, double ddAi0[3],
+                       double ddAj0[3], int li, int lj, int ci, int cj,
+                       double inv2g, double a_over_g, double& v,
+                       double dv_dA[3]) {
+    auto dP = [a_over_g](int k, int m) {
+        return (k == m) ? a_over_g : 0.0;
+    };
+    v = P[ia] * P[ib] * dAi0 * dAj0;
+    if (ia == ib)
+        v += inv2g * dAi0 * dAj0;
+    if (li == 1) {
+        if (ci == ia)
+            v += inv2g * P[ib] * dAj0;
+        if (ci == ib)
+            v += inv2g * P[ia] * dAj0;
+    }
+    if (lj == 1) {
+        if (cj == ia)
+            v += inv2g * P[ib] * dAi0;
+        if (cj == ib)
+            v += inv2g * P[ia] * dAi0;
+    }
+    if (li == 1 && lj == 1) {
+        if (ci == cj) {
+            v += inv2g * P[ia] * P[ib];
+            if (ia == ib)
+                v += inv2g * inv2g;
+        }
+        if (ci == ia && cj == ib)
+            v += inv2g * inv2g;
+        if (ci == ib && cj == ia)
+            v += inv2g * inv2g;
+    }
+    for (int m = 0; m < 3; ++m) {
+        double dv = dP(ia, m) * P[ib] * dAi0 * dAj0
+                    + P[ia] * dP(ib, m) * dAi0 * dAj0
+                    + P[ia] * P[ib] * ddAi0[m] * dAj0
+                    + P[ia] * P[ib] * dAi0 * ddAj0[m];
+        if (ia == ib)
+            dv += inv2g * (ddAi0[m] * dAj0 + dAi0 * ddAj0[m]);
+        if (li == 1) {
+            if (ci == ia)
+                dv += inv2g * (dP(ib, m) * dAj0 + P[ib] * ddAj0[m]);
+            if (ci == ib)
+                dv += inv2g * (dP(ia, m) * dAj0 + P[ia] * ddAj0[m]);
+        }
+        if (lj == 1) {
+            if (cj == ia)
+                dv += inv2g * (dP(ib, m) * dAi0 + P[ib] * ddAi0[m]);
+            if (cj == ib)
+                dv += inv2g * (dP(ia, m) * dAi0 + P[ia] * ddAi0[m]);
+        }
+        if (li == 1 && lj == 1 && ci == cj)
+            dv += inv2g * (dP(ia, m) * P[ib] + P[ia] * dP(ib, m));
+        dv_dA[m] = dS00[m] * v + S00 * dv;
+    }
+}
+
+void primitive_sdq_grad(double a, const double A[3], int la, double b,
+                        const double B[3], int lb, double& s, double ds_dA[3],
+                        double D[3], double dD_dA[3][3], double Q[6],
+                        double dQ_dA[6][3]) {
+    primitive_sd_grad(a, A, la, b, B, lb, s, ds_dA, D, dD_dA);
+    const double gamma = a + b;
+    const double mu = a * b / gamma;
+    const double inv2g = 0.5 / gamma;
+    const double a_over_g = a / gamma;
+    double R[3];
+    double R2 = 0;
+    for (int k = 0; k < 3; ++k) {
+        R[k] = A[k] - B[k];
+        R2 += R[k] * R[k];
+    }
+    const double S00 = std::pow(kPi / gamma, 1.5) * std::exp(-mu * R2);
+    double dS00[3];
+    for (int k = 0; k < 3; ++k)
+        dS00[k] = -2.0 * mu * R[k] * S00;
+    double P[3];
+    for (int k = 0; k < 3; ++k)
+        P[k] = (a * A[k] + b * B[k]) / gamma;
+    const int ci = (la == 0) ? 0 : (la - 1);
+    const int cj = (lb == 0) ? 0 : (lb - 1);
+    const double dAi0 = (la == 1) ? (P[ci] - A[ci]) : 1.0;
+    const double dAj0 = (lb == 1) ? (P[cj] - B[cj]) : 1.0;
+    double ddAi0[3] = {0, 0, 0};
+    double ddAj0[3] = {0, 0, 0};
+    for (int m = 0; m < 3; ++m) {
+        if (la == 1)
+            ddAi0[m] = ((m == ci) ? a_over_g : 0.0) - ((m == ci) ? 1.0 : 0.0);
+        if (lb == 1)
+            ddAj0[m] = (m == cj) ? a_over_g : 0.0;
+    }
+    static constexpr int kPack[6][2] = {{0, 0}, {0, 1}, {1, 1},
+                                        {0, 2}, {1, 2}, {2, 2}};
+    const int li = (la == 0) ? 0 : 1;
+    const int lj = (lb == 0) ? 0 : 1;
+    for (int k = 0; k < 6; ++k) {
+        double v = 0;
+        double dQk[3];
+        cartesian_rr_grad(kPack[k][0], kPack[k][1], P, dS00, S00, dAi0, dAj0,
+                          ddAi0, ddAj0, li, lj, ci, cj, inv2g, a_over_g, v,
+                          dQk);
+        Q[k] = S00 * v;
+        for (int m = 0; m < 3; ++m)
+            dQ_dA[k][m] = dQk[m];
+    }
+}
+
+void shell_sdq_grad(const Shell& si, const double Ai[3], int ui,
+                    const Shell& sj, const double Aj[3], int vj, double& s,
+                    double ds_dAi[3], double D[3], double dD_dAi[3][3],
+                    double Q[6], double dQ_dAi[6][3]) {
+    s = 0;
+    ds_dAi[0] = ds_dAi[1] = ds_dAi[2] = 0;
+    D[0] = D[1] = D[2] = 0;
+    for (int k = 0; k < 3; ++k)
+        for (int m = 0; m < 3; ++m)
+            dD_dAi[k][m] = 0;
+    for (int k = 0; k < 6; ++k) {
+        Q[k] = 0;
+        for (int m = 0; m < 3; ++m)
+            dQ_dAi[k][m] = 0;
+    }
+    const int Li = (si.l == 0) ? 0 : (ui + 1);
+    const int Lj = (sj.l == 0) ? 0 : (vj + 1);
+    for (int p = 0; p < si.n_prim; ++p) {
+        for (int q = 0; q < sj.n_prim; ++q) {
+            double sp = 0;
+            double dsp[3];
+            double Dp[3];
+            double dDp[3][3];
+            double Qp[6];
+            double dQp[6][3];
+            primitive_sdq_grad(si.alpha[p], Ai, Li, sj.alpha[q], Aj, Lj, sp,
+                               dsp, Dp, dDp, Qp, dQp);
+            const double c = si.coeff[p] * sj.coeff[q];
+            s += c * sp;
+            for (int k = 0; k < 3; ++k) {
+                ds_dAi[k] += c * dsp[k];
+                D[k] += c * Dp[k];
+                for (int m = 0; m < 3; ++m)
+                    dD_dAi[k][m] += c * dDp[k][m];
+            }
+            for (int k = 0; k < 6; ++k) {
+                Q[k] += c * Qp[k];
+                for (int m = 0; m < 3; ++m)
+                    dQ_dAi[k][m] += c * dQp[k][m];
+            }
+        }
+    }
+}
+
+// Origin-shifted traceless quadrupole and d/dA. dR[α][m] = ∂R_α/∂A_m
+// (identity if the CAMM owner is A, zero if it is B).
+void origin_shift_quad_grad(const double Q[6], const double dQ[6][3],
+                            const double D[3], const double dD[3][3],
+                            const double* R, const double dR[3][3], double s,
+                            const double ds[3], double tq[6],
+                            double dtq[6][3]) {
+    double qs[6];
+    double dqs[6][3];
+    qs[0] = Q[0] - 2.0 * R[0] * D[0] + R[0] * R[0] * s;
+    qs[1] = Q[1] - R[0] * D[1] - R[1] * D[0] + R[0] * R[1] * s;
+    qs[2] = Q[2] - 2.0 * R[1] * D[1] + R[1] * R[1] * s;
+    qs[3] = Q[3] - R[0] * D[2] - R[2] * D[0] + R[0] * R[2] * s;
+    qs[4] = Q[4] - R[1] * D[2] - R[2] * D[1] + R[1] * R[2] * s;
+    qs[5] = Q[5] - 2.0 * R[2] * D[2] + R[2] * R[2] * s;
+    for (int m = 0; m < 3; ++m) {
+        dqs[0][m] = dQ[0][m] - 2.0 * (dR[0][m] * D[0] + R[0] * dD[0][m])
+                    + 2.0 * R[0] * dR[0][m] * s + R[0] * R[0] * ds[m];
+        dqs[1][m] = dQ[1][m] - dR[0][m] * D[1] - R[0] * dD[1][m]
+                    - dR[1][m] * D[0] - R[1] * dD[0][m]
+                    + dR[0][m] * R[1] * s + R[0] * dR[1][m] * s
+                    + R[0] * R[1] * ds[m];
+        dqs[2][m] = dQ[2][m] - 2.0 * (dR[1][m] * D[1] + R[1] * dD[1][m])
+                    + 2.0 * R[1] * dR[1][m] * s + R[1] * R[1] * ds[m];
+        dqs[3][m] = dQ[3][m] - dR[0][m] * D[2] - R[0] * dD[2][m]
+                    - dR[2][m] * D[0] - R[2] * dD[0][m]
+                    + dR[0][m] * R[2] * s + R[0] * dR[2][m] * s
+                    + R[0] * R[2] * ds[m];
+        dqs[4][m] = dQ[4][m] - dR[1][m] * D[2] - R[1] * dD[2][m]
+                    - dR[2][m] * D[1] - R[2] * dD[1][m]
+                    + dR[1][m] * R[2] * s + R[1] * dR[2][m] * s
+                    + R[1] * R[2] * ds[m];
+        dqs[5][m] = dQ[5][m] - 2.0 * (dR[2][m] * D[2] + R[2] * dD[2][m])
+                    + 2.0 * R[2] * dR[2][m] * s + R[2] * R[2] * ds[m];
+    }
+    traceless_quad(qs, tq);
+    for (int m = 0; m < 3; ++m) {
+        const double dtr = 0.5 * (dqs[0][m] + dqs[2][m] + dqs[5][m]);
+        dtq[0][m] = 1.5 * dqs[0][m] - dtr;
+        dtq[1][m] = 1.5 * dqs[1][m];
+        dtq[2][m] = 1.5 * dqs[2][m] - dtr;
+        dtq[3][m] = 1.5 * dqs[3][m];
+        dtq[4][m] = 1.5 * dqs[4][m];
+        dtq[5][m] = 1.5 * dqs[5][m] - dtr;
     }
 }
 
@@ -869,7 +1073,6 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const int ish = ao_shell[static_cast<std::size_t>(mu)];
             const int a = ao_atom[static_cast<std::size_t>(mu)];
             const double* Ra = xyz[static_cast<std::size_t>(a)].data();
-            const bool qa = el[static_cast<std::size_t>(a)]->n_shell > 1;
             for (int nu = 0; nu < n_ao; ++nu) {
                 const int jsh = ao_shell[static_cast<std::size_t>(nu)];
                 const int b = ao_atom[static_cast<std::size_t>(nu)];
@@ -889,28 +1092,24 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                                 [static_cast<std::size_t>(k)]
                                  * (d - Rb[k] * sij));
                 }
-                if (qa || el[static_cast<std::size_t>(b)]->n_shell > 1) {
+                {
                     const double q0[6] = {Q(0, mu, nu), Q(1, mu, nu),
                                           Q(2, mu, nu), Q(3, mu, nu),
                                           Q(4, mu, nu), Q(5, mu, nu)};
                     const double d0[3] = {D(0, mu, nu), D(1, mu, nu),
                                           D(2, mu, nu)};
-                    if (qa) {
-                        double tq[6];
-                        origin_shift_quad(q0, d0, Ra, sij, tq);
-                        const auto& va = vqp[static_cast<std::size_t>(a)];
-                        for (int k = 0; k < 6; ++k)
-                            H(mu, nu) += 0.5 * va[static_cast<std::size_t>(k)]
-                                         * tq[k];
-                    }
-                    if (el[static_cast<std::size_t>(b)]->n_shell > 1) {
-                        double tq[6];
-                        origin_shift_quad(q0, d0, Rb, sij, tq);
-                        const auto& vb = vqp[static_cast<std::size_t>(b)];
-                        for (int k = 0; k < 6; ++k)
-                            H(mu, nu) += 0.5 * vb[static_cast<std::size_t>(k)]
-                                         * tq[k];
-                    }
+                    double tqA[6];
+                    origin_shift_quad(q0, d0, Ra, sij, tqA);
+                    const auto& va = vqp[static_cast<std::size_t>(a)];
+                    for (int k = 0; k < 6; ++k)
+                        H(mu, nu) += 0.5 * va[static_cast<std::size_t>(k)]
+                                     * tqA[k];
+                    double tqB[6];
+                    origin_shift_quad(q0, d0, Rb, sij, tqB);
+                    const auto& vb = vqp[static_cast<std::size_t>(b)];
+                    for (int k = 0; k < 6; ++k)
+                        H(mu, nu) += 0.5 * vb[static_cast<std::size_t>(k)]
+                                     * tqB[k];
                 }
             }
         }
@@ -948,10 +1147,8 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const double* Ra = xyz[static_cast<std::size_t>(a)].data();
             const int ia = ao0[static_cast<std::size_t>(a)];
             const int na = n_ao_of(e);
-            const bool has_p = e.n_shell > 1;
-            // Mulliken: bra on A (same partition as the dipole foothold).
-            // s-only centres (H) get no CAMM quadrupole — the overlap blob
-            // about a 1s origin is not the GFN2 atomic Θ (xtb mmompop).
+            // xtb mmompop: bra on A (same Mulliken split as the dipole).
+            // Two-centre origin-shifted Θ is kept on s-only H.
             for (int u = 0; u < na; ++u) {
                 for (int b2 = 0; b2 < n_at; ++b2) {
                     const int ib = ao0[static_cast<std::size_t>(b2)];
@@ -964,27 +1161,15 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                                  [static_cast<std::size_t>(k)] +=
                                 0.5 * p
                                 * (D(k, ia + u, ib + v) - Ra[k] * s);
-                        if (!has_p)
-                            continue;
                         const double q0[6] = {
                             Q(0, ia + u, ib + v), Q(1, ia + u, ib + v),
                             Q(2, ia + u, ib + v), Q(3, ia + u, ib + v),
                             Q(4, ia + u, ib + v), Q(5, ia + u, ib + v)};
-                        const double d0 = D(0, ia + u, ib + v);
-                        const double d1 = D(1, ia + u, ib + v);
-                        const double d2 = D(2, ia + u, ib + v);
-                        double qs[6];
-                        qs[0] = q0[0] - 2.0 * Ra[0] * d0 + Ra[0] * Ra[0] * s;
-                        qs[1] = q0[1] - Ra[0] * d1 - Ra[1] * d0
-                                + Ra[0] * Ra[1] * s;
-                        qs[2] = q0[2] - 2.0 * Ra[1] * d1 + Ra[1] * Ra[1] * s;
-                        qs[3] = q0[3] - Ra[0] * d2 - Ra[2] * d0
-                                + Ra[0] * Ra[2] * s;
-                        qs[4] = q0[4] - Ra[1] * d2 - Ra[2] * d1
-                                + Ra[1] * Ra[2] * s;
-                        qs[5] = q0[5] - 2.0 * Ra[2] * d2 + Ra[2] * Ra[2] * s;
+                        const double d0[3] = {D(0, ia + u, ib + v),
+                                              D(1, ia + u, ib + v),
+                                              D(2, ia + u, ib + v)};
                         double tq[6];
-                        traceless_quad(qs, tq);
+                        origin_shift_quad(q0, d0, Ra, s, tq);
                         for (int k = 0; k < 6; ++k)
                             quadat[static_cast<std::size_t>(a)]
                                   [static_cast<std::size_t>(k)] +=
@@ -1056,6 +1241,9 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
 
     if (!want_grad)
         return out;
+
+    // Converged CAMM → AES potential for quadrupole (and dipole) chains.
+    fill_aes_pot(vat, vdp, vqp);
 
     linalg::RealMatrix W = xt::zeros<double>({n_ao, n_ao});
     for (int o = 0; o < n_occ; ++o) {
@@ -1252,12 +1440,28 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                             double ds[3];
                             double Dip[3];
                             double dDip[3][3];
-                            shell_sd_grad(si, Ai, u, sj, Aj, v, sij, ds, Dip,
-                                          dDip);
+                            double Qint[6];
+                            double dQint[6][3];
+                            shell_sdq_grad(si, Ai, u, sj, Aj, v, sij, ds, Dip,
+                                           dDip, Qint, dQint);
                             const double pij = P(mu, nu);
                             const double hpij = pij * hij;
                             const double sval =
                                 2.0 * (pij * fscale - W(mu, nu));
+                            double dRa[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+                            double dRb[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+                            double tqA[6];
+                            double dtqA[6][3] = {};
+                            double tqB[6];
+                            double dtqB[6][3] = {};
+                            origin_shift_quad_grad(Qint, dQint, Dip, dDip, Ai,
+                                                   dRa, sij, ds, tqA, dtqA);
+                            origin_shift_quad_grad(Qint, dQint, Dip, dDip, Aj,
+                                                   dRb, sij, ds, tqB, dtqB);
+                            (void)tqA;
+                            (void)tqB;
+                            const auto& vqa = vqp[static_cast<std::size_t>(a)];
+                            const auto& vqb = vqp[static_cast<std::size_t>(b)];
                             for (int k = 0; k < 3; ++k) {
                                 dG[static_cast<std::size_t>(k)] +=
                                     sval * ds[k] + 2.0 * hpij * sij * dsv[k];
@@ -1280,6 +1484,16 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                                              * dmuB;
                                 }
                                 dG[static_cast<std::size_t>(k)] += dmu_a + dmu_b;
+                                // Frozen-P CAMM quadrupole (xtb mmompop),
+                                // including two-centre Θ on H.
+                                double dth = 0;
+                                for (int c = 0; c < 6; ++c)
+                                    dth += 0.5 * pij
+                                           * (vqa[static_cast<std::size_t>(c)]
+                                                  * dtqA[c][k]
+                                              + vqb[static_cast<std::size_t>(c)]
+                                                    * dtqB[c][k]);
+                                dG[static_cast<std::size_t>(k)] += dth;
                             }
                             dcni += dsed_i * pij * sij;
                             dcnj += dsed_j * pij * sij;
