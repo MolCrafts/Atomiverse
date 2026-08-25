@@ -1,5 +1,5 @@
 /// @file cpu/semiempirical/gfn1.h
-/// @brief GFN1-xTB energy (organic H/C/N/O, static in-tree tables, CPU).
+/// @brief GFN1-xTB energy and analytic nuclear forces (H/C/N/O).
 #pragma once
 
 #include <string>
@@ -12,7 +12,7 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief GFN1-xTB total energy for H/C/N/O.
+/// @brief GFN1-xTB total energy and analytic nuclear forces for H/C/N/O.
 ///
 /// First-generation Grimme extended tight-binding (Grimme, Bannwarth,
 /// Shushkov, *J. Chem. Theory Comput.* **13**, 1989 (2017), DOI
@@ -22,17 +22,19 @@ namespace semiempirical {
 /// set. Hydrogen is double-ζ (1s+2s, 2s orthogonalized). Static tables in
 /// `basis_data/gfn1_tables.h` cover Z = 1, 6, 7, 8 only.
 ///
-/// Energy foothold: `with_forces` defaults false and throws if set true
-/// (analytic GFN forces are a later slug). Closed shell only. Units on the
-/// public surface: energy [eV], positions [Å].
+/// Closed-form \(F=-\nabla E\) (Hellmann–Feynman + Pulay, CN/shell-poly
+/// chains, \(\partial\gamma/\partial R\), pair repulsion, D3). Closed shell
+/// only. Units on the public surface: energy [eV], positions [Å], forces
+/// [eV/Å].
 ///
-/// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pin:
-/// `regressions/semiempirical/gfn1-xtb-organic/`.
+/// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pins:
+/// `regressions/semiempirical/gfn1-xtb-organic/` (energy),
+/// `regressions/semiempirical/gfn1-xtb-forces/` (forces).
 ///
 /// @code
 ///   cpu::Evaluate eval;
 ///   cpu::semiempirical::GFN1 gfn1;
-///   gfn1.with_forces = false;
+///   gfn1.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(gfn1));
 /// @endcode
 class GFN1 : public cpu::Semiempirical, public cpu::QmEngine {
@@ -47,14 +49,12 @@ class GFN1 : public cpu::Semiempirical, public cpu::QmEngine {
     int charge = 0;
     /// @brief Spin multiplicity 2S+1. Only 1 (closed shell) is supported.
     int multiplicity = 1;
-    /// @brief When true, throw — nuclear forces are not a product path yet.
+    /// @brief When true, write analytic forces F=−∇E [eV/Å] on launch.
     bool with_forces = false;
 
     GFN1() = default;
 
     std::string name() const override { return "gfn1"; }
-
-    bool provides_force() const override { return false; }
 
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;

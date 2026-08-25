@@ -24,8 +24,8 @@ gate `reg_gfn1-xtb-organic` asserts
 \]
 
 against an offline **xtb 6.7.1** `--gfn 1` pin (−4.274232224875 Ha). Measured
-ATV residual at this geometry is **10.2 meV**. Energy foothold only:
-`with_forces` defaults false and **throws** if set true. Fair wall vs xtb:
+ATV residual at this geometry is **10.2 meV**. Analytic forces are a
+sibling pin (`reg_gfn1-xtb-forces`). Fair wall vs xtb:
 \(T_{\mathrm{ATV}}/T_{\mathrm{xtb}} = 0.5 \le 10\).
 
 ## Method
@@ -101,14 +101,13 @@ Hartree / Bohr.
 | ---- | ----- |
 | Method | GFN1-xTB energy only |
 | Tables | static `basis_data/gfn1_tables.h` (H/C/N/O) |
-| Forces | off (`with_forces = false`; true throws) |
+| Forces | off in this energy pin (`with_forces = false`; analytic G is `reg_gfn1-xtb-forces`) |
 | SCC | `scc_tol = 1e-8`, `max_scc = 80` (regression) |
 | Charge | 0 |
 
 **Key exclusions (non-goals of this slug)**
 
-- Analytic nuclear forces (`with_forces` throws; queue `gfn-xtb-analytic-hessian`
-  after a GFN1/2 force slug; GFN0 analytic G is a sibling, not this path).
+- Analytic nuclear forces (this energy pin; see `reg_gfn1-xtb-forces`).
 - Open shell (`multiplicity != 1` throws; queue `spin-gfn-xtb`).
 - Halogen-bond correction (xtb term; identically 0 on CH₄; not implemented).
 - ALPB/GBSA, CPCM-X/ddCOSMO, PBC, sTDA, IPEA.
