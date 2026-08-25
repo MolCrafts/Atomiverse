@@ -186,6 +186,7 @@ Full index: [methods/README](methods/README.md).
 |--------|------|------------|--------|
 | GFN1-xTB analytic nuclear forces (off-eq H₂O) | [gfn1-xtb-forces](methods/gfn1-xtb-forces.md) | `regressions/semiempirical/gfn1-xtb-forces` | xtb 6.7.1 (ratio **≈ 0.16**) |
 | GFN2-xTB analytic nuclear forces (off-eq H₂O) | [gfn2-xtb-forces](methods/gfn2-xtb-forces.md) | `regressions/semiempirical/gfn2-xtb-forces` | xtb 6.7.1 (**asserted ≤ 10**, xtb wall 0.018 s) |
+| IPEA-xTB analytic nuclear forces (off-eq CH4) | [ipea-xtb-forces](methods/ipea-xtb-forces.md) | `regressions/semiempirical/ipea-xtb-forces` | xtb 6.7.1 (ratio **≈ 0.26**) |
 | GFN0-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn0-xtb-analytic-hessian](methods/gfn0-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn0-xtb-analytic-hessian` | xtb 6.7.1 (ratio **≈ 0.06**) |
 
 ### TB / SE capability wave 10 (semiempirical + tight-binding)

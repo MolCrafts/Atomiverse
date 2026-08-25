@@ -88,7 +88,7 @@ ATV **0.01 s**, xtb 6.7.1 clock **0.005 s**.
 
 ## Gaps
 
-- Analytic forces
+- Analytic forces: landed as `reg_ipea-xtb-forces` (this energy pin stays energy-only)
 - Elements beyond H/C/N/O
 - Open-shell / `--vip` ΔSCC IP+EA (cation/anion)
 - Polar-molecule residual vs water (E3 / charge; not this pin)

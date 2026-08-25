@@ -1,5 +1,5 @@
 /// @file src/cpu/semiempirical/ipea.cpp
-/// IPEA-xTB energy (organic H/C/N/O): Stewart overlap, EHT+SCC, extra 3s, D3.
+/// IPEA-xTB energy and analytic nuclear forces (organic H/C/N/O).
 #include "atomiverse/cpu/semiempirical/ipea.h"
 
 #include <algorithm>
@@ -146,6 +146,7 @@ struct Shell {
     int nao = 1;
     bool valence = true;
     double h = 0;        ///< CN-shifted onsite [Hartree].
+    double kcn = 0;      ///< dh/dCN = −kcn [Hartree].
     double shpoly = 0;   ///< k_poly.
     double hardness = 0; ///< η_l [Hartree].
     double n0 = 0;
@@ -176,6 +177,51 @@ double ov3d(int lxa, int lya, int lza, double alpha, const double A[3], int lxb,
     return ov1d(lxa, lxb, alpha, beta, A[0], B[0])
            * ov1d(lya, lyb, alpha, beta, A[1], B[1])
            * ov1d(lza, lzb, alpha, beta, A[2], B[2]);
+}
+
+void ov1d_grad(int la, int lb, double alpha, double beta, double Aa, double Ba,
+               double& I, double& dI_dA) {
+    const double gamma = alpha + beta;
+    const double mu = alpha * beta / gamma;
+    const double dx = Aa - Ba;
+    const double I00 = std::sqrt(kPi / gamma) * std::exp(-mu * dx * dx);
+    const double dI00 = -2.0 * mu * dx * I00;
+    const double P = (alpha * Aa + beta * Ba) / gamma;
+    if (la == 0 && lb == 0) {
+        I = I00;
+        dI_dA = dI00;
+        return;
+    }
+    const double I10 = (P - Aa) * I00;
+    const double I01 = (P - Ba) * I00;
+    const double dP = alpha / gamma;
+    const double dI10 = (dP - 1.0) * I00 + (P - Aa) * dI00;
+    const double dI01 = dP * I00 + (P - Ba) * dI00;
+    if (la == 1 && lb == 0) {
+        I = I10;
+        dI_dA = dI10;
+        return;
+    }
+    if (la == 0 && lb == 1) {
+        I = I01;
+        dI_dA = dI01;
+        return;
+    }
+    I = (P - Aa) * I01 + 0.5 / gamma * I00;
+    dI_dA = (dP - 1.0) * I01 + (P - Aa) * dI01 + 0.5 / gamma * dI00;
+}
+
+void ov3d_grad(int lxa, int lya, int lza, double alpha, const double A[3],
+               int lxb, int lyb, int lzb, double beta, const double B[3],
+               double& s, double ds_dA[3]) {
+    double Ix = 0, Iy = 0, Iz = 0, dIx = 0, dIy = 0, dIz = 0;
+    ov1d_grad(lxa, lxb, alpha, beta, A[0], B[0], Ix, dIx);
+    ov1d_grad(lya, lyb, alpha, beta, A[1], B[1], Iy, dIy);
+    ov1d_grad(lza, lzb, alpha, beta, A[2], B[2], Iz, dIz);
+    s = Ix * Iy * Iz;
+    ds_dA[0] = dIx * Iy * Iz;
+    ds_dA[1] = Ix * dIy * Iz;
+    ds_dA[2] = Ix * Iy * dIz;
 }
 
 void cart_pow(int l, int m, int pows[3][3]) {
@@ -347,6 +393,7 @@ IpeaSystem build_system(const StorageReal* x, const StorageReal* y,
             sh.valence = ea.valence[ish];
             sh.h = ea.level[ish]
                    - ea.kcn[ish] * sys.cn[static_cast<std::size_t>(a)];
+            sh.kcn = ea.kcn[ish];
             sh.shpoly = ea.shpoly[ish];
             sh.hardness = ea.gam * ea.lgam[ish];
             sh.n0 = ea.refocc[ish];
@@ -471,6 +518,10 @@ struct SccOut {
     double energy_eh = 0;
     double residual = 0;
     int iterations = 0;
+    linalg::RealMatrix P;
+    linalg::RealMatrix W;
+    std::vector<double> q;
+    std::vector<double> V;
 };
 
 SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
@@ -478,12 +529,10 @@ SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
     std::vector<double> q(static_cast<std::size_t>(sys.n_sh), 0.0);
     internal::ChargeMixer mixer(mix_beta, 6);
     bool converged = false;
-    double residual = 0;
+    SccOut out;
     linalg::RealMatrix H = sys.H0;
     std::pair<linalg::RealVector, linalg::RealMatrix> sol;
-    int it_done = 0;
     for (int it = 0; it < max_scc; ++it) {
-        it_done = it + 1;
         std::vector<double> q_at(static_cast<std::size_t>(sys.n_at), 0.0);
         for (int i = 0; i < sys.n_sh; ++i)
             q_at[static_cast<std::size_t>(
@@ -531,12 +580,13 @@ SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
                     pop += P(si.ao0 + ia, nu) * sys.S(si.ao0 + ia, nu);
             q_out[static_cast<std::size_t>(i)] = pop - si.n0;
         }
-        residual = 0;
+        out.residual = 0;
         for (int i = 0; i < sys.n_sh; ++i)
-            residual = std::max(residual,
-                                std::fabs(q_out[static_cast<std::size_t>(i)]
-                                          - q[static_cast<std::size_t>(i)]));
-        if (residual < scc_tol) {
+            out.residual = std::max(out.residual,
+                                    std::fabs(q_out[static_cast<std::size_t>(i)]
+                                              - q[static_cast<std::size_t>(i)]));
+        out.iterations = it + 1;
+        if (out.residual < scc_tol) {
             q = q_out;
             converged = true;
             break;
@@ -546,21 +596,26 @@ SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
     if (!converged)
         throw std::runtime_error(
             "IPEA: SCC did not converge in " + std::to_string(max_scc)
-            + " iterations (residual " + std::to_string(residual)
+            + " iterations (residual " + std::to_string(out.residual)
             + " e > scc_tol " + std::to_string(scc_tol)
             + "); raise max_scc or lower mix_beta");
 
+    const auto& eps = sol.first;
     const auto& C = sol.second;
-    linalg::RealMatrix P = xt::zeros<double>({sys.n_ao, sys.n_ao});
+    out.P = xt::zeros<double>({sys.n_ao, sys.n_ao});
+    out.W = xt::zeros<double>({sys.n_ao, sys.n_ao});
     for (int o = 0; o < sys.n_occ; ++o)
         for (int mu = 0; mu < sys.n_ao; ++mu)
-            for (int nu = 0; nu < sys.n_ao; ++nu)
-                P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
+            for (int nu = 0; nu < sys.n_ao; ++nu) {
+                const double cc = C(mu, o) * C(nu, o);
+                out.P(mu, nu) += 2.0 * cc;
+                out.W(mu, nu) += 2.0 * eps(o) * cc;
+            }
 
     double e_h0 = 0;
     for (int mu = 0; mu < sys.n_ao; ++mu)
         for (int nu = 0; nu < sys.n_ao; ++nu)
-            e_h0 += P(mu, nu) * sys.H0(mu, nu);
+            e_h0 += out.P(mu, nu) * sys.H0(mu, nu);
     double e2 = 0;
     for (int i = 0; i < sys.n_sh; ++i)
         for (int j = 0; j < sys.n_sh; ++j)
@@ -578,10 +633,257 @@ SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
         e3 += (1.0 / 3.0) * sys.sh[static_cast<std::size_t>(s0)].gam3 * qa * qa
               * qa;
     }
-    SccOut out;
     out.energy_eh = e_h0 + e2 + e3;
-    out.residual = residual;
-    out.iterations = it_done;
+    out.q = q;
+    out.V.assign(static_cast<std::size_t>(sys.n_sh), 0.0);
+    for (int i = 0; i < sys.n_sh; ++i) {
+        double v = 0;
+        for (int j = 0; j < sys.n_sh; ++j)
+            v += sys.gamma[static_cast<std::size_t>(i * sys.n_sh + j)]
+                 * q[static_cast<std::size_t>(j)];
+        const int ia = sys.sh[static_cast<std::size_t>(i)].atom;
+        v += sys.sh[static_cast<std::size_t>(i)].gam3
+             * q_at[static_cast<std::size_t>(ia)]
+             * q_at[static_cast<std::size_t>(ia)];
+        out.V[static_cast<std::size_t>(i)] = v;
+    }
+    return out;
+}
+
+double pair_hscale(const IpeaSystem& sys, int i, int j) {
+    const Shell& si = sys.sh[static_cast<std::size_t>(i)];
+    const Shell& sj = sys.sh[static_cast<std::size_t>(j)];
+    if (si.atom == sj.atom)
+        return 1.0;
+    const auto& Ai = sys.xyz[static_cast<std::size_t>(si.atom)];
+    const auto& Bj = sys.xyz[static_cast<std::size_t>(sj.atom)];
+    const double dx = Ai[0] - Bj[0];
+    const double dy = Ai[1] - Bj[1];
+    const double dz = Ai[2] - Bj[2];
+    const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
+    const double rr = std::sqrt(r / ((si.rad + sj.rad) * kA2Bohr));
+    const double pi = 1.0 + si.shpoly * rr;
+    const double pj = 1.0 + sj.shpoly * rr;
+    const auto& ea = *sys.el[static_cast<std::size_t>(si.atom)];
+    const auto& eb = *sys.el[static_cast<std::size_t>(sj.atom)];
+    const int ish = i - sys.atom_sh0[static_cast<std::size_t>(si.atom)];
+    const int jsh = j - sys.atom_sh0[static_cast<std::size_t>(sj.atom)];
+    return hscale_pair(ea, ish, eb, jsh) * pi * pj;
+}
+
+double dgamma_ko_dr(double r, double eta_a, double eta_b) {
+    if (r < 1e-14)
+        return 0;
+    const double g = kIpeaGExp;
+    const double eta = 2.0 / (1.0 / eta_a + 1.0 / eta_b);
+    const double u = std::pow(r, g) + std::pow(eta, -g);
+    const double gam = 1.0 / std::pow(u, 1.0 / g);
+    return -std::pow(r, g - 1.0) * std::pow(gam, g + 1.0);
+}
+
+// dE/dR [Hartree/Bohr] of the IPEA energy at frozen SCC density.
+void nuclear_gradient(const IpeaSystem& sys, const SccOut& scc, const int* type,
+                      std::vector<std::array<double, 3>>& g) {
+    const int n_at = sys.n_at;
+    g.assign(static_cast<std::size_t>(n_at), {0.0, 0.0, 0.0});
+    const auto& P = scc.P;
+    const auto& W = scc.W;
+    const auto& q = scc.q;
+
+    std::vector<double> dEdh(static_cast<std::size_t>(sys.n_sh), 0.0);
+    for (int i = 0; i < sys.n_sh; ++i) {
+        const Shell& si = sys.sh[static_cast<std::size_t>(i)];
+        for (int j = 0; j < sys.n_sh; ++j) {
+            const Shell& sj = sys.sh[static_cast<std::size_t>(j)];
+            const double scale = pair_hscale(sys, i, j);
+            for (int ia = 0; ia < si.nao; ++ia)
+                for (int ja = 0; ja < sj.nao; ++ja)
+                    dEdh[static_cast<std::size_t>(i)] +=
+                        P(si.ao0 + ia, sj.ao0 + ja) * scale
+                        * sys.S(si.ao0 + ia, sj.ao0 + ja);
+        }
+    }
+    std::vector<double> dEdcn(static_cast<std::size_t>(n_at), 0.0);
+    for (int i = 0; i < sys.n_sh; ++i) {
+        const Shell& si = sys.sh[static_cast<std::size_t>(i)];
+        dEdcn[static_cast<std::size_t>(si.atom)] +=
+            dEdh[static_cast<std::size_t>(i)] * (-si.kcn);
+    }
+
+    for (int i = 0; i < sys.n_sh; ++i) {
+        const Shell& si = sys.sh[static_cast<std::size_t>(i)];
+        const int a = si.atom;
+        const double* A = sys.xyz[static_cast<std::size_t>(a)].data();
+        int pa[3][3] = {};
+        for (int ia = 0; ia < si.nao; ++ia)
+            cart_pow(si.l, ia, pa);
+        for (int j = 0; j < sys.n_sh; ++j) {
+            const Shell& sj = sys.sh[static_cast<std::size_t>(j)];
+            const int b = sj.atom;
+            if (a >= b)
+                continue;
+            const double* B = sys.xyz[static_cast<std::size_t>(b)].data();
+            const double dx = A[0] - B[0];
+            const double dy = A[1] - B[1];
+            const double dz = A[2] - B[2];
+            const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (r < 1e-14)
+                continue;
+            const double dir[3] = {dx / r, dy / r, dz / r};
+            const double radsum = (si.rad + sj.rad) * kA2Bohr;
+            const double rr = std::sqrt(r / radsum);
+            const double pi = 1.0 + si.shpoly * rr;
+            const double pj = 1.0 + sj.shpoly * rr;
+            const auto& ea = *sys.el[static_cast<std::size_t>(a)];
+            const auto& eb = *sys.el[static_cast<std::size_t>(b)];
+            const int ish = i - sys.atom_sh0[static_cast<std::size_t>(a)];
+            const int jsh = j - sys.atom_sh0[static_cast<std::size_t>(b)];
+            const double hs = hscale_pair(ea, ish, eb, jsh);
+            const double scale = hs * pi * pj;
+            const double drr_dr = 0.5 * rr / r;
+            const double dscale_dr =
+                hs * (si.shpoly * pj + sj.shpoly * pi) * drr_dr;
+            const double havg = 0.5 * (si.h + sj.h);
+            const double vij =
+                0.5
+                * (scc.V[static_cast<std::size_t>(i)]
+                   + scc.V[static_cast<std::size_t>(j)]);
+            const double dgdR = dgamma_ko_dr(r, si.hardness, sj.hardness);
+            const double qg = q[static_cast<std::size_t>(i)]
+                              * q[static_cast<std::size_t>(j)] * dgdR;
+
+            int pb[3][3] = {};
+            for (int ib = 0; ib < sj.nao; ++ib)
+                cart_pow(sj.l, ib, pb);
+            for (int ia = 0; ia < si.nao; ++ia) {
+                for (int ib = 0; ib < sj.nao; ++ib) {
+                    double sij = 0;
+                    double ds[3] = {0, 0, 0};
+                    for (const auto& p : si.prim) {
+                        for (const auto& qq : sj.prim) {
+                            double sp = 0;
+                            double dsp[3];
+                            ov3d_grad(pa[ia][0], pa[ia][1], pa[ia][2], p.a, A,
+                                      pb[ib][0], pb[ib][1], pb[ib][2], qq.a, B,
+                                      sp, dsp);
+                            const double c = p.c * qq.c;
+                            sij += c * sp;
+                            ds[0] += c * dsp[0];
+                            ds[1] += c * dsp[1];
+                            ds[2] += c * dsp[2];
+                        }
+                    }
+                    const int mu = si.ao0 + ia;
+                    const int nu = sj.ao0 + ib;
+                    const double Pmn = P(mu, nu);
+                    const double Wmn = W(mu, nu);
+                    for (int k = 0; k < 3; ++k) {
+                        const double dH0 =
+                            havg
+                            * (dscale_dr * dir[k] * sij + scale * ds[k]);
+                        const double dE =
+                            2.0
+                            * (Pmn * dH0 + (vij * Pmn - Wmn) * ds[k]);
+                        g[static_cast<std::size_t>(a)][static_cast<std::size_t>(
+                            k)] += dE;
+                        g[static_cast<std::size_t>(b)][static_cast<std::size_t>(
+                            k)] -= dE;
+                    }
+                }
+            }
+            for (int k = 0; k < 3; ++k) {
+                const double t = qg * dir[k];
+                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] += t;
+                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -= t;
+            }
+        }
+    }
+
+    for (int a = 0; a < n_at; ++a) {
+        const double ra = d3_rcov_bohr(type[a]);
+        const auto& A = sys.xyz[static_cast<std::size_t>(a)];
+        for (int b = a + 1; b < n_at; ++b) {
+            const double rb = d3_rcov_bohr(type[b]);
+            const auto& B = sys.xyz[static_cast<std::size_t>(b)];
+            const double dx = A[0] - B[0];
+            const double dy = A[1] - B[1];
+            const double dz = A[2] - B[2];
+            const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (r < 1e-14)
+                continue;
+            const double dir[3] = {dx / r, dy / r, dz / r};
+            const double rcov = ra + rb;
+            const double f = d3_cn(r, rcov);
+            const double dfdr =
+                f * (1.0 - f) * (-kIpeaD3k1 * rcov / (r * r));
+            const double chain =
+                (dEdcn[static_cast<std::size_t>(a)]
+                 + dEdcn[static_cast<std::size_t>(b)])
+                * dfdr;
+            for (int k = 0; k < 3; ++k) {
+                const double t = chain * dir[k];
+                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] += t;
+                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -= t;
+            }
+
+            const auto& ea = *sys.el[static_cast<std::size_t>(a)];
+            const auto& eb = *sys.el[static_cast<std::size_t>(b)];
+            const double kpre = std::sqrt(ea.alpha * eb.alpha);
+            const double kexp = kpre * std::pow(r, kIpeaRepKExp);
+            const double epair = ea.zeff * eb.zeff / r * std::exp(-kexp);
+            const double dEdr =
+                epair
+                * (-1.0 / r
+                   - kIpeaRepKExp * kpre * std::pow(r, kIpeaRepKExp - 1.0));
+            for (int k = 0; k < 3; ++k) {
+                const double t = dEdr * dir[k];
+                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] += t;
+                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -= t;
+            }
+        }
+    }
+
+    std::vector<int> Z(static_cast<std::size_t>(n_at));
+    std::vector<std::array<double, 3>> pos(static_cast<std::size_t>(n_at));
+    for (int a = 0; a < n_at; ++a) {
+        Z[static_cast<std::size_t>(a)] = type[a];
+        pos[static_cast<std::size_t>(a)] = sys.xyz[static_cast<std::size_t>(a)];
+    }
+    const double cell[3] = {0, 0, 0};
+    const auto d3 =
+        gpw::dftd3_pbe_bj(Z, pos, cell, false, gpw::D3Params{}, 94.2,
+                          kIpeaD3s6, kIpeaD3s8, kIpeaD3a1, kIpeaD3a2);
+    for (int a = 0; a < n_at; ++a) {
+        g[static_cast<std::size_t>(a)][0] -=
+            d3.forces[static_cast<std::size_t>(a)][0];
+        g[static_cast<std::size_t>(a)][1] -=
+            d3.forces[static_cast<std::size_t>(a)][1];
+        g[static_cast<std::size_t>(a)][2] -=
+            d3.forces[static_cast<std::size_t>(a)][2];
+    }
+}
+
+struct TotalOut {
+    double energy_ev = 0;
+    double residual = 0;
+    int iterations = 0;
+    std::vector<std::array<double, 3>> grad_ha_bohr;
+};
+
+TotalOut total_energy_eV(const StorageReal* x, const StorageReal* y,
+                         const StorageReal* z, const int* type, int n_at,
+                         int charge, double scc_tol, int max_scc,
+                         double mix_beta, bool want_grad) {
+    const IpeaSystem sys = build_system(x, y, z, type, n_at, charge);
+    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta);
+    const double e_rep = repulsive_e(sys);
+    const double e_disp = dispersion_e(sys, type);
+    TotalOut out;
+    out.energy_ev = (scc.energy_eh + e_rep + e_disp) * kHa2eV;
+    out.residual = scc.residual;
+    out.iterations = scc.iterations;
+    if (want_grad)
+        nuclear_gradient(sys, scc, type, out.grad_ha_bohr);
     return out;
 }
 
@@ -594,29 +896,41 @@ void IPEA::launch(const LaunchContext& ctx) {
     const int n_at = f.nlocal();
     if (n_at < 1)
         throw std::invalid_argument("IPEA: empty frame");
+    if (!(mix_beta > 0.0) || mix_beta > 1.0)
+        throw std::invalid_argument("IPEA: mix_beta must be in (0, 1]");
     if (multiplicity != 1)
         throw std::runtime_error(
             "IPEA: open shell (multiplicity!=1) is not a product path; "
-            "closed-shell energy only (see queue spin-gfn-xtb)");
-    if (with_forces)
-        throw std::runtime_error(
-            "IPEA: nuclear forces are not implemented on this energy "
-            "foothold; set with_forces=false");
-
+            "closed-shell only (see queue spin-gfn-xtb)");
     const auto type = f.span(kAtom_type);
     const StorageReal* x = f.span(kAtom_x);
     const StorageReal* y = f.span(kAtom_y);
     const StorageReal* z = f.span(kAtom_z);
-    double& energy_meta = f.meta.get(kEnergy);
+    AccReal* fx = f.span(kAtom_fx);
+    AccReal* fy = f.span(kAtom_fy);
+    AccReal* fz = f.span(kAtom_fz);
 
-    const IpeaSystem sys = build_system(x, y, z, type, n_at, charge);
-    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta);
-    const double e_rep = repulsive_e(sys);
-    const double e_disp = dispersion_e(sys, type);
-    energy_ = (scc.energy_eh + e_rep + e_disp) * kHa2eV;
-    scc_residual_ = scc.residual;
-    scc_iterations_ = scc.iterations;
-    energy_meta += energy_;
+    const bool do_f = with_forces && ctx.forces_requested;
+    const TotalOut out =
+        total_energy_eV(x, y, z, type, n_at, charge, scc_tol, max_scc,
+                        mix_beta, do_f);
+    energy_ = out.energy_ev;
+    scc_residual_ = out.residual;
+    scc_iterations_ = out.iterations;
+    f.meta.get(kEnergy) += energy_;
+    f.meta.get(kEnergyElectronic) += energy_;
+
+    if (do_f) {
+        const double fac = units::kHartreePerBohrInEvPerAngstrom;
+        for (int a = 0; a < n_at; ++a) {
+            fx[a] += static_cast<AccReal>(
+                -out.grad_ha_bohr[static_cast<std::size_t>(a)][0] * fac);
+            fy[a] += static_cast<AccReal>(
+                -out.grad_ha_bohr[static_cast<std::size_t>(a)][1] * fac);
+            fz[a] += static_cast<AccReal>(
+                -out.grad_ha_bohr[static_cast<std::size_t>(a)][2] * fac);
+        }
+    }
 }
 
 } // namespace semiempirical
