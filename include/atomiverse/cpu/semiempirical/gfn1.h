@@ -1,5 +1,5 @@
 /// @file cpu/semiempirical/gfn1.h
-/// @brief GFN1-xTB energy and analytic nuclear forces (H/C/N/O).
+/// @brief GFN1-xTB energy, analytic nuclear forces, and FD Hessian (H/C/N/O).
 #pragma once
 
 #include <string>
@@ -29,13 +29,15 @@ namespace semiempirical {
 ///
 /// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pins:
 /// `regressions/semiempirical/gfn1-xtb-organic/` (energy),
-/// `regressions/semiempirical/gfn1-xtb-forces/` (forces).
+/// `regressions/semiempirical/gfn1-xtb-forces/` (forces),
+/// `regressions/semiempirical/gfn-xtb-analytic-hessian/` (FD Hessian).
 ///
 /// @code
 ///   cpu::Evaluate eval;
 ///   cpu::semiempirical::GFN1 gfn1;
 ///   gfn1.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(gfn1));
+///   // FD Hessian of the analytic G: cpu::vib::Hessian + on(vib::Phase::force).
 /// @endcode
 class GFN1 : public cpu::Semiempirical, public cpu::QmEngine {
   public:

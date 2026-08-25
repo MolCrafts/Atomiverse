@@ -24,6 +24,12 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 
 **Live count: 7.** (6 component-plugin + 1 TB)
 
+## Live — TB wave 10 worker (2026-08-25)
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [gfn-xtb-analytic-hessian](gfn-xtb-analytic-hessian/gfn-xtb-analytic-hessian.md) | `gfn1-xtb-forces`, `gfn2-xtb-forces` | GFN1/2 FD Hessian via `cpu::vib::Hessian`; pin ω vs xtb 6.7.1 `--gfn 1 --hess` (GFN2 with AES-in-Fock hole) [implemented] |
+
 ## Closed — TB harness wave 9 (2026-08-25)
 
 Merged to `dev` (`276c7353`, `b8e86743`, `d4582d31`); specs deleted; history is git.

@@ -280,6 +280,8 @@ if(ATV_BUILD_SEMIEMPIRICAL)
     if(ATV_BUILD_VIB)
         atv_add_cpp_test(test_cpu_xtb_gfn0_hessian
             cpu/semiempirical/test_xtb_gfn0_hessian.cpp)
+        atv_add_cpp_test(test_cpu_xtb_gfn_hessian
+            cpu/semiempirical/test_xtb_gfn_hessian.cpp)
     endif()
 endif()
 

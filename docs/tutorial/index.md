@@ -177,8 +177,9 @@ Offline OpenMOPAC / DFTB+ / xtb pins only — see
 [tb-method-handoff](../developer/tb-method-handoff.md) and `tools/tb_oracle/`.
 Family-locked oracles: NDDO → OpenMOPAC; DFTB* → DFTB+; GFN-xTB → xtb.
 Harness wave 9 (2026-08-25) closed GFN1/GFN2 analytic \(F\) and GFN0 FD
-Hessian (`-DATV_BUILD_VIB=ON` exception). Family GFN1/2 Hessian stays ○
-(`gfn-xtb-analytic-hessian`). GFN2 AES remains post-SCC (angular \(F\) hole).
+Hessian (`-DATV_BUILD_VIB=ON` exception). Family GFN1/2 Hessian is
+[`gfn-xtb-analytic-hessian`](methods/gfn-xtb-analytic-hessian.md). GFN2 AES
+remains post-SCC (angular \(F\) hole).
 Full index: [methods/README](methods/README.md).
 
 | Method | Page | Regression | Oracle |
@@ -186,6 +187,7 @@ Full index: [methods/README](methods/README.md).
 | GFN1-xTB analytic nuclear forces (off-eq H₂O) | [gfn1-xtb-forces](methods/gfn1-xtb-forces.md) | `regressions/semiempirical/gfn1-xtb-forces` | xtb 6.7.1 (ratio **≈ 0.16**) |
 | GFN2-xTB analytic nuclear forces (off-eq H₂O) | [gfn2-xtb-forces](methods/gfn2-xtb-forces.md) | `regressions/semiempirical/gfn2-xtb-forces` | xtb 6.7.1 (**asserted ≤ 10**, xtb wall 0.018 s) |
 | GFN0-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn0-xtb-analytic-hessian](methods/gfn0-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn0-xtb-analytic-hessian` | xtb 6.7.1 (ratio **≈ 0.06**) |
+| GFN1/GFN2-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn-xtb-analytic-hessian](methods/gfn-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn-xtb-analytic-hessian` | xtb 6.7.1 (ratio **≈ 0.11**) |
 
 ### MetalWalls capability wave 1 (classical electrochem + LAMMPS-overlap MD)
 
