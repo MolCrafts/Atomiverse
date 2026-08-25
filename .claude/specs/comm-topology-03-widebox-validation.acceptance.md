@@ -6,8 +6,10 @@ criteria:
     type: code
     pass_when: |
       tests/mpi/test_halo_dual_image_ghosts.cpp contains a case that sets
-      ATV_FORCE_DIMS=4,2,1 on a 24x12x12 A box at cutoff 6.0 / skin 0.6
-      (halo 6.6 A > 6.0 A span on both decomposed axes), skips unless
+      ATV_FORCE_DIMS=4,2,1 on a 24x14x14 A box at cutoff 6.0 / skin 0.6
+      (halo 6.6 A: x span 6.0 in the 2-hop band, y span 7.0 single-hop
+      dual-image; the originally-specified 24x12x12 violates the
+      minimum-image bound at dims_y=2 and cannot exist), skips unless
       world == 8, and asserts total energy vs the file's O(N^2) minimum-image
       brute force within rel < 1e-9; tests/CMakeLists.txt registers
       test_mpi_halo_dual_image_ghosts_n8, and
@@ -49,8 +51,9 @@ criteria:
       data, no third party at run time):
       (1) np=1 total energy vs the in-case O(N^2) minimum-image direct sum,
           relative <= 1e-9, and per-atom force components <= 1e-9 eV/A;
-      (2) np=8 under ATV_FORCE_DIMS=4,2,1 vs np=1, energy relative <= 1e-10
-          and tag-aligned per-atom force components <= 1e-9 eV/A;
+      (2) np=8 under ATV_FORCE_DIMS=4,2,1 (24x14x14 A geometry) vs np=1,
+          energy relative <= 1e-10 and tag-aligned per-atom force
+          components <= 1e-9 eV/A;
       and regressions/md/multihop-widebox-parity/REFERENCE.md cites Plimpton
       J. Comput. Phys. 117, 1 (1995) and Allen & Tildesley 2nd ed. §1.6.3 with
       the physical justification of those tolerances.

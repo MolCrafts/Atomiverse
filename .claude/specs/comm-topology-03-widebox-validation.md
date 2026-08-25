@@ -1,7 +1,7 @@
 ---
 title: 多跳落地后的宽域实机验证（24k GAFF / 256 rank）
 slug: comm-topology-03-widebox-validation
-status: approved
+status: in-progress
 created: 2026-08-25
 grilled: true
 deps: comm-topology-01-swaplist, comm-topology-02-multihop
@@ -39,7 +39,7 @@ deps: comm-topology-01-swaplist, comm-topology-02-multihop
    | `fmax` / `fnorm` | 相对 ≤ `1e-6` |
 
    分母一律 `max(1, |参考值|)`。脚本还必须断言 np=$NP 日志里 `[atv] GRID` 的 `hops` 至少有一个分量 ≥ 2，否则判 FAIL——跑了一个单跳几何却报 PASS 是这条链最危险的假绿。
-3. `tests/mpi/test_halo_dual_image_ghosts.cpp` + `tests/CMakeLists.txt:560-562` — 在既有 `HaloDualImageGhosts` pin 上**就地推广**出生产形状：`ATV_FORCE_DIMS=4,2,1` 的 8-rank 网格（x 轴 4 刀、y 轴 2 刀、z 不分解），box 24 × 12 × 12 Å、`cutoff = 6.0`、`skin = 0.6` ⇒ `halo = 6.6 Å > span_x = span_y = 6.0 Å`，两条被分解的轴同时进入 2 跳区，且 y 轴 `dims == 2` 同时踩中该文件原本盯的 dual-image 分支——这正是 8×8×4 全轴窄子域在小 rank 数上的最近代理。用例在 `world != 8` 时 `GTEST_SKIP`，进程内 `setenv` 后收尾 `unsetenv`，判据沿用文件里既有的 O(N²) 最小镜像 brute force 与 `kEnergyRelativeTolerance = 1e-9`。
+3. `tests/mpi/test_halo_dual_image_ghosts.cpp` + `tests/CMakeLists.txt:560-562` — 在既有 `HaloDualImageGhosts` pin 上**就地推广**出生产形状：`ATV_FORCE_DIMS=4,2,1` 的 8-rank 网格（x 轴 4 刀、y 轴 2 刀、z 不分解），box 24 × 14 × 14 Å、`cutoff = 6.0`、`skin = 0.6` ⇒ `halo = 6.6 Å`：x 轴 span 6.0 进入 2 跳区（≤ dims−1=3），y 轴 span 7.0 单跳且 `2·6.6 > 7.0` 踩中 dual-image 分支（**几何修正**：原 24×12×12 在 dims_y=2 下 6.6 Å 壳违反最小镜像上界 `shell ≤ L−w_self = 6.0`，物理不可行）——这正是 8×8×4 全轴窄子域在小 rank 数上的最近代理。用例在 `world != 8` 时 `GTEST_SKIP`，进程内 `setenv` 后收尾 `unsetenv`，判据沿用文件里既有的 O(N²) 最小镜像 brute force 与 `kEnergyRelativeTolerance = 1e-9`。
 4. `regressions/md/multihop-widebox-parity/`（new，`reg_multihop-widebox-parity.cpp` + `REFERENCE.md`）+ `regressions/CMakeLists.txt` — 仓库内、不依赖任何外部数据集的宽域 parity 案例，形状照抄最近的两个先例：`regressions/md/const-pot-charge-halo-mpi`（自重启二进制、编译期 `ATV_MPIEXEC` pin、`ATV_FORCE_DIMS` 定几何）与 `regressions/pw/mpi-pw-scaling-4rank`（parent 起 np=1 与 np=N 两次 child、child 写一行结果、parent 判窗口）。体系是**带电 + 有 bonded 拓扑**的分子晶格（三原子分子 × 若干，整体电中性），势能 = `PairLJCut` + `PairCoulCut` + `BondHarmonic` + `AngleHarmonic`；不引 PPPM，故只需 `ATV_BUILD_MD + ATV_USE_MPI`，无 FFTW 门。这与 -02 自带的最小 LJ 多跳用例明确不重叠：这里同时跨多跳搬运 **ghost 电荷** 与 **bonded 延伸**，正是 24k GAFF 的形状。两级判据：先 np=1 对最小镜像 brute force（验证 oracle 的 special-bond 排除规则镜像正确），再 np=8（`ATV_FORCE_DIMS=4,2,1`）对 np=1（多跳主张本身）。一个扁平 `main()`，`got/want/tol` 打印，失败非零退出，≤ 60 s。
 5. `tools/bench_gaff_lammps/README.md` — 追加一个日期快照块，沿用文件里已有的 LAMMPS 对齐计时表惯例。
 
@@ -72,10 +72,10 @@ deps: comm-topology-01-swaplist, comm-topology-02-multihop
 
 ## Tasks
 
-- [ ] Generalize `HaloDualImageGhosts` in `tests/mpi/test_halo_dual_image_ghosts.cpp` 覆盖生产窄网格（`ATV_FORCE_DIMS=4,2,1`、box 24×12×12 Å、cutoff 6.0 / skin 0.6 ⇒ halo 6.6 Å > span 6.0 Å、`world != 8` 时 skip、判据沿用 O(N²) 最小镜像 brute force 与 rel < 1e-9），并在 `tests/CMakeLists.txt` 注册 `test_mpi_halo_dual_image_ghosts_n8`
-- [ ] Add `tools/bench_gaff_lammps/widebox_parity.sh`：同参数跑 np=1 与 np=$NP（`ATV_FORCE_DIMS=$DIMS`）单点，解析 `[atv] GRID` / `SINGLE-POINT (eV)` / `SINGLE-POINT FORCES` 行，按默认窗口逐项 `got/want/tol` 判定，并断言 `hops` 至少一个分量 ≥ 2，失败非零退出（在下一条落地前应因缺少这两行而 FAIL）
-- [ ] Implement rank 无关的 `fmax`/`fnorm`（`MPI_Allreduce` MAX/SUM，仅 owner 行）与 `[atv] GRID dims/span/halo/hops`（经 `DomainDecomposition::choose_dims`）输出于 `tools/bench_gaff_lammps/run_atv_gaff.cpp` 的 `--single-point` 分支
-- [ ] Add regression example `regressions/md/multihop-widebox-parity/reg_multihop-widebox-parity.cpp` + `REFERENCE.md`（自重启 np=1 / np=8、`ATV_FORCE_DIMS=4,2,1`、带电 + bonded 分子晶格、最小镜像 brute force + 跨 rank parity 双判据、硬编码 tol、非零退出）并在 `regressions/CMakeLists.txt` 注册
+- [x] Generalize `HaloDualImageGhosts` in `tests/mpi/test_halo_dual_image_ghosts.cpp` 覆盖生产窄网格（`ATV_FORCE_DIMS=4,2,1`、box 24×14×14 Å、cutoff 6.0 / skin 0.6 ⇒ x 2 跳、y 单跳双镜像、`world != 8` 时 skip、判据沿用 O(N²) 最小镜像 brute force 与 rel < 1e-9），并在 `tests/CMakeLists.txt` 注册 `test_mpi_halo_dual_image_ghosts_n8`
+- [x] Add `tools/bench_gaff_lammps/widebox_parity.sh`：同参数跑 np=1 与 np=$NP（`ATV_FORCE_DIMS=$DIMS`）单点，解析 `[atv] GRID` / `SINGLE-POINT (eV)` / `SINGLE-POINT FORCES` 行，按默认窗口逐项 `got/want/tol` 判定，并断言 `hops` 至少一个分量 ≥ 2，失败非零退出（在下一条落地前应因缺少这两行而 FAIL）
+- [x] Implement rank 无关的 `fmax`/`fnorm`（`MPI_Allreduce` MAX/SUM，仅 owner 行）与 `[atv] GRID dims/span/halo/hops`（经 `DomainDecomposition::choose_dims`）输出于 `tools/bench_gaff_lammps/run_atv_gaff.cpp` 的 `--single-point` 分支
+- [x] Add regression example `regressions/md/multihop-widebox-parity/reg_multihop-widebox-parity.cpp` + `REFERENCE.md`（自重启 np=1 / np=8、`ATV_FORCE_DIMS=4,2,1`、带电 + bonded 分子晶格、最小镜像 brute force + 跨 rank parity 双判据、硬编码 tol、非零退出）并在 `regressions/CMakeLists.txt` 注册
 - [ ] Verify MIL0PEGM18 24k 体系在单节点 256 rank（`ATV_FORCE_DIMS=8,8,4`）下 `widebox_parity.sh` 全项 PASS，并保存 np=1 / np=256 两份日志
 - [ ] Record 日期快照块于 `tools/bench_gaff_lammps/README.md`（256-rank steps/s、分项计时表、同节点同精度档 LAMMPS 对照、srun 命令与数据集路径，并注明这些数字不是验收判据）
 - [ ] Run full check + test suite

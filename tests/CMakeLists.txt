@@ -625,6 +625,19 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
     atv_add_mpi_run(test_mpi_atom_migration_n1 test_mpi_atom_migration 1)
     atv_add_mpi_run(test_mpi_atom_migration_n2 test_mpi_atom_migration 2)
 
+    # cpu::Evaluate must inject the same Migrate/Halo/Reduce set that MD and
+    # Minimize do; without it a multi-rank single point runs with zero ghosts
+    # and silently drops every cross-boundary interaction. n1 is the serial
+    # guardrail, n2 the multi-rank statement.
+    if(ATV_BUILD_EVALUATE AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+        atv_add_mpi_exec(test_mpi_evaluate_halo_parity
+                         mpi/test_evaluate_halo_parity.cpp)
+        atv_add_mpi_run(test_mpi_evaluate_halo_parity_n1
+                        test_mpi_evaluate_halo_parity 1)
+        atv_add_mpi_run(test_mpi_evaluate_halo_parity_n2
+                        test_mpi_evaluate_halo_parity 2)
+    endif()
+
     atv_add_mpi_exec(test_mpi_minimize_lj mpi/test_minimize_lj.cpp)
     atv_add_mpi_run(test_mpi_minimize_lj_n1 test_mpi_minimize_lj 1)
     atv_add_mpi_run(test_mpi_minimize_lj_n2 test_mpi_minimize_lj 2)

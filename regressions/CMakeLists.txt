@@ -196,6 +196,16 @@ if(ATV_BUILD_MD)
         atv_add_regression(md comm-topology-multihop)
         target_compile_definitions(reg_comm-topology-multihop PRIVATE
             ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
+        # WIDE-BOX parity (comm-topology-03): a forced 4x2x1 split of a
+        # 24 x 14 x 14 A box puts x in the 2-hop band (6.0 A slabs vs a 6.6 A
+        # shell) and y on the dims == 2 dual-image branch at once, while the
+        # shell carries ghost CHARGES and the BONDED extension. Self-
+        # relaunching binary (mpiexec -n 1 and -n 8): np = 1 against the
+        # in-file O(N^2) min-image direct sum, then np = 8 against np = 1.
+        # oracle=literature identity. perf_exempt.
+        atv_add_regression(md multihop-widebox-parity)
+        target_compile_definitions(reg_multihop-widebox-parity PRIVATE
+            ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
     endif()
 endif()
 if(ATV_BUILD_MC)
