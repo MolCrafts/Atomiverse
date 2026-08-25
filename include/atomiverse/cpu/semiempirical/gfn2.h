@@ -13,19 +13,20 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief GFN2-xTB energy for H/C/N/O (Bannwarth, Ehlert, Grimme, JCTC 2019).
+/// @brief GFN2-xTB energy and analytic nuclear forces for H/C/N/O
+///        (Bannwarth, Ehlert, Grimme, JCTC 2019).
 ///
 /// Molecular closed-shell energy: STO-*n*G valence basis, CN-shifted H⁰,
 /// shell-resolved isotropic SCC, on-site third-order, anisotropic
 /// electrostatics (charge–dipole, dipole–dipole, charge–quadrupole) +
 /// dipole/quadrupole AXC, screened repulsion, Grimme D4 (GFN2 damping).
 /// Parameters are static in-tree tables — there is no `libxtb` kernel.
-/// Oracle: **xtb** 6.7.1 (`reg_gfn2-quadrupole-aes`). Units: energy [eV],
-/// positions [Å]. Forces are not this slug (`gfn2-xtb-forces`).
+/// Oracle: **xtb** 6.7.1 (`reg_gfn2-xtb-forces`). Units: energy [eV],
+/// positions [Å], forces [eV/Å].
 ///
 /// @code
 ///   cpu::semiempirical::GFN2 gfn2;
-///   gfn2.with_forces = false;
+///   gfn2.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(gfn2));
 /// @endcode
 class GFN2 : public cpu::Semiempirical, public cpu::QmEngine {
@@ -38,7 +39,7 @@ class GFN2 : public cpu::Semiempirical, public cpu::QmEngine {
     double mix_beta = 0.4;
     /// @brief Net molecular charge [e].
     int charge = 0;
-    /// @brief When true, throw — analytic / FD forces are `gfn2-xtb-forces`.
+    /// @brief When true, write analytic forces \(F=-\nabla E\) [eV/Å] on launch.
     bool with_forces = false;
 
     GFN2() = default;

@@ -240,15 +240,192 @@ double cn_d3(double r, double r0) {
     return 1.0 / (1.0 + std::exp(-kGfn2CnK * (rco / r - 1.0)));
 }
 
+double dcn_d3_dr(double r, double r0) {
+    if (r < 1e-12)
+        return 0;
+    const double rco = (4.0 / 3.0) * r0;
+    const double e = std::exp(-kGfn2CnK * (rco / r - 1.0));
+    const double den = 1.0 + e;
+    return -e / (den * den) * kGfn2CnK * rco / (r * r);
+}
+
+using Grad3 = std::array<double, 3>;
+
+// dS/dA of a Cartesian s/p primitive pair (GFN0 kernel). dS/dB = -dS/dA.
+void primitive_overlap_grad(double a, const double A[3], int la, double b,
+                            const double B[3], int lb, double& s,
+                            double ds_dA[3]) {
+    const double gamma = a + b;
+    const double mu = a * b / gamma;
+    double R[3];
+    double R2 = 0;
+    for (int k = 0; k < 3; ++k) {
+        R[k] = A[k] - B[k];
+        R2 += R[k] * R[k];
+    }
+    const double S00 = std::pow(kPi / gamma, 1.5) * std::exp(-mu * R2);
+    double dS00[3];
+    for (int k = 0; k < 3; ++k)
+        dS00[k] = -2.0 * mu * R[k] * S00;
+    double P[3];
+    for (int k = 0; k < 3; ++k)
+        P[k] = (a * A[k] + b * B[k]) / gamma;
+
+    if (la == 0 && lb == 0) {
+        s = S00;
+        for (int k = 0; k < 3; ++k)
+            ds_dA[k] = dS00[k];
+        return;
+    }
+    if (la == 0) {
+        const int ib = lb - 1;
+        const double dlt = P[ib] - B[ib];
+        s = dlt * S00;
+        for (int k = 0; k < 3; ++k) {
+            const double ddlt = (k == ib) ? (a / gamma) : 0.0;
+            ds_dA[k] = ddlt * S00 + dlt * dS00[k];
+        }
+        return;
+    }
+    if (lb == 0) {
+        const int ia = la - 1;
+        const double dlt = P[ia] - A[ia];
+        s = dlt * S00;
+        for (int k = 0; k < 3; ++k) {
+            const double ddlt = (k == ia) ? (-b / gamma) : 0.0;
+            ds_dA[k] = ddlt * S00 + dlt * dS00[k];
+        }
+        return;
+    }
+    const int ia = la - 1;
+    const int ib = lb - 1;
+    const double dA = P[ia] - A[ia];
+    const double dB = P[ib] - B[ib];
+    s = dA * dB * S00;
+    if (ia == ib)
+        s += S00 / (2.0 * gamma);
+    for (int k = 0; k < 3; ++k) {
+        const double ddA = (k == ia) ? (-b / gamma) : 0.0;
+        const double ddB = (k == ib) ? (a / gamma) : 0.0;
+        ds_dA[k] = (ddA * dB + dA * ddB) * S00 + dA * dB * dS00[k];
+        if (ia == ib)
+            ds_dA[k] += dS00[k] / (2.0 * gamma);
+    }
+}
+
+void primitive_sd_grad(double a, const double A[3], int la, double b,
+                       const double B[3], int lb, double& s, double ds_dA[3],
+                       double D[3], double dD_dA[3][3]) {
+    const double gamma = a + b;
+    const double mu = a * b / gamma;
+    const double inv2g = 0.5 / gamma;
+    double R[3];
+    double R2 = 0;
+    for (int k = 0; k < 3; ++k) {
+        R[k] = A[k] - B[k];
+        R2 += R[k] * R[k];
+    }
+    const double S00 = std::pow(kPi / gamma, 1.5) * std::exp(-mu * R2);
+    double dS00[3];
+    for (int k = 0; k < 3; ++k)
+        dS00[k] = -2.0 * mu * R[k] * S00;
+    double P[3];
+    for (int k = 0; k < 3; ++k)
+        P[k] = (a * A[k] + b * B[k]) / gamma;
+    auto dP = [a, gamma](int k, int m) {
+        return (k == m) ? (a / gamma) : 0.0;
+    };
+
+    primitive_overlap_grad(a, A, la, b, B, lb, s, ds_dA);
+
+    if (la == 0 && lb == 0) {
+        for (int k = 0; k < 3; ++k) {
+            D[k] = P[k] * S00;
+            for (int m = 0; m < 3; ++m)
+                dD_dA[k][m] = dP(k, m) * S00 + P[k] * dS00[m];
+        }
+        return;
+    }
+    const int ci = (la == 0) ? 0 : (la - 1);
+    const int cj = (lb == 0) ? 0 : (lb - 1);
+    const double dAi0 = (la == 1) ? (P[ci] - A[ci]) : 1.0;
+    const double dAj0 = (lb == 1) ? (P[cj] - B[cj]) : 1.0;
+    for (int k = 0; k < 3; ++k) {
+        double t = P[k] * dAi0 * dAj0;
+        if (la == 1 && lb == 1 && ci == cj)
+            t += P[k] * inv2g;
+        if (la == 1 && ci == k)
+            t += inv2g * dAj0;
+        if (lb == 1 && cj == k)
+            t += inv2g * dAi0;
+        D[k] = S00 * t;
+        for (int m = 0; m < 3; ++m) {
+            const double ddAi =
+                (la == 1) ? (dP(ci, m) - ((m == ci) ? 1.0 : 0.0)) : 0.0;
+            const double ddAj = (lb == 1) ? dP(cj, m) : 0.0;
+            double dt = dP(k, m) * dAi0 * dAj0 + P[k] * ddAi * dAj0
+                        + P[k] * dAi0 * ddAj;
+            if (la == 1 && lb == 1 && ci == cj)
+                dt += dP(k, m) * inv2g;
+            if (la == 1 && ci == k)
+                dt += inv2g * ddAj;
+            if (lb == 1 && cj == k)
+                dt += inv2g * ddAi;
+            dD_dA[k][m] = dS00[m] * t + S00 * dt;
+        }
+    }
+}
+
+void shell_sd_grad(const Shell& si, const double Ai[3], int ui, const Shell& sj,
+                   const double Aj[3], int vj, double& s, double ds_dAi[3],
+                   double D[3], double dD_dAi[3][3]) {
+    s = 0;
+    ds_dAi[0] = ds_dAi[1] = ds_dAi[2] = 0;
+    D[0] = D[1] = D[2] = 0;
+    for (int k = 0; k < 3; ++k)
+        for (int m = 0; m < 3; ++m)
+            dD_dAi[k][m] = 0;
+    const int Li = (si.l == 0) ? 0 : (ui + 1);
+    const int Lj = (sj.l == 0) ? 0 : (vj + 1);
+    for (int p = 0; p < si.n_prim; ++p) {
+        for (int q = 0; q < sj.n_prim; ++q) {
+            double sp = 0;
+            double dsp[3];
+            double Dp[3];
+            double dDp[3][3];
+            primitive_sd_grad(si.alpha[p], Ai, Li, sj.alpha[q], Aj, Lj, sp, dsp,
+                              Dp, dDp);
+            const double c = si.coeff[p] * sj.coeff[q];
+            s += c * sp;
+            for (int k = 0; k < 3; ++k) {
+                ds_dAi[k] += c * dsp[k];
+                D[k] += c * Dp[k];
+                for (int m = 0; m < 3; ++m)
+                    dD_dAi[k][m] += c * dDp[k][m];
+            }
+        }
+    }
+}
+
+double dgamma_dr(double r, double gi, double gj) {
+    if (r < 1e-12)
+        return 0;
+    const double gam = 0.5 * (gi + gj);
+    const double gexp = kGfn2Gexp;
+    const double t = std::pow(r, gexp) + std::pow(gam, -gexp);
+    return -std::pow(r, gexp - 1.0) / std::pow(t, 1.0 / gexp + 1.0);
+}
+
 struct SolveOut {
     double energy_eh = 0;
     double residual = 0;
     int iterations = 0;
     std::vector<double> dq;
+    std::vector<Grad3> grad; // ∇E [Eh/Bohr]; empty unless want_grad
 };
 
 SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
-                    double mix_beta) {
+                    double mix_beta, bool want_grad) {
     const int n_at = f.nlocal();
     const int* type = f.span(kAtom_type).data();
     const StorageReal* xA = f.span(kAtom_x).data();
@@ -492,6 +669,9 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
     std::vector<std::array<double, 6>> quadat(static_cast<std::size_t>(n_at));
     internal::ChargeMixer mixer(mix_beta, 6);
     linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
+    linalg::RealMatrix Cmat = xt::zeros<double>({n_ao, n_ao});
+    linalg::RealVector eps_mo = xt::zeros<double>({n_ao});
+    std::vector<double> vsh(static_cast<std::size_t>(n_sh), 0.0);
     SolveOut out;
     bool converged = false;
 
@@ -573,7 +753,6 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
     };
 
     for (int it = 0; it < max_scc; ++it) {
-        std::vector<double> vsh(static_cast<std::size_t>(n_sh), 0.0);
         for (int ish = 0; ish < n_sh; ++ish) {
             double s = 0;
             for (int jsh = 0; jsh < n_sh; ++jsh)
@@ -596,7 +775,9 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             }
         }
         auto sol = linalg::diagonalize_fock_generalized(H, S);
-        const auto& C = sol.second;
+        eps_mo = sol.first;
+        Cmat = sol.second;
+        const auto& C = Cmat;
         P = xt::zeros<double>({n_ao, n_ao});
         for (int o = 0; o < n_occ; ++o)
             for (int mu = 0; mu < n_ao; ++mu)
@@ -709,13 +890,458 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
         e3 += q * q * q * gam3[static_cast<std::size_t>(ish)] / 3.0;
     }
     const double e_rep = repulsion();
-    const double e_d4 = d4_energy();
     const double e_aes = aes_energy();
+
+    std::vector<int> Z(static_cast<std::size_t>(n_at));
+    for (int a = 0; a < n_at; ++a)
+        Z[static_cast<std::size_t>(a)] = type[a];
+    const double cell[3] = {20.0 * kBohr, 20.0 * kBohr, 20.0 * kBohr};
+    scf::D4Result d4;
+    double e_d4 = 0;
+    if (want_grad) {
+        d4 = scf::dftd4(Z, xyz, cell, /*periodic=*/false, kGfn2D4S6, kGfn2D4S8,
+                        kGfn2D4A1, kGfn2D4A2, 3.0, 2.0, 6.0,
+                        static_cast<double>(charge), 30.0, 60.0, kGfn2D4S9,
+                        40.0);
+        e_d4 = d4.energy;
+    } else {
+        e_d4 = d4_energy();
+    }
 
     out.energy_eh = e_h0 + e_ies + e3 + e_rep + e_d4 + e_aes;
     out.dq.assign(static_cast<std::size_t>(n_at), 0.0);
     for (int a = 0; a < n_at; ++a)
         out.dq[static_cast<std::size_t>(a)] = -qat[static_cast<std::size_t>(a)];
+    // Energy pieces stay on the existing kernels; gradient is additive.
+
+    if (!want_grad)
+        return out;
+
+    linalg::RealMatrix W = xt::zeros<double>({n_ao, n_ao});
+    for (int o = 0; o < n_occ; ++o) {
+        const double wfac = 2.0 * eps_mo(o);
+        for (int mu = 0; mu < n_ao; ++mu) {
+            const double cmu = Cmat(mu, o);
+            for (int nu = 0; nu < n_ao; ++nu)
+                W(mu, nu) += wfac * cmu * Cmat(nu, o);
+        }
+    }
+
+    // ∂E_AES/∂μ including AXC (frozen kernel radii). Used for CAMM chains.
+    std::vector<Grad3> vd(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
+    for (int a = 0; a < n_at; ++a) {
+        const auto& ea = *el[static_cast<std::size_t>(a)];
+        const auto& mua = dipat[static_cast<std::size_t>(a)];
+        vd[static_cast<std::size_t>(a)] = {2.0 * ea.dkernel * mua[0],
+                                           2.0 * ea.dkernel * mua[1],
+                                           2.0 * ea.dkernel * mua[2]};
+        const double* ra = xyz[static_cast<std::size_t>(a)].data();
+        const double arg =
+            cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
+        const double t1 = std::exp(-kGfn2AesKexp * arg);
+        const double radA =
+            ea.mprad + (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
+        for (int b = 0; b < n_at; ++b) {
+            if (a == b)
+                continue;
+            const auto& eb = *el[static_cast<std::size_t>(b)];
+            const double* rb = xyz[static_cast<std::size_t>(b)].data();
+            const auto& mub = dipat[static_cast<std::size_t>(b)];
+            const double qb = -qat[static_cast<std::size_t>(b)];
+            double vec[3] = {ra[0] - rb[0], ra[1] - rb[1], ra[2] - rb[2]};
+            const double r1 = std::sqrt(vec[0] * vec[0] + vec[1] * vec[1]
+                                        + vec[2] * vec[2]);
+            if (r1 < 1e-12)
+                continue;
+            const double argb =
+                cn[static_cast<std::size_t>(b)] - eb.mpvcn - kGfn2AesShift;
+            const double t1b = std::exp(-kGfn2AesKexp * argb);
+            const double radB =
+                eb.mprad + (kGfn2AesRmax - eb.mprad) / (1.0 + t1b);
+            const double g1 = 1.0 / r1;
+            const double g3 = g1 * g1 * g1;
+            const double g5 = g3 * g1 * g1;
+            const double rrd = 0.5 * (radA + radB) * g1;
+            const double fdmp3 =
+                1.0 / (1.0 + 6.0 * std::pow(rrd, kGfn2AesDmp3));
+            const double fdmp5 =
+                1.0 / (1.0 + 6.0 * std::pow(rrd, kGfn2AesDmp5));
+            for (int k = 0; k < 3; ++k)
+                vd[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                    qb * vec[k] * g3 * fdmp3;
+            const double mrv =
+                (mua[0] * vec[0] + mua[1] * vec[1] + mua[2] * vec[2])
+                * (mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2]);
+            (void)mrv;
+            // Ordered a≠b: E_dd = ½ (μa·μb g3 − 3 (μa·r)(μb·r) g5) fdmp5
+            // both directions ⇒ vd_a += μb g3 fdmp5 − 3 r (μb·r) g5 fdmp5.
+            const double mub_r =
+                mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2];
+            for (int k = 0; k < 3; ++k)
+                vd[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                    mub[k] * g3 * fdmp5 - 3.0 * vec[k] * mub_r * g5 * fdmp5;
+        }
+    }
+
+    std::vector<Grad3> g(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
+    std::vector<double> dEdcn(static_cast<std::size_t>(n_at), 0.0);
+    std::vector<Grad3> dcndr(
+        static_cast<std::size_t>(n_at) * static_cast<std::size_t>(n_at),
+        Grad3{0, 0, 0});
+
+    for (int a = 0; a < n_at; ++a) {
+        const double rca = el[static_cast<std::size_t>(a)]->rcov * kBohr;
+        for (int b = 0; b < a; ++b) {
+            const double rcb = el[static_cast<std::size_t>(b)]->rcov * kBohr;
+            double dx = static_cast<double>(xA[a] - xA[b]);
+            double dy = static_cast<double>(yA[a] - yA[b]);
+            double dz = static_cast<double>(zA[a] - zA[b]);
+            f.box.min_image(dx, dy, dz);
+            const double dxb = dx * kBohr;
+            const double dyb = dy * kBohr;
+            const double dzb = dz * kBohr;
+            const double r = std::sqrt(dxb * dxb + dyb * dyb + dzb * dzb);
+            if (r < 1e-12)
+                continue;
+            const double r0 = rca + rcb;
+            const double dc = dcn_d3_dr(r, r0);
+            const double invr = 1.0 / r;
+            const double dvec[3] = {dxb * invr * dc, dyb * invr * dc,
+                                    dzb * invr * dc};
+            // CN_a and CN_b each pick up this pair.
+            for (int k = 0; k < 3; ++k) {
+                dcndr[static_cast<std::size_t>(a * n_at + a)]
+                     [static_cast<std::size_t>(k)] += dvec[k];
+                dcndr[static_cast<std::size_t>(b * n_at + a)]
+                     [static_cast<std::size_t>(k)] -= dvec[k];
+                dcndr[static_cast<std::size_t>(a * n_at + b)]
+                     [static_cast<std::size_t>(k)] += dvec[k];
+                dcndr[static_cast<std::size_t>(b * n_at + b)]
+                     [static_cast<std::size_t>(k)] -= dvec[k];
+            }
+        }
+    }
+
+    // On-site CN: diagonal AO populations of each shell (tblite).
+    for (int a = 0; a < n_at; ++a) {
+        const auto& e = *el[static_cast<std::size_t>(a)];
+        const int is0 = sh0[static_cast<std::size_t>(a)];
+        for (int s = 0; s < e.n_shell; ++s) {
+            const int ish = is0 + s;
+            const Shell& sh = shells[static_cast<std::size_t>(ish)];
+            const double dsedcn = -e.kcn[s] * kGfn2EvToEh;
+            const int nao = 2 * sh.l + 1;
+            double pop = 0;
+            for (int u = 0; u < nao; ++u)
+                pop += P(sh.ao0 + u, sh.ao0 + u);
+            dEdcn[static_cast<std::size_t>(a)] += dsedcn * pop;
+        }
+    }
+
+    for (int a = 0; a < n_at; ++a) {
+        const auto& ea = *el[static_cast<std::size_t>(a)];
+        const double* Ai = xyz[static_cast<std::size_t>(a)].data();
+        const int is0 = sh0[static_cast<std::size_t>(a)];
+        for (int b = 0; b < a; ++b) {
+            const auto& eb = *el[static_cast<std::size_t>(b)];
+            const double* Aj = xyz[static_cast<std::size_t>(b)].data();
+            const int js0 = sh0[static_cast<std::size_t>(b)];
+            double vec[3] = {Ai[0] - Aj[0], Ai[1] - Aj[1], Ai[2] - Aj[2]};
+            const double r2 =
+                vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2];
+            if (r2 < 1e-16)
+                continue;
+            const double r = std::sqrt(r2);
+            const double radi = ea.rcov * kBohr;
+            const double radj = eb.rcov * kBohr;
+            const double rr = std::sqrt(std::sqrt(r2 / (radi + radj)));
+            const double den = ea.en - eb.en;
+            const double enp = 1.0 + kGfn2Enscale * den * den;
+
+            Grad3 dG{0, 0, 0};
+            double dcni = 0;
+            double dcnj = 0;
+
+            const int nsh_a = ea.n_shell;
+            const int nsh_b = eb.n_shell;
+            for (int sa = 0; sa < nsh_a; ++sa) {
+                const int ish = is0 + sa;
+                const Shell& si = shells[static_cast<std::size_t>(ish)];
+                const double shpi = 1.0 + ea.shpoly[si.l == 0 ? 0 : 1] * rr;
+                const int nai = 2 * si.l + 1;
+                for (int sb = 0; sb < nsh_b; ++sb) {
+                    const int jsh = js0 + sb;
+                    const Shell& sj = shells[static_cast<std::size_t>(jsh)];
+                    const double shpj =
+                        1.0 + eb.shpoly[sj.l == 0 ? 0 : 1] * rr;
+                    const double shpoly = shpi * shpj;
+                    const double zi = si.zeta;
+                    const double zj = sj.zeta;
+                    const double zij =
+                        std::pow(2.0 * std::sqrt(zi * zj) / (zi + zj),
+                                 kGfn2Wexp);
+                    const double hsc = zij * k_shell(si.l, sj.l) * enp;
+                    const double hs = hsc * shpoly;
+                    const double hij =
+                        0.5
+                        * (selfe[static_cast<std::size_t>(ish)]
+                           + selfe[static_cast<std::size_t>(jsh)])
+                        * hs;
+                    const double dshpoly =
+                        (shpi * eb.shpoly[sj.l == 0 ? 0 : 1]
+                         + shpj * ea.shpoly[si.l == 0 ? 0 : 1])
+                        * 0.5 * rr / r2;
+                    const double dsv[3] = {dshpoly / shpoly * vec[0],
+                                           dshpoly / shpoly * vec[1],
+                                           dshpoly / shpoly * vec[2]};
+                    const double dsed_i =
+                        -ea.kcn[sa] * kGfn2EvToEh * hs;
+                    const double dsed_j =
+                        -eb.kcn[sb] * kGfn2EvToEh * hs;
+                    const double vscale =
+                        0.5
+                        * (vsh[static_cast<std::size_t>(ish)]
+                           + vsh[static_cast<std::size_t>(jsh)]);
+                    const double fscale = hij + vscale;
+                    const int naj = 2 * sj.l + 1;
+                    for (int u = 0; u < nai; ++u) {
+                        const int mu = si.ao0 + u;
+                        for (int v = 0; v < naj; ++v) {
+                            const int nu = sj.ao0 + v;
+                            double sij = 0;
+                            double ds[3];
+                            double Dip[3];
+                            double dDip[3][3];
+                            shell_sd_grad(si, Ai, u, sj, Aj, v, sij, ds, Dip,
+                                          dDip);
+                            const double pij = P(mu, nu);
+                            const double hpij = pij * hij;
+                            const double sval =
+                                2.0 * (pij * fscale - W(mu, nu));
+                            for (int k = 0; k < 3; ++k) {
+                                dG[static_cast<std::size_t>(k)] +=
+                                    sval * ds[k] + 2.0 * hpij * sij * dsv[k];
+                                // Frozen-P CAMM dipole: μ = ½ P (D − R S).
+                                double dmu_a = 0;
+                                double dmu_b = 0;
+                                for (int al = 0; al < 3; ++al) {
+                                    const double dD = dDip[al][k];
+                                    const double dmuA =
+                                        0.5 * pij
+                                        * (dD - ((al == k) ? sij : 0.0)
+                                           - Ai[al] * ds[k]);
+                                    const double dmuB =
+                                        0.5 * pij * (dD - Aj[al] * ds[k]);
+                                    dmu_a += vd[static_cast<std::size_t>(a)]
+                                               [static_cast<std::size_t>(al)]
+                                             * dmuA;
+                                    dmu_b += vd[static_cast<std::size_t>(b)]
+                                               [static_cast<std::size_t>(al)]
+                                             * dmuB;
+                                }
+                                dG[static_cast<std::size_t>(k)] += dmu_a + dmu_b;
+                            }
+                            dcni += dsed_i * pij * sij;
+                            dcnj += dsed_j * pij * sij;
+                        }
+                    }
+                }
+            }
+
+            // IES: Σ_{ish on a, jsh on b} q_i q_j dγ/dR_a
+            double dEies_dr = 0;
+            for (int sa = 0; sa < nsh_a; ++sa) {
+                const int ish = is0 + sa;
+                for (int sb = 0; sb < nsh_b; ++sb) {
+                    const int jsh = js0 + sb;
+                    dEies_dr += qsh[static_cast<std::size_t>(ish)]
+                                * qsh[static_cast<std::size_t>(jsh)]
+                                * dgamma_dr(r, hardness[static_cast<std::size_t>(ish)],
+                                            hardness[static_cast<std::size_t>(jsh)]);
+                }
+            }
+            const double invr = 1.0 / r;
+            for (int k = 0; k < 3; ++k)
+                dG[static_cast<std::size_t>(k)] += dEies_dr * vec[k] * invr;
+
+            // Repulsion
+            const double kexp =
+                (ea.z > 2 || eb.z > 2) ? kGfn2Kexp : kGfn2KexpLight;
+            const double al = std::sqrt(ea.alpha_rep * eb.alpha_rep);
+            const double zf = ea.zeff * eb.zeff;
+            const double erep =
+                zf * std::exp(-al * std::pow(r, kexp)) / std::pow(r, kGfn2Rexp);
+            const double dErep_dr =
+                erep * (-al * kexp * std::pow(r, kexp - 1.0) - kGfn2Rexp / r);
+            for (int k = 0; k < 3; ++k)
+                dG[static_cast<std::size_t>(k)] += dErep_dr * vec[k] * invr;
+
+            dEdcn[static_cast<std::size_t>(a)] += dcni;
+            dEdcn[static_cast<std::size_t>(b)] += dcnj;
+            for (int k = 0; k < 3; ++k) {
+                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                    dG[static_cast<std::size_t>(k)];
+                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -=
+                    dG[static_cast<std::size_t>(k)];
+            }
+        }
+    }
+
+    for (int moved = 0; moved < n_at; ++moved) {
+        for (int a = 0; a < n_at; ++a) {
+            const auto& dcn =
+                dcndr[static_cast<std::size_t>(moved * n_at + a)];
+            const double dcnE = dEdcn[static_cast<std::size_t>(a)];
+            for (int k = 0; k < 3; ++k)
+                g[static_cast<std::size_t>(moved)][static_cast<std::size_t>(k)] +=
+                    dcn[static_cast<std::size_t>(k)] * dcnE;
+        }
+    }
+
+    // AES kernel at frozen CAMM (tblite get_multipole_gradient_0d).
+    std::vector<double> mrad(static_cast<std::size_t>(n_at));
+    std::vector<double> dmrdcn(static_cast<std::size_t>(n_at));
+    std::vector<double> dEdrad(static_cast<std::size_t>(n_at), 0.0);
+    for (int a = 0; a < n_at; ++a) {
+        const auto& ea = *el[static_cast<std::size_t>(a)];
+        const double arg =
+            cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
+        const double t1 = std::exp(-kGfn2AesKexp * arg);
+        const double t2 = (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
+        mrad[static_cast<std::size_t>(a)] = ea.mprad + t2;
+        dmrdcn[static_cast<std::size_t>(a)] =
+            -t2 * kGfn2AesKexp * t1 / (1.0 + t1);
+    }
+    for (int iat = 0; iat < n_at; ++iat) {
+        const double* ri = xyz[static_cast<std::size_t>(iat)].data();
+        const auto& mui = dipat[static_cast<std::size_t>(iat)];
+        const auto& thi = quadat[static_cast<std::size_t>(iat)];
+        const double qi = -qat[static_cast<std::size_t>(iat)]; // Mulliken
+        for (int jat = 0; jat < iat; ++jat) {
+            const double* rj = xyz[static_cast<std::size_t>(jat)].data();
+            const auto& muj = dipat[static_cast<std::size_t>(jat)];
+            const auto& thj = quadat[static_cast<std::size_t>(jat)];
+            const double qj = -qat[static_cast<std::size_t>(jat)];
+            double vec[3] = {rj[0] - ri[0], rj[1] - ri[1], rj[2] - ri[2]};
+            const double r1 = std::sqrt(vec[0] * vec[0] + vec[1] * vec[1]
+                                        + vec[2] * vec[2]);
+            if (r1 < 1e-12)
+                continue;
+            const double r2 = r1 * r1;
+            const double g1 = 1.0 / r1;
+            const double g3 = g1 * g1 * g1;
+            const double g5 = g3 * g1 * g1;
+            const double g7 = g5 * g1 * g1;
+            const double rr =
+                0.5
+                * (mrad[static_cast<std::size_t>(iat)]
+                   + mrad[static_cast<std::size_t>(jat)]);
+            const double fdmp3 =
+                1.0 / (1.0 + 6.0 * std::pow(rr * g1, kGfn2AesDmp3));
+            const double ddmp3 =
+                -3.0 * g5 * fdmp3
+                - kGfn2AesDmp3 * fdmp3 * (fdmp3 - 1.0) * g5;
+            const double fdmp5 =
+                1.0 / (1.0 + 6.0 * std::pow(rr * g1, kGfn2AesDmp5));
+            const double ddmp5 =
+                -5.0 * fdmp5 - kGfn2AesDmp5 * (fdmp5 * fdmp5 - fdmp5);
+
+            const double dpiqj =
+                (mui[0] * vec[0] + mui[1] * vec[1] + mui[2] * vec[2]) * qj;
+            const double qidpj =
+                (muj[0] * vec[0] + muj[1] * vec[1] + muj[2] * vec[2]) * qi;
+            const double fddr_cd =
+                3.0 * (dpiqj - qidpj) * kGfn2AesDmp3 * fdmp3 * g3
+                * (fdmp3 / rr) * std::pow(rr * g1, kGfn2AesDmp3);
+            Grad3 dG{0, 0, 0};
+            for (int k = 0; k < 3; ++k)
+                dG[static_cast<std::size_t>(k)] =
+                    -ddmp3 * vec[k] * (dpiqj - qidpj)
+                    + fdmp3 * g3 * (qi * muj[k] - qj * mui[k]);
+
+            const double dpidpj =
+                mui[0] * muj[0] + mui[1] * muj[1] + mui[2] * muj[2];
+            const double dpiv =
+                mui[0] * vec[0] + mui[1] * vec[1] + mui[2] * vec[2];
+            const double dpjv =
+                muj[0] * vec[0] + muj[1] * vec[1] + muj[2] * vec[2];
+            const double edd = dpidpj * r2 - 3.0 * dpjv * dpiv;
+            const double fddr_dd =
+                3.0 * edd * kGfn2AesDmp5 * fdmp5 * g5 * (fdmp5 / rr)
+                * std::pow(rr * g1, kGfn2AesDmp5);
+            for (int k = 0; k < 3; ++k)
+                dG[static_cast<std::size_t>(k)] +=
+                    -2.0 * fdmp5 * g5 * dpidpj * vec[k]
+                    + 3.0 * fdmp5 * g5 * (dpiv * muj[k] + dpjv * mui[k])
+                    - edd * ddmp5 * g7 * vec[k];
+
+            // Charge–quadrupole: ATV energy uses −Θ:rr g5 fdmp5 / 3.
+            const double eq =
+                2.0
+                    * (qj * thi[1] + thj[1] * qi) * vec[0] * vec[1]
+                + 2.0
+                    * (qj * thi[3] + thj[3] * qi) * vec[0] * vec[2]
+                + 2.0
+                    * (qj * thi[4] + thj[4] * qi) * vec[1] * vec[2]
+                + (qj * thi[0] + thj[0] * qi) * vec[0] * vec[0]
+                + (qj * thi[2] + thj[2] * qi) * vec[1] * vec[1]
+                + (qj * thi[5] + thj[5] * qi) * vec[2] * vec[2];
+            const double eq_atv = -eq / 3.0;
+            const double fddr_cq =
+                eq_atv * 3.0 * kGfn2AesDmp5 * fdmp5 * g5 * fdmp5 / rr
+                * std::pow(rr * g1, kGfn2AesDmp5);
+            auto qvec = [](const std::array<double, 6>& th, const double v[3],
+                           double out[3]) {
+                out[0] = v[0] * th[0] + v[1] * th[1] + v[2] * th[3];
+                out[1] = v[0] * th[1] + v[1] * th[2] + v[2] * th[4];
+                out[2] = v[0] * th[3] + v[1] * th[4] + v[2] * th[5];
+            };
+            double tvi[3], tvj[3];
+            qvec(thi, vec, tvi);
+            qvec(thj, vec, tvj);
+            for (int k = 0; k < 3; ++k)
+                dG[static_cast<std::size_t>(k)] +=
+                    (-eq_atv * ddmp5 * g7 * vec[k]
+                     - 2.0 * fdmp5 * g5 * qi * tvj[k] / 3.0
+                     - 2.0 * fdmp5 * g5 * qj * tvi[k] / 3.0);
+
+            const double fddr = fddr_cd + fddr_dd + fddr_cq;
+            dEdrad[static_cast<std::size_t>(iat)] += fddr;
+            dEdrad[static_cast<std::size_t>(jat)] += fddr;
+            for (int k = 0; k < 3; ++k) {
+                g[static_cast<std::size_t>(iat)][static_cast<std::size_t>(k)] +=
+                    dG[static_cast<std::size_t>(k)];
+                g[static_cast<std::size_t>(jat)][static_cast<std::size_t>(k)] -=
+                    dG[static_cast<std::size_t>(k)];
+            }
+        }
+    }
+    std::vector<double> dEdcn_aes(static_cast<std::size_t>(n_at), 0.0);
+    for (int a = 0; a < n_at; ++a)
+        dEdcn_aes[static_cast<std::size_t>(a)] =
+            dEdrad[static_cast<std::size_t>(a)]
+            * dmrdcn[static_cast<std::size_t>(a)];
+    for (int moved = 0; moved < n_at; ++moved) {
+        for (int a = 0; a < n_at; ++a) {
+            const auto& dcn =
+                dcndr[static_cast<std::size_t>(moved * n_at + a)];
+            const double dcnE = dEdcn_aes[static_cast<std::size_t>(a)];
+            for (int k = 0; k < 3; ++k)
+                g[static_cast<std::size_t>(moved)][static_cast<std::size_t>(k)] +=
+                    dcn[static_cast<std::size_t>(k)] * dcnE;
+        }
+    }
+
+    for (int a = 0; a < n_at; ++a) {
+        g[static_cast<std::size_t>(a)][0] -=
+            d4.forces[static_cast<std::size_t>(a)][0];
+        g[static_cast<std::size_t>(a)][1] -=
+            d4.forces[static_cast<std::size_t>(a)][1];
+        g[static_cast<std::size_t>(a)][2] -=
+            d4.forces[static_cast<std::size_t>(a)][2];
+    }
+
+    out.grad = std::move(g);
     return out;
 }
 
@@ -729,12 +1355,10 @@ void GFN2::launch(const LaunchContext& ctx) {
         throw std::invalid_argument("GFN2: empty frame");
     if (!(mix_beta > 0.0) || mix_beta > 1.0)
         throw std::invalid_argument("GFN2: mix_beta must be in (0, 1]");
-    if (with_forces && ctx.forces_requested)
-        throw std::runtime_error(
-            "GFN2: nuclear forces are not this slug — see queue "
-            "gfn2-xtb-forces (energy-only foothold)");
 
-    const auto out = solve_gfn2(f, charge, scc_tol, max_scc, mix_beta);
+    const bool do_f = with_forces && ctx.forces_requested;
+    const auto out =
+        solve_gfn2(f, charge, scc_tol, max_scc, mix_beta, do_f);
     energy_ = out.energy_eh * units::kHartreeInEv;
     scc_residual_ = out.residual;
     scc_iterations_ = out.iterations;
@@ -746,6 +1370,20 @@ void GFN2::launch(const LaunchContext& ctx) {
     for (int a = 0; a < n; ++a)
         qcol[a] =
             static_cast<StorageReal>(last_dq_[static_cast<std::size_t>(a)]);
+    if (do_f) {
+        AccReal* fx = f.span(kAtom_fx);
+        AccReal* fy = f.span(kAtom_fy);
+        AccReal* fz = f.span(kAtom_fz);
+        const double fac = units::kHartreePerBohrInEvPerAngstrom;
+        for (int a = 0; a < n; ++a) {
+            fx[a] += static_cast<AccReal>(
+                -out.grad[static_cast<std::size_t>(a)][0] * fac);
+            fy[a] += static_cast<AccReal>(
+                -out.grad[static_cast<std::size_t>(a)][1] * fac);
+            fz[a] += static_cast<AccReal>(
+                -out.grad[static_cast<std::size_t>(a)][2] * fac);
+        }
+    }
 }
 
 } // namespace semiempirical
