@@ -32,7 +32,9 @@ void Runtime::init() {
     // A local ATV_MOLRS_PATH is an alternate source location, not permission to
     // run against a different interface. Fail before any execution service is
     // initialized or any component sees a Frame.
+#ifdef ATV_HAS_MOLRS
     ATV::molrs_contract::require_compatible();
+#endif
 
     // Device: OpenMP thread configuration (+ NUMA-bind warning).
     device_.configure_threads(context_);

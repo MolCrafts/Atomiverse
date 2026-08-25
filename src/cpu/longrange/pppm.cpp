@@ -4,7 +4,9 @@
 #include "atomiverse/cpu/longrange/pppm.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
@@ -179,10 +181,10 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         // Serial plans bind to dens_full_ / work_ (reused every step).
         plan_fwd_ = fftw_plan_dft_r2c_3d(
             K_[0], K_[1], K_[2], dens_full_.data(),
-            reinterpret_cast<fftw_complex*>(work_.data()), FFTW_ESTIMATE);
+            reinterpret_cast<fftw_complex*>(work_.data()), FFTW_MEASURE);
         plan_bwd_ = fftw_plan_dft_c2r_3d(
             K_[0], K_[1], K_[2], reinterpret_cast<fftw_complex*>(work_.data()),
-            dens_full_.data(), FFTW_ESTIMATE);
+            dens_full_.data(), FFTW_MEASURE);
         if (!plan_fwd_ || !plan_bwd_) {
             release_storage();
             throw std::runtime_error("KSpacePPPM: serial r2c/c2r plan failed");
@@ -306,31 +308,58 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                                      dtheta_.data());
 
     double e_recip = 0;
-    // Multi-rank default: brick + reverse/forward + Alltoallv + FFTW-MPI.
-    // Fallback dens_full Allreduce when FFTW-MPI is unavailable, or when
-    // ATV_PPPM_ALLREDUCE=1 (debug / compare).
+    // Multi-rank default: brick + reverse/forward + Alltoallv + FFTW-MPI —
+    // but only when the mesh is large enough to feed the slab FFT. A small
+    // mesh (≤ 64³) across many ranks is faster fully replicated: local
+    // spread → one Allreduce of the whole grid (≤ 2 MB) → every rank runs
+    // the tiny serial FFT + influence identically → local interpolation,
+    // no Bcast, no slab remap, no idle ranks. ATV_PPPM_ALLREDUCE=1 forces
+    // replicated; ATV_PPPM_BRICK=1 forces the brick path.
     const bool use_brick_mpi =
 #if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
         mpi && dd->cart_comm != MPI_COMM_NULL
-        && std::getenv("ATV_PPPM_ALLREDUCE") == nullptr;
+        && std::getenv("ATV_PPPM_ALLREDUCE") == nullptr
+        && (std::getenv("ATV_PPPM_BRICK") != nullptr
+            || static_cast<long>(K0) * K1 * K2 > 64L * 64L * 64L
+            || ctx.runtime.mpi_size < 16);
 #else
         false;
 #endif
 
     if (!use_brick_mpi) {
         // ── dens_full path (serial, or multi-rank via Allreduce) ───────
+        // ATV_PPPM_PROFILE=1: per-phase accumulators, printed every 500
+        // calls from whatever rank hits the counter (diagnostic only).
+        static thread_local double tp_spread = 0, tp_reduce = 0, tp_fft = 0,
+                                   tp_interp = 0;
+        static thread_local long tp_calls = 0;
+        const bool tp_on = std::getenv("ATV_PPPM_PROFILE") != nullptr;
+        auto tp_now = [] { return std::chrono::steady_clock::now(); };
+        auto tp0 = tp_now();
+
         std::fill(dens_full_.begin(), dens_full_.end(), 0.0);
         longrange::pme_spread_charges_real(q, n_local, order_, K_, base_.data(),
                                            theta_.data(), dens_full_.data());
+        if (tp_on) {
+            tp_spread += std::chrono::duration<double>(tp_now() - tp0).count();
+            tp0 = tp_now();
+        }
 #ifdef ATV_HAS_MPI
         if (mpi)
             MPI_Allreduce(MPI_IN_PLACE, dens_full_.data(),
                           static_cast<int>(dens_full_.size()), MPI_DOUBLE,
                           MPI_SUM, dd->cart_comm);
 #endif
-        // FFT + influence on rank 0 only under multi-rank (PME pattern).
-        if (first_rank) {
-            fftw_execute(static_cast<fftw_plan>(plan_fwd_));
+        if (tp_on) {
+            tp_reduce += std::chrono::duration<double>(tp_now() - tp0).count();
+            tp0 = tp_now();
+        }
+        // Every rank runs the (small) FFT + influence identically on the
+        // Allreduced grid — deterministic, so no Bcast is needed and no
+        // rank idles. e_recip is identical on every rank; the caller adds
+        // it on first_rank only.
+        fftw_execute(static_cast<fftw_plan>(plan_fwd_));
+        {
             const int n2 = K2 / 2 + 1;
             const int m2_nyquist = (K2 % 2 == 0) ? (K2 / 2) : -1;
             for (int m0 = 0; m0 < K0; ++m0)
@@ -353,11 +382,10 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             e_recip *= ATV::units::coulomb / (2.0 * ATV::units::pi * vol);
             fftw_execute(static_cast<fftw_plan>(plan_bwd_));
         }
-#ifdef ATV_HAS_MPI
-        if (mpi)
-            MPI_Bcast(dens_full_.data(), static_cast<int>(dens_full_.size()),
-                      MPI_DOUBLE, 0, dd->cart_comm);
-#endif
+        if (tp_on) {
+            tp_fft += std::chrono::duration<double>(tp_now() - tp0).count();
+            tp0 = tp_now();
+        }
 
         // Force from dens_full_ (same as pre-brick serial path).
         const double fscale = ATV::units::coulomb / (ATV::units::pi * vol);
@@ -406,6 +434,14 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             fx[i] += s * fxi;
             fy[i] += s * fyi;
             fz[i] += s * fzi;
+        }
+        if (tp_on) {
+            tp_interp += std::chrono::duration<double>(tp_now() - tp0).count();
+            if (++tp_calls % 500 == 0)
+                std::fprintf(stderr,
+                             "[pppm prof] calls=%ld spread=%.4fs reduce=%.4fs "
+                             "fft=%.4fs interp=%.4fs\n",
+                             tp_calls, tp_spread, tp_reduce, tp_fft, tp_interp);
         }
     } else
 #if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
@@ -1099,10 +1135,18 @@ void KSpacePPPM::release_storage() noexcept {
         fftw_destroy_plan(static_cast<fftw_plan>(plan_bwd_));
     plan_fwd_ = plan_bwd_ = nullptr;
 #ifdef ATV_HAS_FFTW_MPI
-    if (plan_mpi_fwd_)
-        fftw_destroy_plan(static_cast<fftw_plan>(plan_mpi_fwd_));
-    if (plan_mpi_bwd_)
-        fftw_destroy_plan(static_cast<fftw_plan>(plan_mpi_bwd_));
+    // FFTW-MPI plans hold a duplicated communicator; destroying one after
+    // MPI_Finalize hits MPI_Comm_free on a dead runtime (MPICH aborts and
+    // eats any buffered stdout). A stack-allocated driver destroyed after
+    // MPI_Finalize is legal user code, so leak the plans in that case.
+    int mpi_finalized = 0;
+    MPI_Finalized(&mpi_finalized);
+    if (!mpi_finalized) {
+        if (plan_mpi_fwd_)
+            fftw_destroy_plan(static_cast<fftw_plan>(plan_mpi_fwd_));
+        if (plan_mpi_bwd_)
+            fftw_destroy_plan(static_cast<fftw_plan>(plan_mpi_bwd_));
+    }
     plan_mpi_fwd_ = plan_mpi_bwd_ = nullptr;
     if (mpi_data_) {
         fftw_free(mpi_data_);

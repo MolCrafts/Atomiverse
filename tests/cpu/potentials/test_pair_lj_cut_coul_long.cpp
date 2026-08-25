@@ -27,12 +27,13 @@ TEST(ErfcTable, MatchesDirectErfc) {
         const double expm2 = std::exp(-grij * grij);
         const double erfcv = std::erfc(grij);
         const double e_ref = erfcv / r;
+        // fpair convention: F⃗ = qq·f·(dx,dy,dz), so f = |F|/(qq·r) = (…)/r³.
         const double f_ref =
-            (erfcv + cpu::md::ErfcTable::kEwaldF * grij * expm2) / (r * r);
-        // Linear-in-r² table: denser near r=0 would be tighter; 2e-3 is fine
-        // for force MD (pair specials + energy bands, not metrology).
-        EXPECT_NEAR(e, e_ref, 2e-3) << "r=" << r;
-        EXPECT_NEAR(f, f_ref, 1e-2) << "r=" << r;
+            (erfcv + cpu::md::ErfcTable::kEwaldF * grij * expm2) / (r * r * r);
+        // Linear-in-r² table: coarsest (relatively) at small r; 5e-3 relative
+        // is fine for force MD (pair specials + energy bands, not metrology).
+        EXPECT_NEAR(e, e_ref, 5e-3 * std::fabs(e_ref)) << "r=" << r;
+        EXPECT_NEAR(f, f_ref, 5e-3 * std::fabs(f_ref)) << "r=" << r;
     }
 }
 

@@ -157,9 +157,9 @@ void CoulLong::launch(const LaunchContext& ctx) {
                 const int j = neighbors[off + jj];
                 double sc = 1.0;
                 if (any_special_) {
+                    // Zero-scale (1-2/1-3) pairs stay: with a reciprocal
+                    // partner they owe the -(1-f)·qq/r Ewald compensation.
                     sc = special_.scale_owner(i, tag_ptr[j]);
-                    if (sc == 0.0)
-                        continue;
                 }
                 double dx, dy, dz;
                 if (has_shifts) {
@@ -186,9 +186,13 @@ void CoulLong::launch(const LaunchContext& ctx) {
                 const double grij = alpha * r;
                 const double expm2 = std::exp(-grij * grij);
                 const double erfcv = std::erfc(grij);
-                const double prefactor = sc * qqr2e * qi * qj / r;
-                const double forcecoul =
-                    prefactor * (erfcv + kEwaldF * grij * expm2);
+                // LAMMPS special convention with a kspace partner: erfc part
+                // unscaled; scaled/excluded bonded pairs subtract the (1-f)
+                // plain-Coulomb share the reciprocal sum added for them.
+                const double prefactor = qqr2e * qi * qj / r;
+                double forcecoul = prefactor * (erfcv + kEwaldF * grij * expm2);
+                if (sc != 1.0)
+                    forcecoul -= (1.0 - sc) * prefactor;
                 const double fpair = forcecoul * r2inv;
 
                 const double fxp = dx * fpair;
@@ -208,7 +212,9 @@ void CoulLong::launch(const LaunchContext& ctx) {
                 v_xz += dx * fzp;
                 v_yz += dy * fzp;
 
-                energy_total += prefactor * erfcv;
+                energy_total += sc != 1.0
+                                    ? prefactor * erfcv - (1.0 - sc) * prefactor
+                                    : prefactor * erfcv;
             }
             fxt[i] += fi_x;
             fyt[i] += fi_y;

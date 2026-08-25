@@ -49,7 +49,9 @@
 #include "atomiverse/cpu/component/zero.h"
 #include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/frame/frame.h"
+#ifdef ATV_HAS_MOLRS
 #include "atomiverse/cpu/frame/molrs_exchange.h"
+#endif
 
 namespace ATV {
 namespace cpu {
@@ -97,11 +99,13 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
     /// pass on it, and writes the results back into the *same* molrs.Frame. The borrow
     /// window is strictly this one call.
     /// @param frame molrs.Frame handle (input geometry + output sink).
+#ifdef ATV_HAS_MOLRS
     void run(molrs::FrameRef& frame) {
         cpu::Frame work = cpu::from_molrs(frame);
         run(work);
         cpu::to_molrs(work, frame);
     }
+#endif
 
   protected:
     void install_defaults() override {

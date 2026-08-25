@@ -263,6 +263,7 @@ if(NOT ATV_DOCS_ONLY)
         # never method-gated.
         src/cpu/electronic/xl_bomd.cpp
         src/cpu/io/lammps_data.cpp
+        src/cpu/io/lammps_coeffs.cpp
         # molrs-backed IO / ANALYSIS / exchange — gated below (ATV_BUILD_*)
         src/cpu/record/thermo.cpp
         src/cpu/record/timing_report.cpp
@@ -279,15 +280,6 @@ if(NOT ATV_DOCS_ONLY)
         # Multiscale shared machinery (QmEngine slot; used by SE and HF couplings)
         src/cpu/multiscale/internal/qm_subsystem.cpp
         src/cpu/multiscale/internal/qm_mm_vdw.cpp
-        # CPU task infrastructure (TaskSpec + codec + materializer + protocol)
-        src/cpu/task/task_spec.cpp
-        src/cpu/task/task_codec.cpp
-        src/cpu/task/task_materializer.cpp
-        # Typed Minimize params -> components/criterion, shared by the
-        # materializer replay and the Python Minimize handle.
-        src/cpu/task/internal/minimize_builders.cpp
-        src/cpu/task/task_protocol.cpp
-        src/cpu/task/launcher_gate.cpp
         src/cpu/asynchronous/analysis_executor.cpp
         src/cpu/asynchronous/async_component_base.cpp
         src/cpu/asynchronous/snapshot_publisher.cpp
@@ -504,6 +496,23 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/bias/harmonic_bias.cpp
             src/cpu/bias/metadynamics_1d.cpp
             src/cpu/bias/metadynamics.cpp
+        )
+    endif()
+
+    # CPU task infrastructure (TaskSpec + codec + materializer + protocol).
+    # Serves the MPI Python launcher only; the materializer instantiates
+    # components across domains (EAM/SW/PW headers reach molrs::Element), so
+    # the whole block follows MOLRS (LAUNCHER ⇒ PYTHON ⇒ IO ⇒ MOLRS).
+    if(ATV_BUILD_MOLRS)
+        list(APPEND ATOMIVERSE_SRCS
+            src/cpu/task/task_spec.cpp
+            src/cpu/task/task_codec.cpp
+            src/cpu/task/task_materializer.cpp
+            # Typed Minimize params -> components/criterion, shared by the
+            # materializer replay and the Python Minimize handle.
+            src/cpu/task/internal/minimize_builders.cpp
+            src/cpu/task/task_protocol.cpp
+            src/cpu/task/launcher_gate.cpp
         )
     endif()
 
@@ -1134,6 +1143,9 @@ if(NOT ATV_DOCS_ONLY)
             PROPERTIES GENERATED TRUE)
 
         target_link_libraries(atomiverse PUBLIC molrs_cxx)
+        # Headers gate their molrs::FrameRef convenience overloads on this
+        # (md.h / minimize.h / evaluate.h compile molrs-free without it).
+        target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLRS)
     endif()
 
 

@@ -17,7 +17,15 @@ namespace cpu {
 
 DihedralMultiHarmonic::DihedralMultiHarmonic(
     std::vector<std::vector<double>> Cn)
-    : Cn_(std::move(Cn)) {}
+    : Cn_(std::move(Cn)) {
+    active_.resize(Cn_.size(), 0);
+    for (std::size_t t = 0; t < Cn_.size(); ++t)
+        for (const double c : Cn_[t])
+            if (c != 0.0) {
+                active_[t] = 1;
+                break;
+            }
+}
 
 void DihedralMultiHarmonic::build(const BuildContext& ctx) {
     int n_threads = 1;
@@ -102,6 +110,12 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
             const int i3 = tup[5 * t + 2];
             const int i4 = tup[5 * t + 3];
             const int type = tup[5 * t + 4];
+            if (type < 0 || static_cast<std::size_t>(type) >= Cn_.size())
+                continue;
+            // All-zero Cn contributes exactly zero energy and force — the
+            // type is owned by the other member of a hybrid dihedral split.
+            if (!active_[static_cast<std::size_t>(type)])
+                continue;
 
             dihedral_geom::Geometry g;
             const bool ok = dihedral_geom::fill(

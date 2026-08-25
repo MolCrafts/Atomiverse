@@ -133,6 +133,10 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
             const int type = tup[5 * t + 4];
             if (type < 0 || static_cast<std::size_t>(type) >= ntypes)
                 continue;
+            // K = 0 contributes exactly zero energy and force — the type is
+            // owned by the other member of a hybrid dihedral split.
+            if (Ktab[static_cast<std::size_t>(type)] == 0.0)
+                continue;
 
             dihedral_geom::Geometry g;
             const bool ok = dihedral_geom::fill(

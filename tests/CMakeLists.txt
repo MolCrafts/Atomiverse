@@ -140,7 +140,9 @@ atv_add_cpp_test(test_cpu_chunked_range cpu/device/test_chunked_range.cpp)
 # defaults, trivially-copyable / non-polymorphic guards. Layout-only, no
 # physics.
 atv_add_cpp_test(test_cpu_component_context_slices cpu/component/test_context_slices.cpp)
-atv_add_cpp_test(test_cpu_component_provides_probes cpu/component/test_provides_probes.cpp)
+if(ATV_BUILD_VIB) # instantiates vib::HessianAccumulator
+    atv_add_cpp_test(test_cpu_component_provides_probes cpu/component/test_provides_probes.cpp)
+endif()
 if(ATV_BUILD_HF)
     atv_add_cpp_test(test_cpu_qm_engine cpu/component/test_qm_engine.cpp)
     # Bit-for-bit erased-vs-direct RHF comparison: OMP reduction order must be
@@ -154,17 +156,21 @@ endif()
 # Evaluate pass must leave the QM share alone in it. Registered UNCONDITIONALLY
 # (ZeroEnergy is always-on infrastructure); the two co-binding cases inside are
 # #ifdef ATV_HAS_HF. Serial: the RHF pin must not drift with reduction order.
-atv_add_cpp_test(test_cpu_zero_energy_electronic cpu/component/test_zero_energy_electronic.cpp)
+if(ATV_BUILD_HF) # drives the electronic-energy zeroing through scf methods
+    atv_add_cpp_test(test_cpu_zero_energy_electronic cpu/component/test_zero_energy_electronic.cpp)
+endif()
 if(TARGET test_cpu_zero_energy_electronic)
 set_tests_properties(test_cpu_zero_energy_electronic PROPERTIES
     ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 endif()
-atv_add_cpp_test(test_cpu_mc_scaffold cpu/test_mc_scaffold.cpp)
-atv_add_cpp_test(test_cpu_mc_move cpu/montecarlo/test_mc_move.cpp)
-atv_add_cpp_test(test_cpu_mc_transaction_rollback cpu/montecarlo/test_transaction_rollback.cpp)
-atv_add_cpp_test(test_cpu_mc_ensemble_policies cpu/montecarlo/test_ensemble_policies.cpp)
-atv_add_cpp_test(test_cpu_mc_gcmc_npt_movers cpu/montecarlo/test_gcmc_npt_movers.cpp)
-atv_add_cpp_test(test_cpu_mc_row_order cpu/montecarlo/test_mc_row_order.cpp)
+if(ATV_BUILD_MC) # montecarlo sources are excluded when MC is off
+    atv_add_cpp_test(test_cpu_mc_scaffold cpu/test_mc_scaffold.cpp)
+    atv_add_cpp_test(test_cpu_mc_move cpu/montecarlo/test_mc_move.cpp)
+    atv_add_cpp_test(test_cpu_mc_transaction_rollback cpu/montecarlo/test_transaction_rollback.cpp)
+    atv_add_cpp_test(test_cpu_mc_ensemble_policies cpu/montecarlo/test_ensemble_policies.cpp)
+    atv_add_cpp_test(test_cpu_mc_gcmc_npt_movers cpu/montecarlo/test_gcmc_npt_movers.cpp)
+    atv_add_cpp_test(test_cpu_mc_row_order cpu/montecarlo/test_mc_row_order.cpp)
+endif()
 # The MC physics-validation gates (pair_distribution / acceptance_ratio /
 # lj_nist) drive MC::run over many sweeps — e2e, not unit. They now live in
 # benchmarks/mc/lj/validation/ and run at acceptance time, never in ctest.
@@ -210,16 +216,19 @@ atv_add_cpp_test(test_cpu_dihedral_charmm         cpu/potentials/test_dihedral_c
 atv_add_cpp_test(test_cpu_improper_harmonic       cpu/potentials/test_improper_harmonic.cpp)
 atv_add_cpp_test(test_cpu_lammps_data_full        cpu/io/test_lammps_data_full.cpp)
 atv_add_cpp_test(test_cpu_lammps_real             cpu/io/test_lammps_real.cpp)
+atv_add_cpp_test(test_cpu_lammps_coeffs           cpu/io/test_lammps_coeffs.cpp)
 atv_add_cpp_test(test_cpu_fix_efield              cpu/dynamics/test_fix_efield.cpp)
 atv_add_cpp_test(test_cpu_fix_dfield              cpu/dynamics/test_fix_dfield.cpp)
 atv_add_cpp_test(test_cpu_fix_addforce            cpu/dynamics/test_fix_addforce.cpp)
 atv_add_cpp_test(test_cpu_fix_oscillating_efield  cpu/dynamics/test_fix_oscillating_efield.cpp)
 atv_add_cpp_test(test_cpu_fix_wall_lj1043         cpu/dynamics/test_fix_wall_lj1043.cpp)
-atv_add_cpp_test(test_cpu_bias_distance_cv        cpu/bias/test_distance_cv.cpp)
-atv_add_cpp_test(test_cpu_bias_angle_cv           cpu/bias/test_angle_cv.cpp)
-atv_add_cpp_test(test_cpu_bias_dihedral_cv        cpu/bias/test_dihedral_cv.cpp)
-atv_add_cpp_test(test_cpu_bias_metadynamics_1d    cpu/bias/test_metadynamics_1d.cpp)
-atv_add_cpp_test(test_cpu_bias_metadynamics_nd    cpu/bias/test_metadynamics_nd.cpp)
+if(ATV_BUILD_PATH) # bias sources ride the PATH domain flag
+    atv_add_cpp_test(test_cpu_bias_distance_cv    cpu/bias/test_distance_cv.cpp)
+    atv_add_cpp_test(test_cpu_bias_angle_cv       cpu/bias/test_angle_cv.cpp)
+    atv_add_cpp_test(test_cpu_bias_dihedral_cv    cpu/bias/test_dihedral_cv.cpp)
+    atv_add_cpp_test(test_cpu_bias_metadynamics_1d cpu/bias/test_metadynamics_1d.cpp)
+    atv_add_cpp_test(test_cpu_bias_metadynamics_nd cpu/bias/test_metadynamics_nd.cpp)
+endif()
 # Requires molrs WhamCompute (gated with ATV_MOLRS_HAS_WHAM / ATV_HAS_MOLRS_WHAM).
 if(ATV_MOLRS_HAS_WHAM)
     atv_add_cpp_test(test_cpu_wham                cpu/observe/test_wham.cpp)
@@ -254,7 +263,9 @@ atv_add_cpp_test(test_cpu_minimize_triclinic      cpu/minimize/test_triclinic_ce
 atv_add_cpp_test(test_cpu_bond_fene               cpu/potentials/test_bond_fene.cpp)
 atv_add_cpp_test(test_cpu_pair_wca                cpu/potentials/test_pair_wca.cpp)
 atv_add_cpp_test(test_cpu_pair_dpd                cpu/potentials/test_pair_dpd.cpp)
-atv_add_cpp_test(test_cpu_path_hremd              cpu/path/test_hremd.cpp)
+if(ATV_BUILD_PATH)
+    atv_add_cpp_test(test_cpu_path_hremd          cpu/path/test_hremd.cpp)
+endif()
 atv_add_cpp_test(test_cpu_ewald_sum               cpu/longrange/test_ewald_sum.cpp)
 atv_add_cpp_test(test_cpu_pme_math                cpu/longrange/test_pme_math.cpp)
 atv_add_cpp_test(test_cpu_ewald_coul              cpu/longrange/test_ewald_coul.cpp)
@@ -269,10 +280,12 @@ if(ATV_BUILD_KSPACE)
     atv_add_cpp_test(test_cpu_pme_coul            cpu/longrange/test_pme_coul.cpp)
     atv_add_cpp_test(test_cpu_pppm_coul           cpu/longrange/test_pppm_coul.cpp)
 endif()
-atv_add_cpp_test(test_cpu_nddo_calpar_derived    cpu/semiempirical/test_nddo_calpar_derived.cpp)
-atv_add_cpp_test(test_cpu_rm1                     cpu/semiempirical/test_rm1.cpp)
-atv_add_cpp_test(test_cpu_dftb2_sk                cpu/semiempirical/test_dftb2_sk.cpp)
-atv_add_cpp_test(test_cpu_scc_mixer               cpu/semiempirical/test_scc_mixer.cpp)
+if(ATV_BUILD_SEMIEMPIRICAL)
+    atv_add_cpp_test(test_cpu_nddo_calpar_derived cpu/semiempirical/test_nddo_calpar_derived.cpp)
+    atv_add_cpp_test(test_cpu_rm1                 cpu/semiempirical/test_rm1.cpp)
+    atv_add_cpp_test(test_cpu_dftb2_sk            cpu/semiempirical/test_dftb2_sk.cpp)
+    atv_add_cpp_test(test_cpu_scc_mixer           cpu/semiempirical/test_scc_mixer.cpp)
+endif()
 if(ATV_BUILD_SEMIEMPIRICAL)
     atv_add_cpp_test(test_cpu_xtb_gfn0            cpu/semiempirical/test_xtb_gfn0.cpp)
     atv_add_cpp_test(test_cpu_xtb_gfn1            cpu/semiempirical/test_xtb_gfn1.cpp)
@@ -356,8 +369,11 @@ atv_add_cpp_test(test_cpu_md_full_neighbor_list  cpu/dynamics/test_full_neighbor
 atv_add_cpp_test(test_cpu_md_cell_list_grid_stale  cpu/dynamics/test_cell_list_grid_stale.cpp)
 atv_add_cpp_test(test_cpu_atom_variable_n  cpu/test_atom_variable_n.cpp)
 atv_add_cpp_test(test_cpu_frame_registry  cpu/frame/test_frame_registry.cpp)
-atv_add_cpp_test(test_cpu_eam  cpu/potentials/test_eam.cpp)
-atv_add_cpp_test(test_cpu_sw  cpu/potentials/test_sw.cpp)
+# EAM/SW table lookups key on molrs::Element; sources excluded when MOLRS off.
+if(ATV_BUILD_MOLRS)
+    atv_add_cpp_test(test_cpu_eam  cpu/potentials/test_eam.cpp)
+    atv_add_cpp_test(test_cpu_sw  cpu/potentials/test_sw.cpp)
+endif()
 if(ATV_BUILD_VIB)
     atv_add_cpp_test(test_cpu_vib_phonon_dispersion cpu/vibration/test_phonon_dispersion.cpp)
     # esmm-contract-01-zeroing: the Hessian driver must zero kAtom_f* / kEnergy
@@ -379,17 +395,21 @@ atv_add_cpp_test(test_cpu_md_fix_settle  cpu/dynamics/test_fix_settle.cpp)
 atv_add_cpp_test(test_cpu_md_virtual_sites  cpu/dynamics/test_virtual_sites.cpp)
 atv_add_cpp_test(test_cpu_md_brownian     cpu/dynamics/test_brownian.cpp)
 atv_add_cpp_test(test_cpu_md_write_sets  cpu/dynamics/test_write_sets.cpp)
-atv_add_cpp_test(test_cpu_path_replica    cpu/path/test_replica.cpp)
-atv_add_cpp_test(test_cpu_path_remd       cpu/path/test_remd.cpp)
-atv_add_cpp_test(test_cpu_path_string     cpu/path/test_string_method.cpp)
-atv_add_cpp_test(test_cpu_path_irc        cpu/path/test_irc.cpp)
-atv_add_cpp_test(test_cpu_path_rpmd_est   cpu/path/test_rpmd_estimator.cpp)
-# esmm-contract-01-zeroing: PathDriver must zero kAtom_f* / kEnergy before each
-# per-replica force pass, or an accumulating source grows with the iteration.
-atv_add_cpp_test(test_cpu_path_zeroing    cpu/path/test_path_zeroing.cpp)
-# esmm-contract-02-validation-walks: PathDriver::validate_components must see a
-# nested `Driver<scf::Phase> + HF` method node as the band's force source.
-atv_add_cpp_test(test_cpu_path_validation cpu/path/test_path_validation.cpp)
+if(ATV_BUILD_PATH)
+    atv_add_cpp_test(test_cpu_path_replica    cpu/path/test_replica.cpp)
+    atv_add_cpp_test(test_cpu_path_remd       cpu/path/test_remd.cpp)
+    atv_add_cpp_test(test_cpu_path_string     cpu/path/test_string_method.cpp)
+    atv_add_cpp_test(test_cpu_path_irc        cpu/path/test_irc.cpp)
+    atv_add_cpp_test(test_cpu_path_rpmd_est   cpu/path/test_rpmd_estimator.cpp)
+    # esmm-contract-01-zeroing: PathDriver must zero kAtom_f* / kEnergy before
+    # each per-replica force pass, or an accumulating source grows with the
+    # iteration.
+    atv_add_cpp_test(test_cpu_path_zeroing    cpu/path/test_path_zeroing.cpp)
+    # esmm-contract-02-validation-walks: PathDriver::validate_components must
+    # see a nested `Driver<scf::Phase> + HF` method node as the band's force
+    # source.
+    atv_add_cpp_test(test_cpu_path_validation cpu/path/test_path_validation.cpp)
+endif()
 # esmm-contract-03-runslot-nested: Minimize's StrongWolfe trials must re-enter a
 # nested `Driver<scf::Phase> + HF` force source (run_stage → Runtime::run_slot_).
 # Stub physics (harmonic well) — no SCF, milliseconds.
@@ -410,19 +430,26 @@ atv_add_cpp_test(test_cpu_driver_unfix cpu/driver/test_unfix.cpp)
 # verb contract (the canonical policy owns Displace/None and refuses the
 # Box/Insert/Delete trials that need the NptMc / Gcmc presets). Formula-level,
 # hand-built LoopState, microseconds.
-atv_add_cpp_test(test_cpu_outcome_policy cpu/driver/test_outcome_policy.cpp)
+if(ATV_BUILD_MC) # exercises mc::Transaction verbs
+    atv_add_cpp_test(test_cpu_outcome_policy cpu/driver/test_outcome_policy.cpp)
+endif()
 # esmm-contract-04-forces-requested: `forces_requested` as a compiled Plan-slot
 # property — MC's energy phase is energy-only, MD/Minimize/Evaluate still ask for
 # forces, and the veto ANDs through a nested driver's own slots. Stubs only, no
 # physics, microseconds; the QM-in-MC e2e is regressions/mc/mc_bias_es.
-atv_add_cpp_test(test_cpu_forces_requested cpu/driver/test_forces_requested.cpp)
+if(ATV_BUILD_MC) # instantiates the cpu::mc::MC preset
+    atv_add_cpp_test(test_cpu_forces_requested cpu/driver/test_forces_requested.cpp)
+endif()
 # test_cpu_md_pe_nvt relocated to benchmarks/md/pe/validation/ (val_md_pe_nvt) —
 # a full NVT equilibration of the bonded PE melt, not a ms unit test.
 atv_add_cpp_test(test_cpu_md_frame_tag_image      cpu/dynamics/test_frame_tag_image.cpp)
 atv_add_cpp_test(test_cpu_md_domain_decomposition cpu/dynamics/test_domain_decomposition.cpp)
 atv_add_cpp_test(test_cpu_analysis_executor       cpu/test_analysis_executor.cpp)
-atv_add_cpp_test(test_cpu_observer_msd            cpu/observe/test_msd.cpp)
-atv_add_cpp_test(test_cpu_observer_vacf           cpu/observe/test_vacf.cpp)
+# MSD/VACF stream into molrs accumulators (cpu/observe/trajectory_metrics.h).
+if(ATV_BUILD_ANALYSIS)
+    atv_add_cpp_test(test_cpu_observer_msd        cpu/observe/test_msd.cpp)
+    atv_add_cpp_test(test_cpu_observer_vacf       cpu/observe/test_vacf.cpp)
+endif()
 atv_add_cpp_test(test_cpu_observer_widom          cpu/observe/test_widom.cpp)
 atv_add_cpp_test(test_cpu_observer_electrode_charge cpu/observe/test_electrode_charge_observer.cpp)
 atv_add_cpp_test(test_cpu_observer_capacitance_charge_fluctuation
@@ -435,7 +462,10 @@ atv_add_cpp_test(test_cpu_observer_species_density_profile
 atv_add_cpp_test(test_cpu_driver_role_validation cpu/test_cpu_driver_role_validation.cpp)
 # Registration-time PhaseKind gate + five-driver plan-shape regression
 # (arch-refactor-01-bindings). Uses AM1Evaluator (unconditional, no RHF gate).
-atv_add_cpp_test(test_cpu_driver_binding_kind             cpu/test_driver_binding_kind.cpp)
+# Walks default bindings across MC / PATH / SE / VIB component kinds.
+if(ATV_BUILD_MC AND ATV_BUILD_PATH AND ATV_BUILD_SEMIEMPIRICAL AND ATV_BUILD_VIB)
+    atv_add_cpp_test(test_cpu_driver_binding_kind         cpu/test_driver_binding_kind.cpp)
+endif()
 atv_add_cpp_test(test_cpu_evaluate_driver_capabilities    cpu/test_evaluate_driver_capabilities.cpp)
 atv_add_cpp_test(test_cpu_optimize_driver_early_stop      cpu/test_optimize_driver_early_stop.cpp)
 atv_add_cpp_test(test_cpu_dynamics_full_budget            cpu/test_dynamics_full_budget.cpp)
@@ -445,7 +475,9 @@ atv_add_cpp_test(test_cpu_md_plan_equivalence             cpu/dynamics/test_md_p
 # `MD::run(molrs::FrameRef&, n)` independence contract: consecutive calls are
 # separate simulations (step index restarts at 0), NOT a continued trajectory —
 # the cpu::Frame& overload is the continuable one. 2 x 3 steps of 4-atom LJ, ms.
-atv_add_cpp_test(test_cpu_md_molrs_run                    cpu/dynamics/test_md_molrs_run.cpp)
+if(ATV_BUILD_IO) # MD::run(molrs::FrameRef&) goes through the molrs exchange
+    atv_add_cpp_test(test_cpu_md_molrs_run                cpu/dynamics/test_md_molrs_run.cpp)
+endif()
 # TimestepProvider/TimestepConsumer opt-in protocol + the MD build-time push
 # (esmm-cpmd-02-timestep-protocol): dt is single-sourced from the integrator,
 # conflicting/absent/invalid publications throw at build. Local stubs only —
@@ -456,20 +488,28 @@ atv_add_cpp_test(test_cpu_md_timestep_protocol            cpu/dynamics/test_time
 # throw when the electronic keys are absent. Pure meta arithmetic on a seeded
 # one-atom frame — no GPW, no SCF, no MD step.
 atv_add_cpp_test(test_cpu_minimize_evaluate_set_api       cpu/test_minimize_evaluate_set_api.cpp)
-atv_add_cpp_test(test_cpu_materialize                     cpu/test_materialize.cpp)
-atv_add_cpp_test(test_cpu_molrs_contract                  cpu/test_molrs_contract.cpp)
+if(ATV_BUILD_IO) # from_molrs/to_molrs boundary lives in the IO block
+    atv_add_cpp_test(test_cpu_materialize                 cpu/test_materialize.cpp)
+endif()
+if(ATV_BUILD_MOLRS)
+    atv_add_cpp_test(test_cpu_molrs_contract              cpu/test_molrs_contract.cpp)
+endif()
 
 # cpu/task infrastructure cluster (mpi-launcher-embedded-python-02-codec):
 # TaskSpec data model + MPI-free byte codec + rank-agnostic materializer.
 # Serial, no mpirun; the AM1 single point and the 3-step AM1 BOMD both run on
 # the ms-scale H2 fixture this file owns (mirrored by test_mpi_serial_on_replica).
-atv_add_cpp_test(test_cpu_task_codec                      cpu/test_task_codec.cpp)
-atv_add_cpp_test(test_cpu_task_materializer               cpu/test_task_materializer.cpp)
+if(ATV_BUILD_MOLRS) # cpu/task block follows MOLRS (launcher-only surface)
+    atv_add_cpp_test(test_cpu_task_codec                  cpu/test_task_codec.cpp)
+    atv_add_cpp_test(test_cpu_task_materializer           cpu/test_task_materializer.cpp)
+endif()
 
 # LauncherGate (mpi-launcher-embedded-python-04, ac-002): the PID-qualified
 # ATV_LAUNCHER marker probe. Serial gtest — MPI is never initialized in this
 # binary, which is exactly the state the degradation contract is about.
-atv_add_cpp_test(test_cpu_launcher_gate                   cpu/task/test_launcher_gate.cpp)
+if(ATV_BUILD_MOLRS) # cpu/task block follows MOLRS (launcher-only surface)
+    atv_add_cpp_test(test_cpu_launcher_gate               cpu/task/test_launcher_gate.cpp)
+endif()
 
 # LauncherArgs (same link, ac-002/ac-006): header-only class in
 # app/atomiverse/, which is NOT part of libatomiverse — the test compiles the
@@ -489,7 +529,10 @@ target_include_directories(test_app_interpreter_locator PRIVATE
     ${CMAKE_SOURCE_DIR}/app/atomiverse)
 
 # ExtXYZ loading through molrs — inline fixtures only, no external file.
-atv_add_cpp_test(test_cpu_io_extxyz                       cpu/io/test_cpu_io_extxyz.cpp)
+# Gated: cpu/io/extxyz.h reaches molrs.hpp, absent in MOLRS-off builds.
+if(ATV_BUILD_IO)
+    atv_add_cpp_test(test_cpu_io_extxyz                   cpu/io/test_cpu_io_extxyz.cpp)
+endif()
 
 # cpu::XyzRecorder (py-recorder-xyz, ac-003): stride cadence, truncate-then-
 # append, frame content. The component itself is compiled only in the
@@ -501,7 +544,9 @@ if(ATV_BUILD_IO AND ATV_BUILD_MD)
 endif()
 
 # Unreadable input paths must throw std::runtime_error, not abort in Rust.
-atv_add_cpp_test(test_cpu_io_missing_file                 cpu/io/test_cpu_io_missing_file.cpp)
+if(ATV_BUILD_IO) # extxyz + XyzRecorder halves reach molrs
+    atv_add_cpp_test(test_cpu_io_missing_file             cpu/io/test_cpu_io_missing_file.cpp)
+endif()
 
 # ── MPI tests (launched under `mpirun`) ─────────────────────────────────
 
@@ -587,14 +632,18 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
     atv_add_mpi_exec(test_mpi_deform_multirank mpi/test_deform_multirank.cpp)
     atv_add_mpi_run(test_mpi_deform_multirank_n8 test_mpi_deform_multirank 8)
 
-    atv_add_mpi_exec(test_mpi_eam_multirank mpi/test_eam_multirank.cpp)
-    atv_add_mpi_run(test_mpi_eam_multirank_n2 test_mpi_eam_multirank 2)
-    atv_add_mpi_run(test_mpi_eam_multirank_n4 test_mpi_eam_multirank 4)
+    if(ATV_BUILD_MOLRS) # EAM/SW table lookups key on molrs::Element
+        atv_add_mpi_exec(test_mpi_eam_multirank mpi/test_eam_multirank.cpp)
+        atv_add_mpi_run(test_mpi_eam_multirank_n2 test_mpi_eam_multirank 2)
+        atv_add_mpi_run(test_mpi_eam_multirank_n4 test_mpi_eam_multirank 4)
+    endif()
 
 
-    atv_add_mpi_exec(test_mpi_sw_multirank mpi/test_sw_multirank.cpp)
-    atv_add_mpi_run(test_mpi_sw_multirank_n2 test_mpi_sw_multirank 2)
-    atv_add_mpi_run(test_mpi_sw_multirank_n4 test_mpi_sw_multirank 4)
+    if(ATV_BUILD_MOLRS) # EAM/SW table lookups key on molrs::Element
+        atv_add_mpi_exec(test_mpi_sw_multirank mpi/test_sw_multirank.cpp)
+        atv_add_mpi_run(test_mpi_sw_multirank_n2 test_mpi_sw_multirank 2)
+        atv_add_mpi_run(test_mpi_sw_multirank_n4 test_mpi_sw_multirank 4)
+    endif()
 
 
     atv_add_mpi_exec(test_mpi_gather mpi/test_gather.cpp)
@@ -606,18 +655,22 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
     atv_add_mpi_run(test_mpi_rcb_n1 test_mpi_rcb 1)
     atv_add_mpi_run(test_mpi_rcb_n8 test_mpi_rcb 8)
 
-    atv_add_mpi_exec(test_mpi_task_protocol mpi/test_task_protocol.cpp)
-    atv_add_mpi_run(test_mpi_task_protocol_n1 test_mpi_task_protocol 1)
-    atv_add_mpi_run(test_mpi_task_protocol_n2 test_mpi_task_protocol 2)
-    atv_add_mpi_run(test_mpi_task_protocol_n4 test_mpi_task_protocol 4)
+    if(ATV_BUILD_MOLRS) # cpu/task block follows MOLRS (launcher-only surface)
+        atv_add_mpi_exec(test_mpi_task_protocol mpi/test_task_protocol.cpp)
+        atv_add_mpi_run(test_mpi_task_protocol_n1 test_mpi_task_protocol 1)
+        atv_add_mpi_run(test_mpi_task_protocol_n2 test_mpi_task_protocol 2)
+        atv_add_mpi_run(test_mpi_task_protocol_n4 test_mpi_task_protocol 4)
+    endif()
 
     # serial-on-replica seam (mpi-launcher-embedded-python-04): a driver with
     # set_serial_on_replica() must NOT decompose — every rank solves the full
     # replica (AM1 H2 single point) and lands on the identical energy.
-    atv_add_mpi_exec(test_mpi_serial_on_replica mpi/test_serial_on_replica.cpp)
-    atv_add_mpi_run(test_mpi_serial_on_replica_n1 test_mpi_serial_on_replica 1)
-    atv_add_mpi_run(test_mpi_serial_on_replica_n2 test_mpi_serial_on_replica 2)
-    atv_add_mpi_run(test_mpi_serial_on_replica_n4 test_mpi_serial_on_replica 4)
+    if(ATV_BUILD_SEMIEMPIRICAL) # AM1 H2 fixture
+        atv_add_mpi_exec(test_mpi_serial_on_replica mpi/test_serial_on_replica.cpp)
+        atv_add_mpi_run(test_mpi_serial_on_replica_n1 test_mpi_serial_on_replica 1)
+        atv_add_mpi_run(test_mpi_serial_on_replica_n2 test_mpi_serial_on_replica 2)
+        atv_add_mpi_run(test_mpi_serial_on_replica_n4 test_mpi_serial_on_replica 4)
+    endif()
 endif()
 
 # ── PW infrastructure tests (require ATV_BUILD_PW) ─────────────────────

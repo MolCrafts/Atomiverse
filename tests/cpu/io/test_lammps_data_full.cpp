@@ -191,3 +191,63 @@ TEST(LammpsDataFull, MalformedAtomsThrows) {
     }
     std::remove(path.c_str());
 }
+
+namespace {
+
+// Non-zero box origin + Velocities section (write_data restart shape).
+const char* kOriginVel = R"(LAMMPS data file origin+velocities
+
+2 atoms
+0 bonds
+0 angles
+0 dihedrals
+
+1 atom types
+
+2.0 12.0 xlo xhi
+3.0 13.0 ylo yhi
+4.0 14.0 zlo zhi
+
+Masses
+
+1 12.01
+
+Atoms # full
+
+1 1 1 0.1 2.5 3.5 4.5 0 0 0
+2 1 1 -0.1 6.0 7.0 8.0 0 0 0
+
+Velocities
+
+1 0.01 -0.02 0.03
+2 -0.04 0.05 -0.06
+)";
+
+} // namespace
+
+TEST(LammpsDataFull, ShiftsPositionsByBoxOrigin) {
+    const std::string path = write_temp("origin", kOriginVel);
+    Frame f = load_lammps_data(path);
+    std::remove(path.c_str());
+
+    // Positions land in the [0, L) frame: shifted by (xlo, ylo, zlo).
+    EXPECT_NEAR(f.span(kAtom_x)[0], 0.5, 1e-12);
+    EXPECT_NEAR(f.span(kAtom_y)[0], 0.5, 1e-12);
+    EXPECT_NEAR(f.span(kAtom_z)[0], 0.5, 1e-12);
+    EXPECT_NEAR(f.span(kAtom_x)[1], 4.0, 1e-12);
+    // Box edge lengths are hi - lo.
+    EXPECT_NEAR(f.box.length(0), 10.0, 1e-12);
+    EXPECT_NEAR(f.box.length(1), 10.0, 1e-12);
+}
+
+TEST(LammpsDataFull, ReadsVelocities) {
+    const std::string path = write_temp("vel", kOriginVel);
+    Frame f = load_lammps_data(path);
+    std::remove(path.c_str());
+
+    EXPECT_NEAR(f.span(ATV::kAtom_vx)[0], 0.01, 1e-12);
+    EXPECT_NEAR(f.span(ATV::kAtom_vy)[0], -0.02, 1e-12);
+    EXPECT_NEAR(f.span(ATV::kAtom_vz)[0], 0.03, 1e-12);
+    EXPECT_NEAR(f.span(ATV::kAtom_vx)[1], -0.04, 1e-12);
+    EXPECT_NEAR(f.span(ATV::kAtom_vz)[1], -0.06, 1e-12);
+}

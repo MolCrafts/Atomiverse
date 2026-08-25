@@ -11,3 +11,7 @@ endif()
 add_executable(run_atv_gaff run_atv_gaff.cpp)
 target_link_libraries(run_atv_gaff PRIVATE atomiverse MPI::MPI_CXX)
 target_compile_features(run_atv_gaff PRIVATE cxx_std_20)
+
+add_executable(fd_check fd_check.cpp)
+target_link_libraries(fd_check PRIVATE atomiverse MPI::MPI_CXX)
+target_compile_features(fd_check PRIVATE cxx_std_20)

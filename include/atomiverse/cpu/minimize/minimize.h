@@ -65,7 +65,9 @@
 #include "atomiverse/cpu/component/zero.h"
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/driver/driver.h"
+#ifdef ATV_HAS_MOLRS
 #include "atomiverse/cpu/frame/molrs_exchange.h"
+#endif
 
 namespace ATV {
 namespace cpu {
@@ -125,12 +127,14 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     /// @param frame molrs.Frame handle (input geometry + output sink).
     /// @param max_iter Iteration budget.
     /// @return Number of iterations actually executed (≤ `max_iter`).
+#ifdef ATV_HAS_MOLRS
     int run(molrs::FrameRef& frame, int max_iter) {
         cpu::Frame work = cpu::from_molrs(frame);
         const int iters = run(work, max_iter);
         cpu::to_molrs(work, frame);
         return iters;
     }
+#endif
 
     Minimize() {
         // Phase-agnostic backend-root Zero*, bound to minimizer phases.

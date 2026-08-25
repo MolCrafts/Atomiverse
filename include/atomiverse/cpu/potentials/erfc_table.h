@@ -17,7 +17,7 @@ namespace md {
 ///
 /// Indexed by **r²** (no per-pair `sqrt`): for each bin centre r²,
 ///   e_tab[i] = erfc(α r) / r
-///   f_tab[i] = (erfc(α r) + (2/√π) α r exp(−(α r)²)) / r²
+///   f_tab[i] = (erfc(α r) + (2/√π) α r exp(−(α r)²)) / r³   (fpair: F⃗ = qq·f·d⃗)
 /// so energy = qqr2e·q_i·q_j·e and fpair = qqr2e·q_i·q_j·f.
 struct ErfcTable {
     static constexpr double kEwaldF = 1.1283791670955126; // 2/√π
@@ -59,8 +59,11 @@ struct ErfcTable {
             const double expm2 = std::exp(-grij * grij);
             const double erfcv = std::erfc(grij);
             e_tab[static_cast<std::size_t>(i)] = erfcv / r;
+            // LAMMPS fpair convention: force *per unit displacement vector*,
+            // F_vec = qq · f · (dx,dy,dz). |F| = qq(erfc + F·αr·e^{-α²r²})/r²,
+            // so f = |F|/(qq·r) = (…)/r³.
             f_tab[static_cast<std::size_t>(i)] =
-                (erfcv + kEwaldF * grij * expm2) / r2;
+                (erfcv + kEwaldF * grij * expm2) / (r2 * r);
         }
         // r→0 limit: erfc(0)/r diverges; force users skip r2==0.
         e_tab[0] = e_tab[1];

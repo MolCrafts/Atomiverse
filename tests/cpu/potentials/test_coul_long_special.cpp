@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
@@ -69,13 +70,17 @@ double run_coul(cpu::Frame& f, cpu::md::PairList& pairs, double s14) {
 } // namespace
 
 TEST(CoulLongSpecial, Half14RealSpace) {
+    // LAMMPS convention with a reciprocal partner: the erfc part is unscaled
+    // and a scaled 1-4 pair subtracts (1-f)·qq/r — the plain-Coulomb share
+    // that the k-space full sum adds for it. So e(f) = e(1) - (1-f)·pref.
     auto f = two_charge_14();
     auto pairs = only_14();
     const double e1 = run_coul(f, pairs, 1.0);
     pairs.version = 2;
     const double e05 = run_coul(f, pairs, 0.5);
     ASSERT_NE(e1, 0.0);
-    EXPECT_NEAR(e05, 0.5 * e1, 1e-10 * std::abs(e1));
+    const double pref = ATV::units::coulomb * (1.0) * (-1.0) / 3.6;
+    EXPECT_NEAR(e05, e1 - 0.5 * pref, 1e-10 * std::abs(e1));
 }
 
 TEST(CoulLongSpecial, Zero12Bonded) {
@@ -117,5 +122,9 @@ TEST(CoulLongSpecial, Zero12Bonded) {
     coul.build({ctx, f});
     coul.launch({ctx, f, 0, 0});
     coul.destroy({ctx, f});
-    EXPECT_NEAR(f.meta.get(kEnergy), 0.0, 1e-14);
+    // Excluded (f=0) bonded pair still owes the Ewald compensation:
+    // e = pref·erfc - pref = -pref·erf(αr), pref = C·q1·q2/r.
+    const double pref = ATV::units::coulomb * (1.0) * (-1.0) / 1.5;
+    const double e_ref = -pref * std::erf(0.3 * 1.5);
+    EXPECT_NEAR(f.meta.get(kEnergy), e_ref, 1e-10 * std::abs(e_ref));
 }

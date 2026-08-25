@@ -184,9 +184,11 @@ Frame load_lammps_data(const std::string& path) {
                                   double x, double y, double z) {
                 const int idx = next_idx++;
                 id_to_idx[id] = idx;
-                sp_x[idx] = static_cast<StorageReal>(x);
-                sp_y[idx] = static_cast<StorageReal>(y);
-                sp_z[idx] = static_cast<StorageReal>(z);
+                // ATV's box spans [0, L) per axis; LAMMPS positions live in
+                // [lo, hi). Shift by the header origin (harmless when lo=0).
+                sp_x[idx] = static_cast<StorageReal>(x - xlo);
+                sp_y[idx] = static_cast<StorageReal>(y - ylo);
+                sp_z[idx] = static_cast<StorageReal>(z - zlo);
                 sp_type[idx] = atype - 1; // 0-indexed
                 sp_q[idx] = static_cast<StorageReal>(q);
                 auto it = type_to_mass.find(atype);
@@ -276,8 +278,34 @@ Frame load_lammps_data(const std::string& path) {
                 line.clear();
             continue;
         }
-        // Skip Velocities / Impropers — not used in this benchmark.
-        if (is_section("Velocities") || is_section("Impropers")) {
+        if (is_section("Velocities")) {
+            // Velocities: <id> <vx> <vy> <vz> — LAMMPS `units real` velocity
+            // is Å/fs, identical to ATV engineering units; copy through.
+            if (id_to_idx.empty())
+                die(path, "Velocities section before Atoms is not supported");
+            StorageReal* __restrict sp_vx = frame.span(kAtom_vx);
+            StorageReal* __restrict sp_vy = frame.span(kAtom_vy);
+            StorageReal* __restrict sp_vz = frame.span(kAtom_vz);
+            consume_n(n_atoms, [&](const std::string& l) {
+                std::istringstream iss(l);
+                int id;
+                double vx, vy, vz;
+                if (!(iss >> id >> vx >> vy >> vz))
+                    die(path, "malformed Velocities row: " + l);
+                const auto it = id_to_idx.find(id);
+                if (it == id_to_idx.end())
+                    die(path, "Velocities row for unknown atom id "
+                                  + std::to_string(id));
+                sp_vx[it->second] = static_cast<StorageReal>(vx);
+                sp_vy[it->second] = static_cast<StorageReal>(vy);
+                sp_vz[it->second] = static_cast<StorageReal>(vz);
+            });
+            if (!next_data_line(in, line))
+                line.clear();
+            continue;
+        }
+        // Skip Impropers — no improper styles are wired into this loader yet.
+        if (is_section("Impropers")) {
             // Best-effort skip: advance until the next section header or EOF.
             while (next_data_line(in, line)) {
                 if (starts_with(line, "Atoms") || starts_with(line, "Bonds")
