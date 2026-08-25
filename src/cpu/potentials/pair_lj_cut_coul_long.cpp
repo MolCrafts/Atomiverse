@@ -379,14 +379,15 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
         const double lx = box.length(0), ly = box.length(1), lz = box.length(2);
         const double inv_lx = 1.0 / lx, inv_ly = 1.0 / ly, inv_lz = 1.0 / lz;
 
-#ifdef ATV_HAS_MPI
-        // Halo ghosts carry image-shifted coordinates, so dx = xi - xj is
-        // already nearest-image under MPI; only the serial no-ghost list
-        // needs per-pair min-image wrapping.
-        const bool wrap = !k_has_shifts && !mpi;
-#else
+        // Per-pair min-image is NOT redundant under MPI: VelocityVerlet
+        // wraps coordinates into the box every step, so between neighbor
+        // rebuilds a wrapped owner (or the ghost copy forwarded from it)
+        // sits a full box length from its listed partners. Raw dx would
+        // silently drop those pairs until the next rebuild (slow thermal
+        // runaway, worse at high rank counts). LAMMPS avoids this by
+        // wrapping only at reneighbor; until ATV does the same, keep the
+        // wrap here.
         const bool wrap = !k_has_shifts;
-#endif
 
 #pragma omp for schedule(static)
         for (int ii = 0; ii < k_inum; ++ii) {
