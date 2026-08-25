@@ -174,9 +174,9 @@ void traceless_quad(const double Q[6], double T[6]) {
 
 void origin_shift_quad(const double Q[6], const double D[3], const double* R,
                        double s, double tq[6]) {
-    // Standard <(r−R)(r−R)> origin shift. O at the global origin is
-    // invariant to the R⊗R S sign; naive two-centre Θ on H is not
-    // xtb mmompop (eq-H2O residual 23 meV).
+    // tblite shift_operator / physical ⟨(r−R)(r−R)⟩. Minus-RRS (xtb
+    // mmompop with opab4-signed Q plugged into unsigned ATV Q) breaks
+    // SCC (residual stuck 7e-6, ΔE ~ 0.67 eV).
     double qs[6];
     qs[0] = Q[0] - 2.0 * R[0] * D[0] + R[0] * R[0] * s;
     qs[1] = Q[1] - R[0] * D[1] - R[1] * D[0] + R[0] * R[1] * s;
@@ -1073,7 +1073,6 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const int ish = ao_shell[static_cast<std::size_t>(mu)];
             const int a = ao_atom[static_cast<std::size_t>(mu)];
             const double* Ra = xyz[static_cast<std::size_t>(a)].data();
-            const bool qa = el[static_cast<std::size_t>(a)]->n_shell > 1;
             for (int nu = 0; nu < n_ao; ++nu) {
                 const int jsh = ao_shell[static_cast<std::size_t>(nu)];
                 const int b = ao_atom[static_cast<std::size_t>(nu)];
@@ -1093,28 +1092,24 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                                 [static_cast<std::size_t>(k)]
                                  * (d - Rb[k] * sij));
                 }
-                if (qa || el[static_cast<std::size_t>(b)]->n_shell > 1) {
+                {
                     const double q0[6] = {Q(0, mu, nu), Q(1, mu, nu),
                                           Q(2, mu, nu), Q(3, mu, nu),
                                           Q(4, mu, nu), Q(5, mu, nu)};
                     const double d0[3] = {D(0, mu, nu), D(1, mu, nu),
                                           D(2, mu, nu)};
-                    if (qa) {
-                        double tq[6];
-                        origin_shift_quad(q0, d0, Ra, sij, tq);
-                        const auto& va = vqp[static_cast<std::size_t>(a)];
-                        for (int k = 0; k < 6; ++k)
-                            H(mu, nu) += 0.5 * va[static_cast<std::size_t>(k)]
-                                         * tq[k];
-                    }
-                    if (el[static_cast<std::size_t>(b)]->n_shell > 1) {
-                        double tq[6];
-                        origin_shift_quad(q0, d0, Rb, sij, tq);
-                        const auto& vb = vqp[static_cast<std::size_t>(b)];
-                        for (int k = 0; k < 6; ++k)
-                            H(mu, nu) += 0.5 * vb[static_cast<std::size_t>(k)]
-                                         * tq[k];
-                    }
+                    double tqA[6];
+                    origin_shift_quad(q0, d0, Ra, sij, tqA);
+                    const auto& va = vqp[static_cast<std::size_t>(a)];
+                    for (int k = 0; k < 6; ++k)
+                        H(mu, nu) += 0.5 * va[static_cast<std::size_t>(k)]
+                                     * tqA[k];
+                    double tqB[6];
+                    origin_shift_quad(q0, d0, Rb, sij, tqB);
+                    const auto& vb = vqp[static_cast<std::size_t>(b)];
+                    for (int k = 0; k < 6; ++k)
+                        H(mu, nu) += 0.5 * vb[static_cast<std::size_t>(k)]
+                                     * tqB[k];
                 }
             }
         }
@@ -1152,10 +1147,8 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const double* Ra = xyz[static_cast<std::size_t>(a)].data();
             const int ia = ao0[static_cast<std::size_t>(a)];
             const int na = n_ao_of(e);
-            const bool has_p = e.n_shell > 1;
-            // Mulliken: bra on A (same partition as the dipole foothold).
-            // s-only centres (H) get no CAMM quadrupole — naive two-centre
-            // Θ on H is not xtb mmompop (eq-H2O residual 23 meV).
+            // xtb mmompop: bra on A (same Mulliken split as the dipole).
+            // Two-centre origin-shifted Θ is kept on s-only H.
             for (int u = 0; u < na; ++u) {
                 for (int b2 = 0; b2 < n_at; ++b2) {
                     const int ib = ao0[static_cast<std::size_t>(b2)];
@@ -1168,8 +1161,6 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                                  [static_cast<std::size_t>(k)] +=
                                 0.5 * p
                                 * (D(k, ia + u, ib + v) - Ra[k] * s);
-                        if (!has_p)
-                            continue;
                         const double q0[6] = {
                             Q(0, ia + u, ib + v), Q(1, ia + u, ib + v),
                             Q(2, ia + u, ib + v), Q(3, ia + u, ib + v),
@@ -1463,17 +1454,10 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                             double dtqA[6][3] = {};
                             double tqB[6];
                             double dtqB[6][3] = {};
-                            const bool do_th =
-                                el[static_cast<std::size_t>(a)]->n_shell > 1
-                                || el[static_cast<std::size_t>(b)]->n_shell > 1;
-                            if (do_th) {
-                                origin_shift_quad_grad(Qint, dQint, Dip, dDip,
-                                                       Ai, dRa, sij, ds, tqA,
-                                                       dtqA);
-                                origin_shift_quad_grad(Qint, dQint, Dip, dDip,
-                                                       Aj, dRb, sij, ds, tqB,
-                                                       dtqB);
-                            }
+                            origin_shift_quad_grad(Qint, dQint, Dip, dDip, Ai,
+                                                   dRa, sij, ds, tqA, dtqA);
+                            origin_shift_quad_grad(Qint, dQint, Dip, dDip, Aj,
+                                                   dRb, sij, ds, tqB, dtqB);
                             (void)tqA;
                             (void)tqB;
                             const auto& vqa = vqp[static_cast<std::size_t>(a)];

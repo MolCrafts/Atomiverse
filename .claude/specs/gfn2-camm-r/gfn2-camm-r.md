@@ -50,6 +50,11 @@ A naive dump of the O-centre formula onto H without the two-centre
 origin-shift / Fock / \(\partial\Theta/\partial R\) chain is **not**
 `mmompop` (eq-H₂O residual 23 meV). This slug is the three together.
 
+**Wave-13:** the three together (tblite `shift_operator` plus-RRS on
+every centre, \(v^Q\) in Fock on H, frozen-\(P\) \(\partial\Theta/\partial R\))
+still does not close \(F_{H1,y}\) (+0.12 vs xtb −0.80). Minus-RRS
+(opab4-signed \(Q\)) still breaks SCC. Not closed.
+
 ## Design
 
 - Same public type `cpu::semiempirical::GFN2`. No `*Config`, no `make_*`.

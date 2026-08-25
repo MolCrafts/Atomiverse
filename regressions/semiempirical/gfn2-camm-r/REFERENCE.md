@@ -93,18 +93,20 @@ envelope used for \(F_{O,x}\) in `reg_gfn2-aes-fock`. Energy floor 10 meV
 covers remaining mixer / D4 / intcut residual (sibling 9.19 meV). Dual
 gate includes analytic vs ATV energy FD.
 
-**Wave-12 finding (not closed).** Analytic \(G\) now chains frozen-\(P\)
-\(\partial\Theta/\partial R\) on p-centres: off-eq \(F_{O,x}\) residual
-**0.236** eV/Å (was 0.306 in `reg_gfn2-aes-fock`), energy 9.19 meV,
-analytic-vs-FD holds, \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}\approx 0.14\).
-Angular \(F_{H1,y}\) stays **+0.112** vs xtb **−0.799** (0.91 eV/Å).
-Naive two-centre \(\Theta\) on H (same origin-shift as O) is the
-documented 23 meV eq-H₂O residual and does **not** tilt \(F_{H1,y}\)
-(stays \(\sim+0.12\)). Flipping the \(R\otimes R\,S\) sign to the xtb
-`opab4` convention breaks SCC (residual stuck \(7\times10^{-6}\),
-\(\Delta E\sim 0.67\) eV). s–p-only H \(\Theta\) is 32 meV and still
-\(F_{H1,y}=+0.10\). xtb `mmompop` on H is **not** that dump — do not
-bless it. Dipole–quadrupole / quadrupole–quadrupole pair ranks wait.
+**Wave-13 resume (not closed).** The three-together of the spec is on
+the tip: two-centre \(\Theta\) on every centre (tblite
+`shift_operator` / \(\langle(r-R)(r-R)\rangle\)), \(v^Q\) in the SCC
+Fock on s-only H, frozen-\(P\) \(\partial\Theta/\partial R\) on every
+pair. Off-eq dual-gate: \(E\) **10.6 meV**, \(F_{O,x}\) residual
+**0.260** eV/Å, analytic-vs-FD holds, \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}
+\approx 0.05\). Angular \(F_{H1,y}\) stays **+0.123** vs xtb **−0.799**
+(0.92 eV/Å) — the physical origin-shift on H does **not** tilt the
+bend. Eq-H₂O energy moves **23 meV** (unit test no longer freezes the
+O-centre xtb digit). Minus-RRS (xtb `mmompop` with opab4-signed \(Q\)
+on unsigned ATV \(Q\)) still breaks SCC (residual stuck \(7\times10^{-6}\),
+\(\Delta E\sim 0.67\) eV). xtb `mmompop` on H is **not** this operator
+— do not bless it. Dipole–quadrupole / quadrupole–quadrupole pair ranks
+wait.
 
 ## Perf
 
