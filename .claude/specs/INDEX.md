@@ -16,13 +16,17 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-**Live count: 7.** (component-plugin chain + one TB spec on `wf/ipea-xtb-analytic-hessian`)
+**Live count: 6.** (component-plugin chain only; no live TB specs on `dev`.
+`gfn2-camm-r` spec lives on unmerged `wf/gfn2-camm-r`.)
 
-## Live — TB method loop (2026-08-25)
+## Closed — TB harness wave 12 (2026-08-25)
 
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [ipea-xtb-analytic-hessian](ipea-xtb-analytic-hessian/ipea-xtb-analytic-hessian.md) | IPEA analytic \(G\) | IPEA FD Hessian via `cpu::vib::Hessian` vs xtb 6.7.1 `--hess` on CH4 [implemented] |
+Merged to `dev` (`c7db3d8f`); specs deleted; history is git.
+`gfn2-camm-r` stays `[~]` on `wf/gfn2-camm-r`.
+
+| Spec | Shipped |
+| ---- | ------- |
+| `ipea-xtb-analytic-hessian` | IPEA FD Hessian via `cpu::vib::Hessian`; `reg_ipea-xtb-analytic-hessian` CH4 ω vs xtb 6.7.1 IPEA `--hess` (1541.68×3 / 1705.89×2 / 3548.78 / 3576.13 cm⁻¹) |
 
 ## Closed — TB harness wave 11 (2026-08-25)
 

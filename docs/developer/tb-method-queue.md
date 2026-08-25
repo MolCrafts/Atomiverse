@@ -1297,6 +1297,63 @@ wave-11). **Queue not exhausted.** Ladder: without `theme=gfn` staff Phase B
 NDDO / DFTB3/ThreeOb deepens first. CAMM-R / ALPB / beyond-CHNO / sTDA collide
 on `gfn2.cpp`; IPEA Hessian / VIP collide on `ipea.cpp`.
 
+## Assign — 2026-08-25 wave 12 (this-shift wave 6, parent `dev` @ `d0c49de0`)
+
+**Priority:** incomplete `[~]` (0) ≫ open SE specs (none; component-plugin is
+another loop) ≫ pending. **Staff = 2** (cap 5). Operator **`theme=gfn`**
+overrides the NDDO-first ladder for **NEW** slugs only. Census refresh at
+HEAD: SE product surface unchanged since wave-12 (`GFN0/1/2` E+G+FD H CHNO;
+AES **in the SCC Fock**; angular \(F_{H1,y}\) is CAMM-vs-\(R\); `IPEA` E+G,
+no FD Hessian / `--vip`). **TB `wf/*`:** none. Isolation worktrees: none.
+No new pending from this assign-time re-diff (`d0c49de0` = census commit).
+
+Staff **Phase C deepens on distinct files**: GFN2 two-centre CAMM quadrupole
+on H (`gfn2.cpp`; AES-in-Fock does not close \(F_{H1,y}\)), IPEA FD Hessian
+(`cpu::vib::Hessian` over shipped IPEA \(G\), VIB=ON exception — same shape
+as family H). Skip same-file GFN2 dependents (`alpb-xtb`, `gfn2-beyond-chno`,
+sTDA) so CAMM-R can close the angular \(F\) hole **before** solvent /
+extra-Z tables. Skip IPEA VIP (same `ipea.cpp` as Hessian). Skip PBC/spin
+(would touch GFN0/1/2). Native static tables — do **not** wrap `libxtb`.
+Three staff slots left empty rather than collide on `gfn2.cpp` / `ipea.cpp`.
+
+| # | Slug | Kind | Action |
+| - | ---- | ---- | ------ |
+| 1 | `gfn2-camm-r` | **new** | Two-centre CAMM quadrupole on H (xtb `mmompop`) so angular \(F_{H1,y}\) matches xtb `--gfn 2 --grad`; AES-in-Fock does not close it (ATV energy FD \(\sim+0.06\) eV/Å vs xtb \(-0.80\)). Reuse on-disk `h2o_gfn2_offeq_grad`. Frozen-CAMM \(\partial Q/\partial R\) on \(F_{O,x}\) is the same hole, not a second slug. |
+| 2 | `ipea-xtb-analytic-hessian` | **new** | IPEA FD Hessian via `cpu::vib::Hessian` (analytic G already ships). Seed `tools/tb_oracle/inputs/xtb/` `--hess` twin with `param_ipea`. **CH4** not water (polar IPEA water is the 0.5 eV kernel hole). VIB=ON exception like family H. |
+
+**Skipped this wave:** Phase A DFTB + Phase B NDDO (`theme=gfn`);
+`ipea-xtb-vip` (same-file as IPEA Hessian); `alpb-xtb` / `gfn2-beyond-chno` /
+`stda-xtb` (same-file as CAMM-R); `periodic-gfn-xtb` / `spin-gfn-xtb`
+(would collide on GFN0/1/2); `cpcm-x-xtb` (after ALPB); blocked (5).
+
+**After staff:** incomplete `[~]` = **2**; pending = **29**; blocked = **5**.
+Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**
+`.claude/specs/<slug>/`; SE-only cmake (incl. CLI=OFF;
+`ipea-xtb-analytic-hessian` may add `ATV_BUILD_VIB=ON` only); offline **xtb**
+pins only. **No push.**
+
+## Recover / harness — 2026-08-25 (harness wave 12 / this-shift wave 6)
+
+| Source | Result |
+| ------ | ------ |
+| Queue greens merged | `ipea-xtb-analytic-hessian` (`c7db3d8f` / `f5e7c78a`) → **done** |
+| Unmerged TB `wf/*` | **1** → keep **`[~]`** `gfn2-camm-r` @ `4555d0de` (ahead=1 behind=2) |
+| Isolation worktrees (TB) | none (Clearup already ran) |
+| Live SE/TB specs after close | **none** of this merge (1 deleted); CAMM-R spec lives on the unmerged tip |
+| Incomplete | **1** |
+| Pending | **29** (unchanged this harness; GapCensus owns refill) |
+| Blocked | **5** |
+| Roadmap | ○→✓ **IPEA-xTB analytic Hessian** (CHNO FD H). CAMM-vs-\(R\) stays ○ (`[~]`) |
+
+**Found (not a slug):** CAMM-R tip (`4555d0de`) chains frozen-P quadrupole
+dΘ/dR through ∂E_AES/∂Θ; angular \(F_{H1,y}\) still **+0.11 vs xtb −0.80**
+eV/Å (naive two-centre Θ on H is not xtb `mmompop`; minus-RRS opab sign
+breaks SCC). Recover, do not invent a second slug.
+
+**Next:** Recover `gfn2-camm-r` before new pending. Foothold ≠ closed
+(ALPB / CPCM-X / PBC / spin / sTDA / beyond-CHNO / IPEA `--vip` / CAMM-vs-\(R\)).
+**Queue not exhausted.**
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
@@ -1338,23 +1395,22 @@ unwraps an isolated fragment under wrap). Do **not** use DFTB+ for these rows.
 
 xTB is **not** DFTB3++. **GFN0** energy + analytic G + FD Hessian, **GFN1**
 energy + analytic G + FD Hessian, **GFN2** energy + quadrupole AES **in the
-SCC Fock** + analytic G + FD Hessian, and **IPEA** energy + analytic G ship
-on `dev` (H/C/N/O;
+SCC Fock** + analytic G + FD Hessian, and **IPEA** energy + analytic G + FD
+Hessian ship on `dev` (H/C/N/O;
 `reg_gfn0-beyond-toy`, `reg_gfn0-xtb-forces`, `reg_gfn0-xtb-analytic-hessian`,
 `reg_gfn1-xtb-organic`, `reg_gfn1-xtb-forces`, `reg_gfn-xtb-analytic-hessian`,
 `reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`, `reg_gfn2-xtb-forces`,
-`reg_gfn2-aes-fock`, `reg_ipea-xtb-small`, `reg_ipea-xtb-forces`;
+`reg_gfn2-aes-fock`, `reg_ipea-xtb-small`, `reg_ipea-xtb-forces`,
+`reg_ipea-xtb-analytic-hessian`;
 oracle=xtb 6.7.1). AES-in-Fock landed; angular \(F_{H1,y}\) is a CAMM-vs-\(R\)
-hole (not a missing Fock term) → `gfn2-camm-r`. `--vip`/`--vea` unopened.
-IPEA Hessian unblocked (F ships). Toy `XtbGfn0` was deleted (`bc14dabd`).
-**Staff order after this wave:** CAMM-R / ALPB / beyond-CHNO / sTDA (one at a
-time on `gfn2.cpp`) / PBC / spin / IPEA VIP / IPEA Hessian (VIP + Hessian
-collide on `ipea.cpp`). Family Hessian (GFN0/1/2 FD H) and IPEA analytic G
-are done.
+hole (not a missing Fock term) → `[~]` `gfn2-camm-r` (`wf/gfn2-camm-r` @
+`4555d0de`, ahead=1 behind=2). `--vip`/`--vea` unopened. Toy `XtbGfn0` was
+deleted (`bc14dabd`). **After this staff:** Recover CAMM-R before ALPB /
+beyond-CHNO / sTDA (one at a time on `gfn2.cpp`) / PBC / spin / IPEA VIP
+(same `ipea.cpp` — Hessian now landed). Family Hessian (GFN0/1/2 FD H)
+and IPEA analytic G + FD H are done.
 
-- [ ] `gfn2-camm-r` | Two-centre CAMM quadrupole on H (xtb `mmompop`) so angular \(F_{H1,y}\) matches xtb; AES-in-Fock does not close it (ATV energy FD \(\sim+0.06\) eV/Å vs xtb \(-0.80\)). Frozen-CAMM \(\partial Q/\partial R\) on \(F_{O,x}\) is the same hole | xtb | off-eq H2O | F | **oracle=xtb**; after `gfn2-aes-fock`; same `gfn2.cpp` as ALPB / beyond-CHNO / sTDA
-- [ ] `ipea-xtb-vip` | xtb `--vip`/`--vea` ΔSCC IP/EA (empirical shift; the IPEA product — energy pin is **not** this) | xtb | small organic | IP / EA | **oracle=xtb**; after IPEA F; Hessian not required; same `ipea.cpp`
-- [ ] `ipea-xtb-analytic-hessian` | IPEA FD Hessian via `cpu::vib::Hessian` (analytic G already ships) | xtb | CH4 / water | ω | **oracle=xtb**; VIB=ON exception like family H; after IPEA F; same `ipea.cpp` as VIP
+- [ ] `ipea-xtb-vip` | xtb `--vip`/`--vea` ΔSCC IP/EA (empirical shift; the IPEA product — energy pin is **not** this) | xtb | small organic | IP / EA | **oracle=xtb**; after IPEA F; Hessian not required; same `ipea.cpp` — Hessian landed
 - [ ] `gfn2-beyond-chno` | GFN2 static tables beyond H/C/N/O (xtb is all-element; GFN0/GFN1 same shape after) | xtb | small hetero | E | **oracle=xtb**; after CHNO F / AES-in-Fock / CAMM-R
 - [ ] `alpb-xtb` | xtb ALPB/GBSA implicit solvent on production GFN2 | xtb | H2O / small organic | E | **oracle=xtb**; after `gfn2-aes-fock` / CAMM-R
 - [ ] `cpcm-x-xtb` | xtb ddCOSMO / CPCM-X continuum solvent on production GFN2 (Stahn 2023; banner on xtb 6.7.1) | xtb | H2O / small | E | **oracle=xtb**; after `alpb-xtb`
@@ -1364,7 +1420,7 @@ are done.
 
 ## in_progress
 
-_(empty after harness wave 11 — no `[~]` tips)_
+- [~] `gfn2-camm-r` | Two-centre CAMM quadrupole on H (xtb `mmompop`) so angular \(F_{H1,y}\) matches xtb; AES-in-Fock does not close it. Tip `4555d0de`: frozen-P dΘ/dR; \(F_{H1,y}\) still +0.11 vs xtb −0.80 (naive two-centre Θ ≠ `mmompop`) | xtb | off-eq H2O | F | **oracle=xtb**; `wf/gfn2-camm-r` @ `4555d0de` (ahead=1 behind=2); spec on the tip; same `gfn2.cpp` as ALPB / beyond-CHNO / sTDA
 
 ## permanent rules / scope-out (never pending)
 
@@ -1383,6 +1439,7 @@ Not work items — see `.claude/notes/tb-blocked-capabilities.md`.
 
 _(footholds + wave-1/2/3/4 product depth on `dev`)_
 
+- [x] `ipea-xtb-analytic-hessian` | IPEA FD Hessian via `cpu::vib::Hessian`; CH4 ω vs xtb 6.7.1 IPEA `--hess` (1541.68×3 / 1705.89×2 / 3548.78 / 3576.13×3 cm⁻¹; Δω ≤ 1.30 cm⁻¹; \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}\approx 0.061\)) | `reg_ipea-xtb-analytic-hessian` | **oracle=xtb**; VIB=ON exception
 - [x] `gfn2-aes-fock` | GFN2 AES (charge–dipole/quadrupole + AXC) in the SCC Fock; off-eq H₂O vs xtb 6.7.1 `--gfn 2 --grad` (−5.058625058504 Eh). Angular \(F_{H1,y}\) is CAMM-vs-\(R\) (xtb `mmompop` two-centre \(\Theta\) on H), not a missing Fock term | `reg_gfn2-aes-fock` | **oracle=xtb**
 - [x] `ipea-xtb-forces` | IPEA analytic \(F=-\nabla E\) (GFN1-shaped); off-eq CH4 vs xtb 6.7.1 `param_ipea` `--grad` (−4.662477307157 Eh; \(F_{C,x}\) 5.12e-4 eV/Å; \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}\approx 0.26\)) | `reg_ipea-xtb-forces` | **oracle=xtb**
 - [x] `ipea-xtb-small` | IPEA-xTB energy foothold (own type/tables, extra 3s on C/N/O); CH4 vs xtb 6.7.1 −4.670476737294 Eh (8.90 meV; `with_forces` throws) | `reg_ipea-xtb-small` | **oracle=xtb**
