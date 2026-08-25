@@ -91,6 +91,79 @@ TEST(Gfn2Params, UnsupportedElementThrows) {
     }
 }
 
+cpu::Frame make_water_offeq() {
+    cpu::Frame f = make_water();
+    f.span(kAtom_x)[1] = 1.10; // stretch O–H so |F| ≠ 0
+    return f;
+}
+
+TEST(Gfn2Params, WithForcesDoesNotThrow) {
+    auto f = make_water_offeq();
+    cpu::Context ctx;
+    GFN2 gfn2;
+    gfn2.with_forces = true;
+    gfn2.build({ctx, f});
+    EXPECT_NO_THROW(gfn2.launch({ctx, f, 0, 0}));
+    EXPECT_TRUE(std::isfinite(static_cast<double>(f.span(kAtom_fx)[0])));
+}
+
+TEST(Gfn2Params, AnalyticForceMatchesCentralFD) {
+    auto f = make_water_offeq();
+    cpu::Context ctx;
+    GFN2 gfn2;
+    gfn2.with_forces = true;
+    gfn2.build({ctx, f});
+    gfn2.launch({ctx, f, 0, 0});
+    const double fx0 = static_cast<double>(f.span(kAtom_fx)[0]);
+    const double fy1 = static_cast<double>(f.span(kAtom_fy)[1]);
+    EXPECT_GT(std::fabs(fx0) + std::fabs(fy1), 1e-3);
+
+    auto energy_only = [](cpu::Frame g) {
+        g.meta.get(kEnergy) = 0;
+        for (int i = 0; i < 3; ++i)
+            g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
+        cpu::Context c;
+        GFN2 m;
+        m.with_forces = false;
+        m.build({c, g});
+        m.launch({c, g, 0, 0});
+        return g.meta.get(kEnergy);
+    };
+    auto fd = [&](int atom, int k, double h) {
+        auto shifted = [&](double s) {
+            cpu::Frame g = make_water_offeq();
+            StorageReal* col = (k == 0)   ? g.span(kAtom_x)
+                               : (k == 1) ? g.span(kAtom_y)
+                                          : g.span(kAtom_z);
+            col[atom] += static_cast<StorageReal>(s);
+            return energy_only(g);
+        };
+        return -(shifted(h) - shifted(-h)) / (2.0 * h);
+    };
+    constexpr double h = 1.0e-4;
+    // Quadrupole CAMM dQ and AES-in-Fock response remain a deepen.
+    EXPECT_NEAR(fx0, fd(0, 0, h), 3e-2);
+    EXPECT_NEAR(fy1, fd(1, 1, h), 3e-2);
+}
+
+TEST(Gfn2Params, AnalyticForceTranslationallyInvariant) {
+    auto f = make_water_offeq();
+    cpu::Context ctx;
+    GFN2 gfn2;
+    gfn2.with_forces = true;
+    gfn2.build({ctx, f});
+    gfn2.launch({ctx, f, 0, 0});
+    double net[3] = {0, 0, 0};
+    for (int i = 0; i < 3; ++i) {
+        net[0] += static_cast<double>(f.span(kAtom_fx)[i]);
+        net[1] += static_cast<double>(f.span(kAtom_fy)[i]);
+        net[2] += static_cast<double>(f.span(kAtom_fz)[i]);
+    }
+    EXPECT_NEAR(net[0], 0.0, 1e-10);
+    EXPECT_NEAR(net[1], 0.0, 1e-10);
+    EXPECT_NEAR(net[2], 0.0, 1e-10);
+}
+
 TEST(Gfn2Params, WaterEnergyFiniteAndSccConverged) {
     auto f = make_water();
     cpu::Context ctx;
