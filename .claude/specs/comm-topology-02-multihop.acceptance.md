@@ -10,7 +10,8 @@ criteria:
       computes ceil(need/w) in closed form with no MPI call, and the non-uniform
       branch accumulates target-side slab widths along the send direction and
       reconciles with one MPI_Allreduce(MAX).
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-002
     summary: Hop-derivation unit test passes with hard-coded expectations
     type: runtime
@@ -20,7 +21,8 @@ criteria:
       max_hops == 2 for (L=15.78, dims=4, need=6.6), == 4 for dims=8, == 1 for
       dims=2, == 0 for dims=1, and == 3 for the non-uniform case
       (L=20, dims=4, cuts={0,0.5,0.6,0.7,1.0}, need=5.0).
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-003
     summary: Narrow-subdomain rejection removed; only the min-image bound throws
     type: code
@@ -29,7 +31,8 @@ criteria:
       on "shell wider than this rank's subdomain"; the only remaining throw on
       that path fires when max_hops(d) > dims[d]-1 and its message names the
       minimum-image bound (need > L_d - w_self), not the rank count.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-004
     summary: A box shrink raises the hop count instead of throwing
     type: runtime
@@ -38,7 +41,8 @@ criteria:
       The unit test drives setup() twice on one SwapList instance with L=15.78
       then L=10.0 (same dims=4, need=6.6) and observes max_hops 2 -> 3 with no
       exception; repeating the second call is idempotent.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-005
     summary: Cell grid pads extended axes by the actual ghost shell width
     type: code
@@ -47,7 +51,8 @@ criteria:
       dd_->ghost_shell_width), grid_stale() compares the captured shell width,
       DomainDecomposition carries ghost_shell_width [Angstrom] written by
       HaloSend, and neighbor_list.h passes it at the reinit_strategy call site.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-006
     summary: Multi-hop ghosts bin inside the grid, never clamped to edge cells
     type: runtime
@@ -57,7 +62,8 @@ criteria:
       skin=0.2, ghost_shell_width=6.6, rows at sublo-6.5 and sublo-6.5+cs bin to
       distinct cells with index > 0, ghost_shell_width=0 reproduces the 2.2 A
       pad, and raising the shell width alone makes grid_stale() return true.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-007
     summary: Narrow-subdomain MPI runs match the brute-force oracle
     type: runtime
@@ -67,7 +73,8 @@ criteria:
       (8,1,1) on the 3^3 / a0=5.26 A box at cutoff 6 A match the in-file O(N^2)
       minimum-image LJ oracle to relative error < 1e-9 with dd->n_ghost > 0, and
       the existing _n1 / _n2 registrations still pass unchanged.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-008
     summary: Decomposed axes are still never minimum-imaged
     type: code
@@ -75,7 +82,8 @@ criteria:
       CellList::min_image_unextended_ and the axis_extended_[d] = (dims[d] > 1)
       predicate are unchanged, and no new call site min-images a separation on a
       decomposed axis.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-009
     summary: Bonded skin and halo generation semantics preserved
     type: code
@@ -83,7 +91,8 @@ criteria:
       The shell width stays max(pair cutoff, bonded_extension) with the existing
       MPI_Allreduce(MAX) at halo_exchange.cpp:478-485, ++dd->halo_generation
       still runs on every full rebuild, and no new symbol is named halo_cutoff().
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-010
     summary: Regression reproduces single-rank energy and forces at 4x1x1
     type: runtime
@@ -96,7 +105,8 @@ criteria:
       max per-atom force deviation <= 1e-9 eV/A, observed x-axis max_hops >= 2,
       np=4 vs np=1 energy rel <= 1e-12; wall time <= 60 s; no third-party binary
       or import at run time.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-011
     summary: REFERENCE.md pins the measured value and cites the ghost semantics
     type: docs
@@ -106,7 +116,8 @@ criteria:
       with its tolerance, and cites Plimpton J. Comput. Phys. 117, 1 (1995),
       DOI 10.1006/jcph.1995.1039 and Thompson et al. Comput. Phys. Commun. 271,
       108171 (2022), DOI 10.1016/j.cpc.2021.108171.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-012
     summary: New public symbols carry doxygen with units
     type: docs
@@ -115,7 +126,8 @@ criteria:
       DomainDecomposition::ghost_shell_width each have @brief, @param with
       Angstrom units where applicable, and @return; the HaloSend header contract
       no longer documents the removed narrow-subdomain rejection.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
   - id: ac-013
     summary: Full build and test suite green
     type: runtime
@@ -123,7 +135,8 @@ criteria:
       cmake --build build -j$(nproc) succeeds and
       ctest --test-dir build --output-on-failure reports zero failures,
       including every MPI registration in tests/CMakeLists.txt.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
 ---
 
 # Acceptance criteria

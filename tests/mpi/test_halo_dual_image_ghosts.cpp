@@ -256,12 +256,12 @@ TEST(HaloDualImageGhosts, NonOverlappingGeometryStillMatchesBruteForce) {
 // Same 3^3 lattice and same 6 A cutoff (auto halo 6.6 A) as the dims == 2
 // case above, cut finer along x. The shell is now WIDER than a subdomain,
 // so filling it needs ghosts forwarded through intermediate ranks —
-// `max_hops = ceil(6.6 / sub)` rounds per direction. Until
-// `comm-topology-02` lands, `SwapList::setup` refuses the geometry
-// (`src/cpu/communication/swap_list.cpp:75`, reached from
-// `HaloSend::build` / `HaloSend::launch`) and these two cases die on the
-// throw. The `1e-9` oracle window is the same one the n1 / n2 cases use:
-// spatial decomposition may not move the total energy at all.
+// `max_hops = ceil(6.6 / sub)` rounds per direction. comm-topology-02
+// fills the shell by forwarding ghosts over that many rounds; the only
+// remaining refusal is the minimum-image bound
+// (`SwapList` refuse_minimum_image). The `1e-9` oracle window is the
+// same one the n1 / n2 cases use: spatial decomposition may not move
+// the total energy at all.
 
 // 4 ranks: sub = 15.78 / 4 = 3.945 A < 6.6 A => max_hops = 2 along x.
 TEST(HaloDualImageGhosts, NarrowSubdomainFourRanksMatchBruteForce) {

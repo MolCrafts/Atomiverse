@@ -188,6 +188,14 @@ if(ATV_BUILD_MD)
         atv_add_regression(md comm-swaplist-halo-mpi)
         target_compile_definitions(reg_comm-swaplist-halo-mpi PRIVATE
             ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
+        # MULTI-HOP halo (comm-topology-02): a forced 4x1x1 split of a 15.78 A
+        # box gives 3.945 A subdomains against a 6.6 A ghost shell, so the
+        # shell needs 2 forwarding rounds on x. Self-relaunching binary
+        # (mpiexec -n 4 and -n 1) against the in-file O(N^2) min-image LJ sum,
+        # oracle=literature identity. perf_exempt.
+        atv_add_regression(md comm-topology-multihop)
+        target_compile_definitions(reg_comm-topology-multihop PRIVATE
+            ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
     endif()
 endif()
 if(ATV_BUILD_MC)
