@@ -80,6 +80,7 @@ tools/tb_oracle/
 | `inputs/xtb/h2o_gfn2/` | xtb 6.7.1 | H₂O GFN2 energy pin (`reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`); `mol.xyz` + archived `xtb.out` |
 | `inputs/xtb/{ch4,nh3,ch3oh}_gfn2/` | xtb 6.7.1 | extra GFN2 energy transcripts on disk (`*.out` gitignored) |
 | `inputs/xtb/h2o_gfn2_offeq_grad/` | xtb 6.7.1 | GFN2 off-eq water force twin (`reg_gfn2-xtb-forces`); `--gfn 2 --grad` |
+| `inputs/xtb/ch4_ipea/` | xtb 6.7.1 | CH4 IPEA-xTB energy pin (`reg_ipea-xtb-small`); `param_ipea` as GFN1 |
 | `inputs/mopac/rm1-water/` | OpenMOPAC | RM1 H₂O ΔHf decks (`reg_rm1-water-mopac-energy`); the ΔHf path is calibrated against MOPAC2016 21.298M `tests/keywords/RM1.out` (CO₂) to 3.1e-4 kcal/mol |
 | `inputs/mopac/rm1-co2/` | OpenMOPAC | RM1 CO₂/CO ΔHf decks (`reg_nddo-sharp-discriminator`); PARAM survey −81.55 / −13.87 kcal/mol |
 
