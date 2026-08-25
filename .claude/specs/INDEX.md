@@ -871,10 +871,13 @@ Do not re-create closed slugs without superseding intent.
 
 | cuda-openmm-md 01–05 | contract, rebuild, tile-force, multigpu, delete | CS=32 clusters, real masks, tile LJ/Coul, multi-GPU classify; Verlet default removed on CUDA |
 
-## Live — comm-topology chain (2026-08-25)
+## Closed — comm-topology chain (2026-08-26)
 
-参照 LAMMPS CommBrick 重构 CPU 并行拓扑：swap-list halo（行为等价）→ 多跳（任意节点×进程）→ 24k GAFF @256 rank 实机验证。性能数字进 bench 记录，不进验收。CPU 车道 MPI+OpenMP+xsimd 原生，无 Kokkos。
+参照 LAMMPS CommBrick 重构 CPU 并行拓扑，3/3 全链落地于 `feat/comm-topology`；
+specs deleted; history is git. CPU 车道 MPI+OpenMP+xsimd 原生，无 Kokkos。
 
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [comm-topology-03-widebox-validation](comm-topology-03-widebox-validation.md) | 01, 02 | MIL0PEGM18 24k @256 rank 跑通 + parity；性能仅记 bench 快照 [approved] |
+| Spec | Shipped |
+| ---- | ------- |
+| `comm-topology-01-swaplist` | swap-list halo（setup/borders/forward/reverse，单跳行为等价，旧级联删除）；tests/mpi 全绿 |
+| `comm-topology-02-multihop` | 每维 maxneed 轮逐轮转发（任意节点×进程，min-image 上界为唯一剩余拒绝）；`ATV_FORCE_DIMS` 窄盒 parity |
+| `comm-topology-03-widebox-validation` | MIL0PEGM18 24k @256 rank（8×8×4，hops 2,2,1）单点 parity 全项 dev=0.0（job 1692800）；README 快照 343 steps/s（记录非验收）。附带修复：Evaluate 无 halo 注入、Minimize 重复挂载、halo reach < neighbor reach |
