@@ -16,7 +16,13 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-**Live count: 6.**
+**Live count: 7.**
+
+## Live — TB Phase C (2026-08-25)
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [gfn2-xtb-water](gfn2-xtb-water/spec.md) | — | Production GFN2-xTB energy; xtb 6.7.1 H₂O pin −5.070383095219 Eh |
 
 Claim-completion Track P (Python) closed 2026-08-15; Track C (`cuda-gpw-product`) closed
 2026-08-18. Sections below that still say “Live” are campaign history
