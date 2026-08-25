@@ -13,20 +13,20 @@
 #include "atomiverse/cuda/gpw/internal/gpw_forces.cuh"
 
 #include <cmath>
-#include <xtensor/containers/xarray.hpp>
-#include <xtensor/generators/xbuilder.hpp>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <xtensor/containers/xarray.hpp>
+#include <xtensor/generators/xbuilder.hpp>
 
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GpwAtom;
 using ATV::cpu::gpw::GthPotential;
+using ATV::cpu::gpw::make_uniform_grid;
 using ATV::cpu::gpw::UniformGrid;
 using ATV::cpu::gpw::XcKind;
-using ATV::cpu::gpw::make_uniform_grid;
 using ATV::cuda::gpw::internal::CollocateGridDesc;
 using ATV::cuda::gpw::internal::DeviceForceAtom;
 using ATV::cuda::gpw::internal::kMaxCloc;
@@ -138,8 +138,8 @@ TEST(CudaGpwForces, IonicHfKernelMatchesHost) {
     check_cuda(cudaDeviceSynchronize());
 
     double F_dev[3] = {0, 0, 0};
-    check_cuda(cudaMemcpy(F_dev, d_f, 3 * sizeof(double),
-                          cudaMemcpyDeviceToHost));
+    check_cuda(
+        cudaMemcpy(F_dev, d_f, 3 * sizeof(double), cudaMemcpyDeviceToHost));
     cudaFree(d_ves);
     cudaFree(d_f);
     cudaFree(d_a);
@@ -162,7 +162,7 @@ TEST(CudaGpwForces, LocalPpHfKernelMatchesHost) {
     a.pos[0] = 2.8;
     a.pos[1] = 3.0;
     a.pos[2] = 3.0;
-    a.cloc = { -4.0, 0.6 }; // typical GTH-ish
+    a.cloc = {-4.0, 0.6}; // typical GTH-ish
     std::vector<GpwAtom> atoms = {a};
 
     // Synthetic density offset from nucleus.
@@ -202,8 +202,8 @@ TEST(CudaGpwForces, LocalPpHfKernelMatchesHost) {
     check_cuda(cudaDeviceSynchronize());
 
     double F_dev[3] = {0, 0, 0};
-    check_cuda(cudaMemcpy(F_dev, d_f, 3 * sizeof(double),
-                          cudaMemcpyDeviceToHost));
+    check_cuda(
+        cudaMemcpy(F_dev, d_f, 3 * sizeof(double), cudaMemcpyDeviceToHost));
     cudaFree(d_rho);
     cudaFree(d_f);
     cudaFree(d_a);

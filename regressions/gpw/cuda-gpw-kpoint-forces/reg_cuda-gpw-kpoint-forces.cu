@@ -159,9 +159,9 @@ int main(int argc, char** argv) {
                          max_ds);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-kpoint-forces  |dE|=%.3e  max|dF|=%.3e  max|dσ|=%.3e\n",
-            de, max_df, max_ds);
+        std::printf("PASS: cuda-gpw-kpoint-forces  |dE|=%.3e  max|dF|=%.3e  "
+                    "max|dσ|=%.3e\n",
+                    de, max_df, max_ds);
     } else {
         std::printf("PASS: cuda-gpw-kpoint-forces (--device=%s only)\n",
                     device.c_str());

@@ -65,7 +65,8 @@ static cpu::Frame make_water() {
     return f;
 }
 
-static int check_hessian_shape(const char* tag, const cpu::vib::HessianResult& res) {
+static int check_hessian_shape(const char* tag,
+                               const cpu::vib::HessianResult& res) {
     if (res.n_atoms != 3) {
         std::printf("FAIL %s n_atoms=%d\n", tag, res.n_atoms);
         return 1;
@@ -157,8 +158,9 @@ int main() {
         const double e_ha = e_ev / units::kHartreeInEv;
         const double pin_ev = kGfn1_E_pin_Ha * units::kHartreeInEv;
 
-        std::printf("GFN1 H2O Hessian: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
-                    e_ha, kGfn1_E_pin_Ha, std::fabs(e_ev - pin_ev));
+        std::printf(
+            "GFN1 H2O Hessian: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
+            e_ha, kGfn1_E_pin_Ha, std::fabs(e_ev - pin_ev));
         std::printf("  H_Oxx=%.12f eV/A^2  pin=%.12f  |d|=%.3e\n", h_oxx,
                     h_oxx_pin, std::fabs(h_oxx - h_oxx_pin));
         for (int k = 0; k < 3; ++k) {
@@ -166,7 +168,8 @@ int main() {
             std::printf("  omega[%d]=%.4f cm^-1  pin=%.2f  |d|=%.3e\n", k, w,
                         kGfn1_omega_pin[k], std::fabs(w - kGfn1_omega_pin[k]));
             if (!(w > 100.0) || !std::isfinite(w)) {
-                std::printf("FAIL GFN1 frequency not positive/physical: %g\n", w);
+                std::printf("FAIL GFN1 frequency not positive/physical: %g\n",
+                            w);
                 return 1;
             }
             if (std::fabs(w - kGfn1_omega_pin[k]) > kGfn1_omega_tol) {
@@ -227,8 +230,9 @@ int main() {
         const double e_ha = e_ev / units::kHartreeInEv;
         const double pin_ev = kGfn2_E_pin_Ha * units::kHartreeInEv;
 
-        std::printf("GFN2 H2O Hessian: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
-                    e_ha, kGfn2_E_pin_Ha, std::fabs(e_ev - pin_ev));
+        std::printf(
+            "GFN2 H2O Hessian: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
+            e_ha, kGfn2_E_pin_Ha, std::fabs(e_ev - pin_ev));
         std::printf("  H_Oxx=%.12f eV/A^2  pin=%.12f  |d|=%.3e\n", h_oxx,
                     h_oxx_pin, std::fabs(h_oxx - h_oxx_pin));
         for (int k = 0; k < 3; ++k) {
@@ -236,7 +240,8 @@ int main() {
             std::printf("  omega[%d]=%.4f cm^-1  pin=%.2f  |d|=%.3e\n", k, w,
                         kGfn2_omega_pin[k], std::fabs(w - kGfn2_omega_pin[k]));
             if (!(w > 100.0) || !std::isfinite(w)) {
-                std::printf("FAIL GFN2 frequency not positive/physical: %g\n", w);
+                std::printf("FAIL GFN2 frequency not positive/physical: %g\n",
+                            w);
                 return 1;
             }
             if (std::fabs(w - kGfn2_omega_pin[k]) > kGfn2_omega_tol) {

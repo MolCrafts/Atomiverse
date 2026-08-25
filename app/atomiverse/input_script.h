@@ -14,23 +14,23 @@ namespace app {
 
 /// @brief Parsed native input (units: eV, Å, fs, amu).
 struct InputDeck {
-    double lattice_a = 0;          ///< sc lattice constant [Å]
+    double lattice_a = 0; ///< sc lattice constant [Å]
     double xlo = 0, xhi = 0;
     double ylo = 0, yhi = 0;
     double zlo = 0, zhi = 0;
     bool have_region = false;
     int ntypes = 1;
     bool created_atoms = false;
-    double mass = 39.948;          ///< type-1 mass [amu]
+    double mass = 39.948; ///< type-1 mass [amu]
     int type_id = 1;
-    double pair_cut = 0;           ///< lj/cut cutoff [Å]
-    double pair_eps = 0;           ///< [eV]
-    double pair_sigma = 0;         ///< [Å]
+    double pair_cut = 0;   ///< lj/cut cutoff [Å]
+    double pair_eps = 0;   ///< [eV]
+    double pair_sigma = 0; ///< [Å]
     bool have_pair = false;
-    double neighbor_skin = -1.0;   ///< [Å]; negative = NeighborList auto
-    double timestep = 1.0;         ///< [fs]
+    double neighbor_skin = -1.0; ///< [Å]; negative = NeighborList auto
+    double timestep = 1.0;       ///< [fs]
     int thermo_every = 0;
-    double velocity_T = -1.0;      ///< <0 = no InitVelocity
+    double velocity_T = -1.0; ///< <0 = no InitVelocity
     unsigned velocity_seed = 42;
     int run_steps = 0;
 };

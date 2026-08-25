@@ -64,8 +64,9 @@ int main() {
 
     const double e = frame.meta.get(kEnergy);
     const double pin_ev = kPinEnergyEh * units::kHartreeInEv;
-    std::printf("GFN2 H2O quadrupole AES: E=%.12f eV  pin=%.12f eV  dE=%.6e eV\n",
-                e, pin_ev, e - pin_ev);
+    std::printf(
+        "GFN2 H2O quadrupole AES: E=%.12f eV  pin=%.12f eV  dE=%.6e eV\n", e,
+        pin_ev, e - pin_ev);
     std::printf("  SCC residual=%.3e in %d iterations\n",
                 gfn2.last_scc_residual(), gfn2.last_scc_iterations());
     if (!std::isfinite(e)) {

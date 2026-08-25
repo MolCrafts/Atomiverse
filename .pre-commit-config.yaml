@@ -26,7 +26,9 @@ repos:
     hooks:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude: '^tools/.+_oracle/inputs/'
       - id: end-of-file-fixer
+        exclude: '^tools/.+_oracle/inputs/'
       - id: check-yaml
       - id: check-merge-conflict
       - id: check-added-large-files
@@ -39,6 +41,7 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c, c++, cuda]
+        exclude: 'basis_data/.*tables\.h$'
 
   - repo: local
     hooks:

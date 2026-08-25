@@ -347,9 +347,7 @@ void primitive_sd_grad(double a, const double A[3], int la, double b,
     double P[3];
     for (int k = 0; k < 3; ++k)
         P[k] = (a * A[k] + b * B[k]) / gamma;
-    auto dP = [a, gamma](int k, int m) {
-        return (k == m) ? (a / gamma) : 0.0;
-    };
+    auto dP = [a, gamma](int k, int m) { return (k == m) ? (a / gamma) : 0.0; };
 
     primitive_overlap_grad(a, A, la, b, B, lb, s, ds_dA);
 
@@ -428,9 +426,7 @@ void cartesian_rr_grad(int ia, int ib, const double P[3], const double dS00[3],
                        double ddAj0[3], int li, int lj, int ci, int cj,
                        double inv2g, double a_over_g, double& v,
                        double dv_dA[3]) {
-    auto dP = [a_over_g](int k, int m) {
-        return (k == m) ? a_over_g : 0.0;
-    };
+    auto dP = [a_over_g](int k, int m) { return (k == m) ? a_over_g : 0.0; };
     v = P[ia] * P[ib] * dAi0 * dAj0;
     if (ia == ib)
         v += inv2g * dAi0 * dAj0;
@@ -458,10 +454,9 @@ void cartesian_rr_grad(int ia, int ib, const double P[3], const double dS00[3],
             v += inv2g * inv2g;
     }
     for (int m = 0; m < 3; ++m) {
-        double dv = dP(ia, m) * P[ib] * dAi0 * dAj0
-                    + P[ia] * dP(ib, m) * dAi0 * dAj0
-                    + P[ia] * P[ib] * ddAi0[m] * dAj0
-                    + P[ia] * P[ib] * dAi0 * ddAj0[m];
+        double dv =
+            dP(ia, m) * P[ib] * dAi0 * dAj0 + P[ia] * dP(ib, m) * dAi0 * dAj0
+            + P[ia] * P[ib] * ddAi0[m] * dAj0 + P[ia] * P[ib] * dAi0 * ddAj0[m];
         if (ia == ib)
             dv += inv2g * (ddAi0[m] * dAj0 + dAi0 * ddAj0[m]);
         if (li == 1) {
@@ -595,19 +590,16 @@ void origin_shift_quad_grad(const double Q[6], const double dQ[6][3],
         dqs[0][m] = dQ[0][m] - 2.0 * (dR[0][m] * D[0] + R[0] * dD[0][m])
                     + 2.0 * R[0] * dR[0][m] * s + R[0] * R[0] * ds[m];
         dqs[1][m] = dQ[1][m] - dR[0][m] * D[1] - R[0] * dD[1][m]
-                    - dR[1][m] * D[0] - R[1] * dD[0][m]
-                    + dR[0][m] * R[1] * s + R[0] * dR[1][m] * s
-                    + R[0] * R[1] * ds[m];
+                    - dR[1][m] * D[0] - R[1] * dD[0][m] + dR[0][m] * R[1] * s
+                    + R[0] * dR[1][m] * s + R[0] * R[1] * ds[m];
         dqs[2][m] = dQ[2][m] - 2.0 * (dR[1][m] * D[1] + R[1] * dD[1][m])
                     + 2.0 * R[1] * dR[1][m] * s + R[1] * R[1] * ds[m];
         dqs[3][m] = dQ[3][m] - dR[0][m] * D[2] - R[0] * dD[2][m]
-                    - dR[2][m] * D[0] - R[2] * dD[0][m]
-                    + dR[0][m] * R[2] * s + R[0] * dR[2][m] * s
-                    + R[0] * R[2] * ds[m];
+                    - dR[2][m] * D[0] - R[2] * dD[0][m] + dR[0][m] * R[2] * s
+                    + R[0] * dR[2][m] * s + R[0] * R[2] * ds[m];
         dqs[4][m] = dQ[4][m] - dR[1][m] * D[2] - R[1] * dD[2][m]
-                    - dR[2][m] * D[1] - R[2] * dD[1][m]
-                    + dR[1][m] * R[2] * s + R[1] * dR[2][m] * s
-                    + R[1] * R[2] * ds[m];
+                    - dR[2][m] * D[1] - R[2] * dD[1][m] + dR[1][m] * R[2] * s
+                    + R[1] * dR[2][m] * s + R[1] * R[2] * ds[m];
         dqs[5][m] = dQ[5][m] - 2.0 * (dR[2][m] * D[2] + R[2] * dD[2][m])
                     + 2.0 * R[2] * dR[2][m] * s + R[2] * R[2] * ds[m];
     }
@@ -900,10 +892,10 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const auto& mu = dipat[static_cast<std::size_t>(a)];
             const auto& th = quadat[static_cast<std::size_t>(a)];
             e += ea.dkernel * (mu[0] * mu[0] + mu[1] * mu[1] + mu[2] * mu[2]);
-            e += ea.qkernel
-                 * (th[0] * th[0] + 2.0 * th[1] * th[1] + th[2] * th[2]
-                    + 2.0 * th[3] * th[3] + 2.0 * th[4] * th[4]
-                    + th[5] * th[5]);
+            e +=
+                ea.qkernel
+                * (th[0] * th[0] + 2.0 * th[1] * th[1] + th[2] * th[2]
+                   + 2.0 * th[3] * th[3] + 2.0 * th[4] * th[4] + th[5] * th[5]);
             const double arg =
                 cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
             const double t1 = std::exp(-kGfn2AesKexp * arg);
@@ -955,8 +947,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                 // mmompop (−P·Q). /3 converts the 3/2-traceless packed Θ:rr
                 // into the GFN2 0d kernel (xtb aniso_electro gab5).
                 const double sq =
-                    -(tha[0] * vec[0] * vec[0]
-                      + 2.0 * tha[1] * vec[0] * vec[1]
+                    -(tha[0] * vec[0] * vec[0] + 2.0 * tha[1] * vec[0] * vec[1]
                       + tha[2] * vec[1] * vec[1]
                       + 2.0 * tha[3] * vec[0] * vec[2]
                       + 2.0 * tha[4] * vec[1] * vec[2]
@@ -1020,20 +1011,20 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                     (mua[0] * vec[0] + mua[1] * vec[1] + mua[2] * vec[2]) * g3
                     * fdmp3;
                 for (int k = 0; k < 3; ++k)
-                    vdp[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                    vdp[static_cast<std::size_t>(a)]
+                       [static_cast<std::size_t>(k)] +=
                         qb * vec[k] * g3 * fdmp3;
                 vat[static_cast<std::size_t>(b)] += -sd;
                 const double mub_r =
                     mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2];
                 for (int k = 0; k < 3; ++k)
-                    vdp[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
-                        mub[k] * g3 * fdmp5
-                        - 3.0 * vec[k] * mub_r * g5 * fdmp5;
+                    vdp[static_cast<std::size_t>(a)]
+                       [static_cast<std::size_t>(k)] +=
+                        mub[k] * g3 * fdmp5 - 3.0 * vec[k] * mub_r * g5 * fdmp5;
                 const double rrq =
                     tha[0] * vec[0] * vec[0] + 2.0 * tha[1] * vec[0] * vec[1]
                     + tha[2] * vec[1] * vec[1] + 2.0 * tha[3] * vec[0] * vec[2]
-                    + 2.0 * tha[4] * vec[1] * vec[2]
-                    + tha[5] * vec[2] * vec[2];
+                    + 2.0 * tha[4] * vec[1] * vec[2] + tha[5] * vec[2] * vec[2];
                 const double sq = -rrq * g5 * fdmp5 / 3.0;
                 const double facq = qb * (-g5 * fdmp5 / 3.0);
                 auto& vqa = vqp[static_cast<std::size_t>(a)];
@@ -1051,7 +1042,8 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
     std::vector<double> vat(static_cast<std::size_t>(n_at), 0.0);
     std::vector<Grad3> vdp(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
     std::vector<std::array<double, 6>> vqp(
-        static_cast<std::size_t>(n_at), std::array<double, 6>{0, 0, 0, 0, 0, 0});
+        static_cast<std::size_t>(n_at),
+        std::array<double, 6>{0, 0, 0, 0, 0, 0});
 
     for (int it = 0; it < max_scc; ++it) {
         fill_aes_pot(vat, vdp, vqp);
@@ -1083,14 +1075,13 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                                 + vsh[static_cast<std::size_t>(jsh)]);
                 for (int k = 0; k < 3; ++k) {
                     const double d = D(k, mu, nu);
-                    H(mu, nu) +=
-                        0.5
-                        * (vdp[static_cast<std::size_t>(a)]
-                              [static_cast<std::size_t>(k)]
-                               * (d - Ra[k] * sij)
-                           + vdp[static_cast<std::size_t>(b)]
-                                [static_cast<std::size_t>(k)]
-                                 * (d - Rb[k] * sij));
+                    H(mu, nu) += 0.5
+                                 * (vdp[static_cast<std::size_t>(a)]
+                                       [static_cast<std::size_t>(k)]
+                                        * (d - Ra[k] * sij)
+                                    + vdp[static_cast<std::size_t>(b)]
+                                         [static_cast<std::size_t>(k)]
+                                          * (d - Rb[k] * sij));
                 }
                 {
                     const double q0[6] = {Q(0, mu, nu), Q(1, mu, nu),
@@ -1102,14 +1093,14 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                     origin_shift_quad(q0, d0, Ra, sij, tqA);
                     const auto& va = vqp[static_cast<std::size_t>(a)];
                     for (int k = 0; k < 6; ++k)
-                        H(mu, nu) += 0.5 * va[static_cast<std::size_t>(k)]
-                                     * tqA[k];
+                        H(mu, nu) +=
+                            0.5 * va[static_cast<std::size_t>(k)] * tqA[k];
                     double tqB[6];
                     origin_shift_quad(q0, d0, Rb, sij, tqB);
                     const auto& vb = vqp[static_cast<std::size_t>(b)];
                     for (int k = 0; k < 6; ++k)
-                        H(mu, nu) += 0.5 * vb[static_cast<std::size_t>(k)]
-                                     * tqB[k];
+                        H(mu, nu) +=
+                            0.5 * vb[static_cast<std::size_t>(k)] * tqB[k];
                 }
             }
         }
@@ -1159,8 +1150,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                         for (int k = 0; k < 3; ++k)
                             dipat[static_cast<std::size_t>(a)]
                                  [static_cast<std::size_t>(k)] +=
-                                0.5 * p
-                                * (D(k, ia + u, ib + v) - Ra[k] * s);
+                                0.5 * p * (D(k, ia + u, ib + v) - Ra[k] * s);
                         const double q0[6] = {
                             Q(0, ia + u, ib + v), Q(1, ia + u, ib + v),
                             Q(2, ia + u, ib + v), Q(3, ia + u, ib + v),
@@ -1267,8 +1257,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
         const double arg =
             cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
         const double t1 = std::exp(-kGfn2AesKexp * arg);
-        const double radA =
-            ea.mprad + (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
+        const double radA = ea.mprad + (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
         for (int b = 0; b < n_at; ++b) {
             if (a == b)
                 continue;
@@ -1277,8 +1266,8 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const auto& mub = dipat[static_cast<std::size_t>(b)];
             const double qb = -qat[static_cast<std::size_t>(b)];
             double vec[3] = {ra[0] - rb[0], ra[1] - rb[1], ra[2] - rb[2]};
-            const double r1 = std::sqrt(vec[0] * vec[0] + vec[1] * vec[1]
-                                        + vec[2] * vec[2]);
+            const double r1 =
+                std::sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
             if (r1 < 1e-12)
                 continue;
             const double argb =
@@ -1313,9 +1302,9 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
 
     std::vector<Grad3> g(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
     std::vector<double> dEdcn(static_cast<std::size_t>(n_at), 0.0);
-    std::vector<Grad3> dcndr(
-        static_cast<std::size_t>(n_at) * static_cast<std::size_t>(n_at),
-        Grad3{0, 0, 0});
+    std::vector<Grad3> dcndr(static_cast<std::size_t>(n_at)
+                                 * static_cast<std::size_t>(n_at),
+                             Grad3{0, 0, 0});
 
     for (int a = 0; a < n_at; ++a) {
         const double rca = el[static_cast<std::size_t>(a)]->rcov * kBohr;
@@ -1400,14 +1389,12 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                 for (int sb = 0; sb < nsh_b; ++sb) {
                     const int jsh = js0 + sb;
                     const Shell& sj = shells[static_cast<std::size_t>(jsh)];
-                    const double shpj =
-                        1.0 + eb.shpoly[sj.l == 0 ? 0 : 1] * rr;
+                    const double shpj = 1.0 + eb.shpoly[sj.l == 0 ? 0 : 1] * rr;
                     const double shpoly = shpi * shpj;
                     const double zi = si.zeta;
                     const double zj = sj.zeta;
-                    const double zij =
-                        std::pow(2.0 * std::sqrt(zi * zj) / (zi + zj),
-                                 kGfn2Wexp);
+                    const double zij = std::pow(
+                        2.0 * std::sqrt(zi * zj) / (zi + zj), kGfn2Wexp);
                     const double hsc = zij * k_shell(si.l, sj.l) * enp;
                     const double hs = hsc * shpoly;
                     const double hij =
@@ -1422,10 +1409,8 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                     const double dsv[3] = {dshpoly / shpoly * vec[0],
                                            dshpoly / shpoly * vec[1],
                                            dshpoly / shpoly * vec[2]};
-                    const double dsed_i =
-                        -ea.kcn[sa] * kGfn2EvToEh * hs;
-                    const double dsed_j =
-                        -eb.kcn[sb] * kGfn2EvToEh * hs;
+                    const double dsed_i = -ea.kcn[sa] * kGfn2EvToEh * hs;
+                    const double dsed_j = -eb.kcn[sb] * kGfn2EvToEh * hs;
                     const double vscale =
                         0.5
                         * (vsh[static_cast<std::size_t>(ish)]
@@ -1448,8 +1433,10 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                             const double hpij = pij * hij;
                             const double sval =
                                 2.0 * (pij * fscale - W(mu, nu));
-                            double dRa[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-                            double dRb[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+                            double dRa[3][3] = {
+                                {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+                            double dRb[3][3] = {
+                                {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
                             double tqA[6];
                             double dtqA[6][3] = {};
                             double tqB[6];
@@ -1483,7 +1470,8 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                                                [static_cast<std::size_t>(al)]
                                              * dmuB;
                                 }
-                                dG[static_cast<std::size_t>(k)] += dmu_a + dmu_b;
+                                dG[static_cast<std::size_t>(k)] +=
+                                    dmu_a + dmu_b;
                                 // Frozen-P CAMM quadrupole (xtb mmompop),
                                 // including two-centre Θ on H.
                                 double dth = 0;
@@ -1508,10 +1496,11 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                 const int ish = is0 + sa;
                 for (int sb = 0; sb < nsh_b; ++sb) {
                     const int jsh = js0 + sb;
-                    dEies_dr += qsh[static_cast<std::size_t>(ish)]
-                                * qsh[static_cast<std::size_t>(jsh)]
-                                * dgamma_dr(r, hardness[static_cast<std::size_t>(ish)],
-                                            hardness[static_cast<std::size_t>(jsh)]);
+                    dEies_dr +=
+                        qsh[static_cast<std::size_t>(ish)]
+                        * qsh[static_cast<std::size_t>(jsh)]
+                        * dgamma_dr(r, hardness[static_cast<std::size_t>(ish)],
+                                    hardness[static_cast<std::size_t>(jsh)]);
                 }
             }
             const double invr = 1.0 / r;
@@ -1543,11 +1532,11 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
 
     for (int moved = 0; moved < n_at; ++moved) {
         for (int a = 0; a < n_at; ++a) {
-            const auto& dcn =
-                dcndr[static_cast<std::size_t>(moved * n_at + a)];
+            const auto& dcn = dcndr[static_cast<std::size_t>(moved * n_at + a)];
             const double dcnE = dEdcn[static_cast<std::size_t>(a)];
             for (int k = 0; k < 3; ++k)
-                g[static_cast<std::size_t>(moved)][static_cast<std::size_t>(k)] +=
+                g[static_cast<std::size_t>(moved)]
+                 [static_cast<std::size_t>(k)] +=
                     dcn[static_cast<std::size_t>(k)] * dcnE;
         }
     }
@@ -1577,8 +1566,8 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const auto& thj = quadat[static_cast<std::size_t>(jat)];
             const double qj = -qat[static_cast<std::size_t>(jat)];
             double vec[3] = {rj[0] - ri[0], rj[1] - ri[1], rj[2] - ri[2]};
-            const double r1 = std::sqrt(vec[0] * vec[0] + vec[1] * vec[1]
-                                        + vec[2] * vec[2]);
+            const double r1 =
+                std::sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
             if (r1 < 1e-12)
                 continue;
             const double r2 = r1 * r1;
@@ -1586,15 +1575,13 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const double g3 = g1 * g1 * g1;
             const double g5 = g3 * g1 * g1;
             const double g7 = g5 * g1 * g1;
-            const double rr =
-                0.5
-                * (mrad[static_cast<std::size_t>(iat)]
-                   + mrad[static_cast<std::size_t>(jat)]);
+            const double rr = 0.5
+                              * (mrad[static_cast<std::size_t>(iat)]
+                                 + mrad[static_cast<std::size_t>(jat)]);
             const double fdmp3 =
                 1.0 / (1.0 + 6.0 * std::pow(rr * g1, kGfn2AesDmp3));
             const double ddmp3 =
-                -3.0 * g5 * fdmp3
-                - kGfn2AesDmp3 * fdmp3 * (fdmp3 - 1.0) * g5;
+                -3.0 * g5 * fdmp3 - kGfn2AesDmp3 * fdmp3 * (fdmp3 - 1.0) * g5;
             const double fdmp5 =
                 1.0 / (1.0 + 6.0 * std::pow(rr * g1, kGfn2AesDmp5));
             const double ddmp5 =
@@ -1604,9 +1591,9 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                 (mui[0] * vec[0] + mui[1] * vec[1] + mui[2] * vec[2]) * qj;
             const double qidpj =
                 (muj[0] * vec[0] + muj[1] * vec[1] + muj[2] * vec[2]) * qi;
-            const double fddr_cd =
-                3.0 * (dpiqj - qidpj) * kGfn2AesDmp3 * fdmp3 * g3
-                * (fdmp3 / rr) * std::pow(rr * g1, kGfn2AesDmp3);
+            const double fddr_cd = 3.0 * (dpiqj - qidpj) * kGfn2AesDmp3 * fdmp3
+                                   * g3 * (fdmp3 / rr)
+                                   * std::pow(rr * g1, kGfn2AesDmp3);
             Grad3 dG{0, 0, 0};
             for (int k = 0; k < 3; ++k)
                 dG[static_cast<std::size_t>(k)] =
@@ -1620,9 +1607,9 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const double dpjv =
                 muj[0] * vec[0] + muj[1] * vec[1] + muj[2] * vec[2];
             const double edd = dpidpj * r2 - 3.0 * dpjv * dpiv;
-            const double fddr_dd =
-                3.0 * edd * kGfn2AesDmp5 * fdmp5 * g5 * (fdmp5 / rr)
-                * std::pow(rr * g1, kGfn2AesDmp5);
+            const double fddr_dd = 3.0 * edd * kGfn2AesDmp5 * fdmp5 * g5
+                                   * (fdmp5 / rr)
+                                   * std::pow(rr * g1, kGfn2AesDmp5);
             for (int k = 0; k < 3; ++k)
                 dG[static_cast<std::size_t>(k)] +=
                     -2.0 * fdmp5 * g5 * dpidpj * vec[k]
@@ -1631,19 +1618,16 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
 
             // Charge–quadrupole: ATV energy uses −Θ:rr g5 fdmp5 / 3.
             const double eq =
-                2.0
-                    * (qj * thi[1] + thj[1] * qi) * vec[0] * vec[1]
-                + 2.0
-                    * (qj * thi[3] + thj[3] * qi) * vec[0] * vec[2]
-                + 2.0
-                    * (qj * thi[4] + thj[4] * qi) * vec[1] * vec[2]
+                2.0 * (qj * thi[1] + thj[1] * qi) * vec[0] * vec[1]
+                + 2.0 * (qj * thi[3] + thj[3] * qi) * vec[0] * vec[2]
+                + 2.0 * (qj * thi[4] + thj[4] * qi) * vec[1] * vec[2]
                 + (qj * thi[0] + thj[0] * qi) * vec[0] * vec[0]
                 + (qj * thi[2] + thj[2] * qi) * vec[1] * vec[1]
                 + (qj * thi[5] + thj[5] * qi) * vec[2] * vec[2];
             const double eq_atv = -eq / 3.0;
-            const double fddr_cq =
-                eq_atv * 3.0 * kGfn2AesDmp5 * fdmp5 * g5 * fdmp5 / rr
-                * std::pow(rr * g1, kGfn2AesDmp5);
+            const double fddr_cq = eq_atv * 3.0 * kGfn2AesDmp5 * fdmp5 * g5
+                                   * fdmp5 / rr
+                                   * std::pow(rr * g1, kGfn2AesDmp5);
             auto qvec = [](const std::array<double, 6>& th, const double v[3],
                            double out[3]) {
                 out[0] = v[0] * th[0] + v[1] * th[1] + v[2] * th[3];
@@ -1677,11 +1661,11 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             * dmrdcn[static_cast<std::size_t>(a)];
     for (int moved = 0; moved < n_at; ++moved) {
         for (int a = 0; a < n_at; ++a) {
-            const auto& dcn =
-                dcndr[static_cast<std::size_t>(moved * n_at + a)];
+            const auto& dcn = dcndr[static_cast<std::size_t>(moved * n_at + a)];
             const double dcnE = dEdcn_aes[static_cast<std::size_t>(a)];
             for (int k = 0; k < 3; ++k)
-                g[static_cast<std::size_t>(moved)][static_cast<std::size_t>(k)] +=
+                g[static_cast<std::size_t>(moved)]
+                 [static_cast<std::size_t>(k)] +=
                     dcn[static_cast<std::size_t>(k)] * dcnE;
         }
     }
@@ -1711,8 +1695,7 @@ void GFN2::launch(const LaunchContext& ctx) {
         throw std::invalid_argument("GFN2: mix_beta must be in (0, 1]");
 
     const bool do_f = with_forces && ctx.forces_requested;
-    const auto out =
-        solve_gfn2(f, charge, scc_tol, max_scc, mix_beta, do_f);
+    const auto out = solve_gfn2(f, charge, scc_tol, max_scc, mix_beta, do_f);
     energy_ = out.energy_eh * units::kHartreeInEv;
     scc_residual_ = out.residual;
     scc_iterations_ = out.iterations;

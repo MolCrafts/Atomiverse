@@ -22,9 +22,9 @@ using namespace ATV;
 // Offline xtb 6.7.1 IPEA `--chrg 0 --uhf 0 --acc 0.01 --hess` on mol.xyz
 // (tools/tb_oracle/inputs/xtb/ch4_ipea_hess/; param_ipea as GFN1).
 static constexpr double kE_pin_Ha = -4.670476737294;
-static constexpr double k_omega_pin[9] = {1541.68, 1541.68, 1541.68, 1705.89,
-                                          1705.89, 3548.78, 3576.13, 3576.13,
-                                          3576.13};
+static constexpr double k_omega_pin[9] = {1541.68, 1541.68, 1541.68,
+                                          1705.89, 1705.89, 3548.78,
+                                          3576.13, 3576.13, 3576.13};
 static constexpr double kH_Cxx_HaBohr2 = 0.6813937129;
 static constexpr double kE_tol_eV = 5.0e-2;
 static constexpr double k_omega_tol = 10.0;
@@ -66,7 +66,8 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const cpu::vib::HessianResult res = hess.run(f);
     const auto t1 = std::chrono::steady_clock::now();
-    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double ms =
+        std::chrono::duration<double, std::milli>(t1 - t0).count();
 
     if (res.n_atoms != 5) {
         std::printf("FAIL n_atoms=%d\n", res.n_atoms);
@@ -130,8 +131,9 @@ int main() {
     const double e_ha = e_ev / units::kHartreeInEv;
     const double pin_ev = kE_pin_Ha * units::kHartreeInEv;
 
-    std::printf("IPEA CH4 Hessian: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
-                e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
+    std::printf(
+        "IPEA CH4 Hessian: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
+        e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
     std::printf("  H_Cxx=%.12f eV/A^2  pin=%.12f  |d|=%.3e\n", h_cxx, h_cxx_pin,
                 std::fabs(h_cxx - h_cxx_pin));
     for (int k = 0; k < 9; ++k) {

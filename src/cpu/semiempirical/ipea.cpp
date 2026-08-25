@@ -29,6 +29,7 @@ using basis_data::kIpeaD3k1;
 using basis_data::kIpeaD3s6;
 using basis_data::kIpeaD3s8;
 using basis_data::kIpeaElements;
+using basis_data::kIpeaEtempK;
 using basis_data::kIpeaGExp;
 using basis_data::kIpeaKdiff;
 using basis_data::kIpeaKEn;
@@ -37,7 +38,6 @@ using basis_data::kIpeaKs;
 using basis_data::kIpeaKsp;
 using basis_data::kIpeaNElements;
 using basis_data::kIpeaRepKExp;
-using basis_data::kIpeaEtempK;
 using basis_data::kIpeaShiftEv;
 
 constexpr double kPi = 3.14159265358979323846;
@@ -112,15 +112,15 @@ void sto_ng(int ng, int n, int l, double zeta, std::vector<double>& alpha,
         alpha = {5.641487709e-1, 6.924421391e-2, 3.269529097e-2};
         coeff = {-1.782577972e-1, 8.612761663e-1, 2.261841969e-1};
     } else if (ng == 6 && n == 2 && l == 0) {
-        alpha = {2.768496241e+1, 5.077140627, 1.426786050, 2.040335729e-1,
-                 9.260298399e-2, 4.416183978e-2};
+        alpha = {2.768496241e+1, 5.077140627,    1.426786050,
+                 2.040335729e-1, 9.260298399e-2, 4.416183978e-2};
         coeff = {-4.151277819e-3, -2.067024148e-2, -5.150303337e-2,
-                 3.346271174e-1, 5.621061301e-1, 1.712994697e-1};
+                 3.346271174e-1,  5.621061301e-1,  1.712994697e-1};
     } else if (ng == 6 && n == 2 && l == 1) {
-        alpha = {5.868285913, 1.530329631, 5.475665231e-1, 2.288932733e-1,
-                 1.046655969e-1, 4.948220127e-2};
-        coeff = {7.924233646e-3, 5.144104825e-2, 1.898400060e-1, 4.049863191e-1,
-                 4.012362861e-1, 1.051855189e-1};
+        alpha = {5.868285913,    1.530329631,    5.475665231e-1,
+                 2.288932733e-1, 1.046655969e-1, 4.948220127e-2};
+        coeff = {7.924233646e-3, 5.144104825e-2, 1.898400060e-1,
+                 4.049863191e-1, 4.012362861e-1, 1.051855189e-1};
     } else {
         throw std::runtime_error("IPEA: no Stewart STO-nG for n="
                                  + std::to_string(n) + " l=" + std::to_string(l)
@@ -152,7 +152,7 @@ struct Shell {
     double shpoly = 0;   ///< k_poly.
     double hardness = 0; ///< η_l [Hartree].
     double n0 = 0;
-    double gam3 = 0;     ///< Atomic Γ (same on every shell of the atom).
+    double gam3 = 0; ///< Atomic Γ (same on every shell of the atom).
     double rad = 0;
     std::vector<Prim> prim;
 };
@@ -439,15 +439,15 @@ IpeaSystem build_system(const StorageReal* x, const StorageReal* y,
         const double* Ai = sys.xyz[static_cast<std::size_t>(si.atom)].data();
         for (int j = 0; j < sys.n_sh; ++j) {
             const Shell& sj = sys.sh[static_cast<std::size_t>(j)];
-            const double* Bj = sys.xyz[static_cast<std::size_t>(sj.atom)].data();
+            const double* Bj =
+                sys.xyz[static_cast<std::size_t>(sj.atom)].data();
             double hij = 0.5 * (si.h + sj.h);
             if (si.atom != sj.atom) {
                 const double dx = Ai[0] - Bj[0];
                 const double dy = Ai[1] - Bj[1];
                 const double dz = Ai[2] - Bj[2];
                 const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
-                const double rr =
-                    std::sqrt(r / ((si.rad + sj.rad) * kA2Bohr));
+                const double rr = std::sqrt(r / ((si.rad + sj.rad) * kA2Bohr));
                 const double pi = 1.0 + si.shpoly * rr;
                 const double pj = 1.0 + sj.shpoly * rr;
                 const auto& ea = *sys.el[static_cast<std::size_t>(si.atom)];
@@ -511,8 +511,8 @@ double dispersion_e(const IpeaSystem& sys, const int* type) {
     }
     const double cell[3] = {0, 0, 0};
     const auto d3 =
-        gpw::dftd3_pbe_bj(Z, pos, cell, false, gpw::D3Params{}, 94.2,
-                          kIpeaD3s6, kIpeaD3s8, kIpeaD3a1, kIpeaD3a2);
+        gpw::dftd3_pbe_bj(Z, pos, cell, false, gpw::D3Params{}, 94.2, kIpeaD3s6,
+                          kIpeaD3s8, kIpeaD3a1, kIpeaD3a2);
     return d3.energy;
 }
 
@@ -648,9 +648,9 @@ SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
         }
         out.residual = 0;
         for (int i = 0; i < sys.n_sh; ++i)
-            out.residual = std::max(out.residual,
-                                    std::fabs(q_out[static_cast<std::size_t>(i)]
-                                              - q[static_cast<std::size_t>(i)]));
+            out.residual = std::max(
+                out.residual, std::fabs(q_out[static_cast<std::size_t>(i)]
+                                        - q[static_cast<std::size_t>(i)]));
         out.iterations = it + 1;
         if (out.residual < scc_tol) {
             q = q_out;
@@ -682,7 +682,8 @@ SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
                   * q[static_cast<std::size_t>(j)];
     std::vector<double> q_at(static_cast<std::size_t>(sys.n_at), 0.0);
     for (int i = 0; i < sys.n_sh; ++i)
-        q_at[static_cast<std::size_t>(sys.sh[static_cast<std::size_t>(i)].atom)] +=
+        q_at[static_cast<std::size_t>(
+            sys.sh[static_cast<std::size_t>(i)].atom)] +=
             q[static_cast<std::size_t>(i)];
     double e3 = 0;
     for (int a = 0; a < sys.n_at; ++a) {
@@ -802,10 +803,9 @@ void nuclear_gradient(const IpeaSystem& sys, const SccOut& scc, const int* type,
             const double dscale_dr =
                 hs * (si.shpoly * pj + sj.shpoly * pi) * drr_dr;
             const double havg = 0.5 * (si.h + sj.h);
-            const double vij =
-                0.5
-                * (scc.V[static_cast<std::size_t>(i)]
-                   + scc.V[static_cast<std::size_t>(j)]);
+            const double vij = 0.5
+                               * (scc.V[static_cast<std::size_t>(i)]
+                                  + scc.V[static_cast<std::size_t>(j)]);
             const double dgdR = dgamma_ko_dr(r, si.hardness, sj.hardness);
             const double qg = q[static_cast<std::size_t>(i)]
                               * q[static_cast<std::size_t>(j)] * dgdR;
@@ -837,22 +837,22 @@ void nuclear_gradient(const IpeaSystem& sys, const SccOut& scc, const int* type,
                     const double Wmn = W(mu, nu);
                     for (int k = 0; k < 3; ++k) {
                         const double dH0 =
-                            havg
-                            * (dscale_dr * dir[k] * sij + scale * ds[k]);
+                            havg * (dscale_dr * dir[k] * sij + scale * ds[k]);
                         const double dE =
-                            2.0
-                            * (Pmn * dH0 + (vij * Pmn - Wmn) * ds[k]);
-                        g[static_cast<std::size_t>(a)][static_cast<std::size_t>(
-                            k)] += dE;
-                        g[static_cast<std::size_t>(b)][static_cast<std::size_t>(
-                            k)] -= dE;
+                            2.0 * (Pmn * dH0 + (vij * Pmn - Wmn) * ds[k]);
+                        g[static_cast<std::size_t>(a)]
+                         [static_cast<std::size_t>(k)] += dE;
+                        g[static_cast<std::size_t>(b)]
+                         [static_cast<std::size_t>(k)] -= dE;
                     }
                 }
             }
             for (int k = 0; k < 3; ++k) {
                 const double t = qg * dir[k];
-                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] += t;
-                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -= t;
+                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                    t;
+                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -=
+                    t;
             }
         }
     }
@@ -872,16 +872,16 @@ void nuclear_gradient(const IpeaSystem& sys, const SccOut& scc, const int* type,
             const double dir[3] = {dx / r, dy / r, dz / r};
             const double rcov = ra + rb;
             const double f = d3_cn(r, rcov);
-            const double dfdr =
-                f * (1.0 - f) * (-kIpeaD3k1 * rcov / (r * r));
-            const double chain =
-                (dEdcn[static_cast<std::size_t>(a)]
-                 + dEdcn[static_cast<std::size_t>(b)])
-                * dfdr;
+            const double dfdr = f * (1.0 - f) * (-kIpeaD3k1 * rcov / (r * r));
+            const double chain = (dEdcn[static_cast<std::size_t>(a)]
+                                  + dEdcn[static_cast<std::size_t>(b)])
+                                 * dfdr;
             for (int k = 0; k < 3; ++k) {
                 const double t = chain * dir[k];
-                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] += t;
-                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -= t;
+                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                    t;
+                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -=
+                    t;
             }
 
             const auto& ea = *sys.el[static_cast<std::size_t>(a)];
@@ -895,8 +895,10 @@ void nuclear_gradient(const IpeaSystem& sys, const SccOut& scc, const int* type,
                    - kIpeaRepKExp * kpre * std::pow(r, kIpeaRepKExp - 1.0));
             for (int k = 0; k < 3; ++k) {
                 const double t = dEdr * dir[k];
-                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] += t;
-                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -= t;
+                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
+                    t;
+                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -=
+                    t;
             }
         }
     }
@@ -909,8 +911,8 @@ void nuclear_gradient(const IpeaSystem& sys, const SccOut& scc, const int* type,
     }
     const double cell[3] = {0, 0, 0};
     const auto d3 =
-        gpw::dftd3_pbe_bj(Z, pos, cell, false, gpw::D3Params{}, 94.2,
-                          kIpeaD3s6, kIpeaD3s8, kIpeaD3a1, kIpeaD3a2);
+        gpw::dftd3_pbe_bj(Z, pos, cell, false, gpw::D3Params{}, 94.2, kIpeaD3s6,
+                          kIpeaD3s8, kIpeaD3a1, kIpeaD3a2);
     for (int a = 0; a < n_at; ++a) {
         g[static_cast<std::size_t>(a)][0] -=
             d3.forces[static_cast<std::size_t>(a)][0];
@@ -970,9 +972,8 @@ void IPEA::launch(const LaunchContext& ctx) {
     AccReal* fz = f.span(kAtom_fz);
 
     const bool do_f = with_forces && ctx.forces_requested;
-    const TotalOut out =
-        total_energy_eV(x, y, z, type, n_at, charge, scc_tol, max_scc,
-                        mix_beta, do_f, 0.0);
+    const TotalOut out = total_energy_eV(x, y, z, type, n_at, charge, scc_tol,
+                                         max_scc, mix_beta, do_f, 0.0);
     energy_ = out.energy_ev;
     scc_residual_ = out.residual;
     scc_iterations_ = out.iterations;

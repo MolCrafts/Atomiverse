@@ -126,9 +126,8 @@ int main(int argc, char** argv) {
         e_cuda = r.e_total;
         s_cuda = ATV::cuda::gpw::gpw_stress(atoms, m, r, kH);
         std::printf("CUDA: E=%.12f Ha  iters=%d\n", e_cuda, r.iters);
-        std::printf("CUDA σ= %.8e %.8e %.8e  (off %.3e %.3e %.3e)\n",
-                    s_cuda[0], s_cuda[1], s_cuda[2], s_cuda[3], s_cuda[4],
-                    s_cuda[5]);
+        std::printf("CUDA σ= %.8e %.8e %.8e  (off %.3e %.3e %.3e)\n", s_cuda[0],
+                    s_cuda[1], s_cuda[2], s_cuda[3], s_cuda[4], s_cuda[5]);
         for (int k = 3; k < 6; ++k) {
             if (std::abs(s_cuda[static_cast<std::size_t>(k)]) > kOffDiagTol) {
                 std::fprintf(stderr, "FAIL: CUDA off-diag σ[%d]=%.3e\n", k,
@@ -159,8 +158,9 @@ int main(int argc, char** argv) {
                          max_ds);
             return 1;
         }
-        std::printf("PASS: cuda-gpw-product-h2o-stress  |dE|=%.3e  max|dσ|=%.3e\n",
-                    de, max_ds);
+        std::printf(
+            "PASS: cuda-gpw-product-h2o-stress  |dE|=%.3e  max|dσ|=%.3e\n", de,
+            max_ds);
     } else {
         std::printf("PASS: cuda-gpw-product-h2o-stress (--device=%s only)\n",
                     device.c_str());

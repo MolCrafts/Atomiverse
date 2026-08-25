@@ -239,8 +239,7 @@ double contracted_s_overlap(const double* aa, const double* ca, int na,
     const double Z[3] = {0, 0, 0};
     for (int i = 0; i < na; ++i)
         for (int j = 0; j < nb; ++j)
-            s += ca[i] * cb[j]
-                 * primitive_overlap(aa[i], Z, 0, ab[j], Z, 0);
+            s += ca[i] * cb[j] * primitive_overlap(aa[i], Z, 0, ab[j], Z, 0);
     return s;
 }
 
@@ -292,9 +291,9 @@ void build_basis(const std::vector<const Gfn0Element*>& el, int n_at,
                     alp[static_cast<std::size_t>(ng + i)] = val_s_a[i];
                     cont[static_cast<std::size_t>(ng + i)] = -ss * val_s_c[i];
                 }
-                const double nrm = contracted_s_overlap(
-                    alp.data(), cont.data(), ng + val_s_n, alp.data(),
-                    cont.data(), ng + val_s_n);
+                const double nrm =
+                    contracted_s_overlap(alp.data(), cont.data(), ng + val_s_n,
+                                         alp.data(), cont.data(), ng + val_s_n);
                 const double inv = 1.0 / std::sqrt(nrm);
                 for (double& c : cont)
                     c *= inv;
@@ -313,8 +312,7 @@ void build_basis(const std::vector<const Gfn0Element*>& el, int n_at,
                 aos.push_back(std::move(ao));
             }
         }
-        ao0[static_cast<std::size_t>(a) + 1] =
-            static_cast<int>(aos.size());
+        ao0[static_cast<std::size_t>(a) + 1] = static_cast<int>(aos.size());
     }
 }
 
@@ -357,7 +355,8 @@ void coordination_numbers(const std::vector<const Gfn0Element*>& el,
     constexpr double cnmax = 8.0;
     cn.assign(static_cast<std::size_t>(n_at), 0.0);
     if (want_grad)
-        dcndr.assign(static_cast<std::size_t>(n_at) * static_cast<std::size_t>(n_at),
+        dcndr.assign(static_cast<std::size_t>(n_at)
+                         * static_cast<std::size_t>(n_at),
                      Grad3{0, 0, 0});
     const double cut2 = cutoff * cutoff;
     for (int i = 0; i < n_at; ++i) {
@@ -367,16 +366,17 @@ void coordination_numbers(const std::vector<const Gfn0Element*>& el,
             double rij[3];
             double r2 = 0;
             for (int k = 0; k < 3; ++k) {
-                rij[k] = xyz[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)]
-                         - xyz[static_cast<std::size_t>(j)][static_cast<std::size_t>(k)];
+                rij[k] = xyz[static_cast<std::size_t>(i)]
+                            [static_cast<std::size_t>(k)]
+                         - xyz[static_cast<std::size_t>(j)]
+                              [static_cast<std::size_t>(k)];
                 r2 += rij[k] * rij[k];
             }
             if (r2 > cut2 || r2 < 1.0e-12)
                 continue;
             const double r = std::sqrt(r2);
-            const double rj =
-                el[static_cast<std::size_t>(j)]->rcov_d3_ang * kAatoau * 4.0
-                / 3.0;
+            const double rj = el[static_cast<std::size_t>(j)]->rcov_d3_ang
+                              * kAatoau * 4.0 / 3.0;
             const double r0 = ri + rj;
             const double c = 0.5 * (1.0 + std::erf(-kcn * (r - r0) / r0));
             cn[static_cast<std::size_t>(i)] += c;
@@ -390,14 +390,14 @@ void coordination_numbers(const std::vector<const Gfn0Element*>& el,
                 const int n = n_at;
                 for (int k = 0; k < 3; ++k) {
                     const double d = derf * rij[k] * invr;
-                    dcndr[static_cast<std::size_t>(i * n + i)][static_cast<std::size_t>(k)] +=
-                        d;
-                    dcndr[static_cast<std::size_t>(j * n + j)][static_cast<std::size_t>(k)] -=
-                        d;
-                    dcndr[static_cast<std::size_t>(i * n + j)][static_cast<std::size_t>(k)] +=
-                        d;
-                    dcndr[static_cast<std::size_t>(j * n + i)][static_cast<std::size_t>(k)] -=
-                        d;
+                    dcndr[static_cast<std::size_t>(i * n + i)]
+                         [static_cast<std::size_t>(k)] += d;
+                    dcndr[static_cast<std::size_t>(j * n + j)]
+                         [static_cast<std::size_t>(k)] -= d;
+                    dcndr[static_cast<std::size_t>(i * n + j)]
+                         [static_cast<std::size_t>(k)] += d;
+                    dcndr[static_cast<std::size_t>(j * n + i)]
+                         [static_cast<std::size_t>(k)] -= d;
                 }
             }
         }
@@ -406,10 +406,10 @@ void coordination_numbers(const std::vector<const Gfn0Element*>& el,
     for (int i = 0; i < n_at; ++i) {
         const double cni = cn[static_cast<std::size_t>(i)];
         if (want_grad) {
-            const double dcut = std::exp(cnmax) / (std::exp(cnmax) + std::exp(cni));
+            const double dcut =
+                std::exp(cnmax) / (std::exp(cnmax) + std::exp(cni));
             for (int m = 0; m < n_at; ++m) {
-                auto& g =
-                    dcndr[static_cast<std::size_t>(m * n_at + i)];
+                auto& g = dcndr[static_cast<std::size_t>(m * n_at + i)];
                 g[0] *= dcut;
                 g[1] *= dcut;
                 g[2] *= dcut;
@@ -443,14 +443,16 @@ void eeq_charges(const std::vector<const Gfn0Element*>& el,
             const auto& ej = *el[static_cast<std::size_t>(j)];
             double r2 = 0;
             for (int k = 0; k < 3; ++k) {
-                const double d =
-                    xyz[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)]
-                    - xyz[static_cast<std::size_t>(j)][static_cast<std::size_t>(k)];
+                const double d = xyz[static_cast<std::size_t>(i)]
+                                    [static_cast<std::size_t>(k)]
+                                 - xyz[static_cast<std::size_t>(j)]
+                                      [static_cast<std::size_t>(k)];
                 r2 += d * d;
             }
             const double r = std::sqrt(r2);
             const double gij =
-                1.0 / std::sqrt(ei.eeq_alp * ei.eeq_alp + ej.eeq_alp * ej.eeq_alp);
+                1.0
+                / std::sqrt(ei.eeq_alp * ei.eeq_alp + ej.eeq_alp * ej.eeq_alp);
             const double t = std::erf(gij * r) / r;
             J(i, j) = t;
             J(j, i) = t;
@@ -483,15 +485,18 @@ void eeq_charges(const std::vector<const Gfn0Element*>& el,
             double r2 = 0;
             for (int k = 0; k < 3; ++k) {
                 // vec = R_j - R_i (pprcht)
-                vec[k] = xyz[static_cast<std::size_t>(j)][static_cast<std::size_t>(k)]
-                         - xyz[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)];
+                vec[k] = xyz[static_cast<std::size_t>(j)]
+                            [static_cast<std::size_t>(k)]
+                         - xyz[static_cast<std::size_t>(i)]
+                              [static_cast<std::size_t>(k)];
                 r2 += vec[k] * vec[k];
             }
             const double gij2 =
                 1.0 / (ei.eeq_alp * ei.eeq_alp + ej.eeq_alp * ej.eeq_alp);
             const double g1 = std::erf(std::sqrt(gij2 * r2)) / std::sqrt(r2);
             const double pref =
-                (2.0 * std::sqrt(gij2) * std::exp(-gij2 * r2) / kSqrtPi - g1) / r2;
+                (2.0 * std::sqrt(gij2) * std::exp(-gij2 * r2) / kSqrtPi - g1)
+                / r2;
             double dG[3] = {pref * vec[0], pref * vec[1], pref * vec[2]};
             const double qi = q(i);
             const double qj = q(j);
@@ -500,10 +505,10 @@ void eeq_charges(const std::vector<const Gfn0Element*>& el,
                     [static_cast<std::size_t>(k)] -= dG[k] * qi;
                 djdr[static_cast<std::size_t>(j)][static_cast<std::size_t>(i)]
                     [static_cast<std::size_t>(k)] += dG[k] * qj;
-                djdtr[static_cast<std::size_t>(j)][static_cast<std::size_t>(k)] +=
-                    dG[k] * qi;
-                djdtr[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)] -=
-                    dG[k] * qj;
+                djdtr[static_cast<std::size_t>(j)]
+                     [static_cast<std::size_t>(k)] += dG[k] * qi;
+                djdtr[static_cast<std::size_t>(i)]
+                     [static_cast<std::size_t>(k)] -= dG[k] * qj;
             }
         }
     }
@@ -513,16 +518,19 @@ void eeq_charges(const std::vector<const Gfn0Element*>& el,
             const auto& dcn =
                 dcndr[static_cast<std::size_t>(moved * n_at + iat)];
             for (int k = 0; k < 3; ++k)
-                djdr[static_cast<std::size_t>(moved)][static_cast<std::size_t>(iat)]
-                    [static_cast<std::size_t>(k)] -= dx * dcn[static_cast<std::size_t>(k)];
+                djdr[static_cast<std::size_t>(moved)][static_cast<std::size_t>(
+                    iat)][static_cast<std::size_t>(k)] -=
+                    dx * dcn[static_cast<std::size_t>(k)];
         }
     }
     for (int moved = 0; moved < n_at; ++moved) {
         for (int col = 0; col < ndim; ++col) {
             const double qc = q(col);
             for (int k = 0; k < 3; ++k)
-                g[static_cast<std::size_t>(moved)][static_cast<std::size_t>(k)] +=
-                    djdr[static_cast<std::size_t>(moved)][static_cast<std::size_t>(col)]
+                g[static_cast<std::size_t>(moved)]
+                 [static_cast<std::size_t>(k)] +=
+                    djdr[static_cast<std::size_t>(moved)]
+                        [static_cast<std::size_t>(col)]
                         [static_cast<std::size_t>(k)]
                     * qc;
         }
@@ -531,7 +539,8 @@ void eeq_charges(const std::vector<const Gfn0Element*>& el,
         for (int k = 0; k < 3; ++k)
             djdr[static_cast<std::size_t>(iat)][static_cast<std::size_t>(iat)]
                 [static_cast<std::size_t>(k)] +=
-                djdtr[static_cast<std::size_t>(iat)][static_cast<std::size_t>(k)];
+                djdtr[static_cast<std::size_t>(iat)]
+                     [static_cast<std::size_t>(k)];
     }
     linalg::RealMatrix Jinv = xt::linalg::inv(J);
     dqdr.assign(static_cast<std::size_t>(n_at) * static_cast<std::size_t>(n_at),
@@ -541,8 +550,8 @@ void eeq_charges(const std::vector<const Gfn0Element*>& el,
             Grad3 acc{0, 0, 0};
             for (int col = 0; col < ndim; ++col) {
                 const double invca = Jinv(col, a);
-                const auto& djc =
-                    djdr[static_cast<std::size_t>(moved)][static_cast<std::size_t>(col)];
+                const auto& djc = djdr[static_cast<std::size_t>(moved)]
+                                      [static_cast<std::size_t>(col)];
                 acc[0] -= djc[0] * invca;
                 acc[1] -= djc[1] * invca;
                 acc[2] -= djc[2] * invca;
@@ -564,15 +573,17 @@ double repulsion_energy(const std::vector<const Gfn0Element*>& el,
             double rij[3];
             double r2 = 0;
             for (int k = 0; k < 3; ++k) {
-                rij[k] =
-                    xyz[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)]
-                    - xyz[static_cast<std::size_t>(j)][static_cast<std::size_t>(k)];
+                rij[k] = xyz[static_cast<std::size_t>(i)]
+                            [static_cast<std::size_t>(k)]
+                         - xyz[static_cast<std::size_t>(j)]
+                              [static_cast<std::size_t>(k)];
                 r2 += rij[k] * rij[k];
             }
             if (r2 > rthr || r2 < 1.0e-6)
                 continue;
             const double r = std::sqrt(r2);
-            const double den2 = (ei.en_ham - ej.en_ham) * (ei.en_ham - ej.en_ham);
+            const double den2 =
+                (ei.en_ham - ej.en_ham) * (ei.en_ham - ej.en_ham);
             const double den4 = den2 * den2;
             const double alpha =
                 std::sqrt(ei.rep_alpha * ej.rep_alpha)
@@ -586,10 +597,10 @@ double repulsion_energy(const std::vector<const Gfn0Element*>& el,
                 const double dtmp =
                     expterm * (1.5 * alpha * r2top34 + 1.0) / r2top34top2;
                 for (int k = 0; k < 3; ++k) {
-                    g[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)] -=
-                        dtmp * rij[k];
-                    g[static_cast<std::size_t>(j)][static_cast<std::size_t>(k)] +=
-                        dtmp * rij[k];
+                    g[static_cast<std::size_t>(i)]
+                     [static_cast<std::size_t>(k)] -= dtmp * rij[k];
+                    g[static_cast<std::size_t>(j)]
+                     [static_cast<std::size_t>(k)] += dtmp * rij[k];
                 }
             }
         }
@@ -631,9 +642,10 @@ double srb_energy(const std::vector<const Gfn0Element*>& el,
             double rij[3];
             double r2 = 0;
             for (int k = 0; k < 3; ++k) {
-                rij[k] =
-                    xyz[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)]
-                    - xyz[static_cast<std::size_t>(j)][static_cast<std::size_t>(k)];
+                rij[k] = xyz[static_cast<std::size_t>(i)]
+                            [static_cast<std::size_t>(k)]
+                         - xyz[static_cast<std::size_t>(j)]
+                              [static_cast<std::size_t>(k)];
                 r2 += rij[k] * rij[k];
             }
             if (r2 > 200.0)
@@ -642,12 +654,12 @@ double srb_energy(const std::vector<const Gfn0Element*>& el,
             const auto& ej = *el[static_cast<std::size_t>(j)];
             const int ir = srb_row(zi);
             const int jr = srb_row(zj);
-            const double ra =
-                ei.srb_r0 + ei.srb_cnfak * cn[static_cast<std::size_t>(i)]
-                + kGfn0SrbShift;
-            const double rb =
-                ej.srb_r0 + ej.srb_cnfak * cn[static_cast<std::size_t>(j)]
-                + kGfn0SrbShift;
+            const double ra = ei.srb_r0
+                              + ei.srb_cnfak * cn[static_cast<std::size_t>(i)]
+                              + kGfn0SrbShift;
+            const double rb = ej.srb_r0
+                              + ej.srb_cnfak * cn[static_cast<std::size_t>(j)]
+                              + kGfn0SrbShift;
             const double den_srb = std::fabs(ei.srb_en - ej.srb_en);
             const double k1 = 0.005 * (p[ir][0] + p[jr][0]);
             const double k2 = 0.005 * (p[ir][1] + p[jr][1]);
@@ -664,10 +676,10 @@ double srb_energy(const std::vector<const Gfn0Element*>& el,
                 const double dtmp = 2.0 * pre * dr * expterm;
                 const double invrab = 1.0 / rab;
                 for (int k = 0; k < 3; ++k) {
-                    g[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)] -=
-                        dtmp * rij[k] * invrab;
-                    g[static_cast<std::size_t>(j)][static_cast<std::size_t>(k)] +=
-                        dtmp * rij[k] * invrab;
+                    g[static_cast<std::size_t>(i)]
+                     [static_cast<std::size_t>(k)] -= dtmp * rij[k] * invrab;
+                    g[static_cast<std::size_t>(j)]
+                     [static_cast<std::size_t>(k)] += dtmp * rij[k] * invrab;
                 }
                 // dE/d rab0 = dtmp; rab0 = ff*(r0i(CN_i)+r0j(CN_j))
                 for (int moved = 0; moved < n_at; ++moved) {
@@ -679,9 +691,10 @@ double srb_energy(const std::vector<const Gfn0Element*>& el,
                         const double drab0 =
                             ff
                             * (ei.srb_cnfak * dci[static_cast<std::size_t>(k)]
-                               + ej.srb_cnfak * dcj[static_cast<std::size_t>(k)]);
-                        g[static_cast<std::size_t>(moved)][static_cast<std::size_t>(k)] +=
-                            dtmp * drab0;
+                               + ej.srb_cnfak
+                                     * dcj[static_cast<std::size_t>(k)]);
+                        g[static_cast<std::size_t>(moved)]
+                         [static_cast<std::size_t>(k)] += dtmp * drab0;
                     }
                 }
             }
@@ -691,7 +704,8 @@ double srb_energy(const std::vector<const Gfn0Element*>& el,
 }
 
 void self_energies(const std::vector<const Gfn0Element*>& el, int n_at,
-                   const std::vector<double>& cn, const std::vector<double>& qat,
+                   const std::vector<double>& cn,
+                   const std::vector<double>& qat,
                    std::vector<std::array<double, 2>>& se,
                    std::vector<std::array<double, 2>>& dSEdcn,
                    std::vector<std::array<double, 2>>& dSEdq, bool want_grad) {
@@ -709,10 +723,11 @@ void self_energies(const std::vector<const Gfn0Element*>& el, int n_at,
                 e.self_e[sh] - e.k_cn[sh] * cna - e.k_q_shell[sh] * qa
                 - e.k_q_atom * qa * qa;
             if (want_grad) {
-                dSEdcn[static_cast<std::size_t>(a)][static_cast<std::size_t>(sh)] =
-                    -e.k_cn[sh];
-                dSEdq[static_cast<std::size_t>(a)][static_cast<std::size_t>(sh)] =
-                    -e.k_q_shell[sh] - 2.0 * e.k_q_atom * qa;
+                dSEdcn[static_cast<std::size_t>(a)]
+                      [static_cast<std::size_t>(sh)] = -e.k_cn[sh];
+                dSEdq[static_cast<std::size_t>(a)]
+                     [static_cast<std::size_t>(sh)] =
+                         -e.k_q_shell[sh] - 2.0 * e.k_q_atom * qa;
             }
         }
     }
@@ -736,8 +751,7 @@ void dshell_poly(double iPoly, double jPoly, double iRad, double jRad,
     const double t15 = k1 * t14;
     const double t23 = k2 * t14;
     shpoly = (1.0 + t15) * (1.0 + t23);
-    const double fac =
-        (t15 * (1.0 + t23) + (1.0 + t15) * t23) * aexp / rab2;
+    const double fac = (t15 * (1.0 + t23) + (1.0 + t15) * t23) * aexp / rab2;
     dxyz[0] = fac * rij[0];
     dxyz[1] = fac * rij[1];
     dxyz[2] = fac * rij[2];
@@ -761,8 +775,8 @@ double eht_energy(const std::vector<const Gfn0Element*>& el,
 
     for (int mu = 0; mu < nao; ++mu) {
         const auto& u = aos[static_cast<std::size_t>(mu)];
-        const double hii =
-            se[static_cast<std::size_t>(u.atom)][static_cast<std::size_t>(u.shell)];
+        const double hii = se[static_cast<std::size_t>(u.atom)]
+                             [static_cast<std::size_t>(u.shell)];
         S(mu, mu) = 1.0;
         H(mu, mu) = hii;
         for (int nu = 0; nu < mu; ++nu) {
@@ -794,9 +808,8 @@ double eht_energy(const std::vector<const Gfn0Element*>& el,
                 km = 0.0;
             else if (!vali || !valj)
                 km *= kGfn0Kdiff;
-            const double hjj =
-                se[static_cast<std::size_t>(v.atom)][static_cast<std::size_t>(
-                    v.shell)];
+            const double hjj = se[static_cast<std::size_t>(v.atom)]
+                                 [static_cast<std::size_t>(v.shell)];
             const double hav = 0.5 * km * (hii + hjj);
             const double rr = ei.rad_ang * kAatoau + ej.rad_ang * kAatoau;
             const double rrab = r / rr;
@@ -842,14 +855,14 @@ double eht_energy(const std::vector<const Gfn0Element*>& el,
         const double Pii = P(mu, mu) * kGfn0EvToAu;
         dHdcn[static_cast<std::size_t>(iat)] +=
             Pii
-            * dSEdcn[static_cast<std::size_t>(iat)][static_cast<std::size_t>(
-                u.shell)];
+            * dSEdcn[static_cast<std::size_t>(iat)]
+                    [static_cast<std::size_t>(u.shell)];
         dHdq[static_cast<std::size_t>(iat)] +=
             Pii
-            * dSEdq[static_cast<std::size_t>(iat)][static_cast<std::size_t>(
-                u.shell)];
-        const double hii =
-            se[static_cast<std::size_t>(iat)][static_cast<std::size_t>(u.shell)];
+            * dSEdq[static_cast<std::size_t>(iat)]
+                   [static_cast<std::size_t>(u.shell)];
+        const double hii = se[static_cast<std::size_t>(iat)]
+                             [static_cast<std::size_t>(u.shell)];
         for (int nu = 0; nu < nao; ++nu) {
             const auto& v = aos[static_cast<std::size_t>(nu)];
             const int jat = v.atom;
@@ -873,9 +886,8 @@ double eht_energy(const std::vector<const Gfn0Element*>& el,
                 km = 0.0;
             else if (!vali || !valj)
                 km *= kGfn0Kdiff;
-            const double hjj =
-                se[static_cast<std::size_t>(jat)][static_cast<std::size_t>(
-                    v.shell)];
+            const double hjj = se[static_cast<std::size_t>(jat)]
+                                 [static_cast<std::size_t>(v.shell)];
             const double hav = 0.5 * km * (hii + hjj);
             double shpoly = 0;
             double dsh[3];
@@ -920,14 +932,13 @@ double eht_energy(const std::vector<const Gfn0Element*>& el,
     }
     for (int moved = 0; moved < n_at; ++moved) {
         for (int a = 0; a < n_at; ++a) {
-            const auto& dcn =
-                dcndr[static_cast<std::size_t>(moved * n_at + a)];
-            const auto& dq =
-                dqdr[static_cast<std::size_t>(moved * n_at + a)];
+            const auto& dcn = dcndr[static_cast<std::size_t>(moved * n_at + a)];
+            const auto& dq = dqdr[static_cast<std::size_t>(moved * n_at + a)];
             const double dcnE = dHdcn[static_cast<std::size_t>(a)];
             const double dqE = dHdq[static_cast<std::size_t>(a)];
             for (int k = 0; k < 3; ++k) {
-                g[static_cast<std::size_t>(moved)][static_cast<std::size_t>(k)] +=
+                g[static_cast<std::size_t>(moved)]
+                 [static_cast<std::size_t>(k)] +=
                     dcn[static_cast<std::size_t>(k)] * dcnE
                     + dq[static_cast<std::size_t>(k)] * dqE;
             }
@@ -953,10 +964,10 @@ double energy_gfn0(const Frame& f, const StorageReal* x, const StorageReal* y,
 
     std::vector<Grad3> xyz(static_cast<std::size_t>(n_at));
     for (int a = 0; a < n_at; ++a) {
-        xyz[static_cast<std::size_t>(a)] = {
-            static_cast<double>(x[a]) * kAatoau,
-            static_cast<double>(y[a]) * kAatoau,
-            static_cast<double>(z[a]) * kAatoau};
+        xyz[static_cast<std::size_t>(a)] = {static_cast<double>(x[a]) * kAatoau,
+                                            static_cast<double>(y[a]) * kAatoau,
+                                            static_cast<double>(z[a])
+                                                * kAatoau};
     }
 
     std::vector<Grad3> g(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
@@ -966,11 +977,9 @@ double energy_gfn0(const Frame& f, const StorageReal* x, const StorageReal* y,
     std::vector<double> qat;
     std::vector<Grad3> dqdr;
     double e_ies = 0;
-    eeq_charges(el, xyz, n_at, chrg, cn, qat, e_ies, want_grad, dcndr, g,
-                dqdr);
+    eeq_charges(el, xyz, n_at, chrg, cn, qat, e_ies, want_grad, dcndr, g, dqdr);
     const double e_rep = repulsion_energy(el, xyz, n_at, want_grad, g);
-    const double e_srb =
-        srb_energy(el, xyz, n_at, cn, want_grad, dcndr, g);
+    const double e_srb = srb_energy(el, xyz, n_at, cn, want_grad, dcndr, g);
 
     std::vector<int> Z(static_cast<std::size_t>(n_at));
     for (int a = 0; a < n_at; ++a)
@@ -985,9 +994,12 @@ double energy_gfn0(const Frame& f, const StorageReal* x, const StorageReal* y,
             /*s9=*/0.0);
         e_d4 = d4.energy;
         for (int a = 0; a < n_at; ++a) {
-            g[static_cast<std::size_t>(a)][0] -= d4.forces[static_cast<std::size_t>(a)][0];
-            g[static_cast<std::size_t>(a)][1] -= d4.forces[static_cast<std::size_t>(a)][1];
-            g[static_cast<std::size_t>(a)][2] -= d4.forces[static_cast<std::size_t>(a)][2];
+            g[static_cast<std::size_t>(a)][0] -=
+                d4.forces[static_cast<std::size_t>(a)][0];
+            g[static_cast<std::size_t>(a)][1] -=
+                d4.forces[static_cast<std::size_t>(a)][1];
+            g[static_cast<std::size_t>(a)][2] -=
+                d4.forces[static_cast<std::size_t>(a)][2];
         }
     } else {
         e_d4 = cpu::scf::dftd4_energy(
@@ -1031,8 +1043,8 @@ void GFN0::launch(const LaunchContext& ctx) {
 
     const bool do_f = with_forces && ctx.forces_requested;
     std::vector<Grad3> grad;
-    const double e_ha =
-        energy_gfn0(f, x, y, z, type, n_at, charge, do_f, do_f ? &grad : nullptr);
+    const double e_ha = energy_gfn0(f, x, y, z, type, n_at, charge, do_f,
+                                    do_f ? &grad : nullptr);
     energy_ = e_ha * units::kHartreeInEv;
     energy_meta += energy_;
 
@@ -1040,9 +1052,12 @@ void GFN0::launch(const LaunchContext& ctx) {
         // F[eV/Å] = −(dE_Ha/dR_Bohr) * (Hartree/eV) / a0[Å]
         const double fac = units::kHartreeInEv * kAatoau;
         for (int a = 0; a < n_at; ++a) {
-            fx[a] += static_cast<AccReal>(-grad[static_cast<std::size_t>(a)][0] * fac);
-            fy[a] += static_cast<AccReal>(-grad[static_cast<std::size_t>(a)][1] * fac);
-            fz[a] += static_cast<AccReal>(-grad[static_cast<std::size_t>(a)][2] * fac);
+            fx[a] += static_cast<AccReal>(-grad[static_cast<std::size_t>(a)][0]
+                                          * fac);
+            fy[a] += static_cast<AccReal>(-grad[static_cast<std::size_t>(a)][1]
+                                          * fac);
+            fz[a] += static_cast<AccReal>(-grad[static_cast<std::size_t>(a)][2]
+                                          * fac);
         }
     }
 }

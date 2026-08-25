@@ -60,9 +60,8 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
                         const std::string& gth_name, double ecut_ry,
                         DeviceDensity& den, DeviceBandSolver& solver,
                         cpu::pw::internal::PWProblem& prob,
-                        cpu::pw::internal::PWWorkspace& ws,
-                        int n_alpha = -1, int n_beta = -1,
-                        bool use_smear = false, int n_elec = 0,
+                        cpu::pw::internal::PWWorkspace& ws, int n_alpha = -1,
+                        int n_beta = -1, bool use_smear = false, int n_elec = 0,
                         cpu::pw::internal::SmearKind smear_kind =
                             cpu::pw::internal::SmearKind::fermi_dirac,
                         double degauss_ha = 0.0, int mp_order = 1);

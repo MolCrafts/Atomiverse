@@ -43,7 +43,8 @@ std::vector<std::string> tokenize(const std::string& line) {
     return tok;
 }
 
-double req_d(const std::vector<std::string>& t, std::size_t i, const char* cmd) {
+double req_d(const std::vector<std::string>& t, std::size_t i,
+             const char* cmd) {
     if (i >= t.size())
         throw std::invalid_argument(std::string(cmd) + ": missing number");
     return std::stod(t[i]);
@@ -69,8 +70,7 @@ InputDeck parse_input_script(std::istream& in) {
         const std::string& c = t[0];
         try {
             if (c == "units") {
-                if (t.size() < 2
-                    || (t[1] != "metal" && t[1] != "atomiverse"))
+                if (t.size() < 2 || (t[1] != "metal" && t[1] != "atomiverse"))
                     throw std::invalid_argument(
                         "units: only 'metal' or 'atomiverse' "
                         "(eV, Å, fs, amu) — no other LAMMPS unit sets");
@@ -92,7 +92,8 @@ InputDeck parse_input_script(std::istream& in) {
             } else if (c == "region") {
                 if (t.size() < 9 || t[2] != "block")
                     throw std::invalid_argument(
-                        "region: only 'region box block xlo xhi ylo yhi zlo zhi'");
+                        "region: only 'region box block xlo xhi ylo yhi zlo "
+                        "zhi'");
                 d.xlo = req_d(t, 3, "region");
                 d.xhi = req_d(t, 4, "region");
                 d.ylo = req_d(t, 5, "region");
@@ -143,7 +144,8 @@ InputDeck parse_input_script(std::istream& in) {
                     throw std::invalid_argument(
                         "velocity: only 'velocity all create T seed'");
                 d.velocity_T = req_d(t, 3, "velocity");
-                d.velocity_seed = static_cast<unsigned>(req_i(t, 4, "velocity"));
+                d.velocity_seed =
+                    static_cast<unsigned>(req_i(t, 4, "velocity"));
             } else if (c == "run") {
                 d.run_steps = req_i(t, 1, "run");
                 if (d.run_steps < 0)
@@ -207,8 +209,7 @@ void run_input_deck(const InputDeck& d, std::ostream& log) {
     ATV::cpu::md::MD sim;
     sim.set_evaluator(
         ATV::cpu::PairLJCut{d.pair_eps, d.pair_sigma, d.pair_cut});
-    sim.set_neighbor(
-        ATV::cpu::md::NeighborList<>{d.pair_cut, d.neighbor_skin});
+    sim.set_neighbor(ATV::cpu::md::NeighborList<>{d.pair_cut, d.neighbor_skin});
     sim.set_integrator(ATV::cpu::md::VelocityVerlet{d.timestep});
     if (d.velocity_T > 0)
         sim.set_observer(

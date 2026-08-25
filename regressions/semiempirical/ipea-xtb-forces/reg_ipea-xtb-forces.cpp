@@ -32,11 +32,7 @@ static cpu::Frame make_ch4() {
     const double s = 0.629311793417;
     const double h1 = s * (1.20 / 1.09);
     const double xyz[kNat][3] = {
-        {0.0, 0.0, 0.0},
-        {h1, h1, h1},
-        {s, -s, -s},
-        {-s, s, -s},
-        {-s, -s, s},
+        {0.0, 0.0, 0.0}, {h1, h1, h1}, {s, -s, -s}, {-s, s, -s}, {-s, -s, s},
     };
     const int Z[kNat] = {6, 1, 1, 1, 1};
     const double mass[kNat] = {12.011, 1.008, 1.008, 1.008, 1.008};
@@ -101,8 +97,9 @@ int main() {
     const double fCx = static_cast<double>(f.span(kAtom_fx)[0]);
     const double fH1x = static_cast<double>(f.span(kAtom_fx)[1]);
 
-    std::printf("IPEA CH4 forces: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
-                e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
+    std::printf(
+        "IPEA CH4 forces: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n", e_ha,
+        kE_pin_Ha, std::fabs(e_ev - pin_ev));
     std::printf("  F_C_x  =%.12f eV/A  pin=%.12f  |d|=%.3e\n", fCx, fCx_pin,
                 std::fabs(fCx - fCx_pin));
     std::printf("  F_H1_x =%.12f eV/A  pin=%.12f  |d|=%.3e\n", fH1x, fH1x_pin,

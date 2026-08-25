@@ -67,22 +67,22 @@ class GpwDft {
     // ── Method parameters (mirror CPU GpwDft product-slice members) ──────
     double cell[3] = {0, 0, 0}; ///< orthorhombic box lengths [Bohr].
     double cutoff_ry = 300.0;   ///< density grid cutoff [Ry].
-    int ngrids = 1;             ///< multigrid levels (≥1; >1 needs rel_cutoff>0).
-    double rel_cutoff = 0.0;    ///< CP2K REL_CUTOFF [Ry] (required when ngrids>1).
-    int n_occ = 0;              ///< RKS: doubly-occupied orbitals (N_elec / 2).
-    int n_alpha = 0;            ///< UKS α occupations (with `n_beta`; 0 ⇒ RKS).
-    int n_beta = 0;             ///< UKS β occupations (with `n_alpha`; 0 ⇒ RKS).
-    int max_iter = 100;         ///< max SCF iterations.
-    double tol = 1e-8;          ///< SCF energy convergence [Hartree].
-    double eps_default = 1e-8;  ///< Gaussian-tail cutoff.
-    double mix = 0.5;           ///< linear density mixing when diis_depth==0.
-    int diis_depth = 6;         ///< Pulay DIIS history depth.
+    int ngrids = 1;          ///< multigrid levels (≥1; >1 needs rel_cutoff>0).
+    double rel_cutoff = 0.0; ///< CP2K REL_CUTOFF [Ry] (required when ngrids>1).
+    int n_occ = 0;           ///< RKS: doubly-occupied orbitals (N_elec / 2).
+    int n_alpha = 0;         ///< UKS α occupations (with `n_beta`; 0 ⇒ RKS).
+    int n_beta = 0;          ///< UKS β occupations (with `n_alpha`; 0 ⇒ RKS).
+    int max_iter = 100;      ///< max SCF iterations.
+    double tol = 1e-8;       ///< SCF energy convergence [Hartree].
+    double eps_default = 1e-8; ///< Gaussian-tail cutoff.
+    double mix = 0.5;          ///< linear density mixing when diis_depth==0.
+    int diis_depth = 6;        ///< Pulay DIIS history depth.
     double lindep_threshold = 1e-8; ///< S-eigenvalue keep threshold.
     double level_shift = 0.0;       ///< virtual level shift [Hartree] (Γ path).
-    XcKind xc = XcKind::PADE;       ///< RKS: PADE or PBE; UKS: PADE only (first cut).
-    bool nonperiodic = false;       ///< MT Poisson — not on device (throws).
-    bool local_pp_on_grid = true;   ///< collocate GTH local SR PP on grid.
-    bool use_ot = false;            ///< OT — not on device product (throws).
+    XcKind xc = XcKind::PADE; ///< RKS: PADE or PBE; UKS: PADE only (first cut).
+    bool nonperiodic = false; ///< MT Poisson — not on device (throws).
+    bool local_pp_on_grid = true; ///< collocate GTH local SR PP on grid.
+    bool use_ot = false;          ///< OT — not on device product (throws).
     /// @brief Monkhorst–Pack subdivisions (CP2K convention). `{1,1,1}` is Γ
     ///        product path; any \(N_d>1\) selects multi-k RKS DIIS (single-grid).
     int k_mesh[3] = {1, 1, 1};
@@ -168,7 +168,6 @@ gpw_forces_analytic(const std::vector<GpwAtom>& atoms, GpwDft& method);
 std::vector<std::array<double, 3>>
 gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
                     const GpwResult& scf);
-
 
 /// @brief Analytic cell stress after a CUDA Γ SCF (free-function family).
 ///

@@ -91,14 +91,16 @@ int main() {
     const double e_ev = f.meta.get(kEnergy);
     const double e_ha = e_ev / units::kHartreeInEv;
     const double pin_ev = kE_pin_Ha * units::kHartreeInEv;
-    const double fac = units::kHartreeInEv / cpu::semiempirical::basis_data::kGfn0AutoAA;
+    const double fac =
+        units::kHartreeInEv / cpu::semiempirical::basis_data::kGfn0AutoAA;
     const double fOx_pin = -kG_O_x_HaBohr * fac;
     const double fH1y_pin = -kG_H1_y_HaBohr * fac;
     const double fOx = static_cast<double>(f.span(kAtom_fx)[0]);
     const double fH1y = static_cast<double>(f.span(kAtom_fy)[1]);
 
-    std::printf("GFN0 H2O forces: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
-                e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
+    std::printf(
+        "GFN0 H2O forces: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n", e_ha,
+        kE_pin_Ha, std::fabs(e_ev - pin_ev));
     std::printf("  F_O_x =%.12f eV/A  pin=%.12f  |d|=%.3e\n", fOx, fOx_pin,
                 std::fabs(fOx - fOx_pin));
     std::printf("  F_H1_y=%.12f eV/A  pin=%.12f  |d|=%.3e\n", fH1y, fH1y_pin,

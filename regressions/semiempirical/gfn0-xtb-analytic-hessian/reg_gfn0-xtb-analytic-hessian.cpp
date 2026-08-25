@@ -131,8 +131,9 @@ int main() {
     const double e_ha = e_ev / units::kHartreeInEv;
     const double pin_ev = kE_pin_Ha * units::kHartreeInEv;
 
-    std::printf("GFN0 H2O Hessian: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
-                e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
+    std::printf(
+        "GFN0 H2O Hessian: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
+        e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
     std::printf("  H_Oxx=%.12f eV/A^2  pin=%.12f  |d|=%.3e\n", h_oxx, h_oxx_pin,
                 std::fabs(h_oxx - h_oxx_pin));
     std::printf("  max|H-H^T|=%.3e  n_imag=%d  linear=%d\n", max_asym,

@@ -99,8 +99,9 @@ int main() {
     const double fOx = static_cast<double>(f.span(kAtom_fx)[0]);
     const double fH2y = static_cast<double>(f.span(kAtom_fy)[2]);
 
-    std::printf("GFN1 H2O forces: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
-                e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
+    std::printf(
+        "GFN1 H2O forces: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n", e_ha,
+        kE_pin_Ha, std::fabs(e_ev - pin_ev));
     std::printf("  F_O_x =%.12f eV/A  pin=%.12f  |d|=%.3e\n", fOx, fOx_pin,
                 std::fabs(fOx - fOx_pin));
     std::printf("  F_H2_y=%.12f eV/A  pin=%.12f  |d|=%.3e\n", fH2y, fH2y_pin,

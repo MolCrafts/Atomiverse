@@ -21,14 +21,14 @@
 
 namespace {
 
-using ATV::cpu::Frame;
-using ATV::cpu::semiempirical::RM1;
-using ATV::cpu::semiempirical::RM1Result;
 using ATV::kAtom_type;
 using ATV::kAtom_x;
 using ATV::kAtom_y;
 using ATV::kAtom_z;
 using ATV::StorageReal;
+using ATV::cpu::Frame;
+using ATV::cpu::semiempirical::RM1;
+using ATV::cpu::semiempirical::RM1Result;
 
 // OpenMOPAC PARAM survey RM1.heats / RM1.geos @ 9859905.
 constexpr double kCo2ExpHofKcal = -94.05;
@@ -145,19 +145,22 @@ double max_force(Frame& geom) {
 } // namespace
 
 int main() {
-    if (!(std::abs(kCo2Rm1HofKcal - kCo2ExpHofKcal) > kDiscriminatorFloorKcal)) {
-        std::printf("FAIL: published RM1 CO2 is no longer a discriminator vs experiment\n");
+    if (!(std::abs(kCo2Rm1HofKcal - kCo2ExpHofKcal)
+          > kDiscriminatorFloorKcal)) {
+        std::printf("FAIL: published RM1 CO2 is no longer a discriminator vs "
+                    "experiment\n");
         return 1;
     }
     if (!(std::abs(kCoRm1HofKcal - kCoExpHofKcal) > kDiscriminatorFloorKcal)) {
-        std::printf("FAIL: published RM1 CO is no longer a discriminator vs experiment\n");
+        std::printf("FAIL: published RM1 CO is no longer a discriminator vs "
+                    "experiment\n");
         return 1;
     }
 
     Point co2;
     const double r_co2 = relax_r(linear_co2, 1.162, &co2);
-    std::printf("RM1 CO2: r(C-O)=%.5f A  dHf=%.4f kcal/mol  E=%.6f eV\n",
-                r_co2, co2.hof_kcal, co2.energy_ev);
+    std::printf("RM1 CO2: r(C-O)=%.5f A  dHf=%.4f kcal/mol  E=%.6f eV\n", r_co2,
+                co2.hof_kcal, co2.energy_ev);
     if (!co2.converged || !std::isfinite(co2.hof_kcal)) {
         std::printf("FAIL: RM1 CO2 did not converge\n");
         return 1;
@@ -168,13 +171,14 @@ int main() {
         return 1;
     }
     if (!(std::abs(co2.hof_kcal - kCo2ExpHofKcal) > kDiscriminatorFloorKcal)) {
-        std::printf("FAIL: ATV RM1 CO2 (%.4f) collapsed onto experiment (%.2f)\n",
-                    co2.hof_kcal, kCo2ExpHofKcal);
+        std::printf(
+            "FAIL: ATV RM1 CO2 (%.4f) collapsed onto experiment (%.2f)\n",
+            co2.hof_kcal, kCo2ExpHofKcal);
         return 1;
     }
     if (!(std::abs(r_co2 - kCo2Rm1RAngstrom) <= kRTolAngstrom)) {
-        std::printf("FAIL: r(CO2)=%.5f vs RM1.geos %.3f +- %.3f\n",
-                    r_co2, kCo2Rm1RAngstrom, kRTolAngstrom);
+        std::printf("FAIL: r(CO2)=%.5f vs RM1.geos %.3f +- %.3f\n", r_co2,
+                    kCo2Rm1RAngstrom, kRTolAngstrom);
         return 1;
     }
     Frame co2_geom = linear_co2(r_co2);
@@ -186,8 +190,8 @@ int main() {
 
     Point co;
     const double r_co = relax_r(diatomic_co, 1.128, &co);
-    std::printf("RM1 CO : r(C-O)=%.5f A  dHf=%.4f kcal/mol  E=%.6f eV\n",
-                r_co, co.hof_kcal, co.energy_ev);
+    std::printf("RM1 CO : r(C-O)=%.5f A  dHf=%.4f kcal/mol  E=%.6f eV\n", r_co,
+                co.hof_kcal, co.energy_ev);
     if (!co.converged || !std::isfinite(co.hof_kcal)) {
         std::printf("FAIL: RM1 CO did not converge\n");
         return 1;
@@ -198,14 +202,15 @@ int main() {
         return 1;
     }
     if (!(std::abs(r_co - kCoRm1RAngstrom) <= kRTolAngstrom)) {
-        std::printf("FAIL: r(CO)=%.5f vs RM1.geos %.3f +- %.3f\n",
-                    r_co, kCoRm1RAngstrom, kRTolAngstrom);
+        std::printf("FAIL: r(CO)=%.5f vs RM1.geos %.3f +- %.3f\n", r_co,
+                    kCoRm1RAngstrom, kRTolAngstrom);
         return 1;
     }
 
-    std::printf("PASS: nddo-sharp-discriminator "
-                "(CO2 dHf %.4f vs RM1 %.2f, exp %.2f; CO dHf %.4f vs RM1 %.2f)\n",
-                co2.hof_kcal, kCo2Rm1HofKcal, kCo2ExpHofKcal, co.hof_kcal,
-                kCoRm1HofKcal);
+    std::printf(
+        "PASS: nddo-sharp-discriminator "
+        "(CO2 dHf %.4f vs RM1 %.2f, exp %.2f; CO dHf %.4f vs RM1 %.2f)\n",
+        co2.hof_kcal, kCo2Rm1HofKcal, kCo2ExpHofKcal, co.hof_kcal,
+        kCoRm1HofKcal);
     return 0;
 }

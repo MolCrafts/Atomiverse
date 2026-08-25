@@ -115,7 +115,8 @@ int main(int argc, char** argv) {
         m.build(atoms);
         const auto& r = m.run(atoms);
         if (!r.converged) {
-            std::fprintf(stderr, "FAIL: CUDA UKS SCF not converged (iters=%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: CUDA UKS SCF not converged (iters=%d)\n",
                          r.iters);
             return 1;
         }
@@ -159,9 +160,9 @@ int main(int argc, char** argv) {
                          max_ds);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-uks-o2-forces  |dE|=%.3e  max|dF|=%.3e  max|dσ|=%.3e\n",
-            de, max_df, max_ds);
+        std::printf("PASS: cuda-gpw-uks-o2-forces  |dE|=%.3e  max|dF|=%.3e  "
+                    "max|dσ|=%.3e\n",
+                    de, max_df, max_ds);
     } else {
         std::printf("PASS: cuda-gpw-uks-o2-forces (--device=%s only)\n",
                     device.c_str());

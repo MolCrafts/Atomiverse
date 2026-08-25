@@ -95,8 +95,9 @@ int main() {
     const double fOx = static_cast<double>(f.span(kAtom_fx)[0]);
     const double fH1y = static_cast<double>(f.span(kAtom_fy)[1]);
 
-    std::printf("GFN2 AES-Fock H2O: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
-                e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
+    std::printf(
+        "GFN2 AES-Fock H2O: E_ATV=%.12f Eh  E_pin=%.12f Eh  |dE|=%.3e eV\n",
+        e_ha, kE_pin_Ha, std::fabs(e_ev - pin_ev));
     std::printf("  F_O_x =%.12f eV/A  pin=%.12f  |d|=%.3e\n", fOx, fOx_pin,
                 std::fabs(fOx - fOx_pin));
     std::printf("  F_H1_y=%.12f eV/A  pin=%.12f  |d|=%.3e\n", fH1y, fH1y_pin,
