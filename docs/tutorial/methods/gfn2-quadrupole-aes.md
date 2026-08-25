@@ -23,7 +23,8 @@ the remaining **1.45 meV** H₂O hole against archived xtb was the missing
 **charge–quadrupole AES** plus **quadrupole AXC**. This slug closes that hole
 on the public Evaluate surface (eV on `frame.meta[kEnergy]`). Parameters are
 static in-tree tables — there is no `libxtb` wrap and no runtime parameter
-file. Forces still throw (`gfn2-xtb-forces`).
+file. Analytic forces ship on the sibling `gfn2-xtb-forces` (AES remains
+post-SCC; angular \(F\) vs xtb is a deepen).
 
 ## Method
 
@@ -174,8 +175,8 @@ tolerance from \(2\times10^{-3}\) eV to \(1\times10^{-4}\) eV.
 
 ### Explicit exclusions
 
-- **Not** analytic / FD nuclear forces (`with_forces` throws;
-  sibling `gfn2-xtb-forces`).
+- **Not** analytic nuclear forces (this energy pin; sibling
+  `gfn2-xtb-forces` ships closed-form \(F=-\nabla E\)).
 - **Not** AES inside the SCC Fock (moments / kernel are post-energy).
 - **Not** dipole–quadrupole or quadrupole–quadrupole pair ranks.
 - **Not** ALPB/GBSA, CPCM-X, spin, PBC, IPEA, sTDA, Hessian.
@@ -329,14 +330,15 @@ when xtb is on PATH. Gate convention (TB loop): \(r\le 10\) unless
 | GFN2 energy H/C/N/O (isotropic + dipole AES) | closed by sibling `gfn2-xtb-water` |
 | AES as SCC Fock potential | open (post-energy only) |
 | Dipole–quadrupole / quadrupole–quadrupole pair AES | not assembled |
-| Analytic nuclear forces | **throws**; sibling `gfn2-xtb-forces` |
+| Analytic nuclear forces | sibling `gfn2-xtb-forces` (AES still post-SCC) |
 | Elements beyond H/C/N/O | throw; sibling `gfn2-beyond-chno` |
 | ALPB / CPCM-X / spin / PBC / IPEA / sTDA / Hessian | open or blocked |
 | H⁰ CN (D3-logistic \(4/3\) radii vs tblite `dexp`) | residual contributor |
 | Live oracle in CI | **forbidden** — offline pins only |
 
-Foothold ≠ closed: GFN2 product energy on CHNO is ✓, but the GFN family
-analytic gradient, solvent, PBC, and all-element tables remain ○.
+Foothold ≠ closed: GFN2 product energy on CHNO is ✓, and sibling
+`gfn2-xtb-forces` ships closed-form \(F=-\nabla E\); solvent, PBC,
+AES-in-Fock, family Hessian, and all-element tables remain ○.
 
 ## References
 

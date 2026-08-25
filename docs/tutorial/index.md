@@ -171,6 +171,22 @@ and GFN2 quadrupole AES. Full index: [methods/README](methods/README.md).
 | GFN1-xTB organic energy (CH₄, H/C/N/O) | [gfn1-xtb-organic](methods/gfn1-xtb-organic.md) | `regressions/semiempirical/gfn1-xtb-organic` | xtb 6.7.1 (ratio **0.5**) |
 | GFN2-xTB charge–quadrupole AES + \(q_{\mathrm{kernel}}\) AXC (H₂O) | [gfn2-quadrupole-aes](methods/gfn2-quadrupole-aes.md) | `regressions/semiempirical/gfn2-quadrupole-aes` | xtb 6.7.1 (`perf_exempt`) |
 
+### TB / SE capability wave 9 (semiempirical + tight-binding)
+
+Offline OpenMOPAC / DFTB+ / xtb pins only — see
+[tb-method-handoff](../developer/tb-method-handoff.md) and `tools/tb_oracle/`.
+Family-locked oracles: NDDO → OpenMOPAC; DFTB* → DFTB+; GFN-xTB → xtb.
+Harness wave 9 (2026-08-25) closed GFN1/GFN2 analytic \(F\) and GFN0 FD
+Hessian (`-DATV_BUILD_VIB=ON` exception). Family GFN1/2 Hessian stays ○
+(`gfn-xtb-analytic-hessian`). GFN2 AES remains post-SCC (angular \(F\) hole).
+Full index: [methods/README](methods/README.md).
+
+| Method | Page | Regression | Oracle |
+|--------|------|------------|--------|
+| GFN1-xTB analytic nuclear forces (off-eq H₂O) | [gfn1-xtb-forces](methods/gfn1-xtb-forces.md) | `regressions/semiempirical/gfn1-xtb-forces` | xtb 6.7.1 (ratio **≈ 0.16**) |
+| GFN2-xTB analytic nuclear forces (off-eq H₂O) | [gfn2-xtb-forces](methods/gfn2-xtb-forces.md) | `regressions/semiempirical/gfn2-xtb-forces` | xtb 6.7.1 (**asserted ≤ 10**, xtb wall 0.018 s) |
+| GFN0-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn0-xtb-analytic-hessian](methods/gfn0-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn0-xtb-analytic-hessian` | xtb 6.7.1 (ratio **≈ 0.06**) |
+
 ### MetalWalls capability wave 1 (classical electrochem + LAMMPS-overlap MD)
 
 Offline LAMMPS / MetalWalls / literature pins only — see

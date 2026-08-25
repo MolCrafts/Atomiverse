@@ -132,10 +132,13 @@ own \(E\) (\(h=10^{-4}\) Å) as an identity gate, not as the production force.
 
 - Methanol **energy** vs xtb `--gfn 0` — sibling `gfn0-beyond-toy` (that pin
   covers C–O SRB; water has no SRB because H is outside \(Z\in[5,9]\)).
-- **GFN1 / GFN2** forces — `GFN1`/`GFN2::with_forces` still throw
-  (`gfn2-xtb-forces`). Family analytic-gradient row stays ○.
-- GFN-xTB **Hessian**, IPEA, PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other
-  queue rows. GFN-FF is classical (scope-out of this loop).
+- **GFN1 / GFN2** forces — siblings `gfn1-xtb-forces`, `gfn2-xtb-forces`.
+  Family analytic-gradient row stays ○ only for remaining GFN deepen
+  (AES-in-Fock, solvent, PBC).
+- GFN0 **FD Hessian** — sibling `gfn0-xtb-analytic-hessian`. Family GFN1/2
+  Hessian stays ○ (`gfn-xtb-analytic-hessian`). IPEA, PBC, spin, sTDA,
+  ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical (scope-out of
+  this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
   `gfn2-beyond-chno`.
 - Live xtb / DFTB+ / OpenMOPAC from ctest — **forbidden**; offline pins only.
