@@ -780,6 +780,23 @@ Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**
 `.claude/specs/<slug>/`; resume rebases the existing spec; SE-only cmake
 (incl. CLI=OFF); offline **xtb** pins only. **No push.**
 
+## Recover / harness — 2026-08-25 (harness wave 8 / this-shift wave 2)
+
+| Source | Result |
+| ------ | ------ |
+| Queue greens merged | `gfn1-xtb-organic` (`d214f365` / `924d1327`), `gfn0-xtb-forces` (`e870f86d` / `a420b3d6`), `gfn2-quadrupole-aes` (`a48f0ee3` / `e6a06026`) → **done** |
+| Unmerged TB `wf/*` | **1** → keep **`[~]`** `ipea-xtb-small` @ `01275c77` (ahead=1 behind=7) |
+| Isolation worktrees (TB) | none (Clearup already ran) |
+| Live SE/TB specs after close | **none** of these three (deleted); ipea spec lives on the unmerged tip |
+| Incomplete | **1** |
+| Pending | **27** (unchanged this harness; GapCensus owns refill) |
+| Blocked | **5** |
+| Roadmap | GFN1-xTB already ✓ on merge; family GFN analytic gradient stays ○ (GFN0 G ships; GFN1/2 F throw); IPEA stays ○ |
+
+**Next:** Recover `ipea-xtb-small` before new pending. Foothold ≠ closed
+(GFN2 F / ALPB / CPCM-X / PBC / spin / sTDA / Hessian / beyond-CHNO).
+**Queue not exhausted.**
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
@@ -835,7 +852,7 @@ beyond-CHNO. AES before GFN2 F (xtb force pin) is done.
 
 ## in_progress
 
-- [~] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | small | E | **oracle=xtb**; after GFN2 energy
+- [~] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | small | E | **oracle=xtb**; `wf/ipea-xtb-small` @ `01275c77` (ahead=1 behind=7)
 
 ## permanent rules / scope-out (never pending)
 

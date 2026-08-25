@@ -16,17 +16,18 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-**Live count: 9.** (component-plugin chain 6 + TB wave 8: `gfn0-xtb-forces`, `gfn1-xtb-organic`, `gfn2-quadrupole-aes`)
+**Live count: 6.** (component-plugin chain only)
 
-## Live — TB loop wave 8 (2026-08-25)
+## Closed — TB harness wave 8 (2026-08-25)
 
-Merged to `dev` (wave-2 merge). Specs kept on `dev`.
+Merged to `dev` (`d214f365`, `e870f86d`, `a48f0ee3`); specs deleted; history is git.
+`ipea-xtb-small` stays `[~]` on `wf/ipea-xtb-small`.
 
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [gfn0-xtb-forces](gfn0-xtb-forces/gfn0-xtb-forces.md) | `gfn0-beyond-toy` | Analytic GFN0 G; replace central FD vs xtb `--gfn 0` |
-| [gfn1-xtb-organic](gfn1-xtb-organic/gfn1-xtb-organic.md) | — | GFN1-xTB organic (H/C/N/O) energy vs xtb `--gfn 1` CH4 |
-| [gfn2-quadrupole-aes](gfn2-quadrupole-aes/spec.md) | `gfn2-xtb-water` | GFN2 charge–quadrupole AES + qkernel AXC; close 1.45 meV H₂O vs xtb 6.7.1 |
+| Spec | Shipped |
+| ---- | ------- |
+| `gfn1-xtb-organic` | `GFN1` H/C/N/O energy; `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1 `--gfn 1` −4.274232224875 Eh |
+| `gfn0-xtb-forces` | Analytic GFN0 G; `reg_gfn0-xtb-forces` off-eq water vs xtb 6.7.1 `--gfn 0 --grad` |
+| `gfn2-quadrupole-aes` | GFN2 quadrupole AES + qkernel AXC; `reg_gfn2-quadrupole-aes` H₂O residual 26 µeV |
 
 ## Closed — TB harness wave 7 (2026-08-25)
 
