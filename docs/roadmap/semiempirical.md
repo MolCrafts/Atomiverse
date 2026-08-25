@@ -22,7 +22,9 @@ under PBC wrap (same pattern as Gaussian SCF). Regressions: `am1_water_force`,
 [Chapter 17](../tutorial/ch17-semiempirical-am1.md) + `examples/15_am1.cpp`.
 Heat of formation is MOPAC-style. Absolute OpenMOPAC pins now cover H₂O (AM1/RM1)
 and the RM1 CO₂/CO discriminator (`reg_nddo-sharp-discriminator`). PM3/PM6/PM7,
-closed-form multipole forces, NDDO UHF, and OpenMOPAC COSMO remain open. AM1-BCC charge
+closed-form multipole forces, NDDO UHF, OpenMOPAC COSMO, and OpenMOPAC
+Γ-point PBC remain open (molecular AM1 under wrap still unwraps an isolated
+fragment). AM1-BCC charge
 assignment still uses the energy/charge path (see
 [Multiscale and Properties](multiscale.md)).
 
@@ -90,6 +92,7 @@ DFTB+ (DFTB) / xtb (GFN) — see `tools/tb_oracle/README.md`.
 | Semiempirical analytic Hessian  |  ✓  |   ○  |   ○  |
 | AM1 heat of formation (MOPAC-style ΔHf) |  ✓  |   ○  |   ○  |
 | NDDO COSMO (OpenMOPAC)                  |  ○  |   ○  |   ○  |
+| NDDO Γ-point PBC (OpenMOPAC)            |  ○  |   ○  |   ○  |
 
 The NDDO core (overlap, one-electron core Hamiltonian, two-electron integrals,
 Fock build, density, SCF, forces) is parameterization-agnostic in structure.
@@ -99,7 +102,8 @@ not in the OpenMOPAC primary surface (blocked in the TB queue until a
 family-locked pin exists). Product-path forces are fixed-density FD; closed-form
 multipole derivatives stay ○. SCF is closed-shell RHF only (OpenMOPAC UHF is
 a pending deepen). Continuum solvent is OpenMOPAC COSMO (○; not xtb ALPB).
-Analytic Hessian remains finite-difference via
+Periodic NDDO is OpenMOPAC Γ-PBC (○); molecular AM1 under wrap unwraps an
+isolated fragment and is not that path. Analytic Hessian remains finite-difference via
 `cpu::vib::Hessian` over SE forces (VIB off under SE-only loop cmake).
 
 ## 2. Density-Functional Tight Binding
@@ -122,6 +126,7 @@ Analytic Hessian remains finite-difference via
 | TD-DFTB excited-state gradient |  ○  |   ○  |   ○  |
 | Range-separated / LC-DFTB |  ○  |   ○  |   ○  |
 | Fermi filling (metallic DFTB) |  ○  |   ○  |   ○  |
+| DFTB implicit solvent (GBSA)  |  ○  |   ○  |   ○  |
 
 DFTB2 is multi-element H/C/N/O with static SK tables (`dftb_mio_sk_tables.h`
 mio-1-1 every ordered pair + `dftb_3ob_tables.h` 3ob-3-1 organics;
@@ -153,8 +158,9 @@ lattice-sum D3**, and **ThreeOb / open-shell analytic stress**. **Multi-k
 collinear open shell** (dual α/β H(k) + dual-channel forces) ships 2026-07-29.
 Still ○: **TD-DFTB excited-state gradients**, **range-separated / LC-DFTB**,
 **Fermi filling**, **ThreeOb multi-k / open shell**, **DFTB-D4**, **DFTB+U
-analytic forces**, and **DFTB3 beyond Γ-PBC forces** (no k-mesh / stress /
-open shell / ThreeOb SK / D3 on the DFTB3 path). Oracle for all DFTB rows:
+analytic forces**, **DFTB implicit solvent (GBSA)**, and **DFTB3 beyond Γ-PBC
+forces** (no k-mesh / stress / open shell / ThreeOb SK / D3 on the DFTB3 path).
+Oracle for all DFTB rows:
 **DFTB+** (never OpenMOPAC). Ladder: DFTB0 → DFTB2 depth → DFTB3 F → TD →
 NDDO PM → GFN late.
 
@@ -181,9 +187,12 @@ vs xtb 6.7.1 −7.597234498685 Eh; `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1
 `--gfn 1` −4.274232224875 Eh; `reg_gfn2-xtb-water` / `reg_gfn2-quadrupole-aes`
 H₂O vs xtb 6.7.1 −5.070383095219 Eh). GFN0 `with_forces` is closed-form
 \(\mathbf{F}=-\nabla E\) (`reg_gfn0-xtb-forces`); GFN1/GFN2 forces still throw
-(`gfn2-xtb-forces`). GFN2 quadrupole AES + qkernel AXC close the 1.45 meV
-H₂O residual. Tables are CHNO-only (`gfn2-beyond-chno`). The H/C/O `XtbGfn0`
+(`gfn1-xtb-forces`, `gfn2-xtb-forces`). GFN0 Hessian is staffable via
+`cpu::vib::Hessian` (`gfn0-xtb-analytic-hessian`). GFN2 quadrupole AES +
+qkernel AXC close the 1.45 meV H₂O residual; GFN1 CH4 still sits **10.2 meV**
+from xtb (kernel/D3/intcut — the force slug tightens it). Tables are
+CHNO-only (`gfn2-beyond-chno`). The H/C/O `XtbGfn0`
 sketch stays deleted. GFN-xTB is **not** a DFTB3 successor (oracle = **xtb**).
-Family analytic gradient (GFN1/2), Hessian, IPEA, PBC, spin, sTDA, ALPB/GBSA,
-and CPCM-X/ddCOSMO remain ○. GFN-FF is classical force-field territory
-(scope-out of the electronic SE/TB capability loop).
+Family analytic gradient (GFN1/2), Hessian (GFN1/2), IPEA, PBC, spin, sTDA,
+ALPB/GBSA, and CPCM-X/ddCOSMO remain ○. GFN-FF is classical force-field
+territory (scope-out of the electronic SE/TB capability loop).
