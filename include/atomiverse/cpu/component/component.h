@@ -157,6 +157,22 @@ class Component {
     /// @param system Schema being accumulated.
     virtual void declare_reverse_fields(Schema& system) const { (void)system; }
 
+    /// @brief Fields that CHANGE every step and must be refreshed on ghost
+    ///        rows between neighbour rebuilds.
+    ///
+    /// The distinction `declare_fields` does not make, and which LAMMPS
+    /// keeps as two lists (`fields_comm` vs `fields_border`,
+    /// `atom_vec.cpp:36-39`): a field read on a ghost but constant between
+    /// rebuilds rides the border wire once; a field that moves every step
+    /// has to ride the per-step forward wire as well. Positions are the base
+    /// case; a component that mutates some other ghost-visible field per
+    /// step declares it here.
+    ///
+    /// Declaring here does NOT imply `declare_fields` — say both if the
+    /// field must also be present when the ghost is first created.
+    /// @param system Schema being accumulated.
+    virtual void declare_refresh_fields(Schema& system) const { (void)system; }
+
     virtual void build(const BuildContext& ctx) { (void)ctx; }
     virtual void launch(const LaunchContext& ctx) = 0;
     virtual void destroy(const DestroyContext& ctx) { (void)ctx; }

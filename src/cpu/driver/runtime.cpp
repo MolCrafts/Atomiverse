@@ -190,6 +190,7 @@ void Runtime::build_components() {
     if (frame_ != nullptr) {
         check_schema(verlet_.ghost_fields, *frame_, "driver build");
         check_schema(verlet_.ghost_reverse_fields, *frame_, "driver build");
+        check_schema(verlet_.ghost_refresh_fields, *frame_, "driver build");
     }
     verlet_setup_done_ = false;
     if (plan_
@@ -277,8 +278,10 @@ void Runtime::cache_verlet_comm_() {
     // positions no matter which components are mounted.
     base_fields::border(verlet_.ghost_fields);
     base_fields::reverse(verlet_.ghost_reverse_fields);
+    base_fields::forward(verlet_.ghost_refresh_fields);
     context_.md.ghost_fields = &verlet_.ghost_fields;
     context_.md.ghost_reverse_fields = &verlet_.ghost_reverse_fields;
+    context_.md.ghost_refresh_fields = &verlet_.ghost_refresh_fields;
     for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
         const auto& slot = plan_->slots[s];
         for (std::size_t o = 0; o < slot.ops.size(); ++o) {
@@ -302,6 +305,7 @@ void Runtime::cache_verlet_comm_() {
             // schema without a collective.
             c->declare_fields(verlet_.ghost_fields);
             c->declare_reverse_fields(verlet_.ghost_reverse_fields);
+            c->declare_refresh_fields(verlet_.ghost_refresh_fields);
         }
     }
 }

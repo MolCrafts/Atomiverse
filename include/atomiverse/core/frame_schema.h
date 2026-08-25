@@ -76,10 +76,13 @@ inline constexpr unsigned kColIdentityTail = 1u << 2;
 /// flag: it is the correct declaration, it is the consumer that is missing.
 inline constexpr unsigned kColWriteBack = 1u << 3;
 inline constexpr unsigned kColMigrate = 1u << 4;
+// Wire membership for the comm / border / reverse wires used to live here
+// as kColComm / kColBorder / kColReverse — a global guess, made once, about
+// what some consumer might want. It is now derived per run from what the
+// mounted components declare (`Component::declare_fields`, `core/schema.h`).
+// kColExchange stays a flag because migration carries what an atom IS, which
+// is a property of the Frame rather than of whoever happens to be mounted.
 inline constexpr unsigned kColExchange = 1u << 5;
-inline constexpr unsigned kColComm = 1u << 6;
-inline constexpr unsigned kColBorder = 1u << 7;
-inline constexpr unsigned kColReverse = 1u << 8;
 inline constexpr unsigned kColState = kColMigrate | kColExchange;
 
 /// One canonical field row.  wire_id is explicit and never derived from a
@@ -96,33 +99,21 @@ struct FieldSpec {
 
 // id, key, element tier, dtype, stride, group, entries/item, flags
 #define ATV_ATOM_FIELDS(X)                                                     \
-    X(x, "x", StorageReal, Storage, One, Core, 0,                              \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
-    X(y, "y", StorageReal, Storage, One, Core, 0,                              \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
-    X(z, "z", StorageReal, Storage, One, Core, 0,                              \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
-    X(vx, "vx", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColBorder | kColWriteBack)                                  \
-    X(vy, "vy", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColBorder | kColWriteBack)                                  \
-    X(vz, "vz", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColBorder | kColWriteBack)                                  \
-    X(fx, "fx", AccReal, Acc, One, Core, 0,                                    \
-      kColState | kColReverse | kColWriteBack)                                 \
-    X(fy, "fy", AccReal, Acc, One, Core, 0,                                    \
-      kColState | kColReverse | kColWriteBack)                                 \
-    X(fz, "fz", AccReal, Acc, One, Core, 0,                                    \
-      kColState | kColReverse | kColWriteBack)                                 \
-    X(mass, "mass", StorageReal, Storage, One, Core, 0,                        \
-      kColState | kColBorder)                                                  \
+    X(x, "x", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack)   \
+    X(y, "y", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack)   \
+    X(z, "z", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack)   \
+    X(vx, "vx", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
+    X(vy, "vy", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
+    X(vz, "vz", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
+    X(fx, "fx", AccReal, Acc, One, Core, 0, kColState | kColWriteBack)         \
+    X(fy, "fy", AccReal, Acc, One, Core, 0, kColState | kColWriteBack)         \
+    X(fz, "fz", AccReal, Acc, One, Core, 0, kColState | kColWriteBack)         \
+    X(mass, "mass", StorageReal, Storage, One, Core, 0, kColState)             \
     X(charge, "charge", StorageReal, Storage, One, Core, 0,                    \
-      kColState | kColBorder | kColWriteBack)                                  \
-    X(type, "type", int, Int, One, Core, 0, kColState | kColBorder)            \
-    X(tag, "tag", TagInt, Tag, One, Core, 0,                                   \
-      kColState | kColBorder | kColIdentityTail)                               \
-    X(image, "image", std::int8_t, Int8, Fixed3, Core, 0,                      \
-      kColState | kColBorder)                                                  \
+      kColState | kColWriteBack)                                               \
+    X(type, "type", int, Int, One, Core, 0, kColState)                         \
+    X(tag, "tag", TagInt, Tag, One, Core, 0, kColState | kColIdentityTail)     \
+    X(image, "image", std::int8_t, Int8, Fixed3, Core, 0, kColState)           \
     X(num_bond, "num_bond", int, Int, One, Bond, 0, kColState | kColCount)     \
     X(bond_atom, "bond_atom", TagInt, Tag, BondPA, Bond, 1,                    \
       kColState | kColTopology)                                                \

@@ -66,6 +66,8 @@ struct DynamicsServices {
     /// @see core/schema.h
     const Schema* ghost_fields = nullptr;
     const Schema* ghost_reverse_fields = nullptr;
+    /// @brief Fields refreshed on ghost rows every step (forward wire).
+    const Schema* ghost_refresh_fields = nullptr;
 
     /// @brief Non-owning handle to the active neighbor list.
     /// Published by `NeighborList::build()` (address stable across the

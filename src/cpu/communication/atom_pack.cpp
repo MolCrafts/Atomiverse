@@ -117,15 +117,37 @@ std::uint64_t fingerprint(PackKind kind, const std::vector<ColumnRef>& fields) {
     return hash;
 }
 
+/// @brief Compile a plan for the fields a `Schema` names.
+///
+/// The wire is what the mounted components asked for, resolved in
+/// declaration order. Only the exchange wire still selects by flag, because
+/// migration carries what an atom IS rather than what some consumer reads —
+/// that is a property of the Frame, not of the component set.
+template <typename FrameT>
+PackPlan make_plan(FrameT& frame, PackKind kind, const Schema& schema) {
+    auto& block = frame.block("atoms");
+    PackPlan plan;
+    plan.kind = kind;
+    plan.frame_generation = frame.meta.generation();
+    plan.block_generation = block.generation();
+    plan.frame_owner = &frame;
+    plan.owner = &block;
+    plan.fields = block.resolve_columns(schema);
+    if (plan.fields.empty())
+        throw column_error(
+            "the schema named no fields for this wire; a wire with nothing on "
+            "it is a build-time mistake, not a run-time state");
+    plan.writable =
+        std::all_of(plan.fields.begin(), plan.fields.end(),
+                    [](const ColumnRef& field) { return field.writable; });
+    plan.fingerprint = fingerprint(kind, plan.fields);
+    return plan;
+}
+
 template <typename FrameT>
 PackPlan make_plan(FrameT& frame, PackKind kind) {
     auto& block = frame.block("atoms");
-    const unsigned required_flags =
-        kind == PackKind::Comm
-            ? kColComm
-            : (kind == PackKind::Border
-                   ? kColBorder
-                   : (kind == PackKind::Reverse ? kColReverse : kColExchange));
+    const unsigned required_flags = kColExchange;
 
     PackPlan plan;
     plan.kind = kind;
@@ -202,31 +224,21 @@ void PackPlan::validate(const Frame& frame) const {
         field_ref.validate();
 }
 
-PackPlan make_comm_plan(const Frame& frame) {
-    return make_plan(frame, PackKind::Comm);
+PackPlan make_wire_plan(Frame& frame, PackKind kind, const Schema& schema) {
+    return make_plan(frame, kind, schema);
 }
-PackPlan make_comm_plan(Frame& frame) {
-    return make_plan(frame, PackKind::Comm);
+
+PackPlan make_wire_plan(const Frame& frame, PackKind kind,
+                        const Schema& schema) {
+    return make_plan(frame, kind, schema);
 }
-PackPlan make_border_plan(const Frame& frame) {
-    return make_plan(frame, PackKind::Border);
-}
-PackPlan make_border_plan(Frame& frame) {
-    return make_plan(frame, PackKind::Border);
-}
+
 PackPlan make_exchange_plan(const Frame& frame) {
     return make_plan(frame, PackKind::Exchange);
 }
 PackPlan make_exchange_plan(Frame& frame) {
     return make_plan(frame, PackKind::Exchange);
 }
-PackPlan make_reverse_plan(const Frame& frame) {
-    return make_plan(frame, PackKind::Reverse);
-}
-PackPlan make_reverse_plan(Frame& frame) {
-    return make_plan(frame, PackKind::Reverse);
-}
-
 void require_schema_fingerprint(const PackPlan& local,
                                 std::uint64_t remote_fingerprint,
                                 std::uint32_t remote_version) {
@@ -397,7 +409,8 @@ void unpack_comm_wire(Frame& frame, const PackPlan& plan, int n, int first,
     if (!plan.writable)
         throw column_error(
             "unpack_comm needs a writable plan; this one was compiled "
-            "from a const Frame. Rebuild it with make_comm_plan(Frame&).");
+            "from a const Frame. Rebuild it with make_wire_plan(Frame&, "
+            "kind, schema).");
     if (!plan_is_xyz_comm(plan)) {
         // General wire: row-major, mirroring pack_comm's generic arm.
         Reader reader(data, size);
@@ -479,7 +492,8 @@ void unpack_border_wire(Frame& frame, const PackPlan& plan, int n, int first,
     if (!plan.writable)
         throw column_error(
             "unpack_border needs a writable plan; this one was compiled from "
-            "a const Frame. Rebuild it with make_border_plan(Frame&).");
+            "a const Frame. Rebuild it with make_wire_plan(Frame&, kind, "
+            "schema).");
     // Mirror of pack_border: row-major, columns in plan order. See there for
     // why there is exactly one border layout.
     Reader reader(data, size);
@@ -709,7 +723,7 @@ void accumulate_reverse_wire(const PackPlan& plan, const std::vector<int>& rows,
         throw column_error(
             "accumulate_reverse_rows needs a writable plan; this one was "
             "compiled from a const Frame. Rebuild it with "
-            "make_reverse_plan(Frame&).");
+            "make_wire_plan(Frame&, kind, schema).");
     const std::size_t expected = plan.bytes(static_cast<int>(rows.size()));
     if (buffer.size() != expected)
         throw std::length_error(

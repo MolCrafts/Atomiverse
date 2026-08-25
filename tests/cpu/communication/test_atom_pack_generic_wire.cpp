@@ -13,8 +13,8 @@
 ///
 /// Surface pinned (no MPI, no halo, no Driver):
 /// @code{.cpp}
-///   pack_comm / unpack_comm            with a multi-component kColComm column
-///   pack_reverse_rows / accumulate_reverse_rows  with a kColReverse column
+///   pack / unpack   with a multi-component plugin column on the wire
+///   pack_rows / accumulate                       with a plugin accumulator
 ///   pack_border / unpack_border        (row-major is its ONLY layout)
 /// @endcode
 ///
@@ -27,12 +27,23 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/precision.h"
+#include "atomiverse/core/schema.h"
 #include "atomiverse/cpu/communication/atom_pack.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 using namespace ATV;
 
 namespace {
+
+/// @brief Schema for a wire that carries the base set plus a plugin column —
+/// the shape that routes both ends down the generic (row-major) arm.
+ATV::Schema wire_with(std::string_view extra, ColDType dtype, int cols,
+                      void (*base)(ATV::Schema&)) {
+    ATV::Schema s;
+    base(s);
+    s.require(extra, dtype, cols, "plugin");
+    return s;
+}
 
 /// @brief A two-component plugin column on the comm wire — the shape that
 /// makes `plan_is_xyz_comm` false and routes pack/unpack down the generic arm.
@@ -47,8 +58,7 @@ cpu::Frame frame_with_comm_aux(int n) {
     cpu::Frame f(n);
     f.block("atoms").insert(
         "aux", cpu::ColumnSpec{ColDType::Storage, 2, ColGroup::Core, 0,
-                               kColMigrate | kColExchange | kColComm,
-                               kDynamicFieldId});
+                               kColMigrate | kColExchange, kDynamicFieldId});
     for (int i = 0; i < n; ++i) {
         f.span(kAtom_x)[i] = static_cast<StorageReal>(i);
         f.span(kAtom_y)[i] = static_cast<StorageReal>(10 * i);
@@ -69,7 +79,9 @@ cpu::Frame frame_with_comm_aux(int n) {
 /// plugin column.
 TEST(TestAtomPackGenericWire, CommRoundTripCarriesAMultiComponentColumn) {
     cpu::Frame f = frame_with_comm_aux(6);
-    cpu::comm::PackPlan plan = cpu::comm::make_comm_plan(f);
+    cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
+        f, cpu::comm::PackKind::Comm,
+        wire_with("aux", ColDType::Storage, 2, ATV::base_fields::forward));
     // The plugin column is present, so this is NOT the canonical x/y/z plan.
     ASSERT_GT(plan.fields.size(), 3u);
 
@@ -107,10 +119,10 @@ TEST(TestAtomPackGenericWire, CommRoundTripCarriesAMultiComponentColumn) {
 /// arm; the accumulate side must still be `+=` on every component.
 TEST(TestAtomPackGenericWire, ReverseRoundTripCarriesAPluginAccumulator) {
     cpu::Frame f(6);
-    f.block("atoms").insert(
-        "aux_acc", cpu::ColumnSpec{ColDType::Acc, 2, ColGroup::Core, 0,
-                                   kColMigrate | kColExchange | kColReverse,
-                                   kDynamicFieldId});
+    f.block("atoms").insert("aux_acc",
+                            cpu::ColumnSpec{ColDType::Acc, 2, ColGroup::Core, 0,
+                                            kColMigrate | kColExchange,
+                                            kDynamicFieldId});
     for (int i = 0; i < 6; ++i) {
         f.span(kAtom_fx)[i] = static_cast<AccReal>(i);
         f.span(kAtom_fy)[i] = static_cast<AccReal>(0);
@@ -118,7 +130,9 @@ TEST(TestAtomPackGenericWire, ReverseRoundTripCarriesAPluginAccumulator) {
         f.span(kAuxAcc)(i, 0) = static_cast<AccReal>(7 * i);
         f.span(kAuxAcc)(i, 1) = static_cast<AccReal>(-3 * i);
     }
-    cpu::comm::PackPlan plan = cpu::comm::make_reverse_plan(f);
+    cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
+        f, cpu::comm::PackKind::Reverse,
+        wire_with("aux_acc", ColDType::Acc, 2, ATV::base_fields::reverse));
     ASSERT_GT(plan.fields.size(), 3u);
 
     std::vector<std::byte> wire;
@@ -157,7 +171,17 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
         f.span(kAtom_image)(i, 1) = static_cast<std::int8_t>(-i);
         f.span(kAtom_image)(i, 2) = static_cast<std::int8_t>(2 * i);
     }
-    cpu::comm::PackPlan plan = cpu::comm::make_border_plan(f);
+    cpu::comm::PackPlan plan =
+        cpu::comm::make_wire_plan(f, cpu::comm::PackKind::Border, [] {
+            // Everything this test asserts survives the round trip, plus
+            // `image` — the three-component column that makes the border
+            // wire row-major.
+            ATV::Schema b;
+            ATV::base_fields::border(b);
+            b.require(kAtom_charge, "test");
+            b.require("image", ColDType::Int8, 3, "test");
+            return b;
+        }());
 
     const int send[2] = {1, 3};
     const std::size_t bytes = plan.bytes(2);
@@ -192,7 +216,10 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
 TEST(TestAtomPackGenericWire, UnpackRefusesAConstPlan) {
     cpu::Frame f(4);
     const cpu::Frame& cf = f;
-    const cpu::comm::PackPlan ro = cpu::comm::make_comm_plan(cf);
+    ATV::Schema fwd;
+    ATV::base_fields::forward(fwd);
+    const cpu::comm::PackPlan ro =
+        cpu::comm::make_wire_plan(cf, cpu::comm::PackKind::Comm, fwd);
     ASSERT_FALSE(ro.writable);
 
     const std::size_t bytes = ro.bytes(1);

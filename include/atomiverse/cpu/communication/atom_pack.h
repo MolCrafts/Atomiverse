@@ -132,14 +132,23 @@ struct PackPlan {
                            std::size_t size);
 };
 
-PackPlan make_comm_plan(const Frame& frame);
-PackPlan make_comm_plan(Frame& frame);
-PackPlan make_border_plan(const Frame& frame);
-PackPlan make_border_plan(Frame& frame);
+/// @brief Compile a wire plan for exactly the fields a `Schema` names.
+///
+/// This is the entry point for the comm, border and reverse wires: the
+/// system Schema says what the mounted components need, and the wire carries
+/// that and nothing else. `make_exchange_plan` stays flag-driven — migration
+/// carries what an atom IS, a property of the Frame rather than of whoever
+/// happens to be mounted.
+/// @param frame Frame to resolve against.
+/// @param kind Which wire.
+/// @param schema Fields the wire carries, in wire order.
+/// @return Compiled plan.
+PackPlan make_wire_plan(Frame& frame, PackKind kind, const Schema& schema);
+PackPlan make_wire_plan(const Frame& frame, PackKind kind,
+                        const Schema& schema);
+
 PackPlan make_exchange_plan(const Frame& frame);
 PackPlan make_exchange_plan(Frame& frame);
-PackPlan make_reverse_plan(const Frame& frame);
-PackPlan make_reverse_plan(Frame& frame);
 
 /// Fail before an MPI payload operation when ranks disagree.  The MPI owner
 /// must compare/all-reduce this value collectively before point-to-point I/O.

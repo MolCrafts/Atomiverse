@@ -391,7 +391,7 @@ inline void forward_round(Frame& frame, md::mpi::DomainDecomposition& dd,
                           const int* win_first, const int* win_last,
                           bool full_rebuild, int& frame_cap, int my_rank,
                           int& slot_in_out, PackPlan& plan,
-                          TimerRegistry* timer) {
+                          const Schema& plan_schema, TimerRegistry* timer) {
     constexpr int kCommCat = static_cast<int>(md::StepTiming::Comm);
     // A silent swap (no partner, or the partner is this rank) ships and
     // receives nothing, so its send list stays as `setup` left it: empty.
@@ -505,7 +505,7 @@ inline void forward_round(Frame& frame, md::mpi::DomainDecomposition& dd,
             frame.set_capacity(static_cast<int>(requested));
             frame_cap = frame.capacity();
             dd.capacity = frame.capacity();
-            plan = make_border_plan(frame);
+            plan = make_wire_plan(frame, plan.kind, plan_schema);
             require_schema_fingerprint(plan, fingerprint, plan.version);
             ATV_DEBUG("halo_exchange: rank {} grew ghost capacity to {} "
                       "(needed {}) at axis {} round {}",
@@ -583,7 +583,8 @@ inline void forward_round(Frame& frame, md::mpi::DomainDecomposition& dd,
 inline void forward_cascade(Frame& frame, md::mpi::DomainDecomposition& dd,
                             Halo& swaps, FaceBufs& bufs, bool full_rebuild,
                             int& frame_cap, int my_rank, int& slot_in_out,
-                            PackPlan& plan, TimerRegistry* timer) {
+                            PackPlan& plan, const Schema& plan_schema,
+                            TimerRegistry* timer) {
     const int nswap = static_cast<int>(swaps.size());
     for (int begin = 0; begin < nswap;) {
         const int stop = swaps.stage_end(begin);
@@ -603,7 +604,7 @@ inline void forward_cascade(Frame& frame, md::mpi::DomainDecomposition& dd,
 
             forward_round(frame, dd, swaps, bufs, rbegin, rend, win_first,
                           win_last, full_rebuild, frame_cap, my_rank,
-                          slot_in_out, plan, timer);
+                          slot_in_out, plan, plan_schema, timer);
 
             for (int k = 0; k < width; ++k) {
                 prev_first[k] = swaps[rbegin + k].firstrecv;
@@ -619,11 +620,11 @@ inline void forward_cascade(Frame& frame, md::mpi::DomainDecomposition& dd,
 // Zero every schema-declared reverse accumulator on ghost rows. Runtime
 // columns opt in with kColReverse and require no endpoint field-list edit.
 void zero_ghost_forces(Frame& frame, const md::mpi::DomainDecomposition& dd,
-                       PackPlan& reverse_plan) {
+                       PackPlan& reverse_plan, const Schema& reverse_schema) {
     const int lo = dd.n_local;
     const int hi = dd.n_local + dd.n_ghost;
     if (!reverse_plan.valid_for(frame) || !reverse_plan.writable) {
-        reverse_plan = make_reverse_plan(frame);
+        reverse_plan = make_wire_plan(frame, PackKind::Reverse, reverse_schema);
     }
     if (hi <= lo)
         return;
@@ -656,9 +657,37 @@ void CommBrick::setup(const cpu::LaunchContext& ctx) {
     if (!bufs_)
         bufs_ = std::make_unique<detail::FaceBufs>();
     bufs_->resize_swaps(swaps_.size());
-    bufs_->border_plan = make_border_plan(ctx.frame);
-    bufs_->comm_plan = make_comm_plan(ctx.frame);
-    bufs_->reverse_plan = make_reverse_plan(ctx.frame);
+    // The wires are what the mounted components asked for. `ctx.md` carries
+    // the fold from build(); the forward wire is the engine's own base set
+    // (positions), because that is what changes every step — a field a
+    // component reads on a ghost but that does not move per step rides the
+    // border wire instead.
+    // A Frame driven without a Driver fold (the MPI transport tests do this)
+    // gets the base set — which is exactly what the fold produces when no
+    // mounted component declares anything, so this is the same answer by a
+    // shorter route, not a silent degradation.
+    border_schema_.clear();
+    if (ctx.runtime.md.ghost_fields != nullptr)
+        border_schema_ = *ctx.runtime.md.ghost_fields;
+    else
+        base_fields::border(border_schema_);
+    reverse_schema_.clear();
+    if (ctx.runtime.md.ghost_reverse_fields != nullptr)
+        reverse_schema_ = *ctx.runtime.md.ghost_reverse_fields;
+    else
+        base_fields::reverse(reverse_schema_);
+    forward_schema_.clear();
+    if (ctx.runtime.md.ghost_refresh_fields != nullptr)
+        forward_schema_ = *ctx.runtime.md.ghost_refresh_fields;
+    else
+        base_fields::forward(forward_schema_);
+
+    bufs_->border_plan =
+        make_wire_plan(ctx.frame, PackKind::Border, border_schema_);
+    bufs_->comm_plan =
+        make_wire_plan(ctx.frame, PackKind::Comm, forward_schema_);
+    bufs_->reverse_plan =
+        make_wire_plan(ctx.frame, PackKind::Reverse, reverse_schema_);
     require_collective_plan(bufs_->border_plan, dd->cart_comm, "halo/border");
     require_collective_plan(bufs_->comm_plan, dd->cart_comm, "halo/comm");
     // Per-step / per-rebuild paths compare against these LOCALLY: the
@@ -692,7 +721,7 @@ void CommBrick::borders(const cpu::LaunchContext& ctx) {
     PackPlan& forward_plan = bufs.border_plan;
     if (!forward_plan.valid_for(frame) || !forward_plan.writable
         || forward_plan.kind != PackKind::Border)
-        forward_plan = make_border_plan(frame);
+        forward_plan = make_wire_plan(frame, PackKind::Border, border_schema_);
 
     int my_rank = 0;
     MPI_Comm_rank(dd->cart_comm, &my_rank);
@@ -733,11 +762,12 @@ void CommBrick::borders(const cpu::LaunchContext& ctx) {
 
     int slot = dd->n_local;
     forward_cascade(frame, *dd, swaps_, bufs, /*full_rebuild=*/true, frame_cap,
-                    my_rank, slot, forward_plan, ctx.runtime.timer);
+                    my_rank, slot, forward_plan, border_schema_,
+                    ctx.runtime.timer);
     dd->n_ghost = slot - dd->n_local;
     frame.set_nghost(dd->n_ghost);
     ++dd->halo_generation;
-    zero_ghost_forces(frame, *dd, bufs.reverse_plan);
+    zero_ghost_forces(frame, *dd, bufs.reverse_plan, reverse_schema_);
 }
 
 void CommBrick::forward_comm(const cpu::LaunchContext& ctx) {
@@ -757,7 +787,7 @@ void CommBrick::forward_comm(const cpu::LaunchContext& ctx) {
     PackPlan& forward_plan = bufs.comm_plan;
     if (!forward_plan.valid_for(frame) || !forward_plan.writable
         || forward_plan.kind != PackKind::Comm)
-        forward_plan = make_comm_plan(frame);
+        forward_plan = make_wire_plan(frame, PackKind::Comm, forward_schema_);
 
     // Replay: sizes and slot layout are already committed in the table, so
     // every receive is posted up front (one pass over all rounds), then the
@@ -834,7 +864,7 @@ void CommBrick::forward_comm(const cpu::LaunchContext& ctx) {
     }
     if (n_sends > 0)
         MPI_Waitall(n_sends, send_reqs, MPI_STATUSES_IGNORE);
-    zero_ghost_forces(frame, *dd, bufs.reverse_plan);
+    zero_ghost_forces(frame, *dd, bufs.reverse_plan, reverse_schema_);
 }
 
 void CommBrick::reverse_comm(const cpu::LaunchContext& ctx) {
@@ -854,7 +884,8 @@ void CommBrick::reverse_comm(const cpu::LaunchContext& ctx) {
     PackPlan& reverse_plan = bufs.reverse_plan;
     if (!reverse_plan.valid_for(frame) || !reverse_plan.writable
         || reverse_plan.kind != PackKind::Reverse)
-        reverse_plan = make_reverse_plan(frame);
+        reverse_plan =
+            make_wire_plan(frame, PackKind::Reverse, reverse_schema_);
 
     if (dd->halo_generation != last_checked_halo_generation_) {
         // Local guards only: the schema was anchored collectively in

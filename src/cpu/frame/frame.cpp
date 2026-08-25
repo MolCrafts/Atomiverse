@@ -403,6 +403,50 @@ bool ref_order(const ColumnRef& a, const ColumnRef& b) {
 
 } // namespace
 
+std::vector<ColumnRef> Block::resolve_columns(const Schema& schema) {
+    note_resolution_();
+    std::vector<ColumnRef> refs;
+    refs.reserve(schema.size());
+    for (const Field& f : schema) {
+        const auto it = columns_.find(f.name);
+        if (it == columns_.end())
+            throw column_error(
+                "the wire needs column '" + std::string(f.name)
+                + "' (required by " + std::string(f.required_by)
+                + ") but this Frame's atoms Block does not carry it. The "
+                  "Driver validates the Frame against the schema at build(); "
+                  "reaching here means the Frame changed shape afterwards.");
+        Column& column = it->second;
+        refs.push_back(ColumnRef{it->first, column.dtype(), column.group(),
+                                 column.entries_per_item(), column.flags(),
+                                 column.wire_id(), column.data(), column.data(),
+                                 column.cols(), column.element_size(), true,
+                                 &generation_, generation_});
+    }
+    return refs;
+}
+
+std::vector<ColumnRef> Block::resolve_columns(const Schema& schema) const {
+    note_resolution_();
+    std::vector<ColumnRef> refs;
+    refs.reserve(schema.size());
+    for (const Field& f : schema) {
+        const auto it = columns_.find(f.name);
+        if (it == columns_.end())
+            throw column_error(
+                "the wire needs column '" + std::string(f.name)
+                + "' (required by " + std::string(f.required_by)
+                + ") but this Frame's atoms Block does not carry it.");
+        const Column& column = it->second;
+        refs.push_back(ColumnRef{
+            it->first, column.dtype(), column.group(),
+            column.entries_per_item(), column.flags(), column.wire_id(),
+            column.data(), nullptr, column.cols(), column.element_size(), false,
+            const_cast<std::uint64_t*>(&generation_), generation_});
+    }
+    return refs;
+}
+
 std::vector<ColumnRef> Block::resolve_columns(unsigned required_flags) {
     note_resolution_();
     std::vector<ColumnRef> refs;

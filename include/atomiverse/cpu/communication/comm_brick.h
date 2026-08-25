@@ -28,6 +28,7 @@
 #include <memory>
 #include <vector>
 
+#include "atomiverse/core/schema.h"
 #include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/halo.h"
 
@@ -75,6 +76,13 @@ class CommBrick : public Comm {
     CommBrick();
 
     void remember_(const LaunchContext& ctx);
+
+    /// Wires this run carries, cached at `setup()` from the Driver's fold.
+    /// Border and reverse come from the mounted components; forward is the
+    /// engine's base set, since positions are what change every step.
+    Schema border_schema_;
+    Schema reverse_schema_;
+    Schema forward_schema_;
 
     Halo swaps_;
     std::unique_ptr<detail::FaceBufs> bufs_;

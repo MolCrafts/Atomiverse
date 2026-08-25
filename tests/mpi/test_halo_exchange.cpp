@@ -32,6 +32,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
+#include "atomiverse/core/schema.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
@@ -47,6 +48,40 @@
 using namespace ATV;
 
 namespace {
+
+/// @brief Publish a border/reverse schema naming a plugin runtime column.
+///
+/// Under the flag-driven wire a column travelled because it carried
+/// `kColBorder`. Under the schema-driven wire it travels because something
+/// asked for it (`comm-maint-09-schema`). A test that drives `CommBrick`
+/// directly has no mounted component to declare on its behalf, so it plays
+/// that part here — which is also the documentation of how a plugin gets a
+/// column onto the wire.
+struct PublishedSchemas {
+    ATV::Schema border;
+    ATV::Schema reverse;
+    ATV::Schema refresh;
+};
+
+/// Declares the base set plus whichever plugin columns THIS frame actually
+/// carries — a component declares what it uses, and a test frame that never
+/// inserted `halo_aux` must not put it on the wire.
+PublishedSchemas publish_wire(const cpu::Frame& frame) {
+    PublishedSchemas out;
+    ATV::base_fields::border(out.border);
+    ATV::base_fields::reverse(out.reverse);
+    ATV::base_fields::forward(out.refresh);
+    if (frame.has("atoms", "halo_aux")) {
+        // Present when the ghost is created, AND refreshed every step —
+        // this test mutates it between forward_comm calls.
+        out.border.require("halo_aux", ColDType::Storage, 2, "test plugin");
+        out.refresh.require("halo_aux", ColDType::Storage, 2, "test plugin");
+    }
+    if (frame.has("atoms", "halo_reverse_aux"))
+        out.reverse.require("halo_reverse_aux", ColDType::Acc, 2,
+                            "test plugin");
+    return out;
+}
 
 const ColKey<StorageReal> kHaloAux{"atoms", "halo_aux", kDynamicFieldId,
                                    ColDType::Storage};
@@ -96,6 +131,10 @@ ForwardResult run_forward(double box_len, int n_per_side, double cutoff) {
     cpu::Comm* comm = backend.context().md.comm;
     comm->set_ghost_cutoff(cutoff);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
+    PublishedSchemas wires = publish_wire(frame);
+    backend.context().md.ghost_fields = &wires.border;
+    backend.context().md.ghost_reverse_fields = &wires.reverse;
+    backend.context().md.ghost_refresh_fields = &wires.refresh;
     comm->setup(lctx);
     comm->borders(lctx);
 
@@ -163,8 +202,7 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
     frame.block("atoms").insert(
         "halo_aux",
         cpu::ColumnSpec{ColDType::Storage, 2, ColGroup::Core, 0,
-                        kColMigrate | kColExchange | kColBorder | kColComm,
-                        kDynamicFieldId});
+                        kColMigrate | kColExchange, kDynamicFieldId});
     for (int i = 0; i < frame.nlocal(); ++i) {
         frame.span(kAtom_tag)[i] = tag_base + TagInt(i);
         frame.span(kHaloAux)(i, 0) = StorageReal(100 + i);
@@ -179,6 +217,10 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
     cpu::Comm* comm = backend.context().md.comm;
     comm->set_ghost_cutoff(2.0);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
+    PublishedSchemas wires = publish_wire(frame);
+    backend.context().md.ghost_fields = &wires.border;
+    backend.context().md.ghost_reverse_fields = &wires.reverse;
+    backend.context().md.ghost_refresh_fields = &wires.refresh;
     comm->setup(lctx);
     comm->borders(lctx);
 
@@ -264,8 +306,7 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
     frame.block("atoms").insert(
         "halo_reverse_aux",
         cpu::ColumnSpec{ColDType::Storage, 1, ColGroup::Core, 0,
-                        kColMigrate | kColExchange | kColReverse,
-                        kDynamicFieldId});
+                        kColMigrate | kColExchange, kDynamicFieldId});
     cpu::Runtime backend;
     backend.init();
     backend.set_frame(frame);
@@ -273,6 +314,10 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
     cpu::Comm* comm = backend.context().md.comm;
     comm->set_ghost_cutoff(2.0);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
+    PublishedSchemas wires = publish_wire(frame);
+    backend.context().md.ghost_fields = &wires.border;
+    backend.context().md.ghost_reverse_fields = &wires.reverse;
+    backend.context().md.ghost_refresh_fields = &wires.refresh;
     comm->setup(lctx);
     comm->borders(lctx);
 

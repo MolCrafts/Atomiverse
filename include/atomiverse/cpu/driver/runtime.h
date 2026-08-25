@@ -148,6 +148,7 @@ class Runtime {
         /// `core/schema.h`.
         Schema ghost_fields;
         Schema ghost_reverse_fields;
+        Schema ghost_refresh_fields;
 
         /// Widest `NeighborConsumer::halo_cutoff()` [Å] among mounted
         /// components. A many-body style (EAM) declares a ghost-of-ghost

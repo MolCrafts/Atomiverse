@@ -95,6 +95,24 @@ class Block {
     std::vector<ColumnRef> resolve_columns(unsigned required_flags = 0);
     std::vector<ColumnRef> resolve_columns(unsigned required_flags = 0) const;
 
+    /// @brief Resolve exactly the fields a `Schema` names, in the Schema's
+    ///        declaration order.
+    ///
+    /// The flag overloads above answer "which columns claim to belong on
+    /// wire X"; this answers "which columns did the mounted components ask
+    /// for". The second question is the one with an answer that depends on
+    /// the run, which is why the wire is built from it.
+    ///
+    /// Declaration order is the wire order, and it is the same on every rank
+    /// because it is Plan order. `check_schema` has already run at build(),
+    /// so a named field being absent here is an engine bug, not user error,
+    /// and throws as such.
+    /// @param schema Fields to resolve.
+    /// @return One ColumnRef per declared field, in declaration order.
+    /// @throws column_error if a declared field is not in this Block.
+    std::vector<ColumnRef> resolve_columns(const Schema& schema);
+    std::vector<ColumnRef> resolve_columns(const Schema& schema) const;
+
     const Columns& columns() const noexcept { return columns_; }
 
   private:
