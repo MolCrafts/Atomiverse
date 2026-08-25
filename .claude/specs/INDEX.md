@@ -870,3 +870,14 @@ Do not re-create closed slugs without superseding intent.
 ## Closed — CUDA OpenMM MD engine (2026-07-23, from origin/dev)
 
 | cuda-openmm-md 01–05 | contract, rebuild, tile-force, multigpu, delete | CS=32 clusters, real masks, tile LJ/Coul, multi-GPU classify; Verlet default removed on CUDA |
+
+## Closed — comm-topology chain (2026-08-26)
+
+参照 LAMMPS CommBrick 重构 CPU 并行拓扑，3/3 全链落地于 `feat/comm-topology`；
+specs deleted; history is git. CPU 车道 MPI+OpenMP+xsimd 原生，无 Kokkos。
+
+| Spec | Shipped |
+| ---- | ------- |
+| `comm-topology-01-swaplist` | swap-list halo（setup/borders/forward/reverse，单跳行为等价，旧级联删除）；tests/mpi 全绿 |
+| `comm-topology-02-multihop` | 每维 maxneed 轮逐轮转发（任意节点×进程，min-image 上界为唯一剩余拒绝）；`ATV_FORCE_DIMS` 窄盒 parity |
+| `comm-topology-03-widebox-validation` | MIL0PEGM18 24k @256 rank（8×8×4，hops 2,2,1）单点 parity 全项 dev=0.0（job 1692800）；README 快照 343 steps/s（记录非验收）。附带修复：Evaluate 无 halo 注入、Minimize 重复挂载、halo reach < neighbor reach |

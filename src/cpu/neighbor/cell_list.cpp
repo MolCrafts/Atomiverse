@@ -25,8 +25,8 @@ CellList::CellList(double cutoff, double skin)
     : cutoff_(cutoff), skin_(skin < 0 ? double(0.3) * cutoff : skin),
       cutoff_skin_(cutoff + (skin < 0 ? double(0.3) * cutoff : skin)) {}
 
-void CellList::init(const cpu::Frame& frame, double /*cutoff_skin*/) {
-    cutoff_skin_ = cutoff_ + skin_;
+void CellList::init(const cpu::Frame& frame, double cutoff_skin) {
+    cutoff_skin_ = cutoff_skin;
     // Single-rank: no axis extension; whole-box grid; ghosts wrap into [0, L).
     dd_ = nullptr;
     for (int d = 0; d < 3; ++d) {
@@ -44,12 +44,12 @@ void CellList::init(const cpu::Frame& frame, double /*cutoff_skin*/) {
     z_save_ = xt::zeros<double>({capacity_});
 }
 
-void CellList::init_extended(const cpu::Frame& frame, double /*cutoff_skin*/,
+void CellList::init_extended(const cpu::Frame& frame, double cutoff_skin,
                              const mpi::DomainDecomposition* dd, int capacity) {
-    cutoff_skin_ = cutoff_ + skin_;
+    cutoff_skin_ = cutoff_skin;
     // Multi-rank: every decomposed axis bins only this rank's subdomain
-    // plus a cutoff_skin halo margin (extent + origin derived from
-    // dd->sublo/subhi inside compute_grid).
+    // plus a max(cutoff_skin, dd->ghost_shell_width) halo margin (extent +
+    // origin derived from dd->sublo/subhi inside compute_grid).
     dd_ = dd;
     for (int d = 0; d < 3; ++d) {
         axis_extended_[d] = (dd != nullptr && dd->dims[d] > 1);
@@ -66,9 +66,23 @@ void CellList::init_extended(const cpu::Frame& frame, double /*cutoff_skin*/,
     z_save_ = xt::zeros<double>({capacity_});
 }
 
+double CellList::halo_pad_() const noexcept {
+    // The two reaches answer different questions: cutoff_skin_ is how far a
+    // PAIR may be found, dd_->ghost_shell_width is how far a GHOST may
+    // actually be placed (HaloSend's max(pair cutoff, bonded extension),
+    // covered in as many hops as the subdomain width needs). Under a
+    // multi-hop halo, or a bonded extension wider than cutoff + skin, the
+    // second exceeds the first and rows land outside a cutoff_skin-only
+    // window — where bin_atoms's clamp folds them into the edge cell
+    // silently. Take the deeper one. Zero (no halo built yet, or
+    // single-rank) leaves today's cutoff_skin margin untouched.
+    return dd_ != nullptr ? std::max(cutoff_skin_, dd_->ghost_shell_width)
+                          : cutoff_skin_;
+}
+
 void CellList::compute_grid(const cpu::Frame& frame) {
     // Per-axis grid extent. Extended (decomposed) axes cover only this
-    // rank's subdomain plus a cutoff_skin halo margin on each side, so
+    // rank's subdomain plus a `halo_pad_()` margin on each side, so
     // both the cell arrays and every per-rebuild cell sweep stay
     // O(local atoms) instead of O(global box). Non-extended axes use the
     // global box edge as-is (positions wrap into [0, L) during binning).
@@ -86,20 +100,25 @@ void CellList::compute_grid(const cpu::Frame& frame) {
     // (measured: +2.5% step-1 pressure error on the 8-rank NPT gate).
     // PBC ghost pre-shifts (±L) preserve lattice alignment because L is
     // an exact integer multiple of the cell size by construction.
+    //
+    // The margin widens with the halo's ghost shell but the CELL EDGE does
+    // not: it stays `L / floor(L / cutoff_skin)`, derived from the GLOBAL
+    // box, so a deeper shell buys more cells rather than bigger ones and
+    // the cross-rank lattice argued above survives untouched.
     int nc[3];
     double cs[3];
+    const double pad = halo_pad_();
     for (int d = 0; d < 3; ++d) {
         const double L = frame.box.length(d);
         const int nc_global =
             std::max(int(1), static_cast<int>(std::floor(L / cutoff_skin_)));
         const double cs_d = L / nc_global;
         if (axis_extended_[d]) {
-            // Lattice-aligned local window covering
-            // [sublo - cutoff_skin, subhi + cutoff_skin].
-            const int lo_bin = static_cast<int>(
-                std::floor((dd_->sublo[d] - cutoff_skin_) / cs_d));
-            const int hi_bin = static_cast<int>(
-                std::floor((dd_->subhi[d] + cutoff_skin_) / cs_d));
+            // Lattice-aligned local window covering [sublo - pad, subhi + pad].
+            const int lo_bin =
+                static_cast<int>(std::floor((dd_->sublo[d] - pad) / cs_d));
+            const int hi_bin =
+                static_cast<int>(std::floor((dd_->subhi[d] + pad) / cs_d));
             nc[d] = hi_bin - lo_bin + 1;
             cs[d] = cs_d;
             origin_[d] = lo_bin * cs_d;
@@ -113,6 +132,8 @@ void CellList::compute_grid(const cpu::Frame& frame) {
             subhi_at_grid_[d] = L;
         }
     }
+
+    halo_pad_at_grid_ = pad;
 
     ncx_ = nc[0];
     ncy_ = nc[1];
@@ -136,6 +157,13 @@ bool CellList::grid_stale(const cpu::Frame& frame) const {
                 continue;
             if (dd_->sublo[d] != sublo_at_grid_[d]
                 || dd_->subhi[d] != subhi_at_grid_[d])
+                return true;
+            // A halo that deepened its ghost shell since the grid was
+            // derived (box shrank into more hops, bonded extension grew)
+            // now places ghosts past the window; re-derive rather than let
+            // bin_atoms clamp them into the edge cell. Only the extended
+            // axes carry the margin, so an unextended-only grid ignores it.
+            if (halo_pad_() != halo_pad_at_grid_)
                 return true;
         }
     }

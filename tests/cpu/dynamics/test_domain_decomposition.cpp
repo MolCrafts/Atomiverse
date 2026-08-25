@@ -66,6 +66,11 @@ TEST(DomainDecomposition, SingleRankDefaults) {
 }
 
 // ── send lists empty ─────────────────────────────────────────────────
+//
+// The send lists moved off the decomposition onto the halo's published
+// swap table (`ctx.md.swap_list`, owned by `HaloSend`). Single-rank keeps
+// the same criterion — nothing is ever shipped — expressed at the new
+// address: no halo component runs, so no table is published at all.
 
 TEST(DomainDecomposition, SendListsEmpty) {
     auto frame = make_small_frame(32);
@@ -73,10 +78,9 @@ TEST(DomainDecomposition, SendListsEmpty) {
 
     cpu::Context& ctx = backend.context();
     ASSERT_NE(ctx.md.dd, nullptr);
-    for (int face = 0; face < 6; ++face) {
-        EXPECT_TRUE(ctx.md.dd->send_lists[face].empty())
-            << "send_lists[" << face << "] must be empty in single-rank mode";
-    }
+    EXPECT_EQ(ctx.md.swap_list, nullptr)
+        << "single-rank mode must publish no swap table, so there are no "
+           "send lists to ship from";
 }
 
 // ── identity tag→local map ───────────────────────────────────────────

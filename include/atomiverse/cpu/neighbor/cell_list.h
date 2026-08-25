@@ -5,10 +5,14 @@
 /// Produces LAMMPS-style CSR PairList (half or full).
 ///
 /// **Multi-rank ghost-aware mode** (`init_extended`):
-/// the bin grid is widened by `cutoff_skin` on each side along every axis
-/// `d` with `dims[d] > 1`, so ghost atoms whose positions lie outside the
-/// box (after PBC pre-shift by `HaloSend`) bin into dedicated
-/// halo cells instead of wrapping back onto owner cells. Iteration bounds
+/// the bin grid is widened by `max(cutoff_skin, dd->ghost_shell_width)` on
+/// each side along every axis `d` with `dims[d] > 1`, so ghost atoms whose
+/// positions lie outside the box (after PBC pre-shift by `HaloSend`) bin
+/// into dedicated halo cells instead of wrapping back onto owner cells.
+/// The halo term is what makes the window follow a ghost shell deeper than
+/// the Verlet reach (multi-hop halo, or a bonded extension wider than
+/// `cutoff + skin`); without it those ghosts fall outside the grid and
+/// `bin_atoms` clamps them into the edge cell. Iteration bounds
 /// are explicit: `bin_atoms` walks `[0, n_active)` (= owners + current
 /// ghosts), and the half-list outer loop walks `[0, n_active)` so callers
 /// can later trim `inum = n_local` for force kernels.
@@ -44,16 +48,28 @@ class CellList {
     /// @brief One-time setup (single-rank): grid spans `[0, L)` per axis,
     /// ghost positions are wrapped during binning.
     /// @param frame Frame whose box defines the grid.
-    /// @param cutoff_skin Interaction cutoff plus Verlet skin [Angstrom].
+    /// @param cutoff_skin Verlet reach [Angstrom] this index is sized and
+    ///        filtered by — the interaction cutoff plus the Verlet skin.
+    ///        Overrides the value derived from the constructor arguments.
     void init(const cpu::Frame& frame, double cutoff_skin);
 
     /// @brief One-time setup (multi-rank): along every axis `d` with
     /// `dims[d] > 1` the grid covers only THIS RANK's subdomain plus a
-    /// `cutoff_skin` halo margin on each side — `[sublo[d] - cutoff_skin,
-    /// subhi[d] + cutoff_skin)` — not the global box. Ghost atoms (PBC
-    /// pre-shifted by `HaloSend`) bin into the halo cells without
-    /// wrap-around. Single-rank axes (`dims[d] == 1`) keep the global
-    /// `[0, L)` range and are wrapped during binning.
+    /// `max(cutoff_skin, dd->ghost_shell_width)` halo margin on each side,
+    /// not the global box. Ghost atoms (PBC pre-shifted by `HaloSend`) bin
+    /// into the halo cells without wrap-around. Single-rank axes
+    /// (`dims[d] == 1`) keep the global `[0, L)` range and are wrapped
+    /// during binning.
+    ///
+    /// The margin takes the deeper of the two reaches because they answer
+    /// different questions: `cutoff_skin` is how far a pair may be found,
+    /// `dd->ghost_shell_width` is how far a ghost may actually be placed. A
+    /// multi-hop halo (subdomain thinner than the shell) or a bonded
+    /// extension wider than `cutoff + skin` puts ghosts past the Verlet
+    /// reach, and `bin_atoms` would clamp them into the edge cell —
+    /// silently, no missing atom and no error, only wrong pairs.
+    /// `ghost_shell_width == 0` (no halo built yet) leaves the margin at
+    /// `cutoff_skin`.
     ///
     /// Sizing the grid to the subdomain keeps both the cell arrays and the
     /// per-rebuild cell loops O(local atoms): the previous global-box grid
@@ -61,11 +77,13 @@ class CellList {
     /// added rank at 200k atoms/rank, the dominant per-rank RSS growth and
     /// the multi-node rebuild bottleneck at 512-1024 ranks.
     /// @param frame Frame whose box defines the grid.
-    /// @param cutoff_skin Interaction cutoff plus Verlet skin [Angstrom].
-    /// @param dd Domain decomposition (dims + this rank's sublo/subhi).
-    ///        Borrowed pointer; must outlive this CellList's use. The grid
-    ///        re-derives itself from `dd->sublo/subhi` whenever they move
-    ///        (NPT rescale, RCB rebalance).
+    /// @param cutoff_skin Verlet reach [Angstrom] this index is sized and
+    ///        filtered by — the interaction cutoff plus the Verlet skin.
+    ///        Overrides the value derived from the constructor arguments.
+    /// @param dd Domain decomposition (dims, this rank's sublo/subhi, and
+    ///        `ghost_shell_width`). Borrowed pointer; must outlive this
+    ///        CellList's use. The grid re-derives itself whenever those
+    ///        move (NPT rescale, RCB rebalance, deeper ghost shell).
     /// @param capacity Maximum number of active atoms (owners + ghost slack);
     ///        per-atom bookkeeping arrays are sized to this.
     void init_extended(const cpu::Frame& frame, double cutoff_skin,
@@ -144,6 +162,21 @@ class CellList {
     /// check would have skipped it.
     int n_at_last_build() const { return n_at_last_build_; }
 
+    /// @brief Flat bin index a frame row was assigned at the last
+    /// `build()`, i.e. `cx * ncy * ncz + cy * ncz + cz` in this rank's
+    /// grid (which, on decomposed axes, is a lattice-aligned window around
+    /// the subdomain — bin 0 is not the box origin there).
+    ///
+    /// Read-only introspection on the binning, the one observable that
+    /// distinguishes a correctly padded window from one whose out-of-window
+    /// rows were clamped into the edge cell; the published `PairList` looks
+    /// the same either way because the distance filter rejects the merged
+    /// candidates. `n_at_last_build()` is the precedent.
+    /// @param row Frame row index, in `[0, n_active)` of the last `build()`.
+    /// @return Flat cell index in `[0, total_cells)`; unspecified before
+    ///         the first `build()`.
+    int cell_of(int row) const { return atom_cell_[row]; }
+
     /// @brief Verlet skin width [Angstrom] currently held by this strategy.
     /// Used by infrastructure auto-injection (e.g. MD::install_defaults
     /// extending the halo cutoff by skin so atoms in the skin band stay
@@ -205,6 +238,21 @@ class CellList {
     /// and RCB rebalancing both trigger a grid re-derivation.
     double sublo_at_grid_[3] = {0.0, 0.0, 0.0};
     double subhi_at_grid_[3] = {0.0, 0.0, 0.0};
+
+    /// @brief `halo_pad_()` captured at the last `compute_grid()`
+    /// [Angstrom]. `grid_stale()` compares against the live value so a
+    /// halo that deepens its ghost shell mid-run (a shrinking box raising
+    /// the hop count, a bonded extension growing) re-derives the window
+    /// instead of binning into a now-too-narrow one. Not a latch: dropping
+    /// the shell back makes the grid fresh again.
+    double halo_pad_at_grid_ = 0.0;
+
+    /// @brief Extended-axis window margin [Angstrom]: the deeper of this
+    /// index's Verlet reach (`cutoff_skin_`) and the halo's real ghost
+    /// shell (`dd_->ghost_shell_width`). Single-rank (`dd_ == nullptr`)
+    /// is the Verlet reach alone.
+    /// @return Margin added on each side of the subdomain [Angstrom].
+    double halo_pad_() const noexcept;
 
     // Binning
     xt::xtensor<int, 1> atom_cell_;    ///< Atom -> cell index [capacity].

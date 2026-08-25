@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
@@ -292,23 +293,87 @@ int main(int argc, char** argv) {
 
     // ── Single-point: one evaluation, component energies, exit ──────────
     if (args.single_point) {
+        // Same skin the MD path hands NeighborList below; the geometry
+        // report reuses it as the ghost-shell lower bound.
+        const double skin = 2.0;
         cpu::Evaluate eval;
-        eval.set_neighbor(cpu::md::NeighborList<>{cutoff, 2.0});
+        eval.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
         install(eval);
         eval.build();
         eval.run(frame);
-        // Component energies are rank-local sums (global constants land on
-        // rank 0); reduce before printing.
-        double e[5] = {frame.meta.get(kEnergy), frame.meta.get(kEnergyPair),
-                       frame.meta.get(kEnergyBond),
-                       frame.meta.get(kEnergyAngle),
-                       frame.meta.get(kEnergyDihedral)};
-        MPI_Allreduce(MPI_IN_PLACE, e, 5, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        frame.meta.get(kEnergy) = e[0];
-        frame.meta.get(kEnergyPair) = e[1];
-        frame.meta.get(kEnergyBond) = e[2];
-        frame.meta.get(kEnergyAngle) = e[3];
-        frame.meta.get(kEnergyDihedral) = e[4];
+        // The component energies on the Frame are already GLOBAL:
+        // `Evaluate::install_defaults` binds `md::mpi::Reduce` at
+        // `evaluate @ +20`, which allreduces kEnergy / kEnergyPair /
+        // kEnergyBond / kEnergyAngle / kEnergyDihedral (plus improper,
+        // charging work, kinetic and both stress tensors) in one batched
+        // call. Re-reducing them here would multiply every printed total by
+        // the rank count.
+
+        // Rank-invariant force scalars. Only OWNER rows are summed:
+        // `partition_atoms` sets `frame.nlocal()` to this rank's
+        // `DomainDecomposition::n_local`, and ghost rows live above it in
+        // `[nlocal, nlocal + nghost)`. A ghost's force is a partial sum that
+        // the reverse halo adds into its owner's row, so counting it here
+        // would double it. `fmax` reduces with MAX over |f_i|² and takes one
+        // sqrt at the end (the max of the squares is the square of the max);
+        // `fnorm` reduces the sum of squares with SUM, then takes the sqrt.
+        //
+        // The reverse halo this relies on is auto-injected: `Evaluate` now
+        // binds `comm::Migrate` / `comm::HaloSend` / `comm::HaloRecv` /
+        // `md::mpi::Reduce` around the evaluate phase exactly as
+        // `cpu::minimizer::Minimize` does. Before that fix this branch ran
+        // with ZERO ghost atoms at np > 1 and every quantity here silently
+        // lost its cross-rank part (MIL0PEGM18 24k: E = 1684.070 eV at np=1
+        // vs 1241.720 eV at np=8); `widebox_parity.sh` is what reports it.
+        {
+            const AccReal* fx = frame.span(kAtom_fx);
+            const AccReal* fy = frame.span(kAtom_fy);
+            const AccReal* fz = frame.span(kAtom_fz);
+            const int n_owned = frame.nlocal();
+            double fmax2 = 0.0, fsum2 = 0.0;
+            for (int i = 0; i < n_owned; ++i) {
+                const double f2 = fx[i] * fx[i] + fy[i] * fy[i] + fz[i] * fz[i];
+                fsum2 += f2;
+                fmax2 = std::max(fmax2, f2);
+            }
+            MPI_Allreduce(MPI_IN_PLACE, &fmax2, 1, MPI_DOUBLE, MPI_MAX,
+                          MPI_COMM_WORLD);
+            MPI_Allreduce(MPI_IN_PLACE, &fsum2, 1, MPI_DOUBLE, MPI_SUM,
+                          MPI_COMM_WORLD);
+            if (rank == 0)
+                std::printf("[atv] SINGLE-POINT FORCES: fmax=%.10e "
+                            "fnorm=%.10e\n",
+                            std::sqrt(fmax2), std::sqrt(fsum2));
+        }
+
+        // Processor grid geometry, from the same pure function the
+        // DomainDecomposition itself calls — so this reports the grid that
+        // was actually used, `ATV_FORCE_DIMS` override included.
+        //
+        // `halo` here is the GEOMETRIC LOWER BOUND on the ghost shell:
+        // `cutoff + skin` only. Bonded reach (bond/angle/dihedral spans) is
+        // added engine-side on top of it, so a printed `hops=2` means "at
+        // least 2 hops" — never fewer.
+        if (rank == 0) {
+            int dims[3] = {1, 1, 1};
+            cpu::md::mpi::DomainDecomposition::choose_dims(
+                nrank, frame.box.length(0), frame.box.length(1),
+                frame.box.length(2), dims);
+            const double halo = cutoff + skin;
+            double span[3];
+            int hops[3];
+            for (int d = 0; d < 3; ++d) {
+                span[d] = frame.box.length(d) / dims[d];
+                hops[d] = dims[d] == 1
+                              ? 0
+                              : static_cast<int>(std::ceil(halo / span[d]));
+            }
+            std::printf("[atv] GRID dims=%d,%d,%d span=%.6f,%.6f,%.6f "
+                        "halo=%.6f hops=%d,%d,%d\n",
+                        dims[0], dims[1], dims[2], span[0], span[1], span[2],
+                        halo, hops[0], hops[1], hops[2]);
+        }
+
         if (rank == 0) {
             std::printf("[atv] SINGLE-POINT (eV): E=%.8f pair+kspace=%.8f "
                         "bond=%.8f angle=%.8f dihedral=%.8f\n",
@@ -316,7 +381,7 @@ int main(int argc, char** argv) {
                         frame.meta.get(kEnergyBond),
                         frame.meta.get(kEnergyAngle),
                         frame.meta.get(kEnergyDihedral));
-            const double kcal = 23.060547830619026;
+            const double kcal = 1.0 / ATV::cpu::kKcalPerMolInEv;
             std::printf("[atv] SINGLE-POINT (kcal/mol): E=%.6f "
                         "pair+kspace=%.6f bond=%.6f angle=%.6f "
                         "dihedral=%.6f\n",

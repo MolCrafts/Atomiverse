@@ -25,7 +25,7 @@ TEST(TestDriver, BuildRetainsMountsAndSecondCompileMatchesPlan) {
     eval.on(ATV::evaluate::Phase::evaluate).add_ref(a);
     eval.on(ATV::evaluate::Phase::evaluate).add_ref(b);
     eval.build();
-    EXPECT_EQ(eval.mounted().size(), 5u);
+    EXPECT_EQ(eval.mounted().size(), 7u);
     EXPECT_TRUE(eval.is_mounted(ATV::PluginIdentity{&a}));
     EXPECT_TRUE(eval.is_mounted(ATV::PluginIdentity{&b}));
     EXPECT_FALSE((ATV::PluginIdentity{&a} == ATV::PluginIdentity{&b}));

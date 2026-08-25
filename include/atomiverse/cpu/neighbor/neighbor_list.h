@@ -110,6 +110,17 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// @brief Mutable supply side, for a driver that configures the list.
     cpu::NeighborProvider* neighbor_provider() override { return this; }
 
+    /// @brief Distance this list enumerates pairs out to [Angstrom]:
+    /// `cutoff + skin`, exactly the radius `build()` hands the spatial index.
+    ///
+    /// The auto-injected MPI halo is sized from this, so the ghost shell covers
+    /// the whole skin band rather than the interaction cutoff alone (see
+    /// `NeighborProvider::neighbor_reach`).
+    /// @return Enumeration radius [Angstrom].
+    AccReal neighbor_reach() const override {
+        return static_cast<AccReal>(cutoff_ + strategy_.skin());
+    }
+
     /// @brief Drop `atom_modify sort` permanently (see `NeighborProvider`).
     void forbid_row_reordering() override {
         AtomSortParams p = sort_state_.params;
@@ -168,7 +179,8 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         //   halo_stale: HaloSend did a full rebuild that may have
         //               reshuffled ghost slot indices (different atoms in the
         //               same slot, or atoms relocated to a different slot
-        //               because earlier-axis recv_counts changed). The pair
+        //               because an earlier-axis swap's received count
+        //               changed). The pair
         //               list CSR stores `j` as raw slot indices, so a
         //               reshuffle without a rebuild leaves the LJ + bonded
         //               kernels reading stale (wrong-atom) positions —
@@ -202,7 +214,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         if (mode_stale || size_stale || halo_stale || disp_rebuild) {
             // Serial only: multi-rank sort runs in HaloSend before borders
             // (LAMMPS exchange → sort → borders). Sorting here after halo
-            // would invalidate reverse send_lists.
+            // would invalidate the swap table's reverse send lists.
             //
             // Must notify_sorted so BondedTupleCache rebuilds: on serial MD
             // `dd` still exists, and cache staleness is keyed on
@@ -213,8 +225,11 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
                 auto& f = ctx.frame;
                 const double bs =
                     sort_state_.resolved_binsize(cutoff_ + strategy_.skin());
+                // No swap table on this path by construction: it is the
+                // single-rank branch, where `HaloSend` early-returns and
+                // publishes nothing.
                 if (sort_owned_atoms(f, f.nlocal(), bs))
-                    notify_sorted(ctx.runtime.md.dd, f,
+                    notify_sorted(ctx.runtime.md.dd, f, /*swaps=*/nullptr,
                                   /*clear_ghosts=*/true);
                 sort_state_.mark_sorted();
             }
@@ -311,10 +326,17 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// and from `launch()` whenever `frame.box` has drifted enough that
     /// the cell-grid sizing is stale.
     void reinit_strategy(const cpu::Context& rt, cpu::Frame& f) {
+        // The strategy is sized and filtered by the VERLET reach, not the
+        // bare cutoff: a list built to `cutoff` alone drops every pair in
+        // the skin band and stops being reusable between rebuilds.
+        // (`skin()` is the constructor's negative-means-auto value already
+        // resolved, so this is exactly what the strategy derives itself.)
+        const double cutoff_skin = cutoff_ + strategy_.skin();
         if (is_multi_rank(rt)) {
-            strategy_.init_extended(f, cutoff_, rt.md.dd, rt.md.dd->capacity);
+            strategy_.init_extended(f, cutoff_skin, rt.md.dd,
+                                    rt.md.dd->capacity);
         } else {
-            strategy_.init(f, cutoff_);
+            strategy_.init(f, cutoff_skin);
         }
     }
 

@@ -69,7 +69,7 @@ TEST(AtomSort, NotifyBumpsNeighborGeneration) {
     cpu::md::mpi::DomainDecomposition dd;
     dd.bind(f);
     const auto g0 = dd.neighbor_generation;
-    cpu::md::notify_sorted(&dd, f);
+    cpu::md::notify_sorted(&dd, f, /*swaps=*/nullptr);
     EXPECT_EQ(dd.neighbor_generation, g0 + 1);
     // Owner tag map always rebuilt after sort (specials / gather / bonded).
     EXPECT_EQ(dd.tag_to_local.size(), 4u);
@@ -100,7 +100,7 @@ TEST(AtomSort, NotifyRepublishesTheFrameTagIndex) {
     cpu::md::mpi::DomainDecomposition dd;
     dd.bind(f);
     ASSERT_TRUE(cpu::md::sort_owned_atoms(f, n, /*binsize=*/5.0));
-    cpu::md::notify_sorted(&dd, f);
+    cpu::md::notify_sorted(&dd, f, /*swaps=*/nullptr);
 
     const auto& index = f.meta.get(cpu::kTagIndex);
     ASSERT_EQ(index.size(), static_cast<std::size_t>(n));
@@ -133,7 +133,7 @@ TEST(AtomSort, NotifyRepublishesTheFrameTagIndexWithoutADecomposition) {
     f.rebuild_tag_index(0, n);
 
     ASSERT_TRUE(cpu::md::sort_owned_atoms(f, n, /*binsize=*/5.0));
-    cpu::md::notify_sorted(/*dd=*/nullptr, f);
+    cpu::md::notify_sorted(/*dd=*/nullptr, f, /*swaps=*/nullptr);
 
     const auto& index = f.meta.get(cpu::kTagIndex);
     ASSERT_EQ(index.size(), static_cast<std::size_t>(n));

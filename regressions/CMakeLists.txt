@@ -148,8 +148,10 @@ if(ATV_BUILD_MD)
     endif()
     atv_add_regression(md surface-tension-coupling)
     atv_add_regression(md pe_bonded_nve)
-    atv_add_regression(md eam_cu)
-    atv_add_regression(md sw_si)
+    if(ATV_BUILD_MOLRS) # EAM/SW table lookups key on molrs::Element
+        atv_add_regression(md eam_cu)
+        atv_add_regression(md sw_si)
+    endif()
     atv_add_regression(md rigid_water)
     atv_add_regression(md dihedral_charmm)
     atv_add_regression(md improper_harmonic)
@@ -179,6 +181,30 @@ if(ATV_BUILD_MD)
     if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
         atv_add_regression(md const-pot-charge-halo-mpi)
         target_compile_definitions(reg_const-pot-charge-halo-mpi PRIVATE
+            ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
+        # Swap-list halo vs the in-file O(N^2) min-image LJ sum under a forced
+        # 2x1x1 decomposition: self-relaunching binary (mpiexec -n 2 and -n 1),
+        # oracle=literature identity. perf_exempt.
+        atv_add_regression(md comm-swaplist-halo-mpi)
+        target_compile_definitions(reg_comm-swaplist-halo-mpi PRIVATE
+            ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
+        # MULTI-HOP halo (comm-topology-02): a forced 4x1x1 split of a 15.78 A
+        # box gives 3.945 A subdomains against a 6.6 A ghost shell, so the
+        # shell needs 2 forwarding rounds on x. Self-relaunching binary
+        # (mpiexec -n 4 and -n 1) against the in-file O(N^2) min-image LJ sum,
+        # oracle=literature identity. perf_exempt.
+        atv_add_regression(md comm-topology-multihop)
+        target_compile_definitions(reg_comm-topology-multihop PRIVATE
+            ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
+        # WIDE-BOX parity (comm-topology-03): a forced 4x2x1 split of a
+        # 24 x 14 x 14 A box puts x in the 2-hop band (6.0 A slabs vs a 6.6 A
+        # shell) and y on the dims == 2 dual-image branch at once, while the
+        # shell carries ghost CHARGES and the BONDED extension. Self-
+        # relaunching binary (mpiexec -n 1 and -n 8): np = 1 against the
+        # in-file O(N^2) min-image direct sum, then np = 8 against np = 1.
+        # oracle=literature identity. perf_exempt.
+        atv_add_regression(md multihop-widebox-parity)
+        target_compile_definitions(reg_multihop-widebox-parity PRIVATE
             ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
     endif()
 endif()
@@ -1633,21 +1659,28 @@ if(ATV_BUILD_PATH)
     atv_add_regression(path irc_muller_brown)
     atv_add_regression(path pimd_free_particle_estimators)
 endif()
-atv_add_regression(architecture harmonic_driver_matrix)
+if(ATV_BUILD_VIB) # drives the vib::Hessian preset
+    atv_add_regression(architecture harmonic_driver_matrix)
+endif()
 atv_add_regression(architecture component-plugin-01-probe)
 atv_add_regression(architecture component-plugin-02-wrap)
 atv_add_regression(architecture component-plugin-03-slot)
 atv_add_regression(architecture component-plugin-04-match)
 atv_add_regression(architecture component-plugin-05-live)
 atv_add_regression(architecture component-plugin-06-unmount)
-atv_add_regression(architecture arch-gpw-driver-paths)
+if(ATV_BUILD_GPW)
+    atv_add_regression(architecture arch-gpw-driver-paths)
+endif()
 # arch-mg-main-structural: multi-level MAIN product path single owner
 # (multigrid_collocate_rho* / multigrid_integrate_veff*); twin energy pin
 # is gpw-multigrid-kpoints. Requires GPW (+ FFT) product sources.
 if(ATV_BUILD_GPW)
     atv_add_regression(architecture arch-mg-main-structural)
 endif()
-atv_add_regression(architecture module_compile_defs)
+# Asserts the full-classical compile-def set by design (#error otherwise).
+if(ATV_BUILD_MC AND ATV_BUILD_PATH AND ATV_BUILD_VIB AND ATV_BUILD_SEMIEMPIRICAL)
+    atv_add_regression(architecture module_compile_defs)
+endif()
 if(ATV_BUILD_GPW)
     # arch-cuda-gpw-public-shape-freeze: CUDA full GPW product must mirror CPU
     # GpwDft public shape (members + build/run/last_result). Shape-only harness;

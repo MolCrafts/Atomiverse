@@ -42,7 +42,11 @@ namespace mpi {
 /// Holds (a) MPI Cartesian topology, (b) this rank's owned spatial slab,
 /// (c) authoritative atom counts (`n_local`, `n_ghost`, `capacity`),
 /// (d) a generation counter that consumers (neighbor lists, halo lists)
-/// rebuild against, and (e) derived bookkeeping (send lists, tag→local map).
+/// rebuild against, and (e) the tag→local map.
+///
+/// It does **not** hold the halo's derived indices: the per-swap send lists
+/// and ghost-slot layout live on `comm::SwapList`, owned by `comm::HaloSend`
+/// and published as `ctx.md.swap_list`.
 ///
 /// `Frame::capacity()` is the allocated row capacity in multi-rank mode;
 /// `n_local` is the owned-atom count. Force kernels and integrators iterate
@@ -108,7 +112,7 @@ struct DomainDecomposition {
     /// rebuild* (not on position-only refreshes). Distinct from
     /// `neighbor_generation` because a full halo rebuild can reshuffle
     /// ghost slot indices (atoms entering / leaving the cutoff zone, or
-    /// just re-binning across axes when per-face `recv_counts` change),
+    /// just re-binning across axes when a swap's received count changes),
     /// which invalidates any cached structure that stores raw frame
     /// indices for ghost atoms — most importantly the `NeighborList`
     /// pair-list CSR, whose `j` entries hold raw slot indices. Without
@@ -123,29 +127,34 @@ struct DomainDecomposition {
     /// `.claude/notes/msu_stage2_conserved_drift_2026-05-27.md`.)
     std::uint64_t halo_generation = 0;
 
+    /// @brief Depth [Angstrom] of the ghost shell the halo actually builds:
+    /// how far beyond `sublo` / `subhi` a legitimate ghost may sit.
+    ///
+    /// Written by `HaloSend` (`max(pair cutoff, bonded extension)`) at every
+    /// full rebuild. `0.0` means no halo has been built yet — the first
+    /// `NeighborList::build()` precedes the first `HaloSend::build()`, and
+    /// single-rank runs never write it at all — in which case consumers use
+    /// their own reach and behave exactly as before this field existed.
+    ///
+    /// Consumed by `CellList::compute_grid`, which pads every decomposed
+    /// axis by `max(cutoff + skin, ghost_shell_width)`. Under a multi-hop
+    /// halo (subdomain thinner than the shell) or a bonded extension wider
+    /// than `cutoff + skin`, ghosts land deeper than the Verlet reach; a
+    /// grid padded only by `cutoff + skin` lets `bin_atoms` clamp them into
+    /// the edge cell — silently, with no missing atom and no error, only
+    /// wrong cell membership and therefore wrong pairs.
+    double ghost_shell_width = 0.0;
+
     // ── atom_modify sort (LAMMPS: exchange → sort → borders) ──────────
     // NeighborList publishes these; HaloSend applies sort on full rebuild
-    // *before* rebuilding ghost slots so reverse send_lists stay valid.
+    // *before* rebuilding ghost slots so the swap table's reverse send
+    // lists stay valid.
     bool atom_sort_enabled = true;
     int atom_sort_nfreq = 1000;
     double atom_sort_binsize = 0.0;   ///< ≤0 → 0.5 * atom_sort_neigh_cut
     double atom_sort_neigh_cut = 0.0; ///< neighbor cutoff+skin for auto binsize
     int atom_sort_step = 0;
     int atom_sort_next = 1000; ///< first sort after nfreq steps
-
-    /// @brief Per-face send lists: owned-atom indices shadowed to each face neighbor.
-    /// Order matches `face_neighbors`. Empty in single-rank mode. Rebuilt by
-    /// `HaloSend::launch()` each step; consumed by both
-    /// `HaloSend` (to pack outgoing positions) and
-    /// `HaloRecv` (to add incoming ghost forces back to owners).
-    std::array<std::vector<int>, 6> send_lists{};
-
-    /// @brief Per-face ghost counts received in the most recent forward halo.
-    /// `recv_counts[f]` ghosts from face `f` occupy frame slots
-    /// `[n_local + sum(recv_counts[0..f]), n_local + sum(recv_counts[0..f+1]))`.
-    /// Used by `HaloRecv` to know how many ghost forces to ship
-    /// back per face. Reset to zero on partition; set by Forward.
-    std::array<int, 6> recv_counts{};
 
     /// @brief Map from global atom tag to local row index.
     ///

@@ -1,26 +1,45 @@
 /// @file cpu/comm/halo_exchange.h
 /// @brief Ghost-atom halo exchange components for MPI domain decomposition.
 ///
-/// LAMMPS-style forward/reverse comm:
-///   - `HaloSend::launch` rebuilds per-face send lists from
-///     current positions, packs owned positions (with PBC shift across
-///     periodic-edge faces), issues 6-face `MPI_Isend/Irecv`, and unpacks
-///     received ghosts into `atoms` Block rows `[n_local, n_local+n_ghost)`.
-///   - `HaloRecv::launch` symmetrically reduces ghost-row
-///     `fx/fy/fz` contributions back onto the owners.
+/// LAMMPS CommBrick forward/reverse comm, driven by an ordered **swap
+/// table** (`comm::SwapList`) instead of a per-step per-face geometry
+/// re-derivation:
+///   - `HaloSend::launch` re-derives the table at every full rebuild
+///     (`setup` + borders: refill each swap's send list from current
+///     positions, exchange counts, pack rows with the swap's PBC image
+///     shift, `MPI_Isend/Irecv` both swaps of one round concurrently,
+///     unpack received ghosts into `atoms` Block rows
+///     `[n_local, n_local+n_ghost)` and commit each swap's ghost slots).
+///     In between rebuilds it replays the same table, refreshing ghost
+///     rows only.
+///   - `HaloRecv::launch` walks the same table backwards, reducing
+///     ghost-row `fx/fy/fz` contributions back onto the owners.
 ///
-/// Each endpoint owns its per-face MPI buffers (`detail::FaceBufs`,
-/// per-instance PIMPL); the shared per-face send lists and receive counts
-/// live on `md::mpi::DomainDecomposition` (`dd->send_lists`,
-/// `dd->recv_counts`). `HaloSend` is the producer (writes the counts and
-/// the ghost rows); `HaloRecv` is the consumer (uses the same counts to
-/// know how many ghost forces to pack and where they go on the owner's
-/// side).
+/// **A ghost shell deeper than one subdomain is not a refusal.** When the
+/// shell is wider than this rank's slab (narrow box, many ranks on one axis,
+/// an NPT / deform shrink, or a bonded span wider than the pair cutoff) the
+/// table carries `SwapList::max_hops(d) > 1` **forwarding rounds** per axis,
+/// and round `r > 1` of a face ships exactly what round `r - 1` delivered on
+/// the OPPOSITE face of the same axis — so rank `c - r`'s atoms arrive
+/// through the ranks in between, never as a direct message to a rank two
+/// hops away. Rounds are serialized; the two faces of a round are not. The
+/// only geometry still refused is the minimum-image bound
+/// (`shell <= L_d - w_self`), which no number of hops can satisfy.
+///
+/// Each endpoint owns its per-swap MPI buffers (`detail::FaceBufs`,
+/// per-instance PIMPL). The swap table itself is **owned by `HaloSend`**
+/// and published non-owning as `ctx.md.swap_list` (mirroring
+/// `NeighborList → ctx.md.pair_list`); `HaloRecv` and `HaloRefresh` read
+/// it, and a null pointer means "no table yet" — a rank-uniform no-op.
 ///
 /// The default-constructed `HaloSend{}` (`cutoff = 0`) is a
 /// no-op sentinel. Under `ATV_BUILD_MPI`, `cpu::md::MD` auto-injects the
-/// `HaloSend{1.1 * pair_cutoff}` + `HaloRecv{}` pair when `set_evaluator` is
-/// called; a manually registered pair suppresses the injection (detected
+/// `HaloSend{max(1.1 * pair_cutoff, neighbor_reach)}` + `HaloRecv{}` pair when
+/// `set_evaluator` is called — the shell has to cover the distance the neighbor
+/// list enumerates to (`cutoff + skin`), not just the interaction cutoff, or a
+/// cross-rank pair inside the skin band gets no ghost and goes missing from the
+/// CSR until the next full rebuild. A manually registered pair suppresses the
+/// injection (detected
 /// through the `halo_participant()` protocol probe — reverse exchange
 /// must run exactly once).
 ///
@@ -44,6 +63,7 @@
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/communication/swap_list.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/halo_participant.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -53,25 +73,48 @@ namespace cpu {
 namespace comm {
 
 namespace detail {
-/// @brief Per-face MPI buffer storage (PIMPL). Definition lives in
+/// @brief Per-swap MPI buffer storage (PIMPL). Definition lives in
 /// `halo_exchange.cpp` so the header stays free of MPI-adjacent state.
 /// Held per-instance by `HaloSend` / `HaloRecv` so
 /// multiple components in the same process do not clobber each other's
-/// send/recv buffers.
+/// send/recv buffers. Sized to the swap count, which is derived
+/// (`2 * sum_d maxneed_d`) rather than a fixed six.
 struct FaceBufs;
 } // namespace detail
 
 /// @brief Forward pass: owned positions → ghost rows on face neighbors.
 ///
-/// Per-face send lists are rebuilt every step from current owned positions;
-/// packed buffers are allocated once in `build()` based on a generous initial
-/// estimate (no `launch()` realloc on the steady-state path). Single-rank
-/// (`runtime.mpi_size == 1`) and `cutoff == 0` both early-return.
+/// Owns the halo's `comm::SwapList` and publishes it as `ctx.md.swap_list`.
+/// The table is re-derived on every full rebuild — so an NPT / deform box
+/// rescale is picked up, including a shrink that raises the per-axis round
+/// count — and each swap's send list is refilled from the current positions;
+/// packed buffers are allocated once in `build()` based on a generous
+/// initial estimate (no `launch()` realloc on the steady-state path).
+/// Single-rank (`runtime.mpi_size == 1`) and `cutoff == 0` both early-return,
+/// leaving the published pointer null.
 ///
 /// Atoms within `cutoff` of a face plane are flagged as ghosts to the
-/// corresponding face neighbor. PBC: atoms sent across the periodic edge of
-/// the global box are shifted by `±L_d` on the way out so the receiver sees
-/// them in its own coordinate frame.
+/// corresponding face neighbor, and a deeper shell is filled by forwarding
+/// each round's ghosts one rank further. PBC: rows sent across the periodic
+/// edge of the global box are shifted by `±L_d` on the way out so the
+/// receiver sees them in its own coordinate frame; a forwarded row already
+/// carries the shifts of the hops it has taken, and each link adds its own.
+///
+/// It also publishes the shell it is about to build as
+/// `DomainDecomposition::ghost_shell_width` [Angstrom] — at `build()` and at
+/// every full rebuild, before any consumer reads it. `CellList` pads the
+/// decomposed axes of its bin grid by that width; a multi-hop ghost outside
+/// the window would be clamped into the edge cell silently.
+///
+/// The published width is the shell that is *asked for*,
+/// `max(cutoff, bonded_extension)`. A forwarding round carries the open band
+/// of `Swap::slablo` (the LAMMPS `ineed >= 2` convention), so the last round
+/// of an axis can also deliver rows up to one partner slab **past** that
+/// width — surplus, never a missing ghost: those rows are farther from every
+/// owner than the shell itself, so no pair kernel and no neighbour list ever
+/// reaches them, and the grid's edge clamp on them changes nothing. Trimming
+/// them would mean giving rounds `> 1` the round-1 band, which is a
+/// `SwapList` geometry decision, not a transport one.
 class HaloSend : public cpu::Component, public cpu::HaloParticipant {
   public:
     /// @brief No-op default constructor (cutoff = 0).
@@ -123,6 +166,15 @@ class HaloSend : public cpu::Component, public cpu::HaloParticipant {
     void build(const cpu::BuildContext& ctx) override;
     void launch(const cpu::LaunchContext& ctx) override;
 
+    /// @brief Retract the published swap table.
+    ///
+    /// The table dies with this component, so the pointer on the context
+    /// must not outlive it — a runtime unfix would otherwise leave
+    /// `HaloRecv` / `HaloRefresh` reading freed memory instead of taking
+    /// their null branch.
+    /// @param ctx Destroy context carrying the publishing runtime.
+    void destroy(const cpu::DestroyContext& ctx) override;
+
     /// @brief Pair cutoff this exchange was constructed with (no bonded skin).
     double cutoff() const { return cutoff_; }
 
@@ -154,7 +206,7 @@ class HaloSend : public cpu::Component, public cpu::HaloParticipant {
     /// @return Maximum intra-tuple pairwise distance in Angstroms.
     static double compute_bonded_extension(const cpu::Frame& frame);
 
-    /// @brief Test-only: per-face native-byte send-buffer capacity after
+    /// @brief Test-only: per-swap native-byte send-buffer capacity after
     /// `build()` has preallocated the instance's own `FaceBufs`. Returns 0
     /// before `build()` or when MPI is not compiled in. Two instances
     /// built from different `dd->capacity` values are expected to report
@@ -162,13 +214,16 @@ class HaloSend : public cpu::Component, public cpu::HaloParticipant {
     /// buffers are per-instance rather than a process-global static.
     std::size_t send_buf_capacity_for_test() const;
 
-    /// @brief Resident heap bytes of the per-face send/recv ghost buffers.
+    /// @brief Resident heap bytes of the per-swap send/recv ghost buffers.
     /// Classified under the "Comm" category by the driver memory summary.
     std::size_t memory_bytes() const override;
 
   private:
     double cutoff_ = 0.0;
     double bonded_extension_ = 0.0;
+    /// The halo's swap table — owned here, published non-owning as
+    /// `ctx.md.swap_list`. Empty until `build()`.
+    comm::SwapList swaps_;
     std::unique_ptr<detail::FaceBufs> bufs_;
     /// Field participants bound by the driver (non-owning); their
     /// `comm_forward_fields()` ride the per-face forward messages.
@@ -181,9 +236,10 @@ class HaloSend : public cpu::Component, public cpu::HaloParticipant {
     bool fields_cached_ = false;
 
     // Reneighboring cadence. On `ago_ >= every_` or when migration bumps
-    // `dd->neighbor_generation`, the next `launch()` does a full rebuild
-    // of per-face send lists and ghost-slot assignments. Otherwise the
-    // launch reuses existing send lists and only refreshes ghost x/y/z.
+    // `dd->neighbor_generation`, the next `launch()` re-derives the swap
+    // table and rebuilds its send lists and ghost-slot assignments.
+    // Otherwise the launch replays the table and only refreshes ghost
+    // x/y/z.
     int every_ = 10;
     int ago_ = 0;
     std::uint64_t last_rebuild_generation_ = 0;
@@ -191,15 +247,19 @@ class HaloSend : public cpu::Component, public cpu::HaloParticipant {
 
 /// @brief Reverse pass: ghost-row forces → owner's force arrays.
 ///
-/// Pairs with the most recent `HaloSend` exchange via
-/// the shared per-face state on `md::mpi::DomainDecomposition`. Ghost forces in
-/// `kAtom_fx/fy/fz` ghost rows are packed by face,
-/// `MPI_Isend/Irecv` to the originating ranks, and added into the owners'
-/// local force arrays at the indices in their own `send_lists`.
+/// Pairs with the most recent `HaloSend` exchange through the published
+/// swap table (`ctx.md.swap_list`), walked in reverse so the forward
+/// cascade plays backwards: last axis first, and inside an axis the deepest
+/// forwarding round first, so a hop's ghost forces land on the intermediate
+/// rank's own ghost rows before that rank passes them further. Ghost forces
+/// in `kAtom_fx/fy/fz` are packed per swap from
+/// `[firstrecv, firstrecv + nrecv)`, `MPI_Isend/Irecv` to the originating
+/// ranks, and added into the owners' (or the next hop's) force array rows at
+/// the indices in that swap's send list.
 ///
-/// @see HaloSend for the matching producer of `dd->send_lists` /
-///      `dd->recv_counts`; Reverse consumes those counts to decide how
-///      many ghost forces to pack and where to add them on the owner side.
+/// @see HaloSend for the matching producer of the table; a null
+///      `ctx.md.swap_list` (no halo in this run) makes the whole pass a
+///      rank-uniform no-op.
 ///
 /// ## Reverse-comm payload audit (2026-05-06)
 ///
@@ -236,9 +296,11 @@ class HaloSend : public cpu::Component, public cpu::HaloParticipant {
 /// near that point, and ghost velocities are never shipped at all.
 ///
 /// `HaloRefresh` closes that hole without disturbing the two exchanges that already
-/// exist. It rebuilds nothing: it reuses the send lists, per-face receive counts and
-/// ghost-slot layout that `HaloSend` established at the last reneighbor, and simply
-/// re-packs one field triple into the same slots. Bind it wherever the data is needed:
+/// exist. It rebuilds nothing: it replays the swap table `HaloSend` published at the
+/// last reneighbor — send lists, per-swap receive counts and ghost-slot layout — and
+/// simply re-packs one field triple into the same slots. With no table published
+/// (`ctx.md.swap_list == nullptr`, e.g. at step 0 before the first `HaloSend` launch,
+/// or single-rank) it is a rank-uniform no-op. Bind it wherever the data is needed:
 ///
 /// @code
 ///   md.on(md::Phase::post_integrate).add(comm::HaloRefresh{Field::positions}, -100);
@@ -287,8 +349,6 @@ class HaloRefresh : public cpu::Component {
         }
         return "halo_refresh";
     }
-
-    /// @brief Write-set: it writes ghost rows of the chosen field.
 
     /// @brief No default binding — the caller decides the phase, because only the
     /// caller knows when its data is stale.
