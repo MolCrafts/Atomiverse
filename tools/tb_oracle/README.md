@@ -81,7 +81,7 @@ tools/tb_oracle/
 | `inputs/xtb/h2o_gfn2_hess/` | xtb 6.7.1 | GFN2 water Hessian twin (`reg_gfn-xtb-analytic-hessian`); `--gfn 2 --hess` |
 | `inputs/xtb/h2o_gfn2/` | xtb 6.7.1 | H₂O GFN2 energy pin (`reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`); `mol.xyz` + archived `xtb.out` |
 | `inputs/xtb/{ch4,nh3,ch3oh}_gfn2/` | xtb 6.7.1 | extra GFN2 energy transcripts on disk (`*.out` gitignored) |
-| `inputs/xtb/h2o_gfn2_offeq_grad/` | xtb 6.7.1 | GFN2 off-eq water force twin (`reg_gfn2-xtb-forces`, `reg_gfn2-aes-fock`); `--gfn 2 --grad` |
+| `inputs/xtb/h2o_gfn2_offeq_grad/` | xtb 6.7.1 | GFN2 off-eq water force twin (`reg_gfn2-xtb-forces`, `reg_gfn2-aes-fock`, `reg_gfn2-camm-r`); `--gfn 2 --grad` |
 | `inputs/xtb/ch4_ipea/` | xtb 6.7.1 | CH4 IPEA-xTB energy pin (`reg_ipea-xtb-small`); `param_ipea` as GFN1 |
 | `inputs/xtb/ch4_ipea_offeq_grad/` | xtb 6.7.1 | IPEA off-eq CH4 force twin (`reg_ipea-xtb-forces`); `param_ipea` as GFN1 + `--grad` |
 | `inputs/xtb/ch4_ipea_hess/` | xtb 6.7.1 | IPEA CH4 FD Hessian twin (`reg_ipea-xtb-analytic-hessian`); `param_ipea` as GFN1 + `--hess` |

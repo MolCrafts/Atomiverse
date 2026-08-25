@@ -16,13 +16,17 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-**Live count: 6.** (component-plugin chain only; no live TB specs on `dev`.
-`gfn2-camm-r` spec lives on unmerged `wf/gfn2-camm-r`.)
+**Live — TB method loop (wave 13 resume)**
+
+| Spec | One-line |
+| ---- | -------- |
+| [gfn2-camm-r](gfn2-camm-r/gfn2-camm-r.md) | Two-centre CAMM quadrupole on H (xtb `mmompop`) + \(\partial\Theta/\partial R\); angular \(F_{H1,y}\) vs xtb 6.7.1 |
+
+**Live count: 7.** (6 component-plugin + 1 TB)
 
 ## Closed — TB harness wave 12 (2026-08-25)
 
 Merged to `dev` (`c7db3d8f`); specs deleted; history is git.
-`gfn2-camm-r` stays `[~]` on `wf/gfn2-camm-r`.
 
 | Spec | Shipped |
 | ---- | ------- |

@@ -1,4 +1,4 @@
-# xtb GFN2 off-eq water force twin (`gfn2-xtb-forces`, `gfn2-aes-fock`)
+# xtb GFN2 off-eq water force twin (`gfn2-xtb-forces`, `gfn2-aes-fock`, `gfn2-camm-r`)
 
 ```text
 oracle: xtb
