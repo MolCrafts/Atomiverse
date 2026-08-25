@@ -66,9 +66,11 @@ xtb summary (same transcript):
 | halogen | 0 |
 | **total** | **−4.670476737294** |
 
-Measured ATV residual at this geometry: **9 meV**. The 0.05 eV window is the
-same kernel-residual floor as `reg_gfn1-xtb-organic` (D3 CN vs xtb ncoord,
-Stewart contraction vs `intcut`, Anderson vs Broyden).
+Measured ATV residual at this geometry (Release, dual-gate after rebase
+onto `dev` @ `0df56074`): **8.90 meV** (`E = −127.08124904` eV vs pin
+`−127.09014645` eV). The 0.05 eV window is the same kernel-residual floor
+as `reg_gfn1-xtb-organic` (D3 CN vs xtb ncoord, Stewart contraction vs
+`intcut`, Anderson vs Broyden).
 
 Wall (xtb, 1 thread): 0.005 s (xtb clock) / 0.02 s (`/usr/bin/time`).
 
@@ -80,9 +82,9 @@ Wall (xtb, 1 thread): 0.005 s (xtb clock) / 0.02 s (`/usr/bin/time`).
 
 ## Perf
 
-Fair 1-thread wall vs the archived xtb clock (0.005 s). Gate
-\(T_{\mathrm{atv}}/T_{\mathrm{xtb}} \le 10\) at the dual-gate run; otherwise
-`perf_exempt` with reason.
+Fair 1-thread wall of `reg_ipea-xtb-small` (Release, `OMP_NUM_THREADS=1`):
+ATV **0.01 s**, xtb 6.7.1 clock **0.005 s**.
+\(T_{\mathrm{atv}}/T_{\mathrm{xtb}} = 2.0 \le 10\). Not `perf_exempt`.
 
 ## Gaps
 
