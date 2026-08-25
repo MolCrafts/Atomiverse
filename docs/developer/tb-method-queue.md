@@ -540,6 +540,85 @@ blocked (9).
 tips) → return to pending. After harness: incomplete=0; pending=17;
 blocked=9. **Queue not exhausted.**
 
+## Recover — 2026-08-25 (parent `dev` @ `7a4e3047`)
+
+| Source | Result |
+| ------ | ------ |
+| Queue `[~]` / `## in_progress` | **0** (already empty; leave empty) |
+| Open SE/TB specs | **none** (live `.claude/specs/` is component-plugin, other loop) |
+| Unmerged TB `wf/*` | **none** (no local/remote `wf/` tips) |
+| Isolation worktrees | **none** (`git worktree list` = parent; `atv-wf/` empty) |
+| Half regressions | **none** (no pending-slug dirs; every `regressions/semiempirical/*` has `reg_*.cpp` + `REFERENCE.md`) |
+| GFN2 INDEX / `if(EXISTS gfn2.cpp)` | **not Recover** — never-landed campaign; Phase C pending only |
+| Incomplete | **0** — pick ≤5 → **none**; do not invent methods |
+
+**Found (not a slug):** parent tree has uncommitted SE comment/path edits deleting duplicate `dftb_mio_hh_sk.h` / `mio_hh_table.h` while HEAD still ships both copies — concurrent dirt, not `[~]`.
+
+**Next:** GapCensus/Assign remaining pending (**17**). Do not promote pending to `[~]` from this recover.
+
+## GapCensus — 2026-08-25 wave-7 (parent `dev`; this-shift wave 1)
+
+**Branch:** `dev` @ `7a4e3047`. **Live SE/TB spec files:** none (INDEX GFN2-CHON
+is stale — sources never landed). **TB `wf/*` tips / isolation worktrees:**
+none. **incomplete `[~]`:** 0. Census reads the committed SE surface at HEAD;
+parent working tree is dirty with concurrent non-TB work (ignored).
+
+### Sources re-diffed
+
+| Source | Finding |
+| ------ | ------- |
+| `docs/roadmap/semiempirical.md` ○ | PM3/6/7/OM3; closed-form NDDO F; GFN0/1/2/IPEA/spin/PBC/analytic G/H; GFN-FF; sTDA; noncollinear / SOC; DFTB3 k/σ/open-shell/3ob/D3; ThreeOb multi-k; TD excited F; LC-TD |
+| `include/atomiverse/cpu/semiempirical/` | Public: `AM1`/`RM1` (+evaluators), `DFTB0`, `DFTB2`, `DFTB3`, `TdDftbResult`. **No** `PM*` / `MNDO` / `XtbGfn0` / `GFN1` / `GFN2` / LC-DFTB types |
+| `SemiEmpiricalMethod` | **AM1\|RM1 only** |
+| `NDDOSolver::run` | **closed-shell RHF only** — `n_alpha != n_beta` throws; OpenMOPAC UHF is a gap |
+| `NDDOSolver::compute_forces` | still **fixed-P central FD** |
+| `DFTB2` | analytic F+σ on Mio (restricted, collinear, multi-k) and ThreeOb Γ; ThreeOb **multi-k throws** and **open-shell/charge throws**; D3 molecular + orthorhombic periodic; Elstner γ; integer filling only (no Fermi); `td_casida` energies+\(f\), no excited F |
+| `DFTB3` | energy + analytic F + **Γ-PBC lattice-image F**; **no** `k_mesh`, `with_stress`, multiplicity, `DftbSkSet::ThreeOb`, D3. Hubbard \(U^{\mathrm{d}}\) is a mio-order **sketch** |
+| `dftb2.h` comments | **stale:** still claim multi-k open shell throws — `scc_energy_unrestricted_kmesh` ships (`dftb2-multi-k-open-shell` done) |
+| `tools/tb_oracle/` | mopac AM1/RM1 water + RM1 CO₂/CO; dftbplus twins incl. `h2o_mio_scc`; xtb 6.7.1 GFN2 twins on disk (`*.out` gitignored) |
+| OpenMOPAC surface | MNDO / AM1 / PM3 / RM1 / PM6 / PM7 / MNDO-d / PM6-D3H4 / UHF / COSMO — **not** OM3, **not** DFTB |
+| DFTB+ surface | DFTB0/2/3, spin, PBC/k, F/σ, Fermi filling, TD-DFTB + excited F, LC-DFTB, +U, SOC, D3, 3ob-3-1 as **DFTB3** SK, … |
+| xtb surface | GFN0/1/2, IPEA, analytic G, ALPB/GBSA solvent, PBC, spin; GFN-FF classical (scope-out) |
+| CMake | `if(EXISTS gfn2.cpp)` / `test_gfn2_params.cpp` stubs — sources missing |
+
+### Tree vs roadmap (wave-7)
+
+| Capability | Roadmap | Tree on `dev` HEAD | Verdict |
+| ---------- | ------- | ------------------ | ------- |
+| AM1 / RM1 + mopac H₂O + CO₂/CO | ✓ | ship | deepen: closed-form F, UHF, PM* |
+| NDDO closed-form F | ○ | fixed-P FD | **gap** |
+| NDDO UHF | — | RHF-only throw | **gap** (OpenMOPAC UHF) |
+| PM3 / PM6 / PM7 | ○ | no types | Phase B **oracle=mopac** |
+| DFTB0 / DFTB2 E+F+σ / Γ / multi-k / open-shell k | ✓ | product | ThreeOb multi-k + ThreeOb open shell still throw; no Fermi |
+| DFTB3 E+F + Γ-PBC F | ✓ | molecular + Γ F | deepen: **no k / stress / open shell / ThreeOb / D3** |
+| γ_AB Elstner | ✓ | `internal/dftb_gamma.h` | **closed** |
+| TD-DFTB | ✓ foothold | Casida + \(f\) | no excited-state F, no LC |
+| LC-DFTB | (new ○) | absent | **gap** (DFTB+ range-separated) |
+| Fermi filling | (new ○) | integer occ only | **gap** (DFTB+ `Filling`) |
+| GFN0/1/2 / IPEA / PBC / spin / ALPB | ○ | absent | Phase C **oracle=xtb** |
+
+### Foothold ≠ closed (wave-7)
+
+- DFTB3 Γ-PBC F ships; **cell stress / k-mesh / collinear spin / 3ob SK / D3** still missing → keep `dftb3-analytic-stress`, `dftb3-kpoints`; **new** `dftb3-threeob`, `dftb3-open-shell`, `dftb3-dispersion-d3`.
+- ThreeOb energy/F/σ ship; **multi-k throws** and **open-shell/charge throws** → keep `dftb2-threeob-multi-k`; **new** `dftb2-threeob-open-shell`.
+- Multi-k energy/F/σ ship with **integer filling** → **new** `dftb2-fermi-smearing` (DFTB+ `Filling { Fermi {…} }`).
+- TD-DFTB Casida +\(f\) is a foothold; DFTB+ has excited-state forces and LC-TD → **new** `td-dftb-excited-forces`, `lc-dftb-ground`.
+- AM1/RM1 RHF + mopac pins ship; **UHF throws** → **new** `nddo-uhf`.
+- xtb 6.7.1 ALPB/GBSA is a first-class solvent surface, not a GFN Hamiltonian → **new** `alpb-xtb` (after GFN2 energy).
+- GFN2 CHON campaign never merged; do **not** Recover from missing specs. Staff GFN only after NDDO PM or `theme=gfn\|xtb`.
+- **Not pending:** noncollinear / SOC / OM3 / +U deepen / GFN-FF / mopac-as-dftb-oracle (blocked or permanent). CUDA SE is this loop's scope-out.
+
+### gaps_remaining (wave-7 census snapshot)
+
+**26** pending + **0** incomplete + **5** blocked/permanent `[!]` → **nonzero; continue loop.**
+`new_slugs_added=9`. Blocked count **corrected** from the stale “9”:
+`se-analytic-hessian` and `dftb-plus-u` are **done**; `stda-xtb` /
+`gfn-xtb-analytic-hessian` live under Phase C pending. Remaining `[!]`:
+3 permanent + 2 science. Roadmap: add ○ LC-DFTB + Fermi filling; prose
+fixes (open-shell strain-FD gone; mopac H₂O/CO₂ pins landed). **Queue not
+exhausted.** Ladder this wave: **NDDO PM** then remaining DFTB3/ThreeOb
+deepens; skip LC and Phase C GFN unless `theme=`.
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
@@ -550,13 +629,21 @@ Product DFTB0/2/3 + γ Elstner + Γ-PBC F landed. Remaining are **deepens**.
 - [ ] `dftb3-analytic-stress` | DFTB3 closed-form cell stress (pair virial, Γ); DFTB2 already has no strain-FD path | dftb3 | C-chain / H2O cell | σ vs strain-FD | **oracle=dftb+** (formula)
 - [ ] `dftb3-kpoints` | DFTB3 Monkhorst–Pack energy (+ F later) | dftb3 | C-chain | E | **oracle=dftb+**; after Γ stress
 - [ ] `dftb2-threeob-multi-k` | ThreeOb currently throws on `k_mesh≠{1,1,1}` | dftb2 | CH4 / C-chain 3ob | E/F | **oracle=dftb+**
+- [ ] `dftb3-threeob` | Wire `DftbSkSet::ThreeOb` (3ob-3-1 CHNO) into `DFTB3`; transcribe Hubbard \(U^{\mathrm{d}}\) — 3ob is a DFTB3 set, not a DFTB2 one | dftb3 | H2O / CH4 | E/F | **oracle=dftb+**
+- [ ] `dftb3-open-shell` | Collinear spin-DFTB3 (`multiplicity`); DFTB2 already has dual α/β | dftb3 | O2 triplet | E / m | **oracle=dftb+**
+- [ ] `dftb3-dispersion-d3` | Opt-in D3(BJ) on `DFTB3` (molecular first; periodic later). DFTB2 already has `d3` / `d3_periodic` | dftb3 | water dimer | E/F | **oracle=dftb+** / s-dftd3
+- [ ] `dftb2-threeob-open-shell` | ThreeOb currently throws on `multiplicity!=1` or `charge!=0` | dftb2 | open-shell CHNO | E/F | **oracle=dftb+**; after `dftb2-threeob-multi-k`
+- [ ] `dftb2-fermi-smearing` | DFTB+ `Filling { Fermi {…} }` — multi-k is integer occupation only | dftb2 | metallic C-chain / small cell | E / n(εF) | **oracle=dftb+**
+- [ ] `td-dftb-excited-forces` | Casida nuclear forces on `DFTB2::td_casida` (energies+\(f\) already ship) | dftb2/td | H2 / small | F | **oracle=dftb+** (formula / FD)
+- [ ] `lc-dftb-ground` | Range-separated LC-DFTB energy foothold (Yukawa ω; DFTB+ `RangeSeparated`) | dftb2/lc | small organic | E | **oracle=dftb+**; staff after DFTB3 deepens, before GFN
 
 ### Phase B — NDDO product depth (oracle = OpenMOPAC)
 
-AM1/RM1 energy footholds + water mopac pins ship. Forces are still
-fixed-density FD. Do **not** use DFTB+ for these rows.
+AM1/RM1 energy footholds + water + CO₂/CO mopac pins ship. Forces are still
+fixed-density FD; SCF is **RHF only**. Do **not** use DFTB+ for these rows.
 
 - [ ] `nddo-closed-form-forces` | Closed-form multipole / integral-derivative NDDO nuclear forces (replace fixed-P FD) | nddo | H2O off-eq | F vs mopac + FD | **oracle=mopac**
+- [ ] `nddo-uhf` | Unrestricted NDDO SCF (`n_alpha != n_beta` currently throws RHF-only) | nddo | O2 / radical | E | **oracle=mopac**
 - [ ] `pm3-organic-energy` | PM3 (or MNDO) on NDDO ladder for table pipeline | nddo | small organic | E | **oracle=mopac**; bridge MNDO→PM6; extend `SemiEmpiricalMethod`
 - [ ] `pm6-water-energy` | PM6 energy vs OpenMOPAC | nddo/pm6 | H2O | E | **oracle=mopac**
 - [ ] `pm6-water-forces` | PM6 forces vs OpenMOPAC / FD | nddo/pm6 | H2O off-eq | F | **oracle=mopac**
@@ -568,13 +655,14 @@ xTB is **not** DFTB3++. Toy `XtbGfn0` was deleted (`bc14dabd`); GFN2 CHON
 never landed on `dev` (stale INDEX). Offline xtb 6.7.1 twins exist on disk
 under `tools/tb_oracle/inputs/xtb/` (`*.out` gitignored). Staff after NDDO PM
 unless `theme=gfn|xtb`.
-**Staff order:** `gfn0-beyond-toy` → `gfn1` / `gfn2-water` → forces → then
+**Staff order:** `gfn0-beyond-toy` → `gfn1` / `gfn2-water` → forces / ALPB → then
 `gfn-xtb-analytic-hessian` / `stda-xtb`.
 
 - [ ] `gfn0-beyond-toy` | Production GFN0 (toy type deleted; restore as product or skip to GFN2) | xtb | multi-element | E | **oracle=xtb**
 - [ ] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | small organic | E [eV] | **oracle=xtb**
 - [ ] `gfn2-xtb-water` | Production GFN2-xTB energy | xtb | H2O | E [eV] | **oracle=xtb**
 - [ ] `gfn2-xtb-forces` | GFN2-xTB analytic forces | xtb | H2O off-eq | F | **oracle=xtb**
+- [ ] `alpb-xtb` | xtb ALPB/GBSA implicit solvent on production GFN2 | xtb | H2O / small organic | E | **oracle=xtb**; after `gfn2-xtb-water`
 - [ ] `gfn-xtb-analytic-hessian` | GFN FD Hessian via `cpu::vib::Hessian` once product GFN forces exist | xtb/vib | small | ω | **oracle=xtb**; VIB=ON exception like `se-analytic-hessian`; after `gfn2-xtb-forces`
 - [ ] `stda-xtb` | sTDA-xTB excitations on production GFN ground state | xtb | small organic | ω_exc | **oracle=xtb|literature**; after `gfn2-xtb-water`
 - [ ] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | small | E | **oracle=xtb**; after GFN2 energy

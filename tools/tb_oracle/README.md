@@ -74,10 +74,11 @@ tools/tb_oracle/
 | `inputs/mopac/am1-water/` | OpenMOPAC | AM1 H₂O deck + archived MOPAC 7.00 transcript (`reg_am1-water-mopac-energy`); **first mopac twin** |
 | `inputs/xtb/{h2o,ch4,nh3,ch3oh}_gfn2/` + `h2o_gfn2_offeq_grad/` | xtb 6.7.1 | transcripts on disk; `*.out` gitignored — Phase C, not yet a product pin |
 | `inputs/mopac/rm1-water/` | OpenMOPAC | RM1 H₂O ΔHf decks (`reg_rm1-water-mopac-energy`); the ΔHf path is calibrated against MOPAC2016 21.298M `tests/keywords/RM1.out` (CO₂) to 3.1e-4 kcal/mol |
+| `inputs/mopac/rm1-co2/` | OpenMOPAC | RM1 CO₂/CO ΔHf decks (`reg_nddo-sharp-discriminator`); PARAM survey −81.55 / −13.87 kcal/mol |
 
-Twins above are on `dev` (wave-3/4 dftbplus + mopac water). Wave-6 census:
-xtb GFN2 transcripts exist on disk but are gitignored (`*.out`); PM3/PM6/PM7
-and NDDO CO₂ mopac twins still to seed. Periodic-D3 / multi-k-force twins
+Twins above are on `dev` (wave-3/4 dftbplus + mopac water + wave-6 RM1 CO₂/CO).
+Wave-7 census: xtb GFN2 transcripts exist on disk but are gitignored (`*.out`);
+PM3/PM6/PM7 mopac twins still to seed. Periodic-D3 / multi-k-force twins
 already landed with those slugs.
 
 ## Pinning when the oracle binary is unavailable
