@@ -85,6 +85,7 @@ tools/tb_oracle/
 | `inputs/xtb/ch4_ipea/` | xtb 6.7.1 | CH4 IPEA-xTB energy pin (`reg_ipea-xtb-small`); `param_ipea` as GFN1 |
 | `inputs/xtb/ch4_ipea_offeq_grad/` | xtb 6.7.1 | IPEA off-eq CH4 force twin (`reg_ipea-xtb-forces`); `param_ipea` as GFN1 + `--grad` |
 | `inputs/xtb/ch4_ipea_hess/` | xtb 6.7.1 | IPEA CH4 FD Hessian twin (`reg_ipea-xtb-analytic-hessian`); `param_ipea` as GFN1 + `--hess` |
+| `inputs/xtb/ch4_ipea_vip/` | xtb 6.7.1 | IPEA CH4 ΔSCC VIP/VEA twin (`reg_ipea-xtb-vip`); `param_ipea` as GFN1 + `--vipea` |
 | `inputs/mopac/rm1-water/` | OpenMOPAC | RM1 H₂O ΔHf decks (`reg_rm1-water-mopac-energy`); the ΔHf path is calibrated against MOPAC2016 21.298M `tests/keywords/RM1.out` (CO₂) to 3.1e-4 kcal/mol |
 | `inputs/mopac/rm1-co2/` | OpenMOPAC | RM1 CO₂/CO ΔHf decks (`reg_nddo-sharp-discriminator`); PARAM survey −81.55 / −13.87 kcal/mol |
 

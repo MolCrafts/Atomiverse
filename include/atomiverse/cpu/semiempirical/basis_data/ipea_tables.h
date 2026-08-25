@@ -150,6 +150,12 @@ inline constexpr double kIpeaD3s8 = 2.4;
 inline constexpr double kIpeaD3a1 = 0.63;
 inline constexpr double kIpeaD3a2 = 5.0;
 inline constexpr double kIpeaD3k1 = 16.0;      ///< D3 / exp-CN steepness.
+/// Empirical VIP/VEA shift. xtb `ipeashift` 1.78069 is tblite ×0.1 of eV
+/// (same scale as GAM3); xtb prints **4.8455 eV**.
+/// `IP = (E_{N-1}-E_N)[eV] - kIpeaShiftEv` (and EA analogously).
+inline constexpr double kIpeaShiftEv = 1.78069 * 0.1 / kIpeaEvToHa;
+/// xtb default electronic temperature for ionized ΔSCC [K].
+inline constexpr double kIpeaEtempK = 300.0;
 
 } // namespace basis_data
 } // namespace semiempirical

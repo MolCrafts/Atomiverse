@@ -1,6 +1,7 @@
 /// @file tests/cpu/semiempirical/test_xtb_ipea.cpp
-/// Unit tests for IPEA-xTB (tables, throws, FD identity). Pins live in
-/// regressions/semiempirical/ipea-xtb-small and ipea-xtb-forces.
+/// Unit tests for IPEA-xTB (tables, throws, FD identity, VIP/VEA flags).
+/// Pins live in regressions/semiempirical/ipea-xtb-small, ipea-xtb-forces,
+/// and ipea-xtb-vip.
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -17,6 +18,27 @@ using namespace ATV;
 using namespace ATV::cpu::semiempirical;
 
 namespace {
+
+cpu::Frame make_ch4() {
+    const double s = 1.09 / std::sqrt(3.0);
+    cpu::Frame f(5);
+    const double x[5] = {0, s, s, -s, -s};
+    const double y[5] = {0, s, -s, s, -s};
+    const double z[5] = {0, s, -s, -s, s};
+    const int Z[5] = {6, 1, 1, 1, 1};
+    for (int i = 0; i < 5; ++i) {
+        f.span(kAtom_type)[i] = Z[i];
+        f.span(kAtom_x)[i] = x[i];
+        f.span(kAtom_y)[i] = y[i];
+        f.span(kAtom_z)[i] = z[i];
+        f.span(kAtom_mass)[i] = (i == 0) ? 12.011 : 1.008;
+        f.span(kAtom_tag)[i] = i + 1;
+        f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
+    }
+    f.box = cpu::Box::cubic(20.0);
+    f.meta.get(kEnergy) = 0;
+    return f;
+}
 
 cpu::Frame make_water() {
     cpu::Frame f(3);
@@ -161,4 +183,30 @@ TEST(XtbIpea, WaterEnergyFiniteAndSccConverged) {
     EXPECT_LT(ipea.last_scc_residual(), ipea.scc_tol);
     EXPECT_GT(ipea.last_scc_iterations(), 0);
     EXPECT_TRUE(ipea.provides_force());
+    EXPECT_DOUBLE_EQ(ipea.last_vip(), 0.0);
+    EXPECT_DOUBLE_EQ(ipea.last_vea(), 0.0);
+}
+
+TEST(XtbIpea, ShiftConstantMatchesXtbPrint) {
+    using namespace basis_data;
+    EXPECT_NEAR(kIpeaShiftEv, 4.8455, 5e-4);
+    EXPECT_EQ(kIpeaEtempK, 300.0);
+}
+
+TEST(XtbIpea, Ch4VipVeaFinite) {
+    auto f = make_ch4();
+    cpu::Context ctx;
+    IPEA ipea;
+    ipea.with_forces = false;
+    ipea.compute_vip = true;
+    ipea.compute_vea = true;
+    ipea.scc_tol = 1e-8;
+    ipea.build({ctx, f});
+    ipea.launch({ctx, f, 0, 0});
+    EXPECT_TRUE(std::isfinite(ipea.last_vip()));
+    EXPECT_TRUE(std::isfinite(ipea.last_vea()));
+    EXPECT_GT(ipea.last_vip(), 5.0);
+    EXPECT_LT(ipea.last_vip(), 20.0);
+    EXPECT_GT(std::fabs(ipea.last_vea()), 0.1);
+    EXPECT_LT(ipea.last_scc_residual(), ipea.scc_tol);
 }
