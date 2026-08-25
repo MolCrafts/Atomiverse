@@ -49,7 +49,9 @@ Bloch-sum image-resolved densities (`reg_dftb2-multi-k-forces`). Opt-in
 **Grimme D3(BJ)** dispersion ships both as an additive **molecular** correction
 and as a **Γ-PBC lattice sum** (`DFTB2::d3`, `d3_periodic`, `d3_cutoff`;
 `reg_dftb2-dispersion-d3`, `reg_dftb2-dispersion-d3-periodic`), each with its
-own analytic gradient and virial. Non-SCC **DFTB0** ships (`reg_dftb0-h2`).
+own analytic gradient and virial. Non-SCC **DFTB0** ships (`reg_dftb0-h2`); nuclear forces on that path are
+still **6N central FD of E** (queue `dftb0-analytic-forces`) — DFTB2/3 F
+are closed-form.
 **GFN0-xTB** production energy, analytic G, **and FD Hessian** ship (`GFN0`,
 H/C/N/O; `reg_gfn0-beyond-toy`, `reg_gfn0-xtb-forces`,
 `reg_gfn0-xtb-analytic-hessian`, xtb 6.7.1). **GFN1-xTB** energy, analytic
@@ -167,7 +169,8 @@ collinear open shell** (dual α/β H(k) + dual-channel forces) ships 2026-07-29.
 Still ○: **TD-DFTB excited-state gradients**, **range-separated / LC-DFTB**,
 **Fermi filling**, **ThreeOb lattice-image PBC / multi-k / open shell**,
 **DFTB-D4**, **DFTB+U
-analytic forces**, **DFTB implicit solvent (GBSA)**, and **DFTB3 beyond Γ-PBC
+analytic forces**, **DFTB implicit solvent (GBSA)**, **DFTB0 analytic F**
+(energy foothold uses 6N FD), and **DFTB3 beyond Γ-PBC
 forces** (no k-mesh / stress / open shell / ThreeOb SK / D3 on the DFTB3 path).
 Oracle for all DFTB rows:
 **DFTB+** (never OpenMOPAC). Ladder: DFTB0 → DFTB2 depth → DFTB3 F → TD →
@@ -192,6 +195,7 @@ NDDO PM → GFN late.
 | sTDA-xTB                  |  ○  |   ○  |   ○  |
 | GFN-xTB ALPB/GBSA solvent |  ○  |   ○  |   ○  |
 | GFN-xTB CPCM-X / ddCOSMO  |  ○  |   ○  |   ○  |
+| GFN-xTB Fermi filling (`--etemp`) |  ○  |   ○  |   ○  |
 
 **GFN0-xTB**, **GFN1-xTB**, and **GFN2-xTB** energy + analytic G ship for
 H/C/N/O (`cpu::semiempirical::GFN0` / `GFN1` / `GFN2`; `reg_gfn0-beyond-toy`
@@ -214,7 +218,8 @@ eV/Å), not a missing Fock term (queue `gfn2-camm-r`). GFN1 CH4 still sits
 **10.2 meV** from xtb (kernel/D3/intcut, not a missing term). Tables are
 CHNO-only (`gfn2-beyond-chno`). The H/C/O `XtbGfn0` sketch stays deleted.
 GFN-xTB is **not** a DFTB3 successor (oracle = **xtb**). PBC, spin, sTDA,
-ALPB/GBSA, CPCM-X/ddCOSMO, and **IPEA `--vip`/`--vea`**
-remain ○ (queue `ipea-xtb-vip`). GFN-FF is
+ALPB/GBSA, CPCM-X/ddCOSMO, **IPEA `--vip`/`--vea`**, extra-Z IPEA tables,
+and **Fermi filling (`--etemp`, xtb default 300 K; ATV integer occ)**
+remain ○ (queue `ipea-xtb-vip`, `ipea-beyond-chno`, `gfn-xtb-etemp`). GFN-FF is
 classical force-field territory (scope-out of the electronic SE/TB
 capability loop).
