@@ -1,6 +1,6 @@
 ---
 title: GFN1-xTB organic energy — acceptance
-status: in-progress
+status: done
 slug: gfn1-xtb-organic
 ---
 

@@ -17,7 +17,8 @@ namespace {
 
 // Offline xtb 6.7.1 --gfn 1, tetrahedral CH4 r(C-H)=1.09 Å (Ha * CODATA eV).
 constexpr double kPin_eV = -116.30778398;
-constexpr double kTol_eV = 0.05;
+// 20 meV floor: 10.2 meV measured vs xtb 6.7.1 (see REFERENCE.md).
+constexpr double kTol_eV = 0.02;
 
 cpu::Frame make_ch4() {
     cpu::Frame f(5);
@@ -58,15 +59,21 @@ int main() {
     gfn1.with_forces = false;
     gfn1.scc_tol = 1e-8;
     gfn1.max_scc = 80;
-    eval.on(evaluate::Phase::evaluate).add(std::move(gfn1));
+    eval.on(evaluate::Phase::evaluate).add_ref(gfn1);
     eval.build();
     eval.run(frame);
 
     const double e = frame.meta.get(kEnergy);
     std::printf("GFN1 CH4: E=%.8f eV  pin=%.8f eV  |dE|=%.6e\n", e, kPin_eV,
                 std::fabs(e - kPin_eV));
+    std::printf("  SCC residual=%.3e in %d iterations\n",
+                gfn1.last_scc_residual(), gfn1.last_scc_iterations());
     if (!std::isfinite(e)) {
         std::printf("FAIL non-finite energy\n");
+        return 1;
+    }
+    if (!(gfn1.last_scc_residual() < gfn1.scc_tol)) {
+        std::printf("FAIL SCC residual above scc_tol\n");
         return 1;
     }
     if (std::fabs(e - kPin_eV) > kTol_eV) {

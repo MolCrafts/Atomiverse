@@ -65,9 +65,15 @@ class GFN1 : public cpu::Semiempirical, public cpu::QmEngine {
 
     /// @brief Last total energy E_EHT+γ+Γ+rep+D3 [eV].
     double last_energy() const { return energy_; }
+    /// @brief Last SCC residual max|Δq_shell| [e].
+    double last_scc_residual() const { return scc_residual_; }
+    /// @brief SCC iterations of the last solve.
+    int last_scc_iterations() const { return scc_iterations_; }
 
   private:
     double energy_ = 0;
+    double scc_residual_ = 0;
+    int scc_iterations_ = 0;
 };
 
 } // namespace semiempirical

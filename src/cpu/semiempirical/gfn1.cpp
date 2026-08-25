@@ -69,6 +69,7 @@ double pyykko_rcov_A(int z) {
     }
 }
 
+// tblite exp CN uses mctc get_covalent_rad = (4/3) Pyykkö, k=16.
 double d3_rcov_bohr(int z) { return (4.0 / 3.0) * pyykko_rcov_A(z) * kA2Bohr; }
 
 double kshell(int la, int lb) {
@@ -485,12 +486,18 @@ double dispersion_e(const Gfn1System& sys, const int* type) {
     return d3.energy;
 }
 
-double scc_energy(const Gfn1System& sys, double scc_tol, int max_scc,
+struct SccOut {
+    double energy_eh = 0;
+    double residual = 0;
+    int iterations = 0;
+};
+
+SccOut scc_energy(const Gfn1System& sys, double scc_tol, int max_scc,
                   double mix_beta) {
     std::vector<double> q(static_cast<std::size_t>(sys.n_sh), 0.0);
     internal::ChargeMixer mixer(mix_beta, 6);
     bool converged = false;
-    double residual = 0;
+    SccOut out;
     linalg::RealMatrix H = sys.H0;
     std::pair<linalg::RealVector, linalg::RealMatrix> sol;
     for (int it = 0; it < max_scc; ++it) {
@@ -542,13 +549,14 @@ double scc_energy(const Gfn1System& sys, double scc_tol, int max_scc,
             // Electron excess Δn = pop − n0 (DFTB2 / GFN2 / tblite SCC).
             q_out[static_cast<std::size_t>(i)] = pop - si.n0;
         }
-        residual = 0;
+        out.residual = 0;
         for (int i = 0; i < sys.n_sh; ++i)
-            residual = std::max(
-                residual,
+            out.residual = std::max(
+                out.residual,
                 std::fabs(q_out[static_cast<std::size_t>(i)]
                           - q[static_cast<std::size_t>(i)]));
-        if (residual < scc_tol) {
+        out.iterations = it + 1;
+        if (out.residual < scc_tol) {
             q = q_out;
             converged = true;
             break;
@@ -558,7 +566,7 @@ double scc_energy(const Gfn1System& sys, double scc_tol, int max_scc,
     if (!converged)
         throw std::runtime_error(
             "GFN1: SCC did not converge in " + std::to_string(max_scc)
-            + " iterations (residual " + std::to_string(residual)
+            + " iterations (residual " + std::to_string(out.residual)
             + " e > scc_tol " + std::to_string(scc_tol)
             + "); raise max_scc or lower mix_beta");
 
@@ -592,18 +600,29 @@ double scc_energy(const Gfn1System& sys, double scc_tol, int max_scc,
         e3 += (1.0 / 3.0) * sys.sh[static_cast<std::size_t>(s0)].gam3 * qa * qa
               * qa;
     }
-    return e_h0 + e2 + e3;
+    out.energy_eh = e_h0 + e2 + e3;
+    return out;
 }
 
-double total_energy_eV(const StorageReal* x, const StorageReal* y,
-                       const StorageReal* z, const int* type, int n_at,
-                       int charge, double scc_tol, int max_scc,
-                       double mix_beta) {
+struct TotalOut {
+    double energy_ev = 0;
+    double residual = 0;
+    int iterations = 0;
+};
+
+TotalOut total_energy_eV(const StorageReal* x, const StorageReal* y,
+                         const StorageReal* z, const int* type, int n_at,
+                         int charge, double scc_tol, int max_scc,
+                         double mix_beta) {
     const Gfn1System sys = build_system(x, y, z, type, n_at, charge);
-    const double e_el = scc_energy(sys, scc_tol, max_scc, mix_beta);
+    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta);
     const double e_rep = repulsive_e(sys);
     const double e_disp = dispersion_e(sys, type);
-    return (e_el + e_rep + e_disp) * kHa2eV;
+    TotalOut out;
+    out.energy_ev = (scc.energy_eh + e_rep + e_disp) * kHa2eV;
+    out.residual = scc.residual;
+    out.iterations = scc.iterations;
+    return out;
 }
 
 } // namespace
@@ -615,6 +634,8 @@ void GFN1::launch(const LaunchContext& ctx) {
     const int n_at = f.nlocal();
     if (n_at < 1)
         throw std::invalid_argument("GFN1: empty frame");
+    if (!(mix_beta > 0.0) || mix_beta > 1.0)
+        throw std::invalid_argument("GFN1: mix_beta must be in (0, 1]");
     if (multiplicity != 1)
         throw std::runtime_error(
             "GFN1: open shell (multiplicity!=1) is not a product path; "
@@ -622,18 +643,21 @@ void GFN1::launch(const LaunchContext& ctx) {
     if (with_forces)
         throw std::runtime_error(
             "GFN1: nuclear forces are not implemented on this energy "
-            "foothold; set with_forces=false (later slug gfn2-xtb-forces / "
-            "gfn-xtb analytic gradient)");
+            "foothold; set with_forces=false (later slug: GFN-xTB analytic "
+            "gradient)");
 
     const auto type = f.span(kAtom_type);
     const StorageReal* x = f.span(kAtom_x);
     const StorageReal* y = f.span(kAtom_y);
     const StorageReal* z = f.span(kAtom_z);
-    double& energy_meta = f.meta.get(kEnergy);
 
-    energy_ = total_energy_eV(x, y, z, type, n_at, charge, scc_tol, max_scc,
-                              mix_beta);
-    energy_meta += energy_;
+    const TotalOut out = total_energy_eV(x, y, z, type, n_at, charge, scc_tol,
+                                         max_scc, mix_beta);
+    energy_ = out.energy_ev;
+    scc_residual_ = out.residual;
+    scc_iterations_ = out.iterations;
+    f.meta.get(kEnergy) += energy_;
+    f.meta.get(kEnergyElectronic) += energy_;
 }
 
 } // namespace semiempirical

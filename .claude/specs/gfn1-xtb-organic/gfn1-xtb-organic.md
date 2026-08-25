@@ -1,6 +1,6 @@
 ---
 title: GFN1-xTB energy on small organics
-status: in-progress
+status: done
 created: 2026-08-25
 chain: tb-method-loop
 slug: gfn1-xtb-organic

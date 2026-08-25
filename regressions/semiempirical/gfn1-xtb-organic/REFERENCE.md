@@ -63,12 +63,14 @@ temperature (integer occupation on this gap). 1-thread wall **0.02 s**.
 
 ## Gate
 
-- Assert `|E_ATV − (−116.30778398)| ≤ 0.05` eV.
-- The 0.05 eV window covers remaining kernel residuals (D3 CN vs xtb ncoord,
-  Stewart contraction vs xtb's `intcut`, Anderson vs Broyden) on a ~116 eV
-  total. Tighten once a later force slug forces the kernels bit-identical.
+- Assert `|E_ATV − (−116.30778398)| ≤ 0.02` eV.
+- Measured ATV residual at this geometry: **10.2 meV** (0.375 mEh). The 20 meV
+  floor covers remaining kernel residuals (D3 C6 interpolation vs xtb's
+  internal D3, Stewart primitive screening vs xtb `intcut`, Anderson vs
+  Broyden) on a ~116 eV total. Tighten once a later force slug forces the
+  kernels bit-identical.
 
 ## Perf (optional, not ctest)
 
-xtb 6.7.1, `OMP_NUM_THREADS=1`: **0.02 s** wall for this molecule. ATV is a
-12×12 dense eigenproblem; expected well under 10×.
+xtb 6.7.1, `OMP_NUM_THREADS=1`: **0.02 s** wall (transcript). ATV 1-thread
+Release binary: **0.01 s**. \(T_{\mathrm{atv}}/T_{\mathrm{xtb}} = 0.5 \le 10\).
