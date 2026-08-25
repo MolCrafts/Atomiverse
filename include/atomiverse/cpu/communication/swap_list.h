@@ -83,8 +83,10 @@ struct Swap {
     /// `tests/mpi/test_halo_dual_image_ghosts.cpp`. A `sendself` swap
     /// therefore sends nothing, receives nothing, and keeps `nrecv == 0`;
     /// periodicity along that axis is carried by the pair kernel's
-    /// min-image. Deliberate deviation from LAMMPS, up for review when
-    /// multi-hop swaps land (spec `comm-topology-02`).
+    /// min-image. Deliberate deviation from LAMMPS, reaffirmed by spec
+    /// `comm-topology-02`: an undecomposed axis derives **zero** hops
+    /// (`SwapList::max_hops(d) == 0`) and keeps exactly one placeholder
+    /// `(lo, hi)` pair in the table.
     bool sendself = false;
 
     /// @brief Integer periodic image flags, one per axis, in `{-1, 0, +1}`.
@@ -97,8 +99,17 @@ struct Swap {
     /// all zero.
     int pbc[3] = {0, 0, 0};
 
+    /// @brief Which hop of its axis this swap carries, 1-based.
+    ///
+    /// A dim with `SwapList::maxneed(dim) == k` expands to `k` `(lo, hi)`
+    /// pairs, `round = 1 … k`; the whole chain goes through the **same** face
+    /// neighbours (`sendproc`/`recvproc` are round-independent), each round
+    /// forwarding one rank further what the previous round received.
+    int round = 1;
+
     /// @brief Low edge of the eligibility band along `dim` [Angstrom].
     ///
+    /// **Round 1** bounds the rank's own boundary band:
     /// `sublo[dim] + halo_cutoff` bounds the high side of a low-face swap
     /// and `subhi[dim] - halo_cutoff` the low side of a high-face swap; the
     /// outward side carries a `±1e30` sentinel, far outside any physical
@@ -107,6 +118,15 @@ struct Swap {
     /// (`q - sublo < cutoff` / `subhi - q < cutoff`) and is deliberately
     /// *not* LAMMPS' `<=`, which would drift the ghost set by the atoms
     /// sitting exactly on the band edge.
+    ///
+    /// **Rounds 2 and deeper** carry the *open* band `(-1e30, +1e30)`, the
+    /// LAMMPS `ineed >= 2` convention: a forwarding round ships everything
+    /// the caller offers it, and *which* rows those are — the ghosts the
+    /// previous round received, not the owners already shipped by round 1 —
+    /// is the caller's scan window (`rebuild_sendlist`'s `sources_end`, plus
+    /// whatever lower bound the forward pass keeps). The geometry does not
+    /// re-filter them: after one hop the rows sit in the *partner's* band,
+    /// which this rank's own `sublo/subhi` no longer describes.
     double slablo = 0.0;
 
     /// @brief High edge of the eligibility band along `dim` [Angstrom].
@@ -130,9 +150,10 @@ struct Swap {
 /// @brief The ordered swap table of one rank's halo.
 ///
 /// Three primitives, in the order a full rebuild uses them:
-///   1. `setup` — derive `maxneed` and the swap geometry from the current
-///      decomposition and box (called at every full rebuild, so slab bands
-///      follow an NPT / deform box rescale automatically),
+///   1. `setup` — derive the per-axis hop counts (`derive_hops`) and expand
+///      them into the swap geometry from the current decomposition and box
+///      (called at every full rebuild, so both the round count and the slab
+///      bands follow an NPT / deform box rescale automatically),
 ///   2. `rebuild_sendlist` — refill one swap's send list from the frame,
 ///   3. `commit_recv` — record what came back and advance the ghost-slot
 ///      prefix sum.
@@ -147,46 +168,105 @@ struct Swap {
 /// with a how-to rather than degrading silently.
 class SwapList {
   public:
+    /// @brief Hops one rank needs in each send direction, per axis.
+    ///
+    /// `minus[d]` counts the hops toward *decreasing* `coords[d]` (the chain
+    /// of partners `coords[d] - 1, coords[d] - 2, …`), `plus[d]` toward
+    /// increasing coords. Both are 0 on an undecomposed axis (`dims[d] <= 1`)
+    /// — that axis exchanges nothing.
+    ///
+    /// The two directions differ only under a non-uniform partition
+    /// (`DomainDecomposition::cuts`), where the partner slab widths along the
+    /// two chains differ; a uniform brick is symmetric.
+    struct HopNeed {
+        /// @brief Hops toward decreasing `coords[d]`, one entry per axis.
+        int minus[3] = {0, 0, 0};
+        /// @brief Hops toward increasing `coords[d]`, one entry per axis.
+        int plus[3] = {0, 0, 0};
+    };
+
+    /// @brief Derive one rank's per-direction hop counts. Pure, no MPI.
+    ///
+    /// LAMMPS `Comm::setup` semantics, per axis `d` with `dims[d] > 1`:
+    ///
+    ///   * **uniform** partition (`dd.cuts[d]` empty), slab width
+    ///     `w_d = L_d / dims_d`: the closed form
+    ///     `hops = ceil(shell_width * dims_d / L_d)`, identical in both
+    ///     directions. A shell exactly as wide as one slab stays a *single*
+    ///     hop.
+    ///   * **non-uniform** partition (`dd.cuts[d]` non-empty, RCB /
+    ///     `Rebalance`): walk the send direction rank by rank with periodic
+    ///     wrap, accumulating the **partner** slab widths, and stop at the
+    ///     first partner whose cumulative width covers `shell_width`. It is
+    ///     the partner chain, not this rank's own width, that decides whether
+    ///     the shell can be filled.
+    ///
+    /// An axis with `dims[d] <= 1` yields 0 in both directions and is
+    /// **exempt from every width check**: it produces no ghosts at all and
+    /// its periodicity is the pair kernel's minimum image, so an EAM-style
+    /// `2 * cutoff` shell on a thin undecomposed axis stays legal.
+    ///
+    /// On a **non-periodic** axis (`dd.periods[d] == 0`) the chain simply
+    /// ends at the global boundary: the count is truncated to the partners
+    /// that exist in that direction, never refused.
+    ///
+    /// @param dd This rank's decomposition: `dims`, `coords`, `periods` and
+    ///        the optional fractional `cuts`.
+    /// @param box Current simulation box; `length(d)` [Angstrom] is the axis
+    ///        length the slab widths are measured against.
+    /// @param shell_width Ghost shell width [Angstrom],
+    ///        `max(pair cutoff, bonded extension)`.
+    /// @return Hops needed in each direction of each axis.
+    /// @throws std::runtime_error if `shell_width` is negative or NaN, if an
+    ///         axis length is non-positive, if `dd.cuts[d]` is present but
+    ///         not `dims[d] + 1` long, or if a **periodic** decomposed axis
+    ///         needs more hops than `dims[d] - 1` — the minimum-image bound
+    ///         `shell_width <= L_d - w_self`, beyond which an atom would
+    ///         interact with its own periodic image.
+    static HopNeed derive_hops(const md::mpi::DomainDecomposition& dd,
+                               const Box& box, double shell_width);
+
     /// @brief Derive the swap table for this rank from its decomposition.
     ///
-    /// Per axis, the number of hops the ghost shell needs is
-    /// `need_d = ceil(r_halo / sub_d)` where `sub_d = subhi[d] - sublo[d]`
-    /// is this rank's own slab width [Angstrom]. For the uniform brick
-    /// decomposition `sub_d == L_d / dims_d`, so this is exactly the
-    /// `ceil(r_halo * dims_d / L_d)` of the spec; using the rank's own slab
-    /// keeps the refusal exact under a non-uniform partition
-    /// (`DomainDecomposition::cuts`), where the two differ.
+    /// Calls `derive_hops` and expands the result: axis `d` contributes
+    /// `maxneed(d)` `(lo, hi)` swap pairs, in round order `1 … maxneed(d)`,
+    /// so `size() == 2 * sum_d maxneed(d)`. Every round of an axis uses that
+    /// axis' two face neighbours — the chain is a **forwarding** chain, each
+    /// round passing what the previous one received one rank further, never
+    /// a direct message to a rank two hops away.
     ///
-    /// **Undecomposed axes are exempt.** An axis with `dims[d] <= 1` is
-    /// forced to `need_d = 1` and both its swaps to `sendself` without any
-    /// width check, mirroring the `if (dims[d] <= 1) continue` short circuit
-    /// of the outgoing guard: such an axis produces no ghosts at all, and a
-    /// halo shell wider than the whole (thin) axis is legal there because
-    /// periodicity is the pair kernel's min-image. Refusing it would break
-    /// runs that are correct today, e.g. an EAM-style `2 * cutoff` shell on
-    /// a thin undecomposed axis.
+    /// `maxneed(d) = max(max_hops(d), 1)` keeps one placeholder pair on an
+    /// axis that needs no hop at all (undecomposed, or a zero-width shell);
+    /// those swaps are `sendself` and move nothing.
     ///
-    /// A **decomposed** axis is constrained to `need_d == 1`: the halo
-    /// exchanges with immediate neighbours only, so a deeper shell could
-    /// never be filled. `r_halo == sub_d` stays a single hop (the `ceil`
-    /// convention), matching the outgoing guard, which refused only
-    /// `r_halo > sub_d`. Multi-hop chains are spec `comm-topology-02`.
+    /// This runs at the head of **every full rebuild**, so it is also the
+    /// re-derivation hook: an NPT / deform box shrink narrows the slabs and
+    /// raises the round count in place instead of throwing or silently
+    /// truncating the ghost shell. It is idempotent for identical arguments.
+    ///
+    /// The derivation is **per rank and serial** — `SwapList` performs no
+    /// MPI. Making the round count rank-uniform under a non-uniform
+    /// partition (the `MPI_Allreduce(MAX)` of the spec) is the transport
+    /// caller's job (`HaloSend`); what is stored here is this rank's own
+    /// maximum over the two send directions.
     ///
     /// Rebuilds the table in place, preserving the send lists' heap
     /// capacity. On a throw the previous table is left untouched.
     ///
-    /// @param dd This rank's decomposition: `dims`, `coords`, `sublo/subhi`
-    ///        [Angstrom] and `face_neighbors`.
-    /// @param box Current simulation box; edge lengths [Angstrom] are
-    ///        reported in the refusal message. Image displacements are
-    ///        *not* baked in here — `Swap::pbc` stays an integer flag.
+    /// @param dd This rank's decomposition: `dims`, `coords`, `periods`,
+    ///        `cuts`, `sublo/subhi` [Angstrom] and `face_neighbors`.
+    /// @param box Current simulation box; edge lengths [Angstrom] drive the
+    ///        slab widths and are reported in the refusal message. Image
+    ///        displacements are *not* baked in here — `Swap::pbc` stays an
+    ///        integer flag.
     /// @param halo_cutoff Ghost shell width [Angstrom],
-    ///        `max(cutoff, bonded_extension)`.
+    ///        `max(cutoff, bonded_extension)`; readable back as
+    ///        `shell_width()`.
     /// @param my_rank This rank's id in the Cartesian communicator; a face
     ///        neighbour equal to it marks the swap `sendself`.
     /// @throws std::runtime_error if `halo_cutoff` is negative or NaN, if a
-    ///         decomposed axis has a non-positive slab width, or if a
-    ///         decomposed axis needs more than one hop.
+    ///         decomposed axis has a non-positive slab width, or if the
+    ///         minimum-image bound of `derive_hops` is exceeded.
     void setup(const md::mpi::DomainDecomposition& dd, const Box& box,
                double halo_cutoff, int my_rank);
 
@@ -226,10 +306,39 @@ class SwapList {
     int total_recv() const;
 
     /// @brief Hops the ghost shell needs along one axis.
+    ///
+    /// The reduced (`max`) of the two send directions of `derive_hops`, as
+    /// derived by the last `setup`: 0 on an undecomposed axis, 0 before the
+    /// first `setup`.
+    ///
     /// @param d Axis index in `[0, 3)`.
-    /// @return `need_d`, always 1 at this stage (see `setup`).
+    /// @return Hop count on axis `d`.
+    /// @throws std::runtime_error if `d` is out of range.
+    int max_hops(int d) const;
+
+    /// @brief Swap rounds the hop derivation asks for on one axis.
+    /// @param d Axis index in `[0, 3)`.
+    /// @return `2 * max_hops(d)` — one `(lo, hi)` pair per hop, 0 on an
+    ///         undecomposed axis.
+    /// @throws std::runtime_error if `d` is out of range.
+    int nswap(int d) const;
+
+    /// @brief Swap **pairs** the table actually holds for one axis.
+    ///
+    /// `max(max_hops(d), 1)`: the table keeps one `sendself` placeholder pair
+    /// on an axis that needs no hop, so `size() == 2 * sum_d maxneed(d)` and
+    /// every axis owns a contiguous run of swaps. Use `nswap(d)` for the
+    /// number of rounds that actually transmit.
+    ///
+    /// @param d Axis index in `[0, 3)`.
+    /// @return Swap pairs on axis `d`; 0 before the first `setup`.
     /// @throws std::runtime_error if `d` is out of range.
     int maxneed(int d) const;
+
+    /// @brief Ghost shell width the current table was derived against.
+    /// @return The `halo_cutoff` [Angstrom] passed to the last `setup`;
+    ///         0 before the first one.
+    double shell_width() const noexcept { return shell_width_; }
 
     /// @brief Drop every stored row index, keep the swap geometry.
     ///
@@ -254,7 +363,12 @@ class SwapList {
 
   private:
     std::vector<Swap> swaps_;
+    /// Reduced hops per axis (`max` of the two send directions); 0 = none.
+    int hops_[3] = {0, 0, 0};
+    /// Swap pairs per axis, `max(hops_, 1)` after `setup`, 0 before it.
     int maxneed_[3] = {0, 0, 0};
+    /// Ghost shell width [Angstrom] the table was derived against.
+    double shell_width_ = 0.0;
 };
 
 } // namespace comm

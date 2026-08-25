@@ -315,10 +315,17 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// and from `launch()` whenever `frame.box` has drifted enough that
     /// the cell-grid sizing is stale.
     void reinit_strategy(const cpu::Context& rt, cpu::Frame& f) {
+        // The strategy is sized and filtered by the VERLET reach, not the
+        // bare cutoff: a list built to `cutoff` alone drops every pair in
+        // the skin band and stops being reusable between rebuilds.
+        // (`skin()` is the constructor's negative-means-auto value already
+        // resolved, so this is exactly what the strategy derives itself.)
+        const double cutoff_skin = cutoff_ + strategy_.skin();
         if (is_multi_rank(rt)) {
-            strategy_.init_extended(f, cutoff_, rt.md.dd, rt.md.dd->capacity);
+            strategy_.init_extended(f, cutoff_skin, rt.md.dd,
+                                    rt.md.dd->capacity);
         } else {
-            strategy_.init(f, cutoff_);
+            strategy_.init(f, cutoff_skin);
         }
     }
 

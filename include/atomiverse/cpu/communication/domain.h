@@ -127,6 +127,24 @@ struct DomainDecomposition {
     /// `.claude/notes/msu_stage2_conserved_drift_2026-05-27.md`.)
     std::uint64_t halo_generation = 0;
 
+    /// @brief Depth [Angstrom] of the ghost shell the halo actually builds:
+    /// how far beyond `sublo` / `subhi` a legitimate ghost may sit.
+    ///
+    /// Written by `HaloSend` (`max(pair cutoff, bonded extension)`) at every
+    /// full rebuild. `0.0` means no halo has been built yet — the first
+    /// `NeighborList::build()` precedes the first `HaloSend::build()`, and
+    /// single-rank runs never write it at all — in which case consumers use
+    /// their own reach and behave exactly as before this field existed.
+    ///
+    /// Consumed by `CellList::compute_grid`, which pads every decomposed
+    /// axis by `max(cutoff + skin, ghost_shell_width)`. Under a multi-hop
+    /// halo (subdomain thinner than the shell) or a bonded extension wider
+    /// than `cutoff + skin`, ghosts land deeper than the Verlet reach; a
+    /// grid padded only by `cutoff + skin` lets `bin_atoms` clamp them into
+    /// the edge cell — silently, with no missing atom and no error, only
+    /// wrong cell membership and therefore wrong pairs.
+    double ghost_shell_width = 0.0;
+
     // ── atom_modify sort (LAMMPS: exchange → sort → borders) ──────────
     // NeighborList publishes these; HaloSend applies sort on full rebuild
     // *before* rebuilding ghost slots so the swap table's reverse send
