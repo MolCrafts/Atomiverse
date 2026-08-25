@@ -1,11 +1,11 @@
 # TB / SE method loop — handoff
 
-Last assign: **2026-08-25 wave 7** (this-shift wave 1, `theme=gfn`) on
-parent `dev` @ `c05f6b45`.
-Last GapCensus: **2026-08-25 wave 7**.
+Last assign: **2026-08-25 wave 8** (this-shift wave 2, `theme=gfn`) on
+parent `dev` @ `dd8b1459`.
+Last GapCensus: **2026-08-25 wave 8** (refresh at assign HEAD).
 Last harness: **wave 7** — `gfn0-beyond-toy` + `gfn2-xtb-water` merged
 (`07f5c188` / `dee2e8ce`). Keep `gfn1-xtb-organic` `[~]`.
-**incomplete_remaining=1. pending=23. blocked=5.**
+**incomplete_remaining=4. pending=27. blocked=5.**
 **Queue not exhausted.**
 
 ## Workflow order (binding)
@@ -14,31 +14,21 @@ Recover incomplete first → Census → Assign (`incomplete ≫ pending`) →
 Worktrees (**spec-first**) → Merge → Clearup → Harness → Tutorial. See
 `docs/developer/tb-method-loop.md` and `docs/developer/oracle-capability-loop.md`.
 
-## Harness wave 7 (this-shift wave 1, 2026-08-25)
+## Assign wave 8 (this-shift wave 2, 2026-08-25)
 
-| slug | Result |
-| ---- | ------ |
-| `gfn0-beyond-toy` | **merged → done** — `cpu::semiempirical::GFN0` H/C/N/O energy; methanol vs xtb 6.7.1 **−7.597234498685 Eh** (`reg_gfn0-beyond-toy`; residual ~3.6e-8 eV); twin `tools/tb_oracle/inputs/xtb/ch3oh_gfn0/` |
-| `gfn2-xtb-water` | **merged → done** — `cpu::semiempirical::GFN2` H/C/N/O energy; H₂O vs xtb 6.7.1 **−5.070383095219 Eh** (`reg_gfn2-xtb-water`; residual 1.45 meV; forces throw); twin `tools/tb_oracle/inputs/xtb/h2o_gfn2/` |
-| `gfn1-xtb-organic` | **keep `[~]`** — unmerged `wf/gfn1-xtb-organic` @ `30510fc0` (CH4 vs xtb `--gfn 1`); Recover before new pending |
+| slug | Kind | Action |
+| ---- | ---- | ------ |
+| `gfn1-xtb-organic` | resume | Rebase `wf/gfn1-xtb-organic` @ `30510fc0` (ahead=1 behind=6). Spec on the tip. CH4 vs xtb `--gfn 1` **−4.274232224875 Eh**. |
+| `gfn0-xtb-forces` | new | Analytic GFN0 G; replace central FD. Oracle=xtb `--gfn 0`. |
+| `gfn2-quadrupole-aes` | new | Quadrupole AES on `GFN2`; close 1.45 meV H₂O residual. Must land before `gfn2-xtb-forces`. |
+| `ipea-xtb-small` | new | IPEA-xTB energy foothold; own type/tables. Oracle=xtb. |
 
-Specs closed (deleted: `gfn0-beyond-toy`, `gfn2-xtb-water`). Isolation
-worktrees: **none** (Clearup already ran). Local TB tip:
-`wf/gfn1-xtb-organic` (incomplete — do **not** `-D`).
+Skipped same-file GFN2 F/ALPB/beyond-CHNO; Hessian/sTDA/PBC/spin; DFTB/NDDO
+(`theme=gfn`); `cpcm-x-xtb` (new pending after ALPB). One staff slot empty
+rather than collide on `gfn2.cpp`.
 
-Roadmap ○→✓ **GFN0-xTB** + **GFN2-xTB** energy (H/C/N/O). Foothold ≠ closed:
-analytic GFN F, ALPB, IPEA, PBC, spin, sTDA, Hessian, elements beyond CHNO,
-and GFN1 still unmerged.
-
-## Start here next wave
-
-**Recover `gfn1-xtb-organic` first** (`incomplete ≫ pending`). Then either
-finish GFN1 merge or staff GFN2 dependents (`gfn2-xtb-forces`, `alpb-xtb`)
-if `theme=gfn|xtb` still holds. Without theme, ladder returns to Phase B
-NDDO (`pm3-organic-energy`, `nddo-closed-form-forces`) and DFTB3/ThreeOb
-deepens.
-
-Do **not** treat GFN energy footholds as the GFN product closed.
+Workers: isolation worktree on nobackup; branch `wf/<slug>`; spec-first
+`.claude/specs/<slug>/`. Resume rebases the existing spec. **No push.**
 
 ## Oracle / build (binding)
 
@@ -55,7 +45,7 @@ Do **not** treat GFN energy footholds as the GFN product closed.
 
 ## Next
 
-1. Recover/merge `gfn1-xtb-organic` (or rebase onto current `dev`).
-2. Spec-first workers on `wf/<slug>`; SE-only cmake **including CLI=OFF**.
+1. Worktrees for the four `[~]` slugs (resume rebases onto current `dev`).
+2. Spec-first; SE-only cmake **including CLI=OFF**.
 3. **No push.** Wipe builds; Clearup worktrees same wave. `git worktree remove`
    of a tree with `molrs` needs `--force`.

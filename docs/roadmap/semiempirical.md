@@ -173,6 +173,7 @@ NDDO PM → GFN late.
 | GFN-FF                    |  ○  |   ○  |   ○  |
 | sTDA-xTB                  |  ○  |   ○  |   ○  |
 | GFN-xTB ALPB/GBSA solvent |  ○  |   ○  |   ○  |
+| GFN-xTB CPCM-X / ddCOSMO  |  ○  |   ○  |   ○  |
 
 **GFN0-xTB** and **GFN2-xTB** energy footholds ship for H/C/N/O
 (`cpu::semiempirical::GFN0` / `GFN2`; `reg_gfn0-beyond-toy` methanol vs xtb
@@ -182,6 +183,6 @@ NDDO PM → GFN late.
 missing quadrupole AES (`gfn2-quadrupole-aes`). Tables are CHNO-only
 (`gfn2-beyond-chno`). GFN1 is still ○ (unmerged `wf/gfn1-xtb-organic`). The
 H/C/O `XtbGfn0` sketch stays deleted. GFN-xTB is **not** a DFTB3 successor
-(oracle = **xtb**). Analytic gradient, Hessian, IPEA, PBC, spin, sTDA, and
-ALPB/GBSA remain ○. GFN-FF is classical force-field territory (scope-out of
-the electronic SE/TB capability loop).
+(oracle = **xtb**). Analytic gradient, Hessian, IPEA, PBC, spin, sTDA,
+ALPB/GBSA, and CPCM-X/ddCOSMO remain ○. GFN-FF is classical force-field
+territory (scope-out of the electronic SE/TB capability loop).

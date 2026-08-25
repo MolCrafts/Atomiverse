@@ -743,6 +743,43 @@ DFTB-D4; GFN0/GFN2 stay ✓ energy (CHNO foothold); GFN1 stays ○.
 **Queue not exhausted.** Ladder: **Recover `gfn1-xtb-organic` first**; without
 `theme=gfn` staff Phase B NDDO / DFTB3 deepens, not GFN dependents.
 
+## Assign — 2026-08-25 wave 8 (this-shift wave 2, parent `dev` @ `dd8b1459`)
+
+**Priority:** incomplete `[~]` (1) ≫ open SE specs (none; component-plugin is
+another loop) ≫ pending. **Staff = 4** (cap 5). Operator **`theme=gfn`**
+overrides the NDDO-first ladder for **NEW** slugs only. Census refresh at
+HEAD: SE product surface unchanged since wave-8 (`GFN0`/`GFN2` energy CHNO;
+no `GFN1`/`PM*` on `dev`). **TB `wf/*`:** `wf/gfn1-xtb-organic` @ `30510fc0`
+(ahead=1 behind=6). Isolation worktrees: none.
+
+xtb 6.7.1 banner also lists **ddCOSMO / CPCM-X** solvent (Stahn 2023) — **new**
+pending `cpcm-x-xtb` (after `alpb-xtb`; not staffed). Not a GFN Hamiltonian.
+
+Staff **Recover GFN1** then Phase C deepens on **distinct files**:
+GFN0 analytic G (`gfn0.cpp`), GFN2 quadrupole AES (`gfn2.cpp`), IPEA
+(own type). Skip same-file GFN2 dependents (`gfn2-xtb-forces`, `alpb-xtb`,
+beyond-CHNO) so AES can close the 1.45 meV H₂O hole **before** an xtb force
+pin. Skip Hessian (needs forces + VIB=ON), sTDA (would hook GFN2 internals),
+PBC/spin (would touch GFN0/2). Native static tables — do **not** wrap
+`libxtb`. One staff slot left empty rather than collide on `gfn2.cpp`.
+
+| # | Slug | Kind | Action |
+| - | ---- | ---- | ------ |
+| 1 | `gfn1-xtb-organic` | resume | Rebase `wf/gfn1-xtb-organic` (ahead=1 behind=6) onto `dev`; dual-gate CH4 vs xtb `--gfn 1` (−4.274232224875 Eh). Spec lives on the tip. |
+| 2 | `gfn0-xtb-forces` | **new** | Replace GFN0 central-FD F with analytic G vs xtb `--gfn 0`; energy already ships |
+| 3 | `gfn2-quadrupole-aes` | **new** | GFN2 quadrupole AES (closes 1.45 meV H₂O residual; unblocks later xtb F pin) |
+| 4 | `ipea-xtb-small` | **new** | IPEA-xTB energy foothold vs xtb; own Hamiltonian / tables (after GFN2 energy) |
+
+**Skipped this wave:** Phase A DFTB + Phase B NDDO (`theme=gfn`);
+`gfn2-xtb-forces` / `alpb-xtb` / `gfn2-beyond-chno` (same-file as AES);
+`gfn-xtb-analytic-hessian` / `stda-xtb` / `periodic-gfn-xtb` / `spin-gfn-xtb`
+(need AES/F or would collide); `cpcm-x-xtb` (after ALPB); blocked (5).
+
+**After staff:** incomplete `[~]` = **4**; pending = **27**; blocked = **5**.
+Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**
+`.claude/specs/<slug>/`; resume rebases the existing spec; SE-only cmake
+(incl. CLI=OFF); offline **xtb** pins only. **No push.**
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
@@ -781,26 +818,27 @@ DFTB+ for these rows.
 
 xTB is **not** DFTB3++. **GFN0** and **GFN2** energy footholds ship on `dev`
 (H/C/N/O; `reg_gfn0-beyond-toy`, `reg_gfn2-xtb-water`; oracle=xtb 6.7.1).
-GFN1 remains `[~]` (`wf/gfn1-xtb-organic`). Toy `XtbGfn0` was deleted
-(`bc14dabd`). Staff GFN dependents after Recover of GFN1, or Phase B NDDO
-without `theme=gfn|xtb`.
+GFN1 is `[~]` (`wf/gfn1-xtb-organic`). Wave-8 assign also staffed GFN0
+analytic G, GFN2 quadrupole AES, and IPEA (`## in_progress`). Toy `XtbGfn0`
+was deleted (`bc14dabd`).
 **Staff order:** Recover GFN1 → GFN0/GFN2 forces / quadrupole AES / ALPB →
-then Hessian / sTDA / beyond-CHNO.
+then Hessian / sTDA / beyond-CHNO. AES before GFN2 F (xtb force pin).
 
-- [ ] `gfn0-xtb-forces` | Replace GFN0 central-FD F with analytic G vs xtb `--gfn 0` | xtb | methanol / H2O off-eq | F | **oracle=xtb**; energy already ships
-- [ ] `gfn2-xtb-forces` | GFN2-xTB analytic forces (`with_forces` currently throws) | xtb | H2O off-eq | F | **oracle=xtb**; after `gfn2-xtb-water`; on-disk `h2o_gfn2_offeq_grad`
-- [ ] `gfn2-quadrupole-aes` | GFN2 quadrupole AES (closes the 1.45 meV H₂O residual vs xtb 6.7.1; foothold is charge–dipole + dipole–dipole + AXC only) | xtb | H2O | E | **oracle=xtb**
+- [ ] `gfn2-xtb-forces` | GFN2-xTB analytic forces (`with_forces` currently throws) | xtb | H2O off-eq | F | **oracle=xtb**; after `gfn2-quadrupole-aes`; on-disk `h2o_gfn2_offeq_grad`
 - [ ] `gfn2-beyond-chno` | GFN2 static tables beyond H/C/N/O (xtb is all-element; GFN0 same shape after) | xtb | small hetero | E | **oracle=xtb**; after CHNO F
 - [ ] `alpb-xtb` | xtb ALPB/GBSA implicit solvent on production GFN2 | xtb | H2O / small organic | E | **oracle=xtb**; after `gfn2-xtb-water`
+- [ ] `cpcm-x-xtb` | xtb ddCOSMO / CPCM-X continuum solvent on production GFN2 (Stahn 2023; banner on xtb 6.7.1) | xtb | H2O / small | E | **oracle=xtb**; after `alpb-xtb`
 - [ ] `gfn-xtb-analytic-hessian` | GFN FD Hessian via `cpu::vib::Hessian` once product GFN forces exist | xtb/vib | small | ω | **oracle=xtb**; VIB=ON exception like `se-analytic-hessian`; after `gfn2-xtb-forces`
 - [ ] `stda-xtb` | sTDA-xTB excitations on production GFN ground state | xtb | small organic | ω_exc | **oracle=xtb|literature**; after `gfn2-xtb-water`
-- [ ] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | small | E | **oracle=xtb**; after GFN2 energy
 - [ ] `periodic-gfn-xtb` | Periodic GFN-xTB Γ / PBC energy | xtb | small cell | E | **oracle=xtb**
 - [ ] `spin-gfn-xtb` | Spin-polarized GFN-xTB | xtb | open shell | E / spin | **oracle=xtb**; after GFN2
 
 ## in_progress
 
-- [~] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | CH4 | E [eV] | **oracle=xtb** (generate `--gfn 1` twin; on-disk `ch4_gfn2` is GFN2-only); `wf/gfn1-xtb-organic` @ `30510fc0`
+- [~] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | CH4 | E [eV] | **oracle=xtb** (twin `ch4_gfn1` on the tip); `wf/gfn1-xtb-organic` @ `30510fc0` (ahead=1 behind=6)
+- [~] `gfn0-xtb-forces` | Replace GFN0 central-FD F with analytic G vs xtb `--gfn 0` | xtb | methanol / H2O off-eq | F | **oracle=xtb**; energy already ships
+- [~] `gfn2-quadrupole-aes` | GFN2 quadrupole AES (closes the 1.45 meV H₂O residual vs xtb 6.7.1; foothold is charge–dipole + dipole–dipole + AXC only) | xtb | H2O | E | **oracle=xtb**
+- [~] `ipea-xtb-small` | IPEA-xTB energy foothold | xtb | small | E | **oracle=xtb**; after GFN2 energy
 
 ## permanent rules / scope-out (never pending)
 
