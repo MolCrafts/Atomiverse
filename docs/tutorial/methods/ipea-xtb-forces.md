@@ -9,7 +9,7 @@
 | Public API | `cpu::semiempirical::IPEA` (`with_forces = true`); `cpu::Evaluate` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md) (SE product surface; IPEA is a GFN-xTB sibling) |
 | Queue | TB method loop — wave 11 done (`b7388af2` / `ae6b48df`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB energy **and** analytic \(G\) ✓ |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB energy **and** analytic \(G\) ✓; FD Hessian is [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md); `--vip` stays ○ |
 | Oracle | **xtb 6.7.1** only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -163,7 +163,8 @@ scaled so \(r(\mathrm{C{-}H1})=1.20\) Å.
 - Off-eq **water** vs xtb — polar Δq still carries a ~0.5 eV kernel hole
   (named in `reg_ipea-xtb-small` Gaps). Analytic \(F\) on water is gated by
   ATV energy FD in `test_cpu_xtb_ipea`, not this product pin.
-- IPEA Hessian, PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other queue rows.
+- IPEA **FD Hessian** (Td CH₄) — sibling [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md).
+  PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other queue rows.
   GFN-FF is classical (scope-out of this loop).
 - Halogen-bond correction (xtb term; identically 0 on CH₄; not implemented).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
@@ -373,6 +374,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   residual vs water (~0.5 eV) is an energy-path hole, not a gradient
   defect.
 - **No Hessian / PBC / spin / solvent / `--vip` / halogen** on this page —
+  FD Hessian is [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md);
   `--vip`/`--vea` is queue `ipea-xtb-vip`. GFN-FF is classical
   (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
@@ -380,8 +382,8 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   `reg_am1_water_minimize` under this configure.
 - Family lock: **xtb only** for IPEA / GFN rows — never DFTB+ or OpenMOPAC as
   an IPEA oracle; never treat GFN-xTB as a DFTB3 successor.
-- Foothold ≠ closed: IPEA energy + IPEA \(G\) is not the GFN product closed
-  (`--vip`/`--vea`, IPEA Hessian, ALPB, CPCM-X, PBC, spin, sTDA,
+- Foothold ≠ closed: IPEA energy + IPEA \(G\) + FD Hessian is not the GFN
+  product closed (`--vip`/`--vea`, ALPB, CPCM-X, PBC, spin, sTDA,
   beyond-CHNO remain).
 
 ## References
@@ -400,5 +402,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - V. Ásgeirsson, C. Bauer, S. Grimme, *Chem. Sci.* **8**, 4879 (2017),
   DOI [10.1039/c7sc00601b](https://doi.org/10.1039/c7sc00601b)
 - C. Bannwarth et al., *WIREs Comput. Mol. Sci.* **11**, e01493 (2021) (xtb)
-- Siblings: `ipea-xtb-small` (IPEA energy), `gfn1-xtb-forces` (GFN1 analytic
-  \(G\)), `gfn0-xtb-forces` / `gfn2-xtb-forces` (GFN0 / GFN2 analytic \(G\))
+- Siblings: `ipea-xtb-small` (IPEA energy),
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) (IPEA FD Hessian),
+  `gfn1-xtb-forces` (GFN1 analytic \(G\)), `gfn0-xtb-forces` /
+  `gfn2-xtb-forces` (GFN0 / GFN2 analytic \(G\))

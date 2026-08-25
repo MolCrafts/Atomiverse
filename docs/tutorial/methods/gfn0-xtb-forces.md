@@ -137,9 +137,11 @@ own \(E\) (\(h=10^{-4}\) Å) as an identity gate, not as the production force.
   (solvent, PBC). AES-in-Fock is [`gfn2-aes-fock`](gfn2-aes-fock.md).
 - GFN0 **FD Hessian** — sibling `gfn0-xtb-analytic-hessian`. Family GFN1/2
   Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
-  IPEA energy / \(G\) are [`ipea-xtb-small`](ipea-xtb-small.md) /
-  [`ipea-xtb-forces`](ipea-xtb-forces.md). PBC, spin, sTDA, ALPB/GBSA,
-  CPCM-X — other queue rows. GFN-FF is classical (scope-out of this loop).
+  IPEA energy / \(G\) / FD Hessian are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md) /
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). PBC, spin,
+  sTDA, ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical
+  (scope-out of this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
   `gfn2-beyond-chno`.
 - Live xtb / DFTB+ / OpenMOPAC from ctest — **forbidden**; offline pins only.

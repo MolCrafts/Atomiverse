@@ -222,8 +222,8 @@ Full index: [methods/README](methods/README.md).
 Offline OpenMOPAC / DFTB+ / xtb pins only — see
 [tb-method-handoff](../developer/tb-method-handoff.md) and `tools/tb_oracle/`.
 Family-locked oracles: NDDO → OpenMOPAC; DFTB* → DFTB+; GFN-xTB / IPEA → xtb.
-IPEA FD Hessian via `cpu::vib::Hessian` (`-DATV_BUILD_VIB=ON` exception).
-`--vip`/`--vea` stays ○.
+Harness wave 12 (2026-08-25) closed IPEA-xTB FD Hessian of analytic \(G\)
+(`-DATV_BUILD_VIB=ON` exception). `--vip`/`--vea` stays ○.
 Full index: [methods/README](methods/README.md).
 
 | Method | Page | Regression | Oracle |

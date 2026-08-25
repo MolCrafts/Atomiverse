@@ -287,8 +287,9 @@ Informative only — **not** asserted in ctest. Gate convention (TB loop):
 - 10.2 meV residual vs xtb is accepted by the 20 meV gate; not
   bit-identical (D3 C6, integral cutoff, mixer).
 - Halogen correction, continuum solvent, PBC, sTDA: out of this slug.
-  IPEA energy / \(G\) are [`ipea-xtb-small`](ipea-xtb-small.md) /
-  [`ipea-xtb-forces`](ipea-xtb-forces.md); family Hessian is
+  IPEA energy / \(G\) / FD Hessian are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md) /
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md); family Hessian is
   [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md); AES-in-Fock
   is [`gfn2-aes-fock`](gfn2-aes-fock.md).
 - Cross-oracle misuse forbidden: do not re-pin this energy with OpenMOPAC or

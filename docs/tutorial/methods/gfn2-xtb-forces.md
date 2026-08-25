@@ -142,9 +142,11 @@ HOMO–LUMO 10.606 eV; Mulliken \(q(\mathrm{O})=-0.549\),
   \(\partial Q/\partial R\).
 - **GFN0 / GFN1** forces — siblings `gfn0-xtb-forces`, `gfn1-xtb-forces`.
 - GFN-xTB **Hessian** is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
-  IPEA energy / \(G\) are [`ipea-xtb-small`](ipea-xtb-small.md) /
-  [`ipea-xtb-forces`](ipea-xtb-forces.md). PBC, spin, sTDA, ALPB/GBSA,
-  CPCM-X — other queue rows. GFN-FF is classical (scope-out of this loop).
+  IPEA energy / \(G\) / FD Hessian are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md) /
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). PBC, spin,
+  sTDA, ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical
+  (scope-out of this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
   `gfn2-beyond-chno`.
 - Live xtb / DFTB+ / OpenMOPAC from ctest — **forbidden**; offline pins only.
@@ -337,8 +339,9 @@ wall; the regression fails if the ratio exceeds 10.
   Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md)
   (GFN2 \(\omega\) carries the CAMM-vs-\(R\) hole); IPEA is
   [`ipea-xtb-small`](ipea-xtb-small.md) /
-  [`ipea-xtb-forces`](ipea-xtb-forces.md). GFN-FF is classical (never
-  pending on this loop).
+  [`ipea-xtb-forces`](ipea-xtb-forces.md) /
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). GFN-FF is
+  classical (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
   for the TB product gate; do not build `reg_am1_water_bomd` /
   `reg_am1_water_minimize` under this configure.

@@ -9,7 +9,7 @@
 | Public API | `cpu::semiempirical::IPEA` + `cpu::Evaluate` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md) (SE product surface; IPEA is a GFN-family sibling, not NDDO) |
 | Queue | TB method loop — harness wave 10 done (`50066df7` / `4c278a20`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB energy ✓; forces / `--vip` stay ○ |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 IPEA-xTB energy ✓; analytic \(G\) is [`ipea-xtb-forces`](ipea-xtb-forces.md); FD Hessian is [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md); `--vip` stays ○ |
 | Oracle | **xtb 6.7.1** (compiled 2026-06-09) only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -33,7 +33,8 @@ tables only — **no** `libxtb`. Product gate `reg_ipea-xtb-small` asserts
 
 against an offline **xtb 6.7.1** IPEA-xTB pin. Measured ATV residual at this
 geometry is **8.90 meV**. This page is energy-only; analytic \(G\) is
-[`ipea-xtb-forces`](ipea-xtb-forces.md). Fair wall vs xtb:
+[`ipea-xtb-forces`](ipea-xtb-forces.md); FD Hessian of that \(G\) is
+[`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). Fair wall vs xtb:
 \(T_{\mathrm{ATV}}/T_{\mathrm{xtb}} = 2.0 \le 10\).
 
 ## Method
@@ -318,7 +319,8 @@ unless `perf_exempt`.
 
 - **Energy-only IPEA** on H/C/N/O. `with_forces = true` and
   `multiplicity != 1` throw on this page. Analytic \(G\) now ships
-  ([`ipea-xtb-forces`](ipea-xtb-forces.md)).
+  ([`ipea-xtb-forces`](ipea-xtb-forces.md)); FD Hessian is
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md).
 - Organic CHNO tables only; other IPEA elements are not in-tree
   (`gfn2-beyond-chno` is the beyond-CHNO deepen, on GFN2 first).
 - 8.90 meV residual vs xtb is accepted by the 50 meV gate; not
@@ -331,9 +333,10 @@ unless `perf_exempt`.
   PBC / spin.
 
 Foothold ≠ closed: IPEA CHNO energy is ✓; IPEA \(G\) is ✓
-([`ipea-xtb-forces`](ipea-xtb-forces.md)); `--vip`, solvent, PBC, and
-spin stay ○. GFN CHNO energy + analytic G + family FD Hessian +
-AES-in-Fock + IPEA E+\(G\) is not the GFN product closed.
+([`ipea-xtb-forces`](ipea-xtb-forces.md)); IPEA FD Hessian is ✓
+([`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md)); `--vip`,
+solvent, PBC, and spin stay ○. GFN CHNO energy + analytic G + family
+FD Hessian + AES-in-Fock + IPEA E+\(G\)+\(H\) is not the GFN product closed.
 
 ## References
 
@@ -354,6 +357,8 @@ AES-in-Fock + IPEA E+\(G\) is not the GFN product closed.
     (xtb)
 - Related narrative: [ch17-semiempirical-am1](../ch17-semiempirical-am1.md)
   (NDDO/AM1; different family — OpenMOPAC oracle)
-- Siblings: `gfn1-xtb-organic` (same CH₄, GFN1 Hamiltonian),
+- Siblings: [`ipea-xtb-forces`](ipea-xtb-forces.md) (analytic \(G\)),
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) (FD Hessian),
+  `gfn1-xtb-organic` (same CH₄, GFN1 Hamiltonian),
   `gfn0-beyond-toy` (GFN0 energy), `gfn2-xtb-water` /
   `gfn2-quadrupole-aes` (GFN2 energy)

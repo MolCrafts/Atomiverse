@@ -84,7 +84,9 @@ class (analytic \(G\), numerical \(H\)) at step \(0.005\,a_0\approx 0.00265\) Å
 **Not included.** Closed-form \(\partial^2 E/\partial R_i\partial R_j\)
 (CPHF / GFN0 second-derivative kernel). GFN1/GFN2 Hessian
 (`gfn-xtb-analytic-hessian`). IR intensities from an APT (FD driver does
-not solve CPHF). PBC / spin / solvent / IPEA. GFN-FF (classical).
+not solve CPHF). PBC / spin / solvent. IPEA FD Hessian is
+[`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). GFN-FF
+(classical).
 
 **Twin settings (binding for this page / regression):**
 
@@ -119,8 +121,11 @@ Eh/\(a_0\)); all three vibrational eigenvalues are real.
 - **GFN1 / GFN2 Hessian** — sibling [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
 - GFN0 **energy** (methanol) — sibling `gfn0-beyond-toy`.
 - GFN0 **analytic \(G\)** (this geometry) — sibling `gfn0-xtb-forces`.
-- IPEA, PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is
-  classical (scope-out of this loop).
+- IPEA energy / \(G\) / FD Hessian — [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md) /
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). PBC, spin,
+  sTDA, ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical
+  (scope-out of this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
   `gfn2-beyond-chno`.
 - Live xtb / DFTB+ / OpenMOPAC from ctest — **forbidden**; offline pins only.
@@ -310,11 +315,13 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - **GFN1 / GFN2 Hessian.** Sibling [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
   This page closes GFN0 FD \(H\) only.
 - **No PBC / spin / solvent / IR** on this page — see Phase C queue.
-  IPEA energy / \(G\) are [`ipea-xtb-small`](ipea-xtb-small.md) /
-  [`ipea-xtb-forces`](ipea-xtb-forces.md). GFN-FF is classical
-  (never pending on this loop).
+  IPEA energy / \(G\) / FD Hessian are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md) /
+  [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md). GFN-FF is
+  classical (never pending on this loop).
 - **VIB exception.** This slug (and `se-analytic-hessian` /
-  `gfn-xtb-analytic-hessian`) may set `-DATV_BUILD_VIB=ON`. Do not enable
+  `gfn-xtb-analytic-hessian` / `ipea-xtb-analytic-hessian`) may set
+  `-DATV_BUILD_VIB=ON`. Do not enable
   MD/MINIMIZER/HF/PW/GPW/CUDA for the TB product gate; do not build
   `reg_am1_water_bomd` / `reg_am1_water_minimize` under this configure.
 - Family lock: **xtb only** for GFN rows — never DFTB+ or OpenMOPAC as a
@@ -337,6 +344,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   `docs/developer/tb-method-loop.md`,
   `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/semiempirical.md`
+- IPEA Hessian sibling: [`ipea-xtb-analytic-hessian.md`](ipea-xtb-analytic-hessian.md)
 - Spec history (closed, deleted at done): git `wf/gfn0-xtb-analytic-hessian`
 - P. Pracht, E. Caldeweyher, S. Ehlert, S. Grimme, ChemRxiv (2019),
   DOI 10.26434/chemrxiv.8326202.v1

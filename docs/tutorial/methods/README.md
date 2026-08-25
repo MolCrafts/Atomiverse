@@ -198,9 +198,10 @@ Offline family-locked pins only — see
 [tb-method-handoff](../../developer/tb-method-handoff.md) and
 `tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
 OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
-REFERENCE (`ratio` or `perf_exempt`). Wave 12 staffs IPEA FD Hessian
-(`reg_ipea-xtb-analytic-hessian`; `-DATV_BUILD_VIB=ON` exception) and
-GFN2 CAMM-vs-\(R\). `--vip`/`--vea` stays ○.
+REFERENCE (`ratio` or `perf_exempt`). Harness wave 12 closed IPEA
+FD Hessian (`reg_ipea-xtb-analytic-hessian`; `-DATV_BUILD_VIB=ON`
+exception). `--vip`/`--vea` stays ○. GFN2 CAMM-vs-\(R\) remains
+incomplete.
 
 | Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |
