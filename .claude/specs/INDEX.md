@@ -877,6 +877,5 @@ Do not re-create closed slugs without superseding intent.
 
 | Spec | Deps | One-line |
 | ---- | ---- | -------- |
-| [comm-topology-01-swaplist](comm-topology-01-swaplist.md) | — | LAMMPS swap-list halo 重构（setup/borders/forward/reverse，行为等价，旧级联删除） [approved] |
 | [comm-topology-02-multihop](comm-topology-02-multihop.md) | 01 | maxneed 展开多轮 swap，删除窄子域拒绝，cell-list 垫层联动，窄盒 parity 单测 [approved] |
 | [comm-topology-03-widebox-validation](comm-topology-03-widebox-validation.md) | 01, 02 | MIL0PEGM18 24k @256 rank 跑通 + parity；性能仅记 bench 快照 [approved] |
