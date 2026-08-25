@@ -74,6 +74,7 @@ tools/tb_oracle/
 | `inputs/mopac/am1-water/` | OpenMOPAC | AM1 H₂O deck + archived MOPAC 7.00 transcript (`reg_am1-water-mopac-energy`); **first mopac twin** |
 | `inputs/xtb/ch3oh_gfn0/` | xtb 6.7.1 | GFN0 methanol energy twin (`reg_gfn0-beyond-toy`); `--gfn 0` |
 | `inputs/xtb/h2o_gfn0_offeq_grad/` | xtb 6.7.1 | GFN0 off-eq water force twin (`reg_gfn0-xtb-forces`); `--gfn 0 --grad` |
+| `inputs/xtb/h2o_gfn0_hess/` | xtb 6.7.1 | GFN0 water FD Hessian twin (`reg_gfn0-xtb-analytic-hessian`); `--gfn 0 --hess` |
 | `inputs/xtb/ch4_gfn1/` | xtb 6.7.1 | CH4 `--gfn 1` energy pin (`reg_gfn1-xtb-organic`); `mol.xyz` + `xtb.out.txt` |
 | `inputs/xtb/h2o_gfn2/` | xtb 6.7.1 | H₂O GFN2 energy pin (`reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`); `mol.xyz` + archived `xtb.out` |
 | `inputs/xtb/{ch4,nh3,ch3oh}_gfn2/` + `h2o_gfn2_offeq_grad/` | xtb 6.7.1 | extra GFN2 transcripts on disk (`*.out` gitignored) |

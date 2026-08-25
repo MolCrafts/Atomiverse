@@ -1,5 +1,5 @@
 /// @file cpu/semiempirical/gfn0.h
-/// @brief GFN0-xTB energy and analytic nuclear forces (H/C/N/O).
+/// @brief GFN0-xTB energy, analytic nuclear forces, and FD Hessian (H/C/N/O).
 #pragma once
 
 #include <string>
@@ -27,6 +27,7 @@ namespace semiempirical {
 ///   cpu::semiempirical::GFN0 gfn0;
 ///   gfn0.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(gfn0));
+///   // FD Hessian of the analytic G: cpu::vib::Hessian + on(vib::Phase::force).
 /// @endcode
 class GFN0 : public cpu::Semiempirical {
   public:
