@@ -19,7 +19,6 @@
 
 #include <cmath>
 #include <cstdlib>
-#include <stdexcept>
 #include <string>
 
 #include "atomiverse/core/mat3.h"

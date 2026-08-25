@@ -1,7 +1,7 @@
 ---
 title: 多跳落地后的宽域实机验证（24k GAFF / 256 rank）
 slug: comm-topology-03-widebox-validation
-status: in-progress
+status: code-complete
 created: 2026-08-25
 grilled: true
 deps: comm-topology-01-swaplist, comm-topology-02-multihop
@@ -76,9 +76,9 @@ deps: comm-topology-01-swaplist, comm-topology-02-multihop
 - [x] Add `tools/bench_gaff_lammps/widebox_parity.sh`：同参数跑 np=1 与 np=$NP（`ATV_FORCE_DIMS=$DIMS`）单点，解析 `[atv] GRID` / `SINGLE-POINT (eV)` / `SINGLE-POINT FORCES` 行，按默认窗口逐项 `got/want/tol` 判定，并断言 `hops` 至少一个分量 ≥ 2，失败非零退出（在下一条落地前应因缺少这两行而 FAIL）
 - [x] Implement rank 无关的 `fmax`/`fnorm`（`MPI_Allreduce` MAX/SUM，仅 owner 行）与 `[atv] GRID dims/span/halo/hops`（经 `DomainDecomposition::choose_dims`）输出于 `tools/bench_gaff_lammps/run_atv_gaff.cpp` 的 `--single-point` 分支
 - [x] Add regression example `regressions/md/multihop-widebox-parity/reg_multihop-widebox-parity.cpp` + `REFERENCE.md`（自重启 np=1 / np=8、`ATV_FORCE_DIMS=4,2,1`、带电 + bonded 分子晶格、最小镜像 brute force + 跨 rank parity 双判据、硬编码 tol、非零退出）并在 `regressions/CMakeLists.txt` 注册
-- [ ] Verify MIL0PEGM18 24k 体系在单节点 256 rank（`ATV_FORCE_DIMS=8,8,4`）下 `widebox_parity.sh` 全项 PASS，并保存 np=1 / np=256 两份日志
-- [ ] Record 日期快照块于 `tools/bench_gaff_lammps/README.md`（256-rank steps/s、分项计时表、同节点同精度档 LAMMPS 对照、srun 命令与数据集路径，并注明这些数字不是验收判据）
-- [ ] Run full check + test suite
+- [x] Verify MIL0PEGM18 24k 体系在单节点 256 rank（`ATV_FORCE_DIMS=8,8,4`）下 `widebox_parity.sh` 全项 PASS，并保存 np=1 / np=256 两份日志
+- [x] Record 日期快照块于 `tools/bench_gaff_lammps/README.md`（256-rank steps/s、分项计时表、同节点同精度档 LAMMPS 对照、srun 命令与数据集路径，并注明这些数字不是验收判据）
+- [x] Run full check + test suite
 
 ## Testing strategy
 

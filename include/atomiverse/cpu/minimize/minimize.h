@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/minimize.h
+/// @file cpu/minimize/minimize.h
 /// @brief cpu::minimizer::Minimize — concrete energy-minimizer driver.
 ///
 /// `Minimize` is the user-facing CPU geometry-optimization preset — a

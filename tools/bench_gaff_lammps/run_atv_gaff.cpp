@@ -381,7 +381,7 @@ int main(int argc, char** argv) {
                         frame.meta.get(kEnergyBond),
                         frame.meta.get(kEnergyAngle),
                         frame.meta.get(kEnergyDihedral));
-            const double kcal = 23.060547830619026;
+            const double kcal = 1.0 / ATV::cpu::kKcalPerMolInEv;
             std::printf("[atv] SINGLE-POINT (kcal/mol): E=%.6f "
                         "pair+kspace=%.6f bond=%.6f angle=%.6f "
                         "dihedral=%.6f\n",

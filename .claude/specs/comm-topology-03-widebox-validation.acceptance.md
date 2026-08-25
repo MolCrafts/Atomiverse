@@ -14,7 +14,9 @@ criteria:
       brute force within rel < 1e-9; tests/CMakeLists.txt registers
       test_mpi_halo_dual_image_ghosts_n8, and
       `ctest -R test_mpi_halo_dual_image_ghosts` is green at n1, n2 and n8.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
+    evidence: ProductionGridTwoNarrowAxesMatchBruteForce (4,2,1 / 24x14x14) in test_halo_dual_image_ghosts.cpp; n1/n2/n8 registered, full suite green
   - id: ac-002
     summary: run_atv_gaff --single-point reports rank-invariant forces and DD geometry
     type: code
@@ -27,7 +29,9 @@ criteria:
       halo=<r> hops=<hx,hy,hz>` derived from DomainDecomposition::choose_dims;
       runs without --single-point print byte-identical output to the
       pre-change binary.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
+    evidence: FORCES+GRID lines land in bench logs (parity256/log.*); non-single-point path unchanged
   - id: ac-003
     summary: widebox_parity.sh fails loudly instead of always printing PASS
     type: runtime
@@ -39,7 +43,9 @@ criteria:
       (bond, angle, dihedral, pair+kspace, total, fmax, fnorm); and a run whose
       np>1 log reports every `hops` component <= 1 is reported FAIL as
       "not a multi-hop geometry".
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
+    evidence: bite-verified: --tol-total 0 FAILs nonzero; hops<=1 rejected as non-multi-hop
   - id: ac-004
     summary: Multi-hop wide-box regression reproduces brute force and rank parity
     type: runtime
@@ -57,7 +63,9 @@ criteria:
       and regressions/md/multihop-widebox-parity/REFERENCE.md cites Plimpton
       J. Comput. Phys. 117, 1 (1995) and Allen & Tildesley 2nd ed. §1.6.3 with
       the physical justification of those tolerances.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
+    evidence: run_reg_multihop-widebox-parity exit 0 in regression suite (E=-1.9390130589549823 eV family, hard-coded)
   - id: ac-005
     summary: 24k GAFF MIL0PEGM18 runs at 256 ranks and matches the np=1 single point
     type: runtime
@@ -72,7 +80,9 @@ criteria:
       bond/angle/dihedral relative <= 1e-9, pair+kspace relative <= 1e-8,
       total energy relative <= 1e-8 and |dE|/N <= 1e-6 eV/atom,
       fmax and fnorm relative <= 1e-6 (denominators max(1, |reference|)).
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
+    evidence: sbatch 1692800: NP=256 DIMS=8,8,4 on MIL0PEGM18 eq.data, hops=2,2,1, all windows dev=0.0, exit 0; logs atv-mil-bench/parity256/
   - id: ac-006
     summary: Bench README carries a dated 256-rank snapshot marked non-binding
     type: docs
@@ -86,7 +96,9 @@ criteria:
       sentence stating these numbers are a record and not an acceptance
       criterion. No numeric performance threshold is asserted anywhere in the
       spec's criteria.
-    status: pending
+    status: verified
+    last_checked: 2026-08-26
+    evidence: README.md Snapshot (2026-08-26) block: grid 8x8x4, span vs halo, steps/s, 8-section table, LAMMPS ref, srun cmd, record-not-acceptance sentence
 ---
 
 # Acceptance criteria

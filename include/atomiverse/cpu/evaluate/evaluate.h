@@ -1,4 +1,4 @@
-/// @file cpu/driver/evaluate.h
+/// @file cpu/evaluate/evaluate.h
 /// @brief cpu::Evaluate — concrete one-pass evaluator driver.
 ///
 /// `cpu::Evaluate` is the user-facing CPU single-point preset — a

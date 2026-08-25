@@ -94,3 +94,56 @@ spread 0.04, interp 0.09 per step), Comm 2.4, Neigh 0.9 — LAMMPS 3.8 /
 min-image (±3%); the min-image restore fixed a slow thermal runaway from
 silently dropped wrapped pairs (VelocityVerlet wraps every step; LAMMPS
 wraps only at reneighbor — a future integrator-side slug).
+
+## Snapshot (2026-08-26, MIL0PEGM18 n108, 24048 atoms, multi-hop 256 ranks, single node EPYC-9005 256c)
+
+First full-node run unlocked by the swap-list multi-hop halo
+(comm-topology chain): 24048 atoms, box 63.0016 Å cubic, processor grid
+**8×8×4** ⇒ subdomain span 7.875×7.875×15.750 Å vs halo shell
+cutoff+skin = 11.0 Å (hops 2,2,1 — x/y ghosts cross two subdomains).
+Same protocol as the 2026-08-25 block: NVT 400 K, lj/cut/coul/long 9.0 +
+SPME 32³ (α=0.25232811, spacing 1.98), dt=1 fs, no SHAKE, 5000 steps
+after 200 warmup, OMP=1. These numbers are a record, not an acceptance
+criterion.
+
+| config | steps/s | note |
+|---|---|---|
+| ATV np=64 / 125 / 200 / **256** | 393 / 419 / 384 / **343** | multi-hop; peak at 125, kspace Allreduce turns over beyond |
+| LAMMPS np=256 (same node, double) | **1523** | pppm 1e-4 (24³); Loop 3.28 s / 5000 steps |
+
+ATV MPI task timing breakdown at np=256 (s / 5000 steps; LAMMPS same-run
+reference in parentheses):
+
+| Section | min | avg | max | %total |
+|---|---|---|---|---|
+| Pair | 0.8378 | 1.1005 | 1.4336 | 7.2 (LMP 0.936, 28.5%) |
+| Bond | 0.1124 | 0.1439 | 0.1757 | 0.9 (LMP 0.104, 3.2%) |
+| Kspace | 9.4300 | 9.8740 | 10.2181 | 64.9 (LMP 1.563, 47.6%) |
+| Neigh | 0.3627 | 0.4364 | 0.5419 | 2.9 (LMP 0.145, 4.4%) |
+| Comm | 3.4121 | 3.4989 | 3.6144 | 23.0 (LMP 0.441, 13.4%) |
+| Output | 0.0000 | 0.0000 | 0.0000 | 0.0 |
+| Modify | 0.1277 | 0.1498 | 0.1642 | 1.0 |
+| Other | 0.0068 | 0.0086 | 0.0104 | 0.1 |
+| Loop | 15.2125 | 15.2193 | 15.2234 | 100.0 |
+
+Pair is now *ahead* of LAMMPS per avg-time (1.10 vs 0.94 with 30% varavg
+imbalance); the whole remaining gap is **Kspace (65%: every-rank 32³
+replicated FFT + density Allreduce wait behind pair imbalance) and the
+Comm it drags** — the next lever is a kspace subcommunicator
+(brick-alltoallv to an FFT subgroup), not the pair kernel.
+
+Correctness at this geometry: `widebox_parity.sh` np=256 (8,8,4) vs np=1
+single point — bond/angle/dihedral/pair+kspace/E/fmax/fnorm all
+dev=0.0 at every printed digit (job 1692800, logs
+`atv-mil-bench/parity256/`).
+
+Exact command (dataset external, env-passed, never committed):
+
+```bash
+DATA=/home/jicli594/work/salamander/MIL0PEGM18/aMIL0PEGM18_n20_LiTFSI_n108/eq2/eq.data
+srun --mpi=pmi2 --ntasks=256 --cpus-per-task=1 --cpu-bind=cores \
+  --distribution=block:block run_atv_gaff --data $DATA --ff system.ff \
+  --alpha 0.25232811 --grid-spacing 1.98 --warmup 200 --steps 5000
+# parity: NP=256 DIMS=8,8,4 tools/bench_gaff_lammps/widebox_parity.sh \
+#   --alpha 0.25232811 --grid-spacing 1.98
+```
