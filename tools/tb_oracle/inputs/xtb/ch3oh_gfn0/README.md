@@ -16,3 +16,5 @@ xtb mol.xyz --gfn 0 --chrg 0 --uhf 0 --acc 1.0
 
 Archived transcript: `xtb.out.txt` (verbatim). `*.out` is gitignored.
 Pinned TOTAL ENERGY: **−7.597234498685 Eh**.
+Optional `--grad` archive on this geometry: `gradient.txt` (wave-8
+`gfn0-xtb-forces`; not the force-regression pin — that is off-eq water).
