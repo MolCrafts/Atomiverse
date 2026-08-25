@@ -1,5 +1,5 @@
 /// @file cpu/semiempirical/gfn2.h
-/// @brief GFN2-xTB energy (static in-tree tables, CPU).
+/// @brief GFN2-xTB energy, analytic nuclear forces, and FD Hessian (H/C/N/O).
 #pragma once
 
 #include <string>
@@ -21,13 +21,16 @@ namespace semiempirical {
 /// electrostatics (charge–dipole, dipole–dipole, charge–quadrupole) +
 /// dipole/quadrupole AXC, screened repulsion, Grimme D4 (GFN2 damping).
 /// Parameters are static in-tree tables — there is no `libxtb` kernel.
-/// Oracle: **xtb** 6.7.1 (`reg_gfn2-xtb-forces`). Units: energy [eV],
-/// positions [Å], forces [eV/Å].
+/// Oracle: **xtb** 6.7.1 (`reg_gfn2-xtb-forces`,
+/// `reg_gfn-xtb-analytic-hessian`). Units: energy [eV], positions [Å],
+/// forces [eV/Å]. AES remains post-SCC (angular \(F\) hole;
+/// `gfn2-aes-fock`).
 ///
 /// @code
 ///   cpu::semiempirical::GFN2 gfn2;
 ///   gfn2.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(gfn2));
+///   // FD Hessian of the analytic G: cpu::vib::Hessian + on(vib::Phase::force).
 /// @endcode
 class GFN2 : public cpu::Semiempirical, public cpu::QmEngine {
   public:

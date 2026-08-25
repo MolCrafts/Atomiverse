@@ -334,6 +334,7 @@ empirical or quantum — which is exactly the invariant
 | --- | --- | --- |
 | H₂O HF/6-31G\* wavenumbers, FD pipeline vs analytic CPHF vs PySCF 2.14.0 | [`regressions/scf/h2o_rhf_freq`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_freq/reg_h2o_rhf_freq.cpp) | 1 cm⁻¹ on both gates |
 | H₂ over DFTB2 forces: symmetry, exact 3N−5 mode count, real stretch | [`regressions/semiempirical/se-analytic-hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/semiempirical/se-analytic-hessian/reg_se-analytic-hessian.cpp) | 1e-8 eV/Å² asymmetry; ω > 100 cm⁻¹ |
+| H₂O GFN1/GFN2 FD Hessian of analytic \(G\) vs xtb 6.7.1 `--hess` | [`regressions/semiempirical/gfn-xtb-analytic-hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/semiempirical/gfn-xtb-analytic-hessian/reg_gfn-xtb-analytic-hessian.cpp) | ω pin; see REFERENCE |
 | Ar₂ stretch vs the closed-form LJ well curvature, and the ZPE closed form | [`python/tests/test_vib.py`](https://github.com/MolCrafts/Atomiverse/blob/dev/python/tests/test_vib.py) | 1e-3 relative; 1e-9 Hartree |
 | Force-accumulator zeroing across the 6N displacement passes (unit) | [`tests/cpu/vibration/test_hessian_zeroing.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/vibration/test_hessian_zeroing.cpp) | exact |
 

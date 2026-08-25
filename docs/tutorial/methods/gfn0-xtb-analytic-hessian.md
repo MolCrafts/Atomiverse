@@ -9,7 +9,7 @@
 | Public API | `cpu::semiempirical::GFN0` (`with_forces = true`) on `cpu::vib::Hessian` at `vib::Phase::force` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md) (SE product surface); [Ch. 14 Vibrations](../ch14-vibrations.md) (`cpu::vib::Hessian` FD driver) |
 | Queue | TB method loop — wave 9 done (`d4582d31` / `30a6be4c`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 GFN0 energy + analytic \(G\) + **FD Hessian** ✓; **family** GFN-xTB analytic Hessian stays ○ (GFN1/2 is `gfn-xtb-analytic-hessian`) |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 GFN0 energy + analytic \(G\) + **FD Hessian** ✓; family GFN1/2 is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md) |
 | Oracle | **xtb 6.7.1** only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -116,7 +116,7 @@ Eh/\(a_0\)); all three vibrational eigenvalues are real.
 
 - Closed-form GFN0 Hessian kernel — not shipped; this page is FD of analytic
   \(G\), matching xtb `--hess`.
-- **GFN1 / GFN2 Hessian** — family row stays ○ (`gfn-xtb-analytic-hessian`).
+- **GFN1 / GFN2 Hessian** — sibling [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
 - GFN0 **energy** (methanol) — sibling `gfn0-beyond-toy`.
 - GFN0 **analytic \(G\)** (this geometry) — sibling `gfn0-xtb-forces`.
 - IPEA, PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is
@@ -307,9 +307,8 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   still all real. Do not cite these \(\omega\) as a GFN0 minimum of water.
 - **Water has no SRB.** Polar-bond SRB is gated on methanol energy
   (`gfn0-beyond-toy`); this Hessian does not exercise \(\partial^2 E_{\mathrm{SRB}}\).
-- **GFN1 / GFN2 Hessian still ○.** Family “GFN-xTB analytic Hessian” stays
-  ○ until `gfn-xtb-analytic-hessian` lands. This page closes GFN0 FD \(H\)
-  only.
+- **GFN1 / GFN2 Hessian.** Sibling [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
+  This page closes GFN0 FD \(H\) only.
 - **No PBC / spin / solvent / IPEA / IR** on this page — see Phase C queue.
   GFN-FF is classical (never pending on this loop).
 - **VIB exception.** This slug (and `se-analytic-hessian` /

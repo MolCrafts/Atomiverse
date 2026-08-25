@@ -77,6 +77,8 @@ tools/tb_oracle/
 | `inputs/xtb/h2o_gfn0_hess/` | xtb 6.7.1 | GFN0 water FD Hessian twin (`reg_gfn0-xtb-analytic-hessian`); `--gfn 0 --hess` |
 | `inputs/xtb/ch4_gfn1/` | xtb 6.7.1 | CH4 `--gfn 1` energy pin (`reg_gfn1-xtb-organic`); `mol.xyz` + `xtb.out.txt` |
 | `inputs/xtb/h2o_gfn1_offeq_grad/` | xtb 6.7.1 | GFN1 off-eq water force twin (`reg_gfn1-xtb-forces`); `--gfn 1 --grad` |
+| `inputs/xtb/h2o_gfn1_hess/` | xtb 6.7.1 | GFN1 water FD Hessian twin (`reg_gfn-xtb-analytic-hessian`); `--gfn 1 --hess` |
+| `inputs/xtb/h2o_gfn2_hess/` | xtb 6.7.1 | GFN2 water Hessian twin (`reg_gfn-xtb-analytic-hessian`); `--gfn 2 --hess` |
 | `inputs/xtb/h2o_gfn2/` | xtb 6.7.1 | H₂O GFN2 energy pin (`reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`); `mol.xyz` + archived `xtb.out` |
 | `inputs/xtb/{ch4,nh3,ch3oh}_gfn2/` | xtb 6.7.1 | extra GFN2 energy transcripts on disk (`*.out` gitignored) |
 | `inputs/xtb/h2o_gfn2_offeq_grad/` | xtb 6.7.1 | GFN2 off-eq water force twin (`reg_gfn2-xtb-forces`); `--gfn 2 --grad` |
