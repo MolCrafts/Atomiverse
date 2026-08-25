@@ -52,8 +52,8 @@ and as a **Γ-PBC lattice sum** (`DFTB2::d3`, `d3_periodic`, `d3_cutoff`;
 own analytic gradient and virial. Non-SCC **DFTB0** ships (`reg_dftb0-h2`).
 **GFN0-xTB** production energy **and analytic G** ship (`GFN0`, H/C/N/O;
 `reg_gfn0-beyond-toy`, `reg_gfn0-xtb-forces`, xtb 6.7.1). **GFN1-xTB**
-energy ships (`GFN1`, `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1 `--gfn 1`;
-forces throw). **GFN2-xTB** energy ships (`GFN2`, H/C/N/O;
+energy **and analytic G** ship (`GFN1`, `reg_gfn1-xtb-organic` CH4 vs xtb
+6.7.1 `--gfn 1`; `reg_gfn1-xtb-forces` off-eq water). **GFN2-xTB** energy ships (`GFN2`, H/C/N/O;
 `reg_gfn2-xtb-water` + `reg_gfn2-quadrupole-aes`; quadrupole AES closes the
 1.45 meV H₂O residual; forces throw). Tables are CHNO-only. The toy
 `XtbGfn0` sketch stays deleted (`bc14dabd`). **DFTB3** ships energy
@@ -185,14 +185,14 @@ NDDO PM → GFN late.
 (`cpu::semiempirical::GFN0` / `GFN1` / `GFN2`; `reg_gfn0-beyond-toy` methanol
 vs xtb 6.7.1 −7.597234498685 Eh; `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1
 `--gfn 1` −4.274232224875 Eh; `reg_gfn2-xtb-water` / `reg_gfn2-quadrupole-aes`
-H₂O vs xtb 6.7.1 −5.070383095219 Eh). GFN0 `with_forces` is closed-form
-\(\mathbf{F}=-\nabla E\) (`reg_gfn0-xtb-forces`); GFN1/GFN2 forces still throw
-(`gfn1-xtb-forces`, `gfn2-xtb-forces`). GFN0 Hessian is staffable via
+H₂O vs xtb 6.7.1 −5.070383095219 Eh). GFN0 and GFN1 `with_forces` are
+closed-form \(\mathbf{F}=-\nabla E\) (`reg_gfn0-xtb-forces`,
+`reg_gfn1-xtb-forces`); GFN2 forces still throw (`gfn2-xtb-forces`). GFN0 Hessian is staffable via
 `cpu::vib::Hessian` (`gfn0-xtb-analytic-hessian`). GFN2 quadrupole AES +
 qkernel AXC close the 1.45 meV H₂O residual; GFN1 CH4 still sits **10.2 meV**
 from xtb (kernel/D3/intcut — the force slug tightens it). Tables are
 CHNO-only (`gfn2-beyond-chno`). The H/C/O `XtbGfn0`
 sketch stays deleted. GFN-xTB is **not** a DFTB3 successor (oracle = **xtb**).
-Family analytic gradient (GFN1/2), Hessian (GFN1/2), IPEA, PBC, spin, sTDA,
+Family analytic gradient (GFN2 still throws), Hessian (GFN1/2), IPEA, PBC, spin, sTDA,
 ALPB/GBSA, and CPCM-X/ddCOSMO remain ○. GFN-FF is classical force-field
 territory (scope-out of the electronic SE/TB capability loop).
