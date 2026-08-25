@@ -28,4 +28,8 @@ Offline xtb 6.7.1 `--gfn 2 --chrg 0 --uhf 0 --acc 1.0 --grad` on
 | \(\|\sum_i F_i\|\) | 0 | \(1\times10^{-10}\) eV/Å |
 | \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}\) | — | \(\le 10\) or `perf_exempt` |
 
+Sibling `reg_gfn2-xtb-water` (tol \(2\times10^{-3}\) eV) and
+`reg_gfn2-quadrupole-aes` (tol \(5\times10^{-4}\) eV after AES-in-Fock
+density shift 230 µeV) keep the same xtb 6.7.1 pin value.
+
 `REFERENCE.md` states `oracle: xtb` and `oracle_version: 6.7.1`.

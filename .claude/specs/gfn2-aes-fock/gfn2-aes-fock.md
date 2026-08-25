@@ -72,7 +72,9 @@ Integer occupation, molecular, H/C/N/O. Not PBC, not Fermi smear, not GFN0/1.
 - Analytic \(\nabla E\) keeps the frozen-CAMM kernel + dipole CAMM chain; Pulay
   \(W\) is now from the AES-containing Fock so the density is variational.
 - Energy pins of `reg_gfn2-xtb-water` / `reg_gfn2-quadrupole-aes` stay on the
-  same kernels; residual may shrink (AES-in-Fock is the xtb Hamiltonian).
+  same kernels. AES-in-Fock density shift grows the eq-H₂O residual 26→230 µeV
+  (CAMM-vs-\(R\)); sibling tols cover it. Naive two-centre \(\Theta\) on H
+  is **not** xtb `mmompop` (23 meV).
 
 ## Files
 

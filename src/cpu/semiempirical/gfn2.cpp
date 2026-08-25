@@ -951,7 +951,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const bool has_p = e.n_shell > 1;
             // Mulliken: bra on A (same partition as the dipole foothold).
             // s-only centres (H) get no CAMM quadrupole — the overlap blob
-            // about a 1s origin is not the GFN2 atomic Θ.
+            // about a 1s origin is not the GFN2 atomic Θ (xtb mmompop).
             for (int u = 0; u < na; ++u) {
                 for (int b2 = 0; b2 < n_at; ++b2) {
                     const int ib = ao0[static_cast<std::size_t>(b2)];

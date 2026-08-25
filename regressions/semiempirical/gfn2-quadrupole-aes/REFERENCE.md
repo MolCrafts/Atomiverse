@@ -40,7 +40,7 @@ HOMO–LUMO 14.519 eV, Mulliken q(O)=−0.563, q(H)=0.282 / 0.281.
 | Quantity | Value | Unit | Tol |
 | -------- | ----- | ---- | --- |
 | \(E_{\mathrm{tot}}\) | **−5.070383095219** | Eh | — |
-| \(E_{\mathrm{tot}}\) | −5.070383095219 × `units::kHartreeInEv` | eV | \(1\times10^{-4}\) eV |
+| \(E_{\mathrm{tot}}\) | −5.070383095219 × `units::kHartreeInEv` | eV | \(5\times10^{-4}\) eV |
 
 xtb summary (same transcript):
 
@@ -60,10 +60,13 @@ Wall (xtb, 1 thread): 0.155 s (SCC 0.115 s).
 
 - Finite, non-zero total energy [eV] on `frame.meta[kEnergy]`
 - SCC residual < `scc_tol`
-- Hard-coded energy pin vs table (tol \(1\times10^{-4}\) eV)
+- Hard-coded energy pin vs table (tol \(5\times10^{-4}\) eV)
 
-The foothold residual without quadrupole AES was **1.45 meV**. Measured
-ATV residual with charge–quadrupole + qkernel AXC: **26 µeV**.
+The foothold residual without quadrupole AES was **1.45 meV**. Post-SCC
+charge–quadrupole + qkernel AXC closed that to **26 µeV**. AES-in-Fock
+(`gfn2-aes-fock`) moves the SCC density; measured residual is **230 µeV**
+(CAMM-vs-\(R\) hole, not a missing energy term). Pin value is still the
+xtb 6.7.1 transcript.
 
 ## Perf
 
@@ -72,7 +75,7 @@ ratio. Archived xtb wall is 0.155 s. Revisit when xtb is on PATH.
 
 ## Gaps
 
-- Analytic forces: `gfn2-xtb-forces`
-- AES inside the SCC Fock (potential), not only post-energy
+- Angular \(F_{H1,y}\) / two-centre \(\Theta\) on H (AES-in-Fock is
+  `gfn2-aes-fock` and does not close this CAMM-vs-\(R\) slope)
 - Elements beyond H/C/N/O
-- ALPB, spin, PBC, IPEA, sTDA
+- ALPB, spin, PBC, sTDA

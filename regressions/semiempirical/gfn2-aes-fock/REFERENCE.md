@@ -80,12 +80,14 @@ geometry as `reg_gfn2-xtb-forces`.
 \(F = -\nabla E \times\) `units::kHartreePerBohrInEvPerAngstrom`.
 
 **Tolerance rationale.** AES-in-Fock changes the SCC density; stretch
-\(F_{O,x}\) residual is \(\sim 0.31\) eV/Å (was \(\sim 0.09\) post-SCC).
-Energy FD of ATV \(E_{\mathrm{AES}}\) on \(F_{H1,y}\) stays \(\sim+0.06\)
-eV/Å versus xtb \(-0.80\): that slope is a **CAMM-vs-\(R\)** hole (xtb
-`mmompop` two-centre quadrupole on H; ATV skips s-only \(\Theta\)), not a
-missing Fock term. Putting AES in the Fock does not tilt ATV's energy
-surface onto xtb's angular slope.
+\(F_{O,x}\) residual is **0.306** eV/Å (was \(\sim 0.09\) post-SCC).
+Off-eq energy residual **9.19 meV**. Analytic \(F_{H1,y}=+0.136\) eV/Å vs
+xtb \(-0.799\); ATV energy FD stays \(\sim+0.06\): that slope is a
+**CAMM-vs-\(R\)** hole (xtb `mmompop` two-centre quadrupole on H; ATV skips
+s-only \(\Theta\)), not a missing Fock term. Naive two-centre \(\Theta\) on
+H is not xtb `mmompop` (eq-H₂O residual 23 meV). Putting AES in the Fock
+does not tilt ATV's energy surface onto xtb's angular slope. Dual-gated
+anyway (assign wave 11).
 
 ## Perf
 
