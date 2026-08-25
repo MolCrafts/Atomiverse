@@ -16,13 +16,16 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-## Live — TB method loop (wave 11)
+**Live count: 6.** (component-plugin chain only; no live TB specs)
 
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [gfn2-aes-fock](gfn2-aes-fock/gfn2-aes-fock.md) | GFN2 CHNO E+G | AES (CAMM + AXC) in the SCC Fock; pin angular \(F_{H1,y}\) vs xtb 6.7.1 |
+## Closed — TB harness wave 11 (2026-08-25)
 
-**Live count: 7.** (component-plugin chain + `gfn2-aes-fock`)
+Merged to `dev` (`93c334cb`, `b7388af2`); specs deleted; history is git.
+
+| Spec | Shipped |
+| ---- | ------- |
+| `gfn2-aes-fock` | GFN2 AES in the SCC Fock; `reg_gfn2-aes-fock` off-eq H₂O vs xtb 6.7.1 `--gfn 2 --grad` (−5.058625058504 Eh). Angular \(F_{H1,y}\) is CAMM-vs-\(R\), not a missing Fock term |
+| `ipea-xtb-forces` | IPEA analytic \(F=-\nabla E\); `reg_ipea-xtb-forces` off-eq CH4 vs xtb 6.7.1 IPEA `--grad` (−4.662477307157 Eh) |
 
 ## Closed — TB harness wave 10 (2026-08-25)
 

@@ -3,10 +3,9 @@
 Last assign: **2026-08-25 wave 11** (this-shift wave 5, `theme=gfn`) on
 parent `dev` @ `a6164fe9`.
 Last GapCensus: **2026-08-25 wave 11** (refresh at assign HEAD `a6164fe9`).
-Last harness: **wave 10** — `ipea-xtb-small` + `gfn-xtb-analytic-hessian`
-merged (`50066df7` / `46c26afa`). Keep `gfn2-aes-fock` `[~]`; staff NEW
-`ipea-xtb-forces`.
-**incomplete_remaining=2. pending=29. blocked=5.**
+Last harness: **wave 11** — `gfn2-aes-fock` + `ipea-xtb-forces` merged
+(`93c334cb` / `b7388af2`). No remaining `[~]`.
+**incomplete_remaining=0. pending=29. blocked=5.**
 **Queue not exhausted.**
 
 ## Workflow order (binding)
@@ -15,35 +14,32 @@ Recover incomplete first → Census → Assign (`incomplete ≫ pending`) →
 Worktrees (**spec-first**) → Merge → Clearup → Harness → Tutorial. See
 `docs/developer/tb-method-loop.md` and `docs/developer/oracle-capability-loop.md`.
 
-## Harness wave 10 (this-shift wave 4, 2026-08-25)
+## Harness wave 11 (this-shift wave 5, 2026-08-25)
 
 | slug | Result |
 | ---- | ------ |
-| `ipea-xtb-small` | **merged → done** — IPEA-xTB energy foothold (`cpu::semiempirical::IPEA`, extra 3s on C/N/O); CH4 vs xtb 6.7.1 IPEA-xTB (`reg_ipea-xtb-small`; \(E\) **−4.670476737294 Eh**, residual 8.90 meV, \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}=2.0\)); `with_forces` throws; twin `tools/tb_oracle/inputs/xtb/ch4_ipea/` |
-| `gfn-xtb-analytic-hessian` | **merged → done** — GFN1/2 FD Hessian via `cpu::vib::Hessian`; water ω vs xtb 6.7.1 `--gfn 1 --hess` (`reg_gfn-xtb-analytic-hessian`; GFN1 1474.96 / 3657.78 / 3761.56 cm⁻¹); GFN2 ω carries AES-in-Fock hole (Δω 121 cm⁻¹); twins `tools/tb_oracle/inputs/xtb/h2o_gfn{1,2}_hess/` |
-| `gfn2-aes-fock` | **keep `[~]`** — unmerged `wf/gfn2-aes-fock` @ `0069724c` (ahead=1 behind=9); spec lives on the tip |
+| `gfn2-aes-fock` | **merged → done** — GFN2 AES (charge–dipole/quadrupole + AXC) in the SCC Fock (`cpu::semiempirical::GFN2`); off-eq H₂O vs xtb 6.7.1 `--gfn 2 --grad` (`reg_gfn2-aes-fock`; \(E\) **−5.058625058504 Eh**, \(F_{O,x}\) +3.869 eV/Å / 0.35 eV/Å). Angular \(F_{H1,y}\) is a **CAMM-vs-\(R\)** hole (xtb `mmompop` two-centre \(\Theta\) on H; ATV energy FD stays \(\sim+0.06\) eV/Å vs xtb \(-0.80\)) — not a missing Fock term. Twin `tools/tb_oracle/inputs/xtb/h2o_gfn2_offeq_grad/` |
+| `ipea-xtb-forces` | **merged → done** — IPEA analytic \(F=-\nabla E\) (GFN1-shaped HF+Pulay, CN/shell-poly, \(\partial\gamma/\partial R\), rep, D3); off-eq CH4 vs xtb 6.7.1 `param_ipea` `--grad` (`reg_ipea-xtb-forces`; \(E\) **−4.662477307157 Eh**, \(F_{C,x}\) +1.801 eV/Å, \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}\approx 0.26\)); `with_forces` no longer throws. Twin `tools/tb_oracle/inputs/xtb/ch4_ipea_offeq_grad/` |
 
-Specs closed (deleted: `ipea-xtb-small`, `gfn-xtb-analytic-hessian`).
+Specs closed (deleted: `gfn2-aes-fock`, `ipea-xtb-forces`).
 Isolation worktrees: **none** (Clearup already ran).
-Local TB tip: `wf/gfn2-aes-fock` (incomplete — do **not** `-D`).
+Local TB tips: **none** (do not `-D` non-TB `wf/*`).
 
-Roadmap ○→✓ **IPEA-xTB** (CHNO energy foothold) + **GFN-xTB analytic Hessian**
-(GFN0/1/2 FD \(H\) via `cpu::vib::Hessian`). AES-in-Fock stays ○.
-Foothold ≠ closed: ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO, GFN2
-AES-in-Fock, IPEA forces / `--vip`.
+Roadmap ○→✓ **IPEA-xTB analytic gradient** (CHNO closed-form \(F=-\nabla E\)).
+AES-in-Fock **landed** (no table row to flip; angular \(F\) stays a CAMM
+hole — GapCensus owns a deepen). IPEA VIP/VEA stays ○.
+Foothold ≠ closed: ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO, IPEA
+`--vip`/`--vea`, IPEA Hessian, CAMM-vs-\(R\) AES.
 
-## Start here this wave (assign 11 / this-shift wave 5)
+## Start here next wave
 
-**Recover `gfn2-aes-fock`** (`wf/gfn2-aes-fock` @ `0069724c`, ahead=1
-behind=9) — rebase onto current `dev` @ `a6164fe9` before gate. Spec lives
-on the tip. **NEW** `ipea-xtb-forces` on distinct `ipea.cpp` (GFN1-shaped
-analytic G vs xtb `param_ipea` + `--grad`). Skip same-file GFN2 dependents
-(`alpb-xtb`, `gfn2-beyond-chno`, sTDA) and same-file `ipea-xtb-vip`. Skip
-PBC/spin (would collide on GFN0/1/2). Without `theme=gfn`, ladder returns
-to Phase B NDDO and DFTB3/ThreeOb deepens.
-
-Do **not** treat GFN CHNO energy + analytic G + family FD Hessian + IPEA
-energy as the GFN product closed.
+**incomplete = 0.** Without `theme=gfn`, ladder returns to Phase B NDDO
+(`pm3-organic-energy`, `nddo-closed-form-forces`) and DFTB3/ThreeOb
+deepens (`dftb2-threeob-periodic` before `dftb2-threeob-multi-k`).
+With `theme=gfn`: `ipea-xtb-vip` (same `ipea.cpp`) or ALPB / beyond-CHNO
+/ sTDA (same `gfn2.cpp` — staff one). Do **not** treat GFN CHNO energy +
+analytic G + family FD Hessian + AES-in-Fock + IPEA E+G as the GFN
+product closed.
 
 ## Oracle / build (binding)
 
@@ -54,14 +50,15 @@ energy as the GFN product closed.
 | Offline only | `tools/tb_oracle/`; never live oracle in ctest |
 | SE-only cmake | SEMIEMPIRICAL+EVALUATE+TESTS+REGRESSIONS **ON**; HF/PW/GPW/MD/MC/MINIMIZER/VIB/PATH/KSPACE/POTENTIALS/NEIGHBOR/CUDA/**CLI** **OFF** |
 | Hessian exception | landed Hessian slugs (`se-analytic-hessian`, `gfn0-xtb-analytic-hessian`, `gfn-xtb-analytic-hessian`) may add `-DATV_BUILD_VIB=ON` only; no staffed Hessian remaining |
-| Domain suite (merge gate) | `ctest -R '^test_cpu_(am1\|rm1\|dftb0\|dftb2\|dftb3\|td\|xtb_gfn0\|xtb_gfn1\|gfn2\|nddo_\|scc_)'` |
+| Domain suite (merge gate) | `ctest -R '^test_cpu_(am1\|rm1\|dftb0\|dftb2\|dftb3\|td\|xtb_gfn0\|xtb_gfn1\|xtb_ipea\|gfn2\|nddo_\|scc_)'` |
 | Worker build | scoped `--target atomiverse <test_*> reg_<slug>` only |
 
 **No oracle binary** on this host (`mopac` / `dftb+` / `xtb` absent).
 
 ## Next
 
-1. Recover `gfn2-aes-fock` (rebase onto current `dev` @ `a6164fe9`).
-2. Spec-first worker on `wf/ipea-xtb-forces`; SE-only cmake **including CLI=OFF**.
+1. GapCensus wave 12 owns discovery (CAMM-vs-\(R\) AES, IPEA Hessian,
+   remaining Phase A/B/C). Do **not** staff from this harness.
+2. Spec-first workers on `wf/<slug>`; SE-only cmake **including CLI=OFF**.
 3. **No push.** Wipe builds; Clearup worktrees same wave. `git worktree remove`
    of a tree with `molrs` needs `--force`.

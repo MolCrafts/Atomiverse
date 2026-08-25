@@ -1195,6 +1195,28 @@ Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**
 `.claude/specs/<slug>/`; resume rebases the existing spec; SE-only cmake
 (incl. CLI=OFF); offline **xtb** pins only. **No push.**
 
+## Recover / harness — 2026-08-25 (harness wave 11 / this-shift wave 5)
+
+| Source | Result |
+| ------ | ------ |
+| Queue greens merged | `gfn2-aes-fock` (`93c334cb` / `979ba707`), `ipea-xtb-forces` (`b7388af2` / `ae6b48df`) → **done** |
+| Unmerged TB `wf/*` | **none** (Clearup already ran; no local TB tips) |
+| Isolation worktrees (TB) | none |
+| Live SE/TB specs after close | **none** (2 deleted: `gfn2-aes-fock`, `ipea-xtb-forces`) |
+| Incomplete | **0** |
+| Pending | **29** (unchanged this harness; GapCensus owns refill) |
+| Blocked | **5** |
+| Roadmap | ○→✓ **IPEA-xTB analytic gradient**. AES-in-Fock landed (no table row; angular \(F_{H1,y}\) is CAMM-vs-\(R\)) |
+
+**Found (not a slug):** AES-in-Fock does **not** close angular \(F_{H1,y}\)
+(ATV energy FD \(\sim+0.06\) eV/Å vs xtb \(-0.80\); xtb `mmompop` two-centre
+\(\Theta\) on H). IPEA Hessian is now unblocked (F ships). Polar IPEA water
+still ~0.5 eV vs xtb (energy-path kernel). GapCensus wave 12 owns those.
+
+**Next:** GapCensus owns discovery. Foothold ≠ closed (ALPB / CPCM-X / PBC /
+spin / sTDA / beyond-CHNO / IPEA `--vip` / IPEA Hessian / CAMM-vs-\(R\)).
+**Queue not exhausted.**
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
@@ -1235,20 +1257,21 @@ unwraps an isolated fragment under wrap). Do **not** use DFTB+ for these rows.
 ### Phase C — GFN-xTB (oracle = xtb) — product ladder open
 
 xTB is **not** DFTB3++. **GFN0** energy + analytic G + FD Hessian, **GFN1**
-energy + analytic G + FD Hessian, **GFN2** energy + quadrupole AES + analytic
-G + FD Hessian, and **IPEA** energy ship on `dev` (H/C/N/O;
+energy + analytic G + FD Hessian, **GFN2** energy + quadrupole AES **in the
+SCC Fock** + analytic G + FD Hessian, and **IPEA** energy + analytic G ship
+on `dev` (H/C/N/O;
 `reg_gfn0-beyond-toy`, `reg_gfn0-xtb-forces`, `reg_gfn0-xtb-analytic-hessian`,
 `reg_gfn1-xtb-organic`, `reg_gfn1-xtb-forces`, `reg_gfn-xtb-analytic-hessian`,
 `reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`, `reg_gfn2-xtb-forces`,
-`reg_ipea-xtb-small`; oracle=xtb 6.7.1). AES-in-Fock remains `[~]`
-(`wf/gfn2-aes-fock` @ `0069724c`, ahead=1 behind=9). IPEA analytic G is
-`[~]` this wave (`ipea-xtb-forces`). `--vip`/`--vea` unopened. Toy
-`XtbGfn0` was deleted (`bc14dabd`).
-**Staff order after this wave:** Recover AES-in-Fock + IPEA F → ALPB /
-beyond-CHNO / sTDA / PBC / spin / IPEA VIP. Family Hessian (GFN0/1/2 FD H)
-is done. IPEA Hessian waits on IPEA F.
+`reg_gfn2-aes-fock`, `reg_ipea-xtb-small`, `reg_ipea-xtb-forces`;
+oracle=xtb 6.7.1). AES-in-Fock landed; angular \(F_{H1,y}\) is a CAMM-vs-\(R\)
+hole (not a missing Fock term). `--vip`/`--vea` unopened. Toy `XtbGfn0` was
+deleted (`bc14dabd`).
+**Staff order after this wave:** ALPB / beyond-CHNO / sTDA (one at a time on
+`gfn2.cpp`) / PBC / spin / IPEA VIP. Family Hessian (GFN0/1/2 FD H) and
+IPEA analytic G are done. IPEA Hessian waits on GapCensus (F now ships).
 
-- [ ] `ipea-xtb-vip` | xtb `--vip`/`--vea` ΔSCC IP/EA (empirical shift; the IPEA product — energy pin is **not** this) | xtb | small organic | IP / EA | **oracle=xtb**; after energy; Hessian not required; same `ipea.cpp` as forces — do not parallelize with `ipea-xtb-forces`
+- [ ] `ipea-xtb-vip` | xtb `--vip`/`--vea` ΔSCC IP/EA (empirical shift; the IPEA product — energy pin is **not** this) | xtb | small organic | IP / EA | **oracle=xtb**; after IPEA F; Hessian not required; same `ipea.cpp`
 - [ ] `gfn2-beyond-chno` | GFN2 static tables beyond H/C/N/O (xtb is all-element; GFN0/GFN1 same shape after) | xtb | small hetero | E | **oracle=xtb**; after CHNO F / AES-in-Fock
 - [ ] `alpb-xtb` | xtb ALPB/GBSA implicit solvent on production GFN2 | xtb | H2O / small organic | E | **oracle=xtb**; after `gfn2-aes-fock`
 - [ ] `cpcm-x-xtb` | xtb ddCOSMO / CPCM-X continuum solvent on production GFN2 (Stahn 2023; banner on xtb 6.7.1) | xtb | H2O / small | E | **oracle=xtb**; after `alpb-xtb`
@@ -1258,8 +1281,7 @@ is done. IPEA Hessian waits on IPEA F.
 
 ## in_progress
 
-- [~] `gfn2-aes-fock` | Put GFN2 AES in the SCC Fock (angular \(F_{H1,y}\) hole) | xtb | off-eq H2O | F | **oracle=xtb**; `wf/gfn2-aes-fock` @ `0069724c` (ahead=1 behind=9); spec on the tip; CHNO F already ships
-- [~] `ipea-xtb-forces` | IPEA `with_forces` throws (energy foothold only). Analytic G vs xtb `param_ipea` + `--grad` (GFN1-shaped) | xtb | off-eq water | F | **oracle=xtb**; distinct file from AES-in-Fock (`ipea.cpp`)
+_(empty after harness wave 11 — no `[~]` tips)_
 
 ## permanent rules / scope-out (never pending)
 
@@ -1278,6 +1300,8 @@ Not work items — see `.claude/notes/tb-blocked-capabilities.md`.
 
 _(footholds + wave-1/2/3/4 product depth on `dev`)_
 
+- [x] `gfn2-aes-fock` | GFN2 AES (charge–dipole/quadrupole + AXC) in the SCC Fock; off-eq H₂O vs xtb 6.7.1 `--gfn 2 --grad` (−5.058625058504 Eh). Angular \(F_{H1,y}\) is CAMM-vs-\(R\) (xtb `mmompop` two-centre \(\Theta\) on H), not a missing Fock term | `reg_gfn2-aes-fock` | **oracle=xtb**
+- [x] `ipea-xtb-forces` | IPEA analytic \(F=-\nabla E\) (GFN1-shaped); off-eq CH4 vs xtb 6.7.1 `param_ipea` `--grad` (−4.662477307157 Eh; \(F_{C,x}\) 5.12e-4 eV/Å; \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}\approx 0.26\)) | `reg_ipea-xtb-forces` | **oracle=xtb**
 - [x] `ipea-xtb-small` | IPEA-xTB energy foothold (own type/tables, extra 3s on C/N/O); CH4 vs xtb 6.7.1 −4.670476737294 Eh (8.90 meV; `with_forces` throws) | `reg_ipea-xtb-small` | **oracle=xtb**
 - [x] `gfn-xtb-analytic-hessian` | GFN1/2 FD Hessian via `cpu::vib::Hessian` (analytic G already ships; GFN0 H already ships); water ω vs xtb 6.7.1 `--gfn 1 --hess` (1474.96 / 3657.78 / 3761.56 cm⁻¹); GFN2 ω carries AES-in-Fock hole | `reg_gfn-xtb-analytic-hessian` | **oracle=xtb**; VIB=ON exception
 - [x] `gfn1-xtb-forces` | Analytic GFN1 G (HF+Pulay, CN/shell-poly, \(\partial\gamma/\partial R\), rep, D3); off-eq water vs xtb 6.7.1 `--gfn 1 --grad` | `reg_gfn1-xtb-forces` | **oracle=xtb**
