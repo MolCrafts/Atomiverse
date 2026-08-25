@@ -180,6 +180,8 @@ NDDO PM → GFN late.
 | GFN2-xTB                  |  ✓  |   ○  |   ○  |
 | Spin-polarized GFN-xTB    |  ○  |   ○  |   ○  |
 | IPEA-xTB                  |  ✓  |   ○  |   ○  |
+| IPEA-xTB analytic gradient |  ○  |   ○  |   ○  |
+| IPEA-xTB VIP/VEA (ΔSCC IP/EA) |  ○  |   ○  |   ○  |
 | Periodic GFN-xTB          |  ○  |   ○  |   ○  |
 | GFN-xTB analytic gradient |  ✓  |   ○  |   ○  |
 | GFN-xTB analytic Hessian  |  ✓  |   ○  |   ○  |
@@ -206,6 +208,7 @@ queue `gfn2-aes-fock`; GFN2 FD ω carries that hole). GFN1 CH4 still sits
 **10.2 meV** from xtb (kernel/D3/intcut, not a missing term). Tables are
 CHNO-only (`gfn2-beyond-chno`). The H/C/O `XtbGfn0` sketch stays deleted.
 GFN-xTB is **not** a DFTB3 successor (oracle = **xtb**). PBC, spin, sTDA,
-ALPB/GBSA, CPCM-X/ddCOSMO, IPEA forces / `--vip`, and GFN2 AES-in-Fock
-remain ○. GFN-FF is classical force-field territory (scope-out of the
-electronic SE/TB capability loop).
+ALPB/GBSA, CPCM-X/ddCOSMO, **IPEA analytic G** (`with_forces` throws),
+**IPEA `--vip`/`--vea`**, and GFN2 AES-in-Fock remain ○ (queue
+`ipea-xtb-forces`, `ipea-xtb-vip`, `gfn2-aes-fock`). GFN-FF is classical
+force-field territory (scope-out of the electronic SE/TB capability loop).

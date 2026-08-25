@@ -49,8 +49,11 @@ enum class DftbSkSet {
 ///   \(\tilde P(\mathbf T)=\sum_k w_k\,\mathrm{Re}[P(k)e^{-2\pi i\kappa\cdot n}]\)
 ///   (and the energy-weighted \(\tilde W\)) with the same lattice-image walk
 ///   the energy used, so \(F=-\nabla E\) of the sampled functional and
-///   \(\sigma\) is its pair virial (`reg_dftb2-multi-k-forces`). Multi-k open
-///   shell and ThreeOb still throw with a message naming the missing piece.
+///   \(\sigma\) is its pair virial (`reg_dftb2-multi-k-forces`). Collinear
+///   open-shell multi-k ships (`scc_energy_unrestricted_kmesh`,
+///   `dftb2-multi-k-open-shell`). **ThreeOb still throws** on `k_mesh≠{1,1,1}`
+///   (no lattice sum / no Bloch H0(k)/S(k) — `dftb2-threeob-periodic` then
+///   `dftb2-threeob-multi-k`).
 ///   **Analytic** nuclear forces for closed shell **and** collinear open shell
 ///   (HF + Pulay + SCC γ + repulsive; spin shifts on ∂S) use the **same
 ///   lattice-image walk** as the energy — not min-image only — so
@@ -99,7 +102,7 @@ enum class DftbSkSet {
 /// @endcode
 ///
 /// Periodic cell sampled beyond Γ — energy + analytic forces + analytic stress
-/// (open shell throws, `ThreeOb` throws):
+/// (collinear open shell ships on MioSketch; `ThreeOb` throws):
 /// @code
 ///   cpu::semiempirical::DFTB2 dftb;
 ///   dftb.k_mesh = {4, 1, 1};
@@ -175,9 +178,9 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     ///        (dimensionless). Default `{1,1,1}` = Γ only (real solver).
     ///
     /// CP2K/DFTB+ convention: \(\kappa_d = (2r - N_d - 1)/(2 N_d)\),
-    /// \(r = 1..N_d\). Any \(N_d < 1\) throws. Multi-k requires restricted
-    /// MioSketch; it delivers energy, analytic nuclear forces, and the
-    /// analytic cell stress. Open shell / `ThreeOb` throw.
+    /// \(r = 1..N_d\). Any \(N_d < 1\) throws. Multi-k MioSketch delivers
+    /// energy, analytic nuclear forces, and analytic cell stress for closed
+    /// shell **and** collinear open shell. `ThreeOb` throws.
     std::array<int, 3> k_mesh{{1, 1, 1}};
     /// @brief Fold \(\pm\mathbf{k}\) pairs (double weight). Default true.
     ///        Exact for real-Hamiltonian closed-shell densities.

@@ -28,7 +28,8 @@ list only when its gate is *actually* removed.
 
 ## Phase C dependents (pending, not blocked)
 
-`stda-xtb` / `gfn-xtb-analytic-hessian` wait on production GFN ground state
-(`gfn0-beyond-toy` → `gfn2-…`). Staff under Phase C; do not re-list as blocked.
+`stda-xtb` waits on AES-in-Fock / production GFN2 GS. Family Hessian
+(`gfn-xtb-analytic-hessian`) **shipped**. Staff remaining Phase C under the
+queue; do not re-list as blocked.
 
 Related: [[dftb-plus-u]], [[dftb-gamma-units-defect]].
