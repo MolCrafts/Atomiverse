@@ -19,12 +19,12 @@ namespace semiempirical {
 /// Molecular closed-shell energy: STO-*n*G valence basis, CN-shifted H⁰,
 /// shell-resolved isotropic SCC, on-site third-order, anisotropic
 /// electrostatics (charge–dipole, dipole–dipole, charge–quadrupole) +
-/// dipole/quadrupole AXC, screened repulsion, Grimme D4 (GFN2 damping).
-/// Parameters are static in-tree tables — there is no `libxtb` kernel.
-/// Oracle: **xtb** 6.7.1 (`reg_gfn2-xtb-forces`,
-/// `reg_gfn-xtb-analytic-hessian`). Units: energy [eV], positions [Å],
-/// forces [eV/Å]. AES remains post-SCC (angular \(F\) hole;
-/// `gfn2-aes-fock`).
+/// dipole/quadrupole AXC **in the SCC Fock**, screened repulsion, Grimme D4
+/// (GFN2 damping). Parameters are static in-tree tables — there is no
+/// `libxtb` kernel. Oracle: **xtb** 6.7.1 (`reg_gfn2-aes-fock`,
+/// `reg_gfn2-xtb-forces`, `reg_gfn-xtb-analytic-hessian`). Units: energy
+/// [eV], positions [Å], forces [eV/Å]. Angular \(F_{H1,y}\) remains a
+/// CAMM-vs-\(R\) hole (two-centre \(\Theta\) on H).
 ///
 /// @code
 ///   cpu::semiempirical::GFN2 gfn2;
