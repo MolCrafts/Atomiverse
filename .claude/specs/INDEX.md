@@ -16,19 +16,17 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-## Live — TB GFN0 (2026-08-25)
+**Live count: 6.** (component-plugin chain only)
 
-| Spec | One-line |
-| ---- | -------- |
-| [gfn0-beyond-toy](gfn0-beyond-toy.md) | Production GFN0-xTB energy (H/C/N/O) vs xtb `--gfn 0` [implemented] |
+## Closed — TB harness wave 7 (2026-08-25)
 
-## Live — TB Phase C (2026-08-25)
+Merged to `dev` (`07f5c188`, `dee2e8ce`); specs deleted; history is git.
+`gfn1-xtb-organic` stays `[~]` on `wf/gfn1-xtb-organic`.
 
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [gfn2-xtb-water](gfn2-xtb-water/spec.md) | — | Production GFN2-xTB energy; xtb 6.7.1 H₂O pin −5.070383095219 Eh |
-
-**Live count: 8.**
+| Spec | Shipped |
+| ---- | ------- |
+| `gfn0-beyond-toy` | `GFN0` H/C/N/O energy; `reg_gfn0-beyond-toy` vs xtb 6.7.1 methanol |
+| `gfn2-xtb-water` | `GFN2` H/C/N/O energy; `reg_gfn2-xtb-water` vs xtb 6.7.1 H₂O |
 
 Claim-completion Track P (Python) closed 2026-08-15; Track C (`cuda-gpw-product`) closed
 2026-08-18. Sections below that still say “Live” are campaign history

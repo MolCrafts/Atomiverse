@@ -48,8 +48,11 @@ Bloch-sum image-resolved densities (`reg_dftb2-multi-k-forces`). Opt-in
 and as a **Γ-PBC lattice sum** (`DFTB2::d3`, `d3_periodic`, `d3_cutoff`;
 `reg_dftb2-dispersion-d3`, `reg_dftb2-dispersion-d3-periodic`), each with its
 own analytic gradient and virial. Non-SCC **DFTB0** ships (`reg_dftb0-h2`).
-**GFN0-xTB toy** was deleted (`XtbGfn0` / `reg_h2o_gfn0` gone as of
-`bc14dabd`); production GFN stays ○. **DFTB3** ships energy
+**GFN0-xTB** production energy ships (`GFN0`, H/C/N/O;
+`reg_gfn0-beyond-toy`, xtb 6.7.1 methanol pin). **GFN2-xTB** production
+energy ships (`GFN2`, H/C/N/O; `reg_gfn2-xtb-water`, xtb 6.7.1 H₂O pin;
+forces throw). GFN1 remains unmerged. The toy `XtbGfn0` sketch stays
+deleted (`bc14dabd`). **DFTB3** ships energy
 (`reg_dftb3-water-mio`) — after its third-order potential was corrected to be
 the derivative of its own energy — **and closed-form nuclear forces** including
 ∂Γ/∂R (`reg_dftb3-analytic-forces`), plus **Γ-PBC lattice-image forces**
@@ -153,9 +156,9 @@ DFTB2 depth → DFTB3 F → TD → NDDO PM → GFN late.
 
 | Method                    | CPU | CUDA | Kokkos |
 | ------------------------- | :-: | :--: | :---: |
-| GFN0-xTB                  |  ○  |   ○  |   ○  |
+| GFN0-xTB                  |  ✓  |   ○  |   ○  |
 | GFN1-xTB                  |  ○  |   ○  |   ○  |
-| GFN2-xTB                  |  ○  |   ○  |   ○  |
+| GFN2-xTB                  |  ✓  |   ○  |   ○  |
 | Spin-polarized GFN-xTB    |  ○  |   ○  |   ○  |
 | IPEA-xTB                  |  ○  |   ○  |   ○  |
 | Periodic GFN-xTB          |  ○  |   ○  |   ○  |
@@ -165,9 +168,12 @@ DFTB2 depth → DFTB3 F → TD → NDDO PM → GFN late.
 | sTDA-xTB                  |  ○  |   ○  |   ○  |
 | GFN-xTB ALPB/GBSA solvent |  ○  |   ○  |   ○  |
 
-GFN0/1/2 product types are **absent** (the H/C/O `XtbGfn0` sketch was deleted;
-INDEX GFN2-CHON rows are stale — sources never landed on `dev`). GFN-xTB is
-**not** a DFTB3 successor; schedule after the NDDO PM ladder (oracle = **xtb**).
-xtb 6.7.1 ALPB/GBSA solvent is a product surface (queue `alpb-xtb`) once a
-GFN ground state exists. GFN-FF is classical force-field territory (scope-out
-of the electronic SE/TB capability loop).
+**GFN0-xTB** and **GFN2-xTB** energy footholds ship for H/C/N/O
+(`cpu::semiempirical::GFN0` / `GFN2`; `reg_gfn0-beyond-toy` methanol vs xtb
+6.7.1 −7.597234498685 Eh; `reg_gfn2-xtb-water` H₂O vs xtb 6.7.1
+−5.070383095219 Eh). GFN2 forces throw (`gfn2-xtb-forces`). GFN1 is still
+○ (unmerged `wf/gfn1-xtb-organic`). The H/C/O `XtbGfn0` sketch stays
+deleted. GFN-xTB is **not** a DFTB3 successor (oracle = **xtb**). Analytic
+gradient, Hessian, IPEA, PBC, spin, sTDA, and ALPB/GBSA remain ○. GFN-FF is
+classical force-field territory (scope-out of the electronic SE/TB
+capability loop).

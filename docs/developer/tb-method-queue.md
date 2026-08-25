@@ -653,6 +653,22 @@ Workers: isolation worktree on nobackup; branch `wf/<slug>`; **spec-first**
 `.claude/specs/<slug>/`; SE-only cmake (incl. CLI=OFF); offline **xtb** pins
 only. **No push.**
 
+## Recover / harness — 2026-08-25 (harness wave 7 / this-shift wave 1)
+
+| Source | Result |
+| ------ | ------ |
+| Queue greens merged | `gfn0-beyond-toy` (`07f5c188` / `0219fa95`), `gfn2-xtb-water` (`dee2e8ce` / `982027ea`) → **done** |
+| Unmerged TB `wf/*` | **1** → keep **`[~]`** `gfn1-xtb-organic` @ `30510fc0` |
+| Isolation worktrees (TB) | none (Clearup already ran) |
+| Live SE/TB specs after close | **none** of these two (deleted); gfn1 spec lives on the unmerged tip |
+| Incomplete | **1** |
+| Pending | **23** (unchanged this harness; GapCensus owns refill) |
+| Blocked | **5** |
+| Roadmap | ○→✓ GFN0-xTB + GFN2-xTB energy (H/C/N/O); GFN1 stays ○ |
+
+**Next:** Recover `gfn1-xtb-organic` before new pending. Foothold ≠ closed
+(GFN F / ALPB / IPEA / PBC / spin / sTDA / Hessian). **Queue not exhausted.**
+
 ## pending
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
@@ -685,11 +701,12 @@ fixed-density FD; SCF is **RHF only**. Do **not** use DFTB+ for these rows.
 
 ### Phase C — GFN-xTB (oracle = xtb) — product ladder open
 
-xTB is **not** DFTB3++. Toy `XtbGfn0` was deleted (`bc14dabd`); GFN2 CHON
-never landed on `dev` (stale INDEX). Offline xtb 6.7.1 twins exist on disk
-under `tools/tb_oracle/inputs/xtb/` (`*.out` gitignored). Staff after NDDO PM
-unless `theme=gfn|xtb`.
-**Staff order:** `gfn0-beyond-toy` → `gfn1` / `gfn2-water` → forces / ALPB → then
+xTB is **not** DFTB3++. **GFN0** and **GFN2** energy footholds ship on `dev`
+(H/C/N/O; `reg_gfn0-beyond-toy`, `reg_gfn2-xtb-water`; oracle=xtb 6.7.1).
+GFN1 remains `[~]` (`wf/gfn1-xtb-organic`). Toy `XtbGfn0` was deleted
+(`bc14dabd`). Staff GFN dependents after the energy GS, or Phase B NDDO
+without `theme=gfn|xtb`.
+**Staff order:** Recover GFN1 → GFN2 forces / ALPB → then
 `gfn-xtb-analytic-hessian` / `stda-xtb`.
 
 - [ ] `gfn2-xtb-forces` | GFN2-xTB analytic forces | xtb | H2O off-eq | F | **oracle=xtb**; after `gfn2-xtb-water`
@@ -702,9 +719,7 @@ unless `theme=gfn|xtb`.
 
 ## in_progress
 
-- [~] `gfn0-beyond-toy` | Production GFN0 (toy deleted `bc14dabd`); multi-element E | xtb | CH3OH | E [eV] | **oracle=xtb** (generate `--gfn 0` twin; GFN2 CH3OH transcript is not a GFN0 pin)
-- [~] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | CH4 | E [eV] | **oracle=xtb** (generate `--gfn 1` twin; on-disk `ch4_gfn2` is GFN2-only)
-- [~] `gfn2-xtb-water` | Production GFN2-xTB energy | xtb | H2O | E [eV] | **oracle=xtb** 6.7.1 `inputs/xtb/h2o_gfn2` −5.070383095219 Eh
+- [~] `gfn1-xtb-organic` | GFN1-xTB energy | xtb | CH4 | E [eV] | **oracle=xtb** (generate `--gfn 1` twin; on-disk `ch4_gfn2` is GFN2-only); `wf/gfn1-xtb-organic` @ `30510fc0`
 
 ## permanent rules / scope-out (never pending)
 
@@ -723,6 +738,8 @@ Not work items — see `.claude/notes/tb-blocked-capabilities.md`.
 
 _(footholds + wave-1/2/3/4 product depth on `dev`)_
 
+- [x] `gfn0-beyond-toy` | Production GFN0-xTB energy (H/C/N/O); methanol vs xtb 6.7.1 −7.597234498685 Eh | `reg_gfn0-beyond-toy` | **oracle=xtb**
+- [x] `gfn2-xtb-water` | Production GFN2-xTB energy (H/C/N/O); H₂O vs xtb 6.7.1 −5.070383095219 Eh (forces throw; residual 1.45 meV) | `reg_gfn2-xtb-water` | **oracle=xtb**
 - [x] `nddo-sharp-discriminator` | RM1 CO₂/CO ΔHf vs PARAM survey (−81.55 / −13.87 kcal/mol; r=1.173 / 1.138 Å); water is 0.06 from exp, these are 12.5 | `reg_nddo-sharp-discriminator` | **oracle=mopac**
 - [x] `se-analytic-hessian` | `cpu::vib::Hessian` + DFTB2 forces on H₂; symmetric H, linear ω≈4500 cm⁻¹ | `reg_se-analytic-hessian` | **oracle=literature** (structural); needs `ATV_BUILD_VIB=ON`
 - [x] `dftb-plus-u` | DFTB2 Dudarev equal-filling \(E_U\) on O water; formula identity; forces throw | `reg_dftb-plus-u` | design `.claude/notes/dftb-plus-u.md`
