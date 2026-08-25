@@ -47,6 +47,10 @@ namespace mc {
 struct Transaction;
 } // namespace mc
 
+namespace comm {
+class SwapList;
+} // namespace comm
+
 /// @brief Classical force-pipeline services (publishers: `Backend`,
 ///        `NeighborList`, `cpu::md::MD`).
 struct DynamicsServices {
@@ -62,6 +66,28 @@ struct DynamicsServices {
     /// run). Kept here — rather than on `cpu::Frame` — so the frame stays
     /// confined to fundamental physical quantities.
     const md::PairList* pair_list = nullptr;
+
+    /// @brief Non-owning handle to the halo's ordered swap table.
+    ///
+    /// Published by `comm::HaloSend::build()` and re-published by its
+    /// `launch()` (address stable across the run; `destroy()` clears it).
+    /// It is the LAMMPS CommBrick swap list — per face exchange: send list,
+    /// received ghost count and first ghost slot — derived once per full
+    /// halo rebuild and replayed by `HaloRecv` (reverse accumulation) and
+    /// `HaloRefresh` (in-step field refresh).
+    ///
+    /// Kept here rather than on `md::mpi::DomainDecomposition` for the same
+    /// reason as `pair_list`: it is derived bookkeeping, not ownership
+    /// geometry, and the hot-path structures carry only fundamental
+    /// quantities.
+    ///
+    /// **Null contract:** null means *no swap table exists yet* — single
+    /// rank, a no-op `HaloSend{}` (cutoff 0), or before `HaloSend::build()`.
+    /// Every rank sees the same nullness (it follows from rank-uniform
+    /// component registration), so a consumer's "null ⇒ do nothing" branch
+    /// is a collective no-op and cannot deadlock. Consumers read it in
+    /// `launch()`, never cache it across launches.
+    const comm::SwapList* swap_list = nullptr;
 
     /// @brief Opt-in: publish a FULL neighbor list instead of the half list.
     ///

@@ -298,6 +298,7 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/communication/atom_pack.cpp
         src/cpu/communication/bcast_frame.cpp
         src/cpu/communication/halo_exchange.cpp
+        src/cpu/communication/swap_list.cpp
         src/cpu/communication/atom_migration.cpp
         src/cpu/communication/domain.cpp
         src/cpu/communication/reduce.cpp

@@ -3,8 +3,8 @@
 ///
 /// Multi-rank tests for `HaloSend` + `HaloRecv`.
 /// Launched via `mpirun -n N`. Verifies:
-///   - Forward populates `dd->n_ghost > 0` and `recv_counts` consistent with
-///     each rank's own send list.
+///   - Forward populates `dd->n_ghost > 0` and per-swap receive counts
+///     (`ctx.md.swap_list`) consistent with each rank's own send list.
 ///   - Symmetry: my +x send count to my +x neighbor equals my +x neighbor's
 ///     -x send count to me (count exchange handshake is consistent).
 ///   - PBC shift: ghosts received from across a periodic-edge face land
@@ -42,6 +42,7 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/communication/halo_exchange.h"
+#include "atomiverse/cpu/communication/swap_list.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/component/halo_participant.h"
@@ -85,8 +86,10 @@ cpu::Frame make_uniform_grid(int n_per_side, double box_len) {
 struct ForwardResult {
     int n_local;
     int n_ghost;
-    std::array<int, 6> recv_counts;
-    std::array<int, 6> send_counts;
+    // Per-swap, read off the halo's published table (`ctx.md.swap_list`);
+    // swap i is face i of `face_neighbors`.
+    std::array<int, 6> swap_nrecv;
+    std::array<int, 6> swap_send_counts;
     std::array<int, 6> face_neighbors;
     int dims[3];
     int coords[3];
@@ -113,9 +116,13 @@ ForwardResult run_forward(double box_len, int n_per_side, double cutoff) {
     ForwardResult r{};
     r.n_local = dd->n_local;
     r.n_ghost = dd->n_ghost;
+    const auto* swaps = backend.context().md.swap_list;
     for (int f = 0; f < 6; ++f) {
-        r.recv_counts[f] = dd->recv_counts[f];
-        r.send_counts[f] = static_cast<int>(dd->send_lists[f].size());
+        const bool has_swap =
+            swaps != nullptr && f < static_cast<int>(swaps->size());
+        r.swap_nrecv[f] = has_swap ? (*swaps)[f].nrecv : 0;
+        r.swap_send_counts[f] =
+            has_swap ? static_cast<int>((*swaps)[f].sendlist.size()) : 0;
         r.face_neighbors[f] = dd->face_neighbors[f];
     }
     for (int d = 0; d < 3; ++d) {
@@ -159,7 +166,7 @@ TEST(HaloForward, GhostsPopulatedAtModerateCutoff) {
         << "expected ghost atoms after Forward halo exchange at cutoff 2.0";
 }
 
-// ── recv_counts[f] consistent with the f-neighbor's send_counts ────────
+// ── per-swap nrecv consistent with the swap's send list ────────────────
 
 TEST(HaloForward, RecvCountsConsistentWithSendLists) {
     int world_size = 0;
@@ -220,21 +227,37 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
         EXPECT_EQ(frame.span(kHaloAux)(row, 1), StorageReal(-1200 - source));
     }
 
-    // Local sanity: total ghost atoms = sum of recv_counts[] across faces.
+    // Local sanity: total ghost atoms = sum of the swap table's nrecv.
+    const auto* swaps = backend.context().md.swap_list;
+    ASSERT_NE(swaps, nullptr) << "HaloSend must publish its swap table";
+    ASSERT_EQ(swaps->size(), 6u);
     int total_ghosts = 0;
-    for (int f = 0; f < 6; ++f)
-        total_ghosts += dd->recv_counts[f];
+    for (int s = 0; s < 6; ++s)
+        total_ghosts += (*swaps)[s].nrecv;
     EXPECT_EQ(total_ghosts, dd->n_ghost);
+    EXPECT_EQ(swaps->total_recv(), dd->n_ghost);
 
-    // Faces that self-wrap (dims[dim] == 1) contribute 0 because we
+    // Swaps that self-wrap (dims[dim] == 1) contribute 0 because we
     // short-circuit those at the component.
-    for (int f = 0; f < 6; ++f) {
-        const int dim = f >> 1;
+    for (int s = 0; s < 6; ++s) {
+        const int dim = (*swaps)[s].dim;
         if (dd->dims[dim] == 1) {
-            EXPECT_EQ(dd->recv_counts[f], 0)
-                << "face " << f << " wraps to self (dims[" << dim
-                << "]==1) but received " << dd->recv_counts[f] << " ghosts";
+            EXPECT_TRUE((*swaps)[s].sendself)
+                << "swap " << s << " crosses undecomposed axis " << dim
+                << " but is not marked sendself";
+            EXPECT_EQ((*swaps)[s].nrecv, 0)
+                << "swap " << s << " wraps to self (dims[" << dim
+                << "]==1) but received " << (*swaps)[s].nrecv << " ghosts";
         }
+    }
+
+    // Ghost slots are appended in swap order: firstrecv is the running
+    // prefix sum from n_local.
+    int expected_first = dd->n_local;
+    for (int s = 0; s < 6; ++s) {
+        EXPECT_EQ((*swaps)[s].firstrecv, expected_first)
+            << "swap " << s << " ghost slots are not contiguous in swap order";
+        expected_first += (*swaps)[s].nrecv;
     }
 
     backend.shutdown();
@@ -328,7 +351,7 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
     // Reverse sums every ghost copy's force back to its owner. The forward
     // halo is a 3-axis cascade (x→y→z), so an owner near a corner is ghosted
     // on up to 7 neighbours at 2×2×2 (3 face + 3 edge + 1 corner) — a count
-    // this rank's own `send_lists` does NOT capture (the edge/corner copies
+    // this rank's own swap send lists do NOT capture (the edge/corner copies
     // are forwarded by *other* ranks). The robust, topology-independent
     // invariant is global conservation: every ghost's planted force lands on
     // exactly one owner, so the global owner-force sum is

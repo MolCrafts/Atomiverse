@@ -870,3 +870,13 @@ Do not re-create closed slugs without superseding intent.
 ## Closed — CUDA OpenMM MD engine (2026-07-23, from origin/dev)
 
 | cuda-openmm-md 01–05 | contract, rebuild, tile-force, multigpu, delete | CS=32 clusters, real masks, tile LJ/Coul, multi-GPU classify; Verlet default removed on CUDA |
+
+## Live — comm-topology chain (2026-08-25)
+
+参照 LAMMPS CommBrick 重构 CPU 并行拓扑：swap-list halo（行为等价）→ 多跳（任意节点×进程）→ 24k GAFF @256 rank 实机验证。性能数字进 bench 记录，不进验收。CPU 车道 MPI+OpenMP+xsimd 原生，无 Kokkos。
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [comm-topology-01-swaplist](comm-topology-01-swaplist.md) | — | LAMMPS swap-list halo 重构（setup/borders/forward/reverse，行为等价，旧级联删除） [approved] |
+| [comm-topology-02-multihop](comm-topology-02-multihop.md) | 01 | maxneed 展开多轮 swap，删除窄子域拒绝，cell-list 垫层联动，窄盒 parity 单测 [approved] |
+| [comm-topology-03-widebox-validation](comm-topology-03-widebox-validation.md) | 01, 02 | MIL0PEGM18 24k @256 rank 跑通 + parity；性能仅记 bench 快照 [approved] |

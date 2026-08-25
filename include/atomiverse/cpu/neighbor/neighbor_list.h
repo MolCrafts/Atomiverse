@@ -168,7 +168,8 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         //   halo_stale: HaloSend did a full rebuild that may have
         //               reshuffled ghost slot indices (different atoms in the
         //               same slot, or atoms relocated to a different slot
-        //               because earlier-axis recv_counts changed). The pair
+        //               because an earlier-axis swap's received count
+        //               changed). The pair
         //               list CSR stores `j` as raw slot indices, so a
         //               reshuffle without a rebuild leaves the LJ + bonded
         //               kernels reading stale (wrong-atom) positions —
@@ -202,7 +203,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         if (mode_stale || size_stale || halo_stale || disp_rebuild) {
             // Serial only: multi-rank sort runs in HaloSend before borders
             // (LAMMPS exchange → sort → borders). Sorting here after halo
-            // would invalidate reverse send_lists.
+            // would invalidate the swap table's reverse send lists.
             //
             // Must notify_sorted so BondedTupleCache rebuilds: on serial MD
             // `dd` still exists, and cache staleness is keyed on
@@ -213,8 +214,11 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
                 auto& f = ctx.frame;
                 const double bs =
                     sort_state_.resolved_binsize(cutoff_ + strategy_.skin());
+                // No swap table on this path by construction: it is the
+                // single-rank branch, where `HaloSend` early-returns and
+                // publishes nothing.
                 if (sort_owned_atoms(f, f.nlocal(), bs))
-                    notify_sorted(ctx.runtime.md.dd, f,
+                    notify_sorted(ctx.runtime.md.dd, f, /*swaps=*/nullptr,
                                   /*clear_ghosts=*/true);
                 sort_state_.mark_sorted();
             }
