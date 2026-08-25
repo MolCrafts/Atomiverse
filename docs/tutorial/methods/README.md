@@ -150,15 +150,30 @@ Offline family-locked pins only — see
 `tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB rows (never OpenMOPAC /
 DFTB+; GFN is not a DFTB3 successor). Fair walls from REFERENCE (`ratio`
 or `perf_exempt`). Harness wave 9 closed GFN1/GFN2 analytic \(F\) and GFN0
-FD Hessian (`-DATV_BUILD_VIB=ON` exception). Family GFN1/2 Hessian:
-[gfn-xtb-analytic-hessian](gfn-xtb-analytic-hessian.md). GFN2 AES remains
-post-SCC (angular \(F\) hole).
+FD Hessian (`-DATV_BUILD_VIB=ON` exception). Family GFN1/2 Hessian is
+wave 10 [gfn-xtb-analytic-hessian](gfn-xtb-analytic-hessian.md). GFN2 AES
+remains post-SCC (angular \(F\) hole).
 
 | Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |
 | GFN1-xTB analytic nuclear forces (off-eq H₂O) | [gfn1-xtb-forces](gfn1-xtb-forces.md) | `regressions/semiempirical/gfn1-xtb-forces` | xtb 6.7.1 | **≈ 0.16** |
 | GFN2-xTB analytic nuclear forces (off-eq H₂O) | [gfn2-xtb-forces](gfn2-xtb-forces.md) | `regressions/semiempirical/gfn2-xtb-forces` | xtb 6.7.1 | **asserted ≤ 10** (xtb wall 0.018 s) |
 | GFN0-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn0-xtb-analytic-hessian](gfn0-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn0-xtb-analytic-hessian` | xtb 6.7.1 | **≈ 0.06** |
+
+## Index — TB / SE capability wave 10 (2026-08-25)
+
+Offline family-locked pins only — see
+[tb-method-handoff](../../developer/tb-method-handoff.md) and
+`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
+OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
+REFERENCE (`ratio` or `perf_exempt`). Harness wave 10 closed IPEA-xTB
+energy (`reg_ipea-xtb-small`) and the family GFN1/2 FD Hessian
+(`reg_gfn-xtb-analytic-hessian`; `-DATV_BUILD_VIB=ON` exception). GFN2 AES
+remains post-SCC (angular \(F\) hole — recover `gfn2-aes-fock`).
+
+| Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
+| ------ | ---- | ---------- | ------ | --------------------------------------------- |
+| IPEA-xTB organic energy (CH₄, extra \((n+1)s\)) | [ipea-xtb-small](ipea-xtb-small.md) | `regressions/semiempirical/ipea-xtb-small` | xtb 6.7.1 | **2.0** |
 | GFN1/GFN2-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn-xtb-analytic-hessian](gfn-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn-xtb-analytic-hessian` | xtb 6.7.1 | **≈ 0.11** |
 
 ## Index — MetalWalls capability wave 1 (2026-07-23)

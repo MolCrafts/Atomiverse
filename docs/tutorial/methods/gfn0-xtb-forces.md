@@ -136,7 +136,8 @@ own \(E\) (\(h=10^{-4}\) Å) as an identity gate, not as the production force.
   Family analytic-gradient row stays ○ only for remaining GFN deepen
   (AES-in-Fock, solvent, PBC).
 - GFN0 **FD Hessian** — sibling `gfn0-xtb-analytic-hessian`. Family GFN1/2
-  Hessian stays ○ (`gfn-xtb-analytic-hessian`). IPEA, PBC, spin, sTDA,
+  Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
+  IPEA energy is [`ipea-xtb-small`](ipea-xtb-small.md). PBC, spin, sTDA,
   ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical (scope-out of
   this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via

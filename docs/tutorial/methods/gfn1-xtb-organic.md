@@ -279,20 +279,21 @@ Informative only — **not** asserted in ctest. Gate convention (TB loop):
 ## Limitations
 
 - **Energy-only GFN1** on H/C/N/O. `with_forces = true` and
-  `multiplicity != 1` throw. GFN0 already ships closed-form
-  \(\mathbf{F}=-\nabla E\); GFN1/2 forces remain queue items.
+  `multiplicity != 1` throw on this page. GFN0/1/2 analytic \(G\) now
+  ship (`gfn0-xtb-forces`, [`gfn1-xtb-forces`](gfn1-xtb-forces.md),
+  [`gfn2-xtb-forces`](gfn2-xtb-forces.md)).
 - Organic CHNO tables only; other GFN1 elements are not in-tree
   (`gfn2-beyond-chno` is the beyond-CHNO deepen, on GFN2).
 - 10.2 meV residual vs xtb is accepted by the 20 meV gate; not
   bit-identical (D3 C6, integral cutoff, mixer).
-- Halogen correction, continuum solvent, PBC, sTDA, IPEA: out of this slug.
+- Halogen correction, continuum solvent, PBC, sTDA: out of this slug.
+  IPEA energy is [`ipea-xtb-small`](ipea-xtb-small.md); family Hessian is
+  [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
 - Cross-oracle misuse forbidden: do not re-pin this energy with OpenMOPAC or
   DFTB+, and do not treat GFN1 as a DFTB3 successor.
-- Follow-ons (queue): recover `ipea-xtb-small`; `gfn2-xtb-forces` / `alpb-xtb`;
-  Hessian / sTDA / PBC / spin after a landed GFN force path.
+- Follow-ons (queue): recover `gfn2-aes-fock`; then ALPB / sTDA / PBC / spin.
 
-Foothold ≠ closed: GFN1 organic energy is ✓; family analytic gradient (GFN1/2),
-solvent, PBC, and spin stay ○.
+Foothold ≠ closed: GFN1 organic energy is ✓; solvent, PBC, and spin stay ○.
 
 ## References
 

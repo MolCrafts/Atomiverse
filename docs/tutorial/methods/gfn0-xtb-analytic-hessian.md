@@ -309,8 +309,9 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   (`gfn0-beyond-toy`); this Hessian does not exercise \(\partial^2 E_{\mathrm{SRB}}\).
 - **GFN1 / GFN2 Hessian.** Sibling [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
   This page closes GFN0 FD \(H\) only.
-- **No PBC / spin / solvent / IPEA / IR** on this page — see Phase C queue.
-  GFN-FF is classical (never pending on this loop).
+- **No PBC / spin / solvent / IR** on this page — see Phase C queue.
+  IPEA energy is [`ipea-xtb-small`](ipea-xtb-small.md). GFN-FF is classical
+  (never pending on this loop).
 - **VIB exception.** This slug (and `se-analytic-hessian` /
   `gfn-xtb-analytic-hessian`) may set `-DATV_BUILD_VIB=ON`. Do not enable
   MD/MINIMIZER/HF/PW/GPW/CUDA for the TB product gate; do not build

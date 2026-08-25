@@ -137,8 +137,10 @@ energy-only** FD of ATV’s own \(E\) (\(h=10^{-4}\) Å) as an identity gate.
   10.2 meV residual is the same kernel hole as the force components not
   pinned here).
 - **GFN0 / GFN2** forces — siblings `gfn0-xtb-forces`, `gfn2-xtb-forces`.
-- GFN-xTB **Hessian**, IPEA, PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other
-  queue rows. GFN-FF is classical (scope-out of this loop).
+- GFN-xTB **Hessian** is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
+  IPEA energy is [`ipea-xtb-small`](ipea-xtb-small.md). PBC, spin, sTDA,
+  ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical (scope-out of
+  this loop).
 - Halogen-bond correction (xtb term; identically 0 on H₂O; not implemented).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
   `gfn2-beyond-chno`.
@@ -334,15 +336,17 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - **Kernel hole vs xtb.** Energy residual 2.77 meV and ~0.20 eV/Å on
   \(F_{O,y}\) / \(F_{H1,y}\) are the same D3/intcut/mixer mismatch as the
   CH4 energy pin; analytic vs ATV energy FD is \(<10^{-9}\) eV/Å.
-- **No Hessian / PBC / spin / solvent / IPEA / halogen** on this page — see
-  Phase C queue. GFN-FF is classical (never pending on this loop).
+- **No Hessian / PBC / spin / solvent / IPEA / halogen** on this page —
+  Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
+  IPEA is [`ipea-xtb-small`](ipea-xtb-small.md). GFN-FF is classical
+  (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
   for the TB product gate; do not build `reg_am1_water_bomd` /
   `reg_am1_water_minimize` under this configure.
 - Family lock: **xtb only** for GFN rows — never DFTB+ or OpenMOPAC as a
   GFN1 oracle; never treat GFN-xTB as a DFTB3 successor.
 - Foothold ≠ closed: GFN1 energy + GFN1 \(G\) is not the GFN product closed
-  (ALPB, CPCM-X, PBC, spin, sTDA, family Hessian, beyond-CHNO, IPEA remain).
+  (ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO remain).
 
 ## References
 

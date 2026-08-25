@@ -137,8 +137,10 @@ HOMO–LUMO 10.606 eV; Mulliken \(q(\mathrm{O})=-0.549\),
 - Dipole–quadrupole / quadrupole–quadrupole pair AES ranks; quadrupole CAMM
   \(\partial Q/\partial R\).
 - **GFN0 / GFN1** forces — siblings `gfn0-xtb-forces`, `gfn1-xtb-forces`.
-- GFN-xTB **Hessian**, IPEA, PBC, spin, sTDA, ALPB/GBSA, CPCM-X — other
-  queue rows. GFN-FF is classical (scope-out of this loop).
+- GFN-xTB **Hessian** is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
+  IPEA energy is [`ipea-xtb-small`](ipea-xtb-small.md). PBC, spin, sTDA,
+  ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical (scope-out of
+  this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
   `gfn2-beyond-chno`.
 - Live xtb / DFTB+ / OpenMOPAC from ctest — **forbidden**; offline pins only.
@@ -325,16 +327,18 @@ wall; the regression fails if the ratio exceeds 10.
   kernel gradient at frozen CAMM is in this path; AES is **not** a Fock
   potential, so xtb’s angular \(F_{H1,y}\) is a documented hole
   (`gfn2-aes-fock`), not a failed stretch pin.
-- **No Hessian / PBC / spin / solvent / IPEA / sTDA** on this page — see
-  Phase C queue. GFN-FF is classical (never pending on this loop).
+- **No Hessian / PBC / spin / solvent / IPEA / sTDA** on this page —
+  Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md)
+  (GFN2 \(\omega\) carries the AES-in-Fock hole); IPEA is
+  [`ipea-xtb-small`](ipea-xtb-small.md). GFN-FF is classical (never
+  pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
   for the TB product gate; do not build `reg_am1_water_bomd` /
   `reg_am1_water_minimize` under this configure.
 - Family lock: **xtb only** for GFN rows — never DFTB+ or OpenMOPAC as a
   GFN2 oracle; never treat GFN-xTB as a DFTB3 successor.
 - Foothold ≠ closed: GFN2 energy + GFN2 \(G\) on CHNO is not the GFN product
-  closed (ALPB, CPCM-X, PBC, spin, sTDA, family Hessian, beyond-CHNO,
-  AES-in-Fock remain ○).
+  closed (ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO, AES-in-Fock remain ○).
 
 ## References
 
