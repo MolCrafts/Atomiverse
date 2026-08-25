@@ -209,9 +209,16 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
         // and must not be used here). Both are single-rank no-ops. Reduce
         // sits after HaloRecv (+10) and before convergence_check so the
         // optimizer reads globally-summed energy.
-        this->on(ATV::minimizer::Phase::force)
-            .add(comm::Migrate{migrate_every_}, -50);
-        this->on(ATV::minimizer::Phase::force).add(md::mpi::Reduce{}, +20);
+        // Guarded like Evaluate/MD: install_defaults() runs on every
+        // build() and pending_ survives it, so an unguarded add mounts a
+        // second Migrate and a second Reduce on re-build — the duplicate
+        // Reduce re-allreduces already-global scalars and multiplies the
+        // reported energy by the rank count.
+        if (!this->pending_named_("migrate"))
+            this->on(ATV::minimizer::Phase::force)
+                .add(comm::Migrate{migrate_every_}, -50);
+        if (!this->pending_named_("reduce"))
+            this->on(ATV::minimizer::Phase::force).add(md::mpi::Reduce{}, +20);
 
 #ifdef ATV_HAS_MPI
         if (s.neighbor_consumer_cutoff) {

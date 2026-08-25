@@ -124,8 +124,7 @@ TEST(DriverBindingKind, MdSetObserverEvaluateKindProbeThrows) {
 // AIMD-style explicit force binding is legal (no default_bindings kind gate).
 TEST(DriverBindingKind, MdSetEvaluatorAm1NoThrow) {
     ATV::cpu::md::MD md;
-    EXPECT_NO_THROW(
-        md.set_evaluator(ATV::cpu::semiempirical::AM1Evaluator{}));
+    EXPECT_NO_THROW(md.set_evaluator(ATV::cpu::semiempirical::AM1Evaluator{}));
 }
 
 // ─── Same-kind add() unchanged ──────────────────────────────────────────
@@ -174,7 +173,7 @@ TEST(DriverBindingKind, EvaluatePlanShapeUnchanged) {
                                         "zero_stress"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(
                                    ATV::evaluate::Phase::evaluate)),
-              (std::vector<std::string>{"stub_energy"}));
+              (std::vector<std::string>{"migrate", "stub_energy", "reduce"}));
     EXPECT_TRUE(slot_names(plan, static_cast<std::size_t>(
                                      ATV::evaluate::Phase::finalize))
                     .empty());
@@ -230,10 +229,10 @@ TEST(DriverBindingKind, MinimizePlanShapeUnchanged) {
               (std::vector<std::string>{"lbfgs"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::line_search)),
               (std::vector<std::string>{"lbfgs"}));
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::force)),
-              (std::vector<std::string>{"zero_forces", "zero_energy",
-                                        "zero_stress", "migrate", "stub_force",
-                                        "reduce"}));
+    EXPECT_EQ(
+        slot_names(plan, static_cast<std::size_t>(P::force)),
+        (std::vector<std::string>{"zero_forces", "zero_energy", "zero_stress",
+                                  "migrate", "stub_force", "reduce"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::convergence_check)),
               (std::vector<std::string>{"lbfgs"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::end_of_step)),
@@ -254,9 +253,9 @@ TEST(DriverBindingKind, HessianPlanShapeUnchanged) {
               (std::vector<std::string>{"vib_reference_geometry"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::displace)),
               (std::vector<std::string>{"vib_displace_step"}));
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::force)),
-              (std::vector<std::string>{"zero_forces", "zero_energy",
-                                        "stub_force"}));
+    EXPECT_EQ(
+        slot_names(plan, static_cast<std::size_t>(P::force)),
+        (std::vector<std::string>{"zero_forces", "zero_energy", "stub_force"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::accumulate)),
               (std::vector<std::string>{"vib_hessian_accumulator"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::diagonalize)),
