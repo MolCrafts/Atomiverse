@@ -282,6 +282,8 @@ if(ATV_BUILD_SEMIEMPIRICAL)
             cpu/semiempirical/test_xtb_gfn0_hessian.cpp)
         atv_add_cpp_test(test_cpu_xtb_gfn_hessian
             cpu/semiempirical/test_xtb_gfn_hessian.cpp)
+        atv_add_cpp_test(test_cpu_xtb_ipea_hessian
+            cpu/semiempirical/test_xtb_ipea_hessian.cpp)
     endif()
 endif()
 

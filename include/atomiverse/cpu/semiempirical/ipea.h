@@ -1,5 +1,5 @@
 /// @file cpu/semiempirical/ipea.h
-/// @brief IPEA-xTB energy and analytic nuclear forces (organic H/C/N/O, CPU).
+/// @brief IPEA-xTB energy, analytic nuclear forces, and FD Hessian (organic H/C/N/O, CPU).
 #pragma once
 
 #include <string>
@@ -12,7 +12,7 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief IPEA-xTB total energy and analytic nuclear forces for H/C/N/O.
+/// @brief IPEA-xTB total energy, analytic nuclear forces, and FD Hessian for H/C/N/O.
 ///
 /// Special-purpose GFN1 reparametrization for ionization potentials and
 /// electron affinities (Ásgeirsson, Bauer, Grimme, *Chem. Sci.* **8**, 4879
@@ -23,13 +23,15 @@ namespace semiempirical {
 /// `basis_data/ipea_tables.h` cover Z = 1, 6, 7, 8 only.
 ///
 /// Closed-form \(F=-\nabla E\) (Hellmann–Feynman + Pulay, CN/shell-poly
-/// chains, \(\partial\gamma/\partial R\), pair repulsion, D3). Closed shell
-/// only. Units on the public surface: energy [eV], positions [Å], forces
-/// [eV/Å].
+/// chains, \(\partial\gamma/\partial R\), pair repulsion, D3). The nuclear
+/// Hessian is a 6N central FD of that analytic \(G\) via `cpu::vib::Hessian`
+/// (`with_forces = true`). Closed shell only. Units on the public surface:
+/// energy [eV], positions [Å], forces [eV/Å], Hessian [eV/Å²].
 ///
 /// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pins:
 /// `regressions/semiempirical/ipea-xtb-small/` (energy),
-/// `regressions/semiempirical/ipea-xtb-forces/` (forces).
+/// `regressions/semiempirical/ipea-xtb-forces/` (forces),
+/// `regressions/semiempirical/ipea-xtb-analytic-hessian/` (FD Hessian).
 ///
 /// @code
 ///   cpu::Evaluate eval;

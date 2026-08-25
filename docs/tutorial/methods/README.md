@@ -192,6 +192,20 @@ hole, not a missing Fock term. `--vip`/`--vea` stays ○.
 | GFN2-xTB AES in the SCC Fock (off-eq H₂O) | [gfn2-aes-fock](gfn2-aes-fock.md) | `regressions/semiempirical/gfn2-aes-fock` | xtb 6.7.1 | **asserted ≤ 10** (xtb wall 0.018 s) |
 | IPEA-xTB analytic nuclear forces (off-eq CH₄) | [ipea-xtb-forces](ipea-xtb-forces.md) | `regressions/semiempirical/ipea-xtb-forces` | xtb 6.7.1 | **≈ 0.26** |
 
+## Index — TB / SE capability wave 12 (2026-08-25)
+
+Offline family-locked pins only — see
+[tb-method-handoff](../../developer/tb-method-handoff.md) and
+`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
+OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
+REFERENCE (`ratio` or `perf_exempt`). Wave 12 staffs IPEA FD Hessian
+(`reg_ipea-xtb-analytic-hessian`; `-DATV_BUILD_VIB=ON` exception) and
+GFN2 CAMM-vs-\(R\). `--vip`/`--vea` stays ○.
+
+| Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
+| ------ | ---- | ---------- | ------ | --------------------------------------------- |
+| IPEA-xTB FD Hessian of analytic \(G\) (Td CH₄) | [ipea-xtb-analytic-hessian](ipea-xtb-analytic-hessian.md) | `regressions/semiempirical/ipea-xtb-analytic-hessian` | xtb 6.7.1 | **≈ 0.061** |
+
 ## Index — MetalWalls capability wave 1 (2026-07-23)
 
 Classical electrochemical MD + LAMMPS-overlap MD (map E1–E3, E8–E9). Offline

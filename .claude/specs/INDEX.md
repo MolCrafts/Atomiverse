@@ -16,7 +16,13 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-**Live count: 6.** (component-plugin chain only; no live TB specs)
+**Live count: 7.** (component-plugin chain + one TB spec on `wf/ipea-xtb-analytic-hessian`)
+
+## Live — TB method loop (2026-08-25)
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [ipea-xtb-analytic-hessian](ipea-xtb-analytic-hessian/ipea-xtb-analytic-hessian.md) | IPEA analytic \(G\) | IPEA FD Hessian via `cpu::vib::Hessian` vs xtb 6.7.1 `--hess` on CH4 [implemented] |
 
 ## Closed — TB harness wave 11 (2026-08-25)
 
