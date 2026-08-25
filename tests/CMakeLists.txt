@@ -232,9 +232,7 @@ atv_add_cpp_test(test_cpu_pair_virial             cpu/potentials/test_pair_viria
 atv_add_cpp_test(test_cpu_pim_induced_dipole      cpu/potentials/test_pim_induced_dipole.cpp)
 atv_add_cpp_test(test_cpu_pim_xl_dipole           cpu/potentials/test_pim_xl_dipole.cpp)
 atv_add_cpp_test(test_cpu_minimize_aniso_cell     cpu/minimize/test_anisotropic_cell.cpp)
-# GFN2 sources land with the SE domain; gate the unit test the same way.
-if(ATV_BUILD_SEMIEMPIRICAL AND EXISTS
-   "${CMAKE_CURRENT_SOURCE_DIR}/cpu/semiempirical/test_gfn2_params.cpp")
+if(ATV_BUILD_SEMIEMPIRICAL)
     atv_add_cpp_test(test_cpu_gfn2_params         cpu/semiempirical/test_gfn2_params.cpp)
 endif()
 # QM/MM units. Mechanical stays under SE; electrostatic engine-slot path needs HF.

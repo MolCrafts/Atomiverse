@@ -22,7 +22,13 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | ---- | -------- |
 | [gfn0-beyond-toy](gfn0-beyond-toy.md) | Production GFN0-xTB energy (H/C/N/O) vs xtb `--gfn 0` [implemented] |
 
-**Live count: 7.**
+## Live — TB Phase C (2026-08-25)
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [gfn2-xtb-water](gfn2-xtb-water/spec.md) | — | Production GFN2-xTB energy; xtb 6.7.1 H₂O pin −5.070383095219 Eh |
+
+**Live count: 8.**
 
 Claim-completion Track P (Python) closed 2026-08-15; Track C (`cuda-gpw-product`) closed
 2026-08-18. Sections below that still say “Live” are campaign history
