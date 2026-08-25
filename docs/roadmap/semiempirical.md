@@ -145,8 +145,9 @@ identity on mio-1-1 H–H ships (`reg_dftb2-dftbplus-energy-pin`); 3ob CH4 has a
 DFTB+ pin under pure SCC-DFTB2. **Γ-point PBC** lattice-sum energy **and**
 lattice-image nuclear forces ship; **multi-k energy + analytic F/σ**
 (Monkhorst–Pack) ships for MioSketch, including collinear open shell.
-**ThreeOb multi-k and ThreeOb open shell still throw.** Occupation is
-integer filling only (no Fermi / metallic smearing). **TD-DFTB** ships as a
+**ThreeOb is a molecular cluster** (no lattice-image Γ-PBC — queue
+`dftb2-threeob-periodic`); **ThreeOb multi-k and ThreeOb open shell still
+throw.** Occupation is integer filling only (no Fermi / metallic smearing). **TD-DFTB** ships as a
 linear-response Casida foothold on the restricted MioSketch ground state
 (`DFTB2::td_casida`; Niehaus et al., PRB **63**, 085108 (2001);
 `reg_td-dftb-h2`): **energies + oscillator strengths** (length form; triplets
@@ -159,7 +160,8 @@ two-level identities, and \(f\geq0\); see its `REFERENCE.md` `Gaps`.
 lattice-sum D3**, and **ThreeOb / open-shell analytic stress**. **Multi-k
 collinear open shell** (dual α/β H(k) + dual-channel forces) ships 2026-07-29.
 Still ○: **TD-DFTB excited-state gradients**, **range-separated / LC-DFTB**,
-**Fermi filling**, **ThreeOb multi-k / open shell**, **DFTB-D4**, **DFTB+U
+**Fermi filling**, **ThreeOb lattice-image PBC / multi-k / open shell**,
+**DFTB-D4**, **DFTB+U
 analytic forces**, **DFTB implicit solvent (GBSA)**, and **DFTB3 beyond Γ-PBC
 forces** (no k-mesh / stress / open shell / ThreeOb SK / D3 on the DFTB3 path).
 Oracle for all DFTB rows:
@@ -193,9 +195,10 @@ methanol vs xtb 6.7.1 −7.597234498685 Eh; `reg_gfn1-xtb-organic` CH4 vs xtb
 `cpu::vib::Hessian` (`reg_gfn0-xtb-analytic-hessian`; water ω vs xtb 6.7.1
 `--gfn 0 --hess`). GFN2 quadrupole AES + qkernel AXC close the 1.45 meV H₂O
 energy residual; AES is still a **post-SCC energy** (angular \(F_{H1,y}\) vs
-xtb is the Fock hole). GFN1 CH4 still sits **10.2 meV** from xtb
-(kernel/D3/intcut). Tables are CHNO-only (`gfn2-beyond-chno`). The H/C/O
+xtb is the Fock hole — queue `gfn2-aes-fock`). GFN1 CH4 still sits **10.2 meV**
+from xtb (kernel/D3/intcut, not a missing term). Tables are CHNO-only
+(`gfn2-beyond-chno`). The H/C/O
 `XtbGfn0` sketch stays deleted. GFN-xTB is **not** a DFTB3 successor
-(oracle = **xtb**). Family Hessian (GFN1/2), IPEA, PBC, spin, sTDA,
-ALPB/GBSA, and CPCM-X/ddCOSMO remain ○. GFN-FF is classical force-field
+(oracle = **xtb**). Family Hessian (GFN1/2; GFN0 FD H ships), IPEA, PBC, spin,
+sTDA, ALPB/GBSA, and CPCM-X/ddCOSMO remain ○. GFN-FF is classical force-field
 territory (scope-out of the electronic SE/TB capability loop).
