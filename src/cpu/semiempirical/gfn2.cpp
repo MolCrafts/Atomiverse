@@ -130,15 +130,63 @@ void primitive_ss(double a, double b, const double A[3], const double B[3],
     S00 = std::pow(kPi / g, 1.5) * std::exp(-mu * r2);
 }
 
-// Overlap and dipole (origin 0) between two contracted Cartesian shells.
+// Cartesian second moment <r_a r_b> at origin 0 (s/p primitives).
+double cartesian_rr(int a, int b, const double P[3], double dAi0, double dAj0,
+                    int li, int lj, int ci, int cj, double inv2g) {
+    double v = P[a] * P[b] * dAi0 * dAj0;
+    if (a == b)
+        v += inv2g * dAi0 * dAj0;
+    if (li == 1) {
+        if (ci == a)
+            v += inv2g * P[b] * dAj0;
+        if (ci == b)
+            v += inv2g * P[a] * dAj0;
+    }
+    if (lj == 1) {
+        if (cj == a)
+            v += inv2g * P[b] * dAi0;
+        if (cj == b)
+            v += inv2g * P[a] * dAi0;
+    }
+    if (li == 1 && lj == 1) {
+        if (ci == cj) {
+            v += inv2g * P[a] * P[b];
+            if (a == b)
+                v += inv2g * inv2g;
+        }
+        if (ci == a && cj == b)
+            v += inv2g * inv2g;
+        if (ci == b && cj == a)
+            v += inv2g * inv2g;
+    }
+    return v;
+}
+
+void traceless_quad(const double Q[6], double T[6]) {
+    const double tr = 0.5 * (Q[0] + Q[2] + Q[5]);
+    T[0] = 1.5 * Q[0] - tr;
+    T[1] = 1.5 * Q[1];
+    T[2] = 1.5 * Q[2] - tr;
+    T[3] = 1.5 * Q[3];
+    T[4] = 1.5 * Q[4];
+    T[5] = 1.5 * Q[5] - tr;
+}
+
+// Overlap, dipole, and Cartesian quadrupole (origin 0) between two
+// contracted Cartesian s/p shells. Packed Q: xx, xy, yy, xz, yz, zz.
 void shell_ints(const Shell& si, const double Ai[3], const Shell& sj,
-                const double Aj[3], int iao, int jao, double& S, double D[3]) {
+                const double Aj[3], int iao, int jao, double& S, double D[3],
+                double Q[6]) {
     S = 0;
     D[0] = D[1] = D[2] = 0;
+    for (int k = 0; k < 6; ++k)
+        Q[k] = 0;
     const int li = si.l;
     const int lj = sj.l;
     const int ci = (li == 0) ? 0 : iao;
     const int cj = (lj == 0) ? 0 : jao;
+    static constexpr int kPack[6][2] = {{0, 0}, {0, 1}, {1, 1},
+                                        {0, 2}, {1, 2}, {2, 2}};
     for (int p = 0; p < si.n_prim; ++p) {
         for (int q = 0; q < sj.n_prim; ++q) {
             const double a = si.alpha[p];
@@ -164,6 +212,11 @@ void shell_ints(const Shell& si, const double Ai[3], const Shell& sj,
                 if (lj == 1 && cj == k)
                     t += inv2g * dAi0;
                 D[k] += cab * S00 * t;
+            }
+            for (int k = 0; k < 6; ++k) {
+                const double t = cartesian_rr(kPack[k][0], kPack[k][1], P, dAi0,
+                                              dAj0, li, lj, ci, cj, inv2g);
+                Q[k] += cab * S00 * t;
             }
         }
     }
@@ -298,8 +351,12 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
     linalg::RealMatrix S = xt::zeros<double>({n_ao, n_ao});
     linalg::RealMatrix H0 = xt::zeros<double>({n_ao, n_ao});
     std::vector<double> dip(static_cast<std::size_t>(3 * n_ao * n_ao), 0.0);
+    std::vector<double> quad(static_cast<std::size_t>(6 * n_ao * n_ao), 0.0);
     auto D = [&](int k, int mu, int nu) -> double& {
         return dip[static_cast<std::size_t>((k * n_ao + mu) * n_ao + nu)];
+    };
+    auto Q = [&](int k, int mu, int nu) -> double& {
+        return quad[static_cast<std::size_t>((k * n_ao + mu) * n_ao + nu)];
     };
 
     for (int ish = 0; ish < n_sh; ++ish) {
@@ -346,14 +403,16 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                                * ((a == b) ? 1.0 : hsc * shpoly);
             for (int u = 0; u < nai; ++u) {
                 for (int v = 0; v < naj; ++v) {
-                    double s = 0, d[3];
-                    shell_ints(si, Ai, sj, Aj, u, v, s, d);
+                    double s = 0, d[3], q6[6];
+                    shell_ints(si, Ai, sj, Aj, u, v, s, d, q6);
                     const int mu = si.ao0 + u;
                     const int nu = sj.ao0 + v;
                     S(mu, nu) = s;
                     H0(mu, nu) = s * hij;
                     for (int k = 0; k < 3; ++k)
                         D(k, mu, nu) = d[k];
+                    for (int k = 0; k < 6; ++k)
+                        Q(k, mu, nu) = q6[k];
                 }
             }
         }
@@ -430,6 +489,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
     std::vector<double> qsh_out(static_cast<std::size_t>(n_sh), 0.0);
     std::vector<double> qat(static_cast<std::size_t>(n_at), 0.0);
     std::vector<std::array<double, 3>> dipat(static_cast<std::size_t>(n_at));
+    std::vector<std::array<double, 6>> quadat(static_cast<std::size_t>(n_at));
     internal::ChargeMixer mixer(mix_beta, 6);
     linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
     SolveOut out;
@@ -440,9 +500,14 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
         for (int a = 0; a < n_at; ++a) {
             const auto& ea = *el[static_cast<std::size_t>(a)];
             const double* ra = xyz[static_cast<std::size_t>(a)].data();
-            // AXC
+            // AXC (dipole + packed quadrupole; off-diag scale 2, tblite)
             const auto& mu = dipat[static_cast<std::size_t>(a)];
+            const auto& th = quadat[static_cast<std::size_t>(a)];
             e += ea.dkernel * (mu[0] * mu[0] + mu[1] * mu[1] + mu[2] * mu[2]);
+            e += ea.qkernel
+                 * (th[0] * th[0] + 2.0 * th[1] * th[1] + th[2] * th[2]
+                    + 2.0 * th[3] * th[3] + 2.0 * th[4] * th[4]
+                    + th[5] * th[5]);
             const double arg =
                 cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
             const double t1 = std::exp(-kGfn2AesKexp * arg);
@@ -474,7 +539,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                     1.0 / (1.0 + 6.0 * std::pow(rr, kGfn2AesDmp5));
                 const auto& mua = dipat[static_cast<std::size_t>(a)];
                 const auto& mub = dipat[static_cast<std::size_t>(b)];
-                const double qa = -qat[static_cast<std::size_t>(a)];
+                const auto& tha = quadat[static_cast<std::size_t>(a)];
                 const double qb = -qat[static_cast<std::size_t>(b)];
                 // tblite get_energy: vd = amat_sd q; E += μ·vd  (ordered i≠j)
                 const double sd =
@@ -488,6 +553,20 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                     * (mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2]);
                 // ½ μ T μ with T filled for every ordered pair
                 e += 0.5 * (mdot * g3 * fdmp5 - 3.0 * mrv * g5 * fdmp5);
+                // Charge–quadrupole. Dipole CAMM is +½P(D−RS); that operator
+                // is odd in R so the foothold sign already matches xtb AES.
+                // Quadrupole is even in R, so the contraction follows xtb
+                // mmompop (−P·Q). /3 converts the 3/2-traceless packed Θ:rr
+                // into the GFN2 0d kernel (xtb aniso_electro gab5).
+                const double sq =
+                    -(tha[0] * vec[0] * vec[0]
+                      + 2.0 * tha[1] * vec[0] * vec[1]
+                      + tha[2] * vec[1] * vec[1]
+                      + 2.0 * tha[3] * vec[0] * vec[2]
+                      + 2.0 * tha[4] * vec[1] * vec[2]
+                      + tha[5] * vec[2] * vec[2])
+                    * g5 * fdmp5 / 3.0;
+                e += qb * sq;
             }
         }
         return e;
@@ -528,6 +607,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
         for (int a = 0; a < n_at; ++a) {
             qat[static_cast<std::size_t>(a)] = 0;
             dipat[static_cast<std::size_t>(a)] = {0, 0, 0};
+            quadat[static_cast<std::size_t>(a)] = {0, 0, 0, 0, 0, 0};
             const auto& e = *el[static_cast<std::size_t>(a)];
             const int is0 = sh0[static_cast<std::size_t>(a)];
             for (int s = 0; s < e.n_shell; ++s) {
@@ -547,19 +627,47 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const double* Ra = xyz[static_cast<std::size_t>(a)].data();
             const int ia = ao0[static_cast<std::size_t>(a)];
             const int na = n_ao_of(e);
-            // Mulliken: bra on A, ket on any centre (tblite dpint contraction).
+            const bool has_p = e.n_shell > 1;
+            // Mulliken: bra on A (same partition as the dipole foothold).
+            // s-only centres (H) get no CAMM quadrupole — the overlap blob
+            // about a 1s origin is not the GFN2 atomic Θ.
             for (int u = 0; u < na; ++u) {
                 for (int b2 = 0; b2 < n_at; ++b2) {
                     const int ib = ao0[static_cast<std::size_t>(b2)];
                     const int nb = n_ao_of(*el[static_cast<std::size_t>(b2)]);
                     for (int v = 0; v < nb; ++v) {
                         const double p = P(ia + u, ib + v);
+                        const double s = S(ia + u, ib + v);
                         for (int k = 0; k < 3; ++k)
                             dipat[static_cast<std::size_t>(a)]
                                  [static_cast<std::size_t>(k)] +=
                                 0.5 * p
-                                * (D(k, ia + u, ib + v)
-                                   - Ra[k] * S(ia + u, ib + v));
+                                * (D(k, ia + u, ib + v) - Ra[k] * s);
+                        if (!has_p)
+                            continue;
+                        const double q0[6] = {
+                            Q(0, ia + u, ib + v), Q(1, ia + u, ib + v),
+                            Q(2, ia + u, ib + v), Q(3, ia + u, ib + v),
+                            Q(4, ia + u, ib + v), Q(5, ia + u, ib + v)};
+                        const double d0 = D(0, ia + u, ib + v);
+                        const double d1 = D(1, ia + u, ib + v);
+                        const double d2 = D(2, ia + u, ib + v);
+                        double qs[6];
+                        qs[0] = q0[0] - 2.0 * Ra[0] * d0 + Ra[0] * Ra[0] * s;
+                        qs[1] = q0[1] - Ra[0] * d1 - Ra[1] * d0
+                                + Ra[0] * Ra[1] * s;
+                        qs[2] = q0[2] - 2.0 * Ra[1] * d1 + Ra[1] * Ra[1] * s;
+                        qs[3] = q0[3] - Ra[0] * d2 - Ra[2] * d0
+                                + Ra[0] * Ra[2] * s;
+                        qs[4] = q0[4] - Ra[1] * d2 - Ra[2] * d1
+                                + Ra[1] * Ra[2] * s;
+                        qs[5] = q0[5] - 2.0 * Ra[2] * d2 + Ra[2] * Ra[2] * s;
+                        double tq[6];
+                        traceless_quad(qs, tq);
+                        for (int k = 0; k < 6; ++k)
+                            quadat[static_cast<std::size_t>(a)]
+                                  [static_cast<std::size_t>(k)] +=
+                                0.5 * p * tq[k];
                     }
                 }
             }

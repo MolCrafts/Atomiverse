@@ -5,7 +5,7 @@ oracle: xtb
 oracle_version: 6.7.1 (edcfbbe)
 ```
 
-Offline twin for `reg_gfn2-xtb-water`.
+Offline twin for `reg_gfn2-xtb-water` and `reg_gfn2-quadrupole-aes`.
 
 - Input: `mol.xyz` (ATV off-eq water, Å)
 - Command: `xtb mol.xyz --gfn 2 --chrg 0 --uhf 0`

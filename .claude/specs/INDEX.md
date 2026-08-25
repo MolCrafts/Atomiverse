@@ -18,6 +18,12 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 
 **Live count: 6.** (component-plugin chain only)
 
+## Live — TB wave 8 (`gfn2-quadrupole-aes`)
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [gfn2-quadrupole-aes](gfn2-quadrupole-aes/spec.md) | `gfn2-xtb-water` | GFN2 charge–quadrupole AES + qkernel AXC; close 1.45 meV H₂O vs xtb 6.7.1 |
+
 ## Closed — TB harness wave 7 (2026-08-25)
 
 Merged to `dev` (`07f5c188`, `dee2e8ce`); specs deleted; history is git.
