@@ -16,14 +16,17 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-**Live count: 7.** (component-plugin chain + `ipea-xtb-vip` on `wf/ipea-xtb-vip`.
+**Live count: 6.** (component-plugin chain only; no live TB specs on `dev`.
 `gfn2-camm-r` spec lives on unmerged `wf/gfn2-camm-r`.)
 
-## Live — TB `ipea-xtb-vip` (2026-08-25)
+## Closed — TB harness wave 13 (2026-08-25)
 
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [ipea-xtb-vip](ipea-xtb-vip/ipea-xtb-vip.md) | IPEA E+G+H | xtb `--vip`/`--vea` ΔSCC IP/EA + `ipeashift` on CH4 [implemented] |
+Merged to `dev` (`0a7e8b2a`); specs deleted; history is git.
+`gfn2-camm-r` stays `[~]` on `wf/gfn2-camm-r`.
+
+| Spec | Shipped |
+| ---- | ------- |
+| `ipea-xtb-vip` | IPEA ΔSCC VIP/VEA + ipeashift; `reg_ipea-xtb-vip` CH4 vs xtb 6.7.1 IPEA `--vipea` (IP 13.0088 eV / EA −1.4559 eV) |
 
 ## Closed — TB harness wave 12 (2026-08-25)
 

@@ -61,10 +61,11 @@ G, **and FD Hessian** ship (`GFN1`, `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1
 `reg_gfn2-xtb-water` + `reg_gfn2-quadrupole-aes` + `reg_gfn2-xtb-forces` +
 `reg_gfn2-aes-fock`; quadrupole AES closes the 1.45 meV H₂O residual; AES
 is **in the SCC Fock** — angular \(F_{H1,y}\) vs xtb is a CAMM-vs-\(R\)
-hole, not a missing Fock term; queue `gfn2-camm-r`). **IPEA-xTB** energy, analytic G, **and FD Hessian**
+hole, not a missing Fock term; queue `gfn2-camm-r`). **IPEA-xTB** energy, analytic G, FD Hessian, **and ΔSCC VIP/VEA**
 ship (`IPEA`, `reg_ipea-xtb-small` CH4 vs xtb 6.7.1 −4.670476737294 Eh;
 `reg_ipea-xtb-forces` off-eq CH4 `--grad`;
-`reg_ipea-xtb-analytic-hessian` CH4 `--hess`). Tables are CHNO-only. The toy
+`reg_ipea-xtb-analytic-hessian` CH4 `--hess`;
+`reg_ipea-xtb-vip` CH4 `--vipea` IP 13.0088 / EA −1.4559 eV). Tables are CHNO-only. The toy
 `XtbGfn0` sketch stays deleted (`bc14dabd`). **DFTB3** ships energy
 (`reg_dftb3-water-mio`) — after its third-order potential was corrected to be
 the derivative of its own energy — **and closed-form nuclear forces** including
@@ -187,7 +188,7 @@ NDDO PM → GFN late.
 | IPEA-xTB                  |  ✓  |   ○  |   ○  |
 | IPEA-xTB analytic gradient |  ✓  |   ○  |   ○  |
 | IPEA-xTB analytic Hessian |  ✓  |   ○  |   ○  |
-| IPEA-xTB VIP/VEA (ΔSCC IP/EA) |  ○  |   ○  |   ○  |
+| IPEA-xTB VIP/VEA (ΔSCC IP/EA) |  ✓  |   ○  |   ○  |
 | Periodic GFN-xTB          |  ○  |   ○  |   ○  |
 | GFN-xTB analytic gradient |  ✓  |   ○  |   ○  |
 | GFN-xTB analytic Hessian  |  ✓  |   ○  |   ○  |
@@ -206,11 +207,13 @@ methanol vs xtb 6.7.1 −7.597234498685 Eh; `reg_gfn1-xtb-organic` CH4 vs xtb
 `reg_gfn1-xtb-forces`, `reg_gfn2-xtb-forces`). Family FD Hessian ships via
 `cpu::vib::Hessian` (`reg_gfn0-xtb-analytic-hessian`,
 `reg_gfn-xtb-analytic-hessian`; GFN1 water ω vs xtb 6.7.1 `--gfn 1 --hess`
-1474.96 / 3657.78 / 3761.56 cm⁻¹). **IPEA-xTB** energy, analytic G, **and FD Hessian** ship
+1474.96 / 3657.78 / 3761.56 cm⁻¹). **IPEA-xTB** energy, analytic G, FD Hessian, **and ΔSCC VIP/VEA** ship
 (`cpu::semiempirical::IPEA`; `reg_ipea-xtb-small` CH4 vs xtb 6.7.1
 −4.670476737294 Eh, residual 8.90 meV; `reg_ipea-xtb-forces` off-eq CH4
 `--grad`, \(F_{C,x}\) 5e-4 eV/Å; `reg_ipea-xtb-analytic-hessian` CH4 ω vs
-xtb 6.7.1 `--hess` 1541.68 / 1705.89 / 3548.78 / 3576.13 cm⁻¹). GFN2 quadrupole AES + qkernel AXC close
+xtb 6.7.1 `--hess` 1541.68 / 1705.89 / 3548.78 / 3576.13 cm⁻¹;
+`reg_ipea-xtb-vip` CH4 `--vipea` IP 13.0088 eV / EA −1.4559 eV, ionized
+kernel 0.15 eV). GFN2 quadrupole AES + qkernel AXC close
 the 1.45 meV H₂O energy residual; AES is **in the SCC Fock**
 (`reg_gfn2-aes-fock`) — angular \(F_{H1,y}\) vs xtb is a CAMM-vs-\(R\) hole
 (xtb `mmompop` two-centre \(\Theta\) on H; ATV energy FD stays \(\sim+0.06\)
@@ -218,8 +221,8 @@ eV/Å), not a missing Fock term (queue `gfn2-camm-r`). GFN1 CH4 still sits
 **10.2 meV** from xtb (kernel/D3/intcut, not a missing term). Tables are
 CHNO-only (`gfn2-beyond-chno`). The H/C/O `XtbGfn0` sketch stays deleted.
 GFN-xTB is **not** a DFTB3 successor (oracle = **xtb**). PBC, spin, sTDA,
-ALPB/GBSA, CPCM-X/ddCOSMO, **IPEA `--vip`/`--vea`**, extra-Z IPEA tables,
-and **Fermi filling (`--etemp`, xtb default 300 K; ATV integer occ)**
-remain ○ (queue `ipea-xtb-vip`, `ipea-beyond-chno`, `gfn-xtb-etemp`). GFN-FF is
+ALPB/GBSA, CPCM-X/ddCOSMO, extra-Z IPEA tables, and **Fermi filling
+(`--etemp`, xtb default 300 K; ATV integer occ)** remain ○ (queue
+`ipea-beyond-chno`, `gfn-xtb-etemp`). GFN-FF is
 classical force-field territory (scope-out of the electronic SE/TB
 capability loop).
