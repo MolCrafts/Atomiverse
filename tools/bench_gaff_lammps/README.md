@@ -74,3 +74,23 @@ Kspace gap shrinks a lot once mesh density matches; further wins = true PPPM / r
 Full `melt.data` + `melt.ff` live under the MD job dirs that feed that figure:
 
 `figures/relaxation/ref_lammps/runs/packmol_n100_r2/melt/`
+
+## Snapshot (2026-08-25, MIL0PEGM18 n108 eq.data, 24048 atoms, single node EPYC-9005 256c)
+
+NVT 400 K, lj/cut/coul/long 9.0 + SPME 32³ (α=0.25232811, spacing 1.98),
+dt=1 fs, no SHAKE, 5000 steps after 200 warmup, `srun --cpu-bind=cores`.
+These numbers are a record, not an acceptance criterion.
+
+| config | steps/s | note |
+|---|---|---|
+| LAMMPS np=16 / 64 / 128 / 256 | 219 / 766 / 1075 / **1523** | pppm 1e-4 (24³); kspace saturates at 256 (1.57 s / 5000) |
+| ATV np=16 / 64 / 125 (scalar kernel) | 127 / 281 / **381** | single-hop halo caps ranks at 5/axis (63 Å box, 11 Å shell) |
+| ATV hybrid 125×2 / 64×4 / 32×8 | 337 / 338 / 318 | pure MPI wins even at half the cores — per-thread force-buffer zero+reduce and unthreaded kspace/comm eat the gain |
+
+Section splits at np=64 (s / 5000 steps): ATV Pair 6.0, Kspace 9.4 (≈1.3 ms
+of it is the density Allreduce *wait* behind pair imbalance; fft 0.10,
+spread 0.04, interp 0.09 per step), Comm 2.4, Neigh 0.9 — LAMMPS 3.8 /
+1.3 / 0.5 / 0.45. Kernel history: staged-SIMD ≈ scalar with restored
+min-image (±3%); the min-image restore fixed a slow thermal runaway from
+silently dropped wrapped pairs (VelocityVerlet wraps every step; LAMMPS
+wraps only at reneighbor — a future integrator-side slug).
