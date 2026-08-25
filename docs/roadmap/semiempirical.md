@@ -52,13 +52,16 @@ and as a **Γ-PBC lattice sum** (`DFTB2::d3`, `d3_periodic`, `d3_cutoff`;
 own analytic gradient and virial. Non-SCC **DFTB0** ships (`reg_dftb0-h2`).
 **GFN0-xTB** production energy, analytic G, **and FD Hessian** ship (`GFN0`,
 H/C/N/O; `reg_gfn0-beyond-toy`, `reg_gfn0-xtb-forces`,
-`reg_gfn0-xtb-analytic-hessian`, xtb 6.7.1). **GFN1-xTB** energy **and
-analytic G** ship (`GFN1`, `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1 `--gfn 1`;
-`reg_gfn1-xtb-forces` off-eq water). **GFN2-xTB** energy **and analytic G**
-ship (`GFN2`, H/C/N/O; `reg_gfn2-xtb-water` + `reg_gfn2-quadrupole-aes` +
-`reg_gfn2-xtb-forces`; quadrupole AES closes the 1.45 meV H₂O residual; AES
-is still post-SCC so angular \(F\) vs xtb is a deepen). Tables are CHNO-only.
-The toy `XtbGfn0` sketch stays deleted (`bc14dabd`). **DFTB3** ships energy
+`reg_gfn0-xtb-analytic-hessian`, xtb 6.7.1). **GFN1-xTB** energy, analytic
+G, **and FD Hessian** ship (`GFN1`, `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1
+`--gfn 1`; `reg_gfn1-xtb-forces` off-eq water; `reg_gfn-xtb-analytic-hessian`).
+**GFN2-xTB** energy **and analytic G** ship (`GFN2`, H/C/N/O;
+`reg_gfn2-xtb-water` + `reg_gfn2-quadrupole-aes` + `reg_gfn2-xtb-forces`;
+quadrupole AES closes the 1.45 meV H₂O residual; AES is still post-SCC so
+angular \(F\) vs xtb is a deepen). **IPEA-xTB** energy ships (`IPEA`,
+`reg_ipea-xtb-small` CH4 vs xtb 6.7.1 −4.670476737294 Eh; `with_forces`
+throws). Tables are CHNO-only. The toy `XtbGfn0` sketch stays deleted
+(`bc14dabd`). **DFTB3** ships energy
 (`reg_dftb3-water-mio`) — after its third-order potential was corrected to be
 the derivative of its own energy — **and closed-form nuclear forces** including
 ∂Γ/∂R (`reg_dftb3-analytic-forces`), plus **Γ-PBC lattice-image forces**
@@ -176,10 +179,10 @@ NDDO PM → GFN late.
 | GFN1-xTB                  |  ✓  |   ○  |   ○  |
 | GFN2-xTB                  |  ✓  |   ○  |   ○  |
 | Spin-polarized GFN-xTB    |  ○  |   ○  |   ○  |
-| IPEA-xTB                  |  ○  |   ○  |   ○  |
+| IPEA-xTB                  |  ✓  |   ○  |   ○  |
 | Periodic GFN-xTB          |  ○  |   ○  |   ○  |
 | GFN-xTB analytic gradient |  ✓  |   ○  |   ○  |
-| GFN-xTB analytic Hessian  |  ○  |   ○  |   ○  |
+| GFN-xTB analytic Hessian  |  ✓  |   ○  |   ○  |
 | GFN-FF                    |  ○  |   ○  |   ○  |
 | sTDA-xTB                  |  ○  |   ○  |   ○  |
 | GFN-xTB ALPB/GBSA solvent |  ○  |   ○  |   ○  |
@@ -191,14 +194,18 @@ methanol vs xtb 6.7.1 −7.597234498685 Eh; `reg_gfn1-xtb-organic` CH4 vs xtb
 6.7.1 `--gfn 1` −4.274232224875 Eh; `reg_gfn2-xtb-water` /
 `reg_gfn2-quadrupole-aes` H₂O vs xtb 6.7.1 −5.070383095219 Eh). Closed-form
 \(\mathbf{F}=-\nabla E\) ships on all three (`reg_gfn0-xtb-forces`,
-`reg_gfn1-xtb-forces`, `reg_gfn2-xtb-forces`). GFN0 FD Hessian ships via
-`cpu::vib::Hessian` (`reg_gfn0-xtb-analytic-hessian`; water ω vs xtb 6.7.1
-`--gfn 0 --hess`). GFN2 quadrupole AES + qkernel AXC close the 1.45 meV H₂O
-energy residual; AES is still a **post-SCC energy** (angular \(F_{H1,y}\) vs
-xtb is the Fock hole — queue `gfn2-aes-fock`). GFN1 CH4 still sits **10.2 meV**
-from xtb (kernel/D3/intcut, not a missing term). Tables are CHNO-only
-(`gfn2-beyond-chno`). The H/C/O
-`XtbGfn0` sketch stays deleted. GFN-xTB is **not** a DFTB3 successor
-(oracle = **xtb**). Family Hessian (GFN1/2; GFN0 FD H ships), IPEA, PBC, spin,
-sTDA, ALPB/GBSA, and CPCM-X/ddCOSMO remain ○. GFN-FF is classical force-field
-territory (scope-out of the electronic SE/TB capability loop).
+`reg_gfn1-xtb-forces`, `reg_gfn2-xtb-forces`). Family FD Hessian ships via
+`cpu::vib::Hessian` (`reg_gfn0-xtb-analytic-hessian`,
+`reg_gfn-xtb-analytic-hessian`; GFN1 water ω vs xtb 6.7.1 `--gfn 1 --hess`
+1474.96 / 3657.78 / 3761.56 cm⁻¹). **IPEA-xTB** energy ships
+(`cpu::semiempirical::IPEA`; `reg_ipea-xtb-small` CH4 vs xtb 6.7.1
+−4.670476737294 Eh, residual 8.90 meV; `with_forces` throws). GFN2
+quadrupole AES + qkernel AXC close the 1.45 meV H₂O energy residual; AES is
+still a **post-SCC energy** (angular \(F_{H1,y}\) vs xtb is the Fock hole —
+queue `gfn2-aes-fock`; GFN2 FD ω carries that hole). GFN1 CH4 still sits
+**10.2 meV** from xtb (kernel/D3/intcut, not a missing term). Tables are
+CHNO-only (`gfn2-beyond-chno`). The H/C/O `XtbGfn0` sketch stays deleted.
+GFN-xTB is **not** a DFTB3 successor (oracle = **xtb**). PBC, spin, sTDA,
+ALPB/GBSA, CPCM-X/ddCOSMO, IPEA forces / `--vip`, and GFN2 AES-in-Fock
+remain ○. GFN-FF is classical force-field territory (scope-out of the
+electronic SE/TB capability loop).

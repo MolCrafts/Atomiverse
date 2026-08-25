@@ -16,19 +16,17 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-## Live — TB `ipea-xtb-small` (2026-08-25)
+**Live count: 6.** (component-plugin chain only; `gfn2-aes-fock` spec lives on unmerged `wf/gfn2-aes-fock`)
 
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [ipea-xtb-small](ipea-xtb-small/ipea-xtb-small.md) | GFN2 energy on `dev` | IPEA-xTB energy (own type/tables) vs xtb 6.7.1 CH4 [in-progress] |
+## Closed — TB harness wave 10 (2026-08-25)
 
-**Live count: 7.** (6 component-plugin + 1 TB)
+Merged to `dev` (`50066df7`, `46c26afa`); specs deleted; history is git.
+`gfn2-aes-fock` stays `[~]` on `wf/gfn2-aes-fock`.
 
-## Live — TB wave 10 worker (2026-08-25)
-
-| Spec | Deps | One-line |
-| ---- | ---- | -------- |
-| [gfn-xtb-analytic-hessian](gfn-xtb-analytic-hessian/gfn-xtb-analytic-hessian.md) | `gfn1-xtb-forces`, `gfn2-xtb-forces` | GFN1/2 FD Hessian via `cpu::vib::Hessian`; pin ω vs xtb 6.7.1 `--gfn 1 --hess` (GFN2 with AES-in-Fock hole) [implemented] |
+| Spec | Shipped |
+| ---- | ------- |
+| `ipea-xtb-small` | `IPEA` H/C/N/O energy; `reg_ipea-xtb-small` CH4 vs xtb 6.7.1 IPEA-xTB −4.670476737294 Eh (8.90 meV) |
+| `gfn-xtb-analytic-hessian` | GFN1/2 FD Hessian via `cpu::vib::Hessian`; `reg_gfn-xtb-analytic-hessian` ω vs xtb 6.7.1 `--gfn 1 --hess` (GFN2 AES-in-Fock hole) |
 
 ## Closed — TB harness wave 9 (2026-08-25)
 
