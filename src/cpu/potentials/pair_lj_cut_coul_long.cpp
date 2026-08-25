@@ -379,15 +379,16 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
         const double lx = box.length(0), ly = box.length(1), lz = box.length(2);
         const double inv_lx = 1.0 / lx, inv_ly = 1.0 / ly, inv_lz = 1.0 / lz;
 
-        // Per-pair min-image is NOT redundant under MPI: VelocityVerlet
-        // wraps coordinates into the box every step, so between neighbor
-        // rebuilds a wrapped owner (or the ghost copy forwarded from it)
-        // sits a full box length from its listed partners. Raw dx would
-        // silently drop those pairs until the next rebuild (slow thermal
-        // runaway, worse at high rank counts). LAMMPS avoids this by
-        // wrapping only at reneighbor; until ATV does the same, keep the
-        // wrap here.
-        const bool wrap = !k_has_shifts;
+        // Survivor-compaction staging, one chunk of a neighbor list at a
+        // time. 4 x 512 doubles + the index list is ~18 KB, so a chunk and
+        // its survivor list stay L1-resident (48 KB/core) alongside the
+        // random position gathers of pass 1.
+        constexpr int kChunk = 512;
+        alignas(64) double dxb[kChunk];
+        alignas(64) double dyb[kChunk];
+        alignas(64) double dzb[kChunk];
+        alignas(64) double r2b[kChunk];
+        alignas(64) int surv[kChunk];
 
 #pragma omp for schedule(static)
         for (int ii = 0; ii < k_inum; ++ii) {
@@ -401,98 +402,144 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
             const std::size_t ti_base =
                 static_cast<std::size_t>(ti) * static_cast<std::size_t>(ntypes);
 
-            // LAMMPS-shaped tight loop: early distance exit before any
-            // table/scale load — ~45% of a 2 A-skin list is out of cutoff.
-            for (int jj = 0; jj < jnum; ++jj) {
-                const int j = k_neighbors[off + jj];
-                double dx = xi - x_ptr[j];
-                double dy = yi - y_ptr[j];
-                double dz = zi - z_ptr[j];
+            // ~45% of a 2 A-skin list is out of cutoff. Rather than pay a
+            // hard-to-predict early exit inside the force loop, geometry is
+            // computed unconditionally (pass 1, branch-free and
+            // vectorizable), survivors are compacted, and only they reach
+            // the LJ/coulomb body.
+            for (int base = 0; base < jnum; base += kChunk) {
+                const int nc = std::min(kChunk, jnum - base);
+
                 if (k_has_shifts) {
-                    dx -= k_sx[off + jj];
-                    dy -= k_sy[off + jj];
-                    dz -= k_sz[off + jj];
-                } else if (wrap) {
-                    dx -= lx * std::nearbyint(dx * inv_lx);
-                    dy -= ly * std::nearbyint(dy * inv_ly);
-                    dz -= lz * std::nearbyint(dz * inv_lz);
-                }
-                const double r2 = dx * dx + dy * dy + dz * dz;
-                if (r2 >= rc_sq || r2 == 0.0)
-                    continue;
-
-                double fpair = 0.0;
-                double epair = 0.0;
-
-                const double sl =
-                    k_sl ? static_cast<double>(k_sl[off + jj]) : 1.0;
-                if (sl != 0.0) {
-                    const std::size_t ab =
-                        ti_base + static_cast<std::size_t>(type_ptr[j]);
-                    const double a1 = lj1[ab];
-                    if (a1 != 0.0) {
-                        const double r2inv = 1.0 / r2;
-                        const double r6inv = r2inv * r2inv * r2inv;
-                        fpair +=
-                            sl * r2inv * (a1 * r6inv * r6inv - lj2[ab] * r6inv);
-                        epair += sl
-                                 * (lj3[ab] * r6inv * r6inv - lj4[ab] * r6inv
-                                    - shift[ab]);
+                    for (int t = 0; t < nc; ++t) {
+                        const int idx = off + base + t;
+                        const int j = k_neighbors[idx];
+                        const double dx = (xi - x_ptr[j]) - k_sx[idx];
+                        const double dy = (yi - y_ptr[j]) - k_sy[idx];
+                        const double dz = (zi - z_ptr[j]) - k_sz[idx];
+                        dxb[t] = dx;
+                        dyb[t] = dy;
+                        dzb[t] = dz;
+                        r2b[t] = dx * dx + dy * dy + dz * dz;
+                    }
+                } else {
+                    // Per-pair min-image is NOT redundant under MPI:
+                    // VelocityVerlet wraps coordinates into the box every
+                    // step, so between neighbor rebuilds a wrapped owner (or
+                    // the ghost copy forwarded from it) sits a full box
+                    // length from its listed partners. Raw dx would silently
+                    // drop those pairs until the next rebuild (slow thermal
+                    // runaway, worse at high rank counts). LAMMPS avoids
+                    // this by wrapping only at reneighbor; until ATV does
+                    // the same, keep the wrap here.
+                    for (int t = 0; t < nc; ++t) {
+                        const int j = k_neighbors[off + base + t];
+                        double dx = xi - x_ptr[j];
+                        double dy = yi - y_ptr[j];
+                        double dz = zi - z_ptr[j];
+                        dx -= lx * std::nearbyint(dx * inv_lx);
+                        dy -= ly * std::nearbyint(dy * inv_ly);
+                        dz -= lz * std::nearbyint(dz * inv_lz);
+                        dxb[t] = dx;
+                        dyb[t] = dy;
+                        dzb[t] = dz;
+                        r2b[t] = dx * dx + dy * dy + dz * dz;
                     }
                 }
-                // LAMMPS special convention with a kspace partner: the erfc
-                // part is UNscaled; scaled/excluded bonded pairs subtract
-                // (1-f)*qq/r — the plain-Coulomb share the reciprocal sum
-                // added for them.
-                if (qi_scale != 0.0) {
-                    const double qj = q_ptr[j];
-                    if (qj != 0.0) {
-                        double x = r2 * inv_dr2;
-                        int bi = static_cast<int>(x);
-                        if (bi >= nbin)
-                            bi = nbin - 1;
-                        const double t = x - static_cast<double>(bi);
-                        const std::size_t ii2 = static_cast<std::size_t>(bi);
-                        const double et =
-                            e_tab[ii2] + t * (e_tab[ii2 + 1] - e_tab[ii2]);
-                        const double ft =
-                            f_tab[ii2] + t * (f_tab[ii2 + 1] - f_tab[ii2]);
-                        const double qq = qi_scale * qj;
-                        double ec = qq * et;
-                        double fc = qq * ft;
-                        const double sc =
-                            k_sc ? static_cast<double>(k_sc[off + jj]) : 1.0;
-                        if (sc != 1.0) {
-                            const double r2i = 1.0 / r2;
-                            const double comp =
-                                (1.0 - sc) * qq * std::sqrt(r2i);
-                            ec -= comp;
-                            fc -= comp * r2i;
+
+                // Branchless append; ascending order is mandatory so pass 2
+                // accumulates energy/force/virial in exactly the order the
+                // single-pass loop did (bitwise-identical totals).
+                int ns = 0;
+                for (int t = 0; t < nc; ++t) {
+                    const double r2 = r2b[t];
+                    surv[ns] = t;
+                    ns += (r2 >= rc_sq || r2 == 0.0) ? 0 : 1;
+                }
+
+                for (int k = 0; k < ns; ++k) {
+                    const int slot = surv[k];
+                    const int idx = off + base + slot;
+                    const int j = k_neighbors[idx];
+                    const double dx = dxb[slot];
+                    const double dy = dyb[slot];
+                    const double dz = dzb[slot];
+                    const double r2 = r2b[slot];
+
+                    double fpair = 0.0;
+                    double epair = 0.0;
+
+                    const double sl =
+                        k_sl ? static_cast<double>(k_sl[idx]) : 1.0;
+                    if (sl != 0.0) {
+                        const std::size_t ab =
+                            ti_base + static_cast<std::size_t>(type_ptr[j]);
+                        const double a1 = lj1[ab];
+                        if (a1 != 0.0) {
+                            const double r2inv = 1.0 / r2;
+                            const double r6inv = r2inv * r2inv * r2inv;
+                            fpair += sl * r2inv
+                                     * (a1 * r6inv * r6inv - lj2[ab] * r6inv);
+                            epair += sl
+                                     * (lj3[ab] * r6inv * r6inv
+                                        - lj4[ab] * r6inv - shift[ab]);
                         }
-                        fpair += fc;
-                        epair += ec;
                     }
-                }
-                if (fpair == 0.0 && epair == 0.0)
-                    continue;
+                    // LAMMPS special convention with a kspace partner: the
+                    // erfc part is UNscaled; scaled/excluded bonded pairs
+                    // subtract (1-f)*qq/r — the plain-Coulomb share the
+                    // reciprocal sum added for them.
+                    if (qi_scale != 0.0) {
+                        const double qj = q_ptr[j];
+                        if (qj != 0.0) {
+                            double x = r2 * inv_dr2;
+                            int bi = static_cast<int>(x);
+                            if (bi >= nbin)
+                                bi = nbin - 1;
+                            const double t = x - static_cast<double>(bi);
+                            const std::size_t ii2 =
+                                static_cast<std::size_t>(bi);
+                            const double et =
+                                e_tab[ii2] + t * (e_tab[ii2 + 1] - e_tab[ii2]);
+                            const double ft =
+                                f_tab[ii2] + t * (f_tab[ii2 + 1] - f_tab[ii2]);
+                            const double qq = qi_scale * qj;
+                            double ec = qq * et;
+                            double fc = qq * ft;
+                            const double sc =
+                                k_sc ? static_cast<double>(k_sc[idx]) : 1.0;
+                            if (sc != 1.0) {
+                                const double r2i = 1.0 / r2;
+                                const double comp =
+                                    (1.0 - sc) * qq * std::sqrt(r2i);
+                                ec -= comp;
+                                fc -= comp * r2i;
+                            }
+                            fpair += fc;
+                            epair += ec;
+                        }
+                    }
+                    if (fpair == 0.0 && epair == 0.0)
+                        continue;
 
-                const double fxp = dx * fpair;
-                const double fyp = dy * fpair;
-                const double fzp = dz * fpair;
-                fi_x += fxp;
-                fi_y += fyp;
-                fi_z += fzp;
-                fxt[j] -= fxp;
-                fyt[j] -= fyp;
-                fzt[j] -= fzp;
-                energy_total += epair;
-                if (do_virial) {
-                    v_xx += dx * fxp;
-                    v_yy += dy * fyp;
-                    v_zz += dz * fzp;
-                    v_xy += dx * fyp;
-                    v_xz += dx * fzp;
-                    v_yz += dy * fzp;
+                    const double fxp = dx * fpair;
+                    const double fyp = dy * fpair;
+                    const double fzp = dz * fpair;
+                    fi_x += fxp;
+                    fi_y += fyp;
+                    fi_z += fzp;
+                    fxt[j] -= fxp;
+                    fyt[j] -= fyp;
+                    fzt[j] -= fzp;
+                    energy_total += epair;
+                    if (do_virial) {
+                        v_xx += dx * fxp;
+                        v_yy += dy * fyp;
+                        v_zz += dz * fzp;
+                        v_xy += dx * fyp;
+                        v_xz += dx * fzp;
+                        v_yz += dy * fzp;
+                    }
                 }
             }
             fxt[i] += fi_x;
