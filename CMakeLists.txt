@@ -360,6 +360,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/semiempirical/rm1_evaluator.cpp
             src/cpu/semiempirical/dftb2.cpp
             src/cpu/semiempirical/dftb0.cpp
+            src/cpu/semiempirical/gfn0.cpp
             src/cpu/semiempirical/dftb3.cpp
             src/cpu/semiempirical/dftb3_scc.cpp
             src/cpu/semiempirical/mio_sk_block.cpp
@@ -391,6 +392,7 @@ if(NOT ATV_DOCS_ONLY)
             list(APPEND ATOMIVERSE_SRCS
                 src/cpu/gpw/internal/dftd3_params.cpp
                 src/cpu/gpw/internal/dftd3.cpp
+                src/cpu/scf/dftd4.cpp
             )
         endif()
     endif()
