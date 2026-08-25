@@ -1,6 +1,6 @@
 ---
 title: Swap-list halo — LAMMPS CommBrick 形状重构（行为等价，maxneed ≡ 1）
-status: in-progress
+status: code-complete
 created: 2026-08-25
 grilled: true
 ---
@@ -115,9 +115,10 @@ struct Swap {
 - [x] Generalize `HaloRecv` 的 `slot_start` 前缀和 into `Swap::firstrecv` and reverse over the reversed swap table in `src/cpu/communication/halo_exchange.cpp`（保留 `MPI_Allreduce(MIN)` 布局守卫，改判 `total_recv() == n_ghost`）
 - [x] Rewrite `HaloRefresh::launch` in `src/cpu/communication/halo_exchange.cpp` onto the published swap table（`Field` 枚举、幂等契约、positions 加位移 / velocities+charges 不加，全部不变）
 - [x] Update existing consumers to the new accessors in `tests/mpi/test_halo_exchange.cpp`, `tests/cpu/dynamics/test_domain_decomposition.cpp`, `tests/cpu/dynamics/test_atom_sort.cpp`
-- [ ] Add Doxygen `@brief`/`@param`(with units)/`@return` for every public symbol in `include/atomiverse/cpu/communication/swap_list.h`, and sync the stale prose in `include/atomiverse/cpu/communication/halo_exchange.h`, `include/atomiverse/cpu/communication/domain.h`, `docs/developer/kspace-long-range.md`
-- [ ] Add regression example `regressions/md/comm-swaplist-halo-mpi/reg_comm-swaplist-halo-mpi.cpp` + `REFERENCE.md` and register it in `regressions/CMakeLists.txt`（public API only；就地解析 O(N²) min-image 判据，运行时不触第三方）
-- [ ] Run full check + test suite（含 `ctest -L mpi` 的 n=1/2/8 全部用例）
+- [x] Add Doxygen `@brief`/`@param`(with units)/`@return` for every public symbol in `include/atomiverse/cpu/communication/swap_list.h`, and sync the stale prose in `include/atomiverse/cpu/communication/halo_exchange.h`, `include/atomiverse/cpu/communication/domain.h`, `docs/developer/kspace-long-range.md`
+- [x] Add regression example `regressions/md/comm-swaplist-halo-mpi/reg_comm-swaplist-halo-mpi.cpp` + `REFERENCE.md` and register it in `regressions/CMakeLists.txt`（public API only；就地解析 O(N²) min-image 判据，运行时不触第三方）
+- [x] Run full check + test suite（含 `ctest -L mpi` 的 n=1/2/8 全部用例）
+- [x] Hygiene: /mol:simplify ran clean (3 fixes applied, gate green)
 
 ## Testing strategy
 

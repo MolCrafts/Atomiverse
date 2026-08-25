@@ -77,9 +77,6 @@ struct AtomSortState {
         return step >= next_sort;
     }
 
-    /// @brief @deprecated alias for #due (reneighbor-gated callers).
-    bool due_at_reneighbor() const { return due(); }
-
     void mark_sorted() {
         next_sort = step + (params.nfreq > 0 ? params.nfreq : 1);
     }

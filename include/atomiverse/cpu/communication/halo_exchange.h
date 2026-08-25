@@ -313,8 +313,6 @@ class HaloRefresh : public cpu::Component {
         return "halo_refresh";
     }
 
-    /// @brief Write-set: it writes ghost rows of the chosen field.
-
     /// @brief No default binding — the caller decides the phase, because only the
     /// caller knows when its data is stale.
     void build(const cpu::BuildContext& ctx) override;

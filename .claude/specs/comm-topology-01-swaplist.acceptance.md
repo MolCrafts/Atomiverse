@@ -11,7 +11,8 @@ criteria:
       的引用为 0；include/atomiverse/cpu/communication/swap_list.h 定义
       `struct Swap` 含 sendproc/recvproc/sendself/pbc[3]/slablo/slabhi/
       sendlist/nrecv/firstrecv，且 swap_list.cpp 不含任何 MPI_ 调用。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-002
     summary: "Old cascade deleted with no fallback path"
     type: code
@@ -20,7 +21,8 @@ criteria:
       `rebuild_send_lists_for_axis`、`forward_axis_stage`、
       `pbc_shift_for_face`；文件内没有任何在新旧 halo 路径之间切换的
       `#ifdef`、环境变量或运行时布尔开关。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-003
     summary: "Ownership/publication mirrors NeighborList→PairList; public API unchanged"
     type: code
@@ -33,7 +35,8 @@ criteria:
       {positions, velocities, charges}；md.h 的三处自动注入 phase/order
       (post_integrate@-100, final_integrate@+150, pre_force@+900) 未变；
       新增符号中无 *Config / make_* / build_* / create_*。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-004
     summary: "SwapList setup/borders unit tests pass without mpirun"
     type: runtime
@@ -48,7 +51,8 @@ criteria:
       firstrecv=={10,13,15,15,15,15} 与 total_recv()==5；
       rebuild_sendlist 的索引集合与半开判据 (q−sublo<cutoff / subhi−q<cutoff)
       逐元素相同。测试进程不调用 mpirun/mpiexec。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-005
     summary: "setup() throws with how-to when derived maxneed exceeds 1"
     type: runtime
@@ -58,7 +62,8 @@ criteria:
       抛出 std::runtime_error，消息同时含「哪一维」与三选一的 how-to
       （更大的盒 / 该轴更少 rank / 更小 cutoff）；反向地，
       halo_cutoff 恰等于 L_d/dims_d − 1e-9 的构造不抛错且 maxneed==1。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-006
     summary: "All 20 tests/mpi cases stay green at n=1/2/8 (behaviour equivalence)"
     type: runtime
@@ -70,7 +75,8 @@ criteria:
       test_mpi_coul_energy_bruteforce、test_mpi_bonded_energy_bruteforce、
       test_mpi_eam_multirank、test_mpi_sw_multirank 的 O(N²) 暴力对比
       容差未被放宽（diff 中这些文件的容差常量不变）。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-007
     summary: "dims==2 dual-image ghosts survive; no tag dedup introduced"
     type: runtime
@@ -80,7 +86,8 @@ criteria:
       在 n=1 与 n=2 均通过；且新增/更新的断言证明在 2*halo_cutoff > 子域跨度
       的几何下，至少一个 owner tag 在 ghost 行中出现两次（两个周期镜像），
       即 forward 路径未按 tag 去重、未把 sendself swap 变成本地 memcpy。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-008
     summary: "HaloRefresh seam unchanged and idempotent over the swap table"
     type: runtime
@@ -90,14 +97,14 @@ criteria:
       test_cpu_comm_halo_refresh_charges 与 test_mpi_halo_refresh_charges_n1/n2
       且 0 failures；连续两次 launch 同一 HaloRefresh 后 ghost 行数值不变
       （幂等），positions 携带周期位移而 velocities/charges 不携带。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-009
     summary: "Regression regressions/md/comm-swaplist-halo-mpi meets its hard-coded gates"
     type: runtime
-    evaluator_hint: "ctest -R reg_comm-swaplist-halo-mpi"
+    evaluator_hint: "cmake --build build-gaff --target run_reg_comm-swaplist-halo-mpi (regressions are build-run targets, not ctest registrations)"
     pass_when: |
-      `ctest --test-dir build -R reg_comm-swaplist-halo-mpi --output-on-failure`
-      退出码 0 且用时 ≤ 60 s。regressions/md/comm-swaplist-halo-mpi/
+      `cmake --build <build> --target run_reg_comm-swaplist-halo-mpi` 退出码 0 且用时 ≤ 60 s。regressions/md/comm-swaplist-halo-mpi/
       reg_comm-swaplist-halo-mpi.cpp 只包含公开头并链接 atomiverse，经
       ATV_MPIEXEC 自重启为 mpiexec -n 2，在 8³=512 原子 SC 晶格
       (a0=3.617 Å, box 28.94 Å, ε=0.010341 eV, σ=3.4 Å, r_c=8.5 Å,
@@ -106,7 +113,8 @@ criteria:
       max_i|F_i,dd − F_i,bruteforce| ≤ 1e-9 eV/Å、|Σ_i F_i| ≤ 1e-10 eV/Å、
       nswap == 6、Σ nrecv == n_ghost > 0、全量重建次数 ≥ 2；
       运行期不 import、不 subprocess、不读取任何第三方引擎产物。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
   - id: ac-010
     summary: "Doxygen on new public symbols + stale halo prose synced"
     type: docs
@@ -118,7 +126,8 @@ criteria:
       (cell_list.cpp 的 axis_extended_ min-image 双计)；
       halo_exchange.h、domain.h、docs/developer/kspace-long-range.md 中
       不再有 `send_lists` / `recv_counts` 的残留描述。
-    status: pending
+    status: verified
+    last_checked: 2026-08-25
 out_of_scope:
   - "maxneed > 1 多跳 halo（-02）"
   - "256-rank 强扩展验证与任何 wall-clock/加速比声明（-03）"
