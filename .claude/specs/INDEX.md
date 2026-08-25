@@ -16,7 +16,13 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | [component-plugin-05-live](component-plugin-05-live.md) | 03 | `build()` 保留 `pending_` 为活表；按实例身份可重编 Plan [approved] |
 | [component-plugin-06-unmount](component-plugin-06-unmount.md) | 04, 05 | 运行中 `unfix` / 再挂；destroy → 重编 → 同一套闭包 [approved] |
 
-**Live count: 6.** (component-plugin chain only)
+**Live count: 7.** (component-plugin chain + TB `gfn0-xtb-forces`)
+
+## Live — TB loop wave 8 (2026-08-25)
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [gfn0-xtb-forces](gfn0-xtb-forces/gfn0-xtb-forces.md) | `gfn0-beyond-toy` | Analytic GFN0 G; replace central FD vs xtb `--gfn 0` |
 
 ## Closed — TB harness wave 7 (2026-08-25)
 

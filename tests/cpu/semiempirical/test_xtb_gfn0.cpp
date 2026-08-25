@@ -88,3 +88,59 @@ TEST(XtbGfn0, WaterEnergyFinite) {
     EXPECT_TRUE(std::isfinite(gfn0.last_energy()));
     EXPECT_LT(gfn0.last_energy(), 0.0);
 }
+
+TEST(XtbGfn0, AnalyticForceMatchesCentralFD) {
+    auto f = make_h2o();
+    cpu::Context ctx;
+    GFN0 gfn0;
+    gfn0.with_forces = true;
+    gfn0.build({ctx, f});
+    gfn0.launch({ctx, f, 0, 0});
+    const double fx0 = static_cast<double>(f.span(kAtom_fx)[0]);
+    const double fy1 = static_cast<double>(f.span(kAtom_fy)[1]);
+    EXPECT_GT(std::fabs(fx0) + std::fabs(fy1), 1e-4);
+
+    auto energy_only = [](cpu::Frame g) {
+        g.meta.get(kEnergy) = 0;
+        for (int i = 0; i < 3; ++i)
+            g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
+        cpu::Context c;
+        GFN0 m;
+        m.with_forces = false;
+        m.build({c, g});
+        m.launch({c, g, 0, 0});
+        return g.meta.get(kEnergy);
+    };
+    auto fd = [&](int atom, int k, double h) {
+        auto shifted = [&](double s) {
+            cpu::Frame g = make_h2o();
+            StorageReal* col = (k == 0)   ? g.span(kAtom_x)
+                               : (k == 1) ? g.span(kAtom_y)
+                                          : g.span(kAtom_z);
+            col[atom] += static_cast<StorageReal>(s);
+            return energy_only(g);
+        };
+        return -(shifted(h) - shifted(-h)) / (2.0 * h);
+    };
+    constexpr double h = 1.0e-4;
+    EXPECT_NEAR(fx0, fd(0, 0, h), 3e-5);
+    EXPECT_NEAR(fy1, fd(1, 1, h), 3e-5);
+}
+
+TEST(XtbGfn0, AnalyticForceTranslationallyInvariant) {
+    auto f = make_h2o();
+    cpu::Context ctx;
+    GFN0 gfn0;
+    gfn0.with_forces = true;
+    gfn0.build({ctx, f});
+    gfn0.launch({ctx, f, 0, 0});
+    double net[3] = {0, 0, 0};
+    for (int i = 0; i < 3; ++i) {
+        net[0] += static_cast<double>(f.span(kAtom_fx)[i]);
+        net[1] += static_cast<double>(f.span(kAtom_fy)[i]);
+        net[2] += static_cast<double>(f.span(kAtom_fz)[i]);
+    }
+    EXPECT_NEAR(net[0], 0.0, 1e-10);
+    EXPECT_NEAR(net[1], 0.0, 1e-10);
+    EXPECT_NEAR(net[2], 0.0, 1e-10);
+}

@@ -73,6 +73,7 @@ tools/tb_oracle/
 | `inputs/dftbplus/dftb2-dispersion-d3/` | s-dftd3 | Water-dimer **molecular** D3(BJ) geometry twin (`reg_dftb2-dispersion-d3`) |
 | `inputs/mopac/am1-water/` | OpenMOPAC | AM1 H₂O deck + archived MOPAC 7.00 transcript (`reg_am1-water-mopac-energy`); **first mopac twin** |
 | `inputs/xtb/ch3oh_gfn0/` | xtb 6.7.1 | GFN0 methanol energy twin (`reg_gfn0-beyond-toy`); `--gfn 0` |
+| `inputs/xtb/h2o_gfn0_offeq_grad/` | xtb 6.7.1 | GFN0 off-eq water force twin (`reg_gfn0-xtb-forces`); `--gfn 0 --grad` |
 | `inputs/xtb/ch4_gfn1/` | xtb 6.7.1 | CH4 `--gfn 1` energy pin (`reg_gfn1-xtb-organic`); `mol.xyz` + `xtb.out.txt` |
 | `inputs/xtb/h2o_gfn2/` | xtb 6.7.1 | H₂O GFN2 energy pin (`reg_gfn2-xtb-water`); `mol.xyz` + archived `xtb.out` |
 | `inputs/xtb/{ch4,nh3,ch3oh}_gfn2/` + `h2o_gfn2_offeq_grad/` | xtb 6.7.1 | extra GFN2 transcripts on disk (`*.out` gitignored) |

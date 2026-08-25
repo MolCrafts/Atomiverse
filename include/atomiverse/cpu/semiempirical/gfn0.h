@@ -1,5 +1,5 @@
 /// @file cpu/semiempirical/gfn0.h
-/// @brief GFN0-xTB energy (production, H/C/N/O) — static in-tree tables, CPU.
+/// @brief GFN0-xTB energy and analytic nuclear forces (H/C/N/O).
 #pragma once
 
 #include <string>
@@ -11,7 +11,7 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief GFN0-xTB non-SCC energy for H/C/N/O.
+/// @brief GFN0-xTB non-SCC energy and analytic nuclear forces for H/C/N/O.
 ///
 /// Production GFN0 (Pracht, Caldeweyher, Ehlert, Grimme, ChemRxiv 2019,
 /// DOI 10.26434/chemrxiv.8326202.v1): erf coordination number, electronegativity
@@ -25,14 +25,14 @@ namespace semiempirical {
 ///
 /// @code
 ///   cpu::semiempirical::GFN0 gfn0;
-///   gfn0.with_forces = false;
+///   gfn0.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(gfn0));
 /// @endcode
 class GFN0 : public cpu::Semiempirical {
   public:
     /// @brief Molecular charge [e] (EEQ constraint).
     int charge = 0;
-    /// @brief When true, write forces F=−∇E [eV/Å] on launch (central FD of E).
+    /// @brief When true, write analytic forces F=−∇E [eV/Å] on launch.
     bool with_forces = false;
 
     GFN0() = default;
