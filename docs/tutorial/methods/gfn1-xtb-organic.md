@@ -287,11 +287,13 @@ Informative only — **not** asserted in ctest. Gate convention (TB loop):
 - 10.2 meV residual vs xtb is accepted by the 20 meV gate; not
   bit-identical (D3 C6, integral cutoff, mixer).
 - Halogen correction, continuum solvent, PBC, sTDA: out of this slug.
-  IPEA energy is [`ipea-xtb-small`](ipea-xtb-small.md); family Hessian is
-  [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
+  IPEA energy / \(G\) are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md); family Hessian is
+  [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md); AES-in-Fock
+  is [`gfn2-aes-fock`](gfn2-aes-fock.md).
 - Cross-oracle misuse forbidden: do not re-pin this energy with OpenMOPAC or
   DFTB+, and do not treat GFN1 as a DFTB3 successor.
-- Follow-ons (queue): recover `gfn2-aes-fock`; then ALPB / sTDA / PBC / spin.
+- Follow-ons (queue): ALPB / sTDA / PBC / spin; IPEA `--vip`.
 
 Foothold ≠ closed: GFN1 organic energy is ✓; solvent, PBC, and spin stay ○.
 

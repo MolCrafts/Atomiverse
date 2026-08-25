@@ -310,7 +310,8 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - **GFN1 / GFN2 Hessian.** Sibling [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md).
   This page closes GFN0 FD \(H\) only.
 - **No PBC / spin / solvent / IR** on this page — see Phase C queue.
-  IPEA energy is [`ipea-xtb-small`](ipea-xtb-small.md). GFN-FF is classical
+  IPEA energy / \(G\) are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md). GFN-FF is classical
   (never pending on this loop).
 - **VIB exception.** This slug (and `se-analytic-hessian` /
   `gfn-xtb-analytic-hessian`) may set `-DATV_BUILD_VIB=ON`. Do not enable

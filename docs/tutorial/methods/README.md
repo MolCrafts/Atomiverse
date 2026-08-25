@@ -157,7 +157,6 @@ remains post-SCC (angular \(F\) hole).
 | Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |
 | GFN1-xTB analytic nuclear forces (off-eq H₂O) | [gfn1-xtb-forces](gfn1-xtb-forces.md) | `regressions/semiempirical/gfn1-xtb-forces` | xtb 6.7.1 | **≈ 0.16** |
-| IPEA-xTB analytic nuclear forces (off-eq CH4) | [ipea-xtb-forces](ipea-xtb-forces.md) | `regressions/semiempirical/ipea-xtb-forces` | xtb 6.7.1 | **≈ 0.26** |
 | GFN2-xTB analytic nuclear forces (off-eq H₂O) | [gfn2-xtb-forces](gfn2-xtb-forces.md) | `regressions/semiempirical/gfn2-xtb-forces` | xtb 6.7.1 | **asserted ≤ 10** (xtb wall 0.018 s) |
 | GFN0-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn0-xtb-analytic-hessian](gfn0-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn0-xtb-analytic-hessian` | xtb 6.7.1 | **≈ 0.06** |
 
@@ -176,6 +175,22 @@ remains post-SCC (angular \(F\) hole — recover `gfn2-aes-fock`).
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |
 | IPEA-xTB organic energy (CH₄, extra \((n+1)s\)) | [ipea-xtb-small](ipea-xtb-small.md) | `regressions/semiempirical/ipea-xtb-small` | xtb 6.7.1 | **2.0** |
 | GFN1/GFN2-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn-xtb-analytic-hessian](gfn-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn-xtb-analytic-hessian` | xtb 6.7.1 | **≈ 0.11** |
+
+## Index — TB / SE capability wave 11 (2026-08-25)
+
+Offline family-locked pins only — see
+[tb-method-handoff](../../developer/tb-method-handoff.md) and
+`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
+OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
+REFERENCE (`ratio` or `perf_exempt`). Harness wave 11 closed GFN2
+AES-in-Fock (`reg_gfn2-aes-fock`) and IPEA analytic \(G\)
+(`reg_ipea-xtb-forces`). Angular \(F_{H1,y}\) vs xtb is a CAMM-vs-\(R\)
+hole, not a missing Fock term. `--vip`/`--vea` stays ○.
+
+| Method | Page | Regression | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
+| ------ | ---- | ---------- | ------ | --------------------------------------------- |
+| GFN2-xTB AES in the SCC Fock (off-eq H₂O) | [gfn2-aes-fock](gfn2-aes-fock.md) | `regressions/semiempirical/gfn2-aes-fock` | xtb 6.7.1 | **asserted ≤ 10** (xtb wall 0.018 s) |
+| IPEA-xTB analytic nuclear forces (off-eq CH₄) | [ipea-xtb-forces](ipea-xtb-forces.md) | `regressions/semiempirical/ipea-xtb-forces` | xtb 6.7.1 | **≈ 0.26** |
 
 ## Index — MetalWalls capability wave 1 (2026-07-23)
 

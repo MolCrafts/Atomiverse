@@ -186,7 +186,6 @@ Full index: [methods/README](methods/README.md).
 |--------|------|------------|--------|
 | GFN1-xTB analytic nuclear forces (off-eq H₂O) | [gfn1-xtb-forces](methods/gfn1-xtb-forces.md) | `regressions/semiempirical/gfn1-xtb-forces` | xtb 6.7.1 (ratio **≈ 0.16**) |
 | GFN2-xTB analytic nuclear forces (off-eq H₂O) | [gfn2-xtb-forces](methods/gfn2-xtb-forces.md) | `regressions/semiempirical/gfn2-xtb-forces` | xtb 6.7.1 (**asserted ≤ 10**, xtb wall 0.018 s) |
-| IPEA-xTB analytic nuclear forces (off-eq CH4) | [ipea-xtb-forces](methods/ipea-xtb-forces.md) | `regressions/semiempirical/ipea-xtb-forces` | xtb 6.7.1 (ratio **≈ 0.26**) |
 | GFN0-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn0-xtb-analytic-hessian](methods/gfn0-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn0-xtb-analytic-hessian` | xtb 6.7.1 (ratio **≈ 0.06**) |
 
 ### TB / SE capability wave 10 (semiempirical + tight-binding)
@@ -203,6 +202,20 @@ Full index: [methods/README](methods/README.md).
 |--------|------|------------|--------|
 | IPEA-xTB organic energy (CH₄, extra \((n+1)s\)) | [ipea-xtb-small](methods/ipea-xtb-small.md) | `regressions/semiempirical/ipea-xtb-small` | xtb 6.7.1 (ratio **2.0**) |
 | GFN1/GFN2-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn-xtb-analytic-hessian](methods/gfn-xtb-analytic-hessian.md) | `regressions/semiempirical/gfn-xtb-analytic-hessian` | xtb 6.7.1 (ratio **≈ 0.11**) |
+
+### TB / SE capability wave 11 (semiempirical + tight-binding)
+
+Offline OpenMOPAC / DFTB+ / xtb pins only — see
+[tb-method-handoff](../developer/tb-method-handoff.md) and `tools/tb_oracle/`.
+Family-locked oracles: NDDO → OpenMOPAC; DFTB* → DFTB+; GFN-xTB / IPEA → xtb.
+Harness wave 11 (2026-08-25) closed IPEA-xTB analytic \(F\) and GFN2
+AES-in-Fock. `--vip`/`--vea` stays ○.
+Full index: [methods/README](methods/README.md).
+
+| Method | Page | Regression | Oracle |
+|--------|------|------------|--------|
+| GFN2-xTB AES in the SCC Fock (off-eq H₂O) | [gfn2-aes-fock](methods/gfn2-aes-fock.md) | `regressions/semiempirical/gfn2-aes-fock` | xtb 6.7.1 (**asserted ≤ 10**, xtb wall 0.018 s) |
+| IPEA-xTB analytic nuclear forces (off-eq CH₄) | [ipea-xtb-forces](methods/ipea-xtb-forces.md) | `regressions/semiempirical/ipea-xtb-forces` | xtb 6.7.1 (ratio **≈ 0.26**) |
 
 ### MetalWalls capability wave 1 (classical electrochem + LAMMPS-overlap MD)
 

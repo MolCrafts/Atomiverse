@@ -9,7 +9,7 @@
 | Public API | `cpu::semiempirical::GFN2` (`with_forces = true`); `cpu::Evaluate` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md) (SE product surface; GFN-xTB is a sibling family) |
 | Queue | TB method loop — wave 9 done (`b8e86743`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 GFN2-xTB energy + analytic G ✓ (CHNO); AES-in-Fock still ○ |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 GFN2-xTB energy + analytic G ✓ (CHNO); AES-in-Fock landed on [`gfn2-aes-fock`](gfn2-aes-fock.md) (angular \(F_{H1,y}\) is CAMM-vs-\(R\)) |
 | Oracle | **xtb 6.7.1** only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -31,9 +31,12 @@ no public `*Config`, no `make_*` / `build_*`. Product gate:
 (`reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`). Fair wall asserted
 \(T_{\mathrm{ATV}}/T_{\mathrm{xtb}}\le 10\) (xtb archived wall 0.018 s).
 
-AES remains a **post-SCC energy** (not a Fock potential). Stretch
-\(F_{O,x}\) matches xtb; the angular \(F_{H1,y}\) hole is the next deepen
-(`gfn2-aes-fock`), not a defect of the \(H^0\)/IES/rep/D4 closed-form path.
+This slug kept AES as a **post-SCC energy**. Sibling
+[`gfn2-aes-fock`](gfn2-aes-fock.md) puts charge–dipole/quadrupole + AXC
+in the SCC Fock. Stretch \(F_{O,x}\) matches xtb; the angular
+\(F_{H1,y}\) hole is **CAMM-vs-\(R\)** (xtb `mmompop` two-centre \(\Theta\)
+on H), not a missing Fock term and not a defect of the \(H^0\)/IES/rep/D4
+closed-form path.
 
 ## Method
 
@@ -132,15 +135,16 @@ HOMO–LUMO 10.606 eV; Mulliken \(q(\mathrm{O})=-0.549\),
 
 - Near-eq **energy** vs xtb `--gfn 2` — siblings `gfn2-xtb-water` (isotropic +
   dipole AES) and `gfn2-quadrupole-aes` (charge–quadrupole + \(q_{\mathrm{kernel}}\)).
-- **AES as an SCC Fock potential.** Moments / kernel are post-energy; the
-  angular \(F_{H1,y}\) vs xtb hole is that deepen, not this slug.
+- **AES as an SCC Fock potential.** This slug’s kernel is post-energy;
+  sibling [`gfn2-aes-fock`](gfn2-aes-fock.md) lands the Fock term. The
+  angular \(F_{H1,y}\) vs xtb hole is CAMM-vs-\(R\), not this slug.
 - Dipole–quadrupole / quadrupole–quadrupole pair AES ranks; quadrupole CAMM
   \(\partial Q/\partial R\).
 - **GFN0 / GFN1** forces — siblings `gfn0-xtb-forces`, `gfn1-xtb-forces`.
 - GFN-xTB **Hessian** is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
-  IPEA energy is [`ipea-xtb-small`](ipea-xtb-small.md). PBC, spin, sTDA,
-  ALPB/GBSA, CPCM-X — other queue rows. GFN-FF is classical (scope-out of
-  this loop).
+  IPEA energy / \(G\) are [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md). PBC, spin, sTDA, ALPB/GBSA,
+  CPCM-X — other queue rows. GFN-FF is classical (scope-out of this loop).
 - Beyond-CHNO tables — unsupported \(Z\) throws; deepen via
   `gfn2-beyond-chno`.
 - Live xtb / DFTB+ / OpenMOPAC from ctest — **forbidden**; offline pins only.
@@ -290,14 +294,15 @@ xtb also printed TOTAL ENERGY **−5.058625058504 Eh** and
 | \(F_{O,x}\) | `kAtom_fx[0]` | **+3.869155970641 eV/Å** | \(0.15\) eV/Å | \(-\nabla E\) converted; stretch component |
 | \(\lvert\sum_i F_{i,d}\rvert\) | identity | 0 | \(1\times10^{-10}\) eV/Å | translation invariance, each Cartesian |
 | \(F_{O,x}\), \(F_{H1,y}\) vs energy FD | identity | — | \(3\times10^{-2}\) eV/Å | \(h=10^{-4}\) Å; unit test same |
-| \(F_{H1,y}\) vs xtb | printed, **not gated** | **−0.7986 eV/Å** | — | AES-in-Fock / quadrupole-CAMM hole |
+| \(F_{H1,y}\) vs xtb | printed, **not gated** | **−0.7986 eV/Å** | — | CAMM-vs-\(R\) / quadrupole-CAMM hole |
 
-**Tolerance rationale.** AES is still a post-SCC energy (not in the Fock), so
-the offeq stretch residual is **8.9 meV** vs 26 µeV on the 0.96 Å energy pin
-— energy floor \(10^{-2}\) eV. The stretch force \(F_{O,x}\) matches xtb to
+**Tolerance rationale.** This slug’s AES kernel is post-SCC (the Fock
+deepen is [`gfn2-aes-fock`](gfn2-aes-fock.md)). The offeq stretch residual
+is **8.9 meV** vs 26 µeV on the 0.96 Å energy pin — energy floor
+\(10^{-2}\) eV. The stretch force \(F_{O,x}\) matches xtb to
 \(\sim 0.09\) eV/Å (analytic vs ATV energy FD \(\sim 0.02\) eV/Å); product
-tol \(0.15\) eV/Å sits above that. The angular \(F_{H1,y}\) is an AES-in-Fock
-/ quadrupole-CAMM hole (xtb \(\approx-0.80\) eV/Å vs ATV energy FD
+tol \(0.15\) eV/Å sits above that. The angular \(F_{H1,y}\) is a
+CAMM-vs-\(R\) / quadrupole-CAMM hole (xtb \(\approx-0.80\) eV/Å vs ATV energy FD
 \(\approx+0.06\)) and is **not** a hard pin; it is the next deepen, not a
 defect of the \(H^0\)/IES/rep/D4 closed-form path. The FD identity (tol
 \(3\times10^{-2}\) eV/Å) is the gradient-consistency gate, including the
@@ -323,22 +328,25 @@ wall; the regression fails if the ratio exceeds 10.
   silent skip.
 - **Closed-shell even-electron only.** Odd / non-integer valence count throws
   (`spin-gfn-xtb`).
-- **AES is post-SCC.** Charge–dipole / dipole–dipole / charge–quadrupole
-  kernel gradient at frozen CAMM is in this path; AES is **not** a Fock
-  potential, so xtb’s angular \(F_{H1,y}\) is a documented hole
-  (`gfn2-aes-fock`), not a failed stretch pin.
+- **AES on this page is post-SCC.** Charge–dipole / dipole–dipole /
+  charge–quadrupole kernel gradient at frozen CAMM is in this path.
+  Sibling [`gfn2-aes-fock`](gfn2-aes-fock.md) puts AES in the Fock; xtb’s
+  angular \(F_{H1,y}\) remains a **CAMM-vs-\(R\)** hole, not a failed
+  stretch pin.
 - **No Hessian / PBC / spin / solvent / IPEA / sTDA** on this page —
   Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md)
-  (GFN2 \(\omega\) carries the AES-in-Fock hole); IPEA is
-  [`ipea-xtb-small`](ipea-xtb-small.md). GFN-FF is classical (never
+  (GFN2 \(\omega\) carries the CAMM-vs-\(R\) hole); IPEA is
+  [`ipea-xtb-small`](ipea-xtb-small.md) /
+  [`ipea-xtb-forces`](ipea-xtb-forces.md). GFN-FF is classical (never
   pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
   for the TB product gate; do not build `reg_am1_water_bomd` /
   `reg_am1_water_minimize` under this configure.
 - Family lock: **xtb only** for GFN rows — never DFTB+ or OpenMOPAC as a
   GFN2 oracle; never treat GFN-xTB as a DFTB3 successor.
-- Foothold ≠ closed: GFN2 energy + GFN2 \(G\) on CHNO is not the GFN product
-  closed (ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO, AES-in-Fock remain ○).
+- Foothold ≠ closed: GFN2 energy + GFN2 \(G\) + AES-in-Fock on CHNO is not
+  the GFN product closed (ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO,
+  CAMM-vs-\(R\) remain ○).
 
 ## References
 

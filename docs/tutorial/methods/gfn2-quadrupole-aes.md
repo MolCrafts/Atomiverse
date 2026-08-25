@@ -23,8 +23,9 @@ the remaining **1.45 meV** H₂O hole against archived xtb was the missing
 **charge–quadrupole AES** plus **quadrupole AXC**. This slug closes that hole
 on the public Evaluate surface (eV on `frame.meta[kEnergy]`). Parameters are
 static in-tree tables — there is no `libxtb` wrap and no runtime parameter
-file. Analytic forces ship on the sibling `gfn2-xtb-forces` (AES remains
-post-SCC; angular \(F\) vs xtb is a deepen).
+file. Analytic forces ship on the sibling `gfn2-xtb-forces`. AES-in-Fock
+is [`gfn2-aes-fock`](gfn2-aes-fock.md); angular \(F_{H1,y}\) vs xtb is a
+CAMM-vs-\(R\) hole, not a missing Fock term.
 
 ## Method
 
@@ -50,9 +51,9 @@ on this H₂O).
 
 ### Anisotropic electrostatics
 
-AES is a **post-SCC energy** on CAMM atomic moments, not a Fock potential
-(that deepen is listed under Limitations). Moments live on the atom origin
-\(R_A\):
+AES on this energy slug is a **post-SCC energy** on CAMM atomic moments.
+Sibling [`gfn2-aes-fock`](gfn2-aes-fock.md) puts the same multipoles in
+the SCC Fock. Moments live on the atom origin \(R_A\):
 
 \[
 \mu_{A,\alpha}
@@ -328,17 +329,18 @@ when xtb is on PATH. Gate convention (TB loop): \(r\le 10\) unless
 | ---- | ------ |
 | Charge–quadrupole AES + \(q_{\mathrm{kernel}}\) AXC on H₂O | **closed** (this slug; residual 26 µeV) |
 | GFN2 energy H/C/N/O (isotropic + dipole AES) | closed by sibling `gfn2-xtb-water` |
-| AES as SCC Fock potential | open (post-energy only) |
+| AES as SCC Fock potential | sibling [`gfn2-aes-fock`](gfn2-aes-fock.md) (angular \(F\) is CAMM-vs-\(R\)) |
 | Dipole–quadrupole / quadrupole–quadrupole pair AES | not assembled |
-| Analytic nuclear forces | sibling `gfn2-xtb-forces` (AES still post-SCC) |
+| Analytic nuclear forces | sibling `gfn2-xtb-forces` |
 | Elements beyond H/C/N/O | throw; sibling `gfn2-beyond-chno` |
 | ALPB / CPCM-X / spin / PBC / IPEA / sTDA / Hessian | open or blocked |
 | H⁰ CN (D3-logistic \(4/3\) radii vs tblite `dexp`) | residual contributor |
 | Live oracle in CI | **forbidden** — offline pins only |
 
-Foothold ≠ closed: GFN2 product energy on CHNO is ✓, and sibling
-`gfn2-xtb-forces` ships closed-form \(F=-\nabla E\); solvent, PBC,
-AES-in-Fock, family Hessian, and all-element tables remain ○.
+Foothold ≠ closed: GFN2 product energy on CHNO is ✓, sibling
+`gfn2-xtb-forces` ships closed-form \(F=-\nabla E\), and AES-in-Fock is
+[`gfn2-aes-fock`](gfn2-aes-fock.md); solvent, PBC, CAMM-vs-\(R\), and
+all-element tables remain ○.
 
 ## References
 

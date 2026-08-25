@@ -32,8 +32,9 @@ tables only — **no** `libxtb`. Product gate `reg_ipea-xtb-small` asserts
 \]
 
 against an offline **xtb 6.7.1** IPEA-xTB pin. Measured ATV residual at this
-geometry is **8.90 meV**. `with_forces = true` throws (energy foothold). Fair
-wall vs xtb: \(T_{\mathrm{ATV}}/T_{\mathrm{xtb}} = 2.0 \le 10\).
+geometry is **8.90 meV**. This page is energy-only; analytic \(G\) is
+[`ipea-xtb-forces`](ipea-xtb-forces.md). Fair wall vs xtb:
+\(T_{\mathrm{ATV}}/T_{\mathrm{xtb}} = 2.0 \le 10\).
 
 ## Method
 
@@ -316,23 +317,23 @@ unless `perf_exempt`.
 ## Limitations
 
 - **Energy-only IPEA** on H/C/N/O. `with_forces = true` and
-  `multiplicity != 1` throw. GFN0/1/2 already ship closed-form
-  \(\mathbf{F}=-\nabla E\); IPEA forces remain a queue deepen.
+  `multiplicity != 1` throw on this page. Analytic \(G\) now ships
+  ([`ipea-xtb-forces`](ipea-xtb-forces.md)).
 - Organic CHNO tables only; other IPEA elements are not in-tree
   (`gfn2-beyond-chno` is the beyond-CHNO deepen, on GFN2 first).
 - 8.90 meV residual vs xtb is accepted by the 50 meV gate; not
   bit-identical (D3 C6, integral cutoff, mixer).
 - `--vip` ΔSCC IP/EA, halogen correction, continuum solvent, PBC, sTDA:
-  out of this slug.
+  out of this slug. AES-in-Fock is [`gfn2-aes-fock`](gfn2-aes-fock.md).
 - Cross-oracle misuse forbidden: do not re-pin this energy with OpenMOPAC or
   DFTB+, and do not treat IPEA / GFN-xTB as a DFTB3 successor.
-- Follow-ons (queue): recover `gfn2-aes-fock`; then ALPB / beyond-CHNO /
-  sTDA / PBC / spin; IPEA analytic \(F\) and `--vip` after the energy
-  foothold.
+- Follow-ons (queue): `ipea-xtb-vip`; then ALPB / beyond-CHNO / sTDA /
+  PBC / spin.
 
-Foothold ≠ closed: IPEA CHNO energy is ✓; IPEA forces, `--vip`, solvent,
-PBC, and spin stay ○. GFN CHNO energy + analytic G + family FD Hessian +
-IPEA energy is not the GFN product closed.
+Foothold ≠ closed: IPEA CHNO energy is ✓; IPEA \(G\) is ✓
+([`ipea-xtb-forces`](ipea-xtb-forces.md)); `--vip`, solvent, PBC, and
+spin stay ○. GFN CHNO energy + analytic G + family FD Hessian +
+AES-in-Fock + IPEA E+\(G\) is not the GFN product closed.
 
 ## References
 
