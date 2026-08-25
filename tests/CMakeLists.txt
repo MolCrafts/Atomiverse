@@ -447,6 +447,7 @@ endif()
 # a full NVT equilibration of the bonded PE melt, not a ms unit test.
 atv_add_cpp_test(test_cpu_md_frame_tag_image      cpu/dynamics/test_frame_tag_image.cpp)
 atv_add_cpp_test(test_cpu_md_domain_decomposition cpu/dynamics/test_domain_decomposition.cpp)
+atv_add_cpp_test(test_cpu_md_halo_injection_reach cpu/dynamics/test_halo_injection_reach.cpp)
 atv_add_cpp_test(test_cpu_analysis_executor       cpu/test_analysis_executor.cpp)
 # MSD/VACF stream into molrs accumulators (cpu/observe/trajectory_metrics.h).
 if(ATV_BUILD_ANALYSIS)

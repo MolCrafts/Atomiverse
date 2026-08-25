@@ -408,16 +408,26 @@ class MD : public Driver<ATV::md::Phase> {
             // PE stage-2 NPT as a +1-3 eV per-rebuild jump in the MTK
             // extended Hamiltonian (E_bond drops by ~2.5 eV at rebuild
             // boundaries because ~16 chain bonds lose their ghost
-            // partner each cycle). The 10% multiplier matches the
-            // ~0.1 Å typical 10-step drift at PE-thermalized 500 K with
-            // good margin while staying under `2× pair_cutoff` for the
-            // 144-atom-in-48Å unit tests (those have slabs of 24 Å, so
-            // a 13.65 Å halo would duplicate ghosts and overflow
-            // `frame.nlocal()`). Callers running with a custom NL
-            // skin > 10% of cutoff should register
-            // `HaloSend{halo_cut}` explicitly before the
-            // pair evaluator — `install_defaults` will see an existing
-            // halo and skip the auto-inject.
+            // partner each cycle).
+            //
+            // The skin that matters is the one the neighbor list actually
+            // uses: `NeighborList::build()` enumerates out to
+            // `cutoff + skin`, so a pair anywhere in that band is supposed
+            // to be in the CSR. A ghost shell thinner than the band leaves
+            // a cross-rank `j` inside it with no ghost at all — the pair is
+            // absent from the CSR rather than merely inactive, and stays
+            // absent until the next full rebuild while the displacement
+            // trigger (`max_disp * 2 > skin`) is by construction not
+            // watching for it. Hence `neighbor_reach()`, taken straight
+            // from the provider. The 10% multiplier stays as the floor for
+            // consumers whose provider declares no reach (it matches the
+            // ~0.1 Å typical 10-step drift at PE-thermalized 500 K); with a
+            // provider present the wider of the two wins.
+            //
+            // A halo wider than half the local slab duplicates ghosts, so a
+            // caller on a very small box should size the shell itself:
+            // registering `HaloSend{halo_cut}` explicitly before the pair
+            // evaluator suppresses the auto-inject entirely.
             // Skip the auto-inject when the caller already registered halo
             // components (custom cutoff / skin / reneighbor cadence). Auto-
             // injecting on top of an explicit halo would run the REVERSE
@@ -425,8 +435,11 @@ class MD : public Driver<ATV::md::Phase> {
             // reduced ghost forces to their owners — a per-step momentum leak
             // (Σ F ≠ 0) that pumps energy and blows the NVE trajectory up.
             // `reverse exchange must run exactly once` (see halo_exchange.h).
-            const double halo_cut =
+            double halo_cut =
                 1.1 * static_cast<double>(*s.neighbor_consumer_cutoff);
+            if (s.neighbor_provider_reach)
+                halo_cut = std::max(
+                    halo_cut, static_cast<double>(*s.neighbor_provider_reach));
             if (!s.has_halo_send)
                 this->bind_defaults(comm::HaloSend{halo_cut});
             if (!s.has_halo_recv)

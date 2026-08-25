@@ -22,8 +22,9 @@ namespace cpu {
 ///        requires a neighbor structure covering its interaction cutoff.
 ///
 /// The category drivers throw at `build()` when a consumer is registered
-/// without a neighbor structure, and size the auto-injected MPI halo from
-/// the first consumer's cutoff (skin-padded, 1.1×).
+/// without a neighbor structure, and size the auto-injected MPI halo from the
+/// widest consumer halo requirement (padded 1.1×) or, when a provider declares
+/// one, from `NeighborProvider::neighbor_reach()` — whichever is larger.
 class NeighborConsumer {
   public:
     virtual ~NeighborConsumer() = default;
@@ -84,6 +85,26 @@ class NeighborProvider {
     /// A spatial sort is a cache optimisation; correctness of the sampler is
     /// not negotiable against it.
     virtual void forbid_row_reordering() = 0;
+
+    /// @brief Total distance out to which this provider enumerates pairs [Å].
+    ///
+    /// A Verlet structure does not stop at the interaction cutoff: it builds out
+    /// to `cutoff + skin`, and that band is the entire reason the list is reusable
+    /// between rebuilds. Any pair inside it is *supposed* to be enumerated, so the
+    /// MPI ghost shell has to be at least this wide. A shell sized from the
+    /// interaction cutoff alone leaves a cross-rank `j` sitting in the band with no
+    /// ghost on `i`'s rank: the pair is absent from the CSR outright rather than
+    /// merely inactive, and stays absent until the next full rebuild while the
+    /// displacement trigger (`max_disp * 2 > skin`) is by construction not watching
+    /// for it. The pair can then drift from the band down below the interaction
+    /// cutoff contributing exactly zero force the whole way.
+    ///
+    /// The driver infrastructure scan reads this and sizes the auto-injected halo
+    /// from it (max over providers).
+    ///
+    /// @return Enumeration radius [Å]; `0` = no reach declared (the halo falls
+    ///         back to the consumer-cutoff estimate).
+    virtual AccReal neighbor_reach() const { return AccReal(0); }
 };
 
 } // namespace cpu

@@ -44,6 +44,7 @@
 /// rank 0 only.
 #pragma once
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -214,14 +215,20 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
 
 #ifdef ATV_HAS_MPI
         if (s.neighbor_consumer_cutoff) {
-            // Same 10% skin rule as MD::install_defaults — ghosts must stay
-            // registered as atoms drift between the every-10-step full halo
-            // rebuilds. The minimizer's step cap (0.1 Å) keeps per-step
-            // drift well inside this band. Explicit halo registrations
-            // suppress the auto-inject: the reverse exchange must run
-            // exactly once (see halo_exchange.h).
-            const double halo_cut =
+            // Same rule as MD::install_defaults — the shell must cover the
+            // distance the neighbor list actually enumerates to
+            // (`cutoff + skin`, published as `neighbor_reach()`), otherwise a
+            // cross-rank pair inside the skin band has no ghost and is missing
+            // from the CSR outright until the next full rebuild. The 10%
+            // multiplier is the floor when no provider declares a reach; the
+            // minimizer's step cap (0.1 Å) keeps per-step drift well inside
+            // that band. Explicit halo registrations suppress the auto-inject:
+            // the reverse exchange must run exactly once (see halo_exchange.h).
+            double halo_cut =
                 1.1 * static_cast<double>(*s.neighbor_consumer_cutoff);
+            if (s.neighbor_provider_reach)
+                halo_cut = std::max(
+                    halo_cut, static_cast<double>(*s.neighbor_provider_reach));
             if (!s.has_halo_send)
                 this->on(ATV::minimizer::Phase::force)
                     .add(comm::HaloSend{halo_cut}, -30);

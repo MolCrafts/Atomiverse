@@ -34,8 +34,12 @@
 ///
 /// The default-constructed `HaloSend{}` (`cutoff = 0`) is a
 /// no-op sentinel. Under `ATV_BUILD_MPI`, `cpu::md::MD` auto-injects the
-/// `HaloSend{1.1 * pair_cutoff}` + `HaloRecv{}` pair when `set_evaluator` is
-/// called; a manually registered pair suppresses the injection (detected
+/// `HaloSend{max(1.1 * pair_cutoff, neighbor_reach)}` + `HaloRecv{}` pair when
+/// `set_evaluator` is called — the shell has to cover the distance the neighbor
+/// list enumerates to (`cutoff + skin`), not just the interaction cutoff, or a
+/// cross-rank pair inside the skin band gets no ghost and goes missing from the
+/// CSR until the next full rebuild. A manually registered pair suppresses the
+/// injection (detected
 /// through the `halo_participant()` protocol probe — reverse exchange
 /// must run exactly once).
 ///

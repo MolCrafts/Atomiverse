@@ -1185,6 +1185,11 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         std::string neighbor_consumer_name; ///< First `NeighborConsumer`.
         std::optional<AccReal>
             neighbor_consumer_cutoff; ///< Set when it declares a cutoff > 0.
+        /// Widest `NeighborProvider::neighbor_reach()` [Å] among the registered
+        /// providers — the distance a list actually enumerates pairs out to
+        /// (`cutoff + skin`), which the halo shell must cover. Unset when no
+        /// provider declares one.
+        std::optional<AccReal> neighbor_provider_reach;
     };
 
     /// @brief Compute and publish the global DOF count — the single owner.
@@ -1235,8 +1240,15 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
                     s.needs_stress = true;
                 if (c.provides_system_stress())
                     s.has_virial_stress = true;
-                if (c.as_neighbor_provider())
+                if (const cpu::NeighborProvider* np =
+                        c.as_neighbor_provider()) {
                     s.has_neighbor_list = true;
+                    const AccReal reach = np->neighbor_reach();
+                    if (reach > AccReal(0)
+                        && (!s.neighbor_provider_reach
+                            || reach > *s.neighbor_provider_reach))
+                        s.neighbor_provider_reach = reach;
+                }
                 if (c.as_constraint())
                     s.has_constraint = true;
                 if (c.updates_owned_charges())

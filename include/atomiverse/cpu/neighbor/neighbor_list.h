@@ -110,6 +110,17 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// @brief Mutable supply side, for a driver that configures the list.
     cpu::NeighborProvider* neighbor_provider() override { return this; }
 
+    /// @brief Distance this list enumerates pairs out to [Angstrom]:
+    /// `cutoff + skin`, exactly the radius `build()` hands the spatial index.
+    ///
+    /// The auto-injected MPI halo is sized from this, so the ghost shell covers
+    /// the whole skin band rather than the interaction cutoff alone (see
+    /// `NeighborProvider::neighbor_reach`).
+    /// @return Enumeration radius [Angstrom].
+    AccReal neighbor_reach() const override {
+        return static_cast<AccReal>(cutoff_ + strategy_.skin());
+    }
+
     /// @brief Drop `atom_modify sort` permanently (see `NeighborProvider`).
     void forbid_row_reordering() override {
         AtomSortParams p = sort_state_.params;
