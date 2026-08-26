@@ -871,9 +871,9 @@ Do not re-create closed slugs without superseding intent.
 
 | cuda-openmm-md 01–05 | contract, rebuild, tile-force, multigpu, delete | CS=32 clusters, real masks, tile LJ/Coul, multi-GPU classify; Verlet default removed on CUDA |
 
-## Live — kspace-subcomm (2026-08-26)
+## Closed — kspace-subcomm (2026-08-26)
 
-- [kspace-subcomm](kspace-subcomm.md) — PPPM mesh selector third arm: FFTW-MPI slab FFT on a derived MPI subgroup (first real derived communicator in the tree); fixes the measured-false replicated policy at np∈[16,64] [approved]
+PPPM mesh 选择器第三臂：FFTW-MPI slab FFT 收进派生 MPI 子组（树上首个真派生通信域，fingerprint 守卫、可别名、finalize 守卫释放）；删除被证伪的 replicated 策略。13/13 判据 verified；spec deleted; history is git（`4fa986de`）。实测同冻结二进制：np=256 343→586 steps/s（+71%），峰值 419→605@np200，Kspace 随 rank 数持平 ~3.7-4.0 s；256-rank widebox parity 全窗 dev=0.0（job 1693014）。下一杠杆已登记：remap Alltoallv 形状（reduce_scatter/邻域集合）。
 
 ## Closed — comm-topology chain (2026-08-26)
 
