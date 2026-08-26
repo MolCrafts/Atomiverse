@@ -9,6 +9,8 @@ build-backend = "scikit_build_core.build"
 name = "atomiverse"
 version = "0.1.0"
 description = "Molecular simulation compute backend (CPU + optional CUDA)"
+license = "GPL-2.0-only"
+license-files = ["../LICENSE"]
 requires-python = ">=3.9"
 dependencies = ["numpy", "molcrafts-molpy>=0.13.0,<0.14", "typer>=0.12"]
 

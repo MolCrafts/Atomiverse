@@ -40,6 +40,35 @@ structure (Gaussian SCF, plane-wave DFT, GPW, NDDO/AM1, DFTB). C++20, `ATV::`
 namespace. Active development is on **`dev`**; `master` is a stale snapshot —
 never read it for current behaviour, and branch worktrees off `dev` explicitly.
 
+## License & LAMMPS porting (operator directive 2026-08-26)
+
+Atomiverse is **GPL-2.0-only** — the same license as LAMMPS; `LICENSE` at the
+repo root is LAMMPS's GPLv2 text verbatim, and the python wheel metadata
+carries `GPL-2.0-only`. This is deliberate: it makes ATV license-compatible
+with LAMMPS source, so parallel machinery is **ported from LAMMPS, not
+independently derived**.
+
+- **Scope of the port mandate:** multicore/parallel algorithms — domain
+  decomposition, halo/forward/reverse communication, buffer pack/unpack,
+  k-space parallel FFT decomposition and remap, load balancing, neighbor
+  build parallel structure. When such a slug opens, read the LAMMPS
+  implementation first and transplant its algorithm and communication
+  structure; do not invent an alternative and A/B it.
+- **Reference checkout:** `../../lammps-src` relative to the repo root
+  (`/nobackup/proj/disk/teoroo/personal/jicli594/work/lammps-src`, shallow
+  clone, `78a7ddf 2026-08-25`). Deepen or re-clone rather than trusting
+  memory of LAMMPS internals.
+- **Provenance headers are mandatory:** every file whose algorithm or
+  structure is taken from LAMMPS carries a header naming the originating
+  LAMMPS source file (e.g. `src/comm_brick.cpp`) and retaining the Sandia
+  copyright notice, per GPL.
+- **What does not change:** ATV's own laws (Frame/Driver/Component, iron
+  laws, directory layering) still govern the *shape* of the ported code —
+  the port is of the algorithm and communication pattern, not a verbatim
+  file dump; public API stays ATV-native.
+- Physics/serial-kernel work (SCF, GPW, TB, pair styles' math) is untouched
+  by this mandate and keeps its existing oracle-loop rules.
+
 ## Where things live
 
 | Path | Contents |

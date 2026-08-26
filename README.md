@@ -5,6 +5,13 @@ simulation. Dual backends (CPU + CUDA) share one **Driver / Component** API
 across classical MD, Monte Carlo, geometry optimization, vibration, and
 electronic structure (Gaussian SCF, plane-wave DFT, GPW, NDDO/AM1, DFTB).
 
+Atomiverse is distributed under the **GNU General Public License version 2
+(GPL-2.0)** — the same license as [LAMMPS](https://www.lammps.org) — see
+[LICENSE](LICENSE). Parallel-decomposition machinery is deliberately ported
+from LAMMPS (license-compatible by construction); ported files carry a
+provenance header naming the originating LAMMPS source file and retain the
+Sandia copyright notice.
+
 Methods include:
 
 - **Classical molecular dynamics** — Lennard-Jones and bonded force fields, NVE/NVT/NPT.
