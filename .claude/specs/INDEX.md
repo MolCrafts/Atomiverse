@@ -871,9 +871,13 @@ Do not re-create closed slugs without superseding intent.
 
 | cuda-openmm-md 01–05 | contract, rebuild, tile-force, multigpu, delete | CS=32 clusters, real masks, tile LJ/Coul, multi-GPU classify; Verlet default removed on CUDA |
 
-## Live — lammps-comm-port (2026-08-26)
+## Closed — lammps-comm-port (2026-08-26)
 
-- [lammps-comm-port](lammps-comm-port.md) — port LAMMPS CommBrick per-step comm discipline: zero step-path collectives (6 Allreduce/step removed), comm_x_only 24 B forward payload, no recv memset; Comm 3.50→2.61 s at np=256 measured (job 1702467), physics bit-identical [done]
+Port of LAMMPS `CommBrick` per-step halo discipline: zero collectives on the
+refresh path, `kColComm` = x/y/z (24 B/ghost), recv buffers size-set without
+memset. 12/12 criteria verified; spec deleted; history is git (`aa2876ba`).
+np=256 widebox parity all-window dev=0.0; Comm 3.50→2.61 s, 343/586→662
+steps/s (job 1702467). Next lever remains kspace remap collective shape.
 
 ## Closed — kspace-subcomm (2026-08-26)
 
