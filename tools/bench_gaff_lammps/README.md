@@ -147,3 +147,38 @@ srun --mpi=pmi2 --ntasks=256 --cpus-per-task=1 --cpu-bind=cores \
 # parity: NP=256 DIMS=8,8,4 tools/bench_gaff_lammps/widebox_parity.sh \
 #   --alpha 0.25232811 --grid-spacing 1.98
 ```
+
+## Snapshot (2026-08-26, kspace subcommunicator — three-arm matrix, same frozen binary)
+
+`kspace-subcomm` landed the PPPM mesh-selector third arm: the FFTW-MPI slab
+FFT runs on a derived subgroup of `pppm_fft_ranks(K0=32, np)` ranks instead
+of the world communicator. One frozen binary (`run_atv_gaff.subcomm`), same
+protocol as the blocks above (MIL0PEGM18 24048 atoms, NVT 400 K, SPME 32³
+α=0.25232811 spacing 1.98, 5000 steps + 200 warmup, `srun
+--cpu-bind=cores`, OMP=1). Arms forced per run: subgroup = default,
+world-brick = `ATV_PPPM_BRICK=1`, replicated = `ATV_PPPM_ALLREDUCE=1`.
+These numbers are a record, not an acceptance criterion.
+
+steps/s (Kspace avg s / 5000 steps in parentheses):
+
+| np | subgroup (default) | world brick | replicated |
+|---|---|---|---|
+| 64  | **445** (4.02) | 419 (4.77) | 384 (5.76) |
+| 125 | **555** (3.74) | 453 (5.94) | 423 (6.78) |
+| 200 | **605** (3.81) | 349 (9.82) | 390 (8.58) |
+| 256 | **586** (3.72) | 339 (9.89) | 342 (9.91) |
+
+The subgroup arm wins every cell; the two old arms hit the same ~9.9 s wall
+at np≥200 (32 slab planes dragged through a world-sized FFT collective vs a
+world-sized grid Allreduce). With the FFT pinned to 32 ranks, Kspace is
+flat (~3.7–4.0 s) in world size; the machine peak moved 419 → **605**
+steps/s (np=200) and np=256 went 343 → **586** (+71%). Same-node LAMMPS
+np=256 reference stays 1523 steps/s (Kspace 1.56, Comm 0.44): the remaining
+2.6× gap is Kspace 3.72 (Alltoallv remap over all ranks with mostly-zero
+counts + density-wait behind pair imbalance) and Comm 3.54 — the remap
+collective shape (reduce_scatter / neighborhood) is the registered next
+spec.
+
+Correctness at 256: `widebox_parity.sh` with the subgroup arm as default —
+every window dev=0.0 vs np=1 (job 1693014, logs
+`atv-mil-bench/parity256sub/`).

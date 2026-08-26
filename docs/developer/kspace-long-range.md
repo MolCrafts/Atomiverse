@@ -71,7 +71,7 @@ and related unit tests.
 | Style | Multi-rank (default) | Optional / debug |
 |---|---|---|
 | **PME** | Replicated-grid: `MPI_Allreduce` full charge mesh; rank-0 FFT; `MPI_Bcast` potential | — |
-| **PPPM** | Brick + reverse/forward + Alltoallv brick↔FFT + FFTW-MPI slabs (`libfftw3_mpi`). Gate: `test_mpi_pppm_brick_parity` n=1/2. | `ATV_PPPM_ALLREDUCE=1` dens_full Allreduce + rank-0 FFT (PME-like compare path). |
+| **PPPM** | **Subgroup arm**: brick + reverse/forward + Alltoallv brick↔FFT + FFTW-MPI slabs on a derived communicator of `pppm_fft_ranks(K0, nprocs)` cart ranks `[0, P_fft)` (largest divisor of K0 within the rank budget; the tree's first real `MPI_Comm_split`, fingerprint-guarded, aliased un-split when `P_fft == nprocs`). Non-members spread/halo/remap/interpolate only — no FFT collective. Selection: `pppm_select_mesh_arm`; the old `mesh ≤ 64³ && ranks ≥ 16 → replicated` rule is gone (falsified at np=64: brick 4.78 s vs replicated 5.43 s). Gates: `test_mpi_pppm_subcomm_parity` n=1/2/4, `test_mpi_pppm_brick_parity` n=1/2. | `ATV_PPPM_BRICK=1` forces the world-comm brick arm (all ranks in the FFT collective); `ATV_PPPM_ALLREDUCE=1` forces the replicated arm (dens_full Allreduce, every rank runs the serial FFT). Both are the debug/compare paths the three-arm bench matrix is measured with. |
 
 Self-energy partitions over owned atoms; reciprocal energy/net-charge on
 rank 0; `Reduce` all-reduces frame energy/stress.

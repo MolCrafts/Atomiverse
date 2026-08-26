@@ -612,6 +612,16 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
                         test_mpi_pppm_brick_parity 1)
         atv_add_mpi_run(test_mpi_pppm_brick_parity_n2
                         test_mpi_pppm_brick_parity 2)
+        # PPPM mesh-arm selector: Replicated (n1), aliased BrickWorld (n2),
+        # and the FFT subgroup (n4: K0=6 → 3 of 4 ranks, one non-member).
+        atv_add_mpi_exec(test_mpi_pppm_subcomm_parity
+                         mpi/test_pppm_subcomm_parity.cpp)
+        atv_add_mpi_run(test_mpi_pppm_subcomm_parity_n1
+                        test_mpi_pppm_subcomm_parity 1)
+        atv_add_mpi_run(test_mpi_pppm_subcomm_parity_n2
+                        test_mpi_pppm_subcomm_parity 2)
+        atv_add_mpi_run(test_mpi_pppm_subcomm_parity_n4
+                        test_mpi_pppm_subcomm_parity 4)
     endif()
 
     atv_add_mpi_exec(test_mpi_bonded_energy_bruteforce

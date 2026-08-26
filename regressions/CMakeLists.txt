@@ -1862,6 +1862,22 @@ if(ATV_BUILD_KSPACE AND ATV_BUILD_MD)
     atv_add_regression(md nanoporous-carbon-const-pot)
     atv_add_regression(md maze-molten-salt-al)
     atv_add_regression(md thermo-integration-capacitance)
+    # PPPM FFT SUBGROUP arm (kspace-subcomm): a self-relaunching binary
+    # (mpiexec -n 1, -n 8, and -n 8 with ATV_PPPM_BRICK=1) checks rock-salt
+    # NaCl against the cited Madelung constant on one rank and then proves the
+    # subgroup arm is the same sum as the serial control and as the
+    # world-communicator brick arm. oracle=literature. perf_exempt.
+    #
+    # Gated on FFTW3_MPI_LIB (the cache entry behind the ATV_HAS_FFTW_MPI
+    # compile definition, CMakeLists.txt:971) as well as on MPI: without
+    # multi-rank FFTW the np=8 legs cannot reach BrickSubgroup at all, so the
+    # honest thing is not to register the case rather than to let it skip
+    # internally and still print PASS.
+    if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE AND FFTW3_MPI_LIB)
+        atv_add_regression(longrange pppm-subcomm-parity-mpi)
+        target_compile_definitions(reg_pppm-subcomm-parity-mpi PRIVATE
+            ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
+    endif()
 endif()
 # FMM operator math is always-on (facade longrange/); no product-module gate.
 atv_add_regression(longrange fmm_point_charges)
