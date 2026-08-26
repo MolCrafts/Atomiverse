@@ -1,5 +1,9 @@
-/// @file src/cpu/comm/halo_exchange.cpp
+/// @file src/cpu/communication/halo_exchange.cpp
 /// @brief `HaloSend` / `HaloRecv` real implementation — table driven.
+///
+/// Structural reimplementation of the LAMMPS CommBrick communication
+/// discipline in `src/comm_brick.cpp` (`CommBrick::forward_comm` /
+/// `reverse_comm` / `borders`) — not a verbatim dump.
 ///
 /// Orthorhombic, LAMMPS CommBrick forward comm over an ordered swap table
 /// (`comm::SwapList`, owned by `HaloSend`): the swaps of one axis form one
@@ -34,6 +38,18 @@
 /// `SwapList::commit_recv`; `HaloRecv` mirrors that layout and walks it
 /// exactly backwards (last axis first, deepest hop first) so both cascades
 /// play in reverse.
+///
+/// Copyright (2003) Sandia Corporation.  Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software.  This software is distributed under
+/// the GNU General Public License.
+///
+/// References:
+///   * S. Plimpton, J. Comput. Phys. **117**, 1 (1995),
+///     DOI 10.1006/jcph.1995.1039 — the original swap-list forward/reverse
+///     comm (`maxneed`, `sendlist`, `firstrecv`, `sendself`).
+///   * A. P. Thompson et al., Comput. Phys. Commun. **271**, 108171 (2022),
+///     DOI 10.1016/j.cpc.2021.108171 — modern LAMMPS borders/forward/reverse.
 
 #include "atomiverse/cpu/communication/halo_exchange.h"
 
@@ -578,15 +594,16 @@ void prealloc_bufs(FaceBufs& b, int initial_cap, std::size_t border_row_bytes,
 /// @brief Re-derive the swap table against the current geometry, with a
 /// **rank-uniform** round count.
 ///
-/// `SwapList::derive_hops` is pure and per-rank, and its answer is not
-/// automatically the same on every rank: a non-uniform (RCB) partition has a
-/// different partner-slab chain per rank, and a non-periodic axis truncates
-/// its chain at the global boundary. The transport cannot tolerate that —
-/// every round is a matched pair of messages, so a rank that stops one round
-/// early leaves its partner posting a receive nobody answers. Hence the one
-/// `MPI_Allreduce(MAX)` the spec calls for; it also carries the refusal flag,
-/// so a minimum-image violation only some ranks can see throws on **all** of
-/// them instead of hanging the rest.
+/// Rounds are `SwapList::derive_uniform_rounds`: a pure local sweep over
+/// every coordinate of each axis (`O(Σ dims[d])`), no MPI. Every rank sees
+/// the same `dims`/`periods`/`cuts`/`box`/`shell`, so the vector is
+/// rank-uniform by construction; a minimum-image refusal throws locally
+/// (and on every rank) instead of riding an Allreduce flag.
+///
+/// `shell` folds in `bonded_extension_`, which is a **build-time** quantity
+/// (Allreduced once in `HaloSend::build`). If that extension ever became
+/// per-step, its Allreduce would return to the step path and the
+/// zero-collective-halo premise of `lammps-comm-port` would fail.
 ///
 /// @param swaps Table to rebuild in place.
 /// @param dd This rank's decomposition (current `sublo/subhi` [Angstrom]).
@@ -594,29 +611,12 @@ void prealloc_bufs(FaceBufs& b, int initial_cap, std::size_t border_row_bytes,
 /// @param shell Ghost shell width [Angstrom],
 ///        `max(pair cutoff, bonded extension)`.
 /// @param my_rank This rank's id in the Cartesian communicator.
-/// @param comm Cartesian communicator the halo runs on.
-/// @throws std::runtime_error if any rank refuses the geometry.
+/// @throws std::runtime_error if the geometry refuses (minimum-image bound).
 void setup_swaps(SwapList& swaps, const md::mpi::DomainDecomposition& dd,
-                 const Box& box, double shell, int my_rank, MPI_Comm comm) {
-    int reduced[4] = {0, 0, 0, 0}; // rounds per axis, then the refusal flag
-    std::string refusal;
-    try {
-        const SwapList::HopNeed hops = SwapList::derive_hops(dd, box, shell);
-        for (int d = 0; d < 3; ++d)
-            reduced[d] = std::max(hops.minus[d], hops.plus[d]);
-    } catch (const std::runtime_error& error) {
-        refusal = error.what();
-        reduced[3] = 1;
-    }
-    MPI_Allreduce(MPI_IN_PLACE, reduced, 4, MPI_INT, MPI_MAX, comm);
-    if (reduced[3] != 0)
-        throw std::runtime_error(
-            refusal.empty()
-                ? std::string("halo: another rank refused the ghost-shell "
-                              "geometry (minimum-image bound); its message "
-                              "names the axis and the bound.")
-                : refusal);
-    swaps.setup(dd, box, shell, my_rank, reduced);
+                 const Box& box, double shell, int my_rank) {
+    const std::array<int, 3> rounds =
+        SwapList::derive_uniform_rounds(dd, box, shell);
+    swaps.setup(dd, box, shell, my_rank, rounds.data());
 }
 
 } // namespace
@@ -660,9 +660,12 @@ void HaloSend::build(const cpu::BuildContext& ctx) {
     // rank further (spec `comm-topology-02`). The one geometry that still
     // throws is the minimum-image bound `shell <= L_d - w_self` — past it an
     // atom would interact with its own periodic image, which no number of
-    // hops can fix.
-    setup_swaps(swaps_, *dd, ctx.frame.box, halo_cutoff(), my_rank,
-                dd->cart_comm);
+    // hops can fix. Rounds are a local sweep (`derive_uniform_rounds`).
+    // `halo_cutoff()` folds in `bonded_extension_`, a **build-time**
+    // quantity (Allreduced just above); if that extension became per-step,
+    // its Allreduce would return to the step path and this spec's premise
+    // would fail.
+    setup_swaps(swaps_, *dd, ctx.frame.box, halo_cutoff(), my_rank);
     ctx.runtime.md.swap_list = &swaps_;
 
     // `setup` keeps the swap geometry and drops every stored row index, so
@@ -678,6 +681,14 @@ void HaloSend::build(const cpu::BuildContext& ctx) {
     bufs_->border_plan = make_border_plan(ctx.frame);
     bufs_->comm_plan = make_comm_plan(ctx.frame);
     bufs_->reverse_plan = make_reverse_plan(ctx.frame);
+    // Fingerprints are a pure function of the atoms-Block column set; no
+    // launch() mutates that set. Comm-plan is checked here only — the
+    // position-only refresh path must not Allreduce. Border is re-checked
+    // on every full rebuild.
+    require_collective_halo_schema(bufs_->border_plan, fwd_fields_,
+                                   dd->cart_comm, "halo/border");
+    require_collective_halo_schema(bufs_->comm_plan, fwd_fields_, dd->cart_comm,
+                                   "halo/comm");
     // Each swap ships only the boundary layer (cutoff-deep slab, typically
     // 5-15% of owners; the cascade re-forwarding adds a little). A quarter
     // of capacity is generous; std::vector growth covers outliers.
@@ -773,11 +784,12 @@ inline void forward_round(Frame& frame, md::mpi::DomainDecomposition& dd,
         else
             pack_forward_for_swap(frame, swaps[s], plan, full_rebuild, sbuf,
                                   xfields);
-        rbuf.assign(
+        const std::size_t nbytes =
             checked_mul(static_cast<std::size_t>(
                             bufs.recv_count[static_cast<std::size_t>(s)]),
-                        row_bytes, "halo receive buffer"),
-            std::byte{0});
+                        row_bytes, "halo receive buffer");
+        if (rbuf.size() != nbytes)
+            rbuf.resize(nbytes);
     }
 
     int n_preqs = 0;
@@ -1235,8 +1247,6 @@ void HaloSend::launch(const cpu::LaunchContext& ctx) {
         forward_plan =
             full_rebuild ? make_border_plan(frame) : make_comm_plan(frame);
     }
-    require_collective_halo_schema(forward_plan, fwd_fields_, dd->cart_comm,
-                                   full_rebuild ? "halo/border" : "halo/comm");
 
     int my_rank = 0;
     MPI_Comm_rank(dd->cart_comm, &my_rank);
@@ -1248,6 +1258,8 @@ void HaloSend::launch(const cpu::LaunchContext& ctx) {
     int frame_cap = frame.capacity();
 
     if (full_rebuild) {
+        require_collective_halo_schema(forward_plan, fwd_fields_, dd->cart_comm,
+                                       "halo/border");
         // LAMMPS: after exchange, before borders — spatial sort owned atoms
         // so pair/neighbor walks are cache-friendly. Must run *before* the
         // send lists / ghost slots are built (reverse uses those indices),
@@ -1283,8 +1295,13 @@ void HaloSend::launch(const cpu::LaunchContext& ctx) {
         // members near the boundary. Republished on `dd` so the neighbor
         // grid pads its decomposed axes by the shell that is actually about
         // to be built, before it consumes the ghost rows.
+        //
+        // `halo_cut` folds in `bonded_extension_`, a **build-time** quantity
+        // (Allreduced in `HaloSend::build`). If that extension became
+        // per-step, its Allreduce would return to the step path and this
+        // spec's premise would fail.
         dd->ghost_shell_width = halo_cut;
-        setup_swaps(swaps_, *dd, frame.box, halo_cut, my_rank, dd->cart_comm);
+        setup_swaps(swaps_, *dd, frame.box, halo_cut, my_rank);
         bufs.resize_swaps(swaps_.size());
 
         for (auto t : dd->ghost_tags)
@@ -1330,7 +1347,25 @@ void HaloSend::launch(const cpu::LaunchContext& ctx) {
 
 // ── HaloRefresh — a forward field refresh at an arbitrary phase ───────
 
-void HaloRefresh::build(const cpu::BuildContext& /*ctx*/) {}
+void HaloRefresh::build(const cpu::BuildContext& ctx) {
+    auto* dd = ctx.runtime.md.dd;
+    if (!dd || ctx.runtime.mpi_size <= 1 || dd->cart_comm == MPI_COMM_NULL)
+        return;
+    const bool pos = (field_ == Field::positions);
+    PackPlan plan = make_border_plan(ctx.frame);
+    constexpr std::uint64_t kPositionRefresh = 0x706f736974696f6eull;
+    constexpr std::uint64_t kVelocityRefresh = 0x76656c6f63697479ull;
+    constexpr std::uint64_t kChargeRefresh = 0x63686172676573ull; // "charges"
+    const char* refresh_name =
+        pos ? "halo/refresh-position"
+            : (field_ == Field::velocities ? "halo/refresh-velocity"
+                                           : "halo/refresh-charge");
+    const std::uint64_t refresh_token =
+        pos ? kPositionRefresh
+            : (field_ == Field::velocities ? kVelocityRefresh : kChargeRefresh);
+    require_collective_halo_schema(plan, {}, dd->cart_comm, refresh_name,
+                                   refresh_token);
+}
 
 void HaloRefresh::launch(const cpu::LaunchContext& ctx) {
     auto* dd = ctx.runtime.md.dd;
@@ -1346,19 +1381,8 @@ void HaloRefresh::launch(const cpu::LaunchContext& ctx) {
         return;
     Frame& frame = ctx.frame;
     const bool pos = (field_ == Field::positions);
-    PackPlan plan = make_comm_plan(frame);
-    constexpr std::uint64_t kPositionRefresh = 0x706f736974696f6eull;
-    constexpr std::uint64_t kVelocityRefresh = 0x76656c6f63697479ull;
-    constexpr std::uint64_t kChargeRefresh = 0x63686172676573ull; // "charges"
-    const char* refresh_name =
-        pos ? "halo/refresh-position"
-            : (field_ == Field::velocities ? "halo/refresh-velocity"
-                                           : "halo/refresh-charge");
-    const std::uint64_t refresh_token =
-        pos ? kPositionRefresh
-            : (field_ == Field::velocities ? kVelocityRefresh : kChargeRefresh);
-    require_collective_halo_schema(plan, {}, dd->cart_comm, refresh_name,
-                                   refresh_token);
+    // Velocity/charge triples live on kColBorder only; kColComm is x/y/z.
+    PackPlan plan = make_border_plan(frame);
     const auto columns = refresh_columns(plan, field_);
 
     // Replay the swap table EXACTLY as the last full rebuild laid it out:
@@ -1399,8 +1423,10 @@ void HaloRefresh::launch(const cpu::LaunchContext& ctx) {
                 shifts = {shift[0], shift[1], shift[2]};
             }
             pack_refresh_rows(columns, swap.sendlist, shifts, sb);
-            rb.assign(refresh_payload_bytes(swap.nrecv, columns.size()),
-                      std::byte{0});
+            const std::size_t nbytes =
+                refresh_payload_bytes(swap.nrecv, columns.size());
+            if (rb.size() != nbytes)
+                rb.resize(nbytes);
 
             if (swap_is_silent(swap))
                 continue;
@@ -1474,21 +1500,14 @@ void HaloRecv::launch(const cpu::LaunchContext& ctx) {
     if (!reverse_plan.valid_for(frame) || !reverse_plan.writable
         || reverse_plan.kind != PackKind::Reverse)
         reverse_plan = make_reverse_plan(frame);
-    require_collective_halo_schema(reverse_plan, rev_fields_, dd->cart_comm,
-                                   "halo/reverse");
 
-    const int nswap = static_cast<int>(swaps->size());
-    if (bufs.send_force.size() != static_cast<std::size_t>(nswap)) {
-        bufs.resize_swaps(static_cast<std::size_t>(nswap));
-        prealloc_bufs(bufs, dd->capacity, 0, 0, plan_row_bytes(reverse_plan));
-    }
-
-    // Ghost slot layout guard. The prefix sum is the swap table's invariant
-    // (`firstrecv = n_local + Σ_{j<i} nrecv[j]`, maintained by
-    // `commit_recv`), so all that is left to check is that it describes the
-    // frame this rank is about to write into — collectively, because a
-    // disagreement is a wire-level mismatch, not a local one.
-    {
+    // Schema + layout-guard Allreduce only when HaloSend has rebuilt the
+    // ghost slots (`halo_generation` is bumped on every rank in that step).
+    // A position-only refresh leaves the generation unchanged, so this
+    // launch posts no collectives.
+    if (dd->halo_generation != last_checked_halo_generation_) {
+        require_collective_halo_schema(reverse_plan, rev_fields_, dd->cart_comm,
+                                       "halo/reverse");
         const int local_layout_valid =
             swaps->total_recv() == dd->n_ghost
             && dd->n_local + dd->n_ghost <= frame.capacity();
@@ -1498,6 +1517,13 @@ void HaloRecv::launch(const cpu::LaunchContext& ctx) {
         if (!all_layouts_valid)
             throw std::runtime_error(
                 "halo reverse ghost layout disagrees with Frame capacity");
+        last_checked_halo_generation_ = dd->halo_generation;
+    }
+
+    const int nswap = static_cast<int>(swaps->size());
+    if (bufs.send_force.size() != static_cast<std::size_t>(nswap)) {
+        bufs.resize_swaps(static_cast<std::size_t>(nswap));
+        prealloc_bufs(bufs, dd->capacity, 0, 0, plan_row_bytes(reverse_plan));
     }
 
     // Reverse the cascade EXACTLY backwards: the last round of the last axis
@@ -1527,11 +1553,12 @@ void HaloRecv::launch(const cpu::LaunchContext& ctx) {
             pack_reverse_rows(reverse_plan, swap.firstrecv, swap.nrecv,
                               rev_fields_,
                               bufs.send_force[static_cast<std::size_t>(s)]);
-            bufs.recv_force[static_cast<std::size_t>(s)].assign(
-                reverse_payload_bytes(reverse_plan,
-                                      static_cast<int>(swap.sendlist.size()),
-                                      rev_fields_),
-                std::byte{0});
+            auto& rforce = bufs.recv_force[static_cast<std::size_t>(s)];
+            const std::size_t nbytes = reverse_payload_bytes(
+                reverse_plan, static_cast<int>(swap.sendlist.size()),
+                rev_fields_);
+            if (rforce.size() != nbytes)
+                rforce.resize(nbytes);
         }
 
         int n_reqs = 0;

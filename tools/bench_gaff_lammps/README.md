@@ -182,3 +182,38 @@ spec.
 Correctness at 256: `widebox_parity.sh` with the subgroup arm as default —
 every window dev=0.0 vs np=1 (job 1693014, logs
 `atv-mil-bench/parity256sub/`).
+
+## Snapshot (2026-08-26, lammps-comm-port — CommBrick per-step discipline)
+
+Port of LAMMPS `CommBrick` step-path discipline onto the CPU halo: no
+collectives on the refresh path, `kColComm` is x/y/z (24 B/ghost), recv
+buffers size-set without memset. Same protocol as the kspace-subcomm
+block (MIL0PEGM18 24048 atoms, NVT 400 K, SPME 32³ α=0.25232811 spacing
+1.98, 5000 steps + 200 warmup, `srun --cpu-bind=cores`, OMP=1, grid
+8×8×4). These numbers are a record, **not** an acceptance criterion.
+
+| config | steps/s | note |
+|---|---|---|
+| ATV np=256 (job 1702467) | **662** | wall 7.56 s / 5000 prod |
+| LAMMPS np=256 (same node, double) | **1523** | Loop 3.28 s / 5000; Comm 0.441 s |
+
+ATV MPI task timing at np=256 (s / 5200 launches = 200 warmup + 5000 prod;
+LAMMPS Comm 0.441 s is the 5000-step reference):
+
+| Section | min | avg | max | %total |
+|---|---|---|---|---|
+| Pair | 0.7838 | 1.0334 | 1.3738 | 12.9 |
+| Bond | 0.1006 | 0.1346 | 0.1619 | 1.7 |
+| Kspace | 3.1122 | 3.6573 | 3.9590 | 45.6 |
+| Neigh | 0.3617 | 0.4344 | 0.5652 | 5.4 |
+| Comm | 2.5262 | **2.6144** | 2.6927 | 32.6 |
+| Modify | 0.1155 | 0.1278 | 0.1477 | 1.6 |
+| Other | 0.0061 | 0.0070 | 0.0078 | 0.1 |
+| Loop | 8.0090 | 8.0157 | 8.0213 | 100.0 |
+
+Comm avg moved 3.50 → 2.61 s on the 5200-launch dump (halo_send 1.62,
+halo_recv 0.72, migrate 0.42, reduce 0.047). No performance threshold is
+asserted. Next registered lever remains kspace remap collective shape.
+
+Correctness: `widebox_parity.sh` NP=256 DIMS=8,8,4 — every window
+dev=0.0 vs np=1, hops=2,2,1 (job 1702467).

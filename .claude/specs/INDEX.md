@@ -871,6 +871,10 @@ Do not re-create closed slugs without superseding intent.
 
 | cuda-openmm-md 01–05 | contract, rebuild, tile-force, multigpu, delete | CS=32 clusters, real masks, tile LJ/Coul, multi-GPU classify; Verlet default removed on CUDA |
 
+## Live — lammps-comm-port (2026-08-26)
+
+- [lammps-comm-port](lammps-comm-port.md) — port LAMMPS CommBrick per-step comm discipline: zero step-path collectives (6 Allreduce/step removed), comm_x_only 24 B forward payload, no recv memset; Comm 3.50→2.61 s at np=256 measured (job 1702467), physics bit-identical [done]
+
 ## Closed — kspace-subcomm (2026-08-26)
 
 PPPM mesh 选择器第三臂：FFTW-MPI slab FFT 收进派生 MPI 子组（树上首个真派生通信域，fingerprint 守卫、可别名、finalize 守卫释放）；删除被证伪的 replicated 策略。13/13 判据 verified；spec deleted; history is git（`4fa986de`）。实测同冻结二进制：np=256 343→586 steps/s（+71%），峰值 419→605@np200，Kspace 随 rank 数持平 ~3.7-4.0 s；256-rank widebox parity 全窗 dev=0.0（job 1693014）。下一杠杆已登记：remap Alltoallv 形状（reduce_scatter/邻域集合）。

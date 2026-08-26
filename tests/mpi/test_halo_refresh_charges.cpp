@@ -5,7 +5,8 @@
 /// rewrites OWNED charges after the step's forward halo, so ghost charges go
 /// stale mid-step. `HaloRefresh{charges}` re-sends the owner `charge` column
 /// into the existing ghost slots. Checks (2 ranks):
-///   - after HaloSend, ghost q equals the owner value (kColComm baseline);
+///   - after HaloSend (full rebuild / pack_border), ghost q equals the owner
+///     value (charge rides kColBorder, not the per-step kColComm payload);
 ///   - after mutating owned q (simulated Q solve) the ghosts are stale;
 ///   - after HaloRefresh{charges}, every ghost q equals the owner's new
 ///     value EXACTLY (transport is memcpy — bitwise);
@@ -91,7 +92,8 @@ TEST(HaloRefreshCharges, GhostChargesMatchOwnerAfterRefresh) {
     fwd.launch(lctx);
     ASSERT_GT(dd->n_ghost, 0) << "no ghosts: the test would be vacuous";
 
-    // Baseline: the forward halo already ships `charge` (kColComm).
+    // Baseline: the first HaloSend is a full rebuild, so pack_border ships
+    // charge (kColBorder). Per-step kColComm is x/y/z only.
     for (int g = 0; g < dd->n_ghost; ++g) {
         const int row = dd->n_local + g;
         const TagInt tag = frame.span(kAtom_tag)[row];

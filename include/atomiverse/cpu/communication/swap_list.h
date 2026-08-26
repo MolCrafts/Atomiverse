@@ -20,6 +20,7 @@
 ///     DOI 10.1016/j.cpc.2021.108171 — modern LAMMPS borders/forward/reverse.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <vector>
 
@@ -226,6 +227,37 @@ class SwapList {
     static HopNeed derive_hops(const md::mpi::DomainDecomposition& dd,
                                const Box& box, double shell_width);
 
+    /// @brief Rank-uniform per-axis round counts. Pure, no MPI.
+    ///
+    /// This is the round vector that used to be an `MPI_Allreduce(MAX)` in
+    /// `setup_swaps`. For each axis `d` it copies `dd`, walks
+    /// `coords[d] = 0 … dims[d)`, calls `derive_hops`, and keeps
+    /// `max(minus[d], plus[d])`. Complexity `O(Σ dims[d])`, independent of
+    /// the rank count. Hop math is not rewritten: negative/NaN shells,
+    /// cut-table errors, and the minimum-image bound all come from
+    /// `derive_hops`.
+    ///
+    /// Every input is rank-consistent (`dims` / `periods` / `cuts` / `box` /
+    /// `shell_width`), so every rank produces the same vector. A
+    /// minimum-image refusal throws inside the local scan — every rank sees
+    /// every coordinate — which is strictly better than a generic "another
+    /// rank refused" Allreduce flag.
+    ///
+    /// @param dd Any rank's decomposition: `dims`, `periods`, and the
+    ///        optional fractional `cuts`. `coords` is overwritten per scan
+    ///        point; `sublo`/`subhi` [Angstrom] appear only in a refusal
+    ///        message.
+    /// @param box Current simulation box; `length(d)` [Angstrom] is the axis
+    ///        length the slab widths are measured against.
+    /// @param shell_width Ghost shell width [Angstrom],
+    ///        `max(pair cutoff, bonded extension)`.
+    /// @return Hop count per axis — the rank-uniform round vector a
+    ///         transport caller passes to the five-argument `setup`.
+    /// @throws std::runtime_error under the same conditions as `derive_hops`.
+    static std::array<int, 3>
+    derive_uniform_rounds(const md::mpi::DomainDecomposition& dd,
+                          const Box& box, double shell_width);
+
     /// @brief Derive the swap table for this rank from its decomposition.
     ///
     /// Calls `derive_hops` and expands the result: axis `d` contributes
@@ -247,9 +279,9 @@ class SwapList {
     /// The derivation is **per rank and serial** — `SwapList` performs no
     /// MPI. What is stored here is this rank's own maximum over the two send
     /// directions; a transport caller that needs the round count to be
-    /// rank-uniform (the `MPI_Allreduce(MAX)` of the spec, required whenever
-    /// the partition is non-uniform or the axis non-periodic) reduces it and
-    /// calls the five-argument overload instead.
+    /// rank-uniform obtains it from `derive_uniform_rounds` (the MPI-free
+    /// local sweep that replaced the spec's `MPI_Allreduce(MAX)`) and then
+    /// calls the five-argument overload.
     ///
     /// Rebuilds the table in place, preserving the send lists' heap
     /// capacity. On a throw the previous table is left untouched.
@@ -285,12 +317,11 @@ class SwapList {
     /// derived count is not automatically rank-uniform — a non-uniform (RCB)
     /// partition has different partner-slab chains per rank, and a
     /// non-periodic axis truncates its chain at the global boundary — so the
-    /// caller reduces it (`MPI_Allreduce(MAX)`, the spec's reconciliation)
-    /// and hands the result back here. The extra rounds are not wasted: they
-    /// carry exactly what the deepest rank on that axis still needs.
+    /// caller obtains a uniform vector from `derive_uniform_rounds` and
+    /// hands it back here. The extra rounds are not wasted: they carry
+    /// exactly what the deepest rank on that axis still needs.
     ///
-    /// `SwapList` performs no MPI; the reduction stays with the caller
-    /// (`HaloSend`).
+    /// `SwapList` performs no MPI; the sweep is a pure local function.
     ///
     /// @param dd This rank's decomposition, as for the four-argument form.
     /// @param box Current simulation box; edge lengths [Angstrom].

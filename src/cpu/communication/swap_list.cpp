@@ -1,13 +1,15 @@
 /// @file src/cpu/communication/swap_list.cpp
 /// @brief `SwapList` implementation: multi-hop derivation, swap expansion,
 /// band scan, ghost-slot prefix sum. Purely local — no MPI here by
-/// construction, so the per-rank hop counts are what this file produces and
-/// the `MPI_Allreduce(MAX)` that makes them rank-uniform under a non-uniform
-/// partition belongs to the transport caller (`HaloSend`).
+/// construction. Rank-uniform round counts come from
+/// `derive_uniform_rounds` (a local sweep over each axis's coordinates);
+/// the transport caller (`HaloSend`) then expands them via the five-argument
+/// `setup`.
 
 #include "atomiverse/cpu/communication/swap_list.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -213,6 +215,24 @@ SwapList::HopNeed SwapList::derive_hops(const md::mpi::DomainDecomposition& dd,
         hops.plus[d] = plus.hops;
     }
     return hops;
+}
+
+std::array<int, 3>
+SwapList::derive_uniform_rounds(const md::mpi::DomainDecomposition& dd,
+                                const Box& box, double shell_width) {
+    std::array<int, 3> rounds{0, 0, 0};
+    for (int d = 0; d < 3; ++d) {
+        int axis_max = 0;
+        for (int c = 0; c < dd.dims[d]; ++c) {
+            md::mpi::DomainDecomposition scan = dd;
+            scan.coords[d] = c;
+            const HopNeed hops = derive_hops(scan, box, shell_width);
+            axis_max =
+                std::max(axis_max, std::max(hops.minus[d], hops.plus[d]));
+        }
+        rounds[static_cast<std::size_t>(d)] = axis_max;
+    }
+    return rounds;
 }
 
 void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,

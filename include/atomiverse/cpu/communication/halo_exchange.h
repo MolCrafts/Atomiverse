@@ -1,8 +1,10 @@
-/// @file cpu/comm/halo_exchange.h
+/// @file cpu/communication/halo_exchange.h
 /// @brief Ghost-atom halo exchange components for MPI domain decomposition.
 ///
-/// LAMMPS CommBrick forward/reverse comm, driven by an ordered **swap
-/// table** (`comm::SwapList`) instead of a per-step per-face geometry
+/// Structural reimplementation of the LAMMPS CommBrick communication
+/// discipline in `src/comm_brick.cpp` (`CommBrick::forward_comm` /
+/// `reverse_comm` / `borders`) — not a verbatim dump. Driven by an ordered
+/// **swap table** (`comm::SwapList`) instead of a per-step per-face geometry
 /// re-derivation:
 ///   - `HaloSend::launch` re-derives the table at every full rebuild
 ///     (`setup` + borders: refill each swap's send list from current
@@ -53,6 +55,18 @@
 /// cutoff is smaller than a bonded tuple's reach. Callers no longer have
 /// to hand-roll the bonded skin width on top of the pair cutoff.
 ///
+/// Copyright (2003) Sandia Corporation.  Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software.  This software is distributed under
+/// the GNU General Public License.
+///
+/// References:
+///   * S. Plimpton, J. Comput. Phys. **117**, 1 (1995),
+///     DOI 10.1006/jcph.1995.1039 — the original swap-list forward/reverse
+///     comm (`maxneed`, `sendlist`, `firstrecv`, `sendself`).
+///   * A. P. Thompson et al., Comput. Phys. Commun. **271**, 108171 (2022),
+///     DOI 10.1016/j.cpc.2021.108171 — modern LAMMPS borders/forward/reverse.
+///
 /// @see .claude/specs/parallel-md-engine.md  § A.4, A.5
 #pragma once
 
@@ -87,9 +101,16 @@ struct FaceBufs;
 /// Owns the halo's `comm::SwapList` and publishes it as `ctx.md.swap_list`.
 /// The table is re-derived on every full rebuild — so an NPT / deform box
 /// rescale is picked up, including a shrink that raises the per-axis round
-/// count — and each swap's send list is refilled from the current positions;
-/// packed buffers are allocated once in `build()` based on a generous
-/// initial estimate (no `launch()` realloc on the steady-state path).
+/// count — and each swap's send list is refilled from the current positions.
+///
+/// Steady-state (refresh / non-full-rebuild) `launch()` path: **zero MPI
+/// collectives**, **zero realloc** of the swap table / `FaceBufs` (buffers
+/// may `resize` up to pre-reserved capacity), **zero memset** of recv
+/// buffers. Schema-fingerprint collectives live in `build()` and the
+/// full-rebuild branch only. `HaloRecv`'s layout-guard Allreduce is gated
+/// on `dd->halo_generation`. `mpi::Reduce` is a separate NVT temperature
+/// reduction, not part of halo.
+///
 /// Single-rank (`runtime.mpi_size == 1`) and `cutoff == 0` both early-return,
 /// leaving the published pointer null.
 ///
@@ -406,6 +427,9 @@ class HaloRecv : public cpu::Component, public cpu::HaloParticipant {
     /// Flattened reverse-field descriptors, cached on first launch.
     std::vector<HaloParticipant::CommField> rev_fields_;
     bool fields_cached_ = false;
+    /// Schema + layout-guard Allreduce run only when `dd->halo_generation`
+    /// differs; HaloSend bumps it on every rank at full rebuild.
+    std::uint64_t last_checked_halo_generation_{};
 };
 
 } // namespace comm

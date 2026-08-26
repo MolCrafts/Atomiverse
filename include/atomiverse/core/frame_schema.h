@@ -94,11 +94,11 @@ struct FieldSpec {
     X(z, "z", StorageReal, Storage, One, Core, 0,                              \
       kColState | kColComm | kColBorder | kColWriteBack)                       \
     X(vx, "vx", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
+      kColState | kColBorder | kColWriteBack)                                  \
     X(vy, "vy", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
+      kColState | kColBorder | kColWriteBack)                                  \
     X(vz, "vz", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
+      kColState | kColBorder | kColWriteBack)                                  \
     X(fx, "fx", AccReal, Acc, One, Core, 0,                                    \
       kColState | kColReverse | kColWriteBack)                                 \
     X(fy, "fy", AccReal, Acc, One, Core, 0,                                    \
@@ -108,7 +108,7 @@ struct FieldSpec {
     X(mass, "mass", StorageReal, Storage, One, Core, 0,                        \
       kColState | kColBorder)                                                  \
     X(charge, "charge", StorageReal, Storage, One, Core, 0,                    \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
+      kColState | kColBorder | kColWriteBack)                                  \
     X(type, "type", int, Int, One, Core, 0, kColState | kColBorder)            \
     X(tag, "tag", TagInt, Tag, One, Core, 0,                                   \
       kColState | kColBorder | kColIdentityTail)                               \

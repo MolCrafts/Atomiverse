@@ -198,6 +198,8 @@ atv_add_cpp_test(test_cpu_comm_halo_refresh_charges cpu/communication/test_halo_
 atv_add_cpp_test(test_cpu_comm_tag_index_lifetime cpu/communication/test_tag_index_lifetime.cpp)
 atv_add_cpp_test(test_cpu_comm_swap_list          cpu/communication/test_swap_list.cpp)
 atv_add_cpp_test(test_cpu_comm_swap_list_maxneed  cpu/communication/test_swap_list_maxneed.cpp)
+atv_add_cpp_test(test_cpu_comm_swap_list_uniform_rounds cpu/communication/test_swap_list_uniform_rounds.cpp)
+atv_add_cpp_test(test_cpu_comm_atom_pack_comm_plan cpu/communication/test_atom_pack_comm_plan.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_ffield     cpu/dynamics/test_const_pot_ffield.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_maze_symplectic cpu/dynamics/test_const_pot_maze_symplectic.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_site_volume cpu/dynamics/test_const_pot_site_volume.cpp)
