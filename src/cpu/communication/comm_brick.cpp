@@ -21,17 +21,12 @@
 #include "atomiverse/cpu/communication/comm_brick.h"
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <memory>
-#include <numeric>
 #include <stdexcept>
-#include <string>
-#include <string_view>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
@@ -75,6 +70,10 @@ struct FaceBufs {
     std::vector<std::vector<std::byte>> recv_pos;
     std::vector<std::vector<std::byte>> send_force;
     std::vector<std::vector<std::byte>> recv_force;
+    /// Extra-field packer path (`forward_comm(Packer&)`): doubles, one
+    /// pair of buffers per swap, sized once at the end of `borders()`.
+    std::vector<std::vector<double>> send_pack;
+    std::vector<std::vector<double>> recv_pack;
     /// Per-swap count-handshake scratch (`MPI_Isend`/`Irecv` need stable
     /// addresses for the duration of the exchange, so these cannot be
     /// stack locals of a helper).
@@ -94,12 +93,74 @@ struct FaceBufs {
         recv_pos.resize(nswap);
         send_force.resize(nswap);
         recv_force.resize(nswap);
+        send_pack.resize(nswap);
+        recv_pack.resize(nswap);
         send_count.resize(nswap, 0);
         recv_count.resize(nswap, 0);
 #ifdef ATV_HAS_MPI
         requests.resize(2 * nswap);
 #endif
     }
+
+    /// @brief Reserve packer buffers for `nsize` doubles × `max_atoms`.
+    ///        Capacity only grows; a steady-state interval does not
+    ///        reallocate once this has been called with the interval max.
+    void reserve_packer(int nsize, int max_atoms) {
+        if (nsize <= 0 || max_atoms <= 0)
+            return;
+        const std::size_t cap = checked_mul(static_cast<std::size_t>(nsize),
+                                            static_cast<std::size_t>(max_atoms),
+                                            "halo packer reserve");
+        for (auto& b : send_pack)
+            if (b.capacity() < cap)
+                b.reserve(cap);
+        for (auto& b : recv_pack)
+            if (b.capacity() < cap)
+                b.reserve(cap);
+    }
+
+#ifdef ATV_HAS_MPI
+    /// @brief One concurrent point-to-point round over `[begin, end)`.
+    ///
+    /// Buffers and requests are `this`. For each index `s` the recv and
+    /// send callables may invoke `post(buf, nbytes, proc, tag)` zero or
+    /// more times; a zero-byte or `MPI_PROC_NULL` post is a skip. After
+    /// every index has filled, `Waitall`. MPI_BYTE throughout — a count
+    /// handshake posts `sizeof(int)` bytes. No configuration struct.
+    ///
+    /// @param comm Cartesian communicator.
+    /// @param begin Inclusive first index of this round.
+    /// @param end Exclusive end index of this round.
+    /// @param recv Called as `recv(s, post)` for each `s` in the interval.
+    /// @param send Called as `send(s, post)` for each `s` in the interval.
+    template <typename RecvFn, typename SendFn>
+    void exchange_round(MPI_Comm comm, int begin, int end, RecvFn&& recv,
+                        SendFn&& send) {
+        const int width = std::max(0, end - begin);
+        const std::size_t need = 2 * static_cast<std::size_t>(width);
+        if (requests.size() < need)
+            requests.resize(need);
+        int nreq = 0;
+        auto post_recv = [&](void* buf, int nbytes, int proc, int tag) {
+            if (nbytes <= 0 || proc == MPI_PROC_NULL)
+                return;
+            MPI_Irecv(buf, nbytes, MPI_BYTE, proc, tag, comm,
+                      &requests[static_cast<std::size_t>(nreq++)]);
+        };
+        auto post_send = [&](void* buf, int nbytes, int proc, int tag) {
+            if (nbytes <= 0 || proc == MPI_PROC_NULL)
+                return;
+            MPI_Isend(buf, nbytes, MPI_BYTE, proc, tag, comm,
+                      &requests[static_cast<std::size_t>(nreq++)]);
+        };
+        for (int s = begin; s < end; ++s) {
+            recv(s, post_recv);
+            send(s, post_send);
+        }
+        if (nreq > 0)
+            MPI_Waitall(nreq, requests.data(), MPI_STATUSES_IGNORE);
+    }
+#endif
 };
 
 } // namespace detail
@@ -117,7 +178,12 @@ std::size_t facebufs_bytes(const detail::FaceBufs* b) {
         n += buf.size();
     for (const auto& buf : b->recv_force)
         n += buf.size();
-    return n * sizeof(std::byte);
+    n *= sizeof(std::byte);
+    for (const auto& buf : b->send_pack)
+        n += buf.size() * sizeof(double);
+    for (const auto& buf : b->recv_pack)
+        n += buf.size() * sizeof(double);
+    return n;
 }
 } // namespace
 
@@ -125,11 +191,6 @@ CommBrick::CommBrick() = default;
 CommBrick::~CommBrick() = default;
 CommBrick::CommBrick(CommBrick&&) noexcept = default;
 CommBrick& CommBrick::operator=(CommBrick&&) noexcept = default;
-
-std::size_t CommBrick::send_buf_capacity_for_test() const {
-    return (bufs_ && !bufs_->send_pos.empty()) ? bufs_->send_pos[0].capacity()
-                                               : 0;
-}
 
 std::size_t CommBrick::memory_bytes() const {
     return facebufs_bytes(bufs_.get());
@@ -184,7 +245,8 @@ inline void pack_to(std::vector<std::byte>& buf, const Frame& frame,
 // have no ordering between them, and two blocking Sendrecvs in a row cost two
 // serialized round trips where one Waitall costs one.
 void exchange_along_dim(Frame& frame, md::mpi::DomainDecomposition* dd, int dim,
-                        std::size_t payload_bytes, PackPlan& plan) {
+                        std::size_t payload_bytes, PackPlan& plan,
+                        FaceBufs& bufs) {
     if (dd->dims[dim] <= 1)
         return; // not decomposed along this axis — nothing leaves via it
     const int lo_nbr = dd->face_neighbors[static_cast<std::size_t>(2 * dim)];
@@ -196,7 +258,15 @@ void exchange_along_dim(Frame& frame, md::mpi::DomainDecomposition* dd, int dim,
     const ColKey axis_key =
         (dim == 0) ? kAtom_x : ((dim == 1) ? kAtom_y : kAtom_z);
 
-    std::vector<std::byte> send_lo, send_hi, recv_lo, recv_hi;
+    // Two streams occupy FaceBufs slots 0 (hi) and 1 (lo). Tags are 0 and 1
+    // — the two concurrent messages, same reason the halo round uses the
+    // swap index. Count Waitall finishes before payload, so both phases
+    // reuse those tags (LAMMPS uses 0 because it is sequential).
+    bufs.resize_swaps(std::max(bufs.send_pos.size(), std::size_t{2}));
+    auto& send_hi = bufs.send_pos[0];
+    auto& send_lo = bufs.send_pos[1];
+    auto& recv_lo = bufs.recv_pos[0];
+    auto& recv_hi = bufs.recv_pos[1];
     while (true) {
         // Re-fetch each round: set_capacity below may have reallocated the SoA,
         // invalidating any span resolved in a previous round.
@@ -227,30 +297,37 @@ void exchange_along_dim(Frame& frame, md::mpi::DomainDecomposition* dd, int dim,
         // when dims[dim]==2 and lo_nbr==hi_nbr): +dim atoms go to hi_nbr and
         // arrive from lo_nbr; −dim atoms go to lo_nbr and arrive from hi_nbr.
         int n_recv_lo = 0, n_recv_hi = 0; // +dim from lo, −dim from hi
-        MPI_Request reqs[4];
-        MPI_Isend(&n_send_hi, 1, MPI_INT, hi_nbr, 0, comm, &reqs[0]);
-        MPI_Irecv(&n_recv_lo, 1, MPI_INT, lo_nbr, 0, comm, &reqs[1]);
-        MPI_Isend(&n_send_lo, 1, MPI_INT, lo_nbr, 1, comm, &reqs[2]);
-        MPI_Irecv(&n_recv_hi, 1, MPI_INT, hi_nbr, 1, comm, &reqs[3]);
-        MPI_Waitall(4, reqs, MPI_STATUSES_IGNORE);
+        bufs.send_count[0] = n_send_hi;
+        bufs.send_count[1] = n_send_lo;
+        bufs.exchange_round(
+            comm, 0, 2,
+            [&](int s, auto post) {
+                post(s == 0 ? &n_recv_lo : &n_recv_hi,
+                     static_cast<int>(sizeof(int)), s == 0 ? lo_nbr : hi_nbr,
+                     s);
+            },
+            [&](int s, auto post) {
+                post(&bufs.send_count[static_cast<std::size_t>(s)],
+                     static_cast<int>(sizeof(int)), s == 0 ? hi_nbr : lo_nbr,
+                     s);
+            });
 
-        // `resize` on a byte vector value-initializes the grown tail; the
-        // payload overwrites all of it, so skip the zero pass.
         recv_lo.resize(static_cast<std::size_t>(n_recv_lo) * payload_bytes);
         recv_hi.resize(static_cast<std::size_t>(n_recv_hi) * payload_bytes);
-        MPI_Isend(send_hi.data(),
-                  checked_mpi_byte_count(send_hi.size(), "migrate/send_hi"),
-                  MPI_BYTE, hi_nbr, 2, comm, &reqs[0]);
-        MPI_Irecv(recv_lo.data(),
-                  checked_mpi_byte_count(recv_lo.size(), "migrate/recv_lo"),
-                  MPI_BYTE, lo_nbr, 2, comm, &reqs[1]);
-        MPI_Isend(send_lo.data(),
-                  checked_mpi_byte_count(send_lo.size(), "migrate/send_lo"),
-                  MPI_BYTE, lo_nbr, 3, comm, &reqs[2]);
-        MPI_Irecv(recv_hi.data(),
-                  checked_mpi_byte_count(recv_hi.size(), "migrate/recv_hi"),
-                  MPI_BYTE, hi_nbr, 3, comm, &reqs[3]);
-        MPI_Waitall(4, reqs, MPI_STATUSES_IGNORE);
+        bufs.exchange_round(
+            comm, 0, 2,
+            [&](int s, auto post) {
+                auto& rbuf = s == 0 ? recv_lo : recv_hi;
+                post(rbuf.data(),
+                     checked_mpi_byte_count(rbuf.size(), "migrate/recv"),
+                     s == 0 ? lo_nbr : hi_nbr, s);
+            },
+            [&](int s, auto post) {
+                auto& sbuf = s == 0 ? send_hi : send_lo;
+                post(sbuf.data(),
+                     checked_mpi_byte_count(sbuf.size(), "migrate/send"),
+                     s == 0 ? hi_nbr : lo_nbr, s);
+            });
 
         const int n_recv = n_recv_lo + n_recv_hi;
         const int n_needed = dd->n_local + n_recv;
@@ -296,29 +373,6 @@ void exchange_along_dim(Frame& frame, md::mpi::DomainDecomposition* dd, int dim,
         if (global_pending == 0)
             return;
     }
-}
-
-/// @brief Which exchange a halo message belongs to. One tag stride each, so
-/// a table deeper than the old fixed six swaps cannot alias a count
-/// handshake onto a payload.
-enum class HaloTagKind : int { count = 0, forward = 1, reverse = 2 };
-
-/// Swaps a single stride may address. A multi-hop table holds
-/// `2 * sum_d maxneed_d` swaps — up to `2 * (dims - 1)` on a narrow axis —
-/// so the stride is sized for a thousands-of-ranks axis while four strides
-/// still fit the 32767 tag range MPI guarantees.
-constexpr int kHaloTagStride = 4096;
-
-/// @brief MPI tag for one swap's message of one kind.
-/// @param kind Which of the four halo exchanges the message belongs to.
-/// @param iswap Swap index in the published table.
-/// @return Tag, unique across kinds and swaps.
-/// @throws std::overflow_error if the table is deeper than one tag stride.
-inline int halo_tag(HaloTagKind kind, int iswap) {
-    if (iswap < 0 || iswap >= kHaloTagStride)
-        throw std::overflow_error(
-            "halo: swap table deeper than the MPI tag stride");
-    return static_cast<int>(kind) * kHaloTagStride + iswap;
 }
 
 /// @brief Gather one swap's send list onto the wire.
@@ -410,25 +464,25 @@ inline void forward_round(Frame& frame, md::mpi::DomainDecomposition& dd,
             full_rebuild ? 0 : swaps[s].nrecv;
     }
 
+    // Concurrent posts to the same neighbour (dims[d]==2) need distinct
+    // MPI tags: the swap index. LAMMPS uses tag 0 because it is sequential.
     if (full_rebuild) {
         ScopedTimer scope(timer, "halo/brd_count", -1, kCommCat);
-        int n_creqs = 0;
-        for (int s = begin; s < end; ++s) {
-            if (swaps[s].is_silent())
-                continue;
-            MPI_Isend(&bufs.send_count[static_cast<std::size_t>(s)], 1, MPI_INT,
-                      swaps[s].sendproc, halo_tag(HaloTagKind::count, s),
-                      dd.cart_comm,
-                      &bufs.requests[static_cast<std::size_t>(n_creqs++)]);
-            MPI_Irecv(
-                &bufs.recv_count[static_cast<std::size_t>(s)], 1, MPI_INT,
-                swaps[s].recvproc,
-                halo_tag(HaloTagKind::count, Halo::mirror_swap(begin, end, s)),
-                dd.cart_comm,
-                &bufs.requests[static_cast<std::size_t>(n_creqs++)]);
-        }
-        if (n_creqs > 0)
-            MPI_Waitall(n_creqs, bufs.requests.data(), MPI_STATUSES_IGNORE);
+        bufs.exchange_round(
+            dd.cart_comm, begin, end,
+            [&](int s, auto post) {
+                if (swaps[s].is_silent())
+                    return;
+                post(&bufs.recv_count[static_cast<std::size_t>(s)],
+                     static_cast<int>(sizeof(int)), swaps[s].recvproc,
+                     Halo::mirror_swap(begin, end, s));
+            },
+            [&](int s, auto post) {
+                if (swaps[s].is_silent())
+                    return;
+                post(&bufs.send_count[static_cast<std::size_t>(s)],
+                     static_cast<int>(sizeof(int)), swaps[s].sendproc, s);
+            });
     }
 
     const std::size_t row_bytes = plan.bytes(1);
@@ -452,33 +506,27 @@ inline void forward_round(Frame& frame, md::mpi::DomainDecomposition& dd,
 
     {
         ScopedTimer scope(timer, "halo/brd_wait", -1, kCommCat);
-        int n_preqs = 0;
-        for (int s = begin; s < end; ++s) {
-            if (swaps[s].is_silent())
-                continue;
-            auto& sbuf = bufs.send_pos[static_cast<std::size_t>(s)];
-            auto& rbuf = bufs.recv_pos[static_cast<std::size_t>(s)];
-            if (bufs.send_count[static_cast<std::size_t>(s)] > 0) {
-                MPI_Isend(
-                    sbuf.data(),
-                    checked_mpi_byte_count(sbuf.size(), "halo forward send"),
-                    MPI_BYTE, swaps[s].sendproc,
-                    halo_tag(HaloTagKind::forward, s), dd.cart_comm,
-                    &bufs.requests[static_cast<std::size_t>(n_preqs++)]);
-            }
-            if (bufs.recv_count[static_cast<std::size_t>(s)] > 0) {
-                MPI_Irecv(
+        bufs.exchange_round(
+            dd.cart_comm, begin, end,
+            [&](int s, auto post) {
+                if (swaps[s].is_silent()
+                    || bufs.recv_count[static_cast<std::size_t>(s)] <= 0)
+                    return;
+                auto& rbuf = bufs.recv_pos[static_cast<std::size_t>(s)];
+                post(
                     rbuf.data(),
                     checked_mpi_byte_count(rbuf.size(), "halo forward receive"),
-                    MPI_BYTE, swaps[s].recvproc,
-                    halo_tag(HaloTagKind::forward,
-                             Halo::mirror_swap(begin, end, s)),
-                    dd.cart_comm,
-                    &bufs.requests[static_cast<std::size_t>(n_preqs++)]);
-            }
-        }
-        if (n_preqs > 0)
-            MPI_Waitall(n_preqs, bufs.requests.data(), MPI_STATUSES_IGNORE);
+                    swaps[s].recvproc, Halo::mirror_swap(begin, end, s));
+            },
+            [&](int s, auto post) {
+                if (swaps[s].is_silent()
+                    || bufs.send_count[static_cast<std::size_t>(s)] <= 0)
+                    return;
+                auto& sbuf = bufs.send_pos[static_cast<std::size_t>(s)];
+                post(sbuf.data(),
+                     checked_mpi_byte_count(sbuf.size(), "halo forward send"),
+                     swaps[s].sendproc, s);
+            });
     }
 
     if (full_rebuild) {
@@ -617,8 +665,7 @@ inline void forward_cascade(Frame& frame, md::mpi::DomainDecomposition& dd,
     }
 }
 
-// Zero every schema-declared reverse accumulator on ghost rows. Runtime
-// columns opt in with kColReverse and require no endpoint field-list edit.
+// Zero every schema-declared reverse accumulator on ghost rows.
 void zero_ghost_forces(Frame& frame, const md::mpi::DomainDecomposition& dd,
                        PackPlan& reverse_plan, const Schema& reverse_schema) {
     const int lo = dd.n_local;
@@ -716,7 +763,6 @@ void CommBrick::borders(const cpu::LaunchContext& ctx) {
 
     Frame& frame = ctx.frame;
     FaceBufs& bufs = *bufs_;
-    ++dd->atom_sort_step;
 
     PackPlan& forward_plan = bufs.border_plan;
     if (!forward_plan.valid_for(frame) || !forward_plan.writable
@@ -729,22 +775,16 @@ void CommBrick::borders(const cpu::LaunchContext& ctx) {
 
     if (forward_plan.fingerprint != verified_border_fingerprint_)
         throw std::runtime_error(
-            "halo/border: the Frame wire schema changed after Comm::setup "
-            "anchored it collectively; rebuild the communicator (run "
-            "setup again) instead of reneighbouring across a schema "
-            "mutation.");
-    if (dd->atom_sort_enabled && dd->atom_sort_nfreq > 0
-        && dd->atom_sort_step >= dd->atom_sort_next) {
-        double bs = dd->atom_sort_binsize;
-        if (!(bs > 0.0))
-            bs = 0.5
-                 * (dd->atom_sort_neigh_cut > 0.0 ? dd->atom_sort_neigh_cut
-                                                  : ghost_cutoff_);
-        if (md::sort_owned_atoms(frame, dd->n_local, bs))
-            md::notify_sorted(dd, frame, &swaps_, /*clear_ghosts=*/true);
-        dd->atom_sort_next =
-            dd->atom_sort_step
-            + (dd->atom_sort_nfreq > 0 ? dd->atom_sort_nfreq : 1);
+            "halo/border: the Frame wire schema changed after setup "
+            "anchored it; schema mutation mid-run is not supported.");
+    if (md::AtomSortState* sort = ctx.runtime.md.atom_sort) {
+        sort->step = ctx.step;
+        if (sort->due()) {
+            const double bs = sort->resolved_binsize(ghost_cutoff_);
+            if (md::sort_owned_atoms(frame, dd->n_local, bs))
+                md::notify_sorted(dd, frame, &swaps_, /*clear_ghosts=*/true);
+            sort->mark_sorted();
+        }
     }
 
     frame.set_nghost(0);
@@ -768,6 +808,12 @@ void CommBrick::borders(const cpu::LaunchContext& ctx) {
     frame.set_nghost(dd->n_ghost);
     ++dd->halo_generation;
     zero_ghost_forces(frame, *dd, bufs.reverse_plan, reverse_schema_);
+    int max_atoms = 1;
+    for (std::size_t s = 0; s < swaps_.size(); ++s)
+        max_atoms =
+            std::max({max_atoms, static_cast<int>(swaps_[s].sendlist.size()),
+                      swaps_[s].nrecv});
+    bufs.reserve_packer(packer_nsize_, max_atoms);
 }
 
 void CommBrick::forward_comm(const cpu::LaunchContext& ctx) {
@@ -782,7 +828,6 @@ void CommBrick::forward_comm(const cpu::LaunchContext& ctx) {
 
     Frame& frame = ctx.frame;
     FaceBufs& bufs = *bufs_;
-    ++dd->atom_sort_step;
 
     PackPlan& forward_plan = bufs.comm_plan;
     if (!forward_plan.valid_for(frame) || !forward_plan.writable
@@ -816,9 +861,7 @@ void CommBrick::forward_comm(const cpu::LaunchContext& ctx) {
                 rbuf.resize(nbytes);
             MPI_Irecv(rbuf.data(),
                       checked_mpi_byte_count(nbytes, "halo refresh receive"),
-                      MPI_BYTE, swap.recvproc,
-                      halo_tag(HaloTagKind::forward,
-                               Halo::mirror_swap(begin, end, s)),
+                      MPI_BYTE, swap.recvproc, Halo::mirror_swap(begin, end, s),
                       dd->cart_comm, &recv_reqs[s]);
         }
         begin = end;
@@ -839,8 +882,8 @@ void CommBrick::forward_comm(const cpu::LaunchContext& ctx) {
                 MPI_Isend(
                     sbuf.data(),
                     checked_mpi_byte_count(sbuf.size(), "halo refresh send"),
-                    MPI_BYTE, swap.sendproc, halo_tag(HaloTagKind::forward, s),
-                    dd->cart_comm, &send_reqs[n_sends++]);
+                    MPI_BYTE, swap.sendproc, s, dd->cart_comm,
+                    &send_reqs[n_sends++]);
             }
         }
         if (end - begin > 0) {
@@ -895,9 +938,8 @@ void CommBrick::reverse_comm(const cpu::LaunchContext& ctx) {
         // exchange/borders skew across all ranks).
         if (reverse_plan.fingerprint != verified_reverse_fingerprint_)
             throw std::runtime_error(
-                "halo/reverse: the Frame wire schema changed after "
-                "Comm::setup anchored it collectively; rebuild the "
-                "communicator instead of mutating the schema mid-run.");
+                "halo/reverse: the Frame wire schema changed after setup "
+                "anchored it; schema mutation mid-run is not supported.");
         if (swaps_.total_recv() != dd->n_ghost
             || dd->n_local + dd->n_ghost > frame.capacity())
             throw std::runtime_error(
@@ -931,9 +973,7 @@ void CommBrick::reverse_comm(const cpu::LaunchContext& ctx) {
                 rbuf.resize(nbytes);
             MPI_Irecv(rbuf.data(),
                       checked_mpi_byte_count(nbytes, "halo reverse receive"),
-                      MPI_BYTE, swap.sendproc,
-                      halo_tag(HaloTagKind::reverse,
-                               Halo::mirror_swap(begin, end, s)),
+                      MPI_BYTE, swap.sendproc, Halo::mirror_swap(begin, end, s),
                       dd->cart_comm, &recv_reqs[s]);
         }
         end = begin;
@@ -954,8 +994,8 @@ void CommBrick::reverse_comm(const cpu::LaunchContext& ctx) {
                 MPI_Isend(
                     sbuf.data(),
                     checked_mpi_byte_count(sbuf.size(), "halo reverse send"),
-                    MPI_BYTE, swap.recvproc, halo_tag(HaloTagKind::reverse, s),
-                    dd->cart_comm, &send_reqs[n_sends++]);
+                    MPI_BYTE, swap.recvproc, s, dd->cart_comm,
+                    &send_reqs[n_sends++]);
             }
         }
         if (end - begin > 0) {
@@ -1022,8 +1062,7 @@ void CommBrick::exchange(const cpu::LaunchContext& ctx) {
         // Allreduce barrier in front of every reneighbouring.
         throw std::runtime_error(
             "owner_exchange: the Frame wire schema changed after the first "
-            "exchange anchored it collectively; rebuild the communicator "
-            "instead of mutating the schema mid-run.");
+            "exchange anchored it; schema mutation mid-run is not supported.");
     }
 
     int any_local = 0;
@@ -1061,9 +1100,12 @@ void CommBrick::exchange(const cpu::LaunchContext& ctx) {
     frame.set_nghost(0);
     dd->n_ghost = 0;
 
-    exchange_along_dim(frame, dd, 0, payload_bytes, plan);
-    exchange_along_dim(frame, dd, 1, payload_bytes, plan);
-    exchange_along_dim(frame, dd, 2, payload_bytes, plan);
+    if (!bufs_)
+        bufs_ = std::make_unique<detail::FaceBufs>();
+    bufs_->resize_swaps(std::max(swaps_.size(), std::size_t{2}));
+    exchange_along_dim(frame, dd, 0, payload_bytes, plan, *bufs_);
+    exchange_along_dim(frame, dd, 1, payload_bytes, plan, *bufs_);
+    exchange_along_dim(frame, dd, 2, payload_bytes, plan, *bufs_);
 
     dd->n_ghost = 0;
     ++dd->neighbor_generation;
@@ -1082,7 +1124,9 @@ void CommBrick::exchange(const cpu::LaunchContext& ctx) {
 }
 
 void CommBrick::forward_comm(Packer& packer) {
-    // LAMMPS `CommBrick::forward_comm(Fix*)` (src/comm_brick.cpp:1078).
+    // LAMMPS `CommBrick::forward_comm(Fix*)` (src/comm_brick.cpp:1078):
+    // sequential per swap, tag 0. The self-copy branch is unreachable —
+    // `is_silent()` already skips sendself / MPI_PROC_NULL.
     if (mpi_size_ <= 1)
         return;
     if (!dd_ || dd_->cart_comm == MPI_COMM_NULL || swaps_.size() == 0)
@@ -1090,12 +1134,19 @@ void CommBrick::forward_comm(Packer& packer) {
     const int nsize = packer.comm_forward();
     if (nsize <= 0)
         return;
-
-    int my_rank = 0;
-    MPI_Comm_rank(dd_->cart_comm, &my_rank);
+    packer_nsize_ = std::max(packer_nsize_, nsize);
+    if (!bufs_)
+        bufs_ = std::make_unique<detail::FaceBufs>();
+    FaceBufs& bufs = *bufs_;
     const int nswap = static_cast<int>(swaps_.size());
-    std::vector<double> sbuf;
-    std::vector<double> rbuf;
+    bufs.resize_swaps(static_cast<std::size_t>(nswap));
+    int max_atoms = 1;
+    for (int s = 0; s < nswap; ++s)
+        max_atoms =
+            std::max({max_atoms, static_cast<int>(swaps_[s].sendlist.size()),
+                      swaps_[s].nrecv});
+    bufs.reserve_packer(packer_nsize_, max_atoms);
+
     for (int iswap = 0; iswap < nswap; ++iswap) {
         const Swap& swap = swaps_[iswap];
         if (swap.is_silent())
@@ -1104,24 +1155,33 @@ void CommBrick::forward_comm(Packer& packer) {
         const int n_recv = swap.nrecv;
         const int pbc_flag =
             (swap.pbc[0] != 0 || swap.pbc[1] != 0 || swap.pbc[2] != 0) ? 1 : 0;
+        auto& sbuf = bufs.send_pack[static_cast<std::size_t>(iswap)];
+        auto& rbuf = bufs.recv_pack[static_cast<std::size_t>(iswap)];
         sbuf.resize(static_cast<std::size_t>(std::max(n_send * nsize, 1)));
         const int n = packer.pack_forward_comm(n_send, swap.sendlist.data(),
                                                sbuf.data(), pbc_flag, swap.pbc);
         rbuf.resize(static_cast<std::size_t>(std::max(n_recv * nsize, 1)));
-        MPI_Request request = MPI_REQUEST_NULL;
-        double* buf = sbuf.data();
-        if (swap.sendproc != my_rank) {
-            if (n_recv > 0)
-                MPI_Irecv(rbuf.data(), n_recv * nsize, MPI_DOUBLE,
-                          swap.recvproc, 0, dd_->cart_comm, &request);
-            if (n_send > 0)
-                MPI_Send(sbuf.data(), n, MPI_DOUBLE, swap.sendproc, 0,
-                         dd_->cart_comm);
-            if (n_recv > 0)
-                MPI_Wait(&request, MPI_STATUS_IGNORE);
-            buf = rbuf.data();
-        }
-        packer.unpack_forward_comm(n_recv, swap.firstrecv, buf);
+        bufs.exchange_round(
+            dd_->cart_comm, iswap, iswap + 1,
+            [&](int, auto post) {
+                if (n_recv <= 0)
+                    return;
+                post(rbuf.data(),
+                     checked_mpi_byte_count(static_cast<std::size_t>(n_recv)
+                                                * sizeof(double),
+                                            "packer recv"),
+                     swap.recvproc, 0);
+            },
+            [&](int, auto post) {
+                if (n <= 0)
+                    return;
+                post(sbuf.data(),
+                     checked_mpi_byte_count(static_cast<std::size_t>(n)
+                                                * sizeof(double),
+                                            "packer send"),
+                     swap.sendproc, 0);
+            });
+        packer.unpack_forward_comm(n_recv, swap.firstrecv, rbuf.data());
     }
 }
 

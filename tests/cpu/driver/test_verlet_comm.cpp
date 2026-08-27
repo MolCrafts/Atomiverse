@@ -371,3 +371,57 @@ TEST(TestVerletComm, MinimizeRunStageWrapsComm) {
     ASSERT_GE(log.size(), 2u);
     EXPECT_EQ(log.back(), "reverse");
 }
+
+TEST(TestVerletComm, MdRefreshSequenceIsForwardThenReverse) {
+    auto frame = one_atom();
+    SpyComm comm;
+    SpyNeighbor neigh;
+    Hook hook;
+    std::vector<std::string> log;
+    comm.log = &log;
+    auto plan = md_plan(neigh, hook);
+
+    cpu::Runtime rt;
+    rt.init();
+    rt.load(plan);
+    rt.set_frame(frame);
+    bind_spy(rt, comm);
+    rt.build_components();
+    rt.step(0);
+
+    ASSERT_EQ(log.size(), 2u);
+    EXPECT_EQ(log[0], "forward");
+    EXPECT_EQ(log[1], "reverse");
+}
+
+TEST(TestVerletComm, MdRebuildSequenceIsExchangeBordersReverse) {
+    auto frame = one_atom();
+    SpyComm comm;
+    SpyNeighbor neigh;
+    Hook hook;
+    std::vector<std::string> log;
+    comm.log = &log;
+    auto plan = md_plan(neigh, hook);
+
+    cpu::Runtime rt;
+    rt.init();
+    rt.load(plan);
+    rt.set_frame(frame);
+    bind_spy(rt, comm);
+    rt.build_components();
+    for (int s = 0; s < 10; ++s)
+        rt.step(s);
+
+    std::vector<std::string> rebuild;
+    for (std::size_t i = 0; i + 2 < log.size(); ++i) {
+        if (log[i] == "exchange" && log[i + 1] == "borders") {
+            rebuild.assign(log.begin() + static_cast<std::ptrdiff_t>(i),
+                           log.begin() + static_cast<std::ptrdiff_t>(i) + 3);
+            break;
+        }
+    }
+    ASSERT_EQ(rebuild.size(), 3u);
+    EXPECT_EQ(rebuild[0], "exchange");
+    EXPECT_EQ(rebuild[1], "borders");
+    EXPECT_EQ(rebuild[2], "reverse");
+}

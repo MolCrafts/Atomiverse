@@ -24,8 +24,6 @@
 /// `[n_local, n_local+n_ghost)` and are rewritten by halo).
 #pragma once
 
-#include <cmath>
-
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -37,8 +35,16 @@ namespace md {
 // DomainDecomposition lives in md::mpi (see domain.h).
 using DomainDecomposition = mpi::DomainDecomposition;
 
-/// @brief LAMMPS `atom_modify sort Nfreq binsize` parameters.
-struct AtomSortParams {
+/// @brief Runtime state for LAMMPS `atom_modify sort Nfreq binsize`.
+///
+/// Owned by `NeighborList`, published non-owning as `ctx.md.atom_sort`.
+/// Multi-rank: `CommBrick` applies it **before** borders (LAMMPS:
+/// exchange → sort → borders). Serial: `NeighborList` applies it at
+/// reneighbor. The clock is the Driver's `LaunchContext::step`, not a
+/// counter incremented on every communication opportunity — Minimize
+/// line-search re-evaluates forces at a frozen step and must not walk
+/// the cadence.
+struct AtomSortState {
     /// @brief Sort at the first reneighbor after this many MD steps.
     ///        LAMMPS default is typically 1000; use 1 to sort every rebuild.
     int nfreq = 1000;
@@ -46,45 +52,39 @@ struct AtomSortParams {
     double binsize = 0.0;
     /// @brief Master enable (LAMMPS `atom_modify sort` vs no-sort).
     bool enabled = true;
-};
-
-/// @brief Runtime state for atom_modify sort cadence.
-///
-/// Multi-rank: owned by `DomainDecomposition` and applied in `CommBrick`
-/// **before** borders (LAMMPS: exchange → sort → borders). Serial: applied
-/// in `NeighborList` at reneighbor (no halo).
-struct AtomSortState {
-    AtomSortParams params{};
-    /// @brief Global MD step estimate (incremented once per sort opportunity).
+    /// @brief The loop's current step, stamped from `LaunchContext::step`.
     int step = 0;
     /// @brief Next `step` at which sort may fire. Default = default nfreq so
     ///        the first sort is after `nfreq` steps (LAMMPS `nextsort` init),
     ///        not on step 0.
     int next_sort = 1000;
 
-    /// @brief Resolve binsize (Å) from params + neighbor cutoff.
+    /// @brief Resolve binsize (Å) from `binsize` + neighbor cutoff.
     double resolved_binsize(double neighbor_cutoff) const {
-        if (params.binsize > 0.0)
-            return params.binsize;
+        if (binsize > 0.0)
+            return binsize;
         // LAMMPS: when binsize = 0.0, use 0.5 * neighbor cutoff.
         return 0.5 * neighbor_cutoff;
     }
 
     /// @brief True when this opportunity should run a spatial sort.
     bool due() const {
-        if (!params.enabled || params.nfreq <= 0)
+        if (!enabled || nfreq <= 0)
             return false;
         return step >= next_sort;
     }
 
-    void mark_sorted() {
-        next_sort = step + (params.nfreq > 0 ? params.nfreq : 1);
-    }
+    void mark_sorted() { next_sort = step + (nfreq > 0 ? nfreq : 1); }
 
-    /// @brief Apply params and schedule first sort at `nfreq` (not step 0).
-    void configure(AtomSortParams p) {
-        params = p;
-        next_sort = (p.nfreq > 0) ? p.nfreq : 1;
+    /// @brief Apply cadence and schedule first sort at `nfreq_` (not step 0).
+    /// @param nfreq_ Sort at the first reneighbor after this many steps.
+    /// @param binsize_ Bin edge [Å]; `≤ 0` → auto from neighbor cutoff.
+    /// @param enabled_ Master enable.
+    void configure(int nfreq_, double binsize_ = 0.0, bool enabled_ = true) {
+        nfreq = nfreq_;
+        binsize = binsize_;
+        enabled = enabled_;
+        next_sort = (nfreq > 0) ? nfreq : 1;
     }
 };
 

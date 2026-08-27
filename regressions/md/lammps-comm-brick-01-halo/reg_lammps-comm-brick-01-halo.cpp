@@ -33,9 +33,7 @@ DomainDecomposition uniform_dd(int dims_x, int coords_x, double L = kBoxL) {
     dd.coords[0] = coords_x;
     dd.coords[1] = 0;
     dd.coords[2] = 0;
-    dd.periods[0] = 1;
-    dd.periods[1] = 1;
-    dd.periods[2] = 1;
+
     const double w = L / static_cast<double>(dims_x);
     dd.sublo[0] = w * static_cast<double>(coords_x);
     dd.subhi[0] = dd.sublo[0] + w;

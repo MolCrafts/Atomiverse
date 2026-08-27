@@ -73,10 +73,10 @@ cpu::Frame frame_with_comm_aux(int n) {
 
 // ── comm wire, generic arm ────────────────────────────────────────────
 
-/// A multi-component `kColComm` column makes the plan non-canonical, so both
-/// ends take the row-major arm. The round trip must preserve every value,
-/// including the PBC shift on the coordinate columns and NO shift on the
-/// plugin column.
+/// A multi-component plugin column on the forward Schema makes the plan
+/// non-canonical, so both ends take the row-major arm. The round trip must
+/// preserve every value, including the PBC shift on the coordinate columns
+/// and NO shift on the plugin column.
 TEST(TestAtomPackGenericWire, CommRoundTripCarriesAMultiComponentColumn) {
     cpu::Frame f = frame_with_comm_aux(6);
     cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
@@ -115,8 +115,8 @@ TEST(TestAtomPackGenericWire, CommRoundTripCarriesAMultiComponentColumn) {
 
 // ── reverse wire, generic arm ─────────────────────────────────────────
 
-/// A `kColReverse` plugin column routes the reverse codec down its generic
-/// arm; the accumulate side must still be `+=` on every component.
+/// A plugin column on the reverse Schema routes the reverse codec down its
+/// generic arm; the accumulate side must still be `+=` on every component.
 TEST(TestAtomPackGenericWire, ReverseRoundTripCarriesAPluginAccumulator) {
     cpu::Frame f(6);
     f.block("atoms").insert("aux_acc",
@@ -157,7 +157,7 @@ TEST(TestAtomPackGenericWire, ReverseRoundTripCarriesAPluginAccumulator) {
 
 // ── border wire has exactly one layout ────────────────────────────────
 
-/// `image` is a three-component `kColBorder` column on every canonical Frame,
+/// `image` is a three-component column on the canonical border Schema,
 /// so the border plan is never all-scalar and the row-major loop is the only
 /// border layout there is. Round-tripping the canonical plan pins that.
 TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
@@ -204,6 +204,38 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
         EXPECT_EQ(f.span(kAtom_image)(dst, 2),
                   static_cast<std::int8_t>(2 * src));
     }
+}
+
+/// A scalar Storage plugin column whose `wire_id` is *numerically* `x` (0)
+/// must still travel unshifted: PBC displacement is `kColPbcShift`, not
+/// `wire_id <= z`. The old comparison would have added a box length here.
+TEST(TestAtomPackGenericWire, PluginScalarIsNotPbcShiftedByWireId) {
+    cpu::Frame f(4);
+    f.block("atoms").insert("qaux", cpu::ColumnSpec{ColDType::Storage, 1,
+                                                    ColGroup::Core, 0,
+                                                    kColMigrate | kColExchange,
+                                                    /*wire_id=*/0});
+    const ColKey<StorageReal> kQaux{"atoms", "qaux", /*wire_id=*/0,
+                                    ColDType::Storage};
+    for (int i = 0; i < 4; ++i) {
+        f.span(kAtom_x)[i] = static_cast<StorageReal>(i);
+        f.span(kAtom_y)[i] = static_cast<StorageReal>(0);
+        f.span(kAtom_z)[i] = static_cast<StorageReal>(0);
+        f.span(kQaux)[i] = static_cast<StorageReal>(40 + i);
+    }
+    cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
+        f, cpu::comm::PackKind::Comm,
+        wire_with("qaux", ColDType::Storage, 1, ATV::base_fields::forward));
+
+    const int send[1] = {1};
+    const std::size_t bytes = plan.bytes(1);
+    std::vector<std::byte> wire(bytes);
+    const double shift[3] = {5.0, 0.0, 0.0};
+    plan.pack(f, send, 1, shift, wire.data(), bytes);
+    plan.unpack(f, 1, /*first=*/3, wire.data(), bytes);
+
+    EXPECT_DOUBLE_EQ(f.span(kAtom_x)[3], static_cast<StorageReal>(1 + 5));
+    EXPECT_DOUBLE_EQ(f.span(kQaux)[3], static_cast<StorageReal>(41));
 }
 
 // ── edge: writability is a precondition of both arms ──────────────────

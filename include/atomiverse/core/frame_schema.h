@@ -84,9 +84,16 @@ inline constexpr unsigned kColMigrate = 1u << 4;
 // is a property of the Frame rather than of whoever happens to be mounted.
 inline constexpr unsigned kColExchange = 1u << 5;
 inline constexpr unsigned kColState = kColMigrate | kColExchange;
+/// @brief This column is a Cartesian coordinate and takes a PBC image
+///        shift on the forward/border wires. x/y/z only. Never infer
+///        this from `wire_id <= AtomFieldId::z` — a table insert ahead
+///        of `z` would then silently add a box length to the new column.
+inline constexpr unsigned kColPbcShift = 1u << 6;
 
-/// One canonical field row.  wire_id is explicit and never derived from a
-/// variant or container index.
+/// One canonical field row. `wire_id` is the row index in
+/// `ATV_ATOM_FIELDS` (and therefore of `AtomFieldId`). x/y/z are pinned
+/// to 0/1/2 by static_assert below so a table reorder fails at compile
+/// time rather than silently shifting the wrong column.
 struct FieldSpec {
     std::uint16_t wire_id;
     const char* key;
@@ -99,9 +106,12 @@ struct FieldSpec {
 
 // id, key, element tier, dtype, stride, group, entries/item, flags
 #define ATV_ATOM_FIELDS(X)                                                     \
-    X(x, "x", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack)   \
-    X(y, "y", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack)   \
-    X(z, "z", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack)   \
+    X(x, "x", StorageReal, Storage, One, Core, 0,                              \
+      kColState | kColWriteBack | kColPbcShift)                                \
+    X(y, "y", StorageReal, Storage, One, Core, 0,                              \
+      kColState | kColWriteBack | kColPbcShift)                                \
+    X(z, "z", StorageReal, Storage, One, Core, 0,                              \
+      kColState | kColWriteBack | kColPbcShift)                                \
     X(vx, "vx", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
     X(vy, "vy", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
     X(vz, "vz", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
@@ -164,6 +174,14 @@ inline constexpr FieldSpec kAtomFieldSpecs[] = {
 inline constexpr int kAtomFieldCount =
     static_cast<int>(sizeof(kAtomFieldSpecs) / sizeof(FieldSpec));
 inline constexpr std::uint16_t kDynamicFieldId = 0xffffu;
+
+static_assert(static_cast<std::uint16_t>(AtomFieldId::x) == 0
+                  && static_cast<std::uint16_t>(AtomFieldId::y) == 1
+                  && static_cast<std::uint16_t>(AtomFieldId::z) == 2,
+              "x/y/z must stay the first three AtomFieldId values so a "
+              "PBC-shifted column's wire_id is the axis index; reorder the "
+              "table and this assert fails instead of silently shifting a "
+              "new column");
 
 /// Compile-time typed column key.  Dynamic columns use kDynamicFieldId and
 /// are still dtype-checked by Block::span.

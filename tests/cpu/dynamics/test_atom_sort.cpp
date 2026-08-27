@@ -2,12 +2,13 @@
 /// @brief Spatial sort reorders owned atoms by bin; tags/positions stay bound.
 #include <gtest/gtest.h>
 
-#include <cmath>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/dynamics/atom_sort.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/neighbor/neighbor_list.h"
 
 using namespace ATV;
 
@@ -139,4 +140,66 @@ TEST(AtomSort, NotifyRepublishesTheFrameTagIndexWithoutADecomposition) {
     ASSERT_EQ(index.size(), static_cast<std::size_t>(n));
     for (int row = 0; row < n; ++row)
         EXPECT_EQ(index.at(f.span(kAtom_tag)[row]), row);
+}
+
+/// The clock is the Driver step, assigned not incremented. A Minimize
+/// line-search re-evaluation stamps the same step twice and must not walk
+/// `next_sort` — that used to happen because `forward_comm` did
+/// `++dd->atom_sort_step` on every force evaluation.
+TEST(AtomSort, LineSearchReevalDoesNotAdvanceCadence) {
+    cpu::md::AtomSortState s;
+    s.configure(/*nfreq=*/2);
+    EXPECT_EQ(s.next_sort, 2);
+
+    s.step = 2;
+    EXPECT_TRUE(s.due());
+    s.step = 2; // same step again — line-search trial
+    EXPECT_TRUE(s.due());
+    EXPECT_EQ(s.next_sort, 2);
+    s.mark_sorted();
+    EXPECT_EQ(s.next_sort, 4);
+    s.step = 2;
+    EXPECT_FALSE(s.due());
+}
+
+/// Under plain MD the sort fires on the requested nfreq cadence, not on
+/// the first step (LAMMPS `nextsort` init) and not on the in-between steps.
+TEST(AtomSort, FiresOnNfreqCadence) {
+    cpu::md::AtomSortState s;
+    s.configure(/*nfreq=*/3);
+    s.step = 0;
+    EXPECT_FALSE(s.due());
+    s.step = 2;
+    EXPECT_FALSE(s.due());
+    s.step = 3;
+    EXPECT_TRUE(s.due());
+    s.mark_sorted();
+    s.step = 5;
+    EXPECT_FALSE(s.due());
+    s.step = 6;
+    EXPECT_TRUE(s.due());
+}
+
+/// NeighborList publishes the existing AtomSortState; it does not flatten
+/// the cadence onto DomainDecomposition.
+TEST(AtomSort, NeighborListPublishesTheStateOnDynamicsServices) {
+    cpu::Frame f(2);
+    f.span(kAtom_x)[0] = 0.0;
+    f.span(kAtom_y)[0] = 0.0;
+    f.span(kAtom_z)[0] = 0.0;
+    f.span(kAtom_x)[1] = 1.0;
+    f.span(kAtom_y)[1] = 0.0;
+    f.span(kAtom_z)[1] = 0.0;
+    f.span(kAtom_mass)[0] = 1.0;
+    f.span(kAtom_mass)[1] = 1.0;
+    f.box = cpu::Box::cubic(10.0);
+
+    cpu::Context ctx;
+    cpu::md::NeighborList<> nl(/*cutoff=*/2.0);
+    nl.set_atom_sort(/*nfreq=*/7, /*binsize=*/1.5, /*enabled=*/true);
+    nl.build({ctx, f});
+    ASSERT_NE(ctx.md.atom_sort, nullptr);
+    EXPECT_EQ(ctx.md.atom_sort->nfreq, 7);
+    EXPECT_DOUBLE_EQ(ctx.md.atom_sort->binsize, 1.5);
+    EXPECT_TRUE(ctx.md.atom_sort->enabled);
 }

@@ -1,5 +1,5 @@
 /// @file cuda/comm/domain_decomposition.cu
-/// @brief DomainDecomposition implementation (pure host topology).
+/// @brief SpatialGrid implementation (pure host topology).
 
 #include "atomiverse/cuda/communication/domain_decomposition.cuh"
 
@@ -47,12 +47,11 @@ void factor3d(int n, const double L[3], int dims[3]) {
 
 } // namespace
 
-DomainDecomposition::DomainDecomposition(int n_gpus, double Lx, double Ly,
-                                         double Lz) {
+SpatialGrid::SpatialGrid(int n_gpus, double Lx, double Ly, double Lz) {
     if (n_gpus < 1)
-        throw std::invalid_argument("DomainDecomposition: n_gpus < 1");
+        throw std::invalid_argument("SpatialGrid: n_gpus < 1");
     if (Lx <= 0 || Ly <= 0 || Lz <= 0)
-        throw std::invalid_argument("DomainDecomposition: non-positive box");
+        throw std::invalid_argument("SpatialGrid: non-positive box");
     n_ = n_gpus;
     L_[0] = Lx;
     L_[1] = Ly;
@@ -60,30 +59,30 @@ DomainDecomposition::DomainDecomposition(int n_gpus, double Lx, double Ly,
     factor3d(n_, L_, dims_);
 }
 
-int DomainDecomposition::slot_of(int cx, int cy, int cz) const {
+int SpatialGrid::slot_of(int cx, int cy, int cz) const {
     return (cz * dims_[1] + cy) * dims_[0] + cx; // x-fastest
 }
 
-std::array<int, 3> DomainDecomposition::coords(int slot) const {
+std::array<int, 3> SpatialGrid::coords(int slot) const {
     int cx = slot % dims_[0];
     int cy = (slot / dims_[0]) % dims_[1];
     int cz = slot / (dims_[0] * dims_[1]);
     return {cx, cy, cz};
 }
 
-std::array<double, 3> DomainDecomposition::sublo(int slot) const {
+std::array<double, 3> SpatialGrid::sublo(int slot) const {
     auto c = coords(slot);
     return {L_[0] * c[0] / dims_[0], L_[1] * c[1] / dims_[1],
             L_[2] * c[2] / dims_[2]};
 }
 
-std::array<double, 3> DomainDecomposition::subhi(int slot) const {
+std::array<double, 3> SpatialGrid::subhi(int slot) const {
     auto c = coords(slot);
     return {L_[0] * (c[0] + 1) / dims_[0], L_[1] * (c[1] + 1) / dims_[1],
             L_[2] * (c[2] + 1) / dims_[2]};
 }
 
-int DomainDecomposition::face_neighbor(int slot, int face) const {
+int SpatialGrid::face_neighbor(int slot, int face) const {
     auto c = coords(slot);
     int axis = face / 2;            // 0:x 1:y 2:z
     int dir = (face & 1) ? +1 : -1; // even=-, odd=+
@@ -92,7 +91,7 @@ int DomainDecomposition::face_neighbor(int slot, int face) const {
     return slot_of(nc[0], nc[1], nc[2]);
 }
 
-int DomainDecomposition::owner_of(double x, double y, double z) const {
+int SpatialGrid::owner_of(double x, double y, double z) const {
     double q[3] = {x, y, z};
     int c[3];
     for (int d = 0; d < 3; ++d) {

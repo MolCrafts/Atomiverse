@@ -4,7 +4,7 @@
 /// `Halo` is a **purely local** data structure: it derives the ordered
 /// swap table from a `DomainDecomposition` + `Box` + halo cutoff, and owns
 /// the per-swap send lists and ghost-slot prefix sum. It performs no MPI,
-/// so every case here builds the DD by hand (dims / coords / periods /
+/// so every case here builds the DD by hand (dims / coords /
 /// sublo / subhi / face_neighbors) and never initializes MPI. Multi-rank
 /// transport correctness stays in `tests/mpi/test_halo_exchange.cpp`.
 ///
@@ -59,9 +59,6 @@ DomainDecomposition split_x_dd(int rank) {
     dd.coords[0] = rank;
     dd.coords[1] = 0;
     dd.coords[2] = 0;
-    dd.periods[0] = 1;
-    dd.periods[1] = 1;
-    dd.periods[2] = 1;
     dd.sublo[0] = 10.0 * rank;
     dd.subhi[0] = 10.0 * rank + 10.0;
     dd.sublo[1] = 0.0;
@@ -89,9 +86,6 @@ DomainDecomposition thin_y_axis_dd(int rank) {
     dd.coords[0] = rank;
     dd.coords[1] = 0;
     dd.coords[2] = 0;
-    dd.periods[0] = 1;
-    dd.periods[1] = 1;
-    dd.periods[2] = 1;
     dd.sublo[0] = 15.0 * rank;
     dd.subhi[0] = 15.0 * rank + 15.0;
     dd.sublo[1] = 0.0;
@@ -109,7 +103,7 @@ cpu::Box thin_y_axis_box() { return cpu::Box::orthorhombic(30.0, 8.0, 16.0); }
 
 /// @brief dims = {1,1,1}: one rank owns the whole box, every face is self.
 DomainDecomposition single_rank_dd() {
-    DomainDecomposition dd; // dims {1,1,1}, coords {0,0,0}, periods {1,1,1}
+    DomainDecomposition dd; // dims {1,1,1}, coords {0,0,0}
     dd.sublo[0] = 0.0;
     dd.subhi[0] = 20.0;
     dd.sublo[1] = 0.0;

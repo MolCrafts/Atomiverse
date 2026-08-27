@@ -402,10 +402,9 @@ int main(int argc, char** argv) {
     // Match paper in.workflow: neighbor 2.0 bin; neigh_modify delay 0 every 1
     // check yes. atom_modify sort: LAMMPS default nfreq=1000 (paper does not
     // set sort 1); every-reneighbor sort thrash-rebuilds BondedTupleCache.
-    sim.set_neighbor(
-        cpu::md::NeighborList<>{cutoff, /*skin=*/2.0, /*every=*/1,
-                                /*delay=*/0, /*check=*/true}
-            .set_atom_sort({.nfreq = 1000, .binsize = 0.0, .enabled = true}));
+    sim.set_neighbor(cpu::md::NeighborList<>{cutoff, /*skin=*/2.0, /*every=*/1,
+                                             /*delay=*/0, /*check=*/true}
+                         .set_atom_sort(/*nfreq=*/1000));
     install(sim);
     if (args.npt) {
         // 1 atm = 6.324209e-7 eV/Å³ (LAMMPS units real pressure is atm)

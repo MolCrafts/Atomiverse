@@ -19,7 +19,7 @@
 ///
 /// Everything here is **serial**: `Halo` performs no MPI, the uniform
 /// derivation is closed form, and the per-rank non-uniform chain is a pure
-/// function of `dims / coords / periods / cuts / L / shell`. The
+/// function of `dims / coords / cuts / L / shell`. The
 /// `MPI_Allreduce(MAX)` that makes the round count rank-uniform is
 /// `setup()`'s wrapper job under MPI, so the non-uniform cases below drive
 /// the pure entry once per rank coordinate and take the maximum in the test
@@ -97,9 +97,6 @@ DomainDecomposition uniform_dd(int dims_x, int coords_x, double L = kBoxL) {
     dd.coords[0] = coords_x;
     dd.coords[1] = 0;
     dd.coords[2] = 0;
-    dd.periods[0] = 1;
-    dd.periods[1] = 1;
-    dd.periods[2] = 1;
     const double w = L / dims_x;
     dd.sublo[0] = w * coords_x;
     dd.subhi[0] = w * (coords_x + 1);
@@ -129,9 +126,6 @@ DomainDecomposition rcb_dd(int coords_x) {
     dd.coords[0] = coords_x;
     dd.coords[1] = 0;
     dd.coords[2] = 0;
-    dd.periods[0] = 1;
-    dd.periods[1] = 1;
-    dd.periods[2] = 1;
     dd.cuts[0] = std::vector<double>{kRcbCuts[0], kRcbCuts[1], kRcbCuts[2],
                                      kRcbCuts[3], kRcbCuts[4]};
     dd.sublo[0] = kRcbCuts[coords_x] * kRcbL;

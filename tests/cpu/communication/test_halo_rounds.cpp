@@ -62,7 +62,6 @@ DomainDecomposition brick_dd(int dx, int dy, int dz, int cx, int cy, int cz) {
     for (int a = 0; a < 3; ++a) {
         dd.dims[a] = d[a];
         dd.coords[a] = c[a];
-        dd.periods[a] = 1;
         const double w = kBoxEdge / d[a];
         dd.sublo[a] = w * c[a];
         dd.subhi[a] = dd.sublo[a] + w;

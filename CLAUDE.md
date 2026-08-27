@@ -338,6 +338,10 @@ owns the cell matrix plus a per-step-immutable cache and exposes `length(d)`,
 `min_image_batch<B>`; LJ keeps an inlined branchy min-image in its ket-loop
 because member-load-through-`this` defeats hoisting there (~7%/step).
 
+CPU `DomainDecomposition` is periodic on every axis. Face neighbours wrap;
+`Halo::derive_hops` uses the periodic reach `dims[d] - 1`. There is no
+non-periodic brick path.
+
 ### Core
 
 `core/` holds the device-independent contracts: precision tiers, `Mat3`, units,

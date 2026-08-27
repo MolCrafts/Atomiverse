@@ -475,7 +475,7 @@ TEST(MultiGpu, HaloExchangeXSplit) {
         GTEST_SKIP() << "needs >= 2 GPUs";
 
     auto g = make_grid(12.0); // grid coords 1.5/4.5/7.5/10.5
-    mg.partition(g);          // creates the DomainDecomposition (dd_)
+    mg.partition(g);          // creates the SpatialGrid (dd_)
     ASSERT_EQ(mg.domain().dims(),
               (std::array<int, 3>{2, 1, 1})); // boundary at x = 6
     mg.exchange_halo(3.0);                    // cutoff 3.0
@@ -802,7 +802,7 @@ TEST(MultiGpu, LjForceParityVsSingleGpu4Way) {
         mg1.gather_forces(ref);
     }
 
-    mg.partition(g); // creates the DomainDecomposition (dd_)
+    mg.partition(g); // creates the SpatialGrid (dd_)
 
     // Confirm the decomposition genuinely needs the cascade (>1 axis split).
     const auto dims = mg.domain().dims();
@@ -1038,7 +1038,7 @@ TEST(MultiGpu, EachAtomOnOwnerSlab) {
     mg.partition(g);
     if (mg.count() < 2)
         GTEST_SKIP() << "single GPU: trivially one slab";
-    // Owner count per slab should match DomainDecomposition::owner_of.
+    // Owner count per slab should match SpatialGrid::owner_of.
     const auto& dd = mg.domain();
     std::vector<int> expect(mg.count(), 0);
     for (int i = 0; i < g.nlocal(); ++i)

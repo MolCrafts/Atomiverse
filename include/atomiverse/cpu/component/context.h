@@ -38,6 +38,7 @@ class ReplicaSet;
 class Runtime; ///< The Runtime; published on `Context::exec`. @see ExecServices
 
 namespace md {
+struct AtomSortState;
 struct PairList;
 namespace mpi {
 struct DomainDecomposition;
@@ -68,6 +69,14 @@ struct DynamicsServices {
     const Schema* ghost_reverse_fields = nullptr;
     /// @brief Fields refreshed on ghost rows every step (forward wire).
     const Schema* ghost_refresh_fields = nullptr;
+
+    /// @brief Non-owning handle to the atom-sort cadence.
+    /// Owned by `NeighborList`; published at `build()`. Null when no list
+    /// is mounted. `CommBrick` and the serial neighbor path both stamp
+    /// `LaunchContext::step` onto it — they do not increment a private
+    /// counter — so a Minimize line-search re-evaluation at a frozen step
+    /// cannot walk the sort cadence.
+    md::AtomSortState* atom_sort = nullptr;
 
     /// @brief Non-owning handle to the active neighbor list.
     /// Published by `NeighborList::build()` (address stable across the

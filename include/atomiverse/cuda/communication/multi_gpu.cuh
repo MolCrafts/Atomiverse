@@ -2,7 +2,7 @@
 
 /// @file cuda/comm/multi_gpu.cuh
 /// @brief MultiGpu — single-process multi-GPU MD orchestrator. Owns the
-///        DeviceManager (P2P over NVLink) and a 3D DomainDecomposition, splits
+///        DeviceManager (P2P over NVLink) and a 3D SpatialGrid, splits
 ///        a global cpu::Frame into one device-resident subdomain frame per GPU,
 ///        and drives the full Verlet-cadence step loop over NVLink: partition /
 ///        gather, the 3-axis cascade halo (build_halo) + per-step position
@@ -56,7 +56,7 @@ class MultiGpu {
 
     int count() const { return dm_.count(); }
     const DeviceManager& devices() const { return dm_; }
-    const DomainDecomposition& domain() const { return *dd_; }
+    const SpatialGrid& domain() const { return *dd_; }
 
     /// Split `global` by owner slab and materialize each subdomain onto its
     /// GPU. `ghost_headroom` over-allocates each subdomain's per-atom arrays so
@@ -344,7 +344,7 @@ class MultiGpu {
     void destroy_tag_maps();
 
     DeviceManager dm_;
-    std::unique_ptr<DomainDecomposition> dd_;
+    std::unique_ptr<SpatialGrid> dd_;
     std::vector<cuda::Frame> frames_; // per-slot device frame
     std::vector<int> n_local_;        // per-slot owned count
     std::vector<HaloPlan>

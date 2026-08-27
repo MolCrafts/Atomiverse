@@ -1,5 +1,6 @@
 /// @file cpu/communication/comm.h
-/// @brief `cpu::Comm` — abstract brick/tiled communicator (LAMMPS `Comm`).
+/// @brief `cpu::Comm` — brick communicator contract and test-double seam
+///        (LAMMPS `Comm`).
 ///
 /// Algorithm and communication structure transplanted from LAMMPS
 /// `src/comm.h` (checkout `78a7ddf`, 2026-08-25). Public API is ATV-native:
@@ -31,8 +32,17 @@ using Packer = ForwardPacker;
 /// @brief Abstract spatial communicator: borders / forward / reverse /
 ///        exchange.
 ///
+/// This is a **contract and a test-double seam**, not a comm-style
+/// selection mechanism. Production has one implementation (`CommBrick`);
+/// `tests/cpu/driver/test_verlet_comm.cpp`'s `SpyComm` is the second.
+/// Shared swap-table logic lives on `Halo` / `Swap` (MPI-free). If a
+/// second production communicator arrives, shared code goes there — not
+/// into this base, and not into a `CommTiled` sibling that repeats the
+/// wrappers.
+///
 /// Owned by `communication::DomainRuntime` and published non-owning as
-/// `ctx.md.comm`. Users never construct a concrete communicator.
+/// `ctx.md.comm`. Users never construct a concrete communicator. The
+/// constructor of `CommBrick` is private.
 class Comm {
   public:
     virtual ~Comm() = default;

@@ -65,10 +65,6 @@ class CommBrick : public Comm {
     void forward_comm(Packer& packer) override;
     void set_ghost_cutoff(double cutoff) override;
 
-    /// @brief Test-only: native-byte capacity of the first swap send buffer.
-    /// @return Bytes reserved, or 0 before `setup` / without MPI.
-    std::size_t send_buf_capacity_for_test() const;
-
     /// @brief Resident heap bytes of the per-swap send/recv buffers.
     std::size_t memory_bytes() const;
 
@@ -99,6 +95,9 @@ class CommBrick : public Comm {
     /// compared locally on every migration after it.
     std::uint64_t verified_exchange_fingerprint_{};
     bool exchange_schema_anchored_ = false;
+    /// @brief Widest `ForwardPacker::comm_forward()` seen this run; used
+    ///        to size shared packer buffers at the end of `borders()`.
+    int packer_nsize_ = 0;
 };
 
 } // namespace comm

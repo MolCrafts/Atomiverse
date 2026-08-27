@@ -60,7 +60,7 @@ struct ChainWalk {
 /// @param axis_length Box edge along the axis [Angstrom].
 /// @param shell Ghost shell width to cover [Angstrom].
 /// @param reach Partners available in this direction (the whole ring minus
-///        this rank when periodic, the ranks before the boundary otherwise).
+///        this rank).
 /// @return Hops walked and whether the shell ended up covered.
 ChainWalk walk_chain(const std::vector<double>& cuts, int dims, int coords,
                      int step, double axis_length, double shell, int reach) {
@@ -184,14 +184,10 @@ Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
                   "partition.");
         }
 
-        // Partners available in each direction. A periodic axis offers the
-        // whole ring minus this rank; a non-periodic one ends at the global
-        // boundary, where the chain simply stops — there is no partner left
-        // and no periodic image to collide with, so no refusal either.
-        const bool periodic = dd.periods[d] != 0;
-        const int reach_minus = periodic ? dd.dims[d] - 1 : coords[d];
-        const int reach_plus =
-            periodic ? dd.dims[d] - 1 : dd.dims[d] - 1 - coords[d];
+        // Every axis is periodic: the brick wraps, and the chain can walk
+        // the whole ring minus this rank. There is no non-periodic
+        // decomposition path (see DomainDecomposition).
+        const int reach = dd.dims[d] - 1;
 
         if (cuts.empty()) {
             // Uniform brick: every partner slab is L_d / dims_d wide, so the
@@ -199,25 +195,24 @@ Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
             // a shell exactly one slab wide at a single hop.
             const int needed = static_cast<int>(std::ceil(
                 shell_width * static_cast<double>(dd.dims[d]) / axis_length));
-            if (periodic && needed > dd.dims[d] - 1)
+            if (needed > dd.dims[d] - 1)
                 refuse_minimum_image(d, dd, axis_length, shell_width, needed);
-            hops.minus[d] = std::min(needed, reach_minus);
-            hops.plus[d] = std::min(needed, reach_plus);
+            hops.minus[d] = std::min(needed, reach);
+            hops.plus[d] = std::min(needed, reach);
             continue;
         }
 
         // Non-uniform (RCB / Rebalance): it is the *partner* width chain in
         // each send direction that decides how many rounds the shell takes,
         // not this rank's own width.
-        const ChainWalk minus =
-            walk_chain(cuts, dd.dims[d], coords[d], -1, axis_length,
-                       shell_width, reach_minus);
+        const ChainWalk minus = walk_chain(cuts, dd.dims[d], coords[d], -1,
+                                           axis_length, shell_width, reach);
         const ChainWalk plus = walk_chain(cuts, dd.dims[d], coords[d], +1,
-                                          axis_length, shell_width, reach_plus);
-        if (periodic && !minus.covered)
+                                          axis_length, shell_width, reach);
+        if (!minus.covered)
             refuse_minimum_image(d, dd, axis_length, shell_width,
                                  minus.hops + 1);
-        if (periodic && !plus.covered)
+        if (!plus.covered)
             refuse_minimum_image(d, dd, axis_length, shell_width,
                                  plus.hops + 1);
         hops.minus[d] = minus.hops;

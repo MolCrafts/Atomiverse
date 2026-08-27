@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <iomanip>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -203,6 +202,24 @@ void validate_row(const Frame& frame, int row) {
         throw std::out_of_range("Frame pack row is outside capacity");
 }
 
+/// Coordinate columns are marked `kColPbcShift` on the field table, not
+/// inferred from `wire_id <= z`. A plugin Storage column — even a scalar
+/// one, even one whose wire_id happens to be small — must travel unshifted.
+void append_field(Writer& writer, const ColumnRef& col, int row,
+                  const double shift[3]) {
+    if ((col.flags & kColPbcShift) == 0) {
+        writer.append(row_ptr(col, row), col.row_bytes());
+        return;
+    }
+    if (col.dtype != ColDType::Storage || col.cols != 1 || col.wire_id > 2)
+        throw column_error("position halo column has invalid schema");
+    StorageReal value;
+    std::memcpy(&value, row_ptr(col, row), sizeof(value));
+    value = static_cast<StorageReal>(static_cast<double>(value)
+                                     + shift[col.wire_id]);
+    writer.append(&value, sizeof(value));
+}
+
 } // namespace
 
 bool PackPlan::valid_for(const Frame& frame) const noexcept {
@@ -299,7 +316,7 @@ namespace {
 /// @brief True when the plan is the standard position wire: exactly the
 /// three scalar `StorageReal` columns x, y, z, in wire order.
 ///
-/// This is what `kColComm` resolves to on every current Frame. It is a
+/// This is the engine's base forward Schema (x, y, z). It is a
 /// **precondition**, not a fast-path test: there is one wire layout
 /// (field-major) and a plan that does not match it is refused.
 ///
@@ -333,26 +350,14 @@ std::size_t pack_comm_wire(const Frame& frame, const PackPlan& plan,
     const std::array<double, 3> shift{sx, sy, sz};
     if (!plan_is_xyz_comm(plan)) {
         // General wire: ROW-major, columns in plan order. This is what a
-        // plugin-declared runtime column rides (`Block::insert` with
-        // `kColComm`), exercised by tests/mpi/test_halo_exchange.cpp.
+        // plugin-declared Schema column rides (`Block::insert`),
+        // exercised by tests/mpi/test_halo_exchange.cpp.
         Writer writer(out, capacity);
         for (int k = 0; k < n; ++k) {
             const int row = sendlist[k];
             validate_row(frame, row);
-            for (const ColumnRef& col : plan.fields) {
-                if (col.wire_id <= static_cast<std::uint16_t>(AtomFieldId::z)) {
-                    if (col.dtype != ColDType::Storage || col.cols != 1)
-                        throw column_error(
-                            "position halo column has invalid schema");
-                    StorageReal value;
-                    std::memcpy(&value, row_ptr(col, row), sizeof(value));
-                    value = static_cast<StorageReal>(static_cast<double>(value)
-                                                     + shift[col.wire_id]);
-                    writer.append(&value, sizeof(value));
-                } else {
-                    writer.append(row_ptr(col, row), col.row_bytes());
-                }
-            }
+            for (const ColumnRef& col : plan.fields)
+                append_field(writer, col, row, shift.data());
         }
         return writer.size();
     }
@@ -462,20 +467,8 @@ std::size_t pack_border_wire(const Frame& frame, const PackPlan& plan,
     for (int k = 0; k < n; ++k) {
         const int row = sendlist[k];
         validate_row(frame, row);
-        for (const ColumnRef& col : plan.fields) {
-            if (col.wire_id <= static_cast<std::uint16_t>(AtomFieldId::z)) {
-                if (col.dtype != ColDType::Storage || col.cols != 1)
-                    throw column_error(
-                        "position border column has invalid schema");
-                StorageReal value;
-                std::memcpy(&value, row_ptr(col, row), sizeof(value));
-                value = static_cast<StorageReal>(static_cast<double>(value)
-                                                 + shift[col.wire_id]);
-                writer.append(&value, sizeof(value));
-            } else {
-                writer.append(row_ptr(col, row), col.row_bytes());
-            }
-        }
+        for (const ColumnRef& col : plan.fields)
+            append_field(writer, col, row, shift.data());
     }
     return writer.size();
 }
@@ -637,8 +630,8 @@ std::size_t unpack_exchange_wire(Frame& frame, PackPlan& plan, int row,
 }
 
 /// @brief True when the plan is the standard force wire: exactly the three
-/// scalar `AccReal` columns fx, fy, fz. What `kColReverse` resolves to on
-/// every current Frame; anything else falls back to the generic loops.
+/// scalar `AccReal` columns fx, fy, fz. What the reverse Schema resolves
+/// to on every current Frame; anything else falls back to the generic loops.
 bool plan_is_fxyz_reverse(const PackPlan& plan) {
     if (plan.fields.size() != 3)
         return false;
@@ -653,8 +646,8 @@ void pack_reverse_wire(const PackPlan& plan, int first, int count,
     buffer.resize(plan.bytes(count));
     if (!plan_is_fxyz_reverse(plan)) {
         // General wire: row-major, columns in plan order. A plugin-declared
-        // runtime column with `kColReverse` rides this arm — exercised by
-        // tests/mpi/test_halo_exchange.cpp.
+        // runtime column on the reverse Schema rides this arm — exercised
+        // by tests/mpi/test_halo_exchange.cpp.
         std::size_t offset = 0;
         for (const ColumnRef& field : plan.fields) {
             for (int k = 0; k < count; ++k) {

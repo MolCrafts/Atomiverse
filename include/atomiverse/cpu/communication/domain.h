@@ -46,7 +46,26 @@ namespace mpi {
 ///
 /// It does **not** hold the halo's derived indices: the per-swap send lists
 /// and ghost-slot layout live on `comm::Halo`, private to `comm::CommBrick`
-/// and published as `ctx.md.comm`.
+/// and published as `ctx.md.comm`. Atom-sort cadence lives on
+/// `md::AtomSortState`, published as `ctx.md.atom_sort`.
+///
+/// **Periodicity.** The brick is periodic on every axis. `init_topology`
+/// wraps face neighbours through the Cartesian grid; `Halo::derive_hops`
+/// always uses the periodic reach `dims[d] - 1`. There is no non-periodic
+/// decomposition path — a shrink-wrapped / open-boundary run is a
+/// different problem and is not silently half-supported.
+///
+/// **Who may write these fields from outside `cpu/communication/`.**
+/// Production writers:
+///   * `md::notify_sorted` (`cpu/dynamics/atom_sort.h`) — owner half of
+///     `tag_to_local`, `ghost_tags` / `n_ghost` when `clear_ghosts`, and
+///     both generation counters. A spatial reorder of owned rows
+///     invalidates every cached row index; that is its job.
+///   * `CommBrick` (this directory) — ghost bookkeeping, `ghost_shell_width`,
+///     `halo_generation`.
+/// Readers outside this directory (not writers): `CellList` pads its grid
+/// from `ghost_shell_width`; three regressions feed `Halo::derive_uniform_rounds`
+/// with it. Do not add a new writer without extending this comment.
 ///
 /// `Frame::capacity()` is the allocated row capacity in multi-rank mode;
 /// `n_local` is the owned-atom count. Force kernels and integrators iterate
@@ -81,9 +100,6 @@ struct DomainDecomposition {
         out[1] = (rank / dims[2]) % dims[1];
         out[2] = rank % dims[2];
     }
-
-    /// @brief Periodic flags per dimension (1=periodic, 0=non-periodic).
-    int periods[3] = {1, 1, 1};
 
     /// @brief Face neighbor ranks: order is -x, +x, -y, +y, -z, +z.
     /// Single-rank: all zeros (this rank is its own neighbor along periodic axes).
@@ -144,17 +160,6 @@ struct DomainDecomposition {
     /// the edge cell — silently, with no missing atom and no error, only
     /// wrong cell membership and therefore wrong pairs.
     double ghost_shell_width = 0.0;
-
-    // ── atom_modify sort (LAMMPS: exchange → sort → borders) ──────────
-    // NeighborList publishes these; CommBrick applies sort on full rebuild
-    // *before* rebuilding ghost slots so the swap table's reverse send
-    // lists stay valid.
-    bool atom_sort_enabled = true;
-    int atom_sort_nfreq = 1000;
-    double atom_sort_binsize = 0.0;   ///< ≤0 → 0.5 * atom_sort_neigh_cut
-    double atom_sort_neigh_cut = 0.0; ///< neighbor cutoff+skin for auto binsize
-    int atom_sort_step = 0;
-    int atom_sort_next = 1000; ///< first sort after nfreq steps
 
     /// @brief Map from global atom tag to local row index.
     ///

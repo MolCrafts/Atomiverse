@@ -48,7 +48,6 @@ DomainDecomposition brick_dd(int dx, int dy, int dz, int cx, int cy, int cz) {
     dd.coords[0] = cx;
     dd.coords[1] = cy;
     dd.coords[2] = cz;
-    dd.periods[0] = dd.periods[1] = dd.periods[2] = 1;
     const int d[3] = {dx, dy, dz};
     const int c[3] = {cx, cy, cz};
     for (int a = 0; a < 3; ++a) {

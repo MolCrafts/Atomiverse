@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file cuda/comm/domain_decomposition.cuh
-/// @brief DomainDecomposition — single-process 3D spatial split of an
+/// @brief SpatialGrid — single-process 3D spatial split of an
 ///        orthorhombic box across N GPUs. Pure host-side topology (no device
 ///        code): factorizes N into a balanced 3D grid (the single-process
 ///        analog of MPI_Dims_create), assigns each GPU slot its Cartesian
@@ -17,14 +17,14 @@
 namespace ATV {
 namespace cuda {
 
-class DomainDecomposition {
+class SpatialGrid {
   public:
     /// Face order matches cpu: 0:-x 1:+x 2:-y 3:+y 4:-z 5:+z.
     enum Face { MX = 0, PX, MY, PY, MZ, PZ };
 
     /// @param n_gpus  Number of subdomains (>= 1).
     /// @param Lx,Ly,Lz  Orthorhombic box edge lengths [Angstrom].
-    DomainDecomposition(int n_gpus, double Lx, double Ly, double Lz);
+    SpatialGrid(int n_gpus, double Lx, double Ly, double Lz);
 
     int count() const { return n_; }
     std::array<int, 3> dims() const { return {dims_[0], dims_[1], dims_[2]}; }

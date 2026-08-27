@@ -77,8 +77,9 @@ struct Swap {
     /// comes back. (LAMMPS instead pairs a send on one face with a receive
     /// from the opposite face; the two conventions move the identical atom
     /// set, because the partner's opposite face points back here.) A face
-    /// with no partner (non-periodic axis) keeps whatever `face_neighbors`
-    /// holds — `MPI_PROC_NULL` — and the transport side skips it.
+    /// with no partner (`kNoPartner` / `MPI_PROC_NULL`) is skipped; under
+    /// the all-periodic brick that is only an undecomposed axis (`sendself`)
+    /// or a defensive unused slot.
     int sendproc = -1;
 
     /// @brief Rank whose ghosts land in `[firstrecv, firstrecv + nrecv)`.
@@ -164,8 +165,7 @@ struct Swap {
     /// maintained by `Halo::commit_recv`.
     int firstrecv = 0;
 
-    /// @brief `sendproc` value meaning "this face has no partner" — the
-    /// non-periodic global boundary.
+    /// @brief `sendproc` value meaning "this face has no partner".
     ///
     /// `Halo` is MPI-free by contract, so it cannot name `MPI_PROC_NULL`.
     /// The transport that does (`comm_brick.cpp`) static-asserts the two
@@ -175,7 +175,7 @@ struct Swap {
 
     /// @brief True when this swap moves no data at all.
     ///
-    /// Either the face has no partner (non-periodic axis) or the partner
+    /// Either the face has no partner (`kNoPartner`) or the partner
     /// is this rank itself (`sendself`, an undecomposed axis). The latter
     /// is a **skip, not a LAMMPS local memcpy** — see `sendself` for why a
     /// self-image ghost would double-count against the pair kernel's
@@ -254,11 +254,11 @@ class Halo {
     /// its periodicity is the pair kernel's minimum image, so an EAM-style
     /// `2 * cutoff` shell on a thin undecomposed axis stays legal.
     ///
-    /// On a **non-periodic** axis (`dd.periods[d] == 0`) the chain simply
-    /// ends at the global boundary: the count is truncated to the partners
-    /// that exist in that direction, never refused.
+    /// Every decomposed axis is periodic. There is no non-periodic hop
+    /// truncation: a shell that would wrap onto this rank's own image is
+    /// refused (minimum-image bound). See `DomainDecomposition`.
     ///
-    /// @param dd This rank's decomposition: `dims`, `coords`, `periods` and
+    /// @param dd This rank's decomposition: `dims`, `coords`, and
     ///        the optional fractional `cuts`.
     /// @param box Current simulation box; `length(d)` [Angstrom] is the axis
     ///        length the slab widths are measured against.
@@ -293,13 +293,13 @@ class Halo {
     /// cut-table errors, and the minimum-image bound all come from
     /// `derive_hops`.
     ///
-    /// Every input is rank-consistent (`dims` / `periods` / `cuts` / `box` /
+    /// Every input is rank-consistent (`dims` / `cuts` / `box` /
     /// `shell_width`), so every rank produces the same vector. A
     /// minimum-image refusal throws inside the local scan — every rank sees
     /// every coordinate — which is strictly better than a generic "another
     /// rank refused" Allreduce flag.
     ///
-    /// @param dd Any rank's decomposition: `dims`, `periods`, and the
+    /// @param dd Any rank's decomposition: `dims` and the
     ///        optional fractional `cuts`. `coords` is overwritten per scan
     ///        point; `sublo`/`subhi` [Angstrom] appear only in a refusal
     ///        message.
@@ -342,7 +342,7 @@ class Halo {
     /// Rebuilds the table in place, preserving the send lists' heap
     /// capacity. On a throw the previous table is left untouched.
     ///
-    /// @param dd This rank's decomposition: `dims`, `coords`, `periods`,
+    /// @param dd This rank's decomposition: `dims`, `coords`,
     ///        `cuts`, `sublo/subhi` [Angstrom] and `face_neighbors`.
     /// @param box Current simulation box; edge lengths [Angstrom] drive the
     ///        slab widths and are reported in the refusal message. Image
@@ -371,8 +371,7 @@ class Halo {
     /// `Sendrecv` pairs: a rank that stops one round earlier than its partner
     /// leaves that partner posting a receive nobody answers. The locally
     /// derived count is not automatically rank-uniform — a non-uniform (RCB)
-    /// partition has different partner-slab chains per rank, and a
-    /// non-periodic axis truncates its chain at the global boundary — so the
+    /// partition has different partner-slab chains per rank — so the
     /// caller obtains a uniform vector from `derive_uniform_rounds` and
     /// hands it back here. The extra rounds are not wasted: they carry
     /// exactly what the deepest rank on that axis still needs.

@@ -56,9 +56,6 @@ TEST(DomainDecomposition, SingleRankDefaults) {
     EXPECT_EQ(ctx.md.dd->coords[0], 0);
     EXPECT_EQ(ctx.md.dd->coords[1], 0);
     EXPECT_EQ(ctx.md.dd->coords[2], 0);
-    EXPECT_EQ(ctx.md.dd->periods[0], 1);
-    EXPECT_EQ(ctx.md.dd->periods[1], 1);
-    EXPECT_EQ(ctx.md.dd->periods[2], 1);
     EXPECT_EQ(ctx.md.dd->n_local, frame.nlocal());
     EXPECT_EQ(ctx.md.dd->n_ghost, 0);
     EXPECT_EQ(ctx.md.dd->capacity, frame.nlocal());

@@ -99,9 +99,7 @@ DomainDecomposition stub_dd(double shell) {
     dd.coords[0] = 1;
     dd.coords[1] = 0;
     dd.coords[2] = 0;
-    dd.periods[0] = 1;
-    dd.periods[1] = 1;
-    dd.periods[2] = 1;
+
     dd.sublo[0] = kSublo;
     dd.subhi[0] = kSubhi;
     dd.sublo[1] = 0.0;

@@ -742,7 +742,7 @@ void MultiGpu::partition(const cpu::Frame& global, double ghost_headroom) {
     box_L_[0] = Lx;
     box_L_[1] = Ly;
     box_L_[2] = Lz;
-    dd_ = std::make_unique<DomainDecomposition>(N, Lx, Ly, Lz);
+    dd_ = std::make_unique<SpatialGrid>(N, Lx, Ly, Lz);
 
     // Global per-atom columns (host spans; blocks+meta+box frame).
     const auto gx = global.span(kAtom_x);
@@ -2104,7 +2104,7 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
 
 namespace {
 // Owner slot of a position under the global 3D decomposition (device-side
-// mirror of DomainDecomposition::owner_of: wrap into [0,L), bin per axis,
+// mirror of SpatialGrid::owner_of: wrap into [0,L), bin per axis,
 // x-fastest slot index).
 __device__ inline int dev_owner(double x, double y, double z, int d0, int d1,
                                 int d2, double Lx, double Ly, double Lz) {

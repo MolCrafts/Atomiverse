@@ -9,7 +9,7 @@
 /// rewritten.
 ///
 /// Everything here is **serial**: no MPI is initialized. The DD is built by
-/// hand (`dims` / `coords` / `periods` / `sublo` / `subhi` / `cuts`).
+/// hand (`dims` / `coords` / `sublo` / `subhi` / `cuts`).
 ///
 /// Surface pinned (new in `lammps-comm-port`, on the existing type):
 /// @code{.cpp}
@@ -51,19 +51,18 @@ using DomainDecomposition = cpu::md::mpi::DomainDecomposition;
 constexpr double kProdL = 63.0016;  // [Angstrom]
 constexpr double kProdShell = 11.0; // [Angstrom]
 
-/// @brief Uniform brick over `box` at the given `dims` / `coords` / `periods`.
+/// @brief Uniform brick over `box` at the given `dims` / `coords`.
 ///
 /// `sublo/subhi` are the closed-form slabs `w = L / dims`. Face neighbours
-/// are unused by the hop derivation and left default.
+/// are unused by the hop derivation and left default. Every axis is
+/// periodic (see `DomainDecomposition`).
 DomainDecomposition uniform_dd(const std::array<int, 3>& dims,
                                const std::array<int, 3>& coords,
-                               const cpu::Box& box,
-                               const std::array<int, 3>& periods = {1, 1, 1}) {
+                               const cpu::Box& box) {
     DomainDecomposition dd;
     for (int d = 0; d < 3; ++d) {
         dd.dims[d] = dims[d];
         dd.coords[d] = coords[d];
-        dd.periods[d] = periods[d];
         const double L = box.length(d);
         const double w = L / static_cast<double>(dims[d]);
         dd.sublo[d] = w * static_cast<double>(coords[d]);
@@ -162,9 +161,6 @@ TEST(TestHaloUniformRounds, MatchesMaxOfDeriveHopsOnCutsGrid) {
     dd.coords[0] = 0;
     dd.coords[1] = 0;
     dd.coords[2] = 0;
-    dd.periods[0] = 1;
-    dd.periods[1] = 1;
-    dd.periods[2] = 1;
     // x widths {10, 2, 2, 6} A; y widths {4, 6, 10} A.
     dd.cuts[0] = std::vector<double>{0.0, 0.5, 0.6, 0.7, 1.0};
     dd.cuts[1] = std::vector<double>{0.0, 0.2, 0.5, 1.0};
@@ -241,26 +237,11 @@ TEST(TestHaloUniformRounds, ZeroShellYieldsAllZeros) {
     EXPECT_EQ(rounds[2], 0);
 }
 
-/// A non-periodic axis (`periods[d] == 0`) truncates the chain at the
-/// global boundary and does **not** refuse, even when the same shell on a
-/// periodic axis would violate `shell <= L - w_self`.
-///
-/// `dims = {2,1,1}`, `L_x = 10 A`, `shell = 9 A`: periodic would refuse
-/// (`L - w_self = 5 A`). Non-periodic reach is 1, so both coordinates
-/// truncate to 1 hop and the sweep must not throw.
-TEST(TestHaloUniformRounds, NonPeriodicAxisTruncatesWithoutRefusal) {
-    const cpu::Box box = cpu::Box::orthorhombic(10.0, 20.0, 20.0);
-    const DomainDecomposition dd =
-        uniform_dd(/*dims=*/{2, 1, 1}, /*coords=*/{0, 0, 0}, box,
-                   /*periods=*/{0, 1, 1});
-
-    std::array<int, 3> rounds{};
-    ASSERT_NO_THROW(rounds = cpu::comm::Halo::derive_uniform_rounds(
-                        dd, box, /*shell=*/9.0));
-    EXPECT_EQ(rounds[0], 1);
-    EXPECT_EQ(rounds[1], 0);
-    EXPECT_EQ(rounds[2], 0);
-}
+/// There is no non-periodic hop branch. The geometry that used to truncate
+/// (`dims = {2,1,1}`, `L_x = 10 A`, `shell = 9 A`) now refuses the
+/// minimum-image bound on every coordinate — see
+/// `RefusesMinimumImageAtEveryCoordinate`. The brick is periodic on every
+/// axis; a non-periodic request cannot be expressed.
 
 // ── 4. domain: minimum-image refusal is rank-consistent ───────────────
 

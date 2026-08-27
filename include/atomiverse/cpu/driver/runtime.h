@@ -162,6 +162,11 @@ class Runtime {
     void apply_ghost_cutoff_();
     /// @brief True when `slot` is Evaluate `evaluate` or Minimize `force`.
     bool is_linear_force_slot_(int slot) const;
+    /// @brief Position-only halo refresh (no reneighbor).
+    void comm_refresh_(int slot, int step);
+    /// @brief Exchange + borders. Flat slot args so Verlet can walk
+    ///        `pre_exchange` / `pre_neighbor` in between; no schedule bag.
+    void comm_rebuild_(int exchange_slot, int borders_slot, int step);
     /// @brief nflag XOR: forward, or exchange + borders + neighbor build.
     void comm_before_force_(int slot, int step_idx);
     /// @brief Newton-on reverse of ghost forces [eV/Å].

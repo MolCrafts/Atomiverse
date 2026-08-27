@@ -1,5 +1,5 @@
 /// @file tests/cuda/test_domain_decomposition.cu
-/// @brief cuda::DomainDecomposition — 3D factorization, slab bounds, periodic
+/// @brief cuda::SpatialGrid — 3D factorization, slab bounds, periodic
 ///        face neighbors, position->owner. Pure host logic (no GPU used).
 
 #include <gtest/gtest.h>
@@ -8,9 +8,9 @@
 #include "atomiverse/cuda/communication/domain_decomposition.cuh"
 
 using namespace ATV;
-using DD = cuda::DomainDecomposition;
+using DD = cuda::SpatialGrid;
 
-TEST(DomainDecomposition, SingleGpuTrivial) {
+TEST(SpatialGrid, SingleGpuTrivial) {
     DD dd(1, 10.0, 10.0, 10.0);
     EXPECT_EQ(dd.count(), 1);
     EXPECT_EQ(dd.dims(), (std::array<int, 3>{1, 1, 1}));
@@ -19,7 +19,7 @@ TEST(DomainDecomposition, SingleGpuTrivial) {
         EXPECT_EQ(dd.face_neighbor(0, f), 0); // own periodic neighbor
 }
 
-TEST(DomainDecomposition, BalancedFactorization) {
+TEST(SpatialGrid, BalancedFactorization) {
     EXPECT_EQ(DD(2, 10, 10, 10).dims(), (std::array<int, 3>{2, 1, 1}));
     EXPECT_EQ(DD(4, 10, 10, 10).dims(), (std::array<int, 3>{2, 2, 1}));
     EXPECT_EQ(DD(8, 10, 10, 10).dims(), (std::array<int, 3>{2, 2, 2}));
@@ -29,13 +29,13 @@ TEST(DomainDecomposition, BalancedFactorization) {
     EXPECT_EQ(d3[0] * d3[1] * d3[2], 3);
 }
 
-TEST(DomainDecomposition, FactorizationFollowsBoxShape) {
+TEST(SpatialGrid, FactorizationFollowsBoxShape) {
     // A long-x box: n=2 should split along x (smallest resulting surface).
     auto d = DD(2, 40.0, 10.0, 10.0).dims();
     EXPECT_EQ(d, (std::array<int, 3>{2, 1, 1}));
 }
 
-TEST(DomainDecomposition, SlabsTileTheBox) {
+TEST(SpatialGrid, SlabsTileTheBox) {
     DD dd(8, 12.0, 12.0, 12.0); // 2x2x2, each slab 6x6x6
     double vol = 0.0;
     std::set<int> seen;
@@ -53,7 +53,7 @@ TEST(DomainDecomposition, SlabsTileTheBox) {
     EXPECT_NEAR(vol, 12.0 * 12.0 * 12.0, 1e-6); // slabs exactly tile the box
 }
 
-TEST(DomainDecomposition, OwnerMatchesSlab) {
+TEST(SpatialGrid, OwnerMatchesSlab) {
     DD dd(8, 12.0, 12.0, 12.0);
     // Every atom's owner slab must actually contain it.
     for (double x = 0.5; x < 12; x += 2.0)
@@ -70,13 +70,13 @@ TEST(DomainDecomposition, OwnerMatchesSlab) {
             }
 }
 
-TEST(DomainDecomposition, OwnerWrapsPbc) {
+TEST(SpatialGrid, OwnerWrapsPbc) {
     DD dd(2, 10.0, 10.0, 10.0);                                 // 2x1x1
     EXPECT_EQ(dd.owner_of(-1.0, 5, 5), dd.owner_of(9.0, 5, 5)); // -1 wraps to 9
     EXPECT_EQ(dd.owner_of(11.0, 5, 5), dd.owner_of(1.0, 5, 5)); // 11 wraps to 1
 }
 
-TEST(DomainDecomposition, FaceNeighborsPeriodicInvolution) {
+TEST(SpatialGrid, FaceNeighborsPeriodicInvolution) {
     DD dd(8, 12.0, 12.0, 12.0); // 2x2x2: dims==2 each axis
     for (int s = 0; s < dd.count(); ++s)
         for (int axis = 0; axis < 3; ++axis) {

@@ -85,12 +85,17 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// @brief LAMMPS `atom_modify sort Nfreq binsize` — spatial reorder of
     ///        owned atoms. Multi-rank: applied in CommBrick before borders;
     ///        serial: at NeighborList reneighbor. Default: enabled, nfreq=1000.
-    NeighborList& set_atom_sort(AtomSortParams p) & {
-        sort_state_.configure(p);
+    /// @param nfreq Sort at the first reneighbor after this many MD steps.
+    /// @param binsize Bin edge [Å]; `≤ 0` → `0.5 * (cutoff + skin)`.
+    /// @param enabled Master enable.
+    NeighborList& set_atom_sort(int nfreq, double binsize = 0.0,
+                                bool enabled = true) & {
+        sort_state_.configure(nfreq, binsize, enabled);
         return *this;
     }
-    NeighborList set_atom_sort(AtomSortParams p) && {
-        set_atom_sort(p);
+    NeighborList set_atom_sort(int nfreq, double binsize = 0.0,
+                               bool enabled = true) && {
+        set_atom_sort(nfreq, binsize, enabled);
         return std::move(*this);
     }
 
@@ -117,11 +122,11 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         return static_cast<AccReal>(cutoff_ + strategy_.skin());
     }
 
-    /// @brief LAMMPS `Neighbor::decide()` (`nflag`). Increments `ago_`
-    ///        and the `atom_modify sort` step counter (every MD step).
+    /// @brief LAMMPS `Neighbor::decide()` (`nflag`). Increments `ago_`.
+    ///        Sort cadence is stamped from `LaunchContext::step` at the
+    ///        sort site, not from this call.
     bool decide_reneighbor(cpu::Context& rt, cpu::Frame& frame) override {
         const int n_active = active_count(rt, frame);
-        ++sort_state_.step;
         ++ago_;
         const bool mode_stale = rt.md.full_list_requested != built_full_;
         const bool size_stale = n_active != strategy_.n_at_last_build();
@@ -134,11 +139,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     }
 
     /// @brief Drop `atom_modify sort` permanently (see `NeighborProvider`).
-    void forbid_row_reordering() override {
-        AtomSortParams p = sort_state_.params;
-        p.enabled = false;
-        sort_state_.configure(p);
-    }
+    void forbid_row_reordering() override { sort_state_.enabled = false; }
 
     void build(const cpu::BuildContext& ctx) override {
         reinit_strategy(ctx.runtime, ctx.frame);
@@ -154,6 +155,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         ++pairs_.version;
         trim_inum_to_local(ctx.runtime, pairs_);
         ctx.runtime.md.pair_list = &pairs_;
+        ctx.runtime.md.atom_sort = &sort_state_;
         ago_ = 0;
         n_rebuilds_ = 1; // initial enumeration counts as rebuild #1
         // Snapshot the halo generation so the first `launch()` doesn't
@@ -162,17 +164,8 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         // it has, via `pre_force`; under `Evaluate` there is no halo
         // launch before the first force eval, hence the
         // `is_multi_rank` guard.)
-        if (is_multi_rank(ctx.runtime)) {
+        if (is_multi_rank(ctx.runtime))
             last_halo_generation_ = ctx.runtime.md.dd->halo_generation;
-            // Publish sort cadence for CommBrick (exchange → sort → borders).
-            auto* dd = ctx.runtime.md.dd;
-            dd->atom_sort_enabled = sort_state_.params.enabled;
-            dd->atom_sort_nfreq = sort_state_.params.nfreq;
-            dd->atom_sort_binsize = sort_state_.params.binsize;
-            dd->atom_sort_neigh_cut = cutoff_ + strategy_.skin();
-            dd->atom_sort_step = sort_state_.step;
-            dd->atom_sort_next = sort_state_.next_sort;
-        }
     }
 
     void launch(const cpu::LaunchContext& ctx) override {
@@ -203,6 +196,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
             // neighbor_generation. Skipping the bump leaves bonded forces
             // on pre-sort local indices → GAFF trajectory explosion at
             // nfreq=1.
+            sort_state_.step = ctx.step;
             if (!is_multi_rank(ctx.runtime) && sort_state_.due()) {
                 auto& f = ctx.frame;
                 const double bs =

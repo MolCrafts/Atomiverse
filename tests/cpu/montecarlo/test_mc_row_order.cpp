@@ -21,7 +21,6 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/component/context.h"
-#include "atomiverse/cpu/dynamics/atom_sort.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/montecarlo/mc.h"
 #include "atomiverse/cpu/montecarlo/translate_move.h"
@@ -76,7 +75,7 @@ TEST(NeighborListRowOrder, ForbidRowReorderingStopsTheSpatialSort) {
     // first launch permutes (see the control below).
     cpu::md::NeighborList<> nl{6.0, /*skin=*/1.0, /*every=*/1, /*delay=*/0,
                                /*check=*/false};
-    nl.set_atom_sort(cpu::md::AtomSortParams{/*nfreq=*/1});
+    nl.set_atom_sort(/*nfreq=*/1);
     nl.forbid_row_reordering();
 
     cpu::Context ctx;
@@ -95,7 +94,7 @@ TEST(NeighborListRowOrder, TheSortDoesReorderWhenItIsAllowed) {
 
     cpu::md::NeighborList<> nl{6.0, /*skin=*/1.0, /*every=*/1, /*delay=*/0,
                                /*check=*/false};
-    nl.set_atom_sort(cpu::md::AtomSortParams{/*nfreq=*/1});
+    nl.set_atom_sort(/*nfreq=*/1);
 
     cpu::Context ctx;
     nl.build({ctx, f});
@@ -112,7 +111,7 @@ TEST(McRowOrder, BuildForbidsRowReorderingOnTheNeighborList) {
 
     cpu::md::NeighborList<> nl{6.0, /*skin=*/1.0, /*every=*/1, /*delay=*/0,
                                /*check=*/false};
-    nl.set_atom_sort(cpu::md::AtomSortParams{/*nfreq=*/1});
+    nl.set_atom_sort(/*nfreq=*/1);
 
     cpu::mc::MC mc{/*T [K]=*/300.0, /*seed=*/7u};
     mc.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.0});

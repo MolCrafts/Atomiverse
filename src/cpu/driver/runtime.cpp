@@ -352,21 +352,39 @@ inline void timed_comm(TimerRegistry& reg, int handle, Fn&& fn) {
 
 } // namespace
 
-void Runtime::comm_before_force_(int slot, int step_idx) {
+void Runtime::comm_refresh_(int slot, int step) {
+    apply_ghost_cutoff_();
+    cpu::Comm* comm = context_.md.comm;
+    if (!comm)
+        return;
+    LaunchContext comm_ctx{context_, *frame_, slot, step,
+                           /*forces_requested=*/true};
+    timed_comm(device_.timing(), comm_handle_fwd_,
+               [&] { comm->forward_comm(comm_ctx); });
+}
+
+void Runtime::comm_rebuild_(int exchange_slot, int borders_slot, int step) {
     apply_ghost_cutoff_();
     cpu::Comm* comm = context_.md.comm;
     if (!comm)
         return;
     TimerRegistry& reg = device_.timing();
-    LaunchContext comm_ctx{context_, *frame_, slot, step_idx,
+    LaunchContext comm_ctx{context_, *frame_, exchange_slot, step,
                            /*forces_requested=*/true};
+    timed_comm(reg, comm_handle_exch_, [&] { comm->exchange(comm_ctx); });
+    comm_ctx.stage = borders_slot;
+    timed_comm(reg, comm_handle_bord_, [&] { comm->borders(comm_ctx); });
+}
+
+void Runtime::comm_before_force_(int slot, int step_idx) {
+    cpu::Comm* comm = context_.md.comm;
+    if (!comm)
+        return;
     if (!context_.md.reneighbor) {
-        timed_comm(reg, comm_handle_fwd_,
-                   [&] { comm->forward_comm(comm_ctx); });
+        comm_refresh_(slot, step_idx);
         return;
     }
-    timed_comm(reg, comm_handle_exch_, [&] { comm->exchange(comm_ctx); });
-    timed_comm(reg, comm_handle_bord_, [&] { comm->borders(comm_ctx); });
+    comm_rebuild_(slot, slot, step_idx);
     if (verlet_.neighbor_comp && plan_ != nullptr && verlet_.neighbor_slot >= 0
         && static_cast<std::size_t>(verlet_.neighbor_slot)
                < plan_->slots.size()) {
@@ -393,15 +411,11 @@ void Runtime::setup_verlet_comm_() {
     // forward_comm. Copyright (2003) Sandia Corporation. GPL-2.0-only.
     if (verlet_setup_done_ || context_.mpi_size <= 1)
         return;
-    apply_ghost_cutoff_();
     LaunchContext ctx{context_, *frame_,
                       ATV::slot_of(ATV::md::Phase::pre_exchange), 0,
                       /*forces_requested=*/true};
-    if (cpu::Comm* comm = context_.md.comm) {
-        comm->exchange(ctx);
-        ctx.stage = ATV::slot_of(ATV::md::Phase::pre_neighbor);
-        comm->borders(ctx);
-    }
+    comm_rebuild_(ATV::slot_of(ATV::md::Phase::pre_exchange),
+                  ATV::slot_of(ATV::md::Phase::pre_neighbor), 0);
     if (verlet_.neighbor_comp) {
         context_.md.reneighbor = true;
         context_.md.reneighbor_decided = true;
@@ -463,26 +477,13 @@ void Runtime::step_verlet_(int step_idx) {
 
     const int pre_n = ATV::slot_of(P::pre_neighbor);
     const int neigh = ATV::slot_of(P::neighbor);
-    apply_ghost_cutoff_();
     cpu::Comm* comm = context_.md.comm;
-    TimerRegistry& reg = device_.timing();
-    LaunchContext comm_ctx{context_, *frame_, pre_n, step_idx,
-                           /*forces_requested=*/true};
 
     if (!nflag) {
-        if (comm)
-            timed_comm(reg, comm_handle_fwd_,
-                       [&] { comm->forward_comm(comm_ctx); });
+        comm_refresh_(pre_n, step_idx);
     } else {
         walk_slot_(ATV::slot_of(P::pre_exchange), step_idx, true);
-        if (comm) {
-            comm_ctx.stage = ATV::slot_of(P::pre_exchange);
-            timed_comm(reg, comm_handle_exch_,
-                       [&] { comm->exchange(comm_ctx); });
-            comm_ctx.stage = pre_n;
-            timed_comm(reg, comm_handle_bord_,
-                       [&] { comm->borders(comm_ctx); });
-        }
+        comm_rebuild_(ATV::slot_of(P::pre_exchange), pre_n, step_idx);
         walk_slot_(pre_n, step_idx, true);
         if (verlet_.neighbor_comp) {
             launch_engine_(verlet_.neighbor_comp, verlet_.neighbor_slot,
@@ -495,8 +496,10 @@ void Runtime::step_verlet_(int step_idx) {
     walk_slot_(ATV::slot_of(P::force), step_idx, true);
 
     if (comm) {
-        comm_ctx.stage = ATV::slot_of(P::post_force);
-        timed_comm(reg, comm_handle_rev_,
+        LaunchContext comm_ctx{context_, *frame_, ATV::slot_of(P::post_force),
+                               step_idx,
+                               /*forces_requested=*/true};
+        timed_comm(device_.timing(), comm_handle_rev_,
                    [&] { comm->reverse_comm(comm_ctx); });
     }
     walk_slot_(ATV::slot_of(P::post_force), step_idx, true);
