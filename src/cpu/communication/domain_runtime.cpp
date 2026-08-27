@@ -4,11 +4,13 @@
 
 #include "atomiverse/cpu/communication/domain_runtime.h"
 
+#include "atomiverse/cpu/communication/comm_brick.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 #include <cstdint>
+#include <new>
 #include <unordered_map>
 #include <utility>
 
@@ -25,10 +27,15 @@ DomainRuntime::~DomainRuntime() = default;
 DomainRuntime::DomainRuntime(DomainRuntime&&) noexcept = default;
 DomainRuntime& DomainRuntime::operator=(DomainRuntime&&) noexcept = default;
 
+Comm* DomainRuntime::comm() const { return comm_.get(); }
+
 void DomainRuntime::allocate(Context& ctx) {
     if (!dd_)
         dd_ = std::make_unique<md::mpi::DomainDecomposition>();
     ctx.md.dd = dd_.get();
+    if (!comm_)
+        comm_ = std::unique_ptr<comm::CommBrick>(new comm::CommBrick());
+    ctx.md.comm = comm_.get();
 
 #ifdef ATV_HAS_MPI
     // serial_on_replica_: molecular whole-system evaluators opt out of spatial
@@ -133,11 +140,14 @@ void DomainRuntime::release_comm() {
 }
 
 std::size_t DomainRuntime::memory_bytes() const {
-    if (!dd_)
-        return 0;
-    return dd_->tag_to_local.size() * 32
-           + dd_->tag_to_local.bucket_count() * sizeof(void*)
-           + dd_->ghost_tags.capacity() * sizeof(std::int64_t);
+    std::size_t n = 0;
+    if (dd_)
+        n += dd_->tag_to_local.size() * 32
+             + dd_->tag_to_local.bucket_count() * sizeof(void*)
+             + dd_->ghost_tags.capacity() * sizeof(std::int64_t);
+    if (comm_)
+        n += comm_->memory_bytes();
+    return n;
 }
 
 } // namespace communication

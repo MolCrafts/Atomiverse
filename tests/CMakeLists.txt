@@ -140,6 +140,7 @@ atv_add_cpp_test(test_cpu_chunked_range cpu/device/test_chunked_range.cpp)
 # defaults, trivially-copyable / non-polymorphic guards. Layout-only, no
 # physics.
 atv_add_cpp_test(test_cpu_component_context_slices cpu/component/test_context_slices.cpp)
+atv_add_cpp_test(test_cpu_component_pack_forward_comm cpu/component/test_pack_forward_comm.cpp)
 if(ATV_BUILD_VIB) # instantiates vib::HessianAccumulator
     atv_add_cpp_test(test_cpu_component_provides_probes cpu/component/test_provides_probes.cpp)
 endif()
@@ -194,12 +195,20 @@ atv_add_cpp_test(test_cpu_md_qeq                  cpu/dynamics/test_qeq.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_cg         cpu/dynamics/test_const_pot_cg.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_per_eta    cpu/dynamics/test_const_pot_per_eta.cpp)
 atv_add_cpp_test(test_cpu_md_charge_updater_probe cpu/dynamics/test_charge_updater_probe.cpp)
-atv_add_cpp_test(test_cpu_comm_halo_refresh_charges cpu/communication/test_halo_refresh_charges.cpp)
+atv_add_cpp_test(test_cpu_md_charge_packer        cpu/dynamics/test_charge_packer.cpp)
+atv_add_cpp_test(test_cpu_md_fix_rattle_packer    cpu/dynamics/test_fix_rattle_packer.cpp)
 atv_add_cpp_test(test_cpu_comm_tag_index_lifetime cpu/communication/test_tag_index_lifetime.cpp)
-atv_add_cpp_test(test_cpu_comm_swap_list          cpu/communication/test_swap_list.cpp)
-atv_add_cpp_test(test_cpu_comm_swap_list_maxneed  cpu/communication/test_swap_list_maxneed.cpp)
-atv_add_cpp_test(test_cpu_comm_swap_list_uniform_rounds cpu/communication/test_swap_list_uniform_rounds.cpp)
+atv_add_cpp_test(test_cpu_comm_halo               cpu/communication/test_halo.cpp)
+atv_add_cpp_test(test_cpu_comm_halo_maxneed       cpu/communication/test_halo_maxneed.cpp)
+atv_add_cpp_test(test_cpu_comm_halo_queries       cpu/communication/test_halo_queries.cpp)
+atv_add_cpp_test(test_cpu_comm_halo_rounds        cpu/communication/test_halo_rounds.cpp)
+atv_add_cpp_test(test_cpu_frame_schema            cpu/frame/test_schema.cpp)
+atv_add_cpp_test(test_cpu_comm_halo_uniform_rounds cpu/communication/test_halo_uniform_rounds.cpp)
+atv_add_cpp_test(test_cpu_comm                    cpu/communication/test_comm.cpp)
+atv_add_cpp_test(test_cpu_comm_brick              cpu/communication/test_comm_brick.cpp)
 atv_add_cpp_test(test_cpu_comm_atom_pack_comm_plan cpu/communication/test_atom_pack_comm_plan.cpp)
+atv_add_cpp_test(test_cpu_comm_atom_pack_reverse  cpu/communication/test_atom_pack_reverse.cpp)
+atv_add_cpp_test(test_cpu_comm_atom_pack_generic  cpu/communication/test_atom_pack_generic_wire.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_ffield     cpu/dynamics/test_const_pot_ffield.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_maze_symplectic cpu/dynamics/test_const_pot_maze_symplectic.cpp)
 atv_add_cpp_test(test_cpu_md_const_pot_site_volume cpu/dynamics/test_const_pot_site_volume.cpp)
@@ -369,6 +378,9 @@ atv_add_cpp_test(test_cpu_md_pe_energy_xcheck     cpu/dynamics/test_pe_energy_xc
 # pe_tension_protocol grepped benchmarks/md/pe/... which was deleted; re-add
 # when the PE tension app is restored under regressions/ or examples/.
 atv_add_cpp_test(test_cpu_md_neighbor_list_arena  cpu/dynamics/test_neighbor_list_arena.cpp)
+atv_add_cpp_test(test_cpu_md_neighbor_decide      cpu/dynamics/test_neighbor_decide.cpp)
+atv_add_cpp_test(test_cpu_driver_verlet_comm      cpu/driver/test_verlet_comm.cpp)
+atv_add_cpp_test(test_cpu_driver_preset_comm_plan cpu/driver/test_preset_comm_plan.cpp)
 atv_add_cpp_test(test_cpu_md_full_neighbor_list  cpu/dynamics/test_full_neighbor_list.cpp)
 atv_add_cpp_test(test_cpu_md_cell_list_grid_stale  cpu/dynamics/test_cell_list_grid_stale.cpp)
 atv_add_cpp_test(test_cpu_md_cell_list_halo_pad  cpu/dynamics/test_cell_list_halo_pad.cpp)
@@ -449,7 +461,7 @@ endif()
 # a full NVT equilibration of the bonded PE melt, not a ms unit test.
 atv_add_cpp_test(test_cpu_md_frame_tag_image      cpu/dynamics/test_frame_tag_image.cpp)
 atv_add_cpp_test(test_cpu_md_domain_decomposition cpu/dynamics/test_domain_decomposition.cpp)
-atv_add_cpp_test(test_cpu_md_halo_injection_reach cpu/dynamics/test_halo_injection_reach.cpp)
+
 atv_add_cpp_test(test_cpu_analysis_executor       cpu/test_analysis_executor.cpp)
 # MSD/VACF stream into molrs accumulators (cpu/observe/trajectory_metrics.h).
 if(ATV_BUILD_ANALYSIS)
@@ -581,11 +593,9 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
     atv_add_mpi_run(test_mpi_halo_exchange_n2 test_mpi_halo_exchange 2)
     atv_add_mpi_run(test_mpi_halo_exchange_n8 test_mpi_halo_exchange 8)
 
-    # Ghost-charge refresh after a mid-step Q rewrite (const-pot MPI DD).
-    atv_add_mpi_exec(test_mpi_halo_refresh_charges mpi/test_halo_refresh_charges.cpp)
-    atv_add_mpi_run(test_mpi_halo_refresh_charges_n1 test_mpi_halo_refresh_charges 1)
-    atv_add_mpi_run(test_mpi_halo_refresh_charges_n2 test_mpi_halo_refresh_charges 2)
-
+    atv_add_mpi_exec(test_mpi_comm_brick mpi/test_comm_brick.cpp)
+    atv_add_mpi_run(test_mpi_comm_brick_n1 test_mpi_comm_brick 1)
+    atv_add_mpi_run(test_mpi_comm_brick_n2 test_mpi_comm_brick 2)
 
     atv_add_mpi_exec(test_mpi_lj_energy_bruteforce
                      mpi/test_lj_energy_bruteforce.cpp)
@@ -633,14 +643,13 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
     atv_add_mpi_run(test_mpi_bonded_energy_bruteforce_n8
                     test_mpi_bonded_energy_bruteforce 8)
 
-    atv_add_mpi_exec(test_mpi_atom_migration mpi/test_atom_migration.cpp)
-    atv_add_mpi_run(test_mpi_atom_migration_n1 test_mpi_atom_migration 1)
-    atv_add_mpi_run(test_mpi_atom_migration_n2 test_mpi_atom_migration 2)
+    atv_add_mpi_exec(test_mpi_owner_exchange mpi/test_owner_exchange.cpp)
+    atv_add_mpi_run(test_mpi_owner_exchange_n1 test_mpi_owner_exchange 1)
+    atv_add_mpi_run(test_mpi_owner_exchange_n2 test_mpi_owner_exchange 2)
 
-    # cpu::Evaluate must inject the same Migrate/Halo/Reduce set that MD and
-    # Minimize do; without it a multi-rank single point runs with zero ghosts
-    # and silently drops every cross-boundary interaction. n1 is the serial
-    # guardrail, n2 the multi-rank statement.
+    # cpu::Evaluate wraps ctx.md.comm around the evaluate slot (same
+    # identity as MD/Minimize). n1 is the serial guardrail, n2 the
+    # multi-rank statement.
     if(ATV_BUILD_EVALUATE AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
         atv_add_mpi_exec(test_mpi_evaluate_halo_parity
                          mpi/test_evaluate_halo_parity.cpp)

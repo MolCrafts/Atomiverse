@@ -217,3 +217,119 @@ asserted. Next registered lever remains kspace remap collective shape.
 
 Correctness: `widebox_parity.sh` NP=256 DIMS=8,8,4 — every window
 dev=0.0 vs np=1, hops=2,2,1 (job 1702467).
+
+## Snapshot (2026-08-27, wt10 — multi-hop slab band + exchange collectives)
+
+Same protocol as every block above (MIL0PEGM18 24048 atoms, NVT 400 K,
+lj/cut/coul/long 9.0 + PPPM, dt = 1 fs, 5000 steps after 200 warmup,
+`srun --cpu-bind=cores`, OMP=1, grid 8×8×4, hops 2,2,1). Best config
+`--grid-spacing 2.63` (24³ mesh) `--fft-ranks 8`. Job 1734723; the LAMMPS
+reference is the same job on the same node. These numbers are a record,
+**not** an acceptance criterion.
+
+Four changes, all in `cpu/communication/`:
+
+1. **Forwarding rounds carry the LAMMPS `ineed >= 2` slab band again**
+   (`halo.cpp`, `Halo::expand`). It had been switched off behind a
+   `&& false` bisect flag, leaving hop ≥ 2 with an open band, so every
+   forwarding round shipped the whole slab it had received instead of the
+   part still inside the receiver's shell. The surplus compounds per hop:
+   the per-axis ghost span was 39.4 Å where the shell only reaches
+   29.9 Å, i.e. **1.76× the ghost rows** over three axes.
+2. **`exchange` entry collectives 4 → 1.** The wire schema is anchored
+   collectively on the first migration and compared locally after it (the
+   discipline the halo plans already used); the "does anyone have an atom
+   to home" flag and the global max native row width now ride one
+   `MPI_Allreduce(MPI_MAX)` over a 2-element array.
+3. **`exchange_along_dim` round shape.** The first round is unconditional
+   (LAMMPS runs exactly one per dim and never asks the world); the
+   Allreduce now only asks whether a *received* row is still out of slab,
+   which is false on the common path, so a dim usually costs one
+   reduction instead of two. Count and payload exchanges are nonblocking
+   pairs rather than two serialized `MPI_Sendrecv`s.
+4. **Slab test inclusive on both edges** (`>=`/`<=`), as
+   `CommBrick::borders`. It had been strict; with (1) restoring a second
+   *closed* edge at `sublo + cutoff` that became a real lost-pair risk.
+
+| config | steps/s | note |
+|---|---|---|
+| ATV np=256 wt9 | 1307 | open forwarding band |
+| ATV np=256 **wt10** | **1444 / 1448 / 1447** | 3 reps, wall 3.45 s / 5000 |
+| LAMMPS np=256 (same node, same job) | **1521** | Loop 3.29 s / 5000 |
+
+ATV is at **95%** of LAMMPS (was 86%). Section table (s / 5200 launches
+for ATV, / 5000 steps for LAMMPS; both `avg` over ranks):
+
+| Section | ATV wt9 | ATV wt10 | LAMMPS | wt10 / LMP |
+|---|---|---|---|---|
+| Pair | 0.958 | 0.951 | 0.931 | 1.02 |
+| Bond | 0.124 | 0.122 | 0.103 | 1.18 |
+| Kspace | 1.419 | 1.408 | 1.574 | **0.89** |
+| Neigh | 0.126 | 0.106 | 0.144 | **0.74** |
+| Comm | 1.142 | **0.842** | 0.438 | **1.92** |
+| Modify | 0.131 | 0.120 | 0.062 | 1.94 |
+| Loop | 4.058 | **3.656** | 3.287 | 1.11 |
+
+Comm sub-ops (max over ranks, s / 5200 launches):
+
+| op | calls | wt9 | wt10 |
+|---|---|---|---|
+| comm_forward | 4969 | 0.372 | 0.320 |
+| comm_reverse | 5200 | 0.404 | 0.314 |
+| comm_borders | 231 | 0.228 | 0.134 |
+| comm_exchange | 231 | 0.201 | 0.122 |
+| reduce | 5200 | 0.047 | 0.045 |
+
+The ghost count is now reported directly in the load-balance table
+(`nghost_min/avg/max` + `ghost/owned`), because that is where a slab-band
+or hop-count regression shows up long before it shows up as Comm seconds.
+It is also the sharpest available check that the port is faithful, and it
+now passes: **ATV nghost_avg 3151.3 against LAMMPS `Nghost: 3147.24 ave`
+on the same run** — 0.13% apart, the residue of the inclusive band edge
+and of `ceil` vs LAMMPS' `int()+1` in the hop count. Before the band fix
+ATV carried ~5530. Comm buffer allocation fell 0.200 → 0.112 GB over 256
+ranks, the same 44%.
+
+### Where the remaining Comm goes
+
+Same binary plus per-phase `ATV_PROFILE_SCOPE`s in the halo paths (job
+1734801, 1453 / 1460 steps/s — the scopes cost nothing measurable).
+Rank-0 seconds over 5200 launches, 5 rounds per call:
+
+| phase | s | phase | s |
+|---|---|---|---|
+| halo/fwd_pack (+`Isend` posting) | 0.090 | halo/rev_pack (+posting) | 0.061 |
+| **halo/fwd_wait** | **0.188** | **halo/rev_wait** | **0.200** |
+| halo/fwd_unpack | 0.008 | halo/rev_accum | 0.026 |
+
+`MPI_Waitall` is **~63%** of forward + reverse. Unpack is negligible
+(0.008 s), so receive-into-`x` — LAMMPS' `comm_x_only` trick, which ATV's
+SoA Frame cannot do in one message anyway — would buy nothing here. In
+`borders` (0.134 s total) the biggest item is brd_unpack 0.053 and the
+ghost tag-map teardown is **0.000007 s**: `exchange` clears `ghost_tags`
+immediately before, so that loop is a no-op on every migrating step. A
+LAMMPS-style direct-index `map_array` would therefore buy nothing either.
+
+So the remaining 1.92× is not volume (ghost counts match), not imbalance
+(spreads match), not pack/unpack, and not the tag map. It is the
+round-trip cost of the serialized dependency rounds themselves, and
+ATV already posts *fewer* MPI calls per step than LAMMPS (26 vs 30 on the
+forward path). Closing it needs a measurement the current instrumentation
+cannot give: these scopes are **rank 0 only**, and rank 0 is one of the 8
+`--fft-ranks` ranks, so it is a systematically *late* rank that waits less
+than average. The next step is per-rank sub-phase statistics, or a
+barrier-bracketed run, to separate transport from residual skew — not
+another guess at the pack path.
+
+Note the section bookkeeping is not identical to LAMMPS': ATV charges
+`zero_ghost_forces` (ghost force rows) to Comm, where LAMMPS clears the
+whole force array in `Verlet::force_clear` and charges it to Other. That
+is worth ~0.02 s of ATV's Comm.
+
+Correctness: `widebox_parity.sh` at NP=256, every window dev=0.0 vs np=1,
+on three grids — 8,8,4 at 32³ and at 24³ (hops 2,2,1) and **16,4,4**
+(3.94 Å subdomain vs 11 Å shell ⇒ **hops 3,1,1**). The 3-hop arm is the
+one that matters for change (1): it is the only grid here where a
+forwarding round has to hand its rows on to yet another hop, so an
+over-tight depth clip would drop pairs there first. 237/237 unit + MPI
+tests green.

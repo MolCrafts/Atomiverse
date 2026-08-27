@@ -1,12 +1,15 @@
-/// @file src/cpu/communication/swap_list.cpp
-/// @brief `SwapList` implementation: multi-hop derivation, swap expansion,
+/// @file src/cpu/communication/halo.cpp
+/// @brief `Halo` implementation: multi-hop derivation, swap expansion,
 /// band scan, ghost-slot prefix sum. Purely local — no MPI here by
 /// construction. Rank-uniform round counts come from
 /// `derive_uniform_rounds` (a local sweep over each axis's coordinates);
-/// the transport caller (`HaloSend`) then expands them via the five-argument
+/// the transport caller (`CommBrick`) then expands them via the five-argument
 /// `setup`.
+///
+/// Algorithm transplanted from LAMMPS `src/comm_brick.cpp` sendlist
+/// (checkout `78a7ddf`). Copyright (2003) Sandia Corporation. GPL-2.0-only.
 
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 
 #include <algorithm>
 #include <array>
@@ -92,7 +95,7 @@ ChainWalk walk_chain(const std::vector<double>& cuts, int dims, int coords,
                                        int hops) {
     const double self_width = dd.subhi[d] - dd.sublo[d];
     throw std::runtime_error(
-        "SwapList: the requested ghost shell (" + std::to_string(shell)
+        "Halo: the requested ghost shell (" + std::to_string(shell)
         + " A) violates the minimum-image convention on periodic axis "
         + std::to_string(d) + ": covering it would take " + std::to_string(hops)
         + " hops of the " + std::to_string(dd.dims[d] - 1)
@@ -112,11 +115,11 @@ ChainWalk walk_chain(const std::vector<double>& cuts, int dims, int coords,
 void check_shell_width(double halo_cutoff) {
     if (!(halo_cutoff >= 0.0)) {
         throw std::runtime_error(
-            "SwapList::setup: halo cutoff must be a non-negative width in "
+            "Halo::setup: halo cutoff must be a non-negative width in "
             "Angstrom, got "
             + std::to_string(halo_cutoff)
             + ". It is max(pair cutoff, bonded extension) and is derived by "
-              "HaloSend; a negative or NaN value means the caller never "
+              "CommBrick; a negative or NaN value means the caller never "
               "computed it.");
     }
 }
@@ -126,22 +129,28 @@ void check_shell_width(double halo_cutoff) {
 /// @param d Axis index that must lie in `[0, 3)`.
 void check_axis(const char* what, int d) {
     if (d < 0 || d >= 3) {
-        throw std::runtime_error(std::string("SwapList::") + what + ": axis "
+        throw std::runtime_error(std::string("Halo::") + what + ": axis "
                                  + std::to_string(d) + " is outside [0, 3).");
     }
 }
 
 } // namespace
 
-SwapList::HopNeed SwapList::derive_hops(const md::mpi::DomainDecomposition& dd,
-                                        const Box& box, double shell_width) {
+Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
+                                const Box& box, double shell_width) {
+    return derive_hops(dd, box, shell_width, dd.coords);
+}
+
+Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
+                                const Box& box, double shell_width,
+                                const int (&coords)[3]) {
     if (!(shell_width >= 0.0)) {
         throw std::runtime_error(
-            "SwapList::derive_hops: the ghost shell must be a non-negative "
+            "Halo::derive_hops: the ghost shell must be a non-negative "
             "width in Angstrom, got "
             + std::to_string(shell_width)
             + ". It is max(pair cutoff, bonded extension) and is derived by "
-              "HaloSend; a negative or NaN value means the caller never "
+              "CommBrick; a negative or NaN value means the caller never "
               "computed it.");
     }
 
@@ -158,8 +167,8 @@ SwapList::HopNeed SwapList::derive_hops(const md::mpi::DomainDecomposition& dd,
         const double axis_length = box.length(d);
         if (!(axis_length > 0.0)) {
             throw std::runtime_error(
-                "SwapList::derive_hops: box edge along axis "
-                + std::to_string(d) + " is " + std::to_string(axis_length)
+                "Halo::derive_hops: box edge along axis " + std::to_string(d)
+                + " is " + std::to_string(axis_length)
                 + " A; the slab widths the hop count is measured against are "
                   "undefined. Set the box before deriving the swap table.");
         }
@@ -167,7 +176,7 @@ SwapList::HopNeed SwapList::derive_hops(const md::mpi::DomainDecomposition& dd,
         const std::vector<double>& cuts = dd.cuts[static_cast<std::size_t>(d)];
         if (!cuts.empty() && static_cast<int>(cuts.size()) != dd.dims[d] + 1) {
             throw std::runtime_error(
-                "SwapList::derive_hops: the non-uniform cut table of axis "
+                "Halo::derive_hops: the non-uniform cut table of axis "
                 + std::to_string(d) + " has " + std::to_string(cuts.size())
                 + " entries but the axis carries " + std::to_string(dd.dims[d])
                 + " ranks, so it must have " + std::to_string(dd.dims[d] + 1)
@@ -180,9 +189,9 @@ SwapList::HopNeed SwapList::derive_hops(const md::mpi::DomainDecomposition& dd,
         // boundary, where the chain simply stops — there is no partner left
         // and no periodic image to collide with, so no refusal either.
         const bool periodic = dd.periods[d] != 0;
-        const int reach_minus = periodic ? dd.dims[d] - 1 : dd.coords[d];
+        const int reach_minus = periodic ? dd.dims[d] - 1 : coords[d];
         const int reach_plus =
-            periodic ? dd.dims[d] - 1 : dd.dims[d] - 1 - dd.coords[d];
+            periodic ? dd.dims[d] - 1 : dd.dims[d] - 1 - coords[d];
 
         if (cuts.empty()) {
             // Uniform brick: every partner slab is L_d / dims_d wide, so the
@@ -201,9 +210,9 @@ SwapList::HopNeed SwapList::derive_hops(const md::mpi::DomainDecomposition& dd,
         // each send direction that decides how many rounds the shell takes,
         // not this rank's own width.
         const ChainWalk minus =
-            walk_chain(cuts, dd.dims[d], dd.coords[d], -1, axis_length,
+            walk_chain(cuts, dd.dims[d], coords[d], -1, axis_length,
                        shell_width, reach_minus);
-        const ChainWalk plus = walk_chain(cuts, dd.dims[d], dd.coords[d], +1,
+        const ChainWalk plus = walk_chain(cuts, dd.dims[d], coords[d], +1,
                                           axis_length, shell_width, reach_plus);
         if (periodic && !minus.covered)
             refuse_minimum_image(d, dd, axis_length, shell_width,
@@ -218,25 +227,31 @@ SwapList::HopNeed SwapList::derive_hops(const md::mpi::DomainDecomposition& dd,
 }
 
 std::array<int, 3>
-SwapList::derive_uniform_rounds(const md::mpi::DomainDecomposition& dd,
-                                const Box& box, double shell_width) {
+Halo::derive_uniform_rounds(const md::mpi::DomainDecomposition& dd,
+                            const Box& box, double shell_width) {
     std::array<int, 3> rounds{0, 0, 0};
+    // Coords override instead of copying the decomposition per scan point:
+    // a DomainDecomposition carries the tag→local hash and the ghost-tag
+    // log, so the old `scan = dd` deep-copied thousands of entries per
+    // coordinate — measurable at every borders pass on bonded systems.
+    int coords[3] = {dd.coords[0], dd.coords[1], dd.coords[2]};
     for (int d = 0; d < 3; ++d) {
         int axis_max = 0;
+        const int saved = coords[d];
         for (int c = 0; c < dd.dims[d]; ++c) {
-            md::mpi::DomainDecomposition scan = dd;
-            scan.coords[d] = c;
-            const HopNeed hops = derive_hops(scan, box, shell_width);
+            coords[d] = c;
+            const HopNeed hops = derive_hops(dd, box, shell_width, coords);
             axis_max =
                 std::max(axis_max, std::max(hops.minus[d], hops.plus[d]));
         }
+        coords[d] = saved;
         rounds[static_cast<std::size_t>(d)] = axis_max;
     }
     return rounds;
 }
 
-void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
-                     double halo_cutoff, int my_rank) {
+void Halo::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
+                 double halo_cutoff, int my_rank) {
     check_shell_width(halo_cutoff);
 
     // Derive every hop count first: a refusal must leave the previous table
@@ -252,8 +267,8 @@ void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
     expand(dd, halo_cutoff, my_rank, rounds);
 }
 
-void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
-                     double halo_cutoff, int my_rank, const int rounds[3]) {
+void Halo::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
+                 double halo_cutoff, int my_rank, const int rounds[3]) {
     check_shell_width(halo_cutoff);
 
     // Re-derive locally anyway: the minimum-image bound and the cut-table
@@ -278,15 +293,22 @@ void SwapList::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
     expand(dd, halo_cutoff, my_rank, reconciled);
 }
 
-void SwapList::expand(const md::mpi::DomainDecomposition& dd,
-                      double halo_cutoff, int my_rank, const int rounds[3]) {
+void Halo::setup_uniform(const md::mpi::DomainDecomposition& dd, const Box& box,
+                         double halo_cutoff, int my_rank) {
+    const std::array<int, 3> rounds =
+        derive_uniform_rounds(dd, box, halo_cutoff);
+    setup(dd, box, halo_cutoff, my_rank, rounds.data());
+}
+
+void Halo::expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
+                  int my_rank, const int rounds[3]) {
     int pairs[3];
     for (int d = 0; d < 3; ++d) {
         if (dd.dims[d] > 1) {
             const double sub = dd.subhi[d] - dd.sublo[d];
             if (!(sub > 0.0)) {
                 throw std::runtime_error(
-                    "SwapList::setup: this rank's subdomain along axis "
+                    "Halo::setup: this rank's subdomain along axis "
                     + std::to_string(d) + " has non-positive width ("
                     + std::to_string(sub)
                     + " A), so the ghost shell has nothing to grow from. Call "
@@ -348,12 +370,39 @@ void SwapList::expand(const md::mpi::DomainDecomposition& dd,
                 }
 
                 if (round > 1) {
-                    // Forwarding round: the rows it ships already sit outside
-                    // this rank's subdomain, so no band of this rank's own
-                    // coordinates describes them. The open band takes whatever
-                    // the caller's scan window offers.
-                    swap.slablo = -kBigSlab;
-                    swap.slabhi = +kBigSlab;
+                    // Forwarding round — LAMMPS `CommBrick::setup` slab
+                    // bounds for `ineed >= 2` (`src/comm_brick.cpp`).
+                    //
+                    // Depth bound: the low-going swap hands rows to the
+                    // neighbour whose own high edge is this rank's
+                    // `sublo`, so that neighbour's shell reaches exactly
+                    // `sublo + halo_cutoff`; anything past it is outside
+                    // every shell the chain will ever serve, because the
+                    // next hop clips at a strictly lower bound again. An
+                    // open band ships the whole forwarded slab instead of
+                    // the part that is still in reach, and the surplus
+                    // compounds once per hop: at the bench geometry
+                    // (7.875 A subdomain, 11 A shell) it inflates the
+                    // per-axis ghost span 29.9 -> 39.4 A, i.e. 1.76x the
+                    // ghost rows over three axes — paid again in halo
+                    // bytes, neighbour build and reverse comm.
+                    //
+                    // Mid-plane bound: mirrors LAMMPS, where one window
+                    // holds the previous round's receipts from BOTH faces
+                    // and the mid-plane is what keeps a row from bouncing
+                    // back to the face it arrived from. Here the caller
+                    // already narrows the window to the opposite face
+                    // (`forward_cascade`), so it is a redundant guard —
+                    // kept because it costs one compare and holds the
+                    // invariant locally rather than by convention.
+                    const double mid = 0.5 * (dd.sublo[d] + dd.subhi[d]);
+                    if (hi) {
+                        swap.slablo = dd.subhi[d] - halo_cutoff;
+                        swap.slabhi = mid;
+                    } else {
+                        swap.slablo = mid;
+                        swap.slabhi = dd.sublo[d] + halo_cutoff;
+                    }
                 } else if (hi) {
                     swap.slablo = dd.subhi[d] - halo_cutoff;
                     swap.slabhi = +kBigSlab;
@@ -370,22 +419,21 @@ void SwapList::expand(const md::mpi::DomainDecomposition& dd,
     }
 }
 
-void SwapList::rebuild_sendlist(int iswap, const Frame& frame,
-                                int sources_end) {
+void Halo::rebuild_sendlist(int iswap, const Frame& frame, int sources_end) {
     rebuild_sendlist(iswap, frame, /*first=*/0, /*last=*/sources_end);
 }
 
-void SwapList::rebuild_sendlist(int iswap, const Frame& frame, int first,
-                                int last) {
+void Halo::rebuild_sendlist(int iswap, const Frame& frame, int first,
+                            int last) {
     if (iswap < 0 || static_cast<std::size_t>(iswap) >= swaps_.size()) {
         throw std::runtime_error(
-            "SwapList::rebuild_sendlist: swap index " + std::to_string(iswap)
+            "Halo::rebuild_sendlist: swap index " + std::to_string(iswap)
             + " is outside the table of " + std::to_string(swaps_.size())
             + " swaps. Call setup() first and iterate [0, size()).");
     }
     if (first < 0 || last < first || last > frame.capacity()) {
         throw std::runtime_error(
-            "SwapList::rebuild_sendlist: scan window [" + std::to_string(first)
+            "Halo::rebuild_sendlist: scan window [" + std::to_string(first)
             + ", " + std::to_string(last)
             + ") is not an ascending range inside " + "the frame's "
             + std::to_string(frame.capacity())
@@ -400,28 +448,32 @@ void SwapList::rebuild_sendlist(int iswap, const Frame& frame, int first,
                                       : (swap.dim == 1) ? frame.span(kAtom_y)
                                                         : frame.span(kAtom_z);
 
-    // Strict on both edges: an atom exactly on the band edge is not shipped.
+    // Inclusive on both edges, as LAMMPS `CommBrick::borders`
+    // (`x[i][dim] >= lo && x[i][dim] <= hi`). A row sitting exactly on a
+    // band edge is shipped: an extra ghost is free, a missing one is a lost
+    // pair, and a coordinate that arrived across a periodic boundary can
+    // land on the edge by round-off alone.
     const double lo = swap.slablo;
     const double hi = swap.slabhi;
     swap.sendlist.clear();
     for (int i = first; i < last; ++i) {
         const double qi = static_cast<double>(q[i]);
-        if (lo < qi && qi < hi)
+        if (lo <= qi && qi <= hi)
             swap.sendlist.push_back(i);
     }
 }
 
-int SwapList::commit_recv(int iswap, int nrecv, int next_slot) {
+int Halo::commit_recv(int iswap, int nrecv, int next_slot) {
     if (iswap < 0 || static_cast<std::size_t>(iswap) >= swaps_.size()) {
         throw std::runtime_error(
-            "SwapList::commit_recv: swap index " + std::to_string(iswap)
+            "Halo::commit_recv: swap index " + std::to_string(iswap)
             + " is outside the table of " + std::to_string(swaps_.size())
             + " swaps. Call setup() first and iterate [0, size()).");
     }
     if (nrecv < 0 || next_slot < 0) {
         throw std::runtime_error(
-            "SwapList::commit_recv: negative ghost count ("
-            + std::to_string(nrecv) + ") or slot (" + std::to_string(next_slot)
+            "Halo::commit_recv: negative ghost count (" + std::to_string(nrecv)
+            + ") or slot (" + std::to_string(next_slot)
             + "). Drive the prefix sum in swap order starting from n_local.");
     }
 
@@ -431,29 +483,87 @@ int SwapList::commit_recv(int iswap, int nrecv, int next_slot) {
     return next_slot + nrecv;
 }
 
-int SwapList::total_recv() const {
+int Halo::total_recv() const {
     int total = 0;
     for (const Swap& swap : swaps_)
         total += swap.nrecv;
     return total;
 }
 
-int SwapList::max_hops(int d) const {
+void Swap::pbc_shift(const Box& box, double out[3]) const {
+    for (int d = 0; d < 3; ++d)
+        out[d] = static_cast<double>(pbc[d]) * box.length(d);
+}
+
+void Halo::round_scan_window(int round, int width, int sources_end,
+                             const int (&prev_first)[2],
+                             const int (&prev_last)[2], int (&win_first)[2],
+                             int (&win_last)[2]) {
+    if (width < 1 || width > 2)
+        throw std::logic_error(
+            "Halo::round_scan_window: a round holds one (lo, hi) pair at "
+            "most, got width "
+            + std::to_string(width)
+            + ". The table is expanded axis-major, then round, then face.");
+    for (int k = 0; k < width; ++k) {
+        if (round <= 1) {
+            win_first[k] = 0;
+            win_last[k] = sources_end;
+        } else {
+            // The OPPOSITE face's previous receipts, not this face's.
+            const int opposite = width - 1 - k;
+            win_first[k] = prev_first[opposite];
+            win_last[k] = prev_last[opposite];
+        }
+    }
+}
+
+int Halo::stage_end(int begin) const {
+    const int n = static_cast<int>(swaps_.size());
+    const int dim = swaps_[static_cast<std::size_t>(begin)].dim;
+    int end = begin;
+    while (end < n && swaps_[static_cast<std::size_t>(end)].dim == dim)
+        ++end;
+    return end;
+}
+
+int Halo::round_end(int begin) const {
+    const int n = static_cast<int>(swaps_.size());
+    const Swap& first = swaps_[static_cast<std::size_t>(begin)];
+    int end = begin;
+    while (end < n && swaps_[static_cast<std::size_t>(end)].dim == first.dim
+           && swaps_[static_cast<std::size_t>(end)].round == first.round)
+        ++end;
+    return end;
+}
+
+int Halo::round_begin(int end) const {
+    int begin = end - 1;
+    while (begin > 0
+           && swaps_[static_cast<std::size_t>(begin) - 1].dim
+                  == swaps_[static_cast<std::size_t>(begin)].dim
+           && swaps_[static_cast<std::size_t>(begin) - 1].round
+                  == swaps_[static_cast<std::size_t>(begin)].round)
+        --begin;
+    return begin;
+}
+
+int Halo::max_hops(int d) const {
     check_axis("max_hops", d);
     return hops_[d];
 }
 
-int SwapList::nswap(int d) const {
+int Halo::nswap(int d) const {
     check_axis("nswap", d);
     return 2 * hops_[d];
 }
 
-int SwapList::maxneed(int d) const {
+int Halo::maxneed(int d) const {
     check_axis("maxneed", d);
     return maxneed_[d];
 }
 
-void SwapList::invalidate() {
+void Halo::invalidate() {
     for (Swap& swap : swaps_) {
         swap.sendlist.clear();
         swap.nrecv = 0;

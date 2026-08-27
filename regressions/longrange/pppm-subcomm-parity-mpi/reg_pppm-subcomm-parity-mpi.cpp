@@ -216,7 +216,7 @@ cpu::Frame make_rocksalt() {
 ///
 /// Bound at `evaluate::Phase::finalize` @ +900, i.e. after `md::mpi::Reduce`
 /// (evaluate @ +20) has turned the Frame scalars into system totals and long
-/// after `HaloRecv` (evaluate @ +10) folded every ghost force back onto its
+/// after `CommBrick` (evaluate @ +10) folded every ghost force back onto its
 /// owner. Every rank ends up holding the same tag-ordered arrays, so the
 /// child's report is independent of which rank writes it.
 class RockSaltChecker : public cpu::Component {

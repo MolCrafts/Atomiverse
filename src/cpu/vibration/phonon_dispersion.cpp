@@ -24,17 +24,6 @@ namespace {
 
 constexpr double kTwoPi = 6.28318530717958647692;
 
-/// @brief Decode supercell atom index (expand_supercell order).
-void decode_sc(int sc, int n_unit, int /*na*/, int nb, int nc, int& ia, int& ib,
-               int& ic, int& iu) {
-    iu = sc % n_unit;
-    int t = sc / n_unit;
-    ic = t % nc;
-    t /= nc;
-    ib = t % nb;
-    ia = t / nb;
-}
-
 /// @brief Encode home-cell unit atom → supercell index at (ia,ib,ic).
 int encode_sc(int ia, int ib, int ic, int iu, int n_unit, int nb, int nc) {
     return ((ia * nb + ib) * nc + ic) * n_unit + iu;
@@ -58,7 +47,8 @@ dynamical_matrix_q(const xt::xtensor<double, 2>& hessian_sc,
 
     for (int i = 0; i < n_unit; ++i) {
         const int I = encode_sc(0, 0, 0, i, n_unit, nb, nc);
-        const double inv_sqrt_mi = 1.0 / std::sqrt(mass[static_cast<std::size_t>(i)]);
+        const double inv_sqrt_mi =
+            1.0 / std::sqrt(mass[static_cast<std::size_t>(i)]);
         for (int ja = 0; ja < na; ++ja) {
             for (int jb = 0; jb < nb; ++jb) {
                 for (int jc = 0; jc < nc; ++jc) {
@@ -82,8 +72,7 @@ dynamical_matrix_q(const xt::xtensor<double, 2>& hessian_sc,
                             for (int b = 0; b < 3; ++b) {
                                 const double phi =
                                     hessian_sc(3 * I + a, 3 * J + b);
-                                D(3 * i + a, 3 * j + b) +=
-                                    scale * phi * w;
+                                D(3 * i + a, 3 * j + b) += scale * phi * w;
                             }
                         }
                     }
@@ -157,10 +146,10 @@ std::vector<double> lambdas_to_cm(const std::vector<double>& lambdas) {
     return w;
 }
 
-std::vector<double>
-omega_at_q(const xt::xtensor<double, 2>& hessian_sc,
-           const std::vector<double>& mass, int n_unit, int na, int nb, int nc,
-           const std::array<double, 3>& q_frac) {
+std::vector<double> omega_at_q(const xt::xtensor<double, 2>& hessian_sc,
+                               const std::vector<double>& mass, int n_unit,
+                               int na, int nb, int nc,
+                               const std::array<double, 3>& q_frac) {
     auto D = dynamical_matrix_q(hessian_sc, mass, n_unit, na, nb, nc, q_frac);
     auto lam = hermitian_eigenvalues(D);
     return lambdas_to_cm(lam);
@@ -173,8 +162,7 @@ void validate_inputs(const xt::xtensor<double, 2>& hessian_sc,
             "PhononDispersion: supercell factors na,nb,nc must be ≥ 1");
     const int n_unit = unit.nlocal();
     if (n_unit <= 0)
-        throw std::invalid_argument(
-            "PhononDispersion: unit cell has no atoms");
+        throw std::invalid_argument("PhononDispersion: unit cell has no atoms");
     const int n_sc = n_unit * na * nb * nc;
     const int dim = 3 * n_sc;
     if (static_cast<int>(hessian_sc.shape(0)) != dim
@@ -194,20 +182,20 @@ std::vector<double> masses_from_frame(const cpu::Frame& unit) {
     std::vector<double> mass(static_cast<std::size_t>(n));
     const auto type = unit.span(kAtom_type);
     for (int i = 0; i < n; ++i)
-        mass[static_cast<std::size_t>(i)] =
-            mass_amu(static_cast<int>(type[i]));
+        mass[static_cast<std::size_t>(i)] = mass_amu(static_cast<int>(type[i]));
     return mass;
 }
 
-std::vector<std::array<double, 3>>
-lerp_segment(const std::array<double, 3>& a, const std::array<double, 3>& b,
-             int n_seg, bool include_start) {
+std::vector<std::array<double, 3>> lerp_segment(const std::array<double, 3>& a,
+                                                const std::array<double, 3>& b,
+                                                int n_seg, bool include_start) {
     std::vector<std::array<double, 3>> pts;
     if (n_seg < 2)
         n_seg = 2;
     const int start = include_start ? 0 : 1;
     for (int i = start; i < n_seg; ++i) {
-        const double t = static_cast<double>(i) / static_cast<double>(n_seg - 1);
+        const double t =
+            static_cast<double>(i) / static_cast<double>(n_seg - 1);
         pts.push_back({a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]),
                        a[2] + t * (b[2] - a[2])});
     }
@@ -239,7 +227,8 @@ void PhononDispersion::set_diamond_path(int n_seg) {
 
 PhononDispersionResult
 PhononDispersion::compute(const xt::xtensor<double, 2>& hessian_sc,
-                          const cpu::Frame& unit, int na, int nb, int nc) const {
+                          const cpu::Frame& unit, int na, int nb,
+                          int nc) const {
     validate_inputs(hessian_sc, unit, na, nb, nc);
     const int n_unit = unit.nlocal();
     const auto mass = masses_from_frame(unit);

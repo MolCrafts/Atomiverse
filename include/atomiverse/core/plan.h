@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/binding.h"
 #include "atomiverse/core/types.h"
 
 namespace ATV {
@@ -61,6 +62,10 @@ struct StageSlot {
 template <typename Component>
 struct Plan {
     std::vector<StageSlot<Component>> slots; ///< One StageSlot per phase.
+    /// @brief Workflow this Plan was compiled for. MD uses the Verlet
+    ///        `nflag` comm block in `Runtime::step`; other kinds walk slots
+    ///        linearly. Stamped by `Driver::build()` from `kind_of(Phase)`.
+    PhaseKind kind = PhaseKind::Evaluate;
 };
 
 /// @brief Compiles bindings into a Plan.

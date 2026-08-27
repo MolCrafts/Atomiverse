@@ -5,6 +5,8 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/component/comm.h"
+#include "atomiverse/cpu/dynamics/charge_packer.h"
 #include "atomiverse/cpu/frame/box.h"
 #include "atomiverse/cpu/frame/frame.h"
 
@@ -608,6 +610,7 @@ void DipoleElectrodeJoint::launch(const LaunchContext& ctx) {
     if (!last_joint_converged_)
         throw std::runtime_error(
             "DipoleElectrodeJoint: joint Q–μ loop did not converge");
+    ChargePacker::forward(ctx);
 }
 
 void DipoleElectrodeJoint::destroy(const DestroyContext&) {

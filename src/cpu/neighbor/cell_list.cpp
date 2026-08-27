@@ -69,7 +69,7 @@ void CellList::init_extended(const cpu::Frame& frame, double cutoff_skin,
 double CellList::halo_pad_() const noexcept {
     // The two reaches answer different questions: cutoff_skin_ is how far a
     // PAIR may be found, dd_->ghost_shell_width is how far a GHOST may
-    // actually be placed (HaloSend's max(pair cutoff, bonded extension),
+    // actually be placed (CommBrick's max(pair cutoff, bonded extension),
     // covered in as many hops as the subdomain width needs). Under a
     // multi-hop halo, or a bonded extension wider than cutoff + skin, the
     // second exceeds the first and rows land outside a cutoff_skin-only
@@ -110,8 +110,14 @@ void CellList::compute_grid(const cpu::Frame& frame) {
     const double pad = halo_pad_();
     for (int d = 0; d < 3; ++d) {
         const double L = frame.box.length(d);
-        const int nc_global =
-            std::max(int(1), static_cast<int>(std::floor(L / cutoff_skin_)));
+        // LAMMPS `Neighbor::setup_bins`: bins are HALF the neighbor reach
+        // (binsize = 0.5 * cutoff+skin), searched with a multi-cell
+        // distance-pruned stencil. Half-reach bins cut the candidate
+        // volume per atom by ~1.8x against one-reach bins — the stencil
+        // covers the reach exactly instead of rounding it up to whole
+        // fat cells.
+        const int nc_global = std::max(
+            int(1), static_cast<int>(std::floor(L / (0.5 * cutoff_skin_))));
         const double cs_d = L / nc_global;
         if (axis_extended_[d]) {
             // Lattice-aligned local window covering [sublo - pad, subhi + pad].
@@ -174,21 +180,55 @@ void CellList::build_stencil() {
     half_stencil_.clear();
     full_stencil_.clear();
 
-    for (int di = -1; di <= 1; ++di) {
-        for (int dj = -1; dj <= 1; ++dj) {
-            for (int dk = -1; dk <= 1; ++dk) {
+    // Per-axis reach in cells. With half-reach bins this is 2; odd aspect
+    // ratios or the nc==1 floor can make it 1 or 3.
+    const int rx =
+        std::max(1, static_cast<int>(std::ceil(cutoff_skin_ / csx_ - 1e-12)));
+    const int ry =
+        std::max(1, static_cast<int>(std::ceil(cutoff_skin_ / csy_ - 1e-12)));
+    const int rz =
+        std::max(1, static_cast<int>(std::ceil(cutoff_skin_ / csz_ - 1e-12)));
+    stencil_reach_[0] = rx;
+    stencil_reach_[1] = ry;
+    stencil_reach_[2] = rz;
+
+    const double rc_sq = cutoff_skin_ * cutoff_skin_;
+    // Minimum distance between any two points of the home cell and the
+    // offset cell (LAMMPS `Neighbor::bin_distance`): cells farther apart
+    // than the reach can never hold a pair and are pruned outright.
+    auto min_dist_sq = [&](int di, int dj, int dk) {
+        const double ddx =
+            di > 0 ? (di - 1) * csx_ : (di < 0 ? (di + 1) * csx_ : 0.0);
+        const double ddy =
+            dj > 0 ? (dj - 1) * csy_ : (dj < 0 ? (dj + 1) * csy_ : 0.0);
+        const double ddz =
+            dk > 0 ? (dk - 1) * csz_ : (dk < 0 ? (dk + 1) * csz_ : 0.0);
+        return ddx * ddx + ddy * ddy + ddz * ddz;
+    };
+
+    for (int di = -rx; di <= rx; ++di) {
+        for (int dj = -ry; dj <= ry; ++dj) {
+            for (int dk = -rz; dk <= rz; ++dk) {
+                if (min_dist_sq(di, dj, dk) > rc_sq)
+                    continue;
                 full_stencil_.push_back({di, dj, dk});
-                // Half stencil: include self (0,0,0), and any neighbor
-                // whose flat offset > 0 in the original integer ordering
-                // (lexicographic on (di, dj, dk)). The full-list filter
-                // catches every pair twice; the half-list filter is the
-                // same pair pruned to one direction.
-                const int flat = di * ncy_ * ncz_ + dj * ncz_ + dk;
-                if (flat > 0 || (di == 0 && dj == 0 && dk == 0))
+                // Half stencil: the home cell plus the lexicographically
+                // FORWARD offsets. Explicit lexicographic order (not the
+                // flat-index sign, which aliases once |dj|·ncz + |dk|
+                // can exceed ncy·ncz on multi-cell reaches): every
+                // unordered pair is emitted exactly once — home cell by
+                // the j>i filter, forward cells unconditionally, and the
+                // backward image of a forward offset is never scanned.
+                const bool home = (di == 0 && dj == 0 && dk == 0);
+                const bool forward = (di > 0) || (di == 0 && dj > 0)
+                                     || (di == 0 && dj == 0 && dk > 0);
+                if (home || forward)
                     half_stencil_.push_back({di, dj, dk});
             }
         }
     }
+    if (visited_scratch_.size() < full_stencil_.size())
+        visited_scratch_.resize(full_stencil_.size());
 }
 
 void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
@@ -460,16 +500,17 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
         const int* __restrict cell_offset_ptr = cell_offset_.data();
         const int* __restrict binned_ptr = binned_atoms_.data();
 
-        // Half-stencil (LAMMPS newton-on) fast path: iterate ~14 cells (home +
-        // forward) instead of the full 27 with a `j<=i` reject on every
-        // candidate. Each unordered pair is still emitted exactly once (home
-        // cell: j>i; forward cells: all j -- the reverse offset is backward
-        // from j and thus not in j's half stencil). Valid whenever no PBC
-        // wrap-aliasing can fold two stencil offsets onto the same cell, i.e.
-        // >=3 cells on every axis. This holds for single-rank (every axis
-        // wraps) AND multi-rank: extended (decomposed) axes never wrap
-        // (out-of-range stencil cells `continue`, see below), and the
-        // non-extended axes still need >=3 cells.
+        // Half-stencil (LAMMPS newton-on) fast path: iterate the home +
+        // forward cells instead of the full stencil with a `j<=i` reject on
+        // every candidate. Each unordered pair is still emitted exactly once
+        // (home cell: j>i; forward cells: all j -- the reverse offset is
+        // backward from j and thus not in j's half stencil). Valid whenever
+        // no PBC wrap-aliasing can fold two stencil offsets onto the same
+        // cell, i.e. >= 2*reach+1 cells on every wrapped axis. This holds
+        // for single-rank (every axis wraps) AND multi-rank: extended
+        // (decomposed) axes never wrap (out-of-range stencil cells
+        // `continue`, see below), and only the non-extended axes need the
+        // cell-count bound.
         //
         // Multi-rank cross-rank dedup (tag_dedup): ghost atoms are iterated as
         // `i` too, but `inum` is trimmed to `n_local` downstream so only the
@@ -480,13 +521,19 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
         // tag tie-break is needed there alone -- gated by `reject_le_i` below.
         // This mirrors LAMMPS `npair_half_bin_newton` (coordinate tie-break in
         // the home bin, unconditional add in the forward stencil bins).
-        // Small/aliased grids (<3 cells) fall back to the full stencil, where
-        // the tie-break applies on every cell because both ranks scan all 27.
-        const bool use_half = ncx_ >= 3 && ncy_ >= 3 && ncz_ >= 3;
+        // Small/aliased grids fall back to the full stencil, where the
+        // tie-break applies on every cell because both ranks scan them all.
+        const auto axis_ok = [&](int nc, int reach, bool extended) {
+            return extended || nc >= 2 * reach + 1;
+        };
+        const bool use_half =
+            axis_ok(ncx_, stencil_reach_[0], axis_extended_[0])
+            && axis_ok(ncy_, stencil_reach_[1], axis_extended_[1])
+            && axis_ok(ncz_, stencil_reach_[2], axis_extended_[2]);
         const std::vector<StencilOffset>& stencil =
             use_half ? half_stencil_ : full_stencil_;
 
-        int visited[27];
+        int* __restrict visited = visited_scratch_.data();
         int cursor = 0;
 
         for (int i = 0; i < n; ++i) {
@@ -546,6 +593,13 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
                         cx -= ncx_;
                         shx = lx;
                     }
+                    // Multi-cell reach on a tiny wrapped grid (full-stencil
+                    // fallback only — the half path's nc >= 2*reach+1 gate
+                    // guarantees the single wrap above): fold the residue.
+                    // The fallback ignores the per-cell shift and re-derives
+                    // separations by min-image, so only the index matters.
+                    if (cx < 0 || cx >= ncx_)
+                        cx = ((cx % ncx_) + ncx_) % ncx_;
                 }
                 if (axis_extended_[1]) {
                     if (cy < 0 || cy >= ncy_)
@@ -558,6 +612,8 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
                         cy -= ncy_;
                         shy = ly;
                     }
+                    if (cy < 0 || cy >= ncy_)
+                        cy = ((cy % ncy_) + ncy_) % ncy_;
                 }
                 if (axis_extended_[2]) {
                     if (cz < 0 || cz >= ncz_)
@@ -570,6 +626,8 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
                         cz -= ncz_;
                         shz = lz;
                     }
+                    if (cz < 0 || cz >= ncz_)
+                        cz = ((cz % ncz_) + ncz_) % ncz_;
                 }
 
                 const int cj = cx * ncy_ * ncz_ + cy * ncz_ + cz;
@@ -747,29 +805,20 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
                 if (axis_extended_[0]) {
                     if (cx < 0 || cx >= ncx_)
                         continue;
-                } else {
-                    if (cx < 0)
-                        cx += ncx_;
-                    if (cx >= ncx_)
-                        cx -= ncx_;
+                } else if (cx < 0 || cx >= ncx_) {
+                    cx = ((cx % ncx_) + ncx_) % ncx_;
                 }
                 if (axis_extended_[1]) {
                     if (cy < 0 || cy >= ncy_)
                         continue;
-                } else {
-                    if (cy < 0)
-                        cy += ncy_;
-                    if (cy >= ncy_)
-                        cy -= ncy_;
+                } else if (cy < 0 || cy >= ncy_) {
+                    cy = ((cy % ncy_) + ncy_) % ncy_;
                 }
                 if (axis_extended_[2]) {
                     if (cz < 0 || cz >= ncz_)
                         continue;
-                } else {
-                    if (cz < 0)
-                        cz += ncz_;
-                    if (cz >= ncz_)
-                        cz -= ncz_;
+                } else if (cz < 0 || cz >= ncz_) {
+                    cz = ((cz % ncz_) + ncz_) % ncz_;
                 }
 
                 const int cj = cx * ncy_ * ncz_ + cy * ncz_ + cz;
@@ -927,29 +976,20 @@ void CellList::refresh_full(const cpu::Frame& frame, int n_active,
                 if (axis_extended_[0]) {
                     if (cx < 0 || cx >= ncx_)
                         continue;
-                } else {
-                    if (cx < 0)
-                        cx += ncx_;
-                    if (cx >= ncx_)
-                        cx -= ncx_;
+                } else if (cx < 0 || cx >= ncx_) {
+                    cx = ((cx % ncx_) + ncx_) % ncx_;
                 }
                 if (axis_extended_[1]) {
                     if (cy < 0 || cy >= ncy_)
                         continue;
-                } else {
-                    if (cy < 0)
-                        cy += ncy_;
-                    if (cy >= ncy_)
-                        cy -= ncy_;
+                } else if (cy < 0 || cy >= ncy_) {
+                    cy = ((cy % ncy_) + ncy_) % ncy_;
                 }
                 if (axis_extended_[2]) {
                     if (cz < 0 || cz >= ncz_)
                         continue;
-                } else {
-                    if (cz < 0)
-                        cz += ncz_;
-                    if (cz >= ncz_)
-                        cz -= ncz_;
+                } else if (cz < 0 || cz >= ncz_) {
+                    cz = ((cz % ncz_) + ncz_) % ncz_;
                 }
 
                 const int cj = cx * ncy_ * ncz_ + cy * ncz_ + cz;

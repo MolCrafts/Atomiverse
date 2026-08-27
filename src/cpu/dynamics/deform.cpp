@@ -110,7 +110,7 @@ void Deform::launch(const cpu::LaunchContext& ctx) {
 
     // Ghost rows must track the box transform too. Without this, force
     // evaluators between this deform call and the next skin-gated
-    // HaloSend see owner→ghost separations corrupted by
+    // CommBrick see owner→ghost separations corrupted by
     // `(scale-1)*pos` on the deformed axis (mirrors the NPT case;
     // LAMMPS `fix deform`'s `remap` also operates on nlocal+nghost).
     // Velocity drift is intentionally omitted — the owner rank applies

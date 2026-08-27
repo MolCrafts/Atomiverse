@@ -11,7 +11,7 @@
 /// (async analysis executor). Unfilled slice fields stay `nullptr` =
 /// service unavailable; components check before use. Cross-slice reads
 /// are legitimate (slices group by *publisher*, not by exclusive
-/// consumer): `comm::Migrate` reads `opt.line_search_trial`, Minimize's
+/// consumer): `CommBrick::exchange` reads `opt.line_search_trial`, Minimize's
 /// force phase reads `md.pair_list`.
 ///
 /// The grouping is zero-cost: one aggregate, stack-constructible,
@@ -19,6 +19,7 @@
 /// heap (hot-path invariant of the arch-refactor chain).
 #pragma once
 
+#include "atomiverse/core/schema.h"
 #include <functional>
 #include <random>
 #include <type_traits>
@@ -47,9 +48,7 @@ namespace mc {
 struct Transaction;
 } // namespace mc
 
-namespace comm {
-class SwapList;
-} // namespace comm
+class Comm;
 
 /// @brief Classical force-pipeline services (publishers: `Backend`,
 ///        `NeighborList`, `cpu::md::MD`).
@@ -61,33 +60,28 @@ struct DynamicsServices {
     /// MPI headers transitively).
     md::mpi::DomainDecomposition* dd = nullptr;
 
+    /// @brief Fields the halo carries this run, folded at `build()` from
+    ///        every component's `declare_fields` plus the engine's base set.
+    ///        Non-owning; the Driver owns them. Null before `build()`.
+    /// @see core/schema.h
+    const Schema* ghost_fields = nullptr;
+    const Schema* ghost_reverse_fields = nullptr;
+
     /// @brief Non-owning handle to the active neighbor list.
     /// Published by `NeighborList::build()` (address stable across the
     /// run). Kept here — rather than on `cpu::Frame` — so the frame stays
     /// confined to fundamental physical quantities.
     const md::PairList* pair_list = nullptr;
 
-    /// @brief Non-owning handle to the halo's ordered swap table.
+    /// @brief Non-owning handle to the domain communicator (`CommBrick`).
     ///
-    /// Published by `comm::HaloSend::build()` and re-published by its
-    /// `launch()` (address stable across the run; `destroy()` clears it).
-    /// It is the LAMMPS CommBrick swap list — per face exchange: send list,
-    /// received ghost count and first ghost slot — derived once per full
-    /// halo rebuild and replayed by `HaloRecv` (reverse accumulation) and
-    /// `HaloRefresh` (in-step field refresh).
+    /// Published by `communication::DomainRuntime::allocate()`. Address
+    /// stable for the run. The swap table is private to `CommBrick`;
+    /// Runtime Verlet / linear wrap and plugin packers call this pointer.
     ///
-    /// Kept here rather than on `md::mpi::DomainDecomposition` for the same
-    /// reason as `pair_list`: it is derived bookkeeping, not ownership
-    /// geometry, and the hot-path structures carry only fundamental
-    /// quantities.
-    ///
-    /// **Null contract:** null means *no swap table exists yet* — single
-    /// rank, a no-op `HaloSend{}` (cutoff 0), or before `HaloSend::build()`.
-    /// Every rank sees the same nullness (it follows from rank-uniform
-    /// component registration), so a consumer's "null ⇒ do nothing" branch
-    /// is a collective no-op and cannot deadlock. Consumers read it in
-    /// `launch()`, never cache it across launches.
-    const comm::SwapList* swap_list = nullptr;
+    /// **Null contract:** null only before `allocate()` (or after
+    /// DomainRuntime destruction). Serial methods no-op with `n_ghost == 0`.
+    Comm* comm = nullptr;
 
     /// @brief Opt-in: publish a FULL neighbor list instead of the half list.
     ///
@@ -129,6 +123,18 @@ struct DynamicsServices {
     /// collectives (e.g. `mpi::Reduce` under `set_scalar_reduce_every > 1`)
     /// guarantee globally-reduced scalars are valid when `run()` returns.
     bool is_last_step = false;
+
+    /// @brief LAMMPS `Neighbor::decide()` result (`nflag`) for this step.
+    ///
+    /// MD Verlet (`Runtime::step` when `Plan::kind == PhaseKind::MD`)
+    /// branches on this: `false` → `forward_comm` only; `true` →
+    /// `exchange` + `borders` + `neighbor->build`. Default `true` so
+    /// linear drivers that never call decide still rebuild ghosts.
+    bool reneighbor = true;
+
+    /// @brief Verlet already ran `NeighborProvider::decide_reneighbor`
+    /// this step. When false, a direct `launch()` decides inline.
+    bool reneighbor_decided = false;
 };
 
 /// @brief Metropolis-sampling services (publisher: `cpu::mc::MC::run`).
@@ -162,8 +168,8 @@ struct OptimizeServices {
     std::function<void(bool need_grad)> reeval_forces = nullptr;
 
     /// @brief True while an Optimizer is evaluating line-search trial
-    /// geometries via `reeval_forces`. Migration-type components
-    /// (`comm::Migrate`) skip when set: the optimizer's per-row buffers are
+    /// geometries via `reeval_forces`. `CommBrick::exchange` skips when
+    /// set: the optimizer's per-row buffers are
     /// keyed to the current owned-row order, so reshuffling rows mid-search
     /// would corrupt it. Halo exchange still runs, keeping trial forces
     /// correct for the bounded step.

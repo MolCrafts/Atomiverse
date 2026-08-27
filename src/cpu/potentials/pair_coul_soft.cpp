@@ -185,7 +185,6 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
                 if (r2 >= rc_sq || r2 == 0.0)
                     continue;
 
-                const double r = std::sqrt(r2);
                 const double r6 = r2 * r2 * r2;
                 const double r_lam = std::pow(soft0 + r6, 1.0 / 6.0);
                 const double inv_rl = 1.0 / r_lam;

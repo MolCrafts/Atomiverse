@@ -30,6 +30,12 @@ class CoulLong : public cpu::Potential,
                  public cpu::NeighborConsumer,
                  public cpu::LongRangeParticipant {
   public:
+    /// @brief Real-space Coulomb reads the neighbour charge.
+    /// @param out Schema being accumulated at build().
+    void declare_fields(Schema& out) const override {
+        out.require(kAtom_charge, "CoulLong");
+    }
+
     /// @param alpha  Ewald splitting parameter α [1/Å]. Must match the
     ///               reciprocal-space component.
     /// @param cutoff Real-space cutoff [Å]. The neighbor list must be built

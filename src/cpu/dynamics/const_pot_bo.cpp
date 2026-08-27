@@ -5,6 +5,8 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/component/comm.h"
+#include "atomiverse/cpu/dynamics/charge_packer.h"
 #include "atomiverse/cpu/electrodes/charge_aspc.h"
 #include "atomiverse/cpu/frame/box.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -143,16 +145,14 @@ ConstPotBO ConstPotBO::add_electrode(int type, double psi, double eta_e) && {
 }
 
 ConstPotBO& ConstPotBO::add_electrode_charge(int type, double q_total) & {
-    groups_.push_back(
-        ElectrodeGroup{type, /*psi=*/0.0, /*eta=*/0.0, /*const_charge=*/true,
-                       q_total});
+    groups_.push_back(ElectrodeGroup{type, /*psi=*/0.0, /*eta=*/0.0,
+                                     /*const_charge=*/true, q_total});
     return *this;
 }
 
 ConstPotBO ConstPotBO::add_electrode_charge(int type, double q_total) && {
-    groups_.push_back(
-        ElectrodeGroup{type, /*psi=*/0.0, /*eta=*/0.0, /*const_charge=*/true,
-                       q_total});
+    groups_.push_back(ElectrodeGroup{type, /*psi=*/0.0, /*eta=*/0.0,
+                                     /*const_charge=*/true, q_total});
     return std::move(*this);
 }
 
@@ -223,6 +223,7 @@ void ConstPotBO::launch(const LaunchContext& ctx) {
     build_rhs_(ctx.frame);
     solve_();
     write_charges_(ctx.frame);
+    ChargePacker::forward(ctx);
     if (write_electrode_forces)
         write_electrode_forces_(ctx.frame);
     record_aspc_();
@@ -274,8 +275,7 @@ void ConstPotBO::collect_electrodes_(const cpu::Frame& frame) {
                 psi_vec_.push_back(groups_[g].const_charge ? 0.0
                                                            : groups_[g].psi);
                 // Per-group η_e when registered; shared member otherwise.
-                eta_vec_.push_back(groups_[g].eta > 0.0 ? groups_[g].eta
-                                                        : eta);
+                eta_vec_.push_back(groups_[g].eta > 0.0 ? groups_[g].eta : eta);
                 break;
             }
         }
@@ -381,8 +381,7 @@ void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
         constexpr double kPi = 3.14159265358979323846;
         const double pref = 4.0 * kPi * units::coulomb * l_tf * l_tf;
         if (!site_volume.empty()) {
-            if (site_volume.size()
-                != static_cast<std::size_t>(frame.nlocal()))
+            if (site_volume.size() != static_cast<std::size_t>(frame.nlocal()))
                 throw std::invalid_argument(
                     "ConstPotBO: site_volume size must equal the frame's "
                     "nlocal (per-site volumes are indexed by frame row)");
@@ -408,8 +407,8 @@ void ConstPotBO::build_rhs_(const cpu::Frame& frame) {
     // Reset per-atom base potentials every launch: const-Q entries were
     // overwritten with the solved response after the previous solve.
     for (int a = 0; a < m; ++a) {
-        const auto& g =
-            groups_[static_cast<std::size_t>(elec_group_[static_cast<std::size_t>(a)])];
+        const auto& g = groups_[static_cast<std::size_t>(
+            elec_group_[static_cast<std::size_t>(a)])];
         psi_vec_[static_cast<std::size_t>(a)] = g.const_charge ? 0.0 : g.psi;
     }
     const int n = frame.nlocal();
@@ -598,7 +597,8 @@ void ConstPotBO::constrain_const_q_(std::vector<double>& Q0) {
         const double pe = psi[static_cast<std::size_t>(e)];
         for (int a = 0; a < m; ++a)
             Q0[static_cast<std::size_t>(a)] +=
-                pe * u[static_cast<std::size_t>(e)][static_cast<std::size_t>(a)];
+                pe
+                * u[static_cast<std::size_t>(e)][static_cast<std::size_t>(a)];
         solved_psi_[static_cast<std::size_t>(ge)] = pe;
         for (int a = 0; a < m; ++a)
             if (elec_group_[static_cast<std::size_t>(a)] == ge)

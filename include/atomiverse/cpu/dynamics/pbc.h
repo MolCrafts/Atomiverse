@@ -3,7 +3,7 @@
 ///
 /// Integrators (VelocityVerlet, NVELimit, ...) call `wrap_orthorhombic`
 /// after advancing positions so atoms stay in `[0, L_d)` per axis. Ghost
-/// rows are intentionally untouched -- the next `HaloSend`
+/// rows are intentionally untouched -- the next `CommBrick`
 /// rebuild will overwrite them with freshly packed neighbor data.
 #pragma once
 

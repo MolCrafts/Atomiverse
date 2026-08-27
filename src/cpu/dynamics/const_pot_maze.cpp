@@ -7,6 +7,9 @@
 #include <cstddef>
 #include <stdexcept>
 
+#include "atomiverse/cpu/component/comm.h"
+#include "atomiverse/cpu/dynamics/charge_packer.h"
+
 namespace ATV {
 namespace cpu {
 namespace md {
@@ -67,8 +70,7 @@ void ConstPotMaZe::build(const BuildContext& ctx) {
     if (!(maze_tol > 0.0))
         throw std::invalid_argument("ConstPotMaZe: maze_tol must be > 0 [V]");
     if (max_maze_iters <= 0)
-        throw std::invalid_argument(
-            "ConstPotMaZe: max_maze_iters must be > 0");
+        throw std::invalid_argument("ConstPotMaZe: max_maze_iters must be > 0");
     bo_.build(ctx);
     clear_history();
     have_u_ = false;
@@ -83,6 +85,7 @@ void ConstPotMaZe::launch(const LaunchContext& ctx) {
     }
     // Adiabatic foothold twin: CG + ASPC BO solve each step.
     bo_.launch(ctx);
+    ChargePacker::forward(ctx);
     const auto& Q = bo_.charges();
     max_dQ_ = 0.0;
     if (hist_count_ >= 1 && Q.size() == Q_curr_.size()) {
@@ -262,8 +265,8 @@ void ConstPotMaZe::launch_symplectic_(const LaunchContext& ctx) {
     constraint_residual_ = 0.0;
     bo_.residual_ = 0.0;
     for (int i = 0; i < m; ++i) {
-        const double unshifted = AQ[static_cast<std::size_t>(i)]
-                                 - rhs[static_cast<std::size_t>(i)];
+        const double unshifted =
+            AQ[static_cast<std::size_t>(i)] - rhs[static_cast<std::size_t>(i)];
         constraint_residual_ =
             std::max(constraint_residual_, std::abs(unshifted - chi));
         bo_.residual_ = std::max(bo_.residual_, std::abs(unshifted));
@@ -280,6 +283,7 @@ void ConstPotMaZe::launch_symplectic_(const LaunchContext& ctx) {
             Q[static_cast<std::size_t>(a)];
     }
     bo_.write_charges_(ctx.frame);
+    ChargePacker::forward(ctx);
     if (bo_.write_electrode_forces)
         bo_.write_electrode_forces_(ctx.frame);
 
@@ -287,10 +291,9 @@ void ConstPotMaZe::launch_symplectic_(const LaunchContext& ctx) {
     max_dQ_ = 0.0;
     if (hist_count_ >= 1 && Q_before.size() == Q.size()) {
         for (int i = 0; i < m; ++i)
-            max_dQ_ = std::max(max_dQ_,
-                               std::abs(Q[static_cast<std::size_t>(i)]
-                                        - Q_before[static_cast<std::size_t>(
-                                            i)]));
+            max_dQ_ = std::max(
+                max_dQ_, std::abs(Q[static_cast<std::size_t>(i)]
+                                  - Q_before[static_cast<std::size_t>(i)]));
     }
     hist_count_ = std::min(hist_count_ + 1, 2);
 }

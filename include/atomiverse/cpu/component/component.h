@@ -14,6 +14,7 @@
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/role.h"
+#include "atomiverse/core/schema.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/types.h"
 #include "atomiverse/cpu/component/context.h"
@@ -22,7 +23,6 @@
 namespace ATV {
 namespace cpu {
 
-class HaloParticipant;
 class ConstraintProvider;
 class NeighborConsumer;
 class NeighborProvider;
@@ -56,6 +56,13 @@ struct DestroyContext {
 };
 
 /// @brief Abstract base for CPU simulation components.
+///
+/// Deliberately NOT a `ForwardPacker`. The extra-field forward path is
+/// self-initiated — a plugin calls `ctx.md.comm->forward_comm(*this)` when
+/// it has dirtied owned rows (`fix_settle.cpp`, `fix_rattle.cpp`,
+/// `ChargePacker::forward`) — so nothing in the engine scans for a packer
+/// and no probe accessor is needed. Inheriting it here put three empty
+/// virtuals in every component's vtable for the benefit of three classes.
 class Component {
   public:
     virtual ~Component() = default;
@@ -74,7 +81,7 @@ class Component {
     }
     /// @brief Mutable supply side, for a driver that must CONFIGURE the
     /// neighbor structure it was handed (Monte Carlo forbids row reordering).
-    /// Mirrors `halo_participant()` / `as_timestep_consumer()`.
+    /// Mirrors `as_timestep_consumer()`.
     virtual NeighborProvider* neighbor_provider() { return nullptr; }
     virtual const LongRangeParticipant* as_long_range_participant() const {
         return nullptr;
@@ -88,7 +95,9 @@ class Component {
     /// @brief This component must be handed the nuclear timestep [fs].
     /// @see component/timestep_protocol.h
     virtual TimestepConsumer* as_timestep_consumer() { return nullptr; }
-    virtual HaloParticipant* halo_participant() { return nullptr; }
+    /// @brief True for CommBrick / Neighbor engine ops the MD Verlet
+    ///        coordinator calls by name. The Plan walk skips them.
+    virtual bool verlet_engine() const { return false; }
 
     /// @brief Plan needs a system-stress Observer (NPT / barostat).
     virtual bool requires_system_stress() const { return false; }
@@ -105,10 +114,9 @@ class Component {
     /// @return Dimensionless predicate. Default false.
     virtual bool provides_hessian() const { return false; }
     /// @brief Rewrites owned per-atom charges mid-step (constant-potential
-    /// electrode solvers). Under MPI DD the MD driver auto-injects a
-    /// `comm::HaloRefresh{Field::charges}` after the charge-solve slot so
-    /// ghost rows see the updated charges before the force stages read them
-    /// (otherwise ghost q is one solve stale — zero at step 0).
+    /// electrode solvers). After writing `kAtom_charge` the solver calls
+    /// `ChargePacker::forward(ctx)` so ghost rows see the new charges
+    /// [e] before the force stages read them.
     virtual bool updates_owned_charges() const { return false; }
     /// @brief Resolves global tags through the Frame tag index at run time.
     ///
@@ -130,6 +138,24 @@ class Component {
     virtual int frequency() const { return 0; }
     virtual std::size_t memory_bytes() const { return 0; }
     virtual std::vector<DefaultBinding> default_bindings() const { return {}; }
+
+    /// @brief Fields this component needs the system to carry on GHOST rows.
+    ///
+    /// Same shape as `default_bindings()`: the component states a fact about
+    /// itself and the Driver folds every component's answer into the system
+    /// `Schema` at `build()`. Owned rows need no declaration — they are
+    /// always there; this is about what has to travel.
+    ///
+    /// A pair style that indexes a neighbour (`q[j]`, `v[j]`) declares those
+    /// fields here. Default: nothing, because most components only touch
+    /// rows they already own.
+    /// @param system Schema being accumulated. Add to it; never clear it.
+    virtual void declare_fields(Schema& system) const { (void)system; }
+
+    /// @brief Fields this component ACCUMULATES onto ghost rows, for the
+    ///        reverse pass to fold back onto the owners.
+    /// @param system Schema being accumulated.
+    virtual void declare_reverse_fields(Schema& system) const { (void)system; }
 
     virtual void build(const BuildContext& ctx) { (void)ctx; }
     virtual void launch(const LaunchContext& ctx) = 0;

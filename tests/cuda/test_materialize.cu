@@ -57,9 +57,10 @@ namespace {
     molrs::frame_set_column_f64(
         *fr, "atoms", "charge",
         ::rust::Slice<const double>(charge.data(), charge.size()));
+    const std::vector<std::uint32_t> z_num(type.begin(), type.end());
     molrs::frame_set_column_u32(
         *fr, "atoms", "atomic_number",
-        ::rust::Slice<const std::int32_t>(type.data(), type.size()));
+        ::rust::Slice<const std::uint32_t>(z_num.data(), z_num.size()));
     molrs::frame_set_column_i32(
         *fr, "atoms", "tag",
         ::rust::Slice<const std::int32_t>(tag.data(), tag.size()));
@@ -69,16 +70,16 @@ namespace {
     // tag->local map, mirroring the CPU sibling test. Atom tags are {10,11,12},
     // so this bond joins tags 10 and 11. Using row indices {0,1} here would be
     // silently dropped by add_bond (tag 0 not in the map) -> n_bonds()==0.
-    const std::vector<std::int32_t> bi = {10}, bj = {11}, bt = {1};
+    const std::vector<std::uint32_t> bi = {10}, bj = {11}, bt = {1};
     molrs::frame_set_column_u32(
         *fr, "bonds", "atomi",
-        ::rust::Slice<const std::int32_t>(bi.data(), bi.size()));
+        ::rust::Slice<const std::uint32_t>(bi.data(), bi.size()));
     molrs::frame_set_column_u32(
         *fr, "bonds", "atomj",
-        ::rust::Slice<const std::int32_t>(bj.data(), bj.size()));
+        ::rust::Slice<const std::uint32_t>(bj.data(), bj.size()));
     molrs::frame_set_column_u32(
         *fr, "bonds", "type_id",
-        ::rust::Slice<const std::int32_t>(bt.data(), bt.size()));
+        ::rust::Slice<const std::uint32_t>(bt.data(), bt.size()));
 
     const std::vector<double> h = {20.0, 0.0, 0.0, 0.0, 20.0,
                                    0.0,  0.0, 0.0, 20.0};
@@ -150,9 +151,10 @@ TEST(CudaMaterialize, RoundTrip) {
 TEST(CudaMaterialize, MissingPositionsThrows) {
     auto fr = molrs::frame_new();
     const std::vector<std::int32_t> type = {1, 2};
+    const std::vector<std::uint32_t> z_num(type.begin(), type.end());
     molrs::frame_set_column_u32(
         *fr, "atoms", "atomic_number",
-        ::rust::Slice<const std::int32_t>(type.data(), type.size()));
+        ::rust::Slice<const std::uint32_t>(z_num.data(), z_num.size()));
 
     try {
         cuda::Frame d = cuda::from_molrs(*fr);

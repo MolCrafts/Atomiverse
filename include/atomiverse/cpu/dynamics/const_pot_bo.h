@@ -117,8 +117,8 @@ class ConstPotBO : public cpu::Component {
 
     std::string name() const override { return "const_pot_bo"; }
 
-    /// @brief Declares the mid-step charge rewrite: under MPI DD the MD
-    /// driver auto-injects a ghost-charge refresh after this slot.
+    /// @brief Declares the mid-step charge rewrite; `launch` posts
+    ///        `ChargePacker` through `ctx.md.comm->forward_comm`.
     bool updates_owned_charges() const override { return true; }
 
     std::vector<DefaultBinding> default_bindings() const override {

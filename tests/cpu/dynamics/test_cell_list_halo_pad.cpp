@@ -37,8 +37,9 @@
 /// Geometry shared by every case (spec Testing strategy):
 ///   * cubic box `L = 15.78 A` (3^3 lattice at a0 = 5.26 A),
 ///   * `cutoff = 2.0 A`, `skin = 0.2 A` => `cutoff_skin = 2.2 A`,
-///   * global cell count per axis `floor(L / 2.2) = 7`, so the GLOBAL cell
-///     edge is `cs = 15.78 / 7 = 2.254285714... A` on every axis,
+///   * LAMMPS half-reach bins: global cell count per axis
+///     `floor(L / (0.5 * 2.2)) = 14`, so the GLOBAL cell edge is
+///     `cs = 15.78 / 14 = 1.127142857... A` on every axis,
 ///   * subdomain `[sublo, subhi) = [3.945, 7.89) A` (L/4, coords_x = 1),
 ///   * ghost shell `6.6 A` (pair cutoff 6.0 + auto skin 0.6 of the narrow
 ///     4-rank case), i.e. `max_hops = 2` along x.
@@ -74,22 +75,22 @@ constexpr double kCutoff = 2.0;     // [Angstrom]
 constexpr double kSkin = 0.2;       // [Angstrom]
 constexpr double kCutoffSkin = 2.2; // [Angstrom]
 constexpr double kShell = 6.6;      // ghost shell width [Angstrom]
-constexpr int kGlobalCells = 7;     // floor(15.78 / 2.2)
+constexpr int kGlobalCells = 14;    // floor(15.78 / 1.1)
 constexpr double kSublo = 3.945;    // [Angstrom] = 1 * L / 4
 constexpr double kSubhi = 7.89;     // [Angstrom] = 2 * L / 4
 
 /// Global cell edge, identical on every axis and on every rank:
-/// `L / floor(L / cutoff_skin)` = 15.78 / 7.
+/// `L / floor(L / (0.5 * cutoff_skin))` = 15.78 / 14.
 double cell_edge() { return kBoxL / kGlobalCells; }
 
 /// Cells per undecomposed axis => the stride between two consecutive x
 /// bins in the flat index `cx * ncy * ncz + cy * ncz + cz`. y and z carry
-/// `dims == 1`, so they keep the global 7-cell grid: stride = 49.
+/// `dims == 1`, so they keep the global 14-cell grid: stride = 196.
 constexpr int kXStride = kGlobalCells * kGlobalCells;
 
 /// @brief `dims = {4,1,1}` stub over the cubic box, this rank at coords 1.
 /// @param shell Ghost shell width [Angstrom] the halo would grow
-///        (`HaloSend` writes `max(cutoff, bonded_extension)` here).
+///        (`CommBrick` writes `max(cutoff, bonded_extension)` here).
 DomainDecomposition stub_dd(double shell) {
     DomainDecomposition dd;
     dd.dims[0] = 4;
@@ -161,16 +162,16 @@ std::vector<int> x_bins(const cpu::Frame& frame, cpu::md::CellList& cl,
 /// neighbours, land in DISTINCT consecutive cells instead of collapsing
 /// into the clamped edge cell.
 ///
-/// Hard-coded expectations (cs = 15.78/7 = 2.2542857 A, window low edge
-/// snapped down to the global lattice at `-2 * cs = -4.5085714 A`, 9 cells
+/// Hard-coded expectations (cs = 15.78/14 = 1.1271429 A, window low edge
+/// snapped down to the global lattice at `-3 * cs = -3.3814286 A`, 16 cells
 /// along x):
 ///
-///   x = sublo - 6.5   = -2.555   -> (x - lo)/cs = 0.8666 -> cx 0
-///   x = sublo - 6.5 + cs         -> 1.8666               -> cx 1
-///   x = sublo - 6.5 + 2cs        -> 2.8666               -> cx 2
-///   x = sublo + 0.1   =  4.045   -> 3.7946               -> cx 3
-///   x = subhi + 6.5 - cs = 12.1357 -> 7.3839             -> cx 7
-///   x = subhi + 6.5   = 14.39    -> 8.3839               -> cx 8
+///   x = sublo - 6.5   = -2.555   -> (x - lo)/cs = 0.7331 -> cx 0
+///   x = sublo - 6.5 + cs         -> 1.7331               -> cx 1
+///   x = sublo - 6.5 + 2cs        -> 2.7331               -> cx 2
+///   x = sublo + 0.1   =  4.045   -> 6.5898               -> cx 6
+///   x = subhi + 6.5 - cs = 13.2629 -> 14.768             -> cx 14
+///   x = subhi + 6.5   = 14.39    -> 15.768               -> cx 15
 ///
 /// `cx = 0` for the deepest low-side probe is not a clamp: the window's low
 /// edge is lattice-snapped and therefore at most one cell below
@@ -190,16 +191,16 @@ TEST(TestCellListHaloPad, ExtendedAxisWindowCoversGhostShell) {
     const std::vector<int> bins = x_bins(frame, cl, dd);
     ASSERT_EQ(bins.size(), 6u);
 
-    const int expect[6] = {0, 1, 2, 3, 7, 8};
+    const int expect[6] = {0, 1, 2, 6, 14, 15};
     for (int i = 0; i < 6; ++i) {
         SCOPED_TRACE("probe row " + std::to_string(i));
         EXPECT_EQ(bins[static_cast<std::size_t>(i)], expect[i]);
     }
 }
 
-/// `ghost_shell_width == 0` — `HaloSend` has not built yet, or the run is
+/// `ghost_shell_width == 0` — `CommBrick` has not built yet, or the run is
 /// single-rank — degenerates to today's `cutoff_skin` pad: the window is
-/// `[sublo - 2.2, subhi + 2.2]`, snapped to the lattice at `[0, 5 * cs)`.
+/// `[sublo - 2.2, subhi + 2.2]`, snapped to the lattice at `[cs, 9 * cs)`.
 /// Rows deeper than that fold onto the edge cell, which is precisely the
 /// silent failure a real 6.6 A shell must not hit.
 TEST(TestCellListHaloPad, ZeroShellKeepsTodaysCutoffSkinPad) {
@@ -215,8 +216,8 @@ TEST(TestCellListHaloPad, ZeroShellKeepsTodaysCutoffSkinPad) {
     // Both deep rows are outside the 2.2 A window and clamp to cell 0.
     EXPECT_EQ(bins[0], 0);
     EXPECT_EQ(bins[1], 0);
-    // The owner is inside it: 4.045 / 2.2542857 = 1.794 -> cell 1.
-    EXPECT_EQ(bins[2], 1);
+    // The owner is inside it: (4.045 - cs) / 1.1271429 = 2.589 -> cell 2.
+    EXPECT_EQ(bins[2], 2);
 }
 
 // ── 2. compute_grid: the pad must not break lattice alignment ─────────
@@ -225,9 +226,9 @@ TEST(TestCellListHaloPad, ZeroShellKeepsTodaysCutoffSkinPad) {
 /// stays an integer multiple of it, so cell boundaries coincide across
 /// ranks (the home/forward classification of `refresh_half` depends on it,
 /// `cell_list.cpp:76-88`). Probed without reading the origin: two rows
-/// straddling the GLOBAL lattice plane `2 * cs = 4.5085714 A` by 1e-3 A
+/// straddling the GLOBAL lattice plane `2 * cs = 2.2542857 A` by 1e-3 A
 /// must fall in different cells, while two rows straddling the mid-cell
-/// plane `2.5 * cs = 5.6357143 A` by the same amount must share one.
+/// plane `2.5 * cs = 2.8178571 A` by the same amount must share one.
 TEST(TestCellListHaloPad, PadKeepsCellEdgeOnTheGlobalLattice) {
     const double cs = cell_edge();
     const double delta = 1.0e-3; // [Angstrom]

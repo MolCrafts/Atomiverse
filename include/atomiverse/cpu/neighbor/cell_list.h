@@ -7,7 +7,7 @@
 /// **Multi-rank ghost-aware mode** (`init_extended`):
 /// the bin grid is widened by `max(cutoff_skin, dd->ghost_shell_width)` on
 /// each side along every axis `d` with `dims[d] > 1`, so ghost atoms whose
-/// positions lie outside the box (after PBC pre-shift by `HaloSend`) bin
+/// positions lie outside the box (after PBC pre-shift by `CommBrick`) bin
 /// into dedicated halo cells instead of wrapping back onto owner cells.
 /// The halo term is what makes the window follow a ghost shell deeper than
 /// the Verlet reach (multi-hop halo, or a bonded extension wider than
@@ -56,7 +56,7 @@ class CellList {
     /// @brief One-time setup (multi-rank): along every axis `d` with
     /// `dims[d] > 1` the grid covers only THIS RANK's subdomain plus a
     /// `max(cutoff_skin, dd->ghost_shell_width)` halo margin on each side,
-    /// not the global box. Ghost atoms (PBC pre-shifted by `HaloSend`) bin
+    /// not the global box. Ghost atoms (PBC pre-shifted by `CommBrick`) bin
     /// into the halo cells without wrap-around. Single-rank axes
     /// (`dims[d] == 1`) keep the global `[0, L)` range and are wrapped
     /// during binning.
@@ -157,7 +157,7 @@ class CellList {
 
     /// @brief Number of active atoms at the last `build()` / `refresh_*`
     /// call, or `-1` before the first build. `NeighborList::launch` uses
-    /// this to detect whether an upstream `Migrate` has changed the
+    /// this to detect whether an upstream `Comm::exchange` has changed the
     /// owner count and force a rebuild even when the displacement skin
     /// check would have skipped it.
     int n_at_last_build() const { return n_at_last_build_; }
@@ -274,6 +274,12 @@ class CellList {
     };
     std::vector<StencilOffset> half_stencil_;
     std::vector<StencilOffset> full_stencil_;
+    /// @brief Per-axis stencil reach in cells (`ceil(cutoff_skin / cs_d)`);
+    /// 2 with the half-reach bins, 1 on the nc==1 floor.
+    int stencil_reach_[3] = {1, 1, 1};
+    /// @brief Serial-path visited-cell dedup scratch, sized to the full
+    /// stencil (the wrapped-axis alias dedup needs one slot per offset).
+    mutable std::vector<int> visited_scratch_;
 
     // Displacement tracking
     xt::xtensor<double, 1> x_save_, y_save_, z_save_;

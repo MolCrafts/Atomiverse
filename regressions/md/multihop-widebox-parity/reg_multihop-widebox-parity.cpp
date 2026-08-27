@@ -38,7 +38,7 @@
 ///     is also what makes the flat min-image oracle below the right one).
 /// A 12 A y edge (span 6.0 A) would NOT be legal here: at dims_y = 2 the
 /// deepest reachable hop is dims - 1 = 1, so a 6.6 A shell over 6.0 A slabs
-/// is refused by `SwapList::derive_hops` ("shell <= L - w_self = 6.0 A").
+/// is refused by `Halo::derive_hops` ("shell <= L - w_self = 6.0 A").
 ///
 /// What the multi-hop shell has to carry here that the LJ-only
 /// `comm-topology-multihop` slug does not: ghost CHARGES (PairCoulCut reads
@@ -53,6 +53,7 @@
 #include <mpi.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -64,7 +65,7 @@
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
@@ -417,7 +418,7 @@ OracleEnergy brute_force(const std::vector<double>& x,
 ///        confront the decomposed result with the in-file oracle.
 ///
 /// Bound at end_of_step @ +900, i.e. AFTER `mpi::Reduce` (-50) has published
-/// the globally summed energies and long after `HaloRecv` (post_force
+/// the globally summed energies and long after `CommBrick` (post_force
 /// @ -1000) folded every ghost force back onto its owner. Every launch
 /// overwrites the stored deviations, so the report carries the LAST step;
 /// swap-table tallies are kept as extrema over all launches, so a single
@@ -432,32 +433,20 @@ class WideBoxChecker : public cpu::Component {
         const int nloc = dd ? dd->n_local : f.nlocal();
         const int ngh = dd ? dd->n_ghost : 0;
 
-        // ── Published swap table (null at 1 rank — the documented contract).
-        //    Two independent readings of "how deep is the shell": the derived
-        //    per-axis hop count, and the deepest round the table actually
-        //    materialised on x. Both must say >= 2 at np = 8, or the case has
-        //    silently degraded to a single-hop shell.
-        if (const auto* swaps = ctx.runtime.md.swap_list) {
-            const int hx = swaps->max_hops(0);
+        if (dd && dd->ghost_shell_width > 0.0) {
+            const auto need = cpu::comm::Halo::derive_hops(
+                *dd, ctx.frame.box, dd->ghost_shell_width);
+            const int hx = std::max(need.minus[0], need.plus[0]);
+            const int hy = std::max(need.minus[1], need.plus[1]);
             if (hops_x_min_ < 0 || hx < hops_x_min_)
                 hops_x_min_ = hx;
-            const int hy = swaps->max_hops(1);
             if (hops_y_max_ < 0 || hy > hops_y_max_)
                 hops_y_max_ = hy;
-            int deepest = 0;
-            for (int i = 0; i < static_cast<int>(swaps->size()); ++i) {
-                const auto& s = (*swaps)[i];
-                if (s.dim == 0 && !s.sendself && s.round > deepest)
-                    deepest = s.round;
-            }
-            if (round_x_min_ < 0 || deepest < round_x_min_)
-                round_x_min_ = deepest;
-            if (static_cast<long long>(swaps->total_recv())
-                != static_cast<long long>(ngh))
-                ++recv_mismatch_;
-            if (nghost_min_ < 0 || ngh < nghost_min_)
-                nghost_min_ = ngh;
+            if (round_x_min_ < 0 || hx < round_x_min_)
+                round_x_min_ = hx;
         }
+        if (ngh > 0 && (nghost_min_ < 0 || ngh < nghost_min_))
+            nghost_min_ = ngh;
         if (dd)
             rebuilds_ = static_cast<unsigned long long>(dd->halo_generation);
 
@@ -581,8 +570,8 @@ class WideBoxChecker : public cpu::Component {
     double max_dforce_ = -1.0;         ///< max_i |F_i,dd - F_i,oracle| [eV/A]
     double net_force_ = -1.0;          ///< ||sum_i F_i,dd|| [eV/A]
     double max_force_magnitude_ = 0.0; ///< max_i |F_i,oracle| [eV/A]
-    int hops_x_min_ = -1;              ///< min SwapList::max_hops(0) over steps
-    int hops_y_max_ = -1;              ///< max SwapList::max_hops(1) over steps
+    int hops_x_min_ = -1;              ///< min Halo::max_hops(0) over steps
+    int hops_y_max_ = -1;              ///< max Halo::max_hops(1) over steps
     int round_x_min_ = -1;             ///< min deepest transmitting x round
     long long nghost_min_ = -1;        ///< min dd->n_ghost over launches
     long long recv_mismatch_ = 0;      ///< launches where sum nrecv != n_ghost
@@ -603,7 +592,13 @@ int run_child(const char* out_path) {
     auto frame = make_molecular_lattice();
 
     cpu::md::MD sim;
-    sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin, kNeighEvery});
+    // `delay 0 check no`: rebuild unconditionally every kNeighEvery steps.
+    // Since lammps-comm-brick-03 the halo borders pass is gated on the same
+    // nflag as the neighbor rebuild (LAMMPS Verlet), so the ">= 2 full
+    // rebuilds" gate below needs the unconditional cadence — the default
+    // `check yes` would skip every rebuild on this barely-moving lattice.
+    sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin, kNeighEvery,
+                                             /*delay=*/0, /*check=*/false});
     sim.set_evaluator(cpu::PairLJCut{kEps, kSigma, kCut}.set_special_bonds(
         kSpecial12, kSpecial13, kSpecial14));
     sim.set_evaluator(cpu::PairCoulCut{kCut}.set_special_bonds(

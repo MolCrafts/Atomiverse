@@ -43,7 +43,7 @@ derivation still refuses to cross.
   scales*, Comput. Phys. Commun. **271**, 108171 (2022),
   DOI 10.1016/j.cpc.2021.108171 — `Comm::setup`'s `maxneed` / `nswap`
   derivation and the UNIFORM / NONUNIFORM layout semantics the ATV
-  `SwapList::derive_hops` reproduces, plus the "reverse exactly once" contract.
+  `Halo::derive_hops` reproduces, plus the "reverse exactly once" contract.
 
 ## System (child, np = 4 and np = 1)
 
@@ -67,11 +67,11 @@ np = 1 leg a serial control rather than a second decomposed run).
 
 Pipeline — all defaults, the halo being the feature under test:
 `PairLJCut{ε, σ, 6.0}` + `NeighborList{6.0, 0.6, every = 10}` +
-`VelocityVerlet{1.0 fs}`. `MD::install_defaults()` injects `comm::HaloSend`
-with a **6.6 Å** shell (1.1 × the pair cutoff) at `pre_neighbor @ 0` and
-`comm::HaloRecv` at `post_force @ −1000`. Nothing here registers a halo
-component by hand, and nothing here sets a hop count by hand — the round count
-is derived by `SwapList::setup` from the geometry.
+`VelocityVerlet{1.0 fs}`. Halo / exchange / reverse live on `ctx.md.comm`
+sized from `NeighborList::neighbor_reach()` (cutoff + skin = 6.6 Å).
+Nothing here registers a halo component by hand, and nothing here sets a
+hop count by hand — the round count is derived by `Halo::setup` from
+the geometry.
 
 ### Why this geometry
 
@@ -124,8 +124,8 @@ Measured 2026-08-26 on the x86_64 login node (GCC + MPICH 4.3.2, Release,
 | maxᵢ \|F_i,brute\| (non-vacuous) | > 1e-4 eV/Å | — | **1.453e-02** |
 
 The hop row is what separates this slug from `comm-swaplist-halo-mpi`: it is
-read back from the **published** `ctx.md.swap_list` twice over — the derived
-`SwapList::max_hops(0)` and the deepest `Swap::round` the table actually
+read back from the **published** `ctx.md.comm` twice over — the derived
+`Halo::max_hops(0)` and the deepest `Swap::round` the table actually
 materialised on a transmitting x swap — as the minimum over all 21 steps, so a
 silent degradation to a single-hop shell on any one step fails the case
 instead of hiding behind an energy that happens to still be right.
@@ -183,6 +183,6 @@ brick: two forwarding rounds on x, dual-image ghosts from the wrap-around rank,
 forward at both cadences, reverse exactly once per hop depth, and decomposition
 invariance against the serial control. Out of scope, by spec: the non-uniform
 (RCB) hop chain and the `max_hops > dims − 1` refusal (unit-tested serially in
-`tests/cpu/communication/test_swap_list_maxneed.cpp`), deeper shells at 8
+`tests/cpu/communication/test_halo_maxneed.cpp`), deeper shells at 8
 ranks (`tests/mpi/test_halo_dual_image_ghosts.cpp` `_n8`), and every
 performance number (`comm-topology-03`).

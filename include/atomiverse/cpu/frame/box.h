@@ -158,7 +158,7 @@ class Box {
     /// @brief Wrap a single Cartesian coordinate into `[0, L_d)`.
     ///
     /// Orthorhombic only. Used by MPI domain decomposition (`rcb`,
-    /// `atom_migration`) and 1-D histogramming. Triclinic wrap is a
+    /// `Comm::exchange`) and 1-D histogramming. Triclinic wrap is a
     /// separate concern (see DD spec).
     ///
     /// @param q Coordinate value [Angstrom].

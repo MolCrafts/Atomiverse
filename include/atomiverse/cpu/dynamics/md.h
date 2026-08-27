@@ -15,9 +15,7 @@
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/asynchronous/snapshot_publisher.h"
-#include "atomiverse/cpu/communication/atom_migration.h"
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/halo_exchange.h"
 #include "atomiverse/cpu/communication/reduce.h"
 #include "atomiverse/cpu/component/bias.h"
 #include "atomiverse/cpu/component/gpw.h"
@@ -29,6 +27,7 @@
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/component/semiempirical.h"
 #include "atomiverse/cpu/component/timestep_protocol.h"
+#include "atomiverse/cpu/component/zero.h"
 #include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/driver/runtime.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
@@ -57,9 +56,8 @@ namespace md {
 ///
 ///   - Stress capability dependency → auto-injects `Virial`
 ///     (deduped against an explicitly-registered `Virial`).
-///   - `#ifdef ATV_HAS_MPI` and a pair evaluator was set →
-///     auto-injects `HaloSend{cutoff}` and
-///     `HaloRecv{}` at the documented orders.
+///   - Halo / exchange live on `ctx.md.comm` (`CommBrick`); the Plan
+///     does not mount `CommBrick` / `Comm::exchange` / `CommBrick::forward_comm`.
 ///   - A `NeighborConsumer` (pair evaluator / real-space Coulomb) was
 ///     registered without a corresponding `set_neighbor()` →
 ///     `build()` throws naming the offending component.
@@ -83,14 +81,12 @@ namespace md {
 /// observers, recorders, etc.) that do not yet have a categorical
 /// setter. There is no bare `add()`: the phase is always explicit.
 ///
-/// Phase skeleton (LAMMPS-granular; see
-/// `.claude/notes/cpu-md-execution-model.md`): initial_integrate →
-/// post_integrate → pre_exchange (Migrate) → pre_neighbor (HaloSend) →
-/// neighbor (NeighborList) → pre_force (Zero{Forces,Energy,Stress}) → force
-/// (pair + bonded) → post_force (HaloRecv, Virial) → final_integrate →
-/// end_of_step. End-of-step ordering: ZeroKinetic(-1000) → KineticEnergy(-100)
-/// → Reduce(-50) → Publish(+10) → user observers. Categorical thermo at
-/// `set_thermo(N)` binds `cpu::Thermo{N}` at `end_of_step @ +20`.
+/// Phase skeleton is LAMMPS `Verlet::run` (`src/verlet.cpp`): after
+/// `initial_integrate`, `nflag = neighbor->decide()`; `nflag==0` →
+/// `comm->forward_comm()`; else `comm->exchange()` + `comm->borders()` +
+/// `neighbor->build()`; after force, `comm->reverse_comm()` (newton).
+/// Halo/Migrate/NeighborList are Verlet engine ops, not independent
+/// Plan cadences. Publish is mounted only when an async observer is.
 ///
 /// Usage (LAMMPS-shaped):
 /// @code{.cpp}
@@ -169,26 +165,16 @@ class MD : public Driver<ATV::md::Phase> {
 #endif
 
     MD() {
-        // Always-on zero / kinetic infrastructure. Phase-agnostic
-        // Zero* classes are bound explicitly to MD phases.
+        // Force/energy accumulators every force eval. Stress zeroing and
+        // Publish are opt-in in install_defaults(): NVT does not need a
+        // stress tensor, a run with no async observer does not snapshot,
+        // and Verlet nflag skips exchange on forward_comm steps.
         this->on(ATV::md::Phase::pre_force)
             .add(ZeroForces{}, -1000)
-            .add(ZeroEnergy{}, -999)
-            .add(ZeroStress{}, -998);
+            .add(ZeroEnergy{}, -999);
         this->on(ATV::md::Phase::end_of_step)
             .add(ZeroKinetic{}, -1000)
             .add(KineticEnergy{}, -100);
-
-        // MPI infrastructure (single-rank no-ops in Phase 1). `Reduce` is
-        // injected in install_defaults() so set_scalar_reduce_every() (which
-        // runs after construction) can configure its cadence.
-        this->on(ATV::md::Phase::pre_exchange).add(comm::Migrate{10});
-
-        // Async-analysis publisher — shared infrastructure, explicitly
-        // bound to *this driver's* end_of_step @ +10. Subscribers
-        // inheriting `cpu::md::AsyncObserver` default to +20 on the same
-        // phase and see this publisher's slot.
-        this->on(ATV::md::Phase::end_of_step).add(cpu::Publish{}, 10);
     }
 
     // ─── MD-specific categorical setters ────────────────────────────
@@ -394,93 +380,26 @@ class MD : public Driver<ATV::md::Phase> {
         if (!this->pending_named_("reduce"))
             this->bind_defaults(mpi::Reduce{scalar_reduce_every_});
 
-        if (s.needs_stress && !s.has_virial_stress)
-            this->bind_defaults(Virial{});
-
-#ifdef ATV_HAS_MPI
-        if (s.neighbor_consumer_cutoff) {
-            // Halo cutoff must include a SKIN beyond the pair cutoff so
-            // ghost atoms stay registered as they drift in/out of the
-            // pair-cutoff zone between full halo rebuilds. Without the
-            // skin band, atoms slip out of `tag_to_local` at each
-            // `every_=10` rebuild and any cross-rank bond/angle/dihedral
-            // involving them is silently dropped — observed under MSU
-            // PE stage-2 NPT as a +1-3 eV per-rebuild jump in the MTK
-            // extended Hamiltonian (E_bond drops by ~2.5 eV at rebuild
-            // boundaries because ~16 chain bonds lose their ghost
-            // partner each cycle).
-            //
-            // The skin that matters is the one the neighbor list actually
-            // uses: `NeighborList::build()` enumerates out to
-            // `cutoff + skin`, so a pair anywhere in that band is supposed
-            // to be in the CSR. A ghost shell thinner than the band leaves
-            // a cross-rank `j` inside it with no ghost at all — the pair is
-            // absent from the CSR rather than merely inactive, and stays
-            // absent until the next full rebuild while the displacement
-            // trigger (`max_disp * 2 > skin`) is by construction not
-            // watching for it. Hence `neighbor_reach()`, taken straight
-            // from the provider. The 10% multiplier stays as the floor for
-            // consumers whose provider declares no reach (it matches the
-            // ~0.1 Å typical 10-step drift at PE-thermalized 500 K); with a
-            // provider present the wider of the two wins.
-            //
-            // A halo wider than half the local slab duplicates ghosts, so a
-            // caller on a very small box should size the shell itself:
-            // registering `HaloSend{halo_cut}` explicitly before the pair
-            // evaluator suppresses the auto-inject entirely.
-            // Skip the auto-inject when the caller already registered halo
-            // components (custom cutoff / skin / reneighbor cadence). Auto-
-            // injecting on top of an explicit halo would run the REVERSE
-            // exchange (HaloRecv) twice, which double-applies the already-
-            // reduced ghost forces to their owners — a per-step momentum leak
-            // (Σ F ≠ 0) that pumps energy and blows the NVE trajectory up.
-            // `reverse exchange must run exactly once` (see halo_exchange.h).
-            double halo_cut =
-                1.1 * static_cast<double>(*s.neighbor_consumer_cutoff);
-            if (s.neighbor_provider_reach)
-                halo_cut = std::max(
-                    halo_cut, static_cast<double>(*s.neighbor_provider_reach));
-            if (!s.has_halo_send)
-                this->bind_defaults(comm::HaloSend{halo_cut});
-            if (!s.has_halo_recv)
-                this->bind_defaults(comm::HaloRecv{});
+        if (s.needs_stress) {
+            if (!this->pending_named_("zero_stress"))
+                this->on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
+            if (!s.has_virial_stress)
+                this->bind_defaults(Virial{});
         }
 
-        // A constraint needs ghost positions AFTER the drift and ghost velocities
-        // AFTER the second half-kick. The built-in forward halo fires once, at
-        // pre_neighbor, and carries positions only — so at the position stage the
-        // ghost data is a step stale, and ghost velocities never exist at all.
-        //
-        // Auto-inject the two refreshes rather than documenting them. Requiring the
-        // user to remember them would mean that forgetting one line produces
-        // constraints that are silently wrong at rank boundaries — no throw, no crash,
-        // just a molecule that is not rigid on one side of a cut. That is exactly the
-        // failure mode this engine keeps trying to make impossible, and it is not a
-        // thing to leave to a doc comment.
-        if (s.has_constraint) {
-            this->on(ATV::md::Phase::post_integrate)
-                .add(comm::HaloRefresh{comm::HaloRefresh::Field::positions},
-                     -100);
-            this->on(ATV::md::Phase::final_integrate)
-                .add(comm::HaloRefresh{comm::HaloRefresh::Field::velocities},
-                     +150);
-        }
+        // Snapshot publisher only if an async observer/recorder is mounted.
+        bool has_async = false;
+        this->for_each_pending([&](const cpu::Component& c) {
+            if (c.scheduling() == Scheduling::deferrable)
+                has_async = true;
+        });
+        if (has_async && !this->pending_named_("publish"))
+            this->on(ATV::md::Phase::end_of_step).add(cpu::Publish{}, 10);
 
-        // A constant-potential charge solver rewrites owned charges at
-        // pre_force (ConstPot* bind at -500/-50) — AFTER the step's forward
-        // halo at pre_neighbor. Without a refresh, the force stages read
-        // ghost charges one solve stale (zero at step 0): forces are silently
-        // wrong exactly at rank boundaries. Same "make forgetting impossible"
-        // rationale as the constraint refreshes above. Idempotent, so a
-        // user-registered charge refresh alongside this one is harmless.
-        // LAMMPS twin: fix electrode forward-communicates q after every conp
-        // solve (Ahrens-Iwers et al., J. Chem. Phys. 157, 084801 (2022)).
-        if (s.has_charge_updater) {
-            this->on(ATV::md::Phase::pre_force)
-                .add(comm::HaloRefresh{comm::HaloRefresh::Field::charges},
-                     +900);
-        }
-#endif
+        // Halo / exchange / reverse live on `ctx.md.comm` (Runtime Verlet
+        // and linear wrap). Constraint and charge-updater ghost refresh is
+        // owned by the plugin packer
+        // (`ctx.md.comm->forward_comm(*this)` / `ChargePacker`).
 
         this->throw_if_missing_neighbor_list_(
             s, "MD",

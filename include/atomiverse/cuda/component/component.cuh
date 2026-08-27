@@ -27,7 +27,6 @@
 namespace ATV {
 namespace cuda {
 
-class HaloParticipant;  // opt-in halo protocol (halo_participant.cuh)
 class NeighborConsumer; // opt-in neighbor protocols (neighbor_protocol.cuh)
 class NeighborProvider;
 class
@@ -195,24 +194,12 @@ class Component {
     /// @param ctx Destroy context with Runtime and DeviceFrame references.
     virtual void destroy(const DestroyContext& ctx) {}
 
-    /// @brief Typed accessor for the opt-in halo protocol (mirrors
-    ///        `cpu::Component::halo_participant()`). A participating
-    ///        component inherits `cuda::HaloParticipant` and overrides this
-    ///        to return `this`; probes stay free of `dynamic_cast` and
-    ///        `name()` matching. Default: not a participant.
-    /// @return The participant view of this component, or `nullptr`.
-    virtual HaloParticipant* halo_participant() { return nullptr; }
-
     /// @brief Heap/device bytes this component owns (workspaces, rings,
     ///        comm buffers). Mirrors `cpu::Component::memory_bytes()`
     ///        so both backends expose the same core reporting set; the
     ///        driver-side memory summary consumption lands with
     ///        arch-refactor-04. Default 0 for stateless components.
     virtual std::size_t memory_bytes() const { return 0; }
-
-    // The former in-vtable CommField trio moved to the opt-in
-    // `cuda::HaloParticipant` protocol (halo_participant.cuh), shared
-    // shape with the CPU backend. See arch-refactor-02-halo.
 };
 
 } // namespace cuda

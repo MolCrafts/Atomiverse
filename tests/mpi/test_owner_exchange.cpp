@@ -1,9 +1,9 @@
-/// @file tests/mpi/test_atom_migration.cpp
-/// @brief Phase 0.2 (msu-pe-validation) / P3.1 -- Migrate.
+/// @file tests/mpi/test_owner_exchange.cpp
+/// @brief Phase 0.2 (msu-pe-validation) / P3.1 -- `Comm::exchange`.
 ///
 /// Verifies that an owner whose post-integration position falls outside its
 /// rank's slab is transferred to the rank whose slab actually contains the
-/// new position. The component must:
+/// new position. `ctx.md.comm->exchange()` must:
 ///   - drop the migrating atom from this rank's owner range,
 ///   - append it (with all per-atom fields preserved) on the destination rank,
 ///   - bump `dd->neighbor_generation`,
@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/communication/atom_migration.h"
+#include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/driver/runtime.h"
@@ -56,7 +56,7 @@ cpu::Frame make_chain_frame(double box_len, int n_atoms) {
 
 // ── 2-rank: a single atom drifts past +x boundary, must end up on neighbor ──
 
-TEST(Migrate, AtomDriftsAcrossPosXBoundary) {
+TEST(Exchange, AtomDriftsAcrossPosXBoundary) {
     int world_size = 0;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     if (world_size != 2) {
@@ -120,12 +120,9 @@ TEST(Migrate, AtomDriftsAcrossPosXBoundary) {
     MPI_Bcast(&moved_tag, 1, tag_mpi, 0, MPI_COMM_WORLD);
     MPI_Bcast(moved_aux, 2, storage_mpi, 0, MPI_COMM_WORLD);
 
-    // Drive a single Migrate::launch.
-    cpu::comm::Migrate mig{};
-    cpu::BuildContext bctx{backend.context(), frame};
-    mig.build(bctx);
+    ASSERT_NE(backend.context().md.comm, nullptr);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
-    mig.launch(lctx);
+    backend.context().md.comm->exchange(lctx);
 
     const int n_local_after = dd->n_local;
     if (my_rank == 0) {
@@ -180,9 +177,9 @@ TEST(Migrate, AtomDriftsAcrossPosXBoundary) {
     backend.shutdown();
 }
 
-// ── single-rank no-op: Migrate must leave the frame untouched ──
+// ── single-rank no-op: exchange must leave the frame untouched ──
 
-TEST(Migrate, SingleRankIsNoOp) {
+TEST(Exchange, SingleRankIsNoOp) {
     int world_size = 0;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     if (world_size != 1) {
@@ -201,11 +198,9 @@ TEST(Migrate, SingleRankIsNoOp) {
     // Move atom 0 past where the slab boundary would be (box edge in single-rank).
     frame.span(ATV::kAtom_x)[0] = 19.5;
 
-    cpu::comm::Migrate mig{};
-    cpu::BuildContext bctx{backend.context(), frame};
-    mig.build(bctx);
+    ASSERT_NE(backend.context().md.comm, nullptr);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
-    mig.launch(lctx);
+    backend.context().md.comm->exchange(lctx);
 
     EXPECT_EQ(dd->n_local, n_before)
         << "single-rank migration must not change n_local";

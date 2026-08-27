@@ -297,9 +297,8 @@ if(NOT ATV_DOCS_ONLY)
         # CPU MPI communication subsystem (LAMMPS-shaped, ATV::cpu::comm::*)
         src/cpu/communication/atom_pack.cpp
         src/cpu/communication/bcast_frame.cpp
-        src/cpu/communication/halo_exchange.cpp
-        src/cpu/communication/swap_list.cpp
-        src/cpu/communication/atom_migration.cpp
+        src/cpu/communication/comm_brick.cpp
+        src/cpu/communication/halo.cpp
         src/cpu/communication/domain.cpp
         src/cpu/communication/reduce.cpp
         src/cpu/communication/gather.cpp
@@ -1039,6 +1038,20 @@ if(NOT ATV_DOCS_ONLY)
     # Language-guarded to prevent NVCC from seeing -march=native on CUDA files.
     target_compile_options(atomiverse PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:-march=native>)
+
+    # ── Unused-symbol warnings (comm-maint-01-deadcode) ──────────────
+    #
+    # The build carried NO -W flag at all, which is how two dead helpers
+    # (`pack_atom` / `unpack_atom` in comm_brick.cpp) and a 306-line
+    # zero-caller source file survived review: -Wunused-function never
+    # fired because it was never on. These two are the narrow flags that
+    # catch that class directly.
+    #
+    # Deliberately NOT -Werror: a compiler upgrade must not become a
+    # build outage. Deliberately not the full -Wall yet either — that is
+    # a separate, measured decision; see the INDEX ticket.
+    target_compile_options(atomiverse PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-Wunused-function -Wunused-variable>)
 
     # ── Phase 5 Track B.8 — `-ffast-math` policy ─────────────────────
     #

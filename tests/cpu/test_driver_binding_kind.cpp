@@ -150,7 +150,7 @@ TEST(DriverBindingKind, MinimizeAddSameKindLbfgsNoThrow) {
 // force/energy slot now installs the accumulator-zeroing components as
 // DEFAULTS, so each sequence below gained the Zero* prefix its slot is
 // contracted to have (Evaluate::prepare +zero_stress; Minimize::force
-// +zero_stress before migrate; Hessian::force +zero_forces/+zero_energy;
+// +zero_stress; Hessian::force +zero_forces/+zero_energy;
 // MC::energy +zero_forces). These deltas are the SPEC, not drift — a slot
 // that loses its Zero prefix is accumulating into stale buffers.
 //
@@ -173,7 +173,7 @@ TEST(DriverBindingKind, EvaluatePlanShapeUnchanged) {
                                         "zero_stress"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(
                                    ATV::evaluate::Phase::evaluate)),
-              (std::vector<std::string>{"migrate", "stub_energy", "reduce"}));
+              (std::vector<std::string>{"stub_energy", "reduce"}));
     EXPECT_TRUE(slot_names(plan, static_cast<std::size_t>(
                                      ATV::evaluate::Phase::finalize))
                     .empty());
@@ -194,24 +194,23 @@ TEST(DriverBindingKind, MdPlanShapeUnchanged) {
               (std::vector<std::string>{"velocity_verlet"}));
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::post_integrate)).empty());
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::pre_exchange)),
-              (std::vector<std::string>{"migrate"}));
+    EXPECT_TRUE(
+        slot_names(plan, static_cast<std::size_t>(P::pre_exchange)).empty());
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::pre_neighbor)).empty());
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::neighbor)).empty());
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::pre_force)),
-              (std::vector<std::string>{"zero_forces", "zero_energy",
-                                        "zero_stress"}));
+              (std::vector<std::string>{"zero_forces", "zero_energy"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::force)),
               (std::vector<std::string>{"noop_force"}));
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::post_force)).empty());
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::final_integrate)),
               (std::vector<std::string>{"velocity_verlet"}));
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::end_of_step)),
-              (std::vector<std::string>{"zero_kinetic", "kinetic_energy",
-                                        "reduce", "publish"}));
+    EXPECT_EQ(
+        slot_names(plan, static_cast<std::size_t>(P::end_of_step)),
+        (std::vector<std::string>{"zero_kinetic", "kinetic_energy", "reduce"}));
 }
 
 TEST(DriverBindingKind, MinimizePlanShapeUnchanged) {
@@ -232,7 +231,7 @@ TEST(DriverBindingKind, MinimizePlanShapeUnchanged) {
     EXPECT_EQ(
         slot_names(plan, static_cast<std::size_t>(P::force)),
         (std::vector<std::string>{"zero_forces", "zero_energy", "zero_stress",
-                                  "migrate", "stub_force", "reduce"}));
+                                  "stub_force", "reduce"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::convergence_check)),
               (std::vector<std::string>{"lbfgs"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::end_of_step)),

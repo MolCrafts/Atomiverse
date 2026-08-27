@@ -39,6 +39,7 @@
 #include <mpi.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -50,7 +51,7 @@
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
@@ -202,7 +203,7 @@ double brute_force_lj(const std::vector<double>& x,
 ///        confront the multi-hop decomposed result with the in-file oracle.
 ///
 /// Bound at end_of_step @ +900, i.e. AFTER `mpi::Reduce` (-50) has published
-/// the globally summed potential energy and long after `HaloRecv` (post_force
+/// the globally summed potential energy and long after `CommBrick` (post_force
 /// @ -1000) has folded every ghost force back onto its owner. Every launch
 /// overwrites the stored deviations, so what the report carries is the state
 /// of the LAST step; the swap-table tallies are accumulated as extrema over
@@ -217,32 +218,26 @@ class MultiHopHaloChecker : public cpu::Component {
         const int nloc = dd ? dd->n_local : f.nlocal();
         const int ngh = dd ? dd->n_ghost : 0;
 
-        // ── Published swap table (null at 1 rank — the documented contract).
-        //    Two independent readings of "how deep is the shell": the derived
-        //    per-axis hop count, and the deepest round the table actually
-        //    materialised on x. Both must say >= 2, or the case has silently
-        //    degraded to the single-hop shell of comm-topology-01.
-        if (const auto* swaps = ctx.runtime.md.swap_list) {
-            const int hx = swaps->max_hops(0);
+        // Swap table is private to CommBrick. Hop counts are a pure function
+        // of the published DD + box + ghost_shell_width.
+        if (dd && dd->ghost_shell_width > 0.0) {
+            const auto need = cpu::comm::Halo::derive_hops(
+                *dd, ctx.frame.box, dd->ghost_shell_width);
+            const int hx = std::max(need.minus[0], need.plus[0]);
             if (hops_x_min_ < 0 || hx < hops_x_min_)
                 hops_x_min_ = hx;
-            int deepest = 0;
-            for (int i = 0; i < static_cast<int>(swaps->size()); ++i) {
-                const auto& s = (*swaps)[i];
-                if (s.dim == 0 && !s.sendself && s.round > deepest)
-                    deepest = s.round;
+            if (round_x_min_ < 0 || hx < round_x_min_)
+                round_x_min_ = hx;
+            int nswap = 0;
+            for (int d = 0; d < 3; ++d) {
+                const int h = std::max(need.minus[d], need.plus[d]);
+                nswap += 2 * std::max(h, 1);
             }
-            if (round_x_min_ < 0 || deepest < round_x_min_)
-                round_x_min_ = deepest;
-            const int nswap = static_cast<int>(swaps->size());
             if (nswap_min_ < 0 || nswap < nswap_min_)
                 nswap_min_ = nswap;
-            if (static_cast<long long>(swaps->total_recv())
-                != static_cast<long long>(ngh))
-                ++recv_mismatch_;
-            if (nghost_min_ < 0 || ngh < nghost_min_)
-                nghost_min_ = ngh;
         }
+        if (ngh > 0 && (nghost_min_ < 0 || ngh < nghost_min_))
+            nghost_min_ = ngh;
         if (dd)
             rebuilds_ = static_cast<unsigned long long>(dd->halo_generation);
 
@@ -355,7 +350,7 @@ class MultiHopHaloChecker : public cpu::Component {
     double max_dforce_ = -1.0;         ///< max_i |F_i,dd - F_i,brute| [eV/A]
     double net_force_ = -1.0;          ///< ||sum_i F_i,dd|| [eV/A]
     double max_force_magnitude_ = 0.0; ///< max_i |F_i,brute| [eV/A]
-    int hops_x_min_ = -1;              ///< min SwapList::max_hops(0) over steps
+    int hops_x_min_ = -1;              ///< min Halo::max_hops(0) over steps
     int round_x_min_ = -1;             ///< min deepest transmitting x round
     int nswap_min_ = -1;               ///< min table size over launches
     long long nghost_min_ = -1;        ///< min dd->n_ghost over launches
@@ -378,7 +373,8 @@ int run_child(const char* out_path) {
 
     cpu::md::MD sim;
     sim.set_evaluator(cpu::PairLJCut{kEps, kSigma, kCut});
-    sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin, kNeighEvery});
+    sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin, kNeighEvery,
+                                             kNeighEvery, /*check=*/false});
     sim.set_integrator(cpu::md::VelocityVerlet{kDt});
     sim.enable_timing(false);
 

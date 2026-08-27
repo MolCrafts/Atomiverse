@@ -28,7 +28,7 @@
 /// (`MPI_Initialized` probe, same as `scatter_atoms_from_root`).
 ///
 /// @see cpu/comm/atom_pack.h    the row codec this primitive rides
-/// @see cpu/comm/atom_migration.h  `scatter_atoms_from_root`, the
+/// @see cpu/communication/comm.h  `Comm::exchange`, the
 ///      distribute-by-ownership sibling of this replicate-everywhere call
 #pragma once
 

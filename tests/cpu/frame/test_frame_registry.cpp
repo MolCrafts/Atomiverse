@@ -167,11 +167,9 @@ TEST(FrameRegistry, ExchangedExtensionColumnRidesThePayload) {
 
     auto send_plan = cpu::comm::make_exchange_plan(a);
     auto recv_plan = cpu::comm::make_exchange_plan(b);
-    std::vector<std::byte> buf(cpu::comm::max_exchange_bytes(a, send_plan));
-    const auto packed =
-        cpu::comm::pack_exchange(a, send_plan, 1, buf.data(), buf.size());
-    const auto unpacked =
-        cpu::comm::unpack_exchange(b, recv_plan, 0, buf.data(), packed);
+    std::vector<std::byte> buf(send_plan.max_row_bytes());
+    const auto packed = send_plan.pack_row(a, 1, buf.data(), buf.size());
+    const auto unpacked = recv_plan.unpack_row(b, 0, buf.data(), packed);
     EXPECT_EQ(packed, unpacked);
     EXPECT_LE(packed, static_cast<int>(buf.size()));
 

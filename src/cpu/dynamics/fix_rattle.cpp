@@ -8,7 +8,9 @@
 #include <string>
 #include <unordered_map>
 
+#include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/component/comm.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 #ifdef ATV_HAS_MPI
@@ -312,8 +314,72 @@ void FixRattle::resolve_rows_(const cpu::LaunchContext& ctx) {
     }
 }
 
+int FixRattle::pack_forward_comm(int n, const int* list, double* buf,
+                                 int pbc_flag, const int* pbc) {
+    if (!frame_ || n <= 0)
+        return 0;
+    int m = 0;
+    if (comm_mode_ == CommMode::XSHAKE) {
+        const auto x = frame_->span(kAtom_x);
+        const auto y = frame_->span(kAtom_y);
+        const auto z = frame_->span(kAtom_z);
+        double dx = 0.0, dy = 0.0, dz = 0.0;
+        if (pbc_flag != 0) {
+            dx = static_cast<double>(pbc[0]) * frame_->box.length(0);
+            dy = static_cast<double>(pbc[1]) * frame_->box.length(1);
+            dz = static_cast<double>(pbc[2]) * frame_->box.length(2);
+        }
+        for (int i = 0; i < n; ++i) {
+            const int j = list[i];
+            buf[m++] = static_cast<double>(x[j]) + dx;
+            buf[m++] = static_cast<double>(y[j]) + dy;
+            buf[m++] = static_cast<double>(z[j]) + dz;
+        }
+        return m;
+    }
+    const auto vx = frame_->span(kAtom_vx);
+    const auto vy = frame_->span(kAtom_vy);
+    const auto vz = frame_->span(kAtom_vz);
+    (void)pbc_flag;
+    (void)pbc;
+    for (int i = 0; i < n; ++i) {
+        const int j = list[i];
+        buf[m++] = static_cast<double>(vx[j]);
+        buf[m++] = static_cast<double>(vy[j]);
+        buf[m++] = static_cast<double>(vz[j]);
+    }
+    return m;
+}
+
+void FixRattle::unpack_forward_comm(int n, int first, const double* buf) {
+    if (!frame_ || n <= 0)
+        return;
+    int m = 0;
+    const int last = first + n;
+    if (comm_mode_ == CommMode::XSHAKE) {
+        auto x = frame_->span(kAtom_x);
+        auto y = frame_->span(kAtom_y);
+        auto z = frame_->span(kAtom_z);
+        for (int i = first; i < last; ++i) {
+            x[i] = static_cast<StorageReal>(buf[m++]);
+            y[i] = static_cast<StorageReal>(buf[m++]);
+            z[i] = static_cast<StorageReal>(buf[m++]);
+        }
+        return;
+    }
+    auto vx = frame_->span(kAtom_vx);
+    auto vy = frame_->span(kAtom_vy);
+    auto vz = frame_->span(kAtom_vz);
+    for (int i = first; i < last; ++i) {
+        vx[i] = static_cast<StorageReal>(buf[m++]);
+        vy[i] = static_cast<StorageReal>(buf[m++]);
+        vz[i] = static_cast<StorageReal>(buf[m++]);
+    }
+}
+
 void FixRattle::launch(const cpu::LaunchContext& ctx) {
     cpu::Frame& f = ctx.frame;
+    frame_ = &f;
     const auto* dd = ctx.runtime.md.dd;
     const bool multi = (dd != nullptr && ctx.runtime.mpi_size > 1);
     const int n_rows = multi ? (dd->n_local + dd->n_ghost) : f.nlocal();
@@ -344,12 +410,15 @@ void FixRattle::launch(const cpu::LaunchContext& ctx) {
     }
 
     // Every rank holding any atom of a cluster solves that cluster REDUNDANTLY, from
-    // identical inputs (a HaloRefresh has just re-sent the ghosts' x and v), and so
+    // identical inputs (XSHAKE forward_comm has just re-sent the ghosts' x), and so
     // arrives at identical corrections. It applies them to all its rows; the ghost-row
     // writes are local scratch, discarded at the next refresh, while each owner ends up
     // with exactly the correction its owning rank computed. No extra reverse exchange
     // is needed — this is LAMMPS's replicated-cluster route.
     if (ctx.at(ATV::md::Phase::post_integrate)) {
+        comm_mode_ = CommMode::XSHAKE;
+        if (cpu::Comm* comm = ctx.runtime.md.comm)
+            comm->forward_comm(*this);
         const double inv_dt = 1.0 / dt_;
         int iter = 0;
         double last_worst = 0.0;
@@ -425,13 +494,16 @@ void FixRattle::launch(const cpu::LaunchContext& ctx) {
     // bond lengths stay right while the molecule quietly absorbs energy along its own
     // bonds.
     if (ctx.at(ATV::md::Phase::final_integrate)) {
-        // Re-resolve. `HaloSend` runs at pre_neighbor (phase 3), between the position
+        // Re-resolve. `CommBrick` runs at pre_neighbor (phase 3), between the position
         // stage (1) and this one (8), and a full rebuild RESHUFFLES the ghost slots —
         // so the rows resolved at initial_integrate are stale by now, and the velocity
         // stage was silently constraining the wrong atoms. It showed up as a
         // non-converging solve, which is the good failure mode; had the shuffle been
         // milder it would simply have produced wrong dynamics.
         resolve_rows_(ctx);
+        comm_mode_ = CommMode::VP;
+        if (cpu::Comm* comm = ctx.runtime.md.comm)
+            comm->forward_comm(*this);
         int iter = 0;
         double last_worst = 0.0;
         for (; iter < max_iter_; ++iter) {

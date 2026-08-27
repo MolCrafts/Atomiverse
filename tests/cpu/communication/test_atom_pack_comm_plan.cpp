@@ -80,7 +80,7 @@ TEST(TestCommPlanMembership, CommBytesIsThreeStorageRealsPerRow) {
 
     const cpu::Frame frame(1);
     const cpu::comm::PackPlan plan = cpu::comm::make_comm_plan(frame);
-    EXPECT_EQ(cpu::comm::comm_bytes(plan, 1), 3 * sizeof(StorageReal));
+    EXPECT_EQ(plan.bytes(1), 3 * sizeof(StorageReal));
 }
 
 // ── 3. basics: ghost v/q moved to border, not deleted ─────────────────

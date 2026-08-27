@@ -35,6 +35,9 @@ ReducedReport reduce_timing(const TimerRegistry& reg) {
     int nl = reg.nlocal() < 0 ? 0 : reg.nlocal();
     int nl_min = nl, nl_max = nl;
     long long nl_sum = nl;
+    int ng = reg.nghost() < 0 ? 0 : reg.nghost();
+    int ng_min = ng, ng_max = ng;
+    long long ng_sum = ng;
     int ranks = 1;
 
 #ifdef ATV_HAS_MPI
@@ -54,6 +57,11 @@ ReducedReport reduce_timing(const TimerRegistry& reg) {
             long long nll = nl;
             MPI_Allreduce(&nll, &nl_sum, 1, MPI_LONG_LONG, MPI_SUM,
                           MPI_COMM_WORLD);
+            MPI_Allreduce(&ng, &ng_min, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&ng, &ng_max, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+            long long ngl = ng;
+            MPI_Allreduce(&ngl, &ng_sum, 1, MPI_LONG_LONG, MPI_SUM,
+                          MPI_COMM_WORLD);
         }
     }
 #endif
@@ -65,6 +73,9 @@ ReducedReport reduce_timing(const TimerRegistry& reg) {
     rep.nlocal_min = nl_min;
     rep.nlocal_max = nl_max;
     rep.nlocal_avg = static_cast<double>(nl_sum) / ranks;
+    rep.nghost_min = ng_min;
+    rep.nghost_max = ng_max;
+    rep.nghost_avg = static_cast<double>(ng_sum) / ranks;
 
     for (std::size_t c = 0; c < kN; ++c) {
         SectionStat s;
@@ -98,12 +109,22 @@ void emit_timing_table(const ReducedReport& rep, std::string_view stage) {
            report::fmt(rep.loop_max), "", "100.0"});
     t.emit();
 
-    // Load-balance line as a second one-row table.
-    report::Table lb(
-        "Load balance (owned atoms/rank)",
-        {{"nlocal_min", 12}, {"nlocal_avg", 12}, {"nlocal_max", 12}});
+    // Load-balance line as a second one-row table. `ghost/owned` is the
+    // halo width in atoms: it is what a slab-band or hop-count regression
+    // moves, and it moves there long before it is visible in Comm seconds.
+    report::Table lb("Load balance (atoms/rank)", {{"nlocal_min", 12},
+                                                   {"nlocal_avg", 12},
+                                                   {"nlocal_max", 12},
+                                                   {"nghost_min", 12},
+                                                   {"nghost_avg", 12},
+                                                   {"nghost_max", 12},
+                                                   {"ghost/owned", 12}});
+    const double ratio =
+        rep.nlocal_avg > 0.0 ? rep.nghost_avg / rep.nlocal_avg : 0.0;
     lb.row({std::to_string(rep.nlocal_min), report::fmt(rep.nlocal_avg, 1),
-            std::to_string(rep.nlocal_max)});
+            std::to_string(rep.nlocal_max), std::to_string(rep.nghost_min),
+            report::fmt(rep.nghost_avg, 1), std::to_string(rep.nghost_max),
+            report::fmt(ratio, 2)});
     lb.emit();
 }
 
@@ -299,6 +320,25 @@ void emit_per_component(const TimerRegistry& reg, std::string_view stage) {
                report::fmt(gmax[static_cast<std::size_t>(i)], 6)});
     }
     t.emit();
+
+    // Scoped sub-regions (ATV_PROFILE_SCOPE), rank 0's local values. Keys
+    // can differ across ranks (an FFT-subgroup member times regions a
+    // non-member never enters), so no cross-rank reduction is attempted —
+    // the table is a rank-0 drill-down, not a collective section.
+    if (!reg.scoped().empty()) {
+        std::vector<std::pair<std::string, TimerStat>> rows(
+            reg.scoped().begin(), reg.scoped().end());
+        std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+        report::Table st(
+            "Scoped regions [" + std::string(stage) + "] (rank 0 s)",
+            {{"region", 22, report::Align::Left}, {"calls"}, {"rank0_s"}});
+        for (const auto& [key, stat] : rows)
+            st.row({key, std::to_string(stat.calls),
+                    report::fmt(stat.total_s, 6)});
+        st.emit();
+    }
 }
 
 } // namespace md

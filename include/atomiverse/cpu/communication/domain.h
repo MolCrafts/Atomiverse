@@ -45,8 +45,8 @@ namespace mpi {
 /// rebuild against, and (e) the tag→local map.
 ///
 /// It does **not** hold the halo's derived indices: the per-swap send lists
-/// and ghost-slot layout live on `comm::SwapList`, owned by `comm::HaloSend`
-/// and published as `ctx.md.swap_list`.
+/// and ghost-slot layout live on `comm::Halo`, private to `comm::CommBrick`
+/// and published as `ctx.md.comm`.
 ///
 /// `Frame::capacity()` is the allocated row capacity in multi-rank mode;
 /// `n_local` is the owned-atom count. Force kernels and integrators iterate
@@ -108,7 +108,7 @@ struct DomainDecomposition {
     /// halo-list consumers rebuild when they observe a bump.
     std::uint64_t neighbor_generation = 0;
 
-    /// @brief Generation counter, bumped at every `HaloSend` *full
+    /// @brief Generation counter, bumped at every `CommBrick` *full
     /// rebuild* (not on position-only refreshes). Distinct from
     /// `neighbor_generation` because a full halo rebuild can reshuffle
     /// ghost slot indices (atoms entering / leaving the cutoff zone, or
@@ -120,7 +120,7 @@ struct DomainDecomposition {
     /// been replaced, producing a per-rebuild PE / virial discontinuity
     /// that injects 1-3 eV per halo cycle into the MTK extended
     /// Hamiltonian and accumulates to a step-1000 catastrophic ε̇
-    /// runaway under MSU PE stage-2 NPT. (`atom_migration` keys off
+    /// runaway under MSU PE stage-2 NPT. (`Comm::exchange` keys off
     /// `neighbor_generation` only — bumping that counter from the halo
     /// path interacts disastrously with its first_launch handling on a
     /// Zarr-loaded state; see
@@ -130,9 +130,9 @@ struct DomainDecomposition {
     /// @brief Depth [Angstrom] of the ghost shell the halo actually builds:
     /// how far beyond `sublo` / `subhi` a legitimate ghost may sit.
     ///
-    /// Written by `HaloSend` (`max(pair cutoff, bonded extension)`) at every
+    /// Written by `CommBrick` (`max(pair cutoff, bonded extension)`) at every
     /// full rebuild. `0.0` means no halo has been built yet — the first
-    /// `NeighborList::build()` precedes the first `HaloSend::build()`, and
+    /// `NeighborList::build()` precedes the first `CommBrick::build()`, and
     /// single-rank runs never write it at all — in which case consumers use
     /// their own reach and behave exactly as before this field existed.
     ///
@@ -146,7 +146,7 @@ struct DomainDecomposition {
     double ghost_shell_width = 0.0;
 
     // ── atom_modify sort (LAMMPS: exchange → sort → borders) ──────────
-    // NeighborList publishes these; HaloSend applies sort on full rebuild
+    // NeighborList publishes these; CommBrick applies sort on full rebuild
     // *before* rebuilding ghost slots so the swap table's reverse send
     // lists stay valid.
     bool atom_sort_enabled = true;
@@ -164,12 +164,12 @@ struct DomainDecomposition {
     /// whether the atom is an owner or a halo ghost.
     ///
     /// Owner entries are rebuilt on every `partition_atoms()` /
-    /// `Migrate`. Ghost entries are appended by `HaloSend`
+    /// `Comm::exchange`. Ghost entries are appended by `CommBrick`
     /// and erased back out at the start of the next halo via the
     /// companion `ghost_tags` log.
     std::unordered_map<TagInt, int> tag_to_local;
 
-    /// @brief Tags of the ghost atoms that `HaloSend` last
+    /// @brief Tags of the ghost atoms that `CommBrick` last
     /// inserted into `tag_to_local`, in slot order. Used to roll back
     /// ghost entries before the next halo write so a different ghost set
     /// does not leave stale tag→slot bindings behind.
@@ -180,7 +180,7 @@ struct DomainDecomposition {
     /// `cuts[d]` has either size `0` (uniform partition along axis `d`, default)
     /// or size `dims[d] + 1` with `cuts[d].front() == 0.0` and `cuts[d].back() == 1.0`.
     /// When non-empty, `compute_sublo_subhi()` reads from these instead of the
-    /// uniform `coord[d] / dims[d]` formula, and `Migrate::dest_rank_for`
+    /// uniform `coord[d] / dims[d]` formula, and `Comm::exchange dest_rank_for`
     /// binary-searches the cuts to decide each owner's destination rank.
     ///
     /// Stored as fractions so the partition survives NPT box rescaling without
@@ -213,6 +213,23 @@ struct DomainDecomposition {
     ///        against an already-dead runtime).
     void release_comm(bool mpi_is_finalizing = false);
 #endif
+
+    /// @brief Rank that owns position `(x, y, z)` under this decomposition.
+    ///
+    /// The single owner-lookup of the engine: `Comm::exchange` homes atoms
+    /// with it and the benchmark-side pre-filters agree with it by
+    /// construction. Coordinates are wrapped into the box first, then
+    /// resolved per axis — against `cuts[d]` when the axis carries a
+    /// non-uniform partition, against equal-width slabs otherwise.
+    ///
+    /// Flat coordinates deliberately: this used to exist as three separate
+    /// file-local copies (two in the communication directory, one here).
+    /// @param x Position along x [Angstrom].
+    /// @param y Position along y [Angstrom].
+    /// @param z Position along z [Angstrom].
+    /// @param box Current simulation box.
+    /// @return Owning rank in the Cartesian communicator.
+    int owner_of(double x, double y, double z, const ATV::cpu::Box& box) const;
 
     /// @brief Compute and store this rank's spatial slab from the box.
     ///
@@ -275,14 +292,14 @@ struct DomainDecomposition {
     /// subset whose (PBC-wrapped) positions fall in this rank's slab,
     /// compacts those atoms to the front of every per-atom array, and
     /// updates `n_local`, `n_ghost = 0`, `capacity = atoms.size()`. Stale
-    /// rows in `[n_local, capacity)` are reused later by `HaloSend`
+    /// rows in `[n_local, capacity)` are reused later by `CommBrick`
     /// as ghost slots.
     ///
     /// **Initial-partition contract:** every rank starts with the same
     /// `frame` and claims its spatial subset. Owners that later drift across
-    /// a slab boundary are re-homed by `cpu::comm::Migrate` at
-    /// `pre_force @ -30`, so long runs where atoms move between slabs are
-    /// handled correctly (see the MSU-PE multi-rank NPT validation).
+    /// a slab boundary are re-homed by `ctx.md.comm->exchange()`, so long
+    /// runs where atoms move between slabs are handled correctly (see the
+    /// MSU-PE multi-rank NPT validation).
     ///
     /// Single-rank: behaves like `bind(frame)`.
     /// @param frame Frame whose atoms this rank's slab claims a subset of.

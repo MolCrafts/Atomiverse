@@ -3,7 +3,7 @@
 ///        neighbor-list contract. CUDA-free header.
 ///
 /// Split out of `Component` (arch-refactor-03-neighbor), following the
-/// `HaloParticipant` / `PairEvaluator` opt-in precedent: the consumer side
+/// `PairEvaluator` opt-in precedent: the consumer side
 /// (pair styles, real-space electrostatics) and the supply side
 /// (`cpu::md::NeighborList`) are disjoint populations, so they get two
 /// independent protocols — mirroring the halo protocol's send/recv split.
@@ -18,13 +18,15 @@
 namespace ATV {
 namespace cpu {
 
+class Frame;
+struct Context;
+
 /// @brief Consumer side of the neighbor-list contract: a component that
 ///        requires a neighbor structure covering its interaction cutoff.
 ///
 /// The category drivers throw at `build()` when a consumer is registered
-/// without a neighbor structure, and size the auto-injected MPI halo from the
-/// widest consumer halo requirement (padded 1.1×) or, when a provider declares
-/// one, from `NeighborProvider::neighbor_reach()` — whichever is larger.
+/// without a neighbor structure. `Runtime` sizes `ctx.md.comm` from
+/// `NeighborProvider::neighbor_reach()`.
 class NeighborConsumer {
   public:
     virtual ~NeighborConsumer() = default;
@@ -99,12 +101,28 @@ class NeighborProvider {
     /// for it. The pair can then drift from the band down below the interaction
     /// cutoff contributing exactly zero force the whole way.
     ///
-    /// The driver infrastructure scan reads this and sizes the auto-injected halo
-    /// from it (max over providers).
+    /// Runtime sizes `ctx.md.comm` from this (max over providers).
     ///
     /// @return Enumeration radius [Å]; `0` = no reach declared (the halo falls
     ///         back to the consumer-cutoff estimate).
     virtual AccReal neighbor_reach() const { return AccReal(0); }
+
+    /// @brief LAMMPS `Neighbor::decide()` — one `nflag` for the whole step.
+    ///
+    /// Verlet calls this *before* exchange/borders so migrate, halo full
+    /// rebuild, and the neighbor CSR rebuild share one gate. Default `true`
+    /// (always reneighbor) is conservative for providers that have no
+    /// Verlet cadence. `NeighborList` overrides with delay/every/check.
+    ///
+    /// @param rt Runtime context; the implementation writes nothing here
+    ///        (the caller stores the bool on `rt.md.reneighbor`).
+    /// @param frame Positions for the optional skin displacement test.
+    /// @return `true` if this step should exchange + borders + rebuild.
+    virtual bool decide_reneighbor(Context& rt, Frame& frame) {
+        (void)rt;
+        (void)frame;
+        return true;
+    }
 };
 
 } // namespace cpu

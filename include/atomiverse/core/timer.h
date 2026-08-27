@@ -86,9 +86,10 @@ class TimerRegistry {
         st.add(secs);
     }
 
-    void set_loop(double secs, int nlocal) noexcept {
+    void set_loop(double secs, int nlocal, int nghost) noexcept {
         loop_seconds_ += secs;
         nlocal_ = nlocal;
+        nghost_ = nghost;
     }
     void tick_step() noexcept { ++steps_; }
 
@@ -102,6 +103,7 @@ class TimerRegistry {
         loop_seconds_ = 0.0;
         steps_ = 0;
         nlocal_ = -1;
+        nghost_ = -1;
     }
 
     /// @brief Roll up top-level stats into per-category buckets, indexed by
@@ -134,6 +136,10 @@ class TimerRegistry {
     double loop_seconds() const noexcept { return loop_seconds_; }
     std::uint64_t steps() const noexcept { return steps_; }
     int nlocal() const noexcept { return nlocal_; }
+    /// @brief Ghost rows this rank held at the last recorded step, or -1.
+    ///        Reported beside `nlocal` because halo over-forwarding shows up
+    ///        here first — long before it shows up as Comm seconds.
+    int nghost() const noexcept { return nghost_; }
 
   private:
     bool enabled_ = false;
@@ -144,6 +150,7 @@ class TimerRegistry {
     double loop_seconds_ = 0.0;
     std::uint64_t steps_ = 0;
     int nlocal_ = -1;
+    int nghost_ = -1;
 };
 
 /// @brief RAII timer for a sub-region inside a component. Records into the

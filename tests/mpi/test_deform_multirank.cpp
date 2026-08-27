@@ -17,7 +17,6 @@
 #include <cmath>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/communication/halo_exchange.h"
 #include "atomiverse/cpu/dynamics/deform.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
@@ -80,13 +79,11 @@ TEST(DeformMultiRank, UniaxialPullStretchesBoxOnAllRanks) {
 
     cpu::md::MD sim;
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
-    sim.set_observer(cpu::md::Deform{cpu::md::Deform::Mode::erate, strain_rate, dt,
-                            /*axis=*/0});
-    sim.on(ATV::md::Phase::pre_force).add(cpu::comm::HaloSend{lj_cut}, -20);
-    sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
-    sim.on(ATV::md::Phase::force)
-        .add(cpu::md::NeighborList<>{lj_cut}, -10)
-        .add(cpu::PairLJCut{lj_eps, lj_sig, lj_cut});
+    sim.set_observer(cpu::md::Deform{cpu::md::Deform::Mode::erate, strain_rate,
+                                     dt,
+                                     /*axis=*/0});
+    sim.set_neighbor(cpu::md::NeighborList<>{lj_cut});
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{lj_eps, lj_sig, lj_cut});
     sim.set_observer(cpu::md::Virial{});
     sim.build();
 

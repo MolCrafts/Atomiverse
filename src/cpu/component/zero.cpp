@@ -18,8 +18,8 @@ void ZeroForces::launch(const cpu::LaunchContext& ctx) {
     // would touch ~global-N slots on every rank every step — measured as the
     // single largest scaling cost at high rank counts (it dwarfed the LJ
     // kernel). Ghost rows [n_local, n_local + n_ghost) are zeroed by
-    // `HaloSend` right after it (re)populates them this step,
-    // giving `HaloRecv` its known-zero ghost baseline.
+    // `CommBrick` right after it (re)populates them this step,
+    // giving `CommBrick` its known-zero ghost baseline.
     // Single-rank: `owned_count` == atoms.size() and n_ghost == 0, so this is
     // the full (and only) array. See owned_range.h for the row-range contract.
     const int n = owned_count(ctx);

@@ -708,7 +708,7 @@ void NoseHooverNPT::propagate_x_and_box(const cpu::LaunchContext& ctx) {
     }
 
     // Ghost rows must also track the box scaling. Between this call and
-    // the next `HaloSend`, force evaluators (bond/angle/LJ)
+    // the next `CommBrick`, force evaluators (bond/angle/LJ)
     // will compute owner→ghost separations against the FRESHLY-SCALED
     // box. If the ghosts are left at their pre-scale absolute positions,
     // the owner→ghost Δ is wrong by `(ax-1)*pos` per axis. With ax≈1.001
@@ -765,8 +765,8 @@ void NoseHooverNPT::propagate_x_and_box(const cpu::LaunchContext& ctx) {
     // step — a workaround for the MSU-PE multi-rank collapse that was in
     // fact a stale special-bonds exclusion map in `PairLJCut` (fixed
     // there). Forcing per-step reneighbor made the 8-rank run ~10×
-    // slower for no correctness benefit: `Migrate` (every_=10) and
-    // `HaloSend` (every_=10 + position-only refresh in between,
+    // slower for no correctness benefit: `Comm::exchange` (every_=10) and
+    // `CommBrick` (every_=10 + position-only refresh in between,
     // which already rescales ghosts as the box breathes) keep the halo
     // valid on the standard LAMMPS-style cadence. Migration still fires
     // promptly whenever an owner crosses a slab boundary because the

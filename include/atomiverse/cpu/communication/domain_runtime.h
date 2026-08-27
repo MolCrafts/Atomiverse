@@ -24,9 +24,16 @@ struct DomainDecomposition;
 } // namespace mpi
 } // namespace md
 
+class Comm;
+
+namespace comm {
+class CommBrick;
+}
+
 namespace communication {
 
-/// @brief Owns the DomainDecomposition and its bind/partition lifecycle.
+/// @brief Owns the DomainDecomposition, the brick communicator, and their
+///        bind/partition lifecycle.
 class DomainRuntime {
   public:
     DomainRuntime();
@@ -36,8 +43,9 @@ class DomainRuntime {
     DomainRuntime(DomainRuntime&&) noexcept;
     DomainRuntime& operator=(DomainRuntime&&) noexcept;
 
-    /// @brief Allocate the single-rank DD if none is owned, publish it through
-    ///        `ctx.md.dd`, and build MPI topology unless running serial-on-replica.
+    /// @brief Allocate the DD and the sole `CommBrick`, publish
+    ///        `ctx.md.dd` / `ctx.md.comm`, and build MPI topology unless
+    ///        running serial-on-replica.
     void allocate(Context& ctx);
 
     /// @brief Bind the owned DD to a frame (partition / slab bounds / tag maps).
@@ -77,11 +85,15 @@ class DomainRuntime {
     /// @brief Non-owning DD accessor (may be null before allocate()).
     md::mpi::DomainDecomposition* dd() const { return dd_.get(); }
 
+    /// @brief Non-owning communicator (null before allocate()).
+    Comm* comm() const;
+
     /// @brief Heap bytes of the DD tag→local map + ghost-tag list (Comm bucket).
     std::size_t memory_bytes() const;
 
   private:
     std::unique_ptr<md::mpi::DomainDecomposition> dd_;
+    std::unique_ptr<comm::CommBrick> comm_;
     bool serial_on_replica_ = false;
 };
 

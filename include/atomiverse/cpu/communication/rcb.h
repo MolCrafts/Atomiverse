@@ -16,11 +16,11 @@
 ///      store the resulting `dims[d] + 1` cut planes (as box-length fractions)
 ///      in `dd->cuts[d]`.
 ///   4. Refresh this rank's `sublo[]/subhi[]` via `compute_sublo_subhi(box)`.
-///   5. Bump `dd->neighbor_generation` so the next `Migrate::launch()`
+///   5. Bump `dd->neighbor_generation` so the next `Comm::exchange()`
 ///      ships every owner that now lies outside its rank's slab to its new owner.
 ///
 /// The component itself does not move atoms -- it only updates the partition.
-/// Migration is the responsibility of `Migrate`, which already runs at
+/// Migration is the responsibility of `Comm::exchange`, which already runs at
 /// `pre_force @ -30` and consults `dd->cuts[]` (when populated) to decide each
 /// owner's destination.
 ///

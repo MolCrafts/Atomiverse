@@ -1,15 +1,8 @@
 /// @file tests/mpi/test_evaluate_halo_parity.cpp
 /// @brief Pin `cpu::Evaluate::install_defaults` against the MPI comm contract.
 ///
-/// `cpu::md::MD::install_defaults`
-/// (`include/atomiverse/cpu/dynamics/md.h:440-447`) and
-/// `cpu::minimizer::Minimize::install_defaults`
-/// (`include/atomiverse/cpu/minimize/minimize.h:212-238`) both auto-inject the
-/// four communication components a multi-rank force evaluation needs:
-/// `comm::Migrate`, `comm::HaloSend`, `comm::HaloRecv`, `md::mpi::Reduce`.
-/// `cpu::Evaluate::install_defaults`
-/// (`include/atomiverse/cpu/evaluate/evaluate.h:111`) injects NONE of them: it
-/// only scans for a neighbor list and throws if one is missing.
+/// `cpu::Evaluate::install_defaults` mounts `md::mpi::Reduce`. Halo /
+/// exchange / reverse live on `ctx.md.comm` (`Runtime::step_linear_`).
 ///
 /// The consequence is silent, not loud. `Runtime::set_frame` still partitions
 /// the frame into per-rank slabs (`src/cpu/communication/domain_runtime.cpp:73`),
@@ -206,8 +199,7 @@ TEST(EvaluateHaloParity, TotalEnergyMatchesBruteForce) {
         << e_frame << " on the Frame vs brute force " << e_bf << " (rel=" << rel
         << "); sum of per-rank partials " << e_sum << " (deficit "
         << (100.0 * (e_sum - e_bf) / std::abs(e_bf))
-        << "%) — cpu::Evaluate::install_defaults injects no "
-           "Migrate/HaloSend/HaloRecv/Reduce";
+        << "%) — Evaluate linear wrap / Reduce missing";
 }
 
 // ── 2. The halo shell exists and the partition conserves the lattice ────
@@ -242,8 +234,7 @@ TEST(EvaluateHaloParity, GhostShellIsPopulated) {
                   MPI_COMM_WORLD);
     EXPECT_GT(ghost_max, 0)
         << "no ghosts anywhere at world=" << world
-        << ": cpu::Evaluate::install_defaults auto-injects no comm::HaloSend, "
-           "so every cross-boundary interaction is silently dropped";
+        << ": Evaluate linear wrap did not populate the halo";
 }
 
 // ── Custom main that initializes MPI before/after GoogleTest ────────────

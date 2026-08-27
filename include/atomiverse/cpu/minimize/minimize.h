@@ -16,20 +16,16 @@
 /// `add()` and `on(phase).add()` from the underlying `Driver<>`
 /// remain public for user-defined hooks.
 ///
-/// **MPI / domain decomposition.** Minimize mirrors `cpu::md::MD`'s
-/// infrastructure auto-injection, folded into the single `force` phase
-/// (the minimizer skeleton has no dedicated exchange/neighbor phases):
+/// **MPI / domain decomposition.** Halo / exchange / reverse live on
+/// `ctx.md.comm` (`Runtime::step_linear_` / `run_slot_` wrap the force
+/// slot). The Plan still mounts `md::mpi::Reduce` so Frame metadata is
+/// global before `convergence_check`:
 ///
 /// @code
 ///   force @ -1000  ZeroForces        (ctor)
 ///   force @  -999  ZeroEnergy        (ctor)
-///   force @   -50  comm::Migrate     (install_defaults; re-homes owners,
-///                                     single-rank no-op)
-///   force @   -30  comm::HaloSend    (install_defaults, ATV_HAS_MPI +
-///                                     pair evaluator; deduped)
 ///   force @   -10  NeighborList      (set_neighbor)
 ///   force @     0  pair / bonded evaluators
-///   force @   +10  comm::HaloRecv    (install_defaults, gated as above)
 ///   force @   +20  md::mpi::Reduce   (install_defaults; makes
 ///                                     Frame metadata global *before* the
 ///                                     convergence_check phase reads them)
@@ -51,8 +47,6 @@
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/asynchronous/snapshot_publisher.h"
-#include "atomiverse/cpu/communication/atom_migration.h"
-#include "atomiverse/cpu/communication/halo_exchange.h"
 #include "atomiverse/cpu/communication/reduce.h"
 #include "atomiverse/cpu/component/bias.h"
 #include "atomiverse/cpu/component/gpw.h"
@@ -173,17 +167,6 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     template <typename O>
     Minimize& set_optimizer(O&) = delete;
 
-    /// @brief Owner-migration cadence in optimizer iterations (default 10,
-    /// matching `HaloSend`'s full-rebuild cadence). Each actual migration
-    /// discards the optimizer's curvature history (row indices reshuffle),
-    /// so raise this when minimizing systems that barely drift; the
-    /// exchange itself is skipped whenever no rank has a strayed atom.
-    /// Call before `build()`.
-    Minimize& set_migrate_every(int every) {
-        migrate_every_ = every < 1 ? 1 : every;
-        return *this;
-    }
-
   protected:
     void validate_components() const override {
         this->require_optimizer();
@@ -204,46 +187,16 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
 
         const auto s = this->scan_pending_infra_();
 
-        // Owner migration + global scalar reduction, explicitly bound to
-        // minimizer phases (their default_bindings() are md::Phase values
-        // and must not be used here). Both are single-rank no-ops. Reduce
-        // sits after HaloRecv (+10) and before convergence_check so the
-        // optimizer reads globally-summed energy.
-        // Guarded like Evaluate/MD: install_defaults() runs on every
+        // Global scalar reduction, explicitly bound to the force phase
+        // (Reduce's default_bindings() are md::Phase values). Single-rank
+        // no-op. Sits before convergence_check so the optimizer reads
+        // globally-summed energy. Guarded: install_defaults() runs on every
         // build() and pending_ survives it, so an unguarded add mounts a
-        // second Migrate and a second Reduce on re-build — the duplicate
-        // Reduce re-allreduces already-global scalars and multiplies the
-        // reported energy by the rank count.
-        if (!this->pending_named_("migrate"))
-            this->on(ATV::minimizer::Phase::force)
-                .add(comm::Migrate{migrate_every_}, -50);
+        // second Reduce on re-build — the duplicate re-allreduces already-
+        // global scalars and multiplies the reported energy by the rank
+        // count. Halo / exchange / reverse live on `ctx.md.comm`.
         if (!this->pending_named_("reduce"))
             this->on(ATV::minimizer::Phase::force).add(md::mpi::Reduce{}, +20);
-
-#ifdef ATV_HAS_MPI
-        if (s.neighbor_consumer_cutoff) {
-            // Same rule as MD::install_defaults — the shell must cover the
-            // distance the neighbor list actually enumerates to
-            // (`cutoff + skin`, published as `neighbor_reach()`), otherwise a
-            // cross-rank pair inside the skin band has no ghost and is missing
-            // from the CSR outright until the next full rebuild. The 10%
-            // multiplier is the floor when no provider declares a reach; the
-            // minimizer's step cap (0.1 Å) keeps per-step drift well inside
-            // that band. Explicit halo registrations suppress the auto-inject:
-            // the reverse exchange must run exactly once (see halo_exchange.h).
-            double halo_cut =
-                1.1 * static_cast<double>(*s.neighbor_consumer_cutoff);
-            if (s.neighbor_provider_reach)
-                halo_cut = std::max(
-                    halo_cut, static_cast<double>(*s.neighbor_provider_reach));
-            if (!s.has_halo_send)
-                this->on(ATV::minimizer::Phase::force)
-                    .add(comm::HaloSend{halo_cut}, -30);
-            if (!s.has_halo_recv)
-                this->on(ATV::minimizer::Phase::force)
-                    .add(comm::HaloRecv{}, +10);
-        }
-#endif
 
         this->throw_if_missing_neighbor_list_(
             s, "Minimize",
@@ -281,7 +234,6 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     }
 
     std::optional<std::string> optimizer_set_;
-    int migrate_every_ = 10;
 };
 
 } // namespace minimizer

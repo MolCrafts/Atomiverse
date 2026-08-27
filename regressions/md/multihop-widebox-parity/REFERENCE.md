@@ -90,11 +90,11 @@ leg a serial control rather than a second decomposed run).
 Pipeline — all defaults, the halo being the feature under test:
 `PairLJCut` + `PairCoulCut` + `BondHarmonic` + `AngleHarmonic` +
 `NeighborList{6.0, 0.6, every = 10}` + `VelocityVerlet{0.5 fs}`.
-`MD::install_defaults()` injects `comm::HaloSend` with a
+`MD::install_defaults()` injects `comm::CommBrick` with a
 **max(1.1 · 6.0, 6.0 + 0.6) = 6.6 Å** shell at `pre_neighbor @ 0` and
-`comm::HaloRecv` at `post_force @ −1000`. Nothing here registers a halo
+`comm::CommBrick` at `post_force @ −1000`. Nothing here registers a halo
 component by hand and nothing sets a hop count by hand — the round count is
-derived by `SwapList::setup` from the geometry. **No PPPM**: the build needs
+derived by `Halo::setup` from the geometry. **No PPPM**: the build needs
 only `ATV_BUILD_MD` + `ATV_USE_MPI`, no FFTW gate.
 
 ### Why this geometry
@@ -108,11 +108,11 @@ only `ATV_BUILD_MD` + `ATV_USE_MPI`, no FFTW gate.
 A **12 Å** y edge (span 6.0 Å) — the naive "24 × 12 × 12" reading of the
 spec — is *not* a legal 2-hop y axis and is not what this case runs: at
 `dims_y = 2` the deepest reachable hop is `dims − 1 = 1`, because round 2 would
-wrap onto this rank's own periodic image. `SwapList::derive_hops`
-(`src/cpu/communication/swap_list.cpp:191`) refuses it outright:
+wrap onto this rank's own periodic image. `Halo::derive_hops`
+(`src/cpu/communication/halo.cpp`) refuses it outright:
 
 ```
-SwapList: the requested ghost shell (6.600000 A) violates the minimum-image
+Halo: the requested ghost shell (6.600000 A) violates the minimum-image
 convention on periodic axis 1: ... The bound is shell <= L - w_self =
 12.000000 - 6.000000 = 6.000000 A.
 ```
@@ -172,8 +172,8 @@ Measured 2026-08-26 on the x86_64 login node (GCC + MPICH 4.3.2, Release,
 | maxᵢ \|F_i,oracle\| (non-vacuous) | > 1e-4 eV/Å | — | **1.146e+00** |
 | \|E_pair\| / \|E_bond\| / \|E_angle\| (non-vacuous) | > 1e-4 eV | — | **1.203e+01 / 1.244e-01 / 3.752e-01** |
 
-The hop row is read back from the **published** `ctx.md.swap_list` twice over —
-the derived `SwapList::max_hops(0)` and the deepest `Swap::round` the table
+The hop row is read back from the **published** `ctx.md.comm` twice over —
+the derived `Halo::max_hops(0)` and the deepest `Swap::round` the table
 actually materialised on a transmitting x swap — as the minimum over all 21
 steps, so a silent degradation to a single-hop shell on any one step fails the
 case instead of hiding behind an energy that happens to still be right. The
@@ -247,7 +247,7 @@ charges and bonded topology on a two-axis brick: two forwarding rounds on x,
 dual-image ghosts on y, forward at both cadences, reverse exactly once per hop
 depth, and decomposition invariance against the serial control. Out of scope,
 by spec: the non-uniform (RCB) hop chain and the `max_hops > dims − 1` refusal
-(unit-tested serially in `tests/cpu/communication/test_swap_list_maxneed.cpp`),
+(unit-tested serially in `tests/cpu/communication/test_halo_maxneed.cpp`),
 deeper shells at 8 ranks on one axis
 (`tests/mpi/test_halo_dual_image_ghosts.cpp` `_n8`), long-range electrostatics
 (no PPPM here), the 24k-atom / 256-rank real-machine run

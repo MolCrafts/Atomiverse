@@ -1011,5 +1011,54 @@ Frame Frame::clone_structure(int rows) const {
     return out;
 }
 
+std::vector<SchemaError> validate_schema(const Schema& required,
+                                         const Frame& frame) {
+    std::vector<SchemaError> errors = required.conflicts();
+    for (const Field& f : required) {
+        if (!frame.has("atoms", f.name)) {
+            errors.push_back(SchemaError{
+                f.name, f.required_by,
+                "the Frame has no such column. Add it before the run "
+                "(Block::insert, or load a file that carries it), or unmount "
+                "the component that needs it."});
+            continue;
+        }
+        const auto& cols = frame.block("atoms").columns();
+        const auto it = cols.find(f.name);
+        if (it == cols.end())
+            continue; // has() said otherwise; nothing to compare against
+        const Column& col = it->second;
+        if (col.dtype() != f.dtype)
+            errors.push_back(SchemaError{
+                f.name, f.required_by,
+                "declared as " + std::string(Schema::dtype_name(f.dtype))
+                    + " but the Frame carries "
+                    + std::string(Schema::dtype_name(col.dtype()))});
+        else if (col.cols() != f.cols)
+            errors.push_back(
+                SchemaError{f.name, f.required_by,
+                            "declared with " + std::to_string(f.cols)
+                                + " component(s) but the Frame carries "
+                                + std::to_string(col.cols())});
+    }
+    return errors;
+}
+
+void check_schema(const Schema& required, const Frame& frame,
+                  std::string_view who) {
+    const std::vector<SchemaError> errors = validate_schema(required, frame);
+    if (errors.empty())
+        return;
+    std::string msg = std::string(who)
+                      + ": this Frame does not satisfy the "
+                        "system schema ("
+                      + std::to_string(errors.size()) + " problem(s)):";
+    for (const SchemaError& e : errors) {
+        msg += "\n  - " + std::string(e.field) + " (required by "
+               + std::string(e.required_by) + "): " + e.reason;
+    }
+    throw std::runtime_error(msg);
+}
+
 } // namespace cpu
 } // namespace ATV

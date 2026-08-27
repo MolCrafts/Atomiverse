@@ -1,5 +1,5 @@
-/// @file tests/cpu/communication/test_swap_list_maxneed.cpp
-/// @brief Unit tests for `comm::SwapList`'s **multi-hop** derivation —
+/// @file tests/cpu/communication/test_halo_maxneed.cpp
+/// @brief Unit tests for `comm::Halo`'s **multi-hop** derivation —
 ///        spec `.claude/specs/comm-topology-02-multihop.md`.
 ///
 /// `comm-topology-01` delivered the swap table but capped every decomposed
@@ -17,7 +17,7 @@
 ///   * the only surviving refusal is the **minimum-image** upper bound
 ///     `max_hops(d) <= dims[d] - 1`, i.e. `need_d <= L_d - w_self`.
 ///
-/// Everything here is **serial**: `SwapList` performs no MPI, the uniform
+/// Everything here is **serial**: `Halo` performs no MPI, the uniform
 /// derivation is closed form, and the per-rank non-uniform chain is a pure
 /// function of `dims / coords / periods / cuts / L / shell`. The
 /// `MPI_Allreduce(MAX)` that makes the round count rank-uniform is
@@ -27,13 +27,13 @@
 ///
 /// Surface pinned (new in `-02`, on the existing type):
 /// @code{.cpp}
-///   struct SwapList::HopNeed { int minus[3]; int plus[3]; };
-///   static HopNeed SwapList::derive_hops(const DomainDecomposition& dd,
+///   struct Halo::HopNeed { int minus[3]; int plus[3]; };
+///   static HopNeed Halo::derive_hops(const DomainDecomposition& dd,
 ///                                        const Box& box,
 ///                                        double shell_width);
-///   int    SwapList::max_hops(int d) const;    // reduced hops on axis d
-///   int    SwapList::nswap(int d) const;       // == 2 * max_hops(d)
-///   double SwapList::shell_width() const;      // [Angstrom]
+///   int    Halo::max_hops(int d) const;    // reduced hops on axis d
+///   int    Halo::nswap(int d) const;       // == 2 * max_hops(d)
+///   double Halo::shell_width() const;      // [Angstrom]
 /// @endcode
 ///
 /// `HopNeed::minus[d]` counts the hops needed toward *decreasing* `coords[d]`
@@ -65,7 +65,7 @@
 #include <vector>
 
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/frame/box.h"
 
 using namespace ATV;
@@ -162,9 +162,8 @@ std::string normalized(std::string s) {
 }
 
 /// Run `setup` and return the refusal message, or "" when it did not throw.
-std::string setup_message(cpu::comm::SwapList& list,
-                          const DomainDecomposition& dd, const cpu::Box& box,
-                          double shell, int my_rank) {
+std::string setup_message(cpu::comm::Halo& list, const DomainDecomposition& dd,
+                          const cpu::Box& box, double shell, int my_rank) {
     try {
         list.setup(dd, box, shell, my_rank);
     } catch (const std::runtime_error& e) {
@@ -183,7 +182,7 @@ std::string setup_message(cpu::comm::SwapList& list,
 ///   dims = 8 -> w = 1.9725 A -> ceil(3.3460) = 4 hops, 8 swap rounds
 ///   dims = 2 -> w = 7.89 A   -> ceil(0.8365) = 1 hop,  2 swap rounds
 /// All three are inside the minimum-image bound (`hops <= dims - 1`).
-TEST(TestSwapListMaxneed, UniformHopsAreCeilOfShellOverSlab) {
+TEST(TestHaloMaxneed, UniformHopsAreCeilOfShellOverSlab) {
     struct Case {
         int dims_x;
         int expect_hops;
@@ -193,7 +192,7 @@ TEST(TestSwapListMaxneed, UniformHopsAreCeilOfShellOverSlab) {
     for (const Case& c : cases) {
         SCOPED_TRACE("dims_x = " + std::to_string(c.dims_x));
         const DomainDecomposition dd = uniform_dd(c.dims_x, /*coords_x=*/1);
-        cpu::comm::SwapList list;
+        cpu::comm::Halo list;
         ASSERT_NO_THROW(
             list.setup(dd, cubic_box(kBoxL), kShell, /*my_rank=*/1));
 
@@ -204,10 +203,10 @@ TEST(TestSwapListMaxneed, UniformHopsAreCeilOfShellOverSlab) {
 
 /// The shell width the table was derived against is readable back —
 /// `shell_width()`, deliberately NOT a third `halo_cutoff()`
-/// (`NeighborConsumer::halo_cutoff` and `HaloSend::halo_cutoff` already
+/// (`NeighborConsumer::halo_cutoff` and `CommBrick::halo_cutoff` already
 /// carry that name for two different things).
-TEST(TestSwapListMaxneed, ShellWidthIsRecorded) {
-    cpu::comm::SwapList list;
+TEST(TestHaloMaxneed, ShellWidthIsRecorded) {
+    cpu::comm::Halo list;
     list.setup(uniform_dd(/*dims_x=*/4, /*coords_x=*/1), cubic_box(kBoxL),
                kShell, /*my_rank=*/1);
     EXPECT_DOUBLE_EQ(list.shell_width(), kShell);
@@ -216,10 +215,10 @@ TEST(TestSwapListMaxneed, ShellWidthIsRecorded) {
 /// The pure entry must reproduce the closed form on a uniform partition,
 /// symmetrically in both send directions (every partner slab has the same
 /// width, so the `-` chain and the `+` chain agree).
-TEST(TestSwapListMaxneed, UniformDeriveHopsIsDirectionSymmetric) {
+TEST(TestHaloMaxneed, UniformDeriveHopsIsDirectionSymmetric) {
     const DomainDecomposition dd = uniform_dd(/*dims_x=*/4, /*coords_x=*/1);
-    const cpu::comm::SwapList::HopNeed hops =
-        cpu::comm::SwapList::derive_hops(dd, cubic_box(kBoxL), kShell);
+    const cpu::comm::Halo::HopNeed hops =
+        cpu::comm::Halo::derive_hops(dd, cubic_box(kBoxL), kShell);
 
     EXPECT_EQ(hops.minus[0], 2);
     EXPECT_EQ(hops.plus[0], 2);
@@ -237,7 +236,7 @@ TEST(TestSwapListMaxneed, UniformDeriveHopsIsDirectionSymmetric) {
 /// minimum image. It is also **exempt from every width check** — an
 /// EAM-style `2 * cutoff` shell on a thin undecomposed axis is legal today
 /// and must stay legal (`comm-topology-01`
-/// `TestSwapList.UndecomposedAxisExemptFromGuard`).
+/// `TestHalo.UndecomposedAxisExemptFromGuard`).
 ///
 /// Note the deliberate difference from `-01`, which forced `maxneed = 1`
 /// plus two `sendself` placeholder swaps on such an axis: the number pinned
@@ -245,10 +244,10 @@ TEST(TestSwapListMaxneed, UniformDeriveHopsIsDirectionSymmetric) {
 /// number of swap *rounds* that derivation asks for. Whether the expansion
 /// keeps a `sendself` placeholder entry in the table is the expansion's
 /// business (`comm-topology-01`), not this accessor's.
-TEST(TestSwapListMaxneed, UndecomposedAxesNeedNoHops) {
+TEST(TestHaloMaxneed, UndecomposedAxesNeedNoHops) {
     {
         SCOPED_TRACE("dims = {4,1,1}, shell inside the box");
-        cpu::comm::SwapList list;
+        cpu::comm::Halo list;
         ASSERT_NO_THROW(list.setup(uniform_dd(/*dims_x=*/4, /*coords_x=*/1),
                                    cubic_box(kBoxL), kShell, /*my_rank=*/1));
         for (int d = 1; d < 3; ++d) {
@@ -261,7 +260,7 @@ TEST(TestSwapListMaxneed, UndecomposedAxesNeedNoHops) {
         // Every axis undecomposed: no swap rounds anywhere, and a shell
         // wider than the whole box is still not a refusal.
         SCOPED_TRACE("dims = {1,1,1}, shell wider than L - w_self (= 0)");
-        cpu::comm::SwapList list;
+        cpu::comm::Halo list;
         ASSERT_NO_THROW(list.setup(uniform_dd(/*dims_x=*/1, /*coords_x=*/0),
                                    cubic_box(kBoxL), kShell, /*my_rank=*/0));
         for (int d = 0; d < 3; ++d) {
@@ -279,7 +278,7 @@ TEST(TestSwapListMaxneed, UndecomposedAxesNeedNoHops) {
                                             /*L=*/30.0);
         dd.subhi[1] = 8.0;
         dd.subhi[2] = 16.0;
-        cpu::comm::SwapList list;
+        cpu::comm::Halo list;
         ASSERT_NO_THROW(list.setup(dd, cpu::Box::orthorhombic(30.0, 8.0, 16.0),
                                    12.0, /*my_rank=*/0));
         EXPECT_EQ(list.max_hops(0), 1); // ceil(12 / 15)
@@ -294,17 +293,17 @@ TEST(TestSwapListMaxneed, UndecomposedAxesNeedNoHops) {
 /// `need / w` that lands one ulp above 1. `coords_x == 1` makes
 /// `subhi - sublo == w` bit-exact, so a derivation reading either the
 /// closed form (`L / dims`) or the stub's slab width sees the same number.
-TEST(TestSwapListMaxneed, ShellEqualToSlabWidthIsOneHop) {
+TEST(TestHaloMaxneed, ShellEqualToSlabWidthIsOneHop) {
     const int dims_x = 4;
     const double w = kBoxL / dims_x; // 3.945 A
     const DomainDecomposition dd = uniform_dd(dims_x, /*coords_x=*/1);
 
-    cpu::comm::SwapList exact;
+    cpu::comm::Halo exact;
     ASSERT_NO_THROW(exact.setup(dd, cubic_box(kBoxL), w, /*my_rank=*/1));
     EXPECT_EQ(exact.max_hops(0), 1);
     EXPECT_EQ(exact.nswap(0), 2);
 
-    cpu::comm::SwapList just_under;
+    cpu::comm::Halo just_under;
     ASSERT_NO_THROW(
         just_under.setup(dd, cubic_box(kBoxL), w - 1e-9, /*my_rank=*/1));
     EXPECT_EQ(just_under.max_hops(0), 1);
@@ -329,7 +328,7 @@ TEST(TestSwapListMaxneed, ShellEqualToSlabWidthIsOneHop) {
 /// The global `MPI_Allreduce(MAX)` over all ranks and both directions is
 /// **3**; it is `setup()`'s job under MPI, so this serial test takes the
 /// maximum over the four per-rank results itself.
-TEST(TestSwapListMaxneed, NonUniformChainCountsSlabsPerSendDirection) {
+TEST(TestHaloMaxneed, NonUniformChainCountsSlabsPerSendDirection) {
     const double need = 5.0; // [Angstrom]
     const int expect_minus[4] = {1, 1, 2, 3};
     const int expect_plus[4] = {3, 2, 1, 1};
@@ -338,8 +337,8 @@ TEST(TestSwapListMaxneed, NonUniformChainCountsSlabsPerSendDirection) {
     for (int c = 0; c < 4; ++c) {
         SCOPED_TRACE("coords_x = " + std::to_string(c) + " (slab width "
                      + std::to_string(kRcbWidths[c]) + " A)");
-        const cpu::comm::SwapList::HopNeed hops =
-            cpu::comm::SwapList::derive_hops(rcb_dd(c), cubic_box(kRcbL), need);
+        const cpu::comm::Halo::HopNeed hops =
+            cpu::comm::Halo::derive_hops(rcb_dd(c), cubic_box(kRcbL), need);
         EXPECT_EQ(hops.minus[0], expect_minus[c]);
         EXPECT_EQ(hops.plus[0], expect_plus[c]);
         // Undecomposed axes stay at zero regardless of the cut table.
@@ -365,15 +364,15 @@ TEST(TestSwapListMaxneed, NonUniformChainCountsSlabsPerSendDirection) {
 ///   need = 12.0 A -> ceil(3.042) = 4  > dims - 1  -> refused
 /// The message must name the minimum-image bound and must NOT repeat the
 /// superseded "fewer ranks" how-to, which is no longer the fix.
-TEST(TestSwapListMaxneed, RefusesShellBeyondMinimumImageBound) {
+TEST(TestHaloMaxneed, RefusesShellBeyondMinimumImageBound) {
     const DomainDecomposition dd = uniform_dd(/*dims_x=*/4, /*coords_x=*/1);
 
-    cpu::comm::SwapList deep;
+    cpu::comm::Halo deep;
     ASSERT_NO_THROW(deep.setup(dd, cubic_box(kBoxL), 11.0, /*my_rank=*/1));
     EXPECT_EQ(deep.max_hops(0), 3);
     EXPECT_EQ(deep.nswap(0), 6);
 
-    cpu::comm::SwapList over;
+    cpu::comm::Halo over;
     EXPECT_THROW(over.setup(dd, cubic_box(kBoxL), 12.0, /*my_rank=*/1),
                  std::runtime_error);
 
@@ -393,14 +392,14 @@ TEST(TestSwapListMaxneed, RefusesShellBeyondMinimumImageBound) {
 /// (`w_self = 2 A`): `L - w_self = 18 A`, so a 19 A shell needs the whole
 /// ring — `-` chain 2, 12, 18 still short of 19 with only the rank's own
 /// slab left.
-TEST(TestSwapListMaxneed, DeriveHopsRefusesBeyondMinimumImageBound) {
-    EXPECT_THROW(cpu::comm::SwapList::derive_hops(rcb_dd(/*coords_x=*/2),
-                                                  cubic_box(kRcbL), 19.0),
+TEST(TestHaloMaxneed, DeriveHopsRefusesBeyondMinimumImageBound) {
+    EXPECT_THROW(cpu::comm::Halo::derive_hops(rcb_dd(/*coords_x=*/2),
+                                              cubic_box(kRcbL), 19.0),
                  std::runtime_error);
 
     // Inside the bound the same chain is legal: the `-` chain 2, 12, 18
     // covers a 17 A shell on its third slab, i.e. 3 hops == dims - 1.
-    const cpu::comm::SwapList::HopNeed hops = cpu::comm::SwapList::derive_hops(
+    const cpu::comm::Halo::HopNeed hops = cpu::comm::Halo::derive_hops(
         rcb_dd(/*coords_x=*/2), cubic_box(kRcbL), 17.0);
     EXPECT_EQ(hops.minus[0], 3);
 }
@@ -413,8 +412,8 @@ TEST(TestSwapListMaxneed, DeriveHopsRefusesBeyondMinimumImageBound) {
 /// `w: 3.945 -> 2.5 A`, `ceil(6.6 / 2.5) = 3` (still within
 /// `dims - 1 = 3`, and `6.6 <= 10 - 2.5`). Re-running with identical
 /// arguments changes nothing.
-TEST(TestSwapListMaxneed, SetupRederivesHopsWhenBoxShrinks) {
-    cpu::comm::SwapList list;
+TEST(TestHaloMaxneed, SetupRederivesHopsWhenBoxShrinks) {
+    cpu::comm::Halo list;
     list.setup(uniform_dd(/*dims_x=*/4, /*coords_x=*/1), cubic_box(kBoxL),
                kShell, /*my_rank=*/1);
     ASSERT_EQ(list.max_hops(0), 2);

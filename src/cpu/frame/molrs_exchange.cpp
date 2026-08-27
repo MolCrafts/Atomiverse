@@ -101,16 +101,6 @@ bool has_column(const molrs::FrameRef& src, const char* block,
     return values;
 }
 
-::rust::Vec<std::int32_t> require_i32(const molrs::FrameRef& src,
-                                      const char* block, const char* col) {
-    auto values = molrs::frame_column_i32(src, block, col);
-    if (values.empty())
-        throw std::runtime_error("cpu::from_molrs: required field '"
-                                 + std::string(block) + "." + col
-                                 + "' is missing or empty");
-    return values;
-}
-
 template <typename T>
 void copy_optional_f64(const molrs::FrameRef& src, const char* key,
                        Span<T> destination, int n) {

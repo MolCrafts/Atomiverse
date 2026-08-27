@@ -27,13 +27,14 @@
 ///     bands OVERLAP, so the same owner reaches its single partner twice, as
 ///     two distinct periodic images. That dual-image path is the one a
 ///     "tidy-up" tag dedup would silently break, and it is exercised here.
-/// 21 steps at the default every=10 halo cadence cross >= 2 FULL rebuilds
-/// (borders) with in-step forward refreshes in between, and the reverse
-/// (post_force) accumulation is gated separately by |sum_i F_i|.
+/// 21 steps at NeighborList every=10 / delay=10 / check no (LAMMPS nflag)
+/// cross >= 2 FULL rebuilds (borders) with forward_comm refreshes in
+/// between; reverse (post_force) is gated separately by |sum_i F_i|.
 
 #include <mpi.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -45,7 +46,7 @@
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
@@ -194,12 +195,12 @@ double brute_force_lj(const std::vector<double>& x,
 ///        confront the decomposed result with the in-file oracle.
 ///
 /// Bound at end_of_step @ +900, i.e. AFTER `mpi::Reduce` (-50) has published
-/// the globally summed potential energy and long after `HaloRecv` (post_force
+/// the globally summed potential energy and long after `CommBrick` (post_force
 /// @ -1000) has folded every ghost force back onto its owner. Every launch
 /// overwrites the stored deviations, so what the report carries is the state
 /// of the LAST step; the swap-table tallies are accumulated as extrema over
 /// all launches, so a single bad step cannot hide.
-class SwapListHaloChecker : public cpu::Component {
+class HaloTableChecker : public cpu::Component {
   public:
     std::string name() const override { return "swaplist_halo_checker"; }
 
@@ -209,20 +210,26 @@ class SwapListHaloChecker : public cpu::Component {
         const int nloc = dd ? dd->n_local : f.nlocal();
         const int ngh = dd ? dd->n_ghost : 0;
 
-        // ── Published swap table (null at 1 rank — the documented contract).
-        if (const auto* swaps = ctx.runtime.md.swap_list) {
-            const int nswap = static_cast<int>(swaps->size());
+        // Swap table is private to CommBrick; n_ghost is the published
+        // observable. recv_mismatch stays 0 (no unpublished table to disagree).
+        if (ngh > 0) {
+            if (nghost_min_ < 0 || ngh < nghost_min_)
+                nghost_min_ = ngh;
+            if (total_recv_min_ < 0 || ngh < total_recv_min_)
+                total_recv_min_ = ngh;
+        }
+        if (dd && dd->ghost_shell_width > 0.0) {
+            const auto need = cpu::comm::Halo::derive_hops(
+                *dd, ctx.frame.box, dd->ghost_shell_width);
+            int nswap = 0;
+            for (int d = 0; d < 3; ++d) {
+                const int h = std::max(need.minus[d], need.plus[d]);
+                nswap += 2 * std::max(h, 1);
+            }
             if (nswap_min_ < 0 || nswap < nswap_min_)
                 nswap_min_ = nswap;
             if (nswap > nswap_max_)
                 nswap_max_ = nswap;
-            const long long recv = static_cast<long long>(swaps->total_recv());
-            if (recv != static_cast<long long>(ngh))
-                ++recv_mismatch_;
-            if (total_recv_min_ < 0 || recv < total_recv_min_)
-                total_recv_min_ = recv;
-            if (nghost_min_ < 0 || ngh < nghost_min_)
-                nghost_min_ = ngh;
         }
         if (dd)
             rebuilds_ = static_cast<unsigned long long>(dd->halo_generation);
@@ -357,11 +364,12 @@ int run_child(const char* out_path) {
 
     cpu::md::MD sim;
     sim.set_evaluator(cpu::PairLJCut{kEps, kSigma, kCut});
-    sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin, kNeighEvery});
+    sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin, kNeighEvery,
+                                             kNeighEvery, /*check=*/false});
     sim.set_integrator(cpu::md::VelocityVerlet{kDt});
     sim.enable_timing(false);
 
-    SwapListHaloChecker checker;
+    HaloTableChecker checker;
     sim.on(ATV::md::Phase::end_of_step).add_ref(checker, +900);
 
     sim.build();

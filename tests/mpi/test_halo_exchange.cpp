@@ -1,27 +1,20 @@
 /// @file tests/mpi/test_halo_exchange.cpp
 /// @brief Phase 2.2 / 2.3 ghost halo correctness tests.
 ///
-/// Multi-rank tests for `HaloSend` + `HaloRecv`.
+/// Multi-rank tests for `ctx.md.comm` (`CommBrick` borders / reverse).
 /// Launched via `mpirun -n N`. Verifies:
-///   - Forward populates `dd->n_ghost > 0` and per-swap receive counts
-///     (`ctx.md.swap_list`) consistent with each rank's own send list.
+///   - Forward populates `dd->n_ghost > 0`.
 ///   - Symmetry: my +x send count to my +x neighbor equals my +x neighbor's
 ///     -x send count to me (count exchange handshake is consistent).
 ///   - PBC shift: ghosts received from across a periodic-edge face land
 ///     at coordinates that, when wrapped back to `[0, L)`, match an actual
 ///     owner position somewhere in the neighbor's slab.
 ///   - Reverse symmetry: applying a known per-ghost force and reducing
-///     back through `HaloRecv` adds exactly the right total to
+///     back through `reverse_comm` adds exactly the right total to
 ///     each owner's force.
 ///
-/// arch-refactor-02-halo additions (`HaloParticipant` protocol):
-///   - A test-only field participant (`Endpoint::none`) declaring width-1 and
-///     width-3 per-atom forward `CommField`s sees every ghost row refreshed to
-///     its owner's value each step (full-rebuild AND position-only-refresh
-///     packing paths, incl. across periodic faces).
-///   - A declared reverse `CommField` has its ghost contributions accumulated
-///     back onto the owners exactly once per step (global conservation).
-///   - Single rank: the same component path is a strict no-op.
+/// Extra-field `CommField` / `Endpoint` packing was removed in
+/// lammps-comm-brick-04-packer; plugins use `ForwardPacker` instead.
 
 #include <gtest/gtest.h>
 
@@ -40,12 +33,11 @@
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/halo_exchange.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
-#include "atomiverse/cpu/component/halo_participant.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/driver/runtime.h"
 #include "atomiverse/cpu/dynamics/md.h"
@@ -86,10 +78,6 @@ cpu::Frame make_uniform_grid(int n_per_side, double box_len) {
 struct ForwardResult {
     int n_local;
     int n_ghost;
-    // Per-swap, read off the halo's published table (`ctx.md.swap_list`);
-    // swap i is face i of `face_neighbors`.
-    std::array<int, 6> swap_nrecv;
-    std::array<int, 6> swap_send_counts;
     std::array<int, 6> face_neighbors;
     int dims[3];
     int coords[3];
@@ -105,26 +93,17 @@ ForwardResult run_forward(double box_len, int n_per_side, double cutoff) {
     backend.set_frame(frame);
 
     auto* dd = backend.context().md.dd;
-
-    // Drive one Forward launch directly (without going through MD driver).
-    cpu::comm::HaloSend fwd{cutoff};
-    cpu::BuildContext bctx{backend.context(), frame};
-    fwd.build(bctx);
+    cpu::Comm* comm = backend.context().md.comm;
+    comm->set_ghost_cutoff(cutoff);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
-    fwd.launch(lctx);
+    comm->setup(lctx);
+    comm->borders(lctx);
 
     ForwardResult r{};
     r.n_local = dd->n_local;
     r.n_ghost = dd->n_ghost;
-    const auto* swaps = backend.context().md.swap_list;
-    for (int f = 0; f < 6; ++f) {
-        const bool has_swap =
-            swaps != nullptr && f < static_cast<int>(swaps->size());
-        r.swap_nrecv[f] = has_swap ? (*swaps)[f].nrecv : 0;
-        r.swap_send_counts[f] =
-            has_swap ? static_cast<int>((*swaps)[f].sendlist.size()) : 0;
+    for (int f = 0; f < 6; ++f)
         r.face_neighbors[f] = dd->face_neighbors[f];
-    }
     for (int d = 0; d < 3; ++d) {
         r.dims[d] = dd->dims[d];
         r.coords[d] = dd->coords[d];
@@ -197,12 +176,11 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
     backend.init();
     backend.set_frame(frame);
     auto* dd = backend.context().md.dd;
-
-    cpu::comm::HaloSend fwd{2.0};
-    cpu::BuildContext bctx{backend.context(), frame};
-    fwd.build(bctx);
+    cpu::Comm* comm = backend.context().md.comm;
+    comm->set_ghost_cutoff(2.0);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
-    fwd.launch(lctx);
+    comm->setup(lctx);
+    comm->borders(lctx);
 
     for (int g = 0; g < dd->n_ghost; ++g) {
         const int row = dd->n_local + g;
@@ -218,7 +196,7 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
         frame.span(kHaloAux)(i, 0) += StorageReal(1000);
         frame.span(kHaloAux)(i, 1) -= StorageReal(1000);
     }
-    fwd.launch(lctx); // steady comm plan, same ghost slots
+    comm->forward_comm(lctx); // steady comm plan, same ghost slots
     for (int g = 0; g < dd->n_ghost; ++g) {
         const int row = dd->n_local + g;
         const int source =
@@ -227,38 +205,8 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
         EXPECT_EQ(frame.span(kHaloAux)(row, 1), StorageReal(-1200 - source));
     }
 
-    // Local sanity: total ghost atoms = sum of the swap table's nrecv.
-    const auto* swaps = backend.context().md.swap_list;
-    ASSERT_NE(swaps, nullptr) << "HaloSend must publish its swap table";
-    ASSERT_EQ(swaps->size(), 6u);
-    int total_ghosts = 0;
-    for (int s = 0; s < 6; ++s)
-        total_ghosts += (*swaps)[s].nrecv;
-    EXPECT_EQ(total_ghosts, dd->n_ghost);
-    EXPECT_EQ(swaps->total_recv(), dd->n_ghost);
-
-    // Swaps that self-wrap (dims[dim] == 1) contribute 0 because we
-    // short-circuit those at the component.
-    for (int s = 0; s < 6; ++s) {
-        const int dim = (*swaps)[s].dim;
-        if (dd->dims[dim] == 1) {
-            EXPECT_TRUE((*swaps)[s].sendself)
-                << "swap " << s << " crosses undecomposed axis " << dim
-                << " but is not marked sendself";
-            EXPECT_EQ((*swaps)[s].nrecv, 0)
-                << "swap " << s << " wraps to self (dims[" << dim
-                << "]==1) but received " << (*swaps)[s].nrecv << " ghosts";
-        }
-    }
-
-    // Ghost slots are appended in swap order: firstrecv is the running
-    // prefix sum from n_local.
-    int expected_first = dd->n_local;
-    for (int s = 0; s < 6; ++s) {
-        EXPECT_EQ((*swaps)[s].firstrecv, expected_first)
-            << "swap " << s << " ghost slots are not contiguous in swap order";
-        expected_first += (*swaps)[s].nrecv;
-    }
+    ASSERT_NE(backend.context().md.comm, nullptr);
+    EXPECT_GT(dd->n_ghost, 0);
 
     backend.shutdown();
 }
@@ -322,14 +270,11 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
     backend.init();
     backend.set_frame(frame);
     auto* dd = backend.context().md.dd;
-
-    cpu::comm::HaloSend fwd{2.0};
-    cpu::comm::HaloRecv rev{};
-    cpu::BuildContext bctx{backend.context(), frame};
-    fwd.build(bctx);
-    rev.build(bctx);
+    cpu::Comm* comm = backend.context().md.comm;
+    comm->set_ghost_cutoff(2.0);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
-    fwd.launch(lctx);
+    comm->setup(lctx);
+    comm->borders(lctx);
 
     // Plant a known force pattern on every atom (owners + ghosts).
     // Owner forces start at 1.0, 2.0, 3.0; ghost forces add 10.0 each.
@@ -346,7 +291,7 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
         frame.span(kHaloReverseAux)[dd->n_local + g] = StorageReal(7.0);
     }
 
-    rev.launch(lctx);
+    comm->reverse_comm(lctx);
 
     // Reverse sums every ghost copy's force back to its owner. The forward
     // halo is a 3-axis cascade (x→y→z), so an owner near a corner is ghosted
@@ -388,351 +333,17 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
     backend.shutdown();
 }
 
-// ── Regression: per-instance FaceBufs (PIMPL, not a shared static) ─────
-
-// Catches a re-introduction of `static thread_local FaceBufs s` (or any
-// other cross-instance shared storage) behind the Forward / Reverse
-// facades. The test builds two HaloSend instances in sequence
-// against DIFFERENT `dd->capacity` values and verifies that the first
-// instance's per-face buffer capacity is unchanged by the second's
-// `build()`. With the old shared static, the vector's `reserve()`
-// monotonically grew, so the first instance would see its capacity bumped
-// up to the second's after B.build() ran.
-TEST(HaloForward, FaceBufsAreInstanceOwned) {
-    int world_size = 0;
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    if (world_size <= 1) {
-        GTEST_SKIP() << "multi-rank required (need non-null dd)";
-    }
-
-    auto frame_small = make_uniform_grid(2, 10.0); // 8 atoms
-    auto frame_big = make_uniform_grid(6, 10.0);   // 216 atoms
-
+TEST(HaloForward, OneCommPerRuntime) {
+    auto frame = make_uniform_grid(2, 10.0);
     cpu::Runtime backend;
     backend.init();
-    backend.set_frame(frame_small);
-
-    cpu::comm::HaloSend fwd_a{2.0};
-    cpu::BuildContext bctx_small{backend.context(), frame_small};
-    fwd_a.build(bctx_small);
-    const std::size_t cap_a_before = fwd_a.send_buf_capacity_for_test();
-
-    // Rebind the same backend to a larger frame; dd->capacity now reflects
-    // the bigger slab.
-    backend.set_frame(frame_big);
-    cpu::comm::HaloSend fwd_b{2.0};
-    cpu::BuildContext bctx_big{backend.context(), frame_big};
-    fwd_b.build(bctx_big);
-    const std::size_t cap_b = fwd_b.send_buf_capacity_for_test();
-    const std::size_t cap_a_after = fwd_a.send_buf_capacity_for_test();
-
-    // Per-instance invariant: A's bufs are untouched by B's build.
-    EXPECT_EQ(cap_a_before, cap_a_after)
-        << "HaloSend #A's FaceBufs capacity changed from " << cap_a_before
-        << " to " << cap_a_after
-        << " after instance #B was built -- bufs must be per-instance, "
-        << "not a shared static.";
-
-    // Different capacity inputs must land in different storage: if A and B
-    // shared a static vector, they'd see the same (max) capacity.
-    EXPECT_NE(cap_a_after, cap_b)
-        << "Instances A and B built against different dd->capacity values "
-        << "produced identical send-buf capacities (A=" << cap_a_after
-        << " B=" << cap_b << "); likely sharing a single storage object.";
-
+    backend.set_frame(frame);
+    ASSERT_NE(backend.context().md.comm, nullptr);
+    EXPECT_EQ(backend.context().md.comm, backend.context().md.comm);
     backend.shutdown();
 }
 
-// ═══ HaloParticipant extra-field forward / reverse (arch-refactor-02) ═══
-//
-// Test-only components; the production tree gains no field participant here.
-
-namespace {
-
-/// @brief No-op Force evaluator so `cpu::md::MD` validation passes without
-/// dragging a pair potential + neighbor list into the field-participant tests.
-// A zero force. Inherits the Potential kind so the MD driver's energy-source
-// validation is satisfied; it plants nothing, keeping owner rows static.
-class NullForce : public cpu::Potential {
-  public:
-    std::string name() const override { return "null_force"; }
-    void launch(const cpu::LaunchContext&) override {}
-};
-
-/// @brief Pure field participant (`halo_endpoint() == Endpoint::none`):
-/// declares two per-atom forward fields (width 1 and width 3, contiguous
-/// `data[i*width + k]` layout) and one width-1 reverse field.
-///
-/// Lifecycle (per the HaloParticipant contract):
-///   - `build()` allocates owned+ghost capacity (`frame.nlocal()`,
-///     == `dd->capacity` in multi-rank mode; no-alloc-in-launch) and seeds
-///     owner rows with tag-derived values so the step-0 forward exchange
-///     (HaloSend @ pre_neighbor, i.e. *before* our force-phase launch)
-///     already packs deterministic data.
-///   - `launch()` (bound at `md::Phase::force`, order +100) first snapshots
-///     the state produced by this step's forward exchange / last step's
-///     reverse exchange, then rewrites owner rows and plants a known
-///     contribution on every ghost row of the reverse field.
-///
-/// Value scheme (all exactly representable, so transport must be lossless):
-///   forward width-1:  f1(tag) = 0.5 + 3*tag
-///   forward width-3:  f3(tag, k) = 1000*(k+1) + tag   (k = 0,1,2 lanes)
-///   reverse: owners start at kRevBase, each ghost copy plants kRevGhost;
-///            after one reverse pass an owner holds
-///            kRevBase + kRevGhost * (# ghost copies of it, cluster-wide).
-class FieldParticipant : public cpu::Component, public cpu::HaloParticipant {
-  public:
-    static double fwd1_value(TagInt t) {
-        return 0.5 + 3.0 * static_cast<double>(t);
-    }
-    static double fwd3_value(TagInt t, int k) {
-        return 1000.0 * static_cast<double>(k + 1) + static_cast<double>(t);
-    }
-    static constexpr double kRevBase = 2.0;
-    static constexpr double kRevGhost = 5.0;
-
-    /// @brief Per-step capture of what the halo engine produced.
-    struct Snapshot {
-        bool valid = false;
-        int n_local = 0;
-        int n_ghost = 0;
-        std::vector<TagInt> ghost_tag;  ///< tag of each ghost row
-        std::vector<double> ghost_fwd1; ///< width-1 forward field, ghost rows
-        std::vector<double> ghost_fwd3; ///< width-3 forward field, ghost rows
-        std::vector<double> owner_rev;  ///< reverse field, owner rows,
-                                        ///< captured BEFORE this step rewrites
-    };
-    Snapshot snap0; ///< captured at force-phase of step 0 (post full rebuild)
-    Snapshot snap1; ///< captured at force-phase of step 1 (post refresh pack
-                    ///< AND post step-0 reverse accumulation)
-
-    std::string name() const override { return "field_participant"; }
-
-    /// Protocol hook: this component IS a halo participant …
-    cpu::HaloParticipant* halo_participant() override { return this; }
-    // … but `halo_endpoint()` is deliberately NOT overridden: a pure field
-    // participant reports the default `Endpoint::none`.
-
-    std::vector<CommField> comm_forward_fields() const override {
-        CommField f1;
-        f1.data = fwd1_p_;
-        f1.width = 1;
-        CommField f3;
-        f3.data = fwd3_p_;
-        f3.width = 3;
-        return {f1, f3};
-    }
-
-    std::vector<CommField> comm_reverse_fields() const override {
-        CommField r;
-        r.data = rev_p_;
-        r.width = 1;
-        return {r};
-    }
-
-    void build(const cpu::BuildContext& ctx) override {
-        const std::size_t cap = static_cast<std::size_t>(ctx.frame.capacity());
-        fwd1_.assign(cap, StorageReal(0));
-        fwd3_.assign(cap * 3, StorageReal(0));
-        rev_.assign(cap, StorageReal(0));
-        fwd1_p_ = fwd1_.data();
-        fwd3_p_ = fwd3_.data();
-        rev_p_ = rev_.data();
-        write_owner_rows_(ctx.frame, ctx.runtime.md.dd);
-    }
-
-    void launch(const cpu::LaunchContext& ctx) override {
-        const auto* dd = ctx.runtime.md.dd;
-        const int n_local =
-            dd ? dd->n_local : static_cast<int>(ctx.frame.nlocal());
-        const int n_ghost = dd ? dd->n_ghost : 0;
-
-        if (ctx.step <= 1) {
-            Snapshot& s = (ctx.step == 0) ? snap0 : snap1;
-            s.valid = true;
-            s.n_local = n_local;
-            s.n_ghost = n_ghost;
-            s.ghost_tag.assign(static_cast<std::size_t>(n_ghost), TagInt(0));
-            s.ghost_fwd1.assign(static_cast<std::size_t>(n_ghost), 0.0);
-            s.ghost_fwd3.assign(static_cast<std::size_t>(n_ghost) * 3, 0.0);
-            const auto tags = ctx.frame.span(ATV::kAtom_tag);
-            for (int g = 0; g < n_ghost; ++g) {
-                const int row = n_local + g;
-                s.ghost_tag[g] = tags[row];
-                s.ghost_fwd1[g] = static_cast<double>(fwd1_[row]);
-                for (int k = 0; k < 3; ++k)
-                    s.ghost_fwd3[3 * g + k] =
-                        static_cast<double>(fwd3_[3 * row + k]);
-            }
-            s.owner_rev.assign(static_cast<std::size_t>(n_local), 0.0);
-            for (int i = 0; i < n_local; ++i)
-                s.owner_rev[i] = static_cast<double>(rev_[i]);
-        }
-
-        // Rewrite owners (tags are authoritative even if Migrate reordered
-        // rows) and plant this step's ghost contributions on the reverse
-        // field. HaloRecv (post_force @ -1000) must accumulate each planted
-        // value onto its owner exactly once.
-        write_owner_rows_(ctx.frame, dd);
-        for (int g = 0; g < n_ghost; ++g)
-            rev_[n_local + g] = StorageReal(kRevGhost);
-    }
-
-  private:
-    void write_owner_rows_(const cpu::Frame& frame,
-                           const cpu::md::mpi::DomainDecomposition* dd) {
-        const int n_local = dd ? dd->n_local : static_cast<int>(frame.nlocal());
-        const auto tags = frame.span(ATV::kAtom_tag);
-        for (int i = 0; i < n_local; ++i) {
-            const TagInt t = tags[i];
-            fwd1_[i] = StorageReal(fwd1_value(t));
-            for (int k = 0; k < 3; ++k)
-                fwd3_[3 * i + k] = StorageReal(fwd3_value(t, k));
-            rev_[i] = StorageReal(kRevBase);
-        }
-    }
-
-    std::vector<StorageReal> fwd1_;
-    std::vector<StorageReal> fwd3_;
-    std::vector<StorageReal> rev_;
-    StorageReal* fwd1_p_ = nullptr;
-    StorageReal* fwd3_p_ = nullptr;
-    StorageReal* rev_p_ = nullptr;
-};
-
-/// @brief Minimal 2-step MD over the 4x4x4 uniform grid with explicit halo
-/// endpoints (default bindings: HaloSend @ pre_neighbor, HaloRecv @
-/// post_force) and the field participant bound at force @ +100. The frame is
-/// static (zero velocities, NullForce), so owner rows / tags are stable.
-void run_field_participant_md(cpu::Frame& frame, NullForce& force,
-                              FieldParticipant& part) {
-    cpu::md::MD sim;
-    sim.set_integrator(cpu::md::VelocityVerlet{1.0});
-    sim.on(ATV::md::Phase::force).add_ref(force);
-    sim.set_observer(cpu::comm::HaloSend{2.0});
-    sim.set_observer(cpu::comm::HaloRecv{});
-    sim.on(ATV::md::Phase::force).add_ref(part, +100);
-    sim.build();
-    sim.run(frame, 2);
-}
-
-} // namespace
-
-// ── Forward: declared extra fields reach ghost rows (both pack paths) ───
-
-TEST(HaloFieldParticipant, ForwardGhostRowsMatchOwnerValues) {
-    int world_size = 0;
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    if (world_size <= 1)
-        GTEST_SKIP() << "multi-rank test; skipped on single-rank";
-
-    auto frame = make_uniform_grid(4, 10.0);
-    NullForce force;
-    FieldParticipant part;
-    run_field_participant_md(frame, force, part);
-
-    ASSERT_TRUE(part.snap0.valid);
-    ASSERT_TRUE(part.snap1.valid);
-    // With cutoff 2.0 on a 10 Å box every multi-rank dims choice ghosts the
-    // slab faces; any axis with dims==2 imports through the periodic edge on
-    // one of the two faces, so the loop below covers PBC-crossing ghosts too.
-    EXPECT_GT(part.snap0.n_ghost, 0)
-        << "expected ghost atoms at cutoff 2.0 under multi-rank";
-
-    // snap0 = step-0 forward (full border rebuild); snap1 = step-1 forward
-    // (position-only refresh). Declared fields must be packed on BOTH paths.
-    for (const auto* s : {&part.snap0, &part.snap1}) {
-        for (int g = 0; g < s->n_ghost; ++g) {
-            const TagInt t = s->ghost_tag[g];
-            EXPECT_NEAR(s->ghost_fwd1[g], FieldParticipant::fwd1_value(t),
-                        1e-12)
-                << "width-1 forward field: ghost " << g << " (tag " << t
-                << ") != owner value";
-            for (int k = 0; k < 3; ++k) {
-                EXPECT_NEAR(s->ghost_fwd3[3 * g + k],
-                            FieldParticipant::fwd3_value(t, k), 1e-12)
-                    << "width-3 forward field: ghost " << g << " lane " << k
-                    << " (tag " << t
-                    << ") mismatch -- contiguous data[i*3+k] layout violated?";
-            }
-        }
-    }
-}
-
-// ── Reverse: ghost contributions accumulate onto owners exactly once ────
-
-TEST(HaloFieldParticipant, ReverseGhostContributionsAccumulateExactlyOnce) {
-    int world_size = 0;
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    if (world_size <= 1)
-        GTEST_SKIP() << "multi-rank test; skipped on single-rank";
-
-    auto frame = make_uniform_grid(4, 10.0);
-    NullForce force;
-    FieldParticipant part;
-    run_field_participant_md(frame, force, part);
-
-    ASSERT_TRUE(part.snap1.valid);
-    ASSERT_GT(part.snap0.n_ghost, 0);
-
-    // snap1.owner_rev is captured at step-1 force phase: after step 0's
-    // reverse pass, before anything is rewritten. Per-owner: the offset over
-    // the base must be a non-negative integer multiple of kRevGhost (each
-    // ghost copy lands exactly once — 0.5x/2x multiples would betray a
-    // missed or duplicated accumulation).
-    double local_sum = 0.0;
-    for (int i = 0; i < part.snap1.n_local; ++i) {
-        const double off = part.snap1.owner_rev[i] - FieldParticipant::kRevBase;
-        local_sum += part.snap1.owner_rev[i];
-        EXPECT_GE(off, -1e-9) << "owner " << i << " lost its base value";
-        EXPECT_NEAR(off / FieldParticipant::kRevGhost,
-                    std::round(off / FieldParticipant::kRevGhost), 1e-9)
-            << "owner " << i << " reverse offset " << off
-            << " is not a clean multiple of the planted "
-            << FieldParticipant::kRevGhost;
-    }
-
-    // Global conservation (topology-independent, mirrors HaloReverse above):
-    //   Σ_owners rev == kRevBase * N_owners + kRevGhost * N_ghosts.
-    // Double accumulation would give 2x the ghost term; a dropped pass 0x.
-    double local[3] = {local_sum, static_cast<double>(part.snap1.n_local),
-                       static_cast<double>(part.snap0.n_ghost)};
-    double global[3] = {0.0, 0.0, 0.0};
-    MPI_Allreduce(local, global, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    ASSERT_DOUBLE_EQ(global[1], 64.0) << "owner partition lost atoms";
-    EXPECT_NEAR(global[0],
-                FieldParticipant::kRevBase * global[1]
-                    + FieldParticipant::kRevGhost * global[2],
-                1e-6)
-        << "reverse field not conserved: ghost contributions were not "
-           "accumulated exactly once";
-}
-
-// ── Single rank: the same component path is a strict no-op ──────────────
-
-TEST(HaloFieldParticipant, SingleRankIsNoOp) {
-    int world_size = 0;
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    if (world_size != 1)
-        GTEST_SKIP() << "single-rank baseline; skipped under multi-rank";
-
-    auto frame = make_uniform_grid(4, 10.0);
-    NullForce force;
-    FieldParticipant part;
-    ASSERT_NO_THROW(run_field_participant_md(frame, force, part));
-
-    ASSERT_TRUE(part.snap0.valid);
-    ASSERT_TRUE(part.snap1.valid);
-    EXPECT_EQ(part.snap0.n_ghost, 0);
-    EXPECT_EQ(part.snap1.n_ghost, 0);
-    EXPECT_EQ(part.snap1.n_local, 64);
-
-    // No ghosts => no reverse traffic: owners keep exactly the base value.
-    for (int i = 0; i < part.snap1.n_local; ++i) {
-        EXPECT_DOUBLE_EQ(part.snap1.owner_rev[i], FieldParticipant::kRevBase)
-            << "single-rank reverse pass must not touch owner " << i;
-    }
-}
+// Extra-field CommField packing was removed (lammps-comm-brick-04-packer).
 
 // See test_topology.cpp for the OpenMPI 5.0.x macOS teardown rationale.
 // CTest reads the GoogleTest "[  PASSED  ]" summary line to determine

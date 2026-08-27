@@ -18,9 +18,8 @@
 ///     owned-range error in the minimizer stack shows up as a mismatch).
 ///   - Energy strictly decreases from the perturbed starting point.
 ///
-/// `Minimize::install_defaults` is exercised end-to-end: Migrate,
-/// HaloSend/HaloRecv (auto-injected from the pair cutoff), and
-/// `md::mpi::Reduce` all fold into the minimizer `force` phase.
+/// `Minimize::install_defaults` is exercised end-to-end: `md::mpi::Reduce`
+/// on the force slot, halo / exchange on `ctx.md.comm`.
 
 #include <gtest/gtest.h>
 

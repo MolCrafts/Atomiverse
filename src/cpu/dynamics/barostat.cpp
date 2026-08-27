@@ -83,7 +83,7 @@ void Barostat::launch(const cpu::LaunchContext& ctx) {
     }
 
     // Ghost rows must also track the box transform. The next
-    // HaloSend is skin-gated and may skip the refresh; if
+    // CommBrick is skin-gated and may skip the refresh; if
     // ghosts retain their pre-scale absolute positions while the box
     // (and owner positions) have moved to the new scale, force
     // evaluators see owner→ghost separations corrupted by

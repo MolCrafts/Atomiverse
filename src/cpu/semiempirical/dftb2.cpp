@@ -603,7 +603,7 @@ void fill_sk_block_phased(const DftbElementRow& ea, const DftbElementRow& eb,
     linalg::RealMatrix s_scratch = xt::zeros<double>({na, nb});
     // add_block indexes (ia0+i, ib0+j); stage at origin of the scratch.
     internal::MioSketchPair{ea, eb, sk}.add_block(dx, dy, dz, r, h_scratch,
-                                                   s_scratch, 0, 0);
+                                                  s_scratch, 0, 0);
     for (int i = 0; i < na; ++i)
         for (int j = 0; j < nb; ++j) {
             H0(ia0 + i, ib0 + j) += phase * h_scratch(i, j);
@@ -1052,7 +1052,6 @@ SccResult scc_energy_unrestricted(int n_at, int n_ao, int n_alpha, int n_beta,
     return out;
 }
 
-
 /// Closed-form nuclear gradient (+ optional intensive cell stress) for
 /// **collinear spin-resolved** SCC-DFTB2 on the MioSketch tables.
 ///
@@ -1366,8 +1365,8 @@ void analytic_forces_restricted_kmesh(
     const StorageReal* y, const StorageReal* z, const cpu::Box& box,
     const std::vector<double>& dq, const std::vector<KPoint>& kpts,
     const std::vector<CplxMatrix>& Pk, const std::vector<CplxMatrix>& Wk,
-    bool time_reversal, AccReal* fx, AccReal* fy, AccReal* fz,
-    bool want_forces, double* stress_voigt /* nullable, length 6 */,
+    bool time_reversal, AccReal* fx, AccReal* fy, AccReal* fz, bool want_forces,
+    double* stress_voigt /* nullable, length 6 */,
     // Optional collinear open-shell dual channel (empty ⇒ restricted).
     const std::vector<double>* spin = nullptr,
     const std::vector<CplxMatrix>* Pak = nullptr,
@@ -1376,14 +1375,15 @@ void analytic_forces_restricted_kmesh(
     const std::vector<CplxMatrix>* Wbk = nullptr) {
     const std::size_t nk = kpts.size();
     if (nk == 0 || Pk.size() != nk || Wk.size() != nk)
-        throw std::runtime_error(
-            "DFTB2 multi-k: missing converged Bloch densities for the gradient");
-    const bool open_shell =
-        spin != nullptr && Pak != nullptr && Pbk != nullptr && Wak != nullptr
-        && Wbk != nullptr && !Pak->empty();
+        throw std::runtime_error("DFTB2 multi-k: missing converged Bloch "
+                                 "densities for the gradient");
+    const bool open_shell = spin != nullptr && Pak != nullptr && Pbk != nullptr
+                            && Wak != nullptr && Wbk != nullptr
+                            && !Pak->empty();
     if (open_shell
         && (Pak->size() != nk || Pbk->size() != nk || Wak->size() != nk
-            || Wbk->size() != nk || spin->size() != static_cast<std::size_t>(n_at)))
+            || Wbk->size() != nk
+            || spin->size() != static_cast<std::size_t>(n_at)))
         throw std::runtime_error(
             "DFTB2 multi-k open shell: dual Bloch densities size mismatch");
 
@@ -1446,8 +1446,9 @@ void analytic_forces_restricted_kmesh(
             const auto& sk = pair_sk(type[a], type[b]);
             const double dqa = dq[static_cast<std::size_t>(a)];
             const double dqb = dq[static_cast<std::size_t>(b)];
-            const double shift = 0.5 * (dV[static_cast<std::size_t>(a)]
-                                        + dV[static_cast<std::size_t>(b)]);
+            const double shift = 0.5
+                                 * (dV[static_cast<std::size_t>(a)]
+                                    + dV[static_cast<std::size_t>(b)]);
             const double shift_a =
                 open_shell ? 0.5
                                  * (dVa[static_cast<std::size_t>(a)]
@@ -1472,8 +1473,8 @@ void analytic_forces_restricted_kmesh(
                 double F_a[3] = {0, 0, 0};
 
                 for (std::size_t ik = 0; ik < nk; ++ik)
-                    conj_phase[ik] = std::conj(
-                        bloch_phase(kpts[ik].frac, T.n0, T.n1, T.n2));
+                    conj_phase[ik] =
+                        std::conj(bloch_phase(kpts[ik].frac, T.n0, T.n1, T.n2));
 
                 for (int k = 0; k < 3; ++k) {
                     dH0[k] = xt::zeros<double>({n_ao, n_ao});
@@ -1507,10 +1508,10 @@ void analytic_forces_restricted_kmesh(
                                     w_im += wk * (zwa.imag() + zwb.imag());
                                 }
                             } else {
-                                const Cplx zp = Pk[ik](ia + i, ib + j)
-                                                * conj_phase[ik];
-                                const Cplx zw = Wk[ik](ia + i, ib + j)
-                                                * conj_phase[ik];
+                                const Cplx zp =
+                                    Pk[ik](ia + i, ib + j) * conj_phase[ik];
+                                const Cplx zw =
+                                    Wk[ik](ia + i, ib + j) * conj_phase[ik];
                                 p_re += wk * zp.real();
                                 w_re += wk * zw.real();
                                 if (!time_reversal || self_paired[ik]) {
@@ -1525,13 +1526,11 @@ void analytic_forces_restricted_kmesh(
                             const double dh = dH0[k](ia + i, ib + j);
                             const double ds = dS[k](ia + i, ib + j);
                             if (open_shell)
-                                acc[k] += pa_re * (dh + shift_a * ds)
-                                          - wa_re * ds
-                                          + pb_re * (dh + shift_b * ds)
-                                          - wb_re * ds;
-                            else
                                 acc[k] +=
-                                    p_re * (dh + shift * ds) - w_re * ds;
+                                    pa_re * (dh + shift_a * ds) - wa_re * ds
+                                    + pb_re * (dh + shift_b * ds) - wb_re * ds;
+                            else
+                                acc[k] += p_re * (dh + shift * ds) - w_re * ds;
                         }
                     }
                 }
@@ -1584,8 +1583,8 @@ void analytic_forces_restricted_kmesh(
                     continue;
                 const double dir[3] = {T.tx / r, T.ty / r, T.tz / r};
                 for (std::size_t ik = 0; ik < nk; ++ik)
-                    conj_phase[ik] = std::conj(
-                        bloch_phase(kpts[ik].frac, T.n0, T.n1, T.n2));
+                    conj_phase[ik] =
+                        std::conj(bloch_phase(kpts[ik].frac, T.n0, T.n1, T.n2));
                 for (int k = 0; k < 3; ++k) {
                     dH0[k] = xt::zeros<double>({n_ao, n_ao});
                     dS[k] = xt::zeros<double>({n_ao, n_ao});
@@ -1602,19 +1601,18 @@ void analytic_forces_restricted_kmesh(
                         double p_re = 0, w_re = 0;
                         for (std::size_t ik = 0; ik < nk; ++ik) {
                             const double wk = kpts[ik].weight;
-                            p_re += wk * (Pk[ik](ia + i, ia + j)
-                                          * conj_phase[ik])
-                                             .real();
-                            w_re += wk * (Wk[ik](ia + i, ia + j)
-                                          * conj_phase[ik])
-                                             .real();
+                            p_re += wk
+                                    * (Pk[ik](ia + i, ia + j) * conj_phase[ik])
+                                          .real();
+                            w_re += wk
+                                    * (Wk[ik](ia + i, ia + j) * conj_phase[ik])
+                                          .real();
                         }
                         for (int k = 0; k < 3; ++k) {
                             const double ds = dS[k](ia + i, ia + j);
-                            dE_dT[k] += p_re
-                                            * (dH0[k](ia + i, ia + j)
-                                               + shift * ds)
-                                        - w_re * ds;
+                            dE_dT[k] +=
+                                p_re * (dH0[k](ia + i, ia + j) + shift * ds)
+                                - w_re * ds;
                         }
                     }
                 }
@@ -1648,12 +1646,11 @@ void analytic_forces_restricted_kmesh(
     if (max_imag > kImagTol)
         throw std::runtime_error(
             "DFTB2 multi-k: Bloch density k-sum did not reduce to a real force "
-            "(max |Im| " + std::to_string(max_imag) + " > "
-            + std::to_string(kImagTol)
+            "(max |Im| "
+            + std::to_string(max_imag) + " > " + std::to_string(kImagTol)
             + "); the ±k mesh is not time-reversal symmetric or P(k) is not "
               "Hermitian");
 }
-
 
 /// Collinear open-shell multi-k SCC: dual α/β H(k) with V^σ = γ·Δq ± W m.
 SccResult scc_energy_unrestricted_kmesh(
@@ -1908,9 +1905,9 @@ SccResult scc_total(int n_at, int n_ao, const Occupancy& occ,
             return scc_energy_unrestricted_kmesh(
                 n_at, n_ao, occ.n_alpha, occ.n_beta, el, ao0, type, x, y, z,
                 box, scc_tol, max_scc, mix_beta, mesh, time_reversal);
-        return scc_energy_restricted_kmesh(
-            n_at, n_ao, occ.n_alpha, el, ao0, type, x, y, z, box, scc_tol,
-            max_scc, mix_beta, mesh, time_reversal);
+        return scc_energy_restricted_kmesh(n_at, n_ao, occ.n_alpha, el, ao0,
+                                           type, x, y, z, box, scc_tol, max_scc,
+                                           mix_beta, mesh, time_reversal);
     }
     if (!occ.unrestricted)
         return scc_energy_restricted(n_at, n_ao, occ.n_alpha, el, ao0, type, x,
@@ -1989,8 +1986,7 @@ double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
     double& energy_meta = f.meta.get(kEnergy);
     out_stress.fill(0.0);
 
-    const bool multi_k =
-        k_mesh[0] > 1 || k_mesh[1] > 1 || k_mesh[2] > 1;
+    const bool multi_k = k_mesh[0] > 1 || k_mesh[1] > 1 || k_mesh[2] > 1;
 
     std::vector<const DftbElementRow*> el(static_cast<std::size_t>(n_at));
     std::vector<int> ao0(static_cast<std::size_t>(n_at) + 1, 0);
@@ -2027,15 +2023,15 @@ double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
             double stress_buf[6] = {0, 0, 0, 0, 0, 0};
             if (res.unrestricted)
                 analytic_forces_restricted_kmesh(
-                    n_at, n_ao, el, ao0, type, x, y, z, f.box, res.dq,
-                    res.kpts, res.Pk, res.Wk, k_time_reversal, fx, fy, fz,
-                    with_forces, with_stress ? stress_buf : nullptr, &res.spin,
-                    &res.Pak, &res.Pbk, &res.Wak, &res.Wbk);
+                    n_at, n_ao, el, ao0, type, x, y, z, f.box, res.dq, res.kpts,
+                    res.Pk, res.Wk, k_time_reversal, fx, fy, fz, with_forces,
+                    with_stress ? stress_buf : nullptr, &res.spin, &res.Pak,
+                    &res.Pbk, &res.Wak, &res.Wbk);
             else
                 analytic_forces_restricted_kmesh(
-                    n_at, n_ao, el, ao0, type, x, y, z, f.box, res.dq,
-                    res.kpts, res.Pk, res.Wk, k_time_reversal, fx, fy, fz,
-                    with_forces, with_stress ? stress_buf : nullptr);
+                    n_at, n_ao, el, ao0, type, x, y, z, f.box, res.dq, res.kpts,
+                    res.Pk, res.Wk, k_time_reversal, fx, fy, fz, with_forces,
+                    with_stress ? stress_buf : nullptr);
             if (with_stress) {
                 // kStress is the extensive Voigt virial [eV]; `stress_buf` and
                 // `out_stress` (last_stress()) stay intensive [eV/Å³].
@@ -2063,8 +2059,7 @@ double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
         analytic_forces_stress(n_at, n_ao, res.n_alpha, res.n_beta, el, ao0,
                                type, x, y, z, f.box, res.dq, res.spin, res.Ca,
                                res.Cb, res.eps_a, res.eps_b, fx, fy, fz,
-                               with_forces,
-                               with_stress ? stress_buf : nullptr);
+                               with_forces, with_stress ? stress_buf : nullptr);
     else
         // Restricted: C^α = C^β = C, ε^α = ε^β = ε, n_α = n_β = n_occ,
         // m ≡ 0 ⇒ P^α = P^β = P/2, W^α = W^β = W/2.
@@ -2115,8 +2110,7 @@ double poly_interp_u1(const double* xp, const double* yp, int nn, double xx) {
         C[static_cast<std::size_t>(i)] = yp[i - 1];
         D[static_cast<std::size_t>(i)] = yp[i - 1];
     }
-    int iCl = static_cast<int>(
-        std::ceil((xx - X[1]) / std::abs(X[2] - X[1])));
+    int iCl = static_cast<int>(std::ceil((xx - X[1]) / std::abs(X[2] - X[1])));
     if (iCl < 1)
         iCl = 1;
     if (iCl > nn)
@@ -2154,15 +2148,32 @@ void sk_col_3ob(const Dftb3obPair& p, int ch, std::vector<double>& col) {
         const Dftb3obSkPoint& pt = p.sk[i];
         double v = 0;
         switch (ch) {
-        case 0: v = pt.h_ss; break;
-        case 1: v = pt.h_sp; break;
-        case 2: v = pt.h_pps; break;
-        case 3: v = pt.h_ppp; break;
-        case 4: v = pt.s_ss; break;
-        case 5: v = pt.s_sp; break;
-        case 6: v = pt.s_pps; break;
-        case 7: v = pt.s_ppp; break;
-        default: break;
+        case 0:
+            v = pt.h_ss;
+            break;
+        case 1:
+            v = pt.h_sp;
+            break;
+        case 2:
+            v = pt.h_pps;
+            break;
+        case 3:
+            v = pt.h_ppp;
+            break;
+        case 4:
+            v = pt.s_ss;
+            break;
+        case 5:
+            v = pt.s_sp;
+            break;
+        case 6:
+            v = pt.s_pps;
+            break;
+        case 7:
+            v = pt.s_ppp;
+            break;
+        default:
+            break;
         }
         col[static_cast<std::size_t>(i)] = v;
     }
@@ -2189,7 +2200,8 @@ double grid_value_3ob(const Dftb3obPair& p, int ch, double r_bohr) {
         double ya[nInterNew];
         for (int ii = 1; ii <= nInterNew; ++ii) {
             xa[ii - 1] = static_cast<double>(iLast - nInterNew + ii) * incr;
-            ya[ii - 1] = tab[static_cast<std::size_t>(iLast - nInterNew + ii - 1)];
+            ya[ii - 1] =
+                tab[static_cast<std::size_t>(iLast - nInterNew + ii - 1)];
         }
         return poly_interp_u1(xa, ya, nInterNew, r_bohr);
     }
@@ -2202,8 +2214,10 @@ double grid_value_3ob(const Dftb3obPair& p, int ch, double r_bohr) {
         xa[ii - 1] = static_cast<double>(iLast - nInterNew + ii) * incr;
         ya[ii - 1] = tab[static_cast<std::size_t>(iLast - nInterNew + ii - 1)];
     }
-    const double y0 = poly_interp_u1(xa, ya, nInterNew, xa[nInterNew - 1] - deltaR);
-    const double y2 = poly_interp_u1(xa, ya, nInterNew, xa[nInterNew - 1] + deltaR);
+    const double y0 =
+        poly_interp_u1(xa, ya, nInterNew, xa[nInterNew - 1] - deltaR);
+    const double y2 =
+        poly_interp_u1(xa, ya, nInterNew, xa[nInterNew - 1] + deltaR);
     const double y1 = ya[nInterNew - 1];
     const double y1p = (y2 - y0) / (2.0 * deltaR);
     const double y1pp = (y2 + y0 - 2.0 * y1) / (deltaR * deltaR);
@@ -2358,8 +2372,8 @@ void fill_sk_block_deriv_3ob(const Dftb3obElement& ea, const Dftb3obElement& eb,
     double ch[8], dch[8];
     interp_3ob_sk(p_ab, r, ch);
     interp_3ob_sk_dr(p_ab, r, dch);
-    double Hss = ch[0], Hsp = ch[1], Hpps = ch[2], Hppp = ch[3];
-    double Sss = ch[4], Ssp = ch[5], Spps = ch[6], Sppp = ch[7];
+    double Hsp = ch[1], Hpps = ch[2], Hppp = ch[3];
+    double Ssp = ch[5], Spps = ch[6], Sppp = ch[7];
     double dHss = dch[0], dHsp = dch[1], dHpps = dch[2], dHppp = dch[3];
     double dSss = dch[4], dSsp = dch[5], dSpps = dch[6], dSppp = dch[7];
     // X–H tables store only ss; s–p lives in H–X.
@@ -2612,18 +2626,14 @@ Scc3obResult scc_3ob(const std::vector<const Dftb3obElement*>& el,
 /// exactly — the pair virial below is FD-exact, not an approximation.
 ///
 /// @param vol_a3 Cell volume Ω [Å³]; only read when `stress_voigt` is non-null.
-void analytic_forces_3ob(int n_at, int n_ao, int n_occ,
-                         const std::vector<const Dftb3obElement*>& el,
-                         const std::vector<int>& ao0, const std::vector<int>& Z,
-                         const std::vector<double>& x_b,
-                         const std::vector<double>& y_b,
-                         const std::vector<double>& z_b,
-                         const std::vector<double>& dq,
-                         const linalg::RealMatrix& C,
-                         const linalg::RealVector& eps, AccReal* fx, AccReal* fy,
-                         AccReal* fz, bool want_forces,
-                         double* stress_voigt /* nullable, length 6 */,
-                         double vol_a3) {
+void analytic_forces_3ob(
+    int n_at, int n_ao, int n_occ, const std::vector<const Dftb3obElement*>& el,
+    const std::vector<int>& ao0, const std::vector<int>& Z,
+    const std::vector<double>& x_b, const std::vector<double>& y_b,
+    const std::vector<double>& z_b, const std::vector<double>& dq,
+    const linalg::RealMatrix& C, const linalg::RealVector& eps, AccReal* fx,
+    AccReal* fy, AccReal* fz, bool want_forces,
+    double* stress_voigt /* nullable, length 6 */, double vol_a3) {
     auto dist = [&](int i, int j, double& dx, double& dy, double& dz) {
         dx =
             x_b[static_cast<std::size_t>(j)] - x_b[static_cast<std::size_t>(i)];
@@ -2826,8 +2836,7 @@ double launch_3ob(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
         double stress_buf[6] = {0, 0, 0, 0, 0, 0};
         analytic_forces_3ob(n_at, n_ao, res.n_occ, el, ao0, Z, xb, yb, zb,
                             out_dq, res.C, res.eps, fx, fy, fz, with_forces,
-                            with_stress ? stress_buf : nullptr,
-                            f.box.volume());
+                            with_stress ? stress_buf : nullptr, f.box.volume());
         if (with_stress) {
             // kStress is the extensive Voigt virial [eV]; `stress_buf` and
             // `out_stress` (last_stress()) stay intensive [eV/Å³].
@@ -2981,10 +2990,9 @@ void DFTB2::launch(const LaunchContext& ctx) {
                 std::array<double, 6> st{};
                 double res = 0;
                 int it = 0;
-                double e =
-                    launch_mio(f, scc_tol, max_scc, mix_beta, false, false,
-                               charge, multiplicity, mesh, k_time_reversal, dq,
-                               spin, st, res, it);
+                double e = launch_mio(f, scc_tol, max_scc, mix_beta, false,
+                                      false, charge, multiplicity, mesh,
+                                      k_time_reversal, dq, spin, st, res, it);
                 e += apply_e_u(dq);
                 return e;
             };
@@ -2993,15 +3001,14 @@ void DFTB2::launch(const LaunchContext& ctx) {
                 AccReal* forces[3] = {fx, fy, fz};
                 for (int k = 0; k < 3; ++k) {
                     const StorageReal x0 = coords[k][a];
-                    coords[k][a] = static_cast<StorageReal>(
-                        static_cast<double>(x0) + h);
+                    coords[k][a] =
+                        static_cast<StorageReal>(static_cast<double>(x0) + h);
                     const double ep = e_total_at();
-                    coords[k][a] = static_cast<StorageReal>(
-                        static_cast<double>(x0) - h);
+                    coords[k][a] =
+                        static_cast<StorageReal>(static_cast<double>(x0) - h);
                     const double em = e_total_at();
                     coords[k][a] = x0;
-                    forces[k][a] =
-                        static_cast<AccReal>(-(ep - em) / (2.0 * h));
+                    forces[k][a] = static_cast<AccReal>(-(ep - em) / (2.0 * h));
                 }
             }
             f.restore_resolution_window(saved_window);
@@ -3050,11 +3057,10 @@ void DFTB2::launch(const LaunchContext& ctx) {
         }
         if (!(d3_cutoff > 0.0))
             throw std::runtime_error("DFTB2 D3: d3_cutoff must be positive");
-        const gpw::D3Result res =
-            gpw::dftd3_pbe_bj(Z, pos, cell, periodic, gpw::D3Params{},
-                              d3_cutoff * units::kAngstromInBohr, d3_s6, d3_s8,
-                              d3_a1, d3_a2,
-                              /*cp2k_cn=*/false, /*calculate_c9=*/false);
+        const gpw::D3Result res = gpw::dftd3_pbe_bj(
+            Z, pos, cell, periodic, gpw::D3Params{},
+            d3_cutoff * units::kAngstromInBohr, d3_s6, d3_s8, d3_a1, d3_a2,
+            /*cp2k_cn=*/false, /*calculate_c9=*/false);
 
         e_disp_ = res.energy * units::kHartreeInEv;
         energy_ += e_disp_;
@@ -3115,8 +3121,7 @@ void DFTB2::launch(const LaunchContext& ctx) {
 
 TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
                               TdDftbChannel channel, int n_occ_window,
-                              int n_virt_window,
-                              double coupling_scale) const {
+                              int n_virt_window, double coupling_scale) const {
     // Dense Casida path only; matches the RKS::tddft n_ov cap.
     constexpr int kMaxPairs = 512;
 
@@ -3177,13 +3182,14 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
     if (n_occ < 1 || n_virt < 1)
         throw std::runtime_error(
             "DFTB2::td_casida: need at least one occupied and one virtual "
-            "orbital (n_occ=" + std::to_string(n_occ)
-            + ", n_virt=" + std::to_string(n_virt) + ")");
+            "orbital (n_occ="
+            + std::to_string(n_occ) + ", n_virt=" + std::to_string(n_virt)
+            + ")");
 
     // Ground state at THIS geometry — no cached state, no launch-order coupling.
-    const SccResult gs = scc_energy_restricted(n_at, n_ao, n_occ, el, ao0, type,
-                                               x, y, z, frame.box, scc_tol,
-                                               max_scc, mix_beta);
+    const SccResult gs =
+        scc_energy_restricted(n_at, n_ao, n_occ, el, ao0, type, x, y, z,
+                              frame.box, scc_tol, max_scc, mix_beta);
 
     // Overlap and gamma from the same builders the energy path uses.
     linalg::RealMatrix H0, S;
@@ -3205,10 +3211,10 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
             + " exceeds the dense cap " + std::to_string(kMaxPairs)
             + " — narrow n_occ_window / n_virt_window (no iterative solver)");
     if (n_states > n_pair)
-        throw std::invalid_argument(
-            "DFTB2::td_casida: n_states " + std::to_string(n_states)
-            + " exceeds the " + std::to_string(n_pair)
-            + " occupied->virtual pairs in the window");
+        throw std::invalid_argument("DFTB2::td_casida: n_states "
+                                    + std::to_string(n_states) + " exceeds the "
+                                    + std::to_string(n_pair)
+                                    + " occupied->virtual pairs in the window");
 
     TdDftbResult out;
     out.n_pair = n_pair;
@@ -3244,13 +3250,12 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
         for (int m = ao0[static_cast<std::size_t>(a)];
              m < ao0[static_cast<std::size_t>(a) + 1]; ++m)
             ao_atom[static_cast<std::size_t>(m)] = a;
-    out.transition_charge.assign(
-        static_cast<std::size_t>(n_pair) * n_at, 0.0);
+    out.transition_charge.assign(static_cast<std::size_t>(n_pair) * n_at, 0.0);
     for (int p = 0; p < n_pair; ++p) {
         const int i = out.pair_occ[static_cast<std::size_t>(p)];
         const int a = out.pair_virt[static_cast<std::size_t>(p)];
-        double* qp = out.transition_charge.data()
-                     + static_cast<std::size_t>(p) * n_at;
+        double* qp =
+            out.transition_charge.data() + static_cast<std::size_t>(p) * n_at;
         for (int mu = 0; mu < n_ao; ++mu)
             qp[ao_atom[static_cast<std::size_t>(mu)]] +=
                 0.5 * (gs.C(mu, i) * SC(mu, a) + gs.C(mu, a) * SC(mu, i));
@@ -3260,8 +3265,8 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
     // as written — never re-symmetrized, so its symmetry stays a real check.
     out.casida_ev2.assign(static_cast<std::size_t>(n_pair) * n_pair, 0.0);
     for (int p = 0; p < n_pair; ++p) {
-        const double* qp = out.transition_charge.data()
-                           + static_cast<std::size_t>(p) * n_at;
+        const double* qp =
+            out.transition_charge.data() + static_cast<std::size_t>(p) * n_at;
         for (int r = 0; r < n_pair; ++r) {
             const double* qr = out.transition_charge.data()
                                + static_cast<std::size_t>(r) * n_at;
@@ -3275,12 +3280,11 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
             } else {
                 // Magnetization kernel is on-site: gamma^m_AB = delta_AB W_A.
                 for (int a = 0; a < n_at; ++a)
-                    k += qp[a] * el[static_cast<std::size_t>(a)]->spin_w
-                         * qr[a];
+                    k +=
+                        qp[a] * el[static_cast<std::size_t>(a)]->spin_w * qr[a];
             }
             k *= coupling_scale;
-            double om = 2.0
-                        * std::sqrt(de[static_cast<std::size_t>(p)]) * k
+            double om = 2.0 * std::sqrt(de[static_cast<std::size_t>(p)]) * k
                         * std::sqrt(de[static_cast<std::size_t>(r)]);
             if (p == r)
                 om += de[static_cast<std::size_t>(p)]
@@ -3300,8 +3304,8 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
     // Pair transition dipoles μ_ia = Σ_A q^{ia}_A R_A [e·Å].
     std::vector<double> mu_pair(static_cast<std::size_t>(n_pair) * 3, 0.0);
     for (int p = 0; p < n_pair; ++p) {
-        const double* qp = out.transition_charge.data()
-                           + static_cast<std::size_t>(p) * n_at;
+        const double* qp =
+            out.transition_charge.data() + static_cast<std::size_t>(p) * n_at;
         for (int a = 0; a < n_at; ++a) {
             mu_pair[static_cast<std::size_t>(p) * 3 + 0] +=
                 qp[a] * static_cast<double>(x[a]);
@@ -3333,9 +3337,8 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
         // (Casida ΩF=ω²F normalisation, length form).
         double t[3] = {0, 0, 0};
         for (int p = 0; p < n_pair; ++p) {
-            const double amp =
-                std::sqrt(2.0) * F(p, s)
-                * std::sqrt(de[static_cast<std::size_t>(p)]);
+            const double amp = std::sqrt(2.0) * F(p, s)
+                               * std::sqrt(de[static_cast<std::size_t>(p)]);
             t[0] += amp * mu_pair[static_cast<std::size_t>(p) * 3 + 0];
             t[1] += amp * mu_pair[static_cast<std::size_t>(p) * 3 + 1];
             t[2] += amp * mu_pair[static_cast<std::size_t>(p) * 3 + 2];
@@ -3350,8 +3353,7 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
 
     std::vector<double> de_sorted = de;
     std::sort(de_sorted.begin(), de_sorted.end());
-    out.ks_gap_ev.assign(de_sorted.begin(),
-                         de_sorted.begin() + n_states);
+    out.ks_gap_ev.assign(de_sorted.begin(), de_sorted.begin() + n_states);
     return out;
 }
 

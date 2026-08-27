@@ -31,9 +31,7 @@ namespace {
 
 std::size_t checked_product(std::size_t a, std::size_t b,
                             const char* operation) {
-    if (a != 0 && b > std::numeric_limits<std::size_t>::max() / a)
-        throw std::overflow_error(std::string(operation) + ": size overflow");
-    return a * b;
+    return comm::checked_mul(a, b, operation);
 }
 
 void copy_runtime_columns(GatheredFrame& out, const Frame& frame, int n_local,

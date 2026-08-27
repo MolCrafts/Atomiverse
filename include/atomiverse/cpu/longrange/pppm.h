@@ -21,8 +21,9 @@
 /// **Cartesian communicator** — ringed by `order - 1` **ghost** layers that its
 /// neighbours also write into; **reverse_comm** sums those ghosts back into
 /// their owners and **forward_comm** refills them from the owners afterwards.
-/// Brick layout and slab layout cut the mesh differently, so a **remap** (an
-/// all-to-all exchange) converts between them before and after the FFT.
+/// Brick layout and slab layout cut the mesh differently, so a **remap** (a
+/// plan-based point-to-point exchange between overlapping ranks, LAMMPS
+/// `remap_3d`) converts between them before and after the FFT.
 /// Forces are taken in the **AD** (analytic differentiation) scheme: each atom
 /// differentiates the interpolation weights it spread with, rather than reading
 /// a separately differentiated mesh.
@@ -33,10 +34,10 @@
 /// |---|---|
 /// | 1 | Local **density brick** (owned mesh + order ghost layers) |
 /// | 2 | Spread **owned atoms only** onto brick |
-/// | 3 | **reverse_comm**: sum ghost density into neighbors' owned cells |
-/// | 4 | **brick→FFT remap** (Alltoallv) into FFTW-MPI dim-0 slabs |
+/// | 3 | **mesh reverse fold**: ghost density to owners (Grid3d plan, p2p) |
+/// | 4 | **brick→FFT remap** (remap_3d plan, p2p) into FFTW-MPI dim-0 slabs |
 /// | 5 | Distributed r2c FFT → SPME H(m) → c2r |
-/// | 6 | **FFT→brick remap** + **forward_comm** potential ghosts |
+/// | 6 | **FFT→brick remap** + **mesh forward fill** of potential ghosts |
 /// | 7 | AD force interpolation from local brick |
 ///
 /// ### Mesh arms
@@ -258,10 +259,50 @@ class KSpacePPPM : public cpu::KSpace {
     void compute(const LaunchContext& ctx) override;
 
   private:
+    // ── Grid-exchange plan types (LAMMPS `Grid3d` + `remap_3d` port) ──
+    //
+    // Message extents are inclusive cell boxes **in the executing side's
+    // own indexing** (brick: unwrapped out-range coords; slab: global
+    // coords); wire order is x-outer / y-mid / z-inner.
+    struct GridMsg {
+        int proc = -1; ///< partner cart rank
+        int xlo = 0, xhi = 0;
+        int ylo = 0, yhi = 0;
+        int zlo = 0, zhi = 0;
+        int bufloc = 0; ///< offset into the direction's buffer [doubles]
+        int size = 0;   ///< extent volume [doubles]
+    };
+    struct GridPlan {
+        std::vector<GridMsg> sends;
+        std::vector<GridMsg> recvs;
+        /// Self overlaps (periodic images / slab-on-same-rank), moved by
+        /// local copy: pack `self_src[k]`, unpack `self_dst[k]`.
+        std::vector<GridMsg> self_src;
+        std::vector<GridMsg> self_dst;
+        int sendtot = 0; ///< doubles across sends (excl. self)
+        int recvtot = 0; ///< doubles across recvs (excl. self)
+        int selftot = 0; ///< doubles across self copies
+    };
+
     void ensure_grid(const cpu::Frame& frame, bool initial_build);
     void ensure_atom_capacity(int required, bool initial_build);
     void release_storage() noexcept;
     void setup_brick_partition_(const int (&coords)[3], const int (&dims)[3]);
+    /// @brief Image-map every atom's stencil into the contiguous brick;
+    /// throws when an atom drifted beyond the ghost range (LAMMPS
+    /// "out of range atoms — cannot compute PPPM").
+    void map_stencils_(int n_local);
+#ifdef ATV_HAS_MPI
+    /// @brief Build the four grid plans against the Allgathered brick /
+    /// slab extent tables (once per mesh shape / decomposition / group).
+    void build_grid_plans_(MPI_Comm comm, int me, int nprocs);
+    /// @brief Replay one plan: Irecv all, pack + Isend all, local self
+    /// copies, Waitall, unpack. `src_brick` / `dst_brick` select brick vs
+    /// FFT-slab indexing; `add` sums on unpack (mesh reverse) instead of
+    /// overwriting.
+    void run_grid_plan_(const GridPlan& plan, MPI_Comm comm, int tag_base,
+                        bool src_brick, bool dst_brick, bool add);
+#endif
 
     double alpha_;
     double spacing_;
@@ -281,7 +322,10 @@ class KSpacePPPM : public cpu::KSpace {
     int nylo_out_ = 0, nyhi_out_ = 0;
     int nzlo_out_ = 0, nzhi_out_ = 0;
     int nxl_ = 0, nyl_ = 0, nzl_ = 0; ///< brick dimensions incl. ghosts
-    int nghost_ = 0;
+    /// Ghost layers below / above the owned brick per axis. The one-sided
+    /// SPME stencil needs order-1 below + drift margin; above only drift.
+    int nghost_lo_ = 0;
+    int nghost_hi_ = 0;
     std::vector<double> brick_; ///< density or potential, size nxl*nyl*nzl
 
     // Serial full-mesh buffers (1-rank path / green tables).
@@ -320,20 +364,49 @@ class KSpacePPPM : public cpu::KSpace {
     std::vector<int> fft_m0_starts_;
     std::vector<int> fft_m0_counts_;
 
-    // Remap scratch
-    std::vector<double> remap_send_;
-    std::vector<double> remap_recv_;
-    std::vector<int> sendcounts_, senddispls_, recvcounts_, recvdispls_;
+    // ── Plan-based grid exchanges (LAMMPS `Grid3d` + `remap_3d` port) ──
+    //
+    // Four plans, all built once per (mesh shape, decomposition, FFT
+    // group) and replayed every step as point-to-point value messages
+    // between actually-overlapping ranks — no collectives, no indices on
+    // the wire:
+    //
+    //   * `mesh_rev_`  — ghost density folded into owners (sum),
+    //   * `mesh_fwd_`  — ghost potential refilled from owners (copy),
+    //   * `remap_fwd_` — brick owned cells → FFTW-MPI slab,
+    //   * `remap_bwd_` — FFTW-MPI slab → brick owned cells.
+    //
+    // The mesh plans enumerate periodic images of the ghost-extended
+    // brick, so a ghost shell deeper than a neighbour's brick (small
+    // mesh, many ranks) is routed to the rank that actually owns the
+    // cells — the dim-by-dim face cascade this replaces silently dropped
+    // that charge.
+    GridPlan mesh_rev_;
+    GridPlan mesh_fwd_;
+    GridPlan remap_fwd_;
+    GridPlan remap_bwd_;
+    std::vector<double> grid_send_;
+    std::vector<double> grid_recv_;
+    std::vector<double> grid_self_;
+#ifdef ATV_HAS_MPI
+    std::vector<MPI_Request> grid_reqs_;
+#endif
+    bool mesh_plans_ready_ = false;
 
     int atom_capacity_ = 0;
     std::vector<int> base_;
     std::vector<double> theta_;
     std::vector<double> dtheta_;
+    /// Per-atom stencil-min brick coordinate (3·capacity), image-mapped so
+    /// the whole `order³` stencil is contiguous inside the out-range brick.
+    std::vector<int> stencil_min_;
 
     /// @brief Flat index into brick_ for global (ix,iy,iz) in out-range.
+    /// z-fastest, matching the FFTW slab layout so remap/halo rows are
+    /// contiguous runs.
     int brick_index_(int ix, int iy, int iz) const noexcept {
-        return (iz - nzlo_out_) * nyl_ * nxl_ + (iy - nylo_out_) * nxl_
-               + (ix - nxlo_out_);
+        return ((ix - nxlo_out_) * nyl_ + (iy - nylo_out_)) * nzl_
+               + (iz - nzlo_out_);
     }
 };
 

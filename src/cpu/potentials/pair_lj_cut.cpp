@@ -408,7 +408,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
 #endif
         // Single-thread (pure-MPI): accumulate straight into the frame's force
         // arrays — already cleared by ZeroForces (owned rows) +
-        // HaloSend::zero_ghost_forces (ghost rows). Elides the per-step
+        // CommBrick::zero_ghost_forces (ghost rows). Elides the per-step
         // zero-fill below AND the reduce sweep at the end of the region, two
         // O(n_force) passes LAMMPS never pays. The multi-thread path keeps each
         // thread's writes in a private buffer to avoid the shared-row race.

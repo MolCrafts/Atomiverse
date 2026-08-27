@@ -179,7 +179,43 @@ inline int rank_along_dim(double q, double L, int dims_d) {
     return std::max(0, std::min(dims_d - 1, r));
 }
 
+// Slab index whose [cuts[k], cuts[k+1]) contains the box-length fraction
+// `frac` (already wrapped into [0, 1)). `cuts` has dims_d + 1 entries with
+// front() == 0 and back() == 1. Clamped against FP rounding at both edges.
+inline int slab_along_dim_from_cuts(double frac,
+                                    const std::vector<double>& cuts,
+                                    int dims_d) {
+    if (dims_d <= 1)
+        return 0;
+    auto it = std::upper_bound(cuts.begin(), cuts.end(), frac);
+    int k = static_cast<int>(std::distance(cuts.begin(), it)) - 1;
+    if (k < 0)
+        k = 0;
+    if (k > dims_d - 1)
+        k = dims_d - 1;
+    return k;
+}
+
 } // namespace
+
+int DomainDecomposition::owner_of(double x, double y, double z,
+                                  const ATV::cpu::Box& box) const {
+    const double q[3] = {x, y, z};
+    int c[3];
+    for (int d = 0; d < 3; ++d) {
+        const double L = box.length(d);
+        const double wrapped = box.wrap_axis(q[d], d);
+        if (static_cast<int>(cuts[static_cast<std::size_t>(d)].size())
+            == dims[d] + 1) {
+            const double frac = (L > 0.0) ? (wrapped / L) : 0.0;
+            c[d] = slab_along_dim_from_cuts(
+                frac, cuts[static_cast<std::size_t>(d)], dims[d]);
+        } else {
+            c[d] = rank_along_dim(wrapped, L, dims[d]);
+        }
+    }
+    return rank_of(c[0], c[1], c[2]);
+}
 
 void DomainDecomposition::partition_atoms(ATV::cpu::Frame& frame) {
     const int world_size = dims[0] * dims[1] * dims[2];

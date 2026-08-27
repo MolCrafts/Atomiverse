@@ -10,6 +10,7 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/component/comm.h"
 #include "atomiverse/cpu/component/constraint.h"
 #include "atomiverse/cpu/component/constraint_protocol.h"
 
@@ -92,14 +93,12 @@ namespace md {
 /// 2. **Fresh ghost positions AND velocities at the two stages.** The engine's single
 ///    forward halo fires at `pre_neighbor` and carries positions only, so at
 ///    `post_integrate` the ghost data is a step stale and ghost velocities never exist
-///    at all. `comm::HaloRefresh` supplies both, bound wherever they are needed. Users
-///    must add them:
-///
-/// @code
-///   md.on(md::Phase::post_integrate).add(comm::HaloRefresh{Field::positions}, -100);
-///   md.on(md::Phase::final_integrate).add(comm::HaloRefresh{Field::velocities}, +150);
-/// @endcode
-class FixRattle : public cpu::Constraint, public cpu::ConstraintProvider {
+///    at all. After the integrator dirties owned rows this component posts
+///    `ctx.md.comm->forward_comm(*this)`: XSHAKE at `post_integrate` (PBC shift
+///    \(p_d L_d\) [Å]), VP at `final_integrate` (velocities [Å/fs], no shift).
+class FixRattle : public cpu::Constraint,
+                  public cpu::ConstraintProvider,
+                  public cpu::ForwardPacker {
   public:
     /// @brief Smallest meaningful relative residual for the configured Frame
     /// storage precision. A tighter request cannot survive the write back to
@@ -171,6 +170,33 @@ class FixRattle : public cpu::Constraint, public cpu::ConstraintProvider {
     void build(const cpu::BuildContext& ctx) override;
     void launch(const cpu::LaunchContext& ctx) override;
 
+    /// @brief LAMMPS `FixRattle` packer mode (`fix_rattle.cpp:652-678`).
+    enum class CommMode { XSHAKE, VP, V };
+
+    /// @brief Select the packer mode (XSHAKE applies \(p_d L_d\) [Å]).
+    /// @param mode Packer mode.
+    void set_comm_mode(CommMode mode) { comm_mode_ = mode; }
+
+    /// @brief Three doubles per atom (x/y/z [Å] or vx/vy/vz [Å/fs]).
+    /// @return 3.
+    int comm_forward() const override { return 3; }
+
+    /// @brief Pack sendlist rows. XSHAKE applies \(p_d L_d\) [Å]; VP/V do not.
+    /// @param n Number of local rows in `list` [dimensionless].
+    /// @param list Local row indices to pack.
+    /// @param buf Output buffer.
+    /// @param pbc_flag 1 when this swap crosses a periodic image.
+    /// @param pbc Per-axis image flags in `{-1,0,+1}`.
+    /// @return Number of doubles written.
+    int pack_forward_comm(int n, const int* list, double* buf, int pbc_flag,
+                          const int* pbc) override;
+
+    /// @brief Unpack received rows into ghost slots `[first, first+n)`.
+    /// @param n Number of ghost rows [dimensionless].
+    /// @param first First destination row index.
+    /// @param buf Packed doubles.
+    void unpack_forward_comm(int n, int first, const double* buf) override;
+
     /// @brief Iterations taken by the last position stage (diagnostics).
     int last_position_iters() const { return last_pos_iters_; }
     /// @brief Iterations taken by the last velocity stage (diagnostics).
@@ -227,6 +253,8 @@ class FixRattle : public cpu::Constraint, public cpu::ConstraintProvider {
 
     int last_pos_iters_ = 0;
     int last_vel_iters_ = 0;
+    CommMode comm_mode_ = CommMode::XSHAKE;
+    cpu::Frame* frame_ = nullptr;
 };
 
 } // namespace md

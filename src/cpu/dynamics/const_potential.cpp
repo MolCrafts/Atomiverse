@@ -8,7 +8,9 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/component/comm.h"
 #include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/dynamics/charge_packer.h"
 #include "atomiverse/cpu/frame/box.h"
 
 namespace ATV {
@@ -256,6 +258,7 @@ void ConstPotentialBO::launch(const LaunchContext& ctx) {
     if (!ctx.at(ATV::md::Phase::pre_force))
         return;
     solve_(ctx.frame);
+    ChargePacker::forward(ctx);
 }
 
 void ConstPotentialBO::destroy(const DestroyContext& /*ctx*/) {

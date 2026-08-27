@@ -196,3 +196,7 @@ slurm-*.out
 
 # TB oracle structure twins (offline pin inputs)
 !tools/tb_oracle/**/*.xyz
+
+# local bench/job scratch (datasets and cluster scripts, not source)
+.molq/
+logs/

@@ -67,10 +67,8 @@ TEST(DomainDecomposition, SingleRankDefaults) {
 
 // ── send lists empty ─────────────────────────────────────────────────
 //
-// The send lists moved off the decomposition onto the halo's published
-// swap table (`ctx.md.swap_list`, owned by `HaloSend`). Single-rank keeps
-// the same criterion — nothing is ever shipped — expressed at the new
-// address: no halo component runs, so no table is published at all.
+// DomainRuntime publishes `ctx.md.comm` even on a single rank; serial
+// CommBrick methods no-op, so n_ghost stays 0.
 
 TEST(DomainDecomposition, SendListsEmpty) {
     auto frame = make_small_frame(32);
@@ -78,9 +76,9 @@ TEST(DomainDecomposition, SendListsEmpty) {
 
     cpu::Context& ctx = backend.context();
     ASSERT_NE(ctx.md.dd, nullptr);
-    EXPECT_EQ(ctx.md.swap_list, nullptr)
-        << "single-rank mode must publish no swap table, so there are no "
-           "send lists to ship from";
+    ASSERT_NE(ctx.md.comm, nullptr);
+    EXPECT_EQ(ctx.md.dd->n_ghost, 0)
+        << "single-rank CommBrick methods no-op: nothing is shipped";
 }
 
 // ── identity tag→local map ───────────────────────────────────────────

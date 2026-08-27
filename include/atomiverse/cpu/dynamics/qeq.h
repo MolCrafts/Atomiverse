@@ -58,6 +58,10 @@ class QEq : public cpu::Component {
 
     std::string name() const override { return "qeq"; }
 
+    /// @brief QEq rewrites owned `kAtom_charge` at `pre_force`, then posts
+    ///        `ChargePacker` through `ctx.md.comm->forward_comm`.
+    bool updates_owned_charges() const override { return true; }
+
     std::vector<DefaultBinding> default_bindings() const override {
         // Before pair/kspace force components so they see equilibrated
         // charges; same slot as the const-potential electrode solvers.

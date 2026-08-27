@@ -20,6 +20,8 @@
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/communication/comm.h"
+#include "atomiverse/cpu/component/comm.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 namespace ATV {
@@ -227,10 +229,8 @@ void FixSettle::settle_positions_(Frame& f) const {
         const double xb0d = dot(b0, ex), yb0d = dot(b0, ey);
         const double xc0d = dot(c0, ex), yc0d = dot(c0, ey);
         const double za1d = dot(a1, ez);
-        const double xb1d = dot(b1, ex), yb1d = dot(b1, ey),
-                     zb1d = dot(b1, ez);
-        const double xc1d = dot(c1, ex), yc1d = dot(c1, ey),
-                     zc1d = dot(c1, ez);
+        const double xb1d = dot(b1, ex), yb1d = dot(b1, ey), zb1d = dot(b1, ez);
+        const double xc1d = dot(c1, ex), yc1d = dot(c1, ey), zc1d = dot(c1, ez);
 
         // Rotations φ (about x′) and ψ (about y′) — eq. A6/A7.
         const double sinphi = za1d / ra;
@@ -261,8 +261,7 @@ void FixSettle::settle_positions_(Frame& f) const {
             throw std::runtime_error(
                 "FixSettle: degenerate reference triangle (α² + β² = 0)");
         const double sinthe =
-            (alpha * gamma - beta * safe_sqrt(al2be2 - gamma * gamma))
-            / al2be2;
+            (alpha * gamma - beta * safe_sqrt(al2be2 - gamma * gamma)) / al2be2;
         const double costhe = safe_sqrt(1.0 - sinthe * sinthe);
 
         // Constrained positions in the body frame — eq. A12.
@@ -334,18 +333,88 @@ void FixSettle::settle_velocities_(Frame& f) const {
     }
 }
 
+int FixSettle::pack_forward_comm(int n, const int* list, double* buf,
+                                 int pbc_flag, const int* pbc) {
+    if (!frame_ || n <= 0)
+        return 0;
+    int m = 0;
+    if (comm_mode_ == CommMode::XSHAKE) {
+        const auto x = frame_->span(kAtom_x);
+        const auto y = frame_->span(kAtom_y);
+        const auto z = frame_->span(kAtom_z);
+        double dx = 0.0, dy = 0.0, dz = 0.0;
+        if (pbc_flag != 0) {
+            dx = static_cast<double>(pbc[0]) * frame_->box.length(0);
+            dy = static_cast<double>(pbc[1]) * frame_->box.length(1);
+            dz = static_cast<double>(pbc[2]) * frame_->box.length(2);
+        }
+        for (int i = 0; i < n; ++i) {
+            const int j = list[i];
+            buf[m++] = static_cast<double>(x[j]) + dx;
+            buf[m++] = static_cast<double>(y[j]) + dy;
+            buf[m++] = static_cast<double>(z[j]) + dz;
+        }
+        return m;
+    }
+    const auto vx = frame_->span(kAtom_vx);
+    const auto vy = frame_->span(kAtom_vy);
+    const auto vz = frame_->span(kAtom_vz);
+    (void)pbc_flag;
+    (void)pbc;
+    for (int i = 0; i < n; ++i) {
+        const int j = list[i];
+        buf[m++] = static_cast<double>(vx[j]);
+        buf[m++] = static_cast<double>(vy[j]);
+        buf[m++] = static_cast<double>(vz[j]);
+    }
+    return m;
+}
+
+void FixSettle::unpack_forward_comm(int n, int first, const double* buf) {
+    if (!frame_ || n <= 0)
+        return;
+    int m = 0;
+    const int last = first + n;
+    if (comm_mode_ == CommMode::XSHAKE) {
+        auto x = frame_->span(kAtom_x);
+        auto y = frame_->span(kAtom_y);
+        auto z = frame_->span(kAtom_z);
+        for (int i = first; i < last; ++i) {
+            x[i] = static_cast<StorageReal>(buf[m++]);
+            y[i] = static_cast<StorageReal>(buf[m++]);
+            z[i] = static_cast<StorageReal>(buf[m++]);
+        }
+        return;
+    }
+    auto vx = frame_->span(kAtom_vx);
+    auto vy = frame_->span(kAtom_vy);
+    auto vz = frame_->span(kAtom_vz);
+    for (int i = first; i < last; ++i) {
+        vx[i] = static_cast<StorageReal>(buf[m++]);
+        vy[i] = static_cast<StorageReal>(buf[m++]);
+        vz[i] = static_cast<StorageReal>(buf[m++]);
+    }
+}
+
 void FixSettle::launch(const LaunchContext& ctx) {
     auto& f = ctx.frame;
+    frame_ = &f;
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
         resolve_rows_(f);
         snapshot_(f);
         return;
     }
     if (ctx.at(ATV::md::Phase::post_integrate)) {
+        comm_mode_ = CommMode::XSHAKE;
+        if (cpu::Comm* comm = ctx.runtime.md.comm)
+            comm->forward_comm(*this);
         settle_positions_(f);
         return;
     }
     if (ctx.at(ATV::md::Phase::final_integrate)) {
+        comm_mode_ = CommMode::VP;
+        if (cpu::Comm* comm = ctx.runtime.md.comm)
+            comm->forward_comm(*this);
         settle_velocities_(f);
     }
 }

@@ -5,6 +5,8 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/component/comm.h"
+#include "atomiverse/cpu/dynamics/charge_packer.h"
 #include "atomiverse/cpu/frame/box.h"
 #include "atomiverse/cpu/frame/frame.h"
 
@@ -66,6 +68,7 @@ void ConstPotCG::launch(const LaunchContext& ctx) {
     build_rhs_(ctx.frame);
     solve_();
     write_charges_(ctx.frame);
+    ChargePacker::forward(ctx);
 }
 
 void ConstPotCG::destroy(const DestroyContext&) {

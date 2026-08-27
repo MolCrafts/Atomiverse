@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "atomiverse/core/plan.h"
+#include "atomiverse/core/schema.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/timer.h"
 #include "atomiverse/cpu/asynchronous/analysis_runtime.h"
@@ -33,6 +34,8 @@
 
 namespace ATV {
 namespace cpu {
+
+class NeighborProvider;
 
 namespace md {
 namespace mpi {
@@ -133,6 +136,50 @@ class Runtime {
     /// @brief Replay one compiled Plan slot. The erased half of `run_stage`.
     void run_slot_(int slot, int step_idx);
 
+    /// @brief NeighborProvider cache for Verlet / linear `ctx.md.comm` dispatch.
+    ///        Halo adapters are not cached; Runtime calls one `Comm*`.
+    struct VerletComm {
+        cpu::NeighborProvider* neighbor = nullptr;
+        cpu::Component* neighbor_comp = nullptr;
+        int neighbor_slot = -1;
+        int neighbor_op = -1;
+        /// Columns the halo carries this run, folded from every mounted
+        /// `FieldUser` plus the base set. Derived at `build()`; see
+        /// `core/schema.h`.
+        Schema ghost_fields;
+        Schema ghost_reverse_fields;
+
+        /// Widest `NeighborConsumer::halo_cutoff()` [Å] among mounted
+        /// components. A many-body style (EAM) declares a ghost-of-ghost
+        /// shell of 2·cutoff here, wider than the provider's enumeration
+        /// reach; the ghost shell must honour whichever is larger.
+        double consumer_halo_cutoff = 0.0;
+    };
+
+    void cache_verlet_comm_();
+    /// @brief Size `ctx.md.comm` from `NeighborProvider::neighbor_reach()` [Å].
+    void apply_ghost_cutoff_();
+    /// @brief True when `slot` is Evaluate `evaluate` or Minimize `force`.
+    bool is_linear_force_slot_(int slot) const;
+    /// @brief nflag XOR: forward, or exchange + borders + neighbor build.
+    void comm_before_force_(int slot, int step_idx);
+    /// @brief Newton-on reverse of ghost forces [eV/Å].
+    void comm_after_force_(int slot, int step_idx);
+    /// @brief LAMMPS Verlet::setup: `comm->exchange` then `borders` then
+    ///        neighbor build (MPI only). Ghost positions in Å.
+    void setup_verlet_comm_();
+    /// @brief Evaluate/Minimize: Comm around force/evaluate (Å positions,
+    ///        reverse of ghost forces [eV/Å]); skip `verlet_engine` adapters.
+    void step_linear_(int step_idx);
+    /// @brief LAMMPS Verlet::run comm on `ctx.md.comm`. `nflag==0` →
+    ///        `forward_comm` (ghost positions [Å]); else exchange + borders +
+    ///        neighbor build. `reverse_comm` every step (newton-on, [eV/Å]).
+    void step_verlet_(int step_idx);
+    void launch_op_(std::size_t slot, std::size_t op, int step_idx);
+    void walk_slot_(int phase, int step_idx, bool skip_engine);
+    void launch_engine_(cpu::Component* c, int slot, int op, int phase,
+                        int step_idx);
+
     Context context_{};
     cpu::Frame* frame_ = nullptr;
     const Plan<cpu::Component>* plan_ = nullptr;
@@ -144,6 +191,18 @@ class Runtime {
     /// Per-slot, per-op dense timing handles, precomputed in `build_components()`
     /// so the hot `step()` loop never calls `component->name()`.
     std::vector<std::vector<int>> op_handle_;
+
+    /// Runtime-level comm timing handles (forward / exchange / borders /
+    /// reverse). LAMMPS's `Comm` section covers exactly these calls; they
+    /// are Runtime-driven rather than plan ops, so without their own
+    /// handles the breakdown table under-reports Comm by the whole halo.
+    int comm_handle_fwd_ = -1;
+    int comm_handle_exch_ = -1;
+    int comm_handle_bord_ = -1;
+    int comm_handle_rev_ = -1;
+
+    VerletComm verlet_{};
+    bool verlet_setup_done_ = false;
 };
 
 } // namespace cpu

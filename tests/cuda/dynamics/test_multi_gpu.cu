@@ -52,6 +52,10 @@ class StubKSpace : public cuda::KSpace {
   public:
     StubKSpace() = default;
     std::string name() const override { return "stub-kspace"; }
+    cuda::LongRangeContract long_range_contract() const override {
+        return {cuda::LongRangeRole::ReciprocalSpace, AccReal(0.3), AccReal(0),
+                AccReal(0)};
+    }
 
   protected:
     void compute(const cuda::LaunchContext&) override {
@@ -501,7 +505,8 @@ TEST(MultiGpu, HaloExchangeXSplit) {
 namespace {
 // Shift the x-coordinate of every owned atom by `delta` (test helper for
 // forward_comm: emulates one integration step moving the owners).
-__global__ void shift_owned_x(float* x, int n_local, float delta) {
+__global__ void shift_owned_x(ATV::cuda::real_t* x, int n_local,
+                              ATV::cuda::real_t delta) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n_local)
         x[i] += delta;

@@ -36,10 +36,10 @@ void Transaction::record_touch(const cpu::Frame& f, int row) {
     prepare_plans_(f, k + 1);
     comm::require_schema_fingerprint(patch_plan_, source_plan_.fingerprint,
                                      source_plan_.version);
-    buf_.resize(comm::max_exchange_bytes(f, source_plan_));
+    buf_.resize(source_plan_.max_row_bytes());
     const std::size_t size =
-        comm::pack_exchange(f, source_plan_, row, buf_.data(), buf_.size());
-    comm::unpack_exchange(patch_, patch_plan_, k, buf_.data(), size);
+        source_plan_.pack_row(f, row, buf_.data(), buf_.size());
+    patch_plan_.unpack_row(patch_, k, buf_.data(), size);
     touched_.push_back(static_cast<LocalInt>(row));
     patch_.set_nlocal(k + 1);
 }
@@ -66,13 +66,11 @@ void Transaction::rollback(cpu::Frame& f) {
             patch_plan_ = comm::make_exchange_plan(patch_);
         comm::require_schema_fingerprint(source_plan_, patch_plan_.fingerprint,
                                          patch_plan_.version);
-        buf_.resize(comm::max_exchange_bytes(patch_, patch_plan_));
+        buf_.resize(patch_plan_.max_row_bytes());
         for (std::size_t k = 0; k < touched_.size(); ++k) {
-            const std::size_t size =
-                comm::pack_exchange(patch_, patch_plan_, static_cast<int>(k),
-                                    buf_.data(), buf_.size());
-            comm::unpack_exchange(f, source_plan_, touched_[k], buf_.data(),
-                                  size);
+            const std::size_t size = patch_plan_.pack_row(
+                patch_, static_cast<int>(k), buf_.data(), buf_.size());
+            source_plan_.unpack_row(f, touched_[k], buf_.data(), size);
         }
     }
     if (box_recorded_)

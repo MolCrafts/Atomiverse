@@ -7,7 +7,7 @@
 ///   2. Re-derives this rank's `sublo/subhi` from the new cuts (consistent
 ///      with `compute_sublo_subhi`).
 ///   3. Bumps `dd->neighbor_generation`.
-///   4. Causes the next `Migrate` to redistribute atoms so per-rank
+///   4. Causes the next `comm->exchange()` to redistribute atoms so per-rank
 ///      counts are within ~10% of the global mean.
 
 #include <gtest/gtest.h>
@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/communication/atom_migration.h"
+#include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/communication/rcb.h"
 #include "atomiverse/cpu/driver/runtime.h"
@@ -131,10 +131,9 @@ TEST(Rebalance, RebalancesSkewedDistribution) {
     }
     EXPECT_GT(dd->neighbor_generation, gen_before);
 
-    // Now run Migrate so atoms move to their new rank.
-    cpu::comm::Migrate mig{};
-    mig.build(bctx);
-    mig.launch(lctx);
+    // Exchange so atoms move to their new rank.
+    ASSERT_NE(backend.context().md.comm, nullptr);
+    backend.context().md.comm->exchange(lctx);
 
     // Post-migration: per-rank counts should be much more balanced.
     const int n_local_post = dd->n_local;

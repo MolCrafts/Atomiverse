@@ -4,6 +4,8 @@
 #include "atomiverse/cpu/dynamics/qeq.h"
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/component/comm.h"
+#include "atomiverse/cpu/dynamics/charge_packer.h"
 #include "atomiverse/cpu/frame/box.h"
 #include "atomiverse/cpu/frame/frame.h"
 
@@ -118,6 +120,7 @@ void QEq::launch(const LaunchContext& ctx) {
     collect_params_(ctx.frame);
     build_matrix_(ctx.frame);
     solve_and_write_(ctx.frame);
+    ChargePacker::forward(ctx);
 }
 
 void QEq::destroy(const DestroyContext&) {
@@ -223,7 +226,8 @@ void QEq::solve_and_write_(cpu::Frame& frame) {
         for (int j = 0; j < n; ++j)
             hq += H_[static_cast<std::size_t>(i) * n + j]
                   * q_[static_cast<std::size_t>(j)];
-        e += chi_i_[static_cast<std::size_t>(i)] * q_[static_cast<std::size_t>(i)]
+        e += chi_i_[static_cast<std::size_t>(i)]
+                 * q_[static_cast<std::size_t>(i)]
              + 0.5 * q_[static_cast<std::size_t>(i)] * hq;
     }
     energy_ = e;

@@ -41,7 +41,7 @@ namespace {
 constexpr double kD = 2.82;
 // n=6 → L=16.92 Å. Under 2 ranks the thinnest subdomain is L/2 ≈ 8.46 Å,
 // which must exceed the neighbor/halo shell (cutoff+skin ≈ 5.9 Å). n=4
-// (L=11.28 → half 5.64) is too thin and HaloSend throws.
+// (L=11.28 → half 5.64) is too thin and CommBrick throws.
 constexpr int kSide = 6;
 constexpr int kN = kSide * kSide * kSide;
 constexpr double kMadelung = 1.747564594633182;

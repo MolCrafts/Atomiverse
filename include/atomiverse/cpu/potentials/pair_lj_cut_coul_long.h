@@ -21,6 +21,12 @@ namespace cpu {
 /// @brief Fused `lj/cut/coul/long` with multi-type LJ and Amber specials.
 class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
   public:
+    /// @brief The fused kernel reads the neighbour charge (`q_ptr[j]`).
+    /// @param out Schema being accumulated at build().
+    void declare_fields(Schema& out) const override {
+        out.require(kAtom_charge, "PairLJCutCoulLong");
+    }
+
     /// @param coeffs  Diagonal (and optional off-diagonal) LJ type pairs.
     /// @param alpha   Ewald α [1/Å] — must match the KSpace component.
     /// @param cutoff  Shared LJ/Coul real-space cutoff [Å] (LAMMPS default).

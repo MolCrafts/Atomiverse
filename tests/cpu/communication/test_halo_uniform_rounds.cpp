@@ -1,11 +1,11 @@
-/// @file tests/cpu/communication/test_swap_list_uniform_rounds.cpp
-/// @brief Unit tests for `comm::SwapList::derive_uniform_rounds`.
+/// @file tests/cpu/communication/test_halo_uniform_rounds.cpp
+/// @brief Unit tests for `comm::Halo::derive_uniform_rounds`.
 ///
 /// Spec `.claude/specs/lammps-comm-port.md`: the per-axis round count that
 /// used to be an `MPI_Allreduce(MAX)` over `derive_hops` is a **pure local
 /// sweep**. For each axis `d` it copies `dd`, walks `coords[d] = 0 … dims[d)`,
 /// calls the existing `derive_hops`, and keeps `max(minus[d], plus[d])`.
-/// Complexity `O(Σ dims[d])`. `SwapList` stays MPI-free; hop math is not
+/// Complexity `O(Σ dims[d])`. `Halo` stays MPI-free; hop math is not
 /// rewritten.
 ///
 /// Everything here is **serial**: no MPI is initialized. The DD is built by
@@ -14,7 +14,7 @@
 /// Surface pinned (new in `lammps-comm-port`, on the existing type):
 /// @code{.cpp}
 ///   static std::array<int, 3>
-///   SwapList::derive_uniform_rounds(const DomainDecomposition& dd,
+///   Halo::derive_uniform_rounds(const DomainDecomposition& dd,
 ///                                   const Box& box, double shell_width);
 /// @endcode
 ///
@@ -38,7 +38,7 @@
 #include <vector>
 
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/frame/box.h"
 
 using namespace ATV;
@@ -83,8 +83,8 @@ std::array<int, 3> max_hops_over_coords(const DomainDecomposition& dd,
         for (int c = 0; c < dd.dims[d]; ++c) {
             DomainDecomposition scan = dd;
             scan.coords[d] = c;
-            const cpu::comm::SwapList::HopNeed hops =
-                cpu::comm::SwapList::derive_hops(scan, box, shell);
+            const cpu::comm::Halo::HopNeed hops =
+                cpu::comm::Halo::derive_hops(scan, box, shell);
             axis_max =
                 std::max(axis_max, std::max(hops.minus[d], hops.plus[d]));
         }
@@ -97,7 +97,7 @@ std::array<int, 3> max_hops_over_coords(const DomainDecomposition& dd,
 std::string rounds_message(const DomainDecomposition& dd, const cpu::Box& box,
                            double shell) {
     try {
-        (void)cpu::comm::SwapList::derive_uniform_rounds(dd, box, shell);
+        (void)cpu::comm::Halo::derive_uniform_rounds(dd, box, shell);
     } catch (const std::runtime_error& e) {
         return e.what();
     }
@@ -113,13 +113,13 @@ std::string rounds_message(const DomainDecomposition& dd, const cpu::Box& box,
 ///   x, y: ceil(11 * 8 / 63.0016) = ceil(1.3968) = 2
 ///   z:    ceil(11 * 4 / 63.0016) = ceil(0.6984) = 1
 /// Hard-coded; any starting `coords` is fine — the sweep visits them all.
-TEST(TestSwapListUniformRounds, ProductionGeometryRoundsAreTwoTwoOne) {
+TEST(TestHaloUniformRounds, ProductionGeometryRoundsAreTwoTwoOne) {
     const cpu::Box box = cpu::Box::cubic(kProdL);
     const DomainDecomposition dd =
         uniform_dd(/*dims=*/{8, 8, 4}, /*coords=*/{0, 0, 0}, box);
 
     const std::array<int, 3> rounds =
-        cpu::comm::SwapList::derive_uniform_rounds(dd, box, kProdShell);
+        cpu::comm::Halo::derive_uniform_rounds(dd, box, kProdShell);
 
     EXPECT_EQ(rounds[0], 2);
     EXPECT_EQ(rounds[1], 2);
@@ -130,14 +130,14 @@ TEST(TestSwapListUniformRounds, ProductionGeometryRoundsAreTwoTwoOne) {
 
 /// On a uniform brick, `derive_uniform_rounds` per axis equals the max over
 /// every coordinate of `max(derive_hops.minus[d], derive_hops.plus[d])`.
-TEST(TestSwapListUniformRounds, MatchesMaxOfDeriveHopsOnUniformGrid) {
+TEST(TestHaloUniformRounds, MatchesMaxOfDeriveHopsOnUniformGrid) {
     const cpu::Box box = cpu::Box::cubic(40.0);
     const DomainDecomposition dd =
         uniform_dd(/*dims=*/{4, 3, 2}, /*coords=*/{1, 1, 0}, box);
     const double shell = 11.0; // [Angstrom]; inside L - w_self on every axis
 
     const std::array<int, 3> rounds =
-        cpu::comm::SwapList::derive_uniform_rounds(dd, box, shell);
+        cpu::comm::Halo::derive_uniform_rounds(dd, box, shell);
     const std::array<int, 3> expect = max_hops_over_coords(dd, box, shell);
 
     for (int d = 0; d < 3; ++d) {
@@ -150,7 +150,7 @@ TEST(TestSwapListUniformRounds, MatchesMaxOfDeriveHopsOnUniformGrid) {
 /// Same pin on a cuts-based (RCB) grid, where per-rank hop counts differ
 /// so the max is not equal to every coordinate's own hops. `cuts[d]` has
 /// `dims[d] + 1` fractions in `[0, 1]`; slabs are uneven.
-TEST(TestSwapListUniformRounds, MatchesMaxOfDeriveHopsOnCutsGrid) {
+TEST(TestHaloUniformRounds, MatchesMaxOfDeriveHopsOnCutsGrid) {
     constexpr double L = 20.0; // [Angstrom]
     const cpu::Box box = cpu::Box::cubic(L);
     const double shell = 5.0; // [Angstrom]
@@ -182,7 +182,7 @@ TEST(TestSwapListUniformRounds, MatchesMaxOfDeriveHopsOnCutsGrid) {
     }
 
     const std::array<int, 3> rounds =
-        cpu::comm::SwapList::derive_uniform_rounds(dd, box, shell);
+        cpu::comm::Halo::derive_uniform_rounds(dd, box, shell);
     const std::array<int, 3> expect = max_hops_over_coords(dd, box, shell);
 
     for (int d = 0; d < 3; ++d) {
@@ -197,13 +197,13 @@ TEST(TestSwapListUniformRounds, MatchesMaxOfDeriveHopsOnCutsGrid) {
 /// `dims[d] <= 1` => round count 0: the axis is not decomposed, produces
 /// no swap rounds, and is **exempt from every width check**. A 12 A shell
 /// on an 8 A undecomposed y axis is legal (EAM-style `2 * cutoff`).
-TEST(TestSwapListUniformRounds, UndecomposedAxisYieldsZero) {
+TEST(TestHaloUniformRounds, UndecomposedAxisYieldsZero) {
     const cpu::Box box = cpu::Box::orthorhombic(30.0, 8.0, 16.0);
     const DomainDecomposition dd =
         uniform_dd(/*dims=*/{2, 1, 1}, /*coords=*/{0, 0, 0}, box);
 
     const std::array<int, 3> rounds =
-        cpu::comm::SwapList::derive_uniform_rounds(dd, box, /*shell=*/12.0);
+        cpu::comm::Halo::derive_uniform_rounds(dd, box, /*shell=*/12.0);
 
     EXPECT_EQ(rounds[0], 1); // ceil(12 * 2 / 30)
     EXPECT_EQ(rounds[1], 0);
@@ -211,7 +211,7 @@ TEST(TestSwapListUniformRounds, UndecomposedAxisYieldsZero) {
 }
 
 /// A shell exactly one slab wide stays a single hop — the `ceil` convention.
-TEST(TestSwapListUniformRounds, ShellEqualToSlabWidthIsOneHop) {
+TEST(TestHaloUniformRounds, ShellEqualToSlabWidthIsOneHop) {
     const cpu::Box box = cpu::Box::cubic(20.0);
     // coords {1,1,1} makes `subhi - sublo == L/dims` bit-exact (w = 5 A).
     const DomainDecomposition dd =
@@ -219,7 +219,7 @@ TEST(TestSwapListUniformRounds, ShellEqualToSlabWidthIsOneHop) {
     const double w = 20.0 / 4.0; // 5 A, one slab
 
     const std::array<int, 3> rounds =
-        cpu::comm::SwapList::derive_uniform_rounds(dd, box, w);
+        cpu::comm::Halo::derive_uniform_rounds(dd, box, w);
 
     EXPECT_EQ(rounds[0], 1);
     EXPECT_EQ(rounds[1], 1);
@@ -228,13 +228,13 @@ TEST(TestSwapListUniformRounds, ShellEqualToSlabWidthIsOneHop) {
 
 /// A zero-width shell asks for no hops on any axis, including decomposed
 /// ones.
-TEST(TestSwapListUniformRounds, ZeroShellYieldsAllZeros) {
+TEST(TestHaloUniformRounds, ZeroShellYieldsAllZeros) {
     const cpu::Box box = cpu::Box::cubic(kProdL);
     const DomainDecomposition dd =
         uniform_dd(/*dims=*/{8, 8, 4}, /*coords=*/{0, 0, 0}, box);
 
     const std::array<int, 3> rounds =
-        cpu::comm::SwapList::derive_uniform_rounds(dd, box, /*shell=*/0.0);
+        cpu::comm::Halo::derive_uniform_rounds(dd, box, /*shell=*/0.0);
 
     EXPECT_EQ(rounds[0], 0);
     EXPECT_EQ(rounds[1], 0);
@@ -248,14 +248,14 @@ TEST(TestSwapListUniformRounds, ZeroShellYieldsAllZeros) {
 /// `dims = {2,1,1}`, `L_x = 10 A`, `shell = 9 A`: periodic would refuse
 /// (`L - w_self = 5 A`). Non-periodic reach is 1, so both coordinates
 /// truncate to 1 hop and the sweep must not throw.
-TEST(TestSwapListUniformRounds, NonPeriodicAxisTruncatesWithoutRefusal) {
+TEST(TestHaloUniformRounds, NonPeriodicAxisTruncatesWithoutRefusal) {
     const cpu::Box box = cpu::Box::orthorhombic(10.0, 20.0, 20.0);
     const DomainDecomposition dd =
         uniform_dd(/*dims=*/{2, 1, 1}, /*coords=*/{0, 0, 0}, box,
                    /*periods=*/{0, 1, 1});
 
     std::array<int, 3> rounds{};
-    ASSERT_NO_THROW(rounds = cpu::comm::SwapList::derive_uniform_rounds(
+    ASSERT_NO_THROW(rounds = cpu::comm::Halo::derive_uniform_rounds(
                         dd, box, /*shell=*/9.0));
     EXPECT_EQ(rounds[0], 1);
     EXPECT_EQ(rounds[1], 0);
@@ -270,7 +270,7 @@ TEST(TestSwapListUniformRounds, NonPeriodicAxisTruncatesWithoutRefusal) {
 /// bound. The throw must fire at **every** coordinate of that axis
 /// (`coords[0] = 0` and `coords[0] = 1`): after the Allreduce flag is
 /// gone, every rank must refuse locally.
-TEST(TestSwapListUniformRounds, RefusesMinimumImageAtEveryCoordinate) {
+TEST(TestHaloUniformRounds, RefusesMinimumImageAtEveryCoordinate) {
     const cpu::Box box = cpu::Box::orthorhombic(10.0, 20.0, 20.0);
     const double shell = 9.0; // [Angstrom]
 
@@ -279,7 +279,7 @@ TEST(TestSwapListUniformRounds, RefusesMinimumImageAtEveryCoordinate) {
         const DomainDecomposition dd =
             uniform_dd(/*dims=*/{2, 1, 1}, /*coords=*/{c, 0, 0}, box);
 
-        EXPECT_THROW(cpu::comm::SwapList::derive_uniform_rounds(dd, box, shell),
+        EXPECT_THROW(cpu::comm::Halo::derive_uniform_rounds(dd, box, shell),
                      std::runtime_error);
 
         const std::string message = rounds_message(dd, box, shell);

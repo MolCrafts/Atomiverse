@@ -27,7 +27,7 @@
 #include <cmath>
 
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 namespace ATV {
@@ -50,7 +50,7 @@ struct AtomSortParams {
 
 /// @brief Runtime state for atom_modify sort cadence.
 ///
-/// Multi-rank: owned by `DomainDecomposition` and applied in `HaloSend`
+/// Multi-rank: owned by `DomainDecomposition` and applied in `CommBrick`
 /// **before** borders (LAMMPS: exchange → sort → borders). Serial: applied
 /// in `NeighborList` at reneighbor (no halo).
 struct AtomSortState {
@@ -101,9 +101,9 @@ bool sort_owned_atoms(Frame& f, int n_local, double binsize);
 
 /// @brief After a successful sort: rebuild owner tag map + bump generation.
 ///
-/// Call only when ghosts are about to be rebuilt (HaloSend full borders) or
+/// Call only when ghosts are about to be rebuilt (CommBrick full borders) or
 /// when there are no ghosts (serial). Zeroing `n_ghost` without invalidating
-/// the swap table makes HaloRecv layout checks fail.
+/// the swap table makes CommBrick layout checks fail.
 ///
 /// A reorder invalidates every cached row index in the process, and the two
 /// places that hold them are the DD's `tag_to_local` and the **Frame's own tag
@@ -119,7 +119,7 @@ bool sort_owned_atoms(Frame& f, int n_local, double binsize);
 /// every call site has to state which halo table a reorder just invalidated
 /// rather than silently forgetting one: the halo path passes its own table,
 /// the serial `NeighborList` path passes `nullptr` because no swap table
-/// exists there. Non-const: `SwapList::invalidate()` is a mutation of the
+/// exists there. Non-const: `Halo::invalidate()` is a mutation of the
 /// owner's table, and no `const_cast` is permitted anywhere for it.
 ///
 /// @param dd Domain decomposition (may be null — the DD half is then skipped).
@@ -127,8 +127,8 @@ bool sort_owned_atoms(Frame& f, int n_local, double binsize);
 /// @param swaps Halo swap table whose stored row indices the reorder just
 ///        invalidated, or null when this path has no halo (serial).
 /// @param clear_ghosts If true, drop ghost bookkeeping (pre-borders path).
-inline void notify_sorted(DomainDecomposition* dd, Frame& f,
-                          comm::SwapList* swaps, bool clear_ghosts = true) {
+inline void notify_sorted(DomainDecomposition* dd, Frame& f, comm::Halo* swaps,
+                          bool clear_ghosts = true) {
     // Sendlists / ghost counts name rows that have just moved; the swap
     // geometry (faces, neighbours, pbc flags, slab bands) survives a
     // reorder untouched.

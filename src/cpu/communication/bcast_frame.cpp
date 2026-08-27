@@ -256,9 +256,7 @@ void deserialize_meta(const std::vector<std::byte>& payload, MetaMap& meta) {
 }
 
 std::size_t checked_product(std::size_t a, std::size_t b) {
-    if (a != 0 && b > std::numeric_limits<std::size_t>::max() / a)
-        throw std::overflow_error("bcast_frame: payload size overflow");
-    return a * b;
+    return comm::checked_mul(a, b, "bcast_frame payload");
 }
 
 } // namespace
@@ -296,14 +294,13 @@ void bcast_frame(Frame& frame, int root) {
 
     if (rank == root) {
         const int n = frame.nlocal();
-        const std::size_t row_capacity = max_exchange_bytes(frame, plan);
+        const std::size_t row_capacity = plan.max_row_bytes();
         atom_payload.resize(
             checked_product(static_cast<std::size_t>(n), row_capacity));
         std::size_t cursor = 0;
         for (int row = 0; row < n; ++row) {
-            cursor +=
-                pack_exchange(frame, plan, row, atom_payload.data() + cursor,
-                              atom_payload.size() - cursor);
+            cursor += plan.pack_row(frame, row, atom_payload.data() + cursor,
+                                    atom_payload.size() - cursor);
         }
         atom_payload.resize(cursor);
         meta_payload = serialize_meta(frame.meta);
@@ -380,7 +377,7 @@ void bcast_frame(Frame& frame, int root) {
     std::size_t cursor = 0;
     for (int row = 0; row < atom_count; ++row) {
         const std::size_t consumed =
-            unpack_exchange(frame, plan, row, atom_payload.data() + cursor,
+            plan.unpack_row(frame, row, atom_payload.data() + cursor,
                             atom_payload.size() - cursor);
         if (consumed == 0)
             throw std::runtime_error("bcast_frame: zero-length atom row");

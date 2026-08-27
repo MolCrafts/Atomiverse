@@ -80,7 +80,6 @@
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/constraint_protocol.h"
 #include "atomiverse/cpu/component/criterion.h"
-#include "atomiverse/cpu/component/halo_participant.h"
 #include "atomiverse/cpu/component/hf.h"
 #include "atomiverse/cpu/component/integrator.h"
 #include "atomiverse/cpu/component/long_range_protocol.h"
@@ -210,7 +209,6 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// requirements), `Base::build()` last.
     void build() {
         install_defaults();
-        bind_halo_participants_();
         validate_long_range_contract_();
         validate_components();
         // Capture Constraint components from the live mount table. Plan is a
@@ -441,31 +439,6 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             else
                 cfn(*pb.component);
         }
-    }
-
-    /// @brief Build-time halo wiring: collect every halo participant among
-    /// the pending components (deduplicated — multi-binding components
-    /// appear once) and hand the list to each exchange endpoint via
-    /// `bind_participants()`. Runs after `install_defaults()` (so
-    /// auto-injected endpoints are covered) and before component `build()`
-    /// (endpoints flatten field descriptors lazily at first launch).
-    void bind_halo_participants_() {
-        std::vector<const cpu::HaloParticipant*> participants;
-        std::vector<cpu::HaloParticipant*> endpoints;
-        std::unordered_set<const cpu::Component*> seen;
-        for (auto& pb : this->pending_) {
-            cpu::Component* c = pb.component;
-            if (!seen.insert(c).second)
-                continue;
-            cpu::HaloParticipant* hp = c->halo_participant();
-            if (!hp)
-                continue;
-            participants.push_back(hp);
-            if (hp->halo_endpoint() != cpu::HaloParticipant::Endpoint::none)
-                endpoints.push_back(hp);
-        }
-        for (auto* e : endpoints)
-            e->bind_participants(participants);
     }
 
     /// @brief Fail closed on incomplete split long-range electrostatics.
@@ -1172,8 +1145,6 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             false; ///< Canonical Stress provider already there.
         bool has_neighbor_list = false; ///< NeighborList already there.
         bool has_constraint = false; ///< A Constraint component is registered.
-        bool has_halo_send = false;  ///< A HaloSend is already registered.
-        bool has_halo_recv = false;  ///< A HaloRecv is already registered.
         bool has_charge_updater =
             false; ///< A component rewrites owned charges mid-step.
         bool has_energy = false;     ///< Some plugin provides_energy().
@@ -1276,22 +1247,6 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         return s;
     }
 
-    /// @brief Mutable scan: const facts plus halo endpoints.
-    InfraScan scan_pending_infra_() {
-        InfraScan s =
-            static_cast<const Driver<PhaseEnum>*>(this)->scan_pending_infra_();
-        for_each_pending_mut([&](cpu::Component& c) {
-            cpu::HaloParticipant* hp = c.halo_participant();
-            if (!hp)
-                return;
-            if (hp->halo_endpoint() == cpu::HaloParticipant::Endpoint::send)
-                s.has_halo_send = true;
-            if (hp->halo_endpoint() == cpu::HaloParticipant::Endpoint::recv)
-                s.has_halo_recv = true;
-        });
-        return s;
-    }
-
     /// @brief Throw unless some plugin provides energy.
     void require_energy() const {
         if (!scan_pending_infra_().has_energy)
@@ -1377,12 +1332,12 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             builder.add(e);
         }
         this->plan_ = builder.build(ATV::slot_count<PhaseEnum>());
+        this->plan_.kind = kind_of(PhaseEnum{});
         for (auto& s : this->plan_.slots)
             s.forces_requested =
                 phase_wants_forces(static_cast<PhaseEnum>(s.phase));
         if (this->backend_)
             this->backend_->load(this->plan());
-        bind_halo_participants_();
         validate_long_range_contract_();
         validate_components();
     }

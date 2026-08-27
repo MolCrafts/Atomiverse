@@ -37,7 +37,7 @@ TEST(TimerRegistry, RecordRollupReset) {
     r.record(h_bond, 0.5);
     r.record(h_vv, 0.25);
     r.record(h_pp, 2.0);
-    r.set_loop(5.0, 1234);
+    r.set_loop(5.0, 1234, 5678);
     r.tick_step();
 
     const auto roll = r.rollup_by_category();
@@ -87,11 +87,18 @@ TEST(TimerReport, ReduceSingleRank) {
     r.set_enabled(true);
     r.record(handle(r, "lj", 2), 4.0);            // Pair
     r.record(handle(r, "harmonic_bond", 2), 1.0); // Bond
-    r.set_loop(5.0, 100);
+    r.set_loop(5.0, 100, 250);
     r.tick_step();
 
     const auto rep = cpu::md::reduce_timing(r);
     EXPECT_EQ(rep.ranks, 1);
+    // Ghost rows are reduced beside owned rows: halo over-forwarding is
+    // visible here before it is visible as Comm seconds.
+    EXPECT_EQ(rep.nlocal_min, 100);
+    EXPECT_EQ(rep.nlocal_max, 100);
+    EXPECT_EQ(rep.nghost_min, 250);
+    EXPECT_EQ(rep.nghost_max, 250);
+    EXPECT_DOUBLE_EQ(rep.nghost_avg, 250.0);
     EXPECT_DOUBLE_EQ(rep.sections[StepTiming::Pair].avg_s, 4.0);
     EXPECT_DOUBLE_EQ(rep.sections[StepTiming::Pair].min_s, 4.0);
     EXPECT_DOUBLE_EQ(rep.sections[StepTiming::Pair].max_s, 4.0);

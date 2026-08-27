@@ -1,16 +1,27 @@
-/// @file cpu/communication/swap_list.h
-/// @brief `Swap` / `SwapList` — the LAMMPS CommBrick swap table of the CPU halo.
+/// @file cpu/communication/halo.h
+/// @brief `Swap` / `Halo` — the LAMMPS CommBrick swap table of the CPU halo.
 ///
-/// A `SwapList` is the ordered table of face exchanges a rank performs to
+/// Algorithm and communication structure transplanted from LAMMPS
+/// `src/comm_brick.cpp` sendlist (checkout `78a7ddf`, 2026-08-25).
+/// Structural reimplementation of the swap-table derivation (`maxneed`,
+/// `sendlist`, `firstrecv`, `sendself`) — not a verbatim dump. Public API
+/// is ATV-native (`comm::Halo`).
+///
+/// Copyright (2003) Sandia Corporation.  Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software.  This software is distributed under
+/// the GNU General Public License (GPL-2.0-only).
+///
+/// A `Halo` is the ordered table of face exchanges a rank performs to
 /// grow its ghost shell: derived **once per full halo rebuild** from the
 /// `DomainDecomposition` + `Box` + halo cutoff, then replayed by the halo
 /// components for the rest of the rebuild interval. It replaces the
 /// per-step, per-face geometry re-derivation of the old cascade halo.
 ///
-/// `SwapList` is **purely local**: it performs no MPI and does not depend on
+/// `Halo` is **purely local**: it performs no MPI and does not depend on
 /// `ATV_HAS_MPI`. Count handshakes, `Isend`/`Irecv`, packing and unpacking
-/// stay in `HaloSend` / `HaloRecv` / `HaloRefresh` — `SwapList` is to the
-/// halo what `CellList` / `PairList` are to `NeighborList`.
+/// stay in `CommBrick` — `Halo` is to the halo what `CellList` /
+/// `PairList` are to `NeighborList`.
 ///
 /// References:
 ///   * S. Plimpton, J. Comput. Phys. **117**, 1 (1995),
@@ -41,14 +52,16 @@ namespace comm {
 /// @brief One face exchange: the rows this rank ships out of one side of its
 /// subdomain, and where the ghosts coming back land.
 ///
-/// Swaps are ordered `(0,lo), (0,hi), (1,lo), (1,hi), (2,lo), (2,hi)` inside
-/// `SwapList`, bit-for-bit the `DomainDecomposition::face_neighbors` face
-/// order `{-x, +x, -y, +y, -z, +z}`.
+/// Swaps are ordered axis-major, then round, then face: axis 0's rounds
+/// `1..maxneed(0)` each contributing a `(lo, hi)` pair, then axis 1, then
+/// axis 2. At one hop per axis that degenerates to
+/// `(0,lo), (0,hi), (1,lo), (1,hi), (2,lo), (2,hi)` — bit-for-bit the
+/// `DomainDecomposition::face_neighbors` order `{-x, +x, -y, +y, -z, +z}`.
 ///
 /// The geometry members (`dim` … `slabhi`) are derived once by
-/// `SwapList::setup`; the index members (`sendlist`, `nrecv`, `firstrecv`)
-/// are refilled per rebuild by `SwapList::rebuild_sendlist` /
-/// `SwapList::commit_recv` and dropped by `SwapList::invalidate`.
+/// `Halo::setup`; the index members (`sendlist`, `nrecv`, `firstrecv`)
+/// are refilled per rebuild by `Halo::rebuild_sendlist` /
+/// `Halo::commit_recv` and dropped by `Halo::invalidate`.
 struct Swap {
     /// @brief Axis this swap crosses: 0 = x, 1 = y, 2 = z.
     int dim = 0;
@@ -86,7 +99,7 @@ struct Swap {
     /// periodicity along that axis is carried by the pair kernel's
     /// min-image. Deliberate deviation from LAMMPS, reaffirmed by spec
     /// `comm-topology-02`: an undecomposed axis derives **zero** hops
-    /// (`SwapList::max_hops(d) == 0`) and keeps exactly one placeholder
+    /// (`Halo::max_hops(d) == 0`) and keeps exactly one placeholder
     /// `(lo, hi)` pair in the table.
     bool sendself = false;
 
@@ -102,7 +115,7 @@ struct Swap {
 
     /// @brief Which hop of its axis this swap carries, 1-based.
     ///
-    /// A dim with `SwapList::maxneed(dim) == k` expands to `k` `(lo, hi)`
+    /// A dim with `Halo::maxneed(dim) == k` expands to `k` `(lo, hi)`
     /// pairs, `round = 1 … k`; the whole chain goes through the **same** face
     /// neighbours (`sendproc`/`recvproc` are round-independent), each round
     /// forwarding one rank further what the previous round received.
@@ -114,20 +127,24 @@ struct Swap {
     /// `sublo[dim] + halo_cutoff` bounds the high side of a low-face swap
     /// and `subhi[dim] - halo_cutoff` the low side of a high-face swap; the
     /// outward side carries a `±1e30` sentinel, far outside any physical
-    /// box. The band is **strict on both edges**: a row qualifies for
-    /// `slablo < q < slabhi`. That reproduces the outgoing predicate
-    /// (`q - sublo < cutoff` / `subhi - q < cutoff`) and is deliberately
-    /// *not* LAMMPS' `<=`, which would drift the ghost set by the atoms
-    /// sitting exactly on the band edge.
+    /// box. The band is **inclusive on both edges** — a row qualifies for
+    /// `slablo <= q <= slabhi` — matching LAMMPS `CommBrick::borders`: an
+    /// extra ghost on the edge is free, a missing one is a lost pair, and a
+    /// coordinate that crossed a periodic boundary can land exactly on the
+    /// edge by round-off.
     ///
-    /// **Rounds 2 and deeper** carry the *open* band `(-1e30, +1e30)`, the
-    /// LAMMPS `ineed >= 2` convention: a forwarding round ships everything
-    /// the caller offers it, and *which* rows those are — the ghosts the
-    /// previous round received, not the owners already shipped by round 1 —
-    /// is the caller's scan window (`rebuild_sendlist`'s `sources_end`, plus
-    /// whatever lower bound the forward pass keeps). The geometry does not
-    /// re-filter them: after one hop the rows sit in the *partner's* band,
-    /// which this rank's own `sublo/subhi` no longer describes.
+    /// **Rounds 2 and deeper** carry the LAMMPS `ineed >= 2` band — a
+    /// low-face swap takes `(mid, sublo[dim] + halo_cutoff)` and a
+    /// high-face swap `(subhi[dim] - halo_cutoff, mid)`, where `mid` is
+    /// this rank's own mid-plane. *Which* rows are offered is still the
+    /// caller's scan window (the ghosts the previous round received on the
+    /// opposite face, never the owners round 1 already shipped); the band
+    /// is what clips their **depth**. A forwarded row only matters to the
+    /// partner while it is inside the partner's shell, whose far edge is
+    /// `sublo[dim] + halo_cutoff` for the low face — the chain is still
+    /// complete because the next hop clips at a strictly lower bound
+    /// again. Leaving it open forwards the whole slab instead of the part
+    /// still in reach, and the surplus compounds once per hop.
     double slablo = 0.0;
 
     /// @brief High edge of the eligibility band along `dim` [Angstrom].
@@ -136,7 +153,7 @@ struct Swap {
 
     /// @brief Frame row indices shipped by this swap, ascending.
     /// Owners in the first axis stage, owners + earlier-axis ghosts later —
-    /// the scan bound is the caller's (see `SwapList::rebuild_sendlist`).
+    /// the scan bound is the caller's (see `Halo::rebuild_sendlist`).
     std::vector<int> sendlist;
 
     /// @brief Ghost rows received by this swap in the current rebuild.
@@ -144,8 +161,38 @@ struct Swap {
 
     /// @brief Frame row index of this swap's first received ghost.
     /// `firstrecv = n_local + sum_{j < iswap} nrecv[j]` — the prefix sum
-    /// maintained by `SwapList::commit_recv`.
+    /// maintained by `Halo::commit_recv`.
     int firstrecv = 0;
+
+    /// @brief `sendproc` value meaning "this face has no partner" — the
+    /// non-periodic global boundary.
+    ///
+    /// `Halo` is MPI-free by contract, so it cannot name `MPI_PROC_NULL`.
+    /// The transport that does (`comm_brick.cpp`) static-asserts the two
+    /// are equal, so this stays a compile-time-checked mirror rather than
+    /// an assumption.
+    static constexpr int kNoPartner = -1;
+
+    /// @brief True when this swap moves no data at all.
+    ///
+    /// Either the face has no partner (non-periodic axis) or the partner
+    /// is this rank itself (`sendself`, an undecomposed axis). The latter
+    /// is a **skip, not a LAMMPS local memcpy** — see `sendself` for why a
+    /// self-image ghost would double-count against the pair kernel's
+    /// minimum image.
+    /// @return True if the transport side must ignore this swap.
+    bool is_silent() const noexcept {
+        return sendself || sendproc == kNoPartner;
+    }
+
+    /// @brief Periodic image displacement this swap applies at pack time.
+    ///
+    /// `pbc` is an integer image flag; the metric displacement is only
+    /// formed here, against the **current** box, so an NPT / deform
+    /// rescale cannot ship a stale shift.
+    /// @param box Current simulation box.
+    /// @param out Displacement per axis [Angstrom].
+    void pbc_shift(const Box& box, double out[3]) const;
 };
 
 /// @brief The ordered swap table of one rank's halo.
@@ -167,7 +214,7 @@ struct Swap {
 /// `NeighborList` + `CellList`: a default-constructed list is empty and
 /// `setup` is what makes it usable; bad input throws `std::runtime_error`
 /// with a how-to rather than degrading silently.
-class SwapList {
+class Halo {
   public:
     /// @brief Hops one rank needs in each send direction, per axis.
     ///
@@ -227,6 +274,15 @@ class SwapList {
     static HopNeed derive_hops(const md::mpi::DomainDecomposition& dd,
                                const Box& box, double shell_width);
 
+    /// @brief `derive_hops` with a coordinate override — the sweep entry
+    /// used by `derive_uniform_rounds`, so scanning another rank's
+    /// position on an axis never copies the decomposition (its tag→local
+    /// map makes that copy O(atoms)).
+    /// @param coords Per-axis coordinates to derive for.
+    static HopNeed derive_hops(const md::mpi::DomainDecomposition& dd,
+                               const Box& box, double shell_width,
+                               const int (&coords)[3]);
+
     /// @brief Rank-uniform per-axis round counts. Pure, no MPI.
     ///
     /// This is the round vector that used to be an `MPI_Allreduce(MAX)` in
@@ -276,7 +332,7 @@ class SwapList {
     /// raises the round count in place instead of throwing or silently
     /// truncating the ghost shell. It is idempotent for identical arguments.
     ///
-    /// The derivation is **per rank and serial** — `SwapList` performs no
+    /// The derivation is **per rank and serial** — `Halo` performs no
     /// MPI. What is stored here is this rank's own maximum over the two send
     /// directions; a transport caller that needs the round count to be
     /// rank-uniform obtains it from `derive_uniform_rounds` (the MPI-free
@@ -321,7 +377,7 @@ class SwapList {
     /// hands it back here. The extra rounds are not wasted: they carry
     /// exactly what the deepest rank on that axis still needs.
     ///
-    /// `SwapList` performs no MPI; the sweep is a pure local function.
+    /// `Halo` performs no MPI; the sweep is a pure local function.
     ///
     /// @param dd This rank's decomposition, as for the four-argument form.
     /// @param box Current simulation box; edge lengths [Angstrom].
@@ -335,11 +391,26 @@ class SwapList {
     void setup(const md::mpi::DomainDecomposition& dd, const Box& box,
                double halo_cutoff, int my_rank, const int rounds[3]);
 
+    /// @brief Derive the table with a **rank-uniform** round count.
+    ///
+    /// The entry point a transport caller wants. `derive_uniform_rounds`
+    /// sweeps every coordinate of each axis, so every rank gets the same
+    /// vector by construction; the four-argument `setup` derives only
+    /// *this* rank's hops, which is not rank-uniform and would leave a
+    /// partner posting a receive nobody answers. Pure and local — no MPI.
+    /// @param dd This rank's decomposition (current `sublo/subhi` [Å]).
+    /// @param box Current simulation box.
+    /// @param halo_cutoff Ghost shell width [Angstrom].
+    /// @param my_rank This rank's id in the Cartesian communicator.
+    /// @throws std::runtime_error on the minimum-image refusal.
+    void setup_uniform(const md::mpi::DomainDecomposition& dd, const Box& box,
+                       double halo_cutoff, int my_rank);
+
     /// @brief Refill one swap's send list from the current positions.
     ///
     /// Scans rows `[0, sources_end)` of the frame's `x`/`y`/`z` column for
-    /// the swap's `dim` and keeps every row strictly inside the band
-    /// `slablo < q < slabhi`. The list is cleared first (refill, not
+    /// the swap's `dim` and keeps every row inside the band
+    /// `slablo <= q <= slabhi`. The list is cleared first (refill, not
     /// append); its heap capacity is preserved.
     ///
     /// Cascading is the caller's to express through `sources_end`: axis 0
@@ -361,8 +432,9 @@ class SwapList {
     /// delivered on the *opposite* face of the same axis — one contiguous
     /// slot range, `[firstrecv, firstrecv + nrecv)` of that swap — and must
     /// not re-ship the owners round 1 already sent, which would land the same
-    /// atom twice at the same periodic image on the partner. Those rows carry
-    /// the open band of a `round > 1` swap, so the window alone selects them.
+    /// atom twice at the same periodic image on the partner. The window
+    /// picks *which* rows are offered; the `round > 1` band then clips how
+    /// deep they may be (see `Swap::slablo`).
     ///
     /// @param iswap Swap index in `[0, size())`.
     /// @param frame Frame holding the positions [Angstrom] to scan.
@@ -424,6 +496,85 @@ class SwapList {
     /// @return The `halo_cutoff` [Angstrom] passed to the last `setup`;
     ///         0 before the first one.
     double shell_width() const noexcept { return shell_width_; }
+
+    /// @brief One past the last swap of the axis stage starting at `begin`.
+    ///
+    /// The swaps of one axis are contiguous in the table (`setup` expands
+    /// axis-major, then round, then face), and a stage is exactly one such
+    /// run — the unit whose round 1 shares a scan bound (owners plus the
+    /// ghosts every earlier axis delivered).
+    /// @param begin First swap of the stage.
+    /// @return One past the stage's last swap.
+    int stage_end(int begin) const;
+
+    /// @brief One past the last swap of the forwarding round starting at
+    /// `begin`: the `(lo, hi)` pair of one hop of one axis.
+    ///
+    /// The round — not the axis stage — is the transport unit. Its two
+    /// swaps go out **concurrently** (at `dims[d] == 2` the low and high
+    /// neighbour are the same rank, and two sequential exchanges cross
+    /// their tags and deadlock), while consecutive rounds are strictly
+    /// **serialized**: round `r` ships what round `r - 1` received.
+    /// @param begin First swap of the round.
+    /// @return One past the round's last swap.
+    int round_end(int begin) const;
+
+    /// @brief First swap of the forwarding round that ends at `end`.
+    /// The reverse pass walks rounds backwards, deepest hop first.
+    /// @param end One past the round's last swap.
+    /// @return First swap of that round.
+    int round_begin(int end) const;
+
+    /// @brief The swap of the same round pointing the other way.
+    ///
+    /// A message this rank sends on swap `iswap` arrives at the partner as
+    /// its opposite-facing swap of the same axis and round, so the receive
+    /// tag is derived from the mirrored index.
+    /// @param begin First swap of the round.
+    /// @param end One past the round's last swap.
+    /// @param iswap Swap whose partner-side index is wanted.
+    /// @return Mirrored swap index within `[begin, end)`.
+    static int mirror_swap(int begin, int end, int iswap) noexcept {
+        return begin + (end - 1) - iswap;
+    }
+
+    /// @brief Rows a forwarding round is allowed to offer, per face.
+    ///
+    /// The other half of the multi-hop rule. `Swap::slablo`/`slabhi` clip a
+    /// row's **depth**; this decides **which rows are looked at at all**, and
+    /// getting it wrong is how an atom gets shipped to the same rank at the
+    /// same periodic image twice:
+    ///
+    ///   * **round 1** of an axis scans `[0, sources_end)` — this rank's
+    ///     owners plus every ghost the earlier axes already delivered. That
+    ///     is what reaches the 12 edge and 8 corner neighbours without ever
+    ///     addressing them.
+    ///   * **round r > 1** of a face scans exactly what the **opposite**
+    ///     face received at round `r - 1`. The ghosts my high neighbour gave
+    ///     me are what my low neighbour is missing at depth `r`. Feeding it
+    ///     the owners again would re-ship them to a rank that already has
+    ///     them.
+    ///
+    /// Pure: reads the table and the caller's bounds, touches no Frame and
+    /// no MPI. Out-parameters are fixed-size raw arrays, matching
+    /// `derive_hops(const int (&coords)[3])`; no window aggregate exists.
+    ///
+    /// @param round Which hop this round carries, 1-based.
+    /// @param width Swaps in the round: 2 for a `(lo, hi)` pair, 1 for a
+    ///        lone placeholder.
+    /// @param sources_end One past the last row round 1 may scan (owners
+    ///        plus earlier-axis ghosts).
+    /// @param prev_first Per-face first received slot of round `r - 1`.
+    /// @param prev_last Per-face one-past-last received slot of round
+    ///        `r - 1`.
+    /// @param win_first Out: per-face inclusive lower scan bound.
+    /// @param win_last Out: per-face exclusive upper scan bound.
+    /// @throws std::logic_error if `width` is not 1 or 2 — a round holds at
+    ///         most one `(lo, hi)` pair by construction.
+    static void round_scan_window(int round, int width, int sources_end,
+                                  const int (&prev_first)[2],
+                                  const int (&prev_last)[2],
+                                  int (&win_first)[2], int (&win_last)[2]);
 
     /// @brief Drop every stored row index, keep the swap geometry.
     ///

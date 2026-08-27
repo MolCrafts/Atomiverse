@@ -62,10 +62,9 @@ np = 1 because the product must equal the world size).
 
 Pipeline — all defaults, the halo being the feature under test:
 `PairLJCut{ε, σ, 8.5}` + `NeighborList{8.5, 0.85, every = 10}` +
-`VelocityVerlet{1.0 fs}`. `MD::install_defaults()` injects `comm::HaloSend`
-with a **9.35 Å** shell (1.1 × the pair cutoff) at `pre_neighbor @ 0` and
-`comm::HaloRecv` at `post_force @ -1000`. Nothing here registers a halo
-component by hand.
+`VelocityVerlet{1.0 fs}`. Halo / exchange / reverse live on `ctx.md.comm`
+sized from `NeighborList::neighbor_reach()` (cutoff + skin = 9.35 Å).
+Nothing here registers a halo component by hand.
 
 ### Why this geometry
 
@@ -123,7 +122,7 @@ oracle energy matches to the last bit); the ~1e-13 eV spread between the two
 engine energies is pure summation order — decomposed half-pair sums plus
 ghost rows versus one serial minimum-image walk.
 
-At np = 1 the published `ctx.md.swap_list` is `nullptr` — the documented
+At np = 1 the published `ctx.md.comm` is `nullptr` — the documented
 null contract (no swap table exists on a single rank) — so the swap-table
 gates are asserted on the np = 2 report only.
 

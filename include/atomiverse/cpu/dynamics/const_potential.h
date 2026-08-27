@@ -49,7 +49,7 @@ class ConstPotentialBO : public cpu::Component {
     std::string name() const override { return "const_potential_bo"; }
 
     /// @brief Declares the mid-step charge rewrite: under MPI DD the MD
-    /// driver auto-injects a ghost-charge refresh after this slot.
+    /// solver posts `ChargePacker` through `ctx.md.comm->forward_comm`.
     bool updates_owned_charges() const override { return true; }
 
     std::vector<DefaultBinding> default_bindings() const override {

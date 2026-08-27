@@ -222,6 +222,7 @@ class Driver {
         for (auto& pb : pending_)
             builder.add({pb.phase, pb.order, pb.component});
         plan_ = builder.build(ATV::slot_count<PhaseEnum>());
+        plan_.kind = kind_of(PhaseEnum{});
     }
 
     /// @brief Live mount table (survives `build()`).

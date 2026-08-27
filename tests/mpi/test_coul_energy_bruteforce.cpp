@@ -20,7 +20,6 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/communication/halo_exchange.h"
 #include "atomiverse/cpu/component/long_range_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/dynamics/md.h"
@@ -147,12 +146,11 @@ TEST(CoulEnergyBruteForce, GlobalEnergyMatchesBruteForce) {
     ASSERT_GT(std::abs(e_bf), 1e-9) << "degenerate oracle energy";
 
     cpu::md::MD sim;
-    sim.set_integrator(cpu::md::VelocityVerlet{0.0}); // dt = 0 → positions frozen
-    sim.on(ATV::md::Phase::force).add(cpu::md::NeighborList<>{cutoff}, -10);
+    sim.set_integrator(
+        cpu::md::VelocityVerlet{0.0}); // dt = 0 → positions frozen
+    sim.set_neighbor(cpu::md::NeighborList<>{cutoff});
     sim.on(ATV::md::Phase::force).add(cpu::CoulLong{alpha, cutoff});
     sim.on(ATV::md::Phase::force).add(NullReciprocal{alpha});
-    sim.on(ATV::md::Phase::pre_force).add(cpu::comm::HaloSend{cutoff}, -20);
-    sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
     sim.build();
 
     sim.run(frame, 1); // one frozen step → Reduce fills global energy

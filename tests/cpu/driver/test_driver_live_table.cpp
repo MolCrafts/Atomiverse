@@ -25,7 +25,10 @@ TEST(TestDriver, BuildRetainsMountsAndSecondCompileMatchesPlan) {
     eval.on(ATV::evaluate::Phase::evaluate).add_ref(a);
     eval.on(ATV::evaluate::Phase::evaluate).add_ref(b);
     eval.build();
-    EXPECT_EQ(eval.mounted().size(), 7u);
+    // 2 user probes + 4 preset-mounted infrastructure components. The halo
+    // adapters stopped being auto-mounted when Comm moved onto the Runtime
+    // (lammps-comm-brick-05), dropping the count from 7.
+    EXPECT_EQ(eval.mounted().size(), 6u);
     EXPECT_TRUE(eval.is_mounted(ATV::PluginIdentity{&a}));
     EXPECT_TRUE(eval.is_mounted(ATV::PluginIdentity{&b}));
     EXPECT_FALSE((ATV::PluginIdentity{&a} == ATV::PluginIdentity{&b}));

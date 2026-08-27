@@ -11,7 +11,7 @@
 /// Multi-rank (`dd` non-null and `mpi_size > 1`):
 ///   - owned rows: `[0, dd->n_local)`
 ///   - ghost rows: `[n_local, n_local + n_ghost)` — force partners only;
-///     integrators / zeroing must not touch them (HaloRecv returns forces).
+///     integrators / zeroing must not touch them (CommBrick returns forces).
 ///
 /// Serial / single-rank MPI: return `frame.nlocal()`; never read `dd`.
 #pragma once

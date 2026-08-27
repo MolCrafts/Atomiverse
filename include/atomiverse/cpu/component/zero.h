@@ -17,7 +17,7 @@ namespace ATV {
 namespace cpu {
 
 /// @brief Zero all owned-row forces. Phase-agnostic — driver binds to its
-/// own phase. Ghost rows are zeroed by `HaloSend` when it (re)populates them.
+/// own phase. Ghost rows are zeroed by `CommBrick` when it (re)populates them.
 class ZeroForces : public cpu::Component {
   public:
     std::string name() const override { return "zero_forces"; }

@@ -20,10 +20,10 @@
 ///    for 5 steps with an out-of-library GhostChargeChecker Component bound
 ///    at the force phase; reduce the tallies; rank 0 writes one result line.
 ///
-/// The charge refresh under test is AUTO-INJECTED by MD::install_defaults()
-/// (`HaloRefresh{Field::charges}` at pre_force @ +900) because ConstPotBO
-/// declares `updates_owned_charges()`. Nothing here registers it manually —
-/// the regression gates the default MPI pipeline, not a hand-built one.
+/// The charge refresh under test is posted by ConstPotBO itself after it
+/// rewrites owned q (`ChargePacker` through `ctx.md.comm->forward_comm`).
+/// Nothing here registers a CommBrick::forward_comm — the regression gates the default
+/// MPI packer pipeline, not a hand-built one.
 
 #include <mpi.h>
 #include <unistd.h>
@@ -75,8 +75,7 @@ cpu::Frame make_capacitor() {
     const int n = 2 * n_wall + 8;
     cpu::Frame f(n);
     int idx = 0;
-    auto put = [&](double x, double y, double z, int type, double q,
-                   double m) {
+    auto put = [&](double x, double y, double z, int type, double q, double m) {
         f.span(kAtom_x)[idx] = x;
         f.span(kAtom_y)[idx] = y;
         f.span(kAtom_z)[idx] = z;
@@ -97,11 +96,10 @@ cpu::Frame make_capacitor() {
                     /*q=*/0.0, /*m=*/196.966553);
     }
     // Neutral electrolyte: 8 ions, alternating ±0.25 e, between the plates.
-    const double ion[8][4] = {
-        {4.0, 2.5, 7.0, +0.25},  {9.0, 7.5, 7.5, -0.25},
-        {13.0, 2.5, 8.0, +0.25}, {17.0, 7.5, 8.5, -0.25},
-        {6.0, 5.0, 9.0, +0.25},  {11.0, 2.0, 9.5, -0.25},
-        {15.0, 5.5, 7.2, +0.25}, {18.5, 3.0, 8.8, -0.25}};
+    const double ion[8][4] = {{4.0, 2.5, 7.0, +0.25},  {9.0, 7.5, 7.5, -0.25},
+                              {13.0, 2.5, 8.0, +0.25}, {17.0, 7.5, 8.5, -0.25},
+                              {6.0, 5.0, 9.0, +0.25},  {11.0, 2.0, 9.5, -0.25},
+                              {15.0, 5.5, 7.2, +0.25}, {18.5, 3.0, 8.8, -0.25}};
     for (const auto& r : ion)
         put(r[0], r[1], r[2], kTypeIon, r[3], 22.9898);
     f.box = cpu::Box::orthorhombic(kLx, kLy, kLz);
@@ -148,8 +146,7 @@ class GhostChargeChecker : public cpu::Component {
         for (int i = 0; i < nloc; ++i) {
             my_tags[static_cast<std::size_t>(i)] =
                 static_cast<long long>(tag_col[i]);
-            my_q[static_cast<std::size_t>(i)] =
-                static_cast<double>(q_col[i]);
+            my_q[static_cast<std::size_t>(i)] = static_cast<double>(q_col[i]);
         }
         std::vector<long long> all_tags(static_cast<std::size_t>(total));
         std::vector<double> all_q(static_cast<std::size_t>(total));
@@ -178,18 +175,17 @@ class GhostChargeChecker : public cpu::Component {
             if (dq > max_dq_)
                 max_dq_ = dq;
             const int type = static_cast<int>(type_col[row]);
-            if ((type == kTypeBot || type == kTypeTop)
-                && std::fabs(qg) > 1e-12)
+            if ((type == kTypeBot || type == kTypeTop) && std::fabs(qg) > 1e-12)
                 ++elec_ghost_nonzero_;
             ++checked_;
         }
         ++launches_;
     }
 
-    double max_dq_ = 0.0;          ///< max |q_ghost − q_owner| [e]
-    long long checked_ = 0;        ///< ghost rows compared
+    double max_dq_ = 0.0;              ///< max |q_ghost − q_owner| [e]
+    long long checked_ = 0;            ///< ghost rows compared
     long long elec_ghost_nonzero_ = 0; ///< electrode ghosts with |q| > 0
-    long long unresolved_ = 0;     ///< ghost tags with no owner (must be 0)
+    long long unresolved_ = 0;         ///< ghost tags with no owner (must be 0)
     int launches_ = 0;
 };
 
@@ -228,10 +224,10 @@ int run_child(const char* out_path) {
                   MPI_COMM_WORLD);
     MPI_Allreduce(&checker.checked_, &checked, 1, MPI_LONG_LONG, MPI_SUM,
                   MPI_COMM_WORLD);
-    MPI_Allreduce(&checker.elec_ghost_nonzero_, &elec_nonzero, 1,
-                  MPI_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&checker.unresolved_, &unresolved, 1, MPI_LONG_LONG,
+    MPI_Allreduce(&checker.elec_ghost_nonzero_, &elec_nonzero, 1, MPI_LONG_LONG,
                   MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&checker.unresolved_, &unresolved, 1, MPI_LONG_LONG, MPI_SUM,
+                  MPI_COMM_WORLD);
 
     int rank = 0;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -287,9 +283,8 @@ int main(int argc, char** argv) {
     double max_dq = -1.0;
     long long checked = -1, elec_nonzero = -1, unresolved = -1;
     int launches = -1;
-    const int got = std::fscanf(in, "%lf %lld %lld %lld %d", &max_dq,
-                                &checked, &elec_nonzero, &unresolved,
-                                &launches);
+    const int got = std::fscanf(in, "%lf %lld %lld %lld %d", &max_dq, &checked,
+                                &elec_nonzero, &unresolved, &launches);
     std::fclose(in);
     std::remove(out.c_str());
     if (got != 5) {

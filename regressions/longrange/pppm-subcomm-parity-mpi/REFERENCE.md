@@ -100,7 +100,7 @@ periodic box of edge **L = 6 d = 16.92 Å**, Σq = 0 (108 cations, 108 anions).
 
 Pipeline — all defaults, the FFT communicator being the feature under test:
 `Evaluate::install_defaults()` injects `comm::Migrate` (−50),
-`comm::HaloSend{max(1.1 · 7.0, 7.0 + 0.3) = 7.7 Å}` (−30), `comm::HaloRecv`
+`comm::CommBrick{max(1.1 · 7.0, 7.0 + 0.3) = 7.7 Å}` (−30), `comm::CommBrick`
 (+10) and `md::mpi::Reduce` (+20) into the `evaluate` phase, with the neighbor
 list at −10 and the two evaluators at 0. Nothing registers a halo component or
 a hop count by hand.
@@ -110,7 +110,7 @@ a hop count by hand.
 | Choice | Why it must be this |
 | --- | --- |
 | L = 16.92 Å, spacing 1.45 Å | ⌈16.92/1.45⌉ = 12 and `good_fft_size(12) = 12` (12 = 2²·3 is {2,3,5,7}-smooth), order + 1 = 6 ≤ 12, and dim 2 is even, so no clamp moves it. **12 is the point**: `pppm_fft_ranks(12, 8) = 6` — the largest divisor of 12 that fits 8 ranks — so the FFT group is a *proper* subset and two ranks are genuine non-members. A mesh with no proper divisor ≤ 8 would silently give the world arm. |
-| np = 8, dims 2×2×2 | 8.46 Å slabs. The auto-injected 7.7 Å shell needs `⌈7.7 · 2 / 16.92⌉ = 1` hop, which is the deepest legal hop at `dims = 2` (`SwapList::derive_hops` refuses more). |
+| np = 8, dims 2×2×2 | 8.46 Å slabs. The auto-injected 7.7 Å shell needs `⌈7.7 · 2 / 16.92⌉ = 1` hop, which is the deepest legal hop at `dims = 2` (`Halo::derive_hops` refuses more). |
 | r_c = 7.0 Å | ≤ L/2 = 8.46 Å (minimum image well defined) **and** max(1.1 r_c, r_c + skin) = 7.7 Å ≤ 8.46 Å (the shell fits one slab). r_c = 8.0 Å would give a 8.8 Å shell and be refused outright at dims = 2. |
 | α = 0.40 Å⁻¹ | Balances the split at this mesh: α·r_c = 2.8 ⇒ real-space truncation erfc(2.8) ≈ 7.5e-5; k_max = πK/L = 2.229 Å⁻¹ ⇒ reciprocal truncation ≈ exp(−(k_max/2α)²) = exp(−7.76) ≈ 4.3e-4. Both sit two decades inside the 2e-3 window; measured total deviation 7.3e-6. |
 | origin = 1.41 Å = L/12 | One **exact mesh cell**, so d = 2.82 Å is exactly two cells and every ion still sits on a mesh node — while no ion sits on the periodic boundary or on the 8.46 Å domain cut (nearest ion 1.41 Å away). |
@@ -153,7 +153,7 @@ environment to every rank) and is unset again immediately after the leg.
 
 The report is assembled **in this file**: an out-of-library `cpu::Component` at
 `evaluate::Phase::finalize @ +900` — after `md::mpi::Reduce` (evaluate @ +20)
-has made the Frame scalars system totals and after `HaloRecv` (evaluate @ +10)
+has made the Frame scalars system totals and after `CommBrick` (evaluate @ +10)
 folded every ghost force onto its owner — allgathers every rank's owned rows by
 tag and min/max-reduces the energy, the arm and the group size across ranks.
 

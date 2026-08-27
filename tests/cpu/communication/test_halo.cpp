@@ -1,7 +1,7 @@
-/// @file tests/cpu/communication/test_swap_list.cpp
-/// @brief Unit tests for `comm::SwapList` — the LAMMPS CommBrick swap table.
+/// @file tests/cpu/communication/test_halo.cpp
+/// @brief Unit tests for `comm::Halo` — the LAMMPS CommBrick swap table.
 ///
-/// `SwapList` is a **purely local** data structure: it derives the ordered
+/// `Halo` is a **purely local** data structure: it derives the ordered
 /// swap table from a `DomainDecomposition` + `Box` + halo cutoff, and owns
 /// the per-swap send lists and ghost-slot prefix sum. It performs no MPI,
 /// so every case here builds the DD by hand (dims / coords / periods /
@@ -12,14 +12,14 @@
 ///   * swap expansion order and count (`nswap = 2 * sum_d maxneed_d`),
 ///   * `pbc[3]` integer image flags on the periodic edges of the grid,
 ///   * `sendself` on non-decomposed axes (a **skip**, not a local memcpy),
-///   * the **half-open** `slablo/slabhi` eligibility band,
+///   * the **inclusive** `slablo/slabhi` eligibility band,
 ///   * `commit_recv` as the ghost-slot prefix-sum invariant,
 ///   * the undecomposed-axis exemption from every width check
 ///     (the `need_d > 1` refusal itself is superseded by
 ///     `.claude/specs/comm-topology-02-multihop.md`: a decomposed axis now
 ///     derives multi-hop rounds, and only the minimum-image bound refuses
 ///     — see `DerivesMultiHopWhenNeedExceedsSub` below and
-///     `test_swap_list_maxneed.cpp` for the hop counts),
+///     `test_halo_maxneed.cpp` for the hop counts),
 ///   * `invalidate()` clearing indices while keeping the swap geometry.
 
 #include <gtest/gtest.h>
@@ -31,7 +31,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/frame/box.h"
 #include "atomiverse/cpu/frame/frame.h"
 
@@ -157,9 +157,9 @@ constexpr double kHaloCutoff = 3.0; // [Angstrom]
 /// Happy path: a 3-D periodic grid whose halo fits inside every sub-slab
 /// expands to exactly six swaps in face order (0,lo),(0,hi),...,(2,hi) —
 /// bit-for-bit the `face_neighbors` order the cascade halo used.
-TEST(TestSwapList, HappyPathExpansion) {
+TEST(TestHalo, HappyPathExpansion) {
     const DomainDecomposition dd = split_x_dd(/*rank=*/0);
-    cpu::comm::SwapList list;
+    cpu::comm::Halo list;
     list.setup(dd, test_box(), kHaloCutoff, /*my_rank=*/0);
 
     // need_d = ceil(r_halo * dims_d / L_d): x -> ceil(0.3), y -> ceil(0.3),
@@ -195,8 +195,8 @@ TEST(TestSwapList, HappyPathExpansion) {
 /// `pbc[3]` carries the *integer* image flag (multiplied by the current
 /// `box.length(dim)` at pack time, never a metric offset baked in at setup).
 /// Only a rank sitting on the global periodic edge shifts.
-TEST(TestSwapList, PbcFlags) {
-    cpu::comm::SwapList lo_edge;
+TEST(TestHalo, PbcFlags) {
+    cpu::comm::Halo lo_edge;
     lo_edge.setup(split_x_dd(/*rank=*/0), test_box(), kHaloCutoff,
                   /*my_rank=*/0);
     // coords[0] == 0: the -x partner sits at the far side of the global box.
@@ -204,7 +204,7 @@ TEST(TestSwapList, PbcFlags) {
     // coords[0] == 0 != dims[0]-1: the +x partner is an interior neighbour.
     expect_pbc(lo_edge[1], 0, 0, 0);
 
-    cpu::comm::SwapList hi_edge;
+    cpu::comm::Halo hi_edge;
     hi_edge.setup(split_x_dd(/*rank=*/1), test_box(), kHaloCutoff,
                   /*my_rank=*/1);
     expect_pbc(hi_edge[0], 0, 0, 0);
@@ -226,8 +226,8 @@ TEST(TestSwapList, PbcFlags) {
 /// This engine **skips** those swaps rather than doing LAMMPS' local
 /// self-image memcpy: `cell_list` still applies min-image on non-extended
 /// axes, so a self-ghost there would be double-counted.
-TEST(TestSwapList, SendselfSkip) {
-    cpu::comm::SwapList list;
+TEST(TestHalo, SendselfSkip) {
+    cpu::comm::Halo list;
     list.setup(split_x_dd(/*rank=*/0), test_box(), kHaloCutoff, /*my_rank=*/0);
     ASSERT_EQ(static_cast<int>(list.size()), 6);
 
@@ -241,15 +241,19 @@ TEST(TestSwapList, SendselfSkip) {
     EXPECT_EQ(list.total_recv(), 0);
 }
 
-// ── 4. the half-open eligibility band ─────────────────────────────────
+// ── 4. the inclusive eligibility band ─────────────────────────────────
 
-/// The band comparison stays **strict** (`q - sublo < cutoff` /
-/// `subhi - q < cutoff`), not LAMMPS' `<=`: an atom exactly on the band
-/// edge is NOT shipped. x = 3.0 (lo edge) and x = 7.0 (hi edge) are in the
-/// chain precisely to catch a slide to `<=`.
-TEST(TestSwapList, SlabBandMatchesLegacyPredicate) {
+/// The band comparison is **inclusive on both edges**, as LAMMPS
+/// `CommBrick::borders` (`x[i][dim] >= lo && x[i][dim] <= hi`): an atom
+/// exactly on the band edge IS shipped. An edge ghost that is not needed
+/// costs one row; an edge ghost that is missing costs a pair, and a
+/// coordinate that arrived across a periodic boundary can land on the edge
+/// by round-off alone. x = 3.0 (lo-face edge, `sublo + cutoff`) and
+/// x = 7.0 (hi-face edge, `subhi - cutoff`) sit exactly on the bounds to
+/// pin that.
+TEST(TestHalo, SlabBandIsInclusiveOnBothEdges) {
     const cpu::Frame frame = x_chain_frame();
-    cpu::comm::SwapList list;
+    cpu::comm::Halo list;
     list.setup(split_x_dd(/*rank=*/0), test_box(), kHaloCutoff, /*my_rank=*/0);
 
     // Finite band edges, in this rank's own coordinate frame; the open side
@@ -262,38 +266,38 @@ TEST(TestSwapList, SlabBandMatchesLegacyPredicate) {
     list.rebuild_sendlist(/*iswap=*/0, frame, /*sources_end=*/10);
     list.rebuild_sendlist(/*iswap=*/1, frame, /*sources_end=*/10);
 
-    // q - 0.0 < 3.0  -> x = 0, 1, 2   (x = 3.0 excluded)
-    EXPECT_EQ(list[0].sendlist, (std::vector<int>{0, 1, 2}));
-    // 10.0 - q < 3.0 -> x = 8, 9      (x = 7.0 excluded)
-    EXPECT_EQ(list[1].sendlist, (std::vector<int>{8, 9}));
+    // q <= 3.0  -> x = 0, 1, 2, 3   (row 3 sits ON the edge and ships)
+    EXPECT_EQ(list[0].sendlist, (std::vector<int>{0, 1, 2, 3}));
+    // q >= 7.0  -> x = 7, 8, 9      (row 7 sits ON the edge and ships)
+    EXPECT_EQ(list[1].sendlist, (std::vector<int>{7, 8, 9}));
 }
 
 /// Cascade semantics: the scan bound is the caller's, so a later axis stage
 /// (owners + earlier-axis ghosts) picks up the appended ghost rows without
 /// the swap table knowing anything about staging.
-TEST(TestSwapList, SlabBandCascadeHonorsSourcesEnd) {
+TEST(TestHalo, SlabBandCascadeHonorsSourcesEnd) {
     const cpu::Frame frame = x_chain_frame();
-    cpu::comm::SwapList list;
+    cpu::comm::Halo list;
     list.setup(split_x_dd(/*rank=*/0), test_box(), kHaloCutoff, /*my_rank=*/0);
 
     list.rebuild_sendlist(/*iswap=*/0, frame, /*sources_end=*/12);
     list.rebuild_sendlist(/*iswap=*/1, frame, /*sources_end=*/12);
 
     // row 10 (x = -0.5) enters the lo band; row 11 (x = 10.5) the hi band.
-    EXPECT_EQ(list[0].sendlist, (std::vector<int>{0, 1, 2, 10}));
-    EXPECT_EQ(list[1].sendlist, (std::vector<int>{8, 9, 11}));
+    EXPECT_EQ(list[0].sendlist, (std::vector<int>{0, 1, 2, 3, 10}));
+    EXPECT_EQ(list[1].sendlist, (std::vector<int>{7, 8, 9, 11}));
 
     // Shrinking the scan back drops them again (refill, not append).
     list.rebuild_sendlist(/*iswap=*/0, frame, /*sources_end=*/10);
-    EXPECT_EQ(list[0].sendlist, (std::vector<int>{0, 1, 2}));
+    EXPECT_EQ(list[0].sendlist, (std::vector<int>{0, 1, 2, 3}));
 }
 
 // ── 5. ghost slot prefix sum ──────────────────────────────────────────
 
 /// `firstrecv[i] = n_local + sum_{j<i} nrecv[j]` becomes a type invariant,
-/// replacing the `slot_start[6]` prefix sum hand-computed in `HaloRecv`.
-TEST(TestSwapList, CommitRecvPrefixSum) {
-    cpu::comm::SwapList list;
+/// replacing the `slot_start[6]` prefix sum hand-computed in `CommBrick`.
+TEST(TestHalo, CommitRecvPrefixSum) {
+    cpu::comm::Halo list;
     list.setup(split_x_dd(/*rank=*/0), test_box(), kHaloCutoff, /*my_rank=*/0);
     ASSERT_EQ(static_cast<int>(list.size()), 6);
 
@@ -329,8 +333,8 @@ TEST(TestSwapList, CommitRecvPrefixSum) {
 /// this test keeps the `-01` geometry, which happens to sit exactly beyond
 /// it (10.5 A shell on a 20 A box whose 2-rank slab is 10 A wide), and
 /// pins that it still throws — for the new reason. The hop counts
-/// themselves live in `tests/cpu/communication/test_swap_list_maxneed.cpp`.
-TEST(TestSwapList, DerivesMultiHopWhenNeedExceedsSub) {
+/// themselves live in `tests/cpu/communication/test_halo_maxneed.cpp`.
+TEST(TestHalo, DerivesMultiHopWhenNeedExceedsSub) {
     // 20 A box split 4 ways: sub = 5 A, shell 6 A => ceil(1.2) = 2 hops,
     // and 2 <= dims - 1 = 3, so the minimum-image bound is satisfied.
     DomainDecomposition four_way;
@@ -346,14 +350,14 @@ TEST(TestSwapList, DerivesMultiHopWhenNeedExceedsSub) {
     four_way.subhi[2] = 16.0;
     four_way.face_neighbors = std::array<int, 6>{0, 2, 1, 1, 1, 1};
 
-    cpu::comm::SwapList list;
+    cpu::comm::Halo list;
     ASSERT_NO_THROW(list.setup(four_way, test_box(), 6.0, /*my_rank=*/1));
     EXPECT_EQ(list.max_hops(0), 2);
 
     // Minimum-image bound: 10.5 A > L - w_self = 20 - 10 A. Still refused,
     // and no longer with the "fewer ranks" how-to.
     const DomainDecomposition dd = split_x_dd(/*rank=*/0);
-    cpu::comm::SwapList over;
+    cpu::comm::Halo over;
     EXPECT_THROW(over.setup(dd, test_box(), 10.5, /*my_rank=*/0),
                  std::runtime_error);
 }
@@ -361,31 +365,31 @@ TEST(TestSwapList, DerivesMultiHopWhenNeedExceedsSub) {
 /// The ceil convention keeps `r_halo == sub_width` a **single** hop, which
 /// is what the outgoing guard did (it rejected only `need > sub`, letting
 /// equality through). Both the exact edge and one epsilon below it pass.
-TEST(TestSwapList, AcceptsCutoffUpToSubdomainWidth) {
+TEST(TestHalo, AcceptsCutoffUpToSubdomainWidth) {
     const DomainDecomposition dd = split_x_dd(/*rank=*/0);
 
-    cpu::comm::SwapList just_under;
+    cpu::comm::Halo just_under;
     EXPECT_NO_THROW(
         just_under.setup(dd, test_box(), 10.0 - 1e-9, /*my_rank=*/0));
     EXPECT_EQ(just_under.maxneed(0), 1);
     EXPECT_EQ(static_cast<int>(just_under.size()), 6);
 
-    cpu::comm::SwapList exact;
+    cpu::comm::Halo exact;
     EXPECT_NO_THROW(exact.setup(dd, test_box(), 10.0, /*my_rank=*/0));
     EXPECT_EQ(exact.maxneed(0), 1);
     EXPECT_EQ(static_cast<int>(exact.size()), 6);
 }
 
 /// **Undecomposed axes are exempt from the guard.** Today's guard short-
-/// circuits `dims[d] <= 1` *before* comparing (`halo_exchange.cpp:498-499`),
+/// circuits `dims[d] <= 1` *before* comparing (`comm_brick.cpp:498-499`),
 /// so a shell wider than the entire axis runs fine there: that axis grows no
 /// ghosts at all and its periodicity is the cell list's min-image on
 /// non-extended axes. `setup` must replicate the short-circuit **ahead of**
 /// the ceil, or an EAM-style `2*cutoff` shell on a thin axis turns a run
 /// that is legal today into a hard throw.
-TEST(TestSwapList, UndecomposedAxisExemptFromGuard) {
+TEST(TestHalo, UndecomposedAxisExemptFromGuard) {
     const DomainDecomposition dd = thin_y_axis_dd(/*rank=*/0);
-    cpu::comm::SwapList list;
+    cpu::comm::Halo list;
     // 12 A shell: fits the 15 A x sub-slab, but L_y = 8 A would give a naive
     // ceil(12 * 1 / 8) = 2 on the undecomposed y axis.
     ASSERT_NO_THROW(list.setup(dd, thin_y_axis_box(), 12.0, /*my_rank=*/0));
@@ -410,8 +414,8 @@ TEST(TestSwapList, UndecomposedAxisExemptFromGuard) {
 
 /// One rank owns everything: every swap is `sendself`, so the table exists
 /// but moves nothing and no ghost slot is ever claimed.
-TEST(TestSwapList, AllSelfWhenSingleRank) {
-    cpu::comm::SwapList list;
+TEST(TestHalo, AllSelfWhenSingleRank) {
+    cpu::comm::Halo list;
     list.setup(single_rank_dd(), test_box(), kHaloCutoff, /*my_rank=*/0);
 
     ASSERT_EQ(static_cast<int>(list.size()), 6);
@@ -433,9 +437,9 @@ TEST(TestSwapList, AllSelfWhenSingleRank) {
 /// — but the *geometry* (which rank, which band, which image flag) is
 /// unaffected by a reshuffle and must survive, so the next `borders()` pass
 /// only has to re-scan, not re-derive the table.
-TEST(TestSwapList, InvalidateClearsIndicesKeepsGeometry) {
+TEST(TestHalo, InvalidateClearsIndicesKeepsGeometry) {
     const cpu::Frame frame = x_chain_frame();
-    cpu::comm::SwapList list;
+    cpu::comm::Halo list;
     list.setup(split_x_dd(/*rank=*/0), test_box(), kHaloCutoff, /*my_rank=*/0);
     list.rebuild_sendlist(/*iswap=*/0, frame, /*sources_end=*/10);
     list.rebuild_sendlist(/*iswap=*/1, frame, /*sources_end=*/10);

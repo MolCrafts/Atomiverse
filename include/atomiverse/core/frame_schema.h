@@ -65,6 +65,15 @@ inline constexpr unsigned kColNone = 0;
 inline constexpr unsigned kColCount = 1u << 0;
 inline constexpr unsigned kColTopology = 1u << 1;
 inline constexpr unsigned kColIdentityTail = 1u << 2;
+/// @brief Declares the write-back set: the columns `to_molrs` returns to
+///        the caller's Frame. Currently x/y/z, v, f and charge.
+///
+/// NOT YET CONSUMED. `to_molrs` (`src/cpu/frame/molrs_exchange.cpp:281`)
+/// hand-lists exactly these columns plus tag and image instead of walking
+/// this flag, so the declaration and the implementation can drift. Wiring
+/// `to_molrs` onto `resolve_columns(kColWriteBack)` is owed — see the
+/// comm-maint chain notes in `.claude/specs/INDEX.md`. Do not delete the
+/// flag: it is the correct declaration, it is the consumer that is missing.
 inline constexpr unsigned kColWriteBack = 1u << 3;
 inline constexpr unsigned kColMigrate = 1u << 4;
 inline constexpr unsigned kColExchange = 1u << 5;

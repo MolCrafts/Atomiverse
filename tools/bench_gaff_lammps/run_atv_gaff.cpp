@@ -57,6 +57,7 @@ struct Args {
     double cutoff = 10.0;       // overridden by --ff pair_style cutoff
     double accuracy = 1.0e-4;   // overridden by --ff kspace_style accuracy
     double alpha = -1.0;        // <0 → pppm_alpha_from_accuracy(accuracy)
+    int fft_ranks = 0;          // 0 → derive from the mesh
     double grid_spacing = -1.0; // <0 → from_accuracy default (rcut/2.5)
     double T = 400.0;
     double tau_T = 100.0;
@@ -95,6 +96,8 @@ Args parse(int argc, char** argv) {
             a.grid_spacing = std::atof(next("--grid-spacing"));
         else if (!std::strcmp(argv[i], "--alpha"))
             a.alpha = std::atof(next("--alpha"));
+        else if (!std::strcmp(argv[i], "--fft-ranks"))
+            a.fft_ranks = std::atoi(next("--fft-ranks"));
         else if (!std::strcmp(argv[i], "--T"))
             a.T = std::atof(next("--T"));
         else if (!std::strcmp(argv[i], "--tau-T"))
@@ -281,7 +284,8 @@ int main(int argc, char** argv) {
                               .set_tail_correction(tail)
                               .set_energy_shift(shift)
                               .set_compute_stress(stress));
-        sim.set_evaluator(cpu::KSpacePPPM{alpha, grid_sp, /*order=*/5});
+        sim.set_evaluator(
+            cpu::KSpacePPPM{alpha, grid_sp, /*order=*/5, args.fft_ranks});
         sim.set_evaluator(cpu::BondHarmonic{Kbond, r0});
         sim.set_evaluator(cpu::AngleHarmonic{Kang, th0});
         if (use_charmm)
@@ -318,10 +322,9 @@ int main(int argc, char** argv) {
         // sqrt at the end (the max of the squares is the square of the max);
         // `fnorm` reduces the sum of squares with SUM, then takes the sqrt.
         //
-        // The reverse halo this relies on is auto-injected: `Evaluate` now
-        // binds `comm::Migrate` / `comm::HaloSend` / `comm::HaloRecv` /
-        // `md::mpi::Reduce` around the evaluate phase exactly as
-        // `cpu::minimizer::Minimize` does. Before that fix this branch ran
+        // The reverse halo this relies on is `ctx.md.comm` (Evaluate
+        // linear wrap) plus `md::mpi::Reduce` on the evaluate slot.
+        // Before that wrap this branch ran
         // with ZERO ghost atoms at np > 1 and every quantity here silently
         // lost its cross-rank part (MIL0PEGM18 24k: E = 1684.070 eV at np=1
         // vs 1241.720 eV at np=8); `widebox_parity.sh` is what reports it.

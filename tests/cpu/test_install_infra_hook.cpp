@@ -11,13 +11,8 @@
 ///
 /// arch-refactor-02-halo additions (`HaloParticipant` protocol scan):
 ///        (d) `Component::halo_participant()` defaults to `nullptr`; the
-///            eight legacy halo virtuals are gone from the base vtable;
-///        (e) `HaloSend`/`HaloRecv` expose `Endpoint::send`/`Endpoint::recv`
-///            through the protocol, and a manually registered pair +
-///            `set_evaluator` builds to exactly ONE endpoint pair (no double
-///            injection);
-///        (f) a pure field participant (`Endpoint::none`) is not treated as
-///            an endpoint and does not suppress the automatic injection.
+///            legacy `pack_forward` name is gone from the base vtable
+///            (packer protocol is `pack_forward_comm`).
 ///
 /// arch-refactor-03-neighbor additions (`NeighborConsumer` /
 /// `NeighborProvider` opt-in protocol, neighbor_protocol.h):
@@ -43,9 +38,7 @@
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/communication/halo_exchange.h"
 #include "atomiverse/cpu/component/component.h"
-#include "atomiverse/cpu/component/halo_participant.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -83,7 +76,7 @@ TEST(InstallInfraHook, AsNeighborProviderDefaultsToNull) {
 /// @brief Counts how often `install_defaults()` is called per `build()`.
 ///
 /// Subclasses the `cpu::md::MD` preset (the category bases are gone). MD *itself*
-/// overrides `install_defaults()` — it injects `mpi::Reduce`, the halo pair and the
+/// overrides `install_defaults()` — it injects `mpi::Reduce` and the
 /// neighbor-list guard — so the override must chain to `MD::install_defaults()`, not to
 /// `Driver`'s empty base hook, or that infrastructure silently disappears.
 class HookCounterDynamics : public ATV::cpu::md::MD {
@@ -127,7 +120,7 @@ TEST(InstallInfraHook, HookFiresExactlyOncePerBuild) {
 
 TEST(InstallInfraHook, DefaultInstallInfraIsNoOp) {
     // The plain `cpu::md::MD` (no subclass override) must still throw on missing
-    // Integrator. Its own `install_defaults()` injects INFRASTRUCTURE (Reduce, halo,
+    // Integrator. Its own `install_defaults()` injects INFRASTRUCTURE (Reduce,
     // …) — proves it never silently fabricates a component that satisfies a required
     // role, which is what would make the validation rule vacuous.
     ATV::cpu::md::MD d;
@@ -136,66 +129,12 @@ TEST(InstallInfraHook, DefaultInstallInfraIsNoOp) {
     EXPECT_THROW(d.build(), std::runtime_error);
 }
 
-// ═══ HaloParticipant protocol scan (arch-refactor-02-halo) ══════════════
+// ═══ Component base vtable stays free of halo plumbing ═════════════════
 
-/// @brief Pure field participant: opts into `HaloParticipant`, keeps the
-/// default `Endpoint::none`, and declares one width-1 forward field. Must
-/// neither count as a halo endpoint nor suppress endpoint auto-injection.
-class PureFieldParticipant : public ATV::cpu::Component,
-                             public ATV::cpu::HaloParticipant {
-  public:
-    std::string name() const override { return "pure_field_participant"; }
-    ATV::cpu::HaloParticipant* halo_participant() override { return this; }
-    std::vector<CommField> comm_forward_fields() const override {
-        CommField f;
-        f.data = nullptr; // storage is only allocated in build(); the
-        f.width = 1;      // declaration shape alone drives the driver scan
-        return {f};
-    }
-    void launch(const ATV::cpu::LaunchContext&) override {}
-};
-
-/// @brief Count distinct send/recv halo endpoints in a compiled Plan via the
-/// protocol probe (`halo_participant()->halo_endpoint()`), deduplicating
-/// components that appear under multiple phase bindings. No `dynamic_cast`,
-/// no `name()` matching — same discipline as `scan_pending_infra_()`.
-std::pair<int, int>
-count_halo_endpoints(const ATV::Plan<ATV::cpu::Component>& plan) {
-    std::unordered_set<const ATV::cpu::Component*> seen;
-    int sends = 0;
-    int recvs = 0;
-    for (const auto& slot : plan.slots) {
-        for (const auto& op : slot.ops) {
-            ATV::cpu::Component* c = op.component;
-            if (!seen.insert(c).second)
-                continue;
-            ATV::cpu::HaloParticipant* p = c->halo_participant();
-            if (p == nullptr)
-                continue;
-            switch (p->halo_endpoint()) {
-            case ATV::cpu::HaloParticipant::Endpoint::send:
-                ++sends;
-                break;
-            case ATV::cpu::HaloParticipant::Endpoint::recv:
-                ++recvs;
-                break;
-            case ATV::cpu::HaloParticipant::Endpoint::none:
-                break;
-            }
-        }
-    }
-    return {sends, recvs};
-}
-
-// ─── (d) base-vtable contract ───────────────────────────────────────────
-
-TEST(HaloParticipantProtocol, ComponentBaseDefaultsToNullParticipant) {
-    StubIntegrator c;
-    EXPECT_EQ(c.halo_participant(), nullptr);
-}
-
-// Detection idiom: the eight legacy halo virtuals must be GONE from
-// `cpu::Component` (replaced by the single `halo_participant()` query).
+// Detection idiom: the legacy halo virtuals must stay GONE from
+// `cpu::Component`. The `halo_participant()` query that once replaced them
+// is itself gone (comm-maint-01-deadcode): it had zero implementers, and
+// the extra-field forward path is self-initiated by the plugin.
 #define ATV_TEST_HAS_MEMBER(memb)                                              \
     template <typename T, typename = void>                                     \
     struct HasMember_##memb : std::false_type {};                              \
@@ -205,7 +144,6 @@ TEST(HaloParticipantProtocol, ComponentBaseDefaultsToNullParticipant) {
 
 ATV_TEST_HAS_MEMBER(provides_halo_send);
 ATV_TEST_HAS_MEMBER(provides_halo_recv);
-ATV_TEST_HAS_MEMBER(comm_forward);
 ATV_TEST_HAS_MEMBER(comm_reverse);
 ATV_TEST_HAS_MEMBER(pack_forward);
 ATV_TEST_HAS_MEMBER(unpack_forward);
@@ -220,8 +158,6 @@ TEST(HaloParticipantProtocol, LegacyHaloVirtualsAreGoneFromComponentBase) {
                   "provides_halo_send must be deleted from cpu::Component");
     static_assert(!HasMember_provides_halo_recv<CB>::value,
                   "provides_halo_recv must be deleted from cpu::Component");
-    static_assert(!HasMember_comm_forward<CB>::value,
-                  "comm_forward must be deleted from cpu::Component");
     static_assert(!HasMember_comm_reverse<CB>::value,
                   "comm_reverse must be deleted from cpu::Component");
     static_assert(!HasMember_pack_forward<CB>::value,
@@ -233,81 +169,6 @@ TEST(HaloParticipantProtocol, LegacyHaloVirtualsAreGoneFromComponentBase) {
     static_assert(!HasMember_unpack_reverse<CB>::value,
                   "unpack_reverse must be deleted from cpu::Component");
     SUCCEED(); // contract is compile-time
-}
-
-// ─── (e) endpoint exposure + no double injection ────────────────────────
-
-TEST(HaloParticipantProtocol, HaloSendRecvExposeEndpoints) {
-    ATV::cpu::comm::HaloSend send{2.0};
-    ATV::cpu::HaloParticipant* ps = send.halo_participant();
-    ASSERT_NE(ps, nullptr);
-    EXPECT_EQ(ps, static_cast<ATV::cpu::HaloParticipant*>(&send));
-    EXPECT_EQ(ps->halo_endpoint(), ATV::cpu::HaloParticipant::Endpoint::send);
-
-    ATV::cpu::comm::HaloRecv recv{};
-    ATV::cpu::HaloParticipant* pr = recv.halo_participant();
-    ASSERT_NE(pr, nullptr);
-    EXPECT_EQ(pr, static_cast<ATV::cpu::HaloParticipant*>(&recv));
-    EXPECT_EQ(pr->halo_endpoint(), ATV::cpu::HaloParticipant::Endpoint::recv);
-}
-
-TEST(HaloParticipantProtocol, ManualHaloPairIsNotDoubleInjected) {
-    // User registers the halo pair explicitly (custom cutoff) AND sets a
-    // pair evaluator. install_defaults() must detect the existing endpoints
-    // via the protocol probe and inject nothing on top — reverse exchange
-    // must run exactly once (see halo_exchange.h).
-    ATV::cpu::md::MD sim;
-    StubIntegrator integ;
-    sim.on(ATV::md::Phase::initial_integrate).add_ref(integ);
-    sim.set_evaluator(ATV::cpu::PairLJCut{0.0104, 3.4, 6.0});
-    sim.set_neighbor(ATV::cpu::md::NeighborList<>{6.0});
-    sim.set_observer(ATV::cpu::comm::HaloSend{6.6});
-    sim.set_observer(ATV::cpu::comm::HaloRecv{});
-    sim.build();
-
-    const auto [sends, recvs] = count_halo_endpoints(sim.plan());
-    EXPECT_EQ(sends, 1) << "expected exactly one HaloSend endpoint "
-                           "(manual registration must suppress auto-inject)";
-    EXPECT_EQ(recvs, 1) << "expected exactly one HaloRecv endpoint "
-                           "(manual registration must suppress auto-inject)";
-}
-
-// ─── (f) Endpoint::none neither endpoint nor injection suppressor ───────
-
-TEST(HaloParticipantProtocol, FieldParticipantIsNotAnEndpoint) {
-    PureFieldParticipant fp;
-    ATV::cpu::HaloParticipant* p = fp.halo_participant();
-    ASSERT_NE(p, nullptr);
-    EXPECT_EQ(p->halo_endpoint(), ATV::cpu::HaloParticipant::Endpoint::none);
-    EXPECT_TRUE(fp.comm_reverse_fields().empty()); // base default
-    ASSERT_EQ(fp.comm_forward_fields().size(), 1u);
-    EXPECT_EQ(fp.comm_forward_fields()[0].width, 1);
-}
-
-TEST(HaloParticipantProtocol, FieldParticipantDoesNotSuppressAutoInjection) {
-    // A pure field participant is registered, but NO halo endpoints are.
-    // Under an MPI build, install_defaults() must still auto-inject the
-    // HaloSend/HaloRecv pair for the set_evaluator cutoff: Endpoint::none must
-    // not trip the has_halo_send/has_halo_recv scan booleans.
-    ATV::cpu::md::MD sim;
-    StubIntegrator integ;
-    PureFieldParticipant fp;
-    sim.on(ATV::md::Phase::initial_integrate).add_ref(integ);
-    sim.set_evaluator(ATV::cpu::PairLJCut{0.0104, 3.4, 6.0});
-    sim.set_neighbor(ATV::cpu::md::NeighborList<>{6.0});
-    sim.on(ATV::md::Phase::force).add_ref(fp, +100);
-    sim.build();
-
-    const auto [sends, recvs] = count_halo_endpoints(sim.plan());
-#ifdef ATV_HAS_MPI
-    EXPECT_EQ(sends, 1) << "Endpoint::none participant suppressed the "
-                           "HaloSend auto-injection";
-    EXPECT_EQ(recvs, 1) << "Endpoint::none participant suppressed the "
-                           "HaloRecv auto-injection";
-#else
-    EXPECT_EQ(sends, 0) << "no MPI build: nothing may inject endpoints";
-    EXPECT_EQ(recvs, 0) << "no MPI build: nothing may inject endpoints";
-#endif
 }
 
 // ═══ NeighborConsumer/NeighborProvider protocol (arch-refactor-03) ══════

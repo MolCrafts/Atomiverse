@@ -45,6 +45,14 @@ namespace cpu {
 /// valid) noise realization.
 class PairDpd : public Pair {
   public:
+    /// @brief DPD's dissipative term is v_j - v_i, so ghost rows
+    /// carry velocities. This is the ONLY style in the tree that reads a
+    /// neighbour velocity; a run without it does not ship them.
+    /// @param out Schema being accumulated at build().
+    void declare_fields(Schema& out) const override {
+        out.require_all({"vx", "vy", "vz"}, ColDType::Storage, "PairDpd");
+    }
+
     /// @brief Single-type: one amplitude `a` for every pair.
     ///
     /// @param a           Soft repulsion amplitude [eV/Å] — a FORCE, not an

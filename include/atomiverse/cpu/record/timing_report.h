@@ -39,6 +39,8 @@ struct ReducedReport {
     double loop_min = 0.0, loop_avg = 0.0, loop_max = 0.0;
     int nlocal_min = 0, nlocal_max = 0;
     double nlocal_avg = 0.0;
+    int nghost_min = 0, nghost_max = 0;
+    double nghost_avg = 0.0;
     std::uint64_t steps = 0;
     int ranks = 1;
 };
@@ -95,7 +97,7 @@ void emit_memory_table(const MemReport& rep, std::string_view stage);
 
 /// @brief Diagnostic: emit per-component (per-name) max-over-ranks wall time —
 /// splits the category rollup (e.g. Comm) into its constituent components
-/// (halo_forward / halo_reverse / atom_migration). Rank 0 only; intended for
+/// (halo_forward / halo_reverse / owner_exchange). Rank 0 only; intended for
 /// scaling investigations. Component registration order is identical across
 /// ranks, so the per-component totals reduce elementwise.
 void emit_per_component(const TimerRegistry& reg, std::string_view stage);

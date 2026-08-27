@@ -11,6 +11,7 @@
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/component/comm.h"
 #include "atomiverse/cpu/component/constraint.h"
 #include "atomiverse/cpu/component/constraint_protocol.h"
 
@@ -55,7 +56,9 @@ namespace md {
 /// is what makes the closed form exist. A water whose H masses differ throws
 /// at `build()` rather than being silently mis-constrained — use `FixRattle`,
 /// which is iterative and general.
-class FixSettle : public Constraint, public ConstraintProvider {
+class FixSettle : public Constraint,
+                  public ConstraintProvider,
+                  public ForwardPacker {
   public:
     /// @param dt Timestep [fs] (for velocity stage).
     /// @param d_oh O–H distance [Å] (TIP3P default 0.9572).
@@ -89,6 +92,33 @@ class FixSettle : public Constraint, public ConstraintProvider {
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
 
+    /// @brief LAMMPS RATTLE/SHAKE packer mode. XSHAKE applies \(p_d L_d\) [Å].
+    enum class CommMode { XSHAKE, VP, V };
+
+    /// @brief Select the packer mode.
+    /// @param mode Packer mode.
+    void set_comm_mode(CommMode mode) { comm_mode_ = mode; }
+
+    /// @brief Three doubles per atom (x/y/z [Å] or vx/vy/vz [Å/fs]).
+    /// @return 3.
+    int comm_forward() const override { return 3; }
+
+    /// @brief Pack sendlist rows. XSHAKE applies \(p_d L_d\) [Å]; VP/V do not.
+    /// @param n Number of local rows in `list` [dimensionless].
+    /// @param list Local row indices to pack.
+    /// @param buf Output buffer.
+    /// @param pbc_flag 1 when this swap crosses a periodic image.
+    /// @param pbc Per-axis image flags in `{-1,0,+1}`.
+    /// @return Number of doubles written.
+    int pack_forward_comm(int n, const int* list, double* buf, int pbc_flag,
+                          const int* pbc) override;
+
+    /// @brief Unpack received rows into ghost slots `[first, first+n)`.
+    /// @param n Number of ghost rows [dimensionless].
+    /// @param first First destination row index.
+    /// @param buf Packed doubles.
+    void unpack_forward_comm(int n, int first, const double* buf) override;
+
   private:
     struct Water {
         TagInt o, h1, h2;
@@ -108,6 +138,8 @@ class FixSettle : public Constraint, public ConstraintProvider {
     /// snapshotted before the integrator moves anything: 9 doubles per water
     /// (O, H1, H2 × x/y/z), minimum-image-unwrapped about the oxygen.
     std::vector<double> ref_;
+    CommMode comm_mode_ = CommMode::XSHAKE;
+    cpu::Frame* frame_ = nullptr;
 };
 
 } // namespace md

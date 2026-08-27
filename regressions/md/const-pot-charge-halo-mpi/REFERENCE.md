@@ -44,13 +44,11 @@ per-atom charge so ghosts match owners before force evaluation.
 | Top plate (Ψ = 1 V) | 2 | 15 (5×3 grid) | 11 | 0 (solved) |
 | Electrolyte ions | 3 | 8 | 7–9.5 | ±0.25 (neutral) |
 
-Pipeline (all defaults — the auto-injected refresh is the feature under
+Pipeline (all defaults — the packer refresh is the feature under
 test): `VelocityVerlet{0.1 fs}` + `NeighborList{3.0, 0.3}` +
 `PairCoulCut{3.0}` + `ConstPotBO{η = 2 Å⁻¹}` (electroneutrality on, matrix
-rebuilt per step). `MD::install_defaults()` injects `HaloSend`/`HaloRecv`
-(from the pair cutoff) and — because `ConstPotBO` declares
-`updates_owned_charges()` — `comm::HaloRefresh{Field::charges}` at
-`pre_force @ +900`. 5 MD steps.
+rebuilt per step). Halo / exchange / reverse live on `ctx.md.comm`;
+`ConstPotBO` posts `ChargePacker` after writing owned charges. 5 MD steps.
 
 An out-of-library `GhostChargeChecker` Component (defined in the regression
 file — the user-extension path) runs at the force phase and compares every

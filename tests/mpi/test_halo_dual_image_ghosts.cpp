@@ -17,13 +17,14 @@
 
 #include <mpi.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <string>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/swap_list.h"
+#include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
@@ -151,12 +152,13 @@ class GhostCountProbe : public cpu::Component {
             return;
         n_local = dd->n_local;
         n_ghost = dd->n_ghost;
-        // The published swap table is how a case states which shell it
-        // actually got: `max_hops(d)` is the derived round count of axis d
-        // (0 on an undecomposed axis, by the `sendself` convention).
-        if (const auto* swaps = ctx.runtime.md.swap_list)
+        // Hop counts are a pure function of the published DD + box + shell.
+        if (dd->ghost_shell_width > 0.0) {
+            const auto need = cpu::comm::Halo::derive_hops(
+                *dd, ctx.frame.box, dd->ghost_shell_width);
             for (int d = 0; d < 3; ++d)
-                hops[d] = swaps->max_hops(d);
+                hops[d] = std::max(need.minus[d], need.plus[d]);
+        }
         ++launches;
     }
 
@@ -295,7 +297,7 @@ TEST(HaloDualImageGhosts, NonOverlappingGeometryStillMatchesBruteForce) {
 // `max_hops = ceil(6.6 / sub)` rounds per direction. comm-topology-02
 // fills the shell by forwarding ghosts over that many rounds; the only
 // remaining refusal is the minimum-image bound
-// (`SwapList` refuse_minimum_image). The `1e-9` oracle window is the
+// (`Halo` refuse_minimum_image). The `1e-9` oracle window is the
 // same one the n1 / n2 cases use: spatial decomposition may not move
 // the total energy at all.
 
@@ -347,8 +349,8 @@ TEST(HaloDualImageGhosts, NarrowSubdomainEightRanksMatchBruteForce) {
 //
 // Why 14 A on y and not the 12 A of a 24x12x12 box: at dims_y = 2 the deepest
 // legal hop is dims - 1 = 1 (round 2 would wrap onto this rank's own periodic
-// image), so `SwapList::derive_hops` refuses `ceil(6.6 / 6.0) = 2`
-// (`src/cpu/communication/swap_list.cpp:191`) with
+// image), so `Halo::derive_hops` refuses `ceil(6.6 / 6.0) = 2`
+// (`Halo::refuse_minimum_image`, src/cpu/communication/halo.cpp) with
 //   "the requested ghost shell (6.6 A) violates the minimum-image convention
 //    on periodic axis 1 ... the bound is shell <= L - w_self = 12 - 6 = 6 A".
 // A 2-hop x axis and a 2-hop y axis at dims_y = 2 therefore cannot coexist;

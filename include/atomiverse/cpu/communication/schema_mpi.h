@@ -46,6 +46,20 @@ inline void require_collective_schema(const PackPlan& plan,
                                    operation);
 }
 
+/// @brief Collective agreement on a wire plan's schema, with a
+///        discriminator so two uses of the same plan shape stay distinct.
+/// @param plan Compiled wire plan.
+/// @param communicator Communicator every participant calls this on.
+/// @param operation Name used in the failure message.
+/// @param discriminator Extra value folded into the digest.
+inline void require_collective_plan(const PackPlan& plan, MPI_Comm communicator,
+                                    std::string_view operation,
+                                    std::uint64_t discriminator = 0) {
+    require_collective_fingerprint(plan.version,
+                                   plan.wire_fingerprint(discriminator),
+                                   communicator, operation);
+}
+
 inline int checked_mpi_byte_count(std::size_t bytes,
                                   std::string_view operation) {
     if (bytes > static_cast<std::size_t>(std::numeric_limits<int>::max()))

@@ -19,7 +19,6 @@ void Thermo::launch(const cpu::LaunchContext& ctx) {
         return;
 
     auto& f = ctx.frame;
-    int n = f.nlocal();
     // Ndof has ONE owner (Driver::publish_dof_): 3N - 3 - n_constraints. This
     // used to be hardcoded as 3N - 3 here, which is simply wrong the moment
     // anything is constrained — a rigid-water box would report T ~33% low.
