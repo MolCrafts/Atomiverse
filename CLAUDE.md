@@ -484,10 +484,18 @@ Reduce) inherits `Component` directly; there is no `Infrastructure` kind.
 | `Integrator` / `Thermostat` / `Barostat` / `Optimizer` / `Constraint` / `Mover` | required | VelocityVerlet, LBFGS |
 
 **Opt-in protocols** — `Component` stays minimal; cross-cutting needs are
-declared by implementing a protocol the engine probes for (no `dynamic_cast`,
-no dead default virtuals): `HaloParticipant`, `NeighborConsumer`,
+declared by implementing a protocol the engine **probes for** (no
+`dynamic_cast`, no dead default virtuals): `NeighborConsumer`,
 `NeighborProvider`, `LongRangeParticipant` (exactly one matched real/reciprocal
-pair required), `PairEvaluator`, `AsyncComponent`.
+pair required), `PairEvaluator`, `ConstraintProvider`, `TimestepProvider` /
+`TimestepConsumer`. The async base is a class, `AsyncComponentBase`, not a
+probed protocol.
+
+A protocol only earns a `Component` accessor when something **scans** for it.
+`ForwardPacker` (`component/comm.h`) does not: the extra-field forward path is
+self-initiated — the plugin calls `ctx.md.comm->forward_comm(*this)` itself —
+so it is named as a base by the three classes that pack (`ChargePacker`,
+`FixSettle`, `FixRattle`) and `Component` carries none of its virtuals.
 
 **Lifecycle:** `build()` (one-time alloc) → `launch()` × N → `destroy()`. No
 allocation in `launch()`.
@@ -575,8 +583,9 @@ accumulator; the one g(r) emitter is `cpu::rdf_write_curve`.
 - **File extensions:** CPU `.h`/`.cpp`, CUDA `.cuh`/`.cu`, core `.h`.
   Deliberately CUDA-free bridge headers under `cuda/` keep `.h`.
 - **Phase naming:** Evaluate `prepare, evaluate, finalize`; MD LAMMPS-style
-  (`initial_integrate, pre_force, force, post_force, final_integrate,
-  end_of_step`); Minimizer `search_direction, line_search, force,
+  (`initial_integrate, post_integrate, pre_exchange, pre_neighbor, neighbor,
+  pre_force, force, post_force, final_integrate, end_of_step` —
+  `core/stage.h`); Minimizer `search_direction, line_search, force,
   convergence_check, end_of_step`; Vib `setup, displace, force, accumulate,
   diagonalize, thermochem, end_of_step`; Sampling `propose, energy,
   end_of_step`; SCF `fock, mix, diagonalize, density, check`.

@@ -3,6 +3,59 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Live — lammps-comm-brick chain (2026-08-26)
+
+CPU 多核通信按 LAMMPS `Comm` / `CommBrick` 重构。`Halo` ≡ 原 `Halo`（CommBrick 私有）；插件只见 Frame 行。有序链，前者落地后者才能编。
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| `lammps-comm-brick-01-halo` | — | DONE 2026-08-26 — Halo→Halo 表；Send/Recv 适配器；spec deleted |
+| `lammps-comm-brick-02-brick` | 01 | DONE 2026-08-26 — Comm+CommBrick；ctx.md.comm；spec deleted |
+| `lammps-comm-brick-03-verlet` | 02 | DONE 2026-08-26 — Runtime 只打 Comm*；nflag XOR；spec deleted |
+| `lammps-comm-brick-04-packer` | 03 | DONE 2026-08-26 — pack_forward_comm；Rattle/电荷 packer；spec deleted |
+| `lammps-comm-brick-05-presets` | 04 | DONE 2026-08-26 — 预设停注并删除四类型；spec deleted |
+
+**Live count: 16.** (9 comm-maint + 6 component-plugin + 1 TB)
+
+## Live — comm-maint chain (2026-08-27)
+
+CPU 通信层可维护性整改，来自对 `cpu/communication` + 通信拓扑架构的评审（对照 LAMMPS `src/comm*.{h,cpp}`、`domain.h`、`atom.h`、`atom_vec.cpp`，checkout `78a7ddf`）。**卫生在前、补测其次、结构最后**——顺序是操作者定的。操作者约束：不写 bag 类，参数尽量平铺；死代码/失效测试先清。与 `component-plugin` 链在 `component.h` 上**文件相邻但符号不重叠**（那条链改 `provides_energy`/`provides_force`，本链删 `halo_participant()`/`atom_exchange()` 并摘掉 `ForwardPacker` 基类）——实现时注意合并顺序，不是设计冲突。
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| [comm-maint-01-deadcode](comm-maint-01-deadcode.md) | — | 删 atom_migration（306 行零调用者）、两个零实现者协议及 CUDA 孪生、`pack_atom`/`unpack_atom`、`kColWriteBack`；摘 `Component : ForwardPacker`；改写指向不存在类型的注释与 architecture.md；**打开 `-Wunused-*`**（当前构建一个 `-W` 都没有，这是死代码得以静默存活的机制） [approved] |
+| [comm-maint-02-dedup](comm-maint-02-dedup.md) | 01 | `comm_brick.cpp` 匿名命名空间 27 个函数归位：6 个属 `Halo`/`Swap`、4 个属 `PackPlan`、4 个是 reverse 编解码器（forward 同胞已在 `atom_pack.h`）、3 个与 `atom_migration.cpp` 逐字重复；层内 4 份 checked-mul、2 份哈希合一 [approved] |
+| [comm-maint-03-genericpath](comm-maint-03-genericpath.md) | 02 | **DONE 2026-08-27, premise corrected mid-flight** — generic 分支不是死代码，它承载插件声明的运行时列（comm + reverse 两条线都有 MPI 测试证明）；真正死的只有 border 的 field-major 臂（`image[3]` 让谓词恒假）。实际缺陷是注释谎称两臂 byte-identical（实为 field-major vs row-major）+ pack/unpack 谓词不对称（`&& plan.writable`），不可写的合形 plan 会静默错值。已修：可写性提为双臂前置、谓词对称、删 border 死臂、补 generic 臂串行单测 [code-complete] |
+| [comm-maint-04-roundscan](comm-maint-04-roundscan.md) | 02 | **本链最高价值**：把轮次/窗口调度抽成 `Halo` 纯函数并补 round>1 行为测试。2026-08-27 修的 `round > 1 && false`（ghost 膨胀 1.76×）活在零覆盖区——`test_halo_maxneed.cpp` 只测 hop 计数，grep `slablo\|slabhi\|sendlist` 零命中。**DONE 2026-08-27**：抽出 `Halo::round_scan_window`（纯、静态、平铺数组出参）+ 11 个测试；反向验证过——把波段改回开放，新文件红而两个既有 halo 测试文件全绿 [code-complete] |
+| [comm-maint-05-dd-split](comm-maint-05-dd-split.md) | 04 | `DomainDecomposition`（296 行头 / 22 公开字段 / 67 文件 include）最小切口：6 个 `atom_sort_*` 改为发布既有的 `md::AtomSortState`；手搓步数换成 `LaunchContext::step`（**会改变 Minimize 排序节奏，这是修复目标**）；处置生产中从无写者的 `periods` [approved] |
+| [comm-maint-06-transport](comm-maint-06-transport.md) | 03, 05 | 5 个手写 MPI 循环 / 3 套约定 → 一个 `FaceBufs` 成员原语；tag 与缓冲区统一；`Comm::setup` 契约（生产中无外部调用者，错误信息却叫用户 run setup again）；Verlet 时序三份收一份 [approved] |
+| [comm-maint-09-schema](comm-maint-09-schema.md) | 08 | **操作者定的方向,取代 08 的命名与被传类型**:不引入 atom style(ATV 没有,列集是 Frame 实例属性),改为**每个 component 声明自己在 ghost 上读什么**,`build()` 取并集成 `comm::Schema`。实测依据:`pair_dpd.cpp:147` 是全树唯一读 `v[j]` 的 style,而 bench 不挂它——border 却每 ghost 常年多带 24 B 速度 + 8 B 质量。**进行中**:Schema/协议/收集/发布 + 8 个测试已落,`atom_pack`/`comm_brick` 的改接与删三个标志位未做 [approved] |
+| [comm-maint-08-wireplan](comm-maint-08-wireplan.md) | 03 | **DONE 2026-08-27** — 操作者"移除巨大 packer/bag"。诊断：`PackPlan` 不是参数包而是编译产物（`PairList` 同类），丑在**只有数据没有动词**——14 个自由函数拿它当参数，9 参签名，调用方挑函数、函数再检查挑对没有。已改：`pack`/`unpack`/`bytes`/`row_bytes`/`max_row_bytes`/`wire_fingerprint`/`pack_rows`/`accumulate`/`pack_row`/`unpack_row` 全部方法化，kind 分派内部化，`sx,sy,sz`→`const double shift[3]`；`ColumnRef` 与字段表不动（它们是声明式的基础）[code-complete] |
+| [comm-maint-07-wire](comm-maint-07-wire.md) | 06 | `wire_id <= z` 静默位移陷阱（表序一改新列就收盒长）→ 显式标志 + `static_assert`；border per-run mask 走既有 `resolve_columns` 的 `unsigned`（先测量，<2% 则只写文档）；`Comm` 保留（`SpyComm` 是第二实现）；CUDA 同名 `DomainDecomposition` 改名 [approved] |
+
+## Ticket — /mol:fix owed (named 2026-08-27, comm-maint-01 warning sweep)
+
+`comm-maint-01-deadcode` turned on `-Wunused-function -Wunused-variable` for
+the `atomiverse` target — the build previously carried **no `-W` flag at all**,
+which is why two dead helpers and a 306-line zero-caller source file survived
+review. The flag immediately surfaced 13 more dead symbols tree-wide. Nine were
+cleared in that slug (5 dead stores, `require_i32` in `molrs_exchange.cpp`,
+`decode_sc` in `phonon_dispersion.cpp`, plus the two comm ones the slug
+targeted). **Four remain, all in the semiempirical/DFTB area and deliberately
+NOT deleted** because they sit in the blast radius of the live `gfn2-camm-r`
+spec and the tb-method-loop — a "defined but not used" static in a half-landed
+gradient path may be exactly what the next slug wires up:
+
+- `src/cpu/semiempirical/dftb2.cpp:79` `pair_rep`
+- `src/cpu/semiempirical/dftb2.cpp:87` `h_radial`, `:90` `s_radial`
+- `src/cpu/semiempirical/dftb2.cpp:1924` `apply_affine_strain`
+- plus `dftb3.cpp` `pair_rep` and `gfn2.cpp` `shell_sd_grad` on a clean build
+
+Each needs a one-line verdict from whoever owns that physics: wire it up or
+delete it. Until then the build emits those warnings, so the flag is not yet a
+clean gate. `-Wall` was NOT enabled — a separate, measured decision, owed
+alongside this.
+
 ## Live — component-plugin chain (2026-08-18)
 
 Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / 宿主。CUDA 镜像后置。
@@ -22,7 +75,7 @@ Component 作为 Driver 的插件系统。派生类尽量零改；改基类 / �
 | ---- | -------- |
 | [gfn2-camm-r](gfn2-camm-r/gfn2-camm-r.md) | Two-centre CAMM quadrupole on H (xtb `mmompop`) + \(\partial\Theta/\partial R\); angular \(F_{H1,y}\) vs xtb 6.7.1 |
 
-**Live count: 7.** (6 component-plugin + 1 TB)
+**Live count: 16.** (9 comm-maint + 6 component-plugin + 1 TB)
 
 ## Closed — TB harness wave 13 (2026-08-25)
 

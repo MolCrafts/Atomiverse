@@ -6,7 +6,7 @@
 | ----- | ----- |
 | Slug | `const-pot-charge-halo-mpi` |
 | Regression | `regressions/md/const-pot-charge-halo-mpi/` |
-| Public API | `Component::updates_owned_charges()` protocol + auto-injected `comm::HaloRefresh{Field::charges}` (`pre_force @ +900` on `cpu::md::MD` under MPI DD) |
+| Public API | `Component::updates_owned_charges()` protocol + `ChargePacker` through `ctx.md.comm->forward_comm` after each const-pot solve |
 | Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → wave 5 (2026-07-27); map §1 "Charge halo correctness after Q update" (**P0**) |
 | Oracle | **literature** (self-consistency invariant; no oracle binary — LAMMPS ELECTRODE / MetalWalls forward-comm contract, citations below) |
 
@@ -23,15 +23,13 @@ the cuts.
 
 This capability makes forgetting the refresh impossible: any Component that
 declares `updates_owned_charges()` (all of `ConstPotBO`, `ConstPotential`,
-`ConstPotCG`, `ConstPotMaZe`, `DipoleElectrodeJoint`) causes
-`cpu::md::MD::install_defaults()` to auto-inject a
-`comm::HaloRefresh{Field::charges}` at `pre_force @ +900` — after every
-charge-solve slot (`ConstPot*` bind at −500/−50), before any force stage.
-This mirrors the documented LAMMPS ELECTRODE contract: `fix electrode`
-forward-communicates the per-atom charge after every conp solve so ghosts
-match owners before force evaluation (Ahrens-Iwers et al., *J. Chem. Phys.*
-**157**, 084801 (2022)). The regression gates the **default** MPI pipeline —
-nothing registers the refresh manually.
+`ConstPotCG`, `ConstPotMaZe`, `DipoleElectrodeJoint`) posts `ChargePacker`
+through `ctx.md.comm->forward_comm` after writing owned charges, before any
+force stage. This mirrors the documented LAMMPS ELECTRODE contract: `fix
+electrode` forward-communicates the per-atom charge after every conp solve so
+ghosts match owners before force evaluation (Ahrens-Iwers et al., *J. Chem.
+Phys.* **157**, 084801 (2022)). The regression gates the **default** MPI
+pipeline — nothing registers a Plan-level refresh component.
 
 ## Method
 
@@ -131,31 +129,26 @@ conp.rebuild_matrix_every_step = true;
 sim.add_ref(conp);                 // default binding: pre_force @ -50
 
 sim.build();
-// Under MPI DD, install_defaults() has now auto-injected
-//   comm::HaloRefresh{Field::charges} at pre_force @ +900
-// because ConstPotBO declares updates_owned_charges().
+// ConstPotBO posts ChargePacker through ctx.md.comm->forward_comm after
+// writing owned charges (updates_owned_charges()).
 sim.run(frame, /*nsteps=*/5);      // Frame in / Frame out; solved q on kAtom_charge
 ```
 
 Extending the protocol: any new charge-writing Component keeps the invariant
-by overriding one virtual —
+by overriding one virtual and posting `ChargePacker` after the write —
 
 ```cpp
 class MyChargeSolver : public cpu::Component {
     bool updates_owned_charges() const override { return true; }
-    // ... solve at pre_force; MD injects the ghost refresh after you.
+    // ... solve at pre_force; then ChargePacker::forward(ctx).
 };
 ```
-
-Manual refreshes remain available and idempotent
-(`md.on(phase).add(comm::HaloRefresh{comm::HaloRefresh::Field::charges}, order)`),
-so a user-registered refresh alongside the auto-injected one is harmless.
 
 | Path | Role |
 | ---- | ---- |
 | `include/atomiverse/cpu/component/component.h` | `updates_owned_charges()` protocol (default `false`) |
-| `include/atomiverse/cpu/communication/halo_exchange.h` | `comm::HaloRefresh` (fields: positions / velocities / charges) |
-| `include/atomiverse/cpu/dynamics/md.h` | `install_defaults()` auto-injection at `pre_force @ +900` |
+| `include/atomiverse/cpu/dynamics/charge_packer.h` | `ChargePacker` extra-field forward through `ctx.md.comm` |
+| `include/atomiverse/cpu/communication/comm.h` | `Comm::forward_comm(Packer&)` |
 | `regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp` | Product gate (self-mpiexec parent + 2-rank child) |
 
 The regression is one binary in two modes: the parent re-launches itself
@@ -220,7 +213,7 @@ to race.
 - Pin + contract: [`regressions/md/const-pot-charge-halo-mpi/REFERENCE.md`](../../../regressions/md/const-pot-charge-halo-mpi/REFERENCE.md)
 - Product gate: [`regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp`](../../../regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp)
 - Protocol header: [`include/atomiverse/cpu/component/component.h`](../../../include/atomiverse/cpu/component/component.h) (`updates_owned_charges()`)
-- Refresh component: [`include/atomiverse/cpu/communication/halo_exchange.h`](../../../include/atomiverse/cpu/communication/halo_exchange.h) (`comm::HaloRefresh`)
+- Packer: [`include/atomiverse/cpu/dynamics/charge_packer.h`](../../../include/atomiverse/cpu/dynamics/charge_packer.h) (`ChargePacker`)
 - Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` §1 (charge halo correctness, P0)
 - Literature: A. P. Thompson et al., *Comput. Phys. Commun.* **271**, 108171 (2022), DOI [10.1016/j.cpc.2021.108171](https://doi.org/10.1016/j.cpc.2021.108171); L. J. V. Ahrens-Iwers et al., *J. Chem. Phys.* **157**, 084801 (2022), DOI [10.1063/5.0099239](https://doi.org/10.1063/5.0099239); A. Marin-Laflèche et al., *J. Open Source Softw.* **5**, 2373 (2020), DOI [10.21105/joss.02373](https://doi.org/10.21105/joss.02373)

@@ -87,7 +87,7 @@ decomposition). Atomiverse:
 
 | Mode | Where sort runs |
 |---|---|
-| **Multi-rank** | `HaloSend` full rebuild, *before* ghost slots / the swap-table sendlists |
+| **Multi-rank** | `CommBrick` full rebuild, *before* ghost slots / the swap-table sendlists |
 | **Serial** | `NeighborList` reneighbor before cell-list rebuild |
 
 After a successful reorder, `notify_sorted` bumps `neighbor_generation`

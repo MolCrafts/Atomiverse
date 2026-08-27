@@ -115,8 +115,10 @@ spine; keep ATV advantages.
 | ML heterogeneous electrodes (PiNNwall, …) | ecosystem ✓ | ○ | External interface — **blocked E12** | P3 |
 
 **MD phase / halo (implementation constraint — resolved wave-5):**
-`kAtom_charge` already borders (`kColComm|kColBorder|kColWriteBack`).
-Updating \(Q\) at `pre_force` after `HaloSend` leaves **stale ghost charges**
+`kAtom_charge` already borders (`kColState|kColBorder|kColWriteBack`) — it
+is NOT on the per-step comm wire: `kColComm` is x/y/z only, and a charge
+solver refreshes ghost charges itself through `ChargePacker`.
+Updating \(Q\) at `pre_force` after `CommBrick` leaves **stale ghost charges**
 under MPI; the landed design refreshes ghost charges **after** the solve
 (`reg_const-pot-charge-halo-mpi`). Any new charge-writing Component must keep
 that post-solve refresh.
