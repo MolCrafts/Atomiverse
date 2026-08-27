@@ -1,6 +1,6 @@
 ---
 title: Components declare their fields; build collects the schema
-status: approved
+status: code-complete
 created: 2026-08-27
 chain: comm-maint
 supersedes: comm-maint-08-wireplan (naming + the passed type), absorbs comm-maint-07-wire border mask
@@ -171,6 +171,32 @@ green at this checkpoint.
 
 242/242 绿;np=16 MIL0PEGM18 单点 `E=1725.258348 pair=-200.208398 eV` 全程逐位不变。
 
-**仍未做**:`comm_brick` 还在吃 `kColComm`/`kColBorder`/`kColReverse`,`atom_pack`
-还在,border 仍是 79 B/ghost。schema 已经收集、发布、能校验,但还没被 wire 消费。
-那是本 spec 的剩余主体。
+## 2026-08-27 完成 — wire 已改吃 schema
+
+`Block::resolve_columns(const Schema&)` 按声明顺序解析,`make_wire_plan(frame,
+kind, schema)` 据此编译;`CommBrick` 在 `setup()` 缓存三条线并据此重建。
+`make_comm_plan`/`make_border_plan`/`make_reverse_plan` 删除,
+`kColComm`/`kColBorder`/`kColReverse` 一并删除。`kColExchange`/`kColMigrate`
+保留——迁移携带的是"这个原子是什么",是 Frame 的属性,不是挂载集的属性;
+这条线正是另外三个能删掉的理由。
+
+**三条线,不是两条。** 实现中发现 `declare_fields` 表达不了"每步都变、需要刷新"
+这件事:`test_mpi_halo_exchange` 在两次 `forward_comm` 之间修改插件列并期望被刷新,
+把 forward 线钉死在坐标上之后它正确地失败了。补上 `declare_refresh_fields`——
+LAMMPS 把同一区分保留为 `fields_comm` vs `fields_border`(`atom_vec.cpp:36-39`)。
+
+**实测**:border 载荷 **79 → 44 B/ghost**(x,y,z 24 + tag 8 + type 4 + charge 8)。
+去掉的是 ghost 速度(全树唯一消费者 `pair_dpd.cpp:147` 未挂载)、ghost 质量
+(无消费者)、`image`(只在 `owned_count` 下被读,且仍走 exchange 线,迁移需要它)。
+能量与力逐位不变(`E=1725.258348 pair=-200.208398 eV`),这就是那 35 字节确实
+无人承重的证据。
+
+**闸门(job 1753125)**:np=256 widebox parity 三个几何全部 dev=0.0 ——
+8,8,4 @32³、8,8,4 @24³、16,4,4(hops 3,1,1)。242/242 单测绿。
+
+**性能:未下结论。** 单次 np=256 得 1405 steps/s,而 wt10 三次是 1444/1448/1447。
+分项里只有 `comm_borders` 朝预期方向明确移动(**0.134 → 0.104,−23%**,正是窄了的
+border 线);`comm_forward`/`comm_reverse`/`comm_exchange`/`reduce` 都上浮 7–27%,
+而这四项**本次一个字节都没改**——`reduce` 是纯 Allreduce,+27% 只可能是 skew。
+n=1 不足以判 3% 的 loop 级移动,已提 3 次重复(job 1753630)。在那之前不宣称净
+性能变化。
