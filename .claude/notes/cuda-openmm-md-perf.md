@@ -5,6 +5,23 @@
 **ATV engine:** OpenMM cluster/tile path, Release, `CMAKE_CUDA_ARCHITECTURES=90`  
 **LAMMPS:** develop d3b14f6, serial `lmp-kk-serial`, Kokkos CUDA HOPPER90
 
+## OPEN RED — cluster LJ force disagrees with brute force (2026-08-28)
+
+`MultiGpu.LjForceParityNlistVsSingleGpu`
+(`tests/cuda/dynamics/test_multi_gpu.cu:750`) fails on a **single** GH200:
+the cluster/tile `compute_lj_nlist` path and the `compute_lj_bruteforce`
+oracle differ by **9.50** where the tolerance is 5e-2, on 512 atoms at
+cut=5.0 / spacing 3.0 / ghost_headroom 2.0. This is the production CUDA MD
+force path against its own oracle, one GPU, no halo involved — so it is a
+cluster-build or tile-mask defect, not a multi-GPU communication one.
+
+Timing numbers below were taken before this was noticed; treat them as
+unvalidated until the parity gate is green. The two `driver build: missing
+required Integrator` failures alongside it were test-side (the force-pass
+tests had no Integrator after the preset validation tightened) and are fixed.
+
+Reproduce: `sbatch tools/job_cuda_fail_detail.sh` (GH200, ~2 min).
+
 ## Methodology (operator rules)
 
 | Axis | Mechanism | How |

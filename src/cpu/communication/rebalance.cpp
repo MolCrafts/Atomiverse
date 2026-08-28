@@ -1,4 +1,4 @@
-/// @file src/cpu/md/mpi/rcb.cpp
+/// @file src/cpu/communication/rebalance.cpp
 /// @brief `Rebalance` -- histogram-based non-uniform brick rebalance.
 ///
 /// Algorithm per launch:
@@ -11,17 +11,19 @@
 ///      resulting `dims[d] + 1` fractional cut positions are stored in
 ///      `dd->cuts[d]`.
 ///   4. `compute_sublo_subhi(frame.box)` re-derives this rank's `sublo/subhi`
-///      from the new cuts, and `dd->neighbor_generation` is bumped so the
-///      next `Migrate` ships any owner that has just moved outside
-///      its (resized) slab.
+///      from the new cuts; `neighbor_generation` and `partition_dirty` tell
+///      bonded caches and Verlet nflag that owners may need to move.
 ///
 /// Bit-identical cuts on every rank are essential: migration would otherwise
 /// see disagreeing destinations and lose atoms. The `MPI_Allreduce` plus
 /// purely-deterministic post-processing guarantees this by construction.
 ///
-/// @see .claude/specs/parallel-md-engine.md  § A.4
+/// Algorithm transplanted from LAMMPS `src/balance.cpp` (`balance dynamic xyz`,
+/// checkout `78a7ddf`).
+///
+/// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 
-#include "atomiverse/cpu/communication/rcb.h"
+#include "atomiverse/cpu/communication/rebalance.h"
 
 #include <algorithm>
 #include <cmath>
@@ -214,10 +216,8 @@ void Rebalance::launch(const cpu::LaunchContext& ctx) {
     // Refresh this rank's slab from the new cuts.
     dd->compute_sublo_subhi(frame.box);
 
-    // Mark the partition as changed so Migrate ships any owner now
-    // outside its slab. Note that Migrate normally runs at the next
-    // step's `pre_force @ -30`; the bump arms it.
     ++dd->neighbor_generation;
+    dd->partition_dirty = true;
 }
 
 #else // !ATV_HAS_MPI

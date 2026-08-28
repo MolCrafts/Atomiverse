@@ -124,8 +124,8 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
 
     // Atom migration reshuffles local row indexing: curvature history and
     // previous-step state key off row order and must be discarded.
-    // `neighbor_generation` is bumped in lockstep on every rank (Migrate gates
-    // the exchange on a global allreduce), so this reset stays rank-uniform.
+    // `neighbor_generation` is bumped in lockstep on every rank by
+    // `Comm::exchange`, so this reset stays rank-uniform.
     {
         const auto* dd = ctx.runtime.md.dd;
         const std::uint64_t gen =

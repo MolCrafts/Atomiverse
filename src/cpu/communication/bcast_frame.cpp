@@ -1,4 +1,4 @@
-/// @file cpu/comm/bcast_frame.cpp
+/// @file cpu/communication/bcast_frame.cpp
 /// @brief Whole-Frame broadcast using native row and typed-meta wire plans.
 
 #include "atomiverse/cpu/communication/bcast_frame.h"

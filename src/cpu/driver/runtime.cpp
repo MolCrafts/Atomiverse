@@ -188,9 +188,7 @@ void Runtime::build_components() {
     // Iron law 4, applied once for the whole component set instead of each
     // component remembering to check its own fields.
     if (frame_ != nullptr) {
-        check_schema(verlet_.ghost_fields, *frame_, "driver build");
-        check_schema(verlet_.ghost_reverse_fields, *frame_, "driver build");
-        check_schema(verlet_.ghost_refresh_fields, *frame_, "driver build");
+        check_ghosts(verlet_.ghost, *frame_, "driver build");
     }
     verlet_setup_done_ = false;
     if (plan_
@@ -276,12 +274,8 @@ void Runtime::cache_verlet_comm_() {
         return;
     // The halo's own product comes first, so it keeps the leading wire
     // positions no matter which components are mounted.
-    base_fields::border(verlet_.ghost_fields);
-    base_fields::reverse(verlet_.ghost_reverse_fields);
-    base_fields::forward(verlet_.ghost_refresh_fields);
-    context_.md.ghost_fields = &verlet_.ghost_fields;
-    context_.md.ghost_reverse_fields = &verlet_.ghost_reverse_fields;
-    context_.md.ghost_refresh_fields = &verlet_.ghost_refresh_fields;
+    verlet_.ghost.declare(base_fields::kEngine);
+    context_.md.ghost = &verlet_.ghost;
     for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
         const auto& slot = plan_->slots[s];
         for (std::size_t o = 0; o < slot.ops.size(); ++o) {
@@ -303,9 +297,7 @@ void Runtime::cache_verlet_comm_() {
             // union of the columns anybody reads on a ghost row. Insertion
             // order is Plan order, so every rank builds the identical
             // schema without a collective.
-            c->declare_fields(verlet_.ghost_fields);
-            c->declare_reverse_fields(verlet_.ghost_reverse_fields);
-            c->declare_refresh_fields(verlet_.ghost_refresh_fields);
+            verlet_.ghost.declare(c->declare_ghosts());
         }
     }
 }

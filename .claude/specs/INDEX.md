@@ -31,7 +31,11 @@ CPU 通信层可维护性整改。Specs deleted; history is git.
 | `comm-maint-08-wireplan` | pack/unpack verbs on PackPlan |
 | `comm-maint-09-schema` | halo wire compiled from component Schema; border 79→44 B/ghost |
 
-`PackPlan` remains the compiled Schema projection (not a config bag). Cluster `widebox_parity` / GH200 CUDA rebuild attested agent-auto at close.
+Step halo is the Schema-compiled wire, field-major on the all-scalar
+refresh / reverse / border sets, drained per swap **round** with mirrored
+tags. `PackPlan` leftover on exchange/gather/bcast/MC — see
+[md-comm.md](../notes/md-comm.md). Cluster `widebox_parity` / GH200 CUDA
+rebuild attested agent-auto at close.
 
 ## Ticket — /mol:fix owed (named 2026-08-27, comm-maint-01 warning sweep)
 
@@ -55,6 +59,27 @@ Each needs a one-line verdict from whoever owns that physics: wire it up or
 delete it. Until then the build emits those warnings, so the flag is not yet a
 clean gate. `-Wall` was NOT enabled — a separate, measured decision, owed
 alongside this.
+
+**Full list re-measured on a clean rebuild 2026-08-28** — the "four remain"
+count above was low, because an incremental build never recompiles the quiet
+files. Actual survivors:
+
+| Path | Warning |
+| --- | --- |
+| `src/cpu/semiempirical/dftb2.cpp:79`, `:87`, `:90`, `:1921` | `pair_rep`, `h_radial`, `s_radial`, `apply_affine_strain` unused |
+| `src/cpu/semiempirical/dftb3.cpp:61` | `pair_rep` unused |
+| `src/cpu/semiempirical/gfn2.cpp:392` | `shell_sd_grad` unused |
+| `src/cpu/scf/internal/hamiltonian_builder.cpp:107` | unused variable `n` |
+| `src/cpu/scf/internal/periodic_hf.cpp:130` | unused variable `n` |
+| `src/cpu/scf/eom_ee_ccsd.cpp:325` | `sf_score` unused |
+| `src/cpu/planewave/pw_solver.cpp:93` | `ensure_helpers` unused |
+| `src/cpu/gpw/gpw_solver.cpp:1775` | unused variable `ot_grad_tol_k` |
+| `src/cpu/gpw/gpw_solver.cpp:6070`+ | redundant by-ref lambda captures |
+| libstdc++ `stl_algobase.h:452` | `-Wstringop-overflow=` from a caller not yet identified |
+
+The six semiempirical ones stay in the `gfn2-camm-r` / tb-method-loop blast
+radius as before. The four SCF / PW / GPW ones are plain dead locals and are
+free to delete; the `-Wstringop-overflow=` one needs its caller found first.
 
 ## Live — component-plugin chain (2026-08-18)
 

@@ -1,4 +1,4 @@
-/// @file src/cpu/comm/atom_pack.cpp
+/// @file src/cpu/communication/atom_pack.cpp
 /// @brief Native-dtype schema-compiled Frame row packing.
 
 #include "atomiverse/cpu/communication/atom_pack.h"
@@ -116,14 +116,42 @@ std::uint64_t fingerprint(PackKind kind, const std::vector<ColumnRef>& fields) {
     return hash;
 }
 
-/// @brief Compile a plan for the fields a `Schema` names.
+/// @brief Does this declaration ride the pass `kind` drives?
+///
+/// The compile step, in one function. Reading a field means the ghost
+/// carries it from the moment it exists, so every read is on the border
+/// pass; only a `step` guarantee also needs re-sending each step; a
+/// reduction travels the other way. Exchange is not contract-driven.
+///
+/// @param field One folded declaration.
+/// @param kind Pass being compiled.
+/// @return True when the pass carries this field.
+bool on_pass(const GhostField& field, PackKind kind) {
+    switch (kind) {
+    case PackKind::Border:
+        return field.access == GhostAccess::read;
+    case PackKind::Comm:
+        return field.access == GhostAccess::read
+               && field.freshness == Freshness::step;
+    case PackKind::Reverse:
+        return field.access == GhostAccess::reduce;
+    case PackKind::Exchange:
+        break;
+    }
+    throw std::invalid_argument(
+        "the exchange wire is flag-driven; it is not compiled from the "
+        "ghost contract");
+}
+
+/// @brief Compile a plan for the fields the contract puts on this pass.
 ///
 /// The wire is what the mounted components asked for, resolved in
 /// declaration order. Only the exchange wire still selects by flag, because
 /// migration carries what an atom IS rather than what some consumer reads —
 /// that is a property of the Frame, not of the component set.
 template <typename FrameT>
-PackPlan make_plan(FrameT& frame, PackKind kind, const Schema& schema) {
+PackPlan make_plan(FrameT& frame, PackKind kind,
+                   const GhostContract& contract) {
     auto& block = frame.block("atoms");
     PackPlan plan;
     plan.kind = kind;
@@ -131,11 +159,14 @@ PackPlan make_plan(FrameT& frame, PackKind kind, const Schema& schema) {
     plan.block_generation = block.generation();
     plan.frame_owner = &frame;
     plan.owner = &block;
-    plan.fields = block.resolve_columns(schema);
+    for (const GhostField& field : contract)
+        if (on_pass(field, kind))
+            plan.fields.push_back(block.resolve_column(field));
     if (plan.fields.empty())
         throw column_error(
-            "the schema named no fields for this wire; a wire with nothing on "
-            "it is a build-time mistake, not a run-time state");
+            std::string("the ") + pack_kind_name(kind)
+            + " schema named no fields for this wire; a wire with nothing on "
+              "it is a build-time mistake, not a run-time state");
     plan.writable =
         std::all_of(plan.fields.begin(), plan.fields.end(),
                     [](const ColumnRef& field) { return field.writable; });
@@ -241,13 +272,14 @@ void PackPlan::validate(const Frame& frame) const {
         field_ref.validate();
 }
 
-PackPlan make_wire_plan(Frame& frame, PackKind kind, const Schema& schema) {
-    return make_plan(frame, kind, schema);
+PackPlan make_wire_plan(Frame& frame, PackKind kind,
+                        const GhostContract& contract) {
+    return make_plan(frame, kind, contract);
 }
 
 PackPlan make_wire_plan(const Frame& frame, PackKind kind,
-                        const Schema& schema) {
-    return make_plan(frame, kind, schema);
+                        const GhostContract& contract) {
+    return make_plan(frame, kind, contract);
 }
 
 PackPlan make_exchange_plan(const Frame& frame) {
@@ -273,6 +305,15 @@ std::size_t checked_mul(std::size_t a, std::size_t b, const char* operation) {
     if (a != 0 && b > std::numeric_limits<std::size_t>::max() / a)
         throw std::overflow_error(std::string(operation) + ": size overflow");
     return a * b;
+}
+
+std::size_t packer_bytes(int n_atoms, int nsize) {
+    if (n_atoms < 0 || nsize < 0)
+        throw std::invalid_argument("packer_bytes: negative count");
+    return checked_mul(checked_mul(static_cast<std::size_t>(n_atoms),
+                                   static_cast<std::size_t>(nsize),
+                                   "packer wire"),
+                       sizeof(double), "packer wire");
 }
 
 static std::size_t comm_bytes(const PackPlan& plan, int n) {
@@ -313,30 +354,117 @@ static std::size_t max_exchange_bytes(const Frame& frame,
 
 namespace {
 
-/// @brief True when the plan is the standard position wire: exactly the
-/// three scalar `StorageReal` columns x, y, z, in wire order.
+/// @brief True when every column on the wire is a scalar (`cols == 1`).
 ///
-/// This is the engine's base forward Schema (x, y, z). It is a
-/// **precondition**, not a fast-path test: there is one wire layout
-/// (field-major) and a plan that does not match it is refused.
+/// An all-scalar wire travels FIELD-major: each column is one sequential
+/// read stream feeding one contiguous write, and the matching unpack is one
+/// block copy per column into the (contiguous) ghost slots. Production is
+/// this shape on every wire — refresh x/y/z, plus vx/vy/vz when a style
+/// reads a neighbour's velocity; creation x/y/z/tag/type; reverse fx/fy/fz —
+/// so declaring one more scalar field does not drop the wire off a cliff.
 ///
-/// It used to select between a field-major fast path and a row-major
-/// "generic" path that was documented as byte-identical and was not. The two
-/// produced the same total size, so the length check passed either way, and
-/// because unpack additionally required `plan.writable` while pack did not, a
-/// conforming-but-non-writable plan packed field-major and unpacked
-/// row-major. Silent wrong values, no throw. The generic path had never once
-/// executed and had no test.
-inline bool plan_is_xyz_comm(const PackPlan& plan) {
-    if (plan.fields.size() != 3)
+/// A multi-component column (`image`, a 3-wide plugin column) puts the whole
+/// wire back on the row-major arm: a field-major stream for `cols > 1` would
+/// need a per-column stride the reader does not carry.
+///
+/// **Pack and unpack must test this identical predicate.** They once did
+/// not: unpack additionally required `plan.writable` inside the fast-path
+/// condition while pack had no such term, so a conforming-but-non-writable
+/// plan packed field-major and unpacked row-major — same byte count, so the
+/// length check passed, and the ghosts silently took the wrong values.
+/// Writability is now checked before either layout is chosen.
+inline bool plan_is_all_scalar(const PackPlan& plan) {
+    if (plan.fields.empty())
         return false;
-    for (int d = 0; d < 3; ++d) {
-        const ColumnRef& col = plan.fields[static_cast<std::size_t>(d)];
-        if (col.dtype != ColDType::Storage || col.cols != 1
-            || col.wire_id != static_cast<std::uint16_t>(d))
+    for (const ColumnRef& col : plan.fields)
+        if (col.cols != 1)
             return false;
-    }
     return true;
+}
+
+/// @brief Field-major gather for an all-scalar wire, shared by the refresh
+///        and border passes.
+///
+/// The PBC image shift is applied exactly where `append_field` applies it —
+/// a column flagged `kColPbcShift`, on the axis its `wire_id` names — so the
+/// two layouts cannot disagree about which columns move.
+///
+/// @param frame Frame being read.
+/// @param plan Compiled all-scalar wire.
+/// @param sendlist Rows to gather.
+/// @param n Row count.
+/// @param shift Per-axis image shift [Å].
+/// @param out Wire buffer.
+/// @param capacity Bytes available at `out`.
+/// @param bytes Exact payload size for `n` rows.
+/// @return Bytes written.
+std::size_t pack_scalar_field_major(const Frame& frame, const PackPlan& plan,
+                                    const int* sendlist, int n,
+                                    const double shift[3], std::byte* out,
+                                    std::size_t capacity, std::size_t bytes) {
+    if (bytes > capacity)
+        throw std::length_error("field-major wire buffer too small");
+    for (const ColumnRef& col : plan.fields)
+        col.validate();
+    // A band-scan send list is often the identity range; that case is one
+    // block copy (or one shifted stream) per column.
+    const bool contiguous = n > 0 && sendlist[n - 1] - sendlist[0] == n - 1;
+    std::byte* cursor = out;
+    for (const ColumnRef& col : plan.fields) {
+        const std::size_t elem = col.row_bytes();
+        if ((col.flags & kColPbcShift) != 0) {
+            if (col.dtype != ColDType::Storage || col.wire_id > 2)
+                throw column_error("position halo column has invalid schema");
+            auto* __restrict dst = reinterpret_cast<StorageReal*>(cursor);
+            const auto* __restrict src =
+                static_cast<const StorageReal*>(col.read_data);
+            const StorageReal off =
+                static_cast<StorageReal>(shift[col.wire_id]);
+            if (contiguous) {
+                const StorageReal* __restrict run = src + sendlist[0];
+                if (off == StorageReal(0))
+                    std::memcpy(dst, run,
+                                static_cast<std::size_t>(n)
+                                    * sizeof(StorageReal));
+                else
+                    for (int k = 0; k < n; ++k)
+                        dst[k] = run[k] + off;
+            } else {
+                for (int k = 0; k < n; ++k)
+                    dst[k] = src[sendlist[k]] + off;
+            }
+        } else if (contiguous && elem > 0) {
+            std::memcpy(cursor, row_ptr(col, sendlist[0]),
+                        static_cast<std::size_t>(n) * elem);
+        } else {
+            for (int k = 0; k < n; ++k) {
+                validate_row(frame, sendlist[k]);
+                if (elem != 0)
+                    std::memcpy(cursor + static_cast<std::size_t>(k) * elem,
+                                row_ptr(col, sendlist[k]), elem);
+            }
+        }
+        cursor += static_cast<std::size_t>(n) * elem;
+    }
+    return bytes;
+}
+
+/// @brief Scatter the field-major wire into contiguous ghost slots.
+/// @param plan Compiled all-scalar wire (writable).
+/// @param n Row count.
+/// @param first First ghost row to write.
+/// @param data Wire buffer.
+void unpack_scalar_field_major(const PackPlan& plan, int n, int first,
+                               const std::byte* data) {
+    for (const ColumnRef& col : plan.fields)
+        col.validate();
+    const std::byte* cursor = data;
+    for (const ColumnRef& col : plan.fields) {
+        const std::size_t run = static_cast<std::size_t>(n) * col.row_bytes();
+        if (run != 0)
+            std::memcpy(mutable_row_ptr(col, first), cursor, run);
+        cursor += run;
+    }
 }
 
 } // namespace
@@ -348,54 +476,23 @@ std::size_t pack_comm_wire(const Frame& frame, const PackPlan& plan,
     if (plan.kind != PackKind::Comm || n < 0)
         throw std::invalid_argument("pack_comm received wrong plan/count");
     const std::array<double, 3> shift{sx, sy, sz};
-    if (!plan_is_xyz_comm(plan)) {
-        // General wire: ROW-major, columns in plan order. This is what a
-        // plugin-declared Schema column rides (`Block::insert`),
-        // exercised by tests/mpi/test_halo_exchange.cpp.
-        Writer writer(out, capacity);
-        for (int k = 0; k < n; ++k) {
-            const int row = sendlist[k];
-            validate_row(frame, row);
-            for (const ColumnRef& col : plan.fields)
-                append_field(writer, col, row, shift.data());
-        }
-        return writer.size();
+    // LAMMPS `AtomVec::pack_comm` shape adapted to SoA columns. The refresh
+    // wire is x/y/z, plus whatever a `step`-freshness read added — all
+    // scalar, so it stays field-major however many columns it has.
+    if (plan_is_all_scalar(plan))
+        return pack_scalar_field_major(frame, plan, sendlist, n, shift.data(),
+                                       out, capacity, comm_bytes(plan, n));
+    // General wire: ROW-major, columns in plan order. This is what a
+    // multi-component plugin column rides (`Block::insert`), exercised by
+    // tests/cpu/communication/test_atom_pack_generic_wire.cpp.
+    Writer writer(out, capacity);
+    for (int k = 0; k < n; ++k) {
+        const int row = sendlist[k];
+        validate_row(frame, row);
+        for (const ColumnRef& col : plan.fields)
+            append_field(writer, col, row, shift.data());
     }
-    // LAMMPS `AtomVec::pack_comm` shape adapted to SoA columns: the
-    // wire is FIELD-major (all x, then all y, then all z), so each
-    // column is one sequential read stream feeding one contiguous
-    // write — and the matching unpack degenerates to three memcpys
-    // into the contiguous ghost slots. A band-scan sendlist is often
-    // the identity range; that case is three shifted block copies.
-    const std::size_t bytes =
-        static_cast<std::size_t>(n) * 3 * sizeof(StorageReal);
-    if (bytes > capacity)
-        throw std::length_error("pack_comm buffer too small");
-    for (const ColumnRef& col : plan.fields)
-        col.validate();
-    auto* __restrict buf = reinterpret_cast<StorageReal*>(out);
-    const bool contiguous = n > 0 && sendlist[n - 1] - sendlist[0] == n - 1;
-    for (int f = 0; f < 3; ++f) {
-        const auto* __restrict src = static_cast<const StorageReal*>(
-            plan.fields[static_cast<std::size_t>(f)].read_data);
-        const StorageReal off =
-            static_cast<StorageReal>(shift[static_cast<std::size_t>(f)]);
-        StorageReal* __restrict dst = buf + static_cast<std::size_t>(f) * n;
-        if (contiguous) {
-            const StorageReal* __restrict run = src + sendlist[0];
-            if (off == StorageReal(0)) {
-                std::memcpy(dst, run,
-                            static_cast<std::size_t>(n) * sizeof(StorageReal));
-            } else {
-                for (int k = 0; k < n; ++k)
-                    dst[k] = run[k] + off;
-            }
-        } else {
-            for (int k = 0; k < n; ++k)
-                dst[k] = src[sendlist[k]] + off;
-        }
-    }
-    return bytes;
+    return writer.size();
 }
 
 void unpack_comm_wire(Frame& frame, const PackPlan& plan, int n, int first,
@@ -407,41 +504,26 @@ void unpack_comm_wire(Frame& frame, const PackPlan& plan, int n, int first,
     if (size != comm_bytes(plan, n))
         throw std::length_error("unpack_comm payload size mismatch");
     // Writability is a precondition of BOTH layouts, checked before either
-    // is chosen. It used to sit inside the fast-path condition while pack
-    // had no such term, so a conforming-but-non-writable plan packed
-    // field-major and unpacked row-major — same byte count, different
-    // meaning, no throw. The two sides now test the identical predicate.
+    // is chosen — see `plan_is_all_scalar`.
     if (!plan.writable)
         throw column_error(
             "unpack_comm needs a writable plan; this one was compiled "
             "from a const Frame. Rebuild it with make_wire_plan(Frame&, "
             "kind, schema).");
-    if (!plan_is_xyz_comm(plan)) {
-        // General wire: row-major, mirroring pack_comm's generic arm.
-        Reader reader(data, size);
-        for (int k = 0; k < n; ++k) {
-            for (const ColumnRef& col : plan.fields) {
-                const std::size_t bytes = col.row_bytes();
-                std::byte* dst = mutable_row_ptr(col, first + k);
-                const std::byte* src = reader.take(bytes);
-                if (bytes != 0)
-                    std::memcpy(dst, src, bytes);
-            }
-        }
+    if (plan_is_all_scalar(plan)) {
+        unpack_scalar_field_major(plan, n, first, data);
         return;
     }
-    // Field-major wire (see pack_comm): ghost slots are contiguous, so
-    // each column lands as one block copy.
-    for (const ColumnRef& col : plan.fields)
-        col.validate();
-    const auto* __restrict buf = reinterpret_cast<const StorageReal*>(data);
-    for (int f = 0; f < 3; ++f) {
-        auto* __restrict dst = static_cast<StorageReal*>(
-            plan.fields[static_cast<std::size_t>(f)].write_data);
-        std::memcpy(dst + first, buf + static_cast<std::size_t>(f) * n,
-                    static_cast<std::size_t>(n) * sizeof(StorageReal));
+    Reader reader(data, size);
+    for (int k = 0; k < n; ++k) {
+        for (const ColumnRef& col : plan.fields) {
+            const std::size_t bytes = col.row_bytes();
+            std::byte* dst = mutable_row_ptr(col, first + k);
+            const std::byte* src = reader.take(bytes);
+            if (bytes != 0)
+                std::memcpy(dst, src, bytes);
+        }
     }
-    return;
 }
 
 std::size_t pack_border_wire(const Frame& frame, const PackPlan& plan,
@@ -450,20 +532,14 @@ std::size_t pack_border_wire(const Frame& frame, const PackPlan& plan,
     plan.validate(frame);
     if (plan.kind != PackKind::Border || n < 0)
         throw std::invalid_argument("pack_border received wrong plan/count");
-    // ROW-major, one row at a time, every column in plan order. Unlike the
-    // comm and reverse wires this one is NOT field-major: the border plan
-    // carries `image`, a three-component column, so the whole schema has to
-    // travel row by row.
-    //
-    // A field-major variant used to sit in front of this loop behind a
-    // `plan_is_scalar_border` test, documented as byte-identical. It was
-    // neither identical (field-major vs row-major) nor ever taken — `image`
-    // makes the predicate false on every production Frame. Two layouts
-    // selected by the presence of a column, with a size check that passes
-    // either way, is how a wrong-but-plausible ghost value gets shipped.
-    // One layout now.
-    Writer writer(out, capacity);
     const std::array<double, 3> shift{sx, sy, sz};
+    // Same layout rule as the refresh wire, same code: all-scalar is
+    // field-major, a multi-component column (`image` on a plugin wire)
+    // drops to row-major.
+    if (plan_is_all_scalar(plan))
+        return pack_scalar_field_major(frame, plan, sendlist, n, shift.data(),
+                                       out, capacity, border_bytes(plan, n));
+    Writer writer(out, capacity);
     for (int k = 0; k < n; ++k) {
         const int row = sendlist[k];
         validate_row(frame, row);
@@ -487,8 +563,10 @@ void unpack_border_wire(Frame& frame, const PackPlan& plan, int n, int first,
             "unpack_border needs a writable plan; this one was compiled from "
             "a const Frame. Rebuild it with make_wire_plan(Frame&, kind, "
             "schema).");
-    // Mirror of pack_border: row-major, columns in plan order. See there for
-    // why there is exactly one border layout.
+    if (plan_is_all_scalar(plan)) {
+        unpack_scalar_field_major(plan, n, first, data);
+        return;
+    }
     Reader reader(data, size);
     for (int k = 0; k < n; ++k) {
         const int row = first + k;
@@ -630,7 +708,7 @@ std::size_t unpack_exchange_wire(Frame& frame, PackPlan& plan, int row,
 }
 
 /// @brief True when the plan is the standard force wire: exactly the three
-/// scalar `AccReal` columns fx, fy, fz. What the reverse Schema resolves
+/// scalar `AccReal` columns fx, fy, fz. What the reverse pass resolves
 /// to on every current Frame; anything else falls back to the generic loops.
 bool plan_is_fxyz_reverse(const PackPlan& plan) {
     if (plan.fields.size() != 3)
@@ -646,7 +724,7 @@ void pack_reverse_wire(const PackPlan& plan, int first, int count,
     buffer.resize(plan.bytes(count));
     if (!plan_is_fxyz_reverse(plan)) {
         // General wire: row-major, columns in plan order. A plugin-declared
-        // runtime column on the reverse Schema rides this arm — exercised
+        // runtime column on the reverse pass rides this arm — exercised
         // by tests/mpi/test_halo_exchange.cpp.
         std::size_t offset = 0;
         for (const ColumnRef& field : plan.fields) {

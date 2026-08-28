@@ -19,7 +19,7 @@
 /// heap (hot-path invariant of the arch-refactor chain).
 #pragma once
 
-#include "atomiverse/core/schema.h"
+#include "atomiverse/core/ghost_contract.h"
 #include <functional>
 #include <random>
 #include <type_traits>
@@ -61,14 +61,14 @@ struct DynamicsServices {
     /// MPI headers transitively).
     md::mpi::DomainDecomposition* dd = nullptr;
 
-    /// @brief Fields the halo carries this run, folded at `build()` from
-    ///        every component's `declare_fields` plus the engine's base set.
-    ///        Non-owning; the Driver owns them. Null before `build()`.
-    /// @see core/schema.h
-    const Schema* ghost_fields = nullptr;
-    const Schema* ghost_reverse_fields = nullptr;
-    /// @brief Fields refreshed on ghost rows every step (forward wire).
-    const Schema* ghost_refresh_fields = nullptr;
+    /// @brief The run's ghost contract — every mounted component's
+    ///        `declare_ghosts` folded at `build()`. One handle: each pass
+    ///        compiles itself straight off this, so there is no per-wire
+    ///        copy to drift. Non-owning; the Driver owns it. Null before
+    ///        `build()`, and a `Comm` that finds it null folds the engine's
+    ///        base declaration instead.
+    /// @see core/ghost_contract.h
+    const GhostContract* ghost = nullptr;
 
     /// @brief Non-owning handle to the atom-sort cadence.
     /// Owned by `NeighborList`; published at `build()`. Null when no list

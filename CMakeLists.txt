@@ -303,7 +303,7 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/communication/reduce.cpp
         src/cpu/communication/gather.cpp
         src/cpu/communication/gather_for_io.cpp
-        src/cpu/communication/rcb.cpp
+        src/cpu/communication/rebalance.cpp
         # Direct Ewald always (no external deps); PME gated by ATV_BUILD_KSPACE below
         src/cpu/longrange/ewald.cpp
     )
@@ -540,7 +540,7 @@ if(NOT ATV_DOCS_ONLY)
         list(APPEND ATOMIVERSE_SRCS
             src/cuda/device/log_callback.cpp
             src/cuda/device/device_manager.cu
-            src/cuda/communication/domain_decomposition.cu
+            src/cuda/communication/spatial_grid.cu
             src/cuda/asynchronous/async_bridge.cu
             src/cuda/asynchronous/record_base.cu
             src/cuda/frame/transfer.cu

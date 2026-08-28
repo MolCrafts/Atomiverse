@@ -1,4 +1,4 @@
-/// @file cpu/md/pbc.h
+/// @file cpu/frame/pbc.h
 /// @brief Orthorhombic periodic-boundary wrap for owned atoms.
 ///
 /// Integrators (VelocityVerlet, NVELimit, ...) call `wrap_orthorhombic`

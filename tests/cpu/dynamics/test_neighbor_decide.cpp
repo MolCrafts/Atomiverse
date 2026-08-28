@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
@@ -49,6 +50,20 @@ TEST(TestNeighborDecide, DelayTenEveryOneCheckNoRebuildsOnTenthDecide) {
     ctx.md.reneighbor_decided = true;
     nl.launch({ctx, frame, 0, 10});
     EXPECT_EQ(nl.n_rebuilds(), 2);
+}
+
+TEST(TestNeighborDecide, PartitionDirtyForcesReneighborDuringDelay) {
+    auto frame = two_atoms();
+    cpu::Context ctx;
+    cpu::md::NeighborList<> nl(2.0, 0.4, 1, 10, false);
+    nl.build({ctx, frame});
+    cpu::md::mpi::DomainDecomposition dd;
+    dd.n_local = frame.nlocal();
+    ctx.md.dd = &dd;
+    ctx.mpi_size = 2;
+    EXPECT_FALSE(nl.decide_reneighbor(ctx, frame));
+    dd.partition_dirty = true;
+    EXPECT_TRUE(nl.decide_reneighbor(ctx, frame));
 }
 
 TEST(TestNeighborDecide, DirectLaunchDecidesEachCall) {

@@ -10,7 +10,7 @@
 ///
 /// Surface pinned (no MPI, no halo, no Driver):
 /// @code{.cpp}
-///   PackPlan    make_wire_plan(Frame&, PackKind, const Schema&);
+///   PackPlan    make_wire_plan(Frame&, PackKind, const GhostContract&);
 ///   std::size_t plan_row_bytes(const PackPlan&);
 ///   std::size_t reverse_payload_bytes(const PackPlan&, int);
 ///   void        pack_reverse_rows(const PackPlan&, int, int,
@@ -34,8 +34,8 @@
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/precision.h"
-#include "atomiverse/core/schema.h"
 #include "atomiverse/cpu/communication/atom_pack.h"
 #include "atomiverse/cpu/frame/frame.h"
 
@@ -45,10 +45,8 @@ namespace {
 
 /// @brief The reverse wire of a run with no declaring components: the force
 /// accumulators the engine folds back regardless.
-ATV::Schema reverse_schema() {
-    ATV::Schema s;
-    ATV::base_fields::reverse(s);
-    return s;
+ATV::GhostContract reverse_contract() {
+    return ATV::base_fields::engine_contract();
 }
 
 /// @brief Frame with `n` rows and a known force pattern: row i carries
@@ -72,7 +70,7 @@ cpu::Frame forces_frame(int n) {
 TEST(TestAtomPackReverse, PayloadIsThreeAccumulatorsPerRow) {
     cpu::Frame f = forces_frame(4);
     const cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
-        f, cpu::comm::PackKind::Reverse, reverse_schema());
+        f, cpu::comm::PackKind::Reverse, reverse_contract());
 
     EXPECT_EQ(plan.fields.size(), 3u);
     EXPECT_EQ(plan.row_bytes(), 3 * sizeof(AccReal));
@@ -96,7 +94,7 @@ TEST(TestAtomPackReverse, RoundTripRecoversTheGhostForces) {
         f.span(kAtom_fz)[i] = 0.0;
     }
     cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
-        f, cpu::comm::PackKind::Reverse, reverse_schema());
+        f, cpu::comm::PackKind::Reverse, reverse_contract());
 
     std::vector<std::byte> wire;
     plan.pack_rows(/*first=*/3, /*count=*/3, wire);
@@ -126,7 +124,7 @@ TEST(TestAtomPackReverse, AccumulateAddsRatherThanOverwrites) {
         f.span(kAtom_fz)[i] = 0.0;
     }
     cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
-        f, cpu::comm::PackKind::Reverse, reverse_schema());
+        f, cpu::comm::PackKind::Reverse, reverse_contract());
 
     std::vector<std::byte> wire;
     plan.pack_rows(/*first=*/2, /*count=*/2, wire);
@@ -149,7 +147,7 @@ TEST(TestAtomPackReverse, ManyGhostsFoldOntoOneOwner) {
     f.span(kAtom_fy)[0] = 0.0;
     f.span(kAtom_fz)[0] = 0.0;
     cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
-        f, cpu::comm::PackKind::Reverse, reverse_schema());
+        f, cpu::comm::PackKind::Reverse, reverse_contract());
 
     std::vector<std::byte> wire;
     plan.pack_rows(/*first=*/1, /*count=*/3, wire);
@@ -167,7 +165,7 @@ TEST(TestAtomPackReverse, ManyGhostsFoldOntoOneOwner) {
 TEST(TestAtomPackReverse, EmptyPayloadIsANoOp) {
     cpu::Frame f = forces_frame(3);
     cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
-        f, cpu::comm::PackKind::Reverse, reverse_schema());
+        f, cpu::comm::PackKind::Reverse, reverse_contract());
 
     std::vector<std::byte> wire;
     plan.pack_rows(/*first=*/0, /*count=*/0, wire);
@@ -183,7 +181,7 @@ TEST(TestAtomPackReverse, EmptyPayloadIsANoOp) {
 TEST(TestAtomPackReverse, MismatchedRowCountThrows) {
     cpu::Frame f = forces_frame(4);
     cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
-        f, cpu::comm::PackKind::Reverse, reverse_schema());
+        f, cpu::comm::PackKind::Reverse, reverse_contract());
 
     std::vector<std::byte> wire;
     plan.pack_rows(/*first=*/0, /*count=*/2, wire);

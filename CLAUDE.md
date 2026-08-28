@@ -648,6 +648,66 @@ not here.
 **Classical MD CUDA is a separate track** — OpenMM engine work is not blocked
 by ES CPU priority, and ES CUDA freezes do not freeze MD CUDA.
 
+### API naming law
+
+`declare_*` describes **structure**, `require_*` describes a **dependency**,
+`on_*` handles an **event**. Never mix them: an interface that spells a data
+property as an event (`on_every_step(field)`) has put static metadata in the
+lifecycle vocabulary, and the name will keep sliding between "what the field
+is" and "when something happens". `on(phase).add(...)` is legal under this law
+— a phase *is* an event, and that call declares its handler.
+
+`declare_*` is a **Component-author** surface, the same side of the fence as
+`launch()`. No user script constructs one.
+
+### Ghost data is a lifetime contract, not a wire
+
+A component hands back a `static constexpr` table from
+`declare_ghosts()` (`core/ghost_contract.h`) — a compile-time property of the
+type, not a builder call. Each `GhostField` states two orthogonal things:
+
+| Axis | Question | Constructor |
+| --- | --- | --- |
+| **freshness** (owner → ghost) | how current must this be when I read it? | `read_stable` / `read_each_step` |
+| **data flow** (ghost → owner) | what do I tally that has to reach the owner? | `reduce_to_owner` |
+
+They are not one enum: `stable`/`step` are two strengths of the *same*
+guarantee in one direction; a reduction is the other direction and has no
+freshness. **Presence is implied** — reading a field on a ghost means the
+ghost carries it from the moment it exists, so there is no second set to keep
+in sync. Two components asking for the same field merge with the **stricter**
+freshness winning, in either order, so the fold is rank-independent; opposite
+directions on one column is a conflict, not a merge. The named constructors
+are the only way to build a `GhostField`, so a half-stated declaration does
+not exist.
+
+**One object, one compile step.** The Driver folds every component's table
+onto the engine's own (`base_fields::kEngine`) into a single `GhostContract`,
+published as `ctx.md.ghost`. There is no per-wire copy and no intermediate
+bag. The mapping from contract to communication pass lives exactly once, in
+`make_wire_plan` (`cpu/communication/atom_pack.cpp`): `Border` = every read,
+`Comm` = reads at `Freshness::step`, `Reverse` = every reduction. Nothing
+above that function names a wire; nothing below it names a freshness.
+
+**Two selectors, two questions.** `Block::resolve_column(GhostField)` answers
+"give me the column this component asked for"; `resolve_columns(flags)`
+answers "which columns claim to belong on wire X" and drives migration only,
+because what an atom IS is a property of the Frame rather than of whoever is
+mounted. Neither is a generalisation of the other and there is no third.
+
+**CPU MD step halo** is that contract, compiled — refresh x/y/z (plus whatever a
+`step` read added), reverse fx/fy/fz, creation x/y/z/tag/type — field-major
+whenever every column on it is scalar, which is every production wire. MPI
+shape is LAMMPS `CommBrick` (standing `Irecv` → pack → blocking `Send` →
+`Wait`, no send-side `Isend`/`Waitall`), posted per **round**, never
+per swap: ATV's swap table gives both faces of a round the *same* partner
+(`Swap::sendproc == recvproc`), so a swap is answered by the partner's
+`Halo::mirror_swap` and the swap index is the tag. LAMMPS's per-swap tag 0 is
+legal only under its `sendproc != recvproc` convention — adopting it here means
+converting the swap table first, not deleting the tags. Remaining `PackPlan` /
+swap-table convention / CUDA `MultiGpu` / namespace alignment:
+[md-comm.md](.claude/notes/md-comm.md).
+
 ## Oracle capability loops
 
 Instances: `pyscf-method-loop`, `cp2k-method-loop`, `metalwalls-method-loop`,

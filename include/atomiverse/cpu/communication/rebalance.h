@@ -1,4 +1,4 @@
-/// @file cpu/comm/rcb.h
+/// @file cpu/communication/rebalance.h
 /// @brief `Rebalance` -- non-uniform brick load balancer.
 ///
 /// Recomputes per-axis cut planes from a globally-reduced
@@ -7,7 +7,7 @@
 /// (the existing halo / migration topology); only the slab widths change.
 ///
 /// Hard prerequisite: a multi-rank `DomainDecomposition` initialised by
-/// `Backend::init()`. Single-rank: structural no-op (`launch()` early-returns).
+/// `DomainRuntime`. Single-rank: structural no-op (`launch()` early-returns).
 ///
 /// Effect of one balance pass:
 ///   1. Build local atom-position histograms for x, y, z.
@@ -16,22 +16,25 @@
 ///      store the resulting `dims[d] + 1` cut planes (as box-length fractions)
 ///      in `dd->cuts[d]`.
 ///   4. Refresh this rank's `sublo[]/subhi[]` via `compute_sublo_subhi(box)`.
-///   5. Bump `dd->neighbor_generation` so the next `Comm::exchange()`
-///      ships every owner that now lies outside its rank's slab to its new owner.
+///   5. Bump `dd->neighbor_generation` (bonded-cache invalidation) and set
+///      `dd->partition_dirty` so `NeighborList::decide_reneighbor` returns
+///      true and Verlet runs `exchange` + `borders` on the next step.
 ///
 /// The component itself does not move atoms -- it only updates the partition.
-/// Migration is the responsibility of `Comm::exchange`, which already runs at
-/// `pre_force @ -30` and consults `dd->cuts[]` (when populated) to decide each
-/// owner's destination.
+/// Migration is `Comm::exchange`, which consults `dd->cuts[]` when populated.
 ///
 /// **Topology constraint.** This is a non-uniform *brick* balance, not full
 /// recursive coordinate bisection (which would produce irregular subdomains
 /// incompatible with the existing 6-face halo). The simpler axis-aligned
-/// scheme matches LAMMPS's `balance dynamic xyz` and stays inside ~300 LOC
-/// while still adapting to non-uniform atom densities (e.g. polymer melts
-/// with regions of differing density during glass formation).
+/// scheme matches LAMMPS's `balance dynamic xyz`.
 ///
-/// @see .claude/specs/parallel-md-engine.md  § A.4
+/// Algorithm and communication structure transplanted from LAMMPS
+/// `src/balance.cpp` (`balance dynamic xyz`, checkout `78a7ddf`).
+///
+/// Copyright (2003) Sandia Corporation.  Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software.  This software is distributed under
+/// the GNU General Public License (GPL-2.0-only).
 #pragma once
 
 #include <string>

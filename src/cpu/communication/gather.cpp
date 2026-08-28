@@ -1,4 +1,4 @@
-/// @file cpu/comm/gather.cpp
+/// @file cpu/communication/gather.cpp
 /// @brief Native-dtype owner gather with schema-driven runtime columns.
 
 #include "atomiverse/cpu/communication/gather.h"

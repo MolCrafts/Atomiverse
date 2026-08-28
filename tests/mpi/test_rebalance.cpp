@@ -1,12 +1,12 @@
-/// @file tests/mpi/test_rcb.cpp
-/// @brief Phase 4 -- `Rebalance` non-uniform brick rebalance.
+/// @file tests/mpi/test_rebalance.cpp
+/// @brief `Rebalance` non-uniform brick rebalance.
 ///
 /// Verifies that one balance pass on a deliberately skewed atom distribution:
 ///   1. Populates `dd->cuts[d]` with `dims[d] + 1` monotonically increasing
 ///      fractions in `[0, 1]`.
 ///   2. Re-derives this rank's `sublo/subhi` from the new cuts (consistent
 ///      with `compute_sublo_subhi`).
-///   3. Bumps `dd->neighbor_generation`.
+///   3. Bumps `dd->neighbor_generation` and sets `partition_dirty`.
 ///   4. Causes the next `comm->exchange()` to redistribute atoms so per-rank
 ///      counts are within ~10% of the global mean.
 
@@ -20,7 +20,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
-#include "atomiverse/cpu/communication/rcb.h"
+#include "atomiverse/cpu/communication/rebalance.h"
 #include "atomiverse/cpu/driver/runtime.h"
 #include "atomiverse/cpu/frame/frame.h"
 
@@ -69,7 +69,8 @@ TEST(Rebalance, SingleRankIsNoOp) {
     rcb.launch(lctx);
 
     EXPECT_EQ(dd->neighbor_generation, gen0)
-        << "single-rank RCB must not bump generation";
+        << "single-rank Rebalance must not bump generation";
+    EXPECT_FALSE(dd->partition_dirty);
     EXPECT_TRUE(dd->cuts[0].empty());
     EXPECT_TRUE(dd->cuts[1].empty());
     EXPECT_TRUE(dd->cuts[2].empty());
@@ -130,10 +131,12 @@ TEST(Rebalance, RebalancesSkewedDistribution) {
         }
     }
     EXPECT_GT(dd->neighbor_generation, gen_before);
+    EXPECT_TRUE(dd->partition_dirty);
 
     // Exchange so atoms move to their new rank.
     ASSERT_NE(backend.context().md.comm, nullptr);
     backend.context().md.comm->exchange(lctx);
+    EXPECT_FALSE(dd->partition_dirty);
 
     // Post-migration: per-rank counts should be much more balanced.
     const int n_local_post = dd->n_local;

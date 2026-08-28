@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file cuda/comm/multi_gpu.cuh
+/// @file cuda/communication/multi_gpu.cuh
 /// @brief MultiGpu — single-process multi-GPU MD orchestrator. Owns the
 ///        DeviceManager (P2P over NVLink) and a 3D SpatialGrid, splits
 ///        a global cpu::Frame into one device-resident subdomain frame per GPU,
@@ -19,7 +19,7 @@
 #include <memory>
 #include <vector>
 
-#include "atomiverse/cuda/communication/domain_decomposition.cuh"
+#include "atomiverse/cuda/communication/spatial_grid.cuh"
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/device_manager.cuh"
 #include "atomiverse/cuda/frame/frame.cuh"
@@ -56,7 +56,7 @@ class MultiGpu {
 
     int count() const { return dm_.count(); }
     const DeviceManager& devices() const { return dm_; }
-    const SpatialGrid& domain() const { return *dd_; }
+    const SpatialGrid& domain() const { return *grid_; }
 
     /// Split `global` by owner slab and materialize each subdomain onto its
     /// GPU. `ghost_headroom` over-allocates each subdomain's per-atom arrays so
@@ -90,9 +90,6 @@ class MultiGpu {
     /// Within an axis the sendable set is snapshotted at the axis start, so
     /// ghosts received during that axis are not immediately re-forwarded.
     void build_halo(double cutoff);
-
-    /// Backward-compatible alias for `build_halo` (full ghost-set rebuild).
-    void exchange_halo(double cutoff) { build_halo(cutoff); }
 
     /// Refresh ghost POSITIONS only, reusing the `HaloPlan` recorded by the
     /// last `build_halo`. For each recorded transfer, gather the current owned
@@ -216,9 +213,9 @@ class MultiGpu {
 
     /// Compute LJ 12-6 forces on each subdomain's OWNED atoms from its
     /// owned+ghost set (brute force, global-box min-image). Run after
-    /// exchange_halo: each owned atom's force is complete (ghosts supply the
-    /// cross-boundary neighbors), so this needs no reverse halo. Validates the
-    /// decomposition+halo+force path against a single-GPU run.
+    /// `build_halo`: each owned atom's force is complete (ghosts supply the
+    /// cross-boundary neighbors), so this needs no reverse halo. Halo
+    /// correctness oracle for tests — production force is `compute_lj_nlist`.
     void compute_lj_bruteforce(double cutoff, double epsilon, double sigma);
 
     /// Gather owned-atom forces back to global tag/index order (like gather()
@@ -291,47 +288,24 @@ class MultiGpu {
     /// ghost positions. The multi-GPU equivalent of the single-GPU PE NVE step.
     void run_nve_pe(int steps, double dt, int reneigh_every = 10);
 
+  private:
     /// One recorded P2P ghost transfer (one src subdomain → one dst face
-    /// neighbor). `d_src_idx` (on the src device) lists the owned-atom indices
-    /// selected at build_halo; their current positions are gathered into
-    /// `d_sx/sy/sz` (also src-device) and copied into dst's ghost region at
-    /// [base, base+cnt). Stable for the life of a reneighbor interval.
+    /// neighbor). Stable for the life of a reneighbor interval.
     struct HaloPlan {
-        int src = 0;  // source subdomain slot
-        int dst = 0;  // destination subdomain slot
-        int axis = 0; // cascade stage (0=x,1=y,2=z); replayed in order
-        int cnt = 0;  // atoms transferred
-        int base = 0; // dst ghost offset (n_local + accumulated)
-        int* d_src_idx = nullptr; // [cnt] src-array indices (owned OR
-                                  // prior-axis ghost) on src device
-        // Packed [3*cnt] halo staging, shared by the forward (positions) and
-        // reverse (forces) exchanges — they never overlap within a step. One
-        // buffer per device, so each forward/reverse transfer is a SINGLE
-        // cudaMemcpyPeer (x|y|z blocks) instead of three. Allocated by build_halo.
-        real_t* d_pack_src =
-            nullptr; // [3*cnt] src device (forward send / reverse recv)
-        real_t* d_pack_dst =
-            nullptr; // [3*cnt] dst device (forward recv / reverse gather)
-        // Copy-done events for async P2P ordering across devices. forward_comm /
-        // reverse_comm issue cudaMemcpyPeerAsync (non-blocking) so the independent
-        // plans within one cascade axis overlap instead of serializing on the
-        // host; the consuming kernel on the OTHER device waits on the event.
-        // `ev_src` lives on the src device (records the forward position copy);
-        // `ev_dst` lives on the dst device (records the reverse force copy) —
-        // cudaEventRecord requires the event's device be current. Created with
-        // cudaEventDisableTiming (sync-only). Allocated by build_halo.
-        cudaEvent_t ev_src = nullptr; // src-device: forward copy-done
-        cudaEvent_t ev_dst = nullptr; // dst-device: reverse copy-done
-        // Buffer-release handshakes for the sync-free step pipeline: with no
-        // host barrier between steps, step N+1's forward P2P (issued on the
-        // SRC comm stream) could overwrite d_pack_dst while dst's step-N
-        // unpack still reads it — and symmetrically for the reverse staging.
-        // The consumer records "buffer free", the next producer waits on it.
-        cudaEvent_t ev_fwd_done = nullptr; // dst-device: forward unpack done
-        cudaEvent_t ev_rev_done = nullptr; // src-device: reverse scatter done
+        int src = 0;
+        int dst = 0;
+        int axis = 0;
+        int cnt = 0;
+        int base = 0;
+        int* d_src_idx = nullptr;
+        real_t* d_pack_src = nullptr;
+        real_t* d_pack_dst = nullptr;
+        cudaEvent_t ev_src = nullptr;
+        cudaEvent_t ev_dst = nullptr;
+        cudaEvent_t ev_fwd_done = nullptr;
+        cudaEvent_t ev_rev_done = nullptr;
     };
 
-  private:
     void destroy_frames();
     void destroy_halo_plan();
     void destroy_force_engine();
@@ -344,7 +318,7 @@ class MultiGpu {
     void destroy_tag_maps();
 
     DeviceManager dm_;
-    std::unique_ptr<SpatialGrid> dd_;
+    std::unique_ptr<SpatialGrid> grid_;
     std::vector<cuda::Frame> frames_; // per-slot device frame
     std::vector<int> n_local_;        // per-slot owned count
     std::vector<HaloPlan>

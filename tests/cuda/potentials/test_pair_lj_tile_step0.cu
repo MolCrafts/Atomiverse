@@ -7,6 +7,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/dynamics/md.cuh"
+#include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 
@@ -51,6 +52,10 @@ TEST(PairLjTileStep0, TwoAtomEnergyMatchesOracle) {
     frame.box = cpu::Box::cubic(20.0);
 
     cuda::md::MD sim;
+    // dt = 0: one frozen step is a force/energy pass. `MD` requires an
+    // Integrator, so the pass declares the one that does nothing rather
+    // than leaving the slot empty.
+    sim.set_integrator(cuda::md::VelocityVerlet{0.0});
     sim.set_neighbor(cuda::NeighborList{rc, 0.5});
     sim.set_evaluator(cuda::PairLJCut{eps, sig, rc});
     sim.build();

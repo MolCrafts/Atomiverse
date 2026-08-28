@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "../io/molrs_meta.h"
+#include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
 
 namespace ATV {
@@ -281,16 +282,21 @@ Frame from_molrs(const molrs::FrameRef& src) {
 void to_molrs(const Frame& src, molrs::FrameRef& dst) {
     internal::require_molrs_frame_schema_v2();
     const int n = src.nlocal();
-    write_f64(dst, "x", src.span(kAtom_x).data(), n);
-    write_f64(dst, "y", src.span(kAtom_y).data(), n);
-    write_f64(dst, "z", src.span(kAtom_z).data(), n);
-    write_f64(dst, "vx", src.span(kAtom_vx).data(), n);
-    write_f64(dst, "vy", src.span(kAtom_vy).data(), n);
-    write_f64(dst, "vz", src.span(kAtom_vz).data(), n);
-    write_f64(dst, "fx", src.span(kAtom_fx).data(), n);
-    write_f64(dst, "fy", src.span(kAtom_fy).data(), n);
-    write_f64(dst, "fz", src.span(kAtom_fz).data(), n);
-    write_f64(dst, "charge", src.span(kAtom_charge).data(), n);
+    for (const auto& col : src.block("atoms").resolve_columns(kColWriteBack)) {
+        if (col.cols != 1)
+            throw std::runtime_error(
+                "to_molrs: kColWriteBack column must be scalar");
+        const std::string key{col.key};
+        if (col.dtype == ColDType::Storage)
+            write_f64(dst, key.c_str(),
+                      static_cast<const StorageReal*>(col.read_data), n);
+        else if (col.dtype == ColDType::Acc)
+            write_f64(dst, key.c_str(),
+                      static_cast<const AccReal*>(col.read_data), n);
+        else
+            throw std::runtime_error(
+                "to_molrs: kColWriteBack column has unsupported dtype");
+    }
 
     const auto image = src.span(kAtom_image);
     const TagInt* tags = src.span(kAtom_tag).data();

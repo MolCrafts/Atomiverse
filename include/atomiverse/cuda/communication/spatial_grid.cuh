@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file cuda/comm/domain_decomposition.cuh
+/// @file cuda/communication/spatial_grid.cuh
 /// @brief SpatialGrid — single-process 3D spatial split of an
 ///        orthorhombic box across N GPUs. Pure host-side topology (no device
 ///        code): factorizes N into a balanced 3D grid (the single-process
@@ -8,8 +8,10 @@
 ///        coords, owned slab [sublo, subhi), and 6 face-neighbor slots (with
 ///        periodic wrap), and maps a wrapped position to its owner slot.
 ///
-/// Mirrors cpu::md::mpi::DomainDecomposition's topology, minus the MPI handles.
-/// The multi-GPU driver uses it to partition atoms into per-device subdomains
+/// Same *role* as `cpu::md::mpi::DomainDecomposition` (owned slabs + face
+/// neighbors), minus MPI handles. Slot linearization is x-fastest; the CPU
+/// brick is x-slowest — they are not the same rank map. The multi-GPU
+/// driver uses this type to partition atoms into per-device subdomains
 /// and to drive P2P halo/migration between face neighbors.
 
 #include <array>

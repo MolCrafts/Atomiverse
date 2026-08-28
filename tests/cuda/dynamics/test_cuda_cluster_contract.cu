@@ -13,6 +13,7 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/driver/backend.cuh"
 #include "atomiverse/cuda/dynamics/md.cuh"
+#include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 
@@ -82,6 +83,9 @@ TEST(CudaClusterContract, PairLjRunsOnClusterPath) {
     const double cutoff = 3.0;
 
     cuda::md::MD sim;
+    // dt = 0: one frozen step is a force/energy pass (see
+    // `test_pair_lj_tile_step0.cu`).
+    sim.set_integrator(cuda::md::VelocityVerlet{0.0});
     sim.set_neighbor(cuda::NeighborList{cutoff, 0.9});
     sim.set_evaluator(cuda::PairLJCut{1.0, 1.0, cutoff});
     sim.build();

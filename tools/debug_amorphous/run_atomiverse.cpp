@@ -34,7 +34,7 @@
 #include <string>
 
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/communication/halo_exchange.h"
+
 #include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/init.h"
@@ -256,9 +256,8 @@ int main(int argc, char** argv) {
         std::cerr << "[atomiverse] n_bonds     = " << nb << '\n';
         std::cerr << "[atomiverse] n_angles    = " << na << '\n';
         std::cerr << "[atomiverse] n_dihedrals = " << nd << '\n';
-        std::cerr << "[atomiverse] box (Å)     = " << frame.box.length(0)
-                  << ' ' << frame.box.length(1) << ' '
-                  << frame.box.length(2) << '\n';
+        std::cerr << "[atomiverse] box (Å)     = " << frame.box.length(0) << ' '
+                  << frame.box.length(1) << ' ' << frame.box.length(2) << '\n';
     }
 
     const int n_atoms_global = frame.nlocal();
@@ -296,14 +295,12 @@ int main(int argc, char** argv) {
         cpu::md::MD sim;
         sim.set_integrator(cpu::md::NVELimit{dt, xmax});
         sim.set_observer(cpu::md::InitVelocity{T_tgt, /*seed=*/1231});
-        sim.set_thermostat(cpu::md::FixLangevin{T_tgt, /*T_stop=*/T_tgt, tau_lang, dt,
-                                     /*seed=*/904297});
-        sim.on(ATV::md::Phase::pre_force)
-            .add(cpu::comm::HaloSend{lj_cut + 0.4}, -20);
-        sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
+        sim.set_thermostat(cpu::md::FixLangevin{T_tgt, /*T_stop=*/T_tgt,
+                                                tau_lang, dt,
+                                                /*seed=*/904297});
+        sim.set_neighbor(
+            cpu::md::NeighborList<>{lj_cut, /*skin=*/0.4, /*every=*/10});
         sim.on(ATV::md::Phase::force)
-            .add(cpu::md::NeighborList<>{lj_cut, /*skin=*/0.4, /*every=*/10},
-                 -10)
             .add(cpu::PairLJCut{lj_eps_ev, lj_sig, lj_cut}.set_special_bonds(
                 0.0, 0.0, 0.0))
             .add(cpu::BondHarmonic{{bond_K_ev}, {bond_r0}})
@@ -374,16 +371,13 @@ int main(int argc, char** argv) {
         const double tau_P = 1000.0; // LAMMPS Pdamp
 
         cpu::md::MD sim;
-        sim.set_integrator(cpu::md::NoseHooverNPT{*/ T_tgt, */ tau_T, */ P_tgt, */ tau_P,
-                                       */ dt, */ 2.0, */ 3, */ 3});
+        sim.set_integrator(cpu::md::NoseHooverNPT{
+            */ T_tgt, */ tau_T, */ P_tgt, */ tau_P, */ dt, */ 2.0, */ 3, */ 3});
         // LAMMPS `fix momentum 1 linear 1 1 1` equivalent.
         sim.set_observer(cpu::md::ZeroMomentum{1});
-        sim.on(ATV::md::Phase::pre_force)
-            .add(cpu::comm::HaloSend{lj_cut + 0.4}, -20);
-        sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
+        sim.set_neighbor(
+            cpu::md::NeighborList<>{lj_cut, /*skin=*/0.4, /*every=*/10});
         sim.on(ATV::md::Phase::force)
-            .add(cpu::md::NeighborList<>{lj_cut, /*skin=*/0.4, /*every=*/10},
-                 -10)
             .add(cpu::PairLJCut{lj_eps_ev, lj_sig, lj_cut}.set_special_bonds(
                 0.0, 0.0, 0.0))
             .add(cpu::BondHarmonic{{bond_K_ev}, {bond_r0}})

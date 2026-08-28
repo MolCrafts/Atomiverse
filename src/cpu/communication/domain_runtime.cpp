@@ -74,9 +74,10 @@ void DomainRuntime::bind_frame(cpu::Frame& frame, Context& ctx,
         // Subsequent calls (e.g. `adopt` across per-stage driver rebuilds):
         // dd already holds the previous stage's partition state. Re-running
         // `partition_atoms` here would iterate only `[0, n_local)` and DROP any
-        // atom that has drifted across a slab boundary since the last Migrate.
-        // Skip the re-partition; refresh slab bounds against the (possibly
-        // box-changed) current box and let the next Migrate absorb any drift.
+        // atom that has drifted across a slab boundary since the last
+        // `Comm::exchange`. Skip the re-partition; refresh slab bounds against
+        // the (possibly box-changed) current box and let the next exchange
+        // absorb any drift.
         if (dd_->n_local == 0) {
             dd_->init_topology(MPI_COMM_WORLD, frame.box.length(0),
                                frame.box.length(1), frame.box.length(2));

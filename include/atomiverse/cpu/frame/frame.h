@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-#include "atomiverse/core/schema.h"
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/cpu/frame/block.h"
 #include "atomiverse/cpu/frame/box.h"
 #include "atomiverse/cpu/frame/meta.h"
@@ -110,32 +110,34 @@ class Frame {
     const Block& atoms_block_() const { return block("atoms"); }
 };
 
-/// @brief Validate a Frame against a system `Schema`, pydantic
+/// @brief Validate a Frame against the folded ghost contract, pydantic
 ///        `model_validate` style: report EVERY problem, not the first.
 ///
-/// The Schema-to-Frame relationship is validation, not construction. A Frame
-/// is a mapping and arrives with whatever its source gave it (a data file,
-/// `Block::insert`, another rank); nothing builds one from a Schema.
+/// The contract-to-Frame relationship is validation, not construction. A
+/// Frame is a mapping and arrives with whatever its source gave it (a data
+/// file, `Block::insert`, another rank); nothing builds one from a contract.
 ///
 /// Reports a field that is absent, and a field that is present with the
 /// wrong element type or width — the second is the case a bare name list
-/// cannot see, and it is the one that corrupts a wire silently.
+/// cannot see, and it is the one that corrupts a wire silently. Freshness
+/// and direction are not checked here: they say what the engine must do with
+/// the column, not what the Frame has to look like.
 ///
 /// @param required Fields the mounted components declared.
 /// @param frame Frame to check.
 /// @return One entry per problem, each naming the field and its declarer.
-///         Empty when the Frame satisfies the Schema.
-std::vector<SchemaError> validate_schema(const Schema& required,
+///         Empty when the Frame satisfies the contract.
+std::vector<SchemaError> validate_ghosts(const GhostContract& required,
                                          const Frame& frame);
 
-/// @brief `validate_schema`, but throws a single message listing every
+/// @brief `validate_ghosts`, but throws a single message listing every
 ///        problem. The systematic form of CLAUDE.md's per-component rule:
 ///        a missing required field throws with a how-to, never defaults.
 /// @param required Fields the mounted components declared.
 /// @param frame Frame to check.
 /// @param who Caller name, used in the message.
-/// @throws std::runtime_error when the Frame does not satisfy the Schema.
-void check_schema(const Schema& required, const Frame& frame,
+/// @throws std::runtime_error when the Frame does not satisfy the contract.
+void check_ghosts(const GhostContract& required, const Frame& frame,
                   std::string_view who);
 
 } // namespace cpu

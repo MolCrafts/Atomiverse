@@ -475,10 +475,10 @@ TEST(MultiGpu, HaloExchangeXSplit) {
         GTEST_SKIP() << "needs >= 2 GPUs";
 
     auto g = make_grid(12.0); // grid coords 1.5/4.5/7.5/10.5
-    mg.partition(g);          // creates the SpatialGrid (dd_)
+    mg.partition(g);          // creates the SpatialGrid
     ASSERT_EQ(mg.domain().dims(),
               (std::array<int, 3>{2, 1, 1})); // boundary at x = 6
-    mg.exchange_halo(3.0);                    // cutoff 3.0
+    mg.build_halo(3.0);                       // cutoff 3.0
 
     // Each slab owns 32 atoms; boundary atoms within 3.0 of x=0/6/12 are sent
     // both ways, so each side receives the other's near-boundary atoms.
@@ -593,7 +593,7 @@ TEST(MultiGpu, LjForceParityVsSingleGpu) {
     {
         cuda::md::MultiGpu mg1(1); // whole system on one GPU
         mg1.partition(g);
-        mg1.exchange_halo(cut); // no ghosts (self-neighbors skipped)
+        mg1.build_halo(cut); // no ghosts (self-neighbors skipped)
         mg1.compute_lj_bruteforce(cut, eps, sig);
         mg1.gather_forces(ref);
     }
@@ -602,7 +602,7 @@ TEST(MultiGpu, LjForceParityVsSingleGpu) {
     if (mg.count() < 2)
         GTEST_SKIP() << "needs >= 2 GPUs";
     mg.partition(g);
-    mg.exchange_halo(cut);
+    mg.build_halo(cut);
     mg.compute_lj_bruteforce(cut, eps, sig);
     cpu::Frame mf(n);
     for (int i = 0; i < n; ++i)
@@ -802,7 +802,7 @@ TEST(MultiGpu, LjForceParityVsSingleGpu4Way) {
         mg1.gather_forces(ref);
     }
 
-    mg.partition(g); // creates the SpatialGrid (dd_)
+    mg.partition(g); // creates the SpatialGrid
 
     // Confirm the decomposition genuinely needs the cascade (>1 axis split).
     const auto dims = mg.domain().dims();

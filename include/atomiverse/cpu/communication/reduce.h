@@ -1,4 +1,4 @@
-/// @file cpu/comm/reduce.h
+/// @file cpu/communication/reduce.h
 /// @brief End-of-step MPI reductions for MD: energy, kinetic, stress.
 ///
 /// `Reduce` does one batched `MPI_Allreduce(SUM)` of the 20 per-rank

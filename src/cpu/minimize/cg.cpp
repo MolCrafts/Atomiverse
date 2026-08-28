@@ -72,7 +72,7 @@ void CG::launch(const cpu::LaunchContext& ctx) {
 
     // Migration reshuffles local rows → previous-step vectors are keyed to
     // dead indexing; restart as steepest descent. Rank-uniform: the
-    // generation bump is gated on a global allreduce inside Migrate.
+    // generation bump is lockstep on every rank (`Comm::exchange`).
     {
         const auto* dd = ctx.runtime.md.dd;
         const std::uint64_t gen =

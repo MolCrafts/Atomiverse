@@ -1,4 +1,4 @@
-/// @file cpu/comm/schema_mpi.h
+/// @file cpu/communication/schema_mpi.h
 /// @brief Collective validation for native-dtype Frame wire plans.
 #pragma once
 

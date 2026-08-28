@@ -7,7 +7,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
-#include "atomiverse/cpu/dynamics/pbc.h"
+#include "atomiverse/cpu/frame/pbc.h"
 
 namespace ATV {
 namespace cpu {

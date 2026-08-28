@@ -21,8 +21,8 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/plan.h"
-#include "atomiverse/core/schema.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/timer.h"
 #include "atomiverse/cpu/asynchronous/analysis_runtime.h"
@@ -143,12 +143,11 @@ class Runtime {
         cpu::Component* neighbor_comp = nullptr;
         int neighbor_slot = -1;
         int neighbor_op = -1;
-        /// Columns the halo carries this run, folded from every mounted
-        /// `FieldUser` plus the base set. Derived at `build()`; see
-        /// `core/schema.h`.
-        Schema ghost_fields;
-        Schema ghost_reverse_fields;
-        Schema ghost_refresh_fields;
+        /// The run's ghost contract: every mounted component's
+        /// `declare_ghosts` folded onto the engine's own, once at `build()`.
+        /// Each communication pass compiles itself off this directly.
+        /// See `core/ghost_contract.h`.
+        GhostContract ghost;
 
         /// Widest `NeighborConsumer::halo_cutoff()` [Å] among mounted
         /// components. A many-body style (EAM) declares a ghost-of-ghost

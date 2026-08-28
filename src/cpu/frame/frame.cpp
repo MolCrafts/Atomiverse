@@ -403,48 +403,43 @@ bool ref_order(const ColumnRef& a, const ColumnRef& b) {
 
 } // namespace
 
-std::vector<ColumnRef> Block::resolve_columns(const Schema& schema) {
+ColumnRef Block::resolve_column(const GhostField& field) {
     note_resolution_();
-    std::vector<ColumnRef> refs;
-    refs.reserve(schema.size());
-    for (const Field& f : schema) {
-        const auto it = columns_.find(f.name);
-        if (it == columns_.end())
-            throw column_error(
-                "the wire needs column '" + std::string(f.name)
-                + "' (required by " + std::string(f.required_by)
-                + ") but this Frame's atoms Block does not carry it. The "
-                  "Driver validates the Frame against the schema at build(); "
-                  "reaching here means the Frame changed shape afterwards.");
-        Column& column = it->second;
-        refs.push_back(ColumnRef{it->first, column.dtype(), column.group(),
-                                 column.entries_per_item(), column.flags(),
-                                 column.wire_id(), column.data(), column.data(),
-                                 column.cols(), column.element_size(), true,
-                                 &generation_, generation_});
-    }
-    return refs;
+    const auto it = columns_.find(field.name);
+    if (it == columns_.end())
+        throw column_error(
+            "the wire needs column '" + std::string(field.name)
+            + "' (required by " + std::string(field.required_by)
+            + ") but this Frame's atoms Block does not carry it. The "
+              "Driver validates the Frame against the ghost contract at "
+              "build(); reaching here means the Frame changed shape "
+              "afterwards.");
+    Column& column = it->second;
+    return ColumnRef{it->first,      column.dtype(),
+                     column.group(), column.entries_per_item(),
+                     column.flags(), column.wire_id(),
+                     column.data(),  column.data(),
+                     column.cols(),  column.element_size(),
+                     true,           &generation_,
+                     generation_};
 }
 
-std::vector<ColumnRef> Block::resolve_columns(const Schema& schema) const {
+ColumnRef Block::resolve_column(const GhostField& field) const {
     note_resolution_();
-    std::vector<ColumnRef> refs;
-    refs.reserve(schema.size());
-    for (const Field& f : schema) {
-        const auto it = columns_.find(f.name);
-        if (it == columns_.end())
-            throw column_error(
-                "the wire needs column '" + std::string(f.name)
-                + "' (required by " + std::string(f.required_by)
-                + ") but this Frame's atoms Block does not carry it.");
-        const Column& column = it->second;
-        refs.push_back(ColumnRef{
-            it->first, column.dtype(), column.group(),
-            column.entries_per_item(), column.flags(), column.wire_id(),
-            column.data(), nullptr, column.cols(), column.element_size(), false,
-            const_cast<std::uint64_t*>(&generation_), generation_});
-    }
-    return refs;
+    const auto it = columns_.find(field.name);
+    if (it == columns_.end())
+        throw column_error(
+            "the wire needs column '" + std::string(field.name)
+            + "' (required by " + std::string(field.required_by)
+            + ") but this Frame's atoms Block does not carry it.");
+    const Column& column = it->second;
+    return ColumnRef{it->first,      column.dtype(),
+                     column.group(), column.entries_per_item(),
+                     column.flags(), column.wire_id(),
+                     column.data(),  nullptr,
+                     column.cols(),  column.element_size(),
+                     false,          const_cast<std::uint64_t*>(&generation_),
+                     generation_};
 }
 
 std::vector<ColumnRef> Block::resolve_columns(unsigned required_flags) {
@@ -1055,10 +1050,10 @@ Frame Frame::clone_structure(int rows) const {
     return out;
 }
 
-std::vector<SchemaError> validate_schema(const Schema& required,
+std::vector<SchemaError> validate_ghosts(const GhostContract& required,
                                          const Frame& frame) {
     std::vector<SchemaError> errors = required.conflicts();
-    for (const Field& f : required) {
+    for (const GhostField& f : required) {
         if (!frame.has("atoms", f.name)) {
             errors.push_back(SchemaError{
                 f.name, f.required_by,
@@ -1075,9 +1070,9 @@ std::vector<SchemaError> validate_schema(const Schema& required,
         if (col.dtype() != f.dtype)
             errors.push_back(SchemaError{
                 f.name, f.required_by,
-                "declared as " + std::string(Schema::dtype_name(f.dtype))
+                "declared as " + std::string(GhostContract::dtype_name(f.dtype))
                     + " but the Frame carries "
-                    + std::string(Schema::dtype_name(col.dtype()))});
+                    + std::string(GhostContract::dtype_name(col.dtype()))});
         else if (col.cols() != f.cols)
             errors.push_back(
                 SchemaError{f.name, f.required_by,
@@ -1088,14 +1083,14 @@ std::vector<SchemaError> validate_schema(const Schema& required,
     return errors;
 }
 
-void check_schema(const Schema& required, const Frame& frame,
+void check_ghosts(const GhostContract& required, const Frame& frame,
                   std::string_view who) {
-    const std::vector<SchemaError> errors = validate_schema(required, frame);
+    const std::vector<SchemaError> errors = validate_ghosts(required, frame);
     if (errors.empty())
         return;
     std::string msg = std::string(who)
                       + ": this Frame does not satisfy the "
-                        "system schema ("
+                        "ghost contract ("
                       + std::to_string(errors.size()) + " problem(s)):";
     for (const SchemaError& e : errors) {
         msg += "\n  - " + std::string(e.field) + " (required by "

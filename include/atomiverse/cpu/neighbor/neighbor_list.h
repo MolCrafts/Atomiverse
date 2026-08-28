@@ -135,7 +135,9 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         const bool disp_rebuild =
             delay_ok && every_ok
             && (!check_ || strategy_.needs_rebuild(frame, n_active));
-        return mode_stale || size_stale || disp_rebuild;
+        const bool partition_stale =
+            is_multi_rank(rt) && rt.md.dd->partition_dirty;
+        return mode_stale || size_stale || disp_rebuild || partition_stale;
     }
 
     /// @brief Drop `atom_modify sort` permanently (see `NeighborProvider`).

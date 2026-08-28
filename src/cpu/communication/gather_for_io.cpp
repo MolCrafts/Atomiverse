@@ -1,4 +1,4 @@
-/// @file cpu/comm/gather_for_io.cpp
+/// @file cpu/communication/gather_for_io.cpp
 /// @brief Shared owner-gather preamble for root-writing recorders.
 
 #include "atomiverse/cpu/communication/gather_for_io.h"

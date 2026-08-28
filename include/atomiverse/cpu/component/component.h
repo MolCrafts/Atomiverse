@@ -9,12 +9,13 @@
 /// inherit at most one kind: Concrete → Kind → Component.
 #pragma once
 
+#include <span>
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/role.h"
-#include "atomiverse/core/schema.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/types.h"
 #include "atomiverse/cpu/component/context.h"
@@ -139,39 +140,36 @@ class Component {
     virtual std::size_t memory_bytes() const { return 0; }
     virtual std::vector<DefaultBinding> default_bindings() const { return {}; }
 
-    /// @brief Fields this component needs the system to carry on GHOST rows.
+    /// @brief What this component needs of the ghost copies it uses.
     ///
-    /// Same shape as `default_bindings()`: the component states a fact about
-    /// itself and the Driver folds every component's answer into the system
-    /// `Schema` at `build()`. Owned rows need no declaration — they are
-    /// always there; this is about what has to travel.
+    /// A **static property of the type**, in the same family as
+    /// `default_bindings()`: hand back a `static constexpr` table and the
+    /// Driver folds every mounted component's answer once at `build()`.
+    /// Nothing here runs during a step and nothing allocates.
     ///
-    /// A pair style that indexes a neighbour (`q[j]`, `v[j]`) declares those
-    /// fields here. Default: nothing, because most components only touch
-    /// rows they already own.
-    /// @param system Schema being accumulated. Add to it; never clear it.
-    virtual void declare_fields(Schema& system) const { (void)system; }
-
-    /// @brief Fields this component ACCUMULATES onto ghost rows, for the
-    ///        reverse pass to fold back onto the owners.
-    /// @param system Schema being accumulated.
-    virtual void declare_reverse_fields(Schema& system) const { (void)system; }
-
-    /// @brief Fields that CHANGE every step and must be refreshed on ghost
-    ///        rows between neighbour rebuilds.
+    /// @code{.cpp}
+    /// static constexpr std::array kGhosts = {
+    ///     GhostField::read_stable(kAtom_charge, "CoulLong"),
+    ///     GhostField::read_each_step(kAtom_vx, "PairDpd"),
+    ///     GhostField::reduce_to_owner(kAtom_fx, "PairX"),
+    /// };
+    /// std::span<const GhostField> declare_ghosts() const override {
+    ///     return kGhosts;
+    /// }
+    /// @endcode
     ///
-    /// The distinction `declare_fields` does not make, and which LAMMPS
-    /// keeps as two lists (`fields_comm` vs `fields_border`,
-    /// `atom_vec.cpp:36-39`): a field read on a ghost but constant between
-    /// rebuilds rides the border wire once; a field that moves every step
-    /// has to ride the per-step forward wire as well. Positions are the base
-    /// case; a component that mutates some other ghost-visible field per
-    /// step declares it here.
+    /// This is a **Component-author** surface, like `launch()` — no user
+    /// script ever writes a `GhostField`. Owned rows need no declaration;
+    /// this is only about what has to travel and what guarantee it carries.
     ///
-    /// Declaring here does NOT imply `declare_fields` — say both if the
-    /// field must also be present when the ghost is first created.
-    /// @param system Schema being accumulated.
-    virtual void declare_refresh_fields(Schema& system) const { (void)system; }
+    /// `read_each_step` is a **freshness level**, not a lifecycle event: it
+    /// says the value must be current when this component reads it, not that
+    /// anything happens per step. To *act* at a point in the loop, bind to a
+    /// `Phase` (`on(phase).add(...)`) — that is the engine's event system.
+    ///
+    /// @return This component's declarations; empty by default, because most
+    ///         components only touch rows they already own.
+    virtual std::span<const GhostField> declare_ghosts() const { return {}; }
 
     virtual void build(const BuildContext& ctx) { (void)ctx; }
     virtual void launch(const LaunchContext& ctx) = 0;

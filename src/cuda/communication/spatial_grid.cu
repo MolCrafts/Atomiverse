@@ -1,7 +1,7 @@
-/// @file cuda/comm/domain_decomposition.cu
+/// @file cuda/communication/spatial_grid.cu
 /// @brief SpatialGrid implementation (pure host topology).
 
-#include "atomiverse/cuda/communication/domain_decomposition.cuh"
+#include "atomiverse/cuda/communication/spatial_grid.cuh"
 
 #include <cmath>
 #include <stdexcept>

@@ -66,20 +66,15 @@ inline constexpr unsigned kColCount = 1u << 0;
 inline constexpr unsigned kColTopology = 1u << 1;
 inline constexpr unsigned kColIdentityTail = 1u << 2;
 /// @brief Declares the write-back set: the columns `to_molrs` returns to
-///        the caller's Frame. Currently x/y/z, v, f and charge.
-///
-/// NOT YET CONSUMED. `to_molrs` (`src/cpu/frame/molrs_exchange.cpp:281`)
-/// hand-lists exactly these columns plus tag and image instead of walking
-/// this flag, so the declaration and the implementation can drift. Wiring
-/// `to_molrs` onto `resolve_columns(kColWriteBack)` is owed — see the
-/// comm-maint chain notes in `.claude/specs/INDEX.md`. Do not delete the
-/// flag: it is the correct declaration, it is the consumer that is missing.
+///        the caller's Frame as native f64 (x/y/z, v, f, charge). Tag and
+///        image stay a separate i32 identity path (narrowing + ix/iy/iz split).
 inline constexpr unsigned kColWriteBack = 1u << 3;
 inline constexpr unsigned kColMigrate = 1u << 4;
 // Wire membership for the comm / border / reverse wires used to live here
 // as kColComm / kColBorder / kColReverse — a global guess, made once, about
 // what some consumer might want. It is now derived per run from what the
-// mounted components declare (`Component::declare_fields`, `core/schema.h`).
+// mounted components declare (`Component::declare_ghosts`,
+// `core/ghost_contract.h`).
 // kColExchange stays a flag because migration carries what an atom IS, which
 // is a property of the Frame rather than of whoever happens to be mounted.
 inline constexpr unsigned kColExchange = 1u << 5;

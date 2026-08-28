@@ -1,4 +1,4 @@
-/// @file cpu/comm/domain.h
+/// @file cpu/communication/domain.h
 /// @brief `DomainDecomposition` — multi-rank spatial ownership / halo state.
 ///
 /// **Not used for serial physics.** Without multi-rank MPI there is no
@@ -9,7 +9,8 @@
 /// `dims={1,1,1}` stub for infrastructure, but force kernels must not
 /// require it — prefer the owned_range helpers.
 ///
-/// Owned by `cpu::Runtime`; non-owning pointer on `cpu::Context::dd`.
+/// Owned by `communication::DomainRuntime`; non-owning pointer on
+/// `ctx.md.dd`.
 ///
 /// @see .claude/specs/parallel-md-engine.md  § A.1
 #pragma once
@@ -124,6 +125,14 @@ struct DomainDecomposition {
     /// halo-list consumers rebuild when they observe a bump.
     std::uint64_t neighbor_generation = 0;
 
+    /// @brief Set by `Rebalance` after cut planes change. `NeighborList::
+    ///        decide_reneighbor` ORs this into nflag so the next Verlet
+    ///        step runs `exchange` + `borders`. Cleared at the start of
+    ///        `CommBrick::exchange`. Not `neighbor_generation`: exchange
+    ///        itself bumps that counter, so keying nflag on it would
+    ///        reneighbor every subsequent step.
+    bool partition_dirty = false;
+
     /// @brief Generation counter, bumped at every `CommBrick` *full
     /// rebuild* (not on position-only refreshes). Distinct from
     /// `neighbor_generation` because a full halo rebuild can reshuffle
@@ -136,10 +145,9 @@ struct DomainDecomposition {
     /// been replaced, producing a per-rebuild PE / virial discontinuity
     /// that injects 1-3 eV per halo cycle into the MTK extended
     /// Hamiltonian and accumulates to a step-1000 catastrophic ε̇
-    /// runaway under MSU PE stage-2 NPT. (`Comm::exchange` keys off
-    /// `neighbor_generation` only — bumping that counter from the halo
-    /// path interacts disastrously with its first_launch handling on a
-    /// Zarr-loaded state; see
+    /// runaway under MSU PE stage-2 NPT. (Do not bump `neighbor_generation`
+    /// from the halo path: that interacts with `exchange` first_launch
+    /// handling on a Zarr-loaded state; see
     /// `.claude/notes/msu_stage2_conserved_drift_2026-05-27.md`.)
     std::uint64_t halo_generation = 0;
 

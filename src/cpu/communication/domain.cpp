@@ -1,6 +1,15 @@
-/// @file src/cpu/md/mpi/domain.cpp
+/// @file src/cpu/communication/domain.cpp
 /// @brief `DomainDecomposition` implementation: single-rank `bind`, plus
 /// multi-rank `init_topology`, `compute_sublo_subhi`, and `partition_atoms`.
+///
+/// Algorithm and communication structure transplanted from LAMMPS
+/// `src/domain.cpp` / `src/comm.cpp` / `src/procmap.cpp` (checkout `78a7ddf`,
+/// 2026-08-25). Public API is ATV-native.
+///
+/// Copyright (2003) Sandia Corporation.  Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software.  This software is distributed under
+/// the GNU General Public License (GPL-2.0-only).
 
 #include "atomiverse/cpu/communication/domain.h"
 

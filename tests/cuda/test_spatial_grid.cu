@@ -1,11 +1,11 @@
-/// @file tests/cuda/test_domain_decomposition.cu
+/// @file tests/cuda/test_spatial_grid.cu
 /// @brief cuda::SpatialGrid — 3D factorization, slab bounds, periodic
 ///        face neighbors, position->owner. Pure host logic (no GPU used).
 
 #include <gtest/gtest.h>
 #include <set>
 
-#include "atomiverse/cuda/communication/domain_decomposition.cuh"
+#include "atomiverse/cuda/communication/spatial_grid.cuh"
 
 using namespace ATV;
 using DD = cuda::SpatialGrid;

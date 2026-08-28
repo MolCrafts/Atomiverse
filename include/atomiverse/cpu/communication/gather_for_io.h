@@ -1,4 +1,4 @@
-/// @file cpu/comm/gather_for_io.h
+/// @file cpu/communication/gather_for_io.h
 /// @brief `gather_for_root_io` -- resolve the frame a rank-0 recorder writes.
 ///
 /// Shared preamble of the root-writing recorders (TrajectoryWriter,

@@ -18,7 +18,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
-#include "atomiverse/cpu/dynamics/pbc.h"
+#include "atomiverse/cpu/frame/pbc.h"
 
 #include <cmath>
 

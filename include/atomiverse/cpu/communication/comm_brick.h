@@ -28,7 +28,7 @@
 #include <memory>
 #include <vector>
 
-#include "atomiverse/core/schema.h"
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/halo.h"
 
@@ -73,12 +73,15 @@ class CommBrick : public Comm {
 
     void remember_(const LaunchContext& ctx);
 
-    /// Wires this run carries, cached at `setup()` from the Driver's fold.
-    /// Border and reverse come from the mounted components; forward is the
-    /// engine's base set, since positions are what change every step.
-    Schema border_schema_;
-    Schema reverse_schema_;
-    Schema forward_schema_;
+    /// The run's ghost contract, cached at `setup()` from the Driver's
+    /// fold. Each pass compiles its own `PackPlan` off this; there is no
+    /// per-wire copy.
+    GhostContract contract_;
+
+    /// @brief Whether `setup()` has cached the wire schemas for this run.
+    ///        `bufs_` cannot stand in for it: `exchange()` and
+    ///        `reverse_comm()` allocate the buffers on demand too.
+    bool setup_done_ = false;
 
     Halo swaps_;
     std::unique_ptr<detail::FaceBufs> bufs_;

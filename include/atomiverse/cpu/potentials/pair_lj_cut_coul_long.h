@@ -6,6 +6,9 @@
 /// tabulated erfc. Reciprocal space is a separate `KSpacePME` / `KSpacePPPM`.
 #pragma once
 
+#include <array>
+#include <span>
+
 #include <string>
 #include <vector>
 
@@ -22,9 +25,12 @@ namespace cpu {
 class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
   public:
     /// @brief The fused kernel reads the neighbour charge (`q_ptr[j]`).
-    /// @param out Schema being accumulated at build().
-    void declare_fields(Schema& out) const override {
-        out.require(kAtom_charge, "PairLJCutCoulLong");
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_charge, "PairLJCutCoulLong"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
     }
 
     /// @param coeffs  Diagonal (and optional off-diagonal) LJ type pairs.

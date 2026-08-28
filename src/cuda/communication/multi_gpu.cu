@@ -450,8 +450,8 @@ void MultiGpu::build_halo(double cutoff) {
 
         for (int src = 0; src < N; ++src) {
             const int ns = n_send[src];
-            const int dlo = dd_->face_neighbor(src, 2 * axis);
-            const int dhi = dd_->face_neighbor(src, 2 * axis + 1);
+            const int dlo = grid_->face_neighbor(src, 2 * axis);
+            const int dhi = grid_->face_neighbor(src, 2 * axis + 1);
             if (ns == 0 || (dlo == src && dhi == src))
                 continue; // empty, or dims==1 along this axis (periodic self)
             dm_.set_device(src);
@@ -467,8 +467,8 @@ void MultiGpu::build_halo(double cutoff) {
             CKM(mallocp(&sidx, ns * sizeof(int)));
             CKM(mallocp(&scnt, sizeof(int)));
             auto& a = frames_[src].atoms;
-            const auto lo = dd_->sublo(src);
-            const auto hi = dd_->subhi(src);
+            const auto lo = grid_->sublo(src);
+            const auto hi = grid_->subhi(src);
 
             // Distinct (dst, mode) sends along this axis. When the low and high
             // face-neighbors are the SAME GPU (dims==2 along the axis, periodic
@@ -742,7 +742,7 @@ void MultiGpu::partition(const cpu::Frame& global, double ghost_headroom) {
     box_L_[0] = Lx;
     box_L_[1] = Ly;
     box_L_[2] = Lz;
-    dd_ = std::make_unique<SpatialGrid>(N, Lx, Ly, Lz);
+    grid_ = std::make_unique<SpatialGrid>(N, Lx, Ly, Lz);
 
     // Global per-atom columns (host spans; blocks+meta+box frame).
     const auto gx = global.span(kAtom_x);
@@ -759,7 +759,7 @@ void MultiGpu::partition(const cpu::Frame& global, double ghost_headroom) {
     // Bucket global atom indices by owner slab.
     std::vector<std::vector<int>> buckets(N);
     for (int i = 0; i < ng; ++i) {
-        int owner = dd_->owner_of(gx[i], gy[i], gz[i]);
+        int owner = grid_->owner_of(gx[i], gy[i], gz[i]);
         buckets[owner].push_back(i);
     }
 
@@ -1011,7 +1011,7 @@ vv_second(real_t* __restrict__ vx, real_t* __restrict__ vy,
 
 void MultiGpu::run_nve(int steps, double dt, double cutoff, double epsilon,
                        double sigma) {
-    exchange_halo(cutoff);
+    build_halo(cutoff);
     compute_lj_bruteforce(cutoff, epsilon, sigma);
     const real_t dtr = static_cast<real_t>(dt);
     for (int step = 0; step < steps; ++step) {
@@ -1026,7 +1026,7 @@ void MultiGpu::run_nve(int steps, double dt, double cutoff, double epsilon,
                                       a.fy, a.fz, a.mass, nl, dtr);
             CKM(cudaGetLastError());
         }
-        exchange_halo(cutoff);
+        build_halo(cutoff);
         compute_lj_bruteforce(cutoff, epsilon, sigma);
         for (int s = 0; s < count(); ++s) {
             const int nl = frames_[s].n_local_;
@@ -2388,7 +2388,7 @@ void MultiGpu::migrate() {
     const int N = count();
     if (N < 2)
         return; // single GPU: every atom already owned here
-    const auto dims = dd_->dims();
+    const auto dims = grid_->dims();
 
     // Phase 1a — per source: classify owners + per-destination COUNTS only
     // (cheap; the counting-sort `order` is deferred to phase 1b so the common

@@ -1,4 +1,4 @@
-/// @file cpu/comm/bcast_frame.h
+/// @file cpu/communication/bcast_frame.h
 /// @brief `bcast_frame` -- replicate the root rank's whole Frame onto every
 ///        rank of `MPI_COMM_WORLD`.
 ///

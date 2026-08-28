@@ -1,4 +1,4 @@
-/// @file cpu/comm/gather.h
+/// @file cpu/communication/gather.h
 /// @brief `gather_to_root` -- collect distributed `cpu::Frame` owners to one rank.
 ///
 /// Used by recorders (XYZ, thermo) and benchmarks that need a single-rank view

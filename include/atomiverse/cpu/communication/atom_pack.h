@@ -1,5 +1,5 @@
-/// @file cpu/comm/atom_pack.h
-/// @brief Schema-compiled, native-dtype Frame row packing.
+/// @file cpu/communication/atom_pack.h
+/// @brief Contract-compiled, native-dtype Frame row packing.
 ///
 /// Payloads are bytes described by an exact schema fingerprint.  Values are
 /// copied in their native configured dtype; TagInt is never widened through
@@ -21,6 +21,23 @@ namespace comm {
 inline constexpr std::uint32_t kAtomWireVersion = 2;
 
 enum class PackKind : std::uint8_t { Comm, Border, Exchange, Reverse };
+
+/// @brief Human name of a wire, for diagnostics.
+/// @param kind Wire kind.
+/// @return Static string naming the wire.
+constexpr const char* pack_kind_name(PackKind kind) noexcept {
+    switch (kind) {
+    case PackKind::Comm:
+        return "refresh";
+    case PackKind::Border:
+        return "border";
+    case PackKind::Exchange:
+        return "exchange";
+    case PackKind::Reverse:
+        return "reverse";
+    }
+    return "?";
+}
 
 /// @brief A wire plan compiled from a Frame's schema, and the verbs that
 ///        drive it.
@@ -66,7 +83,7 @@ struct PackPlan {
     /// @return Upper bound on one packed row [bytes].
     std::size_t max_row_bytes() const;
 
-    /// @brief Schema digest, for the collective agreement check.
+    /// @brief Wire-shape digest, for the collective agreement check.
     /// @param discriminator Extra value folded in, distinguishing two uses
     ///        of the same plan shape.
     /// @return 64-bit digest, identical on every rank with the same schema.
@@ -132,20 +149,30 @@ struct PackPlan {
                            std::size_t size);
 };
 
-/// @brief Compile a wire plan for exactly the fields a `Schema` names.
+/// @brief Compile a wire plan from the folded ghost contract.
 ///
-/// This is the entry point for the comm, border and reverse wires: the
-/// system Schema says what the mounted components need, and the wire carries
-/// that and nothing else. `make_exchange_plan` stays flag-driven — migration
-/// carries what an atom IS, a property of the Frame rather than of whoever
-/// happens to be mounted.
+/// **This is the compile step**, and the only place that maps a
+/// data-lifetime contract onto a communication pass:
+///
+/// | `PackKind` | carries |
+/// | --- | --- |
+/// | `Border` | every read — presence is implied by reading it |
+/// | `Comm` | reads at `Freshness::step` |
+/// | `Reverse` | every reduction |
+///
+/// Nothing above this function names a wire, and nothing below it names a
+/// freshness. `make_exchange_plan` stays flag-driven — migration carries
+/// what an atom IS, a property of the Frame rather than of whoever happens
+/// to be mounted, which is a different question and not a second answer to
+/// this one.
 /// @param frame Frame to resolve against.
 /// @param kind Which wire.
 /// @param schema Fields the wire carries, in wire order.
 /// @return Compiled plan.
-PackPlan make_wire_plan(Frame& frame, PackKind kind, const Schema& schema);
+PackPlan make_wire_plan(Frame& frame, PackKind kind,
+                        const GhostContract& contract);
 PackPlan make_wire_plan(const Frame& frame, PackKind kind,
-                        const Schema& schema);
+                        const GhostContract& contract);
 
 PackPlan make_exchange_plan(const Frame& frame);
 PackPlan make_exchange_plan(Frame& frame);
@@ -167,6 +194,16 @@ void require_schema_fingerprint(const PackPlan& local,
 /// @return `a * b`.
 /// @throws std::overflow_error if the product would wrap.
 std::size_t checked_mul(std::size_t a, std::size_t b, const char* operation);
+
+/// @brief Bytes of an extra-field packer payload: `n_atoms * nsize` doubles.
+///
+/// `ForwardPacker::comm_forward()` is doubles per atom; the MPI post must
+/// use this product, not `n_atoms` alone. LAMMPS `CommBrick::forward_comm(Fix*)`
+/// posts `nsize * recvnum` MPI_DOUBLE.
+/// @param n_atoms Atom count on this swap.
+/// @param nsize Doubles per atom (`Packer::comm_forward()`).
+/// @return Payload size [bytes].
+std::size_t packer_bytes(int n_atoms, int nsize);
 
 } // namespace comm
 } // namespace cpu

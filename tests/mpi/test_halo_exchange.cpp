@@ -29,10 +29,10 @@
 #include <iostream>
 #include <vector>
 
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
-#include "atomiverse/core/schema.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
@@ -57,29 +57,32 @@ namespace {
 /// directly has no mounted component to declare on its behalf, so it plays
 /// that part here — which is also the documentation of how a plugin gets a
 /// column onto the wire.
-struct PublishedSchemas {
-    ATV::Schema border;
-    ATV::Schema reverse;
-    ATV::Schema refresh;
-};
-
 /// Declares the base set plus whichever plugin columns THIS frame actually
 /// carries — a component declares what it uses, and a test frame that never
 /// inserted `halo_aux` must not put it on the wire.
-PublishedSchemas publish_wire(const cpu::Frame& frame) {
-    PublishedSchemas out;
-    ATV::base_fields::border(out.border);
-    ATV::base_fields::reverse(out.reverse);
-    ATV::base_fields::forward(out.refresh);
+ATV::GhostContract publish_wire(const cpu::Frame& frame) {
+    ATV::GhostContract out;
+    out.declare(ATV::base_fields::kEngine);
     if (frame.has("atoms", "halo_aux")) {
-        // Present when the ghost is created, AND refreshed every step —
-        // this test mutates it between forward_comm calls.
-        out.border.require("halo_aux", ColDType::Storage, 2, "test plugin");
-        out.refresh.require("halo_aux", ColDType::Storage, 2, "test plugin");
+        // This test mutates it between `forward_comm` calls, so it must be
+        // current every step. One declaration; the compile step decides that
+        // means border + refresh.
+        static constexpr std::array aux = {ATV::GhostField::read_each_step(
+            "halo_aux", ColDType::Storage, 2, "test plugin")};
+        out.declare(aux);
     }
-    if (frame.has("atoms", "halo_reverse_aux"))
-        out.reverse.require("halo_reverse_aux", ColDType::Acc, 2,
-                            "test plugin");
+    if (frame.has("atoms", "ghost_speed")) {
+        // The DPD shape: one more SCALAR read at step freshness, which keeps
+        // the whole wire field-major.
+        static constexpr std::array speed = {ATV::GhostField::read_each_step(
+            "ghost_speed", ColDType::Storage, 1, "test plugin")};
+        out.declare(speed);
+    }
+    if (frame.has("atoms", "halo_reverse_aux")) {
+        static constexpr std::array rev = {ATV::GhostField::reduce_to_owner(
+            "halo_reverse_aux", ColDType::Acc, 2, "test plugin")};
+        out.declare(rev);
+    }
     return out;
 }
 
@@ -87,6 +90,8 @@ const ColKey<StorageReal> kHaloAux{"atoms", "halo_aux", kDynamicFieldId,
                                    ColDType::Storage};
 const ColKey<StorageReal> kHaloReverseAux{"atoms", "halo_reverse_aux",
                                           kDynamicFieldId, ColDType::Storage};
+const ColKey<StorageReal> kGhostSpeed{"atoms", "ghost_speed", kDynamicFieldId,
+                                      ColDType::Storage};
 
 cpu::Frame make_uniform_grid(int n_per_side, double box_len) {
     const int n = n_per_side * n_per_side * n_per_side;
@@ -131,10 +136,8 @@ ForwardResult run_forward(double box_len, int n_per_side, double cutoff) {
     cpu::Comm* comm = backend.context().md.comm;
     comm->set_ghost_cutoff(cutoff);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
-    PublishedSchemas wires = publish_wire(frame);
-    backend.context().md.ghost_fields = &wires.border;
-    backend.context().md.ghost_reverse_fields = &wires.reverse;
-    backend.context().md.ghost_refresh_fields = &wires.refresh;
+    ATV::GhostContract wires = publish_wire(frame);
+    backend.context().md.ghost = &wires;
     comm->setup(lctx);
     comm->borders(lctx);
 
@@ -217,10 +220,8 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
     cpu::Comm* comm = backend.context().md.comm;
     comm->set_ghost_cutoff(2.0);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
-    PublishedSchemas wires = publish_wire(frame);
-    backend.context().md.ghost_fields = &wires.border;
-    backend.context().md.ghost_reverse_fields = &wires.reverse;
-    backend.context().md.ghost_refresh_fields = &wires.refresh;
+    ATV::GhostContract wires = publish_wire(frame);
+    backend.context().md.ghost = &wires;
     comm->setup(lctx);
     comm->borders(lctx);
 
@@ -249,6 +250,75 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
 
     ASSERT_NE(backend.context().md.comm, nullptr);
     EXPECT_GT(dd->n_ghost, 0);
+
+    backend.shutdown();
+}
+
+// ── a scalar step-freshness read rides the field-major refresh wire ───
+
+/// The shape `PairDpd` produces: a scalar read at `each_step` freshness
+/// alongside x/y/z, so the refresh wire is four scalars and stays
+/// field-major. The 2-component `halo_aux` case above covers the
+/// row-major arm; this covers the one production actually takes when a style
+/// declares a neighbour velocity, and it covers it over real MPI rather than
+/// in-process.
+///
+/// It also pins that presence is implied by the requirement, not declared
+/// separately: the value is checked on the ghosts straight out of
+/// `borders()`, before any `forward_comm` has run.
+TEST(HaloForward, ScalarEveryStepFieldIsCreatedThenRefreshed) {
+    int world_size = 0;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    if (world_size <= 1)
+        GTEST_SKIP() << "single-rank: no ghosts to refresh";
+
+    auto frame = make_uniform_grid(4, 10.0);
+    constexpr TagInt tag_base = TagInt{1000};
+    frame.block("atoms").insert(
+        "ghost_speed",
+        cpu::ColumnSpec{ColDType::Storage, 1, ColGroup::Core, 0,
+                        kColMigrate | kColExchange, kDynamicFieldId});
+    for (int i = 0; i < frame.nlocal(); ++i) {
+        frame.span(kAtom_tag)[i] = tag_base + TagInt(i);
+        frame.span(kGhostSpeed)[i] = StorageReal(7 + i);
+    }
+    frame.clear_tag_index();
+    frame.rebuild_tag_index(0, frame.nlocal());
+
+    cpu::Runtime backend;
+    backend.init();
+    backend.set_frame(frame);
+    auto* dd = backend.context().md.dd;
+    cpu::Comm* comm = backend.context().md.comm;
+    comm->set_ghost_cutoff(2.0);
+    cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
+    ATV::GhostContract wires = publish_wire(frame);
+    backend.context().md.ghost = &wires;
+    ASSERT_TRUE(wires.contains("ghost_speed"));
+    ASSERT_EQ(wires.find("ghost_speed")->freshness, ATV::Freshness::step);
+    comm->setup(lctx);
+    comm->borders(lctx);
+    ASSERT_GT(dd->n_ghost, 0);
+
+    // Straight out of borders(): the creation wire carried it.
+    for (int g = 0; g < dd->n_ghost; ++g) {
+        const int row = dd->n_local + g;
+        const int src = static_cast<int>(frame.span(kAtom_tag)[row] - tag_base);
+        ASSERT_GE(src, 0);
+        ASSERT_LT(src, 64);
+        EXPECT_EQ(frame.span(kGhostSpeed)[row], StorageReal(7 + src));
+    }
+
+    // Owners move on; the refresh pass carries the new values without a
+    // rebuild — the guarantee a `stable` declaration would not give.
+    for (int i = 0; i < dd->n_local; ++i)
+        frame.span(kGhostSpeed)[i] += StorageReal(500);
+    comm->forward_comm(lctx);
+    for (int g = 0; g < dd->n_ghost; ++g) {
+        const int row = dd->n_local + g;
+        const int src = static_cast<int>(frame.span(kAtom_tag)[row] - tag_base);
+        EXPECT_EQ(frame.span(kGhostSpeed)[row], StorageReal(507 + src));
+    }
 
     backend.shutdown();
 }
@@ -314,10 +384,8 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
     cpu::Comm* comm = backend.context().md.comm;
     comm->set_ghost_cutoff(2.0);
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
-    PublishedSchemas wires = publish_wire(frame);
-    backend.context().md.ghost_fields = &wires.border;
-    backend.context().md.ghost_reverse_fields = &wires.reverse;
-    backend.context().md.ghost_refresh_fields = &wires.refresh;
+    ATV::GhostContract wires = publish_wire(frame);
+    backend.context().md.ghost = &wires;
     comm->setup(lctx);
     comm->borders(lctx);
 

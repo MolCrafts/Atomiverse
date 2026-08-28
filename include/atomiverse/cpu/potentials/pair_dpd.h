@@ -2,6 +2,9 @@
 /// @brief Groot–Warren DPD: soft conservative + pairwise D/R (CPU).
 #pragma once
 
+#include <array>
+#include <span>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -45,12 +48,24 @@ namespace cpu {
 /// valid) noise realization.
 class PairDpd : public Pair {
   public:
-    /// @brief DPD's dissipative term is v_j - v_i, so ghost rows
-    /// carry velocities. This is the ONLY style in the tree that reads a
-    /// neighbour velocity; a run without it does not ship them.
-    /// @param out Schema being accumulated at build().
-    void declare_fields(Schema& out) const override {
-        out.require_all({"vx", "vy", "vz"}, ColDType::Storage, "PairDpd");
+    /// @brief DPD's dissipative term is \(v_j - v_i\), so ghost rows carry
+    /// velocities. This is the ONLY style in the tree that reads a neighbour
+    /// velocity; a run without it does not ship them.
+    ///
+    /// `each_step`, not `stable`: what DPD needs is not "send velocities
+    /// once per rebuild" but "\(v_j\) is the owner's current value when I
+    /// compute \(F^D\)". Under a `stable` guarantee it would be up to
+    /// `every` steps old for the whole reneighbour interval — a
+    /// systematically wrong friction that no energy-conservation check
+    /// catches, because DPD is not energy-conserving by construction.
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_each_step(kAtom_vx, "PairDpd"),
+        GhostField::read_each_step(kAtom_vy, "PairDpd"),
+        GhostField::read_each_step(kAtom_vz, "PairDpd"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
     }
 
     /// @brief Single-type: one amplitude `a` for every pair.

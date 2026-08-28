@@ -13,6 +13,9 @@
 /// are unchanged (LAMMPS convention).
 #pragma once
 
+#include <array>
+#include <span>
+
 #include <vector>
 
 #include "atomiverse/core/precision.h"
@@ -31,9 +34,12 @@ class CoulLong : public cpu::Potential,
                  public cpu::LongRangeParticipant {
   public:
     /// @brief Real-space Coulomb reads the neighbour charge.
-    /// @param out Schema being accumulated at build().
-    void declare_fields(Schema& out) const override {
-        out.require(kAtom_charge, "CoulLong");
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_charge, "CoulLong"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
     }
 
     /// @param alpha  Ewald splitting parameter α [1/Å]. Must match the
