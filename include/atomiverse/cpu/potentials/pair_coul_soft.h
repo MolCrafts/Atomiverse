@@ -13,9 +13,13 @@
 ///       GROMACS free-energy soft-core Coulomb.
 #pragma once
 
+#include <array>
+#include <span>
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/potentials/pair.h"
 
@@ -38,6 +42,21 @@ class PairCoulSoft : public Pair {
     /// @throws std::invalid_argument if any length/α/p is non-positive.
     PairCoulSoft(double cutoff, double sigma_c, double alpha = 0.5,
                  double p = 1.0);
+
+    /// @brief The softened Coulomb kernel reads the NEIGHBOUR charge, and a
+    /// neighbour is a ghost across every cut.
+    ///
+    /// `stable`, matching `CoulLong` / `PairLJCutCoulLong`: a fixed-charge
+    /// model never changes it, and a fluctuating-charge owner (QEq,
+    /// constant-potential electrodes) refreshes ghosts itself through
+    /// `ChargePacker` on the self-initiated `ForwardPacker` path.
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_charge, "PairCoulSoft"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
+    }
 
     std::string name() const override { return "coul/soft"; }
 

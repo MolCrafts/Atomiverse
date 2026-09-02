@@ -70,6 +70,13 @@ class Frame {
     void set_capacity(int new_capacity);
     void copy_row(int dst, int src);
 
+    /// @brief Copy row `src` of `source`'s atoms Block into row `dst` of
+    ///        this Frame's — see `Block::copy_row_from`.
+    /// @param source Frame to read from.
+    /// @param dst Destination row in this Frame.
+    /// @param src Source row in `source`.
+    void copy_row_from(const Frame& source, int dst, int src);
+
     bool has_bonded() const { return meta.get(kHasBonded) != 0; }
     void ensure_bonded_storage();
     void grow_bond_per_atom(int target);

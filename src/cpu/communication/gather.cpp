@@ -34,9 +34,20 @@ std::size_t checked_product(std::size_t a, std::size_t b,
     return comm::checked_mul(a, b, operation);
 }
 
+/// @brief The atoms-Block columns a gathered frame carries.
+///
+/// The Block's own flag selector, not a compiled wire plan: a gather is a
+/// bulk column-major collective, so it wants the column *set* and never any
+/// of `PackPlan`'s per-row pack verbs. `kColExchange` is the same "what an
+/// atom IS" question migration asks, which is exactly what a single-rank
+/// view of the system has to reproduce.
+std::vector<ColumnRef> migrated_columns(const Frame& frame) {
+    return frame.block("atoms").resolve_columns(kColExchange);
+}
+
 void copy_runtime_columns(GatheredFrame& out, const Frame& frame, int n_local,
-                          const comm::PackPlan& plan) {
-    for (const ColumnRef& field : plan.fields) {
+                          const std::vector<ColumnRef>& fields) {
+    for (const ColumnRef& field : fields) {
         if (field.wire_id != kDynamicFieldId)
             continue;
         GatheredColumn column;
@@ -97,8 +108,7 @@ void copy_owners_into(GatheredFrame& out, const Frame& frame, int n_local) {
     copy(out.tag, tag, rows);
     copy(out.image, image,
          checked_product(rows, std::size_t{3}, "gather/image"));
-    const comm::PackPlan plan = comm::make_exchange_plan(frame);
-    copy_runtime_columns(out, frame, n_local, plan);
+    copy_runtime_columns(out, frame, n_local, migrated_columns(frame));
 }
 
 void sort_by_tag(GatheredFrame& gathered) {
@@ -192,8 +202,10 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
         return out;
     }
 
-    const comm::PackPlan plan = comm::make_exchange_plan(frame);
-    comm::require_collective_schema(plan, dd.cart_comm, "gather_to_root");
+    const std::vector<ColumnRef> fields = migrated_columns(frame);
+    comm::require_collective_fingerprint(
+        comm::kAtomWireVersion, comm::column_schema_fingerprint(fields),
+        dd.cart_comm, "gather_to_root");
 
     const int local_range_valid =
         dd.n_local >= 0 && dd.n_local <= frame.capacity();
@@ -294,7 +306,7 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
                 rank == root ? image_displacements.data() : nullptr, MPI_INT8_T,
                 root, dd.cart_comm);
 
-    for (const ColumnRef& field : plan.fields) {
+    for (const ColumnRef& field : fields) {
         if (field.wire_id != kDynamicFieldId)
             continue;
         comm::require_collective_fingerprint(

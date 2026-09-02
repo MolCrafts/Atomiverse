@@ -206,23 +206,30 @@ TEST(TransactionRollback, RejectedVolumeMoveRestoresBoxAndCoordinates) {
     expect_frames_identical(frame, before);
 }
 
+/// A volume move records every owned row, so a per-row schema resolution
+/// would be O(N) descriptor rebuilds per trial. The patch is a
+/// `clone_structure` of the source and rows move by `copy_row_from`, which
+/// walks the Block's own column map — so the whole operation resolves
+/// NOTHING, at any atom count.
 TEST(TransactionRollback, VolumePatchResolutionIsConstantInAtomCount) {
     cpu::Frame frame = make_frame(256);
     cpu::mc::Transaction t;
 
-    frame.begin_resolution_window(2);
+    frame.begin_resolution_window(1);
     t.begin(Verb::Box, frame);
     for (int i = 0; i < frame.nlocal(); ++i)
         t.record_touch(frame, i);
-    EXPECT_EQ(frame.resolution_count(), 1u)
-        << "the exchange schema must be compiled once, not once per row";
+    EXPECT_EQ(frame.resolution_count(), 0u)
+        << "recording a whole-frame patch must not resolve a column plan at "
+           "all, let alone one per row";
     EXPECT_NO_THROW(frame.end_resolution_window("transaction_record_all"));
 
-    // Invalidate the main-frame plan once. Rollback may rebuild that plan at
-    // the operation boundary, but still must not resolve inside its row loop.
+    // Grow the main frame: the atoms Block's structural generation changes,
+    // so the patch is re-cloned at the operation boundary — and the row loop
+    // still resolves nothing.
     frame.grow(frame.capacity() + 1);
-    frame.begin_resolution_window(2);
+    frame.begin_resolution_window(1);
     t.rollback(frame);
-    EXPECT_EQ(frame.resolution_count(), 1u);
+    EXPECT_EQ(frame.resolution_count(), 0u);
     EXPECT_NO_THROW(frame.end_resolution_window("transaction_rollback_all"));
 }

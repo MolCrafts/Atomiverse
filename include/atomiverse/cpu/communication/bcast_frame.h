@@ -3,12 +3,20 @@
 ///        rank of `MPI_COMM_WORLD`.
 ///
 /// The rank-0-reads / every-rank-computes primitive. Before payload traffic,
-/// every rank collectively validates the exact atoms-Block PackPlan and typed
-/// metadata schema. The root then broadcasts an explicit fixed-width header,
-/// nine cell doubles, the native-dtype row bytes, and typed metadata bytes.
-/// Every non-root rank reconstructs a full replica: all rows owned
-/// (`nlocal == n`, `nghost == 0`), tag→local map rebuilt, cell and
-/// serializable metadata overwritten. The root's Frame is never modified.
+/// every rank collectively validates the atoms-Block column schema
+/// (`comm::column_schema_fingerprint` over `Block::resolve_columns`) and the
+/// typed metadata schema. The root then broadcasts an explicit fixed-width
+/// header, nine cell doubles, typed metadata bytes, and **one Bcast per
+/// atoms column** — the native bytes of `[0, n)` rows, column-major, no
+/// per-row packing and no borrowed wire plan. Every non-root rank
+/// reconstructs a full replica: all rows owned (`nlocal == n`,
+/// `nghost == 0`), tag→local map rebuilt, cell and serializable metadata
+/// overwritten. The root's Frame is never modified.
+///
+/// A variable-length topology column's reserve stride is per rank, so the
+/// root's stride travels in the header: a receiver adopts it where it is
+/// wider (`Frame::grow_group`) and stages + zero-pads where its own is
+/// wider.
 ///
 /// The payload is pure byte transit -- no arithmetic touches any value in
 /// flight, so every replicated field (positions [Angstrom], velocities
@@ -27,7 +35,8 @@
 /// world size 1, the call returns immediately and the Frame is untouched
 /// (`MPI_Initialized` probe, same as `scatter_atoms_from_root`).
 ///
-/// @see cpu/comm/atom_pack.h    the row codec this primitive rides
+/// @see cpu/comm/atom_pack.h    `column_schema_fingerprint`, the rank
+///      agreement value this primitive checks before any payload
 /// @see cpu/communication/comm.h  `Comm::exchange`, the
 ///      distribute-by-ownership sibling of this replicate-everywhere call
 #pragma once

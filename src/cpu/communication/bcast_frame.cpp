@@ -1,5 +1,6 @@
 /// @file cpu/communication/bcast_frame.cpp
-/// @brief Whole-Frame broadcast using native row and typed-meta wire plans.
+/// @brief Whole-Frame broadcast: native column-major atom payload plus a
+///        typed-meta byte stream.
 
 #include "atomiverse/cpu/communication/bcast_frame.h"
 
@@ -281,40 +282,47 @@ void bcast_frame(Frame& frame, int root) {
         throw std::invalid_argument(
             "bcast_frame: root rank is invalid or differs across ranks");
 
-    PackPlan plan = make_exchange_plan(frame);
-    require_collective_schema(plan, MPI_COMM_WORLD, "bcast_frame/atoms");
+    // The atoms Block's own column selection, not a compiled wire plan. A
+    // broadcast is a bulk column-major collective: it wants the column set
+    // and none of `PackPlan`'s per-row pack verbs, and shipping whole
+    // columns is both fewer MPI calls and fewer bytes touched than a
+    // per-row pack loop over the same data.
+    std::vector<ColumnRef> fields =
+        frame.block("atoms").resolve_columns(kColExchange);
+    require_collective_fingerprint(kAtomWireVersion,
+                                   column_schema_fingerprint(fields),
+                                   MPI_COMM_WORLD, "bcast_frame/atoms");
     require_collective_fingerprint(kMetaWireVersion,
                                    frame.meta.serializable_fingerprint(),
                                    MPI_COMM_WORLD, "bcast_frame/meta");
 
-    std::vector<std::byte> atom_payload;
     std::vector<std::byte> meta_payload;
     std::array<double, 9> cell{};
-    std::array<std::uint64_t, 7> header{};
+    // 0 wire version, 1 atom count, 2 meta bytes, 3 meta fingerprint,
+    // 4 has_bonded, 5 column count, 6..10 per-atom topology capacities.
+    std::array<std::uint64_t, 11> header{};
 
     if (rank == root) {
-        const int n = frame.nlocal();
-        const std::size_t row_capacity = plan.max_row_bytes();
-        atom_payload.resize(
-            checked_product(static_cast<std::size_t>(n), row_capacity));
-        std::size_t cursor = 0;
-        for (int row = 0; row < n; ++row) {
-            cursor += plan.pack_row(frame, row, atom_payload.data() + cursor,
-                                    atom_payload.size() - cursor);
-        }
-        atom_payload.resize(cursor);
         meta_payload = serialize_meta(frame.meta);
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
                 cell[static_cast<std::size_t>(3 * i + j)] =
                     frame.box.cell()(i, j);
-        header = {kBcastWireVersion,
-                  static_cast<std::uint64_t>(n),
-                  static_cast<std::uint64_t>(atom_payload.size()),
-                  static_cast<std::uint64_t>(meta_payload.size()),
-                  frame.meta.serializable_fingerprint(),
-                  frame.has_bonded() ? 1u : 0u,
-                  plan.fingerprint};
+        header = {
+            kBcastWireVersion,
+            static_cast<std::uint64_t>(frame.nlocal()),
+            static_cast<std::uint64_t>(meta_payload.size()),
+            frame.meta.serializable_fingerprint(),
+            frame.has_bonded() ? 1u : 0u,
+            static_cast<std::uint64_t>(fields.size()),
+            static_cast<std::uint64_t>(frame.group_capacity(ColGroup::Bond)),
+            static_cast<std::uint64_t>(frame.group_capacity(ColGroup::Angle)),
+            static_cast<std::uint64_t>(
+                frame.group_capacity(ColGroup::Dihedral)),
+            static_cast<std::uint64_t>(
+                frame.group_capacity(ColGroup::Improper)),
+            static_cast<std::uint64_t>(
+                frame.group_capacity(ColGroup::Special))};
     }
 
     MPI_Bcast(header.data(), static_cast<int>(header.size()), MPI_UINT64_T,
@@ -324,69 +332,130 @@ void bcast_frame(Frame& frame, int root) {
     if (header[1] > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
         throw std::length_error(
             "bcast_frame: atom count exceeds local int range");
-    if (header[2] > std::numeric_limits<std::size_t>::max()
-        || header[3] > std::numeric_limits<std::size_t>::max())
+    if (header[2] > std::numeric_limits<std::size_t>::max())
         throw std::length_error(
             "bcast_frame: payload exceeds addressable size");
-    if (header[4] != frame.meta.serializable_fingerprint())
+    if (header[3] != frame.meta.serializable_fingerprint())
         throw std::runtime_error(
             "bcast_frame: typed-meta schema changed during broadcast");
+    if (header[5] != static_cast<std::uint64_t>(fields.size()))
+        throw std::runtime_error(
+            "bcast_frame: rank column counts disagree after the schema "
+            "digest matched");
 
     const int atom_count = static_cast<int>(header[1]);
-    const std::size_t atom_bytes = static_cast<std::size_t>(header[2]);
-    const std::size_t meta_bytes = static_cast<std::size_t>(header[3]);
-    const int atom_mpi_count =
-        checked_mpi_byte_count(atom_bytes, "bcast_frame/atoms");
+    const std::size_t meta_bytes = static_cast<std::size_t>(header[2]);
     const int meta_mpi_count =
         checked_mpi_byte_count(meta_bytes, "bcast_frame/meta");
 
-    if (rank != root) {
-        atom_payload.resize(atom_bytes);
+    // The root's per-column row stride. Every rank agrees on dtype,
+    // entries/item and core width (the schema digest above), but a variable
+    // topology column's local reserve stride is deliberately outside that
+    // agreement — so it travels explicitly and the receiver adapts.
+    std::vector<std::uint64_t> wire_row_bytes(fields.size());
+    if (rank == root)
+        for (std::size_t i = 0; i < fields.size(); ++i)
+            wire_row_bytes[i] =
+                static_cast<std::uint64_t>(fields[i].row_bytes());
+    if (!wire_row_bytes.empty())
+        MPI_Bcast(wire_row_bytes.data(),
+                  static_cast<int>(wire_row_bytes.size()), MPI_UINT64_T, root,
+                  MPI_COMM_WORLD);
+
+    if (rank != root)
         meta_payload.resize(meta_bytes);
-    }
     MPI_Bcast(cell.data(), static_cast<int>(cell.size()), MPI_DOUBLE, root,
               MPI_COMM_WORLD);
     if (meta_mpi_count != 0)
         MPI_Bcast(meta_payload.data(), meta_mpi_count, MPI_BYTE, root,
                   MPI_COMM_WORLD);
-    if (atom_mpi_count != 0)
-        MPI_Bcast(atom_payload.data(), atom_mpi_count, MPI_BYTE, root,
-                  MPI_COMM_WORLD);
+
+    if (rank != root) {
+        deserialize_meta(meta_payload, frame.meta);
+        if (frame.meta.serializable_fingerprint() != header[3])
+            throw std::runtime_error(
+                "bcast_frame: decoded typed-meta schema mismatch");
+
+        Mat3 matrix{};
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                matrix(i, j) = cell[static_cast<std::size_t>(3 * i + j)];
+        frame.box.set_cell(matrix);
+
+        frame.set_nghost(0);
+        frame.set_nlocal(0);
+        frame.set_capacity(atom_count);
+        // Adopt the root's topology widths where they are wider; a receiver
+        // that already reserved more keeps its own stride and takes the
+        // staged path below.
+        static constexpr std::array<ColGroup, 5> kGroups{
+            ColGroup::Bond, ColGroup::Angle, ColGroup::Dihedral,
+            ColGroup::Improper, ColGroup::Special};
+        for (std::size_t gi = 0; gi < kGroups.size(); ++gi)
+            frame.grow_group(kGroups[gi], static_cast<int>(header[6 + gi]));
+        frame.meta.set(kHasBonded, static_cast<std::int64_t>(header[4] != 0));
+        // Every mutation above bumps the Block generation, so the refs have
+        // to be resolved after the last of them.
+        fields = frame.block("atoms").resolve_columns(kColExchange);
+        if (header[5] != static_cast<std::uint64_t>(fields.size()))
+            throw std::runtime_error(
+                "bcast_frame: the receiving Frame's column set changed while "
+                "it was being resized");
+    }
+
+    // One Bcast per column, `atom_count` rows of the ROOT's stride.
+    std::vector<std::byte> staging;
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+        const std::size_t wire_row =
+            static_cast<std::size_t>(wire_row_bytes[i]);
+        const std::size_t wire_bytes =
+            checked_product(static_cast<std::size_t>(atom_count), wire_row);
+        const int mpi_count =
+            checked_mpi_byte_count(wire_bytes, "bcast_frame/atoms");
+        const std::size_t local_row = fields[i].row_bytes();
+        if (mpi_count == 0) {
+            // The root reserved nothing for this column (an unallocated
+            // topology column is legally zero-width). A receiver that
+            // reserved more must not keep whatever its own rows held.
+            if (rank != root && local_row != 0 && atom_count != 0)
+                std::memset(
+                    fields[i].mutable_bytes(), 0,
+                    checked_product(static_cast<std::size_t>(atom_count),
+                                    local_row));
+            continue;
+        }
+        if (rank == root) {
+            MPI_Bcast(fields[i].mutable_bytes(), mpi_count, MPI_BYTE, root,
+                      MPI_COMM_WORLD);
+            continue;
+        }
+        if (local_row == wire_row) {
+            MPI_Bcast(fields[i].mutable_bytes(), mpi_count, MPI_BYTE, root,
+                      MPI_COMM_WORLD);
+            continue;
+        }
+        // Wider local reserve (a topology column this rank had already
+        // grown past the root's): land the payload aside, then scatter it
+        // row by row and zero the unused tail.
+        staging.resize(wire_bytes);
+        MPI_Bcast(staging.data(), mpi_count, MPI_BYTE, root, MPI_COMM_WORLD);
+        if (local_row < wire_row)
+            throw std::runtime_error(
+                "bcast_frame: a topology column is narrower on this rank "
+                "than on the root after adopting the root's reserve widths");
+        std::byte* destination = fields[i].mutable_bytes();
+        for (int row = 0; row < atom_count; ++row) {
+            std::byte* out =
+                destination + static_cast<std::size_t>(row) * local_row;
+            std::memcpy(
+                out, staging.data() + static_cast<std::size_t>(row) * wire_row,
+                wire_row);
+            std::memset(out + wire_row, 0, local_row - wire_row);
+        }
+    }
 
     if (rank == root)
         return;
-
-    deserialize_meta(meta_payload, frame.meta);
-    if (frame.meta.serializable_fingerprint() != header[4])
-        throw std::runtime_error(
-            "bcast_frame: decoded typed-meta schema mismatch");
-
-    Mat3 matrix{};
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            matrix(i, j) = cell[static_cast<std::size_t>(3 * i + j)];
-    frame.box.set_cell(matrix);
-
-    frame.set_nghost(0);
-    frame.set_nlocal(0);
-    frame.set_capacity(atom_count);
-    frame.meta.set(kHasBonded, static_cast<std::int64_t>(header[5] != 0));
-    plan = make_exchange_plan(frame);
-    require_schema_fingerprint(plan, header[6], plan.version);
-
-    std::size_t cursor = 0;
-    for (int row = 0; row < atom_count; ++row) {
-        const std::size_t consumed =
-            plan.unpack_row(frame, row, atom_payload.data() + cursor,
-                            atom_payload.size() - cursor);
-        if (consumed == 0)
-            throw std::runtime_error("bcast_frame: zero-length atom row");
-        cursor += consumed;
-    }
-    if (cursor != atom_payload.size())
-        throw std::runtime_error(
-            "bcast_frame: atom payload has trailing bytes");
-
     frame.set_nlocal(atom_count);
     frame.set_nghost(0);
     frame.clear_tag_index();

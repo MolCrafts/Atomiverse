@@ -2,7 +2,7 @@
 # CPU MD communication
 
 **Rule**: the per-step halo (`forward_comm` / `reverse_comm`) rides the
-Schema-compiled `PackPlan`. Refresh is x/y/z, reverse is fx/fy/fz, border is
+contract-compiled `PackPlan`. Refresh is x/y/z, reverse is fx/fy/fz, border is
 x/y/z/tag/type — and each of those is field-major, because every column on
 them is scalar. A column travels because a mounted component declared it, not
 because it carries a flag.
@@ -30,46 +30,77 @@ and there is no way to spell one without the other. Getting that wrong is how
 energy-conservation check catches, because DPD does not conserve energy by
 construction.
 
-**The swap table pairs mirrored faces, and that is what fixes the tag.**
-`Halo::setup_uniform` gives both faces of a round the *same* partner rank
-(`Swap::sendproc == Swap::recvproc == face_neighbour`), so a message this rank
-sends on swap `s` arrives at the partner as its `Halo::mirror_swap(s)`. Every
-MPI post therefore keys on the swap index: send with tag `s`, receive with tag
-`mirror_swap(begin, end, s)`, and the **round** — not the swap — is the unit
-that gets drained. LAMMPS can run one swap at a time on tag 0 only because its
-`sendproc != recvproc` (send low, hear back from high), which makes both ranks'
-swap `i` each other's partner.
+**A style that does not declare gets nothing, and nothing says so.** When the
+wire moved off the global `kColBorder` flag (`82ad7867`), `charge` stopped
+riding the border pass unless a mounted component asked for it — and four
+styles that read `q[j]` were never given a `declare_ghosts()`: `PairCoulCut`,
+`PairCoulSoft`, `PairGaussianCoul`, `PairLJCutTip4pCut`. At one rank nothing
+changes (there are no ghosts). At 8 ranks `coul/cut` read whatever those ghost
+rows happened to hold and pumped **44% onto the total energy**, while
+`Σ_i F_i` stayed exactly 0 — a bogus `q_i q_j` is still symmetric, so every
+force-balance and momentum check passes. `regressions/md/multihop-widebox-parity`
+caught it; `TestGhostContract.EveryGhostChargeReaderDeclaresIt` is the
+unit-level guard. Charge is `read_stable` on all six Coulomb styles: a fixed
+charge does not change while a ghost lives, and a fluctuating-charge owner
+(QEq, constant-potential electrodes) refreshes ghosts itself through
+`ChargePacker` on the self-initiated `ForwardPacker` path. **Adding a style
+that reads any ghost column means adding its declaration in the same change**
+— the missing case is silent by construction.
 
-Draining ATV's table one swap at a time on tag 0 pairs the wrong faces, and at
-`dims[d] == 2` — where both faces of a round address the same rank — deadlocks
-outright. That was tried and reverted: it silently shipped the opposite face's
-positions (equal byte count, so no MPI error) and cost 23% of the LJ energy at
-8 ranks.
+**The swap table is LAMMPS's, `sendproc != recvproc` included.**
+`Halo::expand` gives swap `s` its own face's neighbour to send to and the
+**opposite** face's neighbour to hear back from — LAMMPS `CommBrick::setup`'s
+`procneigh[dim][0]` / `procneigh[dim][1]`. The table is rank-uniform
+(`derive_uniform_rounds`) and every rank walks it in the same order, so this
+rank's swap `s` is answered by the partner's swap `s`. Exactly one message
+per pair per swap, therefore: **one swap at a time, tag 0**, at
+`dims[d] == 2` (both faces the same rank) as much as anywhere else. There is
+no mirrored index and no round-as-a-transport-unit rule.
 
-Within a round the transport is LAMMPS-shaped: post every receive, then pack
-and **blocking `MPI_Send`** into partners that are already listening, then
-`Waitall` the receives and unpack. No send-side `Isend`/`Waitall` — that
-Waitall was the measured Comm wall at 256 ranks.
+The mirrored convention that came before (`sendproc == recvproc`: my band
+out, the partner's band across the same plane back) moved the identical atom
+set but paired swap `s` with the partner's *opposite* swap. That forced a
+per-swap tag and a whole round as the drain unit; draining it one swap at a
+time on tag 0 shipped the opposite face's positions (equal byte count, so no
+MPI error) and cost 23% of the LJ energy at 8 ranks. Under the current
+convention the same shape is correct, which is the whole point of converting
+the table rather than deleting the tags.
 
-`PackPlan` is a compiled Schema projection, not a config bag, and it already
-fast-paths the all-scalar wires down to three shifted block copies. It is not
-on the critical path for removal.
+**The round survives as the forwarding unit.** Its two swaps share one scan
+window — everything the previous round of that axis delivered, LAMMPS
+`CommBrick::borders`' `nfirst = nlast; nlast = nlocal + nghost` — and the
+`round > 1` mid-plane band edge is what sorts that shared window between the
+faces: a ghost that arrived across one face sits past the opposite edge of
+the subdomain, so it fails its own face's band and passes the other's. The
+band cannot keep round `r > 1` off the OWNERS (an owner is inside the
+subdomain and can be on either side of the mid-plane); that is the window's
+job, three lines in `forward_cascade`.
+
+Transport is LAMMPS-shaped throughout: post the receive, pack, **blocking
+`MPI_Send`** into a partner that is already listening, `Wait`, unpack. No
+send-side `Isend`/`Waitall` — that Waitall was the measured Comm wall at 256
+ranks.
+
+**`PackPlan` is a communication artifact and nothing else.** Two makers:
+`make_wire_plan` (contract-driven halo passes) and `make_exchange_plan`
+(migration, flag-driven on `kColExchange` — migration carries what an atom
+IS, which is a property of the Frame, not of whoever is mounted). Everything
+else asks the Block directly:
+
+- `gather_to_root` enumerates with `Block::resolve_columns(kColExchange)` and
+  `Gatherv`s column-major.
+- `bcast_frame` does the same and `Bcast`s **one call per column**; the
+  root's per-column stride rides the header, because a topology column's
+  reserve width is per rank and deliberately outside the schema digest.
+- `mc::Transaction` snapshots and restores whole rows with
+  `Frame::copy_row_from` onto a `clone_structure` patch — zero column
+  resolutions per trial, where the old two-plan byte round trip cost one.
+
+Rank agreement for the two collectives is `comm::column_schema_fingerprint`,
+the same field digest `PackPlan::fingerprint` folds under its `PackKind`.
 
 ## Remaining leads
 
-- **Convert the swap table to LAMMPS's `sendproc != recvproc` convention.**
-  Send low / hear from high per swap, the way `comm_brick.cpp` sets
-  `procneigh`. That is the only thing that makes the literal per-swap tag-0
-  shape legal here, and it would delete `mirror_swap` and the round-as-unit
-  rule with it. Touches `borders` (count handshake, send-list bands, pbc
-  flags), `reverse_comm`, and the multi-hop `round_scan_window`. A spec, not a
-  drive-by.
-- **`PackPlan` off exchange / gather / bcast / MC.** The migration wire still
-  selects by flag (`kColExchange`) rather than by Schema, which is defensible —
-  migration carries what an atom IS, not what a consumer reads. Gather / bcast /
-  MC `Transaction` have no such excuse. Tests under
-  `tests/cpu/communication/test_atom_pack_*.cpp` and
-  `include/atomiverse/cpu/montecarlo/transaction.h`.
 - **CUDA `MultiGpu` is a second MD stack** in `cuda/communication/`
   (partition + halo + force + NVE, public `PairFactory`). CPU communication
   is DomainRuntime + CommBrick behind `ctx.md.comm`. Split when CUDA MD
@@ -78,12 +109,18 @@ on the critical path for removal.
 - **Four namespaces** in one pillar: `cpu::Comm`, `cpu::comm`,
   `cpu::communication`, `cpu::md::mpi`. CLAUDE: namespace alignment is a
   deliberate follow-up, not a drive-by.
+- **`tools/debug_amorphous/gather_frame.h`** still drives `pack_row` /
+  `unpack_row` for an all-gather of variable-length rows. That is the
+  migration payload doing migration's job in a debug harness, not the
+  borrowed-wire pattern the library paths shed — leave it unless the tool
+  itself is being reworked.
 - **`SpatialGrid` slot map is x-fastest; CPU brick is x-slowest.** Same
   role, not the same rank linearization. Do not silently unify.
 - **kspace remap Alltoallv** is the other measured wall vs LAMMPS at
   np=256 (wt10: ATV 95% overall; Comm 1.92× was Waitall on the old Isend
   path). Next measurement: same MIL0PEGM18 protocol now that the send side is
-  a blocking `Send` behind standing receives.
+  a blocking `Send` behind standing receives — and now that the halo posts
+  per swap rather than per round, which is a second variable in that number.
 - **OpenMP over sendlists / MPI datatype into SoA x,y,z** were not the
   measured Comm wall (unpack 0.008 s). Do not add either without a new
   256-rank number.

@@ -50,6 +50,26 @@ class Block {
     /// Copy all columns tagged kColMigrate from src to dst.
     void copy_row(int dst, int src);
 
+    /// @brief Copy row `src` of `source` into row `dst` of this Block.
+    ///
+    /// The cross-Block sibling of `copy_row`, carrying the same
+    /// `kColMigrate` set: whatever an atom IS travels with the row. Used to
+    /// move a whole atom between two structurally identical Blocks — a
+    /// Monte Carlo trial patch and the main Frame — without a serializer
+    /// round trip through bytes.
+    ///
+    /// Every `kColMigrate` column of THIS Block must exist in `source` at
+    /// the same dtype and stride — a missing column or a divergent width
+    /// throws rather than truncating. `Frame::clone_structure` produces
+    /// exactly that, in both directions.
+    /// @param source Block to read from.
+    /// @param dst Destination row in this Block.
+    /// @param src Source row in `source`.
+    /// @throws std::out_of_range if either row is outside its Block.
+    /// @throws column_error if the two Blocks are not structurally equal
+    ///         over the `kColMigrate` set.
+    void copy_row_from(const Block& source, int dst, int src);
+
     std::size_t memory_bytes() const noexcept;
     Block clone_structure(int rows) const;
 

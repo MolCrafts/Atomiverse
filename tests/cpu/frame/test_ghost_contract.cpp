@@ -31,12 +31,18 @@
 
 #include <array>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
+#include "atomiverse/cpu/potentials/pair_coul_cut.h"
+#include "atomiverse/cpu/potentials/pair_coul_soft.h"
 #include "atomiverse/cpu/potentials/pair_dpd.h"
+#include "atomiverse/cpu/potentials/pair_gaussian_coul.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut_tip4p_cut.h"
 
 using namespace ATV;
 
@@ -216,6 +222,52 @@ TEST(TestGhostContract, CoulombReadsGhostChargeAtStableFreshness) {
     ASSERT_TRUE(c.contains("charge"));
     EXPECT_EQ(c.find("charge")->freshness, Freshness::stable);
     EXPECT_FALSE(c.contains("vx"));
+}
+
+/// EVERY style that reads `q[j]` must declare it, not just the two that
+/// happened to be converted first.
+///
+/// When the wire moved from a global `kColBorder` flag to a per-component
+/// declaration, `charge` stopped riding the border pass unless somebody asked
+/// for it — and four styles that read a neighbour's charge never did. On one
+/// rank nothing changed (there are no ghosts); at 8 ranks `coul/cut` read
+/// whatever those ghost rows happened to hold and pumped 44% onto the total
+/// energy, with `sum_i F_i` still exactly zero because the bogus `q_i q_j`
+/// is symmetric. `regressions/md/multihop-widebox-parity` caught it; this is
+/// the unit-level guard.
+TEST(TestGhostContract, EveryGhostChargeReaderDeclaresIt) {
+    const cpu::PairCoulCut coul_cut{/*cutoff=*/9.0};
+    const cpu::PairCoulSoft coul_soft{/*cutoff=*/9.0, /*sigma_c=*/3.0};
+    const cpu::PairGaussianCoul gaussian{/*cutoff=*/9.0,
+                                         /*eta_by_type=*/{1.0}};
+    const cpu::PairLJCutTip4pCut tip4p{
+        /*type_O=*/0,          /*type_H=*/1,
+        /*qdist=*/0.15,
+        /*r_oh=*/0.9572,       /*theta_hoh=*/1.82421813,
+        /*epsilon_OO=*/0.0067,
+        /*sigma_OO=*/3.1589,   /*cut_lj=*/9.0};
+    const cpu::CoulLong coul_long{/*alpha=*/0.25, /*cutoff=*/9.0};
+    const cpu::PairLJCutCoulLong lj_coul_long{
+        {{0, 0, 0.0067, 3.1589}}, /*alpha=*/0.25, /*cutoff=*/9.0};
+
+    const std::vector<std::pair<std::string_view, GhostContract>> styles = {
+        {"coul/cut", folded(coul_cut.declare_ghosts())},
+        {"coul/soft", folded(coul_soft.declare_ghosts())},
+        {"gaussian/coul", folded(gaussian.declare_ghosts())},
+        {"lj/cut/tip4p/cut", folded(tip4p.declare_ghosts())},
+        {"coul/long", folded(coul_long.declare_ghosts())},
+        {"lj/cut/coul/long", folded(lj_coul_long.declare_ghosts())},
+    };
+    for (const auto& [name, c] : styles) {
+        SCOPED_TRACE(name);
+        ASSERT_TRUE(c.contains("charge"));
+        EXPECT_EQ(c.find("charge")->access, GhostAccess::read);
+        // `stable`: a fixed charge does not change while a ghost lives, and
+        // a fluctuating-charge owner refreshes ghosts itself through
+        // `ChargePacker`. Asking for `step` here would put charge on every
+        // step's refresh message for every run that mounts a Coulomb style.
+        EXPECT_EQ(c.find("charge")->freshness, Freshness::stable);
+    }
 }
 
 /// The whole point, end to end at the fold level: the same base declaration

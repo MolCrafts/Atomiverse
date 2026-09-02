@@ -284,6 +284,20 @@ void Column::copy_row(int dst, int src) {
                  base + static_cast<std::size_t>(src) * bytes, bytes);
 }
 
+void Column::copy_row_from(const Column& source, int dst, int src) {
+    if (spec_.cols == 0)
+        return;
+    const std::size_t bytes =
+        static_cast<std::size_t>(spec_.cols) * element_size();
+    // memmove, like copy_row: a caller is free to pass the same Block on
+    // both sides, and a same-row copy would otherwise be an overlap.
+    std::memmove(static_cast<std::byte*>(data())
+                     + static_cast<std::size_t>(dst) * bytes,
+                 static_cast<const std::byte*>(source.data())
+                     + static_cast<std::size_t>(src) * bytes,
+                 bytes);
+}
+
 // --------------------------------------------------------------------------
 // Block
 
@@ -369,6 +383,33 @@ void Block::copy_row(int dst, int src) {
         (void)key;
         if (column.flags() & kColMigrate)
             column.copy_row(dst, src);
+    }
+}
+
+void Block::copy_row_from(const Block& source, int dst, int src) {
+    if (dst < 0 || dst >= rows_)
+        throw std::out_of_range(
+            "Block::copy_row_from destination row is outside capacity");
+    if (src < 0 || src >= source.rows_)
+        throw std::out_of_range(
+            "Block::copy_row_from source row is outside the source Block");
+    for (auto& [key, column] : columns_) {
+        if (!(column.flags() & kColMigrate))
+            continue;
+        const auto it = source.columns_.find(key);
+        if (it == source.columns_.end())
+            throw column_error(
+                "Block::copy_row_from: the source Block has no column '" + key
+                + "'. Both Blocks must carry the same migrating columns; "
+                  "build the destination with Frame::clone_structure().");
+        const Column& from = it->second;
+        if (from.dtype() != column.dtype() || from.cols() != column.cols())
+            throw column_error(
+                "Block::copy_row_from: column '" + key
+                + "' has a different dtype or stride in the source Block. "
+                  "Rebuild the destination with Frame::clone_structure() "
+                  "after the source's schema or topology width changed.");
+        column.copy_row_from(from, dst, src);
     }
 }
 
@@ -670,6 +711,10 @@ void Frame::set_capacity(int new_capacity) {
 }
 
 void Frame::copy_row(int dst, int src) { atoms_block_().copy_row(dst, src); }
+
+void Frame::copy_row_from(const Frame& source, int dst, int src) {
+    atoms_block_().copy_row_from(source.atoms_block_(), dst, src);
+}
 
 void Frame::ensure_bonded_storage() { meta.set(kHasBonded, std::int64_t{1}); }
 

@@ -24,16 +24,19 @@ CPU 通信层可维护性整改。Specs deleted; history is git.
 | `comm-maint-01-deadcode` | dead files/protocols/`-Wunused-*`; `send_buf_capacity_for_test` deleted |
 | `comm-maint-02-dedup` | helpers rehomed onto Halo/Swap/PackPlan/DD |
 | `comm-maint-03-genericpath` | pack/unpack writability symmetric; border field-major arm gone |
-| `comm-maint-04-roundscan` | `Halo::round_scan_window`; multi-hop band coverage |
+| `comm-maint-04-roundscan` | multi-hop band coverage (its `Halo::round_scan_window` since removed) |
 | `comm-maint-05-dd-split` | `atom_sort_*` off DD onto `ctx.md.atom_sort`; all-periodic brick |
 | `comm-maint-06-transport` | `FaceBufs::exchange_round`; packer on FaceBufs tag 0; `comm_refresh_`/`comm_rebuild_` |
 | `comm-maint-07-wire` | `kColPbcShift`; `Comm` contract comment; CUDA type `SpatialGrid` |
 | `comm-maint-08-wireplan` | pack/unpack verbs on PackPlan |
 | `comm-maint-09-schema` | halo wire compiled from component Schema; border 79→44 B/ghost |
 
-Step halo is the Schema-compiled wire, field-major on the all-scalar
-refresh / reverse / border sets, drained per swap **round** with mirrored
-tags. `PackPlan` leftover on exchange/gather/bcast/MC — see
+Step halo is the contract-compiled wire, field-major on the all-scalar
+refresh / reverse / border sets. Since 2026-08-28 the swap table follows
+LAMMPS's `sendproc != recvproc` convention and the halo drains **per swap on
+tag 0** — `Halo::mirror_swap`, `Halo::round_begin` and
+`Halo::round_scan_window` are gone with it, and `PackPlan` is off
+gather / bcast / MC (exchange keeps it, deliberately). See
 [md-comm.md](../notes/md-comm.md). Cluster `widebox_parity` / GH200 CUDA
 rebuild attested agent-auto at close.
 

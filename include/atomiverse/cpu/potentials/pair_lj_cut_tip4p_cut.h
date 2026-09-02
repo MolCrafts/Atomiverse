@@ -10,11 +10,15 @@
 /// convention). Units: energy eV, length Å, charge e.
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/cpu/component/pair_evaluator.h"
@@ -54,6 +58,21 @@ class PairLJCutTip4pCut : public cpu::PairPotential {
     PairLJCutTip4pCut(int type_O, int type_H, double qdist, double r_oh,
                       double theta_hoh, double epsilon_OO, double sigma_OO,
                       double cut_lj, double cut_coul = -1.0);
+
+    /// @brief The Coulomb half of this style reads the NEIGHBOUR charge, and a
+    /// neighbour is a ghost across every cut.
+    ///
+    /// `stable`, matching `CoulLong` / `PairLJCutCoulLong`: a fixed-charge
+    /// model never changes it, and a fluctuating-charge owner (QEq,
+    /// constant-potential electrodes) refreshes ghosts itself through
+    /// `ChargePacker` on the self-initiated `ForwardPacker` path.
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_charge, "PairLJCutTip4pCut"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
+    }
 
     std::string name() const override { return "lj/cut/tip4p/cut"; }
 

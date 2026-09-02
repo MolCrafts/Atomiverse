@@ -2,10 +2,14 @@
 /// @brief Real-space Coulomb with hard cutoff (LAMMPS `pair_style coul/cut`) — CPU.
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/cpu/component/pair_evaluator.h"
@@ -24,6 +28,21 @@ class PairCoulCut : public cpu::PairPotential {
   public:
     /// @param cutoff Real-space cutoff [Å].
     explicit PairCoulCut(double cutoff);
+
+    /// @brief The cut Coulomb kernel reads the NEIGHBOUR charge, and a
+    /// neighbour is a ghost across every cut.
+    ///
+    /// `stable`, matching `CoulLong` / `PairLJCutCoulLong`: a fixed-charge
+    /// model never changes it, and a fluctuating-charge owner (QEq,
+    /// constant-potential electrodes) refreshes ghosts itself through
+    /// `ChargePacker` on the self-initiated `ForwardPacker` path.
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_charge, "PairCoulCut"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
+    }
 
     std::string name() const override { return "coul/cut"; }
 

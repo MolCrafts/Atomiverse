@@ -14,16 +14,19 @@
 /// multi-hop rule directly:
 ///
 ///   * the **band** (`Swap::slablo`/`slabhi`) clips how DEEP a forwarded row
-///     may be;
-///   * the **window** (`Halo::round_scan_window`) decides WHICH rows a round
-///     is allowed to look at.
+///     may be, and — since the two faces of a round share one scan window,
+///     LAMMPS-style — its mid-plane edge is also what sorts that window
+///     between them;
+///   * the window itself (`[nfirst, nlast)`: everything the previous round
+///     delivered) is `forward_cascade`'s three lines in `comm_brick.cpp`,
+///     behind MPI.
 ///
 /// Categories: domain (band geometry, chain completeness), edge (inclusive
 /// edges, singleton round). No MPI.
 ///
 /// Reference: LAMMPS `src/comm_brick.cpp` `CommBrick::setup`, the
 /// `ineed >= 2` arm, baseline
-/// `/nobackup/proj/disk/teoroo/personal/jicli594/work/lammps-src` @ 78a7ddf;
+/// `/nobackup/proj/disk/teoroo/personal/jicli594/work/lammps-src` @ 970d4ba;
 /// S. Plimpton, J. Comput. Phys. 117, 1 (1995), DOI 10.1006/jcph.1995.1039.
 
 #include <gtest/gtest.h>
@@ -201,65 +204,46 @@ TEST(TestHaloRounds, RoundTwoBandEdgesAreInclusive) {
     EXPECT_EQ(h[lo].sendlist, (std::vector<int>{0, 1}));
 }
 
-// ── 3. the scan window picks the OPPOSITE face ────────────────────────
+// ── 3. the mid-plane edge sorts the shared window ─────────────────────
 
-/// Round 1 scans owners plus every earlier-axis ghost.
-TEST(TestHaloRounds, RoundOneScansEverythingDeliveredSoFar) {
-    const int prev_first[2] = {40, 60};
-    const int prev_last[2] = {50, 70};
-    int wf[2] = {-1, -1};
-    int wl[2] = {-1, -1};
-    cpu::comm::Halo::round_scan_window(/*round=*/1, /*width=*/2,
-                                       /*sources_end=*/37, prev_first,
-                                       prev_last, wf, wl);
-    EXPECT_EQ(wf[0], 0);
-    EXPECT_EQ(wl[0], 37);
-    EXPECT_EQ(wf[1], 0);
-    EXPECT_EQ(wl[1], 37);
-}
+/// Round `r > 1` offers both faces of round `r - 1` at once (LAMMPS
+/// `CommBrick::borders`' `[nfirst, nlast)`), so the band is what decides
+/// which face may forward which row. A ghost that arrived across the LOW
+/// face sits below `sublo`, i.e. below the mid-plane, so it fails the
+/// low-face band and passes the high-face one — it moves on, it does not
+/// bounce back to where it came from.
+///
+/// The band cannot do the other half of the job: an OWNER row sits inside
+/// the subdomain and can fall on either side of the mid-plane, so keeping
+/// round `r > 1` off the owners is the window's responsibility, not the
+/// band's (`forward_cascade`).
+TEST(TestHaloRounds, MidPlaneEdgeSortsTheSharedWindowBetweenFaces) {
+    cpu::comm::Halo h;
+    const DomainDecomposition dd = brick_dd(8, 8, 4, 3, 3, 1);
+    h.setup_uniform(dd, bench_box(), kShell, /*my_rank=*/0);
+    const int lo = swap_of(h, 0, 2, 0);
+    const int hi = swap_of(h, 0, 2, 1);
+    ASSERT_GE(lo, 0);
+    ASSERT_GE(hi, 0);
 
-/// Round r>1 of a face scans what the OPPOSITE face received at r-1. Feeding
-/// a face its own previous receipts would send an atom straight back where it
-/// came from; feeding it the owners again would double-deliver them.
-TEST(TestHaloRounds, RoundTwoScansTheOppositeFacesPreviousReceipts) {
-    const int prev_first[2] = {40, 60};
-    const int prev_last[2] = {50, 70};
-    int wf[2] = {-1, -1};
-    int wl[2] = {-1, -1};
-    cpu::comm::Halo::round_scan_window(/*round=*/2, /*width=*/2,
-                                       /*sources_end=*/37, prev_first,
-                                       prev_last, wf, wl);
-    // face 0 takes face 1's band, and vice versa — crossed, not straight.
-    EXPECT_EQ(wf[0], 60);
-    EXPECT_EQ(wl[0], 70);
-    EXPECT_EQ(wf[1], 40);
-    EXPECT_EQ(wl[1], 50);
-}
+    // Row 0: a ghost delivered across the LOW face at round 1 — it lives
+    // just below this subdomain. Row 1: one delivered across the HIGH
+    // face, just above. Both are within the forwardable depth
+    // (`shell - w` = 3.125 A here), so only the mid-plane edge tells them
+    // apart.
+    const double depth = 0.5 * (kShell - (dd.subhi[0] - dd.sublo[0]));
+    cpu::Frame f(2);
+    f.span(kAtom_x)[0] = static_cast<StorageReal>(dd.sublo[0] - depth);
+    f.span(kAtom_x)[1] = static_cast<StorageReal>(dd.subhi[0] + depth);
+    for (int i = 0; i < 2; ++i) {
+        f.span(kAtom_y)[i] = static_cast<StorageReal>(dd.sublo[1] + 1.0);
+        f.span(kAtom_z)[i] = static_cast<StorageReal>(dd.sublo[2] + 1.0);
+    }
 
-/// A lone placeholder round (an undecomposed axis keeps one) scans its own
-/// single band rather than indexing off the end.
-TEST(TestHaloRounds, SingletonRoundTakesItsOwnBand) {
-    const int prev_first[2] = {11, 0};
-    const int prev_last[2] = {13, 0};
-    int wf[2] = {-1, -1};
-    int wl[2] = {-1, -1};
-    cpu::comm::Halo::round_scan_window(/*round=*/2, /*width=*/1,
-                                       /*sources_end=*/9, prev_first, prev_last,
-                                       wf, wl);
-    EXPECT_EQ(wf[0], 11);
-    EXPECT_EQ(wl[0], 13);
-}
-
-/// A round wider than an (lo, hi) pair is a corrupt table, not a case to
-/// handle.
-TEST(TestHaloRounds, WiderThanAPairIsRefused) {
-    const int prev_first[2] = {0, 0};
-    const int prev_last[2] = {0, 0};
-    int wf[2] = {};
-    int wl[2] = {};
-    EXPECT_THROW(cpu::comm::Halo::round_scan_window(2, 3, 0, prev_first,
-                                                    prev_last, wf, wl),
-                 std::logic_error);
+    h.rebuild_sendlist(lo, f, /*first=*/0, /*last=*/2);
+    EXPECT_EQ(h[lo].sendlist, (std::vector<int>{1}));
+    h.rebuild_sendlist(hi, f, /*first=*/0, /*last=*/2);
+    EXPECT_EQ(h[hi].sendlist, (std::vector<int>{0}));
 }
 
 // ── 4. the 3-hop chain stays complete ─────────────────────────────────

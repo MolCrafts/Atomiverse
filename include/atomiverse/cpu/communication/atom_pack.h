@@ -177,6 +177,23 @@ PackPlan make_wire_plan(const Frame& frame, PackKind kind,
 PackPlan make_exchange_plan(const Frame& frame);
 PackPlan make_exchange_plan(Frame& frame);
 
+/// @brief Digest of a resolved column set — key, dtype, group, entries/item,
+///        flags, and (for core / count columns) stride.
+///
+/// The rank-agreement value for a collective that ships whole atoms without
+/// compiling a wire plan: `bcast_frame` and `gather_to_root` enumerate the
+/// Block's own columns (`Block::resolve_columns`) and Bcast/Gatherv them
+/// column-major, so they need the schema digest without any of `PackPlan`'s
+/// per-row pack verbs. `PackPlan::fingerprint` folds the same digest under
+/// its `PackKind`.
+///
+/// A variable-length topology column's local reserve stride is deliberately
+/// absent: two ranks may hold different `bond_per_atom` and still agree on
+/// the schema.
+/// @param fields Resolved columns, in the order the payload uses them.
+/// @return 64-bit digest, identical on every rank with the same schema.
+std::uint64_t column_schema_fingerprint(const std::vector<ColumnRef>& fields);
+
 /// Fail before an MPI payload operation when ranks disagree.  The MPI owner
 /// must compare/all-reduce this value collectively before point-to-point I/O.
 void require_schema_fingerprint(const PackPlan& local,

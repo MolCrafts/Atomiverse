@@ -4,10 +4,10 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "atomiverse/core/precision.h"
-#include "atomiverse/cpu/communication/atom_pack.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 namespace ATV {
@@ -35,9 +35,13 @@ namespace mc {
 ///   - **Box**      — patch carries the original `Box`; every rescaled row is
 ///                    recorded so coordinates restore bitwise.
 ///
-/// Rows travel through the EXISTING `comm::pack_exchange` /
-/// `comm::unpack_exchange` serializers (public, MPI-free) — the same payload
-/// migration uses — so `mc/` owns no atom-row serializer of its own.
+/// Rows travel by `Frame::copy_row_from` — the cross-Frame sibling of the
+/// row copy migration already uses to compact its owner array, carrying the
+/// same `kColMigrate` set. The patch is a `clone_structure` of the source,
+/// so a whole atom (topology included) moves as a per-column memcpy: `mc/`
+/// owns no atom-row serializer, and it does not borrow the migration WIRE
+/// either. Nothing here is communication, so nothing here compiles a
+/// `comm::PackPlan`.
 ///
 /// It is pure data + its own splice logic; it never reaches into the neighbor
 /// list, and it is never a member of `cpu::Frame` (Frame-purity). The driver
@@ -95,19 +99,24 @@ class Transaction {
     void clear();
 
   private:
-    /// Compile or refresh the two exchange plans once at the transaction
-    /// boundary, and reserve enough patch rows for the announced operation.
-    /// Per-row record/rollback loops only execute the compiled descriptors.
-    void prepare_plans_(const cpu::Frame& source, int required_rows);
+    /// Bring the patch Frame's structure back in step with the source and
+    /// reserve enough patch rows for the announced operation, once at the
+    /// transaction boundary. Per-row record/rollback loops are then plain
+    /// column memcpys.
+    void prepare_patch_(const cpu::Frame& source, int required_rows);
 
     cpu::Frame patch_{0};           ///< Original rows of touched atoms + box.
     std::vector<LocalInt> touched_; ///< Main-frame row of patch row k.
     int nlocal_before_ = -1;        ///< `nlocal` when `begin()` ran.
     bool box_recorded_ = false;     ///< Patch box is meaningful.
-    std::vector<std::byte> buf_;    ///< Native pack scratch (reused).
     const cpu::Frame* source_frame_ = nullptr;
-    comm::PackPlan source_plan_; ///< Main Frame exchange descriptor.
-    comm::PackPlan patch_plan_;  ///< Patch Frame exchange descriptor.
+    /// The atoms Block the patch was last cloned from, and its structural
+    /// generation. A schema insert, a capacity change or a topology
+    /// re-stride bumps that generation, and the patch is re-cloned — which
+    /// is what keeps `copy_row_from`'s stride equality an invariant rather
+    /// than a hope.
+    const cpu::Block* cloned_from_ = nullptr;
+    std::uint64_t cloned_generation_ = 0;
 };
 
 } // namespace mc

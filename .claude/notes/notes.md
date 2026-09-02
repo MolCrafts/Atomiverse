@@ -38,15 +38,21 @@ History is git's job — superseded designs are deleted, not archived here.
 - **Component clone ceiling.** Components cannot be cloned, so one inner
   Driver body over N replicas (N L-BFGS histories) is not expressible yet.
   Undecided; revisit when a real N-replica inner-loop user appears.
-- **CPU MD comm.** Step halo is the Schema-compiled wire, drained per swap
-  round with mirrored tags (ATV pairs both faces of a round with the same
-  partner; LAMMPS's tag 0 needs its own `sendproc != recvproc` convention).
-  Components declare a ghost data-lifetime contract as a `constexpr` table
-  (`declare_ghosts` → `GhostField`: freshness `read_stable`/`read_each_step`,
-  data flow `reduce_to_owner`), folded into one `ctx.md.ghost`; the
-  contract→pass mapping lives only in `make_wire_plan`. `PackPlan` leftover on
-  exchange/gather/bcast/MC; CUDA `MultiGpu` is still a second stack. Leads:
-  [md-comm.md](md-comm.md).
+- **CPU MD comm.** Step halo is the contract-compiled wire on a LAMMPS swap
+  table: `sendproc != recvproc` (send across this face, hear back across the
+  opposite one), so every rank's swap `s` is its partner's swap `s` and the
+  transport is one swap at a time on tag 0. The round is only the forwarding
+  unit — both its faces share one scan window and the `round > 1` mid-plane
+  band sorts them. Components declare a ghost data-lifetime contract as a
+  `constexpr` table (`declare_ghosts` → `GhostField`: freshness
+  `read_stable`/`read_each_step`, data flow `reduce_to_owner`), folded into
+  one `ctx.md.ghost`; the contract→pass mapping lives only in
+  `make_wire_plan` — and a style that reads a ghost column without declaring
+  it silently gets garbage (four Coulomb styles did; fixed 2026-08-28).
+  `PackPlan` is now confined to the halo and migration —
+  gather/bcast go column-major off `Block::resolve_columns`, MC rolls back
+  with `Frame::copy_row_from`. CUDA `MultiGpu` is still a second stack.
+  Leads: [md-comm.md](md-comm.md).
 
 ## Loop state pointers
 

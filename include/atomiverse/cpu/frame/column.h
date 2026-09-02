@@ -217,6 +217,7 @@ class Column {
     void resize_rows(int old_rows, int new_rows);
     void restride(int rows, int new_cols);
     void copy_row(int dst, int src);
+    void copy_row_from(const Column& source, int dst, int src);
     const void* data() const noexcept;
     void* data() noexcept;
 

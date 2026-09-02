@@ -9,8 +9,8 @@
 ///
 /// Surface pinned:
 ///   Swap::is_silent, Swap::kNoPartner, Swap::pbc_shift
-///   Halo::stage_end, Halo::round_end, Halo::round_begin, Halo::mirror_swap
-///   Halo::setup_uniform
+///   Swap::sendproc / Swap::recvproc (the LAMMPS face pairing)
+///   Halo::stage_end, Halo::round_end, Halo::setup_uniform
 ///
 /// Categories: basics / edge / domain. No MPI — `Halo` is MPI-free by
 /// contract, which is exactly why these are testable at all.
@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstddef>
 #include <vector>
 
 #include "atomiverse/cpu/communication/domain.h"
@@ -140,7 +141,6 @@ TEST(TestHaloQueries, SingleHopStagesAreFacePairs) {
         SCOPED_TRACE("stage at " + std::to_string(begin));
         EXPECT_EQ(h.stage_end(begin), begin + 2);
         EXPECT_EQ(h.round_end(begin), begin + 2);
-        EXPECT_EQ(h.round_begin(begin + 2), begin);
     }
 }
 
@@ -167,39 +167,56 @@ TEST(TestHaloQueries, MultiHopStageSpansRoundsButRoundIsAPair) {
     EXPECT_EQ(h.round_end(8), 10);
 }
 
-/// `round_begin` is the inverse of `round_end`, which is what lets the
-/// reverse pass walk the table backwards deepest-hop-first.
-TEST(TestHaloQueries, RoundBeginInvertsRoundEnd) {
+// ── the LAMMPS face pairing ───────────────────────────────────────────
+
+/// The property every tag-0 post rests on: a swap sends across its own face
+/// and hears back across the OPPOSITE one, so this rank's swap `s` and its
+/// partner's swap `s` are one exchange. LAMMPS `CommBrick::setup`,
+/// `sendproc = procneigh[dim][0]` / `recvproc = procneigh[dim][1]`.
+///
+/// Every swap of every axis, every round: `sendproc` is its own face's
+/// neighbour and `recvproc` is the other one, table-wide.
+TEST(TestHaloQueries, SwapSendsOneWayAndHearsBackFromTheOtherFace) {
     cpu::comm::Halo h;
-    h.setup_uniform(brick_dd(8, 8, 4, 3, 3, 1), bench_box(), kShell,
-                    /*my_rank=*/0);
-    const int n = static_cast<int>(h.size());
-    for (int begin = 0; begin < n;) {
-        const int end = h.round_end(begin);
-        SCOPED_TRACE("round [" + std::to_string(begin) + ", "
-                     + std::to_string(end) + ")");
-        EXPECT_EQ(h.round_begin(end), begin);
-        begin = end;
+    // Multi-hop on x and y so this covers forwarding rounds too, not just
+    // round 1.
+    auto dd = brick_dd(8, 8, 4, 3, 3, 1);
+    h.setup_uniform(dd, bench_box(), kShell, /*my_rank=*/0);
+    ASSERT_EQ(static_cast<int>(h.size()), 10);
+
+    for (int s = 0; s < static_cast<int>(h.size()); ++s) {
+        const cpu::comm::Swap& swap = h[s];
+        SCOPED_TRACE("swap " + std::to_string(s));
+        const std::size_t own =
+            static_cast<std::size_t>(2 * swap.dim + (swap.sign > 0 ? 1 : 0));
+        const std::size_t other =
+            static_cast<std::size_t>(2 * swap.dim + (swap.sign > 0 ? 0 : 1));
+        EXPECT_EQ(swap.sendproc, dd.face_neighbors[own]);
+        EXPECT_EQ(swap.recvproc, dd.face_neighbors[other]);
+        EXPECT_NE(swap.sendproc, swap.recvproc);
     }
 }
 
-// ── mirror_swap ───────────────────────────────────────────────────────
-
-/// Within a round the two faces mirror onto each other, and mirroring twice
-/// is the identity — the property the receive tag depends on.
-TEST(TestHaloQueries, MirrorSwapIsAnInvolutionWithinTheRound) {
-    EXPECT_EQ(cpu::comm::Halo::mirror_swap(4, 6, 4), 5);
-    EXPECT_EQ(cpu::comm::Halo::mirror_swap(4, 6, 5), 4);
-    for (int s = 4; s < 6; ++s) {
-        const int m = cpu::comm::Halo::mirror_swap(4, 6, s);
-        EXPECT_EQ(cpu::comm::Halo::mirror_swap(4, 6, m), s);
+/// At `dims[d] == 2` both faces address the same rank, so the pairing
+/// degenerates to `sendproc == recvproc` — the geometry the mirrored
+/// convention deadlocked on. It stays legal here only because the two swaps
+/// run in order: one message per pair per swap, tag 0.
+TEST(TestHaloQueries, TwoRankAxisAddressesOnePartnerOnBothFaces) {
+    cpu::comm::Halo h;
+    auto dd = brick_dd(2, 1, 1, 0, 0, 0);
+    // dims[0] == 2: the low and high x partner are the same rank.
+    dd.face_neighbors[0] = 1;
+    dd.face_neighbors[1] = 1;
+    h.setup_uniform(dd, bench_box(), kShell, /*my_rank=*/0);
+    ASSERT_GE(static_cast<int>(h.size()), 2);
+    for (int s = 0; s < static_cast<int>(h.size()); ++s) {
+        if (h[s].dim != 0)
+            continue;
+        SCOPED_TRACE("swap " + std::to_string(s));
+        EXPECT_EQ(h[s].sendproc, 1);
+        EXPECT_EQ(h[s].recvproc, 1);
+        EXPECT_FALSE(h[s].is_silent());
     }
-}
-
-/// A one-swap round (an undecomposed axis keeps a lone placeholder pair in
-/// some geometries) mirrors onto itself rather than off the end.
-TEST(TestHaloQueries, MirrorSwapOfASingletonRoundIsItself) {
-    EXPECT_EQ(cpu::comm::Halo::mirror_swap(7, 8, 7), 7);
 }
 
 // ── setup_uniform is the rank-uniform entry point ─────────────────────

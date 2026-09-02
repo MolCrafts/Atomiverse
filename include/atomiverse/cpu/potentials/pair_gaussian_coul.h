@@ -11,10 +11,14 @@
 /// keeps for the no-list case.
 #pragma once
 
+#include <array>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/cpu/potentials/pair.h"
 
 namespace ATV {
@@ -39,6 +43,21 @@ class PairGaussianCoul : public Pair {
     ///                     Gaussian types.
     PairGaussianCoul(double cutoff, std::vector<double> eta_by_type,
                      bool include_self = true);
+
+    /// @brief The Gaussian Coulomb kernel reads the NEIGHBOUR charge, and a
+    /// neighbour is a ghost across every cut.
+    ///
+    /// `stable`, matching `CoulLong` / `PairLJCutCoulLong`: a fixed-charge
+    /// model never changes it, and a fluctuating-charge owner (QEq,
+    /// constant-potential electrodes) refreshes ghosts itself through
+    /// `ChargePacker` on the self-initiated `ForwardPacker` path.
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_charge, "PairGaussianCoul"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
+    }
 
     std::string name() const override { return "gaussian/coul"; }
 

@@ -2,7 +2,7 @@
 /// @brief `Swap` / `Halo` — the LAMMPS CommBrick swap table of the CPU halo.
 ///
 /// Algorithm and communication structure transplanted from LAMMPS
-/// `src/comm_brick.cpp` sendlist (checkout `78a7ddf`, 2026-08-25).
+/// `src/comm_brick.cpp` sendlist (checkout `970d4ba`, 2026-08-27).
 /// Structural reimplementation of the swap-table derivation (`maxneed`,
 /// `sendlist`, `firstrecv`, `sendself`) — not a verbatim dump. Public API
 /// is ATV-native (`comm::Halo`).
@@ -71,19 +71,30 @@ struct Swap {
 
     /// @brief Rank the rows in `sendlist` are shipped to.
     ///
-    /// This is `face_neighbors[2 * dim + (sign > 0)]`: the halo exchanges
-    /// symmetrically across a face, so `sendproc == recvproc` — this rank's
-    /// boundary band goes out, the partner's band across the same plane
-    /// comes back. (LAMMPS instead pairs a send on one face with a receive
-    /// from the opposite face; the two conventions move the identical atom
-    /// set, because the partner's opposite face points back here.) A face
-    /// with no partner (`kNoPartner` / `MPI_PROC_NULL`) is skipped; under
-    /// the all-periodic brick that is only an undecomposed axis (`sendself`)
-    /// or a defensive unused slot.
+    /// `face_neighbors[2 * dim + (sign > 0)]` — the neighbour across the
+    /// face this swap points at. A face with no partner (`kNoPartner` /
+    /// `MPI_PROC_NULL`) is skipped; under the all-periodic brick that is
+    /// only an undecomposed axis (`sendself`) or a defensive unused slot.
     int sendproc = -1;
 
     /// @brief Rank whose ghosts land in `[firstrecv, firstrecv + nrecv)`.
-    /// Equal to `sendproc`; see there.
+    ///
+    /// The **opposite** face's neighbour,
+    /// `face_neighbors[2 * dim + (sign < 0)]` — LAMMPS `CommBrick::setup`'s
+    /// `sendproc = procneigh[dim][0], recvproc = procneigh[dim][1]` pairing
+    /// (send west, hear back from east). That is what makes swap `s`
+    /// self-matching: the table is rank-uniform and every rank walks it in
+    /// the same order, so the message this rank sends on swap `s` is the one
+    /// its partner unpacks on **its** swap `s`. Exactly one message per pair
+    /// per swap, so every post keys on tag 0 and the **swap**, not the
+    /// round, is the transport unit — including at `dims[dim] == 2`, where
+    /// both faces address the same rank.
+    ///
+    /// The mirrored convention (`sendproc == recvproc`: this rank's band out
+    /// and the partner's band across the same plane back) moves the
+    /// identical atom set, but pairs swap `s` with the partner's *opposite*
+    /// swap, which forces a per-swap tag and forbids draining a round one
+    /// swap at a time.
     int recvproc = -1;
 
     /// @brief The Cartesian partner on this face **is** this rank
@@ -120,6 +131,7 @@ struct Swap {
     /// pairs, `round = 1 … k`; the whole chain goes through the **same** face
     /// neighbours (`sendproc`/`recvproc` are round-independent), each round
     /// forwarding one rank further what the previous round received.
+    /// Rounds are the unit the scan window advances on (`Halo::round_end`).
     int round = 1;
 
     /// @brief Low edge of the eligibility band along `dim` [Angstrom].
@@ -137,10 +149,13 @@ struct Swap {
     /// **Rounds 2 and deeper** carry the LAMMPS `ineed >= 2` band — a
     /// low-face swap takes `(mid, sublo[dim] + halo_cutoff)` and a
     /// high-face swap `(subhi[dim] - halo_cutoff, mid)`, where `mid` is
-    /// this rank's own mid-plane. *Which* rows are offered is still the
-    /// caller's scan window (the ghosts the previous round received on the
-    /// opposite face, never the owners round 1 already shipped); the band
-    /// is what clips their **depth**. A forwarded row only matters to the
+    /// this rank's own mid-plane. *Which* rows are offered is the caller's
+    /// scan window — everything the previous round of this axis delivered,
+    /// both faces at once, never the owners round 1 already shipped. The
+    /// **mid-plane edge is what separates the two faces inside that shared
+    /// window**: ghosts a face received sit past the opposite edge of the
+    /// subdomain, so they fail their own face's band and pass the other's.
+    /// The far edge clips **depth**: a forwarded row only matters to the
     /// partner while it is inside the partner's shell, whose far edge is
     /// `sublo[dim] + halo_cutoff` for the low face — the chain is still
     /// complete because the next hop clips at a strictly lower bound
@@ -179,7 +194,9 @@ struct Swap {
     /// is this rank itself (`sendself`, an undecomposed axis). The latter
     /// is a **skip, not a LAMMPS local memcpy** — see `sendself` for why a
     /// self-image ghost would double-count against the pair kernel's
-    /// minimum image.
+    /// minimum image. Testing the send side alone is complete: on an
+    /// undecomposed axis both face neighbours are this rank, and under the
+    /// all-periodic brick a decomposed axis has a partner on both faces.
     /// @return True if the transport side must ignore this swap.
     bool is_silent() const noexcept {
         return sendself || sendproc == kNoPartner;
@@ -427,13 +444,14 @@ class Halo {
     ///
     /// The same band predicate over rows `[first, last)` instead of
     /// `[0, last)`. The lower bound is what a **forwarding round** needs:
-    /// round `r > 1` of a face ships exactly the ghosts round `r - 1`
-    /// delivered on the *opposite* face of the same axis — one contiguous
-    /// slot range, `[firstrecv, firstrecv + nrecv)` of that swap — and must
-    /// not re-ship the owners round 1 already sent, which would land the same
+    /// round `r > 1` of an axis offers exactly the ghost rows round `r - 1`
+    /// delivered — one contiguous slot range covering both of that round's
+    /// faces, LAMMPS `CommBrick::borders`' `[nfirst, nlast)` — and must not
+    /// re-ship the owners round 1 already sent, which would land the same
     /// atom twice at the same periodic image on the partner. The window
-    /// picks *which* rows are offered; the `round > 1` band then clips how
-    /// deep they may be (see `Swap::slablo`).
+    /// picks *which* rows are offered; the `round > 1` band then both clips
+    /// how deep they may be and sorts the shared window between the two
+    /// faces at the mid-plane (see `Swap::slablo`).
     ///
     /// @param iswap Swap index in `[0, size())`.
     /// @param frame Frame holding the positions [Angstrom] to scan.
@@ -509,71 +527,14 @@ class Halo {
     /// @brief One past the last swap of the forwarding round starting at
     /// `begin`: the `(lo, hi)` pair of one hop of one axis.
     ///
-    /// The round — not the axis stage — is the transport unit. Its two
-    /// swaps go out **concurrently** (at `dims[d] == 2` the low and high
-    /// neighbour are the same rank, and two sequential exchanges cross
-    /// their tags and deadlock), while consecutive rounds are strictly
-    /// **serialized**: round `r` ships what round `r - 1` received.
+    /// The round is the **forwarding** unit, not the transport unit: its two
+    /// swaps share one scan window (everything the previous round of this
+    /// axis delivered, LAMMPS's `nfirst`/`nlast`), and consecutive rounds
+    /// are strictly serialized because round `r` ships what round `r - 1`
+    /// received. Transport is per swap — see `Swap::recvproc`.
     /// @param begin First swap of the round.
     /// @return One past the round's last swap.
     int round_end(int begin) const;
-
-    /// @brief First swap of the forwarding round that ends at `end`.
-    /// The reverse pass walks rounds backwards, deepest hop first.
-    /// @param end One past the round's last swap.
-    /// @return First swap of that round.
-    int round_begin(int end) const;
-
-    /// @brief The swap of the same round pointing the other way.
-    ///
-    /// A message this rank sends on swap `iswap` arrives at the partner as
-    /// its opposite-facing swap of the same axis and round, so the receive
-    /// tag is derived from the mirrored index.
-    /// @param begin First swap of the round.
-    /// @param end One past the round's last swap.
-    /// @param iswap Swap whose partner-side index is wanted.
-    /// @return Mirrored swap index within `[begin, end)`.
-    static int mirror_swap(int begin, int end, int iswap) noexcept {
-        return begin + (end - 1) - iswap;
-    }
-
-    /// @brief Rows a forwarding round is allowed to offer, per face.
-    ///
-    /// The other half of the multi-hop rule. `Swap::slablo`/`slabhi` clip a
-    /// row's **depth**; this decides **which rows are looked at at all**, and
-    /// getting it wrong is how an atom gets shipped to the same rank at the
-    /// same periodic image twice:
-    ///
-    ///   * **round 1** of an axis scans `[0, sources_end)` — this rank's
-    ///     owners plus every ghost the earlier axes already delivered. That
-    ///     is what reaches the 12 edge and 8 corner neighbours without ever
-    ///     addressing them.
-    ///   * **round r > 1** of a face scans exactly what the **opposite**
-    ///     face received at round `r - 1`. The ghosts my high neighbour gave
-    ///     me are what my low neighbour is missing at depth `r`. Feeding it
-    ///     the owners again would re-ship them to a rank that already has
-    ///     them.
-    ///
-    /// Pure: reads the table and the caller's bounds, touches no Frame and
-    /// no MPI. Out-parameters are fixed-size raw arrays, matching
-    /// `derive_hops(const int (&coords)[3])`; no window aggregate exists.
-    ///
-    /// @param round Which hop this round carries, 1-based.
-    /// @param width Swaps in the round: 2 for a `(lo, hi)` pair, 1 for a
-    ///        lone placeholder.
-    /// @param sources_end One past the last row round 1 may scan (owners
-    ///        plus earlier-axis ghosts).
-    /// @param prev_first Per-face first received slot of round `r - 1`.
-    /// @param prev_last Per-face one-past-last received slot of round
-    ///        `r - 1`.
-    /// @param win_first Out: per-face inclusive lower scan bound.
-    /// @param win_last Out: per-face exclusive upper scan bound.
-    /// @throws std::logic_error if `width` is not 1 or 2 — a round holds at
-    ///         most one `(lo, hi)` pair by construction.
-    static void round_scan_window(int round, int width, int sources_end,
-                                  const int (&prev_first)[2],
-                                  const int (&prev_last)[2],
-                                  int (&win_first)[2], int (&win_last)[2]);
 
     /// @brief Drop every stored row index, keep the swap geometry.
     ///

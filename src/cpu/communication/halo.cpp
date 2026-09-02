@@ -7,7 +7,7 @@
 /// `setup`.
 ///
 /// Algorithm transplanted from LAMMPS `src/comm_brick.cpp` sendlist
-/// (checkout `78a7ddf`). Copyright (2003) Sandia Corporation. GPL-2.0-only.
+/// (checkout `970d4ba`). Copyright (2003) Sandia Corporation. GPL-2.0-only.
 
 #include "atomiverse/cpu/communication/halo.h"
 
@@ -336,19 +336,28 @@ void Halo::expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
             for (int face_side = 0; face_side < 2; ++face_side) { // lo, hi
                 Swap& swap = swaps_[iswap++];
                 const bool hi = (face_side == 1);
-                const int neighbor = dd.face_neighbors[static_cast<std::size_t>(
+                const int send_nbr = dd.face_neighbors[static_cast<std::size_t>(
                     2 * d + face_side)];
+                const int recv_nbr = dd.face_neighbors[static_cast<std::size_t>(
+                    2 * d + 1 - face_side)];
 
                 swap.dim = d;
                 swap.sign = hi ? +1 : -1;
                 swap.round = round;
                 // Every round of the chain goes through the SAME face
-                // neighbour: a deeper shell is filled by forwarding what the
+                // neighbours: a deeper shell is filled by forwarding what the
                 // previous round received one rank further, never by a direct
                 // message to a rank two hops away.
-                swap.sendproc = neighbor;
-                swap.recvproc = neighbor;
-                swap.sendself = (neighbor == my_rank); // == (dims[d] <= 1)
+                //
+                // LAMMPS `CommBrick::setup`: send across THIS face, hear back
+                // across the opposite one (`procneigh[dim][0]` /
+                // `procneigh[dim][1]`). Both ranks run the same rank-uniform
+                // table in the same order, so swap `s` is answered by the
+                // partner's swap `s` — one message per pair per swap, tag 0,
+                // no round-as-a-unit rule and no mirrored index.
+                swap.sendproc = send_nbr;
+                swap.recvproc = recv_nbr;
+                swap.sendself = (send_nbr == my_rank); // == (dims[d] <= 1)
 
                 swap.pbc[0] = 0;
                 swap.pbc[1] = 0;
@@ -382,14 +391,13 @@ void Halo::expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
                     // ghost rows over three axes — paid again in halo
                     // bytes, neighbour build and reverse comm.
                     //
-                    // Mid-plane bound: mirrors LAMMPS, where one window
-                    // holds the previous round's receipts from BOTH faces
-                    // and the mid-plane is what keeps a row from bouncing
-                    // back to the face it arrived from. Here the caller
-                    // already narrows the window to the opposite face
-                    // (`forward_cascade`), so it is a redundant guard —
-                    // kept because it costs one compare and holds the
-                    // invariant locally rather than by convention.
+                    // Mid-plane bound: LAMMPS, exactly. One window holds
+                    // the previous round's receipts from BOTH faces, and
+                    // the mid-plane is what sorts them — a ghost that
+                    // arrived across one face sits past the opposite edge
+                    // of this subdomain, so it fails its own face's band
+                    // and passes the other's. That is what keeps a row from
+                    // bouncing straight back to where it came from.
                     const double mid = 0.5 * (dd.sublo[d] + dd.subhi[d]);
                     if (hi) {
                         swap.slablo = dd.subhi[d] - halo_cutoff;
@@ -490,29 +498,6 @@ void Swap::pbc_shift(const Box& box, double out[3]) const {
         out[d] = static_cast<double>(pbc[d]) * box.length(d);
 }
 
-void Halo::round_scan_window(int round, int width, int sources_end,
-                             const int (&prev_first)[2],
-                             const int (&prev_last)[2], int (&win_first)[2],
-                             int (&win_last)[2]) {
-    if (width < 1 || width > 2)
-        throw std::logic_error(
-            "Halo::round_scan_window: a round holds one (lo, hi) pair at "
-            "most, got width "
-            + std::to_string(width)
-            + ". The table is expanded axis-major, then round, then face.");
-    for (int k = 0; k < width; ++k) {
-        if (round <= 1) {
-            win_first[k] = 0;
-            win_last[k] = sources_end;
-        } else {
-            // The OPPOSITE face's previous receipts, not this face's.
-            const int opposite = width - 1 - k;
-            win_first[k] = prev_first[opposite];
-            win_last[k] = prev_last[opposite];
-        }
-    }
-}
-
 int Halo::stage_end(int begin) const {
     const int n = static_cast<int>(swaps_.size());
     const int dim = swaps_[static_cast<std::size_t>(begin)].dim;
@@ -530,17 +515,6 @@ int Halo::round_end(int begin) const {
            && swaps_[static_cast<std::size_t>(end)].round == first.round)
         ++end;
     return end;
-}
-
-int Halo::round_begin(int end) const {
-    int begin = end - 1;
-    while (begin > 0
-           && swaps_[static_cast<std::size_t>(begin) - 1].dim
-                  == swaps_[static_cast<std::size_t>(begin)].dim
-           && swaps_[static_cast<std::size_t>(begin) - 1].round
-                  == swaps_[static_cast<std::size_t>(begin)].round)
-        --begin;
-    return begin;
 }
 
 int Halo::max_hops(int d) const {

@@ -89,10 +89,7 @@ void hash_value(std::uint64_t& hash, const T& value) {
     hash_bytes(hash, &value, sizeof(value));
 }
 
-std::uint64_t fingerprint(PackKind kind, const std::vector<ColumnRef>& fields) {
-    std::uint64_t hash = 1469598103934665603ull;
-    hash_value(hash, kAtomWireVersion);
-    hash_value(hash, kind);
+void hash_fields(std::uint64_t& hash, const std::vector<ColumnRef>& fields) {
     if (fields.size() > std::numeric_limits<std::uint32_t>::max())
         throw std::overflow_error("Frame pack schema has too many columns");
     const std::uint32_t count = static_cast<std::uint32_t>(fields.size());
@@ -113,6 +110,13 @@ std::uint64_t fingerprint(PackKind kind, const std::vector<ColumnRef>& fields) {
         if (field.group == ColGroup::Core || (field.flags & kColCount))
             hash_value(hash, field.cols);
     }
+}
+
+std::uint64_t fingerprint(PackKind kind, const std::vector<ColumnRef>& fields) {
+    std::uint64_t hash = 1469598103934665603ull;
+    hash_value(hash, kAtomWireVersion);
+    hash_value(hash, kind);
+    hash_fields(hash, fields);
     return hash;
 }
 
@@ -280,6 +284,13 @@ PackPlan make_wire_plan(Frame& frame, PackKind kind,
 PackPlan make_wire_plan(const Frame& frame, PackKind kind,
                         const GhostContract& contract) {
     return make_plan(frame, kind, contract);
+}
+
+std::uint64_t column_schema_fingerprint(const std::vector<ColumnRef>& fields) {
+    std::uint64_t hash = 1469598103934665603ull;
+    hash_value(hash, kAtomWireVersion);
+    hash_fields(hash, fields);
+    return hash;
 }
 
 PackPlan make_exchange_plan(const Frame& frame) {

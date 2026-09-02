@@ -87,7 +87,9 @@ struct GatheredFrame {
     /// @brief PBC crossing counts in flat row-major `[n_total * 3]` layout.
     std::vector<std::int8_t> image;
     /// Runtime-added exchanged columns, native and row-major. The schema is
-    /// taken directly from the exchange PackPlan; no gather-only field list.
+    /// the atoms Block's own `kColExchange` selection
+    /// (`Block::resolve_columns`); no gather-only field list, and no
+    /// borrowed wire plan.
     std::vector<GatheredColumn> runtime_columns;
     /// @brief Simulation cell (replicated to every rank from the local frame).
     Mat3 box{};

@@ -56,8 +56,11 @@ independently derived**.
   structure; do not invent an alternative and A/B it.
 - **Reference checkout:** `../../lammps-src` relative to the repo root
   (`/nobackup/proj/disk/teoroo/personal/jicli594/work/lammps-src`, shallow
-  clone, `78a7ddf 2026-08-25`). Deepen or re-clone rather than trusting
-  memory of LAMMPS internals.
+  sparse clone of `src/`, `970d4ba 2026-08-27`). Deepen or re-clone rather
+  than trusting memory of LAMMPS internals — and when you re-clone, stamp
+  the SHA you actually read into the provenance header of every file you
+  touch. Older headers naming `78a7ddf` were derived against that earlier
+  checkout; do not rewrite them wholesale.
 - **Provenance headers are mandatory:** every file whose algorithm or
   structure is taken from LAMMPS carries a header naming the originating
   LAMMPS source file (e.g. `src/comm_brick.cpp`) and retaining the Sandia
@@ -673,7 +676,9 @@ type, not a builder call. Each `GhostField` states two orthogonal things:
 
 They are not one enum: `stable`/`step` are two strengths of the *same*
 guarantee in one direction; a reduction is the other direction and has no
-freshness. **Presence is implied** — reading a field on a ghost means the
+freshness. **A style that reads a ghost column and does not declare it gets
+garbage, silently** — adding such a style means adding its table in the same
+change. **Presence is implied** — reading a field on a ghost means the
 ghost carries it from the moment it exists, so there is no second set to keep
 in sync. Two components asking for the same field merge with the **stricter**
 freshness winning, in either order, so the fold is rank-independent; opposite
@@ -698,15 +703,29 @@ mounted. Neither is a generalisation of the other and there is no third.
 **CPU MD step halo** is that contract, compiled — refresh x/y/z (plus whatever a
 `step` read added), reverse fx/fy/fz, creation x/y/z/tag/type — field-major
 whenever every column on it is scalar, which is every production wire. MPI
-shape is LAMMPS `CommBrick` (standing `Irecv` → pack → blocking `Send` →
-`Wait`, no send-side `Isend`/`Waitall`), posted per **round**, never
-per swap: ATV's swap table gives both faces of a round the *same* partner
-(`Swap::sendproc == recvproc`), so a swap is answered by the partner's
-`Halo::mirror_swap` and the swap index is the tag. LAMMPS's per-swap tag 0 is
-legal only under its `sendproc != recvproc` convention — adopting it here means
-converting the swap table first, not deleting the tags. Remaining `PackPlan` /
-swap-table convention / CUDA `MultiGpu` / namespace alignment:
+shape is LAMMPS `CommBrick` verbatim: **one swap at a time on tag 0**,
+standing `Irecv` → pack → blocking `Send` → `Wait`, no send-side
+`Isend`/`Waitall`. That is legal because the swap table follows LAMMPS's
+`sendproc != recvproc` convention — a swap ships across its own face and
+hears back across the opposite one, so every rank's swap `s` is its
+partner's swap `s` and exactly one message is in flight per pair per swap.
+The **round** survives only as the forwarding unit: its two swaps share one
+scan window (everything the previous round delivered), and the `round > 1`
+mid-plane band edge is what sorts that window between the two faces.
+Remaining CUDA `MultiGpu` / namespace alignment:
 [md-comm.md](.claude/notes/md-comm.md).
+
+**Nothing outside the halo and migration compiles a `PackPlan`.** It is a
+communication artifact: `make_wire_plan` for the contract-driven halo passes,
+`make_exchange_plan` for migration (flag-driven, `kColExchange` — migration
+carries what an atom IS). Everything else asks the Block directly.
+`gather_to_root` and `bcast_frame` enumerate columns with
+`Block::resolve_columns` and move them **column-major** (`Gatherv` / `Bcast`
+per column), agreeing on the schema through `comm::column_schema_fingerprint`;
+`mc::Transaction` snapshots and restores whole rows with
+`Frame::copy_row_from` onto a `clone_structure` patch. Borrowing the
+migration wire to answer a non-migration question is what those three used to
+do, and it is not a shortcut that is available again.
 
 ## Oracle capability loops
 
