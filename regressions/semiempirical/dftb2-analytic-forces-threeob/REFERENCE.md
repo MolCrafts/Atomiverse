@@ -1,8 +1,16 @@
 # Reference — DFTB2 ThreeOb analytic nuclear forces (H2O)
 
-oracle: dftb+
-oracle_version: formula-level (Hourahine et al. JCP 152, 124101 (2020); Gaus
-  et al. JCTC 9, 338 (2013) 3ob-3-1; no DFTB+ binary required on pin host)
+oracle: literature
+oracle_version: Hourahine et al., J. Chem. Phys. 152, 124101 (2020); Gaus
+  et al., J. Chem. Theory Comput. 9, 338 (2013) 3ob-3-1 — closed-form
+  ThreeOb nuclear gradient
+family_oracle: dftb+
+
+No DFTB+ run produced an absolute energy or force for this off-eq H2O
+geometry. The gate is analytic \(F\) vs re-SCC FD of the same ATV 3ob
+energy. The CH4 3ob energy pin (`dftb2-3ob-organic`) is a different
+system and is not this case's oracle. Do not read `oracle: dftb+` into
+the FD identity.
 
 ## Method
 
@@ -100,5 +108,6 @@ gate is also owed (O₂ is homonuclear, so it cannot see this class of bug).
 
 ## Perf
 
-`perf_exempt: true` — no DFTB+ fair wall on pin host. Analytic path replaces
-\(6N\) full re-SCC force evaluations with one post-SCC contraction.
+`perf_exempt: true` — no DFTB+ absolute-force twin was run for this
+geometry (FD identity only). Analytic path replaces \(6N\) full re-SCC
+force evaluations with one post-SCC contraction.

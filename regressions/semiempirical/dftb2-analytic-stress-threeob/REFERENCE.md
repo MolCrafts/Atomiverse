@@ -1,9 +1,15 @@
 # Reference — DFTB2 **ThreeOb** closed-form cell stress (CH₄ / 3ob-3-1)
 
-oracle: dftb+
-oracle_version: 24.1 — **formula-level** (stress/virial module boundary); no
-  DFTB+ binary exists on this host (`module spider dftb` → nothing), so no
-  absolute DFTB+ σ is claimed.
+oracle: literature
+oracle_version: Hourahine et al., J. Chem. Phys. 152, 124101 (2020); Gaus
+  et al., J. Chem. Theory Comput. 9, 338 (2013) 3ob-3-1 — pair-virial
+  ThreeOb cell stress
+family_oracle: dftb+
+
+No DFTB+ run produced an absolute energy or stress for this asymmetric CH₄
+geometry. The gate is analytic \(\sigma\) vs strain-FD of the same ATV 3ob
+energy, plus the isotropic-trace identity. Do not read `oracle: dftb+` into
+those identities.
 
 ## Method
 
@@ -154,14 +160,12 @@ residual" to absorb; a loose gate here would mask a real defect.
 
 ## Gaps (still open)
 
-1. **No absolute DFTB+ σ.** No `dftb+` binary on this host, so this slug pins an
-   *identity* (analytic virial ≡ strain-FD of the same functional, plus the
-   isotropic trace identity), not a DFTB+ 24.1 number. `dftb_in.hsd` for the
-   twin CH₄/3ob run lives at
-   `tools/tb_oracle/inputs/dftbplus/ch4_3ob_dftb2/` (used for the *energy* pin
-   of `dftb2-3ob-organic`); adding `Analysis { CalculateForces = Yes }` +
-   `Options { WriteResultsTag = Yes }` on a host with DFTB+ would convert this
-   into an absolute σ pin.
+1. **No absolute DFTB+ σ.** This slug pins an *identity* (analytic virial ≡
+   strain-FD of the same functional, plus the isotropic trace identity), not
+   a DFTB+ 24.1 number. `dftb_in.hsd` for the twin CH₄/3ob *energy* pin lives
+   at `tools/tb_oracle/inputs/dftbplus/ch4_3ob_dftb2/`; adding
+   `Analysis { PrintForces = Yes }` there would convert this into an
+   absolute σ pin, and that run has not been taken.
 2. **No periodic ThreeOb.** `scc_3ob` is a molecular cluster sum — no lattice
    images. The stress is therefore the isolated-molecule virial and the cell
    enters only through Ω. A Γ-point lattice-summed ThreeOb (like the MioSketch
@@ -176,6 +180,7 @@ residual" to absorb; a loose gate here would mask a real defect.
 
 ## Perf
 
-`perf_exempt: true` — no DFTB+ binary / fair wall on pin host. The analytic
-path replaces **12** multi-SCC energy evaluations (6 Voigt × ±h) with **one**
-post-SCC pair contraction that is shared with the nuclear-force assembly.
+`perf_exempt: true` — no DFTB+ absolute-stress twin was run for this
+geometry (strain-FD identity only). The analytic path replaces **12**
+multi-SCC energy evaluations (6 Voigt × ±h) with **one** post-SCC pair
+contraction that is shared with the nuclear-force assembly.

@@ -149,7 +149,10 @@ there:
 
 - **End-to-end of any kind** — no full SCF/MD/vib/MC solve, no convergence
   loop, no timing, no external-engine comparison, no third-party read at build
-  or test time.
+  or test time. In-tree scientific parameter data (`basis_data/` headers and a
+  future `data/` directory) is first-party code carrying provenance; tests and
+  regressions reading it is not a "third-party read". Reading anything outside
+  the repo at build or test time stays forbidden.
 - **Style / surface / architecture gates** — no grep scrubs, no shell or CMake
   scripts registered via `add_test`, no test that reads the source tree to
   assert a file exists, is absent, or contains a token. Architectural rules

@@ -3,6 +3,16 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Live — dftb-data chain (2026-09-04)
+
+科学参数表的诚实性与获取机制。四步链条，step 0 独立且不依赖其余三步：先清除 DFTB
+路径上被编造的常数与不可再生的参数 blob，再把有外部标准分发的参数表改为运行时读取。
+后续 spec 1–3 尚未落盘。
+
+| Spec | Deps | One-line |
+| ---- | ---- | -------- |
+| `dftb-data-00-honesty` | — | code-complete 2026-09-04 — 删除编造的 U^d / 自旋 W；显式 `hubbard_du_ha` / `spin_w_ha`；`DFTB3::sk_set` 与 `DFTB2::shell_resolved_spin`；3ob 生成器 + double；iron law 1；DFTB+ 24.1 spin pins；诚实 provenance |
+
 ## Live — lammps-comm-brick chain (2026-08-26)
 
 CPU 多核通信按 LAMMPS `Comm` / `CommBrick` 重构。`Halo` ≡ 原 `Halo`（CommBrick 私有）；插件只见 Frame 行。有序链，前者落地后者才能编。

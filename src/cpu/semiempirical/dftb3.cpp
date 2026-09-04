@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/log.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
@@ -153,7 +154,8 @@ double gamma_charge1_dr(double r, double ua, double ub, double uda) {
 }
 
 /// Lattice-summed γ_AB [eV] (DFTB2-style, cut at SK rcut).
-double gamma_pair_lat(int a, int b, const std::vector<const DftbElementRow*>& el,
+double gamma_pair_lat(int a, int b,
+                      const std::vector<const DftbElementRow*>& el,
                       const StorageReal* x, const StorageReal* y,
                       const StorageReal* z, const cpu::Box& box,
                       const std::vector<LatVec>& images) {
@@ -187,13 +189,14 @@ double gamma_pair_lat(int a, int b, const std::vector<const DftbElementRow*>& el
 
 double gamma_charge_pair_lat(int a, int b,
                              const std::vector<const DftbElementRow*>& el,
+                             const std::vector<double>& hubbard_du_ev,
                              const StorageReal* x, const StorageReal* y,
                              const StorageReal* z, const cpu::Box& box,
                              const std::vector<LatVec>& images) {
     // Γ_AB = ∂γ_AB/∂q_A lattice sum.
     const double ua = el[static_cast<std::size_t>(a)]->hubbard_u;
     const double ub = el[static_cast<std::size_t>(b)]->hubbard_u;
-    const double uda = el[static_cast<std::size_t>(a)]->hubbard_du;
+    const double uda = hubbard_du_ev[static_cast<std::size_t>(a)];
     const double rcut = pair_rcut_A(*el[static_cast<std::size_t>(a)],
                                     *el[static_cast<std::size_t>(b)]);
     const double xa = static_cast<double>(x[a]);
@@ -250,6 +253,7 @@ SccSolution solve_scc(const cpu::Frame& f, const int* type,
                       const StorageReal* x, const StorageReal* y,
                       const StorageReal* z,
                       const std::vector<const DftbElementRow*>& el,
+                      const std::vector<double>& hubbard_du_ev,
                       const std::vector<int>& ao0, int n_at, int n_ao,
                       int n_occ, double scc_tol, int max_scc, double mix_beta) {
     const std::size_t n = static_cast<std::size_t>(n_at);
@@ -300,7 +304,7 @@ SccSolution solve_scc(const cpu::Frame& f, const int* type,
                 if (r > rcut)
                     continue;
                 internal::MioSketchPair{ea, eb, sk}.add_block(dx, dy, dz, r, H0,
-                                                               S, ia, ib);
+                                                              S, ia, ib);
             }
             if (rmin < 1e299)
                 dist[static_cast<std::size_t>(a) * n
@@ -316,12 +320,13 @@ SccSolution solve_scc(const cpu::Frame& f, const int* type,
         hubbard_u[static_cast<std::size_t>(a)] =
             el[static_cast<std::size_t>(a)]->hubbard_u;
         hubbard_du[static_cast<std::size_t>(a)] =
-            el[static_cast<std::size_t>(a)]->hubbard_du;
+            hubbard_du_ev[static_cast<std::size_t>(a)];
         for (int b = 0; b < n_at; ++b) {
             G[static_cast<std::size_t>(a) * n + static_cast<std::size_t>(b)] =
                 gamma_pair_lat(a, b, el, x, y, z, f.box, images);
             Gd[static_cast<std::size_t>(a) * n + static_cast<std::size_t>(b)] =
-                gamma_charge_pair_lat(a, b, el, x, y, z, f.box, images);
+                gamma_charge_pair_lat(a, b, el, hubbard_du_ev, x, y, z, f.box,
+                                      images);
         }
     }
     // Dftb3Scc kept for pair_energy_distance_derivative API on min-image r
@@ -404,9 +409,9 @@ SccSolution solve_scc(const cpu::Frame& f, const int* type,
                 qa += PS(ia + i, ia + i);
             dq_out[static_cast<std::size_t>(a)] =
                 qa - el[static_cast<std::size_t>(a)]->n_val;
-            residual = std::max(residual,
-                                std::abs(dq_out[static_cast<std::size_t>(a)]
-                                         - dq[static_cast<std::size_t>(a)]));
+            residual =
+                std::max(residual, std::abs(dq_out[static_cast<std::size_t>(a)]
+                                            - dq[static_cast<std::size_t>(a)]));
         }
 
         out.residual = residual;
@@ -487,6 +492,7 @@ SccSolution solve_scc(const cpu::Frame& f, const int* type,
 /// round-off by construction.
 void analytic_forces(int n_at, int n_ao,
                      const std::vector<const DftbElementRow*>& el,
+                     const std::vector<double>& hubbard_du_ev,
                      const std::vector<int>& ao0, const int* type,
                      const StorageReal* x, const StorageReal* y,
                      const StorageReal* z, const cpu::Box& box,
@@ -502,14 +508,16 @@ void analytic_forces(int n_at, int n_ao,
             G[static_cast<std::size_t>(a) * n + static_cast<std::size_t>(b)] =
                 gamma_pair_lat(a, b, el, x, y, z, box, images);
             Gd[static_cast<std::size_t>(a) * n + static_cast<std::size_t>(b)] =
-                gamma_charge_pair_lat(a, b, el, x, y, z, box, images);
+                gamma_charge_pair_lat(a, b, el, hubbard_du_ev, x, y, z, box,
+                                      images);
         }
     std::vector<double> dV(n, 0.0);
     for (int a = 0; a < n_at; ++a) {
         double s2 = 0;
         for (int b = 0; b < n_at; ++b)
-            s2 += G[static_cast<std::size_t>(a) * n + static_cast<std::size_t>(b)]
-                  * sol.dq[static_cast<std::size_t>(b)];
+            s2 +=
+                G[static_cast<std::size_t>(a) * n + static_cast<std::size_t>(b)]
+                * sol.dq[static_cast<std::size_t>(b)];
         const double dqa = sol.dq[static_cast<std::size_t>(a)];
         double s3 = 0;
         for (int b = 0; b < n_at; ++b) {
@@ -550,7 +558,7 @@ void analytic_forces(int n_at, int n_ao,
         const double ya = static_cast<double>(y[a]);
         const double za = static_cast<double>(z[a]);
         const double ua = ea.hubbard_u;
-        const double uda = ea.hubbard_du;
+        const double uda = hubbard_du_ev[static_cast<std::size_t>(a)];
         const double dqa = sol.dq[static_cast<std::size_t>(a)];
 
         for (int b = 0; b < n_at; ++b) {
@@ -558,16 +566,16 @@ void analytic_forces(int n_at, int n_ao,
             const int ib = ao0[static_cast<std::size_t>(b)];
             const int nb = eb.n_ao;
             const double ub = eb.hubbard_u;
-            const double udb = eb.hubbard_du;
+            const double udb = hubbard_du_ev[static_cast<std::size_t>(b)];
             const double dqb = sol.dq[static_cast<std::size_t>(b)];
             const double rcut = pair_rcut_A(ea, eb);
             const auto& sk_ab = pair_sk(type[a], type[b]);
             const double xb = static_cast<double>(x[b]);
             const double yb = static_cast<double>(y[b]);
             const double zb = static_cast<double>(z[b]);
-            const double shift =
-                0.5 * (dV[static_cast<std::size_t>(a)]
-                       + dV[static_cast<std::size_t>(b)]);
+            const double shift = 0.5
+                                 * (dV[static_cast<std::size_t>(a)]
+                                    + dV[static_cast<std::size_t>(b)]);
 
             for (const auto& T : images) {
                 const double dx = xb + T.tx - xa;
@@ -594,8 +602,9 @@ void analytic_forces(int n_at, int n_ao,
                             for (int j = 0; j < nb; ++j) {
                                 const double p = P(ia + i, ib + j);
                                 const double w = W(ia + i, ib + j);
-                                acc += p * (dH0[k](ia + i, ib + j)
-                                            + shift * dS[k](ia + i, ib + j))
+                                acc += p
+                                           * (dH0[k](ia + i, ib + j)
+                                              + shift * dS[k](ia + i, ib + j))
                                        - w * dS[k](ia + i, ib + j);
                             }
                         // R = R_b+T−R_a ⇒ ∂/∂R_a = −∂/∂R ⇒ F_a = +acc.
@@ -632,6 +641,16 @@ void analytic_forces(int n_at, int n_ao,
 
 } // namespace
 
+namespace {
+
+constexpr const char* kDftbHubbardDerivHowto =
+    "d3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa;";
+constexpr const char* kDftbSkSetHowto =
+    "DFTB3 will not pick an SK set for you — declare "
+    "d3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;";
+
+} // namespace
+
 void DFTB3::build(const BuildContext& /*ctx*/) {}
 
 void DFTB3::launch(const LaunchContext& ctx) {
@@ -642,7 +661,41 @@ void DFTB3::launch(const LaunchContext& ctx) {
     if (!(mix_beta > 0.0) || mix_beta > 1.0)
         throw std::invalid_argument("DFTB3: mix_beta must be in (0, 1]");
 
+    switch (sk_set) {
+    case DftbSkSet::Unset:
+        throw std::invalid_argument(
+            std::string("DFTB3::launch: sk_set is unset — ") + kDftbSkSetHowto);
+    case DftbSkSet::ThreeOb:
+        throw std::runtime_error(
+            "DFTB3::launch: sk_set = ThreeOb is not implemented — "
+            "dftb-gamma-h-damping");
+    case DftbSkSet::MioSketch:
+        break;
+    }
+
     const auto type = f.span(kAtom_type);
+    // U^d completeness before element_row so unsupported Z (e.g. 9) still
+    // reports hubbard_du_ha rather than "unsupported element".
+    std::vector<double> hubbard_du_ev(static_cast<std::size_t>(n_at), 0.0);
+    for (int a = 0; a < n_at; ++a) {
+        const int z = type[a];
+        if (z < 0 || z >= static_cast<int>(hubbard_du_ha.size())
+            || hubbard_du_ha[static_cast<std::size_t>(z)] == 0.0
+            || !std::isfinite(hubbard_du_ha[static_cast<std::size_t>(z)]))
+            throw std::invalid_argument(
+                std::string("DFTB3::launch: hubbard_du_ha is unset for Z=")
+                + std::to_string(z) + " — " + kDftbHubbardDerivHowto);
+        hubbard_du_ev[static_cast<std::size_t>(a)] =
+            hubbard_du_ha[static_cast<std::size_t>(z)] * units::kHartreeInEv;
+    }
+
+    if (sk_set == DftbSkSet::MioSketch && !warned_mixed_set_) {
+        ATV_WARN("[dftb3] 3ob-3-1 README: 3ob supersedes the MIO parameter "
+                 "set; MioSketch SK + 3ob HubbardDerivs is a mixed-set pairing "
+                 "and must not be labelled oracle: dftb+");
+        warned_mixed_set_ = true;
+    }
+
     // Read-only: the closed-form gradient never displaces the geometry (the
     // deleted FD path did, 6N times per force evaluation).
     const StorageReal* x = f.span(kAtom_x);
@@ -672,8 +725,9 @@ void DFTB3::launch(const LaunchContext& ctx) {
             "DFTB3: odd/non-integer valence electron count not supported");
     const int n_occ = static_cast<int>(std::lround(n_elec)) / 2;
 
-    const SccSolution sol = solve_scc(f, type.data(), x, y, z, el, ao0, n_at,
-                                      n_ao, n_occ, scc_tol, max_scc, mix_beta);
+    const SccSolution sol =
+        solve_scc(f, type.data(), x, y, z, el, hubbard_du_ev, ao0, n_at, n_ao,
+                  n_occ, scc_tol, max_scc, mix_beta);
     e2_ = sol.e2;
     e3_ = sol.e3;
     scc_residual_ = sol.residual;
@@ -686,8 +740,8 @@ void DFTB3::launch(const LaunchContext& ctx) {
     energy_meta += energy_;
 
     if (with_forces)
-        analytic_forces(n_at, n_ao, el, ao0, type.data(), x, y, z, f.box, sol,
-                        fx, fy, fz);
+        analytic_forces(n_at, n_ao, el, hubbard_du_ev, ao0, type.data(), x, y,
+                        z, f.box, sol, fx, fy, fz);
 }
 
 } // namespace semiempirical

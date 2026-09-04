@@ -3,7 +3,7 @@
 ///
 /// Method: collinear unrestricted SCC-DFTB2 (Elstner + Köhler spin channel).
 /// Force boundary: Hourahine et al. JCP 152, 124101 (2020) / DFTB+ spin module.
-/// In-tree mio-style SK — not absolute mio-1-1 DFTB+ numbers.
+/// oracle: dftb+ 24.1 (tools/tb_oracle/inputs/dftbplus/dftb2-spin-analytic-forces/).
 ///
 /// Exit non-zero on failure. Public API only. <= 60 s.
 #include <cmath>
@@ -44,7 +44,11 @@ double energy_only_triplet(cpu::Frame g) {
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
     cpu::semiempirical::DFTB2 d;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d.multiplicity = 3;
+    d.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
     d.with_forces = false;
     d.scc_tol = 1e-10;
     d.max_scc = 80;
@@ -61,7 +65,11 @@ int main() {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.multiplicity = 3;
+    dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
     dftb.with_forces = true;
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 80;

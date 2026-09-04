@@ -355,6 +355,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/semiempirical/gfn0.cpp
             src/cpu/semiempirical/dftb3.cpp
             src/cpu/semiempirical/dftb3_scc.cpp
+            src/cpu/semiempirical/dftb_spin.cpp
             src/cpu/semiempirical/mio_sk_block.cpp
             src/cpu/semiempirical/scc_mixer.cpp
 

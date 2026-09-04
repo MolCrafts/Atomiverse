@@ -22,12 +22,13 @@ using namespace ATV;
 
 namespace {
 
-// ATV twin pins after mio-1-1 SK + Γ lattice walk (2026-07-29). Physics oracle
-// is the FD identity below (not DFTB+ absolute forces).
-// Re-pinned after stable equal-U ∂γ/∂U for E³ (2026-07-29). Twin, not DFTB+ absolute.
-constexpr double kPinEnergyEV = -110.972004227931;
-constexpr double kPinFoxEVA = 2.651279044727;
-constexpr double kPinFh1yEVA = -0.171473609620;
+// ATV twin pins after published 3ob U^d (dftb-data-00-honesty). Physics
+// oracle is the FD identity below (not DFTB+ absolute forces). Twin snapshot,
+// not DFTB+ absolute. Supersedes sketch-U^d -110.972004227931 /
+// 2.651279044727 / -0.171473609620.
+constexpr double kPinEnergyEV = -110.961689188230;
+constexpr double kPinFoxEVA = 2.662706377721;
+constexpr double kPinFh1yEVA = -0.175866697553;
 constexpr double kPinTol = 1e-6;
 
 cpu::Frame make_water() {
@@ -64,6 +65,8 @@ double energy_only(cpu::Frame g) {
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
     cpu::semiempirical::DFTB3 d;
+    d.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+    d.hubbard_du_ha = cpu::semiempirical::basis_data::k3obHubbardDerivsHa;
     d.with_forces = false;
     d.scc_tol = 1e-10;
     ev.on(evaluate::Phase::evaluate).add(std::move(d));
@@ -92,6 +95,8 @@ int main() {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB3 dftb3;
+    dftb3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+    dftb3.hubbard_du_ha = cpu::semiempirical::basis_data::k3obHubbardDerivsHa;
     dftb3.with_forces = true;
     dftb3.scc_tol = 1e-10;
     eval.on(evaluate::Phase::evaluate).add_ref(dftb3);
@@ -149,8 +154,8 @@ int main() {
     const double fy1 = static_cast<double>(frame.span(kAtom_fy)[1]);
     {
         const double fd = fd_force(0, 0, h);
-        std::printf("  F_O_x analytic=%.12f  fd=%.12f  |d|=%.3e eV/A\n", fx0, fd,
-                    std::fabs(fx0 - fd));
+        std::printf("  F_O_x analytic=%.12f  fd=%.12f  |d|=%.3e eV/A\n", fx0,
+                    fd, std::fabs(fx0 - fd));
         if (std::fabs(fx0 - fd) > tol) {
             std::printf("FAIL F_O_x vs re-SCC FD (tol %g eV/A)\n", tol);
             return 1;
@@ -173,8 +178,9 @@ int main() {
     {
         const double err_coarse = std::fabs(fx0 - fd_force(0, 0, 8e-4));
         const double err_fine = std::fabs(fx0 - fd_force(0, 0, 2e-4));
-        std::printf("  F_O_x FD residual: h=8e-4 -> %.3e, h=2e-4 -> %.3e eV/A\n",
-                    err_coarse, err_fine);
+        std::printf(
+            "  F_O_x FD residual: h=8e-4 -> %.3e, h=2e-4 -> %.3e eV/A\n",
+            err_coarse, err_fine);
         if (err_fine > tol || err_coarse > tol) {
             std::printf("FAIL FD residual above absolute tol %g eV/A\n", tol);
             return 1;
@@ -185,6 +191,9 @@ int main() {
     auto frame2 = make_water();
     cpu::Evaluate eval2;
     cpu::semiempirical::DFTB2 d2;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d2.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d2.with_forces = true;
     d2.scc_tol = 1e-10;
     eval2.on(evaluate::Phase::evaluate).add(std::move(d2));
@@ -193,7 +202,8 @@ int main() {
     const double dfx = fx0 - static_cast<double>(frame2.span(kAtom_fx)[0]);
     std::printf("  F_O_x DFTB3-DFTB2 = %.6e eV/A\n", dfx);
     if (std::fabs(dfx) < 1e-6) {
-        std::printf("FAIL DFTB3 force identical to DFTB2 (third order inert)\n");
+        std::printf(
+            "FAIL DFTB3 force identical to DFTB2 (third order inert)\n");
         return 1;
     }
 
@@ -203,7 +213,8 @@ int main() {
         || std::fabs(fy1 - kPinFh1yEVA) > kPinTol) {
         std::printf("FAIL pin: E=%.12f (exp %.12f) F_O_x=%.12f (exp %.12f) "
                     "F_H1_y=%.12f (exp %.12f) tol %g\n",
-                    e, kPinEnergyEV, fx0, kPinFoxEVA, fy1, kPinFh1yEVA, kPinTol);
+                    e, kPinEnergyEV, fx0, kPinFoxEVA, fy1, kPinFh1yEVA,
+                    kPinTol);
         return 1;
     }
     std::printf("PIN match (tol %g)\n", kPinTol);

@@ -27,9 +27,13 @@ namespace semiempirical {
 ///   \(K^{S}_{ia,jb}=\sum_{AB}q^{ia}_A\gamma_{AB}q^{jb}_B\) — the same
 ///   \(\gamma_{AB}\) [eV] the second-order SCC energy uses.
 /// - `triplet`: magnetization channel, on-site kernel
-///   \(K^{T}_{ia,jb}=\sum_{A}q^{ia}_A W_A q^{jb}_A\) with the atom-averaged
-///   collinear spin constant \(W_A\) [eV]
-///   (`basis_data::DftbElementRow::spin_w`).
+///   \(K^{T}_{ia,jb}=\sum_{A}q^{ia}_A W_A q^{jb}_A\). \(W_A\) [eV] is the
+///   highest-occupied atomic orbital (HOAO) diagonal of
+///   `DFTB2::spin_w_ha` (H \(W_{ss}\), C/N/O \(W_{pp}\)) converted Ha→eV;
+///   `spin_w_ha` itself is
+///   [Ha] (atomic units, as in DFTB+ HubbardDerivs / SpinConstants — NOT eV)
+///   and must be set or `DFTB2::td_casida` throws. Same collapse as
+///   collinear ground-state `launch()`.
 enum class TdDftbChannel { singlet, triplet };
 
 /// @brief Vertical excitation energies and the assembled Casida quantities of
@@ -104,7 +108,7 @@ struct TdDftbResult {
     ///        (dimensionless).
     int n_atoms = 0;
 
-    /// @brief Which spin channel was solved.
+    /// @brief Which spin channel was solved (dimensionless selector).
     TdDftbChannel channel = TdDftbChannel::singlet;
 
     /// @brief Scale \(\lambda\) applied to the coupling kernel \(K\)

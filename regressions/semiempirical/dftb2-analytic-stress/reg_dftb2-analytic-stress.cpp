@@ -97,6 +97,9 @@ double energy_only(cpu::Frame g) {
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
     cpu::semiempirical::DFTB2 d;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d.with_forces = false;
     d.with_stress = false;
     d.scc_tol = 1e-10;
@@ -113,6 +116,9 @@ int main() {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.with_forces = false;
     dftb.with_stress = true;
     dftb.scc_tol = 1e-10;
@@ -160,7 +166,8 @@ int main() {
         std::printf("  σ_v%d analytic=%.8e  fd=%.8e  |d|=%.3e eV/A3\n", voigt,
                     s_an, s_fd, std::fabs(s_an - s_fd));
         if (std::fabs(s_an - s_fd) > tol) {
-            std::printf("FAIL σ[%d] vs strain-FD (tol %.3e eV/A3)\n", voigt, tol);
+            std::printf("FAIL σ[%d] vs strain-FD (tol %.3e eV/A3)\n", voigt,
+                        tol);
             return 1;
         }
     }

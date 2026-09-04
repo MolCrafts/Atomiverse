@@ -1,0 +1,105 @@
+ Fermi distribution function
+
+Calculation with static geometry
+
+
+********************************************************************************
+ iSCC Total electronic   Diff electronic      SCC error    
+    2   -0.66031015E+01   -0.66031015E+01    0.17763568E-14
+********************************************************************************
+
+ Total charge:    -0.00000000
+
+ Atomic gross charges (e)
+ Atom           Charge
+    1       0.00000000
+    2      -0.00000000
+
+Nr. of electrons (up):      7.00000000
+Atom populations (up)
+ Atom       Population
+    1       3.50000000
+    2       3.50000000
+
+l-shell populations (up)
+ Atom Sh.   l       Population
+    1   1   0       0.92363091
+    1   2   1       2.57636909
+    2   1   0       0.92363091
+    2   2   1       2.57636909
+
+Orbital populations (up)
+ Atom Sh.   l   m       Population  Label
+    1   1   0   0       0.92363091  s
+    1   2   1  -1       0.79242085  p_y
+    1   2   1   0       0.93645536  p_z
+    1   2   1   1       0.84749287  p_x
+    2   1   0   0       0.92363091  s
+    2   2   1  -1       0.79242085  p_y
+    2   2   1   0       0.93645536  p_z
+    2   2   1   1       0.84749287  p_x
+
+Nr. of electrons (down):      5.00000000
+Atom populations (down)
+ Atom       Population
+    1       2.50000000
+    2       2.50000000
+
+l-shell populations (down)
+ Atom Sh.   l       Population
+    1   1   0       0.92363091
+    1   2   1       1.57636909
+    2   1   0       0.92363091
+    2   2   1       1.57636909
+
+Orbital populations (down)
+ Atom Sh.   l   m       Population  Label
+    1   1   0   0       0.92363091  s
+    1   2   1  -1       0.53742085  p_y
+    1   2   1   0       0.51145536  p_z
+    1   2   1   1       0.52749287  p_x
+    2   1   0   0       0.92363091  s
+    2   2   1  -1       0.53742085  p_y
+    2   2   1   0       0.51145536  p_z
+    2   2   1   1       0.52749287  p_x
+
+Spin  up
+Fermi level:                         0.0240897824 H            0.6555 eV
+Band energy:                        -3.7149038099 H         -101.0877 eV
+TS:                                  0.0000000000 H            0.0000 eV
+Band free energy (E-TS):            -3.7149038099 H         -101.0877 eV
+Extrapolated E(0K):                 -3.7149038099 H         -101.0877 eV
+Input / Output electrons (up):      7.0000000000      7.0000000000
+
+Spin  down
+Fermi level:                        -0.2945409862 H           -8.0149 eV
+Band energy:                        -2.9161976860 H          -79.3538 eV
+TS:                                  0.0000000000 H            0.0000 eV
+Band free energy (E-TS):            -2.9161976860 H          -79.3538 eV
+Extrapolated E(0K):                 -2.9161976860 H          -79.3538 eV
+Input / Output electrons (down):      5.0000000000      5.0000000000
+
+Energy H0:                          -6.5751014959 H         -178.9176 eV
+Energy SCC:                          0.0000000000 H            0.0000 eV
+Energy SPIN:                        -0.0280000000 H           -0.7619 eV
+Total Electronic energy:            -6.6031014959 H         -179.6795 eV
+Repulsive energy:                    0.1067673775 H            2.9053 eV
+Total energy:                       -6.4963341184 H         -176.7742 eV
+Extrapolated to 0:                  -6.4963341184 H         -176.7742 eV
+Total Mermin free energy:           -6.4963341184 H         -176.7742 eV
+Force related energy:               -6.4963341184 H         -176.7742 eV
+
+Non-constrained calculation
+
+SCC converged
+
+Total Forces
+    1      0.057307719745      0.066859006948      0.036991973513
+    2     -0.057307719745     -0.066859006948     -0.036991973513
+
+Maximal derivative component:        0.668590E-01 au
+
+Dipole moment:   -0.00000000   -0.00000000   -0.00000000 au
+Dipole moment:   -0.00000000   -0.00000000   -0.00000000 Debye
+
+

@@ -1,8 +1,8 @@
 /// @file regressions/semiempirical/td-dftb-h2/reg_td-dftb-h2.cpp
 /// @brief Linear-response TD-DFTB (Casida) on SCC-DFTB2 — H2 (+ H2O windows).
 ///
-/// oracle: literature (formula-level: Niehaus et al., PRB 63, 085108 (2001))
-/// oracle_version: no dftb+ binary on this host — see REFERENCE.md `Gaps`.
+/// oracle: literature (Niehaus et al., PRB 63, 085108 (2001)).
+/// No citable H2/mio-1-1 TD-DFTB value; snapshot is a drift guard.
 /// Public API only (`cpu::semiempirical::DFTB2::td_casida` + Frame).
 /// Exit non-zero on failure. <= 60 s.
 #include <cmath>
@@ -18,15 +18,16 @@ using namespace ATV;
 
 // ── Self-consistency snapshot, NOT an oracle number ────────────────────
 // H2 at r = 0.74 A, MioSketch (H onsite/U and the whole H-H SK + repulsive
-// grid ARE transcribed mio-1-1; the spin constant W_H is a sketch). One
-// sigma_g -> sigma_u channel. These are Atomiverse's own converged values,
-// pinned to catch silent drift — no DFTB+ identity is claimed (no dftb+ binary
-// exists on this host and no published TD-DFTB/mio-1-1 H2 value was located).
-// Gap/T1 unchanged by γ form for H2 ground state (Δq≡0); S1 re-pinned because
-// the Casida kernel couples with γ_AB (Elstner form, 2026-07-29).
+// grid ARE transcribed mio-1-1). Triplet kernel uses published PBE W_ss(H)
+// via spin_w_ha (HOAO collapse). One sigma_g -> sigma_u channel. These are
+// Atomiverse's own converged values, pinned to catch silent drift — no DFTB+
+// identity is claimed (no published TD-DFTB/mio-1-1 H2 value was located).
+// Gap/S1 unchanged by W (Δq≡0; singlet kernel is γ). T1 re-pinned after
+// published W_ss(H) (dftb-data-00-honesty, 2026-09-04); supersedes sketch-W
+// 15.01024822 eV.
 static constexpr double kH2GapEv = 15.44081455;
 static constexpr double kH2SingletEv = 16.39162450;
-static constexpr double kH2TripletEv = 15.01024822;
+static constexpr double kH2TripletEv = 13.67637744;
 static constexpr double kSnapshotTolEv = 1.0e-6;
 
 // Structural tolerances (see REFERENCE.md).
@@ -74,8 +75,12 @@ static cpu::Frame make_water() {
 
 int main() {
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.scc_tol = 1e-12;
     dftb.max_scc = 120;
+    dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
 
     // ── H2: the single sigma_g -> sigma_u channel ──────────────────────
     cpu::Frame h2 = make_h2(0.74);
@@ -90,8 +95,7 @@ int main() {
     std::printf("  q_H1=%.10f  q_H2=%.10f e\n", s.transition_charge[0],
                 s.transition_charge[1]);
     std::printf("  f_S1=%.6e  f_T1=%.6e (triplet dark)\n",
-                s.oscillator_strength.empty() ? -1.0
-                                              : s.oscillator_strength[0],
+                s.oscillator_strength.empty() ? -1.0 : s.oscillator_strength[0],
                 t.oscillator_strength.empty() ? -1.0
                                               : t.oscillator_strength[0]);
     if (s.oscillator_strength.empty() || s.oscillator_strength[0] < -1e-12) {
@@ -216,8 +220,7 @@ int main() {
 
     double max_bare = 0.0;
     for (std::size_t i = 0; i < w_bare.energy_ev.size(); ++i) {
-        const double d =
-            std::fabs(w_bare.energy_ev[i] - w_bare.ks_gap_ev[i]);
+        const double d = std::fabs(w_bare.energy_ev[i] - w_bare.ks_gap_ev[i]);
         if (d > max_bare)
             max_bare = d;
     }
