@@ -563,6 +563,14 @@ if(ATV_BUILD_IO AND ATV_BUILD_MD)
     atv_add_cpp_test(test_cpu_xyz_recorder                cpu/record/test_xyz_recorder.cpp)
 endif()
 
+# cpu::MrecRecorder — the streaming `*.mrec` sibling: constructor guards,
+# stride cadence + commit at teardown, frame-0 read-back through the bridge.
+# Same IO+MD gate as the XYZ recorder, plus the molrs pin must declare the
+# TrajectoryWriter bridge (iron law 8: the component is excluded without it).
+if(ATV_BUILD_IO AND ATV_BUILD_MD AND ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+    atv_add_cpp_test(test_cpu_mrec_recorder               cpu/record/test_mrec_recorder.cpp)
+endif()
+
 # Unreadable input paths must throw std::runtime_error, not abort in Rust.
 if(ATV_BUILD_IO) # extxyz + XyzRecorder halves reach molrs
     atv_add_cpp_test(test_cpu_io_missing_file             cpu/io/test_cpu_io_missing_file.cpp)

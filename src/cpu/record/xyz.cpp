@@ -83,9 +83,13 @@ int ZarrReader::read_into(Frame& frame) {
     // velocities / mass / tag / image components, f64 column for type.
     // Fallible since molrs 0.13: a corrupt store raises `rust::Error` rather
     // than aborting, and the wrapper attaches the path the bridge omits.
-    auto fref = internal::with_molrs_context(
-        "cpu::ZarrReader::read_into", path_,
-        [&] { return molrs::read_frame_zarr_first({path_.data(), path_.size()}); });
+    // molrs 0.14 renamed the door `read_frame_zarr_first` → `read_first_frame`
+    // and reads it through the lazy sequence cursor (frame 0 only is decoded),
+    // so it serves both the single-frame checkpoint and a streamed `*.mrec`.
+    auto fref =
+        internal::with_molrs_context("cpu::ZarrReader::read_into", path_, [&] {
+            return molrs::read_first_frame({path_.data(), path_.size()});
+        });
     auto& fr = *fref;
 
     auto x = molrs::frame_column_f64(fr, "atoms", "x");

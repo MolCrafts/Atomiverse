@@ -92,7 +92,7 @@ class StepStamp final : public cpu::Component {
     auto fr = molrs::frame_new();
 
     std::vector<double> x(kN), y(kN), z(kN), mass(kN);
-    std::vector<std::uint32_t> atomic_number(kN);
+    std::vector<std::uint64_t> atomic_number(kN);
     std::vector<std::int32_t> tag(kN);
     for (int i = 0; i < kN; ++i) {
         const auto k = static_cast<std::size_t>(i);
@@ -115,7 +115,7 @@ class StepStamp final : public cpu::Component {
         ::rust::Slice<const double>(mass.data(), mass.size()));
     molrs::frame_set_column_u32(
         *fr, "atoms", "atomic_number",
-        ::rust::Slice<const std::uint32_t>(atomic_number.data(),
+        ::rust::Slice<const std::uint64_t>(atomic_number.data(),
                                            atomic_number.size()));
     molrs::frame_set_column_i32(
         *fr, "atoms", "tag",

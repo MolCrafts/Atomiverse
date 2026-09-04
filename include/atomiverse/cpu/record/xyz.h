@@ -37,12 +37,13 @@ class XYZ {
     std::vector<double> x_, y_, z_;
 };
 
-/// @brief Zarr V3 reader — loads the first frame of a Zarr-stored trajectory
-///        into a cpu::Frame.
+/// @brief `*.mrec` (Zarr v3) reader — loads the first frame of a stored
+///        trajectory into a cpu::Frame through molrs `read_first_frame`.
 ///
 /// Used by checkpoint reload: a bench stage dumps its end-state via
 /// `cpu::write_frame_zarr`, subsequent debug iterations call
-/// `ZarrReader::read_into(frame)` to skip that stage.
+/// `ZarrReader::read_into(frame)` to skip that stage. Only frame 0 is
+/// decoded, so a store streamed by cpu::MrecRecorder reads the same way.
 ///
 /// The reader expects per-atom columns `x, y, z, vx, vy, vz, mass, tag,
 /// image_x, image_y, image_z` (all f64) and an f64 `type` column in the
