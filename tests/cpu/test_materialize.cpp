@@ -89,10 +89,10 @@ namespace {
     molrs::frame_set_column_f64(
         *fr, "atoms", "charge",
         ::rust::Slice<const double>(charge.data(), charge.size()));
-    const std::vector<std::uint32_t> z_num(type.begin(), type.end());
+    const std::vector<std::uint64_t> z_num(type.begin(), type.end());
     molrs::frame_set_column_u32(
         *fr, "atoms", "atomic_number",
-        ::rust::Slice<const std::uint32_t>(z_num.data(), z_num.size()));
+        ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
     molrs::frame_set_column_i32(
         *fr, "atoms", "tag",
         ::rust::Slice<const std::int32_t>(tag.data(), tag.size()));
@@ -100,48 +100,48 @@ namespace {
     // Topology: one bond, one angle, one dihedral. molrs topology columns
     // reference atoms by tag (materialize scatters them via the tag->local
     // map), so use the atom tags {10,11,12} above -- not row indices.
-    const std::vector<std::uint32_t> bi = {10}, bj = {11}, bt = {1};
+    const std::vector<std::uint64_t> bi = {10}, bj = {11}, bt = {1};
     molrs::frame_set_column_u32(
         *fr, "bonds", "atomi",
-        ::rust::Slice<const std::uint32_t>(bi.data(), bi.size()));
+        ::rust::Slice<const std::uint64_t>(bi.data(), bi.size()));
     molrs::frame_set_column_u32(
         *fr, "bonds", "atomj",
-        ::rust::Slice<const std::uint32_t>(bj.data(), bj.size()));
+        ::rust::Slice<const std::uint64_t>(bj.data(), bj.size()));
     molrs::frame_set_column_u32(
         *fr, "bonds", "type_id",
-        ::rust::Slice<const std::uint32_t>(bt.data(), bt.size()));
+        ::rust::Slice<const std::uint64_t>(bt.data(), bt.size()));
 
-    const std::vector<std::uint32_t> ai = {10}, aj = {11}, ak = {12}, at = {1};
+    const std::vector<std::uint64_t> ai = {10}, aj = {11}, ak = {12}, at = {1};
     molrs::frame_set_column_u32(
         *fr, "angles", "atomi",
-        ::rust::Slice<const std::uint32_t>(ai.data(), ai.size()));
+        ::rust::Slice<const std::uint64_t>(ai.data(), ai.size()));
     molrs::frame_set_column_u32(
         *fr, "angles", "atomj",
-        ::rust::Slice<const std::uint32_t>(aj.data(), aj.size()));
+        ::rust::Slice<const std::uint64_t>(aj.data(), aj.size()));
     molrs::frame_set_column_u32(
         *fr, "angles", "atomk",
-        ::rust::Slice<const std::uint32_t>(ak.data(), ak.size()));
+        ::rust::Slice<const std::uint64_t>(ak.data(), ak.size()));
     molrs::frame_set_column_u32(
         *fr, "angles", "type_id",
-        ::rust::Slice<const std::uint32_t>(at.data(), at.size()));
+        ::rust::Slice<const std::uint64_t>(at.data(), at.size()));
 
-    const std::vector<std::uint32_t> di = {10}, dj = {11}, dk = {12}, dl = {12},
+    const std::vector<std::uint64_t> di = {10}, dj = {11}, dk = {12}, dl = {12},
                                      dt = {1};
     molrs::frame_set_column_u32(
         *fr, "dihedrals", "atomi",
-        ::rust::Slice<const std::uint32_t>(di.data(), di.size()));
+        ::rust::Slice<const std::uint64_t>(di.data(), di.size()));
     molrs::frame_set_column_u32(
         *fr, "dihedrals", "atomj",
-        ::rust::Slice<const std::uint32_t>(dj.data(), dj.size()));
+        ::rust::Slice<const std::uint64_t>(dj.data(), dj.size()));
     molrs::frame_set_column_u32(
         *fr, "dihedrals", "atomk",
-        ::rust::Slice<const std::uint32_t>(dk.data(), dk.size()));
+        ::rust::Slice<const std::uint64_t>(dk.data(), dk.size()));
     molrs::frame_set_column_u32(
         *fr, "dihedrals", "atoml",
-        ::rust::Slice<const std::uint32_t>(dl.data(), dl.size()));
+        ::rust::Slice<const std::uint64_t>(dl.data(), dl.size()));
     molrs::frame_set_column_u32(
         *fr, "dihedrals", "type_id",
-        ::rust::Slice<const std::uint32_t>(dt.data(), dt.size()));
+        ::rust::Slice<const std::uint64_t>(dt.data(), dt.size()));
 
     // Cubic box, row-major 3x3 H.
     const std::vector<double> h = {20.0, 0.0, 0.0, 0.0, 20.0,
@@ -185,10 +185,10 @@ namespace {
         *fr, "atoms", "y", ::rust::Slice<const double>(x.data(), x.size()));
     molrs::frame_set_column_f64(
         *fr, "atoms", "z", ::rust::Slice<const double>(x.data(), x.size()));
-    const std::vector<std::uint32_t> z_num(type.begin(), type.end());
+    const std::vector<std::uint64_t> z_num(type.begin(), type.end());
     molrs::frame_set_column_u32(
         *fr, "atoms", "atomic_number",
-        ::rust::Slice<const std::uint32_t>(z_num.data(), z_num.size()));
+        ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
     return fr;
 }
 
@@ -325,10 +325,10 @@ TEST(Materialize, MissingPositionsThrows) {
     auto fr = molrs::frame_new();
     // type present, x/y/z absent.
     const std::vector<std::int32_t> type = {1, 2};
-    const std::vector<std::uint32_t> z_num(type.begin(), type.end());
+    const std::vector<std::uint64_t> z_num(type.begin(), type.end());
     molrs::frame_set_column_u32(
         *fr, "atoms", "atomic_number",
-        ::rust::Slice<const std::uint32_t>(z_num.data(), z_num.size()));
+        ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
 
     try {
         Frame cf = from_molrs(*fr);
@@ -373,10 +373,10 @@ TEST(Materialize, MissingOptionalFieldsDefaultToZero) {
         *fr, "atoms", "y", ::rust::Slice<const double>(x.data(), x.size()));
     molrs::frame_set_column_f64(
         *fr, "atoms", "z", ::rust::Slice<const double>(x.data(), x.size()));
-    const std::vector<std::uint32_t> z_num(type.begin(), type.end());
+    const std::vector<std::uint64_t> z_num(type.begin(), type.end());
     molrs::frame_set_column_u32(
         *fr, "atoms", "atomic_number",
-        ::rust::Slice<const std::uint32_t>(z_num.data(), z_num.size()));
+        ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
 
     Frame cf = from_molrs(*fr); // must NOT throw
 
