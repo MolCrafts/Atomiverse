@@ -451,6 +451,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/dynamics/fix_dfield.cpp
             src/cpu/dynamics/fix_oscillating_efield.cpp
             src/cpu/dynamics/fix_wall_lj1043.cpp
+            src/cpu/dynamics/berendsen.cpp
             src/cpu/dynamics/fix_csvr.cpp
             src/cpu/dynamics/fix_rattle.cpp
             src/cpu/dynamics/fix_settle.cpp

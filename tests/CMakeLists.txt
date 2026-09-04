@@ -412,6 +412,7 @@ atv_add_cpp_test(test_cpu_md_piston_electrode cpu/dynamics/test_piston_electrode
 atv_add_cpp_test(test_cpu_md_const_potential_bo  cpu/dynamics/test_const_potential_bo.cpp)
 atv_add_cpp_test(test_cpu_md_fix_settle  cpu/dynamics/test_fix_settle.cpp)
 atv_add_cpp_test(test_cpu_md_virtual_sites  cpu/dynamics/test_virtual_sites.cpp)
+atv_add_cpp_test(test_cpu_md_berendsen    cpu/dynamics/test_berendsen.cpp)
 atv_add_cpp_test(test_cpu_md_brownian     cpu/dynamics/test_brownian.cpp)
 atv_add_cpp_test(test_cpu_md_write_sets  cpu/dynamics/test_write_sets.cpp)
 if(ATV_BUILD_PATH)
