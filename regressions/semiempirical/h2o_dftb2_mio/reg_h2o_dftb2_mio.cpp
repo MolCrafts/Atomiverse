@@ -3,7 +3,7 @@
 ///
 /// Domain: Elstner et al., Phys. Rev. B 58, 7260 (1998). Static H/C/N/O
 /// mio-1-1 tables (`dftb_mio_sk_tables.h`). Absolute energy pin vs DFTB+ 24.1
-/// (tol covers residual ~0.037 eV; see REFERENCE.md).
+/// Matches DFTB+ to ~5e-8 eV; see REFERENCE.md.
 ///
 /// Exit non-zero on failure. Public API only. <= 60 s.
 #include <cmath>
@@ -50,6 +50,9 @@ int main() {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.with_forces = true;
     dftb.scc_tol = 1e-10;
     eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
@@ -62,18 +65,19 @@ int main() {
         std::printf("FAIL non-finite energy\n");
         return 1;
     }
-    // DFTB+ 24.1 + mio-1-1 SCC at this geometry: −110.9590 eV
-    // (tools/tb_oracle/inputs/dftbplus/h2o_mio_scc/). ATV residual ~0.037 eV
-    // after full SK transcription (Hubbard-U / mixer detail still open).
-    constexpr double kDftbPlusEV = -110.9590;
-    constexpr double kAbsTolEV = 0.05;
+    // DFTB+ mio-1-1 SCC at this geometry, at the precision DFTB+ prints:
+    //   Total energy = −4.0776668457 Ha × 27.211386245988 eV/Ha
+    // (tools/tb_oracle/inputs/dftbplus/h2o_mio_scc/). Identical on 24.1 and on
+    // 25.1 (commit a23bfb2), so the pin is not version-bound.
+    constexpr double kDftbPlusEV = -110.9589675208;
+    constexpr double kAbsTolEV = 1e-4;
     if (std::fabs(e - kDftbPlusEV) > kAbsTolEV) {
-        std::printf("FAIL |E-DFTB+| = %.6f > tol %.3f eV (got %.8f)\n",
+        std::printf("FAIL |E-DFTB+| = %.3e > tol %.1e eV (got %.10f)\n",
                     std::fabs(e - kDftbPlusEV), kAbsTolEV, e);
         return 1;
     }
-    std::printf("  vs DFTB+ 24.1: pin %.4f  |dE|=%.6f eV (tol %.3f)\n",
-                kDftbPlusEV, std::fabs(e - kDftbPlusEV), kAbsTolEV);
+    std::printf("  vs DFTB+: pin %.10f  |dE|=%.3e eV (tol %.1e)\n", kDftbPlusEV,
+                std::fabs(e - kDftbPlusEV), kAbsTolEV);
 
     double f2 = 0;
     for (int i = 0; i < 3; ++i) {
@@ -100,6 +104,9 @@ int main() {
             g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
         cpu::Evaluate ev;
         cpu::semiempirical::DFTB2 d;
+        // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+        // geometry, so say so rather than letting a cutoff hide the images.
+        d.boundary = cpu::semiempirical::DftbBoundary::cluster;
         d.with_forces = false;
         d.scc_tol = 1e-10;
         ev.on(evaluate::Phase::evaluate).add(std::move(d));

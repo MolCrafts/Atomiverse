@@ -49,6 +49,9 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.with_forces = false;
     dftb.scc_tol = 1e-8;
     dftb.max_scc = 50;
@@ -56,15 +59,16 @@ int main() {
     eval.build();
     eval.run(frame);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
     const double e = frame.meta.get(kEnergy);
     const double err = std::fabs(e - kPin_eV);
-    std::printf("DFTB2 H2 r=0.74 A: E_ATV=%.8f eV  E_pin=%.8f eV  |dE|=%.3e eV\n",
-                e, kPin_eV, err);
-    std::printf("wall_atv_s=%.6f  (oracle cold ~0.15 s; ratio informative only)\n",
-                wall_s);
+    std::printf(
+        "DFTB2 H2 r=0.74 A: E_ATV=%.8f eV  E_pin=%.8f eV  |dE|=%.3e eV\n", e,
+        kPin_eV, err);
+    std::printf(
+        "wall_atv_s=%.6f  (oracle cold ~0.15 s; ratio informative only)\n",
+        wall_s);
 
     if (!std::isfinite(e)) {
         std::printf("FAIL non-finite energy\n");
