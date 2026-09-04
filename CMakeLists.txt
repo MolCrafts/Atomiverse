@@ -1050,6 +1050,44 @@ if(NOT ATV_DOCS_ONLY)
     find_package(BLAS REQUIRED)
     find_package(LAPACK REQUIRED)
 
+    # ── The Python extension must not use an OpenMP-flavour BLAS ────────
+    #
+    # An OpenBLAS built USE_OPENMP **deadlocks** in threaded `dgemm` once it is
+    # `dlopen`ed into CPython: every worker spins forever in `inner_thread`.
+    # Reproduced with nothing but `ctypes.CDLL(libopenblas.so)` and one
+    # `dgemm_` call at 1088x1088x256 — no numpy, no Atomiverse. The same
+    # library in a statically linked executable runs that GEMM at 415 GFLOP/s,
+    # which is why the C++ regressions and benchmarks never saw it.
+    #
+    # The failure mode is a silent hang, so warn at configure time rather than
+    # letting someone discover it as "the Python bindings are slow". OpenBLAS
+    # ships pthread and sequential flavours alongside the OpenMP one; both are
+    # dlopen-safe. Pass e.g.
+    #   -DBLAS_LIBRARIES=<prefix>/pthread/lp64/lib/libopenblas.so
+    #   -DLAPACK_LIBRARIES=<prefix>/pthread/lp64/lib/libopenblas.so
+    #
+    # Detection is by linkage, not by path: an OpenMP-flavour BLAS links
+    # libgomp/libomp, whatever directory it happens to live in.
+    if(ATV_BUILD_PYTHON AND BLAS_LIBRARIES)
+        list(GET BLAS_LIBRARIES 0 _atv_blas_first)
+        if(EXISTS "${_atv_blas_first}")
+            execute_process(COMMAND ldd "${_atv_blas_first}"
+                            OUTPUT_VARIABLE _atv_blas_ldd
+                            ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+            if(_atv_blas_ldd MATCHES "libgomp|libomp\\.so|libiomp5")
+                message(WARNING
+                    "ATV_BUILD_PYTHON is ON and BLAS '${_atv_blas_first}' is an "
+                    "OpenMP-threaded build (it links libgomp/libomp). Such a "
+                    "BLAS deadlocks in threaded GEMM when dlopen'ed into "
+                    "CPython — the extension will HANG on any system large "
+                    "enough to cross the BLAS threading threshold. Point "
+                    "BLAS_LIBRARIES/LAPACK_LIBRARIES at the pthread or "
+                    "sequential flavour instead.")
+            endif()
+        endif()
+
+    endif()
+
     if(ATV_BUILD_CUDA)
         target_include_directories(atomiverse PRIVATE src/cuda/neighbor)
     endif()
@@ -1250,6 +1288,39 @@ if(NOT ATV_DOCS_ONLY)
         nanobind_add_module(_atomiverse ${_ATV_NB_SRCS})
         target_link_libraries(_atomiverse PRIVATE atomiverse)
         target_include_directories(_atomiverse PRIVATE include python/src/bindings)
+
+        # ── Pin the extension to the BLAS it was linked against ────────
+        #
+        # OpenBLAS ships openmp / pthread / sequential flavours that all carry
+        # the SAME soname, `libopenblas.so.0`. The one that wins at run time is
+        # whichever directory comes first in the extension's DT_RPATH — and
+        # CMake fills that RPATH from the compiler's implicit link path, which
+        # on a module-based toolchain is the OpenMP flavour. -DBLAS_LIBRARIES
+        # therefore does NOT choose the runtime library, and neither does
+        # LD_LIBRARY_PATH, because DT_RPATH is searched first.
+        #
+        # That matters because the OpenMP flavour **deadlocks** in threaded
+        # GEMM once dlopen'ed into CPython (see the configure-time check near
+        # find_package(BLAS)). Put the linked BLAS's own directory at the head
+        # of the RPATH so the extension actually loads what it was built with.
+        if(BLAS_LIBRARIES)
+            list(GET BLAS_LIBRARIES 0 _atv_py_blas)
+            if(EXISTS "${_atv_py_blas}")
+                get_filename_component(_atv_py_blas_dir "${_atv_py_blas}" DIRECTORY)
+                # `BUILD_RPATH` is APPENDED after the implicit link
+                # directories, which is exactly the wrong end — the toolchain's
+                # own OpenBLAS directory sits in those. Emit the -rpath as a
+                # link option instead: CMake places LINK_OPTIONS ahead of the
+                # rpath flags it generates itself, and the loader takes the
+                # first DT_RPATH entry that resolves.
+                target_link_options(_atomiverse PRIVATE
+                                    "LINKER:-rpath,${_atv_py_blas_dir}")
+                set_property(TARGET _atomiverse APPEND PROPERTY
+                             INSTALL_RPATH "${_atv_py_blas_dir}")
+                message(STATUS
+                    "python extension BLAS rpath: ${_atv_py_blas_dir}")
+            endif()
+        endif()
         if(ATV_BUILD_PW)
             target_link_libraries(_atomiverse PRIVATE ${FFTW3_LIB})
         endif()
