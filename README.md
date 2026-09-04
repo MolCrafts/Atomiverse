@@ -116,6 +116,18 @@ for adding new examples.
 C++20, CMake ≥ 3.18, a C++ compiler, BLAS/LAPACK (OpenBLAS). The Gaussian-SCF
 methods need `-march=native`. Plane-wave DFT (`ATV_BUILD_PW`) needs FFTW3. The
 CUDA backend needs the CUDA toolkit and a GPU. A Rust toolchain is required to
-build the molrs I/O dependency (git submodule at `./molrs`; after clone run
-`git submodule update --init --recursive molrs`). xtensor is fetched
-automatically.
+build the molrs I/O dependency. molrs comes from one of two places:
+
+- **CI and plain `cmake -B build`** use the git submodule at `./molrs` (after
+  clone run `git submodule update --init --recursive molrs`); the gitlink pins
+  the newest *committed* molrs `dev` commit Atomiverse was verified against.
+- **Developer builds** (`cmake --preset cpu-unit` and every other preset in
+  `CMakePresets.json`) set `ATV_MOLRS_PATH=${sourceDir}/../molrs` — the
+  sibling MolCrafts checkout of molrs `dev`, whose **uncommitted** working
+  tree (the streaming `*.mrec` trajectory writer behind `cpu::MrecRecorder`)
+  no gitlink can capture. Clone `MolCrafts/molrs` next to this repo on `dev`.
+
+Either source is held to the same CXX API contract
+(`cmake/MolrsContract.cmake`); surfaces that only the dev tree has (the
+`TrajectoryWriter` bridge) are detected per pin and compiled out otherwise.
+xtensor is fetched automatically.

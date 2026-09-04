@@ -27,9 +27,14 @@ Dftb3Scc::Dftb3Scc(std::vector<double> hubbard_u,
             "Dftb3Scc: Hubbard derivative size " + std::to_string(ud_.size())
             + " != Hubbard U size " + std::to_string(u_.size()));
     if (r_.size() != u_.size() * u_.size())
-        throw std::invalid_argument(
-            "Dftb3Scc: distance matrix size " + std::to_string(r_.size())
-            + " != n^2 = " + std::to_string(u_.size() * u_.size()));
+        throw std::invalid_argument("Dftb3Scc: distance matrix size "
+                                    + std::to_string(r_.size()) + " != n^2 = "
+                                    + std::to_string(u_.size() * u_.size()));
+    for (double ud : ud_) {
+        if (ud == 0.0 || !std::isfinite(ud))
+            throw std::invalid_argument(
+                "Dftb3Scc: Hubbard derivative must be filled and all nonzero");
+    }
     n_ = static_cast<int>(u_.size());
 }
 

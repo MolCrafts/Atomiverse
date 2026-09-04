@@ -64,10 +64,13 @@ tools/tb_oracle/
 | `inputs/dftbplus/dftb2-periodic-gamma/` | DFTB+ | Γ-PBC C-chain geometry twin (ATV Hamiltonian pin) |
 | `inputs/dftbplus/dftb2-periodic-forces/` | DFTB+ | Off-eq Γ-PBC C-chain force twin (analytic vs re-SCC FD) |
 | `inputs/dftbplus/dftb2-kpoints/` | DFTB+ | 4×1×1 MP multi-k C-chain twin (`reg_dftb2-kpoints`; energy-only) |
+| `inputs/dftbplus/spin-dftb2-o2/` | DFTB+ 24.1 | Cluster O₂ triplet r=1.21 Å, `ShellResolvedSpin=No`, PBE \(W_{\mathrm{pp}}(\mathrm{O})=-0.028\) Ha (`reg_spin-dftb2-o2`; archived `dftb.out.txt`) |
+| `inputs/dftbplus/dftb2-spin-analytic-forces/` | DFTB+ 24.1 | Cluster O₂ triplet r=1.30 Å + forces (`reg_dftb2-spin-analytic-forces`; archived `dftb.out.txt`) |
+| `inputs/dftbplus/dftb2-spin-analytic-stress/` | DFTB+ 24.1 | Cluster tilted O₂ r=1.30 Å; energy+forces, **no cluster stress** (`reg_dftb2-spin-analytic-stress`; archived `dftb.out.txt`) |
 | `inputs/dftbplus/dftb0_h2.note` | DFTB+ | H₂ non-SCC DFTB0 pin twin (`reg_dftb0-h2`; shares the mio-1-1 H₂ transcript) |
-| `inputs/dftbplus/dftb3_h2o_mio_note.md` | DFTB+ | H₂O SCC-DFTB3 formula / module boundary (`reg_dftb3-water-mio`) |
-| `inputs/dftbplus/dftb2_analytic_forces_note.md` | DFTB+ | Formula-level force module boundary (MioSketch) |
-| `inputs/dftbplus/dftb2_spin_analytic_forces_note.md` | DFTB+ | Collinear open-shell force module boundary (O₂) |
+| `inputs/dftbplus/dftb3_h2o_mio_note.md` | DFTB+ | H₂O SCC-DFTB3 formula / module boundary (`reg_dftb3-water-mio`) — mixed mio SK + 3ob \(U^{\mathrm d}\), **not** `oracle: dftb+` |
+| `inputs/dftbplus/dftb2_analytic_forces_note.md` | DFTB+ | Formula-level force module boundary (no absolute DFTB+ run) |
+| `inputs/dftbplus/dftb2_spin_analytic_forces_note.md` | DFTB+ | Superseded by `dftb2-spin-analytic-forces/` (24.1 archive) |
 | `inputs/dftbplus/dftb2_analytic_forces_threeob_note.md` | DFTB+ | ThreeOb closed-form F vs re-SCC FD (formula) |
 | `inputs/dftbplus/dftb2_analytic_stress_note.md` | DFTB+ | Cell-stress module boundary (pair virial; formula) |
 | `inputs/dftbplus/dftb2-dispersion-d3/` | s-dftd3 | Water-dimer **molecular** D3(BJ) geometry twin (`reg_dftb2-dispersion-d3`) |

@@ -137,6 +137,23 @@ inline constexpr double pi = 3.14159265358979323846;
 /// Thermal energy: `kT [eV] = kB_ev_per_k * T [K]`.
 inline constexpr double kB_ev_per_k = 8.617333262e-5;
 
+// ── Pressure ────────────────────────────────────────────────────────
+//
+// Pressure on the public surface is **eV/Å³** — barostats, cell-relax
+// criteria and `kStress` all speak it. Literature and other engines quote
+// Pa / bar / atm, and callers were converting by hand from a factor written
+// in a doc comment. These are that factor, named.
+//
+//   P [eV/Å³] = pa_to_ev_per_a3 * P [Pa]
+//
+// 1 Pa = 1 J/m³ = (1/e) eV / 10³⁰ Å³ with e the elementary charge
+// (CODATA 2018 exact, 1.602176634e-19 C).
+inline constexpr double pa_to_ev_per_a3 = 6.241509074460763e-12;
+/// 1 bar = 10⁵ Pa.
+inline constexpr double bar_to_ev_per_a3 = 6.241509074460763e-7;
+/// 1 atm = 101325 Pa.
+inline constexpr double atm_to_ev_per_a3 = 6.324209069697368e-7;
+
 // ── MD "metal" internal coupling (LAMMPS convention) ────────────────
 //
 // Å / eV / fs / amu / K is not SI-consistent; these two factors make

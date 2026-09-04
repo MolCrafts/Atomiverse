@@ -3,27 +3,66 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "atomiverse/cpu/component/qm_engine.h"
 #include "atomiverse/cpu/component/semiempirical.h"
+#include "atomiverse/cpu/electronic/aspc_predictor.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/semiempirical/basis_data/dftb_spin_constants.h"
 #include "atomiverse/cpu/semiempirical/td_dftb2.h"
 
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief Which static SK parameter set DFTB2 uses.
+/// @brief Which static SK parameter set DFTB2 / DFTB3 uses.
 ///
-/// Parameters are a public member on the method (no `*Config` bag).
+/// Parameters are a public member on the method (no `*Config` bag). Hubbard
+/// derivatives \(U^{\mathrm d}\) and collinear spin constants \(W\) are
+/// **not** part of the SK set — they are explicit user input
+/// (`DFTB3::hubbard_du_ha`, `DFTB2::spin_w_ha`), both
+/// [Ha] (atomic units, as in DFTB+ HubbardDerivs / SpinConstants — NOT eV).
+/// Renaming `MioSketch` is out of scope.
 enum class DftbSkSet {
-    /// Mio path: H–H uses transcribed mio-1-1 grids; other H/C/N/O pairs use
-    /// exponential sketches (+ spin_W).
+    /// @brief Sentinel: the method has not been told which SK set to use.
+    ///
+    /// DFTB3 defaults here and will not pick a set — `DFTB3::launch` throws
+    /// `std::invalid_argument`. DFTB2 defaults to `MioSketch` and throws
+    /// `std::invalid_argument` from `DFTB2::launch` if the caller assigns
+    /// this value. Assignment itself does not throw.
+    Unset = -1,
+    /// DFTB.org **mio-1-1** H/C/N/O: onsite energies, Hubbard U, the full
+    /// two-centre SK grids and the spline repulsive, all transcribed from the
+    /// released `.skf` by `tools/gen_dftb_mio_tables.py`
+    /// (`basis_data/dftb_mio_sk_tables.h`).
+    ///
+    /// The name is historical: this path carried exponential sketches before
+    /// the SK transcription landed, and every pair has been real mio-1-1
+    /// since.
     MioSketch = 0,
     /// DFTB.org 3ob-3-1 organic CHNO radial tables (static header).
     ThreeOb = 1,
+};
+
+/// @brief Boundary treatment of the DFTB2 Hamiltonian and its SCC kernel.
+///
+/// This is the same fork DFTB+ makes through the geometry block: a `C`
+/// (cluster) geometry is an isolated molecule, an `S`/`F` geometry is a
+/// supercell. They are **different Hamiltonians**, not an approximation of one
+/// another — under `lattice` the second-order term carries the Ewald-summed
+/// \(1/R\) interaction of every periodic image, which does not vanish for a
+/// neutral cell because the charge distribution still has a dipole.
+enum class DftbBoundary {
+    /// Isolated molecule: no lattice images anywhere in \(H^0\), \(S\),
+    /// \(\gamma\) or the repulsive. DFTB+ `C` geometry.
+    cluster = 0,
+    /// 3-D lattice: image-summed \(H^0\)/\(S\)/repulsive inside the SK
+    /// cutoff and an **Ewald-summed** \(\gamma\). DFTB+ `S`/`F` geometry.
+    lattice = 1,
 };
 
 /// @brief SCC-DFTB2 energy (+ optional D3 dispersion, nuclear forces, cell
@@ -34,12 +73,16 @@ enum class DftbSkSet {
 /// polarization (Köhler / DFTB+ spin channel): dual α/β Fock matrices,
 /// Mulliken Δq and spin population m = Nα−Nβ.
 ///
-/// - `sk_set = MioSketch` (default): H–H from static mio-1-1
-///   (`basis_data/dftb_mio_hh_sk.h`, DFTB+ pin
-///   `regressions/semiempirical/dftb2-dftbplus-energy-pin/`); other pairs from
-///   exponential sketch (`dftb_mio_tables.h` + spin_W). **Γ-point PBC:**
-///   lattice-summed H⁰/S, screened γ, and repulsive within static SK cutoffs
-///   (molecular limit when L ≫ r_cut). **k-mesh beyond Γ:** set
+/// - `sk_set = MioSketch` (default): full mio-1-1 H/C/N/O SK + repulsive
+///   (`basis_data/dftb_mio_sk_tables.h`; DFTB+ pins
+///   `regressions/semiempirical/{dftb2-dftbplus-energy-pin,h2o_dftb2_mio}/`).
+///   **Γ-point PBC** (`boundary = lattice`): lattice-summed H⁰/S and
+///   repulsive within the SK cutoffs, and an **Ewald-summed** γ — the 1/R
+///   half of the SCC kernel is only conditionally convergent, so truncating it
+///   at a sphere is not an approximation but a different (non-positive-definite)
+///   operator. Set `boundary = cluster` for an isolated molecule; a large box
+///   is **not** a substitute, because Ewald has no cutoff to hide behind.
+///   **k-mesh beyond Γ:** set
 ///   `k_mesh = {n1,n2,n3}` (Monkhorst–Pack, CP2K/DFTB+ convention) for
 ///   Bloch-phased complex \(H^0(\mathbf{k})\), \(S(\mathbf{k})\), and
 ///   k-weighted SCC energy (`reg_dftb2-kpoints`). Default `{1,1,1}` keeps the
@@ -95,6 +138,7 @@ enum class DftbSkSet {
 /// @code
 ///   cpu::semiempirical::DFTB2 dftb;
 ///   dftb.multiplicity = 3;   // O2 triplet (MioSketch)
+///   dftb.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;
 ///   dftb.d3 = true;
 ///   dftb.with_forces = true;
 ///   dftb.with_stress = true;
@@ -112,7 +156,7 @@ enum class DftbSkSet {
 /// @endcode
 class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
   public:
-    /// @brief SCC residual tolerance on max |Δq| (and |Δm| when open shell).
+    /// @brief SCC residual tolerance on max |Δq| (and |Δm| when open shell) [e].
     double scc_tol = 1e-8;
     /// @brief Maximum SCC iterations (dimensionless). Exhausting it throws.
     int max_scc = 50;
@@ -147,6 +191,26 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     bool with_stress = false;
     /// @brief Static SK parameter set (member — not a Config bag).
     DftbSkSet sk_set = DftbSkSet::MioSketch;
+    /// @brief Cluster or lattice Hamiltonian. Default `lattice`.
+    ///
+    /// A Frame always carries a `Box`, so the box alone cannot say whether the
+    /// caller means a crystal or a molecule in a large empty cell; the method
+    /// has to be told, exactly as DFTB+ is told by the geometry type. The
+    /// default is `lattice` because a declared cell is a declared lattice —
+    /// an isolated molecule must **say so**, rather than relying on a cutoff
+    /// to hide its own images.
+    ///
+    /// `k_mesh` beyond Γ requires `lattice` and throws under `cluster`.
+    DftbBoundary boundary = DftbBoundary::lattice;
+    /// @brief Ewald real-space cutoff for the periodic \(\gamma\) [Å].
+    ///
+    /// Also fixes the splitting parameter \(\alpha\) through the LAMMPS
+    /// heuristic \(\alpha=(1.35-0.15\ln\varepsilon)/r_c\). Energy is
+    /// invariant to this choice; it trades real-space against reciprocal work.
+    /// Ignored under `cluster`.
+    double ewald_cutoff = 10.0;
+    /// @brief Ewald relative accuracy in (0, 1); sets the \(|k|\) cutoff.
+    double ewald_accuracy = 1e-8;
     /// @brief Net molecular charge [e] (subtracted from valence electron count).
     int charge = 0;
     /// @brief Spin multiplicity 2S+1 (dimensionless). Default 1 = closed shell.
@@ -208,16 +272,113 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// See `.claude/notes/dftb-plus-u.md`.
     std::array<double, 96> u_eff{};
 
+    /// @brief Per-element collinear spin constants \(W^A_{ll'}\)
+    ///        [Ha] (atomic units, as in DFTB+ HubbardDerivs / SpinConstants — NOT eV).
+    ///
+    /// Empty = unset. Required when the spin channel is taken
+    /// (`multiplicity != 1` on `launch()`, or `TdDftbChannel::triplet` on
+    /// `td_casida()`); otherwise ignored. The published PBE table is
+    /// `basis_data::kDftbSpinConstantsPbeHa`.
+    ///
+    /// `launch()` / `td_casida()` convert Ha→eV with `units::kHartreeInEv`
+    /// and collapse the shell matrix to the highest-occupied atomic orbital
+    /// (HOAO) diagonal: H \(W_{ss}=w_{ha}[0][0]\), C/N/O
+    /// \(W_{pp}=w_{ha}[1][1]\). The implemented spin energy [eV] is then
+    ///
+    /// \[
+    ///   E_{\mathrm{spin}}=\tfrac12\sum_A W_A\, m_A^2
+    /// \]
+    ///
+    /// with \(W_A\) that HOAO scalar [eV] and
+    /// \(m_A=N_{\alpha,A}-N_{\beta,A}\) the Mulliken spin population [e].
+    /// This is DFTB+ `ShellResolvedSpin = No`. Setting
+    /// `shell_resolved_spin` true throws (`dftb-shell-resolved-spin`); the
+    /// unimplemented shell-resolved path (per-shell Mulliken spin \(p_{Al}\)
+    /// [e] contracted with the full \(W_{ll'}\) matrix) is not computed.
+    std::vector<basis_data::DftbSpinConstant> spin_w_ha{};
+
+    /// @brief When true, request DFTB+ `ShellResolvedSpin = Yes` (unimplemented).
+    ///
+    /// Default path collapses `spin_w_ha` [Ha] to the highest-occupied
+    /// atomic orbital (HOAO) diagonal and converts Ha→eV, equivalent to
+    /// DFTB+ `ShellResolvedSpin = No`. `true` throws `std::runtime_error`
+    /// naming `dftb-shell-resolved-spin` when the spin channel is taken.
+    bool shell_resolved_spin = false;
+
     DFTB2() = default;
 
+    /// @brief Extrapolate the SCC starting charges from previous launches.
+    ///
+    /// Along a trajectory the converged Mulliken \f$\Delta q\f$ is a smooth
+    /// function of time, so the previous steps predict the next one. Kolafa's
+    /// always-stable predictor–corrector (`electronic::ASPCPredictor`, the
+    /// same one Gaussian SCF and GPW use on the density matrix) is applied to
+    /// the \f$[\Delta q, m]\f$ vector, which is the layout `ChargeMixer`
+    /// already mixes.
+    ///
+    /// This changes **where the SCC starts, never where it converges**: the
+    /// residual gate is unchanged, so the energy is the same to `scc_tol` and
+    /// only the iteration count moves. History resets automatically when the
+    /// atom count changes; call `reset_predictor()` after any other geometry
+    /// discontinuity.
+    ///
+    /// Off by default — a single point has no history to extrapolate from.
+    ///
+    /// @param order Lagrange extrapolation order K (dimensionless, ≥ 0).
+    ///              Prediction needs K+1 recorded steps.
+    /// @return `*this`, so the call chains into a component registration.
+    /// @throws std::invalid_argument when `order < 0`.
+    DFTB2& predictor(int order = 3) & {
+        dq_predictor_.emplace(order);
+        predictor_n_at_ = 0;
+        return *this;
+    }
+
+    /// @brief Rvalue overload of @ref predictor, for
+    ///        `on(phase).add(DFTB2{}.predictor(3))`.
+    /// @param order Lagrange extrapolation order K (dimensionless, ≥ 0).
+    DFTB2&& predictor(int order = 3) && {
+        dq_predictor_.emplace(order);
+        predictor_n_at_ = 0;
+        return std::move(*this);
+    }
+
+    /// @brief Drop the extrapolation history (geometry discontinuity/restart).
+    ///        No-op when no predictor is armed.
+    void reset_predictor() {
+        if (dq_predictor_)
+            dq_predictor_->reset();
+        predictor_n_at_ = 0;
+    }
+
+    /// @brief Component name token `"dftb2"` (dimensionless).
     std::string name() const override { return "dftb2"; }
 
+    /// @brief No-op; DFTB2 allocates no per-run workspace in `build`.
+    /// @param ctx Driver build context (unused).
     void build(const BuildContext& ctx) override;
+
+    /// @brief One SCC-DFTB2 evaluation; writes `kEnergy` [eV] to `frame`.
+    ///
+    /// Optional: `with_forces` writes \(F=-\nabla E\) [eV/Å]; `with_stress`
+    /// writes intensive `kStress` [eV/Å³].
+    ///
+    /// @param ctx Driver launch context (non-owning `frame` + services).
+    /// @throws std::invalid_argument when `sk_set` is `Unset`, when
+    ///         `multiplicity != 1` and `spin_w_ha` is empty, when the Frame
+    ///         is empty, or when a numeric parameter is out of range.
+    /// @throws std::runtime_error when `shell_resolved_spin` is true on an
+    ///         open-shell run, or when a requested SK / k-mesh / boundary
+    ///         combination is not implemented.
     void launch(const LaunchContext& ctx) override;
 
-    // ── QmEngine (esmm-qmmm-02) — one-line Component forwards ─────────
+    /// @brief `QmEngine` name token; same as `name()` (`"dftb2"`).
     std::string qm_engine_name() const override { return name(); }
+    /// @brief `QmEngine` prepare; forwards to `build`.
+    /// @param qm_ctx Driver build context (unused by DFTB2).
     void prepare(const BuildContext& qm_ctx) override { build(qm_ctx); }
+    /// @brief `QmEngine` evaluate; forwards to `launch`.
+    /// @param qm_ctx Driver launch context (non-owning `frame` + services).
     void evaluate(const LaunchContext& qm_ctx) override { launch(qm_ctx); }
     // as_embedding() default nullptr
 
@@ -226,6 +387,26 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
 
     /// @brief Last D3(BJ) dispersion energy [eV] (0 when `d3` is false).
     double last_e_disp() const { return e_disp_; }
+
+    /// @brief Last band-structure energy \(\sum_i n_i \varepsilon_i\) [eV].
+    ///
+    /// The same quantity DFTB+ prints as `Band energy` in `detailed.out`,
+    /// k-weighted on a mesh and summed over both spin channels when open
+    /// shell. It is **not** \(\mathrm{Tr}(\rho H^0)\): the SCC shift is in
+    /// \(H\), so this carries \(\sum_A V_A q_A\) on the gross Mulliken
+    /// population. Exposed so an oracle residual can be bisected term by term
+    /// rather than only on the total.
+    double last_e_band() const { return e_band_; }
+
+    /// @brief Last second-order SCC energy \(\tfrac12\sum_{AB}\gamma_{AB}
+    ///        \Delta q_A\Delta q_B\) [eV] — DFTB+ `Energy SCC`.
+    double last_e_scc() const { return e_scc_; }
+
+    /// @brief Last pair repulsive energy [eV] — DFTB+ `Repulsive energy`.
+    ///
+    /// `last_energy() - last_e_rep()` is DFTB+'s `Total Electronic energy`
+    /// (before any D3 / +U add-on).
+    double last_e_rep() const { return e_rep_; }
 
     /// @brief Last DFTB+U Dudarev correction [eV] (0 when all `u_eff` are 0).
     double last_e_u() const { return e_u_; }
@@ -257,8 +438,12 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// \(K^{S}_{ia,jb}=\sum_{AB}q^{ia}_A\gamma_{AB}q^{jb}_B\) (singlet, the
     /// same \(\gamma_{AB}\) [eV] as the SCC energy) or
     /// \(K^{T}_{ia,jb}=\sum_{A}q^{ia}_A W_A q^{jb}_A\) (triplet, on-site
-    /// magnetization kernel, atom-averaged spin constant \(W_A\) [eV]); the
-    /// Hermitian eigenproblem \(\Omega F=\omega^2 F\) with
+    /// magnetization kernel). \(W_A\) [eV] is the highest-occupied atomic
+    /// orbital (HOAO) diagonal of `spin_w_ha` (H \(W_{ss}\), C/N/O
+    /// \(W_{pp}\)) converted Ha→eV with `units::kHartreeInEv`; `spin_w_ha`
+    /// itself is
+    /// [Ha] (atomic units, as in DFTB+ HubbardDerivs / SpinConstants — NOT eV).
+    /// The Hermitian eigenproblem \(\Omega F=\omega^2 F\) with
     /// \(\Omega_{ia,jb}=\delta_{ij}\delta_{ab}(\varepsilon_a-\varepsilon_i)^2
     /// +2\sqrt{\varepsilon_a-\varepsilon_i}\,K_{ia,jb}\,
     /// \sqrt{\varepsilon_b-\varepsilon_j}\) is solved densely.
@@ -269,12 +454,10 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// where) `launch()` last ran. Cost is one extra SCC solve.
     ///
     /// **Energies + oscillator strengths** (length form, singlet). No
-    /// excited-state gradients. **Parameter caveat:** only the H onsite /
-    /// Hubbard \(U\) and the H–H Slater–Koster + repulsive grids are
-    /// transcribed mio-1-1; every other `MioSketch` pair (and every spin
-    /// constant \(W_A\), including H's) is an order-of-magnitude sketch, so
-    /// absolute excitation energies are not DFTB+/mio-1-1 numbers for anything
-    /// but the structural limits gated in
+    /// excited-state gradients. The triplet kernel needs `spin_w_ha` (HOAO
+    /// collapse of the published PBE table); empty `spin_w_ha` throws.
+    /// Absolute excitation energies are not DFTB+/mio-1-1 numbers for
+    /// anything but the structural limits gated in
     /// `regressions/semiempirical/td-dftb-h2/`.
     ///
     /// @param frame          Geometry [Å] + atomic number Z in the type column.
@@ -295,13 +478,15 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     ///         the assembled Casida matrix Ω [eV²].
     /// @throws std::runtime_error when `sk_set != MioSketch`, when a k-mesh
     ///         beyond Γ is set, when the reference is not closed shell
-    ///         (`multiplicity != 1` or an odd electron count), when there is
-    ///         no occupied or no virtual orbital, when the pair space exceeds
-    ///         the dense cap of 512, when an occupied→virtual gap is
-    ///         non-positive, or when a Casida root ω² is negative (an
+    ///         (`multiplicity != 1` or an odd electron count), when
+    ///         `shell_resolved_spin` is true on the triplet channel, when
+    ///         there is no occupied or no virtual orbital, when the pair
+    ///         space exceeds the dense cap of 512, when an occupied→virtual
+    ///         gap is non-positive, or when a Casida root ω² is negative (an
     ///         imaginary excitation — instability). No fallback values.
     /// @throws std::invalid_argument when `n_states`, either window, or
-    ///         `coupling_scale` is out of range.
+    ///         `coupling_scale` is out of range, or when `channel` is
+    ///         `triplet` and `spin_w_ha` is empty.
     TdDftbResult td_casida(const Frame& frame, int n_states,
                            TdDftbChannel channel = TdDftbChannel::singlet,
                            int n_occ_window = 0, int n_virt_window = 0,
@@ -309,8 +494,13 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
 
   private:
     double energy_ = 0;
+    double e_band_ = 0;
+    double e_scc_ = 0;
+    double e_rep_ = 0;
     double e_disp_ = 0;
     double e_u_ = 0;
+    std::optional<electronic::ASPCPredictor> dq_predictor_;
+    int predictor_n_at_ = 0;
     double scc_residual_ = 0;
     int scc_iterations_ = 0;
     std::array<double, 6> last_stress_{};

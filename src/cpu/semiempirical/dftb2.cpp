@@ -1,5 +1,5 @@
 /// @file src/cpu/semiempirical/dftb2.cpp
-/// SCC-DFTB2 multi-element: mio-1-1 H–H pin + sketch (spin + analytic F) + 3ob.
+/// SCC-DFTB2 multi-element: mio-1-1 SK, explicit collinear spin (`spin_w_ha`), analytic F, 3ob.
 /// Closed-shell analytic nuclear forces on BOTH SK sets; MioSketch runs closed
 /// shell AND collinear open shell through ONE spin-resolved closed-form
 /// gradient + pair-virial cell stress (`analytic_forces_stress`).
@@ -29,14 +29,93 @@
 #include "atomiverse/cpu/semiempirical/basis_data/dftb_3ob_tables.h"
 #include "atomiverse/cpu/semiempirical/basis_data/dftb_mio_tables.h"
 #include "atomiverse/cpu/semiempirical/internal/dftb_gamma.h"
+#include "atomiverse/cpu/semiempirical/internal/dftb_gamma_lattice.h"
+#include "atomiverse/cpu/semiempirical/internal/dftb_spin.h"
 #include "atomiverse/cpu/semiempirical/internal/mio_sk_block.h"
 #include "atomiverse/cpu/semiempirical/internal/mio_sk_table.h"
 #include "atomiverse/cpu/semiempirical/internal/scc_mixer.h"
+
+// Column-major GEMM. Spelled out here rather than reached through
+// xtensor-blas for the same reason `eigensolve.h` declares its LAPACK entry
+// points by hand: these are rank-k updates on raw buffers in the SCC inner
+// loop, and they must not go through an expression-template temporary.
+extern "C" {
+void dgemm_(const char* transa, const char* transb, const int* m, const int* n,
+            const int* k, const double* alpha, const double* a, const int* lda,
+            const double* b, const int* ldb, const double* beta, double* c,
+            const int* ldc);
+}
 
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
 namespace {
+
+/// @brief Density matrix \f$P = f\,C_{occ}C_{occ}^{\mathsf T}\f$ [e].
+///
+/// A rank-`n_occ` update, i.e. one GEMM. Written as a scalar triple loop this
+/// is `n_occ * n_ao^2` element accesses with the inner index striding the
+/// leading dimension — 7.2e9 cache-hostile accesses **per SCC iteration** at
+/// n_ao = 2432.
+void build_density(const linalg::RealMatrix& C, int n_ao, int n_occ,
+                   double fill, linalg::RealMatrix& P) {
+    const double beta = 0.0;
+    dgemm_("N", "T", &n_ao, &n_ao, &n_occ, &fill, C.data(), &n_ao, C.data(),
+           &n_ao, &beta, P.data(), &n_ao);
+}
+
+/// @brief Density \f$P=f\,C_{occ}C_{occ}^{\mathsf T}\f$ and its
+///        energy-weighted partner \f$W=f\,C_{occ}\,\mathrm{diag}(\varepsilon)
+///        \,C_{occ}^{\mathsf T}\f$ [e], [eV·e].
+///
+/// Two GEMMs sharing one scaled copy of the occupied block. As scalar triple
+/// loops the pair costs `2 * n_occ * n_ao^2` strided accesses per spin channel
+/// — 2.9e10 for a 1088-atom cell, which was 83% of a single-point run.
+void build_density_weighted(const linalg::RealMatrix& C,
+                            const linalg::RealVector& eps_orb, int n_ao,
+                            int n_occ, double fill, linalg::RealMatrix& P,
+                            linalg::RealMatrix& W,
+                            std::vector<double>& scaled) {
+    const double beta = 0.0;
+    dgemm_("N", "T", &n_ao, &n_ao, &n_occ, &fill, C.data(), &n_ao, C.data(),
+           &n_ao, &beta, P.data(), &n_ao);
+    scaled.resize(static_cast<std::size_t>(n_ao)
+                  * static_cast<std::size_t>(n_occ));
+    for (int o = 0; o < n_occ; ++o) {
+        const double e = eps_orb(o);
+        const double* col =
+            C.data()
+            + static_cast<std::size_t>(o) * static_cast<std::size_t>(n_ao);
+        double* dst =
+            scaled.data()
+            + static_cast<std::size_t>(o) * static_cast<std::size_t>(n_ao);
+        for (int mu = 0; mu < n_ao; ++mu)
+            dst[mu] = e * col[mu];
+    }
+    dgemm_("N", "T", &n_ao, &n_ao, &n_occ, &fill, scaled.data(), &n_ao,
+           C.data(), &n_ao, &beta, W.data(), &n_ao);
+}
+
+/// @brief Diagonal of \f$PS\f$ — the Mulliken AO populations.
+///
+/// \f$(PS)_{\mu\mu}=\sum_\nu P_{\mu\nu}S_{\nu\mu}\f$ and both matrices are
+/// symmetric, so this is a column-wise elementwise product: \f$O(N^2)\f$.
+/// Forming the whole \f$PS\f$ product to read its diagonal is \f$O(N^3)\f$
+/// for the same numbers.
+void ps_diagonal(const linalg::RealMatrix& P, const linalg::RealMatrix& S,
+                 int n_ao, std::vector<double>& out) {
+    out.assign(static_cast<std::size_t>(n_ao), 0.0);
+    const double* __restrict pd = P.data();
+    const double* __restrict sd = S.data();
+    for (int nu = 0; nu < n_ao; ++nu) {
+        const std::size_t off =
+            static_cast<std::size_t>(nu) * static_cast<std::size_t>(n_ao);
+        const double* __restrict pc = pd + off;
+        const double* __restrict sc = sd + off;
+        for (int mu = 0; mu < n_ao; ++mu)
+            out[static_cast<std::size_t>(mu)] += pc[mu] * sc[mu];
+    }
+}
 
 using basis_data::Dftb3obElement;
 using basis_data::Dftb3obPair;
@@ -186,9 +265,8 @@ std::vector<LatVec> enumerate_lattice(const Mat3& cell, double max_cut) {
     return out;
 }
 
-std::vector<LatVec>
-lattice_images_for(const cpu::Box& box,
-                   const std::vector<const DftbElementRow*>& el) {
+/// Longest range at which any mio SK / short-range γ term is still nonzero [Å].
+double max_sk_cutoff(const std::vector<const DftbElementRow*>& el) {
     double max_cut = 0;
     for (const auto* e : el)
         max_cut = std::max(max_cut, e->r_cut);
@@ -197,9 +275,37 @@ lattice_images_for(const cpu::Box& box,
         const auto& p = basis_data::kMioSkPairs[i];
         max_cut = std::max(max_cut, internal::MioSkTable{p.za, p.zb}.cutoff());
     }
-    if (max_cut < 1e-12)
-        max_cut = 1.0;
-    return enumerate_lattice(box.cell(), max_cut);
+    return (max_cut < 1e-12) ? 1.0 : max_cut;
+}
+
+std::vector<LatVec>
+lattice_images_for(const cpu::Box& box,
+                   const std::vector<const DftbElementRow*>& el) {
+    return enumerate_lattice(box.cell(), max_sk_cutoff(el));
+}
+
+/// Build the geometry-fixed SCC charge kernel γ for one launch.
+///
+/// γ depends on the geometry alone, so it is assembled **once** here rather
+/// than re-derived per (a, b) inside the SCC loop — which is also what makes
+/// the Ewald treatment of its 1/R half affordable.
+internal::GammaLattice build_gamma(const std::vector<const DftbElementRow*>& el,
+                                   const StorageReal* x, const StorageReal* y,
+                                   const StorageReal* z, const cpu::Box& box,
+                                   bool periodic, double ewald_cutoff,
+                                   double ewald_accuracy) {
+    const std::size_t n = el.size();
+    std::vector<double> u(n), xa(n), ya(n), za(n);
+    for (std::size_t a = 0; a < n; ++a) {
+        u[a] = el[a]->hubbard_u;
+        xa[a] = static_cast<double>(x[a]);
+        ya[a] = static_cast<double>(y[a]);
+        za[a] = static_cast<double>(z[a]);
+    }
+    return internal::GammaLattice{
+        static_cast<int>(n), u.data(), xa.data(), ya.data(),
+        za.data(),           box,      periodic,  ewald_cutoff,
+        ewald_accuracy};
 }
 
 /// dγ/dR [eV/Å] for the DFTB+ Elstner form.
@@ -241,8 +347,24 @@ Occupancy resolve_occupancy(double n_elec, int multiplicity) {
     return occ;
 }
 
+/// @brief The three energy lines DFTB+ prints in `detailed.out`, in ATV units.
+///
+/// Carried out of the launch paths purely so a caller can bisect a residual
+/// against the oracle term by term. All [eV].
+struct EnergyTerms {
+    double band = 0;      ///< Σ_i n_i ε_i — DFTB+ "Band energy"
+    double scc = 0;       ///< ½ Σ γ Δq Δq — DFTB+ "Energy SCC"
+    double repulsive = 0; ///< pair repulsive — DFTB+ "Repulsive energy"
+};
+
 struct SccResult {
     double energy = 0;
+    /// Σ_i n_i ε_i [eV] — the DFTB+ `detailed.out` "Band energy" line.
+    double e_band = 0;
+    /// ½ Σ_AB γ_AB Δq_A Δq_B [eV] — DFTB+ "Energy SCC".
+    double e_scc = 0;
+    /// Pair repulsive sum [eV] — DFTB+ "Repulsive energy".
+    double e_rep = 0;
     double residual = 0;
     int iterations = 0;
     std::vector<double> dq;
@@ -297,6 +419,12 @@ void build_h0_s(int n_at, int n_ao,
     }
 
     // Lattice sum over ordered pairs (a,b) and images T of B.
+    //
+    // Threaded over A: `add_block` writes rows ia..ia+na of H0/S, and those
+    // rows belong to A alone, so ordered pairs need no synchronisation.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 8)
+#endif
     for (int a = 0; a < n_at; ++a) {
         const auto& ea = *el[static_cast<std::size_t>(a)];
         const int ia = ao0[static_cast<std::size_t>(a)];
@@ -416,16 +544,24 @@ SccResult scc_energy_restricted(int n_at, int n_ao, int n_occ,
                                 const std::vector<int>& ao0, const int* type,
                                 const StorageReal* x, const StorageReal* y,
                                 const StorageReal* z, const cpu::Box& box,
-                                double scc_tol, int max_scc, double mix_beta) {
+                                const internal::GammaLattice& gam,
+                                double scc_tol, int max_scc, double mix_beta,
+                                const double* dq_guess) {
     linalg::RealMatrix H0, S;
     build_h0_s(n_at, n_ao, el, ao0, type, x, y, z, box, H0, S);
 
     const std::size_t n = static_cast<std::size_t>(n_at);
+    // A neutral start is only the *default* guess; an MD caller can hand over
+    // an extrapolated Δq from previous steps, which is what makes the SCC
+    // cheap without changing where it converges.
     std::vector<double> dq(n, 0.0);
+    if (dq_guess)
+        std::copy(dq_guess, dq_guess + n, dq.begin());
     std::vector<double> dq_out(n, 0.0);
     linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
     linalg::RealMatrix C = xt::zeros<double>({n_ao, n_ao});
     linalg::RealVector eps = xt::zeros<double>({n_ao});
+    std::vector<double> ps_diag;
     double residual = 0;
     int iterations = 0;
     bool converged = false;
@@ -437,8 +573,7 @@ SccResult scc_energy_restricted(int n_at, int n_ao, int n_occ,
         for (int a = 0; a < n_at; ++a) {
             double shift = 0;
             for (int b = 0; b < n_at; ++b)
-                shift += gamma_pair(a, b, el, x, y, z, box)
-                         * dq[static_cast<std::size_t>(b)];
+                shift += gam.pair(a, b) * dq[static_cast<std::size_t>(b)];
             dV[static_cast<std::size_t>(a)] = shift;
         }
         linalg::RealMatrix H;
@@ -447,20 +582,16 @@ SccResult scc_energy_restricted(int n_at, int n_ao, int n_occ,
         eps = sol.first;
         C = sol.second;
 
-        P = xt::zeros<double>({n_ao, n_ao});
-        for (int o = 0; o < n_occ; ++o)
-            for (int mu = 0; mu < n_ao; ++mu)
-                for (int nu = 0; nu < n_ao; ++nu)
-                    P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
+        build_density(C, n_ao, n_occ, 2.0, P);
 
-        linalg::RealMatrix PS = xt::linalg::dot(P, S);
+        ps_diagonal(P, S, n_ao, ps_diag);
         residual = 0;
         for (int a = 0; a < n_at; ++a) {
             double qa = 0;
             const int ia = ao0[static_cast<std::size_t>(a)];
             const int na = el[static_cast<std::size_t>(a)]->n_ao;
             for (int i = 0; i < na; ++i)
-                qa += PS(ia + i, ia + i);
+                qa += ps_diag[static_cast<std::size_t>(ia + i)];
             dq_out[static_cast<std::size_t>(a)] =
                 qa - el[static_cast<std::size_t>(a)]->n_val;
             residual =
@@ -481,16 +612,22 @@ SccResult scc_energy_restricted(int n_at, int n_ao, int n_occ,
     double e_scc = 0;
     for (int a = 0; a < n_at; ++a)
         for (int b = 0; b < n_at; ++b)
-            e_scc += 0.5 * gamma_pair(a, b, el, x, y, z, box)
-                     * dq[static_cast<std::size_t>(a)]
+            e_scc += 0.5 * gam.pair(a, b) * dq[static_cast<std::size_t>(a)]
                      * dq[static_cast<std::size_t>(b)];
+
+    const double e_rep = repulsive_energy(n_at, type, x, y, z, box, el);
+    double e_band = 0;
+    for (int o = 0; o < n_occ; ++o)
+        e_band += 2.0 * eps(o);
 
     SccResult out;
     // E = Tr(ρH⁰) + E² + E_rep. NOT E_band − E²: the band energy is
     // Tr(ρH⁰) + Σ_A V_A q_A with the GROSS Mulliken population, so that route
     // leaves a spurious Σ_A V_A q⁰_A which is linear in Δq.
-    out.energy = trace_product(P, H0) + e_scc
-                 + repulsive_energy(n_at, type, x, y, z, box, el);
+    out.energy = trace_product(P, H0) + e_scc + e_rep;
+    out.e_band = e_band;
+    out.e_scc = e_scc;
+    out.e_rep = e_rep;
     out.residual = residual;
     out.iterations = iterations;
     out.dq = std::move(dq);
@@ -747,7 +884,8 @@ SccResult scc_energy_restricted_kmesh(
     int n_at, int n_ao, int n_occ, const std::vector<const DftbElementRow*>& el,
     const std::vector<int>& ao0, const int* type, const StorageReal* x,
     const StorageReal* y, const StorageReal* z, const cpu::Box& box,
-    double scc_tol, int max_scc, double mix_beta, const int mesh[3],
+    const internal::GammaLattice& gam, double scc_tol, int max_scc,
+    double mix_beta, const double* dq_guess, const int mesh[3],
     bool time_reversal) {
     if (n_occ > n_ao)
         throw std::runtime_error(
@@ -761,7 +899,12 @@ SccResult scc_energy_restricted_kmesh(
                      H0k[ik], Sk[ik]);
 
     const std::size_t n = static_cast<std::size_t>(n_at);
+    // A neutral start is only the *default* guess; an MD caller can hand over
+    // an extrapolated Δq from previous steps, which is what makes the SCC
+    // cheap without changing where it converges.
     std::vector<double> dq(n, 0.0);
+    if (dq_guess)
+        std::copy(dq_guess, dq_guess + n, dq.begin());
     std::vector<double> dq_out(n, 0.0);
     double residual = 0;
     int iterations = 0;
@@ -779,8 +922,7 @@ SccResult scc_energy_restricted_kmesh(
         for (int a = 0; a < n_at; ++a) {
             double shift = 0;
             for (int b = 0; b < n_at; ++b)
-                shift += gamma_pair(a, b, el, x, y, z, box)
-                         * dq[static_cast<std::size_t>(b)];
+                shift += gam.pair(a, b) * dq[static_cast<std::size_t>(b)];
             dV[static_cast<std::size_t>(a)] = shift;
         }
 
@@ -834,13 +976,15 @@ SccResult scc_energy_restricted_kmesh(
 
     // Rebuild final densities from the converged dq (last Pk is from the
     // residual check with dq_out; re-evaluate once for energy consistency).
+    // Σ_i n_i ε_i (k-weighted) is accumulated here — the DFTB+ "Band energy"
+    // line, which is NOT the Tr(ρH⁰) that assembles the total below.
+    double e_band_neps = 0;
     {
         std::vector<double> dV(n, 0.0);
         for (int a = 0; a < n_at; ++a) {
             double shift = 0;
             for (int b = 0; b < n_at; ++b)
-                shift += gamma_pair(a, b, el, x, y, z, box)
-                         * dq[static_cast<std::size_t>(b)];
+                shift += gam.pair(a, b) * dq[static_cast<std::size_t>(b)];
             dV[static_cast<std::size_t>(a)] = shift;
         }
         for (std::size_t ik = 0; ik < nk; ++ik) {
@@ -859,6 +1003,7 @@ SccResult scc_energy_restricted_kmesh(
                         P(mu, nu) += 2.0 * cc;
                         W(mu, nu) += 2.0 * e_o * cc;
                     }
+                e_band_neps += kpts[ik].weight * 2.0 * e_o;
             }
             Pk[ik] = std::move(P);
             Wk[ik] = std::move(W);
@@ -872,13 +1017,16 @@ SccResult scc_energy_restricted_kmesh(
     double e_scc = 0;
     for (int a = 0; a < n_at; ++a)
         for (int b = 0; b < n_at; ++b)
-            e_scc += 0.5 * gamma_pair(a, b, el, x, y, z, box)
-                     * dq[static_cast<std::size_t>(a)]
+            e_scc += 0.5 * gam.pair(a, b) * dq[static_cast<std::size_t>(a)]
                      * dq[static_cast<std::size_t>(b)];
 
+    const double e_rep = repulsive_energy(n_at, type, x, y, z, box, el);
+
     SccResult out;
-    out.energy =
-        e_band + e_scc + repulsive_energy(n_at, type, x, y, z, box, el);
+    out.energy = e_band + e_scc + e_rep;
+    out.e_band = e_band_neps;
+    out.e_scc = e_scc;
+    out.e_rep = e_rep;
     out.residual = residual;
     out.iterations = iterations;
     out.dq = std::move(dq);
@@ -897,8 +1045,11 @@ SccResult scc_energy_unrestricted(int n_at, int n_ao, int n_alpha, int n_beta,
                                   const std::vector<int>& ao0, const int* type,
                                   const StorageReal* x, const StorageReal* y,
                                   const StorageReal* z, const cpu::Box& box,
-                                  double scc_tol, int max_scc,
-                                  double mix_beta) {
+                                  const internal::GammaLattice& gam,
+                                  double scc_tol, int max_scc, double mix_beta,
+                                  const double* dq_guess,
+                                  const double* spin_guess,
+                                  const std::vector<double>& spin_w_ev) {
     if (n_alpha > n_ao || n_beta > n_ao)
         throw std::runtime_error("DFTB2: n_alpha/n_beta exceeds basis size");
 
@@ -908,10 +1059,14 @@ SccResult scc_energy_unrestricted(int n_at, int n_ao, int n_alpha, int n_beta,
     const std::size_t n = static_cast<std::size_t>(n_at);
     std::vector<double> dq(n, 0.0);
     std::vector<double> mspin(n, 0.0);
+    if (dq_guess)
+        std::copy(dq_guess, dq_guess + n, dq.begin());
+    if (spin_guess)
+        std::copy(spin_guess, spin_guess + n, mspin.begin());
     std::vector<double> dq_out(n, 0.0);
     std::vector<double> mspin_out(n, 0.0);
     // Seed high-spin magnetization so the first iteration is not spin-null.
-    if (n_alpha != n_beta) {
+    if (!spin_guess && n_alpha != n_beta) {
         const double m_tot = static_cast<double>(n_alpha - n_beta);
         for (int a = 0; a < n_at; ++a)
             mspin[static_cast<std::size_t>(a)] =
@@ -937,11 +1092,10 @@ SccResult scc_energy_unrestricted(int n_at, int n_ao, int n_alpha, int n_beta,
         for (int a = 0; a < n_at; ++a) {
             double shift = 0;
             for (int b = 0; b < n_at; ++b)
-                shift += gamma_pair(a, b, el, x, y, z, box)
-                         * dq[static_cast<std::size_t>(b)];
+                shift += gam.pair(a, b) * dq[static_cast<std::size_t>(b)];
             dVc[static_cast<std::size_t>(a)] = shift;
             dVs[static_cast<std::size_t>(a)] =
-                el[static_cast<std::size_t>(a)]->spin_w
+                spin_w_ev[static_cast<std::size_t>(a)]
                 * mspin[static_cast<std::size_t>(a)];
         }
 
@@ -1024,20 +1178,29 @@ SccResult scc_energy_unrestricted(int n_at, int n_ao, int n_alpha, int n_beta,
     e_scc = 0;
     for (int a = 0; a < n_at; ++a)
         for (int b = 0; b < n_at; ++b)
-            e_scc += 0.5 * gamma_pair(a, b, el, x, y, z, box)
-                     * dq[static_cast<std::size_t>(a)]
+            e_scc += 0.5 * gam.pair(a, b) * dq[static_cast<std::size_t>(a)]
                      * dq[static_cast<std::size_t>(b)];
     e_spin = 0;
     for (int a = 0; a < n_at; ++a)
-        e_spin += 0.5 * el[static_cast<std::size_t>(a)]->spin_w
+        e_spin += 0.5 * spin_w_ev[static_cast<std::size_t>(a)]
                   * mspin[static_cast<std::size_t>(a)]
                   * mspin[static_cast<std::size_t>(a)];
+
+    const double e_rep = repulsive_energy(n_at, type, x, y, z, box, el);
+    double e_band = 0;
+    for (int o = 0; o < n_alpha; ++o)
+        e_band += epsA(o);
+    for (int o = 0; o < n_beta; ++o)
+        e_band += epsB(o);
 
     SccResult out;
     // E = Tr(ρH⁰) + E² + E_spin + E_rep (same convention as the restricted
     // path): Tr(ρ^σ H^σ) carries Σ_A V_A q_A on the GROSS population.
-    out.energy = trace_product(Pa, H0) + trace_product(Pb, H0) + e_scc + e_spin
-                 + repulsive_energy(n_at, type, x, y, z, box, el);
+    out.energy =
+        trace_product(Pa, H0) + trace_product(Pb, H0) + e_scc + e_spin + e_rep;
+    out.e_band = e_band;
+    out.e_scc = e_scc;
+    out.e_rep = e_rep;
     out.residual = residual;
     out.iterations = iterations;
     out.dq = std::move(dq);
@@ -1098,24 +1261,54 @@ SccResult scc_energy_unrestricted(int n_at, int n_ao, int n_alpha, int n_beta,
 /// zero nuclear force and are skipped; in a dense periodic cell they do carry
 /// a virial — an open gap shared with the shipped restricted path, recorded in
 /// `regressions/semiempirical/dftb2-analytic-stress/REFERENCE.md`.
+/// Fold γ's own gradient into the accumulators the SK walk already fills.
+///
+/// γ is Ewald-summed, so its derivative has a reciprocal half that no
+/// real-space walk can produce; `GammaLattice` owns value and derivative
+/// together so the two cannot drift apart.
+void add_gamma_gradient(const internal::GammaLattice& gam,
+                        const std::vector<double>& dq, bool want_forces,
+                        AccReal* fx, AccReal* fy, AccReal* fz, double* dE_de) {
+    const std::size_t n = dq.size();
+    const bool f =
+        want_forces && fx != nullptr && fy != nullptr && fz != nullptr;
+    if (!f && dE_de == nullptr)
+        return;
+    std::vector<double> gx, gy, gz;
+    if (f) {
+        gx.assign(n, 0.0);
+        gy.assign(n, 0.0);
+        gz.assign(n, 0.0);
+    }
+    gam.add_gradient(dq.data(), f ? gx.data() : nullptr,
+                     f ? gy.data() : nullptr, f ? gz.data() : nullptr, dE_de);
+    if (f)
+        for (std::size_t a = 0; a < n; ++a) {
+            fx[a] += static_cast<AccReal>(gx[a]);
+            fy[a] += static_cast<AccReal>(gy[a]);
+            fz[a] += static_cast<AccReal>(gz[a]);
+        }
+}
+
 void analytic_forces_stress(
     int n_at, int n_ao, int n_alpha, int n_beta,
     const std::vector<const DftbElementRow*>& el, const std::vector<int>& ao0,
     const int* type, const StorageReal* x, const StorageReal* y,
-    const StorageReal* z, const cpu::Box& box, const std::vector<double>& dq,
-    const std::vector<double>& mspin, const linalg::RealMatrix& Ca,
-    const linalg::RealMatrix& Cb, const linalg::RealVector& eps_a_orb,
-    const linalg::RealVector& eps_b_orb, AccReal* fx, AccReal* fy, AccReal* fz,
-    bool want_forces, double* stress_voigt /* nullable, length 6 */) {
+    const StorageReal* z, const cpu::Box& box,
+    const internal::GammaLattice& gam, const std::vector<double>& dq,
+    const std::vector<double>& mspin, const std::vector<double>& spin_w_ev,
+    const linalg::RealMatrix& Ca, const linalg::RealMatrix& Cb,
+    const linalg::RealVector& eps_a_orb, const linalg::RealVector& eps_b_orb,
+    AccReal* fx, AccReal* fy, AccReal* fz, bool want_forces,
+    double* stress_voigt /* nullable, length 6 */) {
     // ε^σ_A = Σ_B γ_AB Δq_B ± W_A m_A (γ_AB already lattice-summed).
     std::vector<double> eps_at_a(static_cast<std::size_t>(n_at), 0.0);
     std::vector<double> eps_at_b(static_cast<std::size_t>(n_at), 0.0);
     for (int a = 0; a < n_at; ++a) {
         double shift = 0;
         for (int b = 0; b < n_at; ++b)
-            shift += gamma_pair(a, b, el, x, y, z, box)
-                     * dq[static_cast<std::size_t>(b)];
-        const double vs = el[static_cast<std::size_t>(a)]->spin_w
+            shift += gam.pair(a, b) * dq[static_cast<std::size_t>(b)];
+        const double vs = spin_w_ev[static_cast<std::size_t>(a)]
                           * mspin[static_cast<std::size_t>(a)];
         eps_at_a[static_cast<std::size_t>(a)] = shift + vs;
         eps_at_b[static_cast<std::size_t>(a)] = shift - vs;
@@ -1125,25 +1318,26 @@ void analytic_forces_stress(
     linalg::RealMatrix Pb = xt::zeros<double>({n_ao, n_ao});
     linalg::RealMatrix Wa = xt::zeros<double>({n_ao, n_ao});
     linalg::RealMatrix Wb = xt::zeros<double>({n_ao, n_ao});
-    for (int o = 0; o < n_alpha; ++o)
-        for (int mu = 0; mu < n_ao; ++mu)
-            for (int nu = 0; nu < n_ao; ++nu) {
-                Pa(mu, nu) += Ca(mu, o) * Ca(nu, o);
-                Wa(mu, nu) += eps_a_orb(o) * Ca(mu, o) * Ca(nu, o);
-            }
-    for (int o = 0; o < n_beta; ++o)
-        for (int mu = 0; mu < n_ao; ++mu)
-            for (int nu = 0; nu < n_ao; ++nu) {
-                Pb(mu, nu) += Cb(mu, o) * Cb(nu, o);
-                Wb(mu, nu) += eps_b_orb(o) * Cb(mu, o) * Cb(nu, o);
-            }
+    {
+        std::vector<double> scaled;
+        build_density_weighted(Ca, eps_a_orb, n_ao, n_alpha, 1.0, Pa, Wa,
+                               scaled);
+        build_density_weighted(Cb, eps_b_orb, n_ao, n_beta, 1.0, Pb, Wb,
+                               scaled);
+    }
 
-    linalg::RealMatrix dH0[3] = {xt::zeros<double>({n_ao, n_ao}),
-                                 xt::zeros<double>({n_ao, n_ao}),
-                                 xt::zeros<double>({n_ao, n_ao})};
-    linalg::RealMatrix dS[3] = {xt::zeros<double>({n_ao, n_ao}),
-                                xt::zeros<double>({n_ao, n_ao}),
-                                xt::zeros<double>({n_ao, n_ao})};
+    // One SK block spans at most 4×4 AOs (s + p). Sizing this scratch by the
+    // whole basis and re-zeroing it per pair-image made the force walk
+    // O(N²·n_ao²): 141 MB of memset for every bond in a 1088-atom cell.
+    // `set_block_derivative` assigns every element it reads back, so the
+    // scratch needs neither the size nor the zeroing.
+    constexpr int kSkBlock = 4;
+    linalg::RealMatrix dH0[3] = {xt::zeros<double>({kSkBlock, kSkBlock}),
+                                 xt::zeros<double>({kSkBlock, kSkBlock}),
+                                 xt::zeros<double>({kSkBlock, kSkBlock})};
+    linalg::RealMatrix dS[3] = {xt::zeros<double>({kSkBlock, kSkBlock}),
+                                xt::zeros<double>({kSkBlock, kSkBlock}),
+                                xt::zeros<double>({kSkBlock, kSkBlock})};
 
     // Accumulate ∂E/∂ε (before −1/Ω) in Voigt order.
     double dE_de[6] = {0, 0, 0, 0, 0, 0};
@@ -1187,18 +1381,14 @@ void analytic_forces_stress(
                 double F_a[3] = {0, 0, 0};
 
                 if (r <= rcut) {
-                    for (int k = 0; k < 3; ++k) {
-                        dH0[k] = xt::zeros<double>({n_ao, n_ao});
-                        dS[k] = xt::zeros<double>({n_ao, n_ao});
-                    }
                     internal::MioSketchPair{ea, eb, sk}.set_block_derivative(
-                        dx, dy, dz, r, dH0, dS, ia, ib);
+                        dx, dy, dz, r, dH0, dS, 0, 0);
                     for (int k = 0; k < 3; ++k) {
                         double acc = 0;
                         for (int i = 0; i < na; ++i)
                             for (int j = 0; j < nb; ++j) {
-                                const double dh = dH0[k](ia + i, ib + j);
-                                const double ds = dS[k](ia + i, ib + j);
+                                const double dh = dH0[k](i, j);
+                                const double ds = dS[k](i, j);
                                 acc += Pa(ia + i, ib + j) * (dh + shift_a * ds)
                                        - Wa(ia + i, ib + j) * ds;
                                 acc += Pb(ia + i, ib + j) * (dh + shift_b * ds)
@@ -1208,15 +1398,10 @@ void analytic_forces_stress(
                         F_a[k] += 2.0 * acc;
                     }
 
-                    // Lattice γ: each image of γ(|R+T|) contributes
-                    // independently. E² = ½Σ_AB γ_AB Δq_A Δq_B with
-                    // γ_AB = Σ_T γ(|R+T|); the a<b pair term is
-                    // γ_AB Δq_A Δq_B, so ∂E²/∂bond_T = Δq_A Δq_B dγ/dr.
-                    const double dgdR =
-                        dgamma_dr(r, ea.hubbard_u, eb.hubbard_u);
-                    for (int k = 0; k < 3; ++k)
-                        F_a[k] += dqa * dqb * dgdR * dir[k];
-
+                    // The γ share of the gradient is NOT here: γ is Ewald
+                    // summed, so its derivative has a reciprocal half that no
+                    // real-space SK walk can see. `GammaLattice::add_gradient`
+                    // owns the whole of it, below.
                     const double dErep_dr =
                         pair_repulsive_dE_dr(type[a], type[b], r);
                     for (int k = 0; k < 3; ++k)
@@ -1269,12 +1454,8 @@ void analytic_forces_stress(
                 if (r < 1e-12 || r > rcut)
                     continue;
                 const double dir[3] = {T.tx / r, T.ty / r, T.tz / r};
-                for (int k = 0; k < 3; ++k) {
-                    dH0[k] = xt::zeros<double>({n_ao, n_ao});
-                    dS[k] = xt::zeros<double>({n_ao, n_ao});
-                }
                 internal::MioSketchPair{ea, ea, sk}.set_block_derivative(
-                    T.tx, T.ty, T.tz, r, dH0, dS, ia, ia);
+                    T.tx, T.ty, T.tz, r, dH0, dS, 0, 0);
                 // Factor 1: the image walk already visits both T and −T, and
                 // the (a,a) block is contracted whole, not upper-triangle only.
                 // γ_AA and E_rep are each half-weighted per ordered image.
@@ -1283,8 +1464,8 @@ void analytic_forces_stress(
                     double acc = 0;
                     for (int i = 0; i < na; ++i)
                         for (int j = 0; j < na; ++j) {
-                            const double dh = dH0[k](ia + i, ia + j);
-                            const double ds = dS[k](ia + i, ia + j);
+                            const double dh = dH0[k](i, j);
+                            const double ds = dS[k](i, j);
                             acc += Pa(ia + i, ia + j) * (dh + shift_a * ds)
                                    - Wa(ia + i, ia + j) * ds;
                             acc += Pb(ia + i, ia + j) * (dh + shift_b * ds)
@@ -1292,9 +1473,10 @@ void analytic_forces_stress(
                         }
                     dE_dT[k] = acc;
                 }
+                // γ's own self-image virial is carried by
+                // `GammaLattice::add_gradient`, not here.
                 const double half_pair =
-                    0.5 * dqa * dqa * dgamma_dr(r, ea.hubbard_u, ea.hubbard_u)
-                    + 0.5 * pair_repulsive_dE_dr(type[a], type[a], r);
+                    0.5 * pair_repulsive_dE_dr(type[a], type[a], r);
                 for (int k = 0; k < 3; ++k)
                     dE_dT[k] += half_pair * dir[k];
 
@@ -1308,6 +1490,9 @@ void analytic_forces_stress(
             }
         }
     }
+
+    add_gamma_gradient(gam, dq, want_forces, fx, fy, fz,
+                       stress_voigt ? dE_de : nullptr);
 
     if (stress_voigt) {
         const double vol = box.volume();
@@ -1363,10 +1548,12 @@ void analytic_forces_restricted_kmesh(
     int n_at, int n_ao, const std::vector<const DftbElementRow*>& el,
     const std::vector<int>& ao0, const int* type, const StorageReal* x,
     const StorageReal* y, const StorageReal* z, const cpu::Box& box,
-    const std::vector<double>& dq, const std::vector<KPoint>& kpts,
-    const std::vector<CplxMatrix>& Pk, const std::vector<CplxMatrix>& Wk,
-    bool time_reversal, AccReal* fx, AccReal* fy, AccReal* fz, bool want_forces,
+    const internal::GammaLattice& gam, const std::vector<double>& dq,
+    const std::vector<KPoint>& kpts, const std::vector<CplxMatrix>& Pk,
+    const std::vector<CplxMatrix>& Wk, bool time_reversal, AccReal* fx,
+    AccReal* fy, AccReal* fz, bool want_forces,
     double* stress_voigt /* nullable, length 6 */,
+    const std::vector<double>& spin_w_ev,
     // Optional collinear open-shell dual channel (empty ⇒ restricted).
     const std::vector<double>* spin = nullptr,
     const std::vector<CplxMatrix>* Pak = nullptr,
@@ -1394,11 +1581,10 @@ void analytic_forces_restricted_kmesh(
     for (int a = 0; a < n_at; ++a) {
         double shift = 0;
         for (int b = 0; b < n_at; ++b)
-            shift += gamma_pair(a, b, el, x, y, z, box)
-                     * dq[static_cast<std::size_t>(b)];
+            shift += gam.pair(a, b) * dq[static_cast<std::size_t>(b)];
         dV[static_cast<std::size_t>(a)] = shift;
         if (open_shell) {
-            const double vs = el[static_cast<std::size_t>(a)]->spin_w
+            const double vs = spin_w_ev[static_cast<std::size_t>(a)]
                               * (*spin)[static_cast<std::size_t>(a)];
             dVa[static_cast<std::size_t>(a)] = shift + vs;
             dVb[static_cast<std::size_t>(a)] = shift - vs;
@@ -1417,12 +1603,18 @@ void analytic_forces_restricted_kmesh(
         self_paired[ik] = sp ? 1 : 0;
     }
 
-    linalg::RealMatrix dH0[3] = {xt::zeros<double>({n_ao, n_ao}),
-                                 xt::zeros<double>({n_ao, n_ao}),
-                                 xt::zeros<double>({n_ao, n_ao})};
-    linalg::RealMatrix dS[3] = {xt::zeros<double>({n_ao, n_ao}),
-                                xt::zeros<double>({n_ao, n_ao}),
-                                xt::zeros<double>({n_ao, n_ao})};
+    // One SK block spans at most 4×4 AOs (s + p). Sizing this scratch by the
+    // whole basis and re-zeroing it per pair-image made the force walk
+    // O(N²·n_ao²): 141 MB of memset for every bond in a 1088-atom cell.
+    // `set_block_derivative` assigns every element it reads back, so the
+    // scratch needs neither the size nor the zeroing.
+    constexpr int kSkBlock = 4;
+    linalg::RealMatrix dH0[3] = {xt::zeros<double>({kSkBlock, kSkBlock}),
+                                 xt::zeros<double>({kSkBlock, kSkBlock}),
+                                 xt::zeros<double>({kSkBlock, kSkBlock})};
+    linalg::RealMatrix dS[3] = {xt::zeros<double>({kSkBlock, kSkBlock}),
+                                xt::zeros<double>({kSkBlock, kSkBlock}),
+                                xt::zeros<double>({kSkBlock, kSkBlock})};
 
     const auto images = lattice_images_for(box, el);
     std::vector<Cplx> conj_phase(nk);
@@ -1476,12 +1668,8 @@ void analytic_forces_restricted_kmesh(
                     conj_phase[ik] =
                         std::conj(bloch_phase(kpts[ik].frac, T.n0, T.n1, T.n2));
 
-                for (int k = 0; k < 3; ++k) {
-                    dH0[k] = xt::zeros<double>({n_ao, n_ao});
-                    dS[k] = xt::zeros<double>({n_ao, n_ao});
-                }
                 internal::MioSketchPair{ea, eb, sk}.set_block_derivative(
-                    dx, dy, dz, r, dH0, dS, ia, ib);
+                    dx, dy, dz, r, dH0, dS, 0, 0);
 
                 double acc[3] = {0, 0, 0};
                 for (int i = 0; i < na; ++i) {
@@ -1523,8 +1711,8 @@ void analytic_forces_restricted_kmesh(
                         max_imag = std::max(
                             max_imag, std::max(std::abs(p_im), std::abs(w_im)));
                         for (int k = 0; k < 3; ++k) {
-                            const double dh = dH0[k](ia + i, ib + j);
-                            const double ds = dS[k](ia + i, ib + j);
+                            const double dh = dH0[k](i, j);
+                            const double ds = dS[k](i, j);
                             if (open_shell)
                                 acc[k] +=
                                     pa_re * (dh + shift_a * ds) - wa_re * ds
@@ -1538,11 +1726,12 @@ void analytic_forces_restricted_kmesh(
                 for (int k = 0; k < 3; ++k)
                     F_a[k] += 2.0 * acc[k];
 
-                const double dgdR = dgamma_dr(r, ea.hubbard_u, eb.hubbard_u);
+                // γ's gradient is Ewald-summed and lives in
+                // `GammaLattice::add_gradient`, not in this SK walk.
                 const double dErep_dr =
                     pair_repulsive_dE_dr(type[a], type[b], r);
                 for (int k = 0; k < 3; ++k)
-                    F_a[k] += (dqa * dqb * dgdR + dErep_dr) * dir[k];
+                    F_a[k] += dErep_dr * dir[k];
 
                 if (want_forces && fx && fy && fz) {
                     fx[a] += static_cast<AccReal>(F_a[0]);
@@ -1585,12 +1774,8 @@ void analytic_forces_restricted_kmesh(
                 for (std::size_t ik = 0; ik < nk; ++ik)
                     conj_phase[ik] =
                         std::conj(bloch_phase(kpts[ik].frac, T.n0, T.n1, T.n2));
-                for (int k = 0; k < 3; ++k) {
-                    dH0[k] = xt::zeros<double>({n_ao, n_ao});
-                    dS[k] = xt::zeros<double>({n_ao, n_ao});
-                }
                 internal::MioSketchPair{ea, ea, sk}.set_block_derivative(
-                    T.tx, T.ty, T.tz, r, dH0, dS, ia, ia);
+                    T.tx, T.ty, T.tz, r, dH0, dS, 0, 0);
 
                 // Factor 1: the image walk already visits both T and −T, and
                 // the (a,a) block is contracted whole. γ_AA and E_rep are each
@@ -1609,16 +1794,14 @@ void analytic_forces_restricted_kmesh(
                                           .real();
                         }
                         for (int k = 0; k < 3; ++k) {
-                            const double ds = dS[k](ia + i, ia + j);
+                            const double ds = dS[k](i, j);
                             dE_dT[k] +=
-                                p_re * (dH0[k](ia + i, ia + j) + shift * ds)
-                                - w_re * ds;
+                                p_re * (dH0[k](i, j) + shift * ds) - w_re * ds;
                         }
                     }
                 }
                 const double half_pair =
-                    0.5 * dqa * dqa * dgamma_dr(r, ea.hubbard_u, ea.hubbard_u)
-                    + 0.5 * pair_repulsive_dE_dr(type[a], type[a], r);
+                    0.5 * pair_repulsive_dE_dr(type[a], type[a], r);
                 for (int k = 0; k < 3; ++k)
                     dE_dT[k] += half_pair * dir[k];
 
@@ -1632,6 +1815,9 @@ void analytic_forces_restricted_kmesh(
             }
         }
     }
+
+    add_gamma_gradient(gam, dq, want_forces, fx, fy, fz,
+                       stress_voigt ? dE_de : nullptr);
 
     if (stress_voigt) {
         const double vol = box.volume();
@@ -1657,8 +1843,11 @@ SccResult scc_energy_unrestricted_kmesh(
     int n_at, int n_ao, int n_alpha, int n_beta,
     const std::vector<const DftbElementRow*>& el, const std::vector<int>& ao0,
     const int* type, const StorageReal* x, const StorageReal* y,
-    const StorageReal* z, const cpu::Box& box, double scc_tol, int max_scc,
-    double mix_beta, const int mesh[3], bool time_reversal) {
+    const StorageReal* z, const cpu::Box& box,
+    const internal::GammaLattice& gam, double scc_tol, int max_scc,
+    double mix_beta, const double* dq_guess, const double* spin_guess,
+    const int mesh[3], bool time_reversal,
+    const std::vector<double>& spin_w_ev) {
     if (n_alpha > n_ao || n_beta > n_ao)
         throw std::runtime_error(
             "DFTB2 multi-k open shell: n_alpha/n_beta exceeds basis size");
@@ -1672,8 +1861,12 @@ SccResult scc_energy_unrestricted_kmesh(
 
     const std::size_t n = static_cast<std::size_t>(n_at);
     std::vector<double> dq(n, 0.0), mspin(n, 0.0);
+    if (dq_guess)
+        std::copy(dq_guess, dq_guess + n, dq.begin());
+    if (spin_guess)
+        std::copy(spin_guess, spin_guess + n, mspin.begin());
     std::vector<double> dq_out(n, 0.0), mspin_out(n, 0.0);
-    if (n_alpha != n_beta) {
+    if (!spin_guess && n_alpha != n_beta) {
         const double m_tot = static_cast<double>(n_alpha - n_beta);
         for (int a = 0; a < n_at; ++a)
             mspin[static_cast<std::size_t>(a)] =
@@ -1692,11 +1885,10 @@ SccResult scc_energy_unrestricted_kmesh(
         for (int a = 0; a < n_at; ++a) {
             double shift = 0;
             for (int b = 0; b < n_at; ++b)
-                shift += gamma_pair(a, b, el, x, y, z, box)
-                         * dq[static_cast<std::size_t>(b)];
+                shift += gam.pair(a, b) * dq[static_cast<std::size_t>(b)];
             dVc[static_cast<std::size_t>(a)] = shift;
             dVs[static_cast<std::size_t>(a)] =
-                el[static_cast<std::size_t>(a)]->spin_w
+                spin_w_ev[static_cast<std::size_t>(a)]
                 * mspin[static_cast<std::size_t>(a)];
         }
         std::vector<double> eps_a(n), eps_b(n);
@@ -1780,16 +1972,18 @@ SccResult scc_energy_unrestricted_kmesh(
     require_scc_converged(converged, residual, scc_tol, max_scc);
 
     // Final densities + energy-weighted W(k) at converged (dq, m).
+    // Σ_i n_i ε_i (k-weighted, both spin channels) — the DFTB+
+    // "Band energy" line; NOT the Tr(ρH⁰) that assembles the total.
+    double e_band_neps = 0;
     {
         std::vector<double> dVc(n, 0.0), dVs(n, 0.0);
         for (int a = 0; a < n_at; ++a) {
             double shift = 0;
             for (int b = 0; b < n_at; ++b)
-                shift += gamma_pair(a, b, el, x, y, z, box)
-                         * dq[static_cast<std::size_t>(b)];
+                shift += gam.pair(a, b) * dq[static_cast<std::size_t>(b)];
             dVc[static_cast<std::size_t>(a)] = shift;
             dVs[static_cast<std::size_t>(a)] =
-                el[static_cast<std::size_t>(a)]->spin_w
+                spin_w_ev[static_cast<std::size_t>(a)]
                 * mspin[static_cast<std::size_t>(a)];
         }
         std::vector<double> eps_a(n), eps_b(n);
@@ -1802,6 +1996,7 @@ SccResult scc_energy_unrestricted_kmesh(
                 - dVs[static_cast<std::size_t>(a)];
         }
         for (std::size_t ik = 0; ik < nk; ++ik) {
+            const double wk = kpts[ik].weight;
             CplxMatrix Ha, Hb;
             apply_shift_k(n_at, el, ao0, H0k[ik], Sk[ik], eps_a, Ha);
             apply_shift_k(n_at, el, ao0, H0k[ik], Sk[ik], eps_b, Hb);
@@ -1823,6 +2018,7 @@ SccResult scc_energy_unrestricted_kmesh(
                         Pa(mu, nu) += cc;
                         Wa(mu, nu) += e_o * cc;
                     }
+                e_band_neps += wk * e_o;
             }
             for (int o = 0; o < n_beta; ++o) {
                 const double e_o = eb[static_cast<std::size_t>(o)];
@@ -1832,6 +2028,7 @@ SccResult scc_energy_unrestricted_kmesh(
                         Pb(mu, nu) += cc;
                         Wb(mu, nu) += e_o * cc;
                     }
+                e_band_neps += wk * e_o;
             }
             Pak[ik] = Pa;
             Pbk[ik] = Pb;
@@ -1849,12 +2046,11 @@ SccResult scc_energy_unrestricted_kmesh(
     double e_scc = 0;
     for (int a = 0; a < n_at; ++a)
         for (int b = 0; b < n_at; ++b)
-            e_scc += 0.5 * gamma_pair(a, b, el, x, y, z, box)
-                     * dq[static_cast<std::size_t>(a)]
+            e_scc += 0.5 * gam.pair(a, b) * dq[static_cast<std::size_t>(a)]
                      * dq[static_cast<std::size_t>(b)];
     double e_spin = 0;
     for (int a = 0; a < n_at; ++a)
-        e_spin += 0.5 * el[static_cast<std::size_t>(a)]->spin_w
+        e_spin += 0.5 * spin_w_ev[static_cast<std::size_t>(a)]
                   * mspin[static_cast<std::size_t>(a)]
                   * mspin[static_cast<std::size_t>(a)];
 
@@ -1870,9 +2066,13 @@ SccResult scc_energy_unrestricted_kmesh(
             }
     }
 
+    const double e_rep = repulsive_energy(n_at, type, x, y, z, box, el);
+
     SccResult out;
-    out.energy = e_band + e_scc + e_spin
-                 + repulsive_energy(n_at, type, x, y, z, box, el);
+    out.energy = e_band + e_scc + e_spin + e_rep;
+    out.e_band = e_band_neps;
+    out.e_scc = e_scc;
+    out.e_rep = e_rep;
     out.residual = residual;
     out.iterations = iterations;
     out.dq = std::move(dq);
@@ -1896,25 +2096,29 @@ SccResult scc_total(int n_at, int n_ao, const Occupancy& occ,
                     const std::vector<const DftbElementRow*>& el,
                     const std::vector<int>& ao0, const int* type,
                     const StorageReal* x, const StorageReal* y,
-                    const StorageReal* z, const cpu::Box& box, double scc_tol,
-                    int max_scc, double mix_beta, const int mesh[3],
-                    bool time_reversal) {
+                    const StorageReal* z, const cpu::Box& box,
+                    const internal::GammaLattice& gam, double scc_tol,
+                    int max_scc, double mix_beta, const double* dq_guess,
+                    const double* spin_guess, const int mesh[3],
+                    bool time_reversal, const std::vector<double>& spin_w_ev) {
     const bool multi_k = mesh[0] > 1 || mesh[1] > 1 || mesh[2] > 1;
     if (multi_k) {
         if (occ.unrestricted)
             return scc_energy_unrestricted_kmesh(
                 n_at, n_ao, occ.n_alpha, occ.n_beta, el, ao0, type, x, y, z,
-                box, scc_tol, max_scc, mix_beta, mesh, time_reversal);
-        return scc_energy_restricted_kmesh(n_at, n_ao, occ.n_alpha, el, ao0,
-                                           type, x, y, z, box, scc_tol, max_scc,
-                                           mix_beta, mesh, time_reversal);
+                box, gam, scc_tol, max_scc, mix_beta, dq_guess, spin_guess,
+                mesh, time_reversal, spin_w_ev);
+        return scc_energy_restricted_kmesh(
+            n_at, n_ao, occ.n_alpha, el, ao0, type, x, y, z, box, gam, scc_tol,
+            max_scc, mix_beta, dq_guess, mesh, time_reversal);
     }
     if (!occ.unrestricted)
         return scc_energy_restricted(n_at, n_ao, occ.n_alpha, el, ao0, type, x,
-                                     y, z, box, scc_tol, max_scc, mix_beta);
+                                     y, z, box, gam, scc_tol, max_scc, mix_beta,
+                                     dq_guess);
     return scc_energy_unrestricted(n_at, n_ao, occ.n_alpha, occ.n_beta, el, ao0,
-                                   type, x, y, z, box, scc_tol, max_scc,
-                                   mix_beta);
+                                   type, x, y, z, box, gam, scc_tol, max_scc,
+                                   mix_beta, dq_guess, spin_guess, spin_w_ev);
 }
 
 /// Affine strain of box + coordinates (mechanical ε; matches PW/GPW stress FD).
@@ -1972,9 +2176,12 @@ void apply_affine_strain(cpu::Frame& frame, int voigt, double h) {
 double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
                   bool with_forces, bool with_stress, int charge,
                   int multiplicity, const int k_mesh[3], bool k_time_reversal,
+                  bool periodic, double ewald_cutoff, double ewald_accuracy,
+                  const double* dq_guess, const double* spin_guess,
+                  const std::vector<double>& spin_w_ev,
                   std::vector<double>& out_dq, std::vector<double>& out_spin,
                   std::array<double, 6>& out_stress, double& out_residual,
-                  int& out_iterations) {
+                  int& out_iterations, EnergyTerms& out_terms) {
     const int n_at = f.nlocal();
     const int* type = f.span(kAtom_type).data();
     StorageReal* x = f.span(kAtom_x);
@@ -2003,12 +2210,16 @@ double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
         throw std::runtime_error("DFTB2: no basis functions");
 
     const Occupancy occ = resolve_occupancy(n_elec, multiplicity);
-    auto res = scc_total(n_at, n_ao, occ, el, ao0, type, x, y, z, f.box,
-                         scc_tol, max_scc, mix_beta, k_mesh, k_time_reversal);
+    const internal::GammaLattice gam =
+        build_gamma(el, x, y, z, f.box, periodic, ewald_cutoff, ewald_accuracy);
+    auto res = scc_total(n_at, n_ao, occ, el, ao0, type, x, y, z, f.box, gam,
+                         scc_tol, max_scc, mix_beta, dq_guess, spin_guess,
+                         k_mesh, k_time_reversal, spin_w_ev);
     out_dq = res.dq;
     out_spin = res.spin;
     out_residual = res.residual;
     out_iterations = res.iterations;
+    out_terms = {res.e_band, res.e_scc, res.e_rep};
     const double energy = res.energy;
     energy_meta += energy;
     // The electronic per-term share of the total, same operator, same value
@@ -2023,15 +2234,15 @@ double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
             double stress_buf[6] = {0, 0, 0, 0, 0, 0};
             if (res.unrestricted)
                 analytic_forces_restricted_kmesh(
-                    n_at, n_ao, el, ao0, type, x, y, z, f.box, res.dq, res.kpts,
-                    res.Pk, res.Wk, k_time_reversal, fx, fy, fz, with_forces,
-                    with_stress ? stress_buf : nullptr, &res.spin, &res.Pak,
-                    &res.Pbk, &res.Wak, &res.Wbk);
+                    n_at, n_ao, el, ao0, type, x, y, z, f.box, gam, res.dq,
+                    res.kpts, res.Pk, res.Wk, k_time_reversal, fx, fy, fz,
+                    with_forces, with_stress ? stress_buf : nullptr, spin_w_ev,
+                    &res.spin, &res.Pak, &res.Pbk, &res.Wak, &res.Wbk);
             else
                 analytic_forces_restricted_kmesh(
-                    n_at, n_ao, el, ao0, type, x, y, z, f.box, res.dq, res.kpts,
-                    res.Pk, res.Wk, k_time_reversal, fx, fy, fz, with_forces,
-                    with_stress ? stress_buf : nullptr);
+                    n_at, n_ao, el, ao0, type, x, y, z, f.box, gam, res.dq,
+                    res.kpts, res.Pk, res.Wk, k_time_reversal, fx, fy, fz,
+                    with_forces, with_stress ? stress_buf : nullptr, spin_w_ev);
             if (with_stress) {
                 // kStress is the extensive Voigt virial [eV]; `stress_buf` and
                 // `out_stress` (last_stress()) stay intensive [eV/Å³].
@@ -2057,16 +2268,17 @@ double launch_mio(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
     double stress_buf[6] = {0, 0, 0, 0, 0, 0};
     if (occ.unrestricted)
         analytic_forces_stress(n_at, n_ao, res.n_alpha, res.n_beta, el, ao0,
-                               type, x, y, z, f.box, res.dq, res.spin, res.Ca,
-                               res.Cb, res.eps_a, res.eps_b, fx, fy, fz,
-                               with_forces, with_stress ? stress_buf : nullptr);
+                               type, x, y, z, f.box, gam, res.dq, res.spin,
+                               spin_w_ev, res.Ca, res.Cb, res.eps_a, res.eps_b,
+                               fx, fy, fz, with_forces,
+                               with_stress ? stress_buf : nullptr);
     else
         // Restricted: C^α = C^β = C, ε^α = ε^β = ε, n_α = n_β = n_occ,
         // m ≡ 0 ⇒ P^α = P^β = P/2, W^α = W^β = W/2.
         analytic_forces_stress(n_at, n_ao, res.n_occ, res.n_occ, el, ao0, type,
-                               x, y, z, f.box, res.dq, res.spin, res.C, res.C,
-                               res.eps, res.eps, fx, fy, fz, with_forces,
-                               with_stress ? stress_buf : nullptr);
+                               x, y, z, f.box, gam, res.dq, res.spin, spin_w_ev,
+                               res.C, res.C, res.eps, res.eps, fx, fy, fz,
+                               with_forces, with_stress ? stress_buf : nullptr);
 
     if (with_stress) {
         // kStress is the extensive Voigt virial [eV]; `stress_buf` and
@@ -2141,7 +2353,7 @@ double poly_interp_u1(const double* xp, const double* yp, int nn, double xx) {
     return yy;
 }
 
-/// One 3ob channel column as double (tables store float).
+/// One 3ob channel column as double (tables store double).
 void sk_col_3ob(const Dftb3obPair& p, int ch, std::vector<double>& col) {
     col.resize(static_cast<std::size_t>(p.n_grid));
     for (int i = 0; i < p.n_grid; ++i) {
@@ -2445,6 +2657,12 @@ double dgamma_dr_ha(double r_bohr, double ua_ha, double ub_ha) {
 
 struct Scc3obResult {
     double energy_ha = 0;
+    /// Σ_i n_i ε_i [Ha] — DFTB+ "Band energy".
+    double e_band_ha = 0;
+    /// ½ Σ_AB γ_AB Δq_A Δq_B [Ha] — DFTB+ "Energy SCC".
+    double e_scc_ha = 0;
+    /// Pair repulsive sum [Ha] — DFTB+ "Repulsive energy".
+    double e_rep_ha = 0;
     double residual = 0;
     int iterations = 0;
     std::vector<double> dq;
@@ -2501,6 +2719,7 @@ Scc3obResult scc_3ob(const std::vector<const Dftb3obElement*>& el,
     linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
     linalg::RealMatrix C = xt::zeros<double>({n_ao, n_ao});
     linalg::RealVector eps = xt::zeros<double>({n_ao});
+    std::vector<double> ps_diag;
     double e_scc = 0, residual = 0;
     int iterations = 0;
     bool converged = false;
@@ -2545,20 +2764,16 @@ Scc3obResult scc_3ob(const std::vector<const Dftb3obElement*>& el,
         eps = sol.first;
         C = sol.second;
 
-        P = xt::zeros<double>({n_ao, n_ao});
-        for (int o = 0; o < n_occ; ++o)
-            for (int mu = 0; mu < n_ao; ++mu)
-                for (int nu = 0; nu < n_ao; ++nu)
-                    P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
+        build_density(C, n_ao, n_occ, 2.0, P);
 
-        linalg::RealMatrix PS = xt::linalg::dot(P, S);
+        ps_diagonal(P, S, n_ao, ps_diag);
         residual = 0;
         for (int a = 0; a < n_at; ++a) {
             double qa = 0;
             const int ia = ao0[static_cast<std::size_t>(a)];
             const int na = el[static_cast<std::size_t>(a)]->n_ao;
             for (int i = 0; i < na; ++i)
-                qa += PS(ia + i, ia + i);
+                qa += ps_diag[static_cast<std::size_t>(ia + i)];
             dq_out[static_cast<std::size_t>(a)] =
                 qa - el[static_cast<std::size_t>(a)]->n_val;
             residual =
@@ -2603,8 +2818,15 @@ Scc3obResult scc_3ob(const std::vector<const Dftb3obElement*>& el,
             e_repulsive += rep_3ob(pr, r);
         }
 
+    double e_band = 0;
+    for (int o = 0; o < n_occ; ++o)
+        e_band += 2.0 * eps(o);
+
     Scc3obResult out;
     out.energy_ha = e_h0 + e_scc + e_repulsive;
+    out.e_band_ha = e_band;
+    out.e_scc_ha = e_scc;
+    out.e_rep_ha = e_repulsive;
     out.residual = residual;
     out.iterations = iterations;
     out.dq = std::move(dq);
@@ -2662,22 +2884,26 @@ void analytic_forces_3ob(
 
     linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
     linalg::RealMatrix W = xt::zeros<double>({n_ao, n_ao});
-    for (int o = 0; o < n_occ; ++o)
-        for (int mu = 0; mu < n_ao; ++mu)
-            for (int nu = 0; nu < n_ao; ++nu) {
-                P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
-                W(mu, nu) += 2.0 * eps(o) * C(mu, o) * C(nu, o);
-            }
+    {
+        std::vector<double> scaled;
+        build_density_weighted(C, eps, n_ao, n_occ, 2.0, P, W, scaled);
+    }
 
     // Ha/Bohr → eV/Å: F_eV_A = F_Ha_Bohr * kHa2eV / kBohr2A
     const double fscale = kHa2eV / kBohr2A;
 
-    linalg::RealMatrix dH0[3] = {xt::zeros<double>({n_ao, n_ao}),
-                                 xt::zeros<double>({n_ao, n_ao}),
-                                 xt::zeros<double>({n_ao, n_ao})};
-    linalg::RealMatrix dS[3] = {xt::zeros<double>({n_ao, n_ao}),
-                                xt::zeros<double>({n_ao, n_ao}),
-                                xt::zeros<double>({n_ao, n_ao})};
+    // One SK block spans at most 4×4 AOs (s + p). Sizing this scratch by the
+    // whole basis and re-zeroing it per pair-image made the force walk
+    // O(N²·n_ao²): 141 MB of memset for every bond in a 1088-atom cell.
+    // `set_block_derivative` assigns every element it reads back, so the
+    // scratch needs neither the size nor the zeroing.
+    constexpr int kSkBlock = 4;
+    linalg::RealMatrix dH0[3] = {xt::zeros<double>({kSkBlock, kSkBlock}),
+                                 xt::zeros<double>({kSkBlock, kSkBlock}),
+                                 xt::zeros<double>({kSkBlock, kSkBlock})};
+    linalg::RealMatrix dS[3] = {xt::zeros<double>({kSkBlock, kSkBlock}),
+                                xt::zeros<double>({kSkBlock, kSkBlock}),
+                                xt::zeros<double>({kSkBlock, kSkBlock})};
 
     // ∂E/∂ε in Voigt order [Ha] (strain is dimensionless), before −1/Ω.
     double dE_de[6] = {0, 0, 0, 0, 0, 0};
@@ -2696,13 +2922,9 @@ void analytic_forces_3ob(
             double dE_dbond[3] = {0, 0, 0}; // ∂E/∂bond [Ha/Bohr]
 
             if (r <= std::max(ea.r_cut, eb.r_cut)) {
-                for (int k = 0; k < 3; ++k) {
-                    dH0[k] = xt::zeros<double>({n_ao, n_ao});
-                    dS[k] = xt::zeros<double>({n_ao, n_ao});
-                }
                 fill_sk_block_deriv_3ob(ea, eb, Z[static_cast<std::size_t>(a)],
                                         Z[static_cast<std::size_t>(b)], dx, dy,
-                                        dz, r, dH0, dS, ia, ib);
+                                        dz, r, dH0, dS, 0, 0);
                 const double shift = 0.5
                                      * (dV[static_cast<std::size_t>(a)]
                                         + dV[static_cast<std::size_t>(b)]);
@@ -2714,8 +2936,8 @@ void analytic_forces_3ob(
                         for (int j = 0; j < nb; ++j) {
                             const double p = P(ia + i, ib + j);
                             const double w = W(ia + i, ib + j);
-                            const double dh = dH0[k](ia + i, ib + j);
-                            const double ds = dS[k](ia + i, ib + j);
+                            const double dh = dH0[k](i, j);
+                            const double ds = dS[k](i, j);
                             acc += p * (dh + shift * ds) - w * ds;
                         }
                     dE_dbond[k] += 2.0 * acc;
@@ -2779,7 +3001,7 @@ double launch_3ob(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
                   bool with_forces, bool with_stress,
                   std::vector<double>& out_dq,
                   std::array<double, 6>& out_stress, double& out_residual,
-                  int& out_iterations) {
+                  int& out_iterations, EnergyTerms& out_terms) {
     const int n_at = f.nlocal();
     const auto type = f.span(kAtom_type);
     StorageReal* x = f.span(kAtom_x);
@@ -2822,6 +3044,8 @@ double launch_3ob(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
     auto res = scc_3ob(el, ao0, Z, xb, yb, zb, n_at, n_ao, n_occ, scc_tol,
                        max_scc, mix_beta);
     const double energy = res.energy_ha * kHa2eV;
+    out_terms = {res.e_band_ha * kHa2eV, res.e_scc_ha * kHa2eV,
+                 res.e_rep_ha * kHa2eV};
     out_residual = res.residual;
     out_iterations = res.iterations;
     energy_meta += energy;
@@ -2853,6 +3077,13 @@ double launch_3ob(cpu::Frame& f, double scc_tol, int max_scc, double mix_beta,
 
 } // namespace
 
+namespace {
+
+constexpr const char* kDftbSpinHowto =
+    "d.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;";
+
+} // namespace
+
 void DFTB2::build(const BuildContext& /*ctx*/) {}
 
 void DFTB2::launch(const LaunchContext& ctx) {
@@ -2862,6 +3093,11 @@ void DFTB2::launch(const LaunchContext& ctx) {
 
     if (!(mix_beta > 0.0) || mix_beta > 1.0)
         throw std::invalid_argument("DFTB2: mix_beta must be in (0, 1]");
+
+    if (sk_set == DftbSkSet::Unset)
+        throw std::invalid_argument(
+            "DFTB2::launch: sk_set is Unset — DFTB2 will not pick an SK set "
+            "for you");
 
     bool any_u = false;
     for (std::size_t z = 1; z < u_eff.size(); ++z) {
@@ -2892,6 +3128,15 @@ void DFTB2::launch(const LaunchContext& ctx) {
                 + std::to_string(d) + " got "
                 + std::to_string(k_mesh[static_cast<std::size_t>(d)]) + ")");
     const bool multi_k = k_mesh[0] > 1 || k_mesh[1] > 1 || k_mesh[2] > 1;
+    const bool lattice_bc = boundary == DftbBoundary::lattice;
+    if (multi_k && !lattice_bc)
+        throw std::runtime_error(
+            "DFTB2: k_mesh beyond Gamma needs boundary=lattice — a cluster "
+            "has no reciprocal cell to sample");
+    if (!(ewald_cutoff > 0.0))
+        throw std::invalid_argument("DFTB2: ewald_cutoff must be > 0");
+    if (!(ewald_accuracy > 0.0 && ewald_accuracy < 1.0))
+        throw std::invalid_argument("DFTB2: ewald_accuracy must be in (0, 1)");
 
     // When +U is active, nuclear forces come from central FD of the total
     // energy (SCC + E_U), not the analytic SCC gradient alone — ∂E_U/∂R needs
@@ -2899,7 +3144,60 @@ void DFTB2::launch(const LaunchContext& ctx) {
     const bool u_force_fd = any_u && with_forces;
     const bool scc_forces = with_forces && !u_force_fd;
 
-    if (sk_set == DftbSkSet::ThreeOb) {
+    EnergyTerms terms;
+
+    // ── ASPC charge guess ────────────────────────────────────────────────
+    // The state vector is [Δq, m] — the same concatenation ChargeMixer mixes,
+    // so the closed-shell case simply carries a zero spin half.
+    const int n_at_launch = f.nlocal();
+    std::vector<double> spin_w_ev(static_cast<std::size_t>(n_at_launch), 0.0);
+    if (multiplicity != 1) {
+        if (shell_resolved_spin)
+            throw std::runtime_error(
+                "DFTB2::launch: shell_resolved_spin = true is not implemented "
+                "— dftb-shell-resolved-spin");
+        if (spin_w_ha.empty())
+            throw std::invalid_argument(
+                std::string("DFTB2::launch: spin_w_ha is unset — ")
+                + kDftbSpinHowto);
+        const int* ztype = f.span(kAtom_type).data();
+        std::vector<int> z_per_atom(static_cast<std::size_t>(n_at_launch));
+        for (int a = 0; a < n_at_launch; ++a)
+            z_per_atom[static_cast<std::size_t>(a)] = ztype[a];
+        spin_w_ev = internal::collapse_spin_w_ev(spin_w_ha, z_per_atom);
+    }
+    std::vector<double> guess_state;
+    const double* guess_dq = nullptr;
+    const double* guess_spin = nullptr;
+    xt::xtensor<double, 2> aspc_predicted;
+    bool aspc_used_prediction = false;
+    if (dq_predictor_) {
+        if (predictor_n_at_ != n_at_launch) {
+            dq_predictor_->reset();
+            predictor_n_at_ = n_at_launch;
+        }
+        aspc_predicted = xt::zeros<double>({2 * n_at_launch, 1});
+        if (dq_predictor_->predict(aspc_predicted)) {
+            guess_state.resize(static_cast<std::size_t>(2 * n_at_launch));
+            for (int i = 0; i < 2 * n_at_launch; ++i)
+                guess_state[static_cast<std::size_t>(i)] = aspc_predicted(i, 0);
+            guess_dq = guess_state.data();
+            guess_spin = guess_state.data() + n_at_launch;
+            aspc_used_prediction = true;
+        }
+    }
+
+    switch (sk_set) {
+    case DftbSkSet::Unset:
+        throw std::invalid_argument(
+            "DFTB2::launch: sk_set is Unset — DFTB2 will not pick an SK set "
+            "for you");
+    case DftbSkSet::ThreeOb:
+        if (lattice_bc)
+            throw std::runtime_error(
+                "DFTB2(ThreeOb): boundary=lattice not supported — the 3ob "
+                "radial-table path is a molecular cluster sum with no lattice "
+                "images; set boundary=cluster or use sk_set=MioSketch");
         if (multi_k)
             throw std::runtime_error(
                 "DFTB2(ThreeOb): multi-k not supported — the 3ob radial-table "
@@ -2908,16 +3206,44 @@ void DFTB2::launch(const LaunchContext& ctx) {
         if (multiplicity != 1 || charge != 0)
             throw std::runtime_error(
                 "DFTB2(ThreeOb): open-shell/charge not supported on this path");
-        energy_ =
-            launch_3ob(f, scc_tol, max_scc, mix_beta, scc_forces, with_stress,
-                       last_dq_, last_stress_, scc_residual_, scc_iterations_);
+        energy_ = launch_3ob(f, scc_tol, max_scc, mix_beta, scc_forces,
+                             with_stress, last_dq_, last_stress_, scc_residual_,
+                             scc_iterations_, terms);
         last_spin_.assign(static_cast<std::size_t>(f.nlocal()), 0.0);
-    } else {
+        break;
+    case DftbSkSet::MioSketch: {
         const int mesh[3] = {k_mesh[0], k_mesh[1], k_mesh[2]};
-        energy_ = launch_mio(f, scc_tol, max_scc, mix_beta, scc_forces,
-                             with_stress, charge, multiplicity, mesh,
-                             k_time_reversal, last_dq_, last_spin_,
-                             last_stress_, scc_residual_, scc_iterations_);
+        energy_ = launch_mio(
+            f, scc_tol, max_scc, mix_beta, scc_forces, with_stress, charge,
+            multiplicity, mesh, k_time_reversal, lattice_bc, ewald_cutoff,
+            ewald_accuracy, guess_dq, guess_spin, spin_w_ev, last_dq_,
+            last_spin_, last_stress_, scc_residual_, scc_iterations_, terms);
+        break;
+    }
+    }
+    e_band_ = terms.band;
+    e_scc_ = terms.scc;
+    e_rep_ = terms.repulsive;
+
+    // Record the converged state for the next launch. On a warm step the
+    // corrector output is what goes in — recording the raw SCC result would
+    // throw away the time-reversibility the corrector buys.
+    if (dq_predictor_) {
+        xt::xtensor<double, 2> state = xt::zeros<double>({2 * n_at_launch, 1});
+        for (int i = 0; i < n_at_launch; ++i) {
+            state(i, 0) = last_dq_[static_cast<std::size_t>(i)];
+            state(n_at_launch + i, 0) =
+                last_spin_.empty() ? 0.0
+                                   : last_spin_[static_cast<std::size_t>(i)];
+        }
+        if (aspc_used_prediction) {
+            xt::xtensor<double, 2> corrected =
+                xt::zeros<double>({2 * n_at_launch, 1});
+            dq_predictor_->correct(state, aspc_predicted, corrected);
+            dq_predictor_->record(corrected);
+        } else {
+            dq_predictor_->record(state);
+        }
     }
 
     // DFTB+U (Dudarev equal-filling on atomic Mulliken n) — post-SCC additive.
@@ -2990,9 +3316,12 @@ void DFTB2::launch(const LaunchContext& ctx) {
                 std::array<double, 6> st{};
                 double res = 0;
                 int it = 0;
-                double e = launch_mio(f, scc_tol, max_scc, mix_beta, false,
-                                      false, charge, multiplicity, mesh,
-                                      k_time_reversal, dq, spin, st, res, it);
+                EnergyTerms probe_terms;
+                double e = launch_mio(
+                    f, scc_tol, max_scc, mix_beta, false, false, charge,
+                    multiplicity, mesh, k_time_reversal, lattice_bc,
+                    ewald_cutoff, ewald_accuracy, nullptr, nullptr, spin_w_ev,
+                    dq, spin, st, res, it, probe_terms);
                 e += apply_e_u(dq);
                 return e;
             };
@@ -3148,6 +3477,16 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
     if (!(mix_beta > 0.0) || mix_beta > 1.0)
         throw std::invalid_argument(
             "DFTB2::td_casida: mix_beta must be in (0, 1]");
+    if (channel == TdDftbChannel::triplet) {
+        if (shell_resolved_spin)
+            throw std::runtime_error(
+                "DFTB2::td_casida: shell_resolved_spin = true is not "
+                "implemented — dftb-shell-resolved-spin");
+        if (spin_w_ha.empty())
+            throw std::invalid_argument(
+                std::string("DFTB2::td_casida: spin_w_ha is unset — ")
+                + kDftbSpinHowto);
+    }
 
     const int n_at = frame.nlocal();
     if (n_at < 1)
@@ -3172,6 +3511,14 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
     if (n_ao < 1)
         throw std::runtime_error("DFTB2::td_casida: no basis functions");
 
+    std::vector<double> spin_w_ev(static_cast<std::size_t>(n_at), 0.0);
+    if (channel == TdDftbChannel::triplet) {
+        std::vector<int> z_per_atom(static_cast<std::size_t>(n_at));
+        for (int a = 0; a < n_at; ++a)
+            z_per_atom[static_cast<std::size_t>(a)] = type[a];
+        spin_w_ev = internal::collapse_spin_w_ev(spin_w_ha, z_per_atom);
+    }
+
     const Occupancy occ = resolve_occupancy(n_elec, multiplicity);
     if (occ.unrestricted)
         throw std::runtime_error(
@@ -3187,9 +3534,13 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
             + ")");
 
     // Ground state at THIS geometry — no cached state, no launch-order coupling.
+    const internal::GammaLattice gam =
+        build_gamma(el, x, y, z, frame.box, boundary == DftbBoundary::lattice,
+                    ewald_cutoff, ewald_accuracy);
     const SccResult gs =
         scc_energy_restricted(n_at, n_ao, n_occ, el, ao0, type, x, y, z,
-                              frame.box, scc_tol, max_scc, mix_beta);
+                              frame.box, gam, scc_tol, max_scc, mix_beta,
+                              /*dq_guess=*/nullptr);
 
     // Overlap and gamma from the same builders the energy path uses.
     linalg::RealMatrix H0, S;
@@ -3197,8 +3548,7 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
     std::vector<double> gamma(static_cast<std::size_t>(n_at) * n_at, 0.0);
     for (int a = 0; a < n_at; ++a)
         for (int b = 0; b < n_at; ++b)
-            gamma[static_cast<std::size_t>(a) * n_at + b] =
-                gamma_pair(a, b, el, x, y, z, frame.box);
+            gamma[static_cast<std::size_t>(a) * n_at + b] = gam.pair(a, b);
 
     // Active window: the n_o highest occupied and n_v lowest virtual orbitals.
     const int n_o = (n_occ_window == 0) ? n_occ : std::min(n_occ_window, n_occ);
@@ -3280,8 +3630,7 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
             } else {
                 // Magnetization kernel is on-site: gamma^m_AB = delta_AB W_A.
                 for (int a = 0; a < n_at; ++a)
-                    k +=
-                        qp[a] * el[static_cast<std::size_t>(a)]->spin_w * qr[a];
+                    k += qp[a] * spin_w_ev[static_cast<std::size_t>(a)] * qr[a];
             }
             k *= coupling_scale;
             double om = 2.0 * std::sqrt(de[static_cast<std::size_t>(p)]) * k

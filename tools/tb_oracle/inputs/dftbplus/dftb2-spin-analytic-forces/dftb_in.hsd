@@ -1,0 +1,44 @@
+# Offline DFTB+ 24.1 twin for ATV slug dftb2-spin-analytic-forces.
+# Cluster O2 triplet, off-eq r=1.30 Å, matching
+# regressions/semiempirical/dftb2-spin-analytic-forces/. Same spin block as
+# spin-dftb2-o2 (PBE W_pp(O) = -0.028 Ha, ShellResolvedSpin = No).
+Geometry = GenFormat {
+  <<< "geo.gen"
+}
+
+Driver = {}
+
+Hamiltonian = DFTB {
+  SCC = Yes
+  SCCTolerance = 1e-10
+  MaxSCCIterations = 100
+  MaxAngularMomentum = {
+    O = "p"
+  }
+  SlaterKosterFiles = Type2FileNames {
+    Prefix = "./"
+    Separator = "-"
+    Suffix = ".skf"
+  }
+  SpinPolarisation = Colinear {
+    UnpairedElectrons = 2
+    RelaxTotalSpin = No
+  }
+  SpinConstants = {
+    ShellResolvedSpin = No
+    O = { -0.028 }
+  }
+}
+
+Analysis = {
+  PrintForces = Yes
+}
+
+Options = {
+  WriteDetailedOut = Yes
+  WriteResultsTag = Yes
+}
+
+ParserOptions = {
+  ParserVersion = 12
+}

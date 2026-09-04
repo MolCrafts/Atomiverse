@@ -73,6 +73,34 @@ change (wrong-sign γ term; see
 `regressions/semiempirical/dftb2-analytic-forces-threeob/REFERENCE.md`), but
 this case runs with `with_forces = false`.
 
+## Float → double re-emission (reproducibility, not accuracy)
+
+`tools/gen_dftb_3ob_tables.py` now transcribes 3ob-3-1 `.skf` into
+`basis_data/dftb_3ob_tables.h` with `Dftb3obSkPoint` stored as eight
+`double`s at 17 significant digits (was `float`, 9 digits). This is a
+**reproducibility** fix — a generator and a full-precision table — not an
+accuracy fix. The float32 storage bound on this Hamiltonian is
+≤ 2.03e-06 Ha (5.53e-05 eV) and cannot explain a 9.4e-04 Ha
+(~2.6e-02 eV) residual (~470×).
+
+Measured CH₄ energy on the same public `DFTB2` / `DftbSkSet::ThreeOb` /
+`DftbBoundary::cluster` launch used by this regression:
+
+| Table | \(E\) [eV] | vs DFTB+ pin −87.86856831 eV |
+|-------|------------|------------------------------|
+| committed `float` 9-digit | −87.868568739305 | −4.3e-07 eV |
+| re-emitted `double` 17-digit | −87.868568232331 | +7.8e-08 eV |
+
+**Movement from this re-emission: +5.07e-07 eV** (float table → double
+table), well under the expected 1e-04 eV. The regression golden
+(DFTB+ pin, 0.05 eV gate) is unchanged.
+
+The historical ATV snapshot \(E = -87.84300546\) eV in the section above
+(|ΔE| = 2.6e-02 eV vs DFTB+) is already stale on current code: even the
+committed float tables sit on the DFTB+ pin to ~4e-07 eV. That 2.6e-02 eV
+gap is not present on this Hamiltonian today and was not closed by
+widening storage.
+
 ## Perf (optional, not ctest)
 
 DFTB+ wall for this molecule: ~0.12 s (single core, release). ATV expected

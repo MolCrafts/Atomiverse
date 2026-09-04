@@ -3,8 +3,10 @@
 ///
 /// Domain: collinear spin-DFTB (Köhler, Seifert, Frauenheim; Elstner et al.,
 /// Phys. Rev. B 58, 7260 (1998)); DFTB+ spin + stress module boundary
-/// (Hourahine et al., J. Chem. Phys. 152, 124101 (2020)). In-tree mio-style SK
-/// tables — not absolute mio-1-1 DFTB+ numbers.
+/// (Hourahine et al., J. Chem. Phys. 152, 124101 (2020)).
+/// oracle: dftb+ 24.1 for energy/forces
+/// (tools/tb_oracle/inputs/dftbplus/dftb2-spin-analytic-stress/); cluster
+/// DFTB+ has no cell stress — σ is analytic vs strain-FD.
 ///
 /// Headline case: O2 triplet. Discriminator: NO doublet — O2 is homonuclear, so
 /// dq = 0 and the spin shift +/- W_A m_A is uniform across atoms; NO carries
@@ -97,7 +99,11 @@ double energy_only(cpu::Frame g, int multiplicity) {
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
     cpu::semiempirical::DFTB2 d;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d.multiplicity = multiplicity;
+    d.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
     d.with_forces = false;
     d.with_stress = false;
     d.scc_tol = 1e-12;
@@ -114,7 +120,11 @@ int check_case(const char* label, int z1, double r_ang, int multiplicity) {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.multiplicity = multiplicity;
+    dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
     dftb.with_forces = true;
     dftb.with_stress = true;
     dftb.scc_tol = 1e-12;

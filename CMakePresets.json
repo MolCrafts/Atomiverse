@@ -10,10 +10,11 @@
       "name": "cpu-unit-base",
       "hidden": true,
       "displayName": "CPU unit base (no optional physics)",
-      "description": "Serial unit scaffold: ≤10s, no heavy, no regressions. HF/PW/GPW/KSPACE off — turn on only what you test.",
+      "description": "Serial unit scaffold: ≤10s, no heavy, no regressions. HF/PW/GPW/KSPACE off — turn on only what you test. Developer builds compile molrs from the sibling checkout ${sourceDir}/../molrs (its uncommitted dev tree cannot be pinned by the ./molrs gitlink); CI keeps the submodule via cmake/AtvUnitGate.cmake.",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "ATV_MOLRS_PATH": "${sourceDir}/../molrs",
         "ATV_BUILD_CUDA": "OFF",
         "ATV_BUILD_TESTS": "ON",
         "ATV_BUILD_EXAMPLES": "OFF",

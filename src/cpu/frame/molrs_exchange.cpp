@@ -92,7 +92,9 @@ bool has_column(const molrs::FrameRef& src, const char* block,
     return values;
 }
 
-::rust::Vec<std::uint32_t> require_u32(const molrs::FrameRef& src,
+// molrs 0.14: the domain index type `Idx` is u64, so `frame_column_u32`
+// (name kept for bridge stability) now yields u64 values.
+::rust::Vec<std::uint64_t> require_u32(const molrs::FrameRef& src,
                                        const char* block, const char* col) {
     auto values = molrs::frame_column_u32(src, block, col);
     if (values.empty())
@@ -138,8 +140,9 @@ std::vector<int> topology_kind_column(const molrs::FrameRef& src,
 /// @brief Read one topology connectivity column (`atomi`/`atomj`/`atomk`/
 ///        `atoml`).
 ///
-/// molrs declares every identifier key UInt, so the endpoint indices are u32 —
-/// they are row numbers into the target node block and are never negative.
+/// molrs declares every identifier key UInt (u64 `Idx` since 0.14), so the
+/// endpoint indices are unsigned — they are row numbers into the target node
+/// block and are never negative.
 /// Kinds travel separately as `type_id` (`topology_kind_column`); `type` is a
 /// String force-field label this boundary does not import.
 std::vector<int> topology_column(const molrs::FrameRef& src, const char* block,

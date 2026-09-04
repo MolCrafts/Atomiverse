@@ -2,112 +2,91 @@
 
 ```text
 oracle: dftb+
-oracle_version: formula-level (Hourahine et al. JCP 152, 124101 (2020);
-  Elstner PRB 58, 7260 (1998); Köhler collinear spin-DFTB; no DFTB+ binary
-  on pin host)
-family_oracle: dftb+
+oracle_version: 24.1
 ```
+
+Offline twin: `tools/tb_oracle/inputs/dftbplus/dftb2-spin-analytic-forces/`
+(`geo.gen`, `dftb_in.hsd`, archived `dftb.out.txt`). Same spin block as
+`spin-dftb2-o2` (PBE \(W_{\mathrm{pp}}(\mathrm{O})=-0.028\) Ha,
+`ShellResolvedSpin = No`). Cluster O₂, r = 1.30 Å. ctest never launches DFTB+.
+
+The **module-boundary** gate remains analytic \(F\) vs re-SCC central FD of
+the same ATV energy. Absolute \(E\) and \(F_x\) are additionally pinned
+against DFTB+ 24.1.
 
 ## Method
 
-Collinear unrestricted SCC-DFTB2:
+Collinear unrestricted SCC-DFTB2 (Elstner SCC + Köhler spin channel). Nuclear
+forces are the **closed-form** gradient at the SCC density (dual α/β
+Hellmann–Feynman + Pulay + spin-dependent Hamiltonian shifts on \(\partial S\)
++ fixed-\(\Delta q\) SCC \(\gamma\) + repulsive). \(W_A\) is
+geometry-independent; fixed-\(m\) spin energy contributes no extra nuclear
+term. This is the DFTB+ collinear spin force module boundary
+(Hourahine et al., *J. Chem. Phys.* **152**, 124101 (2020)).
 
-\[
-E = \sum_{\sigma i} f_{i\sigma}\varepsilon_{i\sigma}
-  - \tfrac12\sum_{AB}\gamma_{AB}\Delta q_A\Delta q_B
-  - \tfrac12\sum_A W_A m_A^2
-  + E_{\mathrm{rep}}
-\]
-
-Nuclear forces are the **closed-form** gradient at the SCC density (dual α/β
-Hellmann–Feynman + Pulay energy-weighted density + spin-dependent Hamiltonian
-shifts on \(\partial S\) + fixed-\(\Delta q\) \(-\partial E_{\mathrm{SCC}}\) +
-repulsive) — **not** a re-SCC finite difference. \(W_A\) is geometry-independent;
-fixed-\(m\) spin energy contributes no extra nuclear term.
-
-This is the DFTB+ collinear spin force module boundary.
+Energy: \(\mathrm{Tr}(\rho H^0)+E^{(2)}+E_{\mathrm{spin}}+E_{\mathrm{rep}}\).
 
 ## Hamiltonian / tables
 
-- ATV class: `cpu::semiempirical::DFTB2`
-- SK / Hubbard / spin_W / repulsive: static `basis_data/dftb_mio_tables.h`
-  (mio-**style** sketch H/C/N/O). **Not** bit-identical to DFTB.org mio-1-1.
+- ATV class: `cpu::semiempirical::DFTB2`, `sk_set = MioSketch` (transcribed
+  mio-1-1), `boundary = cluster`, `multiplicity = 3`,
+  `spin_w_ha = basis_data::kDftbSpinConstantsPbeHa`.
 
 ## Geometry (Å)
 
-O₂ triplet, **stretched** bond so \(|F|\neq 0\):
+O₂ triplet, **stretched** so \(|F|\neq 0\):
 
 | atom | Z | x | y | z |
 | ---- | - | - | - | - |
 | O | 8 | 0.00 | 0.00 | 0.00 |
 | O | 8 | 1.30 | 0.00 | 0.00 |
 
-Isolated molecule, cubic box 30 Å. `charge = 0`, `multiplicity = 3`
-(\(n_\alpha=7\), \(n_\beta=5\)), `scc_tol = 1e-10`.
+Isolated cluster. `charge = 0`, `multiplicity = 3`, `scc_tol = 1e-10`.
 
 ## Pins (hard-coded gates)
 
 1. **Energy:** finite, \(|E| > 10^{-3}\) eV.
 2. **Forces:** all components finite; \(|F|^2 > 10^{-8}\) at off-eq geometry.
 3. **Translation:** \(|\sum_i F_i| \le 10^{-6}\) eV/Å per Cartesian.
-4. **Action–reaction:** \(F_{0,x} + F_{1,x} = 0\) (within \(10^{-6}\)).
+4. **Action–reaction:** \(F_{0,x}+F_{1,x}=0\) (within \(10^{-6}\)).
 5. **FD identity:** analytic \(F\) vs central **re-SCC** FD of the same \(E\)
-   (\(h=10^{-4}\) Å) on \(F_{0,x}\) and \(F_{1,x}\) within **0.05 eV/Å**
-   (same-element O–O; multi-element residual class remains ~1 eV/Å).
+   (\(h=10^{-4}\) Å) on \(F_{0,x}\) and \(F_{1,x}\) within **0.05 eV/Å**.
 
-Offline pin note:
-`tools/tb_oracle/inputs/dftbplus/dftb2_spin_analytic_forces_note.md`.
+Measured ATV (2026-09-04, Release, 1 thread):
 
-Measured at merge onto `dev` (2026-07-28): analytic \(F_{0,x} = 6.51550456\),
-re-SCC FD \(= 6.51550426\) eV/Å, \(|d| = 3.0\times10^{-7}\) eV/Å — four orders
-tighter than the 0.05 eV/Å gate.
+```text
+E = -176.77425642 eV
+F[0] = ( 4.91147291, 0, 0) eV/Å
+F[1] = (-4.91147291, 0, 0) eV/Å
+F_0_x analytic=4.91147291  fd=4.91147232  |d|=5.9e-07 eV/Å
+```
 
-## Gaps — what this case does NOT cover
+## Offline DFTB+ 24.1
 
-**Homonuclear O₂ has \(\Delta q \equiv 0\) by symmetry** (`reg_spin-dftb2-o2`
-prints `dq_Mulliken = [0.000000, 0.000000]`). The second-order SCC term and its
-gradient \(-\Delta q_A \Delta q_B \,\partial\gamma_{AB}/\partial R\) therefore
-vanish identically here, so this gate exercises the α/β spin machinery, the
-H⁰/S derivative and the repulsive derivative — but **not** the charge-dependent
-part of the gradient. That is exactly where the restricted path is known to
-disagree with FD:
+From archived `dftb.out.txt` (1 Ha = 27.211386245988 eV;
+1 Ha/Bohr = 51.42206747467393 eV/Å):
 
-| case | \(\Delta q\) | analytic vs re-SCC FD |
-| ---- | ------------ | --------------------- |
-| O₂ triplet (this case) | 0 | 3.0e-07 eV/Å |
-| H₂O (`reg_dftb2-analytic-forces`) | ≈ ±1.9 e | 0.23 / 0.75 eV/Å (tol 1.0) |
+| Quantity | DFTB+ | Converted |
+| -------- | ----- | --------- |
+| Total energy | −6.4963341184 H | **−176.774256878772 eV** |
+| Energy SPIN | −0.0280000000 H | −0.761918814888 eV |
+| \(F_{0,x}\) | +0.095512870310 Ha/Bohr | **+4.9114692618 eV/Å** |
+| \(F_{1,x}\) | −0.095512870310 Ha/Bohr | −4.9114692618 eV/Å |
 
-A correct SCC-DFTB2 gradient is FD-exact at self-consistency, so the H₂O
-residual is a **defect, not a "charge-response residual"** — see the Gaps
-section of `regressions/semiempirical/dftb2-analytic-forces/REFERENCE.md`
-(both were repaired 2026-07-28).
+\(\lvert E_{\mathrm{ATV}}-E_{\mathrm{DFTB+}}\rvert=4.6\times10^{-7}\) eV,
+\(\lvert F_{0,x}^{\mathrm{ATV}}-F_{0,x}^{\mathrm{DFTB+}}\rvert=3.6\times10^{-6}\) eV/Å
+(both ≤ \(10^{-3}\) ⇒ `oracle: dftb+`).
 
-**Closed 2026-07-29 — the owed \(\Delta q\neq0\) open-shell case.**
-`regressions/semiempirical/dftb2-spin-analytic-stress` runs an **NO doublet**
-(Z = 8/7, `multiplicity = 2`) alongside the O₂ triplet through the same
-spin-resolved assembly, so the open-shell \(\gamma\) term now has a gate.
-That case also records a second O₂ degeneracy this REFERENCE did not name: the
-spin shift \(\pm W_A m_A\) is **uniform over atoms** for homonuclear O₂, and a
-uniform \(cS\) leaves the generalized eigenvectors invariant, so the O₂ triplet
-density / forces / virial are numerically identical to the restricted ones
-(\(E_{\text{triplet}}-E_{\text{singlet}} = -1.000000000000\) eV exactly, i.e.
-\(\tfrac12\sum_A W_A m_A^2\), geometry-independent).
-
-## Unmoved by the 2026-07-28 SCC repair
-
-`E = −141.69354377 eV` and `|F_analytic − F_FD| = 3.0e-07 eV/Å` are unchanged.
-Homonuclear O₂ has Δq ≡ 0, so the wrong-sign γ gradient term found in
-`analytic_forces_unrestricted` (and fixed in the same wave) is multiplied by
-zero here. **This gate cannot see that class of bug** — it is exactly why the
-defect survived in three functions. The open-shell γ term now carries the
-corrected sign but has no gate; an open-shell Δq ≠ 0 case is owed.
+Homonuclear O₂ has \(\Delta q\equiv 0\), so this gate does not exercise the
+charge-dependent \(\gamma\) gradient. That discriminator is the NO doublet in
+`dftb2-spin-analytic-stress`.
 
 ## Perf
 
 ```text
 perf_exempt: true
-perf_exempt_reason: no DFTB+ binary / fair wall on pin host; analytic path
-  replaces 6N full re-SCC force evaluations with one post-SCC contraction
+perf_exempt_reason: DFTB+ 24.1 cold wall includes I/O; the analytic path
+  replaces 6N re-SCC force evaluations with one post-SCC contraction
 ```
 
 ## Units

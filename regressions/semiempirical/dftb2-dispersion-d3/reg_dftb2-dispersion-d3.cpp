@@ -23,8 +23,8 @@ constexpr double kEDispTolEv = 1e-4;
 cpu::Frame make_dimer() {
     cpu::Frame f(6);
     const double xyz[6][3] = {
-        {0.000, 0.000, 0.000},  {0.757, 0.000, 0.586},  {-0.757, 0.000, 0.586},
-        {0.000, 0.000, 2.900},  {0.757, 0.000, 3.486},  {-0.757, 0.000, 3.486},
+        {0.000, 0.000, 0.000}, {0.757, 0.000, 0.586}, {-0.757, 0.000, 0.586},
+        {0.000, 0.000, 2.900}, {0.757, 0.000, 3.486}, {-0.757, 0.000, 3.486},
     };
     const int Z[6] = {8, 1, 1, 8, 1, 1};
     for (int i = 0; i < 6; ++i) {
@@ -47,6 +47,9 @@ int main() {
     auto f_off = make_dimer();
     cpu::Evaluate eval_off;
     cpu::semiempirical::DFTB2 d_off;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d_off.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d_off.d3 = false;
     d_off.with_forces = false;
     d_off.scc_tol = 1e-10;
@@ -59,6 +62,9 @@ int main() {
     auto f_on = make_dimer();
     cpu::Evaluate eval_on;
     cpu::semiempirical::DFTB2 d_on;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d_on.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d_on.d3 = true;
     d_on.with_forces = false;
     d_on.scc_tol = 1e-10;
@@ -72,7 +78,8 @@ int main() {
     std::printf("  pin E_disp=%.12f eV  |Δ|=%.3e eV\n", kEDispPinEv,
                 std::fabs(e_disp - kEDispPinEv));
 
-    if (!std::isfinite(e_on) || !std::isfinite(e_disp) || !std::isfinite(e_off)) {
+    if (!std::isfinite(e_on) || !std::isfinite(e_disp)
+        || !std::isfinite(e_off)) {
         std::printf("FAIL non-finite energy\n");
         return 1;
     }

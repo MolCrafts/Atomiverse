@@ -25,11 +25,16 @@ void write_frame_xyz(const std::string& path, const std::vector<int>& type_id,
                      const std::vector<double>& z,
                      const std::array<double, 9>& box_mat, bool append);
 
-/// @brief Write one frame plus named per-atom fields to a single-frame Zarr store.
+/// @brief Write one frame plus named per-atom fields to a single-frame
+///        `*.mrec` store (molrs' Zarr-v3 scientific record).
 ///
-/// Delegates to molrs `write_frame_zarr`. @param field_names one name per extra
-/// per-atom column. @param field_data row-major `[n_fields, n_atoms]`, matching
-/// `field_names` order. @param box_mat row-major 3×3 cell [Å].
+/// Delegates to molrs `write_frame` (named `write_frame_zarr` before molrs
+/// 0.14). The checkpoint door: one frame, whole, replaced on every call —
+/// for a streaming trajectory use cpu::MrecWriter / cpu::MrecRecorder.
+/// @param path store path; must not use the retired `.zarr` suffix (molrs
+/// refuses it), conventionally `*.mrec`. @param field_names one name per
+/// extra per-atom column. @param field_data row-major `[n_fields, n_atoms]`,
+/// matching `field_names` order. @param box_mat row-major 3×3 cell [Å].
 void write_frame_zarr(const std::string& path, const std::vector<int>& type_id,
                       const std::vector<double>& x,
                       const std::vector<double>& y,

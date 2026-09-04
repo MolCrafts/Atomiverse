@@ -72,6 +72,11 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``semiempirical.AM1``                 ``AM1``                     ``cpu::semiempirical::AM1``
 ``semiempirical.AM1Evaluator``        ``AM1Evaluator``            ``cpu::semiempirical::AM1Evaluator``
 ``semiempirical.AM1Result``           ``AM1Result``               ``cpu::semiempirical::AM1Result``
+``semiempirical.DFTB2``               ``DFTB2``                   ``cpu::semiempirical::DFTB2``
+``semiempirical.DftbBoundary``        ``DftbBoundary``            ``cpu::semiempirical::DftbBoundary``
+``semiempirical.DftbSkSet``           ``DftbSkSet``               ``cpu::semiempirical::DftbSkSet``
+``semiempirical.DftbSpinConstant``    ``DftbSpinConstant``        ``cpu::semiempirical::basis_data::DftbSpinConstant``
+``semiempirical.kDftbSpinConstantsPbeHa`` ``kDftbSpinConstantsPbeHa`` ``cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa``
 ``vibration.Hessian``                 ``Hessian``                 ``cpu::vib::Hessian``
 ``vibration.HessianResult``           ``HessianResult``           ``cpu::vib::HessianResult``
 ``driver.single_point``               ``single_point``            ``cpu::single_point``
@@ -234,6 +239,18 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "AM1": ("atomiverse.semiempirical", "AM1"),
     "AM1Evaluator": ("atomiverse.semiempirical", "AM1Evaluator"),
     "AM1Result": ("atomiverse.semiempirical", "AM1Result"),
+    "DFTB2": ("atomiverse.semiempirical", "DFTB2"),
+    "DftbBoundary": ("atomiverse.semiempirical", "DftbBoundary"),
+    "DftbSkSet": ("atomiverse.semiempirical", "DftbSkSet"),
+    "DftbSpinConstant": ("atomiverse.semiempirical", "DftbSpinConstant"),
+    "kDftbSpinConstantsPbeHa": (
+        "atomiverse.semiempirical",
+        "kDftbSpinConstantsPbeHa",
+    ),
+    "kDftbSpinConstantsLdaHa": (
+        "atomiverse.semiempirical",
+        "kDftbSpinConstantsLdaHa",
+    ),
     "Hessian": ("atomiverse.vibration", "Hessian"),
     "HessianResult": ("atomiverse.vibration", "HessianResult"),
     "single_point": ("atomiverse.driver", "single_point"),
@@ -319,6 +336,12 @@ __all__ = [
     "AM1",
     "AM1Evaluator",
     "AM1Result",
+    "DFTB2",
+    "DftbBoundary",
+    "DftbSkSet",
+    "DftbSpinConstant",
+    "kDftbSpinConstantsPbeHa",
+    "kDftbSpinConstantsLdaHa",
     "Hessian",
     "HessianResult",
     "single_point",

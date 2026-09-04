@@ -3,6 +3,13 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Closed — dftb-data-00-honesty (2026-09-04)
+
+Spec deleted; history is git (`17957633` + close). Fabricated U^d / W gone;
+`DFTB3::hubbard_du_ha` / `DFTB2::spin_w_ha` are required explicit Hartree
+input; `DFTB3::sk_set` Unset throws; HOAO spin collapse is declared.
+Chain steps 1–3 (runtime SKF / `data/`) are not yet specified.
+
 ## Live — lammps-comm-brick chain (2026-08-26)
 
 CPU 多核通信按 LAMMPS `Comm` / `CommBrick` 重构。`Halo` ≡ 原 `Halo`（CommBrick 私有）；插件只见 Frame 行。有序链，前者落地后者才能编。

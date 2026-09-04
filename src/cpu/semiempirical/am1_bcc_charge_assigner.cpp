@@ -27,7 +27,7 @@ namespace {
     return values;
 }
 
-::rust::Vec<std::uint32_t> require_u32_column(const molrs::FrameRef& frame,
+::rust::Vec<std::uint64_t> require_u32_column(const molrs::FrameRef& frame,
                                               const char* block,
                                               const char* col) {
     auto values = molrs::frame_column_u32(frame, block, col);

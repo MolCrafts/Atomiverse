@@ -21,8 +21,13 @@ PY="${PYTHON:-$HOME/work/.x86_64/bin/python}"
 NT="${NTHREADS:-8}"
 
 export OMP_NUM_THREADS="$NT"
-export OMP_PROC_BIND=close
-export OMP_PLACES=cores
+# DO NOT bind threads here. An OpenMP-flavour OpenBLAS collapses to a SINGLE
+# thread as soon as any OpenMP affinity is requested — measured on OpenBLAS
+# 0.3.32 (ZEN, USE_OPENMP): dgemm 807 -> 106 GFLOP/s. RI-JK is BLAS3-bound, so
+# binding measures the engine with its BLAS switched off; the PySCF column has
+# no such handicap, which makes the comparison unfair in ATV's disfavour.
+# See src/cpu/device/device_runtime.cpp for the full note.
+unset OMP_PROC_BIND OMP_PLACES || true
 
 # ── Compile the engine benchmark main, reusing the compile/link recipe
 #    of an existing regression target (no hardcoded toolchain paths).

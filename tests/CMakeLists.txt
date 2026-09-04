@@ -298,6 +298,7 @@ if(ATV_BUILD_SEMIEMPIRICAL)
     atv_add_cpp_test(test_cpu_nddo_calpar_derived cpu/semiempirical/test_nddo_calpar_derived.cpp)
     atv_add_cpp_test(test_cpu_rm1                 cpu/semiempirical/test_rm1.cpp)
     atv_add_cpp_test(test_cpu_dftb2_sk            cpu/semiempirical/test_dftb2_sk.cpp)
+    atv_add_cpp_test(test_cpu_dftb_published_constants cpu/semiempirical/test_dftb_published_constants.cpp)
     atv_add_cpp_test(test_cpu_scc_mixer           cpu/semiempirical/test_scc_mixer.cpp)
 endif()
 if(ATV_BUILD_SEMIEMPIRICAL)
@@ -411,6 +412,7 @@ atv_add_cpp_test(test_cpu_md_piston_electrode cpu/dynamics/test_piston_electrode
 atv_add_cpp_test(test_cpu_md_const_potential_bo  cpu/dynamics/test_const_potential_bo.cpp)
 atv_add_cpp_test(test_cpu_md_fix_settle  cpu/dynamics/test_fix_settle.cpp)
 atv_add_cpp_test(test_cpu_md_virtual_sites  cpu/dynamics/test_virtual_sites.cpp)
+atv_add_cpp_test(test_cpu_md_berendsen    cpu/dynamics/test_berendsen.cpp)
 atv_add_cpp_test(test_cpu_md_brownian     cpu/dynamics/test_brownian.cpp)
 atv_add_cpp_test(test_cpu_md_write_sets  cpu/dynamics/test_write_sets.cpp)
 if(ATV_BUILD_PATH)
@@ -560,6 +562,14 @@ endif()
 # too) — an IO-less / SE-only build must not try to link cpu::XyzRecorder.
 if(ATV_BUILD_IO AND ATV_BUILD_MD)
     atv_add_cpp_test(test_cpu_xyz_recorder                cpu/record/test_xyz_recorder.cpp)
+endif()
+
+# cpu::MrecRecorder — the streaming `*.mrec` sibling: constructor guards,
+# stride cadence + commit at teardown, frame-0 read-back through the bridge.
+# Same IO+MD gate as the XYZ recorder, plus the molrs pin must declare the
+# TrajectoryWriter bridge (iron law 8: the component is excluded without it).
+if(ATV_BUILD_IO AND ATV_BUILD_MD AND ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+    atv_add_cpp_test(test_cpu_mrec_recorder               cpu/record/test_mrec_recorder.cpp)
 endif()
 
 # Unreadable input paths must throw std::runtime_error, not abort in Rust.

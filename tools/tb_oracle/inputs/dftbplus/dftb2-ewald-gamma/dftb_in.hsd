@@ -1,0 +1,29 @@
+# Offline DFTB+ twin for ATV slug dftb2-ewald-gamma.
+# Family oracle: DFTB+ only. Not run by ctest.
+# Geometry matches regressions/semiempirical/dftb2-ewald-gamma/REFERENCE.md.
+#
+# Polar periodic cell: this is the only periodic DFTB2 twin whose Delta-q is
+# nonzero, so it is the one that actually exercises the Ewald-summed gamma.
+# Rewrite Prefix to $ATV_DFTBPLUS_SK_MIO before running (run_dftbplus_pin.sh
+# does this for you).
+Geometry = GenFormat {
+  <<< "geo.gen"
+}
+Hamiltonian = DFTB {
+  SCC = Yes
+  SCCTolerance = 1e-10
+  MaxAngularMomentum = { O = p; H = s }
+  SlaterKosterFiles = Type2FileNames {
+    Prefix = "PLACEHOLDER_SK_DIR/"
+    Separator = "-"
+    Suffix = ".skf"
+  }
+  KPointsAndWeights = SuperCellFolding {
+    1 0 0
+    0 1 0
+    0 0 1
+    0.0 0.0 0.0
+  }
+}
+Analysis { CalculateForces = Yes }
+ParserOptions { ParserVersion = 8 }

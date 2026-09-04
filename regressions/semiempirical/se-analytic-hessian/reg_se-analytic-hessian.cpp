@@ -51,6 +51,9 @@ int main() {
     auto frame = make_h2();
 
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.with_forces = true;
     dftb.with_stress = false;
     dftb.scc_tol = 1e-10;
@@ -97,8 +100,9 @@ int main() {
         return 1;
     }
     const double w = res.frequencies(0);
-    std::printf("SE Hessian H2 (DFTB2): omega=%.4f cm^-1  n_imag=%d  max|H-H^T|=%.3e\n",
-                w, res.n_imaginary, max_asym);
+    std::printf(
+        "SE Hessian H2 (DFTB2): omega=%.4f cm^-1  n_imag=%d  max|H-H^T|=%.3e\n",
+        w, res.n_imaginary, max_asym);
     if (!(w > 100.0) || !std::isfinite(w)) {
         // mio-1-1 H–H stretch is thousands of cm^-1; 100 is a soft floor.
         std::printf("FAIL stretch frequency not positive/physical: %g\n", w);

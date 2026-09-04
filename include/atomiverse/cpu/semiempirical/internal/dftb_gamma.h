@@ -4,9 +4,13 @@
 /// Family oracle is DFTB+ 24.1. Full γ is assembled as:
 /// \f[ \gamma_{AB}(R) = \frac{1}{R} - S(\tau_A,\tau_B,R),\quad
 ///     \tau = \frac{16}{5} U = 3.2\,U \f]
-/// with on-site \f$\gamma_{AA}=U_A\f$. The short-range piece \f$S\f$ is
-/// `expGamma` from DFTB+ `shortgammafuncs.F90` (Hourahine et al.; Elstner
-/// 1998 with the review-article sign convention).
+/// with on-site \f$\gamma_{AA}=U_A\f$. The short-range piece \f$S\f$ is the
+/// published Elstner form (Elstner et al., *Phys. Rev. B* **58**, 7260 (1998),
+/// DOI 10.1103/PhysRevB.58.7260, with the review-article sign convention);
+/// DFTB+ calls the same expression `expGamma`. Written from the paper, not
+/// transcribed from DFTB+ — that code is LGPL-3.0 and cannot be absorbed by
+/// this GPL-2.0-only tree. DFTB+ is the numerical oracle here, never the
+/// source.
 ///
 /// **Not** Ohno–Klopman \f$1/\sqrt{R^2+\tau^2}\f$ — that form gave H₂O
 /// E² ≈ 0.65 eV vs DFTB+ 0.496 eV at the same Δq (see
@@ -88,9 +92,8 @@ inline double exp_gamma_prime_au(double rab, double Ua, double Ub) {
         const double d = t1s - t2s;
         const double d2 = d * d;
         const double d3 = d2 * d;
-        const double f =
-            (0.5 * t2s * t2s * t1 / d2)
-            - (t2s * t2s * t2s - 3.0 * t2s * t2s * t1s) / (r * d3);
+        const double f = (0.5 * t2s * t2s * t1 / d2)
+                         - (t2s * t2s * t2s - 3.0 * t2s * t2s * t1s) / (r * d3);
         const double fp =
             (t2s * t2s * t2s - 3.0 * t2s * t2s * t1s) / (r * r * d3);
         return -t1 * std::exp(-t1 * r) * f + std::exp(-t1 * r) * fp;

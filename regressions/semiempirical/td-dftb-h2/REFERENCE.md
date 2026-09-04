@@ -2,10 +2,8 @@
 
 ```text
 oracle: literature
-oracle_version: formula-level only — Niehaus et al., Phys. Rev. B 63, 085108
-                (2001). NO absolute excitation-energy pin was established
-                (no dftb+ binary on this host; no citable H2/mio-1-1 TD-DFTB
-                value exists — see "Why there is no absolute pin" below).
+oracle_version: Niehaus et al., Phys. Rev. B 63, 085108 (2001) — Casida
+  TD-DFTB. No citable H2/mio-1-1 TD-DFTB value exists (see below).
 ```
 
 ## Method
@@ -55,12 +53,11 @@ solved densely (LAPACK `dsyevd` through `xt::linalg::eigh`).
 
 ## Hamiltonian / tables
 
-`basis_data/dftb_mio_tables.h` + `internal/mio_hh_table.h`. For **H** the onsite
-energy, the Hubbard \(U\) and the whole H–H Slater–Koster + repulsive grid are
-transcribed **mio-1-1**; every other pair is an exponential *sketch*. The spin
-constants \(W_A\) (including \(W_\mathrm{H}=-0.50\) eV) are sketches — the
-DFTB.org mio value for H is \(W_{ss}\approx-0.072\) Ha \(\approx-1.96\) eV, so
-the **triplet red shift here is roughly 4× too small**.
+`basis_data/dftb_mio_tables.h` + transcribed mio-1-1 H–H. The triplet kernel
+uses the published PBE \(W_{\mathrm{ss}}(\mathrm{H})=-0.072\) Ha
+\(= -1.959219809711\) eV via `spin_w_ha = basis_data::kDftbSpinConstantsPbeHa`
+(HOAO collapse; `shell_resolved_spin` default `false`). The singlet kernel
+is \(\gamma_{AB}\) and does not take \(W\).
 
 ## Geometry
 
@@ -83,10 +80,10 @@ cubic box 20 Å. n_ao = 6, n_occ = 4, n_virt = 2 ⇒ **8** pairs.
 | 2 | **λ = 0 ⇒ ω = ε_a − ε_i** (H₂O, 4 states) | 1e-10 eV | 0.000e+00 |
 | 3 | **Ω symmetric** (H₂O, 8×8, as assembled — never re-symmetrized) | 1e-12 eV² | 3.553e-15 |
 | 4 | **Σ_A q^{ia}_A = 0** (H₂O, all 8 pairs) | 1e-10 e | 2.776e-16 |
-| 5 | H₂: ω_T < (ε_a−ε_i) < ω_S, all finite and > 0 | strict | 15.010 < 15.441 < 22.418 |
+| 5 | H₂: ω_T < (ε_a−ε_i) < ω_S, all finite and > 0 | strict | 13.676 < 15.441 < 16.392 |
 | 6 | H₂: q_H1 = −q_H2 and \|q\| > ½ | 1e-10 e / strict | ±0.6515851161 |
-| 7 | H₂: ω_S(1.20 Å) < ω_S(0.74 Å) (σ_g/σ_u splitting closes) | strict | 10.566 < 22.418 |
-| 8 | H₂ **snapshot** ω_S, ω_T, gap (drift guard, **not** an oracle) | 1e-6 eV | ≤ 4.5e-09 |
+| 7 | H₂: ω_S(1.20 Å) < ω_S(0.74 Å) (σ_g/σ_u splitting closes) | strict | 7.445 < 16.392 |
+| 8 | H₂ **snapshot** ω_S, ω_T, gap (drift guard, **not** an oracle) | 1e-6 eV | ≤ 5e-09 |
 
 Gate 1/2 is the decisive structural check: at zero coupling Ω is diagonal in
 \((\varepsilon_a-\varepsilon_i)^2\), so every root must be a bare
@@ -101,18 +98,23 @@ general Mulliken code path must satisfy without being told \(S_{12}\).
 (The measured 0.65159 back-solves to \(S_{12}=0.6412\), the mio-1-1 H–H overlap
 at 0.74 Å.)
 
-Measured run (`OMP_NUM_THREADS=1`, 13 ms):
+Measured run (2026-09-04, `OMP_NUM_THREADS=1`):
 
 ```text
-TD-DFTB H2 r=0.74 A: gap=15.44081455  S1=22.41789842  T1=15.01024822 eV
+TD-DFTB H2 r=0.74 A: gap=15.44081455  S1=16.39162450  T1=13.67637744 eV
   q_H1=-0.6515851161  q_H2=0.6515851161 e
   lambda=0: |omega - (eps_a - eps_i)| = 0.000e+00 eV
-  S1(1.20 A)=10.56605311 eV (must be below S1(0.74 A))
-TD-DFTB H2O: n_pair=8  S1..S4 = 5.343226 7.104688 8.898242 9.842894 eV
-  max |Omega_pq - Omega_qp| = 3.553e-15 eV^2
-  max |sum_A q^ia_A| = 2.776e-16 e
+  S1(1.20 A)=7.44545235 eV (must be below S1(0.74 A))
+TD-DFTB H2O: n_pair=8  S1..S4 = 14.090670 15.869295 17.148433 18.385602 eV
+  max |Omega_pq - Omega_qp| = 2.487e-14 eV^2
+  max |sum_A q^ia_A| = 2.903e-16 e
   H2O lambda=0 max |omega - gap| = 0.000e+00 eV
 ```
+
+T1 was re-pinned after published \(W_{\mathrm{ss}}(\mathrm{H})\) landed
+(`dftb-data-00-honesty`); it supersedes the sketch-\(W_{\mathrm{H}}=-0.50\) eV
+snapshot 15.01024822 eV. S1/gap are independent of \(W\) (singlet kernel is
+\(\gamma\); H₂ ground state has \(\Delta q\equiv 0\)).
 
 ## Why there is no absolute pin
 
@@ -137,18 +139,17 @@ for this system, and none was invented. What was searched (2026-07-29):
   nobody benchmarks it.
 
 Consequently gate 8 pins **Atomiverse's own converged values** and is labelled
-in the source as a drift guard, not an oracle. `S1 = 22.42 eV` for H₂ is
+in the source as a drift guard, not an oracle. `S1 = 16.39 eV` for H₂ is
 **not** a physical excitation energy (experiment: B¹Σ⁺_u ≈ 12.3–12.7 eV
-vertical); a minimal-basis σ_u with sketch spin constants and the γ defect
-below cannot produce one.
+vertical); a minimal-basis σ_u cannot produce one.
 
 ## Gaps (open)
 
-1. **No absolute excitation-energy oracle.** No `dftb+` binary on this host
-   (`module spider dftb` → nothing) and no citable H₂/mio-1-1 TD-DFTB value
-   exists. Everything gated here is a structural / analytic limit plus a drift
-   snapshot. Closing this needs an offline DFTB+ `Casida{}` run — and, for a
-   *literature*-grade pin, a molecule with real SK tables in-tree.
+1. **No absolute excitation-energy oracle.** No citable H₂/mio-1-1 TD-DFTB
+   value exists (see above). Everything gated here is a structural / analytic
+   limit plus a drift snapshot. Closing this needs an offline DFTB+ `Casida{}`
+   run on a molecule with a published number — N₂ is the candidate (next
+   item). DFTB+ 24.1 is installed; it was not run for this H₂ toy.
 2. **N₂ would be the citable case, and the tree cannot run it.** The DFTB+
    Recipes ship a fully specified mio-1-1 N₂ `Casida{}` example
    (d = 1.151128 Å, `SpinConstants N = {-0.026}`, `SCCTolerance = 1e-10`) whose
@@ -210,6 +211,5 @@ MioSketch pin set re-derived in one pass.
 
 ## Perf
 
-`perf_exempt: true` — no DFTB+ binary on this host, so no fair wall-clock
-comparison exists. Runtime is 13 ms single-threaded (two 2-atom SCCs, one
-3-atom SCC, an 8×8 and three 1×1 dense eigensolves).
+`perf_exempt: true` — no DFTB+ `Casida{}` twin was run for this H₂ toy (no
+citable number exists). Runtime is ~15 ms single-threaded.

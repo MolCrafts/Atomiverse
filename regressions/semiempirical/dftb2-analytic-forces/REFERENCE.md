@@ -1,7 +1,13 @@
 # Reference — DFTB2 analytic nuclear forces (H2O)
 
-oracle: dftb+
-oracle_version: formula-level (Hourahine et al. JCP 152, 124101 (2020); no DFTB+ binary on pin host)
+oracle: literature
+oracle_version: Hourahine et al., J. Chem. Phys. 152, 124101 (2020); Elstner
+  et al., Phys. Rev. B 58, 7260 (1998) — closed-form SCC-DFTB2 nuclear gradient
+family_oracle: dftb+
+
+No DFTB+ run produced an absolute energy or force for this geometry. The
+gate is analytic \(F\) vs re-SCC FD of the same ATV energy. Do not read
+`oracle: dftb+` into that identity.
 
 ## Method
 
@@ -85,8 +91,8 @@ Residual after the fix, measured on this case:
 
 The energy of this case moved from −44.60971806 to **−91.70909683 eV** as a
 consequence of (1) and (2): the old number was a limit-cycle snapshot over a
-double-counting route that was wrong at second order. It is not an oracle
-value and no DFTB+ identity is claimed for it.
+double-counting route that was wrong at second order. It is an ATV twin
+snapshot, not an oracle value — no DFTB+ identity is claimed for it.
 
 **Closed 2026-07-29:** the owed open-shell \(\Delta q \ne 0\) gate landed as
 the **NO doublet** in `regressions/semiempirical/dftb2-spin-analytic-stress`,
@@ -97,5 +103,6 @@ another.
 
 ## Perf
 
-`perf_exempt: true` — no DFTB+ binary / fair wall on pin host. Analytic path
-replaces \(6N\) full re-SCC force evaluations with one post-SCC contraction.
+`perf_exempt: true` — no DFTB+ absolute-force twin was run for this
+geometry (FD identity only). Analytic path replaces \(6N\) full re-SCC
+force evaluations with one post-SCC contraction.

@@ -1,20 +1,26 @@
 # dftb2-multi-k-forces — analytic Bloch-sum forces + cell stress (2×1×1 MP mesh)
 
 ```text
-oracle: dftb+
-oracle_version: DFTB+ 24.1 (family oracle; formula-level pin — no DFTB+ binary on host)
+oracle: literature
+oracle_version: Elstner et al., Phys. Rev. B 58, 7260 (1998); Hourahine et al.,
+  J. Chem. Phys. 152, 124101 (2020) — Bloch-sum SCC-DFTB2 forces
 family_oracle: dftb+
 ```
 
-**Note:** no offline DFTB+ binary exists on the pin host (`module spider dftb`
-→ nothing; `command -v dftb+` → nothing), and the in-tree SK tables are a
-mio-**style** sketch, not a DFTB.org mio-1-1 dump. Absolute agreement with
-DFTB+ is therefore **not** claimed. The scientific pin is the
-**module-boundary identity**: the analytic multi-k gradient is \(-\nabla E\) of
-exactly the Bloch-phased, lattice-summed functional the multi-k SCC converged,
-verified against a re-SCC central finite difference of that same functional.
-Absolute \(E\) / \(F_x\) are additionally frozen as ATV-twin values so a silent
-Hamiltonian drift fails the gate. Family numerical oracle remains **DFTB+**.
+**W does not enter.** `multiplicity = 1` (closed shell); `spin_w_ha` is
+ignored. This spec (`dftb-data-00-honesty`) did **not** move the energy.
+The numbers below are the current ATV twin (transcribed mio-1-1 C–C, Ewald
+\(\gamma\)), matching `reg_dftb2-multi-k-forces.cpp`. They supersede the
+2026-07-29 REFERENCE snapshot −104.6601079822 eV, which was already stale
+versus the cpp pin; that move is not a spin-constant effect and is not
+labelled as one.
+
+Absolute agreement with DFTB+ is **not** claimed (no offline 2×1×1 force
+twin was re-taken here). The scientific pin is the **module-boundary
+identity**: analytic multi-k \(F=-\nabla E\) of the Bloch-phased,
+lattice-summed functional, vs re-SCC FD of that same functional. Absolute
+\(E\) / \(F_x\) are frozen as an ATV-twin snapshot so silent Hamiltonian
+drift fails the gate.
 
 ## Method
 
@@ -93,8 +99,7 @@ e.g. Γ in an odd mesh).
 
 ## Data
 
-In-tree static tables `basis_data/dftb_mio_tables.h` for H/C/N/O only.
-**Not** a full DFTB.org mio-1-1 `.skf` dump. SK set: `DftbSkSet::MioSketch`.
+In-tree transcribed mio-1-1 C–C (`DftbSkSet::MioSketch`, historical name).
 
 ## Geometry
 
@@ -145,37 +150,32 @@ Offline DFTB+ twin input shape:
 | **Force FD identity** | analytic \(F_{0,x}\), \(F_{1,x}\) vs re-SCC central FD of the **multi-k** energy (\(h = 10^{-4}\) Å) within **1×10⁻⁶ eV/Å** |
 | **Stress FD identity** | analytic \(\sigma_{xx}\), \(\sigma_{yy}\) vs re-SCC **affine strain**-FD of the multi-k energy (\(h = 2\times10^{-4}\)) within **1×10⁻⁶ eV/Å³**; all six components finite |
 | Multi-k ≠ Γ | \(\|F_{0,x}^{2\times1\times1} - F_{0,x}^{\Gamma}\| > 10^{-3}\) eV/Å |
-| Energy pin | \(E = -104.6601079822\) eV ± 0.05 |
-| Force pin | \(F_{0,x} = 87.7589230119\) eV/Å ± 0.05 |
+| Energy pin | \(E = -91.8503968025\) eV ± 0.05 |
+| Force pin | \(F_{0,x} = -11.1318394253\) eV/Å ± 0.05 |
 
-Measured (2026-07-29, `-DCMAKE_BUILD_TYPE=Release`, 1 thread):
+Measured (2026-09-04, `-DCMAKE_BUILD_TYPE=Release`, 1 thread) — **unchanged
+by published \(W\)** (`multiplicity = 1`):
 
 ```text
-DFTB2 multi-k (2x1x1) C-chain forces: E=-104.6601079822 eV
-  F[0]=( 87.7589230119, -0.0000000000, -0.0000000000) eV/A
-  F[1]=(-87.7589230119,  0.0000000000,  0.0000000000) eV/A
-  F0x analytic= 87.7589230119  fd= 87.7589234489  |d|=4.370e-07
-  F1x analytic=-87.7589230119  fd=-87.7589234494  |d|=4.375e-07
-  sigma=(-2.3734943199e-01, 0.0, 0.0, 2.794e-18, 6.931e-18, 0.0) eV/A^3
-  sigma_xx analytic=-2.3734943199e-01  strain-fd=-2.3734943420e-01  |d|=2.216e-09
-  sigma_yy analytic= 0.0000000000e+00  strain-fd=-0.0000000000e+00  |d|=0.000e+00
-  Γ (1x1x1): E=-119.5331774864 eV  F0x=57.7318816248 eV/A  ΔF0x=30.027041
+DFTB2 multi-k (2x1x1) C-chain forces: E=-91.8503968025 eV
+  F[0]=(-11.1318394253, -0.0000000000,  0.0000000000) eV/A
+  F[1]=( 11.1318394253,  0.0000000000, -0.0000000000) eV/A
+  F0x analytic=-11.1318394253  fd=-11.1318416498  |d|=2.225e-06
+  F1x analytic= 11.1318394253  fd= 11.1318416501  |d|=2.225e-06
+  sigma=(-2.4281077193e-02, ~0, ~0, ~0, ~0, ~0) eV/A^3
+  sigma_xx analytic=-2.4281077193e-02  strain-fd=-2.4281094545e-02  |d|=1.735e-08
+  sigma_yy analytic= 0                 strain-fd= 0                 |d|=2e-32
+  Γ (1x1x1): E=-93.1115376115 eV  F0x=-14.8265853692 eV/A  ΔF0x=3.694746
 ```
 
-\(\sigma_{yy}=\sigma_{zz}=0\) exactly and the shears are ~1e-18 — correct for a
+\(\sigma_{yy}=\sigma_{zz}=0\) and the shears are numerical zeros — correct for a
 1-D chain along \(x\) with 12 Å of vacuum on the transverse axes (every
 transverse image is beyond \(r_{\mathrm{cut}}\)).
 
-**The FD residual is pure \(h^2\) truncation, not a gradient defect.** Halving
-the step to \(h = 5\times10^{-5}\) Å takes it from `4.370e-07` to `1.095e-07`
-(F0x) and `4.375e-07` to `1.092e-07` (F1x) — a factor of 4.00, exactly the
-second-order central-difference law. The relative error at the gate step is
-\(5\times10^{-9}\) of a 87.76 eV/Å force.
-
-The Γ control (\(F_{0,x} = 57.73\) eV/Å) is the value
-`reg_dftb2-periodic-forces` gates at the same geometry: the 30.03 eV/Å shift is
-the physical effect of sampling the 1-D band beyond Γ, and it is what makes this
-case a gradient test rather than a re-run of the Γ one.
+The Γ control (\(F_{0,x}=-14.8265853692\) eV/Å, \(E=-93.1115376115\) eV) is
+the same geometry as `reg_dftb2-periodic-forces` / `reg_dftb3-periodic-forces`
+(homonuclear ⇒ DFTB3 reduces to DFTB2). The 3.69 eV/Å shift is the physical
+effect of sampling the 1-D band beyond Γ.
 
 ## Public API
 
@@ -225,8 +225,8 @@ after adding the self-image \(H^0/S/\gamma/E_\mathrm{rep}\) virial terms
    \(-\nabla E\). The gated geometry has an open gap at both sampled k-points
    (which the \(10^{-6}\) FD identity demonstrates); a genuinely metallic mesh
    is out of scope.
-4. **No absolute DFTB+ number.** Sketch SK tables + no oracle binary on host;
-   see the note at the top.
+4. **No absolute DFTB+ number.** No 2×1×1 force twin was re-taken in this
+   spec; see the note at the top. W does not enter.
 5. **D3 is still a molecular cluster sum** (pre-existing `DFTB2::d3`
    limitation), so `d3 = true` with a k-mesh mixes a periodic electronic
    energy with an isolated-cluster dispersion term. Untouched here.
@@ -235,7 +235,7 @@ after adding the self-image \(H^0/S/\gamma/E_\mathrm{rep}\) virial terms
 
 ```text
 perf_exempt: true
-perf_exempt_reason: no offline DFTB+ binary on host; fair wall deferred
+perf_exempt_reason: no DFTB+ 2x1x1 force twin re-taken in this spec
 ```
 
 Runtime: < 0.1 s (2-atom cell, 1 irreducible k-point after ±k folding, 5 SCC

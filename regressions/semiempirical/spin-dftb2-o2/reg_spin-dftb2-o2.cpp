@@ -2,9 +2,8 @@
 /// @brief O₂ collinear spin-polarized SCC-DFTB2 — energy + Mulliken spin gate.
 ///
 /// Method: collinear spin-DFTB2 (Elstner SCC + Köhler / DFTB+ spin channel).
-/// In-tree mio-style H/C/N/O tables (not DFTB.org mio-1-1 bit-identical).
-/// Absolute energy pin is the ATV Hamiltonian twin (deterministic).
-/// Family oracle: DFTB+ (offline when SK fidelity matches); literature method.
+/// oracle: dftb+ 24.1 (tools/tb_oracle/inputs/dftbplus/spin-dftb2-o2/).
+/// Published PBE W via spin_w_ha; ShellResolvedSpin = No (HOAO collapse).
 ///
 /// Exit non-zero on failure. Public API only. <= 60 s.
 #include <cmath>
@@ -46,8 +45,12 @@ int main() {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.charge = 0;
     dftb.multiplicity = 3; // ground-state triplet O₂
+    dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
     dftb.with_forces = false;
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 80;
@@ -58,24 +61,13 @@ int main() {
     eval.run(frame);
 
     const double e = frame.meta.get(kEnergy);
-    std::printf("spin-DFTB2 O2 triplet: E=%.10f eV\n", e);
+    std::printf("spin-DFTB2 O2 triplet: E=%.12f eV\n", e);
     if (!std::isfinite(e)) {
         std::printf("FAIL non-finite energy\n");
         return 1;
     }
     if (std::fabs(e) < 1e-3) {
         std::printf("FAIL energy near zero\n");
-        return 1;
-    }
-
-    // Hard pin: ATV mio-style Hamiltonian twin (see REFERENCE.md).
-    // Offline DFTB+ absolute identity needs SK fidelity (not this slug).
-    // Re-pinned after full mio-1-1 O–O + Elstner γ (2026-07-29). ATV twin.
-    constexpr double kE_pin_eV = -177.2425823576;
-    const double de = std::fabs(e - kE_pin_eV);
-    std::printf("  |E - pin|=%.6e eV (tol 5e-2)\n", de);
-    if (de > 5e-2) {
-        std::printf("FAIL energy pin\n");
         return 1;
     }
 
@@ -87,7 +79,7 @@ int main() {
     const double m0 = m[0];
     const double m1 = m[1];
     const double m_tot = m0 + m1;
-    std::printf("  m_Mulliken = [%.6f, %.6f]  sum=%.6f\n", m0, m1, m_tot);
+    std::printf("  m_Mulliken = [%.12f, %.12f]  sum=%.12f\n", m0, m1, m_tot);
     if (std::fabs(m_tot - 2.0) > 0.25) {
         std::printf("FAIL total spin population (expect ~2 for triplet)\n");
         return 1;
@@ -98,6 +90,44 @@ int main() {
     }
     if (std::fabs(m0 - m1) > 0.2) {
         std::printf("FAIL spin asymmetry on O2\n");
+        return 1;
+    }
+
+    // E_spin from the public Mulliken spin; there is no last_e_spin().
+    // W_pp(O, PBE) = -0.028 Ha = -0.761918814888 eV. O2 triplet m_A = 1
+    // by symmetry, so E_spin = 1/2 Σ_A W m_A² = W.
+    constexpr double kW_O_Pbe_eV = -0.761918814888;
+    constexpr double kEspin_eV = -0.761918814888;
+    constexpr double kEspinTol_eV = 1e-9;
+    const double e_spin = 0.5 * kW_O_Pbe_eV * (m0 * m0 + m1 * m1);
+    std::printf("  E_spin=0.5*W*(m0^2+m1^2)=%.12f eV (pin %.12f)\n", e_spin,
+                kEspin_eV);
+    if (std::fabs(e_spin - kEspin_eV) > kEspinTol_eV) {
+        std::printf("FAIL E_spin pin\n");
+        return 1;
+    }
+
+    // Total energy vs the superseded sketch-W ATV twin. E = Tr(ρH0)+E2+E_spin
+    // +E_rep; O2 homonuclear ⇒ Δq≡0 ⇒ uniform spin shift leaves ρ unchanged,
+    // so ΔE = ΔE_spin = +0.238081185112 eV exactly (1e-4 is numerical noise).
+    constexpr double kE_old_eV = -177.2425823576;
+    constexpr double kDeltaEspin_eV = 0.238081185112;
+    constexpr double kE_pin_eV = -177.004501172488;
+    constexpr double kDeltaTol_eV = 1e-4;
+    const double shift = e - kE_old_eV;
+    std::printf("  E-E_old=%.12f eV (expect ΔE_spin=%.12f, tol %g)\n", shift,
+                kDeltaEspin_eV, kDeltaTol_eV);
+    if (std::fabs(shift - kDeltaEspin_eV) > kDeltaTol_eV) {
+        std::printf("FAIL |E_new - E_old - ΔE_spin|=%.12f eV > %g "
+                    "(iron law 9 — do not widen; E_new=%.12f E_old=%.12f)\n",
+                    std::fabs(shift - kDeltaEspin_eV), kDeltaTol_eV, e,
+                    kE_old_eV);
+        return 1;
+    }
+    const double de = std::fabs(e - kE_pin_eV);
+    std::printf("  |E - pin|=%.6e eV (tol %g)\n", de, kDeltaTol_eV);
+    if (de > kDeltaTol_eV) {
+        std::printf("FAIL energy pin: got %.12f want %.12f\n", e, kE_pin_eV);
         return 1;
     }
 

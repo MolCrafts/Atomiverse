@@ -37,6 +37,9 @@ double energy_at(double r) {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.with_forces = false;
     dftb.scc_tol = 1e-10;
     eval.on(evaluate::Phase::evaluate).add(std::move(dftb));

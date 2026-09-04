@@ -118,9 +118,12 @@ if(NOT ATV_DOCS_ONLY)
            "Build libxc-backed XC oracle (test-only scaffolding; deletable after native parity is locked in)"
            OFF)
     # molrs path (optional product — gated by ATV_BUILD_MOLRS after module DAG).
-    # Submodule pin at ./molrs; -DATV_MOLRS_PATH only for local experiments.
+    # Two documented sources (cmake/MolrsContract.cmake, "Pin policy"):
+    #   * CI / plain `cmake -B`: the ./molrs submodule gitlink (this default);
+    #   * developer presets (CMakePresets.json): the sibling MolCrafts checkout
+    #     ${sourceDir}/../molrs, whose uncommitted dev tree no gitlink can pin.
     set(ATV_MOLRS_PATH "${CMAKE_SOURCE_DIR}/molrs" CACHE PATH
-        "Path to molrs source tree (default: git submodule ./molrs)")
+        "Path to molrs source tree (default: git submodule ./molrs; presets: ../molrs)")
     include("${CMAKE_SOURCE_DIR}/cmake/MolrsContract.cmake")
     option(ATV_BUILD_PYTHON "Build Python bindings (nanobind)" OFF)
     # The nanobind module is a shared object linking the static atomiverse
@@ -146,18 +149,24 @@ if(NOT ATV_DOCS_ONLY)
 
     # molrs contract only when the DAG left MOLRS on.
     set(ATV_MOLRS_HAS_WHAM OFF)
+    set(ATV_MOLRS_HAS_TRAJECTORY_WRITER OFF)
     if(ATV_BUILD_MOLRS)
         if(NOT EXISTS "${ATV_MOLRS_PATH}/Cargo.toml")
             message(FATAL_ERROR
                 "ATV_BUILD_MOLRS=ON but molrs not found at "
                 "ATV_MOLRS_PATH='${ATV_MOLRS_PATH}'.\n"
-                "  Init: git submodule update --init --recursive molrs\n"
+                "  Submodule: git submodule update --init --recursive molrs\n"
+                "  Presets:   clone MolCrafts/molrs (branch dev) next to this "
+                "repo as ../molrs\n"
                 "  Or turn off ANALYSIS/IO/PYTHON/GPW/HF/SEMIEMPIRICAL "
                 "(those products enable molrs).")
         endif()
-        if(NOT ATV_MOLRS_PATH STREQUAL "${CMAKE_SOURCE_DIR}/molrs")
-            message(WARNING
-                "ATV_MOLRS_PATH='${ATV_MOLRS_PATH}' overrides the ./molrs submodule.")
+        if(ATV_MOLRS_PATH STREQUAL "${CMAKE_SOURCE_DIR}/molrs")
+            message(STATUS "molrs source: ./molrs submodule (CI pin)")
+        else()
+            message(STATUS
+                "molrs source: ${ATV_MOLRS_PATH} (developer checkout; "
+                "the ./molrs submodule is bypassed)")
         endif()
         atv_validate_molrs_source_contract("${ATV_MOLRS_PATH}")
         atv_detect_molrs_wham("${ATV_MOLRS_PATH}" ATV_MOLRS_HAS_WHAM)
@@ -165,6 +174,14 @@ if(NOT ATV_DOCS_ONLY)
             message(STATUS "molrs WhamCompute: available")
         else()
             message(STATUS "molrs WhamCompute: not in this pin (wham skipped)")
+        endif()
+        atv_detect_molrs_trajectory_writer("${ATV_MOLRS_PATH}"
+                                           ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+        if(ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+            message(STATUS "molrs TrajectoryWriter: available (cpu::MrecRecorder)")
+        else()
+            message(STATUS
+                "molrs TrajectoryWriter: not in this pin (MrecRecorder skipped)")
         endif()
     else()
         message(STATUS "molrs CXX: OFF (no Rust link; pure engine build)")
@@ -262,6 +279,11 @@ if(NOT ATV_DOCS_ONLY)
         # dipoles (cpu/potentials/pim_xl_dipole.*, MD-only builds), so it is
         # never method-gated.
         src/cpu/electronic/xl_bomd.cpp
+        # Kolafa ASPC extrapolation (cpu/electronic/aspc_predictor.cpp): same
+        # story. Gaussian SCF and GPW extrapolate the density with it, and the
+        # DFTB2 SCC extrapolates its Mulliken charges with it in SE-only
+        # builds where ATV_BUILD_HF is OFF, so it cannot live behind HF.
+        src/cpu/electronic/aspc_predictor.cpp
         src/cpu/io/lammps_data.cpp
         src/cpu/io/lammps_coeffs.cpp
         # molrs-backed IO / ANALYSIS / exchange — gated below (ATV_BUILD_*)
@@ -323,6 +345,14 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/record/xyz.cpp
             src/cpu/record/xyz_recorder.cpp
         )
+        # Streaming `*.mrec` recorder — needs the molrs TrajectoryWriter bridge
+        # (capability bit 3); gated on the pin like WHAM, sources AND tests.
+        if(ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+            list(APPEND ATOMIVERSE_SRCS
+                src/cpu/record/mrec.cpp
+                src/cpu/record/mrec_recorder.cpp
+            )
+        endif()
     endif()
     if(ATV_BUILD_ANALYSIS)
         list(APPEND ATOMIVERSE_SRCS
@@ -355,7 +385,9 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/semiempirical/gfn0.cpp
             src/cpu/semiempirical/dftb3.cpp
             src/cpu/semiempirical/dftb3_scc.cpp
+            src/cpu/semiempirical/dftb_spin.cpp
             src/cpu/semiempirical/mio_sk_block.cpp
+            src/cpu/semiempirical/dftb_gamma_lattice.cpp
             src/cpu/semiempirical/scc_mixer.cpp
 
             src/cpu/multiscale/qmmm_mechanical.cpp
@@ -419,6 +451,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/dynamics/fix_dfield.cpp
             src/cpu/dynamics/fix_oscillating_efield.cpp
             src/cpu/dynamics/fix_wall_lj1043.cpp
+            src/cpu/dynamics/berendsen.cpp
             src/cpu/dynamics/fix_csvr.cpp
             src/cpu/dynamics/fix_rattle.cpp
             src/cpu/dynamics/fix_settle.cpp
@@ -621,6 +654,11 @@ if(NOT ATV_DOCS_ONLY)
         target_sources(atomiverse PRIVATE src/cpu/observe/wham.cpp)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLRS_WHAM=1)
     endif()
+    # Streaming mrec recorder — needs IO + molrs pin with the TrajectoryWriter.
+    if(ATV_BUILD_IO AND ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+        target_compile_definitions(atomiverse PUBLIC
+                                   ATV_HAS_MOLRS_TRAJECTORY_WRITER=1)
+    endif()
 
     if(ATV_BUILD_HF)
         target_sources(atomiverse PRIVATE
@@ -707,14 +745,12 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/casscf.cpp
             src/cpu/scf/nevpt2.cpp
             src/cpu/scf/orbital_info_observer.cpp
-            # Electronic-state propagators (cpu/electronic/): Kolafa ASPC
-            # extrapolation and Car–Parrinello fictitious-mass dynamics. They
-            # depend only on cpu/linalg, and every consumer (Gaussian SCF
-            # here, GPW below — GPW requires HF) is behind this flag, so they
-            # build once here. The Niklasson XL recursion (xl_bomd.cpp) moved
-            # to the always-on set: classical PIM XL dipoles consume it in
-            # MD-only builds.
-            src/cpu/electronic/aspc_predictor.cpp
+            # Car–Parrinello fictitious-mass dynamics (cpu/electronic/cpmd.cpp):
+            # depends only on cpu/linalg, and every consumer (Gaussian SCF here,
+            # GPW below — GPW requires HF) is behind this flag. The Niklasson XL
+            # recursion (xl_bomd.cpp) and the Kolafa ASPC predictor
+            # (aspc_predictor.cpp) both moved to the always-on set, for the
+            # classical PIM XL dipoles and the DFTB2 charge guess respectively.
             src/cpu/electronic/cpmd.cpp
             # Molecular DFT-D3 (BJ) + shared Grimme tables (also used by GPW
             # zero-damping when ATV_BUILD_GPW=ON — sources live once under HF
@@ -1014,6 +1050,44 @@ if(NOT ATV_DOCS_ONLY)
     find_package(BLAS REQUIRED)
     find_package(LAPACK REQUIRED)
 
+    # ── The Python extension must not use an OpenMP-flavour BLAS ────────
+    #
+    # An OpenBLAS built USE_OPENMP **deadlocks** in threaded `dgemm` once it is
+    # `dlopen`ed into CPython: every worker spins forever in `inner_thread`.
+    # Reproduced with nothing but `ctypes.CDLL(libopenblas.so)` and one
+    # `dgemm_` call at 1088x1088x256 — no numpy, no Atomiverse. The same
+    # library in a statically linked executable runs that GEMM at 415 GFLOP/s,
+    # which is why the C++ regressions and benchmarks never saw it.
+    #
+    # The failure mode is a silent hang, so warn at configure time rather than
+    # letting someone discover it as "the Python bindings are slow". OpenBLAS
+    # ships pthread and sequential flavours alongside the OpenMP one; both are
+    # dlopen-safe. Pass e.g.
+    #   -DBLAS_LIBRARIES=<prefix>/pthread/lp64/lib/libopenblas.so
+    #   -DLAPACK_LIBRARIES=<prefix>/pthread/lp64/lib/libopenblas.so
+    #
+    # Detection is by linkage, not by path: an OpenMP-flavour BLAS links
+    # libgomp/libomp, whatever directory it happens to live in.
+    if(ATV_BUILD_PYTHON AND BLAS_LIBRARIES)
+        list(GET BLAS_LIBRARIES 0 _atv_blas_first)
+        if(EXISTS "${_atv_blas_first}")
+            execute_process(COMMAND ldd "${_atv_blas_first}"
+                            OUTPUT_VARIABLE _atv_blas_ldd
+                            ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+            if(_atv_blas_ldd MATCHES "libgomp|libomp\\.so|libiomp5")
+                message(WARNING
+                    "ATV_BUILD_PYTHON is ON and BLAS '${_atv_blas_first}' is an "
+                    "OpenMP-threaded build (it links libgomp/libomp). Such a "
+                    "BLAS deadlocks in threaded GEMM when dlopen'ed into "
+                    "CPython — the extension will HANG on any system large "
+                    "enough to cross the BLAS threading threshold. Point "
+                    "BLAS_LIBRARIES/LAPACK_LIBRARIES at the pthread or "
+                    "sequential flavour instead.")
+            endif()
+        endif()
+
+    endif()
+
     if(ATV_BUILD_CUDA)
         target_include_directories(atomiverse PRIVATE src/cuda/neighbor)
     endif()
@@ -1132,8 +1206,12 @@ if(NOT ATV_DOCS_ONLY)
             GIT_TAG v0.6.1
         )
         FetchContent_MakeAvailable(Corrosion)
+        # molrs >= 0.14 makes molrs-cxxapi a standalone workspace root (its
+        # own `[workspace]` + Cargo.lock), so it is no longer reachable from
+        # the repo-root manifest; the 0.13 submodule layout resolves the same
+        # path to the root workspace member, so one MANIFEST_PATH serves both.
         corrosion_import_crate(
-            MANIFEST_PATH "${ATV_MOLRS_PATH}/Cargo.toml"
+            MANIFEST_PATH "${ATV_MOLRS_PATH}/molrs-cxxapi/Cargo.toml"
             CRATES molcrafts-molrs-cxxapi
         )
         # molrs-core hardcodes F = f64.  Bridge always uses double.
@@ -1210,6 +1288,39 @@ if(NOT ATV_DOCS_ONLY)
         nanobind_add_module(_atomiverse ${_ATV_NB_SRCS})
         target_link_libraries(_atomiverse PRIVATE atomiverse)
         target_include_directories(_atomiverse PRIVATE include python/src/bindings)
+
+        # ── Pin the extension to the BLAS it was linked against ────────
+        #
+        # OpenBLAS ships openmp / pthread / sequential flavours that all carry
+        # the SAME soname, `libopenblas.so.0`. The one that wins at run time is
+        # whichever directory comes first in the extension's DT_RPATH — and
+        # CMake fills that RPATH from the compiler's implicit link path, which
+        # on a module-based toolchain is the OpenMP flavour. -DBLAS_LIBRARIES
+        # therefore does NOT choose the runtime library, and neither does
+        # LD_LIBRARY_PATH, because DT_RPATH is searched first.
+        #
+        # That matters because the OpenMP flavour **deadlocks** in threaded
+        # GEMM once dlopen'ed into CPython (see the configure-time check near
+        # find_package(BLAS)). Put the linked BLAS's own directory at the head
+        # of the RPATH so the extension actually loads what it was built with.
+        if(BLAS_LIBRARIES)
+            list(GET BLAS_LIBRARIES 0 _atv_py_blas)
+            if(EXISTS "${_atv_py_blas}")
+                get_filename_component(_atv_py_blas_dir "${_atv_py_blas}" DIRECTORY)
+                # `BUILD_RPATH` is APPENDED after the implicit link
+                # directories, which is exactly the wrong end — the toolchain's
+                # own OpenBLAS directory sits in those. Emit the -rpath as a
+                # link option instead: CMake places LINK_OPTIONS ahead of the
+                # rpath flags it generates itself, and the loader takes the
+                # first DT_RPATH entry that resolves.
+                target_link_options(_atomiverse PRIVATE
+                                    "LINKER:-rpath,${_atv_py_blas_dir}")
+                set_property(TARGET _atomiverse APPEND PROPERTY
+                             INSTALL_RPATH "${_atv_py_blas_dir}")
+                message(STATUS
+                    "python extension BLAS rpath: ${_atv_py_blas_dir}")
+            endif()
+        endif()
         if(ATV_BUILD_PW)
             target_link_libraries(_atomiverse PRIVATE ${FFTW3_LIB})
         endif()

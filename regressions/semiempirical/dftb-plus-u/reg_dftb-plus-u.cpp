@@ -43,6 +43,9 @@ cpu::Frame make_water() {
 /// @brief Single-point DFTB2(+U) energy via Evaluate (Frame only).
 double energy_only(cpu::Frame g, double u_o) {
     cpu::semiempirical::DFTB2 d;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d.with_forces = false;
     d.scc_tol = 1e-10;
     if (u_o > 0.0)
@@ -62,6 +65,9 @@ int main() {
 
     auto f0 = make_water();
     cpu::semiempirical::DFTB2 plain;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    plain.boundary = cpu::semiempirical::DftbBoundary::cluster;
     plain.with_forces = false;
     plain.scc_tol = 1e-10;
     {
@@ -74,6 +80,9 @@ int main() {
 
     auto f = make_water();
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.with_forces = true;
     dftb.scc_tol = 1e-10;
     dftb.u_eff[8] = kU;
@@ -129,8 +138,8 @@ int main() {
         -(energy_only(std::move(fp), kU) - energy_only(std::move(fm), kU))
         / (2.0 * h);
     const double fox = static_cast<double>(f.span(kAtom_fx)[0]);
-    std::printf("  F_O_x analytic/FD-path=%.12f  fd=%.12f  |d|=%.3e eV/A\n", fox,
-                fd, std::fabs(fox - fd));
+    std::printf("  F_O_x analytic/FD-path=%.12f  fd=%.12f  |d|=%.3e eV/A\n",
+                fox, fd, std::fabs(fox - fd));
     if (std::fabs(fox - fd) > 5e-4) {
         std::printf("FAIL force vs energy FD (tol 5e-4 eV/A)\n");
         return 1;

@@ -50,6 +50,9 @@ double energy_only(cpu::Frame g) {
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
     cpu::semiempirical::DFTB2 d;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d.with_forces = false;
     d.scc_tol = 1e-10;
     ev.on(evaluate::Phase::evaluate).add(std::move(d));
@@ -65,6 +68,9 @@ int main() {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.with_forces = true;
     dftb.scc_tol = 1e-10;
     eval.on(evaluate::Phase::evaluate).add(std::move(dftb));

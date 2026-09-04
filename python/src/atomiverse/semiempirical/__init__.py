@@ -58,4 +58,59 @@ AM1Evaluator = _cpp.AM1Evaluator
 #: nuclear-force buffer [eV/Å].
 AM1Result = _cpp.AM1Result
 
-__all__ = ["AM1", "AM1Evaluator", "AM1Result"]
+#: SCC-DFTB2 for H/C/N/O — Elstner et al., Phys. Rev. B 58, 7260 (1998).
+#:
+#: A tight-binding valence Hamiltonian built from tabulated two-centre
+#: integrals with the atomic charges relaxed self-consistently. Unlike AM1 it
+#: has closed-form analytic forces and an analytic cell stress, and it is
+#: periodic: `boundary` chooses between an isolated molecule and a 3-D lattice
+#: with an Ewald-summed charge kernel. On the mio-1-1 parameter set it
+#: reproduces DFTB+ to ~1e-8 eV/atom.
+#:
+#: Example::
+#:
+#:     d = atv.DFTB2()
+#:     d.boundary = atv.DftbBoundary.lattice
+#:     d.k_mesh = (3, 3, 3)
+#:     forces = d.forces(frame)      # (N, 3) [eV/Å]; energy on frame.meta
+#:
+#: Open shell (triplet O₂, DFTB+ ``ShellResolvedSpin = No``)::
+#:
+#:     d = atv.DFTB2()
+#:     d.boundary = atv.DftbBoundary.cluster
+#:     d.multiplicity = 3
+#:     d.spin_w_ha = atv.kDftbSpinConstantsPbeHa
+DFTB2 = _cpp.DFTB2
+
+#: Cluster vs lattice Hamiltonian — DFTB+'s `C` vs `S` geometry. These are
+#: different Hamiltonians, not an approximation of one another: a large empty
+#: box is NOT a way to get an isolated molecule once γ is Ewald-summed.
+DftbBoundary = _cpp.DftbBoundary
+
+#: Which transcribed Slater-Koster set DFTB2 / DFTB3 uses
+#: (``unset``, ``mio``, or ``threeob``). DFTB2 defaults to ``mio``;
+#: ``unset`` is the DFTB3 sentinel and throws from launch until assigned.
+DftbSkSet = _cpp.DftbSkSet
+
+#: One element's shell-resolved collinear spin constants \(W^A_{ll'}\) [Ha].
+DftbSpinConstant = _cpp.DftbSpinConstant
+
+#: Published PBE collinear spin-constant table [Ha] (Köhler / DFTB+ appendix).
+#: Assign onto ``DFTB2.spin_w_ha`` for an open-shell solve; never applied
+#: silently.
+kDftbSpinConstantsPbeHa = _cpp.kDftbSpinConstantsPbeHa
+
+#: LDA-functional collinear spin constants [Ha]. Not a default.
+kDftbSpinConstantsLdaHa = _cpp.kDftbSpinConstantsLdaHa
+
+__all__ = [
+    "AM1",
+    "AM1Evaluator",
+    "AM1Result",
+    "DFTB2",
+    "DftbBoundary",
+    "DftbSkSet",
+    "DftbSpinConstant",
+    "kDftbSpinConstantsPbeHa",
+    "kDftbSpinConstantsLdaHa",
+]

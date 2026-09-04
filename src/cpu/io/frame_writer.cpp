@@ -38,8 +38,10 @@ void write_frame_zarr(const std::string& path, const std::vector<int>& type_id,
     rust::Vec<rust::String> names;
     for (const auto& n : field_names)
         names.push_back(rust::String(n));
+    // molrs 0.14 renamed the bridge door `write_frame_zarr` → `write_frame`
+    // (the store is a `*.mrec`; the retired `.zarr` suffix is refused).
     internal::with_molrs_context("cpu::write_frame_zarr", path, [&] {
-        molrs::write_frame_zarr(
+        molrs::write_frame(
             {path.data(), path.size()},
             {reinterpret_cast<const std::int32_t*>(type_id.data()),
              type_id.size()},

@@ -45,7 +45,8 @@ class Dftb3Scc {
     ///        size n.
     /// @param distance Row-major n×n interatomic distances [Å] (minimum
     ///        image already applied; diagonal ignored).
-    /// @throws std::invalid_argument on an empty or size-mismatched input.
+    /// @throws std::invalid_argument on an empty or size-mismatched input,
+    ///         or when any Hubbard derivative is zero or non-finite.
     Dftb3Scc(std::vector<double> hubbard_u,
              std::vector<double> hubbard_derivative,
              std::vector<double> distance);
@@ -122,13 +123,15 @@ class Dftb3Scc {
     ///        \f$V^{(2)}_A=\partial E^{(2)}/\partial\Delta q_A\f$ [eV/e].
     /// @param dq Mulliken charge fluctuations Δq [e], size n.
     /// @return Per-atom \f$V^{(2)}\f$ [eV/e], size n.
-    std::vector<double> second_order_potential(const std::vector<double>& dq) const;
+    std::vector<double>
+    second_order_potential(const std::vector<double>& dq) const;
 
     /// @brief Third-order atomic potential
     ///        \f$V^{(3)}_A=\partial E^{(3)}/\partial\Delta q_A\f$ [eV/e].
     /// @param dq Mulliken charge fluctuations Δq [e], size n.
     /// @return Per-atom \f$V^{(3)}\f$ [eV/e], size n.
-    std::vector<double> third_order_potential(const std::vector<double>& dq) const;
+    std::vector<double>
+    third_order_potential(const std::vector<double>& dq) const;
 
     /// @brief Full SCC atomic potential
     ///        \f$\partial(E^{(2)}+E^{(3)})/\partial\Delta q_A\f$ [eV/e].

@@ -19,12 +19,11 @@ using namespace ATV;
 namespace {
 
 // ATV Hamiltonian-twin pin [eV] at the geometry below after full mio-1-1
-// H/C/N/O SK transcription (2026-07-29). scc_tol=1e-10. Third-order U^d are
-// still sketches, so this is NOT a DFTB+ absolute DFTB3 number — it is the
-// deterministic ATV DFTB3 energy on real mio SK + sketch U^d.
-// Supersedes sketch-era -94.536037348400.
-// Re-pinned after stable equal-U ∂γ/∂U for E³ (2026-07-29). ATV twin: U^d sketch.
-constexpr double kPinEnergyEV = -111.204208212956;
+// H/C/N/O SK transcription. scc_tol=1e-10. Published 3ob U^d assigned
+// explicitly (hubbard_du_ha) on mio SK — mixed-set pairing, NOT a DFTB+
+// absolute DFTB3 number. Deterministic ATV DFTB3 energy (twin snapshot).
+// Supersedes sketch-U^d pin -111.204208212956 (dftb-data-00-honesty).
+constexpr double kPinEnergyEV = -111.195830730395;
 constexpr double kPinTolEV = 1e-6;
 
 cpu::Frame make_water() {
@@ -58,6 +57,8 @@ int main() {
 
     cpu::Evaluate eval;
     cpu::semiempirical::DFTB3 dftb3;
+    dftb3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+    dftb3.hubbard_du_ha = cpu::semiempirical::basis_data::k3obHubbardDerivsHa;
     dftb3.with_forces = false;
     dftb3.scc_tol = 1e-10;
     eval.on(evaluate::Phase::evaluate).add_ref(dftb3);
@@ -92,6 +93,9 @@ int main() {
     auto frame2 = make_water();
     cpu::Evaluate eval2;
     cpu::semiempirical::DFTB2 d2;
+    // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
+    // geometry, so say so rather than letting a cutoff hide the images.
+    d2.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d2.with_forces = false;
     d2.scc_tol = 1e-10;
     eval2.on(evaluate::Phase::evaluate).add(std::move(d2));
@@ -100,7 +104,8 @@ int main() {
     const double e2 = frame2.meta.get(kEnergy);
     std::printf("DFTB2 H2O: E=%.12f eV  |dE|=%.6e\n", e2, std::fabs(e - e2));
     if (std::fabs(e - e2) < 1e-6) {
-        std::printf("FAIL DFTB3 energy identical to DFTB2 (third-order inactive)\n");
+        std::printf(
+            "FAIL DFTB3 energy identical to DFTB2 (third-order inactive)\n");
         return 1;
     }
     std::printf("  E3=%.6e eV  |dE|/|E3|=%.4f\n", e3,

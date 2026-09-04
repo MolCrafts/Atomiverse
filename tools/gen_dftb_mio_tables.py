@@ -13,6 +13,7 @@ Usage:
 
 Default --sk-dir walks up from this file to .../software/dftb-params/mio-1-1.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,10 +35,6 @@ IDX_PPS, IDX_PPP, IDX_SPS, IDX_SSS = 5, 6, 8, 9
 HA_TO_EV = 27.211386245988
 BOHR_TO_A = 0.529177210903
 
-# Sketch Hubbard derivatives / spin W (not in mio SKF) retained for DFTB3 / spin.
-SKETCH_DU = {1: -1.36, 6: -2.50, 7: -3.20, 8: -3.81}
-SKETCH_SPIN_W = {1: -0.50, 6: -0.80, 7: -0.90, 8: -1.00}
-
 
 def expand_tokens(line: str) -> list[float]:
     line = line.split("#", 1)[0].strip()
@@ -56,9 +53,7 @@ def expand_tokens(line: str) -> list[float]:
 
 def parse_skf(path: Path) -> dict:
     lines = path.read_text().splitlines()
-    spline_i = next(
-        i for i, l in enumerate(lines) if l.strip().startswith("Spline")
-    )
+    spline_i = next(i for i, l in enumerate(lines) if l.strip().startswith("Spline"))
     head = lines[0].replace(",", " ").split()
     grid_dist = float(head[0])
     n_file = int(float(head[1]))
@@ -88,9 +83,7 @@ def parse_skf(path: Path) -> dict:
             sk_rows.append((v + [0.0] * 20)[:20])
 
     if len(sk_rows) < n_grid:
-        raise RuntimeError(
-            f"{path.name}: only {len(sk_rows)} SK rows, need {n_grid}"
-        )
+        raise RuntimeError(f"{path.name}: only {len(sk_rows)} SK rows, need {n_grid}")
     sk_rows = sk_rows[:n_grid]
 
     def col(i: int) -> list[float]:
@@ -151,7 +144,9 @@ def fmt_array(name: str, values: list[float], per_line: int = 4) -> str:
     for i, v in enumerate(values):
         line.append(f"{v:.16e}")
         if len(line) == per_line or i + 1 == len(values):
-            parts.append("    " + ", ".join(line) + ("," if i + 1 < len(values) else ""))
+            parts.append(
+                "    " + ", ".join(line) + ("," if i + 1 < len(values) else "")
+            )
             line = []
     parts.append("};")
     return "\n".join(parts)
@@ -221,17 +216,20 @@ def emit_sk_header(pairs: list[dict], out: Path) -> None:
     for p in pairs:
         tag = pair_tag(p["za"], p["zb"])
         lines.append(f"// ── {p['sym_a']}–{p['sym_b']} ──────────────────────────────")
-        for ch in ("H_sss", "H_sps", "H_pps", "H_ppp", "S_sss", "S_sps", "S_pps", "S_ppp"):
+        for ch in (
+            "H_sss",
+            "H_sps",
+            "H_pps",
+            "H_ppp",
+            "S_sss",
+            "S_sps",
+            "S_pps",
+            "S_ppp",
+        ):
             lines.append(fmt_array(f"kMioSk_{tag}_{ch}", p[ch]))
             lines.append("")
-        lines.append(
-            f"inline constexpr double kMioSk_{tag}_xStart[] = {{"
-        )
-        lines.append(
-            "    "
-            + ", ".join(f"{v:.16e}" for v in p["x_start"])
-            + ","
-        )
+        lines.append(f"inline constexpr double kMioSk_{tag}_xStart[] = {{")
+        lines.append("    " + ", ".join(f"{v:.16e}" for v in p["x_start"]) + ",")
         lines.append("};")
         lines.append("")
         lines.append(fmt_array(f"kMioSk_{tag}_spCoeffs", p["sp_coeffs"]))
@@ -257,12 +255,8 @@ def emit_sk_header(pairs: list[dict], out: Path) -> None:
         lines.append(
             f"     kMioSk_{tag}_S_sss, kMioSk_{tag}_S_sps, kMioSk_{tag}_S_pps, kMioSk_{tag}_S_ppp,"
         )
-        lines.append(
-            f"     {p['n_spline']}u, {p['rep_cutoff']:.16e},"
-        )
-        lines.append(
-            f"     {{{ec[0]:.16e}, {ec[1]:.16e}, {ec[2]:.16e}}},"
-        )
+        lines.append(f"     {p['n_spline']}u, {p['rep_cutoff']:.16e},")
+        lines.append(f"     {{{ec[0]:.16e}, {ec[1]:.16e}, {ec[2]:.16e}}},")
         lines.append(
             f"     kMioSk_{tag}_xStart, kMioSk_{tag}_spCoeffs, kMioSk_{tag}_spLast}},"
         )
@@ -318,11 +312,9 @@ def emit_elements_patch(pairs: list[dict], tables_h: Path) -> None:
         es = d["es_ha"] * HA_TO_EV
         ep = 0.0 if z == 1 else d["ep_ha"] * HA_TO_EV
         u = d["u_ha"] * HA_TO_EV
-        du = SKETCH_DU[z]
-        sw = SKETCH_SPIN_W[z]
         rows.append(
-            f"    {{{z}, \"{sym}\", {n_ao}, {d['n_val']:.1f}, {es:.12f}, {ep:.12f}, "
-            f"{u:.12f}, {du:.2f}, {r_cut[z]:.6f}, {sw:.2f}}},"
+            f'    {{{z}, "{sym}", {n_ao}, {d["n_val"]:.1f}, {es:.12f}, {ep:.12f}, '
+            f"{u:.12f}, {r_cut[z]:.6f}}},"
         )
     new_block = (
         "inline constexpr DftbElementRow kDftbElements[] = {\n"
@@ -339,35 +331,15 @@ def emit_elements_patch(pairs: list[dict], tables_h: Path) -> None:
     if n != 1:
         raise RuntimeError("failed to rewrite kDftbElements in dftb_mio_tables.h")
 
-    # Update file comment to state real mio SK for pairs + elements
-    text2 = text2.replace(
-        "Values are **mio-style** order-of-magnitude\n"
-        "/// hoppings / Hubbard U / Hubbard derivatives / repulsive pairs for\n"
-        "/// product-path multi-element DFTB2",
-        "Element onsite / Hubbard U and pair **SK + repulsive** for H/C/N/O\n"
-        "/// are transcribed mio-1-1 (`dftb_mio_sk_tables.h`). Hubbard\n"
-        r"/// derivatives \(U^{\mathrm{d}}\) and spin W remain sketches for" "\n"
-        "/// the DFTB3 / collinear product path. Sketch `DftbPairSkRow` /\n"
-        "/// `DftbPairRepRow` below are retained only as unused fallback\n"
-        "/// documentation — energy/force paths read `MioSkTable`. DFTB2",
-    )
-    # Soften "not bit-identical" claim
-    text2 = text2.replace(
-        "They are not\n"
-        "/// bit-identical to a full DFTB.org mio-1-1 dump for every pair. **H**\n"
-        "/// onsite/U and the **H–H** pair use transcribed mio-1-1 data\n"
-        "/// (`dftb_mio_hh_sk.h`); other pairs, the Hubbard derivatives, and the spin\n"
-        "/// constants remain sketches.",
-        "SK H⁰/S and repulsives match mio-1-1 for every ordered pair among\n"
-        "/// H/C/N/O. Hubbard derivatives and spin constants remain sketches.",
-    )
+    # File prologue is owned by the committed header (U^d / W are not in
+    # this table). Do not rewrite it here.
     tables_h.write_text(text2)
     print(f"updated element rows in {tables_h}")
     for z, sym in ELEMENTS.items():
         d = by_z[z]
         print(
-            f"  {sym}: Es={d['es_ha']*HA_TO_EV:.6f} eV  "
-            f"U={d['u_ha']*HA_TO_EV:.6f} eV  r_cut={r_cut[z]:.3f} Å"
+            f"  {sym}: Es={d['es_ha'] * HA_TO_EV:.6f} eV  "
+            f"U={d['u_ha'] * HA_TO_EV:.6f} eV  r_cut={r_cut[z]:.3f} Å"
         )
 
 
@@ -421,12 +393,12 @@ def main() -> int:
                 print(f"missing {path}", file=sys.stderr)
                 return 1
             pairs.append(parse_skf(path))
-            print(f"parsed {name}: n_grid={pairs[-1]['n_grid']} n_spline={pairs[-1]['n_spline']}")
+            print(
+                f"parsed {name}: n_grid={pairs[-1]['n_grid']} n_spline={pairs[-1]['n_spline']}"
+            )
 
     # Verify H–H ssσ against legacy pin header if present
-    legacy = Path(
-        "include/atomiverse/cpu/semiempirical/basis_data/dftb_mio_hh_sk.h"
-    )
+    legacy = Path("include/atomiverse/cpu/semiempirical/basis_data/dftb_mio_hh_sk.h")
     if legacy.is_file():
         hh = next(p for p in pairs if p["za"] == 1 and p["zb"] == 1)
         text = legacy.read_text()
@@ -434,9 +406,7 @@ def main() -> int:
         if m:
             nums = [
                 float(x)
-                for x in re.findall(
-                    r"[-+]?(?:\d+\.\d+|\d+)(?:e[+-]?\d+)?", m.group(1)
-                )
+                for x in re.findall(r"[-+]?(?:\d+\.\d+|\d+)(?:e[+-]?\d+)?", m.group(1))
             ]
             if len(nums) != len(hh["H_sss"]):
                 print(
@@ -447,7 +417,10 @@ def main() -> int:
                 max_d = max(abs(a - b) for a, b in zip(nums, hh["H_sss"]))
                 print(f"H–H vs legacy dftb_mio_hh_sk.h max|ΔHss| = {max_d:.3e}")
                 if max_d > 1e-12:
-                    print("ERROR: H–H transcription drifted from pin table", file=sys.stderr)
+                    print(
+                        "ERROR: H–H transcription drifted from pin table",
+                        file=sys.stderr,
+                    )
                     return 1
 
     emit_sk_header(pairs, args.out_sk)

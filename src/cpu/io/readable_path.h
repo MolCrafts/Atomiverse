@@ -3,7 +3,8 @@
 ///
 /// **molrs 0.13** made the bridge readers and writers fallible —
 /// `fn xyz_read_first_frame(path: &str) -> Result<Box<FrameRef>>` and the
-/// same for `read_frame_zarr_first`, `write_frame_xyz`, `write_frame_zarr`,
+/// same for `read_first_frame`, `write_frame_xyz`, `write_frame` (named
+/// `read_frame_zarr_first` / `write_frame_zarr` before molrs 0.14),
 /// `frame_set_box` and the four `frame_set_column_*`. cxx maps `Result<T>` to
 /// a C++ function returning `T` that throws `rust::Error`, which derives from
 /// `std::exception`, so a caller's `catch` finally sees these failures. Before

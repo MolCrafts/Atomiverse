@@ -1,7 +1,13 @@
 # Reference — DFTB2 analytic cell stress (H2O)
 
-oracle: dftb+
-oracle_version: formula-level (Hourahine et al. JCP 152, 124101 (2020); no DFTB+ binary on pin host)
+oracle: literature
+oracle_version: Hourahine et al., J. Chem. Phys. 152, 124101 (2020); Elstner
+  et al., Phys. Rev. B 58, 7260 (1998) — pair-virial cell stress of SCC-DFTB2
+family_oracle: dftb+
+
+No DFTB+ run produced an absolute energy or stress for this geometry. The
+gate is analytic \(\sigma\) vs strain-FD of the same ATV energy. Do not read
+`oracle: dftb+` into that identity.
 
 ## Method
 
@@ -78,8 +84,7 @@ tighter, and the gate is tightened to 1e-8 to match.
 Both \(E\) and \(\sigma\) moved (the stress even changed sign): the old
 numbers were a limit-cycle snapshot over a double-counting route that was wrong
 at second order, differentiated by a gradient with a sign error. Neither the old
-nor the new value is an oracle number — no DFTB+ binary exists on this host
-(`module spider dftb` → nothing) and no DFTB+ identity is claimed.
+nor the new value is an oracle number — no DFTB+ identity is claimed.
 
 ## Gaps (still open)
 
@@ -115,6 +120,6 @@ nor the new value is an oracle number — no DFTB+ binary exists on this host
 
 ## Perf
 
-`perf_exempt: true` — no DFTB+ binary / fair wall on pin host. Analytic path
-replaces 12 multi-SCC energy evaluations (6 Voigt × ±h) with one post-SCC
-pair contraction.
+`perf_exempt: true` — no DFTB+ absolute-stress twin was run for this
+geometry (strain-FD identity only). Analytic path replaces 12 multi-SCC
+energy evaluations (6 Voigt × ±h) with one post-SCC pair contraction.
