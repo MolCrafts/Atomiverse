@@ -1504,7 +1504,11 @@ CAMM-vs-\(R\)).
 
 ### Phase A — DFTB ladder (oracle = DFTB+)
 
-Product DFTB0/2/3 + γ Elstner + Γ-PBC F landed. Remaining are **deepens**.
+Product DFTB0/2/3 + γ Elstner + Γ-PBC F landed, and the periodic γ is now
+Ewald-summed (`dftb2-ewald-gamma`) — before that every periodic case was a
+homonuclear C-chain with Δq ≡ 0, so the charge kernel was untested under PBC.
+**Any new periodic row must be polar or it gates nothing.** Remaining are
+**deepens**.
 **Prefer Recover of `## in_progress` over new pending.** DFTB0 F is still
 6N FD — that is a ladder-head deepen, not a closed product path.
 
@@ -1517,6 +1521,9 @@ Product DFTB0/2/3 + γ Elstner + Γ-PBC F landed. Remaining are **deepens**.
 - [ ] `dftb3-open-shell` | Collinear spin-DFTB3 (`multiplicity`); DFTB2 already has dual α/β | dftb3 | O2 triplet | E / m | **oracle=dftb+**
 - [ ] `dftb3-dispersion-d3` | Opt-in D3(BJ) on `DFTB3` (molecular first; periodic later). DFTB2 already has `d3` / `d3_periodic` | dftb3 | water dimer | E/F | **oracle=dftb+** / s-dftd3
 - [ ] `dftb2-threeob-open-shell` | ThreeOb currently throws on `multiplicity!=1` or `charge!=0` | dftb2 | open-shell CHNO | E/F | **oracle=dftb+**; after `dftb2-threeob-periodic`
+- [ ] `dftb3-ewald-gamma` | DFTB3 still truncates its periodic γ at the SK cutoff — the defect `dftb2-ewald-gamma` fixed for DFTB2. `dftb3-periodic-forces` passes only because it is FD-consistent within its own (wrong) γ, on a homonuclear cell where Δq ≡ 0 | dftb3 | polar periodic cell | E / F / σ | **oracle=dftb+**; reuse `internal::GammaLattice`
+- [ ] `dftb-sk-analytic-derivative` | `MioSkTable` derivatives are central FD of the Neville interpolant (h = 1e-5), i.e. two interpolations per channel. The interpolating polynomial has an analytic derivative | dftb2/3 | any | F identity | **oracle=dftb+** (formula); perf, not fidelity
+- [ ] `dftb2-broyden-mixer` | `internal::ChargeMixer` is Anderson/Pulay at β = 0.3; DFTB+ defaults to Broyden. With the ASPC guess in place the SCC iteration count is mixer-bound, not guess-bound (β = 0.5 alone takes the 1088-atom cell 10 → 8 iterations but the header records β ≳ 0.7 failing on hydrogen-bonded systems) | dftb2 | PEG liquid / H₂O | iteration count | **oracle=dftb+** (wall)
 - [ ] `dftb2-fermi-smearing` | DFTB+ `Filling { Fermi {…} }` — multi-k is integer occupation only | dftb2 | metallic C-chain / small cell | E / n(εF) | **oracle=dftb+**
 - [ ] `td-dftb-excited-forces` | Casida nuclear forces on `DFTB2::td_casida` (energies+\(f\) already ship) | dftb2/td | H2 / small | F | **oracle=dftb+** (formula / FD)
 - [ ] `lc-dftb-ground` | Range-separated LC-DFTB energy foothold (Yukawa ω; DFTB+ `RangeSeparated`) | dftb2/lc | small organic | E | **oracle=dftb+**; staff after DFTB3 deepens, before GFN
@@ -1588,6 +1595,12 @@ Not work items — see `.claude/notes/tb-blocked-capabilities.md`.
 ## done
 
 _(footholds + wave-1/2/3/4 product depth on `dev`)_
+
+- [x] `dftb2-ewald-gamma` | **Periodic SCC γ was wrong, not approximate.** The 1/R half of \(\gamma\) was truncated at the SK cutoff, which is a conditionally-convergent lattice sum cut at a sphere: \(\gamma\) came out non-positive-definite, \(E^{(2)}\) negative, 37 eV error on a 24-atom water cell. Now Ewald-summed with a neutralising background (`internal/dftb_gamma_lattice.h`, reusing `longrange::EwaldSum` k-tables), value **and** gradient on one type — energy, analytic F and the pair virial. Every prior periodic case was a homonuclear C-chain where Δq ≡ 0, so none of them touched γ. vs DFTB+ 25.1: |ΔE| 1.9e-6 eV, |ΔE_SCC| 1.7e-6 eV, max |ΔF| 3.6e-6 eV/Å | `reg_dftb2-ewald-gamma` | **oracle=dftb+** 25.1 (a23bfb2)
+- [x] `dftb2-boundary-declared` | `DFTB2::boundary` = `cluster` \| `lattice`, the fork DFTB+ makes through its `C` vs `S` geometry. A Frame always carries a Box, so a large box can no longer stand in for an isolated molecule once γ is Ewald-summed — the molecular cases now say so. Also fixes a latent cluster bug: γ was cut at 5.81 Å for molecules too, so an extended chain lost its own intramolecular Coulomb | folded into `reg_dftb2-ewald-gamma` + the 18 molecular cases | **oracle=dftb+**
+- [x] `dftb2-peg-liquid-scale` | 1088-atom PEG liquid (C₂₅₆H₆₄₀O₁₉₂, n_ao 2432), Γ, vs DFTB+ 25.1: total energy **2.3e-8 eV/atom**, E_SCC 1.3e-6 relative, forces 2.5e-6 eV/Å MAE. Fair wall at matched threads and matched SCC tolerance (1e-5): \(T_{\mathrm{atv}}/T_{\mathrm{dftb+}}\) = **0.73 / 0.66 / 0.62** at 4 / 16 / 32 threads | `benchmarks/semiempirical/dftb_peg_liquid/` (not ctest) | **oracle=dftb+** 25.1
+- [x] `dftb2-scc-guess` | Kolafa ASPC on the Mulliken Δq across launches (`DFTB2::predictor(order)`), reusing `electronic::ASPCPredictor` — which moved out of `ATV_BUILD_HF` to the always-on set for it. 1.90× fewer SCC iterations on a smooth trajectory, 1.44–1.48× under thermal MD; converged energy unchanged to 2.3e-13 eV | `reg_dftb2-scc-guess` | **oracle=literature** (Kolafa; an optimisation has no absolute pin)
+- [x] `dftb2-scc-hotpath` | SCC-DFTB2 single point 3727 s → 8.3 s on 1088 atoms, same numbers to the last digit. Four defects: OpenMP affinity silently single-threading OpenBLAS (10× on the eigensolver, see `.claude/notes/openblas-thread-binding.md`); density and energy-weighted-density built as scalar triple loops instead of GEMM; the full \(PS\) product formed to read its diagonal; 141 MB of n_ao² scratch re-zeroed per bond-image in the force walk. γ and H⁰/S walks threaded | measured in `benchmarks/semiempirical/dftb_peg_liquid/README.md` | **oracle=dftb+** (wall)
 
 - [x] `ipea-xtb-vip` | IPEA ΔSCC vertical IP/EA + ipeashift 4.8455 eV; CH4 vs xtb 6.7.1 IPEA `--vipea` (IP 13.0088 eV / EA −1.4559 eV; Δ 0.103 / 0.125 eV ionized kernel; \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}=2.0\)) | `reg_ipea-xtb-vip` | **oracle=xtb**
 - [x] `ipea-xtb-analytic-hessian` | IPEA FD Hessian via `cpu::vib::Hessian`; CH4 ω vs xtb 6.7.1 IPEA `--hess` (1541.68×3 / 1705.89×2 / 3548.78 / 3576.13×3 cm⁻¹; Δω ≤ 1.30 cm⁻¹; \(T_{\mathrm{atv}}/T_{\mathrm{xtb}}\approx 0.061\)) | `reg_ipea-xtb-analytic-hessian` | **oracle=xtb**; VIB=ON exception

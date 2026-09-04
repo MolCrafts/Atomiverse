@@ -65,7 +65,7 @@ History is git's job — superseded designs are deleted, not archived here.
 | cuda-rhf-reshape | [cuda-rhf-device-only.md](cuda-rhf-device-only.md) (waves 0–10 done; free-loop `SCFSolver` **folded** via **arch-campaign** `arch-cuda-scf-solver-fold` → private `RhfScfCycle`; nested `cuda::Driver<scf::Phase>` residual); CUDA GPW public shape **frozen** to CPU `GpwDft` on `dev` — [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md); full product staffable under that contract (not auto-landed) |
 | **arch-campaign** | queue [arch-campaign-queue.md](../../docs/developer/arch-campaign-queue.md); loop [arch-campaign-loop.md](../../docs/developer/arch-campaign-loop.md); spine **GpwDft/PW Driver nodes → residual paths → CUDA SCF fold → shape freeze → MG structural**; landed: `arch-gpw-driver-node`, `arch-gpw-driver-paths` (multi-path DIIS; OT free-loop residual), `arch-pw-driver-node`, `arch-cuda-scf-solver-fold`, `arch-e2e-tests-wave{1,2}`, `arch-cuda-gpw-public-shape-freeze` (merge `0147fe02`); harness wave-8 **pending=0** unheld / **in_progress=2** (`arch-pw-driver-paths` @ `c20bb04f`, `arch-mg-main-structural` @ `9ee9f49e`; rebase onto `0147fe02` before gate) / **gaps_remaining=3** / **new_slugs=0**; unmerged tip ≠ done |
 | CUDA MD perf | [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) (A/B methodology + precision mode map vs LAMMPS Kokkos); **not** blocked by ES CPU priority |
-| **claim-completion** | queue [claim-completion-queue.md](../../docs/developer/claim-completion-queue.md) — CUDA/docs/Python completion for claimed domains (operator 2026-08-14); torch backend **removed**; molrs submodule at latest (`95dde84`, 0.13.1); python layer migrated to molrs 0.13.1 schema (`atomic_number` uint + plain-value meta), suite 176 green |
+| **claim-completion** | queue [claim-completion-queue.md](../../docs/developer/claim-completion-queue.md) — CUDA/docs/Python completion for claimed domains (operator 2026-08-14); torch backend **removed**; molrs submodule gitlink at `f339962` (0.14.0 dev, renamed bridge doors `write_frame` / `read_first_frame`, u64 `Idx`); developer presets build the sibling `../molrs` dev tree (uncommitted streaming `TrajectoryWriter` ⇒ `cpu::MrecRecorder`, gated `ATV_MOLRS_HAS_TRAJECTORY_WRITER`); python layer on the molrs 0.13.1 schema (`atomic_number` uint + plain-value meta), suite 176 green — `bind_mc.cpp` still exports `type` as uint32 numpy, unverified against 0.14 |
 
 ## Build-shape conclusions
 
@@ -73,8 +73,16 @@ History is git's job — superseded designs are deleted, not archived here.
   (`ATV_BUILD_ANALYSIS` / `IO` / `PYTHON` / `GPW` / `HF` / `SEMIEMPIRICAL`
   force `ATV_BUILD_MOLRS=ON` in `cmake/AtvProductModules.cmake`); never a peer
   option, never `FATAL_ERROR "X requires MOLRS"`. Feature slices that need a
-  specific molrs pin (e.g. WHAM ⇒ `ATV_MOLRS_HAS_WHAM`) gate their sources
-  **and** their regressions on the same condition.
+  specific molrs pin (WHAM ⇒ `ATV_MOLRS_HAS_WHAM`, streaming mrec ⇒
+  `ATV_MOLRS_HAS_TRAJECTORY_WRITER`) gate their sources **and** their tests /
+  regressions on the same condition.
+- **Two molrs sources, one contract.** `./molrs` submodule = CI pin (the
+  unit gate configures without `ATV_MOLRS_PATH`); every developer preset sets
+  `ATV_MOLRS_PATH=${sourceDir}/../molrs` because molrs `dev` is consumed with
+  uncommitted working-tree changes. molrs ≥ 0.14 makes `molrs-cxxapi` a
+  standalone workspace root, so corrosion imports
+  `${ATV_MOLRS_PATH}/molrs-cxxapi/Cargo.toml` (also valid for the 0.13
+  layout). Bump `ATV_MOLRS_GIT_REF` when advancing the gitlink.
 - **Toolchain gotchas** (login node): `OPENBLAS_ROOT="$OPENBLASDIR"`,
   `RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu`, mirror `LIBRARY_PATH`
   into `LD_LIBRARY_PATH` before running anything. GPU node: default aarch64
