@@ -1,4 +1,4 @@
-/// @file facade/loop.h
+/// @file core/verdict.h
 /// @brief Verdict + ConvergenceMetrics — the vocabulary a loop's termination is
 ///        decided in. Backend-agnostic, CUDA-free.
 ///

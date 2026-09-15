@@ -146,8 +146,7 @@ bash tools/setup_pyscf_env.sh
 Source: fair wall in
 [`regressions/scf/ccsd-t-h2o-sto3g/REFERENCE.md`](../../../regressions/scf/ccsd-t-h2o-sto3g/REFERENCE.md)
 (2026-07-23; login node; `OMP_NUM_THREADS=1`; median of ≥3). Campaign rollup
-ratio **0.333** (`docs/developer/pyscf-method-handoff.md`). No standing
-`docs/developer/pyscf-method-perf.md` table in-tree at draft time.
+ratio **0.333** (the case `REFERENCE.md`). No standing comparison table in-tree at draft time.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -183,8 +182,6 @@ required on this case.
 - Offline pin: `regressions/scf/ccsd-t-h2o-sto3g/REFERENCE.md`
 - Regression consumer: `regressions/scf/ccsd-t-h2o-sto3g/reg_ccsd-t-h2o-sto3g.cpp`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/post-hf.md` (§3 Coupled cluster)
 - Public API: `include/atomiverse/cpu/scf/ccsd.h`
 - Sibling CCSD foothold: `docs/tutorial/methods/ccsd-h2-sto3g.md`

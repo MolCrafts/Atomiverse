@@ -1,4 +1,4 @@
-/// @file cpu/md/atom_sort.cpp
+/// @file cpu/dynamics/atom_sort.cpp
 /// @brief Spatial reordering of owned atoms (LAMMPS atom_modify sort).
 #include "atomiverse/cpu/dynamics/atom_sort.h"
 

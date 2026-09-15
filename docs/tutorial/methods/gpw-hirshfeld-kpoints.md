@@ -7,7 +7,7 @@
 | Slug | `gpw-hirshfeld-kpoints` |
 | Regression | `regressions/gpw/gpw-hirshfeld-kpoints/` |
 | Public API | `cpu::gpw::GpwDft::hirshfeld` + `mbd` + `k_mesh`; `GpwResult::e_disp` [Ha], `GpwResult::volume_ratios`; same members on `GPWEvaluator` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, harness wave 6) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -174,9 +174,9 @@ bash -lc '
 ## Validation (CP2K capability / offline product pin)
 
 Source:
-[`regressions/gpw/gpw-hirshfeld-kpoints/REFERENCE.md`](../../../regressions/gpw/gpw-hirshfeld-kpoints/REFERENCE.md).  
+[`regressions/gpw/gpw-hirshfeld-kpoints/REFERENCE.md`](../../../regressions/gpw/gpw-hirshfeld-kpoints/REFERENCE.md).
 Oracle notes:
-[`tools/cp2k_oracle/inputs/gpw-hirshfeld-kpoints/water_dimer_k_hirshfeld.note`](../../../tools/cp2k_oracle/inputs/gpw-hirshfeld-kpoints/water_dimer_k_hirshfeld.note).  
+[`tools/cp2k_oracle/inputs/gpw-hirshfeld-kpoints/water_dimer_k_hirshfeld.note`](../../../tools/cp2k_oracle/inputs/gpw-hirshfeld-kpoints/water_dimer_k_hirshfeld.note).
 **Never** launch live CP2K (or recompute pins) from ctest. Because stock
 CP2K 2026.1 has no TS/MBD `PAIR_POTENTIAL`, the hard gate freezes the **ATV
 product** under fixed settings and cross-checks against free-atom MBD and the
@@ -228,7 +228,7 @@ in CP2K 2026.1); a full twin QS ratio is not the product gate.
 
 **perf_exempt = true.** Reason: primary deliverable is multi-k \(E_{\mathrm{disp}}\)
 + volume-ratio parity under fixed product settings; SCF dominates wall. Handoff:
-`docs/developer/cp2k-method-handoff.md` (wave 6 row `gpw-hirshfeld-kpoints`).
+the case `REFERENCE.md` (wave 6 row `gpw-hirshfeld-kpoints`).
 
 ## Limitations
 
@@ -255,9 +255,6 @@ in CP2K 2026.1); a full twin QS ratio is not the product gate.
 - Related pins: `regressions/gpw/gpw-mbd-hirshfeld/REFERENCE.md` (Γ Hirshfeld),
   `regressions/gpw/gpw-mbd-ice/REFERENCE.md` (free-atom MBD),
   `regressions/gpw/gpw-mbd-periodic/REFERENCE.md` (Ewald MBD)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline pins only; never live
   in ctest)
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

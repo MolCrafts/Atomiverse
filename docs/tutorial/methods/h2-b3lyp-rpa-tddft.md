@@ -160,7 +160,7 @@ bash -lc '
 '
 ```
 
-**Twin caveats:** reg binary includes pin checks/guards; PySCF side is twin kernel only. Rollup `docs/developer/pyscf-method-perf.md` currently lists related full-LR under `full-lr-tddft-h2-pbe` with a **TDA** twin (`rks_tda`, \(r\approx 0.27\)) — not interchangeable with this hybrid RPA twin. Micro-system H₂/STO-3G (\(n_{\mathrm{ov}}=1\)) does not stress dense RPA scaling.
+**Twin caveats:** reg binary includes pin checks/guards; PySCF side is twin kernel only. The rollup currently lists related full-LR under `full-lr-tddft-h2-pbe` with a **TDA** twin (`rks_tda`, \(r\approx 0.27\)) — not interchangeable with this hybrid RPA twin. Micro-system H₂/STO-3G (\(n_{\mathrm{ov}}=1\)) does not stress dense RPA scaling.
 
 ## Limitations
 
@@ -174,7 +174,6 @@ bash -lc '
 ## References
 
 - Offline pin: [`regressions/scf/h2-b3lyp-rpa-tddft/REFERENCE.md`](../../../regressions/scf/h2-b3lyp-rpa-tddft/REFERENCE.md)
-- Perf rollup: [`docs/developer/pyscf-method-perf.md`](../../developer/pyscf-method-perf.md)
 - Roadmap: [`docs/roadmap/excited-states.md`](../../roadmap/excited-states.md)
 - Related methods: [h2-b3lyp-hybrid-tda](h2-b3lyp-hybrid-tda.md) (TDA), [full-lr-tddft-h2-pbe](full-lr-tddft-h2-pbe.md) (pure GGA full LR)
 - M. E. Casida, in *Recent Advances in Density Functional Methods*, Part I (World Scientific, 1995) — Casida (A,B)

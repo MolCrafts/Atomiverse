@@ -1,4 +1,4 @@
-/// @file md/velocity_verlet.cu
+/// @file cuda/dynamics/velocity_verlet.cu
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"

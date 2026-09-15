@@ -1,4 +1,4 @@
-/// @file cpu/pw/pw_evaluator.cpp
+/// @file cpu/planewave/pw_evaluator.cpp
 /// @brief PWEvaluator implementation — plane-wave energy (+ analytic forces).
 
 #include "atomiverse/cpu/planewave/pw_evaluator.h"

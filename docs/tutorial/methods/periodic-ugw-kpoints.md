@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/periodic-ugw-kpoints/` |
 | Public API | `cpu::gpw::GpwDft::g0w0(atoms)` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`); UKS via `n_alpha`/`n_beta`, multi-k via `k_mesh` |
 | Roadmap | `docs/roadmap/dft.md` §10 — multi-k UGW (`reg_periodic-ugw-kpoints`) |
-| Queue / handoff | `docs/developer/cp2k-method-queue.md` (done); ratio **perf_exempt** |
 
 ## Summary
 
@@ -197,7 +196,7 @@ are structural + dual-gate vs Atomiverse multi-k RKS G0W0.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` (wave 7, 2026-07-26) +
+Source: the case `REFERENCE.md` (wave 7, 2026-07-26) +
 REFERENCE.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -231,8 +230,6 @@ gaps and optionally record a fair_bench ratio.
 - Oracle input twin: `tools/cp2k_oracle/inputs/periodic-ugw-kpoints.inp`
 - Γ UGW twin: `regressions/gpw/periodic-ugw-si/REFERENCE.md`
 - Multi-k RKS G0W0 dual-gate: `regressions/gpw/periodic-gw-kpoints/`
-- Handoff / ratio: `docs/developer/cp2k-method-handoff.md` (**perf_exempt**)
-- Queue: `docs/developer/cp2k-method-queue.md` (done 2026-07-26)
 - Roadmap: `docs/roadmap/dft.md` §10
 - Public headers: `include/atomiverse/cpu/gpw/g0w0.h`, `gpw_solver.h`
 - Unit: `tests/cpu/gpw/test_cpu_gpw_g0w0.cpp`

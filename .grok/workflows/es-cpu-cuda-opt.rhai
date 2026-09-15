@@ -26,9 +26,9 @@ let meta = #{
 // ── CONFIG (customize this block; machinery below stays template-shaped) ─
 let loop_id = "es-cpu-cuda";
 let oracle_name = "cp2k+cpu-twin";  // CPU: real CP2K; CUDA: same-settings CPU twin
-let queue_path = "docs/developer/es-cpu-cuda-queue.md";
-let handoff_path = "docs/developer/es-cpu-cuda-handoff.md";
-let loop_doc = "docs/developer/es-cpu-cuda-loop.md";
+let queue_path = ".claude/campaigns/es-cpu-cuda-queue.md";
+let handoff_path = ".claude/campaigns/es-cpu-cuda-handoff.md";
+let loop_doc = ".claude/campaigns/es-cpu-cuda-loop.md";
 let map_path = "docs/roadmap/dft.md";
 let oracle_readme = "tools/cp2k_oracle/README.md";
 let tutorial_root = "docs/tutorial/methods/";
@@ -41,7 +41,7 @@ let cmake_flags = "-DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON -DATV_BUILD_R
 let test_filter = "^test_cpu_(gpw|pw|scf|xc)_|^test_xc_|^test_cuda_(scf|gpw|pw)_";
 let scope_in = "landed CPU GPW/PW/SCF wall cut vs real CP2K fair twins; corresponding CUDA ES slices under open-gate with CUDA-only mid-path (RHF/PW/GPW product); residency first, then kernel depth";
 let scope_out = "new electronic methods (hybrid/GAPW/PAW/meta-GGA product — use cp2k/pyscf method loops); classical MD CUDA (OpenMM track); global XTENSOR_USE_XSIMD; arch intrinsics; pin-unsafe MG windows; soften tols / self-golden pins; dual-gate matrix explosion without residency; mid-SCF Device↔Host scientific exchange; host AO science loops inside claimed CUDA product SCF";
-let gap_sources = "docs/developer/es-cpu-cuda-queue.md + .claude/notes/cuda-only-no-dh.md + .claude/notes/cuda-rhf-device-only.md + .claude/notes/es-optimization-order.md + .claude/notes/gpw-perf-baseline.md + docs/roadmap/dft.md CUDA/GPW columns + tree scan src/cuda/{scf,gpw,planewave}";
+let gap_sources = ".claude/campaigns/es-cpu-cuda-queue.md + .claude/notes/cuda-only-no-dh.md + .claude/notes/cuda-rhf-device-only.md + .claude/notes/es-optimization-order.md + .claude/notes/gpw-perf-baseline.md + docs/roadmap/dft.md CUDA/GPW columns + tree scan src/cuda/{scf,gpw,planewave}";
 // Loop-specific binding rules (template already has DISK/CLEARUP/GapCensus)
 let extra_law = "";
 extra_law += "DUAL TRACK: every queue row carries method=cpu|cuda (use the method field). CPU: cut T_atv/T_cp2k on fair twins at 1 MPI × OMP=4; T_cp2k from real cp2k.psmp; provenance in .claude/notes/gpw-perf-baseline.md + oracle-pin-provenance.md. ";
@@ -311,7 +311,7 @@ while wave < max_waves {
     census_p += "GAP-CENSUS wave " + wn + " on `" + target_branch + "`. ";
     census_p += "Diff " + oracle_name + " + " + map_path + " + " + gap_sources + " vs ATV on branch. ";
     census_p += "AUTONOMOUS DISCOVERY (binding): re-rank fair walls from .claude/notes/gpw-perf-baseline.md authority; ";
-    census_p += "read " + queue_path + " + docs/developer/gpw-perf-queue.md + .claude/notes/cuda-rhf-device-only.md; ";
+    census_p += "read " + queue_path + " + .claude/campaigns/gpw-perf-queue.md + .claude/notes/cuda-rhf-device-only.md; ";
     census_p += "if a foothold is green but production depth is missing, OPEN a deeper pending slug (foothold ≠ closed). ";
     census_p += "For each new/updated pending row set method=cpu|cuda, rationale=concrete lever (file/function/metric), twin, and acceptance. ";
     census_p += "Rewrite " + queue_path + " ## pending (keep done/blocked/in_progress). Update roadmap ○/✓ only when truly complete. ";

@@ -97,10 +97,12 @@ ATV_BUILD_CUDA  = {env = "ATV_BUILD_CUDA",  default = "OFF"}
 # binary is environment-bound, never manylinux-distributable):
 #   ATV_BUILD_LAUNCHER=ON pip install .
 ATV_BUILD_LAUNCHER = {env = "ATV_BUILD_LAUNCHER", default = "OFF"}
-ATV_USE_LIBXC   = {env = "ATV_USE_LIBXC",  default = "OFF"}
 
-# Precision: float (default) or double
-ATV_REAL = {env = "ATV_REAL", default = "float"}
+# Precision tiers: per-atom storage and transient kernel work, each float or
+# double. The engine default is double on both; the wheel keeps that so a pip
+# install and a source build agree numerically.
+ATV_REAL_STORAGE = {env = "ATV_REAL_STORAGE", default = "double"}
+ATV_REAL_WORK    = {env = "ATV_REAL_WORK",    default = "double"}
 
 # ── Environment-specific overrides ────────────────────────────────────────────
 

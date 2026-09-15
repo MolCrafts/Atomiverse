@@ -1,4 +1,4 @@
-/// @file cpu/md/fix_csvr.cpp
+/// @file cpu/dynamics/fix_csvr.cpp
 /// @brief CPU CSVR (Bussi) thermostat implementation.
 
 #include "atomiverse/cpu/dynamics/fix_csvr.h"

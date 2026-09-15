@@ -48,10 +48,13 @@ Two policy slots let you change *when* a run ends without writing a driver:
 | Method | Component (kind) | Build flag |
 |---|---|---|
 | Lennard-Jones + bonded styles | `PairLJCut` / `BondHarmonic` / … (`Potential`) | `ATV_BUILD_POTENTIALS` |
-| Gaussian SCF — RHF / UHF / Kohn-Sham DFT | `cpu::scf::RHF` / `UHF` / `RKS` / `UKS` (`HF`) | `ATV_BUILD_HF` |
+| Reciprocal-space electrostatics | `KSpaceEwald` / `KSpacePME` / `KSpacePPPM` (`Potential`) | `ATV_BUILD_KSPACE` |
+| Gaussian SCF — Hartree-Fock and Kohn-Sham | `cpu::scf::RHF` / `UHF` / `ROHF` / `GHF` / `RKS` / `UKS` / `ROKS` (`HF`) | `ATV_BUILD_HF` |
 | Plane-wave DFT | `cpu::pw::PWEvaluator` (`PlaneWave`) | `ATV_BUILD_PW` |
 | Gaussian-and-plane-waves DFT | `cpu::gpw::GPWEvaluator` (`GPW`) | `ATV_BUILD_GPW` |
-| NDDO / AM1 semiempirics | `cpu::semiempirical::AM1Evaluator` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
+| NDDO semiempirics | `cpu::semiempirical::AM1Evaluator` / `RM1Evaluator` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
+| DFTB | `cpu::semiempirical::DFTB0` / `DFTB2` / `DFTB3` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
+| Extended tight binding | `cpu::semiempirical::GFN0` / `GFN1` / `GFN2` / `IPEA` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
 
 Most methods are a **concrete type** carrying its parameters as constructor
 arguments and public members, with `run(frame)` as the entry point —
@@ -246,11 +249,25 @@ mc.run(frame, 100000);                    // 100k trial moves
 double e = mc.current_energy();            // (eV); mc.acceptance_ratio() in [0,1]
 ```
 
-## Semiempirical
+## Semiempirical and tight binding
 
-NDDO with the AM1 parameterization, and AM1-BCC charge assignment. Roughly SCF
-accuracy at force-field cost, useful when a full Gaussian SCF is too expensive
-per step.
+Roughly SCF accuracy at a small fraction of the cost — the right choice when a
+full Gaussian SCF is too expensive per step. Three families, all CPU-only:
+
+- **NDDO** — `AM1` and `RM1`, with analytic nuclear forces and AM1-BCC charge
+  assignment. Pinned against OpenMOPAC.
+- **DFTB** — `DFTB0` (non-SCC), `DFTB2` (SCC) and `DFTB3` (third order) on the
+  in-tree mio-1-1 and 3ob-3-1 Slater-Koster tables for H/C/N/O. DFTB2 carries
+  analytic forces and analytic cell stress for closed and open shell, at Gamma
+  and on a k-mesh, plus D3 dispersion, DFTB+U, and linear-response TD-DFTB.
+  Pinned against DFTB+.
+- **Extended tight binding** — `GFN0`, `GFN1`, `GFN2` and `IPEA`, each with
+  analytic forces and an FD Hessian. Pinned against xtb.
+
+Each is a concrete type with its parameters as members; bind the matching
+evaluator (or the method itself, which is a `Semiempirical` component) into any
+Driver that needs energy and forces. See
+[Chapter 17](../tutorial/ch17-semiempirical-am1.md).
 
 ## Vibrations
 

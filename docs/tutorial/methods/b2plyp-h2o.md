@@ -107,7 +107,7 @@ bash -lc '
 
 ## Validation (vs PySCF)
 
-Source: [`regressions/scf/b2plyp-h2o/REFERENCE.md`](../../../regressions/scf/b2plyp-h2o/REFERENCE.md).  
+Source: [`regressions/scf/b2plyp-h2o/REFERENCE.md`](../../../regressions/scf/b2plyp-h2o/REFERENCE.md).
 Oracle: offline PySCF **2.14.0** composed B2PLYP (not a golden of Atomiverse output; never live-import PySCF in ctest).
 
 **Setup:**
@@ -144,7 +144,7 @@ Pin command (offline only):
 
 ## Performance
 
-Source: fair wall in `regressions/scf/b2plyp-h2o/REFERENCE.md` (worktree 2026-07-23); worker/handoff ratio **1.75**. No standing row in `docs/developer/pyscf-method-perf.md` at handbook write time.
+Source: fair wall in `regressions/scf/b2plyp-h2o/REFERENCE.md` (worktree 2026-07-23); worker/handoff ratio **1.75**. No standing row in at handbook write time.
 
 Protocol: `tools/pyscf_oracle/fair_bench.py`, median of ≥3 runs, `OMP_NUM_THREADS=1`.
 
@@ -180,6 +180,5 @@ export LD_LIBRARY_PATH="$LIBRARY_PATH:$LD_LIBRARY_PATH"
 - Regression consumer: `regressions/scf/b2plyp-h2o/reg_b2plyp-h2o.cpp`
 - Oracle helpers: `tools/pyscf_oracle/pin_scf.py`, `tools/pyscf_oracle/fair_bench.py`; env `tools/setup_pyscf_env.sh`
 - Roadmap: `docs/roadmap/dft.md` §7
-- Campaign queue/handoff: `docs/developer/pyscf-method-queue.md`, `docs/developer/pyscf-method-handoff.md`
-- Perf rollup (if populated later): `docs/developer/pyscf-method-perf.md`
-- Public API headers: `include/atomiverse/cpu/scf/rks.h`, `xc_functional.h`, `mean_field_method.h`
+- Campaign queue/handoff: the case `REFERENCE.md`
+- Perf rollup (if populated later): - Public API headers: `include/atomiverse/cpu/scf/rks.h`, `xc_functional.h`, `mean_field_method.h`

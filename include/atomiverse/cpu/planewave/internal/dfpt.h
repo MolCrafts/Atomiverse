@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/dfpt.h
+/// @file cpu/planewave/internal/dfpt.h
 /// @brief DFPT machinery for the plane-wave method (Γ and finite q): Ewald
 ///        force constants, Sternheimer conduction-space CG, and assembly of
 ///        the Cartesian dynamical matrix from self-consistent first-order
@@ -54,11 +54,9 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
 /// @param cell    Simulation cell [Å].
 /// @param ecut_hartree Wavefunction cutoff [Hartree] (sets recip G cut).
 /// @param q_frac  Phonon wavevector in fractional crystal coordinates.
-std::vector<std::complex<AccReal>>
-ewald_dynamical_matrix_q(const std::vector<Vec3>& pos_ang,
-                         const std::vector<AccReal>& charges,
-                         const cpu::Box& cell, AccReal ecut_hartree,
-                         const Vec3& q_frac);
+std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
+    const std::vector<Vec3>& pos_ang, const std::vector<AccReal>& charges,
+    const cpu::Box& cell, AccReal ecut_hartree, const Vec3& q_frac);
 
 /// @brief Conduction-space projected preconditioned CG for the Sternheimer
 ///        equation `P_c (H − ε) P_c x = P_c b` at the bound k-sphere of `ws`.

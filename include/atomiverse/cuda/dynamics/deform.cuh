@@ -1,4 +1,4 @@
-/// @file cuda/md/deform.cuh
+/// @file cuda/dynamics/deform.cuh
 /// @brief Deform -- uniaxial strain deformation component.
 ///
 /// Rescales box and atom positions along a given axis at a constant engineering strain rate.

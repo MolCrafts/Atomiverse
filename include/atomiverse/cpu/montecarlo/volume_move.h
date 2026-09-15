@@ -1,4 +1,4 @@
-/// @file cpu/mc/volume_move.h
+/// @file cpu/montecarlo/volume_move.h
 /// @brief cpu::mc::VolumeMove — isotropic volume-change Mover for NPT-MC.
 #pragma once
 

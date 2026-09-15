@@ -1,4 +1,4 @@
-/// @file cpu/observer/rdf.h
+/// @file cpu/observe/rdf.h
 /// @brief CPU async radial-distribution-function observer (molrs-backed,
 /// streaming).
 ///

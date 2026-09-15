@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/convergence.h
+/// @file cpu/planewave/internal/convergence.h
 /// @brief internal::ConvergenceCheck — density-change SCF convergence test.
 ///
 /// Facade-private residual helper used by `cpu::pw::PW` stages. NOT a

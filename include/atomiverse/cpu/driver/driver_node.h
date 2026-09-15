@@ -1,4 +1,4 @@
-/// @file cpu/driver/driver.h
+/// @file cpu/driver/driver_node.h
 /// @brief cpu::DriverNode — non-template polymorphic base for nestable loop nodes.
 ///
 /// A Driver is an executable node (build → launch × N → destroy). Type erasure

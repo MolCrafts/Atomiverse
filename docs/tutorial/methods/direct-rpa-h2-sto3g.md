@@ -194,7 +194,7 @@ ratio is informative for the foothold, not a large-basis throughput claim.
 
 - Offline pin: `regressions/scf/direct-rpa-h2-sto3g/REFERENCE.md`
 - Perf (in REFERENCE): fair_bench numbers above; handoff
-  `docs/developer/pyscf-method-handoff.md` records ratio **0.760**
+  the case `REFERENCE.md` records ratio **0.760**
 - Roadmap: `docs/roadmap/excited-states.md` (Direct RPA ✓ CPU)
 - Public headers: `include/atomiverse/cpu/scf/rpa.h`, `rhf.h`
 - Impl: `src/cpu/scf/rpa.cpp`

@@ -1,4 +1,4 @@
-/// @file cpu/mc/mc_base.h
+/// @file cpu/montecarlo/mc_base.h
 /// @brief cpu::mc::McBase — the shared Monte Carlo loop under the NVT / NPT /
 ///        μVT presets.
 #pragma once

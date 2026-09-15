@@ -1,4 +1,4 @@
-/// @file cuda/minimizer/lbfgs.cuh
+/// @file cuda/minimize/lbfgs.cuh
 /// @brief cuda::minimizer::LBFGS — L-BFGS Optimizer component.
 ///
 /// CUDA mirror of `cpu::minimizer::LBFGS`: two-loop recursion with

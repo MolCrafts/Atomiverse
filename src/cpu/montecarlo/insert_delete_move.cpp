@@ -1,4 +1,4 @@
-/// @file src/cpu/mc/insert_delete_move.cpp
+/// @file cpu/montecarlo/insert_delete_move.cpp
 /// @brief cpu::mc::InsertDeleteMove implementation.
 
 #include "atomiverse/cpu/montecarlo/insert_delete_move.h"

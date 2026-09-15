@@ -1,4 +1,4 @@
-/// @file cpu/scf/cphf_pack.cpp
+/// @file cpu/scf/internal/cphf_pack.cpp
 /// @brief CPHF linear response (link-08 σ₊ kernel as the LHS) + analytic
 ///        RHF nuclear-Hessian assembly. See cphf_pack.h for the equations
 ///        and references (Pople et al. 1979, DOI 10.1002/qua.560160825).

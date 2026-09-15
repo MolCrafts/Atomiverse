@@ -7,7 +7,7 @@
 | Slug | `second-gen-cpmd-uks` |
 | Regression | `regressions/dynamics/second-gen-cpmd-uks/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::SecondGenCp{cpu::gpw::GPWEvaluator{…, n_alpha, n_beta}, aspc_k, corrector_max_iter}` bound with `set_evaluator_ref` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `second-gen-cpmd-uks`; AIMD / SGCP UKS residual closed wave 7 |
+| Roadmap | AIMD / SGCP UKS residual closed wave 7 |
 | Dual gate | Correctness A1–A4 (unit + e2e envelope); speed **`perf_exempt`** (NVE drift; no CP2K twin wall) |
 | Wave | CP2K capability loop — harness wave 7 (2026-07-26) |
 | Oracle | Offline CP2K sketch only (`tools/cp2k_oracle/`); never live in ctest |
@@ -209,8 +209,6 @@ corrector-budget identity pin, not wall ratio.
 
 - Offline pin: `regressions/dynamics/second-gen-cpmd-uks/REFERENCE.md`
 - CP2K twin sketch: `tools/cp2k_oracle/inputs/second-gen-cpmd-uks/o2_uks_sgcp_nve.inp`
-- Handoff / ratio: [cp2k-method-handoff.md](../../developer/cp2k-method-handoff.md) (wave 7)
-- Queue: [cp2k-method-queue.md](../../developer/cp2k-method-queue.md)
 - Closed-shell sibling: `regressions/dynamics/second-gen-cpmd-water`
 - T. D. Kühne, M. Krack, F. R. Mohamed, M. Parrinello, *Phys. Rev. Lett.*
   **98**, 066401 (2007)

@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/async_observer.h
+/// @file cpu/minimize/async_observer.h
 /// @brief `cpu::minimizer::AsyncObserver` -- minimizer-bound convenience
 /// wrapper over the driver-agnostic `cpu::AsyncComponentBase`.
 ///

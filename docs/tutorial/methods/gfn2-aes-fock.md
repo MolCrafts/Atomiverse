@@ -42,7 +42,7 @@ skips s-only quadrupoles), not a missing Fock term. Dual-gated anyway
 **15**, 1652 (2019), DOI
 [10.1021/acs.jctc.8b01176](https://doi.org/10.1021/acs.jctc.8b01176)) —
 closed-shell molecular SCC, already assembled by
-[`gfn2-xtb-water`](gfn2-xtb-water.md) /
+`gfn2-xtb-water` /
 [`gfn2-quadrupole-aes`](gfn2-quadrupole-aes.md):
 
 \[
@@ -325,11 +325,11 @@ bash -lc '
 ## Validation (xtb)
 
 Source:
-[`regressions/semiempirical/gfn2-aes-fock/REFERENCE.md`](../../../regressions/semiempirical/gfn2-aes-fock/REFERENCE.md).  
+[`regressions/semiempirical/gfn2-aes-fock/REFERENCE.md`](../../../regressions/semiempirical/gfn2-aes-fock/REFERENCE.md).
 Oracle: **`xtb`** `--gfn 2 --grad` (Bannwarth et al., *J. Chem. Theory Comput.*
 **15**, 1652 (2019); Bannwarth et al., *WIREs Comput. Mol. Sci.* **11**, e01493
-(2021)). Formula twin: tblite `get_potential`, `add_vmp_to_h1`.  
-`oracle_version`: **6.7.1**.  
+(2021)). Formula twin: tblite `get_potential`, `add_vmp_to_h1`.
+`oracle_version`: **6.7.1**.
 Hard-coded gates in the regression binary — **never** live xtb from ctest.
 
 ```text
@@ -448,10 +448,6 @@ wall; the regression fails if the ratio exceeds 10.
 - IPEA Hessian sibling: [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md)
 - IPEA VIP/VEA sibling: [`ipea-xtb-vip`](ipea-xtb-vip.md)
 - Oracle README: `tools/tb_oracle/README.md`
-- Queue / handoff / loop: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`,
-  `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/semiempirical.md`
 - Spec history (closed, deleted at done): git `wf/gfn2-aes-fock`
   (`93c334cb` / `979ba707`)

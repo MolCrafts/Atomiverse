@@ -7,7 +7,7 @@
 | Slug | `xl-bomd-kpoints` |
 | Regression | `regressions/dynamics/xl-bomd-kpoints/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{…, compute_forces=true, k_mesh, k_time_reversal}, k=5}` bound with `set_evaluator_ref`; complex propagator `cpu::electronic::XlBomdCplx` (one per sampled \(k\)) |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `xl-bomd-kpoints` (done 2026-07-26); MD roadmap XL-BOMD multi-k RKS; handoff [cp2k-method-handoff.md](../../developer/cp2k-method-handoff.md) |
+| Roadmap | MD roadmap XL-BOMD multi-k RKS |
 | Dual gate | Correctness: NVE drift envelope + multi-k \(P_k\) payload; speed **`perf_exempt`** (no offline CP2K multi-k AIMD twin wall) |
 | Wave | CP2K capability loop — harness wave 10 (2026-07-26) |
 | Oracle | Offline CP2K pins / twin input only (`tools/cp2k_oracle/`); never live in ctest |
@@ -269,7 +269,6 @@ Related pins:
 | `perf_exempt` | **true** |
 | Reason | No offline CP2K binary on host for a fair wall twin of multi-step multi-k AIMD (2026-07-26 inventory); correctness is NVE drift / payload, not wall |
 | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | n/a |
-| Handoff | [cp2k-method-handoff.md](../../developer/cp2k-method-handoff.md) row `xl-bomd-kpoints` |
 
 Gate policy for CP2K-loop AIMD envelopes: wall ratio ≤10× only when a
 fair offline twin exists; otherwise `perf_exempt` with cited reason (this
@@ -296,8 +295,6 @@ slug).
 - Regression: `regressions/dynamics/xl-bomd-kpoints/reg_xl-bomd-kpoints.cpp`
 - CP2K twin sketch: `tools/cp2k_oracle/inputs/xl-bomd-kpoints/`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline only; never live ctest)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`, `docs/developer/cp2k-method-loop.md`
 - Γ XL tutorial: [xl-bomd-water.md](xl-bomd-water.md)
 - Multi-k forces family: [gpw-kpoint-forces](../../roadmap/dft.md) product row /
   `regressions/gpw/gpw-kpoint-forces`

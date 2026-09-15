@@ -196,7 +196,7 @@ bash -lc '
 ## Validation (vs CP2K / dual-gate)
 
 Source:
-[`regressions/gpw/gpw-kpoint-uks-stress-gga/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-uks-stress-gga/REFERENCE.md).  
+[`regressions/gpw/gpw-kpoint-uks-stress-gga/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-uks-stress-gga/REFERENCE.md).
 Oracle: offline **CP2K** documentation twins + **ATV dual-gate** (analytic vs
 `gpw_stress_fd`). Hard-coded pins in the regression binary — **never** live
 CP2K from ctest.
@@ -270,7 +270,7 @@ k-UKS force/stress footholds. Activation floor separates GGA from PBE.
 
 ## Performance
 
-Source: `REFERENCE.md` + handoff wave 11 (`docs/developer/cp2k-method-handoff.md`).
+Source: `REFERENCE.md` + handoff wave 11 (the case `REFERENCE.md`).
 
 | Item | Value |
 | ---- | ----- |
@@ -315,9 +315,6 @@ and target \(r \le 10\).
 - CP2K documentation twins:
   [`tools/cp2k_oracle/inputs/gpw-kpoint-uks-stress-gga/`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-uks-stress-gga/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop / queue / handoff: [`cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  [`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
 - Predecessor PADE multi-k UKS stress:
   [`regressions/gpw/gpw-kpoint-uks-stress/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-uks-stress/REFERENCE.md)
 - Γ analytic stress narrative: [`gpw-analytic-stress.md`](gpw-analytic-stress.md)

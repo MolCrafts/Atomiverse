@@ -1,4 +1,4 @@
-/// @file cuda/minimizer/conv_check.cuh
+/// @file cuda/minimize/conv_check.cuh
 /// @brief ConvCheck — the shared convergence-METRIC reduction for the CUDA Optimizer
 ///        components (`SteepestDescent` / `CG` / `LBFGS`).
 ///

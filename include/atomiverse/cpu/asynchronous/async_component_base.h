@@ -1,4 +1,4 @@
-/// @file cpu/async/async_component_base.h
+/// @file cpu/asynchronous/async_component_base.h
 /// @brief `AsyncComponentBase` -- driver-agnostic base for off-hot-path
 /// analysis components.
 ///

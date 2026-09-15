@@ -1,4 +1,4 @@
-/// @file cpu/vib/hessian.h
+/// @file cpu/vibration/hessian.h
 /// @brief cpu::vib::Hessian — concrete numerical-Hessian driver.
 ///
 /// `cpu::vib::Hessian` is the user-facing CPU numerical-Hessian preset. It

@@ -8,7 +8,6 @@
 | Regression | `regressions/semiempirical/dftb2-periodic-forces/` |
 | Public API | `cpu::semiempirical::DFTB2` (`with_forces = true`, restricted MioSketch) + `cpu::Evaluate` |
 | Roadmap | [`semiempirical.md`](../../roadmap/semiempirical.md) — lattice-image-consistent Γ-PBC nuclear \(F\) ✓ |
-| Queue | TB method loop wave 3 (`docs/developer/tb-method-queue.md`) `dftb2-periodic-forces` (done) |
 | Family oracle | **DFTB+** (formula / force-module boundary; absolute SK digits deferred) |
 
 ## Summary
@@ -252,7 +251,7 @@ bash -lc '
 ## Validation (DFTB+ / literature)
 
 Source:
-[`regressions/semiempirical/dftb2-periodic-forces/REFERENCE.md`](../../../regressions/semiempirical/dftb2-periodic-forces/REFERENCE.md).  
+[`regressions/semiempirical/dftb2-periodic-forces/REFERENCE.md`](../../../regressions/semiempirical/dftb2-periodic-forces/REFERENCE.md).
 Oracle lines:
 
 ```text
@@ -345,10 +344,6 @@ not ctest.
 - Offline twin: [`tools/tb_oracle/inputs/dftbplus/dftb2-periodic-forces/`](../../../tools/tb_oracle/inputs/dftbplus/dftb2-periodic-forces/)
 - Oracle tooling: [`tools/tb_oracle/README.md`](../../../tools/tb_oracle/README.md)
 - Roadmap: [`docs/roadmap/semiempirical.md`](../../roadmap/semiempirical.md)
-- Queue / handoff / loop: [`docs/developer/tb-method-queue.md`](../../developer/tb-method-queue.md),
-  [`docs/developer/tb-method-handoff.md`](../../developer/tb-method-handoff.md),
-  [`docs/developer/tb-method-loop.md`](../../developer/tb-method-loop.md),
-  [`docs/developer/oracle-capability-loop.md`](../../developer/oracle-capability-loop.md)
 - Spec history (closed, deleted at done): git `wf/dftb2-periodic-forces` /
   wave-3 harness (`.claude/specs/dftb2-periodic-forces/` removed at done)
 - Literature: M. Elstner *et al.*, *Phys. Rev. B* **58**, 7260 (1998);

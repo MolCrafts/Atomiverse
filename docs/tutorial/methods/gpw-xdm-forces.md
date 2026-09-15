@@ -8,7 +8,7 @@
 | Regression | `regressions/gpw/gpw-xdm-forces/` |
 | Public API | `cpu::gpw::GpwDft::xdm` / `cpu::gpw::GPWEvaluator::xdm` with force assembly; `xdm_pbe` → `XdmResult::{energy,forces}`; `GpwResult::e_disp` [Ha] |
 | Related energy pin | `regressions/gpw/gpw-xdm-ice/` (same geometry / tables; energy-only) |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -234,7 +234,7 @@ bash -lc '
 ## Validation (dual pure-Python / FD dual-gate)
 
 Source:
-[`regressions/gpw/gpw-xdm-forces/REFERENCE.md`](../../../regressions/gpw/gpw-xdm-forces/REFERENCE.md).  
+[`regressions/gpw/gpw-xdm-forces/REFERENCE.md`](../../../regressions/gpw/gpw-xdm-forces/REFERENCE.md).
 Oracle: offline **dual pure-Python** lattice sum (same tables as ATV
 `xdm_tables.h`) + **independent central FD** of \(E_{\mathrm{disp}}\) vs
 product analytic forces. Twin notes under
@@ -328,9 +328,6 @@ parity, not \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\).
 - Energy sibling: `regressions/gpw/gpw-xdm-ice/REFERENCE.md`
 - Twin notes: `tools/cp2k_oracle/inputs/gpw-xdm-forces/water_dimer_xdm_forces.note`
 - Oracle policy: `tools/cp2k_oracle/README.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - Narrative GPW: `docs/tutorial/ch09-gpw.md`
 - Related force pins: `gpw-ts-forces`, `gpw-mbd-forces`, `gpw-d4-forces`,

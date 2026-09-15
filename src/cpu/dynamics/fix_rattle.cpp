@@ -1,4 +1,4 @@
-/// @file src/cpu/md/fix_rattle.cpp
+/// @file cpu/dynamics/fix_rattle.cpp
 /// @brief cpu::md::FixRattle — iterative holonomic distance constraints.
 
 #include "atomiverse/cpu/dynamics/fix_rattle.h"

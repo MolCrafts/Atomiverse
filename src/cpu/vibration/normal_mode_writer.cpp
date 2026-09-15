@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/normal_mode_writer.cpp
+/// @file cpu/vibration/normal_mode_writer.cpp
 /// @brief cpu::vib::NormalModeWriter — per-mode XYZ-animation writer.
 
 #include "atomiverse/cpu/vibration/normal_mode_writer.h"

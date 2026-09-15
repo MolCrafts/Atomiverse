@@ -7,7 +7,7 @@
 | Slug | `spin-dftb2-o2` |
 | Regression | `regressions/semiempirical/spin-dftb2-o2/` |
 | Public API | `cpu::semiempirical::DFTB2` (`multiplicity`, `spin_w_ha`, Mulliken `m`) |
-| Track | TB / SE method loop wave 1 (`tb-method-loop`) |
+| Track | TB / SE method loop wave 1 () |
 | Roadmap | Spin-polarized DFTB (collinear) — ✓ foothold |
 | Family oracle | **DFTB+** (never OpenMOPAC / xtb) |
 | Pin oracle | `dftb+` 24.1 (transcribed mio-1-1 + published PBE \(W\)) |
@@ -267,18 +267,12 @@ reason above. Queue/handoff: **perf_exempt** (wall twin, not energy-class).
   a DFTB energy reference; never xtb (GFN is a different ladder end).
 - **Foothold ≠ closed ladder.** Collinear spin-DFTB is ✓ on the roadmap
   table; remaining Phase A rows are tracked in
-  `docs/developer/tb-method-queue.md`.
-
 ## References
 
 - Offline pin:
   [`regressions/semiempirical/spin-dftb2-o2/REFERENCE.md`](../../../regressions/semiempirical/spin-dftb2-o2/REFERENCE.md)
 - Regression consumer:
   `regressions/semiempirical/spin-dftb2-o2/reg_spin-dftb2-o2.cpp`
-- Queue / handoff: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`
-- Loop design: `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/semiempirical.md` (spin-polarized DFTB ✓ collinear)
 - Offline oracle tooling: `tools/tb_oracle/README.md`
 - Related product pages (same family): [dftb2-3ob-organic](dftb2-3ob-organic.md),

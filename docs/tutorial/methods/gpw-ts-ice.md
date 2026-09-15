@@ -7,7 +7,7 @@
 | Slug | `gpw-ts-ice` |
 | Regression | `regressions/gpw/gpw-ts-ice/` |
 | Public API | `cpu::gpw::GpwDft::ts` / `cpu::gpw::GPWEvaluator::ts`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, harness wave 2026-07-25) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -181,7 +181,7 @@ bash -lc '
 ## Validation (libMBD / pure-RS)
 
 Source:
-[`regressions/gpw/gpw-ts-ice/REFERENCE.md`](../../../regressions/gpw/gpw-ts-ice/REFERENCE.md).  
+[`regressions/gpw/gpw-ts-ice/REFERENCE.md`](../../../regressions/gpw/gpw-ts-ice/REFERENCE.md).
 Oracle: offline **libMBD** (git `88069c6`, built 2026-07-25) for the isolated
 dimer, plus dual pure-Python lattice sum / Atomiverse `ts_pbe` for the periodic
 hard gate. External engine pin — not a golden of Atomiverse’s own output;
@@ -264,9 +264,6 @@ host with an external TS-capable engine.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-ts-ice/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle notes: `tools/cp2k_oracle/inputs/gpw-ts-ice/water_dimer_ts.note`
 - Oracle rules: `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

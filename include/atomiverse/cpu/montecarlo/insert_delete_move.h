@@ -1,4 +1,4 @@
-/// @file cpu/mc/insert_delete_move.h
+/// @file cpu/montecarlo/insert_delete_move.h
 /// @brief cpu::mc::InsertDeleteMove — grand-canonical insertion/deletion
 ///        Mover (single species).
 #pragma once

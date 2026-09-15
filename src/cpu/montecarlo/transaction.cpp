@@ -1,4 +1,4 @@
-/// @file src/cpu/mc/transaction.cpp
+/// @file cpu/montecarlo/transaction.cpp
 /// @brief cpu::mc::Transaction implementation — Frame-patch record/rollback
 ///        over the cross-Frame row copy.
 

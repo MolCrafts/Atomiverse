@@ -193,7 +193,7 @@ throughput claim.
 
 - Offline pin: `regressions/scf/gf2-h2-sto3g/REFERENCE.md`
 - Perf (in REFERENCE; campaign queue records ratio **0.071**):
-  `docs/developer/pyscf-method-queue.md` (`gf2-h2-sto3g`)
+  (`gf2-h2-sto3g`)
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
 - Pin helper: `tools/pyscf_oracle/pin_scf.py` (`gf2`)
 - Roadmap: `docs/roadmap/excited-states.md` (GF2 ✓ CPU; self-consistent GF2 ○)

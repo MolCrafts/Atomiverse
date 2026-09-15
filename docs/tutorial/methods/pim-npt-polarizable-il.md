@@ -7,7 +7,7 @@
 | Slug | `pim-npt-polarizable-il` |
 | Regression | `regressions/md/pim-npt-polarizable-il/` |
 | Public API | `cpu::PimInducedDipole` (`Potential`) + `cpu::md::NoseHooverNPT` on `cpu::md::MD`; pin legs on `cpu::Evaluate` |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → wave 5 done (2026-07-27); map §9 "Bulk polarizable IL / PIM-NPT" |
+| Roadmap | map §9 "Bulk polarizable IL / PIM-NPT" |
 | Oracle | **MetalWalls** bulk-PIM Thole form (offline numpy pin; MW JOSS 2020, Thole 1981) — not LAMMPS |
 
 ## Summary
@@ -222,7 +222,7 @@ final volume.
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md)
+the case `REFERENCE.md`
 (wave 5, 2026-07-27).
 
 | Twin | \(T_{\mathrm{oracle}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -265,7 +265,6 @@ require \(\le 10\). Runtime of the regression itself is ≪ 60 s
 - Pin notes: [`tools/metalwalls_oracle/pin_notes_pim-npt-polarizable-il.md`](../../../tools/metalwalls_oracle/pin_notes_pim-npt-polarizable-il.md)
 - Product gate: [`regressions/md/pim-npt-polarizable-il/reg_pim-npt-polarizable-il.cpp`](../../../regressions/md/pim-npt-polarizable-il/reg_pim-npt-polarizable-il.cpp)
 - Sibling foothold page: [`pim-induced-dipole-bulk.md`](pim-induced-dipole-bulk.md) (E4 — the SCC physics and equations)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Literature: Marin-Laflèche et al., *J. Open Source Softw.* **5**, 2373
   (2020) (MetalWalls classical PIM); Thole, *Chem. Phys.* **59**, 341

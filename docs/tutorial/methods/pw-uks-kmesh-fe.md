@@ -7,7 +7,7 @@
 | Slug | `pw-uks-kmesh-fe` |
 | Regression | `regressions/pw/pw-uks-kmesh-fe/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`, `k_mesh ≥ 2`) → `PWResult::{magnetization, energy_ha}` |
-| Track | CP2K capability wave 2 (`cp2k-method-loop`) |
+| Track | CP2K capability wave 2 () |
 | Roadmap | [dft.md](../../roadmap/dft.md) § k-point periodic UKS; queue `pw-uks-kmesh-fe` (done) |
 
 ## Summary
@@ -235,8 +235,6 @@ Dual gate: (1) mag + \(e_{\mathrm{tot}}\) + SCF converge with `k_mesh = 2`;
 - Offline pin: [`regressions/pw/pw-uks-kmesh-fe/REFERENCE.md`](../../../regressions/pw/pw-uks-kmesh-fe/REFERENCE.md)
 - Regression consumer: `regressions/pw/pw-uks-kmesh-fe/reg_pw-uks-kmesh-fe.cpp`
 - Oracle note: `tools/cp2k_oracle/inputs/pw-uks-kmesh-fe.note`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Closed acceptance (git history): `.claude/specs/pw-uks-kmesh-fe/` (deleted at
   done; wave 2 2026-07-24)
 - Narrative PW / GPW chapters: [ch08-plane-wave.md](../ch08-plane-wave.md),

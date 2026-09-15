@@ -7,7 +7,7 @@
 | Slug | `second-gen-cpmd-ot` |
 | Regression | `regressions/dynamics/second-gen-cpmd-ot/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::SecondGenCp{cpu::gpw::GPWEvaluator{…, use_ot=true}, aspc_k, corrector_max_iter}` bound with `set_evaluator_ref` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `second-gen-cpmd-ot`; MD roadmap SGCP OT corrector |
+| Roadmap | MD roadmap SGCP OT corrector |
 | Dual gate | Correctness: NVE drift + method-identity (partial OT budget); speed **`perf_exempt`** |
 | Wave | CP2K capability loop — wave 9 (2026-07-26) |
 | Oracle | Offline CP2K sketch only — never live in ctest |
@@ -24,9 +24,9 @@ ASPC predicts \(P\), the OT manifold is warm-started from that density
 analytic nuclear forces are taken at the post-corrector electronic state.
 
 **Not BOMD** — production steps cap OT iterations well below a full
-self-consistency budget.  
-**Not classical CPMD** — no \(\mu\,\ddot C\), no \(T_e\), no electronic RATTLE.  
-**Not DIIS SGCP** — that is `second-gen-cpmd-water` (`use_ot=false`).  
+self-consistency budget.
+**Not classical CPMD** — no \(\mu\,\ddot C\), no \(T_e\), no electronic RATTLE.
+**Not DIIS SGCP** — that is `second-gen-cpmd-water` (`use_ot=false`).
 **Not XL-BOMD** — ASPC extrapolation, not Niklasson auxiliary Verlet
 (`cpu::electronic::XlBomdForce`).
 
@@ -213,7 +213,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/dynamics/second-gen-cpmd-ot/REFERENCE.md`](../../../regressions/dynamics/second-gen-cpmd-ot/REFERENCE.md).  
+[`regressions/dynamics/second-gen-cpmd-ot/REFERENCE.md`](../../../regressions/dynamics/second-gen-cpmd-ot/REFERENCE.md).
 Oracle: offline **CP2K** input sketch (`EXTRAPOLATION ASPC`,
 `EXTRAPOLATION_ORDER 1`, `&OT`, tight `MAX_SCF`); **never** live in ctest.
 No `cp2k` binary required on the pin host (same class as
@@ -285,8 +285,6 @@ MD binary against a static SCF twin.
 - Offline pin: `regressions/dynamics/second-gen-cpmd-ot/REFERENCE.md`
 - Regression: `regressions/dynamics/second-gen-cpmd-ot/reg_second-gen-cpmd-ot.cpp`
 - CP2K oracle sketch: `tools/cp2k_oracle/inputs/second-gen-cpmd-ot/h2o_sgcp_ot_nve.inp`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md` (wave 9, `perf_exempt`)
 - Roadmap: `docs/roadmap/molecular-dynamics.md` (SGCP OT corrector product)
 - Sibling pages: [ot-minimizer-water](ot-minimizer-water.md),
   [cpmd-water](cpmd-water.md), [xl-bomd-water](xl-bomd-water.md),

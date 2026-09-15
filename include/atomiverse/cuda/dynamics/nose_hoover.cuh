@@ -1,4 +1,4 @@
-/// @file cuda/md/nose_hoover.cuh
+/// @file cuda/dynamics/nose_hoover.cuh
 /// @brief NoseHoover -- single-chain Nosé-Hoover thermostat for NVT.
 ///
 /// Modifies velocities at initial_integrate and final_integrate (after VelocityVerlet).

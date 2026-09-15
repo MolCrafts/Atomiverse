@@ -1,4 +1,4 @@
-/// @file minimizer/conv_check.cu
+/// @file cuda/minimize/conv_check.cu
 /// @brief Fused convergence-metric reduction + host five-criteria verdict.
 
 #include <cmath>

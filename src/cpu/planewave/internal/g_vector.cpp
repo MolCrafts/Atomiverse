@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/g_vector.cpp
+/// @file cpu/planewave/internal/g_vector.cpp
 /// @brief G-vector enumeration implementation.
 
 #include "atomiverse/cpu/planewave/internal/g_vector.h"

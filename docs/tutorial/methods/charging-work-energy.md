@@ -7,7 +7,6 @@
 | Slug | `charging-work-energy` |
 | Regression | `regressions/md/charging-work-energy/` |
 | Public API | `cpu::electrodes::ChargingWork` (`Potential` kind); bind via `set_evaluator` on `cpu::Evaluate` / `cpu::md::MD` |
-| Roadmap / queue | MetalWalls map **E1** — `docs/developer/metalwalls-method-queue.md` → **done** (wave 1, 2026-07-23); handoff `docs/developer/metalwalls-method-handoff.md` |
 
 ## Summary
 
@@ -179,9 +178,9 @@ bash -lc '
 ## Validation (vs literature)
 
 Source:
-[`regressions/md/charging-work-energy/REFERENCE.md`](../../../regressions/md/charging-work-energy/REFERENCE.md).  
+[`regressions/md/charging-work-energy/REFERENCE.md`](../../../regressions/md/charging-work-energy/REFERENCE.md).
 **Oracle: literature** — MetalWalls JOSS **5**(53) 2373 (2020) eq. 6 second term
-and Scalfi et al. *PCCP* **22** 10480 (2020) / arXiv:1911.09351 eq. 12.  
+and Scalfi et al. *PCCP* **22** 10480 (2020) / arXiv:1911.09351 eq. 12.
 No live MetalWalls or LAMMPS binary is invoked in ctest; the pin is the
 closed-form evaluation of the published identity on a fixed charge assignment.
 Pin notes: `tools/metalwalls_oracle/pin_notes_charging-work-energy.md`.
@@ -231,8 +230,7 @@ Source: [`REFERENCE.md`](../../../regressions/md/charging-work-energy/REFERENCE.
 | Parallel-plate \(-\sum\Psi Q\) | — | micro (bookkeeping) | **exempt** | n/a | No MW/LAMMPS named twin; literature pin only |
 
 Do **not** invent a wall ratio. Campaign records the same exempt status in
-`docs/developer/metalwalls-method-queue.md` and
-`docs/developer/metalwalls-method-handoff.md`.
+the case `REFERENCE.md`.
 
 ## Limitations
 
@@ -258,8 +256,6 @@ Do **not** invent a wall ratio. Campaign records the same exempt status in
 - Product gate: `regressions/md/charging-work-energy/reg_charging-work-energy.cpp`
 - Unit tests: `tests/cpu/electrodes/test_charging_work.cpp`
 - Public header: `include/atomiverse/cpu/electrodes/charging_work.h`
-- Queue / handoff: `docs/developer/metalwalls-method-queue.md`,
-  `docs/developer/metalwalls-method-handoff.md`
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (E1)
 - Oracle tooling: `tools/metalwalls_oracle/README.md`
 - A. Marin-Laflèche et al., *J. Open Source Softw.* **5**, 2373 (2020),

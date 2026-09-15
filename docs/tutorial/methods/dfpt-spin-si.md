@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-spin-si/` |
 | Public API | `cpu::pw::DfptPhonon` (members) + `cpu::pw::DfptPhononResult`; `PW::spin_polarized` / `multiplicity` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — collinear-spin product ✓ |
-| Queue | `docs/developer/cp2k-method-queue.md` (wave 7, 2026-07-26); **`perf_exempt`** |
 | Dep | `dfpt-phonon-si` ✓ (restricted LSDA Γ); sibling `dfpt-gga-si` ✓ (GGA kernel) |
 
 ## Summary
@@ -149,7 +148,7 @@ bash -lc '
 ## Validation (vs CP2K / same-Hamiltonian FD)
 
 Source:
-[`regressions/response/dfpt-spin-si/REFERENCE.md`](../../../regressions/response/dfpt-spin-si/REFERENCE.md).  
+[`regressions/response/dfpt-spin-si/REFERENCE.md`](../../../regressions/response/dfpt-spin-si/REFERENCE.md).
 Oracle priority: offline **CP2K DFPT / `VIBRATIONAL_ANALYSIS`** (LSD/UKS) when
 a binary is available; **this pin host had no CP2K module** — sharp pin is the
 central second difference of the **collinear-spin** PW SCF total energy at
@@ -232,8 +231,6 @@ When a CP2K binary is available offline: time a comparable DFPT twin, append
 - Offline pin: [`regressions/response/dfpt-spin-si/REFERENCE.md`](../../../regressions/response/dfpt-spin-si/REFERENCE.md)
 - Regression: [`regressions/response/dfpt-spin-si/reg_dfpt-spin-si.cpp`](../../../regressions/response/dfpt-spin-si/reg_dfpt-spin-si.cpp)
 - Oracle note: [`tools/cp2k_oracle/inputs/dfpt-spin-si.note`](../../../tools/cp2k_oracle/inputs/dfpt-spin-si.note)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md` (wave 7, 2026-07-26)
 - Sibling tutorials: [dfpt-phonon-si](dfpt-phonon-si.md),
   [fd-phonon-supercell](fd-phonon-supercell.md)
 - Roadmap: [dft.md](../../roadmap/dft.md) §11 DFPT

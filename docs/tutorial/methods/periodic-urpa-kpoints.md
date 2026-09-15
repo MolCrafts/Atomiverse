@@ -7,7 +7,7 @@
 | Slug | `periodic-urpa-kpoints` |
 | Regression | `regressions/gpw/periodic-urpa-kpoints/` |
 | Public API | `cpu::gpw::GpwDft::direct_rpa(atoms)` → `cpu::gpw::RpaResult` (`cpu/gpw/rpa.h`); multi-k UKS via members `n_alpha` / `n_beta`, `k_mesh`, `mp2_ri`, `mp2_n_virt` |
-| Roadmap / queue | `docs/roadmap/dft.md` §10–11 (periodic RPA / URPA); CP2K capability queue `docs/developer/cp2k-method-queue.md` |
+| Roadmap | `docs/roadmap/dft.md` §10–11 (periodic RPA / URPA) |
 | Oracle | offline CP2K twin `tools/cp2k_oracle/inputs/periodic-urpa-kpoints.inp` (never live in ctest) |
 
 ## Summary
@@ -202,7 +202,7 @@ only, not the hard accuracy gate.
 
 ## Performance
 
-Source: REFERENCE + `docs/developer/cp2k-method-handoff.md`.
+Source: REFERENCE + the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
@@ -236,8 +236,6 @@ CP2K from ctest.
 - Regression binary: `regressions/gpw/periodic-urpa-kpoints/reg_periodic-urpa-kpoints.cpp`
 - CP2K input twin: `tools/cp2k_oracle/inputs/periodic-urpa-kpoints.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md`
-- Handoff / ratio: `docs/developer/cp2k-method-handoff.md` (`perf_exempt`)
-- Queue / loop: `docs/developer/cp2k-method-queue.md`, `cp2k-method-loop.md`
 - Roadmap: `docs/roadmap/dft.md` (periodic RPA / URPA)
 - Public headers: `include/atomiverse/cpu/gpw/rpa.h`, `gpw_solver.h`
 - Unit kernels: `tests/cpu/gpw/test_cpu_gpw_rpa.cpp`

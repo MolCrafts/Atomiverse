@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-uks-forces/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`n_alpha`/`n_beta`, `XcKind::PBE`, `nonperiodic`, `compute_forces`); `cpu::Evaluate` |
 | Roadmap | `docs/roadmap/dft.md` — Γ-UKS GPW ionic forces (PBE GGA) |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`); ratio **~2.52** |
 
 ## Summary
 
@@ -300,7 +299,7 @@ mpirun -n 1 cp2k.psmp -i o2_uks_forces.inp -o o2_uks_forces.out
 ## Performance
 
 Source: same `REFERENCE.md` fair-wall note (2026-07-25) and
-`docs/developer/cp2k-method-handoff.md`. Not a ctest gate; optional offline
+the case `REFERENCE.md`. Not a ctest gate; optional offline
 twin under `tools/cp2k_oracle/`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -340,8 +339,6 @@ the same ratio **~2.52**.
 - Regression consumer: [`reg_gpw-uks-forces.cpp`](../../../regressions/gpw/gpw-uks-forces/reg_gpw-uks-forces.cpp)
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-uks-forces/`](../../../tools/cp2k_oracle/inputs/gpw-uks-forces/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  queue / handoff under `docs/developer/cp2k-method-*.md`
 - Sibling tutorials: [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md) (energy),
   [gpw-forces-water](gpw-forces-water.md) (closed-shell forces)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

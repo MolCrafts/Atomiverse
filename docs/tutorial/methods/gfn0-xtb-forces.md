@@ -236,10 +236,10 @@ bash -lc '
 ## Validation (xtb)
 
 Source:
-[`regressions/semiempirical/gfn0-xtb-forces/REFERENCE.md`](../../../regressions/semiempirical/gfn0-xtb-forces/REFERENCE.md).  
+[`regressions/semiempirical/gfn0-xtb-forces/REFERENCE.md`](../../../regressions/semiempirical/gfn0-xtb-forces/REFERENCE.md).
 Oracle: **`xtb`** `--gfn 0 --grad` (Pracht et al., ChemRxiv 2019; Bannwarth et
-al., *WIREs Comput. Mol. Sci.* **11**, e01493 (2021)).  
-`oracle_version`: **6.7.1**.  
+al., *WIREs Comput. Mol. Sci.* **11**, e01493 (2021)).
+`oracle_version`: **6.7.1**.
 Hard-coded gates in the regression binary — **never** live xtb from ctest.
 
 ```text
@@ -329,10 +329,6 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   `xtb.out.txt`, `gradient.txt`)
 - Energy sibling: `regressions/semiempirical/gfn0-beyond-toy/REFERENCE.md`
 - Oracle README: `tools/tb_oracle/README.md`
-- Queue / handoff / loop: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`,
-  `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/semiempirical.md`
 - Spec history (closed, deleted at done): git `wf/gfn0-xtb-forces`
 - P. Pracht, E. Caldeweyher, S. Ehlert, S. Grimme, ChemRxiv (2019),

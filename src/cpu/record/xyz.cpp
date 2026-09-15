@@ -1,4 +1,4 @@
-/// @file cpu/recorder/xyz.cpp
+/// @file cpu/record/xyz.cpp
 /// @brief XYZ writer + Zarr reader — delegating to molrs FFI, one frame at a time.
 
 #include "atomiverse/cpu/record/xyz.h"

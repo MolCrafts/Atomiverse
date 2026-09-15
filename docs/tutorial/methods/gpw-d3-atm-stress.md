@@ -7,7 +7,7 @@
 | Slug | `gpw-d3-atm-stress` |
 | Regression | `regressions/gpw/gpw-d3-atm-stress/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`d3`, `d3_atm`, `d3_rcut_bohr`, `compute_stress`, `stress_use_fd=false`); free `gpw_stress` / `gpw_stress_fd` with `GpwDft::{d3, d3_atm, d3_rcut_bohr}` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (worker wave 2 2026-07-31) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 

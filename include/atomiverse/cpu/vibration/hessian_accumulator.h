@@ -1,4 +1,4 @@
-/// @file cpu/vib/hessian_accumulator.h
+/// @file cpu/vibration/hessian_accumulator.h
 /// @brief cpu::vib::HessianAccumulator — central-difference Hessian-row build.
 ///
 /// Bound at `vib::Phase::accumulate`, after the user-registered force

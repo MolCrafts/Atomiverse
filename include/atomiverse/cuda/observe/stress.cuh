@@ -1,4 +1,4 @@
-/// @file cuda/observer/stress.cuh
+/// @file cuda/observe/stress.cuh
 /// @brief Virial -- ZEROING of the kinetic-stress accumulator.
 ///
 /// The full virial stress tensor is

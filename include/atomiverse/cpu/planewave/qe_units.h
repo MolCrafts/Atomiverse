@@ -1,4 +1,4 @@
-/// @file cpu/pw/qe_units.h
+/// @file cpu/planewave/qe_units.h
 /// @brief Quantum ESPRESSO-rounded unit factors owned by the PW method.
 #pragma once
 

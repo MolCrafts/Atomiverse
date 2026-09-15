@@ -1,4 +1,4 @@
-/// @file longrange/pme_spline.h
+/// @file cpu/longrange/pme_spline.h
 /// @brief Backend-agnostic PME B-spline / modulus / FFT-size math and charge
 ///        spreading (no Frame / Component / MPI / FFT engine).
 ///
@@ -143,19 +143,10 @@ inline void pme_fill_atom_splines(const StorageReal* x, const StorageReal* y,
     }
 }
 
-/// @brief Spread charges onto a complex PME grid (Q).
-///
-/// Grid layout: idx = k2 + K2·(k1 + K1·k0). Caller zeroes @p grid first.
-/// @p base / @p theta from #pme_fill_atom_splines.
-///
-/// @param q       Charges [e], length @p n_atoms.
-/// @param n_atoms Atom count.
-/// @param order   B-spline order.
-/// @param K       Grid dimensions {K0, K1, K2}.
-/// @param base    Per-atom base indices (length 3·n_atoms).
-/// @param theta   Per-atom B-spline weights (length 3·order·n_atoms).
-/// @param[in,out] grid Complex charge grid, length K0·K1·K2.
 /// @brief Wrap grid index into [0, K) without double-modulo.
+/// @param g Candidate grid index, at most one period outside [0, K).
+/// @param K Grid extent along this axis.
+/// @return The index folded into [0, K).
 inline int pme_wrap(int g, int K) {
     // base ∈ [0,K), offset ∈ [-(n-1), n-1] → at most one wrap either side
     // for typical order ≤ 8; fall back to while for safety.
@@ -170,6 +161,18 @@ inline int pme_wrap(int g, int K) {
     return g;
 }
 
+/// @brief Spread charges onto a complex PME grid (Q).
+///
+/// Grid layout: idx = k2 + K2·(k1 + K1·k0). Caller zeroes @p grid first.
+/// @p base / @p theta from #pme_fill_atom_splines.
+///
+/// @param q       Charges [e], length @p n_atoms.
+/// @param n_atoms Atom count.
+/// @param order   B-spline order.
+/// @param K       Grid dimensions {K0, K1, K2}.
+/// @param base    Per-atom base indices (length 3·n_atoms).
+/// @param theta   Per-atom B-spline weights (length 3·order·n_atoms).
+/// @param[in,out] grid Complex charge grid, length K0·K1·K2.
 inline void pme_spread_charges(const StorageReal* q, int n_atoms, int order,
                                const int K[3], const int* base,
                                const double* theta,

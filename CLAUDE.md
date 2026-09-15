@@ -79,11 +79,13 @@ independently derived**.
 | `include/atomiverse/` + `src/` | Mirrored header/impl trees |
 | `tests/` | **Unit tests only** (see the test iron law) |
 | `regressions/` | `<domain>/<case>/` — the only home of end-to-end |
-| `docs/` | user-guide / tutorial / developer / api |
+| `benchmarks/` | Standing perf harnesses; never registered with ctest |
+| `docs/` | The manual: user-guide / tutorial / roadmap / developer / api. `docs/roadmap/` is the **only** place that states what is implemented on which backend |
 | `.claude/notes/` | Passive project knowledge (current understanding only) |
 | `.claude/specs/` | Live specs; deleted at `done` |
+| `.claude/campaigns/` | Generated loop ledgers — **gitignored**, never the manual |
 | `app/`, `python/` | Installable apps, nanobind wheel |
-| `tools/` | Data generators, oracle pin scripts, debug harnesses |
+| `tools/` | Data generators, oracle pin scripts, debug harnesses, `cpu_job.sh` / `gpu_job.sh` batch templates |
 
 ## Build & test
 
@@ -110,8 +112,12 @@ Skipping the `LD_LIBRARY_PATH` mirror is the #1 cause of `libopenblas.so.0` /
 toolkit. From an agent use batch (`hpc gpu` needs a TTY):
 
 ```bash
-sbatch -p gpu -A naiss2026-4-715-gpu --gpus 1 -t 01:00:00 -c 8 -o out.log job.sh
+sbatch -A <slurm-account> tools/gpu_job.sh      # knobs: ATV_CMAKE_FLAGS,
+                                               # ATV_TARGETS, ATV_CTEST_RE
 ```
+
+`tools/gpu_job.sh` (GPU) and `tools/cpu_job.sh` (CPU) are the batch templates —
+parameterised, not one script per slug.
 
 The job script starts `#!/bin/bash -l` and loads
 `GPU/buildenv-gcccuda/2026.03-cu13.0`. Never pipe `module load` — a subshell
@@ -735,6 +741,12 @@ do, and it is not a shortcut that is available again.
 Instances: `pyscf-method-loop`, `cp2k-method-loop`, `metalwalls-method-loop`,
 `tb-method-loop`. Design: `docs/developer/oracle-capability-loop.md`; template
 `.grok/workflows/_templates/`; scaffold skill `.agents/skills/create-oracle-loop/`.
+
+**A loop's queue / handoff / ledger is not documentation.** It is generated
+under `.claude/campaigns/` (gitignored) and stays there. The one place that
+states what a method can do, on which backend, is `docs/roadmap/` — a wave that
+lands a capability updates the roadmap row, and nothing about waves, slugs or
+job IDs is ever written into `docs/`.
 
 - **GapCensus every wave** — re-diff the offline oracle + roadmap against ATV on
   `target_branch`, refill pending, update the roadmap. A foothold is not a

@@ -7,7 +7,7 @@
 | Slug | `xl-bomd-water` |
 | Regression | `regressions/dynamics/xl-bomd-water/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{…, compute_forces=true}, k=5}` bound with `set_evaluator_ref`; propagator class `cpu::electronic::XlBomd` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `xl-bomd-water`; MD roadmap XL-BOMD (`ASPC ≠ XL`) |
+| Roadmap | MD roadmap XL-BOMD (`ASPC ≠ XL`) |
 | Dual gate | Correctness A1–A9 of the spec acceptance; speed **`perf_exempt`** (no CP2K AIMD twin wall) |
 | Wave | CP2K capability loop — wave 3 |
 

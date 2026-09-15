@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_stress.h
+/// @file cpu/planewave/internal/pw_stress.h
 /// @brief Plane-wave cell stress (Nielsen–Martin analytic + strain-FD oracle).
 #pragma once
 

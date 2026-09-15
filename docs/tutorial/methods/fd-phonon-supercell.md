@@ -8,7 +8,6 @@
 | Regression | `regressions/pw/fd-phonon-supercell/` |
 | Public API | `cpu::vib::Phonon` (ctor `na,nb,nc` / members) + `cpu::vib::PhononResult` + `cpu::vib::expand_supercell` |
 | Roadmap | [dft.md](../../roadmap/dft.md) § Finite-displacement phonons ✓; enables `dfpt-phonon-si` |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (wave 2, 2026-07-24); **`perf_exempt`** |
 
 ## Summary
 
@@ -173,7 +172,7 @@ bash -lc '
 
 ## Validation (vs CP2K / literature)
 
-Source: [`regressions/pw/fd-phonon-supercell/REFERENCE.md`](../../../regressions/pw/fd-phonon-supercell/REFERENCE.md).  
+Source: [`regressions/pw/fd-phonon-supercell/REFERENCE.md`](../../../regressions/pw/fd-phonon-supercell/REFERENCE.md).
 Oracle priority: offline **CP2K `VIBRATIONAL_ANALYSIS`** when a binary is
 available; **this pin host had no CP2K module** — surrogate is the acoustic
 sum rule plus the published Stillinger–Weber optical scale. **Never** live
@@ -260,8 +259,6 @@ REFERENCE.md, require \(r \le 10\).
 - Offline pin: [`regressions/pw/fd-phonon-supercell/REFERENCE.md`](../../../regressions/pw/fd-phonon-supercell/REFERENCE.md)
 - Regression: [`regressions/pw/fd-phonon-supercell/reg_fd-phonon-supercell.cpp`](../../../regressions/pw/fd-phonon-supercell/reg_fd-phonon-supercell.cpp)
 - Closed acceptance (git): `wf/fd-phonon-supercell` / `.claude/specs/fd-phonon-supercell/`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Oracle notes: `tools/cp2k_oracle/README.md`
 - Narrative style refs: [Chapter 8 — Plane-Wave DFT](../ch08-plane-wave.md),
   [Chapter 9 — GPW](../ch09-gpw.md)

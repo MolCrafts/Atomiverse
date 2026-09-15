@@ -1,4 +1,4 @@
-/// @file cpu/observer/esp_charges.cpp
+/// @file cpu/observe/esp_charges.cpp
 /// @brief MK / CHELPG ESP-fitted charges implementation. @see esp_charges.h
 
 #include "atomiverse/cpu/observe/esp_charges.h"

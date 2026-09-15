@@ -38,21 +38,20 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/gpw/stages/diagonalize_stage.h"
-#include "atomiverse/cpu/gpw/stages/density_stage.h"
-#include "atomiverse/cpu/gpw/stages/gpw_converged.h"
-#include "atomiverse/cpu/gpw/stages/ks_build_stage.h"
-#include "atomiverse/cpu/gpw/stages/mix_stage.h"
+#include "atomiverse/cpu/gpw/g0w0.h"           // G0W0Result
 #include "atomiverse/cpu/gpw/gaussian_basis.h" // GaussianBasis
 #include "atomiverse/cpu/gpw/gth_potential.h" // GthPotential, GthNonlocalChannel
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h" // kD3Cp2kPairCutoffBohr
-#include "atomiverse/cpu/gpw/g0w0.h"      // G0W0Result
-#include "atomiverse/cpu/gpw/mp2.h"       // Mp2Result
-#include "atomiverse/cpu/gpw/rpa.h"       // RpaResult
+#include "atomiverse/cpu/gpw/mp2.h"            // Mp2Result
+#include "atomiverse/cpu/gpw/rpa.h"            // RpaResult
+#include "atomiverse/cpu/gpw/stages/density_stage.h"
+#include "atomiverse/cpu/gpw/stages/diagonalize_stage.h"
+#include "atomiverse/cpu/gpw/stages/gpw_converged.h"
+#include "atomiverse/cpu/gpw/stages/ks_build_stage.h"
+#include "atomiverse/cpu/gpw/stages/mix_stage.h"
 #include "atomiverse/cpu/linalg/matrix.h" // RealMatrix
 #include "atomiverse/molrs.hpp"
-
 
 namespace ATV {
 namespace cpu {
@@ -67,13 +66,11 @@ struct KpointBasisGrid;
 /// @brief Dudarev DFT+U (CP2K PLUS_U) on one element / angular-momentum shell.
 ///
 /// Parameters are constructor args / members — no `PlusUConfig` bag.
-/// @param element Correlated element (e.g. Ni).
-/// @param l       Angular momentum of the correlated shell (d → 2).
-/// @param u_minus_j_ev Effective U−J [eV] (public surface; converted to Ha inside).
 struct PlusU {
-    molrs::Element element = molrs::Element::H;
-    int l = 2;
-    double u_minus_j_ev = 0.0;
+    molrs::Element element =
+        molrs::Element::H; ///< Correlated element (e.g. Ni).
+    int l = 2; ///< Angular momentum of the correlated shell (d → 2).
+    double u_minus_j_ev = 0.0; ///< Effective U−J [eV]; converted to Ha inside.
 
     PlusU() = default;
     PlusU(molrs::Element element, int l, double u_minus_j_ev)
@@ -119,15 +116,7 @@ struct GpwAtom {
 /// `OptB88VdW` — pure GGA (OptB88VdW = optB88-x + PW92-c; pair with `vdw_df`)
 /// (shared `evaluate_xc`). RKS and Γ-UKS support all six (spin-GGA via
 /// `xc_grid_*_spin`; closed-shell via `xc_grid_*`).
-enum class XcKind : int {
-    PADE,
-    PBE,
-    PBEsol,
-    RevPBE,
-    RPBE,
-    BLYP,
-    OptB88VdW
-};
+enum class XcKind : int { PADE, PBE, PBEsol, RevPBE, RPBE, BLYP, OptB88VdW };
 
 /// @brief Whether `xc` needs the density gradient (GGA) rather than ρ alone.
 /// @param xc functional choice.
@@ -152,13 +141,15 @@ enum class Smearing : int {
 
 /// @brief GPW SCF result with an energy decomposition.
 struct GpwResult {
-    double e_total = 0.0;    ///< total energy [Hartree] (free energy \(F\) when smearing).
+    double e_total =
+        0.0; ///< total energy [Hartree] (free energy \(F\) when smearing).
     double e_kinetic = 0.0;  ///< Tr(P T)  (RKS: closed P; UKS: Tr((Pα+Pβ)T)).
     double e_loc_sr = 0.0;   ///< Tr(P V_loc^sr).
     double e_nonlocal = 0.0; ///< Tr(P V_nl).
     double e_es = 0.0; ///< total electrostatic (Hartree + e-ion-lr + ion-ion).
     double e_xc = 0.0; ///< XC energy.
-    double e_disp = 0.0; ///< DFT-D3/D4/TS/MBD/XDM/vdW-DF/DF2/rVV10 dispersion [Hartree] (0 when off).
+    double e_disp =
+        0.0; ///< DFT-D3/D4/TS/MBD/XDM/vdW-DF/DF2/rVV10 dispersion [Hartree] (0 when off).
     /// @brief Fermi level \(\mu\) [Hartree] when metallic smearing is on (0 if fixed occ).
     double e_fermi = 0.0;
     /// @brief Entropy contribution \(-\sigma S\) [Hartree] folded into free energy (0 if fixed).
@@ -276,9 +267,11 @@ struct GpwResult {
     /// fills `H_ks_k` / `S_k` (size == `n_kpts`) instead of the Γ fields;
     /// multi-k UKS additionally fills `H_ks_k_beta`.
     /// @{
-    linalg::RealMatrix H_ks; ///< KS matrix H[P] / \(H_\alpha\) [Hartree] (nb × nb).
-    linalg::RealMatrix H_ks_beta; ///< UKS \(H_\beta\) [Hartree] (empty for RKS).
-    linalg::RealMatrix S;    ///< Overlap matrix at this geometry (nb × nb).
+    linalg::RealMatrix
+        H_ks; ///< KS matrix H[P] / \(H_\alpha\) [Hartree] (nb × nb).
+    linalg::RealMatrix
+        H_ks_beta;        ///< UKS \(H_\beta\) [Hartree] (empty for RKS).
+    linalg::RealMatrix S; ///< Overlap matrix at this geometry (nb × nb).
     /// @brief Multi-k fixed-density KS matrices \(H_k\) [Hartree] (empty for Γ
     ///        / multi-iteration SCF). One Hermitian nb×nb per sampled k.
     ///        RKS: total. Multi-k UKS fixed-density: the α channel
@@ -332,10 +325,10 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     int diis_depth = 6;        ///< Pulay DIIS history depth.
     double lindep_threshold = 1e-8; ///< S-eigenvalue keep threshold.
     double level_shift = 0.0;       ///< virtual level shift [Hartree].
-    XcKind xc =
-        XcKind::PADE; ///< LDA (PADE) or GGA (PBE / PBEsol / RevPBE / RPBE / BLYP / OptB88VdW).
-    bool nonperiodic = false;       ///< isolated (MT) Poisson solver.
-    bool local_pp_on_grid = true;   ///< collocate GTH local SR PP on grid.
+    XcKind xc = XcKind::
+        PADE; ///< LDA (PADE) or GGA (PBE / PBEsol / RevPBE / RPBE / BLYP / OptB88VdW).
+    bool nonperiodic = false;     ///< isolated (MT) Poisson solver.
+    bool local_pp_on_grid = true; ///< collocate GTH local SR PP on grid.
     bool d3 =
         false; ///< Grimme DFT-D3 zero damping (PBE). Exclusive vs d3bj/d4/ts/mbd/xdm.
     /// @brief Grimme DFT-D3 Becke–Johnson damping (PBE params, CP2K CN form).
@@ -519,13 +512,13 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     ///         RKS + non-null `guess_P_beta` / `guess_P_k_beta`, multi-k +
     ///         real-only density guess, multi-k UKS partial k-spin guess,
     ///         or shape / count mismatch.
-    GpwResult& run(const std::vector<GpwAtom>& atoms,
-                   const linalg::RealMatrix* guess_C = nullptr,
-                   const linalg::RealMatrix* guess_P = nullptr,
-                   const linalg::RealMatrix* guess_P_beta = nullptr,
-                   const std::vector<linalg::CplxMatrix>* guess_P_k = nullptr,
-                   const std::vector<linalg::CplxMatrix>* guess_P_k_beta =
-                       nullptr);
+    GpwResult&
+    run(const std::vector<GpwAtom>& atoms,
+        const linalg::RealMatrix* guess_C = nullptr,
+        const linalg::RealMatrix* guess_P = nullptr,
+        const linalg::RealMatrix* guess_P_beta = nullptr,
+        const std::vector<linalg::CplxMatrix>* guess_P_k = nullptr,
+        const std::vector<linalg::CplxMatrix>* guess_P_k_beta = nullptr);
 
     /// @brief Result of the most recent `run()` (default-constructed —
     ///        `converged == false` — before the first run).
@@ -691,9 +684,8 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
                              DiagonalizeStage::Op diag, DensityStage::Op dens);
 
     /// @brief Path-local Op factory: receives DIIS gate refs, returns stage Ops.
-    using PathOpFactory = std::function<std::tuple<KsBuildStage::Op, MixStage::Op,
-                                                   DiagonalizeStage::Op,
-                                                   DensityStage::Op>(
+    using PathOpFactory = std::function<std::tuple<
+        KsBuildStage::Op, MixStage::Op, DiagonalizeStage::Op, DensityStage::Op>(
         bool& skip, double& e_total, double& err_norm, double& prev_energy)>;
 
     /// @brief Wire factory Ops onto gate fields and run the Driver loop.
@@ -739,16 +731,17 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
         int n_beta, int nb, bool use_diis, double mix, double level_shift,
         int max_iter, double tol, double diis_err_tol, int diis_depth,
         bool do_dftu,
-        std::function<std::tuple<linalg::RealMatrix, linalg::RealMatrix, double>(
-            const linalg::RealMatrix& Pa, const linalg::RealMatrix& Pb)>
+        std::function<
+            std::tuple<linalg::RealMatrix, linalg::RealMatrix, double>(
+                const linalg::RealMatrix& Pa, const linalg::RealMatrix& Pb)>
             build_uks_H,
         GpwResult& res);
 
-    GpwResult result_;     ///< Owned result buffer (last run).
-    Mp2Result mp2_result_; ///< Owned MP2 result buffer (last mp2()).
-    RpaResult rpa_result_; ///< Owned RPA result buffer (last direct_rpa()).
+    GpwResult result_;       ///< Owned result buffer (last run).
+    Mp2Result mp2_result_;   ///< Owned MP2 result buffer (last mp2()).
+    RpaResult rpa_result_;   ///< Owned RPA result buffer (last direct_rpa()).
     G0W0Result g0w0_result_; ///< Owned G0W0 result buffer (last g0w0()).
-    bool built_ = false;   ///< Whether build() validated the configuration.
+    bool built_ = false;     ///< Whether build() validated the configuration.
 
     // ── Shared DIIS gate flag + Γ RKS loop matrices (path Ops capture) ──
     linalg::RealMatrix loop_P_;
@@ -760,8 +753,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     linalg::RealMatrix loop_C_;
     double loop_e_total_ = 0;
     double loop_err_norm_ = 0;
-    double loop_prev_energy_ =
-        std::numeric_limits<double>::quiet_NaN();
+    double loop_prev_energy_ = std::numeric_limits<double>::quiet_NaN();
     bool loop_skip_update_ = false;
     bool driver_built_ = false;
     const void* wired_self_ = nullptr;
@@ -832,11 +824,10 @@ std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
 /// @param axes Per-axis mask (x,y,z); a masked axis skips samples and reports
 ///        exactly 0.
 /// @return Voigt stress [Hartree/Bohr³], order xx,yy,zz,xy,xz,yz.
-std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
-                                 const GpwDft& method, const GpwResult& state,
-                                 double h = 2e-3,
-                                 const std::array<bool, 3>& axes = {true, true,
-                                                                    true});
+std::array<double, 6>
+gpw_stress(const std::vector<GpwAtom>& atoms, const GpwDft& method,
+           const GpwResult& state, double h = 2e-3,
+           const std::array<bool, 3>& axes = {true, true, true});
 
 /// @brief Multi-SCF strain-FD cell stress σ [Hartree/Bohr³] (oracle / twin).
 ///

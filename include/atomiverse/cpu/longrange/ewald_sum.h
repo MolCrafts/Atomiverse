@@ -1,4 +1,4 @@
-/// @file longrange/ewald_sum.h
+/// @file cpu/longrange/ewald_sum.h
 /// @brief Backend-agnostic reciprocal-space Ewald math (no Frame / Component /
 ///        MPI / FFT).
 ///

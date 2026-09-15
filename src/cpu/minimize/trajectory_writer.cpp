@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/trajectory_writer.cpp
+/// @file cpu/minimize/trajectory_writer.cpp
 /// @brief TrajectoryWriter -- molrs-backed XYZ append.
 ///        MPI-aware: collective owner gather, rank-0 I/O.
 

@@ -1,4 +1,4 @@
-/// @file md/fix_langevin.cu
+/// @file cuda/dynamics/fix_langevin.cu
 /// @brief CUDA Langevin thermostat kernel.
 
 #include "atomiverse/core/stage.h"

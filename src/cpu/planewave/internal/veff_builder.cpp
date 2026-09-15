@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/veff_builder.cpp
+/// @file cpu/planewave/internal/veff_builder.cpp
 /// @brief Assemble V_eff(G) = V_loc + V_H + V_xc, then FFT to real-space V_eff(r).
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 

@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-spin-incommensurate/` |
 | Public API | `cpu::pw::DfptPhonon` (`q_frac`, response members) + `cpu::pw::PW` (`spin_polarized`, `multiplicity`) + `DfptPhononResult` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — collinear spin at incommensurate \(q\) ✓ |
-| Queue | `docs/developer/cp2k-method-queue.md` (wave 8, 2026-07-26); **`perf_exempt`** |
 | Dep | `dfpt-spin-si` ✓ (Γ collinear); `dfpt-incommensurate-si` ✓ (restricted finite \(q\)) |
 
 ## Summary
@@ -190,7 +189,7 @@ spectra live only on `DfptPhononResult`.
 ## Performance
 
 Source: `REFERENCE.md` +
-`docs/developer/cp2k-method-handoff.md` (wave 8 staff table).
+the case `REFERENCE.md` (wave 8 staff table).
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
@@ -227,8 +226,6 @@ the oracle note.
 - Offline pin: `regressions/response/dfpt-spin-incommensurate/REFERENCE.md`
 - Oracle note: `tools/cp2k_oracle/inputs/dfpt-spin-incommensurate.note`
 - Oracle rules: `tools/cp2k_oracle/README.md` (never live in ctest)
-- Handoff / ratio: `docs/developer/cp2k-method-handoff.md` (wave 8)
-- Queue: `docs/developer/cp2k-method-queue.md` — `[x] dfpt-spin-incommensurate`
 - API: `include/atomiverse/cpu/planewave/dfpt_phonon.h`
 - Siblings: `docs/tutorial/methods/dfpt-phonon-si.md` (Γ restricted);
   regressions `dfpt-spin-si`, `dfpt-incommensurate-si`, `dfpt-metallic-si`

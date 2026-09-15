@@ -7,7 +7,7 @@
 | Slug | `periodic-rpa-finite-q` |
 | Regression | `regressions/gpw/periodic-rpa-finite-q/` |
 | Public API | `cpu::gpw::GpwDft::direct_rpa(atoms)` → `cpu::gpw::RpaResult` (`cpu/gpw/rpa.h`); multi-k members `k_mesh[]`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt` |
-| Roadmap / queue | `docs/roadmap/dft.md` §10 Periodic RPA (finite-\(q\) inter-\(k\)); `docs/developer/cp2k-method-queue.md` done wave 4 (2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §10 Periodic RPA (finite-\(q\) inter-\(k\)) |
 
 ## Summary
 
@@ -184,7 +184,7 @@ Geometry / cell / basis / PP / XC / k-mesh: see REFERENCE system table and
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` (wave 4), queue row
+Source: the case `REFERENCE.md` (wave 4), queue row
 `periodic-rpa-finite-q`. Fair-wall target when a comparable CP2K binary and
 algorithm twin exist: \(r=T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\le 10\).
 
@@ -212,8 +212,6 @@ Regression wall budget: **≤ 60 s** (hard fail above).
 - Offline pin: `regressions/gpw/periodic-rpa-finite-q/REFERENCE.md`
 - Oracle input: `tools/cp2k_oracle/inputs/periodic-rpa-finite-q.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline only; never in ctest)
-- Handoff / ratio: `docs/developer/cp2k-method-handoff.md`
-- Queue: `docs/developer/cp2k-method-queue.md` (`periodic-rpa-finite-q` ✓)
 - Roadmap: `docs/roadmap/dft.md` §10
 - Related: `periodic-rpa-si`, `periodic-rpa-kpoints`, `periodic-mp2-kpoints`,
   `periodic-gw-kpoints`

@@ -7,7 +7,7 @@
 | Slug | `gpw-blyp-water` |
 | Regression | `regressions/gpw/gpw-blyp-water/` |
 | Public API | `cpu::gpw::GPWEvaluator` + `cpu::single_point`; `xc = XcKind::BLYP`; `Kind` + `GaussianBasis` / `GthPotential` lookup ctors |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → **done** (harness wave 2026-07-25); handoff ratio **perf_exempt** (dual-gate vs PBE); sibling PBE pin [gpw-water-pbe-mt](gpw-water-pbe-mt.md); narrative [ch09-gpw](../ch09-gpw.md) |
+| Roadmap | handoff ratio **perf_exempt** (dual-gate vs PBE); sibling PBE pin [gpw-water-pbe-mt](gpw-water-pbe-mt.md); narrative [ch09-gpw](../ch09-gpw.md) |
 
 ## Summary
 
@@ -189,7 +189,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/gpw-blyp-water/REFERENCE.md`](../../../regressions/gpw/gpw-blyp-water/REFERENCE.md).  
+[`regressions/gpw/gpw-blyp-water/REFERENCE.md`](../../../regressions/gpw/gpw-blyp-water/REFERENCE.md).
 Oracle: offline **CP2K Quickstep** twin (same geometry, DZVP-MOLOPT-GTH +
 GTH-PBE, CUTOFF 400, PERIODIC NONE / PSOLVER MT, `XC_FUNCTIONAL BLYP`).
 External-engine absolute digits were **not** available at pin time (no CP2K
@@ -243,7 +243,7 @@ cp2k.psmp -i tools/cp2k_oracle/inputs/gpw-blyp-water.inp \
 ## Performance
 
 Source: [`REFERENCE.md`](../../../regressions/gpw/gpw-blyp-water/REFERENCE.md)
-(2026-07-25); handoff `docs/developer/cp2k-method-handoff.md`.
+(2026-07-25).
 
 | Item | Value |
 | ---- | ----- |
@@ -254,8 +254,7 @@ Source: [`REFERENCE.md`](../../../regressions/gpw/gpw-blyp-water/REFERENCE.md)
 | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | **n/a (exempt)** |
 | `within_10x` | n/a (exempt) |
 
-Campaign queue records the same: ratio **perf_exempt**
-(`docs/developer/cp2k-method-queue.md` → done). Gate when a twin exists:
+. Gate when a twin exists:
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) on the same host/core count
 (single-rank).
 
@@ -289,8 +288,6 @@ Campaign queue records the same: ratio **perf_exempt**
   [gpw-water-pbe-mt](gpw-water-pbe-mt.md)
 - Molecular all-electron BLYP (PySCF): [blyp-water-sto3g](blyp-water-sto3g.md)
 - Narrative chapter: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
-- Queue / loop / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`, `docs/developer/cp2k-method-handoff.md`
 - Closed spec (git history): `.claude/specs/gpw-blyp-water/`
 - Public API: `include/atomiverse/cpu/gpw/gpw_evaluator.h`,
   `include/atomiverse/cpu/gpw/gpw_solver.h` (`XcKind::BLYP`)

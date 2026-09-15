@@ -1,4 +1,4 @@
-/// @file cpu/observer/rdf_curve.cpp
+/// @file cpu/observe/rdf_curve.cpp
 /// @brief rdf_write_curve — the single emitter of the g(r) file format.
 
 #include "atomiverse/cpu/observe/rdf_curve.h"

@@ -7,7 +7,7 @@
 | Slug | `const-pot-bo-parallel-plate` |
 | Regression | `regressions/md/const-pot-bo-parallel-plate/` |
 | Public API | `cpu::md::ConstPotBO` (Component on `cpu::md::MD`, default `pre_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E1 done** (wave 1, 2026-07-23); map slice E1 |
+| Roadmap | map slice E1 |
 | Oracle | **LAMMPS** ELECTRODE package (`fix electrode/conp`, madelung example) |
 
 ## Summary
@@ -231,7 +231,7 @@ lmp -in in.ewald-ew3dc
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{LAMMPS}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | --------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -272,7 +272,6 @@ available, re-run offline fair bench, record version + walls, and replace
 - Offline pin: [`regressions/md/const-pot-bo-parallel-plate/REFERENCE.md`](../../../regressions/md/const-pot-bo-parallel-plate/REFERENCE.md)
 - Product gate: [`regressions/md/const-pot-bo-parallel-plate/reg_const-pot-bo-parallel-plate.cpp`](../../../regressions/md/const-pot-bo-parallel-plate/reg_const-pot-bo-parallel-plate.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/const_pot_bo.h`](../../../include/atomiverse/cpu/dynamics/const_pot_bo.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), [`tools/metalwalls_oracle/inputs/lammps/const-pot-bo-parallel-plate.notes.md`](../../../tools/metalwalls_oracle/inputs/lammps/const-pot-bo-parallel-plate.notes.md)
 - Literature: Ahrens-Iwers et al., *J. Chem. Phys.* **157**, 084801 (2022), DOI [10.1063/5.0099239](https://doi.org/10.1063/5.0099239) (LAMMPS ELECTRODE); Siepmann–Sprik Gaussian electrode charges (method basis of `plate_cap` / BO matrix)
 - LAMMPS example: `examples/PACKAGES/electrode/madelung` (`in.ewald-ew3dc`, `plate_cap.py`)

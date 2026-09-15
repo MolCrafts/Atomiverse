@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/frequency_report.cpp
+/// @file cpu/vibration/frequency_report.cpp
 /// @brief cpu::vib::FrequencyReport — TSV writer implementation.
 
 #include "atomiverse/cpu/vibration/frequency_report.h"

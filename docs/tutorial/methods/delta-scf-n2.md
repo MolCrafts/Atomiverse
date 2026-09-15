@@ -182,7 +182,7 @@ bash -lc '
 | N₂ UHF/STO-3G ΔSCF IMOM (`delta_scf`) | **0.0283** | **0.2217** | **7.83** | ✓ | ATV path = RHF warm-start + ground UHF + IMOM UHF (**three** SCF loops); PySCF twin = RHF + `mom_occ_` UHF; micro-system walls are noisy |
 
 Gate: \(r\le 10\) unless exempted — **within_10x = true**.
-`docs/developer/pyscf-method-perf.md` is not present in-tree; numbers above are
+is not present in-tree; numbers above are
 from the regression REFERENCE and handoff rollup.
 
 ## Limitations
@@ -206,8 +206,7 @@ from the regression REFERENCE and handoff rollup.
 
 - Offline pin: `regressions/scf/delta-scf-n2/REFERENCE.md`
 - Perf numbers: same REFERENCE § Performance; handoff
-  `docs/developer/pyscf-method-handoff.md` (ratio 7.83); queue note
-  `docs/developer/pyscf-method-queue.md`
+  the case `REFERENCE.md` (ratio 7.83); queue note
 - Oracle: `tools/setup_pyscf_env.sh`, `tools/pyscf_oracle/pin_scf.py delta-scf`,
   `tools/pyscf_oracle/fair_bench.py --method delta_scf`
 - A. T. B. Gilbert, N. A. Besley, P. M. W. Gill, *J. Phys. Chem. A* **112**,

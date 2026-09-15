@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/davidson.h
+/// @file cpu/planewave/internal/davidson.h
 /// @brief internal::DavidsonSolver — matrix-free iterative diagonalization.
 ///
 /// Facade-private step helper owned by `cpu::pw::PW`. NOT a

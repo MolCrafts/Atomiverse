@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_forces.cpp
+/// @file cpu/planewave/internal/pw_forces.cpp
 /// @brief Analytic plane-wave ionic forces (local HF + Ewald + KB nonlocal).
 
 #include "atomiverse/cpu/planewave/internal/pw_forces.h"

@@ -149,8 +149,8 @@ Oracle re-pin:
 
 Source: `REFERENCE.md` fair-bench block (2026-07-23, login node,
 `OMP_NUM_THREADS=4`, `OMP_PROC_BIND=close`, median of \(n=3\)). Handoff ratio
-**1.117** (`docs/developer/pyscf-method-handoff.md`). Not yet a row in the
-rollup `docs/developer/pyscf-method-perf.md` (that table still lists energy-only
+**1.117** (the case `REFERENCE.md`). Not yet a row in the
+rollup (that table still lists energy-only
 `roks-o2-sto3g` with ROHF twin).
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -185,14 +185,12 @@ this matched `roks_grad` pair.
 - Hessian / vibrational analysis on ROKS density: not this slug (ROHF Hessian
   is a separate queue item).
 - Perf rollup table may lag REFERENCE until a bulk refresh of
-  `pyscf-method-perf.md`.
+  ``.
 
 ## References
 
 - Offline pin: `regressions/scf/roks-grad-o2-sto3g/REFERENCE.md`
 - Energy sibling pin: `regressions/scf/roks-o2-sto3g/REFERENCE.md`
-- Perf / handoff: `docs/developer/pyscf-method-handoff.md` (ratio 1.117);
-  rollup template `docs/developer/pyscf-method-perf.md`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`;
   `tools/pyscf_oracle/pin_scf.py`, `tools/setup_pyscf_env.sh`
 - Energy handbook: [`roks-o2-sto3g.md`](roks-o2-sto3g.md)

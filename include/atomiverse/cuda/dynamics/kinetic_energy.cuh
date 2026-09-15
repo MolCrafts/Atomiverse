@@ -1,4 +1,4 @@
-/// @file cuda/md/kinetic_energy.cuh
+/// @file cuda/dynamics/kinetic_energy.cuh
 /// @brief md::KineticEnergy -- computes system kinetic energy from velocities.
 ///
 /// KE [eV] = 0.5 * ATV::units::mass_v2_to_energy * sum_i( mass_i * (vx_i^2 + vy_i^2 + vz_i^2) ).

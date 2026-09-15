@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-kpoint-stress/` |
 | Public API | `cpu::gpw::gpw_stress` (analytic fixed-\(P_k\)); oracle `gpw_stress_fd`; `GpwDft` members `k_mesh`, `cell`, `cutoff_ry`, … (no `*Config`) |
 | Roadmap | [dft.md](../../roadmap/dft.md) § Periodic DFT — GPW analytic cell stress at k-points |
-| Queue | CP2K capability loop — harness wave 2026-07-25 (`docs/developer/cp2k-method-queue.md`) |
 
 ## Summary
 
@@ -185,7 +184,7 @@ bash -lc '
 ## Validation (vs CP2K / dual-gate)
 
 Source:
-[`regressions/gpw/gpw-kpoint-stress/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-stress/REFERENCE.md).  
+[`regressions/gpw/gpw-kpoint-stress/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-stress/REFERENCE.md).
 Oracle strategy: offline **CP2K** twin when available (`cp2k.psmp` +
 `tools/cp2k_oracle/inputs/gpw-kpoint-stress.inp`); **never** live CP2K from
 ctest. Pin host (2026-07-25) had **no CP2K binary/module** — absolute
@@ -270,9 +269,6 @@ convention for stress twins (`gpw-stress-water`).
 - Offline pin + fair wall: `regressions/gpw/gpw-kpoint-stress/REFERENCE.md`
 - Twin input: `tools/cp2k_oracle/inputs/gpw-kpoint-stress.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / handoff / loop: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Related: [gpw-analytic-stress](gpw-analytic-stress.md) (Γ fixed-\(P\)),
   [gpw-stress-water](gpw-stress-water.md) (MT NUMERICAL pin),
   k-point energy twin family `gpw-kpoints-si`, k-forces

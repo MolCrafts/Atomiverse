@@ -7,7 +7,7 @@
 | Slug | `slab-2d-ewald-foothold` |
 | Regression | `regressions/md/slab-2d-ewald-foothold/` |
 | Public API | `cpu::CoulLong` + `cpu::KSpaceEwald` (`slab_factor` member) on `cpu::Evaluate` / `cpu::md::MD` |
-| Roadmap / queue | `docs/roadmap/force-fields.md` § Direct Ewald slab; queue `docs/developer/metalwalls-method-queue.md` `slab-2d-ewald-foothold` (done, wave 1) |
+| Roadmap | `docs/roadmap/force-fields.md` § Direct Ewald slab |
 
 ## Summary
 
@@ -146,7 +146,7 @@ bash -lc '
 ./build/regressions/reg_slab-2d-ewald-foothold
 ```
 
-Oracle input (offline only):  
+Oracle input (offline only):
 `tools/metalwalls_oracle/inputs/lammps/slab-2d-ewald-foothold/in.lammps`.
 
 ## Validation (oracle: LAMMPS)
@@ -208,9 +208,6 @@ REFERENCE: reciprocal sum over the positive hemisphere with prefactor
 - Regression consumer: `regressions/md/slab-2d-ewald-foothold/reg_slab-2d-ewald-foothold.cpp`
 - LAMMPS twin input: `tools/metalwalls_oracle/inputs/lammps/slab-2d-ewald-foothold/in.lammps`
 - Oracle notes: `tools/metalwalls_oracle/README.md`
-- Queue / handoff: `docs/developer/metalwalls-method-queue.md`,
-  `docs/developer/metalwalls-method-handoff.md`
-- Design: `docs/developer/metalwalls-method-loop.md`
 - Roadmap: `docs/roadmap/force-fields.md` (Direct Ewald + slab)
 - I.-C. Yeh, M. L. Berkowitz, *J. Chem. Phys.* **111**, 3155 (1999)
 - V. Ballenegger et al., *J. Chem. Phys.* **131**, 094107 (2009) (non-neutral extension)

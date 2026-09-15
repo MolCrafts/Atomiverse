@@ -1,4 +1,4 @@
-/// @file cpu/md/atom_sort.h
+/// @file cpu/dynamics/atom_sort.h
 /// @brief LAMMPS `atom_modify sort` — spatial reordering of **owned** atoms.
 ///
 /// ## Placement (copy LAMMPS)

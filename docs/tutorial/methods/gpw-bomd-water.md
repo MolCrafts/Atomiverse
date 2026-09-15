@@ -7,7 +7,7 @@
 | Slug | `gpw-bomd-water` |
 | Regression | `regressions/gpw/gpw-bomd-water/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::gpw::GPWEvaluator{…, compute_forces=true}` at `md::Phase::force` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `gpw-bomd-water`; MD product path in [ch09-gpw.md](../ch09-gpw.md) / [ch10-classical-md.md](../ch10-classical-md.md) |
+| Roadmap | MD product path in [ch09-gpw.md](../ch09-gpw.md) / [ch10-classical-md.md](../ch10-classical-md.md) |
 | Dual gate | Correctness A4–A6; speed **`perf_exempt`** (no CP2K AIMD twin wall) |
 | Wave | CP2K capability loop — wave 2 **done** (merged 2026-07-24) |
 
@@ -255,8 +255,8 @@ Related unit surface (not the e2e pin): `tests/cpu/gpw/test_gpw_bomd.cpp` —
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; queue/handoff
-[`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-[`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md).
+``,
+``.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -305,8 +305,6 @@ this multi-step BOMD twin.
   `regressions/gpw/gpw-forces-water/`
 - Unit bind test: `tests/cpu/gpw/test_gpw_bomd.cpp`
 - Suggested CP2K input: `tools/cp2k_oracle/inputs/h2o_bomd_mt.inp`
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
 - Oracle: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - Narrative GPW / MD: [ch09-gpw.md](../ch09-gpw.md),
   [ch10-classical-md.md](../ch10-classical-md.md)

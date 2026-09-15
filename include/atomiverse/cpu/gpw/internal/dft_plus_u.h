@@ -176,23 +176,28 @@ mulliken_spin_populations(const linalg::RealMatrix& Pa,
     return m;
 }
 
-/// @brief Apply DFT+U for all configured (element,L,U) entries on one spin.
-/// @param z_of_atom Atomic numbers per atom (length n_atoms).
-/// @param U_ha_of_element Maps atomic number → (l, U_ha); U_ha==0 skips.
-/// @return Total E_U for this spin [Hartree].
+/// @brief One correlated shell's DFT+U parameters in atomic units.
 struct PlusUHa {
-    int l = 2;
-    double U_ha = 0.0;
+    int l = 2;         ///< Angular momentum of the correlated shell (d → 2).
+    double U_ha = 0.0; ///< Effective U−J [Hartree]; 0 disables this entry.
 };
 
-inline double apply_dft_plus_u(linalg::RealMatrix& H,
-                               const linalg::RealMatrix& P,
-                               const linalg::RealMatrix& S,
-                               const std::vector<AoShellTag>& tags,
-                               const std::vector<int>& z_of_atom,
-                               const std::vector<PlusUHa>& by_z_slot,
-                               const std::vector<int>& z_keys,
-                               linalg::RealMatrix* V_hat_out = nullptr) {
+/// @brief Apply DFT+U for all configured (element, l, U) entries on one spin.
+/// @param H In/out Fock matrix for this spin, updated in place [Hartree].
+/// @param P Density matrix for this spin.
+/// @param S Overlap matrix.
+/// @param tags Per-AO shell tags used to select the correlated subspace.
+/// @param z_of_atom Atomic numbers per atom (length n_atoms).
+/// @param by_z_slot Per-key `(l, U_ha)` entries; `U_ha == 0` skips the key.
+/// @param z_keys Atomic numbers indexing `by_z_slot`.
+/// @param V_hat_out Optional: receives the DFT+U potential matrix.
+/// @return Total E_U for this spin [Hartree].
+
+inline double apply_dft_plus_u(
+    linalg::RealMatrix& H, const linalg::RealMatrix& P,
+    const linalg::RealMatrix& S, const std::vector<AoShellTag>& tags,
+    const std::vector<int>& z_of_atom, const std::vector<PlusUHa>& by_z_slot,
+    const std::vector<int>& z_keys, linalg::RealMatrix* V_hat_out = nullptr) {
     double e_u = 0.0;
     const int nb = static_cast<int>(P.shape(0));
     linalg::RealMatrix V_hat = xt::zeros<double>({nb, nb});
@@ -271,14 +276,11 @@ inline double dft_plus_u_energy(const linalg::RealMatrix& P,
 /// @param P_spin One spin channel's density [e] (RKS: pass P_tot/2).
 /// @param S Overlap (nb × nb), same image convention as the SCF.
 /// @param channel_scale 2 for the two identical RKS channels, 1 per UKS spin.
-inline void subtract_dftu_pulay(linalg::RealMatrix& W,
-                                const linalg::RealMatrix& P_spin,
-                                const linalg::RealMatrix& S,
-                                double channel_scale,
-                                const std::vector<AoShellTag>& tags,
-                                const std::vector<int>& z_of_atom,
-                                const std::vector<PlusUHa>& by_z_slot,
-                                const std::vector<int>& z_keys) {
+inline void subtract_dftu_pulay(
+    linalg::RealMatrix& W, const linalg::RealMatrix& P_spin,
+    const linalg::RealMatrix& S, double channel_scale,
+    const std::vector<AoShellTag>& tags, const std::vector<int>& z_of_atom,
+    const std::vector<PlusUHa>& by_z_slot, const std::vector<int>& z_keys) {
     const int nb = static_cast<int>(P_spin.shape(0));
     linalg::RealMatrix H_discard = xt::zeros<double>({nb, nb});
     linalg::RealMatrix V_hat;
@@ -300,9 +302,11 @@ inline void subtract_dftu_pulay(linalg::RealMatrix& W,
 ///
 /// Adds \(w\cdot\tfrac12\mathrm{Herm}[(PS)+(SP)]\) (real part after
 /// Hermitian projection) into `occ` (n×n, pre-sized / accumulated).
-inline void accumulate_mulliken_occupation_k(
-    linalg::RealMatrix& occ, const linalg::CplxMatrix& P,
-    const linalg::CplxMatrix& S, const std::vector<int>& idx, double w) {
+inline void accumulate_mulliken_occupation_k(linalg::RealMatrix& occ,
+                                             const linalg::CplxMatrix& P,
+                                             const linalg::CplxMatrix& S,
+                                             const std::vector<int>& idx,
+                                             double w) {
     using Cplx = std::complex<double>;
     const int n = static_cast<int>(idx.size());
     if (n == 0 || !(w > 0.0))
@@ -408,16 +412,14 @@ inline double build_dftu_potential_k(
 /// it later (band-payload rebuild) must go through `add_dftu_potential_cplx`
 /// with the matching \(S_k\), never a bare add.
 /// @return \(E_U\) [Hartree] for this spin (global when `allreduce_occ`).
-inline double apply_dft_plus_u_k(std::vector<linalg::CplxMatrix>& H_k,
-                                 const std::vector<linalg::CplxMatrix>& P_k,
-                                 const std::vector<linalg::CplxMatrix>& S_k,
-                                 const std::vector<double>& weights,
-                                 int ik_begin, int ik_stride, bool allreduce_occ,
-                                 const std::vector<AoShellTag>& tags,
-                                 const std::vector<int>& z_of_atom,
-                                 const std::vector<PlusUHa>& by_z_slot,
-                                 const std::vector<int>& z_keys,
-                                 linalg::RealMatrix* V_out = nullptr) {
+inline double apply_dft_plus_u_k(
+    std::vector<linalg::CplxMatrix>& H_k,
+    const std::vector<linalg::CplxMatrix>& P_k,
+    const std::vector<linalg::CplxMatrix>& S_k,
+    const std::vector<double>& weights, int ik_begin, int ik_stride,
+    bool allreduce_occ, const std::vector<AoShellTag>& tags,
+    const std::vector<int>& z_of_atom, const std::vector<PlusUHa>& by_z_slot,
+    const std::vector<int>& z_keys, linalg::RealMatrix* V_out = nullptr) {
     linalg::RealMatrix V_full;
     const double e_u = build_dftu_potential_k(
         P_k, S_k, weights, ik_begin, ik_stride, allreduce_occ, tags, z_of_atom,
@@ -442,15 +444,13 @@ inline double apply_dft_plus_u_k(std::vector<linalg::CplxMatrix>& H_k,
 /// @param W_k Per-k total energy-weighted densities; modified in place.
 /// @param P_spin_k One spin channel per k (RKS: pass P_k/2 views).
 /// @param channel_scale 2 for the two identical RKS channels, 1 per UKS spin.
-inline void subtract_dftu_pulay_k(std::vector<linalg::CplxMatrix>& W_k,
-                                  const std::vector<linalg::CplxMatrix>& P_spin_k,
-                                  const std::vector<linalg::CplxMatrix>& S_k,
-                                  const std::vector<double>& weights,
-                                  double channel_scale,
-                                  const std::vector<AoShellTag>& tags,
-                                  const std::vector<int>& z_of_atom,
-                                  const std::vector<PlusUHa>& by_z_slot,
-                                  const std::vector<int>& z_keys) {
+inline void subtract_dftu_pulay_k(
+    std::vector<linalg::CplxMatrix>& W_k,
+    const std::vector<linalg::CplxMatrix>& P_spin_k,
+    const std::vector<linalg::CplxMatrix>& S_k,
+    const std::vector<double>& weights, double channel_scale,
+    const std::vector<AoShellTag>& tags, const std::vector<int>& z_of_atom,
+    const std::vector<PlusUHa>& by_z_slot, const std::vector<int>& z_keys) {
     using Cplx = std::complex<double>;
     const int nk = static_cast<int>(P_spin_k.size());
     if (nk == 0)

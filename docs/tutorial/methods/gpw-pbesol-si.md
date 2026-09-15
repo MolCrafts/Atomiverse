@@ -7,7 +7,7 @@
 | Slug | `gpw-pbesol-si` |
 | Regression | `regressions/gpw/gpw-pbesol-si/` |
 | Public API | `cpu::gpw::GpwDft` / `GPWEvaluator` with `xc = XcKind::PBEsol`; `GaussianBasis` / `GthPotential` lookup ctors; shared `cpu::scf::XCType::PBEsol` |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → **done** (wave 2, 2026-07-24); handoff ratio **perf_exempt** |
+| Roadmap | handoff ratio **perf_exempt** |
 
 ## Summary
 
@@ -180,7 +180,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/gpw-pbesol-si/REFERENCE.md`](../../../regressions/gpw/gpw-pbesol-si/REFERENCE.md).  
+[`regressions/gpw/gpw-pbesol-si/REFERENCE.md`](../../../regressions/gpw/gpw-pbesol-si/REFERENCE.md).
 Oracle status at pin time (2026-07-23): **no CP2K binary / module** on the worker
 host (`cp2k`, `cp2k.psmp`, `cp2k.sopt` not on PATH; `module avail cp2k` empty).
 Absolute CP2K \(E_{\mathrm{tot}}\) digits are therefore **not** invented from
@@ -250,8 +250,7 @@ Source: [`REFERENCE.md`](../../../regressions/gpw/gpw-pbesol-si/REFERENCE.md)
 | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | **n/a (exempt)** |
 | `within_10x` | n/a (exempt) |
 
-Campaign queue records the same: ratio **perf_exempt**
-(`docs/developer/cp2k-method-queue.md` → done, wave 2). Gate when a twin
+. Gate when a twin
 exists: \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) on the same host/core
 count (single-rank).
 
@@ -283,8 +282,6 @@ count (single-rank).
 - Regression consumer: `regressions/gpw/gpw-pbesol-si/reg_gpw-pbesol-si.cpp`
 - Oracle twin: `tools/cp2k_oracle/inputs/gpw-pbesol-si.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / loop / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`, `docs/developer/cp2k-method-handoff.md`
 - Closed spec (git history): `.claude/specs/gpw-pbesol-si/` on
   `wf/gpw-pbesol-si` / merge `7022224b`
 - Narrative GPW chapter: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

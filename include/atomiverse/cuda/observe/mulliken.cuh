@@ -1,4 +1,4 @@
-/// @file cuda/observer/mulliken.cuh
+/// @file cuda/observe/mulliken.cuh
 /// @brief MullikenObs -- header-only Mulliken population observer (async D2H bridge).
 ///
 /// Pure observer: computes and stores per-atom charges.  Does NOT write to

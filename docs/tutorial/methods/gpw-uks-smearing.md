@@ -8,8 +8,6 @@
 | Regression | `regressions/gpw/gpw-uks-smearing/` |
 | Public API | `cpu::gpw::GpwDft` members `n_alpha`/`n_beta`, `smearing`, `degauss` [Ry], `extra_bands`, `mp_order`, `k_mesh`; `GpwResult::{e_total,e_fermi,n_elec_occ,e_entropy}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) — Smearing for metals (GPW multi-k UKS ✓) |
-| Loop | CP2K capability (`cp2k-method-loop`) |
-
 ## Summary
 
 Metals need **fractional band occupations** and a shared chemical potential
@@ -259,7 +257,7 @@ only).
 
 Source: same REFERENCE (single-rank wall, 2026-07-26). Gate:
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) unless exempted. Handoff:
-`docs/developer/cp2k-method-handoff.md`.
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ---------------------------------------: | ---- | ------ |
@@ -302,9 +300,7 @@ treat \(r\) as bit-identical Hamiltonian throughput. Queue records ratio
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-uks-smearing/`](../../../tools/cp2k_oracle/inputs/gpw-uks-smearing/)
 - RKS twin / wall class: [`tools/cp2k_oracle/inputs/gpw-metallic-smearing/`](../../../tools/cp2k_oracle/inputs/gpw-metallic-smearing/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Handoff ratio **~0.017**: [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Queue row: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md) (`gpw-uks-smearing` done)
-- Loop design: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
+- Handoff ratio **~0.017**: the case `REFERENCE.md`
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md) (Smearing for metals — GPW multi-k UKS ✓)
 - Public header: `include/atomiverse/cpu/gpw/gpw_solver.h`
 - Related tutorials: [pw-smearing-al](pw-smearing-al.md), [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md)

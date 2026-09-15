@@ -1,4 +1,4 @@
-/// @file cpu/observer/lowdin.cpp
+/// @file cpu/observe/lowdin.cpp
 /// @brief Löwdin population analysis implementation. @see lowdin.h
 
 #include "atomiverse/cpu/observe/lowdin.h"

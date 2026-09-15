@@ -1,4 +1,4 @@
-/// @file cuda/async/async_bridge.cuh
+/// @file cuda/asynchronous/async_bridge.cuh
 /// @brief AsyncBridge -- base class for all CUDA async-D2H observer/recorder components.
 ///
 /// Encapsulates the sidecar pattern shared by every CUDA observer and recorder,

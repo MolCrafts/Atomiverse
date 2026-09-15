@@ -1,4 +1,4 @@
-/// @file cpu/md/nve_limit.h
+/// @file cpu/dynamics/nve_limit.h
 /// @brief CPU velocity-Verlet integrator with a per-step displacement
 ///        (distance) cap. LAMMPS-equivalent `fix nve/limit`
 ///        (`lammps/src/fix_nve_limit.cpp`).

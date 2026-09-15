@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ugw-uks-rpbe/` |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `XcKind::RPBE`, `g0w0(atoms)` → `G0W0Result`) |
 | Roadmap | `docs/roadmap/dft.md` — UGW@UKS with RPBE spin XC |
-| Queue | CP2K capability loop wave 11 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -229,7 +228,7 @@ the dual-gate band with uncited RI-GW digits.
 
 ## Performance
 
-Source: same `REFERENCE.md` / handoff (`docs/developer/cp2k-method-handoff.md`).
+Source: same `REFERENCE.md` / handoff (the case `REFERENCE.md`).
 **Not** a ctest gate.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -261,9 +260,6 @@ CP2K from ctest.
 - CP2K twin: [`tools/cp2k_oracle/inputs/ugw-uks-rpbe.inp`](../../../tools/cp2k_oracle/inputs/ugw-uks-rpbe.inp)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - PBE UGW twin: [`regressions/gpw/periodic-ugw-si/REFERENCE.md`](../../../regressions/gpw/periodic-ugw-si/REFERENCE.md)
-- Loop / queue / handoff: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  [`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - Public headers: `include/atomiverse/cpu/gpw/g0w0.h`, `gpw_solver.h`

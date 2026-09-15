@@ -7,7 +7,7 @@
 | Slug | `dos-spin-si` |
 | Regression | `regressions/pw/dos-spin-si/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`) + `cpu::pw::Dos` + `DosResult` |
-| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS (spin DOS); queue `docs/developer/cp2k-method-queue.md` `dos-spin-si` (done) |
+| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS (spin DOS)|
 
 ## Summary
 
@@ -301,8 +301,6 @@ Wall comparison is same-geometry only, not absolute-\(D(E)\) parity
 - Regression: [`regressions/pw/dos-spin-si/reg_dos-spin-si.cpp`](../../../regressions/pw/dos-spin-si/reg_dos-spin-si.cpp)
 - Public API: [`include/atomiverse/cpu/planewave/bands_dos.h`](../../../include/atomiverse/cpu/planewave/bands_dos.h)
 - Optional CP2K character / wall note: `tools/cp2k_oracle/inputs/dos-spin-si.note`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Sibling restricted DOS: [bands-dos-si](bands-dos-si.md)
 - Sibling collinear energy/spin SCF: [pw-spin-polarized-o2](pw-spin-polarized-o2.md)
 - Narrative style ref: [Chapter 8 — Plane-Wave DFT](../ch08-plane-wave.md)

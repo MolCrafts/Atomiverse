@@ -1,4 +1,4 @@
-/// @file cpu/vib/symmetrize.h
+/// @file cpu/vibration/symmetrize.h
 /// @brief cpu::vib::Symmetrize — symmetric-subspace projection of the Hessian.
 ///
 /// Bound at `vib::Phase::diagonalize` with order `-1` (runs on the final

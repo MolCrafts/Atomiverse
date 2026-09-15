@@ -1,4 +1,4 @@
-/// @file cpu/scf/gradient.cpp
+/// @file cpu/scf/internal/gradient.cpp
 /// @brief Unified analytic nuclear gradient for all mean-field methods.
 ///
 /// `internal::ScfGradient::compute()` handles RHF, UHF, RKS, and UKS.
@@ -812,9 +812,11 @@ GradientResult ScfGradient::assemble_(
 
         std::vector<int> shell_to_atom(static_cast<std::size_t>(n_cart), -1);
         for (int i = 0; i < n_cart; ++i) {
-            const double* c = integrals.shells[static_cast<std::size_t>(i)].center;
+            const double* c =
+                integrals.shells[static_cast<std::size_t>(i)].center;
             for (int a = 0; a < natm; ++a) {
-                const double* p = integrals.atoms[static_cast<std::size_t>(a)].pos;
+                const double* p =
+                    integrals.atoms[static_cast<std::size_t>(a)].pos;
                 if (c[0] == p[0] && c[1] == p[1] && c[2] == p[2]) {
                     shell_to_atom[static_cast<std::size_t>(i)] = a;
                     break;

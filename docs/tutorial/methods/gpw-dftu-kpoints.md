@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-dftu-kpoints/` |
 | Public API | `cpu::gpw::GpwDft` members `k_mesh` / `k_points` + `k_point_weights`, `k_time_reversal`, `n_alpha`/`n_beta`, `std::vector<PlusU> plus_u` |
 | Roadmap | `docs/roadmap/dft.md` — multi-k Dudarev DFT+U SCF (`reg_gpw-dftu-kpoints`) ✓ |
-| Queue | CP2K capability loop harness wave 5 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 | Perf | **`perf_exempt`** (no fair absolute CP2K energy twin on the H₂ toy) |
 
 ## Summary
@@ -178,7 +177,7 @@ bash -lc '
 
 ## Validation (vs CP2K + internal identities)
 
-Source: [`regressions/gpw/gpw-dftu-kpoints/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-kpoints/REFERENCE.md).  
+Source: [`regressions/gpw/gpw-dftu-kpoints/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-kpoints/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** twin **ships** under `tools/cp2k_oracle/` but is
 **pathology-noted** (not absolute energy gate). **Never** live in ctest. Pin
 date: **2026-07-26**.
@@ -250,7 +249,7 @@ OMP_NUM_THREADS=8 cp2k.psmp -i h2_uks_dftu_kpoints.inp -o h2_uks_dftu_kpoints.ou
 
 Source: fair wall table in
 `regressions/gpw/gpw-dftu-kpoints/REFERENCE.md` (2026-07-26). Handoff:
-`docs/developer/cp2k-method-handoff.md` — **`perf_exempt`**. Same pattern as
+the case `REFERENCE.md` — **`perf_exempt`**. Same pattern as
 `gpw-kpoints-uks`: decisive gates are internal identities, not
 \(T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) against a fair absolute energy twin.
 
@@ -286,9 +285,6 @@ bulk NiO multi-k PLUS_U wall or multigrid parity.
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - Γ DFT+U product twin: [gpw-dftu-nio](gpw-dftu-nio.md),
   [`regressions/gpw/gpw-dftu-nio/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-nio/REFERENCE.md)
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Loop design: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - V. I. Anisimov, J. Zaanen, O. K. Andersen, *Phys. Rev. B* **44**, 943 (1991) — DFT+U

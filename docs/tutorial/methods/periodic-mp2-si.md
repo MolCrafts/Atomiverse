@@ -7,7 +7,7 @@
 | Slug | `periodic-mp2-si` |
 | Regression | `regressions/gpw/periodic-mp2-si/` |
 | Public API | `cpu::gpw::GpwDft::mp2(atoms)` → `cpu::gpw::Mp2Result` (`cpu/gpw/mp2.h`); members `mp2_n_virt`, `mp2_os_scale`, `mp2_ss_scale` |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` wave 3; roadmap §10 ○ Periodic MP2 foothold; unblocks `periodic-rpa-si` |
+| Roadmap | roadmap §10 ○ Periodic MP2 foothold; unblocks `periodic-rpa-si` |
 
 ## Summary
 

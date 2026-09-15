@@ -203,8 +203,6 @@ No ⚡ optimization pass required on this case (\(r < 10\)).
 - Regression consumer: `regressions/scf/ccsd-grad-h2o-sto3g/reg_ccsd-grad-h2o-sto3g.cpp`
 - Energy sibling page: [ccsd-h2-sto3g](ccsd-h2-sto3g.md)
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/post-hf.md` (§3 Coupled cluster)
 - Public API: `include/atomiverse/cpu/scf/mean_field_method.h` (`ccsd_forces`),
   `include/atomiverse/cpu/scf/gradient_result.h`

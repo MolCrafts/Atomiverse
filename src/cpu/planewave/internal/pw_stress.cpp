@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_stress.cpp
+/// @file cpu/planewave/internal/pw_stress.cpp
 /// @brief Plane-wave cell stress: Nielsen–Martin one-SCF analytic path +
 ///        multi-SCF strain-FD oracle.
 ///

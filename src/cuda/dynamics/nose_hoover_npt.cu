@@ -1,4 +1,4 @@
-/// @file md/nose_hoover_npt.cu
+/// @file cuda/dynamics/nose_hoover_npt.cu
 /// @brief CUDA MTK NPT integrator implementation. Mirrors the CPU
 ///        sibling cpu::md::NoseHooverNPT line for line — see that file
 ///        for the canonical algorithm documentation block.

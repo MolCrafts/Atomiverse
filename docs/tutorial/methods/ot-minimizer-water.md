@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ot-minimizer-water/` |
 | Public API | `cpu::gpw::GPWEvaluator` + member `use_ot` (ctor arg or assign) |
 | Roadmap | `docs/roadmap/dft.md` §10 GPW — OT minimizer ✓ (`reg_ot-minimizer-water`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (wave 1, 2026-07-23) |
 
 ## Summary
 
@@ -155,7 +154,7 @@ bash -lc '
 
 ## Validation (vs CP2K)
 
-Source: [`regressions/gpw/ot-minimizer-water/REFERENCE.md`](../../../regressions/gpw/ot-minimizer-water/REFERENCE.md).  
+Source: [`regressions/gpw/ot-minimizer-water/REFERENCE.md`](../../../regressions/gpw/ot-minimizer-water/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`, 1 MPI rank); **never** live in ctest.
 
 **Setup:**
@@ -239,8 +238,6 @@ optimize pass required for this foothold.
 - Closed spec (git history): `.claude/specs/ot-minimizer-water/` (deleted at
   done; see commit `feat(gpw): productize OT SCF + CP2K water pin`)
 - CP2K oracle inputs: `tools/cp2k_oracle/inputs/ot-minimizer-water-*.inp`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Narrative GPW chapter: `docs/tutorial/ch09-gpw.md`
 - Roadmap: `docs/roadmap/dft.md` §10 (OT ✓ on GPW)
 - VandeVondele, J.; Hutter, J. *J. Chem. Phys.* **118**, 4365 (2003),

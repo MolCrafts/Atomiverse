@@ -1,4 +1,4 @@
-/// @file facade/stage.h
+/// @file core/stage.h
 /// @brief Phase enums that define the staged execution skeleton for each
 ///        driver type. CUDA-free header.
 #pragma once
@@ -193,8 +193,8 @@ namespace gpw {
 
 /// @brief Phase order for one GPW KS self-consistency iteration.
 enum class Phase {
-    ks_build,    ///< Collocate ρ → Poisson → XC → integrate → H + energy.
-    mix,         ///< DIIS extrapolation in KS-matrix space (precedes diagonalize).
+    ks_build, ///< Collocate ρ → Poisson → XC → integrate → H + energy.
+    mix,      ///< DIIS extrapolation in KS-matrix space (precedes diagonalize).
     diagonalize, ///< Solve the generalized eigenproblem for the orbitals.
     density,     ///< Build the new density from the occupied orbitals.
     check,       ///< Convergence test (|ΔE| / DIIS residual).

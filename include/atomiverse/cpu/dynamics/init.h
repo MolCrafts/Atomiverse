@@ -1,4 +1,4 @@
-/// @file cpu/md/init.h
+/// @file cpu/dynamics/init.h
 /// @brief CPU MD infrastructure components: KineticEnergy, InitVelocity,
 ///        ZeroMomentum.
 #pragma once

@@ -1,4 +1,4 @@
-/// @file cpu/vib/atomic_masses.h
+/// @file cpu/vibration/atomic_masses.h
 /// @brief IUPAC-2013 standard atomic weights for vibrational analysis.
 ///
 /// Mirrors `pyscf/data/elements.py::MASSES` (IUPAC-2013, isotope-averaged

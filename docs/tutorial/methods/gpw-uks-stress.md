@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-uks-stress/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`n_alpha`/`n_beta`, `XcKind::PBE`, `compute_stress`, `stress_use_fd=false`); free `gpw_stress` / `gpw_stress_fd` |
 | Related narrative | [Ch. 9 GPW](../ch09-gpw.md) |
-| Queue | CP2K capability loop — closed 2026-07-25 (`docs/developer/cp2k-method-queue.md`) |
 
 ## Summary
 
@@ -283,7 +282,7 @@ mpirun -n 1 cp2k.psmp -i o2_uks_stress_num.inp -o o2_uks_stress_num.out
 
 ## Performance
 
-Source: `REFERENCE.md` + `docs/developer/cp2k-method-handoff.md`. **Not** a
+Source: `REFERENCE.md` + the case `REFERENCE.md`. **Not** a
 ctest gate.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -326,9 +325,6 @@ ctest gate.
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-uks-stress/`](../../../tools/cp2k_oracle/inputs/gpw-uks-stress/)
 - Energy pin sibling: [`regressions/gpw/gpw-uks-forces/REFERENCE.md`](../../../regressions/gpw/gpw-uks-forces/REFERENCE.md)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop / queue / handoff: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  [`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
 - Closed-shell analytic stress: [`gpw-analytic-stress.md`](gpw-analytic-stress.md)
 - Strain-FD water pin: [`gpw-stress-water.md`](gpw-stress-water.md)
 - PADE UKS energy foothold: [`gpw-uks-o2-gamma.md`](gpw-uks-o2-gamma.md)

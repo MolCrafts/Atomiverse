@@ -1,4 +1,4 @@
-/// @file longrange/pppm_green.h
+/// @file cpu/longrange/pppm_green.h
 /// @brief Hockney–Eastwood PPPM Green's function (orthorhombic, ik/ad-ready).
 ///
 /// After LAMMPS `PPPM::compute_gf_ik` / `gf_denom` (src/KSPACE/pppm.cpp).

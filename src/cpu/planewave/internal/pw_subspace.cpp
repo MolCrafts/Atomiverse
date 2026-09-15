@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_subspace.cpp
+/// @file cpu/planewave/internal/pw_subspace.cpp
 /// @brief Davidson subspace utilities (moved verbatim from pw_davidson.cpp).
 
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"

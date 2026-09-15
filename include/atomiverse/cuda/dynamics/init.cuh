@@ -1,4 +1,4 @@
-/// @file cuda/md/init.cuh
+/// @file cuda/dynamics/init.cuh
 /// @brief Initializer components for forces, energy, kinetic energy, and velocity.
 ///
 /// Initializers prepare accumulator fields before the computation phase:

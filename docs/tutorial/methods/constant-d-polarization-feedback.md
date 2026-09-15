@@ -7,7 +7,7 @@
 | Slug | `constant-d-polarization-feedback` |
 | Regression | `regressions/md/constant-d-polarization-feedback/` |
 | Public API | `cpu::md::FixDfield(Dx, Dy, Dz)` with member `polarization_feedback` (default `false`); accessors `last_energy()`, `last_Pz()`, `last_Ez()` (Component, `Bias` kind, on `cpu::md::MD`, default `post_force` +100) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` wave 5; map "Displacement D-field" → ✓★ (P2) |
+| Roadmap | map "Displacement D-field" → ✓★ (P2) |
 | Oracle | **literature** intentional — Zhang & Sprik 2016 / Cox & Sprik 2019 closed-form constant-D; not a 1:1 MW twin |
 
 ## Summary
@@ -246,7 +246,7 @@ python3 tools/metalwalls_oracle/inputs/literature/constant_d_pins.py
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{MetalWalls}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -288,7 +288,6 @@ re-run an offline fair bench, record version + walls, and replace
 - Product gate: [`regressions/md/constant-d-polarization-feedback/reg_constant-d-polarization-feedback.cpp`](../../../regressions/md/constant-d-polarization-feedback/reg_constant-d-polarization-feedback.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/fix_dfield.h`](../../../include/atomiverse/cpu/dynamics/fix_dfield.h)
 - Pin script: [`tools/metalwalls_oracle/inputs/literature/constant_d_pins.py`](../../../tools/metalwalls_oracle/inputs/literature/constant_d_pins.py)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (Displacement D-field, P2)
 - Literature: C. Zhang, M. Sprik, *Phys. Rev. B* **93**, 144201 (2016), DOI [10.1103/PhysRevB.93.144201](https://doi.org/10.1103/PhysRevB.93.144201) (constant-D electric enthalpy \(F = E_{\mathrm{PBC}} + V(D-4\pi P)^2/8\pi\)); S. J. Cox, M. Sprik, *J. Chem. Phys.* **151**, 064506 (2019), DOI [10.1063/1.5099207](https://doi.org/10.1063/1.5099207) (finite-field bulk electrolyte formalism); M. Stengel, N. A. Spaldin, D. Vanderbilt, *Nat. Phys.* **5**, 304 (2009), DOI [10.1038/nphys1185](https://doi.org/10.1038/nphys1185) (constant-D functional origin)

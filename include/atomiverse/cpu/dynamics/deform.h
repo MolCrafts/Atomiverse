@@ -1,4 +1,4 @@
-/// @file cpu/md/deform.h
+/// @file cpu/dynamics/deform.h
 /// @brief CPU affine box-deformation driver (single-axis uniaxial strain).
 #pragma once
 

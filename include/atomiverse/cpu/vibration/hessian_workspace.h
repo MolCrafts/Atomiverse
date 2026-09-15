@@ -1,4 +1,4 @@
-/// @file cpu/vib/hessian_workspace.h
+/// @file cpu/vibration/hessian_workspace.h
 /// @brief cpu::vib::HessianWorkspace — shared scratch for the four
 ///        numerical-Hessian structural components.
 ///

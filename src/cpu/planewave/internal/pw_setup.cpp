@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_setup.cpp
+/// @file cpu/planewave/internal/pw_setup.cpp
 /// @brief Host-side plane-wave SCF problem assembly (moved verbatim from
 ///        the pre-loop section of the solver) shared by both backends.
 

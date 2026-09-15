@@ -7,7 +7,7 @@
 | Slug | `periodic-ri-mp2-si` |
 | Regression | `regressions/gpw/periodic-ri-mp2-si/` |
 | Public API | `cpu::gpw::GpwDft::mp2(atoms)` → `cpu::gpw::Mp2Result` (`cpu/gpw/mp2.h`); members `mp2_ri` (default **true**), `mp2_n_virt`, `mp2_os_scale`, `mp2_ss_scale` |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → **done** (harness wave 1, 2026-07-25); ratio **~0.09**; closes capability after foothold `periodic-mp2-si`; unblocks `periodic-rpa-si` |
+| Roadmap | ratio **~0.09**; closes capability after foothold `periodic-mp2-si`; unblocks `periodic-rpa-si` |
 
 ## Summary
 
@@ -207,7 +207,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/periodic-ri-mp2-si/REFERENCE.md`](../../../regressions/gpw/periodic-ri-mp2-si/REFERENCE.md).  
+[`regressions/gpw/periodic-ri-mp2-si/REFERENCE.md`](../../../regressions/gpw/periodic-ri-mp2-si/REFERENCE.md).
 Oracle: **offline CP2K 2026.1** (`cp2k.psmp`), input
 `tools/cp2k_oracle/inputs/periodic-ri-mp2-si.inp` — never launched by ctest.
 Pin date 2026-07-25, host arrhenius1 (EPYC), OMP=4, 1 MPI rank.
@@ -284,8 +284,8 @@ Never launch CP2K from ctest.
 | ---- | -----------------------: | ----------------------: | ----: | ---- | ------ |
 | sc-Si₂ RI-GPW MP2 (PBE, 30 Ry, Γ) | 576.7 | ~16–30 | **~0.09** (queue) | ✓ | ATV wall may include can. cross-check; not bulk Si |
 
-Campaign queue: `docs/developer/cp2k-method-queue.md` → done, harness wave 1
-2026-07-25. Handoff: `docs/developer/cp2k-method-handoff.md`.
+Campaign queue: → done, harness wave 1
+2026-07-25. Handoff: the case `REFERENCE.md`.
 
 ## Limitations
 
@@ -311,8 +311,6 @@ Campaign queue: `docs/developer/cp2k-method-queue.md` → done, harness wave 1
 - Regression consumer: `regressions/gpw/periodic-ri-mp2-si/reg_periodic-ri-mp2-si.cpp`
 - Oracle twin: `tools/cp2k_oracle/inputs/periodic-ri-mp2-si.inp`
 - Oracle contract: `tools/cp2k_oracle/README.md`
-- Queue / loop / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`, `docs/developer/cp2k-method-handoff.md`
 - Foothold sibling: [`periodic-mp2-si`](periodic-mp2-si.md) (Poisson
   `DIRECT_CANONICAL`-class; `mp2_ri = false`)
 - Narrative GPW chapter: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

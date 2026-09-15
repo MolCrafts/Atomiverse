@@ -223,9 +223,7 @@ Gate: \(r\le 10\) unless exempted — **within_10x = true**.
 ## References
 
 - Offline pin: `regressions/scf/sf-tddft-o2/REFERENCE.md`
-- Perf numbers: same REFERENCE § Performance; rollup context
-  `docs/developer/pyscf-method-perf.md` (if present); handoff
-  `docs/developer/pyscf-method-handoff.md` (ratio 9.51)
+- Perf numbers: same REFERENCE § Performance; rollup context the case `REFERENCE.md` (ratio 9.51)
 - Sibling TDA report: `docs/tutorial/methods/spin-flip-tda-o2.md`
 - Oracle: `tools/setup_pyscf_env.sh`, `tools/pyscf_oracle/pin_scf.py sf-tddft`,
   `tools/pyscf_oracle/fair_bench.py --method sf_tddft`

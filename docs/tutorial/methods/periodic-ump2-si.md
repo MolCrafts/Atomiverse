@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/periodic-ump2-si/` |
 | Public API | `cpu::gpw::GpwDft::mp2(atoms)` → `cpu::gpw::Mp2Result` on a **UKS** reference (`n_alpha`/`n_beta`); members `mp2_ri`, `mp2_n_virt`, `mp2_os_scale`, `mp2_ss_scale` |
 | Roadmap | `docs/roadmap/dft.md` §10 — Periodic MP2 includes **Γ UMP2@UKS** (`reg_periodic-ump2-si`) ✓ |
-| Queue | CP2K capability loop harness wave 5 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -201,7 +200,7 @@ bash -lc '
 ## Validation (vs CP2K / dual-gate)
 
 Source:
-[`regressions/gpw/periodic-ump2-si/REFERENCE.md`](../../../regressions/gpw/periodic-ump2-si/REFERENCE.md).  
+[`regressions/gpw/periodic-ump2-si/REFERENCE.md`](../../../regressions/gpw/periodic-ump2-si/REFERENCE.md).
 Oracle: offline **CP2K** twin (`tools/cp2k_oracle/inputs/periodic-ump2-si.inp`:
 `UKS`, `MULTIPLICITY 1`, same cell/basis/PP/cutoff, `&WF_CORRELATION` MP2);
 **never** live in ctest. At pin time **no CP2K module** on the host —
@@ -241,7 +240,7 @@ sum; UMP2 ≡ RMP2 on identical α=β tensors; cross-spin RI ≡ Poisson.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` (harness wave 5, 2026-07-26);
+Source: the case `REFERENCE.md` (harness wave 5, 2026-07-26);
 `REFERENCE.md` §Perf.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -271,8 +270,6 @@ build: αα, ββ, αβ). Do **not** invent a numeric ratio without a fair twin.
 - Regression: `regressions/gpw/periodic-ump2-si/reg_periodic-ump2-si.cpp`
 - CP2K twin: `tools/cp2k_oracle/inputs/periodic-ump2-si.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline pins only; never live ctest)
-- Handoff / ratio: [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Queue: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md) §10 Periodic MP2
 - Closed-shell sibling: [periodic-mp2-si](periodic-mp2-si.md)
 - Molecular UMP2: [ump2-o2-sto3g](ump2-o2-sto3g.md)

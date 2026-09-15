@@ -7,7 +7,7 @@
 | Slug | `cpmd-electronic-thermostat` |
 | Regression | `regressions/dynamics/cpmd-electronic-thermostat/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::CarParrinello{cpu::gpw::GPWEvaluator{…, compute_forces=true}, mu_au, cpu::electronic::ElectronicThermostat{ekin_target_ha, tau_e_fs}}` bound with `set_evaluator_ref`; propagator `cpu::electronic::Cpmd` (RATTLE + NH). The thermostat is the **three-argument wrapper constructor**, not a set of evaluator flags. The nuclear dt is pushed from the integrator into the wrapper by `MD` (`TimestepProvider` → `TimestepConsumer`) — never set on the evaluator |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `cpmd-electronic-thermostat`; MD AIMD electronic thermostat residual closed |
+| Roadmap | MD AIMD electronic thermostat residual closed |
 | Dual gate | Correctness from REFERENCE (E_ext drift, Te ceiling, fixed-density); speed **`perf_exempt`** |
 | Wave | CP2K capability loop — wave 11 **done** (merged 2026-07-26) |
 | Oracle | Offline CP2K geometry/basis twin + literature envelope (never live CP2K in ctest) |
@@ -199,8 +199,7 @@ ensemble twin; absolute energy parity is out of scope for this slug.
 | — | n/a | short H₂O NVE (≤60 s class) | — | **perf_exempt** | no CP2K classical-CPMD+e-T wall twin on worker host |
 
 Gate: literature envelope + structural gates (same inventory class as
-`cpmd-rattle-water`). Handoff: [cp2k-method-handoff.md](../../developer/cp2k-method-handoff.md)
-wave 11 — ratio **`perf_exempt`**.
+`cpmd-rattle-water`). wave 11 — ratio **`perf_exempt`**.
 
 ## Limitations
 
@@ -218,8 +217,6 @@ wave 11 — ratio **`perf_exempt`**.
 - Regression: `regressions/dynamics/cpmd-electronic-thermostat/reg_cpmd-electronic-thermostat.cpp`
 - CP2K twin input: `tools/cp2k_oracle/inputs/cpmd_electronic_thermostat_h2o.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Sibling footholds: [cpmd-water](cpmd-water.md),
   [cpmd-rattle-water](cpmd-rattle-water.md)
 - Car & Parrinello, *Phys. Rev. Lett.* **55**, 2471 (1985)

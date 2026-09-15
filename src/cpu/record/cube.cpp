@@ -1,4 +1,4 @@
-/// @file cpu/recorder/cube.cpp
+/// @file cpu/record/cube.cpp
 /// @brief Gaussian cube-format I/O.
 
 #include "atomiverse/cpu/record/cube.h"

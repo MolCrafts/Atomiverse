@@ -7,7 +7,7 @@
 | Slug | `gpw-mbd-hirshfeld` |
 | Regression | `regressions/gpw/gpw-mbd-hirshfeld/` |
 | Public API | `cpu::gpw::GpwDft::mbd` + `::hirshfeld` / `GPWEvaluator` same; `GpwResult::e_disp` [Ha], `GpwResult::volume_ratios` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, harness wave 3, 2026-07-25) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -199,7 +199,7 @@ bash -lc '
 ## Validation (libMBD / dual Hirshfeld; CP2K loop)
 
 Source:
-[`regressions/gpw/gpw-mbd-hirshfeld/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-hirshfeld/REFERENCE.md).  
+[`regressions/gpw/gpw-mbd-hirshfeld/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-hirshfeld/REFERENCE.md).
 Oracle: offline **libMBD** free-atom MBD (slug `gpw-mbd-ice`) + **dual
 pure-Python Hirshfeld** on the same exponential free-atom model; product pin
 is ATV `GpwDft` with `mbd`+`hirshfeld` at CUTOFF 200 Ry. External / dual
@@ -284,9 +284,6 @@ host with libMBD-linked CP2K.
 
 - Offline pin: `regressions/gpw/gpw-mbd-hirshfeld/REFERENCE.md`
 - Free-atom MBD pin: `regressions/gpw/gpw-mbd-ice/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle notes: `tools/cp2k_oracle/inputs/gpw-mbd-hirshfeld/`
 - Oracle rules: `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

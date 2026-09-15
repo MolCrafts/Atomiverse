@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/upf_reader.h
+/// @file cpu/planewave/internal/upf_reader.h
 /// @brief UPF v1 pseudopotential file parser.
 #pragma once
 

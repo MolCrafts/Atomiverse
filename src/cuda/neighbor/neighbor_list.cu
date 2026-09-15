@@ -1,4 +1,4 @@
-/// @file md/neighbor_list.cu
+/// @file cuda/neighbor/neighbor_list.cu
 /// @brief NeighborList Component — build/launch/destroy lifecycle with
 ///        Verlet-skin rebuild gating.
 ///

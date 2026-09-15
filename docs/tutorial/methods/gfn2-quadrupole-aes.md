@@ -348,8 +348,6 @@ all-element tables remain ○.
 - Water foothold: [`regressions/semiempirical/gfn2-xtb-water/REFERENCE.md`](../../../regressions/semiempirical/gfn2-xtb-water/REFERENCE.md)
 - Oracle twin: [`tools/tb_oracle/inputs/xtb/h2o_gfn2/`](../../../tools/tb_oracle/inputs/xtb/h2o_gfn2/)
 - Family rules: [`tools/tb_oracle/README.md`](../../../tools/tb_oracle/README.md)
-- Queue / handoff: [`docs/developer/tb-method-queue.md`](../../developer/tb-method-queue.md),
-  [`docs/developer/tb-method-handoff.md`](../../developer/tb-method-handoff.md)
 - Roadmap: [`docs/roadmap/semiempirical.md`](../../roadmap/semiempirical.md) §3
 - C. Bannwarth, S. Ehlert, S. Grimme, *J. Chem. Theory Comput.* **15**, 1652
   (2019), DOI [10.1021/acs.jctc.8b01176](https://doi.org/10.1021/acs.jctc.8b01176)

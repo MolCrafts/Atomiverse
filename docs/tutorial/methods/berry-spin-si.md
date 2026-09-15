@@ -8,7 +8,6 @@
 | Regression | `regressions/pw/berry-spin-si/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`) + `cpu::pw::BerryPolarization` / `BerryPolarizationResult` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 Berry-phase polarization (collinear spin ✓) |
-| Queue / handoff | `docs/developer/cp2k-method-queue.md` row `berry-spin-si` (done); **`perf_exempt`** |
 | Wave | CP2K capability loop — wave 10 / merged 2026-07-26 |
 | Dual gate | Literature symmetry pins (centrosymmetric lattice + elemental \(Z^*=0\)); speed **`perf_exempt`** |
 
@@ -344,8 +343,6 @@ not absolute-phase parity with GTH Quickstep.
 - Regression: `regressions/pw/berry-spin-si/reg_berry-spin-si.cpp`
 - Closed-shell sibling: `regressions/pw/berry-polarization/REFERENCE.md`
 - CP2K oracle note: `tools/cp2k_oracle/inputs/si_berry_spin_note.inp`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md` (ratio **perf_exempt**, 2026-07-26)
 - Roadmap: [dft.md](../../roadmap/dft.md) §11 Berry-phase polarization
 - King-Smith & Vanderbilt, *Phys. Rev. B* **47**, 1651 (1993)
 - Resta, *Rev. Mod. Phys.* **66**, 899 (1994)

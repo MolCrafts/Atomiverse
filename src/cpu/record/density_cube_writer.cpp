@@ -1,4 +1,4 @@
-/// @file cpu/recorder/density_cube_writer.cpp
+/// @file cpu/record/density_cube_writer.cpp
 /// @brief Electron-density cube writer implementation.
 
 #include "atomiverse/cpu/record/density_cube_writer.h"

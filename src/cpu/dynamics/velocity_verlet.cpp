@@ -1,4 +1,4 @@
-/// @file cpu/md/velocity_verlet.cpp
+/// @file cpu/dynamics/velocity_verlet.cpp
 /// @brief CPU VelocityVerlet implementation with OpenMP.
 
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"

@@ -7,7 +7,7 @@
 | Slug | `gpw-ts-kpoint-forces` |
 | Regression | `regressions/gpw/gpw-ts-kpoint-forces/` |
 | Public API | `cpu::gpw::GpwDft::ts` + `k_mesh` / `GPWEvaluator::ts`; multi-k `gpw_forces_from_scf` / `GPWEvaluator(compute_forces=true)`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion + §10 Periodic KS; `docs/developer/cp2k-method-queue.md` |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion + §10 Periodic KS |
 | Oracle | **libMBD** free-atom TS energy + force dual-gate (CP2K has **no** stock `TYPE TS`) |
 
 ## Summary

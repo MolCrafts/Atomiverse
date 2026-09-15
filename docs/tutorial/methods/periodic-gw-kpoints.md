@@ -7,7 +7,7 @@
 | Slug | `periodic-gw-kpoints` |
 | Regression | `regressions/gpw/periodic-gw-kpoints/` |
 | Public API | `cpu::gpw::GpwDft::g0w0(atoms)` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`); members `k_mesh`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt` |
-| Roadmap / queue | `docs/roadmap/dft.md` §10 **Periodic GW** ✓ (multi-k residual); `docs/developer/cp2k-method-queue.md` → **done** (2026-07-26); handoff ratio **perf_exempt** |
+| Roadmap | `docs/roadmap/dft.md` §10 **Periodic GW** ✓ (multi-k residual); handoff ratio **perf_exempt** |
 
 ## Summary
 
@@ -182,7 +182,7 @@ Related product path: Γ-only spectral G0W0 on sc-Si₂ —
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/periodic-gw-kpoints/REFERENCE.md`](../../../regressions/gpw/periodic-gw-kpoints/REFERENCE.md).  
+[`regressions/gpw/periodic-gw-kpoints/REFERENCE.md`](../../../regressions/gpw/periodic-gw-kpoints/REFERENCE.md).
 Oracle status at pin time (**2026-07-26**): **no CP2K binary / module** on the
 worker host. Absolute CP2K QP digits are **not invented**. CP2K’s default
 `&RI_G0W0` path is **frequency-integrated** RI-GW with Gaussian `RI_AUX`, not
@@ -242,7 +242,7 @@ parity.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` / REFERENCE **perf_exempt**.
+Source: the case `REFERENCE.md` / REFERENCE **perf_exempt**.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
@@ -277,8 +277,6 @@ launch CP2K from ctest.
 - Regression consumer: `regressions/gpw/periodic-gw-kpoints/reg_periodic-gw-kpoints.cpp`
 - Offline CP2K twin: `tools/cp2k_oracle/inputs/periodic-gw-kpoints.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline pins only)
-- Handoff / ratio: `docs/developer/cp2k-method-handoff.md` (`perf_exempt`)
-- Queue / loop: `docs/developer/cp2k-method-queue.md`, `cp2k-method-loop.md`
 - Roadmap: `docs/roadmap/dft.md` §10 Periodic GW
 - Γ foothold sibling: `regressions/gpw/periodic-gw-si/`
 - Molecular spectral twin (PySCF campaign, separate loop):

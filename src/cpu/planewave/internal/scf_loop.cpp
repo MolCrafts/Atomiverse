@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/scf_loop.cpp
+/// @file cpu/planewave/internal/scf_loop.cpp
 /// @brief Shared minimal restricted fixed-occupation plane-wave SCF loop.
 
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
@@ -91,9 +91,8 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
     PWResult result{};
     const auto layout = mpi_layout();
 
-    setup_pw_problem(frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, method.k_mesh,
-                     prob);
+    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
+                     method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -197,9 +196,8 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
     PWResult result{};
     const auto layout = mpi_layout();
 
-    setup_pw_problem(frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, method.k_mesh,
-                     prob);
+    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
+                     method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -223,8 +221,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
     davidson.prepare(ws);
     ConvergenceCheck convergence{AccReal(method.tol), 2};
 
-    std::vector<std::vector<AccReal>> evals_k(
-        static_cast<std::size_t>(n_kpts));
+    std::vector<std::vector<AccReal>> evals_k(static_cast<std::size_t>(n_kpts));
     std::vector<xt::xarray<std::complex<AccReal>>> wfc_k(
         static_cast<std::size_t>(n_kpts));
 
@@ -252,7 +249,8 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
             evals_k[static_cast<std::size_t>(ik)].assign(
                 ws.eigenvalues.begin(),
                 ws.eigenvalues.begin()
-                    + std::min(n_bands, static_cast<int>(ws.eigenvalues.size())));
+                    + std::min(n_bands,
+                               static_cast<int>(ws.eigenvalues.size())));
             if (static_cast<int>(evals_k[static_cast<std::size_t>(ik)].size())
                 > n_bands)
                 evals_k[static_cast<std::size_t>(ik)].resize(
@@ -268,8 +266,8 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
                 static_cast<std::size_t>(n_kpts * n_bands), AccReal(0));
             for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
-                for (int b = 0;
-                     b < n_bands && b < static_cast<int>(ev.size()); ++b)
+                for (int b = 0; b < n_bands && b < static_cast<int>(ev.size());
+                     ++b)
                     pack[static_cast<std::size_t>(ik * n_bands + b)] = ev[b];
             }
             MPI_Allreduce(MPI_IN_PLACE, pack.data(), n_kpts * n_bands,
@@ -310,8 +308,8 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
             const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
             const auto& ev = evals_k[static_cast<std::size_t>(ik)];
             std::vector<AccReal> w_one(ev.size(), w);
-            auto fill = fill_occupations(ev, w_one, mu_ha, degauss_ha, kind,
-                                         mp_order);
+            auto fill =
+                fill_occupations(ev, w_one, mu_ha, degauss_ha, kind, mp_order);
             occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
             for (std::size_t b = 0; b < ev.size(); ++b)
                 occ_k[static_cast<std::size_t>(ik)][b] =
@@ -332,8 +330,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
                 {evals_k[static_cast<std::size_t>(ik)].size()});
             for (std::size_t b = 0;
                  b < evals_k[static_cast<std::size_t>(ik)].size(); ++b)
-                ws.eigenvalues[b] =
-                    evals_k[static_cast<std::size_t>(ik)][b];
+                ws.eigenvalues[b] = evals_k[static_cast<std::size_t>(ik)][b];
 
             const AccReal weight =
                 prob.kg.weights[static_cast<std::size_t>(ik)];

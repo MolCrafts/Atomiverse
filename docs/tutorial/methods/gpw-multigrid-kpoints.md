@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-multigrid-kpoints/` |
 | Public API | `cpu::gpw::GpwDft` (`k_mesh`, `k_time_reversal`, `ngrids`, `rel_cutoff`, `cutoff_ry`, `eps_default`); lookup ctors `GaussianBasis` / `GthPotential` |
 | Roadmap | `docs/roadmap/dft.md` — k-point GPW × multigrid product collocation |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) |
 
 ## Summary
 
@@ -241,7 +240,6 @@ exemption.
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - Siblings: [`gpw-uks-multigrid.md`](gpw-uks-multigrid.md) (Γ multigrid),
   `gpw-kpoints-si` regression, [`gpw-kpoint-forces.md`](gpw-kpoint-forces.md)
-- Loop: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - G. Lippert, J. Hutter, M. Parrinello, *Mol. Phys.* **92**, 477 (1997) — GPW
 - H. J. Monkhorst, J. D. Pack, *Phys. Rev. B* **13**, 5188 (1976) — MP k sampling

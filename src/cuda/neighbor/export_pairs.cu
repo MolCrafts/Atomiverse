@@ -1,4 +1,4 @@
-/// @file neighborlist/export_pairs.cu
+/// @file cuda/neighbor/export_pairs.cu
 /// @brief Cluster flat pairs → atom-level PairList with full triclinic PBC.
 
 #include "nlist_data.cuh"

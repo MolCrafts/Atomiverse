@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/cg.cpp
+/// @file cpu/minimize/cg.cpp
 /// @brief Polak-Ribière+ CG step; publishes ConvergenceMetrics (mirrors LBFGS).
 ///        MPI-aware: owned-row loops + cross-rank reductions.
 

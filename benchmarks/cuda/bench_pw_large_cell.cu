@@ -1,4 +1,4 @@
-/// @file tools/bench_cuda_pw_cell.cu
+/// @file benchmarks/cuda/bench_pw_large_cell.cu
 /// @brief Manual CPU-vs-CUDA plane-wave wall harness over Si supercells
 ///        (parity-gap slug `cuda-pw-large-cell-measure`). NOT a ctest and
 ///        NOT a regression: no literature window, no pass/fail pin — it
@@ -8,13 +8,11 @@
 ///        + `Frame`; settings live inside the CUDA LSDA envelope
 ///        (restricted, fixed occupations, `XCType::LSDA`, no smearing).
 ///
-/// Build: compiled by `tools/gpu_job_cuda_pw_large_cell.sh` with the exact
-/// compile/device-link/link commands CMake generates for
-/// `reg_pw-cuda-lda-si` (harvested via `make -n`), so no tracked CMake file
-/// changes and the flags match the regression bit-for-bit.
+/// Build: `-DATV_BUILD_BENCHMARKS=ON -DATV_BUILD_CUDA=ON -DATV_BUILD_PW=ON`
+/// (benchmarks/cuda/CMakeLists.txt); the binary lands in `<build>/bin`.
 ///
 /// Run:
-///   bench_cuda_pw_cell <upf> <n_rep> <cpu|cuda|both>
+///   ./bin/bench_pw_large_cell <upf> <n_rep> <cpu|cuda|both>
 ///                      [ecut_ry=15] [k_mesh=1] [tol=1e-6] [max_iter=100]
 ///
 /// The cell is the 8-atom conventional diamond-Si cube (a = 5.43 Å)
@@ -56,10 +54,10 @@ struct Opts {
 /// @param a Cubic lattice constant [Å].
 /// @param n Repetitions per axis (dimensionless).
 cpu::Frame make_si_supercell(double a, int n) {
-    constexpr double frac[8][3] = {
-        {0.00, 0.00, 0.00}, {0.00, 0.50, 0.50}, {0.50, 0.00, 0.50},
-        {0.50, 0.50, 0.00}, {0.25, 0.25, 0.25}, {0.25, 0.75, 0.75},
-        {0.75, 0.25, 0.75}, {0.75, 0.75, 0.25}};
+    constexpr double frac[8][3] = {{0.00, 0.00, 0.00}, {0.00, 0.50, 0.50},
+                                   {0.50, 0.00, 0.50}, {0.50, 0.50, 0.00},
+                                   {0.25, 0.25, 0.25}, {0.25, 0.75, 0.75},
+                                   {0.75, 0.25, 0.75}, {0.75, 0.75, 0.25}};
     const int nat = 8 * n * n * n;
     cpu::Frame f(nat);
     int i = 0;
@@ -105,8 +103,8 @@ double run_leg(const cpu::Frame& frame, const Opts& o, cpu::pw::PWResult& out) {
     return std::chrono::duration<double>(t1 - t0).count();
 }
 
-int report(const char* dev, const Opts& o, int nat,
-           const cpu::pw::PWResult& r, double wall_s) {
+int report(const char* dev, const Opts& o, int nat, const cpu::pw::PWResult& r,
+           double wall_s) {
     std::printf("BENCH_RESULT device=%s n_rep=%d atoms=%d n_kpts=%d "
                 "ecut_ry=%.1f kmesh=%d tol=%.1e max_iter=%d iters=%d "
                 "converged=%d E_ry=%.8f E_per_atom_ry=%.8f wall_s=%.3f\n",
@@ -135,12 +133,16 @@ int main(int argc, char** argv) {
     o.upf = argv[1];
     o.n_rep = std::atoi(argv[2]);
     o.device = argv[3];
-    if (argc > 4) o.ecut_ry = std::atof(argv[4]);
-    if (argc > 5) o.k_mesh = std::atoi(argv[5]);
-    if (argc > 6) o.tol = std::atof(argv[6]);
-    if (argc > 7) o.max_iter = std::atoi(argv[7]);
-    if (o.n_rep < 1 || (o.device != "cpu" && o.device != "cuda" &&
-                        o.device != "both")) {
+    if (argc > 4)
+        o.ecut_ry = std::atof(argv[4]);
+    if (argc > 5)
+        o.k_mesh = std::atoi(argv[5]);
+    if (argc > 6)
+        o.tol = std::atof(argv[6]);
+    if (argc > 7)
+        o.max_iter = std::atoi(argv[7]);
+    if (o.n_rep < 1
+        || (o.device != "cpu" && o.device != "cuda" && o.device != "both")) {
         std::fprintf(stderr, "FAIL: bad n_rep=%d or device=%s\n", o.n_rep,
                      o.device.c_str());
         return 1;

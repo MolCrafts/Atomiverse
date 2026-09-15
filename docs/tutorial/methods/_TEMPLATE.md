@@ -46,8 +46,6 @@ Geometry, basis, `cart`/spherical, `conv_tol`, PySCF version — all from REFERE
 
 ## Performance
 
-Source: `docs/developer/pyscf-method-perf.md` or
-
 ```bash
 python tools/pyscf_oracle/fair_bench.py --method … -- \
   ./build/regressions/reg_<slug>
@@ -66,5 +64,4 @@ Scope, known failures, speed debt, follow-ons.
 ## References
 
 - Offline pin: `regressions/scf/<slug>/REFERENCE.md`
-- Perf rollup: `docs/developer/pyscf-method-perf.md`
 - Literature / specs …

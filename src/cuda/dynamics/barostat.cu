@@ -1,4 +1,4 @@
-/// @file md/barostat.cu
+/// @file cuda/dynamics/barostat.cu
 /// @brief Barostat -- Berendsen isotropic pressure coupling.
 
 #include "atomiverse/core/stage.h"

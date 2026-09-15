@@ -1,4 +1,4 @@
-/// @file cpu/recorder/timing_report.h
+/// @file cpu/record/timing_report.h
 /// @brief Cross-rank reduction + rendering of TimerRegistry data into a
 /// LAMMPS-`timing breakdown`-comparable table (console) and CSV (metrics file).
 ///

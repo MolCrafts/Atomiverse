@@ -1,4 +1,4 @@
-/// @file cpu/pw/pw_evaluator.h
+/// @file cpu/planewave/pw_evaluator.h
 /// @brief PWEvaluator — plane-wave DFT energy (+ optional analytic forces).
 ///
 /// Mirrors the Gaussian methods (`cpu::scf::RHF` / `RKS` / …): holds a `PW`
@@ -25,9 +25,11 @@ namespace pw {
 /// (`pw_forces_analytic`).
 class PWEvaluator : public cpu::PlaneWave {
   public:
-    /// @brief Construct from a plane-wave configuration.
-    /// @param config Cutoff, k-mesh, convergence, mixing parameters.
+    /// @brief Construct with a default-configured plane-wave method.
     PWEvaluator() = default;
+
+    /// @brief Construct from a configured plane-wave method.
+    /// @param method Carries cutoff, k-mesh, convergence and mixing settings.
     explicit PWEvaluator(PW method) : method_(std::move(method)) {}
 
     std::string name() const override { return "pw_evaluator"; }

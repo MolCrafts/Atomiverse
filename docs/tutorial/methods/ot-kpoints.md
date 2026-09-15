@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ot-kpoints/` |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `k_mesh` / `k_points` + `k_point_weights` |
 | Roadmap | `docs/roadmap/dft.md` §10 GPW — OT multi-k ✓ (`reg_ot-kpoints`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (harness wave 7, 2026-07-26) |
 | Oracle | offline CP2K (`tools/cp2k_oracle/inputs/ot-kpoints/`); **never** live in ctest |
 
 ## Summary
@@ -178,7 +177,7 @@ bash -lc '
 
 ## Validation (vs CP2K / internal exactness)
 
-Source: [`regressions/gpw/ot-kpoints/REFERENCE.md`](../../../regressions/gpw/ot-kpoints/REFERENCE.md).  
+Source: [`regressions/gpw/ot-kpoints/REFERENCE.md`](../../../regressions/gpw/ot-kpoints/REFERENCE.md).
 Oracle: offline **CP2K** (`tools/cp2k_oracle/`); **never** live in ctest.
 
 **Setup:**
@@ -233,7 +232,7 @@ Identity gates A1–A4 remain decisive regardless of absolute CP2K digits.
 ## Performance
 
 Source: `regressions/gpw/ot-kpoints/REFERENCE.md` and
-`docs/developer/cp2k-method-handoff.md` (wave 7). Queue record:
+the case `REFERENCE.md` (wave 7). Queue record:
 **`perf_exempt`**.
 
 | Twin | Wall [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -266,8 +265,6 @@ microcase; ratio (when measured) will not forecast sparse/linear-scaling OT.
 - Regression binary: `regressions/gpw/ot-kpoints/reg_ot-kpoints.cpp`
 - CP2K oracle input: `tools/cp2k_oracle/inputs/ot-kpoints/h2_ot_kpoints.inp`
 - Closed spec (git history): `.claude/specs/ot-kpoints/` (deleted at done)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Sibling Γ OT handbook: [`ot-minimizer-water`](ot-minimizer-water.md)
 - Narrative GPW chapter: `docs/tutorial/ch09-gpw.md`
 - Roadmap: `docs/roadmap/dft.md` §10 (OT multi-k ✓ on GPW)

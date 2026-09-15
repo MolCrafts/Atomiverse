@@ -1,4 +1,4 @@
-/// @file cpu/vib/nist_constants.h
+/// @file cpu/vibration/nist_constants.h
 /// @brief CODATA-2014 fundamental constants for vibrational analysis.
 ///
 /// Mirrors `pyscf/data/nist.py` verbatim (CODATA-2014). The reference-port

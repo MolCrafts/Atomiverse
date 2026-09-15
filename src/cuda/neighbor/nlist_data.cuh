@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file nlist_data.cuh
+/// @file cuda/neighbor/nlist_data.cuh
 /// @brief GPU data structures for the OpenMM-style cluster neighbor list.
 ///
 /// Canonical CUDA MD neighbor representation: kClusterSize=32 tiles, FULL CSR

@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-dftu-stress/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`plus_u`, `n_alpha`/`n_beta`, `compute_stress`, `stress_use_fd=false`); free `gpw_stress` / `gpw_stress_fd`; Frame `kStress` |
 | Roadmap | [`docs/roadmap/dft.md`](../../roadmap/dft.md) — DFT+U analytic stress (`reg_gpw-dftu-stress`) ✓ |
-| Queue | CP2K capability loop harness wave 4 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -217,7 +216,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/gpw-dftu-stress/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-stress/REFERENCE.md).  
+[`regressions/gpw/gpw-dftu-stress/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-stress/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** Quickstep; **never** live in ctest. Pin date
 **2026-07-26** (first green). Decisive product gate is **analytic vs multi-SCF
 FD**; energy soft twin reuses `gpw-dftu-nio`.
@@ -279,7 +278,7 @@ Bar → Ha/Bohr³ (CP2K internal table):
 ## Performance
 
 Source: `regressions/gpw/gpw-dftu-stress/REFERENCE.md` (2026-07-26). Handoff:
-[`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
+the case `REFERENCE.md`
 — ratio **`perf_exempt`**.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -325,10 +324,6 @@ fair ENERGY_FORCE / NUMERICAL twin on the same host and replace this section
   [`regressions/gpw/gpw-dftu-nio/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-nio/REFERENCE.md)
 - Oracle contract:
   [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Queue / handoff / loop:
-  [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md),
-  [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Spec history (closed, deleted at done): `.claude/specs/gpw-dftu-stress/`
   (git log under `wf/gpw-dftu-stress` / merge into `dev`)
 - Related tutorials: [gpw-dftu-nio](gpw-dftu-nio.md),

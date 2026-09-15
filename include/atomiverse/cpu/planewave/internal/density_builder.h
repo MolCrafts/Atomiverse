@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/density_builder.h
+/// @file cpu/planewave/internal/density_builder.h
 /// @brief internal::DensityBuilder — ρ from wavefunctions + Pulay mixing.
 ///
 /// Facade-private step helper owned by `cpu::pw::PW`. NOT a

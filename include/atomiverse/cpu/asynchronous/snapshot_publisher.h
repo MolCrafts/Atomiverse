@@ -1,4 +1,4 @@
-/// @file cpu/async/snapshot_publisher.h
+/// @file cpu/asynchronous/snapshot_publisher.h
 /// @brief `Publish` -- driver-agnostic infrastructure that fills a
 /// ring slot from `cpu::Frame` when at least one async subscriber fires.
 ///

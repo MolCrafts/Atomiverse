@@ -1,4 +1,4 @@
-/// @file cpu/observer/density.h
+/// @file cpu/observe/density.h
 /// @brief Electron density grid evaluation on the CPU (STO-3G basis).
 ///
 /// Called by cuda::DensityRecorder after async D2H of the density matrix P.

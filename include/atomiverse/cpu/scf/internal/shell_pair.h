@@ -1,4 +1,4 @@
-/// @file cpu/scf/shell_pair.h
+/// @file cpu/scf/internal/shell_pair.h
 /// @brief ShellPairList: canonical shell pairs with Cauchy-Schwarz bounds for direct SCF.
 ///
 /// Pre-computes Schwarz bounds Q_ij = sqrt((ij|ij)) for all canonical pairs (i>=j).

@@ -266,12 +266,13 @@ in this chapter travels with the method wherever forces are needed.
 
 ## Validation Reference
 
-Hybrid analytic gradients are validated in
-[`tests/cpu/scf/test_hybrid_gradient.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_hybrid_gradient.cpp):
-B3LYP and PBE0 forces vs PySCF `grad.RKS` (**≤ 1e-5 Ha/Bohr** on H₂O/CH₄/NH₃),
-vs moving-grid finite difference (**≤ 1e-5 Ha/Bohr**, an oracle independent of
-PySCF), translational invariance (`|Σ_A F_A| ≤ 1e-8 Ha/Bohr`), and a
-B3LYP/6-31G* geometry-optimization endpoint vs a PySCF-optimized reference.
-Hybrid single-point energies are pinned in
-[`tests/cpu/scf/test_hybrid_singlepoint.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_hybrid_singlepoint.cpp),
-and the semi-local XC parts vs libxc (1e-12) in `test_xc_vs_libxc`.
+Hybrid single-point energies are pinned against PySCF in
+[`regressions/scf/b3lyp-fused-jk-h2o`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/b3lyp-fused-jk-h2o)
+and, for the range-separated case,
+[`regressions/scf/cam-b3lyp-h2-sto3g`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/cam-b3lyp-h2-sto3g);
+the double hybrid is
+[`regressions/scf/b2plyp-h2o`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/b2plyp-h2o).
+The semi-local XC parts are checked against libxc to 1e-12 in
+[`tests/cpu/scf/test_xc_vs_libxc.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_xc_vs_libxc.cpp)
+(built only with `ATV_BUILD_XC_ORACLE=ON`; libxc is never a runtime
+dependency).

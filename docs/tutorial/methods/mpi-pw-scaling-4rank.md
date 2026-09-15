@@ -7,7 +7,7 @@
 | Slug | `mpi-pw-scaling-4rank` |
 | Regression | `regressions/pw/mpi-pw-scaling-4rank/` |
 | Public API | `cpu::pw::PW` (members) + `PWResult::{n_kpts,n_kpts_local}` |
-| Roadmap | [dft.md](../../roadmap/dft.md) § plane-wave DFT (k-point RR MPI); queue `docs/developer/cp2k-method-queue.md` `mpi-pw-scaling-4rank` |
+| Roadmap | [dft.md](../../roadmap/dft.md) § plane-wave DFT (k-point RR MPI)|
 | Dep | `pw-lda-si` ✓ (Si ONCV LDA twin); sibling gate `mpi-gpw-scaling-4rank` |
 
 ## Summary

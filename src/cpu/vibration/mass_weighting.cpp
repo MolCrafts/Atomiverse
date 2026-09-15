@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/mass_weighting.cpp
+/// @file cpu/vibration/mass_weighting.cpp
 /// @brief cpu::vib::MassWeighting — implementation of the mass-weighting
 ///        transform on the assembled numerical Hessian.
 

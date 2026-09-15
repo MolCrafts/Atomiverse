@@ -1,4 +1,4 @@
-/// @file fused_search.cu
+/// @file cuda/neighbor/fused_search.cu
 /// @brief CSR↔Flat conversion, displacement tracking, and flat-mask refresh kernels.
 ///
 /// Supports the GPU-Resident Fused Neighbor List (GRFNL) pipeline.

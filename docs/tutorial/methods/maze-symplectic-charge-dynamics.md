@@ -7,7 +7,7 @@
 | Slug | `maze-symplectic-charge-dynamics` |
 | Regression | `regressions/md/maze-symplectic-charge-dynamics/` |
 | Public API | `cpu::md::ConstPotMaZe` members `symplectic` (default `true`), `maze_tol` [V], `max_maze_iters`; accessors `constraint_residual()`, `last_maze_iters()`, `max_dQ()`, `solver()` (Component on `cpu::md::MD`, default `pre_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` wave 5; map §1 "MaZe mass-zero charge dynamics" ~ → ✓★ |
+| Roadmap | map §1 "MaZe mass-zero charge dynamics" ~ → ✓★ |
 | Oracle | **MetalWalls** physics — literature pin (Coretti et al. 2020, DOI 10.1063/5.0007192; no MW binary on host → `perf_exempt`) |
 
 ## Summary
@@ -211,7 +211,7 @@ amu, V, e (Atomiverse public surface).
 ## Performance
 
 Source: REFERENCE.md runtime note; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{MetalWalls}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -253,7 +253,6 @@ re-run an offline fair bench, record version + walls, and replace
 - Product gate: [`regressions/md/maze-symplectic-charge-dynamics/reg_maze-symplectic-charge-dynamics.cpp`](../../../regressions/md/maze-symplectic-charge-dynamics/reg_maze-symplectic-charge-dynamics.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/const_pot_maze.h`](../../../include/atomiverse/cpu/dynamics/const_pot_maze.h)
 - Pin notes: [`tools/metalwalls_oracle/pin_notes_maze-symplectic-charge-dynamics.md`](../../../tools/metalwalls_oracle/pin_notes_maze-symplectic-charge-dynamics.md)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (§1 MaZe mass-zero charge dynamics)
 - Literature: Coretti, Scalfi, Bacon, Rotenberg, Vuilleumier, Salanne,
   Ciccotti, Bonella, *Mass-zero constrained molecular dynamics for electrode

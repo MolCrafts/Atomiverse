@@ -1,4 +1,4 @@
-/// @file longrange/fmm_tree.h
+/// @file cpu/longrange/fmm_tree.h
 /// @brief Adaptive octree FMM for open-boundary point-charge Coulomb.
 ///
 /// Backend-agnostic (no Frame / Component / MPI). Classical Greengard–Rokhlin

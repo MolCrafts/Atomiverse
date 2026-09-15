@@ -1,4 +1,4 @@
-/// @file cuda/async/sync_guard.cuh
+/// @file cuda/asynchronous/sync_guard.cuh
 /// @brief `cuda::stream_synchronize` wrapper + opt-in hot-path sync counter
 ///        used to prove the `AsyncRecordBase` contract.
 ///

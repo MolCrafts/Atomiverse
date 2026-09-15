@@ -169,9 +169,7 @@ bash tools/setup_pyscf_env.sh
 Source: fair wall in
 [`regressions/scf/eom-cc2-h2/REFERENCE.md`](../../../regressions/scf/eom-cc2-h2/REFERENCE.md)
 (2026-07-23; login node; `OMP_NUM_THREADS=1`; median of ≥3). Campaign rollup
-ratio **0.300** (`docs/developer/pyscf-method-handoff.md`,
-`docs/developer/pyscf-method-queue.md`). No standing
-`docs/developer/pyscf-method-perf.md` table in-tree at draft time.
+ratio **0.300** (the case `REFERENCE.md`). No standing comparison table in-tree at draft time.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -207,8 +205,6 @@ required on this case.
 - Offline pin: `regressions/scf/eom-cc2-h2/REFERENCE.md`
 - Regression consumer: `regressions/scf/eom-cc2-h2/reg_eom-cc2-h2.cpp`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/excited-states.md` (§3 Equation-of-Motion Coupled Cluster);
   ground-state CC2: `docs/roadmap/post-hf.md` (§3), handbook
   [cc2-h2-sto3g](cc2-h2-sto3g.md)

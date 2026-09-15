@@ -238,11 +238,11 @@ bash -lc '
 ## Validation (xtb)
 
 Source:
-[`regressions/semiempirical/gfn1-xtb-forces/REFERENCE.md`](../../../regressions/semiempirical/gfn1-xtb-forces/REFERENCE.md).  
+[`regressions/semiempirical/gfn1-xtb-forces/REFERENCE.md`](../../../regressions/semiempirical/gfn1-xtb-forces/REFERENCE.md).
 Oracle: **`xtb`** `--gfn 1 --grad` (Grimme, Bannwarth, Shushkov, *JCTC* **13**,
 1989 (2017); Bannwarth et al., *WIREs Comput. Mol. Sci.* **11**, e01493
-(2021)).  
-`oracle_version`: **6.7.1**.  
+(2021)).
+`oracle_version`: **6.7.1**.
 Hard-coded gates in the regression binary — **never** live xtb from ctest.
 
 ```text
@@ -361,10 +361,6 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   `xtb.out.txt`, `gradient.txt`)
 - Energy sibling: `regressions/semiempirical/gfn1-xtb-organic/REFERENCE.md`
 - Oracle README: `tools/tb_oracle/README.md`
-- Queue / handoff / loop: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`,
-  `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/semiempirical.md`
 - Spec history (closed, deleted at done): git `wf/gfn1-xtb-forces`
 - S. Grimme, C. Bannwarth, P. Shushkov, *J. Chem. Theory Comput.* **13**,

@@ -1,4 +1,4 @@
-/// @file cuda/md/md.cuh
+/// @file cuda/dynamics/md.cuh
 /// @brief cuda::md::MD -- molecular dynamics preset with LAMMPS-style phases.
 ///
 /// `MD` is the CUDA molecular-dynamics preset: a `cuda::Driver<md::Phase>` that owns

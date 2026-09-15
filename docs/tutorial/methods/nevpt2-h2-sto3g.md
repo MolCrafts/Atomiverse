@@ -182,8 +182,8 @@ bash tools/setup_pyscf_env.sh
 Source: fair wall in
 [`regressions/scf/nevpt2-h2-sto3g/REFERENCE.md`](../../../regressions/scf/nevpt2-h2-sto3g/REFERENCE.md)
 (2026-07-24; login node; `OMP_NUM_THREADS=1`; median of ≥5). Campaign
-handoff ratio **0.072** (`docs/developer/pyscf-method-handoff.md`). No
-standing `pyscf-method-perf.md` table in-tree at draft time.
+handoff ratio **0.072** (the case `REFERENCE.md`). No
+standing comparison table in-tree at draft time.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -222,8 +222,6 @@ pass required on this case.
 - Offline pin: `regressions/scf/nevpt2-h2-sto3g/REFERENCE.md`
 - Regression consumer: `regressions/scf/nevpt2-h2-sto3g/reg_nevpt2-h2-sto3g.cpp`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/post-hf.md` (§4.2 Multireference correlation)
 - Public API: `include/atomiverse/cpu/scf/nevpt2.h`
 - Sibling (CASSCF foothold): `docs/tutorial/methods/casscf-h2-sto3g.md`

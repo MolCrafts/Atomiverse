@@ -1,4 +1,4 @@
-/// @file cpu/observer/virial_stress.cpp
+/// @file cpu/observe/virial_stress.cpp
 /// @brief Kinetic-stress contribution.
 
 #include "atomiverse/cpu/observe/virial_stress.h"

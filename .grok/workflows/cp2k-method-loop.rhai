@@ -26,9 +26,9 @@ let meta = #{
 // ── CONFIG ──────────────────────────────────────────────────────────────
 let loop_id = "cp2k";
 let oracle_name = "CP2K";
-let queue_path = "docs/developer/cp2k-method-queue.md";
-let handoff_path = "docs/developer/cp2k-method-handoff.md";
-let loop_doc = "docs/developer/cp2k-method-loop.md";
+let queue_path = ".claude/campaigns/cp2k-method-queue.md";
+let handoff_path = ".claude/campaigns/cp2k-method-handoff.md";
+let loop_doc = ".claude/campaigns/cp2k-method-loop.md";
 let map_path = "docs/roadmap/dft.md";
 let oracle_readme = "tools/cp2k_oracle/README.md";
 let tutorial_root = "docs/tutorial/methods/";

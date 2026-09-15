@@ -1,4 +1,4 @@
-/// @file facade/molrs_contract.h
+/// @file core/molrs_contract.h
 /// @brief Exact Atomiverse/molrs CXX API and capability contract.
 #pragma once
 

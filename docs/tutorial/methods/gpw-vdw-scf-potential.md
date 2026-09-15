@@ -7,7 +7,7 @@
 | Slug | `gpw-vdw-scf-potential` |
 | Regression | `regressions/gpw/gpw-vdw-scf-potential/` |
 | Public API | `cpu::gpw::GpwDft::rvv10` / `vdw_df` / `vdw_df2` (and `GPWEvaluator` twins); `GpwResult::e_disp` [Ha]; forces via `gpw_forces_from_scf` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, wave 8, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -207,7 +207,7 @@ bash -lc '
 ## Validation (CP2K)
 
 Source:
-[`regressions/gpw/gpw-vdw-scf-potential/REFERENCE.md`](../../../regressions/gpw/gpw-vdw-scf-potential/REFERENCE.md).  
+[`regressions/gpw/gpw-vdw-scf-potential/REFERENCE.md`](../../../regressions/gpw/gpw-vdw-scf-potential/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (Arrhenius `work/cp2k/install`), twin
 `tools/cp2k_oracle/inputs/gpw-vdw-scf-potential/water_dimer_rvv10_force.inp`
 (and energy twin under `gpw-rvv10-ice`). External engine pin — **not** a golden
@@ -297,10 +297,6 @@ product policy requires \(r=T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\le10\).
 ## References
 
 - Offline pin: `regressions/gpw/gpw-vdw-scf-potential/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Oracle inputs: `tools/cp2k_oracle/inputs/gpw-vdw-scf-potential/`
 - Oracle notes: `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion; `docs/roadmap/index.md` GPW residual

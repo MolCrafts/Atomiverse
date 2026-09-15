@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-dftu-nio/` |
 | Public API | `cpu::gpw::GPWEvaluator` + `std::vector<PlusU> plus_u`; `n_alpha`/`n_beta`; `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — GPW Dudarev DFT+U (`plus_u`; `reg_gpw-dftu-nio`) ✓ |
-| Queue | CP2K capability loop wave 2 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-24 |
 
 ## Summary
 
@@ -176,7 +175,7 @@ bash -lc '
 
 ## Validation (vs CP2K)
 
-Source: [`regressions/gpw/gpw-dftu-nio/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-nio/REFERENCE.md).  
+Source: [`regressions/gpw/gpw-dftu-nio/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-nio/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`, revision 85b8a9b49c); **never** live
 in ctest. Pin date: **2026-07-24**. Closed-spec gates A3–A5 / A7.
 
@@ -238,7 +237,7 @@ artifacts; the **molecule** is the first-green PLUS_U foothold.
 
 Source: fair wall table in
 `regressions/gpw/gpw-dftu-nio/REFERENCE.md` (2026-07-24). Handoff:
-`docs/developer/cp2k-method-handoff.md` ratio **0.21**. Gate \(r\le 10\) or
+the case `REFERENCE.md` ratio **0.21**. Gate \(r\le 10\) or
 `perf_exempt` (closed-spec A8).
 
 Comparable settings: cutoff 250 Ry, PADE+U, MT, single rank, `OMP_NUM_THREADS=8`.
@@ -279,9 +278,6 @@ on identical algorithms.
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - Closed spec (git history): `.claude/specs/gpw-dftu-nio/` (deleted at done;
   commit `feat(gpw): Dudarev DFT+U for NiO (gpw-dftu-nio)`)
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Loop design: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - V. I. Anisimov, J. Zaanen, O. K. Andersen, *Phys. Rev. B* **44**, 943 (1991) — DFT+U

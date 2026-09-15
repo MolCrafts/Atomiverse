@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-uks-blyp/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`n_alpha`/`n_beta`, `XcKind::BLYP`, `nonperiodic`); `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — Γ-UKS BLYP spin-GGA (productized) |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) → **done** (wave 4, 2026-07-26) |
 | Fair wall | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx \mathbf{2.48}\) (≤10×) |
 
 ## Summary
@@ -243,7 +242,7 @@ mpirun -np 1 cp2k.psmp -i o2_uks_blyp.inp -o o2_uks_blyp.out
 ## Performance
 
 Source: same `REFERENCE.md` fair-wall note (2026-07-26); handoff
-`docs/developer/cp2k-method-handoff.md` (wave 4). Not a ctest gate;
+the case `REFERENCE.md` (wave 4). Not a ctest gate;
 optional offline twin under `tools/cp2k_oracle/`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -275,8 +274,6 @@ Gate from closed spec: \(r \le 10\) or `perf_exempt`. Here \(r \approx 2.48\)
 - Regression consumer: [`reg_gpw-uks-blyp.cpp`](../../../regressions/gpw/gpw-uks-blyp/reg_gpw-uks-blyp.cpp)
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-uks-blyp/`](../../../tools/cp2k_oracle/inputs/gpw-uks-blyp/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  queue / handoff under `docs/developer/cp2k-method-*.md`
 - Sibling tutorials: [`gpw-uks-o2-gamma`](gpw-uks-o2-gamma.md) (PADE LSD),
   closed-shell water BLYP reg `gpw-blyp-water`
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

@@ -1,4 +1,4 @@
-/// @file md/init.cu
+/// @file cuda/dynamics/init.cu
 /// @brief Initializer implementations: ZeroForces, ZeroEnergy, ZeroKinetic, InitVelocity.
 
 #include "atomiverse/core/units.h"

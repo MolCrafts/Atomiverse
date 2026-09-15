@@ -7,7 +7,7 @@
 | Slug | `fumi-tosi-nacl` |
 | Regression | `regressions/forcefield/fumi-tosi-nacl/` |
 | Public API | `cpu::PairBorn` (multi-type table) + `cpu::PairCoulCut` on `cpu::Evaluate` |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E8 done** (wave 2, 2026-07-24); map salt/wall FF |
+| Roadmap | map salt/wall FF |
 | Oracle | **LAMMPS** `pair_style hybrid/overlay born coul/cut` (`pair_modify pair born shift yes`) |
 
 ## Summary
@@ -154,7 +154,7 @@ Headers: `include/atomiverse/cpu/potentials/pair_born.h`,
 `regressions/forcefield/fumi-tosi-nacl/reg_fumi-tosi-nacl.cpp`.
 
 ```bash
-# MD-only configure (see metalwalls-method-loop) then:
+# MD-only configure (see ) then:
 cmake --build build --target reg_fumi-tosi-nacl -j$(nproc)
 ./build/regressions/reg_fumi-tosi-nacl
 ```
@@ -196,7 +196,7 @@ is recorded in REFERENCE only.
 ## Performance
 
 Source: `regressions/forcefield/fumi-tosi-nacl/REFERENCE.md`,
-`docs/developer/metalwalls-method-handoff.md`.
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{oracle}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}}\) | ≤10× | Caveat |
 | ---- | --------------------------: | -----------------------: | -----------------------------------------: | ---- | ------ |
@@ -233,8 +233,6 @@ a molten-salt box.
 - Regression: `regressions/forcefield/fumi-tosi-nacl/reg_fumi-tosi-nacl.cpp`
 - LAMMPS twin: `tools/metalwalls_oracle/inputs/lammps/in.fumi_tosi_nacl4`
 - Pin notes: `tools/metalwalls_oracle/pin_notes.md` → `fumi-tosi-nacl`
-- Queue / handoff: `docs/developer/metalwalls-method-queue.md` (E8),
-  `docs/developer/metalwalls-method-handoff.md`
 - Roadmap: `docs/roadmap/force-fields.md` (Born–Mayer–Huggins / Fumi–Tosi)
 - Public API: `include/atomiverse/cpu/potentials/pair_born.h`,
   `pair_coul_cut.h`

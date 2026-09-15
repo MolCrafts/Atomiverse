@@ -1,4 +1,4 @@
-/// @file cpu/scf/one_electron.cpp
+/// @file cpu/scf/internal/one_electron.cpp
 /// @brief Native-engine implementations of the one-electron integral kernels
 ///        (internal::IntegralWorkspace private static members) + nuclear repulsion energy.
 
@@ -74,7 +74,8 @@ void for_each_canonical_block_pair(
 
 } // anonymous namespace
 
-xt::xtensor<double, 2> internal::IntegralWorkspace::overlap(const ShellList& shells) {
+xt::xtensor<double, 2>
+internal::IntegralWorkspace::overlap(const ShellList& shells) {
     const int n = shells.n_basis;
     xt::xtensor<double, 2> S = xt::zeros<double>({n, n});
     const auto blocks = blocks_from_shells(shells.shells);
@@ -85,7 +86,8 @@ xt::xtensor<double, 2> internal::IntegralWorkspace::overlap(const ShellList& she
     return S;
 }
 
-xt::xtensor<double, 2> internal::IntegralWorkspace::kinetic(const ShellList& shells) {
+xt::xtensor<double, 2>
+internal::IntegralWorkspace::kinetic(const ShellList& shells) {
     const int n = shells.n_basis;
     xt::xtensor<double, 2> T = xt::zeros<double>({n, n});
     const auto blocks = blocks_from_shells(shells.shells);
@@ -96,8 +98,9 @@ xt::xtensor<double, 2> internal::IntegralWorkspace::kinetic(const ShellList& she
     return T;
 }
 
-xt::xtensor<double, 2> internal::IntegralWorkspace::nuclear_attraction(const ShellList& shells,
-                                                        const AtomList& atoms) {
+xt::xtensor<double, 2>
+internal::IntegralWorkspace::nuclear_attraction(const ShellList& shells,
+                                                const AtomList& atoms) {
     const int n = shells.n_basis;
     const int natm = static_cast<int>(atoms.atoms.size());
     xt::xtensor<double, 2> V = xt::zeros<double>({n, n});
@@ -209,7 +212,7 @@ void pvp_block(const native::ShellBlock& A, const native::ShellBlock& B,
 } // namespace
 
 xt::xtensor<double, 2> internal::IntegralWorkspace::pvp(const ShellList& shells,
-                                         const AtomList& atoms) {
+                                                        const AtomList& atoms) {
     const int n = shells.n_basis;
     const int natm = static_cast<int>(atoms.atoms.size());
     xt::xtensor<double, 2> Wmat = xt::zeros<double>({n, n});

@@ -47,7 +47,7 @@ declare default bindings if the phase is fixed, and override `launch`:
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/cpu/component/integrator.h"
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/core/stage.h"
 
 namespace ATV { namespace cpu { namespace md {
 
@@ -94,8 +94,8 @@ Two architectural choices to make consciously:
 
 **Allocation discipline.** If you store per-step buffers, allocate them
 in `build()` (sized to `frame.capacity()`), not in `launch()`. The
-zero-allocation invariant in `launch()` is verified by
-`tests/cpu/test_md_no_alloc.cpp`, and breaking it will fail review.
+zero-allocation invariant in `launch()` is a review rule, not an automated
+gate — breaking it will fail review.
 
 **Validation comes for free.** `cpu::md::MD::validate_components`
 walks the registered set and requires at least one `Integrator` (and an
@@ -103,7 +103,7 @@ energy/force kind). Inheriting `cpu::Integrator` makes Beeman a valid
 replacement for `VelocityVerlet`. No driver-side change is needed.
 
 **Test recipe.** Add `tests/cpu/dynamics/test_beeman.cpp` that builds a small
-NVE system (typically the FCC Argon fixture from `test_md.cpp`),
+NVE system (typically the FCC Argon fixture used by `tests/cpu/dynamics/test_md_set_api.cpp`),
 substitutes Beeman for VelocityVerlet, runs a few thousand steps, and
 asserts:
 
@@ -140,7 +140,7 @@ judged. It does **not** judge them itself. Mirror the existing pattern:
 
 #include "atomiverse/cpu/component/optimizer.h"
 #include "atomiverse/cpu/minimize/lbfgs.h"   // for OptRecord
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/core/stage.h"
 
 namespace ATV { namespace cpu { namespace minimizer {
 

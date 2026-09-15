@@ -8,8 +8,6 @@
 | Regression | `regressions/gpw/gpw-metallic-smearing/` |
 | Public API | `cpu::gpw::GpwDft` members `smearing`, `degauss` [Ry], `mp_order`, `extra_bands`, `k_mesh`; `GpwResult::{e_total,e_fermi,n_elec_occ,e_entropy}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) — Smearing for metals (CPU GPW ✓ multi-k RKS) |
-| Loop | CP2K capability (`cp2k-method-loop`) |
-
 ## Summary
 
 Metals need **fractional band occupations** and a chemical potential \(\mu\)
@@ -267,7 +265,7 @@ r = T_{\mathrm{atv}} / T_{\mathrm{cp2k}} \approx 0.011 \ll 10
 `within_10x = true`. Fairness note: do **not** treat \(r\) as a
 same-multigrid throughput claim — CP2K multigrid + Broyden vs ATV DIIS /
 single density pathway. Handoff records ratio **~0.011**
-(`docs/developer/cp2k-method-handoff.md`).
+(the case `REFERENCE.md`).
 
 ## Limitations
 
@@ -296,8 +294,7 @@ single density pathway. Handoff records ratio **~0.011**
 - Regression: [`reg_gpw-metallic-smearing.cpp`](../../../regressions/gpw/gpw-metallic-smearing/reg_gpw-metallic-smearing.cpp)
 - CP2K twin input: [`tools/cp2k_oracle/inputs/gpw-metallic-smearing/`](../../../tools/cp2k_oracle/inputs/gpw-metallic-smearing/)
 - Oracle notes: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Handoff ratio **~0.011**: [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Queue row: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md) (`gpw-metallic-smearing` done)
+- Handoff ratio **~0.011**: the case `REFERENCE.md`
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md) (Smearing for metals ✓ CPU GPW)
 - Public header: `include/atomiverse/cpu/gpw/gpw_solver.h`
 - Shared occupations: `include|src/.../planewave/internal/smearing.*`

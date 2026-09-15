@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/thermochem.cpp
+/// @file cpu/vibration/thermochem.cpp
 /// @brief cpu::vib::Thermochem — verbatim port of PySCF
 ///        `pyscf/hessian/thermo.py::thermo()`.
 ///

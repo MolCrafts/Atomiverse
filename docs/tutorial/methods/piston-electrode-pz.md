@@ -7,7 +7,7 @@
 | Slug | `piston-electrode-pz` |
 | Regression | `regressions/md/piston-electrode-pz/` |
 | Public API | `cpu::md::PistonElectrode` (Component on `cpu::md::MD`; default `post_force` / rigid integrate hooks) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E6 done** (wave 2, 2026-07-24); map slice E6 |
+| Roadmap | map slice E6 |
 | Oracle | **MetalWalls** rigid-piston constant-\(P_z\) algorithm (JOSS; no live MW binary on pin host) |
 
 ## Summary
@@ -244,10 +244,7 @@ and REFERENCE (match `reg_piston-electrode-pz`).
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md);
-queue
-[`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md).
-
+the case `REFERENCE.md`;
 | Twin | \(T_{\mathrm{MW}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ----------------------: | -----------------------: | ----: | ---- | ------ |
 | rigid-piston constant-\(P_z\) | — | — | **perf_exempt** | n/a | No MetalWalls binary on offline worker PATH; cannot fair-bench vs MW twin |
@@ -285,7 +282,6 @@ in REFERENCE.
 - Product gate: [`regressions/md/piston-electrode-pz/reg_piston-electrode-pz.cpp`](../../../regressions/md/piston-electrode-pz/reg_piston-electrode-pz.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/piston_electrode.h`](../../../include/atomiverse/cpu/dynamics/piston_electrode.h)
 - Unit tests: [`tests/cpu/dynamics/test_piston_electrode.cpp`](../../../tests/cpu/dynamics/test_piston_electrode.cpp)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), [`tools/metalwalls_oracle/inputs/metalwalls/piston-electrode-pz/README.md`](../../../tools/metalwalls_oracle/inputs/metalwalls/piston-electrode-pz/README.md)
 - Literature: Marin-Laflèche et al., *J. Open Source Softw.* **5**, 2373 (2020), DOI [10.21105/joss.02373](https://doi.org/10.21105/joss.02373) (MetalWalls; constant \(P_z\) via rigid electrode pistons)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (E6 electrode mechanics)

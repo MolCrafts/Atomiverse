@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/fft.cpp
+/// @file cpu/planewave/internal/fft.cpp
 /// @brief FFTW3 wrapper implementation.
 
 #include "atomiverse/cpu/planewave/internal/fft.h"

@@ -7,7 +7,7 @@
 | Slug | `bands-dos-si` |
 | Regression | `regressions/pw/bands-dos-si/` |
 | Public API | `cpu::pw::PW` (SCF members) + `cpu::pw::Bands` / `cpu::pw::Dos` + `BandsResult` / `DosResult` |
-| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS; queue `docs/developer/cp2k-method-queue.md` `bands-dos-si` (done) |
+| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS|
 
 ## Summary
 
@@ -316,8 +316,6 @@ Wall comparison is same-geometry only, not absolute-eigenvalue parity
 - Regression: [`regressions/pw/bands-dos-si/reg_bands-dos-si.cpp`](../../../regressions/pw/bands-dos-si/reg_bands-dos-si.cpp)
 - Public API: [`include/atomiverse/cpu/planewave/bands_dos.h`](../../../include/atomiverse/cpu/planewave/bands_dos.h)
 - Optional CP2K wall / character skeleton: `tools/cp2k_oracle/inputs/si_bands_dos_note.inp`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Related energy foothold: [pw-lda-si](pw-lda-si.md)
 - Narrative style ref: [Chapter 8 — Plane-Wave DFT](../ch08-plane-wave.md)
 - M. T. Yin and M. L. Cohen, *Phys. Rev. B* **26**, 5668 (1982)

@@ -7,7 +7,7 @@
 | Slug | `dftb2-spin-analytic-forces` |
 | Regression | `regressions/semiempirical/dftb2-spin-analytic-forces/` |
 | Public API | `cpu::semiempirical::DFTB2` (`multiplicity`, `with_forces`) |
-| Track | TB / SE method loop wave 2 (`tb-method-loop`) |
+| Track | TB / SE method loop wave 2 () |
 | Roadmap | Spin-polarized DFTB analytic gradient (collinear open shell) |
 | Family oracle | **DFTB+** (formula / module boundary) |
 

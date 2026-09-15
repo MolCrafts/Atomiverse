@@ -7,7 +7,7 @@
 | Slug | `gpw-variable-cell-molopt` |
 | Regression | `regressions/gpw/gpw-variable-cell-molopt/` |
 | Public API | `cpu::minimizer::Minimize` + `AnisotropicCellRelax` + `StressConverged` + `cpu::gpw::GPWEvaluator` (`compute_stress`, `stress_axes`) |
-| Roadmap / queue | [dft.md](../../roadmap/dft.md) variable-cell / CELL_OPT; [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `gpw-variable-cell-molopt` |
+| Roadmap | [dft.md](../../roadmap/dft.md) variable-cell / CELL_OPT |
 | Wave | CP2K capability harness wave 2 — **done** (2026-07-25) |
 | Dual gate | Correctness vs offline CP2K 2026.1 CELL_OPT; speed ratio **~7.5** (≤10×) |
 
@@ -265,7 +265,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/gpw-variable-cell-molopt/REFERENCE.md`](../../../regressions/gpw/gpw-variable-cell-molopt/REFERENCE.md).  
+[`regressions/gpw/gpw-variable-cell-molopt/REFERENCE.md`](../../../regressions/gpw/gpw-variable-cell-molopt/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`, EasyBuild
 `2026.1-gmpflf-2026.03`), Arrhenius epyc login, 1 rank × 4 OMP. Inputs under
 `tools/cp2k_oracle/inputs/gpw-variable-cell-molopt/`. Hard-coded pins in the
@@ -394,9 +394,6 @@ strain-FD tax that forced the ice pivot to compact GTH-PADE.
   `regressions/gpw/gpw-variable-cell-molopt/reg_gpw-variable-cell-molopt.cpp`
 - Twin inputs: `tools/cp2k_oracle/inputs/gpw-variable-cell-molopt/`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / handoff / loop: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Prior foothold (GTH-PADE pivot):
   `regressions/gpw/gpw-variable-cell-ice/`
 - Analytic stress product path: [gpw-analytic-stress](gpw-analytic-stress.md),

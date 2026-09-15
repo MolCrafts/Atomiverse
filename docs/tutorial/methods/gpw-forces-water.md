@@ -172,7 +172,7 @@ bash -lc '
 ## Validation (CP2K)
 
 Source:
-[`regressions/gpw/gpw-forces-water/REFERENCE.md`](../../../regressions/gpw/gpw-forces-water/REFERENCE.md).  
+[`regressions/gpw/gpw-forces-water/REFERENCE.md`](../../../regressions/gpw/gpw-forces-water/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`, EasyBuild
 `2026.1-gmpflf-2026.03`), Arrhenius epyc, `RUN_TYPE ENERGY_FORCE`. Hard-coded
 pins in the regression binary — **never** live CP2K from ctest.
@@ -252,9 +252,6 @@ Handoff / queue record the same ratio **3.56** for wave-1 merge.
 - Offline pin: `regressions/gpw/gpw-forces-water/REFERENCE.md`
 - Twin input: `tools/cp2k_oracle/inputs/h2o_forces_mt.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Narrative GPW: `docs/tutorial/ch09-gpw.md`
 - Spec history (closed, deleted at done): git `wf/gpw-forces-water` /
   commit `94e64ea9` (`.claude/specs/gpw-forces-water/spec.md`)

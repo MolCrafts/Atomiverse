@@ -7,7 +7,7 @@
 | Slug | `second-gen-cpmd-water` |
 | Regression | `regressions/dynamics/second-gen-cpmd-water/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::SecondGenCp{cpu::gpw::GPWEvaluator{…}, aspc_k, corrector_max_iter}` bound with `set_evaluator_ref`; ASPC primitive `cpu::electronic::ASPCPredictor` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `second-gen-cpmd-water`; MD roadmap second-generation CP |
+| Roadmap | MD roadmap second-generation CP |
 | Dual gate | Correctness envelope + method-identity (partial SCF); speed **`perf_exempt`** |
 | Wave | CP2K capability loop — harness wave 1 **done** (merged 2026-07-25) |
 | Oracle | **CP2K** offline sketch (`tools/cp2k_oracle/inputs/second_gen_cpmd_water_nve.inp`); literature envelope on pin host |
@@ -252,8 +252,8 @@ Related unit surface (not the e2e pin):
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; queue/handoff
-[`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-[`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md).
+``,
+``.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -300,8 +300,6 @@ ratio **3.56**, within_10×) — not this multi-step SGCP twin.
 - SGCP wrapper: `include/atomiverse/cpu/electronic/second_gen_cp.h`
 - Sibling AIMD pages: [gpw-bomd-water](gpw-bomd-water.md),
   [xl-bomd-water](xl-bomd-water.md), [cpmd-water](cpmd-water.md)
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
 - Roadmap: [`docs/roadmap/molecular-dynamics.md`](../../roadmap/molecular-dynamics.md) §AIMD
 - Oracle: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - T. D. Kühne, M. Krack, F. R. Mohamed, M. Parrinello, *Phys. Rev. Lett.*

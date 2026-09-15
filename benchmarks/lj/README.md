@@ -1,13 +1,14 @@
 # LJ 12-6 standing benchmark
 
-Not registered in ctest. Build with `-DATV_BUILD_BENCHMARKS=ON`
-(or the CUDA claim job, which builds `cuda_nonbonded_style_bench`).
+Not registered in ctest. Build with
+`-DATV_BUILD_BENCHMARKS=ON -DATV_BUILD_CUDA=ON`; the binary lands in
+`<build>/bin` (see `benchmarks/cuda/CMakeLists.txt`).
 
 ## CUDA tile engine (GH200)
 
 ```
 # on GH200 after a CUDA build
-./cuda_nonbonded_style_bench 10000 80 15
+./bin/bench_nonbonded_style 10000 80 15
 ```
 
 Recorded GH200 job **1332540** (n68, `GPU/buildenv-gcccuda/2026.03-cu13.0`):

@@ -1,4 +1,4 @@
-/// @file cpu/pw/pw_solver.cpp
+/// @file cpu/planewave/pw_solver.cpp
 /// @brief PW implementation — orchestrates the internal step helpers
 ///        through the plane-wave SCF self-consistency cycle.
 ///

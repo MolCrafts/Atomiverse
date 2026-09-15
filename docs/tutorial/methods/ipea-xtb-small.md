@@ -345,10 +345,6 @@ IPEA E+\(G\)+\(H\)+VIP is not the GFN product closed.
 - Oracle twin: `tools/tb_oracle/inputs/xtb/ch4_ipea/` (`mol.xyz`,
   `xtb.out.txt`)
 - Oracle rules: `tools/tb_oracle/README.md` (GFN-xTB / IPEA → xtb only)
-- Loop design: `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
-- Queue / handoff: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`
 - Roadmap: `docs/roadmap/semiempirical.md` §3
 - Literature:
   - V. Ásgeirsson, C. Bauer, S. Grimme, *Chem. Sci.* **8**, 4879 (2017),

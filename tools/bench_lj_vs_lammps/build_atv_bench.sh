@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build ATV cuda_nonbonded_style_bench with a LAMMPS-aligned CUDA precision mode.
+# Build ATV bench_nonbonded_style with a LAMMPS-aligned CUDA precision mode.
 #
 # Modes match LAMMPS Kokkos `-D KOKKOS_PREC=…` (one knob):
 #   double  → real=work=prec=double   (LMP default)
@@ -12,7 +12,7 @@
 #   ./build_atv_bench.sh single
 #
 # Output binary:
-#   build-cuda-bench-<mode>/bin/cuda_nonbonded_style_bench
+#   build-cuda-bench-<mode>/bin/bench_nonbonded_style
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -44,6 +44,6 @@ cmake -B "$BUILD" \
   -DATV_CUDA_PREC_MODE="$MODE" \
   -DBLA_VENDOR=OpenBLAS
 
-cmake --build "$BUILD" -j"$(nproc)" --target cuda_nonbonded_style_bench
-ls -la "$BUILD/bin/cuda_nonbonded_style_bench"
-echo "export ATV_BENCH=$ROOT/$BUILD/bin/cuda_nonbonded_style_bench"
+cmake --build "$BUILD" -j"$(nproc)" --target bench_nonbonded_style
+ls -la "$BUILD/bin/bench_nonbonded_style"
+echo "export ATV_BENCH=$ROOT/$BUILD/bin/bench_nonbonded_style"

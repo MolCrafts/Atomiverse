@@ -200,7 +200,7 @@ bash -lc '
 ## Validation (vs CP2K / dual-gate)
 
 Source:
-[`regressions/gpw/gpw-kpoint-uks-stress/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-uks-stress/REFERENCE.md).  
+[`regressions/gpw/gpw-kpoint-uks-stress/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-uks-stress/REFERENCE.md).
 Oracle policy: offline **CP2K 2026.1** documentation twin when the module is
 available; **never** live CP2K from ctest. Decisive product gates are
 **internal dual-gate** (analytic vs multi-SCF FD) and **closed-shell
@@ -250,7 +250,7 @@ mpirun -np 1 cp2k.psmp -i h2_uks_kpoint_stress.inp -o h2_uks_kpoint_stress.out
 
 ## Performance
 
-Source: `REFERENCE.md` + handoff (`docs/developer/cp2k-method-handoff.md`).
+Source: `REFERENCE.md` + handoff (the case `REFERENCE.md`).
 **`perf_exempt = true`**.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -290,9 +290,6 @@ shell identity — within the ≤ 60 s e2e budget.
 - Regression consumer: [`reg_gpw-kpoint-uks-stress.cpp`](../../../regressions/gpw/gpw-kpoint-uks-stress/reg_gpw-kpoint-uks-stress.cpp)
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-kpoint-uks-stress/`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-uks-stress/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Queue / handoff / loop: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Related pins: `gpw-kpoint-uks-forces`, `gpw-uks-stress`, `gpw-kpoint-stress`,
   `gpw-kpoints-uks`, `gpw-analytic-stress`, `gpw-stress-water`
 - Narrative GPW: `docs/tutorial/ch09-gpw.md`

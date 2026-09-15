@@ -65,7 +65,8 @@ void vdw_df_q0(const std::vector<double>& rho, const std::vector<double>& sigma,
 /// @param sigma      |∇ρ|² on the grid, same length.
 /// @param potential  If true, fill `VdwDfResult::v_r` (SC KS potential).
 /// @return E_c^{nl} [Hartree] and optional V_nl.
-VdwDfResult vdw_df_drsll(const UniformGrid& grid, const std::vector<double>& rho,
+VdwDfResult vdw_df_drsll(const UniformGrid& grid,
+                         const std::vector<double>& rho,
                          const std::vector<double>& sigma,
                          bool potential = false);
 
@@ -78,9 +79,16 @@ VdwDfResult vdw_df_drsll(const UniformGrid& grid, const std::vector<double>& rho
 /// @param sigma      |∇ρ|² on the grid, same length.
 /// @param potential  If true, fill `VdwDfResult::v_r`.
 /// @return E_c^{nl} [Hartree] and optional V_nl.
-VdwDfResult vdw_df_lmkll(const UniformGrid& grid, const std::vector<double>& rho,
+VdwDfResult vdw_df_lmkll(const UniformGrid& grid,
+                         const std::vector<double>& rho,
                          const std::vector<double>& sigma,
                          bool potential = false);
+
+/// @brief Result of a nonlocal vdW evaluation on a uniform grid.
+struct NonlocalVdwOnGrid {
+    double energy = 0.0;     ///< E_c^{nl} [Hartree].
+    std::vector<double> v_r; ///< V_nl [Hartree] (empty if !potential).
+};
 
 /// @brief Evaluate nonlocal vdW (DRSLL / LMKLL / rVV10) energy and optional V_nl.
 ///
@@ -94,10 +102,6 @@ VdwDfResult vdw_df_lmkll(const UniformGrid& grid, const std::vector<double>& rho
 /// @param rvv10      rVV10.
 /// @param potential  If true, fill `v_r`.
 /// @return Energy [Ha] and optional real-space potential.
-struct NonlocalVdwOnGrid {
-    double energy = 0.0; ///< E_c^{nl} [Hartree].
-    std::vector<double> v_r; ///< V_nl [Hartree] (empty if !potential).
-};
 NonlocalVdwOnGrid nonlocal_vdw_on_grid(const UniformGrid& grid,
                                        const std::vector<double>& rho,
                                        bool vdw_df, bool vdw_df2, bool rvv10,

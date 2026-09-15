@@ -1,4 +1,4 @@
-/// @file plan.h
+/// @file core/plan.h
 /// @brief Plan + PlanBuilder -- execution plan compilation. CUDA-free.
 ///
 /// The Plan is the compiled schedule that bridges Facade and Backend.

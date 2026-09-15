@@ -1,4 +1,4 @@
-/// @file cuda/md/nose_hoover_npt.cuh
+/// @file cuda/dynamics/nose_hoover_npt.cuh
 /// @brief CUDA Martyna-Tobias-Klein NPT integrator (LAMMPS-equivalent
 ///        `fix npt`).
 ///

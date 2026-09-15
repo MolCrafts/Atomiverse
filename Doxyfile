@@ -1,7 +1,7 @@
 # Doxyfile for Atomiverse
 
 PROJECT_NAME           = "Atomiverse"
-PROJECT_BRIEF          = "Unified Molecular Simulation Platform — MD / DFT / MLIP"
+PROJECT_BRIEF          = "Engine for multiscale, multiphysics atomistic simulation — classical MD, Monte Carlo, optimization, vibrations, and electronic structure"
 PROJECT_NUMBER         = "0.1.0"
 
 # Input

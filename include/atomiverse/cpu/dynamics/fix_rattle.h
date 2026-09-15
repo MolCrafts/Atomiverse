@@ -1,4 +1,4 @@
-/// @file cpu/md/fix_rattle.h
+/// @file cpu/dynamics/fix_rattle.h
 /// @brief cpu::md::FixRattle — iterative holonomic distance constraints.
 #pragma once
 

@@ -7,7 +7,7 @@
 | Slug | `periodic-gw-finite-q` |
 | Regression | `regressions/gpw/periodic-gw-finite-q/` |
 | Public API | `cpu::gpw::GpwDft::g0w0(atoms)` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`) |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` **done** (wave 5, 2026-07-26); residual close of Periodic GW ✓ — product multi-k path after Γ (`periodic-gw-si`) and k-diagonal (`periodic-gw-kpoints`) |
+| Roadmap | residual close of Periodic GW ✓ — product multi-k path after Γ (`periodic-gw-si`) and k-diagonal (`periodic-gw-kpoints`) |
 | Ratio | **`perf_exempt`** (CP2K RI-G0W0 ≠ finite-\(q\) spectral + MT) |
 
 ## Summary
@@ -183,7 +183,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/periodic-gw-finite-q/REFERENCE.md`](../../../regressions/gpw/periodic-gw-finite-q/REFERENCE.md).  
+[`regressions/gpw/periodic-gw-finite-q/REFERENCE.md`](../../../regressions/gpw/periodic-gw-finite-q/REFERENCE.md).
 Oracle: offline **CP2K** input twin
 `tools/cp2k_oracle/inputs/periodic-gw-finite-q.inp` (multi-k GPW RKS PBE,
 MONKHORST-PACK 2 1 1, FULL_GRID / no symmetry ≈
@@ -239,7 +239,7 @@ cp2k.psmp -i tools/cp2k_oracle/inputs/periodic-gw-finite-q.inp \
 ## Performance
 
 Source: [`REFERENCE.md`](../../../regressions/gpw/periodic-gw-finite-q/REFERENCE.md),
-[`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
+the case `REFERENCE.md`
 (wave 5, 2026-07-26).
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -273,8 +273,6 @@ Source: [`REFERENCE.md`](../../../regressions/gpw/periodic-gw-finite-q/REFERENCE
 - Product gate: `regressions/gpw/periodic-gw-finite-q/reg_periodic-gw-finite-q.cpp`
 - CP2K twin input: `tools/cp2k_oracle/inputs/periodic-gw-finite-q.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline only; never ctest)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md` (wave 5, **perf_exempt**)
 - Prior chain: Γ `periodic-gw-si` → k-diagonal `periodic-gw-kpoints` → **this**
   finite-\(q\) product; dielectric twin `periodic-rpa-finite-q`
 - Molecular spectral G0W0 (PySCF loop): [g0w0-h2-sto3g](g0w0-h2-sto3g.md)

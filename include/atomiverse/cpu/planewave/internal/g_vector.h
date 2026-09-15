@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/g_vector.h
+/// @file cpu/planewave/internal/g_vector.h
 /// @brief G-vector enumeration for plane-wave basis.
 #pragma once
 

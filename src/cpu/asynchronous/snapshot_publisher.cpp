@@ -1,4 +1,4 @@
-/// @file src/cpu/snapshot_publisher.cpp
+/// @file cpu/asynchronous/snapshot_publisher.cpp
 /// @brief `cpu::Publish` implementation: collects subscriber
 /// `CaptureMask`s, fills a ring slot. Each `AsyncComponentBase` dispatches
 /// itself at `end_of_step @ +20` against the slot most recently published.

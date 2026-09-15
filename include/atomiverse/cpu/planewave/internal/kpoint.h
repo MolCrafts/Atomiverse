@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/kpoint.h
+/// @file cpu/planewave/internal/kpoint.h
 /// @brief Monkhorst-Pack k-point mesh generator.
 #pragma once
 

@@ -1,4 +1,4 @@
-/// @file cpu/scf/stability.cpp
+/// @file cpu/scf/internal/stability.cpp
 /// @brief StabilityAnalysis — dense and matrix-free Davidson lowest-root
 ///        solves of the (A + B) channel blocks.
 

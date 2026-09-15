@@ -7,7 +7,7 @@
 | Slug | `gpw-optb88-vdw` |
 | Regression | `regressions/gpw/gpw-optb88-vdw/` |
 | Public API | `cpu::gpw::XcKind::OptB88VdW` + `GpwDft::vdw_df` / `GPWEvaluator::vdw_df`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -184,7 +184,7 @@ bash -lc '
 ## Validation (CP2K / offline pins)
 
 Source:
-[`regressions/gpw/gpw-optb88-vdw/REFERENCE.md`](../../../regressions/gpw/gpw-optb88-vdw/REFERENCE.md).  
+[`regressions/gpw/gpw-optb88-vdw/REFERENCE.md`](../../../regressions/gpw/gpw-optb88-vdw/REFERENCE.md).
 Oracle design: offline **CP2K** twin under
 `tools/cp2k_oracle/inputs/gpw-optb88-vdw/` (Hutter recipe:
 `XC_GGA_X_OPTB88_VDW` + `&PW92` + `TYPE DRSLL`). On the pin host, **CP2K is
@@ -268,9 +268,6 @@ a strict full-SCF twin later if product policy requires
 ## References
 
 - Offline pin: `regressions/gpw/gpw-optb88-vdw/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle inputs: `tools/cp2k_oracle/inputs/gpw-optb88-vdw/`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline pins only; never in ctest)
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

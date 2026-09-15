@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/final_geometry.cpp
+/// @file cpu/minimize/final_geometry.cpp
 /// @brief FinalGeometry -- write the final geometry once, at end of run.
 ///        MPI-aware: collective owner gather, rank-0 I/O.
 

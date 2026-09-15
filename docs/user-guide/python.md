@@ -59,7 +59,7 @@ python -m atomiverse python/examples/md_lj_argon.py
 
 **Modules** are positional on `config` only: `md`, `minimize`, `mc`, `evaluate`,
 `vib`, `path`, `hf`, `pw`, `gpw`, `am1`, `cuda`, `kspace`, `potentials`,
-`neighbor`.  
+`neighbor`.
 Enabling `md` / `mc` / `minimize` auto-enables `potentials` + `neighbor`.
 
 **Global options** (on `config`, never under a module name):

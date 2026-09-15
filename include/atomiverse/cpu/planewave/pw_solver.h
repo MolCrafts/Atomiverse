@@ -1,4 +1,4 @@
-/// @file cpu/pw/pw_solver.h
+/// @file cpu/planewave/pw_solver.h
 /// @brief cpu::pw::PW — concrete plane-wave DFT method (CPU Driver node).
 ///
 /// Parameters are public members (RHF pattern). Frame is the only I/O.

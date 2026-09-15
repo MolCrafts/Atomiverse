@@ -1391,7 +1391,7 @@ if(NOT ATV_DOCS_ONLY)
     endif()
 
     if(ATV_BUILD_BENCHMARKS)
-        add_subdirectory(benchmarks/lj)
+        add_subdirectory(benchmarks)
     endif()
 
     if(ATV_BUILD_EXAMPLES)

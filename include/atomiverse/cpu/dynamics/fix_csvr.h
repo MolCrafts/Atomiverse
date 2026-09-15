@@ -1,4 +1,4 @@
-/// @file cpu/md/fix_csvr.h
+/// @file cpu/dynamics/fix_csvr.h
 /// @brief CPU CSVR (Bussi) stochastic-velocity-rescaling thermostat.
 #pragma once
 

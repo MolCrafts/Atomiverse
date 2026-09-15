@@ -1,4 +1,4 @@
-/// @file cpu/recorder/thermo.h
+/// @file cpu/record/thermo.h
 /// @brief CPU thermodynamic output: Thermo component + thermo_print free function.
 ///
 /// `Thermo` is the per-step recorder component; `thermo_print` is the
@@ -40,7 +40,7 @@ class Thermo : public cpu::Recorder {
 /// @param step           Current step number.
 /// @param pe             Potential energy [eV].
 /// @param ke             Kinetic energy [eV].
-/// @param n_atoms        Number of atoms (used to compute degrees of freedom).
+/// @param n_dof          Degrees of freedom, used for the temperature.
 /// @param header_printed Guard flag; set to true after the first call.
 /// @param file           Optional open output stream (may be a closed fstream).
 void thermo_print(int step, double pe, double ke, int n_dof,

@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-metallic-si/` |
 | Public API | `cpu::pw::DfptPhonon` / `DfptPhononResult` + `PW` members `smearing`, `degauss` [Ry], `extra_bands` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — metallic occupation smearing ✓ |
-| Queue | `docs/developer/cp2k-method-queue.md` (wave 8, 2026-07-26); **`perf_exempt`** |
 | Dep | `dfpt-phonon-si` ✓ (Γ fixed-occ); `pw-smearing-al` ✓ (Mermin GS); siblings: GGA / spin / finite-\(q\) DFPT |
 
 ## Summary
@@ -230,7 +229,7 @@ Source: same REFERENCE + handoff. Gate:
 | `ratio_atv_over_cp2k` | n/a (exempt) |
 | `within_10x` | n/a (exempt; correctness gates only) |
 
-Handoff: `docs/developer/cp2k-method-handoff.md` (`dfpt-metallic-si` →
+Handoff: the case `REFERENCE.md` (`dfpt-metallic-si` →
 **perf_exempt**).
 
 ## Limitations
@@ -258,8 +257,7 @@ Handoff: `docs/developer/cp2k-method-handoff.md` (`dfpt-metallic-si` →
 - Regression: `regressions/response/dfpt-metallic-si/reg_dfpt-metallic-si.cpp`
 - CP2K twin note: `tools/cp2k_oracle/inputs/dfpt-metallic-si.note`
 - Oracle rules: `tools/cp2k_oracle/README.md`
-- Handoff (**perf_exempt**): `docs/developer/cp2k-method-handoff.md`
-- Queue row: `docs/developer/cp2k-method-queue.md` (`dfpt-metallic-si` done, wave 8)
+- Handoff (**perf_exempt**): the case `REFERENCE.md`
 - Roadmap: `docs/roadmap/dft.md` §11 metallic DFPT ✓
 - Public headers: `include/atomiverse/cpu/planewave/dfpt_phonon.h`,
   `pw_solver.h`

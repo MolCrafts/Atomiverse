@@ -1,4 +1,4 @@
-/// @file cpu/md/nose_hoover_npt.h
+/// @file cpu/dynamics/nose_hoover_npt.h
 /// @brief CPU MTK Nose-Hoover NPT integrator — isotropic *or* anisotropic
 ///        per-axis barostat, with an optional continuous temperature ramp.
 ///        LAMMPS-equivalent `fix npt iso` / `fix npt x .. y .. z ..`.

@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/convergence.cpp
+/// @file cpu/planewave/internal/convergence.cpp
 #include "atomiverse/cpu/planewave/internal/convergence.h"
 #include <cmath>
 

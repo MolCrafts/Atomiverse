@@ -7,7 +7,7 @@
 | Slug | `freeze-electrode-atoms` |
 | Regression | `regressions/md/freeze-electrode-atoms/` |
 | Public API | `cpu::md::FixFreeze{type_id}` on `cpu::md::MD` (with `VelocityVerlet` + pair potential) |
-| Roadmap / queue | MetalWalls map **E1** wall-immobility foothold; [metalwalls-method-queue.md](../../developer/metalwalls-method-queue.md) → **done** (wave 1, 2026-07-23) |
+| Roadmap | MetalWalls map **E1** wall-immobility foothold |
 | Dual gate | Correctness (immobility invariants); speed fair wall vs LAMMPS \(r\approx 3.98\le 10\) |
 
 ## Summary
@@ -216,9 +216,6 @@ Gate: \(r \le 10.0\) → **PASS** (`within_10x=true`).
 - Regression consumer: `regressions/md/freeze-electrode-atoms/reg_freeze-electrode-atoms.cpp`
 - LAMMPS offline inputs: `tools/metalwalls_oracle/inputs/lammps/freeze-electrode-atoms/`
 - Component: `include/atomiverse/cpu/dynamics/fix_freeze.h`, `src/cpu/dynamics/fix_freeze.cpp`
-- Queue / handoff: [metalwalls-method-queue.md](../../developer/metalwalls-method-queue.md),
-  [metalwalls-method-handoff.md](../../developer/metalwalls-method-handoff.md)
-- Design: [metalwalls-method-loop.md](../../developer/metalwalls-method-loop.md)
 - LAMMPS: `fix setforce` documentation; source `src/fix_setforce.cpp`
   (develop pin version in REFERENCE)
 - MetalWalls electrode `mobile = false` practice (physics end-state; **not** the

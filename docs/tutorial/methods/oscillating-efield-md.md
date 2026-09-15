@@ -7,7 +7,7 @@
 | Slug | `oscillating-efield-md` |
 | Regression | `regressions/md/oscillating-efield-md/` |
 | Public API | `cpu::md::FixOscillatingEfield` (`Bias`) on `cpu::md::MD` (default `post_force` +100) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E3 done** (wave 3, 2026-07-24); map slice E3 oscillating residual |
+| Roadmap | map slice E3 oscillating residual |
 | Oracle | **LAMMPS** (`oracle: lammps`; `oracle_version: 30 Mar 2026 - Development`, patch `30Mar2026-1074-g7f680de296`) |
 
 ## Summary
@@ -192,8 +192,8 @@ input
 [`tools/metalwalls_oracle/inputs/lammps/oscillating-efield-md/in.oscillating_efield`](../../../tools/metalwalls_oracle/inputs/lammps/oscillating-efield-md/in.oscillating_efield).
 
 **Oracle:** LAMMPS variable `fix efield` equal-style cosine
-(`docs.lammps.org/fix_efield.html`; `src/fix_efield.cpp`).  
-`oracle: lammps`,  
+(`docs.lammps.org/fix_efield.html`; `src/fix_efield.cpp`).
+`oracle: lammps`,
 `oracle_version: 30 Mar 2026 - Development (patch_30Mar2026-1074-g7f680de296)`;
 binary recorded in REFERENCE as `/home/jicli594/.local/x86_64/bin/lmp`.
 
@@ -240,7 +240,7 @@ same integer step index \(n\).
 
 Source: [`regressions/md/oscillating-efield-md/REFERENCE.md`](../../../regressions/md/oscillating-efield-md/REFERENCE.md)
 fair-wall section; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md)
+the case `REFERENCE.md`
 (`ratio` **2.12**).
 
 Comparable pure oscillating-efield workload (pair zero / inert, NVE, AC field
@@ -287,7 +287,6 @@ Sibling constant-field MD fair wall (when documented under
 - Offline pin: [`regressions/md/oscillating-efield-md/REFERENCE.md`](../../../regressions/md/oscillating-efield-md/REFERENCE.md)
 - Product gate: [`regressions/md/oscillating-efield-md/reg_oscillating-efield-md.cpp`](../../../regressions/md/oscillating-efield-md/reg_oscillating-efield-md.cpp)
 - Public header / impl: [`include/atomiverse/cpu/dynamics/fix_oscillating_efield.h`](../../../include/atomiverse/cpu/dynamics/fix_oscillating_efield.h), [`src/cpu/dynamics/fix_oscillating_efield.cpp`](../../../src/cpu/dynamics/fix_oscillating_efield.cpp)
-- Queue / handoff / design: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Capability map: [`.claude/notes/metalwalls-capability-map.md`](../../../.claude/notes/metalwalls-capability-map.md) (E3)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), [`tools/metalwalls_oracle/inputs/lammps/oscillating-efield-md/in.oscillating_efield`](../../../tools/metalwalls_oracle/inputs/lammps/oscillating-efield-md/in.oscillating_efield)
 - Related: constant field `external-efield-md` / `FixEfield`; finite-field single electrode [`finite-field-single-electrode`](finite-field-single-electrode.md)

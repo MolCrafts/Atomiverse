@@ -148,9 +148,7 @@ renormalization \(E_Q^{(4)}\).
 ## Performance
 
 Source: `REFERENCE.md` fair-bench block (2026-07-23); worker / queue ratio
-**0.031**. Rollup target: `docs/developer/pyscf-method-perf.md` (may lag
-individual REFERENCE tables; file may be absent until campaign rollup).
-
+**0.031**.
 ```bash
 export OMP_NUM_THREADS=1
 export LD_LIBRARY_PATH="${LIBRARY_PATH}:${LD_LIBRARY_PATH}"
@@ -187,10 +185,8 @@ includes RHF + MP4 + regression asserts. `perf_exempt=false`.
 ## References
 
 - Offline pin: `regressions/scf/mp4-h2-sto3g/REFERENCE.md`
-- Perf rollup: `docs/developer/pyscf-method-perf.md`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
 - Pin helper: `tools/pyscf_oracle/pin_scf.py` (`mp4`)
-- Queue row: `docs/developer/pyscf-method-queue.md` (`mp4-h2-sto3g`)
 - A. Szabo, N. S. Ostlund, *Modern Quantum Chemistry*, Dover (MPn / PT through
   fourth order)
 - R. J. Bartlett, *Ann. Rev. Phys. Chem.* **32**, 359 (1981) (many-body PT /

@@ -1,4 +1,4 @@
-/// @file cuda/md/barostat.cuh
+/// @file cuda/dynamics/barostat.cuh
 /// @brief Barostat -- Berendsen-style isotropic pressure coupling.
 ///
 /// Rescales box and positions: μ = (1 - β*dt/τ_p * (P_target - P))^(1/3).

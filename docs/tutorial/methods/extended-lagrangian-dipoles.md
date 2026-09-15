@@ -7,7 +7,7 @@
 | Slug | `extended-lagrangian-dipoles` |
 | Regression | `regressions/md/extended-lagrangian-dipoles/` |
 | Public API | `cpu::PimXlDipole` (`Potential`; on `cpu::md::MD` at `force`, or `cpu::Evaluate`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` wave 5; map §2 "XL dipoles" ~ → ✓ |
+| Roadmap | map §2 "XL dipoles" ~ → ✓ |
 | Oracle | **MetalWalls c8ad175d** for stationary PIM (`thole_a=0`); XL dynamics = scheme self-check (Albaugh 2015 / Niklasson 2009) |
 
 ## Summary
@@ -178,7 +178,7 @@ Related unit surface (not the e2e pin):
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md)
+the case `REFERENCE.md`
 (wave 5, 2026-07-27).
 
 | Twin | \(T_{\mathrm{MetalWalls}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -217,7 +217,6 @@ trajectory (Pin 2).
 - Offline pin: [`regressions/md/extended-lagrangian-dipoles/REFERENCE.md`](../../../regressions/md/extended-lagrangian-dipoles/REFERENCE.md)
 - Product gate: [`regressions/md/extended-lagrangian-dipoles/reg_extended-lagrangian-dipoles.cpp`](../../../regressions/md/extended-lagrangian-dipoles/reg_extended-lagrangian-dipoles.cpp)
 - Public header: [`include/atomiverse/cpu/potentials/pim_xl_dipole.h`](../../../include/atomiverse/cpu/potentials/pim_xl_dipole.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Sibling pages: [`pim-induced-dipole-bulk`](pim-induced-dipole-bulk.md) (owned SCC), [`maze-symplectic-charge-dynamics`](maze-symplectic-charge-dynamics.md) (the MaZe route, for electrode charges)
 - Literature: Albaugh, Demerdash & Head-Gordon, *J. Chem. Phys.* **143**,
   174104 (2015) — iEL/SCF; Niklasson et al., *J. Chem. Phys.* **130**,

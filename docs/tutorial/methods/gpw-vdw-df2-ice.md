@@ -7,7 +7,7 @@
 | Slug | `gpw-vdw-df2-ice` |
 | Regression | `regressions/gpw/gpw-vdw-df2-ice/` |
 | Public API | `cpu::gpw::GpwDft::vdw_df2` / `cpu::gpw::GPWEvaluator::vdw_df2`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, harness wave 4) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -161,7 +161,7 @@ bash -lc '
 ## Validation (CP2K / libvdwxc)
 
 Source:
-[`regressions/gpw/gpw-vdw-df2-ice/REFERENCE.md`](../../../regressions/gpw/gpw-vdw-df2-ice/REFERENCE.md).  
+[`regressions/gpw/gpw-vdw-df2-ice/REFERENCE.md`](../../../regressions/gpw/gpw-vdw-df2-ice/REFERENCE.md).
 Oracle: offline **libvdwxc 0.5.0** (kernel; same engine CP2K links for
 `TYPE LMKLL`) + dual-frozen full-GPW pin after unit gate. Twin notes:
 `tools/cp2k_oracle/inputs/gpw-vdw-df2-ice/water_dimer_vdw_df2.note`. External
@@ -238,9 +238,6 @@ when a host provides CP2K linked with libvdwxc if product policy requires
 ## References
 
 - Offline pin: `regressions/gpw/gpw-vdw-df2-ice/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle inputs: `tools/cp2k_oracle/inputs/gpw-vdw-df2-ice/`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion (vdW-DF2 ✓)
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`

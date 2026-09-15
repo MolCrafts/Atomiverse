@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/ewald.h
+/// @file cpu/planewave/internal/ewald.h
 /// @brief 3D Ewald summation for periodic point charges (energy + ionic forces).
 #pragma once
 

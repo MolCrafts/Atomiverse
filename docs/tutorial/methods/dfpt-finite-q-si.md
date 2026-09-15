@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-finite-q-si/` |
 | Public API | `cpu::pw::DfptPhonon` (member `q_frac`) + `cpu::pw::DfptPhononResult` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — finite-q product path ✓ |
-| Queue | `docs/developer/cp2k-method-queue.md` (wave 2, 2026-07-25); **`perf_exempt`** |
 | Dep | `dfpt-phonon-si` ✓ (Γ Sternheimer); `phonon-dispersion-si` ✓ (IFC Fourier consumer) |
 | Oracle | CP2K offline twin note (`tools/cp2k_oracle/inputs/dfpt-finite-q-si.note`); no live CP2K in ctest |
 
@@ -198,7 +197,7 @@ host this shift.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` (wave 2) + REFERENCE.md.
+Source: the case `REFERENCE.md` (wave 2) + REFERENCE.md.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -225,8 +224,6 @@ host this shift. Re-bench with OMP matched when the oracle binary lands.
 - Regression: `regressions/response/dfpt-finite-q-si/reg_dfpt-finite-q-si.cpp`
 - Oracle note: `tools/cp2k_oracle/inputs/dfpt-finite-q-si.note`
 - Oracle rules: `tools/cp2k_oracle/README.md` (never live in ctest)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Γ foothold tutorial: [dfpt-phonon-si](dfpt-phonon-si.md)
 - FD supercell machinery: [fd-phonon-supercell](fd-phonon-supercell.md)
 - Roadmap: [dft.md](../../roadmap/dft.md) §11

@@ -1,4 +1,4 @@
-/// @file driver.h
+/// @file core/driver_template.h
 /// @brief Driver -- user-facing simulation facade with fluent API.
 ///
 /// Backend-agnostic template: DeviceTag selects CPU or CUDA at compile time.

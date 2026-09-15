@@ -1,4 +1,4 @@
-/// @file cpu/observer/density.cpp
+/// @file cpu/observe/density.cpp
 /// @brief Electron density grid evaluation:
 ///        rho(r) = sum_{mu,nu} P_{mu,nu} phi_mu(r) phi_nu(r).
 ///

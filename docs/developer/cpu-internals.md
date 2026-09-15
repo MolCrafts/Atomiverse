@@ -61,7 +61,7 @@ That is a `Criterion`, and it is about ten lines.
 ## The Hierarchy in One Diagram
 
 ```text
-Driver<PhaseEnum, DeviceTag>            facade/driver.h — Plan/Backend ownership
+Driver<PhaseEnum, DeviceTag>            core/driver_template.h — Plan/Backend ownership
     └─ cpu::Driver<PhaseEnum>        cpu/driver/cpu_driver.h — THE loop node
          ├─ cpu::Evaluate               cpu/driver/evaluate.h
          ├─ cpu::md::MD                 cpu/dynamics/md.h
@@ -159,7 +159,7 @@ enum. Two orthogonal mechanisms remain:
    Presets validate with `dynamic_cast` to those types.
 2. **Role** — a `RoleFlag` bitset on `role()` (`FrameImmutable`,
    `Deferred`, `ExternalIO`). Unset `Deferred` ⇒ main-loop required.
-   See [`facade/component_role.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/component_role.h).
+   See [`core/role.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/role.h).
 
 Outputs are Frame keys (`kEnergy`, `kAtom_fx`, …), not capability bits.
 
@@ -193,10 +193,10 @@ The contract is:
    goes here: per-thread reduction buffers, cell-list arrays,
    shell-pair lists, FFT plans, anything sized to `frame.capacity()`
    or derived from `frame.box`.
-2. **`launch` runs once per iteration.** No allocation. Re-use only.
-   This is enforced by code review and by regression tests like
-   `tests/cpu/test_md_no_alloc.cpp`, which asserts that the inner MD
-   loop performs zero `operator new` calls after `build`.
+2. **`launch` runs once per iteration.** No allocation. Re-use only —
+   everything a component needs is allocated in `build`. This is a review
+   rule (CLAUDE.md), not an automated gate: there is no allocation-counting
+   test in the suite today.
 3. **`destroy` runs once, after the last iteration.** RAII handles most
    cleanup automatically (xtensor destructors, `std::vector` going out
    of scope), but if the component opens files, holds GPU handles in a
@@ -233,9 +233,9 @@ Two practical consequences:
 
 Two small structs carry the loop's verdict and the evidence for it.
 `ATV::IterationStatus`
-([`facade/iteration_status.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/iteration_status.h))
+([`core/iteration_status.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/iteration_status.h))
 is the verdict; `ATV::ConvergenceMetrics`
-([`facade/loop.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/loop.h))
+([`core/verdict.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/verdict.h))
 is the evidence.
 
 ```cpp
@@ -352,7 +352,7 @@ the cached `spin_contamination()`.
 The remaining helpers in
 [`include/atomiverse/cpu/scf/internal/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/internal/)
 (integrals, gradient kernels, MO transforms) stay private workspace:
-none register into any foreign Plan, and the **facade-public**
+none register into any foreign Plan, and the **core-public**
 production headers — `evaluate.h`, `single_point.h`, `md.h`, `lbfgs.h`
 — must not include from `cpu/scf/internal/` (tests may). Two surfaces
 elsewhere still use the old inner-solver shape as scheduled debt, not a
@@ -504,10 +504,9 @@ plug into them automatically.
 
 - `tests/cpu/test_minimize_driver_swap_optimizer.cpp` — the
   canonical hot-swap test for two `Optimizer`-role components.
-- `tests/cpu/test_md_no_alloc.cpp` — the regression test for "no
-  allocation in `launch()`".
-- `tests/cpu/scf/test_aimd_conservation.cpp` — energy / momentum /
-  bond-oscillation conservation under composed `MD + SCF`.
+- `regressions/scf/h2_rhf_sto3g_aimd/` — energy conservation under a
+  composed `MD` + Gaussian-SCF run, the end-to-end proof that a method and
+  an integrator compose.
 - [Extending CPU Subsystems](extending-cpu-subsystems.md) — the
   practical recipe for adding new components in each of MD, SCF, and
   the minimizer.

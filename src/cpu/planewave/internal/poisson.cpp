@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/poisson.cpp
+/// @file cpu/planewave/internal/poisson.cpp
 #include "atomiverse/cpu/planewave/internal/poisson.h"
 
 namespace ATV {

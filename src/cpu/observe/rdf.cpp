@@ -1,4 +1,4 @@
-/// @file cpu/observer/rdf.cpp
+/// @file cpu/observe/rdf.cpp
 /// @brief CPU async RDF observer — streams each snapshot into the molrs
 /// g(r) accumulator (bounded memory; all binning + normalization in molrs).
 

@@ -181,37 +181,11 @@ constant path): \(\mathbf{F}_i = q_i\mathbf{E}\), energy
 **Constant-velocity SMD** is `cpu::md::FixMove` (LAMMPS `fix move`;
 `reg_constant-velocity-smd`). **Displacement \(\mathbf{D}\)-field** is
 `cpu::md::FixDfield` (`reg_displacement-dfield-md`). Classical electrochemistry
-Components on `cpu::md::MD` (MetalWalls map E1–E10; waves 1–5 done — see
-`docs/developer/metalwalls-method-queue.md`; residual pending wave-6+:
-nanoporous carbon product, molten-salt+Al+MaZe scenario, TI capacitance):
-
-- **E1:** `ConstPotBO`, `FixFreeze`, charge observer, charging work, short
-  const-pot NVT; wave-4: `ConstPotMaZe` (CG+ASPC adiabatic \(Q\)),
-  `write_electrode_forces`, `global_electroneutrality`; wave-5: per-electrode
-  \(\eta_e\) (`add_electrode(type, psi, eta)`, `reg_per-electrode-eta`),
-  const-charge control (`add_electrode_charge`, LAMMPS `electrode/conq` twin,
-  `reg_const-charge-electrode`), post-solve ghost-charge refresh under MPI DD
-  (`reg_const-pot-charge-halo-mpi`), symplectic mass-zero MaZe
-  (`ConstPotMaZe.symplectic`, `reg_maze-symplectic-charge-dynamics`)
-- **E2:** `ConstPotCG` (large multi-site walls); Kolafa ASPC on `ConstPotBO`;
-  `PairGaussianCoul` NeighborList bulk path (`reg_gaussian-coul-neighborlist`)
-- **E3:** single-electrode finite-field (Dufils); AC `FixOscillatingEfield`;
-  `FixDfield` displacement field, incl. self-consistent constant-\(D\)
-  ensemble \(E = D - 4\pi k_e P\) (`polarization_feedback`,
-  `reg_constant-d-polarization-feedback`, wave-5)
-- **E5:** `DipoleElectrodeJoint` — coupled PIM \(\boldsymbol{\mu}\) ⊕ electrode
-  \(Q\) SCF (`reg_dipole-electrode-joint`)
-- **E6:** `PistonElectrode` constant \(P_z\) rigid wall (not Langevin piston)
-- **E7:** Thomas–Fermi finite metallicity (`ConstPotBO::l_tf`, `site_density`);
-  `VoronoiVolume` site-volume companion (`reg_voronoi-volume-tf`, wave-5)
-- **E9:** multi-topology virtual sites (TIP4P/TIP5P); const-pot + TIP4P EDL
-  foothold (`reg_const-pot-tip4p-edl`); wave-5: planar const-pot + IL EDL
-  production box (`reg_const-pot-il-edl-box`), PIM-NPT polarizable IL twin
-  (`reg_pim-npt-polarizable-il`). Still open: nanoporous carbon product
-- **E10:** `CapacitanceChargeFluctuation`; slab \(\Psi(z)\) `PotentialProfile`;
-  wave-4: `ChargeAutocorr` (\(C_{QQ}\)), `ElastanceObserver` (\(\mathrm{cond}(A)\))
-- **E8 walls:** `FixWallLJ1043` Steele 10-4-3 (force-fields roadmap note)
-
+Components on `cpu::md::MD` — constant-potential and constant-charge
+electrodes, MaZe mass-zero charge dynamics, Thomas–Fermi metallicity, the
+piston electrode, coupled dipole–electrode SCF, and the electrode observers —
+have their own chapter: **[Electrodes and Electrochemistry](electrodes.md)**.
+They are not repeated here.
 
 ## 7. Ab Initio Molecular Dynamics
 
@@ -232,18 +206,17 @@ AIMD works by binding a force-providing method/component to `md::Phase::force`
 
 - Concrete `RHF`/`UHF`/`RKS`/`UKS` (or nested SCF) with gradients → **HF and KS
   BOMD**, with an ASPC density predictor for warm starts.
-- `cpu::gpw::GPWEvaluator` with forces on → **periodic KS BOMD** (Γ-point,
-  closed-shell); NVE energy-drift pin `reg_gpw-bomd-water`. **Multi-k
-  BOMD** is product (`reg_gpw-bomd-kpoints`; previous-step \(P_k\) SCF
-  warm start mirroring CP2K EXTRAPOLATION USE_PREV_P; CP2K Quickstep
-  AIMD k-mesh pin, fair wall ratio 0.064; multi-k XL is product too;
-  multi-k UKS BOMD is product too — dual-spin previous-step
-  \(P_k^\sigma\) warm start, `reg_gpw-bomd-uks-kpoints`). Multi-k free-energy
-  **forces under smear** are product (`reg_gpw-metallic-forces` /
-  `reg_gpw-uks-metallic-forces`). Multi-k free-energy **stress under
-  smear** is incomplete on `wf/gpw-metallic-stress` (`[~]`); metallic
-  occupation-smear BOMD (free-energy / Mermin trajectory) remains queued
-  as `gpw-bomd-smearing`.
+- `cpu::gpw::GPWEvaluator` with forces on → **periodic KS BOMD**. Γ-point
+  closed-shell carries the NVE energy-drift pin (`reg_gpw-bomd-water`);
+  multi-k RKS and multi-k UKS both ship, each warm-starting the SCF from the
+  previous step's \(P_k\) (dual-spin \(P_k^\sigma\) for UKS), mirroring
+  CP2K's `EXTRAPOLATION USE_PREV_P` and pinned against CP2K Quickstep AIMD on
+  the same k-mesh (`reg_gpw-bomd-kpoints`, `reg_gpw-bomd-uks-kpoints`; fair
+  wall ratio 0.064). Metallic occupation-smear BOMD — the free-energy /
+  Mermin trajectory — ships as `reg_gpw-bomd-smearing`, and multi-k
+  free-energy forces *and* stress under smear are both product
+  (`reg_gpw-metallic-forces` / `reg_gpw-uks-metallic-forces`,
+  `reg_gpw-metallic-stress` / `reg_gpw-uks-metallic-stress`).
 - `cpu::pw::PWEvaluator` with `with_gradient(true)` → **plane-wave BOMD**
   (analytic local + Ewald + KB forces; default is energy-only); foothold
   `reg_pw-bomd-h`.

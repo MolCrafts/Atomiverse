@@ -1,4 +1,4 @@
-/// @file cpu/vib/hessian_diagonalizer.h
+/// @file cpu/vibration/hessian_diagonalizer.h
 /// @brief cpu::vib::HessianDiagonalizer — TR projection + diagonalization of the
 ///        mass-weighted Hessian into normal-mode frequencies.
 ///

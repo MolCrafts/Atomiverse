@@ -149,7 +149,7 @@ bash -lc '
 ## Validation (vs LAMMPS)
 
 Source:
-[`regressions/forcefield/buckingham-pair-lammps/REFERENCE.md`](../../../regressions/forcefield/buckingham-pair-lammps/REFERENCE.md).  
+[`regressions/forcefield/buckingham-pair-lammps/REFERENCE.md`](../../../regressions/forcefield/buckingham-pair-lammps/REFERENCE.md).
 Oracle: offline **LAMMPS** `pair_style buck` with `pair_modify shift yes`,
 **metal** units. External-engine pin — **not** a golden of Atomiverse’s own
 output; **never** launch LAMMPS from ctest. Twin input:
@@ -197,7 +197,7 @@ lmp -in tools/metalwalls_oracle/inputs/lammps/in.buckingham_dimer
 
 Source:
 [`REFERENCE.md`](../../../regressions/forcefield/buckingham-pair-lammps/REFERENCE.md)
-and [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md)
+and the case `REFERENCE.md`
 (wave 1, 2026-07-23).
 
 | Engine | Wall (single `run 0` / Evaluate) | Note |
@@ -236,9 +236,6 @@ lands, re-measure vs LAMMPS `pair_style buck` on the same lattice.
 - Offline pin: `regressions/forcefield/buckingham-pair-lammps/REFERENCE.md`
 - Twin input: `tools/metalwalls_oracle/inputs/lammps/in.buckingham_dimer`
 - Oracle notes: `tools/metalwalls_oracle/README.md`
-- Queue / handoff: `docs/developer/metalwalls-method-queue.md`,
-  `docs/developer/metalwalls-method-handoff.md`,
-  `docs/developer/metalwalls-method-loop.md`
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (E8)
 - Roadmap: `docs/roadmap/force-fields.md` (Buckingham CPU ✓)
 - Public header: `include/atomiverse/cpu/potentials/pair_buck.h`

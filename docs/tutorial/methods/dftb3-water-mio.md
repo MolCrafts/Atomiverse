@@ -303,8 +303,6 @@ DFTB+/mio-1-1 water identity or analytic forces.
 - Offline pin: [`regressions/semiempirical/dftb3-water-mio/REFERENCE.md`](../../../regressions/semiempirical/dftb3-water-mio/REFERENCE.md)
 - Twin note: [`tools/tb_oracle/inputs/dftbplus/dftb3_h2o_mio_note.md`](../../../tools/tb_oracle/inputs/dftbplus/dftb3_h2o_mio_note.md)
 - Family rules: [`tools/tb_oracle/README.md`](../../../tools/tb_oracle/README.md)
-- Queue / handoff: [`docs/developer/tb-method-queue.md`](../../developer/tb-method-queue.md),
-  [`docs/developer/tb-method-handoff.md`](../../developer/tb-method-handoff.md)
 - Roadmap: [`docs/roadmap/semiempirical.md`](../../roadmap/semiempirical.md)
 - H–H absolute bridge: [`dftb2-dftbplus-energy-pin`](dftb2-dftbplus-energy-pin.md)
 - M. Gaus, Q. Cui, M. Elstner, *J. Chem. Theory Comput.* **7**, 931 (2011),

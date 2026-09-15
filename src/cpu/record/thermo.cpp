@@ -1,4 +1,4 @@
-/// @file cpu/recorder/thermo.cpp
+/// @file cpu/record/thermo.cpp
 /// @brief CPU thermodynamic output: Thermo component + thermo_print helper.
 
 #include "atomiverse/cpu/record/thermo.h"

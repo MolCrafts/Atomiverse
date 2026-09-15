@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/periodic-ugw-si/` |
 | Public API | `cpu::gpw::GpwDft::g0w0(atoms)` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`); UKS via members `n_alpha` / `n_beta` |
 | Roadmap | `docs/roadmap/dft.md` §10 — Γ UGW@UKS product (`reg_periodic-ugw-si`) |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) wave 6 ✓ |
 
 ## Summary
 
@@ -233,7 +232,7 @@ mpirun -np 1 cp2k.psmp -i periodic-ugw-si.inp -o periodic-ugw-si.out
 ## Performance
 
 Source: `REFERENCE.md` + handoff
-[`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
+the case `REFERENCE.md`
 (wave 6, 2026-07-26). Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\)
 or **`perf_exempt`**.
 
@@ -270,9 +269,6 @@ well under the ≤ 60 s e2e cap. Never launch CP2K from ctest.
 - Closed-shell dual-gate twin: [`regressions/gpw/periodic-gw-si/REFERENCE.md`](../../../regressions/gpw/periodic-gw-si/REFERENCE.md)
 - CP2K twin input: [`tools/cp2k_oracle/inputs/periodic-ugw-si.inp`](../../../tools/cp2k_oracle/inputs/periodic-ugw-si.inp)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop / queue / handoff: [`cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  [`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md) (Periodic GW + UGW)
 - Public headers: `include/atomiverse/cpu/gpw/g0w0.h`, `gpw_solver.h`
 - Impl: `src/cpu/gpw/g0w0.cpp`

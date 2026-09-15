@@ -150,8 +150,8 @@ bash tools/setup_pyscf_env.sh
 Source: fair wall in
 [`regressions/scf/casci-h2-sto3g/REFERENCE.md`](../../../regressions/scf/casci-h2-sto3g/REFERENCE.md)
 (2026-07-23; login node; `OMP_NUM_THREADS=1`; median of ≥5). Campaign
-handoff ratio **0.076** (`docs/developer/pyscf-method-handoff.md`). No
-standing `pyscf-method-perf.md` table in-tree at draft time.
+handoff ratio **0.076** (the case `REFERENCE.md`). No
+standing comparison table in-tree at draft time.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -189,8 +189,6 @@ pass required on this case.
 - Offline pin: `regressions/scf/casci-h2-sto3g/REFERENCE.md`
 - Regression consumer: `regressions/scf/casci-h2-sto3g/reg_casci-h2-sto3g.cpp`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/post-hf.md` (§4.1 Active-space methods)
 - Public API: `include/atomiverse/cpu/scf/casci.h`
 - B. O. Roos, *The Complete Active Space Self-Consistent Field Method and

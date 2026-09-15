@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_forces.h
+/// @file cpu/planewave/internal/pw_forces.h
 /// @brief Analytic ionic forces for plane-wave DFT (local HF + Ewald + KB later).
 ///
 /// After one SCF, F_I = F_I^loc + F_I^nl + F_I^Ewald. Plane waves are
@@ -23,7 +23,7 @@ namespace internal {
 /// last density (with a warning).
 ///
 /// @param frame Geometry [Å]; not mutated.
-/// @param cfg   Plane-wave configuration.
+/// @param method Plane-wave method carrying cutoff, k-mesh and SCF settings.
 /// @param energy_ry_out Optional: total (or Mermin free) energy [Ry] of the
 ///        SCF run here, so a caller needing both quantities pays for one SCF.
 /// @return Forces [eV/Å], one xyz triple per atom.

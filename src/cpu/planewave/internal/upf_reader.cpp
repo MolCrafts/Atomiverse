@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/upf_reader.cpp
+/// @file cpu/planewave/internal/upf_reader.cpp
 /// @brief UPF v1 XML-like format parser.
 
 #include "atomiverse/cpu/planewave/internal/upf_reader.h"

@@ -7,7 +7,7 @@
 | Slug | `gpw-mbd-kpoint-stress` |
 | Regression | `regressions/gpw/gpw-mbd-kpoint-stress/` |
 | Public API | `cpu::gpw::GPWEvaluator` members `k_mesh`, `mbd`, `mbd_k_mesh`, `compute_stress`, `stress_use_fd`; Frame `kStress` [eV/Å³]; `last_stress_ha_bohr3()` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion + §10 Periodic KS; `docs/developer/cp2k-method-queue.md` (done) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion + §10 Periodic KS |
 
 ## Summary
 
@@ -151,7 +151,7 @@ bash -lc '
 ## Validation (pymbd / CP2K-campaign offline pins)
 
 Source:
-[`regressions/gpw/gpw-mbd-kpoint-stress/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-kpoint-stress/REFERENCE.md).  
+[`regressions/gpw/gpw-mbd-kpoint-stress/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-kpoint-stress/REFERENCE.md).
 Oracle: offline **pure-Python pymbd** `mbd_energy_species` (libmbd git
 `88069c6`) for the dispersion energies; **multi-SCF strain-FD**
 (`gpw_stress_fd`, full re-SCF at each strained cell on the same 1×1×2 mesh)
@@ -244,9 +244,6 @@ defined.
 
 - Offline pin: `regressions/gpw/gpw-mbd-kpoint-stress/REFERENCE.md`
 - Pin generator: `tools/cp2k_oracle/inputs/gpw-mbd-kpoint-stress/pin_mbd_strain.py`
-- Queue / loop: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion, §10 Periodic KS
 - Sibling stress pins: `regressions/gpw/gpw-mbd-stress/`,
   `regressions/gpw/gpw-kpoint-stress/`

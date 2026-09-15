@@ -1,4 +1,4 @@
-/// @file cpu/observer/msd.cpp
+/// @file cpu/observe/msd.cpp
 /// @brief CPU async MSD observer — streams each snapshot into the molrs
 /// MSD accumulator (bounded memory; all analysis math in molrs).
 

@@ -395,8 +395,9 @@ assert the molrs FFI round-trip and the observer plumbing:
   [`tests/cpu/observe/test_msd.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/observe/test_msd.cpp)
 - VACF (FFI round-trip, buffer accumulation):
   [`tests/cpu/observe/test_vacf.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/observe/test_vacf.cpp)
-- RDF (histogram accumulation, first-peak position, output format, frequency):
-  [`tests/cpu/observe/test_rdf_observer.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/observe/test_rdf_observer.cpp)
+- RDF: the g(r) histogram math lives in molrs, not in C++, so the check that
+  matters is the accumulator-parity test
+  [`tests/cuda/observe/test_rdf_molrs.cu`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cuda/observe/test_rdf_molrs.cu)
 
 Energy conservation and ensemble-level observable averages are physical
 benchmark cases under [`benchmarks/md`](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/md) (the LJ and

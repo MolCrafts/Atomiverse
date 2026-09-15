@@ -57,5 +57,3 @@ Geometry O(0,0,0), O(0,0,1.2075) Å; STO-3G cart; `conv_tol=1e-12` on the pin.
 | Twin | \(T_{\mathrm{PySCF}}\) | \(T_{\mathrm{ATV}}\) | \(r\) | ≤10× |
 | ---- | ---------------------: | -------------------: | ----: | ---- |
 | `ump2` | 2.51 s | 0.57 s | **0.23** | ✓ |
-
-Full table: [pyscf-method-perf.md](../../developer/pyscf-method-perf.md).

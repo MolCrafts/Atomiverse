@@ -1,4 +1,4 @@
-/// @file cpu/observer/multipole.h
+/// @file cpu/observe/multipole.h
 /// @brief MultipoleObserver — molecular dipole and traceless quadrupole from
 ///        a converged mean-field wavefunction.
 ///

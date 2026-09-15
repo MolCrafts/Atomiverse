@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-dftu-kpoint-stress/` |
 | Public API | `cpu::gpw::GpwDft` members `k_mesh` / `plus_u` / `n_alpha`/`n_beta`; free `gpw_stress` (product) + `gpw_stress_fd` (oracle); optional `GPWEvaluator::{k_mesh,plus_u,compute_stress}` |
 | Roadmap | `docs/roadmap/dft.md` — multi-k DFT+U analytic stress (`reg_gpw-dftu-kpoint-stress`) ✓ |
-| Queue | CP2K capability loop harness wave 6 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -199,7 +198,7 @@ bash -lc '
 
 ## Validation (vs CP2K + internal dual-gate)
 
-Source: [`regressions/gpw/gpw-dftu-kpoint-stress/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-kpoint-stress/REFERENCE.md).  
+Source: [`regressions/gpw/gpw-dftu-kpoint-stress/REFERENCE.md`](../../../regressions/gpw/gpw-dftu-kpoint-stress/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest. Pin
 date: **2026-07-26**. Closed-spec gates A1–A7.
 
@@ -277,7 +276,7 @@ OMP_NUM_THREADS=8 cp2k.psmp -i h2_uks_dftu_kpoint_stress.inp -o h2.out
 
 Source: fair-wall / exemption table in
 `regressions/gpw/gpw-dftu-kpoint-stress/REFERENCE.md` (2026-07-26). Handoff:
-`docs/developer/cp2k-method-handoff.md` — ratio **`perf_exempt`**.
+the case `REFERENCE.md` — ratio **`perf_exempt`**.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ---------------------------------------: | ---- | ------ |
@@ -314,9 +313,6 @@ parity is established.
 - Deps: `gpw-dftu-kpoints` ✓, `gpw-dftu-stress` ✓, `gpw-kpoint-uks-stress` ✓
 - Γ DFT+U energy handbook: [gpw-dftu-nio](gpw-dftu-nio.md)
 - Γ analytic stress: [gpw-analytic-stress](gpw-analytic-stress.md)
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Loop design: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - S. L. Dudarev et al., *Phys. Rev. B* **57**, 1505 (1998) — simplified rotationally invariant \(U\)

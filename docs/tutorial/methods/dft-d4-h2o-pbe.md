@@ -134,7 +134,7 @@ bash -lc '
 ## Validation (vs PySCF)
 
 Source:
-[`regressions/scf/dft-d4-h2o-pbe/REFERENCE.md`](../../../regressions/scf/dft-d4-h2o-pbe/REFERENCE.md).  
+[`regressions/scf/dft-d4-h2o-pbe/REFERENCE.md`](../../../regressions/scf/dft-d4-h2o-pbe/REFERENCE.md).
 Oracle: offline PySCF **2.14.0** + `pyscf-dispersion` / libdftd4
 (`DFTD4Dispersion(mol, xc='pbe', version='d4', atm=True)`). External-engine
 pin — not a golden of Atomiverse’s own output; **never** live-import PySCF in
@@ -193,8 +193,6 @@ eval): PASS at \(1\times 10^{-6}\) Ha vs offline pin.
 ## References
 
 - Offline pin: `regressions/scf/dft-d4-h2o-pbe/REFERENCE.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/dft.md` (dispersion §)
 - E. Caldeweyher, S. Ehlert, A. Hansen, H. Neugebauer, S. Spicher,
   C. Bannwarth, S. Grimme, *J. Chem. Phys.* **150**, 154122 (2019)

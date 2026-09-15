@@ -8,7 +8,6 @@
 | Regression | `regressions/response/phonon-dispersion-si/` |
 | Public API | `cpu::vib::PhononDispersion` (members) + `cpu::vib::PhononDispersionResult` + IFCs from `cpu::vib::Phonon` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 — phonon dispersions ω(q) ✓ (finite-q DFPT Sternheimer ○) |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (2026-07-25); **`perf_exempt`** |
 | Dep | `fd-phonon-supercell` ✓ (supercell FD Φ); `dfpt-phonon-si` ✓ is orthogonal (Γ DFPT, not this Fourier path) |
 
 ## Summary
@@ -206,7 +205,7 @@ bash -lc '
 ## Validation (vs CP2K / literature)
 
 Source:
-[`regressions/response/phonon-dispersion-si/REFERENCE.md`](../../../regressions/response/phonon-dispersion-si/REFERENCE.md).  
+[`regressions/response/phonon-dispersion-si/REFERENCE.md`](../../../regressions/response/phonon-dispersion-si/REFERENCE.md).
 Oracle priority: offline **CP2K `VIBRATIONAL_ANALYSIS`** (+ band structure) when
 a binary is available; **this pin host had no CP2K module** — surrogate is the
 acoustic sum rule plus the published Stillinger–Weber optical / zone-boundary
@@ -307,8 +306,6 @@ REFERENCE.md, require \(r \le 10\).
 - Regression: [`regressions/response/phonon-dispersion-si/reg_phonon-dispersion-si.cpp`](../../../regressions/response/phonon-dispersion-si/reg_phonon-dispersion-si.cpp)
 - Upstream Γ FD twin: [fd-phonon-supercell](fd-phonon-supercell.md),
   [dfpt-phonon-si](dfpt-phonon-si.md) (orthogonal PW Γ DFPT)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Roadmap: [dft.md](../../roadmap/dft.md) §11 phonons / DFPT
 - Oracle notes: `tools/cp2k_oracle/README.md`
 - Narrative style refs: [Chapter 8 — Plane-Wave DFT](../ch08-plane-wave.md),

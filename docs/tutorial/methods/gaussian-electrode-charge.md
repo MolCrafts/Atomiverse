@@ -7,7 +7,7 @@
 | Slug | `gaussian-electrode-charge` |
 | Regression | `regressions/md/gaussian-electrode-charge/` |
 | Public API | `cpu::PairGaussianCoul` (Potential on `cpu::Evaluate` / MD force slot); pure math `cpu::GaussianChargeKernel` |
-| Map / queue | MetalWalls capability map **E2**; `docs/developer/metalwalls-method-queue.md` → **done** (wave 1, 2026-07-23) |
+| Map / queue | MetalWalls capability map **E2**; → **done** (wave 1, 2026-07-23) |
 
 ## Summary
 
@@ -224,7 +224,7 @@ from the published formulae with `units::coulomb`.
 
 Source:
 [`REFERENCE.md`](../../../regressions/md/gaussian-electrode-charge/REFERENCE.md)
-and queue row in `docs/developer/metalwalls-method-queue.md` (2026-07-23).
+and queue row in (2026-07-23).
 
 | Item | Value |
 | ---- | ----- |
@@ -238,7 +238,6 @@ and queue row in `docs/developer/metalwalls-method-queue.md` (2026-07-23).
 | ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
 | Fixed-\(Q\) Gaussian Coulomb (5 atoms) | — | — | **exempt** | n/a | No MW / ELECTRODE binary for fair wall; remeasure when available |
 
-Campaign queue records the same: ratio **perf_exempt**. When a MetalWalls or
 LAMMPS ELECTRODE twin exists, fair wall should use that binary on the same
 host/core count; do **not** invent a ratio.
 
@@ -267,9 +266,6 @@ host/core count; do **not** invent a ratio.
 - Oracle notes:
   `tools/metalwalls_oracle/inputs/metalwalls/gaussian-electrode-charge/README.md`
 - Oracle tree: `tools/metalwalls_oracle/README.md`
-- Queue / loop / handoff: `docs/developer/metalwalls-method-queue.md`,
-  `docs/developer/metalwalls-method-loop.md`,
-  `docs/developer/metalwalls-method-handoff.md`
 - Public API: `include/atomiverse/cpu/potentials/gaussian_charge.h`,
   `include/atomiverse/cpu/potentials/pair_gaussian_coul.h`
 - S. K. Reed, O. J. Lanning, P. A. Madden, *J. Chem. Phys.* **126**, 084704

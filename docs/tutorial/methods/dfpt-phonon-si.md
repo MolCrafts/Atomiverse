@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-phonon-si/` |
 | Public API | `cpu::pw::DfptPhonon` (members) + `cpu::pw::DfptPhononResult` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — Γ-point foothold ✓ (dispersions ○) |
-| Queue | `docs/developer/cp2k-method-queue.md` (wave 3, 2026-07-25); **`perf_exempt`** |
 | Dep | `fd-phonon-supercell` ✓ (FD twin machinery); enables `phonon-dispersion-si` |
 
 ## Summary

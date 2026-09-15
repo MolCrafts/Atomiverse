@@ -7,7 +7,7 @@
 | Slug | `pw-uks-fe-smearing` |
 | Regression | `regressions/pw/pw-uks-fe-smearing/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`, `smearing`, `degauss` [Ry], `extra_bands`, `k_mesh`) → `PWResult::{energy, energy_ha, magnetization, e_fermi, n_elec_occ, e_entropy}` |
-| Track | CP2K capability (`cp2k-method-loop` harness 2026-07-25) |
+| Track | CP2K capability (harness 2026-07-25) |
 | Roadmap | [dft.md](../../roadmap/dft.md) § spin + metallic smearing (CPU PW ✓); queue `pw-uks-fe-smearing` (done) |
 
 ## Summary
@@ -307,8 +307,6 @@ single-rank CPU.
 - Offline pin: [`regressions/pw/pw-uks-fe-smearing/REFERENCE.md`](../../../regressions/pw/pw-uks-fe-smearing/REFERENCE.md)
 - Regression consumer: `regressions/pw/pw-uks-fe-smearing/reg_pw-uks-fe-smearing.cpp`
 - Oracle note: `tools/cp2k_oracle/inputs/pw-uks-fe-smearing.note`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md` (ratio **perf_exempt**)
 - Roadmap: `docs/roadmap/dft.md` (bulk Fe UKS+smear ✓ CPU)
 - Public header: `include/atomiverse/cpu/planewave/pw_solver.h`
 - Internal occupations: `include|src/.../planewave/internal/smearing.*`

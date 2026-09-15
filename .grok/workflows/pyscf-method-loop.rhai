@@ -26,9 +26,9 @@ let meta = #{
 // ── CONFIG ──────────────────────────────────────────────────────────────
 let loop_id = "pyscf";
 let oracle_name = "PySCF";
-let queue_path = "docs/developer/pyscf-method-queue.md";
-let handoff_path = "docs/developer/pyscf-method-handoff.md";
-let loop_doc = "docs/developer/pyscf-method-loop.md";
+let queue_path = ".claude/campaigns/pyscf-method-queue.md";
+let handoff_path = ".claude/campaigns/pyscf-method-handoff.md";
+let loop_doc = ".claude/campaigns/pyscf-method-loop.md";
 let map_path = "docs/roadmap";
 let oracle_readme = "tools/pyscf_oracle/README.md";
 let tutorial_root = "docs/tutorial/methods/";

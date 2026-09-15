@@ -1,19 +1,19 @@
 /**
-@mainpage Atomiverse -- Unified Molecular Simulation Platform
+@mainpage Atomiverse -- an engine for multiscale, multiphysics atomistic simulation
 
 @tableofcontents
 
 @section intro Overview
 
 Atomiverse is a molecular simulation codebase written in modern C++ and CUDA.
-It uses one staged execution model to express three families of workflows:
-molecular dynamics, minimization, and self-consistent electronic-structure
-calculations.
+It uses one staged execution model to express every workflow it supports:
+molecular dynamics, Monte Carlo, geometry optimization, vibrational analysis,
+reaction paths, and self-consistent electronic structure.
 
 The project is built around a clear separation of responsibilities:
 
 - the **user-facing data model** lives in `cpu::Frame`
-- the **facade layer** compiles a staged execution plan
+- the **core contract layer** compiles a staged execution plan and is CUDA-free
 - the **CPU and CUDA backends** execute that plan with different storage models
 - the **API reference** documents the exact classes, functions, and headers
 
@@ -28,7 +28,7 @@ different kind of question.
 - [User Guide](user-guide/index.md) -- how to build the project, choose examples,
   and understand the main workflows without assuming prior chemistry knowledge
 - [Developer Manual](developer/index.md) -- how the repository is organized
-  internally, why the facade/backend split exists, and how to extend the code
+  internally, why the core/backend split exists, and how to extend the code
 - [API Reference](api/index.md) -- where to find the exact classes, functions,
   headers, and generated reference pages
 

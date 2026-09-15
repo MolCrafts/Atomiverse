@@ -26,11 +26,11 @@ let meta = #{
 // ── CONFIG (customize this block; machinery below stays template-shaped) ─
 let loop_id = "arch";
 let oracle_name = "harness+cpu-regs";  // architecture gates: unit + regressions, not new methods
-let queue_path = "docs/developer/arch-campaign-queue.md";
-let handoff_path = "docs/developer/arch-campaign-handoff.md";
-let loop_doc = "docs/developer/arch-campaign-loop.md";
+let queue_path = ".claude/campaigns/arch-campaign-queue.md";
+let handoff_path = ".claude/campaigns/arch-campaign-handoff.md";
+let loop_doc = ".claude/campaigns/arch-campaign-loop.md";
 let map_path = "docs/roadmap/dft.md";
-let oracle_readme = "docs/developer/e2e-in-tests-campaign.md";
+let oracle_readme = ".claude/campaigns/e2e-in-tests-campaign.md";
 let tutorial_root = "docs/tutorial/methods/";
 let specs_root = ".claude/specs/";
 let specs_index = ".claude/specs/INDEX.md";

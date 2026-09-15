@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_workspace.h
+/// @file cpu/planewave/internal/pw_workspace.h
 /// @brief PWWorkspace — facade-private scratch for the plane-wave SCF.
 ///
 /// Owned by `cpu::pw::PW` (the inner solver), never by `cpu::Frame`

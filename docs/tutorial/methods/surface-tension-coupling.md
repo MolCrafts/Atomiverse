@@ -7,7 +7,7 @@
 | Slug | `surface-tension-coupling` |
 | Regression | `regressions/md/surface-tension-coupling/` |
 | Public API | `cpu::md::SurfaceTensionNPT` (Integrator on `cpu::md::MD`; thin NPγT front over `NoseHooverNPT` couple-\(xy\)) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **done** (wave 3, 2026-07-24); `docs/roadmap/molecular-dynamics.md` constant-surface-tension ✓ |
+| Roadmap | `docs/roadmap/molecular-dynamics.md` constant-surface-tension ✓ |
 | Oracle | **LAMMPS** `fix npt … couple xy` (offline pin; no live `lmp` in ctest) |
 
 ## Summary
@@ -213,7 +213,7 @@ MetalWalls is reserved for MW-only physics.
 
 ATV need not match LAMMPS edge lengths at step 200 (different RNG path and
 dynamic \(P_\perp(L_z)\)). Unit surface (not the e2e statistical pin) —
-`tests/cpu/dynamics/test_surface_tension_npt.cpp`: Integrator API (no Config),
+Integrator API (no Config),
 couple-\(xy\) keeps \(L_x=L_y\), `NoseHooverNPT::set_surface_tension` enables
 couple \(xy\).
 
@@ -231,10 +231,7 @@ lmp -in tools/metalwalls_oracle/inputs/lammps/in.surface_tension_coupling
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md);
-queue
-[`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md).
-
+the case `REFERENCE.md`;
 Comparable workload: **108 atoms, 5000 MD steps**, OMP=1, same LJ + couple-\(xy\)
 NPT settings as the pin (fixed Plat on LAMMPS; `SurfaceTensionNPT` on ATV).
 Host: same login node, 2026-07-24.
@@ -276,8 +273,8 @@ REFERENCE / handoff.
 - Product gate: [`regressions/md/surface-tension-coupling/reg_surface-tension-coupling.cpp`](../../../regressions/md/surface-tension-coupling/reg_surface-tension-coupling.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/surface_tension_npt.h`](../../../include/atomiverse/cpu/dynamics/surface_tension_npt.h)
 - Base integrator: [`include/atomiverse/cpu/dynamics/nose_hoover_npt.h`](../../../include/atomiverse/cpu/dynamics/nose_hoover_npt.h)
-- Unit tests: [`tests/cpu/dynamics/test_surface_tension_npt.cpp`](../../../tests/cpu/dynamics/test_surface_tension_npt.cpp)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
+- Unit tests: none yet — `SurfaceTensionNPT` is covered only by the
+  end-to-end regression above.
 - Roadmap: [`docs/roadmap/molecular-dynamics.md`](../../roadmap/molecular-dynamics.md) (constant surface-tension coupling)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), twin [`tools/metalwalls_oracle/inputs/lammps/in.surface_tension_coupling`](../../../tools/metalwalls_oracle/inputs/lammps/in.surface_tension_coupling)
 - Literature: Martyna, Tobias, Klein, *J. Chem. Phys.* **101**, 4177 (1994); LAMMPS `fix nh` / `fix npt` documentation (`couple xy`) — <https://docs.lammps.org/fix_nh.html>

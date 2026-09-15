@@ -7,7 +7,7 @@
 | Slug | `gpw-vdw-df-ice` |
 | Regression | `regressions/gpw/gpw-vdw-df-ice/` |
 | Public API | `cpu::gpw::GpwDft::vdw_df` / `cpu::gpw::GPWEvaluator::vdw_df`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-25) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -186,7 +186,7 @@ ctest --test-dir build -R '^test_cpu_gpw_vdw_df$' --output-on-failure
 ## Validation (CP2K / libvdwxc)
 
 Source:
-[`regressions/gpw/gpw-vdw-df-ice/REFERENCE.md`](../../../regressions/gpw/gpw-vdw-df-ice/REFERENCE.md).  
+[`regressions/gpw/gpw-vdw-df-ice/REFERENCE.md`](../../../regressions/gpw/gpw-vdw-df-ice/REFERENCE.md).
 Oracle: offline **libvdwxc 0.5.0** `VDWXC_DF1` for the RPS kernel (same family
 as CP2K `TYPE DRSLL`); full-cell product pin is dual-frozen after that unit
 gate. External engine pin — not a golden of Atomiverse’s own output; **never**
@@ -267,9 +267,6 @@ libvdwxc-linked CP2K.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-vdw-df-ice/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle notes: `tools/cp2k_oracle/inputs/gpw-vdw-df-ice/`,
   `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

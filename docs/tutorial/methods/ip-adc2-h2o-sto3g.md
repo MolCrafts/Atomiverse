@@ -140,7 +140,7 @@ of the eV comparison use `units::kHartreeInEv`.
 Source: fair-bench block in
 `regressions/scf/ip-adc2-h2o-sto3g/REFERENCE.md` (2026-07-23, login node,
 `OMP_NUM_THREADS=8`, Release). Handoff records ratio **0.191**.
-`docs/developer/pyscf-method-perf.md` is not present in-tree; numbers below are
+no offline comparison table is present in-tree; the numbers below are
 from REFERENCE / handoff, not re-benched here.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{PySCF}}\) | ≤10× | Caveat |
@@ -185,8 +185,6 @@ invalid for the 10× gate.
   `include/atomiverse/cpu/scf/rhf.h` (`RHF::ip_adc2`)
 - Implementation: `src/cpu/scf/adc.cpp`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md` (ratio 0.191)
 - J. Schirmer, *Phys. Rev. A* **26**, 2395 (1982).
   DOI [10.1103/PhysRevA.26.2395](https://doi.org/10.1103/PhysRevA.26.2395)
 - J. Schirmer, L. S. Cederbaum, O. Walter, *Phys. Rev. A* **28**, 1237 (1983).

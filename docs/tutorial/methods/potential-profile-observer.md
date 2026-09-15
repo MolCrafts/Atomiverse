@@ -7,7 +7,7 @@
 | Slug | `potential-profile-observer` |
 | Regression | `regressions/md/potential-profile-observer/` |
 | Public API | `cpu::PotentialProfile` (`Observer` on `cpu::md::MD`, default `end_of_step` @ +45) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E10 done** (wave 3, 2026-07-24); map slice E10 ecosystem |
+| Roadmap | map slice E10 ecosystem |
 | Oracle | **literature** (planar Poisson / parallel-plate; Jackson continuum; MetalWalls potential-profile lineage; no LAMMPS or MetalWalls binary twin) |
 
 ## Summary
@@ -281,7 +281,7 @@ PY
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{oracle}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | --------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -323,7 +323,6 @@ same binning and metal units; neither shipped as a binary pin for this slug.
 - Offline pin: [`regressions/md/potential-profile-observer/REFERENCE.md`](../../../regressions/md/potential-profile-observer/REFERENCE.md)
 - Product gate: [`regressions/md/potential-profile-observer/reg_potential-profile-observer.cpp`](../../../regressions/md/potential-profile-observer/reg_potential-profile-observer.cpp)
 - Public header: [`include/atomiverse/cpu/observe/potential_profile.h`](../../../include/atomiverse/cpu/observe/potential_profile.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), [`tools/metalwalls_oracle/pin_notes_potential-profile-observer.md`](../../../tools/metalwalls_oracle/pin_notes_potential-profile-observer.md)
 - Capability map: [`.claude/notes/metalwalls-capability-map.md`](../../../.claude/notes/metalwalls-capability-map.md) (E10)
 - Literature: Jackson, *Classical Electrodynamics* (planar Poisson); Marin-Laflèche et al., *J. Open Source Softw.* **5**(53), 2373 (2020) (MetalWalls); Scalfi et al., *Phys. Chem. Chem. Phys.* **22**, 10480 (2020)

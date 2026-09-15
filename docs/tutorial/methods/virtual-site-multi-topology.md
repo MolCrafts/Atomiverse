@@ -7,7 +7,7 @@
 | Slug | `virtual-site-multi-topology` |
 | Regression | `regressions/md/virtual-site-multi-topology/` |
 | Public API | `cpu::md::VirtualSites` (+ nested `Place` / `Redistribute` Components); ordinary `PairLJCut` + `PairCoulCut` |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E9 done** (wave 3, 2026-07-24); map slice E9 molecular water |
+| Roadmap | map slice E9 molecular water |
 | Oracle | **LAMMPS** `pair_style lj/cut/tip4p/cut` (metal units; offline pin). TIP5P dual-gated by geometry only |
 
 ## Summary
@@ -268,7 +268,7 @@ Parent force pin (LAMMPS metal; atoms 1–6 = O1 H1 H2 O2 H3 H4):
 ## Performance
 
 Source: `regressions/md/virtual-site-multi-topology/REFERENCE.md`,
-`docs/developer/metalwalls-method-handoff.md` (handoff rounds ratio to **0.084**).
+the case `REFERENCE.md` (handoff rounds ratio to **0.084**).
 
 Fair wall: ATV `reg_virtual-site-multi-topology` vs LAMMPS
 `in.tip4p_dimer_metal` / `run 0`, serial `OMP_NUM_THREADS=1`, 50 process
@@ -311,8 +311,6 @@ satisfied (\(r \approx 0.084\)).
 - Regression: `regressions/md/virtual-site-multi-topology/reg_virtual-site-multi-topology.cpp`
 - LAMMPS twin: `tools/metalwalls_oracle/inputs/lammps/virtual-site-multi-topology/`
 - Related foothold: `regressions/md/four-site-tip4p-foothold/` (same physics pin, earlier ATV path)
-- Queue / handoff: `docs/developer/metalwalls-method-queue.md` (E9),
-  `docs/developer/metalwalls-method-handoff.md` (wave 3, ratio **0.084**)
 - Roadmap: `docs/roadmap/molecular-dynamics.md` (virtual sites / TIP4P–TIP5P)
 - Public API: `include/atomiverse/cpu/dynamics/virtual_sites.h`
 - Capability map: `.claude/notes/metalwalls-capability-map.md` → **E9**

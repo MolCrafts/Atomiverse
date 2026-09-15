@@ -1,4 +1,4 @@
-/// @file cpu/observer/trajectory_metrics.h
+/// @file cpu/observe/trajectory_metrics.h
 /// @brief Trajectory-analysis compute objects — thin C++ wrappers over the molrs
 /// FFI compute types (molrs::{MsdCompute, DiffusionCompute, VacfCompute,
 /// RdfCompute}) and their streaming accumulator counterparts

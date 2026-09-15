@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file nlist_impl.cuh
+/// @file cuda/neighbor/nlist_impl.cuh
 /// @brief Internal implementation class bridging public API and CUDA kernels.
 
 #include "nlist_data.cuh"

@@ -8,7 +8,6 @@
 | Regression | `regressions/semiempirical/dftb2-periodic-gamma/` |
 | Public API | `cpu::semiempirical::DFTB2` (members) + `cpu::Evaluate` |
 | Roadmap | [`semiempirical.md`](../../roadmap/semiempirical.md) — Periodic DFTB (Γ-point) ✓ |
-| Queue | TB method loop (`docs/developer/tb-method-queue.md`) `dftb2-periodic-gamma` (done) |
 | Family oracle | **DFTB+** (absolute pin deferred to bit-identical SK; see Validation) |
 
 ## Summary
@@ -248,8 +247,6 @@ slug. A related molecular energy pin
 - Regression: [`reg_dftb2-periodic-gamma.cpp`](../../../regressions/semiempirical/dftb2-periodic-gamma/reg_dftb2-periodic-gamma.cpp)
 - Public API: [`include/atomiverse/cpu/semiempirical/dftb2.h`](../../../include/atomiverse/cpu/semiempirical/dftb2.h)
 - Roadmap: [`docs/roadmap/semiempirical.md`](../../roadmap/semiempirical.md)
-- Queue / handoff: [`docs/developer/tb-method-queue.md`](../../developer/tb-method-queue.md),
-  [`docs/developer/tb-method-handoff.md`](../../developer/tb-method-handoff.md)
 - Oracle tooling: [`tools/tb_oracle/README.md`](../../../tools/tb_oracle/README.md)
 - Literature: Elstner *et al.*, *Phys. Rev. B* **58**, 7260 (1998)
 - Related: H₂ DFTB+ energy pin `dftb2-dftbplus-energy-pin`; analytic

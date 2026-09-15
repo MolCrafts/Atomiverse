@@ -1,4 +1,4 @@
-/// @file cpu/async/frame_snapshot.h
+/// @file cpu/asynchronous/frame_snapshot.h
 /// @brief POD snapshot of a `cpu::Frame` for off-hot-path analysis consumers.
 ///
 /// The snapshot is a contiguous host-allocated copy of a subset of frame

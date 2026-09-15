@@ -12,17 +12,43 @@ from LAMMPS (license-compatible by construction); ported files carry a
 provenance header naming the originating LAMMPS source file and retain the
 Sandia copyright notice.
 
-Methods include:
+## What it computes
 
-- **Classical molecular dynamics** — Lennard-Jones and bonded force fields, NVE/NVT/NPT.
-- **Geometry optimization** — L-BFGS / conjugate-gradient on ab-initio forces.
-- **Gaussian-basis SCF** — restricted/unrestricted Hartree-Fock (RHF/UHF) and
-  Kohn-Sham DFT (UKS) for molecules.
-- **Plane-wave DFT** — Kohn-Sham LDA for periodic crystals.
-- **Gaussian-and-plane-waves (GPW) DFT** — Gaussian-basis Kohn-Sham with
-  grid-based Hartree/XC and GTH pseudopotentials (experimental).
-- **Semiempirical / tight-binding** — NDDO (AM1/RM1), SCC-DFTB2/3 (mio/3ob), TD-DFTB.
-- **Ab-initio molecular dynamics** — the MD loop driven by SCF forces.
+- **Classical molecular dynamics** — Lennard-Jones, Morse, Buckingham,
+  Born-Mayer-Huggins, Yukawa, DPD and bonded force fields; Ewald/PME/PPPM
+  electrostatics; NVE/NVT/NPT/NPH with Nose-Hoover, Parrinello-Rahman, Langevin,
+  CSVR and Berendsen; RATTLE/SETTLE constraints and general virtual sites;
+  EAM and Stillinger-Weber many-body potentials.
+- **Gaussian-basis electronic structure** — RHF, UHF, ROHF, GHF, RKS, UKS, ROKS
+  with analytic gradients; CPHF Hessians and polarizabilities; MP2 through MP4,
+  CCSD, CCSD(T), CASCI/CASSCF, NEVPT2; TDHF/TDA/full LR-TDDFT, spin-flip,
+  ADC(2), EOM-CC, G0W0, RPA, BSE and GF2; implicit solvent (C-PCM / COSMO /
+  IEF-PCM), ECPs, RI-J/RI-JK, CFMM and x2c-1e.
+- **Plane-wave DFT** — norm-conserving pseudopotentials, LDA and GGA, collinear
+  spin, k-points, metallic smearing, analytic forces and Nielsen-Martin stress,
+  bands/DOS, Wannier functions, Berry-phase polarization and DFPT phonons.
+- **Gaussian-and-plane-waves (GPW) DFT** — RKS and UKS at Gamma and on a
+  k-mesh, diagonalization or orbital transformation, DFT+U, metallic smearing,
+  a large dispersion/vdW set (D3, D3-BJ, D4, TS, MBD, XDM, vdW-DF, rVV10,
+  optB88-vdW), analytic forces and stress, CELL_OPT, and periodic MP2/RPA/GW.
+- **Semiempirical and tight binding** — NDDO (AM1, RM1), DFTB0/2/3 on mio-1-1
+  and 3ob-3-1 tables with analytic forces and stress, TD-DFTB, and the
+  extended tight-binding family GFN0/GFN1/GFN2/IPEA-xTB.
+- **Ab-initio molecular dynamics** — Born-Oppenheimer MD, Car-Parrinello,
+  second-generation CPMD and XL-BOMD, over any of the electronic methods above.
+- **Sampling, paths and free energy** — Monte Carlo (NVT/NPT/uVT, Widom),
+  umbrella sampling, well-tempered metadynamics, WHAM, thermodynamic
+  integration, REMD and H-REMD, NEB, dimer, string, IRC and PIMD.
+- **Electrochemistry** — constant-potential and constant-charge electrodes,
+  MaZe charge dynamics, Thomas-Fermi metallicity and the electrode observers.
+- **Multiscale and properties** — QM/MM (mechanical, electrostatic and
+  polarizable, with H link atoms), population and ESP charges, vibrational
+  analysis and thermochemistry, RDF/MSD/VACF and density cubes.
+
+Not every method runs on both backends. The
+[roadmap](docs/roadmap/index.md) states, method by method, what is
+implemented on CPU, what is implemented on CUDA, and what is not implemented
+at all; every claim there is backed by a case under `regressions/`.
 
 Everything in this README and in `docs/` targets the **C++ API**. For the
 Python package (pure `pip install` + on-demand native build via
@@ -93,7 +119,7 @@ read in order. Each tutorial chapter is written around the matching example.
 | # | File | Method | Build flag |
 |---|------|--------|------------|
 | 01 | `examples/01_scf.cpp` | The bare SCF loop (no chemistry) | — |
-| 02 | `examples/02_rhf.cpp` | Restricted Hartree-Fock (H₂) | `ATV_BUILD_HF` |
+| 02 | `examples/02_rhf.cpp` | Restricted Hartree-Fock (H₂) | `ATV_BUILD_HF` (CUDA twin `02_rhf.cu`: `ATV_BUILD_CUDA`) |
 | 03 | `examples/03_uhf.cpp` | Unrestricted Hartree-Fock | `ATV_BUILD_HF` |
 | 04 | `examples/04_uks.cpp` | Kohn-Sham DFT (UKS-LSDA) | `ATV_BUILD_HF` |
 | 05 | `examples/05_geom_opt.cpp` | Geometry optimization (L-BFGS + DFT) | `ATV_BUILD_HF` |

@@ -98,11 +98,14 @@ nav = [
   { "Developer" = [
     "developer/index.md",
     "developer/architecture.md",
+    "developer/frame-architecture.md",
     "developer/cpu-internals.md",
     "developer/md-execution-model.md",
     "developer/extending-components.md",
     "developer/extending-cpu-subsystems.md",
     "developer/kspace-long-range.md",
+    "developer/python-molpy-boundary.md",
+    "developer/oracle-capability-loop.md",
   ] },
   { "Reference" = [
     "api/index.md",

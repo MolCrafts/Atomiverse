@@ -7,7 +7,7 @@
 | Slug | `constant-force-pull-ion` |
 | Regression | `regressions/md/constant-force-pull-ion/` |
 | Public API | `cpu::md::FixAddForce` (`Bias` Component; default `md::Phase::post_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **shared classical MD / EDL transport twin** (wave 3, 2026-07-24); `docs/roadmap/molecular-dynamics.md` → FixAddForce |
+| Roadmap | `docs/roadmap/molecular-dynamics.md` → FixAddForce |
 | Oracle | **LAMMPS** `fix addforce` (metal units) |
 
 ## Summary
@@ -220,10 +220,7 @@ lmp -in tools/metalwalls_oracle/inputs/lammps/constant-force-pull-ion/in.addforc
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md);
-queue
-[`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md).
-
+the case `REFERENCE.md`;
 Comparable pure-addforce workload (pair zero / inert, NVE, addforce on one
 type; OMP=1; same login node, 2026-07-24):
 
@@ -259,7 +256,6 @@ recorded in REFERENCE / handoff / queue for this slug.
 - Offline pin: [`regressions/md/constant-force-pull-ion/REFERENCE.md`](../../../regressions/md/constant-force-pull-ion/REFERENCE.md)
 - Product gate: [`regressions/md/constant-force-pull-ion/reg_constant-force-pull-ion.cpp`](../../../regressions/md/constant-force-pull-ion/reg_constant-force-pull-ion.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/fix_addforce.h`](../../../include/atomiverse/cpu/dynamics/fix_addforce.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Roadmap: [`docs/roadmap/molecular-dynamics.md`](../../roadmap/molecular-dynamics.md) (`FixAddForce` / constant-force pull)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), twin [`tools/metalwalls_oracle/inputs/lammps/constant-force-pull-ion/in.addforce_pin`](../../../tools/metalwalls_oracle/inputs/lammps/constant-force-pull-ion/in.addforce_pin)
 - LAMMPS: <https://docs.lammps.org/fix_addforce.html>; source `src/fix_addforce.cpp` (constant force path)

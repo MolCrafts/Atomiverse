@@ -7,7 +7,6 @@
 | Slug | `cpmd-rattle-water` |
 | Regression | `regressions/dynamics/cpmd-rattle-water/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::CarParrinello{cpu::gpw::GPWEvaluator{…, compute_forces=true}, mu_au}` bound with `set_evaluator_ref`; propagator `cpu::electronic::Cpmd` (RATTLE). CP mode is the **wrapper type**, not a flag. The nuclear dt is pushed from the integrator into the wrapper by `MD` (`TimestepProvider` → `TimestepConsumer`) — never set on the evaluator |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `cpmd-rattle-water` |
 | Dual gate | Correctness A1–A16 of the spec acceptance; speed **`perf_exempt`** |
 | Wave | CP2K capability loop — wave 5 |
 

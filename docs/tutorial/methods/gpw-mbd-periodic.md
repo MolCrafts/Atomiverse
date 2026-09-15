@@ -7,7 +7,7 @@
 | Slug | `gpw-mbd-periodic` |
 | Regression | `regressions/gpw/gpw-mbd-periodic/` |
 | Public API | `cpu::gpw::GpwDft::mbd` + `mbd_k_mesh[3]`; `cpu::gpw::GPWEvaluator::mbd` + `mbd_k_mesh[3]`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion / §10; `docs/developer/cp2k-method-queue.md` (done, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion / §10 |
 
 ## Summary
 
@@ -185,7 +185,7 @@ bash -lc '
 ## Validation (pymbd / libMBD family)
 
 Source:
-[`regressions/gpw/gpw-mbd-periodic/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-periodic/REFERENCE.md).  
+[`regressions/gpw/gpw-mbd-periodic/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-periodic/REFERENCE.md).
 Oracle: offline **pure-Python pymbd** (`libmbd/src/pymbd/pymbd.py` `mbd_energy`),
 ATV Å→Bohr factor `1/0.52917720859`. External engine pin — not a golden of
 Atomiverse’s own output; **never** launch live CP2K / libMBD / pymbd from
@@ -266,9 +266,6 @@ libMBD-linked CP2K.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-mbd-periodic/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle notes: `tools/cp2k_oracle/inputs/gpw-mbd-periodic/`
 - Oracle rules: `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

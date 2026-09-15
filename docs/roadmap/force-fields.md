@@ -11,7 +11,7 @@ LAMMPS, but no longer "one pair style and nothing else".
 
 The Lennard–Jones 12-6 pair style is the only ⚡ in the roadmap: SIMD on CPU
 (xsimd, `-march=native`) and the CUDA OpenMM tile engine. Standing bench:
-`benchmarks/lj/` + `tools/cuda_nonbonded_style_bench`. GH200 **1332540**:
+`benchmarks/lj/` + `benchmarks/cuda/bench_nonbonded_style.cu`. GH200 **1332540**:
 `96.997 Matom*step/s` (N=10648, 80 steps). LAMMPS twin deck:
 `tools/bench_lj_vs_lammps/in.lj_nve.kk`. Keep ⚡ only while a same-node
 LAMMPS Kokkos ratio still supports it.

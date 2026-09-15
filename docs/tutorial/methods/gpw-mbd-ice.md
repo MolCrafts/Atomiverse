@@ -7,7 +7,7 @@
 | Slug | `gpw-mbd-ice` |
 | Regression | `regressions/gpw/gpw-mbd-ice/` |
 | Public API | `cpu::gpw::GpwDft::mbd` / `cpu::gpw::GPWEvaluator::mbd`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, wave 2 2026-07-25) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -167,7 +167,7 @@ bash -lc '
 ## Validation (libMBD / CP2K MBD backend)
 
 Source:
-[`regressions/gpw/gpw-mbd-ice/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-ice/REFERENCE.md).  
+[`regressions/gpw/gpw-mbd-ice/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-ice/REFERENCE.md).
 Hard pin: offline **libMBD** Fortran `cmbd_mbd_scs_energy` (git `88069c6`),
 geometry converted with ATV Å→Bohr \(1/0.52917720859\). Same policy as
 `gpw-ts-ice`: CP2K 2026.1 stock pair types lack MBD; hosts that enable VDW via
@@ -242,9 +242,6 @@ full-SCF twin later if product policy requires
 ## References
 
 - Offline pin: `regressions/gpw/gpw-mbd-ice/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle notes: `tools/cp2k_oracle/inputs/gpw-mbd-ice/`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`

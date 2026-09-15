@@ -8,8 +8,6 @@
 | Regression | `regressions/gpw/ot-dftu-smearing/` |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `plus_u`, `smearing`, `degauss` [Ry], `extra_bands`, `k_points` / `k_point_weights` |
 | Roadmap | `docs/roadmap/dft.md` §8/§10 — multi-k RKS **OT+DFT+U+smear** ✓ (`reg_ot-dftu-smearing`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (CP2K loop harness wave 9, 2026-07-26) |
-| Handoff | `docs/developer/cp2k-method-handoff.md` — ratio **perf_exempt** |
 
 ## Summary
 
@@ -206,7 +204,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/ot-dftu-smearing/REFERENCE.md`](../../../regressions/gpw/ot-dftu-smearing/REFERENCE.md).  
+[`regressions/gpw/ot-dftu-smearing/REFERENCE.md`](../../../regressions/gpw/ot-dftu-smearing/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest. Pin
 date: **2026-07-26**.
 
@@ -267,7 +265,7 @@ cp2k.psmp -i tools/cp2k_oracle/inputs/ot-dftu-smearing/h2_ot_dftu_smear.inp \
 ## Performance
 
 Source: `regressions/gpw/ot-dftu-smearing/REFERENCE.md` +
-`docs/developer/cp2k-method-handoff.md` (wave 9). Gate \(r\le 10\) unless
+the case `REFERENCE.md` (wave 9). Gate \(r\le 10\) unless
 `perf_exempt`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -308,11 +306,6 @@ OT wall comparison. Decisive product gates are the free-energy identities
 - CP2K twin:
   [`tools/cp2k_oracle/inputs/ot-dftu-smearing/`](../../../tools/cp2k_oracle/inputs/ot-dftu-smearing/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Queue / handoff:
-  [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Loop design:
-  [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - Related pages: [ot-minimizer-water](ot-minimizer-water.md),
   [gpw-dftu-nio](gpw-dftu-nio.md), [pw-smearing-al](pw-smearing-al.md)

@@ -1,4 +1,4 @@
-/// @file minimizer/lbfgs.cu
+/// @file cuda/minimize/lbfgs.cu
 /// @brief L-BFGS kernels: device-resident two-loop recursion +
 ///        multi-criteria convergence via the shared ConvCheck.
 

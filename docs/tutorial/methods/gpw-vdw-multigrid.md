@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-vdw-multigrid/` |
 | Public API | `cpu::gpw::GpwDft` (`vdw_df` / `vdw_df2` / `rvv10`, `ngrids`, `rel_cutoff`, `cutoff_ry`); lookup ctors `GaussianBasis` / `GthPotential` |
 | Roadmap | `docs/roadmap/dft.md` §8 — nonlocal vdW × multigrid |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) |
 
 ## Summary
 

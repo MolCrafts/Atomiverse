@@ -7,7 +7,7 @@
 | Slug | `xl-bomd-linearized-uks` |
 | Regression | `regressions/dynamics/xl-bomd-linearized-uks/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{…, n_alpha, n_beta}, k=5, cpu::electronic::XlBomdLinearized{}}` bound with `set_evaluator_ref`; dual α/β `cpu::electronic::XlBomd` propagators |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `xl-bomd-linearized-uks`; follow-on of the `xl-bomd-linearized-forces` residual (UKS refused there at `build()`) |
+| Roadmap | follow-on of the `xl-bomd-linearized-forces` residual (UKS refused there at `build()`) |
 | Dual gate | Correctness A1–A3 unit (`test_cpu_gpw_xl_bomd`) + A4 e2e `reg_xl-bomd-linearized-uks`; speed **`perf_exempt`** |
 | Oracle | Offline CP2K twin sketch only (`tools/cp2k_oracle/inputs/xl-bomd-linearized-uks/`); never live in ctest |
 
@@ -325,8 +325,6 @@ measured fair-bench ratio.
 - Regression: `regressions/dynamics/xl-bomd-linearized-uks/reg_xl-bomd-linearized-uks.cpp`
 - CP2K twin sketch: `tools/cp2k_oracle/inputs/xl-bomd-linearized-uks/o2_uks_xl_linearized_nve.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md`
-- Queue / loop: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Sibling paths: [xl-bomd-linearized-forces](xl-bomd-linearized-forces.md)
   (closed-shell zero-SCF foothold);
   [xl-bomd-uks](xl-bomd-uks.md) (SCF-converged open-shell A/B twin);

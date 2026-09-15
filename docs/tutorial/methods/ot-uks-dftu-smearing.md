@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ot-uks-dftu-smearing/` |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `plus_u`, `smearing`, `degauss`, `extra_bands`, `n_alpha`/`n_beta`, `k_points` / `k_mesh` |
 | Roadmap | `docs/roadmap/dft.md` — multi-k **UKS OT+U+smear** (`reg_ot-uks-dftu-smearing`) ✓ |
-| Queue | CP2K capability loop wave 10 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -190,7 +189,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/ot-uks-dftu-smearing/REFERENCE.md`](../../../regressions/gpw/ot-uks-dftu-smearing/REFERENCE.md).  
+[`regressions/gpw/ot-uks-dftu-smearing/REFERENCE.md`](../../../regressions/gpw/ot-uks-dftu-smearing/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest. Pin
 date: **2026-07-26**. Closed gates A0–A6.
 
@@ -249,7 +248,7 @@ Attempting `&OT` under the same multi-k + SMEAR setup aborts on CP2K 2026.1
 ## Performance
 
 Source: REFERENCE performance section + handoff
-`docs/developer/cp2k-method-handoff.md` row `ot-uks-dftu-smearing`. Gate:
+the case `REFERENCE.md` row `ot-uks-dftu-smearing`. Gate:
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) **or** `perf_exempt`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -289,9 +288,7 @@ class as `ot-dftu-smearing` / `ot-uks-dftu`. Wall above is indicative only
 - Oracle contract:
   [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - Handoff (`perf_exempt`):
-  [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Queue row: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md)
-- Loop design: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
+  the case `REFERENCE.md`
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Related method pages: [ot-minimizer-water](ot-minimizer-water.md),

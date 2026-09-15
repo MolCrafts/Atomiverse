@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file flat_pair_list.cuh
+/// @file cuda/neighbor/flat_pair_list.cuh
 /// @brief Flat SoA cluster pair list for the fused search+mask pipeline.
 ///
 /// Unlike CSR ClusterPairList, pairs are stored in a flat array without

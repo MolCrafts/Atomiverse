@@ -1,4 +1,4 @@
-/// @file cpu/recorder/cube.h
+/// @file cpu/record/cube.h
 /// @brief Gaussian ".cube" volumetric file I/O helpers.
 ///
 /// Shared by `DensityCubeWriter` and `OrbitalCubeWriter`. The cube format is

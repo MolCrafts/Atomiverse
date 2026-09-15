@@ -1,4 +1,4 @@
-/// @file cpu/observer/multipole.cpp
+/// @file cpu/observe/multipole.cpp
 /// @brief MultipoleObserver implementation. @see multipole.h
 
 #include "atomiverse/cpu/observe/multipole.h"

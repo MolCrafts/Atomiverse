@@ -7,7 +7,7 @@
 | Slug | `gpw-rvv10-ice` |
 | Regression | `regressions/gpw/gpw-rvv10-ice/` |
 | Public API | `cpu::gpw::GpwDft::rvv10` / `cpu::gpw::GPWEvaluator::rvv10`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -164,7 +164,7 @@ bash -lc '
 ## Validation (CP2K)
 
 Source:
-[`regressions/gpw/gpw-rvv10-ice/REFERENCE.md`](../../../regressions/gpw/gpw-rvv10-ice/REFERENCE.md).  
+[`regressions/gpw/gpw-rvv10-ice/REFERENCE.md`](../../../regressions/gpw/gpw-rvv10-ice/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (Arrhenius tree install `work/cp2k/install`,
 GCC 11.5 + libxc + FFTW3), twin
 `tools/cp2k_oracle/inputs/gpw-rvv10-ice/water_dimer_rvv10.inp`. External
@@ -240,9 +240,6 @@ strict full-SCF twin later if product policy requires
 ## References
 
 - Offline pin: `regressions/gpw/gpw-rvv10-ice/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle inputs: `tools/cp2k_oracle/inputs/gpw-rvv10-ice/`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`

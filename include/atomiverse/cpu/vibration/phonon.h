@@ -1,4 +1,4 @@
-/// @file cpu/vib/phonon.h
+/// @file cpu/vibration/phonon.h
 /// @brief cpu::vib::Phonon — finite-displacement supercell phonon driver.
 ///
 /// Crystal counterpart of `cpu::vib::Hessian`. Builds an optional supercell,

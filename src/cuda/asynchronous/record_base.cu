@@ -1,4 +1,4 @@
-/// @file cuda/async/record_base.cu
+/// @file cuda/asynchronous/record_base.cu
 /// @brief `cuda::detail::HostWorker` implementation + sync-guard counter
 ///        out-of-line definitions.
 ///

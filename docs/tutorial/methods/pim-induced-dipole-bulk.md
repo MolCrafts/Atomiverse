@@ -7,7 +7,7 @@
 | Slug | `pim-induced-dipole-bulk` |
 | Regression | `regressions/md/pim-induced-dipole-bulk/` |
 | Public API | `cpu::PimInducedDipole` (`Potential`; typically on `cpu::Evaluate` or MD `force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E4 done** (wave 2, 2026-07-24); map slice E4 |
+| Roadmap | map slice E4 |
 | Oracle | **MetalWalls** bulk PIM multipole form (offline analytic pin; not LAMMPS) |
 
 ## Summary
@@ -225,7 +225,7 @@ Related unit surface (not the e2e pin):
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md)
+the case `REFERENCE.md`
 (wave 2, 2026-07-24).
 
 | Twin | \(T_{\mathrm{MetalWalls}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -262,7 +262,6 @@ available, record \(T_{\mathrm{atv}}/T_{\mathrm{MW}}\) in REFERENCE and require
 - Offline pin: [`regressions/md/pim-induced-dipole-bulk/REFERENCE.md`](../../../regressions/md/pim-induced-dipole-bulk/REFERENCE.md)
 - Product gate: [`regressions/md/pim-induced-dipole-bulk/reg_pim-induced-dipole-bulk.cpp`](../../../regressions/md/pim-induced-dipole-bulk/reg_pim-induced-dipole-bulk.cpp)
 - Public header: [`include/atomiverse/cpu/potentials/pim_induced_dipole.h`](../../../include/atomiverse/cpu/potentials/pim_induced_dipole.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Literature: Thole, *Chem. Phys.* **59**, 341 (1981); Applequist isotropic
   induced-dipole SCC; Marin-Laflèche et al., *J. Open Source Softw.* **5**,

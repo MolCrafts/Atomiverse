@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/ewald.cpp
+/// @file cpu/planewave/internal/ewald.cpp
 /// @brief 3D Ewald summation implementation (energy + ionic forces).
 
 #include "atomiverse/cpu/planewave/internal/ewald.h"
@@ -71,15 +71,13 @@ EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
                         const AccReal Lz = AccReal(hx) * cb(0, 2)
                                            + AccReal(hy) * cb(1, 2)
                                            + AccReal(hz) * cb(2, 2);
-                        Vec3 dr = {pos[static_cast<std::size_t>(i)][0]
-                                       - pos[static_cast<std::size_t>(j)][0]
-                                       + Lx,
-                                   pos[static_cast<std::size_t>(i)][1]
-                                       - pos[static_cast<std::size_t>(j)][1]
-                                       + Ly,
-                                   pos[static_cast<std::size_t>(i)][2]
-                                       - pos[static_cast<std::size_t>(j)][2]
-                                       + Lz};
+                        Vec3 dr = {
+                            pos[static_cast<std::size_t>(i)][0]
+                                - pos[static_cast<std::size_t>(j)][0] + Lx,
+                            pos[static_cast<std::size_t>(i)][1]
+                                - pos[static_cast<std::size_t>(j)][1] + Ly,
+                            pos[static_cast<std::size_t>(i)][2]
+                                - pos[static_cast<std::size_t>(j)][2] + Lz};
                         AccReal r = dr.norm();
                         if (r > AccReal(0) && r < r_cut) {
                             AccReal erfc_ar = std::erfc(alpha * r);

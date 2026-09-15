@@ -1,4 +1,4 @@
-/// @file cpu/scf/integral_derivatives.cpp
+/// @file cpu/scf/internal/integral_derivatives.cpp
 /// @brief Analytic derivatives of molecular integrals w.r.t. nuclear positions.
 ///
 /// Uses the angular momentum raising formula for derivatives:
@@ -378,7 +378,6 @@ build_shell_to_atom_from_integrals(const internal::IntegralView& integrals) {
     return shell_to_atom;
 }
 
-
 static QuartetDerivTotals
 compute_quartet_derivatives(const native::Shell& shell_a, const int a_ang[3],
                             const native::Shell& shell_b, const int b_ang[3],
@@ -681,10 +680,12 @@ IntegralDerivPack::IntegralDerivPack(const internal::IntegralView& ipack) {
     }
 }
 
-void accumulate_two_electron_gradient(
-    xt::xtensor<double, 2>& grad, const internal::IntegralView& integrals,
-    const xt::xtensor<double, 2>& P_total_sph, const SlaterDeterminant& det,
-    MeanFieldType method, SpinType spin, XCType xc_type) {
+void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
+                                      const internal::IntegralView& integrals,
+                                      const xt::xtensor<double, 2>& P_total_sph,
+                                      const SlaterDeterminant& det,
+                                      MeanFieldType method, SpinType spin,
+                                      XCType xc_type) {
     const auto t_total = LogClock::now();
     const int natm = static_cast<int>(integrals.atoms.size());
     // GHF (generalized): the spin-off-diagonal blocks P^{αβ}, P^{βα} are
@@ -1214,7 +1215,8 @@ static double d2_cross_center(const Eval2& eval, const int a_ang[3],
 
 } // namespace
 
-IntegralSecondDerivPack::IntegralSecondDerivPack(const internal::IntegralView& ipack) {
+IntegralSecondDerivPack::IntegralSecondDerivPack(
+    const internal::IntegralView& ipack) {
     if (ipack.spherical())
         throw std::runtime_error(
             "cpu::scf::IntegralSecondDerivPack: spherical-convention packs "
@@ -2468,10 +2470,9 @@ void accumulate_two_electron_hessian(xt::xtensor<double, 2>& hess,
               elapsed_ms(t_total));
 }
 
-void accumulate_two_electron_hessian_uhf(xt::xtensor<double, 2>& hess,
-                                         const internal::IntegralView& integrals,
-                                         const xt::xtensor<double, 2>& Pa,
-                                         const xt::xtensor<double, 2>& Pb) {
+void accumulate_two_electron_hessian_uhf(
+    xt::xtensor<double, 2>& hess, const internal::IntegralView& integrals,
+    const xt::xtensor<double, 2>& Pa, const xt::xtensor<double, 2>& Pb) {
     const auto t_total = LogClock::now();
     const int natm = static_cast<int>(integrals.atoms.size());
     const int n = integrals.n_basis;

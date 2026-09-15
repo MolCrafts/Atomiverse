@@ -7,7 +7,7 @@
 | Slug | `steele-wall-argon` |
 | Regression | `regressions/forcefield/steele-wall-argon/` |
 | Public API | `cpu::md::FixWallLJ1043` (`Bias` Component; default `md::Phase::post_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E8 done** (wave 2, 2026-07-24); force-fields note Steele wall |
+| Roadmap | force-fields note Steele wall |
 | Oracle | **LAMMPS** `fix wall/lj1043` (metal units) |
 
 ## Summary
@@ -199,7 +199,7 @@ lmp -in tools/metalwalls_oracle/inputs/lammps/in.steele_wall_argon
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{LAMMPS}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | --------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -235,7 +235,6 @@ defined offline, record version + walls and replace `perf_exempt` in REFERENCE.
 - Offline pin: [`regressions/forcefield/steele-wall-argon/REFERENCE.md`](../../../regressions/forcefield/steele-wall-argon/REFERENCE.md)
 - Product gate: [`regressions/forcefield/steele-wall-argon/reg_steele-wall-argon.cpp`](../../../regressions/forcefield/steele-wall-argon/reg_steele-wall-argon.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/fix_wall_lj1043.h`](../../../include/atomiverse/cpu/dynamics/fix_wall_lj1043.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Roadmap: [`docs/roadmap/force-fields.md`](../../roadmap/force-fields.md) (Steele 10-4-3 / `FixWallLJ1043`)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), twin [`tools/metalwalls_oracle/inputs/lammps/in.steele_wall_argon`](../../../tools/metalwalls_oracle/inputs/lammps/in.steele_wall_argon)
 - Literature: Steele, *Surf. Sci.* **36**, 317 (1973); LAMMPS `fix wall` / `wall/lj1043` documentation

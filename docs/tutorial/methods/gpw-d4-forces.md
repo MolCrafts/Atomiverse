@@ -7,7 +7,7 @@
 | Slug | `gpw-d4-forces` |
 | Regression | `regressions/gpw/gpw-d4-forces/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`d4 = true`, `compute_forces = true`); `cpu::scf::dftd4` / `D4Result`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, wave 9) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -209,7 +209,7 @@ bash -lc '
 ## Validation (CP2K / dftd4)
 
 Source:
-[`regressions/gpw/gpw-d4-forces/REFERENCE.md`](../../../regressions/gpw/gpw-d4-forces/REFERENCE.md).  
+[`regressions/gpw/gpw-d4-forces/REFERENCE.md`](../../../regressions/gpw/gpw-d4-forces/REFERENCE.md).
 Oracle: offline **dftd4 3.7.0** (Arrhenius EasyBuild
 `dftd4/3.7.0-gfbf-2025b`), CLI gradient on
 `tools/cp2k_oracle/inputs/gpw-d4-water/POSCAR`. External engine pin — not a
@@ -330,9 +330,6 @@ host with libdftd4-linked CP2K.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-d4-forces/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle inputs: `tools/cp2k_oracle/inputs/gpw-d4-forces/`,
   `tools/cp2k_oracle/inputs/gpw-d4-water/`
 - Oracle notes: `tools/cp2k_oracle/README.md`

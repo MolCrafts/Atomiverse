@@ -1,4 +1,4 @@
-/// @file cuda/recorder/thermo.cuh
+/// @file cuda/record/thermo.cuh
 /// @brief Thermo -- header-only thermodynamic output recorder (async D2H bridge).
 ///
 /// @see cpu::thermo_print (cpu/recorder/thermo.h)

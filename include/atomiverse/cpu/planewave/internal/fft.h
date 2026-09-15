@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/fft.h
+/// @file cpu/planewave/internal/fft.h
 /// @brief RAII wrapper around FFTW3 3D transforms.
 #pragma once
 

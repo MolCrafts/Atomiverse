@@ -7,7 +7,7 @@
 | Slug | `qeq-fluctuating-charge` |
 | Regression | `regressions/md/qeq-fluctuating-charge/` |
 | Public API | `cpu::md::QEq` (Component on `cpu::md::MD`, default `pre_force` order −50) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → wave 5 (2026-07-27); map §2 "Fluctuating-charge / QEq" |
+| Roadmap | map §2 "Fluctuating-charge / QEq" |
 | Oracle | **LAMMPS** QEQ package (`fix qeq/point`), offline pin — ratio **0.45** |
 
 ## Summary
@@ -218,7 +218,7 @@ lmp -in in.qeq_perf    # 1000-solve fair perf wall
 ## Performance
 
 Source: REFERENCE.md fair perf twin; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 Fair twin is `in.qeq_perf`: 1000 repeated `fix qeq/point` solves (dt = 0)
 vs 1000 `QEq::launch` equilibrations (dense rebuild + Cholesky each launch)
 on the same geometry, measured 2026-07-27 on the x86_64 epyc login node,
@@ -259,7 +259,6 @@ Limitations).
 - Product gate: [`regressions/md/qeq-fluctuating-charge/reg_qeq-fluctuating-charge.cpp`](../../../regressions/md/qeq-fluctuating-charge/reg_qeq-fluctuating-charge.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/qeq.h`](../../../include/atomiverse/cpu/dynamics/qeq.h)
 - Pin procedure: [`tools/metalwalls_oracle/pin_notes_qeq-fluctuating-charge.md`](../../../tools/metalwalls_oracle/pin_notes_qeq-fluctuating-charge.md)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (§2 "Fluctuating-charge / QEq")
 - Literature: Rappé, Goddard, *J. Phys. Chem.* **95**, 3358 (1991), DOI [10.1021/j100161a070](https://doi.org/10.1021/j100161a070) — QEq / electronegativity equalization

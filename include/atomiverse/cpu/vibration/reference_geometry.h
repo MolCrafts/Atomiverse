@@ -1,4 +1,4 @@
-/// @file cpu/vib/reference_geometry.h
+/// @file cpu/vibration/reference_geometry.h
 /// @brief cpu::vib::ReferenceGeometry — caches the equilibrium geometry.
 ///
 /// Bound at `vib::Phase::setup`. On the first displacement pass

@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/line_search.h
+/// @file cpu/minimize/line_search.h
 /// @brief Backend-agnostic line-search numerics for the CPU optimizers.
 ///
 /// Pure 1-D line-search routines shared by `cpu::minimizer::LBFGS` and

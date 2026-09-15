@@ -1,4 +1,4 @@
-/// @file cpu/mc/move_selector.h
+/// @file cpu/montecarlo/move_selector.h
 /// @brief cpu::mc::MoveSelector — draws ONE trial-move type per trial.
 #pragma once
 

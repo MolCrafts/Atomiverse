@@ -1,4 +1,4 @@
-/// @file src/cpu/mc/volume_move.cpp
+/// @file cpu/montecarlo/volume_move.cpp
 /// @brief cpu::mc::VolumeMove implementation.
 
 #include "atomiverse/cpu/montecarlo/volume_move.h"

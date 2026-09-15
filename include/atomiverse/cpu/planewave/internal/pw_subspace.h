@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_subspace.h
+/// @file cpu/planewave/internal/pw_subspace.h
 /// @brief Host-side Davidson subspace utilities (real spherical harmonics,
 ///        small dense Jacobi eigensolver, subspace initialization) shared
 ///        by the CPU and CUDA plane-wave band solvers.

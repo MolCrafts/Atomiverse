@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/density_builder.cpp
+/// @file cpu/planewave/internal/density_builder.cpp
 /// @brief Build charge density from wavefunctions using FFT + Pulay mixing.
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"

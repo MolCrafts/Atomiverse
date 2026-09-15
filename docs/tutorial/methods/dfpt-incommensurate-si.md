@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-incommensurate-si/` |
 | Public API | `cpu::pw::DfptPhonon` (members, incl. `q_frac`) + `cpu::pw::DfptPhononResult` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — incommensurate-q ✓ |
-| Queue | `docs/developer/cp2k-method-queue.md` → **done** (wave 3, 2026-07-25); **`perf_exempt`** |
 | Dep | `dfpt-phonon-si` ✓ (Γ), `dfpt-finite-q-si` ✓ (commensurate X); closes direct Sternheimer branch |
 
 ## Summary
@@ -153,8 +152,8 @@ silent approximations.
 ## Validation (vs CP2K / offline pins)
 
 Source:
-[`regressions/response/dfpt-incommensurate-si/REFERENCE.md`](../../../regressions/response/dfpt-incommensurate-si/REFERENCE.md).  
-Oracle note: `tools/cp2k_oracle/inputs/dfpt-incommensurate-si.note`.  
+[`regressions/response/dfpt-incommensurate-si/REFERENCE.md`](../../../regressions/response/dfpt-incommensurate-si/REFERENCE.md).
+Oracle note: `tools/cp2k_oracle/inputs/dfpt-incommensurate-si.note`.
 Oracle status at pin time (2026-07-25): **no CP2K binary** on the worker host.
 Absolute CP2K \(\omega(q)\) digits are therefore **not** invented; the product
 gate uses measured ATV spectrum windows under the documented minimal twin.
@@ -218,7 +217,7 @@ Source: [`REFERENCE.md`](../../../regressions/response/dfpt-incommensurate-si/RE
 | Si DFPT \(q=(0.3,0,0)\), 10 Ry, \(k=1\) | — | ≈ 7 | **exempt** | n/a | No CP2K binary at pin; remeasure when available |
 
 Campaign queue: ratio **perf_exempt**
-(`docs/developer/cp2k-method-queue.md` → done, 2026-07-25). Gate when a twin
+. Gate when a twin
 exists: \(r\le 10\) on the same host/core count (single-rank).
 
 ## Limitations
@@ -244,7 +243,6 @@ exists: \(r\le 10\) on the same host/core count (single-rank).
 - Offline pin: [`regressions/response/dfpt-incommensurate-si/REFERENCE.md`](../../../regressions/response/dfpt-incommensurate-si/REFERENCE.md)
 - Oracle note: `tools/cp2k_oracle/inputs/dfpt-incommensurate-si.note`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline only; never in ctest)
-- Queue / design: `docs/developer/cp2k-method-queue.md`, `cp2k-method-loop.md`
 - Roadmap: [dft.md](../../roadmap/dft.md) §11 DFPT
 - Related tutorials: [dfpt-phonon-si](dfpt-phonon-si.md) (Γ),
   [fd-phonon-supercell](fd-phonon-supercell.md) (FD Γ)

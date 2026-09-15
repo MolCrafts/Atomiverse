@@ -7,7 +7,7 @@
 | Slug | `second-gen-cpmd-kpoints` |
 | Regression | `regressions/dynamics/second-gen-cpmd-kpoints/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::SecondGenCp{cpu::gpw::GPWEvaluator{…, k_mesh}, aspc_k, corrector_max_iter}` bound with `set_evaluator_ref`; predictor `cpu::electronic::ASPCPredictorCplx` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `second-gen-cpmd-kpoints`; MD AIMD multi-k SGCP residual closed 2026-07-26 |
+| Roadmap | MD AIMD multi-k SGCP residual closed 2026-07-26 |
 | Dual gate | Correctness (NVE drift + corrector budget + multi-k payload); speed **`perf_exempt`** |
 | Wave | CP2K capability loop — harness wave 12 (2026-07-26) |
 | Oracle | Offline CP2K twin sketch only (`tools/cp2k_oracle/inputs/second-gen-cpmd-kpoints/`); never live in ctest |
@@ -65,8 +65,8 @@ not the classical CP \(E_{\mathrm{cons}} = T_{\mathrm{n}} + T_{\mathrm{e}} +
 E_{\mathrm{KS}}\).
 
 **Not BOMD:** production steps cap SCF at `corrector_max_iter` once ASPC
-is warm — they must not run a full `max_iter` BOMD SCF.  
-**Not classical CPMD:** `cpmd = false`; no electronic RATTLE / \(\mu\).  
+is warm — they must not run a full `max_iter` BOMD SCF.
+**Not classical CPMD:** `cpmd = false`; no electronic RATTLE / \(\mu\).
 **Not XL-BOMD:** ASPC is Lagrange history extrapolation + Kolafa blend, not
 Niklasson auxiliary Verlet on a dynamical \(P\).
 
@@ -302,7 +302,7 @@ bit-identical density history or energy.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` (wave 12),
+Source: the case `REFERENCE.md` (wave 12),
 `REFERENCE.md` Perf gate.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -338,9 +338,6 @@ NVE drift + corrector-budget envelope, not a wall-clock ratio.
 - Regression: `regressions/dynamics/second-gen-cpmd-kpoints/reg_second-gen-cpmd-kpoints.cpp`
 - CP2K twin sketch: `tools/cp2k_oracle/inputs/second-gen-cpmd-kpoints/h2_sgcp_kpoints_nve.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md`
-- Perf / handoff: `docs/developer/cp2k-method-handoff.md`
-- Queue / loop: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Prior product paths: `regressions/dynamics/second-gen-cpmd-water`;
   multi-k force pin `regressions/gpw/gpw-kpoint-forces`;
   multi-k XL twin [xl-bomd-uks-kpoints](xl-bomd-uks-kpoints.md);

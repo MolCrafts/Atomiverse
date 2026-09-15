@@ -7,7 +7,7 @@
 | Slug | `gpw-d4-atm-stress` |
 | Regression | `regressions/gpw/gpw-d4-atm-stress/` |
 | Public API | `cpu::gpw::GPWEvaluator{d4 = true, d4_atm = true, compute_stress = true}` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-31) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -143,8 +143,6 @@ regression budget.
 
 - Offline pins: `regressions/gpw/gpw-d4-atm-stress/REFERENCE.md`;
   `tools/cp2k_oracle/inputs/gpw-d4-atm/pin_strain_*_{atm,2b}.json`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md` (closed 2026-07-31),
-  `docs/developer/cp2k-method-handoff.md`
 - Related: [gpw-d4-atm](gpw-d4-atm.md) (energy),
   [gpw-d4-atm-forces](gpw-d4-atm-forces.md) (ATM forces),
   [gpw-d4-stress](gpw-d4-stress.md) (two-body stress),

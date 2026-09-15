@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ot-uks-dftu/` |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `n_alpha`/`n_beta`, `k_mesh` / `k_points`, `plus_u` |
 | Roadmap | `docs/roadmap/dft.md` § OT — multi-k UKS OT+U (`reg_ot-uks-dftu`) ✓ |
-| Queue | CP2K capability loop wave 9 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -211,7 +210,7 @@ API for multi-k UKS OT+U until k-mesh is wired through the evaluator.
 
 ## Validation (vs CP2K / internal identities)
 
-Source: [`regressions/gpw/ot-uks-dftu/REFERENCE.md`](../../../regressions/gpw/ot-uks-dftu/REFERENCE.md).  
+Source: [`regressions/gpw/ot-uks-dftu/REFERENCE.md`](../../../regressions/gpw/ot-uks-dftu/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest.
 Pin date: **2026-07-26**.
 
@@ -265,7 +264,7 @@ cp2k.psmp -i tools/cp2k_oracle/inputs/ot-uks-dftu/h2_uks_ot_dftu_kpoints.inp \
 
 Source: fair wall table in
 `regressions/gpw/ot-uks-dftu/REFERENCE.md` (2026-07-26). Handoff:
-`docs/developer/cp2k-method-handoff.md` → **`perf_exempt`**.
+the case `REFERENCE.md` → **`perf_exempt`**.
 
 | Item | Value |
 | ---- | ----- |
@@ -306,9 +305,6 @@ apply; do not invent a CP2K OT wall from the DIIS twin.
 - Regression consumer: [`reg_ot-uks-dftu.cpp`](../../../regressions/gpw/ot-uks-dftu/reg_ot-uks-dftu.cpp)
 - CP2K DIIS multi-k+U twin: [`tools/cp2k_oracle/inputs/ot-uks-dftu/`](../../../tools/cp2k_oracle/inputs/ot-uks-dftu/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Loop design: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Related handbook: [ot-minimizer-water](ot-minimizer-water.md),

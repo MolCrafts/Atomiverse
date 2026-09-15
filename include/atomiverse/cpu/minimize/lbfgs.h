@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/lbfgs.h
+/// @file cpu/minimize/lbfgs.h
 /// @brief minimizer::LBFGS — L-BFGS Optimizer component for the
 ///        `cpu::minimizer::Minimize` driver (declared in `minimize.h`).
 ///

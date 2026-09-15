@@ -7,7 +7,7 @@
 | Slug | `xl-bomd-uks-kpoints` |
 | Regression | `regressions/dynamics/xl-bomd-uks-kpoints/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{…, n_alpha, n_beta, k_mesh}, k}` bound with `set_evaluator_ref`; propagator class `cpu::electronic::XlBomdCplx` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `xl-bomd-uks-kpoints`; MD AIMD XL multi-k UKS residual closed 2026-07-26 |
+| Roadmap | MD AIMD XL multi-k UKS residual closed 2026-07-26 |
 | Dual gate | Correctness A6 (e2e NVE drift) + unit A1–A5 (`test_cpu_gpw_xl_bomd`); speed **`perf_exempt`** |
 | Wave | CP2K capability loop — harness wave 11 (2026-07-26) |
 | Oracle | Offline CP2K twin sketch only (`tools/cp2k_oracle/inputs/xl-bomd-uks-kpoints/`); never live in ctest |
@@ -271,7 +271,7 @@ bit-identical density history.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` (wave 11),
+Source: the case `REFERENCE.md` (wave 11),
 `REFERENCE.md` Perf gate.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -305,9 +305,6 @@ the NVE drift envelope, not a wall-clock ratio.
 - Regression: `regressions/dynamics/xl-bomd-uks-kpoints/reg_xl-bomd-uks-kpoints.cpp`
 - CP2K twin sketch: `tools/cp2k_oracle/inputs/xl-bomd-uks-kpoints/h2_uks_xl_bomd_kpoints_nve.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md`
-- Perf / handoff: `docs/developer/cp2k-method-handoff.md`
-- Queue / loop: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Prior product paths: [xl-bomd-water](xl-bomd-water.md);
   `regressions/dynamics/xl-bomd-uks`; `regressions/dynamics/xl-bomd-kpoints`;
   multi-k UKS forces `regressions/gpw/gpw-kpoint-uks-forces`

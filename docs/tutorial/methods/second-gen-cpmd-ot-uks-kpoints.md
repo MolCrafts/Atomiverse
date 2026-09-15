@@ -7,7 +7,6 @@
 | Slug | `second-gen-cpmd-ot-uks-kpoints` |
 | Regression | `regressions/dynamics/second-gen-cpmd-ot-uks-kpoints/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::SecondGenCp{cpu::gpw::GPWEvaluator{…, n_alpha, n_beta, k_mesh, use_ot=true}, aspc_k, corrector_max_iter}` bound with `set_evaluator_ref` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `second-gen-cpmd-ot-uks-kpoints` |
 | Dual gate | Correctness (corrector A/B identity + NVE drift + budget + dual-spin multi-k payload); speed **`perf_exempt`** |
 | Wave | CP2K capability loop — worker wave 3 (shift) (2026-07-31) |
 | Oracle | **CP2K cannot run this method** (OT is Γ-only in CP2K; `&OT` + `&KPOINTS` refused, UKS included) — literature envelope + internal A/B identity; unexecutable sketch at `tools/cp2k_oracle/inputs/second-gen-cpmd-ot-uks-kpoints/` |

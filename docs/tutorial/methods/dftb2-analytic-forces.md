@@ -201,10 +201,10 @@ bash -lc '
 ## Validation (DFTB+)
 
 Source:
-[`regressions/semiempirical/dftb2-analytic-forces/REFERENCE.md`](../../../regressions/semiempirical/dftb2-analytic-forces/REFERENCE.md).  
+[`regressions/semiempirical/dftb2-analytic-forces/REFERENCE.md`](../../../regressions/semiempirical/dftb2-analytic-forces/REFERENCE.md).
 Oracle: **`dftb+`** (formula-level / force module boundary — Hourahine et al.,
-*J. Chem. Phys.* **152**, 124101 (2020); Elstner 1998).  
-`oracle_version`: formula-level (no DFTB+ binary on pin host at wave-1).  
+*J. Chem. Phys.* **152**, 124101 (2020); Elstner 1998).
+`oracle_version`: formula-level (no DFTB+ binary on pin host at wave-1).
 Hard-coded gates in the regression binary — **never** live DFTB+ from ctest.
 
 **Setup:**
@@ -275,10 +275,6 @@ exists. Handoff records wave-1 TB greens as `perf_exempt`.
 - Offline pin: `regressions/semiempirical/dftb2-analytic-forces/REFERENCE.md`
 - Oracle note: `tools/tb_oracle/inputs/dftbplus/dftb2_analytic_forces_note.md`
 - Oracle README: `tools/tb_oracle/README.md`
-- Queue / handoff / loop: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`,
-  `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/semiempirical.md`
 - Spec history (closed, deleted at done): git `wf/dftb2-analytic-forces` /
   wave-1 harness (`.claude/specs/dftb2-analytic-forces/` removed at done)

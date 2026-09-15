@@ -1,4 +1,4 @@
-/// @file cuda/minimizer/cg.cuh
+/// @file cuda/minimize/cg.cuh
 /// @brief cuda::minimizer::CG — Polak-Ribière+ conjugate-gradient
 ///        Optimizer component.
 ///

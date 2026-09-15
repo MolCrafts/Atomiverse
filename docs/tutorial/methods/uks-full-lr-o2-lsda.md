@@ -227,8 +227,6 @@ dense RPA scaling at production molecular sizes.
 ## References
 
 - Offline pin: [`regressions/scf/uks-full-lr-o2-lsda/REFERENCE.md`](../../../regressions/scf/uks-full-lr-o2-lsda/REFERENCE.md)
-- Perf rollup: [`docs/developer/pyscf-method-perf.md`](../../developer/pyscf-method-perf.md)
-- Handoff: [`docs/developer/pyscf-method-handoff.md`](../../developer/pyscf-method-handoff.md)
 - Roadmap: [`docs/roadmap/excited-states.md`](../../roadmap/excited-states.md)
 - Related methods: [full-lr-tddft-h2-pbe](full-lr-tddft-h2-pbe.md) (RKS pure full LR),
   [h2-b3lyp-rpa-tddft](h2-b3lyp-rpa-tddft.md) (RKS hybrid RPA),

@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/kpoint.cpp
+/// @file cpu/planewave/internal/kpoint.cpp
 /// @brief Monkhorst-Pack k-point mesh implementation.
 
 #include "atomiverse/cpu/planewave/internal/kpoint.h"

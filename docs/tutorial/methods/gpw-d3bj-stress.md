@@ -7,7 +7,7 @@
 | Slug | `gpw-d3bj-stress` |
 | Regression | `regressions/gpw/gpw-d3bj-stress/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`d3bj`, `compute_stress`, `stress_use_fd=false`); free `gpw_stress` / `gpw_stress_fd` with `GpwDft::d3bj` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (wave 1 2026-07-31) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 

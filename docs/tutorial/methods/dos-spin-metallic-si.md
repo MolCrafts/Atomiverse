@@ -7,9 +7,7 @@
 | Slug | `dos-spin-metallic-si` |
 | Regression | `regressions/pw/dos-spin-metallic-si/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`, `smearing`, `degauss` [Ry], `extra_bands`) + `cpu::pw::Dos` + `DosResult` |
-| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS (collinear spin + metallic smear DOS); queue `docs/developer/cp2k-method-queue.md` `dos-spin-metallic-si` (done) |
-| Loop | CP2K capability (`cp2k-method-loop`) |
-
+| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS (collinear spin + metallic smear DOS)|
 ## Summary
 
 **Collinear spin-polarized** plane-wave Kohn–Sham DFT with **Fermi–Dirac metallic
@@ -354,8 +352,6 @@ Wall comparison is same-geometry only, not absolute-\(D(E)\) parity
 - Regression: [`regressions/pw/dos-spin-metallic-si/reg_dos-spin-metallic-si.cpp`](../../../regressions/pw/dos-spin-metallic-si/reg_dos-spin-metallic-si.cpp)
 - Public API: [`include/atomiverse/cpu/planewave/bands_dos.h`](../../../include/atomiverse/cpu/planewave/bands_dos.h)
 - Optional CP2K character / wall note: `tools/cp2k_oracle/inputs/dos-spin-metallic-si.note`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Sibling collinear fixed-occ DOS: [dos-spin-si](dos-spin-si.md)
 - Sibling metallic restricted DOS: [dos-metallic-si](dos-metallic-si.md) (if present)
 - Sibling metallic restricted bands: [bands-metallic-si](bands-metallic-si.md)

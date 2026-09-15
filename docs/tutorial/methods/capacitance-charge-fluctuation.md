@@ -7,7 +7,7 @@
 | Slug | `capacitance-charge-fluctuation` |
 | Regression | `regressions/md/capacitance-charge-fluctuation/` |
 | Public API | `cpu::CapacitanceChargeFluctuation` (`Observer` on `cpu::md::MD`, default `end_of_step` @ +50) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E10 done** (wave 2, 2026-07-24); map slice E10 ecosystem |
+| Roadmap | map slice E10 ecosystem |
 | Oracle | **literature** (Limmer / Scalfi–Salanne / MetalWalls charge-fluctuation \(C\); no LAMMPS or MetalWalls binary twin) |
 
 ## Summary
@@ -260,7 +260,7 @@ PY
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{oracle}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | --------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -300,7 +300,6 @@ same \(Q\) series and \(k_B\); neither shipped as a binary pin for this slug.
 - Offline pin: [`regressions/md/capacitance-charge-fluctuation/REFERENCE.md`](../../../regressions/md/capacitance-charge-fluctuation/REFERENCE.md)
 - Product gate: [`regressions/md/capacitance-charge-fluctuation/reg_capacitance-charge-fluctuation.cpp`](../../../regressions/md/capacitance-charge-fluctuation/reg_capacitance-charge-fluctuation.cpp)
 - Public header: [`include/atomiverse/cpu/observe/capacitance_charge_fluctuation.h`](../../../include/atomiverse/cpu/observe/capacitance_charge_fluctuation.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), [`tools/metalwalls_oracle/pin_notes_capacitance-charge-fluctuation.md`](../../../tools/metalwalls_oracle/pin_notes_capacitance-charge-fluctuation.md)
 - Capability map: [`.claude/notes/metalwalls-capability-map.md`](../../../.claude/notes/metalwalls-capability-map.md) (E10)
 - Literature: Limmer et al., *J. Chem. Phys.* **139**, 184704 (2013); Scalfi et al., *Phys. Chem. Chem. Phys.* **22**, 10480 (2020); Marin-Laflèche et al., *J. Open Source Softw.* **5**(53), 2373 (2020) (MetalWalls)

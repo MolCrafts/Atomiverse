@@ -1,4 +1,4 @@
-/// @file driver.cu
+/// @file cuda/driver/driver.cu
 /// @brief CUDA Backend implementation + Driver explicit instantiations.
 
 #include <cmath>

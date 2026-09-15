@@ -7,7 +7,7 @@
 | Slug | `gpw-d4-atm` |
 | Regression | `regressions/gpw/gpw-d4-atm/` |
 | Public API | `cpu::gpw::GpwDft::d4` + `d4_atm`; `cpu::gpw::GPWEvaluator::d4` + `d4_atm`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -204,7 +204,7 @@ bash -lc '
 ## Validation (CP2K / dftd4)
 
 Source:
-[`regressions/gpw/gpw-d4-atm/REFERENCE.md`](../../../regressions/gpw/gpw-d4-atm/REFERENCE.md).  
+[`regressions/gpw/gpw-d4-atm/REFERENCE.md`](../../../regressions/gpw/gpw-d4-atm/REFERENCE.md).
 Oracle: offline **dftd4 3.7.0** (`/software/.../dftd4/3.7.0-gfbf-2025b` on
 Arrhenius), CLI twin on `tools/cp2k_oracle/inputs/gpw-d4-atm/POSCAR`.
 External engine pin — not a golden of Atomiverse’s own output; **never**
@@ -291,9 +291,6 @@ host with libdftd4-linked CP2K.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-d4-atm/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle inputs: `tools/cp2k_oracle/inputs/gpw-d4-atm/`
 - Oracle notes: `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

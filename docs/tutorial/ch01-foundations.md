@@ -311,13 +311,12 @@ mean something.
 
 ## Validation Reference
 
-The finite-difference gradient checker shown here is exercised in
-[`tests/cpu/scf/test_gradient.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_gradient.cpp)
-(RHF/UHF/KS analytic gradients vs central differences, STO-3G) and, for
-hybrids on a moving XC grid, in
-[`tests/cpu/scf/test_hybrid_gradient.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_hybrid_gradient.cpp)
-(analytic vs finite-difference to **1e-5 Ha/Bohr**, plus translational
-invariance `|Σ_A F_A| ≤ 1e-8 Ha/Bohr`). The tiered-precision types are
+Analytic gradients are checked end-to-end against PySCF in
+[`regressions/scf/h2o_rhf_sto3g_grad`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_sto3g_grad)
+and, on a larger basis, in
+[`regressions/scf/h2o_rhf_def2svp_grad`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_def2svp_grad).
+The gradient-result plumbing itself has a unit test in
+[`tests/cpu/scf/test_gradient_result.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_gradient_result.cpp). The tiered-precision types are
 defined and documented in
 [`include/atomiverse/core/precision.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/precision.h);
 the unit registry in

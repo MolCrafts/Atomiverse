@@ -1,4 +1,4 @@
-/// @file longrange/fmm_operators.h
+/// @file cpu/longrange/fmm_operators.h
 /// @brief FMM translation operators M2M, M2L, L2L (White & Head-Gordon).
 ///
 /// Backend-agnostic: no Frame / Component / MPI. Coefficient tables for the

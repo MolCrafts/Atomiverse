@@ -183,8 +183,7 @@ bash tools/setup_pyscf_env.sh
 Source: fair wall in
 [`regressions/scf/eom-sf-ccsd-o2/REFERENCE.md`](../../../regressions/scf/eom-sf-ccsd-o2/REFERENCE.md)
 (2026-07-23; login node; `OMP_NUM_THREADS=1`; median of ≥3). Campaign rollup
-ratio **3.12** (`docs/developer/pyscf-method-handoff.md`,
-`docs/developer/pyscf-method-queue.md`).
+ratio **3.12** (the case `REFERENCE.md`).
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -223,8 +222,6 @@ required on this case (\(r=3.12\)).
 - Offline pin: `regressions/scf/eom-sf-ccsd-o2/REFERENCE.md`
 - Regression consumer: `regressions/scf/eom-sf-ccsd-o2/reg_eom-sf-ccsd-o2.cpp`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/excited-states.md` (§3 Equation-of-Motion Coupled Cluster);
   ground-state CC: `docs/roadmap/post-hf.md` (§3)
 - Public API: `include/atomiverse/cpu/scf/eom_sf_ccsd.h`,

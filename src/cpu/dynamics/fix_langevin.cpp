@@ -1,4 +1,4 @@
-/// @file cpu/md/fix_langevin.cpp
+/// @file cpu/dynamics/fix_langevin.cpp
 /// @brief LAMMPS-equivalent Langevin thermostat (force-additive form).
 
 #include "atomiverse/cpu/dynamics/fix_langevin.h"

@@ -185,9 +185,9 @@ large-basis throughput claim.
 ## References
 
 - Offline pin: `regressions/scf/g0w0-h2-sto3g/REFERENCE.md`
-- Perf (in REFERENCE; no separate `pyscf-method-perf.md` row file in tree at
+- Perf (in REFERENCE; no separate `` row file in tree at
   write time): fair_bench numbers above; handoff
-  `docs/developer/pyscf-method-handoff.md` records ratio **0.109**
+  the case `REFERENCE.md` records ratio **0.109**
 - Roadmap: `docs/roadmap/excited-states.md` (G0W0 ✓ CPU)
 - Public headers: `include/atomiverse/cpu/scf/g0w0.h`, `rhf.h`
 - Impl: `src/cpu/scf/g0w0.cpp`

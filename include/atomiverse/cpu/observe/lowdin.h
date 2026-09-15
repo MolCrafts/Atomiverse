@@ -1,4 +1,4 @@
-/// @file cpu/observer/lowdin.h
+/// @file cpu/observe/lowdin.h
 /// @brief Löwdin population analysis — stateless compute functions over a
 ///        mean-field method's shared outputs (`scf::MeanFieldOutputs`).
 ///

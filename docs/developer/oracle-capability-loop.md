@@ -111,7 +111,6 @@ Clearup reports `worktrees_removed`, `branches_pruned`, `builds_wiped` (see temp
 | Knob | PySCF | CP2K | MetalWalls | SE / tight-binding |
 | ---- | ----- | ---- | ---------- | ------------------ |
 | Oracle | offline PySCF | offline CP2K | LAMMPS-first, else MetalWalls | **Family-locked:** OpenMOPAC (NDDO), DFTB+ (DFTB), xtb (GFN); Sparrow/CP2K arch-only |
-| Queue | `pyscf-method-queue.md` | `cp2k-method-queue.md` | `metalwalls-method-queue.md` | `tb-method-queue.md` |
 | Regression root | `regressions/scf/` | `regressions/{gpw,pw,scf}/` | `regressions/{md,forcefield}/` | `regressions/semiempirical/` |
 | Build flags | HF ON; CUDA OFF | HF+PW+GPW ON; CUDA OFF | MD+KSPACE ON; HF/PW/GPW/CUDA OFF | **SE-only**: SEMIEMPIRICAL+EVALUATE ON; HF/PW/GPW/MD/MC/MINIMIZER/VIB/PATH/KSPACE/CUDA OFF |
 | Test filter | `^test_cpu_(scf\|linalg)_` + molecular extras | `^test_cpu_(gpw\|pw\|scf\|xc)_` | `^test_cpu_(md\|mc\|pair\|fix\|observer\|…)` | `^test_cpu_(am1\|rm1\|dftb2\|xtb_gfn0\|nddo_)` |
@@ -125,15 +124,15 @@ Clearup reports `worktrees_removed`, `branches_pruned`, `builds_wiped` (see temp
 | ---- | ---- |
 | Rhai skeleton | `.grok/workflows/_templates/oracle-capability-loop-template.rhai` |
 | Skill | `.agents/skills/create-oracle-loop/SKILL.md` |
-| Instances | `pyscf-method-loop.rhai`, `cp2k-method-loop.rhai`, `metalwalls-method-loop.rhai`, `tb-method-loop.rhai`, `es-cpu-cuda-opt.rhai` (dual-track opt), `arch-campaign.rhai` (architecture/refactor; same phase order) |
+| Instances | .rhai`, .rhai`, .rhai`, .rhai`, `es-cpu-cuda-opt.rhai` (dual-track opt), `arch-campaign.rhai` (architecture/refactor; same phase order) |
 
 Rhai has **no include** — instances are full scripts copied from the template.
 Specialize only:
 
-1. **CONFIG** — paths, cmake, scope, defaults  
+1. **CONFIG** — paths, cmake, scope, defaults
 2. **`extra_law`** — loop-specific binding rules (oracle priority, forbidden
    backends, arch constraints, pin tools). Shared DISK/CLEARUP/GapCensus stay
-   in template law — do not restate them.  
+   in template law — do not restate them.
 3. Optional tiny hooks (worker pin tool line, merge conflict hotspots, one extra
    worker_schema field).
 

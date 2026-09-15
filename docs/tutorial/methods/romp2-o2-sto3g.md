@@ -113,9 +113,7 @@ because reference orbitals/energies differ.
 ## Performance
 
 Source: `REFERENCE.md` fair-bench block (2026-07-23); worker / handoff
-ratio **1.37**. Rollup target: `docs/developer/pyscf-method-perf.md` (may lag
-individual REFERENCE tables).
-
+ratio **1.37**.
 ```bash
 export LD_LIBRARY_PATH="${LIBRARY_PATH}:${LD_LIBRARY_PATH}"
 ~/work/.x86_64/bin/python tools/pyscf_oracle/fair_bench.py \
@@ -145,7 +143,6 @@ scaling claim.
 ## References
 
 - Offline pin: `regressions/scf/romp2-o2-sto3g/REFERENCE.md`
-- Perf rollup: `docs/developer/pyscf-method-perf.md`
 - Roadmap: `docs/roadmap/post-hf.md` (ROMP2 row)
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
 - Related handbook: [ump2-o2-sto3g](ump2-o2-sto3g.md)

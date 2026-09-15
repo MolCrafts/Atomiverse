@@ -79,13 +79,21 @@ Start with these CPU headers:
 - [`scf_guess.h` — SCFInitialGuess](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/scf_guess.h)
 - [`gradient_result.h` — GradientResult (the `forces()` return)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/gradient_result.h)
 - [`XCType`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)
-- [`cpu::semiempirical::GFN1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/gfn1.h) — GFN1-xTB organic energy and analytic forces (H/C/N/O; Evaluate)
+- [`cpu::pw::PW`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_solver.h) + [`cpu::pw::PWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_evaluator.h) — plane-wave DFT
+- [`cpu::gpw::GpwDft`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_solver.h) + [`cpu::gpw::GPWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_evaluator.h) — GPW DFT (bind the *evaluator*: it is the Frame-shaped entry point)
+- [`cpu::semiempirical::AM1` / `RM1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/am1_solver.h) — NDDO
+- [`cpu::semiempirical::DFTB2`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/dftb2.h) (also `DFTB0`, `DFTB3`) — SCC-DFTB on in-tree Slater-Koster tables
+- [`cpu::semiempirical::GFN1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/gfn1.h) (also `GFN0`, `GFN2`, `IPEA`) — extended tight binding, energy + analytic forces (H/C/N/O)
 
 ### Run SCF workflows on the CUDA backend
 
 CUDA SCF presents the same public shape as CPU —
-`cuda::scf::RHF{basis}.run(frame)` / `.forces(frame)`, `Frame` in and out.
-Start with these headers:
+`cuda::scf::RHF{basis}.run(frame)` / `.forces(frame)`, `Frame` in and out — but
+**not the same coverage**: restricted HF only (no UHF/KS), device-native
+integrals and analytic forces over STO-3G s/p shells (l ≤ 1, H…O), and
+`forces()` throws outside that envelope rather than falling back. See
+[Switching backends](../user-guide/backend-switching.md). Start with these
+headers:
 
 - [`cuda::scf::RHF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/rhf.cuh)
 - [`cuda::scf::SCFEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/scf_evaluator.cuh)

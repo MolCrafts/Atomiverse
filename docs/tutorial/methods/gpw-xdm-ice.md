@@ -7,7 +7,7 @@
 | Slug | `gpw-xdm-ice` |
 | Regression | `regressions/gpw/gpw-xdm-ice/` |
 | Public API | `cpu::gpw::GpwDft::xdm` / `cpu::gpw::GPWEvaluator::xdm`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -193,7 +193,7 @@ bash -lc '
 ## Validation (offline dual-Python pin; CP2K capability loop)
 
 Source:
-[`regressions/gpw/gpw-xdm-ice/REFERENCE.md`](../../../regressions/gpw/gpw-xdm-ice/REFERENCE.md).  
+[`regressions/gpw/gpw-xdm-ice/REFERENCE.md`](../../../regressions/gpw/gpw-xdm-ice/REFERENCE.md).
 Oracle context: **CP2K capability loop** (`tools/cp2k_oracle/`), but **no**
 stock CP2K XDM energy — hard gate is dual pure-Python free-atom lattice sum
 (postg / QE combination rules). Twin note:
@@ -263,9 +263,6 @@ gate.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-xdm-ice/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle note: `tools/cp2k_oracle/inputs/gpw-xdm-ice/water_dimer_xdm.note`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`

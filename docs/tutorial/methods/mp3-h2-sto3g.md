@@ -131,9 +131,7 @@ between MP2 and FCI.
 ## Performance
 
 Source: `REFERENCE.md` fair-bench block (2026-07-23); worker / queue ratio
-**0.774**. Rollup target: `docs/developer/pyscf-method-perf.md` (may lag
-individual REFERENCE tables; file may be absent until campaign rollup).
-
+**0.774**.
 ```bash
 export OMP_NUM_THREADS=1
 export LD_LIBRARY_PATH="${LIBRARY_PATH}:${LD_LIBRARY_PATH}"
@@ -167,10 +165,8 @@ asserts.
 ## References
 
 - Offline pin: `regressions/scf/mp3-h2-sto3g/REFERENCE.md`
-- Perf rollup: `docs/developer/pyscf-method-perf.md`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
 - Pin helper: `tools/pyscf_oracle/pin_scf.py` (`mp3`)
-- Queue row: `docs/developer/pyscf-method-queue.md` (`mp3-h2-sto3g`)
 - A. Szabo, N. S. Ostlund, *Modern Quantum Chemistry*, Dover; Table 6.2 /
   pp. 364–368 (third-order diagrams)
 - Psi4NumPy `Moller-Plesset/MP3.py` (spatial diagram reduction used by pin)

@@ -1,4 +1,4 @@
-/// @file cpu/md/barostat.cpp
+/// @file cpu/dynamics/barostat.cpp
 /// @brief CPU Berendsen isotropic barostat.
 
 #include "atomiverse/cpu/dynamics/barostat.h"

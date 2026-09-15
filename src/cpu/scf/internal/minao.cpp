@@ -1,4 +1,4 @@
-/// @file cpu/scf/minao.cpp
+/// @file cpu/scf/internal/minao.cpp
 /// @brief MINAO projector implementation.
 ///
 /// Algorithm (matches pyscf.scf.hf.init_guess_by_minao exactly):

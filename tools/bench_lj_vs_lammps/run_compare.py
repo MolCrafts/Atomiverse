@@ -13,12 +13,12 @@ today; for a fairer arithmetic match use LMP --lmp-neigh full --lmp-newton off.
 Examples:
   # double ATV vs LMP KK double (both defaults)
   python3 run_compare.py \\
-      --atv-bench build-cuda-bench-double/bin/cuda_nonbonded_style_bench --tag double
+      --atv-bench build-cuda-bench-double/bin/bench_nonbonded_style --tag double
 
   # mixed ATV (float math + double acc) — rebuild LMP with -D KOKKOS_PREC=mixed
   # for a same-mode A/B
   python3 run_compare.py \\
-      --atv-bench build-cuda-bench-mixed/bin/cuda_nonbonded_style_bench --tag mixed
+      --atv-bench build-cuda-bench-mixed/bin/bench_nonbonded_style --tag mixed
 """
 from __future__ import annotations
 
@@ -63,10 +63,10 @@ def parse_args() -> argparse.Namespace:
         default=Path(
             os.environ.get(
                 "ATV_BENCH",
-                ROOT / "build-cuda-bench/bin/cuda_nonbonded_style_bench",
+                ROOT / "build-cuda-bench/bin/bench_nonbonded_style",
             )
         ),
-        help="Path to ATV cuda_nonbonded_style_bench (float or double build)",
+        help="Path to ATV bench_nonbonded_style (float or double build)",
     )
     p.add_argument(
         "--lmp-bin",

@@ -197,7 +197,7 @@ not split out. (3) Microsecond-scale reg binary on a 2-AO system (\(n_{\mathrm{o
 
 - Offline pin: `regressions/scf/bse-h2-sto3g/REFERENCE.md`
 - Perf (in REFERENCE): fair_bench numbers above; handoff
-  `docs/developer/pyscf-method-handoff.md` records ratio **0.060**
+  the case `REFERENCE.md` records ratio **0.060**
 - Roadmap: `docs/roadmap/excited-states.md` (BSE@G0W0 ✓ CPU)
 - Public headers: `include/atomiverse/cpu/scf/bse.h`, `g0w0.h`, `rhf.h`
 - Prerequisite pin: `regressions/scf/g0w0-h2-sto3g/REFERENCE.md` /

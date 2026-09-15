@@ -101,7 +101,7 @@ bash -lc '
 
 ## Validation (vs PySCF)
 
-Source: [`regressions/scf/uks-hessian-o2-sto3g/REFERENCE.md`](../../../regressions/scf/uks-hessian-o2-sto3g/REFERENCE.md)  
+Source: [`regressions/scf/uks-hessian-o2-sto3g/REFERENCE.md`](../../../regressions/scf/uks-hessian-o2-sto3g/REFERENCE.md)
 Oracle class: offline central FD of PySCF **2.14.0** analytic UKS nuclear gradient (`mf.nuc_grad_method().kernel()`), \(h=10^{-4}\) Bohr, symmetrized; units via Atomiverse CODATA factors (`kHartreeInEv = 27.211386245988`, `kBohrInAngstrom = 0.529177210903`). PySCF analytic `hessian.uks.Hessian(mf).kernel()` is a **different** algorithm (closed form) and is recorded only as a cross-check (max element abs vs FD twin \(\lesssim 3.44\cdot 10^{-2}\) eV/Å²; analytic stretch \(H_{zz}(0,0)\approx 128.490\) vs FD \(128.456\) eV/Å²). Never live-import PySCF in ctest.
 
 **Setup (from REFERENCE):**
@@ -141,7 +141,7 @@ Off-axis elements are numerically zero on this collinear geometry (\(\lesssim 10
 
 Fair twin: Atomiverse `UKS::hessian` (12 force evaluations after ROKS warm-start + reference) vs a PySCF loop of 12 UKS analytic gradients (same FD skeleton, \(h=10^{-4}\) Bohr). Analytic `hessian.UKS` is a different algorithm and is **not** the fair wall twin for this product path.
 
-Source: `regressions/scf/uks-hessian-o2-sto3g/REFERENCE.md` (recorded 2026-07-24, `OMP_NUM_THREADS=8`, `OMP_PROC_BIND=close`, Release; median of 3 runs). Also rolled into `docs/developer/pyscf-method-handoff.md` / queue notes as ratio **2.13**.
+Source: `regressions/scf/uks-hessian-o2-sto3g/REFERENCE.md` (recorded 2026-07-24, `OMP_NUM_THREADS=8`, `OMP_PROC_BIND=close`, Release; median of 3 runs). Also rolled into the case `REFERENCE.md` / queue notes as ratio **2.13**.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{PySCF}}\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----------------------------------------: | ---- | ------ |
@@ -169,7 +169,6 @@ python tools/pyscf_oracle/fair_bench.py --method uks -- \
 ## References
 
 - Offline pin: `regressions/scf/uks-hessian-o2-sto3g/REFERENCE.md`
-- Perf / handoff: `docs/developer/pyscf-method-handoff.md`, `docs/developer/pyscf-method-queue.md`
 - Roadmap: `docs/roadmap/dft.md`
 - Related product paths: `docs/tutorial/methods/rks-hessian-h2o-sto3g.md` (RKS FD Hessian), `docs/tutorial/methods/rohf-hessian-o2.md` (ROHF FD Hessian)
 - Oracle tooling: `tools/setup_pyscf_env.sh`, `tools/pyscf_oracle/pin_scf.py`

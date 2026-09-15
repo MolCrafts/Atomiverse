@@ -1,4 +1,4 @@
-/// @file cpu/scf/integrals.cpp
+/// @file cpu/scf/internal/integrals.cpp
 /// @brief internal::IntegralWorkspace constructor — production compositor over the
 ///        private integral members (AtomList / ShellList +
 ///        internal::IntegralWorkspace::overlap/kinetic/nuclear_attraction/eri_dense).
@@ -36,10 +36,11 @@ namespace cpu {
 namespace scf {
 namespace internal {
 
-IntegralWorkspace::IntegralWorkspace(const Frame& frame, BasisSet basis, int charge,
-                           bool compute_eri, std::string ecp_name,
-                           const std::vector<int>& ghost_atoms,
-                           bool compute_pvp) {
+IntegralWorkspace::IntegralWorkspace(const Frame& frame, BasisSet basis,
+                                     int charge, bool compute_eri,
+                                     std::string ecp_name,
+                                     const std::vector<int>& ghost_atoms,
+                                     bool compute_pvp) {
     const auto t_total = LogClock::now();
 
     AtomList atom_list{frame, charge, ghost_atoms};
@@ -184,7 +185,7 @@ IntegralWorkspace::IntegralWorkspace(const Frame& frame, BasisSet basis, int cha
 
 xt::xtensor<double, 4>
 IntegralWorkspace::eri_to_spherical(const xt::xtensor<double, 4>& eri_cart,
-                               const xt::xtensor<double, 2>& c2s) {
+                                    const xt::xtensor<double, 2>& c2s) {
     // Four-index transform, one index at a time (small systems only — the
     // dense path is validation/MP2/FCI scale by charter).
     const std::size_t nc = c2s.shape()[0];
@@ -217,7 +218,6 @@ xt::xtensor<double, 4> IntegralView::eri_working() const {
         eri = IntegralWorkspace::eri_to_spherical(eri, c2s);
     return eri;
 }
-
 
 void IntegralWorkspace::fill_rhf_matrices(const Frame& frame, BasisSet basis,
                                           int charge, bool compute_eri,

@@ -1,4 +1,4 @@
-/// @file cpu/async/async_observer.h
+/// @file cpu/asynchronous/async_observer.h
 /// @brief `cpu::md::AsyncObserver` -- MD-bound convenience wrapper over
 /// the driver-agnostic `cpu::AsyncComponentBase`.
 ///

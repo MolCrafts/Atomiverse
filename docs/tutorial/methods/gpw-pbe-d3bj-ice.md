@@ -7,7 +7,7 @@
 | Slug | `gpw-pbe-d3bj-ice` |
 | Regression | `regressions/gpw/gpw-pbe-d3bj-ice/` |
 | Public API | `cpu::gpw::GpwDft::d3bj` / `cpu::gpw::GPWEvaluator::d3bj`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, wave 1) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -156,7 +156,7 @@ bash -lc '
 ## Validation (CP2K)
 
 Source:
-[`regressions/gpw/gpw-pbe-d3bj-ice/REFERENCE.md`](../../../regressions/gpw/gpw-pbe-d3bj-ice/REFERENCE.md).  
+[`regressions/gpw/gpw-pbe-d3bj-ice/REFERENCE.md`](../../../regressions/gpw/gpw-pbe-d3bj-ice/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`git:5e54ba2`, module
 `2026.1-gmpflf-2026.03` on Arrhenius), twin
 `tools/cp2k_oracle/inputs/gpw-pbe-d3bj-ice/water_dimer_d3bj.inp`. External
@@ -223,9 +223,6 @@ primary deliverable is E_disp pin parity; CP2K wall includes full Quickstep
 ## References
 
 - Offline pin: `regressions/gpw/gpw-pbe-d3bj-ice/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle inputs: `tools/cp2k_oracle/inputs/gpw-pbe-d3bj-ice/`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`

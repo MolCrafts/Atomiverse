@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/lbfgs_history.h
+/// @file cpu/minimize/lbfgs_history.h
 /// @brief LbfgsHistory — the curvature history and the two-loop recursion, on their own.
 ///
 /// The L-BFGS *algorithm* — store `m` recent `(s, y)` curvature pairs, recover a descent

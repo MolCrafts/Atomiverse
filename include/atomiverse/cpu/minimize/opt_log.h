@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/opt_log.h
+/// @file cpu/minimize/opt_log.h
 /// @brief OptLog -- per-step optimization summary written as TSV.
 ///
 /// Records `step`, `E[eV]`, `max_force[eV/A]`, `rms_force[eV/A]`, and

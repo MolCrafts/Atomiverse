@@ -1,4 +1,4 @@
-/// @file src/cpu/analysis_executor.cpp
+/// @file cpu/asynchronous/analysis_executor.cpp
 /// @brief `cpu::AnalysisExecutor` implementation.
 
 #include "atomiverse/cpu/asynchronous/analysis_executor.h"

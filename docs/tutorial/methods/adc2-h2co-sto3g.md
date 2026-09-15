@@ -138,7 +138,7 @@ gate is the strict-ADC(2) PySCF root above, not experiment.
 Source: fair-bench block in
 `regressions/scf/adc2-h2co-sto3g/REFERENCE.md` (2026-07-23, login node,
 `OMP_NUM_THREADS=8`, Release). Handoff also records ratio **0.267**.
-`docs/developer/pyscf-method-perf.md` is not present in-tree; numbers below are
+no offline comparison table is present in-tree; the numbers below are
 from REFERENCE / worker, not re-benched here.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{PySCF}}\) | ≤10× | Caveat |
@@ -180,8 +180,6 @@ invalid for the 10× gate.
   `include/atomiverse/cpu/scf/rhf.h` (`RHF::adc2`)
 - Implementation: `src/cpu/scf/adc.cpp`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md` (ratio 0.267)
 - J. Schirmer, *Phys. Rev. A* **26**, 2395 (1982).
   DOI [10.1103/PhysRevA.26.2395](https://doi.org/10.1103/PhysRevA.26.2395)
 - A. B. Trofimov, J. Schirmer, *J. Phys. B* **28**, 2299 (1995).

@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ot-dftu-kpoints/` |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `k_mesh` / `k_points`, `plus_u` |
 | Roadmap | `docs/roadmap/dft.md` §10 GPW — multi-k OT+DFT+U ✓ (`reg_ot-dftu-kpoints`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (wave 8, 2026-07-26) |
 
 ## Summary
 
@@ -183,8 +182,8 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/ot-dftu-kpoints/REFERENCE.md`](../../../regressions/gpw/ot-dftu-kpoints/REFERENCE.md).  
-Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest.  
+[`regressions/gpw/ot-dftu-kpoints/REFERENCE.md`](../../../regressions/gpw/ot-dftu-kpoints/REFERENCE.md).
+Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest.
 Pin date: **2026-07-26**.
 
 **Setup (must match twin / regression):**
@@ -236,7 +235,7 @@ OMP_NUM_THREADS=8 cp2k.psmp -i h2_ot_dftu_kpoints.inp -o diis_k_u.out
 ## Performance
 
 Source: `regressions/gpw/ot-dftu-kpoints/REFERENCE.md` and
-`docs/developer/cp2k-method-handoff.md` (wave 8). Gate: **`perf_exempt`**.
+the case `REFERENCE.md` (wave 8). Gate: **`perf_exempt`**.
 
 | Twin | Wall [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | -------: | ----------------------------------------: | ---- | ------ |
@@ -273,9 +272,6 @@ algorithm and must not be ratioed against ATV OT. Same exemption pattern as
 - CP2K DIIS multi-k PLUS_U twin:
   [`tools/cp2k_oracle/inputs/ot-dftu-kpoints/`](../../../tools/cp2k_oracle/inputs/ot-dftu-kpoints/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Handoff / queue: [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md),
-  [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md)
-- Loop design: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md) §10 (multi-k OT+DFT+U ✓)
 - Related pages: [ot-minimizer-water](ot-minimizer-water.md),
   [gpw-dftu-nio](gpw-dftu-nio.md), [Ch. 9 GPW](../ch09-gpw.md)

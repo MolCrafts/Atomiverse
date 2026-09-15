@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/hessian_diagonalizer.cpp
+/// @file cpu/vibration/hessian_diagonalizer.cpp
 /// @brief cpu::vib::HessianDiagonalizer — verbatim port of PySCF
 ///        `pyscf/hessian/thermo.py::harmonic_analysis`.
 ///

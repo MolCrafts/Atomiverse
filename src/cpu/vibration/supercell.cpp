@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/supercell.cpp
+/// @file cpu/vibration/supercell.cpp
 /// @brief Expand a unit-cell Frame into an \(n_a\times n_b\times n_c\) supercell.
 
 #include "atomiverse/cpu/vibration/supercell.h"

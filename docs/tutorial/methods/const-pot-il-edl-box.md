@@ -7,7 +7,6 @@
 | Slug | `const-pot-il-edl-box` |
 | Regression | `regressions/md/const-pot-il-edl-box/` |
 | Public API | `cpu::md::ConstPotBO` (CG + ASPC members `use_cg`, `cg_tol`, `predictor_order`), `cpu::md::FixFreeze`, `cpu::ElectrodeChargeObserver`, `cpu::PotentialProfile`, `cpu::SpeciesDensityProfile` — all Components on `cpu::md::MD` |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → map §9 planar graphene + const-pot + IL (wave 5, 2026-07-27) |
 | Oracle | **MetalWalls git c8ad175d** — empty capacitor re-pinned 2026-07-29; with-IL absolute Q not expressible under image-sum elastance |
 
 ## Summary
@@ -243,7 +242,7 @@ python3 tools/metalwalls_oracle/inputs/metalwalls/const-pot-il-edl-box/pin_il_ed
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{MetalWalls}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -282,7 +281,6 @@ re-run the offline fair bench, record version + walls, and replace
 - Product gate: [`regressions/md/const-pot-il-edl-box/reg_const-pot-il-edl-box.cpp`](../../../regressions/md/const-pot-il-edl-box/reg_const-pot-il-edl-box.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/const_pot_bo.h`](../../../include/atomiverse/cpu/dynamics/const_pot_bo.h)
 - Pin script: [`tools/metalwalls_oracle/inputs/metalwalls/const-pot-il-edl-box/pin_il_edl.py`](../../../tools/metalwalls_oracle/inputs/metalwalls/const-pot-il-edl-box/pin_il_edl.py)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (§9 planar graphene + const-pot + IL)
 - Literature: Scalfi, Dufils, Reeves, Rotenberg, Salanne, *J. Chem. Phys.* **153**, 174704 (2020), DOI [10.1063/5.0028232](https://doi.org/10.1063/5.0028232); Marin-Laflèche et al., MetalWalls, *JOSS* **5**, 2373 (2020), DOI [10.21105/joss.02373](https://doi.org/10.21105/joss.02373); Roy & Maroncelli, *J. Phys. Chem. B* **114**, 12629 (2010); Merlet et al., *J. Phys. Chem. C* **116**, 7687 (2012)

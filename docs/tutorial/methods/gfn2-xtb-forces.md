@@ -240,11 +240,11 @@ bash -lc '
 ## Validation (xtb)
 
 Source:
-[`regressions/semiempirical/gfn2-xtb-forces/REFERENCE.md`](../../../regressions/semiempirical/gfn2-xtb-forces/REFERENCE.md).  
+[`regressions/semiempirical/gfn2-xtb-forces/REFERENCE.md`](../../../regressions/semiempirical/gfn2-xtb-forces/REFERENCE.md).
 Oracle: **`xtb`** `--gfn 2 --grad` (Bannwarth et al., *J. Chem. Theory Comput.*
 **15**, 1652 (2019); Bannwarth et al., *WIREs Comput. Mol. Sci.* **11**, e01493
-(2021)).  
-`oracle_version`: **6.7.1**.  
+(2021)).
+`oracle_version`: **6.7.1**.
 Hard-coded gates in the regression binary — **never** live xtb from ctest.
 
 ```text
@@ -362,10 +362,6 @@ wall; the regression fails if the ratio exceeds 10.
   `regressions/semiempirical/gfn2-quadrupole-aes/REFERENCE.md`
 - Force siblings: `gfn0-xtb-forces`, `gfn1-xtb-forces` (xtb `--gfn 0/1 --grad`)
 - Oracle README: `tools/tb_oracle/README.md`
-- Queue / handoff / loop: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`,
-  `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/semiempirical.md`
 - Spec history (closed, deleted at done): git `wf/gfn2-xtb-forces`
   (`b8e86743` / `37b9a008`)

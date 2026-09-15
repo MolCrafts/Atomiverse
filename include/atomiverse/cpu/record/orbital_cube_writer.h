@@ -1,4 +1,4 @@
-/// @file cpu/recorder/orbital_cube_writer.h
+/// @file cpu/record/orbital_cube_writer.h
 /// @brief OrbitalCubeWriter -- Gaussian-cube molecular-orbital dump.
 ///
 /// Reads the latest MO coefficients and shells from a sibling mean-field

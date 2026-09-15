@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/lbfgs_history.cpp
+/// @file cpu/minimize/lbfgs_history.cpp
 /// @brief Curvature history + Nocedal's two-loop recursion (N&W, Numerical
 ///        Optimization 2nd ed., Algorithm 7.4).
 

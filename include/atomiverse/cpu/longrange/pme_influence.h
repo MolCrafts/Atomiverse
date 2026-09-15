@@ -1,4 +1,4 @@
-/// @file longrange/pme_influence.h
+/// @file cpu/longrange/pme_influence.h
 /// @brief Backend-agnostic PME influence function and force interpolation
 ///        (no Frame / Component / MPI / FFT engine).
 ///

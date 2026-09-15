@@ -1,4 +1,4 @@
-/// @file cpu/md/nose_hoover.h
+/// @file cpu/dynamics/nose_hoover.h
 /// @brief CPU Nose-Hoover thermostat -- LAMMPS-equivalent `fix nvt`.
 #pragma once
 

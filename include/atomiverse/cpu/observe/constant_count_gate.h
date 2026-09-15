@@ -1,4 +1,4 @@
-/// @file cpu/observer/constant_count_gate.h
+/// @file cpu/observe/constant_count_gate.h
 /// @brief Shared measure-side skeleton for trajectory observers: the
 /// constant-atom-count admission gate and the blocked-x|y|z snapshot packer.
 ///

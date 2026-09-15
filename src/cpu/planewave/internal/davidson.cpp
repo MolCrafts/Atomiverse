@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/davidson.cpp
+/// @file cpu/planewave/internal/davidson.cpp
 /// @brief Iterative block Davidson with FFT-based H·ψ and KB non-local potential.
 ///
 /// Subspace utilities (Y_lm, Jacobi eigensolver, initial subspace) live in

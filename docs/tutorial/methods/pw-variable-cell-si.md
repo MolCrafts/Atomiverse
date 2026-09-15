@@ -6,7 +6,7 @@
 | ----- | ----- |
 | Slug | `pw-variable-cell-si` |
 | Regression | `regressions/pw/pw-variable-cell-si/` |
-| Roadmap | [optimization.md](../../roadmap/optimization.md) § cell relax; [dft.md](../../roadmap/dft.md) § PW CELL_OPT; queue `docs/developer/cp2k-method-queue.md` `pw-variable-cell-si` (done) |
+| Roadmap | [optimization.md](../../roadmap/optimization.md) § cell relax; [dft.md](../../roadmap/dft.md) § PW CELL_OPT|
 
 ## Summary
 
@@ -200,7 +200,7 @@ UPF path is injected at compile time as `ATV_PW_UPF_PATH` →
 ## Validation (CP2K methodology; ATV zero-stress pin)
 
 Source:
-[`regressions/pw/pw-variable-cell-si/REFERENCE.md`](../../../regressions/pw/pw-variable-cell-si/REFERENCE.md).  
+[`regressions/pw/pw-variable-cell-si/REFERENCE.md`](../../../regressions/pw/pw-variable-cell-si/REFERENCE.md).
 Primary science gate is the **ATV residual-stress basin** on the same NC-UPF
 twin (incomplete ecut/k), hard-coded in the regression binary — **never** a live
 third-party oracle from ctest. CP2K Quickstep supplies an offline **CELL_OPT
@@ -323,8 +323,6 @@ mpirun -np 1 cp2k.psmp -i si_cellopt.inp -o cellopt.out
 - Regression: [`regressions/pw/pw-variable-cell-si/reg_pw-variable-cell-si.cpp`](../../../regressions/pw/pw-variable-cell-si/reg_pw-variable-cell-si.cpp)
 - Analytic stress foothold: [pw-analytic-stress-si](pw-analytic-stress-si.md)
 - Energy foothold twin: [pw-lda-si](pw-lda-si.md)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Optional CP2K CELL_OPT methodology input:
   `tools/cp2k_oracle/inputs/pw-variable-cell-si/si_cellopt.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline pins only)

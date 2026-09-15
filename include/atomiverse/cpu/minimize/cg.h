@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/cg.h
+/// @file cpu/minimize/cg.h
 /// @brief CG — Polak-Ribière conjugate-gradient Optimizer component.
 ///
 /// Pluggable alternative to `cpu::minimizer::LBFGS` inside

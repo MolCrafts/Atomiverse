@@ -1,4 +1,4 @@
-/// @file cpu/md/nose_hoover_npt.cpp
+/// @file cpu/dynamics/nose_hoover_npt.cpp
 /// @brief Single-chain Martyna-Tobias-Klein isotropic NPT.
 
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"

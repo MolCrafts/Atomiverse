@@ -1,4 +1,4 @@
-/// @file cpu/scf/orbital_hessian.cpp
+/// @file cpu/scf/internal/orbital_hessian.cpp
 /// @brief OrbitalHessian — occ-virt MO-ERI transform (constructor) plus the
 ///        σ± products, dense builds, and Davidson diagonal per channel.
 

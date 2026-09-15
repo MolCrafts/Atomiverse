@@ -7,7 +7,7 @@
 | Slug | `voronoi-volume-tf` |
 | Regression | `regressions/md/voronoi-volume-tf/` |
 | Public API | `cpu::VoronoiVolume::volumes(frame)` [Å³] (`cpu/observe/voronoi_volume.h`); `cpu::md::ConstPotBO::site_volume` (per-row \(v_i\) [Å³], Component on `cpu::md::MD`, default `pre_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → map §1 "Voronoi volume (TF)" (wave 5); companion of **E7** `thomas-fermi-electrode` (wave 2) |
+| Roadmap | companion of **E7** `thomas-fermi-electrode` (wave 2) |
 | Oracle | **MetalWalls** TF model / Scalfi et al. 2020 (offline algebraic pin; LAMMPS has no TF twin) |
 
 ## Summary
@@ -204,7 +204,7 @@ python3 tools/metalwalls_oracle/inputs/metalwalls/voronoi-volume-tf/pin_voronoi_
 ## Performance
 
 Source: REFERENCE.md perf block; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{MetalWalls}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -244,7 +244,6 @@ hardens the diagonal). Do **not** invent wall-clock ratios.
 - Product gate: [`regressions/md/voronoi-volume-tf/reg_voronoi-volume-tf.cpp`](../../../regressions/md/voronoi-volume-tf/reg_voronoi-volume-tf.cpp)
 - Public headers: [`include/atomiverse/cpu/observe/voronoi_volume.h`](../../../include/atomiverse/cpu/observe/voronoi_volume.h), [`include/atomiverse/cpu/dynamics/const_pot_bo.h`](../../../include/atomiverse/cpu/dynamics/const_pot_bo.h)
 - Pin script: [`tools/metalwalls_oracle/inputs/metalwalls/voronoi-volume-tf/pin_voronoi_tf.py`](../../../tools/metalwalls_oracle/inputs/metalwalls/voronoi-volume-tf/pin_voronoi_tf.py); notes: [`tools/metalwalls_oracle/pin_notes_voronoi-volume-tf.md`](../../../tools/metalwalls_oracle/pin_notes_voronoi-volume-tf.md)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (§1 Voronoi volume (TF); E7 metallicity)
 - Literature: Scalfi, Dufils, Reeves, Rotenberg, Salanne, *J. Chem. Phys.* **153**, 174704 (2020), DOI [10.1063/5.0028232](https://doi.org/10.1063/5.0028232) (arXiv:1910.13341); MetalWalls per-species `thomas_fermi_length` + `voronoi_volume` inputs (Marin-Laflèche et al., *J. Open Source Softw.* **5**, 2373 (2020), DOI [10.21105/joss.02373](https://doi.org/10.21105/joss.02373))

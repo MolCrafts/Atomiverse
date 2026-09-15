@@ -1,4 +1,4 @@
-/// @file src/cpu/md/mpi/reduce.cpp
+/// @file cpu/communication/reduce.cpp
 /// @brief `Reduce` -- batched end-of-step MPI_Allreduce of the
 ///        per-rank scalars and stress tensor.
 ///

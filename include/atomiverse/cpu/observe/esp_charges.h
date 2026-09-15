@@ -1,4 +1,4 @@
-/// @file cpu/observer/esp_charges.h
+/// @file cpu/observe/esp_charges.h
 /// @brief ESP-fitted atomic charges: `MKCharges` (Merz-Singh-Kollman nested
 ///        vdW shells) and `ChelpgCharges` (CHELPG cubic grid).
 ///

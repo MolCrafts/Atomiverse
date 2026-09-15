@@ -7,7 +7,7 @@
 | Slug | `dipole-electrode-joint` |
 | Regression | `regressions/md/dipole-electrode-joint/` |
 | Public API | `cpu::md::DipoleElectrodeJoint` (Component on `cpu::md::MD`, default `pre_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E5 done** (wave 3, 2026-07-24); map slice E5 |
+| Roadmap | map slice E5 |
 | Oracle | **MetalWalls** multipole + Gaussian electrode BO form (offline algebraic pin; not LAMMPS) |
 
 ## Summary
@@ -228,7 +228,7 @@ python3 tools/metalwalls_oracle/inputs/metalwalls/dipole-electrode-joint/pin_joi
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md)
+the case `REFERENCE.md`
 (wave 3, 2026-07-24).
 
 | Twin | \(T_{\mathrm{MetalWalls}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -267,7 +267,6 @@ available, record \(T_{\mathrm{atv}}/T_{\mathrm{MW}}\) in REFERENCE and require
 - Product gate: [`regressions/md/dipole-electrode-joint/reg_dipole-electrode-joint.cpp`](../../../regressions/md/dipole-electrode-joint/reg_dipole-electrode-joint.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/dipole_electrode_joint.h`](../../../include/atomiverse/cpu/dynamics/dipole_electrode_joint.h)
 - Pin script: [`tools/metalwalls_oracle/inputs/metalwalls/dipole-electrode-joint/pin_joint.py`](../../../tools/metalwalls_oracle/inputs/metalwalls/dipole-electrode-joint/pin_joint.py)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), [`tools/metalwalls_oracle/pin_notes.md`](../../../tools/metalwalls_oracle/pin_notes.md)
 - Sibling methods: [pim-induced-dipole-bulk](pim-induced-dipole-bulk.md) (E4), [const-pot-bo-parallel-plate](const-pot-bo-parallel-plate.md) (E1 BO form)
 - Literature: Coretti et al., *J. Chem. Phys.* (2022) — polarizable electrolyte

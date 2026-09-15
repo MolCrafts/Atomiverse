@@ -1,4 +1,4 @@
-/// @file cpu/vib/mass_weighting.h
+/// @file cpu/vibration/mass_weighting.h
 /// @brief cpu::vib::MassWeighting — mass-weights the assembled Hessian.
 ///
 /// Bound at `vib::Phase::diagonalize` immediately after link 1's

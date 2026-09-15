@@ -1,4 +1,4 @@
-/// @file cuda/comm/multi_gpu.cu
+/// @file cuda/communication/multi_gpu.cu
 /// @brief MultiGpu orchestrator — partition / gather (Phase-4 foundation).
 
 #include "atomiverse/cuda/communication/multi_gpu.cuh"

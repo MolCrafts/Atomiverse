@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-hirshfeld-uks/` |
 | Public API | `cpu::gpw::GpwDft` / `cpu::gpw::GPWEvaluator`: `n_alpha`/`n_beta`, `mbd`, `hirshfeld`; `GpwResult::e_disp` [Ha], `volume_ratios` |
 | Roadmap | `docs/roadmap/dft.md` §8 Dispersion — Hirshfeld-scaled MBD (Γ-UKS product) |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -228,7 +227,7 @@ Cross-checks (offline operator notes only):
 
 ## Performance
 
-Source: closed-spec / handoff policy (`docs/developer/cp2k-method-handoff.md`,
+Source: closed-spec / handoff policy (the case `REFERENCE.md`,
 wave 7 2026-07-26). **Not** a ctest gate.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -264,9 +263,6 @@ Gate: `perf_exempt = true` (same policy as `gpw-mbd-hirshfeld` /
 - Regression consumer: [`reg_gpw-hirshfeld-uks.cpp`](../../../regressions/gpw/gpw-hirshfeld-uks/reg_gpw-hirshfeld-uks.cpp)
 - Oracle notes: [`tools/cp2k_oracle/inputs/gpw-hirshfeld-uks/`](../../../tools/cp2k_oracle/inputs/gpw-hirshfeld-uks/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop / handoff: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md),
-  [`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md)
 - Related regressions: RKS Hirshfeld `regressions/gpw/gpw-mbd-hirshfeld/`,
   multi-k RKS Hirshfeld `regressions/gpw/gpw-hirshfeld-kpoints/`,
   free-atom MBD `regressions/gpw/gpw-mbd-ice/`;

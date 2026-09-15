@@ -7,7 +7,7 @@
 | Slug | `const-pot-charge-observer` |
 | Regression | `regressions/md/const-pot-charge-observer/` |
 | Public API | `cpu::ElectrodeChargeObserver` (`Observer`); Frame meta `kElectrodeCharge` |
-| Roadmap / queue | MetalWalls map E1 observe; `docs/developer/metalwalls-method-queue.md` → **done** (wave 1, 2026-07-23); handoff `docs/developer/metalwalls-method-handoff.md` |
+| Roadmap | MetalWalls map E1 observe |
 
 ## Summary
 
@@ -220,9 +220,6 @@ invented wall times on this page.
 - Regression: `regressions/md/const-pot-charge-observer/reg_const-pot-charge-observer.cpp`
 - LAMMPS twin: `tools/metalwalls_oracle/inputs/lammps/const_pot_charge_observer.in`
 - Oracle notes: `tools/metalwalls_oracle/README.md`
-- Queue / handoff: `docs/developer/metalwalls-method-queue.md`,
-  `docs/developer/metalwalls-method-handoff.md`
-- Loop design: `docs/developer/metalwalls-method-loop.md`
 - Related E1: `const-pot-bo-parallel-plate`, `freeze-electrode-atoms`,
   `charging-work-energy`, `const-pot-md-nvt-short`
 - Literature / context: MetalWalls electrode diagnostics (JOSS

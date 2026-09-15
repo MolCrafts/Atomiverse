@@ -26,11 +26,11 @@ let meta = #{
 // ── CONFIG (customized; machinery below stays template-shaped) ──────────
 let loop_id = "parity-gap";
 let oracle_name = "mixed";         // per-item oracle: harness|ctest|cpu-parity|pyscf|cp2k|qe|lammps|literature
-let queue_path = "docs/developer/parity-gap-queue.md";
-let handoff_path = "docs/developer/parity-gap-handoff.md";
-let loop_doc = "docs/developer/parity-gap-loop.md";
+let queue_path = ".claude/campaigns/parity-gap-queue.md";
+let handoff_path = ".claude/campaigns/parity-gap-handoff.md";
+let loop_doc = ".claude/campaigns/parity-gap-loop.md";
 let map_path = "docs/roadmap/index.md";
-let oracle_readme = "docs/developer/parity-gap-loop.md";   // per-oracle pointers live in the loop doc
+let oracle_readme = ".claude/campaigns/parity-gap-loop.md";   // per-oracle pointers live in the loop doc
 let tutorial_root = "docs/tutorial/methods/";
 let specs_root = ".claude/specs/";
 let specs_index = ".claude/specs/INDEX.md";

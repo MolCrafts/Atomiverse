@@ -1,4 +1,4 @@
-/// @file cpu/observer/trajectory_metrics.cpp
+/// @file cpu/observe/trajectory_metrics.cpp
 /// @brief Trajectory-analysis compute wrappers — thin marshaling to the molrs
 /// FFI compute objects and streaming accumulators.
 ///

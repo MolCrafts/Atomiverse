@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-gga-spin-finite-q-si/` |
 | Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` + `PW.spin_polarized = true` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **finite-q × spin × pure GGA** ✓ (`reg_dfpt-gga-spin-finite-q-si`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → **done** (shift wave 3, 2026-07-31); fair ratio **0.19** |
 | Dep | `dfpt-gga-spin-si` ✓ (Γ, spin × PBE); `dfpt-gga-finite-q-si` ✓ (X supercell, restricted PBE) |
 
 ## Summary

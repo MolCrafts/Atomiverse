@@ -1,4 +1,4 @@
-/// @file cpu/observer/rdf_curve.h
+/// @file cpu/observe/rdf_curve.h
 /// @brief rdf_write_curve — the single emitter of the g(r) file format.
 ///
 /// std-only and CUDA-safe (no molrs / `rust/cxx.h`, no CPU async observer

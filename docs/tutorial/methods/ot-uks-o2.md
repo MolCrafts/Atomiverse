@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ot-uks-o2/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`use_ot`, `n_alpha`/`n_beta`, `XcKind::PADE`, `nonperiodic`); `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — product OT minimizer (`use_ot` RKS + **Γ-UKS**) |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -285,8 +284,6 @@ this foothold.
 - Regression consumer: [`reg_ot-uks-o2.cpp`](../../../regressions/gpw/ot-uks-o2/reg_ot-uks-o2.cpp)
 - CP2K twin: [`tools/cp2k_oracle/inputs/ot-uks-o2/`](../../../tools/cp2k_oracle/inputs/ot-uks-o2/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  queue / handoff under `docs/developer/cp2k-method-*.md`
 - Closed-shell OT twin: [`ot-minimizer-water.md`](ot-minimizer-water.md)
 - DIIS UKS 400 Ry twin: [`gpw-uks-o2-gamma.md`](gpw-uks-o2-gamma.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

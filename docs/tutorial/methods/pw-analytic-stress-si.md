@@ -7,7 +7,7 @@
 | Slug | `pw-analytic-stress-si` |
 | Regression | `regressions/pw/pw-analytic-stress-si/` |
 | Public API | `cpu::pw::pw_stress` (analytic Voigt [eV/Å³]); oracle `cpu::pw::pw_stress_fd`; `PWEvaluator::with_stress(true)` → `frame.meta.get(kStress)` |
-| Roadmap | [dft.md](../../roadmap/dft.md) § Periodic response — analytic stress; queue `docs/developer/cp2k-method-queue.md` `pw-analytic-stress-si` (done) |
+| Roadmap | [dft.md](../../roadmap/dft.md) § Periodic response — analytic stress|
 
 ## Summary
 
@@ -165,7 +165,7 @@ UPF path is injected at compile time as `ATV_PW_UPF_PATH` →
 ## Validation (CP2K)
 
 Source:
-[`regressions/pw/pw-analytic-stress-si/REFERENCE.md`](../../../regressions/pw/pw-analytic-stress-si/REFERENCE.md).  
+[`regressions/pw/pw-analytic-stress-si/REFERENCE.md`](../../../regressions/pw/pw-analytic-stress-si/REFERENCE.md).
 Primary science gate is **offline multi-SCF strain-FD** on the same NC-UPF twin
 (`pw_stress_fd`, \(h=2\times 10^{-3}\)), measured **2026-07-24** Arrhenius epyc
 (Release, `OMP_NUM_THREADS=16`). Hard-coded pins in the regression binary —
@@ -263,8 +263,6 @@ append \(r = T_\mathrm{ATV}/T_\mathrm{oracle}\) to REFERENCE.md, require
 - Regression: [`regressions/pw/pw-analytic-stress-si/reg_pw-analytic-stress-si.cpp`](../../../regressions/pw/pw-analytic-stress-si/reg_pw-analytic-stress-si.cpp)
 - Closed SPEC (git history): `.claude/specs/pw-analytic-stress-si/SPEC.md` (deleted at harness done)
 - Energy foothold twin: [pw-lda-si](pw-lda-si.md)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Optional CP2K wall skeleton: `tools/cp2k_oracle/inputs/si_lda_pw_note.inp`
 - Narrative style ref: [Chapter 8 — Plane-Wave DFT](../ch08-plane-wave.md)
 - O. H. Nielsen and R. M. Martin, *Phys. Rev. B* **32**, 3780 (1985)

@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-gga-spin-si/` |
 | Public API | `cpu::pw::DfptPhonon` (members) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` + `PW.spin_polarized = true` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **joint GGA × collinear spin** ✓ (`reg_dfpt-gga-spin-si`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → **done** (shift wave 1, 2026-07-31); fair ratio **0.20** |
 | Dep | `dfpt-gga-si` ✓ (restricted PBE kernel); `dfpt-spin-si` ✓ (collinear LSDA kernel) |
 
 ## Summary

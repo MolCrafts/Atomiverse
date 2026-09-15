@@ -7,7 +7,7 @@
 | Slug | `pw-spin-polarized-o2` |
 | Regression | `regressions/pw/pw-spin-polarized-o2/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`) → `PWResult::magnetization` |
-| Track | CP2K capability wave 1 (`cp2k-method-loop`) |
+| Track | CP2K capability wave 1 () |
 | Roadmap | PW collinear spin (Γ) — enables later `pw-uks-kmesh-fe` |
 
 ## Summary
@@ -226,8 +226,6 @@ reason above. Queue row: ratio **perf_exempt** (2026-07-23 wave 1).
 - Offline pin: [`regressions/pw/pw-spin-polarized-o2/REFERENCE.md`](../../../regressions/pw/pw-spin-polarized-o2/REFERENCE.md)
 - Regression consumer: `regressions/pw/pw-spin-polarized-o2/reg_pw-spin-polarized-o2.cpp`
 - Oracle note: `tools/cp2k_oracle/inputs/pw-spin-polarized-o2.note`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Narrative PW / GPW chapters: [ch08-plane-wave.md](../ch08-plane-wave.md),
   [ch09-gpw.md](../ch09-gpw.md)
 - Related Γ-UKS GPW (different basis/PP): `regressions/gpw/gpw-uks-o2-gamma`

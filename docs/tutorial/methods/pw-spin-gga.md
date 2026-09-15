@@ -7,7 +7,7 @@
 | Slug | `pw-spin-gga` |
 | Regression | `regressions/pw/pw-spin-gga/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`, `xc = XCType::PBE`) → `PWResult::{energy_ha, magnetization}` |
-| Track | CP2K capability wave 4 (`cp2k-method-loop`) |
+| Track | CP2K capability wave 4 () |
 | Roadmap | PW true collinear spin-GGA (`docs/roadmap/dft.md` §10; productized `reg_pw-spin-gga`) |
 
 ## Summary
@@ -274,9 +274,6 @@ Dual gate: (1) mag + \(e_{\mathrm{tot}}\) + GGA activation + SCF converge;
 - Offline pin: [`regressions/pw/pw-spin-gga/REFERENCE.md`](../../../regressions/pw/pw-spin-gga/REFERENCE.md)
 - Regression consumer: `regressions/pw/pw-spin-gga/reg_pw-spin-gga.cpp`
 - Oracle note: `tools/cp2k_oracle/inputs/pw-spin-gga.note`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle rules: `tools/cp2k_oracle/README.md` (never live in ctest)
 - Roadmap: `docs/roadmap/dft.md` (CPU true collinear spin-GGA ✓)
 - Narrative PW / GPW chapters: [ch08-plane-wave.md](../ch08-plane-wave.md),

@@ -1049,28 +1049,6 @@ if(ATV_BUILD_CUDA)
     if(ATV_BUILD_KSPACE)
         atv_add_test(test_cuda_pme_coul cuda/longrange/test_pme_coul.cu)
     endif()
-    # Manual A/B (not ctest): OpenMM cluster vs LAMMPS Verlet nonbonded path.
-    # Run: ATV_CUDA_NONBONDED=openmm|lammps ./cuda_nonbonded_style_bench [n_side] [steps]
-    add_executable(cuda_nonbonded_style_bench
-                   ${CMAKE_SOURCE_DIR}/tools/cuda_nonbonded_style_bench.cu)
-    target_link_libraries(cuda_nonbonded_style_bench PRIVATE atomiverse)
-    set_target_properties(cuda_nonbonded_style_bench PROPERTIES
-                          RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-    # Manual (not ctest): CPU vs CUDA RHF wall + AO scaling.
-    # Run: OMP_NUM_THREADS=8 ./bin/bench_cpu_cuda_rhf [n_rep_e] [n_rep_f]
-    if(ATV_BUILD_HF)
-        add_executable(bench_cpu_cuda_rhf
-                       ${CMAKE_SOURCE_DIR}/tools/bench_cpu_cuda_rhf.cu)
-        target_link_libraries(bench_cpu_cuda_rhf PRIVATE atomiverse)
-        set_target_properties(bench_cpu_cuda_rhf PROPERTIES
-                              CUDA_SEPARABLE_COMPILATION ON
-                              RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-        # OpenMP for fair multi-thread CPU leg on the GPU node.
-        find_package(OpenMP)
-        if(OpenMP_CXX_FOUND)
-            target_link_libraries(bench_cpu_cuda_rhf PRIVATE OpenMP::OpenMP_CXX)
-        endif()
-    endif()
     if(ATV_BUILD_PW)
         atv_add_test(test_cuda_pw_fft cuda/planewave/test_fft.cu)
         target_link_libraries(test_cuda_pw_fft PRIVATE CUDA::cufft)

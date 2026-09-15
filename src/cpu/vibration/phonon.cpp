@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/phonon.cpp
+/// @file cpu/vibration/phonon.cpp
 /// @brief cpu::vib::Phonon — supercell FD phonon driver run loop.
 
 #include "atomiverse/cpu/vibration/phonon.h"

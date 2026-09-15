@@ -1,4 +1,4 @@
-/// @file md/deform.cu
+/// @file cuda/dynamics/deform.cu
 /// @brief Deform -- uniaxial constant-strain-rate deformation.
 
 #include "atomiverse/core/stage.h"

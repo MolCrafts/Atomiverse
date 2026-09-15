@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/final_geometry.h
+/// @file cpu/minimize/final_geometry.h
 /// @brief FinalGeometry -- single-frame XYZ snapshot of the optimizer output.
 ///
 /// `launch()` only marks that a snapshot is pending; the gather + write

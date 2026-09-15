@@ -8,8 +8,7 @@ of kind `cpu::Semiempirical`). The shared NDDO engine is **internal**
 (`NDDOSolver` is not a public bag). Methods compute energies, Mulliken
 charges, the density matrix, and **nuclear forces** via fixed-density central
 finite difference of the SCF energy (product path; matches re-SCF FD at SCF
-stationarity). Closed-form multipole / integral derivatives remain ○ (see
-queue `nddo-closed-form-forces`). AM1 and RM1 now carry **absolute OpenMOPAC
+stationarity). Closed-form multipole / integral derivatives remain ○. AM1 and RM1 now carry **absolute OpenMOPAC
 ΔHf pins** at each method's own optimized geometry
 (`reg_am1-water-mopac-energy`, `reg_rm1-water-mopac-energy`, 2026-07-29); the
 RM1 free-atom energies were AM1-derived and were repaired to MOPAC's `calpar`
@@ -50,7 +49,7 @@ Bloch-sum image-resolved densities (`reg_dftb2-multi-k-forces`). Opt-in
 and as a **Γ-PBC lattice sum** (`DFTB2::d3`, `d3_periodic`, `d3_cutoff`;
 `reg_dftb2-dispersion-d3`, `reg_dftb2-dispersion-d3-periodic`), each with its
 own analytic gradient and virial. Non-SCC **DFTB0** ships (`reg_dftb0-h2`); nuclear forces on that path are
-still **6N central FD of E** (queue `dftb0-analytic-forces`) — DFTB2/3 F
+still **6N central FD of E** (analytic DFTB0 forces not yet implemented) — DFTB2/3 F
 are closed-form.
 **GFN0-xTB** production energy, analytic G, **and FD Hessian** ship (`GFN0`,
 H/C/N/O; `reg_gfn0-beyond-toy`, `reg_gfn0-xtb-forces`,
@@ -61,7 +60,7 @@ G, **and FD Hessian** ship (`GFN1`, `reg_gfn1-xtb-organic` CH4 vs xtb 6.7.1
 `reg_gfn2-xtb-water` + `reg_gfn2-quadrupole-aes` + `reg_gfn2-xtb-forces` +
 `reg_gfn2-aes-fock`; quadrupole AES closes the 1.45 meV H₂O residual; AES
 is **in the SCC Fock** — angular \(F_{H1,y}\) vs xtb is a CAMM-vs-\(R\)
-hole, not a missing Fock term; queue `gfn2-camm-r`). **IPEA-xTB** energy, analytic G, FD Hessian, **and ΔSCC VIP/VEA**
+hole, not a missing Fock term). **IPEA-xTB** energy, analytic G, FD Hessian, **and ΔSCC VIP/VEA**
 ship (`IPEA`, `reg_ipea-xtb-small` CH4 vs xtb 6.7.1 −4.670476737294 Eh;
 `reg_ipea-xtb-forces` off-eq CH4 `--grad`;
 `reg_ipea-xtb-analytic-hessian` CH4 `--hess`;
@@ -82,10 +81,8 @@ the self-image A–(A+T) bonds it previously dropped (a 14% σ error on a dense
 periodic cell). Wave-4 TB staff closed 2026-07-29.
 
 **γ_AB (2026-07-29):** MioSketch DFTB2/DFTB3 use the DFTB+ **Elstner**
-short-range kernel (`internal/dftb_gamma.h`, `1/R − expGamma`). History:
-`.claude/notes/dftb-vs-dftbplus-cleanup.md`. Loop queue:
-`docs/developer/tb-method-queue.md`. Family oracles: OpenMOPAC (NDDO) /
-DFTB+ (DFTB) / xtb (GFN) — see `tools/tb_oracle/README.md`.
+short-range kernel (`internal/dftb_gamma.h`, `1/R − expGamma`). Family oracles: OpenMOPAC (NDDO) / DFTB+ (DFTB) / xtb (GFN) — see
+`tools/tb_oracle/README.md`.
 
 ## 1. Semiempirical Quantum Methods
 
@@ -108,8 +105,8 @@ The NDDO core (overlap, one-electron core Hamiltonian, two-electron integrals,
 Fock build, density, SCF, forces) is parameterization-agnostic in structure.
 **AM1** and **RM1** (H/C/N/O/P/S; Rocha et al. 2006 / MOPAC tables) are
 transcribed. PM3/PM6/PM7 remain tables away (oracle = **OpenMOPAC**). OM3 is
-not in the OpenMOPAC primary surface (blocked in the TB queue until a
-family-locked pin exists). Product-path forces are fixed-density FD; closed-form
+not in the OpenMOPAC primary surface, so it is **blocked** rather than
+scheduled: there is no family-locked binary to pin it against. Product-path forces are fixed-density FD; closed-form
 multipole derivatives stay ○. SCF is closed-shell RHF only (OpenMOPAC UHF is
 a pending deepen). Continuum solvent is OpenMOPAC COSMO (○; not xtb ALPB).
 Periodic NDDO is OpenMOPAC Γ-PBC (○); molecular AM1 under wrap unwraps an
@@ -153,8 +150,7 @@ identity on mio-1-1 H–H ships (`reg_dftb2-dftbplus-energy-pin`); 3ob CH4 has a
 DFTB+ pin under pure SCC-DFTB2. **Γ-point PBC** lattice-sum energy **and**
 lattice-image nuclear forces ship; **multi-k energy + analytic F/σ**
 (Monkhorst–Pack) ships for MioSketch, including collinear open shell.
-**ThreeOb is a molecular cluster** (no lattice-image Γ-PBC — queue
-`dftb2-threeob-periodic`); **ThreeOb multi-k and ThreeOb open shell still
+**ThreeOb is a molecular cluster** (no lattice-image Γ-PBC); **ThreeOb multi-k and ThreeOb open shell still
 throw.** Occupation is integer filling only (no Fermi / metallic smearing). **TD-DFTB** ships as a
 linear-response Casida foothold on the restricted MioSketch ground state
 (`DFTB2::td_casida`; Niehaus et al., PRB **63**, 085108 (2001);
@@ -217,12 +213,12 @@ kernel 0.15 eV). GFN2 quadrupole AES + qkernel AXC close
 the 1.45 meV H₂O energy residual; AES is **in the SCC Fock**
 (`reg_gfn2-aes-fock`) — angular \(F_{H1,y}\) vs xtb is a CAMM-vs-\(R\) hole
 (xtb `mmompop` two-centre \(\Theta\) on H; ATV energy FD stays \(\sim+0.06\)
-eV/Å), not a missing Fock term (queue `gfn2-camm-r`). GFN1 CH4 still sits
+eV/Å), not a missing Fock term . GFN1 CH4 still sits
 **10.2 meV** from xtb (kernel/D3/intcut, not a missing term). Tables are
-CHNO-only (`gfn2-beyond-chno`). The H/C/O `XtbGfn0` sketch stays deleted.
+CHNO-only. The H/C/O `XtbGfn0` sketch stays deleted.
 GFN-xTB is **not** a DFTB3 successor (oracle = **xtb**). PBC, spin, sTDA,
 ALPB/GBSA, CPCM-X/ddCOSMO, extra-Z IPEA tables, and **Fermi filling
-(`--etemp`, xtb default 300 K; ATV integer occ)** remain ○ (queue
-`ipea-beyond-chno`, `gfn-xtb-etemp`). GFN-FF is
+(`--etemp`, xtb default 300 K; ATV uses integer occupation)** remain ○,
+as do extra-Z IPEA tables. GFN-FF is
 classical force-field territory (scope-out of the electronic SE/TB
 capability loop).

@@ -7,7 +7,7 @@
 | Slug | `finite-field-single-electrode` |
 | Regression | `regressions/md/finite-field-single-electrode/` |
 | Public API | `cpu::md::ConstPotBO` (`Ex`/`Ey`/`Ez` on BO RHS) + `cpu::md::FixEfield` + `cpu::md::ClassicalPolarization` on `cpu::md::MD` |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E3 done** (wave 2, 2026-07-24); map slice E3 |
+| Roadmap | map slice E3 |
 | Oracle | **MetalWalls / literature analytic** (Dufils et al. *PRL* **123**, 195501 (2019); Reed/Siepmann–Sprik Gaussian kernels) |
 
 ## Summary
@@ -49,7 +49,7 @@ For a uniform external field the BO equation on electrode sites is
 
 where \(b_i\) is the electrolyte contribution to the potential at site \(i\)
 (zero in the vacuum pin). **Electroneutrality is off** for a free total \(Q\)
-on a single wall (MetalWalls / Dufils single-electrode geometry).  
+on a single wall (MetalWalls / Dufils single-electrode geometry).
 \(\mathbf{E}\) on `ConstPotBO` only updates charges; forces on free charges
 come from a separate `FixEfield` Component:
 
@@ -259,7 +259,7 @@ print(Aii, Q, Pz)
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{MW}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ----------------------: | -----------------------: | ----: | ---- | ------ |
@@ -302,7 +302,6 @@ there is independent of this MW-only slug.
 - Offline pin: [`regressions/md/finite-field-single-electrode/REFERENCE.md`](../../../regressions/md/finite-field-single-electrode/REFERENCE.md)
 - Product gate: [`regressions/md/finite-field-single-electrode/reg_finite-field-single-electrode.cpp`](../../../regressions/md/finite-field-single-electrode/reg_finite-field-single-electrode.cpp)
 - Public headers: [`include/atomiverse/cpu/dynamics/const_pot_bo.h`](../../../include/atomiverse/cpu/dynamics/const_pot_bo.h), [`include/atomiverse/cpu/dynamics/fix_efield.h`](../../../include/atomiverse/cpu/dynamics/fix_efield.h), [`include/atomiverse/cpu/observe/classical_polarization.h`](../../../include/atomiverse/cpu/observe/classical_polarization.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Capability map: [`.claude/notes/metalwalls-capability-map.md`](../../../.claude/notes/metalwalls-capability-map.md) (E3)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md), [`tools/metalwalls_oracle/inputs/metalwalls/finite-field-single-electrode/README.md`](../../../tools/metalwalls_oracle/inputs/metalwalls/finite-field-single-electrode/README.md)
 - Related E1 tutorial: [`const-pot-bo-parallel-plate`](const-pot-bo-parallel-plate.md)

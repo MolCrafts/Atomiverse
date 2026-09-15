@@ -1,4 +1,4 @@
-/// @file cpu/scf/integral_derivatives.h
+/// @file cpu/scf/internal/integral_derivatives.h
 /// @brief Analytic derivatives of molecular integrals w.r.t. nuclear positions.
 ///
 /// Computes dS/dR, dT/dR, dV/dR, d(ERI)/dR, and dV_nuc/dR for contracted
@@ -95,10 +95,12 @@ struct IntegralDerivPack {
 /// @param method         HF or KS mean field (selects the exchange fraction).
 /// @param spin           Restricted or unrestricted spin treatment.
 /// @param xc_type        XC functional (KS hybrid exact-exchange fraction).
-void accumulate_two_electron_gradient(
-    xt::xtensor<double, 2>& grad, const internal::IntegralView& integrals,
-    const xt::xtensor<double, 2>& P_total, const SlaterDeterminant& det,
-    MeanFieldType method, SpinType spin, XCType xc_type);
+void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
+                                      const internal::IntegralView& integrals,
+                                      const xt::xtensor<double, 2>& P_total,
+                                      const SlaterDeterminant& det,
+                                      MeanFieldType method, SpinType spin,
+                                      XCType xc_type);
 
 /// @brief Same contraction from explicit spin densities (no determinant).
 ///
@@ -237,10 +239,9 @@ void accumulate_two_electron_hessian(xt::xtensor<double, 2>& hess,
 /// @param integrals   Integral pack for the current geometry.
 /// @param Pa          α density (factor-1, dimensionless).
 /// @param Pb          β density (factor-1, dimensionless).
-void accumulate_two_electron_hessian_uhf(xt::xtensor<double, 2>& hess,
-                                         const internal::IntegralView& integrals,
-                                         const xt::xtensor<double, 2>& Pa,
-                                         const xt::xtensor<double, 2>& Pb);
+void accumulate_two_electron_hessian_uhf(
+    xt::xtensor<double, 2>& hess, const internal::IntegralView& integrals,
+    const xt::xtensor<double, 2>& Pa, const xt::xtensor<double, 2>& Pb);
 
 // ── Primitive nuclear-attraction derivatives (internal; unit-testable) ─
 // -Z / -q prefactor is NOT included; caller multiplies.

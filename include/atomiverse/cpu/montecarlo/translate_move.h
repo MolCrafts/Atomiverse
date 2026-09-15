@@ -1,4 +1,4 @@
-/// @file cpu/mc/translate_move.h
+/// @file cpu/montecarlo/translate_move.h
 /// @brief cpu::mc::TranslateMove — single-particle symmetric displacement Mover.
 #pragma once
 

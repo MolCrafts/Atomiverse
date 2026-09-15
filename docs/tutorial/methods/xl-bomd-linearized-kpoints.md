@@ -7,7 +7,7 @@
 | Slug | `xl-bomd-linearized-kpoints` |
 | Regression | `regressions/dynamics/xl-bomd-linearized-kpoints/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{… k_mesh …}, k=5, cpu::electronic::XlBomdLinearized{}}` bound with `set_evaluator_ref`; one `cpu::electronic::XlBomdCplx` propagator per sampled (k, σ) |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `xl-bomd-linearized-kpoints`; closes the multi-k residual named by `xl-bomd-linearized-forces` / `xl-bomd-linearized-uks` |
+| Roadmap | closes the multi-k residual named by `xl-bomd-linearized-forces` / `xl-bomd-linearized-uks` |
 | Dual gate | Correctness unit (`test_cpu_gpw_xl_bomd`) + e2e `reg_xl-bomd-linearized-kpoints` (CP2K-anchored); speed measured ratio (see Performance) |
 | Oracle | Offline **CP2K 2026.1** converged-BOMD k-point `.ener` trace (`tools/cp2k_oracle/inputs/xl-bomd-linearized-kpoints/`); never live in ctest |
 

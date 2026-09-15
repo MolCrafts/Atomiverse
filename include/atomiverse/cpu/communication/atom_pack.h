@@ -167,7 +167,7 @@ struct PackPlan {
 /// this one.
 /// @param frame Frame to resolve against.
 /// @param kind Which wire.
-/// @param schema Fields the wire carries, in wire order.
+/// @param contract Folded ghost contract naming the fields this wire carries.
 /// @return Compiled plan.
 PackPlan make_wire_plan(Frame& frame, PackKind kind,
                         const GhostContract& contract);

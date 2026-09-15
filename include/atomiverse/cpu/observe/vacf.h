@@ -1,4 +1,4 @@
-/// @file cpu/observer/vacf.h
+/// @file cpu/observe/vacf.h
 /// @brief CPU async velocity-autocorrelation-function observer (molrs-backed,
 /// streaming).
 ///

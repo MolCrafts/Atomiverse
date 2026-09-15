@@ -1,4 +1,4 @@
-/// @file cuda/async/async_bridge.cu
+/// @file cuda/asynchronous/async_bridge.cu
 /// @brief AsyncBridge sidecar boilerplate: device-ring freeze on the compute
 ///        stream + on-device-completion host callback via `cudaLaunchHostFunc`.
 ///

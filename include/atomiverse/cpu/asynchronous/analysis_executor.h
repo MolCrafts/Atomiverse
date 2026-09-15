@@ -1,4 +1,4 @@
-/// @file cpu/async/analysis_executor.h
+/// @file cpu/asynchronous/analysis_executor.h
 /// @brief `AnalysisExecutor` -- per-rank async worker pool for observers/recorders.
 ///
 /// Owned by `cpu::Runtime`. Lifetime is strictly enclosed by the backend's

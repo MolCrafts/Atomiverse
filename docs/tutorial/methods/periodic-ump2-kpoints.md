@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/periodic-ump2-kpoints/` |
 | Public API | `cpu::gpw::GpwDft::mp2(atoms)` → `cpu::gpw::Mp2Result` (`cpu/gpw/mp2.h`); UKS `n_alpha`/`n_beta`, `k_mesh[3]`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt` |
 | Roadmap | `docs/roadmap/dft.md` §10 — multi-k UMP2 ✓ (`reg_periodic-ump2-kpoints`) |
-| Queue | CP2K capability loop wave 6 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 | Dual gate | E_corr vs multi-k RMP2 first-green; speed **`perf_exempt`** |
 
 ## Summary
@@ -201,7 +200,7 @@ needed.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` (wave 6) and REFERENCE.md.
+Source: the case `REFERENCE.md` (wave 6) and REFERENCE.md.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
@@ -230,8 +229,6 @@ This slug: **`perf_exempt`**. Wall budget for the regression binary: ≤ 60 s.
 - Oracle twin: `tools/cp2k_oracle/inputs/periodic-ump2-kpoints.inp`
 - Closed-shell multi-k twin: `regressions/gpw/periodic-mp2-kpoints/REFERENCE.md`
 - Γ UMP2 foothold: `regressions/gpw/periodic-ump2-si/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Roadmap: `docs/roadmap/dft.md` §10
 - Del Ben, Hutter, VandeVondele, *J. Chem. Theory Comput.* **8**, 4177 (2012)
   (RI-GPW / CP2K `MP2_GPW`)

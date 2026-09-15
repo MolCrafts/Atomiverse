@@ -1,4 +1,4 @@
-/// @file minimizer/sd.cu
+/// @file cuda/minimize/sd.cu
 /// @brief cuda::minimizer::SteepestDescent kernel: x += alpha * f / m * ATV::units::force_to_accel.
 
 #include "atomiverse/core/units.h"

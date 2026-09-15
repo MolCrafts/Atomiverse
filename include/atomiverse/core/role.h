@@ -1,4 +1,4 @@
-/// @file facade/component_role.h
+/// @file core/role.h
 /// @brief Role — bitset of RoleFlags on every Component.
 ///
 /// Loop coupling is **one** axis, named for the soft path:

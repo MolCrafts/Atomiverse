@@ -7,7 +7,7 @@
 | Slug | `xl-bomd-uks` |
 | Regression | `regressions/dynamics/xl-bomd-uks/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{…, compute_forces=true, n_alpha, n_beta}, k=5}` bound with `set_evaluator_ref`; propagator class `cpu::electronic::XlBomd` (dual α/β) |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `xl-bomd-uks`; AIMD residual prose in [dft.md](../../roadmap/dft.md) |
+| Roadmap | AIMD residual prose in [dft.md](../../roadmap/dft.md) |
 | Dual gate | Correctness A1–A6 unit + A7 e2e envelope; speed **`perf_exempt`** (no CP2K AIMD twin wall) |
 | Wave | CP2K capability loop — wave 6 **done** (merged 2026-07-26) |
 
@@ -299,8 +299,8 @@ Geometry, cutoff, SCF tolerances, \(\Delta t\), step count: table in
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; queue/handoff
-[`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-[`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md).
+``,
+``.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -355,8 +355,6 @@ this XL-BOMD trajectory.
 - Unit dual-spin / Table-I gate: `tests/cpu/gpw/test_gpw_xl_bomd.cpp`
 - Public propagator: `include/atomiverse/cpu/electronic/xl_bomd.h`
 - Suggested CP2K input: `tools/cp2k_oracle/inputs/xl-bomd-uks/o2_uks_xl_bomd_nve.inp`
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
 - Oracle: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - Narrative GPW / MD: [ch09-gpw.md](../ch09-gpw.md),
   [ch10-classical-md.md](../ch10-classical-md.md)

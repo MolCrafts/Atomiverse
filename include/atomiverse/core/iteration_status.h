@@ -1,4 +1,4 @@
-/// @file facade/iteration_status.h
+/// @file core/iteration_status.h
 /// @brief IterationStatus — one loop's outcome. **Owned by the loop, not the Context.**
 ///
 ///   - **converged** — the loop terminated successfully. Written ONLY by the driver,

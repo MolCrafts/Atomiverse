@@ -58,7 +58,7 @@ streams, velocity initialisers) keep their state across calls.
 `backend.step()` walks a compiled **Plan** — a list of *slots*, one per phase,
 in phase order. Each slot holds the components bound to that phase, launched in
 ascending *order* (see below). The phases are the `ATV::md::Phase` enum
-(`include/atomiverse/facade/stage.h`), modelled on the LAMMPS Verlet timestep so
+(`include/atomiverse/core/stage.h`), modelled on the LAMMPS Verlet timestep so
 the whole step is legible from the enum:
 
 | Phase | Responsibility | LAMMPS equivalent |

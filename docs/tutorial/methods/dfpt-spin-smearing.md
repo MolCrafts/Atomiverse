@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-spin-smearing/` |
 | Public API | `cpu::pw::DfptPhonon` + `cpu::pw::DfptPhononResult`; ground state via `cpu::pw::PW` members `spin_polarized`, `multiplicity`, `smearing`, `degauss` [Ry], `extra_bands` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — collinear spin + metallic smear ✓ (`reg_dfpt-spin-smearing`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (wave 10, 2026-07-26); **`perf_exempt`** |
 | Dep | siblings `dfpt-spin-si` ✓, `dfpt-metallic-si` ✓; Γ foothold `dfpt-phonon-si` ✓ |
 
 ## Summary
@@ -234,7 +233,7 @@ unless exempted.
 
 `perf_exempt = true` — reason: no CP2K binary/module for a fair DFPT
 spin+smear wall twin this shift. Handoff records **perf_exempt**
-(`docs/developer/cp2k-method-handoff.md`). Informative ATV wall: ~30 s
+(the case `REFERENCE.md`). Informative ATV wall: ~30 s
 (2-atom Si, 6 responses × 2 spins, 8 k-points, OMP=8).
 
 ## Limitations
@@ -260,8 +259,7 @@ spin+smear wall twin this shift. Handoff records **perf_exempt**
 - Regression: `regressions/response/dfpt-spin-smearing/reg_dfpt-spin-smearing.cpp`
 - CP2K twin note: `tools/cp2k_oracle/inputs/dfpt-spin-smearing.note`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Handoff **perf_exempt**: `docs/developer/cp2k-method-handoff.md`
-- Queue row: `docs/developer/cp2k-method-queue.md` (`dfpt-spin-smearing` done)
+- Handoff **perf_exempt**: the case `REFERENCE.md`
 - Roadmap: `docs/roadmap/dft.md` §11 DFPT spin × smear productized
 - Public headers: `include/atomiverse/cpu/planewave/dfpt_phonon.h`,
   `pw_solver.h`

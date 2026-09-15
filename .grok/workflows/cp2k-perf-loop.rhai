@@ -6,7 +6,7 @@
 // Per wave: Baseline? → Census → Assign → Worktrees → Merge? → Clearup
 // (always) → Harness?  Stops early with "cp2k_matched" when every baseline
 // twin reaches target_ratio.
-// Design: docs/developer/cp2k-perf-loop.md + .claude/notes/gpw-perf-architecture.md
+// Design: .claude/campaigns/cp2k-perf-loop.md + .claude/notes/gpw-perf-architecture.md
 
 let meta = #{
     name: "cp2k-perf-loop",
@@ -27,8 +27,8 @@ let meta = #{
 
 // ── CONFIG ──────────────────────────────────────────────────────────────
 let loop_id = "cp2k-perf";
-let queue_path = "docs/developer/gpw-perf-queue.md";
-let loop_doc = "docs/developer/cp2k-perf-loop.md";
+let queue_path = ".claude/campaigns/gpw-perf-queue.md";
+let loop_doc = ".claude/campaigns/cp2k-perf-loop.md";
 let arch_note = ".claude/notes/gpw-perf-architecture.md";
 let baseline_note = ".claude/notes/gpw-perf-baseline.md";
 let provenance_note = ".claude/notes/oracle-pin-provenance.md";

@@ -1,4 +1,4 @@
-/// @file cpu/recorder/timing_report.cpp
+/// @file cpu/record/timing_report.cpp
 /// @brief Cross-rank reduction + rendering of TimerRegistry data.
 
 #include "atomiverse/cpu/record/timing_report.h"

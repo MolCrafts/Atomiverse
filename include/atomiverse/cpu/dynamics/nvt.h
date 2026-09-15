@@ -1,4 +1,4 @@
-/// @file cpu/md/nvt.h
+/// @file cpu/dynamics/nvt.h
 /// @brief cpu::md::NVT — LAMMPS `fix nvt`-style canonical-ensemble setup that
 ///        bundles velocity-Verlet integration with a selectable thermostat.
 ///

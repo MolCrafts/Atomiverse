@@ -1,4 +1,4 @@
-/// @file cuda/recorder/density_recorder.cuh
+/// @file cuda/record/density_recorder.cuh
 /// @brief DensityRecorder -- header-only electron density grid recorder (async D2H bridge).
 ///
 /// @see cpu::eval_density_grid (cpu/observe/density.h)

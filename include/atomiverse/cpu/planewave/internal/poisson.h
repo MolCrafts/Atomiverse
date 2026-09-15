@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/poisson.h
+/// @file cpu/planewave/internal/poisson.h
 /// @brief internal::PoissonSolver — Hartree potential in reciprocal space.
 ///
 /// Facade-private step helper owned by `cpu::pw::PW`. NOT a

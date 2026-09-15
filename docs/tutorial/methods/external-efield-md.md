@@ -7,7 +7,7 @@
 | Slug | `external-efield-md` |
 | Regression | `regressions/md/external-efield-md/` |
 | Public API | `cpu::md::FixEfield{Ex, Ey, Ez}` (`Bias` kind); `cpu::Evaluate` or default `md::Phase::post_force` on `cpu::md::MD` |
-| Queue / map | [metalwalls-method-queue.md](../../developer/metalwalls-method-queue.md) **E3**; map slice E3 in `.claude/notes/metalwalls-capability-map.md` |
+| Queue / map | **E3**; map slice E3 in `.claude/notes/metalwalls-capability-map.md` |
 | Dual gate | Force + energy vs offline LAMMPS pin; fair wall \(r \le 10\) |
 | Oracle | **LAMMPS** (not MetalWalls) — feature also exists as `fix efield` |
 
@@ -203,7 +203,5 @@ step overhead against the LAMMPS twin.
 - LAMMPS input twin: `tools/metalwalls_oracle/inputs/lammps/in.external_efield`
 - LAMMPS docs: <https://docs.lammps.org/fix_efield.html>
 - LAMMPS source (constant charge path): `src/fix_efield.cpp`
-- Queue / handoff: `docs/developer/metalwalls-method-queue.md` (E3),
-  `docs/developer/metalwalls-method-handoff.md` (wave 1 ratio **0.60**)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (E3)
 - Oracle tooling notes: `tools/metalwalls_oracle/README.md`

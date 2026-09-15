@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-gga-spin-smearing/` |
 | Public API | `cpu::pw::DfptPhonon` + `PW` members (`xc=PBE`, `spin_polarized`, `smearing=fermi_dirac`) |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **joint GGA × spin × smear** ✓ |
-| Queue | `docs/developer/cp2k-method-queue.md` → **done** (worker wave 4, 2026-08-01); fair ratio **0.21** |
 | Dep | `dfpt-gga-spin-si` ✓; `dfpt-spin-smearing` ✓; `dfpt-gga-si` ✓ |
 
 ## Summary

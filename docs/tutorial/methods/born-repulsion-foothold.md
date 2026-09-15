@@ -7,7 +7,7 @@
 | Slug | `born-repulsion-foothold` |
 | Regression | `regressions/forcefield/born-repulsion-foothold/` |
 | Public API | `cpu::PairBorn` (`Potential` on `cpu::Evaluate` / `cpu::md::MD`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E8 salt / walls** (wave 2, 2026-07-24); map slice E8 |
+| Roadmap | map slice E8 |
 | Oracle | **LAMMPS** `pair_style born` + `pair_modify shift yes` (metal units) |
 
 ## Summary
@@ -231,7 +231,7 @@ lmp -in tools/metalwalls_oracle/inputs/lammps/in.born_dimer
 ## Performance
 
 Source: REFERENCE.md performance block; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{LAMMPS}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | --------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -266,7 +266,6 @@ same lattice, record version + walls, and replace `perf_exempt` in REFERENCE.
 - Offline pin: [`regressions/forcefield/born-repulsion-foothold/REFERENCE.md`](../../../regressions/forcefield/born-repulsion-foothold/REFERENCE.md)
 - Product gate: [`regressions/forcefield/born-repulsion-foothold/reg_born-repulsion-foothold.cpp`](../../../regressions/forcefield/born-repulsion-foothold/reg_born-repulsion-foothold.cpp)
 - Public header: [`include/atomiverse/cpu/potentials/pair_born.h`](../../../include/atomiverse/cpu/potentials/pair_born.h)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Offline twin input: [`tools/metalwalls_oracle/inputs/lammps/in.born_dimer`](../../../tools/metalwalls_oracle/inputs/lammps/in.born_dimer)
 - LAMMPS doc: `pair_style born` (Born–Mayer–Huggins); metal units; `pair_modify shift`

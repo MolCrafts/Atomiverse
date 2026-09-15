@@ -7,7 +7,7 @@
 | Slug | `second-gen-cpmd-uks-ot` |
 | Regression | `regressions/dynamics/second-gen-cpmd-uks-ot/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::SecondGenCp{cpu::gpw::GPWEvaluator{…, n_alpha, n_beta, use_ot=true}, aspc_k, corrector_max_iter}` bound with `set_evaluator_ref` |
-| Roadmap | `docs/roadmap/molecular-dynamics.md` §7 — SGCP Γ-UKS OT; queue row in [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) |
+| Roadmap | `docs/roadmap/molecular-dynamics.md` §7 — SGCP Γ-UKS OT |
 | Dual gate | Correctness: NVE drift envelope + OT corrector-budget identity + triplet ⟨S²⟩; speed **`perf_exempt`** (no CP2K AIMD twin wall on pin host) |
 | Wave | CP2K capability loop — wave 10 (merged 2026-07-26) |
 | Oracle | Offline CP2K sketch only (`tools/cp2k_oracle/`); **never** live in ctest |
@@ -216,7 +216,7 @@ bash -lc '
 
 ## Validation (vs CP2K)
 
-Source: [`regressions/dynamics/second-gen-cpmd-uks-ot/REFERENCE.md`](../../../regressions/dynamics/second-gen-cpmd-uks-ot/REFERENCE.md).  
+Source: [`regressions/dynamics/second-gen-cpmd-uks-ot/REFERENCE.md`](../../../regressions/dynamics/second-gen-cpmd-uks-ot/REFERENCE.md).
 Oracle: offline **CP2K** sketch under `tools/cp2k_oracle/inputs/second-gen-cpmd-uks-ot/`;
 **never** live in ctest. Pin host inventory (2026-07-26): **no** `cp2k`
 binary / CP2K Lmod module — same class as sibling SGCP dynamics slugs
@@ -275,8 +275,7 @@ Related absolute energy / force offline pins (static O₂ UKS, not this MD slug)
 ## Performance
 
 Source: `regressions/dynamics/second-gen-cpmd-uks-ot/REFERENCE.md` and
-[cp2k-method-handoff.md](../../developer/cp2k-method-handoff.md). Queue
-record: **`perf_exempt`** (NVE drift / method-identity gate; no fair AIMD
+Campaign record: **`perf_exempt`** (NVE drift / method-identity gate; no fair AIMD
 wall twin on pin host 2026-07-26).
 
 | Twin | Wall [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -323,9 +322,6 @@ AIMD with matched ASPC order / OT corrector budget / cutoff / OMP and record
 - Regression binary: `regressions/dynamics/second-gen-cpmd-uks-ot/reg_second-gen-cpmd-uks-ot.cpp`
 - CP2K oracle sketch: `tools/cp2k_oracle/inputs/second-gen-cpmd-uks-ot/o2_uks_sgcp_ot_nve.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline only; never ctest)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Roadmap: `docs/roadmap/molecular-dynamics.md` §7 (SGCP UKS OT ✓)
 - Closed-shell OT static: `docs/tutorial/methods/ot-minimizer-water.md`
 - Γ-UKS static O₂: `docs/tutorial/methods/gpw-uks-o2-gamma.md`

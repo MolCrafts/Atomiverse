@@ -8,8 +8,6 @@
 | Regression | `regressions/response/dfpt-finite-q-spin-smearing/` |
 | Public API | `cpu::pw::DfptPhonon` + `cpu::pw::DfptPhononResult`; GS members on `cpu::pw::PW` (`spin_polarized`, `multiplicity`, `smearing`, `degauss` [Ry], `extra_bands`) |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — finite-q / spin / smear product ✓ |
-| Queue | `docs/developer/cp2k-method-queue.md` (wave 11, 2026-07-26); **`perf_exempt`** |
-| Loop | CP2K capability (`cp2k-method-loop`) |
 | Dep | `dfpt-spin-incommensurate` ✓, `dfpt-finite-q-smearing` ✓, `dfpt-spin-smearing` ✓ |
 
 ## Summary
@@ -230,7 +228,7 @@ this slug is **`perf_exempt`**.
 | `ratio_atv_over_oracle` | n/a (exempt) |
 | `within_10x` | n/a (exempt; correctness gates only) |
 
-Handoff: `docs/developer/cp2k-method-handoff.md` (wave 11 row
+Handoff: the case `REFERENCE.md` (wave 11 row
 `dfpt-finite-q-spin-smearing` → **perf_exempt**).
 
 ## Limitations
@@ -258,8 +256,6 @@ Handoff: `docs/developer/cp2k-method-handoff.md` (wave 11 row
 - Regression: `regressions/response/dfpt-finite-q-spin-smearing/reg_dfpt-finite-q-spin-smearing.cpp`
 - CP2K twin note: `tools/cp2k_oracle/inputs/dfpt-finite-q-spin-smearing.note`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Handoff: `docs/developer/cp2k-method-handoff.md` (wave 11, **perf_exempt**)
-- Queue row: `docs/developer/cp2k-method-queue.md` (`dfpt-finite-q-spin-smearing` done)
 - Roadmap: `docs/roadmap/dft.md` §11 DFPT
 - Public header: `include/atomiverse/cpu/planewave/dfpt_phonon.h`
 - GS method: `include/atomiverse/cpu/planewave/pw_solver.h`

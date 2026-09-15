@@ -87,7 +87,7 @@ bash -lc '
 
 ## Validation (vs PySCF)
 
-Source: [`regressions/scf/rohf-hessian-o2/REFERENCE.md`](../../../regressions/scf/rohf-hessian-o2/REFERENCE.md)  
+Source: [`regressions/scf/rohf-hessian-o2/REFERENCE.md`](../../../regressions/scf/rohf-hessian-o2/REFERENCE.md)
 Oracle class: offline central FD of PySCF **2.14.0** analytic ROHF nuclear gradient (`mf.nuc_grad_method().kernel()`), \(h=10^{-4}\) Bohr, symmetrized; units via Atomiverse CODATA factors. PySCF `mf.Hessian()` / `hessian.ROHF` → `NotImplementedError` (not used as twin). Never live-import PySCF in ctest.
 
 **Setup (from REFERENCE):**
@@ -121,7 +121,7 @@ Regression also asserts Hessian symmetry (\(\lvert H-H^\top\rvert \le 10^{-8}\))
 
 ## Performance
 
-**`perf_exempt=true`.** No entry for this slug in `docs/developer/pyscf-method-perf.md`. PySCF 2.14.0 has no analytic ROHF Hessian twin; the offline oracle is multi-SCF FD of analytic gradients—the same work class as Atomiverse `ROHF::hessian`, not a one-shot CPHF wall-time twin.
+**`perf_exempt=true`.** No external wall-time twin for this case. PySCF 2.14.0 has no analytic ROHF Hessian twin; the offline oracle is multi-SCF FD of analytic gradients—the same work class as Atomiverse `ROHF::hessian`, not a one-shot CPHF wall-time twin.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{PySCF}}\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----------------------------------------: | ---- | ------ |
@@ -159,8 +159,6 @@ python tools/pyscf_oracle/fair_bench.py --method rohf -- \
 ## References
 
 - Offline pin: `regressions/scf/rohf-hessian-o2/REFERENCE.md`
-- Perf rollup: `docs/developer/pyscf-method-perf.md` (slug absent; exempt)
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`, `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/hartree-fock.md`
 - Oracle tooling: `tools/setup_pyscf_env.sh`, `tools/pyscf_oracle/pin_scf.py`
 - C. C. J. Roothaan, *Rev. Mod. Phys.* **32**, 179 (1960) — ROHF.

@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/trajectory_writer.h
+/// @file cpu/minimize/trajectory_writer.h
 /// @brief TrajectoryWriter -- append geometry frames to an XYZ trajectory.
 ///
 /// Per-step recorder for geometry optimization or AIMD runs. Binds by default

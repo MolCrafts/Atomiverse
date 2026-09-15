@@ -1,4 +1,4 @@
-/// @file cpu/driver/path_driver.h
+/// @file cpu/path/path_driver.h
 /// @brief cpu::PathDriver — the coupled-replica preset: N replicas, all must converge.
 ///
 /// "N coupled replicas" is a **second axis**, orthogonal to termination — see

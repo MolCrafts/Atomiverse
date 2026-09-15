@@ -190,7 +190,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/gpw-stress-water/REFERENCE.md`](../../../regressions/gpw/gpw-stress-water/REFERENCE.md).  
+[`regressions/gpw/gpw-stress-water/REFERENCE.md`](../../../regressions/gpw/gpw-stress-water/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`, EasyBuild
 `2026.1-gmpflf-2026.03`), Arrhenius epyc, `RUN_TYPE ENERGY_FORCE` +
 `STRESS_TENSOR NUMERICAL`. Hard-coded pins in the regression binary —
@@ -294,9 +294,6 @@ would change both accuracy path and wall.
 - Offline pin + fair wall: `regressions/gpw/gpw-stress-water/REFERENCE.md`
 - Twin input: `tools/cp2k_oracle/inputs/h2o_stress_mt.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Related force pin: `docs/tutorial/methods/gpw-forces-water.md`,
   `regressions/gpw/gpw-forces-water/`
 - Narrative GPW: `docs/tutorial/ch09-gpw.md`

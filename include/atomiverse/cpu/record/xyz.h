@@ -1,4 +1,4 @@
-/// @file cpu/recorder/xyz.h
+/// @file cpu/record/xyz.h
 /// @brief XYZ and Zarr trajectory writers/readers — all backed by molrs.
 ///
 /// The writers take a `cpu::Frame` and hand its raw per-atom arrays to molrs one

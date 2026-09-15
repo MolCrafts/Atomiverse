@@ -1,8 +1,8 @@
-/// @file tools/cuda_nonbonded_style_bench.cu
+/// @file benchmarks/cuda/bench_nonbonded_style.cu
 /// @brief Single-GPU LJ NVE wall timing for the OpenMM cluster MD path.
 ///
 /// Usage:
-///   ./cuda_nonbonded_style_bench [N_or_n_side] [n_steps] [warmup]
+///   ./bin/bench_nonbonded_style [N_or_n_side] [n_steps] [warmup]
 ///
 /// If the first argument is ≥ 1000, it is treated as **atom count N** and a
 /// cubic lattice is built with n_side = ceil(N^{1/3}) (actual N = n_side³ ≥

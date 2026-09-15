@@ -1,4 +1,4 @@
-/// @file cpu/vib/frequency_report.h
+/// @file cpu/vibration/frequency_report.h
 /// @brief cpu::vib::FrequencyReport — tab-separated vibrational-frequency
 ///        summary writer.
 ///

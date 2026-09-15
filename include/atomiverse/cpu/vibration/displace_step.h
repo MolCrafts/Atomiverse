@@ -1,4 +1,4 @@
-/// @file cpu/vib/displace_step.h
+/// @file cpu/vibration/displace_step.h
 /// @brief cpu::vib::DisplaceStep — applies the +/-h Cartesian displacement.
 ///
 /// Bound at `vib::Phase::displace`. For displacement index `s = ctx.step`

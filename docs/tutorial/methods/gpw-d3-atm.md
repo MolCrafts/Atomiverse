@@ -7,7 +7,7 @@
 | Slug | `gpw-d3-atm` |
 | Regression | `regressions/gpw/gpw-d3-atm/` |
 | Public API | `cpu::gpw::GpwDft::d3` + `d3_atm`; `cpu::gpw::GPWEvaluator::d3` + `d3_atm`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -178,7 +178,7 @@ bash -lc '
 ## Validation (CP2K)
 
 Source:
-[`regressions/gpw/gpw-d3-atm/REFERENCE.md`](../../../regressions/gpw/gpw-d3-atm/REFERENCE.md).  
+[`regressions/gpw/gpw-d3-atm/REFERENCE.md`](../../../regressions/gpw/gpw-d3-atm/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`git` / module
 `2026.1-gmpflf-2026.03` on Arrhenius), twin
 `tools/cp2k_oracle/inputs/gpw-d3-atm/water_dimer_d3_atm.inp`. External
@@ -247,9 +247,6 @@ strict full-SCF twin later if product policy requires
 ## References
 
 - Offline pin: `regressions/gpw/gpw-d3-atm/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle inputs: `tools/cp2k_oracle/inputs/gpw-d3-atm/`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - Related two-body D3(BJ): `docs/tutorial/methods/gpw-pbe-d3bj-ice.md`

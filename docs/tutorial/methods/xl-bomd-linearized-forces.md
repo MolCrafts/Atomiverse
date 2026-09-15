@@ -7,7 +7,7 @@
 | Slug | `xl-bomd-linearized-forces` |
 | Regression | `regressions/dynamics/xl-bomd-linearized-forces/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{…}, k, cpu::electronic::XlBomdLinearized{}}` bound with `set_evaluator_ref`; propagator `cpu::electronic::XlBomd` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `xl-bomd-linearized-forces`; [molecular-dynamics.md](../../roadmap/molecular-dynamics.md) XL-BOMD residual closed 2026-07-26 |
+| Roadmap | [molecular-dynamics.md](../../roadmap/molecular-dynamics.md) XL-BOMD residual closed 2026-07-26 |
 | Dual gate | Correctness A1–A4 unit (`test_cpu_gpw_xl_bomd`) + A5 e2e NVE drift; speed **`perf_exempt`** |
 | Wave | CP2K capability loop — harness wave 12 (2026-07-26) |
 | Oracle | Offline CP2K twin sketch only (`tools/cp2k_oracle/inputs/xl-bomd-linearized-forces/`); never live in ctest |
@@ -309,7 +309,7 @@ bit-identical density history.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` (wave 12),
+Source: the case `REFERENCE.md` (wave 12),
 `REFERENCE.md` Perf gate.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -348,9 +348,6 @@ value; it is not claimed as a measured fair-bench ratio here.
 - Regression: `regressions/dynamics/xl-bomd-linearized-forces/reg_xl-bomd-linearized-forces.cpp`
 - CP2K twin sketch: `tools/cp2k_oracle/inputs/xl-bomd-linearized-forces/h2o_xl_linearized_nve.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md`
-- Perf / handoff: `docs/developer/cp2k-method-handoff.md`
-- Queue / loop: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`
 - Prior product paths: [xl-bomd-water](xl-bomd-water.md) (SCF-converged Γ RKS);
   [xl-bomd-uks-kpoints](xl-bomd-uks-kpoints.md) (multi-k UKS SCF XL);
   [gpw-bomd-water](gpw-bomd-water.md) (plain BOMD foothold)

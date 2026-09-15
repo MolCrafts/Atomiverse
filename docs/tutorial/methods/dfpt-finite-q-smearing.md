@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-finite-q-smearing/` |
 | Public API | `cpu::pw::DfptPhonon` (members: `q_frac`, response/CG tolerances) + `cpu::pw::DfptPhononResult`; ground state via `cpu::pw::PW` members `smearing`, `degauss` [Ry], `extra_bands` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — finite-q + metallic smear ✓ |
-| Queue | `docs/developer/cp2k-method-queue.md` (done 2026-07-26); **`perf_exempt`** |
 | Dep | `dfpt-finite-q-si` ✓ (fixed-occ X twin); `dfpt-metallic-si` ✓ (Γ FD); `pw-smearing-al` ✓ (occupations) |
 | Oracle | CP2K (product intent: `VIBRATIONAL_ANALYSIS` + `&SMEAR`); offline note only |
 
@@ -246,7 +245,7 @@ this slug is **`perf_exempt`**.
 | `ratio_atv_over_oracle` | n/a (exempt) |
 | `within_10x` | n/a (exempt; correctness gates only) |
 
-Handoff: `docs/developer/cp2k-method-handoff.md` records
+Handoff: the case `REFERENCE.md` records
 `dfpt-finite-q-smearing` as **`perf_exempt`**.
 
 ## Limitations
@@ -279,8 +278,7 @@ Handoff: `docs/developer/cp2k-method-handoff.md` records
 - Γ metallic sibling: `regressions/response/dfpt-metallic-si/REFERENCE.md`
 - CP2K product note: `tools/cp2k_oracle/inputs/dfpt-finite-q-smearing.note`
 - Oracle contract: `tools/cp2k_oracle/README.md`
-- Handoff (`perf_exempt`): `docs/developer/cp2k-method-handoff.md`
-- Queue row: `docs/developer/cp2k-method-queue.md` (`dfpt-finite-q-smearing` done)
+- Handoff (`perf_exempt`): the case `REFERENCE.md`
 - Roadmap: `docs/roadmap/dft.md` §11 DFPT (finite-q + metallic smear ✓)
 - Public header: `include/atomiverse/cpu/planewave/dfpt_phonon.h`
 - PW smear members: `include/atomiverse/cpu/planewave/pw_solver.h`

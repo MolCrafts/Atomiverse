@@ -7,7 +7,7 @@
 | Slug | `dftb2-3ob-organic` |
 | Regression | `regressions/semiempirical/dftb2-3ob-organic/` |
 | Public API | `cpu::semiempirical::DFTB2` + `DftbSkSet::ThreeOb`; `cpu::Evaluate` |
-| Roadmap / queue | `docs/roadmap/semiempirical.md`; `docs/developer/tb-method-queue.md` → **done** (wave 1, 2026-07-27) |
+| Roadmap | `docs/roadmap/semiempirical.md` |
 | Oracle | **DFTB+ 24.1** (family-locked; never OpenMOPAC / xtb for this pin) |
 
 ## Summary
@@ -228,7 +228,7 @@ Offline re-pin (human only; never ctest):
 ## Performance
 
 Source: [`REFERENCE.md`](../../../regressions/semiempirical/dftb2-3ob-organic/REFERENCE.md),
-[`docs/developer/tb-method-handoff.md`](../../developer/tb-method-handoff.md)
+the case `REFERENCE.md`
 (wave 1: all three greens `perf_exempt`).
 
 | Item | Value |
@@ -258,10 +258,6 @@ Source: [`REFERENCE.md`](../../../regressions/semiempirical/dftb2-3ob-organic/RE
 - Offline pin: `regressions/semiempirical/dftb2-3ob-organic/REFERENCE.md`
 - Oracle notes: `tools/tb_oracle/inputs/dftbplus/ch4_3ob_dftb2/README.md`
 - Oracle rules: `tools/tb_oracle/README.md` (DFTB* → DFTB+ only)
-- Loop design: `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
-- Queue / handoff: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`
 - Roadmap: `docs/roadmap/semiempirical.md`
 - Literature:
   - M. Elstner et al., *Phys. Rev. B* **58**, 7260 (1998)

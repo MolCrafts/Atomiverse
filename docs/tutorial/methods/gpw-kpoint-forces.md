@@ -190,7 +190,7 @@ bash -lc '
 ## Validation (vs CP2K / FD)
 
 Source:
-[`regressions/gpw/gpw-kpoint-forces/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-forces/REFERENCE.md).  
+[`regressions/gpw/gpw-kpoint-forces/REFERENCE.md`](../../../regressions/gpw/gpw-kpoint-forces/REFERENCE.md).
 Oracle rules: offline pins only (`tools/cp2k_oracle/README.md`); **never** live
 CP2K from ctest. Absolute same-basis CP2K digits are **not** the product gate
 for this slug (basis mismatch); decisive gate is analytic \(\equiv\) FD of the
@@ -287,8 +287,6 @@ same host/core count (single-rank). Do not invent a speed ratio.
 - Regression consumer: `regressions/gpw/gpw-kpoint-forces/reg_gpw-kpoint-forces.cpp`
 - Oracle twin: `tools/cp2k_oracle/inputs/gpw-kpoint-forces.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / loop / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`, `docs/developer/cp2k-method-handoff.md`
 - Spec history: `.claude/specs/gpw-kpoint-forces/` (closed at done; git on
   `wf/gpw-kpoint-forces`)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

@@ -1,4 +1,4 @@
-/// @file src/cpu/scf/ecp_integrals.cpp
+/// @file cpu/scf/internal/ecp_integrals.cpp
 /// @brief Semi-local ECP integrals ⟨μ|U|ν⟩ — McMurchie–Davidson (1981)
 ///        type-1 / type-2 with scaled modified spherical Bessel radial
 ///        integrands and per-term Gauss–Legendre radial quadrature.

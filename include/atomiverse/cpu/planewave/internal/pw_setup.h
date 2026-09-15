@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/pw_setup.h
+/// @file cpu/planewave/internal/pw_setup.h
 /// @brief Host-side plane-wave SCF problem assembly and density mixing,
 ///        shared by the CPU (`cpu::pw::PW`) and CUDA
 ///        (`cuda::pw::PW`) methods.

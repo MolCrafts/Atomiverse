@@ -81,8 +81,7 @@ general nonequilibrium MD and stay in the
 | Extended-Lagrangian dipoles (XL)            |  ✓  |   ○  |   ○  | `extended-lagrangian-dipoles` (MetalWalls stationary gate; dynamics gates self-consistency) |
 | Coupled dipole ⊕ electrode Q solve          |  ✓  |   ○  |   ○  | `dipole-electrode-joint` (MetalWalls kernels; exact joint system has no MW twin — `mw_expressible: false` in the case REFERENCE) |
 
-AIM/DAIM aspherical and deformable ions are **not implemented** (map slice
-E11, deferred off the active queue). `DipoleElectrodeJoint` alternates the
+AIM/DAIM aspherical and deformable ions are **not implemented**. `DipoleElectrodeJoint` alternates the
 Gaussian-elastance \(AQ\) solve with the Thole-damped PIM dipole solve to
 `joint_tol`; it has no Ewald yet, so a fair large-slab wall-time comparison
 against MetalWalls is still owed (`perf_exempt` in the case REFERENCE).

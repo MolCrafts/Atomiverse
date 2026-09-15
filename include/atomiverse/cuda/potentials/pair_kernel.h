@@ -1,4 +1,4 @@
-/// @file potentials/pair_kernel.h
+/// @file cuda/potentials/pair_kernel.h
 /// @brief Backend-agnostic, potential-neutral pairwise force/energy kernels.
 ///
 /// force-infra-03: the per-pair force *math* lives here, ONCE, decoupled from

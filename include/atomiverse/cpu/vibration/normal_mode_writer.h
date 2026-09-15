@@ -1,4 +1,4 @@
-/// @file cpu/vib/normal_mode_writer.h
+/// @file cpu/vibration/normal_mode_writer.h
 /// @brief cpu::vib::NormalModeWriter — per-mode XYZ-animation writer.
 ///
 /// Bound at `vib::Phase::end_of_step`, this Recorder fires once on the

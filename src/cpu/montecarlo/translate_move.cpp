@@ -1,4 +1,4 @@
-/// @file src/cpu/mc/translate_move.cpp
+/// @file cpu/montecarlo/translate_move.cpp
 /// @brief cpu::mc::TranslateMove implementation.
 
 #include "atomiverse/cpu/montecarlo/translate_move.h"

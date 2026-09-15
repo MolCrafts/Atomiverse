@@ -349,9 +349,12 @@ unchanged to any level of theory.
 
 ## Validation Reference
 
-The thermostat and barostat components are exercised under regression in
-[`tests/cpu/dynamics/test_md.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/dynamics/test_md.cpp) (Nosé-Hoover NVT,
-Berendsen barostat, `NoseHooverNPT`, CSVR, Langevin) and the categorical
+The thermostats and barostats are exercised end-to-end by the ensemble
+regressions — [`regressions/md/lj_argon`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/lj_argon) (NVE
+drift), [`regressions/md/npt_lj_mtk`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/npt_lj_mtk) (diagonal
+MTK NPT), [`regressions/md/pr_npt_lj`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/pr_npt_lj)
+(full-cell Parrinello-Rahman) and
+[`regressions/md/nph_lj`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/nph_lj) (thermostat-free NPH) and the categorical
 setter wiring — including the automatic `Virial` injection triggered by a
 barostat's `reads() == Stress` — in
 [`tests/cpu/dynamics/test_md_set_api.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/dynamics/test_md_set_api.cpp).

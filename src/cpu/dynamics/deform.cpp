@@ -1,4 +1,4 @@
-/// @file cpu/md/deform.cpp
+/// @file cpu/dynamics/deform.cpp
 /// @brief CPU uniaxial affine deformation -- LAMMPS `fix deform` aligned.
 ///
 /// ERATE / TRATE formulas and the `L0`-at-fix-issue snapshot are mirrored

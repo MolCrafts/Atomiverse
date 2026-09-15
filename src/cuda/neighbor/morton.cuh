@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file morton.cuh
+/// @file cuda/neighbor/morton.cuh
 /// @brief Morton (Z-order) code bit-interleaving for spatial sorting.
 
 #include <cstdint>

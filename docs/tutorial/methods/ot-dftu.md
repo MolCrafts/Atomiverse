@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ot-dftu/` |
 | Public API | `cpu::gpw::GPWEvaluator` members `use_ot`, `plus_u`, `n_alpha`/`n_beta`; `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` §10 GPW — OT + DFT+U ✓ (`reg_ot-dftu`) |
-| Queue | CP2K capability loop wave 7 (`docs/developer/cp2k-method-queue.md`) — done 2026-07-26 |
 
 ## Summary
 
@@ -192,7 +191,7 @@ bash -lc '
 
 ## Validation (vs CP2K)
 
-Source: [`regressions/gpw/ot-dftu/REFERENCE.md`](../../../regressions/gpw/ot-dftu/REFERENCE.md).  
+Source: [`regressions/gpw/ot-dftu/REFERENCE.md`](../../../regressions/gpw/ot-dftu/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest. Pin date:
 **2026-07-26**. Twin of `gpw-dftu-nio` chemistry with OT as the product path
 on both sides (CP2K always used `&OT` for this NiO mol pin).
@@ -292,9 +291,6 @@ microcase; it does not forecast solid NiO, multigrid parity, or sparse OT.
 - Related DIIS+U foothold: [`gpw-dftu-nio.md`](gpw-dftu-nio.md) /
   [`regressions/gpw/gpw-dftu-nio/`](../../../regressions/gpw/gpw-dftu-nio/)
 - Related OT RKS water: [`ot-minimizer-water.md`](ot-minimizer-water.md)
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Loop design: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - J. VandeVondele, J. Hutter, *J. Chem. Phys.* **118**, 4365 (2003) — OT

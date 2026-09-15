@@ -1,4 +1,4 @@
-/// @file cpu/vib/phonon_result.h
+/// @file cpu/vibration/phonon_result.h
 /// @brief cpu::vib::PhononResult — Γ-point FD phonon spectrum of a supercell.
 #pragma once
 

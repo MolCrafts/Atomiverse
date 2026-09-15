@@ -7,7 +7,7 @@
 | Slug | `periodic-urpa-si` |
 | Regression | `regressions/gpw/periodic-urpa-si/` |
 | Public API | `cpu::gpw::GpwDft::direct_rpa(atoms)` → `cpu::gpw::RpaResult` after Γ **UKS** `run()` (`cpu/gpw/rpa.h`, `gpw_solver.h`) |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → **done** (wave 7, 2026-07-26); handoff **perf_exempt**; roadmap §10 Periodic RPA residual prose (URPA@UKS) |
+| Roadmap | handoff **perf_exempt**; roadmap §10 Periodic RPA residual prose (URPA@UKS) |
 
 ## Summary
 
@@ -259,8 +259,7 @@ queue/handoff **perf_exempt** (wave 7, 2026-07-26).
 | ---- | -----------------------: | ----------------------: | ----: | ---- | ------ |
 | sc-Si₂ URPA@UKS PBE (30 Ry, Γ, RI) | — | ~18 (SCF+RI+Poisson) | **exempt** | n/a | Algorithm mismatch vs CP2K RI-RPA; remeasure only if plasmon-equivalent twin is defined |
 
-Campaign records the same: ratio **perf_exempt**
-(`docs/developer/cp2k-method-queue.md` / `cp2k-method-handoff.md` wave 7).
+Campaign records the same: ratio **perf_exempt**.
 
 ## Limitations
 
@@ -287,8 +286,6 @@ Campaign records the same: ratio **perf_exempt**
 - Regression consumer: `regressions/gpw/periodic-urpa-si/reg_periodic-urpa-si.cpp`
 - Oracle twin: `tools/cp2k_oracle/inputs/periodic-urpa-si.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / loop / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`, `docs/developer/cp2k-method-handoff.md`
 - Roadmap: `docs/roadmap/dft.md` § Periodic RPA / URPA@UKS
 - Related method pages: [periodic-mp2-si](periodic-mp2-si.md) (Γ MP2 foothold),
   [direct-rpa-h2-sto3g](direct-rpa-h2-sto3g.md) (molecular plasmon dRPA),

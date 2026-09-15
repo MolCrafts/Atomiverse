@@ -1,4 +1,4 @@
-/// @file cpu/scf/shell_pair.cpp
+/// @file cpu/scf/internal/shell_pair.cpp
 /// @brief Build canonical shell pair list with Cauchy-Schwarz screening.
 
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
@@ -100,7 +100,8 @@ ShellPairList::ShellPairList(const internal::IntegralView& ints, double thr) {
     *this = std::move(spl);
 }
 
-ShellBlockPairList::ShellBlockPairList(const internal::IntegralView& ints, double thr) {
+ShellBlockPairList::ShellBlockPairList(const internal::IntegralView& ints,
+                                       double thr) {
     const int n = ints.n_ao_cart(); // Cartesian engine dimension
     const int n_raw_shells = static_cast<int>(ints.shells.size());
 

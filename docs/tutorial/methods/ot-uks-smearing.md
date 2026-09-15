@@ -8,9 +8,6 @@
 | Regression | `regressions/gpw/ot-uks-smearing/` |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `n_alpha`/`n_beta`, `smearing`, `degauss` [Ry], `extra_bands`, `k_mesh` |
 | Roadmap | `docs/roadmap/dft.md` §10 GPW — OT+metallic smear **UKS** ✓ (`reg_ot-uks-smearing`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (wave 9, 2026-07-26) |
-| Loop | CP2K capability (`cp2k-method-loop`) |
-
 ## Summary
 
 Collinear **UKS** Gaussian-and-plane-waves (GPW) DFT with **Orbital
@@ -202,7 +199,7 @@ bash -lc '
 
 ## Validation (vs CP2K / internal exactness)
 
-Source: [`regressions/gpw/ot-uks-smearing/REFERENCE.md`](../../../regressions/gpw/ot-uks-smearing/REFERENCE.md).  
+Source: [`regressions/gpw/ot-uks-smearing/REFERENCE.md`](../../../regressions/gpw/ot-uks-smearing/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** for wall class + DIIS LSD twin input; **never**
 live in ctest. Product free-energy accuracy is **ATV-internal** (OT ≡ DIIS)
 plus a frozen first-green pin.
@@ -263,7 +260,7 @@ cp2k.psmp -i tools/cp2k_oracle/inputs/ot-uks-smearing/na_bcc_uks_fermi_dirac.inp
 
 Source: fair wall table in
 `regressions/gpw/ot-uks-smearing/REFERENCE.md` and
-`docs/developer/cp2k-method-handoff.md` (wave 9, 2026-07-26). Queue record:
+the case `REFERENCE.md` (wave 9, 2026-07-26). Queue record:
 ratio **~0.12**. Gate \(r\le 10\).
 
 Comparable settings: cutoff 150 Ry, PADE, multi-k \(2^3\), single rank,
@@ -306,8 +303,6 @@ sparse/linear-scaling OT. (4) `within_10x=true`; no optimize pass required.
 - CP2K oracle inputs: `tools/cp2k_oracle/inputs/ot-uks-smearing/`
 - Sibling tutorials: [ot-minimizer-water](ot-minimizer-water.md) (Γ RKS OT),
   [pw-smearing-al](pw-smearing-al.md) (PW FD metals)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Roadmap: `docs/roadmap/dft.md` §10 (UKS OT+smear ✓ on GPW)
 - VandeVondele, J.; Hutter, J. *J. Chem. Phys.* **118**, 4365 (2003),
   doi:10.1063/1.1543154 (original OT)

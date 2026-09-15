@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-gga-si/` |
 | Public API | `cpu::pw::DfptPhonon` (members) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **GGA kernel** ✓ (`reg_dfpt-gga-si`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → **done** (wave 6, 2026-07-26); handoff **`perf_exempt`** |
 | Dep | `dfpt-phonon-si` ✓ (LSDA Γ product); ground-state twin `pw-pbe-gga-si` ✓ |
 
 ## Summary
@@ -192,7 +191,7 @@ acceptance / hybrid reject guards. No full SCF e2e under `tests/`.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` + REFERENCE.md.
+Source: the case `REFERENCE.md` + REFERENCE.md.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
@@ -219,8 +218,6 @@ and fair ratio \(r = T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) (require \(r\le 10\)).
 - Offline pin: `regressions/response/dfpt-gga-si/REFERENCE.md`
 - Regression: `regressions/response/dfpt-gga-si/reg_dfpt-gga-si.cpp`
 - Oracle note: `tools/cp2k_oracle/inputs/dfpt-gga-si.note`
-- Handoff / perf: `docs/developer/cp2k-method-handoff.md`
-- Queue: `docs/developer/cp2k-method-queue.md`
 - Sibling LSDA product: `docs/tutorial/methods/dfpt-phonon-si.md`
 - Ground-state PBE twin: `docs/tutorial/methods/pw-pbe-gga-si.md`
 - Literature: Baroni, de Gironcoli, Dal Corso, Giannozzi, *Rev. Mod. Phys.*

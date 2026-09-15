@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/opt_log.cpp
+/// @file cpu/minimize/opt_log.cpp
 /// @brief OptLog -- TSV writer for geometry-optimization progress.
 ///        MPI-aware: collective metric reduction, rank-0 I/O.
 

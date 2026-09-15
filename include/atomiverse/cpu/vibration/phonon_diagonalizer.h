@@ -1,4 +1,4 @@
-/// @file cpu/vib/phonon_diagonalizer.h
+/// @file cpu/vibration/phonon_diagonalizer.h
 /// @brief Crystal Γ-point diagonalizer: full \(3N\) mass-weighted spectrum.
 ///
 /// Unlike `HessianDiagonalizer` (molecular TR projection → \(3N-6/5\)), this

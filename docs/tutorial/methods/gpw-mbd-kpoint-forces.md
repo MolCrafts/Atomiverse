@@ -7,7 +7,7 @@
 | Slug | `gpw-mbd-kpoint-forces` |
 | Regression | `regressions/gpw/gpw-mbd-kpoint-forces/` |
 | Public API | `cpu::gpw::GpwDft::mbd` + `k_mesh` / `GPWEvaluator::mbd`; multi-k `gpw_forces_from_scf` / `GPWEvaluator(compute_forces=true)`; `GpwResult::e_disp` [Ha] |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion + §10 Periodic KS; `docs/developer/cp2k-method-queue.md` (done, harness wave 10) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion + §10 Periodic KS |
 
 ## Summary
 
@@ -189,7 +189,7 @@ bash -lc '
 ## Validation (libMBD / CP2K-campaign offline pins)
 
 Source:
-[`regressions/gpw/gpw-mbd-kpoint-forces/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-kpoint-forces/REFERENCE.md).  
+[`regressions/gpw/gpw-mbd-kpoint-forces/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-kpoint-forces/REFERENCE.md).
 Oracle: offline **libMBD** Fortran (`cmbd_mbd_scs_energy`, git `88069c6`) for
 \(E_{\mathrm{disp}}\); independent central FD for forces; multi-k wiring vs
 geometry kernel. Campaign home is the **CP2K method loop** (GPW / PW /
@@ -281,10 +281,6 @@ with libMBD-linked CP2K and a defined fair twin.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-mbd-kpoint-forces/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Oracle notes: `tools/cp2k_oracle/inputs/gpw-mbd-kpoint-forces/`,
   `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion, §10 Periodic KS

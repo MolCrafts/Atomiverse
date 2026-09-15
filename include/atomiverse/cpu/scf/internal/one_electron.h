@@ -1,4 +1,4 @@
-/// @file cpu/scf/one_electron.h
+/// @file cpu/scf/internal/one_electron.h
 /// @brief Nuclear repulsion energy for Hartree-Fock / DFT.
 ///
 /// The one-electron integral kernels (overlap / kinetic / nuclear attraction)

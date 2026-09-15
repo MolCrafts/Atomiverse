@@ -8,8 +8,6 @@
 | Regression | `regressions/gpw/ot-smearing/` |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `smearing`, `degauss` [Ry], `extra_bands`, `mp_order`; `GpwResult::{e_total,e_fermi,n_elec_occ,e_entropy}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §10 — OT + metallic smear ✓ (`reg_ot-smearing`) |
-| Loop | CP2K capability (`cp2k-method-loop` wave 8, 2026-07-26) |
-
 ## Summary
 
 **Orbital Transformation (OT)** optimizes occupied MO coefficients on the
@@ -310,8 +308,7 @@ sparse/linear-scaling OT. (4) **ctest never launches CP2K.**
 - Regression binary: `regressions/gpw/ot-smearing/reg_ot-smearing.cpp`
 - CP2K twin input: `tools/cp2k_oracle/inputs/ot-smearing/na_ot_fermi_dirac.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Handoff ratio **~0.20**: `docs/developer/cp2k-method-handoff.md`
-- Queue row: `docs/developer/cp2k-method-queue.md` (`ot-smearing` done)
+- Handoff ratio **~0.20**: the case `REFERENCE.md`
 - Roadmap: `docs/roadmap/dft.md` §10 (OT + metallic smear ✓)
 - Public header: `include/atomiverse/cpu/gpw/gpw_solver.h`
 - Internal OT (fractional gradient): `include/atomiverse/cpu/gpw/internal/ot.h`

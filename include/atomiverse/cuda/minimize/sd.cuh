@@ -1,4 +1,4 @@
-/// @file cuda/minimizer/sd.cuh
+/// @file cuda/minimize/sd.cuh
 /// @brief cuda::minimizer::SteepestDescent — steepest-descent Optimizer
 ///        component.
 ///

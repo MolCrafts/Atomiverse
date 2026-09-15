@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-gga-spin-finite-q-smearing/` |
 | Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` + `PW.spin_polarized = true` + `PW.smearing = fermi_dirac` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **finite-q × spin × pure GGA × smear** ✓ (`reg_dfpt-gga-spin-finite-q-smearing`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → **done** (shift wave 5, 2026-08-01); fair ratio **0.25** |
 | Dep | `dfpt-gga-spin-smearing` ✓; `dfpt-gga-spin-finite-q-si` ✓; `dfpt-finite-q-spin-smearing` ✓ |
 
 ## Summary

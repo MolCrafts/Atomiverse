@@ -1,4 +1,4 @@
-/// @file md/kinetic_energy.cu
+/// @file cuda/dynamics/kinetic_energy.cu
 /// @brief KineticEnergy kernel: per-atom KE with warp-shuffle block
 ///        reduction. Also writes the kinetic stress tensor
 ///        Σ m·vα·vβ (eV units, no volume division) into

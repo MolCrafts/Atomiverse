@@ -1,4 +1,4 @@
-/// @file cuda/md/fix_langevin.cuh
+/// @file cuda/dynamics/fix_langevin.cuh
 /// @brief CUDA Langevin thermostat — LAMMPS-equivalent `fix langevin`.
 #pragma once
 

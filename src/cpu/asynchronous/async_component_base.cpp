@@ -1,4 +1,4 @@
-/// @file src/cpu/async_component_base.cpp
+/// @file cpu/asynchronous/async_component_base.cpp
 /// @brief `cpu::AsyncComponentBase` implementation -- thin dispatcher into the
 /// snapshot ring slot most recently stamped by `Publish`.
 

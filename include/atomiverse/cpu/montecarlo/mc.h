@@ -1,4 +1,4 @@
-/// @file cpu/mc/mc.h
+/// @file cpu/montecarlo/mc.h
 /// @brief cpu::mc::MC — concrete canonical (NVT) Metropolis Monte Carlo driver.
 #pragma once
 

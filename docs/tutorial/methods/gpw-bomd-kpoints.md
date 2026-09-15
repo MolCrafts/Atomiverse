@@ -9,7 +9,6 @@ capability loop, 2026-07-31.)*
 | Regression | `regressions/gpw/gpw-bomd-kpoints/` |
 | Public API | `cpu::md::MD` + `cpu::md::VelocityVerlet` + `cpu::gpw::GPWEvaluator{kinds, cutoff_ry, …, compute_forces=true}` with `k_mesh = {1,1,2}`, `k_time_reversal = false`; step-0 forces seeded by `cpu::single_point(frame, gpw)` |
 | Oracle | **CP2K 2026.1** Quickstep AIMD (`RUN_TYPE MD` + `&KPOINTS`), offline via `tools/cp2k_oracle/inputs/gpw-bomd-kpoints/` |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` wave-13 row |
 
 ## Summary
 

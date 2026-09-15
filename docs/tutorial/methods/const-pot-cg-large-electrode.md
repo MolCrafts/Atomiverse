@@ -7,7 +7,7 @@
 | Slug | `const-pot-cg-large-electrode` |
 | Regression | `regressions/md/const-pot-cg-large-electrode/` |
 | Public API | `cpu::md::ConstPotCG` (Component on `cpu::md::MD`, default `pre_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E2 done** (wave 2, 2026-07-24); map slice E2 |
+| Roadmap | map slice E2 |
 | Oracle | **MetalWalls** algorithm class (Jacobi-PCG electrode charge solve); dual numeric twin = in-tree `cpu::md::ConstPotBO` |
 
 ## Summary
@@ -236,10 +236,7 @@ keep ctest free of the binary.
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md);
-queue
-[`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md).
-
+the case `REFERENCE.md`;
 | Twin | \(T_{\mathrm{oracle}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | --------------------------: | -----------------------: | ----: | ---- | ------ |
 | MW multi-site CG / ATV `ConstPotCG` | — | — | **perf_exempt** | n/a | No MetalWalls runtime binary on worker PATH for fair CG twin |
@@ -282,7 +279,6 @@ available offline, re-run fair bench, record version + walls, and replace
 - Public header: [`include/atomiverse/cpu/dynamics/const_pot_cg.h`](../../../include/atomiverse/cpu/dynamics/const_pot_cg.h)
 - Dense dual twin: [`include/atomiverse/cpu/dynamics/const_pot_bo.h`](../../../include/atomiverse/cpu/dynamics/const_pot_bo.h)
 - Sibling E1 report: [`const-pot-bo-parallel-plate.md`](const-pot-bo-parallel-plate.md)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Capability map: [`.claude/notes/metalwalls-capability-map.md`](../../../.claude/notes/metalwalls-capability-map.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Literature / method basis: Siepmann–Sprik Gaussian electrode charges; MetalWalls constant-potential CG electrode solve (map E2); dual twin aligned with dense BO / LAMMPS ELECTRODE `symm` projector (Ahrens-Iwers et al., *J. Chem. Phys.* **157**, 084801 (2022) for the ELECTRODE formulation context)

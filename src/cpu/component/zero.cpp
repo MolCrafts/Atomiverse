@@ -1,4 +1,4 @@
-/// @file src/cpu/zero.cpp
+/// @file cpu/component/zero.cpp
 /// @brief Phase-agnostic accumulator-zeroing component implementations.
 
 #include "atomiverse/cpu/component/zero.h"

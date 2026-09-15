@@ -1,4 +1,4 @@
-/// @file cpu/md/fix_langevin.h
+/// @file cpu/dynamics/fix_langevin.h
 /// @brief CPU Langevin thermostat -- LAMMPS-equivalent `fix langevin`.
 #pragma once
 

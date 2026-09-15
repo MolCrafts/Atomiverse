@@ -7,7 +7,7 @@
 | Slug | `gpw-d4-stress` |
 | Regression | `regressions/gpw/gpw-d4-stress/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`d4`, `compute_stress`, `stress_use_fd=false`); free `gpw_stress` / `gpw_stress_fd` with `GpwDft::d4` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, wave 8 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -188,7 +188,7 @@ bash -lc '
 ## Validation (dftd4 + dual-gate)
 
 Source:
-[`regressions/gpw/gpw-d4-stress/REFERENCE.md`](../../../regressions/gpw/gpw-d4-stress/REFERENCE.md).  
+[`regressions/gpw/gpw-d4-stress/REFERENCE.md`](../../../regressions/gpw/gpw-d4-stress/REFERENCE.md).
 Hard energy oracle: offline **dftd4 3.7.0**. Stress oracle: **internal**
 multi-SCF strain-FD on the same method. External-engine / dual-gate pins —
 **never** live dftd4 or CP2K from ctest.
@@ -278,9 +278,6 @@ with libdftd4-linked CP2K.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-d4-stress/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle notes: `tools/cp2k_oracle/inputs/gpw-d4-stress/`,
   `tools/cp2k_oracle/inputs/gpw-d4-water/`, `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/scf_loop.h
+/// @file cpu/planewave/internal/scf_loop.h
 /// @brief internal::run_scf_fixed_occ — minimal restricted fixed-occupation
 ///        plane-wave SCF shared by the analytic force / stress / DFPT paths.
 ///

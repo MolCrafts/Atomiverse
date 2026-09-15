@@ -156,8 +156,8 @@ bash tools/setup_pyscf_env.sh
 Source: fair wall in
 [`regressions/scf/cc2-h2-sto3g/REFERENCE.md`](../../../regressions/scf/cc2-h2-sto3g/REFERENCE.md)
 (2026-07-23; login node; `OMP_NUM_THREADS=1`; median of ≥3). Campaign rollup
-ratio **0.392** (`docs/developer/pyscf-method-handoff.md`). No standing
-`pyscf-method-perf.md` table in-tree at draft time.
+ratio **0.392** (the case `REFERENCE.md`). No standing
+`` table in-tree at draft time.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -195,8 +195,6 @@ required on this case.
 - Offline pin: `regressions/scf/cc2-h2-sto3g/REFERENCE.md`
 - Regression consumer: `regressions/scf/cc2-h2-sto3g/reg_cc2-h2-sto3g.cpp`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
-- Queue / handoff: `docs/developer/pyscf-method-queue.md`,
-  `docs/developer/pyscf-method-handoff.md`
 - Roadmap: `docs/roadmap/post-hf.md` (§3 Coupled cluster)
 - Public API: `include/atomiverse/cpu/scf/cc2.h`
 - Related handbook: [ccsd-h2-sto3g](ccsd-h2-sto3g.md),

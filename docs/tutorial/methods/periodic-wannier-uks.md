@@ -7,7 +7,7 @@
 | Slug | `periodic-wannier-uks` |
 | Regression | `regressions/pw/periodic-wannier-uks/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`) + `cpu::pw::PeriodicWannier` / `PeriodicWannierResult` (`cpu/planewave/periodic_wannier.h`) |
-| Track | CP2K capability (`cp2k-method-loop`); response / PW |
+| Track | CP2K capability (); response / PW |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 MLWF; queue `periodic-wannier-uks` (done) |
 | Dual gate | Bond midpoints per spin + total-spread reduction; speed **`perf_exempt`** |
 | Wave | CP2K harness wave 10 / staffed 2026-07-26 |
@@ -317,8 +317,6 @@ binary is available: time the oracle note geometry, append
 - Oracle note: `tools/cp2k_oracle/inputs/si_periodic_wannier_uks.note`
 - Restricted twin pin: `regressions/pw/periodic-wannier-si/REFERENCE.md`
 - Restricted twin oracle: `tools/cp2k_oracle/inputs/si_periodic_wannier_note.inp`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Oracle rules: `tools/cp2k_oracle/README.md` (never live in ctest)
 - Roadmap: [dft.md](../../roadmap/dft.md) §11 MLWF
 - Related molecular Boys: [`wannier-centers`](wannier-centers.md)

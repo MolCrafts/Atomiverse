@@ -1,4 +1,4 @@
-/// @file cpu/vib/hessian_result.h
+/// @file cpu/vibration/hessian_result.h
 /// @brief cpu::vib::HessianResult — output of the numerical-Hessian driver.
 ///
 /// Frame purity is preserved by NOT adding a Hessian field to

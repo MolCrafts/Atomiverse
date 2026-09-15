@@ -7,7 +7,7 @@
 | Slug | `periodic-rpa-kpoints` |
 | Regression | `regressions/gpw/periodic-rpa-kpoints/` |
 | Public API | `cpu::gpw::GpwDft::direct_rpa(atoms)` → `cpu::gpw::RpaResult` (`cpu/gpw/rpa.h`); members `k_mesh`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt` |
-| Roadmap / queue | [dft.md](../../roadmap/dft.md) §10 Periodic RPA ✓ (multi-k k-diagonal); queue `docs/developer/cp2k-method-queue.md` `periodic-rpa-kpoints` (done, 2026-07-25) |
+| Roadmap | [dft.md](../../roadmap/dft.md) §10 Periodic RPA ✓ (multi-k k-diagonal) |
 | Oracle | CP2K offline twin `tools/cp2k_oracle/inputs/periodic-rpa-kpoints.inp` (never live in ctest) |
 
 ## Summary
@@ -207,7 +207,7 @@ covering OMP orbital scatter on the multi-k SCF; **not** a CP2K digit twin).
 
 ## Performance
 
-Source: REFERENCE + `docs/developer/cp2k-method-handoff.md` (ratio
+Source: REFERENCE + the case `REFERENCE.md` (ratio
 **perf_exempt**). Gate when a fair twin exists:
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\).
 
@@ -241,8 +241,6 @@ available, re-pin wall and accuracy in REFERENCE and handoff.
 - Offline pin: `regressions/gpw/periodic-rpa-kpoints/REFERENCE.md`
 - Oracle input: `tools/cp2k_oracle/inputs/periodic-rpa-kpoints.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md` (ratio **perf_exempt**)
 - Roadmap: `docs/roadmap/dft.md` §10 Periodic RPA ✓ (Γ + multi-k k-diagonal)
 - Γ foothold tutorial / reg: [periodic-mp2-si.md](periodic-mp2-si.md),
   `regressions/gpw/periodic-rpa-si`

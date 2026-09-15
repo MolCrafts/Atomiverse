@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/veff_builder.h
+/// @file cpu/planewave/internal/veff_builder.h
 /// @brief internal::VeffBuilder — assemble V_eff = V_loc + V_H + V_xc.
 ///
 /// Facade-private step helper owned by `cpu::pw::PW`. NOT a

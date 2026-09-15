@@ -7,7 +7,7 @@
 | Slug | `periodic-rpa-si` |
 | Regression | `regressions/gpw/periodic-rpa-si/` |
 | Public API | `cpu::gpw::GpwDft::direct_rpa(atoms)` → `cpu::gpw::RpaResult` (`cpu/gpw/rpa.h`); members `mp2_ri`, `mp2_n_virt` |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` (done 2026-07-25); roadmap §10 Γ dRPA@KS product; handoff **perf_exempt** |
+| Roadmap | roadmap §10 Γ dRPA@KS product; handoff **perf_exempt** |
 
 ## Summary
 
@@ -260,8 +260,7 @@ queue/handoff **`perf_exempt`**.
 | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | **n/a (exempt)** |
 | `within_10x` | n/a (exempt) |
 
-Campaign records the same: ratio **perf_exempt**
-(`docs/developer/cp2k-method-queue.md`, `cp2k-method-handoff.md`). Gate when a
+Campaign records the same: ratio **perf_exempt**. Gate when a
 fair twin exists: \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) on the same
 host/core count (single-rank).
 
@@ -299,8 +298,6 @@ host/core count (single-rank).
 - Regression consumer: `regressions/gpw/periodic-rpa-si/reg_periodic-rpa-si.cpp`
 - Oracle twin: `tools/cp2k_oracle/inputs/periodic-rpa-si.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / loop / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`, `docs/developer/cp2k-method-handoff.md`
 - Roadmap: `docs/roadmap/dft.md` §10 (Periodic RPA Γ dRPA@KS ✓ product)
 - Related method pages:
   [periodic-mp2-si](periodic-mp2-si.md) (shared MO-ERI foothold),

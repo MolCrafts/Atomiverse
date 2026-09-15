@@ -1,4 +1,4 @@
-/// @file cpu/observer/virial_stress.h
+/// @file cpu/observe/virial_stress.h
 /// @brief CPU kinetic-stress contribution to `frame.stress`.
 #pragma once
 

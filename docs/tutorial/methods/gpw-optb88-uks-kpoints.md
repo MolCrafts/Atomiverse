@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-optb88-uks-kpoints/` |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `XcKind::OptB88VdW`, `vdw_df`, `k_mesh` / `k_points`) |
 | Roadmap | `docs/roadmap/dft.md` §8 Dispersion — multi-k UKS optB88-vdW |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) → **done** (2026-08-01) |
 | Fair wall | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx \mathbf{0.73}\) (≤10×) |
 
 ## Summary
@@ -27,8 +26,8 @@ gate: `reg_gpw-optb88-uks-kpoints` — Γ-limit identity, OptB88-vs-PBE dual gat
 absolute \(E_{\mathrm{tot}}\) + tight \(E_{\mathrm{disp}}\) vs offline CP2K, and
 closed-shell multi-k UKS≡RKS identity.
 
-Related: [gpw-optb88-uks](gpw-optb88-uks.md), [gpw-optb88-kpoints](gpw-optb88-kpoints.md),
-[gpw-vdw-uks-kpoints](gpw-vdw-uks-kpoints.md). Narrative: [Ch. 9 GPW](../ch09-gpw.md).
+Related: `gpw-optb88-uks`, `gpw-optb88-kpoints`,
+`gpw-vdw-uks-kpoints`. Narrative: [Ch. 9 GPW](../ch09-gpw.md).
 
 ## Method
 

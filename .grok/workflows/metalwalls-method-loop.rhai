@@ -26,9 +26,9 @@ let meta = #{
 // ── CONFIG ──────────────────────────────────────────────────────────────
 let loop_id = "metalwalls";
 let oracle_name = "LAMMPS|MetalWalls";
-let queue_path = "docs/developer/metalwalls-method-queue.md";
-let handoff_path = "docs/developer/metalwalls-method-handoff.md";
-let loop_doc = "docs/developer/metalwalls-method-loop.md";
+let queue_path = ".claude/campaigns/metalwalls-method-queue.md";
+let handoff_path = ".claude/campaigns/metalwalls-method-handoff.md";
+let loop_doc = ".claude/campaigns/metalwalls-method-loop.md";
 let map_path = ".claude/notes/metalwalls-capability-map.md";
 let oracle_readme = "tools/metalwalls_oracle/README.md";
 let tutorial_root = "docs/tutorial/methods/";

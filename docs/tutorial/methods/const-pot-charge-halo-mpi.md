@@ -7,7 +7,7 @@
 | Slug | `const-pot-charge-halo-mpi` |
 | Regression | `regressions/md/const-pot-charge-halo-mpi/` |
 | Public API | `Component::updates_owned_charges()` protocol + `ChargePacker` through `ctx.md.comm->forward_comm` after each const-pot solve |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → wave 5 (2026-07-27); map §1 "Charge halo correctness after Q update" (**P0**) |
+| Roadmap | map §1 "Charge halo correctness after Q update" (**P0**) |
 | Oracle | **literature** (self-consistency invariant; no oracle binary — LAMMPS ELECTRODE / MetalWalls forward-comm contract, citations below) |
 
 ## Summary
@@ -214,7 +214,6 @@ to race.
 - Product gate: [`regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp`](../../../regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp)
 - Protocol header: [`include/atomiverse/cpu/component/component.h`](../../../include/atomiverse/cpu/component/component.h) (`updates_owned_charges()`)
 - Packer: [`include/atomiverse/cpu/dynamics/charge_packer.h`](../../../include/atomiverse/cpu/dynamics/charge_packer.h) (`ChargePacker`)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` §1 (charge halo correctness, P0)
 - Literature: A. P. Thompson et al., *Comput. Phys. Commun.* **271**, 108171 (2022), DOI [10.1016/j.cpc.2021.108171](https://doi.org/10.1016/j.cpc.2021.108171); L. J. V. Ahrens-Iwers et al., *J. Chem. Phys.* **157**, 084801 (2022), DOI [10.1063/5.0099239](https://doi.org/10.1063/5.0099239); A. Marin-Laflèche et al., *J. Open Source Softw.* **5**, 2373 (2020), DOI [10.21105/joss.02373](https://doi.org/10.21105/joss.02373)
 - Related siblings: [`const-pot-bo-parallel-plate.md`](const-pot-bo-parallel-plate.md), [`const-charge-electrode.md`](const-charge-electrode.md), [`maze-symplectic-charge-dynamics.md`](maze-symplectic-charge-dynamics.md)

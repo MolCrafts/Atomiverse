@@ -1,4 +1,4 @@
-/// @file cuda/md/nve_limit.cuh
+/// @file cuda/dynamics/nve_limit.cuh
 /// @brief CUDA Velocity-Verlet integrator with a per-step displacement cap
 ///        (LAMMPS-equivalent `fix nve/limit`).
 #pragma once

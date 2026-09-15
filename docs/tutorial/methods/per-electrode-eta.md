@@ -7,7 +7,7 @@
 | Slug | `per-electrode-eta` |
 | Regression | `regressions/md/per-electrode-eta/` |
 | Public API | `cpu::md::ConstPotBO::add_electrode(type, Psi, eta)` (3-arg overload; per-group Gaussian width) on the existing `ConstPotBO` Component (`cpu::md::MD`, default `pre_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → wave 5 (2026-07-27); map slice "Multi-electrode, per-electrode \(V,\eta\)" (**P0**) |
+| Roadmap | map slice "Multi-electrode, per-electrode \(V,\eta\)" (**P0**) |
 | Oracle | **literature** closed form — Reed–Lanning–Madden 2007, Scalfi et al. 2020, MetalWalls JOSS 2020 (no MW binary on the agent host) |
 
 ## Summary
@@ -235,7 +235,7 @@ Elastance intermediates fixed by the pin: \(A_{11}=22.737234510126967\),
 ## Performance
 
 Source: REFERENCE.md; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{oracle}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | --------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -273,7 +273,6 @@ run the preserved `runtime.inpt` twin, record version + walls, and replace
 - Product gate: [`regressions/md/per-electrode-eta/reg_per-electrode-eta.cpp`](../../../regressions/md/per-electrode-eta/reg_per-electrode-eta.cpp)
 - Public header: [`include/atomiverse/cpu/dynamics/const_pot_bo.h`](../../../include/atomiverse/cpu/dynamics/const_pot_bo.h)
 - Pin derivation: [`tools/metalwalls_oracle/pin_notes_per-electrode-eta.md`](../../../tools/metalwalls_oracle/pin_notes_per-electrode-eta.md)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (multi-electrode \(V,\eta\), P0)
 - Literature: Reed, Lanning, Madden, *J. Chem. Phys.* **126**, 084704 (2007), DOI [10.1063/1.2464084](https://doi.org/10.1063/1.2464084); Scalfi, Dufils, Reeves, Rotenberg, Salanne, *J. Chem. Phys.* **153**, 174704 (2020), DOI [10.1063/5.0028232](https://doi.org/10.1063/5.0028232); Marin-Laflèche et al., *J. Open Source Softw.* **5**(53), 2373 (2020), DOI [10.21105/joss.02373](https://doi.org/10.21105/joss.02373); Ahrens-Iwers et al., *J. Chem. Phys.* **157**, 084801 (2022) (η = 1.979 Å⁻¹ default)

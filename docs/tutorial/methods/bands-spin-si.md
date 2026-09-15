@@ -7,7 +7,7 @@
 | Slug | `bands-spin-si` |
 | Regression | `regressions/pw/bands-spin-si/` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`) + `cpu::pw::Bands` → `BandsResult` (`nspin`, `eigenvalues_ry` / `eigenvalues_beta_ry`, `magnetization`) |
-| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS + collinear spin bands; queue `docs/developer/cp2k-method-queue.md` `bands-spin-si` (done) |
+| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS + collinear spin bands|
 
 ## Summary
 
@@ -209,7 +209,7 @@ gate is **only** the regression above (no full SCF e2e under `tests/`).
 ## Validation (vs literature / CP2K note)
 
 Source: `regressions/pw/bands-spin-si/REFERENCE.md` (offline pin; never live
-third party in ctest). Queue row closed 2026-07-26 (`cp2k-method-queue.md`).
+third party in ctest). Queue row closed 2026-07-26 (``).
 
 ### Pseudopotential
 
@@ -324,8 +324,6 @@ Wall comparison is same-geometry only, not absolute-eigenvalue parity
 - Regression: [`regressions/pw/bands-spin-si/reg_bands-spin-si.cpp`](../../../regressions/pw/bands-spin-si/reg_bands-spin-si.cpp)
 - Public API: [`include/atomiverse/cpu/planewave/bands_dos.h`](../../../include/atomiverse/cpu/planewave/bands_dos.h)
 - Optional CP2K wall / character skeleton: `tools/cp2k_oracle/inputs/bands-spin-si.note`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Closed-shell sibling: [bands-dos-si](bands-dos-si.md)
 - Collinear energy footholds: [pw-spin-polarized-o2](pw-spin-polarized-o2.md),
   [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)

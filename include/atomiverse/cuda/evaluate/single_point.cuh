@@ -1,4 +1,4 @@
-/// @file cuda/driver/single_point.cuh
+/// @file cuda/evaluate/single_point.cuh
 /// @brief cuda::single_point — free-function syntactic sugar for one-shot
 ///        CUDA evaluator runs.
 ///

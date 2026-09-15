@@ -7,7 +7,7 @@
 | Slug | `thomas-fermi-electrode` |
 | Regression | `regressions/md/thomas-fermi-electrode/` |
 | Public API | `cpu::md::ConstPotBO` members `l_tf`, `site_density`, `capacitance()` (Component on `cpu::md::MD`, default `pre_force`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **E7 done** (wave 2, 2026-07-24); map slice E7 |
+| Roadmap | map slice E7 |
 | Oracle | **MetalWalls** binary, git `c8ad175d` (offline run; not LAMMPS) |
 
 ## Summary
@@ -291,7 +291,7 @@ python3 tools/metalwalls_oracle/inputs/metalwalls/thomas-fermi-electrode/tf_latt
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; handoff
-[`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md).
+the case `REFERENCE.md`.
 
 | Twin | \(T_{\mathrm{MetalWalls}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -332,7 +332,6 @@ the accuracy tail and this ratio at once.
 - Public header: [`include/atomiverse/cpu/dynamics/const_pot_bo.h`](../../../include/atomiverse/cpu/dynamics/const_pot_bo.h)
 - MetalWalls twin input: [`tools/metalwalls_oracle/inputs/metalwalls/thomas-fermi-electrode/mw_twin/`](../../../tools/metalwalls_oracle/inputs/metalwalls/thomas-fermi-electrode/mw_twin/)
 - Truncation diagnosis: [`tools/metalwalls_oracle/inputs/metalwalls/thomas-fermi-electrode/tf_lattice_convergence.py`](../../../tools/metalwalls_oracle/inputs/metalwalls/thomas-fermi-electrode/tf_lattice_convergence.py)
-- Queue / handoff: [`docs/developer/metalwalls-method-queue.md`](../../developer/metalwalls-method-queue.md), [`docs/developer/metalwalls-method-handoff.md`](../../developer/metalwalls-method-handoff.md), [`docs/developer/metalwalls-method-loop.md`](../../developer/metalwalls-method-loop.md)
 - Oracle notes: [`tools/metalwalls_oracle/README.md`](../../../tools/metalwalls_oracle/README.md)
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (E7 metallicity)
 - Literature: Scalfi, Dufils, Reeves, Rotenberg, Salanne, *J. Chem. Phys.* **153**, 174704 (2020), DOI [10.1063/5.0028232](https://doi.org/10.1063/5.0028232) (arXiv:1910.13341); MetalWalls TF hardness model

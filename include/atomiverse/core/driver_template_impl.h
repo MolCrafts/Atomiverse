@@ -1,4 +1,4 @@
-/// @file driver_impl.h
+/// @file core/driver_template_impl.h
 /// @brief Driver method definitions -- shared between CPU and CUDA instantiation units.
 ///
 /// Uses if constexpr to branch by DeviceTag. Discarded branches are not

@@ -194,9 +194,7 @@ Gate: \(r\le 10\) unless exempted — **within_10x = true**.
 ## References
 
 - Offline pin: `regressions/scf/spin-flip-tda-o2/REFERENCE.md`
-- Perf numbers: same REFERENCE § Performance; rollup context
-  `docs/developer/pyscf-method-perf.md` (if present); handoff
-  `docs/developer/pyscf-method-handoff.md` (ratio 9.56)
+- Perf numbers: same REFERENCE § Performance; rollup context the case `REFERENCE.md` (ratio 9.56)
 - Oracle: `tools/setup_pyscf_env.sh`, `tools/pyscf_oracle/pin_scf.py sf-tda`,
   `tools/pyscf_oracle/fair_bench.py --method sf_tda`
 - Y. Shao, M. Head-Gordon, A. I. Krylov, *J. Chem. Phys.* **118**, 4807 (2003)

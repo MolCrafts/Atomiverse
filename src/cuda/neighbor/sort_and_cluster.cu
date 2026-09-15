@@ -1,4 +1,4 @@
-/// @file sort_and_cluster.cu
+/// @file cuda/neighbor/sort_and_cluster.cu
 /// @brief Morton-code sorting and cluster grouping kernels.
 #include "morton.cuh"
 #include "nlist_impl.cuh"

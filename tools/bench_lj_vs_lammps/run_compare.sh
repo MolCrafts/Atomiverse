@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="${ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
-ATV_BENCH="${ATV_BENCH:-$ROOT/build-cuda-bench/bin/cuda_nonbonded_style_bench}"
+ATV_BENCH="${ATV_BENCH:-$ROOT/build-cuda-bench/bin/bench_nonbonded_style}"
 LMP_BIN="${LMP_BIN:-$HOME/.local/$(uname -m)/bin/lmp}"
 SIZES="${SIZES:-100000 250000 500000 1000000 2000000 5000000 10000000}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"

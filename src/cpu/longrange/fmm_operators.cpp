@@ -1,4 +1,4 @@
-/// @file longrange/fmm_operators.cpp
+/// @file cpu/longrange/fmm_operators.cpp
 /// @brief M2M / M2L / L2L solid-harmonic translation operators.
 
 #include "atomiverse/cpu/longrange/fmm_operators.h"

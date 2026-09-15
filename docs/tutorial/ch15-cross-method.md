@@ -355,12 +355,13 @@ different from the one you already know.
 
 ## Validation Reference
 
-The evaluator-composition tests (SCF coexisting with NVE/NVT/NPT
-integrators and both minimizers, plus the state-leakage single-point-vs-
-propagation check) live in
-[`tests/cpu/scf/test_scf_evaluator.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_scf_evaluator.cpp)
-and
-[`tests/cpu/scf/test_aimd_conservation.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_aimd_conservation.cpp);
+Evaluator composition — a Gaussian SCF method standing in for a classical
+force field inside the same MD loop — is proved end-to-end by
+[`regressions/architecture/lj_rhf_coupled`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/architecture/lj_rhf_coupled)
+and by the AIMD energy-conservation case
+[`regressions/scf/h2_rhf_sto3g_aimd`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2_rhf_sto3g_aimd);
+that one driver shape serves several method kinds is
+[`regressions/architecture/harmonic_driver_matrix`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/architecture/harmonic_driver_matrix).
 the optimizer hot-swap (LBFGS ↔ CG on one `Minimize` driver) in
 [`tests/cpu/test_minimize_driver_swap_optimizer.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/test_minimize_driver_swap_optimizer.cpp).
 The end-to-end golden cross-method run is the designated integration

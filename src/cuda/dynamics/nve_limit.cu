@@ -1,4 +1,4 @@
-/// @file md/nve_limit.cu
+/// @file cuda/dynamics/nve_limit.cu
 /// @brief CUDA NVE/limit integrator kernels.
 
 #include "atomiverse/core/stage.h"

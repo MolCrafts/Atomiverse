@@ -7,9 +7,7 @@
 | Slug | `bands-spin-metallic-si` |
 | Regression | `regressions/pw/bands-spin-metallic-si/` |
 | Public API | `cpu::pw::PW` members `spin_polarized`, `multiplicity`, `smearing`, `degauss` [Ry], `extra_bands` + `cpu::pw::Bands` / `BandsResult::{nspin,eigenvalues_ry,eigenvalues_beta_ry,e_fermi_ry,gap_ry,e_vbm_ry,e_cbm_ry,magnetization,energy_ry}` |
-| Roadmap | [dft.md](../../roadmap/dft.md) § bands + collinear spin + metallic occupations; queue `docs/developer/cp2k-method-queue.md` `bands-spin-metallic-si` (done) |
-| Loop | CP2K capability (`cp2k-method-loop`) |
-
+| Roadmap | [dft.md](../../roadmap/dft.md) § bands + collinear spin + metallic occupations|
 ## Summary
 
 Non-self-consistent **plane-wave band structure** for bulk silicon after a
@@ -369,8 +367,6 @@ Wall comparison is same-geometry only, not absolute-eigenvalue parity
 - Regression: [`regressions/pw/bands-spin-metallic-si/reg_bands-spin-metallic-si.cpp`](../../../regressions/pw/bands-spin-metallic-si/reg_bands-spin-metallic-si.cpp)
 - Public API: [`include/atomiverse/cpu/planewave/bands_dos.h`](../../../include/atomiverse/cpu/planewave/bands_dos.h)
 - Optional CP2K wall / character skeleton: `tools/cp2k_oracle/inputs/bands-spin-metallic-si.note`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Sibling fixed-occ spin bands: regression `regressions/pw/bands-spin-si`
 - Sibling restricted metallic bands: [bands-metallic-si](bands-metallic-si.md)
 - Sibling insulator bands+DOS: [bands-dos-si](bands-dos-si.md)

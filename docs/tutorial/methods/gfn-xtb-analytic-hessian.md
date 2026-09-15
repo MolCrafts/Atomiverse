@@ -291,12 +291,12 @@ bash -lc '
 ## Validation (xtb)
 
 Source:
-[`regressions/semiempirical/gfn-xtb-analytic-hessian/REFERENCE.md`](../../../regressions/semiempirical/gfn-xtb-analytic-hessian/REFERENCE.md).  
+[`regressions/semiempirical/gfn-xtb-analytic-hessian/REFERENCE.md`](../../../regressions/semiempirical/gfn-xtb-analytic-hessian/REFERENCE.md).
 Oracle: **`xtb`** `--gfn 1 --hess` / `--gfn 2 --hess` (Grimme et al., *J.
 Chem. Theory Comput.* **13**, 1989 (2017); Bannwarth et al., *J. Chem.
 Theory Comput.* **15**, 1652 (2019); Bannwarth et al., *WIREs Comput. Mol.
-Sci.* **11**, e01493 (2021)).  
-`oracle_version`: **6.7.1**.  
+Sci.* **11**, e01493 (2021)).
+`oracle_version`: **6.7.1**.
 Hard-coded gates in the regression binary — **never** live xtb from ctest.
 
 ```text
@@ -441,10 +441,6 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - IPEA VIP/VEA sibling: [`ipea-xtb-vip.md`](ipea-xtb-vip.md)
 - SE Hessian foothold (DFTB2/H₂, structural): `regressions/semiempirical/se-analytic-hessian/REFERENCE.md`
 - Oracle README: `tools/tb_oracle/README.md`
-- Queue / handoff / loop: `docs/developer/tb-method-queue.md`,
-  `docs/developer/tb-method-handoff.md`,
-  `docs/developer/tb-method-loop.md`,
-  `docs/developer/oracle-capability-loop.md`
 - Roadmap: `docs/roadmap/semiempirical.md`
 - Spec history (closed, deleted at done): git `wf/gfn-xtb-analytic-hessian`
 - S. Grimme, C. Bannwarth, P. Shushkov, *J. Chem. Theory Comput.* **13**,

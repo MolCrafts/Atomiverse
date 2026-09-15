@@ -1,11 +1,12 @@
-/// @file tools/bench_cpu_cuda_rhf.cu
+/// @file benchmarks/cuda/bench_rhf_cpu_vs_cuda.cu
 /// @brief Fair CPU vs CUDA RHF wall-time + AO-size scaling (STO-3G).
 ///
-/// Built as `bench_cpu_cuda_rhf` when ATV_BUILD_CUDA+HF+TESTS (see
-/// tests/CMakeLists.txt). Run on a GPU node so both backends share hardware.
+/// Built as `bench_rhf_cpu_vs_cuda` with ATV_BUILD_BENCHMARKS+CUDA+HF (see
+/// benchmarks/cuda/CMakeLists.txt). Run on a GPU node so both backends share
+/// the same hardware.
 ///
 /// Usage:
-///   OMP_NUM_THREADS=8 ./bench_cpu_cuda_rhf [n_rep_energy=12] [n_rep_force=8]
+///   OMP_NUM_THREADS=8 ./bin/bench_rhf_cpu_vs_cuda [n_rep_energy=12] [n_rep_force=8]
 ///
 /// Reports mean/min wall ms, SCF iters, energy [Ha], and CUDA/CPU speedup.
 #include <chrono>
@@ -39,10 +40,11 @@ static void set_atom(cpu::Frame& f, int i, int Z, double x, double y,
     f.span(kAtom_y)[i] = y;
     f.span(kAtom_z)[i] = z;
     // rough mass by Z (only for Frame completeness)
-    f.span(kAtom_mass)[i] = (Z == 1) ? 1.008 : (Z == 6) ? 12.011
-                                             : (Z == 7)   ? 14.007
-                                             : (Z == 8)   ? 15.999
-                                                          : static_cast<double>(Z);
+    f.span(kAtom_mass)[i] = (Z == 1)   ? 1.008
+                            : (Z == 6) ? 12.011
+                            : (Z == 7) ? 14.007
+                            : (Z == 8) ? 15.999
+                                       : static_cast<double>(Z);
 }
 
 // ── Geometries (Å), closed-shell, STO-3G ──────────────────────────────
@@ -281,9 +283,9 @@ int main(int argc, char** argv) {
         const int natm = static_cast<int>(f.nlocal());
         const int nao = count_ao_sto3g(f);
         // Fewer reps for larger systems
-        const int rep =
-            (nao >= 30) ? std::max(3, n_rep_e / 3)
-                        : (nao >= 14) ? std::max(5, n_rep_e / 2) : n_rep_e;
+        const int rep = (nao >= 30)   ? std::max(3, n_rep_e / 3)
+                        : (nao >= 14) ? std::max(5, n_rep_e / 2)
+                                      : n_rep_e;
         Stat cpu = bench_cpu_energy(f, rep, tol);
         Stat gpu = bench_cuda_energy(f, rep, tol);
         const char* note = "";
@@ -308,8 +310,7 @@ int main(int argc, char** argv) {
     }
 
     // ── C. Forces: pure-s (CUDA device forces) vs CPU ──────────────────
-    std::printf(
-        "\n=== FORCES (CUDA pure-s device forces; CPU analytic) ===\n");
+    std::printf("\n=== FORCES (CUDA pure-s device forces; CPU analytic) ===\n");
     for (int n : {2, 4, 6, 8, 12}) {
         if (n % 2)
             continue;

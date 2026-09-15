@@ -1,4 +1,4 @@
-/// @file cpu/mc/gcmc.h
+/// @file cpu/montecarlo/gcmc.h
 /// @brief cpu::mc::GcmcMetropolis + cpu::mc::Gcmc — grand-canonical (μVT)
 ///        Monte Carlo: the acceptance policy and the preset that installs it.
 #pragma once

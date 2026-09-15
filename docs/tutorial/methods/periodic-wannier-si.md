@@ -7,7 +7,7 @@
 | Slug | `periodic-wannier-si` |
 | Regression | `regressions/pw/periodic-wannier-si/` |
 | Public API | `cpu::pw::PW` + `cpu::pw::PeriodicWannier` / `PeriodicWannierResult` (`cpu/planewave/periodic_wannier.h`) |
-| Roadmap / queue | [dft.md](../../roadmap/dft.md) §11 MLWF; queue `docs/developer/cp2k-method-queue.md` `periodic-wannier-si` (done) |
+| Roadmap | [dft.md](../../roadmap/dft.md) §11 MLWF |
 | Dual gate | Bond-midpoint geometry + spread reduction (REFERENCE.md); speed **`perf_exempt`** |
 | Wave | CP2K capability loop — harness wave 2026-07-25 |
 
@@ -327,8 +327,6 @@ Wall comparison is same-geometry only, not absolute-spread parity
 - Regression: [`regressions/pw/periodic-wannier-si/reg_periodic-wannier-si.cpp`](../../../regressions/pw/periodic-wannier-si/reg_periodic-wannier-si.cpp)
 - Public API: [`include/atomiverse/cpu/planewave/periodic_wannier.h`](../../../include/atomiverse/cpu/planewave/periodic_wannier.h)
 - Optional CP2K wall / character skeleton: `tools/cp2k_oracle/inputs/si_periodic_wannier_note.inp`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Molecular Boys foothold: [wannier-centers](wannier-centers.md)
 - Related energy / bands footholds: [pw-lda-si](pw-lda-si.md),
   [bands-dos-si](bands-dos-si.md)

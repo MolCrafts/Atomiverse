@@ -1,4 +1,4 @@
-/// @file cpu/mc/transaction.h
+/// @file cpu/montecarlo/transaction.h
 /// @brief cpu::mc::Transaction — the Frame-patch changeset for Monte Carlo
 ///        trial moves.
 #pragma once

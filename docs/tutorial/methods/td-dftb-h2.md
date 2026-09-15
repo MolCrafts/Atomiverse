@@ -7,7 +7,7 @@
 | Slug | `td-dftb-h2` |
 | Regression | `regressions/semiempirical/td-dftb-h2/` |
 | Public API | `cpu::semiempirical::DFTB2::td_casida` → `TdDftbResult` |
-| Track | TB / SE method loop wave 4 (`tb-method-loop`) |
+| Track | TB / SE method loop wave 4 () |
 | Roadmap | TD-DFTB — ✓ foothold (energies only) |
 | Family oracle | **DFTB+** (never OpenMOPAC / xtb) |
 | Pin oracle | `literature` — **formalism only**; no absolute value pinned |

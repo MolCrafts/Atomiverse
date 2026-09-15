@@ -1,4 +1,4 @@
-/// @file cpu/recorder/density_cube_writer.h
+/// @file cpu/record/density_cube_writer.h
 /// @brief DensityCubeWriter -- Gaussian-cube electron-density dump.
 ///
 /// Reads the latest density matrix and shell descriptors from a sibling

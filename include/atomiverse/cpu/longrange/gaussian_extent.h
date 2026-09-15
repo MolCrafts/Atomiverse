@@ -1,4 +1,4 @@
-/// @file longrange/gaussian_extent.h
+/// @file cpu/longrange/gaussian_extent.h
 /// @brief Extent classification for continuous Gaussian charge distributions (CFMM).
 ///
 /// Backend-agnostic (no Frame / Component / MPI). A product Gaussian with total

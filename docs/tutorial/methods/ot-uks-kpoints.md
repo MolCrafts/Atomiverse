@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/ot-uks-kpoints/` |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `n_alpha`/`n_beta`, `k_mesh` / `k_points`+`k_point_weights` |
 | Roadmap | `docs/roadmap/dft.md` §10 GPW — multi-k UKS OT ✓ (`reg_ot-uks-kpoints`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → done (wave 8, 2026-07-26) |
 
 ## Summary
 
@@ -162,7 +161,7 @@ bash -lc '
 
 ## Validation (vs CP2K)
 
-Source: [`regressions/gpw/ot-uks-kpoints/REFERENCE.md`](../../../regressions/gpw/ot-uks-kpoints/REFERENCE.md).  
+Source: [`regressions/gpw/ot-uks-kpoints/REFERENCE.md`](../../../regressions/gpw/ot-uks-kpoints/REFERENCE.md).
 Oracle: offline **CP2K 2026.1** documentation twin only; **never** live in ctest.
 
 **Setup:**
@@ -216,7 +215,7 @@ cp2k.psmp -i tools/cp2k_oracle/inputs/ot-uks-kpoints/h2_uks_ot_kpoints.inp \
 ## Performance
 
 Source: `regressions/gpw/ot-uks-kpoints/REFERENCE.md` and
-`docs/developer/cp2k-method-handoff.md` (wave 8).
+the case `REFERENCE.md` (wave 8).
 
 | Item | Value |
 | ---- | ----- |
@@ -247,8 +246,6 @@ unrelated OT pins (`ot-minimizer-water`, `ot-uks-o2`).
 - Regression binary: `regressions/gpw/ot-uks-kpoints/reg_ot-uks-kpoints.cpp`
 - CP2K oracle input: `tools/cp2k_oracle/inputs/ot-uks-kpoints/h2_uks_ot_kpoints.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline only; never in ctest)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Related handbooks: [ot-minimizer-water](ot-minimizer-water.md) (Γ RKS OT),
   `regressions/gpw/ot-kpoints` (multi-k RKS OT),
   `regressions/gpw/ot-uks-o2` (Γ UKS OT + live CP2K OT pin),

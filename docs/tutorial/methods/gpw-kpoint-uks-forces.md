@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-kpoint-uks-forces/` |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `k_mesh`, `XcKind::PADE`); `gpw_forces_analytic` |
 | Roadmap | `docs/roadmap/dft.md` — k-point UKS analytic ionic forces |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) — wave staff 2026-07-25 |
 
 ## Summary
 
@@ -222,7 +221,7 @@ the regression budget for this UKS slug as well.
 
 ## Performance
 
-Source: `REFERENCE.md` / `docs/developer/cp2k-method-handoff.md` (wave 3).
+Source: `REFERENCE.md` / the case `REFERENCE.md` (wave 3).
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ---------------------------------------: | ---- | ------ |
@@ -251,9 +250,6 @@ Gate: \(r \le 10\) or `perf_exempt` + reason. This slug is **perf_exempt**.
 - Regression consumer: [`reg_gpw-kpoint-uks-forces.cpp`](../../../regressions/gpw/gpw-kpoint-uks-forces/reg_gpw-kpoint-uks-forces.cpp)
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-kpoint-uks-forces/`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-uks-forces/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Handoff: [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Loop / queue: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - Deps (landed): `gpw-kpoints-uks`, `gpw-kpoint-forces`, `gpw-uks-forces`

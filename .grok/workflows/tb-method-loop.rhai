@@ -30,9 +30,9 @@ let meta = #{
 // ── CONFIG ──────────────────────────────────────────────────────────────
 let loop_id = "tb";
 let oracle_name = "OpenMOPAC|DFTB+|xtb";
-let queue_path = "docs/developer/tb-method-queue.md";
-let handoff_path = "docs/developer/tb-method-handoff.md";
-let loop_doc = "docs/developer/tb-method-loop.md";
+let queue_path = ".claude/campaigns/tb-method-queue.md";
+let handoff_path = ".claude/campaigns/tb-method-handoff.md";
+let loop_doc = ".claude/campaigns/tb-method-loop.md";
 let map_path = "docs/roadmap/semiempirical.md";
 let oracle_readme = "tools/tb_oracle/README.md";
 let tutorial_root = "docs/tutorial/methods/";

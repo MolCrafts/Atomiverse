@@ -1,4 +1,4 @@
-/// @file cuda/minimizer/minimize.cuh
+/// @file cuda/minimize/minimize.cuh
 /// @brief cuda::minimizer::Minimize — the CUDA energy-minimizer preset.
 ///
 /// `Minimize` is the single user-facing CUDA minimizer: a

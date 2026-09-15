@@ -1,4 +1,4 @@
-/// @file cpu/observer/vacf.cpp
+/// @file cpu/observe/vacf.cpp
 /// @brief CPU async VACF observer — streams each snapshot into the molrs
 /// VACF accumulator (bounded memory; all autocorrelation math in molrs).
 

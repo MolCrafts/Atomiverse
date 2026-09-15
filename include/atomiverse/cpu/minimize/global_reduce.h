@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/global_reduce.h
+/// @file cpu/minimize/global_reduce.h
 /// @brief Scalar cross-rank reductions for optimizer components.
 ///
 /// The optimizer algorithms (LBFGS, CG) and the OptLog recorder compute

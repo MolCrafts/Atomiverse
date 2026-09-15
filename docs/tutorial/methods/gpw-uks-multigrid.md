@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-uks-multigrid/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`n_alpha`/`n_beta`, `ngrids`, `rel_cutoff`, `XcKind::PADE`, `nonperiodic`); `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — UKS multigrid product collocation |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) |
 
 ## Summary
 
@@ -238,7 +237,7 @@ mpirun -np 1 cp2k.psmp -i o2_uks_pade_mg.inp -o o2_uks_pade_mg.out
 
 Source: same `REFERENCE.md` fair-wall note (2026-07-26 ATV / 2026-07-23 CP2K).
 Not a ctest gate; optional offline twin under `tools/cp2k_oracle/`. Handoff:
-`docs/developer/cp2k-method-handoff.md` ratio **~1.54**.
+the case `REFERENCE.md` ratio **~1.54**.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ---------------------------------------: | ---- | ------ |
@@ -275,8 +274,6 @@ inside the 10× wall budget.
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-uks-multigrid/`](../../../tools/cp2k_oracle/inputs/gpw-uks-multigrid/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - Single-grid UKS sibling: [`gpw-uks-o2-gamma.md`](gpw-uks-o2-gamma.md)
-- Loop: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  queue / handoff under `docs/developer/cp2k-method-*.md`
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - G. Lippert, J. Hutter, M. Parrinello, *Mol. Phys.* **92**, 477 (1997) — GPW

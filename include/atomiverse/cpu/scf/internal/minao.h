@@ -1,4 +1,4 @@
-/// @file cpu/scf/minao.h
+/// @file cpu/scf/internal/minao.h
 /// @brief MINAO initial-density projector for PySCF-compatible SCF guess.
 ///
 /// Mirrors `pyscf.scf.hf.init_guess_by_minao`: projects atomic fragment

@@ -2,7 +2,7 @@
 //
 // Per wave: Census → Assign → Worktrees → Merge? → Clearup (always) → Harness?
 // Clearup ALWAYS wipes builds on parent + staffed trees (shared nobackup disk).
-// Design: docs/developer/gpw-perf-loop.md + .claude/notes/gpw-perf-architecture.md
+// Design: .claude/campaigns/gpw-perf-loop.md + .claude/notes/gpw-perf-architecture.md
 
 let meta = #{
     name: "gpw-perf-loop",
@@ -22,8 +22,8 @@ let meta = #{
 
 // ── CONFIG ──────────────────────────────────────────────────────────────
 let loop_id = "gpw-perf";
-let queue_path = "docs/developer/gpw-perf-queue.md";
-let loop_doc = "docs/developer/gpw-perf-loop.md";
+let queue_path = ".claude/campaigns/gpw-perf-queue.md";
+let loop_doc = ".claude/campaigns/gpw-perf-loop.md";
 let arch_note = ".claude/notes/gpw-perf-architecture.md";
 let notes_md = ".claude/notes/notes.md";
 let branch_prefix = "wf/perf-";

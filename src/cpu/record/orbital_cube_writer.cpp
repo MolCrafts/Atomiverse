@@ -1,4 +1,4 @@
-/// @file cpu/recorder/orbital_cube_writer.cpp
+/// @file cpu/record/orbital_cube_writer.cpp
 /// @brief Molecular-orbital cube writer implementation.
 
 #include "atomiverse/cpu/record/orbital_cube_writer.h"

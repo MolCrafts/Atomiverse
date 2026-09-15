@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-hirshfeld-uks-kpoints/` |
 | Public API | `cpu::gpw::GpwDft` / `GPWEvaluator`: `n_alpha`/`n_beta`, `k_mesh`, `mbd`, `hirshfeld`; `GpwResult::e_disp` [Ha], `volume_ratios` |
 | Roadmap | `docs/roadmap/dft.md` §8 Dispersion — multi-k UKS Hirshfeld |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) |
 
 ## Summary
 

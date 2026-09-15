@@ -8,7 +8,6 @@
 | Regression | `regressions/semiempirical/dftb2-kpoints/` |
 | Public API | `cpu::semiempirical::DFTB2` (`k_mesh`, `k_time_reversal` members) + `cpu::Evaluate` |
 | Roadmap | [`semiempirical.md`](../../roadmap/semiempirical.md) — multi-k energy ✓; multi-k F/stress ○ |
-| Queue | TB method loop (`docs/developer/tb-method-queue.md`) `dftb2-kpoints` (done, harness wave 3) |
 | Family oracle | **DFTB+** only (never OpenMOPAC / xtb) |
 
 ## Summary
@@ -307,8 +306,6 @@ remain open ladder tips.
 - Offline twin: [`tools/tb_oracle/inputs/dftbplus/dftb2-kpoints/`](../../../tools/tb_oracle/inputs/dftbplus/dftb2-kpoints/)
 - Family rules: [`tools/tb_oracle/README.md`](../../../tools/tb_oracle/README.md)
 - Roadmap: [`docs/roadmap/semiempirical.md`](../../roadmap/semiempirical.md)
-- Queue / handoff: [`docs/developer/tb-method-queue.md`](../../developer/tb-method-queue.md),
-  [`docs/developer/tb-method-handoff.md`](../../developer/tb-method-handoff.md)
 - Sibling Γ-point page: [`dftb2-periodic-gamma.md`](dftb2-periodic-gamma.md)
 - Sibling absolute DFTB+ pin: [`dftb2-dftbplus-energy-pin.md`](dftb2-dftbplus-energy-pin.md)
 - Literature: Elstner *et al.*, *Phys. Rev. B* **58**, 7260 (1998)

@@ -1,4 +1,4 @@
-/// @file cpu/observer/msd.h
+/// @file cpu/observe/msd.h
 /// @brief CPU async mean-squared-displacement observer (molrs-backed,
 /// streaming).
 ///

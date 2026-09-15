@@ -7,7 +7,7 @@
 | Slug | `const-pot-md-nvt-short` |
 | Regression | `regressions/md/const-pot-md-nvt-short/` |
 | Public API | `cpu::ConstPotentialBO` + `cpu::md::FixFreeze` on `cpu::md::MD` (with `CoulLong` / `KSpacePME`, `NoseHoover`, `VelocityVerlet`) |
-| Roadmap / queue | `docs/developer/metalwalls-method-queue.md` → **done** (wave 1, 2026-07-23); map E1 P0 |
+| Roadmap | map E1 P0 |
 
 ## Summary
 
@@ -167,7 +167,7 @@ bash -lc '
 ## Validation (vs MetalWalls algorithm pin)
 
 Source:
-[`regressions/md/const-pot-md-nvt-short/REFERENCE.md`](../../../regressions/md/const-pot-md-nvt-short/REFERENCE.md).  
+[`regressions/md/const-pot-md-nvt-short/REFERENCE.md`](../../../regressions/md/const-pot-md-nvt-short/REFERENCE.md).
 Oracle: **MetalWalls-class** constant-potential BO (Siepmann–Sprik / Reed /
 Scalfi). **No MetalWalls binary** and **no LAMMPS ELECTRODE package** on the
 offline worker (LAMMPS 30 Mar 2026 packages on host: EXTRA-*, KSPACE, MANYBODY —
@@ -231,8 +231,7 @@ Source:
 | \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}}\) | **n/a (exempt)** |
 | `within_10x` | n/a (exempt) |
 
-Campaign queue records the same: ratio **perf_exempt**
-(`docs/developer/metalwalls-method-queue.md` → done). Gate when a twin exists:
+. Gate when a twin exists:
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) on the same host/core count
 (single-rank), with MetalWalls as primary oracle for this MW-only algorithm
 (LAMMPS ELECTRODE only if that package is the chosen offline twin).
@@ -265,9 +264,6 @@ Campaign queue records the same: ratio **perf_exempt**
 - Oracle notes: `tools/metalwalls_oracle/inputs/metalwalls/const-pot-md-nvt-short/README.md`,
   `tools/metalwalls_oracle/README.md`
 - Capability map: `.claude/notes/metalwalls-capability-map.md` (E1)
-- Queue / loop / handoff: `docs/developer/metalwalls-method-queue.md`,
-  `docs/developer/metalwalls-method-loop.md`,
-  `docs/developer/metalwalls-method-handoff.md`
 - Public API: `include/atomiverse/cpu/dynamics/const_potential.h`,
   `include/atomiverse/cpu/dynamics/fix_freeze.h`
 - J. I. Siepmann, M. Sprik, *J. Chem. Phys.* **102**, 511 (1995) — Gaussian

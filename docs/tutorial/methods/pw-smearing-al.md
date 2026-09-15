@@ -8,8 +8,6 @@
 | Regression | `regressions/pw/pw-smearing-al/` |
 | Public API | `cpu::pw::PW` members `smearing`, `degauss` [Ry], `mp_order`, `extra_bands`; `PWResult::{e_fermi,n_elec_occ,e_entropy}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) — Smearing for metals (CPU PW ✓) |
-| Loop | CP2K capability (`cp2k-method-loop` wave 1) |
-
 ## Summary
 
 Plane-wave DFT for **metals** needs **fractional band occupations** and a
@@ -208,7 +206,7 @@ r = T_{\mathrm{atv}} / T_{\mathrm{cp2k}} \approx 0.008 \ll 10
 `within_10x = true`. Fairness note: ATV NC-UPF PW at 20 Ry / \(2^3\) k vs
 CP2K GPW GTH + MOLOPT at CUTOFF 200 Ry; do **not** treat \(r\) as a
 same-Hamiltonian throughput claim. Handoff records ratio **0.008**
-(`docs/developer/cp2k-method-handoff.md`).
+(the case `REFERENCE.md`).
 
 ## Limitations
 
@@ -235,8 +233,7 @@ same-Hamiltonian throughput claim. Handoff records ratio **0.008**
 - Regression: `regressions/pw/pw-smearing-al/reg_pw-smearing-al.cpp`
 - CP2K twin input: `tools/cp2k_oracle/inputs/al_fermi_dirac.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Handoff ratio **0.008**: `docs/developer/cp2k-method-handoff.md`
-- Queue row: `docs/developer/cp2k-method-queue.md` (`pw-smearing-al` done)
+- Handoff ratio **0.008**: the case `REFERENCE.md`
 - Roadmap: `docs/roadmap/dft.md` (Smearing for metals ✓ CPU)
 - Public header: `include/atomiverse/cpu/planewave/pw_solver.h`
 - Internal occupations: `include|src/.../planewave/internal/smearing.*`

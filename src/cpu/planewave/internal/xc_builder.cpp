@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/xc_builder.cpp
+/// @file cpu/planewave/internal/xc_builder.cpp
 /// @brief XC potential: LDA and true GGA (spectral σ) on the PW FFT grid.
 ///
 /// Closed-shell GGA potential (same collapse as GPW `xc_grid_pbe`):
@@ -431,9 +431,9 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
         }
 
         // True spin-GGA when gga; σ=0 for pure LDA.
-        const auto out = cpu::scf::evaluate_xc(
-            xc, static_cast<double>(ra), static_cast<double>(rb), saa, sab,
-            sbb);
+        const auto out =
+            cpu::scf::evaluate_xc(xc, static_cast<double>(ra),
+                                  static_cast<double>(rb), saa, sab, sbb);
         vxc_up[i] = static_cast<AccReal>(out.vrho_alpha);
         vxc_dn[i] = static_cast<AccReal>(out.vrho_beta);
         ws.exc_r[i] = static_cast<AccReal>(out.exc);
@@ -474,30 +474,27 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
                 ws.fft->r2c(flux[d], work);
                 for (int ig = 0; ig < ng; ++ig) {
                     bool conj = false;
-                    const int idx =
-                        pack_half_index(gv.h[ig], gv.k[ig], gv.l[ig], nx, ny,
-                                        nz, nxc, conj);
+                    const int idx = pack_half_index(
+                        gv.h[ig], gv.k[ig], gv.l[ig], nx, ny, nz, nxc, conj);
                     if (idx < 0 || idx >= nc)
                         continue;
                     const AccReal gd = gv.g[ig][d];
                     const AccReal re =
                         static_cast<AccReal>(work[idx][0]) * inv_nr;
-                    const AccReal im =
-                        static_cast<AccReal>(conj ? -work[idx][1]
-                                                  : work[idx][1])
-                        * inv_nr;
+                    const AccReal im = static_cast<AccReal>(conj ? -work[idx][1]
+                                                                 : work[idx][1])
+                                       * inv_nr;
                     // i * G_d * flux_d(G) = (-G_d im, G_d re)
                     ws.V_xc_spin_G[s][ig] +=
                         std::complex<AccReal>(-gd * im, gd * re);
                 }
             }
 
-            pack_sphere_to_half(
-                gv, ng, nx, ny, nz, nxc, nc, work, [&](int ig) {
-                    return std::complex<double>(
-                        static_cast<double>(ws.V_xc_spin_G[s][ig].real()),
-                        static_cast<double>(ws.V_xc_spin_G[s][ig].imag()));
-                });
+            pack_sphere_to_half(gv, ng, nx, ny, nz, nxc, nc, work, [&](int ig) {
+                return std::complex<double>(
+                    static_cast<double>(ws.V_xc_spin_G[s][ig].real()),
+                    static_cast<double>(ws.V_xc_spin_G[s][ig].imag()));
+            });
             ws.fft->c2r(work, div_buf[s]);
             for (int i = 0; i < nr; ++i)
                 vxc[s][i] -= div_buf[s][i];

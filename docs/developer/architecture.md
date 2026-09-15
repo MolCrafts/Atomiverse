@@ -24,14 +24,14 @@ different storage models, different libraries, and different constraints. The
 project therefore does not pretend that host and device data are the same
 object. Instead, data residency is made explicit in the type system.
 
-That is why Atomiverse uses one facade layer over two separate implementations,
-instead of a single class full of `if (is_cuda)` branches.
+That is why Atomiverse puts one CUDA-free contract layer over two separate
+implementations, instead of a single class full of `if (is_cuda)` branches.
 
-## The Four Layers
+## The Three Layers
 
-The easiest way to understand the codebase is as four layers.
+The easiest way to understand the codebase is as three layers.
 
-### 1. Core vocabulary
+### 1. Core — the shared contract
 
 The files under [`include/atomiverse/core`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core)
 define the smallest shared concepts:
@@ -42,25 +42,26 @@ define the smallest shared concepts:
 - device tags used for compile-time backend selection
 - default binding metadata used by components
 
-These types are intentionally small. They let the facade, CPU backend, and CUDA
-backend talk about the same ideas without forcing them to share the same data
-layout.
+The same directory also holds the public execution skeleton:
 
-### 2. Facade and planning
+- `driver_template.h` defines `Driver<PhaseEnum, DeviceTag>`, which owns
+  user-registered components; `PhaseBuilder` supports the fluent
+  `.on(phase).add(...)` syntax, and `PlanBuilder` compiles unordered
+  registrations into a sorted execution plan
+- `stage.h` defines the phase order for each workflow (MD, minimization,
+  evaluation, vibrational analysis, Monte Carlo sampling, and coupled-replica
+  paths) plus the `kind_of(Phase)` overloads behind `make_binding`
+- `verdict.h` defines `Verdict` and `ConvergenceMetrics` — the vocabulary a
+  loop's termination is decided in. A `Criterion` judges the metrics and
+  returns a verdict; the driver reduces the verdicts across criteria and across
+  MPI ranks, so a criterion author never writes MPI code.
 
-The files under [`include/atomiverse/facade`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade)
-define the public execution skeleton:
+These types are intentionally small, and the whole layer is deliberately
+CUDA-free. Its job is to let the CPU and CUDA backends talk about the same
+ideas without forcing them to share a data layout — to collect intent, not to
+run the algorithm itself.
 
-- `Driver` owns user-registered components
-- `PhaseBuilder` supports the fluent `.on(phase).add(...)` syntax
-- `PlanBuilder` compiles unordered registrations into a sorted execution plan
-- `stage.h` defines the phase order for each workflow (MD, minimization, evaluation, vibrational analysis, Monte Carlo sampling, and coupled-replica paths) plus the `kind_of(Phase)` overloads behind `make_binding`
-- `loop.h` defines `Verdict` and `ConvergenceMetrics` — the vocabulary a loop's termination is decided in (a `Criterion` judges the metrics and returns a verdict; the driver reduces the verdicts across criteria and across MPI ranks)
-
-The facade is deliberately CUDA-free. Its job is to collect intent, not to run
-the algorithm itself.
-
-### 3. CPU backend and CPU analysis layer
+### 2. CPU backend and CPU analysis layer
 
 The CPU side lives under [`include/atomiverse/cpu`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu)
 and [`src/cpu`](https://github.com/MolCrafts/Atomiverse/blob/dev/src/cpu). It contains three distinct roles.
@@ -74,10 +75,11 @@ Second, it provides a true CPU execution backend through
 directly on that host frame with no transfer step.
 
 Third, it provides CPU-only utilities that are not part of the staged CUDA
-component model, such as integral generation, RHF/UHF/UKS solvers, Mulliken
-analysis, density grids, trajectory analysis, and XYZ writing.
+component model, such as integral generation, the Gaussian SCF, plane-wave, GPW and
+semiempirical methods, Mulliken analysis, density grids, trajectory analysis,
+and trajectory writing.
 
-### 4. CUDA backend and staged components
+### 3. CUDA backend and staged components
 
 The CUDA side lives under [`include/atomiverse/cuda`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda)
 and [`src/cuda`](https://github.com/MolCrafts/Atomiverse/blob/dev/src/cuda). This layer owns:
@@ -287,7 +289,7 @@ agreement is what the dual-device regressions in `regressions/scf/` pin.
 When you need to modify the project, use this decision rule.
 
 If you are changing public workflow structure, phase ordering, or component
-registration semantics, start in `facade`.
+registration semantics, start in `core`.
 
 If you are changing user-visible system data, start with `cpu::Frame` and then
 audit the transfer path and the device frame.

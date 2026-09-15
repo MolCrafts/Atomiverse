@@ -1,4 +1,4 @@
-/// @file cuda/driver/evaluate.cuh
+/// @file cuda/evaluate/evaluate.cuh
 /// @brief cuda::Evaluate — one-pass CUDA evaluator preset.
 ///
 /// `cuda::Evaluate` runs the registered evaluator components exactly once on the current

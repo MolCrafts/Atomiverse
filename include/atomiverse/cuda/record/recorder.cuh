@@ -1,4 +1,4 @@
-/// @file cuda/recorder/recorder.cuh
+/// @file cuda/record/recorder.cuh
 /// @brief Recorder -- header-only XYZ trajectory writer (async D2H bridge).
 ///
 /// @see cpu::write_frame_xyz (cpu/io/frame_writer.h — deliberately CUDA-safe)

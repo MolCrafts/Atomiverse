@@ -7,7 +7,7 @@
 | Slug | `gpw-water-pbe-mt` |
 | Regression | `regressions/gpw/gpw-water-pbe-mt/` |
 | Public API | `cpu::gpw::GPWEvaluator` + `cpu::single_point`; `Kind` + `GaussianBasis` / `GthPotential` lookup ctors |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → **done** (wave 1, 2026-07-23); narrative twin [ch09-gpw](../ch09-gpw.md) |
+| Roadmap | narrative twin [ch09-gpw](../ch09-gpw.md) |
 
 ## Summary
 
@@ -148,7 +148,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/gpw-water-pbe-mt/REFERENCE.md`](../../../regressions/gpw/gpw-water-pbe-mt/REFERENCE.md).  
+[`regressions/gpw/gpw-water-pbe-mt/REFERENCE.md`](../../../regressions/gpw/gpw-water-pbe-mt/REFERENCE.md).
 Oracle: offline **CP2K Quickstep** getting-started `h2o.inp` family (same
 geometry, DZVP-MOLOPT-GTH + GTH-PBE, CUTOFF 400, PERIODIC NONE / PSOLVER MT,
 PBE). External-engine pin — **not** a golden of Atomiverse’s own output; **never**
@@ -218,8 +218,7 @@ Source: [`REFERENCE.md`](../../../regressions/gpw/gpw-water-pbe-mt/REFERENCE.md)
 | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | **n/a (exempt)** |
 | `within_10x` | n/a (exempt) |
 
-Campaign queue records the same: ratio **perf_exempt**
-(`docs/developer/cp2k-method-queue.md` → done). Gate when a twin exists:
+. Gate when a twin exists:
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) on the same host/core count
 (single-rank).
 
@@ -251,8 +250,6 @@ Campaign queue records the same: ratio **perf_exempt**
 - Oracle notes: `tools/cp2k_oracle/README.md`
 - Narrative chapter: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Example + JSON: `examples/09_gpw.cpp`, `examples/results/09_gpw.json`
-- Queue / loop / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`, `docs/developer/cp2k-method-handoff.md`
 - Closed spec (git history): `.claude/specs/gpw-water-pbe-mt/` on
   `wf/gpw-water-pbe-mt` / `dc7ad1bc`
 - Public API: `include/atomiverse/cpu/gpw/gpw_evaluator.h`

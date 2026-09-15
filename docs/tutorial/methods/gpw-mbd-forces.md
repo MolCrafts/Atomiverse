@@ -8,7 +8,7 @@
 | Regression | `regressions/gpw/gpw-mbd-forces/` |
 | Public API | `cpu::gpw::GpwDft::mbd` / `cpu::gpw::GPWEvaluator::mbd`; forces via `assemble_gpw_forces` / `compute_forces=true`; `MbdResult::{energy,forces}`; `GpwResult::e_disp` [Ha] |
 | Related energy pin | `gpw-mbd-ice` (E_disp only); periodic mesh `gpw-mbd-periodic` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-26) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -221,7 +221,7 @@ bash -lc '
 ## Validation (libMBD / dual-gate)
 
 Source:
-[`regressions/gpw/gpw-mbd-forces/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-forces/REFERENCE.md).  
+[`regressions/gpw/gpw-mbd-forces/REFERENCE.md`](../../../regressions/gpw/gpw-mbd-forces/REFERENCE.md).
 Oracle: offline **libMBD** Fortran `cmbd_mbd_scs_energy` (git `88069c6`) for
 energy; force dual-gate is product \(\nabla E\) vs independent central FD of
 that energy. External-engine / analytic pins — **not** a golden of Atomiverse’s
@@ -267,7 +267,7 @@ max |F_product − F_fd(h=1e-5)| ≤ 1e-6 Ha/Bohr
 
 ## Performance
 
-Source: `REFERENCE.md` / handoff (`docs/developer/cp2k-method-handoff.md`):
+Source: `REFERENCE.md` / handoff (the case `REFERENCE.md`):
 **perf_exempt**.
 
 MBD energy is \(O(N^3)\) on a \(3N\times 3N\) matrix; product force FD is
@@ -307,9 +307,6 @@ force dual-gate; full twin SCF wall vs CP2K is unavailable/unfair.
 - Offline pin: `regressions/gpw/gpw-mbd-forces/REFERENCE.md`
 - Twin notes: `tools/cp2k_oracle/inputs/gpw-mbd-forces/water_dimer_mbd_forces.note`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - Related energy pin: `regressions/gpw/gpw-mbd-ice/`
 - Related periodic MBD: `regressions/gpw/gpw-mbd-periodic/`

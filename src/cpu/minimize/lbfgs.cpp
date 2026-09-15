@@ -1,4 +1,4 @@
-/// @file cpu/minimizer/lbfgs.cpp
+/// @file cpu/minimize/lbfgs.cpp
 /// @brief L-BFGS step implementation: two-loop recursion + in-step line
 ///        search + multi-criteria convergence. MPI-aware: owned-row loops +
 ///        cross-rank reductions.

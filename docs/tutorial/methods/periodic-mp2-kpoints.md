@@ -7,7 +7,7 @@
 | Slug | `periodic-mp2-kpoints` |
 | Regression | `regressions/gpw/periodic-mp2-kpoints/` |
 | Public API | `cpu::gpw::GpwDft::{build,run,mp2}` → `cpu::gpw::Mp2Result` (`cpu/gpw/mp2.h`); members `k_mesh`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt`, `mp2_os_scale`, `mp2_ss_scale` |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → **done** (2026-07-25); handoff **perf_exempt**; roadmap `dft.md` §10 multi-k RI-GPW MP2 closed |
+| Roadmap | handoff **perf_exempt**; roadmap `dft.md` §10 multi-k RI-GPW MP2 closed |
 
 ## Summary
 
@@ -218,7 +218,7 @@ is run offline; the regression gate is the ATV first-green band at **1e-4 Ha**.
 
 ## Performance
 
-Source: `docs/developer/cp2k-method-handoff.md` + REFERENCE.
+Source: the case `REFERENCE.md` + REFERENCE.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
@@ -244,8 +244,6 @@ Never launch CP2K from ctest.
 - Offline pin: `regressions/gpw/periodic-mp2-kpoints/REFERENCE.md`
 - Oracle twin: `tools/cp2k_oracle/inputs/periodic-mp2-kpoints.inp`
 - Oracle rules: `tools/cp2k_oracle/README.md` (offline only; never in ctest)
-- Handoff / ratio: `docs/developer/cp2k-method-handoff.md` (`perf_exempt`)
-- Queue: `docs/developer/cp2k-method-queue.md` (done 2026-07-25)
 - Roadmap: `docs/roadmap/dft.md` §10 Periodic MP2
 - Prior Γ products: [periodic-mp2-si](periodic-mp2-si.md) (Poisson foothold);
   `regressions/gpw/periodic-ri-mp2-si` (Γ RI)

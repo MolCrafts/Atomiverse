@@ -1,4 +1,4 @@
-/// @file cuda/md/velocity_verlet.cuh
+/// @file cuda/dynamics/velocity_verlet.cuh
 /// @brief VelocityVerlet -- velocity-Verlet time integrator component.
 ///
 /// Implements the velocity-Verlet algorithm for Newtonian dynamics:

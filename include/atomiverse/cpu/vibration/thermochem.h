@@ -1,4 +1,4 @@
-/// @file cpu/vib/thermochem.h
+/// @file cpu/vibration/thermochem.h
 /// @brief cpu::vib::Thermochem — harmonic-oscillator / rigid-rotor
 ///        thermochemistry, a faithful port of PySCF
 ///        `pyscf/hessian/thermo.py::thermo()`.

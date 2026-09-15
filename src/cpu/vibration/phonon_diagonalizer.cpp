@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/phonon_diagonalizer.cpp
+/// @file cpu/vibration/phonon_diagonalizer.cpp
 /// @brief Full \(3N\) mass-weighted dynamical matrix → wavenumbers [cm⁻¹].
 
 #include "atomiverse/cpu/vibration/phonon_diagonalizer.h"

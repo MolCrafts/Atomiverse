@@ -7,7 +7,7 @@
 | Slug | `gpw-rpbe-water` |
 | Regression | `regressions/gpw/gpw-rpbe-water/` |
 | Public API | `cpu::gpw::GPWEvaluator` + `cpu::single_point` with `xc = XcKind::RPBE`; `Kind` + `GaussianBasis` / `GthPotential` lookup ctors; shared `cpu::scf::XCType::RPBE` |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → **done** (2026-07-25); handoff ratio **perf_exempt** (dual-gate \|E_RPBE−E_PBE\|); narrative twin [ch09-gpw](../ch09-gpw.md) |
+| Roadmap | handoff ratio **perf_exempt** (dual-gate \|E_RPBE−E_PBE\|); narrative twin [ch09-gpw](../ch09-gpw.md) |
 
 ## Summary
 
@@ -201,7 +201,7 @@ bash -lc '
 ## Validation (vs CP2K)
 
 Source:
-[`regressions/gpw/gpw-rpbe-water/REFERENCE.md`](../../../regressions/gpw/gpw-rpbe-water/REFERENCE.md).  
+[`regressions/gpw/gpw-rpbe-water/REFERENCE.md`](../../../regressions/gpw/gpw-rpbe-water/REFERENCE.md).
 Oracle status at pin time (2026-07-25): **no CP2K binary / module** on the worker
 host (`cp2k`, `cp2k.psmp`, `cp2k.sopt` not on PATH; `module avail cp2k` empty).
 Absolute CP2K \(E_{\mathrm{tot}}\) digits are therefore **not** invented from
@@ -271,8 +271,7 @@ Source: [`REFERENCE.md`](../../../regressions/gpw/gpw-rpbe-water/REFERENCE.md)
 | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | **n/a (exempt)** |
 | `within_10x` | n/a (exempt) |
 
-Campaign queue records the same: ratio **perf_exempt**
-(`docs/developer/cp2k-method-queue.md` → done). Gate when a twin exists:
+. Gate when a twin exists:
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) on the same host/core count
 (single-rank; fair OMP for both).
 
@@ -304,8 +303,6 @@ Campaign queue records the same: ratio **perf_exempt**
 - Regression consumer: `regressions/gpw/gpw-rpbe-water/reg_gpw-rpbe-water.cpp`
 - Oracle twin: `tools/cp2k_oracle/inputs/gpw-rpbe-water.inp`
 - Oracle notes: `tools/cp2k_oracle/README.md`
-- Queue / loop / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-loop.md`, `docs/developer/cp2k-method-handoff.md`
 - Closed spec (git history): `.claude/specs/gpw-rpbe-water/` on
   `wf/gpw-rpbe-water`
 - Narrative GPW chapter: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

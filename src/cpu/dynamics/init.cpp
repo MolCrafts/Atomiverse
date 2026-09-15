@@ -1,4 +1,4 @@
-/// @file cpu/md/init.cpp
+/// @file cpu/dynamics/init.cpp
 /// @brief CPU MD infrastructure component implementations.
 /// Zero* implementations moved to the backend root (`src/cpu/zero.cpp`).
 

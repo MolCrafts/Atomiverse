@@ -7,7 +7,7 @@
 | Slug | `cpmd-uks` |
 | Regression | `regressions/dynamics/cpmd-uks/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::CarParrinello{cpu::gpw::GPWEvaluator{…, compute_forces=true, n_alpha, n_beta}, mu_au}` bound with `set_evaluator_ref`; dual propagators `cpu::electronic::Cpmd` (α/β). There is no `cpmd_dt`: `MD` pushes the integrator's dt into the wrapper (`TimestepProvider` → `TimestepConsumer`) |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `cpmd-uks`; MD roadmap Car–Parrinello (Γ-UKS) |
+| Roadmap | MD roadmap Car–Parrinello (Γ-UKS) |
 | Dual gate | Correctness: \(E_{\mathrm{cons}}\) drift envelope + fixed-density + spin/structure; speed **`perf_exempt`** |
 | Wave | CP2K capability loop — 2026-07-26 |
 | Oracle | Offline CP2K twin input only — **never** live in ctest |
@@ -250,7 +250,7 @@ energy twin must be recorded in REFERENCE when re-pinned; current gate does
 | O₂ CPMD-UKS short NVE | — | envelope ≤60 s design | **perf_exempt** | n/a | No CP2K CPMD-UKS wall twin on the worker host; literature drift + structural/spin gates |
 
 Gate: dual-gate speed is **`perf_exempt`** (documented in
-`docs/developer/cp2k-method-handoff.md` and queue row `cpmd-uks`). Same class
+the case `REFERENCE.md` and queue row `cpmd-uks`). Same class
 as `cpmd-rattle-water` / `xl-bomd-uks` — trajectory conservation, not a fair
 wall ratio.
 
@@ -274,8 +274,6 @@ energy protocol is standardized offline.
 - Regression: `regressions/dynamics/cpmd-uks/reg_cpmd-uks.cpp`
 - CP2K oracle contract: `tools/cp2k_oracle/README.md`
 - Twin input: `tools/cp2k_oracle/inputs/cpmd_uks_o2_nve.inp`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Related tutorials: [cpmd-water](cpmd-water.md),
   [cpmd-rattle-water](cpmd-rattle-water.md),
   [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md),

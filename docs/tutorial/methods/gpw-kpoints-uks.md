@@ -7,7 +7,7 @@
 | Slug | `gpw-kpoints-uks` |
 | Regression | `regressions/gpw/gpw-kpoints-uks/` |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `k_mesh` / `k_points`+`k_point_weights`, `k_time_reversal`, `XcKind`) |
-| Track | CP2K capability (`cp2k-method-loop`) |
+| Track | CP2K capability () |
 | Roadmap | [dft.md](../../roadmap/dft.md) — multi-k collinear UKS GPW; queue `gpw-kpoints-uks` (done 2026-07-25) |
 
 ## Summary
@@ -285,8 +285,6 @@ replace with measured \(r \le 10\).
 - Regression consumer: [`reg_gpw-kpoints-uks.cpp`](../../../regressions/gpw/gpw-kpoints-uks/reg_gpw-kpoints-uks.cpp)
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-kpoints-uks/`](../../../tools/cp2k_oracle/inputs/gpw-kpoints-uks/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  queue / handoff under `docs/developer/cp2k-method-*.md`
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - Related Γ-UKS GPW: [`gpw-uks-o2-gamma`](gpw-uks-o2-gamma.md)

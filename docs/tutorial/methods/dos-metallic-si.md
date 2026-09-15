@@ -7,9 +7,7 @@
 | Slug | `dos-metallic-si` |
 | Regression | `regressions/pw/dos-metallic-si/` |
 | Public API | `cpu::pw::PW` (`smearing`, `degauss`, `extra_bands`) + `cpu::pw::Dos` / `DosResult` |
-| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS / metallic smear; queue `docs/developer/cp2k-method-queue.md` `dos-metallic-si` (done) |
-| Loop | CP2K capability (`cp2k-method-loop` wave 10) |
-
+| Roadmap | [dft.md](../../roadmap/dft.md) § bands/DOS / metallic smear|
 ## Summary
 
 Plane-wave **Gaussian-broadened density of states** after a spin-unpolarized
@@ -318,8 +316,6 @@ DOS parity (GTH+Gaussian vs NC-UPF PW).
 - Public API: [`include/atomiverse/cpu/planewave/bands_dos.h`](../../../include/atomiverse/cpu/planewave/bands_dos.h)
 - Offline CP2K twin note: `tools/cp2k_oracle/inputs/dos-metallic-si.note`
 - Oracle rules: `tools/cp2k_oracle/README.md` (never live in ctest)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Related fixed-occ bands+DOS: [bands-dos-si](bands-dos-si.md)
 - Related metallic SCF (Al free energy): [pw-smearing-al](pw-smearing-al.md)
 - Related metallic DFPT: [dfpt-metallic-si](dfpt-metallic-si.md) (if present)

@@ -1,4 +1,4 @@
-/// @file md/nose_hoover.cu
+/// @file cuda/dynamics/nose_hoover.cu
 /// @brief NoseHoover -- single-chain Nosé-Hoover thermostat.
 
 #include "atomiverse/core/stage.h"

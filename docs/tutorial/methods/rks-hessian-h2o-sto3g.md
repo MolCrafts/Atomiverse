@@ -85,7 +85,7 @@ bash -lc '
 
 ## Validation (vs PySCF)
 
-Source: [`regressions/scf/rks-hessian-h2o-sto3g/REFERENCE.md`](../../../regressions/scf/rks-hessian-h2o-sto3g/REFERENCE.md)  
+Source: [`regressions/scf/rks-hessian-h2o-sto3g/REFERENCE.md`](../../../regressions/scf/rks-hessian-h2o-sto3g/REFERENCE.md)
 Oracle class: offline central FD of PySCF **2.14.0** analytic RKS nuclear gradient (`mf.nuc_grad_method().kernel()`), \(h=10^{-4}\) Bohr, symmetrized; units via Atomiverse CODATA factors (`kHartreeInEv = 27.211386245988`, `kBohrInAngstrom = 0.529177210903`). PySCF analytic `mf.Hessian().kernel()` is a **different** algorithm (closed form) and is recorded only as a cross-check (max element abs vs FD twin \(\lesssim 4.34\cdot 10^{-2}\) eV/Å²). Never live-import PySCF in ctest.
 
 **Setup (from REFERENCE):**
@@ -129,7 +129,7 @@ Regression also asserts Hessian symmetry (\(\lvert H-H^\top\rvert \le 10^{-8}\))
 
 Fair twin: Atomiverse `RKS::hessian` (18 force evaluations) vs a PySCF loop of 18 RKS analytic gradients (same FD skeleton, \(h=10^{-4}\) Bohr). Analytic `hessian.RKS` is a different algorithm and is **not** the fair wall twin for this product path.
 
-Source: `regressions/scf/rks-hessian-h2o-sto3g/REFERENCE.md` (recorded 2026-07-23, `OMP_NUM_THREADS=8`, Release). Also rolled into `docs/developer/pyscf-method-handoff.md` / queue notes as ratio **3.08**.
+Source: `regressions/scf/rks-hessian-h2o-sto3g/REFERENCE.md` (recorded 2026-07-23, `OMP_NUM_THREADS=8`, Release). Also rolled into the case `REFERENCE.md` / queue notes as ratio **3.08**.
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{PySCF}}\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----------------------------------------: | ---- | ------ |
@@ -156,7 +156,6 @@ python tools/pyscf_oracle/fair_bench.py --method rks -- \
 ## References
 
 - Offline pin: `regressions/scf/rks-hessian-h2o-sto3g/REFERENCE.md`
-- Perf / handoff: `docs/developer/pyscf-method-handoff.md`, `docs/developer/pyscf-method-queue.md`
 - Roadmap: `docs/roadmap/dft.md`
 - Related product path: `docs/tutorial/methods/rohf-hessian-o2.md` (ROHF FD Hessian)
 - Oracle tooling: `tools/setup_pyscf_env.sh`, `tools/pyscf_oracle/pin_scf.py`

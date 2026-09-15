@@ -7,7 +7,7 @@
 | Slug | `pw-bomd-h` |
 | Regression | `regressions/pw/pw-bomd-h/` |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::pw::PWEvaluator{PW}.with_gradient(true)` at `md::Phase::force` |
-| Roadmap / queue | [cp2k-method-queue.md](../../developer/cp2k-method-queue.md) row `pw-bomd-h`; MD product path in [ch08-plane-wave.md](../ch08-plane-wave.md) / [ch10-classical-md.md](../ch10-classical-md.md) |
+| Roadmap | MD product path in [ch08-plane-wave.md](../ch08-plane-wave.md) / [ch10-classical-md.md](../ch10-classical-md.md) |
 | Dual gate | Correctness A4–A6; speed **`perf_exempt`** (no CP2K twin wall) |
 
 ## Summary
@@ -207,8 +207,8 @@ Related unit surface (not the e2e pin): `tests/cpu/planewave/test_pw_bomd.cpp`
 ## Performance
 
 Source: REFERENCE.md dual-gate summary; queue/handoff
-[`cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-[`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md).
+``,
+``.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -249,8 +249,6 @@ one optimize pass.
 - Regression source: [`regressions/pw/pw-bomd-h/reg_pw-bomd-h.cpp`](../../../regressions/pw/pw-bomd-h/reg_pw-bomd-h.cpp)
 - Force symmetry foothold: `regressions/pw/h_force_analytic/`
 - Unit bind test: `tests/cpu/planewave/test_pw_bomd.cpp`
-- Queue / handoff: [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md),
-  [`cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
 - Oracle: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
 - Narrative PW / MD: [ch08-plane-wave.md](../ch08-plane-wave.md),
   [ch10-classical-md.md](../ch10-classical-md.md)

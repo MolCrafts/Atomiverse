@@ -1,4 +1,4 @@
-/// @file cpu/observer/mulliken.cpp
+/// @file cpu/observe/mulliken.cpp
 /// @brief Mulliken population analysis — pure C++/xtensor implementation.
 
 #include "atomiverse/cpu/observe/mulliken.h"
@@ -37,9 +37,9 @@ std::vector<int> derive_basis_to_atom(const scf::internal::IntegralView& pack) {
             }
         }
         if (b2a[static_cast<std::size_t>(mu)] < 0) {
-            throw std::runtime_error("cpu::mulliken: shell center at AO "
-                                     + std::to_string(mu)
-                                     + " matches no atom in internal::IntegralWorkspace");
+            throw std::runtime_error(
+                "cpu::mulliken: shell center at AO " + std::to_string(mu)
+                + " matches no atom in internal::IntegralWorkspace");
         }
     }
     return b2a;

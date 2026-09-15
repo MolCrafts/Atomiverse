@@ -1,19 +1,20 @@
 # Method handbook pages
 
-**Style (current generation): technical report.**  
+**Style (current generation): technical report.**
 Dense, sectioned, validation-first. **Not** the narrative Theory→Practice chapters
 in `docs/tutorial/ch*.md`. A house narrative style will be applied in a later
 rewrite pass.
 
-Produced/updated by workflow **Tutorial** phases after each successful merge
-wave:
+One page per delivered capability, written when that capability lands. Each is
+paired with an external oracle by domain:
 
-- `pyscf-method-loop` — molecular post-HF / response (arg `write_tutorials`)
-- `cp2k-method-loop` — GPW / PW / periodic DFT vs offline CP2K pins
-- `metalwalls-method-loop` — classical electrochemical MD + LAMMPS-overlap MD
-  (arg `write_tutorials`; LAMMPS oracle when feature overlaps; MW for MW-only)
-- `tb-method-loop` — NDDO / DFTB / GFN-xTB vs offline OpenMOPAC | DFTB+ | xtb
-  pins (family-locked; arg `write_tutorials`)
+- molecular Hartree-Fock, post-HF and response — **PySCF**
+- GPW / plane-wave / periodic DFT — **CP2K** (and Quantum ESPRESSO for DFPT)
+- classical and electrochemical MD — **LAMMPS** where the feature overlaps,
+  **MetalWalls** for MetalWalls-only physics
+- NDDO / DFTB / GFN-xTB — family-locked to **OpenMOPAC** / **DFTB+** / **xtb**
+
+`slug` = the regression directory name.
 
 ## Required sections
 
@@ -35,30 +36,23 @@ Template: [`_TEMPLATE.md`](_TEMPLATE.md).
 docs/tutorial/methods/<slug>.md
 ```
 
-`slug` = queue / regression directory name.
-
 ## Data sources (do not invent)
 
 **PySCF campaign (molecular):**
 
 - Accuracy: `regressions/scf/<slug>/REFERENCE.md`
-- Speed: `docs/developer/pyscf-method-perf.md` or `tools/pyscf_oracle/fair_bench.py`
 - Oracle rules: `docs/tutorial/appendix-pyscf-oracle.md` (PySCF never in ctest)
 
 **CP2K capability (GPW / PW / periodic):**
 
 - Accuracy: `regressions/{gpw,pw}/<slug>/REFERENCE.md`
-- Speed / ratios: `docs/developer/cp2k-method-handoff.md` (fair wall or `perf_exempt`)
 - Oracle: `tools/cp2k_oracle/README.md` (offline pins only; CP2K never in ctest)
-- Queue / design: `docs/developer/cp2k-method-queue.md`, `cp2k-method-loop.md`
 
 **MetalWalls / classical electrochem + LAMMPS-overlap MD:**
 
 - Accuracy: `regressions/md/<slug>/REFERENCE.md` or
   `regressions/forcefield/<slug>/REFERENCE.md` (`oracle: lammps|metalwalls|literature`)
-- Speed / ratios: `docs/developer/metalwalls-method-handoff.md` (fair wall or `perf_exempt`)
 - Oracle: `tools/metalwalls_oracle/README.md` (offline pins only; never live in ctest)
-- Queue / design: `docs/developer/metalwalls-method-queue.md`, `metalwalls-method-loop.md`
 - **Oracle priority:** if the feature also exists in LAMMPS, pin and fair-bench
   vs **LAMMPS**. MetalWalls only for MW-only physics.
 
@@ -66,17 +60,13 @@ docs/tutorial/methods/<slug>.md
 
 - Accuracy: `regressions/semiempirical/<slug>/REFERENCE.md`
   (`oracle: mopac|dftb+|xtb|literature` + `oracle_version`)
-- Speed / ratios: `docs/developer/tb-method-handoff.md` (fair wall or `perf_exempt`)
 - Oracle twins: `tools/tb_oracle/README.md` (offline only; never live in ctest)
-- Queue / design: `docs/developer/tb-method-queue.md`, `tb-method-loop.md`
 - **Family lock:** NDDO → OpenMOPAC; DFTB* → DFTB+; GFN-xTB → xtb. Forbidden:
   cross-family energy pins; treating GFN as DFTB3 successor.
 
 ## Index — TB / SE capability wave 1 (2026-07-27)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Family lock: NDDO → OpenMOPAC; DFTB\* → DFTB+;
+Offline family-locked pins only — see `tools/tb_oracle/`. Family lock: NDDO → OpenMOPAC; DFTB\* → DFTB+;
 GFN-xTB → xtb. Narrative: [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md).
 
 | Method | Page | Regression | Oracle |
@@ -87,9 +77,7 @@ GFN-xTB → xtb. Narrative: [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1
 
 ## Index — TB / SE capability wave 2 (2026-07-27)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Oracle = **DFTB+** for DFTB family rows (`oracle: dftb+`
+Offline family-locked pins only — see `tools/tb_oracle/`. Oracle = **DFTB+** for DFTB family rows (`oracle: dftb+`
 or `family_oracle: dftb+` with `oracle: literature` when absolute SK digits
 are ATV-mio-style). Fair walls from REFERENCE (`ratio` or `perf_exempt`).
 
@@ -100,9 +88,7 @@ are ATV-mio-style). Fair walls from REFERENCE (`ratio` or `perf_exempt`).
 
 ## Index — TB / SE capability wave 3 (2026-07-29)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Final harness-wave-3 batch: lattice-image Γ-PBC forces,
+Offline family-locked pins only — see `tools/tb_oracle/`. Final harness-wave-3 batch: lattice-image Γ-PBC forces,
 multi-k energy, DFTB3 energy foothold. Fair walls deferred when no DFTB+
 binary on host (`perf_exempt`).
 
@@ -131,9 +117,7 @@ section must then say so explicitly and the case ships structural gates only.
 
 ## Index — TB / SE capability wave 8 (2026-08-25)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB rows (never OpenMOPAC /
+Offline family-locked pins only — see `tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB rows (never OpenMOPAC /
 DFTB+; GFN is not a DFTB3 successor). Fair walls from REFERENCE (`ratio`
 or `perf_exempt`).
 
@@ -145,9 +129,7 @@ or `perf_exempt`).
 
 ## Index — TB / SE capability wave 9 (2026-08-25)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB rows (never OpenMOPAC /
+Offline family-locked pins only — see `tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB rows (never OpenMOPAC /
 DFTB+; GFN is not a DFTB3 successor). Fair walls from REFERENCE (`ratio`
 or `perf_exempt`). Harness wave 9 closed GFN1/GFN2 analytic \(F\) and GFN0
 FD Hessian (`-DATV_BUILD_VIB=ON` exception). Family GFN1/2 Hessian is
@@ -162,9 +144,7 @@ remains post-SCC (angular \(F\) hole).
 
 ## Index — TB / SE capability wave 10 (2026-08-25)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
+Offline family-locked pins only — see `tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
 OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
 REFERENCE (`ratio` or `perf_exempt`). Harness wave 10 closed IPEA-xTB
 energy (`reg_ipea-xtb-small`) and the family GFN1/2 FD Hessian
@@ -178,9 +158,7 @@ remains post-SCC (angular \(F\) hole — recover `gfn2-aes-fock`).
 
 ## Index — TB / SE capability wave 11 (2026-08-25)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
+Offline family-locked pins only — see `tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
 OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
 REFERENCE (`ratio` or `perf_exempt`). Harness wave 11 closed GFN2
 AES-in-Fock (`reg_gfn2-aes-fock`) and IPEA analytic \(G\)
@@ -194,9 +172,7 @@ hole, not a missing Fock term. `--vip`/`--vea` stays ○.
 
 ## Index — TB / SE capability wave 12 (2026-08-25)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
+Offline family-locked pins only — see `tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
 OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
 REFERENCE (`ratio` or `perf_exempt`). Harness wave 12 closed IPEA
 FD Hessian (`reg_ipea-xtb-analytic-hessian`; `-DATV_BUILD_VIB=ON`
@@ -209,9 +185,7 @@ incomplete.
 
 ## Index — TB / SE capability wave 13 (2026-08-25)
 
-Offline family-locked pins only — see
-[tb-method-handoff](../../developer/tb-method-handoff.md) and
-`tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
+Offline family-locked pins only — see `tools/tb_oracle/`. Oracle = **xtb** for GFN-xTB / IPEA rows (never
 OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
 REFERENCE (`ratio` or `perf_exempt`). Harness wave 13 closed IPEA ΔSCC
 VIP/VEA (`reg_ipea-xtb-vip`). Extra-Z IPEA tables stay ○. GFN2
@@ -224,8 +198,7 @@ CAMM-vs-\(R\) remains incomplete.
 ## Index — MetalWalls capability wave 1 (2026-07-23)
 
 Classical electrochemical MD + LAMMPS-overlap MD (map E1–E3, E8–E9). Offline
-pins only — see [metalwalls-method-handoff](../../developer/metalwalls-method-handoff.md)
-and `tools/metalwalls_oracle/`. **Oracle priority:** LAMMPS when the feature
+pins only — see `tools/metalwalls_oracle/`. **Oracle priority:** LAMMPS when the feature
 overlaps; MetalWalls / literature for MW-only physics.
 
 | Method | Page | Regression | Oracle |
@@ -244,9 +217,7 @@ overlaps; MetalWalls / literature for MW-only physics.
 ## Index — MetalWalls capability wave 2 (2026-07-24)
 
 Classical electrochemical MD + LAMMPS-overlap force fields (map E2–E4, E6–E8,
-E10). Offline pins only — see
-[metalwalls-method-handoff](../../developer/metalwalls-method-handoff.md) and
-`tools/metalwalls_oracle/`. **Oracle priority:** LAMMPS when the feature
+E10). Offline pins only — see `tools/metalwalls_oracle/`. **Oracle priority:** LAMMPS when the feature
 overlaps; MetalWalls / literature for MW-only physics. Fair walls from
 REFERENCE / handoff (`ratio` or `perf_exempt`).
 
@@ -266,9 +237,7 @@ REFERENCE / handoff (`ratio` or `perf_exempt`).
 ## Index — MetalWalls capability wave 3 (2026-07-24)
 
 Classical electrochemical MD + LAMMPS-overlap MD (map E3, E5, E9–E10 + shared
-MD). Offline pins only — see
-[metalwalls-method-handoff](../../developer/metalwalls-method-handoff.md) and
-`tools/metalwalls_oracle/`. **Oracle priority:** LAMMPS when the feature
+MD). Offline pins only — see `tools/metalwalls_oracle/`. **Oracle priority:** LAMMPS when the feature
 overlaps; MetalWalls / literature for MW-only physics. Fair walls from
 REFERENCE / handoff (`ratio` or `perf_exempt`).
 
@@ -285,9 +254,7 @@ REFERENCE / handoff (`ratio` or `perf_exempt`).
 
 Electrochem production depth + polarization dynamics (map E1–E4, E7, E9).
 Wave 4 (2026-07-24) landed production depth on the existing footholds with no
-new method pages, so there is no wave-4 section. Offline pins only — see
-[metalwalls-method-handoff](../../developer/metalwalls-method-handoff.md) and
-`tools/metalwalls_oracle/`. **Oracle priority:** LAMMPS when the feature
+new method pages, so there is no wave-4 section. Offline pins only — see `tools/metalwalls_oracle/`. **Oracle priority:** LAMMPS when the feature
 overlaps; MetalWalls / literature for MW-only physics. Fair walls from
 REFERENCE / handoff (`ratio` or `perf_exempt`).
 
@@ -321,8 +288,7 @@ REFERENCE / handoff (`ratio` or `perf_exempt`).
 
 ## Index — CP2K capability wave 2 (2026-07-24)
 
-Offline CP2K pins only — see [cp2k-method-handoff](../../developer/cp2k-method-handoff.md)
-and `tools/cp2k_oracle/`. Fair walls from harness (`ratio` or `perf_exempt`).
+Offline CP2K pins only — see `tools/cp2k_oracle/`. Fair walls from harness (`ratio` or `perf_exempt`).
 
 | Method | Page | Regression | ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) |
 | ------ | ---- | ---------- | --------------------------------------------- |
@@ -339,8 +305,7 @@ and `tools/cp2k_oracle/`. Fair walls from harness (`ratio` or `perf_exempt`).
 
 ## Index — CP2K capability wave 11 (2026-07-26)
 
-Offline CP2K pins only — see [cp2k-method-handoff](../../developer/cp2k-method-handoff.md)
-wave 11 and `tools/cp2k_oracle/`. Fair walls from harness (`ratio` or
+Offline CP2K pins only — see wave 11 and `tools/cp2k_oracle/`. Fair walls from harness (`ratio` or
 `perf_exempt`). All nine staffed slugs closed 2026-07-26 (pending residual
 emptied — not queue exhausted).
 
@@ -359,8 +324,7 @@ emptied — not queue exhausted).
 
 ## Index — CP2K capability wave 12 (2026-07-26)
 
-Offline CP2K pins only — see [cp2k-method-handoff](../../developer/cp2k-method-handoff.md)
-wave 12 and `tools/cp2k_oracle/`. Fair walls from harness (`ratio` or
+Offline CP2K pins only — see wave 12 and `tools/cp2k_oracle/`. Fair walls from harness (`ratio` or
 `perf_exempt`). Six staffed slugs closed 2026-07-26 (pending residual not
 queue exhausted).
 
@@ -377,7 +341,7 @@ queue exhausted).
 ## Index — CP2K capability wave 14 (2026-07-26)
 
 Offline CP2K 2026.1 / pymbd pins only — see
-[cp2k-method-queue](../../developer/cp2k-method-queue.md) wave 14 and
+wave 14 and
 `tools/cp2k_oracle/`. Five slugs closed; `gpw-fd-phonon-si` stays open on SCF
 conditioning (not force correctness — its earlier block reason was retracted).
 
@@ -391,9 +355,7 @@ conditioning (not force correctness — its earlier block reason was retracted).
 
 ## Index — CP2K capability shift wave (2026-07-31)
 
-Offline CP2K 2026.1 pins only — see
-[cp2k-method-queue](../../developer/cp2k-method-queue.md) and
-`tools/cp2k_oracle/`. Fair walls from each page's Performance section /
+Offline CP2K 2026.1 pins only — see `tools/cp2k_oracle/`. Fair walls from each page's Performance section /
 `REFERENCE.md` (`ratio` or `perf_exempt`). The ninth slug of this batch,
 [dfpt-gga-spin-si](dfpt-gga-spin-si.md) (fair ratio **0.20**), is indexed in
 the Response / phonons table below.
@@ -414,7 +376,7 @@ the Response / phonons table below.
 ## Index — CP2K capability wave 2 (shift) (2026-07-31)
 
 Offline CP2K 2026.1 pins only — see
-[cp2k-method-queue](../../developer/cp2k-method-queue.md) wave 2 (shift) and
+wave 2 (shift) and
 `tools/cp2k_oracle/`. Fair walls from each page's Performance section /
 `REFERENCE.md` (`ratio` or `perf_exempt`). Eight slugs merged; three of them
 ([gpw-d3-stress](gpw-d3-stress.md) **0.55**,
@@ -434,7 +396,7 @@ already carry index rows in the sections above and are not repeated here.
 ## Index — CP2K capability wave 3 (shift) (2026-07-31)
 
 Offline CP2K 2026.1 pins only — see
-[cp2k-method-queue](../../developer/cp2k-method-queue.md) wave 3 (shift) and
+wave 3 (shift) and
 `tools/cp2k_oracle/`. Fair walls from each page's Performance section /
 `REFERENCE.md`.
 
@@ -446,7 +408,7 @@ Offline CP2K 2026.1 pins only — see
 ## Index — restored capability pages (indexed 2026-07-28)
 
 These pages were written by the Tutorial phase of earlier
-`cp2k-method-loop` waves (plus the AO AIMD spec chain `esmm-cpmd-04/05`) but
+waves (plus the AO AIMD spec chain `esmm-cpmd-04/05`) but
 their index rows never landed: each wave stashed its tutorial pages before the
 merge. The pages were recovered on 2026-07-28 and their code samples refreshed
 to the current public API (`frame.box`, `set_evaluator` / `set_evaluator_ref`,

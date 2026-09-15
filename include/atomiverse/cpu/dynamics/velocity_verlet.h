@@ -1,4 +1,4 @@
-/// @file cpu/md/velocity_verlet.h
+/// @file cpu/dynamics/velocity_verlet.h
 /// @brief CPU VelocityVerlet integrator.
 #pragma once
 

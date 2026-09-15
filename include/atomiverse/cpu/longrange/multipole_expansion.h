@@ -1,4 +1,4 @@
-/// @file longrange/multipole_expansion.h
+/// @file cpu/longrange/multipole_expansion.h
 /// @brief Multipole and local expansions for open-boundary Coulomb (FMM).
 ///
 /// Backend-agnostic operator math (no Frame / Component / MPI). Built on

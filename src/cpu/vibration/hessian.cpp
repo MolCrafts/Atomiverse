@@ -1,4 +1,4 @@
-/// @file src/cpu/vib/hessian.cpp
+/// @file cpu/vibration/hessian.cpp
 /// @brief cpu::vib::Hessian — constructor wiring and run() implementation.
 
 #include "atomiverse/cpu/vibration/hessian.h"
@@ -170,8 +170,9 @@ class CartesianFinalize : public Driver<ATV::vib::Phase> {
 
 } // namespace
 
-HessianResult Hessian::run_from_cartesian(
-    cpu::Frame& frame, xt::xtensor<double, 2> hessian_ev_ang2) {
+HessianResult
+Hessian::run_from_cartesian(cpu::Frame& frame,
+                            xt::xtensor<double, 2> hessian_ev_ang2) {
     const int n = static_cast<int>(frame.nlocal());
     if (n < 1)
         throw std::invalid_argument("Hessian::run_from_cartesian: empty frame");
@@ -191,12 +192,9 @@ HessianResult Hessian::run_from_cartesian(
     auto y = frame.span(kAtom_y);
     auto z = frame.span(kAtom_z);
     for (int i = 0; i < n; ++i) {
-        ws.r0[static_cast<std::size_t>(3 * i + 0)] =
-            static_cast<double>(x[i]);
-        ws.r0[static_cast<std::size_t>(3 * i + 1)] =
-            static_cast<double>(y[i]);
-        ws.r0[static_cast<std::size_t>(3 * i + 2)] =
-            static_cast<double>(z[i]);
+        ws.r0[static_cast<std::size_t>(3 * i + 0)] = static_cast<double>(x[i]);
+        ws.r0[static_cast<std::size_t>(3 * i + 1)] = static_cast<double>(y[i]);
+        ws.r0[static_cast<std::size_t>(3 * i + 2)] = static_cast<double>(z[i]);
     }
     ws.r0_ready = true;
 

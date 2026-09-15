@@ -1,4 +1,4 @@
-/// @file cuda/async/record_base.cuh
+/// @file cuda/asynchronous/record_base.cuh
 /// @brief `cuda::AsyncRecordBase<Snapshot>` -- zero-block base class for
 ///        CUDA-side recorder/thermo/observer components.
 ///

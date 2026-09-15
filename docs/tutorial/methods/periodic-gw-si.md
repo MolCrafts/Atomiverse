@@ -7,7 +7,7 @@
 | Slug | `periodic-gw-si` |
 | Regression | `regressions/gpw/periodic-gw-si/` |
 | Public API | `cpu::gpw::GpwDft::g0w0(atoms)` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`); screening virtuals via `mp2_n_virt`, product RI via `mp2_ri` |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → **done** (wave 3, 2026-07-25); roadmap `dft.md` §10 **Periodic GW** ✓ (Γ product; multi-k residual); handoff ratio **perf_exempt** |
+| Roadmap | roadmap `dft.md` §10 **Periodic GW** ✓ (Γ product; multi-k residual); handoff ratio **perf_exempt** |
 
 ## Summary
 
@@ -225,7 +225,7 @@ Pin strategy (binding, mirrors `periodic-rpa-si`):
 
 ## Performance
 
-Source: REFERENCE + `docs/developer/cp2k-method-handoff.md`.
+Source: REFERENCE + the case `REFERENCE.md`.
 Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) unless exempted.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -262,8 +262,6 @@ periodic G0W0; UGW.
 - Offline pin: `regressions/gpw/periodic-gw-si/REFERENCE.md`
 - Oracle twin: `tools/cp2k_oracle/inputs/periodic-gw-si.inp`
 - Oracle contract: `tools/cp2k_oracle/README.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md` (ratio **perf_exempt**)
 - Roadmap: `docs/roadmap/dft.md` §10 Periodic GW ✓ (Γ; multi-k residual)
 - Public headers: `include/atomiverse/cpu/gpw/g0w0.h`, `gpw_solver.h`
 - Impl: `src/cpu/gpw/g0w0.cpp`

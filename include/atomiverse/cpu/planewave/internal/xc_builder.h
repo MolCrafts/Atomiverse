@@ -1,4 +1,4 @@
-/// @file cpu/pw/internal/xc_builder.h
+/// @file cpu/planewave/internal/xc_builder.h
 /// @brief internal::XCBuilder — XC potential on the FFT grid via evaluate_xc.
 ///
 /// Facade-private step helper owned by `cpu::pw::PW`. NOT a

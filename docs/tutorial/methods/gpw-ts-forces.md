@@ -7,7 +7,7 @@
 | Slug | `gpw-ts-forces` |
 | Regression | `regressions/gpw/gpw-ts-forces/` |
 | Public API | `cpu::gpw::GpwDft::ts` / `cpu::gpw::GPWEvaluator::ts`; `GpwResult::e_disp` [Ha]; force assembly via `compute_forces` / `gpw_forces_*` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, wave 11) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -217,7 +217,7 @@ bash -lc '
 ## Validation (libMBD / force dual-gate)
 
 Source:
-[`regressions/gpw/gpw-ts-forces/REFERENCE.md`](../../../regressions/gpw/gpw-ts-forces/REFERENCE.md).  
+[`regressions/gpw/gpw-ts-forces/REFERENCE.md`](../../../regressions/gpw/gpw-ts-forces/REFERENCE.md).
 Oracle: offline **libMBD** free-atom TS energy (`cmbd_ts_energy`, git
 `88069c6`, ATV Å→Bohr) + **analytic-vs-FD dual-gate** + product wiring.
 External engine pin — not a golden of Atomiverse’s own output; **never**
@@ -303,9 +303,6 @@ requires \(r\le 10\).
 ## References
 
 - Offline pin: `regressions/gpw/gpw-ts-forces/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle notes: `tools/cp2k_oracle/inputs/gpw-ts-forces/`,
   `tools/cp2k_oracle/README.md`
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion

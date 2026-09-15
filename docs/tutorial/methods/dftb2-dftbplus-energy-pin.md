@@ -229,8 +229,6 @@ the pin closes **absolute oracle identity for H–H**, not the full DFTB ladder.
 - Offline pin: [`regressions/semiempirical/dftb2-dftbplus-energy-pin/REFERENCE.md`](../../../regressions/semiempirical/dftb2-dftbplus-energy-pin/REFERENCE.md)
 - Oracle twin: [`tools/tb_oracle/inputs/dftbplus/h2_mio_scc/`](../../../tools/tb_oracle/inputs/dftbplus/h2_mio_scc/)
 - Family rules: [`tools/tb_oracle/README.md`](../../../tools/tb_oracle/README.md)
-- Queue / handoff: [`docs/developer/tb-method-queue.md`](../../developer/tb-method-queue.md),
-  [`docs/developer/tb-method-handoff.md`](../../developer/tb-method-handoff.md)
 - Roadmap: [`docs/roadmap/semiempirical.md`](../../roadmap/semiempirical.md) §2
 - M. Elstner et al., *Phys. Rev. B* **58**, 7260 (1998),
   DOI [10.1103/PhysRevB.58.7260](https://doi.org/10.1103/PhysRevB.58.7260)

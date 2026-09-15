@@ -7,7 +7,7 @@
 | Slug | `pw-lda-si` |
 | Regression | `regressions/pw/pw-lda-si/` |
 | Public API | `cpu::pw::PW` (members) + `cpu::pw::PWEvaluator` + `cpu::single_point` |
-| Roadmap | [dft.md](../../roadmap/dft.md) § Periodic DFT / plane-wave; queue `docs/developer/cp2k-method-queue.md` `pw-lda-si` (done) |
+| Roadmap | [dft.md](../../roadmap/dft.md) § Periodic DFT / plane-wave|
 
 ## Summary
 
@@ -257,8 +257,6 @@ Wall comparison is same-geometry only, not absolute-energy parity.
 - Offline pin: [`regressions/pw/pw-lda-si/REFERENCE.md`](../../../regressions/pw/pw-lda-si/REFERENCE.md)
 - Regression: [`regressions/pw/pw-lda-si/reg_pw-lda-si.cpp`](../../../regressions/pw/pw-lda-si/reg_pw-lda-si.cpp)
 - Optional CP2K wall skeleton: `tools/cp2k_oracle/inputs/si_lda_pw_note.inp`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`,
-  `docs/developer/cp2k-method-handoff.md`
 - Narrative style ref: [Chapter 8 — Plane-Wave DFT](../ch08-plane-wave.md)
 - D. R. Hamann, *Phys. Rev. B* **88**, 085117 (2013)
 - M. J. van Setten et al., *Comput. Phys. Commun.* **226**, 39 (2018)

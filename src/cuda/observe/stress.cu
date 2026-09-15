@@ -1,4 +1,4 @@
-/// @file observer/stress.cu
+/// @file cuda/observe/stress.cu
 /// @brief Virial -- ZEROING of `stress_kinetic[6]`.
 ///
 /// After cuda-md-review-cleanup-05-reductions-and-atomics the kinetic

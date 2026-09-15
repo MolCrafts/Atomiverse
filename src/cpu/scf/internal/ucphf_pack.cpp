@@ -1,4 +1,4 @@
-/// @file cpu/scf/ucphf_pack.cpp
+/// @file cpu/scf/internal/ucphf_pack.cpp
 /// @brief Unrestricted CPHF linear response + analytic UHF nuclear-Hessian
 ///        assembly. See ucphf_pack.h for equations and references.
 
@@ -76,7 +76,8 @@ RealMatrix k_contraction(const xt::xtensor<double, 4>& eri,
 
 } // namespace
 
-UCphfPack::UCphfPack(const SlaterDeterminant& det, const internal::IntegralView& pack,
+UCphfPack::UCphfPack(const SlaterDeterminant& det,
+                     const internal::IntegralView& pack,
                      const xt::xtensor<double, 4>& eri_ao,
                      const xt::xtensor<double, 4>& dS_ao,
                      const xt::xtensor<double, 4>& dFa_ao,

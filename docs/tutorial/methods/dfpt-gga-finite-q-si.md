@@ -8,7 +8,6 @@
 | Regression | `regressions/response/dfpt-gga-finite-q-si/` |
 | Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **finite-q × pure GGA** ✓ (`reg_dfpt-gga-finite-q-si`) |
-| Queue | `docs/developer/cp2k-method-queue.md` → **done** (shift wave 2, 2026-07-31); fair ratio **0.17** |
 | Dep | `dfpt-finite-q-si` ✓ (commensurate X path, LSDA); `dfpt-gga-si` ✓ (Γ, PBE kernel) |
 
 ## Summary

@@ -1,4 +1,4 @@
-/// @file cpu/md/barostat.h
+/// @file cpu/dynamics/barostat.h
 /// @brief CPU Berendsen isotropic barostat.
 #pragma once
 

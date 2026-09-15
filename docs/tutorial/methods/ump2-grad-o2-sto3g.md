@@ -179,7 +179,7 @@ python tools/pyscf_oracle/pin_scf.py ump2 --geom o2 --basis sto-3g \
 ## Performance
 
 Source: `REFERENCE.md` fair-bench block. Handoff ratio **1.37**
-(`docs/developer/pyscf-method-handoff.md`).
+(the case `REFERENCE.md`).
 
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
@@ -212,14 +212,12 @@ has a separate fair wall (energy-only); do not conflate that ratio with this
 - Multi-minima UHF for O₂ requires an explicit density guess (ROHF warm-start
   in the regression); cold UHF may miss the PySCF minimum.
 - Perf rollup table may lag REFERENCE until a bulk refresh of
-  `pyscf-method-perf.md`.
+  ``.
 
 ## References
 
 - Offline pin: `regressions/scf/ump2-grad-o2-sto3g/REFERENCE.md`
 - Energy sibling pin: `regressions/scf/ump2-o2-sto3g/REFERENCE.md`
-- Perf / handoff: `docs/developer/pyscf-method-handoff.md` (ratio **1.37**);
-  rollup template `docs/developer/pyscf-method-perf.md`
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`;
   `tools/pyscf_oracle/pin_scf.py`, `tools/setup_pyscf_env.sh`
 - Energy handbook: [`ump2-o2-sto3g.md`](ump2-o2-sto3g.md)

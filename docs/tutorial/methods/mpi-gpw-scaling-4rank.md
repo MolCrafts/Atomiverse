@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/mpi-gpw-scaling-4rank/` |
 | Public API | `cpu::gpw::GpwDft` multi-k (`k_mesh` / `k_points`); `GpwResult::{n_kpts, n_kpts_local, e_total}` |
 | Unit | `tests/mpi/test_gpw_kpoint.cpp` (CTest `mpiexec` n=1/2/4) |
-| Roadmap / queue | `docs/developer/cp2k-method-queue.md` → industrial infra gate |
 | Dual gate | Rank-count energy invariance; speed **`perf_exempt`** (k-RR foothold only) |
 
 ## Summary

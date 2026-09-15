@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-uks-o2-gamma/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`n_alpha`/`n_beta`, `XcKind::PADE`, `nonperiodic`); `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — Γ-point UKS GPW (PADE LSD foothold) |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) |
 
 ## Summary
 
@@ -240,8 +239,6 @@ Gate from closed spec: \(r \le 10\) or `perf_exempt`. Here \(r \approx 0.98\)
 - Regression consumer: [`reg_gpw-uks-o2-gamma.cpp`](../../../regressions/gpw/gpw-uks-o2-gamma/reg_gpw-uks-o2-gamma.cpp)
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-uks-o2-gamma/`](../../../tools/cp2k_oracle/inputs/gpw-uks-o2-gamma/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Loop: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  queue / handoff under `docs/developer/cp2k-method-*.md`
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - G. Lippert, J. Hutter, M. Parrinello, *Mol. Phys.* **92**, 477 (1997) — GPW

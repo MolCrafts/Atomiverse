@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file lebedev_data.h
+ * @file cpu/scf/lebedev_data.h
  * @brief Tabulated Lebedev-Laikov angular quadrature points for DFT grid
  *        integration on the unit sphere.
  *

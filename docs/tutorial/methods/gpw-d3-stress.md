@@ -5,7 +5,7 @@
 | Slug | `gpw-d3-stress` |
 | Regression | `regressions/gpw/gpw-d3-stress/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`d3`, `compute_stress`, `stress_use_fd=false`); free `gpw_stress` / `gpw_stress_fd` with `GpwDft::d3` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, wave 2 2026-07-31) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -184,7 +184,6 @@ difference pin and dual gate, not the product path.
 ## References
 
 - Offline pin: `regressions/gpw/gpw-d3-stress/REFERENCE.md`
-- Queue: `docs/developer/cp2k-method-queue.md`; loop: `docs/developer/cp2k-method-loop.md`
 - S. Grimme, J. Antony, S. Ehrlich, H. Krieg, *J. Chem. Phys.* **132**,
   154104 (2010) (DFT-D3, zero damping)
 - J. VandeVondele et al., *Comput. Phys. Commun.* **167**, 103 (2005) (GPW)

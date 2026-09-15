@@ -41,6 +41,18 @@ mathematics: the code is compact and the linear algebra stays close to the
 physics. The CUDA path keeps the calculation device-resident; for the shells
 its kernels cover, no scientific data returns to the host mid-SCF.
 
+!!! warning "The CUDA SCF covers far less than the CPU one"
+
+    The shape is the same; the coverage is not. `cuda::scf::RHF` is a
+    **restricted Hartree-Fock engine only** — there is no `cuda::scf::UHF`,
+    `RKS` or `UKS`. Its device-native integrals and analytic forces cover
+    STO-3G s/p shells (l ≤ 1, H through O). Outside that envelope `forces()`
+    **throws** rather than silently falling back, and the answer is to use
+    `cpu::scf::RHF`. The plane-wave backend is similarly narrower on device
+    than on host (LDA, spin-unpolarized). The
+    [roadmap](../roadmap/index.md) is the per-method statement of what each
+    backend actually does.
+
 Either method also binds as an evaluator inside an outer driver, again with the
 same shape on both devices:
 

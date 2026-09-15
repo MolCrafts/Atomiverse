@@ -7,7 +7,7 @@
 | Slug | `gpw-d4-atm-forces` |
 | Regression | `regressions/gpw/gpw-d4-atm-forces/` |
 | Public API | `cpu::gpw::GPWEvaluator{d4 = true, d4_atm = true, compute_forces = true}` |
-| Roadmap / queue | `docs/roadmap/dft.md` §8 Dispersion; `docs/developer/cp2k-method-queue.md` (done, 2026-07-31) |
+| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
 ## Summary
 
@@ -153,8 +153,6 @@ policy as `gpw-d4-forces` / `gpw-d4-water`.
 
 - Offline pins: `regressions/gpw/gpw-d4-atm-forces/REFERENCE.md`;
   `tools/cp2k_oracle/inputs/gpw-d4-atm/` (grad + displaced-energy JSON pins)
-- Queue / handoff: `docs/developer/cp2k-method-queue.md` (closed 2026-07-31),
-  `docs/developer/cp2k-method-handoff.md`
 - Related: [gpw-d4-atm](gpw-d4-atm.md) (energy),
   [gpw-d4-forces](gpw-d4-forces.md) (two-body forces),
   [gpw-d3-atm-forces](gpw-d3-atm-forces.md) (D3 C9 twin),

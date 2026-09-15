@@ -1,4 +1,4 @@
-/// @file cuda/observer/rdf.cuh
+/// @file cuda/observe/rdf.cuh
 /// @brief RDF -- header-only radial distribution function observer (async D2H bridge).
 ///
 /// Freezes frame positions + the per-frame cell into a device-ring slot and

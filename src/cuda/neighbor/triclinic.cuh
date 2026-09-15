@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file triclinic.cuh
+/// @file cuda/neighbor/triclinic.cuh
 /// @brief Fractional coordinate transforms + 3x3 inverse helpers for
 ///        neighbor-list internals.
 ///

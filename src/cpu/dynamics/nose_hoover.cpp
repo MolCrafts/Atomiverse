@@ -1,4 +1,4 @@
-/// @file cpu/md/nose_hoover.cpp
+/// @file cpu/dynamics/nose_hoover.cpp
 /// @brief CPU Nose-Hoover thermostat implementation (LAMMPS `fix nvt`).
 
 #include "atomiverse/cpu/dynamics/nose_hoover.h"

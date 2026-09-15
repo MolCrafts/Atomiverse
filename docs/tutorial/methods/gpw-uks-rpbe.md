@@ -8,7 +8,6 @@
 | Regression | `regressions/gpw/gpw-uks-rpbe/` |
 | Public API | `cpu::gpw::GPWEvaluator` (`n_alpha`/`n_beta`, `XcKind::RPBE`, `nonperiodic`); `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — RPBE RKS + Γ-UKS (`reg_gpw-uks-rpbe`) |
-| Queue | CP2K capability loop (`docs/developer/cp2k-method-queue.md`) — **done** 2026-07-26 |
 
 ## Summary
 
@@ -249,7 +248,7 @@ cp2k.psmp -i o2_uks_rpbe.inp -o o2_uks_rpbe.out
 ## Performance
 
 Source: same `REFERENCE.md` fair-wall note (2026-07-26) and
-`docs/developer/cp2k-method-handoff.md` (`ratio ~2.70`). Not a ctest gate;
+the case `REFERENCE.md` (`ratio ~2.70`). Not a ctest gate;
 optional offline twin under `tools/cp2k_oracle/`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -285,9 +284,7 @@ Gate from closed product: \(r \le 10\) or `perf_exempt`. Here
 - Regression consumer: [`reg_gpw-uks-rpbe.cpp`](../../../regressions/gpw/gpw-uks-rpbe/reg_gpw-uks-rpbe.cpp)
 - CP2K twin: [`tools/cp2k_oracle/inputs/gpw-uks-rpbe/`](../../../tools/cp2k_oracle/inputs/gpw-uks-rpbe/)
 - Oracle contract: [`tools/cp2k_oracle/README.md`](../../../tools/cp2k_oracle/README.md)
-- Handoff ratio: [`docs/developer/cp2k-method-handoff.md`](../../developer/cp2k-method-handoff.md)
-- Loop: [`docs/developer/cp2k-method-loop.md`](../../developer/cp2k-method-loop.md),
-  queue [`docs/developer/cp2k-method-queue.md`](../../developer/cp2k-method-queue.md)
+- Handoff ratio: the case `REFERENCE.md`
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - PADE UKS sibling: [`gpw-uks-o2-gamma.md`](gpw-uks-o2-gamma.md)

@@ -142,7 +142,7 @@ bash -lc '
 ## Validation (CP2K)
 
 Source:
-[`regressions/pw/pw-pbe-gga-si/REFERENCE.md`](../../../regressions/pw/pw-pbe-gga-si/REFERENCE.md).  
+[`regressions/pw/pw-pbe-gga-si/REFERENCE.md`](../../../regressions/pw/pw-pbe-gga-si/REFERENCE.md).
 **Oracle status:** no CP2K Quickstep or Quantum ESPRESSO binary on the pin host
 (`module avail cp2k` / `qe` empty; no `cp2k.psmp` / `pw.x` on `PATH`). Absolute total-energy
 digits are **not** invented and **not** taken from a live third-party process at ctest time.
@@ -220,8 +220,6 @@ Never spawn CP2K from ctest.
 ## References
 
 - Offline pin: `regressions/pw/pw-pbe-gga-si/REFERENCE.md`
-- Queue / handoff: `docs/developer/cp2k-method-queue.md`, `docs/developer/cp2k-method-handoff.md`
-- Loop design: `docs/developer/cp2k-method-loop.md`
 - Oracle notes: `tools/cp2k_oracle/README.md`
 - Narrative PW chapter: `docs/tutorial/ch08-plane-wave.md`
 - Roadmap: `docs/roadmap/dft.md` (CPU true GGA PBE ✓)

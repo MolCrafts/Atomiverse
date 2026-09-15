@@ -1,4 +1,4 @@
-/// @file cpu/mc/npt_mc.h
+/// @file cpu/montecarlo/npt_mc.h
 /// @brief cpu::mc::NptMetropolis + cpu::mc::NptMc — isothermal–isobaric
 ///        Monte Carlo: the acceptance policy and the preset that installs it.
 #pragma once
