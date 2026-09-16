@@ -37,8 +37,10 @@ Atomiverse is an engine for multiscale, multiphysics atomistic simulation.
 Dual backends (CPU + CUDA) share one Driver/Component/Frame API across
 classical MD, Monte Carlo, geometry optimization, vibration, and electronic
 structure (Gaussian SCF, plane-wave DFT, GPW, NDDO/AM1, DFTB). C++20, `ATV::`
-namespace. Active development is on **`dev`**; `master` is a stale snapshot —
-never read it for current behaviour, and branch worktrees off `dev` explicitly.
+namespace. Active development is on **`dev`**, and worktrees branch off `dev`
+explicitly. `master` is the released snapshot, advanced only by merging `dev`
+into it — never commit to `master` directly, and when the two have diverged
+`dev` is the one that describes current behaviour.
 
 ## License & LAMMPS porting (operator directive 2026-08-26)
 
