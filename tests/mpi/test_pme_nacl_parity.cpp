@@ -23,13 +23,13 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/comm/gather.h"
+#include "atomiverse/cpu/communication/gather.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/longrange/pme.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/nose_hoover_npt.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
@@ -41,7 +41,7 @@ namespace {
 constexpr double kD = 2.82;
 // n=6 → L=16.92 Å. Under 2 ranks the thinnest subdomain is L/2 ≈ 8.46 Å,
 // which must exceed the neighbor/halo shell (cutoff+skin ≈ 5.9 Å). n=4
-// (L=11.28 → half 5.64) is too thin and HaloSend throws.
+// (L=11.28 → half 5.64) is too thin and CommBrick throws.
 constexpr int kSide = 6;
 constexpr int kN = kSide * kSide * kSide;
 constexpr double kMadelung = 1.747564594633182;
@@ -78,7 +78,7 @@ cpu::Frame make_nacl(double scale) {
                 frame.span(ATV::kAtom_vz)[idx] = 0.0;
                 ++idx;
             }
-    frame.simbox = cpu::Box::cubic(kSide * kD * scale);
+    frame.box = cpu::Box::cubic(kSide * kD * scale);
     return frame;
 }
 
@@ -87,7 +87,7 @@ void build_static_electrostatics(cpu::md::MD& sim) {
     sim.set_integrator(cpu::md::VelocityVerlet{0.0});
     sim.set_neighbor(cpu::md::NeighborList<>{kCutoff, /*skin=*/0.3});
     sim.on(md::Phase::force).add(cpu::CoulLong{kAlpha, kCutoff});
-    sim.add(cpu::KSpacePME{kAlpha, kSpacing, kOrder});
+    sim.set_evaluator(cpu::KSpacePME{kAlpha, kSpacing, kOrder});
 }
 
 } // namespace
@@ -140,7 +140,7 @@ TEST(PmeNaclParity, StaticEnergyStressForceOn1And2Ranks) {
         << "ranks disagree on reduced stress_xx";
 
     // Cell must be identical on every rank (NPT/deform path will write it).
-    double V = frame.simbox.volume();
+    double V = frame.box.volume();
     double V_min = V, V_max = V;
     MPI_Allreduce(MPI_IN_PLACE, &V_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, &V_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
@@ -185,7 +185,7 @@ TEST(PmeNaclParity, ShortNptConservedAndCellOn1And2Ranks) {
     // Mildly expanded start so NPT contracts under cohesion + P=0. Keep the
     // run short so the shrinking cell never undercuts the halo shell.
     auto frame = make_nacl(1.02);
-    const double V0 = frame.simbox.volume();
+    const double V0 = frame.box.volume();
 
     const double dt = 0.5;
     const double T = 300.0;
@@ -195,16 +195,12 @@ TEST(PmeNaclParity, ShortNptConservedAndCellOn1And2Ranks) {
     const double neigh_cut = std::max(kCutoff, lj_cut);
 
     cpu::md::MD sim;
-    sim.add(cpu::md::InitVelocity{T, /*seed=*/42u});
-    sim.set_integrator(cpu::md::NoseHooverNPT{{.T_target = T,
-                                               .tau_T = 50.0,
-                                               .P_target = 0.0,
-                                               .tau_P = 500.0,
-                                               .dt = dt}});
-    sim.add_potential(cpu::PairLJCut{lj_eps, lj_sigma, lj_cut});
+    sim.set_observer(cpu::md::InitVelocity{T, /*seed=*/42u});
+    sim.set_integrator(cpu::md::NoseHooverNPT{T, 50.0, 0.0, 500.0, dt});
+    sim.set_evaluator(cpu::PairLJCut{lj_eps, lj_sigma, lj_cut});
     sim.set_neighbor(cpu::md::NeighborList<>{neigh_cut, /*skin=*/0.5});
     sim.on(md::Phase::force).add(cpu::CoulLong{kAlpha, kCutoff});
-    sim.add(cpu::KSpacePME{kAlpha, kSpacing, kOrder});
+    sim.set_evaluator(cpu::KSpacePME{kAlpha, kSpacing, kOrder});
     sim.build();
 
     sim.run(frame, 1);
@@ -223,7 +219,7 @@ TEST(PmeNaclParity, ShortNptConservedAndCellOn1And2Ranks) {
     constexpr int n_steps = 40;
     sim.run(frame, n_steps);
     const double H1 = frame.meta.get(ATV::kConserved);
-    const double V1 = frame.simbox.volume();
+    const double V1 = frame.box.volume();
     ASSERT_TRUE(std::isfinite(H1)) << "rank " << rank << " H1 non-finite";
     ASSERT_TRUE(std::isfinite(frame.meta.get(ATV::kEnergy)));
     ASSERT_TRUE(std::isfinite(frame.meta.get(ATV::kKinetic)));

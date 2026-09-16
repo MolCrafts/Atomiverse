@@ -32,20 +32,20 @@
 #include <vector>
 
 #include "atomiverse/core/binding.h"
-#include "atomiverse/cpu/driver/evaluate.h"
-#include "atomiverse/cpu/driver/path_driver.h"
-#include "atomiverse/cpu/mc/mc.h"
-#include "atomiverse/cpu/mc/translate_move.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"
-#include "atomiverse/cpu/minimizer/minimize.h"
+#include "atomiverse/core/plan.h"
+#include "atomiverse/core/role.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
+#include "atomiverse/cpu/montecarlo/mc.h"
+#include "atomiverse/cpu/montecarlo/translate_move.h"
 #include "atomiverse/cpu/path/neb.h"
+#include "atomiverse/cpu/path/path_driver.h"
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
-#include "atomiverse/cpu/vib/hessian.h"
-#include "atomiverse/facade/component_role.h"
-#include "atomiverse/facade/plan.h"
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/cpu/vibration/hessian.h"
 
 #include "cpu/driver_test_helpers.h"
 
@@ -77,27 +77,17 @@ class EvaluateKindProbe : public ATV::cpu::Component {
     void launch(const ATV::cpu::LaunchContext&) override {}
 };
 
-// ─── Violating evaluator: AM1Evaluator loses default_bindings() ────────
+// ─── Kind gate via bind_defaults (set_observer / set_integrator) ────────
 //
-// Regression target: pre-refactor, `md.add(AM1Evaluator{})` silently landed
-// the evaluator on `md::Phase::post_integrate` (the erased int `1` of
-// `evaluate::Phase::evaluate`). Post-refactor the override is deleted, so
-// `add()` takes the existing "has no default bindings. Use
-// .on(phase).add()." rejection path.
+// Cross-workflow default_bindings rejection lives on protected
+// `bind_defaults`, used by categorical setters that still honour
+// default_bindings (set_observer, set_integrator, …). `set_evaluator`
+// binds at eval_phase explicitly and does not consult default_bindings.
 
-TEST(DriverBindingKind, MdAddAm1EvaluatorThrows) {
-    ATV::cpu::md::MD md;
-    EXPECT_THROW(md.add(ATV::cpu::semiempirical::AM1Evaluator{}),
-                 std::runtime_error);
-}
-
-// ─── Kind gate: error names BOTH workflows ──────────────────────────────
-
-TEST(DriverBindingKind, EvaluateAddVelocityVerletThrowsWithBothKinds) {
+TEST(DriverBindingKind, EvaluateSetObserverVelocityVerletThrowsWithBothKinds) {
     ATV::cpu::Evaluate ev;
     try {
-        // rvalue `add()` branch.
-        ev.add(ATV::cpu::md::VelocityVerlet{0.01});
+        ev.set_observer(ATV::cpu::md::VelocityVerlet{0.01});
         FAIL() << "expected throw — MD-kind default bindings registered "
                   "into an Evaluate driver";
     } catch (const std::runtime_error& e) {
@@ -106,11 +96,10 @@ TEST(DriverBindingKind, EvaluateAddVelocityVerletThrowsWithBothKinds) {
     }
 }
 
-TEST(DriverBindingKind, MinimizeAddVelocityVerletThrowsWithBothKinds) {
+TEST(DriverBindingKind, MinimizeSetObserverVelocityVerletThrowsWithBothKinds) {
     ATV::cpu::minimizer::Minimize opt;
     try {
-        // rvalue `add()` branch.
-        opt.add(ATV::cpu::md::VelocityVerlet{0.01});
+        opt.set_observer(ATV::cpu::md::VelocityVerlet{0.01});
         FAIL() << "expected throw — MD-kind default bindings registered "
                   "into a Minimize driver";
     } catch (const std::runtime_error& e) {
@@ -119,12 +108,11 @@ TEST(DriverBindingKind, MinimizeAddVelocityVerletThrowsWithBothKinds) {
     }
 }
 
-TEST(DriverBindingKind, MdAddEvaluateKindProbeThrows) {
+TEST(DriverBindingKind, MdSetObserverEvaluateKindProbeThrows) {
     ATV::cpu::md::MD md;
     EvaluateKindProbe probe;
     try {
-        // Explicit borrowed-registration branch.
-        md.add_ref(probe);
+        md.set_observer_ref(probe);
         FAIL() << "expected throw — Evaluate-kind default bindings "
                   "registered into an MD driver";
     } catch (const std::runtime_error& e) {
@@ -133,24 +121,39 @@ TEST(DriverBindingKind, MdAddEvaluateKindProbeThrows) {
     }
 }
 
+// AIMD-style explicit force binding is legal (no default_bindings kind gate).
+TEST(DriverBindingKind, MdSetEvaluatorAm1NoThrow) {
+    ATV::cpu::md::MD md;
+    EXPECT_NO_THROW(md.set_evaluator(ATV::cpu::semiempirical::AM1Evaluator{}));
+}
+
 // ─── Same-kind add() unchanged ──────────────────────────────────────────
 
 TEST(DriverBindingKind, MdAddSameKindVelocityVerletNoThrow) {
     ATV::cpu::md::MD md;
-    EXPECT_NO_THROW(md.add(ATV::cpu::md::VelocityVerlet{0.01}));
+    EXPECT_NO_THROW(md.set_integrator(ATV::cpu::md::VelocityVerlet{0.01}));
 }
 
 TEST(DriverBindingKind, MinimizeAddSameKindLbfgsNoThrow) {
     ATV::cpu::minimizer::Minimize opt;
-    EXPECT_NO_THROW(opt.add(ATV::cpu::minimizer::LBFGS{5, 0.01, 10}));
+    EXPECT_NO_THROW(opt.set_optimizer(ATV::cpu::minimizer::LBFGS{5, 0.01, 10}));
 }
 
 // ─── Plan-shape regression anchors (six driver categories) ──────────────
 //
-// The sequences below were MEASURED on the pre-refactor tree (dev,
-// 2026-07-10) by compiling each minimal driver and walking
-// `driver.plan()`. The kind discriminant is consumed inside `add()` and
-// erased before `PlanBuilder`; the compiled Plan must be byte-identical.
+// The sequences below were MEASURED by compiling each minimal driver and
+// walking `driver.plan()`. The kind discriminant is consumed inside `add()`
+// and erased before `PlanBuilder`; adding the discriminant must not perturb
+// the compiled Plan.
+//
+// Updated 2026-07-26 for `esmm-contract-01-zeroing`: every preset that owns a
+// force/energy slot now installs the accumulator-zeroing components as
+// DEFAULTS, so each sequence below gained the Zero* prefix its slot is
+// contracted to have (Evaluate::prepare +zero_stress; Minimize::force
+// +zero_stress; Hessian::force +zero_forces/+zero_energy;
+// MC::energy +zero_forces). These deltas are the SPEC, not drift — a slot
+// that loses its Zero prefix is accumulating into stale buffers.
+//
 // None of the minimal setups registers a pair evaluator, so no halo
 // component is auto-injected under either an MPI or a serial build —
 // the sequences are build-config invariant.
@@ -166,10 +169,11 @@ TEST(DriverBindingKind, EvaluatePlanShapeUnchanged) {
               static_cast<std::size_t>(ATV::evaluate::Phase::COUNT));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(
                                    ATV::evaluate::Phase::prepare)),
-              (std::vector<std::string>{"zero_forces", "zero_energy"}));
+              (std::vector<std::string>{"zero_forces", "zero_energy",
+                                        "zero_stress"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(
                                    ATV::evaluate::Phase::evaluate)),
-              (std::vector<std::string>{"stub_energy"}));
+              (std::vector<std::string>{"stub_energy", "reduce"}));
     EXPECT_TRUE(slot_names(plan, static_cast<std::size_t>(
                                      ATV::evaluate::Phase::finalize))
                     .empty());
@@ -179,7 +183,7 @@ TEST(DriverBindingKind, MdPlanShapeUnchanged) {
     ATV::cpu::md::MD sim;
     sim.set_integrator(ATV::cpu::md::VelocityVerlet{0.01});
     atv_test::NoOpForce force;
-    sim.add_ref(force);
+    sim.set_evaluator_ref(force);
     sim.build();
 
     const auto& plan = sim.plan();
@@ -190,29 +194,28 @@ TEST(DriverBindingKind, MdPlanShapeUnchanged) {
               (std::vector<std::string>{"velocity_verlet"}));
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::post_integrate)).empty());
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::pre_exchange)),
-              (std::vector<std::string>{"migrate"}));
+    EXPECT_TRUE(
+        slot_names(plan, static_cast<std::size_t>(P::pre_exchange)).empty());
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::pre_neighbor)).empty());
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::neighbor)).empty());
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::pre_force)),
-              (std::vector<std::string>{"zero_forces", "zero_energy",
-                                        "zero_stress"}));
+              (std::vector<std::string>{"zero_forces", "zero_energy"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::force)),
               (std::vector<std::string>{"noop_force"}));
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::post_force)).empty());
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::final_integrate)),
               (std::vector<std::string>{"velocity_verlet"}));
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::end_of_step)),
-              (std::vector<std::string>{"zero_kinetic", "kinetic_energy",
-                                        "reduce", "publish"}));
+    EXPECT_EQ(
+        slot_names(plan, static_cast<std::size_t>(P::end_of_step)),
+        (std::vector<std::string>{"zero_kinetic", "kinetic_energy", "reduce"}));
 }
 
 TEST(DriverBindingKind, MinimizePlanShapeUnchanged) {
     ATV::cpu::minimizer::Minimize opt;
-    opt.add(ATV::cpu::minimizer::LBFGS{5, 0.01, 10});
+    opt.set_optimizer(ATV::cpu::minimizer::LBFGS{5, 0.01, 10});
     atv_test::StubForceEvaluator force;
     opt.on(ATV::minimizer::Phase::force).add_ref(force);
     opt.build();
@@ -225,9 +228,10 @@ TEST(DriverBindingKind, MinimizePlanShapeUnchanged) {
               (std::vector<std::string>{"lbfgs"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::line_search)),
               (std::vector<std::string>{"lbfgs"}));
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::force)),
-              (std::vector<std::string>{"zero_forces", "zero_energy", "migrate",
-                                        "stub_force", "reduce"}));
+    EXPECT_EQ(
+        slot_names(plan, static_cast<std::size_t>(P::force)),
+        (std::vector<std::string>{"zero_forces", "zero_energy", "zero_stress",
+                                  "stub_force", "reduce"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::convergence_check)),
               (std::vector<std::string>{"lbfgs"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::end_of_step)),
@@ -248,8 +252,9 @@ TEST(DriverBindingKind, HessianPlanShapeUnchanged) {
               (std::vector<std::string>{"vib_reference_geometry"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::displace)),
               (std::vector<std::string>{"vib_displace_step"}));
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::force)),
-              (std::vector<std::string>{"stub_force"}));
+    EXPECT_EQ(
+        slot_names(plan, static_cast<std::size_t>(P::force)),
+        (std::vector<std::string>{"zero_forces", "zero_energy", "stub_force"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::accumulate)),
               (std::vector<std::string>{"vib_hessian_accumulator"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::diagonalize)),
@@ -276,7 +281,8 @@ TEST(DriverBindingKind, McPlanShapeUnchanged) {
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::propose)),
               (std::vector<std::string>{"translate"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::energy)),
-              (std::vector<std::string>{"zero_energy", "stub_energy"}));
+              (std::vector<std::string>{"zero_forces", "zero_energy",
+                                        "stub_energy"}));
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::end_of_step)).empty());
 }
@@ -288,7 +294,7 @@ TEST(DriverBindingKind, McPlanShapeUnchanged) {
 TEST(DriverBindingKind, MdAddPathKindNebCouplingThrows) {
     ATV::cpu::md::MD sim;
     try {
-        sim.add(ATV::cpu::path::NebCoupling{1.0});
+        sim.set_observer(ATV::cpu::path::NebCoupling{1.0});
         FAIL() << "MD accepted a Path-kind component";
     } catch (const std::exception& e) {
         const std::string msg = e.what();
@@ -298,10 +304,10 @@ TEST(DriverBindingKind, MdAddPathKindNebCouplingThrows) {
 }
 
 /// ... and the reverse: a Path driver rejects an MD-kind integrator.
-TEST(DriverBindingKind, PathAddMdKindVelocityVerletThrows) {
+TEST(DriverBindingKind, PathSetObserverMdKindVelocityVerletThrows) {
     ATV::cpu::PathDriver neb;
     try {
-        neb.add(ATV::cpu::md::VelocityVerlet{1.0});
+        neb.set_observer(ATV::cpu::md::VelocityVerlet{1.0});
         FAIL() << "Path accepted an MD-kind component";
     } catch (const std::exception& e) {
         const std::string msg = e.what();
@@ -315,8 +321,8 @@ TEST(DriverBindingKind, PathPlanShapeUnchanged) {
     ATV::cpu::PathDriver neb;
     atv_test::StubForceEvaluator force;
     neb.on(ATV::path::Phase::force).add_ref(force);
-    neb.add(ATV::cpu::path::NebCoupling{1.0});
-    neb.add(ATV::cpu::path::BandLBFGS{});
+    neb.set_observer(ATV::cpu::path::NebCoupling{1.0});
+    neb.set_observer(ATV::cpu::path::BandLBFGS{});
     neb.build();
 
     const auto& plan = neb.plan();

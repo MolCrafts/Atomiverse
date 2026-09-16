@@ -115,7 +115,7 @@ void ImproperHarmonic::compute(const LaunchContext& ctx) {
                 z_ptr[i2], x_ptr[i3], y_ptr[i3], z_ptr[i3], x_ptr[i4],
                 y_ptr[i4], z_ptr[i4],
                 [&](double& ax, double& ay, double& az) {
-                    f.simbox.min_image(ax, ay, az);
+                    f.box.min_image(ax, ay, az);
                 },
                 g);
             if (!ok)

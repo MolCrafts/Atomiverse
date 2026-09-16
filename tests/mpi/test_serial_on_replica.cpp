@@ -1,5 +1,5 @@
 /// @file tests/mpi/test_serial_on_replica.cpp
-/// @brief `CPUDriver::set_serial_on_replica()` seam under mpirun
+/// @brief `Driver::set_serial_on_replica()` seam under mpirun
 ///        (mpi-launcher-embedded-python-04, spec verdict 方案 a).
 ///
 /// Launched under `mpirun -n N`, runs at N=1, 2, 4. With the flag set,
@@ -30,15 +30,15 @@
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/comm/domain.h"
+#include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/context.h"
-#include "atomiverse/cpu/driver/backend.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/driver/runtime.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 
@@ -69,27 +69,17 @@ cpu::Frame make_h2_frame() {
     frame.span(ATV::kAtom_x)[1] = 0.0;
     frame.span(ATV::kAtom_y)[1] = 0.0;
     frame.span(ATV::kAtom_z)[1] = 0.74;
-    frame.simbox = ATV::cpu::Box::cubic(20.0);
+    frame.box = ATV::cpu::Box::cubic(20.0);
     return frame;
-}
-
-/// @brief The one AM1 configuration shared by driver and reference paths.
-cpu::semiempirical::AM1Config h2_config() {
-    cpu::semiempirical::AM1Config cfg{};
-    cfg.charge = 0;
-    cfg.multiplicity = 1;
-    cfg.max_iter = 200;
-    cfg.density_tol = 1.0e-8;
-    cfg.energy_tol = 1.0e-10;
-    return cfg;
 }
 
 /// @brief Run the serial-on-replica Evaluate + AM1 single point in place.
 void run_serial_on_replica_am1(cpu::Frame& frame) {
     cpu::Evaluate eval;
     eval.set_serial_on_replica();
+    // charge=0, singlet, max_iter=200, dens/energy tols default.
     eval.on(ATV::evaluate::Phase::evaluate)
-        .add(cpu::semiempirical::AM1Evaluator{h2_config()});
+        .add(cpu::semiempirical::AM1Evaluator{0, 1, 200, 1.0e-8, 1.0e-10});
     eval.build();
     eval.run(frame);
 }
@@ -99,7 +89,7 @@ void run_serial_on_replica_am1(cpu::Frame& frame) {
 TEST(SerialOnReplica, BackendFlagSkipsTopologyAndKeepsFrameWhole) {
     auto frame = make_h2_frame();
 
-    cpu::Backend backend;
+    cpu::Runtime backend;
     backend.set_serial_on_replica();
     backend.init();
     backend.set_frame(frame);
@@ -142,7 +132,7 @@ TEST(SerialOnReplica, EvaluateAm1MatchesSerialInnerSolverReference) {
     // pinned frame contract: scalars.energy = electronic energy [eV],
     // atoms.charge = Mulliken charges [e].
     auto ref_frame = make_h2_frame();
-    cpu::semiempirical::AM1Solver solver(h2_config());
+    cpu::semiempirical::AM1Solver solver{0, 1, 200, 1.0e-8, 1.0e-10};
     solver.build(ref_frame);
     const auto& ref = solver.run(ref_frame);
     ASSERT_TRUE(ref.converged);

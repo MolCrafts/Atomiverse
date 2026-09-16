@@ -2,14 +2,14 @@
 /// @brief CUDA PairLJCut — Lennard-Jones 12-6 shifted (kernel + class).
 ///        Includes LAMMPS-style `special_bonds` 1-2/1-3/1-4 exclusions.
 
+#include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/lj_kernel.cuh"
-#include "atomiverse/cuda/potentials/pair_compute.cuh"
+#include "atomiverse/cuda/potentials/pair_kernel.h"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
-#include "atomiverse/potentials/pair_kernel.h"
 #include <cstddef>
 #include <cstdint>
 #include <cuda_runtime.h>
@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace ATV {
@@ -50,7 +51,7 @@ __device__ inline bool excl_contains(const int* __restrict__ partners, int beg,
 // force kernel reads neighbour positions COALESCED (spx[cj*8+sj] is contiguous
 // per cluster) instead of scattering x[orig_index[..]] ~80×/atom. One scattered
 // read per slot here amortises the scatter that previously happened per pair —
-// the dominant cost of lj_force_cluster (latency-bound uncoalesced gathers).
+// the dominant cost of the pre-tile atom-walk force (latency-bound gathers).
 __global__ void gather_cluster_pos(const int* __restrict__ orig_index,
                                    const real_t* __restrict__ x,
                                    const real_t* __restrict__ y,
@@ -82,10 +83,11 @@ __global__ void gather_cluster_pos(const int* __restrict__ orig_index,
 /// bottleneck). With a FULL neighbor list each interaction is computed twice
 /// (once by each endpoint's owning thread), so the force on each atom is
 /// complete without writing its neighbors; energy and virial are halved to
-/// undo the double count. kClusterSize is the neighbor list's fixed cluster
-/// width; pad slots carry a negative orig_index sentinel.
+/// OpenMM-style tile force: one warp per cluster (CS=32). Neighbor cluster
+/// positions are staged in per-warp shared memory; interaction mask selects
+/// active j-slots. FULL neighbor + 0.5 energy (both endpoints accumulate).
 template <bool Ortho, bool Virial>
-__global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_cluster(
+__global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     real_t* __restrict__ fx, real_t* __restrict__ fy, real_t* __restrict__ fz,
     prec_t* __restrict__ energy, prec_t* __restrict__ stress,
     const real_t* __restrict__ spx, const real_t* __restrict__ spy,
@@ -96,19 +98,25 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_cluster(
     work_t min_pair_dist_sq, work_t v_shift,
     const int* __restrict__ excl_offsets, const int* __restrict__ excl_partners,
     work_t s_excl) {
-    constexpr int CS = 8; // kClusterSize (neighbor-list cluster width)
+    constexpr int CS = ATV::cuda::kOpenmmClusterSize;
+    static_assert(CS == 32, "tile force assumes OpenMM CS=32");
+
+    // Per-warp tile staging: [warp][slot]
+    constexpr int kMaxWarps = ATV::cuda::kDefaultBlock / 32;
+    __shared__ real_t shx[kMaxWarps][CS];
+    __shared__ real_t shy[kMaxWarps][CS];
+    __shared__ real_t shz[kMaxWarps][CS];
+    __shared__ int sh_aj[kMaxWarps][CS];
+
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int ci = tid / CS;
     int slot = tid % CS;
+    int warp_in_block = threadIdx.x / 32;
 
     work_t my_energy = work_t(0);
     work_t my_vxx = work_t(0), my_vyy = work_t(0), my_vzz = work_t(0);
     work_t my_vxy = work_t(0), my_vxz = work_t(0), my_vyz = work_t(0);
 
-    // Mixed precision (matches LAMMPS KOKKOS SINGLE_DOUBLE): geometry + force
-    // in real_t (float — FP32 is 2x FP64 throughput on GH200 and the divide is
-    // far cheaper), energy/virial accumulated in work_t (double). Force is
-    // stored as real_t anyway, so float accumulation loses nothing.
     const real_t eps_r = real_t(epsilon);
     const real_t sigsq_r = real_t(sigma_sq);
     const real_t cut_r = real_t(cutoff_sq);
@@ -116,36 +124,43 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_cluster(
     const real_t vshift_r = real_t(v_shift);
     const real_t sexcl_r = real_t(s_excl);
 
-    if (ci < num_clusters) {
-        int ai = orig_index[ci * CS + slot];
-        if (ai >= 0) {
-            real_t xi = spx[ci * CS + slot], yi = spy[ci * CS + slot],
-                   zi = spz[ci * CS + slot];
-            real_t fxi = real_t(0), fyi = real_t(0), fzi = real_t(0);
-            const bool has_excl = (excl_offsets != nullptr);
-            int beg_excl = has_excl ? excl_offsets[ai] : 0;
-            int end_excl = has_excl ? excl_offsets[ai + 1] : 0;
+    // All lanes of a warp must participate in __syncwarp; pad slots keep
+    // ai < 0 and skip force math but still load tiles.
+    int ai = (ci < num_clusters) ? orig_index[ci * CS + slot] : -1;
+    real_t xi = 0, yi = 0, zi = 0;
+    real_t fxi = 0, fyi = 0, fzi = 0;
+    bool has_excl = false;
+    int beg_excl = 0, end_excl = 0;
+    if (ai >= 0) {
+        xi = spx[ci * CS + slot];
+        yi = spy[ci * CS + slot];
+        zi = spz[ci * CS + slot];
+        has_excl = (excl_offsets != nullptr);
+        beg_excl = has_excl ? excl_offsets[ai] : 0;
+        end_excl = has_excl ? excl_offsets[ai + 1] : 0;
+    }
 
-            int rstart = row_ptr[ci], rend = row_ptr[ci + 1];
-            for (int p = rstart; p < rend; ++p) {
-                int cj = col_idx[p];
-                // This atom owns row `slot` of cluster ci: byte slot*8..slot*8+7
-                // of the pair mask flags which j-slots of cj are within the
-                // search radius. Iterating only set bits replaces the blind
-                // 8-slot scan + per-slot distance prefilter — the dominant cost
-                // — with ≈ the real neighbor count. (All-ones when no real mask
-                // was computed ⇒ identical to the old full scan.)
-                unsigned mbyte =
-                    static_cast<unsigned>((cl_mask[p] >> (slot * 8)) & 0xFFull);
-                while (mbyte) {
-                    int sj = __ffs(static_cast<int>(mbyte)) - 1;
-                    mbyte &= mbyte - 1;
-                    int aj = orig_index[cj * CS + sj];
+    if (ci < num_clusters) {
+        int rstart = row_ptr[ci], rend = row_ptr[ci + 1];
+        for (int p = rstart; p < rend; ++p) {
+            int cj = col_idx[p];
+            shx[warp_in_block][slot] = spx[cj * CS + slot];
+            shy[warp_in_block][slot] = spy[cj * CS + slot];
+            shz[warp_in_block][slot] = spz[cj * CS + slot];
+            sh_aj[warp_in_block][slot] = orig_index[cj * CS + slot];
+            __syncwarp();
+
+            if (ai >= 0) {
+                unsigned mbits = ATV::cuda::openmm_mask_jbits(cl_mask, p, slot);
+                while (mbits) {
+                    int sj = __ffs(static_cast<int>(mbits)) - 1;
+                    mbits &= mbits - 1;
+                    int aj = sh_aj[warp_in_block][sj];
                     if (aj < 0 || aj == ai)
                         continue;
-                    real_t dx = spx[cj * CS + sj] - xi;
-                    real_t dy = spy[cj * CS + sj] - yi;
-                    real_t dz = spz[cj * CS + sj] - zi;
+                    real_t dx = shx[warp_in_block][sj] - xi;
+                    real_t dy = shy[warp_in_block][sj] - yi;
+                    real_t dz = shz[warp_in_block][sj] - zi;
                     if (periodic) {
                         if constexpr (Ortho) {
                             dx -= box.cell[0] * nearbyintf(dx * box.inv_l[0]);
@@ -172,13 +187,9 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_cluster(
                     real_t sr12 = sr6 * sr6;
                     real_t f_over_r = scale * real_t(24) * eps_r
                                       * (real_t(2) * sr12 - sr6) * inv_r2;
-                    // dx = x[aj] - x[ai], so the force ON ai is -f_over_r·dx.
                     fxi += -f_over_r * dx;
                     fyi += -f_over_r * dy;
                     fzi += -f_over_r * dz;
-                    // Each pair is visited twice (ai's and aj's threads): halve
-                    // the energy/virial to recover the unique-pair sum. Promote
-                    // the per-pair term to work_t for the double accumulation.
                     real_t e_pair =
                         scale * (real_t(4) * eps_r * (sr12 - sr6) - vshift_r);
                     my_energy += work_t(0.5) * work_t(e_pair);
@@ -192,9 +203,9 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_cluster(
                     }
                 }
             }
-            // Single non-atomic accumulate: this thread uniquely owns atom ai
-            // (orig_index is a permutation), and force-phase kernels serialize
-            // on the stream, so += safely adds to bonded contributions.
+            __syncwarp();
+        }
+        if (ai >= 0) {
             fx[ai] += fxi;
             fy[ai] += fyi;
             fz[ai] += fzi;
@@ -422,36 +433,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     const PairList* pairs = ctx.runtime.md.pair_list;
     if (!pairs)
         return;
-    // Per-atom Verlet-list path: one thread per atom iterates its tight
-    // neighbor list (built once per rebuild by NeighborList) reading neighbor
-    // positions directly from the frame's current x/y/z. No cluster
-    // indirection, no position gather, no atomicAdd on forces (thread i
-    // uniquely owns fx[i]). Replaces the cluster-CSR walk that left ~7/32 warp
-    // lanes active (ncu).
-    if (pairs->vl_nbr == nullptr || pairs->vl_cnt == nullptr
-        || pairs->vl_stride <= 0)
-        return;
-    int n_atoms = frame.n_atoms(); // active owned(+ghost) count this launch
-    if (n_atoms <= 0)
-        return;
 
-    // Pack the frame's current positions into AoS float4 so the force kernel's
-    // neighbour-position gather is one ≤16-byte transaction per neighbour
-    // (coalesced pack, then an efficient gather) — see pos4_ doc / pack_pos4.
-    if (n_atoms > pos4_cap_) {
-        if (pos4_)
-            cudaFree(pos4_);
-        cudaMalloc(&pos4_, static_cast<std::size_t>(n_atoms) * sizeof(float4));
-        pos4_cap_ = n_atoms;
-    }
-    md::launch_pack_pos4(frame.atoms.x, frame.atoms.y, frame.atoms.z, pos4_,
-                         n_atoms, stream);
-
-    // Pass nullptr for exclusion CSR when none configured — kernel takes the
-    // fast path and avoids the partner lookup overhead entirely. ALSO pass
-    // nullptr when NeighborList already baked the exclusions into the per-atom
-    // Verlet list (excluded partners simply aren't in it): the force kernel then
-    // does zero per-pair exclusion work — the LAMMPS layout.
     const bool baked = ctx.runtime.md.exclusions_baked;
     const int* excl_off =
         (has_exclusions_ && !baked) ? d_excl_offsets_ : nullptr;
@@ -465,29 +447,68 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         static_cast<work_t>(kernels::kMinPairDist)
         * static_cast<work_t>(kernels::kMinPairDist);
     cuda::Box box = ctx.runtime.host_box;
-    // When stress is gated off, pass a null stress pointer (the launcher selects
-    // the Virial=false template, skipping the 6 inner-loop virial products and
-    // the stress reduction; frees the accumulator registers).
     prec_t* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
-    // LJ force math via the backend-agnostic PairKernel seam (force-infra-03).
-    // Instantiated at real_t inside the launcher → identical float-math path as
-    // the prior hand-written lj_force_verlet. LJ is charge-free (q = nullptr).
-    const ATV::potentials::LJKernel lj{
-        static_cast<double>(epsilon_), static_cast<double>(sigma_sq),
-        static_cast<double>(cutoff_sq), static_cast<double>(v_shift_)};
-    // Force-row selection: the multi-GPU engine restricts force rows to owned
-    // atoms (ghost pair rows are wrong to reverse-communicate and waste work)
-    // and may pass an explicit interior/boundary subset. Default (-1): every
-    // atom row, the single-GPU behavior.
-    const int n_rows = (ctx.runtime.md.n_force_rows >= 0)
-                           ? ctx.runtime.md.n_force_rows
-                           : n_atoms;
-    md::launch_pair_compute(
-        lj, frame.atoms.fx, frame.atoms.fy, frame.atoms.fz,
-        &frame.scalars->energy, stress_ptr, pos4_, /*q=*/nullptr, pairs->vl_nbr,
-        pairs->vl_cnt, pairs->vl_stride, n_rows, ctx.runtime.md.force_rows, box,
-        /*periodic=*/true, cutoff_sq, min_pair_dist_sq, excl_off, excl_par,
-        static_cast<work_t>(s_excl_), stream);
+    const bool virial = (stress_ptr != nullptr);
+
+    // OpenMM cluster force — sole CUDA MD nonbonded path (cuda-openmm-md).
+    if (pairs->cl_row_ptr == nullptr || pairs->cl_col_idx == nullptr
+        || pairs->cl_orig_index == nullptr || pairs->num_clusters <= 0)
+        return;
+
+    constexpr int CS = kOpenmmClusterSize;
+    const int nc = pairs->num_clusters;
+    const int n_slots = nc * CS;
+    // Live positions from frame (not rebuild-time cluster_x). Prefer published
+    // cl_x only as a gather target cache when present is wrong — always gather
+    // current frame.atoms into scratch so force is skin-correct.
+    if (n_slots > spos_cap_) {
+        if (spx_) {
+            cudaFree(spx_);
+            cudaFree(spy_);
+            cudaFree(spz_);
+        }
+        cudaMalloc(&spx_, n_slots * sizeof(real_t));
+        cudaMalloc(&spy_, n_slots * sizeof(real_t));
+        cudaMalloc(&spz_, n_slots * sizeof(real_t));
+        spos_cap_ = n_slots;
+    }
+    {
+        int block = kDefaultBlock;
+        int grid = grid_size(n_slots);
+        kernels::gather_cluster_pos<<<grid, block, 0, stream>>>(
+            pairs->cl_orig_index, frame.atoms.x, frame.atoms.y, frame.atoms.z,
+            n_slots, spx_, spy_, spz_);
+    }
+
+    const uint64_t* mask = pairs->cl_mask;
+    int block = kDefaultBlock;
+    int grid = grid_size(n_slots);
+    int shmem = warps_per_block(block) * sizeof(work_t);
+
+    auto launch = [&](auto ortho_t, auto vir_t) {
+        constexpr bool O = decltype(ortho_t)::value;
+        constexpr bool V = decltype(vir_t)::value;
+        kernels::lj_force_tile<O, V><<<grid, block, shmem, stream>>>(
+            frame.atoms.fx, frame.atoms.fy, frame.atoms.fz,
+            &frame.scalars->energy, stress_ptr, spx_, spy_, spz_,
+            pairs->cl_row_ptr, pairs->cl_col_idx, mask, pairs->cl_orig_index,
+            nc, box, /*periodic=*/true, static_cast<work_t>(epsilon_), sigma_sq,
+            cutoff_sq, min_pair_dist_sq, static_cast<work_t>(v_shift_),
+            excl_off, excl_par, static_cast<work_t>(s_excl_));
+    };
+    using T = std::true_type;
+    using F = std::false_type;
+    if (box.ortho) {
+        if (virial)
+            launch(T{}, T{});
+        else
+            launch(T{}, F{});
+    } else {
+        if (virial)
+            launch(F{}, T{});
+        else
+            launch(F{}, F{});
+    }
 }
 
 } // namespace cuda

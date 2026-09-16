@@ -1,0 +1,66 @@
+# Offline vdW-DF2 (LMKLL) pin notes — gpw-vdw-df2-ice
+
+## Kernel oracle (libvdwxc)
+
+CP2K `VDW_POTENTIAL NON_LOCAL TYPE LMKLL` uses the same Román–Pérez–Soler
+kernel family as **libvdwxc DF2**. DF1 and DF2 share the default RPS kernel
+tables; the functional difference is only \(Z_{ab}\) in \(q_0\):
+
+| Functional | CP2K TYPE | libvdwxc | \(Z_{ab}\) |
+| ---------- | --------- | -------- | ---------- |
+| vdW-DF     | DRSLL     | DF1      | −0.8491    |
+| vdW-DF2    | LMKLL     | DF2      | −1.887     |
+
+Hard unit-test pin is libvdwxc 0.5.0 on a fixed synthetic density (not live
+in ctest):
+
+```text
+# 16^3 cubic L=8 Bohr, rho = exp(-0.5 r^2) blob at center, analytic sigma
+E_nl DRSLL/DF1 = 1.2367739353586621e-01 Ha
+E_nl LMKLL/DF2 = 1.1428161716669384e-01 Ha
+```
+
+Pin harness (serial libvdwxc + FFTW3):
+
+```bash
+gcc -O2 pin_vdw_df2.c -I$LIBVDWXC/include -L$LIBVDWXC/lib -lvdwxc -lfftw3 -lm
+# functional=VDWXC_DF2 (2)
+```
+
+## Full GPW regression pin
+
+Post-SCF \(E_c^{\mathrm{nl}}\) on Γ-PBE density of the water dimer
+(CUTOFF 200 Ry, DZVP-MOLOPT-SR-GTH, 12 Å cell):
+
+```text
+E_disp = 1.3011875519702767e-01 Ha
+```
+
+## Suggested CP2K twin (when QS + libvdwxc available)
+
+```
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    &XC
+      &XC_FUNCTIONAL PBE &END XC_FUNCTIONAL
+      &VDW_POTENTIAL
+        POTENTIAL_TYPE NON_LOCAL
+        &NON_LOCAL
+          TYPE LMKLL
+          CUTOFF_RC  0.0   ! use default kernel mesh
+        &END NON_LOCAL
+      &END VDW_POTENTIAL
+    &END XC
+    &MGRID CUTOFF 200 &END MGRID
+    &QS METHOD GPW &END QS
+    &SCF  ...  &END SCF
+  &END DFT
+  &SUBSYS
+    ! water dimer geometry as REFERENCE.md
+  &END SUBSYS
+&END FORCE_EVAL
+```
+
+Record `Dispersion energy` / nonlocal XC contribution and CP2K version in
+REFERENCE.md when a host provides a fair twin wall.

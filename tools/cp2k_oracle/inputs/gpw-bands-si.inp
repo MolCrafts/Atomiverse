@@ -1,0 +1,81 @@
+! CP2K twin for regressions/gpw/gpw-bands-si — GTH-GPW RKS band structure on
+! diamond Si (bct 4-atom cell, DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE).
+! SCF: MONKHORST-PACK 2 2 2. NSCF path: Γ–X–W–L–Γ–K (NPOINTS 4 per segment).
+! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
+! Pin: total energy [Ha] + path gap / selected eigenvalues from BANDSTRUCTURE.
+!
+!   source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+!   ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS} .
+!   OMP_NUM_THREADS=4 mpirun -np 1 cp2k.psmp -i gpw-bands-si.inp -o gpw-bands-si.out
+
+&GLOBAL
+  PROJECT si_gpw_bands_bct
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 150
+      NGRIDS 1
+    &END MGRID
+    &QS
+      EPS_DEFAULT 1.0E-7
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-8
+      MAX_SCF 60
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+      &END MIXING
+      ADDED_MOS 4
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+    &PRINT
+      &BAND_STRUCTURE
+        ADDED_MOS 4
+        FILE_NAME si_gpw_bands
+        &KPOINT_SET
+          NPOINTS 4
+          SPECIAL_POINT GAMMA 0.0 0.0 0.0
+          SPECIAL_POINT X 0.5 0.0 0.5
+          SPECIAL_POINT W 0.5 0.25 0.75
+          SPECIAL_POINT L 0.5 0.5 0.5
+          SPECIAL_POINT GAMMA 0.0 0.0 0.0
+          SPECIAL_POINT K 0.375 0.375 0.75
+        &END KPOINT_SET
+      &END BAND_STRUCTURE
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      ! bct setting of diamond: (a/sqrt(2), a/sqrt(2), a), a = 5.43 A
+      ABC 3.83959 3.83959 5.43000
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      SCALED
+      Si 0.00 0.00 0.00
+      Si 0.50 0.50 0.50
+      Si 0.50 0.00 0.25
+      Si 0.00 0.50 0.75
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

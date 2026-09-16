@@ -1,0 +1,28 @@
+units           metal
+atom_style      full
+boundary        p p p
+pair_style      lj/cut/tip4p/cut 1 2 1 1 0.15 10.0
+bond_style      harmonic
+angle_style     harmonic
+special_bonds   lj/coul 0.0 0.0 0.0
+read_data       data.tip4p_dimer_metal
+# eps in eV: 0.1550 kcal/mol * (1/23.060547830619026)
+pair_coeff      1 1 0.006721436157479146 3.15365
+pair_coeff      1 2 0.0    1.0
+pair_coeff      2 2 0.0    1.0
+pair_modify     shift yes
+bond_coeff      1 0.0 0.9572
+angle_coeff     1 0.0 104.52
+neighbor        1.0 bin
+neigh_modify    delay 0 every 1 check no
+velocity        all set 0.0 0.0 0.0 units box
+run 0
+print "PIN_PE $(pe) eV"
+print "PIN_EVDWL $(evdwl) eV"
+print "PIN_ECOUL $(ecoul) eV"
+print "F1 $(fx[1]) $(fy[1]) $(fz[1])"
+print "F2 $(fx[2]) $(fy[2]) $(fz[2])"
+print "F3 $(fx[3]) $(fy[3]) $(fz[3])"
+print "F4 $(fx[4]) $(fy[4]) $(fz[4])"
+print "F5 $(fx[5]) $(fy[5]) $(fz[5])"
+print "F6 $(fx[6]) $(fy[6]) $(fz[6])"

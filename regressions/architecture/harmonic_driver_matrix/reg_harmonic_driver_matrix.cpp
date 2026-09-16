@@ -7,18 +7,18 @@
 #include <cmath>
 #include <cstdio>
 
+#include "atomiverse/core/role.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/component.h"
-#include "atomiverse/cpu/driver/evaluate.h"
 #include "atomiverse/cpu/driver/criteria.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"
-#include "atomiverse/cpu/minimizer/minimize.h"
-#include "atomiverse/cpu/vib/hessian.h"
-#include "atomiverse/facade/component_role.h"
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
+#include "atomiverse/cpu/vibration/hessian.h"
 
 using namespace ATV;
 
@@ -75,7 +75,7 @@ cpu::Frame make_atom(double x, double mass) {
     f.span(ATV::kAtom_mass)[0] = mass;
     f.span(ATV::kAtom_type)[0] = 6;
     f.span(ATV::kAtom_tag)[0] = 1;
-    f.simbox = cpu::Box::cubic(50.0);
+    f.box = cpu::Box::cubic(50.0);
     return f;
 }
 
@@ -138,10 +138,11 @@ int main() {
     // interpretation of frequencies). Check the dense Cartesian matrix.
     {
         auto frame = make_atom(0.0, mass);
-        cpu::vib::Hessian::OutputConfig out;
-        out.frequency_tsv = "/tmp/atv_reg_harmonic_freq.tsv";
-        out.mode_xyz_prefix = "/tmp/atv_reg_harmonic_mode";
-        cpu::vib::Hessian hess(cpu::vib::Thermochem::Config{}, out);
+        cpu::vib::Hessian hess(
+            /*temperature=*/298.15, /*pressure=*/101325.0,
+            /*multiplicity=*/1, /*symmetry_number=*/1,
+            /*frequency_tsv=*/"/tmp/atv_reg_harmonic_freq.tsv",
+            /*mode_xyz_prefix=*/"/tmp/atv_reg_harmonic_mode");
         hess.on(vib::Phase::force).add(HarmonicOscillator{k, r0x, r0y, r0z});
         hess.build();
         auto res = hess.run(frame);
@@ -150,9 +151,13 @@ int main() {
                         res.n_atoms, res.hessian.shape(0));
             ok = false;
         } else {
-            // Print for diagnosis; accept either raw Cartesian k*I or the
-            // mass-weighted form diag(k/m) depending on when the matrix is
-            // snapshotted into HessianResult (implementation detail).
+            // The evaluator's force is exactly linear in x (F = -k(r-r0)), so
+            // the driver's central difference (h = kHessianStepAngstrom, see
+            // DisplaceStep/HessianAccumulator) has zero truncation error: the
+            // returned Cartesian H_ii must equal the analytic curvature k to
+            // floating-point precision — not k/2 (that value is what a
+            // driver that fails to zero the force accumulator between the
+            // 6N displacement passes produces; see esmm-contract-01).
             double h00 = res.hessian(0, 0);
             double max_off = 0.0;
             for (int i = 0; i < 3; ++i)
@@ -164,24 +169,18 @@ int main() {
                 std::max({std::fabs(res.hessian(0, 0) - k),
                           std::fabs(res.hessian(1, 1) - k),
                           std::fabs(res.hessian(2, 2) - k)});
-            // Mass-weighted Cartesian: H_mw_ii = H_ii / m  (amu-energy form
-            // used by some diagonalizers is different — also try force_to_accel).
-            const double err_per_mass =
-                std::max({std::fabs(res.hessian(0, 0) - k / mass),
-                          std::fabs(res.hessian(1, 1) - k / mass),
-                          std::fabs(res.hessian(2, 2) - k / mass)});
-            std::printf("Hessian: H00=%.6f  err_cart=%.3e  err/m=%.3e  "
-                        "max|off|=%.3e\n",
-                        h00, err_cart, err_per_mass, max_off);
-            // Diagonal equality + off-diagonal zero is the architecture
-            // oracle (user Force evaluator fed into Hessian). Scale may be
-            // k or k/2 depending on FD assembly convention; both are diagonal.
+            std::printf("Hessian: H00=%.12f  err_cart=%.3e  max|off|=%.3e\n",
+                        h00, err_cart, max_off);
+            // Isotropy: no Cartesian direction is special for U=k|r-r0|^2/2.
             const bool diag_equal =
                 std::fabs(res.hessian(0, 0) - res.hessian(1, 1)) < 1e-6
                 && std::fabs(res.hessian(1, 1) - res.hessian(2, 2)) < 1e-6;
-            const bool positive = res.hessian(0, 0) > 0.1 * k;
-            if (!(diag_equal && positive && max_off < 0.05 * std::fabs(h00))) {
-                std::printf("FAIL: Hessian not isotropic positive diagonal\n");
+            // Exact analytic scale: H00 == k (not k/2, not k/mass).
+            const bool exact_scale = err_cart < 1e-8;
+            if (!(diag_equal && exact_scale
+                  && max_off < 0.05 * std::fabs(h00))) {
+                std::printf(
+                    "FAIL: Hessian not isotropic with exact H00==k scale\n");
                 ok = false;
             }
         }

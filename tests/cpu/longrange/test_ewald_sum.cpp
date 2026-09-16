@@ -13,7 +13,7 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/longrange/ewald_sum.h"
+#include "atomiverse/cpu/longrange/ewald_sum.h"
 
 using namespace ATV;
 using ATV::longrange::EwaldSum;
@@ -59,9 +59,10 @@ TEST(EwaldSumMath, TwoIonCubicKTableAndReciprocalEnergy) {
     EwaldSum sum(alpha, accuracy);
     sum.rebuild(inv_cubic(L));
 
-    // Pre-refactor pin: gcut = 2α√(−ln acc), kmax per axis from |b_i|, then
-    // g2 ≤ gcut² filter. For L=10, α=0.3, acc=1e-5 → 146 retained k-vectors.
-    EXPECT_EQ(sum.size(), 146u);
+    // Half-sphere pin: gcut = 2α√(−ln acc), positive-hemisphere filter
+    // (kz>0 ∨ (kz=0∧ky>0) ∨ (kz=ky=0∧kx>0)). For L=10, α=0.3, acc=1e-5 → 73
+    // retained k-vectors (was 146 full-sphere before half-sphere optimize).
+    EXPECT_EQ(sum.size(), 73u);
 
     const double x[2] = {2.0, 7.0};
     const double y[2] = {3.0, 6.0};

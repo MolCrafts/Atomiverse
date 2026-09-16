@@ -15,7 +15,7 @@ solver that works naturally with xtensor, it usually belongs under `cpu` as a
 plain function or CPU helper type.
 
 If the feature changes the public workflow structure itself, such as adding a
-new phase family or changing how plans are compiled, it belongs in the facade.
+new phase family or changing how plans are compiled, it belongs in `core`.
 
 ## Step 2: Choose The Execution Phase
 

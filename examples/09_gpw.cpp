@@ -11,7 +11,8 @@
 /// DZVP-MOLOPT-GTH basis + GTH-PBE pseudopotentials, Martyna-Tuckerman isolated
 /// electrostatics. The user-facing component is cpu::gpw::GPWEvaluator (role
 /// Evaluator, capability Energy), run through cpu::single_point exactly like
-/// cpu::pw::PWEvaluator and cpu::scf::SCF.
+/// cpu::pw::PWEvaluator; the Gaussian methods (cpu::scf::RHF and friends)
+/// have the same Frame-in / Frame-out shape.
 ///
 /// Build:
 ///   cmake -B build -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
@@ -29,7 +30,7 @@
 #include <string>
 #include <vector>
 
-#include "atomiverse/cpu/driver/single_point.h"
+#include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -53,7 +54,7 @@ cpu::Frame make_water() {
         f.span(ATV::kAtom_y)[i] = y[i];
         f.span(ATV::kAtom_z)[i] = zc[i];
     }
-    f.simbox = cpu::Box::cubic(10.0); // 10 Å box
+    f.box = cpu::Box::cubic(10.0); // 10 Å box
     return f;
 }
 
@@ -72,13 +73,9 @@ int main() {
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
-    cpu::gpw::GpwEvaluatorConfig cfg;
-    cfg.cutoff_ry = 400.0;
-    cfg.xc = cpu::gpw::XcKind::PBE;
-    cfg.nonperiodic = true; // isolated molecule (Martyna-Tuckerman)
-    cfg.kinds = {O, H};
-
-    cpu::gpw::GPWEvaluator eval(cfg);
+    cpu::gpw::GPWEvaluator eval(
+        /*kinds*/ {O, H}, /*cutoff_ry*/ 400.0, /*max_iter*/ 200, /*tol*/ 1e-7,
+        /*mix*/ 0.3, /*xc*/ cpu::gpw::XcKind::PBE, /*nonperiodic*/ true);
     cpu::single_point(frame, eval);
 
     const double e_ha = eval.last_energy_hartree();

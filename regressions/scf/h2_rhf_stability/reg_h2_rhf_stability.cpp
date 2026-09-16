@@ -43,7 +43,7 @@ ATV::cpu::Frame make_h2(double r_angstrom) {
     f.span(kAtom_z)[1] = r_angstrom;
     f.span(kAtom_type)[0] = 1;
     f.span(kAtom_type)[1] = 1;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -64,14 +64,14 @@ int main() {
     using cpu::scf::SlaterDeterminant;
 
     // ── PySCF 2.14.0 pins (REFERENCE.md; cart=True, conv_tol=1e-12) ──────
-    constexpr double kERhf15 = -0.9108735546;      // Ha
-    constexpr double kInternal15 = 0.7088965814;   // Ha
-    constexpr double kExternal15 = -0.2092471629;  // Ha
-    constexpr double kEUhf15 = -0.9577067934;      // Ha (broken symmetry)
-    constexpr double kInternalEq = 1.1351770407;   // Ha, R = 0.735 Å
-    constexpr double kExternalEq = 0.4114522416;   // Ha, R = 0.735 Å
-    constexpr double kTolEig = 1e-6;               // Ha
-    constexpr double kTolE = 1e-6;                 // Ha
+    constexpr double kERhf15 = -0.9108735546;     // Ha
+    constexpr double kInternal15 = 0.7088965814;  // Ha
+    constexpr double kExternal15 = -0.2092471629; // Ha
+    constexpr double kEUhf15 = -0.9577067934;     // Ha (broken symmetry)
+    constexpr double kInternalEq = 1.1351770407;  // Ha, R = 0.735 Å
+    constexpr double kExternalEq = 0.4114522416;  // Ha, R = 0.735 Å
+    constexpr double kTolEig = 1e-6;              // Ha
+    constexpr double kTolE = 1e-6;                // Ha
 
     // ── 1. Stretched H2: the Seeger-Pople trap ────────────────────────────
     auto frame = make_h2(1.5);
@@ -89,11 +89,11 @@ int main() {
         return 1;
 
     const cpu::scf::StabilityResult st = rhf.stability();
-    if (!check("internal lowest eig [Ha]", st.internal_eigenvalue,
-               kInternal15, kTolEig))
+    if (!check("internal lowest eig [Ha]", st.internal_eigenvalue, kInternal15,
+               kTolEig))
         return 1;
-    if (!check("external lowest eig [Ha]", st.external_eigenvalue,
-               kExternal15, kTolEig))
+    if (!check("external lowest eig [Ha]", st.external_eigenvalue, kExternal15,
+               kTolEig))
         return 1;
     if (!st.internal_stable || st.external_stable
         || st.external_eigenvalue >= 0.0) {

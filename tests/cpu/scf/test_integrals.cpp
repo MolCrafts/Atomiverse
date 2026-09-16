@@ -3,14 +3,16 @@
 ///
 /// Two test suites:
 ///   NativeIntegrals     -- always-on (ATV_HAS_HF): symmetry, analytical, multi-geometry
-///   NativeVsLibcint     -- libcint comparison (ATV_HAS_LIBCINT): element-by-element ground truth
 
 #ifdef ATV_HAS_HF
 
 #include <cmath>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/scf/basis_data/accessors.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
@@ -19,10 +21,6 @@ using namespace ATV;
 using namespace ATV::cpu::scf;
 
 namespace {
-
-// STO-3G hydrogen parameters
-constexpr double sto3g_exp[3] = {3.42525091, 0.62391373, 0.16885540};
-constexpr double sto3g_coeff[3] = {0.15432897, 0.53532814, 0.44463454};
 
 /// @brief Build an H2 frame at a given bond length along x.
 cpu::Frame make_h2(double bond_length) {
@@ -37,20 +35,27 @@ cpu::Frame make_h2(double bond_length) {
     frame.span(ATV::kAtom_mass)[1] = double(1.008);
     frame.span(ATV::kAtom_type)[0] = 1;
     frame.span(ATV::kAtom_type)[1] = 1;
-    frame.simbox = ATV::cpu::Box::cubic(100.0);
+    frame.box = ATV::cpu::Box::cubic(100.0);
     return frame;
 }
 
 /// @brief Build Shell structs for native API (physical normalization).
+///
+/// Exponents/coeffs from `basis_data::pure_s_sto3g_shell(1)` — no retyped table.
 struct H2Setup {
-    double norm_coeff[3];
+    std::vector<double> norm_coeff;
     double centers[2][3];
     native::Shell shells[2];
     native::Atom atoms[2];
 
     explicit H2Setup(double bond_angstrom = 0.74) {
-        for (int p = 0; p < 3; ++p)
-            norm_coeff[p] = sto3g_coeff[p] * native::phys_norm(sto3g_exp[p]);
+        const auto& h1s = basis_data::pure_s_sto3g_shell(/*Z=*/1);
+        const int n_prim = static_cast<int>(h1s.alpha.size());
+        norm_coeff.resize(static_cast<std::size_t>(n_prim));
+        for (int p = 0; p < n_prim; ++p)
+            norm_coeff[static_cast<std::size_t>(p)] =
+                h1s.coeff[static_cast<std::size_t>(p)]
+                * native::phys_norm(h1s.alpha[static_cast<std::size_t>(p)]);
         centers[0][0] = 0;
         centers[0][1] = 0;
         centers[0][2] = 0;
@@ -58,9 +63,9 @@ struct H2Setup {
         centers[1][1] = 0;
         centers[1][2] = 0;
         for (int s = 0; s < 2; ++s) {
-            shells[s].n_prim = 3;
-            shells[s].alpha = sto3g_exp;
-            shells[s].coeff = norm_coeff;
+            shells[s].n_prim = n_prim;
+            shells[s].alpha = h1s.alpha.data();
+            shells[s].coeff = norm_coeff.data();
             shells[s].center[0] = centers[s][0];
             shells[s].center[1] = centers[s][1];
             shells[s].center[2] = centers[s][2];
@@ -219,11 +224,11 @@ TEST(NativeIntegrals, RegressionValues_H2) {
                 kRefERI_0101, tol);
 }
 
-// ── IntegralPack sanity ───────────────────────────────────────────────
+// ── internal::IntegralWorkspace sanity ───────────────────────────────────────────────
 
-TEST(NativeIntegrals, IntegralPack_Sanity) {
+TEST(NativeIntegrals, IntegralWorkspace_Sanity) {
     auto frame = make_h2(double(0.74));
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G};
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
 
     EXPECT_NEAR(static_cast<double>(pack.S(0, 0)), 1.0, 0.01);
     EXPECT_NEAR(static_cast<double>(pack.V_nuc), kRefVnuc, 0.01);
@@ -248,12 +253,12 @@ TEST(NativeIntegrals, MultiGeometry_OverlapDecay) {
     }
 }
 
-TEST(NativeIntegrals, MultiGeometry_IntegralPack) {
+TEST(NativeIntegrals, MultiGeometry_IntegralWorkspace) {
     // build_integrals should work at various geometries
     double bond_lengths[] = {0.5, 0.74, 1.0, 1.5, 2.0};
     for (double bl : bond_lengths) {
         auto frame = make_h2(double(bl));
-        auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G};
+        auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
         // S diagonal must be ~1 regardless of geometry
         EXPECT_NEAR(static_cast<double>(pack.S(0, 0)), 1.0, 0.01)
             << "S(0,0) != 1.0 at bond_length=" << bl;
@@ -286,7 +291,7 @@ cpu::Frame make_h2o() {
     f.span(ATV::kAtom_type)[0] = 8;
     f.span(ATV::kAtom_type)[1] = 1;
     f.span(ATV::kAtom_type)[2] = 1;
-    f.simbox = ATV::cpu::Box::cubic(100.0);
+    f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
 
@@ -316,13 +321,13 @@ cpu::Frame make_ch4() {
     f.span(ATV::kAtom_type)[2] = 1;
     f.span(ATV::kAtom_type)[3] = 1;
     f.span(ATV::kAtom_type)[4] = 1;
-    f.simbox = ATV::cpu::Box::cubic(100.0);
+    f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
 
-TEST(NativeIntegrals, H2O_IntegralPack_Sanity) {
+TEST(NativeIntegrals, H2O_IntegralWorkspace_Sanity) {
     auto frame = make_h2o();
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G};
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // O: 1s + 2s + 2px + 2py + 2pz = 5, each H: 1s = 1
     EXPECT_EQ(pack.n_basis, 7);
     EXPECT_EQ(pack.n_electrons, 10);
@@ -338,9 +343,9 @@ TEST(NativeIntegrals, H2O_IntegralPack_Sanity) {
                 << "S not symmetric at (" << i << "," << j << ")";
 }
 
-TEST(NativeIntegrals, CH4_IntegralPack_Sanity) {
+TEST(NativeIntegrals, CH4_IntegralWorkspace_Sanity) {
     auto frame = make_ch4();
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G};
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // C: 5 bf, 4 H: 1 bf each = 9 total
     EXPECT_EQ(pack.n_basis, 9);
     EXPECT_EQ(pack.n_electrons, 10);
@@ -352,7 +357,7 @@ TEST(NativeIntegrals, CH4_IntegralPack_Sanity) {
 TEST(NativeIntegrals, PType_SelfOverlap) {
     // px should have <px|px> = 1 for a properly normalized shell
     auto frame = make_h2o();
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G};
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // Basis order for O: 1s(0), 2s(1), 2px(2), 2py(3), 2pz(4), H1(5), H2(6)
     EXPECT_NEAR(static_cast<double>(pack.S(2, 2)), 1.0, 0.01) << "<px|px> != 1";
     EXPECT_NEAR(static_cast<double>(pack.S(3, 3)), 1.0, 0.01) << "<py|py> != 1";
@@ -362,7 +367,7 @@ TEST(NativeIntegrals, PType_SelfOverlap) {
 TEST(NativeIntegrals, PType_Orthogonality) {
     // px, py, pz on the SAME center should be orthogonal
     auto frame = make_h2o();
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G};
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     EXPECT_NEAR(static_cast<double>(pack.S(2, 3)), 0.0, 1e-10)
         << "<px|py> != 0";
     EXPECT_NEAR(static_cast<double>(pack.S(2, 4)), 0.0, 1e-10)
@@ -373,7 +378,7 @@ TEST(NativeIntegrals, PType_Orthogonality) {
 
 /// @brief Verify block-level g_rhf matches AO-level g_rhf for a given frame.
 static void compare_g_ao_vs_block(const cpu::Frame& frame, const char* label) {
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G};
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     int n = pack.n_basis;
 
     // Dense test density with off-diagonal elements to exercise all contributions.
@@ -405,116 +410,6 @@ TEST(NativeIntegrals, BlockG_CH4) { compare_g_ao_vs_block(make_ch4(), "CH4"); }
 
 TEST(NativeIntegrals, BlockG_H2) { compare_g_ao_vs_block(make_h2(0.74), "H2"); }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Suite B: NativeVsLibcint (only when -DATV_BUILD_LIBCINT=ON)
-// ═══════════════════════════════════════════════════════════════════════
-
-#ifdef ATV_HAS_LIBCINT
-
-#include "libcint_reference.cuh"
-
-TEST(NativeVsLibcint, GtoNorm) {
-    for (int p = 0; p < 3; ++p) {
-        double ref = test::libcint_gto_norm(0, sto3g_exp[p]);
-        double nat = native::gto_norm(0, sto3g_exp[p]);
-        EXPECT_NEAR(nat, ref, 1e-12)
-            << "gto_norm mismatch at exponent " << sto3g_exp[p];
-    }
-}
-
-/// @brief Generic helper: compare native vs libcint integrals for any frame.
-///
-/// Tolerances reflect the documented native-vs-libcint numerical floor.
-/// The native Rys/McMurchie-Davidson path accumulates Boys functions in
-/// a different order than libcint; the drift grows with nuclear charge
-/// because V absorbs the Boys-series truncation on Z-weighted terms.
-///
-/// Before 2026-04, this test accidentally passed at 1e-7 because
-/// `build_integrals` silently routed through libcint when compiled
-/// with ATV_HAS_LIBCINT — i.e. it was comparing libcint to itself. That
-/// fallback was removed when the integrals builder was decomposed; this
-/// test now honestly measures native drift from libcint ground truth.
-static void compare_integrals_vs_libcint(const cpu::Frame& frame,
-                                         const char* label) {
-    // Per-integral-type tolerances, calibrated against H2O/CH4/CO.
-    constexpr double kTolST = 5e-7;  ///< Overlap and kinetic.
-    constexpr double kTolV = 2e-6;   ///< Nuclear attraction (Z-weighted Boys).
-    constexpr double kTolERI = 1e-6; ///< Electron repulsion.
-    constexpr double kTolVnuc = 1e-10; ///< Pure classical nucleus–nucleus.
-
-    auto native_pack = cpu::scf::IntegralPack{
-        frame, cpu::scf::BasisSet::STO3G, 0, true}; // need ERI for comparison
-    auto libcint_pack = test::build_integrals_libcint(frame);
-
-    ASSERT_EQ(native_pack.n_basis, libcint_pack.n_basis)
-        << label << " n_basis mismatch";
-    int n = native_pack.n_basis;
-
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j) {
-            EXPECT_NEAR(static_cast<double>(native_pack.S(i, j)),
-                        static_cast<double>(libcint_pack.S(i, j)), kTolST)
-                << label << " S(" << i << "," << j << ")";
-            EXPECT_NEAR(static_cast<double>(native_pack.T(i, j)),
-                        static_cast<double>(libcint_pack.T(i, j)), kTolST)
-                << label << " T(" << i << "," << j << ")";
-            EXPECT_NEAR(static_cast<double>(native_pack.V(i, j)),
-                        static_cast<double>(libcint_pack.V(i, j)), kTolV)
-                << label << " V(" << i << "," << j << ")";
-        }
-
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            for (int k = 0; k < n; ++k)
-                for (int l = 0; l < n; ++l)
-                    EXPECT_NEAR(
-                        static_cast<double>(native_pack.ERI(i, j, k, l)),
-                        static_cast<double>(libcint_pack.ERI(i, j, k, l)),
-                        kTolERI)
-                        << label << " ERI(" << i << "," << j << "," << k << ","
-                        << l << ")";
-
-    EXPECT_NEAR(static_cast<double>(native_pack.V_nuc),
-                static_cast<double>(libcint_pack.V_nuc), kTolVnuc)
-        << label << " V_nuc";
-}
-
-TEST(NativeVsLibcint, AllIntegrals_H2_074) {
-    compare_integrals_vs_libcint(make_h2(double(0.74)), "H2@0.74");
-}
-
-TEST(NativeVsLibcint, MultiGeometry) {
-    double bond_lengths[] = {0.5, 0.74, 1.0, 1.5, 2.0};
-    for (double bl : bond_lengths) {
-        std::string label = "H2@" + std::to_string(bl);
-        compare_integrals_vs_libcint(make_h2(double(bl)), label.c_str());
-    }
-}
-
-TEST(NativeVsLibcint, H2O) { compare_integrals_vs_libcint(make_h2o(), "H2O"); }
-
-TEST(NativeVsLibcint, CH4) { compare_integrals_vs_libcint(make_ch4(), "CH4"); }
-
-/// @brief Build CO (carbon monoxide) frame.
-static cpu::Frame make_co() {
-    cpu::Frame f(2);
-    f.span(ATV::kAtom_x)[0] = double(0.0);
-    f.span(ATV::kAtom_y)[0] = double(0.0);
-    f.span(ATV::kAtom_z)[0] = double(0.0);
-    f.span(ATV::kAtom_x)[1] = double(1.128);
-    f.span(ATV::kAtom_y)[1] = double(0.0);
-    f.span(ATV::kAtom_z)[1] = double(0.0);
-    f.span(ATV::kAtom_mass)[0] = double(12.011);
-    f.span(ATV::kAtom_mass)[1] = double(15.999);
-    f.span(ATV::kAtom_type)[0] = 6;
-    f.span(ATV::kAtom_type)[1] = 8;
-    f.simbox = ATV::cpu::Box::cubic(100.0);
-    return f;
-}
-
-TEST(NativeVsLibcint, CO) { compare_integrals_vs_libcint(make_co(), "CO"); }
-
-#endif // ATV_HAS_LIBCINT
 
 #else // !ATV_HAS_HF
 

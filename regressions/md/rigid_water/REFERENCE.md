@@ -82,6 +82,18 @@ under any force field. A real water benchmark — structure, diffusion, the O–
 distribution — belongs in `benchmarks/`, against an external engine, once charges are
 wired.
 
+## Rows are not an identity — tags are
+
+The geometry check resolves each molecule's three atoms through the Frame's
+tag index, not by row arithmetic (`3m, 3m+1, 3m+2`). It has to: `atom_modify
+sort` spatially reorders the owned atoms at the first reneighbour after
+`nfreq` steps (LAMMPS default 1000), which is inside this run. A row-indexed
+check measures the distance between atoms of three *different* molecules from
+step 1000 onward and reports a "geometry drift" of ~1e+01 while the constraint
+solver is in fact holding every real bond to 5e-11. The engine's own solver
+keys on tags for exactly this reason (`FixRattle`); an out-of-library consumer
+must do the same.
+
 ## Cross-references
 
 The constraint algebra itself (RATTLE: position stage, velocity stage, iteration to

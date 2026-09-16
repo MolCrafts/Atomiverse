@@ -53,7 +53,7 @@ using ATV::cpu::linalg::RealMatrix;
 namespace {
 
 constexpr double kAng = 1.8897259885789; // Å -> Bohr
-constexpr double kEps = 1e-8;            // GpwConfig::eps_default
+constexpr double kEps = 1e-8;            // GpwDft eps default
 
 /// Build the Γ-point overlap for H atoms at the given fractional positions in a
 /// cubic cell of edge L [Å], exactly as the solver does.

@@ -54,7 +54,7 @@ class PairLJCut : public Pair {
     /// usage; the rvalue form returns `PairLJCut` BY VALUE so a chained
     /// `cuda::PairLJCut{…}.set_special_bonds(…)` expression yields an
     /// rvalue (not a dangling lvalue reference to a temporary). Passing
-    /// the latter into `sim.add_potential(…)` moves the configured component
+    /// the latter into `sim.set_evaluator(…)` moves the configured component
     /// into the driver's `unique_ptr`, instead of storing a dangling
     /// `&temporary` that would later trigger a "pure virtual method
     /// called" abort when the driver invokes `compute()` / `build()`.

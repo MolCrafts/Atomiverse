@@ -40,7 +40,7 @@ double DistanceCV::evaluate(const cpu::Frame& frame, double* grad) const {
     double dx = frame.span(kAtom_x)[row_i_] - frame.span(kAtom_x)[row_j_];
     double dy = frame.span(kAtom_y)[row_i_] - frame.span(kAtom_y)[row_j_];
     double dz = frame.span(kAtom_z)[row_i_] - frame.span(kAtom_z)[row_j_];
-    frame.simbox.min_image(dx, dy, dz);
+    frame.box.min_image(dx, dy, dz);
     const double r2 = dx * dx + dy * dy + dz * dz;
     if (r2 == 0.0)
         throw std::runtime_error("DistanceCV: zero separation");

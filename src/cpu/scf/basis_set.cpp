@@ -104,9 +104,9 @@ AtomList::AtomList(const Frame& frame, int charge,
     std::vector<char> is_ghost(static_cast<std::size_t>(natm), 0);
     for (int g : ghost_atoms) {
         if (g < 0 || g >= natm) {
-            throw std::out_of_range(
-                "cpu::scf::AtomList: ghost atom index " + std::to_string(g)
-                + " is outside [0, " + std::to_string(natm) + ")");
+            throw std::out_of_range("cpu::scf::AtomList: ghost atom index "
+                                    + std::to_string(g) + " is outside [0, "
+                                    + std::to_string(natm) + ")");
         }
         is_ghost[static_cast<std::size_t>(g)] = 1;
     }
@@ -178,9 +178,9 @@ build_shell_list_from_table(const AtomList& atoms,
         const int Z = basis_lookup_z(atoms, a);
         if (Z < 1 || Z >= static_cast<int>(table.size())
             || table[static_cast<std::size_t>(Z)].shells.empty()) {
-            throw std::runtime_error(
-                std::string("cpu::scf::ShellList: '") + set_name
-                + "' has no data for Z=" + std::to_string(Z));
+            throw std::runtime_error(std::string("cpu::scf::ShellList: '")
+                                     + set_name + "' has no data for Z="
+                                     + std::to_string(Z));
         }
         for (const auto& sh : table[static_cast<std::size_t>(Z)].shells) {
             if (sh.l < 0 || sh.l > max_l) {
@@ -258,8 +258,8 @@ ShellList::ShellList(const AtomList& atoms, BasisSet basis_id) {
                                           kMaxLOrbital);
         break;
     case BasisSet::Pople631G:
-        tmp = build_shell_list_from_table(atoms, basis_data::pople_631g(),
-                                          name, kMaxLOrbital);
+        tmp = build_shell_list_from_table(atoms, basis_data::pople_631g(), name,
+                                          kMaxLOrbital);
         break;
     case BasisSet::Pople631Gs:
         tmp = build_shell_list_from_table(atoms, basis_data::pople_631gs(),
@@ -270,8 +270,8 @@ ShellList::ShellList(const AtomList& atoms, BasisSet basis_id) {
                                           name, kMaxLOrbital);
         break;
     case BasisSet::AugCcPVDZ:
-        tmp = build_shell_list_from_table(atoms, basis_data::aug_ccpvdz(),
-                                          name, kMaxLOrbital);
+        tmp = build_shell_list_from_table(atoms, basis_data::aug_ccpvdz(), name,
+                                          kMaxLOrbital);
         break;
     case BasisSet::Def2SVP:
         tmp = build_shell_list_from_table(atoms, basis_data::def2_svp(), name,

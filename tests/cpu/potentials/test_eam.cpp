@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/eam.h"
@@ -44,7 +44,7 @@ cpu::Frame copper(double a0, int n_cell, double jitter) {
                     f.span(ATV::kAtom_type)[idx] = 29;
                     ++idx;
                 }
-    f.simbox = ATV::cpu::Box::cubic(a0 * n_cell);
+    f.box = ATV::cpu::Box::cubic(a0 * n_cell);
     return f;
 }
 

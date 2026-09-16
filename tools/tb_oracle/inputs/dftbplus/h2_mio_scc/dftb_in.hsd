@@ -1,0 +1,26 @@
+Geometry = GenFormat {
+  <<< "geo.gen"
+}
+
+Hamiltonian = DFTB {
+  SCC = Yes
+  SCCTolerance = 1e-8
+  MaxSCCIterations = 100
+  MaxAngularMomentum = {
+    H = "s"
+  }
+  SlaterKosterFiles = Type2FileNames {
+    Prefix = "./"
+    Separator = "-"
+    Suffix = ".skf"
+  }
+}
+
+Options = {
+  WriteDetailedOut = Yes
+  WriteResultsTag = Yes
+}
+
+ParserOptions = {
+  ParserVersion = 12
+}

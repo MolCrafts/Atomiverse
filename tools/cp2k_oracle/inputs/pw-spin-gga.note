@@ -1,0 +1,8 @@
+# Offline twin note — pw-spin-gga
+# True collinear spin-GGA PBE on O₂ (plane-wave NC-UPF).
+# CP2K Quickstep is GPW/GTH, not NC-UPF plane-wave. Prefer Quantum ESPRESSO
+# with tests/data/pw/O_ONCV_PBE-1.2.upf for an absolute e_tot twin.
+# Geometry: O2 R=1.2075 Å, cell cubic 8 Å, multiplicity 3, nspin=2, GGA_X_PBE
+# + GGA_C_PBE (true σ), ecut ≈ 12 Ry, Γ-only.
+# When pw.x available: run fixed input and replace energy pin in
+# regressions/pw/pw-spin-gga/REFERENCE.md.

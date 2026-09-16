@@ -56,7 +56,7 @@ struct DummyS {
 
 // Contracted same-center Cartesian overlap of two components of one aux
 // shell block (needed to self-normalize the spherical aux columns the
-// same way IntegralPack::c2s does for the orbital basis).
+// same way internal::IntegralWorkspace::c2s does for the orbital basis).
 double intra_block_overlap(const native::ShellBlock& b, const int ang_i[3],
                            const int ang_k[3]) {
     double s = 0.0;
@@ -70,10 +70,9 @@ double intra_block_overlap(const native::ShellBlock& b, const int ang_i[3],
 
 } // namespace
 
-DensityFitting::DensityFitting(
-    const std::vector<native::Shell>& orbital_shells,
-    const std::vector<native::Atom>& atoms, AuxBasis aux,
-    double lindep_threshold)
+DensityFitting::DensityFitting(const std::vector<native::Shell>& orbital_shells,
+                               const std::vector<native::Atom>& atoms,
+                               AuxBasis aux, double lindep_threshold)
     : lindep_threshold_(lindep_threshold) {
     if (orbital_shells.empty() || atoms.empty())
         throw std::runtime_error(
@@ -93,7 +92,7 @@ DensityFitting::DensityFitting(
         n_aux_ += 2 * b.l + 1;
 
     // ── Spherical transform per aux block, self-normalized in the aux
-    //    Cartesian overlap metric (mirrors IntegralPack::c2s: the engine
+    //    Cartesian overlap metric (mirrors internal::IntegralWorkspace::c2s: the engine
     //    primitive-normalizes but does not unit-normalize contractions).
     //    def2-universal-jkfit is a spherical basis family — fitting in
     //    the raw Cartesian aux span would span extra lower-l functions
@@ -110,16 +109,16 @@ DensityFitting::DensityFitting(
             const int ns = 2 * b.l + 1;
             int ang[kMaxNCart][3];
             fill_cart_comps(b.l, ang);
-            RealMatrix S_blk = xt::zeros<double>(
-                {std::size_t(nc), std::size_t(nc)});
+            RealMatrix S_blk =
+                xt::zeros<double>({std::size_t(nc), std::size_t(nc)});
             for (int i = 0; i < nc; ++i)
                 for (int k = 0; k <= i; ++k) {
                     const double v = intra_block_overlap(b, ang[i], ang[k]);
                     S_blk(i, k) = v;
                     S_blk(k, i) = v;
                 }
-            RealMatrix C = xt::zeros<double>(
-                {std::size_t(nc), std::size_t(ns)});
+            RealMatrix C =
+                xt::zeros<double>({std::size_t(nc), std::size_t(ns)});
             for (int j = 0; j < ns; ++j) {
                 std::vector<double> v(static_cast<std::size_t>(nc));
                 for (int i = 0; i < nc; ++i)
@@ -154,16 +153,15 @@ DensityFitting::DensityFitting(
             std::vector<double> buf(
                 static_cast<std::size_t>(P.n_cart * Q.n_cart), 0.0);
             native::rys_eri_block(P, Pd, Q, Qd, buf.data());
-            auto blk = xt::adapt(buf.data(),
-                                 static_cast<std::size_t>(P.n_cart * Q.n_cart),
-                                 xt::no_ownership(),
-                                 std::vector<std::size_t>{
-                                     std::size_t(P.n_cart),
-                                     std::size_t(Q.n_cart)});
+            auto blk = xt::adapt(
+                buf.data(), static_cast<std::size_t>(P.n_cart * Q.n_cart),
+                xt::no_ownership(),
+                std::vector<std::size_t>{std::size_t(P.n_cart),
+                                         std::size_t(Q.n_cart)});
             // (P.n_cart × Q.n_cart) → spherical sandwich on both sides.
-            const RealMatrix sph = xt::linalg::dot(
-                xt::transpose(aux_c2s[ip]),
-                RealMatrix(xt::linalg::dot(blk, aux_c2s[iq])));
+            const RealMatrix sph =
+                xt::linalg::dot(xt::transpose(aux_c2s[ip]),
+                                RealMatrix(xt::linalg::dot(blk, aux_c2s[iq])));
             const int np = 2 * P.l + 1;
             const int nq = 2 * Q.l + 1;
             for (int a = 0; a < np; ++a)
@@ -207,12 +205,11 @@ DensityFitting::DensityFitting(
                 "internal::DensityFitting: auxiliary Coulomb metric is "
                 "near-singular (Cholesky pivot ratio "
                 + std::to_string(dmin * dmin / (dmax * dmax))
-                + " below lindep_threshold "
-                + std::to_string(lindep_threshold_)
+                + " below lindep_threshold " + std::to_string(lindep_threshold_)
                 + ") — linearly dependent auxiliary functions.");
     }
-    W_ = xt::linalg::solve(L, RealMatrix(xt::eye<double>(
-                                  static_cast<std::size_t>(n_aux_))));
+    W_ = xt::linalg::solve(
+        L, RealMatrix(xt::eye<double>(static_cast<std::size_t>(n_aux_))));
     ATV_DEBUG("[df] cholesky+whiten ms={:.1f}", elapsed_ms(t_chol));
     const auto t_3c = LogClock::now();
 
@@ -220,8 +217,8 @@ DensityFitting::DensityFitting(
     // Layout note: RealMatrix is COLUMN-major, so with the (μν) pair
     // index on the rows every auxiliary column of M3 / B_ is one
     // contiguous n_ao² slice — exactly the M_P matrix k_fitted walks.
-    const std::size_t n2 = static_cast<std::size_t>(n_ao_)
-                           * static_cast<std::size_t>(n_ao_);
+    const std::size_t n2 =
+        static_cast<std::size_t>(n_ao_) * static_cast<std::size_t>(n_ao_);
     RealMatrix M3 = xt::zeros<double>({n2, std::size_t(n_aux_)});
 
     // Canonical orbital block pairs (bi >= bj); each pair writes a
@@ -253,23 +250,23 @@ DensityFitting::DensityFitting(
         native::rys_eri_block(A, Bb, A, Bb, qb.data());
         double qmax = 0.0;
         for (int ab = 0; ab < nab; ++ab)
-            qmax = std::max(qmax,
-                            std::fabs(qb[static_cast<std::size_t>(ab) * nab
-                                         + static_cast<std::size_t>(ab)]));
+            qmax =
+                std::max(qmax, std::fabs(qb[static_cast<std::size_t>(ab) * nab
+                                            + static_cast<std::size_t>(ab)]));
         q_pair[static_cast<std::size_t>(ip)] = std::sqrt(qmax);
     }
     std::vector<double> q_aux(aux_blocks.size(), 0.0);
     for (std::size_t ipb = 0; ipb < aux_blocks.size(); ++ipb) {
         const auto& P = aux_blocks[ipb];
         const auto Pd = dummy.block(P.center);
-        std::vector<double> qb(
-            static_cast<std::size_t>(P.n_cart) * P.n_cart, 0.0);
+        std::vector<double> qb(static_cast<std::size_t>(P.n_cart) * P.n_cart,
+                               0.0);
         native::rys_eri_block(P, Pd, P, Pd, qb.data());
         double qmax = 0.0;
         for (int c = 0; c < P.n_cart; ++c)
-            qmax = std::max(qmax, std::fabs(qb[static_cast<std::size_t>(c)
-                                                   * P.n_cart
-                                               + static_cast<std::size_t>(c)]));
+            qmax = std::max(qmax,
+                            std::fabs(qb[static_cast<std::size_t>(c) * P.n_cart
+                                         + static_cast<std::size_t>(c)]));
         q_aux[ipb] = std::sqrt(qmax);
     }
 
@@ -300,11 +297,11 @@ DensityFitting::DensityFitting(
             const int ns = 2 * P.l + 1;
             const int q0 = aux_sph_start[ipb];
             for (int ia = 0; ia < na; ++ia) {
-                const std::size_t mu = static_cast<std::size_t>(
-                    A.ao_start + ia);
+                const std::size_t mu =
+                    static_cast<std::size_t>(A.ao_start + ia);
                 for (int ib = 0; ib < nb; ++ib) {
-                    const std::size_t nu = static_cast<std::size_t>(
-                        Bb.ao_start + ib);
+                    const std::size_t nu =
+                        static_cast<std::size_t>(Bb.ao_start + ib);
                     const double* row =
                         buf.data()
                         + static_cast<std::size_t>(ia * nb + ib) * ncp;
@@ -374,8 +371,7 @@ RealMatrix DensityFitting::k_fitted(const RealMatrix& C_occ) const {
         std::vector<double> t(n * nocc);
         std::vector<double> k_loc(n * n, 0.0);
 #pragma omp for schedule(static)
-        for (std::ptrdiff_t p = 0; p < static_cast<std::ptrdiff_t>(naux);
-             ++p) {
+        for (std::ptrdiff_t p = 0; p < static_cast<std::ptrdiff_t>(naux); ++p) {
             const double* bp = bd + static_cast<std::size_t>(p) * n * n;
             for (std::size_t mu = 0; mu < n; ++mu)
                 for (std::size_t i = 0; i < nocc; ++i) {

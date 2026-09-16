@@ -13,14 +13,17 @@
 /// are unchanged (LAMMPS convention).
 #pragma once
 
+#include <array>
+#include <span>
+
 #include <vector>
 
 #include "atomiverse/core/precision.h"
+#include "atomiverse/core/role.h"
 #include "atomiverse/cpu/component/long_range_protocol.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
-#include "atomiverse/facade/component_role.h"
 
 namespace ATV {
 namespace cpu {
@@ -30,6 +33,15 @@ class CoulLong : public cpu::Potential,
                  public cpu::NeighborConsumer,
                  public cpu::LongRangeParticipant {
   public:
+    /// @brief Real-space Coulomb reads the neighbour charge.
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_charge, "CoulLong"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
+    }
+
     /// @param alpha  Ewald splitting parameter α [1/Å]. Must match the
     ///               reciprocal-space component.
     /// @param cutoff Real-space cutoff [Å]. The neighbor list must be built

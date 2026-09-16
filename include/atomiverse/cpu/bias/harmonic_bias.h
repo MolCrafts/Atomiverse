@@ -6,9 +6,9 @@
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/role.h"
 #include "atomiverse/cpu/bias/collective_variable.h"
 #include "atomiverse/cpu/component/bias.h"
-#include "atomiverse/facade/component_role.h"
 
 namespace ATV {
 namespace cpu {

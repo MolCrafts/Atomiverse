@@ -77,8 +77,8 @@ ExternalField::core_matrix(const std::vector<native::Shell>& shells) const {
     return H;
 }
 
-double ExternalField::nuclear_energy(
-    const std::vector<native::Atom>& atoms) const {
+double
+ExternalField::nuclear_energy(const std::vector<native::Atom>& atoms) const {
     if (is_zero())
         return 0.0;
     double e = 0.0;

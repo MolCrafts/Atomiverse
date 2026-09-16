@@ -1,0 +1,31 @@
+# Offline CP2K twin — DFPT + metallic smearing (diamond Si)
+
+## Product intent
+
+Document that CP2K Quickstep can combine vibrational analysis with
+electronic smearing (`&SMEAR`) on a Si-like solid. Absolute ω/E pins for
+the Atomiverse regression use **NC-UPF PW + energy-FD of the free energy**
+(same Hamiltonian as ATV DFPT), not GTH-GPW CP2K energies.
+
+## Suggested CP2K input sketch (when a binary is available)
+
+- Structure: diamond Si primitive, a = 5.43 Å, 2 atoms
+- Method: GPW, PADE/LDA, GTH-PADE + DZVP-MOLOPT-SR-GTH (Si q4)
+- `&SMEAR METHOD FERMI_DIRAC ELECTRONIC_TEMPERATURE …` matching
+  `degauss ≈ 0.02 Ry` (~3158 K)
+- `ADDED_MOS` ≥ 4
+- `VIBRATIONAL_ANALYSIS` or finite-displacement phonon at Γ
+- k-points: Monkhorst–Pack 2×2×2 (or denser for production)
+
+## Host status
+
+CP2K module/binary not available on the Arrhenius login node used for
+this pin shift (`module avail cp2k` empty). Record ω(Γ) + wall here when
+run offline; fair ratio \(r = T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) ≤ 10.
+
+## ATV regression twin
+
+`regressions/response/dfpt-metallic-si` — PW LSDA, NC UPF
+`tests/data/pw/Si_lda_nc.upf`, FD degauss 0.02 Ry, extra_bands 4,
+ecut 10 Ry, 2×2×2 MP. Sharp pin: central second difference of Mermin
+free energy F for C[(0x),(0x)].

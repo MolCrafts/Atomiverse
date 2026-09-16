@@ -1,0 +1,32 @@
+# Offline CP2K twin — finite-q DFPT collinear spin + metallic smearing (diamond Si)
+
+## Product intent
+
+Document that CP2K Quickstep can combine fractional-q / phonon analysis with
+UKS/LSD and electronic smearing (`&SMEAR`) on a Si-like solid. Absolute ω
+pins for the Atomiverse regression use **NC-UPF PW** at the same Hamiltonian
+as ATV DFPT (literature-biased |\omega| windows + fixed-occ spin incommensurate
+twin tracking), not GTH-GPW CP2K energies.
+
+## Suggested CP2K input sketch (when a binary is available)
+
+- Structure: diamond Si primitive, a = 5.43 Å, 2 atoms
+- Method: GPW, PADE/LDA, GTH-PADE + DZVP-MOLOPT-SR-GTH (Si q4)
+- `&DFT` LSD / unrestricted with multiplicity 1
+- `&SMEAR METHOD FERMI_DIRAC ELECTRONIC_TEMPERATURE …` matching
+  `degauss ≈ 0.02 Ry` (~3158 K)
+- Phonon / DFPT at fractional q ≈ (0.3,0,0) (or closest commensurate mesh)
+- k-points: Monkhorst–Pack consistent with the twin
+
+## Host status
+
+CP2K module/binary not available on the Arrhenius login node used for
+this pin shift (`module avail cp2k` empty). Record ω + wall here when
+run offline; fair ratio \(r = T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) ≤ 10.
+
+## ATV regression twin
+
+`regressions/response/dfpt-finite-q-spin-smearing` — PW LSDA, NC UPF
+`tests/data/pw/Si_lda_nc.upf`, collinear spin multiplicity=1, FD degauss
+0.02 Ry, extra_bands 0, ecut 10 Ry, k_mesh 1, q = (0.3,0,0) direct
+Sternheimer.

@@ -10,21 +10,13 @@ function(atv_add_cuda_example name src)
     add_executable(${name} ${src})
     target_link_libraries(${name} PRIVATE atomiverse)
     set_target_properties(${name} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    if(ATV_USE_MATPLOT)
-        target_link_libraries(${name} PRIVATE Matplot++::matplot)
-        target_compile_definitions(${name} PRIVATE ATV_HAS_MATPLOT)
-    endif()
 endfunction()
 
 # C++ example (no CUDA required).
 function(atv_add_cpp_example name)
     add_executable(${name} ${name}.cpp)
     target_link_libraries(${name} PRIVATE atomiverse)
-    set_target_properties(${name} PROPERTIES CXX_STANDARD 17)
-    if(ATV_USE_MATPLOT)
-        target_link_libraries(${name} PRIVATE Matplot++::matplot)
-        target_compile_definitions(${name} PRIVATE ATV_HAS_MATPLOT)
-    endif()
+    set_target_properties(${name} PROPERTIES CXX_STANDARD 20)
 endfunction()
 
 # 01 — bare SCF loop on xtensor only (intentionally does not link atomiverse).
@@ -33,7 +25,7 @@ target_link_libraries(01_scf PRIVATE xtensor xtensor-blas ${LAPACK_LIBRARIES} ${
 # xtensor-blas still uses old flat-header paths; route through the compat shim
 # that atomiverse also uses.
 target_include_directories(01_scf PRIVATE $<BUILD_INTERFACE:${_xt_compat}>)
-set_target_properties(01_scf PROPERTIES CXX_STANDARD 17)
+set_target_properties(01_scf PROPERTIES CXX_STANDARD 20)
 
 if(ATV_BUILD_HF)
     atv_add_cpp_example(02_rhf)

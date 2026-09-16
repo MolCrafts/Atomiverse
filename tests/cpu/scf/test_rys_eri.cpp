@@ -2,19 +2,16 @@
 /// @brief Correctness test for the native Rys-quadrature ERI engine.
 ///
 /// Strategy: build a real molecular system via the existing native
-/// IntegralPack + ShellBlockPairList, then compute the full
-/// ERI tensor two ways — once through the canonical McMurchie-Davidson
-/// `native::eri_block` (already validated against libcint to 1e-7) and
-/// once through the new `native::rys_eri_block`. The two must agree.
-///
-/// When libcint is available we also compare directly against
-/// `build_integrals_libcint`, with a tighter tolerance, so any residual
-/// normalization drift vs. libcint is surfaced.
+/// internal::IntegralWorkspace + ShellBlockPairList, then compute the full
+/// ERI tensor two ways — once through the canonical McMurchie–Davidson
+/// `native::eri_block` and once through `native::rys_eri_block`. The two
+/// must agree (cross-check of the two native engines).
 
 #if defined(ATV_HAS_HF)
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -27,9 +24,10 @@
 #include "atomiverse/cpu/scf/native_integrals.h"
 #include "atomiverse/cpu/scf/rys_eri.h"
 
-#ifdef ATV_HAS_LIBCINT
-#include "libcint_reference.cuh"
+#ifdef _OPENMP
+#include <omp.h>
 #endif
+
 
 using namespace ATV;
 using namespace ATV::cpu::scf;
@@ -54,7 +52,7 @@ cpu::Frame make_water() {
     f.span(ATV::kAtom_mass)[0] = 15.999;
     f.span(ATV::kAtom_mass)[1] = 1.008;
     f.span(ATV::kAtom_mass)[2] = 1.008;
-    f.simbox = ATV::cpu::Box::cubic(100.0);
+    f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
 
@@ -71,7 +69,7 @@ cpu::Frame make_co() {
     f.span(ATV::kAtom_type)[1] = 8;
     f.span(ATV::kAtom_mass)[0] = 12.011;
     f.span(ATV::kAtom_mass)[1] = 15.999;
-    f.simbox = ATV::cpu::Box::cubic(100.0);
+    f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
 
@@ -182,7 +180,7 @@ void compare_tensors(const xt::xtensor<double, 4>& a,
 // catches gross algebraic errors in rys_eri_block.
 TEST(RysEri, MatchesMcMurchieDavidson_H2O) {
     auto frame = make_water();
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G, 0,
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
                                        /*need_eri=*/true};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
@@ -192,7 +190,7 @@ TEST(RysEri, MatchesMcMurchieDavidson_H2O) {
 
 TEST(RysEri, MatchesMcMurchieDavidson_CO) {
     auto frame = make_co();
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G, 0,
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
                                        /*need_eri=*/true};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
@@ -200,71 +198,82 @@ TEST(RysEri, MatchesMcMurchieDavidson_CO) {
     compare_tensors(pack.ERI, eri_rys, 5e-7, "CO rys vs native M-D");
 }
 
-// ── Rys ERI should match libcint directly (tighter tolerance) ────────
 
-#ifdef ATV_HAS_LIBCINT
-
-TEST(RysEri, MatchesLibcint_H2O) {
-    auto frame = make_water();
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G, 0,
-                                       /*need_eri=*/true};
-    auto sp = ShellBlockPairList{pack, 1e-14};
-
-    auto eri_rys = build_eri_via_rys(sp);
-    auto libcint_pack = test::build_integrals_libcint(frame);
-    compare_tensors(libcint_pack.ERI, eri_rys, 5e-7, "H2O rys vs libcint");
-}
-
-TEST(RysEri, MatchesLibcint_CO) {
-    auto frame = make_co();
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::STO3G, 0,
-                                       /*need_eri=*/true};
-    auto sp = ShellBlockPairList{pack, 1e-14};
-
-    auto eri_rys = build_eri_via_rys(sp);
-    auto libcint_pack = test::build_integrals_libcint(frame);
-    compare_tensors(libcint_pack.ERI, eri_rys, 5e-7, "CO rys vs libcint");
-}
-
-// ── Phase 4 gate: d-shell (cc-pVDZ-class) ERIs vs libcint ────────────
+// ── thread_local ERI-reuse determinism guard (spec scf-review-06, ac-005) ─
 //
-// The eri-hpc-opt spec's Phase 4 targets cc-pVDZ enablement: d-shells,
-// 6 Cartesian functions per shell. The native ERI engine reaches l = 2
-// through the Rys-quadrature kernel (`native::rys_eri_block`, the same
-// 2D-VRR + HRR algebra as libcint), to which `eri_block()` dispatches
-// every non-(ss|ss) quartet. The d-polarized 6-31G* table exercises the
-// full set of d-shell quartet classes that cc-pVDZ needs — (dd|dd),
-// (dp|dd), (dd|pp), (dd|ss), (ds|ss), … — on a real molecule.
-//
-// This is the binding regression gate (acceptance ac-004): the native
-// d-shell ERI tensor must agree with libcint's `cint2e_cart` to 1e-7.
-TEST(RysEri, MatchesLibcint_DShell_631Gs_H2O) {
+// The planned optimization converts the per-quartet `ang_idx`
+// (rys_eri_block_canonical) and the non-canonical `scratch` (rys_eri_block)
+// from heap-allocated locals to `static thread_local` buffers. This test pins
+// that the SAME (la,lb,lc,ld) block quartet evaluated serially and inside a
+// `#pragma omp parallel` region — every thread recomputing the identical
+// quartet into its own buffer — yields bit-for-bit identical results, so no
+// thread_local scratch bleeds across workers. Passes today (each call has its
+// own local buffers); it stays the guard after the thread_local conversion
+// lands. A d-shell quartet is chosen so the angular-index precompute
+// (`ang_idx`) is non-trivial.
+TEST(RysEri, ThreadLocalReuseDeterminism_DShell) {
     auto frame = make_water();
-    // 6-31G* puts a d-shell on oxygen → d quartets appear in the tensor.
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::Pople631Gs, 0,
-                                       /*need_eri=*/true};
-    auto sp = ShellBlockPairList{pack, 1e-14};
-    ASSERT_GT(sp.n_basis, 7)
-        << "6-31G* H2O must have > 7 AOs (d-shell present)";
-
-    auto eri_rys = build_eri_via_rys(sp);
-    auto eri_ref = test::build_eri_libcint_from_pack(frame, pack);
-    compare_tensors(eri_ref, eri_rys, 1e-7,
-                    "H2O 6-31G* d-shell rys vs libcint");
-}
-
-TEST(RysEri, MatchesLibcint_DShell_631Gs_CO) {
-    auto frame = make_co();
-    // 6-31G* puts a d-shell on both C and O → (dd|dd) quartets present.
-    auto pack = cpu::scf::IntegralPack{frame, cpu::scf::BasisSet::Pople631Gs, 0,
-                                       /*need_eri=*/true};
+    // 6-31G* places a Cartesian d-shell on oxygen.
+    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::Pople631Gs, 0,
+                                       /*need_eri=*/false};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
-    auto eri_rys = build_eri_via_rys(sp);
-    auto eri_ref = test::build_eri_libcint_from_pack(frame, pack);
-    compare_tensors(eri_ref, eri_rys, 1e-7, "CO 6-31G* d-shell rys vs libcint");
-}
+    const int nb = static_cast<int>(sp.blocks.size());
+    ASSERT_GT(nb, 1) << "need at least two distinct blocks";
 
-#endif // ATV_HAS_LIBCINT
+    // Highest-l block (the d-shell) and lowest-l block, so the canonical
+    // kernel constraints li>=lj and lk>=ll hold for (A B | A B).
+    int hi = 0, lo = 0;
+    for (int b = 1; b < nb; ++b) {
+        if (sp.blocks[b].l > sp.blocks[hi].l)
+            hi = b;
+        if (sp.blocks[b].l < sp.blocks[lo].l)
+            lo = b;
+    }
+    ASSERT_GT(sp.blocks[hi].l, sp.blocks[lo].l)
+        << "6-31G* H2O must expose distinct angular momenta (d present)";
+
+    const native::ShellBlock& A = sp.blocks[hi];
+    const native::ShellBlock& B = sp.blocks[lo];
+    const native::ShellBlock& C = sp.blocks[hi];
+    const native::ShellBlock& D = sp.blocks[lo];
+    const int sz = A.n_cart * B.n_cart * C.n_cart * D.n_cart;
+    ASSERT_GT(sz, 1);
+
+    // Serial reference.
+    std::vector<double> serial(static_cast<std::size_t>(sz), 0.0);
+    native::rys_eri_block(A, B, C, D, serial.data());
+
+    int nT = 1;
+#ifdef _OPENMP
+    nT = std::max(2, omp_get_max_threads());
+#endif
+    std::vector<std::vector<double>> par(
+        static_cast<std::size_t>(nT),
+        std::vector<double>(static_cast<std::size_t>(sz), 0.0));
+
+    // Each thread recomputes the same quartet repeatedly into its own buffer;
+    // repetition raises the chance of exposing any cross-thread scratch bleed.
+#ifdef _OPENMP
+#pragma omp parallel num_threads(nT)
+#endif
+    {
+        int tid = 0;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+#endif
+        for (int rep = 0; rep < 8; ++rep) {
+            std::fill(par[tid].begin(), par[tid].end(), 0.0);
+            native::rys_eri_block(A, B, C, D, par[tid].data());
+        }
+    }
+
+    for (int t = 0; t < nT; ++t)
+        for (int e = 0; e < sz; ++e)
+            EXPECT_EQ(par[t][e], serial[e])
+                << "thread " << t << " element " << e
+                << " differs from the serial rys_eri_block value "
+                   "(thread_local scratch bleed)";
+}
 
 #endif // ATV_HAS_HF

@@ -10,7 +10,7 @@
 /// bound explicitly via `sim.on(phase).add(NeighborList{...})`.
 /// CUDA-free header.
 #pragma once
-#include "atomiverse/facade/component_role.h"
+#include "atomiverse/core/role.h"
 
 #include <cstdint>
 #include <memory>
@@ -22,6 +22,21 @@
 
 namespace ATV {
 namespace cuda {
+
+/// @brief OpenMM cluster tile width (atoms per cluster). Must match
+///        `md::nlist::kClusterSize` in the neighbor implementation.
+inline constexpr int kOpenmmClusterSize = 32;
+
+/// @brief uint64 words of interaction mask per CSR cluster-pair (32×32 bits).
+inline constexpr int kOpenmmMaskWords = 16;
+
+/// @brief Read the 32-bit j-interaction flags for i_slot of CSR pair p.
+__host__ __device__ inline std::uint32_t
+openmm_mask_jbits(const std::uint64_t* mask, int pair_idx, int i_slot) {
+    const auto* rows = reinterpret_cast<const std::uint32_t*>(
+        mask + static_cast<std::size_t>(pair_idx) * kOpenmmMaskWords);
+    return rows[i_slot];
+}
 
 /// @brief Neighbor pair list -- all arrays on device.
 ///
@@ -47,41 +62,25 @@ struct PairList {
     int* n_pairs = nullptr;  ///< Current pair count [device, 1 element].
     int* capacity = nullptr; ///< Pre-allocated slot count [device, 1 element].
 
-    // ── Cluster neighbor list (atom-centric, atomic-free force path) ──────
-    // The builder internally produces a per-cluster CSR. These expose it so a
-    // force kernel can own each atom (one thread per atom slot), traverse its
-    // cluster's FULL neighbor-cluster list, compute distances from CURRENT
-    // atom positions, accumulate the atom's force in registers, and write it
-    // ONCE — no atomics, no flat pair list, no per-step export. row_ptr/col_idx
-    // are FULL (every neighbor cluster, both directions). Addresses are stable
-    // across the run; rebuilt in place on each skin-gated rebuild. orig_index
-    // maps a (cluster*kClusterSize + slot) to the global atom index; pad slots
-    // hold a negative sentinel. Null until build() publishes them.
+    // ── OpenMM cluster neighbor CSR (CUDA MD force source of truth) ──────
+    // FULL neighbor: every neighboring cluster in both directions. Force
+    // kernels (tile / cluster) consume these only — not vl_*. Addresses are
+    // stable across the run; rebuilt in place on each skin-gated rebuild.
+    // orig_index maps (cluster * kClusterSize + slot) → atom index; pad slots
+    // hold a negative sentinel. Null until the first rebuild publishes them.
     const int* cl_row_ptr = nullptr;    ///< [num_clusters+1] CSR row offsets.
     const int* cl_col_idx = nullptr;    ///< neighbor cluster indices (full).
     const int* cl_orig_index = nullptr; ///< cluster slot -> global atom index.
-    /// Per-CSR-entry 64-bit interaction mask, bit[i*8+j]=1 if atoms (slot i of
-    /// this cluster, slot j of col_idx[p]) are within the search radius
-    /// (rc+skin) at the last rebuild. Aligned 1:1 with cl_col_idx. The
-    /// atom-centric force kernel iterates only masked-in j-slots instead of all
-    /// kClusterSize candidates — the search-radius mask is a valid superset of
-    /// the cutoff neighbors for the whole reneighbor interval. Null until the
-    /// first rebuild publishes it.
+    /// Per-CSR-entry multi-word interaction mask: `kOpenmmMaskWords` uint64s
+    /// per entry (32×32 bitflags). See `openmm_mask_jbits`. Null until rebuild.
     const uint64_t* cl_mask = nullptr;
+    /// Optional Morton-sorted cluster SoA positions (Å), length
+    /// `num_clusters * kOpenmmClusterSize`. When non-null, force kernels use
+    /// these directly and skip a per-step gather from `frame.atoms.x/y/z`.
+    const real_t* cl_x = nullptr;
+    const real_t* cl_y = nullptr;
+    const real_t* cl_z = nullptr;
     int num_clusters = 0; ///< cluster count (host scalar).
-
-    // ── Per-atom Verlet list (the force path) ────────────────────────────
-    // Tight per-atom neighbor list built once per rebuild from the cluster CSR
-    // at the search radius (rc+skin). Column-major: vl_nbr[k*vl_stride + i] is
-    // atom i's k-th neighbor (global atom index), for k < vl_cnt[i]. A
-    // one-thread-per-atom force kernel iterates this directly — no cluster
-    // indirection, no gather, ~full warp utilization. Null until the first
-    // rebuild publishes them.
-    const int* vl_nbr =
-        nullptr; ///< [vl_max * vl_stride] column-major neighbors.
-    const int* vl_cnt = nullptr; ///< [num atoms] per-atom neighbor count.
-    int vl_stride = 0;           ///< column stride (build-time atom count).
-    int vl_max = 0;              ///< max neighbors per atom (column capacity).
 };
 
 /// @brief Cluster-based neighbor list builder.

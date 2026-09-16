@@ -29,7 +29,7 @@
 ///   FockStage(bool restricted, bool is_hf, XCType, GridLevel, int n_radial,
 ///             int n_angular, double hybrid_alpha_override,
 ///             const MolecularGrid* fixed_grid,
-///             const IntegralPack& integrals,
+///             const internal::IntegralWorkspace& integrals,
 ///             const RealMatrix& P_alpha, const RealMatrix& P_beta,
 ///             RealMatrix& F_alpha, RealMatrix& F_beta, RealMatrix& J,
 ///             double& e_xc_grid, double& e_exact_exchange,
@@ -89,12 +89,12 @@
 #include <xtensor/containers/xtensor.hpp>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/criterion.h"
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/facade/loop.h"
-#include "atomiverse/facade/stage.h"
 
 #include "atomiverse/cpu/scf/basis_set.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
@@ -196,7 +196,7 @@ cpu::Frame make_h2_frame() {
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -244,7 +244,10 @@ static_assert(std::is_base_of_v<cpu::Component, cpu::scf::FockStage>,
               "FockStage is a Component");
 // SOSCF wiring stand-ins for the pre-existing stage tests: the latch stays
 // false (soscf disabled), keeping every path bit-identical to before.
-namespace { bool soscf_latch = false; const bool kNoSoscf = false; }
+namespace {
+bool soscf_latch = false;
+const bool kNoSoscf = false;
+} // namespace
 
 static_assert(std::is_base_of_v<cpu::Component, cpu::scf::MixStage>,
               "MixStage is a Component");
@@ -317,7 +320,7 @@ TEST(EigenSolver, GeneralizedEigIdentityOverlap) {
 
 TEST(FockStage, ReproducesHamiltonianBuilderRestrictedHF) {
     cpu::Frame h2 = make_h2_frame();
-    cpu::scf::IntegralPack ints{h2, cpu::scf::BasisSet::STO3G};
+    cpu::scf::internal::IntegralWorkspace ints{h2, cpu::scf::BasisSet::STO3G};
 
     // A nonzero density (core guess) so J/K actually contribute.
     RealMatrix S = ints.S;
@@ -363,7 +366,7 @@ TEST(FockStage, ReproducesHamiltonianBuilderRestrictedHF) {
 
 TEST(FockStage, ReproducesHamiltonianBuilderRestrictedKS) {
     cpu::Frame h2 = make_h2_frame();
-    cpu::scf::IntegralPack ints{h2, cpu::scf::BasisSet::STO3G};
+    cpu::scf::internal::IntegralWorkspace ints{h2, cpu::scf::BasisSet::STO3G};
 
     RealMatrix S = ints.S, Hcore = ints.Hcore;
     EigenSolver es;
@@ -404,7 +407,7 @@ TEST(FockStage, ReproducesHamiltonianBuilderRestrictedKS) {
 
 TEST(FockStage, BindsFockPhaseAndGuardsWithCtxAt) {
     cpu::Frame h2 = make_h2_frame();
-    cpu::scf::IntegralPack ints{h2, cpu::scf::BasisSet::STO3G};
+    cpu::scf::internal::IntegralWorkspace ints{h2, cpu::scf::BasisSet::STO3G};
     RealMatrix S = ints.S, Hcore = ints.Hcore;
     EigenSolver es;
     auto [eig0, C0] = es.step(Hcore, S);
@@ -457,8 +460,8 @@ TEST(MixStage, ReproducesDiisErrorAndExtrapolationRestricted) {
                            /*diis_start_iter=*/0, /*diis_max_vectors=*/6,
                            /*level_shift=*/0.0, cpu::scf::MixerKind::CDIIS,
                            /*mixer_switch_tol=*/1e-2, /*soscf=*/false,
-                           /*soscf_start=*/0.25, S, X, P, P, iter, e_tot,
-                           F_a, F_b, err_a, err_b, soscf_latch);
+                           /*soscf_start=*/0.25, S, X, P, P, iter, e_tot, F_a,
+                           F_b, err_a, err_b, soscf_latch);
     cpu::Context rt;
     cpu::Frame fr = atv_test::make_trivial_frame();
     cpu::BuildContext bc{rt, fr};
@@ -494,8 +497,8 @@ TEST(MixStage, ReproducesDiisErrorAndExtrapolationUnrestricted) {
                            /*diis_start_iter=*/0, /*diis_max_vectors=*/6,
                            /*level_shift=*/0.0, cpu::scf::MixerKind::CDIIS,
                            /*mixer_switch_tol=*/1e-2, /*soscf=*/false,
-                           /*soscf_start=*/0.25, S, X, Pa, Pb, iter,
-                           e_tot, F_a, F_b, err_a, err_b, soscf_latch);
+                           /*soscf_start=*/0.25, S, X, Pa, Pb, iter, e_tot, F_a,
+                           F_b, err_a, err_b, soscf_latch);
     cpu::Context rt;
     cpu::Frame fr = atv_test::make_trivial_frame();
     cpu::BuildContext bc{rt, fr};
@@ -533,8 +536,8 @@ TEST(MixStage, AppliesLevelShiftRestrictedWhenAboveThreshold) {
                            /*diis_start_iter=*/0, /*diis_max_vectors=*/6,
                            /*level_shift=*/lambda, cpu::scf::MixerKind::CDIIS,
                            /*mixer_switch_tol=*/1e-2, /*soscf=*/false,
-                           /*soscf_start=*/0.25, S, X, P, P, iter, e_tot,
-                           F_a, F_b, err_a, err_b, soscf_latch);
+                           /*soscf_start=*/0.25, S, X, P, P, iter, e_tot, F_a,
+                           F_b, err_a, err_b, soscf_latch);
     cpu::Context rt;
     cpu::Frame fr = atv_test::make_trivial_frame();
     cpu::BuildContext bc{rt, fr};
@@ -563,8 +566,8 @@ TEST(MixStage, SkipsLevelShiftAtOrBelowThreshold) {
     cpu::scf::MixStage mix(true, /*use_diis=*/false, 0, 6,
                            /*level_shift=*/1e-5, cpu::scf::MixerKind::CDIIS,
                            /*mixer_switch_tol=*/1e-2, /*soscf=*/false,
-                           /*soscf_start=*/0.25, S, X, P, P, iter, e_tot,
-                           F_a, F_b, err_a, err_b, soscf_latch);
+                           /*soscf_start=*/0.25, S, X, P, P, iter, e_tot, F_a,
+                           F_b, err_a, err_b, soscf_latch);
     cpu::Context rt;
     cpu::Frame fr = atv_test::make_trivial_frame();
     cpu::BuildContext bc{rt, fr};
@@ -590,11 +593,9 @@ TEST(MixStage, ResetClearsDiisHistory) {
     int iterA = 0;
     double e_totA = 0.0;
     RealMatrix Fa_A = F0, Fb_A = F0, ea_A, eb_A;
-    cpu::scf::MixStage fresh(true, true, 0, 6, 0.0,
-                             cpu::scf::MixerKind::CDIIS, 1e-2, false, 0.25,
-                             S, X, P, P,
-                             iterA, e_totA, Fa_A, Fb_A, ea_A, eb_A,
-                             soscf_latch);
+    cpu::scf::MixStage fresh(true, true, 0, 6, 0.0, cpu::scf::MixerKind::CDIIS,
+                             1e-2, false, 0.25, S, X, P, P, iterA, e_totA, Fa_A,
+                             Fb_A, ea_A, eb_A, soscf_latch);
     cpu::BuildContext bcA{rt, fr};
     fresh.build(bcA);
     Fa_A = F0;
@@ -606,11 +607,9 @@ TEST(MixStage, ResetClearsDiisHistory) {
     int iterB = 0;
     double e_totB = 0.0;
     RealMatrix Fa_B, Fb_B, ea_B, eb_B;
-    cpu::scf::MixStage grown(true, true, 0, 6, 0.0,
-                             cpu::scf::MixerKind::CDIIS, 1e-2, false, 0.25,
-                             S, X, P, P,
-                             iterB, e_totB, Fa_B, Fb_B, ea_B, eb_B,
-                             soscf_latch);
+    cpu::scf::MixStage grown(true, true, 0, 6, 0.0, cpu::scf::MixerKind::CDIIS,
+                             1e-2, false, 0.25, S, X, P, P, iterB, e_totB, Fa_B,
+                             Fb_B, ea_B, eb_B, soscf_latch);
     cpu::BuildContext bcB{rt, fr};
     grown.build(bcB);
     for (iterB = 0; iterB < 2; ++iterB) {

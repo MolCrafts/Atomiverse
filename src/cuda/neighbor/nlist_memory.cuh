@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file nlist_memory.cuh
+/// @file cuda/neighbor/nlist_memory.cuh
 /// @brief RAII device memory wrapper for neighborlist internals.
 
 #include "nlist_error.cuh"

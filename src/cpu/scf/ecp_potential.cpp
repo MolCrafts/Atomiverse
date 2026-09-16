@@ -16,14 +16,14 @@ namespace {
 
 /// IUPAC symbols indexed by Z, covering the basis_data tables (Z <= 86).
 constexpr const char* kSymbols[] = {
-    "X",  "H",  "He", "Li", "Be", "B",  "C",  "N",  "O",  "F",  "Ne", "Na",
-    "Mg", "Al", "Si", "P",  "S",  "Cl", "Ar", "K",  "Ca", "Sc", "Ti", "V",
-    "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br",
-    "Kr", "Rb", "Sr", "Y",  "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag",
-    "Cd", "In", "Sn", "Sb", "Te", "I",  "Xe", "Cs", "Ba", "La", "Ce", "Pr",
-    "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu",
-    "Hf", "Ta", "W",  "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi",
-    "Po", "At", "Rn"};
+    "X",  "H",  "He", "Li", "Be", "B",  "C",  "N",  "O",  "F",  "Ne",
+    "Na", "Mg", "Al", "Si", "P",  "S",  "Cl", "Ar", "K",  "Ca", "Sc",
+    "Ti", "V",  "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge",
+    "As", "Se", "Br", "Kr", "Rb", "Sr", "Y",  "Zr", "Nb", "Mo", "Tc",
+    "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I",  "Xe",
+    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb",
+    "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W",  "Re", "Os",
+    "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn"};
 constexpr int kMaxSymbolZ = sizeof(kSymbols) / sizeof(kSymbols[0]) - 1;
 
 } // namespace
@@ -42,8 +42,7 @@ EcpPotential::family_table(std::string_view name) {
     if (name == "def2-ECP")
         return basis_data::ecp_def2();
     throw std::runtime_error("EcpPotential: unknown ECP family '"
-                             + std::string(name)
-                             + "'. Supported: def2-ECP");
+                             + std::string(name) + "'. Supported: def2-ECP");
 }
 
 EcpPotential::EcpPotential(molrs::Element element, std::string_view name)
@@ -63,8 +62,8 @@ EcpPotential::EcpPotential(molrs::Element element, std::string_view name)
             supported += " " + element_symbol(Z);
     }
     throw std::runtime_error(
-        "EcpPotential: no in-tree '" + std::string(name) + "' entry for Z="
-        + std::to_string(z)
+        "EcpPotential: no in-tree '" + std::string(name)
+        + "' entry for Z=" + std::to_string(z)
         + " (all-electron element in this family). Supported:" + supported);
 }
 

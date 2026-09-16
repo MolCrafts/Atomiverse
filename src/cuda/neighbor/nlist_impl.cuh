@@ -1,6 +1,6 @@
 #pragma once
 
-/// @file nlist_impl.cuh
+/// @file cuda/neighbor/nlist_impl.cuh
 /// @brief Internal implementation class bridging public API and CUDA kernels.
 
 #include "nlist_data.cuh"
@@ -46,7 +46,8 @@ struct NListBuffers {
     DeviceVector<int> row_ptr;       // [num_clusters + 1]
     DeviceVector<int> row_ptr_upper; // [num_clusters + 1] coarse-count offsets
     DeviceVector<int> col_idx;       // [num_pairs]
-    DeviceVector<uint64_t> interaction_mask; // [num_pairs]
+    /// [num_pairs * kMaskWords] OpenMM multi-word interaction masks.
+    DeviceVector<uint64_t> interaction_mask;
     DeviceVector<char> prefix_temp;
 
     // Reference positions for the Verlet-skin rebuild check
@@ -168,13 +169,15 @@ struct NListBuffers {
 
     void resize_pairs(int num_pairs) {
         col_idx.resize(num_pairs);
-        interaction_mask.resize(num_pairs);
+        interaction_mask.resize(static_cast<std::size_t>(num_pairs)
+                                * kMaskWords);
     }
 
     void resize_flat_pairs(int max_pairs) {
         flat_ci.resize(max_pairs);
         flat_cj.resize(max_pairs);
-        flat_mask.resize(max_pairs);
+        // Multi-word masks match CSR layout when csr_to_flat copies masks.
+        flat_mask.resize(static_cast<std::size_t>(max_pairs) * kMaskWords);
         flat_pair_counter.resize(1);
     }
 
@@ -254,23 +257,6 @@ void launch_count_cluster_pairs(
     const real_t* aabb_max_z, int num_clusters, bool periodic,
     work_t cutoff_plus_skin_sq, ATV::cuda::Box box, int* pair_counts,
     cudaStream_t stream = 0);
-
-// ── Direct cell-bin FULL per-atom Verlet build (nlist_direct.cu) ──────────
-// Replaces the cluster-CSR → build_verlet_list pipeline. `box` is by value.
-void launch_bin_atoms(const real_t* x, const real_t* y, const real_t* z, int n,
-                      ATV::cuda::Box box, int dx, int dy, int dz, bool periodic,
-                      int* bincount, float4* bin_pos, int bin_cap,
-                      int* overflow, cudaStream_t stream = 0);
-
-template <typename work_t>
-void launch_build_verlet_direct(
-    const real_t* x, const real_t* y, const real_t* z, int n,
-    ATV::cuda::Box box, int dx, int dy, int dz, bool periodic, const int* sdx,
-    const int* sdy, const int* sdz, const int* n_stencil_ptr,
-    const int* bincount, const float4* bin_pos, int bin_cap, work_t rsq_search,
-    const std::int64_t* tag, const int* nspecial, const std::int64_t* special,
-    int max_special, int* vl_nbr, int* vl_cnt, int vl_stride, int vl_max,
-    int* overflow, cudaStream_t stream = 0);
 
 // Write row_ptr[N] = row_ptr[N-1] + pair_counts[N-1] on device (avoids D→H readback)
 void launch_write_row_ptr_sentinel(int* row_ptr, const int* pair_counts,
@@ -383,9 +369,17 @@ void launch_smart_rolling_prune(
     ATV::cuda::Box box, uint64_t* flat_mask, int prune_step, int prune_period,
     cudaStream_t stream = 0);
 
-// Full (no half-Newton) per-cluster-pair interaction mask at the search radius
-// (rc+skin) for the atom-centric force kernel. Computed once per rebuild; the
-// force kernel iterates only masked-in j-slots. See fused_search.cu.
+// Full CSR interaction masks at the search radius (rc+skin). One warp per
+// cluster row: for each CSR entry p of ci, lane i writes the 32-bit j-mask
+// into masks[p * kMaskWords …]. No half-Newton (FULL neighbor). See fused_search.cu.
+template <typename work_t>
+void launch_compute_csr_masks(const real_t* cluster_x, const real_t* cluster_y,
+                              const real_t* cluster_z, const int* row_ptr,
+                              const int* col_idx, int num_clusters,
+                              work_t search_sq, ATV::cuda::Box box,
+                              uint64_t* masks, cudaStream_t stream = 0);
+
+// Legacy flat-list force mask (optional flat export path only).
 template <typename work_t>
 void launch_compute_force_mask(const real_t* cluster_x, const real_t* cluster_y,
                                const real_t* cluster_z, const int* flat_ci,

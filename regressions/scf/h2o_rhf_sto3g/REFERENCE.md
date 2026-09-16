@@ -4,7 +4,12 @@
 
 Restricted Hartree–Fock (RHF), minimal STO-3G Gaussian basis, single-point
 total electronic + nuclear-repulsion energy on a fixed water geometry. Driven
-by the concrete `cpu::scf::RHF` method through the public Frame API.
+by the concrete `RHF` method through the public Frame API.
+
+**One regression case, multi-device** (PyTorch-style): run
+`reg_h2o_rhf_sto3g --device=cpu|cuda|both` (default `both` when built with
+CUDA). Same geometry and literature pin on every device — not a separate
+`*_cuda` sibling case.
 
 ## Reference value
 
@@ -26,13 +31,19 @@ O–H bonds subtend the reference angle:
 - R(O–H) = 0.95 Å
 - ∠H–O–H = 104.5°
 
-Derived Cartesian coordinates [Å] (half-angle = 52.25°):
+Derived Cartesian coordinates [Å], with the half-angle θ = 52.25° and
+x_H = R sin θ, z_H = R cos θ — the same two formulas `reg_h2o_rhf_sto3g.cpp`
+evaluates:
 
 | Atom | x | y | z |
 |---|---|---|---|
-| O | 0.00000 | 0.0 | 0.00000 |
-| H | +0.75126 | 0.0 | 0.58151 |
-| H | −0.75126 | 0.0 | 0.58151 |
+| O | 0.000000 | 0.0 | 0.000000 |
+| H | +0.751155 | 0.0 | 0.581606 |
+| H | −0.751155 | 0.0 | 0.581606 |
+
+These are rounded for reading only. The case computes them in double
+precision from R and the angle (0.7511550950566511 / 0.5816064160327268);
+do not retype the rounded table into a consumer.
 
 The molecule sits in a 20 Å cubic box (gas-phase; the box only supplies a
 non-degenerate cell and does not enter the isolated-molecule SCF).
@@ -65,8 +76,10 @@ used above.
 
 ## What is checked
 
-`cpu::scf::RHF{basis = STO3G}.run(frame)` converges (`rhf.converged()`) and
+For each selected device, `RHF{STO3G}.run(frame)` converges and
 the Frame energy `frame.meta.get(kEnergy)` [eV], converted to Hartree via
 `units::kHartreeInEv`, lies within 1 × 10⁻³ Ha of the cited −74.961754 Ha.
 Non-convergence, a non-finite energy, or an out-of-tolerance value exits
-non-zero with `got / want / tol`.
+non-zero with `[device] got / want / tol`.
+
+No public integral pack / solver bag: Frame + concrete RHF only.

@@ -54,7 +54,7 @@ atoms.insert("z", np.array(zs))
 atoms.insert("mass", np.full(n, 39.948))  # Ar [amu]
 atoms.insert("type", np.zeros(n, dtype=np.int32))
 frame["atoms"] = atoms
-frame.simbox = molrs.Box.cube(N_CELLS * A0)
+frame.box = molrs.Box.cube(N_CELLS * A0)
 
 sim = atv.md.MD()
 sim.add(atv.VelocityVerlet(0.001))  # dt [fs]

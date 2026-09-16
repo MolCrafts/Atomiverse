@@ -1,0 +1,55 @@
+# MW twin B: finite field + ONE electrode wall of 2 Gaussian sites,
+# charge neutrality ON (the MW-legal Dufils configuration).
+# Cubic L = 20 A, eta = 2 1/A, Psi = 0, Ez = 0.1 V/A, no electrolyte.
+num_steps 0
+timestep  41.341
+temperature 300.0
+
+num_pbc 3
+box
+  length 37.794522492515405 37.794522492515405 37.794522492515405
+
+species
+
+  species_type
+    name  X
+    count 4
+    mass  1.0
+    mobile True
+    charge point 0.0
+
+  species_type
+    name  E1
+    count 2
+    mass  196.966553
+    mobile False
+    charge gaussian 1.058354421806 0.0
+
+electrodes
+
+  electrode_type
+    name    E1
+    species E1
+    potential 0.000
+
+  electrode_charges matrix_inversion
+  charge_neutrality true
+  write_matrix true
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-12
+    coulomb_rcut 18.0
+    coulomb_ktol 1.0e-12
+
+external_field
+  type E
+  direction 0.00 0.00 1.00
+  amplitude 1.944690381148888e-03
+
+output
+  default 0
+  charges 1
+  energies 1 Total Potential External_field
+  total_charges 1
+  polarization 1

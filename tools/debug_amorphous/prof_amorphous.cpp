@@ -11,16 +11,16 @@
 #include <vector>
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/nve_limit.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/fix_langevin.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/nve_limit.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/cell_list.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
-#include "atomiverse/cpu/observer/virial_stress.h"
+#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
@@ -213,10 +213,10 @@ void run_scenario(const std::string& data_path, int n_steps, Mode mode,
     cpu::Frame frame = debug_amorphous::load_lammps_data(data_path);
 
     cpu::md::MD sim;
-    sim.add(cpu::md::NVELimit{1.0, 0.05});
-    sim.add(cpu::md::InitVelocity{500.0, 1231});
-    sim.add(cpu::md::FixLangevin{500.0, /*T_stop=*/500.0, 10.0, 1.0, 904297});
-    sim.add(cpu::md::Virial{});
+    sim.set_integrator(cpu::md::NVELimit{1.0, 0.05});
+    sim.set_observer(cpu::md::InitVelocity{500.0, 1231});
+    sim.set_thermostat(cpu::md::FixLangevin{500.0, /*T_stop=*/500.0, 10.0, 1.0, 904297});
+    sim.set_observer(cpu::md::Virial{});
 
     const int ph_force = static_cast<int>(ATV::md::Phase::force);
 
@@ -226,21 +226,21 @@ void run_scenario(const std::string& data_path, int n_steps, Mode mode,
     else
         // LAMMPS-matched: cutoff=10.5, skin=0.4, every=10 (from `neigh_modify`).
         raw_nl = std::make_unique<InstrNeighborList>(params::lj_cut, 0.4, 10);
-    sim.add_ref(*raw_nl);
+    sim.set_observer_ref(*raw_nl);
 
     auto lj = timed(cpu::PairLJCut{lj_eps_ev, params::lj_sig, params::lj_cut}
                         .set_special_bonds(0.0, 0.0, 0.0),
                     "lj_pair", ph_force, 0);
-    sim.add_ref(*lj);
+    sim.set_observer_ref(*lj);
     auto hb = timed(cpu::BondHarmonic{{bond_K_ev}, {params::bond_r0}},
                     "harm_bond", ph_force, 1);
-    sim.add_ref(*hb);
+    sim.set_observer_ref(*hb);
     auto ha = timed(cpu::AngleHarmonic{{angle_K_ev}, {angle_theta0}},
                     "harm_angle", ph_force, 2);
-    sim.add_ref(*ha);
+    sim.set_observer_ref(*ha);
     auto hd = timed(cpu::DihedralMultiHarmonic{{dihedral_ev}}, "dihedral",
                     ph_force, 3);
-    sim.add_ref(*hd);
+    sim.set_observer_ref(*hd);
 
     sim.build();
     auto t0 = clock_t_::now();

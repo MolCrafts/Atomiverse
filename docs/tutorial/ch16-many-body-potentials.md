@@ -1,15 +1,12 @@
-# Chapter 16: Many-Body Potentials — Metals and Covalent Solids
+# Chapter 16. Many-Body Potentials
 
-| | |
-|---|---|
-| **Components** | `cpu::EAM` (Sutton–Chen copper), `cpu::StillingerWeber` (Si) |
-| **Why** | pair potentials are *qualitatively* wrong for metals / covalent solids (Cauchy relation, vacancy paradox) |
-| **Validation** | finite-difference force oracles in the potential unit tests |
+Pair potentials are qualitatively wrong for metals and covalent solids.
+This chapter uses `cpu::EAM` and `cpu::StillingerWeber`.
 
 ```cpp
-sim.add_potential(cpu::EAM{/* Sutton-Chen Cu lookup */});
+sim.set_evaluator(cpu::EAM{/* Sutton-Chen Cu lookup */});
 // or
-sim.add_potential(cpu::StillingerWeber{/* Si parameters */});
+sim.set_evaluator(cpu::StillingerWeber{/* Si parameters */});
 sim.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
 ```
 
@@ -17,7 +14,6 @@ Pair LJ NVE conservation ([Chapter 10](ch10-classical-md.md)) proves the MD
 pipeline; many-body styles reuse the same neighbor list and force reduction.
 Always re-check FD forces after parameter changes — the two-pass EAM force is a
 common source of sign/density bugs.
-
 
 Every classical potential in this book so far has been a **pair potential**: the
 energy is a sum over separations,
@@ -36,11 +32,6 @@ the **embedded-atom method** (EAM) for metals and the **Stillinger–Weber** (SW
 potential for covalent silicon.
 
 Runnable end-to-end cases, checked against the original papers:
-
-```bash
-cmake -B build -DATV_BUILD_REGRESSIONS=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target regressions      # builds AND runs every case
-```
 
 - [`regressions/md/eam_cu/`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/eam_cu/reg_eam_cu.cpp) — EAM copper
 - [`regressions/md/sw_si/`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/sw_si/reg_sw_si.cpp) — SW silicon
@@ -166,7 +157,7 @@ Copper (`cpu/potentials/eam_data/eam_tables.h`):
 ### Running it
 
 `cpu::EAM` is a force component like any other. It is **not** a `Pair` — see §5 —
-so it is bound explicitly rather than through `add_potential`:
+so it is bound explicitly rather than through `set_evaluator`:
 
 ```cpp
 #include "atomiverse/cpu/potentials/eam.h"
@@ -311,7 +302,7 @@ for (int ix = 0; ix < nc; ++ix)
           type[idx] = 14;   // Z
           ++idx;
       }
-frame.simbox = cpu::Box::cubic(a0 * nc);
+frame.box = cpu::Box::cubic(a0 * nc);
 ```
 
 Two atoms per lattice point, offset by ¼ along the body diagonal: that is what makes
@@ -347,7 +338,7 @@ test of three-bodyness rather than of bookkeeping.
 
 ---
 
-## 4. How the Force Is Computed (and Verified)
+## 4. How the Force Is Computed
 
 ### Two passes for EAM
 
@@ -439,10 +430,10 @@ pattern `CoulLong` already established:
 ```cpp
 class EAM : public cpu::Component, public cpu::NeighborConsumer { ... };
 
-sim.on(md::Phase::force).add(cpu::EAM{...});   // explicit, not add_potential
+sim.on(md::Phase::force).add(cpu::EAM{...});   // explicit, not set_evaluator
 ```
 
-`add_potential` is a singular slot (a second pair style throws), and `Pair::launch()` is
+`set_evaluator` is a singular slot (a second pair style throws), and `Pair::launch()` is
 `final`. Explicit `.on(phase).add()` is the general road, and it is not a workaround —
 it is the API for anything that is not literally a pair style.
 

@@ -1,10 +1,10 @@
-/// @file cpu/scf/one_electron.h
+/// @file cpu/scf/internal/one_electron.h
 /// @brief Nuclear repulsion energy for Hartree-Fock / DFT.
 ///
 /// The one-electron integral kernels (overlap / kinetic / nuclear attraction)
-/// are private static members of `IntegralPack`
-/// (`IntegralPack::overlap/kinetic/nuclear_attraction`, defined in
-/// one_electron.cpp) — construct an `IntegralPack{frame, basis}` to obtain
+/// are private static members of `internal::IntegralWorkspace`
+/// (`internal::IntegralWorkspace::overlap/kinetic/nuclear_attraction`, defined in
+/// one_electron.cpp) — construct an `internal::IntegralWorkspace{frame, basis}` to obtain
 /// S / T / V / Hcore:
 ///
 /// @code

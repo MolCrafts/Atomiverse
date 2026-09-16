@@ -1,0 +1,6 @@
+RM1 1SCF PRECISE XYZ
+RM1 water - single point at the ATV RM1 stationary geometry
+r(OH) = 0.9563700 A, angle(HOH) = 103.59900 deg; offline twin - NEVER run from ctest
+  O   0.00000000 0   0.00000000 0   0.00000000 0
+  H   0.95637000 0   0.00000000 0   0.00000000 0
+  H  -0.22486664 0   0.92955827 0   0.00000000 0

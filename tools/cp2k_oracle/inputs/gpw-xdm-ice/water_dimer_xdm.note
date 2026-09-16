@@ -1,0 +1,23 @@
+# gpw-xdm-ice — offline oracle note
+
+## CP2K status
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` accepts only
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4`. There is **no** stock `TYPE XDM`.
+
+Full (density-dependent) XDM oracles: postg, critic2, Quantum ESPRESSO
+`xdm_dispersion`. This Atomiverse slug ships the **free-atom** foothold
+(geometry-only multipole moments + CRC α) with a dual pure-Python pin.
+
+## Geometry (Å)
+
+Water dimer, cubic 12 Å cell, PERIODIC XYZ — same as `gpw-ts-ice`.
+
+## Offline pin (dual pure-Python)
+
+Free-atom XDM, QE NC-PBE a1=0.4283, a2=2.4690 Å, rcut 50 Å:
+
+- Isolated: E_disp = -2.1020435998516220e-03 Ha
+- Periodic: E_disp = -2.1148157612879029e-03 Ha
+
+See `regressions/gpw/gpw-xdm-ice/REFERENCE.md`.

@@ -12,9 +12,9 @@
 #include <string>
 #include <vector>
 
-#include "atomiverse/cpu/comm/bcast_frame.h"
-#include "atomiverse/cpu/comm/domain.h"
-#include "atomiverse/cpu/comm/gather.h"
+#include "atomiverse/cpu/communication/bcast_frame.h"
+#include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/communication/gather.h"
 #include "atomiverse/cpu/task/task_codec.h"
 #include "atomiverse/cpu/task/task_materializer.h"
 

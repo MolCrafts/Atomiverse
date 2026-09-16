@@ -1,0 +1,34 @@
+# Offline DFTB+ twin for ATV slug dftb2-periodic-forces.
+# Geometry matches regressions/semiempirical/dftb2-periodic-forces/REFERENCE.md.
+# ATV SK tables are mio-style sketches — absolute F vs DFTB.org mio-1-1 is not
+# the pin; the regression gates analytic vs re-SCC FD of the ATV energy.
+
+Geometry = GenFormat {
+  <<< "geo.gen"
+}
+
+Driver = {}
+
+Hamiltonian = DFTB {
+  SCC = Yes
+  SCCTolerance = 1e-10
+  MaxSCCIterations = 100
+  MaxAngularMomentum = {
+    C = "p"
+  }
+  # SlaterKosterFiles = { ... }  # host-local mio path when running offline
+  KPointsAndWeights = SupercellFolding {
+    1 0 0
+    0 1 0
+    0 0 1
+    0.0 0.0 0.0
+  }
+}
+
+Options = {
+  WriteForces = Yes
+}
+
+ParserOptions = {
+  ParserVersion = 12
+}

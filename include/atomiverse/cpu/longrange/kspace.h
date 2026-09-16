@@ -8,7 +8,7 @@
 /// `compute()`; the short-range real-space coulomb is a separate evaluator
 /// (`cpu::CoulLong`). The two share the Ewald splitting parameter α.
 ///
-/// Pure operator math lives in `atomiverse/longrange/*`. The multi-rank
+/// Pure operator math lives in `atomiverse/cpu/longrange/*`. The multi-rank
 /// reduction (MPI_Allreduce over partial S(k) / grid) is a KSpace-specific
 /// communication owned by the concrete wrappers, distinct from the per-atom
 /// halo.

@@ -1,0 +1,38 @@
+# Offline optB88-vdW pin notes — gpw-optb88-vdw
+
+## Functional
+
+CP2K (Hutter recipe, 2019 cp2k-user list):
+
+```
+&XC_FUNCTIONAL
+  &LIBXC
+    FUNCTIONAL XC_GGA_X_OPTB88_VDW
+  &END LIBXC
+  &PW92
+  &END PW92
+&END XC_FUNCTIONAL
+&vdW_POTENTIAL
+  DISPERSION_FUNCTIONAL NON_LOCAL
+  &NON_LOCAL
+    TYPE DRSLL
+  &END NON_LOCAL
+&END vdW_POTENTIAL
+```
+
+libxc exchange parameters (GGA_X_OPTB88_VDW id 139):
+
+- β = 0.003368671161034469
+- γ = 6.981317007977318
+
+ATV: `XcKind::OptB88VdW` + `GpwDft::vdw_df = true`.
+
+## Geometry
+
+Same water dimer as `gpw-vdw-df-ice` / `gpw-rvv10-ice` (12 Å cell,
+DZVP-MOLOPT-SR-GTH, GTH-PBE, CUTOFF 200 Ry).
+
+## Pins
+
+See `regressions/gpw/gpw-optb88-vdw/REFERENCE.md` (filled after first green
+and optional CP2K twin wall).

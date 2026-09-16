@@ -2,7 +2,7 @@
 /// @brief **PRIVATE** EcpIntegrals workspace — semi-local ECP core-Hamiltonian
 ///        integrals ⟨μ|U|ν⟩ over the Cartesian engine AO basis.
 ///
-/// Not a user type: `IntegralPack` builds it from Frame-derived shells and
+/// Not a user type: `internal::IntegralWorkspace` builds it from Frame-derived shells and
 /// adds the resulting U matrix into the nuclear-attraction block of Hcore
 /// BEFORE any Cartesian→spherical sandwich. Never included from a
 /// facade-public header (tests may include it).

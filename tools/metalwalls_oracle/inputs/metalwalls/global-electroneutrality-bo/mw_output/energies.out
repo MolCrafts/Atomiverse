@@ -1,0 +1,4 @@
+# Energy in atomic unit (1 Eh = 2625.499640 kJ/mol)
+# -------------------------------------------------
+# step        Hamiltonian             Total energy           Kinetic energy         Potential energy     Thermostat/barostat en.  External field energy 
+       0  1.463595643076548E-001  1.463595643076548E-001  0.000000000000000E+000  1.463595643076548E-001  0.000000000000000E+000  0.000000000000000E+000

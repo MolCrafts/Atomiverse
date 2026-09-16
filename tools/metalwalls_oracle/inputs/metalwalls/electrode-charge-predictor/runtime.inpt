@@ -1,0 +1,82 @@
+# MetalWalls twin of ATV regression regressions/md/electrode-charge-predictor
+# ===========================================================================
+# 3x3 electrode sites per wall (z = 4 / 16 A) + 4 point ions (+-0.5 e),
+# box 6 x 6 x 20 A, eta = 2.0 1/A, Psi = (0, 1) V, CG electrode charges.
+#
+# Units are ATOMIC UNITS throughout (Bohr, Hartree, e, a.u. of time).
+#   6 A          = 11.33835674775462  Bohr
+#   20 A         = 37.79452249251541  Bohr
+#   eta 2.0 1/A  =  1.058354421806    1/Bohr   (2.0 * 0.529177210903)
+#   Psi 1 V      =  0.036749322175655 Ha/e     (1 / 27.211386245988)
+#   dt 10 fs     =  413.41            a.u.     (41.341 a.u. = 1 fs)
+
+num_steps    30
+timestep     413.41
+temperature  2000
+num_pbc      2
+
+box
+  length 11.33835674775462  11.33835674775462  37.79452249251541
+
+species
+
+  species_type
+    name  Ip
+    count 2
+    charge point 0.5
+    mass  6.9
+    mobile True
+
+  species_type
+    name  Im
+    count 2
+    charge point -0.5
+    mass  6.9
+    mobile True
+
+  species_type
+    name  E1
+    count 9
+    charge gaussian 1.058354421806 0.0
+    mass  12.0
+    mobile False
+
+  species_type
+    name  E2
+    count 9
+    charge gaussian 1.058354421806 0.0
+    mass  12.0
+    mobile False
+
+electrodes
+
+  electrode_type
+    name     E1
+    species  E1
+    potential +0.000000000000000
+
+  electrode_type
+    name     E2
+    species  E2
+    potential +0.036749322175655
+
+  electrode_charges cg 1.0e-10 500
+  charge_neutrality true
+
+interactions
+  coulomb
+    coulomb_rtol  1.0e-12
+    coulomb_rcut  5.60
+    coulomb_ktol  1.0e-12
+
+  lennard-jones
+    lj_rcut 5.60
+    lj_pair Ip Ip 0.01 2.5
+    lj_pair Ip Im 0.01 2.5
+    lj_pair Im Im 0.01 2.5
+
+output
+  default 0
+  step     1
+  charges  1
+  energies 1 Hamiltonian Kinetic Potential Coulomb Coulomb_lr Coulomb_keq0 Coulomb_sr Coulomb_self

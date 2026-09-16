@@ -1,0 +1,66 @@
+# MetalWalls twin of ATV regressions/md/piston-electrode-pz
+# ---------------------------------------------------------
+# Static (step-0) readout of the LJ z-force and P_z = F_z/A on the
+# rigid upper piston electrode.  All charges are zero, so every Coulomb
+# term vanishes and the electrode force is pure Lennard-Jones.
+
+num_steps 1
+timestep  2.067068666824650E+01
+temperature 300.0
+
+num_pbc 2
+
+species
+
+  species_type
+    name Ar
+    count 16
+    charge point 0.0
+    mass 39.948
+
+  species_type
+    name Wlo
+    count 4
+    charge gaussian 0.9563 0.0
+    mass 196.9665
+    mobile False
+
+  species_type
+    name Wup
+    count 4
+    charge gaussian 0.9563 0.0
+    mass 12.011
+    mobile False
+
+electrodes
+
+  electrode_type
+    name Wlo
+    species Wlo
+    potential -0.2500
+
+  electrode_type
+    name Wup
+    species Wup
+    potential +0.2500
+    piston 0.0 -1
+
+  electrode_charges cg 1.e-12 100
+  charge_neutrality true
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-6
+    coulomb_rcut 8.503767564560226E+00
+    coulomb_ktol 1.0e-7
+
+  lennard-jones
+    lj_rcut 8.503767564560226E+00
+    lj_pair Ar  Ar  9.648533052529773E+00 3.000000000000000E+00
+    lj_pair Ar  Wlo 9.648533052529773E+00 3.000000000000000E+00
+    lj_pair Ar  Wup 9.648533052529773E+00 3.000000000000000E+00
+
+output
+  step 1
+  energies 1 Hamiltonian Kinetic Potential Coulomb van_der_Waals Lennard-Jones Piston_work
+  elec_forces 1

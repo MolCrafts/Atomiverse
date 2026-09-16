@@ -12,7 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
@@ -35,14 +35,14 @@ cpu::Frame dimer(int ta, int tb, double r) {
     f.span(ATV::kAtom_mass)[0] = f.span(ATV::kAtom_mass)[1] = 1.0;
     f.span(ATV::kAtom_type)[0] = ta;
     f.span(ATV::kAtom_type)[1] = tb;
-    f.simbox = ATV::cpu::Box::cubic(40.0);
+    f.box = ATV::cpu::Box::cubic(40.0);
     return f;
 }
 
 double energy_of(cpu::Frame& f, cpu::PairLJCut pair, double cutoff) {
     cpu::Evaluate eval;
     eval.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3, 1, 0, true});
-    eval.add_potential(std::move(pair));
+    eval.set_evaluator(std::move(pair));
     eval.enable_timing(false);
     eval.build();
     eval.run(f);

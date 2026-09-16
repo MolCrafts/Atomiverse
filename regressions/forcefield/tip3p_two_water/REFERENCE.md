@@ -2,7 +2,7 @@
 
 ## Roles
 
-- `cpu::ForceField` — owns potential objects (`set_potential` / `add_potential` / …).
+- `cpu::ForceField` — owns potential objects (`set_potential` / `set_evaluator` / …).
 - `cpu::Evaluate` — one-pass **Driver** preset (single-point energy/force).
 - `ff.apply(eval)` moves the bag into the driver before `build`/`run`.
 

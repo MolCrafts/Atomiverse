@@ -1,0 +1,67 @@
+! CP2K twin for regressions/gpw/ot-smearing — metallic FD smear on BCC Na.
+! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
+!
+! CP2K product OT does not combine with SMEAR (fixed integer OT occupations);
+! the offline absolute twin is therefore the same Quickstep DIIS + FERMI_DIRAC
+! setup as tools/cp2k_oracle/inputs/gpw-metallic-smearing/na_bcc_fermi_dirac.inp.
+! Atomiverse product gate is OT+smear ≡ DIIS+smear free energy (identity).
+!
+! System: BCC Na conventional a=4.225 Å, 2 atoms, GTH-PBE-q9 + DZVP-MOLOPT-SR-GTH,
+! PADE, CUTOFF 150, MP 2x2x2, FERMI_DIRAC kT≈0.02 Ry, ADDED_MOS 4.
+
+&GLOBAL
+  PROJECT na_ot_fermi_dirac
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 150
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 80
+      &SMEAR ON
+        METHOD FERMI_DIRAC
+        ELECTRONIC_TEMPERATURE [K] 3157.75
+      &END SMEAR
+      ADDED_MOS 4
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 4.225 4.225 4.225
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Na 0.0 0.0 0.0
+      Na 2.1125 2.1125 2.1125
+    &END COORD
+    &KIND Na
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q9
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

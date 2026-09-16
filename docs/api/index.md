@@ -4,7 +4,7 @@ This page is the front door to the generated API reference. It is not meant to
 duplicate the class and file pages that Doxygen already generates. Its job is to
 help you find the right part of the reference quickly.
 
-All public code examples in Atomiverse assume **C++17 or later**.
+All public code examples in Atomiverse assume **C++20 or later**.
 
 ## How To Use The Generated Reference
 
@@ -28,16 +28,19 @@ Start with these types:
 
 ### Build staged workflows
 
-Start with these facade headers:
+Start with these headers (`core/` holds the device-independent contracts; the
+CPU loop node lives under `cpu/driver/`):
 
-- [`Driver`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/driver.h)
-- [`Plan`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/plan.h)
-- [`Phase` enums](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/stage.h)
-- [`Verdict` / `ConvergenceMetrics`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/loop.h) — the vocabulary termination is decided in
+- [`cpu::Driver<PhaseEnum>` — the loop node every CPU preset derives from](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/driver.h)
+- [`Driver<PhaseEnum, DeviceTag>` — the backend-independent dispatch template](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/driver_template.h)
+- [`Plan`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/plan.h)
+- [`Phase` enums + `slot_of` / `slot_count`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/stage.h)
+- [`Verdict` / `ConvergenceMetrics`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/verdict.h) — the vocabulary termination is decided in
+- [`IterationStatus`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/iteration_status.h) — the per-loop status a driver owns
 
 ### Decide when a run stops
 
-The loop node (`cpu::CPUDriver<P>`, which every CPU driver derives from) has two
+The loop node (`cpu::Driver<P>`, which every CPU driver derives from) has two
 policy slots. Both are user-definable from outside the library:
 
 - [`cpu::Criterion`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/component/criterion.h) —
@@ -47,21 +50,23 @@ policy slots. Both are user-definable from outside the library:
   ([`cpu/driver/criteria.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/criteria.h)).
 - [`cpu::OutcomePolicy`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/outcome_policy.h) —
   *does this iteration count?* `driver.set_outcome(p)`, singular. Ships `Metropolis`.
-- [`cpu::SubDriver`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/sub_driver.h) —
-  put one driver in another's plan; the child runs on the parent's runtime.
+- [`cpu::DriverNode`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/driver_node.h) —
+  the erased node interface that lets a Plan slot hold a nested driver instead
+  of a component; the child runs on the parent's runtime. There is no separate
+  `SubDriver` wrapper: a Driver *is* an executable node.
 
 ### Run molecular dynamics and minimization
 
 Start with these CPU driver and component headers (the ones the tutorials
 use; each has a CUDA counterpart under `cuda/` with the same name):
 
-- [`cpu::md::MD`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/md/md.h)
-- [`cpu::md::VelocityVerlet`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/md/velocity_verlet.h)
+- [`cpu::md::MD`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/dynamics/md.h)
+- [`cpu::md::VelocityVerlet`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/dynamics/velocity_verlet.h)
 - [`cpu::md::NeighborList`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/neighbor/neighbor_list.h)
 - [`cpu::PairLJCut`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/potentials/pair_lj_cut.h)
-- [`cpu::minimizer::Minimize`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/minimizer/minimize.h) + `LBFGS` / `CG`
+- [`cpu::minimizer::Minimize`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/minimize/minimize.h) + `LBFGS` / `CG`
 
-The CUDA equivalents are `cuda::md::MD` (`cuda/md/md.cuh`),
+The CUDA equivalents are `cuda::md::MD` (`cuda/dynamics/md.cuh`),
 `cuda::PairLJCut`, `cuda::minimizer::Minimize`, etc. — same API, GPU-resident.
 
 ### Run electronic-structure calculations on the CPU
@@ -74,28 +79,41 @@ Start with these CPU headers:
 - [`scf_guess.h` — SCFInitialGuess](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/scf_guess.h)
 - [`gradient_result.h` — GradientResult (the `forces()` return)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/gradient_result.h)
 - [`XCType`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)
+- [`cpu::pw::PW`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_solver.h) + [`cpu::pw::PWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_evaluator.h) — plane-wave DFT
+- [`cpu::gpw::GpwDft`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_solver.h) + [`cpu::gpw::GPWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_evaluator.h) — GPW DFT (bind the *evaluator*: it is the Frame-shaped entry point)
+- [`cpu::semiempirical::AM1` / `RM1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/am1_solver.h) — NDDO
+- [`cpu::semiempirical::DFTB2`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/dftb2.h) (also `DFTB0`, `DFTB3`) — SCC-DFTB on in-tree Slater-Koster tables
+- [`cpu::semiempirical::GFN1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/gfn1.h) (also `GFN0`, `GFN2`, `IPEA`) — extended tight binding, energy + analytic forces (H/C/N/O)
 
 ### Run SCF workflows on the CUDA backend
 
-CUDA SCF evaluator (device path; host public API is still `cpu::scf::RHF` etc.)
-component, not a staged driver. Start with these headers:
+CUDA SCF presents the same public shape as CPU —
+`cuda::scf::RHF{basis}.run(frame)` / `.forces(frame)`, `Frame` in and out — but
+**not the same coverage**: restricted HF only (no UHF/KS), device-native
+integrals and analytic forces over STO-3G s/p shells (l ≤ 1, H…O), and
+`forces()` throws outside that envelope rather than falling back. See
+[Switching backends](../user-guide/backend-switching.md). Start with these
+headers:
 
+- [`cuda::scf::RHF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/rhf.cuh)
 - [`cuda::scf::SCFEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/scf_evaluator.cuh)
-- [`cuda::scf::SCFSolver`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/scf_solver.cuh)
-- [`cuda::Evaluate`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/driver/evaluate.cuh)
-- [`cuda::single_point`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/driver/single_point.cuh)
+- [`cuda::Evaluate`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/evaluate/evaluate.cuh)
+- [`cuda::single_point`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/evaluate/single_point.cuh)
 
 ### Record output and analyze results
 
 Start with these types:
 
-- [`cpu::Thermo`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/recorder/thermo.h)
-- [`cpu::write_frame_xyz` / `cpu::write_frame_zarr` (molrs-backed frame writers)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/io/frame_writer.h)
-- [`ATV::RDF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observer/rdf.h)
-- [trajectory analysis (`cpu::compute::*` batch computes + streaming accumulators)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observer/trajectory_metrics.h)
-- [`cpu::XYZ`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/recorder/xyz.h)
-- [`mulliken_charge` and related helpers](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observer/mulliken.h)
-- [`DensityGrid`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observer/density.h)
+- [`cpu::Thermo`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/thermo.h)
+- [`cpu::write_frame_xyz` / `cpu::write_frame_zarr` (molrs-backed single-frame writers; the latter writes a `*.mrec` checkpoint)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/io/frame_writer.h)
+- [`cpu::MrecRecorder` (streaming `*.mrec` MD trajectory Recorder — `set_record`, step stride, `time` axis from the integrator; needs the molrs TrajectoryWriter bridge)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/mrec_recorder.h)
+- [`cpu::MrecWriter` (bare streaming writer beneath the Recorder)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/mrec.h)
+- [`ATV::RDF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/rdf.h)
+- [trajectory analysis (`cpu::compute::*` batch computes + streaming accumulators)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/trajectory_metrics.h)
+- [`cpu::XyzRecorder` (MD trajectory Recorder — `set_record`, step stride)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/xyz_recorder.h)
+- [`cpu::XYZ` (bare XYZ writer beneath the Recorder)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/xyz.h)
+- [`mulliken_charge` and related helpers](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/mulliken.h)
+- [`DensityGrid`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/density.h)
 
 ## When To Leave The API Reference
 

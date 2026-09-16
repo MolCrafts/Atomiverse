@@ -1,0 +1,44 @@
+# Offline pin notes — gpw-mbd-kpoint-forces
+
+## Policy
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` has **no MBD**. Oracle is **libMBD**
+(energy) + **force dual-gate** + **multi-k product wiring** (same policy as
+`gpw-mbd-forces` / `gpw-mbd-ice`).
+
+## Residual closed
+
+Multi-k `assemble_gpw_forces_kpoints` previously counted `mbd` for mutual
+exclusion but skipped adding \(F_{\mathrm{MBD}}\). Product path now matches Γ.
+
+## Pins
+
+### Water dimer — free-atom MBD@rsSCS (β=0.83, a=6)
+
+Geometry (Å):
+
+```
+O  0.000000  0.000000  0.000000
+H  0.758602  0.000000  0.504284
+H  0.758602  0.000000 -0.504284
+O  3.000000  0.000000  0.000000
+H  3.758602  0.000000  0.504284
+H  3.758602  0.000000 -0.504284
+```
+
+Å→Bohr: `1/0.52917720859` (ATV).
+
+E_disp = −1.4928804171407961e-03 Ha (libMBD git 88069c6).
+
+Force dual-gate (never live in ctest):
+
+```text
+max |F_product − F_fd(h=1e-5)| ≤ 1e-6 Ha/Bohr
+|sum F| ≤ 1e-8 Ha/Bohr
+```
+
+### H₂ multi-k wiring
+
+- Cell 12³ Bohr, k-mesh 1×1×2, PADE + DZV-GTH-PADE, bond 1.0 Bohr.
+- `mbd=true`, free-atom (default `mbd_k_mesh={0,0,0}`).
+- Gate: \(F^{k+\mathrm{MBD}}-F^{k}\approx F_{\mathrm{MBD}}^{\mathrm{geom}}\) to 1e-8 Ha/Bohr.

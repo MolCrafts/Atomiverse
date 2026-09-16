@@ -16,13 +16,13 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/longrange/pme_influence.h"
-#include "atomiverse/longrange/pme_spline.h"
+#include "atomiverse/cpu/longrange/pme_influence.h"
+#include "atomiverse/cpu/longrange/pme_spline.h"
 
 #ifdef ATV_HAS_MPI
 #include <mpi.h>
 
-#include "atomiverse/cpu/comm/domain.h"
+#include "atomiverse/cpu/communication/domain.h"
 #endif
 
 namespace ATV {
@@ -62,7 +62,7 @@ KSpacePME::KSpacePME(KSpacePME&& other) noexcept
 }
 
 void KSpacePME::ensure_grid(const cpu::Frame& frame, bool initial_build) {
-    const auto& box = frame.simbox;
+    const auto& box = frame.box;
     if (have_grid_ && box_identity_ == &box && box.revision() == cell_revision_)
         return;
 
@@ -121,10 +121,9 @@ void KSpacePME::ensure_grid(const cpu::Frame& frame, bool initial_build) {
 
     // Influence depends on inv_cell (and α, mesh). Rebuild whenever the cell
     // or mesh changes — not every MD step.
-    longrange::pme_build_influence_tables(K_, bsp_mod_[0].data(),
-                                          bsp_mod_[1].data(),
-                                          bsp_mod_[2].data(), box.inv_cell(),
-                                          alpha_, influence_);
+    longrange::pme_build_influence_tables(
+        K_, bsp_mod_[0].data(), bsp_mod_[1].data(), bsp_mod_[2].data(),
+        box.inv_cell(), alpha_, influence_);
 
     box_identity_ = &box;
     cell_revision_ = box.revision();
@@ -154,10 +153,15 @@ void KSpacePME::compute(const LaunchContext& ctx) {
     auto& f = ctx.frame;
     ensure_grid(f, false);
 
-    const auto* dd = ctx.runtime.md.dd;
-    const bool mpi = dd && ctx.runtime.mpi_size > 1;
-    const int n_local = mpi ? dd->n_local : f.nlocal();
+    // Serial: Frame only. Multi-rank: owned_count → DD n_local.
+    const int n_local = owned_count(ctx);
+#ifdef ATV_HAS_MPI
+    const bool mpi = multi_rank_dd(ctx.runtime);
+    const auto* dd = mpi ? ctx.runtime.md.dd : nullptr;
     const bool first_rank = !mpi || ctx.runtime.mpi_rank == 0;
+#else
+    const bool first_rank = true;
+#endif
     ensure_atom_capacity(n_local, false);
 
     const int ntot = K_[0] * K_[1] * K_[2];
@@ -170,11 +174,12 @@ void KSpacePME::compute(const LaunchContext& ctx) {
     AccReal* __restrict sp_fy = f.span(kAtom_fy);
     AccReal* __restrict sp_fz = f.span(kAtom_fz);
 
-    const auto& ic = f.simbox.inv_cell();
-    const double vol = f.simbox.volume();
+    const auto& ic = f.box.inv_cell();
+    const double vol = f.box.volume();
 
     // Zero charge grid (complex). memset is faster than per-element fill.
-    std::memset(grid_.data(), 0, static_cast<std::size_t>(ntot) * sizeof(grid_[0]));
+    std::memset(grid_.data(), 0,
+                static_cast<std::size_t>(ntot) * sizeof(grid_[0]));
 
     // ── Spread owned charges onto the grid ─────────────────────────────
     longrange::pme_fill_atom_splines(x, y, z, n_local, ic, K_, order_,
@@ -206,15 +211,14 @@ void KSpacePME::compute(const LaunchContext& ctx) {
     }
 #ifdef ATV_HAS_MPI
     if (mpi)
-        MPI_Bcast(reinterpret_cast<double*>(grid_.data()), 2 * ntot,
-                  MPI_DOUBLE, 0, dd->cart_comm);
+        MPI_Bcast(reinterpret_cast<double*>(grid_.data()), 2 * ntot, MPI_DOUBLE,
+                  0, dd->cart_comm);
 #endif
 
     // ── Interpolate reciprocal forces onto owned atoms ─────────────────
-    longrange::pme_interpolate_forces(q, n_local, order_, K_, ic, vol,
-                                      base_.data(), theta_.data(),
-                                      dtheta_.data(), grid_.data(), sp_fx,
-                                      sp_fy, sp_fz);
+    longrange::pme_interpolate_forces(
+        q, n_local, order_, K_, ic, vol, base_.data(), theta_.data(),
+        dtheta_.data(), grid_.data(), sp_fx, sp_fy, sp_fz);
 
     // ── Self energy (per-rank owned) + net-charge (rank 0) ─────────────
     double qsq_local = 0, q_local = 0;

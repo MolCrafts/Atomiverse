@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/eam.h"
@@ -52,11 +52,11 @@ int main() {
                         frame.span(ATV::kAtom_type)[idx] = 29;
                         ++idx;
                     }
-        frame.simbox = ATV::cpu::Box::cubic(a * n_cell);
+        frame.box = ATV::cpu::Box::cubic(a * n_cell);
 
-        if (frame.simbox.length(0) <= 2.0 * cutoff) {
+        if (frame.box.length(0) <= 2.0 * cutoff) {
             std::printf("FAIL: box %.2f A too small for cutoff %.2f A\n",
-                        frame.simbox.length(0), cutoff);
+                        frame.box.length(0), cutoff);
             return 1;
         }
 

@@ -34,7 +34,7 @@
 #include "atomiverse/cpu/scf/rhf.h"
 
 using namespace ATV;
-using cpu::scf::IntegralPack;
+using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::SlaterDeterminant;
@@ -54,7 +54,7 @@ cpu::Frame make_h2(double r_angstrom) {
     f.span(kAtom_z)[1] = r_angstrom;
     f.span(kAtom_type)[0] = 1;
     f.span(kAtom_type)[1] = 1;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -65,7 +65,7 @@ struct H2Reference {
 
 H2Reference make_h2_reference(double r_angstrom) {
     auto frame = make_h2(r_angstrom);
-    IntegralPack pack{frame, cpu::scf::BasisSet::STO3G, 0,
+    cpu::scf::internal::IntegralWorkspace pack{frame, cpu::scf::BasisSet::STO3G, 0,
                       /*compute_eri=*/true};
     const double s12 = pack.S(0, 1);
     const double cg = 1.0 / std::sqrt(2.0 * (1.0 + s12));
@@ -137,9 +137,8 @@ Synthetic make_synthetic(int n, int no, std::uint64_t seed) {
                 for (int l = 0; l < n; ++l)
                     eri(i, j, k, l) =
                         (raw(i, j, k, l) + raw(j, i, k, l) + raw(i, j, l, k)
-                         + raw(j, i, l, k) + raw(k, l, i, j)
-                         + raw(l, k, i, j) + raw(k, l, j, i)
-                         + raw(l, k, j, i))
+                         + raw(j, i, l, k) + raw(k, l, i, j) + raw(l, k, i, j)
+                         + raw(k, l, j, i) + raw(l, k, j, i))
                         / 8.0;
     return {SlaterDeterminant{C, eps, occ, no}, eri};
 }

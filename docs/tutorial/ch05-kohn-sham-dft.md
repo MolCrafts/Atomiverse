@@ -1,15 +1,6 @@
-# Chapter 5: Unrestricted Kohn-Sham DFT (UKS)
+# Chapter 5. Kohn–Sham DFT
 
-| | |
-|---|---|
-| **Example** | [`examples/04_uks.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/04_uks.cpp) |
-| **Results** | [`examples/results/04_uks.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/04_uks.json) |
-
-```bash
-cmake --build build --target 04_uks && ./build/examples/04_uks
-```
-
-## Live atomic and H₂ numbers (UKS-LSDA)
+## Live Atomic and H₂ Numbers
 
 | System | Method | \(E_\mathrm{total}\) (Ha) |
 |--------|--------|--------------------------:|
@@ -18,7 +9,7 @@ cmake --build build --target 04_uks && ./build/examples/04_uks
 | H | UKS-LSDA | **−0.435670** |
 | Li | UKS-LSDA | **−7.221302** |
 
-H₂ scan: UHF vs UKS-LSDA from the same binary (STO-3G).
+H₂ scan: UHF vs UKS-LSDA, STO-3G.
 
 ```molplot preset="molplot" theme="auto" width="100%" aspect="16:9"
 mark: {type: line, point: true, tooltip: true, strokeWidth: 2}
@@ -60,7 +51,7 @@ it keeps the same spin-resolved SCF skeleton, but it replaces explicit
 Hartree-Fock exchange with an exchange-correlation functional of the density.
 
 The example for this chapter is
-[`examples/04_uks.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/04_uks.cpp). That
+the Practice block below. That
 example runs a closed-shell helium atom, open-shell hydrogen and lithium atoms,
 and a small $\mathrm{H}_2$ dissociation comparison against UHF. It is a good
 bridge from the earlier chapters because it shows clearly what UKS keeps from
@@ -169,11 +160,11 @@ just Hartree-Fock with a different label.
 
 ## Reading The Example
 
-In [`examples/04_uks.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/04_uks.cpp), the
+In the scan, the
 basic call looks like this:
 
 ```cpp
-auto ints = /* IntegralPack is private — use RHF */;
+auto ints = /* use RHF{basis}.run(frame) */;
 cpu::scf::UKS uks(n_alpha, n_beta, XCType::LSDA);
 config.n_radial = 50;
 config.n_angular = 110;
@@ -185,42 +176,20 @@ const auto& uks = solver.run(ints);
 
 > **Element coverage:** like the other Gaussian-basis tutorials, STO-3G here
 > supports elements **H through O (Z = 1–8)**; heavier atoms throw at
-> `IntegralPack constructor (private)` by design rather than returning a wrong number.
+> the method constructor path by design rather than returning a wrong number.
 
 The spin counts play the same role they did in UHF. The new ingredient is the
 choice of exchange-correlation functional and the numerical grid used to
 evaluate it. The example uses LSDA because it is the clearest first step.
 
-## How To Read `examples/04_uks.cpp`
+## Practice Notes
 
-[`examples/04_uks.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/04_uks.cpp) is a compact
-survey of what this method changes. The helium atom shows that a closed-shell
-singlet fits naturally into the same framework. The hydrogen and lithium atoms
-show that the same code also handles open-shell occupations. The
-$\mathrm{H}_2$ scan then lets you compare UKS-LSDA against UHF on the same
-minimal-basis molecular problem.
-
-Read the printed decomposition carefully. It teaches a habit that is worth
-keeping in every DFT calculation: when a total energy looks surprising, the
-way to debug it is not to stare at the final scalar. It is to ask whether the
-one-electron, Coulomb, and exchange-correlation pieces each make sense on their
-own, and whether the grid-integrated electron counts are close to the intended
-occupations.
-
-## Running The Example
-
-Build and run it with
-
-```bash
-cmake -B build -DATV_BUILD_CUDA=OFF -DATV_BUILD_HF=ON -DATV_BUILD_EXAMPLES=ON
-cmake --build build --target 04_uks
-./build/examples/04_uks
-```
-
-The printed helium, hydrogen, lithium, and $\mathrm{H}_2$ cases should make one
-point especially clear: once you accept the density-functional point of view,
-closed-shell and open-shell systems still fit into the same self-consistent
-story.
+The helium atom shows that a closed-shell singlet fits the same framework.
+Hydrogen and lithium show open-shell occupations. The H₂ scan compares
+UKS-LSDA against UHF on the same minimal-basis problem. When a total energy
+looks surprising, inspect the one-electron, Coulomb, and exchange-correlation
+pieces separately, and check that grid-integrated electron counts match the
+intended occupations.
 
 ## What Usually Goes Wrong
 

@@ -1,0 +1,56 @@
+# Offline LAMMPS pin for const-pot-charge-observer
+# Parallel-plate toy: two walls (types 1 and 2), fixed charges, no dynamics.
+# Observable: Q_tot per electrode = group sum of q  (compute reduce sum).
+# Units: metal → charge in elementary charges [e].
+#
+# Expected (analytic, identical to reduce):
+#   N_wall = 4, q = ±0.125  →  Q_L = +0.5,  Q_R = -0.5
+#
+# Run (never from ctest):
+#   lmp -in const_pot_charge_observer.in
+
+units metal
+atom_style charge
+boundary p p p
+
+region box block 0 20 0 10 0 10
+create_box 3 box
+
+# Left electrode wall (type 1) at z~1
+create_atoms 1 single 2 2 1
+create_atoms 1 single 6 2 1
+create_atoms 1 single 10 2 1
+create_atoms 1 single 14 2 1
+
+# Right electrode wall (type 2) at z~9
+create_atoms 2 single 2 2 9
+create_atoms 2 single 6 2 9
+create_atoms 2 single 10 2 9
+create_atoms 2 single 14 2 9
+
+# Electrolyte placeholders (type 3) — must not enter electrode sums
+create_atoms 3 single 5 5 5
+create_atoms 3 single 15 5 5
+
+mass 1 12.0
+mass 2 12.0
+mass 3 23.0
+
+set type 1 charge  0.125
+set type 2 charge -0.125
+set type 3 charge  1.0
+
+group left  type 1
+group right type 2
+group ions  type 3
+
+variable qi atom q
+compute ql left  reduce sum v_qi
+compute qr right reduce sum v_qi
+
+thermo_style custom step c_ql c_qr
+thermo 1
+run 0
+
+print "PIN_QL $(c_ql)"
+print "PIN_QR $(c_qr)"

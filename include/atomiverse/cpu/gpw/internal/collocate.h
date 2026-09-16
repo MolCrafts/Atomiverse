@@ -97,9 +97,29 @@ build_compact_basis_grid(const UniformGrid& grid,
 std::vector<double> collocate_density(const CompactBasisGrid& cbg, int nbasis,
                                       const std::vector<double>& P);
 
+/// @brief Dual-spin collocate: one CSR walk yields (ρ_α, ρ_β) for symmetric P^α/P^β.
+///
+/// Bit-identical to two separate `collocate_density` calls (same per-spin FP order).
+/// Used by Γ-UKS to avoid walking χ twice every SCF step.
+void collocate_density_spin(const CompactBasisGrid& cbg, int nbasis,
+                            const std::vector<double>& P_a,
+                            const std::vector<double>& P_b,
+                            std::vector<double>& rho_a,
+                            std::vector<double>& rho_b);
+
 /// @brief Integrate V_uv = Σ_g w φ_u(g) V(g) φ_v(g) over the compact representation.
 std::vector<double> integrate_potential(const CompactBasisGrid& cbg, int nbasis,
                                         const std::vector<double>& V_r);
+
+/// @brief Dual-spin integrate: one CSR walk yields (V^α, V^β) for two grid potentials.
+///
+/// Same triangle+symmetrize algorithm as single-spin `integrate_potential`.
+/// Used by Γ-UKS so α/β share the χ walk every SCF step.
+void integrate_potential_spin(const CompactBasisGrid& cbg, int nbasis,
+                              const std::vector<double>& V_a,
+                              const std::vector<double>& V_b,
+                              std::vector<double>& out_a,
+                              std::vector<double>& out_b);
 
 /// @brief Evaluate every basis function at every grid point.
 /// @param periodic When true, the Gaussian-to-grid displacement uses the

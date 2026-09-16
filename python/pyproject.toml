@@ -9,12 +9,12 @@ build-backend = "scikit_build_core.build"
 name = "atomiverse"
 version = "0.1.0"
 description = "Molecular simulation compute backend (CPU + optional CUDA)"
+license = "GPL-2.0-only"
+license-files = ["../LICENSE"]
 requires-python = ">=3.9"
-dependencies = ["numpy", "molcrafts-molrs==0.7.0", "typer>=0.12"]
+dependencies = ["numpy", "molcrafts-molpy>=0.13.0,<0.14", "typer>=0.12"]
 
 [project.optional-dependencies]
-molpy    = ["molcrafts-molpy==0.7.0"]
-torch    = ["torch"]
 dev      = ["pytest", "pytest-cov", "numpy"]
 # Native extension build (nanobind). Not required for the pure wheel.
 native   = ["nanobind>=2.4"]
@@ -24,13 +24,13 @@ native   = ["nanobind>=2.4"]
 # charting in the `examples` extra, not for documentation builds.
 docs     = [
   "zensical>=0.0.45",
-  "molcrafts-zensical-theme>=0.2.2",
+  "molcrafts-zensical-theme>=0.2.3",
 ]
 # Python examples (pw_qe_compare, …): paper plots via molplot; systems via molpy.
 # Do not add matplotlib or ASE here — use the MolCrafts stack only.
 examples = [
   "molcrafts-molplot>=0.1.2",
-  "molcrafts-molpy==0.7.0",
+  "molcrafts-molpy==0.13.1",
 ]
 
 [tool.pytest.ini_options]
@@ -86,6 +86,9 @@ ATV_BUILD_BENCHMARKS = "OFF"
 ATV_BUILD_EXAMPLES   = "OFF"
 ATV_BUILD_PW         = {env = "ATV_BUILD_PW",  default = "OFF"}
 ATV_BUILD_HF        = {env = "ATV_BUILD_HF", default = "ON"}
+# Reciprocal-space electrostatics (PME, needs FFTW3): ON so the shipped
+# wheel can run charged periodic systems (CoulLong + KSpacePME).
+ATV_BUILD_KSPACE     = {env = "ATV_BUILD_KSPACE", default = "ON"}
 
 # Optional backends: driven by environment variable with a safe default
 # Override: ATV_BUILD_CUDA=ON pip install .
@@ -94,11 +97,12 @@ ATV_BUILD_CUDA  = {env = "ATV_BUILD_CUDA",  default = "OFF"}
 # binary is environment-bound, never manylinux-distributable):
 #   ATV_BUILD_LAUNCHER=ON pip install .
 ATV_BUILD_LAUNCHER = {env = "ATV_BUILD_LAUNCHER", default = "OFF"}
-ATV_BUILD_TORCH = {env = "ATV_BUILD_TORCH", default = "OFF"}
-ATV_USE_LIBXC   = {env = "ATV_USE_LIBXC",  default = "OFF"}
 
-# Precision: float (default) or double
-ATV_REAL = {env = "ATV_REAL", default = "float"}
+# Precision tiers: per-atom storage and transient kernel work, each float or
+# double. The engine default is double on both; the wheel keeps that so a pip
+# install and a source build agree numerically.
+ATV_REAL_STORAGE = {env = "ATV_REAL_STORAGE", default = "double"}
+ATV_REAL_WORK    = {env = "ATV_REAL_WORK",    default = "double"}
 
 # ── Environment-specific overrides ────────────────────────────────────────────
 

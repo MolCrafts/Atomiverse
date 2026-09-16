@@ -34,10 +34,10 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/comm/halo_exchange.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
+#include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
@@ -150,7 +150,7 @@ cpu::Frame make_axis_crossing_chains(double box_len) {
     }
     frame.build_special_list();
 
-    frame.simbox = ATV::cpu::Box::cubic(box_len);
+    frame.box = ATV::cpu::Box::cubic(box_len);
     return frame;
 }
 
@@ -169,7 +169,7 @@ BondedEnergies brute_force_bonded(const cpu::Frame& f) {
     const auto angle_atom = f.span(kAtom_angle_atom);
     const auto num_dihedral = f.span(kAtom_num_dihedral);
     const auto dihedral_atom = f.span(kAtom_dihedral_atom);
-    const double L = f.simbox.cell()(0, 0);
+    const double L = f.box.cell()(0, 0);
     const int n = f.nlocal();
     const double bk = bond_K_eV();
     const double ak = angle_K_eV();
@@ -284,15 +284,13 @@ TEST(BondedEnergyBruteForce, PerTermEnergyMatchesBruteForce) {
     ASSERT_GT(std::abs(bf.dihedral), 1e-9) << "degenerate dihedral oracle";
 
     cpu::md::MD sim;
-    sim.add(cpu::md::VelocityVerlet{0.0}); // dt = 0 → positions frozen
+    sim.set_integrator(
+        cpu::md::VelocityVerlet{0.0}); // dt = 0 → positions frozen
+    sim.set_neighbor(cpu::md::NeighborList<>{cutoff});
     sim.on(ATV::md::Phase::force)
         .add(cpu::BondHarmonic{{bond_K_eV()}, {kBondR0}})
         .add(cpu::AngleHarmonic{{angle_K_eV()}, {kAngleTheta0}})
         .add(cpu::DihedralMultiHarmonic{{dihedral_Cn_eV()}});
-    // Bonded-only sim: no pair evaluator ⇒ halo is not auto-injected, so wire
-    // the ghost exchange explicitly (cutoff must span the longest tuple).
-    sim.on(ATV::md::Phase::pre_force).add(cpu::comm::HaloSend{cutoff}, -20);
-    sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
     sim.build();
 
     sim.run(frame, 1); // one frozen step → Reduce fills global per-term

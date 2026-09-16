@@ -1,0 +1,52 @@
+# Offline pin notes — gpw-xdm-forces
+
+## Policy
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` is only
+`DFTD2|DFTD3|DFTD3(BJ)|DFTD4` — **no** `TYPE XDM`. Canonical density-dependent
+XDM oracles are postg / critic2 / QE. Atomiverse ships the **free-atom**
+foothold (geometry-only multipole moments + CRC α) with a dual pure-Python
+lattice sum + analytic gradient, same energy path as `gpw-xdm-ice`.
+
+## Geometry
+
+Water dimer (Å), same as `gpw-xdm-ice` / `gpw-ts-ice`:
+
+```
+O  0.000000  0.000000  0.000000
+H  0.758602  0.000000  0.504284
+H  0.758602  0.000000 -0.504284
+O  3.000000  0.000000  0.000000
+H  3.758602  0.000000  0.504284
+H  3.758602  0.000000 -0.504284
+```
+
+Cell (periodic pin): ABC 12.0 12.0 12.0 Å, PERIODIC XYZ.
+Å→Bohr: `1/0.52917720859` (ATV).
+Damping: QE NC-PBE a1=0.4283, a2=4.6657338220946531 Bohr (2.4690 Å).
+rcut = 50 Å; image shells via ATV `pair_image_counts` (ceil(rcut/L)+1).
+
+## Energy pin (dual pure-Python ≡ ATV tables)
+
+- Isolated: E_disp = −2.1020435998516220×10⁻³ Ha
+- Periodic: E_disp = −2.1148157612879029×10⁻³ Ha
+
+## Force dual-gate (never live in ctest)
+
+```text
+max |F_product − F_fd(h=1e-5)| ≤ 1e-6 Ha/Bohr
+|sum F| ≤ 1e-8 Ha/Bohr
+```
+
+Isolated free-atom sample F [Ha/Bohr] (ATV order O H H O H H):
+
+| Atom | Fx | Fy | Fz |
+| ---- | -- | -- | -- |
+| O0 | +1.6875829936003448e-04 | 0 | 0 |
+| H0 | +6.9736686381575340e-05 | 0 | −1.3172272218329521e-05 |
+| H1 | +6.9736686381575340e-05 | 0 | +1.3172272218329521e-05 |
+| O1 | −1.1378113807647229e-04 | 0 | 0 |
+| H2 | −9.7225267023356434e-05 | 0 | −1.5448899346549854e-05 |
+| H3 | −9.7225267023356434e-05 | 0 | +1.5448899346549854e-05 |
+
+See `regressions/gpw/gpw-xdm-forces/REFERENCE.md`.

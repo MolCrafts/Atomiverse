@@ -1,25 +1,31 @@
-"""``python -m atomiverse`` Typer entry — CMake-aligned stages.
+"""``python -m atomiverse`` — native build stages **and** script launch.
 
-Pipeline (matches cmake)::
+Build pipeline (matches cmake)::
 
     python -m atomiverse config md pw --mpi --src /path/to/Atomiverse
     python -m atomiverse compile -j 8
     python -m atomiverse install
 
+Run a user script (no cmake)::
+
+    python -m atomiverse run md_lj_argon.py
+    python -m atomiverse md_lj_argon.py          # implicit, if not a subcommand
+
 ``--mpi``, ``--real-storage``, … are **global** config options (not per-module).
 Modules are positional: ``config md pw``.
-
-Raw cmake stdout/stderr is streamed to the terminal.
 """
 
 from __future__ import annotations
 
+import runpy
 import sys
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Sequence
 
 import typer
+
+_BUILD_COMMANDS = frozenset({"config", "compile", "install", "status", "run"})
 
 from atomiverse.cli.build import run_compile, run_config, run_install_stage
 from atomiverse.cli.config import (
@@ -68,6 +74,10 @@ def _print_banner() -> None:
     print("  python -m atomiverse compile -j 8")
     print("  python -m atomiverse install")
     print("  python -m atomiverse status")
+    print()
+    print("Run a Python script (molpy.Frame + atomiverse drivers):")
+    print("  python -m atomiverse run script.py")
+    print("  python -m atomiverse script.py")
     print()
     print("Or from a TOML recipe:")
     print("  python -m atomiverse config --config build.toml --src /path/to/Atomiverse")
@@ -119,7 +129,7 @@ def config_cmd(
         None,
         help=(
             "product modules to enable: md, minimize, mc, evaluate, vib, path, "
-            "pw, gpw, am1, cuda, kspace, potentials, neighbor"
+            "hf, pw, gpw, am1, cuda, kspace, potentials, neighbor"
         ),
         metavar="MODULE",
     ),
@@ -153,7 +163,10 @@ def config_cmd(
     hf: bool = typer.Option(
         False,
         "--hf",
-        help="(rejected) HF/SCF bindings are not available yet",
+        help=(
+            "enable Gaussian SCF — molecular Hartree-Fock / Kohn-Sham DFT, "
+            "ATV_BUILD_HF; the flag spelling of the `hf` module"
+        ),
     ),
     src: Optional[Path] = typer.Option(
         None,
@@ -187,8 +200,11 @@ def config_cmd(
 ) -> None:
     """Configure the native build (``cmake -S -B -D…``). Streams raw cmake output."""
     mod_list = list(modules or [])
+    if hf and "hf" not in mod_list:
+        # --hf is the flag spelling of the `hf` product module.
+        mod_list.append("hf")
     for m in mod_list:
-        if m not in MODULE_TO_DEFINE and m != "hf":
+        if m not in MODULE_TO_DEFINE:
             typer.echo(
                 f"error: unknown module {m!r}; known: {sorted(MODULE_TO_DEFINE)}",
                 err=True,
@@ -219,8 +235,7 @@ def config_cmd(
             merge_unbound_cli(cfg, define)
         if src is None and url is None:
             raise ConfigError(
-                "config requires --src /path/to/Atomiverse "
-                "(staged cmake pipeline)"
+                "config requires --src /path/to/Atomiverse (staged cmake pipeline)"
             )
         source = resolve_source(
             src=str(src) if src is not None else None,
@@ -297,9 +312,42 @@ def status_cmd() -> None:
         raise typer.Exit(code)
 
 
+def run_user_script(script: str, extra: Sequence[str]) -> int:
+    """Execute a user Python script as ``__main__`` (no cmake)."""
+    path = Path(script)
+    if not path.is_file():
+        typer.echo(f"error: script not found: {script}", err=True)
+        return 2
+    sys.argv = [str(path), *list(extra)]
+    try:
+        runpy.run_path(str(path), run_name="__main__")
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        return int(code) if isinstance(code, int) else 1
+    return 0
+
+
+@app.command("run")
+def run_cmd(
+    script: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True),
+    extra: Optional[List[str]] = typer.Argument(
+        None,
+        help="arguments forwarded to the script as sys.argv[1:]",
+    ),
+) -> None:
+    """Run a Python script (the compute path). Frame currency is molpy.Frame."""
+    code = run_user_script(str(script), extra or [])
+    if code != 0:
+        raise typer.Exit(code)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI entry point for tests and ``python -m atomiverse``."""
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and not args[0].startswith("-") and args[0] not in _BUILD_COMMANDS:
+        return run_user_script(args[0], args[1:])
     try:
         result = app(args=args, standalone_mode=False)
         if isinstance(result, int):

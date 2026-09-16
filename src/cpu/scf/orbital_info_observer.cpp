@@ -55,8 +55,8 @@ void OrbitalInfoObserver::launch(const cpu::LaunchContext& ctx) {
         os_.flush();
     }
     if (also_stdout_)
-        std::printf("%6d  %12.6f  %12.6f  %12.6f  %12.6f\n", ctx.step,
-                    homo_eV_, lumo_eV_, gap, ip_koopmans_eV());
+        std::printf("%6d  %12.6f  %12.6f  %12.6f  %12.6f\n", ctx.step, homo_eV_,
+                    lumo_eV_, gap, ip_koopmans_eV());
     ++n_rows_;
 }
 

@@ -12,10 +12,11 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief RM1 semiempirical Evaluator (wraps `RM1Solver` → `NDDOSolver`).
+/// @brief RM1 semiempirical Evaluator (owns concrete `RM1` method).
 class RM1Evaluator : public cpu::Semiempirical {
   public:
-    explicit RM1Evaluator(RM1Config config = {}) : solver_(std::move(config)) {}
+    RM1Evaluator() = default;
+    explicit RM1Evaluator(RM1 method) : solver_(std::move(method)) {}
 
     std::string name() const override { return "rm1_evaluator"; }
 
@@ -32,11 +33,12 @@ class RM1Evaluator : public cpu::Semiempirical {
     void launch(const cpu::LaunchContext& ctx) override;
 
     const RM1Result& last_result() const { return solver_.last_result(); }
-    const RM1Config& config() const { return solver_.config(); }
+    const RM1& method() const { return solver_; }
+    RM1& method() { return solver_; }
     bool gradient_enabled() const noexcept { return compute_force_; }
 
   private:
-    RM1Solver solver_;
+    RM1 solver_;
     bool compute_force_ = true;
 };
 

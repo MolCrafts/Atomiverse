@@ -1,0 +1,75 @@
+! BCC Na collinear UKS + FERMI_DIRAC ENERGY_FORCE
+! Offline twin for gpw-uks-metallic-forces (ATV multi-k UKS free-energy forces).
+! Geometry / basis / PP / cutoff / k-mesh / SMEAR match
+! tools/cp2k_oracle/inputs/gpw-uks-smearing/na_bcc_uks_fermi_dirac.inp
+! (RUN_TYPE ENERGY → ENERGY_FORCE).
+! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
+!
+! Fair wall: single twin job, 1 MPI × fixed OMP (report CP2K ENERGY_FORCE wall).
+! BCC Na is non-magnetic; MULTIPLICITY 3 seeds ferro that collapses under smear.
+
+&GLOBAL
+  PROJECT na_bcc_uks_fd_forces
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 3
+    CHARGE 0
+    &MGRID
+      CUTOFF 150
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 80
+      &SMEAR ON
+        METHOD FERMI_DIRAC
+        ! ~0.02 Ry electronic temperature (k_B T)
+        ELECTRONIC_TEMPERATURE [K] 3157.75
+      &END SMEAR
+      ADDED_MOS 4
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+  &END DFT
+  &SUBSYS
+    &CELL
+      ! BCC conventional cubic a = 4.225 Å
+      ABC 4.225 4.225 4.225
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Na 0.0 0.0 0.0
+      Na 2.1125 2.1125 2.1125
+    &END COORD
+    &KIND Na
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q9
+    &END KIND
+  &END SUBSYS
+  &PRINT
+    &FORCES ON
+    &END FORCES
+  &END PRINT
+&END FORCE_EVAL

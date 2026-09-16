@@ -19,32 +19,41 @@ performance lever). NVT is validated against NIST LJ reference data
 activity expansion / finite-N ⟨V⟩ relation for the exact cut-shifted
 potential (`regressions/mc/gcmc_lj`, `regressions/mc/npt_lj`).
 
-Enhanced sampling and free-energy machinery do not exist at all. Neither does
-any biasing/collective-variable infrastructure to build them on — there is no
-CV layer, no bias component, no PLUMED interface.
+**Enhanced sampling is a working textbook suite, not a PLUMED replacement.** A
+CV protocol (`cpu::bias::CollectiveVariable`) plus `DistanceCV`, `AngleCV`,
+`DihedralCV` and `HarmonicBias` support single-window umbrella sampling
+(`reg_umbrella_harmonic`, `reg_umbrella_angle`, `reg_umbrella_dihedral`).
+Temperature REMD (`cpu::path::Remd`) and Hamiltonian REMD on a λ ladder
+(`cpu::path::HRemd`, `reg_hremd_soft_lambda`) ship as method presets over N
+owned `MD` programs. Soft-core λ TI and **Widom** also exist.
+**Well-tempered metadynamics:** 1D (`Metadynamics1D`, `reg_metad_double_well`)
+and multi-CV (`Metadynamics`, `reg_metad_2d`). **Multi-window WHAM** is a thin
+C++ façade over molrs (`cpu::Wham`, `reg_wham_double_well`). Still absent:
+multi-walker metaD, OPES, ABF, MBAR production PMF protocols. No PLUMED
+interface.
 
 ## 1. Monte Carlo Methods
 
-| Method                                      | CPU | CUDA |
-| ------------------------------------------- | :-: | :--: |
-| Metropolis Monte Carlo                      |  ✓  |   ○  |
-| Canonical Monte Carlo, NVT                  |  ✓  |   ○  |
-| Isothermal–isobaric Monte Carlo, NPT        |  ✓  |   ○  |
-| Grand-canonical Monte Carlo                 |  ✓  |   ○  |
-| Gibbs-ensemble Monte Carlo                  |  ○  |   ○  |
-| Semi-grand-canonical Monte Carlo            |  ○  |   ○  |
-| Configurational-bias Monte Carlo            |  ○  |   ○  |
-| Continuous-fractional-component Monte Carlo |  ○  |   ○  |
-| Hybrid Monte Carlo                          |  ○  |   ○  |
-| Hamiltonian Monte Carlo                     |  ○  |   ○  |
-| Replica-exchange Monte Carlo                |  ○  |   ○  |
-| Simulated tempering                         |  ○  |   ○  |
-| Wang–Landau sampling                        |  ○  |   ○  |
-| Multicanonical sampling                     |  ○  |   ○  |
-| Nested sampling                             |  ○  |   ○  |
-| Kinetic Monte Carlo                         |  ○  |   ○  |
-| Rejection-free kinetic Monte Carlo          |  ○  |   ○  |
-| Reaction-ensemble Monte Carlo               |  ○  |   ○  |
+| Method                                      | CPU | CUDA | Kokkos |
+| ------------------------------------------- | :-: | :--: | :---: |
+| Metropolis Monte Carlo                      |  ✓  |   ○  |   ○  |
+| Canonical Monte Carlo, NVT                  |  ✓  |   ○  |   ○  |
+| Isothermal–isobaric Monte Carlo, NPT        |  ✓  |   ○  |   ○  |
+| Grand-canonical Monte Carlo                 |  ✓  |   ○  |   ○  |
+| Gibbs-ensemble Monte Carlo                  |  ○  |   ○  |   ○  |
+| Semi-grand-canonical Monte Carlo            |  ○  |   ○  |   ○  |
+| Configurational-bias Monte Carlo            |  ○  |   ○  |   ○  |
+| Continuous-fractional-component Monte Carlo |  ○  |   ○  |   ○  |
+| Hybrid Monte Carlo                          |  ○  |   ○  |   ○  |
+| Hamiltonian Monte Carlo                     |  ○  |   ○  |   ○  |
+| Replica-exchange Monte Carlo                |  ○  |   ○  |   ○  |
+| Simulated tempering                         |  ○  |   ○  |   ○  |
+| Wang–Landau sampling                        |  ○  |   ○  |   ○  |
+| Multicanonical sampling                     |  ○  |   ○  |   ○  |
+| Nested sampling                             |  ○  |   ○  |   ○  |
+| Kinetic Monte Carlo                         |  ○  |   ○  |   ○  |
+| Rejection-free kinetic Monte Carlo          |  ○  |   ○  |   ○  |
+| Reaction-ensemble Monte Carlo               |  ○  |   ○  |   ○  |
 
 NPT-MC and GCMC confirmed the prediction this roadmap made before they were
 written: each was a small `OutcomePolicy` plus its mover, with **nothing new
@@ -58,61 +67,72 @@ insertion needs the topology loaders re-run per trial).
 
 ## 2. Enhanced-Sampling Methods
 
-| Method                                  | CPU | CUDA |
-| --------------------------------------- | :-: | :--: |
-| Umbrella sampling                       |  ○  |   ○  |
-| Adaptive umbrella sampling              |  ○  |   ○  |
-| Multidimensional umbrella sampling      |  ○  |   ○  |
-| Well-tempered metadynamics              |  ○  |   ○  |
-| Multiple-walker metadynamics            |  ○  |   ○  |
-| Bias-exchange metadynamics              |  ○  |   ○  |
-| Parallel-bias metadynamics              |  ○  |   ○  |
-| Funnel metadynamics                     |  ○  |   ○  |
-| Adaptive biasing force                  |  ○  |   ○  |
-| Extended-system adaptive biasing force  |  ○  |   ○  |
-| Adaptive biasing potential              |  ○  |   ○  |
-| Accelerated weight histogram            |  ○  |   ○  |
-| Variationally enhanced sampling         |  ○  |   ○  |
-| OPES                                    |  ○  |   ○  |
-| OPES Metad                              |  ○  |   ○  |
-| OPES Expanded                           |  ○  |   ○  |
-| Gaussian accelerated molecular dynamics |  ○  |   ○  |
-| Temperature-accelerated MD              |  ○  |   ○  |
-| Hyperdynamics                           |  ○  |   ○  |
-| Integrated tempering sampling           |  ○  |   ○  |
-| Solute tempering                        |  ○  |   ○  |
-| REST2                                   |  ○  |   ○  |
-| Replica-exchange molecular dynamics     |  ○  |   ○  |
-| Hamiltonian replica exchange            |  ○  |   ○  |
-| Multidimensional replica exchange       |  ○  |   ○  |
-| Expanded-ensemble sampling              |  ○  |   ○  |
-| Weighted-ensemble sampling              |  ○  |   ○  |
-| Transition-path sampling                |  ○  |   ○  |
-| Transition-interface sampling           |  ○  |   ○  |
-| Forward-flux sampling                   |  ○  |   ○  |
-| Milestoning                             |  ○  |   ○  |
+| Method                                  | CPU | CUDA | Kokkos |
+| --------------------------------------- | :-: | :--: | :---: |
+| Umbrella sampling                       |  ✓  |   ○  |   ○  |
+| Adaptive umbrella sampling              |  ○  |   ○  |   ○  |
+| Multidimensional umbrella sampling      |  ○  |   ○  |   ○  |
+| Well-tempered metadynamics              |  ✓  |   ○  |   ○  |
+| Multi-CV well-tempered metadynamics     |  ✓  |   ○  |   ○  |
+| Multiple-walker metadynamics            |  ○  |   ○  |   ○  |
+| Bias-exchange metadynamics              |  ○  |   ○  |   ○  |
+| Parallel-bias metadynamics              |  ○  |   ○  |   ○  |
+| Funnel metadynamics                     |  ○  |   ○  |   ○  |
+| Adaptive biasing force                  |  ○  |   ○  |   ○  |
+| Extended-system adaptive biasing force  |  ○  |   ○  |   ○  |
+| Adaptive biasing potential              |  ○  |   ○  |   ○  |
+| Accelerated weight histogram            |  ○  |   ○  |   ○  |
+| Variationally enhanced sampling         |  ○  |   ○  |   ○  |
+| OPES                                    |  ○  |   ○  |   ○  |
+| OPES Metad                              |  ○  |   ○  |   ○  |
+| OPES Expanded                           |  ○  |   ○  |   ○  |
+| Gaussian accelerated molecular dynamics |  ○  |   ○  |   ○  |
+| Temperature-accelerated MD              |  ○  |   ○  |   ○  |
+| Hyperdynamics                           |  ○  |   ○  |   ○  |
+| Integrated tempering sampling           |  ○  |   ○  |   ○  |
+| Solute tempering                        |  ○  |   ○  |   ○  |
+| REST2                                   |  ○  |   ○  |   ○  |
+| Replica-exchange molecular dynamics     |  ✓  |   ○  |   ○  |
+| Hamiltonian replica exchange            |  ✓  |   ○  |   ○  |
+| Multidimensional replica exchange       |  ○  |   ○  |   ○  |
+| Expanded-ensemble sampling              |  ○  |   ○  |   ○  |
+| Weighted-ensemble sampling              |  ○  |   ○  |   ○  |
+| Transition-path sampling                |  ○  |   ○  |   ○  |
+| Transition-interface sampling           |  ○  |   ○  |   ○  |
+| Forward-flux sampling                   |  ○  |   ○  |   ○  |
+| Milestoning                             |  ○  |   ○  |   ○  |
 
 ## 3. Free-Energy Methods
 
-| Method                                  | CPU | CUDA |
-| --------------------------------------- | :-: | :--: |
-| Free-energy perturbation                |  ○  |   ○  |
-| Thermodynamic integration               |  ○  |   ○  |
-| Multistate Bennett acceptance ratio     |  ○  |   ○  |
-| Umbrella integration                    |  ○  |   ○  |
-| Potential-of-mean-force calculation     |  ○  |   ○  |
-| Adaptive integration of mean force      |  ○  |   ○  |
-| Jarzynski equality                      |  ○  |   ○  |
-| Crooks fluctuation theorem              |  ○  |   ○  |
-| Nonequilibrium switching                |  ○  |   ○  |
-| Bidirectional nonequilibrium estimation |  ○  |   ○  |
-| Widom insertion                         |  ○  |   ○  |
-| Absolute solvation free energy          |  ○  |   ○  |
-| Relative binding free energy            |  ○  |   ○  |
-| Absolute binding free energy            |  ○  |   ○  |
-| Double-decoupling method                |  ○  |   ○  |
-| Alchemical lambda dynamics              |  ○  |   ○  |
-| Constant-pH free-energy calculation     |  ○  |   ○  |
+| Method                                  | CPU | CUDA | Kokkos |
+| --------------------------------------- | :-: | :--: | :---: |
+| Free-energy perturbation                |  ✓  |   ○  |   ○  |
+| Thermodynamic integration               |  ✓  |   ○  |   ○  |
+| Multistate Bennett acceptance ratio     |  ○  |   ○  |   ○  |
+| Umbrella integration                    |  ○  |   ○  |   ○  |
+| Weighted histogram analysis method      |  ✓  |   ○  |   ○  |
+| Potential-of-mean-force calculation     |  ○  |   ○  |   ○  |
+| Adaptive integration of mean force      |  ○  |   ○  |   ○  |
+| Jarzynski equality                      |  ○  |   ○  |   ○  |
+| Crooks fluctuation theorem              |  ○  |   ○  |   ○  |
+| Nonequilibrium switching                |  ○  |   ○  |   ○  |
+| Bidirectional nonequilibrium estimation |  ○  |   ○  |   ○  |
+| Widom insertion                         |  ✓  |   ○  |   ○  |
+| Absolute solvation free energy          |  ○  |   ○  |   ○  |
+| Relative binding free energy            |  ○  |   ○  |   ○  |
+| Absolute binding free energy            |  ○  |   ○  |   ○  |
+| Double-decoupling method                |  ○  |   ○  |   ○  |
+| Alchemical lambda dynamics              |  ○  |   ○  |   ○  |
+| Constant-pH free-energy calculation     |  ○  |   ○  |   ○  |
 
-Alchemical free energy additionally needs soft-core potentials, which are also
-absent (see [Force Fields](force-fields.md#2-classical-nonbonded-potentials)).
+Umbrella *samples* are collected by `HarmonicBias` on MD. **Multi-window WHAM**
+ships as `cpu::Wham` (thin C++ over molrs histogram math;
+`reg_wham_double_well`) — free-energy / PMF reconstruction from pre-binned
+windows, not a turnkey multi-window campaign driver. **Widom insertion** ships
+as `cpu::Widom` (Observer / snapshot estimator): μ_ex = −kT ln⟨e^{−βΔU}⟩ via
+ghost insertions (LJ cut-and-shift or hard sphere). Not GCMC; not absolute
+solvation protocols. Soft-core LJ/Coulomb for alchemical work is
+`cpu::PairLJSoft` / `cpu::PairCoulSoft`. **Kirkwood TI** on fixed soft LJ
+(`dU_dlambda`, `reg_fep_soft_dimer`) is the free-energy *primitive* — not a
+multi-window BAR/MBAR campaign (see
+[Force Fields](force-fields.md#2-classical-nonbonded-potentials)).

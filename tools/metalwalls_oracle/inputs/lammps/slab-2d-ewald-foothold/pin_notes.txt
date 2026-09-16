@@ -1,0 +1,14 @@
+Generated offline with:
+  /home/jicli594/.local/x86_64/bin/lmp  (LAMMPS develop / patch_30Mar2026-1074-g7f680de296)
+  units metal; boundary p p f
+  box 12x12x20; 4x +1 at z=5, 4x -1 at z=15
+  pair coul/long 5.9; kspace ewald 1e-6; kspace_modify gewald 0.5; kspace_modify slab 3.0
+  run 0
+
+E_TOTAL = 63.0848970842656 eV
+E_LONG  = 63.0848970842656 eV  (E_COUL real-space = 0 with cutoff 5.9)
+mean Fz on + plane = +2.51351 eV/A
+mean Fz on - plane = -2.51351 eV/A
+|Fx|,|Fy| ~ machine epsilon
+
+ctest must not invoke lmp.

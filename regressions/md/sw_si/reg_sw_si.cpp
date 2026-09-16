@@ -9,7 +9,7 @@
 #include <cstdio>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/sw.h"
@@ -53,9 +53,9 @@ int main() {
                         frame.span(ATV::kAtom_type)[idx] = 14;
                         ++idx;
                     }
-        frame.simbox = ATV::cpu::Box::cubic(a * n_cell);
+        frame.box = ATV::cpu::Box::cubic(a * n_cell);
 
-        if (frame.simbox.length(0) <= 2.0 * cutoff) {
+        if (frame.box.length(0) <= 2.0 * cutoff) {
             std::printf("FAIL: box too small for the cutoff\n");
             return 1;
         }
@@ -117,7 +117,7 @@ int main() {
                     ff.span(ATV::kAtom_type)[fi] = 14;
                     ++fi;
                 }
-    ff.simbox = ATV::cpu::Box::cubic(a_fcc * n_fcc_cell);
+    ff.box = ATV::cpu::Box::cubic(a_fcc * n_fcc_cell);
 
     cpu::Evaluate eval_fcc;
     eval_fcc.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3, 1, 0, true});

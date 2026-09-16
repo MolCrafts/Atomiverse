@@ -1,0 +1,74 @@
+# CP2K twin sketch for regressions/dynamics/second-gen-cpmd-uks-ot (offline oracle —
+# never run at ctest/regression time). O2 triplet NVE Quickstep UKS with
+# second-generation CP + OT corrector: EXTRAPOLATION ASPC + &OT + limited MAX_SCF.
+# NOTE (2026-07-26): no cp2k binary on the worker host — unexecuted sketch.
+&GLOBAL
+  PROJECT o2_uks_sgcp_ot_nve
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 8
+    TIMESTEP 0.5
+    TEMPERATURE 10.0
+  &END MD
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    UKS
+    MULTIPLICITY 3
+    &MGRID
+      CUTOFF 200
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+      # Second-generation CP: ASPC predictor-corrector (Kolafa 2004).
+      EXTRAPOLATION ASPC
+      EXTRAPOLATION_ORDER 1
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-5
+      # Limited corrector budget — the SGCP signature vs full BOMD MAX_SCF.
+      MAX_SCF 5
+      &OT
+        PRECONDITIONER FULL_SINGLE_INVERSE
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 1
+        EPS_SCF 1.0E-5
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      O  6.0000  6.0000  5.39625
+      O  6.0000  6.0000  6.60375
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

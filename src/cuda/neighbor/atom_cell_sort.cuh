@@ -5,7 +5,7 @@
 ///
 /// Spec multi-gpu-atom-cell-sort-01-permute. Reorders the owned atoms
 /// ([0, n_local)) of a `cuda::Frame` by their neighbor-grid cell index — the
-/// SAME cell convention `nlist_direct.cu::cell_of` uses to bin atoms for the
+/// SAME cell convention `atom cell_of convention` uses to bin atoms for the
 /// per-atom Verlet build — permuting EVERY per-atom array consistently:
 ///   - LJ SoA:  x y z vx vy vz fx fy fz mass charge type tag image
 ///   - bonded SoA (multi-GPU per-atom topology, partners as GLOBAL tags):

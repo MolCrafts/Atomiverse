@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
 #include <vector>
 
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/driver/backend.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 
@@ -77,8 +78,12 @@ class FreqDoubler : public cuda::Component {
 
 TEST(Backend, KernelDispatch) {
     cpu::Frame frame(32);
-    frame.atoms.mass.fill(double(1.0));
-    frame.box = Mat3::cubic(10.0);
+    {
+        auto mass = frame.span(kAtom_mass);
+        for (int i = 0; i < 32; ++i)
+            mass[i] = 1.0;
+    }
+    frame.box = cpu::Box::cubic(10.0);
 
     cuda::Backend backend;
     backend.init();
@@ -100,17 +105,26 @@ TEST(Backend, KernelDispatch) {
     adder.destroy(dctx);
 
     cuda::to_cpu(backend.frame(), frame);
-    for (int i = 0; i < 32; ++i)
-        EXPECT_DOUBLE_EQ(frame.atoms.fx[i], 1.0);
+    {
+        auto fx = frame.span(kAtom_fx);
+        for (int i = 0; i < 32; ++i)
+            EXPECT_DOUBLE_EQ(fx[i], 1.0);
+    }
 
     backend.shutdown();
 }
 
 TEST(Backend, BlockingDeferrable) {
     cpu::Frame frame(32);
-    frame.atoms.mass.fill(double(1.0));
-    frame.atoms.vx.fill(double(1.0));
-    frame.box = Mat3::cubic(10.0);
+    {
+        auto mass = frame.span(kAtom_mass);
+        auto vx = frame.span(kAtom_vx);
+        for (int i = 0; i < 32; ++i) {
+            mass[i] = 1.0;
+            vx[i] = 1.0;
+        }
+    }
+    frame.box = cpu::Box::cubic(10.0);
 
     cuda::Backend backend;
     backend.init();
@@ -137,9 +151,13 @@ TEST(Backend, BlockingDeferrable) {
     doubler.destroy(dctx);
 
     cuda::to_cpu(backend.frame(), frame);
-    for (int i = 0; i < 32; ++i) {
-        EXPECT_DOUBLE_EQ(frame.atoms.fx[i], 1.0);
-        EXPECT_DOUBLE_EQ(frame.atoms.vx[i], 2.0);
+    {
+        auto fx = frame.span(kAtom_fx);
+        auto vx = frame.span(kAtom_vx);
+        for (int i = 0; i < 32; ++i) {
+            EXPECT_DOUBLE_EQ(fx[i], 1.0);
+            EXPECT_DOUBLE_EQ(vx[i], 2.0);
+        }
     }
 
     backend.shutdown();
@@ -147,9 +165,15 @@ TEST(Backend, BlockingDeferrable) {
 
 TEST(Backend, ConditionalExecution) {
     cpu::Frame frame(32);
-    frame.atoms.mass.fill(double(1.0));
-    frame.atoms.vx.fill(double(1.0));
-    frame.box = Mat3::cubic(10.0);
+    {
+        auto mass = frame.span(kAtom_mass);
+        auto vx = frame.span(kAtom_vx);
+        for (int i = 0; i < 32; ++i) {
+            mass[i] = 1.0;
+            vx[i] = 1.0;
+        }
+    }
+    frame.box = cpu::Box::cubic(10.0);
 
     cuda::Backend backend;
     backend.init();
@@ -171,8 +195,11 @@ TEST(Backend, ConditionalExecution) {
     freq.destroy(dctx);
 
     cuda::to_cpu(backend.frame(), frame);
-    for (int i = 0; i < 32; ++i)
-        EXPECT_DOUBLE_EQ(frame.atoms.vx[i], 4.0);
+    {
+        auto vx = frame.span(kAtom_vx);
+        for (int i = 0; i < 32; ++i)
+            EXPECT_DOUBLE_EQ(vx[i], 4.0);
+    }
 
     backend.shutdown();
 }

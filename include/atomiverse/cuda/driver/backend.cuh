@@ -10,11 +10,11 @@
 
 #include <cuda_runtime.h>
 
+#include "atomiverse/core/plan.h"
 #include "atomiverse/cuda/component/component.cuh"
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/timer.h"
 #include "atomiverse/cuda/frame/frame.cuh"
-#include "atomiverse/facade/plan.h"
 
 namespace ATV {
 
@@ -55,6 +55,16 @@ class Backend {
 
     /// @brief Build all components in Plan order (calls Component::build).
     void build_components();
+
+    /// @brief Build only the components in `plan` (mid-run remount).
+    /// @param plan Temporary one-node (or subset) plan; does not replace
+    ///        the loaded schedule.
+    void build_plan(const Plan<Component>& plan);
+
+    /// @brief Destroy only the components in `plan` (mid-run unfix).
+    /// @param plan Temporary one-node (or subset) plan; does not replace
+    ///        the loaded schedule.
+    void destroy_plan(const Plan<Component>& plan);
 
     /// @brief Execute one simulation step (launch all components by phase).
     /// @param step_idx Zero-based step index within the simulation.

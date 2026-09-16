@@ -109,7 +109,7 @@ inline ATV::cpu::Frame load_lammps_data(const std::string& path,
         throw std::runtime_error("LAMMPS data: missing 'atoms' header");
 
     ATV::cpu::Frame frame(n_atoms);
-    frame.simbox.set_cell(ATV::Mat3::diagonal(xhi - xlo, yhi - ylo, zhi - zlo));
+    frame.box.set_cell(ATV::Mat3::diagonal(xhi - xlo, yhi - ylo, zhi - zlo));
 
     // Default: every atom gets the supplied mass and type 0.
     auto initial_mass = frame.span(kAtom_mass);

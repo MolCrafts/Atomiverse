@@ -4,21 +4,21 @@
 #include <cstdio>
 #include <vector>
 
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/nose_hoover.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/io/lammps_real.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/nose_hoover.h"
-#include "atomiverse/cpu/md/nose_hoover_npt.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"
-#include "atomiverse/cpu/minimizer/minimize.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 
@@ -37,7 +37,7 @@ cpu::Frame make_fragment() {
         f.span(kAtom_tag)[i] = i;
         f.span(kAtom_vx)[i] = f.span(kAtom_vy)[i] = f.span(kAtom_vz)[i] = 0;
     }
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     f.clear_tag_index();
     f.rebuild_tag_index(0, n);
     for (int i = 0; i < n - 1; ++i)
@@ -53,14 +53,12 @@ void install_ff(Driver& d, Phase force_phase) {
     const double eps0 = kcal_per_mol_to_ev(0.1);
     const double eps1 = kcal_per_mol_to_ev(0.09);
     d.set_neighbor(cpu::md::NeighborList<>{8.0, 0.5});
-    d.add_potential(
-        cpu::PairLJCut{{{0, 0, eps0, 3.4}, {1, 1, eps1, 3.2}}, 8.0}
-            .set_special_bonds(0.0, 0.0, 0.5));
+    d.set_evaluator(cpu::PairLJCut{{{0, 0, eps0, 3.4}, {1, 1, eps1, 3.2}}, 8.0}
+                        .set_special_bonds(0.0, 0.0, 0.5));
     d.on(force_phase)
         .add(cpu::PairCoulCut{8.0}.set_special_bonds(0.0, 0.0, 0.5));
-    d.add_potential(cpu::BondHarmonic{{kcal_per_mol_to_ev(200.0)}, {1.5}});
-    d.add_potential(
-        cpu::AngleHarmonic{{kcal_per_mol_to_ev(50.0)}, {1.9}});
+    d.set_evaluator(cpu::BondHarmonic{{kcal_per_mol_to_ev(200.0)}, {1.5}});
+    d.set_evaluator(cpu::AngleHarmonic{{kcal_per_mol_to_ev(50.0)}, {1.9}});
 }
 
 } // namespace
@@ -85,7 +83,7 @@ int main() {
         install_ff(sim, md::Phase::force);
         sim.set_integrator(cpu::md::VelocityVerlet{1.0});
         sim.set_thermostat(cpu::md::NoseHoover{400.0, 100.0, 1.0});
-        sim.add(cpu::md::InitVelocity{400.0, 1});
+        sim.set_observer(cpu::md::InitVelocity{400.0, 1});
         sim.build();
         sim.run(f, 50);
     }
@@ -96,21 +94,16 @@ int main() {
     {
         cpu::md::MD sim;
         install_ff(sim, md::Phase::force);
-        cpu::md::NoseHooverNPT::Config cfg;
-        cfg.T_target = 400.0;
-        cfg.T_stop = 500.0;
-        cfg.tau_T = 100.0;
-        cfg.P_target = 0.0;
-        cfg.tau_P = 1000.0;
-        cfg.dt = 1.0;
-        auto npt = cpu::md::NoseHooverNPT{cfg};
+        auto npt = cpu::md::NoseHooverNPT{
+            400.0, 100.0, 0.0, 1000.0, 1.0, 0.0, 3, 3, {true, true, true},
+            500.0};
         npt.set_run_span(0, 50);
         sim.set_integrator(std::move(npt));
         sim.build();
         sim.run(f, 50);
     }
     const double e_npt = f.meta.get(kEnergy);
-    const double vol = f.simbox.volume();
+    const double vol = f.box.volume();
     std::printf("after NPT E=%.6f V=%.6f\n", e_npt, vol);
 
     if (!std::isfinite(e_min) || !std::isfinite(e_nvt) || !std::isfinite(e_npt)

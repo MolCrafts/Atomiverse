@@ -16,8 +16,8 @@ The three case studies are deliberately chosen to span the layering:
    `cpu::md::MD` preset.
 2. **A new minimizer** — a Component plugged into the
    `cpu::minimizer::Minimize` preset.
-3. **A new SCF inner-step helper** — a non-component class owned by
-   `cpu::scf::SCFSolver` (inner solver, not a driver).
+3. **A new SCF mixer** — an `internal::` helper owned by the concrete
+   method (`RHF` / `UHF` / `RKS` / `UKS`) and selected by a member.
 
 If you keep the asymmetries between these three in mind, every other
 extension you ever write will fit somewhere on the same map.
@@ -30,10 +30,10 @@ inside `cpu::md::MD` exactly the way they pick the existing
 `VelocityVerlet`.
 
 **Where it lives.** A header at
-`include/atomiverse/cpu/md/<name>.h` and an implementation at
-`src/cpu/md/<name>.cpp`. The MD subdirectory is the right home because
+`include/atomiverse/cpu/dynamics/<name>.h` and an implementation at
+`src/cpu/dynamics/<name>.cpp`. The MD subdirectory is the right home because
 the component will only ever participate in MD (its phase enum is
-`md::Phase`). Putting it under `cpu/md/` also keeps it out of the
+`md::Phase`). Putting it under `cpu/dynamics/` also keeps it out of the
 minimizer/SCF dependency footprint.
 
 **The skeleton.** Inherit the matching kind (`Integrator`, `Potential`, …),
@@ -47,7 +47,7 @@ declare default bindings if the phase is fixed, and override `launch`:
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/cpu/component/integrator.h"
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/core/stage.h"
 
 namespace ATV { namespace cpu { namespace md {
 
@@ -94,16 +94,16 @@ Two architectural choices to make consciously:
 
 **Allocation discipline.** If you store per-step buffers, allocate them
 in `build()` (sized to `frame.capacity()`), not in `launch()`. The
-zero-allocation invariant in `launch()` is verified by
-`tests/cpu/test_md_no_alloc.cpp`, and breaking it will fail review.
+zero-allocation invariant in `launch()` is a review rule, not an automated
+gate — breaking it will fail review.
 
 **Validation comes for free.** `cpu::md::MD::validate_components`
 walks the registered set and requires at least one `Integrator` (and an
 energy/force kind). Inheriting `cpu::Integrator` makes Beeman a valid
 replacement for `VelocityVerlet`. No driver-side change is needed.
 
-**Test recipe.** Add `tests/cpu/md/test_beeman.cpp` that builds a small
-NVE system (typically the FCC Argon fixture from `test_md.cpp`),
+**Test recipe.** Add `tests/cpu/dynamics/test_beeman.cpp` that builds a small
+NVE system (typically the FCC Argon fixture used by `tests/cpu/dynamics/test_md_set_api.cpp`),
 substitutes Beeman for VelocityVerlet, runs a few thousand steps, and
 asserts:
 
@@ -124,9 +124,9 @@ correct.
 PRL 97, 170201, 2006) optimizer alongside the existing
 `cpu::minimizer::LBFGS` and `cpu::minimizer::CG`.
 
-**Where it lives.** `include/atomiverse/cpu/minimizer/fire.h` and
-`src/cpu/minimizer/fire.cpp`. Same reasoning as above: minimizer
-components live under `cpu/minimizer/`.
+**Where it lives.** `include/atomiverse/cpu/minimize/fire.h` and
+`src/cpu/minimize/fire.cpp`. Same reasoning as above: minimizer
+components live under `cpu/minimize/`.
 
 **The skeleton.** FIRE is structurally similar to LBFGS — it computes a
 search direction *and* publishes the numbers by which the loop will be
@@ -139,8 +139,8 @@ judged. It does **not** judge them itself. Mirror the existing pattern:
 #include <vector>
 
 #include "atomiverse/cpu/component/optimizer.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"   // for OptRecord
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"   // for OptRecord
+#include "atomiverse/core/stage.h"
 
 namespace ATV { namespace cpu { namespace minimizer {
 
@@ -238,26 +238,30 @@ be physical MD velocities). Keeping FIRE's $v$ on the component, not
 on the frame, follows the data-residency rule — a different optimizer
 might use different state, and the frame stays algorithm-agnostic.
 
-## Case 3: Adding an SCF Inner-Step Helper
+## Case 3: Adding an SCF Mixer
 
-**Goal.** Add an alternative DIIS variant — say, ADIIS (Hu & Yang, JCP
-132, 054109, 2010) — that the SCF cycle can use in place of the
-standard Pulay DIIS for poorly-conditioned starts.
+**Goal.** Add an alternative Fock mixer for poorly-conditioned starts.
+The in-tree precedent is EDIIS/ADIIS (Hu & Yang, JCP 132, 054109,
+2010), which ships as `internal::ediis_adiis.h` behind
+`MixerKind::EDIIS_CDIIS` / `MixerKind::ADIIS_CDIIS`. This case study
+walks the same path for a mixer that is not there yet.
 
-**Where it lives.** This is *not* a Component. It does not inherit
-from `cpu::Component`, it does not have `default_bindings()`, and
-it never gets registered into a Plan. It is an inner-step helper, and
-inner-step helpers live in
+**Where it lives.** The mixer itself is *not* a Component: it has no
+`default_bindings()` and is never registered into a Plan. It is an
+`internal::` helper under
 [`include/atomiverse/cpu/scf/internal/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/internal/)
 in the namespace `cpu::scf::internal`.
 
-The reason for this asymmetry — why optimizers are Components but
-DIIS variants are not — is in [CPU Internals](cpu-internals.md): the
-SCF cycle does not present a user-pluggable phase order. The user
-chooses an SCF method through `SCFConfig` (HF vs KS, restricted vs
-unrestricted, MINAO vs Hcore initial guess), not by inserting a
-component into a Plan. The five inner steps are an implementation, not
-an extension surface.
+What *is* a Component is the stage that calls it. SCF is a Driver loop
+(`fock → mix → diagonalize → density → check`), and each stage under
+[`cpu/scf/stages/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/stages/)
+— including `MixStage` — derives `cpu::Component` and is owned by the
+method as a direct member. So the asymmetry is not "SCF has no
+components"; it is that the **stage sequence is fixed by the method**,
+while the **algorithm inside a stage** is swapped by a member on that
+method. The user picks a method as a concrete type (`RHF` vs `UKS`)
+and tunes it through members — never by inserting components into an
+SCF Plan.
 
 **The skeleton.** Mirror the shape of `internal::DIISMixer`:
 
@@ -300,59 +304,47 @@ private:
 
 The contract is "given a history of Fock matrices and error vectors,
 return an extrapolated Fock matrix". Match the existing `DIISMixer`
-signature exactly — that minimizes the change inside `SCFSolver`.
+signature exactly — that minimizes the change inside `MixStage`.
 
-**Wiring.** There are two ways to expose ADIIS to users.
+**Wiring.** Selection is a **member on the method**, never a config
+bag. `MeanFieldMethod` already carries the selector
 
-1. **As a configuration switch.** Add a `DIISVariant` enum to
-   `SCFConfig`:
+```cpp
+enum class MixerKind { CDIIS, EDIIS_CDIIS, ADIIS_CDIIS };  // scf_enums.h
 
-   ```cpp
-   enum class DIISVariant { Pulay, ADIIS };
-   struct SCFConfig {
-       // ...
-       DIISVariant diis_variant = DIISVariant::Pulay;
-   };
-   ```
+MixerKind mixer = MixerKind::CDIIS;   // public member on the method
+double mixer_switch_tol = 1e-2;       // escalation threshold
+```
 
-   Then `SCFSolver` holds both helpers and dispatches in its inner
-   loop:
+so adding a variant means adding one enumerator, owning the helper as
+a private member of `MixStage`, and dispatching on `mixer` inside
+`MixStage::launch`. Users then write
 
-   ```cpp
-   class SCFSolver {
-       // ...
-       internal::DIISMixer  pulay_;
-       internal::ADIISMixer adiis_;
-       // pick one in run() based on config_.diis_variant
-   };
-   ```
+```cpp
+cpu::scf::RHF rhf{BasisSet::STO3G};
+rhf.mixer = cpu::scf::MixerKind::ADIIS_CDIIS;
+rhf.run(frame);
+```
 
-   This is the right pattern when the variants are semantically
-   interchangeable and the user is choosing between them on a
-   problem-by-problem basis.
+Do **not** introduce a `SCFConfig` / `DIISVariant` bag to carry the
+choice — public `*Config` bags are banned by the iron law in
+[CLAUDE.md](../../CLAUDE.md); parameters are constructor arguments or
+public members of the concrete method. If the new mixer is strictly
+better than an existing one, retire the loser by deleting it rather
+than keeping both behind a switch.
 
-2. **As an inner replacement (no public switch).** If ADIIS is
-   strictly better and you want to retire the Pulay form entirely,
-   replace the `internal::DIISMixer` member with `internal::ADIISMixer`
-   and make sure the existing tests (`tests/cpu/scf/*`) still pass.
-   This is the right pattern when the new helper is a strict
-   improvement and the old one no longer pulls its weight.
-
-The first option is more common in early development; the second is
-the correct end state once the new helper has demonstrated dominance
-across the test corpus.
-
-**Test recipe.** Add `tests/cpu/scf/test_adiis_mixer.cpp` that
+**Test recipe.** Add `tests/cpu/scf/test_<name>_mixer.cpp` that
 exercises the helper directly — feed it a synthetic sequence of Fock
 matrices with a known answer (say, a Pulay-difficult harmonic case the
 literature has documented), check that the extrapolated Fock matches
-the reference. Then add a higher-level test that runs `SCFSolver` on a
-small molecule (H2O, STO-3G) once with each variant, and checks that
-both reach the same converged total energy to $10^{-9}$ Hartree.
+the reference. Keep it a **unit** test: one method, no full SCF solve.
+An end-to-end "both mixers reach the same energy" comparison belongs
+in `regressions/scf/` against a cited literature value, not in
+`tests/`.
 
 Because the helper is in the `internal::` namespace, *production*
-facade-public headers (`cpu/driver/evaluate.h`, `cpu/driver/single_point.h`,
-`cpu/md/md.h`, `cpu/minimizer/lbfgs.h`) must not include from
+public headers (`cpu/evaluate/evaluate.h`, `cpu/evaluate/single_point.h`,
+`cpu/dynamics/md.h`, `cpu/minimize/lbfgs.h`) must not include from
 `cpu/scf/internal/`. Tests can include these headers directly. The
 boundary keeps `internal::` types from leaking into user-visible APIs.
 
@@ -365,10 +357,12 @@ Three questions, in order:
      is a Component. Inherit the matching kind (`Potential`,
      `Integrator`, `Optimizer`, `HF`, …), declare default bindings,
      plug into the existing driver.
-   - If no: it is an inner-solver helper. Pick the right inner solver
-     class (today: `cpu::scf::SCFSolver`), put the helper in that
-     solver's `internal::` directory, give it a `prepare()` /
-     `step()` / `reset()` lifecycle, and own it as a member.
+   - If no: it is an inner-step helper. Pick the concrete method that
+     owns the loop (`cpu::scf::RHF` / `UHF` / `RKS` / `UKS`, all built
+     on `cpu::scf::MeanFieldMethod<D>`), put the helper in that
+     method's `internal::` directory, give it a `prepare()` /
+     `step()` / `reset()` lifecycle, and own it as a member of the
+     stage that calls it.
 2. **Does the extension change a *termination* rule, or just an
    *algorithm*?**
    - Algorithm change: Component, plug in. (FIRE replacing L-BFGS;

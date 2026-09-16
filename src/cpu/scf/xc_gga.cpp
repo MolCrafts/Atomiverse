@@ -22,6 +22,7 @@
 /// 1e-12 channel-wise parity; the B88 kernel uses the closed analytic
 /// derivatives of the readable Becke enhancement factor.
 
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/xc_internal.h"
 
 #include <cmath>
@@ -32,7 +33,6 @@ namespace scf {
 
 // ── Constants ────────────────────────────────────────────────────────────
 
-static constexpr double kPi = 3.14159265358979323846;
 static constexpr double kRhoMin = 1e-12; // total density cutoff
 
 // Dirac exchange constant in libxc's convention:
@@ -40,7 +40,7 @@ static constexpr double kRhoMin = 1e-12; // total density cutoff
 // This equals 2^{1/3} * (3/4)(3/pi)^{1/3}, i.e. the spin-scaled Slater
 // constant used by slater_exchange / pbe_exchange_spin.
 static const double kXFactorC =
-    (3.0 / 8.0) * std::cbrt(3.0 / kPi) * std::cbrt(16.0);
+    (3.0 / 8.0) * std::cbrt(3.0 / units::pi) * std::cbrt(16.0);
 
 // libxc threshold below which a spin channel is treated as empty.
 static constexpr double kZetaThreshold = 2.2204460492503131e-16; // DBL_EPSILON
@@ -68,7 +68,8 @@ static constexpr double kB88_gamma = 6.0;
 /// @param[out] vrho_s    d(ex_s)/drho_s, exchange potential [Hartree].
 /// @param[out] vsigma_ss d(ex_s)/dsigma_ss [Hartree*Bohr^2].
 void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
-                       double& vrho_s, double& vsigma_ss) {
+                       double& vrho_s, double& vsigma_ss, double beta,
+                       double gamma) {
     // Empty spin channel: exact zero on every channel, matching libxc's
     // dens_threshold early-return for B88 exchange.
     if (rho_s < kRhoMin * 0.5) {
@@ -79,7 +80,7 @@ void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
     }
 
     const double C = kXFactorC;
-    const double k = kB88_beta / C; // = beta / X_FACTOR_C
+    const double k = beta / C; // = beta / X_FACTOR_C
 
     // Reduced gradient x = |grad rho_s| / rho_s^{4/3}.
     const double r43 = std::pow(rho_s, 4.0 / 3.0);
@@ -90,12 +91,11 @@ void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
     // Becke enhancement factor F(x) = 1 + k x^2 / D,
     //   D = 1 + gamma*beta*x*asinh(x).
     const double asinh_x = std::asinh(x);
-    const double D = 1.0 + kB88_gamma * kB88_beta * x * asinh_x;
+    const double D = 1.0 + gamma * beta * x * asinh_x;
     const double F = 1.0 + k * x * x / D;
 
     // D'(x) = gamma*beta*(asinh(x) + x/sqrt(1+x^2)).
-    const double dD =
-        kB88_gamma * kB88_beta * (asinh_x + x / std::sqrt(1.0 + x * x));
+    const double dD = gamma * beta * (asinh_x + x / std::sqrt(1.0 + x * x));
 
     // F'(x)/x = k (2D - x D') / D^2  -- finite as x -> 0 (-> 2k).
     const double dF_over_x = k * (2.0 * D - x * dD) / (D * D);
@@ -112,6 +112,8 @@ void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
 
     // vsigma_ss = d(ex_s)/dsigma_ss = -C (F'(x)/x) / (2 rho_s^{4/3}).
     vsigma_ss = -C * dF_over_x / (2.0 * r43);
+    (void)kB88_beta;
+    (void)kB88_gamma;
 }
 
 // ── LYP correlation ──────────────────────────────────────────────────────
@@ -163,13 +165,12 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     const double a = kLYP_a, b = kLYP_b, c = kLYP_c, d = kLYP_d;
     const double zeta_threshold = kZetaThreshold;
 
-    const double rho0 = rho_a;
-    const double rho1 = rho_b;
-    const double sigma0 = sigma_aa;
-    const double sigma1 = sigma_ab;
-    const double sigma2 = sigma_bb;
-
     // Density cutoff: below it, libxc's work_gga returns zero.
+    double rho0 = rho_a > 0.0 ? rho_a : 0.0;
+    double rho1 = rho_b > 0.0 ? rho_b : 0.0;
+    double sigma0 = sigma_aa;
+    double sigma1 = sigma_ab;
+    double sigma2 = sigma_bb;
     if (rho0 + rho1 < kRhoMin) {
         ec = 0.0;
         vc_a = 0.0;
@@ -178,6 +179,22 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
         vsigma_ab = 0.0;
         vsigma_bb = 0.0;
         return;
+    }
+    // Empty spin channel: the maple2c intermediates contain 1/rho_s^{8/3}
+    // factors (t70/t77). With rho_s = 0 and sigma_ss = 0 that is 0·∞ → NaN
+    // and poisons UKS (n_β=0). Floor the empty channel dens_threshold-style
+    // and zero its sigma (libxc dens_threshold guard). Occupied-channel
+    // numbers at finite density are unchanged (floor ≪ dens_threshold).
+    constexpr double kSpinFloor = 1e-14;
+    if (rho0 < kSpinFloor) {
+        rho0 = kSpinFloor;
+        sigma0 = 0.0;
+        sigma1 = 0.0;
+    }
+    if (rho1 < kSpinFloor) {
+        rho1 = kSpinFloor;
+        sigma2 = 0.0;
+        sigma1 = 0.0;
     }
 
     auto POW_1_3 = [](double v) { return std::cbrt(v); };
@@ -207,7 +224,7 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     const double t30 = t7 * t27 / 72.0 - 2.0 / 3.0;
     const double t32 = M_CBRT3;
     const double t33 = t32 * t32;
-    const double t34 = kPi * kPi;
+    const double t34 = units::pi * units::pi;
     const double t35 = POW_1_3(t34);
     const double t36 = t35 * t35;
     const double t37 = t33 * t36;

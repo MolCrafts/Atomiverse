@@ -78,8 +78,6 @@ void Hamiltonian::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cublasCreate(&handle);
     cublasSetStream(handle, stream);
     cublas_handle_ = handle;
-
-    cudaStreamSynchronize(stream);
 }
 
 void Hamiltonian::step(const SolverContext& ctx, SCFWorkspace& ws) {

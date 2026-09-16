@@ -1,0 +1,14 @@
+# Offline MBD pin notes (gpw-mbd-ice)
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` has no MBD (only DFTD2/D3/D3BJ/D4);
+hosts may link libMBD as an external VDW backend. Hard pin is **libMBD**
+free-atom MBD@rsSCS — see `regressions/gpw/gpw-mbd-ice/REFERENCE.md`.
+
+Isolated libMBD check (build libmbd, link OpenBLAS; ATV Å→Bohr = 1/0.52917720859):
+
+```text
+Dispersion energy (isolated MBD@rsSCS, β=0.83, a=6, free-atom):
+  -1.4928804171407961e-03 Eh
+```
+
+Geometry: same water dimer as `gpw-ts-ice` / `gpw-pbe-d3bj-ice`.

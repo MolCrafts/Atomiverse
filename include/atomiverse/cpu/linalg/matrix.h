@@ -6,6 +6,8 @@
 /// `eigensolve.h` / `density.h`.
 #pragma once
 
+#include <complex>
+
 #include <xtensor/containers/xtensor.hpp>
 
 namespace ATV {
@@ -14,6 +16,9 @@ namespace linalg {
 
 using RealMatrix = xt::xtensor<double, 2, xt::layout_type::column_major>;
 using RealVector = xt::xtensor<double, 1>;
+/// @brief Complex dense matrix (default row-major) — GPW k-point Bloch MOs /
+///        k-space Hamiltonians. Layout matches `gpw::internal::CplxMatrix`.
+using CplxMatrix = xt::xtensor<std::complex<double>, 2>;
 
 } // namespace linalg
 } // namespace cpu

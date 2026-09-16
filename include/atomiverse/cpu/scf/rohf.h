@@ -7,6 +7,7 @@
 #include <string>
 
 #include "atomiverse/cpu/scf/mean_field_method.h"
+#include "atomiverse/cpu/vibration/hessian_result.h"
 
 namespace ATV {
 namespace cpu {
@@ -34,9 +35,9 @@ namespace scf {
 /// quantity. Orbital energies from this class are only comparable to
 /// references using the same PySCF canonical convention.
 ///
-/// Not yet supported for ROHF (throws, no fallback): analytic
-/// forces/gradients (the Lagrangian needs the coupling terms), `mp2()`,
-/// `fci()`, `soscf`, and `level_shift`.
+/// Not yet supported for ROHF (throws, no fallback): `mp2()`, `fci()`,
+/// `soscf`, and `level_shift`. Analytic nuclear forces and the analytic
+/// nuclear Hessian (`forces`, `hessian`) are implemented.
 ///
 /// References: Roothaan, Rev. Mod. Phys. 32, 179 (1960),
 /// DOI 10.1103/RevModPhys.32.179; Guest & Saunders, Mol. Phys. 28, 819
@@ -58,6 +59,22 @@ class ROHF : public MeanFieldMethod<ROHF> {
     ///                violated at run() with std::invalid_argument).
     explicit ROHF(int n_alpha, int n_beta);
     std::string name() const { return "rohf"; }
+
+    /// @brief Nuclear Hessian d²E/dR² of the ROHF energy [eV/Å²].
+    ///
+    /// Central finite difference of the **analytic** ROHF nuclear forces
+    /// (`forces()` / ROHF Lagrangian W = O_α F_α O_α + O_β F_β O_β). This
+    /// is the correct second derivative of the ROHF energy under the
+    /// constrained open-shell SCF; a fully analytic three-space ROHF CPHF
+    /// is a follow-up (PySCF 2.14 also lacks `hessian.ROHF`). Step
+    /// \(h = 10^{-4}\) Å; the assembled matrix is symmetrized.
+    ///
+    /// @param frame Geometry (Å) + Z in the type column; restored on return.
+    /// @return `vib::HessianResult` with the dense symmetric `[3N, 3N]`
+    ///         Hessian in eV/Å² and `n_atoms` set.
+    /// @throws std::runtime_error when the reference or displaced SCF
+    ///         does not converge, or with RI enabled.
+    vib::HessianResult hessian(Frame& frame);
 
   protected:
     /// @brief Occupation is taken directly from the `n_alpha` / `n_beta`

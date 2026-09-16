@@ -26,18 +26,15 @@ static cpu::Frame make_water() {
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
 int main() {
     auto frame = make_water();
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = 1e-12;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
     auto mp2 = rhf.mp2(frame);
-    std::cout << std::setprecision(10) << "E_SCF = " << rhf.energy()
-              << " Ha\n"
+    std::cout << std::setprecision(10) << "E_SCF = " << rhf.energy() << " Ha\n"
               << "E_corr = " << mp2.e_corr << " Ha\n"
               << "E_MP2 = " << mp2.e_tot << " Ha\n";
     return 0;

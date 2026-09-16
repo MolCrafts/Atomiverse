@@ -6,15 +6,16 @@
 
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/dynamics/fix_csvr.h"
+#include "atomiverse/cpu/dynamics/fix_rattle.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/fix_csvr.h"
-#include "atomiverse/cpu/md/fix_rattle.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -84,7 +85,7 @@ int main() {
                 idx += 3;
                 ++mol;
             }
-    frame.simbox = ATV::cpu::Box::cubic(box_len);
+    frame.box = ATV::cpu::Box::cubic(box_len);
     frame.rebuild_tag_index(0, n);
     for (int m = 0; m < n_mol; ++m) {
         const int o = 3 * m, h1 = o + 1, h2 = o + 2;
@@ -98,21 +99,32 @@ int main() {
     }
     frame.build_special_list(); // intramolecular pairs are NOT LJ neighbours
 
+    // Remember which TAGS make up each molecule. Rows are not an identity:
+    // `atom_modify sort` spatially reorders the owned atoms at the first
+    // reneighbour after `nfreq` steps (LAMMPS default 1000), so row `3m` stops
+    // being molecule `m`'s oxygen part-way through the run. The engine's own
+    // constraint solver keys on tags for exactly this reason; a consumer that
+    // wants a named atom back must ask the Frame's tag index.
+    std::vector<ATV::TagInt> mol_tags(3 * n_mol);
+    for (int m = 0; m < n_mol; ++m)
+        for (int k = 0; k < 3; ++k)
+            mol_tags[3 * m + k] = frame.span(ATV::kAtom_tag)[3 * m + k];
+
     cpu::md::MD sim;
     // TIP3P: the Lennard-Jones site is on OXYGEN only. Hydrogen has none, so the
     // (H,H) and (O,H) pairs mix to eps = 0 and do not interact at all.
-    sim.add_potential(cpu::PairLJCut{{{8, 8, 0.1521 * 0.04336, 3.1507}}, cutoff}
+    sim.set_evaluator(cpu::PairLJCut{{{8, 8, 0.1521 * 0.04336, 3.1507}}, cutoff}
                           // O-O
                           .set_special_bonds(0.0, 0.0, 0.0));
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
     sim.set_thermostat(cpu::md::FixCSVR{t_target, 100.0, dt, 7777u});
-    sim.add(cpu::md::InitVelocity{t_target, 4242u});
+    sim.set_observer(cpu::md::InitVelocity{t_target, 4242u});
 
     cpu::md::FixRattle rattle{dt};
     rattle.constrain_bond(0, r_oh);  // the two O-H bonds
     rattle.constrain_angle(0, d_hh); // the H-H distance IS the angle
-    sim.add_ref(rattle);
+    sim.set_observer_ref(rattle);
 
     sim.enable_timing(false);
     sim.build();
@@ -132,8 +144,11 @@ int main() {
         const double ke = frame.meta.get(ATV::kKinetic); // [eV]
         t_sum += 2.0 * ke / (double(ndof_rigid) * units::kB_ev_per_k);
 
+        const auto& tag_row = frame.meta.get(ATV::cpu::kTagIndex);
         for (int m = 0; m < n_mol; ++m) {
-            const int o = 3 * m, h1 = o + 1, h2 = o + 2;
+            const int o = tag_row.at(mol_tags[3 * m + 0]);
+            const int h1 = tag_row.at(mol_tags[3 * m + 1]);
+            const int h2 = tag_row.at(mol_tags[3 * m + 2]);
             const int ii[3] = {o, o, h1};
             const int jj[3] = {h1, h2, h2};
             const double want[3] = {r_oh, r_oh, d_hh};
@@ -144,7 +159,7 @@ int main() {
                             - frame.span(ATV::kAtom_y)[jj[c]];
                 double dz = frame.span(ATV::kAtom_z)[ii[c]]
                             - frame.span(ATV::kAtom_z)[jj[c]];
-                frame.simbox.min_image(dx, dy, dz);
+                frame.box.min_image(dx, dy, dz);
                 const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
                 worst_geom =
                     std::fmax(worst_geom, std::fabs(r - want[c]) / want[c]);

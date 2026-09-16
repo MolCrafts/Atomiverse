@@ -1,4 +1,4 @@
-# Chapter 17: Semiempirical AM1 — Cheap Quantum Forces
+# Chapter 17. Semiempirical AM1
 
 Gaussian SCF and GPW give transferable electronic structure at a price.
 Classical force fields are fast but parameterized. **Semiempirical** methods
@@ -6,16 +6,7 @@ sit in the middle: a minimal valence electronic Hamiltonian with element
 parameters fitted once, then reused for organic chemistry at a cost between
 classical MD and RHF.
 
-| | |
-|---|---|
-| **Example** | [`examples/15_am1.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/15_am1.cpp) |
-| **Results** | [`examples/results/15_am1.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/15_am1.json) |
-| **Reference** | MOPAC / openmopac AM1 \(\Delta H_f(\mathrm{H_2O})\approx -57.8\) kcal/mol |
-
-```bash
-cmake --build build --target 15_am1
-./build/examples/15_am1
-```
+Reference: MOPAC / openmopac AM1 \(\Delta H_f(\mathrm{H_2O})\approx -57.8\) kcal/mol.
 
 ## Architecture
 
@@ -27,16 +18,6 @@ Preset (Evaluate / MD / Minimize / Hessian)
 
 There is **no** `SemiempiricalDriver`. DFTB and xTB, if added later, get their
 own Solver + Evaluator + kind — not a seat on `NDDOSolver`.
-
-## The molecule: water
-
-```molvis {format="xyz" representation="ball-and-stick" controls="view" height="300px"}
-3
-name=water Connct="[0,1,0,2]"
-O  0.0000  0.0000  0.0000
-H  0.9572  0.0000  0.0000
-H -0.2390  0.9266  0.0000
-```
 
 ## What AM1 computes
 
@@ -57,17 +38,31 @@ Heat of formation follows the openmopac definition:
 with \(e_\mathrm{isol}\) from the AM1 parameter table and \(E_\mathrm{atom}\)
 the experimental gas-phase atomic heats at 298 K.
 
-Forces are the **SCF analytic gradient**: at a stationary density \(P\),
-displace nuclei at fixed \(P\) and differentiate the energy functional
-(Hellmann–Feynman for variational NDDO). They match re-SCF energy finite
-differences; regressions live under `regressions/semiempirical/`.
+Forces are a **central finite difference of the energy functional at fixed
+density**: converge the SCF once, then displace one nucleus by \(\pm h\)
+(\(h = 10^{-4}\) Å by default), rebuild the geometry-dependent integrals and
+core–core repulsion with the density \(P\) unchanged, and difference the two
+energies.
+
+Freezing \(P\) costs no accuracy. At convergence the energy is stationary with
+respect to density variations that conserve the electron count, so the response
+term \((\partial E/\partial P)(dP/dR)\) vanishes; and NDDO's
+zero-differential-overlap approximation makes the orbital basis orthonormal, so
+there is no basis-derivative ("Pulay") term either. The approximation is the
+difference quotient, which equals the exact NDDO gradient to \(O(h^{2})\) plus
+round-off — which is why these forces match re-SCF energy finite differences.
+Regressions live under `regressions/semiempirical/`.
+
+Only \(3(N-1)\) differences are evaluated: the force on the last atom is set to
+minus the sum of the others, exact because a rigid translation cannot change
+\(E\). The forces therefore sum to zero by construction.
 
 ## Example code
 
 ```cpp
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/core/stage.h"
 
 cpu::Frame frame = /* water: type = Z, positions (Å) */;
 
@@ -99,9 +94,9 @@ opt.build();
 opt.run(frame, 50);
 ```
 
-## Live results (`15_am1`)
+## Live Results
 
-From [`examples/results/15_am1.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/15_am1.json):
+Pinned results:
 
 | Quantity | Atomiverse | Reference |
 |----------|-----------:|----------:|

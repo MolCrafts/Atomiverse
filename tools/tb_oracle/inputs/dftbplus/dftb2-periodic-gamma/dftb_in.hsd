@@ -1,0 +1,39 @@
+# Offline DFTB+ twin for ATV slug dftb2-periodic-gamma.
+# Family oracle: DFTB+ only. Not run by ctest.
+# Geometry matches regressions/semiempirical/dftb2-periodic-gamma/REFERENCE.md.
+# NOTE: ATV uses in-tree mio-style sketch SK tables (not bit-identical mio-1-1).
+# Absolute energy pin is the ATV Hamiltonian twin until SK fidelity closes.
+Geometry = GenFormat {
+  <<< "geo.gen"
+}
+
+Driver = {}
+
+Hamiltonian = DFTB {
+  SCC = Yes
+  MaxSCCIterations = 50
+  SCCTolerance = 1.0e-10
+  MaxAngularMomentum = {
+    C = "p"
+  }
+  # Point to a local mio-1-1 (or sketch) SK set when available offline:
+  # SlaterKosterFiles = Type2FileNames {
+  #   Prefix = "slakos/mio-1-1/"
+  #   Separator = "-"
+  #   Suffix = ".skf"
+  # }
+  KPointsAndWeights = SupercellFolding {
+    1 0 0
+    0 1 0
+    0 0 1
+    0.0 0.0 0.0
+  }
+}
+
+Options = {
+  WriteDetailedOut = Yes
+}
+
+ParserOptions = {
+  ParserVersion = 12
+}

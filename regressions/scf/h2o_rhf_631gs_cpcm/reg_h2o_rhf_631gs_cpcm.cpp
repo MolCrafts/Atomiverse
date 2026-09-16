@@ -28,7 +28,7 @@ ATV::cpu::Frame make_h2o() {
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;
-    frame.simbox = cpu::Box::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
     return frame;
 }
 

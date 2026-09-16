@@ -1,0 +1,75 @@
+! Offline CP2K CELL_OPT twin note for pw-variable-cell-si (NOT absolute-energy
+! comparable to Atomiverse NC-UPF). Quickstep GTH-PADE + DZVP-GTH; ATV uses
+! ONCVPSP-LDA plane-wave. Geometry: diamond Si 2-atom fcc primitive, start
+! a0 = 5.55 A (expanded). Use for fair-ish wall / methodology only.
+! See regressions/pw/pw-variable-cell-si/REFERENCE.md.
+
+&GLOBAL
+  PROJECT si_cellopt
+  RUN_TYPE CELL_OPT
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &CELL_OPT
+    TYPE DIRECT_CELL_OPT
+    OPTIMIZER BFGS
+    MAX_ITER 20
+    KEEP_ANGLES .TRUE.
+    KEEP_SYMMETRY .TRUE.
+    PRESSURE 0.0
+  &END CELL_OPT
+  &CONSTRAINT
+    &FIXED_ATOMS
+      COMPONENTS_TO_FIX XYZ
+      LIST 1 2
+    &END FIXED_ATOMS
+  &END CONSTRAINT
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  STRESS_TENSOR ANALYTICAL
+  &DFT
+    &QS
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 60
+    &END MGRID
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+  &END DFT
+  &SUBSYS
+    &CELL
+      A 0.0 2.775 2.775
+      B 2.775 0.0 2.775
+      C 2.775 2.775 0.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Si 0.0 0.0 0.0
+      Si 1.3875 1.3875 1.3875
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-GTH-q4
+      POTENTIAL GTH-PADE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

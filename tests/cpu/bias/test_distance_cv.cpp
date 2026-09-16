@@ -22,7 +22,7 @@ TEST(DistanceCV, ValueAndGradient) {
     f.span(kAtom_z)[1] = 0;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
 
     cpu::bias::DistanceCV cv(1, 2);
     cv.build(f);
@@ -49,7 +49,7 @@ TEST(HarmonicBias, EnergyAndForce) {
         f.span(kAtom_mass)[i] = 1;
         f.span(kAtom_type)[i] = 0;
     }
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     f.meta.get(kEnergy) = 0;
 
     auto cv = std::make_unique<cpu::bias::DistanceCV>(1, 2);
@@ -74,7 +74,7 @@ TEST(HarmonicBias, EnergyOnlySkipsForce) {
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
     f.span(kAtom_fx)[0] = f.span(kAtom_fx)[1] = 0;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     f.meta.get(kEnergy) = 0;
 
     cpu::bias::HarmonicBias bias(std::make_unique<cpu::bias::DistanceCV>(1, 2),

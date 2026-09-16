@@ -1,0 +1,13 @@
+# Offline twin note — pw-uks-kmesh-fe
+
+Atomiverse pin: collinear UKS plane-wave NC-UPF O₂ with k_mesh=2
+(`regressions/pw/pw-uks-kmesh-fe/REFERENCE.md`). Absolute energy is not
+compared to CP2K (GTH-GPW ≠ NC-UPF PW).
+
+If re-pinning documentation against CP2K Quickstep:
+
+- `LSD` / UKS, multiplicity 3 O₂ in cubic L=5.5 Å cell
+- `KPOINTS` Monkhorst–Pack 2 2 2
+- GTH + MOLOPT (not the ATV SG15 ONCV path)
+
+No live CP2K at ctest.

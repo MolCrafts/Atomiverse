@@ -1,4 +1,4 @@
-/// @file cpu/semiempirical/nddo_system.h
+/// @file cpu/semiempirical/internal/nddo_system.h
 /// @brief **PRIVATE WORKSPACE** for `NDDOSolver` — AO indexing + valence
 ///        charges. Not a parallel "System" beside Frame. Users never
 ///        construct this; Frame is the only I/O currency.

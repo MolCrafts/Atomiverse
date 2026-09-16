@@ -3,7 +3,7 @@
 ///        (scf-driver-refactor-01-plumb).
 ///
 /// This pins the *plumbing* that lets the gaussian-basis SCF self-consistency loop
-/// become a `cpu::CPUDriver<scf::Phase>` in later sub-specs — WITHOUT wiring any
+/// become a `cpu::Driver<scf::Phase>` in later sub-specs — WITHOUT wiring any
 /// consumer yet. Everything asserted here is pure-additive facade / core /
 /// infrastructure type surface:
 ///
@@ -13,7 +13,7 @@
 ///      Phase enum anywhere (the `test_stage_typing_scrub` grep gate stays green).
 ///   2. `PhaseKind::SCF` + its `phase_kind_name` case.
 ///   3. `PhaseTraits<scf::Phase>` (eval=fock, neighbor=fock, end=check), proven by
-///      instantiating a `CPUDriver<scf::Phase>` subclass.
+///      instantiating a `Driver<scf::Phase>` subclass.
 ///   4. The `cpu::Criterion` component kind (`Verdict verdict(const LoopState&)`) plus the
 ///      driver's `add_criterion` / `add_criterion_ref` registration and its per-iteration,
 ///      severity-composed pull: Stop > Converged > Continue, with the loop — never the
@@ -24,7 +24,7 @@
 /// `add_criterion`, etc. The assertions must NOT be weakened to make it compile.
 ///
 /// Harness mirrors `tests/cpu/driver/test_sub_driver.cpp` (`OuterLoop`): a minimal
-/// `CPUDriver<>` subclass whose `run()` composes the protected loop primitives
+/// `Driver<>` subclass whose `run()` composes the protected loop primitives
 /// (`setup_pass` / `step_once` / `poll_criteria_` / `teardown_pass`). Unit-scale: an
 /// (almost) empty plan over a 1-atom frame, no physics, milliseconds.
 
@@ -34,12 +34,12 @@
 #include <type_traits>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/criterion.h"
-#include "atomiverse/cpu/driver/cpu_driver.h"
+#include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/facade/loop.h"
-#include "atomiverse/facade/stage.h"
 
 #include "cpu/driver_test_helpers.h"
 
@@ -124,13 +124,13 @@ class AlwaysStop : public cpu::Criterion {
     int polls = 0;
 };
 
-// ── The loop node under test — a bare CPUDriver over scf::Phase ───────────────
+// ── The loop node under test — a bare Driver over scf::Phase ───────────────
 //
 // Mirrors `OuterLoop` in test_sub_driver.cpp: the subclass supplies a tiny `run()` that
 // composes the protected loop primitives, and `validate_components()` requires nothing.
 // Instantiating this at all is the proof that `PhaseTraits<scf::Phase>` is specialized —
 // without the specialization the inherited categorical setters do not compile.
-struct ScfPhaseProbe : cpu::CPUDriver<ATV::scf::Phase> {
+struct ScfPhaseProbe : cpu::Driver<ATV::scf::Phase> {
     /// @brief Walk `budget` iterations, polling the composed termination verdict after the
     ///        stages of each. Returns the number of iterations actually executed.
     int run(cpu::Frame& frame, int budget) {
@@ -208,8 +208,8 @@ TEST(ScfPhasePlumbing, PhaseTraitsSpecialization) {
     EXPECT_EQ(cpu::PhaseTraits<scf::Phase>::neighbor_phase, scf::Phase::fock);
     EXPECT_EQ(cpu::PhaseTraits<scf::Phase>::end_phase, scf::Phase::check);
 
-    // The whole point of the specialization: `CPUDriver<scf::Phase>` must instantiate.
-    static_assert(std::is_base_of_v<cpu::CPUDriver<scf::Phase>, ScfPhaseProbe>,
+    // The whole point of the specialization: `Driver<scf::Phase>` must instantiate.
+    static_assert(std::is_base_of_v<cpu::Driver<scf::Phase>, ScfPhaseProbe>,
                   "the loop node instantiates over scf::Phase");
     ScfPhaseProbe probe; // and it is actually constructible
     (void)probe;

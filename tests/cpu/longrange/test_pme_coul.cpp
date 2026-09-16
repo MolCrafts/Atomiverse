@@ -15,12 +15,12 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/longrange/ewald.h"
 #include "atomiverse/cpu/longrange/pme.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/nose_hoover_npt.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
@@ -48,7 +48,7 @@ cpu::Frame make_rocksalt(double d, int n) {
                 frame.span(ATV::kAtom_tag)[idx] = idx + 1;
                 ++idx;
             }
-    frame.simbox = ATV::cpu::Box::cubic(n * d);
+    frame.box = ATV::cpu::Box::cubic(n * d);
     return frame;
 }
 
@@ -149,7 +149,7 @@ void apply_uniaxial_strain(cpu::Frame& f, int axis, double eps) {
         sy = s;
     else
         sz = s;
-    f.simbox.scale_diagonal(sx, sy, sz);
+    f.box.scale_diagonal(sx, sy, sz);
 }
 
 } // namespace
@@ -205,7 +205,7 @@ TEST(PmeCoul, FiniteDifferenceForces) {
         frame.span(ATV::kAtom_type)[i] = 0;
         frame.span(ATV::kAtom_tag)[i] = i + 1;
     }
-    frame.simbox = ATV::cpu::Box::cubic(8.0);
+    frame.box = ATV::cpu::Box::cubic(8.0);
     cpu::md::PairList pairs;
     build_full_halflist(frame, pairs);
 
@@ -245,7 +245,7 @@ TEST(PmeCoul, FiniteDifferenceForces) {
 
 TEST(PmeLifecycle, SeparatesBuildCellRefreshAndCapacityRebuild) {
     cpu::Frame frame(0);
-    frame.simbox = cpu::Box::cubic(8.0);
+    frame.box = cpu::Box::cubic(8.0);
     cpu::Context ctx;
     cpu::BuildContext build_ctx{ctx, frame};
     cpu::LaunchContext launch_ctx{ctx, frame, 0, 0};
@@ -263,13 +263,13 @@ TEST(PmeLifecycle, SeparatesBuildCellRefreshAndCapacityRebuild) {
     EXPECT_EQ(pme.lifecycle_stats().capacity_rebuilds, 0u);
 
     // 8.0 -> 7.92 Angstrom retains the same 8^3 FFT shape.
-    frame.simbox.scale_isotropic(0.99);
+    frame.box.scale_isotropic(0.99);
     pme.launch(launch_ctx);
     EXPECT_EQ(pme.lifecycle_stats().cell_refreshes, 1u);
     EXPECT_EQ(pme.lifecycle_stats().capacity_rebuilds, 0u);
 
     // A larger cell crosses the mesh-capacity boundary and replans once.
-    frame.simbox.scale_isotropic(2.0);
+    frame.box.scale_isotropic(2.0);
     pme.launch(launch_ctx);
     EXPECT_EQ(pme.lifecycle_stats().cell_refreshes, 1u);
     EXPECT_EQ(pme.lifecycle_stats().capacity_rebuilds, 1u);
@@ -300,7 +300,7 @@ TEST(PmeLifecycle, StableGridRefreshIsReplanFreeAndMemoryStable) {
         frame.span(ATV::kAtom_type)[i] = 0;
         frame.span(ATV::kAtom_tag)[i] = i + 1;
     }
-    frame.simbox = cpu::Box::cubic(10.0);
+    frame.box = cpu::Box::cubic(10.0);
     cpu::Context ctx;
     cpu::KSpacePME pme(/*alpha=*/0.4, /*grid_spacing=*/1.0, /*order=*/6);
     pme.build({ctx, frame});
@@ -315,7 +315,7 @@ TEST(PmeLifecycle, StableGridRefreshIsReplanFreeAndMemoryStable) {
     EXPECT_GT(bytes_warm, 0u);
 
     // Same FFT shape: 10 → 9.9 Å keeps mesh; only cell_refresh.
-    frame.simbox.scale_isotropic(0.99);
+    frame.box.scale_isotropic(0.99);
     for (int i = 0; i < frame.nlocal(); ++i) {
         frame.span(ATV::kAtom_x)[i] *= 0.99;
         frame.span(ATV::kAtom_y)[i] *= 0.99;
@@ -332,7 +332,7 @@ TEST(PmeLifecycle, StableGridRefreshIsReplanFreeAndMemoryStable) {
         << "stable-grid refresh must not grow KSpace storage";
 
     // Intentional mesh crossing: capacity_rebuild increments; plans recreated.
-    frame.simbox.scale_isotropic(2.0);
+    frame.box.scale_isotropic(2.0);
     pme.launch({ctx, frame, 0, 0});
     EXPECT_EQ(pme.lifecycle_stats().capacity_rebuilds, 1u);
     EXPECT_GE(pme.memory_bytes(), bytes_warm);
@@ -349,7 +349,7 @@ TEST(PmeLifecycle, FftPlanOwnershipIsMoveOnly) {
 
 TEST(PmeLifecycle, BuiltFftPlansTransferToExactlyOneOwner) {
     cpu::Frame frame(0);
-    frame.simbox = cpu::Box::cubic(8.0);
+    frame.box = cpu::Box::cubic(8.0);
     cpu::Context ctx;
     cpu::KSpacePME source(0.4, 1.0, 6);
     source.build({ctx, frame});
@@ -365,10 +365,10 @@ TEST(PmeLifecycle, BuiltFftPlansTransferToExactlyOneOwner) {
 TEST(PmeLifecycle, BoxIdentitySeparatesEqualRevisionReplicaFrames) {
     cpu::Frame first(0);
     cpu::Frame second(0);
-    first.simbox = cpu::Box::cubic(8.0);
-    second.simbox = cpu::Box::cubic(8.0);
-    ASSERT_EQ(first.simbox.revision(), second.simbox.revision());
-    ASSERT_NE(&first.simbox, &second.simbox);
+    first.box = cpu::Box::cubic(8.0);
+    second.box = cpu::Box::cubic(8.0);
+    ASSERT_EQ(first.box.revision(), second.box.revision());
+    ASSERT_NE(&first.box, &second.box);
 
     cpu::Context ctx;
     cpu::KSpacePME pme(0.4, 1.0, 6);
@@ -387,14 +387,14 @@ TEST(LongRangePlanContract, ActualEwaldAndPmePairsBuild) {
     ewald.set_integrator(cpu::md::VelocityVerlet{1.0});
     ewald.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3});
     ewald.on(md::Phase::force).add(cpu::CoulLong{alpha, cutoff});
-    ewald.add(cpu::KSpaceEwald{alpha, 1e-5});
+    ewald.set_evaluator(cpu::KSpaceEwald{alpha, 1e-5});
     EXPECT_NO_THROW(ewald.build());
 
     cpu::md::MD pme;
     pme.set_integrator(cpu::md::VelocityVerlet{1.0});
     pme.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3});
     pme.on(md::Phase::force).add(cpu::CoulLong{alpha, cutoff});
-    pme.add(cpu::KSpacePME{alpha, 1.0, 6});
+    pme.set_evaluator(cpu::KSpacePME{alpha, 1.0, 6});
     EXPECT_NO_THROW(pme.build());
 }
 
@@ -404,7 +404,7 @@ TEST(LongRangePlanContract, ActualMismatchedAlphaFailsBeforePlanBuild) {
     sim.set_integrator(cpu::md::VelocityVerlet{1.0});
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3});
     sim.on(md::Phase::force).add(cpu::CoulLong{0.3, cutoff});
-    sim.add(cpu::KSpacePME{0.31, 1.0, 6});
+    sim.set_evaluator(cpu::KSpacePME{0.31, 1.0, 6});
     EXPECT_THROW(sim.build(), std::runtime_error);
 }
 
@@ -412,14 +412,10 @@ TEST(LongRangePlanContract, NptAcceptsPmeWithReciprocalStress) {
     constexpr double alpha = 0.3;
     constexpr double cutoff = 8.0;
     cpu::md::MD sim;
-    sim.set_integrator(cpu::md::NoseHooverNPT{{.T_target = 300.0,
-                                               .tau_T = 100.0,
-                                               .P_target = 0.0,
-                                               .tau_P = 1000.0,
-                                               .dt = 1.0}});
+    sim.set_integrator(cpu::md::NoseHooverNPT{300.0, 100.0, 0.0, 1000.0, 1.0});
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3});
     sim.on(md::Phase::force).add(cpu::CoulLong{alpha, cutoff});
-    sim.add(cpu::KSpacePME{alpha, 1.0, 6});
+    sim.set_evaluator(cpu::KSpacePME{alpha, 1.0, 6});
     EXPECT_NO_THROW(sim.build());
 }
 
@@ -515,7 +511,7 @@ TEST(PmeStress, ScaledCellMatchesFreshBuild) {
         s0[s] = frame.meta.get(ATV::kStress)[s];
 
     // Uniform scale that keeps the FFT shape (same grid dimensions).
-    frame.simbox.scale_isotropic(0.99);
+    frame.box.scale_isotropic(0.99);
     for (int i = 0; i < frame.nlocal(); ++i) {
         frame.span(ATV::kAtom_x)[i] *= 0.99;
         frame.span(ATV::kAtom_y)[i] *= 0.99;
@@ -528,7 +524,7 @@ TEST(PmeStress, ScaledCellMatchesFreshBuild) {
 
     // Fresh component at the scaled cell.
     auto fresh = make_rocksalt(d, 4);
-    fresh.simbox.scale_isotropic(0.99);
+    fresh.box.scale_isotropic(0.99);
     for (int i = 0; i < fresh.nlocal(); ++i) {
         fresh.span(ATV::kAtom_x)[i] *= 0.99;
         fresh.span(ATV::kAtom_y)[i] *= 0.99;

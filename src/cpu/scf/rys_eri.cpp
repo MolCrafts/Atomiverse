@@ -26,6 +26,7 @@
 #include "atomiverse/cpu/scf/cart.h"
 #include "atomiverse/cpu/scf/rys_roots.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -40,7 +41,6 @@ namespace native {
 
 namespace {
 
-constexpr double kPi = 3.14159265358979323846;
 constexpr double kTwoPi25 = 2.0 * 17.493418327624863; // 2 * π^(5/2)
 
 // Struct wrapper around the generic int[3] layout from cart.h — gives
@@ -379,13 +379,32 @@ static void g_shift_ij(double* gaxis, const RysEnv& env, double rirj_d) {
 // its own buffer.
 static thread_local std::vector<double> tls_g_buf;
 
+// Precomputed angular index offsets for one canonical quartet. Each worker
+// thread reuses one buffer across calls (resize-if-smaller), so the millions
+// of shell-block quartets in a direct-SCF Fock build stop heap-allocating a
+// fresh vector per quartet. Fully overwritten each call (no zeroing needed);
+// per-thread storage keeps the Fock builder's `#pragma omp parallel` race-free.
+struct AngIdx {
+    int ox, oy, oz, out_idx;
+};
+static thread_local std::vector<AngIdx> tls_ang_idx;
+
+// Scratch for the non-canonical wrapper's canonical-kernel output. Reused
+// per thread (resize-if-smaller); the used prefix is zeroed before each
+// canonical accumulation.
+static thread_local std::vector<double> tls_swap_scratch;
+
 // ── Canonical-order ERI kernel ───────────────────────────────────────
 // Runs the 2D-VRR + HRR assuming `li >= lj` and `lk >= ll`. The public
 // `rys_eri_block` wrapper swaps shells and transposes the output buffer
 // when those invariants are violated.
+//
+// omega == 0 is the bare 1/r path (bit-identical to the pre-RSH kernel).
+// omega > 0 evaluates the erf(ω r)/r operator by the standard ρ-rescale
+// (libcint / PySCF): θ = ω²/(ω²+ρ), ρ ← θ ρ. VRR/HRR are unchanged.
 static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
                                     const ShellBlock& C, const ShellBlock& D,
-                                    double* out) {
+                                    double omega, double* out) {
     RysEnv env;
     init_env(env, A, B, C, D);
 
@@ -408,12 +427,13 @@ static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
     const int n_out = env.nfi * nbcd;
 
     // ── Precompute angular index offsets (invariant across primitives) ──
-    // Heap-allocated because d-shell quartets need up to 6^4 = 1296 entries.
-    // The derivative kernel already uses std::vector; we match it here.
-    struct AngIdx {
-        int ox, oy, oz, out_idx;
-    };
-    std::vector<AngIdx> ang_idx(static_cast<size_t>(n_out));
+    // d-shell quartets need up to 6^4 = 1296 entries. The buffer is a
+    // per-thread thread_local reused across quartets (resize-if-smaller),
+    // fully overwritten below (indices 0..n_out-1), so no zeroing is required
+    // and no heap allocation happens on the hot path.
+    if (tls_ang_idx.size() < static_cast<size_t>(n_out))
+        tls_ang_idx.resize(static_cast<size_t>(n_out));
+    AngIdx* ang_idx = tls_ang_idx.data();
     {
         int c = 0;
         for (int ia = 0; ia < env.nfi; ++ia)
@@ -495,7 +515,11 @@ static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
 
                 const double a1 = aij * akl;
                 const double delta = aij + akl;
-                const double a0 = a1 / delta;
+                double a0 = a1 / delta;
+                if (omega > 0.0) {
+                    const double w2 = omega * omega;
+                    a0 *= w2 / (w2 + a0);
+                }
                 const double rijkl[3] = {
                     rij[0] - rkl[0],
                     rij[1] - rkl[1],
@@ -1046,14 +1070,15 @@ void rys_eri_block_deriv(const ShellBlock& A, const ShellBlock& B,
 
 // ── Public API ───────────────────────────────────────────────────────
 
-void rys_eri_block(const ShellBlock& A, const ShellBlock& B,
-                   const ShellBlock& C, const ShellBlock& D, double* out) {
+static void rys_eri_dispatch(const ShellBlock& A, const ShellBlock& B,
+                             const ShellBlock& C, const ShellBlock& D,
+                             double omega, double* out) {
     check_root_budget(A, B, C, D, /*extra_l=*/0);
     const bool swap_ab = A.l < B.l;
     const bool swap_cd = C.l < D.l;
 
     if (!swap_ab && !swap_cd) {
-        rys_eri_block_canonical(A, B, C, D, out);
+        rys_eri_block_canonical(A, B, C, D, omega, out);
         return;
     }
 
@@ -1071,9 +1096,14 @@ void rys_eri_block(const ShellBlock& A, const ShellBlock& B,
     const int nbe = Be.n_cart;
     const int nce = Ce.n_cart;
     const int nde = De.n_cart;
-    std::vector<double> scratch(static_cast<size_t>(nae) * nbe * nce * nde,
-                                0.0);
-    rys_eri_block_canonical(Ae, Be, Ce, De, scratch.data());
+    // Per-thread reused scratch (resize-if-smaller); the canonical kernel
+    // accumulates (+=), so zero the used prefix before the call.
+    const size_t sc_need = static_cast<size_t>(nae) * nbe * nce * nde;
+    if (tls_swap_scratch.size() < sc_need)
+        tls_swap_scratch.resize(sc_need);
+    double* scratch = tls_swap_scratch.data();
+    std::fill(scratch, scratch + sc_need, 0.0);
+    rys_eri_block_canonical(Ae, Be, Ce, De, omega, scratch);
 
     const int na = A.n_cart;
     const int nb = B.n_cart;
@@ -1094,6 +1124,28 @@ void rys_eri_block(const ShellBlock& A, const ShellBlock& B,
             }
         }
     }
+}
+
+void rys_eri_block(const ShellBlock& A, const ShellBlock& B,
+                   const ShellBlock& C, const ShellBlock& D, double* out) {
+    rys_eri_dispatch(A, B, C, D, /*omega=*/0.0, out);
+}
+
+void rys_eri_erf_block(const ShellBlock& A, const ShellBlock& B,
+                       const ShellBlock& C, const ShellBlock& D, double omega,
+                       double* out) {
+    if (omega < 0.0) {
+        throw std::invalid_argument(
+            "rys_eri_erf_block: omega must be >= 0 [1/Bohr]; "
+            "omega = 0 is the bare 1/r operator (identity with rys_eri_block)");
+    }
+    // omega == 0 is the documented identity: go through the same public
+    // 1/r entry so the ω→0 gate is bit-identical, not just numerically close.
+    if (omega == 0.0) {
+        rys_eri_block(A, B, C, D, out);
+        return;
+    }
+    rys_eri_dispatch(A, B, C, D, omega, out);
 }
 
 } // namespace native

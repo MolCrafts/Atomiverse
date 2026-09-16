@@ -35,11 +35,12 @@ namespace scf {
 /// saddle on frustrated systems (test-pinned trap).
 ///
 /// This link is real-algebra only (planar noncollinear spin; no complex
-/// coefficients, no spin–orbit coupling), energy only. Not supported
-/// (throws, no fallback): analytic forces, `mp2()`, `fci()`, `soscf`,
-/// `level_shift`, EDIIS/ADIIS mixers, the ASPC predictor, and non-Hcore
-/// initial guesses. Requires the stored dense ERI (`compute_eri`, on by
-/// default here).
+/// coefficients, no spin–orbit coupling). Analytic nuclear gradients are
+/// supported via the spinor energy-weighted density and the unsymmetrized
+/// four-block exchange contraction (`forces()`). Not supported (throws, no
+/// fallback): `mp2()`, `fci()`, `soscf`, `level_shift`, EDIIS/ADIIS mixers,
+/// the ASPC predictor, and non-Hcore initial guesses. Requires the stored
+/// dense ERI (`compute_eri`, on by default here).
 class GHF : public MeanFieldMethod<GHF> {
   public:
     /// @brief Total electron count N (dimensionless; must be set before

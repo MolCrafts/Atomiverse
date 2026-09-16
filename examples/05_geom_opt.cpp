@@ -18,7 +18,7 @@
 #include "atomiverse/core/log.h"
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/scf/methods.h"
 
 using namespace ATV;
@@ -87,7 +87,7 @@ static cpu::Frame make_aspirin() {
         f.span(ATV::kAtom_y)[i] = double(coords[i][1]);
         f.span(ATV::kAtom_z)[i] = double(coords[i][2]);
     }
-    f.simbox = ATV::cpu::Box::cubic(100.0);
+    f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
 
@@ -100,15 +100,12 @@ int main() {
 
     auto frame = make_aspirin();
 
-    // Concrete RHF force provider — parameters are members.
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = double(1e-6);
-    rhf.max_iter = 200;
-    rhf.force_native_two_electron_deriv = true;
+    // Concrete RHF force provider — parameters are constructor arguments.
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                      /*tol=*/double(1e-6), /*max_iter=*/200};
 
     cpu::minimizer::Minimize opt;
-    opt.add(cpu::minimizer::LBFGS{
+    opt.set_optimizer(cpu::minimizer::LBFGS{
         5,            // memory
         double(0.01), // alpha0 [Å²/eV] (only the Fixed-mode / step-0 fallback)
         20            // max_ls (line-search trial cap)

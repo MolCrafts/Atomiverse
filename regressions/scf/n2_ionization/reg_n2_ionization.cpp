@@ -3,10 +3,11 @@
 ///        ΔSCF — vs externally pinned PySCF 2.14.0 values.
 ///
 /// Out-of-library consumer: public headers + link atomiverse only.
-///   - Koopmans: RHF on N2 (R = 1.0977 Å), IP = −ε_HOMO read through
-///     `OrbitalInfoObserver::ip_koopmans_eV()`, vs the PySCF pin to
-///     1e-3 eV (16.6467 eV at this basis; the HF-limit literature value
-///     is ≈17.3 eV and experiment 15.58 eV — Szabo-Ostlund §3.3).
+///   - Koopmans: RHF on N2 (R = 1.0977 Å) hosted by Evaluate with
+///     `OrbitalInfoObserver` on finalize; IP = −ε_HOMO via
+///     `ip_koopmans_eV()`, vs the PySCF pin to 1e-3 eV (16.6467 eV at this
+///     basis; the HF-limit literature value is ≈17.3 eV and experiment
+///     15.58 eV — Szabo-Ostlund §3.3).
 ///   - ΔSCF: E(N2⁺, UHF) − E(N2, RHF), the cation configured ONLY through
 ///     the existing `charge` / `n_alpha` / `n_beta` members (no new Config
 ///     type, no factory), vs the PySCF ΔSCF pin to 1e-3 eV.
@@ -18,8 +19,9 @@
 #include <cmath>
 #include <cstdio>
 
+#include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/methods.h"
 #include "atomiverse/cpu/scf/orbital_info_observer.h"
@@ -36,7 +38,7 @@ ATV::cpu::Frame n2_frame() {
     frame.span(ATV::kAtom_x)[1] = 0.0;
     frame.span(ATV::kAtom_y)[1] = 0.0;
     frame.span(ATV::kAtom_z)[1] = 1.0977;
-    frame.simbox = ATV::cpu::Box::cubic(20.0);
+    frame.box = ATV::cpu::Box::cubic(20.0);
     return frame;
 }
 
@@ -45,21 +47,25 @@ ATV::cpu::Frame n2_frame() {
 int main() {
     using namespace ATV;
 
-    // ── Neutral N2: RHF/6-31G* ─────────────────────────────────────────
+    // ── Neutral N2: RHF/6-31G* + orbital observer via Evaluate ──────────
     auto frame = n2_frame();
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::Pople631Gs;
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
-    rhf.run(frame);
+    auto handle = rhf.result_handle();
+
+    cpu::scf::OrbitalInfoObserver orb{handle};
+    cpu::Evaluate eval;
+    eval.on(evaluate::Phase::evaluate).add_ref(rhf);
+    eval.on(evaluate::Phase::finalize).add_ref(orb);
+    eval.build();
+    eval.run(frame);
+
     const double e_n2 = rhf.energy();
     std::printf("E(N2, RHF) = %.10f Ha (PySCF -108.942662347983)\n", e_n2);
 
     // Koopmans IP through the observer extension (ip_koopmans_eV = −HOMO).
-    cpu::scf::OrbitalInfoObserver orb{rhf.result_handle()};
-    cpu::Context ctx;
-    cpu::LaunchContext lc{ctx, frame, 0, 0};
-    orb.launch(lc);
     const double ip_koopmans = orb.ip_koopmans_eV();
 
     // PySCF 2.14.0 pin: −ε_HOMO = 0.611756029712 Ha = 16.64672961 eV.

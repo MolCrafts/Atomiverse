@@ -6,11 +6,11 @@
 #include <vector>
 
 #include "atomiverse/cpu/driver/step_timing.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/io/lammps_real.h"
 #include "atomiverse/cpu/longrange/ewald.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/erfc_table.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
@@ -27,12 +27,13 @@ TEST(ErfcTable, MatchesDirectErfc) {
         const double expm2 = std::exp(-grij * grij);
         const double erfcv = std::erfc(grij);
         const double e_ref = erfcv / r;
+        // fpair convention: F⃗ = qq·f·(dx,dy,dz), so f = |F|/(qq·r) = (…)/r³.
         const double f_ref =
-            (erfcv + cpu::md::ErfcTable::kEwaldF * grij * expm2) / (r * r);
-        // Linear-in-r² table: denser near r=0 would be tighter; 2e-3 is fine
-        // for force MD (pair specials + energy bands, not metrology).
-        EXPECT_NEAR(e, e_ref, 2e-3) << "r=" << r;
-        EXPECT_NEAR(f, f_ref, 1e-2) << "r=" << r;
+            (erfcv + cpu::md::ErfcTable::kEwaldF * grij * expm2) / (r * r * r);
+        // Linear-in-r² table: coarsest (relatively) at small r; 5e-3 relative
+        // is fine for force MD (pair specials + energy bands, not metrology).
+        EXPECT_NEAR(e, e_ref, 5e-3 * std::fabs(e_ref)) << "r=" << r;
+        EXPECT_NEAR(f, f_ref, 5e-3 * std::fabs(f_ref)) << "r=" << r;
     }
 }
 
@@ -51,7 +52,7 @@ TEST(PairLJCutCoulLong, FiniteEnergyWithAmberSpecials) {
         f.span(kAtom_tag)[i] = i;
         f.span(kAtom_mass)[i] = 12.0;
     }
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     f.clear_tag_index();
     f.rebuild_tag_index(0, n);
     f.add_bond(0, 1, 0);
@@ -63,11 +64,11 @@ TEST(PairLJCutCoulLong, FiniteEnergyWithAmberSpecials) {
     const double eps = cpu::kcal_per_mol_to_ev(0.1);
     cpu::md::MD sim;
     sim.set_neighbor(cpu::md::NeighborList<>{cut, 2.0, 1, 0, true});
-    sim.add_potential(
+    sim.set_evaluator(
         cpu::PairLJCutCoulLong{{{0, 0, eps, 3.4}, {1, 1, eps, 2.5}}, alpha, cut}
             .set_special_bonds_amber()
             .set_compute_stress(true));
-    sim.add(cpu::KSpaceEwald{alpha, /*accuracy=*/1e-5});
+    sim.set_evaluator(cpu::KSpaceEwald{alpha, /*accuracy=*/1e-5});
     sim.set_integrator(cpu::md::VelocityVerlet{1.0});
     sim.build();
     sim.run(f, 1);

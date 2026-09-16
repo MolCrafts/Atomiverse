@@ -39,7 +39,7 @@ ATV::cpu::Frame oh_frame() {
     frame.span(ATV::kAtom_x)[1] = 0.0;
     frame.span(ATV::kAtom_y)[1] = 0.0;
     frame.span(ATV::kAtom_z)[1] = 0.9640;
-    frame.simbox = ATV::cpu::Box::cubic(20.0);
+    frame.box = ATV::cpu::Box::cubic(20.0);
     return frame;
 }
 
@@ -57,15 +57,15 @@ RhfOut run_rhf(ATV::cpu::Frame frame, ATV::cpu::scf::BasisSet basis,
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     rhf.run(frame);
-    const double homo = rhf.determinant().homo(
-        ATV::cpu::scf::SlaterDeterminant::Spin::alpha);
+    const double homo =
+        rhf.determinant().homo(ATV::cpu::scf::SlaterDeterminant::Spin::alpha);
     return {rhf.energy(), homo};
 }
 
 bool check(const char* label, double got, double want, double tol) {
     const double diff = std::fabs(got - want);
-    std::printf("%-34s got=%.12f want=%.12f |diff|=%.3e tol=%.0e\n", label,
-                got, want, diff, tol);
+    std::printf("%-34s got=%.12f want=%.12f |diff|=%.3e tol=%.0e\n", label, got,
+                want, diff, tol);
     return diff < tol;
 }
 
@@ -104,7 +104,7 @@ int main() {
     cl.span(ATV::kAtom_x)[0] = 0.0;
     cl.span(ATV::kAtom_y)[0] = 0.0;
     cl.span(ATV::kAtom_z)[0] = 0.0;
-    cl.simbox = ATV::cpu::Box::cubic(20.0);
+    cl.box = ATV::cpu::Box::cubic(20.0);
     const auto clm = run_rhf(cl, BasisSet::Pople631pGs, -1);
     ok &= check("E(Cl-, 6-31+G*)", clm.e, -459.539661044387, 1e-7);
 
@@ -122,7 +122,7 @@ int main() {
     h2o.span(ATV::kAtom_x)[2] = 0.0;
     h2o.span(ATV::kAtom_y)[2] = -0.7572;
     h2o.span(ATV::kAtom_z)[2] = -0.4692;
-    h2o.simbox = ATV::cpu::Box::cubic(20.0);
+    h2o.box = ATV::cpu::Box::cubic(20.0);
     const auto wat = run_rhf(h2o, BasisSet::AugCcPVDZ, 0);
     ok &= check("E(H2O, aug-cc-pVDZ)", wat.e, -76.041393519987, 1e-7);
 

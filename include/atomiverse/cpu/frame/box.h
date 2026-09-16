@@ -3,7 +3,7 @@
 ///
 /// Single source of truth for cell data and periodic-boundary helpers on
 /// the CPU backend. Lives in the `frame/` pillar because it is part of the
-/// Frame's physical `simbox` region and is consumed across method domains.
+/// Frame's physical `box` region and is consumed across method domains.
 ///
 /// **Hot-path discipline.** Box stores fundamental cell data
 /// (`Mat3 cell_`) plus a per-step-immutable cache (`Mat3 inv_cell_`,
@@ -33,6 +33,8 @@
 #include <cstdint>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/core/units.h"
+#include "atomiverse/core/vec3.h"
 
 namespace ATV {
 namespace cpu {
@@ -155,8 +157,8 @@ class Box {
 
     /// @brief Wrap a single Cartesian coordinate into `[0, L_d)`.
     ///
-    /// Orthorhombic only. Used by MPI domain decomposition (`rcb`,
-    /// `atom_migration`) and 1-D histogramming. Triclinic wrap is a
+    /// Orthorhombic only. Used by MPI domain decomposition (`Rebalance`,
+    /// `Comm::exchange`) and 1-D histogramming. Triclinic wrap is a
     /// separate concern (see DD spec).
     ///
     /// @param q Coordinate value [Angstrom].
@@ -212,8 +214,12 @@ class Box {
     /// @param sz Scale along z.
     void scale_diagonal(double sx, double sy, double sz) noexcept;
 
-    /// @brief Multiply all three diagonal entries by `s`.
-    /// @param s Isotropic scale.
+    /// @brief Isotropic volume scale: multiply the full cell matrix by `s`.
+    ///
+    /// \(h \leftarrow s\,h\) (all nine entries). For axis-aligned orthorhombic
+    /// boxes this equals diagonal-only scaling; for fcc/triclinic primitives
+    /// it is required so off-diagonal lattice vectors actually move.
+    /// @param s Isotropic scale (dimensionless).
     void scale_isotropic(double s) noexcept;
 
     /// @brief Multiply a single diagonal entry by `s`.
@@ -233,6 +239,26 @@ class Box {
     /// @return Reference to `cell^{-1}` [Angstrom^{-1}].
     [[gnu::always_inline]] inline const Mat3& inv_cell() const noexcept {
         return inv_cell_;
+    }
+
+    // ── Derived geometry (cold; returns a small value) ──────────────────
+
+    /// @brief Reciprocal lattice `2*pi * (cell^{-1})^T`.
+    /// @return Reciprocal cell matrix [Angstrom^{-1}] (rows are b0, b1, b2).
+    Mat3 recip_cell() const noexcept {
+        return inv_cell_.transpose() * AccReal(2.0 * units::pi);
+    }
+
+    /// @brief Euclidean lengths of the three lattice vectors (cell rows).
+    /// @return Vector of edge lengths [Angstrom]. For an orthorhombic cell
+    ///         these equal `length(d)`; for triclinic they are the row norms.
+    Vec3 lengths() const noexcept {
+        return {std::sqrt(cell_(0, 0) * cell_(0, 0) + cell_(0, 1) * cell_(0, 1)
+                          + cell_(0, 2) * cell_(0, 2)),
+                std::sqrt(cell_(1, 0) * cell_(1, 0) + cell_(1, 1) * cell_(1, 1)
+                          + cell_(1, 2) * cell_(1, 2)),
+                std::sqrt(cell_(2, 0) * cell_(2, 0) + cell_(2, 1) * cell_(2, 1)
+                          + cell_(2, 2) * cell_(2, 2))};
     }
 
     /// @brief Monotonic mutation revision for cell-dependent component caches.

@@ -62,8 +62,8 @@ std::vector<double> minimize_simplex(const std::vector<double>& g,
     auto value = [&](const std::vector<double>& c) {
         double f = 0.0;
         for (int i = 0; i < m; ++i) {
-            f += g[static_cast<std::size_t>(i)]
-                 * c[static_cast<std::size_t>(i)];
+            f +=
+                g[static_cast<std::size_t>(i)] * c[static_cast<std::size_t>(i)];
             double qc = 0.0;
             for (int j = 0; j < m; ++j)
                 qc += Q(i, j) * c[static_cast<std::size_t>(j)];
@@ -179,9 +179,9 @@ std::vector<double> minimize_simplex(const std::vector<double>& g,
             return;
         }
         for (int i = 0; i < m; ++i)
-            cv[static_cast<std::size_t>(i)] =
-                tv[static_cast<std::size_t>(i)]
-                * tv[static_cast<std::size_t>(i)] / s;
+            cv[static_cast<std::size_t>(i)] = tv[static_cast<std::size_t>(i)]
+                                              * tv[static_cast<std::size_t>(i)]
+                                              / s;
     };
 
     for (int start = 0; start <= m; ++start) {
@@ -207,8 +207,8 @@ std::vector<double> minimize_simplex(const std::vector<double>& g,
                 gt[static_cast<std::size_t>(i)] =
                     2.0 * t[static_cast<std::size_t>(i)] / s
                     * (gc[static_cast<std::size_t>(i)] - cg);
-                gnorm = std::max(
-                    gnorm, std::fabs(gt[static_cast<std::size_t>(i)]));
+                gnorm =
+                    std::max(gnorm, std::fabs(gt[static_cast<std::size_t>(i)]));
             }
             if (gnorm < 1e-14)
                 break;
@@ -300,12 +300,10 @@ double EDIISMixer::objective(const std::vector<double>& c) const {
         f += c[static_cast<std::size_t>(i)] * E_[static_cast<std::size_t>(i)];
     for (int i = 0; i < m; ++i)
         for (int j = 0; j < m; ++j) {
-            const RealMatrix dD =
-                Da_[static_cast<std::size_t>(i)]
-                - Da_[static_cast<std::size_t>(j)];
-            const RealMatrix dF =
-                Fa_[static_cast<std::size_t>(i)]
-                - Fa_[static_cast<std::size_t>(j)];
+            const RealMatrix dD = Da_[static_cast<std::size_t>(i)]
+                                  - Da_[static_cast<std::size_t>(j)];
+            const RealMatrix dF = Fa_[static_cast<std::size_t>(i)]
+                                  - Fa_[static_cast<std::size_t>(j)];
             double b = trace_dot(dD, dF);
             const RealMatrix dDb = Db_[static_cast<std::size_t>(i)]
                                    - Db_[static_cast<std::size_t>(j)];
@@ -341,10 +339,11 @@ void EDIISMixer::solve_() {
     c_ = minimize_simplex(g, Q);
 }
 
-std::pair<RealMatrix, RealMatrix>
-EDIISMixer::step(const RealMatrix& F_alpha, const RealMatrix& D_alpha,
-                 const RealMatrix& F_beta, const RealMatrix& D_beta,
-                 double energy) {
+std::pair<RealMatrix, RealMatrix> EDIISMixer::step(const RealMatrix& F_alpha,
+                                                   const RealMatrix& D_alpha,
+                                                   const RealMatrix& F_beta,
+                                                   const RealMatrix& D_beta,
+                                                   double energy) {
     push_(F_alpha, D_alpha, F_beta, D_beta, energy);
     if (size() < 2) {
         c_ = {1.0};
@@ -398,8 +397,7 @@ double ADIISMixer::objective(const std::vector<double>& c) const {
         for (int j = 0; j < m; ++j) {
             const RealMatrix dFa = Fa_[static_cast<std::size_t>(j)] - Fa_[n];
             const RealMatrix dFb = Fb_[static_cast<std::size_t>(j)] - Fb_[n];
-            f += c[static_cast<std::size_t>(i)]
-                 * c[static_cast<std::size_t>(j)]
+            f += c[static_cast<std::size_t>(i)] * c[static_cast<std::size_t>(j)]
                  * (trace_dot(dDa, dFa) + trace_dot(dDb, dFb));
         }
     }
@@ -429,9 +427,10 @@ void ADIISMixer::solve_() {
     c_ = minimize_simplex(lin, Q);
 }
 
-std::pair<RealMatrix, RealMatrix>
-ADIISMixer::step(const RealMatrix& F_alpha, const RealMatrix& D_alpha,
-                 const RealMatrix& F_beta, const RealMatrix& D_beta) {
+std::pair<RealMatrix, RealMatrix> ADIISMixer::step(const RealMatrix& F_alpha,
+                                                   const RealMatrix& D_alpha,
+                                                   const RealMatrix& F_beta,
+                                                   const RealMatrix& D_beta) {
     push_(F_alpha, D_alpha, F_beta, D_beta);
     if (size() < 2) {
         c_ = {1.0};

@@ -1,0 +1,69 @@
+! High-spin H2 UKS / BLYP — multi-k NUMERICAL stress documentation twin
+! Atomiverse product: regressions/gpw/gpw-kpoint-uks-stress-gga
+! Offline only; never at ctest time.
+
+&GLOBAL
+  PROJECT h2_uks_kpoint_stress_blyp
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  STRESS_TENSOR NUMERICAL
+  &DFT
+    BASIS_SET_FILE_NAME  BASIS_MOLOPT
+    POTENTIAL_FILE_NAME  GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 3
+    CHARGE 0
+    &MGRID
+      CUTOFF 100
+      REL_CUTOFF 30
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-8
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+    &END KPOINTS
+    &SCF
+      MAX_SCF 80
+      EPS_SCF 1.0E-8
+      SCF_GUESS ATOMIC
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+        NBROYDEN 8
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL BLYP
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC [bohr] 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      UNIT bohr
+      H  5.5  6.0  6.0
+      H  6.5  6.0  6.0
+    &END COORD
+    &KIND H
+      BASIS_SET SZV-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+  &END SUBSYS
+  &PRINT
+    &STRESS_TENSOR ON
+    &END STRESS_TENSOR
+  &END PRINT
+&END FORCE_EVAL

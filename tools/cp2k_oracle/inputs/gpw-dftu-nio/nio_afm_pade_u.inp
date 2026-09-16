@@ -1,0 +1,81 @@
+&GLOBAL
+  PROJECT nio_afm_pade_u
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_SET
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    WFN_RESTART_FILE_NAME nio_wfn-RESTART.wfn
+    PLUS_U_METHOD LOWDIN
+    LSD
+    MULTIPLICITY 1
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &SCF
+      SCF_GUESS RESTART
+      EPS_SCF 1.0E-6
+      MAX_SCF 200
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.15
+        NBUFFER 12
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &PRINT
+      &MULLIKEN ON
+      &END MULLIKEN
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 4.17 4.17 8.34
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Ni_u  0.000  0.000  0.000
+      O     2.085  2.085  2.085
+      Ni_d  0.000  0.000  4.170
+      O     2.085  2.085  6.255
+    &END COORD
+    &KIND Ni_u
+      ELEMENT Ni
+      BASIS_SET SZV-GTH-PADE-q18
+      POTENTIAL GTH-PADE-q18
+      MAGNETIZATION 2.0
+      &DFT_PLUS_U
+        L 2
+        U_MINUS_J [eV] 4.0
+      &END DFT_PLUS_U
+    &END KIND
+    &KIND Ni_d
+      ELEMENT Ni
+      BASIS_SET SZV-GTH-PADE-q18
+      POTENTIAL GTH-PADE-q18
+      MAGNETIZATION -2.0
+      &DFT_PLUS_U
+        L 2
+        U_MINUS_J [eV] 4.0
+      &END DFT_PLUS_U
+    &END KIND
+    &KIND O
+      ELEMENT O
+      BASIS_SET SZV-GTH-PADE
+      POTENTIAL GTH-PADE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

@@ -99,7 +99,7 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
 
         // Hot loop over pre-resolved tuples (Newton-bond-ON: each bond is
         // owned by its smaller-tag atom, stored once). Partner `j` may be
-        // an owner or a ghost; ghost force halves ship home via HaloRecv.
+        // an owner or a ghost; ghost force halves ship home via CommBrick.
 #pragma omp for schedule(static)
         for (int t = 0; t < n_tuples; ++t) {
             const int i = tup[3 * t + 0];
@@ -109,7 +109,7 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
             double dx = x_ptr[i] - x_ptr[j];
             double dy = y_ptr[i] - y_ptr[j];
             double dz = z_ptr[i] - z_ptr[j];
-            f.simbox.min_image(dx, dy, dz);
+            f.box.min_image(dx, dy, dz);
 
             const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
             const double dr = r - r0_[type];

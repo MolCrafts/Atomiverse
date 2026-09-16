@@ -7,14 +7,14 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/am1_parameters.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "atomiverse/cpu/semiempirical/rm1_evaluator.h"
 #include "atomiverse/cpu/semiempirical/rm1_parameters.h"
 #include "atomiverse/cpu/semiempirical/rm1_solver.h"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 using namespace ATV::cpu::semiempirical;
@@ -39,7 +39,7 @@ cpu::Frame make_water() {
     f.span(kAtom_x)[2] = -0.239987;
     f.span(kAtom_y)[2] = 0.926627;
     f.span(kAtom_z)[2] = 0.0;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -63,7 +63,7 @@ TEST(RM1, UnsupportedElementThrows) {
     f.span(kAtom_type)[0] = 2; // He
     f.span(kAtom_mass)[0] = 4.0;
     f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
-    f.simbox = cpu::Box::cubic(10.0);
+    f.box = cpu::Box::cubic(10.0);
     RM1Solver solver;
     EXPECT_THROW(solver.build(f), std::runtime_error);
 }

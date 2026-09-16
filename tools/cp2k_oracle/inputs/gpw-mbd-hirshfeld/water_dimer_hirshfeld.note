@@ -1,0 +1,37 @@
+# Offline pin notes — gpw-mbd-hirshfeld
+
+## Method
+
+Hirshfeld \(V/V_{\mathrm{free}}\) from the GPW PBE valence density (in-tree
+exponential free-atom model, `hirshfeld_tables.h`) → MBD@rsSCS with scaled
+α/C6/R (same libMBD free-atom tables as `gpw-mbd-ice`).
+
+## Why not stock CP2K QS?
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` is only DFTD2|DFTD3|DFTD3(BJ)|DFTD4 — no
+stock TS/MBD. Hosts may link libMBD externally. Hard pin:
+
+1. Dual pure-Python Hirshfeld on the same free-atom exponential model
+   (unit-test `SuperpositionGivesUnitVolumeRatios` + grid integral).
+2. libMBD / ATV `mbd_rsscs_pbe` energy with those volume ratios
+   (free-atom MBD already pinned vs libMBD Fortran git `88069c6`).
+
+Geometry: same water dimer as `gpw-mbd-ice` / `gpw-ts-ice`.
+
+## Free-atom model (document for dual)
+
+```
+rho_Z(r) = A exp(-alpha r),  A = N_val * alpha^3 / (8 pi)
+V_free   = 60 * N_val / alpha^3
+H: N=1, alpha=2.0 ; O: N=6, alpha=2.2  (compact valence-like)
+```
+
+See `include/atomiverse/cpu/gpw/basis_data/hirshfeld_tables.h`.
+
+## Pin (product settings)
+
+```
+E_disp = -1.1479852469005181e-03 Ha
+volumes (O H H O H H) ≈ 0.7403 0.6529 0.6529 0.7153 0.5784 0.5784
+CUTOFF 200 Ry, DZVP-MOLOPT-SR-GTH, GTH-PBE, water dimer 12 Å cell
+```

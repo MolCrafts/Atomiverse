@@ -20,6 +20,7 @@
 /// unchanged (bit-identical).
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "atomiverse/cpu/gpw/internal/collocate.h"
@@ -150,6 +151,8 @@ struct GridProduct {
     int ua = 0,
         ub = 0; ///< indices into ProductSet::prims (bra, ket cartesian prim).
     int level = 0; ///< assigned grid level (index into MultiGrid::levels).
+    int t[3] = {0, 0, 0}; ///< ket image shift (lattice cells; bra stays home).
+    int tcell = 0; ///< index of `t` in ProductSet::cells (Bloch phase lookup).
 };
 
 /// @brief One spherical basis function μ that a cartesian primitive feeds, with
@@ -176,14 +179,38 @@ struct PrimRef {
         0.0; ///< max |coeff| over contributors (for the build screen).
 };
 
+/// @brief Geometry-fixed collint shell task — contiguous monoms in
+///        `ProductSet::by_level[l]` that share one collint pol table
+///        (p, ra, rb, pc). Built once in `build_products` (CP2K-style task
+///        list beyond a flat cartesian-prim monom array). Per-SCF collocate
+///        / integrate iterates tasks; monoms stay the expansion of one
+///        geometry batch (shell-prim pair × angular products × image).
+struct CollintTask {
+    int beg = 0; ///< inclusive start index into `by_level[l]`.
+    int end = 0; ///< exclusive end index into `by_level[l]`.
+    int lpx = 0; ///< max monom (la_x + lb_x) in the task.
+    int lpy = 0; ///< max monom (la_y + lb_y).
+    int lpz = 0; ///< max monom (la_z + lb_z).
+    int Ltot = 0; ///< max |la|+|lb| over monoms (window / radius).
+    /// max_i maxc(ua)·maxc(ub)·|k| — geometry magnitude for integrate screen.
+    double geom_mag = 0.0;
+};
+
 /// @brief Products partitioned by grid level, plus the unique cartesian-primitive
 ///        table and the flat contributor pool the products index into.
 struct ProductSet {
     std::vector<std::vector<GridProduct>>
         by_level; ///< products per level (index ua/ub into prims).
+    /// Per-level shell tasks (geometry batches). Parallel to `by_level`; each
+    /// task's [beg, end) indexes a contiguous monom run of one geometry.
+    std::vector<std::vector<CollintTask>> tasks_by_level;
     std::vector<PrimRef> prims; ///< unique cartesian primitives.
     std::vector<PrimContrib>
         contribs; ///< flat contributor pool (sliced by PrimRef).
+    /// Distinct ket image shifts over all products, lexicographically sorted;
+    /// `GridProduct::tcell` indexes this list. Size 1 (the home cell) for an
+    /// isolated system; the Γ path ignores it (every cell weighs by the same P).
+    std::vector<std::array<int, 3>> cells;
 };
 
 /// @brief Build the geometry-fixed primitive-pair product list (the product-based
@@ -211,11 +238,13 @@ ProductSet build_products(const MultiGrid& mg,
 ///        density matches the single-grid path.
 /// @param grid The level's uniform grid.
 /// @param prods Products assigned to this level (from `ProductSet::by_level[l]`).
+/// @param tasks Shell tasks for this level (`ProductSet::tasks_by_level[l]`).
 /// @param nb Basis size (row stride of `P`).
 /// @param P Density matrix, row-major nb×nb.
 /// @param eps Collocation-window screening tolerance.
 std::vector<double> collocate_products(const UniformGrid& grid,
                                        const std::vector<GridProduct>& prods,
+                                       const std::vector<CollintTask>& tasks,
                                        const std::vector<PrimRef>& prims,
                                        const std::vector<PrimContrib>& contribs,
                                        int nb, const std::vector<double>& P,
@@ -229,8 +258,81 @@ std::vector<double> collocate_products(const UniformGrid& grid,
 /// @return Row-major nb×nb KS contribution from this level.
 std::vector<double> integrate_products(
     const UniformGrid& grid, const std::vector<GridProduct>& prods,
-    const std::vector<PrimRef>& prims, const std::vector<PrimContrib>& contribs,
-    int nb, const std::vector<double>& V_level, double eps);
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<double>& V_level, double eps);
+
+/// @brief `collocate_products` with a per-image-cell density-matrix stack —
+///        the Bloch-sampled product collocation. Each product weighs by
+///        `D[tcell][μ·nb+ν]` instead of one shared `P`: for k-point sampling
+///        D(t) = Σ_k w_k Re[P^k e^{−2πi κ·t}] (t = the product's ket image
+///        shift), which reduces to the Γ path when every D[c] is the same P.
+/// @param D One row-major nb×nb real matrix per `ProductSet::cells` entry.
+/// @return Level density ρ_level, length grid.npts().
+std::vector<double> collocate_products_cells(
+    const UniformGrid& grid, const std::vector<GridProduct>& prods,
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<std::vector<double>>& D, double eps);
+
+/// @brief `integrate_products` resolved per image cell — the EXACT transpose of
+///        `collocate_products_cells`: each product's ∫V·shape scatters into the
+///        real matrix of ITS ket image shift, V_t[tcell][μ·nb+ν]. The per-k
+///        grid KS matrix is the caller's phase sum Σ_t e^{+2πi κ·t}·V_t
+///        (Hermitian: the lattice-shifted window makes V_{−t} = V_tᵀ exactly).
+/// @param ncells Number of image cells (`ProductSet::cells.size()`).
+/// @return One row-major nb×nb real matrix per image cell.
+std::vector<std::vector<double>> integrate_products_cells(
+    const UniformGrid& grid, const std::vector<GridProduct>& prods,
+    const std::vector<CollintTask>& tasks, const std::vector<PrimRef>& prims,
+    const std::vector<PrimContrib>& contribs, int nb,
+    const std::vector<double>& V_level, std::size_t ncells, double eps);
+
+// ── Multi-level MAIN product path (single owner for Γ + multi-k SCF) ─────
+//
+// Per-level collocate_products* / integrate_products* are the kernels; the
+// MAIN multigrid path is the multi-level composition:
+//   ρ_fine = Σ_l prolong(collocate_level_l)
+//   V_ks   = Σ_l integrate_level_l(restrict(V_fine))
+// That composition was historically forked as lambdas in every SCF runner
+// (Γ RKS/UKS, multi-k RKS/UKS). These free functions are the one algorithm.
+
+/// @brief Fine-grid density from a Γ density matrix via multi-level product
+///        collocation + spectral prolongation (MAIN multigrid path).
+/// @param mg Multigrid (levels finest-first; level 0 is the SCF grid).
+/// @param products Geometry-fixed product set with tasks_by_level filled.
+/// @param nb Basis size (row stride of `P`).
+/// @param P Row-major density matrix nb×nb.
+/// @param eps Collocation screening tolerance.
+/// @return Total density on the finest level, length `mg.levels[0].npts()`.
+std::vector<double> multigrid_collocate_rho(const MultiGrid& mg,
+                                            const ProductSet& products, int nb,
+                                            const std::vector<double>& P,
+                                            double eps);
+
+/// @brief Fine-grid density from a Bloch D(t) stack (multi-k MAIN path).
+/// @param D One row-major nb×nb real matrix per `products.cells` entry.
+/// @return Total density on the finest level.
+std::vector<double> multigrid_collocate_rho_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<std::vector<double>>& D, double eps);
+
+/// @brief Integrate fine V_eff into the Γ KS matrix contribution — multi-level
+///        spectral restrict + product integrate (exact adjoint of
+///        `multigrid_collocate_rho`).
+/// @param veff Fine-grid effective potential, length `mg.levels[0].npts()`.
+/// @return Row-major nb×nb real KS grid contribution.
+std::vector<double> multigrid_integrate_veff(const MultiGrid& mg,
+                                             const ProductSet& products, int nb,
+                                             const std::vector<double>& veff,
+                                             double eps);
+
+/// @brief Integrate fine V_eff into the per-image-cell real KS stack (multi-k
+///        MAIN path) — exact adjoint of `multigrid_collocate_rho_cells`.
+/// @return One row-major nb×nb real matrix per `products.cells` entry.
+std::vector<std::vector<double>> multigrid_integrate_veff_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<double>& veff, double eps);
 
 } // namespace gpw
 } // namespace cpu

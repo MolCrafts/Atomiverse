@@ -27,14 +27,14 @@ namespace {
     return values;
 }
 
-::rust::Vec<std::int32_t> require_i32_column(const molrs::FrameRef& frame,
-                                             const char* block,
-                                             const char* col) {
-    auto values = molrs::frame_column_i32(frame, block, col);
+::rust::Vec<std::uint64_t> require_u32_column(const molrs::FrameRef& frame,
+                                              const char* block,
+                                              const char* col) {
+    auto values = molrs::frame_column_u32(frame, block, col);
     if (values.empty()) {
         throw std::runtime_error(std::string("AM1BCCChargeAssigner: required ")
                                  + block + "." + col
-                                 + " i32 column is missing");
+                                 + " uint column is missing");
     }
     return values;
 }
@@ -43,7 +43,9 @@ cpu::Frame build_am1_frame(const molrs::FrameRef& frame) {
     auto x = require_f64_column(frame, "atoms", "x");
     auto y = require_f64_column(frame, "atoms", "y");
     auto z = require_f64_column(frame, "atoms", "z");
-    auto atomic_numbers = require_i32_column(frame, "atoms", "type");
+    // molrs 0.13: Z is `atomic_number` (UInt). `type` is a String
+    // force-field label and no longer carries the element.
+    auto atomic_numbers = require_u32_column(frame, "atoms", "atomic_number");
 
     const auto n = static_cast<int>(x.size());
     if (static_cast<int>(y.size()) != n || static_cast<int>(z.size()) != n) {
@@ -77,7 +79,7 @@ cpu::Frame build_am1_frame(const molrs::FrameRef& frame) {
         sp_z[i] = z[static_cast<std::size_t>(i)];
     }
 
-    auto h = molrs::frame_simbox(frame);
+    auto h = molrs::frame_box(frame);
     if (h.size() == 9u) {
         Mat3 cell;
         for (int i = 0; i < 3; ++i) {
@@ -85,7 +87,7 @@ cpu::Frame build_am1_frame(const molrs::FrameRef& frame) {
                 cell(i, j) = h[static_cast<std::size_t>(3 * i + j)];
             }
         }
-        work.simbox.set_cell(cell);
+        work.box.set_cell(cell);
     }
     return work;
 }
@@ -100,8 +102,8 @@ std::vector<double> to_std_vector(const ::rust::Vec<double>& values) {
 
 } // namespace
 
-AM1BCCChargeAssigner::AM1BCCChargeAssigner(AM1BCCChargeConfig config)
-    : config_(std::move(config)), solver_(config_.am1) {}
+AM1BCCChargeAssigner::AM1BCCChargeAssigner(AM1 am1, std::string parameter_set)
+    : solver_(std::move(am1)), parameter_set_(std::move(parameter_set)) {}
 
 std::vector<double> AM1BCCChargeAssigner::assign(molrs::FrameRef& frame) {
     cpu::Frame work = build_am1_frame(frame);
@@ -117,7 +119,7 @@ std::vector<double> AM1BCCChargeAssigner::assign(molrs::FrameRef& frame) {
         frame,
         ::rust::Slice<const double>(am1.mulliken_charges.data(),
                                     am1.mulliken_charges.size()),
-        {config_.parameter_set.data(), config_.parameter_set.size()});
+        {parameter_set_.data(), parameter_set_.size()});
     last_charges_ = to_std_vector(bcc);
     return last_charges_;
 }

@@ -1,0 +1,25 @@
+# Offline rVV10 pin notes — gpw-rvv10-ice
+
+## CP2K full-QS twin (2026.1)
+
+Host: Arrhenius tree install `work/cp2k/install` (GCC 11.5, libxc, FFTW3).
+Input: `water_dimer_rvv10.inp` (this directory).
+
+```text
+CP2K 2026.1  TYPE RVV10  PARAMETERS 6.3 0.0093
+geometry: water dimer 12 Å cubic, DZVP-MOLOPT-SR-GTH + GTH-PBE, CUTOFF 200
+Dispersion energy = 0.06116467960721 Ha
+Total energy      = -34.27712583714492 Ha
+wall ≈ 121 s (OMP=8)
+SCF converged in 35 OT steps
+```
+
+Note: CP2K applies rVV10 **self-consistently**. ATV product path is
+**post-SCF** on the final PBE density (same policy as `gpw-vdw-df-ice`).
+The dual-frozen regression pin is the post-SCF ATV E_disp; CP2K value is
+the literature-aligned cross-check for sign and scale.
+
+## Kernel tables
+
+CP2K `data/rVV10_kernel_table.dat` (nqs=20, nr=1024, r_max=100 Bohr) is
+embedded float32+zlib as `rvv10_kernel_data.cpp` — no runtime file I/O.

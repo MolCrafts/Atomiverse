@@ -33,6 +33,19 @@ struct PoissonResult {
 PoissonResult solve_poisson(const UniformGrid& grid,
                             const std::vector<double>& rho_r);
 
+/// @brief Periodic Poisson with crystal-momentum transfer \(q\) (fractional):
+///        \(V(G)=4\pi\rho(G)/|q+G|^2\). For \(q=0\) this is identical to
+///        `solve_poisson` (G=0 dropped). For \(q\neq 0\) the G=0 mode is
+///        finite (\(4\pi/|q|^2\)) — required for finite-q pair densities in
+///        multi-k RPA/MP2.
+/// @param grid   Uniform orthorhombic grid.
+/// @param rho_r  Density on the grid, length grid.npts().
+/// @param q_frac Fractional transfer \(\kappa_q\) in (−1/2, 1/2]³.
+/// @return Hartree potential on the grid [Hartree].
+PoissonResult solve_poisson_q(const UniformGrid& grid,
+                              const std::vector<double>& rho_r,
+                              const double q_frac[3]);
+
 } // namespace gpw
 } // namespace cpu
 } // namespace ATV

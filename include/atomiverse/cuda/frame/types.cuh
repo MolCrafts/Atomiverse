@@ -1,18 +1,32 @@
 /// @file cuda/frame/types.cuh
-/// @brief CUDA backend mixed-precision types.
+/// @brief CUDA backend floating-point types — **aligned with LAMMPS Kokkos**.
 ///
-/// Three precision tiers for device data:
-///   real_t  -- per-atom storage (N-scaled, bandwidth-bound). Default: float.
-///   work_t  -- kernel computation, shared memory, per-type params. Default: double.
-///   prec_t  -- accumulators, box, SCF workspace (precision-critical). Default: double.
+/// LAMMPS Kokkos (`KOKKOS_PREC`) exposes one compile-time mode and two types:
 ///
-/// Constraint: sizeof(real_t) <= sizeof(work_t) <= sizeof(prec_t).
-/// Host code uses plain double. These types are CUDA-backend-only.
+/// | mode   | `KK_FLOAT` (storage + force math) | `KK_ACC_FLOAT` (force/energy/virial acc) |
+/// |--------|-----------------------------------|------------------------------------------|
+/// | double | double                            | double                                   |
+/// | mixed  | float                             | double                                   |
+/// | single | float                             | float                                    |
 ///
-/// Configure via CMake:
-///   -DATV_CUDA_REAL=float|double     (default: float)
-///   -DATV_CUDA_WORK=float|double     (default: double)
-///   -DATV_CUDA_PREC=float|double     (default: double)
+/// Atomiverse mirrors that exactly:
+///
+/// | ATV type | role                                      | LMP twin        |
+/// |----------|-------------------------------------------|-----------------|
+/// | `real_t` | per-atom storage (x, v, f, charges, …)    | `KK_FLOAT`      |
+/// | `work_t` | kernel temporaries / shared-mem params    | `KK_FLOAT`      |
+/// | `prec_t` | energy / virial / force accumulation      | `KK_ACC_FLOAT`  |
+///
+/// **`work_t` is not a free third precision axis.** It always equals `real_t`
+/// (same as LAMMPS: force math uses the storage precision). Older docs that
+/// advertised independent `-DATV_CUDA_WORK` are obsolete; pick the mode only:
+///
+///   cmake … -DATV_CUDA_PREC_MODE=double|mixed|single
+///
+/// Constraint: sizeof(real_t) <= sizeof(work_t) <= sizeof(prec_t) (always true
+/// under the three modes above). Host-side Frame/CPU code uses
+/// `ATV::StorageReal` / `WorkReal` / `AccReal` from `core/precision.h`
+/// (CPU AccReal is always double).
 #pragma once
 
 #include <type_traits>
@@ -21,7 +35,7 @@ namespace ATV {
 namespace cuda {
 
 #ifndef ATV_CUDA_REAL_TYPE
-#define ATV_CUDA_REAL_TYPE float
+#define ATV_CUDA_REAL_TYPE double
 #endif
 
 #ifndef ATV_CUDA_WORK_TYPE
@@ -40,6 +54,10 @@ static_assert(sizeof(real_t) <= sizeof(work_t),
               "real_t must not exceed work_t");
 static_assert(sizeof(work_t) <= sizeof(prec_t),
               "work_t must not exceed prec_t");
+
+// Mode invariants (LAMMPS KOKKOS_PREC mapping).
+static_assert(sizeof(real_t) == sizeof(work_t),
+              "work_t must equal real_t (LAMMPS KK_FLOAT); no free work axis");
 
 } // namespace cuda
 } // namespace ATV

@@ -1,0 +1,61 @@
+# Offline oracle note — dfpt-gga-finite-q-si (PW DFPT finite-q × pure GGA, Si at X)
+
+## Intent
+
+Pin finite-q (X = (1/2,0,0)) DFPT phonons for diamond Si with the **pure
+GGA (PBE)** response kernel on the plane-wave method — the joint product of
+the two shipped single-axis pins `dfpt-finite-q-si` (commensurate X path,
+LSDA) and `dfpt-gga-si` (Γ, PBE kernel).
+
+## Oracle status (2026-07-31) — CP2K RUN, offline
+
+**CP2K 2026.1** (source rev `85b8a9b49c`, `~/.local/bin/cp2k`, Arrhenius
+epyc login node — the same binary as the `dfpt-gga-spin-si` pin; no module,
+`module avail cp2k` still empty). CP2K has no PW-DFPT, so the twin is
+`RUN_TYPE VIBRATIONAL_ANALYSIS` on the **2×1×1 supercell** (4 atoms): the
+supercell Γ FD spectrum folds primitive Γ ∪ X, and the eigenvector phases
+(unit cells in phase vs out of phase) identify the X branch on the same
+restricted-PBE Hamiltonian class:
+
+- Input: `inputs/dfpt-gga-finite-q-si/si4_pbe_vib.inp` (PBE,
+  DZVP-MOLOPT-SR-GTH, GTH-PBE-q4, CUTOFF 300 Ry, MP 1×2×2 on the supercell
+  ≡ 2×2×2 on the primitive, `FULLY_PERIODIC T`, DX 0.01 bohr,
+  `EPS_SCF 1e-8`).
+- Run: `CP2K_DATA_DIR=<cp2k>/data OMP_NUM_THREADS=1 cp2k -i si4_pbe_vib.inp -o out`
+- Output lines (9 modes; 3 translations projected out by CP2K):
+  `VIB|Frequency (cm^-1)  9.7979172103E+01    1.3126606201E+02    3.7058084483E+02`
+  `VIB|Frequency (cm^-1)  4.2823632486E+02    4.5748021881E+02    4.5868390952E+02`
+  `VIB|Frequency (cm^-1)  5.3831838074E+02    5.3831995025E+02    5.4364491240E+02`
+  Modes 1–6 carry the X folding phase (the two unit cells move out of
+  phase) → **X branch: 97.98, 131.27 (TA doublet, FD-split — the same
+  systematic displaced-cell FD symmetry breaking the `dfpt-gga-spin-si` Γ
+  twin shows), 370.58, 428.24 (LA/LO), 457.48, 458.68 (TO) cm⁻¹**. Modes
+  7–9 = primitive Γ optical (538.32, 538.32, 543.64). Literature LDA X for
+  scale: TA≈146, LA≈397, LO≈413, TO≈455 (Giannozzi et al., PRB 43, 7231).
+- Wall (serial, 1 thread): **288.7 s**. ATV DFPT twin regression: **49.8 s**
+  (serial) → fair ratio r = T_atv/T_cp2k = **0.17** (≤ 10).
+
+The GPW GTH/MOLOPT representation differs from the ATV NC-UPF 10 Ry PW twin
+(Γ-only supercell mesh), so the CP2K numbers anchor the **physics windows**
+(|ω| low 3 ∈ [50, 400], high 3 ∈ [300, 850] cm⁻¹ — the LSDA parent's
+windows, which contain both engines), not the digit. The sharp
+same-Hamiltonian gate is below.
+
+## Sharp pin (same Hamiltonian, energy-only path)
+
+Central second difference of the **restricted-PBE** PW SCF total energy on
+the **2×1×1 supercell** (h = 0.03 Å on supercell atom-0 x, SCF tol 1e-9,
+identical ecut/k/XC/UPF):
+
+- E₀ = −15.121055415608 Ha, E(+h) = −15.120904127510 Ha,
+  E(−h) = −15.120505505958 Ha
+- C[(0x),(0x)] = (E⁺ − 2E⁰ + E⁻)/h² = **21.2006 eV/Å²**
+
+DFPT supercell diagonal at regression settings: **21.1974 eV/Å²**
+(~0.015 % agreement); regression gate |Δ| ≤ 0.30 eV/Å².
+
+Both measured 2026-07-31 (Release, this host) with a scratch harness that
+builds the supercell via `cpu::vib::expand_supercell(frame, 2, 1, 1)` and
+runs `PW::run` at tol 1e-9 — an independent energy-only code path (Davidson
+SCF total energy), not the DFPT solver. ctest never launches CP2K; the
+regression hard-codes the numbers (`REFERENCE.md`).

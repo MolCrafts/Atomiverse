@@ -7,8 +7,6 @@
 #include <cublas_v2.h>
 #include <cusolverDn.h>
 
-#include "atomiverse/core/real.h"
-
 namespace ATV {
 namespace cuda {
 

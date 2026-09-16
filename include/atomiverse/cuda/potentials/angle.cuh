@@ -1,7 +1,9 @@
 /// @file cuda/potentials/angle.cuh
 /// @brief LAMMPS-style abstract base for bonded 3-body styles (CUDA).
 #pragma once
-#include "atomiverse/facade/component_role.h"
+
+#include "atomiverse/core/role.h"
+#include "atomiverse/cuda/component/potential.cuh"
 
 #include <cstdint>
 #include <functional>
@@ -12,7 +14,7 @@
 namespace ATV {
 namespace cuda {
 
-class Angle : public Component {
+class Angle : public cuda::Potential {
   public:
     Role role() const override { return 0; }
     ~Angle() override = default;

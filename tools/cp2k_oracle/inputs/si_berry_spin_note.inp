@@ -1,0 +1,59 @@
+# CP2K twin (offline oracle note) — collinear-spin Berry-phase dipole, bulk Si
+# Pairs with regressions/pw/berry-spin-si/REFERENCE.md.
+# Never executed at ctest/regression time (offline pin only).
+#
+# Same modern-theory-of-polarization observable as si_berry_polarization_note.inp
+# (&MOMENTS PERIODIC T), with an explicit LSD / UKS spin section documenting the
+# collinear path. Absolute phases (GTH + Gaussian) are not comparable to the
+# ONCV plane-wave twin; symmetry pins (half-quantum lattice, ASR Z*=0) are
+# basis-independent and are the scientific product gate.
+&GLOBAL
+  PROJECT si_berry_spin
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 1
+    &QS
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &MGRID
+      CUTOFF 300
+    &END MGRID
+    &SCF
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &PRINT
+      &MOMENTS
+        PERIODIC T
+      &END MOMENTS
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      # fcc primitive vectors of diamond Si, a = 5.43 A
+      A 0.000 2.715 2.715
+      B 2.715 0.000 2.715
+      C 2.715 2.715 0.000
+    &END CELL
+    &COORD
+      Si 0.0000 0.0000 0.0000
+      Si 1.3575 1.3575 1.3575
+      # displaced twin: move atom 2 by +0.02 * C = (0.0543, 0.0543, 0.0000)
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PADE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

@@ -188,11 +188,10 @@ TEST(SlaterDeterminantCtor, DimensionMismatchThrows) {
 // Edge case: the unrestricted constructor validates the beta channel too
 // (negative beta occupation, alpha channel valid).
 TEST(SlaterDeterminantCtor, UnrestrictedBadBetaChannelThrows) {
-    EXPECT_THROW(
-        SlaterDeterminant(make_c_alpha(), make_eps(), make_f_aufbau(), 2,
-                          make_c_beta(), make_eps_beta(),
-                          RealVector{1.0, -0.5, 0.5}, 1),
-        std::invalid_argument);
+    EXPECT_THROW(SlaterDeterminant(make_c_alpha(), make_eps(), make_f_aufbau(),
+                                   2, make_c_beta(), make_eps_beta(),
+                                   RealVector{1.0, -0.5, 0.5}, 1),
+                 std::invalid_argument);
 }
 
 // ── 3. density vs handwritten GEMM (basics / numerics) ───────────────
@@ -280,8 +279,8 @@ TEST(SlaterDeterminantOrbitals, HomoLumoAufbau) {
 // Edge case: no virtual orbitals (f = (1,1,1), N = 3) — lumo() returns
 // homo() (observer:57-59 semantics).
 TEST(SlaterDeterminantOrbitals, LumoEqualsHomoWhenAllOccupied) {
-    SlaterDeterminant sd(make_c_alpha(), make_eps(),
-                         RealVector{1.0, 1.0, 1.0}, 3);
+    SlaterDeterminant sd(make_c_alpha(), make_eps(), RealVector{1.0, 1.0, 1.0},
+                         3);
     EXPECT_NEAR(sd.lumo(Spin::alpha), sd.homo(Spin::alpha), 1e-15);
     EXPECT_NEAR(sd.lumo(Spin::alpha), 0.3, 1e-15);
 }
@@ -323,14 +322,12 @@ TEST(SlaterDeterminantWithOccupation, CopyPathSwapsAndPreservesOriginal) {
     SlaterDeterminant excited = sd.with_occupation(Spin::alpha, 1, 2);
     // New value carries the non-Aufbau occupation (1,0,1).
     expect_matrix_near(excited.density(Spin::alpha),
-                       manual_density(make_c_alpha(), {1.0, 0.0, 1.0}),
-                       1e-12);
+                       manual_density(make_c_alpha(), {1.0, 0.0, 1.0}), 1e-12);
     EXPECT_NEAR(excited.homo(Spin::alpha), 0.3, 1e-15);  // highest OCCUPIED
     EXPECT_NEAR(excited.lumo(Spin::alpha), -0.5, 1e-15); // lowest VIRTUAL
     // Original untouched: still Aufbau.
     expect_matrix_near(sd.density(Spin::alpha),
-                       manual_density(make_c_alpha(), make_f_aufbau()),
-                       1e-12);
+                       manual_density(make_c_alpha(), make_f_aufbau()), 1e-12);
     EXPECT_NEAR(sd.homo(Spin::alpha), -0.5, 1e-15);
 }
 
@@ -341,8 +338,7 @@ TEST(SlaterDeterminantWithOccupation, MovePathChainsOnTemporary) {
         SlaterDeterminant(make_c_alpha(), make_eps(), make_f_aufbau(), 2)
             .with_occupation(Spin::alpha, 1, 2);
     expect_matrix_near(excited.density(Spin::alpha),
-                       manual_density(make_c_alpha(), {1.0, 0.0, 1.0}),
-                       1e-12);
+                       manual_density(make_c_alpha(), {1.0, 0.0, 1.0}), 1e-12);
 }
 
 // Edge case: the transfer requires f_from == 1 and f_to == 0 — moving FROM
@@ -350,11 +346,9 @@ TEST(SlaterDeterminantWithOccupation, MovePathChainsOnTemporary) {
 TEST(SlaterDeterminantWithOccupation, InvalidTransferThrows) {
     SlaterDeterminant sd = make_restricted();
     // from = 2 has f = 0 (not 1).
-    EXPECT_THROW(sd.with_occupation(Spin::alpha, 2, 1),
-                 std::invalid_argument);
+    EXPECT_THROW(sd.with_occupation(Spin::alpha, 2, 1), std::invalid_argument);
     // to = 0 has f = 1 (not 0).
-    EXPECT_THROW(sd.with_occupation(Spin::alpha, 1, 0),
-                 std::invalid_argument);
+    EXPECT_THROW(sd.with_occupation(Spin::alpha, 1, 0), std::invalid_argument);
 }
 
 // ── 10. validate(S) — the S-dependent invariants ─────────────────────
@@ -372,8 +366,8 @@ TEST(SlaterDeterminantValidate, IdentityOverlapIntegerOccupationPasses) {
 // does NOT hold (PSP != P for fractional f) and must be SKIPPED; the
 // electron-count invariant Tr(P^s S) = sum f still holds, so validate passes.
 TEST(SlaterDeterminantValidate, FractionalOccupationSkipsIdempotency) {
-    SlaterDeterminant sd(make_c_alpha(), make_eps(),
-                         RealVector{1.0, 0.5, 0.5}, 2);
+    SlaterDeterminant sd(make_c_alpha(), make_eps(), RealVector{1.0, 0.5, 0.5},
+                         2);
     RealMatrix s = xt::eye<double>(3);
     EXPECT_NO_THROW(sd.validate(s));
 }

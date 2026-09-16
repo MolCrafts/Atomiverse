@@ -60,15 +60,15 @@ HueckelGuess::HueckelGuess(const std::vector<native::Shell>& shells,
             throw std::invalid_argument(
                 "HueckelGuess: shell center coincides with no atom");
         const double h = vsip(Z, sh.l); // throws on unsupported (Z, l)
-        const int n_comp = spherical ? (2 * sh.l + 1)
-                                     : (sh.l + 1) * (sh.l + 2) / 2;
+        const int n_comp =
+            spherical ? (2 * sh.l + 1) : (sh.l + 1) * (sh.l + 2) / 2;
         for (int c = 0; c < n_comp; ++c)
             diag.push_back(h);
     }
 
     // F_μμ = VSIP;  F_μν = ½ K (H_μμ + H_νν) S_μν  for μ ≠ ν.
-    F = xt::zeros<double>({static_cast<std::size_t>(n_work),
-                           static_cast<std::size_t>(n_work)});
+    F = xt::zeros<double>(
+        {static_cast<std::size_t>(n_work), static_cast<std::size_t>(n_work)});
     for (int i = 0; i < n_work; ++i) {
         F(i, i) = diag[static_cast<std::size_t>(i)];
         for (int j = i + 1; j < n_work; ++j) {

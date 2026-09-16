@@ -9,9 +9,28 @@
 ///
 /// Shared by scf_solver.cpp (Fock build) and gradient.cpp (XC gradient).
 ///
+/// The AO-on-grid matrices Phi (and, for GGA, dPhi_x/y/z) depend only on the
+/// molecular geometry and the grid, not on the density, so they are geometry-
+/// fixed across all SCF iterations. `XCGridBasis` holds them so the Fock
+/// builder can build them once per geometry (in `HamiltonianBuilder`, a mutable
+/// per-geometry cache) and reuse them across the ~15–30 SCF iterations,
+/// avoiding a fresh G×N pass of transcendental basis evaluations every step.
+///
+/// Memory cost of the cache (unconditional — no thresholds, no config knobs):
+/// the LSDA cache holds one `Phi[G × N]`; the GGA cache holds `Phi` plus three
+/// gradient blocks `dPhi_x/y/z`, i.e. **4×G·N doubles**. For def2-SVP benzene
+/// (N ≈ 120 Cartesian AOs, medium grid G ≈ 1.2×10⁵) that is ≈115 MB (LSDA) /
+/// ≈460 MB (GGA). This is the same order as the `T_a/T_b` transients the
+/// density GEMM already materializes each call; the cache simply keeps that
+/// working set resident across iterations. If a future very large grid OOMs,
+/// the escape hatch is a grid-point threshold — deliberately not introduced
+/// here (no speculative configuration).
+///
 /// @see PySCF numint.py for the reference algorithm.
 #pragma once
 
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <xtensor-blas/xlinalg.hpp>
@@ -36,6 +55,79 @@ struct XCGridResult {
     double E_xc;  ///< Total XC energy [Hartree].
     double n_alpha_integrated; ///< Grid-integrated alpha electron count.
     double n_beta_integrated;  ///< Grid-integrated beta electron count.
+};
+
+/// @brief Geometry-fixed AO-on-grid basis workspace (internal, not a Config
+///        bag): the value matrix Phi and, for GGA, the gradient matrices
+///        dPhi_x/y/z on a fixed molecular grid.
+///
+/// These matrices depend only on the geometry + grid, so `build()` is a
+/// per-geometry one-time cost the density-dependent `evaluate_xc_batched`
+/// overload consumes across every SCF iteration. Owned as a private cache by
+/// `HamiltonianBuilder`; it is not a user-facing type.
+struct XCGridBasis {
+    xt::xtensor<double, 2> Phi;    ///< AO values Phi[G × N].
+    xt::xtensor<double, 2> dPhi_x; ///< d/dx Phi[G × N] (GGA only).
+    xt::xtensor<double, 2> dPhi_y; ///< d/dy Phi[G × N] (GGA only).
+    xt::xtensor<double, 2> dPhi_z; ///< d/dz Phi[G × N] (GGA only).
+    bool gga = false;              ///< true → gradient blocks are populated.
+    bool built = false; ///< true → build() has run for the current geometry.
+
+    /// @brief Evaluate the AO value (and, for GGA, gradient) matrices on the
+    ///        grid, reusing the same per-point basis evaluation as the cube
+    ///        writers (`eval_basis` / `eval_basis_val_grad`).
+    ///
+    /// @param grid    Molecular quadrature grid.
+    /// @param shells  Basis-function shell descriptors [n_basis].
+    /// @param n_basis Number of basis functions.
+    /// @param is_gga  true → also build dPhi_x/y/z (GGA functionals).
+    void build(const MolecularGrid& grid,
+               const std::vector<native::Shell>& shells, int n_basis,
+               bool is_gga) {
+        const int G = static_cast<int>(grid.points.size());
+        const int N = n_basis;
+        const std::size_t Gs = static_cast<std::size_t>(G);
+        const std::size_t Ns = static_cast<std::size_t>(N);
+        gga = is_gga;
+
+        // Row-major for element-wise ops; will convert for BLAS as needed.
+        Phi = xt::zeros<double>({Gs, Ns});
+        if (is_gga) {
+            dPhi_x = xt::zeros<double>({Gs, Ns});
+            dPhi_y = xt::zeros<double>({Gs, Ns});
+            dPhi_z = xt::zeros<double>({Gs, Ns});
+        }
+
+        // Loop: outer over grid points so each OpenMP thread owns a disjoint
+        // set of grid rows -- Phi(g,:) and dPhi_*(g,:) are then written by
+        // exactly one thread, race-free. The result is bitwise identical to a
+        // serial mu-outer loop (each Phi(g,mu) is the same single eval); only
+        // the iteration order changes. Delegates the per-point polynomial logic
+        // to basis_eval.h so d-shells (and higher l) inherit the same code path
+        // as the cube writers.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+        for (int g = 0; g < G; ++g) {
+            const double rx = static_cast<double>(grid.points[g].x);
+            const double ry = static_cast<double>(grid.points[g].y);
+            const double rz = static_cast<double>(grid.points[g].z);
+            for (int mu = 0; mu < N; ++mu) {
+                const auto& sh = shells[mu];
+                if (is_gga) {
+                    double v, gx, gy, gz;
+                    eval_basis_val_grad(sh, rx, ry, rz, v, gx, gy, gz);
+                    Phi(g, mu) = v;
+                    dPhi_x(g, mu) = gx;
+                    dPhi_y(g, mu) = gy;
+                    dPhi_z(g, mu) = gz;
+                } else {
+                    Phi(g, mu) = eval_basis(sh, rx, ry, rz);
+                }
+            }
+        }
+        built = true;
+    }
 };
 
 /// @brief Parallel grid-contraction GEMM: C = A^T @ B.
@@ -101,92 +193,59 @@ grid_contract_tn(const xt::xtensor<double, 2>& A,
     return C;
 }
 
-/// @brief Batched XC grid integration engine.
+/// @brief Batched XC grid integration on a precomputed AO-on-grid basis.
 ///
-/// Builds AO value matrix Phi and gradient matrices dPhi once per call,
-/// then uses BLAS GEMM for density contraction and Vxc assembly.
+/// Runs the density-dependent steps (density GEMM → XC batch → Vxc GEMM) on a
+/// geometry-fixed `XCGridBasis`, so the geometry-invariant Phi/dPhi build is
+/// hoisted out of the SCF iteration loop. Bit-for-bit identical to the
+/// rebuild-every-call overload on the same inputs.
 ///
-/// @param grid    Molecular quadrature grid.
-/// @param shells  Basis function shell descriptors [n_basis].
-/// @param n_basis Number of basis functions.
+/// @param aog     Precomputed AO value/gradient matrices (built for this grid).
+/// @param grid    Molecular quadrature grid (supplies the weights + point
+///                count; must be the grid `aog` was built from).
 /// @param P_alpha Alpha density matrix [n_basis × n_basis].
 /// @param P_beta  Beta density matrix [n_basis × n_basis].
 /// @param xc_type XC functional type (LSDA or PBE).
 /// @return XCGridResult with Vxc matrices, E_xc, and integration diagnostics.
-inline XCGridResult
-evaluate_xc_batched(const MolecularGrid& grid,
-                    const std::vector<native::Shell>& shells, int n_basis,
-                    const xt::xtensor<double, 2>& P_alpha,
-                    const xt::xtensor<double, 2>& P_beta, XCType xc_type) {
+inline XCGridResult evaluate_xc_batched(const XCGridBasis& aog,
+                                        const MolecularGrid& grid,
+                                        const xt::xtensor<double, 2>& P_alpha,
+                                        const xt::xtensor<double, 2>& P_beta,
+                                        XCType xc_type) {
     const int G = static_cast<int>(grid.points.size());
-    const int N = static_cast<int>(n_basis);
+    const int N = static_cast<int>(aog.Phi.shape()[1]);
     // GGA path is needed for PBE and for the B3LYP / PBE0 hybrids, whose
     // semi-local part carries a gradient-dependent term.
     const bool is_gga = ATV::cpu::scf::is_gga(xc_type);
     const size_t Gs = static_cast<size_t>(G);
     const size_t Ns = static_cast<size_t>(N);
 
-    // ── 1. Build Phi[G × N] (and dPhi_d[G × N] for GGA) ──────────────
-    // Row-major for element-wise ops; will convert for BLAS as needed.
-    xt::xtensor<double, 2> Phi = xt::zeros<double>({Gs, Ns});
-    xt::xtensor<double, 2> dPhi_x, dPhi_y, dPhi_z;
-    if (is_gga) {
-        dPhi_x = xt::zeros<double>({Gs, Ns});
-        dPhi_y = xt::zeros<double>({Gs, Ns});
-        dPhi_z = xt::zeros<double>({Gs, Ns});
-    }
-
-    // Screen: track which grid points have nonzero basis functions.
-    // `char` (not `std::vector<bool>`) so the parallel loop below can write
-    // distinct elements without the bit-packed-proxy data race.
-    std::vector<char> active(G, 0);
-
-    // Loop: outer over grid points so each OpenMP thread owns a disjoint
-    // set of grid rows -- Phi(g,:), dPhi_*(g,:) and active[g] are then
-    // written by exactly one thread, race-free. The result is bitwise
-    // identical to the former serial mu-outer loop (each Phi(g,mu) is the
-    // same single eval); only the iteration order changes. Delegates the
-    // per-point polynomial logic to basis_eval.h so d-shells (and higher
-    // l) inherit the same code path as the cube writers.
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for (int g = 0; g < G; ++g) {
-        const double rx = static_cast<double>(grid.points[g].x);
-        const double ry = static_cast<double>(grid.points[g].y);
-        const double rz = static_cast<double>(grid.points[g].z);
-        for (int mu = 0; mu < N; ++mu) {
-            const auto& sh = shells[mu];
-            if (is_gga) {
-                double v, gx, gy, gz;
-                eval_basis_val_grad(sh, rx, ry, rz, v, gx, gy, gz);
-                Phi(g, mu) = v;
-                dPhi_x(g, mu) = gx;
-                dPhi_y(g, mu) = gy;
-                dPhi_z(g, mu) = gz;
-                if (std::abs(v) > 1e-20)
-                    active[g] = 1;
-            } else {
-                const double v = eval_basis(sh, rx, ry, rz);
-                Phi(g, mu) = v;
-                if (std::abs(v) > 1e-20)
-                    active[g] = 1;
-            }
-        }
-    }
+    // ── 1. AO-on-grid basis is precomputed (aog). ────────────────────
+    const xt::xtensor<double, 2>& Phi = aog.Phi;
+    const xt::xtensor<double, 2>& dPhi_x = aog.dPhi_x;
+    const xt::xtensor<double, 2>& dPhi_y = aog.dPhi_y;
+    const xt::xtensor<double, 2>& dPhi_z = aog.dPhi_z;
 
     // ── 2. Density via GEMM: T = Phi @ P, rho = rowsum(T * Phi) ───────
-    // Convert P to double for computation
-    xt::xtensor<double, 2> Pa({Ns, Ns}), Pb({Ns, Ns});
-    for (int mu = 0; mu < N; ++mu)
-        for (int nu = 0; nu < N; ++nu) {
-            Pa(mu, nu) = static_cast<double>(P_alpha(mu, nu));
-            Pb(mu, nu) = static_cast<double>(P_beta(mu, nu));
-        }
-
-    // T_a = Phi @ Pa  [G × N]  — GEMM
-    auto T_a = xt::linalg::dot(Phi, Pa);
-    auto T_b = xt::linalg::dot(Phi, Pb);
+    // When P is already double (default AccReal) contract against the input
+    // directly, skipping the O(N²) elementwise copy; the float-storage path
+    // (StorageReal=float) keeps the explicit conversion.
+    xt::xtensor<double, 2> T_a, T_b;
+    if constexpr (std::is_same_v<
+                      typename std::decay_t<decltype(P_alpha)>::value_type,
+                      double>) {
+        T_a = xt::linalg::dot(Phi, P_alpha);
+        T_b = xt::linalg::dot(Phi, P_beta);
+    } else {
+        xt::xtensor<double, 2> Pa({Ns, Ns}), Pb({Ns, Ns});
+        for (int mu = 0; mu < N; ++mu)
+            for (int nu = 0; nu < N; ++nu) {
+                Pa(mu, nu) = static_cast<double>(P_alpha(mu, nu));
+                Pb(mu, nu) = static_cast<double>(P_beta(mu, nu));
+            }
+        T_a = xt::linalg::dot(Phi, Pa);
+        T_b = xt::linalg::dot(Phi, Pb);
+    }
 
     // rho_a[g] = sum_nu T_a(g,nu) * Phi(g,nu)  — element-wise multiply + row sum
     xt::xtensor<double, 1> rho_a_arr = xt::sum(T_a * Phi, {1});
@@ -344,19 +403,52 @@ evaluate_xc_batched(const MolecularGrid& grid,
     Vxc_a_d = 0.5 * (Vxc_a_d + xt::transpose(Vxc_a_d));
     Vxc_b_d = 0.5 * (Vxc_b_d + xt::transpose(Vxc_b_d));
 
-    // Convert to double
+    // Emit the result. When the working element type already matches the
+    // output (double, the default AccReal) move the assembled matrices out —
+    // skipping the O(N²) elementwise copy; the float-storage path keeps the
+    // explicit conversion.
     XCGridResult result;
-    result.Vxc_alpha = xt::xtensor<double, 2>::from_shape({Ns, Ns});
-    result.Vxc_beta = xt::xtensor<double, 2>::from_shape({Ns, Ns});
-    for (int mu = 0; mu < N; ++mu)
-        for (int nu = 0; nu < N; ++nu) {
-            result.Vxc_alpha(mu, nu) = static_cast<double>(Vxc_a_d(mu, nu));
-            result.Vxc_beta(mu, nu) = static_cast<double>(Vxc_b_d(mu, nu));
-        }
+    if constexpr (std::is_same_v<
+                      typename std::decay_t<decltype(P_alpha)>::value_type,
+                      double>) {
+        result.Vxc_alpha = std::move(Vxc_a_d);
+        result.Vxc_beta = std::move(Vxc_b_d);
+    } else {
+        result.Vxc_alpha = xt::xtensor<double, 2>::from_shape({Ns, Ns});
+        result.Vxc_beta = xt::xtensor<double, 2>::from_shape({Ns, Ns});
+        for (int mu = 0; mu < N; ++mu)
+            for (int nu = 0; nu < N; ++nu) {
+                result.Vxc_alpha(mu, nu) = static_cast<double>(Vxc_a_d(mu, nu));
+                result.Vxc_beta(mu, nu) = static_cast<double>(Vxc_b_d(mu, nu));
+            }
+    }
     result.E_xc = static_cast<double>(E_xc);
     result.n_alpha_integrated = static_cast<double>(n_alpha_int);
     result.n_beta_integrated = static_cast<double>(n_beta_int);
     return result;
+}
+
+/// @brief Batched XC grid integration engine (rebuild-every-call).
+///
+/// Thin wrapper that builds the AO value/gradient matrices for this geometry
+/// and delegates to the precomputed-basis overload. Kept bit-identical for the
+/// TD-DFT / gradient call sites that do not (yet) hoist the AO-on-grid cache.
+///
+/// @param grid    Molecular quadrature grid.
+/// @param shells  Basis function shell descriptors [n_basis].
+/// @param n_basis Number of basis functions.
+/// @param P_alpha Alpha density matrix [n_basis × n_basis].
+/// @param P_beta  Beta density matrix [n_basis × n_basis].
+/// @param xc_type XC functional type (LSDA or PBE).
+/// @return XCGridResult with Vxc matrices, E_xc, and integration diagnostics.
+inline XCGridResult
+evaluate_xc_batched(const MolecularGrid& grid,
+                    const std::vector<native::Shell>& shells, int n_basis,
+                    const xt::xtensor<double, 2>& P_alpha,
+                    const xt::xtensor<double, 2>& P_beta, XCType xc_type) {
+    XCGridBasis aog;
+    aog.build(grid, shells, n_basis, ATV::cpu::scf::is_gga(xc_type));
+    return evaluate_xc_batched(aog, grid, P_alpha, P_beta, xc_type);
 }
 
 } // namespace scf

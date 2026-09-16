@@ -6,18 +6,23 @@
 /// 32-bit integer) is spent only at deliberately chosen *roles* — never at the
 /// accumulators or global counters where it would corrupt results.
 ///
-/// ### Floating-point tiers (mirrors `cuda/frame/types.cuh` real_t/work_t/prec_t)
-/// Modeled on the LAMMPS GPU package "mixed" mode: *pairwise forces are computed
-/// in single precision, but accumulated into double-precision force vectors.*
-/// Only ::ATV::StorageReal and ::ATV::WorkReal may be lowered to `float`;
-/// ::ATV::AccReal is **always** `double` — the "key location" precision that is
-/// never economized.
+/// ### Floating-point tiers
+///
+/// **CPU / shared** (`StorageReal` / `WorkReal` / `AccReal`):
+/// only storage and work may be lowered to `float`; ::ATV::AccReal is
+/// **always** `double` — the "key location" precision that is never economized.
+///
+/// **CUDA** (`real_t` / `work_t` / `prec_t` in `cuda/frame/types.cuh`) follows
+/// **LAMMPS Kokkos** (`KOKKOS_PREC`), not a free three-axis split:
+/// one mode knob `-DATV_CUDA_PREC_MODE=double|mixed|single` maps to
+/// `(KK_FLOAT, KK_ACC_FLOAT)` with `work_t ≡ real_t ≡ KK_FLOAT` and
+/// `prec_t ≡ KK_ACC_FLOAT`. There is no independent CUDA "work" precision.
 ///
 /// | tier            | role                                   | CUDA twin | default | may lower? |
 /// |-----------------|----------------------------------------|-----------|---------|-----------|
 /// | `StorageReal`   | per-atom persistent state (x, v, f)    | `real_t`  | double  | yes (float) |
 /// | `WorkReal`      | transient per-kernel compute scalars   | `work_t`  | double  | yes (float) |
-/// | `AccReal`       | accumulators / reductions / energy / virial / SCF | `prec_t` | double | **no** |
+/// | `AccReal`       | accumulators / reductions / energy / virial / SCF | `prec_t` | double | **no** (CPU); CUDA `single` mode may lower `prec_t` |
 ///
 /// ### Integer tiers (ports LAMMPS `src/lmptype.h` roles)
 /// Each role is sized independently so 64-bit width is paid only where a count

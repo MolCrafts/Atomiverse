@@ -5,7 +5,7 @@
 /// and CPU/CUDA parity tests. Uses xt::linalg for eigendecomposition
 /// and matrix operations -- no manual linear algebra.
 ///
-/// @see cuda::scf::SCFSolver for the CUDA inner-solver implementation
+/// @see the concrete method (cuda::scf::RHF) private cycle for the CUDA inner-solver implementation
 #pragma once
 
 #include <vector>
@@ -22,7 +22,7 @@ namespace toy {
 /// @brief Toy SCF solver result (synthetic reference solver only).
 ///
 /// Lives in `scf::toy` so it cannot collide with the former production
-/// `ATV::cpu::scf::SCFResult` in `SCFSolver::run.h` (same name in the same
+/// `ATV::cpu::scf::SCFResult` in `RhfScfCycle::drive.h` (same name in the same
 /// namespace would be an ODR violation across the library).
 struct SCFResult {
     bool converged = false; ///< Whether SCF converged within max_iter.

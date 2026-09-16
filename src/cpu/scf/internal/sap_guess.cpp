@@ -40,8 +40,8 @@ SapGuess::SapGuess(const std::vector<native::Shell>& shells,
         pots.emplace_back(at.Z);
 
     // Quadrature: V_μν = Σ_g w_g φ_μ(r_g) V_SAP(r_g) φ_ν(r_g), Cartesian AOs.
-    RealMatrix V_cart = xt::zeros<double>({static_cast<std::size_t>(n_cart),
-                                           static_cast<std::size_t>(n_cart)});
+    RealMatrix V_cart = xt::zeros<double>(
+        {static_cast<std::size_t>(n_cart), static_cast<std::size_t>(n_cart)});
     std::vector<double> phi(static_cast<std::size_t>(n_cart));
     std::vector<int> nz;
     nz.reserve(static_cast<std::size_t>(n_cart));
@@ -51,15 +51,13 @@ SapGuess::SapGuess(const std::vector<native::Shell>& shells,
             const double dx = gp.x - atoms[a].pos[0];
             const double dy = gp.y - atoms[a].pos[1];
             const double dz = gp.z - atoms[a].pos[2];
-            v += pots[a].value(
-                std::sqrt(dx * dx + dy * dy + dz * dz));
+            v += pots[a].value(std::sqrt(dx * dx + dy * dy + dz * dz));
         }
         const double wv = gp.weight * v;
         nz.clear();
         for (int i = 0; i < n_cart; ++i) {
-            const double p =
-                eval_basis(shells[static_cast<std::size_t>(i)], gp.x, gp.y,
-                           gp.z);
+            const double p = eval_basis(shells[static_cast<std::size_t>(i)],
+                                        gp.x, gp.y, gp.z);
             phi[static_cast<std::size_t>(i)] = p;
             if (p != 0.0)
                 nz.push_back(i);
@@ -77,8 +75,8 @@ SapGuess::SapGuess(const std::vector<native::Shell>& shells,
         for (int j = 0; j < i; ++j)
             V_cart(i, j) = V_cart(j, i);
 
-    V = spherical ? RealMatrix(xt::linalg::dot(
-            xt::transpose(c2s), xt::linalg::dot(V_cart, c2s)))
+    V = spherical ? RealMatrix(xt::linalg::dot(xt::transpose(c2s),
+                                               xt::linalg::dot(V_cart, c2s)))
                   : std::move(V_cart);
     F = T + V;
 }

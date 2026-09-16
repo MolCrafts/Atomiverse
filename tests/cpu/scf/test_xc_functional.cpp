@@ -157,6 +157,126 @@ TEST(XCFunctional, PBEClosedShellSymmetry) {
                 static_cast<double>(pbe.vsigma_bb), 1e-8);
 }
 
+// ── PBEsol GGA ──────────────────────────────────────────────────────────
+
+TEST(XCFunctional, PBEsolMetadata) {
+    EXPECT_TRUE(is_gga(XCType::PBEsol));
+    EXPECT_DOUBLE_EQ(hybrid_exchange_fraction(XCType::PBEsol), 0.0);
+    EXPECT_DOUBLE_EQ(hybrid_pt2_fraction(XCType::PBEsol), 0.0);
+}
+
+TEST(XCFunctional, PBEsolMatchesPBEAtZeroGradient) {
+    // At σ=0, Fx=1 and H=0 → PBEsol and PBE share the PW92 LDA base.
+    for (double rho : {0.01, 0.1, 0.5, 2.0}) {
+        auto pbe = evaluate_xc(XCType::PBE, rho / 2, rho / 2, 0, 0, 0);
+        auto sol = evaluate_xc(XCType::PBEsol, rho / 2, rho / 2, 0, 0, 0);
+        EXPECT_NEAR(sol.exc, pbe.exc, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(sol.vrho_alpha, pbe.vrho_alpha, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(sol.vrho_beta, pbe.vrho_beta, 1e-12) << "rho=" << rho;
+    }
+}
+
+TEST(XCFunctional, PBEsolDiffersFromPBEAtFiniteGradient) {
+    // μ_sol = 10/81 < μ_PBE → different enhancement at finite s.
+    auto pbe = evaluate_xc(XCType::PBE, 0.3, 0.3, 0.2, 0.1, 0.2);
+    auto sol = evaluate_xc(XCType::PBEsol, 0.3, 0.3, 0.2, 0.1, 0.2);
+    EXPECT_GT(std::abs(sol.exc - pbe.exc), 1e-8);
+    EXPECT_TRUE(std::isfinite(sol.exc));
+    EXPECT_TRUE(std::isfinite(sol.vsigma_aa));
+}
+
+// ── revPBE GGA (κ=1.245; Zhang & Yang 1998) ──────────────────────────────
+
+TEST(XCFunctional, RevPBEMetadata) {
+    EXPECT_TRUE(is_gga(XCType::RevPBE));
+    EXPECT_DOUBLE_EQ(hybrid_exchange_fraction(XCType::RevPBE), 0.0);
+    EXPECT_DOUBLE_EQ(hybrid_pt2_fraction(XCType::RevPBE), 0.0);
+}
+
+TEST(XCFunctional, RevPBEMatchesPBEAtZeroGradient) {
+    // At σ=0, Fx=1 and H=0 → revPBE and PBE share the PW92 LDA base.
+    for (double rho : {0.01, 0.1, 0.5, 2.0}) {
+        auto pbe = evaluate_xc(XCType::PBE, rho / 2, rho / 2, 0, 0, 0);
+        auto rev = evaluate_xc(XCType::RevPBE, rho / 2, rho / 2, 0, 0, 0);
+        EXPECT_NEAR(rev.exc, pbe.exc, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(rev.vrho_alpha, pbe.vrho_alpha, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(rev.vrho_beta, pbe.vrho_beta, 1e-12) << "rho=" << rho;
+    }
+}
+
+TEST(XCFunctional, RevPBEDiffersFromPBEAtFiniteGradient) {
+    // κ_rev = 1.245 > κ_PBE → different enhancement at finite s.
+    auto pbe = evaluate_xc(XCType::PBE, 0.3, 0.3, 0.2, 0.1, 0.2);
+    auto rev = evaluate_xc(XCType::RevPBE, 0.3, 0.3, 0.2, 0.1, 0.2);
+    EXPECT_GT(std::abs(rev.exc - pbe.exc), 1e-8);
+    EXPECT_TRUE(std::isfinite(rev.exc));
+    EXPECT_TRUE(std::isfinite(rev.vsigma_aa));
+}
+
+// ── RPBE GGA (exponential F_x; Hammer–Hansen–Nørskov 1999) ──────────────
+
+TEST(XCFunctional, RPBEMetadata) {
+    EXPECT_TRUE(is_gga(XCType::RPBE));
+    EXPECT_DOUBLE_EQ(hybrid_exchange_fraction(XCType::RPBE), 0.0);
+    EXPECT_DOUBLE_EQ(hybrid_pt2_fraction(XCType::RPBE), 0.0);
+}
+
+TEST(XCFunctional, RPBEMatchesPBEAtZeroGradient) {
+    // At σ=0, F_x=1 and H=0 → RPBE and PBE share the PW92 LDA base.
+    for (double rho : {0.01, 0.1, 0.5, 2.0}) {
+        auto pbe = evaluate_xc(XCType::PBE, rho / 2, rho / 2, 0, 0, 0);
+        auto rpbe = evaluate_xc(XCType::RPBE, rho / 2, rho / 2, 0, 0, 0);
+        EXPECT_NEAR(rpbe.exc, pbe.exc, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(rpbe.vrho_alpha, pbe.vrho_alpha, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(rpbe.vrho_beta, pbe.vrho_beta, 1e-12) << "rho=" << rho;
+    }
+}
+
+TEST(XCFunctional, RPBEDiffersFromPBEAtFiniteGradient) {
+    // Exponential F_x vs rational PBE form → different enhancement at finite s.
+    auto pbe = evaluate_xc(XCType::PBE, 0.3, 0.3, 0.2, 0.1, 0.2);
+    auto rpbe = evaluate_xc(XCType::RPBE, 0.3, 0.3, 0.2, 0.1, 0.2);
+    EXPECT_GT(std::abs(rpbe.exc - pbe.exc), 1e-8);
+    EXPECT_TRUE(std::isfinite(rpbe.exc));
+    EXPECT_TRUE(std::isfinite(rpbe.vsigma_aa));
+}
+
+TEST(XCFunctional, RPBEDiffersFromRevPBEAtFiniteGradient) {
+    // RPBE ≠ revPBE (different exchange form / κ).
+    auto rev = evaluate_xc(XCType::RevPBE, 0.3, 0.3, 0.2, 0.1, 0.2);
+    auto rpbe = evaluate_xc(XCType::RPBE, 0.3, 0.3, 0.2, 0.1, 0.2);
+    EXPECT_GT(std::abs(rpbe.exc - rev.exc), 1e-8);
+}
+
+
+TEST(XCFunctional, OptB88VdWMetadata) {
+    EXPECT_TRUE(is_gga(XCType::OptB88VdW));
+    EXPECT_DOUBLE_EQ(hybrid_exchange_fraction(XCType::OptB88VdW), 0.0);
+    EXPECT_DOUBLE_EQ(hybrid_pt2_fraction(XCType::OptB88VdW), 0.0);
+}
+
+TEST(XCFunctional, OptB88VdWDiffersFromB88AtFiniteGradient) {
+    // optB88 beta/gamma != B88; pure OptB88VdW uses PW92 not LYP.
+    auto blyp = evaluate_xc(XCType::BLYP, 0.3, 0.3, 0.2, 0.1, 0.2);
+    auto opt = evaluate_xc(XCType::OptB88VdW, 0.3, 0.3, 0.2, 0.1, 0.2);
+    EXPECT_GT(std::abs(opt.exc - blyp.exc), 1e-6);
+    EXPECT_TRUE(std::isfinite(opt.exc));
+    EXPECT_TRUE(std::isfinite(opt.vsigma_aa));
+    EXPECT_NEAR(opt.vsigma_ab, 0.0, 1e-15); // LDA-C only
+}
+
+TEST(XCFunctional, OptB88VdWDiffersFromPBEAtFiniteGradient) {
+    auto pbe = evaluate_xc(XCType::PBE, 0.3, 0.3, 0.2, 0.1, 0.2);
+    auto opt = evaluate_xc(XCType::OptB88VdW, 0.3, 0.3, 0.2, 0.1, 0.2);
+    EXPECT_GT(std::abs(opt.exc - pbe.exc), 1e-6);
+}
+
+TEST(XCFunctional, OptB88VdWClosedShellSymmetry) {
+    auto out = evaluate_xc(XCType::OptB88VdW, 0.25, 0.25, 0.1, 0.05, 0.1);
+    EXPECT_NEAR(out.vrho_alpha, out.vrho_beta, 1e-12);
+    EXPECT_NEAR(out.vsigma_aa, out.vsigma_bb, 1e-12);
+}
+
 // ── Numerical stability ─────────────────────────────────────────────────
 
 TEST(XCFunctional, NoNaNAtVariousDensities) {

@@ -14,7 +14,7 @@
 #include <omp.h>
 #endif
 
-#include "atomiverse/cpu/comm/domain.h"
+#include "atomiverse/cpu/communication/domain.h"
 
 namespace ATV {
 namespace cpu {
@@ -128,7 +128,7 @@ void PairCoulCut::compute(const LaunchContext& ctx) {
             "PairCoulCut::launch: runtime.md.pair_list is null");
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
-    const auto& box = f.simbox;
+    const auto& box = f.box;
 
     const auto* dd = ctx.runtime.md.dd;
 #ifdef ATV_HAS_MPI

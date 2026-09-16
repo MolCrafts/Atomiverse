@@ -33,8 +33,9 @@
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/component/criterion.h"
-#include "atomiverse/facade/loop.h"
+#include "atomiverse/cpu/montecarlo/transaction.h"
 
 namespace ATV {
 namespace cpu {
@@ -107,9 +108,56 @@ class Metropolis : public OutcomePolicy {
     }
 
     /// @brief Apply the acceptance test to the trial energy now in the frame.
-    /// @param s Loop state; `s.frame.meta.get(kEnergy)` is the trial energy [eV].
-    /// @return `Commit` on accept, `Rollback` on reject.
+    ///
+    /// `exp(-βΔE)` is the WHOLE acceptance rule only for a canonical trial —
+    /// one that changes neither the volume nor the particle number. A `Box`
+    /// trial carries the `P·ΔV` and `N·ln(V'/V)` terms and an `Insert`/`Delete`
+    /// trial the `V/(Λ³N)` chemical-potential prefactor; judging either by the
+    /// energy alone samples no defined ensemble, and a downhill draw would be
+    /// committed silently. Those verbs therefore throw, naming the preset that
+    /// does own them — the same guard `NptMetropolis` (`cpu/montecarlo/
+    /// npt_mc.h`) and `GcmcMetropolis` (`cpu/montecarlo/gcmc.h`) already carry.
+    ///
+    /// @param s Loop state; `s.frame.meta.get(kEnergy)` is the trial energy
+    ///        [eV] and `s.runtime.mc.proposal` carries the trial verb.
+    /// @return `Commit` on accept, `Rollback` on reject — and always
+    ///         `Rollback`, with no draw, for an empty (`None`) proposal.
+    /// @throws std::runtime_error when the proposal is not published, or on a
+    ///         `Box` / `Insert` / `Delete` trial verb (no canonical rule).
     Outcome after_stages(const cpu::LoopState& s) override {
+        const mc::Transaction* txn = s.runtime.mc.proposal;
+        if (txn == nullptr)
+            throw std::runtime_error(
+                "Metropolis: ctx.mc.proposal not published — must run under an "
+                "MC preset");
+        switch (txn->verb) {
+        case mc::Transaction::Verb::None:
+            // An empty proposal (a Mover with nothing to propose: TranslateMove
+            // on `nlocal() == 0`, InsertDeleteMove deleting from N == 0) is
+            // rejected outright — no Boltzmann draw, nothing to undo. Same
+            // disposal as the siblings (npt_mc.h, gcmc.h) and what the bound
+            // docs promise ("both always rejected"). It is still a DECIDED
+            // trial, so it counts as an attempt and never as an accept.
+            ++n_attempts_;
+            return Outcome::Rollback;
+        case mc::Transaction::Verb::Displace:
+            // The one verb this ensemble owns: exp(-βΔE) is the whole rule.
+            break;
+        case mc::Transaction::Verb::Box:
+            throw std::runtime_error(
+                "Metropolis: no canonical (NVT) acceptance rule for a Box "
+                "trial verb — volume moves need the NptMc preset, whose rule "
+                "carries the P*dV and N*ln(V'/V) terms this one does not have "
+                "(cpu::mc::NptMc, Python NptMC).");
+        case mc::Transaction::Verb::Insert:
+        case mc::Transaction::Verb::Delete:
+            throw std::runtime_error(
+                "Metropolis: no canonical (NVT) acceptance rule for an "
+                "Insert/Delete trial verb — insertion moves need the Gcmc "
+                "preset, whose rule carries the V/(Lambda^3 N) chemical-"
+                "potential prefactor this one does not have (cpu::mc::Gcmc, "
+                "Python GCMC).");
+        }
         const AccReal e_trial = s.frame.meta.get(kEnergy);
         const AccReal dE = e_trial - e_cur_;
         ++n_attempts_;

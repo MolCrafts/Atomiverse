@@ -1,0 +1,39 @@
+# Offline twin: Born–Mayer–Huggins ion dimer — LAMMPS pair_style born
+# metal units (eV, Å). pair_modify shift yes matches ATV PairBorn.
+# Not run by ctest. Pin recorded 2026-07-24 →
+# regressions/forcefield/born-repulsion-foothold/REFERENCE.md
+
+units           metal
+atom_style      atomic
+atom_modify     map array
+boundary        p p p
+
+region          box block 0 40 0 40 0 40
+create_box      1 box
+
+mass            1 1.0
+
+create_atoms    1 single 20.0 20.0 20.0
+create_atoms    1 single 22.5 20.0 20.0
+
+# pair_coeff i j A rho sigma C D
+# E = A exp((sigma-r)/rho) - C/r^6 + D/r^8   (rho softness [Å])
+pair_style      born 8.0
+pair_coeff      1 1 1000.0 3.0 1.0 50.0 20.0
+pair_modify     shift yes
+
+neighbor        0.3 bin
+neigh_modify    delay 0 every 1 check no
+
+thermo_style    custom step pe fmax fnorm
+thermo          1
+run             0
+
+variable        e equal pe
+print           "PIN_E ${e}"
+print           "PIN_FMAX $(fmax)"
+print           "PIN_FNORM $(fnorm)"
+
+dump            1 all custom 1 forces.dump id fx fy fz
+dump_modify     1 format line "%d %.16e %.16e %.16e"
+run             0

@@ -1,0 +1,44 @@
+# Offline pin notes — gpw-ts-forces
+
+## Policy
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` has **no TS** (only DFTD2 / DFTD3 /
+DFTD3(BJ) / DFTD4). Oracle is **libMBD** free-atom TS energy + **force dual-gate**
+(product \(\nabla E\) vs independent central FD of that energy), same policy as
+`gpw-ts-ice` / `gpw-mbd-forces`.
+
+Never launch libMBD or CP2K from ctest — pins are hard-coded in
+`regressions/gpw/gpw-ts-forces/REFERENCE.md`.
+
+## Geometry
+
+Water dimer (Å), free-atom TS (PBE \(s_R=0.94\), \(d=20\)):
+
+```
+O  0.000000  0.000000  0.000000
+H  0.758602  0.000000  0.504284
+H  0.758602  0.000000 -0.504284
+O  3.000000  0.000000  0.000000
+H  3.758602  0.000000  0.504284
+H  3.758602  0.000000 -0.504284
+```
+
+Å→Bohr: `1/0.52917720859` (ATV).
+
+## Energy pins
+
+| Mode | E_disp [Ha] | Source |
+| ---- | ----------- | ------ |
+| Isolated | −5.9764872295816794×10⁻⁴ | libMBD `cmbd_ts_energy` (git 88069c6) |
+| Periodic 12 Å, rcut 50 Å pure-RS | −6.099630773386013×10⁻⁴ | dual pure-RS / ATV `ts_pbe` (`gpw-ts-ice`) |
+
+## Force dual-gate (never live in ctest)
+
+```text
+max |F_product − F_fd(h=1e-5 Bohr)| ≤ 1e-6 Ha/Bohr
+|sum F| ≤ 1e-8 Ha/Bohr
+F(ts) − F(plain) matches standalone ts_pbe forces ≤ 1e-7 Ha/Bohr
+```
+
+Optional host with libMBD C API: request gradients on the same coordinates and
+compare to ATV product forces (expect \(O(h^2)\) agreement with analytic).

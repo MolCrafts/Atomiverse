@@ -1,0 +1,74 @@
+! O2 triplet UKS / PADE / DZVP-MOLOPT-GTH + GTH-PBE-q6 — Γ-only, MT isolated
+! Twin for Atomiverse regressions/gpw/gpw-uks-multigrid
+! (same pin family as gpw-uks-o2-gamma; ATV uses ngrids=4 product collocation)
+! Geometry: R(O-O) = 1.2075 Å (same as molecular O2 regressions)
+! Valence: 12 e- (GTH-q6), multiplicity 3 → Nα=7, Nβ=5
+
+&GLOBAL
+  PROJECT o2_uks_pade_mg
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME  BASIS_MOLOPT
+    POTENTIAL_FILE_NAME  GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 3
+    CHARGE 0
+    &MGRID
+      CUTOFF 400
+      REL_CUTOFF 60
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-12
+      EXTRAPOLATION ASPC
+    &END QS
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+    &SCF
+      MAX_SCF 200
+      EPS_SCF 1.0E-7
+      SCF_GUESS ATOMIC
+      &OT OFF
+      &END OT
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+        NBROYDEN 8
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &PRINT
+      &MOMENTS OFF
+      &END MOMENTS
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      ! Centered in the 12 Å cell (MT nonperiodic needs well-contained Gaussians)
+      O  6.000000  6.000000  5.396250
+      O  6.000000  6.000000  6.603750
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

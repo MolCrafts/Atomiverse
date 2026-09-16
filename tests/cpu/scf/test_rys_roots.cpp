@@ -12,22 +12,19 @@
 ///     the iterative scheme) to <= 1e-10, AND satisfies the Rys
 ///     quadrature moment identity sum_i w_i t_i^{2m} = F_m(x) for
 ///     m = 0..2N-1 — a libcint-independent mathematical check that holds
-///     even without -DATV_BUILD_LIBCINT.
+///     as a libcint-independent mathematical check.
 
 #if defined(ATV_HAS_HF)
 
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "atomiverse/cpu/scf/rys_roots.h"
 
-#ifdef ATV_HAS_LIBCINT
-extern "C" {
-void CINTrys_roots(int nroots, double x, double* u, double* w);
-}
-#endif
 
 namespace {
 
@@ -103,62 +100,6 @@ double boys_ref(int m, double x) {
 
 } // namespace
 
-#ifdef ATV_HAS_LIBCINT
-
-TEST(RysRoots, MatchesLibcint) {
-    for (int nroots = 1; nroots <= 5; ++nroots) {
-        for (double x : kSampleX) {
-            double u_ref[8] = {};
-            double w_ref[8] = {};
-            double u_atv[8] = {};
-            double w_atv[8] = {};
-
-            CINTrys_roots(nroots, x, u_ref, w_ref);
-            ATV::cpu::scf::native::rys_roots(nroots, x, u_atv, w_atv);
-
-            for (int i = 0; i < nroots; ++i) {
-                EXPECT_NEAR(u_atv[i], u_ref[i], kTol)
-                    << "root drift at nroots=" << nroots << " x=" << x
-                    << " i=" << i;
-                EXPECT_NEAR(w_atv[i], w_ref[i], kTol)
-                    << "weight drift at nroots=" << nroots << " x=" << x
-                    << " i=" << i;
-            }
-        }
-    }
-}
-
-// ── Iterative root finder (nroots 6, 7) vs libcint ───────────────────
-//
-// libcint dispatches nroots 6/7 to its own iterative segment_solve
-// (CINTrys_jacobi / CINTrys_schmidt) — an implementation independent of
-// our port. The native iterative finder must reproduce it to <= 1e-10
-// across the small / intermediate / large x regimes.
-TEST(RysRoots, IterativeMatchesLibcint) {
-    constexpr double kIterTol = 1e-10;
-    for (int nroots = 6; nroots <= 7; ++nroots) {
-        for (double x : kIterX) {
-            double u_ref[8] = {};
-            double w_ref[8] = {};
-            double u_atv[8] = {};
-            double w_atv[8] = {};
-
-            CINTrys_roots(nroots, x, u_ref, w_ref);
-            ATV::cpu::scf::native::rys_roots(nroots, x, u_atv, w_atv);
-
-            for (int i = 0; i < nroots; ++i) {
-                EXPECT_NEAR(u_atv[i], u_ref[i], kIterTol)
-                    << "iterative root drift at nroots=" << nroots << " x=" << x
-                    << " i=" << i;
-                EXPECT_NEAR(w_atv[i], w_ref[i], kIterTol)
-                    << "iterative weight drift at nroots=" << nroots
-                    << " x=" << x << " i=" << i;
-            }
-        }
-    }
-}
-
-#endif // ATV_HAS_LIBCINT
 
 // ── Rys quadrature moment identity (libcint-independent) ─────────────
 //
@@ -172,10 +113,8 @@ TEST(RysRoots, IterativeMatchesLibcint) {
 // ill-conditioned even for libcint's own (ground-truth) roots — at
 // nroots=7, x=1, libcint itself misses the m=13 moment by ~1e-7. The
 // check is therefore applied to m <= 2N-4, the range where the identity
-// holds to ~1e-10 for any correct root set. This is a libcint-
-// independent mathematical correctness check that holds even without
-// -DATV_BUILD_LIBCINT; the full-precision (<= 1e-10) match against the
-// independent libcint reference is asserted by IterativeMatchesLibcint.
+// holds to ~1e-10 for any correct root set. This is a mathematical
+// correctness check independent of any external integral library.
 TEST(RysRoots, IterativeSatisfiesMomentIdentity) {
     constexpr double kMomentTol = 1e-10;
     for (int nroots = 6; nroots <= 7; ++nroots) {
@@ -200,6 +139,50 @@ TEST(RysRoots, IterativeSatisfiesMomentIdentity) {
             }
         }
     }
+}
+
+// ── Unsupported nroots -> catchable exception, not abort (item 14) ─────
+//
+// nroots > 7 (reachable through g/h shells) and nroots < 1 are outside
+// the supported 1..7 domain. The production contract *after*
+// scf-review-05-api-hygiene is a catchable std::invalid_argument whose
+// message names `nroots` — NOT the pre-fix std::fprintf + std::abort(),
+// which terminates the process uncatchably and is unit-untestable.
+//
+// x = 1.0 is benign: it sits in the intermediate regime
+// (SMALLX_LIMIT < x < 35 + 5*nroots), so the call reaches the domain
+// switch/default branch instead of the small-x or large-x fast paths —
+// which is exactly the branch that must now throw.
+//
+// These tests are placed LAST in the file deliberately: while the pre-fix
+// abort() is still in place they terminate the whole test binary (RED),
+// and every test above has already run by then.
+TEST(RysRoots, UnsupportedNrootsThrowsInvalidArgument) {
+    double u[8] = {};
+    double w[8] = {};
+    EXPECT_THROW(ATV::cpu::scf::native::rys_roots(8, 1.0, u, w),
+                 std::invalid_argument);
+}
+
+TEST(RysRoots, UnsupportedNrootsMessageNamesNroots) {
+    double u[8] = {};
+    double w[8] = {};
+    try {
+        ATV::cpu::scf::native::rys_roots(8, 1.0, u, w);
+        ADD_FAILURE() << "expected rys_roots(8, 1.0, ...) to throw";
+    } catch (const std::invalid_argument& e) {
+        EXPECT_NE(std::string(e.what()).find("nroots"), std::string::npos)
+            << "exception message must name nroots, got: " << e.what();
+    }
+}
+
+TEST(RysRoots, NonPositiveNrootsThrowsInvalidArgument) {
+    double u[8] = {};
+    double w[8] = {};
+    EXPECT_THROW(ATV::cpu::scf::native::rys_roots(0, 1.0, u, w),
+                 std::invalid_argument);
+    EXPECT_THROW(ATV::cpu::scf::native::rys_roots(-1, 1.0, u, w),
+                 std::invalid_argument);
 }
 
 #endif // ATV_HAS_HF

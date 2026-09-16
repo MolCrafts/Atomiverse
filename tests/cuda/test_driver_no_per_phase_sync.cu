@@ -115,7 +115,7 @@ TEST(DriverNoPerPhaseSync, StepHasZeroStreamSync) {
 
 TEST(DriverNoPerPhaseSync, AsyncBridgeUsesLaunchHostFunc) {
     const std::string path =
-        std::string(ATV_SOURCE_DIR) + "/src/cuda/async/async_bridge.cu";
+        std::string(ATV_SOURCE_DIR) + "/src/cuda/asynchronous/async_bridge.cu";
     const std::string src = read_file(path);
     ASSERT_FALSE(src.empty());
 

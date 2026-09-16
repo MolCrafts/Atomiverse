@@ -88,8 +88,11 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& ec, double& vc_a,
 /// @param[out] vrho_s    d(rho_s*eps_x)/drho_s, exchange potential
 ///                       [Hartree].
 /// @param[out] vsigma_ss d(rho_s*eps_x)/dsigma_ss [Hartree*Bohr^2].
+/// @param beta     B88 beta (default 0.0042; optB88-vdW uses 0.003368671161).
+/// @param gamma    B88 gamma (default 6.0; optB88-vdW uses 6.981317007977318).
 void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
-                       double& vrho_s, double& vsigma_ss);
+                       double& vrho_s, double& vsigma_ss, double beta = 0.0042,
+                       double gamma = 6.0);
 
 /// @brief Lee-Yang-Parr GGA correlation (libxc XC_GGA_C_LYP, id 131),
 ///        spin-polarized, in the Miehlich-Savin-Stoll-Preuss closed form.

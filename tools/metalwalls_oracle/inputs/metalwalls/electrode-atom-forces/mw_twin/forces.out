@@ -1,0 +1,6 @@
+# Forces on mobile particles in atomic unit
+# -----------------------------------------
+# Force:   1 au = 8.2387225e-8 N = 51.421 eV/angstrom
+#       fx_total               fy_total                fz_total               fx_coulomb              fy_coulomb              fz_coulomb             fx_coulomb_lr           fy_coulomb_lr           fz_coulomb_lr           fx_coulomb_k0           fy_coulomb_k0           fz_coulomb_k0           fx_coulomb_sr           fy_coulomb_sr           fz_coulomb_sr           fx_coulomb_mol          fy_coulomb_mol          fz_coulomb_mol         fx_van_der_Waals        fy_van_der_Waals        fz_van_der_Waals       fx_intramolecular       fy_intramolecular       fz_intramolecular   
+# step        0
+-1.109577648126279E-019 +6.070836345055573E-020 +1.769232616266544E-002 -1.109577648126279E-019 +6.070836345055573E-020 +1.769232616266544E-002 -1.109577648126279E-019 +6.070836345055573E-020 +9.761530424171576E-005 +0.000000000000000E+000 +0.000000000000000E+000 +1.759471085842373E-002 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000 +0.000000000000000E+000

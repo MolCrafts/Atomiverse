@@ -1,0 +1,67 @@
+! Offline CP2K twin for regressions/gpw/gpw-rpbe-water/
+! Never launched by ctest. Run manually when a CP2K binary is available.
+! Same geometry / basis / PP / MT as gpw-water-pbe-mt and gpw-blyp-water,
+! XC_FUNCTIONAL RPBE (Hammer–Hansen–Nørskov; not revPBE).
+!
+! Example:
+!   cp2k.psmp -i gpw-rpbe-water.inp -o gpw-rpbe-water.out
+! Then record TOTAL ENERGY and wall time into REFERENCE.md.
+
+&GLOBAL
+  PROJECT gpw-rpbe-water
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 400
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 200
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.3
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL RPBE
+      &END XC_FUNCTIONAL
+    &END XC
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 10.0 10.0 10.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      O  5.0000  5.0000  5.0000
+      H  5.7586  5.0000  5.5043
+      H  4.2414  5.0000  5.5043
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

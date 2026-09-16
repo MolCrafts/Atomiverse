@@ -3,7 +3,7 @@
 ///        neighbor-list contract. CUDA-free header.
 ///
 /// Split out of `Component` (arch-refactor-03-neighbor), following the
-/// `HaloParticipant` / `PairEvaluator` opt-in precedent: the consumer side
+/// `PairEvaluator` opt-in precedent: the consumer side
 /// (pair styles, real-space electrostatics) and the supply side
 /// (`cpu::md::NeighborList`) are disjoint populations, so they get two
 /// independent protocols — mirroring the halo protocol's send/recv split.
@@ -18,12 +18,15 @@
 namespace ATV {
 namespace cpu {
 
+class Frame;
+struct Context;
+
 /// @brief Consumer side of the neighbor-list contract: a component that
 ///        requires a neighbor structure covering its interaction cutoff.
 ///
 /// The category drivers throw at `build()` when a consumer is registered
-/// without a neighbor structure, and size the auto-injected MPI halo from
-/// the first consumer's cutoff (skin-padded, 1.1×).
+/// without a neighbor structure. `Runtime` sizes `ctx.md.comm` from
+/// `NeighborProvider::neighbor_reach()`.
 class NeighborConsumer {
   public:
     virtual ~NeighborConsumer() = default;
@@ -58,12 +61,68 @@ class NeighborConsumer {
 /// @brief Supply side of the neighbor-list contract: a component that
 ///        builds and publishes the neighbor structure.
 ///
-/// Pure tag protocol — the publication channel stays `Context::pair_list`
-/// (a non-owning pointer written in the provider's `build()`/`launch()`),
-/// not a virtual on this interface.
+/// The publication channel stays `Context::pair_list` (a non-owning pointer
+/// written in the provider's `build()`/`launch()`), not a virtual on this
+/// interface. The one thing the interface does carry is the row-order
+/// guarantee below, because a provider is the only component that renumbers
+/// rows and a driver has to be able to forbid it.
 class NeighborProvider {
   public:
     virtual ~NeighborProvider() = default;
+
+    /// @brief Forbid the spatial reorder of owned rows for the rest of this
+    ///        provider's life (LAMMPS `atom_modify sort`).
+    ///
+    /// **Monte Carlo requires this.** An MC trial move is a transaction whose
+    /// changeset is a set of frame ROWS (`mc::Transaction` records "row `r`
+    /// looked like this"), and the neighbour rebuild runs *inside* the trial —
+    /// the list is bound at `sampling::Phase::energy`, ahead of the evaluator
+    /// that scores the proposal. A reorder landing between `record_touch` and
+    /// `rollback` therefore splices a saved row over a completely unrelated
+    /// atom. Two atoms end up on top of each other, the sampler's bookkeeping
+    /// energy stops describing the configuration it actually holds, and every
+    /// later trial is rejected against an overlap it cannot see: the Markov
+    /// chain freezes at whatever state it was in, with no error and no NaN.
+    ///
+    /// A spatial sort is a cache optimisation; correctness of the sampler is
+    /// not negotiable against it.
+    virtual void forbid_row_reordering() = 0;
+
+    /// @brief Total distance out to which this provider enumerates pairs [Å].
+    ///
+    /// A Verlet structure does not stop at the interaction cutoff: it builds out
+    /// to `cutoff + skin`, and that band is the entire reason the list is reusable
+    /// between rebuilds. Any pair inside it is *supposed* to be enumerated, so the
+    /// MPI ghost shell has to be at least this wide. A shell sized from the
+    /// interaction cutoff alone leaves a cross-rank `j` sitting in the band with no
+    /// ghost on `i`'s rank: the pair is absent from the CSR outright rather than
+    /// merely inactive, and stays absent until the next full rebuild while the
+    /// displacement trigger (`max_disp * 2 > skin`) is by construction not watching
+    /// for it. The pair can then drift from the band down below the interaction
+    /// cutoff contributing exactly zero force the whole way.
+    ///
+    /// Runtime sizes `ctx.md.comm` from this (max over providers).
+    ///
+    /// @return Enumeration radius [Å]; `0` = no reach declared (the halo falls
+    ///         back to the consumer-cutoff estimate).
+    virtual AccReal neighbor_reach() const { return AccReal(0); }
+
+    /// @brief LAMMPS `Neighbor::decide()` — one `nflag` for the whole step.
+    ///
+    /// Verlet calls this *before* exchange/borders so migrate, halo full
+    /// rebuild, and the neighbor CSR rebuild share one gate. Default `true`
+    /// (always reneighbor) is conservative for providers that have no
+    /// Verlet cadence. `NeighborList` overrides with delay/every/check.
+    ///
+    /// @param rt Runtime context; the implementation writes nothing here
+    ///        (the caller stores the bool on `rt.md.reneighbor`).
+    /// @param frame Positions for the optional skin displacement test.
+    /// @return `true` if this step should exchange + borders + rebuild.
+    virtual bool decide_reneighbor(Context& rt, Frame& frame) {
+        (void)rt;
+        (void)frame;
+        return true;
+    }
 };
 
 } // namespace cpu

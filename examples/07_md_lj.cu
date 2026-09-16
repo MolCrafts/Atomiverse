@@ -17,11 +17,11 @@
 #include <iomanip>
 #include <iostream>
 
-#include "atomiverse/cuda/md/md.cuh"
-#include "atomiverse/cuda/md/velocity_verlet.cuh"
+#include "atomiverse/cuda/dynamics/md.cuh"
+#include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
-#include "atomiverse/cuda/recorder/thermo.cuh"
+#include "atomiverse/cuda/record/thermo.cuh"
 
 using namespace ATV;
 
@@ -81,7 +81,7 @@ int main() {
     cpu::Frame probe = frame;
     {
         cuda::md::MD sim;
-        sim.add(cuda::md::VelocityVerlet{dt});
+        sim.set_integrator(cuda::md::VelocityVerlet{dt});
         sim.on(md::Phase::force)
             .add(cuda::NeighborList{cutoff}, -10)
             .add(cuda::PairLJCut{eps, sigma, cutoff});
@@ -92,7 +92,7 @@ int main() {
 
     // Production run with thermo output every 100 steps.
     cuda::md::MD sim;
-    sim.add(cuda::md::VelocityVerlet{dt});
+    sim.set_integrator(cuda::md::VelocityVerlet{dt});
     sim.on(md::Phase::force)
         .add(cuda::NeighborList{cutoff}, -10)
         .add(cuda::PairLJCut{eps, sigma, cutoff});

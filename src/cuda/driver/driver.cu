@@ -1,8 +1,10 @@
-/// @file driver.cu
+/// @file cuda/driver/driver.cu
 /// @brief CUDA Backend implementation + Driver explicit instantiations.
 
 #include <cmath>
 
+#include "atomiverse/core/driver_template_impl.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/transfer.h"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/log_callback.h"
@@ -10,8 +12,6 @@
 #include "atomiverse/cuda/driver/backend.cuh"
 #include "atomiverse/cuda/driver/backend_traits.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
-#include "atomiverse/facade/driver_impl.h"
-#include "atomiverse/facade/stage.h"
 
 namespace ATV {
 namespace cuda {
@@ -44,9 +44,10 @@ void Backend::materialize(const cpu::Frame& frame) {
     // diagonal; for fixed-box (NVE/NVT) runs the build-time value
     // here is the value forever.
     auto& hb = context_.host_box;
+    const auto& cell = frame.box.cell();
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
-            hb.cell[i * 3 + j] = static_cast<real_t>(frame.box(i, j));
+            hb.cell[i * 3 + j] = static_cast<real_t>(cell(i, j));
     // Ortho test: off-diagonal entries within FP roundoff. Threshold
     // lives on cuda::Box so it stays in lock-step with cpu::Box.
     hb.ortho = (std::abs(hb.cell[1]) < cuda::Box::kOrthoEps)
@@ -101,6 +102,22 @@ void Backend::build_components() {
     cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream));
     if (timer_)
         timer_->impl()->flush();
+}
+
+void Backend::build_plan(const Plan<Component>& plan) {
+    BuildContext ctx{context_, frame_};
+    for (auto& slot : plan.slots)
+        for (auto& op : slot.ops)
+            op.component->build(ctx);
+}
+
+void Backend::destroy_plan(const Plan<Component>& plan) {
+    DestroyContext ctx{context_, frame_};
+    for (int s = static_cast<int>(plan.slots.size()) - 1; s >= 0; --s) {
+        auto& slot = plan.slots[static_cast<std::size_t>(s)];
+        for (int o = static_cast<int>(slot.ops.size()) - 1; o >= 0; --o)
+            slot.ops[static_cast<std::size_t>(o)].component->destroy(ctx);
+    }
 }
 
 void Backend::step(int step_idx) {

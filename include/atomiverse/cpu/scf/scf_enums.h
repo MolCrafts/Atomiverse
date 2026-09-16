@@ -55,6 +55,19 @@ enum class InitGuess { Hcore, MINAO, Hueckel, SAP };
 /// pairs (Weigend, PCCP 8, 1057 (2006), DOI 10.1039/b515623h).
 enum class RI { None, J, JK };
 
+/// @brief Coulomb-matrix (J) algorithm for the two-electron Fock build.
+///
+/// - `Direct`: Schwarz-screened analytic ERIs (shipping default;
+///             bit-identical when `ri == RI::None`).
+/// - `RI`:     density-fitted J (same engine as `ri = RI::J` / `RI::JK`);
+///             selecting this with `ri == RI::None` is treated as RI-J.
+/// - `CFMM`:   continuous fast multipole method for J (White–Johnson–Gill–
+///             Head-Gordon extent classification + multipole far field;
+///             Chem. Phys. Lett. 230, 8 (1994),
+///             DOI 10.1016/0009-2614(94)01128-1). Mutually exclusive with
+///             `ri = RI::J/JK` — both set throws. Exchange (K) never uses CFMM.
+enum class Coulomb { Direct, RI, CFMM };
+
 /// @brief SCF Fock-mixer family for the mix stage.
 ///
 /// - `CDIIS`:       Pulay commutator-DIIS only (the shipping default).
@@ -68,6 +81,34 @@ enum class RI { None, J, JK };
 /// EDIIS/ADIIS are far-field mixers only — run to the end they stall well
 /// above tight convergence, hence the escalation-to-CDIIS design.
 enum class MixerKind { CDIIS, EDIIS_CDIIS, ADIIS_CDIIS };
+
+/// @brief Implicit-solvent continuum model attached to a mean-field method.
+///
+/// Active when `solvent_eps > 0`. Conductor-like models share the S-matrix
+/// equation \(S q = -f(\varepsilon) V\) with \(f=(\varepsilon-1)/(\varepsilon+x)\):
+/// - `CPCM`: \(x=0\) (Barone–Cossi; use with `solvent_x = 0`).
+/// - `COSMO`: \(x=\tfrac12\) (Klamt; use with `solvent_x = 0.5`).
+/// - `IEFPCM`: integral-equation formalism (Cancès–Mennucci–Tomasi) with
+///   \(f=(\varepsilon-1)/(\varepsilon+1)\) and the \(K q = R V\) system
+///   involving the double-layer operator \(D\) (PySCF `method='IEF-PCM'`).
+///
+/// Non-electrostatic terms (cavitation, dispersion, repulsion) are never
+/// included. Default `CPCM` keeps the historical vacuum/C-PCM path.
+enum class SolventModel { CPCM, COSMO, IEFPCM };
+
+/// @brief Maximum-overlap occupation selection for ΔSCF excited states.
+///
+/// - `Off`:  energy-ordered Aufbau (shipping default; bit-identical).
+/// - `MOM`:  Gilbert–Besley–Gill maximum-overlap method — each SCF
+///           iteration occupies the n_occ new MOs with largest projection
+///           onto the **previous** iteration's occupied subspace
+///           (J. Phys. Chem. A **112**, 13164 (2008),
+///           DOI 10.1021/jp801738f).
+/// - `IMOM`: initial maximum-overlap method — same projection scores, but
+///           the reference occupied subspace is **frozen** at the seed
+///           (Barca, Gilbert & Gill, JCTC **14**, 1501 (2018),
+///           DOI 10.1021/acs.jctc.7b00994). Matches PySCF `scf.addons.mom_occ_`.
+enum class MomStyle { Off, MOM, IMOM };
 
 } // namespace scf
 } // namespace cpu

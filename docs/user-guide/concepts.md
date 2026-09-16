@@ -9,8 +9,9 @@ almost every public surface:
 | **Component** | One step of work (force, integrate, observe, write) | Construct and register |
 | **Driver** | The loop (stages + plan + when to stop) | Pick a preset, call `run` |
 
-A fourth idea — **Runtime** (`cpu::Backend`) — is shared infrastructure
-(frame binding, MPI, timing). One Runtime per run; nested drivers borrow it.
+A fourth idea — **Runtime** (`cpu::Runtime`, `cpu/driver/runtime.h`) — is shared
+infrastructure (frame binding, MPI, timing). One Runtime per run; nested drivers
+borrow it.
 
 ## Frame
 
@@ -22,7 +23,7 @@ result objects). There is no separate "system" object beside the frame.
 cpu::Frame frame(n);
 auto x = frame.span(kAtom_x);
 // … fill x, type, mass …
-frame.simbox = cpu::Box::cubic(L);
+frame.box = cpu::Box::cubic(L);
 ```
 
 CUDA workflows use an analogous device frame; transfers are explicit
@@ -32,7 +33,8 @@ CUDA workflows use an analogous device frame; transfers are explicit
 
 A component does **one** thing at a **typed stage** of the plan:
 
-- force / energy sources: `PairLJCut`, `cpu::scf::SCF`, `PWEvaluator`, …
+- force / energy sources: `PairLJCut`, `cpu::scf::RHF` (and the other
+  concrete Gaussian methods), `PWEvaluator`, …
 - dynamics: `VelocityVerlet`, thermostats, barostats
 - optimizers / movers: `LBFGS`, `TranslateMove`
 - observers / recorders: RDF, Thermo, XYZ
@@ -43,8 +45,8 @@ No allocation in `launch()`.
 Registration is ownership-explicit:
 
 ```cpp
-sim.add_potential(cpu::PairLJCut{eps, sigma, rcut});  // owns a copy
-sim.on(md::Phase::force).add(cpu::scf::RHF{});     // owns a copy
+sim.set_evaluator(cpu::PairLJCut{eps, sigma, rcut});  // owns a copy
+sim.on(md::Phase::force).add(cpu::scf::RHF{});         // owns a copy
 sim.on(md::Phase::force).add_ref(my_component);       // borrows
 ```
 
@@ -65,22 +67,33 @@ You do not subclass `Driver<>` for ordinary work. You construct a **preset**
 ```cpp
 cpu::md::MD sim;
 sim.set_integrator(cpu::md::VelocityVerlet{0.5});
-sim.add_potential(cpu::PairLJCut{0.0104, 3.4, 6.8});
+sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});
 sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
 sim.build();
 sim.run(frame, 1000);
 ```
 
-The **method** is not a driver class. SCF, PW, GPW, and AM1 are **inner
-solvers** wrapped by **evaluator components** you bind at the force/energy
-stage. Same MD loop, different physics:
+There is no *category* of driver for electronic structure. A method is a
+**concrete class** — `RHF`, `UHF`, `RKS`, `PW`, `GpwDft`, `DFTB2` — that owns
+its own Hamiltonian, parameters and workspace. Several of them run a loop of
+their own, and a loop node is exactly what a Driver is, so those methods simply
+*are* Driver nodes: `cpu::scf::RHF` is a `cpu::Driver<scf::Phase>` whose five
+typed stages are `fock → mix → diagonalize → density → check`.
+
+Because a Driver is an executable node, the same object serves standalone use
+and use inside an outer loop. Bind it at the force stage and the MD loop is
+unchanged; only the physics differs:
 
 ```cpp
 // classical
-sim.add_potential(cpu::PairLJCut{…});
-// ab initio
-sim.on(md::Phase::force).add(cpu::scf::RHF{});
+sim.set_evaluator(cpu::PairLJCut{eps, sigma, rcut});
+// ab initio — same slot, same Frame
+sim.set_evaluator(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
 ```
+
+A few methods are reached through a thin evaluator component rather than
+directly — `cpu::gpw::GPWEvaluator` is the Frame-shaped door to `GpwDft`. See
+[Methods](methods.md) for which is which.
 
 ## When the loop stops
 

@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <vector>
 
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/io/lammps_real.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
@@ -26,12 +26,13 @@ int main() {
     cpu::Frame f(n);
     // Rough extended backbone coordinates [Å]
     const double xyz[][3] = {
-        {0.0, 0.0, 0.0},  {1.5, 0.0, 0.0},  {2.4, 1.2, 0.0},  {3.9, 1.2, 0.0},
-        {0.5, 0.9, 0.0},  {0.5, -0.9, 0.0}, {4.4, 0.3, 0.0},  {4.4, 2.1, 0.0},
+        {0.0, 0.0, 0.0}, {1.5, 0.0, 0.0},  {2.4, 1.2, 0.0}, {3.9, 1.2, 0.0},
+        {0.5, 0.9, 0.0}, {0.5, -0.9, 0.0}, {4.4, 0.3, 0.0}, {4.4, 2.1, 0.0},
     };
     // types: c3,c3,oh,c3, h,h, h,h
     const int types[] = {0, 0, 1, 0, 2, 2, 2, 2};
-    const double mass[] = {12.01, 12.01, 16.0, 12.01, 1.008, 1.008, 1.008, 1.008};
+    const double mass[] = {12.01, 12.01, 16.0,  12.01,
+                           1.008, 1.008, 1.008, 1.008};
     const double q[] = {-0.1, 0.15, -0.4, 0.05, 0.05, 0.05, 0.1, 0.1};
     for (int i = 0; i < n; ++i) {
         f.span(kAtom_x)[i] = xyz[i][0];
@@ -42,7 +43,7 @@ int main() {
         f.span(kAtom_charge)[i] = q[i];
         f.span(kAtom_tag)[i] = i;
     }
-    f.simbox = cpu::Box::cubic(30.0);
+    f.box = cpu::Box::cubic(30.0);
     f.clear_tag_index();
     f.rebuild_tag_index(0, n);
     f.add_bond(0, 1, 0); // c3-c3
@@ -57,8 +58,8 @@ int main() {
     f.add_dihedral(0, 1, 2, 3, 0);
     f.build_special_list();
 
-    using cpu::kcal_per_mol_to_ev;
     using cpu::degree_to_rad;
+    using cpu::kcal_per_mol_to_ev;
     // Diagonal LJ (kcal → eV) for c3, oh, h*
     const double eps_c3 = kcal_per_mol_to_ev(0.1078);
     const double eps_oh = kcal_per_mol_to_ev(0.0930);
@@ -67,23 +68,21 @@ int main() {
 
     cpu::Evaluate eval;
     eval.set_neighbor(cpu::md::NeighborList<>{10.0, 0.5});
-    eval.add_potential(
-        cpu::PairLJCut{{{0, 0, eps_c3, sig_c3},
-                        {1, 1, eps_oh, sig_oh},
-                        {2, 2, eps_h, sig_h}},
-                       10.0}
-            .set_special_bonds(0.0, 0.0, 0.5));
+    eval.set_evaluator(cpu::PairLJCut{
+        {{0, 0, eps_c3, sig_c3}, {1, 1, eps_oh, sig_oh}, {2, 2, eps_h, sig_h}},
+        10.0}
+                           .set_special_bonds(0.0, 0.0, 0.5));
     eval.on(evaluate::Phase::evaluate)
         .add(cpu::PairCoulCut{10.0}.set_special_bonds(0.0, 0.0, 0.5));
-    eval.add_potential(cpu::BondHarmonic{
-        {kcal_per_mol_to_ev(228.89), kcal_per_mol_to_ev(285.15),
-         kcal_per_mol_to_ev(340.0)},
-        {1.5354, 1.4242, 1.09}});
-    eval.add_potential(cpu::AngleHarmonic{
+    eval.set_evaluator(cpu::BondHarmonic{{kcal_per_mol_to_ev(228.89),
+                                          kcal_per_mol_to_ev(285.15),
+                                          kcal_per_mol_to_ev(340.0)},
+                                         {1.5354, 1.4242, 1.09}});
+    eval.set_evaluator(cpu::AngleHarmonic{
         {kcal_per_mol_to_ev(76.79), kcal_per_mol_to_ev(88.33)},
         {degree_to_rad(109.66), degree_to_rad(113.6)}});
-    eval.add_potential(cpu::DihedralCharmm(
-        {kcal_per_mol_to_ev(0.166667)}, {3}, {0.0}));
+    eval.set_evaluator(
+        cpu::DihedralCharmm({kcal_per_mol_to_ev(0.166667)}, {3}, {0.0}));
     eval.build();
     eval.run(f);
 
@@ -92,8 +91,9 @@ int main() {
     const double E_bond = f.meta.get(kEnergyBond);
     const double E_angle = f.meta.get(kEnergyAngle);
     const double E_dihed = f.meta.get(kEnergyDihedral);
-    std::printf("gaff_fragment E=%.8f pair=%.8f bond=%.8f angle=%.8f dihed=%.8f eV\n",
-                E, E_pair, E_bond, E_angle, E_dihed);
+    std::printf(
+        "gaff_fragment E=%.8f pair=%.8f bond=%.8f angle=%.8f dihed=%.8f eV\n",
+        E, E_pair, E_bond, E_angle, E_dihed);
 
     if (!std::isfinite(E) || !std::isfinite(E_pair) || !std::isfinite(E_bond)) {
         std::printf("FAIL: non-finite energy\n");
@@ -113,6 +113,7 @@ int main() {
     }
     // Amber 1-4: specials active — pair energy must differ from full-specials-off.
     // (Documented in REFERENCE.md.)
-    std::printf("PASS: gaff_peo_fragment single-point finite + bonded present\n");
+    std::printf(
+        "PASS: gaff_peo_fragment single-point finite + bonded present\n");
     return 0;
 }

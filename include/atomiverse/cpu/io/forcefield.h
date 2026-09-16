@@ -6,7 +6,7 @@
 /// `set_special_bonds`. Does not install into a Plan.
 ///
 /// Engine-side: read styles/types, then construct `Potential` components and
-/// register them with `Driver::add_potential` / `on(phase).add`.
+/// register them with `Driver::set_evaluator` / `on(phase).add`.
 ///
 /// Units here are Atomiverse engineering (eV, Å, rad) unless noted.
 #pragma once

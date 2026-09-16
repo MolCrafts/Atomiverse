@@ -106,12 +106,12 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
                 double dx_ji = ri[0] - rj[0];
                 double dy_ji = ri[1] - rj[1];
                 double dz_ji = ri[2] - rj[2];
-                f.simbox.min_image(dx_ji, dy_ji, dz_ji);
+                f.box.min_image(dx_ji, dy_ji, dz_ji);
 
                 double dx_jk = rk[0] - rj[0];
                 double dy_jk = rk[1] - rj[1];
                 double dz_jk = rk[2] - rj[2];
-                f.simbox.min_image(dx_jk, dy_jk, dz_jk);
+                f.box.min_image(dx_jk, dy_jk, dz_jk);
 
                 const double r_ji =
                     std::sqrt(dx_ji * dx_ji + dy_ji * dy_ji + dz_ji * dz_ji);

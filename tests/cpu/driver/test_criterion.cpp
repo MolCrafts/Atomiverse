@@ -12,10 +12,10 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/facade/loop.h"
 
 #include <limits>
 

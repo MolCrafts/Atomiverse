@@ -87,7 +87,7 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
             double dx = x_ptr[i] - x_ptr[j];
             double dy = y_ptr[i] - y_ptr[j];
             double dz = z_ptr[i] - z_ptr[j];
-            f.simbox.min_image(dx, dy, dz);
+            f.box.min_image(dx, dy, dz);
             const double r2 = dx * dx + dy * dy + dz * dz;
             if (r2 >= rc2)
                 continue;
@@ -122,7 +122,7 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
             double ax = x_ptr[i] - x_ptr[j];
             double ay = y_ptr[i] - y_ptr[j];
             double az = z_ptr[i] - z_ptr[j];
-            f.simbox.min_image(ax, ay, az);
+            f.box.min_image(ax, ay, az);
             const double r1sq = ax * ax + ay * ay + az * az;
             if (r1sq >= rc2)
                 continue;
@@ -133,7 +133,7 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
                 double bx = x_ptr[i] - x_ptr[k];
                 double by = y_ptr[i] - y_ptr[k];
                 double bz = z_ptr[i] - z_ptr[k];
-                f.simbox.min_image(bx, by, bz);
+                f.box.min_image(bx, by, bz);
                 const double r2sq = bx * bx + by * by + bz * bz;
                 if (r2sq >= rc2)
                     continue;

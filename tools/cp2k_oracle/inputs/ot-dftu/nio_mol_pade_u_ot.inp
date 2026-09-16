@@ -1,0 +1,78 @@
+! CP2K twin for regressions/gpw/ot-dftu — Γ-UKS GPW OT + Dudarev PLUS_U
+! on NiO molecule (same chemistry as gpw-dftu-nio; OT is the product path).
+! Offline only; never launched by ctest.
+&GLOBAL
+  PROJECT ot_dftu_nio_mol
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_SET
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    PLUS_U_METHOD MULLIKEN
+    LSD
+    MULTIPLICITY 3
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+    &MGRID
+      CUTOFF 250
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-8
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 5.0E-6
+      MAX_SCF 50
+      &OT
+        PRECONDITIONER FULL_SINGLE_INVERSE
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 20
+        EPS_SCF 5.0E-6
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &PRINT
+      &MULLIKEN ON
+      &END MULLIKEN
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 10.0 10.0 10.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      Ni  5.000  5.000  4.166
+      O   5.000  5.000  5.834
+    &END COORD
+    &KIND Ni
+      ELEMENT Ni
+      BASIS_SET SZV-GTH-PADE-q18
+      POTENTIAL GTH-PADE-q18
+      MAGNETIZATION 2.0
+      &DFT_PLUS_U
+        L 2
+        U_MINUS_J [eV] 6.0
+      &END DFT_PLUS_U
+    &END KIND
+    &KIND O
+      ELEMENT O
+      BASIS_SET SZV-GTH-PADE
+      POTENTIAL GTH-PADE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

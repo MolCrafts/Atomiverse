@@ -1,0 +1,82 @@
+# MetalWalls twin of regressions/md/voronoi-volume-tf
+# ===================================================
+# Gold-capacitor toy: 3 + 3 Au electrode sites stacked at x = y = 0,
+# Lx = Ly = 4.07 A, first-plane gap 20 A, dPsi = 1 V, eta = 1/0.56 A^-1.
+# Two placeholders:
+#   3.779452249251540       Thomas-Fermi length  [bohr]  (0.0 or 3.779452249251540 = 2 A)
+#   113.741732075823890   per-site Voronoi volume [bohr^3]
+#               113.741732075823890 = a0^3/4 = 16.854785750 A^3   (bulk FCC)
+#                56.870866037911945 = a0^3/8 =  8.427392875 A^3   (halved)
+# Atomic units throughout (bohr, hartree, e).
+
+num_steps  0
+timestep   41.341
+temperature 300.0
+
+# 2D periodicity in x, y (slab geometry) - matches the ATV xy-image electrode sum
+num_pbc  2
+
+box
+  length 7.691185327226886 7.691185327226886 151.178089970061620
+
+species
+
+  # MetalWalls needs >= 2 mobile non-electrode atoms: velocity initialization
+  # removes the centre-of-mass velocity (MW_velocity::global_scaling), which
+  # with a single mobile ion zeroes the kinetic energy and makes the rescale
+  # factor sqrt(T/0) = Inf -> "Temperature is NaN or meaningless".
+  # These probes carry q = 0, so they add nothing to the electrode RHS, nothing
+  # to total_ions_charge and nothing to the elastance matrix: the capacitor
+  # stays empty, exactly like the ATV regression (no electrolyte).
+  species_type
+    name Xx
+    count 2
+    mass 39.948
+    mobile True
+    charge point 0.0
+
+  species_type
+    name Au1
+    count 3
+    mass 196.966553
+    mobile False
+    charge gaussian 0.944959305183928 0.0   # eta = (1/0.56) A^-1 in bohr^-1
+
+  species_type
+    name Au2
+    count 3
+    mass 196.966553
+    mobile False
+    charge gaussian 0.944959305183928 0.0
+
+electrodes
+
+  electrode_type
+    name Au1
+    species Au1
+    potential 0.0                              # 0 V
+    thomas_fermi_length 3.779452249251540
+    voronoi_volume 113.741732075823890
+
+  electrode_type
+    name Au2
+    species Au2
+    potential 0.03674932217565499              # +1 V in hartree/e
+    thomas_fermi_length 3.779452249251540
+    voronoi_volume 113.741732075823890
+
+  electrode_charges matrix_inversion
+  charge_neutrality true
+
+interactions
+  coulomb
+    coulomb_rtol  1.0e-9
+    coulomb_rcut  3.84          # < min(a,b,c)/2 = 3.8456 bohr
+    coulomb_ktol  1.0e-12
+
+output
+  default 0
+  step 1
+  charges 1
+  total_charges 1
+  energies 1 Hamiltonian Potential Coulomb Thomas_Fermi

@@ -1,4 +1,4 @@
-/// @file grid.cu
+/// @file cuda/neighbor/grid.cu
 /// @brief Cluster spatial grid construction (histogram + scan + scatter).
 #include "nlist_impl.cuh"
 #include "triclinic.cuh"

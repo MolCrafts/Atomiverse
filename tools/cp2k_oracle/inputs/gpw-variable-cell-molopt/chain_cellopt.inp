@@ -1,0 +1,85 @@
+! Offline CP2K twin — CELL_OPT headline pin (never launched by ctest).
+! Fixed ions (FIXED_ATOMS 1..3) + CONSTRAINT YZ (only the chain axis a
+! relaxes) + KEEP_ANGLES: the exact constrained variable-cell problem the
+! Atomiverse AnisotropicCellRelax (relax_x only) solves.
+! Basis: DZVP-MOLOPT-SR-GTH (short-range MOLOPT; full DZVP-MOLOPT-GTH is
+! documented in REFERENCE as a secondary pin that exceeds ATV's 60 s e2e
+! budget for periodic collocation).
+! Result (CP2K 2026.1, a0 = 3.328): |a| = 3.200237 Angstrom,
+!   E = -17.184075549824836 Ha, wall (timing table) 9.5 s.
+! Fair twin from a0 = 3.24 (matches ATV regression start): a* same,
+!   wall (timing table) 5.67 s.
+&GLOBAL
+  PROJECT cellopt
+  RUN_TYPE CELL_OPT
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &CELL_OPT
+    TYPE DIRECT_CELL_OPT
+    KEEP_ANGLES .TRUE.
+    CONSTRAINT YZ
+    MAX_ITER 40
+    PRESSURE_TOLERANCE 300.0
+  &END CELL_OPT
+  &CONSTRAINT
+    &FIXED_ATOMS
+      COMPONENTS_TO_FIX XYZ
+      LIST 1 2 3
+    &END FIXED_ATOMS
+  &END CONSTRAINT
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  STRESS_TENSOR ANALYTICAL
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 60
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-12
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 200
+      &OT
+        PRECONDITIONER FULL_SINGLE_INVERSE
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        EPS_SCF 1.0E-7
+        MAX_SCF 20
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 3.24 8.0 8.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      SCALED T
+      O   0.000000  0.000000  0.000000
+      H   0.319067  0.000000  0.000000
+      H  -0.079900  0.000000  0.115830
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

@@ -1,0 +1,57 @@
+# MW twin of ATV regression md/per-electrode-eta case 2, 3x3 supercell
+# (12.0 x 12.0 A in plane, 36 sites per wall, gap 5.0 A).
+# rcut = 5.9880 A -> erfc(eta_ij*rcut) < 1e-20.
+num_steps    0
+timestep     41.341
+temperature  0
+num_pbc      2
+
+species
+
+  species_type
+    name  Null
+    count 1
+    mass  1.0
+    mobile True
+    charge neutral
+
+  species_type
+    name  Ebot
+    count 36
+    mass  196.966569
+    mobile False
+    charge gaussian 1.047241700377037e+00 0.0
+
+  species_type
+    name  Etop
+    count 36
+    mass  196.966569
+    mobile False
+    charge gaussian 5.053642364123649e-01 0.0
+
+electrodes
+
+  electrode_type
+    name      Ebot
+    species   Ebot
+    potential 0.0
+
+  electrode_type
+    name      Etop
+    species   Etop
+    potential 3.674932217565499e-02
+
+  electrode_charges matrix_inversion 1.0e-14
+  charge_neutrality true electrodes
+  compute_force false
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-15
+    coulomb_rcut 1.131568003425911e+01
+    coulomb_ktol 1.0e-15
+
+output
+  default 0
+  step 1
+  charges 1

@@ -1,8 +1,16 @@
 # THE quality gate for Atomiverse (GitHub Actions is not on push).
 #
 #   pre-commit  → format / hygiene (fast)
-#   pre-push    → tools/ci_cpu_unit.sh — same cmake + ctest the optional
-#                 workflow_dispatch CI job would run
+#   pre-push    → cmake -P cmake/AtvUnitGate.cmake
+#                 (path-scoped: only enable HF/PW/GPW/KSPACE if the diff needs them;
+#                  only build + ctest matching tests)
+#
+# Manual full slice:
+#   cmake -DATV_GATE_ALL=1 -P cmake/AtvUnitGate.cmake
+# Manual module force:
+#   cmake -DATV_GATE_MODULES=hf -P cmake/AtvUnitGate.cmake
+# Manual presets:
+#   cmake --workflow --preset cpu-unit-hf
 #
 # Install both:
 #   pre-commit install
@@ -18,7 +26,9 @@ repos:
     hooks:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude: '^tools/.+_oracle/inputs/'
       - id: end-of-file-fixer
+        exclude: '^tools/.+_oracle/inputs/'
       - id: check-yaml
       - id: check-merge-conflict
       - id: check-added-large-files
@@ -31,12 +41,13 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c, c++, cuda]
+        exclude: 'basis_data/.*tables\.h$'
 
   - repo: local
     hooks:
       - id: atv-cpu-unit
-        name: CI CPU unit (cmake + ctest)
-        entry: tools/ci_cpu_unit.sh
+        name: CPU unit (path-scoped cmake gate)
+        entry: cmake -P cmake/AtvUnitGate.cmake
         language: system
         pass_filenames: false
         always_run: true

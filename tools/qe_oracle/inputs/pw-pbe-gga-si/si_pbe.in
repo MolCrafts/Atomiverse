@@ -1,0 +1,32 @@
+! Fair-wall twin of regressions/pw/pw-pbe-gga-si, run 1 of 2 (PBE + forces).
+! Same NC UPF, cell, ecutwfc, MP mesh as the ATV regression. pseudo_dir must
+! point at the ATV checkout's tests/data/pw. ATV solves the full 2x2x2 mesh
+! (8 k, no symmetry reduction); QE reduces to its IBZ set natively.
+&control
+  calculation = 'scf'
+  prefix = 'si_pbe'
+  pseudo_dir = '<ATV_CHECKOUT>/tests/data/pw'
+  outdir = './out'
+  tprnfor = .true.
+/
+&system
+  ibrav = 0
+  nat = 2
+  ntyp = 1
+  ecutwfc = 15.0
+  input_dft = 'PBE'
+/
+&electrons
+  conv_thr = 1.0d-8
+/
+ATOMIC_SPECIES
+Si 28.0855 Si_lda_nc.upf
+CELL_PARAMETERS angstrom
+0.000 2.715 2.715
+2.715 0.000 2.715
+2.715 2.715 0.000
+ATOMIC_POSITIONS angstrom
+Si 0.0000 0.0000 0.0000
+Si 1.3575 1.3575 1.3575
+K_POINTS automatic
+2 2 2 0 0 0

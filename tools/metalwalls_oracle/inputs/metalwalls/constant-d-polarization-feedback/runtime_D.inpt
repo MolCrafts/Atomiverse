@@ -1,0 +1,76 @@
+# MetalWalls twin of regressions/md/constant-d-polarization-feedback (Gate A).
+# Constant-D ensemble: E = D - 4*pi*P (MW atomic units, 4*pi*eps0 = 1).
+#
+# ATV system reproduced here:
+#   +1 e at (5,5,6) A, -1 e at (5,5,4) A, cubic L = 10 A, masses 1 amu,
+#   D_z = 0.5 V/A applied along +z.
+# Unit conversion (CODATA 2018: 1 Ha = 27.211386245988 eV,
+#                               1 Bohr = 0.529177210903 A):
+#   L      = 10 A     -> 18.89726124625770  Bohr
+#   z(+q)  =  6 A     -> 11.33835674775462  Bohr
+#   z(-q)  =  4 A     ->  7.558904498503081 Bohr
+#   D_z    = 0.5 V/A  ->  0.5 / 51.422067476325886 = 9.723451905744437E-3 a.u.
+#
+# One electrode atom is present because MetalWalls refuses an external field
+# without charge neutrality (src/configuration.F90:624-629), and
+# electrode_charge_neutrality is only set by an `electrode_charges` algorithm
+# (src/configuration.F90:4232-4238), which lives in the `electrodes` section.
+# With a SINGLE electrode atom the neutrality constraint sum(q_elec) = 0 pins
+# that charge to exactly zero, so the electrode contributes nothing to the
+# polarization (P(:,3) = 0) and nothing to the Coulomb energy.
+
+num_steps 0
+timestep  41.341
+temperature 300.0
+
+num_pbc 3
+box
+  length 18.89726124625770 18.89726124625770 18.89726124625770
+
+species
+
+  species_type
+    name Na
+    count 1
+    charge point +1.00
+    mass 1.0
+
+  species_type
+    name Cl
+    count 1
+    charge point -1.00
+    mass 1.0
+
+  species_type
+    name C1
+    count 1
+    charge gaussian 0.955234657 0.0
+    mass 1.0
+    mobile False
+
+electrodes
+
+  electrode_type
+    name C1
+    species C1
+    potential +0.000
+
+  electrode_charges matrix_inversion
+  charge_neutrality true
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-12
+    coulomb_rcut 9.0
+    coulomb_ktol 1.0e-12
+
+output
+  default 0
+  forces 1
+  charges 1
+  energies 1 Total Potential External_field
+
+external_field
+  type D
+  direction 0.00 0.00 1.00
+  amplitude 9.723451905744437E-3

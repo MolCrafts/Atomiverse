@@ -5,11 +5,11 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/cpu/driver/evaluate.h"
-#include "atomiverse/cpu/driver/single_point.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
+#include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/methods.h"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 
@@ -32,7 +32,7 @@ cpu::Frame make_h2o() {
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;
-    f.simbox = cpu::Box::cubic(50.0);
+    f.box = cpu::Box::cubic(50.0);
     return f;
 }
 

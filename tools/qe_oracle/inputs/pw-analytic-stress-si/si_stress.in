@@ -1,0 +1,32 @@
+! Fair-wall twin of regressions/pw/pw-analytic-stress-si: one SCF + stress.
+! ATV job: 1 SCF + Nielsen-Martin numerical-HF stress (12 NSCF strained
+! diagonalizations). QE job: 1 SCF + analytic NM stress (tstress). Same NC
+! UPF, cell, ecutwfc, MP mesh; XCType::LSDA = Slater + PW92 -> 'SLA PW'.
+&control
+  calculation = 'scf'
+  prefix = 'si_stress'
+  pseudo_dir = '<ATV_CHECKOUT>/tests/data/pw'
+  outdir = './out'
+  tstress = .true.
+/
+&system
+  ibrav = 0
+  nat = 2
+  ntyp = 1
+  ecutwfc = 15.0
+  input_dft = 'SLA PW'
+/
+&electrons
+  conv_thr = 1.0d-8
+/
+ATOMIC_SPECIES
+Si 28.0855 Si_lda_nc.upf
+CELL_PARAMETERS angstrom
+0.000 2.715 2.715
+2.715 0.000 2.715
+2.715 2.715 0.000
+ATOMIC_POSITIONS angstrom
+Si 0.0000 0.0000 0.0000
+Si 1.3575 1.3575 1.3575
+K_POINTS automatic
+2 2 2 0 0 0

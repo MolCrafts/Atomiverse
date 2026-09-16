@@ -92,8 +92,8 @@ class EDIISMixer {
     std::deque<double> E_;
     std::vector<double> c_;
 
-    void push_(const RealMatrix& Fa, const RealMatrix& Da,
-               const RealMatrix& Fb, const RealMatrix& Db, double energy);
+    void push_(const RealMatrix& Fa, const RealMatrix& Da, const RealMatrix& Fb,
+               const RealMatrix& Db, double energy);
     void solve_();
 };
 
@@ -113,9 +113,10 @@ class ADIISMixer {
     /// @param F_beta  β Fock matrix [Hartree].
     /// @param D_beta  β density matrix paired with `F_beta` (dimensionless).
     /// @return Combined (F̃_α, F̃_β) = Σ_i c_i (F_α,i, F_β,i) [Hartree].
-    std::pair<RealMatrix, RealMatrix>
-    step(const RealMatrix& F_alpha, const RealMatrix& D_alpha,
-         const RealMatrix& F_beta, const RealMatrix& D_beta);
+    std::pair<RealMatrix, RealMatrix> step(const RealMatrix& F_alpha,
+                                           const RealMatrix& D_alpha,
+                                           const RealMatrix& F_beta,
+                                           const RealMatrix& D_beta);
 
     /// @brief Single-channel convenience (restricted SCF; D is the total,
     ///        factor-2 density).
@@ -145,8 +146,8 @@ class ADIISMixer {
     std::deque<RealMatrix> Fa_, Fb_, Da_, Db_;
     std::vector<double> c_;
 
-    void push_(const RealMatrix& Fa, const RealMatrix& Da,
-               const RealMatrix& Fb, const RealMatrix& Db);
+    void push_(const RealMatrix& Fa, const RealMatrix& Da, const RealMatrix& Fb,
+               const RealMatrix& Db);
     void solve_();
 };
 

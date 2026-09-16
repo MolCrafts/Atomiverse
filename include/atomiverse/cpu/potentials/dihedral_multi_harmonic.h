@@ -29,6 +29,9 @@ class DihedralMultiHarmonic : public Dihedral {
 
   private:
     std::vector<std::vector<double>> Cn_;
+    /// Per-type "any nonzero coefficient" flag — an all-zero type (the other
+    /// member of a hybrid dihedral split owns it) is skipped in the hot loop.
+    std::vector<char> active_;
 
     md::BondedForceScratch scratch_;
     md::DropTally drops_;

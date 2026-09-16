@@ -1,0 +1,36 @@
+# Offline MBD strained-cell pin notes (gpw-mbd-kpoint-stress)
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` has no MBD (only DFTD2/D3/D3BJ/D4),
+so there is no CP2K stress twin for an MBD run. Hard pins are **pure-Python
+pymbd** (`libmbd/src/pymbd/pymbd.py` `mbd_energy_species`, libmbd git
+`88069c6`) — the same oracle family as `gpw-mbd-periodic` / `gpw-mbd-stress`.
+
+Geometry: the `gpw-mbd-periodic` water dimer, lattice diag(12 Å) in Bohr
+(Å→Bohr = 1/0.52917720859), free-atom volume ratios 1, β = 0.83, MBD k-grid
+2×2×2. Strained cells: one axis scaled by 1±h at fixed fractional
+coordinates (positions scale with the axis), h = 2e-3.
+
+Reproduce (offline; venv with numpy+scipy; clone libmbd, checkout 88069c6):
+
+```
+PYTHONPATH=<libmbd>/src python pin_mbd_strain.py
+```
+
+Pinned output (2026-07-31):
+
+```
+E_disp unstrained            = -1.4965720704989138e-03 Ha
+E_disp x +h              = -1.4925684743305467e-03 Ha
+E_disp x -h              = -1.5005781658326001e-03 Ha
+sigma_MBD_xx (FD, pymbd)    = -1.7171785426e-07 Ha/Bohr3
+E_disp y +h              = -1.4965139646472281e-03 Ha
+E_disp y -h              = -1.4966306893944292e-03 Ha
+sigma_MBD_yy (FD, pymbd)    = -2.5024338482e-09 Ha/Bohr3
+E_disp z +h              = -1.4957889518587564e-03 Ha
+E_disp z -h              = -1.4973531298823062e-03 Ha
+sigma_MBD_zz (FD, pymbd)    = -3.3534037337e-08 Ha/Bohr3
+```
+
+The unstrained value reproduces the `gpw-mbd-periodic` hard pin
+bit-for-bit — same code path, provenance cross-checked at pin time.
+Never launched at ctest time.

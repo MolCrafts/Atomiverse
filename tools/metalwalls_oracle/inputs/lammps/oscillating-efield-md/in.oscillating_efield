@@ -1,0 +1,42 @@
+# Offline pin twin: oscillating-efield-md
+# units metal; variable fix efield Ez(t)=E0*cos(2*pi*time/T)
+# Energy pin via potential atom-style variable phi = -Ez*z (image flags 0).
+# oracle_version: record `lmp -h` banner when regenerating pins.
+#
+# ATV twin uses fs: period=1000 fs, dt=1 fs  <=>  metal period=1.0 ps, dt=0.001 ps.
+units metal
+atom_style full
+boundary p p p
+region box block 0 20 0 20 0 20
+create_box 1 box
+create_atoms 1 single 5.0 10.0 10.0
+create_atoms 1 single 7.0 10.0 10.0
+create_atoms 1 single 10.0 12.0 8.0
+mass 1 1.0
+set atom 1 charge 1.0
+set atom 2 charge -1.0
+set atom 3 charge 0.5
+pair_style zero 10.0
+pair_coeff * *
+neighbor 0.3 bin
+neigh_modify every 1 delay 0 check no
+timestep 0.001
+variable period equal 1.0
+variable E0 equal 0.2
+variable Ez equal "v_E0*cos(2.0*PI*time/v_period)"
+variable phi atom "-v_Ez*z"
+fix 1 all efield 0.0 0.0 v_Ez potential v_phi
+velocity all set 0 0 0 units box
+thermo_style custom step time pe f_1 v_Ez
+thermo 0
+
+variable s index 0 125 250 375 500 625 750 875 1000
+label loop
+reset_timestep $s
+run 0 post no
+print "PIN step=$s time=$(time) Ez=$(v_Ez) Ufield=$(f_1)"
+dump d all custom 1 dump.s$s id type q x y z fx fy fz
+run 0 post no
+undump d
+next s
+jump SELF loop

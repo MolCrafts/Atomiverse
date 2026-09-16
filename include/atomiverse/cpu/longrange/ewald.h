@@ -18,6 +18,11 @@
 ///
 /// Citation: P. P. Ewald, *Ann. Phys.* **369**, 253 (1921).
 /// DOI: 10.1002/andp.19213690304.
+///
+/// **Slab (quasi-2D).** Set public member #slab_factor to \(f>1\) for the
+/// LAMMPS `kspace_modify slab f` path: reciprocal sum on extended period
+/// \(L_z' = f L_z\) plus Yeh–Berkowitz \(k=0\) dipole correction (J. Chem.
+/// Phys. **111**, 3155). Default `0` keeps pure 3D Ewald.
 #pragma once
 
 #include <cstdint>
@@ -26,10 +31,10 @@
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/precision.h"
+#include "atomiverse/core/role.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/longrange/ewald_sum.h"
 #include "atomiverse/cpu/longrange/kspace.h"
-#include "atomiverse/facade/component_role.h"
-#include "atomiverse/facade/stage.h"
-#include "atomiverse/longrange/ewald_sum.h"
 
 namespace ATV {
 namespace cpu {
@@ -46,6 +51,13 @@ class KSpaceEwald : public cpu::KSpace {
     /// @brief Recommended α for a real-space cutoff and accuracy (LAMMPS
     /// heuristic g_ewald = (1.35 − 0.15·ln(accuracy)) / cutoff).
     static double recommend_alpha(double cutoff, double accuracy = 1e-5);
+
+    /// @brief Slab volume factor \(f\) (LAMMPS `kspace_modify slab f`).
+    ///
+    /// When \(f > 1\), reciprocal space uses volume \(V' = L_x L_y (f L_z)\)
+    /// and the Yeh–Berkowitz correction is applied. Values \(\le 1\) (and the
+    /// default `0`) disable slab mode — pure 3D Ewald.
+    double slab_factor = 0.0;
 
     std::string name() const override { return "ewald"; }
     LongRangeContract long_range_contract() const override {
@@ -64,14 +76,18 @@ class KSpaceEwald : public cpu::KSpace {
     void compute(const LaunchContext& ctx) override;
 
   private:
-    /// @brief Rebuild the reciprocal-vector tables if the cell changed.
+    /// @brief Rebuild the reciprocal-vector tables if the cell / slab changed.
     void ensure_kvectors(const cpu::Frame& frame, bool initial_build);
+
+    /// @return true when slab volume factor is active (\(f > 1\)).
+    bool slab_active() const noexcept { return slab_factor > 1.0; }
 
     longrange::EwaldSum sum_;
 
     // Canonical Box mutation revision used to detect NPT/deform changes.
     const cpu::Box* box_identity_ = nullptr;
     std::uint64_t cell_revision_ = 0;
+    double cached_slab_factor_ = 0.0;
     bool have_kvectors_ = false;
 
     // Scratch structure-factor accumulators (sized to #k vectors).

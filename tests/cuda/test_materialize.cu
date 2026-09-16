@@ -1,13 +1,13 @@
 /// @file tests/cuda/test_materialize.cu
-/// @brief Round-trip + alignment tests for cuda::materialize / write_back.
+/// @brief Round-trip + alignment tests for cuda::from_molrs / to_molrs.
 ///
 /// Covers the rust-frame-lowering-04 acceptance criteria:
-///   - ac-002: a cuda::Frame produced by cuda::materialize carries the
+///   - ac-002: a cuda::Frame produced by cuda::from_molrs carries the
 ///             aligned field set -- per-atom charge / tag / image plus a
 ///             device-resident SystemScalars -- matching cpu::Frame.
 ///   - ac-003: molrs.Frame -> cuda::Frame -> molrs.Frame round-trips
 ///             positions / velocities / charge element-wise (explicit
-///             H2D on materialize, explicit D2H on write_back).
+///             H2D on from_molrs, explicit D2H on to_molrs).
 
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "atomiverse/cuda/frame/materialize.cuh"
+#include "atomiverse/cuda/frame/molrs_exchange.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/molrs.hpp"
 
@@ -57,33 +57,33 @@ namespace {
     molrs::frame_set_column_f64(
         *fr, "atoms", "charge",
         ::rust::Slice<const double>(charge.data(), charge.size()));
-    molrs::frame_set_column_i32(
-        *fr, "atoms", "type",
-        ::rust::Slice<const std::int32_t>(type.data(), type.size()));
+    const std::vector<std::uint64_t> z_num(type.begin(), type.end());
+    molrs::frame_set_column_u32(
+        *fr, "atoms", "atomic_number",
+        ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
     molrs::frame_set_column_i32(
         *fr, "atoms", "tag",
         ::rust::Slice<const std::int32_t>(tag.data(), tag.size()));
 
-    // bonds reference atoms by GLOBAL TAG (not row index): cpu::materialize
+    // bonds reference atoms by GLOBAL TAG (not row index): cpu::from_molrs
     // calls atoms.add_bond(ti, tj, ...) which resolves ti/tj through the
     // tag->local map, mirroring the CPU sibling test. Atom tags are {10,11,12},
     // so this bond joins tags 10 and 11. Using row indices {0,1} here would be
     // silently dropped by add_bond (tag 0 not in the map) -> n_bonds()==0.
-    const std::vector<std::int32_t> bi = {10}, bj = {11}, bt = {1};
-    molrs::frame_set_column_i32(
+    const std::vector<std::uint64_t> bi = {10}, bj = {11}, bt = {1};
+    molrs::frame_set_column_u32(
         *fr, "bonds", "atomi",
-        ::rust::Slice<const std::int32_t>(bi.data(), bi.size()));
-    molrs::frame_set_column_i32(
+        ::rust::Slice<const std::uint64_t>(bi.data(), bi.size()));
+    molrs::frame_set_column_u32(
         *fr, "bonds", "atomj",
-        ::rust::Slice<const std::int32_t>(bj.data(), bj.size()));
-    molrs::frame_set_column_i32(
-        *fr, "bonds", "type",
-        ::rust::Slice<const std::int32_t>(bt.data(), bt.size()));
+        ::rust::Slice<const std::uint64_t>(bj.data(), bj.size()));
+    molrs::frame_set_column_u32(
+        *fr, "bonds", "type_id",
+        ::rust::Slice<const std::uint64_t>(bt.data(), bt.size()));
 
     const std::vector<double> h = {20.0, 0.0, 0.0, 0.0, 20.0,
                                    0.0,  0.0, 0.0, 20.0};
-    molrs::frame_set_simbox(*fr,
-                            ::rust::Slice<const double>(h.data(), h.size()));
+    molrs::frame_set_box(*fr, ::rust::Slice<const double>(h.data(), h.size()));
     return fr;
 }
 
@@ -93,7 +93,7 @@ namespace {
 
 TEST(CudaMaterialize, AlignedFieldSet) {
     auto fr = make_full_frame();
-    cuda::Frame d = cuda::materialize(*fr);
+    cuda::Frame d = cuda::from_molrs(*fr);
 
     EXPECT_EQ(d.n_atoms(), 3);
     EXPECT_EQ(d.n_bonds(), 1);
@@ -110,7 +110,7 @@ TEST(CudaMaterialize, AlignedFieldSet) {
     cuda::destroy(d);
 }
 
-// ── ac-003: molrs.Frame -> cuda::Frame -> write_back round-trips ────────
+// ── ac-003: molrs.Frame -> cuda::Frame -> to_molrs round-trips ────────
 
 TEST(CudaMaterialize, RoundTrip) {
     auto fr = make_full_frame();
@@ -119,11 +119,11 @@ TEST(CudaMaterialize, RoundTrip) {
     const std::vector<double> vy = {-0.01, -0.02, -0.03};
     const std::vector<double> charge = {-0.5, 0.25, 0.25};
 
-    cuda::Frame d = cuda::materialize(*fr);
+    cuda::Frame d = cuda::from_molrs(*fr);
     ASSERT_EQ(d.n_atoms(), 3);
 
     // Explicit D2H write-back into the same molrs.Frame.
-    cuda::write_back(d, *fr);
+    cuda::to_molrs(d, *fr);
 
     auto rx = molrs::frame_column_f64(*fr, "atoms", "x");
     auto rvy = molrs::frame_column_f64(*fr, "atoms", "vy");
@@ -139,27 +139,27 @@ TEST(CudaMaterialize, RoundTrip) {
         EXPECT_NEAR(rq[i], charge[i], 1e-5);
     }
 
-    // System scalars round-trip through the dedicated "scalars" block.
-    auto se = molrs::frame_column_f64(*fr, "scalars", "energy");
-    ASSERT_EQ(se.size(), 1u);
-    EXPECT_DOUBLE_EQ(se[0], 0.0);
+    // System scalars cross the boundary as exact typed meta, never a synthetic
+    // "scalars" block (schema v2) — mirrors tests/cpu/test_materialize.cpp.
+    EXPECT_FALSE(molrs::frame_has_block(*fr, "scalars"));
 
     cuda::destroy(d);
 }
 
-// ── ac-003: required fields fail loud (delegated to cpu::materialize) ───
+// ── ac-003: required fields fail loud (delegated to cpu::from_molrs) ───
 
 TEST(CudaMaterialize, MissingPositionsThrows) {
     auto fr = molrs::frame_new();
     const std::vector<std::int32_t> type = {1, 2};
-    molrs::frame_set_column_i32(
-        *fr, "atoms", "type",
-        ::rust::Slice<const std::int32_t>(type.data(), type.size()));
+    const std::vector<std::uint64_t> z_num(type.begin(), type.end());
+    molrs::frame_set_column_u32(
+        *fr, "atoms", "atomic_number",
+        ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
 
     try {
-        cuda::Frame d = cuda::materialize(*fr);
+        cuda::Frame d = cuda::from_molrs(*fr);
         cuda::destroy(d);
-        FAIL() << "cuda::materialize must throw when atoms.x is absent";
+        FAIL() << "cuda::from_molrs must throw when atoms.x is absent";
     } catch (const std::exception& e) {
         EXPECT_NE(std::string(e.what()).find("x"), std::string::npos)
             << "exception message must name the missing field: " << e.what();

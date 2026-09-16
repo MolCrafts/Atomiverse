@@ -18,12 +18,12 @@ struct Context;
 /// the wrong setpoint, because a thermostat's target kinetic energy is
 /// `Ndof kB T / 2`.
 ///
-/// Called by `CPUDriver::setup_pass()` between `set_frame()` and
+/// Called by `Driver::setup_pass()` between `set_frame()` and
 /// `build_components()`. That ordering is load-bearing — thermostats cache Ndof in
 /// their own `build()`, so a count published any later would be ignored by exactly
 /// the components that most need it.
 ///
-/// Lives in a `.cpp` rather than in the `CPUDriver` template so the driver header
+/// Lives in a `.cpp` rather than in the `Driver` template so the driver header
 /// stays free of `<mpi.h>`.
 ///
 /// @param ctx Execution context; `ctx.md.n_dof_global` is written.

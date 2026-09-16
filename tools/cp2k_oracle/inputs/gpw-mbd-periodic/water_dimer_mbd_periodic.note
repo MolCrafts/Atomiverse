@@ -1,0 +1,30 @@
+# Offline MBD periodic pin notes (gpw-mbd-periodic)
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` has no MBD (only DFTD2/D3/D3BJ/D4);
+hosts may link libMBD as an external VDW backend. Hard pin is **pure-Python
+pymbd** (`libmbd/src/pymbd/pymbd.py` `mbd_energy`) — same algorithm as libMBD
+Fortran Ewald + k-mesh path.
+
+Isolated check (ATV Å→Bohr = 1/0.52917720859):
+
+```
+E_disp free-atom isolated = -1.4928804171425725e-03 Ha  (pure-Python)
+E_disp free-atom isolated = -1.4928804171407961e-03 Ha  (libMBD Fortran pin)
+```
+
+Periodic (lattice = diag(12 Å) in Bohr, free-atom volumes, β=0.83, a=6):
+
+```
+E_disp k=1×1×1 = -1.4474832766229184e-03 Ha
+E_disp k=2×2×2 = -1.4965720704989138e-03 Ha   ← regression hard pin
+E_disp k=3×3×3 = -1.5008181948612531e-03 Ha
+```
+
+Reproduce with pure-Python pymbd after cloning libmbd:
+
+```python
+# coords Å→Bohr with ATV factor; lattice diag(12*kA2B); k_grid=(2,2,2)
+mbd_energy(coords, alpha_0, C6, R_vdw, beta=0.83, lattice=lattice, k_grid=(2,2,2))
+```
+
+Geometry: same water dimer as `gpw-mbd-ice` / `gpw-ts-ice`.

@@ -29,23 +29,18 @@
 ///     return check_distance();          // check yes → displacement-gated
 ///   } else return 0;
 /// ```
-/// `NeighborList::launch()` reproduces this exactly: `ago_` is incremented,
-/// then `delay_ok = ago_ >= delay_` AND `every_ok = ago_ % every_ == 0`
-/// gate the rebuild; when both hold, `check no` (`check_ == false`) rebuilds
-/// unconditionally and `check yes` consults the skin displacement test
-/// (`max_disp·2 > skin`, the half-skin trigger of `check_distance()`).
-/// Atomiverse's `size_stale` short-circuit (atom-count change from MPI
-/// migration / halo resize) is an Atomiverse-only addition with no LAMMPS
-/// keyword — it is always-on and correct (a changed atom set always
-/// invalidates the stored CSR).
+/// `NeighborList::decide_reneighbor()` is that function (LAMMPS `nflag`).
+/// MD Verlet calls it from `Runtime::step` and then either
+/// `forward_comm` or `exchange+borders+launch()` (build). Direct
+/// `launch()` without Runtime still decides inline (unit tests).
 #pragma once
 
 #include <string>
 
-#include "atomiverse/cpu/comm/domain.h"
+#include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
-#include "atomiverse/cpu/md/atom_sort.h"
+#include "atomiverse/cpu/dynamics/atom_sort.h"
 #include "atomiverse/cpu/neighbor/cell_list.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
 
@@ -88,24 +83,65 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
           check_(check) {}
 
     /// @brief LAMMPS `atom_modify sort Nfreq binsize` — spatial reorder of
-    ///        owned atoms. Multi-rank: applied in HaloSend before borders;
+    ///        owned atoms. Multi-rank: applied in CommBrick before borders;
     ///        serial: at NeighborList reneighbor. Default: enabled, nfreq=1000.
-    NeighborList& set_atom_sort(AtomSortParams p) & {
-        sort_state_.configure(p);
+    /// @param nfreq Sort at the first reneighbor after this many MD steps.
+    /// @param binsize Bin edge [Å]; `≤ 0` → `0.5 * (cutoff + skin)`.
+    /// @param enabled Master enable.
+    NeighborList& set_atom_sort(int nfreq, double binsize = 0.0,
+                                bool enabled = true) & {
+        sort_state_.configure(nfreq, binsize, enabled);
         return *this;
     }
-    NeighborList set_atom_sort(AtomSortParams p) && {
-        set_atom_sort(p);
+    NeighborList set_atom_sort(int nfreq, double binsize = 0.0,
+                               bool enabled = true) && {
+        set_atom_sort(nfreq, binsize, enabled);
         return std::move(*this);
     }
 
     std::string name() const override { return "neighbor_list"; }
+    bool verlet_engine() const override { return true; }
 
     /// @brief Supply side of the neighbor contract — the driver
     /// infrastructure scan probes this typed accessor, not `name()`.
     const cpu::NeighborProvider* as_neighbor_provider() const override {
         return this;
     }
+
+    /// @brief Mutable supply side, for a driver that configures the list.
+    cpu::NeighborProvider* neighbor_provider() override { return this; }
+
+    /// @brief Distance this list enumerates pairs out to [Angstrom]:
+    /// `cutoff + skin`, exactly the radius `build()` hands the spatial index.
+    ///
+    /// The auto-injected MPI halo is sized from this, so the ghost shell covers
+    /// the whole skin band rather than the interaction cutoff alone (see
+    /// `NeighborProvider::neighbor_reach`).
+    /// @return Enumeration radius [Angstrom].
+    AccReal neighbor_reach() const override {
+        return static_cast<AccReal>(cutoff_ + strategy_.skin());
+    }
+
+    /// @brief LAMMPS `Neighbor::decide()` (`nflag`). Increments `ago_`.
+    ///        Sort cadence is stamped from `LaunchContext::step` at the
+    ///        sort site, not from this call.
+    bool decide_reneighbor(cpu::Context& rt, cpu::Frame& frame) override {
+        const int n_active = active_count(rt, frame);
+        ++ago_;
+        const bool mode_stale = rt.md.full_list_requested != built_full_;
+        const bool size_stale = n_active != strategy_.n_at_last_build();
+        const bool delay_ok = ago_ >= delay_;
+        const bool every_ok = (ago_ % every_) == 0;
+        const bool disp_rebuild =
+            delay_ok && every_ok
+            && (!check_ || strategy_.needs_rebuild(frame, n_active));
+        const bool partition_stale =
+            is_multi_rank(rt) && rt.md.dd->partition_dirty;
+        return mode_stale || size_stale || disp_rebuild || partition_stale;
+    }
+
+    /// @brief Drop `atom_modify sort` permanently (see `NeighborProvider`).
+    void forbid_row_reordering() override { sort_state_.enabled = false; }
 
     void build(const cpu::BuildContext& ctx) override {
         reinit_strategy(ctx.runtime, ctx.frame);
@@ -121,6 +157,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         ++pairs_.version;
         trim_inum_to_local(ctx.runtime, pairs_);
         ctx.runtime.md.pair_list = &pairs_;
+        ctx.runtime.md.atom_sort = &sort_state_;
         ago_ = 0;
         n_rebuilds_ = 1; // initial enumeration counts as rebuild #1
         // Snapshot the halo generation so the first `launch()` doesn't
@@ -129,82 +166,48 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         // it has, via `pre_force`; under `Evaluate` there is no halo
         // launch before the first force eval, hence the
         // `is_multi_rank` guard.)
-        if (is_multi_rank(ctx.runtime)) {
+        if (is_multi_rank(ctx.runtime))
             last_halo_generation_ = ctx.runtime.md.dd->halo_generation;
-            // Publish sort cadence for HaloSend (exchange → sort → borders).
-            auto* dd = ctx.runtime.md.dd;
-            dd->atom_sort_enabled = sort_state_.params.enabled;
-            dd->atom_sort_nfreq = sort_state_.params.nfreq;
-            dd->atom_sort_binsize = sort_state_.params.binsize;
-            dd->atom_sort_neigh_cut = cutoff_ + strategy_.skin();
-            dd->atom_sort_step = sort_state_.step;
-            dd->atom_sort_next = sort_state_.next_sort;
-        }
     }
 
     void launch(const cpu::LaunchContext& ctx) override {
         const int n_active = active_count(ctx.runtime, ctx.frame);
-        ++ago_;
-        ++sort_state_.step; // LAMMPS ntimestep proxy for atom_modify sort
 
-        // Rebuild decision mirrors LAMMPS `Neighbor::decide()` (neighbor.cpp:2360):
-        //     ago++;
-        //     if (ago >= delay && ago % every == 0) {
-        //       if (dist_check == 0) return 1;   // check no
-        //       return check_distance();          // check yes
-        //     } else return 0;
-        //   size_stale: atom count changed (migration / halo resize) → force
-        //               rebuild. Atomiverse-only short-circuit, no LAMMPS keyword.
-        //   halo_stale: HaloSend did a full rebuild that may have
-        //               reshuffled ghost slot indices (different atoms in the
-        //               same slot, or atoms relocated to a different slot
-        //               because earlier-axis recv_counts changed). The pair
-        //               list CSR stores `j` as raw slot indices, so a
-        //               reshuffle without a rebuild leaves the LJ + bonded
-        //               kernels reading stale (wrong-atom) positions —
-        //               observed as a +1-3 eV per-halo-cycle drift of the
-        //               MTK extended Hamiltonian under MSU stage-2 NPT,
-        //               accumulating to a step-1000 catastrophic ε̇ runaway.
-        //   delay gate:  ago < delay → no rebuild attempt (LAMMPS `delay`)
-        //   every gate:  ago % every != 0 → no rebuild attempt (LAMMPS `every`)
-        //   check yes:   max_disp * 2 > skin → rebuild (half-skin trigger)
-        //   check no:    rebuild unconditionally once the every/delay gate opens
-        //   mode_stale:  a consumer asked for a FULL list (ctx.md.full_list_requested)
-        //               after we had already built a half list — or vice versa.
-        //               Component build() runs in Plan order and the neighbor
-        //               phase precedes force, so the requester's build() lands
-        //               after ours; resolving the mode lazily here is the same
-        //               deal the CUDA flat-pairs export strikes.
+        // Verlet already ran decide_reneighbor (nflag). Direct launch()
+        // in unit tests has not, so decide inline — same delay/every/check
+        // gate as LAMMPS Neighbor::decide().
+        if (!ctx.runtime.md.reneighbor_decided) {
+            ctx.runtime.md.reneighbor =
+                decide_reneighbor(ctx.runtime, ctx.frame);
+            ctx.runtime.md.reneighbor_decided = true;
+        }
         const bool mode_stale =
             ctx.runtime.md.full_list_requested != built_full_;
         const bool size_stale = n_active != strategy_.n_at_last_build();
         const bool halo_stale =
             is_multi_rank(ctx.runtime)
             && ctx.runtime.md.dd->halo_generation != last_halo_generation_;
-        const bool delay_ok = ago_ >= delay_;
-        const bool every_ok = (ago_ % every_) == 0;
-        // When the gate is open: check no → always rebuild; check yes →
-        // consult the displacement skin test. `needs_rebuild` is only
-        // evaluated for `check yes` so `check no` runs pay no O(n) skin scan.
-        const bool disp_rebuild =
-            delay_ok && every_ok
-            && (!check_ || strategy_.needs_rebuild(ctx.frame, n_active));
-        if (mode_stale || size_stale || halo_stale || disp_rebuild) {
-            // Serial only: multi-rank sort runs in HaloSend before borders
+        if (ctx.runtime.md.reneighbor || mode_stale || size_stale
+            || halo_stale) {
+            // Serial only: multi-rank sort runs in CommBrick before borders
             // (LAMMPS exchange → sort → borders). Sorting here after halo
-            // would invalidate reverse send_lists.
+            // would invalidate the swap table's reverse send lists.
             //
             // Must notify_sorted so BondedTupleCache rebuilds: on serial MD
             // `dd` still exists, and cache staleness is keyed on
             // neighbor_generation. Skipping the bump leaves bonded forces
             // on pre-sort local indices → GAFF trajectory explosion at
             // nfreq=1.
+            sort_state_.step = ctx.step;
             if (!is_multi_rank(ctx.runtime) && sort_state_.due()) {
                 auto& f = ctx.frame;
                 const double bs =
                     sort_state_.resolved_binsize(cutoff_ + strategy_.skin());
+                // No swap table on this path by construction: it is the
+                // single-rank branch, where `CommBrick` early-returns and
+                // publishes nothing.
                 if (sort_owned_atoms(f, f.nlocal(), bs))
-                    notify_sorted(ctx.runtime.md.dd, f,
+                    notify_sorted(ctx.runtime.md.dd, f, /*swaps=*/nullptr,
                                   /*clear_ghosts=*/true);
                 sort_state_.mark_sorted();
             }
@@ -222,6 +225,9 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         // across launches, but a subsequent Backend::build_components() cycle
         // (e.g. after a frame-resize) would reset the runtime pointer.
         ctx.runtime.md.pair_list = &pairs_;
+        // Consume the step-local decide flag so a subsequent direct
+        // `launch()` (unit tests) re-runs decide rather than reusing nflag.
+        ctx.runtime.md.reneighbor_decided = false;
     }
 
     /// @brief Total rebuild count since construction (includes initial build()).
@@ -297,14 +303,21 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     }
 
     /// @brief (Re-)initialise the underlying spatial-index strategy from
-    /// the current frame.simbox.  Called from `build()` (one-time setup)
-    /// and from `launch()` whenever `frame.simbox` has drifted enough that
+    /// the current frame.box.  Called from `build()` (one-time setup)
+    /// and from `launch()` whenever `frame.box` has drifted enough that
     /// the cell-grid sizing is stale.
     void reinit_strategy(const cpu::Context& rt, cpu::Frame& f) {
+        // The strategy is sized and filtered by the VERLET reach, not the
+        // bare cutoff: a list built to `cutoff` alone drops every pair in
+        // the skin band and stops being reusable between rebuilds.
+        // (`skin()` is the constructor's negative-means-auto value already
+        // resolved, so this is exactly what the strategy derives itself.)
+        const double cutoff_skin = cutoff_ + strategy_.skin();
         if (is_multi_rank(rt)) {
-            strategy_.init_extended(f, cutoff_, rt.md.dd, rt.md.dd->capacity);
+            strategy_.init_extended(f, cutoff_skin, rt.md.dd,
+                                    rt.md.dd->capacity);
         } else {
-            strategy_.init(f, cutoff_);
+            strategy_.init(f, cutoff_skin);
         }
     }
 
@@ -327,7 +340,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// @brief Total rebuild count (includes the initial `build()` enumeration).
     int n_rebuilds_ = 0;
     /// @brief Last observed value of `dd->halo_generation` (multi-rank only).
-    /// Used to force a CSR rebuild when `HaloSend`'s full rebuild
+    /// Used to force a CSR rebuild when `CommBrick`'s full rebuild
     /// reshuffles ghost slot indices — see the `halo_stale` branch in
     /// `launch()`. Initialised to 0 so the very first launch (which
     /// initialises the CSR via `build()` already) doesn't double-rebuild.

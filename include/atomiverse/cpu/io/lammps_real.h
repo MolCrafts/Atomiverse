@@ -40,8 +40,8 @@ struct FourierTermReal {
 };
 
 struct CharmmDihedralEv {
-    double K_ev = 0;     ///< [eV]
-    int n = 1;           ///< multiplicity
+    double K_ev = 0;      ///< [eV]
+    int n = 1;            ///< multiplicity
     double delta_rad = 0; ///< phase [rad]
 };
 

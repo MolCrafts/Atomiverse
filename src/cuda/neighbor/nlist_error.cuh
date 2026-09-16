@@ -1,4 +1,4 @@
-/// @file nlist_error.cuh
+/// @file cuda/neighbor/nlist_error.cuh
 /// @brief CUDA error checking for neighborlist internals.
 ///
 /// Thin wrapper: pulls in the project-wide ATV_CUDA_CHECK macro and

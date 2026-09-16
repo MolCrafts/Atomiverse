@@ -1,0 +1,70 @@
+! Offline CP2K twin for Atomiverse slug cpmd-uks
+! Car–Parrinello / AIMD NVE on O2 triplet, Γ-UKS GPW (PADE LSD)
+! Geometry twin: xl-bomd-uks / gpw-uks-forces (12 Å MT cell, R=1.2075 Å)
+! ctest never launches this — pin is literature E_cons envelope in REFERENCE.md
+&GLOBAL
+  PROJECT cpmd_uks_o2
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD QS
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 3
+    &MGRID
+      CUTOFF 200
+      REL_CUTOFF 40
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+    &SCF
+      SCF_GUESS ATOMIC
+      MAX_SCF 80
+      EPS_SCF 1.0E-5
+      &OT
+        MINIMIZER DIIS
+        PRECONDITIONER FULL_SINGLE_INVERSE
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 20
+        EPS_SCF 1.0E-5
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      O  6.000000  6.000000  5.396250
+      O  6.000000  6.000000  6.603750
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PADE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 10
+    TIMESTEP 0.1
+    TEMPERATURE 0.0
+  &END MD
+&END MOTION

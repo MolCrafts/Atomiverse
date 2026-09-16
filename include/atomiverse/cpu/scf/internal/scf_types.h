@@ -14,7 +14,7 @@ namespace scf {
 ///        (n_alpha, n_beta). Direct instantiation — no factory function.
 ///
 /// Implements N_e = Σ_A Z_A − q (charge already folded into
-/// `IntegralPack::n_electrons` by its Frame constructor), M = 2S + 1:
+/// `internal::IntegralWorkspace::n_electrons` by its Frame constructor), M = 2S + 1:
 ///   n_alpha = (N_e + M − 1) / 2,   n_beta = (N_e − M + 1) / 2.
 ///
 /// Feed the resolved counts to a concrete open-shell method (`UHF`/`UKS`):

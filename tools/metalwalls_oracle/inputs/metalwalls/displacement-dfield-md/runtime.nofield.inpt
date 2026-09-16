@@ -1,0 +1,77 @@
+# MetalWalls oracle twin for the ATV regression md/displacement-dfield-md
+# Baseline: identical system, NO external_field block (Coulomb only).
+#
+# 4 point ions (2 Na+, 2 Cl-) + 2 Gaussian electrode atoms in a 20 Bohr cube.
+# Electrodes are present only because MW hard-requires charge neutrality (and
+# therefore an electrode charge algorithm) for ANY external field --
+# src/configuration.F90:624-629 "cannot use external fields without charge
+# neutrality".  They are immobile, so forces.out lists the 4 ions only, and the
+# per-term columns there give (f_total - f_coulomb) = the external-field force.
+# No LJ, no molecules => no other force term exists.
+#
+# All quantities atomic units (Hartree, Bohr, e).
+
+num_steps 0
+timestep  1.0
+temperature 300.0
+
+num_pbc 3
+box
+  length 2.000000000000000e+01 2.000000000000000e+01 2.000000000000000e+01
+
+species
+
+  species_type
+    name Na
+    count 2
+    charge point +1.0
+    mass 22.98977
+
+  species_type
+    name Cl
+    count 2
+    charge point -1.0
+    mass 35.45300
+
+  species_type
+    name C1
+    count 1
+    charge gaussian 0.955234657 0.0
+    mass 12.0107
+    mobile False
+
+  species_type
+    name C2
+    count 1
+    charge gaussian 0.955234657 0.0
+    mass 12.0107
+    mobile False
+
+electrodes
+
+  electrode_type
+    name C1
+    species C1
+    potential +0.000
+
+  electrode_type
+    name C2
+    species C2
+    potential +0.000
+
+  electrode_charges cg 1.0e-13 500
+
+  charge_neutrality true
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-9
+    coulomb_rcut 9.0
+    coulomb_ktol 1.0e-9
+
+output
+  default 0
+  forces 1
+  charges 1
+  energies 1 Total Potential Coulomb External_field
+

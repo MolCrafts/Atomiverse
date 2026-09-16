@@ -6,13 +6,13 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/cpu/driver/evaluate.h"
-#include "atomiverse/cpu/minimizer/cg.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"
-#include "atomiverse/cpu/minimizer/minimize.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
+#include "atomiverse/cpu/minimize/cg.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
-#include "atomiverse/facade/stage.h"
 
 #include "cpu/driver_test_helpers.h"
 
@@ -42,7 +42,7 @@ TEST(MinimizeSetApi, SetOptimizerRejectsDifferentTypeAfterFirst) {
 
 TEST(MinimizeSetApi, PairWithNeighborListBuildsClean) {
     ATV::cpu::minimizer::Minimize opt;
-    opt.add_potential(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+    opt.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
     opt.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
     opt.set_optimizer(ATV::cpu::minimizer::LBFGS{});
     EXPECT_NO_THROW(opt.build());
@@ -50,7 +50,7 @@ TEST(MinimizeSetApi, PairWithNeighborListBuildsClean) {
 
 TEST(MinimizeSetApi, PairWithoutNeighborListThrowsAtBuild) {
     ATV::cpu::minimizer::Minimize opt;
-    opt.add_potential(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+    opt.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
     opt.set_optimizer(ATV::cpu::minimizer::LBFGS{});
     try {
         opt.build();
@@ -66,14 +66,14 @@ TEST(MinimizeSetApi, PairWithoutNeighborListThrowsAtBuild) {
 
 TEST(EvaluateSetApi, PairWithNeighborListBuildsClean) {
     ATV::cpu::Evaluate eval;
-    eval.add_potential(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+    eval.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
     eval.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
     EXPECT_NO_THROW(eval.build());
 }
 
 TEST(EvaluateSetApi, PairWithoutNeighborListThrowsAtBuild) {
     ATV::cpu::Evaluate eval;
-    eval.add_potential(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+    eval.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
     try {
         eval.build();
         FAIL() << "expected throw — Evaluate pair without set_neighbor";

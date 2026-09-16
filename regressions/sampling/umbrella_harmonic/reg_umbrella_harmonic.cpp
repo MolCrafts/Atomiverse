@@ -14,7 +14,7 @@
 
 #include "atomiverse/cpu/bias/distance_cv.h"
 #include "atomiverse/cpu/bias/harmonic_bias.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 using namespace ATV;
@@ -143,7 +143,7 @@ int main() {
             f.span(kAtom_tag)[i] = i + 1;
             f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
         }
-        f.simbox = cpu::Box::cubic(20.0);
+        f.box = cpu::Box::cubic(20.0);
 
         const double k = 4.0, center = 3.0;
         cpu::Evaluate eval;
@@ -199,7 +199,7 @@ int main() {
             f.span(kAtom_tag)[i] = i + 1;
             f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
         }
-        f.simbox = cpu::Box::cubic(40.0);
+        f.box = cpu::Box::cubic(40.0);
         cpu::Evaluate eval;
         auto bias = cpu::bias::HarmonicBias(
             std::make_unique<cpu::bias::DistanceCV>(1, 2), k_bias, c);

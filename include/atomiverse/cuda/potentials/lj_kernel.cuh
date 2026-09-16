@@ -1,5 +1,5 @@
 /// @file cuda/potentials/lj_kernel.cuh
-/// @brief Pointer-level LJ kernel -- shared between cuda::PairLJCut component and torch backend.
+/// @brief Pointer-level LJ kernel -- shared pointer-level kernel for cuda::PairLJCut.
 ///
 /// This kernel is the single source of truth for LJ force+energy computation.
 /// It accepts raw pointers so it can be called from any backend.

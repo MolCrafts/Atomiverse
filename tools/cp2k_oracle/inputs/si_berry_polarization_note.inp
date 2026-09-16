@@ -1,0 +1,57 @@
+# CP2K twin (offline oracle note) — Berry-phase dipole of bulk Si
+# Pairs with regressions/pw/berry-polarization/REFERENCE.md.
+# Never executed at ctest/regression time (offline pin only).
+#
+# CP2K evaluates the same modern-theory-of-polarization observable as a
+# Berry-phase dipole (Resta Γ-limit) via &MOMENTS PERIODIC T. Basis is
+# GTH + Gaussian, so absolute phases differ from the ONCV plane-wave twin;
+# the symmetry pins (half-quantum lattice membership for the centrosymmetric
+# cell, ASR Z* = 0 under sublattice displacement) are basis-independent.
+&GLOBAL
+  PROJECT si_berry
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &QS
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &MGRID
+      CUTOFF 300
+    &END MGRID
+    &SCF
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &PRINT
+      &MOMENTS
+        PERIODIC T
+      &END MOMENTS
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      # fcc primitive vectors of diamond Si, a = 5.43 A
+      A 0.000 2.715 2.715
+      B 2.715 0.000 2.715
+      C 2.715 2.715 0.000
+    &END CELL
+    &COORD
+      Si 0.0000 0.0000 0.0000
+      Si 1.3575 1.3575 1.3575
+      # displaced twin: move atom 2 by +0.02 * C = (0.0543, 0.0543, 0.0000)
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PADE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

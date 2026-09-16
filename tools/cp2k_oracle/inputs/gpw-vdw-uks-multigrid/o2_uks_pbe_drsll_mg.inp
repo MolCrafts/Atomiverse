@@ -1,0 +1,72 @@
+! O2 triplet LSD PBE + nonlocal vdW-DF (DRSLL) on REL_CUTOFF multigrid (NGRIDS 4)
+! Twin for Atomiverse regressions/gpw/gpw-vdw-uks-multigrid
+! Geometry: R(O-O) = 1.2075 A centered in a 12 A cubic cell, PERIODIC XYZ
+! (nonlocal RPS kernel requires the periodic Poisson route on both sides).
+! Valence: 12 e- (GTH-q6), multiplicity 3 -> Na=7, Nb=5
+! Matched twin: ATV also runs ngrids=4 / rel_cutoff=60 (not single-grid).
+&GLOBAL
+  PROJECT o2_uks_pbe_drsll_mg
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME  BASIS_MOLOPT
+    POTENTIAL_FILE_NAME  GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 3
+    CHARGE 0
+    &MGRID
+      CUTOFF 400
+      REL_CUTOFF 60
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-12
+    &END QS
+    &SCF
+      MAX_SCF 80
+      EPS_SCF 1.0E-6
+      SCF_GUESS ATOMIC
+      &OT OFF
+      &END OT
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+        NBROYDEN 8
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+      &VDW_POTENTIAL
+        POTENTIAL_TYPE NON_LOCAL
+        &NON_LOCAL
+          TYPE DRSLL
+          KERNEL_FILE_NAME vdW_kernel_table.dat
+          SCALE 1.0
+        &END NON_LOCAL
+      &END VDW_POTENTIAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      O  6.000000  6.000000  5.396250
+      O  6.000000  6.000000  6.603750
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

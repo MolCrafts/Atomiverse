@@ -51,8 +51,7 @@ class DensityBuilder {
     /// @return M^{σσ'} [n × n], in the units of M.
     /// @throws std::invalid_argument when M is not square with even
     ///         dimension.
-    static RealMatrix spin_block(const RealMatrix& M_spinor, int bra,
-                                 int ket) {
+    static RealMatrix spin_block(const RealMatrix& M_spinor, int bra, int ket) {
         const std::size_t two_n = M_spinor.shape()[0];
         if (M_spinor.shape()[1] != two_n || two_n % 2 != 0)
             throw std::invalid_argument(

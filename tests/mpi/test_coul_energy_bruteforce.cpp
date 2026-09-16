@@ -20,10 +20,11 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/comm/halo_exchange.h"
+#include "atomiverse/cpu/component/long_range_protocol.h"
+#include "atomiverse/cpu/component/potential.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
 
@@ -62,7 +63,7 @@ cpu::Frame make_charged_fcc(int n_cells, double a_lat, double q_mag) {
                     frame.span(ATV::kAtom_vz)[idx] = 0.0;
                     ++idx;
                 }
-    frame.simbox = ATV::cpu::Box::cubic(n_cells * a_lat);
+    frame.box = ATV::cpu::Box::cubic(n_cells * a_lat);
     return frame;
 }
 
@@ -71,8 +72,8 @@ cpu::Frame make_charged_fcc(int n_cells, double a_lat, double q_mag) {
 double brute_force_coul_energy(const cpu::Frame& frame, double alpha,
                                double cutoff) {
     const int n = frame.nlocal();
-    const double lx = frame.simbox.cell()(0, 0), ly = frame.simbox.cell()(1, 1),
-                 lz = frame.simbox.cell()(2, 2);
+    const double lx = frame.box.cell()(0, 0), ly = frame.box.cell()(1, 1),
+                 lz = frame.box.cell()(2, 2);
     const double rc_sq = cutoff * cutoff;
     double e = 0.0;
     for (int i = 0; i < n; ++i) {
@@ -106,6 +107,27 @@ double brute_force_coul_energy(const cpu::Frame& frame, double alpha,
     return e;
 }
 
+// CoulLong is the real-space half of split electrostatics; the driver requires
+// a matching reciprocal partner before it will build. This stub declares that
+// half with the same alpha but contributes zero energy, so the reported energy
+// is exactly the real-space part the brute-force oracle computes.
+class NullReciprocal : public cpu::Potential, public cpu::LongRangeParticipant {
+  public:
+    explicit NullReciprocal(double alpha) : alpha_(alpha) {}
+    std::string name() const override { return "null/kspace"; }
+    const cpu::LongRangeParticipant*
+    as_long_range_participant() const override {
+        return this;
+    }
+    cpu::LongRangeContract long_range_contract() const override {
+        return {cpu::LongRangeRole::ReciprocalSpace, alpha_, 0, 0};
+    }
+    void launch(const cpu::LaunchContext&) override {}
+
+  private:
+    double alpha_;
+};
+
 } // namespace
 
 // ── Real-space Coulomb energy matches brute force at 1 and 8 ranks ───────────
@@ -124,11 +146,11 @@ TEST(CoulEnergyBruteForce, GlobalEnergyMatchesBruteForce) {
     ASSERT_GT(std::abs(e_bf), 1e-9) << "degenerate oracle energy";
 
     cpu::md::MD sim;
-    sim.add(cpu::md::VelocityVerlet{0.0}); // dt = 0 → positions frozen
-    sim.on(ATV::md::Phase::force).add(cpu::md::NeighborList<>{cutoff}, -10);
+    sim.set_integrator(
+        cpu::md::VelocityVerlet{0.0}); // dt = 0 → positions frozen
+    sim.set_neighbor(cpu::md::NeighborList<>{cutoff});
     sim.on(ATV::md::Phase::force).add(cpu::CoulLong{alpha, cutoff});
-    sim.on(ATV::md::Phase::pre_force).add(cpu::comm::HaloSend{cutoff}, -20);
-    sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
+    sim.on(ATV::md::Phase::force).add(NullReciprocal{alpha});
     sim.build();
 
     sim.run(frame, 1); // one frozen step → Reduce fills global energy

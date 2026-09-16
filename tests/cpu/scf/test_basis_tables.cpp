@@ -32,11 +32,11 @@
 #include "atomiverse/cpu/scf/internal/basis_workspace.h"
 
 using namespace ATV;
+using cpu::scf::angular_convention;
 using cpu::scf::AtomList;
+using cpu::scf::basis_set_name;
 using cpu::scf::BasisSet;
 using cpu::scf::ShellList;
-using cpu::scf::angular_convention;
-using cpu::scf::basis_set_name;
 using cpu::scf::basis_data::AngularConvention;
 using cpu::scf::basis_data::AtomBasis;
 
@@ -69,7 +69,7 @@ cpu::Frame one_atom(int Z) {
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -194,7 +194,7 @@ TEST(BasisTables, NewEnumNamesAndConvention) {
 
 TEST(BasisTables, ShellListConstructsForNewSets) {
     // Cl: 6-31+G* → 23 Cartesian AOs; aug-cc-pVDZ → 29 Cartesian shells
-    // (spherical collapse to 27 happens downstream in IntegralPack).
+    // (spherical collapse to 27 happens downstream in internal::IntegralWorkspace).
     const auto f = one_atom(17);
     const AtomList atoms{f, -1};
     EXPECT_EQ(atoms.n_electrons, 18);

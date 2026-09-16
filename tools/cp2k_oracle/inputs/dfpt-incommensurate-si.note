@@ -1,0 +1,27 @@
+# Offline oracle note — dfpt-incommensurate-si
+
+## Intent
+
+Twin for incommensurate finite-q DFPT phonons on diamond Si (PW LSDA, NC-UPF).
+Atomiverse path: `cpu::pw::DfptPhonon` with `q_frac = {0.3, 0.0, 0.0}` →
+direct `internal::dfpt_q_force_constants` (not supercell).
+
+## Preferred CP2K twin (when binary available)
+
+- Structure: 2-atom FCC Si, a = 5.43 Å
+- Method: Quickstep or CP2K phonon / VIBRATIONAL_ANALYSIS at non-Γ q, or
+  export dynamical matrix at fractional q ≈ (0.3, 0, 0) of the same cell
+- Functional: LDA / PADE-like; comparable NC or GTH setup
+- Record: ω(q) [cm⁻¹] (6 branches), wall time, CP2K version
+
+## This host (2026-07-25)
+
+CP2K binary **not available**. Pins are literature-biased windows + measured
+ATV spectrum under the regression twin (see
+`regressions/response/dfpt-incommensurate-si/REFERENCE.md`).
+`perf_exempt=true` until a fair CP2K DFPT wall is recorded.
+
+## Cite
+
+Baroni et al., Rev. Mod. Phys. 73, 515 (2001);
+Giannozzi et al., Phys. Rev. B 43, 7231 (1991).

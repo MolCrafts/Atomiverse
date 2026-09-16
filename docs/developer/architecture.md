@@ -24,14 +24,14 @@ different storage models, different libraries, and different constraints. The
 project therefore does not pretend that host and device data are the same
 object. Instead, data residency is made explicit in the type system.
 
-That is why Atomiverse uses one facade layer over two separate implementations,
-instead of a single class full of `if (is_cuda)` branches.
+That is why Atomiverse puts one CUDA-free contract layer over two separate
+implementations, instead of a single class full of `if (is_cuda)` branches.
 
-## The Four Layers
+## The Three Layers
 
-The easiest way to understand the codebase is as four layers.
+The easiest way to understand the codebase is as three layers.
 
-### 1. Core vocabulary
+### 1. Core — the shared contract
 
 The files under [`include/atomiverse/core`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core)
 define the smallest shared concepts:
@@ -42,25 +42,26 @@ define the smallest shared concepts:
 - device tags used for compile-time backend selection
 - default binding metadata used by components
 
-These types are intentionally small. They let the facade, CPU backend, and CUDA
-backend talk about the same ideas without forcing them to share the same data
-layout.
+The same directory also holds the public execution skeleton:
 
-### 2. Facade and planning
+- `driver_template.h` defines `Driver<PhaseEnum, DeviceTag>`, which owns
+  user-registered components; `PhaseBuilder` supports the fluent
+  `.on(phase).add(...)` syntax, and `PlanBuilder` compiles unordered
+  registrations into a sorted execution plan
+- `stage.h` defines the phase order for each workflow (MD, minimization,
+  evaluation, vibrational analysis, Monte Carlo sampling, and coupled-replica
+  paths) plus the `kind_of(Phase)` overloads behind `make_binding`
+- `verdict.h` defines `Verdict` and `ConvergenceMetrics` — the vocabulary a
+  loop's termination is decided in. A `Criterion` judges the metrics and
+  returns a verdict; the driver reduces the verdicts across criteria and across
+  MPI ranks, so a criterion author never writes MPI code.
 
-The files under [`include/atomiverse/facade`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade)
-define the public execution skeleton:
+These types are intentionally small, and the whole layer is deliberately
+CUDA-free. Its job is to let the CPU and CUDA backends talk about the same
+ideas without forcing them to share a data layout — to collect intent, not to
+run the algorithm itself.
 
-- `Driver` owns user-registered components
-- `PhaseBuilder` supports the fluent `.on(phase).add(...)` syntax
-- `PlanBuilder` compiles unordered registrations into a sorted execution plan
-- `stage.h` defines the phase order for each workflow (MD, minimization, evaluation, vibrational analysis, Monte Carlo sampling, and coupled-replica paths) plus the `kind_of(Phase)` overloads behind `make_binding`
-- `loop.h` defines `Verdict` and `ConvergenceMetrics` — the vocabulary a loop's termination is decided in (a `Criterion` judges the metrics and returns a verdict; the driver reduces the verdicts across criteria and across MPI ranks)
-
-The facade is deliberately CUDA-free. Its job is to collect intent, not to run
-the algorithm itself.
-
-### 3. CPU backend and CPU analysis layer
+### 2. CPU backend and CPU analysis layer
 
 The CPU side lives under [`include/atomiverse/cpu`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu)
 and [`src/cpu`](https://github.com/MolCrafts/Atomiverse/blob/dev/src/cpu). It contains three distinct roles.
@@ -74,10 +75,11 @@ Second, it provides a true CPU execution backend through
 directly on that host frame with no transfer step.
 
 Third, it provides CPU-only utilities that are not part of the staged CUDA
-component model, such as integral generation, RHF/UHF/UKS solvers, Mulliken
-analysis, density grids, trajectory analysis, and XYZ writing.
+component model, such as integral generation, the Gaussian SCF, plane-wave, GPW and
+semiempirical methods, Mulliken analysis, density grids, trajectory analysis,
+and trajectory writing.
 
-### 4. CUDA backend and staged components
+### 3. CUDA backend and staged components
 
 The CUDA side lives under [`include/atomiverse/cuda`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda)
 and [`src/cuda`](https://github.com/MolCrafts/Atomiverse/blob/dev/src/cuda). This layer owns:
@@ -194,7 +196,7 @@ the CUDA backend, those components run on a defer stream that can wait on the
 main stream and then perform side work.
 
 This is the purpose of
-[`AsyncBridge`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/async/async_bridge.cuh). It is the base
+[`AsyncBridge`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/asynchronous/async_bridge.cuh). It is the base
 class for CUDA observers and recorders such as:
 
 - `Thermo`
@@ -240,45 +242,54 @@ only the orchestration logic.
 `cpu::Evaluate` runs a `prepare -> evaluate -> finalize` pass exactly once — the
 home of single-point energy and force calculations.
 
-**SCF is not a driver family.** Both Gaussian-basis SCF and plane-wave DFT are
-*inner solvers* — plain low-level classes, not `Driver` subclasses. Gaussian SCF
-is a concrete method (`cpu::scf::RHF` / `UHF` / `RKS` / `UKS`; private loop engine under `scf/internal/`), used by the
-`cpu::scf::SCF` (`cpu::HF`) / the CUDA SCF evaluator; plane-wave DFT is
-`cpu::pw::PWSolver` behind `cpu::pw::PWEvaluator` (`PlaneWave`). There is no
-`Capability` write-set — components write Frame keys and plug into the *same*
-Evaluate, MD, and Minimize drivers ("swap the energy source, keep the driver").
+**SCF is not a driver *family* — it is a driver *node*.** There is no
+"electronic structure" category beside MD and Minimize. Gaussian SCF is a
+concrete method (`cpu::scf::RHF` / `UHF` / `RKS` / `UKS`), and the CRTP base
+they share, `cpu::scf::MeanFieldMethod<D>`, **is** a `cpu::Driver<scf::Phase>`
+— the same loop-node shape as MD and Minimize. Plane-wave DFT has not been
+re-hosted yet: `cpu::pw::PW` behind `cpu::pw::PWEvaluator` (`PlaneWave`) is
+still a plain class with its own loop, which is scheduled debt rather than a
+pattern to copy. There is no `Capability` write-set — components write Frame
+keys and plug into the *same* Evaluate, MD, and Minimize drivers ("swap the
+energy source, keep the driver").
 
-The SCF cycle (Hamiltonian build → diagonalize → density → DIIS → convergence)
-is decomposed into `internal::` helpers — `HamiltonianBuilder`, `EigenSolver`,
-`DensityBuilder`, `DIISMixer`, `DualConvergenceCheck` — owned as direct members
-of the method. Private helpers do not inherit from `Component`, none are registered into a
-Plan, and there is deliberately **no `scf::Phase` enum**. That is why the SCF
-loop is neither a monolithic function nor a user-pluggable phase order.
+The SCF cycle is a typed stage sequence, `fock → mix → diagonalize → density
+→ check`. Each stage under
+[`cpu/scf/stages/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/stages/)
+derives `cpu::Component` and is owned by the method as a direct member; the
+algorithms they call (`DIISMixer`, `EigenSolver`, density and Hamiltonian
+builders) stay `internal::` helpers that never register into a foreign Plan.
+`ATV::scf::Phase` exists **because** there is a Driver node to carry it — the
+banned shape is a free-floating phase enum with no node.
 
-## Why the CPU SCF Solver Still Exists
+So the SCF loop is neither a monolithic function nor a user-pluggable phase
+order: the method fixes the stage sequence, and members on the method
+(`mixer`, `tol`, `max_iter`, guess) select the algorithm inside each stage.
 
-A common question is why the repository has both a CPU `SCFSolver` and staged
-CUDA SCF components.
+## Why CPU And CUDA SCF Both Exist
 
-The short answer is that they solve different engineering problems.
+A common question is why the repository has both a CPU and a CUDA SCF stack
+when they now present the same public shape (`cpu::scf::RHF{basis}.run(frame)`
+vs `cuda::scf::RHF{basis}.run(frame)`).
 
-The CPU solvers are the clearest place to express reference algorithms with
-xtensor and dense linear algebra. They are good for validation, deep-dive
-tutorials, result structs, and testing physical correctness.
+They solve different engineering problems. The CPU stack is the clearest place
+to express reference algorithms with xtensor and dense linear algebra: it is
+where validation, deep-dive tutorials, and physical-correctness tests live, and
+it covers every method and basis. The CUDA stack is organized around device
+residency — for the shells its kernels cover it keeps integrals, the SCF
+iteration, and forces on the GPU with no scientific data returning to the host
+mid-solve — and falls back to the host path outside that coverage.
 
-The CUDA SCF stack is organized around staged execution, device residency, and
-backend timing. It is good for expressing workflows that stay on the GPU and
-compose with the rest of the driver system.
-
-So the duplication is not accidental. One layer emphasizes clarity and
-reference-quality implementation. The other emphasizes staged GPU execution.
+So the duplication is not accidental: one emphasizes breadth and
+reference-quality clarity, the other device-resident execution. Their
+agreement is what the dual-device regressions in `regressions/scf/` pin.
 
 ## Where To Make Changes
 
 When you need to modify the project, use this decision rule.
 
 If you are changing public workflow structure, phase ordering, or component
-registration semantics, start in `facade`.
+registration semantics, start in `core`.
 
 If you are changing user-visible system data, start with `cpu::Frame` and then
 audit the transfer path and the device frame.

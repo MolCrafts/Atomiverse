@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
@@ -12,39 +13,26 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-/// @brief Configuration for AM1-BCC charge assignment.
-///
-/// `am1` controls the Atomiverse AM1 single-point calculation. BCC atom typing,
-/// correction lookup, and charge-column writes are delegated to molrs.
-struct AM1BCCChargeConfig {
-    AM1Config am1{};
-    std::string parameter_set = "bcc";
-};
-
 /// @brief Assign reference AM1-BCC charges to a molrs molecular graph frame.
 ///
-/// This is intentionally not an electronic-structure Driver. It is a charge
-/// assignment facade: Atomiverse supplies AM1 Mulliken base charges, while
-/// molrs owns the BCC typifier/correction machinery and writes `atoms.charge`.
+/// Atomiverse supplies AM1 Mulliken base charges; molrs owns BCC typing /
+/// corrections. No `AM1BCCChargeConfig` bag — parameters on the constructor.
 class AM1BCCChargeAssigner {
   public:
-    explicit AM1BCCChargeAssigner(AM1BCCChargeConfig config = {});
+    /// @param am1 Concrete AM1 method (parameters already set).
+    /// @param parameter_set molrs BCC parameter set name (default "bcc").
+    explicit AM1BCCChargeAssigner(AM1 am1 = {},
+                                  std::string parameter_set = "bcc");
 
-    /// @brief Compute AM1 base charges and apply molrs AM1-BCC corrections.
-    ///
-    /// The input frame must contain atom coordinates plus integer `atoms.type`
-    /// atomic numbers (the exact Atomiverse exchange schema). BCC typing also
-    /// requires canonical `atoms.element` symbols and molrs graph topology;
-    /// neither field substitutes for the other.
     std::vector<double> assign(molrs::FrameRef& frame);
 
     const AM1Result& last_am1_result() const { return solver_.last_result(); }
     const std::vector<double>& last_charges() const { return last_charges_; }
-    const AM1BCCChargeConfig& config() const { return config_; }
+    const std::string& parameter_set() const { return parameter_set_; }
 
   private:
-    AM1BCCChargeConfig config_;
-    AM1Solver solver_;
+    AM1 solver_;
+    std::string parameter_set_;
     std::vector<double> last_charges_;
 };
 

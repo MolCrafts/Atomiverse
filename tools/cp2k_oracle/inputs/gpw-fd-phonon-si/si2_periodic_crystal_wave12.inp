@@ -1,0 +1,73 @@
+! Offline CP2K twin for regressions/gpw/gpw-fd-phonon-si
+! Finite-displacement Γ phonons: Si2 diamond fragment, cubic a=5.43 Å
+! GPW PADE + DZVP-MOLOPT-GTH + GTH-PBE-q4, CUTOFF 150 Ry
+! Nonperiodic MT Poisson (ATV product budget: periodic MOLOPT image sums
+! exceed the ≤60 s e2e wall on epyc login; same twin as pbesol-si lesson).
+! DX matches ATV kHessianStepAngstrom = 1e-3 Å ≈ 0.001889726 Bohr
+! FULLY_PERIODIC T: keep crystal rotations; report 3N-3 optical spectrum
+! Run offline only (tools/cp2k_oracle/README.md); never at ctest time.
+!
+! Pin host (2026-07-26): CP2K 2026.1 (dev 85b8a9b49c), 4 OMP, 1 rank
+! Optical frequencies (cm^-1): -263.481, -194.722, 383.783
+! Wall ≈ 10.1 s
+&GLOBAL
+  PROJECT si2_fd_phonon_np
+  RUN_TYPE VIBRATIONAL_ANALYSIS
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&VIBRATIONAL_ANALYSIS
+  DX 0.001889726
+  FULLY_PERIODIC T
+&END VIBRATIONAL_ANALYSIS
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 150
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-12
+    &END QS
+    &SCF
+      MAX_SCF 120
+      EPS_SCF 1.0E-7
+      SCF_GUESS ATOMIC
+      &OT
+        PRECONDITIONER FULL_SINGLE_INVERSE
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 20
+        EPS_SCF 1.0E-7
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 5.43 5.43 5.43
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      Si 0.000000 0.000000 0.000000
+      Si 1.357500 1.357500 1.357500
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

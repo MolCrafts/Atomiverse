@@ -29,7 +29,7 @@ cpu::Frame four_atom_chain() {
         f.span(kAtom_charge)[i] = (i == 0) ? 1.0 : (i == 3) ? -1.0 : 0.0;
         f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
     }
-    f.simbox = cpu::Box::cubic(40.0);
+    f.box = cpu::Box::cubic(40.0);
     f.clear_tag_index();
     f.rebuild_tag_index(0, 4);
     f.add_bond(0, 1, 0);

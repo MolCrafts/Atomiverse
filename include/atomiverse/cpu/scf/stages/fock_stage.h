@@ -20,7 +20,7 @@
 #include "atomiverse/cpu/scf/dense_matrix.h"
 #include "atomiverse/cpu/scf/grid.h"
 #include "atomiverse/cpu/scf/internal/hamiltonian_builder.h"
-#include "atomiverse/cpu/scf/internal/integrals.h"
+#include "atomiverse/cpu/scf/internal/integral_view.h"
 #include "atomiverse/cpu/scf/internal/pcm.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 
@@ -47,8 +47,8 @@ class FockStage : public cpu::Component {
     ///                     fraction; `< 0` uses the functional's own α_hf.
     /// @param fixed_grid   Optional externally supplied XC grid (KS only; not
     ///                     owned, must outlive this stage).
-    /// @param integrals    Integral pack (S / Hcore / ERI / shells / grid
-    ///                     inputs), caller-owned (read).
+    /// @param integrals    Non-owning view of method integral fields
+    ///                     (S / Hcore / ERI / shells / grid inputs).
     /// @param P_alpha      α density (full closed-shell density when
     ///                     restricted) (read).
     /// @param P_beta       β density; alias of P_alpha when restricted (read).
@@ -85,9 +85,13 @@ class FockStage : public cpu::Component {
     ///                     sits on F — DensityStage subtracts it and adds
     ///                     `e_solvent` so the free-energy convention matches
     ///                     PySCF (write; 0 when pcm is null).
+    /// @param coulomb      J-matrix algorithm (`Coulomb::Direct` default).
+    ///                     `Coulomb::CFMM` with `ri != RI::None` throws.
+    /// @param cfmm_order   Multipole truncation order p for CFMM [dimensionless].
+    /// @param cfmm_threshold Extent threshold ε_thr for CFMM (dimensionless).
     FockStage(bool restricted, bool is_hf, XCType xc_type, GridLevel grid_level,
               int n_radial, int n_angular, double hybrid_alpha_override,
-              const MolecularGrid* fixed_grid, const IntegralPack& integrals,
+              const MolecularGrid* fixed_grid, internal::IntegralView integrals,
               const RealMatrix& P_alpha, const RealMatrix& P_beta,
               RealMatrix& F_alpha, RealMatrix& F_beta, RealMatrix& J,
               double& e_xc_grid, double& e_exact_exchange, double& int_n_alpha,
@@ -95,7 +99,9 @@ class FockStage : public cpu::Component {
               AuxBasis aux_basis = AuxBasis::Def2JKFIT,
               bool generalized = false, internal::Pcm* pcm = nullptr,
               double& e_solvent = FockStage::discard_double_(),
-              double& e_pcm_fock_half = FockStage::discard_double_());
+              double& e_pcm_fock_half = FockStage::discard_double_(),
+              Coulomb coulomb = Coulomb::Direct, int cfmm_order = 10,
+              double cfmm_threshold = 1e-9);
 
     /// @brief Component name.
     /// @return `"scf_fock_stage"`.
@@ -130,10 +136,13 @@ class FockStage : public cpu::Component {
     int n_angular_;
     double hybrid_alpha_override_;
     const MolecularGrid* fixed_grid_;
-    RI ri_;              ///< Density-fitting mode (member-driven seam).
-    AuxBasis aux_basis_; ///< Auxiliary basis for the fit.
+    RI ri_;                 ///< Density-fitting mode (member-driven seam).
+    AuxBasis aux_basis_;    ///< Auxiliary basis for the fit.
+    Coulomb coulomb_;       ///< J-matrix algorithm (Direct / RI / CFMM).
+    int cfmm_order_;        ///< Multipole order p for CFMM.
+    double cfmm_threshold_; ///< Extent threshold ε_thr for CFMM.
 
-    const IntegralPack& integrals_;
+    internal::IntegralView integrals_; ///< Refs into method-owned fields.
     const RealMatrix& P_alpha_;
     const RealMatrix& P_beta_;
 

@@ -1,0 +1,81 @@
+# Offline CP2K multi-k PBE-D4 two-body ENERGY_FORCE pin (gpw-d4-kpoint-forces)
+
+## Binary
+
+| Item | Value |
+| --- | --- |
+| Engine | CP2K 2026.1 `cp2k.psmp` git:5e54ba2 |
+| Flags | `omp libint fftw3 libxc elpa parallel scalapack mpi_f08 spglib libdftd4` |
+| Build | private Arrhenius rebuild with `-DCP2K_USE_DFTD4=ON` |
+| Prefix | `/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install` |
+| libdftd4 | EasyBuild `dftd4/3.7.0-gfbf-2025b` (+ mctc-lib, multicharge, mstore) |
+| Data | `CP2K_DATA_DIR=/nobackup/.../cp2k/src/data` |
+
+Stock source install (`…/cp2k/install`, no `libdftd4` in `cp2kflags`) aborts
+`TYPE DFTD4` — do **not** use it for this twin.
+
+## Reproduce (offline only — never ctest)
+
+```bash
+bash -lc '
+module load buildenv-gcc/2026.03-mpich
+export PATH=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install/bin:$PATH
+export LD_LIBRARY_PATH=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install/lib64:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/dftd4/3.7.0-gfbf-2025b/lib64:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/mctc-lib/0.5.1-GCC-14.3.0/lib:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/multicharge/0.3.1-gfbf-2025b/lib:\
+$LIBRARY_PATH:${LD_LIBRARY_PATH:-}
+export CP2K_DATA_DIR=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/src/data
+export OMP_NUM_THREADS=8
+cd /tmp && mkdir -p atv-cp2k-d4-kpt-forces && cd atv-cp2k-d4-kpt-forces
+ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS} .
+# copy both .inp from tools/cp2k_oracle/inputs/gpw-d4-kpoint-forces/
+mpirun -np 1 cp2k.psmp -i water_dimer_d4_kpoint_forces.inp \
+       -o water_dimer_d4_kpoint_forces.out
+mpirun -np 1 cp2k.psmp -i water_dimer_plain_kpoint_forces.inp \
+       -o water_dimer_plain_kpoint_forces.out
+'
+```
+
+## D4 input requirements
+
+- `D4_CUTOFF` (2-body) ≥ `R_CUTOFF` (3-body slot); twin uses 30 / 20 Å.
+- Two-body only: `CALCULATE_C9_TERM .FALSE.` + `FACTOR_S9_TERM 0.0`.
+- K-points: `DIAGONALIZATION` (not OT); `EPS_SCF 1e-8`; `MONKHORST-PACK 1 1 2`.
+
+## Pinned numbers (2026-08-01)
+
+```
+E_disp (D4 twin)             = -0.00099470623400 Ha
+E_total (D4)                 = -34.339246684320045 Ha
+E_total (plain)              = -34.338251978086035 Ha
+T_cp2k internal (D4 twin)    = 4.117 s   (1 MPI × 8 OMP)
+```
+
+### FORCES| [Ha/Bohr] (atom order O H H O H H)
+
+D4 run:
+
+```
+1  -8.18690169E-02   4.01491544E-10   3.72640658E-10
+2   4.08820655E-02   1.13131587E-11   1.31275113E-01
+3   4.08820655E-02   1.06385688E-11  -1.31275113E-01
+4  -8.05598482E-02   3.58190061E-10   3.28453615E-10
+5   3.76155006E-02   1.35482804E-11   1.35142294E-01
+6   3.76155006E-02   1.32677222E-11  -1.35142294E-01
+```
+
+plain run:
+
+```
+1  -8.19227599E-02   4.01492149E-10   3.72629643E-10
+2   4.08225174E-02   1.13134963E-11   1.31264301E-01
+3   4.08225174E-02   1.06386045E-11  -1.31264301E-01
+4  -8.04237542E-02   3.58185783E-10   3.28458520E-10
+5   3.76338733E-02   1.35478720E-11   1.35133744E-01
+6   3.76338733E-02   1.32671462E-11  -1.35133744E-01
+```
+
+ΔF = F(D4) − F(plain); max |ΔF| ≈ 1.361e−4 Ha/Bohr.
+Cross-check vs dftd4 3.7.0 `--mbdscale 0 --grad` (F=−g, remapped O H H O H H):
+max |ΔF − F_dftd4| ≈ **4.2e−9** Ha/Bohr under these cutoffs.

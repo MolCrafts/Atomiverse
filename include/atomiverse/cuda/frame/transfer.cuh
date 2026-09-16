@@ -40,7 +40,7 @@ void destroy(Frame& frame);
 /// standard `cpu::to_cuda` leaves these arrays null (the single-GPU bonded
 /// kernels read the flat BondList/AngleList/DihedralList instead). Arrays are
 /// sized to `d.capacity_` (ghost headroom) and zeroed; the first
-/// `src.atoms.nlocal` rows are copied from `src`. The device frame must already
+/// `src.nlocal()` rows are copied from `src`. The device frame must already
 /// be materialized (so `d.capacity_` is set). Caps mirror `cpu::Atom`.
 /// `destroy()` frees these (null-safe), so no separate teardown is needed.
 void materialize_per_atom_bonded(Frame& d, const cpu::Frame& src);

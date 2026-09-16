@@ -32,7 +32,7 @@ inline constexpr double kLightSpeedAU = 137.03599967994;
 ///
 /// Construction performs the full Dirac → X → R → h^X2C pipeline. Matrices
 /// are n×n in the contracted AO basis (Cartesian or spherical — whatever
-/// the IntegralPack published). The speed of light is injectable so unit
+/// the internal::IntegralWorkspace published). The speed of light is injectable so unit
 /// tests can drive the non-relativistic (c → ∞) limit.
 class X2cWorkspace {
   public:

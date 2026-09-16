@@ -52,15 +52,15 @@ class SapGuess {
   public:
     /// @brief Assemble F = T + V_SAP by quadrature on `grid`.
     /// @param shells Cartesian AO shell descriptors (one entry per Cartesian
-    ///               AO; centers in Bohr) — `IntegralPack::shells`.
+    ///               AO; centers in Bohr) — `internal::IntegralWorkspace::shells`.
     /// @param T      Kinetic-energy matrix [Hartree] in the WORKING AO basis
     ///               (spherical when the basis convention is spherical) —
-    ///               `IntegralPack::T`.
+    ///               `internal::IntegralWorkspace::T`.
     /// @param atoms  Atom descriptors (Z, position in Bohr) whose tabulated
-    ///               SAP potentials are superposed — `IntegralPack::atoms`.
+    ///               SAP potentials are superposed — `internal::IntegralWorkspace::atoms`.
     /// @param grid   Molecular quadrature grid (points + weights, Bohr).
     /// @param c2s    Block-diagonal Cartesian→spherical transform
-    ///               (n_cart × n_work) — `IntegralPack::c2s`; pass an EMPTY
+    ///               (n_cart × n_work) — `internal::IntegralWorkspace::c2s`; pass an EMPTY
     ///               tensor for Cartesian-convention bases.
     /// @throws std::invalid_argument on an element without a tabulated SAP
     ///         potential, or on a T/c2s dimension mismatch. No fallback.

@@ -18,9 +18,8 @@
 ///     owned-range error in the minimizer stack shows up as a mismatch).
 ///   - Energy strictly decreases from the perturbed starting point.
 ///
-/// `Minimize::install_defaults` is exercised end-to-end: Migrate,
-/// HaloSend/HaloRecv (auto-injected from the pair cutoff), and
-/// `md::mpi::Reduce` all fold into the minimizer `force` phase.
+/// `Minimize::install_defaults` is exercised end-to-end: `md::mpi::Reduce`
+/// on the force slot, halo / exchange on `ctx.md.comm`.
 
 #include <gtest/gtest.h>
 
@@ -31,9 +30,10 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/minimizer/cg.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"
-#include "atomiverse/cpu/minimizer/minimize.h"
+#include "atomiverse/cpu/minimize/cg.h"
+#include "atomiverse/cpu/minimize/fire.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -81,7 +81,7 @@ cpu::Frame make_fcc_argon(double perturb_amp) {
                     frame.span(ATV::kAtom_type)[idx] = 18;
                     ++idx;
                 }
-    frame.simbox = ATV::cpu::Box::cubic(kCells * kALat);
+    frame.box = ATV::cpu::Box::cubic(kCells * kALat);
     return frame;
 }
 
@@ -92,7 +92,7 @@ cpu::Frame make_fcc_argon(double perturb_amp) {
 double reference_energy() {
     cpu::Frame frame = make_fcc_argon(/*perturb_amp=*/0.0);
     cpu::minimizer::Minimize opt;
-    opt.add_potential(cpu::PairLJCut{kEps, kSigma, kCut});
+    opt.set_evaluator(cpu::PairLJCut{kEps, kSigma, kCut});
     opt.set_neighbor(cpu::md::NeighborList<>{kCut, 0.3});
     opt.set_optimizer(cpu::minimizer::LBFGS{});
     opt.build();
@@ -109,7 +109,7 @@ TEST(MinimizeLj, LbfgsRelaxesPerturbedLatticeAnyRankCount) {
     cpu::Frame frame = make_fcc_argon(/*perturb_amp=*/0.08);
 
     cpu::minimizer::Minimize opt;
-    opt.add_potential(cpu::PairLJCut{kEps, kSigma, kCut});
+    opt.set_evaluator(cpu::PairLJCut{kEps, kSigma, kCut});
     opt.set_neighbor(cpu::md::NeighborList<>{kCut, 0.3});
     cpu::minimizer::LBFGS lbfgs{}; // lvalue: post-run trace stays readable
     opt.set_optimizer_ref(lbfgs);
@@ -142,7 +142,7 @@ TEST(MinimizeLj, CgRelaxesPerturbedLatticeAnyRankCount) {
     cpu::Frame frame = make_fcc_argon(/*perturb_amp=*/0.05);
 
     cpu::minimizer::Minimize opt;
-    opt.add_potential(cpu::PairLJCut{kEps, kSigma, kCut});
+    opt.set_evaluator(cpu::PairLJCut{kEps, kSigma, kCut});
     opt.set_neighbor(cpu::md::NeighborList<>{kCut, 0.3});
     cpu::minimizer::CG cg{};
     opt.set_optimizer_ref(cg);
@@ -158,6 +158,37 @@ TEST(MinimizeLj, CgRelaxesPerturbedLatticeAnyRankCount) {
     EXPECT_LT(iters, budget)
         << "CG failed to converge in " << budget
         << " iterations (max_force=" << cg.max_force() << ")";
+    EXPECT_TRUE(opt.converged());
+    EXPECT_LT(e_min, e_start) << "energy did not decrease";
+    EXPECT_LT(std::abs(e_min - e_ref) / std::abs(e_ref), 1e-3)
+        << "minimized energy " << e_min
+        << " does not match perfect-lattice reference " << e_ref;
+}
+
+TEST(MinimizeLj, FireRelaxesPerturbedLatticeAnyRankCount) {
+    const double e_ref = reference_energy();
+    cpu::Frame frame = make_fcc_argon(/*perturb_amp=*/0.05);
+
+    cpu::minimizer::Minimize opt;
+    opt.set_evaluator(cpu::PairLJCut{kEps, kSigma, kCut});
+    opt.set_neighbor(cpu::md::NeighborList<>{kCut, 0.3});
+    cpu::minimizer::FIRE fire{};
+    // Soft LJ crystal needs a larger pseudo-time scale than ASE metal defaults.
+    fire.dt0 = 1.0;
+    fire.dt_max = 20.0;
+    opt.set_optimizer_ref(fire);
+    opt.build();
+
+    const int budget = 2000;
+    const int iters = opt.run(frame, budget);
+
+    ASSERT_FALSE(fire.trace().empty());
+    const double e_start = fire.trace().front().energy;
+    const double e_min = frame.meta.get(ATV::kEnergy);
+
+    EXPECT_LT(iters, budget)
+        << "FIRE failed to converge in " << budget
+        << " iterations (max_force=" << fire.max_force() << ")";
     EXPECT_TRUE(opt.converged());
     EXPECT_LT(e_min, e_start) << "energy did not decrease";
     EXPECT_LT(std::abs(e_min - e_ref) / std::abs(e_ref), 1e-3)

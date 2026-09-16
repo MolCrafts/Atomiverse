@@ -5,7 +5,7 @@
 #include "atomiverse/core/backend_traits.h"
 #include "atomiverse/core/device.h"
 #include "atomiverse/cpu/component/component.h"
-#include "atomiverse/cpu/driver/backend.h"
+#include "atomiverse/cpu/driver/runtime.h"
 
 namespace ATV {
 
@@ -13,7 +13,7 @@ namespace ATV {
 template <>
 struct backend_traits<cpu::device_tag> {
     using component_type = cpu::Component;
-    using backend_type = cpu::Backend;
+    using backend_type = cpu::Runtime;
 };
 
 } // namespace ATV

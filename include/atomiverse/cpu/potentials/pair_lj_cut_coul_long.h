@@ -6,6 +6,9 @@
 /// tabulated erfc. Reciprocal space is a separate `KSpacePME` / `KSpacePPPM`.
 #pragma once
 
+#include <array>
+#include <span>
+
 #include <string>
 #include <vector>
 
@@ -19,9 +22,17 @@ namespace ATV {
 namespace cpu {
 
 /// @brief Fused `lj/cut/coul/long` with multi-type LJ and Amber specials.
-class PairLJCutCoulLong : public Pair,
-                          public LongRangeParticipant {
+class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
   public:
+    /// @brief The fused kernel reads the neighbour charge (`q_ptr[j]`).
+    /// @return This style's ghost declarations.
+    static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_charge, "PairLJCutCoulLong"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        return kGhosts;
+    }
+
     /// @param coeffs  Diagonal (and optional off-diagonal) LJ type pairs.
     /// @param alpha   Ewald α [1/Å] — must match the KSpace component.
     /// @param cutoff  Shared LJ/Coul real-space cutoff [Å] (LAMMPS default).
@@ -50,6 +61,19 @@ class PairLJCutCoulLong : public Pair,
     PairLJCutCoulLong& set_compute_stress(bool on) &;
     PairLJCutCoulLong set_compute_stress(bool on) &&;
 
+    /// @brief LAMMPS `pair_modify shift` — subtract V_LJ(rc) so the LJ energy
+    ///        is zero at the cutoff. Default on. LAMMPS production decks with
+    ///        `tail yes` run shift off.
+    PairLJCutCoulLong& set_energy_shift(bool on) &;
+    PairLJCutCoulLong set_energy_shift(bool on) &&;
+
+    /// @brief LAMMPS `pair_modify tail yes` — analytic LJ tail energy and
+    ///        pressure beyond the cutoff (homogeneous g(r)=1 approximation).
+    ///        Global per-type counts are gathered on first evaluation; the
+    ///        correction tracks the current box volume every step.
+    PairLJCutCoulLong& set_tail_correction(bool on) &;
+    PairLJCutCoulLong set_tail_correction(bool on) &&;
+
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
     std::size_t memory_bytes() const override;
@@ -74,6 +98,12 @@ class PairLJCutCoulLong : public Pair,
     double lj12_ = 1.0, lj13_ = 1.0, lj14_ = 1.0;
     double c12_ = 1.0, c13_ = 1.0, c14_ = 1.0;
     bool any_special_ = false;
+
+    bool energy_shift_ = true;
+    bool tail_ = false;
+    bool tail_ready_ = false;
+    /// E_tail = etail_pref_/V; P_tail = ptail_pref_/V² (see compute()).
+    double etail_pref_ = 0.0, ptail_pref_ = 0.0;
     bool compute_stress_ = true;
 
     md::SpecialScaleTable special_lj_;

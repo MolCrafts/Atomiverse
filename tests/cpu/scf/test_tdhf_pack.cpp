@@ -28,7 +28,7 @@
 #include "atomiverse/cpu/scf/slater_determinant.h"
 
 using namespace ATV;
-using cpu::scf::IntegralPack;
+using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::SlaterDeterminant;
@@ -48,7 +48,7 @@ cpu::Frame make_h2(double r_angstrom) {
     f.span(kAtom_z)[1] = r_angstrom;
     f.span(kAtom_type)[0] = 1;
     f.span(kAtom_type)[1] = 1;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -60,7 +60,7 @@ struct H2Reference {
 
 H2Reference make_h2_reference(double r_angstrom) {
     auto frame = make_h2(r_angstrom);
-    IntegralPack pack{frame, cpu::scf::BasisSet::STO3G, 0,
+    cpu::scf::internal::IntegralWorkspace pack{frame, cpu::scf::BasisSet::STO3G, 0,
                       /*compute_eri=*/true};
     const double s12 = pack.S(0, 1);
     const double cg = 1.0 / std::sqrt(2.0 * (1.0 + s12));
@@ -114,8 +114,7 @@ struct Synthetic {
     xt::xtensor<double, 4> eri;
 };
 
-Synthetic make_synthetic(int n, int no, std::uint64_t seed,
-                         double scale) {
+Synthetic make_synthetic(int n, int no, std::uint64_t seed, double scale) {
     Lcg rng(seed);
     RealMatrix C = xt::zeros<double>({n, n});
     for (int r = 0; r < n; ++r)
@@ -141,9 +140,8 @@ Synthetic make_synthetic(int n, int no, std::uint64_t seed,
                 for (int l = 0; l < n; ++l)
                     eri(i, j, k, l) =
                         (raw(i, j, k, l) + raw(j, i, k, l) + raw(i, j, l, k)
-                         + raw(j, i, l, k) + raw(k, l, i, j)
-                         + raw(l, k, i, j) + raw(k, l, j, i)
-                         + raw(l, k, j, i))
+                         + raw(j, i, l, k) + raw(k, l, i, j) + raw(l, k, i, j)
+                         + raw(k, l, j, i) + raw(l, k, j, i))
                         / 8.0;
     return {SlaterDeterminant{C, eps, occ, no}, eri};
 }
@@ -217,8 +215,9 @@ TEST(TDHFPack, RpaReducedFormMatchesFullNonsymmetricSynthetic) {
         for (int s = 0; s < h.n_ov(); ++s)
             EXPECT_NEAR(roots.omega(s), want[static_cast<std::size_t>(s)],
                         1e-10)
-                << "channel " << (ch == Channel::singlet ? "singlet" : "triplet")
-                << " root " << s;
+                << "channel "
+                << (ch == Channel::singlet ? "singlet" : "triplet") << " root "
+                << s;
     }
 }
 
@@ -268,10 +267,8 @@ TEST(TDHFPack, DavidsonMatchesDense) {
         const auto rp_d = dense.rpa(3);
         const auto rp_i = davidson.rpa(3);
         for (int s = 0; s < 3; ++s) {
-            EXPECT_NEAR(td_i.omega(s), td_d.omega(s), 1e-8)
-                << "tda root " << s;
-            EXPECT_NEAR(rp_i.omega(s), rp_d.omega(s), 1e-8)
-                << "rpa root " << s;
+            EXPECT_NEAR(td_i.omega(s), td_d.omega(s), 1e-8) << "tda root " << s;
+            EXPECT_NEAR(rp_i.omega(s), rp_d.omega(s), 1e-8) << "rpa root " << s;
         }
     }
 }

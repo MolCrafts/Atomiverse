@@ -1,0 +1,26 @@
+# Offline pin twin: external-efield-md
+# units metal; constant fix efield; pair zero; run 0 forces + f_1 energy.
+# oracle_version: record `lmp -h` banner when regenerating pins.
+units metal
+atom_style full
+boundary p p p
+region box block 0 20 0 20 0 20
+create_box 1 box
+create_atoms 1 single 5.0 10.0 10.0
+create_atoms 1 single 7.0 10.0 10.0
+create_atoms 1 single 10.0 12.0 8.0
+mass 1 1.0
+set atom 1 charge 1.0
+set atom 2 charge -1.0
+set atom 3 charge 0.5
+pair_style zero 10.0
+pair_coeff * *
+neighbor 0.3 bin
+neigh_modify every 1 delay 0 check no
+fix 1 all efield 0.1 -0.05 0.2
+velocity all set 0 0 0 units box
+thermo_style custom step pe ke etotal f_1 f_1[1] f_1[2] f_1[3]
+thermo 1
+dump 1 all custom 1 dump.external_efield id type q x y z fx fy fz
+run 0
+print "U_field=$(f_1) Fsum=($(f_1[1]),$(f_1[2]),$(f_1[3]))"

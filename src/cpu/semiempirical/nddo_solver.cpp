@@ -1,7 +1,7 @@
 /// @file src/cpu/semiempirical/nddo_solver.cpp
 /// @brief NDDO semiempirical inner solver scaffold.
 
-#include "atomiverse/cpu/semiempirical/nddo_solver.h"
+#include "atomiverse/cpu/semiempirical/internal/nddo_solver.h"
 
 #include <algorithm>
 #include <cmath>

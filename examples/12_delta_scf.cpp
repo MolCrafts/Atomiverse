@@ -27,16 +27,15 @@ static cpu::Frame make_water() {
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
 int main() {
     auto frame = make_water();
 
-    cpu::scf::RHF neutral;
-    neutral.basis = cpu::scf::BasisSet::STO3G;
-    neutral.tol = 1e-10;
+    cpu::scf::RHF neutral{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                          /*tol=*/1e-10};
     neutral.run(frame);
     const double e_n = neutral.energy();
 

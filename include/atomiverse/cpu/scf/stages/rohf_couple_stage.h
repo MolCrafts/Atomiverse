@@ -57,9 +57,9 @@
 #include <xtensor/generators/xbuilder.hpp>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
-#include "atomiverse/facade/stage.h"
 
 namespace ATV {
 namespace cpu {
@@ -137,23 +137,21 @@ class RohfCoupleStage : public cpu::Component {
             return xt::linalg::dot(xt::transpose(L), xt::linalg::dot(M, R));
         };
 
-        RealMatrix F = 0.5 * sandwich(Pc, Fc, Pc)
-                       + 0.5 * sandwich(Po, Fc, Po)
-                       + 0.5 * sandwich(Pv, Fc, Pv)
-                       + sandwich(Po, F_beta_uncoupled_, Pc)
-                       + sandwich(Po, F_alpha_uncoupled_, Pv)
-                       + sandwich(Pv, Fc, Pc);
+        RealMatrix F =
+            0.5 * sandwich(Pc, Fc, Pc) + 0.5 * sandwich(Po, Fc, Po)
+            + 0.5 * sandwich(Pv, Fc, Pv) + sandwich(Po, F_beta_uncoupled_, Pc)
+            + sandwich(Po, F_alpha_uncoupled_, Pv) + sandwich(Pv, Fc, Pc);
 
         F_alpha_ = F + xt::transpose(F);
         F_beta_ = F_alpha_;
     }
 
   private:
-    const RealMatrix& S_;         ///< Overlap (dimensionless, read).
-    const RealMatrix& P_alpha_;   ///< α density (read).
-    const RealMatrix& P_beta_;    ///< β density (read).
-    RealMatrix& F_alpha_;         ///< α Fock channel → F_eff [Hartree] (write).
-    RealMatrix& F_beta_;          ///< β Fock channel → F_eff [Hartree] (write).
+    const RealMatrix& S_;       ///< Overlap (dimensionless, read).
+    const RealMatrix& P_alpha_; ///< α density (read).
+    const RealMatrix& P_beta_;  ///< β density (read).
+    RealMatrix& F_alpha_;       ///< α Fock channel → F_eff [Hartree] (write).
+    RealMatrix& F_beta_;        ///< β Fock channel → F_eff [Hartree] (write).
     RealMatrix& F_alpha_uncoupled_; ///< Preserved true F_α [Hartree] (write).
     RealMatrix& F_beta_uncoupled_;  ///< Preserved true F_β [Hartree] (write).
     RealMatrix& P_total_;           ///< P_α + P_β (write).

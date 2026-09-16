@@ -49,7 +49,7 @@ cpu::Frame make_rocksalt(double d, int n) {
                 frame.span(ATV::kAtom_tag)[idx] = idx + 1;
                 ++idx;
             }
-    frame.simbox = ATV::cpu::Box::cubic(n * d);
+    frame.box = ATV::cpu::Box::cubic(n * d);
     return frame;
 }
 
@@ -153,7 +153,7 @@ TEST(EwaldCoul, FiniteDifferenceForces) {
         frame.span(ATV::kAtom_type)[i] = 0;
         frame.span(ATV::kAtom_tag)[i] = i + 1;
     }
-    frame.simbox = ATV::cpu::Box::cubic(8.0);
+    frame.box = ATV::cpu::Box::cubic(8.0);
     cpu::md::PairList pairs;
     build_full_halflist(frame, pairs);
 

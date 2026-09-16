@@ -19,10 +19,10 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/mc/gcmc.h"
-#include "atomiverse/cpu/mc/insert_delete_move.h"
-#include "atomiverse/cpu/mc/move_selector.h"
-#include "atomiverse/cpu/mc/translate_move.h"
+#include "atomiverse/cpu/montecarlo/gcmc.h"
+#include "atomiverse/cpu/montecarlo/insert_delete_move.h"
+#include "atomiverse/cpu/montecarlo/move_selector.h"
+#include "atomiverse/cpu/montecarlo/translate_move.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -102,10 +102,10 @@ int main() {
             frame.span(ATV::kAtom_mass)[i] = mass;
             frame.span(ATV::kAtom_type)[i] = 1;
         }
-        frame.simbox = ATV::cpu::Box::cubic(box_len);
+        frame.box = ATV::cpu::Box::cubic(box_len);
 
         cpu::mc::Gcmc mc{temperature, mu, mass, /*seed=*/97u + p};
-        mc.add_potential(cpu::PairLJCut{eps, sigma, cutoff});
+        mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
         mc.set_neighbor(
             cpu::md::NeighborList<>{cutoff, /*skin=*/1.0, 1, 0, true});
         mc.set_mover(cpu::mc::MoveSelector{}

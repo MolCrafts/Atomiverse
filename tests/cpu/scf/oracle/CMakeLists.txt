@@ -21,7 +21,7 @@ target_link_libraries(xc_libxc_oracle
     PUBLIC  Libxc::xc       # propagates libxc to test targets that link this
     PRIVATE atomiverse      # for ATV::cpu::scf::XCOutput definition
 )
-set_target_properties(xc_libxc_oracle PROPERTIES CXX_STANDARD 17)
+set_target_properties(xc_libxc_oracle PROPERTIES CXX_STANDARD 20)
 
 # Smoke test for the oracle itself. Verifies init/teardown,
 # spin-polarized vs unpolarized, density cutoff, and the Slater

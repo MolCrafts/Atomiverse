@@ -28,10 +28,10 @@ nav = [
   { "User Guide" = [
     "user-guide/index.md",
     "user-guide/getting-started.md",
+    "user-guide/python.md",
     "user-guide/concepts.md",
     "user-guide/methods.md",
     "user-guide/backend-switching.md",
-    "user-guide/libtorch-backend.md",
     "user-guide/launcher.md",
     "user-guide/scf-roadmap.md",
   ] },
@@ -41,7 +41,7 @@ nav = [
       "tutorial/ch00-architecture.md",
       "tutorial/ch01-foundations.md",
     ] },
-    { "II · Localized-basis SCF" = [
+    { "II · Hartree–Fock core" = [
       "tutorial/ch02-rhf.md",
       "tutorial/ch03-open-shell.md",
       "tutorial/ch04-basis-sets.md",
@@ -73,6 +73,12 @@ nav = [
     { "IX · Semiempirical" = [
       "tutorial/ch17-semiempirical-am1.md",
     ] },
+    { "X · Hartree–Fock advanced" = [
+      "tutorial/ch18-scf-techniques.md",
+      "tutorial/ch19-hf-large-systems.md",
+      "tutorial/ch20-hf-properties-environment.md",
+      "tutorial/appendix-pyscf-oracle.md",
+    ] },
   ] },
   { "Roadmap" = [
     "roadmap/index.md",
@@ -83,18 +89,23 @@ nav = [
     "roadmap/semiempirical.md",
     "roadmap/force-fields.md",
     "roadmap/molecular-dynamics.md",
+    "roadmap/electrodes.md",
     "roadmap/optimization.md",
     "roadmap/sampling.md",
     "roadmap/multiscale.md",
+    "roadmap/observables.md",
   ] },
   { "Developer" = [
     "developer/index.md",
     "developer/architecture.md",
+    "developer/frame-architecture.md",
     "developer/cpu-internals.md",
     "developer/md-execution-model.md",
     "developer/extending-components.md",
     "developer/extending-cpu-subsystems.md",
     "developer/kspace-long-range.md",
+    "developer/python-molpy-boundary.md",
+    "developer/oracle-capability-loop.md",
   ] },
   { "Reference" = [
     "api/index.md",
@@ -140,6 +151,7 @@ custom_fences = [
 
 [project.theme]
 name = "molcrafts"
+language = "en"
 
 [project.extra.molcrafts]
 product = "atomiverse"

@@ -1,0 +1,80 @@
+# MetalWalls twin of ATV regressions/md/const-pot-md-nvt-short
+# ============================================================
+# Toy parallel-plate NaCl capacitor, IDENTICAL geometry to the ATV
+# regression (14 x 14 x 20 A cell, 2x2 wall sites at z = 2 / 18 A,
+# 4 Na+ + 4 Cl- on two rows at z = 6 / 14 A).
+#
+# ATV units -> MW atomic units:
+#   14 A  = 2.645616574476078E+01 bohr   (1 bohr = 0.529177210903 A)
+#   20 A  = 3.779452249251541E+01 bohr
+#   eta   = 1/w = 2.0 1/A = 1.058354421806 1/bohr   (w = 0.5 A)
+#   Psi   = -+0.5 V = -+0.01837466108782750 Ha/e   (1 Ha = 27.211386245988 eV)
+#
+# 3 is substituted with 3 (3D-periodic Ewald; the twin of ATV's
+# 3D-periodic PME cell) or 2 (2D-periodic slab, MW's usual electrode mode).
+
+num_steps     1
+timestep      41.341
+temperature   300.0
+num_pbc       3
+
+box
+  length 2.645616574476078E+01 2.645616574476078E+01 3.779452249251541E+01
+
+species
+
+  species_type
+    name Na
+    count 4
+    charge point 1.0
+    mass 22.9898
+    mobile True
+
+  species_type
+    name Cl
+    count 4
+    charge point -1.0
+    mass 35.453
+    mobile True
+
+  species_type
+    name C1
+    count 4
+    charge gaussian 1.058354421806 0.0
+    mass 12.011
+    mobile False
+
+  species_type
+    name C2
+    count 4
+    charge gaussian 1.058354421806 0.0
+    mass 12.011
+    mobile False
+
+electrodes
+
+  electrode_type
+    name C1
+    species C1
+    potential -0.01837466108782750
+
+  electrode_type
+    name C2
+    species C2
+    potential +0.01837466108782750
+
+  electrode_charges matrix_inversion
+  charge_neutrality true global
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-15
+    coulomb_rcut 13.0
+    coulomb_ktol 1.0e-15
+
+output
+  default 0
+  step 1
+  charges 1
+  total_charges 1
+  energies 1 Hamiltonian Potential Coulomb Coulomb_lr Coulomb_keq0 Coulomb_sr Coulomb_self

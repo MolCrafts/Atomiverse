@@ -9,6 +9,7 @@
 
 #include "atomiverse/cpu/scf/native_integrals.h"
 #include "atomiverse/core/gto.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/cart.h"
 #include "atomiverse/cpu/scf/rys_eri.h"
 
@@ -19,8 +20,6 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 namespace native {
-
-static constexpr double PI = 3.14159265358979323846;
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -54,7 +53,7 @@ static inline double overlap_primitive(double alpha_a, const double A[3],
     double gamma = alpha_a + alpha_b;
     double mu = alpha_a * alpha_b / gamma;
     double R2 = dist2(A, B);
-    return std::pow(PI / gamma, 1.5) * std::exp(-mu * R2);
+    return std::pow(units::pi / gamma, 1.5) * std::exp(-mu * R2);
 }
 
 double overlap_ss(const Shell& a, const Shell& b) {
@@ -80,7 +79,7 @@ double kinetic_ss(const Shell& a, const Shell& b) {
         for (int q = 0; q < b.n_prim; ++q) {
             double gamma = a.alpha[p] + b.alpha[q];
             double mu = a.alpha[p] * b.alpha[q] / gamma;
-            double S_pq = std::pow(PI / gamma, 1.5) * std::exp(-mu * R2);
+            double S_pq = std::pow(units::pi / gamma, 1.5) * std::exp(-mu * R2);
             T += a.coeff[p] * b.coeff[q] * mu * (3.0 - 2.0 * mu * R2) * S_pq;
         }
     return T;
@@ -107,7 +106,8 @@ double nuclear_ss(const Shell& a, const Shell& b, const Atom* atoms, int natm) {
             for (int d = 0; d < 3; ++d)
                 P[d] = (alpha_a * a.center[d] + alpha_b * b.center[d]) / gamma;
 
-            double prefactor = a.coeff[p] * b.coeff[q] * (2.0 * PI / gamma)
+            double prefactor = a.coeff[p] * b.coeff[q]
+                               * (2.0 * units::pi / gamma)
                                * std::exp(-mu * R2_AB);
 
             // Sum over all nuclei
@@ -165,7 +165,7 @@ double eri_ssss(const Shell& a, const Shell& b, const Shell& c,
                     double PQ2 = dist2(P, Q);
 
                     result += a.coeff[p] * b.coeff[q] * c.coeff[r] * d.coeff[s]
-                              * 2.0 * std::pow(PI, 2.5)
+                              * 2.0 * std::pow(units::pi, 2.5)
                               / (gamma1 * gamma2 * std::sqrt(gamma1 + gamma2))
                               * K_AB * K_CD * boys_f0(rho * PQ2);
                 }
@@ -398,7 +398,7 @@ static double eri_prim_md(const int a_ang[3], const int b_ang[3],
     const double T = rho * PQ2;
 
     // Prefactor: 2*pi^{5/2} / (gamma1 * gamma2 * sqrt(delta))
-    const double prefactor = 2.0 * std::pow(PI, 2.5)
+    const double prefactor = 2.0 * std::pow(units::pi, 2.5)
                              / (gamma1 * gamma2 * std::sqrt(delta)) * K_AB
                              * K_CD;
 
@@ -604,7 +604,7 @@ double overlap_prim_3d(const int a_ang[3], const int b_ang[3], double alpha_a,
     const double gamma = alpha_a + alpha_b;
     const double mu = alpha_a * alpha_b / gamma;
     const double inv2g = 0.5 / gamma;
-    const double sqrt_pi_g = std::sqrt(PI / gamma);
+    const double sqrt_pi_g = std::sqrt(units::pi / gamma);
 
     double result = 1.0;
     for (int d = 0; d < 3; ++d) {
@@ -619,7 +619,8 @@ double overlap_prim_3d(const int a_ang[3], const int b_ang[3], double alpha_a,
         // max entry is (kMaxLOrbital+1)*(kMaxLOrbital+1) = 4*4 = 16 for kMaxLOrbital=2.
         const int imax = a_ang[d];
         const int jmax = b_ang[d];
-        constexpr int kMaxOverlapCells = (kMaxLOrbital + 2) * (kMaxLOrbital + 2);
+        constexpr int kMaxOverlapCells =
+            (kMaxLOrbital + 2) * (kMaxLOrbital + 2);
         double S[kMaxOverlapCells];
         os_overlap_1d(PA, PB, inv2g, S00, imax, jmax, S);
 
@@ -633,7 +634,7 @@ double kinetic_prim_3d(const int a_ang[3], const int b_ang[3], double alpha_a,
     const double gamma = alpha_a + alpha_b;
     const double mu = alpha_a * alpha_b / gamma;
     const double inv2g = 0.5 / gamma;
-    const double sqrt_pi_g = std::sqrt(PI / gamma);
+    const double sqrt_pi_g = std::sqrt(units::pi / gamma);
 
     // Determine uniform table size across all directions.
     // For kinetic, need S(i, j+2) in each direction.
@@ -646,7 +647,7 @@ double kinetic_prim_3d(const int a_ang[3], const int b_ang[3], double alpha_a,
         if (b_ang[d] > jmax_base)
             jmax_base = b_ang[d];
     }
-    const int im = imax_all;      // max kMaxLOrbital+2 = 5 (2nd-derivative bump)
+    const int im = imax_all; // max kMaxLOrbital+2 = 5 (2nd-derivative bump)
     const int jm = jmax_base + 2; // max kMaxLOrbital+2 = 5
     const int jstride = jm + 1;   // max 6
 
@@ -768,7 +769,7 @@ double nuclear_prim(const int a_ang[3], const int b_ang[3], double gamma,
                     const double PA[3], const double PB[3], const double PC[3],
                     double K_AB) {
     const double inv2g = 0.5 / gamma;
-    const double prefactor = 2.0 * PI / gamma * K_AB;
+    const double prefactor = 2.0 * units::pi / gamma * K_AB;
     const double PC2 = PC[0] * PC[0] + PC[1] * PC[1] + PC[2] * PC[2];
     const double T = gamma * PC2;
 
@@ -894,7 +895,7 @@ double eri_prim(const int a_ang[3], const int b_ang[3], const int c_ang[3],
     const double T = rho * PQ2;
 
     // Prefactor: 2*pi^{5/2} / (gamma1 * gamma2 * sqrt(delta))
-    const double prefactor = 2.0 * std::pow(PI, 2.5)
+    const double prefactor = 2.0 * std::pow(units::pi, 2.5)
                              / (gamma1 * gamma2 * std::sqrt(delta)) * K_AB
                              * K_CD;
 
@@ -1042,7 +1043,7 @@ void overlap_block(const ShellBlock& A, const ShellBlock& B, double* out) {
             const double gamma = aa + ab;
             const double mu = aa * ab / gamma;
             const double inv2g = 0.5 / gamma;
-            const double sqrt_pi_g = std::sqrt(PI / gamma);
+            const double sqrt_pi_g = std::sqrt(units::pi / gamma);
             const double cpq = A.coeff[p] * B.coeff[q];
 
             // Build 1D overlap tables once per primitive pair, per axis.
@@ -1091,7 +1092,7 @@ void kinetic_block(const ShellBlock& A, const ShellBlock& B, double* out) {
             const double gamma = aa + ab;
             const double mu = aa * ab / gamma;
             const double inv2g = 0.5 / gamma;
-            const double sqrt_pi_g = std::sqrt(PI / gamma);
+            const double sqrt_pi_g = std::sqrt(units::pi / gamma);
             const double cpq = A.coeff[p] * B.coeff[q];
 
             // 1D overlap tables with the (jmax+2) extension needed for T.
@@ -1162,7 +1163,7 @@ void nuclear_block(const ShellBlock& A, const ShellBlock& B, const Atom* atoms,
             const double cpq = A.coeff[p] * B.coeff[q];
             const double R2_AB = dist2(A.center, B.center);
             const double K_AB = std::exp(-mu * R2_AB);
-            const double prefactor_pq = 2.0 * PI / gamma * K_AB;
+            const double prefactor_pq = 2.0 * units::pi / gamma * K_AB;
 
             double P_c[3], PA[3], PB[3];
             for (int d = 0; d < 3; ++d) {
@@ -1376,7 +1377,7 @@ static void eri_blk_ss_ss(const ShellBlock& A, const ShellBlock& B,
             }
 
             // xsimd-vectorized: acc += pref * boys_f0(T) for each ket pair
-            // boys_f0(T) = 0.5 * sqrt(PI/T) * erf(sqrt(T));  = 1.0 for T < 1e-12
+            // boys_f0(T) = 0.5 * sqrt(units::pi/T) * erf(sqrt(T));  = 1.0 for T < 1e-12
             batch_t acc_v(0.0);
             int kk = 0;
             for (; kk + W <= nket; kk += W) {
@@ -1387,7 +1388,7 @@ static void eri_blk_ss_ss(const ShellBlock& A, const ShellBlock& B,
                 auto sqrtT = xsimd::sqrt(safe_T);
                 auto F0_v = xsimd::select(
                     small, batch_t(1.0),
-                    batch_t(0.5) * xsimd::sqrt(batch_t(PI) / safe_T)
+                    batch_t(0.5) * xsimd::sqrt(batch_t(units::pi) / safe_T)
                         * xsimd::erf(sqrtT));
                 acc_v += pref_v * F0_v;
             }

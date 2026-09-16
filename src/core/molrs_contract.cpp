@@ -1,7 +1,7 @@
 /// @file core/molrs_contract.cpp
 /// @brief Exact Atomiverse/molrs CXX API contract enforcement.
 
-#include "atomiverse/facade/molrs_contract.h"
+#include "atomiverse/core/molrs_contract.h"
 
 #include "atomiverse/molrs.hpp"
 

@@ -1,4 +1,4 @@
-/// @file cpu/scf/minao.h
+/// @file cpu/scf/internal/minao.h
 /// @brief MINAO initial-density projector for PySCF-compatible SCF guess.
 ///
 /// Mirrors `pyscf.scf.hf.init_guess_by_minao`: projects atomic fragment
@@ -19,7 +19,7 @@ namespace cpu {
 namespace scf {
 
 /// @brief True when every atom in the pack has a MINAO basis entry.
-bool minao_supported(const IntegralPack& integrals);
+bool minao_supported(const internal::IntegralView& integrals);
 
 /// @brief Build the RHF-style MINAO initial density matrix.
 ///
@@ -33,7 +33,7 @@ bool minao_supported(const IntegralPack& integrals);
 ///
 /// @param integrals Target-basis integral pack (provides S and atoms).
 /// @return Density matrix P in the target AO basis (column-major).
-RealMatrix build_minao_density(const IntegralPack& integrals);
+RealMatrix build_minao_density(const internal::IntegralView& integrals);
 
 } // namespace scf
 } // namespace cpu

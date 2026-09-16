@@ -17,10 +17,12 @@ namespace scf {
 
 /// @brief Optional density-matrix initial guess.
 struct SCFInitialGuess {
-    xt::xtensor<double, 2> P_alpha; ///< Alpha density guess [n x n] (dimensionless).
-    xt::xtensor<double, 2> P_beta;  ///< Beta density guess [n x n] (dimensionless).
-    bool has_alpha = false;         ///< Whether P_alpha is set.
-    bool has_beta = false;          ///< Whether P_beta is set.
+    xt::xtensor<double, 2>
+        P_alpha; ///< Alpha density guess [n x n] (dimensionless).
+    xt::xtensor<double, 2>
+        P_beta;             ///< Beta density guess [n x n] (dimensionless).
+    bool has_alpha = false; ///< Whether P_alpha is set.
+    bool has_beta = false;  ///< Whether P_beta is set.
 };
 
 /// @brief Rotate the HOMO and LUMO columns of C by `theta` to seed a broken-

@@ -32,7 +32,7 @@ cpu::Frame two_atoms(double x0, double x1) {
     f.span(ATV::kAtom_z)[1] = 0.0;
     f.span(ATV::kAtom_mass)[0] = f.span(ATV::kAtom_mass)[1] = 1.0;
     f.span(ATV::kAtom_type)[0] = f.span(ATV::kAtom_type)[1] = 1;
-    f.simbox = ATV::cpu::Box::cubic(20.0);
+    f.box = ATV::cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -70,7 +70,7 @@ TEST(ReplicaExpansion, LinearInterpolationRefusesFewerThanThreeImages) {
 TEST(ReplicaExpansion, LinearInterpolationRefusesAnAtomCountMismatch) {
     cpu::Frame initial = two_atoms(0.0, 1.0);
     cpu::Frame final_state(3);
-    final_state.simbox = ATV::cpu::Box::cubic(20.0);
+    final_state.box = ATV::cpu::Box::cubic(20.0);
     cpu::LinearInterpolation expand{final_state, 4};
     EXPECT_THROW(expand.expand(initial), std::invalid_argument);
 }

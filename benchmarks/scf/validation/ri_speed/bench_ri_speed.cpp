@@ -34,7 +34,7 @@ ATV::cpu::Frame glycine() {
         f.span(kAtom_y)[i] = xyz[i][1];
         f.span(kAtom_z)[i] = xyz[i][2];
     }
-    f.simbox = cpu::Box::cubic(30.0);
+    f.box = cpu::Box::cubic(30.0);
     return f;
 }
 

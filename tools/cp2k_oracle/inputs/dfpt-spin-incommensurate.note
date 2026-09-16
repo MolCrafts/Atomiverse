@@ -1,0 +1,30 @@
+# Offline oracle note — dfpt-spin-incommensurate
+
+## Intent
+
+Twin for **collinear-spin** DFPT phonons at **incommensurate** fractional q
+on diamond Si (PW LSDA, NC-UPF). Atomiverse path:
+`cpu::pw::DfptPhonon` with `spin_polarized=true`, multiplicity=1,
+`q_frac = {0.3, 0.0, 0.0}` → direct `internal::dfpt_q_force_constants`
+spin channel (`dfpt_q_spin_impl`).
+
+## Preferred CP2K twin (when binary available)
+
+- Structure: 2-atom FCC Si, a = 5.43 Å
+- Method: Quickstep / VIBRATIONAL_ANALYSIS or DFPT at non-Γ q with LSD/UKS
+- Functional: LDA / PADE-like; comparable NC or GTH setup
+- Spin: collinear, M = 0
+- Record: ω(q) [cm⁻¹] (6 branches), wall time, CP2K version
+
+## This host
+
+CP2K binary **not available**. Pins are literature-biased windows aligned
+with the restricted incommensurate twin (`dfpt-incommensurate-si`) plus
+measured ATV collinear-spin spectrum under the regression settings (see
+`regressions/response/dfpt-spin-incommensurate/REFERENCE.md`).
+`perf_exempt=true` until a fair CP2K DFPT wall is recorded.
+
+## Cite
+
+Baroni et al., Rev. Mod. Phys. 73, 515 (2001);
+Giannozzi et al., Phys. Rev. B 43, 7231 (1991).

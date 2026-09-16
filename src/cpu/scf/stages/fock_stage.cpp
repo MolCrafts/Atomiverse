@@ -8,8 +8,8 @@
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/views/xview.hpp>
 
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/scf/internal/density_builder.h"
-#include "atomiverse/facade/stage.h"
 
 namespace ATV {
 namespace cpu {
@@ -19,32 +19,42 @@ FockStage::FockStage(bool restricted, bool is_hf, XCType xc_type,
                      GridLevel grid_level, int n_radial, int n_angular,
                      double hybrid_alpha_override,
                      const MolecularGrid* fixed_grid,
-                     const IntegralPack& integrals, const RealMatrix& P_alpha,
+                     internal::IntegralView integrals, const RealMatrix& P_alpha,
                      const RealMatrix& P_beta, RealMatrix& F_alpha,
                      RealMatrix& F_beta, RealMatrix& J, double& e_xc_grid,
                      double& e_exact_exchange, double& int_n_alpha,
                      double& int_n_beta, RI ri, AuxBasis aux_basis,
                      bool generalized, internal::Pcm* pcm, double& e_solvent,
-                     double& e_pcm_fock_half)
+                     double& e_pcm_fock_half, Coulomb coulomb, int cfmm_order,
+                     double cfmm_threshold)
     : restricted_(restricted), is_hf_(is_hf), generalized_(generalized),
       xc_type_(xc_type), grid_level_(grid_level), n_radial_(n_radial),
       n_angular_(n_angular), hybrid_alpha_override_(hybrid_alpha_override),
       fixed_grid_(fixed_grid), ri_(ri), aux_basis_(aux_basis),
-      integrals_(integrals), P_alpha_(P_alpha), P_beta_(P_beta),
-      F_alpha_(F_alpha), F_beta_(F_beta), J_(J), e_xc_grid_(e_xc_grid),
-      e_exact_exchange_(e_exact_exchange), int_n_alpha_(int_n_alpha),
-      int_n_beta_(int_n_beta), pcm_(pcm), e_solvent_(e_solvent),
-      e_pcm_fock_half_(e_pcm_fock_half) {
+      coulomb_(coulomb), cfmm_order_(cfmm_order),
+      cfmm_threshold_(cfmm_threshold), integrals_(integrals), P_alpha_(P_alpha),
+      P_beta_(P_beta), F_alpha_(F_alpha), F_beta_(F_beta), J_(J),
+      e_xc_grid_(e_xc_grid), e_exact_exchange_(e_exact_exchange),
+      int_n_alpha_(int_n_alpha), int_n_beta_(int_n_beta), pcm_(pcm),
+      e_solvent_(e_solvent), e_pcm_fock_half_(e_pcm_fock_half) {
     if (generalized_ && ri_ != RI::None)
         throw std::runtime_error(
             "FockStage: RI (density fitting) is not wired for the "
             "generalized (GHF) spinor Fock build — GHF contracts the "
             "stored dense ERI directly. Use ri = RI::None with GHF.");
+    if (generalized_ && coulomb_ == Coulomb::CFMM)
+        throw std::runtime_error(
+            "FockStage: Coulomb::CFMM is not wired for the generalized "
+            "(GHF) spinor Fock build — use coulomb = Coulomb::Direct.");
     if (generalized_ && pcm_ != nullptr)
         throw std::runtime_error(
             "FockStage: C-PCM is not wired for the generalized (GHF) "
             "spinor Fock build in this link — clear solvent_eps or use "
             "RHF/UHF/RKS/UKS.");
+    if (coulomb_ == Coulomb::CFMM && ri_ != RI::None)
+        throw std::runtime_error(
+            "FockStage: Coulomb::CFMM is mutually exclusive with RI::J/JK "
+            "— pick one J route.");
 }
 
 std::vector<DefaultBinding> FockStage::default_bindings() const {
@@ -56,7 +66,8 @@ void FockStage::build(const cpu::BuildContext& ctx) {
     // One-time allocation of shell-pair lists + (KS) the integration grid,
     // via HamiltonianBuilder's config-free entry.
     hamiltonian_.prepare(integrals_, is_hf_, grid_level_, n_radial_, n_angular_,
-                         fixed_grid_, ri_, aux_basis_);
+                         fixed_grid_, ri_, aux_basis_, coulomb_, cfmm_order_,
+                         cfmm_threshold_);
 }
 
 void FockStage::launch(const cpu::LaunchContext& ctx) {

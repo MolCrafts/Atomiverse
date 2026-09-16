@@ -1,4 +1,4 @@
-/// @file pair_search.cu
+/// @file cuda/neighbor/pair_search.cu
 /// @brief Stencil-based cluster pair search — single-pass with coarse count.
 ///
 /// Pipeline: coarse_count → prefix_sum → fill(AABB) → prefix_sum → compact.

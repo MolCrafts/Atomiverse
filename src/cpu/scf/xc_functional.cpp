@@ -9,6 +9,7 @@
 /// sibling translation unit xc_gga.cpp.
 
 #include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/xc_internal.h"
 
 #include <algorithm>
@@ -20,7 +21,6 @@ namespace scf {
 
 // ── Constants ────────────────────────────────────────────────────────────
 
-static constexpr double kPi = 3.14159265358979323846;
 static constexpr double kRhoMin = 1e-12; // total density cutoff
 static constexpr double kSpinDensMin =
     1e-15; // per-spin density floor (matches libxc dens_threshold)
@@ -28,7 +28,7 @@ static constexpr double kSigmaMin = 1e-20; // gradient cutoff for GGA
 
 // Slater exchange constant: C_x = (3/4)(3/π)^{1/3}
 static constexpr double kCx =
-    0.7385587663820224; // (3.0/4.0) * std::cbrt(3.0/kPi)
+    0.7385587663820224; // (3.0/4.0) * std::cbrt(3.0/units::pi)
 
 // ── VWN5 parameters (Hartree convention, matching libxc) ─────────────────
 // A stored as A_Ha = A_Ry/2 (libxc maple/vwn.mpl). VWN5Params is declared
@@ -39,8 +39,8 @@ static constexpr VWN5Params kVWN5_P = {0.0310907, -0.10498, 3.72744, 12.9352};
 // Ferromagnetic: A_Ry = 0.0310907 -> A_Ha = 0.01554535
 static constexpr VWN5Params kVWN5_F = {0.01554535, -0.32500, 7.06042, 18.0578};
 // Spin stiffness alpha_c: A_Ry = -1/(3*pi^2) -> A_Ha = -1/(6*pi^2)
-static constexpr VWN5Params kVWN5_A = {-1.0 / (6.0 * kPi * kPi), -0.0047584,
-                                       1.13107, 13.0045};
+static constexpr VWN5Params kVWN5_A = {-1.0 / (6.0 * units::pi * units::pi),
+                                       -0.0047584, 1.13107, 13.0045};
 
 // ── VWN-RPA parameters (libxc maple/vwn.mpl, RPA columns) ────────────────
 // XC_LDA_C_VWN_RPA (id 8): same Pade form as VWN5, RPA (A, x0, b, c).
@@ -214,7 +214,7 @@ static void pw92_correlation(double rho_a, double rho_b, double& ec,
     rho_a = std::max(rho_a, kSpinDensMin);
     rho_b = std::max(rho_b, kSpinDensMin);
     double rho = rho_a + rho_b;
-    double rs = std::pow(3.0 / (4.0 * kPi * rho), 1.0 / 3.0);
+    double rs = std::pow(3.0 / (4.0 * units::pi * rho), 1.0 / 3.0);
     double zeta = (rho_a - rho_b) / rho;
 
     double ecP, ecF, ac, decP_drs, decF_drs, dac_drs;
@@ -263,7 +263,7 @@ static void vwn5_correlation(double rho_a, double rho_b, double& ec,
     rho_b = std::max(rho_b, kSpinDensMin);
 
     double rho = rho_a + rho_b;
-    double rs = std::pow(3.0 / (4.0 * kPi * rho), 1.0 / 3.0);
+    double rs = std::pow(3.0 / (4.0 * units::pi * rho), 1.0 / 3.0);
     double x = std::sqrt(rs);
     double zeta = (rho_a - rho_b) / rho;
 
@@ -329,7 +329,7 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& ec, double& vc_a,
     rho_b = std::max(rho_b, kSpinDensMin);
 
     double rho = rho_a + rho_b;
-    double x = std::sqrt(std::pow(3.0 / (4.0 * kPi * rho), 1.0 / 3.0));
+    double x = std::sqrt(std::pow(3.0 / (4.0 * units::pi * rho), 1.0 / 3.0));
     double zeta = (rho_a - rho_b) / rho;
 
     // RPA paramagnetic / ferromagnetic Pade channels.
@@ -364,11 +364,21 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& ec, double& vc_a,
 
 static constexpr double kPBE_kappa = 0.804;
 static constexpr double kPBE_mu = 0.2195149727645171; // beta*pi^2/3
+/// PBEsol exchange μ from the gradient expansion (Perdew et al. 2008).
+static constexpr double kPBEsol_mu = 10.0 / 81.0;
+/// revPBE exchange κ (Zhang & Yang, PRL 80, 890 (1998); libxc GGA_X_PBE_R).
+static constexpr double kRevPBE_kappa = 1.245;
 
-// Compute PBE exchange for a single spin channel.
+// Compute PBE-family exchange for a single spin channel.
 // Returns: (energy density contribution, v_rho, v_sigma) for this spin.
+// `mu` selects PBE (`kPBE_mu`) or PBEsol (`kPBEsol_mu`); `kappa` selects
+// PBE/PBEsol/RPBE (0.804) or revPBE (1.245). When `rpbe_form` is true, use
+// the Hammer–Hansen–Nørskov exponential enhancement (RPBE) instead of the
+// rational PBE/revPBE form.
 static void pbe_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
-                              double& vrho_s, double& vsigma_ss) {
+                              double& vrho_s, double& vsigma_ss,
+                              double mu = kPBE_mu, double kappa = kPBE_kappa,
+                              bool rpbe_form = false) {
     if (rho_s < kRhoMin * 0.5) {
         ex_s = 0;
         vrho_s = 0;
@@ -383,21 +393,29 @@ static void pbe_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
     double ex_lda = -Cx_spin * rs43; // per volume
 
     // Reduced gradient s
-    double kf =
-        std::pow(6.0 * kPi * kPi, 1.0 / 3.0) * std::pow(rho_s, 1.0 / 3.0);
+    double kf = std::pow(6.0 * units::pi * units::pi, 1.0 / 3.0)
+                * std::pow(rho_s, 1.0 / 3.0);
     double grad = std::sqrt(std::max(sigma_ss, 0.0));
     double s = grad / (2.0 * kf * rho_s);
     double s2 = s * s;
 
-    // Enhancement factor F_x(s)
-    double denom = 1.0 + kPBE_mu * s2 / kPBE_kappa;
-    double Fx = 1.0 + kPBE_kappa - kPBE_kappa / denom;
+    // Enhancement factor F_x(s) and dF_x/ds²
+    double Fx;
+    double dFx_ds2;
+    if (rpbe_form) {
+        // RPBE: F = 1 + κ (1 − exp(−μ s² / κ));  dF/ds² = μ exp(−μ s² / κ)
+        const double expm = std::exp(-mu * s2 / kappa);
+        Fx = 1.0 + kappa * (1.0 - expm);
+        dFx_ds2 = mu * expm;
+    } else {
+        // PBE / revPBE: F = 1 + κ − κ / (1 + μ s² / κ)
+        const double denom = 1.0 + mu * s2 / kappa;
+        Fx = 1.0 + kappa - kappa / denom;
+        dFx_ds2 = mu / (denom * denom);
+    }
 
     // Energy density (per volume) for this spin
     ex_s = ex_lda * Fx;
-
-    // dF_x/ds² = μ / (1 + μs²/κ)²
-    double dFx_ds2 = kPBE_mu / (denom * denom);
 
     // ds²/dρ_σ: s² = σ / (4 k_f² ρ²), k_f = (6π²)^{1/3} ρ^{1/3}
     // s² = σ / (4 (6π²)^{2/3} ρ^{2/3} ρ²) = σ / (4 (6π²)^{2/3} ρ^{8/3})
@@ -405,8 +423,8 @@ static void pbe_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
     double ds2_drho = -(8.0 / 3.0) * s2 / rho_s;
 
     // ds²/dσ = 1 / (4 (6π²)^{2/3} ρ^{8/3})
-    double kf2_fac =
-        4.0 * std::pow(6.0 * kPi * kPi, 2.0 / 3.0) * std::pow(rho_s, 8.0 / 3.0);
+    double kf2_fac = 4.0 * std::pow(6.0 * units::pi * units::pi, 2.0 / 3.0)
+                     * std::pow(rho_s, 8.0 / 3.0);
     double ds2_dsigma = 1.0 / kf2_fac;
 
     // v_rho = d(ex_lda * Fx)/dρ = (d ex_lda/dρ) Fx + ex_lda * dFx/dρ
@@ -429,6 +447,8 @@ static void pbe_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
 
 static constexpr double kPBE_beta = 0.06672455060314922;
 static constexpr double kPBE_gamma = 0.031090690869654895034; // (1 - ln2)/π²
+/// PBEsol correlation β (libxc GGA_C_PBE_SOL / CP2K PBEsol).
+static constexpr double kPBEsol_beta = 0.046;
 
 static double phi_pbe(double zeta) {
     return 0.5
@@ -440,7 +460,8 @@ static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
                             double vc_lda_a, double vc_lda_b, double sigma_aa,
                             double sigma_ab, double sigma_bb, double& ec_pbe,
                             double& vc_a, double& vc_b, double& vsigma_aa,
-                            double& vsigma_ab, double& vsigma_bb) {
+                            double& vsigma_ab, double& vsigma_bb,
+                            double beta = kPBE_beta) {
     double rho = rho_a + rho_b;
     double zeta = (rho_a - rho_b) / rho;
     zeta = std::max(-1.0 + 1e-14, std::min(1.0 - 1e-14, zeta));
@@ -449,8 +470,8 @@ static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
     double phi3 = phi * phi * phi;
 
     // k_F and k_s
-    double kF = std::pow(3.0 * kPi * kPi * rho, 1.0 / 3.0);
-    double ks = std::sqrt(4.0 * kF / kPi);
+    double kF = std::pow(3.0 * units::pi * units::pi * rho, 1.0 / 3.0);
+    double ks = std::sqrt(4.0 * kF / units::pi);
 
     // t = |∇ρ| / (2 φ k_s ρ)
     double sigma_total = sigma_aa + 2.0 * sigma_ab + sigma_bb;
@@ -461,13 +482,13 @@ static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
     // A coefficient
     double exp_arg = -ec_lda / (kPBE_gamma * phi3);
     double exp_val = std::exp(exp_arg);
-    double A = (kPBE_beta / kPBE_gamma) / (exp_val - 1.0);
+    double A = (beta / kPBE_gamma) / (exp_val - 1.0);
 
     // H(r_s, ζ, t)
     double At2 = A * t2;
     double numer = 1.0 + At2;
     double denom = 1.0 + At2 + A * A * t2 * t2;
-    double ratio = (kPBE_beta / kPBE_gamma) * t2 * numer / denom;
+    double ratio = (beta / kPBE_gamma) * t2 * numer / denom;
     double H = kPBE_gamma * phi3 * std::log(1.0 + ratio);
 
     ec_pbe = ec_lda + H;
@@ -492,7 +513,7 @@ static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
     // = -u(2+u) / (1+u+u²)²
 
     double dratio_dt2 =
-        (kPBE_beta / kPBE_gamma) * (one_u / one_u_u2 + t2 * A * d_frac_du);
+        (beta / kPBE_gamma) * (one_u / one_u_u2 + t2 * A * d_frac_du);
 
     double dH_dt2 = kPBE_gamma * phi3 / (1.0 + ratio) * dratio_dt2;
 
@@ -604,7 +625,7 @@ static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
 
     // dA/drho_sigma: A depends on ec_lda (through vc_lda) and phi.
     // A = (beta/gamma) / (exp(-ec_lda/(gamma*phi^3)) - 1)
-    double dA_dfactor = A * A * exp_val / (kPBE_beta / kPBE_gamma);
+    double dA_dfactor = A * A * exp_val / (beta / kPBE_gamma);
     double dA_dec_lda = dA_dfactor / (kPBE_gamma * phi3);
     double dA_dphi = dA_dfactor * (-3.0 * ec_lda / (kPBE_gamma * phi3 * phi));
 
@@ -615,7 +636,7 @@ static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
 
     // dH/dA: from the ratio expression
     double d_frac_dA = -t2 * u * (2.0 + u) / (one_u_u2 * one_u_u2);
-    double dratio_dA = (kPBE_beta / kPBE_gamma) * t2 * d_frac_dA;
+    double dratio_dA = (beta / kPBE_gamma) * t2 * d_frac_dA;
     double dH_dA = kPBE_gamma * phi3 / (1.0 + ratio) * dratio_dA;
 
     // dH/dphi: H = gamma * phi^3 * ln(1+ratio)
@@ -651,10 +672,53 @@ double hybrid_exchange_fraction(XCType type) {
         return 0.0;
     case XCType::PBE:
         return 0.0;
+    case XCType::PBEsol:
+        return 0.0;
+    case XCType::RevPBE:
+        return 0.0; // pure GGA (κ-revised PBE exchange + PBE correlation)
+    case XCType::RPBE:
+        return 0.0; // pure GGA (HHN exponential exchange + PBE correlation)
+    case XCType::BLYP:
+        return 0.0; // pure GGA (B88 + LYP); no exact exchange
+    case XCType::OptB88VdW:
+        return 0.0; // pure GGA (optB88 + PW92); no exact exchange
     case XCType::B3LYP:
         return 0.20; // libxc XC_HYB_GGA_XC_B3LYP
     case XCType::PBE0:
         return 0.25; // libxc XC_HYB_GGA_XC_PBEH
+    case XCType::B2PLYP:
+        return 0.53; // Grimme B2PLYP a_x (JCP 124, 034108 (2006))
+    case XCType::CAMB3LYP:
+        return 0.19; // Yanai α (short-range / bare-Coulomb HF weight)
+    }
+    return 0.0;
+}
+
+RshExchangeParams rsh_exchange_params(XCType type) {
+    RshExchangeParams p;
+    p.alpha = hybrid_exchange_fraction(type);
+    if (type == XCType::CAMB3LYP) {
+        p.beta = 0.46; // Yanai β (erf-Coulomb HF weight)
+        p.mu = 0.33;   // Yanai μ [1/Bohr]
+    }
+    return p;
+}
+
+double hybrid_pt2_fraction(XCType type) {
+    switch (type) {
+    case XCType::B2PLYP:
+        return 0.27; // Grimme B2PLYP a_c
+    case XCType::LSDA:
+    case XCType::PBE:
+    case XCType::PBEsol:
+    case XCType::RevPBE:
+    case XCType::RPBE:
+    case XCType::BLYP:
+    case XCType::OptB88VdW:
+    case XCType::B3LYP:
+    case XCType::PBE0:
+    case XCType::CAMB3LYP:
+        return 0.0;
     }
     return 0.0;
 }
@@ -665,10 +729,24 @@ bool is_gga(XCType type) {
         return false;
     case XCType::PBE:
         return true;
+    case XCType::PBEsol:
+        return true;
+    case XCType::RevPBE:
+        return true;
+    case XCType::RPBE:
+        return true;
+    case XCType::BLYP:
+        return true;
+    case XCType::OptB88VdW:
+        return true; // optB88 GGA exchange (PW92 LDA correlation)
     case XCType::B3LYP:
         return true;
     case XCType::PBE0:
         return true;
+    case XCType::B2PLYP:
+        return true; // B88 + LYP semi-local GGA
+    case XCType::CAMB3LYP:
+        return true; // same B3LYP semi-local GGA mix
     }
     return false;
 }
@@ -692,6 +770,41 @@ constexpr double kB3LYP_cB88 = 0.72;    ///< absolute B88-X coefficient.
 constexpr double kB3LYP_cVWN = 0.19;    ///< absolute VWN_RPA-C coefficient.
 constexpr double kB3LYP_cLYP = 0.81;    ///< absolute LYP-C coefficient.
 constexpr double kPBE0_cX = 0.75;       ///< PBE0 semi-local PBE exchange scale.
+// B2PLYP semi-local (Grimme 2006): (1-a_x)*B88 + (1-a_c)*LYP with a_x=0.53,
+// a_c=0.27. Exact HF (a_x) and PT2 (a_c) are applied outside evaluate_xc.
+constexpr double kB2PLYP_cB88 = 0.47; ///< (1 − 0.53) absolute B88-X scale.
+constexpr double kB2PLYP_cLYP = 0.73; ///< (1 − 0.27) absolute LYP-C scale.
+
+// Pure BLYP GGA (libxc XC_GGA_XC_BLYP composite = B88-X + LYP-C at unit
+// weights). No HF-exchange admixture, no extra Slater / VWN-RPA mix —
+// those enter only the B3LYP hybrid recipe below.
+void blyp_pure(double ra, double rb, double sigma_aa, double sigma_ab,
+               double sigma_bb, XCOutput& out) {
+    const double rho = ra + rb;
+    double sa = std::max(sigma_aa, 0.0);
+    double sb = std::max(sigma_bb, 0.0);
+    double s_ave = 0.5 * (sa + sb);
+    double sab = std::min(std::max(sigma_ab, -s_ave), +s_ave);
+
+    // Full B88 exchange (per-spin, per-volume energy + potentials).
+    double exb_a, vrho_b_a, vsig_b_aa;
+    double exb_b, vrho_b_b, vsig_b_bb;
+    b88_exchange_spin(ra, sa, exb_a, vrho_b_a, vsig_b_aa);
+    b88_exchange_spin(rb, sb, exb_b, vrho_b_b, vsig_b_bb);
+    const double ex_b88 = (exb_a + exb_b) / rho; // per-electron
+
+    // Full LYP GGA correlation (per-electron exc + pot).
+    double ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa, vsig_l_ab, vsig_l_bb;
+    lyp_correlation(ra, rb, sa, sab, sb, ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa,
+                    vsig_l_ab, vsig_l_bb);
+
+    out.exc = ex_b88 + ec_lyp;
+    out.vrho_alpha = vrho_b_a + vc_lyp_a;
+    out.vrho_beta = vrho_b_b + vc_lyp_b;
+    out.vsigma_aa = vsig_b_aa + vsig_l_aa;
+    out.vsigma_ab = vsig_l_ab;
+    out.vsigma_bb = vsig_b_bb + vsig_l_bb;
+}
 
 // Evaluate the B3LYP semi-local energy density / potential at one grid point.
 // Outputs follow the XCOutput convention: exc is the semi-local energy
@@ -733,6 +846,68 @@ void b3lyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
     out.vsigma_aa = kB3LYP_cB88 * vsig_b_aa + kB3LYP_cLYP * vsig_l_aa;
     out.vsigma_ab = kB3LYP_cLYP * vsig_l_ab;
     out.vsigma_bb = kB3LYP_cB88 * vsig_b_bb + kB3LYP_cLYP * vsig_l_bb;
+}
+
+// Evaluate the B2PLYP semi-local energy density / potential at one grid point.
+// Semi-local only: 0.47*B88 + 0.73*LYP. HF a_x=0.53 is applied by the Fock
+// builder; PT2 a_c=0.27 is applied by the MP2 path after SCF.
+void b2plyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
+                      double sigma_bb, XCOutput& out) {
+    const double rho = ra + rb;
+    double sa = std::max(sigma_aa, 0.0);
+    double sb = std::max(sigma_bb, 0.0);
+    double s_ave = 0.5 * (sa + sb);
+    double sab = std::min(std::max(sigma_ab, -s_ave), +s_ave);
+
+    double exb_a, vrho_b_a, vsig_b_aa;
+    double exb_b, vrho_b_b, vsig_b_bb;
+    b88_exchange_spin(ra, sa, exb_a, vrho_b_a, vsig_b_aa);
+    b88_exchange_spin(rb, sb, exb_b, vrho_b_b, vsig_b_bb);
+    const double ex_b88 = (exb_a + exb_b) / rho; // per-electron
+
+    double ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa, vsig_l_ab, vsig_l_bb;
+    lyp_correlation(ra, rb, sa, sab, sb, ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa,
+                    vsig_l_ab, vsig_l_bb);
+
+    out.exc = kB2PLYP_cB88 * ex_b88 + kB2PLYP_cLYP * ec_lyp;
+    out.vrho_alpha = kB2PLYP_cB88 * vrho_b_a + kB2PLYP_cLYP * vc_lyp_a;
+    out.vrho_beta = kB2PLYP_cB88 * vrho_b_b + kB2PLYP_cLYP * vc_lyp_b;
+    out.vsigma_aa = kB2PLYP_cB88 * vsig_b_aa + kB2PLYP_cLYP * vsig_l_aa;
+    out.vsigma_ab = kB2PLYP_cLYP * vsig_l_ab;
+    out.vsigma_bb = kB2PLYP_cB88 * vsig_b_bb + kB2PLYP_cLYP * vsig_l_bb;
+}
+
+// optB88-vdW semi-local (libxc GGA_X_OPTB88_VDW + LDA_C_PW / CP2K PW92):
+// optimized B88 exchange + PW92 LDA correlation. Nonlocal DRSLL is added
+// post-SCF on GPW via GpwDft::vdw_df (not here).
+// Klimeš, Bowler, Michaelides, J. Phys.: Condens. Matter 22, 022201 (2010).
+constexpr double kOptB88_beta = 0.003368671161034469;
+constexpr double kOptB88_gamma = 6.981317007977318;
+
+void optb88_vdw_semilocal(double ra, double rb, double sigma_aa,
+                          double sigma_ab, double sigma_bb, XCOutput& out) {
+    const double rho = ra + rb;
+    double sa = std::max(sigma_aa, 0.0);
+    double sb = std::max(sigma_bb, 0.0);
+    (void)sigma_ab; // exchange is per-spin; no cross-spin sigma term
+
+    double exb_a, vrho_x_a, vsig_x_aa;
+    double exb_b, vrho_x_b, vsig_x_bb;
+    b88_exchange_spin(ra, sa, exb_a, vrho_x_a, vsig_x_aa, kOptB88_beta,
+                      kOptB88_gamma);
+    b88_exchange_spin(rb, sb, exb_b, vrho_x_b, vsig_x_bb, kOptB88_beta,
+                      kOptB88_gamma);
+    const double ex = (exb_a + exb_b) / rho; // per-electron
+
+    double ec, vc_a, vc_b;
+    pw92_correlation(ra, rb, ec, vc_a, vc_b);
+
+    out.exc = ex + ec;
+    out.vrho_alpha = vrho_x_a + vc_a;
+    out.vrho_beta = vrho_x_b + vc_b;
+    out.vsigma_aa = vsig_x_aa;
+    out.vsigma_ab = 0.0;
+    out.vsigma_bb = vsig_x_bb;
 }
 
 // Evaluate the PBE0 semi-local energy density / potential at one grid point.
@@ -794,42 +969,35 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         out.exc = static_cast<double>(ex + ec);
         out.vrho_alpha = static_cast<double>(vx_a + vc_a);
         out.vrho_beta = static_cast<double>(vx_b + vc_b);
-    } else if (type == XCType::PBE) {
-        // PBE = LSDA + gradient corrections. Do NOT clamp per-spin densities
-        // to kRhoMin here -- inflating rho_s = 0 to 1e-12 makes
-        // ds2_dsigma ~ 1/rho_s^{8/3} explode by O(1e30) and produces
-        // nonsense for the empty spin channel. The exchange branch
-        // (pbe_exchange_spin) has its own rho_s < kRhoMin/2 early-return
-        // that yields exactly zero contribution for empty spins (matching
-        // libxc). The correlation branch (pw92_correlation) clamps
-        // internally to kSpinDensMin = 1e-15 for the VWN-style Pade
-        // evaluator, which keeps things finite without inflating the
-        // sigma derivative.
+    } else if (type == XCType::PBE || type == XCType::PBEsol
+               || type == XCType::RevPBE || type == XCType::RPBE) {
+        // PBE family = PW92 LDA base + gradient corrections. Do NOT clamp
+        // per-spin densities to kRhoMin here -- inflating rho_s = 0 to 1e-12
+        // makes ds2_dsigma ~ 1/rho_s^{8/3} explode by O(1e30). Exchange has
+        // its own rho_s < kRhoMin/2 early-return (libxc-matched empty spin).
+        // PBEsol: μ=10/81, β=0.046 (Perdew 2008 / libxc PBE_SOL).
+        // revPBE: κ=1.245, μ/β as PBE (Zhang & Yang 1998 / libxc PBE_R).
+        // RPBE: κ/μ/β as PBE, exponential F_x (Hammer et al. 1999 / GGA_X_RPBE).
+        const double mu = (type == XCType::PBEsol) ? kPBEsol_mu : kPBE_mu;
+        const double beta = (type == XCType::PBEsol) ? kPBEsol_beta : kPBE_beta;
+        const double kappa =
+            (type == XCType::RevPBE) ? kRevPBE_kappa : kPBE_kappa;
+        const bool rpbe_form = (type == XCType::RPBE);
+
         double ra_pbe = ra;
         double rb_pbe = rb;
         double rho_pbe = ra_pbe + rb_pbe;
 
-        // LSDA part (Slater + VWN5) at clamped densities
         double ex_lda, vx_lda_a, vx_lda_b;
         slater_exchange(ra_pbe, rb_pbe, ex_lda, vx_lda_a, vx_lda_b);
 
-        // PBE uses PW92 (not VWN5) as the LSDA correlation base; this is
-        // what libxc's XC_GGA_C_PBE does internally per the PBE paper.
+        // PBE family uses PW92 (not VWN5) as the LSDA correlation base.
         double ec_lda, vc_lda_a, vc_lda_b;
         pw92_correlation(ra_pbe, rb_pbe, ec_lda, vc_lda_a, vc_lda_b);
 
-        // PBE exchange (per-spin)
         double sa = static_cast<double>(sigma_aa);
         double sab = static_cast<double>(sigma_ab);
         double sb = static_cast<double>(sigma_bb);
-
-        // sigma is a squared gradient magnitude -- never negative; let it
-        // through as-is. libxc applies a threshold to *skip* tiny-sigma
-        // grid points (it does not bump them up to a floor); since native
-        // is already gated by kRhoMin on the density side, no further
-        // sigma clamping is needed. Inflating sigma from 0 -> sigma_min
-        // would inject a phantom gradient at every zero-gradient grid
-        // point, diverging from libxc.
         sa = std::max(sa, 0.0);
         sb = std::max(sb, 0.0);
         double s_ave = 0.5 * (sa + sb);
@@ -838,18 +1006,18 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
 
         double ex_pbe_a, vrho_x_a, vsig_x_aa;
         double ex_pbe_b, vrho_x_b, vsig_x_bb;
-        pbe_exchange_spin(ra_pbe, sa, ex_pbe_a, vrho_x_a, vsig_x_aa);
-        pbe_exchange_spin(rb_pbe, sb, ex_pbe_b, vrho_x_b, vsig_x_bb);
+        pbe_exchange_spin(ra_pbe, sa, ex_pbe_a, vrho_x_a, vsig_x_aa, mu, kappa,
+                          rpbe_form);
+        pbe_exchange_spin(rb_pbe, sb, ex_pbe_b, vrho_x_b, vsig_x_bb, mu, kappa,
+                          rpbe_form);
 
-        // Total PBE exchange energy density (per electron)
         double ex_pbe = (ex_pbe_a + ex_pbe_b) / rho_pbe;
 
-        // PBE correlation
         double ec_pbe, vc_pbe_a, vc_pbe_b;
         double vsig_c_aa, vsig_c_ab, vsig_c_bb;
         pbe_correlation(ra_pbe, rb_pbe, ec_lda, vc_lda_a, vc_lda_b, sa, sab, sb,
                         ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab,
-                        vsig_c_bb);
+                        vsig_c_bb, beta);
 
         out.exc = static_cast<double>(ex_pbe + ec_pbe);
         out.vrho_alpha = static_cast<double>(vrho_x_a + vc_pbe_a);
@@ -857,14 +1025,26 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         out.vsigma_aa = static_cast<double>(vsig_x_aa + vsig_c_aa);
         out.vsigma_ab = static_cast<double>(vsig_c_ab);
         out.vsigma_bb = static_cast<double>(vsig_x_bb + vsig_c_bb);
-    } else if (type == XCType::B3LYP) {
-        // B3LYP semi-local part only; HF-exchange admixture (alpha=0.20)
-        // is added by the Fock builder.
+    } else if (type == XCType::BLYP) {
+        // Pure BLYP GGA: full B88 exchange + full LYP correlation.
+        blyp_pure(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
+    } else if (type == XCType::OptB88VdW) {
+        // optB88 exchange + PW92 LDA-C (nonlocal DRSLL via GPW vdw_df).
+        optb88_vdw_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
+    } else if (type == XCType::B3LYP || type == XCType::CAMB3LYP) {
+        // B3LYP / CAM-B3LYP v1 share the same semi-local mix
+        // (0.08 Slater + 0.72 B88 + 0.19 VWN-RPA + 0.81 LYP). CAM
+        // additionally mixes erf-attenuated HF exchange in the Fock
+        // builder (`rsh_exchange_params`).
         b3lyp_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
     } else if (type == XCType::PBE0) {
         // PBE0 semi-local part only; HF-exchange admixture (alpha=0.25)
         // is added by the Fock builder.
         pbe0_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
+    } else if (type == XCType::B2PLYP) {
+        // B2PLYP semi-local: 0.47*B88 + 0.73*LYP; HF a_x=0.53 by Fock
+        // builder; PT2 a_c=0.27 by MP2 path after SCF.
+        b2plyp_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
     }
 
     return out;
@@ -901,8 +1081,16 @@ void evaluate_xc_batch(XCType type, int n, const double* rho_a_arr,
             exc_arr[g] = ex + ec;
             vrho_a_arr[g] = vx_a + vc_a;
             vrho_b_arr[g] = vx_b + vc_b;
-        } else if (type == XCType::PBE) {
+        } else if (type == XCType::PBE || type == XCType::PBEsol
+                   || type == XCType::RevPBE || type == XCType::RPBE) {
             // See scalar branch for rationale: no per-spin clamping here.
+            const double mu = (type == XCType::PBEsol) ? kPBEsol_mu : kPBE_mu;
+            const double beta =
+                (type == XCType::PBEsol) ? kPBEsol_beta : kPBE_beta;
+            const double kappa =
+                (type == XCType::RevPBE) ? kRevPBE_kappa : kPBE_kappa;
+            const bool rpbe_form = (type == XCType::RPBE);
+
             double ra_pbe = ra;
             double rb_pbe = rb;
             double rho_pbe = ra_pbe + rb_pbe;
@@ -910,12 +1098,10 @@ void evaluate_xc_batch(XCType type, int n, const double* rho_a_arr,
             double ex_lda, vx_lda_a, vx_lda_b;
             slater_exchange(ra_pbe, rb_pbe, ex_lda, vx_lda_a, vx_lda_b);
             double ec_lda, vc_lda_a, vc_lda_b;
-            // PBE uses PW92 (not VWN5) as the LSDA correlation base.
             pw92_correlation(ra_pbe, rb_pbe, ec_lda, vc_lda_a, vc_lda_b);
 
             double sa = sigma_aa_arr[g], sab = sigma_ab_arr[g],
                    sb = sigma_bb_arr[g];
-            // No sigma floor -- see scalar branch for rationale.
             sa = std::max(sa, 0.0);
             sb = std::max(sb, 0.0);
             double s_ave = 0.5 * (sa + sb);
@@ -924,15 +1110,17 @@ void evaluate_xc_batch(XCType type, int n, const double* rho_a_arr,
 
             double ex_pbe_a, vrho_x_a, vsig_x_aa;
             double ex_pbe_b, vrho_x_b, vsig_x_bb;
-            pbe_exchange_spin(ra_pbe, sa, ex_pbe_a, vrho_x_a, vsig_x_aa);
-            pbe_exchange_spin(rb_pbe, sb, ex_pbe_b, vrho_x_b, vsig_x_bb);
+            pbe_exchange_spin(ra_pbe, sa, ex_pbe_a, vrho_x_a, vsig_x_aa, mu,
+                              kappa, rpbe_form);
+            pbe_exchange_spin(rb_pbe, sb, ex_pbe_b, vrho_x_b, vsig_x_bb, mu,
+                              kappa, rpbe_form);
             double ex_pbe = (ex_pbe_a + ex_pbe_b) / rho_pbe;
 
             double ec_pbe, vc_pbe_a, vc_pbe_b;
             double vsig_c_aa, vsig_c_ab, vsig_c_bb;
             pbe_correlation(ra_pbe, rb_pbe, ec_lda, vc_lda_a, vc_lda_b, sa, sab,
                             sb, ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa,
-                            vsig_c_ab, vsig_c_bb);
+                            vsig_c_ab, vsig_c_bb, beta);
 
             exc_arr[g] = ex_pbe + ec_pbe;
             vrho_a_arr[g] = vrho_x_a + vc_pbe_a;
@@ -940,15 +1128,25 @@ void evaluate_xc_batch(XCType type, int n, const double* rho_a_arr,
             vsigma_aa_arr[g] = vsig_x_aa + vsig_c_aa;
             vsigma_ab_arr[g] = vsig_c_ab;
             vsigma_bb_arr[g] = vsig_x_bb + vsig_c_bb;
-        } else if (type == XCType::B3LYP || type == XCType::PBE0) {
-            // Global hybrids: GGA semi-local part. The HF-exchange
-            // admixture is applied by the Fock builder, not here.
+        } else if (type == XCType::BLYP || type == XCType::OptB88VdW
+                   || type == XCType::B3LYP || type == XCType::PBE0
+                   || type == XCType::B2PLYP || type == XCType::CAMB3LYP) {
+            // Pure BLYP / OptB88VdW, global hybrids, CAM-B3LYP, and B2PLYP
+            // share the GGA semi-local path. HF-exchange admixture (hybrids
+            // / RSH / double hybrids) is applied by the Fock builder, not
+            // here; PT2 is post-SCF.
             double sa = sigma_aa_arr ? sigma_aa_arr[g] : 0.0;
             double sab = sigma_ab_arr ? sigma_ab_arr[g] : 0.0;
             double sb = sigma_bb_arr ? sigma_bb_arr[g] : 0.0;
             XCOutput out{};
-            if (type == XCType::B3LYP)
+            if (type == XCType::BLYP)
+                blyp_pure(ra, rb, sa, sab, sb, out);
+            else if (type == XCType::OptB88VdW)
+                optb88_vdw_semilocal(ra, rb, sa, sab, sb, out);
+            else if (type == XCType::B3LYP || type == XCType::CAMB3LYP)
                 b3lyp_semilocal(ra, rb, sa, sab, sb, out);
+            else if (type == XCType::B2PLYP)
+                b2plyp_semilocal(ra, rb, sa, sab, sb, out);
             else
                 pbe0_semilocal(ra, rb, sa, sab, sb, out);
             exc_arr[g] = out.exc;

@@ -3,8 +3,8 @@
 ///
 /// AIMD = Born-Oppenheimer molecular dynamics. The classical MD loop runs
 /// unchanged; the only difference is that the per-step force evaluator is
-/// `cpu::scf::SCF` (a self-consistent SCF + analytic gradient)
-/// instead of a classical pair potential. This is the same Driver/Component
+/// the concrete method `cpu::scf::RHF` (a self-consistent SCF + analytic
+/// gradient) instead of a classical pair potential. This is the same Driver
 /// composition that drives geometry optimization in
 /// `examples/05_geom_opt.cpp`, only with the integration loop
 /// (`cpu::md::MD`) instead of the optimization loop (`cpu::minimizer::
@@ -14,7 +14,7 @@
 ///   1. Construct an H2 frame and integrals at STO-3G.
 ///   2. Compose `cpu::md::MD` with InitVelocity + VelocityVerlet +
 ///      NoseHoover (NVT ensemble).
-///   3. Bind `SCF{config}.predictor(3)` at md::Phase::force —
+///   3. Bind `RHF{}.predictor(3)` at md::Phase::force —
 ///      ASPC predictor warm-starts the density across MD steps.
 ///   4. Run 200 steps and report initial / final energy + temperature.
 ///
@@ -42,11 +42,11 @@
 
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/nose_hoover.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/nose_hoover.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/scf/methods.h"
 
 using namespace ATV;
@@ -70,7 +70,7 @@ cpu::Frame make_h2() {
     f.span(ATV::kAtom_mass)[1] = 1.008;
     f.span(ATV::kAtom_type)[0] = 1;
     f.span(ATV::kAtom_type)[1] = 1;
-    f.simbox =
+    f.box =
         ATV::cpu::Box::cubic(100.0); // SCF treats the molecule as isolated
     return f;
 }
@@ -105,9 +105,9 @@ int main() {
 
     // Concrete RHF method as the force component (ASPC density warm-start).
     cpu::md::MD sim;
-    sim.add(cpu::md::InitVelocity{T_target, /*seed=*/42u});
-    sim.add(cpu::md::VelocityVerlet{dt});
-    sim.add(cpu::md::NoseHoover{T_target, tau, dt});
+    sim.set_observer(cpu::md::InitVelocity{T_target, /*seed=*/42u});
+    sim.set_integrator(cpu::md::VelocityVerlet{dt});
+    sim.set_thermostat(cpu::md::NoseHoover{T_target, tau, dt});
     sim.on(md::Phase::force).add(cpu::scf::RHF{}.predictor(/*order=*/3));
     sim.build();
 
@@ -131,7 +131,7 @@ int main() {
     // Bond length via minimum image — atoms may have wrapped through
     // the box independently during the trajectory, but we want the
     // physical bond.
-    const double lx = frame.simbox.cell()(0, 0);
+    const double lx = frame.box.cell()(0, 0);
     auto min_image = [](double d, double L) {
         return (L > 0.0) ? (d - L * std::round(d / L)) : d;
     };

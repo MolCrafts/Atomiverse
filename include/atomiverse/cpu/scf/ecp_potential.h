@@ -56,7 +56,7 @@ struct EcpPotential {
 
     /// @brief Resolve a supported ECP family name to its Z-indexed table.
     ///
-    /// Shared by the lookup constructor, `IntegralPack` (core-Hamiltonian
+    /// Shared by the lookup constructor, `internal::IntegralWorkspace` (core-Hamiltonian
     /// wiring), and the method-level x2c double-counting gate. Empty rows
     /// mark all-electron elements (def2 convention: Z ≤ 36).
     /// @param name Family name (currently "def2-ECP").

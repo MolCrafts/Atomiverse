@@ -17,10 +17,10 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -63,15 +63,15 @@ int main() {
                 frame.span(ATV::kAtom_type)[idx] = 0;
                 ++idx;
             }
-    frame.simbox = ATV::cpu::Box::cubic(box_len);
+    frame.box = ATV::cpu::Box::cubic(box_len);
 
     // NVE: no thermostat. InitVelocity draws a Maxwell distribution at T once,
     // at build; from then on the total energy is the engine's to conserve.
     cpu::md::MD sim;
-    sim.add_potential(cpu::PairLJCut{eps, sigma, cutoff});
+    sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
-    sim.add(cpu::md::InitVelocity{temperature, /*seed=*/12345u});
+    sim.set_observer(cpu::md::InitVelocity{temperature, /*seed=*/12345u});
     sim.enable_timing(false); // this is a correctness check, not a benchmark
     sim.build();
 

@@ -1,0 +1,33 @@
+# Offline oracle note — dfpt-spin-si (PW DFPT collinear spin, diamond Si)
+
+## Intent
+
+Pin Γ-point DFPT phonons for diamond Si with **collinear spin**
+(`nspin=2`, multiplicity=1, LSDA) on the plane-wave method.
+
+## Preferred oracle
+
+CP2K Quickstep DFPT / `VIBRATIONAL_ANALYSIS` (or QE `ph.x`) on the same
+cell with UKS / LSD and a comparable NC/GTH setup.
+
+## Host status (2026-07-26)
+
+No CP2K / QE module or binary on the pin host (`module avail cp2k` empty).
+Sharp correctness pin is the **same-Hamiltonian central second difference
+of the collinear-spin PW SCF total energy** (h = 0.03 Å) at identical
+ecut/k/XC/UPF/spin — recorded in
+`regressions/response/dfpt-spin-si/REFERENCE.md`.
+
+## Twin settings (match regression)
+
+| Item | Value |
+| ---- | ----- |
+| Cell | diamond Si, a = 5.43 Å, 2-atom fcc primitive |
+| PP | `tests/data/pw/Si_lda_nc.upf` (in-tree NC ONCV) |
+| XC | LSDA |
+| Spin | collinear, multiplicity = 1 (M = 0) |
+| ecut | 10 Ry |
+| k-mesh | 2×2×2 MP |
+
+When CP2K becomes available: record ω(Γ) [cm⁻¹], version, and wall for
+fair ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\).

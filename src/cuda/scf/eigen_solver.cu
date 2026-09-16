@@ -38,8 +38,6 @@ void EigenSolver::build(const SolverContext& ctx, SCFWorkspace& ws) {
     work_size_ = lwork;
     cudaMalloc(&d_work_, lwork * sizeof(prec_t));
     cudaMalloc(&d_info_, sizeof(int));
-
-    cudaStreamSynchronize(stream);
 }
 
 void EigenSolver::step(const SolverContext& ctx, SCFWorkspace& ws) {

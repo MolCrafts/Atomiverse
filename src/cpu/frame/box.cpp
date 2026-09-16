@@ -105,9 +105,12 @@ void Box::scale_diagonal(double sx, double sy, double sz) noexcept {
 }
 
 void Box::scale_isotropic(double s) noexcept {
-    cell_(0, 0) *= s;
-    cell_(1, 1) *= s;
-    cell_(2, 2) *= s;
+    // True isotropic volume scale: h ← s·h (full matrix). Required for
+    // non-diagonal cells (e.g. fcc diamond primitive) whose diagonal is zero;
+    // for orthorhombic axis-aligned boxes this equals diagonal-only scaling.
+    for (int a = 0; a < 3; ++a)
+        for (int b = 0; b < 3; ++b)
+            cell_(a, b) *= s;
     recompute_cache_();
     bump_revision_();
 }

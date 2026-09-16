@@ -1,0 +1,29 @@
+Geometry = GenFormat {
+  <<< "geo.gen"
+}
+
+Driver = {}
+
+Hamiltonian = DFTB {
+  SCC = Yes
+  SCCTolerance = 1e-8
+  MaxSCCIterations = 100
+  MaxAngularMomentum = {
+    C = "p"
+    H = "s"
+  }
+  SlaterKosterFiles = Type2FileNames {
+    Prefix = "./"
+    Separator = "-"
+    Suffix = ".skf"
+  }
+  # No ThirdOrder — pure DFTB2 with 3ob SK tables (pin Hamiltonian twin)
+}
+
+Options {
+  WriteDetailedOut = Yes
+}
+
+ParserOptions {
+  ParserVersion = 12
+}

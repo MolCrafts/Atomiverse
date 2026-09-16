@@ -1,10 +1,10 @@
-/// @file cpu/scf/shell_pair.h
+/// @file cpu/scf/internal/shell_pair.h
 /// @brief ShellPairList: canonical shell pairs with Cauchy-Schwarz bounds for direct SCF.
 ///
 /// Pre-computes Schwarz bounds Q_ij = sqrt((ij|ij)) for all canonical pairs (i>=j).
 /// Used by direct-SCF Fock builders to skip negligible shell-quartet contributions.
 ///
-/// @see ShellPairList::ShellPairList(const IntegralPack&, double)
+/// @see ShellPairList::ShellPairList(const internal::IntegralView&, double)
 /// @see ShellPairList::g_rhf, ShellPairList::jk_uhf, ShellPairList::j
 #pragma once
 
@@ -12,14 +12,14 @@
 #include <vector>
 
 #include "atomiverse/cpu/scf/dense_matrix.h"
+#include "atomiverse/cpu/scf/internal/integral_view.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
 
 namespace ATV {
 namespace cpu {
 namespace scf {
 
-struct IntegralPack; // forward declare
-struct ShellList;    // forward declare
+struct ShellList; // forward declare
 
 /// @brief Single canonical shell pair with Cauchy-Schwarz bound.
 struct ShellPair {
@@ -30,7 +30,7 @@ struct ShellPair {
 
 /// @brief Precomputed canonical shell pair list for direct SCF.
 ///
-/// Owns copies of shells, atoms, and shell_data so it can outlive the IntegralPack.
+/// Owns copies of shells, atoms, and shell_data so it can outlive the view.
 /// Only pairs with schwarz > threshold are retained.
 struct ShellPairList {
     std::vector<ShellPair> pairs;      ///< Screened canonical pairs.
@@ -44,17 +44,17 @@ struct ShellPairList {
     /// @brief Empty pair list (fields filled by the caller or left default).
     ShellPairList() = default;
 
-    /// @brief Build the canonical shell pair list from an IntegralPack.
+    /// @brief Build the canonical shell pair list from method integral fields.
     ///
     /// Computes Q_ij = sqrt((ij|ij)) [Hartree^(1/2)] for all i >= j, retaining
-    /// pairs where Q_ij > thr. The list owns all shell data (safe to use after
-    /// the IntegralPack is destroyed).
+    /// pairs where Q_ij > thr. The list owns all shell data (safe after the
+    /// view's storage is rebuilt).
     ///
-    /// @param pack Source integral pack (uses pack.shells, pack.shell_data,
-    ///             pack.atoms).
+    /// @param ints Non-owning view (shells, shell_data, atoms).
     /// @param thr  Cauchy-Schwarz screening threshold [Hartree^(1/2),
     ///             default 1e-10].
-    explicit ShellPairList(const IntegralPack& pack, double thr = 1e-10);
+    explicit ShellPairList(const internal::IntegralView& ints,
+                           double thr = 1e-10);
 
     /// @brief Direct RHF G = J - 0.5*K via on-the-fly ERI with 8-fold symmetry
     ///        and Cauchy-Schwarz screening.
@@ -110,7 +110,7 @@ struct ShellBlockPair {
 /// p-shells: n_cart=3 grouping px/py/pz together).  For STO-3G aspirin
 /// (73 AOs), this gives 47 shell blocks vs 73 AO-level shells.
 ///
-/// The list owns all shell-block data so it can outlive the IntegralPack.
+/// The list owns all shell-block data so it can outlive the integral view.
 struct ShellBlockPairList {
     std::vector<ShellBlockPair> pairs;      ///< Screened canonical block pairs.
     std::vector<native::ShellBlock> blocks; ///< Owned shell-block descriptors.
@@ -123,16 +123,17 @@ struct ShellBlockPairList {
     ///        default).
     ShellBlockPairList() = default;
 
-    /// @brief Build the canonical shell-block pair list from an IntegralPack.
+    /// @brief Build the canonical shell-block pair list from method fields.
     ///
     /// Groups consecutive AO-level shells into shell blocks, then computes
     /// block-level Schwarz bounds Q_{AB} = sqrt(max_{ia,ib} (ia ib|ia ib))
     /// [Hartree^(1/2)] using eri_block().  Pairs with Q_{AB} ≤ thr are dropped.
     ///
-    /// @param pack Source integral pack.
+    /// @param ints Non-owning integral view.
     /// @param thr  Cauchy-Schwarz screening threshold [Hartree^(1/2),
     ///             default 1e-10].
-    explicit ShellBlockPairList(const IntegralPack& pack, double thr = 1e-10);
+    explicit ShellBlockPairList(const internal::IntegralView& ints,
+                                double thr = 1e-10);
 
     /// @brief Shell-block direct RHF G = J - 0.5*K (libcint/PySCF approach).
     ///
@@ -168,6 +169,40 @@ struct ShellBlockPairList {
     /// @param P Total RHF density matrix P = 2*P_occ [n x n, unitless].
     /// @param[out] K Exchange matrix [n x n, Hartree], symmetric, no 0.5 factor.
     void k(const RealMatrix& P, RealMatrix& K) const;
+
+    /// @brief Exchange matrix from the erf-attenuated operator erf(ω r)/r.
+    ///
+    /// Same normalization as `k()` (bare K, no 0.5, no α/β). `omega == 0`
+    /// is the bare-Coulomb identity (`k()`). Used by the CAM-B3LYP Fock
+    /// mix \(K = \alpha K[1/r] + \beta K[\mathrm{erf}]\).
+    ///
+    /// @param P     Total RHF density [n x n, unitless].
+    /// @param omega Range-separation parameter [1/Bohr]; must be ≥ 0.
+    /// @param[out] K Exchange matrix [n x n, Hartree].
+    void k_erf(const RealMatrix& P, double omega, RealMatrix& K) const;
+
+    /// @brief Fused one-sweep restricted J and K from a single shell-block
+    ///        ERI quartet scan.
+    ///
+    /// Produces the bare Coulomb matrix `J_ij = sum_kl P_kl (ij|kl)` and the
+    /// bare exchange matrix `K_ij = sum_kl P_kl (ik|jl)` (NO 0.5 factor, no
+    /// `alpha_hf`) in ONE `eri_block` pass — the Coulomb accumulation of
+    /// `g_rhf` and the 8-term exchange accumulation of `k` share the same
+    /// evaluated integrals, so this is algebraically exact vs the two-pass
+    /// `g_rhf` (J = G + 0.5*K) + `k`, differing only in floating-point add
+    /// order. The restricted global hybrid then assembles
+    /// `F = Hcore + J - 0.5*alpha_hf*K + Vxc`.
+    ///
+    /// K is emitted with the SAME (unscaled) normalization as
+    /// `ShellBlockPairList::k`, kept separable from J so a later
+    /// range-separated (erf-attenuated) exchange operator can add a second K
+    /// without J+K being fused into an opaque single matrix.
+    ///
+    /// @param P_total Total RHF density matrix P = 2*P_occ [n x n, unitless].
+    /// @param[out] J  Bare Coulomb matrix [n x n, Hartree].
+    /// @param[out] K  Bare exchange matrix [n x n, Hartree], symmetric, no
+    ///                0.5 factor (RSH-separable).
+    void jk_rhf(const RealMatrix& P_total, RealMatrix& J, RealMatrix& K) const;
 };
 
 /// @brief Group a flat vector of AO-level `native::Shell` entries into
@@ -176,7 +211,7 @@ struct ShellBlockPairList {
 /// Consecutive shells sharing an angular momentum (same `l`) collapse
 /// into one `native::ShellBlock` with `n_cart = n_cart_of(l)`. Callers
 /// feed this with `ShellList::shells` (one-electron integral path) or
-/// `IntegralPack::shells` (Fock-build Schwarz path) — both use the same
+/// `internal::IntegralWorkspace::shells` (Fock-build Schwarz path) — both use the same
 /// flat layout.
 ///
 /// Returned blocks alias the input's `alpha` / `coeff` pointers, so the

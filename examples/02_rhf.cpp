@@ -32,16 +32,17 @@ int main() {
     frame.span(ATV::kAtom_mass)[1] = double(1.008);
     frame.span(ATV::kAtom_type)[0] = 1;
     frame.span(ATV::kAtom_type)[1] = 1;
-    frame.simbox = ATV::cpu::Box::cubic(100.0);
+    frame.box = ATV::cpu::Box::cubic(100.0);
 
     std::cout << "=== H2 / STO-3G / RHF (CPU) ===\n"
               << "Geometry: H-H at 0.74 Angstrom\n\n";
 
-    // Concrete method — parameters are members; Frame is the only I/O.
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = (sizeof(double) == sizeof(float)) ? double(1e-5) : double(1e-10);
-    rhf.max_iter = 100;
+    // Concrete method — parameters are constructor arguments; Frame is the
+    // only I/O.
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                      /*tol=*/(sizeof(double) == sizeof(float)) ? double(1e-5)
+                                                                : double(1e-10),
+                      /*max_iter=*/100};
 
     rhf.run(frame); // eV energy on frame.meta[kEnergy]; Hartree on energy()
 
@@ -60,8 +61,8 @@ int main() {
 
     std::cout << "\n--- Textbook comparison (Szabo & Ostlund) ---\n"
               << "  Reference: -1.1168 Hartree\n"
-              << std::setprecision(4)
-              << "  This:      " << rhf.energy() << " Hartree\n";
+              << std::setprecision(4) << "  This:      " << rhf.energy()
+              << " Hartree\n";
 
     std::cout << "\n=== Done ===\n";
     return 0;

@@ -6,7 +6,6 @@
 /// class — each backend implements PairList with its own storage type:
 ///   - cpu::PairList  — xtensor arrays
 ///   - cuda::PairList — device pointers (in cuda/frame.cuh)
-///   - torch::Frame   — at::Tensor fields
 ///
 /// @par Canonical SoA fields
 /// | Field    | Type | Shape      | Description                         |

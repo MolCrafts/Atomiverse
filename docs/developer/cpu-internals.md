@@ -31,7 +31,7 @@ CPU backend now has three collaborating pieces:
 | | What it is | How many |
 |---|---|---|
 | **Runtime** (`cpu::Backend`) | frame binding, plan execution, timing, MPI, domain decomposition | one per run, shared by the whole driver tree |
-| **Driver** (`cpu::CPUDriver<P>`) | one **loop node**: stages + plan + criteria | any number, nestable |
+| **Driver** (`cpu::Driver<P>`) | one **loop node**: stages + plan + criteria | any number, nestable |
 | **Criterion** (`cpu::Criterion`) | a Component polled once per iteration: stop or not? | any number, composable, user-definable |
 
 What survives of the old table is the list of **presets** — the classes
@@ -61,18 +61,18 @@ That is a `Criterion`, and it is about ten lines.
 ## The Hierarchy in One Diagram
 
 ```text
-Driver<PhaseEnum, DeviceTag>            facade/driver.h — Plan/Backend ownership
-    └─ cpu::CPUDriver<PhaseEnum>        cpu/driver/cpu_driver.h — THE loop node
+Driver<PhaseEnum, DeviceTag>            core/driver_template.h — Plan/Backend ownership
+    └─ cpu::Driver<PhaseEnum>        cpu/driver/cpu_driver.h — THE loop node
          ├─ cpu::Evaluate               cpu/driver/evaluate.h
-         ├─ cpu::md::MD                 cpu/md/md.h
-         ├─ cpu::minimizer::Minimize    cpu/minimizer/minimize.h
-         ├─ cpu::vib::Hessian           cpu/vib/hessian.h
-         ├─ cpu::mc::MC                 cpu/mc/mc.h
+         ├─ cpu::md::MD                 cpu/dynamics/md.h
+         ├─ cpu::minimizer::Minimize    cpu/minimize/minimize.h
+         ├─ cpu::vib::Hessian           cpu/vibration/hessian.h
+         ├─ cpu::mc::MC                 cpu/montecarlo/mc.h
          └─ cpu::PathDriver             cpu/driver/path_driver.h
 ```
 
 Two levels, not four. `Driver<>` is the underlying primitive — it owns
-the `Plan` and the `Backend`. `cpu::CPUDriver<P>` is the loop node, and
+the `Plan` and the `Backend`. `cpu::Driver<P>` is the loop node, and
 provides:
 
 1. A `build()` override that runs `validate_components()` *before* the
@@ -86,7 +86,7 @@ provides:
    the node, borrowed by the Context (see below).
 4. The two policy slots: `add_criterion(...)` (plural, termination) and
    `set_outcome(...)` (singular, commit/rollback).
-5. The categorical setter API (`add_potential`, `add_potential`, …, `set_thermo`).
+5. The categorical setter API (`set_evaluator`, `set_evaluator`, …, `set_thermo`).
 
 The presets are thin: their constructors auto-add infrastructure
 components (zeroing, kinetic accumulator, snapshot publisher) and
@@ -159,7 +159,7 @@ enum. Two orthogonal mechanisms remain:
    Presets validate with `dynamic_cast` to those types.
 2. **Role** — a `RoleFlag` bitset on `role()` (`FrameImmutable`,
    `Deferred`, `ExternalIO`). Unset `Deferred` ⇒ main-loop required.
-   See [`facade/component_role.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/component_role.h).
+   See [`core/role.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/role.h).
 
 Outputs are Frame keys (`kEnergy`, `kAtom_fx`, …), not capability bits.
 
@@ -192,11 +192,11 @@ The contract is:
 1. **`build` runs once, before the first iteration.** All allocation
    goes here: per-thread reduction buffers, cell-list arrays,
    shell-pair lists, FFT plans, anything sized to `frame.capacity()`
-   or derived from `frame.simbox`.
-2. **`launch` runs once per iteration.** No allocation. Re-use only.
-   This is enforced by code review and by regression tests like
-   `tests/cpu/test_md_no_alloc.cpp`, which asserts that the inner MD
-   loop performs zero `operator new` calls after `build`.
+   or derived from `frame.box`.
+2. **`launch` runs once per iteration.** No allocation. Re-use only —
+   everything a component needs is allocated in `build`. This is a review
+   rule (CLAUDE.md), not an automated gate: there is no allocation-counting
+   test in the suite today.
 3. **`destroy` runs once, after the last iteration.** RAII handles most
    cleanup automatically (xtensor destructors, `std::vector` going out
    of scope), but if the component opens files, holds GPU handles in a
@@ -233,9 +233,9 @@ Two practical consequences:
 
 Two small structs carry the loop's verdict and the evidence for it.
 `ATV::IterationStatus`
-([`facade/iteration_status.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/iteration_status.h))
+([`core/iteration_status.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/iteration_status.h))
 is the verdict; `ATV::ConvergenceMetrics`
-([`facade/loop.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/loop.h))
+([`core/verdict.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/verdict.h))
 is the evidence.
 
 ```cpp
@@ -256,7 +256,7 @@ struct ConvergenceMetrics {   // what the components measured this iteration
 
 **Status belongs to the loop, not to the Context.** Each loop node owns
 its own `IterationStatus` and `ConvergenceMetrics` as members
-(`CPUDriver::status_`, `CPUDriver::metrics_`); the Context only
+(`Driver::status_`, `Driver::metrics_`); the Context only
 *borrows* the active loop's, through the non-owning `ctx.loop`
 (`LoopServices{status, metrics}`). A nested driver re-points `ctx.loop`
 at its own on entry and restores the parent's on exit, so **an inner
@@ -280,7 +280,7 @@ Ownership rules:
   left for it to write. `converged` is set by the driver, and only when
   a criterion returns `Verdict::Converged`.
 - **SCF is not an exception.** The self-consistency cycle inside
-  `RHF`/`UHF`/`RKS`/`UKS` is itself a `CPUDriver<scf::Phase>` loop whose
+  `RHF`/`UHF`/`RKS`/`UKS` is itself a `Driver<scf::Phase>` loop whose
   convergence test, `cpu::scf::ScfConverged`, is a `Criterion` like any
   other; the method answers `converged()` / `stop_reason()` /
   `iterations()` as Driver-owned loop state. The SCF *stage* components
@@ -295,11 +295,12 @@ minimization is only which criteria happen to be attached.
 ## SCF Is a Driver; the Method Owns the Loop
 
 CPU Gaussian SCF used to be an *inner solver* (`cpu::scf::SCFSolver`)
-hidden behind an `SCF` component. That shape is gone: `scf_solver.h` is
-an `#error` tombstone, and so is the `SCFResult` bag (`scf_result.h` is
-deleted). The concrete methods `RHF` / `UHF` / `RKS` / `UKS` share the
+hidden behind an `SCF` component. That shape is gone — the solver, the
+`SCFConfig` bag, the `SCFResult` bag and the `#error` tombstones that
+briefly marked their graves have all been deleted, so the names simply
+do not resolve. The concrete methods `RHF` / `UHF` / `RKS` / `UKS` share the
 CRTP base `cpu::scf::MeanFieldMethod<D>`, and that base **is** a
-`cpu::CPUDriver<scf::Phase>` — the same loop-node shape as MD and
+`cpu::Driver<scf::Phase>` — the same loop-node shape as MD and
 Minimize, with the typed stage enum
 `fock → mix → diagonalize → density → check`. The stage components live
 in `cpu/scf/stages/`, are owned by the method as direct members, and
@@ -308,7 +309,7 @@ iteration state (`F_alpha_`, `P_alpha_`, `err_alpha_`, …):
 
 ```cpp
 template <typename Derived>
-class MeanFieldMethod : public cpu::CPUDriver<ATV::scf::Phase>, public HF {
+class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>, public HF {
     // parameters are members: basis, tol, max_iter, use_diis, ...
 
     std::unique_ptr<FockStage>        fock_stage_;
@@ -317,7 +318,7 @@ class MeanFieldMethod : public cpu::CPUDriver<ATV::scf::Phase>, public HF {
     std::unique_ptr<DensityStage>     density_stage_;
     std::unique_ptr<ScfConverged>     converged_stage_;   // a Criterion
 
-    std::shared_ptr<IntegralPack>      integrals_sp_;  // private workspace
+    // private integral fields (ints_S_, ints_Hcore_, shells, …) — not a bag
     std::shared_ptr<SlaterDeterminant> det_sp_;        // the wavefunction
 };
 ```
@@ -351,16 +352,16 @@ the cached `spin_contamination()`.
 The remaining helpers in
 [`include/atomiverse/cpu/scf/internal/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/internal/)
 (integrals, gradient kernels, MO transforms) stay private workspace:
-none register into any foreign Plan, and the **facade-public**
+none register into any foreign Plan, and the **core-public**
 production headers — `evaluate.h`, `single_point.h`, `md.h`, `lbfgs.h`
 — must not include from `cpu/scf/internal/` (tests may). Two surfaces
 elsewhere still use the old inner-solver shape as scheduled debt, not a
-pattern to extend: CUDA SCF (`cuda::scf::SCFSolver`) and the CPU
-plane-wave SCF (`cpu::pw::PWSolver` + `PWEvaluator`).
+pattern: CUDA RHF private RhfScfCycle (post arch-cuda-scf-solver-fold) and the CPU
+plane-wave SCF (`cpu::pw::PW` + `PWEvaluator`).
 
 ## Hot-Path Data Hygiene
 
-`cpu::Frame`, `cpu::scf::IntegralPack`, and `cpu::scf::ShellList` carry
+`cpu::Frame`, method-owned integral members, and `cpu::scf::ShellList` carry
 *only fundamental physical quantities*. Positions, velocities, forces,
 masses, atom tags, image flags, integral tensors, shell descriptors —
 those are fundamentals. Anything derivable — neighbor maps, atom-to-shell
@@ -428,7 +429,7 @@ order" goes through these stages:
    driver's `pending_` vector. `driver.on(p).add(Component{...}, ord)` owns and
    skips the defaults. The corresponding `add_ref` calls borrow an existing
    instance; plain `add(lvalue)` is deleted.
-2. **Validation.** `cpu::CPUDriver::build()` calls
+2. **Validation.** `cpu::Driver::build()` calls
    `validate_components()` (overridden by each preset) which walks
    `pending_` and checks role + capability requirements.
 3. **Plan compilation.** The base `Driver<>::build()` then asks the
@@ -490,7 +491,7 @@ A short rubric, with examples:
   `cpu::OutcomePolicy`, attached with `set_outcome(...)`. No new driver
   class.
 - **New loop shape** (a genuinely different stage sequence — a new
-  phase enum): subclass `cpu::CPUDriver<YourPhase>` and specialize
+  phase enum): subclass `cpu::Driver<YourPhase>` and specialize
   `cpu::PhaseTraits` for it. This is rare, and it is the *only* case
   that justifies a new driver class.
 
@@ -503,10 +504,9 @@ plug into them automatically.
 
 - `tests/cpu/test_minimize_driver_swap_optimizer.cpp` — the
   canonical hot-swap test for two `Optimizer`-role components.
-- `tests/cpu/test_md_no_alloc.cpp` — the regression test for "no
-  allocation in `launch()`".
-- `tests/cpu/scf/test_aimd_conservation.cpp` — energy / momentum /
-  bond-oscillation conservation under composed `MD + SCF`.
+- `regressions/scf/h2_rhf_sto3g_aimd/` — energy conservation under a
+  composed `MD` + Gaussian-SCF run, the end-to-end proof that a method and
+  an integrator compose.
 - [Extending CPU Subsystems](extending-cpu-subsystems.md) — the
   practical recipe for adding new components in each of MD, SCF, and
   the minimizer.

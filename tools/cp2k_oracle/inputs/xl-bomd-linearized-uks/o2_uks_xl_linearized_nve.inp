@@ -1,0 +1,85 @@
+# CP2K twin sketch for regressions/dynamics/xl-bomd-linearized-uks
+# (offline oracle — never run at ctest). O2 triplet NVE, identical geometry
+# and settings to xl-bomd-uks/o2_uks_xl_bomd_nve.inp — only the zero-SCF
+# linearized shadow-force path differs on the ATV side. ATV zero-SCF
+# linearized XL evaluates dual-spin shadow forces after one dual-KS
+# construction + one diagonalization per spin from the auxiliary densities
+# n^alpha / n^beta. CP2K's closest product settings are UKS density-matrix
+# extrapolation + low MAX_SCF (or LS_SCF / ALMO paths where available).
+# Record MAX_SCF, EXTRAPOLATION, and the .ener conserved column when pinning.
+# NOTE (2026-07-31): no cp2k binary on worker host — unexecuted sketch.
+&GLOBAL
+  PROJECT xl_bomd_linearized_o2_uks_nve
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 5
+    TIMESTEP 0.5
+    TEMPERATURE 10.0
+  &END MD
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    UKS .TRUE.
+    MULTIPLICITY 3
+    &MGRID
+      CUTOFF 200
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+      EXTRAPOLATION ASPC
+      EXTRAPOLATION_ORDER 3
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      # Low SCF budget approximates the one-shot / zero-SCF XL path.
+      # Full ATV pin uses true single-diagonalization-per-spin shadow energy.
+      EPS_SCF 1.0E-5
+      MAX_SCF 1
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      O  6.0000  6.0000  5.39625
+      O  6.0000  6.0000  6.60375
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+    &VELOCITY
+      # Antisymmetric O-O stretch, v_z = -/+ 0.0008 Angstrom/fs (convert to
+      # CP2K units when executing — kept as documentation of the twin).
+      O  0.0000000  0.0000000 -0.0008000
+      O  0.0000000  0.0000000  0.0008000
+    &END VELOCITY
+  &END SUBSYS
+&END FORCE_EVAL

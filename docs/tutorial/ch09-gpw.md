@@ -1,19 +1,7 @@
-# Chapter 9: Gaussian and Plane Waves (GPW)
+# Chapter 9. Gaussian and Plane Waves
 
-| | |
-|---|---|
-| **Example** | [`examples/09_gpw.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/09_gpw.cpp) |
-| **Results** | [`examples/results/09_gpw.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/09_gpw.json) |
-| **Flag** | `-DATV_BUILD_GPW=ON` (needs RHF + PW + FFTW3) |
-| **Data** | in-tree GTH / MOLOPT tables — no parsers at run time |
-| **API** | `GthPotential(Element, name)`, `GaussianBasis(Element, name)`, `GPWEvaluator` |
-
-```bash
-cmake -B build -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
-      -DATV_BUILD_EXAMPLES=ON
-cmake --build build --target 09_gpw
-./build/examples/09_gpw
-```
+Data: in-tree GTH / MOLOPT tables — no runtime parsers.
+API: `GthPotential(Element, name)`, `GaussianBasis(Element, name)`, `GPWEvaluator`.
 
 ## Live result: isolated H₂O / PBE / DZVP-MOLOPT-GTH
 
@@ -25,13 +13,9 @@ CP2K getting-started geometry (Martyna–Tuckerman isolated electrostatics):
 | \(E_\mathrm{total}\) (Ha) | **−17.21275807** | −17.21233714 |
 | \(\lvert\Delta E\rvert\) (Ha) | **0.000421** | — |
 
-```molvis {format="xyz" representation="ball-and-stick" controls="view" height="280px"}
-3
-name=water Connct="[0,1,0,2]"
-O  5.0000  5.0000  5.0000
-H  5.7586  5.0000  5.5043
-H  4.2414  5.0000  5.5043
-```
+Geometry is the CP2K getting-started water (coordinates in the example source).
+What matters is the converged energy against the literature reference, not a
+ball-and-stick view of three atoms.
 
 ```cpp
 const cpu::gpw::Kind O{
@@ -39,19 +23,15 @@ const cpu::gpw::Kind O{
     cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
     cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 // … H kind …
-cpu::gpw::GpwEvaluatorConfig cfg;
-cfg.cutoff_ry = 400.0;
-cfg.xc = cpu::gpw::XcKind::PBE;
-cfg.nonperiodic = true;
-cfg.kinds = {O, H};
-cpu::gpw::GPWEvaluator eval(cfg);
+cpu::gpw::GPWEvaluator eval(
+    /*kinds*/ {O, H}, /*cutoff_ry*/ 400.0, /*max_iter*/ 200, /*tol*/ 1e-7,
+    /*mix*/ 0.3, /*xc*/ cpu::gpw::XcKind::PBE, /*nonperiodic*/ true);
 cpu::single_point(frame, eval);
 ```
 
 Analytic forces must match finite differences; a known pitfall is
-`GpwConfig.local_pp_on_grid` — energy and gradient both read it
+`local_pp_on_grid` (member on `GpwDft` / `GPWEvaluator`) — energy and gradient both read it
 (see `cpu/gpw/internal/local_pp.h`).
-
 
 The manual has now presented the two great basis families of electronic
 structure. The molecular chapters ([Chapter 2](ch02-rhf.md) through
@@ -78,15 +58,15 @@ You will learn:
    better than pure Gaussians for the electrostatics.
 2. **The representation** — a `gpw_solver` inner engine behind a
    `GPWEvaluator` component, the third member of the evaluator family.
-3. **The C++ API** — `Element`, `GpwEvaluatorConfig`, and `single_point`,
-   walked through `examples/09_gpw.cpp` (an isolated water molecule).
+3. **The C++ API** — `Element`, `GPWEvaluator` (constructor parameters), and `single_point`,
+   walked through for an isolated water molecule.
 4. **The expected result** — CP2K Quickstep parity, to the sub-µHartree.
 5. **The validation** — against CP2K, and the honest experimental scope.
 6. **The recurring pattern** — a third evaluator that drops into the same
    Evaluate / MD / Minimize drivers as the Gaussian and plane-wave ones.
 
 GPW needs FFTW3 and is off by default; build with
-`-DATV_BUILD_GPW=ON` (alongside `-DATV_BUILD_HF=ON -DATV_BUILD_PW=ON`).
+GPW enabled in the build.
 
 ## The Concept: Two Representations, One Density
 
@@ -124,7 +104,7 @@ AIMD on thousands of atoms.
 ## The Representation: An Inner Solver Behind an Evaluator
 
 GPW follows the exact architecture of the other electronic-structure methods in
-this manual. The SCF machinery is an **inner solver** — `cpu::gpw::GPWSolver`,
+this manual. The SCF machinery is an **inner solver** — `cpu::gpw::GpwDft`,
 driven by `cpu::gpw::GPWEvaluator` — and it is *not* a `Driver` subclass, just
 as [Gaussian SCF is an inner solver](ch02-rhf.md) behind `SCF` and
 [plane-wave DFT](ch08-plane-wave.md) is one behind `PWEvaluator`.
@@ -139,7 +119,7 @@ plugs into the `Evaluate`, `MD`, and `Minimize` drivers with no special support.
 
 ## The C++ API: Elements, Config, `single_point`
 
-The runnable companion is [`examples/09_gpw.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/09_gpw.cpp) —
+Practice:
 an isolated water molecule, the electronic structure of CP2K's getting-started
 `h2o.inp`. Keep it open beside this text.
 
@@ -159,7 +139,7 @@ for (int i = 0; i < 3; ++i) {
     f.span(kAtom_y)[i] = y[i];
     f.span(kAtom_z)[i] = zc[i];
 }
-f.simbox = cpu::Box::cubic(10.0);                   // 10 Å box
+f.box = cpu::Box::cubic(10.0);                   // 10 Å box
 ```
 
 **Step 2 — declare a `Kind` per element.** A `cpu::gpw::Kind` is CP2K's
@@ -179,29 +159,31 @@ const cpu::gpw::Kind H{molrs::Element::H,
 The `q6`/`q1` suffixes are the valence electron counts the pseudopotential keeps
 (6 for oxygen, 1 for hydrogen) — the core is replaced by the GTH form.
 
-**Step 3 — configure and run.** `GpwEvaluatorConfig` carries the grid cutoff, XC
-choice, electrostatic boundary condition, and the element list:
+**Step 3 — construct and run.** `GPWEvaluator` takes kinds and SCF/grid knobs
+in the constructor (no public Config bag):
 
 ```cpp
-cpu::gpw::GpwEvaluatorConfig cfg;
-cfg.cutoff_ry  = 400.0;                     // real-space grid resolution [Ry]
-cfg.xc         = cpu::gpw::XcKind::PBE;      // PADE (LDA) or PBE (GGA)
-cfg.nonperiodic = true;                      // isolated: Martyna-Tuckerman electrostatics
-cfg.kinds      = {O, H};
+cpu::gpw::GPWEvaluator eval(
+    /*kinds*/ {O, H},
+    /*cutoff_ry*/ 400.0,                   // real-space grid resolution [Ry]
+    /*max_iter*/ 200,
+    /*tol*/ 1e-7,
+    /*mix*/ 0.3,
+    /*xc*/ cpu::gpw::XcKind::PBE,          // PADE (LDA) or PBE (GGA)
+    /*nonperiodic*/ true);                 // isolated: Martyna-Tuckerman electrostatics
 
-cpu::gpw::GPWEvaluator eval(cfg);
-cpu::single_point(frame, eval);              // kEnergy now set (eV)
+cpu::single_point(frame, eval);            // kEnergy now set (eV)
 
 const double e_ha = eval.last_energy_hartree();          // total energy (Hartree)
 const bool   ok   = eval.last_result().converged;
 const int    n    = eval.last_result().iters;
 ```
 
-Set `cfg.nonperiodic = false` for a genuinely periodic system (a crystal or
+Set `nonperiodic = false` for a genuinely periodic system (a crystal or
 slab) — then the grid electrostatics are periodic, as in the small wurtzite-ZnO
-cell of `/* benchmarks removed; re-add later */ gpw/validation/test_cpu_gpw_zno.cpp`. Optional knobs: `cfg.mix` (density
-mixing), `cfg.max_iter`, `cfg.tol`, `cfg.d3` (Grimme DFT-D3 dispersion from the
-in-tree tables), and `cfg.compute_forces` (analytic forces — see
+cell of `/* benchmarks removed; re-add later */ gpw/validation/test_cpu_gpw_zno.cpp`. Optional knobs: `mix` (density
+mixing), `max_iter`, `tol`, `d3` (Grimme DFT-D3 dispersion from the
+in-tree tables), and `compute_forces` (analytic forces — see
 the scope note below).
 
 ## The Expected Result: CP2K Quickstep Parity
@@ -213,7 +195,7 @@ Martyna-Tuckerman) the CP2K reference total energy is
 
 $$ E_\text{total} = -17.21233714\ \text{Hartree}, $$
 
-and `examples/09_gpw.cpp` prints `|dE|` against it. The `GpwResult` also exposes
+and the run reports `|dE|` against it. The `GpwResult` also exposes
 the energy decomposition — `e_kinetic`, `e_loc_sr` (short-range local PP),
 `e_nonlocal`, `e_es` (total electrostatic), `e_xc` — so you can check parity
 term by term, which is how you localise a discrepancy if the total drifts.
@@ -284,7 +266,7 @@ The runnable GPW example validates against a pinned reference energy printed at
 the end of the run:
 
 - Isolated H₂O (PBE, DZVP-MOLOPT-GTH, Martyna-Tuckerman) vs the pinned anchor
-  `-17.21233714` Ha: [`examples/09_gpw.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/09_gpw.cpp).
+  `-17.21233714` Ha.
 
 The full anchor suite (H₂ / Ar / H₂O / ZnO / NaCl single points, forces vs the
 FD oracle, geoopt, AIMD, OT-vs-diag) lives in `/* benchmarks removed; re-add later */ gpw/validation/` —

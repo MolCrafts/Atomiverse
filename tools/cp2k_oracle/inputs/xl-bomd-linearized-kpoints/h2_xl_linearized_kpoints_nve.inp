@@ -1,0 +1,102 @@
+# CP2K twin for regressions/dynamics/xl-bomd-linearized-kpoints (offline
+# oracle — never run at ctest/regression time).
+#
+# CP2K 2026.1 has NO zero-SCF shadow-functional (linearized) XL-BOMD product
+# (its density extrapolations are ASPC/PS/USE_PREV_P + iterative SCF), so the
+# shadow dynamics itself has no CP2K twin. What CP2K DOES pin is the multi-k
+# Born-Oppenheimer surface the shadow potential must track to O((D-n)^2):
+# this input is the converged-SCF k-point NVE twin (identical to the
+# gpw-bomd-kpoints oracle input, re-run for this slug) whose per-step Pot
+# trace anchors the linearized shadow E_pot(t) in REFERENCE.md.
+#
+# Same-basis / same-PP twin of the ATV regression:
+#   basis  DZV-GTH-PADE  (CP2K data file BASIS_SET — numerically identical to
+#                         ATV's in-tree kBas_H_DZV_GTH_PADE table)
+#   PP     GTH-PADE-q1   (GTH_POTENTIALS — rloc 0.2, c1 -4.18023680,
+#                         c2 0.72507482 = ATV kPot_H_GTH_PADE_q1)
+#   XC     PADE, CUTOFF 300 Ry, NGRIDS 1, MP 1x1x2 FULL_GRID (2 k, w = 1/2)
+#   cell   cubic 12 Bohr, H at (5.5, 6, 6) and (6.5, 6, 6) Bohr
+#   MD     NVE, dt 0.5 fs, 4 steps, v0 = -/+0.001 Angstrom/fs along x
+#          (= -/+4.5710290e-5 Bohr/au_t)
+#
+# Run (Arrhenius login node, offline):
+#   module load buildtool-easybuild/5.2.1-hpca3ef7d197 GCC/14.3.0 \
+#               MPICH/4.3.2 CP2K/2026.1     # or any CP2K 2026.1 build
+#   export OMP_NUM_THREADS=8
+#   cp2k.psmp -i h2_xl_linearized_kpoints_nve.inp -o h2_xl_linearized_kpoints_nve.out
+# Pin: per-step Pot/Cons from PROJECT-1.ener (see REFERENCE.md).
+&GLOBAL
+  PROJECT h2_xl_linearized_kpoints_nve
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 4
+    TIMESTEP 0.5
+  &END MD
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  &PRINT
+    &FORCES ON
+    &END FORCES
+  &END PRINT
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_SET
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 300
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+      EXTRAPOLATION USE_PREV_P
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 60
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.3
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+      FULL_GRID .TRUE.
+    &END KPOINTS
+    &POISSON
+      PERIODIC XYZ
+      PSOLVER PERIODIC
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC [bohr] 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      UNIT bohr
+      H  5.5  6.0  6.0
+      H  6.5  6.0  6.0
+    &END COORD
+    &KIND H
+      BASIS_SET DZV-GTH-PADE
+      POTENTIAL GTH-PADE-q1
+    &END KIND
+    &VELOCITY
+      -4.5710290E-05  0.0  0.0
+       4.5710290E-05  0.0  0.0
+    &END VELOCITY
+  &END SUBSYS
+&END FORCE_EVAL

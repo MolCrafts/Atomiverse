@@ -1,0 +1,6 @@
+RM1 PRECISE GNORM=0.001 XYZ
+RM1 water - full geometry optimisation
+start = experimental geometry r(OH) 0.957 A, angle(HOH) 104.500 deg (GR=HERZ1966)
+  O   0.00000000 1   0.00000000 1   0.00000000 1
+  H   0.95700000 1   0.00000000 1   0.00000000 1
+  H  -0.23961400 1   0.92651700 1   0.00000000 1

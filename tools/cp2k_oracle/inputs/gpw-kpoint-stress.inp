@@ -1,0 +1,63 @@
+! CP2K twin for regressions/gpw/gpw-kpoint-stress — Monkhorst-Pack k-point GPW
+! stress on diamond Si bct 4-atom (DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE).
+! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
+! Pin: STRESS_TENSOR (NUMERICAL or ANALYTICAL) [Ha/Bohr^3] + total energy [Ha].
+&GLOBAL
+  PROJECT si_kpoint_stress_bct
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  STRESS_TENSOR NUMERICAL
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 100
+      NGRIDS 1
+    &END MGRID
+    &QS
+      EPS_DEFAULT 1.0E-7
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-8
+      MAX_SCF 60
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 3.83959 3.83959 5.43000
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      SCALED
+      Si 0.00 0.00 0.00
+      Si 0.50 0.50 0.50
+      Si 0.50 0.00 0.25
+      Si 0.00 0.50 0.75
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q4
+    &END KIND
+  &END SUBSYS
+  &PRINT
+    &STRESS_TENSOR
+    &END STRESS_TENSOR
+  &END PRINT
+&END FORCE_EVAL

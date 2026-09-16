@@ -5,18 +5,27 @@
 
 #include <cmath>
 #include <cstdio>
+#include <utility>
 
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/pw/pw_evaluator.h"
-#include "atomiverse/cpu/pw/pw_solver.h"
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 
 using namespace ATV;
 using namespace ATV::cpu::pw;
 
 int main() {
-    const double tol = 0.5; // eV/Å — residual of toy-PP + short SCF
+    // eV/Å. A single atom at the origin of a cubic cell: the force is zero by
+    // point symmetry, not by convergence, so this is a machine-precision
+    // identity and NOT an SCF-quality bound — it holds even though the 8-iter
+    // SCF below stops short of `cfg.tol`. Measured 2026-08-15 with GTH-PBE-q1
+    // at ecut_ry=5, spin-polarized doublet: |F| = 6.6e-16 for both the
+    // analytic and the evaluator path.
+    // (The pre-GTH value of 0.5 was sized for the deleted toy potential and
+    // was ~14 orders of magnitude too loose to detect a broken force term.)
+    const double tol = 1e-9;
 
     cpu::Frame frame(1);
     frame.span(kAtom_type)[0] = 1;
@@ -24,14 +33,21 @@ int main() {
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.0;
-    frame.simbox = cpu::Box::cubic(6.0);
+    frame.box = cpu::Box::cubic(6.0);
 
-    PWConfig cfg;
+    PW cfg;
+    cfg.gth_name = "GTH-PBE-q1";
     cfg.ecut_ry = 5.0;
     cfg.k_mesh = 1;
     cfg.tol = 1e-4;
     cfg.max_iter = 8;
     cfg.mix_beta = 0.5;
+    // One valence electron is open-shell: the restricted force path rejects an
+    // odd electron count (src/cpu/planewave/internal/pw_forces.cpp:266). A lone
+    // H is a doublet (S = 1/2), so N↑−N↓ = 1 ⇒ multiplicity 2; the default 1
+    // would fail the parity check in the same guard.
+    cfg.spin_polarized = true;
+    cfg.multiplicity = 2;
 
     const auto F = pw_forces_analytic(frame, cfg);
     if (F.size() != 1u) {
@@ -48,7 +64,7 @@ int main() {
     for (int i = 0; i < 3; ++i)
         frame.span(kAtom_fx)[0] = frame.span(kAtom_fy)[0] =
             frame.span(kAtom_fz)[0] = 0;
-    PWEvaluator pwe{cfg};
+    PWEvaluator pwe{std::move(cfg)};
     pwe.with_gradient(true);
     cpu::Evaluate eval;
     eval.on(evaluate::Phase::evaluate).add_ref(pwe);

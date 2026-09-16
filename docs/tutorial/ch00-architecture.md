@@ -1,4 +1,4 @@
-# Chapter 0: A Tour of the CPU Backend
+# Chapter 0. CPU Backend
 
 This is the orientation chapter — no physics yet. By the end you know the
 three pillars (**Driver**, **Component**, **Frame**), how termination works
@@ -8,29 +8,19 @@ the method without rewriting the loop.
 | Pillar | Owns | Example types |
 |--------|------|---------------|
 | **Runtime** (`cpu::Backend`) | frame binding, plan storage, MPI, timing | one per run |
-| **Driver** (`cpu::CPUDriver<P>`) | stages + plan + criteria | `MD`, `Minimize`, `MC`, `Evaluate`, … |
-| **Component** | one step of physics | `PairLJCut`, `SCF`, `LBFGS`, `Thermo` |
-| **Frame** | device-resident state | `blocks` + `meta` + `simbox` |
+| **Driver** (`cpu::Driver<P>`) | stages + plan + criteria | `MD`, `Minimize`, `MC`, `Evaluate`, … |
+| **Component** | one step of physics | `PairLJCut`, `LBFGS`, `Thermo` |
+| **Frame** | device-resident state | `blocks` + `meta` + `box` |
 
 ```cpp
 // Same MD loop — different physics by swapping the force component
 cpu::md::MD sim;
 sim.set_integrator(cpu::md::VelocityVerlet{0.5});
-sim.add_potential(cpu::PairLJCut{0.0104, 3.4, 6.8});       // classical
+sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});       // classical
 // sim.on(md::Phase::force).add(cpu::scf::RHF{});       // AIMD
 sim.build();
 sim.run(frame, 1000);
 ```
-
-Runnable proofs of the architecture (not full e2e science):
-
-```bash
-# classical MD energy conservation — proves the loop + potential pipeline
-cmake --build build --target 07_md_lj && ./build/examples/07_md_lj
-# RHF single point — proves SCFSolver as an inner solver, not a Driver
-cmake --build build --target 02_rhf && ./build/examples/02_rhf
-```
-
 
 If you arrived at Atomiverse looking for "how do I run a simulation?" the
 honest answer is: it depends on what you mean by *run*. Three different
@@ -47,7 +37,6 @@ concrete example.
 A shorter, task-oriented version of this vocabulary is in
 [User Guide → Core concepts](../user-guide/concepts.md). If you have not built
 the project yet, see [Getting Started](../user-guide/getting-started.md) first.
-Example programs under `examples/` map one-to-one to the loops described here.
 
 ## The One Truth: `cpu::Frame`
 
@@ -70,9 +59,9 @@ driver, and read final coordinates and energies out of the same fields
 when the run finishes. Units are eV, Å, fs, amu throughout.
 
 The same frame is reused across MD, minimization, and SCF. That is why we
-can compose, for example, `cpu::md::MD` with `cpu::scf::SCF` to do *ab
+can compose, for example, `cpu::md::MD` with `cpu::scf::RHF` to do *ab
 initio* molecular dynamics: the velocity-Verlet integrator and the SCF
-component agree to write to the same `kAtom_fx/fy/fz` columns, and the
+method agree to write to the same `kAtom_fx/fy/fz` columns, and the
 driver routes them in the right order.
 
 ## What a Component Is, and What It Is Not
@@ -83,9 +72,9 @@ phase of one step of one driver. The base class
 defines exactly three lifecycle hooks:
 
 ```cpp
-void build  (const BuildContext&);   // one-time setup
-void launch (const LaunchContext&);  // per-step compute
-void destroy(const DestroyContext&); // teardown
+void build  (...);   // one-time setup (allocate scratch)
+void launch (...);   // per-step compute (no allocation)
+void destroy(...);   // teardown
 ```
 
 Every concrete piece of physics — Lennard-Jones forces, harmonic bonds,
@@ -121,7 +110,7 @@ then iterates that plan with the right termination condition for the
 job at hand.
 
 There is exactly **one** driver class in each backend — the *loop node*,
-`cpu::CPUDriver<PhaseEnum>` — and the classes you actually construct are
+`cpu::Driver<PhaseEnum>` — and the classes you actually construct are
 **presets** over it. A preset is a class whose constructor attaches the
 default policy and infrastructure a given kind of run wants. It is a
 convenience, not a layer of the architecture.
@@ -160,7 +149,7 @@ worth a class hierarchy.
 ## A Single Step, Phase by Phase
 
 Each preset compiles its plan against a fixed, named **phase order**
-([`facade/stage.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/stage.h)).
+([`core/stage.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/stage.h)).
 
 For `cpu::md::MD` the phase order matches LAMMPS:
 
@@ -180,14 +169,29 @@ For `cpu::Evaluate` (single-point work) the order is:
 prepare → evaluate → finalize
 ```
 
-When you call `driver.add(Component{...})`, the driver owns the component and
-its `default_bindings()` say which phase it belongs to and at what order within
-that phase. An existing component is borrowed only with the explicit
-`driver.add_ref(component)` spelling. Explicit placement follows the same rule:
-`driver.on(phase).add(Component{...}, order)` owns, while
-`driver.on(phase).add_ref(component, order)` borrows. Plain `add(lvalue)` is
-deleted. Negative orders run before positive orders, so user observers (default
-`0`) sit naturally after infrastructure (negative orders).
+There is **no `driver.add(component)`**. Every registration goes one of two
+ways:
+
+- A **categorical setter** — `set_evaluator`, `set_neighbor`, `set_integrator`,
+  `set_thermostat`, `set_barostat`, `set_optimizer`, `set_observer`,
+  `set_record`, `set_thermo`. The setter consults the component's
+  `default_bindings()` (or a fixed phase of its own) to decide where it lands,
+  so you never name the phase.
+- **Explicit placement** — `driver.on(phase).add(Component{...}, order)`. The
+  `PhaseBuilder` returned by `on(phase)` is the only public carrier of `add`,
+  and the phase is always written out. This is the road for anything without a
+  categorical setter of its own.
+
+Both roads have the same ownership rule: the `add` / `set_*` form takes an
+**rvalue** and transfers ownership into the driver; `add_ref` / `set_*_ref`
+**borrows** a component you own (declare it before the driver so the driver
+dies first). Plain `add(lvalue)` is `= delete`d — there is no implicit borrow.
+
+Negative orders run before positive orders, so user observers (default `0`) sit
+naturally after infrastructure (negative orders).
+
+(Python's `sim.add(...)` *is* a single dispatching convenience on the binding
+layer. It has no C++ counterpart; do not translate it back.)
 
 You will see this concretely in every later tutorial. The takeaway here
 is just that **the loop has names**. You are never expected to read
@@ -260,35 +264,38 @@ tiny convenience helper around it.
 
 ## Where SCF Sits
 
-A common point of confusion is whether SCF is its own driver. It is not.
+A common point of confusion is whether SCF is its own driver. It is —
+but not a *category* of driver, and there is no method-agnostic class
+standing in front of it.
 
-`cpu::scf::SCFSolver` is an **inner solver** — a self-contained class
-that runs the Hamiltonian-build → diagonalize → density → DIIS →
-convergence-check cycle to converge a single-point electronic structure
-calculation. It has its own internal loop, its own internal helpers
-(under `cpu::scf::internal::`), and its own convergence channel. None of
-those internals are registered into any outer Plan, and none inherit
-from `cpu::Component`.
+The real thing is the **concrete method**: `cpu::scf::RHF`, `UHF`, `RKS`,
+`UKS`, … Each derives
+[`MeanFieldMethod<D>`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/mean_field_method.h),
+which is itself a `cpu::Driver<ATV::scf::Phase>` with the typed stages
+`fock → mix → diagonalize → density → check`. Each stage is a Component
+the method owns as a direct member; the algorithms those stages call
+(`DIISMixer`, `EigenSolver`) stay `cpu::scf::internal::` helpers and are
+never registered into an outer Plan. Integrals and AO workspaces are
+private members of the method, rebuilt from the `Frame`.
 
-What plugs into a driver is a wrapper:
-[`cpu::scf::SCF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/scf_evaluator.h).
-The evaluator is a `cpu::Component` with kind `HF` (or `Potential`) and
-capabilities `Energy | DensityMatrix | Orbitals` (and `Force` when
-gradient computation is enabled). Inside its `launch()` it builds the
-integrals at the current geometry, calls into a pre-built `SCFSolver`,
-optionally computes the analytic nuclear gradient, and writes
-`frame.meta.get(kEnergy)` and (when applicable) the force columns.
+There is no `cpu::scf::SCFSolver` bag, no `SCFConfig`, and no generic
+`cpu::scf::SCF` — parameters are constructor arguments on the concrete
+class, and `Frame` is the only I/O currency.
 
-That is why one and the same component is the right answer for three
-very different workflows:
+Because a Driver is an executable node, the *same object* is the right
+answer for three very different workflows — standalone it runs its own
+loop, nested at an outer force phase it runs via `run_nested`:
 
-- **Single-point energy.** `cpu::Evaluate + SCF{cfg}.with_gradient(false)`
-- **Geometry optimization.** `cpu::minimizer::Minimize + LBFGS + SCF{cfg}` (the example in
+- **Single-point energy.** `cpu::scf::RHF rhf{BasisSet::STO3G}; rhf.run(frame);`
+- **Geometry optimization.** `cpu::minimizer::Minimize + LBFGS`, with
+  `opt.on(minimizer::Phase::force).add(cpu::scf::RHF{basis})` (the example in
   [Chapter 12](ch12-geometry-optimization.md))
-- **Ab initio molecular dynamics.** `cpu::md::MD + VelocityVerlet + NoseHoover + SCF{cfg}.predictor(3)`
-  (the example in [Chapter 15](ch15-cross-method.md))
+- **Ab initio molecular dynamics.** `cpu::md::MD + VelocityVerlet + NoseHoover`,
+  with `sim.on(md::Phase::force).add(cpu::scf::RHF{basis}.predictor(3))` —
+  the ASPC predictor warm-starts the density across steps (the example in
+  [Chapter 15](ch15-cross-method.md))
 
-Same evaluator. Three different drivers. Same `cpu::Frame`.
+Same method. Three different drivers. Same `cpu::Frame`.
 
 ## How the Subsystems Compose
 
@@ -297,12 +304,12 @@ mental model, is that the three loops compose by *swapping force
 providers*, not by writing a new driver.
 
 ```text
-cpu::md::MD        + PairLJCut                          = classical MD
-cpu::md::MD        + SCF                        = AIMD
-cpu::minimizer::Minimize + LBFGS + PairLJCut             = classical relaxation
-cpu::minimizer::Minimize + LBFGS + SCF          = ab initio geometry opt
-cpu::Evaluate      + PairLJCut                           = classical single-point
-cpu::Evaluate      + SCF                        = quantum single-point
+cpu::md::MD              + PairLJCut         = classical MD
+cpu::md::MD              + scf::RHF          = AIMD
+cpu::minimizer::Minimize + LBFGS + PairLJCut = classical relaxation
+cpu::minimizer::Minimize + LBFGS + scf::RHF  = ab initio geometry opt
+cpu::Evaluate            + PairLJCut         = classical single-point
+scf::RHF{basis}.run(frame)                   = quantum single-point
 ```
 
 The driver code does not know whether the force is empirical or
@@ -326,12 +333,12 @@ math; an `xsimd` batched overload (`min_image_batch<B>`) lives in
 loops. You will rarely call these directly; force kernels and
 thermostats use them on your behalf.
 
-[`ConvergenceMetrics`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/loop.h)
+[`ConvergenceMetrics`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/verdict.h)
 is how a component tells the loop what it measured: energy, max force,
 RMS force, the displacement since the previous iteration, |ΔE|. The
 optimizer writes it; the criterion reads it; the driver records the
 resulting verdict in an
-[`IterationStatus`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/facade/iteration_status.h)
+[`IterationStatus`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/iteration_status.h)
 (`converged`, `stop_requested`, and a human-readable `reason`) that it
 **owns**. A component may *request* a stop; only a criterion can declare
 convergence. And because each loop owns its own status rather than
@@ -347,7 +354,7 @@ class StopWhenTooHot : public cpu::Criterion {
   public:
     explicit StopWhenTooHot(double t_max) : t_max_(t_max) {}
     std::string name() const override { return "stop_when_too_hot"; }
-    void launch(const cpu::LaunchContext&) override {}  // verdict-only
+    void launch(...) override {}  // verdict-only — no per-step work
     ATV::Verdict verdict(const cpu::LoopState& s) override {
         return (temperature(s.frame) > t_max_) ? ATV::Verdict::Stop
                                                       : ATV::Verdict::Continue;
@@ -367,23 +374,23 @@ You can now read the rest of the manual without losing your bearings.
   shows the SCF feedback loop on a 2×2 toy system. Best read first if
   the very idea of "self-consistent" is new to you.
 - **Chapter 2 — Restricted Hartree-Fock (RHF).** Same loop, real
-  molecule. Introduces `IntegralPack`, `SCFConfig`, and the
-  `SCF`-with-`cpu::Evaluate` recipe.
+  molecule. Introduces the concrete `RHF` method and its
+  `rhf.run(frame)` entry point.
 - **Chapter 3 — Unrestricted Hartree-Fock (UHF).** Adds spin
-  polarization. Same driver, different `SCFConfig`.
+  polarization. Same Driver shape, different concrete method (`UHF` / `RKS` / …).
 - **Chapter 4 — Unrestricted Kohn-Sham DFT (UKS).** Adds the XC grid.
-  Same driver, same evaluator class, different `SCFConfig`.
+  Same Driver shape, same method-node shape, different XC member.
 - **Chapter 6 — *Ab Initio* Molecular Dynamics.** Switches the driver to
   `cpu::md::MD`, adds an integrator and a thermostat, keeps the
-  `SCF` at the force phase.
+  concrete method (`scf::RHF`) at the force phase.
 - **Chapter 7 — Classical Molecular Dynamics.** Replaces the
-  `SCF` with `PairLJCut` and bonded force-field components. Shows the
+  method with `PairLJCut` and bonded force-field components. Shows the
   full thermo / trajectory / RDF observer stack.
 - **Chapter 8 — Geometry Minimization.** Switches the driver to
   `cpu::minimizer::Minimize`, swaps `LBFGS` and `CG` as the optimizer
-  component, keeps the `SCF` at the force phase.
+  component, keeps the concrete method (`scf::RHF`) at the force phase.
 
 If you only have time for one example to start with, build and run
-`examples/01_scf.cpp` (the SCF toy) and read Chapter 1 next.
+Chapter 1 next for systems and units.
 Everything that follows reuses the same loop with progressively more
 realistic physics.

@@ -1,4 +1,4 @@
-/// @file fused_search.cu
+/// @file cuda/neighbor/fused_search.cu
 /// @brief CSR↔Flat conversion, displacement tracking, and flat-mask refresh kernels.
 ///
 /// Supports the GPU-Resident Fused Neighbor List (GRFNL) pipeline.
@@ -40,7 +40,13 @@ __global__ void csr_to_flat(const int* __restrict__ row_ptr,
     for (int p = begin + lane; p < end; p += 32) {
         flat_ci[p] = ci;
         flat_cj[p] = col_idx[p];
-        flat_mask[p] = mask_in[p];
+        // Multi-word mask: copy kMaskWords uint64s per pair.
+        const uint64_t* src =
+            mask_in + static_cast<std::size_t>(p) * kMaskWords;
+        uint64_t* dst = flat_mask + static_cast<std::size_t>(p) * kMaskWords;
+#pragma unroll
+        for (int w = 0; w < kMaskWords; ++w)
+            dst[w] = src[w];
     }
 }
 
@@ -101,9 +107,9 @@ __global__ void cluster_displacement(
         (lane < count) ? (cluster_z[idx] - ref_cluster_z[idx]) : work_t(0);
     work_t d2 = dx * dx + dy * dy + dz * dz;
 
-    // Warp-level max reduction within the kClusterSize-thread group
-    unsigned mask =
-        0xFFu << (((threadIdx.x % 32) / kClusterSize) * kClusterSize);
+    // Warp-level max reduction (OpenMM CS=32 ⇒ full warp).
+    static_assert(kClusterSize == 32, "cluster_displacement assumes CS=32");
+    unsigned mask = 0xffffffffu;
     for (int offset = kClusterSize / 2; offset >= 1; offset >>= 1) {
         work_t tmp = __shfl_down_sync(mask, d2, offset);
         d2 = fmax(d2, tmp);
@@ -151,18 +157,11 @@ void launch_cluster_displacement(
 // permanently.
 // ---------------------------------------------------------------------------
 
-// `dirty_flags`, `prune_step`, `prune_period` are reserved for a
-// future periodic-skip optimization (see cuda-md-review-cleanup-05*).
-// The kernel currently re-prunes every step from current cluster
-// positions per the correctness note above — the parameters are
-// accepted-but-unread.
+// Flat-list mask refresh: one warp (CS=32) per flat pair. Writes multi-word
+// masks (kMaskWords uint64 / pair). HalfNewton trims the diagonal for export.
 //
-// Templated on `bool Ortho` so the triclinic branch (`box.min_image`'s
-// inv_cell-roundtrip path) is dead-eliminated from the orthorhombic
-// specialization. The ortho path is 3 FMAs per axis; the triclinic
-// path is 12 muls + 6 adds + 3 nearbyint + back-multiply — saving
-// ~4-5× FLOPS per pair × kClusterSize lanes × inner loop
-// (cuda-md-review-cleanup-04-box-by-value-pbc).
+// Templated on `bool Ortho` so the triclinic branch is dead-eliminated on
+// orthorhombic boxes (cuda-md-review-cleanup-04-box-by-value-pbc).
 template <bool Ortho, bool HalfNewton, typename work_t>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock) void smart_rolling_prune(
     const real_t* __restrict__ cluster_x, const real_t* __restrict__ cluster_y,
@@ -171,8 +170,12 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock) void smart_rolling_prune(
     const int* __restrict__ num_flat_pairs_device,
     const int* __restrict__ dirty_flags, work_t cutoff_sq, cuda::Box box,
     uint64_t* __restrict__ flat_mask, int prune_step, int prune_period) {
+    (void)dirty_flags;
+    (void)prune_step;
+    (void)prune_period;
 
-    // kClusterSize threads per pair (8 threads compute the mask)
+    static_assert(kClusterSize == 32, "flat prune assumes OpenMM CS=32");
+
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int pair_idx = tid / kClusterSize;
     int i_lane = tid % kClusterSize;
@@ -188,27 +191,23 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock) void smart_rolling_prune(
     work_t yi = cluster_y[ci * kClusterSize + i_lane];
     work_t zi = cluster_z[ci * kClusterSize + i_lane];
 
+    // Full warp owns this pair: each lane holds one j-slot of cj in registers.
     work_t jx = cluster_x[cj * kClusterSize + i_lane];
     work_t jy = cluster_y[cj * kClusterSize + i_lane];
     work_t jz = cluster_z[cj * kClusterSize + i_lane];
 
-    uint8_t my_bits = 0;
-    int group_in_warp = (threadIdx.x % 32) / kClusterSize;
-    unsigned submask = 0xFFu << (group_in_warp * kClusterSize);
-    int group_base = group_in_warp * kClusterSize;
+    std::uint32_t my_bits = 0;
+    const unsigned submask = 0xffffffffu;
 
     for (int j = 0; j < kClusterSize; ++j) {
-        work_t jx_j = __shfl_sync(submask, jx, group_base + j);
-        work_t jy_j = __shfl_sync(submask, jy, group_base + j);
-        work_t jz_j = __shfl_sync(submask, jz, group_base + j);
+        work_t jx_j = __shfl_sync(submask, jx, j);
+        work_t jy_j = __shfl_sync(submask, jy, j);
+        work_t jz_j = __shfl_sync(submask, jz, j);
 
         work_t dx = jx_j - xi;
         work_t dy = jy_j - yi;
         work_t dz = jz_j - zi;
 
-        // Compile-time-specialized PBC wrap. Ortho path: 3 FMA per axis
-        // (no triclinic detour, no inv_cell roundtrip). Triclinic path:
-        // full inv_cell·dx → fractional → nearbyint → cell·frac.
         if constexpr (Ortho) {
             dx -= work_t(box.cell[0]) * nearbyint(dx * work_t(box.inv_l[0]));
             dy -= work_t(box.cell[4]) * nearbyint(dy * work_t(box.inv_l[1]));
@@ -218,32 +217,20 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock) void smart_rolling_prune(
         }
 
         work_t r2 = dx * dx + dy * dy + dz * dz;
-        if (r2 < cutoff_sq) {
+        if (r2 < cutoff_sq)
             my_bits |= (1u << j);
-        }
     }
 
-    // Half-Newton exclusion for diagonal pairs (flat/export path only). The
-    // atom-centric force kernel consumes a FULL list (each pair owned by both
-    // endpoints, energy halved), so its mask must keep both directions —
-    // HalfNewton=false leaves the diagonal symmetric.
+    // Half-Newton: export path only keeps j > i on diagonal tiles.
     if constexpr (HalfNewton) {
         if (ci == cj) {
-            uint8_t upper = static_cast<uint8_t>(0xFFu << (i_lane + 1));
+            std::uint32_t upper =
+                (i_lane >= 31) ? 0u : (0xffffffffu << (i_lane + 1));
             my_bits &= upper;
         }
     }
 
-    uint64_t new_mask = 0;
-    for (int k = 0; k < kClusterSize; ++k) {
-        uint8_t other = static_cast<uint8_t>(
-            __shfl_sync(submask, static_cast<int>(my_bits), group_base + k));
-        new_mask |= (static_cast<uint64_t>(other) << (k * kClusterSize));
-    }
-
-    if (i_lane == 0) {
-        flat_mask[pair_idx] = new_mask;
-    }
+    mask_set_jbits(flat_mask, pair_idx, i_lane, my_bits);
 }
 
 template <typename work_t>
@@ -282,14 +269,82 @@ void launch_smart_rolling_prune(
 }
 
 // ---------------------------------------------------------------------------
-// Force-path interaction mask: full (no half-Newton) per-cluster-pair mask at
-// the SEARCH radius (rc+skin), computed once per rebuild. The atom-centric LJ
-// force kernel reads it to iterate only the in-range j-slots of each neighbor
-// cluster (≈ the real neighbor count) instead of all kClusterSize candidates —
-// the dominant cost of the cluster-CSR force traversal. Reuses the
-// smart_rolling_prune kernel body with HalfNewton=false. Valid for the whole
-// reneighbor interval because the Verlet skin bounds inter-rebuild drift.
+// CSR interaction masks at SEARCH radius (rc+skin) — production OpenMM path.
+// One block of kClusterSize threads per cluster: lane i writes the 32-bit
+// j-mask for every CSR neighbor of ci into multi-word storage.
 // ---------------------------------------------------------------------------
+template <bool Ortho, typename work_t>
+__global__ __launch_bounds__(32) void compute_csr_masks_k(
+    const real_t* __restrict__ cluster_x, const real_t* __restrict__ cluster_y,
+    const real_t* __restrict__ cluster_z, const int* __restrict__ row_ptr,
+    const int* __restrict__ col_idx, int num_clusters, work_t search_sq,
+    cuda::Box box, uint64_t* __restrict__ masks) {
+    static_assert(kClusterSize == 32, "CSR mask kernel assumes CS=32");
+    int ci = static_cast<int>(blockIdx.x);
+    int i_lane = static_cast<int>(threadIdx.x);
+    if (ci >= num_clusters || i_lane >= kClusterSize)
+        return;
+
+    work_t xi = cluster_x[ci * kClusterSize + i_lane];
+    work_t yi = cluster_y[ci * kClusterSize + i_lane];
+    work_t zi = cluster_z[ci * kClusterSize + i_lane];
+
+    // Pad slots (huge coords) produce no in-range bits.
+    int rstart = row_ptr[ci];
+    int rend = row_ptr[ci + 1];
+    for (int p = rstart; p < rend; ++p) {
+        int cj = col_idx[p];
+        std::uint32_t bits = 0;
+#pragma unroll 4
+        for (int j = 0; j < kClusterSize; ++j) {
+            work_t dx = cluster_x[cj * kClusterSize + j] - xi;
+            work_t dy = cluster_y[cj * kClusterSize + j] - yi;
+            work_t dz = cluster_z[cj * kClusterSize + j] - zi;
+            if constexpr (Ortho) {
+                dx -=
+                    work_t(box.cell[0]) * nearbyint(dx * work_t(box.inv_l[0]));
+                dy -=
+                    work_t(box.cell[4]) * nearbyint(dy * work_t(box.inv_l[1]));
+                dz -=
+                    work_t(box.cell[8]) * nearbyint(dz * work_t(box.inv_l[2]));
+            } else {
+                box.min_image(dx, dy, dz);
+            }
+            work_t r2 = dx * dx + dy * dy + dz * dz;
+            if (r2 < search_sq && r2 > work_t(0))
+                bits |= (1u << j);
+        }
+        // Exclude self on diagonal tiles (ai == aj same slot of same cluster).
+        if (ci == cj)
+            bits &= ~(1u << i_lane);
+        mask_set_jbits(masks, p, i_lane, bits);
+    }
+}
+
+template <typename work_t>
+void launch_compute_csr_masks(const real_t* cluster_x, const real_t* cluster_y,
+                              const real_t* cluster_z, const int* row_ptr,
+                              const int* col_idx, int num_clusters,
+                              work_t search_sq, cuda::Box box, uint64_t* masks,
+                              cudaStream_t stream) {
+    if (num_clusters <= 0)
+        return;
+    // One warp-sized block per cluster.
+    if (box.ortho) {
+        compute_csr_masks_k<true, work_t>
+            <<<num_clusters, kClusterSize, 0, stream>>>(
+                cluster_x, cluster_y, cluster_z, row_ptr, col_idx, num_clusters,
+                search_sq, box, masks);
+    } else {
+        compute_csr_masks_k<false, work_t>
+            <<<num_clusters, kClusterSize, 0, stream>>>(
+                cluster_x, cluster_y, cluster_z, row_ptr, col_idx, num_clusters,
+                search_sq, box, masks);
+    }
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
+
+// Flat-list FULL force mask (optional export path; not default MD).
 template <typename work_t>
 void launch_compute_force_mask(const real_t* cluster_x, const real_t* cluster_y,
                                const real_t* cluster_z, const int* flat_ci,
@@ -510,6 +565,8 @@ namespace {
     reinterpret_cast<const void*>(&launch_smart_rolling_prune<work_t>);
 [[maybe_unused]] const void* _inst_launch_compute_force_mask =
     reinterpret_cast<const void*>(&launch_compute_force_mask<work_t>);
+[[maybe_unused]] const void* _inst_launch_compute_csr_masks =
+    reinterpret_cast<const void*>(&launch_compute_csr_masks<work_t>);
 [[maybe_unused]] const void* _inst_launch_build_verlet_list =
     reinterpret_cast<const void*>(&launch_build_verlet_list<work_t>);
 [[maybe_unused]] const void* _inst_launch_atom_displacement_max =

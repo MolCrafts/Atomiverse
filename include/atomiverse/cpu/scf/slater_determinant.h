@@ -280,10 +280,9 @@ class SlaterDeterminant {
     double orbital_energy(Spin s, int i) const {
         const Channel& ch = channel_(s);
         if (i < 0 || i >= static_cast<int>(ch.epsilon.size()))
-            throw std::out_of_range(
-                "SlaterDeterminant::orbital_energy: index "
-                + std::to_string(i) + " out of range [0, "
-                + std::to_string(ch.epsilon.size()) + ")");
+            throw std::out_of_range("SlaterDeterminant::orbital_energy: index "
+                                    + std::to_string(i) + " out of range [0, "
+                                    + std::to_string(ch.epsilon.size()) + ")");
         return ch.epsilon(i);
     }
 
@@ -379,8 +378,8 @@ class SlaterDeterminant {
                     "SlaterDeterminant::validate: AO overlap is "
                     + std::to_string(S.shape()[0]) + "x"
                     + std::to_string(S.shape()[1])
-                    + " but the spinor dimension is "
-                    + std::to_string(two_n) + " (expected 2n x N_mo C)");
+                    + " but the spinor dimension is " + std::to_string(two_n)
+                    + " (expected 2n x N_mo C)");
             const std::size_t n = two_n / 2;
             RealMatrix S_spinor = xt::zeros<double>({two_n, two_n});
             xt::view(S_spinor, xt::range(0, n), xt::range(0, n)) = S;
@@ -459,8 +458,8 @@ class SlaterDeterminant {
             if (f < 0.0 || f > 1.0)
                 throw std::invalid_argument(
                     std::string("SlaterDeterminant: channel ") + name
-                    + " occupation f[" + std::to_string(i) + "] = "
-                    + std::to_string(f) + " outside [0, 1]");
+                    + " occupation f[" + std::to_string(i)
+                    + "] = " + std::to_string(f) + " outside [0, 1]");
             sum += f;
         }
         const double dev = std::abs(sum - static_cast<double>(n_el));
@@ -468,8 +467,8 @@ class SlaterDeterminant {
             throw std::invalid_argument(
                 std::string("SlaterDeterminant: channel ") + name
                 + " occupation sum " + std::to_string(sum)
-                + " != electron count " + std::to_string(n_el)
-                + " (deviation " + std::to_string(dev) + ")");
+                + " != electron count " + std::to_string(n_el) + " (deviation "
+                + std::to_string(dev) + ")");
     }
 
     void promote_(Spin s, int from, int to) {
@@ -478,26 +477,25 @@ class SlaterDeterminant {
         if (from < 0 || from >= n_mo || to < 0 || to >= n_mo)
             throw std::invalid_argument(
                 "SlaterDeterminant::with_occupation: index out of range "
-                "(from=" + std::to_string(from) + ", to=" + std::to_string(to)
+                "(from="
+                + std::to_string(from) + ", to=" + std::to_string(to)
                 + ", n_mo=" + std::to_string(n_mo) + ")");
         if (ch.occupation(from) != 1.0 || ch.occupation(to) != 0.0)
             throw std::invalid_argument(
                 "SlaterDeterminant::with_occupation: requires f[from] = 1 "
-                "and f[to] = 0 (got f[" + std::to_string(from) + "] = "
-                + std::to_string(ch.occupation(from)) + ", f["
-                + std::to_string(to) + "] = "
-                + std::to_string(ch.occupation(to)) + ")");
+                "and f[to] = 0 (got f["
+                + std::to_string(from)
+                + "] = " + std::to_string(ch.occupation(from)) + ", f["
+                + std::to_string(to)
+                + "] = " + std::to_string(ch.occupation(to)) + ")");
         ch.occupation(from) = 0.0;
         ch.occupation(to) = 1.0;
         const bool single_channel = restricted_ || generalized_;
-        check_channel_(generalized_
-                           ? "spinor"
-                           : (restricted_ ? "alpha(restricted)"
-                                          : (s == Spin::beta ? "beta"
-                                                             : "alpha")),
-                       ch,
-                       (s == Spin::beta && !single_channel) ? n_beta_
-                                                            : n_alpha_);
+        check_channel_(
+            generalized_ ? "spinor"
+                         : (restricted_ ? "alpha(restricted)"
+                                        : (s == Spin::beta ? "beta" : "alpha")),
+            ch, (s == Spin::beta && !single_channel) ? n_beta_ : n_alpha_);
     }
 
     void validate_density_(const char* name, const Channel& ch,
@@ -513,8 +511,8 @@ class SlaterDeterminant {
         if (std::abs(tr - expected) > tol)
             throw std::runtime_error(
                 std::string("SlaterDeterminant::validate: channel ") + name
-                + " Tr(PS) = " + std::to_string(tr) + " != sum(f) = "
-                + std::to_string(expected) + " (deviation "
+                + " Tr(PS) = " + std::to_string(tr)
+                + " != sum(f) = " + std::to_string(expected) + " (deviation "
                 + std::to_string(std::abs(tr - expected)) + ")");
         bool integer_occ = true;
         for (std::size_t i = 0; i < ch.occupation.size(); ++i) {
@@ -538,11 +536,11 @@ class SlaterDeterminant {
                 + " > tol = " + std::to_string(tol));
     }
 
-    Channel alpha_;    ///< Alpha channel (the only channel when restricted).
-    Channel beta_;     ///< Beta channel (empty when restricted).
-    int n_alpha_ = 0;  ///< Alpha electron count N^α.
-    int n_beta_ = 0;   ///< Beta electron count N^β.
-    bool restricted_ = true; ///< Restricted (β forwards to α) or not.
+    Channel alpha_;   ///< Alpha channel (the only channel when restricted).
+    Channel beta_;    ///< Beta channel (empty when restricted).
+    int n_alpha_ = 0; ///< Alpha electron count N^α.
+    int n_beta_ = 0;  ///< Beta electron count N^β.
+    bool restricted_ = true;   ///< Restricted (β forwards to α) or not.
     bool generalized_ = false; ///< Generalized (two-component spinor) form.
     double spin_contamination_ = 0; ///< Cached ⟨S²⟩ − S(S+1) deviation.
 };

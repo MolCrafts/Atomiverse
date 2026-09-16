@@ -216,3 +216,427 @@ TEST(GpwMultigridFFT, ProlongLowFreqIsExact) {
         << "band-limited field not reproduced at fine points";
 }
 #endif // ATV_GPW_HAS_FFT
+
+// ── Bloch image-cell product machinery (multi-k multigrid) ──────────────────
+
+#include <array>
+#include <complex>
+
+#include "atomiverse/cpu/gpw/internal/kpoints.h"
+
+using ATV::cpu::gpw::build_products;
+using ATV::cpu::gpw::collocate_products;
+using ATV::cpu::gpw::collocate_products_cells;
+using ATV::cpu::gpw::integrate_products;
+using ATV::cpu::gpw::integrate_products_cells;
+using ATV::cpu::gpw::ProductSet;
+
+namespace {
+
+// Two s Gaussians in a small periodic cell: products reach several image
+// cells (the multi-k phase regime) while windows stay unit-test sized.
+// Combined exponents p ∈ {0.7, 1.15, 1.6} split across a (60, 12) Ry
+// two-level ladder: need = rel·p puts the diffuse 0.7 pair on the coarse
+// 12 Ry level and the rest on the fine level — both levels populated.
+std::vector<GridBasisFunction> cells_toy_basis(double L) {
+    GridPrimitive p1;
+    p1.alpha = 0.35;
+    p1.center[0] = 0.25 * L;
+    p1.center[1] = 0.40 * L;
+    p1.center[2] = 0.30 * L;
+    p1.coeff = 1.0;
+    GridPrimitive p2 = p1;
+    p2.alpha = 0.80;
+    p2.center[0] = 0.70 * L;
+    p2.center[1] = 0.55 * L;
+    p2.center[2] = 0.65 * L;
+    p2.coeff = 0.8;
+    return {GridBasisFunction{p1}, GridBasisFunction{p2}};
+}
+
+std::vector<double> cells_rand(std::size_t n, unsigned seed) {
+    std::vector<double> v(n);
+    unsigned s = seed;
+    for (auto& x : v) {
+        s = s * 1664525u + 1013904223u;
+        x = (s >> 8) / 16777216.0 - 0.5;
+    }
+    return v;
+}
+
+} // namespace
+
+// The image-cell index is a faithful inverse map: cells[] is sorted + unique,
+// every product's tcell points at its own ket shift, and a diffuse periodic
+// basis populates more than the home cell.
+TEST(GpwMultigridCells, ImageCellIndexIsConsistent) {
+    const double cell[3] = {6.0, 6.0, 6.0};
+    MultiGrid mg = make_multigrid(cell, 60.0, 2, 12.0);
+    const auto basis = cells_toy_basis(cell[0]);
+    const ProductSet ps =
+        build_products(mg, basis, cell, 12.0, 1e-12, /*periodic=*/true);
+
+    ASSERT_GT(ps.cells.size(), 1u) << "diffuse periodic products stayed home";
+    for (std::size_t c = 1; c < ps.cells.size(); ++c)
+        EXPECT_LT(ps.cells[c - 1], ps.cells[c]) << "cells not sorted/unique";
+    for (const auto& lev : ps.by_level)
+        for (const auto& prod : lev) {
+            ASSERT_GE(prod.tcell, 0);
+            ASSERT_LT(static_cast<std::size_t>(prod.tcell), ps.cells.size());
+            const auto& t = ps.cells[static_cast<std::size_t>(prod.tcell)];
+            EXPECT_EQ(t[0], prod.t[0]);
+            EXPECT_EQ(t[1], prod.t[1]);
+            EXPECT_EQ(t[2], prod.t[2]);
+        }
+}
+
+// Γ reduction: a uniform per-cell stack (every D[c] the same P) reproduces the
+// shipped single-density collocation and the cell-summed integration exactly.
+TEST(GpwMultigridCells, UniformStackReducesToGamma) {
+    const double cell[3] = {6.0, 6.0, 6.0};
+    MultiGrid mg = make_multigrid(cell, 60.0, 2, 12.0);
+    const auto basis = cells_toy_basis(cell[0]);
+    const int nb = static_cast<int>(basis.size());
+    const ProductSet ps =
+        build_products(mg, basis, cell, 12.0, 1e-12, /*periodic=*/true);
+
+    std::vector<double> P = cells_rand(static_cast<std::size_t>(nb) * nb, 3u);
+    // Symmetrize (a density matrix weight).
+    for (int i = 0; i < nb; ++i)
+        for (int j = 0; j < i; ++j) {
+            const double s = 0.5
+                             * (P[static_cast<std::size_t>(i) * nb + j]
+                                + P[static_cast<std::size_t>(j) * nb + i]);
+            P[static_cast<std::size_t>(i) * nb + j] = s;
+            P[static_cast<std::size_t>(j) * nb + i] = s;
+        }
+    const std::vector<std::vector<double>> D(ps.cells.size(), P);
+
+    // Both levels must actually hold products, or the loop tests nothing.
+    ASSERT_EQ(mg.levels.size(), 2u);
+    ASSERT_GT(ps.by_level[0].size(), 0u);
+    ASSERT_GT(ps.by_level[1].size(), 0u);
+
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        const auto rho_gamma = collocate_products(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, P, 1e-12);
+        const auto rho_cells = collocate_products_cells(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, D, 1e-12);
+        ASSERT_EQ(rho_gamma.size(), rho_cells.size());
+        // Uniform D-stack must match the Γ product path mathematically; FP
+        // reduction order across the two kernels can differ by a few ulps, so
+        // match the integrate half of this test (1e-12 relative), not
+        // bit-identical equality.
+        for (std::size_t g = 0; g < rho_gamma.size(); ++g)
+            ASSERT_NEAR(rho_gamma[g], rho_cells[g],
+                        1e-12 * (std::abs(rho_gamma[g]) + 1.0));
+
+        const auto V_r =
+            cells_rand(static_cast<std::size_t>(mg.levels[l].npts()), 11u);
+        const auto V_gamma = integrate_products(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, V_r, 1e-12);
+        const auto V_cells = integrate_products_cells(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, V_r, ps.cells.size(), 1e-12);
+        for (std::size_t e = 0; e < V_gamma.size(); ++e) {
+            double s = 0.0;
+            for (const auto& Vc : V_cells)
+                s += Vc[e];
+            EXPECT_NEAR(s, V_gamma[e], 1e-12 * (std::abs(V_gamma[e]) + 1.0));
+        }
+    }
+}
+
+// THE property: the per-cell integration is the exact transpose of the
+// per-cell collocation — Σ_g w·V(g)·ρ_D(g) == Σ_c <D_c, V_t_c>_F for an
+// arbitrary per-cell stack D (what keeps the multi-k multigrid SCF
+// variational).
+TEST(GpwMultigridCells, CellsIntegrateIsAdjointOfCellsCollocate) {
+    const double cell[3] = {6.0, 6.0, 6.0};
+    MultiGrid mg = make_multigrid(cell, 60.0, 2, 12.0);
+    const auto basis = cells_toy_basis(cell[0]);
+    const int nb = static_cast<int>(basis.size());
+    const ProductSet ps =
+        build_products(mg, basis, cell, 12.0, 1e-12, /*periodic=*/true);
+    const std::size_t nn = static_cast<std::size_t>(nb) * nb;
+
+    std::vector<std::vector<double>> D;
+    for (std::size_t c = 0; c < ps.cells.size(); ++c)
+        D.push_back(cells_rand(nn, 17u + static_cast<unsigned>(c)));
+
+    double lhs = 0.0, rhs = 0.0;
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        const auto V_r =
+            cells_rand(static_cast<std::size_t>(mg.levels[l].npts()), 23u);
+        const auto rho = collocate_products_cells(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, D, 1e-12);
+        for (std::size_t g = 0; g < rho.size(); ++g)
+            lhs += mg.levels[l].weight() * V_r[g] * rho[g];
+        const auto Vt = integrate_products_cells(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, V_r, ps.cells.size(), 1e-12);
+        for (std::size_t c = 0; c < ps.cells.size(); ++c)
+            for (std::size_t e = 0; e < nn; ++e)
+                rhs += D[c][e] * Vt[c][e];
+    }
+    EXPECT_NEAR(lhs, rhs, 1e-8 * (std::abs(lhs) + 1.0))
+        << "per-cell integrate is not the transpose of per-cell collocate";
+}
+
+// Time-reversal folding is exact for the D stack: a conjugate ±κ pair at
+// half weight and the folded single κ at full weight build the SAME real
+// D(t) = Σ_k w_k Re[P^k e^{−2πi κ·t}] when P^{−k} = conj(P^k) — the mechanism
+// behind the machine-exact folded-vs-full multi-k multigrid SCF energies
+// (regressions/gpw/gpw-multigrid-kpoints REFERENCE.md).
+TEST(GpwMultigridCells, TimeReversalDStackFoldsExactly) {
+    using Cplx = std::complex<double>;
+    constexpr double kTwoPi = 6.283185307179586476925286766559;
+    const double kappa[3] = {0.25, -0.25, 0.125};
+    const int nb = 2;
+    // Hermitian P at +κ; time reversal gives P(−κ) = conj(P(+κ)).
+    Cplx P[4] = {Cplx(0.9, 0.0), Cplx(0.3, 0.2), Cplx(0.3, -0.2),
+                 Cplx(0.4, 0.0)};
+    const int cells[3][3] = {{0, 0, 0}, {1, 0, 0}, {-1, 2, 1}};
+    for (const auto& t : cells) {
+        const double arg =
+            -kTwoPi * (kappa[0] * t[0] + kappa[1] * t[1] + kappa[2] * t[2]);
+        const Cplx ph(std::cos(arg), std::sin(arg));
+        for (int e = 0; e < nb * nb; ++e) {
+            // Full mesh: +κ and −κ, weight 1/2 each (conj phase, conj P).
+            const double d_full = 0.5 * (P[e] * ph).real()
+                                  + 0.5 * (std::conj(P[e]) * std::conj(ph)).real();
+            // Folded: +κ only, weight 1.
+            const double d_folded = (P[e] * ph).real();
+            ASSERT_DOUBLE_EQ(d_full, d_folded);
+        }
+    }
+}
+
+// Phase conventions against the independent pre-summed χ^k machinery: on one
+// shared grid, the D-stack product density matches collocate_density_k and the
+// phase-summed V_t stack matches integrate_potential_k (Hermitian per k).
+TEST(GpwMultigridCells, MatchesKpointBasisGridPath) {
+    using ATV::cpu::gpw::internal::CplxMatrix;
+    using ATV::cpu::gpw::internal::KPoint;
+    using Cplx = std::complex<double>;
+    constexpr double kTwoPi = 6.283185307179586476925286766559;
+
+    const double cell[3] = {6.0, 6.0, 6.0};
+    // Single level: products and χ^k live on the same grid.
+    MultiGrid mg = make_multigrid(cell, 60.0, 1, 0.0);
+    const UniformGrid& grid = mg.levels[0];
+    const auto basis = cells_toy_basis(cell[0]);
+    const int nb = static_cast<int>(basis.size());
+    const ProductSet ps =
+        build_products(mg, basis, cell, 60.0, 1e-12, /*periodic=*/true);
+
+    std::vector<KPoint> kpts(1);
+    kpts[0].frac[0] = 0.25;
+    kpts[0].frac[1] = -0.5;
+    kpts[0].frac[2] = 0.125;
+    kpts[0].weight = 1.0;
+    const auto kbg = ATV::cpu::gpw::internal::build_kpoint_basis_grid(
+        grid, basis, kpts, 1e-12);
+
+    // Hermitian P_k with nonzero imaginary off-diagonals.
+    CplxMatrix P = xt::zeros<Cplx>({nb, nb});
+    P(0, 0) = 0.9;
+    P(1, 1) = 0.4;
+    P(0, 1) = Cplx(0.3, 0.2);
+    P(1, 0) = std::conj(P(0, 1));
+
+    // Per-cell phases e^{−2πi κ·t} and the real D stack.
+    std::vector<Cplx> phase(ps.cells.size());
+    std::vector<std::vector<double>> D(
+        ps.cells.size(), std::vector<double>(static_cast<std::size_t>(nb) * nb));
+    for (std::size_t c = 0; c < ps.cells.size(); ++c) {
+        const auto& t = ps.cells[c];
+        const double arg = -kTwoPi
+                           * (kpts[0].frac[0] * t[0] + kpts[0].frac[1] * t[1]
+                              + kpts[0].frac[2] * t[2]);
+        phase[c] = Cplx(std::cos(arg), std::sin(arg));
+        for (int i = 0; i < nb; ++i)
+            for (int j = 0; j < nb; ++j)
+                D[c][static_cast<std::size_t>(i) * nb + j] =
+                    (P(i, j) * phase[c]).real();
+    }
+
+    // Density: product path vs pre-summed χ^k path.
+    const auto rho_prod = collocate_products_cells(
+        grid, ps.by_level[0], ps.tasks_by_level[0], ps.prims, ps.contribs, nb,
+        D, 1e-12);
+    std::vector<double> rho_kbg(static_cast<std::size_t>(grid.npts()), 0.0);
+    ATV::cpu::gpw::internal::collocate_density_k(kbg, 0, P, 1.0, rho_kbg);
+    double rho_max = 0.0, rho_err = 0.0;
+    for (std::size_t g = 0; g < rho_prod.size(); ++g) {
+        rho_max = std::max(rho_max, std::abs(rho_kbg[g]));
+        rho_err = std::max(rho_err, std::abs(rho_prod[g] - rho_kbg[g]));
+    }
+    EXPECT_LT(rho_err, 1e-7 * (rho_max + 1.0))
+        << "product D-stack density disagrees with collocate_density_k";
+
+    // KS: phase-summed V_t vs integrate_potential_k; Hermiticity.
+    const auto V_r = cells_rand(static_cast<std::size_t>(grid.npts()), 29u);
+    const auto Vt = integrate_products_cells(
+        grid, ps.by_level[0], ps.tasks_by_level[0], ps.prims, ps.contribs, nb,
+        V_r, ps.cells.size(), 1e-12);
+    CplxMatrix Vk = xt::zeros<Cplx>({nb, nb});
+    for (std::size_t c = 0; c < ps.cells.size(); ++c)
+        for (int i = 0; i < nb; ++i)
+            for (int j = 0; j < nb; ++j)
+                Vk(i, j) += std::conj(phase[c])
+                            * Vt[c][static_cast<std::size_t>(i) * nb + j];
+    const CplxMatrix Vk_ref =
+        ATV::cpu::gpw::internal::integrate_potential_k(kbg, 0, V_r);
+    for (int i = 0; i < nb; ++i)
+        for (int j = 0; j < nb; ++j) {
+            EXPECT_NEAR(Vk(i, j).real(), Vk_ref(i, j).real(),
+                        1e-7 * (std::abs(Vk_ref(i, j)) + 1.0));
+            EXPECT_NEAR(Vk(i, j).imag(), Vk_ref(i, j).imag(),
+                        1e-7 * (std::abs(Vk_ref(i, j)) + 1.0));
+            EXPECT_NEAR(Vk(i, j).real(), Vk(j, i).real(),
+                        1e-9 * (std::abs(Vk(i, j)) + 1.0));
+            EXPECT_NEAR(Vk(i, j).imag(), -Vk(j, i).imag(),
+                        1e-9 * (std::abs(Vk(i, j)) + 1.0));
+        }
+}
+
+// ── Multi-level MAIN product path (arch-mg-main-structural) ──────────────────
+// Shared helpers `multigrid_collocate_rho*` / `multigrid_integrate_veff*` own
+// the multi-level composition that SCF runners used to fork inline.
+
+using ATV::cpu::gpw::multigrid_collocate_rho;
+using ATV::cpu::gpw::multigrid_collocate_rho_cells;
+using ATV::cpu::gpw::multigrid_integrate_veff;
+using ATV::cpu::gpw::multigrid_integrate_veff_cells;
+
+// Multi-level Γ collocate/integrate must equal the hand-rolled per-level sum
+// (regression against the pre-extract forked loop shape).
+TEST(GpwMultigridMainPath, GammaMatchesManualLevelLoop) {
+    const double cell[3] = {6.0, 6.0, 6.0};
+    MultiGrid mg = make_multigrid(cell, 60.0, 2, 12.0);
+    const auto basis = cells_toy_basis(cell[0]);
+    const int nb = static_cast<int>(basis.size());
+    const ProductSet ps =
+        build_products(mg, basis, cell, 12.0, 1e-12, /*periodic=*/true);
+    ASSERT_EQ(mg.levels.size(), 2u);
+    ASSERT_GT(ps.by_level[0].size(), 0u);
+    ASSERT_GT(ps.by_level[1].size(), 0u);
+
+    std::vector<double> P = cells_rand(static_cast<std::size_t>(nb) * nb, 5u);
+    for (int i = 0; i < nb; ++i)
+        for (int j = 0; j < i; ++j) {
+            const double s = 0.5
+                             * (P[static_cast<std::size_t>(i) * nb + j]
+                                + P[static_cast<std::size_t>(j) * nb + i]);
+            P[static_cast<std::size_t>(i) * nb + j] = s;
+            P[static_cast<std::size_t>(j) * nb + i] = s;
+        }
+
+    // Manual multi-level composition (the old forked loop).
+    std::vector<double> rho_manual(
+        static_cast<std::size_t>(mg.levels[0].npts()), 0.0);
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        std::vector<double> rho_l = collocate_products(
+            mg.levels[l], ps.by_level[l], ps.tasks_by_level[l], ps.prims,
+            ps.contribs, nb, P, 1e-12);
+        if (l == 0) {
+            rho_manual = std::move(rho_l);
+        } else {
+#ifdef ATV_GPW_HAS_FFT
+            const std::vector<double> up =
+                prolong_fft(mg.levels[l], mg.levels[0], rho_l, true);
+            for (std::size_t g = 0; g < rho_manual.size(); ++g)
+                rho_manual[g] += up[g];
+#else
+            GTEST_SKIP() << "FFT required for multi-level spectral transfer";
+#endif
+        }
+    }
+    const auto rho = multigrid_collocate_rho(mg, ps, nb, P, 1e-12);
+    ASSERT_EQ(rho.size(), rho_manual.size());
+    for (std::size_t g = 0; g < rho.size(); ++g)
+        EXPECT_NEAR(rho[g], rho_manual[g], 1e-14 * (std::abs(rho_manual[g]) + 1.0));
+
+    const auto V_r =
+        cells_rand(static_cast<std::size_t>(mg.levels[0].npts()), 17u);
+    std::vector<double> V_manual(static_cast<std::size_t>(nb) * nb, 0.0);
+    for (std::size_t l = 0; l < mg.levels.size(); ++l) {
+        std::vector<double> V_l;
+        if (l == 0) {
+            V_l = V_r;
+        } else {
+#ifdef ATV_GPW_HAS_FFT
+            V_l = restrict_fft(mg.levels[0], mg.levels[l], V_r, true);
+#else
+            GTEST_SKIP() << "FFT required for multi-level spectral transfer";
+#endif
+        }
+        const auto Vl = integrate_products(mg.levels[l], ps.by_level[l],
+                                           ps.tasks_by_level[l], ps.prims,
+                                           ps.contribs, nb, V_l, 1e-12);
+        for (std::size_t e = 0; e < V_manual.size(); ++e)
+            V_manual[e] += Vl[e];
+    }
+    const auto V = multigrid_integrate_veff(mg, ps, nb, V_r, 1e-12);
+    ASSERT_EQ(V.size(), V_manual.size());
+    for (std::size_t e = 0; e < V.size(); ++e)
+        EXPECT_NEAR(V[e], V_manual[e], 1e-14 * (std::abs(V_manual[e]) + 1.0));
+}
+
+// Multi-level integrate is the exact adjoint of multi-level collocate (MAIN
+// path variational property across spectral prolong/restrict).
+TEST(GpwMultigridMainPath, IntegrateIsAdjointOfCollocate) {
+#ifndef ATV_GPW_HAS_FFT
+    GTEST_SKIP() << "FFT required for multi-level spectral transfer";
+#else
+    const double cell[3] = {6.0, 6.0, 6.0};
+    MultiGrid mg = make_multigrid(cell, 60.0, 2, 12.0);
+    const auto basis = cells_toy_basis(cell[0]);
+    const int nb = static_cast<int>(basis.size());
+    const ProductSet ps =
+        build_products(mg, basis, cell, 12.0, 1e-12, /*periodic=*/true);
+
+    std::vector<double> P = cells_rand(static_cast<std::size_t>(nb) * nb, 9u);
+    for (int i = 0; i < nb; ++i)
+        for (int j = 0; j < i; ++j) {
+            const double s = 0.5
+                             * (P[static_cast<std::size_t>(i) * nb + j]
+                                + P[static_cast<std::size_t>(j) * nb + i]);
+            P[static_cast<std::size_t>(i) * nb + j] = s;
+            P[static_cast<std::size_t>(j) * nb + i] = s;
+        }
+    const auto V_r =
+        cells_rand(static_cast<std::size_t>(mg.levels[0].npts()), 23u);
+
+    const auto rho = multigrid_collocate_rho(mg, ps, nb, P, 1e-12);
+    const auto Vks = multigrid_integrate_veff(mg, ps, nb, V_r, 1e-12);
+
+    double lhs = 0.0; // <V, ρ>_fine
+    for (std::size_t g = 0; g < rho.size(); ++g)
+        lhs += mg.levels[0].weight() * V_r[g] * rho[g];
+    double rhs = 0.0; // <P, Vks>_F
+    for (std::size_t e = 0; e < P.size(); ++e)
+        rhs += P[e] * Vks[e];
+    EXPECT_NEAR(lhs, rhs, 1e-9 * (std::abs(lhs) + 1.0))
+        << "MAIN multigrid integrate is not the adjoint of collocate";
+
+    // Cells path with uniform D-stack must match Γ path (fine-grid total).
+    const std::vector<std::vector<double>> D(ps.cells.size(), P);
+    const auto rho_c = multigrid_collocate_rho_cells(mg, ps, nb, D, 1e-12);
+    ASSERT_EQ(rho_c.size(), rho.size());
+    for (std::size_t g = 0; g < rho.size(); ++g)
+        EXPECT_NEAR(rho_c[g], rho[g], 1e-12 * (std::abs(rho[g]) + 1.0));
+    const auto Vt = multigrid_integrate_veff_cells(mg, ps, nb, V_r, 1e-12);
+    for (std::size_t e = 0; e < Vks.size(); ++e) {
+        double s = 0.0;
+        for (const auto& Vc : Vt)
+            s += Vc[e];
+        EXPECT_NEAR(s, Vks[e], 1e-12 * (std::abs(Vks[e]) + 1.0));
+    }
+#endif
+}

@@ -1,0 +1,7 @@
+maze
+-------
+|maze| maximum number of iterations:          100
+|maze| Tolerance:                1.00000E-14
+|maze| maximum number of iterations:          100
+|maze| number of iterations:            0
+|maze| Maximum of the constraints:         5.89806E-17

@@ -17,7 +17,7 @@ namespace scf {
 /// @param det  Converged closed-shell reference determinant (MO coefficients,
 ///             electron counts).
 /// @return CI matrix [N_det x N_det] [Hartree], V_nuc included.
-xt::xtensor<double, 2> fci_hamiltonian(const IntegralPack& ints,
+xt::xtensor<double, 2> fci_hamiltonian(const internal::IntegralView& ints,
                                        const SlaterDeterminant& det);
 
 /// @brief Full-CI ground-state energy from the dense CI Hamiltonian.
@@ -26,7 +26,7 @@ xt::xtensor<double, 2> fci_hamiltonian(const IntegralPack& ints,
 /// @param e_scf_ha Converged SCF total energy [Hartree] (the reference for
 ///                 `FCIResult::e_corr`).
 /// @return Full-CI correlation and total energies [Hartree].
-FCIResult fci_energy(const IntegralPack& ints, const SlaterDeterminant& det,
+FCIResult fci_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
                      double e_scf_ha);
 
 } // namespace scf

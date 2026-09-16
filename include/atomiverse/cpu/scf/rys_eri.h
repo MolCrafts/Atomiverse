@@ -90,6 +90,33 @@ static_assert((4 * 3 + 1) / 2 + 1 <= kRysMaxRoots,
 void rys_eri_block(const ShellBlock& A, const ShellBlock& B,
                    const ShellBlock& C, const ShellBlock& D, double* out);
 
+/// @brief Block-level erf-attenuated Coulomb ERI (AB|CD)_ω.
+///
+/// Evaluates
+/// \f[
+///   (\mu\nu|\lambda\sigma)_\omega
+///   = \iint \chi_\mu(\mathbf{r}_1)\chi_\nu(\mathbf{r}_1)\,
+///     \frac{\mathrm{erf}(\omega r_{12})}{r_{12}}\,
+///     \chi_\lambda(\mathbf{r}_2)\chi_\sigma(\mathbf{r}_2)\,
+///     d\mathbf{r}_1\,d\mathbf{r}_2
+/// \f]
+/// with \(\omega\) in Bohr\(^{-1}\). \(\omega = 0\) is defined as the bare
+/// \(1/r\) operator and is bit-identical to `rys_eri_block` (libcint
+/// convention: a zero range-separation parameter means "no attenuation",
+/// not the mathematical \(\mathrm{erf}(0\cdot r)/r = 0\) limit).
+///
+/// Output layout and accumulation semantics match `rys_eri_block`.
+///
+/// @param A,B Shell blocks for the bra (electron 1).
+/// @param C,D Shell blocks for the ket (electron 2).
+/// @param omega Range-separation parameter [1/Bohr]; must be ≥ 0.
+/// @param out Pre-zeroed flat buffer of size
+///            A.n_cart·B.n_cart·C.n_cart·D.n_cart.
+/// @throws std::invalid_argument when omega < 0.
+void rys_eri_erf_block(const ShellBlock& A, const ShellBlock& B,
+                       const ShellBlock& C, const ShellBlock& D, double omega,
+                       double* out);
+
 /// @brief Block-level derivative of the ERI w.r.t. one nuclear centre.
 ///
 /// Computes ∂(AB|CD)/∂R_X — all three Cartesian components — into an

@@ -1,0 +1,80 @@
+# Offline oracle note — dos-spin-si (PW collinear-spin DOS, diamond Si)
+
+## Purpose
+
+Character / wall twin for `regressions/pw/dos-spin-si`. **Not** an absolute
+DOS pin: CP2K Quickstep uses GTH-PADE + DZVP-GTH; Atomiverse PW uses ONCV
+UPF. Record CP2K version, wall, and occupied-state integral character when
+a binary is available. Never launch CP2K from ctest.
+
+## Suggested CP2K settings (LSD + denser k for DOS character)
+
+```
+&GLOBAL
+  PROJECT si_dos_spin_wall
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    LSD
+    MULTIPLICITY 1
+    &QS
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 60
+    &END MGRID
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+    &PRINT
+      &PDOS
+        NLUMO 4
+        COMPONENTS .FALSE.
+      &END PDOS
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      A 0.0 2.715 2.715
+      B 2.715 0.0 2.715
+      C 2.715 2.715 0.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Si 0.0 0.0 0.0
+      Si 1.3575 1.3575 1.3575
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-GTH-q4
+      POTENTIAL GTH-PADE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
+```
+
+## Pins written to REFERENCE.md
+
+See `regressions/pw/dos-spin-si/REFERENCE.md`. Scientific pins: SCF
+converges with \(M=0\); \(\int^{E_\mathrm{vbm}} D(E)\,dE \approx 8\);
+open gap on the denser DOS mesh. Absolute \(D(E)\) not comparable across
+ONCV-PW vs GTH-GPW.

@@ -1,0 +1,291 @@
+**************************************************************************
+**************************************************************************
+**                                                                      **
+**                                                                      **
+**                              METAL WALLS                             **
+**                                                                      **
+**                                                                      **
+**************************************************************************
+**************************************************************************
+MetalWalls release 20.05
+
+Compiled with GNU Fortran *.3.0 on  Jul 29 2026 at   10:54:20
+MPI library version 4.1
+HOSTNAME: arrhenius1.hpc.arrhenius.naiss.se 
+F90:      mpif90 
+F90FLAGS: -O2 -march=native -mtune=native -ftree-vectorize -ffree-line-length-none -J./build/include 
+FPPFLAGS: -cpp 
+LDFLAGS:  -L/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/openmp/lp64/lib -lopenblas 
+
+hpc_sysenv/.1 <H>
+hpc/.2.1.0 <H>
+GCC/.14.3.0 <H>
+MPICH/.4.3.2-hpc2 <H>
+OpenBLAS/.0.3.32-openmp <H>
+ScaLAPACK/.2.2.3-OpenBLAS-0.3.32 <H>
+FFTW/.3.3.11 <H>
+buildenv-gcc/2026.03-mpich
+
+Parallel setup
+==============
+
+MPI communicator id:   ********
+MPI communicator size:        1
+MPI rank:                     0
+
+System parameters:
+==================
+
+Time step:              4.13410E+01
+Number of steps:                  0
+Total simulation time:  0.00000E+00
+
+Total number of molecules:                 0
+Total number of electrolyte atoms:         1
+Total number of electrode atoms:           2
+Total number of degrees of freedom:        3
+
+charges    at t=0 are provided:  no
+forces     at t=0 are provided:  no
+dipoles    at t=0 are provided:  no
+radius     at t=0 are provided:  no
+
+box
+---
+|box| edge length :         1.88973E+01  1.88973E+01  3.77945E+01
+|box| side area:            7.14213E+02  7.14213E+02  3.57106E+02
+|box| side height:          1.88973E+01  1.88973E+01  3.77945E+01
+|box| volume:               1.34967E+04
+
+
+velocities
+----------
+velocities at t=0 are provided in data file: yes
+velocities at t=0 are created with a random normal distribution:   no
+center of mass threshold:        0.00000E+00
+velocities are scaled:    no
+
+electrolyte types (  1)
+---------------
+|ion| Ion     :        1 mobile ions with q =  1.00000E+00 alpha =  0.00000E+00 m =  1.82289E+03 and deformabilities 0.00000E+00 0.00000E+00 0.00000E+00
+
+|electrolyte charge|: 1.000
+
+electrodes (  2)
+----------------
+charge neutrality is enforced: yes
+global charge neutrality is enforced: yes
+|electrode| E1      :      1 atoms at potential V =  0.00000E+00 eta =  1.05835E+00
+|electrode|  Thomas-Fermi length ltf =  0.00000E+00 Voronoi volume =  1.44652E+01
+|electrode| E2      :      1 atoms at potential V =  3.67493E-02 eta =  1.05835E+00
+|electrode|  Thomas-Fermi length ltf =  0.00000E+00 Voronoi volume =  1.44652E+01
+
+polarization
+----------
+polarization at t=0 is provided in data file:  no
+
+ewald
+-----
+|ewald| alpha:                                 5.36051E-01
+|ewald| real space summation tolerance:        1.00000E-12
+|ewald| real space cut-off distance:           9.40000E+00
+|ewald| erfc(alpha*|rcut|)/|rcut|:             1.09881E-13
+|ewald| exp(-alpha^2*|rcut|^2)/|rcut|:         1.00000E-12
+|ewald| reciprocal space summation tolerance:        1.00000E-14
+|ewald| reciprocal space cut-off distance |kcut|^2:  6.08707E+00
+|ewald| exp(-|kcut|^2/(4*alpha^2))/|kcut|^2:         2.69888E-16
+|ewald| reciprocal space image count (kmax):            18           18           36
+|ewald| Z integral points:                              73
+|ewald| Z integral range:                     -6.06798E+00  6.06798E+00
+|ewald| Z integral weights:                    1.66246E-01
+|ewald| Short-Range interaction matrices:
+|ewald| ion <-> ion 
+|ewald| X 
+|ewald| electrode <-> electrode 
+|ewald| O O 
+|ewald| O O 
+|ewald| electrolyte -> electrode 
+|ewald| X X 
+|ewald| electrode -> electrolyte 
+|ewald| X 
+|ewald| X 
+
+local work
+----------
+|localwork| k-modes assignment
+|localwork|    number of global k-modes:    49932
+|localwork|    number of local  k-modes:    48803
+|localwork|    offset of local  k-modes:      0
+|localwork|    start k-mode index      :      0,      1,    -36
+
+|localwork| electrode to electrode pair diagonal block assignment:
+|localwork| itype |  count | offset |
+|localwork|     1 |      1 |      0 |
+|localwork|     2 |      1 |      0 |
+
+|localwork| electrode to electrode pair block assignment:
+|localwork| itype | jtype |  count | offset |
+|localwork|     1 |     1 |      0 |      0 |
+|localwork|     1 |     2 |      1 |      0 |
+|localwork|     2 |     1 |      0 |      0 |
+|localwork|     2 |     2 |      0 |      0 |
+
+|localwork| electrolyte to electrolyte pair diagonal block assignment:
+|localwork| itype |  count | offset |
+|localwork|     1 |      1 |      0 |
+
+|localwork| electrolyte to electrolyte pair block assignment:
+|localwork| itype | jtype |  count | offset |
+|localwork|     1 |     1 |      0 |      0 |
+
+|localwork| electrode to electrolyte pair block assignment:
+|localwork| itype | jtype |  count | offset |
+|localwork|     1 |     1 |      1 |      0 |
+|localwork|     2 |     1 |      1 |      0 |
+
+|localwork| electrolyte to electrode pair block assignment:
+|localwork| itype | jtype |  count | offset |
+|localwork|     1 |     1 |      1 |      0 |
+|localwork|     1 |     2 |      1 |      0 |
+
+|localwork| electrode vector assignment
+|localwork|    number of global electrode atoms:      2
+|localwork|    number of local electrode atoms:      2
+|localwork|    electrode atoms local offset:          0,      1
+|localwork|    electrode atoms local count:           1,      1
+
+|localwork| electrolyte vector assignment
+|localwork|    number of global electrolyte atoms:      1
+|localwork|    number of local electrolyte atoms:      1
+|localwork|    electrolyte atoms local offset:          0, 
+|localwork|    electrolyte atoms local count :          1, 
+
+|localwork| molecules vector assignment
+|localwork|    number of global molecules:      0
+|localwork|    number of local molecules:      0
+|localwork|    molecules local istart:     
+|localwork|    molecules local iend:       
+
+Algorithms parameters:
+======================
+Electrodes parameters:
+----------------------
+matrix_inversion
+----------------
+|matrix_inversion| Tolerance:                1.00000E-12
+|matrix_inversion| Force charge neutrality:      yes
+
+
+|step| step          0
+|step| step          0 /          0 in this run.
+|step| kinetic energy:      0.00000E+00 kJ/mol
+|step| temperature:         0.00000E+00 K
+|step| Global charge on electrode  1: -5.18949E-01
+|step| Global charge on electrode  2: -4.81051E-01
+|step| Global charge on electrodes:   -1.00000E+00
+|matrix_inversion| Norm of the residual after procedure:         0.00000E+00
+
+Total elapsed time:  7.02200E-03 seconds.
+
+Elapsed Times breakdown:
+========================
+                                   average (s)   cumul. (s) fraction (%)
+  initialization:                  1.63000E-03  1.63000E-03        23.21
+  setup:                           5.38300E-03  5.38300E-03        76.66
+  main loop:                       0.00000E+00  0.00000E+00         0.00
+  Time breakdown                     ----       5.16500E-03        73.55
+  => Time NOT in breakdown           ----       1.85700E-03        26.45
+
+Ions->Atoms Coulomb potential
+-----------------------------
+  long range                       8.68000E-04  8.68000E-04        12.36
+  k==0                             6.99982E-06  6.99982E-06         0.10
+  short range                      3.99910E-06  3.99910E-06         0.06
+
+Atoms->Atoms Coulomb potential
+------------------------------
+  long range                       0.00000E+00  0.00000E+00         0.00
+  k==0                             0.00000E+00  0.00000E+00         0.00
+  short range                      0.00000E+00  0.00000E+00         0.00
+  self                             0.00000E+00  0.00000E+00         0.00
+
+Atoms->Atoms Coulomb grad Q of the potential
+--------------------------------------------
+  long range                       1.25600E-03  1.25600E-03        17.89
+  k==0                             3.00258E-06  3.00258E-06         0.04
+  short range                      0.00000E+00  0.00000E+00         0.00
+  self                             9.98378E-07  9.98378E-07         0.01
+
+Ions Coulomb forces
+-------------------
+  long range                       2.12000E-03  2.12000E-03        30.19
+  k==0                             8.00192E-06  8.00192E-06         0.11
+  short range                      7.99820E-06  7.99820E-06         0.11
+  intramolecular                   0.00000E+00  0.00000E+00         0.00
+
+Ions Coulomb potential
+----------------------
+  long range                       7.35998E-04  7.35998E-04        10.48
+  k==0                             5.99772E-06  5.99772E-06         0.09
+  short range                      6.99982E-06  6.99982E-06         0.10
+  intramolecular                   0.00000E+00  0.00000E+00         0.00
+  self                             2.00048E-06  2.00048E-06         0.03
+
+Ions Coulomb electric field (due to charges)
+--------------------------------------------
+  long range                       0.00000E+00  0.00000E+00         0.00
+  k==0                             0.00000E+00  0.00000E+00         0.00
+  short range                      0.00000E+00  0.00000E+00         0.00
+  intramolecular                   0.00000E+00  0.00000E+00         0.00
+
+Ions Coulomb electric field (due to dipoles)
+---------------------------------------- ---
+  long range                       0.00000E+00  0.00000E+00         0.00
+  k==0                             0.00000E+00  0.00000E+00         0.00
+  short range                      0.00000E+00  0.00000E+00         0.00
+  intramolecular                   0.00000E+00  0.00000E+00         0.00
+  self                             0.00000E+00  0.00000E+00         0.00
+
+Ions Coulomb electric field gradient (due to charges and dipoles)
+---------------------------------------- ---
+  long range                       0.00000E+00  0.00000E+00         0.00
+  short range                      0.00000E+00  0.00000E+00         0.00
+  self                             0.00000E+00  0.00000E+00         0.00
+
+Ions Coulomb gradient mu of the electric field
+----------------------------------------------
+  long range                       0.00000E+00  0.00000E+00         0.00
+  k==0                             0.00000E+00  0.00000E+00         0.00
+  short range                      0.00000E+00  0.00000E+00         0.00
+  self                             0.00000E+00  0.00000E+00         0.00
+
+Rattle
+------
+  positions                        0.00000E+00  0.00000E+00         0.00
+  velocities                       0.00000E+00  0.00000E+00         0.00
+
+van der Waals
+-------------
+  vdW  forces                      0.00000E+00  0.00000E+00         0.00
+  vdW  potential                   0.00000E+00  0.00000E+00         0.00
+
+Intramolecular
+--------------
+  Intramolecular  forces           0.00000E+00  0.00000E+00         0.00
+  Intramolecular potential         0.00000E+00  0.00000E+00         0.00
+
+Additional degrees of freedom computation
+-----------------------------------------
+  Electrode charge computation     2.37300E-03  2.37300E-03        33.79
+  Inversion of the matrix          7.90022E-05  7.90022E-05         1.13
+  One matrix-vector product        1.00024E-06  2.00048E-06         0.03
+  Melt dipoles computation         0.00000E+00  0.00000E+00         0.00
+  Inversion of the matrix          0.00000E+00  0.00000E+00         0.00
+  One matrix-vector product        0.00000E+00  0.00000E+00         0.00
+  AIM DOFs computation             0.00000E+00  0.00000E+00         0.00
+
+Diagnostics
+-------------
+  diagnostics computations         0.00000E+00  0.00000E+00         0.00
+  IO                               1.93330E-05  5.79990E-05         0.83
+

@@ -2,7 +2,8 @@
 /// @brief END-TO-END REGRESSION: isothermal–isobaric (NPT) Monte Carlo of the
 ///        truncated-and-shifted Lennard-Jones vapor against the exact
 ///        finite-N ensemble average ⟨V⟩ = (N+1)k_BT/P plus the second-virial
-///        correction N·B₂.
+///        correction N·B₂ — and against the exact ensemble WIDTH
+///        σ_V = √(N+1)·k_BT/P.
 ///
 /// See REFERENCE.md for the literature source of every relation below and the
 /// physical justification of the tolerance. The (N+1) — not N — is the exact
@@ -15,14 +16,16 @@
 
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/mc/move_selector.h"
-#include "atomiverse/cpu/mc/npt_mc.h"
-#include "atomiverse/cpu/mc/translate_move.h"
-#include "atomiverse/cpu/mc/volume_move.h"
+#include "atomiverse/cpu/montecarlo/move_selector.h"
+#include "atomiverse/cpu/montecarlo/npt_mc.h"
+#include "atomiverse/cpu/montecarlo/translate_move.h"
+#include "atomiverse/cpu/montecarlo/volume_move.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -73,11 +76,16 @@ int main() {
     }
 
     // Analytic prediction: ⟨V⟩ = (N+1)k_BT/P + N·B₂ + O(N B₂² ρ).
-    const double v_pred = (n_atoms + 1) * kT / pressure + n_atoms * b2; // [Å³]
+    const double v_ideal = (n_atoms + 1) * kT / pressure;   // [Å³]
+    const double v_pred = v_ideal + n_atoms * b2;           // [Å³]
+    // Exact ideal-gas NPT width: Var V = (N+1)(k_BT/P)².
+    const double sd_pred = std::sqrt(double(n_atoms + 1)) * kT / pressure;
+    // The fingerprint of the V^N weight: getting the exponent wrong by one
+    // (N instead of N+1) moves ⟨V⟩ by exactly this much.
+    const double n_plus_one_signature = kT / pressure; // [Å³]
     std::printf("B2 = %.4f sigma^3, <V> predicted = %.1f A^3 (ideal part %.1f, "
                 "virial shift %.1f)\n",
-                b2 / (sigma * sigma * sigma), v_pred,
-                (n_atoms + 1) * kT / pressure, n_atoms * b2);
+                b2 / (sigma * sigma * sigma), v_pred, v_ideal, n_atoms * b2);
 
     // ── Start 12% BELOW the predicted volume, on a simple-cubic lattice ──
     // Off-prediction start: the chain must expand to the answer, so a frozen
@@ -95,53 +103,140 @@ int main() {
         frame.span(ATV::kAtom_mass)[i] = mass;
         frame.span(ATV::kAtom_type)[i] = 1;
     }
-    frame.simbox = ATV::cpu::Box::cubic(box_len);
+    frame.box = ATV::cpu::Box::cubic(box_len);
 
-    // δV ≈ σ_V = ⟨V⟩/√N keeps volume moves near 50% acceptance.
+    // δV ≈ σ_V/√N keeps volume moves near 50% acceptance. Volume is the
+    // observable, so it gets half the trials: the volume autocorrelation time
+    // is what sets the error bar, and translations do not shorten it.
     const double dv_max = v_pred / std::sqrt(static_cast<double>(n_atoms));
     cpu::mc::NptMc mc{temperature, pressure, /*seed=*/1337u};
-    mc.add_potential(cpu::PairLJCut{eps, sigma, cutoff});
+    mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
     mc.set_neighbor(cpu::md::NeighborList<>{cutoff, /*skin=*/1.0, 1, 0, true});
     mc.set_mover(cpu::mc::MoveSelector{}
-                     .add(cpu::mc::TranslateMove{0.4 * sigma}, 0.8)
-                     .add(cpu::mc::VolumeMove{dv_max}, 0.2));
+                     .add(cpu::mc::TranslateMove{0.4 * sigma}, 0.5)
+                     .add(cpu::mc::VolumeMove{dv_max}, 0.5));
     mc.build();
 
-    mc.run(frame, 40000); // equilibrate
-    const int n_blocks = 30000;
-    double v_sum = 0.0, v_sq_sum = 0.0;
-    for (int b = 0; b < n_blocks; ++b) {
-        mc.run(frame, 10);
-        const double v_now = frame.simbox.volume();
-        v_sum += v_now;
-        v_sq_sum += v_now * v_now;
-    }
-    const double v_avg = v_sum / n_blocks;
-    const double v_var = v_sq_sum / n_blocks - v_avg * v_avg;
-    // Volume decorrelates over ~1/(volume-move fraction) sweeps; samples sit
-    // 10 sweeps apart, so inflate the naive SE by that correlation factor.
-    const double se = std::sqrt(v_var / n_blocks) * std::sqrt(1.0 + 5.0 / 10.0);
+    mc.run(frame, 20000); // equilibrate
 
-    // Tolerance: 5σ statistical + 0.2% for the O(B₃ρ²) truncation.
-    const double tol = 5.0 * se + 0.002 * v_pred;
-    const double diff = std::abs(v_avg - v_pred);
+    // ── Blocking (batch means) — Flyvbjerg & Petersen 1989 ───────────────
+    // Consecutive MC samples are correlated, so the naive √(Var/n) understates
+    // the error by the square root of the autocorrelation time. Batch means
+    // over blocks far longer than that time ARE independent, so their spread
+    // is the honest standard error. It is also the numerically stable route:
+    // ⟨V²⟩ − ⟨V⟩² at V ≈ 2.4e5 subtracts two ~5.9e10 numbers and returns a
+    // NEGATIVE variance in double precision.
+    const int n_batches = 40;
+    const int samples_per_batch = 1000;
+    const int trials_per_sample = 10;
+    std::vector<double> batch_mean(n_batches, 0.0);
+    // Shifted-data accumulation about the prediction: the deviations are
+    // O(σ_V) rather than O(⟨V⟩), so nothing large is ever subtracted.
+    const double shift = v_pred;
+    double s1 = 0.0, s2 = 0.0;
+    long n_samples = 0;
+    for (int b = 0; b < n_batches; ++b) {
+        double acc = 0.0;
+        for (int s = 0; s < samples_per_batch; ++s) {
+            mc.run(frame, trials_per_sample);
+            const double d = frame.box.volume() - shift;
+            acc += d;
+            s1 += d;
+            s2 += d * d;
+            ++n_samples;
+        }
+        batch_mean[b] = shift + acc / samples_per_batch;
+    }
+    const double v_avg = shift + s1 / double(n_samples);
+    double batch_var = 0.0;
+    for (double m : batch_mean)
+        batch_var += (m - v_avg) * (m - v_avg);
+    batch_var /= double(n_batches - 1);
+    const double se = std::sqrt(batch_var / double(n_batches));
+
+    // Ensemble WIDTH of the samples themselves (not of the batch means).
+    const double d_mean = s1 / double(n_samples);
+    const double sd_measured =
+        std::sqrt(s2 / double(n_samples) - d_mean * d_mean);
+
     const double acc_disp =
         mc.acceptance_ratio(cpu::mc::Transaction::Verb::Displace);
     const double acc_vol = mc.acceptance_ratio(cpu::mc::Transaction::Verb::Box);
-    std::printf("<V> got %.1f  want %.1f  (se %.1f, tol %.1f)  acc[disp] %.2f  "
-                "acc[vol] %.2f\n",
-                v_avg, v_pred, se, tol, acc_disp, acc_vol);
-    // A frozen chain (e.g. a NaN energy rejecting every trial) must FAIL,
-    // never coast through on its starting volume.
+
+    // Tolerance: 3× the BLOCKED standard error + 0.2% of ⟨V⟩ for the
+    // O(B₃ρ²) truncation.
+    const double tol = 3.0 * se + 0.002 * v_pred;
+    const double diff = std::abs(v_avg - v_pred);
+    // Model discrimination, with no tolerance at all: the sampled mean must
+    // sit closer to the (N+1) prediction than to the N one.
+    const double miss_n_plus_1 = std::abs(v_avg - v_pred);
+    const double miss_n = std::abs(v_avg - (v_pred - n_plus_one_signature));
+    std::printf("<V> got %.1f  want %.1f  (diff %.1f = %.2f SE, blocked SE "
+                "%.1f, tol %.1f)\n",
+                v_avg, v_pred, v_avg - v_pred, (v_avg - v_pred) / se, se, tol);
+    std::printf("sigma_V got %.1f  want %.1f (exact ideal-gas NPT width)  "
+                "ratio %.4f\n",
+                sd_measured, sd_pred, sd_measured / sd_pred);
+    std::printf("acc[disp] %.3f  acc[vol] %.3f\n", acc_disp, acc_vol);
+    std::printf("V^N weight: |<V> - (N+1)kT/P - N B2| = %.1f  vs  "
+                "|<V> - N kT/P - N B2| = %.1f  (signature %.1f)\n",
+                miss_n_plus_1, miss_n, n_plus_one_signature);
+
+    // A frozen chain (e.g. a NaN energy, or a rollback that corrupted the
+    // configuration into an overlap no trial can escape) must FAIL, never
+    // coast through on its starting volume.
     if (!(acc_disp > 0.01) || !(acc_vol > 0.01)) {
         std::printf(
             "FAIL: frozen chain (displacement/volume acceptance ~ 0)\n");
+        return 1;
+    }
+    // A frozen chain has sigma_V = 0 exactly; a broken volume Jacobian
+    // reshapes the distribution. The width is an ensemble statement in its
+    // own right, independent of the mean.
+    if (!(std::fabs(sd_measured / sd_pred - 1.0) <= 0.15)) {
+        std::printf("FAIL: sigma_V is %.1f%% off the exact NPT ensemble "
+                    "width — the sampled distribution is not P(V) ∝ "
+                    "V^N e^{-beta P V}\n",
+                    100.0 * (sd_measured / sd_pred - 1.0));
         return 1;
     }
     if (!(diff <= tol)) {
         std::printf("FAIL: <V> off the NPT ensemble prediction\n");
         return 1;
     }
+    // The (N+1) is the fingerprint of the V^N weight that uniform-in-V
+    // sampling targets. Comparing the two candidate predictions needs no
+    // tolerance: one of them is right and the other is 1/(N+1) away.
+    if (!(miss_n_plus_1 < miss_n)) {
+        std::printf("FAIL: <V> sits closer to N*kT/P than to (N+1)*kT/P — the "
+                    "volume weight is not V^N (check the N k_BT ln(V'/V) "
+                    "Jacobian term)\n");
+        return 1;
+    }
+
+    // ── The sampler's reference energy must still describe the frame ─────
+    // `NptMetropolis` carries the last accepted energy forward instead of
+    // recomputing it; if anything mutates the configuration behind the
+    // sampler's back (a rollback splicing a saved row over the wrong atom,
+    // say) the two silently part company and every later trial is judged
+    // against a state that no longer exists.
+    cpu::Frame check = frame;
+    cpu::Evaluate eval;
+    eval.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
+    eval.set_neighbor(cpu::md::NeighborList<>{cutoff, /*skin=*/1.0});
+    eval.build();
+    eval.run(check);
+    const double e_true = check.meta.get(ATV::kEnergy);
+    const double e_book = static_cast<double>(mc.current_energy());
+    std::printf("bookkeeping E %.9f eV   recomputed E %.9f eV   |dE| %.3e\n",
+                e_book, e_true, std::fabs(e_book - e_true));
+    if (!(std::fabs(e_book - e_true)
+          <= 1e-9 * std::fabs(e_true) + 1e-12)) {
+        std::printf("FAIL: the chain's reference energy no longer describes "
+                    "the configuration it holds\n");
+        return 1;
+    }
+
     std::printf("PASS: NPT <V> matches (N+1)kT/P + N*B2\n");
     return 0;
 }

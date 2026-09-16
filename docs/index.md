@@ -45,11 +45,12 @@ hero:
 
 ```cpp
 cpu::md::MD sim;
-sim.set_integrator(cpu::md::VelocityVerlet{0.5});   // fs
+sim.set_integrator(cpu::md::VelocityVerlet{0.5});     // fs
 
-sim.add_potential(cpu::PairLJCut{0.0104, 3.4, 6.8}); // classical MD
-// or:
-// sim.on(md::Phase::force).add(cpu::scf::RHF{}); // ab-initio MD
+sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});  // classical MD
+sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});  // cutoff, skin
+// or, for ab-initio MD, swap the energy source:
+// sim.set_evaluator(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
 
 sim.build();
 sim.run(frame, 1000);
@@ -70,11 +71,11 @@ sim.run(frame, 1000);
 <div class="molcrafts-manual-grid molcrafts-manual-grid--cols-3">
   <a href="tutorial/ch10-classical-md/">
     <strong>Classical MD</strong>
-    <em>LJ, bonded, NVE/NVT/NPT, PME.</em>
+    <em>LJ, bonded, many-body, NVE/NVT/NPT/NPH, PME.</em>
   </a>
   <a href="tutorial/ch12-geometry-optimization/">
     <strong>Optimization</strong>
-    <em>L-BFGS / CG over any force source.</em>
+    <em>L-BFGS / CG / FIRE, cell relaxation.</em>
   </a>
   <a href="user-guide/methods/#monte-carlo">
     <strong>Monte Carlo</strong>
@@ -82,15 +83,15 @@ sim.run(frame, 1000);
   </a>
   <a href="tutorial/ch02-rhf/">
     <strong>Gaussian SCF</strong>
-    <em>RHF, UHF, KS-DFT + gradients.</em>
+    <em>HF, KS-DFT, post-HF, excited states.</em>
   </a>
   <a href="tutorial/ch08-plane-wave/">
     <strong>Plane-wave DFT</strong>
-    <em>Periodic KS-LDA, k-points.</em>
+    <em>Periodic KS, k-points, stress, phonons.</em>
   </a>
   <a href="tutorial/ch09-gpw/">
     <strong>GPW DFT</strong>
-    <em>GTH + Gaussians, PBE, D3.</em>
+    <em>GTH + Gaussians, DFT+U, dispersion, OT.</em>
   </a>
   <a href="tutorial/ch14-vibrations/">
     <strong>Vibrations</strong>
@@ -98,11 +99,11 @@ sim.run(frame, 1000);
   </a>
   <a href="tutorial/ch17-semiempirical-am1/">
     <strong>Semiempirics</strong>
-    <em>NDDO/AM1, AM1-BCC charges.</em>
+    <em>AM1/RM1, DFTB0/2/3, GFN-xTB.</em>
   </a>
   <a href="tutorial/ch13-observables/">
     <strong>Observables</strong>
-    <em>RDF, stress, Mulliken, cubes.</em>
+    <em>RDF, MSD, stress, charges, cubes.</em>
   </a>
 </div>
 

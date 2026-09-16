@@ -1,11 +1,8 @@
-# Chapter 1: Systems, Units, Precision, and Validation
+# Chapter 1. Systems and Units
 
-| | |
-|---|---|
-| **Units** | eV, Å, fs, amu, eV/Å, K (`core/units.h`) |
-| **Precision** | `StorageReal` / `WorkReal` / `AccReal` (accumulators always `double`) |
-| **IDs** | `LocalInt`, `TagInt`, `ImageInt`, `BigInt` (LAMMPS roles) |
-| **Frame** | `blocks` + `meta` + `simbox` — no method-specific scratch |
+Units are eV, Å, fs, amu, eV/Å, K. Precision is tiered
+(`StorageReal` / `WorkReal` / always-double `AccReal`). Frame is
+`blocks` + `meta` + `box` only.
 
 Every later chapter reuses this model. Finite-difference gradient checks are the
 universal validation: analytic forces from any evaluator must match energy
@@ -14,15 +11,13 @@ differences within a documented tolerance before they feed MD or Minimize.
 ```cpp
 cpu::Frame f(n);
 auto x = f.span(kAtom_x);          // (Å)
-f.simbox = cpu::Box::cubic(L);     // (Å)
+f.box = cpu::Box::cubic(L);     // (Å)
 // after a force evaluation:
 double E = f.meta.get(kEnergy);    // (eV) for classical/AM1; SCF writes eV too
 ```
 
-Cross-check: run `02_rhf` and confirm the textbook energy in
-[`examples/results/02_rhf.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/02_rhf.json)
-— that is an end-to-end proof that units, Frame, and SCF agree.
-
+Cross-check the textbook energy in the RHF results table of Chapter 2 —
+an end-to-end proof that units, Frame, and SCF agree.
 
 Before any method — Hartree-Fock, DFT, molecular dynamics — there is a
 system: a set of atoms in a box, described in a fixed set of units, stored
@@ -47,7 +42,7 @@ The six questions this book asks of every topic apply here too:
    independent check" discipline reappears in every method chapter.
 
 If the architecture (Driver / Component / Frame) is new to you, read
-[Chapter 0: A Tour of the CPU Backend](ch00-architecture.md) first. This
+[Chapter 0](ch00-architecture.md) first. This
 chapter assumes you know that a `cpu::Frame` is the shared state object and
 picks up from there.
 
@@ -102,7 +97,7 @@ x[2] = 0.0; y[2] = -0.7555; z[2] = -0.4712;
 
 mass[0] = 15.999; mass[1] = 1.008; mass[2] = 1.008; // amu
 
-frame.simbox = cpu::Box::cubic(100.0);      // a big non-interacting cell (Å)
+frame.box = cpu::Box::cubic(100.0);      // a big non-interacting cell (Å)
 ```
 
 For a small molecule the initializer-list form used throughout the test
@@ -122,7 +117,7 @@ for (int i = 0; i < frame.nlocal(); ++i) {
     frame.span(kAtom_z)[i] = z[i];
     frame.span(kAtom_mass)[i] = mass[i];
 }
-frame.simbox = cpu::Box::cubic(100.0);
+frame.box = cpu::Box::cubic(100.0);
 ```
 
 Two conventions here are load-bearing and reused in every quantum chapter:
@@ -135,7 +130,7 @@ object: `frame.meta.get(kEnergy)` (potential energy, eV) and the
 
 The simulation cell is [`cpu::Box`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/frame/box.h),
 constructed most often with `cpu::Box::cubic(L)` and assigned to
-`frame.simbox`. It owns the 3×3 cell matrix plus a per-step-immutable cache and
+`frame.box`. It owns the 3×3 cell matrix plus a per-step-immutable cache and
 exposes the queries force kernels need:
 
 ```cpp
@@ -249,10 +244,9 @@ using namespace ATV;
 
 cpu::Frame frame = /* H2O, positions in Å, type = Z */;
 
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
-rhf.tol = 1e-12;   // tight for FD comparisons
-const auto& result = rhf.run(frame);
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0,
+                  /*tol=*/1e-12};   // tight for FD comparisons
+rhf.run(frame);
 
 // Analytic forces [n_atoms, 3] eV/Å — method owns private workspace.
 auto analytic = rhf.forces(frame);
@@ -264,9 +258,10 @@ Two details are worth internalizing because they recur:
 - **The SCF must be gradient-stationary.** Finite differences probe the
   *true* energy surface, so if the SCF is only loosely converged the ±h
   energies carry convergence noise and the FD gradient is dominated by it.
-  For a tight check, tighten the config: `rhf.tol = 1e-12`
-  and set `config.conv_tol_grad = 1e-9`. (This is exactly what the vibration
-  tests do — see [Chapter 14](ch14-vibrations.md).)
+  For a tight check, pass a tight tolerance to the constructor
+  (`RHF{basis, 0, /*tol=*/1e-12}`) and set `rhf.conv_tol_grad = 1e-9`.
+  (This is exactly what the vibration tests do — see
+  [Chapter 14](ch14-vibrations.md).)
 - **The step size `h` trades truncation against round-off.** The default
   `5e-5 Å` sits in the sweet spot for double-precision energies; far smaller
   and catastrophic cancellation dominates, far larger and the
@@ -316,13 +311,12 @@ mean something.
 
 ## Validation Reference
 
-The finite-difference gradient checker shown here is exercised in
-[`tests/cpu/scf/test_gradient.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_gradient.cpp)
-(RHF/UHF/KS analytic gradients vs central differences, STO-3G) and, for
-hybrids on a moving XC grid, in
-[`tests/cpu/scf/test_hybrid_gradient.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_hybrid_gradient.cpp)
-(analytic vs finite-difference to **1e-5 Ha/Bohr**, plus translational
-invariance `|Σ_A F_A| ≤ 1e-8 Ha/Bohr`). The tiered-precision types are
+Analytic gradients are checked end-to-end against PySCF in
+[`regressions/scf/h2o_rhf_sto3g_grad`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_sto3g_grad)
+and, on a larger basis, in
+[`regressions/scf/h2o_rhf_def2svp_grad`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_def2svp_grad).
+The gradient-result plumbing itself has a unit test in
+[`tests/cpu/scf/test_gradient_result.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_gradient_result.cpp). The tiered-precision types are
 defined and documented in
 [`include/atomiverse/core/precision.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/precision.h);
 the unit registry in

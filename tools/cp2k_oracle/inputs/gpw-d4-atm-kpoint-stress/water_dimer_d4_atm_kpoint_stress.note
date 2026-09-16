@@ -1,0 +1,76 @@
+# Offline CP2K multi-k PBE-D4+ATM NUMERICAL stress pin
+# (gpw-d4-atm-kpoint-stress)
+
+## Binary
+
+| Item | Value |
+| --- | --- |
+| Engine | CP2K 2026.1 `cp2k.psmp` git:5e54ba2 |
+| Flags | `omp libint fftw3 libxc elpa parallel scalapack mpi_f08 spglib libdftd4` |
+| Build | private Arrhenius rebuild with `-DCP2K_USE_DFTD4=ON` |
+| Prefix | `/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install` |
+| libdftd4 | EasyBuild `dftd4/3.7.0-gfbf-2025b` (+ mctc-lib, multicharge, mstore) |
+| Data | `CP2K_DATA_DIR=/nobackup/.../cp2k/src/data` |
+
+Stock source install (`…/cp2k/install`, no `libdftd4` in `cp2kflags`) aborts
+`TYPE DFTD4` — do **not** use it for this twin.
+
+## Reproduce (offline only — never ctest)
+
+```bash
+export PATH=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install/bin:$PATH
+export LD_LIBRARY_PATH=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k-dftd4/install/lib64:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/dftd4/3.7.0-gfbf-2025b/lib64:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/mctc-lib/0.5.1-GCC-14.3.0/lib:\
+/software/sse2/el9_epyc9005/easybuild/prefix/software/multicharge/0.3.1-gfbf-2025b/lib:\
+${LD_LIBRARY_PATH:-}
+export CP2K_DATA_DIR=/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/src/data
+export OMP_NUM_THREADS=8
+cd /tmp && mkdir -p atv-cp2k-d4-atm-kpt-stress && cd atv-cp2k-d4-atm-kpt-stress
+ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS} .
+# copy both .inp files from tools/cp2k_oracle/inputs/gpw-d4-atm-kpoint-stress/
+mpirun -np 1 cp2k.psmp -i water_dimer_d4_atm_kpoint_stress.inp \
+       -o water_dimer_d4_atm_kpoint_stress.out
+mpirun -np 1 cp2k.psmp -i water_dimer_d4_2b_kpoint_stress.inp \
+       -o water_dimer_d4_2b_kpoint_stress.out
+```
+
+## D4 ATM input requirements
+
+- `D4_CUTOFF` (2-body) must be **≥** `R_CUTOFF` (3-body); twin uses
+  `D4_CUTOFF 30`, `R_CUTOFF 20`.
+- ATM on: `CALCULATE_C9_TERM .TRUE.` + `FACTOR_S9_TERM 1.0`.
+- Two-body companion: `CALCULATE_C9_TERM .FALSE.` + `FACTOR_S9_TERM 0.0`.
+- K-points: `DIAGONALIZATION` (not OT); `EPS_SCF 1e-8`;
+  `STRESS_TENSOR NUMERICAL`.
+
+## Pinned numbers (2026-08-01, Arrhenius epyc login)
+
+```
+E_disp printed (ATM twin)    = -0.00099567884677 Ha
+E_disp printed (2b twin)     = -0.00099470623400 Ha
+E_total (ATM, unstrained)    = -34.33924765693281 Ha
+E_total (2b, unstrained)     = -34.33924668432004 Ha
+T_cp2k internal (ATM twin)   = 137.945 s   (1 MPI × 8 OMP)  ← fair wall
+T_cp2k internal (2b twin)    =  71.311 s   (companion; not for ratio)
+
+STRESS| Numerical stress tensor [bar]  (ATM):
+  xx  5.52018710595E+03
+  yy  1.89618271881E+01
+  zz  1.28133914386E+04
+
+STRESS| Numerical stress tensor [bar]  (2b):
+  xx  5.52041294904E+03
+  yy  1.87847915243E+01
+  zz  1.28134653693E+04
+
+sigma_ATM = σ(ATM) − σ(2b)  [Ha/Bohr³]  (1 Ha/Bohr³ = 2.9421015697e8 bar):
+  xx  -7.676250620509834e-10
+  yy  +6.017319919313666e-10
+  zz  -2.512853422932131e-10
+```
+
+Cross-check vs offline dftd4 3.7.0 strained-cell FD ATM stress
+(Γ pin `gpw-d4-atm-stress`, k-independent): residual ≲ 2×10⁻¹¹ Ha/Bohr³.
+ATV product path pins E_disp to dftd4 s9=1; hard Δσ to this multi-k CP2K
+difference.

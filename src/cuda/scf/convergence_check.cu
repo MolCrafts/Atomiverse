@@ -1,11 +1,12 @@
 /// @file cuda/scf/convergence_check.cu
-/// @brief internal::ConvergenceCheck: ||P - P_old||_F, energy = trace(H*P),
-///        convergence flag.
+/// @brief internal::ConvergenceCheck: ||P - P_old||_F on device (no D2H).
 
 #include "atomiverse/cuda/scf/internal/convergence_check.cuh"
 #include "cublas_dispatch.cuh"
 
+#include "atomiverse/core/units.h"
 #include "atomiverse/cuda/frame/types.cuh"
+#include <cublas_v2.h>
 #include <cuda_runtime.h>
 
 namespace ATV {
@@ -17,6 +18,14 @@ using cuda::work_t;
 namespace cuda {
 namespace scf {
 namespace internal {
+
+/// *d_converged = 1 when step>0 and residual < tol (device-only control).
+__global__ void update_scf_converged_kernel(int* __restrict__ d_converged,
+                                            const prec_t* __restrict__ residual,
+                                            prec_t tol, int step) {
+    if (step > 0 && (*residual) < tol)
+        *d_converged = 1;
+}
 
 void ConvergenceCheck::build(const SolverContext& ctx, SCFWorkspace& /*ws*/) {
     auto stream = static_cast<cudaStream_t>(ctx.stream);
@@ -40,23 +49,50 @@ void ConvergenceCheck::step(const SolverContext& ctx, SCFWorkspace& ws) {
     // work = P - P_old
     cudaMemcpyAsync(scf.work, scf.P, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
+    cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST);
     prec_t neg_one = prec_t(-1);
     detail::axpy(handle, nn, &neg_one, scf.P_old, 1, scf.work, 1);
 
-    // ||P - P_old||_F = nrm2(work)
+    // Device residual path (RHF device integrals): no D2H of residual.
+    if (scf.d_residual && scf.d_converged) {
+        cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_DEVICE);
+        detail::nrm2(handle, nn, scf.work, 1, scf.d_residual);
+        update_scf_converged_kernel<<<1, 1, 0, stream>>>(
+            scf.d_converged, scf.d_residual, static_cast<prec_t>(tol_),
+            ctx.step);
+        cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST);
+        // Host scf.converged / residual filled only after the full SCF
+        // (RhfScfCycle::drive post-pass). Mid-loop early exit uses device flag
+        // only when the host polls it — device path runs fixed max_iter
+        // without D2H (see RhfScfCycle::drive).
+        if (compute_energy_ && ctx.frame.scalars) {
+            // Toy path should not mix with d_residual device control usually;
+            // keep host energy write for synthetic if requested.
+            cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST);
+            prec_t energy = 0;
+            detail::dot(handle, nn, scf.H, 1, scf.P, 1, &energy);
+            energy *= static_cast<prec_t>(units::kHartreeInEv);
+            cudaMemcpyAsync(&ctx.frame.scalars->energy, &energy, sizeof(prec_t),
+                            cudaMemcpyHostToDevice, stream);
+        }
+        return;
+    }
+
+    // Host residual path (synthetic / host-integral uploads).
+    cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST);
     prec_t norm = 0;
     detail::nrm2(handle, nn, scf.work, 1, &norm);
 
-    // Optionally compute energy = dot(H, P) (toy-scf mode)
     if (compute_energy_) {
         prec_t energy = 0;
         detail::dot(handle, nn, scf.H, 1, scf.P, 1, &energy);
+        energy *= static_cast<prec_t>(units::kHartreeInEv);
         cudaMemcpyAsync(&ctx.frame.scalars->energy, &energy, sizeof(prec_t),
                         cudaMemcpyHostToDevice, stream);
     }
+    // Single host-mode fence for residual visibility (legacy paths only).
     cudaStreamSynchronize(stream);
 
-    // Update host-cached convergence state
     scf.residual = static_cast<double>(norm);
     scf.iteration = ctx.step;
 

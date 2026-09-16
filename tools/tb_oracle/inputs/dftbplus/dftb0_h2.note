@@ -1,0 +1,26 @@
+# Offline pin note — dftb0-h2
+
+- Date: 2026-07-28 (supersedes the 2026-07-27 sketch-snapshot note)
+- Method: non-SCC DFTB / DFTB0
+- System: H2, R = 0.74 Å, charge 0, singlet
+- Oracle: DFTB+ 24.1 + mio-1-1 — the transcript in `h2_mio_scc/`
+  (shared with `regressions/semiempirical/dftb2-dftbplus-energy-pin/`).
+- Pin: E = **-18.36635052 eV** (-0.6749509324 Ha), tol 1e-3 eV.
+
+## Why the SCC transcript is a valid DFTB0 oracle here
+
+H2 is homonuclear → Δq_A = Δq_B = 0 by symmetry → the DFTB2 second-order
+energy and the SCC shift on H0 are identically zero → DFTB2 reduces exactly to
+E = Σ_i 2ε_i + E_rep, the DFTB0 expression. The transcript says the same
+independently: band -0.6807883427 Ha + repulsive +0.0058374104 Ha + SCC 0
+(Δq = 0) = -0.6749509324 Ha. The licence is specific to homonuclear diatomics;
+a heteronuclear DFTB0 pin needs its own non-SCC DFTB+ run.
+
+## Superseded (2026-07-27, do not reinstate)
+
+The first pin was E = -18.1376035790 eV — a snapshot of ATV's own DFTB0 output
+while `dftb0.cpp` read the mio-*style* sketch H–H row from
+`dftb_mio_tables.h`. That was 0.229 eV off the oracle. `dftb0.cpp` now reads
+the transcribed mio-1-1 H–H grid (`dftb_mio_hh_sk.h` via
+`internal/mio_hh_table.h`), the same tables and interpolation the SCC path
+uses, and reproduces the DFTB+ number to ~3e-9 eV.

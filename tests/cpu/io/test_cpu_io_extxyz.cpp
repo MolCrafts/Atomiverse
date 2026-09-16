@@ -54,9 +54,9 @@ TEST(CpuIoExtxyz, InlineFixtureLoadsAtomsBoxAndZ) {
     EXPECT_EQ(f.span(ATV::kAtom_type)[1], 1); // H
     EXPECT_EQ(f.span(ATV::kAtom_type)[2], 1); // H
 
-    EXPECT_NEAR(f.simbox.length(0), 5.0, 1e-6);
-    EXPECT_NEAR(f.simbox.length(1), 6.0, 1e-6);
-    EXPECT_NEAR(f.simbox.length(2), 7.0, 1e-6);
+    EXPECT_NEAR(f.box.length(0), 5.0, 1e-6);
+    EXPECT_NEAR(f.box.length(1), 6.0, 1e-6);
+    EXPECT_NEAR(f.box.length(2), 7.0, 1e-6);
 
     EXPECT_EQ(f.span(ATV::kAtom_x)[1], ATV::StorageReal(0.9));
     EXPECT_EQ(f.span(ATV::kAtom_y)[2], ATV::StorageReal(0.85));

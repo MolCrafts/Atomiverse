@@ -1,16 +1,18 @@
 /// @file cpu/scf/operators.cpp
 /// @brief Two-electron Fock operator members: stored-ERI
-///        (IntegralPack::coulomb_exchange_fused) and direct-SCF
+///        (internal::IntegralView::coulomb_exchange_fused) and direct-SCF
 ///        (ShellPairList / ShellBlockPairList members).
 
 #include "atomiverse/cpu/scf/cart.h"
-#include "atomiverse/cpu/scf/internal/integrals.h"
+#include "atomiverse/cpu/scf/internal/integral_view.h"
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
+#include "atomiverse/cpu/scf/rys_eri.h"
 
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <stdexcept>
 #include <vector>
 
 #include <xtensor-blas/xlinalg.hpp>
@@ -26,14 +28,14 @@ namespace scf {
 
 // ── Stored-ERI operator (BLAS via xtensor-blas) ─────────────────────────
 //
-// `IntegralPack::coulomb_exchange_fused` reshapes the 4-index ERI tensor into
+// `internal::IntegralView::coulomb_exchange_fused` reshapes the 4-index ERI tensor into
 // an [n²×n²] matrix, turning the Coulomb double-sum into a single DGEMV call.
-// `HamiltonianBuilder` selects this path whenever `IntegralPack::ERI` is a
+// `HamiltonianBuilder` selects this path whenever `IntegralView::ERI` is a
 // materialized dense tensor; otherwise the direct-SCF
 // `ShellBlockPairList::g_rhf` path runs without ever materializing ERI.
 
-void IntegralPack::coulomb_exchange_fused(const RealMatrix& P_total,
-                                          RealMatrix& G) const {
+void internal::IntegralView::coulomb_exchange_fused(const RealMatrix& P_total,
+                                                    RealMatrix& G) const {
     const int n = n_basis;
     // PySCF approach: J via BLAS DGEMV, K via einsum-equivalent contraction.
     //   J(i,j) = einsum('ijkl,kl->', ERI, P)  → reshape(n²,n²) @ flatten(P)
@@ -61,6 +63,15 @@ void IntegralPack::coulomb_exchange_fused(const RealMatrix& P_total,
     const double* Pp = P_total.data(); // column-major
     double* Gp = G.data();             // column-major
     const double* Ep = ERI.data();     // row-major ERI(i,j,k,l)
+    // Parallel over the outer index i: iteration i is the SOLE writer of the
+    // output element (i, j) and its mirror (j, i) for every j <= i (the
+    // element with the larger index equal to i), so no two iterations touch
+    // the same Gp slot. The k,l reduction for each element stays serial in
+    // ascending order, so the result is bit-for-bit identical for any thread
+    // count.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j <= i; ++j) {
             double k_val = 0.0;
@@ -382,8 +393,14 @@ void ShellBlockPairList::k(const RealMatrix& P, RealMatrix& K) const {
             const native::ShellBlock& Bsl = sp.blocks[bp_r.sj];
             const int nc = Bsk.n_cart, nd = Bsl.n_cart;
 
+            // Zero only the actually-used na*nb*nc*nd prefix (eri_block
+            // accumulates into it) instead of `= {}`-initializing the whole
+            // ~80KB stack buffer on every quartet.
             double blk[kMaxNCartOrbital * kMaxNCartOrbital * kMaxNCartOrbital
-                       * kMaxNCartOrbital] = {};
+                       * kMaxNCartOrbital];
+            const int blk_size = na * nb * nc * nd;
+            for (int z = 0; z < blk_size; ++z)
+                blk[z] = 0.0;
             native::eri_block(Bsi, Bsj, Bsk, Bsl, blk);
 
             if (left != right) {
@@ -503,6 +520,167 @@ void ShellBlockPairList::k(const RealMatrix& P, RealMatrix& K) const {
             Kout[i] += kraw[i];
 }
 
+void ShellBlockPairList::k_erf(const RealMatrix& P, double omega,
+                               RealMatrix& K) const {
+    if (omega == 0.0) {
+        k(P, K);
+        return;
+    }
+    if (omega < 0.0) {
+        throw std::invalid_argument(
+            "ShellBlockPairList::k_erf: omega must be >= 0 [1/Bohr]");
+    }
+    // Same accumulation as k(); only the ERI operator changes.
+    const ShellBlockPairList& sp = *this;
+    const int n = sp.n_basis;
+    const int nT = n_threads();
+    const double thr = sp.threshold;
+    const int npairs = static_cast<int>(sp.pairs.size());
+
+    std::vector<std::vector<double>> Kraw(nT, std::vector<double>(n * n, 0.0));
+    const double* Pp = P.data();
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+    for (int left = 0; left < npairs; ++left) {
+        double* Kp = Kraw[thread_id()].data();
+        const ShellBlockPair& bp_l = sp.pairs[left];
+        const native::ShellBlock& Bsi = sp.blocks[bp_l.si];
+        const native::ShellBlock& Bsj = sp.blocks[bp_l.sj];
+        const int na = Bsi.n_cart, nb = Bsj.n_cart;
+
+        for (int right = 0; right <= left; ++right) {
+            const ShellBlockPair& bp_r = sp.pairs[right];
+
+            if (bp_l.schwarz * bp_r.schwarz < thr)
+                continue;
+
+            const native::ShellBlock& Bsk = sp.blocks[bp_r.si];
+            const native::ShellBlock& Bsl = sp.blocks[bp_r.sj];
+            const int nc = Bsk.n_cart, nd = Bsl.n_cart;
+
+            double blk[kMaxNCartOrbital * kMaxNCartOrbital * kMaxNCartOrbital
+                       * kMaxNCartOrbital];
+            const int blk_size = na * nb * nc * nd;
+            for (int z = 0; z < blk_size; ++z)
+                blk[z] = 0.0;
+            native::rys_eri_erf_block(Bsi, Bsj, Bsk, Bsl, omega, blk);
+
+            if (left != right) {
+                const bool diag_bra = (bp_l.si == bp_l.sj);
+                const bool diag_ket = (bp_r.si == bp_r.sj);
+
+                for (int ia = 0; ia < na; ++ia) {
+                    const int a = Bsi.ao_start + ia;
+                    for (int ib = 0; ib < nb; ++ib) {
+                        if (diag_bra && ib > ia)
+                            continue;
+                        const int b = Bsj.ao_start + ib;
+                        const double* blk_ab = blk + (ia * nb + ib) * (nc * nd);
+
+                        for (int ic = 0; ic < nc; ++ic) {
+                            const int c = Bsk.ao_start + ic;
+                            for (int id = 0; id < nd; ++id) {
+                                if (diag_ket && id > ic)
+                                    continue;
+                                const int d = Bsl.ao_start + id;
+                                const double val = blk_ab[ic * nd + id];
+                                if (std::abs(val) < thr)
+                                    continue;
+
+                                const double Pbd = Pp[b + d * n],
+                                             Pad = Pp[a + d * n];
+                                const double Pbc = Pp[b + c * n],
+                                             Pac = Pp[a + c * n];
+                                Kp[a + c * n] += val * Pbd;
+                                Kp[c + a * n] += val * Pbd;
+                                if (a != b) {
+                                    Kp[b + c * n] += val * Pad;
+                                    Kp[c + b * n] += val * Pad;
+                                }
+                                if (c != d) {
+                                    Kp[a + d * n] += val * Pbc;
+                                    Kp[d + a * n] += val * Pbc;
+                                    if (a != b) {
+                                        Kp[b + d * n] += val * Pac;
+                                        Kp[d + b * n] += val * Pac;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                const bool diag_block = (bp_l.si == bp_l.sj);
+                struct AOpair {
+                    int ia, ib;
+                };
+                AOpair ao_pairs[kMaxNCartOrbital * kMaxNCartOrbital];
+                int n_ao_pairs = 0;
+                for (int ia = 0; ia < na; ++ia)
+                    for (int ib = 0; ib < nb; ++ib) {
+                        if (diag_block && ib > ia)
+                            continue;
+                        ao_pairs[n_ao_pairs++] = {ia, ib};
+                    }
+
+                for (int left_ao = 0; left_ao < n_ao_pairs; ++left_ao) {
+                    const int ia = ao_pairs[left_ao].ia;
+                    const int ib = ao_pairs[left_ao].ib;
+                    const int a = Bsi.ao_start + ia;
+                    const int b = Bsj.ao_start + ib;
+                    const double* blk_ab = blk + (ia * nb + ib) * (nc * nd);
+
+                    for (int right_ao = 0; right_ao <= left_ao; ++right_ao) {
+                        const int ic = ao_pairs[right_ao].ia;
+                        const int id = ao_pairs[right_ao].ib;
+                        const int c = Bsk.ao_start + ic;
+                        const int d = Bsl.ao_start + id;
+                        const double val = blk_ab[ic * nd + id];
+                        if (std::abs(val) < thr)
+                            continue;
+
+                        if (left_ao != right_ao) {
+                            const double Pbd = Pp[b + d * n],
+                                         Pad = Pp[a + d * n];
+                            const double Pbc = Pp[b + c * n],
+                                         Pac = Pp[a + c * n];
+                            Kp[a + c * n] += val * Pbd;
+                            Kp[c + a * n] += val * Pbd;
+                            if (a != b) {
+                                Kp[b + c * n] += val * Pad;
+                                Kp[c + b * n] += val * Pad;
+                            }
+                            if (c != d) {
+                                Kp[a + d * n] += val * Pbc;
+                                Kp[d + a * n] += val * Pbc;
+                                if (a != b) {
+                                    Kp[b + d * n] += val * Pac;
+                                    Kp[d + b * n] += val * Pac;
+                                }
+                            }
+                        } else {
+                            raw_sym_add(Kp, n, a, c, val * Pp[b + d * n]);
+                            if (a != b)
+                                raw_sym_add(Kp, n, b, c, val * Pp[a + d * n]);
+                            if (c != d && a != b)
+                                raw_sym_add(Kp, n, b, d, val * Pp[a + c * n]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    K = xt::zeros<double>(
+        {static_cast<std::size_t>(n), static_cast<std::size_t>(n)});
+    double* Kout = K.data();
+    for (auto& kraw : Kraw)
+        for (int i = 0; i < n * n; ++i)
+            Kout[i] += kraw[i];
+}
+
 void ShellBlockPairList::g_rhf(const RealMatrix& P, RealMatrix& G) const {
     const ShellBlockPairList& sp = *this;
     const int n = sp.n_basis;
@@ -537,9 +715,14 @@ void ShellBlockPairList::g_rhf(const RealMatrix& P, RealMatrix& G) const {
             const int nc = Bsk.n_cart, nd = Bsl.n_cart;
 
             // Max block size is (ff|ff) = n_cart_of(kMaxL)^4 — 10^4 =
-            // 10000 doubles for f-shells.
+            // 10000 doubles for f-shells. Zero only the actually-used
+            // na*nb*nc*nd prefix (eri_block accumulates into it) instead of
+            // `= {}`-initializing the whole ~80KB buffer on every quartet.
             double blk[kMaxNCartOrbital * kMaxNCartOrbital * kMaxNCartOrbital
-                       * kMaxNCartOrbital] = {};
+                       * kMaxNCartOrbital];
+            const int blk_size = na * nb * nc * nd;
+            for (int z = 0; z < blk_size; ++z)
+                blk[z] = 0.0;
             native::eri_block(Bsi, Bsj, Bsk, Bsl, blk);
 
             if (left != right) {
@@ -676,6 +859,200 @@ void ShellBlockPairList::g_rhf(const RealMatrix& P, RealMatrix& G) const {
     for (auto& graw : Graw)
         for (int i = 0; i < n * n; ++i)
             Gout[i] += graw[i];
+}
+
+void ShellBlockPairList::jk_rhf(const RealMatrix& P, RealMatrix& J,
+                                RealMatrix& K) const {
+    const ShellBlockPairList& sp = *this;
+    // Fused one-sweep J + K: one eri_block quartet scan accumulates the bare
+    // Coulomb J (g_rhf's Coulomb terms, incl. the fab/fcd diagonal
+    // multiplicity) AND the bare exchange K (k()'s 8-term exchange, NO 0.5
+    // factor, NO alpha_hf). J and K are kept separate so a later
+    // range-separated exchange operator can add a second (erf-attenuated) K.
+    // Because both accumulations consume the SAME evaluated integrals, this is
+    // algebraically identical to the two-pass g_rhf (J = G + 0.5*K) + k,
+    // differing only in floating-point add order.
+    const int n = sp.n_basis;
+    const int nT = n_threads();
+    const double thr = sp.threshold;
+    const int npairs = static_cast<int>(sp.pairs.size());
+
+    // Column-major raw thread-local buffers matching RealMatrix convention.
+    std::vector<std::vector<double>> Jraw(nT, std::vector<double>(n * n, 0.0));
+    std::vector<std::vector<double>> Kraw(nT, std::vector<double>(n * n, 0.0));
+    const double* Pp = P.data();
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+    for (int left = 0; left < npairs; ++left) {
+        const int tid = thread_id();
+        double* Jp = Jraw[tid].data();
+        double* Kp = Kraw[tid].data();
+        const ShellBlockPair& bp_l = sp.pairs[left];
+        const native::ShellBlock& Bsi = sp.blocks[bp_l.si];
+        const native::ShellBlock& Bsj = sp.blocks[bp_l.sj];
+        const int na = Bsi.n_cart, nb = Bsj.n_cart;
+
+        for (int right = 0; right <= left; ++right) {
+            const ShellBlockPair& bp_r = sp.pairs[right];
+
+            // Block-level Cauchy-Schwarz screening
+            if (bp_l.schwarz * bp_r.schwarz < thr)
+                continue;
+
+            const native::ShellBlock& Bsk = sp.blocks[bp_r.si];
+            const native::ShellBlock& Bsl = sp.blocks[bp_r.sj];
+            const int nc = Bsk.n_cart, nd = Bsl.n_cart;
+
+            // Zero only the actually-used na*nb*nc*nd prefix (eri_block
+            // accumulates into it) instead of `= {}`-initializing the whole
+            // ~80KB buffer on every quartet.
+            double blk[kMaxNCartOrbital * kMaxNCartOrbital * kMaxNCartOrbital
+                       * kMaxNCartOrbital];
+            const int blk_size = na * nb * nc * nd;
+            for (int z = 0; z < blk_size; ++z)
+                blk[z] = 0.0;
+            native::eri_block(Bsi, Bsj, Bsk, Bsl, blk);
+
+            if (left != right) {
+                const bool diag_bra = (bp_l.si == bp_l.sj);
+                const bool diag_ket = (bp_r.si == bp_r.sj);
+
+                for (int ia = 0; ia < na; ++ia) {
+                    const int a = Bsi.ao_start + ia;
+                    for (int ib = 0; ib < nb; ++ib) {
+                        if (diag_bra && ib > ia)
+                            continue;
+                        const int b = Bsj.ao_start + ib;
+                        const double fab = (a == b) ? 1.0 : 2.0;
+                        const double* blk_ab = blk + (ia * nb + ib) * (nc * nd);
+
+                        for (int ic = 0; ic < nc; ++ic) {
+                            const int c = Bsk.ao_start + ic;
+                            for (int id = 0; id < nd; ++id) {
+                                if (diag_ket && id > ic)
+                                    continue;
+                                const int d = Bsl.ao_start + id;
+                                const double val = blk_ab[ic * nd + id];
+                                if (std::abs(val) < thr)
+                                    continue;
+
+                                // ── Coulomb → J (g_rhf's accumulation) ──
+                                const double fcd = (c == d) ? 1.0 : 2.0;
+                                raw_sym_add(Jp, n, a, b,
+                                            fcd * Pp[c + d * n] * val);
+                                raw_sym_add(Jp, n, c, d,
+                                            fab * Pp[a + b * n] * val);
+
+                                // ── Exchange → K (k()'s accumulation, no 0.5) ──
+                                const double Pbd = Pp[b + d * n],
+                                             Pad = Pp[a + d * n];
+                                const double Pbc = Pp[b + c * n],
+                                             Pac = Pp[a + c * n];
+                                Kp[a + c * n] += val * Pbd;
+                                Kp[c + a * n] += val * Pbd;
+                                if (a != b) {
+                                    Kp[b + c * n] += val * Pad;
+                                    Kp[c + b * n] += val * Pad;
+                                }
+                                if (c != d) {
+                                    Kp[a + d * n] += val * Pbc;
+                                    Kp[d + a * n] += val * Pbc;
+                                    if (a != b) {
+                                        Kp[b + d * n] += val * Pac;
+                                        Kp[d + b * n] += val * Pac;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                const bool diag_block = (bp_l.si == bp_l.sj);
+                struct AOpair {
+                    int ia, ib;
+                };
+                AOpair ao_pairs[kMaxNCartOrbital * kMaxNCartOrbital];
+                int n_ao_pairs = 0;
+                for (int ia = 0; ia < na; ++ia)
+                    for (int ib = 0; ib < nb; ++ib) {
+                        if (diag_block && ib > ia)
+                            continue;
+                        ao_pairs[n_ao_pairs++] = {ia, ib};
+                    }
+
+                for (int left_ao = 0; left_ao < n_ao_pairs; ++left_ao) {
+                    const int ia = ao_pairs[left_ao].ia;
+                    const int ib = ao_pairs[left_ao].ib;
+                    const int a = Bsi.ao_start + ia;
+                    const int b = Bsj.ao_start + ib;
+                    const double fab = (a == b) ? 1.0 : 2.0;
+                    const double* blk_ab = blk + (ia * nb + ib) * (nc * nd);
+
+                    for (int right_ao = 0; right_ao <= left_ao; ++right_ao) {
+                        const int ic = ao_pairs[right_ao].ia;
+                        const int id = ao_pairs[right_ao].ib;
+                        const int c = Bsk.ao_start + ic;
+                        const int d = Bsl.ao_start + id;
+                        const double val = blk_ab[ic * nd + id];
+                        if (std::abs(val) < thr)
+                            continue;
+
+                        // ── Coulomb → J (g_rhf's diagonal accumulation) ──
+                        const double fcd = (c == d) ? 1.0 : 2.0;
+                        raw_sym_add(Jp, n, a, b, fcd * Pp[c + d * n] * val);
+                        if (left_ao != right_ao)
+                            raw_sym_add(Jp, n, c, d, fab * Pp[a + b * n] * val);
+
+                        // ── Exchange → K (k()'s diagonal accumulation, no 0.5) ──
+                        if (left_ao != right_ao) {
+                            const double Pbd = Pp[b + d * n],
+                                         Pad = Pp[a + d * n];
+                            const double Pbc = Pp[b + c * n],
+                                         Pac = Pp[a + c * n];
+                            Kp[a + c * n] += val * Pbd;
+                            Kp[c + a * n] += val * Pbd;
+                            if (a != b) {
+                                Kp[b + c * n] += val * Pad;
+                                Kp[c + b * n] += val * Pad;
+                            }
+                            if (c != d) {
+                                Kp[a + d * n] += val * Pbc;
+                                Kp[d + a * n] += val * Pbc;
+                                if (a != b) {
+                                    Kp[b + d * n] += val * Pac;
+                                    Kp[d + b * n] += val * Pac;
+                                }
+                            }
+                        } else {
+                            raw_sym_add(Kp, n, a, c, val * Pp[b + d * n]);
+                            if (a != b)
+                                raw_sym_add(Kp, n, b, c, val * Pp[a + d * n]);
+                            if (c != d && a != b)
+                                raw_sym_add(Kp, n, b, d, val * Pp[a + c * n]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Reduce thread-local raw arrays into the xtensor J / K matrices.
+    J = xt::zeros<double>(
+        {static_cast<std::size_t>(n), static_cast<std::size_t>(n)});
+    K = xt::zeros<double>(
+        {static_cast<std::size_t>(n), static_cast<std::size_t>(n)});
+    double* Jout = J.data();
+    double* Kout = K.data();
+    for (int t = 0; t < nT; ++t) {
+        const double* jr = Jraw[t].data();
+        const double* kr = Kraw[t].data();
+        for (int i = 0; i < n * n; ++i) {
+            Jout[i] += jr[i];
+            Kout[i] += kr[i];
+        }
+    }
 }
 
 } // namespace scf

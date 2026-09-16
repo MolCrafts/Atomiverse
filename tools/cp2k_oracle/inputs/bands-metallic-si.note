@@ -1,0 +1,96 @@
+# Offline CP2K twin note — bands-metallic-si
+
+Not an absolute-energy / absolute-band twin of Atomiverse ONCV-PW.
+Documents the Quickstep product counterpart of metallic-occupation bands.
+
+## Intent
+
+- Geometry: diamond Si, a = 5.43 Å, 2-atom fcc primitive (same as
+  `si_bands_dos_note.inp` / `reg_bands-dos-si` / `dos-metallic-si`).
+- SCF: PADE, GTH-PADE-q4 + DZVP-GTH-q4, MP 2×2×2.
+- Metallic occupations: `&SMEAR METHOD FERMI_DIRAC` with
+  \(k_B T \approx 0.02\) Ry (≈ 3158 K), `ADDED_MOS` ≥ 4.
+- Post-SCF: high-symmetry path eigenvalues (`BAND_STRUCTURE` or
+  equivalent print) for offline inspection of \(E_F\) and open Si gap.
+
+## Suggested CP2K input skeleton
+
+```
+&GLOBAL
+  PROJECT si_bands_metallic
+  RUN_TYPE ENERGY
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    &QS
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 60
+    &END MGRID
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+      ADDED_MOS 4
+      &SMEAR
+        METHOD FERMI_DIRAC
+        ELECTRONIC_TEMPERATURE [K] 3157.75
+      &END SMEAR
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+    &PRINT
+      &BAND_STRUCTURE
+        ADDED_MOS 4
+        &KPOINT_SET
+          UNITS B_VECTOR
+          SPECIAL_POINT GAMMA 0.0 0.0 0.0
+          SPECIAL_POINT X 0.5 0.0 0.5
+          SPECIAL_POINT W 0.5 0.25 0.75
+          SPECIAL_POINT L 0.5 0.5 0.5
+          SPECIAL_POINT GAMMA 0.0 0.0 0.0
+          SPECIAL_POINT K 0.375 0.375 0.75
+          NPOINTS 3
+        &END KPOINT_SET
+      &END BAND_STRUCTURE
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      A 0.0 2.715 2.715
+      B 2.715 0.0 2.715
+      C 2.715 2.715 0.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Si 0.0 0.0 0.0
+      Si 1.3575 1.3575 1.3575
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-GTH-q4
+      POTENTIAL GTH-PADE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
+```
+
+## Pin policy
+
+Record CP2K version, wall, and qualitative \(E_F\) / gap character in
+`regressions/pw/bands-metallic-si/REFERENCE.md` when a binary is available.
+Never launch CP2K from ctest.

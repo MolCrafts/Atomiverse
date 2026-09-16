@@ -15,11 +15,12 @@
 #include <stdexcept>
 #include <xtensor/containers/xtensor.hpp>
 
+#include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cuda/driver/evaluate.cuh"
-#include "atomiverse/cuda/md/md.cuh"
-#include "atomiverse/cuda/md/velocity_verlet.cuh"
+#include "atomiverse/cuda/dynamics/md.cuh"
+#include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
+#include "atomiverse/cuda/evaluate/evaluate.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 
@@ -32,29 +33,43 @@ namespace {
 /// 1-2, 2-3; angles: 0-1-2, 1-2-3; dihedral: 0-1-2-3.
 cpu::Frame make_chain4() {
     cpu::Frame frame(4);
-    for (int i = 0; i < 4; ++i) {
-        frame.atoms.x[i] = double(i) * 1.0;
-        frame.atoms.y[i] = 0.0;
-        frame.atoms.z[i] = 0.0;
-        frame.atoms.vx[i] = frame.atoms.vy[i] = frame.atoms.vz[i] = 0.0;
-        frame.atoms.fx[i] = frame.atoms.fy[i] = frame.atoms.fz[i] = 0.0;
-        frame.atoms.mass[i] = 1.0;
-        frame.atoms.type[i] = 0;
-        frame.atoms.tag[i] = i;
+    {
+        auto x = frame.span(kAtom_x);
+        auto y = frame.span(kAtom_y);
+        auto z = frame.span(kAtom_z);
+        auto vx = frame.span(kAtom_vx);
+        auto vy = frame.span(kAtom_vy);
+        auto vz = frame.span(kAtom_vz);
+        auto fx = frame.span(kAtom_fx);
+        auto fy = frame.span(kAtom_fy);
+        auto fz = frame.span(kAtom_fz);
+        auto mass = frame.span(kAtom_mass);
+        auto type = frame.span(kAtom_type);
+        auto tag = frame.span(kAtom_tag);
+        for (int i = 0; i < 4; ++i) {
+            x[i] = double(i) * 1.0;
+            y[i] = 0.0;
+            z[i] = 0.0;
+            vx[i] = vy[i] = vz[i] = 0.0;
+            fx[i] = fy[i] = fz[i] = 0.0;
+            mass[i] = 1.0;
+            type[i] = 0;
+            tag[i] = i;
+        }
     }
-    frame.box = Mat3::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
     // Per-atom topology + 1-2/1-3/1-4 special-neighbor exclusion list.
     // build_special_list() does the BFS over the per-atom bond graph that
     // populates nspecial/special — the source of the LJ exclusion CSR.
-    frame.atoms.map_clear();
-    frame.atoms.map_set(0, frame.atoms.nlocal);
-    frame.atoms.add_bond(0, 1, 0); // bonds 0-1, 1-2, 2-3
-    frame.atoms.add_bond(1, 2, 0);
-    frame.atoms.add_bond(2, 3, 0);
-    frame.atoms.add_angle(0, 1, 2, 0); // angles 0-1-2, 1-2-3
-    frame.atoms.add_angle(1, 2, 3, 0);
-    frame.atoms.add_dihedral(0, 1, 2, 3, 0); // dihedral 0-1-2-3
-    frame.atoms.build_special_list();
+    frame.clear_tag_index();
+    frame.rebuild_tag_index(0, frame.nlocal());
+    frame.add_bond(0, 1, 0); // bonds 0-1, 1-2, 2-3
+    frame.add_bond(1, 2, 0);
+    frame.add_bond(2, 3, 0);
+    frame.add_angle(0, 1, 2, 0); // angles 0-1-2, 1-2-3
+    frame.add_angle(1, 2, 3, 0);
+    frame.add_dihedral(0, 1, 2, 3, 0); // dihedral 0-1-2-3
+    frame.build_special_list();
     return frame;
 }
 
@@ -95,7 +110,7 @@ TEST(CudaPairLJSpecialBonds, FourAtomChainAllExcludedZeroEnergy) {
     // canonical force-phase wiring the MSU PE benchmark uses.
     cuda::md::MD sim;
     sim.set_neighbor(cuda::NeighborList{cutoff});
-    sim.add_potential(
+    sim.set_evaluator(
         cuda::PairLJCut{1.0, 1.0, cutoff}.set_special_bonds(0.0, 0.0, 0.0));
     sim.set_integrator(cuda::md::VelocityVerlet{0.001});
     sim.build();
@@ -103,5 +118,5 @@ TEST(CudaPairLJSpecialBonds, FourAtomChainAllExcludedZeroEnergy) {
     // 4 atoms in a 4-chain: every pair (0-1, 0-2, 0-3, 1-2, 1-3, 2-3) is
     // either 1-2 (bonds), 1-3 (angle endpoints) or 1-4 (dihedral endpoints).
     // With (0,0,0) the LJ kernel must skip every pair → energy_pair == 0.
-    EXPECT_NEAR(static_cast<double>(frame.scalars.energy), 0.0, 1e-9);
+    EXPECT_NEAR(static_cast<double>(frame.meta.get(kEnergy)), 0.0, 1e-9);
 }

@@ -125,7 +125,7 @@ class BondedForceScratch {
     /// @brief Reduce all threads' `[0, n_force)` contributions into frame
     ///        forces. Call after the parallel region, using the same spans
     ///        `bind()` resolved at the top of this launch. The owned + ghost
-    ///        rows are both reduced (ghost forces ship home via HaloRecv).
+    ///        rows are both reduced (ghost forces ship home via CommBrick).
     void reduce_into(int n_force) const {
         // Single-thread direct mode wrote straight into the frame — nothing to
         // gather.

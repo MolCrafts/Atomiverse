@@ -43,7 +43,7 @@ int main() {
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;
-    frame.simbox = cpu::Box::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
 
     // Reference: own exact-ERI RHF (def2-TZVP is spherical).
     cpu::scf::RHF exact;
@@ -58,8 +58,8 @@ int main() {
     ri.basis = cpu::scf::BasisSet::Def2TZVP;
     ri.tol = 1e-12;
     ri.max_iter = 200;
-    ri.ri = cpu::scf::RI::JK;                       // fitted J and K
-    ri.aux_basis = cpu::scf::AuxBasis::Def2JKFIT;   // the default, explicit
+    ri.ri = cpu::scf::RI::JK;                     // fitted J and K
+    ri.aux_basis = cpu::scf::AuxBasis::Def2JKFIT; // the default, explicit
     ri.run(frame);
     const double e_ri = ri.energy();
 

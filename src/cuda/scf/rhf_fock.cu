@@ -1,11 +1,12 @@
 /// @file cuda/scf/rhf_fock.cu
-/// @brief internal::RHFFock: upload integrals, build G(P), F=Hcore+G,
-///        F'=X^T*F*X.
+/// @brief internal::RHFFock (host-matrix upload) and RHFFockDevice (GPU
+///        integrals). Device Löwdin X uses scale_columns_by_rsqrt_kernel
+///        (CUDA skill patterns: coalesced col-major, 32×8 launch, thresh).
 
 #ifdef ATV_HAS_HF
 
-#include "atomiverse/core/constants.h"
 #include "atomiverse/core/gto.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "atomiverse/cuda/scf/internal/rhf_fock.cuh"
@@ -13,8 +14,10 @@
 
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cmath>
+#include <cstdio>
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
+#include <stdexcept>
 #include <vector>
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/reducers/xnorm.hpp>
@@ -30,33 +33,153 @@ using cuda::work_t;
 namespace scf {
 namespace internal {
 
-// ── Kernel: add a scalar to a matrix diagonal ────────────────────────
-// M_ii += lambda, for the level shift F' += λ·I (col-major, n×n).
-__global__ void add_diagonal_kernel(prec_t* __restrict__ M, prec_t lambda,
-                                    int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n)
-        M[i + i * n] += lambda;
+// Level-shift diagonal kernel lives in diis_mixer.cu (CDIIS owns shift).
+
+// ── Kernel: Löwdin column scale U[:,j] *= rsqrt(λ_j) (or 0 if λ_j ≤ thr) ─
+// Skills: fuse-elementwise (scale+rsqrt), optimize-global-memory (col-major
+// coalesced on row = threadIdx.x), choose-launch-configuration (32×8 block),
+// handle-boundary-conditions (i<n && j<n guards), write-numerically-stable
+// (drop near-null overlap directions).
+// Layout: U is column-major n×n; lambda length n.
+// After this, X = U_scaled * U^T implements U diag(λ^{-1/2}) U^T without a
+// host-side diagonal matrix.
+__global__ void scale_columns_by_rsqrt_kernel(prec_t* __restrict__ U,
+                                              const prec_t* __restrict__ lambda,
+                                              int n, prec_t thresh) {
+    const int i = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    const int j = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+    if (i >= n || j >= n)
+        return;
+    // Broadcast λ_j within a column (j fixed along y); row i is stride-1 in
+    // col-major so consecutive threadIdx.x load/store contiguous U(i,j).
+    const prec_t lam = lambda[j];
+    const prec_t s = (lam > thresh) ? rsqrt(lam) : prec_t(0);
+    U[i + j * n] *= s;
+}
+
+// ── Wave 2: geometry pack without host D2H ─────────────────────────────
+// Frame stores SoA positions in Å. Integral kernels want [natm×3] Bohr and
+// pure-s shell centers (= nuclear positions). One thread per atom.
+// Skills: choose-launch-configuration (1D 256), handle-boundary (a < natm),
+// optimize-global-memory (coalesced SoA loads; stores write 3 consecutive
+// prec_t per atom — small write stride).
+// Pack nuclear positions only; shell centers filled by expand_s_shells_kernel.
+__global__ void pack_atom_pos_bohr_kernel(
+    prec_t* __restrict__ atom_pos, // [natm * 3] Bohr
+    const real_t* __restrict__ x_A, const real_t* __restrict__ y_A,
+    const real_t* __restrict__ z_A, int natm, prec_t a2b) {
+    const int a = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    if (a >= natm)
+        return;
+    const prec_t xb = static_cast<prec_t>(x_A[a]) * a2b;
+    const prec_t yb = static_cast<prec_t>(y_A[a]) * a2b;
+    const prec_t zb = static_cast<prec_t>(z_A[a]) * a2b;
+    const int o = a * 3;
+    atom_pos[o + 0] = xb;
+    atom_pos[o + 1] = yb;
+    atom_pos[o + 2] = zb;
+}
+
+// Wave 3: expand per-atom s-shell table to the full molecule shell list.
+// One thread per molecular shell s ∈ [0, natm * nsh_atom).
+//   atom = s / nsh_atom, ish = s % nsh_atom
+//   α/c from alpha_atom[ish * n_prim + p] (table block for one atom)
+//   center = atom_pos[atom] (Bohr, already packed)
+// Skills: choose-launch-configuration, handle-boundary, optimize-global-memory
+// (coalesced along p when n_prim is small — sequential p per thread is fine).
+__global__ void expand_s_shells_kernel(
+    prec_t* __restrict__ alpha_out, prec_t* __restrict__ coeff_out,
+    prec_t* __restrict__ shell_centers, const prec_t* __restrict__ alpha_atom,
+    const prec_t* __restrict__ coeff_atom, const prec_t* __restrict__ atom_pos,
+    int natm, int nsh_atom, int n_prim) {
+    const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    const int n_shells = natm * nsh_atom;
+    if (s >= n_shells)
+        return;
+    const int atom = s / nsh_atom;
+    const int ish = s % nsh_atom;
+    const int base_out = s * n_prim;
+    const int base_in = ish * n_prim;
+    for (int p = 0; p < n_prim; ++p) {
+        alpha_out[base_out + p] = alpha_atom[base_in + p];
+        coeff_out[base_out + p] = coeff_atom[base_in + p];
+    }
+    const int oa = atom * 3;
+    const int os = s * 3;
+    shell_centers[os + 0] = atom_pos[oa + 0];
+    shell_centers[os + 1] = atom_pos[oa + 1];
+    shell_centers[os + 2] = atom_pos[oa + 2];
+}
+
+// Nuclear repulsion V_nuc = Σ_{a<b} Za Zb / |Ra−Rb| [Hartree].
+// One thread per unordered pair; multi-block partials reduced with atomics
+// (order-insensitive for the double sum; pair set is exact).
+// Skills: choose-launch-configuration, handle-boundary, write-numerically-stable
+// (skip r=0).
+__global__ void nuclear_repulsion_pairs_kernel(
+    double* __restrict__ v_nuc_out, const prec_t* __restrict__ atom_pos,
+    const int* __restrict__ atom_Z, int natm) {
+    const int npairs = natm * (natm - 1) / 2;
+    const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    double contrib = 0.0;
+    if (idx < npairs) {
+        // Decode linear pair index → (a,b) with a < b.
+        int i = idx;
+        int a = 0;
+        int row = natm - 1;
+        while (i >= row && row > 0) {
+            i -= row;
+            ++a;
+            --row;
+        }
+        const int b = a + 1 + i;
+        const prec_t* Ra = atom_pos + a * 3;
+        const prec_t* Rb = atom_pos + b * 3;
+        const double dx = static_cast<double>(Ra[0] - Rb[0]);
+        const double dy = static_cast<double>(Ra[1] - Rb[1]);
+        const double dz = static_cast<double>(Ra[2] - Rb[2]);
+        const double r2 = dx * dx + dy * dy + dz * dz;
+        if (r2 > 0.0) {
+            const double r = sqrt(r2);
+            contrib = static_cast<double>(atom_Z[a] * atom_Z[b]) / r;
+        }
+    }
+    // Block reduce then one atomicAdd per block (fewer atomics than per-thread).
+    __shared__ double warp_scratch[/* max warps in 256 */ 8];
+    const double block_sum =
+        cuda::block_reduce_sum<double>(contrib, warp_scratch);
+    if (threadIdx.x == 0 && block_sum != 0.0)
+        atomicAdd(v_nuc_out, block_sum);
 }
 
 // ── Kernel: build G(P) from ERI ──────────────────────────────────────
 // G_ij = sum_kl P_kl * [(ij|kl) - 0.5*(ik|jl)]
 // P already includes factor 2 from RHF closed-shell occupancy.
+// Coalesced P[k+l*n] along k for fixed l. Do NOT early-out on a sticky
+// converged flag: callers zero G then add Hcore+G; skipping the write
+// yields F=Hcore and corrupts the public energy if the host loop still runs.
 __global__ void build_G_kernel(prec_t* __restrict__ G,
                                const prec_t* __restrict__ P,
                                const prec_t* __restrict__ ERI, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = n * n;
+    const int n2 = n * n;
+    const int n3 = n2 * n;
     for (int ij = idx; ij < total; ij += blockDim.x * gridDim.x) {
         int j = ij / n; // column-major: ij = i + j*n
         int i = ij % n;
         work_t val = work_t(0);
-        for (int k = 0; k < n; ++k)
-            for (int l = 0; l < n; ++l) {
-                int ij_kl = i + j * n + k * n * n + l * n * n * n;
-                int ik_jl = i + k * n + j * n * n + l * n * n * n;
-                val += P[k + l * n] * (ERI[ij_kl] - work_t(0.5) * ERI[ik_jl]);
+        for (int l = 0; l < n; ++l) {
+            // ERI[i,j,k,l] col-major: i + j*n + k*n² + l*n³
+            const int base_ij_l = i + j * n + l * n3;
+            for (int k = 0; k < n; ++k) {
+                const int ij_kl = base_ij_l + k * n2;
+                const int ik_jl = i + k * n + j * n2 + l * n3;
+                val += static_cast<work_t>(P[k + l * n])
+                       * (static_cast<work_t>(ERI[ij_kl])
+                          - work_t(0.5) * static_cast<work_t>(ERI[ik_jl]));
             }
+        }
         G[ij] = val;
     }
 }
@@ -64,14 +187,14 @@ __global__ void build_G_kernel(prec_t* __restrict__ G,
 void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
     auto stream = static_cast<cudaStream_t>(ctx.stream);
     auto& scf = ws;
-    int n = integrals_.n_basis;
+    int n = n_basis_;
     int nn = n * n;
     int n4 = nn * nn;
 
     // Set workspace metadata
     scf.n = n;
-    scf.n_occ = integrals_.n_occ();
-    scf.V_nuc = integrals_.V_nuc;
+    scf.n_occ = n_occ_;
+    scf.V_nuc = V_nuc_;
     scf.converged = false;
 
     // Allocate device matrices
@@ -84,6 +207,7 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaMalloc(&scf.eig, n * sizeof(prec_t));
     cudaMalloc(&scf.work, nn * sizeof(prec_t));
     cudaMalloc(&scf.Hcore, nn * sizeof(prec_t));
+    cudaMalloc(&scf.S, nn * sizeof(prec_t));
     cudaMalloc(&scf.X, nn * sizeof(prec_t));
     cudaMalloc(&scf.F_prime, nn * sizeof(prec_t));
     cudaMalloc(&scf.ERI, n4 * sizeof(prec_t));
@@ -98,9 +222,15 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
     std::vector<work_t> buf(nn);
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
-            buf[i + j * n] = integrals_.Hcore(i, j); // col-major
+            buf[i + j * n] = Hcore_(i, j); // col-major
     cudaMemcpy(scf.Hcore, buf.data(), nn * sizeof(prec_t),
                cudaMemcpyHostToDevice);
+
+    // Upload S for device CDIIS error e = Xᵀ (FPS − SPF) X.
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            buf[i + j * n] = S_(i, j);
+    cudaMemcpy(scf.S, buf.data(), nn * sizeof(prec_t), cudaMemcpyHostToDevice);
 
     // Upload ERI (row-major 4D xtensor -> column-major 4D device)
     std::vector<work_t> eri_buf(n4);
@@ -109,12 +239,12 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
             for (int k = 0; k < n; ++k)
                 for (int l = 0; l < n; ++l)
                     eri_buf[i + j * n + k * nn + l * nn * n] =
-                        integrals_.ERI(i, j, k, l);
+                        ERI_(i, j, k, l);
     cudaMemcpy(scf.ERI, eri_buf.data(), n4 * sizeof(prec_t),
                cudaMemcpyHostToDevice);
 
     // Compute X = S^{-1/2} on host using xtensor-blas
-    auto [s_eig, U] = xt::linalg::eigh(integrals_.S);
+    auto [s_eig, U] = xt::linalg::eigh(S_);
     xt::xtensor<work_t, 2> s_inv_sqrt = xt::zeros<work_t>({n, n});
     for (int i = 0; i < n; ++i)
         s_inv_sqrt(i, i) = work_t(1) / std::sqrt(s_eig(i));
@@ -185,28 +315,12 @@ void RHFFock::step(const SolverContext& ctx, SCFWorkspace& ws) {
                     cudaMemcpyDeviceToDevice, stream);
     cudaMemcpyAsync(scf.H, scf.F_prime, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
-    // Now: scf.H = F' (for EigenSolver), scf.work = F (for energy in RHFDensity)
-
-    // ── Level shift (hf-robust-03 CUDA mirror) ────────────────────────
-    // In the orthonormal basis the Saunders–Hillier shift F + λ(S−SD S)
-    // becomes F' += λ(I − P'_occ), with P'_occ = C'_occ C'_occ^T the
-    // occupied projector from the PREVIOUS iteration's orthonormal
-    // eigenvectors (scf.C_prime). Applied to scf.H (what EigenSolver
-    // diagonalizes), never to scf.F_prime. Skipped on step 0 (density is
-    // zero, no previous C') and below the PySCF |λ| ≤ 1e-4 threshold — so
-    // λ = 0 is bit-identical to the pre-feature path.
-    if (std::abs(level_shift_) > 1e-4 && ctx.step > 0) {
-        const prec_t lambda = static_cast<prec_t>(level_shift_);
-        int dblocks = cuda::grid_size(n, cuda::kDefaultBlock);
-        add_diagonal_kernel<<<dblocks, cuda::kDefaultBlock, 0, stream>>>(
-            scf.H, lambda, n); // scf.H += λ·I
-        // scf.H += (−λ)·C'_occ C'_occ^T  (β=1 accumulate; first n_occ cols).
-        const work_t neg_lambda = static_cast<work_t>(-level_shift_);
-        const work_t one_b = work_t(1);
-        detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n, n, scf.n_occ,
-                     &neg_lambda, scf.C_prime, n, scf.C_prime, n, &one_b, scf.H,
-                     n);
-    }
+    // Now: scf.H = F' (seed for EigenSolver), scf.work = unshifted AO F.
+    // Device CDIIS (DIISMixer) extrapolates work, rebuilds F', and applies
+    // the Saunders–Hillier level shift before diagonalization — matching
+    // CPU MixStage order (DIIS on unshifted F, then level shift).
+    (void)level_shift_;
+    (void)ctx;
 }
 
 void RHFFock::destroy(const SolverContext& /*ctx*/, SCFWorkspace& /*ws*/) {
@@ -223,125 +337,242 @@ void RHFFock::destroy(const SolverContext& /*ctx*/, SCFWorkspace& /*ws*/) {
 
 // ══════════════════════════════════════════════════════════════════════
 // RHFFockDevice — CUDA-only path: GPU integral kernels, zero CPU integrals
+// Wave 4: molecular s+p shell list + launch_*_sp (AO-indexed)
 // ══════════════════════════════════════════════════════════════════════
 
-// kAngstromToBohr is in core/constants.h
-
-static void call_1e_integrals(ATV::cuda::prec_t* S, ATV::cuda::prec_t* T,
-                              ATV::cuda::prec_t* V, const ATV::cuda::prec_t* a,
-                              const ATV::cuda::prec_t* c,
-                              const ATV::cuda::prec_t* ctr, const int* Z,
-                              const ATV::cuda::prec_t* pos, int ns, int np,
-                              int na, void* st) {
-    ATV::cuda::scf::launch_1e_integrals(S, T, V, a, c, ctr, Z, pos, ns, np, na,
-                                        st);
-}
-static void call_eri(ATV::cuda::prec_t* ERI, const ATV::cuda::prec_t* a,
-                     const ATV::cuda::prec_t* c, const ATV::cuda::prec_t* ctr,
-                     int ns, int np, void* st) {
-    ATV::cuda::scf::launch_eri(ERI, a, c, ctr, ns, np, st);
+// Expand shell centers from atom_of[s] → atom_pos (Bohr). One thread / shell.
+__global__ void expand_shell_centers_kernel(
+    prec_t* __restrict__ shell_centers, const int* __restrict__ atom_of,
+    const prec_t* __restrict__ atom_pos, int n_shells) {
+    const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    if (s >= n_shells)
+        return;
+    const int a = atom_of[s];
+    shell_centers[s * 3 + 0] = atom_pos[a * 3 + 0];
+    shell_centers[s * 3 + 1] = atom_pos[a * 3 + 1];
+    shell_centers[s * 3 + 2] = atom_pos[a * 3 + 2];
 }
 
 namespace scf {
 namespace internal {
 
-RHFFockDevice::RHFFockDevice(int n_prim, const double* exponents,
-                             const double* coefficients, int n_occ)
-    : n_prim_(n_prim), n_occ_(n_occ), exponents_(exponents, exponents + n_prim),
-      coefficients_(coefficients, coefficients + n_prim) {}
+RHFFockDevice::RHFFockDevice(int n_shells, int n_ao, int n_prim,
+                             const double* alpha_mol, const double* coeff_mol,
+                             const int* L_mol, const int* atom_of_mol,
+                             int n_occ, double level_shift)
+    : n_shells_(n_shells), n_ao_(n_ao), n_prim_(n_prim), n_occ_(n_occ),
+      level_shift_(level_shift), pure_s_broadcast_(false) {
+    const std::size_t nflat =
+        static_cast<std::size_t>(n_shells) * static_cast<std::size_t>(n_prim);
+    alpha_mol_.assign(alpha_mol, alpha_mol + nflat);
+    coeff_mol_.assign(coeff_mol, coeff_mol + nflat);
+    L_mol_.assign(L_mol, L_mol + n_shells);
+    atom_of_mol_.assign(atom_of_mol, atom_of_mol + n_shells);
+}
+
+RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
+                             const double* alpha_atom, const double* coeff_atom,
+                             int n_occ, int natm, double level_shift)
+    : n_prim_(n_prim), n_occ_(n_occ), level_shift_(level_shift),
+      pure_s_broadcast_(false), n_shells_per_atom_(n_shells_per_atom) {
+    // Expand pure-s atom block to molecular shells immediately.
+    n_shells_ = natm * n_shells_per_atom;
+    n_ao_ = n_shells_; // pure-s: 1 AO / shell
+    const std::size_t nflat_atom =
+        static_cast<std::size_t>(n_shells_per_atom)
+        * static_cast<std::size_t>(n_prim);
+    alpha_mol_.resize(static_cast<std::size_t>(n_shells_)
+                      * static_cast<std::size_t>(n_prim));
+    coeff_mol_.resize(alpha_mol_.size());
+    L_mol_.assign(static_cast<std::size_t>(n_shells_), 0);
+    atom_of_mol_.resize(static_cast<std::size_t>(n_shells_));
+    for (int a = 0; a < natm; ++a) {
+        for (int ish = 0; ish < n_shells_per_atom; ++ish) {
+            const int s = a * n_shells_per_atom + ish;
+            atom_of_mol_[static_cast<std::size_t>(s)] = a;
+            for (int p = 0; p < n_prim; ++p) {
+                const std::size_t dst =
+                    static_cast<std::size_t>(s * n_prim + p);
+                const std::size_t src =
+                    static_cast<std::size_t>(ish * n_prim + p);
+                alpha_mol_[dst] = alpha_atom[src];
+                coeff_mol_[dst] = coeff_atom[src];
+            }
+        }
+    }
+    (void)nflat_atom;
+}
+
+RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
+                             const double* alpha_atom, const double* coeff_atom,
+                             int n_occ, double level_shift)
+    : n_prim_(n_prim), n_occ_(n_occ), level_shift_(level_shift),
+      pure_s_broadcast_(true), n_shells_per_atom_(n_shells_per_atom) {
+    // Defer molecular expand until build() knows natm.
+    const std::size_t nflat =
+        static_cast<std::size_t>(n_shells_per_atom)
+        * static_cast<std::size_t>(n_prim);
+    alpha_mol_.assign(alpha_atom, alpha_atom + nflat);
+    coeff_mol_.assign(coeff_atom, coeff_atom + nflat);
+}
 
 void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     auto stream = static_cast<cudaStream_t>(ctx.stream);
     auto& scf = ws;
     int natm = ctx.frame.n_atoms();
-    int n = natm; // 1 basis function per atom (STO-3G 1s for H)
+
+    // Pure-s broadcast ctor: expand atom block → molecular shells now.
+    if (pure_s_broadcast_) {
+        const int nsh_atom = n_shells_per_atom_;
+        const std::vector<double> atom_alpha = alpha_mol_;
+        const std::vector<double> atom_coeff = coeff_mol_;
+        n_shells_ = natm * nsh_atom;
+        n_ao_ = n_shells_;
+        alpha_mol_.resize(static_cast<std::size_t>(n_shells_)
+                          * static_cast<std::size_t>(n_prim_));
+        coeff_mol_.resize(alpha_mol_.size());
+        L_mol_.assign(static_cast<std::size_t>(n_shells_), 0);
+        atom_of_mol_.resize(static_cast<std::size_t>(n_shells_));
+        for (int a = 0; a < natm; ++a) {
+            for (int ish = 0; ish < nsh_atom; ++ish) {
+                const int s = a * nsh_atom + ish;
+                atom_of_mol_[static_cast<std::size_t>(s)] = a;
+                for (int p = 0; p < n_prim_; ++p) {
+                    const std::size_t dst =
+                        static_cast<std::size_t>(s * n_prim_ + p);
+                    const std::size_t src =
+                        static_cast<std::size_t>(ish * n_prim_ + p);
+                    alpha_mol_[dst] = atom_alpha[src];
+                    coeff_mol_[dst] = atom_coeff[src];
+                }
+            }
+        }
+        pure_s_broadcast_ = false; // expanded once per build cycle
+    }
+
+    const int n_shells = n_shells_;
+    const int n = n_ao_;
     int nn = n * n;
     int n4 = nn * nn;
 
     scf.n = n;
     scf.n_occ = n_occ_;
     scf.converged = false;
-    scf.n_shells = n;
+    scf.n_shells = n_shells;
     scf.n_prim = n_prim_;
     scf.natm = natm;
-
-    // ── 1. Upload basis parameters to device (tiny: ~100 bytes) ───────
-    // Build normalized coefficients with physical norm
-    std::vector<work_t> h_alpha(n * n_prim_), h_coeff(n * n_prim_);
-    std::vector<work_t> h_centers(n * 3), h_pos(natm * 3);
-    std::vector<int> h_Z(natm);
-
-    // Read atom positions from cuda::Frame (they're on device — need D2H)
-    // But positions are also in the host-cached Frame. We get them from the
-    // host Frame that Backend::materialize() copied. The positions are stored
-    // in ctx.frame (device). We'll reconstruct from the known atom count and
-    // read from device.
-    real_t* h_x = new real_t[natm];
-    real_t* h_y = new real_t[natm];
-    real_t* h_z = new real_t[natm];
-    int* h_type = new int[natm];
-    cudaMemcpy(h_x, ctx.frame.atoms.x, natm * sizeof(real_t),
-               cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_y, ctx.frame.atoms.y, natm * sizeof(real_t),
-               cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_z, ctx.frame.atoms.z, natm * sizeof(real_t),
-               cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_type, ctx.frame.atoms.type, natm * sizeof(int),
-               cudaMemcpyDeviceToHost);
-
-    for (int a = 0; a < natm; ++a) {
-        double cx = static_cast<double>(h_x[a]) * kAngstromToBohr;
-        double cy = static_cast<double>(h_y[a]) * kAngstromToBohr;
-        double cz = static_cast<double>(h_z[a]) * kAngstromToBohr;
-        h_centers[a * 3 + 0] = work_t(cx);
-        h_centers[a * 3 + 1] = work_t(cy);
-        h_centers[a * 3 + 2] = work_t(cz);
-        h_pos[a * 3 + 0] = work_t(cx);
-        h_pos[a * 3 + 1] = work_t(cy);
-        h_pos[a * 3 + 2] = work_t(cz);
-        h_Z[a] = h_type[a];
-        for (int p = 0; p < n_prim_; ++p) {
-            h_alpha[a * n_prim_ + p] = work_t(exponents_[p]);
-            h_coeff[a * n_prim_ + p] =
-                work_t(coefficients_[p] * ATV::phys_norm_s(exponents_[p]));
+    scf.pure_s_shells = true;
+    for (int s = 0; s < n_shells; ++s) {
+        if (L_mol_[static_cast<std::size_t>(s)] != 0) {
+            scf.pure_s_shells = false;
+            break;
         }
     }
 
-    // Nuclear repulsion (host computation — trivial)
-    scf.V_nuc = 0;
-    for (int a = 0; a < natm; ++a)
-        for (int b = a + 1; b < natm; ++b) {
-            double dx = static_cast<double>(h_centers[a * 3])
-                        - static_cast<double>(h_centers[b * 3]);
-            double dy = static_cast<double>(h_centers[a * 3 + 1])
-                        - static_cast<double>(h_centers[b * 3 + 1]);
-            double dz = static_cast<double>(h_centers[a * 3 + 2])
-                        - static_cast<double>(h_centers[b * 3 + 2]);
-            double r = std::sqrt(dx * dx + dy * dy + dz * dz);
-            scf.V_nuc += work_t(h_Z[a] * h_Z[b] / r);
+    // Host AO maps + phys-normed contraction
+    std::vector<int> h_L(static_cast<std::size_t>(n_shells));
+    std::vector<int> h_ao_start(static_cast<std::size_t>(n_shells));
+    std::vector<int> h_atom_of(static_cast<std::size_t>(n_shells));
+    std::vector<int> h_ao_shell(static_cast<std::size_t>(n));
+    std::vector<int> h_ao_cart(static_cast<std::size_t>(n));
+    int ao = 0;
+    for (int s = 0; s < n_shells; ++s) {
+        const int L = L_mol_[static_cast<std::size_t>(s)];
+        h_L[static_cast<std::size_t>(s)] = L;
+        h_atom_of[static_cast<std::size_t>(s)] =
+            atom_of_mol_[static_cast<std::size_t>(s)];
+        h_ao_start[static_cast<std::size_t>(s)] = ao;
+        const int ncart = (L + 1) * (L + 2) / 2;
+        for (int c = 0; c < ncart; ++c) {
+            h_ao_shell[static_cast<std::size_t>(ao)] = s;
+            h_ao_cart[static_cast<std::size_t>(ao)] = c;
+            ++ao;
         }
+    }
+    if (ao != n) {
+        // Programming error: n_ao must match Σ n_cart(L).
+        throw std::runtime_error(
+            "RHFFockDevice::build: n_ao mismatch vs shell L list");
+    }
 
-    delete[] h_x;
-    delete[] h_y;
-    delete[] h_z;
-    delete[] h_type;
+    const std::size_t nflat =
+        static_cast<std::size_t>(n_shells) * static_cast<std::size_t>(n_prim_);
+    std::vector<prec_t> h_alpha(nflat), h_coeff(nflat);
+    for (int s = 0; s < n_shells; ++s) {
+        const int L = h_L[static_cast<std::size_t>(s)];
+        for (int p = 0; p < n_prim_; ++p) {
+            const std::size_t k =
+                static_cast<std::size_t>(s * n_prim_ + p);
+            const double a = alpha_mol_[k];
+            const double c = coeff_mol_[k];
+            h_alpha[k] = static_cast<prec_t>(a);
+            const double norm =
+                (L == 0) ? ATV::phys_norm_s(a) : ATV::phys_norm_p(a);
+            h_coeff[k] = static_cast<prec_t>(c * norm);
+        }
+    }
 
-    // Upload basis data
-    cudaMalloc(&scf.d_shell_alpha, n * n_prim_ * sizeof(prec_t));
-    cudaMalloc(&scf.d_shell_coeff, n * n_prim_ * sizeof(prec_t));
-    cudaMalloc(&scf.d_shell_center, n * 3 * sizeof(prec_t));
+    // ── 1. Device geometry + shell SoA ────────────────────────────────
+    cudaMalloc(&scf.d_shell_alpha, nflat * sizeof(prec_t));
+    cudaMalloc(&scf.d_shell_coeff, nflat * sizeof(prec_t));
+    cudaMalloc(&scf.d_shell_center, n_shells * 3 * sizeof(prec_t));
     cudaMalloc(&scf.d_atom_Z, natm * sizeof(int));
     cudaMalloc(&scf.d_atom_pos, natm * 3 * sizeof(prec_t));
-    cudaMemcpy(scf.d_shell_alpha, h_alpha.data(), n * n_prim_ * sizeof(prec_t),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(scf.d_shell_coeff, h_coeff.data(), n * n_prim_ * sizeof(prec_t),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(scf.d_shell_center, h_centers.data(), n * 3 * sizeof(prec_t),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(scf.d_atom_Z, h_Z.data(), natm * sizeof(int),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(scf.d_atom_pos, h_pos.data(), natm * 3 * sizeof(prec_t),
-               cudaMemcpyHostToDevice);
+
+    int* d_ao_start = nullptr;
+    cudaMalloc(&scf.d_shell_L, n_shells * sizeof(int));
+    cudaMalloc(&d_ao_start, n_shells * sizeof(int));
+    cudaMalloc(&scf.d_shell_atom, n_shells * sizeof(int));
+    cudaMalloc(&scf.d_ao_shell, n * sizeof(int));
+    cudaMalloc(&scf.d_ao_cart, n * sizeof(int));
+
+    cudaMemcpyAsync(scf.d_shell_alpha, h_alpha.data(), nflat * sizeof(prec_t),
+                    cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(scf.d_shell_coeff, h_coeff.data(), nflat * sizeof(prec_t),
+                    cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(scf.d_shell_L, h_L.data(), n_shells * sizeof(int),
+                    cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(d_ao_start, h_ao_start.data(), n_shells * sizeof(int),
+                    cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(scf.d_shell_atom, h_atom_of.data(), n_shells * sizeof(int),
+                    cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(scf.d_ao_shell, h_ao_shell.data(), n * sizeof(int),
+                    cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(scf.d_ao_cart, h_ao_cart.data(), n * sizeof(int),
+                    cudaMemcpyHostToDevice, stream);
+
+    cudaMemcpyAsync(scf.d_atom_Z, ctx.frame.atoms.type,
+                    static_cast<std::size_t>(natm) * sizeof(int),
+                    cudaMemcpyDeviceToDevice, stream);
+
+    const prec_t a2b = static_cast<prec_t>(ATV::units::kAngstromInBohr);
+    {
+        const int block = cuda::kDefaultBlock;
+        const int grid = cuda::grid_size(natm, block);
+        pack_atom_pos_bohr_kernel<<<grid, block, 0, stream>>>(
+            scf.d_atom_pos, ctx.frame.atoms.x, ctx.frame.atoms.y,
+            ctx.frame.atoms.z, natm, a2b);
+    }
+    {
+        const int block = cuda::kDefaultBlock;
+        const int grid = cuda::grid_size(n_shells, block);
+        expand_shell_centers_kernel<<<grid, block, 0, stream>>>(
+            scf.d_shell_center, scf.d_shell_atom, scf.d_atom_pos, n_shells);
+    }
+
+    // V_nuc: device-only reduction (Wave 7 — no mid-build D2H/H2D rewrite).
+    // Host `scf.V_nuc` is filled post-SCF in RhfScfCycle::drive from d_V_nuc.
+    // Energy during SCF reads d_V_nuc on device (RHFDensity).
+    cudaMalloc(&scf.d_V_nuc, sizeof(double));
+    cudaMemsetAsync(scf.d_V_nuc, 0, sizeof(double), stream);
+    if (natm >= 2) {
+        const int npairs = natm * (natm - 1) / 2;
+        const int block = cuda::kDefaultBlock;
+        const int grid = cuda::grid_size(npairs, block);
+        nuclear_repulsion_pairs_kernel<<<grid, block, 0, stream>>>(
+            scf.d_V_nuc, scf.d_atom_pos, scf.d_atom_Z, natm);
+    }
+    scf.V_nuc = 0.0;
 
     // ── 2. Allocate SCF workspace matrices ────────────────────────────
     cudaMalloc(&scf.H, nn * sizeof(prec_t));
@@ -353,28 +584,48 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaMalloc(&scf.eig, n * sizeof(prec_t));
     cudaMalloc(&scf.work, nn * sizeof(prec_t));
     cudaMalloc(&scf.Hcore, nn * sizeof(prec_t));
+    cudaMalloc(&scf.S, nn * sizeof(prec_t));
     cudaMalloc(&scf.X, nn * sizeof(prec_t));
     cudaMalloc(&scf.F_prime, nn * sizeof(prec_t));
     cudaMalloc(&scf.ERI, n4 * sizeof(prec_t));
     cudaMalloc(&d_temp_, nn * sizeof(prec_t));
-    cudaMalloc(&d_S_, nn * sizeof(prec_t));
     cudaMalloc(&d_T_, nn * sizeof(prec_t));
     cudaMalloc(&d_V_, nn * sizeof(prec_t));
+    // Device control scalars + force W (no mid-SCF scientific D2H).
+    cudaMalloc(&scf.d_residual, sizeof(prec_t));
+    cudaMalloc(&scf.d_scalar_scratch, sizeof(prec_t));
+    // Mapped convergence flag: device writes, host polls without cudaMemcpy.
+    {
+        int* h_map = nullptr;
+        cudaHostAlloc(reinterpret_cast<void**>(&h_map), sizeof(int),
+                      cudaHostAllocMapped);
+        scf.h_converged_mapped = h_map;
+        *scf.h_converged_mapped = 0;
+        void* d_ptr = nullptr;
+        cudaHostGetDevicePointer(&d_ptr, scf.h_converged_mapped, 0);
+        scf.d_converged = static_cast<int*>(d_ptr);
+    }
+    // Device forces (pure-s and mixed s/p) need W after SCF.
+    scf.device_sp_shells = true;
+    cudaMalloc(&scf.d_W, nn * sizeof(prec_t));
 
     cudaMemsetAsync(scf.P, 0, nn * sizeof(prec_t), stream);
     cudaMemsetAsync(scf.P_old, 0, nn * sizeof(prec_t), stream);
 
-    // ── 3. Launch GPU integral kernels ────────────────────────────────
-    // Fused 1e: S, T, V computed simultaneously on device
-    call_1e_integrals(d_S_, d_T_, d_V_, scf.d_shell_alpha, scf.d_shell_coeff,
-                      scf.d_shell_center, scf.d_atom_Z, scf.d_atom_pos, n,
-                      n_prim_, natm, stream);
+    // ── 3. Device integral kernels (s+p MD/OS; pure-s is the l=0 subset) ─
+    // Use the unified sp path for all device RHF so pure-s and mixed share
+    // one contraction (avoids dual-kernel norm/layout drift).
+    ATV::cuda::scf::launch_1e_integrals_sp(
+        scf.S, d_T_, d_V_, scf.d_shell_alpha, scf.d_shell_coeff,
+        scf.d_shell_center, scf.d_shell_L, d_ao_start, scf.d_ao_shell,
+        scf.d_ao_cart, scf.d_atom_Z, scf.d_atom_pos, n_shells, n, n_prim_,
+        natm, stream);
+    ATV::cuda::scf::launch_eri_sp(
+        scf.ERI, scf.d_shell_alpha, scf.d_shell_coeff, scf.d_shell_center,
+        scf.d_shell_L, d_ao_start, scf.d_ao_shell, scf.d_ao_cart, n_shells, n,
+        n_prim_, stream);
 
-    // ERI: full n^4 tensor on device
-    call_eri(scf.ERI, scf.d_shell_alpha, scf.d_shell_coeff, scf.d_shell_center,
-             n, n_prim_, stream);
-
-    // ── 4. Hcore = T + V on device (cuBLAS) ──────────────────────────
+    // ── 4. Hcore = T + V ──────────────────────────────────────────────
     cublasHandle_t handle;
     cublasCreate(&handle);
     cublasSetStream(handle, stream);
@@ -385,19 +636,16 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     work_t one = work_t(1);
     detail::axpy(handle, nn, &one, d_V_, 1, scf.Hcore, 1);
 
-    // ── 5. X = S^{-1/2} on device (cuSOLVER) ─────────────────────────
-    // Eigendecompose S: S = U * diag(lambda) * U^T
-    // X = U * diag(1/sqrt(lambda)) * U^T
+    // ── 5. Löwdin X = S^{-1/2} on device ──────────────────────────────
     cusolverDnHandle_t solver;
     cusolverDnCreate(&solver);
     cusolverDnSetStream(solver, stream);
     cusolver_handle_ = solver;
 
-    // Copy S -> X (cuSOLVER overwrites input with eigenvectors)
-    cudaMemcpyAsync(scf.X, d_S_, nn * sizeof(prec_t), cudaMemcpyDeviceToDevice,
+    // Keep scf.S intact for CDIIS; syevd overwrites a copy in scf.X.
+    cudaMemcpyAsync(scf.X, scf.S, nn * sizeof(prec_t), cudaMemcpyDeviceToDevice,
                     stream);
 
-    // Query workspace and solve
     int lwork = 0;
     prec_t* d_eigenvalues;
     cudaMalloc(&d_eigenvalues, n * sizeof(prec_t));
@@ -412,46 +660,36 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
 
     detail::syevd(solver, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_LOWER, n,
                   scf.X, n, d_eigenvalues, d_work_solver, lwork, d_info);
-    // Now scf.X = eigenvectors (U), d_eigenvalues = eigenvalues
 
-    // Build X = U * diag(1/sqrt(lambda)) * U^T on device
-    // Step: d_temp = U * diag(1/sqrt(lambda))
-    // We need to scale columns of U by 1/sqrt(lambda).
-    // For small n: read eigenvalues back and use a simple kernel.
-    cudaStreamSynchronize(stream);
+    cudaMemcpyAsync(d_temp_, scf.X, nn * sizeof(prec_t),
+                    cudaMemcpyDeviceToDevice, stream);
+    constexpr int kBx = 32;
+    constexpr int kBy = 8;
+    dim3 block(kBx, kBy);
+    dim3 grid((n + kBx - 1) / kBx, (n + kBy - 1) / kBy);
+    const prec_t lindep_thresh = static_cast<prec_t>(1.0e-8);
+    scale_columns_by_rsqrt_kernel<<<grid, block, 0, stream>>>(
+        d_temp_, d_eigenvalues, n, lindep_thresh);
 
-    // Read eigenvalues to host and compute diag(1/sqrt(lambda))
-    std::vector<work_t> h_eig(n);
-    cudaMemcpy(h_eig.data(), d_eigenvalues, n * sizeof(prec_t),
-               cudaMemcpyDeviceToHost);
-    std::vector<work_t> h_diag(nn, 0);
-    for (int i = 0; i < n; ++i)
-        h_diag[i + i * n] = work_t(1) / std::sqrt(h_eig[i]);
-
-    // Upload diag to device (into d_T_ as temp)
-    cudaMemcpy(d_T_, h_diag.data(), nn * sizeof(prec_t),
-               cudaMemcpyHostToDevice);
-
-    // X_final = U * diag * U^T  →  temp = U * diag, X = temp * U^T
     work_t zero = work_t(0);
-    detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, scf.X, n,
-                 d_T_, n, &zero, d_temp_, n);
     detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n, n, n, &one, d_temp_, n,
                  scf.X, n, &zero, d_V_, n);
-
-    // Copy result back to scf.X
     cudaMemcpyAsync(scf.X, d_V_, nn * sizeof(prec_t), cudaMemcpyDeviceToDevice,
                     stream);
 
+    // Free Löwdin / AO-start scratch after stream work (no scientific D2H).
+    // cudaFree is device-wide; one stream fence first keeps free after last use.
+    // AO maps (L, ao_shell, ao_cart) stay live for device s/p forces after SCF.
+    cudaStreamSynchronize(stream);
     cudaFree(d_eigenvalues);
     cudaFree(d_work_solver);
     cudaFree(d_info);
-
-    cudaStreamSynchronize(stream);
+    cudaFree(d_ao_start);
+    // Wave 7: d_V_nuc stays as the sole nuclear-repulsion source for SCF energy;
+    // host scf.V_nuc mirrored only in RhfScfCycle::drive post-pass.
 }
 
 void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {
-    // Identical to RHFFock::step — same Fock build logic
     auto& scf = ws;
     if (scf.converged)
         return;
@@ -481,6 +719,9 @@ void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {
                     cudaMemcpyDeviceToDevice, stream);
     cudaMemcpyAsync(scf.H, scf.F_prime, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
+    // Level shift + CDIIS live in DIISMixer (after this step).
+    (void)level_shift_;
+    (void)ctx;
 }
 
 void RHFFockDevice::destroy(const SolverContext& /*ctx*/,
@@ -495,8 +736,6 @@ void RHFFockDevice::destroy(const SolverContext& /*ctx*/,
     }
     cudaFree(d_temp_);
     d_temp_ = nullptr;
-    cudaFree(d_S_);
-    d_S_ = nullptr;
     cudaFree(d_T_);
     d_T_ = nullptr;
     cudaFree(d_V_);

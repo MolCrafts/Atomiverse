@@ -71,8 +71,8 @@ inline bool fill(double r1x, double r1y, double r1z, double r2x, double r2y,
         return false;
     const double b2_inv = 1.0 / std::sqrt(b2_sq);
 
-    double cos_phi = (g.n1x * g.n2x + g.n1y * g.n2y + g.n1z * g.n2z)
-                     * g.n1_inv * g.n2_inv;
+    double cos_phi =
+        (g.n1x * g.n2x + g.n1y * g.n2y + g.n1z * g.n2z) * g.n1_inv * g.n2_inv;
     cos_phi = std::max(-1.0, std::min(1.0, cos_phi));
 
     // Signed sin via (n1 × n2) · û_b2 / (|n1||n2|).

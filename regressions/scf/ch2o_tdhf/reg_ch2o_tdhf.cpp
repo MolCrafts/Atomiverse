@@ -61,7 +61,7 @@ int main() {
         frame.span(kAtom_z)[i] = zs[i];
         frame.span(kAtom_type)[i] = types[i];
     }
-    frame.simbox = cpu::Box::cubic(30.0);
+    frame.box = cpu::Box::cubic(30.0);
 
     // ── PySCF 2.14.0 pins (REFERENCE.md; cart=True, conv_tol=1e-12) ──────
     constexpr double kERhf = -113.865575118441; // Ha
@@ -69,11 +69,11 @@ int main() {
                                   0.378524177461}; // Ha
     constexpr double kTdhfHa[3] = {0.165369739863, 0.356745006619,
                                    0.358521315202}; // Ha
-    constexpr double kTdaF3 = 0.2165661719;  // π→π* bright state, root 3
-    constexpr double kTdhfF3 = 0.1795988961; // π→π* bright state, root 3
-    constexpr double kTolE = 1e-6;   // Ha, ground state
-    constexpr double kTolEv = 1e-4;  // eV, excitation energies
-    constexpr double kTolF = 1e-3;   // dimensionless, oscillator strengths
+    constexpr double kTdaF3 = 0.2165661719;         // π→π* bright state, root 3
+    constexpr double kTdhfF3 = 0.1795988961;        // π→π* bright state, root 3
+    constexpr double kTolE = 1e-6;                  // Ha, ground state
+    constexpr double kTolEv = 1e-4;                 // eV, excitation energies
+    constexpr double kTolF = 1e-3; // dimensionless, oscillator strengths
 
     // ── RHF/6-31G* (Cartesian d, engine convention) ──────────────────────
     cpu::scf::RHF rhf;
@@ -93,8 +93,8 @@ int main() {
     const cpu::scf::ExcitedStatesResult tda = rhf.tda(3);
     const cpu::scf::ExcitedStatesResult tdhf = rhf.tdhf(3);
 
-    std::printf("\n  %-6s %-14s %-14s %-12s\n", "root", "TDA [eV]",
-                "TDHF [eV]", "f(TDA)/f(TDHF)");
+    std::printf("\n  %-6s %-14s %-14s %-12s\n", "root", "TDA [eV]", "TDHF [eV]",
+                "f(TDA)/f(TDHF)");
     for (int s = 0; s < 3; ++s)
         std::printf("  %-6d %-14.6f %-14.6f %.6f / %.6f\n", s + 1,
                     tda.energy_ev[static_cast<std::size_t>(s)],
@@ -130,8 +130,8 @@ int main() {
 
     // ── Assignments: root 1 = n→π* (dark, A2), root 3 = π→π* (bright,
     //    transition dipole along the C=O axis = z) ─────────────────────────
-    if (!check("n->pi* (root 1) f_TDA (dark)", tda.oscillator_strength[0],
-               0.0, kTolF))
+    if (!check("n->pi* (root 1) f_TDA (dark)", tda.oscillator_strength[0], 0.0,
+               kTolF))
         return 1;
     if (!check("n->pi* (root 1) f_TDHF (dark)", tdhf.oscillator_strength[0],
                0.0, kTolF))
@@ -139,17 +139,15 @@ int main() {
     if (!check("pi->pi* (root 3) f_TDA", tda.oscillator_strength[2], kTdaF3,
                kTolF))
         return 1;
-    if (!check("pi->pi* (root 3) f_TDHF", tdhf.oscillator_strength[2],
-               kTdhfF3, kTolF))
+    if (!check("pi->pi* (root 3) f_TDHF", tdhf.oscillator_strength[2], kTdhfF3,
+               kTolF))
         return 1;
 
-    const double z2 = tda.transition_dipole_au(2, 2)
-                      * tda.transition_dipole_au(2, 2);
-    const double mu2 = tda.transition_dipole_au(2, 0)
-                           * tda.transition_dipole_au(2, 0)
-                       + tda.transition_dipole_au(2, 1)
-                             * tda.transition_dipole_au(2, 1)
-                       + z2;
+    const double z2 =
+        tda.transition_dipole_au(2, 2) * tda.transition_dipole_au(2, 2);
+    const double mu2 =
+        tda.transition_dipole_au(2, 0) * tda.transition_dipole_au(2, 0)
+        + tda.transition_dipole_au(2, 1) * tda.transition_dipole_au(2, 1) + z2;
     if (z2 < 0.99 * mu2) {
         std::fprintf(stderr,
                      "FAIL: pi->pi* transition dipole is not along the C=O "

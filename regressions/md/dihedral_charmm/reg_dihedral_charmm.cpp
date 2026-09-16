@@ -6,7 +6,7 @@
 #include <cmath>
 #include <cstdio>
 
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/potentials/dihedral_charmm.h"
 
@@ -46,7 +46,7 @@ int main() {
             f.span(ATV::kAtom_mass)[i] = 12.0;
             f.span(ATV::kAtom_type)[i] = 0;
         }
-        f.simbox = cpu::Box::cubic(40.0);
+        f.box = cpu::Box::cubic(40.0);
         f.clear_tag_index();
         f.rebuild_tag_index(0, f.nlocal());
         f.add_dihedral(0, 1, 2, 3, 0);

@@ -1,0 +1,71 @@
+! O2 triplet UKS + OT / PADE / DZVP-MOLOPT-GTH + GTH-PBE-q6 — Γ-only, MT
+! Twin for Atomiverse regressions/gpw/ot-uks-o2
+! Geometry matches gpw-uks-o2-gamma (centered R=1.2075 Å)
+! Valence: 12 e- (GTH-q6), multiplicity 3 → Nα=7, Nβ=5
+! Cutoff 250 Ry — fair OT twin under ≤60 s ATV budget class
+
+&GLOBAL
+  PROJECT o2_uks_ot_pade
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME  BASIS_MOLOPT
+    POTENTIAL_FILE_NAME  GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 3
+    CHARGE 0
+    &MGRID
+      CUTOFF 250
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+    &SCF
+      MAX_SCF 200
+      EPS_SCF 1.0E-7
+      SCF_GUESS ATOMIC
+      &OT
+        MINIMIZER DIIS
+        PRECONDITIONER FULL_SINGLE_INVERSE
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 20
+        EPS_SCF 1.0E-7
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &PRINT
+      &MOMENTS OFF
+      &END MOMENTS
+    &END PRINT
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      ! Centered in the 12 Å cell (MT nonperiodic)
+      O  6.000000  6.000000  5.396250
+      O  6.000000  6.000000  6.603750
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

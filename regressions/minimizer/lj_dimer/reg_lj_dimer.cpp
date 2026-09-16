@@ -8,8 +8,8 @@
 
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"
-#include "atomiverse/cpu/minimizer/minimize.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -35,12 +35,12 @@ int main() {
         frame.span(ATV::kAtom_type)[i] = 0;
         frame.span(ATV::kAtom_tag)[i] = i + 1;
     }
-    frame.simbox = cpu::Box::cubic(L);
+    frame.box = cpu::Box::cubic(L);
 
     cpu::minimizer::Minimize opt;
     opt.set_optimizer(cpu::minimizer::LBFGS{10, 0.05, 20});
     opt.add_criterion(cpu::ForceConverged{0.01, 0.005, 0.05, 0.02, 1e-6});
-    opt.add_potential(cpu::PairLJCut{eps, sigma, cutoff});
+    opt.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
     opt.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3});
     opt.build();
     opt.run(frame, 200);

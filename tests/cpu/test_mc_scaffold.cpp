@@ -10,13 +10,16 @@
 #include <type_traits>
 #include <vector>
 
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/component/hf.h"
 #include "atomiverse/cpu/component/mover.h"
 #include "atomiverse/cpu/component/potential.h"
-#include "atomiverse/cpu/mc/mc.h"
-#include "atomiverse/cpu/mc/transaction.h"
-#include "atomiverse/facade/stage.h"
+#include "atomiverse/cpu/driver/driver.h"
+#include "atomiverse/cpu/driver/driver_node.h"
+#include "atomiverse/cpu/montecarlo/mc.h"
+#include "atomiverse/cpu/montecarlo/transaction.h"
 
 using namespace ATV;
 
@@ -109,6 +112,29 @@ struct StubEnergy : cpu::Potential {
     void launch(const cpu::LaunchContext&) override {}
 };
 
+/// @brief The exact shape a Gaussian method presents to an outer driver:
+///        `Driver<scf::Phase>` (hence a `cpu::DriverNode`) + the pure `HF`
+///        kind tag, and **not** a `Component`.
+///
+/// `cpu::scf::RHF` is this plus physics (`MeanFieldMethod` derives the same two
+/// bases). The three `DriverNode` lifecycle ops — `build_on`,
+/// `run_nested_erased`, `destroy_on` — are already implemented by
+/// `cpu::Driver<PhaseEnum>`, so the only pure virtual left to satisfy is
+/// `validate_components()`: a bare loop requires nothing. No physics, no
+/// stages, no frame — this test is about *recognition*, and a stub keeps the
+/// case out of `ATV_BUILD_HF` and in the milliseconds.
+struct StubHfNode : cpu::Driver<ATV::scf::Phase>, cpu::HF {
+    void validate_components() const override {}
+};
+
+/// @brief A nested loop node that is NOT an energy source: same
+///        `Driver<scf::Phase>` node shape, **no** `HF` tag.
+///
+/// The node-aware walk must count the `HF` kind, not "any nested driver".
+struct StubBareNode : cpu::Driver<ATV::scf::Phase> {
+    void validate_components() const override {}
+};
+
 } // namespace
 
 // `validate_components()` is protected on the preset, and it is `build()` that calls it
@@ -134,6 +160,46 @@ TEST(MCScaffold, ValidatePassesWithMoverAndEnergy) {
     d.on(sampling::Phase::energy).add(StubEnergy{});
     EXPECT_NO_THROW(d.build());
 }
+
+// ── Node-aware energy-source recognition (esmm-contract-02, ac-001) ─────────
+//
+// `HF` is a pure polymorphic tag, not a Component: a Gaussian method is a
+// `Driver<scf::Phase> + HF` bound as a NESTED DRIVER NODE. `McBase`'s
+// validation walks components only (`for_each_pending`), so it cannot see any
+// Gaussian method — the "RHF x MC" row of the free-combination matrix fails to
+// build even though it would run. MD / Evaluate / Minimize / Hessian already
+// use the node-aware `for_each_pending_kind` with a
+// `dynamic_cast<const HF*>(node)` driver-node lambda.
+
+/// ac-001 — a nested HF node IS the energy source. RED today: `build()` throws
+/// "missing required Potential / Bias / HF / Semiempirical / PlaneWave / GPW"
+/// because the component-only walk skips driver nodes entirely.
+TEST(MCScaffold, NestedHfNodeSatisfiesEnergyValidation) {
+    StubHfNode method;
+    cpu::mc::MC d{/*temperature_K=*/300.0, /*seed=*/1u};
+    d.on(sampling::Phase::propose).add(StubMover{});
+    // NOTE: `add`/`add_ref`'s second positional argument is `order`, the third
+    // is the nested budget — not `add(node, budget)`.
+    d.on(sampling::Phase::energy)
+        .add_ref(method, /*order=*/0, /*budget=*/0); // the ONLY energy source
+    EXPECT_NO_THROW(d.build());
+}
+
+/// ac-004 — the walk change adds visibility, never permissiveness: a nested
+/// node that does not carry the `HF` tag is still not an energy source. (Passes
+/// today for the weaker reason that no node is looked at at all; it pins the
+/// GREEN against a `dynamic_cast<const DriverNode*>`-shaped shortcut.)
+TEST(MCScaffold, ValidateStillThrowsWithNonHfNestedNode) {
+    StubBareNode not_a_method;
+    cpu::mc::MC d{/*temperature_K=*/300.0, /*seed=*/1u};
+    d.on(sampling::Phase::propose).add(StubMover{});
+    d.on(sampling::Phase::energy).add_ref(not_a_method, /*order=*/0,
+                                         /*budget=*/0);
+    EXPECT_THROW(d.build(), std::runtime_error);
+}
+
+// The zero-source negative leg of ac-004 is `ValidateThrowsWithoutEnergyWriter`
+// above (mover only, plus the driver-owned ZeroEnergy / ZeroForces: throws).
 
 /// The temperature guard moved from `SamplingDriver`'s ctor to `cpu::Metropolis`'s;
 /// `cpu::mc::MC` forwards to it, so constructing the preset with T <= 0 must still throw.

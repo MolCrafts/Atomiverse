@@ -65,16 +65,30 @@ inline constexpr unsigned kColNone = 0;
 inline constexpr unsigned kColCount = 1u << 0;
 inline constexpr unsigned kColTopology = 1u << 1;
 inline constexpr unsigned kColIdentityTail = 1u << 2;
+/// @brief Declares the write-back set: the columns `to_molrs` returns to
+///        the caller's Frame as native f64 (x/y/z, v, f, charge). Tag and
+///        image stay a separate i32 identity path (narrowing + ix/iy/iz split).
 inline constexpr unsigned kColWriteBack = 1u << 3;
 inline constexpr unsigned kColMigrate = 1u << 4;
+// Wire membership for the comm / border / reverse wires used to live here
+// as kColComm / kColBorder / kColReverse — a global guess, made once, about
+// what some consumer might want. It is now derived per run from what the
+// mounted components declare (`Component::declare_ghosts`,
+// `core/ghost_contract.h`).
+// kColExchange stays a flag because migration carries what an atom IS, which
+// is a property of the Frame rather than of whoever happens to be mounted.
 inline constexpr unsigned kColExchange = 1u << 5;
-inline constexpr unsigned kColComm = 1u << 6;
-inline constexpr unsigned kColBorder = 1u << 7;
-inline constexpr unsigned kColReverse = 1u << 8;
 inline constexpr unsigned kColState = kColMigrate | kColExchange;
+/// @brief This column is a Cartesian coordinate and takes a PBC image
+///        shift on the forward/border wires. x/y/z only. Never infer
+///        this from `wire_id <= AtomFieldId::z` — a table insert ahead
+///        of `z` would then silently add a box length to the new column.
+inline constexpr unsigned kColPbcShift = 1u << 6;
 
-/// One canonical field row.  wire_id is explicit and never derived from a
-/// variant or container index.
+/// One canonical field row. `wire_id` is the row index in
+/// `ATV_ATOM_FIELDS` (and therefore of `AtomFieldId`). x/y/z are pinned
+/// to 0/1/2 by static_assert below so a table reorder fails at compile
+/// time rather than silently shifting the wrong column.
 struct FieldSpec {
     std::uint16_t wire_id;
     const char* key;
@@ -88,32 +102,23 @@ struct FieldSpec {
 // id, key, element tier, dtype, stride, group, entries/item, flags
 #define ATV_ATOM_FIELDS(X)                                                     \
     X(x, "x", StorageReal, Storage, One, Core, 0,                              \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
+      kColState | kColWriteBack | kColPbcShift)                                \
     X(y, "y", StorageReal, Storage, One, Core, 0,                              \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
+      kColState | kColWriteBack | kColPbcShift)                                \
     X(z, "z", StorageReal, Storage, One, Core, 0,                              \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
-    X(vx, "vx", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
-    X(vy, "vy", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
-    X(vz, "vz", StorageReal, Storage, One, Core, 0,                            \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
-    X(fx, "fx", AccReal, Acc, One, Core, 0,                                    \
-      kColState | kColReverse | kColWriteBack)                                 \
-    X(fy, "fy", AccReal, Acc, One, Core, 0,                                    \
-      kColState | kColReverse | kColWriteBack)                                 \
-    X(fz, "fz", AccReal, Acc, One, Core, 0,                                    \
-      kColState | kColReverse | kColWriteBack)                                 \
-    X(mass, "mass", StorageReal, Storage, One, Core, 0,                        \
-      kColState | kColBorder)                                                  \
+      kColState | kColWriteBack | kColPbcShift)                                \
+    X(vx, "vx", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
+    X(vy, "vy", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
+    X(vz, "vz", StorageReal, Storage, One, Core, 0, kColState | kColWriteBack) \
+    X(fx, "fx", AccReal, Acc, One, Core, 0, kColState | kColWriteBack)         \
+    X(fy, "fy", AccReal, Acc, One, Core, 0, kColState | kColWriteBack)         \
+    X(fz, "fz", AccReal, Acc, One, Core, 0, kColState | kColWriteBack)         \
+    X(mass, "mass", StorageReal, Storage, One, Core, 0, kColState)             \
     X(charge, "charge", StorageReal, Storage, One, Core, 0,                    \
-      kColState | kColComm | kColBorder | kColWriteBack)                       \
-    X(type, "type", int, Int, One, Core, 0, kColState | kColBorder)            \
-    X(tag, "tag", TagInt, Tag, One, Core, 0,                                   \
-      kColState | kColBorder | kColIdentityTail)                               \
-    X(image, "image", std::int8_t, Int8, Fixed3, Core, 0,                      \
-      kColState | kColBorder)                                                  \
+      kColState | kColWriteBack)                                               \
+    X(type, "type", int, Int, One, Core, 0, kColState)                         \
+    X(tag, "tag", TagInt, Tag, One, Core, 0, kColState | kColIdentityTail)     \
+    X(image, "image", std::int8_t, Int8, Fixed3, Core, 0, kColState)           \
     X(num_bond, "num_bond", int, Int, One, Bond, 0, kColState | kColCount)     \
     X(bond_atom, "bond_atom", TagInt, Tag, BondPA, Bond, 1,                    \
       kColState | kColTopology)                                                \
@@ -164,6 +169,14 @@ inline constexpr FieldSpec kAtomFieldSpecs[] = {
 inline constexpr int kAtomFieldCount =
     static_cast<int>(sizeof(kAtomFieldSpecs) / sizeof(FieldSpec));
 inline constexpr std::uint16_t kDynamicFieldId = 0xffffu;
+
+static_assert(static_cast<std::uint16_t>(AtomFieldId::x) == 0
+                  && static_cast<std::uint16_t>(AtomFieldId::y) == 1
+                  && static_cast<std::uint16_t>(AtomFieldId::z) == 2,
+              "x/y/z must stay the first three AtomFieldId values so a "
+              "PBC-shifted column's wire_id is the axis index; reorder the "
+              "table and this assert fails instead of silently shifting a "
+              "new column");
 
 /// Compile-time typed column key.  Dynamic columns use kDynamicFieldId and
 /// are still dtype-checked by Block::span.
@@ -229,9 +242,70 @@ inline constexpr MetaKey<double> kEnergyBond{"energy_bond", true};
 inline constexpr MetaKey<double> kEnergyAngle{"energy_angle", true};
 inline constexpr MetaKey<double> kEnergyDihedral{"energy_dihedral", true};
 inline constexpr MetaKey<double> kEnergyImproper{"energy_improper", true};
+/// Charging-work bookkeeping \(-\sum_i \Psi_i Q_i\) [eV] (MetalWalls JOSS eq. 6).
+inline constexpr MetaKey<double> kEnergyChargingWork{"energy_charging_work",
+                                                     true};
+/// @brief Electronic-structure share of `kEnergy` [eV] — an **accumulator**
+///        channel, written `+=` by every in-plan electronic-structure source
+///        (Gaussian SCF, GPW, plane-wave, AM1/RM1, DFTB2) and cleared by
+///        `ZeroEnergy` in lockstep with `kEnergy`.
+///
+/// Deliberately ONE key shared by every electronic method: co-bound electronic
+/// sources legitimately merge into a single "electronic share" (Δ-learning, the
+/// QM region of a QM/MM partition), so per-method keys would be key explosion
+/// with no consumer. With a sole electronic source it equals `kEnergy`;
+/// co-bound with classical terms it is the attributable QM part.
+inline constexpr MetaKey<double> kEnergyElectronic{"energy_electronic", true};
 inline constexpr MetaKey<double> kKinetic{"kinetic", true};
 inline constexpr MetaKey<double> kConserved{"conserved", true};
+/// Fictitious CP electronic kinetic energy \(T_e\) [eV] (CPMD evaluators;
+/// adiabaticity monitor).
+inline constexpr MetaKey<double> kEnergyElectronKinetic{
+    "energy_electron_kinetic", true};
+/// Nosé–Hoover electronic thermostat energy [eV] (0 for NVE electrons).
+inline constexpr MetaKey<double> kEnergyElectronThermostat{
+    "energy_electron_thermostat", true};
+/// @brief Configurational stress: the **extensive Voigt virial**
+///        \(W_{ab}=\sum_{i<j} r_{ij,a}F_{ij,b}\), Voigt order
+///        (xx, yy, zz, xy, xz, yz), in **eV**, **compression-positive**,
+///        **excluding** the kinetic term (that is `kStressKinetic`).
+///
+/// Extensive is forced, not chosen. Every evaluator `+=`-accumulates onto this
+/// one key, and the driver MPI-`Reduce`s it by summing rank-local partials —
+/// both are defined only for an extensive quantity (summing rank-local
+/// *intensive* stresses would multiply σ by the rank count).
+///
+/// Consequences for producers and consumers:
+/// - Classical pair/bond/long-range writers already accumulate \(W\) directly.
+/// - Methods that naturally compute the intensive
+///   \(\sigma_{ab}=-(1/\Omega)\,\partial E/\partial\varepsilon_{ab}\)
+///   (PW, GPW, DFTB2) multiply by the cell volume **at the Frame write**; their
+///   own `last_stress()` / `pw_stress()` returns stay intensive [eV/Å³].
+/// - Every consumer divides by \(V\) to obtain a pressure: `IsotropicCellRelax`
+///   and `JointIsotropicRelax` use \(\mathrm{tr}(W)/(3V)\),
+///   `AnisotropicCellRelax` and `TriclinicCellRelax` use \(W_{ab}/V\), and
+///   `StressConverged` judges \(W_{dd}/V\) against a target in eV/Å³.
+///
+/// Sign and factor follow Nielsen & Martin, Phys. Rev. B **32**, 3780 (1985),
+/// Eqs. (5)–(6) (\(\sigma_{\alpha\beta}=T_{\alpha\beta}/\Omega\)); the DFT
+/// strain-derivative form and the classical virial are the *same tensor* up to
+/// \(1/\Omega\), since \(\partial E/\partial\varepsilon_{ab}=-W_{ab}\).
 inline constexpr MetaKey<MetaF64x6> kStress{"stress", true};
+/// @brief Kinetic stress \(\sum_i m_i v_{ia} v_{ib}\) [eV] — extensive, same
+///        Voigt order and sign convention as `kStress`, kept on a separate key
+///        so a 0 K geometry optimization can ignore it.
 inline constexpr MetaKey<MetaF64x6> kStressKinetic{"stress_kinetic", true};
+/// Per-electrode total charge [e], first ≤3 electrodes (ElectrodeChargeObserver).
+inline constexpr MetaKey<MetaF64x3> kElectrodeCharge{"electrode_charge", true};
+/// Differential capacitance \(C_{\mathrm{diff}}=\mathrm{Var}(Q)/(k_B T)\) [e/V]
+/// from electrode charge fluctuations (CapacitanceChargeFluctuation).
+inline constexpr MetaKey<double> kCapacitanceDiff{"capacitance_diff", true};
+/// Integral capacitance \(C_{\mathrm{int}}=\langle Q\rangle/\Delta\Psi\) [e/V]
+/// when \(\Delta\Psi\) is supplied (CapacitanceChargeFluctuation).
+inline constexpr MetaKey<double> kCapacitanceIntegral{"capacitance_integral",
+                                                      true};
+/// Planar slab potential drop \(\Psi(z_{\max})-\Psi(z_{\min})\) [V]
+/// (PotentialProfile observer; left-edge gauge \(\Psi(z_{\min})=0\)).
+inline constexpr MetaKey<double> kPotentialDrop{"potential_drop", true};
 
 } // namespace ATV

@@ -48,7 +48,7 @@ constexpr double kEnergyRiseTol = 1e-10;
 constexpr double kX0Floor = 1e-10;
 } // namespace
 
-SOSCFStepper::SOSCFStepper(bool restricted, const IntegralPack& ints,
+SOSCFStepper::SOSCFStepper(bool restricted, const internal::IntegralView& ints,
                            const int& n_alpha, const int& n_beta,
                            const RealMatrix& Hcore, const double& v_nuc,
                            const RealMatrix& F_alpha, const RealMatrix& F_beta,
@@ -56,20 +56,19 @@ SOSCFStepper::SOSCFStepper(bool restricted, const IntegralPack& ints,
                            RealMatrix& C_alpha, RealMatrix& C_beta,
                            RealVector& eig_alpha, RealVector& eig_beta,
                            int max_micro, double trust_radius)
-    : restricted_(restricted), ints_(ints), n_alpha_(n_alpha),
-      n_beta_(n_beta), Hcore_(Hcore), v_nuc_(v_nuc), F_alpha_(F_alpha),
-      F_beta_(F_beta), P_alpha_(P_alpha), P_beta_(P_beta), C_alpha_(C_alpha),
-      C_beta_(C_beta), eig_alpha_(eig_alpha), eig_beta_(eig_beta),
-      max_micro_(max_micro), trust_radius0_(trust_radius),
-      radius_(trust_radius) {
+    : restricted_(restricted), ints_(ints), n_alpha_(n_alpha), n_beta_(n_beta),
+      Hcore_(Hcore), v_nuc_(v_nuc), F_alpha_(F_alpha), F_beta_(F_beta),
+      P_alpha_(P_alpha), P_beta_(P_beta), C_alpha_(C_alpha), C_beta_(C_beta),
+      eig_alpha_(eig_alpha), eig_beta_(eig_beta), max_micro_(max_micro),
+      trust_radius0_(trust_radius), radius_(trust_radius) {
     if (max_micro < 1)
         throw std::invalid_argument(
             "SOSCFStepper: max_micro = " + std::to_string(max_micro)
             + " — the Davidson micro budget must be >= 1");
     if (!(trust_radius > 0.0))
-        throw std::invalid_argument(
-            "SOSCFStepper: trust_radius = " + std::to_string(trust_radius)
-            + " — the trust radius must be positive");
+        throw std::invalid_argument("SOSCFStepper: trust_radius = "
+                                    + std::to_string(trust_radius)
+                                    + " — the trust radius must be positive");
 }
 
 void SOSCFStepper::reset() {
@@ -135,8 +134,8 @@ RealVector SOSCFStepper::gradient() const {
         const int nv = m - no;
         const RealMatrix Fmo = xt::linalg::dot(
             xt::transpose(C), RealMatrix(xt::linalg::dot(F, C)));
-        RealVector g = xt::zeros<double>(
-            {static_cast<std::size_t>(std::max(nv * no, 0))});
+        RealVector g =
+            xt::zeros<double>({static_cast<std::size_t>(std::max(nv * no, 0))});
         for (int a = 0; a < nv; ++a)
             for (int i = 0; i < no; ++i)
                 g(a * no + i) = scale * Fmo(no + a, i);
@@ -207,8 +206,7 @@ RealMatrix SOSCFStepper::semicanonicalize_(const RealMatrix& F, RealMatrix& C,
     C = C_new;
 
     // Gradient block in the semicanonical basis: Uvᵀ F_vo Uo.
-    RealMatrix g_blk =
-        xt::zeros<double>({std::max(nv, 0), std::max(n_occ, 0)});
+    RealMatrix g_blk = xt::zeros<double>({std::max(nv, 0), std::max(n_occ, 0)});
     for (int a = 0; a < nv; ++a)
         for (int i = 0; i < n_occ; ++i) {
             double s = 0.0;
@@ -220,12 +218,10 @@ RealMatrix SOSCFStepper::semicanonicalize_(const RealMatrix& F, RealMatrix& C,
     return g_blk;
 }
 
-xt::xtensor<double, 4>
-SOSCFStepper::mo_transform_(const xt::xtensor<double, 4>& eri_ao,
-                            const xt::xtensor<double, 2>& C0,
-                            const xt::xtensor<double, 2>& C1,
-                            const xt::xtensor<double, 2>& C2,
-                            const xt::xtensor<double, 2>& C3) {
+xt::xtensor<double, 4> SOSCFStepper::mo_transform_(
+    const xt::xtensor<double, 4>& eri_ao, const xt::xtensor<double, 2>& C0,
+    const xt::xtensor<double, 2>& C1, const xt::xtensor<double, 2>& C2,
+    const xt::xtensor<double, 2>& C3) {
     // Four rounds, each transforming the (current) last axis and rotating it
     // to the front — the OrbitalHessian::transform_block_ pattern.
     xt::xtensor<double, 4> cur = eri_ao;
@@ -234,8 +230,8 @@ SOSCFStepper::mo_transform_(const xt::xtensor<double, 4>& eri_ao,
         const auto sh = cur.shape();
         auto flat = xt::reshape_view(cur, {sh[0] * sh[1] * sh[2], sh[3]});
         xt::xtensor<double, 2> h = xt::linalg::dot(flat, *Cs[round]);
-        xt::xtensor<double, 4> next = xt::reshape_view(
-            h, {sh[0], sh[1], sh[2], Cs[round]->shape()[1]});
+        xt::xtensor<double, 4> next =
+            xt::reshape_view(h, {sh[0], sh[1], sh[2], Cs[round]->shape()[1]});
         cur = xt::transpose(next, {3, 0, 1, 2});
     }
     return cur;
@@ -260,8 +256,8 @@ RealMatrix SOSCFStepper::exp_antisymmetric(const RealMatrix& K) {
     if (K.shape()[0] != K.shape()[1])
         throw std::invalid_argument(
             "SOSCFStepper::exp_antisymmetric: non-square generator ("
-            + std::to_string(K.shape()[0]) + "x"
-            + std::to_string(K.shape()[1]) + ")");
+            + std::to_string(K.shape()[0]) + "x" + std::to_string(K.shape()[1])
+            + ")");
     const std::size_t m = K.shape()[0];
     double asym = 0.0, norm2 = 0.0;
     for (std::size_t r = 0; r < m; ++r)
@@ -588,8 +584,7 @@ void SOSCFStepper::step() {
                     for (int b = 0; b < nv_a; ++b)
                         for (int j = 0; j < no_a; ++j)
                             acc += (2.0 * ovovAA(a, i, b, j)
-                                    - oovvAA(i, j, a, b)
-                                    - ovovAA(a, j, b, i))
+                                    - oovvAA(i, j, a, b) - ovovAA(a, j, b, i))
                                    * v(b * no_a + j);
                     if (rot_b > 0)
                         for (int b = 0; b < nv_b; ++b)
@@ -606,14 +601,13 @@ void SOSCFStepper::step() {
                     for (int b = 0; b < nv_b; ++b)
                         for (int j = 0; j < no_b; ++j)
                             acc += (2.0 * ovovBB(a, i, b, j)
-                                    - oovvBB(i, j, a, b)
-                                    - ovovBB(a, j, b, i))
+                                    - oovvBB(i, j, a, b) - ovovBB(a, j, b, i))
                                    * v(rot_a + b * no_b + j);
                     if (rot_a > 0)
                         for (int b = 0; b < nv_a; ++b)
                             for (int j = 0; j < no_a; ++j)
-                                acc += 2.0 * ovovAB(b, j, a, i)
-                                       * v(b * no_a + j);
+                                acc +=
+                                    2.0 * ovovAB(b, j, a, i) * v(b * no_a + j);
                     y(p) = 2.0 * acc;
                 }
             return y;

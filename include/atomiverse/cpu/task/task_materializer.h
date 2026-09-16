@@ -5,9 +5,9 @@
 #include <memory>
 #include <optional>
 
-#include "atomiverse/cpu/driver/evaluate.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/minimizer/minimize.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
+#include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
 namespace ATV::cpu::task {

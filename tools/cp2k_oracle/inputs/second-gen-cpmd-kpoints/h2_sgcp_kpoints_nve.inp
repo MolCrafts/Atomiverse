@@ -1,0 +1,81 @@
+# CP2K twin sketch for regressions/dynamics/second-gen-cpmd-kpoints (offline
+# oracle — never run at ctest/regression time). Periodic H2 Quickstep RKS MD
+# with KPOINTS + ASPC density extrapolation + limited MAX_SCF (second-
+# generation CP / Kühne SGCP on multi-k). Twin of ATV: DZV-GTH-PADE, PADE XC,
+# mesh 1x1x2, compressed bond, short NVE.
+# NOTE (2026-07-26): no cp2k binary on the worker host — unexecuted sketch.
+&GLOBAL
+  PROJECT h2_sgcp_kpoints_nve
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 8
+    TIMESTEP 0.5
+    TEMPERATURE 10.0
+  &END MD
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 100
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+      # Second-generation CP: ASPC predictor-corrector (Kolafa 2004).
+      EXTRAPOLATION ASPC
+      EXTRAPOLATION_ORDER 1
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-5
+      # Limited corrector budget — the SGCP signature vs full BOMD MAX_SCF.
+      MAX_SCF 5
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.3
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+      FULL_GRID .TRUE.
+    &END KPOINTS
+    &POISSON
+      PERIODIC XYZ
+      PSOLVER PERIODIC
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 6.350145 6.350145 6.350145
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      H  2.9105  3.1751  3.1751
+      H  3.4396  3.1751  3.1751
+    &END COORD
+    &KIND H
+      BASIS_SET DZV-GTH-PADE
+      POTENTIAL GTH-PADE-q1
+    &END KIND
+    &VELOCITY
+      H -0.0010  0.0000  0.0000
+      H  0.0010  0.0000  0.0000
+    &END VELOCITY
+  &END SUBSYS
+&END FORCE_EVAL

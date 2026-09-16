@@ -34,13 +34,6 @@ struct RadialPoint {
               ///< of f(r) over 3-space are sum_i w_i * f(r_i) * 4*pi).
 };
 
-/// @brief Molecular integration grid.
-struct MolecularGrid {
-    std::vector<GridPoint> points; ///< All grid points.
-    int n_radial;                  ///< Radial points per atom.
-    int n_angular;                 ///< Lebedev angular points per atom.
-};
-
 /// @brief Named DFT integration-grid quality level.
 ///
 /// Selects the radial scheme, the angular Lebedev order set, and the
@@ -61,24 +54,32 @@ struct MolecularGrid {
 ///                   (590 for Z <= 10, 770 for Z > 10).
 enum class GridLevel { SG0, SG1, MatchPySCF };
 
-/// @brief Build atom-centered molecular grid at a named quality level.
-///
-/// Level-aware grid builder: selects the radial scheme and the per-radial-
-/// shell angular Lebedev order from `level` (see ::GridLevel). For
-/// `GridLevel::SG0` uses the supplied `n_radial` / `n_angular`. For
-/// `SG1` / `MatchPySCF` the
-/// `n_radial` / `n_angular` arguments are ignored in favour of the level's
-/// own constants.
-///
-/// @param atoms Array of atom descriptors (Z, position in Bohr).
-/// @param natm  Number of atoms.
-/// @param level Named grid quality level.
-/// @param n_radial Radial point count (only used for `GridLevel::SG0`).
-/// @param n_angular Angular point count (only used for `GridLevel::SG0`).
-/// @return MolecularGrid with all weighted grid points.
-MolecularGrid build_molecular_grid(const native::Atom* atoms, int natm,
-                                   GridLevel level, int n_radial = 50,
-                                   int n_angular = 110);
+/// @brief Molecular integration grid: atom-centered DFT quadrature points.
+struct MolecularGrid {
+    std::vector<GridPoint> points; ///< All grid points.
+    int n_radial = 0;              ///< Radial points per atom.
+    int n_angular = 0;             ///< Lebedev angular points per atom.
+
+    /// @brief Empty grid (no points); populated later by copy/move
+    ///        assignment (e.g. a supplied fixed grid or a level-built one).
+    MolecularGrid() = default;
+
+    /// @brief Build atom-centered molecular grid at a named quality level.
+    ///
+    /// Level-aware grid builder: selects the radial scheme and the
+    /// per-radial-shell angular Lebedev order from `level` (see
+    /// ::GridLevel). For `GridLevel::SG0` uses the supplied `n_radial` /
+    /// `n_angular`. For `SG1` / `MatchPySCF` the `n_radial` / `n_angular`
+    /// arguments are ignored in favour of the level's own constants.
+    ///
+    /// @param atoms Array of atom descriptors (Z, position in Bohr).
+    /// @param natm  Number of atoms.
+    /// @param level Named grid quality level.
+    /// @param n_radial Radial point count (only used for `GridLevel::SG0`).
+    /// @param n_angular Angular point count (only used for `GridLevel::SG0`).
+    MolecularGrid(const native::Atom* atoms, int natm, GridLevel level,
+                  int n_radial = 50, int n_angular = 110);
+};
 
 /// @brief Lebedev angular order to use at a single radial shell.
 ///
@@ -118,8 +119,8 @@ std::vector<RadialPoint> radial_grid_euler_maclaurin(int n, double R);
 ///
 /// Exposes `becke_partition_weights` (otherwise file-static in grid.cpp)
 /// so the partition-of-unity acceptance test can probe it directly. Not
-/// intended for production callers -- `build_molecular_grid` applies the
-/// partition internally.
+/// intended for production callers -- the `MolecularGrid` constructor applies
+/// the partition internally.
 ///
 /// @param atoms   Array of atom descriptors (Z, position in Bohr).
 /// @param natm    Number of atoms.

@@ -5,7 +5,7 @@
 /// under the post-2026-05-19 `cpu::Pair` hierarchy costs exactly two new
 /// files: this header + `src/cpu/potentials/pair_morse.cpp`. No CMake
 /// edit (the GLOB picks it up); no Driver edit (users plug it in with
-/// `sim.add(cpu::PairMorse{...})`); no central registry. Per the
+/// `sim.set_evaluator(cpu::PairMorse{...})`); no central registry. Per the
 /// `pe-potential-abstraction.md` ac-009 acceptance.
 ///
 /// Implementation note: the demo uses an O(N²) all-pairs walk instead of

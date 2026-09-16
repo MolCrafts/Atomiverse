@@ -40,7 +40,7 @@ struct ContractedShell {
 ///
 /// Pople sets (6-31G family) are defined with 6 Cartesian d components;
 /// def2/cc- sets are defined with real spherical harmonics (5d/7f).
-/// The ShellList/IntegralPack pipeline reads this per-set flag to pick the
+/// The ShellList/internal::IntegralWorkspace pipeline reads this per-set flag to pick the
 /// AO dimension; there is no runtime override (the convention is part of
 /// the basis-set definition, not a user knob).
 enum class AngularConvention {
@@ -70,7 +70,7 @@ struct EcpGaussianTerm {
 
 /// @brief One angular-momentum channel of a semi-local ECP.
 struct EcpChannel {
-    int l;                             ///< Angular momentum (0 = s, 1 = p, …).
+    int l;                              ///< Angular momentum (0 = s, 1 = p, …).
     std::vector<EcpGaussianTerm> terms; ///< Gaussian expansion of the channel.
 };
 
@@ -83,7 +83,7 @@ struct EcpChannel {
 /// store U_l − U_L directly (PySCF/def2 storage convention). An empty
 /// `AtomEcp` (no channels) marks an all-electron element.
 struct AtomEcp {
-    int n_core = 0;                  ///< Core electrons replaced by the ECP.
+    int n_core = 0;                   ///< Core electrons replaced by the ECP.
     std::vector<EcpChannel> channels; ///< Projector channels, then local U_L.
 };
 

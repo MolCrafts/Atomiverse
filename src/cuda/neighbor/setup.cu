@@ -1,4 +1,4 @@
-/// @file neighborlist/setup.cu
+/// @file cuda/neighbor/setup.cu
 /// @brief GPU-side cell setup: inverse cell, grid dimensions, stencil computation.
 ///
 /// All computation runs on the GPU. No host-side math, no H2D transfers.

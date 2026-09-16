@@ -12,10 +12,10 @@
 ///
 /// Verifies:
 ///   - Multi-rank roundtrip: every schema field, per-atom bonded topology,
-///     simbox and every typed-meta entry replicate exactly; replica invariants
+///     box and every typed-meta entry replicate exactly; replica invariants
 ///     (nlocal == n, nghost == 0, has_bonded(), map usable); root untouched.
 ///   - World size 1: strict no-op — the frame is field-for-field unchanged.
-///   - 0-atom frame: header-only broadcast completes; simbox/meta still land.
+///   - 0-atom frame: header-only broadcast completes; box/meta still land.
 ///   - No-topology frame: has_bonded() stays false on the replica.
 ///   - Runtime exchange columns ride exactly; divergent registration throws
 ///     collectively before payload.
@@ -34,7 +34,7 @@
 #include <string>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/comm/bcast_frame.h"
+#include "atomiverse/cpu/communication/bcast_frame.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 using namespace ATV;
@@ -62,7 +62,7 @@ constexpr TagInt kRefTags[8] = {700000003, 101, 13, 55, 2, 89, 34, 68};
 
 /// @brief Deterministic 8-atom reference frame: every core field distinct and
 ///        nonzero, bonded topology (bond/angle/dihedral/special), an
-///        orthorhombic non-cubic simbox, and nonzero typed meta. Constructed
+///        orthorhombic non-cubic box, and nonzero typed meta. Constructed
 ///        from literals only, so two independent constructions are bitwise
 ///        identical — each rank builds its own expected copy locally.
 cpu::Frame make_reference_frame() {
@@ -99,7 +99,7 @@ cpu::Frame make_reference_frame() {
     f.add_dihedral(kRefTags[0], kRefTags[1], kRefTags[2], kRefTags[3], 1);
     f.build_special_list();
 
-    f.simbox = ATV::cpu::Box::orthorhombic(12.0, 15.5,
+    f.box = ATV::cpu::Box::orthorhombic(12.0, 15.5,
                                            19.25); // orthorhombic, non-cubic
 
     f.meta.get(ATV::kEnergy) = -123.5;
@@ -116,13 +116,13 @@ cpu::Frame make_reference_frame() {
     return f;
 }
 
-/// @brief Assert `got.simbox` == `want.simbox` element-for-element (exact).
+/// @brief Assert `got.box` == `want.box` element-for-element (exact).
 void expect_box_equal(const cpu::Frame& got, const cpu::Frame& want) {
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 3; ++c)
-            EXPECT_EQ(got.simbox.cell()(r, c), want.simbox.cell()(r, c))
+            EXPECT_EQ(got.box.cell()(r, c), want.box.cell()(r, c))
                 << "box(" << r << ", " << c << ")";
-    EXPECT_EQ(got.simbox.is_orthorhombic(), want.simbox.is_orthorhombic());
+    EXPECT_EQ(got.box.is_orthorhombic(), want.box.is_orthorhombic());
 }
 
 /// @brief Assert every serializable built-in typed-meta value equal (exact).
@@ -269,7 +269,7 @@ TEST(MpiBcastFrame, SerialWorldDegradesToNoOp) {
 TEST(MpiBcastFrame, ZeroAtomFrameBroadcastsHeaderOnly) {
     cpu::Frame frame(0);
     if (world_rank() == 0) {
-        frame.simbox = ATV::cpu::Box::orthorhombic(6.0, 7.5, 9.0);
+        frame.box = ATV::cpu::Box::orthorhombic(6.0, 7.5, 9.0);
         frame.meta.get(ATV::kEnergy) = -42.125;
         frame.meta.get(ATV::kKinetic) = 3.5;
     }
@@ -278,9 +278,9 @@ TEST(MpiBcastFrame, ZeroAtomFrameBroadcastsHeaderOnly) {
 
     EXPECT_EQ(frame.nlocal(), 0);
     EXPECT_EQ(frame.nghost(), 0);
-    EXPECT_EQ(frame.simbox.cell()(0, 0), 6.0);
-    EXPECT_EQ(frame.simbox.cell()(1, 1), 7.5);
-    EXPECT_EQ(frame.simbox.cell()(2, 2), 9.0);
+    EXPECT_EQ(frame.box.cell()(0, 0), 6.0);
+    EXPECT_EQ(frame.box.cell()(1, 1), 7.5);
+    EXPECT_EQ(frame.box.cell()(2, 2), 9.0);
     EXPECT_EQ(frame.meta.get(ATV::kEnergy), -42.125);
     EXPECT_EQ(frame.meta.get(ATV::kKinetic), 3.5);
 }
@@ -298,7 +298,7 @@ TEST(MpiBcastFrame, NoTopologyFrameStaysAtomic) {
             frame.span(ATV::kAtom_mass)[i] = StorageReal(4.0);
             frame.span(ATV::kAtom_tag)[i] = TagInt(20 + 3 * i);
         }
-        frame.simbox = ATV::cpu::Box::cubic(10.0);
+        frame.box = ATV::cpu::Box::cubic(10.0);
     }
 
     cpu::comm::bcast_frame(frame, /*root=*/0);
@@ -334,7 +334,7 @@ TEST(MpiBcastFrame, ExchangedExtensionColumnRidesTheRoundtrip) {
             aux(i, 0) = StorageReal(10.0 + i);
             aux(i, 1) = StorageReal(-20.0 - i);
         }
-        frame.simbox = ATV::cpu::Box::cubic(8.0);
+        frame.box = ATV::cpu::Box::cubic(8.0);
     }
 
     cpu::comm::bcast_frame(frame, /*root=*/0);
@@ -362,7 +362,7 @@ TEST(MpiBcastFrame, MismatchedExchangedRegistrationThrowsOnNonRoot) {
             frame.span(ATV::kAtom_x)[i] = StorageReal(i);
             frame.span(ATV::kAtom_tag)[i] = TagInt(i);
         }
-        frame.simbox = ATV::cpu::Box::cubic(5.0);
+        frame.box = ATV::cpu::Box::cubic(5.0);
     } else {
         // The registration divergence under test: non-root only.
         frame.block("atoms").insert(

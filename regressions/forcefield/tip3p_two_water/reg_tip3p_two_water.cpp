@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <vector>
 
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
@@ -43,7 +43,7 @@ int main() {
         f.span(kAtom_charge)[i] = q[i];
         f.span(kAtom_tag)[i] = i + 1;
     }
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     f.clear_tag_index();
     f.rebuild_tag_index(0, f.nlocal());
     f.add_bond(1, 2, 0);
@@ -56,13 +56,13 @@ int main() {
 
     cpu::Evaluate eval;
     eval.set_neighbor(cpu::md::NeighborList<>{10.0, 0.3});
-    eval.add_potential(
+    eval.set_evaluator(
         cpu::PairLJCut{0.0067, 3.1507, 10.0}.set_special_bonds(0, 0, 0));
     eval.on(evaluate::Phase::evaluate)
         .add(cpu::PairCoulCut{10.0}.set_special_bonds(0, 0, 0));
-    eval.add_potential(cpu::BondHarmonic{std::vector<double>{25.0},
+    eval.set_evaluator(cpu::BondHarmonic{std::vector<double>{25.0},
                                          std::vector<double>{0.9572}});
-    eval.add_potential(cpu::AngleHarmonic{
+    eval.set_evaluator(cpu::AngleHarmonic{
         std::vector<double>{5.0},
         std::vector<double>{104.52 * 3.141592653589793 / 180.0}});
     eval.build();

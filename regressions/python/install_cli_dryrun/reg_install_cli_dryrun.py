@@ -73,12 +73,19 @@ def main() -> int:
         return 1
     print("ok: empty config rejected")
 
-    # --hf
-    proc = _run(["config", "md", "--hf", "--src", str(REPO)])
-    if proc.returncode == 0:
-        print("FAIL: --hf should fail")
+    # --hf is a normal module (spec py-scf-single-point): Gaussian SCF
+    # configures like any other product module, no rejection.
+    proc = _run(["config", "md", "--hf", "--src", str(REPO), "--dry-run"])
+    out = proc.stdout + proc.stderr
+    if proc.returncode != 0:
+        print("FAIL: config md --hf")
+        print(out)
         return 1
-    print("ok: --hf rejected")
+    if "ATV_BUILD_HF=ON" not in out:
+        print("FAIL: missing ATV_BUILD_HF=ON")
+        print(out)
+        return 1
+    print("ok: --hf configures ATV_BUILD_HF=ON")
 
     # dry-run config md --mpi
     proc = _run(

@@ -1,0 +1,100 @@
+# MetalWalls twin of the Atomiverse regression regressions/md/dipole-electrode-joint
+# ---------------------------------------------------------------------------------
+# Same geometry / species / charges / masses / eta / box / Psi as
+# reg_dipole-electrode-joint.cpp, converted ANGSTROM/eV/V -> BOHR/Ha/(Ha/e)
+# with MetalWalls' own bohr2angstrom = 0.52917721067 (src/constants.F90).
+#
+#   L            10, 10, 20 A        -> 18.897261254578282 18.897261254578282 37.794522509156565 Bohr
+#   z(bot elec)  2 A                 ->  3.7794522509156563 Bohr
+#   z(cation)    8 A                 -> 15.117809003662625  Bohr
+#   z(anion)    12 A                 -> 22.676713505493936  Bohr
+#   z(top elec) 18 A                 -> 34.015070258240904  Bohr
+#   eta          2.0 1/A             ->  1.05835442134      1/Bohr
+#   alpha(cat)   1.0 A^3             ->  6.748334503514373  Bohr^3
+#   alpha(an)    1.5 A^3             -> 10.12250175527156   Bohr^3
+#   Psi(top)     1 V                 ->  0.03674932217565499 Ha/e   (1/27.211386245988)
+#   Psi(bot)     0 V                 ->  0.0                Ha/e
+#   dt           (unused, 0 steps)   -> 41.341 a.u. = 1 fs
+#
+# NOTE the model gap that is inherent, not a choice: Atomiverse's
+# DipoleElectrodeJoint uses MINIMUM-IMAGE real-space electrostatics
+# (xy_image_range = 0) and Thole damping; MetalWalls always uses Ewald
+# (num_pbc 2 or 3 only) and Tang-Toennies ion-dipole damping.  The `damping`
+# block is therefore omitted (tt = 0, i.e. undamped charge-dipole), which is
+# the ATV thole_a = 0 limit, not the thole_a = 0.39 the regression pins.
+
+num_steps    0
+timestep     41.341
+temperature  0
+num_pbc      2
+
+species
+
+  species_type
+    name  Cat
+    count 1
+    mass  1.0
+    mobile True
+    charge point 1.0
+    polarizability 6.748334503514373
+
+  species_type
+    name  An
+    count 1
+    mass  1.0
+    mobile True
+    charge point -1.0
+    polarizability 10.12250175527156
+
+  species_type
+    name  Ebot
+    count 1
+    mass  12.0
+    mobile False
+    charge gaussian 1.05835442134 0.0
+
+  species_type
+    name  Etop
+    count 1
+    mass  12.0
+    mobile False
+    charge gaussian 1.05835442134 0.0
+
+electrodes
+
+  electrode_type
+    name    Ebot
+    species Ebot
+    potential 0.0
+
+  electrode_type
+    name    Etop
+    species Etop
+    potential 0.03674932217565499
+
+dipoles_and_electrodes
+  algorithm cg 1.0e-13 5000
+  preconditioner jacobi
+  charge_neutrality true
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-12
+    coulomb_rcut 9.4
+    coulomb_ktol 1.0e-12
+
+  # Tang-Toennies ion-dipole damping, switched OFF (c = 0).  The block itself
+  # is MANDATORY whenever dipoles are on: system%tt is only allocated by the
+  # `damping` parser (src/configuration.F90 read_tt_parameters), and
+  # coulomb_sr_pim reads tt%order/tt%b/tt%c unconditionally -> segfault
+  # without it.  c = 0 makes every damping term identically zero.
+  damping
+     tt_pair Cat An  1.0 4 0.0
+
+output
+  default 0
+  energies 1
+  charges 1
+  dipoles 1
+  forces 1
+  total_charges 1

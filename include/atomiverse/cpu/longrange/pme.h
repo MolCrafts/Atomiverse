@@ -2,7 +2,7 @@
 /// @brief Smooth Particle-Mesh Ewald reciprocal sum (LAMMPS `kspace_style
 /// pppm`/`pme`) — CPU. Requires `ATV_BUILD_KSPACE` (FFTW3).
 ///
-/// Thin Frame/MPI/FFTW wrapper over `atomiverse/longrange/{pme_spline,
+/// Thin Frame/MPI/FFTW wrapper over `atomiverse/cpu/longrange/{pme_spline,
 /// pme_influence}`. A drop-in replacement for `KSpaceEwald`: same real-space
 /// `CoulLong`, same self / net-charge terms, but the O(N²) reciprocal sum is
 /// replaced by B-spline charge spreading → FFT → influence-function multiply →
@@ -27,10 +27,10 @@
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/precision.h"
+#include "atomiverse/core/role.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/longrange/kspace.h"
-#include "atomiverse/facade/component_role.h"
-#include "atomiverse/facade/stage.h"
-#include "atomiverse/longrange/pme_influence.h"
+#include "atomiverse/cpu/longrange/pme_influence.h"
 
 namespace ATV {
 namespace cpu {

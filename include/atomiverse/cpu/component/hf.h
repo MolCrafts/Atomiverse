@@ -2,7 +2,7 @@
 /// @brief cpu::HF — pure polymorphic tag for Gaussian-basis mean-field methods.
 ///
 /// Not a Component. Concrete methods (`RHF` / `UHF` / `RKS` / `UKS`) derive
-/// `CPUDriver` + `HF` and bind as nested driver nodes. Outer drivers recognise
+/// `Driver` + `HF` and bind as nested driver nodes. Outer drivers recognise
 /// energy/force sources via `dynamic_cast<const HF*>(driver_ptr)`.
 #pragma once
 
@@ -13,6 +13,13 @@ namespace cpu {
 class HF {
   public:
     virtual ~HF() = default;
+
+    /// @brief True when this method contributes a system energy term.
+    /// @return Dimensionless predicate. Default true.
+    virtual bool provides_energy() const { return true; }
+    /// @brief True when this method contributes a force / gradient term.
+    /// @return Dimensionless predicate. Default true.
+    virtual bool provides_force() const { return true; }
 };
 
 } // namespace cpu

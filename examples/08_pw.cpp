@@ -9,35 +9,39 @@
 ///
 /// One concept: how a plane-wave single-point energy is assembled from the
 /// same Driver/Component vocabulary as every other method. The plane-wave
-/// SCF loop lives inside the inner solver `cpu::pw::PWSolver`; the
+/// SCF loop lives inside the inner solver `cpu::pw::PW`; the
 /// user-facing component is `cpu::pw::PWEvaluator` (role Evaluator,
 /// capability Energy), run through the one-pass `cpu::Evaluate` driver via
-/// the `cpu::single_point` helper — exactly like `cpu::scf::SCF`.
+/// the `cpu::single_point` helper — the same shape as the Gaussian methods
+/// (`cpu::scf::RHF{basis}.run(frame)`).
 ///
 /// Build:
 ///   cmake -B build -DATV_BUILD_PW=ON -DATV_BUILD_EXAMPLES=ON   # needs FFTW3
 ///   cmake --build build --target 08_pw
 ///
-/// Run (toy local potential — runnable with zero arguments):
+/// Run (analytic GTH pseudopotential — runnable with zero arguments):
 ///   ./build/examples/08_pw
 ///
-/// Run with a real norm-conserving pseudopotential (UPF v1) for a physical
-/// energy. A silicon LDA pseudopotential ships with the repository:
-///   ./build/examples/08_pw benchmarks/pw/si/validation/reference/Si_lda_nc.upf
+/// Run against a norm-conserving UPF v1 file instead. A silicon LDA
+/// pseudopotential ships with the repository:
+///   ./build/examples/08_pw tests/data/pw/Si_lda_nc.upf
 ///
-/// Without a UPF file the solver falls back to a toy V_loc ~ -1/G^2: the SCF
-/// loop still runs and returns a finite energy, but the number is not
-/// physically meaningful. Use it to see the workflow; use a real UPF for
-/// real numbers.
+/// With no argument the solver uses the published Goedecker-Teter-Hutter
+/// parameterization "GTH-PBE-q4" for silicon, evaluated in-tree from
+/// `cpu/gpw/basis_data/gpw_tables.h`. There is no pseudopotential-free
+/// mode: a bare valence-charge Coulomb potential is not representable in a
+/// plane-wave basis at any finite cutoff, so a run with neither
+/// `upf_path` nor `gth_name` set throws.
 
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/driver/single_point.h"
+#include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/pw/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/scf/methods.h"
 
 using namespace ATV;
@@ -73,19 +77,23 @@ cpu::Frame make_silicon(double a) {
     cell(2, 0) = h;
     cell(2, 1) = h;
     cell(2, 2) = 0;
-    f.simbox.set_cell(cell);
+    f.box.set_cell(cell);
     return f;
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
+    // A plane-wave run has no default pseudopotential. With no argument this
+    // uses the in-tree analytic GTH parameterization for silicon; pass a UPF
+    // file path to use that instead.
     const std::string upf_path = (argc > 1) ? argv[1] : "";
+    const std::string gth_name = upf_path.empty() ? "GTH-PBE-q4" : "";
 
     std::cout << "=== Silicon (diamond) / plane-wave LDA ===\n"
               << "Cell: 2-atom fcc primitive, a = 5.43 Angstrom\n"
               << "Pseudopotential: "
-              << (upf_path.empty() ? "(none — toy V_loc, unphysical energy)"
+              << (upf_path.empty() ? gth_name + " (analytic, in-tree)"
                                    : upf_path)
               << "\n\n";
 
@@ -99,8 +107,9 @@ int main(int argc, char** argv) {
     //            a denser k-mesh — see benchmarks/pw/si for converged runs.
     // k_mesh   : Monkhorst-Pack Brillouin-zone sampling (k_mesh^3 points).
     // tol      : SCF convergence tolerance on the density change.
-    cpu::pw::PWConfig cfg;
+    cpu::pw::PW cfg;
     cfg.upf_path = upf_path;
+    cfg.gth_name = gth_name;
     cfg.ecut_ry = 15.0;
     cfg.k_mesh = 2;
     cfg.tol = 1e-6;
@@ -108,11 +117,11 @@ int main(int argc, char** argv) {
 
     // ── Run it as an Evaluator component ──────────────────────────────
     //
-    // PWEvaluator wraps the inner PWSolver. cpu::single_point binds it at
+    // PWEvaluator wraps the inner PW. cpu::single_point binds it at
     // the evaluate phase, builds the one-pass Evaluate driver, and runs it.
     // The component writes frame.meta.get(ATV::kEnergy) in eV; the Ry / Hartree
     // breakdown stays on last_result().
-    cpu::pw::PWEvaluator pwe{cfg};
+    cpu::pw::PWEvaluator pwe{std::move(cfg)};
     cpu::single_point(frame, pwe);
 
     const auto& result = pwe.last_result();
@@ -125,10 +134,9 @@ int main(int argc, char** argv) {
               << "E_total:      " << frame.meta.get(ATV::kEnergy) << " eV\n";
 
     if (upf_path.empty())
-        std::cout << "\nNote: re-run with a UPF pseudopotential for a "
-                     "physical energy, e.g.\n"
-                     "  ./08_pw "
-                     "benchmarks/pw/si/validation/reference/Si_lda_nc.upf\n";
+        std::cout << "\nNote: re-run against a UPF file to compare "
+                     "pseudopotentials, e.g.\n"
+                     "  ./08_pw tests/data/pw/Si_lda_nc.upf\n";
 
     std::cout << "\n=== Done ===\n";
     return 0;

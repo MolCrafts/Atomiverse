@@ -8,7 +8,11 @@ namespace ATV {
 namespace cpu {
 
 /// @brief Plane-wave DFT electronic structure.
-class PlaneWave : public Component {};
+class PlaneWave : public Component {
+  public:
+    bool provides_energy() const override { return true; }
+    bool provides_force() const override { return true; }
+};
 
 } // namespace cpu
 } // namespace ATV

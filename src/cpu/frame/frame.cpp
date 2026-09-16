@@ -284,6 +284,20 @@ void Column::copy_row(int dst, int src) {
                  base + static_cast<std::size_t>(src) * bytes, bytes);
 }
 
+void Column::copy_row_from(const Column& source, int dst, int src) {
+    if (spec_.cols == 0)
+        return;
+    const std::size_t bytes =
+        static_cast<std::size_t>(spec_.cols) * element_size();
+    // memmove, like copy_row: a caller is free to pass the same Block on
+    // both sides, and a same-row copy would otherwise be an overlap.
+    std::memmove(static_cast<std::byte*>(data())
+                     + static_cast<std::size_t>(dst) * bytes,
+                 static_cast<const std::byte*>(source.data())
+                     + static_cast<std::size_t>(src) * bytes,
+                 bytes);
+}
+
 // --------------------------------------------------------------------------
 // Block
 
@@ -372,6 +386,33 @@ void Block::copy_row(int dst, int src) {
     }
 }
 
+void Block::copy_row_from(const Block& source, int dst, int src) {
+    if (dst < 0 || dst >= rows_)
+        throw std::out_of_range(
+            "Block::copy_row_from destination row is outside capacity");
+    if (src < 0 || src >= source.rows_)
+        throw std::out_of_range(
+            "Block::copy_row_from source row is outside the source Block");
+    for (auto& [key, column] : columns_) {
+        if (!(column.flags() & kColMigrate))
+            continue;
+        const auto it = source.columns_.find(key);
+        if (it == source.columns_.end())
+            throw column_error(
+                "Block::copy_row_from: the source Block has no column '" + key
+                + "'. Both Blocks must carry the same migrating columns; "
+                  "build the destination with Frame::clone_structure().");
+        const Column& from = it->second;
+        if (from.dtype() != column.dtype() || from.cols() != column.cols())
+            throw column_error(
+                "Block::copy_row_from: column '" + key
+                + "' has a different dtype or stride in the source Block. "
+                  "Rebuild the destination with Frame::clone_structure() "
+                  "after the source's schema or topology width changed.");
+        column.copy_row_from(from, dst, src);
+    }
+}
+
 std::size_t Block::memory_bytes() const noexcept {
     std::size_t bytes = 0;
     for (const auto& [key, column] : columns_)
@@ -402,6 +443,45 @@ bool ref_order(const ColumnRef& a, const ColumnRef& b) {
 }
 
 } // namespace
+
+ColumnRef Block::resolve_column(const GhostField& field) {
+    note_resolution_();
+    const auto it = columns_.find(field.name);
+    if (it == columns_.end())
+        throw column_error(
+            "the wire needs column '" + std::string(field.name)
+            + "' (required by " + std::string(field.required_by)
+            + ") but this Frame's atoms Block does not carry it. The "
+              "Driver validates the Frame against the ghost contract at "
+              "build(); reaching here means the Frame changed shape "
+              "afterwards.");
+    Column& column = it->second;
+    return ColumnRef{it->first,      column.dtype(),
+                     column.group(), column.entries_per_item(),
+                     column.flags(), column.wire_id(),
+                     column.data(),  column.data(),
+                     column.cols(),  column.element_size(),
+                     true,           &generation_,
+                     generation_};
+}
+
+ColumnRef Block::resolve_column(const GhostField& field) const {
+    note_resolution_();
+    const auto it = columns_.find(field.name);
+    if (it == columns_.end())
+        throw column_error(
+            "the wire needs column '" + std::string(field.name)
+            + "' (required by " + std::string(field.required_by)
+            + ") but this Frame's atoms Block does not carry it.");
+    const Column& column = it->second;
+    return ColumnRef{it->first,      column.dtype(),
+                     column.group(), column.entries_per_item(),
+                     column.flags(), column.wire_id(),
+                     column.data(),  nullptr,
+                     column.cols(),  column.element_size(),
+                     false,          const_cast<std::uint64_t*>(&generation_),
+                     generation_};
+}
 
 std::vector<ColumnRef> Block::resolve_columns(unsigned required_flags) {
     note_resolution_();
@@ -487,6 +567,8 @@ Frame::Frame(int n_atoms) {
     meta.insert(kEnergyAngle, 0.0);
     meta.insert(kEnergyDihedral, 0.0);
     meta.insert(kEnergyImproper, 0.0);
+    meta.insert(kEnergyChargingWork, 0.0);
+    meta.insert(kEnergyElectronic, 0.0);
     meta.insert(kKinetic, 0.0);
     meta.insert(kConserved, 0.0);
     meta.insert(kStress, MetaF64x6{});
@@ -505,7 +587,7 @@ Frame::Frame(int n_atoms) {
 }
 
 Frame::Frame(const Frame& other)
-    : blocks(other.blocks), meta(other.meta), simbox(other.simbox) {
+    : blocks(other.blocks), meta(other.meta), box(other.box) {
     bind_resolution_state_();
 }
 
@@ -514,14 +596,14 @@ Frame& Frame::operator=(const Frame& other) {
         return *this;
     blocks = other.blocks;
     meta = other.meta;
-    simbox = other.simbox;
+    box = other.box;
     bind_resolution_state_();
     return *this;
 }
 
 Frame::Frame(Frame&& other)
     : blocks(std::move(other.blocks)), meta(std::move(other.meta)),
-      simbox(std::move(other.simbox)) {
+      box(std::move(other.box)) {
     bind_resolution_state_();
 }
 
@@ -530,7 +612,7 @@ Frame& Frame::operator=(Frame&& other) {
         return *this;
     blocks = std::move(other.blocks);
     meta = std::move(other.meta);
-    simbox = std::move(other.simbox);
+    box = std::move(other.box);
     bind_resolution_state_();
     return *this;
 }
@@ -629,6 +711,10 @@ void Frame::set_capacity(int new_capacity) {
 }
 
 void Frame::copy_row(int dst, int src) { atoms_block_().copy_row(dst, src); }
+
+void Frame::copy_row_from(const Frame& source, int dst, int src) {
+    atoms_block_().copy_row_from(source.atoms_block_(), dst, src);
+}
 
 void Frame::ensure_bonded_storage() { meta.set(kHasBonded, std::int64_t{1}); }
 
@@ -978,7 +1064,7 @@ Frame Frame::clone_structure(int rows) const {
         throw std::invalid_argument(
             "Frame clone row count must be non-negative");
     Frame out(rows);
-    out.simbox = simbox;
+    out.box = box;
 
     // Match the source topology widths before copying runtime schema. The
     // canonical fixed fields already exist in the constructor.
@@ -1007,6 +1093,55 @@ Frame Frame::clone_structure(int rows) const {
     out.meta.set(kNextTag, std::int64_t{-1});
     out.clear_tag_index();
     return out;
+}
+
+std::vector<SchemaError> validate_ghosts(const GhostContract& required,
+                                         const Frame& frame) {
+    std::vector<SchemaError> errors = required.conflicts();
+    for (const GhostField& f : required) {
+        if (!frame.has("atoms", f.name)) {
+            errors.push_back(SchemaError{
+                f.name, f.required_by,
+                "the Frame has no such column. Add it before the run "
+                "(Block::insert, or load a file that carries it), or unmount "
+                "the component that needs it."});
+            continue;
+        }
+        const auto& cols = frame.block("atoms").columns();
+        const auto it = cols.find(f.name);
+        if (it == cols.end())
+            continue; // has() said otherwise; nothing to compare against
+        const Column& col = it->second;
+        if (col.dtype() != f.dtype)
+            errors.push_back(SchemaError{
+                f.name, f.required_by,
+                "declared as " + std::string(GhostContract::dtype_name(f.dtype))
+                    + " but the Frame carries "
+                    + std::string(GhostContract::dtype_name(col.dtype()))});
+        else if (col.cols() != f.cols)
+            errors.push_back(
+                SchemaError{f.name, f.required_by,
+                            "declared with " + std::to_string(f.cols)
+                                + " component(s) but the Frame carries "
+                                + std::to_string(col.cols())});
+    }
+    return errors;
+}
+
+void check_ghosts(const GhostContract& required, const Frame& frame,
+                  std::string_view who) {
+    const std::vector<SchemaError> errors = validate_ghosts(required, frame);
+    if (errors.empty())
+        return;
+    std::string msg = std::string(who)
+                      + ": this Frame does not satisfy the "
+                        "ghost contract ("
+                      + std::to_string(errors.size()) + " problem(s)):";
+    for (const SchemaError& e : errors) {
+        msg += "\n  - " + std::string(e.field) + " (required by "
+               + std::string(e.required_by) + "): " + e.reason;
+    }
+    throw std::runtime_error(msg);
 }
 
 } // namespace cpu

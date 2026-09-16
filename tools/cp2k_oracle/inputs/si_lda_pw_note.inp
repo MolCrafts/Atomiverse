@@ -1,0 +1,58 @@
+! Optional offline wall twin for pw-lda-si (NOT absolute-energy comparable).
+! CP2K Quickstep uses GTH-PADE + DZVP-GTH; Atomiverse PW uses ONCV UPF.
+! Geometry matches the regression twin (a = 5.43 A, 2-atom fcc primitive).
+! Use only for fair wall timing when a CP2K binary is available offline.
+! See regressions/pw/pw-lda-si/REFERENCE.md.
+
+&GLOBAL
+  PROJECT si_lda_wall
+  RUN_TYPE ENERGY
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    &QS
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 60
+    &END MGRID
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-6
+      MAX_SCF 50
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+  &END DFT
+  &SUBSYS
+    &CELL
+      A 0.0 2.715 2.715
+      B 2.715 0.0 2.715
+      C 2.715 2.715 0.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      Si 0.0 0.0 0.0
+      Si 1.3575 1.3575 1.3575
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-GTH-q4
+      POTENTIAL GTH-PADE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

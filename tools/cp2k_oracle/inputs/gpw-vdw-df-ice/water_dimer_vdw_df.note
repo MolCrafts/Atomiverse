@@ -1,0 +1,57 @@
+# Offline vdW-DF (DRSLL) pin notes — gpw-vdw-df-ice
+
+## Kernel oracle (libvdwxc)
+
+CP2K `VDW_POTENTIAL NON_LOCAL TYPE DRSLL` uses the same Román–Pérez–Soler
+kernel family as **libvdwxc DF1**. Hard unit-test pin is libvdwxc 0.5.0 on a
+fixed synthetic density (not live in ctest):
+
+```text
+# 16^3 cubic L=8 Bohr, rho = exp(-0.5 r^2) blob at center, analytic sigma
+E_nl DRSLL/DF1 = 1.2367739353586624e-01 Ha
+```
+
+Build pin harness against system libvdwxc (Arrhenius epyc easybuild):
+
+```bash
+# module / paths as on 2026-07-25 epyc node
+gcc -O2 pin.c -I$LIBVDWXC/include -L$LIBVDWXC/lib -lvdwxc -lfftw3 -lm
+```
+
+## Full GPW regression pin
+
+Post-SCF \(E_c^{\mathrm{nl}}\) on Γ-PBE density of the water dimer
+(CUTOFF 200 Ry, DZVP-MOLOPT-SR-GTH, 12 Å cell):
+
+```text
+E_disp = 1.5194390480303990e-01 Ha
+```
+
+## Suggested CP2K twin (when QS + libvdwxc available)
+
+```
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    &XC
+      &XC_FUNCTIONAL PBE &END XC_FUNCTIONAL
+      &VDW_POTENTIAL
+        POTENTIAL_TYPE NON_LOCAL
+        &NON_LOCAL
+          TYPE DRSLL
+          CUTOFF_RC  0.0   ! use default kernel mesh
+        &END NON_LOCAL
+      &END VDW_POTENTIAL
+    &END XC
+    &MGRID CUTOFF 200 &END MGRID
+    &QS METHOD GPW &END QS
+    &SCF  ...  &END SCF
+  &END DFT
+  &SUBSYS
+    ! water dimer geometry as REFERENCE.md
+  &END SUBSYS
+&END FORCE_EVAL
+```
+
+Record `Dispersion energy` / nonlocal XC contribution and CP2K version in
+REFERENCE.md when a host provides a fair twin wall.

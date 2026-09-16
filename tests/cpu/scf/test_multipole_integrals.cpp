@@ -40,8 +40,7 @@ TEST(MultipoleIntegrals, TwoSGaussiansClosedForm) {
     const MultipoleIntegrals m{ts.sh, 2, origin};
 
     const double p = a + b;
-    const double S =
-        std::pow(kPi / p, 1.5) * std::exp(-a * b / p * bx * bx);
+    const double S = std::pow(kPi / p, 1.5) * std::exp(-a * b / p * bx * bx);
     const double Px = b * bx / p;
     EXPECT_NEAR(m.dipole(0)(0, 1), S * (Px - origin[0]), 1e-14);
     EXPECT_NEAR(m.dipole(1)(0, 1), 0.0, 1e-15);
@@ -59,17 +58,15 @@ TEST(MultipoleIntegrals, TranslationIdentity) {
     const MultipoleIntegrals m2{ts.sh, 2, c2};
 
     const double p = a + b;
-    const double S =
-        std::pow(kPi / p, 1.5) * std::exp(-a * b / p * bx * bx);
+    const double S = std::pow(kPi / p, 1.5) * std::exp(-a * b / p * bx * bx);
     for (int axis = 0; axis < 3; ++axis) {
         for (int i = 0; i < 2; ++i) {
             for (int j = 0; j < 2; ++j) {
                 const double s_ij =
                     (i == j) ? std::pow(kPi / (2.0 * (i ? b : a)), 1.5) : S;
-                EXPECT_NEAR(m2.dipole(axis)(i, j),
-                            m1.dipole(axis)(i, j)
-                                + (c1[axis] - c2[axis]) * s_ij,
-                            1e-13)
+                EXPECT_NEAR(
+                    m2.dipole(axis)(i, j),
+                    m1.dipole(axis)(i, j) + (c1[axis] - c2[axis]) * s_ij, 1e-13)
                     << "axis " << axis << " (" << i << "," << j << ")";
             }
         }

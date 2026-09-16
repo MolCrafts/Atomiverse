@@ -5,8 +5,9 @@ expose ``__version__``, and fail compute paths with an install-oriented
 ``ImportError``. With the extension present, the existing surface remains
 reachable.
 
-Pure-path cases run in an isolated subprocess whose ``sys.path`` puts pure
-sources first and drops site-packages (stdlib kept).
+Pure-path cases run in an isolated subprocess that puts the pure sources
+first on ``sys.path`` and blocks the extension via ``sys.modules`` ``None``
+sentinels, so real dependencies (typer, numpy) stay importable.
 """
 
 from __future__ import annotations
@@ -25,13 +26,15 @@ _INSTALL_SNIPPET = "python -m atomiverse install"
 _ISOLATE_PREAMBLE = f"""\
 import sys
 src = {str(_SRC_ROOT)!r}
-sys.path = [src] + [
-    p for p in sys.path
-    if p and "site-packages" not in p and "dist-packages" not in p
-]
+sys.path.insert(0, src)
 for key in list(sys.modules):
     if key == "atomiverse" or key.startswith("atomiverse.") or key == "_atomiverse":
         del sys.modules[key]
+# A None entry makes `import _atomiverse` raise ImportError, so the pure
+# path is exercised even when the built extension is installed or on
+# PYTHONPATH. Real dependencies (typer, numpy) stay importable.
+sys.modules["_atomiverse"] = None
+sys.modules["atomiverse._atomiverse"] = None
 """
 
 
@@ -124,9 +127,17 @@ def test_main_stub_runs_without_extension() -> None:
 
 
 def test_extension_present_path_still_loads() -> None:
-    """When the native extension is available, soft-load must not hide it."""
+    """When the native extension is available, soft-load must not hide it.
+
+    ``_atomiverse`` itself is deliberately kept in ``sys.modules``:
+    re-initializing a nanobind extension in the same process aborts on
+    duplicate type registrations, and the soft-import probe finds the
+    cached module either way.
+    """
     for key in list(sys.modules):
-        if key == "atomiverse" or key.startswith("atomiverse.") or key == "_atomiverse":
+        if key == "atomiverse" or (
+            key.startswith("atomiverse.") and key != "atomiverse._atomiverse"
+        ):
             del sys.modules[key]
     if str(_SRC_ROOT) not in sys.path:
         sys.path.insert(0, str(_SRC_ROOT))
@@ -140,7 +151,7 @@ def test_extension_present_path_still_loads() -> None:
     assert mod is not None
     assert hasattr(av, "MD")
     assert av.MD is not None
-    if hasattr(binding._cpp, "PWSolver"):
-        assert hasattr(av, "PWSolver")
+    if hasattr(binding._cpp, "PW"):
+        assert hasattr(av, "PW")
     else:
-        assert "PWSolver" not in getattr(av, "__all__", [])
+        assert "PW" not in getattr(av, "__all__", [])

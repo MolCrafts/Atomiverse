@@ -26,12 +26,12 @@
 #include <vector>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
 #include "atomiverse/cpu/scf/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/internal/ediis_adiis.h"
 #include "atomiverse/cpu/scf/scf_enums.h"
-#include "atomiverse/facade/stage.h"
 
 namespace ATV {
 namespace cpu {
@@ -103,12 +103,12 @@ class MixStage : public cpu::Component {
           diis_start_iter_(diis_start_iter),
           diis_max_vectors_(diis_max_vectors), level_shift_(level_shift),
           mixer_kind_(mixer_kind), mixer_switch_tol_(mixer_switch_tol),
-          soscf_(soscf), soscf_start_(soscf_start), S_(S),
-          X_(X), P_alpha_(P_alpha), P_beta_(P_beta), iter_(iter),
-          energy_(energy), F_alpha_(F_alpha), F_beta_(F_beta),
-          err_alpha_(err_alpha), err_beta_(err_beta),
-          soscf_active_(soscf_active), diis_(diis_max_vectors),
-          ediis_(diis_max_vectors), adiis_(diis_max_vectors) {}
+          soscf_(soscf), soscf_start_(soscf_start), S_(S), X_(X),
+          P_alpha_(P_alpha), P_beta_(P_beta), iter_(iter), energy_(energy),
+          F_alpha_(F_alpha), F_beta_(F_beta), err_alpha_(err_alpha),
+          err_beta_(err_beta), soscf_active_(soscf_active),
+          diis_(diis_max_vectors), ediis_(diis_max_vectors),
+          adiis_(diis_max_vectors) {}
 
     /// @brief Component identity.
     /// @return The literal "scf_mix_stage".

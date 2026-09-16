@@ -8,10 +8,13 @@
 ///   3. Agrees with SPME (KSpacePME) on the same system
 ///   4. Finite-difference forces F = −∇E
 ///   5. α-independence of total energy (method identity)
+///   6. Pure mesh-arm selector arithmetic (pppm_fft_ranks /
+///      pppm_select_mesh_arm) — no MPI, no FFT, no env
 
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <stdexcept>
 #include <vector>
 
 #include "atomiverse/core/units.h"
@@ -47,7 +50,7 @@ cpu::Frame make_rocksalt(double d, int n) {
                 frame.span(ATV::kAtom_tag)[idx] = idx + 1;
                 ++idx;
             }
-    frame.simbox = ATV::cpu::Box::cubic(n * d);
+    frame.box = ATV::cpu::Box::cubic(n * d);
     return frame;
 }
 
@@ -114,9 +117,9 @@ TEST(PppmCoul, MadelungNaCl) {
     const double cutoff = 1.9 * d;
     // Moderate α + fine mesh so HE G(k) resolves the lattice well.
     const double alpha = 3.5 / cutoff;
-    const double e =
-        electrostatic_energy(frame, pairs, alpha, cutoff,
-                             cpu::KSpacePPPM(alpha, /*spacing=*/0.5, /*order=*/5));
+    const double e = electrostatic_energy(
+        frame, pairs, alpha, cutoff,
+        cpu::KSpacePPPM(alpha, /*spacing=*/0.5, /*order=*/5));
 
     const int N = n * n * n;
     const double e_expected =
@@ -136,9 +139,8 @@ TEST(PppmCoul, AgreesWithEwald) {
     const double alpha = 3.5 / cutoff;
     const double e_ewald = electrostatic_energy(frame, pairs, alpha, cutoff,
                                                 cpu::KSpaceEwald(alpha, 1e-8));
-    const double e_pppm =
-        electrostatic_energy(frame, pairs, alpha, cutoff,
-                             cpu::KSpacePPPM(alpha, 0.5, 5));
+    const double e_pppm = electrostatic_energy(frame, pairs, alpha, cutoff,
+                                               cpu::KSpacePPPM(alpha, 0.5, 5));
     EXPECT_NEAR(e_pppm / e_ewald, 1.0, 1e-3)
         << "ewald=" << e_ewald << " pppm=" << e_pppm;
 }
@@ -154,9 +156,8 @@ TEST(PppmCoul, AgreesWithPme) {
     const double alpha = 3.5 / cutoff;
     const double e_pme = electrostatic_energy(frame, pairs, alpha, cutoff,
                                               cpu::KSpacePME(alpha, 0.5, 6));
-    const double e_pppm =
-        electrostatic_energy(frame, pairs, alpha, cutoff,
-                             cpu::KSpacePPPM(alpha, 0.5, 5));
+    const double e_pppm = electrostatic_energy(frame, pairs, alpha, cutoff,
+                                               cpu::KSpacePPPM(alpha, 0.5, 5));
     EXPECT_NEAR(e_pppm / e_pme, 1.0, 2e-3)
         << "pme=" << e_pme << " pppm=" << e_pppm;
 }
@@ -170,10 +171,12 @@ TEST(PppmCoul, AlphaIndependence) {
 
     const double cutoff = 1.9 * d;
     // Fine mesh so both α values are well-resolved.
-    const double e1 = electrostatic_energy(
-        frame, pairs, 3.0 / cutoff, cutoff, cpu::KSpacePPPM(3.0 / cutoff, 0.4, 5));
-    const double e2 = electrostatic_energy(
-        frame, pairs, 5.0 / cutoff, cutoff, cpu::KSpacePPPM(5.0 / cutoff, 0.4, 5));
+    const double e1 =
+        electrostatic_energy(frame, pairs, 3.0 / cutoff, cutoff,
+                             cpu::KSpacePPPM(3.0 / cutoff, 0.4, 5));
+    const double e2 =
+        electrostatic_energy(frame, pairs, 5.0 / cutoff, cutoff,
+                             cpu::KSpacePPPM(5.0 / cutoff, 0.4, 5));
     EXPECT_NEAR(e1, e2, 5e-2 * std::max(1.0, std::fabs(e1)))
         << "e1=" << e1 << " e2=" << e2;
 }
@@ -192,7 +195,7 @@ TEST(PppmCoul, FiniteDifferenceForces) {
         frame.span(ATV::kAtom_type)[i] = 0;
         frame.span(ATV::kAtom_tag)[i] = i + 1;
     }
-    frame.simbox = ATV::cpu::Box::cubic(8.0);
+    frame.box = ATV::cpu::Box::cubic(8.0);
     cpu::md::PairList pairs;
     build_full_halflist(frame, pairs);
 
@@ -238,4 +241,96 @@ TEST(PppmLifecycle, IsReciprocalLongRangeParticipant) {
     EXPECT_EQ(lr->long_range_contract().role,
               cpu::LongRangeRole::ReciprocalSpace);
     EXPECT_EQ(pppm.name(), "pppm");
+}
+
+// --- pure selector arithmetic: pppm_fft_ranks -------------------------------
+
+TEST(PppmFftRanks, LargestDivisorWithinRankBudget) {
+    // Budget = min(nprocs, planes_k0); the answer is the largest divisor of
+    // planes_k0 that fits, so the FFTW-MPI dim-0 slab split is never ragged.
+    EXPECT_EQ(cpu::pppm_fft_ranks(32, 256), 32);
+    EXPECT_EQ(cpu::pppm_fft_ranks(32, 64), 32);
+    EXPECT_EQ(cpu::pppm_fft_ranks(32, 16), 16);
+    EXPECT_EQ(cpu::pppm_fft_ranks(34, 4), 2);
+}
+
+TEST(PppmFftRanks, MinPlanesPerRankShrinksBudget) {
+    // Budget = min(nprocs, planes_k0 / min_planes_per_rank).
+    EXPECT_EQ(cpu::pppm_fft_ranks(32, 256, 2), 16);
+    EXPECT_EQ(cpu::pppm_fft_ranks(32, 256, 4), 8);
+}
+
+TEST(PppmFftRanks, MinPlanesPerRankLargerThanMeshGivesOne) {
+    EXPECT_EQ(cpu::pppm_fft_ranks(32, 256, 33), 1);
+    EXPECT_EQ(cpu::pppm_fft_ranks(32, 8, 64), 1);
+}
+
+TEST(PppmFftRanks, PrimeMeshOrSingleRankGivesOne) {
+    EXPECT_EQ(cpu::pppm_fft_ranks(31, 8), 1); // 31 prime: only 1 and 31 fit
+    EXPECT_EQ(cpu::pppm_fft_ranks(32, 1), 1);
+    EXPECT_EQ(cpu::pppm_fft_ranks(31, 1), 1);
+}
+
+TEST(PppmFftRanks, ThrowsOnNonPositiveArguments) {
+    EXPECT_THROW(cpu::pppm_fft_ranks(0, 16), std::invalid_argument);
+    EXPECT_THROW(cpu::pppm_fft_ranks(-32, 16), std::invalid_argument);
+    EXPECT_THROW(cpu::pppm_fft_ranks(32, 0), std::invalid_argument);
+    EXPECT_THROW(cpu::pppm_fft_ranks(32, -4), std::invalid_argument);
+    EXPECT_THROW(cpu::pppm_fft_ranks(32, 16, 0), std::invalid_argument);
+    EXPECT_THROW(cpu::pppm_fft_ranks(32, 16, -1), std::invalid_argument);
+}
+
+TEST(PppmFftRanks, ResultDividesMeshAndFitsBudget) {
+    // Same tuples, checked as the two structural invariants the FFTW-MPI slab
+    // split depends on: exact divisibility, and never more ranks than planes.
+    struct Row {
+        int planes;
+        int nprocs;
+        int min_planes;
+    };
+    const Row rows[] = {{32, 256, 1}, {32, 64, 1},  {32, 16, 1},
+                        {32, 256, 2}, {34, 4, 1},   {31, 8, 1},
+                        {32, 1, 1},   {32, 256, 4}, {31, 1, 1}};
+    for (const Row& row : rows) {
+        const int r =
+            cpu::pppm_fft_ranks(row.planes, row.nprocs, row.min_planes);
+        EXPECT_GE(r, 1) << "planes=" << row.planes << " np=" << row.nprocs;
+        EXPECT_EQ(row.planes % r, 0)
+            << "ragged slab: planes=" << row.planes << " r=" << r;
+        EXPECT_LE(r, row.nprocs) << "planes=" << row.planes;
+        EXPECT_LE(r, row.planes) << "np=" << row.nprocs;
+    }
+}
+
+// --- pure selector policy: pppm_select_mesh_arm -----------------------------
+
+TEST(PppmSelectMeshArm, SingleRankIsReplicated) {
+    EXPECT_EQ(cpu::pppm_select_mesh_arm(32, 1, 1),
+              cpu::PppmMeshArm::Replicated);
+    EXPECT_EQ(cpu::pppm_select_mesh_arm(31, 1, 1),
+              cpu::PppmMeshArm::Replicated);
+}
+
+TEST(PppmSelectMeshArm, AllRanksInFftGroupIsBrickWorld) {
+    EXPECT_EQ(cpu::pppm_select_mesh_arm(32, 16, 16),
+              cpu::PppmMeshArm::BrickWorld);
+    EXPECT_EQ(cpu::pppm_select_mesh_arm(32, 32, 32),
+              cpu::PppmMeshArm::BrickWorld);
+}
+
+TEST(PppmSelectMeshArm, FewerFftRanksThanNprocsIsBrickSubgroup) {
+    // Falsified-policy pin: the old `mesh <= 64^3 && ranks >= 16 -> replicated`
+    // rule picked Replicated at np=64, contradicted by measurement (brick
+    // 4.78 s vs replicated 5.43 s) — 32 planes on 64 ranks is a subgroup.
+    EXPECT_EQ(cpu::pppm_select_mesh_arm(32, 64, 32),
+              cpu::PppmMeshArm::BrickSubgroup);
+    EXPECT_EQ(cpu::pppm_select_mesh_arm(32, 256, 32),
+              cpu::PppmMeshArm::BrickSubgroup);
+    EXPECT_EQ(cpu::pppm_select_mesh_arm(31, 8, 1),
+              cpu::PppmMeshArm::BrickSubgroup);
+}
+
+TEST(PppmSelectMeshArm, ThrowsWhenFftRanksExceedNprocs) {
+    EXPECT_THROW(cpu::pppm_select_mesh_arm(32, 16, 32), std::invalid_argument);
+    EXPECT_THROW(cpu::pppm_select_mesh_arm(32, 4, 8), std::invalid_argument);
 }

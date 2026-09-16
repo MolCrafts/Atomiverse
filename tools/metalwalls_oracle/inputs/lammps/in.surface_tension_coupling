@@ -1,0 +1,41 @@
+# Offline pin: LAMMPS fix npt surface-tension path (couple xy + anisotropic P)
+# oracle_version: 30 Mar 2026 - Development (patch_30Mar2026-1074-g7f680de296)
+#
+# ATV targets (eV, Å, fs):
+#   T=100 K, tau_T=50 fs, tau_P=500 fs, dt=1 fs
+#   Pn = 0 eV/Å³
+#   gamma = 0.001 eV/Å², n_surf=2, Lz0=15.3 Å
+#   Plat = Pn - n*gamma/Lz0 = -0.000130719 eV/Å³
+# metal pressure: 1 eV/Å³ = 1.6021766208e6 bar → Plat = -209.434 bar
+# metal time: 1 ps = 1000 fs → Tdamp=0.05, Pdamp=0.5, timestep=0.001
+
+units metal
+atom_style atomic
+boundary p p p
+timestep 0.001
+
+lattice fcc 5.1
+region box block 0 3 0 3 0 3
+create_box 1 box
+create_atoms 1 box
+mass 1 39.948
+
+pair_style lj/cut 8.5
+pair_coeff 1 1 0.0104 3.4
+
+velocity all create 100.0 777 mom yes rot yes dist gaussian
+neighbor 0.5 bin
+neigh_modify delay 0 every 1 check yes
+
+variable plat equal -209.434
+variable pn equal 0.0
+
+fix 1 all npt temp 100.0 100.0 0.05 x ${plat} ${plat} 0.5 y ${plat} ${plat} 0.5 z ${pn} ${pn} 0.5 couple xy tchain 3 pchain 3 mtk yes
+
+thermo 50
+thermo_style custom step temp pe pxx pyy pzz lx ly lz
+run 200
+
+# Pin snapshot (2026-07-24, lmp develop 30 Mar 2026):
+#   step 200: lx=ly=16.527384  lz=16.249165  (Lx==Ly; Lz!=Lx)
+#   expanded from L0=15.3

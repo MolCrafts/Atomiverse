@@ -9,11 +9,11 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/role.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/facade/component_role.h"
-#include "atomiverse/facade/stage.h"
 
 namespace {
 
@@ -82,8 +82,9 @@ using Evaluate = ATV::cpu::Evaluate;
 using EvaluatePhaseBuilder =
     decltype(std::declval<Evaluate&>().on(ATV::evaluate::Phase::evaluate));
 
+// Public Driver::add is gone — only on().add / set_evaluator remain.
 static_assert(!can_implicitly_add_lvalue<Evaluate, LifetimeProbe>::value,
-              "Driver::add(lvalue) must stay deleted; use add_ref");
+              "Driver::add must not exist on the public surface");
 static_assert(
     !can_implicitly_bind_lvalue<EvaluatePhaseBuilder, LifetimeProbe>::value,
     "PhaseBuilder::add(lvalue) must stay deleted; use add_ref");
@@ -95,7 +96,7 @@ TEST(ComponentOwnership, RvalueIsOwnedByDriver) {
     auto state = std::make_shared<ProbeState>();
     {
         Evaluate eval;
-        eval.add(LifetimeProbe{state});
+        eval.set_evaluator(LifetimeProbe{state});
         eval.build();
         ATV::cpu::Frame frame(1);
         eval.run(frame);
@@ -110,7 +111,7 @@ TEST(ComponentOwnership, UniquePointerTransfersOwnership) {
     auto state = std::make_shared<ProbeState>();
     {
         Evaluate eval;
-        eval.add(std::make_unique<LifetimeProbe>(state));
+        eval.set_evaluator(std::make_unique<LifetimeProbe>(state));
         eval.build();
         ATV::cpu::Frame frame(1);
         eval.run(frame);
@@ -126,7 +127,7 @@ TEST(ComponentOwnership, AddRefBorrowsAndLeavesObjectAlive) {
         LifetimeProbe probe(state);
         {
             Evaluate eval;
-            eval.add_ref(probe);
+            eval.set_evaluator_ref(probe);
             eval.build();
             ATV::cpu::Frame frame(1);
             eval.run(frame);
@@ -183,7 +184,7 @@ TEST(ComponentOwnership, PhaseBuilderUniquePointerTransfersOwnership) {
 TEST(ComponentOwnership, NullOwnedPointerFailsLoudly) {
     Evaluate eval;
     std::unique_ptr<LifetimeProbe> null_probe;
-    EXPECT_THROW(eval.add(std::move(null_probe)), std::invalid_argument);
+    EXPECT_THROW(eval.set_evaluator(std::move(null_probe)), std::invalid_argument);
 }
 
 TEST(ComponentOwnership, PhaseBuilderNullOwnedPointerFailsLoudly) {

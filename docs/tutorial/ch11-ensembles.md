@@ -1,10 +1,7 @@
-# Chapter 11: Ensembles — Thermostats and Barostats
+# Chapter 11. Ensembles
 
-| | |
-|---|---|
-| **Baseline** | NVE energy conservation from [`07_md_lj`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/07_md_lj.cpp) / [`07_md_lj.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/07_md_lj.json) |
-| **Components** | `NoseHoover`, `FixLangevin`, `Barostat` (Berendsen), `NoseHooverNPT` |
-| **Tests** | `tests/cpu/md/` — unit checks per thermostat/barostat (no full e2e equilibration) |
+Thermostats and barostats: `NoseHoover`, `FixLangevin`, Berendsen `Barostat`,
+`NoseHooverNPT`.
 
 NVE must be solid before NVT/NPT. From the live NVE run (Chapter 10):
 
@@ -27,7 +24,6 @@ Relative drift \(\sim 3\times 10^{-7}\) over 1000 steps. Thermostats **exchange*
 energy with a bath (total energy is no longer conserved); acceptance is then
 mean temperature and pressure vs set points — exercised in unit tests and
 benchmarks, not in the 1000-step tutorial binary.
-
 
 [Chapter 10](ch10-classical-md.md) built a complete classical MD run and, at
 the end, added a thermostat and a barostat almost in passing. This chapter
@@ -116,8 +112,11 @@ registered as the integrator.
 
 The categorical setters on `cpu::md::MD` are the primary API:
 `set_integrator` (singular — one integrator), `set_thermostat` and
-`set_barostat` (plural — each call appends), plus the shared `add_potential`,
-`set_neighbor`, `set_thermo`.
+`set_barostat` (plural — each call appends), plus the shared `set_evaluator`,
+`set_neighbor`, `set_thermo`. A component with no categorical setter of its
+own — `InitVelocity` below, for instance — is bound with the explicit
+`sim.on(phase).add(component, order)`. There is no bare `sim.add(...)`: the
+phase is always either implied by a setter or written out.
 
 ### NVE — the baseline
 
@@ -130,8 +129,9 @@ using namespace ATV;
 auto frame = make_fcc_argon(4, /*a=*/5.32);   // 256 Ar atoms, Å
 
 cpu::md::MD sim;
-sim.add(cpu::md::InitVelocity{100.0, /*seed=*/42u});
-sim.add_potential(cpu::PairLJCut{/*eps=*/0.0104, /*sigma=*/3.4, /*cutoff=*/6.8});
+sim.on(md::Phase::initial_integrate)
+   .add(cpu::md::InitVelocity{100.0, /*seed=*/42u}, /*order=*/-999);
+sim.set_evaluator(cpu::PairLJCut{/*eps=*/0.0104, /*sigma=*/3.4, /*cutoff=*/6.8});
 sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
 sim.set_integrator(cpu::md::VelocityVerlet{/*dt=*/4.0});
 sim.set_thermo(100);
@@ -239,28 +239,30 @@ statistics, prefer the MTK integrator below.
 `NoseHooverNPT` is a Martyna-Tobias-Klein integrator that fuses velocity
 integration, an M-chain Nosé-Hoover thermostat, and an NHC barostat into one
 symplectic Trotter step. It **replaces** `VelocityVerlet` / `NoseHoover` /
-`Barostat` and is set as the *integrator*. Its `Config` is an aggregate
-constructed with designated initializers (the idiom the test suite uses):
+`Barostat` and is set as the *integrator*. Its parameters are plain
+constructor arguments — there is no `Config` bag:
 
 ```cpp
-sim.add_potential(cpu::PairLJCut{0.0104, 3.4, 6.8});
+sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});
 sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
-sim.set_integrator(cpu::md::NoseHooverNPT{{.T_target = 100.0,
-                                           .tau_T    = 200.0,
-                                           .P_target = 6.2415e-7,   // eV/Å³
-                                           .tau_P    = 2000.0,
-                                           .dt       = 4.0}});
+sim.set_integrator(cpu::md::NoseHooverNPT{
+    /*T_target*/ 100.0,
+    /*tau_T*/ 200.0,
+    /*P_target*/ 6.2415e-7, // eV/Å³
+    /*tau_P*/ 2000.0,
+    /*dt*/ 4.0});
 sim.set_thermo(100);
 ```
 
-The first five fields (`T_target`, `tau_T`, `P_target`, `tau_P`, `dt`) are
-required; the rest default sensibly (`drag = 0`, `mtchain = mpchain = 3`,
-`couple_axis = {true,true,true}` for isotropic coupling, `T_stop = T_target`
-for no ramp). Like the Berendsen barostat it declares `reads() == Stress`, so
-`Virial` is auto-injected. It writes the full MTK extended Hamiltonian to
-`frame.meta.get(kConserved)` — the flat trace of *that* quantity is the rigorous
-correctness check for an NPT run. Set `couple_axis` to barostat individual
-axes (e.g. `{false,false,true}` for uniaxial), and use `set_run_span` with a
+The first five constructor arguments (`T_target`, `tau_T`, `P_target`, `tau_P`,
+`dt`) are required; the rest default sensibly (`drag = 0`, `mtchain = mpchain =
+3`, `couple_axis = {true,true,true}` for isotropic coupling, `T_stop` folds to
+`T_target` for no ramp). Like the Berendsen barostat it declares
+`reads() == Stress`, so `Virial` is auto-injected. It writes the full MTK
+extended Hamiltonian to `frame.meta.get(kConserved)` — the flat trace of *that*
+quantity is the rigorous correctness check for an NPT run. Pass `couple_axis`
+to barostat individual axes (e.g. `{false,false,true}` for uniaxial), and use
+`set_run_span` with a
 non-default `T_stop` for a temperature ramp.
 
 ### The `set_nvt` shortcut
@@ -275,7 +277,7 @@ sim.set_nvt(cpu::md::NVT{/*dt=*/4.0, /*T=*/100.0, /*tau=*/100.0,
 
 It expands into `VelocityVerlet{dt}` plus the chosen thermostat
 (`NVT::Thermostat::NoseHoover` or `CSVR`), each with its correct phase
-bindings — exactly the two explicit calls, so it composes with `add_potential` /
+bindings — exactly the two explicit calls, so it composes with `set_evaluator` /
 `set_neighbor` and even with a DFT evaluator on the force phase the same way.
 
 ## The Expected Result: Means at the Setpoint, Correct Fluctuations
@@ -323,7 +325,7 @@ designated ensemble validation case.
 
 Every ensemble in this chapter was built on classical `PairLJCut` forces, but
 nothing in the thermostat or barostat touches the force *source*. Replace the
-pair potential with an `SCF` on the force phase and every line about
+pair potential with an `RHF` on the force phase and every line about
 temperature and pressure control stays exactly as written — that is **ab
 initio molecular dynamics in the canonical or isothermal-isobaric ensemble**:
 
@@ -347,12 +349,15 @@ unchanged to any level of theory.
 
 ## Validation Reference
 
-The thermostat and barostat components are exercised under regression in
-[`tests/cpu/md/test_md.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/md/test_md.cpp) (Nosé-Hoover NVT,
-Berendsen barostat, `NoseHooverNPT`, CSVR, Langevin) and the categorical
+The thermostats and barostats are exercised end-to-end by the ensemble
+regressions — [`regressions/md/lj_argon`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/lj_argon) (NVE
+drift), [`regressions/md/npt_lj_mtk`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/npt_lj_mtk) (diagonal
+MTK NPT), [`regressions/md/pr_npt_lj`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/pr_npt_lj)
+(full-cell Parrinello-Rahman) and
+[`regressions/md/nph_lj`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/nph_lj) (thermostat-free NPH) and the categorical
 setter wiring — including the automatic `Virial` injection triggered by a
 barostat's `reads() == Stress` — in
-[`tests/cpu/md/test_md_set_api.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/md/test_md_set_api.cpp).
+[`tests/cpu/dynamics/test_md_set_api.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/dynamics/test_md_set_api.cpp).
 Multi-rank NPT correctness (box consistency across ranks) is covered by
 [`tests/mpi/test_nose_hoover_npt_multirank.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/mpi/test_nose_hoover_npt_multirank.cpp).
 The ensemble-means-vs-LAMMPS benchmark is the designated external validation

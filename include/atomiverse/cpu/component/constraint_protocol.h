@@ -2,7 +2,7 @@
 /// @brief ConstraintProvider — opt-in protocol for components that remove degrees
 ///        of freedom. CUDA-free header.
 ///
-/// Follows the `NeighborConsumer` / `HaloParticipant` precedent: `Component`
+/// Follows the `NeighborConsumer` precedent: `Component`
 /// stays minimal, and a component that participates inherits the protocol and
 /// overrides the matching `as_*` accessor. The driver probes the typed accessor —
 /// no `dynamic_cast`, no `name()` matching.

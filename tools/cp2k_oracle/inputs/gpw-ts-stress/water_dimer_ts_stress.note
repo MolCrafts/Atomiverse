@@ -1,0 +1,53 @@
+# Offline TS strained-cell pin notes (gpw-ts-stress)
+
+CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` has no `TS` (only DFTD2/D3/D3BJ/D4),
+so there is no CP2K stress twin for a free-atom-TS run. Hard pins are
+**libMBD Fortran `get_ts_energy`** (git `88069c6`) on its pure real-space
+lattice-sum branch (`param%ewald_on = .false.`,
+`param%dipole_cutoff = 50 Å` with the ATV Å→Bohr factor `1/0.52917720859`) —
+the same oracle family (and the same binary build) as the shipped
+`gpw-ts-ice` / `gpw-ts-forces` pins, extended to strained cells.
+
+Geometry: the `gpw-ts-ice` water dimer, cell diag(12 Å) in Bohr, free-atom
+α₀/C₆/R_vdW from libMBD `ts_vdw_params`, Fermi damping s_R = 0.94, d = 20
+(PBE). Strained cells: one axis scaled by 1±h at fixed fractional
+coordinates (positions scale with the axis), h = 2e-3.
+
+Reproduce (offline; login node, `buildenv-gcc/2026.03-mpich` module):
+
+```
+git clone https://github.com/libmbd/libmbd && cd libmbd && git checkout 88069c6
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_SCALAPACK_MPI=OFF \
+      -DBLA_VENDOR=OpenBLAS
+cmake --build build -j8
+gfortran -O2 -I build/src/modules pin_ts_strain.f90 -L build/src -lmbd \
+         -o pin_ts_strain
+LD_LIBRARY_PATH="$LIBRARY_PATH:build/src:$LD_LIBRARY_PATH" ./pin_ts_strain
+```
+
+Pinned output (2026-07-31, libmbd 88069c6, GCC 14.3 / OpenBLAS 0.3.32):
+
+```
+E_disp isolated             =  -5.9764872295816794E-04 Ha
+E_disp unstrained           =  -6.0996307733860822E-04 Ha
+E_disp x +h            =  -6.1278297256613687E-04 Ha
+E_disp x -h            =  -6.0709134569744607E-04 Ha
+sigma_TS_xx (FD, libMBD)  =   1.2202142278E-07 Ha/Bohr3
+E_disp y +h            =  -6.0992605267944588E-04 Ha
+E_disp y -h            =  -6.1000059619617259E-04 Ha
+sigma_TS_yy (FD, libMBD)  =  -1.5981205691E-09 Ha/Bohr3
+E_disp z +h            =  -6.0996696060335368E-04 Ha
+E_disp z -h            =  -6.0995897233070745E-04 Ha
+sigma_TS_zz (FD, libMBD)  =   1.7125866055E-10 Ha/Bohr3
+```
+
+Provenance upgrades folded back at pin time (2026-07-31):
+
+- The isolated value is **bit-identical** to the shipped `cmbd_ts_energy`
+  C-API pin (`gpw-ts-ice`).
+- The unstrained periodic value agrees with the shipped periodic pure-RS pin
+  (−6.099630773386013e−4 Ha, previously recorded as "dual pure-RS / ATV
+  `ts_pbe`") to **7e-18 Ha** — the periodic pin is now anchored by a genuine
+  libMBD run (`gpw-ts-ice` / `gpw-ts-forces` REFERENCE rows updated).
+
+Never launched at ctest time.

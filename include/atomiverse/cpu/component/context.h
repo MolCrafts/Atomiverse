@@ -11,7 +11,7 @@
 /// (async analysis executor). Unfilled slice fields stay `nullptr` =
 /// service unavailable; components check before use. Cross-slice reads
 /// are legitimate (slices group by *publisher*, not by exclusive
-/// consumer): `comm::Migrate` reads `opt.line_search_trial`, Minimize's
+/// consumer): `CommBrick::exchange` reads `opt.line_search_trial`, Minimize's
 /// force phase reads `md.pair_list`.
 ///
 /// The grouping is zero-cost: one aggregate, stack-constructible,
@@ -19,12 +19,13 @@
 /// heap (hot-path invariant of the arch-refactor chain).
 #pragma once
 
+#include "atomiverse/core/ghost_contract.h"
 #include <functional>
 #include <random>
 #include <type_traits>
 
-#include "atomiverse/facade/iteration_status.h"
-#include "atomiverse/facade/loop.h"
+#include "atomiverse/core/iteration_status.h"
+#include "atomiverse/core/verdict.h"
 
 namespace ATV {
 
@@ -34,9 +35,10 @@ namespace cpu {
 
 class AnalysisExecutor;
 class ReplicaSet;
-class Backend; ///< The Runtime; published on `Context::exec`. @see ExecServices
+class Runtime; ///< The Runtime; published on `Context::exec`. @see ExecServices
 
 namespace md {
+struct AtomSortState;
 struct PairList;
 namespace mpi {
 struct DomainDecomposition;
@@ -46,6 +48,8 @@ struct DomainDecomposition;
 namespace mc {
 struct Transaction;
 } // namespace mc
+
+class Comm;
 
 /// @brief Classical force-pipeline services (publishers: `Backend`,
 ///        `NeighborList`, `cpu::md::MD`).
@@ -57,11 +61,38 @@ struct DynamicsServices {
     /// MPI headers transitively).
     md::mpi::DomainDecomposition* dd = nullptr;
 
+    /// @brief The run's ghost contract — every mounted component's
+    ///        `declare_ghosts` folded at `build()`. One handle: each pass
+    ///        compiles itself straight off this, so there is no per-wire
+    ///        copy to drift. Non-owning; the Driver owns it. Null before
+    ///        `build()`, and a `Comm` that finds it null folds the engine's
+    ///        base declaration instead.
+    /// @see core/ghost_contract.h
+    const GhostContract* ghost = nullptr;
+
+    /// @brief Non-owning handle to the atom-sort cadence.
+    /// Owned by `NeighborList`; published at `build()`. Null when no list
+    /// is mounted. `CommBrick` and the serial neighbor path both stamp
+    /// `LaunchContext::step` onto it — they do not increment a private
+    /// counter — so a Minimize line-search re-evaluation at a frozen step
+    /// cannot walk the sort cadence.
+    md::AtomSortState* atom_sort = nullptr;
+
     /// @brief Non-owning handle to the active neighbor list.
     /// Published by `NeighborList::build()` (address stable across the
     /// run). Kept here — rather than on `cpu::Frame` — so the frame stays
     /// confined to fundamental physical quantities.
     const md::PairList* pair_list = nullptr;
+
+    /// @brief Non-owning handle to the domain communicator (`CommBrick`).
+    ///
+    /// Published by `communication::DomainRuntime::allocate()`. Address
+    /// stable for the run. The swap table is private to `CommBrick`;
+    /// Runtime Verlet / linear wrap and plugin packers call this pointer.
+    ///
+    /// **Null contract:** null only before `allocate()` (or after
+    /// DomainRuntime destruction). Serial methods no-op with `n_ghost == 0`.
+    Comm* comm = nullptr;
 
     /// @brief Opt-in: publish a FULL neighbor list instead of the half list.
     ///
@@ -85,7 +116,7 @@ struct DynamicsServices {
 
     /// @brief Global degrees of freedom, `3N - 3 - n_constraints`.
     ///
-    /// **The single owner.** Published by `CPUDriver::setup_pass()` after the frame
+    /// **The single owner.** Published by `Driver::setup_pass()` after the frame
     /// is bound and BEFORE any component builds, because thermostats cache it in
     /// their own `build()`. Every consumer of Ndof reads it from here — Thermo,
     /// InitVelocity, NoseHoover, NoseHooverNPT, FixCSVR — instead of each
@@ -103,6 +134,18 @@ struct DynamicsServices {
     /// collectives (e.g. `mpi::Reduce` under `set_scalar_reduce_every > 1`)
     /// guarantee globally-reduced scalars are valid when `run()` returns.
     bool is_last_step = false;
+
+    /// @brief LAMMPS `Neighbor::decide()` result (`nflag`) for this step.
+    ///
+    /// MD Verlet (`Runtime::step` when `Plan::kind == PhaseKind::MD`)
+    /// branches on this: `false` → `forward_comm` only; `true` →
+    /// `exchange` + `borders` + `neighbor->build`. Default `true` so
+    /// linear drivers that never call decide still rebuild ghosts.
+    bool reneighbor = true;
+
+    /// @brief Verlet already ran `NeighborProvider::decide_reneighbor`
+    /// this step. When false, a direct `launch()` decides inline.
+    bool reneighbor_decided = false;
 };
 
 /// @brief Metropolis-sampling services (publisher: `cpu::mc::MC::run`).
@@ -136,8 +179,8 @@ struct OptimizeServices {
     std::function<void(bool need_grad)> reeval_forces = nullptr;
 
     /// @brief True while an Optimizer is evaluating line-search trial
-    /// geometries via `reeval_forces`. Migration-type components
-    /// (`comm::Migrate`) skip when set: the optimizer's per-row buffers are
+    /// geometries via `reeval_forces`. `CommBrick::exchange` skips when
+    /// set: the optimizer's per-row buffers are
     /// keyed to the current owned-row order, so reshuffling rows mid-search
     /// would corrupt it. Halo exchange still runs, keeping trial forces
     /// correct for the bounded step.
@@ -187,10 +230,26 @@ struct LoopServices {
 ///
 /// Non-owning, and deliberately a back-pointer: the Backend owns the Context, and
 /// publishes itself here in `init()` so a node reached through a `LaunchContext` can ask
-/// the Runtime to execute a Plan. @see cpu::Driver
+/// the Runtime to execute a Plan. @see cpu::DriverNode
 struct ExecServices {
     /// @brief The Backend running this node tree. Null outside a run.
-    Backend* runtime = nullptr;
+    Runtime* runtime = nullptr;
+
+    /// @brief The force-request veto channel — how an energy-only phase reaches
+    ///        the slots of the drivers nested inside it.
+    ///
+    /// A slot flag alone (`StageSlot::forces_requested`) stops at the node
+    /// boundary: a nested driver runs its OWN Plan, whose slots were stamped by
+    /// ITS `phase_wants_forces` — and a method loop asks for forces at every SCF
+    /// stage. So the Runtime ANDs the outer slot's flag into this field around a
+    /// nested dispatch (saving and restoring it, so a later phase of the same
+    /// step is unaffected), and every `LaunchContext` it builds carries
+    /// `slot.forces_requested && exec.forces_requested`. The AND is what
+    /// propagates one outer veto through arbitrary nesting depth — and what
+    /// keeps the same node under MD's `force` phase assembling its gradient.
+    ///
+    /// True outside any veto, which is every loop but MC's trial `energy` phase.
+    bool forces_requested = true;
 };
 
 /// @brief Async-analysis services (publisher: `AnalysisExecutor::install`).

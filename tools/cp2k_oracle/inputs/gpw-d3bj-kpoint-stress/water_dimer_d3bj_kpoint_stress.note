@@ -1,0 +1,28 @@
+# Offline CP2K pin — gpw-d3bj-kpoint-stress
+#
+# Binary: /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/bin/cp2k.psmp
+# Version: CP2K 2026.1  Source code revision git:5e54ba2
+# Env: source .../cp2k/install/env.sh ; OMP_NUM_THREADS=8 ; mpirun -np 1
+# Host: Arrhenius epyc login, 2026-08-01
+# Inputs:
+#   water_dimer_d3bj_kpoint_stress.inp
+#   water_dimer_plain_kpoint_stress.inp
+# Outputs (not shipped): /tmp/cp2k_oracle_gpw-d3bj-kpoint-stress/*.out
+#
+# Unstrained (reference cell) output lines:
+#   Dispersion energy:                                           -0.00137627769481
+#   Total energy:                                               -34.33962825578086   (D3BJ)
+#   Total energy:                                               -34.33825197808604   (plain)
+#
+# STRESS| Numerical stress tensor [bar] diagonals:
+#   D3BJ: xx 5.50901753917E+03  yy 1.88563460724E+01  zz 1.28131582984E+04
+#   plain: xx 5.54281020556E+03  yy 1.91191402778E+01  zz 1.28128742083E+04
+# Δσ [Ha/Bohr³] = Δ[bar] / 2.9421015697e8:
+#   xx -1.14858938719e-07
+#   yy -8.93219350774e-10
+#   zz +9.65602625435e-10
+#
+# CP2K internal timer (fair wall twin = D3BJ job):
+#   D3BJ: CP2K  60.111 s
+#   plain: CP2K 145.200 s
+# /usr/bin/time WALL_SEC: D3BJ 60.51  plain 145.58

@@ -1,5 +1,5 @@
 /// @file cpu/task/task_codec.cpp
-/// @brief TaskSpec v3 typed-sum codec; no historic decoder.
+/// @brief TaskSpec v5 typed-sum codec; no historic decoder.
 
 #include "atomiverse/cpu/task/task_codec.h"
 
@@ -37,6 +37,20 @@ struct Writer {
         u64(values.size());
         for (double value : values)
             f64(value);
+    }
+    /// @brief Length-prefixed run of `i32`s — `vec`'s integer twin.
+    ///
+    /// `vec` is f64-only, and a per-type INTEGER (`DihedralCharmmParams::n`,
+    /// `PairBornParams::type_i` / `type_j`) is not a small double: the
+    /// multiplicity is an `int` in the C++ constructor and the type keys index
+    /// a table, so widening them through the double run would change both the
+    /// layout and the type while roundtripping the values unharmed.
+    ///
+    /// @param values Integer run to write; the `u64` count precedes it.
+    void vec_i32(const std::vector<int>& values) {
+        u64(values.size());
+        for (int value : values)
+            i32(value);
     }
     void string(const std::string& value) {
         u64(value.size());
@@ -77,6 +91,24 @@ struct Reader {
         values.reserve(static_cast<std::size_t>(n));
         for (std::uint64_t i = 0; i < n; ++i)
             values.push_back(f64());
+        return values;
+    }
+    /// @brief Read a length-prefixed `i32` run written by `Writer::vec_i32`.
+    ///
+    /// The count is bounds-checked against the remaining bytes before any
+    /// allocation, exactly as `vec` does: a corrupted length must fail as a
+    /// truncation error, not as a multi-gigabyte reserve.
+    ///
+    /// @return The decoded integer run.
+    /// @throws std::runtime_error When the declared count cannot fit.
+    std::vector<int> vec_i32() {
+        const std::uint64_t n = u64();
+        if (n > (size - at) / sizeof(std::int32_t))
+            throw std::runtime_error("task_codec: truncated vector payload");
+        std::vector<int> values;
+        values.reserve(static_cast<std::size_t>(n));
+        for (std::uint64_t i = 0; i < n; ++i)
+            values.push_back(i32());
         return values;
     }
     std::string string() {
@@ -129,6 +161,63 @@ void write(Writer& w, const NoseHooverParams& p) {
     w.f64(p.dt);
 }
 void write(Writer& w, const ThermoParams& p) { w.i32(p.freq); }
+// The only MD payload with a text field (the numeric `vec` fields above are
+// already variable-length): `string` writes a u64 byte-count prefix followed
+// by the raw bytes, so the reader knows where the filename ends and the
+// cadence begins.
+void write(Writer& w, const XyzRecorderParams& p) {
+    w.string(p.filename);
+    w.i32(p.freq);
+}
+void write(Writer& w, const FixLangevinParams& p) {
+    w.f64(p.T_start);
+    w.f64(p.T_stop);
+    w.f64(p.damp);
+    w.f64(p.dt);
+    w.u32(p.seed);
+}
+void write(Writer& w, const FixCsvrParams& p) {
+    w.f64(p.T_start);
+    w.f64(p.tau);
+    w.f64(p.dt);
+    w.u32(p.seed);
+}
+void write(Writer& w, const NoseHooverNptParams& p) {
+    w.f64(p.T_target);
+    w.f64(p.tau_T);
+    w.f64(p.P_target);
+    w.f64(p.tau_P);
+    w.f64(p.dt);
+    w.f64(p.drag);
+    w.i32(p.mtchain);
+    w.i32(p.mpchain);
+    for (bool axis : p.couple_axis)
+        w.u8(axis ? 1 : 0);
+    w.f64(p.T_stop);
+}
+void write(Writer& w, const ParrinelloRahmanNptParams& p) {
+    w.f64(p.T_target);
+    w.f64(p.P_target);
+    w.f64(p.tau_T);
+    w.f64(p.tau_P);
+    w.f64(p.dt);
+}
+void write(Writer& w, const BerendsenBarostatParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.tau_P);
+    w.f64(p.dt);
+    w.f64(p.bulk_modulus);
+}
+void write(Writer& w, const PairCoulCutParams& p) { w.f64(p.cutoff); }
+void write(Writer& w, const CoulLongParams& p) {
+    w.f64(p.alpha);
+    w.f64(p.cutoff);
+}
+void write(Writer& w, const KSpacePmeParams& p) {
+    w.f64(p.alpha);
+    w.f64(p.grid_spacing);
+    w.i32(p.order);
+}
 void write(Writer& w, const AM1EvaluatorParams& p) {
     w.i32(p.charge);
     w.i32(p.multiplicity);
@@ -136,10 +225,145 @@ void write(Writer& w, const AM1EvaluatorParams& p) {
     w.f64(p.density_tol);
     w.f64(p.energy_tol);
 }
+// The widest MD payload (fifteen fields) and the second one leading with a
+// text field. Field order is the struct's declaration order; `bool` crosses
+// as a single byte and both enum mirrors as i32, matching `read_pw` below.
+void write(Writer& w, const PwEvaluatorParams& p) {
+    w.string(p.upf_path);
+    w.string(p.gth_name);
+    w.f64(p.ecut_ry);
+    w.i32(p.k_mesh);
+    w.f64(p.tol);
+    w.i32(p.max_iter);
+    w.f64(p.mix_beta);
+    w.i32(p.pulay_depth);
+    w.i32(p.xc);
+    w.u8(p.spin_polarized ? 1 : 0);
+    w.i32(p.multiplicity);
+    w.i32(p.smearing);
+    w.f64(p.degauss);
+    w.i32(p.mp_order);
+    w.i32(p.extra_bands);
+}
+// The widened real-space catalogue. Field order is each mirror's declaration
+// order, which is also the constructor-argument order the materializer
+// replays — so a reordered struct is a wire break and the field-exact
+// roundtrip catches it. Six of the nine are "some doubles then a cutoff", so
+// nothing but the component ID tells them apart on the wire.
+void write(Writer& w, const PairMorseParams& p) {
+    w.f64(p.D);
+    w.f64(p.alpha);
+    w.f64(p.r0);
+    w.f64(p.cutoff);
+}
+void write(Writer& w, const PairBuckParams& p) {
+    w.f64(p.A);
+    w.f64(p.rho);
+    w.f64(p.C);
+    w.f64(p.cutoff);
+}
+// The widest parallel-vector payload on the wire: two integer runs (the type
+// keys) followed by five double runs (the row coefficients), then the one
+// shared cutoff. Each run carries its own length, so a table of N rows is
+// seven counts and 7N values — redundant, and deliberately so: the reader
+// checks each run independently instead of trusting one leading N.
+void write(Writer& w, const PairBornParams& p) {
+    w.vec_i32(p.type_i);
+    w.vec_i32(p.type_j);
+    w.vec(p.A);
+    w.vec(p.rho);
+    w.vec(p.sigma);
+    w.vec(p.C);
+    w.vec(p.D);
+    w.f64(p.cutoff);
+}
+void write(Writer& w, const PairYukawaParams& p) {
+    w.f64(p.A);
+    w.f64(p.kappa);
+    w.f64(p.cutoff);
+}
+// Two doubles and NOTHING else — WCA's cutoff is derived (2^(1/6)·σ), not
+// chosen. An appended cutoff "for symmetry" is caught by `require_end()`.
+void write(Writer& w, const PairWcaParams& p) {
+    w.f64(p.epsilon);
+    w.f64(p.sigma);
+}
+// The seed goes through `u64`, not `u32`: `cpu::PairDpd` takes a 64-bit one
+// where `FixLangevin` and `FixCSVR` take 32-bit ones, so the four extra bytes
+// are part of the layout even when the value is small.
+void write(Writer& w, const PairDpdParams& p) {
+    w.f64(p.a);
+    w.f64(p.gamma);
+    w.f64(p.temperature);
+    w.f64(p.cutoff);
+    w.f64(p.dt);
+    w.u64(p.seed);
+}
+void write(Writer& w, const BondFeneParams& p) {
+    w.vec(p.K);
+    w.vec(p.R0);
+}
+// The one payload mixing a double run and an integer run: the multiplicity
+// `n` is an `int` per dihedral type, so it takes `vec_i32` between the two
+// double runs.
+void write(Writer& w, const DihedralCharmmParams& p) {
+    w.vec(p.K);
+    w.vec_i32(p.n);
+    w.vec(p.delta);
+}
+void write(Writer& w, const ImproperHarmonicParams& p) {
+    w.vec(p.K);
+    w.vec(p.chi0);
+}
 void write(Writer& w, const LBFGSParams& p) {
     w.i32(p.memory);
     w.f64(p.alpha0);
     w.i32(p.max_ls);
+}
+// The six remaining minimize optimizers. Field order is each mirror's
+// declaration order, which is also the member declaration order of the C++
+// class the materializer replays — so a reordered struct is a wire break, and
+// is caught by the field-exact roundtrip.
+void write(Writer& w, const CGParams& p) { w.f64(p.alpha0); }
+void write(Writer& w, const FIREParams& p) {
+    w.f64(p.dt0);
+    w.f64(p.dt_max);
+    w.i32(p.n_min);
+    w.f64(p.f_inc);
+    w.f64(p.f_dec);
+    w.f64(p.alpha0);
+    w.f64(p.f_alpha);
+    w.f64(p.max_step);
+}
+void write(Writer& w, const IsotropicCellRelaxParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.alpha0);
+    w.f64(p.max_scale);
+    w.f64(p.bulk_mod);
+}
+void write(Writer& w, const AnisotropicCellRelaxParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.alpha0);
+    w.f64(p.max_scale);
+    w.f64(p.bulk_mod);
+    // One byte per axis, in x/y/z order — the `NoseHooverNptParams` couple
+    // mask precedent. A single byte for all three would survive a symmetric
+    // payload and silently mangle an asymmetric one.
+    w.u8(p.relax_x ? 1 : 0);
+    w.u8(p.relax_y ? 1 : 0);
+    w.u8(p.relax_z ? 1 : 0);
+}
+void write(Writer& w, const TriclinicCellRelaxParams& p) {
+    w.f64(p.alpha0);
+    w.f64(p.max_strain);
+    w.f64(p.bulk_mod);
+}
+void write(Writer& w, const JointIsotropicRelaxParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.atom_step);
+    w.f64(p.alpha0);
+    w.f64(p.max_scale);
+    w.f64(p.bulk_mod);
 }
 void write(Writer& w, const ForceConvergedParams& p) {
     w.f64(p.ftol);
@@ -148,10 +372,35 @@ void write(Writer& w, const ForceConvergedParams& p) {
     w.f64(p.rms_dtol);
     w.f64(p.etol);
 }
+void write(Writer& w, const PressureConvergedParams& p) {
+    w.f64(p.P_target);
+    w.f64(p.ptol);
+}
+void write(Writer& w, const StressConvergedParams& p) {
+    w.f64(p.sigma_target);
+    w.f64(p.stol);
+    w.u8(p.check_x ? 1 : 0);
+    w.u8(p.check_y ? 1 : 0);
+    w.u8(p.check_z ? 1 : 0);
+}
 
 template <typename Variant>
 void write_variant(Writer& w, const Variant& params) {
     std::visit([&](const auto& p) { write(w, p); }, params);
+}
+
+/// @brief Write the `MinimizeTask` stop policy: id then payload.
+///
+/// The criterion is the LAST thing the Minimize packer lays down, so the id
+/// has to precede its fields — a decoder reading a fixed five doubles there
+/// ends up short or long, and `require_end()` is what turns that into an error
+/// instead of a silently wrong tolerance.
+///
+/// @param w         Byte sink.
+/// @param criterion The typed stop policy of the task being packed.
+void write_criterion(Writer& w, const MinimizeCriterionParams& criterion) {
+    w.u16(static_cast<std::uint16_t>(criterion_id(criterion)));
+    std::visit([&](const auto& c) { write(w, c); }, criterion);
 }
 
 ComponentId decode_component_id(std::uint16_t raw) {
@@ -178,23 +427,160 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::AM1Evaluator;
     case 10:
         return ComponentId::LBFGS;
+    case 11:
+        return ComponentId::FixLangevin;
+    case 12:
+        return ComponentId::FixCSVR;
+    case 13:
+        return ComponentId::NoseHooverNPT;
+    case 14:
+        return ComponentId::ParrinelloRahmanNPT;
+    case 15:
+        return ComponentId::BerendsenBarostat;
+    case 16:
+        return ComponentId::PairCoulCut;
+    case 17:
+        return ComponentId::CoulLong;
+    case 18:
+        return ComponentId::KSpacePME;
+    case 19:
+        return ComponentId::XyzRecorder;
+    case 20:
+        return ComponentId::PWEvaluator;
+    case 21:
+        return ComponentId::CG;
+    case 22:
+        return ComponentId::FIRE;
+    case 23:
+        return ComponentId::IsotropicCellRelax;
+    case 24:
+        return ComponentId::AnisotropicCellRelax;
+    case 25:
+        return ComponentId::TriclinicCellRelax;
+    case 26:
+        return ComponentId::JointIsotropicRelax;
+    case 27:
+        return ComponentId::PairMorse;
+    case 28:
+        return ComponentId::PairBuck;
+    case 29:
+        return ComponentId::PairBorn;
+    case 30:
+        return ComponentId::PairYukawa;
+    case 31:
+        return ComponentId::PairWCA;
+    case 32:
+        return ComponentId::PairDpd;
+    case 33:
+        return ComponentId::BondFene;
+    case 34:
+        return ComponentId::DihedralCharmm;
+    case 35:
+        return ComponentId::ImproperHarmonic;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
     }
 }
 
+/// @brief Is this component id a Minimize-only one?
+///
+/// Seven optimizers share one home, so `wrong_task` asks this rather than
+/// spelling seven `||` arms at the point where it builds the diagnostic.
+///
+/// @param id A decoded component id.
+/// @return True for the optimizers `MinimizeTask` alone may carry.
+bool is_minimize_only(ComponentId id) noexcept {
+    switch (id) {
+    case ComponentId::LBFGS:
+    case ComponentId::CG:
+    case ComponentId::FIRE:
+    case ComponentId::IsotropicCellRelax:
+    case ComponentId::AnisotropicCellRelax:
+    case ComponentId::TriclinicCellRelax:
+    case ComponentId::JointIsotropicRelax:
+        return true;
+    default:
+        return false;
+    }
+}
+
 [[noreturn]] void wrong_task(ComponentId id, TaskKind target) {
     const char* source = "MD";
-    if (id == ComponentId::LBFGS)
+    if (is_minimize_only(id))
         source = "Minimize";
     else if (id == ComponentId::AM1Evaluator)
-        source = "SinglePoint";
+        // Two legal homes: the whole of a SinglePoint task, and an evaluator
+        // entry of an MD task (semiempirical Born-Oppenheimer dynamics).
+        source = "MD/SinglePoint";
     else if (id == ComponentId::PairLJCut || id == ComponentId::NeighborList)
         source = "MD/Minimize";
     throw std::runtime_error(std::string("task_codec: component ")
                              + component_name(id) + " belongs to " + source
                              + ", not " + task_kind_name(target));
+}
+
+/// @brief Read the five AM1 fields in the order `write` laid them down.
+///
+/// Declared ahead of both readers because ID 9 decodes into two payloads —
+/// the whole of a `SinglePointTask` and an evaluator entry of an `MDTask` —
+/// and one reader is what keeps their field lists from drifting apart.
+AM1EvaluatorParams read_am1(Reader& r) {
+    AM1EvaluatorParams p;
+    p.charge = r.i32();
+    p.multiplicity = r.i32();
+    p.max_iter = r.i32();
+    p.density_tol = r.f64();
+    p.energy_tol = r.f64();
+    return p;
+}
+
+/// @brief Read the fifteen plane-wave fields in the order `write` laid them
+///        down.
+///
+/// Statement per field rather than one braced aggregate: the widest payload
+/// on the wire is also the one where a silently swapped field is hardest to
+/// see, and a named assignment beside its reader makes the byte layout
+/// legible at the point it is decoded.
+PwEvaluatorParams read_pw(Reader& r) {
+    PwEvaluatorParams p;
+    p.upf_path = r.string();
+    p.gth_name = r.string();
+    p.ecut_ry = r.f64();
+    p.k_mesh = r.i32();
+    p.tol = r.f64();
+    p.max_iter = r.i32();
+    p.mix_beta = r.f64();
+    p.pulay_depth = r.i32();
+    p.xc = r.i32();
+    p.spin_polarized = r.u8() != 0;
+    p.multiplicity = r.i32();
+    p.smearing = r.i32();
+    p.degauss = r.f64();
+    p.mp_order = r.i32();
+    p.extra_bands = r.i32();
+    return p;
+}
+
+/// @brief Read the eight Born fields in the order `write` laid them down.
+///
+/// Statement per field rather than one braced aggregate, for the same reason
+/// as `read_pw`: seven length-prefixed runs in a row are where a swapped pair
+/// is hardest to see, and the two INTEGER runs sit next to five double ones.
+///
+/// @param r Byte source, positioned at the first type-key run.
+/// @return The decoded parallel-vector coefficient table.
+PairBornParams read_born(Reader& r) {
+    PairBornParams p;
+    p.type_i = r.vec_i32();
+    p.type_j = r.vec_i32();
+    p.A = r.vec();
+    p.rho = r.vec();
+    p.sigma = r.vec();
+    p.C = r.vec();
+    p.D = r.vec();
+    p.cutoff = r.f64();
+    return p;
 }
 
 MDComponentParams read_md_params(Reader& r, ComponentId id) {
@@ -226,8 +612,66 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return NoseHooverParams{r.f64(), r.f64(), r.f64()};
     case ComponentId::Thermo:
         return ThermoParams{r.i32()};
+    case ComponentId::XyzRecorder:
+        // Braced init: the field reads are sequenced left to right, so the
+        // length-prefixed filename is consumed before the cadence.
+        return XyzRecorderParams{r.string(), r.i32()};
+    case ComponentId::FixLangevin:
+        return FixLangevinParams{r.f64(), r.f64(), r.f64(), r.f64(), r.u32()};
+    case ComponentId::FixCSVR:
+        return FixCsvrParams{r.f64(), r.f64(), r.f64(), r.u32()};
+    case ComponentId::NoseHooverNPT:
+        return NoseHooverNptParams{
+            r.f64(), r.f64(), r.f64(),
+            r.f64(), r.f64(), r.f64(),
+            r.i32(), r.i32(), {r.u8() != 0, r.u8() != 0, r.u8() != 0},
+            r.f64()};
+    case ComponentId::ParrinelloRahmanNPT:
+        return ParrinelloRahmanNptParams{r.f64(), r.f64(), r.f64(), r.f64(),
+                                         r.f64()};
+    case ComponentId::BerendsenBarostat:
+        return BerendsenBarostatParams{r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::PairCoulCut:
+        return PairCoulCutParams{r.f64()};
+    case ComponentId::CoulLong:
+        return CoulLongParams{r.f64(), r.f64()};
+    case ComponentId::KSpacePME:
+        return KSpacePmeParams{r.f64(), r.f64(), r.i32()};
     case ComponentId::AM1Evaluator:
+        return read_am1(r);
+    case ComponentId::PWEvaluator:
+        return read_pw(r);
+    // The widened real-space catalogue. Braced init throughout: the field
+    // reads of a braced-init-list are sequenced left to right, so the
+    // declaration order below IS the byte order `write` laid down.
+    case ComponentId::PairMorse:
+        return PairMorseParams{r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::PairBuck:
+        return PairBuckParams{r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::PairBorn:
+        return read_born(r);
+    case ComponentId::PairYukawa:
+        return PairYukawaParams{r.f64(), r.f64(), r.f64()};
+    case ComponentId::PairWCA:
+        return PairWcaParams{r.f64(), r.f64()};
+    case ComponentId::PairDpd:
+        return PairDpdParams{r.f64(), r.f64(), r.f64(),
+                             r.f64(), r.f64(), r.u64()};
+    case ComponentId::BondFene:
+        return BondFeneParams{r.vec(), r.vec()};
+    case ComponentId::DihedralCharmm:
+        return DihedralCharmmParams{r.vec(), r.vec_i32(), r.vec()};
+    case ComponentId::ImproperHarmonic:
+        return ImproperHarmonicParams{r.vec(), r.vec()};
+    // Every Minimize-only optimizer shares one refusal arm: naming one in an
+    // MD payload is a wrong-home error, not an unknown component.
     case ComponentId::LBFGS:
+    case ComponentId::CG:
+    case ComponentId::FIRE:
+    case ComponentId::IsotropicCellRelax:
+    case ComponentId::AnisotropicCellRelax:
+    case ComponentId::TriclinicCellRelax:
+    case ComponentId::JointIsotropicRelax:
         wrong_task(id, TaskKind::MD);
     }
     throw std::runtime_error("task_codec: invalid MD component id");
@@ -241,23 +685,52 @@ MinimizeComponentParams read_minimize_params(Reader& r, ComponentId id) {
         return NeighborListParams{r.f64(), r.f64()};
     case ComponentId::LBFGS:
         return LBFGSParams{r.i32(), r.f64(), r.i32()};
+    case ComponentId::CG:
+        return CGParams{r.f64()};
+    case ComponentId::FIRE:
+        return FIREParams{r.f64(), r.f64(), r.i32(), r.f64(),
+                          r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::IsotropicCellRelax:
+        return IsotropicCellRelaxParams{r.f64(), r.f64(), r.f64(), r.f64()};
+    case ComponentId::AnisotropicCellRelax:
+        return AnisotropicCellRelaxParams{r.f64(),    r.f64(),     r.f64(),
+                                          r.f64(),    r.u8() != 0, r.u8() != 0,
+                                          r.u8() != 0};
+    case ComponentId::TriclinicCellRelax:
+        return TriclinicCellRelaxParams{r.f64(), r.f64(), r.f64()};
+    case ComponentId::JointIsotropicRelax:
+        return JointIsotropicRelaxParams{r.f64(), r.f64(), r.f64(), r.f64(),
+                                         r.f64()};
     default:
         wrong_task(id, TaskKind::Minimize);
     }
 }
 
-AM1EvaluatorParams read_am1(Reader& r) {
-    AM1EvaluatorParams p;
-    p.charge = r.i32();
-    p.multiplicity = r.i32();
-    p.max_iter = r.i32();
-    p.density_tol = r.f64();
-    p.energy_tol = r.f64();
-    return p;
-}
-
-ForceConvergedParams read_convergence(Reader& r) {
-    return ForceConvergedParams{r.f64(), r.f64(), r.f64(), r.f64(), r.f64()};
+/// @brief Read the `MinimizeTask` stop policy written by `write_criterion`.
+///
+/// Dispatches on the leading `u16`: `PressureConverged` and the first two
+/// `ForceConverged` tolerances are both "two doubles", so an id that was
+/// written but ignored would decode a pressure test back as a force test with
+/// entirely plausible numbers.
+///
+/// @param r Byte source, positioned at the criterion id.
+/// @return The decoded criterion alternative.
+/// @throws std::runtime_error On an unknown criterion id.
+MinimizeCriterionParams read_criterion(Reader& r) {
+    const std::uint16_t raw = r.u16();
+    switch (raw) {
+    case 0:
+        return ForceConvergedParams{r.f64(), r.f64(), r.f64(), r.f64(),
+                                    r.f64()};
+    case 1:
+        return PressureConvergedParams{r.f64(), r.f64()};
+    case 2:
+        return StressConvergedParams{r.f64(), r.f64(), r.u8() != 0, r.u8() != 0,
+                                     r.u8() != 0};
+    default:
+        throw std::runtime_error("task_codec: unknown minimize criterion_id "
+                                 + std::to_string(raw));
+    }
 }
 
 template <typename Phase>
@@ -328,7 +801,7 @@ std::vector<std::byte> pack(const TaskSpec& spec) {
             write_variant(w, entry.params);
         }
         w.i64(task.max_iter);
-        write(w, task.convergence);
+        write_criterion(w, task.convergence);
     }
     return out;
 }
@@ -383,7 +856,7 @@ TaskSpec unpack(const std::byte* data, std::size_t size) {
             MinimizeComponentEntry{read_minimize_params(r, id), binding});
     }
     task.max_iter = r.i64();
-    task.convergence = read_convergence(r);
+    task.convergence = read_criterion(r);
     r.require_end();
     return TaskSpec(std::move(task));
 }

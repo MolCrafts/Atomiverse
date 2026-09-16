@@ -1,0 +1,19 @@
+# Offline twin note — pw-uks-fe-smearing
+
+Atomiverse pin: collinear UKS plane-wave NC-UPF BCC Fe with Fermi–Dirac
+metallic smearing (`regressions/pw/pw-uks-fe-smearing/REFERENCE.md`).
+
+Absolute energy is **not** compared to CP2K (GTH-GPW ≠ NC-UPF PW) — same
+class of limitation as `pw-smearing-al` and `pw-uks-kmesh-fe`.
+
+Algorithm twin (documentation only), if re-running CP2K offline:
+
+- `&FORCE_EVAL` METHOD Quickstep, UKS / LSD
+- Fe GTH (e.g. GTH-PBE-q16 or available Fe PP in the module data dir)
+- `&SMEAR METHOD FERMI_DIRAC` with electronic temperature matching
+  `degauss ≈ 0.02` Ry (≈ 3158 K)
+- Monkhorst–Pack k-mesh matching the ATV pin when fair
+- Optional input skeleton: `fe_uks_smear.inp` (add when a CP2K binary is
+  available on the pin host)
+
+No live CP2K at ctest.

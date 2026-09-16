@@ -1,0 +1,26 @@
+# Constant-charge (conq) twin of the ELECTRODE madelung example.
+# Offline oracle input for regressions/md/const-charge-electrode/ — requires
+# LAMMPS built with -D PKG_ELECTRODE=ON (never run from ctest).
+#
+# Feeds the conp pin Q_top = +0.279214485147238 e (from
+# log.1Dec2022.madelung-ewald-ew3dc.g++.1, run 0 at dV = 1 V) back as fixed
+# electrode charges; f_conq[2]-f_conq[1] must return 1 V (the ELECTRODE
+# package documents that conq inverts conp up to a uniform potential shift —
+# see graph-il/in.conq: "symm on and off give different electrode
+# potentials, but identical potential difference").
+#
+# Run from $LAMMPS_DIR/examples/PACKAGES/electrode/madelung:
+#   lmp -in in.conq_madelung
+
+boundary p p f
+kspace_style ewald/electrode 1.0e-8
+kspace_modify slab 8.0 # ew3dc
+
+include "settings.mod" # styles, computes, groups (data.au-elyt)
+
+fix conq bot electrode/conq -0.279214485147238 2 couple top 0.279214485147238
+variable dv equal f_conq[2]-f_conq[1]
+
+thermo_style custom step pe c_qbot c_qtop f_conq[1] f_conq[2] v_dv
+
+run 0

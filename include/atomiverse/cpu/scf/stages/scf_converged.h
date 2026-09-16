@@ -25,9 +25,9 @@
 
 #include <xtensor/reducers/xnorm.hpp>
 
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/criterion.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
-#include "atomiverse/facade/stage.h"
 
 namespace ATV {
 namespace cpu {

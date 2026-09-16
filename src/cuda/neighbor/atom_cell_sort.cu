@@ -3,7 +3,7 @@
 ///        multi-gpu-atom-cell-sort-01-permute).
 ///
 /// See atom_cell_sort.cuh for the contract and the exact per-atom stride map.
-/// The cell-key kernel mirrors nlist_direct.cu::cell_of byte-for-byte so the
+/// The cell-key kernel mirrors atom cell_of convention byte-for-byte so the
 /// sort order agrees with the grid the Verlet build later bins against.
 
 #include "atom_cell_sort.cuh"
@@ -21,7 +21,7 @@ namespace ATV::cuda::md::nlist {
 
 namespace {
 
-// Identical to nlist_direct.cu::cell_of (same wrap + clamp + linearization:
+// Identical to atom cell_of convention (same wrap + clamp + linearization:
 // cell = (cx*dy + cy)*dz + cz, cx slowest / cz fastest).
 __device__ __forceinline__ int sort_cell_of(real_t x, real_t y, real_t z,
                                             real_t Lx, real_t Ly, real_t Lz,

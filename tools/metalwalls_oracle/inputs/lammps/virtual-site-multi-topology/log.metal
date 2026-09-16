@@ -1,0 +1,112 @@
+LAMMPS (30 Mar 2026 - Development - patch_30Mar2026-1074-g7f680de296)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread.
+  using 1 OpenMP thread(s) per MPI task
+units           metal
+atom_style      full
+boundary        p p p
+pair_style      lj/cut/tip4p/cut 1 2 1 1 0.15 10.0
+bond_style      harmonic
+angle_style     harmonic
+special_bonds   lj/coul 0.0 0.0 0.0
+read_data       data.tip4p_dimer_metal
+Reading data file ...
+  orthogonal box = (0 0 0) to (20 20 20)
+  1 by 1 by 1 MPI processor grid
+  reading atoms ...
+  6 atoms
+  scanning bonds ...
+  2 = max bonds/atom
+  scanning angles ...
+  1 = max angles/atom
+  orthogonal box = (0 0 0) to (20 20 20)
+  1 by 1 by 1 MPI processor grid
+  reading bonds ...
+  4 bonds
+  reading angles ...
+  2 angles
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0
+  special bond factors coul:  0        0        0
+     2 = max # of 1-2 neighbors
+     1 = max # of 1-3 neighbors
+     1 = max # of 1-4 neighbors
+     2 = max # of special neighbors
+  special bonds CPU = 0.000 seconds
+  read_data CPU = 0.002 seconds
+# eps in eV: 0.1550 kcal/mol * (1/23.060547830619026)
+pair_coeff      1 1 0.006721436157479146 3.15365
+pair_coeff      1 2 0.0    1.0
+pair_coeff      2 2 0.0    1.0
+pair_modify     shift yes
+bond_coeff      1 0.0 0.9572
+angle_coeff     1 0.0 104.52
+neighbor        1.0 bin
+neigh_modify    delay 0 every 1 check no
+velocity        all set 0.0 0.0 0.0 units box
+run 0
+WARNING: No fixes with time integration, atoms won't move
+For more information see https://docs.lammps.org/err0028 (src/verlet.cpp:60)
+WARNING: Communication cutoff 0 is shorter than a bond length based estimate of 2.4358. This may lead to errors. (src/comm.cpp:694)
+WARNING: Increasing communication cutoff to 12.1072 for TIP4P pair style (src/MOLECULE/pair_lj_cut_tip4p_cut.cpp:526)
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = no
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 11.3
+  ghost atom cutoff = 12.1072
+  binsize = 5.65, bins = 4 4 4
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair lj/cut/tip4p/cut, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 6.313 | 6.313 | 6.313 Mbytes
+   Step          Temp          E_pair         E_mol          TotEng         Press
+         0   0              0.52924229     0              0.52924229     99.286296
+Loop time of 5.61e-07 on 1 procs for 0 steps with 6 atoms
+
+0.0% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0          | 0          | 0          |   0.0 |  0.00
+Bond    | 0          | 0          | 0          |   0.0 |  0.00
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0          | 0          | 0          |   0.0 |  0.00
+Output  | 0          | 0          | 0          |   0.0 |  0.00
+Modify  | 0          | 0          | 0          |   0.0 |  0.00
+Other   |            | 5.61e-07   |            |       |100.00
+
+Nlocal:              6 ave           6 max           6 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:             42 ave          42 max          42 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:              9 ave           9 max           9 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 9
+Ave neighs/atom = 1.5
+Ave special neighs/atom = 2
+Neighbor list builds = 0
+Dangerous builds not checked
+print "PIN_PE $(pe) eV"
+PIN_PE 0.52924228894955327451 eV
+print "PIN_EVDWL $(evdwl) eV"
+PIN_EVDWL 0.057185016777344513383 eV
+print "PIN_ECOUL $(ecoul) eV"
+PIN_ECOUL 0.4720572721722087195 eV
+print "F1 $(fx[1]) $(fy[1]) $(fz[1])"
+F1 -0.094382238074752045076 0 0.33187666441899288383
+print "F2 $(fx[2]) $(fy[2]) $(fz[2])"
+F2 -1.0593571566097745862 0 -0.31522207906906996033
+print "F3 $(fx[3]) $(fy[3]) $(fz[3])"
+F3 -0.057823257196248978307 0 -0.016654585349923187176
+print "F4 $(fx[4]) $(fy[4]) $(fz[4])"
+F4 0.094382238074751600987 0 0.33187666441899305037
+print "F5 $(fx[5]) $(fy[5]) $(fz[5])"
+F5 1.0593571566097748082 0 -0.31522207906906962727
+print "F6 $(fx[6]) $(fy[6]) $(fz[6])"
+F6 0.057823257196249200351 0 -0.01665458534992322534
+Total wall time: 0:00:00

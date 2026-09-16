@@ -385,10 +385,131 @@ inline constexpr GaussianBasisSetRow kBas_Ar_DZVP_GTH_PADE_sets[] = {
 inline constexpr GaussianBasisRow kBas_Ar_DZVP_GTH_PADE = {
     18, "Ar", "DZVP-GTH-PADE", kBas_Ar_DZVP_GTH_PADE_sets, 2};
 
+// ── Ni / O PADE (DFT+U NiO foothold: SZV-GTH-PADE + GTH-PADE) ─────────────
+// Provenance: CP2K GTH_POTENTIALS / BASIS_SET (Krack 2005; GTH-PADE).
+
+inline constexpr double kPot_Ni_GTH_PADE_q18_cloc[] = {3.61031072, 0.44963832};
+inline constexpr double kPot_Ni_GTH_PADE_q18_h0[] = {12.16113071, 3.51625420,
+                                                     3.51625420, -9.07892931};
+inline constexpr double kPot_Ni_GTH_PADE_q18_h1[] = {-0.82062357, 2.54774737,
+                                                     2.54774737, -6.02907069};
+inline constexpr double kPot_Ni_GTH_PADE_q18_h2[] = {-13.39506212};
+inline constexpr GthChannelRow kPot_Ni_GTH_PADE_q18_ch[] = {
+    {0, 0.24510489, 2, kPot_Ni_GTH_PADE_q18_h0, 4},
+    {1, 0.23474136, 2, kPot_Ni_GTH_PADE_q18_h1, 4},
+    {2, 0.21494950, 1, kPot_Ni_GTH_PADE_q18_h2, 1},
+};
+inline constexpr GthPotentialRow kPot_Ni_GTH_PADE_q18 = {
+    28,
+    "Ni",
+    "GTH-PADE-q18",
+    18,
+    0.35000000,
+    kPot_Ni_GTH_PADE_q18_cloc,
+    2,
+    kPot_Ni_GTH_PADE_q18_ch,
+    3};
+
+inline constexpr double kPot_O_GTH_PADE_q6_cloc[] = {-16.58031797, 2.39570092};
+inline constexpr double kPot_O_GTH_PADE_q6_h0[] = {18.26691718};
+inline constexpr GthChannelRow kPot_O_GTH_PADE_q6_ch[] = {
+    {0, 0.22178614, 1, kPot_O_GTH_PADE_q6_h0, 1},
+    {1, 0.25682890, 0, nullptr, 0},
+};
+inline constexpr GthPotentialRow kPot_O_GTH_PADE_q6 = {8,
+                                                       "O",
+                                                       "GTH-PADE-q6",
+                                                       6,
+                                                       0.24762086,
+                                                       kPot_O_GTH_PADE_q6_cloc,
+                                                       2,
+                                                       kPot_O_GTH_PADE_q6_ch,
+                                                       2};
+
+// Ni SZV-GTH-PADE-q18: n=3,lmin=0,lmax=2,nexp=6,nshell={2,1,1}, ncoef=4
+inline constexpr double kBas_Ni_SZV_GTH_PADE_q18_s0_exps[] = {
+    9.1083628918, 4.7077006381, 2.0075563311,
+    0.7991545346, 0.2801233689, 0.0777183285};
+inline constexpr int kBas_Ni_SZV_GTH_PADE_q18_s0_nshell[] = {2, 1, 1};
+inline constexpr double kBas_Ni_SZV_GTH_PADE_q18_s0_coef[] = {
+    // row-major: nexp × ncoef; columns = s1,s2,p1,d1
+    -0.3318472282, 0.0814757465, -0.0734890997, 0.1546631104,  0.0215195281,
+    0.0083255182,  0.3143433748, 0.2793018964,  0.7820035505,  -0.2919821887,
+    0.5321470345,  0.3572041353, 0.3981367371,  -0.3174059212, 0.3004714229,
+    0.3257021539,  0.0110672576, 0.3537517680,  0.0204262431,  0.1980609814,
+    0.0003240675,  0.8632205228, 0.0000512651,  0.0349659775};
+inline constexpr GaussianBasisSetRow kBas_Ni_SZV_GTH_PADE_q18_sets[] = {
+    {3, 0, 2, 4, kBas_Ni_SZV_GTH_PADE_q18_s0_exps, 6,
+     kBas_Ni_SZV_GTH_PADE_q18_s0_nshell, 3, kBas_Ni_SZV_GTH_PADE_q18_s0_coef,
+     24},
+};
+inline constexpr GaussianBasisRow kBas_Ni_SZV_GTH_PADE_q18 = {
+    28, "Ni", "SZV-GTH-PADE-q18", kBas_Ni_SZV_GTH_PADE_q18_sets, 1};
+
+// O SZV-GTH-PADE: n=2,lmin=0,lmax=1,nexp=4,nshell={1,1}, ncoef=2
+inline constexpr double kBas_O_SZV_GTH_PADE_s0_exps[] = {
+    8.3044042305, 2.4579452461, 0.7597363524, 0.2136387585};
+inline constexpr int kBas_O_SZV_GTH_PADE_s0_nshell[] = {1, 1};
+inline constexpr double kBas_O_SZV_GTH_PADE_s0_coef[] = {
+    0.1510163077,  -0.0995678047, -0.0393193874, -0.3011430914,
+    -0.6971729792, -0.4750852730, -0.3841125601, -0.3798775565};
+inline constexpr GaussianBasisSetRow kBas_O_SZV_GTH_PADE_sets[] = {
+    {2, 0, 1, 2, kBas_O_SZV_GTH_PADE_s0_exps, 4, kBas_O_SZV_GTH_PADE_s0_nshell,
+     2, kBas_O_SZV_GTH_PADE_s0_coef, 8},
+};
+inline constexpr GaussianBasisRow kBas_O_SZV_GTH_PADE = {
+    8, "O", "SZV-GTH-PADE", kBas_O_SZV_GTH_PADE_sets, 1};
+
+// Si GTH-PBE-q4 — Krack, TCA 114, 145 (2005); CP2K GTH_POTENTIALS.
+//   2 2  (s p valence) → zion 4
+//   rloc=0.44, nexp_ppl=1, C1=-6.26928833
+//   s: r=0.43563383 nproj=2  h upper-tri → full symmetric row-major
+//   p: r=0.49794218 nproj=1  h00=2.43127673
+inline constexpr double kPot_Si_GTH_PBE_q4_cloc[] = {-6.26928833};
+inline constexpr double kPot_Si_GTH_PBE_q4_h0[] = {8.95174150, -2.70627082,
+                                                   -2.70627082, 3.49378060};
+inline constexpr double kPot_Si_GTH_PBE_q4_h1[] = {2.43127673};
+inline constexpr GthChannelRow kPot_Si_GTH_PBE_q4_ch[] = {
+    {0, 0.43563383, 2, kPot_Si_GTH_PBE_q4_h0, 4},
+    {1, 0.49794218, 1, kPot_Si_GTH_PBE_q4_h1, 1},
+};
+inline constexpr GthPotentialRow kPot_Si_GTH_PBE_q4 = {14,
+                                                       "Si",
+                                                       "GTH-PBE-q4",
+                                                       4,
+                                                       0.44000000,
+                                                       kPot_Si_GTH_PBE_q4_cloc,
+                                                       1,
+                                                       kPot_Si_GTH_PBE_q4_ch,
+                                                       2};
+
+// Si DZVP-MOLOPT-GTH — VandeVondele & Hutter, JCP 127, 114105 (2007);
+// CP2K BASIS_MOLOPT. n=2 lmin=0 lmax=2 nexp=6 nshell={2,2,1} ncoef=5.
+inline constexpr double kBas_Si_DZVP_MOLOPT_GTH_s0_exps[] = {
+    2.693604434572, 1.359613855428, 0.513245176029,
+    0.326563011394, 0.139986977410, 0.068212286977};
+inline constexpr int kBas_Si_DZVP_MOLOPT_GTH_s0_nshell[] = {2, 2, 1};
+inline constexpr double kBas_Si_DZVP_MOLOPT_GTH_s0_coef[] = {
+    0.015333179500,  -0.073325401200, -0.005800105400, 0.023996406700,
+    0.043919650100,  -0.283798205000, 0.484815594600,  -0.059172026000,
+    0.055459199900,  0.134639409600,  -0.228939692700, -0.276015880000,
+    0.121487149900,  -0.269559268100, 0.517732111300,  0.728834000900,
+    -0.228394679700, 0.423382421100,  -0.259506329000, 0.282311245100,
+    0.446205299300,  -0.018311553000, 0.474592116300,  0.310318217600,
+    0.281350794600,  0.122025292800,  0.365245476200,  0.250129397700,
+    0.647414251100,  0.139066843800};
+inline constexpr GaussianBasisSetRow kBas_Si_DZVP_MOLOPT_GTH_sets[] = {
+    {2, 0, 2, 5, kBas_Si_DZVP_MOLOPT_GTH_s0_exps, 6,
+     kBas_Si_DZVP_MOLOPT_GTH_s0_nshell, 3, kBas_Si_DZVP_MOLOPT_GTH_s0_coef, 30},
+};
+inline constexpr GaussianBasisRow kBas_Si_DZVP_MOLOPT_GTH = {
+    14, "Si", "DZVP-MOLOPT-GTH", kBas_Si_DZVP_MOLOPT_GTH_sets, 1};
+
 inline constexpr const GthPotentialRow* kGthPotentials[] = {
-    &kPot_H_GTH_PBE_q1,   &kPot_O_GTH_PBE_q6,   &kPot_Na_GTH_PBE_q9,
-    &kPot_Cl_GTH_PBE_q7,  &kPot_Zn_GTH_PBE_q12, &kPot_H_GTH_PADE_q1,
-    &kPot_Ar_GTH_PADE_q8,
+    &kPot_H_GTH_PBE_q1,   &kPot_O_GTH_PBE_q6,    &kPot_Na_GTH_PBE_q9,
+    &kPot_Cl_GTH_PBE_q7,  &kPot_Zn_GTH_PBE_q12,  &kPot_H_GTH_PADE_q1,
+    &kPot_Ar_GTH_PADE_q8, &kPot_Ni_GTH_PADE_q18, &kPot_O_GTH_PADE_q6,
+    &kPot_Si_GTH_PBE_q4,
 };
 
 inline constexpr const GaussianBasisRow* kGaussianBases[] = {
@@ -396,7 +517,8 @@ inline constexpr const GaussianBasisRow* kGaussianBases[] = {
     &kBas_Na_DZVP_MOLOPT_SR_GTH, &kBas_Cl_DZVP_MOLOPT_SR_GTH,
     &kBas_Zn_DZVP_MOLOPT_SR_GTH, &kBas_H_DZVP_MOLOPT_GTH,
     &kBas_O_DZVP_MOLOPT_GTH,     &kBas_H_DZV_GTH_PADE,
-    &kBas_Ar_DZVP_GTH_PADE,
+    &kBas_Ar_DZVP_GTH_PADE,      &kBas_Ni_SZV_GTH_PADE_q18,
+    &kBas_O_SZV_GTH_PADE,        &kBas_Si_DZVP_MOLOPT_GTH,
 };
 
 } // namespace basis_data

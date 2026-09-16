@@ -1,30 +1,29 @@
-# Chapter 15: Cross-Method Workflows — Swap the Evaluator
+# Chapter 15. Cross-Method Workflows
 
-| | |
-|---|---|
-| **Example** | [`examples/06_aimd.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/06_aimd.cpp) |
-| **Pattern** | one Driver, different force component |
-| **Examples** | `07_md_lj` (classical), `02_rhf` / `15_am1` (single-point), `06_aimd` (SCF forces in MD) |
+One Driver, different force-phase component.
 
 ```cpp
 // Classical
-sim.add_potential(cpu::PairLJCut{eps, sigma, cutoff});
+sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
 // AM1
 // sim.on(md::Phase::force).add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
 // AIMD
 // sim.on(md::Phase::force).add(cpu::scf::RHF{});
 ```
 
-```bash
-cmake --build build --target 06_aimd 07_md_lj 15_am1
-./build/examples/07_md_lj   # classical NVE — results/07_md_lj.json
-./build/examples/15_am1     # AM1 Evaluate + Minimize
-./build/examples/06_aimd    # BOMD / Nosé-Hoover + SCF
-```
-
 The architectural payoff of the whole book: method is a **Component**, never a
 new Driver category.
 
+> **Build flags.** The quantum half of every comparison below needs
+> `ATV_BUILD_HF=ON` (**OFF by default**); the AM1 line needs
+> `ATV_BUILD_SEMIEMPIRICAL`, which is ON by default. With `HF` off the
+> `cpu::scf::…` headers are not installed at all.
+>
+> ```bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ```
 
 Every chapter of this book has quietly repeated one sentence: *change method
 by swapping the evaluator, keep the driver.* This closing chapter stops
@@ -110,25 +109,22 @@ using namespace ATV;
 auto make_classical = []{ return cpu::PairLJCut{0.0104, 3.4, 6.8}; };
 
 // Quantum force provider: RHF/STO-3G, forces on by default
-auto make_quantum = [](const cpu::scf::IntegralPack& ints){
-    return cpu::scf::SCF{/* use cpu::scf::RHF */};
-};
+auto make_quantum = []{ return cpu::scf::RHF{cpu::scf::BasisSet::STO3G}; };
 ```
 
 ### Single-point energy — `cpu::Evaluate` / `cpu::single_point`
 
 The `cpu::single_point` helper wraps the one-pass `cpu::Evaluate` driver
-around a single evaluator. For an energy-only quantum single point, turn the
-gradient off so the evaluator drops `Capability::Force` and skips the gradient
-work:
+around a single evaluator or method-driver. For an energy-only quantum single
+point, turn the gradient off so the method stops writing the force columns and
+skips the gradient work:
 
 ```cpp
-auto ints = /* IntegralPack is private — use RHF */;
-auto scf  = cpu::scf::SCF{/* use cpu::scf::RHF */};
+auto scf = make_quantum();
 scf.with_gradient(false);                 // energy only
 
 cpu::single_point(frame, scf);            // frame.meta.get(kEnergy) (eV) populated
-double e_ha = scf.energy();   // and in Hartree on the result
+double e_ha = scf.energy();   // and in Hartree on the method
 ```
 
 For a classical single point, drive `cpu::Evaluate` directly with the
@@ -136,7 +132,7 @@ categorical setters (a pair potential needs a neighbor list):
 
 ```cpp
 cpu::Evaluate eval;
-eval.add_potential(make_classical());
+eval.set_evaluator(make_classical());
 eval.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
 eval.build();
 eval.run(frame);                          // frame.meta.get(kEnergy) (eV)
@@ -150,13 +146,13 @@ one-line change:
 
 ```cpp
 cpu::minimizer::Minimize opt;
-opt.add(cpu::minimizer::LBFGS{5, 0.01, 10});
+opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});
 opt.add_criterion(cpu::ForceConverged{0.05, 0.03, 0.1, 0.05, 1e-3});
 
 // Classical relaxation:
 opt.on(minimizer::Phase::force).add(make_classical());
 //   ── OR ── ab initio geometry optimization (one line different):
-opt.on(minimizer::Phase::force).add(make_quantum(ints));
+opt.on(minimizer::Phase::force).add(make_quantum());
 
 opt.build();
 int iters = opt.run(frame, /*max_iter=*/100);
@@ -173,23 +169,22 @@ sim.set_integrator(cpu::md::VelocityVerlet{/*dt=*/0.5});
 sim.set_thermostat(cpu::md::NoseHoover{300.0, 100.0, 0.5});   // NVT
 
 // Classical MD:
-sim.add_potential(make_classical());
+sim.set_evaluator(make_classical());
 sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
 //   ── OR ── AIMD (swap the force provider):
-sim.on(md::Phase::force).add(make_quantum(ints).predictor(3));
+sim.on(md::Phase::force).add(make_quantum().predictor(3));
 
 sim.set_thermo(100);
 sim.build();
 sim.run(frame, n_steps);
 ```
 
-The two `SCF` knobs that appear here are the workflow-tuning levers
+The two method knobs that appear here are the workflow-tuning levers
 this chapter is really about:
 
-- **`with_gradient(bool)`** — on by default (writes forces, advertises
-  `Capability::Force`); turn it off for energy-only single points, where it
-  also drops the force capability so the evaluator is legal in a pure
-  `Evaluate` context.
+- **`with_gradient(bool)`** — on by default (writes the `kAtom_fx/fy/fz`
+  columns); turn it off for energy-only single points, where it also stops the
+  method touching the force columns.
 - **`predictor(order)`** — the ASPC density predictor-corrector. For MD it
   extrapolates the density matrix from previous steps, cutting the SCF
   iteration count by 30–50% on production-scale systems (see the AIMD deep-dive
@@ -202,9 +197,9 @@ The MD row above is the single most consequential cell in the grid — *ab initi
 molecular dynamics (AIMD), where a fully converged SCF supplies the forces at
 every time step. The most common variant, running a converged SCF at each
 nuclear configuration, is **Born-Oppenheimer MD (BOMD)**. The runnable companion
-is [`examples/06_aimd.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/06_aimd.cpp), which propagates H₂ for
+propagates H₂ for
 50 fs of NVT at 100 K on RHF/STO-3G forces. Nothing in the loop "knows" the
-forces are quantum mechanical: the `SCF` advertises `Capability::Force`
+forces are quantum mechanical: the method writes the force columns
 and the driver treats it like any other force provider. But four practical
 points separate a toy run from a production one.
 
@@ -249,11 +244,11 @@ ensemble averages over many trajectories, never a single short one. (This is the
 analysis-side lesson of [Chapter 13](ch13-observables.md): an observable is a
 trajectory average, not an instantaneous reading.)
 
-**A design note that shaped `SCF::launch`.** `VelocityVerlet` wraps
+**A design note that shaped the method's force-phase launch.** `VelocityVerlet` wraps
 atoms through periodic boundaries, but the SCF integral builder is not
 minimum-image aware. If a boundary atom wrapped across the cell, the next SCF
 would see the molecule ~one box length apart and collapse onto the unphysical
-RHF ionic limit. To close that trap, `SCF::launch` reassembles the
+RHF ionic limit. To close that trap, the method reassembles the
 molecule by minimum image relative to atom 0 before each integral build, then
 restores the wrapped positions before returning — so any geometry inside the cell
 is acceptable and you never have to centre atoms yourself. (The anchor-on-atom-0
@@ -301,7 +296,7 @@ consistency check that the evaluator carries no illegal step-to-step state.
 
 The cross-method promise is validated at two levels.
 
-**Composition.** The `SCF` is tested to coexist, without conflict,
+**Composition.** The concrete method is tested to coexist, without conflict,
 with every ensemble and driver it is supposed to plug into — Nosé-Hoover,
 Langevin, and Berendsen-barostat MD; L-BFGS and CG minimization; and the
 single-pass evaluate driver. These composition tests are what certify that
@@ -334,13 +329,13 @@ pattern recurs" section pointed at this one:
 
 ```text
 cpu::Evaluate            + PairLJCut     = classical single point
-cpu::Evaluate            + SCF  = quantum single point
+cpu::Evaluate            + scf::RHF  = quantum single point
 cpu::minimizer::Minimize + PairLJCut     = classical relaxation
-cpu::minimizer::Minimize + SCF  = ab initio geometry optimization
+cpu::minimizer::Minimize + scf::RHF  = ab initio geometry optimization
 cpu::md::MD              + PairLJCut     = classical molecular dynamics
-cpu::md::MD              + SCF  = ab initio molecular dynamics
+cpu::md::MD              + scf::RHF  = ab initio molecular dynamics
 cpu::vib::Hessian        + PairLJCut     = force-field vibrational analysis
-cpu::vib::Hessian        + SCF  = ab initio vibrational analysis
+cpu::vib::Hessian        + scf::RHF  = ab initio vibrational analysis
 ```
 
 Four drivers down the left, two evaluators across the top, eight distinct
@@ -360,12 +355,13 @@ different from the one you already know.
 
 ## Validation Reference
 
-The evaluator-composition tests (SCF coexisting with NVE/NVT/NPT
-integrators and both minimizers, plus the state-leakage single-point-vs-
-propagation check) live in
-[`tests/cpu/scf/test_scf_evaluator.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_scf_evaluator.cpp)
-and
-[`tests/cpu/scf/test_aimd_conservation.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_aimd_conservation.cpp);
+Evaluator composition — a Gaussian SCF method standing in for a classical
+force field inside the same MD loop — is proved end-to-end by
+[`regressions/architecture/lj_rhf_coupled`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/architecture/lj_rhf_coupled)
+and by the AIMD energy-conservation case
+[`regressions/scf/h2_rhf_sto3g_aimd`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2_rhf_sto3g_aimd);
+that one driver shape serves several method kinds is
+[`regressions/architecture/harmonic_driver_matrix`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/architecture/harmonic_driver_matrix).
 the optimizer hot-swap (LBFGS ↔ CG on one `Minimize` driver) in
 [`tests/cpu/test_minimize_driver_swap_optimizer.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/test_minimize_driver_swap_optimizer.cpp).
 The end-to-end golden cross-method run is the designated integration

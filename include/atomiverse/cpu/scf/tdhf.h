@@ -51,6 +51,10 @@ struct ExcitedStatesResult {
     /// @brief true = Tamm-Dancoff approximation (B = 0; CIS on an HF
     ///        reference), false = full TDHF/RPA (dimensionless flag).
     bool tda = false;
+
+    /// @brief true when full MO-product ALDA \(f^{\mathrm{xc}}\) was applied
+    ///        to the Casida A matrix (RKS LSDA TDA path).
+    bool alda = false;
 };
 
 } // namespace scf

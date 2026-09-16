@@ -1,4 +1,4 @@
-/// @file neighborlist/export_pairs.cu
+/// @file cuda/neighbor/export_pairs.cu
 /// @brief Cluster flat pairs → atom-level PairList with full triclinic PBC.
 
 #include "nlist_data.cuh"
@@ -14,6 +14,9 @@ namespace ATV::cuda::md::nlist {
 // Templated on `bool Ortho` so the per-pair PBC wrap dead-eliminates
 // the triclinic branch in the orthorhombic specialization
 // (cuda-md-review-cleanup-04-box-by-value-pbc).
+//
+// Multi-word masks (CS=32): each flat pair has kMaskWords uint64s; bit
+// (i_slot * CS + j_slot) marks an interacting atom pair.
 template <bool Ortho>
 __global__ void export_atom_pairs_kernel(
     const int* __restrict__ flat_ci, const int* __restrict__ flat_cj,
@@ -34,56 +37,63 @@ __global__ void export_atom_pairs_kernel(
 
     int ci = flat_ci[idx];
     int cj = flat_cj[idx];
-    uint64_t mask = flat_mask[idx];
     int cap = *capacity_ptr;
+    const uint64_t* mwords =
+        flat_mask + static_cast<std::size_t>(idx) * kMaskWords;
 
-    // Batch slot reservation: count all pairs this thread will emit,
-    // reserve slots with a single atomicAdd, then write sequentially.
-    // Reduces global atomic contention from O(n_pairs) to O(n_threads).
-    int my_count = __popcll(mask);
+    int my_count = 0;
+#pragma unroll
+    for (int w = 0; w < kMaskWords; ++w)
+        my_count += __popcll(mwords[w]);
+
     int my_base = 0;
     if (my_count > 0)
-        my_base = atomicAdd(out_count, int(my_count));
+        my_base = atomicAdd(out_count, my_count);
 
     int local = 0;
-    while (mask != 0) {
-        int bit = __ffsll(mask) - 1;
-        mask &= mask - 1;
+    for (int w = 0; w < kMaskWords; ++w) {
+        uint64_t mask = mwords[w];
+        while (mask != 0) {
+            int bit = __ffsll(mask) - 1;
+            mask &= mask - 1;
+            int linear = w * 64 + bit;
+            int si = linear / kClusterSize;
+            int sj = linear % kClusterSize;
 
-        int ai = original_index[ci * kClusterSize + bit / kClusterSize];
-        int aj = original_index[cj * kClusterSize + bit % kClusterSize];
+            int ai = original_index[ci * kClusterSize + si];
+            int aj = original_index[cj * kClusterSize + sj];
+            if (ai < 0 || aj < 0)
+                continue;
 
-        work_t dx = pos_x[aj] - pos_x[ai];
-        work_t dy = pos_y[aj] - pos_y[ai];
-        work_t dz = pos_z[aj] - pos_z[ai];
+            work_t dx = pos_x[aj] - pos_x[ai];
+            work_t dy = pos_y[aj] - pos_y[ai];
+            work_t dz = pos_z[aj] - pos_z[ai];
 
-        if (periodic) {
-            if constexpr (Ortho) {
-                dx -=
-                    work_t(box.cell[0]) * nearbyint(dx * work_t(box.inv_l[0]));
-                dy -=
-                    work_t(box.cell[4]) * nearbyint(dy * work_t(box.inv_l[1]));
-                dz -=
-                    work_t(box.cell[8]) * nearbyint(dz * work_t(box.inv_l[2]));
-            } else {
-                box.min_image(dx, dy, dz);
+            if (periodic) {
+                if constexpr (Ortho) {
+                    dx -= work_t(box.cell[0])
+                          * nearbyint(dx * work_t(box.inv_l[0]));
+                    dy -= work_t(box.cell[4])
+                          * nearbyint(dy * work_t(box.inv_l[1]));
+                    dz -= work_t(box.cell[8])
+                          * nearbyint(dz * work_t(box.inv_l[2]));
+                } else {
+                    box.min_image(dx, dy, dz);
+                }
             }
-        }
 
-        // Store r² (no sqrt). LJ uses inv_r² directly; RDF takes
-        // sqrt at host read (one sqrt per pair only when RDF is
-        // bound, vs one per pair every step for sqrt in export).
-        work_t r2 = dx * dx + dy * dy + dz * dz;
-        int slot = my_base + local;
-        if (slot < cap) {
-            out_i[slot] = static_cast<int>(ai);
-            out_j[slot] = static_cast<int>(aj);
-            out_dx[slot] = dx;
-            out_dy[slot] = dy;
-            out_dz[slot] = dz;
-            out_dist_sq[slot] = r2;
+            work_t r2 = dx * dx + dy * dy + dz * dz;
+            int slot = my_base + local;
+            if (slot < cap) {
+                out_i[slot] = ai;
+                out_j[slot] = aj;
+                out_dx[slot] = dx;
+                out_dy[slot] = dy;
+                out_dz[slot] = dz;
+                out_dist_sq[slot] = r2;
+            }
+            local++;
         }
-        local++;
     }
 }
 

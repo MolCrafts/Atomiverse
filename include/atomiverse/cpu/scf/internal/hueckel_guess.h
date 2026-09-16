@@ -86,12 +86,12 @@ class HueckelGuess {
   public:
     /// @brief Assemble the extended-Hückel Fock matrix.
     /// @param shells Cartesian AO shell descriptors (one entry per Cartesian
-    ///               AO; centers in Bohr) — `IntegralPack::shells`.
+    ///               AO; centers in Bohr) — `internal::IntegralWorkspace::shells`.
     /// @param S      Overlap matrix (dimensionless) in the WORKING AO basis
     ///               (spherical when the basis convention is spherical); its
     ///               dimension selects the Cartesian/spherical AO mapping.
     /// @param atoms  Atom descriptors (Z, position in Bohr) supplying the
-    ///               element of each shell center — `IntegralPack::atoms`.
+    ///               element of each shell center — `internal::IntegralWorkspace::atoms`.
     /// @throws std::invalid_argument on an unsupported element/shell type
     ///         (Z > 18 or l > 2), on an S dimension matching neither AO
     ///         convention, or on a shell centered on no atom. No fallback.

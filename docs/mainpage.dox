@@ -1,24 +1,24 @@
 /**
-@mainpage Atomiverse -- Unified Molecular Simulation Platform
+@mainpage Atomiverse -- an engine for multiscale, multiphysics atomistic simulation
 
 @tableofcontents
 
 @section intro Overview
 
 Atomiverse is a molecular simulation codebase written in modern C++ and CUDA.
-It uses one staged execution model to express three families of workflows:
-molecular dynamics, minimization, and self-consistent electronic-structure
-calculations.
+It uses one staged execution model to express every workflow it supports:
+molecular dynamics, Monte Carlo, geometry optimization, vibrational analysis,
+reaction paths, and self-consistent electronic structure.
 
 The project is built around a clear separation of responsibilities:
 
 - the **user-facing data model** lives in `cpu::Frame`
-- the **facade layer** compiles a staged execution plan
+- the **core contract layer** compiles a staged execution plan and is CUDA-free
 - the **CPU and CUDA backends** execute that plan with different storage models
 - the **API reference** documents the exact classes, functions, and headers
 
 All public examples and build instructions in this repository assume
-**C++17 or later**.
+**C++20 or later**.
 
 @section docs Documentation Structure
 
@@ -28,7 +28,7 @@ different kind of question.
 - [User Guide](user-guide/index.md) -- how to build the project, choose examples,
   and understand the main workflows without assuming prior chemistry knowledge
 - [Developer Manual](developer/index.md) -- how the repository is organized
-  internally, why the facade/backend split exists, and how to extend the code
+  internally, why the core/backend split exists, and how to extend the code
 - [API Reference](api/index.md) -- where to find the exact classes, functions,
   headers, and generated reference pages
 
@@ -96,7 +96,7 @@ criterion in its constructor. The same wiring drives classical relaxation
 (`SCFEvaluator` at force). The CUDA side mirrors this exactly:
 `cuda::minimizer::Minimize` takes `SteepestDescent`, `CG`, or `LBFGS`
 Optimizer components. Both are presets over the one loop node
-(`cpu::CPUDriver<P>` / `cuda::CUDADriver<P>`) — there is no category
+(`cpu::Driver<P>` / `cuda::Driver<P>`) — there is no category
 base class between them. Ask the driver for the verdict
 (`opt.converged()`, `opt.stop_reason()`), never the optimizer.
 
@@ -114,9 +114,20 @@ not a new driver class.
 
 Electronic-structure code exists in two complementary forms:
 
-- the CPU `cpu::scf::SCFSolver`, configured for RHF, UHF, RKS, or UKS
-- a device-resident CUDA inner solver `cuda::scf::SCFSolver`, wrapped by the
-  `cuda::scf::SCFEvaluator` component and driven by `cuda::Evaluate`
+- the CPU concrete methods `cpu::scf::RHF` / `UHF` / `RKS` / `UKS` — each a
+  `Driver<scf::Phase>` node in its own right, so `rhf.run(frame)` drives the
+  self-consistency loop and nesting the same object at an outer force phase
+  drives AIMD or geometry optimization
+- a device-resident private RHF cycle (`internal::RhfScfCycle`) owned by
+  `cuda::scf::SCF` component and driven by `cuda::Evaluate`
+
+@code
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
+rhf.run(frame);                 // frame.meta.get(kEnergy) [eV]
+@endcode
+
+There is no bag named `cpu::scf::SCFSolver`, no `SCFConfig`, and no
+method-agnostic `cpu::scf::SCF` — name the ansatz you mean.
 
 The user guide explains when to choose each path. The developer manual explains
 why both layers exist.
@@ -136,7 +147,6 @@ Representative entry points:
 - `examples/07_md_lj.cu` -- CUDA twin of the same classical-MD lesson
 - `examples/08_pw.cpp` -- plane-wave DFT for a periodic solid
 - `examples/09_gpw.cpp` -- GPW DFT single point (water)
-- `examples/10_gpw_znoedl.cpp` -- GPW DFT for a 1214-atom ZnO EDL slab
 
 @section docsbuild Building The Docs
 

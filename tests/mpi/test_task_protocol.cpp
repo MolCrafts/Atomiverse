@@ -140,7 +140,7 @@ cpu::Frame make_lj_frame() {
         for (int d = 0; d < 3; ++d)
             frame.span(ATV::kAtom_image)(i, d) = fixture_image(i, d);
     }
-    frame.simbox = ATV::cpu::Box::cubic(30.0);
+    frame.box = ATV::cpu::Box::cubic(30.0);
     return frame;
 }
 
@@ -220,7 +220,7 @@ void expect_result_frame_contract(const cpu::Frame& result,
 
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 3; ++c)
-            EXPECT_EQ(result.simbox.cell()(r, c), (r == c) ? 30.0 : 0.0)
+            EXPECT_EQ(result.box.cell()(r, c), (r == c) ? 30.0 : 0.0)
                 << "box(" << r << ", " << c << ")";
 
     // Globally reduced scalars, comparable on rank 0 without a second

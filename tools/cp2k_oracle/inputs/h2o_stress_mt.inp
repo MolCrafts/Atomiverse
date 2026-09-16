@@ -1,0 +1,79 @@
+! Offline CP2K twin for regressions/gpw/gpw-stress-water/
+! Never launched by ctest. Same geometry as h2o_forces_mt.inp.
+! STRESS_TENSOR NUMERICAL — same-method twin as Atomiverse strain-FD.
+! (ANALYTICAL stress on nonperiodic MT is not the pin; see REFERENCE.md.)
+!
+! Example:
+!   module load buildtool-easybuild/... GCC/... MPICH/... CP2K/2026.1
+!   export CP2K_DATA_DIR=.../share/cp2k/data
+!   mpirun -n 1 cp2k.psmp -i h2o_stress_mt.inp -o h2o_stress_mt.out
+! Then record STRESS| Numerical stress tensor into REFERENCE.md.
+
+&GLOBAL
+  PROJECT h2o_stress_mt
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  STRESS_TENSOR NUMERICAL
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 400
+      REL_CUTOFF 60
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-12
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 200
+      &OT
+        PRECONDITIONER FULL_SINGLE_INVERSE
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        EPS_SCF 1.0E-7
+        MAX_SCF 20
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 10.0 10.0 10.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      O  5.0000  5.0000  5.0000
+      H  5.7586  5.0000  5.5043
+      H  4.2414  5.0000  5.5043
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+  &END SUBSYS
+  &PRINT
+    &FORCES ON
+    &END FORCES
+    &STRESS_TENSOR ON
+    &END STRESS_TENSOR
+  &END PRINT
+&END FORCE_EVAL

@@ -16,7 +16,7 @@ static cpu::Frame make_h() {
     f.span(kAtom_z)[0] = 0;
     f.span(kAtom_type)[0] = 1;
     f.span(kAtom_mass)[0] = 1.008;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 

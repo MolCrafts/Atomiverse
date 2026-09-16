@@ -29,10 +29,9 @@
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/comm/halo_exchange.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -68,7 +67,7 @@ cpu::Frame make_fcc_argon(int n_cells, double a_lat) {
                     frame.span(ATV::kAtom_vz)[idx] = 0.0;
                     ++idx;
                 }
-    frame.simbox = ATV::cpu::Box::cubic(n_cells * a_lat);
+    frame.box = ATV::cpu::Box::cubic(n_cells * a_lat);
     return frame;
 }
 
@@ -90,8 +89,8 @@ double lj_pair_energy(double r2, double eps, double sigma, double cutoff) {
 double brute_force_lj_energy(const cpu::Frame& frame, double eps, double sigma,
                              double cutoff) {
     const int n = frame.nlocal();
-    const double lx = frame.simbox.cell()(0, 0), ly = frame.simbox.cell()(1, 1),
-                 lz = frame.simbox.cell()(2, 2);
+    const double lx = frame.box.cell()(0, 0), ly = frame.box.cell()(1, 1),
+                 lz = frame.box.cell()(2, 2);
     double e = 0.0;
     for (int i = 0; i < n; ++i) {
         for (int j = i + 1; j < n; ++j) {
@@ -145,11 +144,10 @@ TEST(LjEnergyBruteForce, GlobalEnergyMatchesBruteForce) {
     ASSERT_GT(std::abs(e_bf), 1e-9) << "degenerate oracle energy";
 
     cpu::md::MD sim;
-    sim.add(cpu::md::VelocityVerlet{0.0}); // dt = 0 → positions frozen
-    sim.on(ATV::md::Phase::force).add(cpu::md::NeighborList<>{cutoff}, -10);
+    sim.set_integrator(
+        cpu::md::VelocityVerlet{0.0}); // dt = 0 → positions frozen
+    sim.set_neighbor(cpu::md::NeighborList<>{cutoff});
     sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{eps, sigma, cutoff});
-    sim.on(ATV::md::Phase::pre_force).add(cpu::comm::HaloSend{cutoff}, -20);
-    sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
     sim.build();
 
     sim.run(frame, 1); // one frozen step → Reduce fills global energy

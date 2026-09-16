@@ -25,11 +25,11 @@
 #include <random>
 #include <type_traits>
 
-#include "atomiverse/cpu/async/analysis_executor.h"
+#include "atomiverse/core/iteration_status.h"
+#include "atomiverse/cpu/asynchronous/analysis_executor.h"
 #include "atomiverse/cpu/component/context.h"
-#include "atomiverse/cpu/mc/transaction.h"
+#include "atomiverse/cpu/montecarlo/transaction.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
-#include "atomiverse/facade/iteration_status.h"
 
 using namespace ATV;
 

@@ -1,0 +1,54 @@
+# Offline oracle note — dfpt-gga-spin-si (PW DFPT joint spin × GGA, diamond Si)
+
+## Intent
+
+Pin Γ-point DFPT phonons for diamond Si with the **joint** collinear-spin ×
+pure-GGA response kernel (`nspin=2`, multiplicity=1, PBE) on the plane-wave
+method — the product of the two shipped single-axis pins `dfpt-gga-si`
+(restricted PBE kernel) and `dfpt-spin-si` (collinear LSDA kernel).
+
+## Oracle status (2026-07-31) — CP2K RUN, offline
+
+**CP2K 2026.1** (source rev `85b8a9b49c`, `~/.local/bin/cp2k`, Arrhenius
+epyc login node — same binary as the wave-14 `gpw-d3-forces` pin; no module,
+`module avail cp2k` still empty). CP2K has no PW-DFPT, so the twin is
+`RUN_TYPE VIBRATIONAL_ANALYSIS` — FD of analytic UKS **k-point** forces on
+the same spin×GGA Hamiltonian class:
+
+- Input: `inputs/dfpt-gga-spin-si/si2_uks_pbe_vib.inp` (LSD, MULTIPLICITY 1,
+  PBE, DZVP-MOLOPT-SR-GTH, GTH-PBE-q4, CUTOFF 300 Ry, MP 2×2×2,
+  `FULLY_PERIODIC T`, DX 0.01 bohr, `EPS_SCF 1e-8`).
+- Run: `CP2K_DATA_DIR=<cp2k>/data OMP_NUM_THREADS=1 cp2k -i si2_uks_pbe_vib.inp -o out`
+- Output line:
+  `VIB|Frequency (cm^-1)  4.6344295423E+02    5.5219216579E+02    5.5219217231E+02`
+  → optical Γ modes **463.44, 552.19, 552.19 cm⁻¹** (translations projected
+  out by CP2K). Identical to 5 digits at `EPS_SCF 1e-7` — the 89 cm⁻¹
+  splitting of the [111]-polarized member is systematic to CP2K's
+  displaced-cell k-point FD, not SCF noise. Mean 522.6 cm⁻¹, near the
+  ~517 cm⁻¹ experimental Raman anchor.
+- Wall (serial, 1 thread): **221.8 s** (1e-8; 143.7 s at 1e-7). ATV DFPT twin
+  regression: **44.7 s** → fair ratio r = T_atv/T_cp2k = **0.20** (≤ 10).
+
+The GPW GTH/MOLOPT representation differs from the ATV NC-UPF 10 Ry PW twin,
+so the CP2K number anchors the **physics window** ([450, 650] cm⁻¹), not the
+digit. The sharp same-Hamiltonian gate is below.
+
+## Sharp pin (same Hamiltonian, energy-only path)
+
+Central second difference of the **collinear-spin PBE** PW SCF total energy
+(h = 0.03 Å on atom-0 x, SCF tol 1e-9, identical ecut/k/XC/UPF/spin):
+C[(0x),(0x)] = (E⁺ − 2E⁰ + E⁻)/h² · 27.211386245988 / h[Å]² =
+**17.3454 eV/Å²** (E⁰ = −7.820593875040 Ha, E± = −7.820306828150 /
+−7.820307232893 Ha; this host, 2026-07-31, Release, OMP=1). Recorded with
+the DFPT gates in `regressions/response/dfpt-gga-spin-si/REFERENCE.md`.
+
+## Twin settings (match regression)
+
+| Item | Value |
+| ---- | ----- |
+| Cell | diamond Si, a = 5.43 Å, 2-atom fcc primitive |
+| PP | `tests/data/pw/Si_lda_nc.upf` (in-tree NC ONCV) |
+| XC | PBE (pure GGA; joint spin kernel via FD of the spin-GGA XC operator) |
+| Spin | collinear, multiplicity = 1 (M = 0) |
+| ecut | 10 Ry |
+| k-mesh | 2×2×2 MP |

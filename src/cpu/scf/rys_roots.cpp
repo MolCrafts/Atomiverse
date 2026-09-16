@@ -24,8 +24,8 @@
 
 #include <cfloat>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
+#include <stdexcept>
+#include <string>
 
 namespace ATV {
 namespace cpu {
@@ -94,14 +94,14 @@ void rys_roots(int nroots, double x, double* u, double* w) {
         err = rys_roots_iterative(nroots, x, u, w);
         break;
     default:
-        std::fprintf(stderr,
-                     "ATV::rys_roots: nroots=%d not supported (max 7)\n",
-                     nroots);
-        std::abort();
+        throw std::invalid_argument("ATV::rys_roots: nroots="
+                                    + std::to_string(nroots)
+                                    + " not supported (max 7)");
     }
     if (err) {
-        std::fprintf(stderr, "rys_roots fails: nroots=%d x=%g\n", nroots, x);
-        std::abort();
+        throw std::runtime_error("rys_roots fails: nroots="
+                                 + std::to_string(nroots)
+                                 + " x=" + std::to_string(x));
     }
 }
 

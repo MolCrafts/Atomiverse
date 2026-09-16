@@ -1,0 +1,99 @@
+! Offline CP2K twin for regressions/gpw/gpw-d4-atm-kpoint-stress/
+! Never launched by ctest. Water-dimer GPW PBE-D4 + MONKHORST-PACK 1 1 2
+! + STRESS_TENSOR NUMERICAL. Pin = this run minus the two-body s9=0 twin:
+! D4+ATM (s9=1). Pair with water_dimer_d4_2b_kpoint_stress.inp (s9=0):
+! D4 is geometry-only, so electronic + two-body cancel; Δσ isolates ATM. K-points need DIAGONALIZATION (not OT).
+! EPS_SCF 1e-8 for FD-diff floor.
+!
+! Requires cp2k built with -DCP2K_USE_DFTD4=ON (cp2kflags includes dftd4).
+! Private Arrhenius rebuild: /nobackup/.../cp2k-dftd4/install (git:5e54ba2).
+!
+! Fair wall (offline only):
+!   export PATH=.../cp2k-dftd4/install/bin:$PATH
+!   export LD_LIBRARY_PATH=.../dftd4/3.7.0.../lib64:$LD_LIBRARY_PATH
+!   export CP2K_DATA_DIR=.../cp2k/src/data
+!   export OMP_NUM_THREADS=8
+!   mpirun -np 1 cp2k.psmp -i water_dimer_d4_atm_kpoint_stress.inp \
+!          -o water_dimer_d4_atm_kpoint_stress.out
+&GLOBAL
+  PROJECT water_dimer_d4_atm_kpoint_stress
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  STRESS_TENSOR NUMERICAL
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 300
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+      FULL_GRID .FALSE.
+      SYMMETRY .FALSE.
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      MAX_SCF 80
+      EPS_SCF 1.0E-8
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+      &VDW_POTENTIAL
+        DISPERSION_FUNCTIONAL PAIR_POTENTIAL
+        &PAIR_POTENTIAL
+          TYPE DFTD4
+          REFERENCE_FUNCTIONAL PBE
+          ! 2-body cutoff (D4_CUTOFF) must be >= 3-body (R_CUTOFF) in a.u. terms.
+          D4_CUTOFF 30.0
+          R_CUTOFF 20.0
+          CALCULATE_C9_TERM .TRUE.
+          FACTOR_S9_TERM 1.0
+          VERBOSE_OUTPUT .TRUE.
+        &END PAIR_POTENTIAL
+      &END VDW_POTENTIAL
+    &END XC
+  &END DFT
+  &PRINT
+    &STRESS_TENSOR ON
+    &END STRESS_TENSOR
+  &END PRINT
+  &SUBSYS
+    &CELL
+      ABC 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      O  0.000000  0.000000  0.000000
+      H  0.758602  0.000000  0.504284
+      H  0.758602  0.000000 -0.504284
+      O  3.000000  0.000000  0.000000
+      H  3.758602  0.000000  0.504284
+      H  3.758602  0.000000 -0.504284
+    &END COORD
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-SR-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

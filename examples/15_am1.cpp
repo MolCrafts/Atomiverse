@@ -2,7 +2,8 @@
 /// @brief AM1 semiempirical single-point, force check, and short Minimize.
 ///
 /// Teaches: Semiempirical kind + AM1Evaluator (no SE Driver); energy, ΔHf,
-/// analytic forces; geometry step on Minimize. See docs/tutorial/ch17.
+/// nuclear forces (a central finite difference of the energy at fixed
+/// converged density); geometry step on Minimize. See docs/tutorial/ch17.
 ///
 /// Build: -DATV_BUILD_EXAMPLES=ON (no RHF/PW gate — AM1 is always in the CPU
 /// library).
@@ -12,15 +13,15 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/driver/criteria.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/minimizer/lbfgs.h"
-#include "atomiverse/cpu/minimizer/minimize.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/scf/methods.h"
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
-#include "atomiverse/facade/stage.h"
 
 namespace {
 
@@ -43,7 +44,7 @@ ATV::cpu::Frame make_water() {
         f.span(ATV::kAtom_mass)[i] =
             (f.span(ATV::kAtom_type)[i] == 8) ? 15.999 : 1.008;
     }
-    f.simbox = ATV::cpu::Box::cubic(20.0);
+    f.box = ATV::cpu::Box::cubic(20.0);
     return f;
 }
 

@@ -1,0 +1,66 @@
+! CP2K twin for regressions/gpw/ot-kpoints — OT + KPOINTS on compact H2.
+! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
+! Cell 8 Bohr cubic, DZV-GTH-PADE / GTH-PADE-q1, PADE, CUTOFF 100,
+! KPOINTS GENERAL (0.25 0 0) w=1, OT FULL_SINGLE_INVERSE.
+! Pin: total energy [Ha] → REFERENCE.md / reg when CP2K is available.
+
+&GLOBAL
+  PROJECT h2_ot_kpoints
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_SET
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 100
+      NGRIDS 1
+    &END MGRID
+    &QS
+      EPS_DEFAULT 1.0E-7
+    &END QS
+    &KPOINTS
+      SCHEME GENERAL
+      FULL_GRID .FALSE.
+      VERBOSE .FALSE.
+      UNIT B_VECTOR
+      &KPOINT
+        0.25 0.0 0.0 1.0
+      &END KPOINT
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-8
+      MAX_SCF 200
+      &OT
+        PRECONDITIONER FULL_SINGLE_INVERSE
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 20
+        EPS_SCF 1.0E-8
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC [bohr] 8.0 8.0 8.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      H  3.3  4.0  4.0
+      H  4.7  4.0  4.0
+    &END COORD
+    &KIND H
+      BASIS_SET DZV-GTH-PADE
+      POTENTIAL GTH-PADE-q1
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

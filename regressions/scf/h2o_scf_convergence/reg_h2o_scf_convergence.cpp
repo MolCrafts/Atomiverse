@@ -45,7 +45,7 @@ cpu::Frame make_h2o(double stretch) {
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -hx;
     frame.span(kAtom_z)[2] = hz;
-    frame.simbox = cpu::Box::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
     return frame;
 }
 
@@ -125,8 +125,8 @@ int main() {
         ++failures;
     }
     if (!(r[3].iterations < r[0].iterations)) {
-        std::printf("FAIL: iters(SAP)=%d !< iters(Hcore)=%d\n",
-                    r[3].iterations, r[0].iterations);
+        std::printf("FAIL: iters(SAP)=%d !< iters(Hcore)=%d\n", r[3].iterations,
+                    r[0].iterations);
         ++failures;
     }
 

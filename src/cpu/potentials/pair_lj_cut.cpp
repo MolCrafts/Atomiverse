@@ -3,7 +3,7 @@
 
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/comm/domain.h"
+#include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
 
 #include <algorithm>
@@ -172,9 +172,9 @@ void PairLJCut::build(const BuildContext& ctx) {
     special_.s13 = s13_;
     special_.s14 = s14_;
     any_special_ = special_.active();
-    has_partial_special_ =
-        (s12_ > 0.0 && s12_ < 1.0) || (s13_ > 0.0 && s13_ < 1.0)
-        || (s14_ > 0.0 && s14_ < 1.0);
+    has_partial_special_ = (s12_ > 0.0 && s12_ < 1.0)
+                           || (s13_ > 0.0 && s13_ < 1.0)
+                           || (s14_ > 0.0 && s14_ < 1.0);
     special_.clear();
     if (!any_special_)
         return;
@@ -305,7 +305,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
             "NeighborList component to the force phase ahead of LJ?");
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
-    const auto& box = f.simbox;
+    const auto& box = f.box;
     int n_force = f.nlocal();
     const auto* dd = ctx.runtime.md.dd;
     if (dd && ctx.runtime.mpi_size > 1) {
@@ -408,7 +408,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
 #endif
         // Single-thread (pure-MPI): accumulate straight into the frame's force
         // arrays — already cleared by ZeroForces (owned rows) +
-        // HaloSend::zero_ghost_forces (ghost rows). Elides the per-step
+        // CommBrick::zero_ghost_forces (ghost rows). Elides the per-step
         // zero-fill below AND the reduce sweep at the end of the region, two
         // O(n_force) passes LAMMPS never pays. The multi-thread path keeps each
         // thread's writes in a private buffer to avoid the shared-row race.
@@ -645,14 +645,39 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                 acc_fix = acc_fix + v_fxp;
                 acc_fiy = acc_fiy + v_fyp;
                 acc_fiz = acc_fiz + v_fzp;
-                if (do_virial) {
-                    acc_vxx = acc_vxx + v_dx * v_fxp;
-                    acc_vyy = acc_vyy + v_dy * v_fyp;
-                    acc_vzz = acc_vzz + v_dz * v_fzp;
-                    acc_vxy = acc_vxy + v_dx * v_fyp;
-                    acc_vxz = acc_vxz + v_dx * v_fzp;
-                    acc_vyz = acc_vyz + v_dy * v_fzp;
-                }
+                // UNCONDITIONAL — do NOT put `if (do_virial)` back here.
+                //
+                // These six batch reduction chains used to sit inside that
+                // loop-invariant branch. Under the project's own Release
+                // flags (GCC 14.3, `-O3 -march=native`, AVX-512 ⇒ W = 8) the
+                // optimizer then dropped most of the accumulation: on a 64-ion
+                // jittered lattice the ket loop contributed −0.294 eV to the
+                // virial trace where the same registers, summed lane-serially,
+                // give −4.168 eV. Energy and forces stayed exact to 1e-17, so
+                // nothing looked wrong — the total pair virial was simply 60 %
+                // short, and every pressure, stress and barostat number taken
+                // from the default single-type LJ path with it. `-O2`,
+                // `-Os`, `-O3` without `-march=native`, and
+                // `-O3 -march=native -fno-tree-vectorize` all produced the
+                // correct value; only the shipped combination did not.
+                //
+                // The branch was a micro-optimisation (skip 6 batch FMAs in a
+                // plain NVE run). Correct stress outranks it, and a
+                // branch-free accumulation is the form the auto-vectorizer
+                // cannot reassociate away. `do_virial` still gates the
+                // horizontal reduce, the scalar tail and the flush below — all
+                // of which are outside this innermost loop.
+                //
+                // Pinned by tests/cpu/potentials/test_pair_virial.cpp
+                // (`PairLJCut.SimdKetLoopVirialMatchesLatticeSum`), which
+                // compares against an independent brute-force image sum and so
+                // catches the miscompilation whatever produces it.
+                acc_vxx = acc_vxx + v_dx * v_fxp;
+                acc_vyy = acc_vyy + v_dy * v_fyp;
+                acc_vzz = acc_vzz + v_dz * v_fzp;
+                acc_vxy = acc_vxy + v_dx * v_fyp;
+                acc_vxz = acc_vxz + v_dx * v_fzp;
+                acc_vyz = acc_vyz + v_dy * v_fzp;
                 acc_e = acc_e
                         + xsimd::select(mask,
                                         v_eps4 * (v_r6inv * v_r6inv - v_r6inv)

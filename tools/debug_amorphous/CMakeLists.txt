@@ -17,11 +17,11 @@ target_link_libraries(run_atomiverse_amorphous
 target_include_directories(run_atomiverse_amorphous PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(run_atomiverse_amorphous PROPERTIES
-    CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 
 
 add_executable(prof_amorphous prof_amorphous.cpp)
 target_link_libraries(prof_amorphous PRIVATE atomiverse MPI::MPI_CXX)
 target_include_directories(prof_amorphous PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(prof_amorphous PROPERTIES
-    CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

@@ -24,12 +24,12 @@
 #include <utility>
 #include <vector>
 
-#include "atomiverse/cpu/comm/atom_pack.h"
-#include "atomiverse/cpu/comm/domain.h"
-#include "atomiverse/cpu/comm/schema_mpi.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/communication/atom_pack.h"
+#include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/communication/schema_mpi.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/facade/stage.h"
 
 namespace ATV {
 namespace debug_amorphous {

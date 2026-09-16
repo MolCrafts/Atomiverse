@@ -2,7 +2,7 @@
 /// @brief internal::GpwDiis — single-channel Pulay DIIS for the restricted GPW KS matrix.
 ///
 /// **Internal GPW helper.** Does NOT inherit `cpu::Component` and is not
-/// registered into any outer Driver Plan. Owned by the GPW SCF loop (`GPWSolver`)
+/// registered into any outer Driver Plan. Owned by the GPW SCF loop (`GPW`)
 /// and by tests (via direct include). Self-contained in `cpu::gpw::internal`;
 /// it reuses only `cpu::linalg` matrix types (never `cpu::scf::internal`), per
 /// the GPW domain-isolation rule.
@@ -64,6 +64,12 @@ class GpwDiis {
     /// @return Extrapolated KS matrix [Hartree] (latest H during warm-up / on
     ///         a singular subspace).
     RealMatrix step(const RealMatrix& H, const RealMatrix& e);
+
+    /// @brief Drop all stored (H, error) pairs (e.g. after an energy ascent).
+    void clear() {
+        h_hist_.clear();
+        e_hist_.clear();
+    }
 
   private:
     int max_vectors_;

@@ -81,8 +81,8 @@ void MixStage::launch(const cpu::LaunchContext& ctx) {
                 F_alpha_ = ediis_.step(F_alpha_, P_alpha_, energy_);
                 F_beta_ = F_alpha_;
             } else {
-                auto [Fa_e, Fb_e] = ediis_.step(F_alpha_, P_alpha_, F_beta_,
-                                                P_beta_, energy_);
+                auto [Fa_e, Fb_e] =
+                    ediis_.step(F_alpha_, P_alpha_, F_beta_, P_beta_, energy_);
                 F_alpha_ = Fa_e;
                 F_beta_ = Fb_e;
             }

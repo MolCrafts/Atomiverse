@@ -104,7 +104,7 @@ cpu::Frame single_atom_frame(int Z) {
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.simbox = cpu::Box::cubic(50.0);
+    f.box = cpu::Box::cubic(50.0);
     return f;
 }
 
@@ -117,7 +117,7 @@ cpu::Frame h2_frame(double bond_ang = 0.74) {
     }
     f.span(kAtom_z)[0] = 0.0;
     f.span(kAtom_z)[1] = bond_ang;
-    f.simbox = cpu::Box::cubic(50.0);
+    f.box = cpu::Box::cubic(50.0);
     return f;
 }
 
@@ -273,9 +273,8 @@ TEST(GShellIntegrals, FourCenterGQuartetThrows) {
     PrimBlock g(4, 0.9, c0);
     Dummy d;
     std::vector<double> buf(15 * 15 * 15 * 15, 0.0);
-    EXPECT_THROW(
-        native::rys_eri_block(g.blk, g.blk, g.blk, g.blk, buf.data()),
-        std::runtime_error);
+    EXPECT_THROW(native::rys_eri_block(g.blk, g.blk, g.blk, g.blk, buf.data()),
+                 std::runtime_error);
     // ... while the heaviest supported 3-center case (ff|g·1) runs.
     PrimBlock f1(3, 0.7, c0);
     std::vector<double> buf3(10 * 10 * 15, 0.0);
@@ -294,7 +293,7 @@ TEST(GShellIntegrals, FourCenterGQuartetThrows) {
 // aux c2s — against PySCF's spherical convention with no rescaling.
 TEST(DensityFitting, OxygenSphericalMetricVsPySCF) {
     cpu::Frame f = single_atom_frame(8);
-    IntegralPack pack{f, BasisSet::STO3G};
+    internal::IntegralWorkspace pack{f, BasisSet::STO3G};
     internal::DensityFitting df(pack.shells, pack.atoms, AuxBasis::Def2JKFIT);
 
     ASSERT_EQ(df.n_aux(), 77);
@@ -313,13 +312,13 @@ TEST(DensityFitting, OxygenSphericalMetricVsPySCF) {
 // ── Whitening algebra: W·V·Wᵀ = I to 1e-12. ──────────────────────────
 TEST(DensityFitting, MetricWhiteningIdentity) {
     cpu::Frame f = h2_frame();
-    IntegralPack pack{f, BasisSet::STO3G};
+    internal::IntegralWorkspace pack{f, BasisSet::STO3G};
     internal::DensityFitting df(pack.shells, pack.atoms, AuxBasis::Def2JKFIT);
 
     const auto& V = df.metric();
     const auto& W = df.v_inv_sqrt();
-    const RealMatrix I_test = xt::linalg::dot(
-        W, RealMatrix(xt::linalg::dot(V, xt::transpose(W))));
+    const RealMatrix I_test =
+        xt::linalg::dot(W, RealMatrix(xt::linalg::dot(V, xt::transpose(W))));
     const int n = df.n_aux();
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j) {
@@ -341,7 +340,7 @@ TEST(DensityFitting, MetricWhiteningIdentity) {
 //    path was silently substituted). ────────────────────────────────
 TEST(DensityFitting, FittedJKCloseToDenseH2) {
     cpu::Frame f = h2_frame();
-    IntegralPack pack{f, BasisSet::STO3G, 0, /*compute_eri=*/true};
+    internal::IntegralWorkspace pack{f, BasisSet::STO3G, 0, /*compute_eri=*/true};
     internal::DensityFitting df(pack.shells, pack.atoms, AuxBasis::Def2JKFIT);
 
     // Hcore-guess density: P = 2 C_occ C_occᵀ, n_occ = 1.
@@ -354,10 +353,8 @@ TEST(DensityFitting, FittedJKCloseToDenseH2) {
     // Dense exact J/K from the stored ERI tensor (chemist notation):
     //   J_kl = Σ_ij (ij|kl) P_ji,  K_il = Σ_jk (ij|kl) P_jk.
     const std::vector<std::size_t> ax01{0, 1}, ax10{1, 0}, ax12{1, 2};
-    const RealMatrix J_exact =
-        xt::linalg::tensordot(pack.ERI, P, ax01, ax10);
-    const RealMatrix K_exact =
-        xt::linalg::tensordot(pack.ERI, P, ax12, ax01);
+    const RealMatrix J_exact = xt::linalg::tensordot(pack.ERI, P, ax01, ax10);
+    const RealMatrix K_exact = xt::linalg::tensordot(pack.ERI, P, ax12, ax01);
 
     const RealMatrix J_fit = df.j_fitted(P);
     const RealMatrix K_fit = df.k_fitted_from_density(P);
@@ -408,10 +405,10 @@ TEST(DensityFitting, FittedJKCloseToDenseH2) {
 //    every auxiliary function → Cholesky pivot collapse). ─────────────
 TEST(DensityFitting, NearSingularMetricThrows) {
     cpu::Frame f = h2_frame(1e-7);
-    IntegralPack pack{f, BasisSet::STO3G};
-    EXPECT_THROW(internal::DensityFitting(pack.shells, pack.atoms,
-                                          AuxBasis::Def2JKFIT),
-                 std::runtime_error);
+    internal::IntegralWorkspace pack{f, BasisSet::STO3G};
+    EXPECT_THROW(
+        internal::DensityFitting(pack.shells, pack.atoms, AuxBasis::Def2JKFIT),
+        std::runtime_error);
 }
 
 #endif // ATV_HAS_HF

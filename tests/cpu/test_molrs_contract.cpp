@@ -7,7 +7,7 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/facade/molrs_contract.h"
+#include "atomiverse/core/molrs_contract.h"
 #include "atomiverse/molrs.hpp"
 
 namespace {

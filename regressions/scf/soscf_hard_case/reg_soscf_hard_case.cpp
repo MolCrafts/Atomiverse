@@ -63,7 +63,7 @@ cpu::Frame make_h2o(double stretch) {
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -hx;
     frame.span(kAtom_z)[2] = hz;
-    frame.simbox = cpu::Box::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
     return frame;
 }
 
@@ -79,7 +79,7 @@ cpu::Frame make_n2(double R) {
     frame.span(kAtom_y)[1] = 0.0;
     frame.span(kAtom_z)[1] = 2.5;
     (void)R;
-    frame.simbox = cpu::Box::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
     return frame;
 }
 
@@ -115,8 +115,8 @@ int main() {
     soscfA.run(fA2);
     const double homoA = soscfA.determinant().homo(Spin::alpha);
 
-    std::printf("  CDIIS : iters=%3d conv=%d E=%.11f Ha\n",
-                cdiisA.iterations(), cdiisA.converged(), cdiisA.energy());
+    std::printf("  CDIIS : iters=%3d conv=%d E=%.11f Ha\n", cdiisA.iterations(),
+                cdiisA.converged(), cdiisA.energy());
     std::printf("  SOSCF : iters=%3d (newton %d) conv=%d E=%.11f Ha "
                 "HOMO=%.8f (pins: E=%.11f HOMO=%.8f macro=%d)\n",
                 soscfA.iterations(), soscfA.soscf_iterations(),
@@ -180,8 +180,8 @@ int main() {
     cpu::scf::UHF soscfB = run_uhf(true);
     const double s2B = soscfB.determinant().spin_contamination();
 
-    std::printf("  CDIIS : iters=%3d conv=%d E=%.11f Ha\n",
-                cdiisB.iterations(), cdiisB.converged(), cdiisB.energy());
+    std::printf("  CDIIS : iters=%3d conv=%d E=%.11f Ha\n", cdiisB.iterations(),
+                cdiisB.converged(), cdiisB.energy());
     std::printf("  SOSCF : iters=%3d (newton %d) conv=%d E=%.11f Ha "
                 "<S2>=%.4f (pins: E=%.11f <S2>=%.4f macro=%d)\n",
                 soscfB.iterations(), soscfB.soscf_iterations(),

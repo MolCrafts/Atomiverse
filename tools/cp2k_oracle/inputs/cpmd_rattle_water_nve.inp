@@ -1,0 +1,70 @@
+! Offline CP2K twin for regressions/dynamics/cpmd-rattle-water
+! Isolated H2O, PBE / DZVP-MOLOPT-GTH / GTH-PBE, MT 10 Å, short NVE.
+! ctest NEVER launches CP2K — pin is literature E_cons envelope + structure.
+! Run offline only; record version + wall in REFERENCE.md / pin_notes if available.
+&GLOBAL
+  PROJECT cpmd_rattle_water_nve
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD QS
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 200
+      REL_CUTOFF 40
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &SCF
+      MAX_SCF 60
+      EPS_SCF 1.0E-5
+      SCF_GUESS ATOMIC
+      &OT
+        MINIMIZER DIIS
+        PRECONDITIONER FULL_KINETIC
+      &END OT
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 10.0 10.0 10.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      O  5.0000  5.0000  5.0000
+      H  5.7586  5.0000  5.5043
+      H  4.2414  5.0000  5.5043
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL
+
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 20
+    TIMESTEP 0.1
+    TEMPERATURE 300.0
+  &END MD
+&END MOTION

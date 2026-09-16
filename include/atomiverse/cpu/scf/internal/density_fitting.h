@@ -29,7 +29,7 @@
 /// Auxiliary angular convention: def2-universal-jkfit is a SPHERICAL
 /// basis family, so the auxiliary index P is transformed to real
 /// spherical harmonics (2l+1 per shell, self-normalized against the
-/// aux Cartesian overlap exactly like the orbital `IntegralPack::c2s`).
+/// aux Cartesian overlap exactly like the orbital `internal::IntegralWorkspace::c2s`).
 /// This matters beyond bookkeeping: a Cartesian d/f/g aux shell spans
 /// extra lower-l functions (e.g. the x²+y²+z² combination of a d shell),
 /// so fitting in the raw Cartesian aux span — while still variational —
@@ -57,7 +57,7 @@ class DensityFitting {
     /// @brief Build the full RI workspace: (μν|P), V_PQ, Cholesky
     ///        whitening factor, and the contracted B tensor.
     /// @param orbital_shells Cartesian engine AO shells (one entry per
-    ///        Cartesian component, `IntegralPack::shells` layout);
+    ///        Cartesian component, `internal::IntegralWorkspace::shells` layout);
     ///        centers in Bohr.
     /// @param atoms Atom descriptors (Z + position in Bohr) — the
     ///        auxiliary shells are placed on these centers.

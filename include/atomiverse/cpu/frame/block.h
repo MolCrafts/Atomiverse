@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/cpu/frame/column.h"
 
 namespace ATV {
@@ -48,6 +49,26 @@ class Block {
 
     /// Copy all columns tagged kColMigrate from src to dst.
     void copy_row(int dst, int src);
+
+    /// @brief Copy row `src` of `source` into row `dst` of this Block.
+    ///
+    /// The cross-Block sibling of `copy_row`, carrying the same
+    /// `kColMigrate` set: whatever an atom IS travels with the row. Used to
+    /// move a whole atom between two structurally identical Blocks — a
+    /// Monte Carlo trial patch and the main Frame — without a serializer
+    /// round trip through bytes.
+    ///
+    /// Every `kColMigrate` column of THIS Block must exist in `source` at
+    /// the same dtype and stride — a missing column or a divergent width
+    /// throws rather than truncating. `Frame::clone_structure` produces
+    /// exactly that, in both directions.
+    /// @param source Block to read from.
+    /// @param dst Destination row in this Block.
+    /// @param src Source row in `source`.
+    /// @throws std::out_of_range if either row is outside its Block.
+    /// @throws column_error if the two Blocks are not structurally equal
+    ///         over the `kColMigrate` set.
+    void copy_row_from(const Block& source, int dst, int src);
 
     std::size_t memory_bytes() const noexcept;
     Block clone_structure(int rows) const;
@@ -94,6 +115,23 @@ class Block {
     /// structural plan is built/rebuilt, never per row.
     std::vector<ColumnRef> resolve_columns(unsigned required_flags = 0);
     std::vector<ColumnRef> resolve_columns(unsigned required_flags = 0) const;
+
+    /// @brief Resolve one declared field.
+    ///
+    /// The flag overloads above answer "which columns claim to belong on
+    /// wire X" — a property of the Frame, which is what migration carries.
+    /// This answers "give me the column this component asked for", and the
+    /// caller decides which declarations belong on the pass it is building.
+    /// The two selectors are for two different questions and neither is a
+    /// generalisation of the other.
+    ///
+    /// `check_ghosts` has already run at build(), so a declared field being
+    /// absent here is an engine bug, not user error, and throws as such.
+    /// @param field The declaration to resolve.
+    /// @return ColumnRef for that column.
+    /// @throws column_error if the field is not in this Block.
+    ColumnRef resolve_column(const GhostField& field);
+    ColumnRef resolve_column(const GhostField& field) const;
 
     const Columns& columns() const noexcept { return columns_; }
 

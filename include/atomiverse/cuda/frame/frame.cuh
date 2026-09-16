@@ -6,7 +6,7 @@
 /// CUDA-free header (contains only pointer declarations).
 ///
 /// One backend, one Frame type: this is `cuda::Frame`, not a shared layout
-/// with CPU. The SEMANTIC field set mirrors `cpu::Frame` / `torch::Frame`
+/// with CPU. The SEMANTIC field set mirrors `cpu::Frame`
 /// (same physical quantities), but the topology REPRESENTATION is
 /// deliberately dual on this backend: the single-GPU path uses the flat
 /// `BondList/AngleList/DihedralList` device arrays (transfer-friendly;
@@ -14,7 +14,7 @@
 /// `cpu::to_cuda` re-flattens from the CPU per-atom layout on every
 /// H2D transfer), while the multi-GPU domain-decomposition path carries
 /// the per-atom SoA (global-tag partners) needed for migration. CPU is
-/// blocks+meta+simbox with per-atom topology columns only. Per the
+/// blocks+meta+box with per-atom topology columns only. Per the
 /// CLAUDE.md Frame purity rule the frame carries only fundamental physical
 /// quantities: method-specific scratch (the SCF workspace, the neighbor
 /// pair list) is owned by the components that compute it, not by the frame.
@@ -67,7 +67,7 @@ struct DihedralList {
 /// n_bonds_, etc.) are host-cached counts set at materialize time to avoid
 /// D2H transfers.
 ///
-/// Created by cpu::to_cuda() / cuda::materialize(), freed by cuda::destroy().
+/// Created by cpu::to_cuda() / cuda::from_molrs(), freed by cuda::destroy().
 struct Frame {
     // -- Per-atom arrays (device pointers, molcrafts "atoms" block) --
 

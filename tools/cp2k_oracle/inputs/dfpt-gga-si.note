@@ -1,0 +1,32 @@
+# Offline oracle note — dfpt-gga-si (PW DFPT PBE GGA kernel, diamond Si)
+
+## Intent
+
+Pin Γ-point DFPT phonons for diamond Si with **true PBE GGA** XC kernel on
+the plane-wave method, twinning the LSDA product path (`dfpt-phonon-si`).
+
+## Preferred oracle
+
+CP2K Quickstep DFPT / `VIBRATIONAL_ANALYSIS` (or Quantum ESPRESSO `ph.x`)
+on the same cell with a comparable NC/GTH setup and PBE.
+
+## Host status (2026-07-26)
+
+No CP2K / QE module or binary on the pin host (`module avail cp2k` empty).
+Sharp correctness pin is therefore the **same-Hamiltonian central second
+difference of the PW SCF total energy** (h = 0.03 Å) at identical
+ecut/k/XC/UPF — recorded in
+`regressions/response/dfpt-gga-si/REFERENCE.md`.
+
+## Twin settings (match regression)
+
+| Item | Value |
+| ---- | ----- |
+| Cell | diamond Si, a = 5.43 Å, 2-atom fcc primitive |
+| PP | `tests/data/pw/Si_lda_nc.upf` (in-tree NC ONCV) |
+| XC | PBE (true GGA) |
+| ecut | 10 Ry |
+| k-mesh | 2×2×2 MP |
+
+When CP2K becomes available: record ω(Γ) [cm⁻¹], version, and wall for
+fair ratio \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\).

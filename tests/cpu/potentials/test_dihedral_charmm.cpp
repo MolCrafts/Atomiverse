@@ -34,7 +34,7 @@ cpu::Frame make_right_angle_dihedral() {
         frame.span(ATV::kAtom_mass)[i] = 12.0;
         frame.span(ATV::kAtom_type)[i] = 0;
     }
-    frame.simbox = cpu::Box::cubic(40.0);
+    frame.box = cpu::Box::cubic(40.0);
     frame.clear_tag_index();
     frame.rebuild_tag_index(0, frame.nlocal());
     frame.add_dihedral(0, 1, 2, 3, 0);

@@ -38,9 +38,7 @@ struct SpecialScaleTable {
         tag_to_owner.clear();
     }
 
-    bool active() const {
-        return s12 != 1.0 || s13 != 1.0 || s14 != 1.0;
-    }
+    bool active() const { return s12 != 1.0 || s13 != 1.0 || s14 != 1.0; }
 
     int n_owners() const { return static_cast<int>(by_owner.size()); }
 
@@ -81,10 +79,9 @@ struct SpecialScaleTable {
 
             if (list.size() < 2)
                 continue;
-            std::sort(list.begin(), list.end(),
-                      [](const auto& a, const auto& b) {
-                          return a.first < b.first;
-                      });
+            std::sort(
+                list.begin(), list.end(),
+                [](const auto& a, const auto& b) { return a.first < b.first; });
             // Prefer nearer tier if duplicate partners.
             std::size_t w = 0;
             for (std::size_t r = 0; r < list.size(); ++r) {
@@ -109,11 +106,9 @@ struct SpecialScaleTable {
                     return p.second;
             return 1.0;
         }
-        auto lb = std::lower_bound(
-            list.begin(), list.end(), tj,
-            [](const std::pair<std::int64_t, double>& p, std::int64_t t) {
-                return p.first < t;
-            });
+        auto lb = std::lower_bound(list.begin(), list.end(), tj,
+                                   [](const std::pair<std::int64_t, double>& p,
+                                      std::int64_t t) { return p.first < t; });
         if (lb != list.end() && lb->first == tj)
             return lb->second;
         return 1.0;

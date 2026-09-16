@@ -8,13 +8,16 @@ cpu-breadth-03 **ac-009** documentation.
 
 | Layer | Path | Owns |
 |---|---|---|
-| Facade math | `include/atomiverse/longrange/` | `EwaldSum`, PME B-spline / moduli / influence; HE green tables (`pppm_green.h`) for future IK path — no Frame/MPI/FFT |
-| CPU wrappers | `include/atomiverse/cpu/longrange/`, `src/cpu/longrange/` | `KSpaceEwald` / `KSpacePME` (complex c2c SPME) / **`KSpacePPPM` (real brick + r2c/c2r, SPME H(m))** |
+| Reciprocal solvers + their math | `include/atomiverse/cpu/longrange/`, `src/cpu/longrange/` | `KSpaceEwald` / `KSpacePME` (complex c2c SPME) / **`KSpacePPPM` (real brick + r2c/c2r, SPME H(m))**, together with `EwaldSum`, the PME B-spline / moduli / influence helpers, and the HE green tables (`pppm_green.h`) |
+| CUDA counterpart | `include/atomiverse/cuda/longrange/`, `src/cuda/longrange/` | the same split on device (cuFFT); single-GPU only |
 | Build flag | `ATV_BUILD_KSPACE` | Gates FFTW3 / mesh reciprocal |
 | Science gate | `tests/cpu/longrange/test_pppm_coul.cpp` | Madelung, Ewald/PME parity, α-independence, FD forces |
 
-SCF and future consumers include only `atomiverse/longrange/*`, never
-`cpu/longrange/*`. Citations travel with the math:
+Electrostatics splits LAMMPS-style: real-space pair styles live in
+`potentials/`, reciprocal solvers **and their math** in each backend's own
+`longrange/`. There is deliberately no top-level shared-math module — a
+backend does not reach into another backend's `longrange/`. Citations travel
+with the math:
 Ewald 1921 (DOI: 10.1002/andp.19213690304); Essmann et al. 1995
 (DOI: 10.1063/1.470117).
 
@@ -29,7 +32,7 @@ Real-space and reciprocal-space halves are ordinary components that implement
 | `alpha` | Ewald splitting α (1/Å) — **must match** between the pair |
 | cutoff / accuracy | cold metadata only |
 
-`CPUDriver` validation at `build()` accepts **exactly one** real-space plus
+`Driver` validation at `build()` accepts **exactly one** real-space plus
 **exactly one** reciprocal partner with matching `alpha`. Missing, duplicate,
 or mismatched partners throw before launch with component names and α values.
 There is no short-range or energy-only fallback.
@@ -71,7 +74,7 @@ and related unit tests.
 | Style | Multi-rank (default) | Optional / debug |
 |---|---|---|
 | **PME** | Replicated-grid: `MPI_Allreduce` full charge mesh; rank-0 FFT; `MPI_Bcast` potential | — |
-| **PPPM** | Brick + reverse/forward + Alltoallv brick↔FFT + FFTW-MPI slabs (`libfftw3_mpi`). Gate: `test_mpi_pppm_brick_parity` n=1/2. | `ATV_PPPM_ALLREDUCE=1` dens_full Allreduce + rank-0 FFT (PME-like compare path). |
+| **PPPM** | **Subgroup arm**: brick + reverse/forward + Alltoallv brick↔FFT + FFTW-MPI slabs on a derived communicator of `pppm_fft_ranks(K0, nprocs)` cart ranks `[0, P_fft)` (largest divisor of K0 within the rank budget; the tree's first real `MPI_Comm_split`, fingerprint-guarded, aliased un-split when `P_fft == nprocs`). Non-members spread/halo/remap/interpolate only — no FFT collective. Selection: `pppm_select_mesh_arm`; the old `mesh ≤ 64³ && ranks ≥ 16 → replicated` rule is gone (falsified at np=64: brick 4.78 s vs replicated 5.43 s). Gates: `test_mpi_pppm_subcomm_parity` n=1/2/4, `test_mpi_pppm_brick_parity` n=1/2. | `ATV_PPPM_BRICK=1` forces the world-comm brick arm (all ranks in the FFT collective); `ATV_PPPM_ALLREDUCE=1` forces the replicated arm (dens_full Allreduce, every rank runs the serial FFT). Both are the debug/compare paths the three-arm bench matrix is measured with. |
 
 Self-energy partitions over owned atoms; reciprocal energy/net-charge on
 rank 0; `Reduce` all-reduces frame energy/stress.
@@ -87,7 +90,7 @@ decomposition). Atomiverse:
 
 | Mode | Where sort runs |
 |---|---|
-| **Multi-rank** | `HaloSend` full rebuild, *before* ghost slots / send_lists |
+| **Multi-rank** | `CommBrick` full rebuild, *before* ghost slots / the swap-table sendlists |
 | **Serial** | `NeighborList` reneighbor before cell-list rebuild |
 
 After a successful reorder, `notify_sorted` bumps `neighbor_generation`
@@ -111,10 +114,9 @@ Cadence: first sort after `nfreq` steps (default 1000), matching LAMMPS
 
 | Consumer | Path |
 |---|---|
-| Facade math | `tests/cpu/longrange/test_ewald_sum.cpp`, `test_pme_math.cpp` |
+| Core math | `tests/cpu/longrange/test_ewald_sum.cpp`, `test_pme_math.cpp` |
 | Unit + lifecycle | `tests/cpu/longrange/test_pme_coul.cpp` |
 | 1/2-rank parity | `tests/mpi/test_pme_nacl_parity.cpp` |
 | Literature regression | `regressions/md/npt_pme_nacl/` |
-| LAMMPS validation | `/* benchmarks removed; re-add later */ npt_pme/validation/bench_pme_nacl_lammps` |
 
 Build with `-DATV_BUILD_KSPACE=ON` (FFTW3). MPI tests also need `-DATV_USE_MPI=ON`.

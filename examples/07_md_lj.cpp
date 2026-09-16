@@ -4,7 +4,7 @@
 /// One concept: how a classical-MD run is assembled from the same
 /// Driver/Component vocabulary as every other method, using the
 /// user-facing categorical setters. The `cpu::md::MD` driver owns the
-/// loop; `add_potential` / `set_neighbor` / `set_integrator` install the
+/// loop; `set_evaluator` / `set_neighbor` / `set_integrator` install the
 /// force field, neighbor list, and integrator; `set_thermo` prints
 /// LAMMPS-style rows. No quantum chemistry — the force provider is a
 /// classical pair potential instead of an SCF.
@@ -28,9 +28,9 @@
 #include <iostream>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -56,7 +56,7 @@ cpu::Frame make_argon(int n_side, double density_per_A3) {
                 frame.span(ATV::kAtom_type)[idx] = 0;
                 ++idx;
             }
-    frame.simbox = ATV::cpu::Box::cubic(box_len);
+    frame.box = ATV::cpu::Box::cubic(box_len);
 
     std::srand(42);
     double mvx = 0, mvy = 0, mvz = 0;
@@ -96,7 +96,7 @@ int main() {
 
     // Build the driver from components via the categorical setters.
     cpu::md::MD sim;
-    sim.add_potential(cpu::PairLJCut{eps, sigma, cutoff});
+    sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
     sim.set_thermo(200); // print a thermo line every 200 steps

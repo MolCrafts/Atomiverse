@@ -4,7 +4,7 @@
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/facade/component_role.h"
+#include "atomiverse/core/role.h"
 
 namespace ATV {
 namespace cpu {

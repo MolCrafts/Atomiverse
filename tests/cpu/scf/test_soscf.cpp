@@ -4,13 +4,11 @@
 ///        rotation energy, CIAH matrix-free root vs an explicit dense
 ///        augmented-matrix eigensolve (H built explicitly IN THE TEST ONLY),
 ///        trust-region clipping, stationary no-op, UHF dimension-mismatch
-///        throw, MixStage SOSCF activation latch, and the default-off
-///        (`soscf = false`) micro H2/STO-3G invariance pin.
+///        throw, MixStage SOSCF activation latch, and the KS+soscf throw.
 ///
-/// No production-path SCF beyond the explicitly allowed micro H2/STO-3G
-/// bit-invariance check (a handful of iterations, milliseconds). All other
-/// tests drive the stepper on single Fock builds — never to
-/// self-consistency.
+/// No production-path SCF loop (e2e-in-tests wave-2). Stepper tests drive
+/// single Fock builds only. Hard-case convergence lives in
+/// regressions/scf/soscf_hard_case.
 
 #ifdef ATV_HAS_HF
 
@@ -24,6 +22,7 @@
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/containers/xtensor.hpp>
 
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
 #include "atomiverse/cpu/scf/internal/eigen_solver.h"
@@ -34,11 +33,10 @@
 #include "atomiverse/cpu/scf/rks.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
 #include "atomiverse/cpu/scf/stages/mix_stage.h"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 using cpu::scf::BasisSet;
-using cpu::scf::IntegralPack;
+using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::SlaterDeterminant;
@@ -64,7 +62,7 @@ cpu::Frame make_h2_frame() {
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -78,7 +76,7 @@ double max_abs(const RealMatrix& M) {
 
 /// @brief One RHF Fock build F = Hcore + G(P_total) [Hartree] via the
 ///        pack's stored-ERI fused J−K/2 (never an SCF loop).
-RealMatrix fock_of(const IntegralPack& ints, const RealMatrix& P_total) {
+RealMatrix fock_of(const cpu::scf::internal::IntegralWorkspace& ints, const RealMatrix& P_total) {
     RealMatrix G = xt::zeros<double>(P_total.shape());
     ints.coulomb_exchange_fused(P_total, G);
     RealMatrix Hcore = ints.Hcore; // layout copy (pack tensors are row-major)
@@ -91,13 +89,13 @@ RealMatrix fock_of(const IntegralPack& ints, const RealMatrix& P_total) {
 struct PackViews {
     RealMatrix Hcore;
     RealMatrix S;
-    explicit PackViews(const IntegralPack& ints)
+    explicit PackViews(const cpu::scf::internal::IntegralWorkspace& ints)
         : Hcore(ints.Hcore), S(ints.S) {}
 };
 
 /// @brief RHF energy E = ½ Tr[P(Hcore + F)] + V_nuc [Hartree] of the
 ///        factor-2 total density P.
-double rhf_energy(const IntegralPack& ints, const RealMatrix& P,
+double rhf_energy(const cpu::scf::internal::IntegralWorkspace& ints, const RealMatrix& P,
                   const RealMatrix& F) {
     RealMatrix Hcore = ints.Hcore;
     return 0.5 * xt::sum((Hcore + F) * P)() + ints.V_nuc;
@@ -120,8 +118,8 @@ RealMatrix density2(const RealMatrix& C, int n_occ) {
 /// @brief Rotation energy E(θ) of H2 with κ_{a=va, i=oi} = θ (all other
 ///        amplitudes zero): C' = C·exp(K), P' = 2 C'_occ C'_occᵀ, fresh
 ///        Fock, energy [Hartree].
-double rotation_energy(const IntegralPack& ints, const RealMatrix& C,
-                       int n_occ, int va, int oi, double theta) {
+double rotation_energy(const cpu::scf::internal::IntegralWorkspace& ints, const RealMatrix& C, int n_occ,
+                       int va, int oi, double theta) {
     const int m = static_cast<int>(C.shape()[1]);
     RealMatrix K = xt::zeros<double>(
         {static_cast<std::size_t>(m), static_cast<std::size_t>(m)});
@@ -149,15 +147,14 @@ TEST(SoscfExp, AntisymmetricExponentialIsOrthogonal) {
             ++k;
         }
     const RealMatrix U = SOSCFStepper::exp_antisymmetric(K);
-    const RealMatrix UtU =
-        xt::linalg::dot(RealMatrix(xt::transpose(U)), U);
+    const RealMatrix UtU = xt::linalg::dot(RealMatrix(xt::transpose(U)), U);
     RealMatrix I = xt::eye<double>(4);
     EXPECT_LE(max_abs(UtU - I), 1e-13);
 }
 
 TEST(SoscfExp, RotatedCoefficientsKeepOverlapMetric) {
     cpu::Frame f = make_h2_frame();
-    IntegralPack ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S);
@@ -171,9 +168,9 @@ TEST(SoscfExp, RotatedCoefficientsKeepOverlapMetric) {
     K(0, 2) = 0.15;
     const RealMatrix C_rot =
         xt::linalg::dot(C0, SOSCFStepper::exp_antisymmetric(K));
-    const RealMatrix CtSC = xt::linalg::dot(
-        RealMatrix(xt::transpose(C_rot)),
-        RealMatrix(xt::linalg::dot(pv.S, C_rot)));
+    const RealMatrix CtSC =
+        xt::linalg::dot(RealMatrix(xt::transpose(C_rot)),
+                        RealMatrix(xt::linalg::dot(pv.S, C_rot)));
     RealMatrix I = xt::eye<double>(static_cast<std::size_t>(m));
     EXPECT_LE(max_abs(CtSC - I), 1e-12);
 }
@@ -191,7 +188,7 @@ TEST(SoscfExp, ThrowsOnNonAntisymmetricGenerator) {
 
 TEST(SoscfGradient, MatchesFiniteDifferenceOfRotationEnergy) {
     cpu::Frame f = make_h2_frame();
-    IntegralPack ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S); // NOT the SCF solution
@@ -205,8 +202,8 @@ TEST(SoscfGradient, MatchesFiniteDifferenceOfRotationEnergy) {
     RealMatrix C = C0, C_b = C0;
     RealVector eig = eig0, eig_b = eig0;
     const double v_nuc = ints.V_nuc;
-    SOSCFStepper stepper(/*restricted=*/true, ints, n_alpha, n_beta,
-                         pv.Hcore, v_nuc, F, F, P, P, C, C_b, eig, eig_b,
+    SOSCFStepper stepper(/*restricted=*/true, ints, n_alpha, n_beta, pv.Hcore,
+                         v_nuc, F, F, P, P, C, C_b, eig, eig_b,
                          /*max_micro=*/12, /*trust_radius=*/0.4);
 
     const RealVector g = stepper.gradient(); // 4·F_ai, virtual-major
@@ -232,7 +229,7 @@ TEST(SoscfGradient, MatchesFiniteDifferenceOfRotationEnergy) {
 
 TEST(SoscfCiah, MatchesDenseAugmentedEigensolve) {
     cpu::Frame f = make_h2_frame();
-    IntegralPack ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S);
@@ -245,8 +242,8 @@ TEST(SoscfCiah, MatchesDenseAugmentedEigensolve) {
     RealMatrix F = fock_of(ints, P);
 
     // Gradient 4·F_ai and Hessian 4·¹(A+B) at this iterate.
-    const RealMatrix Fmo = xt::linalg::dot(
-        RealMatrix(xt::transpose(C0)), RealMatrix(xt::linalg::dot(F, C0)));
+    const RealMatrix Fmo = xt::linalg::dot(RealMatrix(xt::transpose(C0)),
+                                           RealMatrix(xt::linalg::dot(F, C0)));
     RealVector g = xt::zeros<double>({static_cast<std::size_t>(n_rot)});
     for (int a = 0; a < nv; ++a)
         g(a * n_occ) = 4.0 * Fmo(n_occ + a, 0);
@@ -258,9 +255,8 @@ TEST(SoscfCiah, MatchesDenseAugmentedEigensolve) {
 
     // Dense reference: H built explicitly IN THE TEST ONLY.
     const RealMatrix Hd = 4.0 * hess.dense_plus(Channel::singlet);
-    RealMatrix Aug = xt::zeros<double>(
-        {static_cast<std::size_t>(n_rot + 1),
-         static_cast<std::size_t>(n_rot + 1)});
+    RealMatrix Aug = xt::zeros<double>({static_cast<std::size_t>(n_rot + 1),
+                                        static_cast<std::size_t>(n_rot + 1)});
     for (int p = 0; p < n_rot; ++p) {
         Aug(0, p + 1) = g(p);
         Aug(p + 1, 0) = g(p);
@@ -294,7 +290,7 @@ TEST(SoscfCiah, MatchesDenseAugmentedEigensolve) {
 
 TEST(SoscfTrust, ClipsStepNormToTrustRadius) {
     cpu::Frame f = make_h2_frame();
-    IntegralPack ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S); // far from stationary
@@ -305,8 +301,8 @@ TEST(SoscfTrust, ClipsStepNormToTrustRadius) {
     RealMatrix F = fock_of(ints, P);
     RealMatrix C = C0, C_b = C0;
     RealVector eig = eig0, eig_b = eig0;
-    SOSCFStepper stepper(true, ints, n_alpha, n_beta, pv.Hcore, ints.V_nuc,
-                         F, F, P, P, C, C_b, eig, eig_b, 12, trust);
+    SOSCFStepper stepper(true, ints, n_alpha, n_beta, pv.Hcore, ints.V_nuc, F,
+                         F, P, P, C, C_b, eig, eig_b, 12, trust);
     stepper.step();
 
     EXPECT_FALSE(stepper.last_step_rejected());
@@ -315,8 +311,7 @@ TEST(SoscfTrust, ClipsStepNormToTrustRadius) {
 
     // The rotated coefficients stay S-orthonormal to 1e-12.
     const RealMatrix CtSC = xt::linalg::dot(
-        RealMatrix(xt::transpose(C)),
-        RealMatrix(xt::linalg::dot(pv.S, C)));
+        RealMatrix(xt::transpose(C)), RealMatrix(xt::linalg::dot(pv.S, C)));
     RealMatrix I = xt::eye<double>(C.shape()[1]);
     EXPECT_LE(max_abs(CtSC - I), 1e-12);
     // And the coefficients actually moved.
@@ -330,7 +325,7 @@ TEST(SoscfStep, StationaryIterateIsNoOp) {
     // eigenvectors ARE the SCF solution — F_ai vanishes to round-off with
     // no iteration at all.
     cpu::Frame f = make_h2_frame();
-    IntegralPack ints(f, BasisSet::STO3G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::STO3G, 0, /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S);
@@ -340,16 +335,14 @@ TEST(SoscfStep, StationaryIterateIsNoOp) {
     RealMatrix F = fock_of(ints, P);
     RealMatrix C = C0, C_b = C0;
     RealVector eig = eig0, eig_b = eig0;
-    SOSCFStepper stepper(true, ints, n_alpha, n_beta, pv.Hcore, ints.V_nuc,
-                         F, F, P, P, C, C_b, eig, eig_b, 12, 0.4);
+    SOSCFStepper stepper(true, ints, n_alpha, n_beta, pv.Hcore, ints.V_nuc, F,
+                         F, P, P, C, C_b, eig, eig_b, 12, 0.4);
 
     const RealVector g = stepper.gradient();
     ASSERT_LT(std::abs(g(0)), 1e-14) << "symmetry must zero the gradient";
 
     stepper.step();
-    EXPECT_EQ(std::memcmp(C.data(), C0.data(),
-                          C0.size() * sizeof(double)),
-              0)
+    EXPECT_EQ(std::memcmp(C.data(), C0.data(), C0.size() * sizeof(double)), 0)
         << "stationary step must leave C bitwise untouched";
     EXPECT_DOUBLE_EQ(stepper.last_step_norm(), 0.0);
 }
@@ -357,7 +350,7 @@ TEST(SoscfStep, StationaryIterateIsNoOp) {
 // ── UHF: α/β dimension mismatch throws (no fallback) ────────────────────────
 
 TEST(SoscfValidate, UhfAlphaBetaMismatchThrows) {
-    IntegralPack ints; // untouched: validation throws first
+    cpu::scf::internal::IntegralWorkspace ints; // untouched: validation throws first
     RealMatrix Hcore = xt::eye<double>(2);
     RealMatrix F_a = xt::eye<double>(2), P_a = xt::eye<double>(2);
     RealMatrix C_a = xt::eye<double>(2);
@@ -368,14 +361,14 @@ TEST(SoscfValidate, UhfAlphaBetaMismatchThrows) {
     int n_alpha = 1, n_beta = 1;
     double v_nuc = 0.0;
     SOSCFStepper stepper(/*restricted=*/false, ints, n_alpha, n_beta, Hcore,
-                         v_nuc, F_a, F_b, P_a, P_b, C_a, C_b, eig_a, eig_b,
-                         12, 0.4);
+                         v_nuc, F_a, F_b, P_a, P_b, C_a, C_b, eig_a, eig_b, 12,
+                         0.4);
     EXPECT_THROW(stepper.step(), std::invalid_argument);
     EXPECT_THROW(stepper.gradient(), std::invalid_argument);
 }
 
 TEST(SoscfValidate, CtorRejectsNonPositiveBudgets) {
-    IntegralPack ints;
+    cpu::scf::internal::IntegralWorkspace ints;
     RealMatrix M = xt::eye<double>(2);
     RealVector v = xt::zeros<double>({2});
     int na = 1, nb = 1;
@@ -430,9 +423,8 @@ TEST(SoscfMixStage, ActivatesAtFirstEligibleIterationWhenStartNonPositive) {
     EXPECT_TRUE(latch)
         << "soscf_start <= 0 must activate at the first eligible iteration";
     // Extrapolation AND level shift skipped: F bitwise unchanged.
-    EXPECT_EQ(std::memcmp(F_a.data(), F_in.data(),
-                          F_in.size() * sizeof(double)),
-              0);
+    EXPECT_EQ(
+        std::memcmp(F_a.data(), F_in.data(), F_in.size() * sizeof(double)), 0);
     // The DIIS error is still produced (the criterion reads it).
     EXPECT_EQ(err_a.shape()[0], 2u);
 }
@@ -470,31 +462,6 @@ TEST(SoscfMixStage, StaysInactiveAboveThresholdAndLatchesBelow) {
     F_b = F_a;
     mix.launch(lc);
     EXPECT_TRUE(latch);
-}
-
-// ── Default-off invariance: micro H2/STO-3G SCF pin (milliseconds) ──────────
-
-TEST(SoscfDefaultOff, MicroH2Sto3gTrajectoryUnchanged) {
-    // soscf defaults to false; the pinned energy/iteration pair was captured
-    // from the pre-SOSCF loop and must stay bit-stable when the flag is off.
-    // PySCF 2.14.0 cross-check: RHF/STO-3G H2 @ 0.74 Å = -1.116759 Ha.
-    auto run = []() {
-        cpu::Frame f = make_h2_frame();
-        cpu::scf::RHF rhf;
-        rhf.basis = BasisSet::STO3G;
-        rhf.tol = 1e-10;
-        rhf.max_iter = 15;
-        rhf.run(f);
-        return std::make_pair(rhf.energy(), rhf.iterations());
-    };
-    const auto [e1, it1] = run();
-    const auto [e2, it2] = run();
-    // OpenMP reduction order is not bitwise-reproducible across runs; the
-    // default-path invariance contract is agreement to accumulator precision.
-    EXPECT_NEAR(e1, e2, 1e-12) << "default path must be run-to-run stable";
-    EXPECT_EQ(it1, it2);
-    EXPECT_NEAR(e1, -1.11675930740, 1e-9)
-        << "default-off energy drifted from the pinned pre-SOSCF value";
 }
 
 TEST(SoscfDefaultOff, SoscfOnKohnShamThrows) {

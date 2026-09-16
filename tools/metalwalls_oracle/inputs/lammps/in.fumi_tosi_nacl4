@@ -1,0 +1,50 @@
+# Offline twin: Fumi–Tosi multi-type Born + Coulomb — 4-ion NaCl square
+# metal units (eV, Å). hybrid/overlay born + coul/cut; pair born shift yes.
+# Not run by ctest. Pin recorded 2026-07-24 →
+# regressions/forcefield/fumi-tosi-nacl/REFERENCE.md
+
+units           metal
+atom_style      charge
+atom_modify     map array
+boundary        p p p
+
+region          box block 0 40 0 40 0 40
+create_box      2 box
+
+mass            1 22.9898
+mass            2 35.453
+
+# Na Cl Na Cl square, edge 2.82 Å, centered-ish in box
+variable        d equal 2.82
+create_atoms    1 single 10.0 10.0 20.0
+create_atoms    2 single $(v_d+10.0) 10.0 20.0
+create_atoms    1 single $(v_d+10.0) $(v_d+10.0) 20.0
+create_atoms    2 single 10.0 $(v_d+10.0) 20.0
+
+set             type 1 charge  1.0
+set             type 2 charge -1.0
+
+pair_style      hybrid/overlay born 12.0 coul/cut 12.0
+# pair_coeff I J A rho sigma C D
+pair_coeff      1 1 born 25.4435 0.317 2.340 101.1719 48.1771
+pair_coeff      2 2 born 25.4435 0.317 3.170 278.122 694.480
+pair_coeff      1 2 born 20.3548 0.317 2.755 48.1771 48.1771
+pair_coeff      * * coul/cut
+pair_modify     pair born shift yes
+
+neighbor        0.3 bin
+neigh_modify    delay 0 every 1 check no
+
+thermo_style    custom step pe evdwl ecoul
+thermo_modify   format float %.16e
+thermo          1
+run             0
+
+variable        e equal pe
+print           "PIN_E ${e}"
+print           "PIN_EVDWL $(evdwl)"
+print           "PIN_ECOUL $(ecoul)"
+
+dump            1 all custom 1 forces.dump id type q x y z fx fy fz
+dump_modify     1 format line "%d %d %.8f %.8f %.8f %.8f %.16e %.16e %.16e"
+run             0

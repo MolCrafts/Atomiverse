@@ -23,8 +23,6 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-static constexpr double kPi = 3.14159265358979323846;
-
 // ── Bragg-Slater atomic radii (Bohr) ────────────────────────────────────
 
 /// @brief Bragg-Slater atomic radius for element Z, returned in Bohr.
@@ -158,7 +156,7 @@ double bragg_slater_radius(int Z) {
 // in-source octahedral-generator code and the Gauss-Legendre x uniform-phi
 // product grid that was used as a placeholder for "Lebedev-110" have
 // been removed -- they produced wrong weight distributions for spherical
-// harmonics. See `build_molecular_grid` below for the dispatch.
+// harmonics. See the `MolecularGrid` constructor below for the dispatch.
 
 // ── Radial quadrature ───────────────────────────────────────────────────
 
@@ -249,13 +247,13 @@ static double treutler_ahlrichs_xi(int Z) {
 //
 // The returned RadialPoint.w already includes the r² Jacobian, so the
 // 3D-space integral of f(r) over the radial axis is sum_i w_i * f(r_i)
-// after multiplication by the angular weight times 4*pi (as in
-// build_molecular_grid below).
+// after multiplication by the angular weight times 4*pi (as in the
+// MolecularGrid constructor below).
 static std::vector<RadialPoint> radial_grid_treutler_ahlrichs(int n, int Z) {
     std::vector<RadialPoint> pts(n);
     double xi = treutler_ahlrichs_xi(Z);
     double ln2 = xi / std::log(2.0);
-    double step = kPi / (n + 1);
+    double step = units::pi / (n + 1);
 
     // PySCF loops i=0..n-1 with x=cos((i+1)*step), then reverses
     // so the returned r is ascending. We do the same so r[0] is the
@@ -593,15 +591,13 @@ int lebedev_order_for_shell(GridLevel level, int Z, double r, double R,
     return (Z > 10) ? heavy_orders[region] : light_orders[region];
 }
 
-// ── Grid assembly core ──────────────────────────────────────────────────
+// ── Grid assembly (MolecularGrid constructor) ────────────────────────────
 //
-// Shared assembly for both build_molecular_grid overloads. `level` selects
-// the radial scheme and the per-shell angular order; for GridLevel::SG0
-// the legacy uniform-order Treutler-Ahlrichs path is reproduced verbatim.
-static MolecularGrid assemble_grid(const native::Atom* atoms, int natm,
-                                   GridLevel level, int n_radial,
-                                   int n_angular) {
-    MolecularGrid grid;
+// `level` selects the radial scheme and the per-shell angular order; for
+// GridLevel::SG0 the legacy uniform-order Treutler-Ahlrichs path is
+// reproduced verbatim.
+MolecularGrid::MolecularGrid(const native::Atom* atoms, int natm,
+                             GridLevel level, int n_radial, int n_angular) {
 
     // Per-level radial point count. SG0 honours the caller's n_radial;
     // SG1 uses the EML-50 parent; MatchPySCF uses PySCF's per-element
@@ -621,8 +617,8 @@ static MolecularGrid assemble_grid(const native::Atom* atoms, int natm,
         return 90;
     };
 
-    grid.n_radial = radial_count(natm > 0 ? atoms[0].Z : 1);
-    grid.n_angular = n_angular;
+    this->n_radial = radial_count(natm > 0 ? atoms[0].Z : 1);
+    this->n_angular = n_angular;
 
     std::vector<double> becke_w(natm);
 
@@ -664,7 +660,7 @@ static MolecularGrid assemble_grid(const native::Atom* atoms, int natm,
 
                 // Lebedev weights sum to 1.0; multiply by 4*pi for the
                 // spherical integral.
-                double w = 4.0 * kPi * w_rad * leb_pts[ia].w * becke_w[a];
+                double w = 4.0 * units::pi * w_rad * leb_pts[ia].w * becke_w[a];
 
                 // Drop only genuinely negligible points. The MAGNITUDE is
                 // tested, not the sign: the 266-point Lebedev rule (used
@@ -673,21 +669,11 @@ static MolecularGrid assemble_grid(const native::Atom* atoms, int natm,
                 // the angular quadrature. Becke-killed near-zero points
                 // are still pruned.
                 if (std::abs(w) > 1e-30) {
-                    grid.points.push_back({px, py, pz, w, a});
+                    points.push_back({px, py, pz, w, a});
                 }
             }
         }
     }
-
-    return grid;
-}
-
-// ── Public API ──────────────────────────────────────────────────────────
-
-MolecularGrid build_molecular_grid(const native::Atom* atoms, int natm,
-                                   GridLevel level, int n_radial,
-                                   int n_angular) {
-    return assemble_grid(atoms, natm, level, n_radial, n_angular);
 }
 
 void becke_partition_weights_for_test(const native::Atom* atoms, int natm,

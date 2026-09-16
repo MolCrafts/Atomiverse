@@ -1,40 +1,45 @@
-# The `atomiverse` MPI launcher: every rank native, rank 0 embeds CPython.
-# ONLY this executable links libpython — libatomiverse and _atomiverse.so
-# stay untouched (the wheel's serial `python atv.py` path is unaffected).
+# The `atomiverse` driver binary.
 #
-# The CMake target is `atomiverse_launcher` (the library target already owns
-# the name `atomiverse`); the on-disk binary is still `atomiverse`.
-
-find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter Development.Embed)
+# Always: native LAMMPS-shaped `-in` runner (no Python, no MPI).
+# Optional ATV_BUILD_LAUNCHER: same binary also hosts Python scripts
+# under MPI (rank 0 embeds CPython).
+#
+# CMake target is `atomiverse_cli` (the library already owns `atomiverse`);
+# the on-disk name is `atomiverse`.
+# The library never depends on this directory.
 
 include(GNUInstallDirs)
 
-add_executable(atomiverse_launcher
+set(_ATV_CLI_SRCS
     main.cpp
-    python_host.cpp
-    interpreter_locator.cpp
+    input_script.cpp
 )
-set_target_properties(atomiverse_launcher PROPERTIES
+
+if(ATV_BUILD_LAUNCHER)
+    list(APPEND _ATV_CLI_SRCS python_host.cpp interpreter_locator.cpp)
+endif()
+
+add_executable(atomiverse_cli ${_ATV_CLI_SRCS})
+set_target_properties(atomiverse_cli PROPERTIES
     OUTPUT_NAME atomiverse
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON
-    # 05-packaging: conda/prefix layouts keep libpython at ../lib; uv-managed
-    # python-build-standalone venvs have NO lib/ dir, so also carry the
-    # build-time libpython dir absolutely — the wheel is environment-bound
-    # by design (never manylinux), so an absolute toolchain path is fair.
-    INSTALL_RPATH "$ORIGIN/../lib;${Python3_LIBRARY_DIRS}")
-target_link_libraries(atomiverse_launcher PRIVATE
-    atomiverse
-    Python3::Python
-    MPI::MPI_CXX)
-# Install: wheel builds land the REAL ELF in the wheel's scripts dir
-# (pip copies binaries verbatim — the patchelf precedent — so it reaches
-# the environment's bin/ on PATH, never a console-script shim); plain
-# `cmake --install` uses the conventional bindir.
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON)
+
+target_include_directories(atomiverse_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(atomiverse_cli PRIVATE atomiverse)
+
+if(ATV_BUILD_LAUNCHER)
+    find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter Development.Embed)
+    target_compile_definitions(atomiverse_cli PRIVATE ATV_HAS_LAUNCHER=1)
+    set_target_properties(atomiverse_cli PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib;${Python3_LIBRARY_DIRS}")
+    target_link_libraries(atomiverse_cli PRIVATE Python3::Python MPI::MPI_CXX)
+endif()
+
 if(SKBUILD)
-    install(TARGETS atomiverse_launcher
+    install(TARGETS atomiverse_cli
             RUNTIME DESTINATION "${SKBUILD_SCRIPTS_DIR}")
 else()
-    install(TARGETS atomiverse_launcher
+    install(TARGETS atomiverse_cli
             RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 endif()

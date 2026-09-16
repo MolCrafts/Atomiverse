@@ -1,0 +1,38 @@
+# Offline LAMMPS pin: two rigid TIP4P waters, single-point energy (no dynamics).
+# pair_style lj/cut/tip4p/cut — classic Jorgensen TIP4P (1983/85).
+# units real → report pe in kcal/mol; ATV converts with kcal/mol → eV = 1/23.060547830619026
+#
+# Geometry: two waters, O–O ≈ 2.8 Å along x (near hydrogen-bond contact).
+# Tags consecutive per molecule: O,H1,H2 (LAMMPS tip4p convention tagO+1, tagO+2).
+
+units           real
+atom_style      full
+boundary        p p p
+
+pair_style      lj/cut/tip4p/cut 1 2 1 1 0.15 10.0
+bond_style      harmonic
+angle_style     harmonic
+special_bonds   lj/coul 0.0 0.0 0.0
+
+read_data       data.tip4p_dimer
+
+pair_coeff      1 1 0.1550 3.15365
+pair_coeff      1 2 0.0    1.0
+pair_coeff      2 2 0.0    1.0
+# Match Atomiverse PairLJCut: V(rc)=0 shift
+pair_modify     shift yes
+
+bond_coeff      1 0.0 0.9572
+angle_coeff     1 0.0 104.52
+
+neighbor        1.0 bin
+neigh_modify    delay 0 every 1 check no
+
+# Zero velocities; single force/energy evaluation
+velocity        all set 0.0 0.0 0.0 units box
+thermo_style    custom step pe evdwl ecoul
+thermo          1
+run             0
+print           "PIN_PE $(pe) kcal/mol"
+print           "PIN_EVDWL $(evdwl) kcal/mol"
+print           "PIN_ECOUL $(ecoul) kcal/mol"

@@ -1,15 +1,17 @@
 /// @file cpu/frame/frame.h
-/// @brief CPU Frame physical mapping: blocks + typed meta + simbox.
+/// @brief CPU Frame physical mapping: blocks + typed meta + box.
 ///
 /// This is the hard-cutover representation.  There is no Atom aggregate,
-/// SystemScalars mirror, named box alias, or compatibility accessor.
+/// SystemScalars mirror, `simbox` alias, or compatibility accessor.
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/cpu/frame/block.h"
 #include "atomiverse/cpu/frame/box.h"
 #include "atomiverse/cpu/frame/meta.h"
@@ -31,7 +33,7 @@ class Frame {
     // per-row buffers; all bookkeeping and scalar results live in typed meta.
     BlockMap blocks;
     MetaMap meta;
-    Box simbox;
+    Box box;
 
     Block& block(std::string_view key);
     const Block& block(std::string_view key) const;
@@ -68,6 +70,13 @@ class Frame {
     void set_capacity(int new_capacity);
     void copy_row(int dst, int src);
 
+    /// @brief Copy row `src` of `source`'s atoms Block into row `dst` of
+    ///        this Frame's — see `Block::copy_row_from`.
+    /// @param source Frame to read from.
+    /// @param dst Destination row in this Frame.
+    /// @param src Source row in `source`.
+    void copy_row_from(const Frame& source, int dst, int src);
+
     bool has_bonded() const { return meta.get(kHasBonded) != 0; }
     void ensure_bonded_storage();
     void grow_bond_per_atom(int target);
@@ -98,7 +107,7 @@ class Frame {
 
     /// Create an independent Frame with the same exact Block/Column and
     /// serializable-meta schema. Per-row values and backend-local counts/index
-    /// are fresh; topology strides and simbox are preserved.
+    /// are fresh; topology strides and box are preserved.
     Frame clone_structure(int rows) const;
 
   private:
@@ -107,6 +116,36 @@ class Frame {
     Block& atoms_block_() { return block("atoms"); }
     const Block& atoms_block_() const { return block("atoms"); }
 };
+
+/// @brief Validate a Frame against the folded ghost contract, pydantic
+///        `model_validate` style: report EVERY problem, not the first.
+///
+/// The contract-to-Frame relationship is validation, not construction. A
+/// Frame is a mapping and arrives with whatever its source gave it (a data
+/// file, `Block::insert`, another rank); nothing builds one from a contract.
+///
+/// Reports a field that is absent, and a field that is present with the
+/// wrong element type or width — the second is the case a bare name list
+/// cannot see, and it is the one that corrupts a wire silently. Freshness
+/// and direction are not checked here: they say what the engine must do with
+/// the column, not what the Frame has to look like.
+///
+/// @param required Fields the mounted components declared.
+/// @param frame Frame to check.
+/// @return One entry per problem, each naming the field and its declarer.
+///         Empty when the Frame satisfies the contract.
+std::vector<SchemaError> validate_ghosts(const GhostContract& required,
+                                         const Frame& frame);
+
+/// @brief `validate_ghosts`, but throws a single message listing every
+///        problem. The systematic form of CLAUDE.md's per-component rule:
+///        a missing required field throws with a how-to, never defaults.
+/// @param required Fields the mounted components declared.
+/// @param frame Frame to check.
+/// @param who Caller name, used in the message.
+/// @throws std::runtime_error when the Frame does not satisfy the contract.
+void check_ghosts(const GhostContract& required, const Frame& frame,
+                  std::string_view who);
 
 } // namespace cpu
 } // namespace ATV

@@ -1,0 +1,54 @@
+num_steps 0
+timestep 41.341
+temperature 0.0
+num_pbc 2
+
+species
+
+  species_type
+    name Xx
+    count 2
+    charge point 0.0
+    mass 39.948
+    mobile True
+
+  species_type
+    name C1
+    count 112
+    charge gaussian 9.552347170717541E-01 0.0
+    mass 12.011
+    mobile False
+
+  species_type
+    name C2
+    count 112
+    charge gaussian 9.552347170717541E-01 0.0
+    mass 12.011
+    mobile False
+
+electrodes
+
+  electrode_type
+    name C1
+    species C1
+    potential -3.674932217565499E-02
+
+  electrode_type
+    name C2
+    species C2
+    potential 3.674932217565499E-02
+
+  electrode_charges matrix_inversion
+  charge_neutrality true electrodes
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-10
+    coulomb_rcut 8.0
+    coulomb_ktol 1.0e-12
+
+output
+  step 1
+  charges 1
+  total_charges 1
+  energies 1 Hamiltonian Potential Coulomb

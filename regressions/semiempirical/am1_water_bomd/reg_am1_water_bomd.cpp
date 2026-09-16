@@ -1,4 +1,5 @@
 /// @file regressions/semiempirical/am1_water_bomd/reg_am1_water_bomd.cpp
+#include <utility>
 /// @brief Short AM1 BOMD smoke: MD + VelocityVerlet + AM1 forces.
 ///
 /// Method: AM1 (Dewar et al., J. Am. Chem. Soc. 107, 3902 (1985)).
@@ -10,12 +11,12 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/semiempirical/am1_evaluator.h"
-#include "atomiverse/facade/stage.h"
 
 namespace {
 
@@ -42,7 +43,7 @@ ATV::cpu::Frame make_water() {
         f.span(ATV::kAtom_vy)[i] = 0.0;
         f.span(ATV::kAtom_vz)[i] = 0.0;
     }
-    f.simbox = ATV::cpu::Box::cubic(20.0);
+    f.box = ATV::cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -57,16 +58,17 @@ int main() {
     constexpr int n_steps = 20;
     constexpr double T0 = 10.0; // K — gentle KE for SCF-stable BOMD smoke
 
-    cpu::semiempirical::AM1Config cfg;
+    cpu::semiempirical::AM1 cfg;
     cfg.max_iter = 300;
     cfg.density_tol = 1.0e-7;
     cfg.energy_tol = 1.0e-9;
 
     cpu::md::MD sim;
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
-    sim.add(cpu::md::InitVelocity{T0, /*seed=*/7u});
+    sim.set_observer(cpu::md::InitVelocity{T0, /*seed=*/7u});
     sim.on(md::Phase::force)
-        .add(cpu::semiempirical::AM1Evaluator{cfg}.with_gradient(true));
+        .add(cpu::semiempirical::AM1Evaluator{std::move(cfg)}.with_gradient(
+            true));
     sim.build();
     sim.run(frame, n_steps);
 

@@ -20,6 +20,7 @@
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
 #include "atomiverse/cpu/scf/internal/density_builder.h"
+#include "atomiverse/cpu/scf/scf_enums.h"
 
 namespace ATV {
 namespace cpu {
@@ -72,18 +73,27 @@ class DensityStage : public cpu::Component {
     ///                          is subtracted first via `e_pcm_fock_half`.
     /// @param e_pcm_fock_half   ½ Tr[V_pcm P_total] [Hartree] already inside
     ///                          the HF ½ Tr[(H+F)P] formula (read; 0 off).
-    DensityStage(bool restricted, bool is_hf, double damping,
-                 const RealMatrix& C_alpha, const RealMatrix& C_beta,
-                 const RealMatrix& F_alpha, const RealMatrix& F_beta,
-                 const RealMatrix& Hcore, const RealMatrix& J,
-                 const int& n_alpha, const int& n_beta, const int& n_basis,
-                 const bool& diis_active, const double& e_xc_grid,
-                 const double& e_exact_exchange, const double& v_nuc,
-                 RealMatrix& P_alpha, RealMatrix& P_beta, double& e_total,
-                 double& e_one, double& e_coulomb, bool generalized = false,
-                 const double& e_solvent = DensityStage::discard_double_(),
-                 const double& e_pcm_fock_half =
-                     DensityStage::discard_double_());
+    /// @param S                 AO overlap (dimensionless); used only when
+    ///                          `mom_style != Off` for projection scores.
+    /// @param mom_style         Maximum-overlap occupation selector (read).
+    /// @param mom_ref_C_alpha   Reference occupied α MO columns [n × n_α]
+    ///                          (read/write: updated each step under MOM).
+    /// @param mom_ref_C_beta    Reference occupied β MO columns [n × n_β].
+    DensityStage(
+        bool restricted, bool is_hf, double damping, const RealMatrix& C_alpha,
+        const RealMatrix& C_beta, const RealMatrix& F_alpha,
+        const RealMatrix& F_beta, const RealMatrix& Hcore, const RealMatrix& J,
+        const int& n_alpha, const int& n_beta, const int& n_basis,
+        const bool& diis_active, const double& e_xc_grid,
+        const double& e_exact_exchange, const double& v_nuc,
+        RealMatrix& P_alpha, RealMatrix& P_beta, double& e_total, double& e_one,
+        double& e_coulomb, bool generalized = false,
+        const double& e_solvent = DensityStage::discard_double_(),
+        const double& e_pcm_fock_half = DensityStage::discard_double_(),
+        const RealMatrix& S = DensityStage::discard_matrix_(),
+        const MomStyle& mom_style = DensityStage::discard_mom_(),
+        RealMatrix& mom_ref_C_alpha = DensityStage::discard_matrix_mut_(),
+        RealMatrix& mom_ref_C_beta = DensityStage::discard_matrix_mut_());
 
     /// @brief Component name.
     /// @return `"scf_density_stage"`.
@@ -106,6 +116,25 @@ class DensityStage : public cpu::Component {
         static double sink = 0;
         return sink;
     }
+    static const RealMatrix& discard_matrix_() {
+        static RealMatrix sink;
+        return sink;
+    }
+    static RealMatrix& discard_matrix_mut_() {
+        static RealMatrix sink;
+        return sink;
+    }
+    static const MomStyle& discard_mom_() {
+        static MomStyle sink = MomStyle::Off;
+        return sink;
+    }
+
+    /// @brief Build P = factor · Σ_{j∈S} c_j c_jᵀ where S is the n_occ
+    ///        new MOs with largest projection onto `C_ref` under metric S.
+    ///        When style is MOM, overwrite `C_ref` with the selected columns.
+    static RealMatrix mom_density_(const RealMatrix& C, RealMatrix& C_ref,
+                                   const RealMatrix& S, int n_occ, int n_basis,
+                                   double factor, MomStyle style);
 
     bool restricted_;
     bool is_hf_;
@@ -118,6 +147,7 @@ class DensityStage : public cpu::Component {
     const RealMatrix& F_beta_;
     const RealMatrix& Hcore_;
     const RealMatrix& J_;
+    const RealMatrix& S_;
 
     const int& n_alpha_;
     const int& n_beta_;
@@ -128,9 +158,12 @@ class DensityStage : public cpu::Component {
     const double& v_nuc_;
     const double& e_solvent_;
     const double& e_pcm_fock_half_;
+    const MomStyle& mom_style_;
 
     RealMatrix& P_alpha_;
     RealMatrix& P_beta_;
+    RealMatrix& mom_ref_C_alpha_;
+    RealMatrix& mom_ref_C_beta_;
     double& e_total_;
     double& e_one_;
     double& e_coulomb_;

@@ -1,0 +1,64 @@
+! CP2K twin for regressions/gpw/gpw-dftu-kpoints — multi-k UKS + PLUS_U on
+! high-spin H2 (DZV-GTH-PADE). Run OFFLINE only; never at ctest time.
+! Pin: total energy + DFT+U energy → REFERENCE.md (cite CP2K version).
+&GLOBAL
+  PROJECT h2_uks_dftu_kpoints
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_SET
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    PLUS_U_METHOD MULLIKEN
+    LSD
+    MULTIPLICITY 3
+    &MGRID
+      CUTOFF 120
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-7
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 2 2 2
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 100
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.35
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC [bohr] 8.0 8.0 8.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      H  3.3  4.0  4.0
+      H  4.7  4.0  4.0
+      UNIT bohr
+    &END COORD
+    &KIND H
+      BASIS_SET DZV-GTH-PADE
+      POTENTIAL GTH-PADE-q1
+      &DFT_PLUS_U
+        L 0
+        U_MINUS_J [eV] 4.0
+      &END DFT_PLUS_U
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

@@ -17,13 +17,12 @@
 #include <cmath>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/comm/halo_exchange.h"
+#include "atomiverse/cpu/dynamics/deform.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/deform.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observer/virial_stress.h"
+#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
 using namespace ATV;
@@ -54,7 +53,7 @@ cpu::Frame make_fcc_argon(int n_cells, double a_lat) {
                     frame.span(ATV::kAtom_type)[idx] = 18;
                     ++idx;
                 }
-    frame.simbox = ATV::cpu::Box::cubic(n_cells * a_lat);
+    frame.box = ATV::cpu::Box::cubic(n_cells * a_lat);
     return frame;
 }
 
@@ -74,20 +73,18 @@ TEST(DeformMultiRank, UniaxialPullStretchesBoxOnAllRanks) {
     const double lj_cut = 6.0;
     const double dt = 0.5;
 
-    const double box_x_initial = frame.simbox.cell()(0, 0);
+    const double box_x_initial = frame.box.cell()(0, 0);
     const double strain_rate = 1e-4; // 1/fs
     const int n_steps = 200;
 
     cpu::md::MD sim;
-    sim.add(cpu::md::VelocityVerlet{dt});
-    sim.add(cpu::md::Deform{cpu::md::Deform::Mode::erate, strain_rate, dt,
-                            /*axis=*/0});
-    sim.on(ATV::md::Phase::pre_force).add(cpu::comm::HaloSend{lj_cut}, -20);
-    sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
-    sim.on(ATV::md::Phase::force)
-        .add(cpu::md::NeighborList<>{lj_cut}, -10)
-        .add(cpu::PairLJCut{lj_eps, lj_sig, lj_cut});
-    sim.add(cpu::md::Virial{});
+    sim.set_integrator(cpu::md::VelocityVerlet{dt});
+    sim.set_observer(cpu::md::Deform{cpu::md::Deform::Mode::erate, strain_rate,
+                                     dt,
+                                     /*axis=*/0});
+    sim.set_neighbor(cpu::md::NeighborList<>{lj_cut});
+    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{lj_eps, lj_sig, lj_cut});
+    sim.set_observer(cpu::md::Virial{});
     sim.build();
 
     sim.run(frame, n_steps);
@@ -97,13 +94,13 @@ TEST(DeformMultiRank, UniaxialPullStretchesBoxOnAllRanks) {
     const double expected_box_x =
         box_x_initial * (1.0 + strain_rate * n_steps * dt);
 
-    EXPECT_NEAR(frame.simbox.cell()(0, 0), expected_box_x, 1e-6)
+    EXPECT_NEAR(frame.box.cell()(0, 0), expected_box_x, 1e-6)
         << "box_x deformation diverged from analytic expectation";
 
     // Rank consistency: gather all ranks' box_x via min and max -- must agree
     // exactly across ranks (Deform is fully deterministic per rank).
     double box_x_min, box_x_max;
-    const double bx = frame.simbox.cell()(0, 0);
+    const double bx = frame.box.cell()(0, 0);
     MPI_Allreduce(&bx, &box_x_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
     MPI_Allreduce(&bx, &box_x_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
     EXPECT_DOUBLE_EQ(box_x_min, box_x_max)

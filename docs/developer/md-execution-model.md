@@ -26,7 +26,7 @@ empty — a concrete instance of the empty-phase principle below.
 ## The three-stage driver lifetime
 
 Every driver runs the same shape, composed from the loop primitives
-`CPUDriver` provides:
+`Driver` provides:
 
 ```
 run(frame, n_steps):
@@ -58,19 +58,19 @@ streams, velocity initialisers) keep their state across calls.
 `backend.step()` walks a compiled **Plan** — a list of *slots*, one per phase,
 in phase order. Each slot holds the components bound to that phase, launched in
 ascending *order* (see below). The phases are the `ATV::md::Phase` enum
-(`include/atomiverse/facade/stage.h`), modelled on the LAMMPS Verlet timestep so
+(`include/atomiverse/core/stage.h`), modelled on the LAMMPS Verlet timestep so
 the whole step is legible from the enum:
 
 | Phase | Responsibility | LAMMPS equivalent |
 |---|---|---|
 | `initial_integrate` | First half-kick `v += ½·dt·f/m`, drift `x += dt·v`; barostat box push | `initial_integrate` |
 | `post_integrate` | Hook immediately after the kick/drift (usually empty) | `post_integrate` |
-| `pre_exchange` | Re-home atoms that crossed a rank boundary (`Migrate`) | `pre_exchange` |
-| `pre_neighbor` | Build ghost atoms — send owned positions to neighbour ranks (`HaloSend`) | `pre_neighbor` |
+| `pre_exchange` | Re-home atoms that crossed a rank boundary (`ctx.md.comm->exchange`) | `pre_exchange` |
+| `pre_neighbor` | Build ghost atoms — send owned positions to neighbour ranks (`ctx.md.comm->borders`) | `pre_neighbor` |
 | `neighbor` | (Re)build the cell / pair neighbour list (`NeighborList`) | neighbor build |
 | `pre_force` | Zero the force / energy / stress accumulators before evaluation | `force_clear` + `pre_force` |
 | `force` | Accumulate forces, energy, and virial (pair + bonded kernels) | `pair/bond/...->compute()` |
-| `post_force` | Reverse ghost-force comm (`HaloRecv`), virial finalize, external/constraint forces | reverse comm + `post_force` |
+| `post_force` | Reverse ghost-force comm (`ctx.md.comm->reverse_comm`), virial finalize, external/constraint forces | reverse comm + `post_force` |
 | `final_integrate` | Second half-kick `v += ½·dt·f/m`; barostat velocity scale | `final_integrate` |
 | `end_of_step` | Global reductions (energy, kinetic, virial), thermostat/barostat bookkeeping, observers, I/O | `end_of_step` + output |
 
@@ -121,7 +121,7 @@ end_of_step       :  zero_kinetic(-1000), kinetic_energy(-100), reduce(-50),
                      observers(+20), rebalance(+1000)
 ```
 
-The categorical setters (`add_potential`, `set_neighbor`, `set_integrator`,
+The categorical setters (`set_evaluator`, `set_neighbor`, `set_integrator`,
 `set_thermostat`, `set_barostat`, …) are thin wrappers that call
 `on(phase).add(...)` at the documented phase/order, so a plan built with the
 setters is identical to one built with raw `add()` calls. `set_neighbor` binds
@@ -174,8 +174,8 @@ genuinely new point in the step that no existing phase models.
 ## Naming convention
 
 Component class names are one to two words, `UpperCamelCase`, with the `name()`
-string the `snake_case` echo (`HaloSend` → `"halo_send"`). Names avoid redundant
-filler ("Exchange", "Stress") and prefer the direct verb or noun (`Migrate`,
+string the `snake_case` echo (`NeighborList` → `"neighbor_list"`). Names avoid redundant
+filler ("Exchange", "Stress") and prefer the direct verb or noun (
 `Reduce`, `Publish`, `Rebalance`, `Virial`). Force-kernel names keep the
 functional form they implement (`BondHarmonic`, `DihedralMultiHarmonic`) because
 the form — not just "a bond" — is what distinguishes one style from the next.

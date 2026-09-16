@@ -1,0 +1,28 @@
+# Offline pin notes — gpw-hirshfeld-uks
+
+## Method
+
+Hirshfeld \(V/V_{\mathrm{free}}\) from the **Γ-UKS** GPW PBE total valence
+density \(\rho=\rho_\alpha+\rho_\beta\) (in-tree exponential free-atom model,
+`hirshfeld_tables.h`) → MBD@rsSCS with scaled α/C6/R (same libMBD free-atom
+tables as `gpw-mbd-ice` / `gpw-mbd-hirshfeld`).
+
+## Why not stock CP2K QS?
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` is only DFTD2|DFTD3|DFTD3(BJ)|DFTD4 — no
+stock TS/MBD. Hard pin is the ATV product under fixed UKS settings (CUTOFF
+200 Ry, DZVP-MOLOPT-GTH, GTH-PBE-q6, O₂ triplet Nα=7/Nβ=5, MT 12 Å cell),
+cross-checked vs free-atom MBD and the dual in-tree Hirshfeld kernel.
+
+## Geometry
+
+Same centered O₂ as `gpw-uks-pbe` / `gpw-uks-o2-gamma` (R = 1.2075 Å).
+
+## Pin (product settings)
+
+```
+E_disp = -1.0379964698969957e-04 Ha
+volumes (O O) ≈ 0.6666 0.6666
+CUTOFF 200 Ry, DZVP-MOLOPT-GTH, GTH-PBE-q6, O2 triplet Nα=7/Nβ=5, MT 12 Å
+max_iter 150, tol 1e-6, mix 0.35, diis_depth 10
+```

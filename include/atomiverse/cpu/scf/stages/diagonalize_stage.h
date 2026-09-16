@@ -26,11 +26,11 @@
 #include <tuple>
 #include <vector>
 
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
 #include "atomiverse/cpu/scf/internal/eigen_solver.h"
 #include "atomiverse/cpu/scf/internal/soscf.h"
-#include "atomiverse/facade/stage.h"
 
 namespace ATV {
 namespace cpu {
@@ -122,18 +122,18 @@ class DiagonalizeStage : public cpu::Component {
     }
 
   private:
-    bool restricted_;             ///< RHF/RKS β-reuse mode selector.
-    const RealMatrix& F_alpha_;   ///< α Fock [Hartree] (read).
-    const RealMatrix& F_beta_;    ///< β Fock [Hartree] (read).
-    const RealMatrix& S_;         ///< Overlap (dimensionless, read).
-    const RealMatrix& X_;         ///< Orthogonalization transform (read).
-    const int& n_dropped_;        ///< Column-drop count → path selector (read).
-    RealMatrix& C_alpha_;         ///< α MO coefficients (write).
-    RealMatrix& C_beta_;          ///< β MO coefficients (write).
-    RealVector& eig_alpha_;       ///< α orbital energies [Hartree] (write).
-    RealVector& eig_beta_;        ///< β orbital energies [Hartree] (write).
+    bool restricted_;           ///< RHF/RKS β-reuse mode selector.
+    const RealMatrix& F_alpha_; ///< α Fock [Hartree] (read).
+    const RealMatrix& F_beta_;  ///< β Fock [Hartree] (read).
+    const RealMatrix& S_;       ///< Overlap (dimensionless, read).
+    const RealMatrix& X_;       ///< Orthogonalization transform (read).
+    const int& n_dropped_;      ///< Column-drop count → path selector (read).
+    RealMatrix& C_alpha_;       ///< α MO coefficients (write).
+    RealMatrix& C_beta_;        ///< β MO coefficients (write).
+    RealVector& eig_alpha_;     ///< α orbital energies [Hartree] (write).
+    RealVector& eig_beta_;      ///< β orbital energies [Hartree] (write).
     internal::SOSCFStepper* soscf_; ///< Borrowed CIAH stepper (may be null).
-    const bool& soscf_active_;    ///< SOSCF latch (read; method-owned).
+    const bool& soscf_active_;      ///< SOSCF latch (read; method-owned).
     internal::EigenSolver eigen_; ///< Closed numeric kernel (NOT a Component).
 };
 

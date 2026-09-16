@@ -1,0 +1,79 @@
+# Offline oracle note — dfpt-gga-spin-finite-q-si (PW DFPT finite-q × spin × GGA, Si at X)
+
+## Intent
+
+Pin finite-q (X = (1/2,0,0)) DFPT phonons for diamond Si with the **joint**
+collinear-spin × pure-GGA (PBE) response kernel on the plane-wave method —
+the triple product of the two shipped joint parents `dfpt-gga-spin-si`
+(Γ, spin × PBE) and `dfpt-gga-finite-q-si` (X supercell path, restricted
+PBE).
+
+## Oracle status (2026-07-31) — CP2K RUN, offline
+
+**CP2K 2026.1** (source rev `85b8a9b49c`, `~/.local/bin/cp2k`, Arrhenius
+epyc login node — the same binary as the parent pins; no module,
+`module avail cp2k` still empty). CP2K has no PW-DFPT, so the twin is
+`RUN_TYPE VIBRATIONAL_ANALYSIS` on the **2×1×1 supercell** (4 atoms) with
+**LSD + MULTIPLICITY 1 + PBE**: the supercell Γ FD spectrum folds primitive
+Γ ∪ X, and the eigenvector phases identify the X branch on the same
+spin×GGA Hamiltonian class:
+
+- Input: `inputs/dfpt-gga-spin-finite-q-si/si4_uks_pbe_vib.inp` (LSD,
+  MULTIPLICITY 1, PBE, DZVP-MOLOPT-SR-GTH, GTH-PBE-q4, CUTOFF 300 Ry,
+  MP 1×2×2 on the supercell ≡ 2×2×2 on the primitive, `FULLY_PERIODIC T`,
+  DX 0.01 bohr, `EPS_SCF 1e-8`).
+- Run: `CP2K_DATA_DIR=<cp2k>/data OMP_NUM_THREADS=1 cp2k -i si4_uks_pbe_vib.inp -o out`
+- Output lines (9 modes; 3 translations projected out by CP2K):
+  `VIB|Frequency (cm^-1)  9.7979171441E+01    1.3126605303E+02    3.7058085178E+02`
+  `VIB|Frequency (cm^-1)  4.2823632737E+02    4.5748022016E+02    4.5868391248E+02`
+  `VIB|Frequency (cm^-1)  5.3831837242E+02    5.3831998162E+02    5.4364489119E+02`
+  Modes 1–6 carry the X folding phase (unit cells out of phase) →
+  **X branch: 97.98, 131.27 (TA doublet, FD-split — same systematic as the
+  restricted supercell parent), 370.58, 428.24 (LA/LO), 457.48, 458.68
+  (TO) cm⁻¹**. Modes 7–9 = primitive Γ optical (538.32, 538.32, 543.64).
+  Digit-identical to the restricted-PBE supercell twin
+  (`dfpt-gga-finite-q-si`) at M = 0, as required.
+- Wall (serial, 1 thread): **577.80 s**. ATV DFPT twin regression:
+  **107.9 s** (serial) → fair ratio r = T_atv/T_cp2k = **0.19** (≤ 10).
+
+The GPW GTH/MOLOPT representation differs from the ATV NC-UPF 10 Ry PW twin
+(Γ-only supercell mesh), so the CP2K numbers anchor the **physics windows**
+(|ω| low 3 ∈ [50, 400], high 3 ∈ [300, 850] cm⁻¹ — the family windows that
+contain both engines), not the digit. The sharp same-Hamiltonian gate is
+below.
+
+## Sharp pin (same Hamiltonian, energy-only path)
+
+Central second difference of the **collinear-spin PBE** PW SCF total energy
+on the **2×1×1 supercell** (h = 0.03 Å on supercell atom-0 x, SCF tol 1e-8,
+`mix_beta` 0.3 — supercell/sparse-k spin densities ring at the default 0.7;
+the DFPT-internal spin SCF caps mix at 0.4 for the same reason; identical
+ecut/k/XC/UPF/spin):
+
+- E₀ = −15.121055565028 Ha, E(+h) = −15.120904278764 Ha,
+  E(−h) = −15.120505654960 Ha (each converged in 37 iters, mag=0)
+- C[(0x),(0x)] = (E⁺ − 2E⁰ + E⁻)/h² = **21.2006 eV/Å²**
+  (digit-identical to the restricted supercell parent pin)
+
+DFPT supercell diagonal at regression settings: **21.1911 eV/Å²**
+(|Δ| vs 21.2006 ≈ 0.04 %); regression gate |Δ| ≤ 0.30 eV/Å². M = 0
+identity vs restricted parent DFPT C00 21.1974: |Δ| ≈ 0.006 eV/Å²
+(tol 0.05).
+
+Both measured 2026-07-31 (Release, this host) with a scratch harness that
+builds the supercell via `cpu::vib::expand_supercell(frame, 2, 1, 1)` and
+runs `PW::run` (spin_polarized, mix_beta 0.3) — an independent energy-only
+code path (Davidson SCF total energy), not the DFPT solver. ctest never
+launches CP2K; the regression hard-codes the numbers (`REFERENCE.md`).
+
+## Twin settings (match regression)
+
+| Item | Value |
+| ---- | ----- |
+| Cell | diamond Si, a = 5.43 Å, 2-atom fcc primitive → 2×1×1 supercell for C00 FD |
+| PP | `tests/data/pw/Si_lda_nc.upf` (in-tree NC ONCV) |
+| XC | PBE (pure GGA; joint spin kernel via FD of the spin-GGA XC operator) |
+| Spin | collinear, multiplicity = 1 (M = 0) |
+| ecut | 10 Ry |
+| k-mesh | 1×1×1 on the supercell (Γ+X of primitive folded) |
+| q | X = (1/2, 0, 0) → commensurate 2×1×1 supercell Γ-DFPT |

@@ -74,8 +74,14 @@ bool am1_has_parameter(int z) noexcept;
 /// @return ΔHf(atom, gas, 298 K) [kcal/mol].
 double am1_atomic_heat_kcal_mol(int z);
 
-/// @brief eV → kcal/mol factor used by MOPAC/AM1 thermochemistry (23.061).
-inline constexpr double kAm1EvToKcalMol = 23.061;
+/// @brief eV → kcal/mol factor used by MOPAC NDDO thermochemistry.
+///
+/// MOPAC's default fundamental constants are 2018 CODATA
+/// (`conref_C.F90` `fpcref(1,9)` = e·N_A·10⁻³/4.184). The legacy 23.061
+/// (`fpcref(2,9)`, only selected by the `OLDCON` keyword) shifts ΔHf by
+/// ~8·10⁻³ kcal/mol on a triatomic — the entire residual against OpenMOPAC's
+/// own RM1 reference output for CO₂ before this was corrected.
+inline constexpr double kAm1EvToKcalMol = 23.060547830619029;
 
 } // namespace semiempirical
 } // namespace cpu

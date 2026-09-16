@@ -1,0 +1,81 @@
+! CP2K twin for regressions/gpw/ot-uks-dftu-smearing.
+! NOTE (CP2K 2026.1):
+!   - OT is incompatible with k-points
+!     ("OT not possible with kpoint calculations" in qs_scf_initialization).
+!   - Product OT does not combine with SMEAR (fixed integer OT occupations).
+! This input is the **DIIS/diagonalization** multi-k UKS PLUS_U + FERMI_DIRAC
+! twin of the ATV multi-k UKS OT+U+smear product path (same free-energy fixed
+! point as reg A2). Run OFFLINE only; never at ctest time.
+! Cell 8 Bohr cubic, equal-spin H2 DZV-GTH-PADE, PADE LSD, CUTOFF 100,
+! general k = (1/4,0,0) weight 1, DFT_PLUS_U L=0 U-J=4 eV on H,
+! MULTIPLICITY 1 (nα=nβ seed under SMEAR), FERMI_DIRAC kT = 0.02 Ry,
+! ADDED_MOS 2.
+
+&GLOBAL
+  PROJECT h2_uks_ot_dftu_smear
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_SET
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 1
+    PLUS_U_METHOD MULLIKEN
+    &MGRID
+      CUTOFF 100
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-7
+    &END QS
+    &KPOINTS
+      SCHEME GENERAL
+      &KPOINT 0.25 0.0 0.0 1.0
+      &END KPOINT
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-8
+      MAX_SCF 300
+      ADDED_MOS 2
+      &SMEAR ON
+        METHOD FERMI_DIRAC
+        ELECTRONIC_TEMPERATURE [K] 3157.75
+      &END SMEAR
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.35
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC [bohr] 8.0 8.0 8.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      H  3.3  4.0  4.0
+      H  4.7  4.0  4.0
+    &END COORD
+    &KIND H
+      BASIS_SET DZV-GTH-PADE
+      POTENTIAL GTH-PADE-q1
+      &DFT_PLUS_U
+        L 0
+        U_MINUS_J [eV] 4.0
+      &END DFT_PLUS_U
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

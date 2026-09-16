@@ -1,0 +1,101 @@
+# CP2K twin for regressions/gpw/gpw-bomd-uks-kpoints (offline oracle — never
+# run at ctest/regression time). Plain multi-k UKS Born-Oppenheimer MD:
+# periodic H2 Quickstep collinear UKS NVE with &KPOINTS, full SCF each step,
+# previous-step dual-spin density as SCF guess (EXTRAPOLATION USE_PREV_P =
+# twin of ATV's multi-k UKS P_k^alpha / P_k^beta warm start).
+#
+# Same-basis / same-PP twin of the ATV regression:
+#   basis  DZV-GTH-PADE  (CP2K data file BASIS_SET — numerically identical to
+#                         ATV's in-tree kBas_H_DZV_GTH_PADE table)
+#   PP     GTH-PADE-q1   (GTH_POTENTIALS — rloc 0.2, c1 -4.18023680,
+#                         c2 0.72507482 = ATV kPot_H_GTH_PADE_q1)
+#   XC     PADE, CUTOFF 300 Ry, NGRIDS 1, MP 1x1x2 FULL_GRID (2 k, w = 1/2)
+#   spin   LSD + MULTIPLICITY 1 (closed-shell collinear UKS: Nα=Nβ=1 —
+#          both channels non-empty, molecule bound; dual-spin warm start)
+#   cell   cubic 12 Bohr, H at (5.5, 6, 6) and (6.5, 6, 6) Bohr
+#   MD     NVE, dt 0.5 fs, 4 steps, v0 = -/+0.001 Angstrom/fs along x
+#          (= -/+4.5710290e-5 Bohr/au_t)
+#
+# Run (Arrhenius login / CP2K source install):
+#   source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+#   export OMP_NUM_THREADS=8
+#   mpirun -np 1 cp2k.psmp -i h2_uks_bomd_kpoints_nve.inp \
+#          -o h2_uks_bomd_kpoints_nve.out
+# Pin: per-step Pot/Cons from PROJECT-1.ener + step-0 FORCES (REFERENCE.md).
+&GLOBAL
+  PROJECT h2_uks_bomd_kpoints_nve
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 4
+    TIMESTEP 0.5
+  &END MD
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  &PRINT
+    &FORCES ON
+    &END FORCES
+  &END PRINT
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_SET
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 1
+    &MGRID
+      CUTOFF 300
+      NGRIDS 1
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+      EXTRAPOLATION USE_PREV_P
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-7
+      MAX_SCF 60
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.3
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+      FULL_GRID .TRUE.
+    &END KPOINTS
+    &POISSON
+      PERIODIC XYZ
+      PSOLVER PERIODIC
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC [bohr] 12.0 12.0 12.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      UNIT bohr
+      H  5.5  6.0  6.0
+      H  6.5  6.0  6.0
+    &END COORD
+    &KIND H
+      BASIS_SET DZV-GTH-PADE
+      POTENTIAL GTH-PADE-q1
+    &END KIND
+    &VELOCITY
+      -4.5710290E-05  0.0  0.0
+       4.5710290E-05  0.0  0.0
+    &END VELOCITY
+  &END SUBSYS
+&END FORCE_EVAL

@@ -79,14 +79,13 @@ class SOSCFStepper {
     ///        (dimensionless); the solve returns its best Ritz pair at the
     ///        budget (co-iteration, not failure).
     /// @param trust_radius Initial trust radius on ‖κ‖₂ (dimensionless).
-    SOSCFStepper(bool restricted, const IntegralPack& ints,
-                 const int& n_alpha, const int& n_beta,
-                 const RealMatrix& Hcore, const double& v_nuc,
-                 const RealMatrix& F_alpha, const RealMatrix& F_beta,
-                 const RealMatrix& P_alpha, const RealMatrix& P_beta,
-                 RealMatrix& C_alpha, RealMatrix& C_beta,
-                 RealVector& eig_alpha, RealVector& eig_beta, int max_micro,
-                 double trust_radius);
+    SOSCFStepper(bool restricted, const internal::IntegralView& ints, const int& n_alpha,
+                 const int& n_beta, const RealMatrix& Hcore,
+                 const double& v_nuc, const RealMatrix& F_alpha,
+                 const RealMatrix& F_beta, const RealMatrix& P_alpha,
+                 const RealMatrix& P_beta, RealMatrix& C_alpha,
+                 RealMatrix& C_beta, RealVector& eig_alpha,
+                 RealVector& eig_beta, int max_micro, double trust_radius);
 
     /// @brief Per-run reset: drop the cached ERI tensor, restore the initial
     ///        trust radius, clear the accepted-energy history.
@@ -196,12 +195,10 @@ class SOSCFStepper {
     ///        tensor (same reshape/dot pattern as
     ///        `OrbitalHessian::transform_block_`); used for the five
     ///        unrestricted occ-virt blocks.
-    static xt::xtensor<double, 4>
-    mo_transform_(const xt::xtensor<double, 4>& eri_ao,
-                  const xt::xtensor<double, 2>& C0,
-                  const xt::xtensor<double, 2>& C1,
-                  const xt::xtensor<double, 2>& C2,
-                  const xt::xtensor<double, 2>& C3);
+    static xt::xtensor<double, 4> mo_transform_(
+        const xt::xtensor<double, 4>& eri_ao, const xt::xtensor<double, 2>& C0,
+        const xt::xtensor<double, 2>& C1, const xt::xtensor<double, 2>& C2,
+        const xt::xtensor<double, 2>& C3);
 
     /// @brief Apply exp(κ) to one channel: build the full antisymmetric
     ///        generator from the occ-virt amplitudes and rotate C in place.
@@ -211,12 +208,12 @@ class SOSCFStepper {
     static void rotate_channel_(const RealVector& kappa, int n_occ,
                                 RealMatrix& C);
 
-    bool restricted_;          ///< Closed-shell (single channel) mode.
-    const IntegralPack& ints_; ///< Integral workspace (ERI source).
-    const int& n_alpha_;       ///< α electron count (read).
-    const int& n_beta_;        ///< β electron count (read).
-    const RealMatrix& Hcore_;  ///< Core Hamiltonian [Hartree] (read).
-    const double& v_nuc_;      ///< Nuclear repulsion [Hartree] (read).
+    bool restricted_;           ///< Closed-shell (single channel) mode.
+    internal::IntegralView ints_;  ///< Integral workspace (ERI source).
+    const int& n_alpha_;        ///< α electron count (read).
+    const int& n_beta_;         ///< β electron count (read).
+    const RealMatrix& Hcore_;   ///< Core Hamiltonian [Hartree] (read).
+    const double& v_nuc_;       ///< Nuclear repulsion [Hartree] (read).
     const RealMatrix& F_alpha_; ///< α Fock [Hartree] (read).
     const RealMatrix& F_beta_;  ///< β Fock [Hartree] (read).
     const RealMatrix& P_alpha_; ///< α density (read).
@@ -228,15 +225,15 @@ class SOSCFStepper {
     int max_micro_;             ///< Davidson expansion budget per macro step.
     double trust_radius0_;      ///< Initial trust radius (reset value).
 
-    xt::xtensor<double, 4> eri_; ///< Cached dense working-dim AO ERI
-                                 ///< [Hartree] (per-run, lazily built).
-    double radius_ = 0.0;        ///< Current trust radius on ‖κ‖₂.
-    bool have_prev_ = false;     ///< An accepted step's energy is recorded.
-    double prev_energy_ = 0.0;   ///< Last ACCEPTED iterate's energy [Hartree].
-    RealMatrix saved_C_alpha_;   ///< α coefficients of the accepted iterate.
-    RealMatrix saved_C_beta_;    ///< β coefficients of the accepted iterate.
-    RealVector saved_eig_alpha_; ///< α energies of the accepted iterate.
-    RealVector saved_eig_beta_;  ///< β energies of the accepted iterate.
+    xt::xtensor<double, 4> eri_;  ///< Cached dense working-dim AO ERI
+                                  ///< [Hartree] (per-run, lazily built).
+    double radius_ = 0.0;         ///< Current trust radius on ‖κ‖₂.
+    bool have_prev_ = false;      ///< An accepted step's energy is recorded.
+    double prev_energy_ = 0.0;    ///< Last ACCEPTED iterate's energy [Hartree].
+    RealMatrix saved_C_alpha_;    ///< α coefficients of the accepted iterate.
+    RealMatrix saved_C_beta_;     ///< β coefficients of the accepted iterate.
+    RealVector saved_eig_alpha_;  ///< α energies of the accepted iterate.
+    RealVector saved_eig_beta_;   ///< β energies of the accepted iterate.
     double last_step_norm_ = 0.0; ///< ‖κ‖₂ of the last applied rotation.
     double last_lambda_ = 0.0;    ///< λ of the last CIAH solve [Hartree].
     bool rejected_ = false;       ///< Last call was a reject-and-shrink.

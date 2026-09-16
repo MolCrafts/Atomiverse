@@ -14,12 +14,12 @@
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
-#include "atomiverse/cpu/driver/path_driver.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/path/neb.h"
+#include "atomiverse/cpu/path/path_driver.h"
 #include "atomiverse/cpu/replica/replica_expansion.h"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 
@@ -81,7 +81,7 @@ cpu::Frame particle_at(double x, double y) {
     f.span(ATV::kAtom_z)[0] = 0.0;
     f.span(ATV::kAtom_mass)[0] = 1.0;
     f.span(ATV::kAtom_type)[0] = 1;
-    f.simbox = ATV::cpu::Box::cubic(
+    f.box = ATV::cpu::Box::cubic(
         100.0); // the surface is unbounded; the box never binds
     return f;
 }
@@ -115,12 +115,19 @@ int main() {
     // the Path category from carrying an NEB-shaped signature.
     cpu::LinearInterpolation expand{final_state, 13};
 
+    // The band optimizer carries the L-BFGS curvature history, so ONE instance
+    // is bound at both of its phases (`add_ref` borrows; it must outlive the
+    // driver, hence the declaration order).
+    cpu::path::BandLBFGS band_opt{/*memory=*/10, /*max_step=*/0.01,
+                                  /*ftol=*/0.5};
+
     cpu::PathDriver neb;
     neb.on(ATV::path::Phase::force).add(MullerBrown{});
-    neb.add(cpu::path::NebCoupling{/*spring_k=*/10.0, /*climbing=*/true,
-                                   /*climb_after=*/20});
-    neb.add(
-        cpu::path::BandLBFGS{/*memory=*/10, /*max_step=*/0.01, /*ftol=*/0.5});
+    neb.on(ATV::path::Phase::couple)
+        .add(cpu::path::NebCoupling{/*spring_k=*/10.0, /*climbing=*/true,
+                                    /*climb_after=*/20});
+    neb.on(ATV::path::Phase::search_direction).add_ref(band_opt);
+    neb.on(ATV::path::Phase::convergence_check).add_ref(band_opt);
     neb.set_threads(
         1); // one atom per image — threads would cost more than the physics
     neb.enable_timing(false);

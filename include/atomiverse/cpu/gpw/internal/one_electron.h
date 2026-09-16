@@ -21,6 +21,18 @@ double prim_overlap(const GridPrimitive& a, const GridPrimitive& b);
 /// @brief Kinetic-energy integral ⟨a|-½∇²|b⟩ of two primitive Gaussians.
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b);
 
+/// @brief Fused ⟨a|b⟩ and ⟨a|-½∇²|b⟩ sharing the Hermite tables (hot STVnl path).
+void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
+             double& t_out);
+
+/// @brief Contracted ⟨a|b(·−T)⟩ and kinetic over all prim pairs, with **local**
+///        Hermite tables reused across monoms that share (α, center). Hot path
+///        for multi-k STVnl setup (one call per lattice image of an AO pair).
+/// @param T Lattice translation applied to every ket primitive center [Bohr].
+void contracted_ST_shift(const GridBasisFunction& a,
+                         const GridBasisFunction& b, const double T[3],
+                         double& s_out, double& t_out);
+
 /// @brief Overlap of two contracted basis functions (sum over primitive pairs).
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b);
 
@@ -43,6 +55,16 @@ double overlap(const GridBasisFunction& a, const GridBasisFunction& b,
 /// @brief Γ-point periodic kinetic energy T_ab = Σ_T ⟨a | −½∇² | b(·−T)⟩.
 double kinetic(const GridBasisFunction& a, const GridBasisFunction& b,
                const double L[3], const int m[3], double reach);
+
+/// @brief Fused Γ-point periodic S and T over the same live image set.
+///        Prefer this when both operators are needed (avoids a second image
+///        sweep). Pure s–s and mixed-angular (L≤d, shell-centered) pairs use
+///        portable xsimd on the image axis when the live image count is
+///        slab-class; otherwise scalar Hermite via contracted_ST_shift.
+void contracted_ST_periodic(const GridBasisFunction& a,
+                            const GridBasisFunction& b, const double L[3],
+                            const int m[3], double reach, double& s_out,
+                            double& t_out);
 
 } // namespace gpw
 } // namespace cpu

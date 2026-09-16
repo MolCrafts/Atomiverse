@@ -1,0 +1,28 @@
+# Offline pin notes — gpw-hirshfeld-kpoints
+
+## Method
+
+Hirshfeld \(V/V_{\mathrm{free}}\) from the **multi-k** GPW PBE valence density
+(k-summed \(\rho=\sum_k w_k\rho_k\); in-tree exponential free-atom model) →
+MBD@rsSCS with scaled α/C6/R (same libMBD free-atom tables as `gpw-mbd-ice` /
+`gpw-mbd-hirshfeld`).
+
+## Why not stock CP2K QS?
+
+CP2K 2026.1 `PAIR_POTENTIAL TYPE` is only DFTD2|DFTD3|DFTD3(BJ)|DFTD4 — no
+stock TS/MBD. Hard pin is the ATV product under fixed settings (CUTOFF 200 Ry,
+Monkhorst–Pack 2×2×2, TR fold, DZVP-MOLOPT-SR-GTH, GTH-PBE, water dimer 12 Å),
+cross-checked vs free-atom MBD and the dual in-tree Hirshfeld kernel (same as
+`gpw-mbd-hirshfeld`).
+
+## Geometry
+
+Same water dimer as `gpw-mbd-ice` / `gpw-mbd-hirshfeld` / `gpw-ts-ice`.
+
+## Pin (product settings)
+
+```
+E_disp = -1.1479849553026611e-03 Ha
+volumes (O H H O H H) ≈ 0.7403 0.6529 0.6529 0.7153 0.5784 0.5784
+CUTOFF 200 Ry, k-mesh 2×2×2 TR, DZVP-MOLOPT-SR-GTH, GTH-PBE, water dimer 12 Å
+```

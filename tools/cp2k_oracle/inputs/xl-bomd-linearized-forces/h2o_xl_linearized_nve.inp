@@ -1,0 +1,85 @@
+# CP2K twin sketch for regressions/dynamics/xl-bomd-linearized-forces
+# (offline oracle — never run at ctest). H2O NVE same geometry as
+# xl_bomd_water_nve.inp. ATV zero-SCF linearized XL evaluates forces of the
+# shadow functional after one KS construction + one diagonalization from the
+# auxiliary density. CP2K's closest product settings are density-matrix
+# extrapolation + low MAX_SCF (or LS_SCF / ALMO paths where available).
+# Record MAX_SCF, EXTRAPOLATION, and .ener conserved column when pinning.
+# NOTE (2026-07-26): no cp2k binary on worker host — unexecuted sketch.
+&GLOBAL
+  PROJECT xl_bomd_linearized_h2o_nve
+  RUN_TYPE MD
+  PRINT_LEVEL LOW
+&END GLOBAL
+&MOTION
+  &MD
+    ENSEMBLE NVE
+    STEPS 5
+    TIMESTEP 0.5
+    TEMPERATURE 10.0
+  &END MD
+&END MOTION
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 200
+      REL_CUTOFF 40
+      NGRIDS 4
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+      EXTRAPOLATION ASPC
+      EXTRAPOLATION_ORDER 3
+    &END QS
+    &SCF
+      SCF_GUESS ATOMIC
+      # Low SCF budget approximates the one-shot / zero-SCF XL path.
+      # Full ATV pin uses true single-diagonalization shadow energy.
+      EPS_SCF 1.0E-5
+      MAX_SCF 1
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.3
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END XC_FUNCTIONAL
+    &END XC
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 10.0 10.0 10.0
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      O  5.0000  5.0000  5.0000
+      H  5.7586  5.0000  5.5043
+      H  4.2414  5.0000  5.5043
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q6
+    &END KIND
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q1
+    &END KIND
+    &VELOCITY
+      O  0.0000  0.0000  0.0000
+      H  0.0015  0.0000  0.0000
+      H -0.0015  0.0000  0.0000
+    &END VELOCITY
+  &END SUBSYS
+&END FORCE_EVAL

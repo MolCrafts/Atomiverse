@@ -37,7 +37,7 @@ int main() {
         dimer.span(kAtom_y)[i] = coords[i][1];
         dimer.span(kAtom_z)[i] = coords[i][2];
     }
-    dimer.simbox = cpu::Box::cubic(30.0);
+    dimer.box = cpu::Box::cubic(30.0);
 
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::Pople631Gs; // 6-31G*

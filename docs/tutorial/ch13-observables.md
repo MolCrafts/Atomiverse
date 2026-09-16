@@ -1,10 +1,7 @@
-# Chapter 13: Observables and Trajectory Analysis
+# Chapter 13. Observables
 
-| | |
-|---|---|
-| **Observers** | RDF, MSD, VACF, VirialStress, Mulliken, density |
-| **Rule** | engine *measures*; molrs *analyzes/stores* (no analysis math in C++) |
-| **MD baseline** | NVE drift in [`07_md_lj.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/07_md_lj.json) |
+Observers measure RDF, MSD, VACF, virial stress, Mulliken, and density.
+The engine measures; molrs analyzes and stores — analysis math stays out of C++.
 
 Energy conservation is the first observable: if \(E_\mathrm{total}\) drifts,
 nothing downstream (RDF, MSD) is trustworthy. Chapter 10 already shows a flat
@@ -13,7 +10,6 @@ total-energy series from a real Atomiverse NVE run.
 Charges and populations are Frame outputs (`kAtom_charge`, Mulliken observers)
 — colour atoms in MolVis by those columns after a SCF/AM1 evaluation
 ([Chapter 17](ch17-semiempirical-am1.md) water charges).
-
 
 Every previous chapter produced a *trajectory* — a sequence of frames from an
 integrator ([Chapter 11](ch11-ensembles.md)), an optimizer
@@ -42,9 +38,11 @@ You will learn:
 2. **The representation.** A derived quantity is a `role() == Observer`
    **Component** (LAMMPS `compute`), fed by an asynchronous snapshot ring so it
    never stalls the integrator, and backed by molrs for the actual math.
-3. **The C++ API.** `set_observer` attaches an observer;
-   `ATV::RDF`, `ATV::MSD`, and `ATV::VACF` are the three ready-made ones, and
-   `cpu::XYZ` dumps the raw trajectory.
+3. **The C++ API.** `set_observer` / `set_observer_ref` attach an observer;
+   `ATV::RDF`, `ATV::MSD`, and `ATV::VACF` are the three ready-made ones.
+   `set_record` attaches a Recorder — `cpu::XyzRecorder` dumps the raw
+   trajectory on a step stride, with `cpu::XYZ` remaining the bare writer
+   beneath it for frames you persist by hand.
 4. **The expected result.** g(r) with a first peak at the nearest-neighbour
    distance; a linear MSD(t) whose slope is the self-diffusion coefficient; a
    VACF that decays from ⟨v²⟩ and rings.
@@ -134,10 +132,21 @@ exposes it through a thin CXX FFI bridge rather than porting the numerics.
 
 ## The C++ API: Attach an Observer, Read the Result
 
-Observers are *plural* — you can attach several — so they use `set_observer`
-(which forwards to the generic `add()` and its default phase binding). Build the
-MD system exactly as in [Chapter 11](ch11-ensembles.md); the only new lines
-construct an observer and call `set_observer`.
+Observers are *plural* — you can attach several — so they use `set_observer`,
+which binds the component at the phase and order its own `default_bindings()`
+declare. Two forms, and the distinction matters here more than anywhere else in
+the book:
+
+- `set_observer(Obs&&)` **takes ownership** of an rvalue. The observer lives
+  inside the driver and you cannot read its curve afterwards.
+- `set_observer_ref(Obs&)` **borrows** an observer you declared yourself. This
+  is the form you want whenever you intend to call `rdf.gr()` / `msd.curve()`
+  after the run. Declare the observer *before* the driver so the driver is
+  destroyed first.
+
+Passing an lvalue to `set_observer` is `= delete`d — there is no implicit
+borrow. Build the MD system exactly as in [Chapter 11](ch11-ensembles.md); the
+only new lines construct an observer and call `set_observer_ref`.
 
 ### The cheapest observable: energy conservation
 
@@ -149,7 +158,7 @@ is already available each step:
 auto frame = make_fcc_argon(4, /*a=*/5.32);        // 256 Ar atoms, Å
 
 cpu::md::MD sim;
-sim.add_potential(cpu::PairLJCut{/*eps=*/0.0104, /*sigma=*/3.4, /*cutoff=*/6.8});
+sim.set_evaluator(cpu::PairLJCut{/*eps=*/0.0104, /*sigma=*/3.4, /*cutoff=*/6.8});
 sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
 sim.set_integrator(cpu::md::VelocityVerlet{/*dt=*/4.0});   // NVE — no thermostat
 sim.set_thermo(1000);   // print step, T, PE, KE, E_total every 1000 steps
@@ -165,19 +174,67 @@ timestep. This is a **physical-approximation** result: you validate it as a
 bounded energy drift over the run, and it is the standard first check that an
 integrator and force field are wired correctly.
 
-### Dumping the trajectory: `cpu::XYZ`
+### Dumping the trajectory: the `cpu::XyzRecorder` component
 
 When you want the frames themselves — for external analysis or visualisation —
-attach the `cpu::XYZ` recorder (a `Recorder`, LAMMPS `dump`, not an `Observer`;
-it writes I/O rather than deriving a quantity):
+register a **Recorder**. A Recorder is the Component kind whose only job is
+writing outside the process; it is Atomiverse's answer to the LAMMPS `dump`
+command. The trajectory Recorder is `cpu::XyzRecorder`, and you install it with
+`set_record`:
 
 ```cpp
-sim.set_record(cpu::XYZ{"trajectory.xyz"});
+sim.set_record(cpu::XyzRecorder{"trajectory.xyz", /*freq=*/1000});
+sim.build();
+sim.run(frame, 1'000'000);   // one frame every 1000 steps
 ```
 
-The recorder appends one frame per its configured cadence. Keep dumps sparse:
-the point of the observers below is that you rarely need the full trajectory on
-disk — the observable is computed as the run proceeds.
+It binds itself to `md::Phase::end_of_step` (order +10, i.e. behind the
+observers that publish per-step quantities), so you never name a phase unless
+you want a different one — `on(phase).add(...)` still works if you do.
+
+Three details decide what ends up in the file:
+
+- **The cadence is a stride on the step index.** A frame is written whenever
+  `step % freq == 0`, and the driver counts steps from zero
+  (`0, 1, …, n-1` for `run(frame, n)`), cumulatively across consecutive
+  `run(cpu::Frame&, …)` calls. So a 10-step run at `freq=5` writes **two**
+  frames — steps 0 and 5 — not three: there is no extra end-of-run write at
+  step 10.
+- **The first write truncates, later writes append.** One recorder therefore
+  owns one trajectory file, and a freshly constructed recorder on the same path
+  starts that file over instead of extending the previous run's.
+- **Under MPI it is collective.** Every rank evaluates the same gate and joins
+  the owner gather; only rank 0 writes, and what it writes is the complete,
+  tag-ordered geometry rather than its own slice.
+
+`set_record` takes an rvalue and *owns* the recorder. If you want to ask the
+recorder afterwards how many frames it wrote, declare it first and borrow it —
+the same ownership pair as the observers above:
+
+```cpp
+cpu::XyzRecorder traj{"trajectory.xyz", /*freq=*/1000};   // declared BEFORE sim
+cpu::md::MD sim;
+// … evaluator / neighbour list / integrator exactly as above …
+sim.set_record_ref(traj);                // borrow: traj must outlive sim
+sim.build();
+sim.run(frame, 1'000'000);
+const int n_frames = traj.n_frames_written();   // rank 0
+```
+
+The element symbol on each atom line comes from the frame's per-atom `type`
+column, which the writer hands to molrs as an atomic number $Z$ — type 18 is
+written as `Ar`. Frames typed with LAMMPS-style `1..N` type indices will
+therefore carry the element names of those small $Z$ values, which is a
+labelling artefact, not a physics one.
+
+Underneath the Recorder sits `cpu::XYZ`, a plain writer with `write(frame)` and
+`append(frame)` and no Component base. Use it directly when the frames are not
+coming from a driver loop at all — dumping one final geometry, say — and use
+the Recorder inside a run.
+
+Keep dumps sparse either way: the point of the observers below is that you
+rarely need the full trajectory on disk — the observable is computed as the run
+proceeds.
 
 ### Structure: the radial distribution function `ATV::RDF`
 
@@ -188,7 +245,7 @@ normalisation all live in molrs; the observer keeps only O(n_bins) state:
 ```cpp
 // r_max (Å), n_bins, capture frequency [steps], output file
 ATV::RDF rdf{/*r_max=*/6.0, /*n_bins=*/200, /*freq=*/100, "rdf.dat"};
-sim.set_observer(rdf);
+sim.set_observer_ref(rdf);   // borrow: rdf must outlive sim
 sim.build();
 sim.run(frame, 1'000'000);
 // rdf.dat now holds two columns: r (Å), g(r); rdf.gr() exposes the curve
@@ -213,7 +270,7 @@ plus the Einstein $D$ from the windowed-MSD slope fit:
 ```cpp
 // dt between captured frames = timestep * freq = 4 fs * 25 = 100 fs
 ATV::MSD msd{/*dt=*/100.0, /*freq=*/25, "msd.dat"};
-sim.set_observer(msd);
+sim.set_observer_ref(msd);   // borrow: msd must outlive sim
 sim.build();
 sim.run(frame, 2'000'000);
 
@@ -240,7 +297,7 @@ curve at `finalize()`:
 ```cpp
 // dt (fs), resolution (max lag in captured frames, >= 1), freq [steps], output
 ATV::VACF vacf{/*dt=*/100.0, /*resolution=*/256, /*freq=*/25, "vacf.dat"};
-sim.set_observer(vacf);
+sim.set_observer_ref(vacf);  // borrow: vacf must outlive sim
 sim.build();
 sim.run(frame, 2'000'000);
 
@@ -335,11 +392,12 @@ The three observers are exercised as fast, millisecond-scale unit tests that
 assert the molrs FFI round-trip and the observer plumbing:
 
 - MSD (analytic curve to `1e-9`, Einstein-D bridge, empty-on-degenerate):
-  [`tests/cpu/observer/test_msd.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/observer/test_msd.cpp)
+  [`tests/cpu/observe/test_msd.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/observe/test_msd.cpp)
 - VACF (FFI round-trip, buffer accumulation):
-  [`tests/cpu/observer/test_vacf.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/observer/test_vacf.cpp)
-- RDF (histogram accumulation, first-peak position, output format, frequency):
-  [`tests/cpu/observer/test_rdf_observer.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/observer/test_rdf_observer.cpp)
+  [`tests/cpu/observe/test_vacf.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/observe/test_vacf.cpp)
+- RDF: the g(r) histogram math lives in molrs, not in C++, so the check that
+  matters is the accumulator-parity test
+  [`tests/cuda/observe/test_rdf_molrs.cu`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cuda/observe/test_rdf_molrs.cu)
 
 Energy conservation and ensemble-level observable averages are physical
 benchmark cases under [`benchmarks/md`](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/md) (the LJ and

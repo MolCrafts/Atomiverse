@@ -9,7 +9,7 @@
 #include <cmath>
 #include <vector>
 
-#include "atomiverse/longrange/pme_spline.h"
+#include "atomiverse/cpu/longrange/pme_spline.h"
 
 using namespace ATV;
 using ATV::longrange::bspline;

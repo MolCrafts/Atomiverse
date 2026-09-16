@@ -1,0 +1,21 @@
+# qeq-fluctuating-charge perf twin: 1000 repeated qeq/point solves (dt=0)
+units metal
+atom_style charge
+boundary f f f
+region simbox block 0 40 0 40 0 40
+create_box 3 simbox
+create_atoms 1 single 20.0 20.0 20.0
+create_atoms 2 single 20.0 20.0 21.205
+create_atoms 3 single 20.943 20.0 19.412
+create_atoms 3 single 19.057 20.0 19.412
+mass 1 12.011
+mass 2 15.999
+mass 3 1.008
+pair_style coul/cut 10.0
+pair_coeff * *
+neighbor 2.0 bin
+fix q all qeq/point 1 10.0 1.0e-10 500 param.qeq
+fix integ all nve
+timestep 0.0
+thermo 1000
+run 1000

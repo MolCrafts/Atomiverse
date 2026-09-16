@@ -25,7 +25,7 @@ TEST(PairCoulCut, TwoChargeEnergyAndForce) {
     f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 0;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
 
     cpu::md::PairList pairs;
     pairs.inum = 1;
@@ -73,7 +73,7 @@ TEST(PairCoulCut, SpecialBondsExclude12) {
     f.span(kAtom_type)[1] = 1;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     f.clear_tag_index();
     f.rebuild_tag_index(0, f.nlocal());
     f.add_bond(1, 2, 0); // tags, not local indices
@@ -121,7 +121,7 @@ TEST(PairCoulCut, SpecialBondsKeepIntermolecular) {
     f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 0;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     f.build_special_list();
 
     cpu::md::PairList pairs;

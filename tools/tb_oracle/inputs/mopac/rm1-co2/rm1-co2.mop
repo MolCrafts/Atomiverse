@@ -1,0 +1,6 @@
+RM1 PRECISE GNORM=0.001 XYZ
+Carbon dioxide — RM1 discriminator (experimental start; relax on RM1)
+
+  C     0.000000  1   0.000000  1   0.000000  1
+  O     1.162000  1   0.000000  1   0.000000  1
+  O    -1.162000  1   0.000000  1   0.000000  1

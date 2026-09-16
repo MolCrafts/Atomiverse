@@ -21,8 +21,8 @@
 #include <vector>
 
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/observer/esp_charges.h"
-#include "atomiverse/cpu/observer/lowdin.h"
+#include "atomiverse/cpu/observe/esp_charges.h"
+#include "atomiverse/cpu/observe/lowdin.h"
 #include "atomiverse/cpu/scf/methods.h"
 
 namespace {
@@ -31,8 +31,8 @@ bool check(const char* name, const std::vector<double>& got,
            const double (&want)[3], double tol) {
     bool ok = true;
     for (int a = 0; a < 3; ++a) {
-        const double diff = std::fabs(got[static_cast<std::size_t>(a)]
-                                      - want[a]);
+        const double diff =
+            std::fabs(got[static_cast<std::size_t>(a)] - want[a]);
         std::printf("%s q[%d] got=%.8f want=%.8f |diff|=%.3e\n", name, a,
                     got[static_cast<std::size_t>(a)], want[a], diff);
         ok = ok && diff < tol;
@@ -58,7 +58,7 @@ int main() {
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;
-    frame.simbox = cpu::Box::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
 
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::Pople631Gs;
@@ -119,8 +119,7 @@ int main() {
         ok = false;
     }
     if (q_mk[0] < -0.90 || q_mk[0] > -0.70) {
-        std::printf("FAIL: MK O charge %.4f outside [-0.90, -0.70]\n",
-                    q_mk[0]);
+        std::printf("FAIL: MK O charge %.4f outside [-0.90, -0.70]\n", q_mk[0]);
         ok = false;
     }
 

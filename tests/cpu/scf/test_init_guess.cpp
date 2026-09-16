@@ -44,7 +44,7 @@ cpu::Frame make_h2o() {
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;
-    frame.simbox = cpu::Box::cubic(100.0);
+    frame.box = cpu::Box::cubic(100.0);
     return frame;
 }
 
@@ -55,7 +55,7 @@ cpu::Frame make_h_atom() {
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.0;
-    frame.simbox = cpu::Box::cubic(100.0);
+    frame.box = cpu::Box::cubic(100.0);
     return frame;
 }
 
@@ -70,7 +70,7 @@ double trace_ps(const RealMatrix& P, const RealMatrix& S) {
 
 TEST(HueckelGuess, DiagonalIsVsipH2OSto3G) {
     cpu::Frame frame = make_h2o();
-    IntegralPack ints{frame, BasisSet::STO3G};
+    internal::IntegralWorkspace ints{frame, BasisSet::STO3G};
     HueckelGuess hg(ints.shells, ints.S, ints.atoms);
 
     // STO-3G H2O AO order: O 1s, O 2s, O 2p x3, H 1s, H 1s.
@@ -85,7 +85,7 @@ TEST(HueckelGuess, DiagonalIsVsipH2OSto3G) {
 
 TEST(HueckelGuess, OffDiagonalWolfsbergHelmholzElementWise) {
     cpu::Frame frame = make_h2o();
-    IntegralPack ints{frame, BasisSet::STO3G};
+    internal::IntegralWorkspace ints{frame, BasisSet::STO3G};
     HueckelGuess hg(ints.shells, ints.S, ints.atoms);
 
     const double K = internal::kWolfsbergHelmholz;
@@ -103,25 +103,24 @@ TEST(HueckelGuess, OffDiagonalWolfsbergHelmholzElementWise) {
 
 TEST(HueckelGuess, SphericalBasisWorkingDimension) {
     cpu::Frame frame = make_h2o();
-    IntegralPack ints{frame, BasisSet::Def2SVP}; // spherical convention
+    internal::IntegralWorkspace ints{frame, BasisSet::Def2SVP}; // spherical convention
     ASSERT_TRUE(ints.spherical());
     HueckelGuess hg(ints.shells, ints.S, ints.atoms);
     ASSERT_EQ(static_cast<int>(hg.F.shape()[0]), ints.n_basis);
     // Every diagonal entry is one of the element's tabulated s/p/d VSIPs.
     for (int i = 0; i < ints.n_basis; ++i) {
         const double d = hg.F(i, i);
-        const bool known = d == HueckelGuess::vsip(8, 0)
-                           || d == HueckelGuess::vsip(8, 1)
-                           || d == HueckelGuess::vsip(8, 2)
-                           || d == HueckelGuess::vsip(1, 0)
-                           || d == HueckelGuess::vsip(1, 1);
+        const bool known =
+            d == HueckelGuess::vsip(8, 0) || d == HueckelGuess::vsip(8, 1)
+            || d == HueckelGuess::vsip(8, 2) || d == HueckelGuess::vsip(1, 0)
+            || d == HueckelGuess::vsip(1, 1);
         EXPECT_TRUE(known) << "AO " << i << " diag " << d;
     }
 }
 
 TEST(HueckelGuess, InitialDensityTracePSEqualsElectronCount) {
     cpu::Frame frame = make_h2o();
-    IntegralPack ints{frame, BasisSet::STO3G};
+    internal::IntegralWorkspace ints{frame, BasisSet::STO3G};
     HueckelGuess hg(ints.shells, ints.S, ints.atoms);
 
     internal::EigenSolver eigen;
@@ -138,7 +137,7 @@ TEST(HueckelGuess, UnsupportedElementOrShellThrows) {
     EXPECT_THROW(HueckelGuess::vsip(1, 3), std::invalid_argument);
 
     cpu::Frame frame = make_h2o();
-    IntegralPack ints{frame, BasisSet::STO3G};
+    internal::IntegralWorkspace ints{frame, BasisSet::STO3G};
     ints.atoms[0].Z = 105; // beyond the VSIP table
     EXPECT_THROW(HueckelGuess(ints.shells, ints.S, ints.atoms),
                  std::invalid_argument);
@@ -148,10 +147,10 @@ TEST(HueckelGuess, UnsupportedElementOrShellThrows) {
 
 TEST(SapGuess, PotentialMatrixSymmetricAndNegativeDiagonal) {
     cpu::Frame frame = make_h2o();
-    IntegralPack ints{frame, BasisSet::STO3G};
-    const MolecularGrid grid = build_molecular_grid(
-        ints.atoms.data(), static_cast<int>(ints.atoms.size()), GridLevel::SG0,
-        50, 110);
+    internal::IntegralWorkspace ints{frame, BasisSet::STO3G};
+    const MolecularGrid grid(ints.atoms.data(),
+                             static_cast<int>(ints.atoms.size()),
+                             GridLevel::SG0, 50, 110);
     SapGuess sg(ints.shells, ints.T, ints.atoms, grid, ints.c2s);
 
     for (int i = 0; i < ints.n_basis; ++i) {
@@ -174,11 +173,10 @@ TEST(SapGuess, HydrogenAtomHandComputedReferenceElement) {
     //   ∫ e^{-γr²} / r d³r                = 2π/γ,
     //   ∫ e^{-γr²} erf(sqrt(a) r)/r d³r   = (2π/γ)·sqrt(a/(a+γ)).
     cpu::Frame frame = make_h_atom();
-    IntegralPack ints{frame, BasisSet::STO3G};
+    internal::IntegralWorkspace ints{frame, BasisSet::STO3G};
     ASSERT_EQ(ints.n_basis, 1);
 
-    const MolecularGrid grid = build_molecular_grid(
-        ints.atoms.data(), 1, GridLevel::SG0, 50, 110);
+    const MolecularGrid grid(ints.atoms.data(), 1, GridLevel::SG0, 50, 110);
     SapGuess sg(ints.shells, ints.T, ints.atoms, grid, ints.c2s);
 
     const native::Shell& sh = ints.shells[0];
@@ -208,11 +206,11 @@ TEST(SapGuess, HydrogenAtomHandComputedReferenceElement) {
 
 TEST(SapGuess, InitialDensityTracePSEqualsElectronCountSpherical) {
     cpu::Frame frame = make_h2o();
-    IntegralPack ints{frame, BasisSet::Def2SVP};
+    internal::IntegralWorkspace ints{frame, BasisSet::Def2SVP};
     ASSERT_TRUE(ints.spherical());
-    const MolecularGrid grid = build_molecular_grid(
-        ints.atoms.data(), static_cast<int>(ints.atoms.size()), GridLevel::SG0,
-        50, 110);
+    const MolecularGrid grid(ints.atoms.data(),
+                             static_cast<int>(ints.atoms.size()),
+                             GridLevel::SG0, 50, 110);
     SapGuess sg(ints.shells, ints.T, ints.atoms, grid, ints.c2s);
     ASSERT_EQ(static_cast<int>(sg.F.shape()[0]), ints.n_basis);
 
@@ -229,9 +227,8 @@ TEST(SapGuess, UnsupportedElementThrows) {
     EXPECT_THROW(SapAtomicPotential(119), std::invalid_argument);
 
     cpu::Frame frame = make_h_atom();
-    IntegralPack ints{frame, BasisSet::STO3G};
-    const MolecularGrid grid = build_molecular_grid(
-        ints.atoms.data(), 1, GridLevel::SG0, 50, 110);
+    internal::IntegralWorkspace ints{frame, BasisSet::STO3G};
+    const MolecularGrid grid(ints.atoms.data(), 1, GridLevel::SG0, 50, 110);
     ints.atoms[0].Z = 200;
     EXPECT_THROW(SapGuess(ints.shells, ints.T, ints.atoms, grid, ints.c2s),
                  std::invalid_argument);

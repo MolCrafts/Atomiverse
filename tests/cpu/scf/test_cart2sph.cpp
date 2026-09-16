@@ -77,11 +77,13 @@ TEST(CartToSph, MatchesPinnedPyscfCoefficients) {
     const auto& d = t.matrix(2);
     for (int i = 0; i < 6; ++i)
         for (int j = 0; j < 5; ++j)
-            EXPECT_NEAR(d(i, j), kD[i][j], 1e-12) << "d(" << i << "," << j << ")";
+            EXPECT_NEAR(d(i, j), kD[i][j], 1e-12)
+                << "d(" << i << "," << j << ")";
     const auto& f = t.matrix(3);
     for (int i = 0; i < 10; ++i)
         for (int j = 0; j < 7; ++j)
-            EXPECT_NEAR(f(i, j), kF[i][j], 1e-12) << "f(" << i << "," << j << ")";
+            EXPECT_NEAR(f(i, j), kF[i][j], 1e-12)
+                << "f(" << i << "," << j << ")";
 }
 
 /// THE double-factorial pitfall: in the engine's per-component

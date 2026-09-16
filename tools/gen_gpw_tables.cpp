@@ -7,7 +7,7 @@
 /// cp2k_io.cpp) were deleted once the tables were committed; regenerating
 /// requires checking out the commit that still carries them.
 /// Build (standalone, std-only):
-///   g++ -std=c++17 -I include tools/gen_gpw_tables.cpp \
+///   g++ -std=c++20 -I include tools/gen_gpw_tables.cpp \
 ///       src/cpu/gpw/basis_data/gpw_data.cpp \
 ///       src/cpu/gpw/internal/cp2k_basis.cpp src/cpu/gpw/internal/cp2k_io.cpp \
 ///       -o gen_gpw_tables && ./gen_gpw_tables > \

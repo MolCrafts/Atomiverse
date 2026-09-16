@@ -1,0 +1,61 @@
+! CP2K twin for regressions/gpw/gpw-kpoint-forces — H2 periodic, PADE,
+! MONKHORST-PACK 1 1 2, ENERGY_FORCE. Offline only (tools/cp2k_oracle).
+! Prefer matching ATV basis DZV-GTH-PADE when available in the CP2K data tree;
+! the reference pin used DZVP-MOLOPT-GTH / GTH-PADE-q1 when DZV-GTH-PADE was
+! absent from BASIS_MOLOPT (see REFERENCE.md for the digits actually used).
+&GLOBAL
+  PROJECT h2_kpoint_forces
+  RUN_TYPE ENERGY_FORCE
+  PRINT_LEVEL LOW
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &MGRID
+      CUTOFF 120
+      NGRIDS 1
+    &END MGRID
+    &QS
+      EPS_DEFAULT 1.0E-8
+    &END QS
+    &KPOINTS
+      SCHEME MONKHORST-PACK 1 1 2
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-8
+      MAX_SCF 50
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 6.35013 6.35013 6.35013
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      H  2.91047  3.17506  3.17506
+      H  3.54549  3.22798  3.12215
+    &END COORD
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PADE-q1
+    &END KIND
+  &END SUBSYS
+  &PRINT
+    &FORCES ON
+    &END FORCES
+  &END PRINT
+&END FORCE_EVAL

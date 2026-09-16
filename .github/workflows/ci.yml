@@ -2,7 +2,7 @@ name: CI
 
 # Intentionally NOT on push/PR. Local pre-commit / pre-push is the gate:
 #   pre-commit  → format / hygiene
-#   pre-push    → tools/ci_cpu_unit.sh  (cmake + unit ctest)
+#   pre-push    → cmake -P cmake/AtvUnitGate.cmake  (path-scoped modules)
 # Multi-backend (CUDA etc.) is machine-local (login node / GPU job), not
 # GitHub-hosted. Manual re-run only when you want a second opinion:
 #   gh workflow run CI.yml
@@ -52,9 +52,6 @@ jobs:
           git -C molrs describe --tags --always
           cat molrs/molrs-cxxapi/CXX_API_VERSION
 
-      - name: CPU unit (same script as local pre-push)
-        env:
-          # Default CMake path is ./molrs (submodule); keep explicit for clarity.
-          ATV_MOLRS_PATH: ${{ github.workspace }}/molrs
-          ATV_CI_BUILD_DIR: build
-        run: bash tools/ci_cpu_unit.sh
+      # Full optional slice on manual GHA (path gate is local pre-push).
+      - name: CPU unit (cmake gate, all modules)
+        run: cmake -DATV_GATE_ALL=1 -P cmake/AtvUnitGate.cmake

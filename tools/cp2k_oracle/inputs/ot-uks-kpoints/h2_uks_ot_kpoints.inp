@@ -1,0 +1,72 @@
+! CP2K twin for regressions/gpw/ot-uks-kpoints — multi-k UKS high-spin H2.
+! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
+!
+! NOTE (CP2K 2026.1): OT + KPOINTS aborts at qs_scf_initialization
+!   ("OT not possible with kpoint calculations"). This input is therefore the
+!   DIAG multi-k UKS energy twin for absolute documentation. Atomiverse product
+!   multi-k UKS OT is gated by OT↔DIIS identities on identical grids (reg).
+!
+! Cell 8 Bohr cubic, DZV-GTH-PADE / GTH-PADE-q1, PADE LSD, CUTOFF 100,
+! KPOINTS GENERAL (0.25 0 0) w=1, UKS multiplicity 3 (Nα=2, Nβ=0).
+
+&GLOBAL
+  PROJECT h2_uks_ot_kpoints
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_SET
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    LSD
+    MULTIPLICITY 3
+    &MGRID
+      CUTOFF 100
+      NGRIDS 1
+    &END MGRID
+    &QS
+      EPS_DEFAULT 1.0E-7
+      METHOD GPW
+    &END QS
+    &KPOINTS
+      SCHEME GENERAL
+      FULL_GRID OFF
+      VERBOSE F
+      KPOINT 0.25 0.0 0.0 1.0
+      WAVEFUNCTIONS COMPLEX
+    &END KPOINTS
+    &SCF
+      SCF_GUESS ATOMIC
+      EPS_SCF 1.0E-8
+      MAX_SCF 120
+      &DIAGONALIZATION
+        ALGORITHM STANDARD
+      &END DIAGONALIZATION
+      &MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+        NBROYDEN 8
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC [bohr] 8.0 8.0 8.0
+      PERIODIC XYZ
+    &END CELL
+    &COORD
+      H  3.3  4.0  4.0
+      H  4.7  4.0  4.0
+    &END COORD
+    &KIND H
+      BASIS_SET DZV-GTH-PADE
+      POTENTIAL GTH-PADE-q1
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

@@ -1,19 +1,8 @@
-# Chapter 7: Beyond Mean Field — Correlation Methods
-
-| | |
-|---|---|
-| **Examples** | [`13_mp2.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/13_mp2.cpp), [`14_fci.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/14_fci.cpp) |
-| **Results** | [`13_mp2.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/13_mp2.json), [`14_fci.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/14_fci.json) |
-
-```bash
-cmake --build build --target 13_mp2 14_fci
-./build/examples/13_mp2
-./build/examples/14_fci
-```
+# Chapter 7. Correlation Methods
 
 ## Live results
 
-### H₂O / STO-3G MP2 (`13_mp2`)
+### H₂O / STO-3G MP2
 
 | | (Ha) |
 |---|---:|
@@ -21,14 +10,7 @@ cmake --build build --target 13_mp2 14_fci
 | \(E_\mathrm{corr}\) (MP2) | **−0.03554565** (≤ 0 by construction) |
 | \(E_\mathrm{MP2}\) | **−74.99856879** |
 
-### H₂ / STO-3G full CI (`14_fci`, \(R=0.7414\) Å)
-
-```molvis {format="xyz" representation="ball-and-stick" controls="view" height="240px"}
-2
-name=H2 Connct="[0,1]"
-H  0.0000  0.0000  0.0000
-H  0.7414  0.0000  0.0000
-```
+### H₂ / STO-3G Full CI
 
 | | Atomiverse (Ha) |
 |---|---:|
@@ -139,7 +121,7 @@ correlation methods as post-SCF steps on the concrete method:
   second-order correlation energy from the `(ia|jb)` MO integral block built by
   `ao2mo_ovov`. For water in STO-3G it recovers E_HF = −74.96302314 Ha →
   E_corr = −0.03554565 Ha → E_MP2 = −74.99856879 Ha (see
-  [`examples/13_mp2.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/13_mp2.cpp); every digit is pinned by
+  the MP2 path; every digit is pinned by
   `val_mp2_vs_pyscf`).
 - **Exact tiny full CI** — `rhf.fci(frame)` gives the *exact*
   in-basis energy for a handful of orbitals (the "Exact correlation in a finite
@@ -226,7 +208,7 @@ with real correlation: two orbitals, $N_\text{det} = \binom{2}{1}\binom{2}{1}
 = 4$, with the reference $|1_\alpha 1_\beta\rangle$ coupling to the double
 $|2_\alpha 2_\beta\rangle$. The pinned reference energy is
 $E_\text{FCI} \approx -1.1372702\ \text{Hartree}$ (STO-3G, $R = 0.7414$ Å; the
-same constant the tests and `examples/14_fci.cpp` assert).
+same constant the unit tests assert).
 
 A useful sanity check against [MP2](#the-hierarchy-mp2-ci-coupled-cluster):
 FCI is the exact in-basis ground state, so it recovers *at least as much*
@@ -251,13 +233,12 @@ Davidson/direct-CI machinery, deliberately: correctness over scale.
 
 **Status:** MP2 and tiny full CI are implemented and validated; coupled cluster,
 multi-reference, and large-scale CI remain out of scope. Runnable examples:
-[`examples/13_mp2.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/13_mp2.cpp) and
-[`examples/14_fci.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/14_fci.cpp). Validation benchmarks pin
+the Practice snippets above. Validation pins
 every quoted number against reference values: `val_mp2_vs_pyscf` (MP2 across
 {He,H₂,H₂O,NH₃,CH₄}×{STO-3G,6-31G}) and `val_fci_vs_pyscf` (exact FCI +
 engine-MO self-consistency + the MP2-vs-FCI two-level cross-check).
 
 For the production route to correlation, return to
-[Chapter 6: Hybrid Functionals and Analytic Gradients](ch06-hybrid-dft.md). For
+[Chapter 6](ch06-hybrid-dft.md). For
 the periodic counterpart of the electronic-structure problem, continue to
-[Chapter 8: Plane-Wave DFT for Periodic Systems](ch08-plane-wave.md).
+[Chapter 8](ch08-plane-wave.md).

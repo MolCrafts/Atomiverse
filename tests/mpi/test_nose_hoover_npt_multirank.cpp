@@ -23,12 +23,11 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/comm/halo_exchange.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/nose_hoover_npt.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
@@ -59,7 +58,7 @@ cpu::Frame make_fcc_argon(int n_cells, double a_lat) {
                     frame.span(ATV::kAtom_type)[idx] = 18;
                     ++idx;
                 }
-    frame.simbox = ATV::cpu::Box::cubic(n_cells * a_lat);
+    frame.box = ATV::cpu::Box::cubic(n_cells * a_lat);
     return frame;
 }
 
@@ -99,15 +98,11 @@ TEST(NoseHooverNptMultiRank, KineticEnergyNonZero) {
     const double tau_P = 1000.0;
 
     cpu::md::MD sim;
-    sim.set_integrator(cpu::md::NoseHooverNPT{{.T_target = T_target,
-                                               .tau_T = tau_T,
-                                               .P_target = 0.0,
-                                               .tau_P = tau_P,
-                                               .dt = dt,
-                                               .drag = 2.0}});
-    sim.add(cpu::md::InitVelocity{T_target, /*seed=*/12345});
+    sim.set_integrator(
+        cpu::md::NoseHooverNPT{T_target, tau_T, 0.0, tau_P, dt, 2.0});
+    sim.set_observer(cpu::md::InitVelocity{T_target, /*seed=*/12345});
     sim.set_neighbor(cpu::md::NeighborList<>{lj_cut, /*skin=*/0.3});
-    sim.add_potential(cpu::PairLJCut{lj_eps, lj_sig, lj_cut}.set_special_bonds(
+    sim.set_evaluator(cpu::PairLJCut{lj_eps, lj_sig, lj_cut}.set_special_bonds(
         0.0, 0.0, 0.0));
     sim.build();
 
@@ -117,7 +112,7 @@ TEST(NoseHooverNptMultiRank, KineticEnergyNonZero) {
     if (my_rank == 0) {
         std::printf("[NHnpt-8r] step 1: T=%.3f K, E_kin=%.3f eV, box=%.4f Å\n",
                     T1, static_cast<double>(frame.meta.get(ATV::kKinetic)),
-                    frame.simbox.cell()(0, 0));
+                    frame.box.cell()(0, 0));
     }
     EXPECT_GT(T1, 50.0) << "after step 1: T_K should be > 50 K, got " << T1;
     EXPECT_LT(T1, 600.0) << "after step 1: T_K runaway: " << T1;
@@ -135,7 +130,7 @@ TEST(NoseHooverNptMultiRank, KineticEnergyNonZero) {
                         "box=%.4f Å\n",
                         chunk_start + probe_every + 1, T,
                         static_cast<double>(frame.meta.get(ATV::kKinetic)),
-                        frame.simbox.cell()(0, 0));
+                        frame.box.cell()(0, 0));
         }
         if (T < T_min_observed)
             T_min_observed = T;
@@ -209,7 +204,7 @@ cpu::Frame make_pe_box_simple(int n_chains_per_axis, int n_atoms_per_chain,
     }
     frame.build_special_list();
 
-    frame.simbox = ATV::cpu::Box::cubic(box_len);
+    frame.box = ATV::cpu::Box::cubic(box_len);
     return frame;
 }
 
@@ -246,17 +241,13 @@ TEST(NoseHooverNptMultiRank, BondsOnlyKineticNonZero) {
     const double T_target = 300.0;
 
     cpu::md::MD sim;
-    sim.set_integrator(cpu::md::NoseHooverNPT{{.T_target = T_target,
-                                               .tau_T = 100.0,
-                                               .P_target = 0.0,
-                                               .tau_P = 1000.0,
-                                               .dt = dt,
-                                               .drag = 2.0}});
-    sim.add(cpu::md::InitVelocity{T_target, /*seed=*/42});
+    sim.set_integrator(
+        cpu::md::NoseHooverNPT{T_target, 100.0, 0.0, 1000.0, dt, 2.0});
+    sim.set_observer(cpu::md::InitVelocity{T_target, /*seed=*/42});
     sim.set_neighbor(cpu::md::NeighborList<>{lj_cut, /*skin=*/0.3});
-    sim.add_potential(cpu::PairLJCut{lj_eps, lj_sig, lj_cut}.set_special_bonds(
+    sim.set_evaluator(cpu::PairLJCut{lj_eps, lj_sig, lj_cut}.set_special_bonds(
         0.0, 0.0, 0.0));
-    sim.add_potential(cpu::BondHarmonic{{bond_K_eV}, {bond_r0}});
+    sim.set_evaluator(cpu::BondHarmonic{{bond_K_eV}, {bond_r0}});
     // NO angle, NO dihedral — bonds only.
     sim.build();
 
@@ -275,7 +266,7 @@ TEST(NoseHooverNptMultiRank, BondsOnlyKineticNonZero) {
                         "eV, box=%.4f Å\n",
                         s, T,
                         static_cast<double>(frame.meta.get(ATV::kKinetic)),
-                        frame.simbox.cell()(0, 0));
+                        frame.box.cell()(0, 0));
         }
         ASSERT_GT(T, 1.0) << "T_K collapsed at step " << s
                           << " (bonds-only repro)";
@@ -317,18 +308,14 @@ TEST(NoseHooverNptMultiRank, BondedKineticNonZero) {
     const double T_target = 300.0;
 
     cpu::md::MD sim;
-    sim.set_integrator(cpu::md::NoseHooverNPT{{.T_target = T_target,
-                                               .tau_T = 100.0,
-                                               .P_target = 0.0,
-                                               .tau_P = 1000.0,
-                                               .dt = dt,
-                                               .drag = 2.0}});
-    sim.add(cpu::md::InitVelocity{T_target, /*seed=*/42});
+    sim.set_integrator(
+        cpu::md::NoseHooverNPT{T_target, 100.0, 0.0, 1000.0, dt, 2.0});
+    sim.set_observer(cpu::md::InitVelocity{T_target, /*seed=*/42});
     sim.set_neighbor(cpu::md::NeighborList<>{lj_cut, /*skin=*/0.3});
-    sim.add_potential(cpu::PairLJCut{lj_eps, lj_sig, lj_cut}.set_special_bonds(
+    sim.set_evaluator(cpu::PairLJCut{lj_eps, lj_sig, lj_cut}.set_special_bonds(
         0.0, 0.0, 0.0));
-    sim.add_potential(cpu::BondHarmonic{{bond_K_eV}, {bond_r0}});
-    sim.add_potential(cpu::AngleHarmonic{{angle_K_eV}, {angle_theta0}});
+    sim.set_evaluator(cpu::BondHarmonic{{bond_K_eV}, {bond_r0}});
+    sim.set_evaluator(cpu::AngleHarmonic{{angle_K_eV}, {angle_theta0}});
     sim.build();
 
     // NOTE: this test was originally a *collapse* repro (T → 0 mode). It
@@ -347,7 +334,7 @@ TEST(NoseHooverNptMultiRank, BondedKineticNonZero) {
                         "box=%.4f Å\n",
                         chunk + probe_every + 1, T,
                         static_cast<double>(frame.meta.get(ATV::kKinetic)),
-                        frame.simbox.cell()(0, 0));
+                        frame.box.cell()(0, 0));
         }
         ASSERT_GT(T, 1.0) << "T_K collapsed at step "
                           << (chunk + probe_every + 1)
@@ -425,7 +412,7 @@ cpu::Frame make_drifting_x1_chains(int n_lanes, int n_atoms_per_chain,
     }
     frame.build_special_list();
 
-    frame.simbox = ATV::cpu::Box::cubic(box_len);
+    frame.box = ATV::cpu::Box::cubic(box_len);
     return frame;
 }
 
@@ -465,9 +452,9 @@ TEST(NoseHooverNptMultiRank, MigrationKeepsSpecialBondsExclusion) {
     // special_bonds(0,0,0): 1-2/1-3/1-4 bonded pairs MUST be excluded from
     // LJ. The migration-staleness bug dropped this exclusion for migrated
     // atoms, feeding the LJ kernel a 1.53 Å pair (E_pair → 1e5+ eV).
-    sim.add_potential(cpu::PairLJCut{lj_eps, lj_sig, lj_cut}.set_special_bonds(
+    sim.set_evaluator(cpu::PairLJCut{lj_eps, lj_sig, lj_cut}.set_special_bonds(
         0.0, 0.0, 0.0));
-    sim.add_potential(cpu::BondHarmonic{{bond_K_eV}, {bond_r0}});
+    sim.set_evaluator(cpu::BondHarmonic{{bond_K_eV}, {bond_r0}});
     sim.build();
 
     // E_pair for these sparse, lane-separated chains is tiny: only intra-
@@ -483,7 +470,7 @@ TEST(NoseHooverNptMultiRank, MigrationKeepsSpecialBondsExclusion) {
             static_cast<double>(frame.meta.get(ATV::kEnergyPair));
         if (my_rank == 0) {
             std::printf("[mig-excl-8r] step %d: E_pair=%.4f eV, box=%.3f Å\n",
-                        chunk + probe_every, e_pair, frame.simbox.cell()(0, 0));
+                        chunk + probe_every, e_pair, frame.box.cell()(0, 0));
         }
         ASSERT_LT(std::abs(e_pair), 200.0)
             << "E_pair exploded at step " << (chunk + probe_every)

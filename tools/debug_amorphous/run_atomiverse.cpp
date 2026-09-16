@@ -34,18 +34,18 @@
 #include <string>
 
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/comm/halo_exchange.h"
+
+#include "atomiverse/cpu/dynamics/barostat.h"
+#include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/nose_hoover.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/nve_limit.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/md/barostat.h"
-#include "atomiverse/cpu/md/fix_langevin.h"
-#include "atomiverse/cpu/md/init.h"
-#include "atomiverse/cpu/md/md.h"
-#include "atomiverse/cpu/md/nose_hoover.h"
-#include "atomiverse/cpu/md/nose_hoover_npt.h"
-#include "atomiverse/cpu/md/nve_limit.h"
-#include "atomiverse/cpu/md/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observer/virial_stress.h"
+#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
@@ -105,9 +105,9 @@ class ThermoPrinter : public cpu::Component {
         const auto& f = ctx.frame;
 
         if (step_ % period_ == 0) {
-            const double Lx = f.simbox.length(0);
-            const double Ly = f.simbox.length(1);
-            const double Lz = f.simbox.length(2);
+            const double Lx = f.box.length(0);
+            const double Ly = f.box.length(1);
+            const double Lz = f.box.length(2);
             const double V = Lx * Ly * Lz;
             const double kinetic = f.meta.get(kKinetic);
             const double energy = f.meta.get(kEnergy);
@@ -256,9 +256,8 @@ int main(int argc, char** argv) {
         std::cerr << "[atomiverse] n_bonds     = " << nb << '\n';
         std::cerr << "[atomiverse] n_angles    = " << na << '\n';
         std::cerr << "[atomiverse] n_dihedrals = " << nd << '\n';
-        std::cerr << "[atomiverse] box (Å)     = " << frame.simbox.length(0)
-                  << ' ' << frame.simbox.length(1) << ' '
-                  << frame.simbox.length(2) << '\n';
+        std::cerr << "[atomiverse] box (Å)     = " << frame.box.length(0) << ' '
+                  << frame.box.length(1) << ' ' << frame.box.length(2) << '\n';
     }
 
     const int n_atoms_global = frame.nlocal();
@@ -294,33 +293,31 @@ int main(int argc, char** argv) {
         const double xmax = 0.05;     // LAMMPS-equivalent cap
 
         cpu::md::MD sim;
-        sim.add(cpu::md::NVELimit{dt, xmax});
-        sim.add(cpu::md::InitVelocity{T_tgt, /*seed=*/1231});
-        sim.add(cpu::md::FixLangevin{T_tgt, /*T_stop=*/T_tgt, tau_lang, dt,
-                                     /*seed=*/904297});
-        sim.on(ATV::md::Phase::pre_force)
-            .add(cpu::comm::HaloSend{lj_cut + 0.4}, -20);
-        sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
+        sim.set_integrator(cpu::md::NVELimit{dt, xmax});
+        sim.set_observer(cpu::md::InitVelocity{T_tgt, /*seed=*/1231});
+        sim.set_thermostat(cpu::md::FixLangevin{T_tgt, /*T_stop=*/T_tgt,
+                                                tau_lang, dt,
+                                                /*seed=*/904297});
+        sim.set_neighbor(
+            cpu::md::NeighborList<>{lj_cut, /*skin=*/0.4, /*every=*/10});
         sim.on(ATV::md::Phase::force)
-            .add(cpu::md::NeighborList<>{lj_cut, /*skin=*/0.4, /*every=*/10},
-                 -10)
             .add(cpu::PairLJCut{lj_eps_ev, lj_sig, lj_cut}.set_special_bonds(
                 0.0, 0.0, 0.0))
             .add(cpu::BondHarmonic{{bond_K_ev}, {bond_r0}})
             .add(cpu::AngleHarmonic{{angle_K_ev}, {angle_theta0}})
             .add(cpu::DihedralMultiHarmonic{{dihedral_ev}});
-        sim.add(cpu::md::Virial{});
+        sim.set_observer(cpu::md::Virial{});
 
         ThermoPrinter thermo{100, rank == 0 ? log_stream : std::cout,
                              n_atoms_global, total_mass_amu};
-        sim.add_ref(thermo);
+        sim.set_observer_ref(thermo);
 
         // Stash this rank's final n_local so we can gather the frame
         // back to every rank between stages (Stage 2's driver scans the
         // whole array on first partition; without a gather it'd see
         // stale ghost rows).
         debug_amorphous::CaptureNLocal capture{&stage1_n_local};
-        sim.add_ref(capture);
+        sim.set_observer_ref(capture);
 
         sim.build();
 
@@ -374,35 +371,24 @@ int main(int argc, char** argv) {
         const double tau_P = 1000.0; // LAMMPS Pdamp
 
         cpu::md::MD sim;
-        sim.add(cpu::md::NoseHooverNPT{{
-            /*.T_target=*/T_tgt,
-            /*.tau_T   =*/tau_T,
-            /*.P_target=*/P_tgt,
-            /*.tau_P   =*/tau_P,
-            /*.dt      =*/dt,
-            /*.drag    =*/2.0, // LAMMPS `drag 2`
-            /*.mtchain =*/3,   // LAMMPS default
-            /*.mpchain =*/3,   // LAMMPS default
-        }});
+        sim.set_integrator(cpu::md::NoseHooverNPT{
+            */ T_tgt, */ tau_T, */ P_tgt, */ tau_P, */ dt, */ 2.0, */ 3, */ 3});
         // LAMMPS `fix momentum 1 linear 1 1 1` equivalent.
-        sim.add(cpu::md::ZeroMomentum{1});
-        sim.on(ATV::md::Phase::pre_force)
-            .add(cpu::comm::HaloSend{lj_cut + 0.4}, -20);
-        sim.on(ATV::md::Phase::post_force).add(cpu::comm::HaloRecv{}, -1000);
+        sim.set_observer(cpu::md::ZeroMomentum{1});
+        sim.set_neighbor(
+            cpu::md::NeighborList<>{lj_cut, /*skin=*/0.4, /*every=*/10});
         sim.on(ATV::md::Phase::force)
-            .add(cpu::md::NeighborList<>{lj_cut, /*skin=*/0.4, /*every=*/10},
-                 -10)
             .add(cpu::PairLJCut{lj_eps_ev, lj_sig, lj_cut}.set_special_bonds(
                 0.0, 0.0, 0.0))
             .add(cpu::BondHarmonic{{bond_K_ev}, {bond_r0}})
             .add(cpu::AngleHarmonic{{angle_K_ev}, {angle_theta0}})
             .add(cpu::DihedralMultiHarmonic{{dihedral_ev}});
-        sim.add(cpu::md::Virial{});
+        sim.set_observer(cpu::md::Virial{});
 
         ThermoPrinter thermo{100, rank == 0 ? log_stream : std::cout,
                              n_atoms_global, total_mass_amu};
         thermo.reset_step();
-        sim.add_ref(thermo);
+        sim.set_observer_ref(thermo);
 
         sim.build();
 

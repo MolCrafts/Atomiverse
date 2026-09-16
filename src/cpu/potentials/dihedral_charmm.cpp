@@ -97,8 +97,8 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
     // Hoist orthorhombic min-image constants (avoids per-bond virtual/ indirections).
-    const double lx = f.simbox.length(0), ly = f.simbox.length(1),
-                 lz = f.simbox.length(2);
+    const double lx = f.box.length(0), ly = f.box.length(1),
+                 lz = f.box.length(2);
     const double inv_lx = 1.0 / lx, inv_ly = 1.0 / ly, inv_lz = 1.0 / lz;
     auto min_image = [&](double& ax, double& ay, double& az) {
         ax -= lx * std::nearbyint(ax * inv_lx);
@@ -132,6 +132,10 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
             const int i4 = tup[5 * t + 3];
             const int type = tup[5 * t + 4];
             if (type < 0 || static_cast<std::size_t>(type) >= ntypes)
+                continue;
+            // K = 0 contributes exactly zero energy and force — the type is
+            // owned by the other member of a hybrid dihedral split.
+            if (Ktab[static_cast<std::size_t>(type)] == 0.0)
                 continue;
 
             dihedral_geom::Geometry g;
@@ -181,8 +185,7 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
 
             // dE/dφ = −K n sin(nφ − δ)
             const double dE_dphi = -K * static_cast<double>(n) * sarg;
-            const double d2E_dphi2 =
-                -K * static_cast<double>(n * n) * carg;
+            const double d2E_dphi2 = -K * static_cast<double>(n * n) * carg;
             const double dV_dcos = dihedral_geom::dV_dcos_from_dE_dphi(
                 dE_dphi, g.sin_phi, g.cos_phi, d2E_dphi2);
 

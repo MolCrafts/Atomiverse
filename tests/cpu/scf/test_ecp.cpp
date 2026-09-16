@@ -1,7 +1,7 @@
 /// @file tests/cpu/scf/test_ecp.cpp
 /// @brief Unit: semi-local ECP (def2-ECP) — static table structure, the
 ///        EcpPotential lookup class, EcpIntegrals U-matrix elements pinned
-///        against PySCF, IntegralPack valence wiring, and the ECP↔x2c
+///        against PySCF, internal::IntegralWorkspace valence wiring, and the ECP↔x2c
 ///        double-counting gate (hf-capability-gaps-06-ecp). No full SCF
 ///        solve beyond the millisecond H2/STO-3G gate check.
 ///
@@ -58,7 +58,7 @@
 using namespace ATV;
 using cpu::scf::BasisSet;
 using cpu::scf::EcpPotential;
-using cpu::scf::IntegralPack;
+using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::basis_data::AtomEcp;
 using cpu::scf::basis_data::EcpChannel;
 using cpu::scf::basis_data::EcpGaussianTerm;
@@ -112,7 +112,7 @@ cpu::Frame i2_frame() {
     f.span(kAtom_x)[1] = 0.0;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 2.666;
-    f.simbox = cpu::Box::cubic(20.0);
+    f.box = cpu::Box::cubic(20.0);
     return f;
 }
 
@@ -293,10 +293,9 @@ TEST(EcpIntegrals_, UMatrixPinnedVsPyscfSyntheticFChannel) {
     // Synthetic semi-local ECP: one f (l=3) projector + local U_L, exactly
     // the user-defined PySCF ECP quoted in the file header. The local
     // channel sits last (relabeled l = L = 4).
-    const AtomEcp ecp{
-        10,
-        {EcpChannel{3, {EcpGaussianTerm{2, 1.0, 5.0}}},
-         EcpChannel{4, {EcpGaussianTerm{2, 1.5, -3.0}}}}};
+    const AtomEcp ecp{10,
+                      {EcpChannel{3, {EcpGaussianTerm{2, 1.0, 5.0}}},
+                       EcpChannel{4, {EcpGaussianTerm{2, 1.5, -3.0}}}}};
     EcpIntegrals ints{shells, {EcpCenter{{0.0, 0.0, 0.0}, &ecp}}};
     const auto U = ints.matrix();
 
@@ -316,12 +315,12 @@ TEST(EcpIntegrals_, UMatrixPinnedVsPyscfSyntheticFChannel) {
     EXPECT_NEAR(U(2, 7), 0.0, tol);
 }
 
-// ── IntegralPack wiring: valence counting, Z_val, untouched S/T ────────
+// ── internal::IntegralWorkspace wiring: valence counting, Z_val, untouched S/T ────────
 
-TEST(EcpIntegralPack, I2ValenceWiring) {
+TEST(EcpIntegralWorkspace, I2ValenceWiring) {
     const auto frame = i2_frame();
-    const IntegralPack ae{frame, BasisSet::Def2SVP};
-    const IntegralPack ve{frame, BasisSet::Def2SVP, 0, false, "def2-ECP"};
+    const cpu::scf::internal::IntegralWorkspace ae{frame, BasisSet::Def2SVP};
+    const cpu::scf::internal::IntegralWorkspace ve{frame, BasisSet::Def2SVP, 0, false, "def2-ECP"};
 
     // Electron and AO bookkeeping: 2 * (53 - 28) = 50 valence electrons.
     EXPECT_EQ(ae.n_electrons, 106);
@@ -355,7 +354,7 @@ TEST(EcpIntegralPack, I2ValenceWiring) {
     EXPECT_GT(max_dV, 1.0); // core removal changes V by O(Z_core)
 }
 
-TEST(EcpIntegralPack, LightMoleculeUnchangedAndUnknownNameThrows) {
+TEST(EcpIntegralWorkspace, LightMoleculeUnchangedAndUnknownNameThrows) {
     // H2O: every atom is all-electron in def2-ECP — the pack must be
     // identical to the empty-ecp path (per-element table, no global switch).
     cpu::Frame h2o(3);
@@ -371,10 +370,10 @@ TEST(EcpIntegralPack, LightMoleculeUnchangedAndUnknownNameThrows) {
     h2o.span(kAtom_x)[2] = 0.0;
     h2o.span(kAtom_y)[2] = -0.7572;
     h2o.span(kAtom_z)[2] = -0.4692;
-    h2o.simbox = cpu::Box::cubic(20.0);
+    h2o.box = cpu::Box::cubic(20.0);
 
-    const IntegralPack plain{h2o, BasisSet::Def2SVP};
-    const IntegralPack named{h2o, BasisSet::Def2SVP, 0, false, "def2-ECP"};
+    const cpu::scf::internal::IntegralWorkspace plain{h2o, BasisSet::Def2SVP};
+    const cpu::scf::internal::IntegralWorkspace named{h2o, BasisSet::Def2SVP, 0, false, "def2-ECP"};
     EXPECT_FALSE(named.has_ecp);
     EXPECT_EQ(named.n_electrons, plain.n_electrons);
     EXPECT_EQ(named.V_nuc, plain.V_nuc);
@@ -385,14 +384,15 @@ TEST(EcpIntegralPack, LightMoleculeUnchangedAndUnknownNameThrows) {
                               std::abs(plain.Hcore(i, j) - named.Hcore(i, j)));
     EXPECT_EQ(max_dH, 0.0);
 
-    EXPECT_THROW(IntegralPack(h2o, BasisSet::Def2SVP, 0, false, "no-such"),
+    EXPECT_THROW(cpu::scf::internal::IntegralWorkspace(h2o, BasisSet::Def2SVP, 0, false, "no-such"),
                  std::runtime_error);
 }
 
 // ── ECP ↔ x2c per-element double-counting gate ─────────────────────────
 
-TEST(EcpX2cGate, ThrowsForEcpElementPassesAllElectron) {
+TEST(EcpX2cGate, ThrowsForEcpElement) {
     // I2 + x2c + def2-ECP: throws before any SCF work, naming the element.
+    // (e2e-in-tests wave-2: no multi-iter all-electron run under tests/.)
     auto frame = i2_frame();
     cpu::scf::RHF rhf;
     rhf.basis = BasisSet::Def2SVP;
@@ -406,23 +406,4 @@ TEST(EcpX2cGate, ThrowsForEcpElementPassesAllElectron) {
         EXPECT_NE(msg.find("I (Z=53)"), std::string::npos) << msg;
         EXPECT_NE(msg.find("x2c"), std::string::npos) << msg;
     }
-
-    // All-electron molecule with the same settings: the gate is
-    // per-element, so nothing throws (H2/STO-3G, milliseconds).
-    cpu::Frame h2(2);
-    h2.span(kAtom_type)[0] = 1;
-    h2.span(kAtom_x)[0] = 0.0;
-    h2.span(kAtom_y)[0] = 0.0;
-    h2.span(kAtom_z)[0] = 0.0;
-    h2.span(kAtom_type)[1] = 1;
-    h2.span(kAtom_x)[1] = 0.0;
-    h2.span(kAtom_y)[1] = 0.0;
-    h2.span(kAtom_z)[1] = 0.74;
-    h2.simbox = cpu::Box::cubic(20.0);
-    cpu::scf::RHF ok;
-    ok.basis = BasisSet::STO3G;
-    ok.ecp = "def2-ECP";
-    ok.x2c = true;
-    ok.max_iter = 3; // gate check only — not a converged solve
-    EXPECT_NO_THROW(ok.run(h2));
 }

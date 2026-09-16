@@ -21,11 +21,10 @@ GHF::GHF() {
     tol = 1e-8;
     // The spinor exchange K[P^ab] of the non-symmetric spin-off-diagonal
     // block needs the stored dense ERI tensor (the direct 8-fold-symmetry
-    // builders assume symmetric densities).
+    // builders assume symmetric densities). Same requirement for the analytic
+    // force path (unsymmetrized four-block dERI contraction).
     compute_eri = true;
-    // No GHF gradient path in this link: keep nested force-slot runs from
-    // silently requesting forces (forces() itself still throws).
-    compute_force = false;
+    compute_force = false; // forces() sets DriveOpts::forces explicitly
 }
 GHF::GHF(int n) : GHF() { n_electrons = n; }
 

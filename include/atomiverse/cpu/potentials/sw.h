@@ -6,9 +6,9 @@
 #include <string_view>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
-#include "atomiverse/facade/stage.h"
 #include "atomiverse/molrs.hpp"
 
 namespace ATV {

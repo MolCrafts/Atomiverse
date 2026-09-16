@@ -3,12 +3,12 @@
 
 #include <iostream>
 
-#include "atomiverse/cpu/driver/evaluate.h"
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/recorder/density_cube_writer.h"
-#include "atomiverse/cpu/recorder/orbital_cube_writer.h"
+#include "atomiverse/cpu/record/density_cube_writer.h"
+#include "atomiverse/cpu/record/orbital_cube_writer.h"
 #include "atomiverse/cpu/scf/methods.h"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 
@@ -24,10 +24,9 @@ int main() {
     frame.span(kAtom_type)[1] = 1;
     frame.span(kAtom_mass)[0] = 1.008;
     frame.span(kAtom_mass)[1] = 1.008;
-    frame.simbox = cpu::Box::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.with_gradient(false);
     auto handle = rhf.result_handle();
 

@@ -2,12 +2,12 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/frame/transfer.h"
 #include "atomiverse/cuda/driver/backend.cuh"
+#include "atomiverse/cuda/dynamics/init.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
-#include "atomiverse/cuda/md/init.cuh"
-#include "atomiverse/facade/stage.h"
 
 using namespace ATV;
 
@@ -15,17 +15,16 @@ TEST(Frame, HostCreate) {
     cpu::Frame frame(100);
     EXPECT_EQ(frame.nlocal(), 100);
     EXPECT_GE(frame.capacity(), 100);
-    EXPECT_EQ(static_cast<int>(frame.span(kAtom_x).size()), frame.capacity());
-    EXPECT_EQ(static_cast<int>(frame.span(kAtom_mass).size()),
-              frame.capacity());
+    // The atoms block (x, mass, ... columns) is allocated to `capacity` rows.
+    EXPECT_EQ(frame.block("atoms").rows(), frame.capacity());
 }
 
 TEST(Frame, Mat3Box) {
     cpu::Frame frame(2);
-    frame.simbox = cpu::Box::cubic(10.0);
-    EXPECT_DOUBLE_EQ(frame.simbox.length(0), 10.0);
-    EXPECT_DOUBLE_EQ(frame.simbox.length(1), 10.0);
-    EXPECT_DOUBLE_EQ(frame.simbox.length(2), 10.0);
+    frame.box = cpu::Box::cubic(10.0);
+    EXPECT_DOUBLE_EQ(frame.box.length(0), 10.0);
+    EXPECT_DOUBLE_EQ(frame.box.length(1), 10.0);
+    EXPECT_DOUBLE_EQ(frame.box.length(2), 10.0);
 }
 
 TEST(Frame, ToDeviceAndBack) {
@@ -38,7 +37,7 @@ TEST(Frame, ToDeviceAndBack) {
     x[3] = 4.0;
     for (int i = 0; i < 4; ++i)
         mass[i] = 1.0;
-    frame.simbox = cpu::Box::cubic(10.0);
+    frame.box = cpu::Box::cubic(10.0);
 
     auto d_frame = cpu::to_cuda(frame);
     EXPECT_NE(d_frame.atoms.d_size, nullptr);
@@ -64,7 +63,7 @@ TEST(Frame, TopologyRoundTrip) {
         z[i] = 0.0;
         mass[i] = 14.0;
     }
-    frame.simbox = cpu::Box::cubic(20.0);
+    frame.box = cpu::Box::cubic(20.0);
 
     // Per-atom topology (LAMMPS layout): the owner atom holds each
     // bond/angle/dihedral; cpu::to_cuda() re-flattens to device tables.

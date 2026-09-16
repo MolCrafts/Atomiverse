@@ -12,6 +12,10 @@ Scientific methods (RHF theory, ensembles, basis sets, …) live in the
     <strong>Getting started</strong>
     <em>Toolchain, CMake flags, first build and first run.</em>
   </a>
+  <a href="python/">
+    <strong>Python package</strong>
+    <em>pip install, staged native build, and the bound driver surface.</em>
+  </a>
   <a href="concepts/">
     <strong>Core concepts</strong>
     <em>Driver, Component, Frame, Criterion — the vocabulary every run uses.</em>
@@ -23,10 +27,6 @@ Scientific methods (RHF theory, ensembles, basis sets, …) live in the
   <a href="backend-switching/">
     <strong>Backend switching</strong>
     <em>CPU vs CUDA: same Frame API, explicit transfers.</em>
-  </a>
-  <a href="libtorch-backend/">
-    <strong>LibTorch backend</strong>
-    <em>Optional Torch path for differentiable workflows.</em>
   </a>
   <a href="launcher/">
     <strong>MPI launcher</strong>

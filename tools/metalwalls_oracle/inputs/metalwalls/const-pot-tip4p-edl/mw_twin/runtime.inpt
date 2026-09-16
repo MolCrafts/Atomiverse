@@ -1,0 +1,59 @@
+num_steps 0
+timestep  41.341
+temperature 0.0
+num_pbc 2
+
+species
+
+  species_type
+    name Ip
+    count 1
+    charge point 5.000000000000000E-01
+    mass 1.0
+
+  species_type
+    name Im
+    count 1
+    charge point -5.000000000000000E-01
+    mass 1.0
+
+  species_type
+    name E1
+    count 1
+    charge gaussian 1.058354421806000E+00 0.0
+    mass 1.0
+    mobile False
+
+  species_type
+    name E2
+    count 1
+    charge gaussian 1.058354421806000E+00 0.0
+    mass 1.0
+    mobile False
+
+electrodes
+
+  electrode_type
+    name E1
+    species E1
+    potential 0.000000000000000E+00
+
+  electrode_type
+    name E2
+    species E2
+    potential 3.674932217565499E-02
+
+  electrode_charges matrix_inversion
+  charge_neutrality true global
+
+interactions
+  coulomb
+    coulomb_rtol 1.0e-12
+    coulomb_rcut 3.800000
+    coulomb_ktol 1.0e-14
+
+output
+  step 1
+  charges 1
+  total_charges 1
+  energies 1 Hamiltonian Potential Coulomb

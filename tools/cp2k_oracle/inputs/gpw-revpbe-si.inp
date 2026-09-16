@@ -1,0 +1,58 @@
+! Offline twin for regressions/gpw/gpw-revpbe-si (never launched by ctest).
+! Geometry: Si2 diamond fragment, cubic a=5.43 Å, isolated MT, RKS revPBE,
+! DZVP-MOLOPT-GTH + GTH-PBE-q4, CUTOFF 200 Ry (matches e2e regression).
+&GLOBAL
+  PROJECT gpw-revpbe-si
+  RUN_TYPE ENERGY
+  PRINT_LEVEL MEDIUM
+&END GLOBAL
+&FORCE_EVAL
+  METHOD QS
+  &DFT
+    BASIS_SET_FILE_NAME BASIS_MOLOPT
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    &POISSON
+      PERIODIC NONE
+      PSOLVER MT
+    &END POISSON
+    &MGRID
+      CUTOFF 200
+      NGRIDS 4
+      REL_CUTOFF 40
+    &END MGRID
+    &QS
+      METHOD GPW
+      EPS_DEFAULT 1.0E-10
+    &END QS
+    &SCF
+      MAX_SCF 300
+      EPS_SCF 1.0E-6
+      SCF_GUESS ATOMIC
+      &MIXING
+        METHOD DIRECT_P_MIXING
+        ALPHA 0.4
+      &END MIXING
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL
+        &PBE
+          PARAMETRIZATION REVPBE
+        &END PBE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 5.43 5.43 5.43
+      PERIODIC NONE
+    &END CELL
+    &COORD
+      Si 2.036250 2.036250 2.036250
+      Si 3.393750 3.393750 3.393750
+    &END COORD
+    &KIND Si
+      BASIS_SET DZVP-MOLOPT-GTH
+      POTENTIAL GTH-PBE-q4
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

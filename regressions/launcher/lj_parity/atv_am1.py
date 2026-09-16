@@ -26,9 +26,9 @@ atoms.insert("z", np.array([0.0, H, H, -H, -H]))
 atoms.insert("mass", np.array([12.011, 1.008, 1.008, 1.008, 1.008]))
 atoms.insert("type", np.array([6, 1, 1, 1, 1], dtype=np.int32))  # Z
 frame["atoms"] = atoms
-frame.simbox = molrs.Box.cube(20.0)
+frame.box = molrs.Box.cube(20.0)
 
-ev = atv.AM1Evaluator(atv.AM1Config(charge=0))
+ev = atv.AM1Evaluator(charge=0)
 atv.single_point(frame, ev)
 
 np.savez(

@@ -1,4 +1,4 @@
-# Chapter 10: Classical Molecular Dynamics on the CPU
+# Chapter 10. Classical Molecular Dynamics
 
 The previous chapters introduced the SCF machinery and showed that the
 same `cpu::md::MD` driver that ran *ab initio* MD will also run classical
@@ -9,19 +9,7 @@ list, integrator, thermostat, barostat, and observers. By the end you
 will have built every layer of an LAMMPS-style script, but in C++, in
 about thirty lines.
 
-| | |
-|---|---|
-| **Example** | [`examples/07_md_lj.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/07_md_lj.cpp) (CUDA twin `07_md_lj.cu`) |
-| **Results** | [`examples/results/07_md_lj.json`](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/results/07_md_lj.json) |
-| **Acceptance** | NVE total-energy conservation |
-
-```bash
-cmake -B build -DATV_BUILD_EXAMPLES=ON
-cmake --build build --target 07_md_lj
-./build/examples/07_md_lj
-```
-
-## Live result: NVE energy conservation (216 Ar, LJ)
+## Live Result: NVE Energy Conservation
 
 Thermo every 200 steps from the binary (total energy in eV):
 
@@ -60,7 +48,7 @@ encoding:
 
 Potential and kinetic trade off; **total** is flat — the NVE signature of a
 correct Velocity-Verlet + LJ force pipeline. The CUDA twin
-(`07_md_lj_cuda`) should match within floating-point noise.
+should match within floating-point noise.
 
 ## What "Classical" Means in This Code
 
@@ -127,7 +115,7 @@ cpu::Frame make_fcc_argon(int n_cells, double a) {
               type[idx] = 18;                      // Ar
               ++idx;
           }
-    f.simbox = cpu::Box::cubic(n_cells * a);
+    f.box = cpu::Box::cubic(n_cells * a);
     return f;
 }
 ```
@@ -136,7 +124,7 @@ The `cpu::Box` is constructed last from the side length. A frame is a
 plain value object — there is no "open" or "init" call to make, no
 implicit registration. Hand it to the driver and you are done.
 
-## Wiring a Lennard-Jones Run (NVE)
+## Wiring a Lennard-Jones Run
 
 The simplest possible classical MD is an NVE run with a single pair
 potential. The full driver setup is:
@@ -145,10 +133,10 @@ potential. The full driver setup is:
 auto frame = make_fcc_argon(4, /*a=*/5.32);  // Å, FCC Ar lattice constant
 
 cpu::md::MD sim;
-sim.add(cpu::md::InitVelocity{/*T_K=*/100.0, /*seed=*/42u});
-sim.add(cpu::md::VelocityVerlet{/*dt_fs=*/4.0});
-sim.on(md::Phase::pre_force).add(
-    cpu::md::NeighborList<>{/*cutoff=*/6.8});
+sim.on(md::Phase::initial_integrate)
+   .add(cpu::md::InitVelocity{/*T_K=*/100.0, /*seed=*/42u}, /*order=*/-999);
+sim.set_integrator(cpu::md::VelocityVerlet{/*dt_fs=*/4.0});
+sim.set_neighbor(cpu::md::NeighborList<>{/*cutoff=*/6.8});
 sim.on(md::Phase::force).add(
     cpu::PairLJCut{/*eps=*/0.0104, /*sig=*/3.4, /*cutoff=*/6.8});
 sim.build();
@@ -158,32 +146,42 @@ sim.run(frame, 10000);
 Five lines describe a complete simulation. Read them in the order they
 appear:
 
-1. **`InitVelocity{T, seed}`** binds at `initial_integrate @ -999`. Its
+1. **`InitVelocity{T, seed}`** has no categorical setter, so it is bound
+   explicitly at `initial_integrate @ -999` — the phase and order its own
+   `default_bindings()` declare. Its
    `launch()` is a no-op; its `build()` draws a Maxwell-Boltzmann sample
    at temperature $T$, scales velocities by $\sqrt{k_B T / m}$ per atom,
    and removes the centre-of-mass velocity. By the time the first MD
    step runs, the `kAtom_vx/vy/vz` columns already carry physical thermal
    velocities.
-2. **`VelocityVerlet{dt}`** is the integrator. It binds at
-   `initial_integrate @ 0` (first half-kick + position drift) and
-   `final_integrate @ 0` (second half-kick). The factor between
+2. **`VelocityVerlet{dt}`** is the integrator, so it goes through the
+   `set_integrator` categorical setter (singular — a second call throws).
+   It binds at `initial_integrate @ 0` (first half-kick + position drift)
+   and `final_integrate @ 0` (second half-kick). The factor between
    $f$ in eV/Å, $m$ in amu, $v$ in Å/fs is the metal-units conversion
    constant `units::force_to_accel` — handled internally; the user sees physical
    units on every public field.
-3. **`NeighborList`** must be bound explicitly at the `pre_force` phase
-   because its natural slot is shared between MD and minimization (no
-   `default_bindings()`). It owns a cell-list strategy with a Verlet
-   skin; the rebuild cadence follows LAMMPS's `neigh_modify every 1
-   delay 0 check yes` discipline. On non-rebuild steps the cost
+3. **`NeighborList`** goes through `set_neighbor`, which places it at the
+   driver's `neighbor_phase @ -10` — for MD the dedicated `neighbor` phase,
+   after the ghost build and before `force`. It owns a cell-list strategy
+   with a Verlet skin; the rebuild cadence follows LAMMPS's `neigh_modify
+   every 1 delay 0 check yes` discipline. On non-rebuild steps the cost
    collapses to a single $O(N)$ skin scan.
 4. **`PairLJCut`** binds explicitly at `force`. The constructor takes
    $\varepsilon$ in eV, $\sigma$ in Å, and a cutoff in Å. The cutoff
    choice has to match — or be larger than — the neighbor-list cutoff;
    the test suite uses $6.8 \approx 2\sigma$ for Argon. Energy is
    shifted so that $V(r_{\mathrm{cut}}) = 0$.
-5. **`build()`** compiles the plan: each component's
-   `default_bindings()` are merged with the explicit `on().add()`
+5. **`build()`** compiles the plan: the bindings contributed by the
+   categorical setters are merged with the explicit `on(phase).add()`
    bindings, sorted by `(phase, order, insertion)`, and validated.
+
+There is no bare `sim.add(component)`. Registration is either a categorical
+setter (`set_integrator`, `set_thermostat`, `set_barostat`, `set_evaluator`,
+`set_neighbor`, `set_observer`, `set_record`, `set_thermo`) or the explicit
+`sim.on(phase).add(component, order)` — the phase is never guessed. The
+rvalue form transfers ownership; pass an lvalue you own with
+`add_ref` / `set_*_ref` instead (plain `add(lvalue)` is `= delete`d).
 
 The driver's auto-added infrastructure — `ZeroForces`, `ZeroEnergy`,
 `ZeroStress` at `pre_force @ -1000/-999/-998`, `KineticEnergy` at
@@ -193,7 +191,7 @@ constructor before the user code runs. You almost never have to think
 about them, but if you ever wonder why `frame.meta.get(kEnergy)` is zero before the
 first force component runs each step, that is why.
 
-## Adding a Thermostat (NVT)
+## Adding a Thermostat
 
 Two thermostats ship today. They differ in *how* they enforce
 temperature, not in the wiring you write:
@@ -205,7 +203,8 @@ toward the target on a timescale $\tau$. Use it when you want a smooth,
 deterministic time series — the textbook canonical ensemble.
 
 ```cpp
-sim.add(cpu::md::NoseHoover{/*T_target=*/100.0, /*tau=*/200.0, /*dt=*/4.0});
+sim.set_thermostat(cpu::md::NoseHoover{/*T_target=*/100.0, /*tau=*/200.0,
+                                       /*dt=*/4.0});
 ```
 
 **Langevin** is a stochastic thermostat applied as additive friction
@@ -216,9 +215,9 @@ combined drag + kick satisfies the fluctuation–dissipation theorem;
 velocity-Verlet integration of the augmented force gives canonical NVT.
 
 ```cpp
-sim.add(cpu::md::FixLangevin{/*T_start=*/100.0, /*T_stop=*/100.0,
-                              /*damp=*/100.0, /*dt=*/4.0,
-                              /*seed=*/0xDEADBEEFu});
+sim.set_thermostat(cpu::md::FixLangevin{/*T_start=*/100.0, /*T_stop=*/100.0,
+                                        /*damp=*/100.0, /*dt=*/4.0,
+                                        /*seed=*/0xDEADBEEFu});
 ```
 
 A Langevin run is the right choice when you want trajectories from
@@ -236,32 +235,87 @@ set advertises `Capability::Force`. That lets a *pure* Langevin run
 `cpu::md::MD`'s "something must produce forces" build-time check.
 Roles describe structure; capabilities describe data flow.
 
-## Adding a Barostat (NPT)
+## Adding a Barostat
 
 For NPT, combine a thermostat with the Berendsen barostat:
 
 ```cpp
-sim.add(cpu::md::NoseHoover{T_target, tau_T, dt});
-sim.add(cpu::md::Barostat {P_target, tau_P, dt});
+sim.set_thermostat(cpu::md::NoseHoover{T_target, tau_T, dt});
+sim.set_barostat  (cpu::md::Barostat{P_target, tau_P, dt});
 ```
 
-`Barostat` reads the global virial sum from `frame.meta.get(kStress)`, computes the
-instantaneous pressure $P = -(\sigma_{xx} + \sigma_{yy} + \sigma_{zz})/(3V)$,
-and rescales the box edge length and every owned atom's position by
-$\mu = (1 - (\Delta t/\tau_P)(P - P_{\mathrm{target}}))^{1/3}$. It is bound at
-`end_of_step @ -45`, just after the global energy reduction, so the
-virial it sees is the same on every MPI rank and the box update is
-collective without any extra communication.
+`Barostat` needs the instantaneous pressure, and it builds that from *two*
+stress accumulators on the Frame. The configurational part is the pair
+virial $\sigma$ in `frame.meta.get(kStress)`, accumulated by the force
+evaluators as $\sigma = \sum_{i<j} \mathbf{r}_{ij}\otimes\mathbf{f}_{ij}$
+with $\mathbf{r}_{ij}$ the pair separation and $\mathbf{f}_{ij}$ the force
+it carries. The kinetic part is $\sigma^{\mathrm{kin}}$ in
+`frame.meta.get(kStressKinetic)`, written by the `Virial` observer as
+$\sum_i m_i \mathbf{v}_i\otimes\mathbf{v}_i$, so its trace is twice the
+kinetic energy. Neither is divided by volume when stored, so the barostat
+does that division itself, with $V$ the cell volume:
+
+$$
+P \;=\; \frac{\mathrm{tr}\,\sigma + \mathrm{tr}\,\sigma^{\mathrm{kin}}}{3V}
+  \;=\; \frac{2\,\mathrm{KE} + \sum_{i<j}\mathbf{r}_{ij}\cdot\mathbf{f}_{ij}}{3V}.
+$$
+
+That plus sign matters: it is LAMMPS's `compute pressure` convention, in
+which a positive $P$ is a system pushing outwards on its box, so holding it
+requires compression. Every pressure quantity in Atomiverse — `Virial`,
+`Barostat`, `NoseHooverNPT` — uses this one convention, and a `P_target`
+you pass anywhere carries the same sign.
+
+The box edges and every atom position (owned rows *and* their ghost copies,
+so neighbour separations stay consistent until the next halo refresh) are
+then multiplied by the Berendsen dilation factor
+
+$$
+\mu \;=\; \left[\,1 - \frac{\Delta t}{\tau_P\,\beta}
+                 \bigl(P_{\mathrm{target}} - P\bigr)\right]^{1/3},
+$$
+
+where $\beta$ is the `bulk_modulus` constructor argument (LAMMPS `modulus`)
+— a tunable stiffness that divides the correction, so a larger $\beta$ gives
+a gentler per-step rescale. Atomiverse defaults it to $1.0$, deliberately
+*not* LAMMPS's $10.0$; pass `10.0` explicitly for LAMMPS-identical
+relaxation. Read the sign off the formula: if the system is over-pressurised
+($P > P_{\mathrm{target}}$) the bracket exceeds 1, $\mu > 1$, and the box
+expands — which is what relieves the pressure. The bracket is clamped to
+$[0.5, 2]$ before the cube root so one pathological step (a force spike at
+step 0, say) cannot collapse or explode the cell.
+
+It is bound at `end_of_step @ -45`, just after the global reduction at
+`-50`, so the stresses it sees are already summed across MPI ranks: every
+rank computes the same $\mu$ from the same $P$ and $V$, and the box update
+stays consistent without any extra communication.
 
 For pressure target conversions: the project's stress is in
 $\mathrm{eV}/\textrm{Å}^3$. Using $1\,\mathrm{bar} \approx 6.24 \times 10^{-7}\,\mathrm{eV}/\textrm{Å}^3$,
 1 atm and ambient room pressure both round to about $6 \times 10^{-7}$
 in code units.
 
-There is no Parrinello-Rahman or fully flexible-cell barostat in the CPU
-backend yet; the box stays cubic / diagonal. The `Barostat::set_enabled`
-toggle and `set_P_target` setter are intended for multi-stage protocols
-that mix NVT and NPT segments under a single driver instance.
+This Berendsen barostat is *isotropic*: one scalar $\mu$ multiplies the
+whole cell matrix, so the cell keeps its shape and only changes size. It is
+also not a rigorous NPT method — it relaxes the pressure towards the target
+without sampling the correct constant-pressure distribution, which makes it
+a good equilibrator and a poor production ensemble. The CPU backend does
+have the rigorous alternatives: `cpu::md::NoseHooverNPT`
+(`include/atomiverse/cpu/dynamics/nose_hoover_npt.h`), which can also
+barostat individual axes, and `cpu::md::ParrinelloRahmanNPT`
+(`include/atomiverse/cpu/dynamics/parrinello_rahman_npt.h`), whose full
+cell matrix lets the box shear as well as breathe. Both are integrators
+that *replace* `VelocityVerlet` + thermostat + barostat rather than joining
+them. [Chapter 11](ch11-ensembles.md) is where the NPT ensemble is worked
+through properly — when Berendsen is enough, how `NoseHooverNPT` is
+configured, and the conserved-quantity trace that tells you an NPT run is
+actually correct; `ParrinelloRahmanNPT` takes the same arguments in the
+order `(T_target, P_target, tau_T, tau_P, dt)` and is documented in its
+header.
+
+The `Barostat::set_enabled` toggle and `set_P_target` setter are intended
+for multi-stage protocols that mix NVT and NPT segments under a single
+driver instance.
 
 ## Bonded Force Fields
 
@@ -336,25 +390,43 @@ The auto-added components in `cpu::md::MD` are, in order:
 User-side, the canonical first additions are:
 
 ```cpp
-sim.add(cpu::Thermo{/*every=*/100});
+sim.set_thermo(/*every=*/100);
 sim.set_observer(ATV::RDF{/*r_max=*/5.5, /*n_bins=*/200,
                           /*freq=*/100, "rdf.dat"});
 ```
 
-`cpu::Thermo` prints the LAMMPS-style "step PE KE T" line synchronously
-on rank 0. `ATV::RDF` is an async observer — it inherits
-`cpu::md::AsyncObserver`, runs on a background thread, and accumulates a
-half-list pair-distance histogram from the published snapshots. At the
-end of the run its `finalize()` writes the normalized $g(r)$ to disk.
+`set_thermo(N)` binds `cpu::Thermo{N}` at `end_of_step @ +20`; it prints the
+LAMMPS-style "step PE KE T" line synchronously on rank 0. `ATV::RDF` is an
+async observer — it inherits `cpu::md::AsyncObserver`, runs on a background
+thread, and accumulates a half-list pair-distance histogram from the published
+snapshots. At the end of the run its `finalize()` writes the normalized
+$g(r)$ to disk. Note that `set_observer` takes an **rvalue**; to keep the
+observer around and read `rdf.gr()` after the run, declare it first and borrow
+it with `set_observer_ref(rdf)`.
 
-For per-frame trajectory output, append a writer at `end_of_step`:
+**Trajectory output is a Recorder.** A *Recorder* is the Component kind whose
+only job is writing outside the process — the LAMMPS `dump` slot. For
+trajectories that component is `cpu::XyzRecorder`, and it goes in through
+`set_record`:
 
 ```cpp
-sim.on(md::Phase::end_of_step).add(cpu::XYZ{"traj.xyz"});
+sim.set_record(cpu::XyzRecorder{"traj.xyz", /*freq=*/100});
 ```
 
-(The exact recorder API is still consolidating — see `cpu/recorder/`
-headers for the currently shipped writers.)
+It binds itself at `end_of_step @ +10` and writes one XYZ frame whenever
+`step % freq == 0`. Step indices start at 0 and keep counting across
+consecutive `run(frame, n)` calls on the same `cpu::Frame`, so a 1000-step run
+at `freq=100` writes frames for steps 0, 100, …, 900 — ten of them, with no
+extra write at step 1000. The recorder truncates the file on its first write
+and appends afterwards, so one recorder owns one trajectory file; MPI runs
+gather to rank 0, which writes the complete tag-ordered geometry.
+
+`set_record` takes an rvalue and owns the recorder; use `set_record_ref` to
+borrow one you declared yourself when you want to read `n_frames_written()`
+after the run. Underneath it, `cpu::XYZ` is still a plain writer (`write` /
+`append`) you can drive by hand for one-off geometries, and
+`cpu::minimizer::TrajectoryWriter` is the sibling Recorder bound to the
+minimizer phases.
 
 ## When the Force Producer Changes
 
@@ -375,10 +447,10 @@ the MD wiring.
 A short field guide to the things that have actually broken in this
 code:
 
-- **`frame.simbox` not set.** Every neighbor-search and minimum-image
+- **`frame.box` not set.** Every neighbor-search and minimum-image
   helper reads `cpu::Box`. An uninitialized box means
   zero-length edges, infinite densities, and segfaults inside cell-list
-  setup. Always set `frame.simbox = cpu::Box::cubic(L)` before `sim.build()`.
+  setup. Always set `frame.box = cpu::Box::cubic(L)` before `sim.build()`.
 - **Cutoff vs neighbor-list-cutoff.** `PairLJCut{eps, sigma, cutoff}` defines
   the physical cutoff. `NeighborList<>{cutoff}` defines the search
   cutoff. They must agree (or the neighbor-list cutoff is larger by the
@@ -400,10 +472,10 @@ Three pieces of MD machinery exist on the CPU side and are not
 discussed in detail here:
 
 - **`Deform`** — affine box deformation for NVT-deformation studies.
-  Implemented in `cpu/md/deform.h`.
+  Implemented in `cpu/dynamics/deform.h`.
 - **`NoseHooverNPT`** — a single integrator that does both thermostat
   and barostat work, implemented as a Martyna–Tobias–Klein chain. Used
-  by `tests/cpu/md/test_md.cpp::NoseHooverNPT`. Prefer it over the
+  by `tests/cpu/dynamics/test_md.cpp::NoseHooverNPT`. Prefer it over the
   Berendsen barostat when you need rigorous NPT statistics.
 - **MPI sub-namespace under `cpu::md::mpi`** — domain decomposition,
   halo exchange, atom migration. Single-rank runs ship every MPI

@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 
 import numpy as np
-import molrs
+import molpy
 
 import atomiverse as av
 
@@ -30,8 +30,8 @@ import atomiverse as av
 _FCC_BASIS = [(0, 0, 0), (0.5, 0.5, 0), (0.5, 0, 0.5), (0, 0.5, 0.5)]
 
 
-def make_fcc_frame(n_cells: int, a0: float = 5.26) -> "molrs.Frame":
-    """Return an FCC argon molrs.Frame with n_cells^3 * 4 atoms."""
+def make_fcc_frame(n_cells: int, a0: float = 5.26) -> "molpy.Frame":
+    """Return an FCC argon molpy.Frame with n_cells^3 * 4 atoms."""
     atoms = [
         ((ix + bx) * a0, (iy + by) * a0, (iz + bz) * a0)
         for ix in range(n_cells)
@@ -42,15 +42,15 @@ def make_fcc_frame(n_cells: int, a0: float = 5.26) -> "molrs.Frame":
     n = len(atoms)
     xs, ys, zs = (np.array(c, dtype=np.float64) for c in zip(*atoms))
 
-    frame = molrs.Frame()
-    block = molrs.Block()
+    frame = molpy.Frame()
+    block = molpy.Block()
     block.insert("x", xs)
     block.insert("y", ys)
     block.insert("z", zs)
     block.insert("mass", np.full(n, 39.948, dtype=np.float64))
-    block.insert("type", np.zeros(n, dtype=np.int32))
+    block.insert("atomic_number", np.full(n, 18, dtype=np.uint32))
     frame["atoms"] = block
-    frame.simbox = molrs.Box.cube(float(n_cells * a0))
+    frame.box = molpy.Box.cube(float(n_cells * a0))
     return frame
 
 
@@ -58,27 +58,28 @@ def make_fcc_frame(n_cells: int, a0: float = 5.26) -> "molrs.Frame":
 
 
 def build_bare_vv(dt: float = 0.001) -> av.MD:
-    sim = av.MD(dt=dt)
-    sim.add(av.InitVelocity(10.0, 42))
+    sim = av.MD()
+    sim.set_integrator(av.VelocityVerlet(dt))
+    sim.set_observer(av.InitVelocity(10.0, 42))
     return sim
 
 
 def build_lj_md(dt: float = 0.001, cutoff: float = 8.5) -> av.MD:
-    sim = av.MD(dt=dt)
-    sim.add(av.InitVelocity(10.0, 42))
-    sim.on("force").add(av.NeighborList(cutoff), order=-10).add(
-        av.PairLJCut(0.0104, 3.4, cutoff)
-    )
+    sim = av.MD()
+    sim.set_integrator(av.VelocityVerlet(dt))
+    sim.set_observer(av.InitVelocity(10.0, 42))
+    sim.set_neighbor(av.NeighborList(cutoff))
+    sim.set_evaluator(av.PairLJCut(0.0104, 3.4, cutoff))
     return sim
 
 
 def build_nvt_md(dt: float = 0.001, cutoff: float = 8.5, T: float = 100.0) -> av.MD:
-    sim = av.MD(dt=dt)
-    sim.add(av.InitVelocity(T, 42))
-    sim.add(av.NoseHoover(T, 100.0, dt))
-    sim.on("force").add(av.NeighborList(cutoff), order=-10).add(
-        av.PairLJCut(0.0104, 3.4, cutoff)
-    )
+    sim = av.MD()
+    sim.set_integrator(av.VelocityVerlet(dt))
+    sim.set_observer(av.InitVelocity(T, 42))
+    sim.set_thermostat(av.NoseHoover(T, 100.0, dt))
+    sim.set_neighbor(av.NeighborList(cutoff))
+    sim.set_evaluator(av.PairLJCut(0.0104, 3.4, cutoff))
     return sim
 
 
@@ -104,7 +105,7 @@ class BenchResult:
 
 def run_bench(
     label: str,
-    frame: "molrs.Frame",
+    frame: "molpy.Frame",
     sim: av.MD,
     n_steps: int = 100,
     warmup: int = 20,

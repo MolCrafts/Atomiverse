@@ -1,0 +1,12 @@
+# Offline CP2K twin note — dfpt-finite-q-si
+
+No CP2K module on the pin host this shift. When available:
+
+- System: diamond Si, 2-atom primitive, a = 5.43 Å
+- Method: Quickstep DFPT / PHONON or VIBRATIONAL_ANALYSIS with GTH+MOLOPT
+  (or NC-compatible) at a comparable cutoff; request finite-q or supercell
+  path that samples the X point of the primitive cell.
+- Record: ω(X) [cm⁻¹] for all 6 branches, CP2K version, wall time.
+- Fair ratio: T_atv / T_cp2k with OMP matched; require ≤ 10 unless exempt.
+
+ATV public API: `cpu::pw::DfptPhonon` with `q_frac = {0.5, 0, 0}`.

@@ -1,0 +1,60 @@
+# Offline oracle note — dfpt-gga-spin-smearing (PW DFPT joint spin × GGA × smear)
+
+## Intent
+
+Pin Γ-point DFPT phonons for diamond Si with the **three-way joint**
+collinear-spin × pure-GGA × Fermi–Dirac metallic occupation smearing response
+path (`nspin=2`, multiplicity=1, PBE, degauss=0.02 Ry) on the plane-wave
+method — the product of shipped pairwise pins `dfpt-gga-spin-si`,
+`dfpt-spin-smearing`, and `dfpt-gga-si`.
+
+## Oracle status (2026-08-01) — CP2K RUN, offline
+
+**CP2K 2026.1** (source rev `git:5e54ba2`, binary
+`/nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/bin/cp2k.psmp`,
+env `…/install/env.sh`, Arrhenius epyc login). CP2K has no PW-DFPT, so the
+twin is `RUN_TYPE VIBRATIONAL_ANALYSIS` — FD of analytic UKS **k-point**
+forces on the same spin×GGA×smear Hamiltonian class:
+
+- Input: `inputs/dfpt-gga-spin-smearing/si2_uks_pbe_smear_vib.inp`
+  (LSD, MULTIPLICITY 1, PBE, FERMI_DIRAC ELECTRONIC_TEMPERATURE 3157.75 K
+  ≡ degauss 0.02 Ry, ADDED_MOS 4, DZVP-MOLOPT-SR-GTH, GTH-PBE-q4, CUTOFF 300
+  Ry, MP 2×2×2, `FULLY_PERIODIC T`, DX 0.01 bohr, `EPS_SCF 1e-8`).
+- Run:
+  ```bash
+  source /nobackup/proj/disk/teoroo/personal/jicli594/work/cp2k/install/env.sh
+  export OMP_NUM_THREADS=1
+  cd /tmp/work && ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS} .
+  mpirun -np 1 cp2k.psmp -i si2_uks_pbe_smear_vib.inp -o out
+  ```
+- Output line:
+  `VIB|Frequency (cm^-1)   463.983524           534.803847           534.803847`
+  → optical Γ modes **463.98, 534.80, 534.80 cm⁻¹** (mean 511.2).
+- Wall (serial, 1 MPI × OMP=1): **232.5 s**. ATV DFPT twin regression:
+  **48.3 s** → fair ratio r = T_atv/T_cp2k = **0.21** (≤ 10).
+
+The GPW GTH/MOLOPT representation differs from the ATV NC-UPF 10 Ry PW twin,
+so the CP2K number anchors the **physics window** ([450, 650] cm⁻¹), not the
+digit. The sharp same-Hamiltonian gate is below.
+
+## Sharp pin (same Hamiltonian, free-energy path)
+
+Central second difference of the **collinear-spin PBE free energy** under
+Fermi–Dirac smear (h = 0.03 Å on atom-0 x, SCF tol 1e-9, identical
+ecut/k/XC/UPF/spin/FD): C[(0x),(0x)] = (F⁺ − 2F⁰ + F⁻)/h² · 27.211386245988
+= **17.3454 eV/Å²** (F⁰ = −7.820593875040 Ha, F± = −7.820306828150 /
+−7.820307232893 Ha; gapped fill ⇒ \|TS\| ~ 1e-15 Ry, F=E; this host,
+2026-08-01, Release, OMP=1). Recorded with the DFPT gates in
+`regressions/response/dfpt-gga-spin-smearing/REFERENCE.md`.
+
+## Twin settings (match regression)
+
+| Item | Value |
+| ---- | ----- |
+| Cell | diamond Si, a = 5.43 Å, 2-atom fcc primitive |
+| PP | `tests/data/pw/Si_lda_nc.upf` (in-tree NC ONCV) |
+| XC | PBE (pure GGA; joint spin kernel via FD of the spin-GGA XC operator) |
+| Spin | collinear, multiplicity = 1 (M = 0) |
+| Smear | Fermi–Dirac, degauss = 0.02 Ry, extra_bands = 0 |
+| ecut | 10 Ry |
+| k-mesh | 2×2×2 MP |

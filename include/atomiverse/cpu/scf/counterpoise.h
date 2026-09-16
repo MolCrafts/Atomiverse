@@ -45,13 +45,13 @@ namespace scf {
 ///   e_int_cp  = e_dimer − e_a_ghost − e_b_ghost
 ///   e_int_raw = e_dimer − e_a − e_b
 struct CounterpoiseResult {
-    double e_dimer = 0;    ///< E_AB^{AB} dimer energy [Hartree].
-    double e_a = 0;        ///< E_A^A monomer A in its own basis [Hartree].
-    double e_b = 0;        ///< E_B^B monomer B in its own basis [Hartree].
-    double e_a_ghost = 0;  ///< E_A^{AB} A in dimer basis (B ghost) [Hartree].
-    double e_b_ghost = 0;  ///< E_B^{AB} B in dimer basis (A ghost) [Hartree].
-    double e_int_cp = 0;   ///< CP-corrected interaction energy [Hartree].
-    double e_int_raw = 0;  ///< Uncorrected interaction energy [Hartree].
+    double e_dimer = 0;   ///< E_AB^{AB} dimer energy [Hartree].
+    double e_a = 0;       ///< E_A^A monomer A in its own basis [Hartree].
+    double e_b = 0;       ///< E_B^B monomer B in its own basis [Hartree].
+    double e_a_ghost = 0; ///< E_A^{AB} A in dimer basis (B ghost) [Hartree].
+    double e_b_ghost = 0; ///< E_B^{AB} B in dimer basis (A ghost) [Hartree].
+    double e_int_cp = 0;  ///< CP-corrected interaction energy [Hartree].
+    double e_int_raw = 0; ///< Uncorrected interaction energy [Hartree].
     /// @brief Basis-set superposition error [Hartree],
     ///        (e_a_ghost − e_a) + (e_b_ghost − e_b); ≤ 0 by construction.
     double bsse = 0;
@@ -65,7 +65,7 @@ struct CounterpoiseResult {
 /// SCFs, restores `ghost_atoms`, and returns the energy components.
 ///
 /// Sub-fragment Frames for free monomers are built with the public Frame
-/// API (row copy of positions + Z + simbox). Method `charge` is left
+/// API (row copy of positions + Z + box). Method `charge` is left
 /// untouched for the dimer run; free-monomer and ghosted runs force
 /// charge 0 (neutral monomers; charged monomers are out of scope).
 ///
@@ -191,7 +191,7 @@ class Counterpoise {
     /// @brief Build a sub-Frame from selected dimer rows (public Frame API).
     /// @param dimer Full complex geometry.
     /// @param idx   Local atom indices to copy (must be in range).
-    /// @return New Frame with `idx.size()` atoms and the dimer's simbox.
+    /// @return New Frame with `idx.size()` atoms and the dimer's box.
     static Frame sub_frame_(const Frame& dimer, const std::vector<int>& idx) {
         const int n_full = static_cast<int>(dimer.nlocal());
         const int n = static_cast<int>(idx.size());
@@ -218,7 +218,7 @@ class Counterpoise {
             dz[k] = sz[i];
             dt[k] = st[i];
         }
-        sub.simbox = dimer.simbox;
+        sub.box = dimer.box;
         return sub;
     }
 };

@@ -20,9 +20,9 @@
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/comm/domain.h"
+#include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/context.h"
-#include "atomiverse/cpu/driver/backend.h"
+#include "atomiverse/cpu/driver/runtime.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 using namespace ATV;
@@ -47,7 +47,7 @@ cpu::Frame make_uniform_grid(int n_per_side, double box_len) {
                 frame.span(ATV::kAtom_mass)[idx] = 1.0;
                 ++idx;
             }
-    frame.simbox = ATV::cpu::Box::cubic(box_len);
+    frame.box = ATV::cpu::Box::cubic(box_len);
     return frame;
 }
 
@@ -56,7 +56,7 @@ cpu::Frame make_uniform_grid(int n_per_side, double box_len) {
 // ── Cartesian topology: dims factorizes world, cart_comm non-null ────────
 
 TEST(MpiTopology, CartCommAndDimsFactorWorld) {
-    cpu::Backend backend;
+    cpu::Runtime backend;
     backend.init();
 
     auto& ctx = backend.context();
@@ -81,7 +81,7 @@ TEST(MpiTopology, CartCommAndDimsFactorWorld) {
 // ── Face neighbors under PBC should all be valid ranks ──────────────────
 
 TEST(MpiTopology, FaceNeighborsValidUnderPBC) {
-    cpu::Backend backend;
+    cpu::Runtime backend;
     backend.init();
 
     auto* dd = backend.context().md.dd;
@@ -107,7 +107,7 @@ TEST(MpiTopology, PartitionConservesTotalAtomCount) {
     auto frame = make_uniform_grid(4, 10.0); // 64 atoms, box 10x10x10
     const int n_total = frame.nlocal();
 
-    cpu::Backend backend;
+    cpu::Runtime backend;
     backend.init();
     backend.set_frame(frame); // runs partition_atoms on multi-rank
 
@@ -130,7 +130,7 @@ TEST(MpiTopology, PartitionAssignsEveryTagOnce) {
     auto frame = make_uniform_grid(4, 10.0);
     const int n_total = frame.nlocal();
 
-    cpu::Backend backend;
+    cpu::Runtime backend;
     backend.init();
     backend.set_frame(frame);
 
@@ -163,7 +163,7 @@ TEST(MpiTopology, PartitionAssignsEveryTagOnce) {
 TEST(MpiTopology, OwnedAtomsInSlab) {
     auto frame = make_uniform_grid(4, 10.0);
 
-    cpu::Backend backend;
+    cpu::Runtime backend;
     backend.init();
     backend.set_frame(frame);
 

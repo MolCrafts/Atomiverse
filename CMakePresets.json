@@ -1,0 +1,176 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "cpu-unit-base",
+      "hidden": true,
+      "displayName": "CPU unit base (no optional physics)",
+      "description": "Serial unit scaffold: ≤10s, no heavy, no regressions. HF/PW/GPW/KSPACE off — turn on only what you test. Developer builds compile molrs from the sibling checkout ${sourceDir}/../molrs (its uncommitted dev tree cannot be pinned by the ./molrs gitlink); CI keeps the submodule via cmake/AtvUnitGate.cmake.",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ATV_MOLRS_PATH": "${sourceDir}/../molrs",
+        "ATV_BUILD_CUDA": "OFF",
+        "ATV_BUILD_TESTS": "ON",
+        "ATV_BUILD_EXAMPLES": "OFF",
+        "ATV_BUILD_REGRESSIONS": "OFF",
+        "ATV_BUILD_BENCHMARKS": "OFF",
+        "ATV_BUILD_HF": "OFF",
+        "ATV_BUILD_PW": "OFF",
+        "ATV_BUILD_GPW": "OFF",
+        "ATV_BUILD_KSPACE": "OFF",
+        "ATV_REAL_STORAGE": "double",
+        "ATV_TEST_TIMEOUT_SECONDS": "10",
+        "ATV_TEST_OMP_THREADS": "2",
+        "ATV_TEST_HEAVY": "OFF"
+      }
+    },
+    {
+      "name": "cpu-unit",
+      "inherits": "cpu-unit-base",
+      "displayName": "CPU unit (classical; optional physics OFF)",
+      "description": "Default local configure. Product modules follow AtvProductModules defaults. Enable HF/PW/… only when testing them."
+    },
+    {
+      "name": "cpu-unit-hf",
+      "inherits": "cpu-unit-base",
+      "displayName": "CPU unit + HF",
+      "cacheVariables": {
+        "ATV_BUILD_HF": "ON"
+      }
+    },
+    {
+      "name": "cpu-unit-pw",
+      "inherits": "cpu-unit-base",
+      "displayName": "CPU unit + PW",
+      "cacheVariables": {
+        "ATV_BUILD_PW": "ON"
+      }
+    },
+    {
+      "name": "cpu-unit-gpw",
+      "inherits": "cpu-unit-base",
+      "displayName": "CPU unit + GPW (implies HF+PW)",
+      "cacheVariables": {
+        "ATV_BUILD_HF": "ON",
+        "ATV_BUILD_PW": "ON",
+        "ATV_BUILD_GPW": "ON"
+      }
+    },
+    {
+      "name": "cpu-unit-kspace",
+      "inherits": "cpu-unit-base",
+      "displayName": "CPU unit + KSPACE",
+      "cacheVariables": {
+        "ATV_BUILD_KSPACE": "ON"
+      }
+    },
+    {
+      "name": "cpu-unit-all",
+      "inherits": "cpu-unit-base",
+      "displayName": "CPU unit + all optional modules",
+      "description": "Manual full slice / GHA. Prefer cmake -P cmake/AtvUnitGate.cmake with ATV_GATE_ALL=1 for the path-aware gate.",
+      "cacheVariables": {
+        "ATV_BUILD_HF": "ON",
+        "ATV_BUILD_PW": "ON",
+        "ATV_BUILD_GPW": "ON",
+        "ATV_BUILD_KSPACE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "cpu-unit",
+      "configurePreset": "cpu-unit",
+      "displayName": "Build CPU unit (classical)"
+    },
+    {
+      "name": "cpu-unit-hf",
+      "configurePreset": "cpu-unit-hf",
+      "displayName": "Build CPU unit + HF"
+    },
+    {
+      "name": "cpu-unit-all",
+      "configurePreset": "cpu-unit-all",
+      "displayName": "Build CPU unit + all optional"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "cpu-unit",
+      "configurePreset": "cpu-unit",
+      "displayName": "ctest classical units (≤10s)",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 10,
+        "jobs": 0
+      },
+      "filter": {
+        "exclude": {
+          "name": "no_alloc|^test_mpi_|scrub|module_dag|module_off|compatibility_surface|molrs_source_contract"
+        }
+      },
+      "environment": {
+        "OMP_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "cpu-unit-hf",
+      "configurePreset": "cpu-unit-hf",
+      "displayName": "ctest HF slice (≤10s)",
+      "inherits": "cpu-unit",
+      "filter": {
+        "include": {
+          "name": "scf|electronic|basis_|ecp|xc_functional|zero_energy|cart2sph|wannier|x2c|test_mat3|test_vec3|test_units"
+        },
+        "exclude": {
+          "name": "no_alloc|^test_mpi_|scrub|module_dag|module_off|compatibility_surface|molrs_source_contract"
+        }
+      }
+    },
+    {
+      "name": "cpu-unit-all",
+      "configurePreset": "cpu-unit-all",
+      "displayName": "ctest all registered units (≤10s)",
+      "inherits": "cpu-unit"
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "cpu-unit",
+      "displayName": "Classical unit configure+build+test",
+      "description": "Manual classical gate (optional physics OFF). Pre-push uses path-scoped cmake -P cmake/AtvUnitGate.cmake instead.",
+      "steps": [
+        { "type": "configure", "name": "cpu-unit" },
+        { "type": "build", "name": "cpu-unit" },
+        { "type": "test", "name": "cpu-unit" }
+      ]
+    },
+    {
+      "name": "cpu-unit-hf",
+      "displayName": "HF unit configure+build+test",
+      "description": "Manual: only when testing HF. Opens ATV_BUILD_HF=ON and filters ctest to scf/electronic.",
+      "steps": [
+        { "type": "configure", "name": "cpu-unit-hf" },
+        { "type": "build", "name": "cpu-unit-hf" },
+        { "type": "test", "name": "cpu-unit-hf" }
+      ]
+    },
+    {
+      "name": "cpu-unit-all",
+      "displayName": "Full optional unit configure+build+test",
+      "steps": [
+        { "type": "configure", "name": "cpu-unit-all" },
+        { "type": "build", "name": "cpu-unit-all" },
+        { "type": "test", "name": "cpu-unit-all" }
+      ]
+    }
+  ]
+}

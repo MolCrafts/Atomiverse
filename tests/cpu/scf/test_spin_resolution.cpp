@@ -1,5 +1,6 @@
 /// @file tests/cpu/scf/test_spin_resolution.cpp
-/// @brief SpinResolution + UHF/RHF occupation guards via concrete methods.
+/// @brief SpinResolution math + UHF/RHF occupation guards (throw before SCF).
+///        No multi-iter converge pin (e2e-in-tests wave-2).
 
 #ifdef ATV_HAS_HF
 
@@ -30,7 +31,7 @@ cpu::Frame make_water() {
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;
-    f.simbox = cpu::Box::cubic(50.0);
+    f.box = cpu::Box::cubic(50.0);
     return f;
 }
 
@@ -66,14 +67,6 @@ TEST(RHF, OddElectronThrows) {
     rhf.basis = cpu::scf::BasisSet::STO3G;
     rhf.charge = 1; // 9 electrons
     EXPECT_THROW(rhf.run(frame), std::invalid_argument);
-}
-
-TEST(UHF, CorrectOccupationConverges) {
-    auto frame = make_water();
-    cpu::scf::UHF uhf(5, 5);
-    uhf.basis = cpu::scf::BasisSet::STO3G;
-    uhf.run(frame);
-    EXPECT_TRUE(uhf.converged());
 }
 
 #endif
