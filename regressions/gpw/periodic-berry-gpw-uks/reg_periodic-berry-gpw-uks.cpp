@@ -58,10 +58,10 @@ std::vector<GpwAtom> si_bct(double a_bohr, double delta_frac_z) {
 } // namespace
 
 int main() {
-    constexpr double kA = 5.43;         // lattice constant [Angstrom]
-    constexpr double kCutoffRy = 80.0;  // density grid [Ry]
-    constexpr double kDelta = 0.02;     // sublattice displacement [frac of c]
-    constexpr double kZval = 4.0;       // Si valence (GTH-q4)
+    constexpr double kA = 5.43;        // lattice constant [Angstrom]
+    constexpr double kCutoffRy = 80.0; // density grid [Ry]
+    constexpr double kDelta = 0.02;    // sublattice displacement [frac of c]
+    constexpr double kZval = 4.0;      // Si valence (GTH-q4)
     // Collinear UKS polarization quantum is e (wrap interval (-0.5, 0.5]).
     constexpr double kQuantum = 1.0;
 
@@ -163,9 +163,10 @@ int main() {
     // Born-charge pin: Z* = (Delta p_z)/delta = 0 for an elemental crystal.
     const double dp = wrap_centered(r1.p_frac[2] - r0.p_frac[2], kQuantum);
     const double z_born = dp / kDelta;
-    std::printf("displaced Si (UKS): E=%.6f Ha  p_z %.6f -> %.6f  Delta p_z=%+.6f  "
-                "Z*=%+.4f\n",
-                r1.energy_ha, r0.p_frac[2], r1.p_frac[2], dp, z_born);
+    std::printf(
+        "displaced Si (UKS): E=%.6f Ha  p_z %.6f -> %.6f  Delta p_z=%+.6f  "
+        "Z*=%+.4f\n",
+        r1.energy_ha, r0.p_frac[2], r1.p_frac[2], dp, z_born);
     if (std::fabs(z_born) > kBornTol) {
         std::printf("FAIL: |Z*|=%.4f exceeds %.2f (ASR: Z*(elemental)=0)\n",
                     std::fabs(z_born), kBornTol);

@@ -91,9 +91,10 @@ int main() {
     std::printf("  CP2K pin                          = %.12f Ha  |dE|=%.3e "
                 "(tol %.1e)\n",
                 kE_cp2k, std::fabs(e_rpbe - kE_cp2k), kTolE);
-    std::printf("  E_PBE twin                        = %.12f Ha  |dE_rpbe-pbe|=%.3e "
-                "(floor %.1e)\n",
-                e_pbe, std::fabs(e_rpbe - e_pbe), kDeFloor);
+    std::printf(
+        "  E_PBE twin                        = %.12f Ha  |dE_rpbe-pbe|=%.3e "
+        "(floor %.1e)\n",
+        e_pbe, std::fabs(e_rpbe - e_pbe), kDeFloor);
     std::printf("  <S2> = %.8f  (CP2K %.8f, |d|=%.3e, tol %.2f)\n", s2,
                 kS2_cp2k, std::fabs(s2 - kS2_cp2k), kTolS2);
     std::printf("  converged=%d iters=%d wall_rpbe=%.3f s\n",

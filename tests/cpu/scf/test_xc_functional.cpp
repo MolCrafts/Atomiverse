@@ -248,7 +248,6 @@ TEST(XCFunctional, RPBEDiffersFromRevPBEAtFiniteGradient) {
     EXPECT_GT(std::abs(rpbe.exc - rev.exc), 1e-8);
 }
 
-
 TEST(XCFunctional, OptB88VdWMetadata) {
     EXPECT_TRUE(is_gga(XCType::OptB88VdW));
     EXPECT_DOUBLE_EQ(hybrid_exchange_fraction(XCType::OptB88VdW), 0.0);

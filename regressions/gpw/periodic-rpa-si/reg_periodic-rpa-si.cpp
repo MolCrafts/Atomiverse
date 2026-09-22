@@ -78,7 +78,8 @@ int main() {
         return 1;
     }
     if (r_can.ri) {
-        std::fprintf(stderr, "FAIL: RpaResult.ri set on Poisson foothold path\n");
+        std::fprintf(stderr,
+                     "FAIL: RpaResult.ri set on Poisson foothold path\n");
         return 1;
     }
     if (!std::isfinite(r_ri.e_corr) || !(r_ri.e_corr < 0.0)) {
@@ -94,8 +95,7 @@ int main() {
         return 1;
     }
     if (static_cast<int>(r_ri.omega_ha.size()) != r_ri.n_occ * r_ri.n_virt) {
-        std::fprintf(stderr,
-                     "FAIL: omega size %zu != n_occ*n_virt=%d\n",
+        std::fprintf(stderr, "FAIL: omega size %zu != n_occ*n_virt=%d\n",
                      r_ri.omega_ha.size(), r_ri.n_occ * r_ri.n_virt);
         return 1;
     }

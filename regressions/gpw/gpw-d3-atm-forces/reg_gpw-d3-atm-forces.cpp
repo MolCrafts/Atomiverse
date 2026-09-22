@@ -126,10 +126,10 @@ void atm_diff_errors(const std::vector<std::array<double, 3>>& f_on,
     for (int i = 0; i < 6; ++i) {
         for (int k = 0; k < 3; ++k) {
             const double want = cp2k_on[i][k] - cp2k_off[i][k];
-            const double got = f_on[static_cast<std::size_t>(i)]
-                                   [static_cast<std::size_t>(k)]
-                               - f_off[static_cast<std::size_t>(i)]
-                                      [static_cast<std::size_t>(k)];
+            const double got =
+                f_on[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)]
+                - f_off[static_cast<std::size_t>(i)]
+                       [static_cast<std::size_t>(k)];
             max_err = std::max(max_err, std::abs(got - want));
             max_signal = std::max(max_signal, std::abs(want));
         }
@@ -158,9 +158,9 @@ int main() {
     std::vector<std::array<double, 3>> pos_iso(6);
     for (int i = 0; i < 6; ++i) {
         Zv[static_cast<std::size_t>(i)] = z[i];
-        pos_iso[static_cast<std::size_t>(i)] = {
-            (raw[i][0] + 4.5) * kAng2Bohr, (raw[i][1] + 6.0) * kAng2Bohr,
-            (raw[i][2] + 6.0) * kAng2Bohr};
+        pos_iso[static_cast<std::size_t>(i)] = {(raw[i][0] + 4.5) * kAng2Bohr,
+                                                (raw[i][1] + 6.0) * kAng2Bohr,
+                                                (raw[i][2] + 6.0) * kAng2Bohr};
     }
     const double cell_iso[3] = {kLIso * kAng2Bohr, kLIso * kAng2Bohr,
                                 kLIso * kAng2Bohr};
@@ -336,10 +336,10 @@ int main() {
     double net[3] = {0.0, 0.0, 0.0};
     for (int i = 0; i < 6; ++i) {
         for (int k = 0; k < 3; ++k) {
-            const double on = F_on[static_cast<std::size_t>(i)]
-                                  [static_cast<std::size_t>(k)];
-            const double off = F_off[static_cast<std::size_t>(i)]
-                                    [static_cast<std::size_t>(k)];
+            const double on =
+                F_on[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)];
+            const double off =
+                F_off[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)];
             if (!std::isfinite(on) || !std::isfinite(off)) {
                 std::printf("FAIL: non-finite force atom %d axis %d\n", i, k);
                 return 1;

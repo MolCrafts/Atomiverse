@@ -47,7 +47,8 @@ struct TsResult {
 TsResult ts_pbe(const std::vector<int>& Z,
                 const std::vector<std::array<double, 3>>& pos_bohr,
                 const double cell_bohr[3], bool periodic,
-                double rcut_bohr = 94.2, double s_r = 0.94, double d_fermi = 20.0,
+                double rcut_bohr = 94.2, double s_r = 0.94,
+                double d_fermi = 20.0,
                 const std::vector<double>& vol_ratio = {});
 
 } // namespace gpw

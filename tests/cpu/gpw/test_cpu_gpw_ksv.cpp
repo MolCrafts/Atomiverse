@@ -13,8 +13,8 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/cpu/gpw/berry_polarization.h"
-#include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
+#include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/molrs.hpp"
 

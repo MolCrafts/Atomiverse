@@ -18,11 +18,11 @@
 #include <gtest/gtest.h>
 #include <vector>
 
+using ATV::cpu::gpw::prolong_fft;
+using ATV::cpu::gpw::restrict_fft;
 using ATV::cpu::gpw::UniformGrid;
 using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::ks_grid_build_rks;
-using ATV::cpu::gpw::prolong_fft;
-using ATV::cpu::gpw::restrict_fft;
 using ATV::cuda::gpw::internal::CollocateGridDesc;
 using ATV::cuda::gpw::internal::DeviceProduct;
 using ATV::cuda::gpw::internal::KsChainEnergies;
@@ -141,7 +141,8 @@ std::vector<double> host_integrate(const UniformGrid& grid,
     return acc;
 }
 
-double max_abs_diff(const std::vector<double>& a, const std::vector<double>& b) {
+double max_abs_diff(const std::vector<double>& a,
+                    const std::vector<double>& b) {
     EXPECT_EQ(a.size(), b.size());
     double m = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i)
@@ -208,11 +209,9 @@ TEST(CudaGpwMultigridTransfer, ProlongRestrictMatchCpu) {
 
     const double peak_p = max_abs(cpu_p);
     const double peak_r = max_abs(cpu_r);
-    EXPECT_LE(max_abs_diff(dev_p, cpu_p),
-              1e-10 * std::max(1.0, peak_p) + 1e-12)
+    EXPECT_LE(max_abs_diff(dev_p, cpu_p), 1e-10 * std::max(1.0, peak_p) + 1e-12)
         << "prolong";
-    EXPECT_LE(max_abs_diff(dev_r, cpu_r),
-              1e-10 * std::max(1.0, peak_r) + 1e-12)
+    EXPECT_LE(max_abs_diff(dev_r, cpu_r), 1e-10 * std::max(1.0, peak_r) + 1e-12)
         << "restrict";
 }
 
@@ -251,10 +250,8 @@ TEST(CudaGpwKsMultigrid, TwoLevelMatchesCpuFragment) {
     mg.levels = {to_desc(fine), to_desc(coarse)};
     KsMultiGridChainDevice chain(mg);
 
-    auto* d_p0 = static_cast<DeviceProduct*>(
-        dmalloc(sizeof(DeviceProduct)));
-    auto* d_p1 = static_cast<DeviceProduct*>(
-        dmalloc(sizeof(DeviceProduct)));
+    auto* d_p0 = static_cast<DeviceProduct*>(dmalloc(sizeof(DeviceProduct)));
+    auto* d_p1 = static_cast<DeviceProduct*>(dmalloc(sizeof(DeviceProduct)));
     check_cuda(cudaMemcpy(d_p0, prods0.data(), sizeof(DeviceProduct),
                           cudaMemcpyHostToDevice),
                "H2D p0");
@@ -313,9 +310,8 @@ TEST(CudaGpwKsMultigrid, SingleLevelMatchesFineOnly) {
     const auto rho = host_collocate(fine, prods);
     std::vector<double> n_ion(rho.size(), 0.0);
     std::vector<double> v_loc;
-    const auto cpu =
-        ks_grid_build_rks(fine, rho, n_ion, v_loc, XcKind::PADE, false, false,
-                          false, false);
+    const auto cpu = ks_grid_build_rks(fine, rho, n_ion, v_loc, XcKind::PADE,
+                                       false, false, false, false);
     const auto acc = host_integrate(fine, prods, cpu.veff);
 
     MultigridDesc mg;
@@ -376,9 +372,8 @@ TEST(CudaGpwKsMultigrid, TwoLevelWithIonAndVloc) {
         }
     }
 
-    const auto cpu =
-        ks_grid_build_rks(fine, rho, n_ion, v_loc, XcKind::PADE, false, false,
-                          false, false);
+    const auto cpu = ks_grid_build_rks(fine, rho, n_ion, v_loc, XcKind::PADE,
+                                       false, false, false, false);
     const auto V1 = restrict_fft(fine, coarse, cpu.veff, true);
     const auto acc0 = host_integrate(fine, prods0, cpu.veff);
     const auto acc1 = host_integrate(coarse, prods1, V1);
@@ -395,10 +390,8 @@ TEST(CudaGpwKsMultigrid, TwoLevelWithIonAndVloc) {
     check_cuda(cudaMemcpy(d_p1, prods1.data(), sizeof(DeviceProduct),
                           cudaMemcpyHostToDevice),
                "H2D p1");
-    auto* d_ion = static_cast<double*>(
-        dmalloc(n_ion.size() * sizeof(double)));
-    auto* d_vloc = static_cast<double*>(
-        dmalloc(v_loc.size() * sizeof(double)));
+    auto* d_ion = static_cast<double*>(dmalloc(n_ion.size() * sizeof(double)));
+    auto* d_vloc = static_cast<double*>(dmalloc(v_loc.size() * sizeof(double)));
     check_cuda(cudaMemcpy(d_ion, n_ion.data(), n_ion.size() * sizeof(double),
                           cudaMemcpyHostToDevice),
                "H2D ion");

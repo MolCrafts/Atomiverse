@@ -49,9 +49,8 @@ void PimXlDipole::launch(const LaunchContext& ctx) {
         guess.resize(static_cast<std::size_t>(3 * n));
         for (long i = 0; i < n; ++i)
             for (long c = 0; c < 3; ++c)
-                guess[static_cast<std::size_t>(3 * i + c)] =
-                    aux(static_cast<std::size_t>(i),
-                        static_cast<std::size_t>(c));
+                guess[static_cast<std::size_t>(3 * i + c)] = aux(
+                    static_cast<std::size_t>(i), static_cast<std::size_t>(c));
         pim_.mu_guess = guess;
         last_warm_ = true;
     }

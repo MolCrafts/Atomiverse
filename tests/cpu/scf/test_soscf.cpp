@@ -36,12 +36,12 @@
 
 using namespace ATV;
 using cpu::scf::BasisSet;
-using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::SlaterDeterminant;
 using cpu::scf::internal::Channel;
 using cpu::scf::internal::EigenSolver;
+using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::internal::OrbitalHessian;
 using cpu::scf::internal::SOSCFStepper;
 
@@ -76,7 +76,8 @@ double max_abs(const RealMatrix& M) {
 
 /// @brief One RHF Fock build F = Hcore + G(P_total) [Hartree] via the
 ///        pack's stored-ERI fused J−K/2 (never an SCF loop).
-RealMatrix fock_of(const cpu::scf::internal::IntegralWorkspace& ints, const RealMatrix& P_total) {
+RealMatrix fock_of(const cpu::scf::internal::IntegralWorkspace& ints,
+                   const RealMatrix& P_total) {
     RealMatrix G = xt::zeros<double>(P_total.shape());
     ints.coulomb_exchange_fused(P_total, G);
     RealMatrix Hcore = ints.Hcore; // layout copy (pack tensors are row-major)
@@ -95,8 +96,8 @@ struct PackViews {
 
 /// @brief RHF energy E = ½ Tr[P(Hcore + F)] + V_nuc [Hartree] of the
 ///        factor-2 total density P.
-double rhf_energy(const cpu::scf::internal::IntegralWorkspace& ints, const RealMatrix& P,
-                  const RealMatrix& F) {
+double rhf_energy(const cpu::scf::internal::IntegralWorkspace& ints,
+                  const RealMatrix& P, const RealMatrix& F) {
     RealMatrix Hcore = ints.Hcore;
     return 0.5 * xt::sum((Hcore + F) * P)() + ints.V_nuc;
 }
@@ -118,8 +119,9 @@ RealMatrix density2(const RealMatrix& C, int n_occ) {
 /// @brief Rotation energy E(θ) of H2 with κ_{a=va, i=oi} = θ (all other
 ///        amplitudes zero): C' = C·exp(K), P' = 2 C'_occ C'_occᵀ, fresh
 ///        Fock, energy [Hartree].
-double rotation_energy(const cpu::scf::internal::IntegralWorkspace& ints, const RealMatrix& C, int n_occ,
-                       int va, int oi, double theta) {
+double rotation_energy(const cpu::scf::internal::IntegralWorkspace& ints,
+                       const RealMatrix& C, int n_occ, int va, int oi,
+                       double theta) {
     const int m = static_cast<int>(C.shape()[1]);
     RealMatrix K = xt::zeros<double>(
         {static_cast<std::size_t>(m), static_cast<std::size_t>(m)});
@@ -154,7 +156,8 @@ TEST(SoscfExp, AntisymmetricExponentialIsOrthogonal) {
 
 TEST(SoscfExp, RotatedCoefficientsKeepOverlapMetric) {
     cpu::Frame f = make_h2_frame();
-    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0,
+                                               /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S);
@@ -188,7 +191,8 @@ TEST(SoscfExp, ThrowsOnNonAntisymmetricGenerator) {
 
 TEST(SoscfGradient, MatchesFiniteDifferenceOfRotationEnergy) {
     cpu::Frame f = make_h2_frame();
-    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0,
+                                               /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S); // NOT the SCF solution
@@ -229,7 +233,8 @@ TEST(SoscfGradient, MatchesFiniteDifferenceOfRotationEnergy) {
 
 TEST(SoscfCiah, MatchesDenseAugmentedEigensolve) {
     cpu::Frame f = make_h2_frame();
-    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0,
+                                               /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S);
@@ -290,7 +295,8 @@ TEST(SoscfCiah, MatchesDenseAugmentedEigensolve) {
 
 TEST(SoscfTrust, ClipsStepNormToTrustRadius) {
     cpu::Frame f = make_h2_frame();
-    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::Pople631G, 0,
+                                               /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S); // far from stationary
@@ -325,7 +331,8 @@ TEST(SoscfStep, StationaryIterateIsNoOp) {
     // eigenvectors ARE the SCF solution — F_ai vanishes to round-off with
     // no iteration at all.
     cpu::Frame f = make_h2_frame();
-    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::STO3G, 0, /*compute_eri=*/true);
+    cpu::scf::internal::IntegralWorkspace ints(f, BasisSet::STO3G, 0,
+                                               /*compute_eri=*/true);
     PackViews pv(ints);
     EigenSolver es;
     auto [eig0, C0] = es.step(pv.Hcore, pv.S);
@@ -350,7 +357,8 @@ TEST(SoscfStep, StationaryIterateIsNoOp) {
 // ── UHF: α/β dimension mismatch throws (no fallback) ────────────────────────
 
 TEST(SoscfValidate, UhfAlphaBetaMismatchThrows) {
-    cpu::scf::internal::IntegralWorkspace ints; // untouched: validation throws first
+    cpu::scf::internal::IntegralWorkspace
+        ints; // untouched: validation throws first
     RealMatrix Hcore = xt::eye<double>(2);
     RealMatrix F_a = xt::eye<double>(2), P_a = xt::eye<double>(2);
     RealMatrix C_a = xt::eye<double>(2);

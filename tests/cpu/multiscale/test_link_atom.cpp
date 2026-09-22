@@ -24,7 +24,7 @@ namespace {
 void insert_qm_z(cpu::Frame& f) {
     f.blocks.at("atoms").insert(
         "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                               kDynamicFieldId});
+                                kDynamicFieldId});
 }
 
 } // namespace
@@ -80,8 +80,8 @@ TEST(LinkAtom, NoBondsMeansZeroLinks) {
     f.span(cpu::kAtomQmZ)[2] = 0;
 
     cpu::Context ctx;
-    cpu::QmmmElectrostatic q{{{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 10.0,
-                             12.0};
+    cpu::QmmmElectrostatic q{
+        {{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 10.0, 12.0};
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::STO3G;
     q.set_engine(std::move(rhf));
@@ -100,8 +100,8 @@ TEST(LinkAtom, QmmmPlacesLinkHydrogenFromBond) {
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
     f.span(kAtom_tag)[2] = 3;
-    f.span(kAtom_charge)[0] = f.span(kAtom_charge)[1] = f.span(kAtom_charge)[2] =
-        0;
+    f.span(kAtom_charge)[0] = f.span(kAtom_charge)[1] =
+        f.span(kAtom_charge)[2] = 0;
     f.box = cpu::Box::cubic(20);
     f.meta.get(kEnergy) = 0;
     insert_qm_z(f);

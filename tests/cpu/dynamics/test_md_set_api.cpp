@@ -214,8 +214,8 @@ TEST(MDSetApi, LongRangeRealHalfRequiresExactlyOneReciprocalHalf) {
 TEST(MDSetApi, LongRangeReciprocalHalfRequiresExactlyOneRealHalf) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"reciprocal-half",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal-half", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
     const std::string error = build_error(sim);
     EXPECT_NE(error.find("reciprocal-half"), std::string::npos);
     EXPECT_NE(error.find("exactly one real-space partner"), std::string::npos);
@@ -224,10 +224,12 @@ TEST(MDSetApi, LongRangeReciprocalHalfRequiresExactlyOneRealHalf) {
 TEST(MDSetApi, LongRangeDuplicateRoleIsRejectedByIdentityIndependentName) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real-a", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"real-b", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"reciprocal",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
+    sim.set_evaluator(
+        LongRangeStub{"real-a", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(
+        LongRangeStub{"real-b", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
     const std::string error = build_error(sim);
     EXPECT_NE(error.find("duplicate real-space"), std::string::npos);
     EXPECT_NE(error.find("real-a"), std::string::npos);
@@ -237,9 +239,10 @@ TEST(MDSetApi, LongRangeDuplicateRoleIsRejectedByIdentityIndependentName) {
 TEST(MDSetApi, LongRangeAlphaMismatchIsRejectedBeforePlanBuild) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"reciprocal",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.31});
+    sim.set_evaluator(
+        LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.31});
     const std::string error = build_error(sim);
     EXPECT_NE(error.find("alpha mismatch"), std::string::npos);
     EXPECT_NE(error.find("real"), std::string::npos);
@@ -249,16 +252,18 @@ TEST(MDSetApi, LongRangeAlphaMismatchIsRejectedBeforePlanBuild) {
 TEST(MDSetApi, MatchingLongRangePairBuildsAsOrdinaryComponents) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"reciprocal",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
+    sim.set_evaluator(
+        LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
     EXPECT_NO_THROW(sim.build());
 }
 
 TEST(MDSetApi, MultiPhaseBindingDoesNotDuplicateLongRangeParticipant) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(
+        LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
     LongRangeStub reciprocal{"reciprocal",
                              ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3};
     sim.on(ATV::md::Phase::force).add_ref(reciprocal);
@@ -271,10 +276,11 @@ TEST(MDSetApi, StressConsumerWithMatchedLongRangePairBuilds) {
     // provides_system_stress provider). Long-range halves only need alpha match.
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"reciprocal",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3,
-                          /*provides_stress=*/false});
+    sim.set_evaluator(
+        LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3,
+        /*provides_stress=*/false});
     sim.set_observer(StressConsumerStub{});
     EXPECT_NO_THROW(sim.build());
 }

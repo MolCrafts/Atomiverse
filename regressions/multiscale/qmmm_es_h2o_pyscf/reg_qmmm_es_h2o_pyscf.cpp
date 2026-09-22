@@ -40,7 +40,7 @@ int main() {
     frame.box = cpu::Box::cubic(20.0);
     frame.blocks.at("atoms").insert(
         "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                           kDynamicFieldId});
+                                kDynamicFieldId});
     auto qm = frame.span(cpu::kAtomQmZ);
     qm[0] = 8;
     qm[1] = 1;
@@ -62,9 +62,9 @@ int main() {
     eval.run(frame);
 
     auto g_ha = [&](int i, int d) {
-        const double f =
-            d == 0 ? frame.span(kAtom_fx)[i]
-                   : (d == 1 ? frame.span(kAtom_fy)[i] : frame.span(kAtom_fz)[i]);
+        const double f = d == 0 ? frame.span(kAtom_fx)[i]
+                                : (d == 1 ? frame.span(kAtom_fy)[i]
+                                          : frame.span(kAtom_fz)[i]);
         return -units::convert(f, units::Force::eVPerAngstrom,
                                units::Force::HartreePerBohr);
     };
@@ -86,16 +86,16 @@ int main() {
         for (int d = 0; d < 3; ++d) {
             const double err = std::fabs(g_ha(A, d) - want_qm[A][d]);
             max_err = std::max(max_err, err);
-            std::printf("g_qm[%d][%d] got=% .10e want=% .10e |err|=%.2e\n", A, d,
-                        g_ha(A, d), want_qm[A][d], err);
+            std::printf("g_qm[%d][%d] got=% .10e want=% .10e |err|=%.2e\n", A,
+                        d, g_ha(A, d), want_qm[A][d], err);
         }
     for (int c = 0; c < 2; ++c)
         for (int d = 0; d < 3; ++d) {
             const int i = 3 + c;
             const double err = std::fabs(g_ha(i, d) - want_mm[c][d]);
             max_err = std::max(max_err, err);
-            std::printf("g_mm[%d][%d] got=% .10e want=% .10e |err|=%.2e\n", c, d,
-                        g_ha(i, d), want_mm[c][d], err);
+            std::printf("g_mm[%d][%d] got=% .10e want=% .10e |err|=%.2e\n", c,
+                        d, g_ha(i, d), want_mm[c][d], err);
         }
     std::printf("max_elementwise_err=%.3e tol=%.0e\n", max_err, tol);
 

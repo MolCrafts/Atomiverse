@@ -32,8 +32,7 @@ void check(bool ok, const char* what) {
 
 std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
     using namespace ATV;
-    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na,
-                                      "DZVP-MOLOPT-SR-GTH");
+    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH");
     const cpu::gpw::GthPotential pNa(molrs::Element::Na, "GTH-PBE-q9");
     const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
     std::vector<cpu::gpw::GpwAtom> atoms;
@@ -87,8 +86,7 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const BandsResult br = bands.compute(method, atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
     std::printf("gpw-bands-metallic: F=%.10f Ha  E_F=%.6f Ha  wall=%.3f s  "
                 "nk=%zu  nspin=%d  conv=%d\n",

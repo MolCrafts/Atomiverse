@@ -157,8 +157,8 @@ int main() {
                 best.hof_kcal, kPublishedHofKcal, kPublishedHofKjMol,
                 published_kcal_from_kj);
 
-    if (!best.converged || !std::isfinite(best.hof_kcal) ||
-        !std::isfinite(best.energy_ev)) {
+    if (!best.converged || !std::isfinite(best.hof_kcal)
+        || !std::isfinite(best.energy_ev)) {
         std::printf("FAIL: RM1 water did not converge to a finite result\n");
         return 1;
     }

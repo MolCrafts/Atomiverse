@@ -119,7 +119,8 @@ TEST(ZeroEnergyElectronic, ZeroEnergyIsIdempotentOnTheElectronicTerm) {
     zero.launch({ctx, f, /*stage=*/0, /*step=*/0});
     EXPECT_EQ(static_cast<double>(f.meta.get(kEnergyElectronic)), 0.0);
 
-    f.meta.get(kEnergyElectronic) = -12.5; // sign matters: ES terms are negative
+    f.meta.get(kEnergyElectronic) =
+        -12.5; // sign matters: ES terms are negative
     zero.launch({ctx, f, /*stage=*/0, /*step=*/0});
     EXPECT_EQ(static_cast<double>(f.meta.get(kEnergyElectronic)), 0.0);
 }

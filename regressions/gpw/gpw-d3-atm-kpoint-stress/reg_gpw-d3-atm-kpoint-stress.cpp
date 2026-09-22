@@ -267,7 +267,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;
@@ -342,9 +343,8 @@ int main() {
     const double t_cp2k = 18.74;
     std::printf("T_atv_product=%.3f s  T_cp2k_c9_twin=%.2f s  ratio=%.3f\n",
                 wall_product_s, t_cp2k, wall_product_s / t_cp2k);
-    std::printf(
-        "PASS: gpw-d3-atm-kpoint-stress  max|σ_ATM-cp2k|=%.3e  "
-        "|dσ_an-fd|_xx=%.3e  |dE_disp|=%.3e\n",
-        max_pin_err, anfd_err, std::abs(e_disp_prod - kEDispAtmCp2k));
+    std::printf("PASS: gpw-d3-atm-kpoint-stress  max|σ_ATM-cp2k|=%.3e  "
+                "|dσ_an-fd|_xx=%.3e  |dE_disp|=%.3e\n",
+                max_pin_err, anfd_err, std::abs(e_disp_prod - kEDispAtmCp2k));
     return 0;
 }

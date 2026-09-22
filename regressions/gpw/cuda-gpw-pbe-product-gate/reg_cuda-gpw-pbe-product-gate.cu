@@ -101,8 +101,8 @@ int main(int argc, char** argv) {
         }
         e_cpu = r.e_total;
         F_cpu = ATV::cpu::gpw::gpw_forces_analytic(atoms, m);
-        std::printf("CPU:  E=%.12f Ha  iters=%d  converged=%d\n", e_cpu, r.iters,
-                    (int)r.converged);
+        std::printf("CPU:  E=%.12f Ha  iters=%d  converged=%d\n", e_cpu,
+                    r.iters, (int)r.converged);
     }
 
     if (run_cuda) {
@@ -111,7 +111,8 @@ int main(int argc, char** argv) {
         m.build(atoms);
         const auto& r = m.run(atoms);
         if (!r.converged) {
-            std::fprintf(stderr, "FAIL: CUDA PBE SCF not converged (iters=%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: CUDA PBE SCF not converged (iters=%d)\n",
                          r.iters);
             return 1;
         }
@@ -146,10 +147,9 @@ int main(int argc, char** argv) {
                          maxd);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-pbe-product-gate  |dE|=%.3e  max|dF|=%.3e  "
-            "(H2 Γ RKS PBE; perf_exempt small cell)\n",
-            de, maxd);
+        std::printf("PASS: cuda-gpw-pbe-product-gate  |dE|=%.3e  max|dF|=%.3e  "
+                    "(H2 Γ RKS PBE; perf_exempt small cell)\n",
+                    de, maxd);
     } else {
         std::printf("PASS: cuda-gpw-pbe-product-gate (--device=%s only)\n",
                     device.c_str());

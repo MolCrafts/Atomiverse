@@ -64,8 +64,9 @@ int main() {
         std::printf("FAIL energies identical at two separations\n");
         return 1;
     }
-    std::printf("DFTB0 H2 r=0.74 A: E_ATV=%.10f eV  E_pin=%.8f eV  |dE|=%.3e eV\n",
-                e_eq, kE_H2_074_eV, std::fabs(e_eq - kE_H2_074_eV));
+    std::printf(
+        "DFTB0 H2 r=0.74 A: E_ATV=%.10f eV  E_pin=%.8f eV  |dE|=%.3e eV\n",
+        e_eq, kE_H2_074_eV, std::fabs(e_eq - kE_H2_074_eV));
     if (std::fabs(e_eq - kE_H2_074_eV) > kE_tol_eV) {
         std::printf("FAIL energy pin: got %.10f expected %.10f ± %.1e eV\n",
                     e_eq, kE_H2_074_eV, kE_tol_eV);
@@ -94,9 +95,10 @@ int main() {
     eval.on(evaluate::Phase::evaluate).add(std::move(dftb0));
     eval.build();
     eval.run(f);
-    const double f2 = static_cast<double>(f.span(kAtom_fx)[0] * f.span(kAtom_fx)[0]
-                                          + f.span(kAtom_fy)[0] * f.span(kAtom_fy)[0]
-                                          + f.span(kAtom_fz)[0] * f.span(kAtom_fz)[0]);
+    const double f2 =
+        static_cast<double>(f.span(kAtom_fx)[0] * f.span(kAtom_fx)[0]
+                            + f.span(kAtom_fy)[0] * f.span(kAtom_fy)[0]
+                            + f.span(kAtom_fz)[0] * f.span(kAtom_fz)[0]);
     if (!(f2 > 0.0) || !std::isfinite(f2)) {
         std::printf("FAIL force skeleton |F|^2=%g\n", f2);
         return 1;

@@ -104,8 +104,8 @@ class DeviceDensity {
     /// @throws std::runtime_error on any CUDA / cuFFT / cuBLAS failure.
     DeviceDensity(const cpu::pw::internal::PWProblem& prob, double mix_beta,
                   int pulay_depth, cpu::scf::XCType xc,
-                  bool spin_polarized = false, int n_alpha = 0,
-                  int n_beta = 0, int n_elec = 0);
+                  bool spin_polarized = false, int n_alpha = 0, int n_beta = 0,
+                  int n_elec = 0);
     ~DeviceDensity();
     DeviceDensity(const DeviceDensity&) = delete;
     DeviceDensity& operator=(const DeviceDensity&) = delete;
@@ -335,10 +335,10 @@ class DeviceDensity {
     double* d_gz_ = nullptr; ///< Cartesian G_z per sphere entry [1/Bohr].
     cufftDoubleComplex* d_sph_ = nullptr; ///< ng0_ G-sphere staging
                                           ///< (i·G_d·ρ and flux_d(G)).
-    double* d_grad_x_r_ = nullptr; ///< ∂ρ/∂x or ∂ρ_α/∂x → flux.
+    double* d_grad_x_r_ = nullptr;        ///< ∂ρ/∂x or ∂ρ_α/∂x → flux.
     double* d_grad_y_r_ = nullptr;
     double* d_grad_z_r_ = nullptr;
-    double* d_div_r_ = nullptr; ///< ∇·flux (restricted or α).
+    double* d_div_r_ = nullptr;       ///< ∇·flux (restricted or α).
     double* d_grad_dn_x_r_ = nullptr; ///< ∂ρ_β/∂x → flux_β (spin-GGA).
     double* d_grad_dn_y_r_ = nullptr;
     double* d_grad_dn_z_r_ = nullptr;

@@ -49,10 +49,11 @@ int main() {
     // Literature dual gate (REFERENCE.md): Grimme SCS on multi-k RI-GPW OS/SS.
     // CP2K 2026.1 git:5e54ba2 aborts MP2_GPW under DFT KPOINTS (no algorithm
     // twin). Absolute band freezes first-green product digits (setup integrity).
-    constexpr double kEcorrRef = -0.0737958960; // Ha (ATV first green, 2026-08-01)
-    constexpr double kEcorrTol = 1.0e-4;         // Ha
-    constexpr double kScaleIdTol = 1.0e-12;      // Ha algebraic identity
-    constexpr double kOsSsPlainTol = 1.0e-10;    // Ha unscaled vs plain
+    constexpr double kEcorrRef =
+        -0.0737958960;                      // Ha (ATV first green, 2026-08-01)
+    constexpr double kEcorrTol = 1.0e-4;    // Ha
+    constexpr double kScaleIdTol = 1.0e-12; // Ha algebraic identity
+    constexpr double kOsSsPlainTol = 1.0e-10; // Ha unscaled vs plain
 
     auto atoms = si_bct(a_bohr);
 
@@ -83,8 +84,8 @@ int main() {
         std::fprintf(stderr,
                      "FAIL: 2k SCF (conv=%d n_kpts=%d C_k=%zu iters=%d "
                      "E=%.8f)\n",
-                     static_cast<int>(scf.converged), scf.n_kpts, scf.C_k.size(),
-                     scf.iters, scf.e_total);
+                     static_cast<int>(scf.converged), scf.n_kpts,
+                     scf.C_k.size(), scf.iters, scf.e_total);
         return 1;
     }
 
@@ -122,8 +123,8 @@ int main() {
         return 1;
     }
     if (r_scs.n_occ != 8 || r_scs.n_virt != 2) {
-        std::fprintf(stderr, "FAIL: n_occ=%d n_virt=%d (want 8/2)\n", r_scs.n_occ,
-                     r_scs.n_virt);
+        std::fprintf(stderr, "FAIL: n_occ=%d n_virt=%d (want 8/2)\n",
+                     r_scs.n_occ, r_scs.n_virt);
         return 1;
     }
 
@@ -172,7 +173,8 @@ int main() {
         return 1;
     }
     if (wall_all > 60.0) {
-        std::fprintf(stderr, "FAIL: wall=%.1f s exceeds 60 s budget\n", wall_all);
+        std::fprintf(stderr, "FAIL: wall=%.1f s exceeds 60 s budget\n",
+                     wall_all);
         return 1;
     }
 

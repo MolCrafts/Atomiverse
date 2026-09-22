@@ -10,10 +10,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/second_gen_cp.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/second_gen_cp.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -91,8 +91,8 @@ int main() {
             return 1;
         }
         if (!(ke_w > 1e-12)) {
-            std::printf(
-                "FAIL: expected non-trivial KE after seed, got %g eV\n", ke_w);
+            std::printf("FAIL: expected non-trivial KE after seed, got %g eV\n",
+                        ke_w);
             return 1;
         }
         if (!(pe_w < -100.0)) {
@@ -173,12 +173,12 @@ int main() {
         }
     }
 
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
     const double r_oo = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (!(r_oo < oo_max) || !(r_oo > oo_min)) {
         std::printf("FAIL: O–O bond exploded/collapsed r=%.3f Å "

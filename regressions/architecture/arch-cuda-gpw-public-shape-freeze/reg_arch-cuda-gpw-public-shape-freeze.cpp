@@ -24,10 +24,10 @@
 namespace {
 
 // Compile-time freeze: method is a Driver node, not a freestanding solver bag.
-static_assert(std::is_base_of_v<ATV::cpu::Driver<ATV::gpw::Phase>,
-                                ATV::cpu::gpw::GpwDft>,
-              "CUDA product must mirror GpwDft as Driver<gpw::Phase>, not a "
-              "free-loop SCFSolver bag");
+static_assert(
+    std::is_base_of_v<ATV::cpu::Driver<ATV::gpw::Phase>, ATV::cpu::gpw::GpwDft>,
+    "CUDA product must mirror GpwDft as Driver<gpw::Phase>, not a "
+    "free-loop SCFSolver bag");
 
 // Detect the frozen entry points (members + build/run/last_result).
 template <typename T>
@@ -103,7 +103,8 @@ int main() {
     method.cutoff_ry = 300.0;
     method.tol = 1e-8;
     method.max_iter = 100;
-    method.use_ot = false; // DIIS path is the product spine; OT residual ≠ block
+    method.use_ot =
+        false; // DIIS path is the product spine; OT residual ≠ block
 
     if (method.is_uks()) {
         std::fprintf(stderr, "FAIL: default n_alpha/n_beta should be RKS\n");
@@ -118,8 +119,8 @@ int main() {
 
     const GpwResult& pre = method.last_result();
     if (pre.converged) {
-        std::fprintf(stderr,
-                     "FAIL: last_result before run must not report converged\n");
+        std::fprintf(
+            stderr, "FAIL: last_result before run must not report converged\n");
         return 1;
     }
 

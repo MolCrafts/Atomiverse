@@ -20,7 +20,7 @@ __device__ __forceinline__ double ipow_nonneg(double x, int n) {
 }
 
 __device__ __forceinline__ double product_radius_dev(double mag, double p,
-                                                    int Ltot, double eps) {
+                                                     int Ltot, double eps) {
     if (!(mag > 0.0) || !(p > 0.0) || !(eps > 0.0))
         return 0.0;
     const double lc = log(fmax(mag, 1e-300));
@@ -34,7 +34,7 @@ __device__ __forceinline__ double product_radius_dev(double mag, double p,
 }
 
 __device__ __forceinline__ double product_shape_bare_raw(const DeviceProduct& q,
-                                                        const double r[3]) {
+                                                         const double r[3]) {
     const double dx = r[0] - q.pc[0];
     const double dy = r[1] - q.pc[1];
     const double dz = r[2] - q.pc[2];
@@ -192,8 +192,7 @@ void integrate_products(const CollocateGridDesc& grid,
     constexpr int kBlock = 256;
     if (grid.periodic) {
         // Mass-margin class default (Si charge); mag field carries group max.
-        const double eps =
-            (grid.eps_win > 0.0) ? grid.eps_win : 1.0e-14;
+        const double eps = (grid.eps_win > 0.0) ? grid.eps_win : 1.0e-14;
         integrate_products_sphere_kernel<<<nprod, kBlock, 0, stream>>>(
             d_prods, nprod, grid.n[0], grid.n[1], grid.n[2], grid.L[0],
             grid.L[1], grid.L[2], grid.origin[0], grid.origin[1],

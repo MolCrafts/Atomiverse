@@ -28,7 +28,6 @@
 #include <omp.h>
 #endif
 
-
 using namespace ATV;
 using namespace ATV::cpu::scf;
 
@@ -180,8 +179,9 @@ void compare_tensors(const xt::xtensor<double, 4>& a,
 // catches gross algebraic errors in rys_eri_block.
 TEST(RysEri, MatchesMcMurchieDavidson_H2O) {
     auto frame = make_water();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
-                                       /*need_eri=*/true};
+    auto pack = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0,
+        /*need_eri=*/true};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
     auto eri_rys = build_eri_via_rys(sp);
@@ -190,14 +190,14 @@ TEST(RysEri, MatchesMcMurchieDavidson_H2O) {
 
 TEST(RysEri, MatchesMcMurchieDavidson_CO) {
     auto frame = make_co();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
-                                       /*need_eri=*/true};
+    auto pack = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0,
+        /*need_eri=*/true};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
     auto eri_rys = build_eri_via_rys(sp);
     compare_tensors(pack.ERI, eri_rys, 5e-7, "CO rys vs native M-D");
 }
-
 
 // ── thread_local ERI-reuse determinism guard (spec scf-review-06, ac-005) ─
 //
@@ -214,8 +214,9 @@ TEST(RysEri, MatchesMcMurchieDavidson_CO) {
 TEST(RysEri, ThreadLocalReuseDeterminism_DShell) {
     auto frame = make_water();
     // 6-31G* places a Cartesian d-shell on oxygen.
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::Pople631Gs, 0,
-                                       /*need_eri=*/false};
+    auto pack = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::Pople631Gs, 0,
+        /*need_eri=*/false};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
     const int nb = static_cast<int>(sp.blocks.size());

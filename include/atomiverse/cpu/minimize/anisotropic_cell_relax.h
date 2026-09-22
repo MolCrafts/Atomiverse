@@ -29,9 +29,9 @@ class AnisotropicCellRelax : public Optimizer {
     double alpha0 = 0.05;    ///< Scale gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per axis.
     double bulk_mod = 1.0;   ///< Soft bulk modulus [eV/Å³].
-    bool relax_x = true; ///< Relax the x box edge.
-    bool relax_y = true; ///< Relax the y box edge.
-    bool relax_z = true; ///< Relax the z box edge.
+    bool relax_x = true;     ///< Relax the x box edge.
+    bool relax_y = true;     ///< Relax the y box edge.
+    bool relax_z = true;     ///< Relax the z box edge.
 
     AnisotropicCellRelax() = default;
     explicit AnisotropicCellRelax(double P_target_ev_a3, double alpha = 0.05);

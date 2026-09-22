@@ -150,8 +150,9 @@ struct IntegralWorkspace {
     /// @param[out] V_nuc Nuclear repulsion [Hartree].
     /// @param[out] n_basis AO dimension.
     /// @param[out] n_electrons Electron count (valence if ECP).
-    static void fill_rhf_matrices(const Frame& frame, BasisSet basis, int charge,
-                                  bool compute_eri, xt::xtensor<double, 2>& S,
+    static void fill_rhf_matrices(const Frame& frame, BasisSet basis,
+                                  int charge, bool compute_eri,
+                                  xt::xtensor<double, 2>& S,
                                   xt::xtensor<double, 2>& Hcore,
                                   xt::xtensor<double, 4>& ERI, double& V_nuc,
                                   int& n_basis, int& n_electrons);
@@ -188,9 +189,9 @@ struct IntegralWorkspace {
     ///                    `W` (needed by scalar-relativistic x2c-1e). Default
     ///                    false keeps the non-relativistic path untouched.
     IntegralWorkspace(const Frame& frame, BasisSet basis, int charge = 0,
-                 bool compute_eri = false, std::string ecp = {},
-                 const std::vector<int>& ghost_atoms = {},
-                 bool compute_pvp = false);
+                      bool compute_eri = false, std::string ecp = {},
+                      const std::vector<int>& ghost_atoms = {},
+                      bool compute_pvp = false);
 
     /// @brief Number of doubly-occupied orbitals (RHF closed-shell).
     /// @return `n_electrons / 2`.
@@ -232,7 +233,8 @@ struct IntegralWorkspace {
     operator IntegralView() const { return view(); }
 
     /// @brief Fused Coulomb + exchange — delegates to `view()`.
-    void coulomb_exchange_fused(const RealMatrix& P_total, RealMatrix& G) const {
+    void coulomb_exchange_fused(const RealMatrix& P_total,
+                                RealMatrix& G) const {
         view().coulomb_exchange_fused(P_total, G);
     }
 

@@ -115,7 +115,8 @@ int main() {
         std::printf("FAIL: nspin got=%d want=1\n", br.nspin);
         return 1;
     }
-    if (br.eigenvalues_ry.empty() || br.kfrac.size() != br.eigenvalues_ry.size()) {
+    if (br.eigenvalues_ry.empty()
+        || br.kfrac.size() != br.eigenvalues_ry.size()) {
         std::printf("FAIL: empty or mismatched path eigenvalues\n");
         return 1;
     }
@@ -150,10 +151,9 @@ int main() {
         // Local same-k gap for integer valence fill (Si twin stays gapped).
         if (!(row[static_cast<std::size_t>(kNOcc)]
               > row[static_cast<std::size_t>(kNOcc - 1)])) {
-            std::printf(
-                "FAIL: local gap closed at ik=%zu e_v=%.6f e_c=%.6f\n", ik,
-                row[static_cast<std::size_t>(kNOcc - 1)],
-                row[static_cast<std::size_t>(kNOcc)]);
+            std::printf("FAIL: local gap closed at ik=%zu e_v=%.6f e_c=%.6f\n",
+                        ik, row[static_cast<std::size_t>(kNOcc - 1)],
+                        row[static_cast<std::size_t>(kNOcc)]);
             return 1;
         }
     }
@@ -177,12 +177,12 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: metallic bands Si a=%.2f A ecut=%.0f Ry scf_k=%d  "
-        "FD degauss=%.3f Ry extra_bands=%d  e_fermi=%.6f Ry  "
-        "gap=%.4f Ry  e_vbm=%.6f e_cbm=%.6f  nk_path=%zu  "
-        "E_scf=%.6f Ry\n",
-        kA, kEcutRy, kMeshScf, kDegaussRy, kExtraBands, br.e_fermi_ry,
-        br.gap_ry, br.e_vbm_ry, br.e_cbm_ry, br.kfrac.size(), br.energy_ry);
+    std::printf("PASS: metallic bands Si a=%.2f A ecut=%.0f Ry scf_k=%d  "
+                "FD degauss=%.3f Ry extra_bands=%d  e_fermi=%.6f Ry  "
+                "gap=%.4f Ry  e_vbm=%.6f e_cbm=%.6f  nk_path=%zu  "
+                "E_scf=%.6f Ry\n",
+                kA, kEcutRy, kMeshScf, kDegaussRy, kExtraBands, br.e_fermi_ry,
+                br.gap_ry, br.e_vbm_ry, br.e_cbm_ry, br.kfrac.size(),
+                br.energy_ry);
     return 0;
 }

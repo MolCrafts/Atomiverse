@@ -28,8 +28,9 @@ int main() {
     static_assert(std::is_base_of_v<cpu::Driver<ATV::pw::Phase>, PW>,
                   "PW must be cpu::Driver<pw::Phase>");
     if (ATV::slot_count<ATV::pw::Phase>() != 5) {
-        std::printf("FAIL: pw::Phase slot_count got=%zu want=5\n",
-                    static_cast<std::size_t>(ATV::slot_count<ATV::pw::Phase>()));
+        std::printf(
+            "FAIL: pw::Phase slot_count got=%zu want=5\n",
+            static_cast<std::size_t>(ATV::slot_count<ATV::pw::Phase>()));
         return 1;
     }
     if (ATV::pw::kind_of(ATV::pw::Phase{}) != ATV::PhaseKind::SCF) {
@@ -82,8 +83,9 @@ int main() {
     const PWResult& r = method.run(frame);
 
     if (!r.converged) {
-        std::printf("FAIL: PW Driver fixed-occ SCF did not converge (iters=%d)\n",
-                    r.iterations);
+        std::printf(
+            "FAIL: PW Driver fixed-occ SCF did not converge (iters=%d)\n",
+            r.iterations);
         return 1;
     }
     if (!std::isfinite(r.energy)) {

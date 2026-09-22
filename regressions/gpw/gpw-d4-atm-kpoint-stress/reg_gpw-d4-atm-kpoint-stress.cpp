@@ -78,10 +78,10 @@ constexpr double kSigmaAtmTol = 5.0e-11; // Ha/Bohr³
 constexpr double kSigmaAtmMin = 5.0e-10; // Ha/Bohr³ engage floor (pin ~7.7e-10)
 
 // Tolerances (REFERENCE.md)
-constexpr double kEPinTol = 1.0e-9;     // Ha, strained-energy parity
-constexpr double kSigPinTol = 1.0e-12;  // Ha/Bohr³, disp/ATM stress from dftd4 E
-constexpr double kEDispTol = 1.0e-8;    // Ha, product e_disp vs base ATM pin
-constexpr double kAnFdTol = 2.0e-5;     // Ha/Bohr³, analytic vs FD dual gate
+constexpr double kEPinTol = 1.0e-9;    // Ha, strained-energy parity
+constexpr double kSigPinTol = 1.0e-12; // Ha/Bohr³, disp/ATM stress from dftd4 E
+constexpr double kEDispTol = 1.0e-8;   // Ha, product e_disp vs base ATM pin
+constexpr double kAnFdTol = 2.0e-5;    // Ha/Bohr³, analytic vs FD dual gate
 constexpr double kOffDiagTol = 1.0e-12; // Ha/Bohr³
 constexpr double kDiagFloor = 1.0e-10;  // Ha/Bohr³
 // Product ATM fold wiring: σ_xx(ATM) − σ_xx(2b) vs standalone σ^ATM_xx.
@@ -148,7 +148,8 @@ int main() {
             const double d1 = std::abs(e_atv_s9[a][s] - kEs9[a][s]);
             const double d0 = std::abs(e_atv_2b[a][s] - kE2b[a][s]);
             max_epin_err = std::max({max_epin_err, d1, d0});
-            if (!std::isfinite(e_atv_s9[a][s]) || d1 > kEPinTol || d0 > kEPinTol) {
+            if (!std::isfinite(e_atv_s9[a][s]) || d1 > kEPinTol
+                || d0 > kEPinTol) {
                 std::printf("FAIL: strained E_disp parity axis=%d s=%d "
                             "|d_s9|=%.3e |d_2b|=%.3e Ha (tol %g)\n",
                             a, s, d1, d0, kEPinTol);
@@ -245,8 +246,9 @@ int main() {
     check(eval.last_result().n_kpts >= 1 && !eval.last_result().C_occ_k.empty(),
           "C multi-k C_occ_k payload present");
     const double e_disp = eval.last_result().e_disp;
-    std::printf("C E_disp(multi-k ATM) = %.14e Ha (dftd4 pin %.14e, |d|=%.2e)\n",
-                e_disp, kEAtmRef, std::abs(e_disp - kEAtmRef));
+    std::printf(
+        "C E_disp(multi-k ATM) = %.14e Ha (dftd4 pin %.14e, |d|=%.2e)\n",
+        e_disp, kEAtmRef, std::abs(e_disp - kEAtmRef));
     check(std::isfinite(e_disp) && std::abs(e_disp - kEAtmRef) <= kEDispTol,
           "C E_disp equals the dftd4 ATM pin (k-mesh independent)");
 
@@ -271,7 +273,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3)
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3)
             conv_ok = false;
     }
     check(conv_ok, "C kStress unit conversion");

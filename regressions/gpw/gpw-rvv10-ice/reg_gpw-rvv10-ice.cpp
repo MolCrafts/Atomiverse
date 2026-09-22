@@ -82,8 +82,9 @@ int main() {
         return 1;
     }
     if (!(res.e_disp > 0.0)) {
-        std::fprintf(stderr, "FAIL: rVV10 E_disp should be positive for this "
-                             "isolated dimer density, got=%.14e\n",
+        std::fprintf(stderr,
+                     "FAIL: rVV10 E_disp should be positive for this "
+                     "isolated dimer density, got=%.14e\n",
                      res.e_disp);
         return 1;
     }

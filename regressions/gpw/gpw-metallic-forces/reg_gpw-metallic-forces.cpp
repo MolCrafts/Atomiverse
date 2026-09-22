@@ -32,8 +32,8 @@ void check(bool ok, const char* what) {
 
 // Frozen first-green ATV (Release, OMP=8), 2026-08-01. Decisive: analytic
 // vs free-energy FD max|dF| = 7.8e-6 Ha/Bohr (h = 1e-3 Bohr).
-constexpr double kEPin = -1.118469277632; // Ha free energy
-constexpr double kETol = 1e-5;            // Ha
+constexpr double kEPin = -1.118469277632;    // Ha free energy
+constexpr double kETol = 1e-5;               // Ha
 constexpr double kF0xPin = -1.4404059091e-2; // Ha/Bohr
 constexpr double kF1xPin = 2.1449155103e-1;  // Ha/Bohr
 constexpr double kForceTol = 1e-5;           // Ha/Bohr
@@ -86,12 +86,9 @@ int main() {
     const auto Ffd = gpw_forces_fd(atoms, make_cfg(), 1e-3);
     const auto t2 = std::chrono::steady_clock::now();
 
-    const double wall_scf =
-        std::chrono::duration<double>(t_scf - t0).count();
-    const double wall_f =
-        std::chrono::duration<double>(t1 - t_scf).count();
-    const double wall_fd =
-        std::chrono::duration<double>(t2 - t1).count();
+    const double wall_scf = std::chrono::duration<double>(t_scf - t0).count();
+    const double wall_f = std::chrono::duration<double>(t1 - t_scf).count();
+    const double wall_fd = std::chrono::duration<double>(t2 - t1).count();
 
     std::printf(
         "F=%.12f Ha  e_fermi=%.6f  Ne=%.8f  e_ent=%.3e  iters=%d  nk=%d  "
@@ -133,6 +130,7 @@ int main() {
         std::printf("FAIL: gpw-metallic-forces (%d checks)\n", g_fail);
         return 1;
     }
-    std::printf("PASS: gpw-metallic-forces (H2 multi-k FD free-energy forces)\n");
+    std::printf(
+        "PASS: gpw-metallic-forces (H2 multi-k FD free-energy forces)\n");
     return 0;
 }

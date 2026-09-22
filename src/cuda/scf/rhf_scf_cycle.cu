@@ -82,9 +82,9 @@ RhfScfCycle::RhfScfCycle(xt::xtensor<double, 2> S, xt::xtensor<double, 2> Hcore,
     const int n_occ = n_electrons / 2;
     eigen_ = std::make_unique<EigenSolver>();
     convergence_ = std::make_unique<ConvergenceCheck>(tol, false);
-    rhf_fock_ = std::make_unique<RHFFock>(std::move(S), std::move(Hcore),
-                                          std::move(ERI), V_nuc, n_occ,
-                                          level_shift_);
+    rhf_fock_ =
+        std::make_unique<RHFFock>(std::move(S), std::move(Hcore),
+                                  std::move(ERI), V_nuc, n_occ, level_shift_);
     rhf_density_ = std::make_unique<RHFDensity>(n_occ);
     diis_ = std::make_unique<DIISMixer>(/*max_vectors=*/8, /*start_iter=*/1,
                                         level_shift_);

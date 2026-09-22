@@ -74,9 +74,9 @@ int main() {
     using clock = std::chrono::steady_clock;
     const auto t_start = clock::now();
     auto mark = [&](const char* what) {
-        std::printf("  [wall] %s at %.1f s\n", what,
-                    std::chrono::duration<double>(clock::now() - t_start)
-                        .count());
+        std::printf(
+            "  [wall] %s at %.1f s\n", what,
+            std::chrono::duration<double>(clock::now() - t_start).count());
     };
 
     const double L = 8.0;
@@ -165,7 +165,7 @@ int main() {
 
         // M5: offline CP2K 2026.1 pin (REFERENCE.md).
         constexpr double kEPin = -1.166228717524314; // Ha (CP2K 2026.1)
-        constexpr double kTolAbs = 1e-3;              // Ha
+        constexpr double kTolAbs = 1e-3;             // Ha
         const double dpin = std::fabs(rm.e_total - kEPin);
         std::printf("M5: |E − pin| = %.3e Ha (pin %.12f)\n", dpin, kEPin);
         check(dpin <= kTolAbs, "M5 absolute e_tot within 1e-3 Ha of CP2K pin");

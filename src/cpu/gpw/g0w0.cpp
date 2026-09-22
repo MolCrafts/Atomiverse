@@ -38,9 +38,8 @@ double sigma_c_diag(double omega, int p, int n_occ, int n_mo,
     double re = 0.0;
     for (int s = 0; s < n_exc; ++s) {
         const double Os = Om[static_cast<std::size_t>(s)];
-        const std::size_t s0 =
-            static_cast<std::size_t>(s) * nmo * nmo
-            + static_cast<std::size_t>(p);
+        const std::size_t s0 = static_cast<std::size_t>(s) * nmo * nmo
+                               + static_cast<std::size_t>(p);
         for (int m = 0; m < n_occ; ++m) {
             const double t = tdm[s0 + static_cast<std::size_t>(m) * nmo];
             const double den_r = omega + Os - eps[static_cast<std::size_t>(m)];
@@ -69,8 +68,7 @@ bool solve_qp(double eps_p, double vx_m_vxc, int p, int n_occ, int n_mo,
             omega_out = w;
             return true;
         }
-        const double sig_p =
-            sigma_c_diag(w + kH, p, n_occ, n_mo, eps, Om, tdm);
+        const double sig_p = sigma_c_diag(w + kH, p, n_occ, n_mo, eps, Om, tdm);
         const double dsig = (sig_p - sig) / kH;
         const double df = 1.0 - dsig;
         if (!(std::abs(df) > 1e-14))
@@ -78,9 +76,9 @@ bool solve_qp(double eps_p, double vx_m_vxc, int p, int n_occ, int n_mo,
         w -= f / df;
     }
     omega_out = w;
-    return std::abs(w - eps_p
-                    - (sigma_c_diag(w, p, n_occ, n_mo, eps, Om, tdm)
-                       + vx_m_vxc))
+    return std::abs(
+               w - eps_p
+               - (sigma_c_diag(w, p, n_occ, n_mo, eps, Om, tdm) + vx_m_vxc))
            < 10.0 * kQpeTol;
 }
 
@@ -134,8 +132,8 @@ int cap_virt_gw_(int n_mo, int n_occ, int mp2_n_virt,
     if (n_mo <= n_occ)
         throw std::invalid_argument(
             std::string("GpwDft::g0w0: no virtual orbitals in the ") + channel
-            + " channel (n_mo = " + std::to_string(n_mo) + ", n_occ = "
-            + std::to_string(n_occ) + ")");
+            + " channel (n_mo = " + std::to_string(n_mo)
+            + ", n_occ = " + std::to_string(n_occ) + ")");
     int n_virt = n_mo - n_occ;
     if (mp2_n_virt > 0)
         n_virt = std::min(n_virt, mp2_n_virt);
@@ -145,10 +143,10 @@ int cap_virt_gw_(int n_mo, int n_occ, int mp2_n_virt,
     const double gap = eps[static_cast<std::size_t>(n_occ)]
                        - eps[static_cast<std::size_t>(n_occ - 1)];
     if (gap < kMinGapHa)
-        throw std::invalid_argument(
-            std::string("GpwDft::g0w0: vanishing ") + channel
-            + " HOMO-LUMO gap (" + std::to_string(gap)
-            + " Ha < 1e-6) — dRPA (A−B) is singular");
+        throw std::invalid_argument(std::string("GpwDft::g0w0: vanishing ")
+                                    + channel + " HOMO-LUMO gap ("
+                                    + std::to_string(gap)
+                                    + " Ha < 1e-6) — dRPA (A−B) is singular");
     return n_virt;
 }
 
@@ -227,8 +225,8 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
                 n_mo_b_min = std::min(
                     n_mo_b_min,
                     static_cast<int>(
-                        result_.C_k_beta[static_cast<std::size_t>(ik)]
-                            .shape(1)));
+                        result_.C_k_beta[static_cast<std::size_t>(ik)].shape(
+                            1)));
                 if (static_cast<int>(
                         result_.eps_k[static_cast<std::size_t>(ik)].size())
                         < n_mo_a_min
@@ -244,9 +242,9 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
             const int n_ob = n_beta;
             std::vector<double> eps_a0(result_.eps_k[0].begin(),
                                        result_.eps_k[0].begin() + n_mo_a_min);
-            std::vector<double> eps_b0(
-                result_.eps_k_beta[0].begin(),
-                result_.eps_k_beta[0].begin() + n_mo_b_min);
+            std::vector<double> eps_b0(result_.eps_k_beta[0].begin(),
+                                       result_.eps_k_beta[0].begin()
+                                           + n_mo_b_min);
             const int n_va =
                 cap_virt_gw_(n_mo_a_min, n_oa, mp2_n_virt, eps_a0, "α");
             const int n_vb =
@@ -256,17 +254,17 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
                     "GpwDft::g0w0: multi-k UGW needs n_α >= 1 and "
                     "n_virt_α >= 1 (primary report is the α channel)");
 
-            auto min_eps_gap =
-                [&](const std::vector<std::vector<double>>& ek, int n_occ) {
-                    double g = 1e300;
-                    for (int ik = 0; ik < nk; ++ik) {
-                        const auto& e = ek[static_cast<std::size_t>(ik)];
-                        g = std::min(
-                            g, e[static_cast<std::size_t>(n_occ)]
-                                   - e[static_cast<std::size_t>(n_occ - 1)]);
-                    }
-                    return g;
-                };
+            auto min_eps_gap = [&](const std::vector<std::vector<double>>& ek,
+                                   int n_occ) {
+                double g = 1e300;
+                for (int ik = 0; ik < nk; ++ik) {
+                    const auto& e = ek[static_cast<std::size_t>(ik)];
+                    g = std::min(g,
+                                 e[static_cast<std::size_t>(n_occ)]
+                                     - e[static_cast<std::size_t>(n_occ - 1)]);
+                }
+                return g;
+            };
             constexpr double kMinGapHa = 1e-6;
             if (min_eps_gap(result_.eps_k, n_oa) < kMinGapHa)
                 throw std::invalid_argument(
@@ -283,8 +281,7 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
                 for (const auto& bf : a.basis)
                     basis.push_back(bf);
 
-            std::vector<internal::KPoint> kpts(
-                static_cast<std::size_t>(nk));
+            std::vector<internal::KPoint> kpts(static_cast<std::size_t>(nk));
             for (int ik = 0; ik < nk; ++ik) {
                 kpts[static_cast<std::size_t>(ik)].frac[0] =
                     result_.k_frac[static_cast<std::size_t>(ik)][0];
@@ -308,15 +305,12 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
             std::vector<std::vector<double>> eps_b_full(
                 static_cast<std::size_t>(nk));
             for (int ik = 0; ik < nk; ++ik) {
-                psi_a_k[static_cast<std::size_t>(ik)] =
-                    internal::mo_on_grid_k(
-                        kbg, ik, result_.C_k[static_cast<std::size_t>(ik)], 0,
-                        n_mo_a_min);
-                psi_b_k[static_cast<std::size_t>(ik)] =
-                    internal::mo_on_grid_k(
-                        kbg, ik,
-                        result_.C_k_beta[static_cast<std::size_t>(ik)], 0,
-                        n_mo_b_min);
+                psi_a_k[static_cast<std::size_t>(ik)] = internal::mo_on_grid_k(
+                    kbg, ik, result_.C_k[static_cast<std::size_t>(ik)], 0,
+                    n_mo_a_min);
+                psi_b_k[static_cast<std::size_t>(ik)] = internal::mo_on_grid_k(
+                    kbg, ik, result_.C_k_beta[static_cast<std::size_t>(ik)], 0,
+                    n_mo_b_min);
                 const auto& ea = result_.eps_k[static_cast<std::size_t>(ik)];
                 const auto& eb =
                     result_.eps_k_beta[static_cast<std::size_t>(ik)];
@@ -360,9 +354,9 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
             std::vector<std::vector<double>> qp_k, sx_k, vxc_k;
             bool ok = false;
             internal::spectral_g0w0_uhf_kpoints(
-                grid, psi_a_k, psi_b_k, eps_a_full, eps_b_full,
-                result_.k_frac, result_.k_weights, n_oa, n_va, n_ob, n_vb,
-                xc_spin.vxc_a, qp_k, sx_k, vxc_k, ok);
+                grid, psi_a_k, psi_b_k, eps_a_full, eps_b_full, result_.k_frac,
+                result_.k_weights, n_oa, n_va, n_ob, n_vb, xc_spin.vxc_a, qp_k,
+                sx_k, vxc_k, ok);
 
             const int homo = n_oa - 1;
             const int lumo = n_oa;
@@ -370,11 +364,10 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
             double min_mf_gap = 1e300;
             int k_report = 0;
             for (int ik = 0; ik < nk; ++ik) {
-                const double qp_g =
-                    qp_k[static_cast<std::size_t>(ik)]
-                        [static_cast<std::size_t>(lumo)]
-                    - qp_k[static_cast<std::size_t>(ik)]
-                          [static_cast<std::size_t>(homo)];
+                const double qp_g = qp_k[static_cast<std::size_t>(ik)]
+                                        [static_cast<std::size_t>(lumo)]
+                                    - qp_k[static_cast<std::size_t>(ik)]
+                                          [static_cast<std::size_t>(homo)];
                 const double mf_g =
                     eps_a_full[static_cast<std::size_t>(ik)]
                               [static_cast<std::size_t>(lumo)]
@@ -468,14 +461,14 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
         const long npts = grid.npts();
         const double gw = grid.weight();
 
-        std::vector<double> psi_oa(
-            static_cast<std::size_t>(n_oa) * static_cast<std::size_t>(npts));
-        std::vector<double> psi_va(
-            static_cast<std::size_t>(n_va) * static_cast<std::size_t>(npts));
-        std::vector<double> psi_ob(
-            static_cast<std::size_t>(n_ob) * static_cast<std::size_t>(npts));
-        std::vector<double> psi_vb(
-            static_cast<std::size_t>(n_vb) * static_cast<std::size_t>(npts));
+        std::vector<double> psi_oa(static_cast<std::size_t>(n_oa)
+                                   * static_cast<std::size_t>(npts));
+        std::vector<double> psi_va(static_cast<std::size_t>(n_va)
+                                   * static_cast<std::size_t>(npts));
+        std::vector<double> psi_ob(static_cast<std::size_t>(n_ob)
+                                   * static_cast<std::size_t>(npts));
+        std::vector<double> psi_vb(static_cast<std::size_t>(n_vb)
+                                   * static_cast<std::size_t>(npts));
         for (int i = 0; i < n_oa; ++i)
             for (long g = 0; g < npts; ++g)
                 psi_oa[static_cast<std::size_t>(i)
@@ -512,24 +505,22 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
         const bool use_ri = mp2_ri && periodic;
         std::vector<double> v_aa, v_bb, v_ab;
         if (n_oa > 0 && n_va > 0)
-            v_aa = use_ri ? internal::mo_eri_ovov_ri(grid, psi_oa, n_oa,
-                                                      psi_va, n_va)
+            v_aa = use_ri ? internal::mo_eri_ovov_ri(grid, psi_oa, n_oa, psi_va,
+                                                     n_va)
                           : internal::mo_eri_ovov(grid, psi_oa, n_oa, psi_va,
-                                                   n_va, nonperiodic);
+                                                  n_va, nonperiodic);
         if (n_ob > 0 && n_vb > 0)
-            v_bb = use_ri ? internal::mo_eri_ovov_ri(grid, psi_ob, n_ob,
-                                                      psi_vb, n_vb)
+            v_bb = use_ri ? internal::mo_eri_ovov_ri(grid, psi_ob, n_ob, psi_vb,
+                                                     n_vb)
                           : internal::mo_eri_ovov(grid, psi_ob, n_ob, psi_vb,
-                                                   n_vb, nonperiodic);
+                                                  n_vb, nonperiodic);
         if (n_oa > 0 && n_va > 0 && n_ob > 0 && n_vb > 0)
-            v_ab =
-                use_ri
-                    ? internal::mo_eri_ovov_ab_ri(grid, psi_oa, n_oa, psi_va,
-                                                   n_va, psi_ob, n_ob, psi_vb,
-                                                   n_vb)
-                    : internal::mo_eri_ovov_ab(grid, psi_oa, n_oa, psi_va,
-                                                n_va, psi_ob, n_ob, psi_vb,
-                                                n_vb, nonperiodic);
+            v_ab = use_ri ? internal::mo_eri_ovov_ab_ri(grid, psi_oa, n_oa,
+                                                        psi_va, n_va, psi_ob,
+                                                        n_ob, psi_vb, n_vb)
+                          : internal::mo_eri_ovov_ab(grid, psi_oa, n_oa, psi_va,
+                                                     n_va, psi_ob, n_ob, psi_vb,
+                                                     n_vb, nonperiodic);
 
         const std::vector<double> eps_oa(result_.eps.begin(),
                                          result_.eps.begin() + n_oa);
@@ -537,9 +528,9 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
                                          result_.eps.begin() + n_oa + n_va);
         const std::vector<double> eps_ob(result_.eps_beta.begin(),
                                          result_.eps_beta.begin() + n_ob);
-        const std::vector<double> eps_vb(
-            result_.eps_beta.begin() + n_ob,
-            result_.eps_beta.begin() + n_ob + n_vb);
+        const std::vector<double> eps_vb(result_.eps_beta.begin() + n_ob,
+                                         result_.eps_beta.begin() + n_ob
+                                             + n_vb);
 
         internal::DirectRpaAmplitudes rpa;
         internal::direct_rpa_uhf(v_aa, v_bb, v_ab, eps_oa, eps_va, eps_ob,
@@ -551,15 +542,13 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
 
         // V_iaσ(r) for each spin channel (periodic Coulomb; ρ_ia neutral).
         const std::vector<double> V_ov_a =
-            (n_oa > 0 && n_va > 0)
-                ? internal::mo_pair_potentials_ov(grid, psi_oa, n_oa, psi_va,
-                                                   n_va)
-                : std::vector<double>{};
+            (n_oa > 0 && n_va > 0) ? internal::mo_pair_potentials_ov(
+                                         grid, psi_oa, n_oa, psi_va, n_va)
+                                   : std::vector<double>{};
         const std::vector<double> V_ov_b =
-            (n_ob > 0 && n_vb > 0)
-                ? internal::mo_pair_potentials_ov(grid, psi_ob, n_ob, psi_vb,
-                                                   n_vb)
-                : std::vector<double>{};
+            (n_ob > 0 && n_vb > 0) ? internal::mo_pair_potentials_ov(
+                                         grid, psi_ob, n_ob, psi_vb, n_vb)
+                                   : std::vector<double>{};
 
         // W_s(g) = Σ_iaτ (X+Y)_iaτ^s V_iaτ(g)  (no √2 — spins explicit).
         // tdm_α[s,m,p] = w Σ_g W_s ψ_m^α ψ_p^α  (same-spin G_α W).
@@ -571,36 +560,33 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
         for (int s = 0; s < n_exc; ++s) {
             std::fill(Ws.begin(), Ws.end(), 0.0);
             for (int ia = 0; ia < nov_a; ++ia) {
-                const double z =
-                    rpa.X[static_cast<std::size_t>(s)
-                               * static_cast<std::size_t>(nov)
-                           + static_cast<std::size_t>(ia)]
-                    + rpa.Y[static_cast<std::size_t>(s)
-                                 * static_cast<std::size_t>(nov)
-                             + static_cast<std::size_t>(ia)];
+                const double z = rpa.X[static_cast<std::size_t>(s)
+                                           * static_cast<std::size_t>(nov)
+                                       + static_cast<std::size_t>(ia)]
+                                 + rpa.Y[static_cast<std::size_t>(s)
+                                             * static_cast<std::size_t>(nov)
+                                         + static_cast<std::size_t>(ia)];
                 if (z == 0.0)
                     continue;
-                const double* Via =
-                    V_ov_a.data()
-                    + static_cast<std::size_t>(ia)
-                          * static_cast<std::size_t>(npts);
+                const double* Via = V_ov_a.data()
+                                    + static_cast<std::size_t>(ia)
+                                          * static_cast<std::size_t>(npts);
                 for (long g = 0; g < npts; ++g)
                     Ws[static_cast<std::size_t>(g)] += z * Via[g];
             }
             for (int ia = 0; ia < nov_b; ++ia) {
                 const double z =
                     rpa.X[static_cast<std::size_t>(s)
-                               * static_cast<std::size_t>(nov)
-                           + static_cast<std::size_t>(nov_a + ia)]
+                              * static_cast<std::size_t>(nov)
+                          + static_cast<std::size_t>(nov_a + ia)]
                     + rpa.Y[static_cast<std::size_t>(s)
-                                 * static_cast<std::size_t>(nov)
-                             + static_cast<std::size_t>(nov_a + ia)];
+                                * static_cast<std::size_t>(nov)
+                            + static_cast<std::size_t>(nov_a + ia)];
                 if (z == 0.0)
                     continue;
-                const double* Via =
-                    V_ov_b.data()
-                    + static_cast<std::size_t>(ia)
-                          * static_cast<std::size_t>(npts);
+                const double* Via = V_ov_b.data()
+                                    + static_cast<std::size_t>(ia)
+                                          * static_cast<std::size_t>(npts);
                 for (long g = 0; g < npts; ++g)
                     Ws[static_cast<std::size_t>(g)] += z * Via[g];
             }
@@ -608,22 +594,20 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
                                    * static_cast<std::size_t>(n_mo_a)
                                    * static_cast<std::size_t>(n_mo_a);
             for (int m = 0; m < n_mo_a; ++m) {
-                const double* pm =
-                    psi_all_a.data()
-                    + static_cast<std::size_t>(m)
-                          * static_cast<std::size_t>(npts);
+                const double* pm = psi_all_a.data()
+                                   + static_cast<std::size_t>(m)
+                                         * static_cast<std::size_t>(npts);
                 for (int p = 0; p < n_mo_a; ++p) {
-                    const double* pp =
-                        psi_all_a.data()
-                        + static_cast<std::size_t>(p)
-                              * static_cast<std::size_t>(npts);
+                    const double* pp = psi_all_a.data()
+                                       + static_cast<std::size_t>(p)
+                                             * static_cast<std::size_t>(npts);
                     double acc = 0.0;
                     for (long g = 0; g < npts; ++g)
-                        acc += Ws[static_cast<std::size_t>(g)] * pm[g]
-                               * pp[g];
-                    tdm_a[s0 + static_cast<std::size_t>(m)
-                                   * static_cast<std::size_t>(n_mo_a)
-                               + static_cast<std::size_t>(p)] = gw * acc;
+                        acc += Ws[static_cast<std::size_t>(g)] * pm[g] * pp[g];
+                    tdm_a[s0
+                          + static_cast<std::size_t>(m)
+                                * static_cast<std::size_t>(n_mo_a)
+                          + static_cast<std::size_t>(p)] = gw * acc;
                 }
             }
         }
@@ -658,8 +642,8 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
                 + static_cast<std::size_t>(p) * static_cast<std::size_t>(npts);
             double acc = 0.0;
             for (long g = 0; g < npts; ++g)
-                acc += pp[g] * pp[g]
-                       * xc_spin.vxc_a[static_cast<std::size_t>(g)];
+                acc +=
+                    pp[g] * pp[g] * xc_spin.vxc_a[static_cast<std::size_t>(g)];
             vxc_diag_a[static_cast<std::size_t>(p)] = gw * acc;
         }
 
@@ -744,8 +728,8 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
             throw std::invalid_argument(
                 "GpwDft::g0w0: no virtual orbitals in the multi-k "
                 "result (n_mo_min = "
-                + std::to_string(n_mo_min) + ", n_occ = "
-                + std::to_string(n_occ) + ")");
+                + std::to_string(n_mo_min)
+                + ", n_occ = " + std::to_string(n_occ) + ")");
 
         int n_virt = n_mo_min - n_occ;
         if (mp2_n_virt > 0)
@@ -832,16 +816,14 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
         double min_mf_gap = 1e300;
         int k_report = 0;
         for (int ik = 0; ik < nk; ++ik) {
-            const double qp_g =
-                qp_k[static_cast<std::size_t>(ik)]
-                    [static_cast<std::size_t>(lumo)]
-                - qp_k[static_cast<std::size_t>(ik)]
-                      [static_cast<std::size_t>(homo)];
-            const double mf_g =
-                eps_k_full[static_cast<std::size_t>(ik)]
-                          [static_cast<std::size_t>(lumo)]
-                - eps_k_full[static_cast<std::size_t>(ik)]
-                            [static_cast<std::size_t>(homo)];
+            const double qp_g = qp_k[static_cast<std::size_t>(ik)]
+                                    [static_cast<std::size_t>(lumo)]
+                                - qp_k[static_cast<std::size_t>(ik)]
+                                      [static_cast<std::size_t>(homo)];
+            const double mf_g = eps_k_full[static_cast<std::size_t>(ik)]
+                                          [static_cast<std::size_t>(lumo)]
+                                - eps_k_full[static_cast<std::size_t>(ik)]
+                                            [static_cast<std::size_t>(homo)];
             if (qp_g < min_qp_gap) {
                 min_qp_gap = qp_g;
                 k_report = ik;
@@ -904,9 +886,9 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
     const double gap = result_.eps[static_cast<std::size_t>(n_occ)]
                        - result_.eps[static_cast<std::size_t>(n_occ - 1)];
     if (gap < kMinGapHa)
-        throw std::invalid_argument(
-            "GpwDft::g0w0: vanishing HOMO-LUMO gap (" + std::to_string(gap)
-            + " Ha < 1e-6) — dRPA (A−B) is singular");
+        throw std::invalid_argument("GpwDft::g0w0: vanishing HOMO-LUMO gap ("
+                                    + std::to_string(gap)
+                                    + " Ha < 1e-6) — dRPA (A−B) is singular");
 
     const bool periodic = !nonperiodic;
     const UniformGrid grid = make_uniform_grid(cell, cutoff_ry);
@@ -925,14 +907,13 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
     const long npts = grid.npts();
     const double gw = grid.weight();
 
-    std::vector<double> psi_occ(
-        static_cast<std::size_t>(n_occ) * static_cast<std::size_t>(npts));
-    std::vector<double> psi_virt(
-        static_cast<std::size_t>(n_virt) * static_cast<std::size_t>(npts));
+    std::vector<double> psi_occ(static_cast<std::size_t>(n_occ)
+                                * static_cast<std::size_t>(npts));
+    std::vector<double> psi_virt(static_cast<std::size_t>(n_virt)
+                                 * static_cast<std::size_t>(npts));
     for (int i = 0; i < n_occ; ++i)
         for (long g = 0; g < npts; ++g)
-            psi_occ[static_cast<std::size_t>(i)
-                        * static_cast<std::size_t>(npts)
+            psi_occ[static_cast<std::size_t>(i) * static_cast<std::size_t>(npts)
                     + static_cast<std::size_t>(g)] =
                 psi_all[static_cast<std::size_t>(i)
                             * static_cast<std::size_t>(npts)
@@ -948,9 +929,10 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
 
     const bool use_ri = mp2_ri && periodic;
     const std::vector<double> v_ovov =
-        use_ri ? internal::mo_eri_ovov_ri(grid, psi_occ, n_occ, psi_virt, n_virt)
-               : internal::mo_eri_ovov(grid, psi_occ, n_occ, psi_virt, n_virt,
-                                       nonperiodic);
+        use_ri
+            ? internal::mo_eri_ovov_ri(grid, psi_occ, n_occ, psi_virt, n_virt)
+            : internal::mo_eri_ovov(grid, psi_occ, n_occ, psi_virt, n_virt,
+                                    nonperiodic);
 
     const std::vector<double> eps_occ(result_.eps.begin(),
                                       result_.eps.begin() + n_occ);
@@ -963,8 +945,8 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
     const int nov = n_occ * n_virt;
 
     // V_ia(r) intermediates (periodic Coulomb; ρ_ia neutral).
-    const std::vector<double> V_ov = internal::mo_pair_potentials_ov(
-        grid, psi_occ, n_occ, psi_virt, n_virt);
+    const std::vector<double> V_ov =
+        internal::mo_pair_potentials_ov(grid, psi_occ, n_occ, psi_virt, n_virt);
 
     // Transition densities tdm[s, m, p] = Σ_ia √2 (X+Y)_ia^s (ia|mp)
     // Layout: [s][m][p] row-major, strides (n_mo*n_mo, n_mo, 1).
@@ -979,14 +961,13 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
     for (int s = 0; s < n_exc; ++s) {
         std::fill(Ws.begin(), Ws.end(), 0.0);
         for (int ia = 0; ia < nov; ++ia) {
-            const double z =
-                sqrt2
-                * (rpa.X[static_cast<std::size_t>(s)
-                             * static_cast<std::size_t>(nov)
-                         + static_cast<std::size_t>(ia)]
-                   + rpa.Y[static_cast<std::size_t>(s)
-                               * static_cast<std::size_t>(nov)
-                           + static_cast<std::size_t>(ia)]);
+            const double z = sqrt2
+                             * (rpa.X[static_cast<std::size_t>(s)
+                                          * static_cast<std::size_t>(nov)
+                                      + static_cast<std::size_t>(ia)]
+                                + rpa.Y[static_cast<std::size_t>(s)
+                                            * static_cast<std::size_t>(nov)
+                                        + static_cast<std::size_t>(ia)]);
             if (z == 0.0)
                 continue;
             const double* Via =
@@ -1003,16 +984,16 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
                 psi_all.data()
                 + static_cast<std::size_t>(m) * static_cast<std::size_t>(npts);
             for (int p = 0; p < n_mo; ++p) {
-                const double* pp =
-                    psi_all.data()
-                    + static_cast<std::size_t>(p)
-                          * static_cast<std::size_t>(npts);
+                const double* pp = psi_all.data()
+                                   + static_cast<std::size_t>(p)
+                                         * static_cast<std::size_t>(npts);
                 double acc = 0.0;
                 for (long g = 0; g < npts; ++g)
                     acc += Ws[static_cast<std::size_t>(g)] * pm[g] * pp[g];
-                tdm[s0 + static_cast<std::size_t>(m)
-                             * static_cast<std::size_t>(n_mo)
-                         + static_cast<std::size_t>(p)] = gw * acc;
+                tdm[s0
+                    + static_cast<std::size_t>(m)
+                          * static_cast<std::size_t>(n_mo)
+                    + static_cast<std::size_t>(p)] = gw * acc;
             }
         }
     }
@@ -1039,8 +1020,7 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
             + static_cast<std::size_t>(p) * static_cast<std::size_t>(npts);
         double acc = 0.0;
         for (long g = 0; g < npts; ++g)
-            acc +=
-                pp[g] * pp[g] * xc_grid.vxc_r[static_cast<std::size_t>(g)];
+            acc += pp[g] * pp[g] * xc_grid.vxc_r[static_cast<std::size_t>(g)];
         vxc_diag[static_cast<std::size_t>(p)] = gw * acc;
     }
 
@@ -1061,9 +1041,8 @@ const G0W0Result& GpwDft::g0w0(const std::vector<GpwAtom>& atoms) {
         const double vx_m_vxc = sigma_x[static_cast<std::size_t>(p)]
                                 - vxc_diag[static_cast<std::size_t>(p)];
         double qp = eps[static_cast<std::size_t>(p)];
-        const bool ok =
-            solve_qp(eps[static_cast<std::size_t>(p)], vx_m_vxc, p, n_occ,
-                     n_mo, eps, rpa.omega, tdm, qp);
+        const bool ok = solve_qp(eps[static_cast<std::size_t>(p)], vx_m_vxc, p,
+                                 n_occ, n_mo, eps, rpa.omega, tdm, qp);
         if (!ok)
             g0w0_result_.converged = false;
         g0w0_result_.qp_energy_ha[static_cast<std::size_t>(p)] = qp;

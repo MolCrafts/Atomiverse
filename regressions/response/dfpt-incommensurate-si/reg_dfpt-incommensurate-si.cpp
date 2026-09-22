@@ -116,18 +116,16 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         if (abs_w[static_cast<std::size_t>(k)] < kLo3Min
             || abs_w[static_cast<std::size_t>(k)] > kLo3Max) {
-            std::printf(
-                "FAIL: low |omega|[%d]=%.2f outside [%.0f, %.0f]\n", k,
-                abs_w[static_cast<std::size_t>(k)], kLo3Min, kLo3Max);
+            std::printf("FAIL: low |omega|[%d]=%.2f outside [%.0f, %.0f]\n", k,
+                        abs_w[static_cast<std::size_t>(k)], kLo3Min, kLo3Max);
             return 1;
         }
     }
     for (int k = 3; k < 6; ++k) {
         if (abs_w[static_cast<std::size_t>(k)] < kHi3Min
             || abs_w[static_cast<std::size_t>(k)] > kHi3Max) {
-            std::printf(
-                "FAIL: high |omega|[%d]=%.2f outside [%.0f, %.0f]\n", k,
-                abs_w[static_cast<std::size_t>(k)], kHi3Min, kHi3Max);
+            std::printf("FAIL: high |omega|[%d]=%.2f outside [%.0f, %.0f]\n", k,
+                        abs_w[static_cast<std::size_t>(k)], kHi3Min, kHi3Max);
             return 1;
         }
     }

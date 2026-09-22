@@ -37,9 +37,7 @@ constexpr double kDegaussRy = 0.02;
 
 enum class Device { Cpu, Cuda };
 
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
@@ -204,6 +202,7 @@ int main(int argc, char** argv) {
         std::printf("FAIL: cuda-pw-metallic-smear\n");
         return 1;
     }
-    std::printf("PASS: cuda-pw-metallic-smear (FCC Al Fermi–Dirac dual-gate)\n");
+    std::printf(
+        "PASS: cuda-pw-metallic-smear (FCC Al Fermi–Dirac dual-gate)\n");
     return 0;
 }

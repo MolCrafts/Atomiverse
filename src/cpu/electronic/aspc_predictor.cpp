@@ -110,9 +110,8 @@ bool ASPCPredictorCplx::predict(linalg::CplxMatrix& P_predicted) const {
     using Cplx = std::complex<double>;
     P_predicted = xt::zeros_like(history_.back());
     for (int k = 0; k <= K_; ++k)
-        P_predicted +=
-            Cplx(omega_[static_cast<std::size_t>(k)])
-            * history_[static_cast<std::size_t>(offset + k)];
+        P_predicted += Cplx(omega_[static_cast<std::size_t>(k)])
+                       * history_[static_cast<std::size_t>(offset + k)];
     return true;
 }
 

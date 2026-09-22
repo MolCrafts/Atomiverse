@@ -409,8 +409,9 @@ so_ccsd_kernel(int no, int nv, xt::xtensor<double, 4> oooo,
     return sol;
 }
 
-CCSDSolution ccsd_solve(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                        double e_scf_ha, double tol, int max_iter, bool cc2) {
+CCSDSolution ccsd_solve(const internal::IntegralView& ints,
+                        const SlaterDeterminant& det, double e_scf_ha,
+                        double tol, int max_iter, bool cc2) {
     using Spin = SlaterDeterminant::Spin;
     if (ints.ERI.size() == 0) {
         throw std::invalid_argument(
@@ -964,17 +965,18 @@ CCSDSolution ccsd_solve(const internal::IntegralView& ints, const SlaterDetermin
     return sol;
 }
 
-CCSDResult ccsd_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                       double e_scf_ha, double tol, int max_iter,
-                       bool use_diis) {
+CCSDResult ccsd_energy(const internal::IntegralView& ints,
+                       const SlaterDeterminant& det, double e_scf_ha,
+                       double tol, int max_iter, bool use_diis) {
     // Closed-shell RHF energy entry: route to the spatial-orbital fast path
     // (n_o²·n_v² storage, no spin expansion). The spin-orbital `ccsd_solve`
     // stays the oracle + the backbone for EOM/(T)/CC2/gradient/UCCSD.
     return ccsd_energy_spatial(ints, det, e_scf_ha, tol, max_iter, use_diis);
 }
 
-CC2Result cc2_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                     double e_scf_ha, double tol, int max_iter) {
+CC2Result cc2_energy(const internal::IntegralView& ints,
+                     const SlaterDeterminant& det, double e_scf_ha, double tol,
+                     int max_iter) {
     const CCSDResult r =
         ccsd_solve(ints, det, e_scf_ha, tol, max_iter, /*cc2=*/true).result;
     return CC2Result{r.e_corr, r.e_tot, r.iterations, r.converged};
@@ -1007,8 +1009,9 @@ xt::xtensor<double, 4> ao2mo_uhf_block(const xt::xtensor<double, 4>& eri_ao,
 
 } // namespace
 
-CCSDSolution uccsd_solve(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                         double e_scf_ha, double tol, int max_iter) {
+CCSDSolution uccsd_solve(const internal::IntegralView& ints,
+                         const SlaterDeterminant& det, double e_scf_ha,
+                         double tol, int max_iter) {
     using Spin = SlaterDeterminant::Spin;
     if (ints.ERI.size() == 0) {
         throw std::invalid_argument(

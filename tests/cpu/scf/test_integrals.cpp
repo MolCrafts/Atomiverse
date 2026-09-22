@@ -228,7 +228,8 @@ TEST(NativeIntegrals, RegressionValues_H2) {
 
 TEST(NativeIntegrals, IntegralWorkspace_Sanity) {
     auto frame = make_h2(double(0.74));
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
 
     EXPECT_NEAR(static_cast<double>(pack.S(0, 0)), 1.0, 0.01);
     EXPECT_NEAR(static_cast<double>(pack.V_nuc), kRefVnuc, 0.01);
@@ -258,7 +259,8 @@ TEST(NativeIntegrals, MultiGeometry_IntegralWorkspace) {
     double bond_lengths[] = {0.5, 0.74, 1.0, 1.5, 2.0};
     for (double bl : bond_lengths) {
         auto frame = make_h2(double(bl));
-        auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+        auto pack = cpu::scf::internal::IntegralWorkspace{
+            frame, cpu::scf::BasisSet::STO3G};
         // S diagonal must be ~1 regardless of geometry
         EXPECT_NEAR(static_cast<double>(pack.S(0, 0)), 1.0, 0.01)
             << "S(0,0) != 1.0 at bond_length=" << bl;
@@ -327,7 +329,8 @@ cpu::Frame make_ch4() {
 
 TEST(NativeIntegrals, H2O_IntegralWorkspace_Sanity) {
     auto frame = make_h2o();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // O: 1s + 2s + 2px + 2py + 2pz = 5, each H: 1s = 1
     EXPECT_EQ(pack.n_basis, 7);
     EXPECT_EQ(pack.n_electrons, 10);
@@ -345,7 +348,8 @@ TEST(NativeIntegrals, H2O_IntegralWorkspace_Sanity) {
 
 TEST(NativeIntegrals, CH4_IntegralWorkspace_Sanity) {
     auto frame = make_ch4();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // C: 5 bf, 4 H: 1 bf each = 9 total
     EXPECT_EQ(pack.n_basis, 9);
     EXPECT_EQ(pack.n_electrons, 10);
@@ -357,7 +361,8 @@ TEST(NativeIntegrals, CH4_IntegralWorkspace_Sanity) {
 TEST(NativeIntegrals, PType_SelfOverlap) {
     // px should have <px|px> = 1 for a properly normalized shell
     auto frame = make_h2o();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // Basis order for O: 1s(0), 2s(1), 2px(2), 2py(3), 2pz(4), H1(5), H2(6)
     EXPECT_NEAR(static_cast<double>(pack.S(2, 2)), 1.0, 0.01) << "<px|px> != 1";
     EXPECT_NEAR(static_cast<double>(pack.S(3, 3)), 1.0, 0.01) << "<py|py> != 1";
@@ -367,7 +372,8 @@ TEST(NativeIntegrals, PType_SelfOverlap) {
 TEST(NativeIntegrals, PType_Orthogonality) {
     // px, py, pz on the SAME center should be orthogonal
     auto frame = make_h2o();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     EXPECT_NEAR(static_cast<double>(pack.S(2, 3)), 0.0, 1e-10)
         << "<px|py> != 0";
     EXPECT_NEAR(static_cast<double>(pack.S(2, 4)), 0.0, 1e-10)
@@ -378,7 +384,8 @@ TEST(NativeIntegrals, PType_Orthogonality) {
 
 /// @brief Verify block-level g_rhf matches AO-level g_rhf for a given frame.
 static void compare_g_ao_vs_block(const cpu::Frame& frame, const char* label) {
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     int n = pack.n_basis;
 
     // Dense test density with off-diagonal elements to exercise all contributions.
@@ -409,7 +416,6 @@ TEST(NativeIntegrals, BlockG_H2O) { compare_g_ao_vs_block(make_h2o(), "H2O"); }
 TEST(NativeIntegrals, BlockG_CH4) { compare_g_ao_vs_block(make_ch4(), "CH4"); }
 
 TEST(NativeIntegrals, BlockG_H2) { compare_g_ao_vs_block(make_h2(0.74), "H2"); }
-
 
 #else // !ATV_HAS_HF
 

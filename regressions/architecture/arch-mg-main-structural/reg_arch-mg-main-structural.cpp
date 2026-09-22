@@ -30,8 +30,8 @@ ATV::cpu::gpw::GridBasisFunction s_gauss(double alpha, double cx, double cy,
 } // namespace
 
 int main() {
-    using ATV::cpu::gpw::GpwDft;
     using ATV::cpu::gpw::build_products;
+    using ATV::cpu::gpw::GpwDft;
     using ATV::cpu::gpw::make_multigrid;
     using ATV::cpu::gpw::multigrid_collocate_rho;
     using ATV::cpu::gpw::multigrid_integrate_veff;
@@ -42,7 +42,8 @@ int main() {
     method.rel_cutoff = 60.0;
     method.cutoff_ry = 150.0;
     if (method.ngrids != 4 || !(method.rel_cutoff > 0.0)) {
-        std::fprintf(stderr, "FAIL: GpwDft ngrids/rel_cutoff surface missing\n");
+        std::fprintf(stderr,
+                     "FAIL: GpwDft ngrids/rel_cutoff surface missing\n");
         return 1;
     }
 
@@ -87,8 +88,8 @@ int main() {
     }
     q *= mg.levels[0].weight();
     if (!(q > 0.0)) {
-        std::fprintf(stderr, "FAIL: fine density integral not positive (q=%g)\n",
-                     q);
+        std::fprintf(stderr,
+                     "FAIL: fine density integral not positive (q=%g)\n", q);
         return 1;
     }
 
@@ -105,7 +106,7 @@ int main() {
         }
     }
 
-    std::printf(
-        "PASS arch-mg-main-structural: MAIN multi-level product path helpers\n");
+    std::printf("PASS arch-mg-main-structural: MAIN multi-level product path "
+                "helpers\n");
     return 0;
 }

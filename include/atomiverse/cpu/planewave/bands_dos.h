@@ -68,13 +68,13 @@ struct BandsResult {
     int nspin = 1;
     /// \(N_\uparrow - N_\downarrow\) (fixed occupations; 0 when restricted).
     double magnetization = 0;
-    double e_vbm_ry = 0;        ///< Valence-band maximum [Ry].
-    double e_cbm_ry = 0;        ///< Conduction-band minimum [Ry].
-    double gap_ry = 0;          ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ry].
-    int vbm_k = 0;              ///< k-index of VBM.
-    int cbm_k = 0;              ///< k-index of CBM.
-    int vbm_band = 0;           ///< Band index of VBM (0-based).
-    int cbm_band = 0;           ///< Band index of CBM (0-based).
+    double e_vbm_ry = 0; ///< Valence-band maximum [Ry].
+    double e_cbm_ry = 0; ///< Conduction-band minimum [Ry].
+    double gap_ry = 0;   ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ry].
+    int vbm_k = 0;       ///< k-index of VBM.
+    int cbm_k = 0;       ///< k-index of CBM.
+    int vbm_band = 0;    ///< Band index of VBM (0-based).
+    int cbm_band = 0;    ///< Band index of CBM (0-based).
     /// Spin channel of VBM/CBM (0=α, 1=β); 0 when restricted.
     int vbm_spin = 0;
     int cbm_spin = 0;
@@ -105,9 +105,10 @@ struct DosResult {
     /// (target \(\approx n_e\)). For fixed occupations \(E_\ast=E_\mathrm{vbm}\);
     /// for metallic smearing \(E_\ast=E_F\) (`e_fermi_ry`).
     double n_elec_to_vbm = 0;
-    double e_vbm_ry = 0;  ///< Valence-band maximum [Ry] (fixed-occ / gapped).
-    double e_cbm_ry = 0;  ///< Conduction-band minimum [Ry].
-    double gap_ry = 0;    ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ry] (0 if no empty).
+    double e_vbm_ry = 0; ///< Valence-band maximum [Ry] (fixed-occ / gapped).
+    double e_cbm_ry = 0; ///< Conduction-band minimum [Ry].
+    double gap_ry =
+        0; ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ry] (0 if no empty).
     double e_fermi_ry = 0; ///< Fermi level [Ry] (0 if fixed occupations).
     bool scf_converged = false;
     /// @brief SCF free energy \(F\) (smear) or total energy [Ry].

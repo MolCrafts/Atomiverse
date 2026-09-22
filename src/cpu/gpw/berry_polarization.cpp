@@ -71,10 +71,8 @@ Cdouble prim_overlap_phase(const GridPrimitive& a, const GridPrimitive& b,
     const double Rp[3] = {(a.alpha * a.center[0] + b.alpha * b.center[0]) / p,
                           (a.alpha * a.center[1] + b.alpha * b.center[1]) / p,
                           (a.alpha * a.center[2] + b.alpha * b.center[2]) / p};
-    const double b2 =
-        bvec[0] * bvec[0] + bvec[1] * bvec[1] + bvec[2] * bvec[2];
-    const double phase =
-        bvec[0] * Rp[0] + bvec[1] * Rp[1] + bvec[2] * Rp[2];
+    const double b2 = bvec[0] * bvec[0] + bvec[1] * bvec[1] + bvec[2] * bvec[2];
+    const double phase = bvec[0] * Rp[0] + bvec[1] * Rp[1] + bvec[2] * Rp[2];
     const double damp = std::exp(-b2 / (4.0 * p));
     return Cdouble{s, 0.0} * damp * std::exp(-I * phase);
 }
@@ -106,16 +104,15 @@ void build_S_cross(const std::vector<GridBasisFunction>& basis,
                             e -= L[d] * std::nearbyint(e / L[d]);
                         d2 += e * e;
                     }
-                    best = std::max(
-                        best, std::abs(p.coeff * q.coeff)
-                                  * std::exp(-p.alpha * q.alpha
-                                             / (p.alpha + q.alpha) * d2));
+                    best = std::max(best,
+                                    std::abs(p.coeff * q.coeff)
+                                        * std::exp(-p.alpha * q.alpha
+                                                   / (p.alpha + q.alpha) * d2));
                 }
             if (best < screen)
                 continue;
-            const double reach =
-                radii[static_cast<std::size_t>(i)]
-                + radii[static_cast<std::size_t>(j)];
+            const double reach = radii[static_cast<std::size_t>(i)]
+                                 + radii[static_cast<std::size_t>(j)];
             const double reach2 = reach * reach;
             const double* ac = a[0].center;
             const double* bc = b[0].center;
@@ -195,8 +192,7 @@ std::vector<Cdouble> flatten_C_occ(const GpwResult& res, int ik, int nbas,
     if (!occ_stack.empty() && static_cast<int>(occ_stack.size()) > ik
         && !occ_stack[static_cast<std::size_t>(ik)].empty()) {
         const auto& raw = occ_stack[static_cast<std::size_t>(ik)];
-        const int ncol =
-            static_cast<int>(raw.size()) / std::max(nbas, 1);
+        const int ncol = static_cast<int>(raw.size()) / std::max(nbas, 1);
         const int nuse = std::min(n_occ, ncol);
         for (int mu = 0; mu < nbas; ++mu)
             for (int o = 0; o < nuse; ++o)
@@ -220,11 +216,12 @@ std::vector<Cdouble> flatten_C_occ(const GpwResult& res, int ik, int nbas,
 }
 
 /// String-averaged Berry phase for one occupied channel on a string mesh.
-double string_phase_channel(
-    const GpwResult& res, int n_occ, int spin, int dir, int k_string,
-    int k_perp, const std::vector<GridBasisFunction>& basis,
-    const std::vector<double>& radii, const double cell[3], const int mimg[3],
-    double screen) {
+double string_phase_channel(const GpwResult& res, int n_occ, int spin, int dir,
+                            int k_string, int k_perp,
+                            const std::vector<GridBasisFunction>& basis,
+                            const std::vector<double>& radii,
+                            const double cell[3], const int mimg[3],
+                            double screen) {
     const int J = k_string;
     const int n_strings = k_perp * k_perp;
     const int nbas = static_cast<int>(basis.size());
@@ -232,8 +229,8 @@ double string_phase_channel(
     if (nk != n_strings * J)
         throw std::runtime_error(
             "BerryPolarization: string-mesh n_kpts mismatch (got "
-            + std::to_string(nk) + ", want "
-            + std::to_string(n_strings * J) + ")");
+            + std::to_string(nk) + ", want " + std::to_string(n_strings * J)
+            + ")");
 
     // Short reciprocal step along `dir` [1/Bohr]: b = 2π / (L_dir * J).
     double b_bohr[3] = {0, 0, 0};
@@ -261,7 +258,8 @@ double string_phase_channel(
             dets[static_cast<std::size_t>(j)] = det_lu(M, n_occ);
         }
         phis.push_back(phase_from_link_dets(dets));
-        ATV_DEBUG_CAT("gpw", "berry dir={} spin={} n_occ={} string={} phi={:+.6f}",
+        ATV_DEBUG_CAT("gpw",
+                      "berry dir={} spin={} n_occ={} string={} phi={:+.6f}",
                       dir, spin, n_occ, s, phis.back());
     }
 

@@ -56,8 +56,9 @@ class RhfScfCycle {
 
     /// @brief RHF from GPU-native molecular s+p shells.
     RhfScfCycle(int n_shells, int n_ao, int n_prim, const double* alpha_mol,
-                const double* coeff_mol, const int* L_mol, const int* atom_of_mol,
-                int n_occ, double tol, int max_iter, double level_shift = 0.0);
+                const double* coeff_mol, const int* L_mol,
+                const int* atom_of_mol, int n_occ, double tol, int max_iter,
+                double level_shift = 0.0);
 
     /// @brief One-time device workspace allocation.
     void build(void* stream, cuda::Frame& frame);

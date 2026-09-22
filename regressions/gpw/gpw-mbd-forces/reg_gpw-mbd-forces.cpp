@@ -71,11 +71,9 @@ int main() {
         for (int d = 0; d < 3; ++d) {
             const double save = pos_fd[i][d];
             pos_fd[i][d] = save + h;
-            const double ep =
-                mbd_rsscs_pbe(Z, pos_fd, cell0, false).energy;
+            const double ep = mbd_rsscs_pbe(Z, pos_fd, cell0, false).energy;
             pos_fd[i][d] = save - h;
-            const double em =
-                mbd_rsscs_pbe(Z, pos_fd, cell0, false).energy;
+            const double em = mbd_rsscs_pbe(Z, pos_fd, cell0, false).energy;
             pos_fd[i][d] = save;
             const double fd = -(ep - em) / (2.0 * h);
             max_err = std::max(max_err, std::abs(fd - mbd.forces[i][d]));
@@ -129,9 +127,8 @@ int main() {
     const auto& res = gpw.run(atoms);
     if (!std::isfinite(res.e_disp)
         || std::abs(res.e_disp - kEDispRef) > kETol) {
-        std::fprintf(stderr,
-                     "FAIL: GpwDft e_disp got=%.14e want=%.14e\n", res.e_disp,
-                     kEDispRef);
+        std::fprintf(stderr, "FAIL: GpwDft e_disp got=%.14e want=%.14e\n",
+                     res.e_disp, kEDispRef);
         return 1;
     }
     if (!std::isfinite(res.e_total)) {
@@ -139,11 +136,10 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: MBD@rsSCS free-atom water dimer E_disp=%.14e Ha "
-        "(libMBD pin); max|F-F_fd|=%.2e Ha/Bohr; |sum F|=%.2e; "
-        "F_O0=(%.6e, %.6e, %.6e) Ha/Bohr; e_total=%.8f Ha (iters=%d)\n",
-        mbd.energy, max_err, sum_norm, mbd.forces[0][0], mbd.forces[0][1],
-        mbd.forces[0][2], res.e_total, res.iters);
+    std::printf("PASS: MBD@rsSCS free-atom water dimer E_disp=%.14e Ha "
+                "(libMBD pin); max|F-F_fd|=%.2e Ha/Bohr; |sum F|=%.2e; "
+                "F_O0=(%.6e, %.6e, %.6e) Ha/Bohr; e_total=%.8f Ha (iters=%d)\n",
+                mbd.energy, max_err, sum_norm, mbd.forces[0][0],
+                mbd.forces[0][1], mbd.forces[0][2], res.e_total, res.iters);
     return 0;
 }

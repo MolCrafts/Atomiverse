@@ -193,8 +193,7 @@ inline void hermite_ensure(HermiteTab& hx, HermiteTab& hy, HermiteTab& hz,
 
 /// 1D kinetic with known b (ket exponent).
 inline double kinetic_1d_tab(HermiteTab& h, int i, int j, double b) {
-    double t = -2.0 * b * b * h.S1d(i, j + 2)
-               + b * (2 * j + 1) * h.S1d(i, j);
+    double t = -2.0 * b * b * h.S1d(i, j + 2) + b * (2 * j + 1) * h.S1d(i, j);
     if (j >= 2)
         t -= 0.5 * j * (j - 1) * h.S1d(i, j - 2);
     return t;
@@ -265,7 +264,8 @@ struct SsPairPack {
                 aa[np] = pa.alpha;
                 ab[np] = pb.alpha;
                 mu[np] = m;
-                pref[np] = pa.coeff * pb.coeff * pi_over_p * std::sqrt(pi_over_p);
+                pref[np] =
+                    pa.coeff * pb.coeff * pi_over_p * std::sqrt(pi_over_p);
                 ++np;
             }
         }
@@ -294,8 +294,8 @@ inline void contracted_ST_ss_simd(const GridBasisFunction& a,
         for (const auto& pa : a) {
             for (const auto& pb : b) {
                 double s_p = 0.0, t_p = 0.0;
-                st_ss(pa.alpha, pb.alpha, pa.center, bc, pa.coeff, pb.coeff, s_p,
-                      t_p);
+                st_ss(pa.alpha, pb.alpha, pa.center, bc, pa.coeff, pb.coeff,
+                      s_p, t_p);
                 s += s_p;
                 t += t_p;
             }
@@ -354,8 +354,8 @@ inline bool image_in_reach(const double ac[3], const double bc[3],
 /// Pack live lattice images + precomputed r² into a caller buffer.
 /// @return number of live images written (≤ nmax).
 inline int pack_live_images_r2(const double ac[3], const double bc[3],
-                               const double L[3], const int m[3],
-                               double reach2, double* r2, int nmax) {
+                               const double L[3], const int m[3], double reach2,
+                               double* r2, int nmax) {
     int n = 0;
     for (int tx = -m[0]; tx <= m[0]; ++tx)
         for (int ty = -m[1]; ty <= m[1]; ++ty)
@@ -533,8 +533,8 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
                     continue;
                 if (na_g < 64)
                     ia_list[na_g++] = ia;
-                imax = std::max(
-                    imax, std::max(pa.l[0], std::max(pa.l[1], pa.l[2])));
+                imax = std::max(imax,
+                                std::max(pa.l[0], std::max(pa.l[1], pa.l[2])));
                 if (pa.l[0] || pa.l[1] || pa.l[2])
                     all_ss = false;
             }
@@ -575,20 +575,17 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
                             const batch_t r2_v =
                                 dx_v * dx_v + dy_v * dy_v + dz_v * dz_v;
                             const batch_t S =
-                                batch_t(pref)
-                                * xsimd::exp(batch_t(-mu) * r2_v);
-                            const batch_t T = batch_t(mu)
-                                              * (three - two * batch_t(mu)
-                                                             * r2_v)
-                                              * S;
+                                batch_t(pref) * xsimd::exp(batch_t(-mu) * r2_v);
+                            const batch_t T =
+                                batch_t(mu) * (three - two * batch_t(mu) * r2_v)
+                                * S;
                             acc_s += S;
                             acc_t += T;
                         }
                         s += xsimd::reduce_add(acc_s);
                         t += xsimd::reduce_add(acc_t);
                         for (; im < nimg; ++im) {
-                            const double r2 = dx[im] * dx[im]
-                                              + dy[im] * dy[im]
+                            const double r2 = dx[im] * dx[im] + dy[im] * dy[im]
                                               + dz[im] * dz[im];
                             const double S = pref * std::exp(-mu * r2);
                             s += S;
@@ -602,8 +599,7 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
             const int jmax = jmax_l + 2;
             if (imax > kHermSimdAng || jmax > kHermSimdAng) {
                 for (int ka = 0; ka < na_g; ++ka) {
-                    const auto& pa =
-                        a[static_cast<std::size_t>(ia_list[ka])];
+                    const auto& pa = a[static_cast<std::size_t>(ia_list[ka])];
                     for (int kb = 0; kb < nb_g; ++kb) {
                         const auto& pb =
                             b[static_cast<std::size_t>(ib_list[kb])];
@@ -612,12 +608,9 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
                                                    pa.center[1] - dy[im],
                                                    pa.center[2] - dz[im]};
                             HermiteTab hx_s, hy_s, hz_s;
-                            hx_s.init(pa.alpha, pb.alpha, pa.center[0],
-                                      bcs[0]);
-                            hy_s.init(pa.alpha, pb.alpha, pa.center[1],
-                                      bcs[1]);
-                            hz_s.init(pa.alpha, pb.alpha, pa.center[2],
-                                      bcs[2]);
+                            hx_s.init(pa.alpha, pb.alpha, pa.center[0], bcs[0]);
+                            hy_s.init(pa.alpha, pb.alpha, pa.center[1], bcs[1]);
+                            hz_s.init(pa.alpha, pb.alpha, pa.center[2], bcs[2]);
                             const int ifill = std::min(kMaxAng, imax);
                             const int jfill = std::min(kMaxAng, jmax);
                             hx_s.fill_upto(ifill, jfill);
@@ -628,19 +621,15 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
                                 double tt =
                                     -2.0 * b_exp * b_exp
                                         * h.S1d_filled(i, j + 2)
-                                    + b_exp * (2 * j + 1)
-                                          * h.S1d_filled(i, j);
+                                    + b_exp * (2 * j + 1) * h.S1d_filled(i, j);
                                 if (j >= 2)
                                     tt -= 0.5 * j * (j - 1)
                                           * h.S1d_filled(i, j - 2);
                                 return tt;
                             };
-                            const double sx =
-                                hx_s.S1d_filled(pa.l[0], pb.l[0]);
-                            const double sy =
-                                hy_s.S1d_filled(pa.l[1], pb.l[1]);
-                            const double sz =
-                                hz_s.S1d_filled(pa.l[2], pb.l[2]);
+                            const double sx = hx_s.S1d_filled(pa.l[0], pb.l[0]);
+                            const double sy = hy_s.S1d_filled(pa.l[1], pb.l[1]);
+                            const double sz = hz_s.S1d_filled(pa.l[2], pb.l[2]);
                             const double tx =
                                 kin1d(hx_s, pa.l[0], pb.l[0], pb.alpha);
                             const double ty =
@@ -650,8 +639,7 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
                             const double c = pa.coeff * pb.coeff;
                             s += c * sx * sy * sz;
                             t += c
-                                 * (tx * sy * sz + sx * ty * sz
-                                    + sx * sy * tz);
+                                 * (tx * sy * sz + sx * ty * sz + sx * sy * tz);
                         }
                     }
                 }
@@ -667,8 +655,7 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
                 hy.fill(xab_y, pa0.alpha, pb0.alpha, imax, jmax);
                 hz.fill(xab_z, pa0.alpha, pb0.alpha, imax, jmax);
                 for (int ka = 0; ka < na_g; ++ka) {
-                    const auto& pa =
-                        a[static_cast<std::size_t>(ia_list[ka])];
+                    const auto& pa = a[static_cast<std::size_t>(ia_list[ka])];
                     for (int kb = 0; kb < nb_g; ++kb) {
                         const auto& pb =
                             b[static_cast<std::size_t>(ib_list[kb])];
@@ -708,17 +695,13 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
                     return tt;
                 };
                 for (int ka = 0; ka < na_g; ++ka) {
-                    const auto& pa =
-                        a[static_cast<std::size_t>(ia_list[ka])];
+                    const auto& pa = a[static_cast<std::size_t>(ia_list[ka])];
                     for (int kb = 0; kb < nb_g; ++kb) {
                         const auto& pb =
                             b[static_cast<std::size_t>(ib_list[kb])];
-                        const double sx =
-                            hx_s.S1d_filled(pa.l[0], pb.l[0]);
-                        const double sy =
-                            hy_s.S1d_filled(pa.l[1], pb.l[1]);
-                        const double sz =
-                            hz_s.S1d_filled(pa.l[2], pb.l[2]);
+                        const double sx = hx_s.S1d_filled(pa.l[0], pb.l[0]);
+                        const double sy = hy_s.S1d_filled(pa.l[1], pb.l[1]);
+                        const double sz = hz_s.S1d_filled(pa.l[2], pb.l[2]);
                         const double tx =
                             kin1d(hx_s, pa.l[0], pb.l[0], pb.alpha);
                         const double ty =
@@ -727,8 +710,7 @@ inline void contracted_ST_angular_images_simd(const GridBasisFunction& a,
                             kin1d(hz_s, pa.l[2], pb.l[2], pb.alpha);
                         const double c = pa.coeff * pb.coeff;
                         s += c * sx * sy * sz;
-                        t += c
-                             * (tx * sy * sz + sx * ty * sz + sx * sy * tz);
+                        t += c * (tx * sy * sz + sx * ty * sz + sx * sy * tz);
                     }
                 }
             }
@@ -798,8 +780,7 @@ inline void contracted_ST_ss_images_simd(const GridBasisFunction& a,
                     const double mu = pa.alpha * pb.alpha / p;
                     const double pi_over_p = M_PI / p;
                     const double S = pa.coeff * pb.coeff * pi_over_p
-                                     * std::sqrt(pi_over_p)
-                                     * std::exp(-mu * r);
+                                     * std::sqrt(pi_over_p) * std::exp(-mu * r);
                     s += S;
                     t += mu * (3.0 - 2.0 * mu * r) * S;
                 }
@@ -867,8 +848,7 @@ inline void contracted_ST_periodic_impl(const GridBasisFunction& a,
     constexpr int kSimdImgMin = static_cast<int>(batch_t::size);
 
     if (basis_is_pure_s(a) && basis_is_pure_s(b)) {
-        const int nimg_est =
-            (2 * m[0] + 1) * (2 * m[1] + 1) * (2 * m[2] + 1);
+        const int nimg_est = (2 * m[0] + 1) * (2 * m[1] + 1) * (2 * m[2] + 1);
         // Tiny image windows (four fair twins): stay on scalar.
         if (nimg_est < kSimdImgMin) {
             contracted_ST_ss_images_scalar(a, b, L, m, reach2, s_out, t_out);
@@ -898,8 +878,7 @@ inline void contracted_ST_periodic_impl(const GridBasisFunction& a,
             for (int im = 0; im < nimg; ++im) {
                 const double r = r2_live[im];
                 for (int ip = 0; ip < pack.np; ++ip) {
-                    const double S =
-                        pack.pref[ip] * std::exp(-pack.mu[ip] * r);
+                    const double S = pack.pref[ip] * std::exp(-pack.mu[ip] * r);
                     s += S;
                     t += pack.mu[ip] * (3.0 - 2.0 * pack.mu[ip] * r) * S;
                 }
@@ -917,9 +896,9 @@ inline void contracted_ST_periodic_impl(const GridBasisFunction& a,
     const int nimg_est = (2 * m[0] + 1) * (2 * m[1] + 1) * (2 * m[2] + 1);
     const int max_la = basis_max_cart_l(a);
     const int max_lb = basis_max_cart_l(b);
-    const bool hermite_simd_ok =
-        nimg_est >= kSimdImgMin && max_la <= 2 && max_lb <= 2
-        && basis_same_center(a) && basis_same_center(b);
+    const bool hermite_simd_ok = nimg_est >= kSimdImgMin && max_la <= 2
+                                 && max_lb <= 2 && basis_same_center(a)
+                                 && basis_same_center(b);
 
     if (hermite_simd_ok) {
         constexpr int kImgMax = 512;
@@ -974,8 +953,8 @@ inline void contracted_ST_periodic_impl(const GridBasisFunction& a,
 
 double prim_overlap(const GridPrimitive& a, const GridPrimitive& b) {
     // Pure s–s: closed form (matches prim_ST).
-    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0
-        && b.l[1] == 0 && b.l[2] == 0) {
+    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0 && b.l[1] == 0
+        && b.l[2] == 0) {
         double s = 0.0, t = 0.0;
         st_ss(a.alpha, b.alpha, a.center, b.center, a.coeff, b.coeff, s, t);
         (void)t;
@@ -989,8 +968,8 @@ double prim_overlap(const GridPrimitive& a, const GridPrimitive& b) {
 }
 
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b) {
-    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0
-        && b.l[1] == 0 && b.l[2] == 0) {
+    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0 && b.l[1] == 0
+        && b.l[2] == 0) {
         double s = 0.0, t = 0.0;
         st_ss(a.alpha, b.alpha, a.center, b.center, a.coeff, b.coeff, s, t);
         (void)s;
@@ -1011,8 +990,8 @@ double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b) {
 void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
              double& t_out) {
     // s–s fast path: no Hermite table (does not touch geometry key).
-    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0
-        && b.l[1] == 0 && b.l[2] == 0) {
+    if (a.l[0] == 0 && a.l[1] == 0 && a.l[2] == 0 && b.l[0] == 0 && b.l[1] == 0
+        && b.l[2] == 0) {
         st_ss(a.alpha, b.alpha, a.center, b.center, a.coeff, b.coeff, s_out,
               t_out);
         return;
@@ -1024,10 +1003,8 @@ void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
                  a.alpha, b.alpha, a.coeff, b.coeff, s_out, t_out);
 }
 
-
-void contracted_ST_shift(const GridBasisFunction& a,
-                         const GridBasisFunction& b, const double T[3],
-                         double& s_out, double& t_out) {
+void contracted_ST_shift(const GridBasisFunction& a, const GridBasisFunction& b,
+                         const double T[3], double& s_out, double& t_out) {
     // Pure s–s: portable xsimd over flattened monom pairs (shared r²).
     // Dominant on H shells and multi-k STVnl image sweeps that land on s.
     if (basis_is_pure_s(a) && basis_is_pure_s(b)) {
@@ -1055,8 +1032,8 @@ void contracted_ST_shift(const GridBasisFunction& a,
             double s_p = 0.0, t_p = 0.0;
             if (pa.l[0] == 0 && pa.l[1] == 0 && pa.l[2] == 0 && pb.l[0] == 0
                 && pb.l[1] == 0 && pb.l[2] == 0) {
-                st_ss(pa.alpha, pb.alpha, pa.center, bc, pa.coeff, pb.coeff, s_p,
-                      t_p);
+                st_ss(pa.alpha, pb.alpha, pa.center, bc, pa.coeff, pb.coeff,
+                      s_p, t_p);
                 s += s_p;
                 t += t_p;
                 continue;
@@ -1073,7 +1050,8 @@ void contracted_ST_shift(const GridBasisFunction& a,
                     const auto& qa = a[static_cast<std::size_t>(ja)];
                     if (qa.alpha != pa.alpha)
                         continue;
-                    if (qa.center[0] != pa.center[0] || qa.center[1] != pa.center[1]
+                    if (qa.center[0] != pa.center[0]
+                        || qa.center[1] != pa.center[1]
                         || qa.center[2] != pa.center[2])
                         continue;
                     max_la = std::max(
@@ -1114,7 +1092,6 @@ void contracted_ST_shift(const GridBasisFunction& a,
     s_out = s;
     t_out = t;
 }
-
 
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b) {
     if (basis_is_pure_s(a) && basis_is_pure_s(b)) {

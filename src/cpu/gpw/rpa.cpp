@@ -125,8 +125,8 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
                 n_mo_b_min = std::min(
                     n_mo_b_min,
                     static_cast<int>(
-                        result_.C_k_beta[static_cast<std::size_t>(ik)]
-                            .shape(1)));
+                        result_.C_k_beta[static_cast<std::size_t>(ik)].shape(
+                            1)));
                 if (static_cast<int>(
                         result_.eps_k[static_cast<std::size_t>(ik)].size())
                         < n_mo_a_min
@@ -143,9 +143,9 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
             const int n_ob = n_beta;
             std::vector<double> eps_a0(result_.eps_k[0].begin(),
                                        result_.eps_k[0].begin() + n_mo_a_min);
-            std::vector<double> eps_b0(
-                result_.eps_k_beta[0].begin(),
-                result_.eps_k_beta[0].begin() + n_mo_b_min);
+            std::vector<double> eps_b0(result_.eps_k_beta[0].begin(),
+                                       result_.eps_k_beta[0].begin()
+                                           + n_mo_b_min);
             const int n_va =
                 cap_virt_rpa_(n_mo_a_min, n_oa, mp2_n_virt, eps_a0, "α");
             const int n_vb =
@@ -155,17 +155,17 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
                     "GpwDft::direct_rpa: multi-k URPA needs at least one "
                     "non-empty spin channel (n_occ and n_virt both >= 1)");
 
-            auto min_eps_gap =
-                [&](const std::vector<std::vector<double>>& ek, int n_occ) {
-                    double g = 1e300;
-                    for (int ik = 0; ik < nk; ++ik) {
-                        const auto& e = ek[static_cast<std::size_t>(ik)];
-                        g = std::min(
-                            g, e[static_cast<std::size_t>(n_occ)]
-                                   - e[static_cast<std::size_t>(n_occ - 1)]);
-                    }
-                    return g;
-                };
+            auto min_eps_gap = [&](const std::vector<std::vector<double>>& ek,
+                                   int n_occ) {
+                double g = 1e300;
+                for (int ik = 0; ik < nk; ++ik) {
+                    const auto& e = ek[static_cast<std::size_t>(ik)];
+                    g = std::min(g,
+                                 e[static_cast<std::size_t>(n_occ)]
+                                     - e[static_cast<std::size_t>(n_occ - 1)]);
+                }
+                return g;
+            };
             constexpr double kMinGapHa = 1e-6;
             if (n_oa >= 1 && n_va >= 1
                 && min_eps_gap(result_.eps_k, n_oa) < kMinGapHa)
@@ -185,8 +185,7 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
                 for (const auto& bf : a.basis)
                     basis.push_back(bf);
 
-            std::vector<internal::KPoint> kpts(
-                static_cast<std::size_t>(nk));
+            std::vector<internal::KPoint> kpts(static_cast<std::size_t>(nk));
             for (int ik = 0; ik < nk; ++ik) {
                 kpts[static_cast<std::size_t>(ik)].frac[0] =
                     result_.k_frac[static_cast<std::size_t>(ik)][0];
@@ -221,14 +220,12 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
                 if (n_oa > 0 && n_va > 0) {
                     psi_oa_k[static_cast<std::size_t>(ik)] =
                         internal::mo_on_grid_k(
-                            kbg, ik,
-                            result_.C_k[static_cast<std::size_t>(ik)], 0,
-                            n_oa);
+                            kbg, ik, result_.C_k[static_cast<std::size_t>(ik)],
+                            0, n_oa);
                     psi_va_k[static_cast<std::size_t>(ik)] =
                         internal::mo_on_grid_k(
-                            kbg, ik,
-                            result_.C_k[static_cast<std::size_t>(ik)], n_oa,
-                            n_va);
+                            kbg, ik, result_.C_k[static_cast<std::size_t>(ik)],
+                            n_oa, n_va);
                     const auto& ea =
                         result_.eps_k[static_cast<std::size_t>(ik)];
                     eps_oa_k[static_cast<std::size_t>(ik)].assign(
@@ -240,8 +237,8 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
                     psi_ob_k[static_cast<std::size_t>(ik)] =
                         internal::mo_on_grid_k(
                             kbg, ik,
-                            result_.C_k_beta[static_cast<std::size_t>(ik)],
-                            0, n_ob);
+                            result_.C_k_beta[static_cast<std::size_t>(ik)], 0,
+                            n_ob);
                     psi_vb_k[static_cast<std::size_t>(ik)] =
                         internal::mo_on_grid_k(
                             kbg, ik,
@@ -260,8 +257,8 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
             std::vector<double> omega;
             internal::direct_rpa_uhf_energy_kpoints(
                 grid, psi_oa_k, psi_va_k, psi_ob_k, psi_vb_k, eps_oa_k,
-                eps_va_k, eps_ob_k, eps_vb_k, result_.k_frac,
-                result_.k_weights, e_corr, tr_A, omega);
+                eps_va_k, eps_ob_k, eps_vb_k, result_.k_frac, result_.k_weights,
+                e_corr, tr_A, omega);
 
             rpa_result_ = RpaResult{};
             rpa_result_.e_corr = e_corr;
@@ -330,35 +327,31 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
             (n_va > 0) ? internal::mo_on_grid(cbg, result_.C, n_oa, n_va)
                        : std::vector<double>{};
         const std::vector<double> psi_ob =
-            (n_ob > 0)
-                ? internal::mo_on_grid(cbg, result_.C_beta, 0, n_ob)
-                : std::vector<double>{};
+            (n_ob > 0) ? internal::mo_on_grid(cbg, result_.C_beta, 0, n_ob)
+                       : std::vector<double>{};
         const std::vector<double> psi_vb =
-            (n_vb > 0)
-                ? internal::mo_on_grid(cbg, result_.C_beta, n_ob, n_vb)
-                : std::vector<double>{};
+            (n_vb > 0) ? internal::mo_on_grid(cbg, result_.C_beta, n_ob, n_vb)
+                       : std::vector<double>{};
 
         const bool use_ri = mp2_ri && periodic;
         std::vector<double> v_aa, v_bb, v_ab;
         if (n_oa > 0 && n_va > 0)
-            v_aa = use_ri ? internal::mo_eri_ovov_ri(grid, psi_oa, n_oa,
-                                                      psi_va, n_va)
+            v_aa = use_ri ? internal::mo_eri_ovov_ri(grid, psi_oa, n_oa, psi_va,
+                                                     n_va)
                           : internal::mo_eri_ovov(grid, psi_oa, n_oa, psi_va,
-                                                   n_va, nonperiodic);
+                                                  n_va, nonperiodic);
         if (n_ob > 0 && n_vb > 0)
-            v_bb = use_ri ? internal::mo_eri_ovov_ri(grid, psi_ob, n_ob,
-                                                      psi_vb, n_vb)
+            v_bb = use_ri ? internal::mo_eri_ovov_ri(grid, psi_ob, n_ob, psi_vb,
+                                                     n_vb)
                           : internal::mo_eri_ovov(grid, psi_ob, n_ob, psi_vb,
-                                                   n_vb, nonperiodic);
+                                                  n_vb, nonperiodic);
         if (n_oa > 0 && n_va > 0 && n_ob > 0 && n_vb > 0)
-            v_ab =
-                use_ri
-                    ? internal::mo_eri_ovov_ab_ri(grid, psi_oa, n_oa, psi_va,
-                                                   n_va, psi_ob, n_ob, psi_vb,
-                                                   n_vb)
-                    : internal::mo_eri_ovov_ab(grid, psi_oa, n_oa, psi_va,
-                                                n_va, psi_ob, n_ob, psi_vb,
-                                                n_vb, nonperiodic);
+            v_ab = use_ri ? internal::mo_eri_ovov_ab_ri(grid, psi_oa, n_oa,
+                                                        psi_va, n_va, psi_ob,
+                                                        n_ob, psi_vb, n_vb)
+                          : internal::mo_eri_ovov_ab(grid, psi_oa, n_oa, psi_va,
+                                                     n_va, psi_ob, n_ob, psi_vb,
+                                                     n_vb, nonperiodic);
 
         const std::vector<double> eps_oa(result_.eps.begin(),
                                          result_.eps.begin() + n_oa);
@@ -366,9 +359,9 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
                                          result_.eps.begin() + n_oa + n_va);
         const std::vector<double> eps_ob(result_.eps_beta.begin(),
                                          result_.eps_beta.begin() + n_ob);
-        const std::vector<double> eps_vb(
-            result_.eps_beta.begin() + n_ob,
-            result_.eps_beta.begin() + n_ob + n_vb);
+        const std::vector<double> eps_vb(result_.eps_beta.begin() + n_ob,
+                                         result_.eps_beta.begin() + n_ob
+                                             + n_vb);
 
         internal::DirectRpaAmplitudes amp;
         internal::direct_rpa_uhf(v_aa, v_bb, v_ab, eps_oa, eps_va, eps_ob,
@@ -426,8 +419,8 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
             throw std::invalid_argument(
                 "GpwDft::direct_rpa: no virtual orbitals in the multi-k "
                 "result (n_mo_min = "
-                + std::to_string(n_mo_min) + ", n_occ = "
-                + std::to_string(n_occ) + ")");
+                + std::to_string(n_mo_min)
+                + ", n_occ = " + std::to_string(n_occ) + ")");
 
         int n_virt = n_mo_min - n_occ;
         if (mp2_n_virt > 0)
@@ -454,8 +447,7 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
             for (const auto& bf : a.basis)
                 basis.push_back(bf);
 
-        std::vector<internal::KPoint> kpts(
-            static_cast<std::size_t>(nk));
+        std::vector<internal::KPoint> kpts(static_cast<std::size_t>(nk));
         for (int ik = 0; ik < nk; ++ik) {
             kpts[static_cast<std::size_t>(ik)].frac[0] =
                 result_.k_frac[static_cast<std::size_t>(ik)][0];
@@ -480,13 +472,12 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
         for (int ik = 0; ik < nk; ++ik) {
             psi_occ_k[static_cast<std::size_t>(ik)] = internal::mo_on_grid_k(
                 kbg, ik, result_.C_k[static_cast<std::size_t>(ik)], 0, n_occ);
-            psi_virt_k[static_cast<std::size_t>(ik)] =
-                internal::mo_on_grid_k(
-                    kbg, ik, result_.C_k[static_cast<std::size_t>(ik)], n_occ,
-                    n_virt);
+            psi_virt_k[static_cast<std::size_t>(ik)] = internal::mo_on_grid_k(
+                kbg, ik, result_.C_k[static_cast<std::size_t>(ik)], n_occ,
+                n_virt);
             const auto& eps = result_.eps_k[static_cast<std::size_t>(ik)];
-            eps_occ_k[static_cast<std::size_t>(ik)].assign(
-                eps.begin(), eps.begin() + n_occ);
+            eps_occ_k[static_cast<std::size_t>(ik)].assign(eps.begin(),
+                                                           eps.begin() + n_occ);
             eps_virt_k[static_cast<std::size_t>(ik)].assign(
                 eps.begin() + n_occ, eps.begin() + n_occ + n_virt);
         }
@@ -539,8 +530,7 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
     if (gap < kMinGapHa)
         throw std::invalid_argument(
             "GpwDft::direct_rpa: vanishing HOMO-LUMO gap ("
-            + std::to_string(gap)
-            + " Ha < 1e-6) — dRPA (A−B) is singular");
+            + std::to_string(gap) + " Ha < 1e-6) — dRPA (A−B) is singular");
 
     const bool periodic = !nonperiodic;
     const UniformGrid grid = make_uniform_grid(cell, cutoff_ry);
@@ -559,9 +549,10 @@ const RpaResult& GpwDft::direct_rpa(const std::vector<GpwAtom>& atoms) {
 
     const bool use_ri = mp2_ri && periodic;
     const std::vector<double> v_ovov =
-        use_ri ? internal::mo_eri_ovov_ri(grid, psi_occ, n_occ, psi_virt, n_virt)
-               : internal::mo_eri_ovov(grid, psi_occ, n_occ, psi_virt, n_virt,
-                                       nonperiodic);
+        use_ri
+            ? internal::mo_eri_ovov_ri(grid, psi_occ, n_occ, psi_virt, n_virt)
+            : internal::mo_eri_ovov(grid, psi_occ, n_occ, psi_virt, n_virt,
+                                    nonperiodic);
 
     const std::vector<double> eps_occ(result_.eps.begin(),
                                       result_.eps.begin() + n_occ);

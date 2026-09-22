@@ -244,7 +244,8 @@ TEST(CudaPWXcLda, SpinMatchesCpuEvaluateXc) {
 
     // ζ = 0 must reproduce the restricted kernel (v_a == v_b).
     for (int i = 0; i < nr; ++i) {
-        if (std::abs(rho_a[i] - rho_b[i]) < 1e-18 && rho_a[i] + rho_b[i] > 1e-12)
+        if (std::abs(rho_a[i] - rho_b[i]) < 1e-18
+            && rho_a[i] + rho_b[i] > 1e-12)
             EXPECT_NEAR(va[i], vb[i], 1e-14);
     }
 

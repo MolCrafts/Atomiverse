@@ -146,8 +146,8 @@ void KpointCollocateDevice::collocate_k(int ik,
     constexpr int kBlock = 256;
     const int grid =
         static_cast<int>((npts_ + kBlock - 1) / static_cast<long>(kBlock));
-    collocate_density_k_kernel<<<grid, kBlock, 0, stream_>>>(
-        chi_k, d_P_, nb_, npts_, wk, d_rho);
+    collocate_density_k_kernel<<<grid, kBlock, 0, stream_>>>(chi_k, d_P_, nb_,
+                                                             npts_, wk, d_rho);
     check_cuda(cudaGetLastError(), "collocate_density_k_kernel launch");
 }
 
@@ -173,8 +173,8 @@ void KpointCollocateDevice::collocate_k_device_cm(int ik, const void* d_P_cm,
     const double2* chi_k = d_chi_ + static_cast<size_t>(ik) * nchi;
     const int grid =
         static_cast<int>((npts_ + kBlock - 1) / static_cast<long>(kBlock));
-    collocate_density_k_kernel<<<grid, kBlock, 0, stream_>>>(
-        chi_k, d_P_, nb_, npts_, wk, d_rho);
+    collocate_density_k_kernel<<<grid, kBlock, 0, stream_>>>(chi_k, d_P_, nb_,
+                                                             npts_, wk, d_rho);
     check_cuda(cudaGetLastError(), "collocate_density_k_kernel device-P");
 }
 

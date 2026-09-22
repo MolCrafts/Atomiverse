@@ -87,11 +87,13 @@ __global__ void pack_atom_pos_bohr_kernel(
 //   center = atom_pos[atom] (Bohr, already packed)
 // Skills: choose-launch-configuration, handle-boundary, optimize-global-memory
 // (coalesced along p when n_prim is small — sequential p per thread is fine).
-__global__ void expand_s_shells_kernel(
-    prec_t* __restrict__ alpha_out, prec_t* __restrict__ coeff_out,
-    prec_t* __restrict__ shell_centers, const prec_t* __restrict__ alpha_atom,
-    const prec_t* __restrict__ coeff_atom, const prec_t* __restrict__ atom_pos,
-    int natm, int nsh_atom, int n_prim) {
+__global__ void expand_s_shells_kernel(prec_t* __restrict__ alpha_out,
+                                       prec_t* __restrict__ coeff_out,
+                                       prec_t* __restrict__ shell_centers,
+                                       const prec_t* __restrict__ alpha_atom,
+                                       const prec_t* __restrict__ coeff_atom,
+                                       const prec_t* __restrict__ atom_pos,
+                                       int natm, int nsh_atom, int n_prim) {
     const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     const int n_shells = natm * nsh_atom;
     if (s >= n_shells)
@@ -116,9 +118,10 @@ __global__ void expand_s_shells_kernel(
 // (order-insensitive for the double sum; pair set is exact).
 // Skills: choose-launch-configuration, handle-boundary, write-numerically-stable
 // (skip r=0).
-__global__ void nuclear_repulsion_pairs_kernel(
-    double* __restrict__ v_nuc_out, const prec_t* __restrict__ atom_pos,
-    const int* __restrict__ atom_Z, int natm) {
+__global__ void
+nuclear_repulsion_pairs_kernel(double* __restrict__ v_nuc_out,
+                               const prec_t* __restrict__ atom_pos,
+                               const int* __restrict__ atom_Z, int natm) {
     const int npairs = natm * (natm - 1) / 2;
     const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     double contrib = 0.0;
@@ -238,8 +241,7 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
         for (int j = 0; j < n; ++j)
             for (int k = 0; k < n; ++k)
                 for (int l = 0; l < n; ++l)
-                    eri_buf[i + j * n + k * nn + l * nn * n] =
-                        ERI_(i, j, k, l);
+                    eri_buf[i + j * n + k * nn + l * nn * n] = ERI_(i, j, k, l);
     cudaMemcpy(scf.ERI, eri_buf.data(), n4 * sizeof(prec_t),
                cudaMemcpyHostToDevice);
 
@@ -341,9 +343,10 @@ void RHFFock::destroy(const SolverContext& /*ctx*/, SCFWorkspace& /*ws*/) {
 // ══════════════════════════════════════════════════════════════════════
 
 // Expand shell centers from atom_of[s] → atom_pos (Bohr). One thread / shell.
-__global__ void expand_shell_centers_kernel(
-    prec_t* __restrict__ shell_centers, const int* __restrict__ atom_of,
-    const prec_t* __restrict__ atom_pos, int n_shells) {
+__global__ void expand_shell_centers_kernel(prec_t* __restrict__ shell_centers,
+                                            const int* __restrict__ atom_of,
+                                            const prec_t* __restrict__ atom_pos,
+                                            int n_shells) {
     const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (s >= n_shells)
         return;
@@ -378,9 +381,8 @@ RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
     // Expand pure-s atom block to molecular shells immediately.
     n_shells_ = natm * n_shells_per_atom;
     n_ao_ = n_shells_; // pure-s: 1 AO / shell
-    const std::size_t nflat_atom =
-        static_cast<std::size_t>(n_shells_per_atom)
-        * static_cast<std::size_t>(n_prim);
+    const std::size_t nflat_atom = static_cast<std::size_t>(n_shells_per_atom)
+                                   * static_cast<std::size_t>(n_prim);
     alpha_mol_.resize(static_cast<std::size_t>(n_shells_)
                       * static_cast<std::size_t>(n_prim));
     coeff_mol_.resize(alpha_mol_.size());
@@ -409,9 +411,8 @@ RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
     : n_prim_(n_prim), n_occ_(n_occ), level_shift_(level_shift),
       pure_s_broadcast_(true), n_shells_per_atom_(n_shells_per_atom) {
     // Defer molecular expand until build() knows natm.
-    const std::size_t nflat =
-        static_cast<std::size_t>(n_shells_per_atom)
-        * static_cast<std::size_t>(n_prim);
+    const std::size_t nflat = static_cast<std::size_t>(n_shells_per_atom)
+                              * static_cast<std::size_t>(n_prim);
     alpha_mol_.assign(alpha_atom, alpha_atom + nflat);
     coeff_mol_.assign(coeff_atom, coeff_atom + nflat);
 }
@@ -501,8 +502,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     for (int s = 0; s < n_shells; ++s) {
         const int L = h_L[static_cast<std::size_t>(s)];
         for (int p = 0; p < n_prim_; ++p) {
-            const std::size_t k =
-                static_cast<std::size_t>(s * n_prim_ + p);
+            const std::size_t k = static_cast<std::size_t>(s * n_prim_ + p);
             const double a = alpha_mol_[k];
             const double c = coeff_mol_[k];
             h_alpha[k] = static_cast<prec_t>(a);
@@ -618,12 +618,12 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     ATV::cuda::scf::launch_1e_integrals_sp(
         scf.S, d_T_, d_V_, scf.d_shell_alpha, scf.d_shell_coeff,
         scf.d_shell_center, scf.d_shell_L, d_ao_start, scf.d_ao_shell,
-        scf.d_ao_cart, scf.d_atom_Z, scf.d_atom_pos, n_shells, n, n_prim_,
-        natm, stream);
-    ATV::cuda::scf::launch_eri_sp(
-        scf.ERI, scf.d_shell_alpha, scf.d_shell_coeff, scf.d_shell_center,
-        scf.d_shell_L, d_ao_start, scf.d_ao_shell, scf.d_ao_cart, n_shells, n,
-        n_prim_, stream);
+        scf.d_ao_cart, scf.d_atom_Z, scf.d_atom_pos, n_shells, n, n_prim_, natm,
+        stream);
+    ATV::cuda::scf::launch_eri_sp(scf.ERI, scf.d_shell_alpha, scf.d_shell_coeff,
+                                  scf.d_shell_center, scf.d_shell_L, d_ao_start,
+                                  scf.d_ao_shell, scf.d_ao_cart, n_shells, n,
+                                  n_prim_, stream);
 
     // ── 4. Hcore = T + V ──────────────────────────────────────────────
     cublasHandle_t handle;

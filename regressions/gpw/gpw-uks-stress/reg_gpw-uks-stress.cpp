@@ -27,7 +27,7 @@ namespace {
 
 // Offline CP2K 2026.1 ENERGY pin (same twin as gpw-uks-forces).
 constexpr double kE_cp2k_ha = -31.928797634435675;
-constexpr double kEnergyTol = 1.0e-3;  // Ha
+constexpr double kEnergyTol = 1.0e-3; // Ha
 // Analytic fixed-P vs multi-SCF strain-FD (UKS O₂ residual).
 constexpr double kAnFdTol = 1.0e-4;    // Ha/Bohr³
 constexpr double kOffDiagTol = 1.0e-8; // Ha/Bohr³
@@ -176,7 +176,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;
@@ -197,8 +198,8 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: gpw-uks-stress  max|dσ_an-fd|=%.3e  |dE|=%.3e  wall_prod=%.3f s\n",
-        max_diag_err, de, wall_product_s);
+    std::printf("PASS: gpw-uks-stress  max|dσ_an-fd|=%.3e  |dE|=%.3e  "
+                "wall_prod=%.3f s\n",
+                max_diag_err, de, wall_product_s);
     return 0;
 }

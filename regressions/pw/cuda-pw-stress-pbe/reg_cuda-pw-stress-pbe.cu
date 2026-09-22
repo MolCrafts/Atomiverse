@@ -10,11 +10,11 @@
 /// Public API only. GTH-PBE-q4, PBE, Γ. See REFERENCE.md. Sibling of
 /// `cuda-pw-stress` (LSDA); this slug closes the PBE stress dual-gate.
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include <array>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -31,15 +31,13 @@ namespace {
 // SCF + FFT + PBE spectral gradients are not bit-exact.
 constexpr double kStressTolEvA3 = 5.0e-2;
 constexpr double kSymTol = 2.5e-2; // eV/Å³ cubic symmetry soft bound
-constexpr double kA = 5.43;       // Å
+constexpr double kA = 5.43;        // Å
 constexpr double kEcutRy = 8.0;
 constexpr int kMesh = 1;
 
 enum class Device { Cpu, Cuda };
 
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
@@ -87,8 +85,8 @@ cpu::Frame make_si_primitive() {
 int check_cubic(const char* tag, const std::array<double, 6>& s) {
     for (int v = 0; v < 6; ++v) {
         if (!std::isfinite(s[static_cast<std::size_t>(v)])) {
-            std::fprintf(stderr, "FAIL [%s]: non-finite stress[%d]=%g\n", tag, v,
-                         s[static_cast<std::size_t>(v)]);
+            std::fprintf(stderr, "FAIL [%s]: non-finite stress[%d]=%g\n", tag,
+                         v, s[static_cast<std::size_t>(v)]);
             return 1;
         }
     }

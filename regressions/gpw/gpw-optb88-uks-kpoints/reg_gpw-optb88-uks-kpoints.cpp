@@ -102,16 +102,16 @@ int main() {
     // Offline CP2K 2026.1 (cp2k.psmp rev git:5e54ba2, libxc 7.0.0): water
     // dimer LSD MULT 1 + GGA_X_OPTB88_VDW + PW92 + NON_LOCAL DRSLL + MP 2×1×1
     // NGRIDS 4 / REL_CUTOFF 40 — REFERENCE.md.
-    constexpr double kEDispCp2k = 0.15206184094414;      // Ha
-    constexpr double kETotCp2k = -34.487914403936173;    // Ha
-    constexpr double kEDispTol = 1.0e-4;                 // Ha
+    constexpr double kEDispCp2k = 0.15206184094414;   // Ha
+    constexpr double kETotCp2k = -34.487914403936173; // Ha
+    constexpr double kEDispTol = 1.0e-4;              // Ha
     // Same Γ-dimer twin-family systematic as gpw-optb88-kpoints / vdW-k.
-    constexpr double kETotTol = 1.0e-2;                  // Ha
-    constexpr double kGammaLimitTol = 1.0e-8;            // Ha
-    constexpr double kIdentityTolEv = 3.0e-4;            // eV
-    constexpr double kIdentityDispTol = 1.0e-5;          // Ha
+    constexpr double kETotTol = 1.0e-2;         // Ha
+    constexpr double kGammaLimitTol = 1.0e-8;   // Ha
+    constexpr double kIdentityTolEv = 3.0e-4;   // eV
+    constexpr double kIdentityDispTol = 1.0e-5; // Ha
     // Dual-gate floor [Ha] — OptB88+DRSLL vs PBE+DRSLL must activate exchange.
-    constexpr double kDualFloor = 1.0e-4;                // Ha
+    constexpr double kDualFloor = 1.0e-4; // Ha
     // CP2K fair twin wall (1 MPI × OMP=8) on the SAME SCF job — REFERENCE.md.
     constexpr double kCp2kWall = 13.29; // s (/usr/bin/time); timer 12.867 s
 
@@ -120,8 +120,8 @@ int main() {
 
     // ── G1: Γ-limit identity (single-grid multi-k UKS vs Γ UKS) + dual ───
     {
-        GpwDft gamma = make_uks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0,
-                                     XcKind::OptB88VdW);
+        GpwDft gamma =
+            make_uks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0, XcKind::OptB88VdW);
         gamma.build(atoms);
         const GpwResult& rg = gamma.run(atoms);
         if (!rg.converged) {
@@ -130,8 +130,8 @@ int main() {
             return 1;
         }
 
-        GpwDft kgamma = make_uks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0,
-                                      XcKind::OptB88VdW);
+        GpwDft kgamma =
+            make_uks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0, XcKind::OptB88VdW);
         kgamma.k_points = {{0.0, 0.0, 0.0}};
         kgamma.k_point_weights = {1.0};
         kgamma.build(atoms);
@@ -166,8 +166,8 @@ int main() {
 
         // OptB88 activation: semi-local energy should differ from a pure
         // PBE+DRSLL reference on the same multi-k UKS path.
-        GpwDft pbe = make_uks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0,
-                                   XcKind::PBE);
+        GpwDft pbe =
+            make_uks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0, XcKind::PBE);
         pbe.k_points = {{0.0, 0.0, 0.0}};
         pbe.k_point_weights = {1.0};
         pbe.build(atoms);
@@ -192,8 +192,8 @@ int main() {
     // ── G2: CP2K MP 2×1×1 + multigrid multi-k UKS OptB88 parity ──────────
     double wall_g2 = 0.0;
     {
-        GpwDft mp = make_uks_base(/*ngrids=*/4, /*rel_cutoff=*/40.0,
-                                  XcKind::OptB88VdW);
+        GpwDft mp =
+            make_uks_base(/*ngrids=*/4, /*rel_cutoff=*/40.0, XcKind::OptB88VdW);
         mp.k_mesh[0] = 2;
         mp.k_mesh[1] = 1;
         mp.k_mesh[2] = 1;
@@ -236,8 +236,8 @@ int main() {
 
     // ── G3: closed-shell multi-k UKS ≡ multi-k RKS (both OptB88+DRSLL) ──
     {
-        GpwDft rks = make_rks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0,
-                                   XcKind::OptB88VdW);
+        GpwDft rks =
+            make_rks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0, XcKind::OptB88VdW);
         rks.k_mesh[0] = 2;
         rks.k_mesh[1] = 1;
         rks.k_mesh[2] = 1;
@@ -245,8 +245,8 @@ int main() {
         rks.build(atoms);
         const GpwResult& rr = rks.run(atoms);
 
-        GpwDft uks = make_uks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0,
-                                   XcKind::OptB88VdW);
+        GpwDft uks =
+            make_uks_base(/*ngrids=*/1, /*rel_cutoff=*/0.0, XcKind::OptB88VdW);
         uks.k_mesh[0] = 2;
         uks.k_mesh[1] = 1;
         uks.k_mesh[2] = 1;
@@ -269,9 +269,8 @@ int main() {
         std::printf("G3: D_RKS=%.14e  D_UKS=%.14e  |Δ|=%.3e Ha\n", rr.e_disp,
                     ru.e_disp, dd);
         if (de_ev > kIdentityTolEv || dd > kIdentityDispTol) {
-            std::fprintf(stderr,
-                         "FAIL: G3 UKS≡RKS |ΔE|=%.3e eV |ΔD|=%.3e Ha\n", de_ev,
-                         dd);
+            std::fprintf(stderr, "FAIL: G3 UKS≡RKS |ΔE|=%.3e eV |ΔD|=%.3e Ha\n",
+                         de_ev, dd);
             return 1;
         }
         if (!(std::isfinite(ru.e_disp) && std::abs(ru.e_disp) > 1e-6)) {

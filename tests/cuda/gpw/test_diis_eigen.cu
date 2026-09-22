@@ -14,10 +14,10 @@
 #include <gtest/gtest.h>
 #include <vector>
 
-using ATV::cpu::linalg::CanonicalOrth;
-using ATV::cpu::linalg::RealMatrix;
 using ATV::cpu::linalg::build_density_matrix;
+using ATV::cpu::linalg::CanonicalOrth;
 using ATV::cpu::linalg::diagonalize_fock;
+using ATV::cpu::linalg::RealMatrix;
 using ATV::cuda::gpw::internal::AoDiisEigenDevice;
 
 namespace {
@@ -80,8 +80,7 @@ TEST(CudaGpwDiisEigen, ErrorMatchesHost) {
     std::vector<double> e_dev(static_cast<size_t>(m * m));
     dev.error_to_host(H.data(), e_dev.data());
 
-    const double d =
-        max_abs_diff(e_host.data(), e_dev.data(), m * m);
+    const double d = max_abs_diff(e_host.data(), e_dev.data(), m * m);
     EXPECT_LE(d, 1e-10) << "max|e_dev-e_host|=" << d;
 
     cudaStreamDestroy(stream);
@@ -246,8 +245,7 @@ TEST(CudaGpwDiisEigen, UksChannelErrorAndDensityMatchHost) {
 
     std::vector<double> e_dev(static_cast<size_t>(m * m));
     dev.error_to_host(H.data(), e_dev.data());
-    const double de =
-        max_abs_diff(e_host.data(), e_dev.data(), m * m);
+    const double de = max_abs_diff(e_host.data(), e_dev.data(), m * m);
     EXPECT_LE(de, 1e-10) << "max|e_dev-e_host| UKS=" << de;
 
     // Eigen + density with occ_factor=1.

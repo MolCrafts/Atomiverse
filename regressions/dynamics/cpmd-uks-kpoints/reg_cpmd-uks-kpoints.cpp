@@ -14,10 +14,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/car_parrinello.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/car_parrinello.h"
 #include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
@@ -262,12 +262,12 @@ int main() {
         }
     }
 
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     const double rhh = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (!(rhh > rmin) || !(rhh < rmax)) {
         std::printf("FAIL: H–H bond out of window r=%.3f Å (%.2f–%.2f)\n", rhh,
@@ -278,12 +278,11 @@ int main() {
     const double pe_f = frame.meta.get(kEnergy);
     const double ke_f = frame.meta.get(kKinetic);
     const double te_f = eval.last_electronic_ke_ev();
-    std::printf(
-        "CPMD multi-k UKS H2 NVE (mu=%.0f, nk=%d, na=nb=1): steps=%d  "
-        "E0=%.6g eV  Ef=%.6g eV  worst |dE_cons|/scale=%.3e  tol=%.2f  "
-        "rHH=%.3f Å\n",
-        mu_au, eval.last_result().n_kpts, n_prod, e0, pe_f + ke_f + te_f,
-        worst_drift, drift_tol, rhh);
+    std::printf("CPMD multi-k UKS H2 NVE (mu=%.0f, nk=%d, na=nb=1): steps=%d  "
+                "E0=%.6g eV  Ef=%.6g eV  worst |dE_cons|/scale=%.3e  tol=%.2f  "
+                "rHH=%.3f Å\n",
+                mu_au, eval.last_result().n_kpts, n_prod, e0,
+                pe_f + ke_f + te_f, worst_drift, drift_tol, rhh);
     std::printf("  PE0=%.6g  KE0=%.6g  Te0=%.6g  PEf=%.6g  KEf=%.6g  "
                 "Tef=%.6g eV\n",
                 pe0, ke0, te0, pe_f, ke_f, te_f);

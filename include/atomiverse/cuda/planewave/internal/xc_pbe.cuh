@@ -75,8 +75,8 @@ void xc_pbe_grid(const double* d_rho_r, double* d_gx_r, double* d_gy_r,
 void xc_pbe_spin_grid(const double* d_rho_a, const double* d_rho_b,
                       double* d_gax_r, double* d_gay_r, double* d_gaz_r,
                       double* d_gbx_r, double* d_gby_r, double* d_gbz_r,
-                      double* d_vxc_a, double* d_vxc_b, double* d_exc_r,
-                      int nr, cudaStream_t stream = nullptr);
+                      double* d_vxc_a, double* d_vxc_b, double* d_exc_r, int nr,
+                      cudaStream_t stream = nullptr);
 
 } // namespace internal
 } // namespace pw

@@ -40,8 +40,8 @@ namespace {
 //     U_λ(r) = ½ λ (r − r₀)²
 // so the exchange argument collapses to (λ_i − λ_j)·(u(r') − u(r)) with
 // u(r) = ½(r − r₀)² — an exactly integrable two-dimensional average.
-constexpr double kR0 = 4.0;  // [Å]
-constexpr double kT = 300.0; // [K]
+constexpr double kR0 = 4.0;                           // [Å]
+constexpr double kT = 300.0;                          // [K]
 const std::vector<double> kLambda = {1.0, 4.0, 16.0}; // [eV/Å²]
 
 void build_spring(cpu::md::MD& md, double lambda, void*) {
@@ -126,7 +126,8 @@ int main() {
     // Three λ so the even/odd schedule exercises an edge on EVERY round:
     // even rounds attempt (0,1), odd rounds attempt (1,2).
     constexpr int n_ex = 1000;
-    constexpr int steps_per_exchange = 800; // ≫ the 285 fs softest-spring period
+    constexpr int steps_per_exchange =
+        800; // ≫ the 285 fs softest-spring period
 
     const double a01 = accept_exact(kLambda[0], kLambda[1]);
     const double a12 = accept_exact(kLambda[1], kLambda[2]);
@@ -158,8 +159,8 @@ int main() {
                 a01, a12, a_pred);
     std::printf("  measured: attempts=%d accepts=%d ratio=%.4f  (diff %+.4f = "
                 "%.2f SE, tol %.4f)\n",
-                attempts, accepts, ratio, ratio - a_pred,
-                (ratio - a_pred) / se, tol);
+                attempts, accepts, ratio, ratio - a_pred, (ratio - a_pred) / se,
+                tol);
 
     // Structural: with three replicas, every round attempts exactly one edge.
     if (attempts != n_ex) {

@@ -58,17 +58,17 @@ int main() {
     // ── Pins (REFERENCE.md) ──────────────────────────────────────────
     // LAMMPS ELECTRODE madelung conp log: ΔΨ = 1 V ⇔ Q_top = +0.279214… e.
     constexpr double kQTopPin = 0.279214485147238; // [e], oracle lammps
-    constexpr double kRelTolQ = 0.01;   // 1% (v1 2D-image A vs ewald/electrode)
-    constexpr double kEta = 2.0;        // [1/Å]
-    constexpr int kImageRange = 250;    // 2D xy Gaussian images
+    constexpr double kRelTolQ = 0.01; // 1% (v1 2D-image A vs ewald/electrode)
+    constexpr double kEta = 2.0;      // [1/Å]
+    constexpr int kImageRange = 250;  // 2D xy Gaussian images
     // Empty Gaussian-lattice capacitor V response (literature Madelung sum,
     // see REFERENCE.md): ΔΨ = 2 k_e [2π σ d + η√(2/π) + M_□ + g(η)] with
     // square-lattice Madelung constant M_□ = −3.90026492 and Gaussian
     // correction g(η=2) = −0.195386  ⇒  651.8103 V for Q = ±1 e,
     // A_cell = 1 Å², d = 4 Å. (The bare-sheet 4π k_e σ d = 723.88 V misses
     // the on-site discrete-lattice term.)
-    constexpr double kPlateDV = 651.8103;   // [V]
-    constexpr double kRelTolPlate = 0.015;  // R=250 real-space tail ≈ 0.8%
+    constexpr double kPlateDV = 651.8103;  // [V]
+    constexpr double kRelTolPlate = 0.015; // R=250 real-space tail ≈ 0.8%
 
     int nfail = 0;
 
@@ -97,8 +97,8 @@ int main() {
     std::printf("  conq totals = % .12e / % .12e e (targets -+Q*)\n",
                 conq.total_charge(0), conq.total_charge(1));
     std::printf("  conq dV     = % .10f V (conp applied 1.0)\n", dv);
-    std::printf("  conq psi    = % .6f / % .6f V\n", conq.electrode_potential(0),
-                conq.electrode_potential(1));
+    std::printf("  conq psi    = % .6f / % .6f V\n",
+                conq.electrode_potential(0), conq.electrode_potential(1));
 
     if (!(rel_q <= kRelTolQ)) {
         std::fprintf(stderr, "FAIL conp Q* vs LAMMPS pin rel=%g > %g\n", rel_q,
@@ -107,7 +107,8 @@ int main() {
     }
     if (!(std::abs(conq.total_charge(0) + q_star) <= 1e-12
           && std::abs(conq.total_charge(1) - q_star) <= 1e-12)) {
-        std::fprintf(stderr, "FAIL conq group totals not exactly the targets\n");
+        std::fprintf(stderr,
+                     "FAIL conq group totals not exactly the targets\n");
         ++nfail;
     }
     if (!(std::abs(dv - 1.0) <= 1e-8)) {
@@ -120,8 +121,8 @@ int main() {
         const double qc = static_cast<double>(fq.span(kAtom_charge)[i]);
         const double qp = static_cast<double>(fp.span(kAtom_charge)[i]);
         if (std::abs(qc - qp) > 1e-10) {
-            std::fprintf(stderr, "FAIL per-site duality atom %d: %g vs %g\n",
-                         i, qc, qp);
+            std::fprintf(stderr, "FAIL per-site duality atom %d: %g vs %g\n", i,
+                         qc, qp);
             ++nfail;
         }
     }
@@ -158,8 +159,9 @@ int main() {
     solve_bo(empty, fv);
     const double dv_empty = empty.delta_psi();
     const double rel_plate = std::abs(dv_empty - kPlateDV) / kPlateDV;
-    std::printf("  empty capacitor dV = % .4f V (Madelung pin %.4f, rel %.2e)\n",
-                dv_empty, kPlateDV, rel_plate);
+    std::printf(
+        "  empty capacitor dV = % .4f V (Madelung pin %.4f, rel %.2e)\n",
+        dv_empty, kPlateDV, rel_plate);
     if (!(rel_plate <= kRelTolPlate)) {
         std::fprintf(stderr, "FAIL empty-capacitor dV rel err %g > %g\n",
                      rel_plate, kRelTolPlate);

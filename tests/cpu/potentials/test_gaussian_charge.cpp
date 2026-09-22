@@ -148,7 +148,8 @@ TEST(PairGaussianCoul, GaussianPointCross) {
 /// energy, the force and the induced charge all change, and nothing says a
 /// row was left out of the table. House rule: lookup tables throw.
 TEST(PairGaussianCoul, ThrowsOnATypeTheWidthTableDoesNotCover) {
-    auto f = dimer(4.0, 1.0, -1.0, /*t0=*/0, /*t1=*/2); // type 2, table has 0..1
+    auto f =
+        dimer(4.0, 1.0, -1.0, /*t0=*/0, /*t1=*/2); // type 2, table has 0..1
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;
     cpu::PairGaussianCoul pot(20.0, /*eta_by_type=*/{0.0, 1.0}, true);

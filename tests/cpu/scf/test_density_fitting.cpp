@@ -340,7 +340,8 @@ TEST(DensityFitting, MetricWhiteningIdentity) {
 //    path was silently substituted). ────────────────────────────────
 TEST(DensityFitting, FittedJKCloseToDenseH2) {
     cpu::Frame f = h2_frame();
-    internal::IntegralWorkspace pack{f, BasisSet::STO3G, 0, /*compute_eri=*/true};
+    internal::IntegralWorkspace pack{f, BasisSet::STO3G, 0,
+                                     /*compute_eri=*/true};
     internal::DensityFitting df(pack.shells, pack.atoms, AuxBasis::Def2JKFIT);
 
     // Hcore-guess density: P = 2 C_occ C_occᵀ, n_occ = 1.

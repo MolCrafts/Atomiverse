@@ -202,9 +202,8 @@ int main() {
                              - s_plain[static_cast<std::size_t>(a)];
         const double err = std::abs(d_atv - kSDispRef[a]);
         max_disp_err = std::max(max_disp_err, err);
-        std::printf(
-            "  σdisp_%s  atv=% .8e  cp2k=% .8e  |d|=%.3e Ha/Bohr3\n",
-            names[a], d_atv, kSDispRef[a], err);
+        std::printf("  σdisp_%s  atv=% .8e  cp2k=% .8e  |d|=%.3e Ha/Bohr3\n",
+                    names[a], d_atv, kSDispRef[a], err);
         if (!std::isfinite(d_atv)) {
             std::printf("FAIL: non-finite dispersion stress %s\n", names[a]);
             return 1;
@@ -220,9 +219,9 @@ int main() {
     // Soft gate — total σ(D3) vs CP2K NUMERICAL (grid-representation bound).
     double max_tot_err = 0.0;
     for (int a = 0; a < 3; ++a)
-        max_tot_err = std::max(max_tot_err,
-                               std::abs(san[static_cast<std::size_t>(a)]
-                                        - kSTotRef[a]));
+        max_tot_err =
+            std::max(max_tot_err,
+                     std::abs(san[static_cast<std::size_t>(a)] - kSTotRef[a]));
     if (max_tot_err > kSTotTol) {
         std::printf("FAIL: total σ vs CP2K NUMERICAL: max diag err %.6e > "
                     "tol %g Ha/Bohr3\n",
@@ -232,8 +231,7 @@ int main() {
 
     // Gate 3 — internal dual gate: analytic vs multi-SCF strain-FD (d3=true).
     const auto t4 = clock::now();
-    const auto sfd =
-        cpu::gpw::gpw_stress_fd(atoms, make_cfg(true), kStrainH);
+    const auto sfd = cpu::gpw::gpw_stress_fd(atoms, make_cfg(true), kStrainH);
     const auto t5 = clock::now();
     const double wall_fd_s = std::chrono::duration<double>(t5 - t4).count();
 
@@ -269,7 +267,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;
@@ -283,9 +282,9 @@ int main() {
     }
 
     const double e_ha = eval.last_energy_hartree();
-    std::printf("E_atv=%.12f Ha  E_disp=%.14e Ha (pin %.14e)  nk=%d  iters=%d\n",
-                e_ha, e_disp, kEDispRef, eval.last_result().n_kpts,
-                eval.last_result().iters);
+    std::printf(
+        "E_atv=%.12f Ha  E_disp=%.14e Ha (pin %.14e)  nk=%d  iters=%d\n", e_ha,
+        e_disp, kEDispRef, eval.last_result().n_kpts, eval.last_result().iters);
     std::printf("max|σdisp_atv-cp2k|=%.3e  max|σtot_atv-cp2k|=%.3e  "
                 "max|σ_an-σ_fd|=%.3e Ha/Bohr3\n",
                 max_disp_err, max_tot_err, max_diag_err);

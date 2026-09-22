@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -94,8 +94,7 @@ void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
                 "QmSubsystem: embed_cutoff must be > 0");
     }
     if (!(link_scale > 0.0) || !(link_scale < 1.0))
-        throw std::invalid_argument(
-            "QmSubsystem: link_scale must be in (0,1)");
+        throw std::invalid_argument("QmSubsystem: link_scale must be in (0,1)");
 
     resolve_mask_(frame);
 
@@ -135,9 +134,8 @@ void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
     // Dedupe unordered tag pairs (bonds may be listed once on min-tag owner).
     std::unordered_set<std::string> seen_pairs;
 
-    const bool has_bonds =
-        frame.blocks.at("atoms").contains("num_bond")
-        && frame.blocks.at("atoms").contains("bond_atom");
+    const bool has_bonds = frame.blocks.at("atoms").contains("num_bond")
+                           && frame.blocks.at("atoms").contains("bond_atom");
     if (has_bonds) {
         const auto num_bond = frame.span(kAtom_num_bond);
         const auto bond_atom = frame.span(kAtom_bond_atom);
@@ -186,9 +184,8 @@ void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
 void QmSubsystem::refresh_(Frame& frame) {
     resolve_mask_(frame);
     if (n_qm_real_ != built_n_qm_)
-        throw std::runtime_error(
-            "QmSubsystem: QM atom count changed mid-run "
-            "(kAtomQmZ is per-run static in v1)");
+        throw std::runtime_error("QmSubsystem: QM atom count changed mid-run "
+                                 "(kAtomQmZ is per-run static in v1)");
 
     const StorageReal* x = frame.span(kAtom_x);
     const StorageReal* y = frame.span(kAtom_y);

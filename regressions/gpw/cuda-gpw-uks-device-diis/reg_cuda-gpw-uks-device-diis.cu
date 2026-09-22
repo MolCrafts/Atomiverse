@@ -144,8 +144,8 @@ int main(int argc, char** argv) {
             "(H2 Γ UKS PADE dual device DIIS+eigen; perf_exempt small cell)\n",
             de);
     } else if (run_cuda) {
-        std::printf(
-            "PASS: cuda-gpw-uks-device-diis (cuda-only) E=%.12f Ha\n", e_cuda);
+        std::printf("PASS: cuda-gpw-uks-device-diis (cuda-only) E=%.12f Ha\n",
+                    e_cuda);
     } else {
         std::printf("PASS: cuda-gpw-uks-device-diis (cpu-only) E=%.12f Ha\n",
                     e_cpu);

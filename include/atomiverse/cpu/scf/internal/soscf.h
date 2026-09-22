@@ -79,8 +79,8 @@ class SOSCFStepper {
     ///        (dimensionless); the solve returns its best Ritz pair at the
     ///        budget (co-iteration, not failure).
     /// @param trust_radius Initial trust radius on ‖κ‖₂ (dimensionless).
-    SOSCFStepper(bool restricted, const internal::IntegralView& ints, const int& n_alpha,
-                 const int& n_beta, const RealMatrix& Hcore,
+    SOSCFStepper(bool restricted, const internal::IntegralView& ints,
+                 const int& n_alpha, const int& n_beta, const RealMatrix& Hcore,
                  const double& v_nuc, const RealMatrix& F_alpha,
                  const RealMatrix& F_beta, const RealMatrix& P_alpha,
                  const RealMatrix& P_beta, RealMatrix& C_alpha,
@@ -208,22 +208,22 @@ class SOSCFStepper {
     static void rotate_channel_(const RealVector& kappa, int n_occ,
                                 RealMatrix& C);
 
-    bool restricted_;           ///< Closed-shell (single channel) mode.
-    internal::IntegralView ints_;  ///< Integral workspace (ERI source).
-    const int& n_alpha_;        ///< α electron count (read).
-    const int& n_beta_;         ///< β electron count (read).
-    const RealMatrix& Hcore_;   ///< Core Hamiltonian [Hartree] (read).
-    const double& v_nuc_;       ///< Nuclear repulsion [Hartree] (read).
-    const RealMatrix& F_alpha_; ///< α Fock [Hartree] (read).
-    const RealMatrix& F_beta_;  ///< β Fock [Hartree] (read).
-    const RealMatrix& P_alpha_; ///< α density (read).
-    const RealMatrix& P_beta_;  ///< β density (read).
-    RealMatrix& C_alpha_;       ///< α MO coefficients (write).
-    RealMatrix& C_beta_;        ///< β MO coefficients (write).
-    RealVector& eig_alpha_;     ///< α orbital energies [Hartree] (write).
-    RealVector& eig_beta_;      ///< β orbital energies [Hartree] (write).
-    int max_micro_;             ///< Davidson expansion budget per macro step.
-    double trust_radius0_;      ///< Initial trust radius (reset value).
+    bool restricted_;             ///< Closed-shell (single channel) mode.
+    internal::IntegralView ints_; ///< Integral workspace (ERI source).
+    const int& n_alpha_;          ///< α electron count (read).
+    const int& n_beta_;           ///< β electron count (read).
+    const RealMatrix& Hcore_;     ///< Core Hamiltonian [Hartree] (read).
+    const double& v_nuc_;         ///< Nuclear repulsion [Hartree] (read).
+    const RealMatrix& F_alpha_;   ///< α Fock [Hartree] (read).
+    const RealMatrix& F_beta_;    ///< β Fock [Hartree] (read).
+    const RealMatrix& P_alpha_;   ///< α density (read).
+    const RealMatrix& P_beta_;    ///< β density (read).
+    RealMatrix& C_alpha_;         ///< α MO coefficients (write).
+    RealMatrix& C_beta_;          ///< β MO coefficients (write).
+    RealVector& eig_alpha_;       ///< α orbital energies [Hartree] (write).
+    RealVector& eig_beta_;        ///< β orbital energies [Hartree] (write).
+    int max_micro_;               ///< Davidson expansion budget per macro step.
+    double trust_radius0_;        ///< Initial trust radius (reset value).
 
     xt::xtensor<double, 4> eri_;  ///< Cached dense working-dim AO ERI
                                   ///< [Hartree] (per-run, lazily built).

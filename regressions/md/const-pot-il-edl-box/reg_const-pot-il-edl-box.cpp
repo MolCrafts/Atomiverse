@@ -54,15 +54,15 @@ constexpr double kPsiRight = +1.0; // [V]
 constexpr double kEta = 1.805132;  // MW graphite Gaussian width [1/Å]
 
 // Coarse-grained single-site IL (BMIM+/PF6−-like sizes; REFERENCE.md).
-constexpr double kEpsCat = 0.026532;  // 2.56 kJ/mol [eV]
-constexpr double kSigCat = 4.38;      // [Å]
-constexpr double kMassCat = 139.22;   // BMIM+ [amu]
-constexpr double kEpsAn = 0.048815;   // 4.71 kJ/mol [eV]
-constexpr double kSigAn = 5.06;       // [Å]
-constexpr double kMassAn = 144.96;    // PF6− [amu]
-constexpr double kEpsC = 0.0023837;   // 0.23 kJ/mol [eV] (graphite C)
-constexpr double kSigC = 3.37;        // [Å]
-constexpr double kMassC = 12.011;     // [amu]
+constexpr double kEpsCat = 0.026532; // 2.56 kJ/mol [eV]
+constexpr double kSigCat = 4.38;     // [Å]
+constexpr double kMassCat = 139.22;  // BMIM+ [amu]
+constexpr double kEpsAn = 0.048815;  // 4.71 kJ/mol [eV]
+constexpr double kSigAn = 5.06;      // [Å]
+constexpr double kMassAn = 144.96;   // PF6− [amu]
+constexpr double kEpsC = 0.0023837;  // 0.23 kJ/mol [eV] (graphite C)
+constexpr double kSigC = 3.37;       // [Å]
+constexpr double kMassC = 12.011;    // [amu]
 
 // Real MetalWalls c8ad175d empty-capacitor pin (total_charges.out):
 // tools/metalwalls_oracle/inputs/metalwalls/const-pot-il-edl-box/mw_twin/empty/
@@ -253,7 +253,8 @@ int main() {
                                      /*cutoff=*/10.0});
     sim.set_neighbor(cpu::md::NeighborList<>{/*cutoff=*/10.0, /*skin=*/0.5});
     sim.on(md::Phase::force).add(cpu::CoulLong{/*alpha=*/0.3, /*cutoff=*/8.0});
-    sim.set_evaluator(cpu::KSpacePME{/*alpha=*/0.3, /*spacing=*/0.5, /*order=*/5});
+    sim.set_evaluator(
+        cpu::KSpacePME{/*alpha=*/0.3, /*spacing=*/0.5, /*order=*/5});
     sim.set_observer(std::move(cpot));
     sim.set_observer(cpu::md::FixFreeze{2});
     sim.set_observer(cpu::md::FixFreeze{3});
@@ -302,9 +303,9 @@ int main() {
     // Freeze: graphene walls immobile.
     double max_dz = 0.0;
     for (int i = 0; i < 2 * kNWallPer; ++i)
-        max_dz = std::fmax(max_dz,
-                           std::fabs(frame.span(kAtom_z)[i]
-                                     - wz0[static_cast<std::size_t>(i)]));
+        max_dz =
+            std::fmax(max_dz, std::fabs(frame.span(kAtom_z)[i]
+                                        - wz0[static_cast<std::size_t>(i)]));
     if (!(max_dz <= 1e-10)) {
         std::printf("FAIL: wall moved (max|Δz|=%.3e)\n", max_dz);
         return 1;
@@ -350,8 +351,8 @@ int main() {
         double n = 0.0; // ions within 4 Å of the wall, from the run mean
         for (int i = 0; i < rho.n_bins(); ++i) {
             const double zc = rho.z_center(i);
-            const bool in = left_wall ? (zc < kZLeft + 4.0)
-                                      : (zc > kZRight - 4.0);
+            const bool in =
+                left_wall ? (zc < kZLeft + 4.0) : (zc > kZRight - 4.0);
             if (in)
                 n += rho.mean_density(s, i) * cell;
         }

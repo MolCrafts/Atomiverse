@@ -8,8 +8,8 @@
 #include <cmath>
 #include <cstdio>
 
-#include "atomiverse/core/units.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"

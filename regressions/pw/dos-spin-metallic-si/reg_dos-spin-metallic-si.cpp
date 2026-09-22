@@ -153,17 +153,16 @@ int main() {
     const double n_b =
         integrate_dos_to(dr.energy_ry, dr.dos_beta, dr.e_fermi_ry);
     if (!(std::abs((n_a + n_b) - dr.n_elec_to_vbm) <= 0.05)) {
-        std::printf(
-            "FAIL: n_alpha+n_beta=%.4f vs n_total=%.4f (tol 0.05)\n",
-            n_a + n_b, dr.n_elec_to_vbm);
+        std::printf("FAIL: n_alpha+n_beta=%.4f vs n_total=%.4f (tol 0.05)\n",
+                    n_a + n_b, dr.n_elec_to_vbm);
         return 1;
     }
     // M≈0: each spin channel holds ~ half the electrons under FD.
     if (!(std::abs(n_a - 0.5 * kNelec) <= kNelecTol
           && std::abs(n_b - 0.5 * kNelec) <= kNelecTol)) {
-        std::printf(
-            "FAIL: per-spin occupied integral n_a=%.4f n_b=%.4f want ~4 ± %.1f\n",
-            n_a, n_b, kNelecTol);
+        std::printf("FAIL: per-spin occupied integral n_a=%.4f n_b=%.4f want "
+                    "~4 ± %.1f\n",
+                    n_a, n_b, kNelecTol);
         return 1;
     }
 

@@ -73,8 +73,8 @@ int main() {
     // gate is still the UKS product path (dual P_k^σ warm start).
     constexpr double e0_cp2k_ha = -1.074050184366365; // step-0 Pot
     constexpr double f0x_cp2k = -0.345535381;         // atom 0 F_x [Ha/Bohr]
-    constexpr double pot_cp2k_ha[4] = {-1.097682104, -1.125544577,
-                                       -1.130531455, -1.121507812};
+    constexpr double pot_cp2k_ha[4] = {-1.097682104, -1.125544577, -1.130531455,
+                                       -1.121507812};
     // Same-method twin bands (REFERENCE.md): Γ-point periodic-GPW residual
     // on this compressed H₂ (~4e-4 Ha / ~6e-3 Ha/Bohr); multi-k adds <1e-5.
     constexpr double tol_e0 = 1e-3;    // [Ha] (RKS twin measured 4.07e-4)
@@ -107,8 +107,8 @@ int main() {
     if (!(std::fabs(e0_atv_ha - e0_cp2k_ha) <= tol_e0)) {
         std::printf("FAIL: step-0 energy vs CP2K |%.9f - (%.9f)| = %.3e Ha "
                     "> %.1e\n",
-                    e0_atv_ha, e0_cp2k_ha,
-                    std::fabs(e0_atv_ha - e0_cp2k_ha), tol_e0);
+                    e0_atv_ha, e0_cp2k_ha, std::fabs(e0_atv_ha - e0_cp2k_ha),
+                    tol_e0);
         return 1;
     }
     const double f0x_atv = static_cast<double>(frame.span(kAtom_fx)[0])
@@ -215,21 +215,21 @@ int main() {
     }
 
     if (!(worst_drift <= drift_tol)) {
-        std::printf("FAIL: NVE drift %.3e exceeds envelope %.2f\n",
-                    worst_drift, drift_tol);
+        std::printf("FAIL: NVE drift %.3e exceeds envelope %.2f\n", worst_drift,
+                    drift_tol);
         return 1;
     }
 
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     const double rhh = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (!(rhh > rmin) || !(rhh < rmax)) {
-        std::printf("FAIL: H–H bond out of window r=%.3f Å (%.2f–%.2f)\n",
-                    rhh, rmin, rmax);
+        std::printf("FAIL: H–H bond out of window r=%.3f Å (%.2f–%.2f)\n", rhh,
+                    rmin, rmax);
         return 1;
     }
 

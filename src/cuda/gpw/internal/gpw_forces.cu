@@ -89,8 +89,7 @@ __global__ void ionic_hf_kernel(int n_atoms, long npts, double w, int n0,
              g < ntot; g += static_cast<long>(blockDim.x) * gridDim.x) {
             double r[3];
             grid_r(g, n0, n1, n2, L0, L1, L2, o0, o1, o2, r);
-            double d[3] = {r[0] - a.pos[0], r[1] - a.pos[1],
-                           r[2] - a.pos[2]};
+            double d[3] = {r[0] - a.pos[0], r[1] - a.pos[1], r[2] - a.pos[2]};
             if (periodic) {
                 d[0] -= L0 * nearbyint(d[0] / L0);
                 d[1] -= L1 * nearbyint(d[1] / L1);
@@ -154,8 +153,7 @@ __global__ void local_pp_hf_kernel(int n_atoms, long npts, double w, int n0,
                 d[1] -= L1 * nearbyint(d[1] / L1);
                 d[2] -= L2 * nearbyint(d[2] / L2);
             }
-            const double t =
-                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) * inv_s2;
+            const double t = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) * inv_s2;
             double poly = 0.0, dpoly = 0.0;
             double tp = 1.0, tpm1 = 0.0;
             for (int k = 0; k < a.n_cloc; ++k) {
@@ -227,9 +225,9 @@ void accumulate_ionic_hf_forces_device(const CollocateGridDesc& grid,
     if (grid_dim > 1024)
         grid_dim = 1024;
     ionic_hf_kernel<<<grid_dim, kBlock, 0, stream>>>(
-        n_atoms, npts, w, grid.n[0], grid.n[1], grid.n[2], grid.L[0],
-        grid.L[1], grid.L[2], grid.origin[0], grid.origin[1], grid.origin[2],
-        periodic, d_atoms, d_v_es, d_forces);
+        n_atoms, npts, w, grid.n[0], grid.n[1], grid.n[2], grid.L[0], grid.L[1],
+        grid.L[2], grid.origin[0], grid.origin[1], grid.origin[2], periodic,
+        d_atoms, d_v_es, d_forces);
 }
 
 void accumulate_local_pp_hf_forces_device(const CollocateGridDesc& grid,
@@ -248,9 +246,9 @@ void accumulate_local_pp_hf_forces_device(const CollocateGridDesc& grid,
     if (grid_dim > 1024)
         grid_dim = 1024;
     local_pp_hf_kernel<<<grid_dim, kBlock, 0, stream>>>(
-        n_atoms, npts, w, grid.n[0], grid.n[1], grid.n[2], grid.L[0],
-        grid.L[1], grid.L[2], grid.origin[0], grid.origin[1], grid.origin[2],
-        periodic, d_atoms, d_rho, d_forces);
+        n_atoms, npts, w, grid.n[0], grid.n[1], grid.n[2], grid.L[0], grid.L[1],
+        grid.L[2], grid.origin[0], grid.origin[1], grid.origin[2], periodic,
+        d_atoms, d_rho, d_forces);
 }
 
 } // namespace internal

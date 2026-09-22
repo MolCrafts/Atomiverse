@@ -76,8 +76,8 @@ int main() {
     }
 
     // Analytic prediction: ⟨V⟩ = (N+1)k_BT/P + N·B₂ + O(N B₂² ρ).
-    const double v_ideal = (n_atoms + 1) * kT / pressure;   // [Å³]
-    const double v_pred = v_ideal + n_atoms * b2;           // [Å³]
+    const double v_ideal = (n_atoms + 1) * kT / pressure; // [Å³]
+    const double v_pred = v_ideal + n_atoms * b2;         // [Å³]
     // Exact ideal-gas NPT width: Var V = (N+1)(k_BT/P)².
     const double sd_pred = std::sqrt(double(n_atoms + 1)) * kT / pressure;
     // The fingerprint of the V^N weight: getting the exponent wrong by one
@@ -230,8 +230,7 @@ int main() {
     const double e_book = static_cast<double>(mc.current_energy());
     std::printf("bookkeeping E %.9f eV   recomputed E %.9f eV   |dE| %.3e\n",
                 e_book, e_true, std::fabs(e_book - e_true));
-    if (!(std::fabs(e_book - e_true)
-          <= 1e-9 * std::fabs(e_true) + 1e-12)) {
+    if (!(std::fabs(e_book - e_true) <= 1e-9 * std::fabs(e_true) + 1e-12)) {
         std::printf("FAIL: the chain's reference energy no longer describes "
                     "the configuration it holds\n");
         return 1;

@@ -76,7 +76,8 @@ PoissonResult solve_poisson(const UniformGrid& grid,
     const double w = grid.weight();
     double e = 0.0;
     for (long i = 0; i < ntot; ++i)
-        e += rho_r[static_cast<std::size_t>(i)] * out.v_r[static_cast<std::size_t>(i)];
+        e += rho_r[static_cast<std::size_t>(i)]
+             * out.v_r[static_cast<std::size_t>(i)];
     out.e_hartree = 0.5 * w * e;
 
     return out;
@@ -151,7 +152,8 @@ PoissonResult solve_poisson_q(const UniformGrid& grid,
     const double w = grid.weight();
     double e = 0.0;
     for (long i = 0; i < ntot; ++i)
-        e += rho_r[static_cast<std::size_t>(i)] * out.v_r[static_cast<std::size_t>(i)];
+        e += rho_r[static_cast<std::size_t>(i)]
+             * out.v_r[static_cast<std::size_t>(i)];
     out.e_hartree = 0.5 * w * e;
 
     return out;

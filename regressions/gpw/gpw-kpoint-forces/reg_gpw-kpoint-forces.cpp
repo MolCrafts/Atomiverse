@@ -29,7 +29,7 @@ void check(bool ok, const char* what) {
 
 // Frozen first-green ATV (Release, OMP=8). Offline FD on related geometry:
 // max|F_an − F_fd| = 5.98e-6 Ha/Bohr (h = 1e-3). See REFERENCE.md.
-constexpr double kEPin = -1.057153829426; // Ha
+constexpr double kEPin = -1.057153829426;  // Ha
 constexpr double kF0xPin = -0.23541914472; // Ha/Bohr
 constexpr double kF1xPin = 0.23541914472;  // Ha/Bohr
 constexpr double kETol = 1e-5;             // Ha
@@ -72,8 +72,8 @@ int main() {
     const auto& er = energy.run(atoms);
     check(er.converged, "A1 k-mesh SCF converged");
     check(std::isfinite(er.e_total), "A1 finite energy");
-    std::printf("E(k 1x1x2) = %.12f Ha  iters=%d  nk=%d\n", er.e_total, er.iters,
-                er.n_kpts);
+    std::printf("E(k 1x1x2) = %.12f Ha  iters=%d  nk=%d\n", er.e_total,
+                er.iters, er.n_kpts);
     check(std::abs(er.e_total - kEPin) <= kETol, "A3 |E - pin| <= 1e-5 Ha");
 
     const auto Fa = gpw_forces_analytic(atoms, make_cfg());

@@ -23,15 +23,15 @@
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GridBasisFunction;
 using ATV::cpu::gpw::GthPotential;
+using ATV::cpu::gpw::make_multigrid;
 using ATV::cpu::gpw::MultiGrid;
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::make_multigrid;
+using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
 using ATV::cpu::gpw::internal::CplxMatrix;
+using ATV::cpu::gpw::internal::diagonalize_k;
 using ATV::cpu::gpw::internal::KOrth;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
-using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
-using ATV::cpu::gpw::internal::diagonalize_k;
 using ATV::cuda::gpw::internal::KpointDiisEigenDevice;
 using ATV::cuda::gpw::internal::KpointIntegrateDevice;
 
@@ -140,8 +140,7 @@ TEST(CudaGpwKpointHResidency, IngestResidualMatchesHostDownload) {
             }
         }
         orth.emplace_back(S[static_cast<std::size_t>(ik)], 1e-10);
-        max_m = std::max(max_m,
-                         static_cast<int>(orth.back().X.shape(1)));
+        max_m = std::max(max_m, static_cast<int>(orth.back().X.shape(1)));
         auto [eps0, C0] =
             diagonalize_k(H0[static_cast<std::size_t>(ik)], orth.back());
         (void)eps0;

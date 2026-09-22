@@ -54,13 +54,13 @@ constexpr double kFIsoPin[6][3] = {
 int main() {
     using namespace ATV;
     using cpu::gpw::GaussianBasis;
+    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::gpw_forces_from_scf;
+    using cpu::gpw::XcKind;
     using cpu::gpw::xdm_pbe;
     using cpu::gpw::XdmResult;
-    using cpu::gpw::XcKind;
 
     constexpr double kA2B = 1.0 / 0.52917720859;
 
@@ -99,9 +99,8 @@ int main() {
     double max_pin = 0.0;
     for (std::size_t i = 0; i < 6; ++i)
         for (int d = 0; d < 3; ++d)
-            max_pin = std::max(
-                max_pin,
-                std::abs(xdm_iso.forces[i][d] - kFIsoPin[i][d]));
+            max_pin = std::max(max_pin,
+                               std::abs(xdm_iso.forces[i][d] - kFIsoPin[i][d]));
     check(max_pin <= kPinFTol, "A3 max|F_iso - dual-Python sample|");
 
     const double h = 1.0e-5;
@@ -121,8 +120,7 @@ int main() {
                     xdm_pbe(Zw, pos_fd, cell, periodic, kRcut).energy;
                 pos_fd[i][d] = save;
                 const double fd = -(ep - em) / (2.0 * h);
-                max_err =
-                    std::max(max_err, std::abs(fd - xdm.forces[i][d]));
+                max_err = std::max(max_err, std::abs(fd - xdm.forces[i][d]));
                 sum[d] += xdm.forces[i][d];
             }
         }
@@ -177,19 +175,17 @@ int main() {
     check(F_xdm.size() == 2 && F_plain.size() == 2, "B two force vectors");
 
     std::vector<int> Zh = {1, 1};
-    std::vector<std::array<double, 3>> posh = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    std::vector<std::array<double, 3>> posh = {{rA[0], rA[1], rA[2]},
+                                               {rB[0], rB[1], rB[2]}};
     const double cellh[3] = {12.0, 12.0, 12.0};
-    const XdmResult geom =
-        xdm_pbe(Zh, posh, cellh, /*periodic=*/true, kRcut);
+    const XdmResult geom = xdm_pbe(Zh, posh, cellh, /*periodic=*/true, kRcut);
 
     double max_wire = 0.0;
     for (int a = 0; a < 2; ++a) {
         for (int k = 0; k < 3; ++k) {
-            const double d =
-                (F_xdm[static_cast<std::size_t>(a)][k]
-                 - F_plain[static_cast<std::size_t>(a)][k])
-                - geom.forces[static_cast<std::size_t>(a)][k];
+            const double d = (F_xdm[static_cast<std::size_t>(a)][k]
+                              - F_plain[static_cast<std::size_t>(a)][k])
+                             - geom.forces[static_cast<std::size_t>(a)][k];
             max_wire = std::max(max_wire, std::abs(d));
             check(std::isfinite(F_xdm[static_cast<std::size_t>(a)][k]),
                   "B finite force component");
@@ -198,12 +194,11 @@ int main() {
     check(max_wire <= kWireTol, "B multi-k wiring |F_xdm-F_plain-F_geom|");
     check(std::abs(geom.forces[0][0]) > 1e-8, "B nontrivial XDM F0x");
 
-    std::printf(
-        "PASS: gpw-xdm-kpoint-forces  E_iso=%.14e  E_per=%.14e  "
-        "max|F_iso-pin|=%.2e  multi-k H2 e_disp=%.6e  max|wire|=%.2e  "
-        "n_kpts=%d\n",
-        xdm_iso.energy, xdm_per.energy, max_pin, scf.e_disp, max_wire,
-        scf.n_kpts);
+    std::printf("PASS: gpw-xdm-kpoint-forces  E_iso=%.14e  E_per=%.14e  "
+                "max|F_iso-pin|=%.2e  multi-k H2 e_disp=%.6e  max|wire|=%.2e  "
+                "n_kpts=%d\n",
+                xdm_iso.energy, xdm_per.energy, max_pin, scf.e_disp, max_wire,
+                scf.n_kpts);
 
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);

@@ -69,7 +69,8 @@ class CphfPack {
     /// @throws std::invalid_argument on an unrestricted determinant or
     ///         dimension mismatches (no fallback).
     CphfPack(const SlaterDeterminant& det, const OrbitalHessian& oh,
-             const internal::IntegralView& pack, const xt::xtensor<double, 4>& eri_ao,
+             const internal::IntegralView& pack,
+             const xt::xtensor<double, 4>& eri_ao,
              const xt::xtensor<double, 4>& dS_ao,
              const xt::xtensor<double, 4>& dF_ao);
 
@@ -131,7 +132,7 @@ class CphfPack {
 
     const SlaterDeterminant& det_;      ///< Converged reference (borrowed).
     const OrbitalHessian& oh_;          ///< Shared σ-vector kernel (borrowed).
-    internal::IntegralView pack_;          ///< Geometry + S/Hcore (borrowed).
+    internal::IntegralView pack_;       ///< Geometry + S/Hcore (borrowed).
     const xt::xtensor<double, 4>& eri_; ///< Dense AO ERI (borrowed).
     const xt::xtensor<double, 4>& dS_ao_; ///< Skeleton dS (borrowed).
     const xt::xtensor<double, 4>& dF_ao_; ///< Skeleton dF (borrowed).

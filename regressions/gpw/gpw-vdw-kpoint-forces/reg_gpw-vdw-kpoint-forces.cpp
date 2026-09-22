@@ -133,7 +133,8 @@ int main() {
     const auto t0 = Clock::now();
     const GpwResult& res = mp.run(atoms);
     check(res.converged, "G1 multi-k SCF converged");
-    check(res.n_kpts >= 1 && !res.C_occ_k.empty(), "G1 multi-k C_occ_k payload");
+    check(res.n_kpts >= 1 && !res.C_occ_k.empty(),
+          "G1 multi-k C_occ_k payload");
     check(std::isfinite(res.e_disp)
               && std::abs(res.e_disp - kEDispCp2k) <= kEDispTol,
           "G1 |E_disp - CP2K|");

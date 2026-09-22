@@ -132,8 +132,7 @@ int main() {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);
         return 1;
     }
-    std::printf(
-        "PASS: gpw-kpoint-stress  E=%.10f  max|dσ|=%.3e  max|σ|=%.3e\n",
-        er.e_total, max_diag_err, max_diag);
+    std::printf("PASS: gpw-kpoint-stress  E=%.10f  max|dσ|=%.3e  max|σ|=%.3e\n",
+                er.e_total, max_diag_err, max_diag);
     return 0;
 }

@@ -77,13 +77,13 @@ int main() {
     // Offline CP2K 2026.1 (cp2k.psmp rev 85b8a9b49c): water dimer, PBE +
     // NON_LOCAL DRSLL, CUTOFF 200 / NGRIDS 4 / REL_CUTOFF 40, KPOINTS
     // MONKHORST-PACK 2 1 1 — see REFERENCE.md.
-    constexpr double kEDispCp2k = 0.15193559113836;      // Ha
-    constexpr double kETotCp2k = -34.186333514352548;    // Ha
-    constexpr double kEDispTol = 1.0e-4;                 // Ha
+    constexpr double kEDispCp2k = 0.15193559113836;   // Ha
+    constexpr double kETotCp2k = -34.186333514352548; // Ha
+    constexpr double kEDispTol = 1.0e-4;              // Ha
     // Same Γ-dimer twin-family systematic as gpw-vdw-multigrid (~8e-3 Ha).
-    constexpr double kETotTol = 1.0e-2;                  // Ha
+    constexpr double kETotTol = 1.0e-2; // Ha
     // Γ-limit identity (k-path at Γ vs shipped Γ runner).
-    constexpr double kGammaLimitTol = 1.0e-8;            // Ha
+    constexpr double kGammaLimitTol = 1.0e-8; // Ha
 
     const auto atoms = make_atoms();
     const auto t0 = Clock::now();
@@ -98,7 +98,8 @@ int main() {
         gamma.build(atoms);
         const GpwResult& rg = gamma.run(atoms);
         if (!rg.converged) {
-            std::fprintf(stderr, "FAIL: G1 Γ runner SCF did not converge (%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: G1 Γ runner SCF did not converge (%d)\n",
                          rg.iters);
             return 1;
         }
@@ -154,8 +155,9 @@ int main() {
         const double wall_mp =
             std::chrono::duration<double>(Clock::now() - t_mp0).count();
         if (!rm.converged) {
-            std::fprintf(stderr, "FAIL: G2 MP multigrid SCF did not converge "
-                                 "(%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: G2 MP multigrid SCF did not converge "
+                         "(%d)\n",
                          rm.iters);
             return 1;
         }

@@ -17,8 +17,8 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/dynamics/fix_dfield.h"
-#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 
@@ -127,8 +127,8 @@ int main() {
     // Pins are the CONTINUOUS analytic values; dt = 0.1 fs keeps the VV
     // discretization error below 5e-6 Å (tolerance 5e-5).
     {
-        const double dt = 0.1;    // [fs]
-        const double d0 = 2.0;    // [Å]
+        const double dt = 0.1;                      // [fs]
+        const double d0 = 2.0;                      // [Å]
         const double omega = 5.9091697154893236e-2; // [1/fs]
         const double U0 = 3.6190255157040796e-1;    // [eV]
         const double tol_z = 5e-5;
@@ -158,7 +158,8 @@ int main() {
         // Quarter period (~266 steps): d ≈ 0; run in two legs so we can pin
         // the mid-trajectory point too.
         sim.run(f, 266);
-        const double d_266 = double(f.span(kAtom_z)[0]) - double(f.span(kAtom_z)[1]);
+        const double d_266 =
+            double(f.span(kAtom_z)[0]) - double(f.span(kAtom_z)[1]);
         std::printf("Gate B: step 266  d=%.16e want=%.16e\n", d_266,
                     d0 * std::cos(omega * 26.6));
         if (std::fabs(d_266 - d0 * std::cos(omega * 26.6)) > tol_z) {
@@ -167,7 +168,8 @@ int main() {
         }
 
         sim.run(f, 266); // half period total (532 steps)
-        const double d_532 = double(f.span(kAtom_z)[0]) - double(f.span(kAtom_z)[1]);
+        const double d_532 =
+            double(f.span(kAtom_z)[0]) - double(f.span(kAtom_z)[1]);
         const double d_want = d0 * std::cos(omega * 53.2); // ≈ −d0
         std::printf("Gate B: step 532  d=%.16e want=%.16e\n", d_532, d_want);
         if (std::fabs(d_532 - d_want) > tol_z) {
@@ -190,8 +192,8 @@ int main() {
         // Field response: E_z(t) = −4π k_e P_z(t) tracked the motion.
         std::printf("Gate B: Ez(final)=%.16e Pz(final)=%.16e\n",
                     dfield.last_Ez(), dfield.last_Pz());
-        if (std::fabs(dfield.last_Ez() - (-4.0 * units::pi * units::coulomb
-                                          * dfield.last_Pz()))
+        if (std::fabs(dfield.last_Ez()
+                      - (-4.0 * units::pi * units::coulomb * dfield.last_Pz()))
             > 1e-13) {
             std::printf("FAIL B Ez = -4*pi*k_e*Pz self-consistency\n");
             ok = false;

@@ -92,7 +92,8 @@ TEST(ZeroMomentum, ZeroesUniformCOMDriftAfterOneStep) {
 
     const double cutoff = 3.0;
     cuda::md::MD sim;
-    sim.set_integrator(cuda::md::VelocityVerlet{1e-6}); // tiny dt — preserve velocity bias
+    sim.set_integrator(
+        cuda::md::VelocityVerlet{1e-6}); // tiny dt — preserve velocity bias
     sim.on(ATV::md::Phase::force)
         .add(cuda::NeighborList{cutoff}, -10)
         .add(cuda::PairLJCut{1.0, 1.0, cutoff});

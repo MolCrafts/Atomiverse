@@ -136,10 +136,10 @@ std::vector<double> host_integrate(const UniformGrid& grid,
     return acc;
 }
 
-std::vector<double> cpu_collint_integrate(const UniformGrid& grid,
-                                          const std::vector<DeviceProduct>& prods,
-                                          const std::vector<double>& V,
-                                          double eps = 1e-14) {
+std::vector<double>
+cpu_collint_integrate(const UniformGrid& grid,
+                      const std::vector<DeviceProduct>& prods,
+                      const std::vector<double>& V, double eps = 1e-14) {
     std::vector<double> acc(prods.size(), 0.0);
     for (std::size_t q = 0; q < prods.size(); ++q) {
         GridProduct gp = to_grid_product(prods[q]);
@@ -159,8 +159,10 @@ std::vector<double> make_V(const UniformGrid& grid) {
         grid.point(i, r);
         // Mild quadratic + offset (Hartree-ish scale).
         V[static_cast<std::size_t>(i)] =
-            0.35 + 0.02 * ((r[0] - 4.0) * (r[0] - 4.0) + 0.5 * (r[1] - 4.0)
-                           + 0.25 * (r[2] - 4.0));
+            0.35
+            + 0.02
+                  * ((r[0] - 4.0) * (r[0] - 4.0) + 0.5 * (r[1] - 4.0)
+                     + 0.25 * (r[2] - 4.0));
     }
     return V;
 }
@@ -174,8 +176,8 @@ std::vector<double> run_device(const UniformGrid& grid,
         dmalloc(static_cast<size_t>(nprod) * sizeof(DeviceProduct)));
     auto* d_V =
         static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
-    auto* d_acc =
-        static_cast<double*>(dmalloc(static_cast<size_t>(nprod) * sizeof(double)));
+    auto* d_acc = static_cast<double*>(
+        dmalloc(static_cast<size_t>(nprod) * sizeof(double)));
     check_cuda(cudaMemcpy(d_prods, prods.data(),
                           static_cast<size_t>(nprod) * sizeof(DeviceProduct),
                           cudaMemcpyHostToDevice),
@@ -202,7 +204,8 @@ std::vector<double> run_device(const UniformGrid& grid,
     return acc;
 }
 
-double max_abs_diff(const std::vector<double>& a, const std::vector<double>& b) {
+double max_abs_diff(const std::vector<double>& a,
+                    const std::vector<double>& b) {
     EXPECT_EQ(a.size(), b.size());
     double m = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i)
@@ -342,14 +345,13 @@ TEST(CudaGpwProductIntegrate, SingleProductWrapper) {
         V2[static_cast<std::size_t>(i)] = 0.5 + 0.03 * r[0];
     }
 
-    auto* d_prod =
-        static_cast<DeviceProduct*>(dmalloc(sizeof(DeviceProduct)));
+    auto* d_prod = static_cast<DeviceProduct*>(dmalloc(sizeof(DeviceProduct)));
     auto* d_V =
         static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
     auto* d_acc = static_cast<double*>(dmalloc(sizeof(double)));
-    check_cuda(cudaMemcpy(d_prod, &q, sizeof(DeviceProduct),
-                          cudaMemcpyHostToDevice),
-               "H2D");
+    check_cuda(
+        cudaMemcpy(d_prod, &q, sizeof(DeviceProduct), cudaMemcpyHostToDevice),
+        "H2D");
     check_cuda(cudaMemcpy(d_V, V2.data(),
                           static_cast<size_t>(ng) * sizeof(double),
                           cudaMemcpyHostToDevice),
@@ -357,15 +359,14 @@ TEST(CudaGpwProductIntegrate, SingleProductWrapper) {
     integrate_product(to_desc(grid), d_prod, d_V, d_acc);
     check_cuda(cudaDeviceSynchronize(), "sync");
     double acc_dev = 0.0;
-    check_cuda(cudaMemcpy(&acc_dev, d_acc, sizeof(double),
-                          cudaMemcpyDeviceToHost),
-               "D2H");
+    check_cuda(
+        cudaMemcpy(&acc_dev, d_acc, sizeof(double), cudaMemcpyDeviceToHost),
+        "D2H");
 
     std::vector<DeviceProduct> prods = {q};
     const auto acc_host = host_integrate(grid, prods, V2);
     // Sphere-window PBC integrate vs full continuous host: tail truncation.
-    EXPECT_NEAR(acc_dev, acc_host[0],
-                1e-10 * std::abs(acc_host[0]) + 1e-12);
+    EXPECT_NEAR(acc_dev, acc_host[0], 1e-10 * std::abs(acc_host[0]) + 1e-12);
 
     cudaFree(d_prod);
     cudaFree(d_V);
@@ -393,9 +394,8 @@ TEST(CudaGpwProductIntegrate, EdgeCenteredPbcMatchesCollint) {
     for (long i = 0; i < ng; ++i) {
         double r[3];
         grid.point(i, r);
-        acc_pbc[0] +=
-            V[static_cast<std::size_t>(i)]
-            * host_product_shape_bare_pbc(prods[0], r, L);
+        acc_pbc[0] += V[static_cast<std::size_t>(i)]
+                      * host_product_shape_bare_pbc(prods[0], r, L);
     }
 
     const double peak = std::max(std::abs(acc_cpu[0]), std::abs(acc_pbc[0]));

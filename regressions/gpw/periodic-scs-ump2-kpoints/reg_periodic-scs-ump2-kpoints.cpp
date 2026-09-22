@@ -52,9 +52,9 @@ int main() {
     // MP2_GPW under DFT KPOINTS (no algorithm twin). Absolute band freezes
     // that dual-gate product digit.
     constexpr double kEcorrRef = -0.0737958960; // Ha (RKS multi-k SCS dual)
-    constexpr double kEcorrTol = 2.0e-3;         // Ha (UKS numerical drift)
-    constexpr double kScaleIdTol = 1.0e-12;      // Ha algebraic identity
-    constexpr double kOsSsPlainTol = 1.0e-10;    // Ha unscaled vs plain
+    constexpr double kEcorrTol = 2.0e-3;        // Ha (UKS numerical drift)
+    constexpr double kScaleIdTol = 1.0e-12;     // Ha algebraic identity
+    constexpr double kOsSsPlainTol = 1.0e-10;   // Ha unscaled vs plain
 
     auto atoms = si_bct(a_bohr);
 
@@ -87,8 +87,9 @@ int main() {
         std::fprintf(stderr,
                      "FAIL: 2k UKS SCF (conv=%d n_kpts=%d C_k=%zu C_k_beta=%zu "
                      "iters=%d E=%.8f)\n",
-                     static_cast<int>(scf.converged), scf.n_kpts, scf.C_k.size(),
-                     scf.C_k_beta.size(), scf.iters, scf.e_total);
+                     static_cast<int>(scf.converged), scf.n_kpts,
+                     scf.C_k.size(), scf.C_k_beta.size(), scf.iters,
+                     scf.e_total);
         return 1;
     }
     if (scf.eps_k_beta.size() != 2) {
@@ -132,8 +133,8 @@ int main() {
     }
     // n_occ = nα+nβ = 16; n_virt = 2+2 = 4 under mp2_n_virt=2 per spin
     if (r_scs.n_occ != 16 || r_scs.n_virt != 4) {
-        std::fprintf(stderr, "FAIL: n_occ=%d n_virt=%d (want 16/4)\n", r_scs.n_occ,
-                     r_scs.n_virt);
+        std::fprintf(stderr, "FAIL: n_occ=%d n_virt=%d (want 16/4)\n",
+                     r_scs.n_occ, r_scs.n_virt);
         return 1;
     }
 
@@ -182,7 +183,8 @@ int main() {
         return 1;
     }
     if (wall_all > 60.0) {
-        std::fprintf(stderr, "FAIL: wall=%.1f s exceeds 60 s budget\n", wall_all);
+        std::fprintf(stderr, "FAIL: wall=%.1f s exceeds 60 s budget\n",
+                     wall_all);
         return 1;
     }
 

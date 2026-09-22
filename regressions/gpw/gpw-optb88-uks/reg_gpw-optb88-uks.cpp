@@ -74,7 +74,8 @@ int main() {
     // PBE (family `gpw-optb88-kpoints` uses 1e-2 Ha); UKS O2 measured ~0.02
     // Ha on single-grid and ~same class with NGRIDS 4.
     constexpr double kTolEtot = 2.5e-2; // Ha
-    constexpr double kTolDisp = 1.0e-4; // Ha (tight — E_c^nl is the product pin)
+    constexpr double kTolDisp =
+        1.0e-4; // Ha (tight — E_c^nl is the product pin)
     // CP2K timer TOTAL TIME on the same twin job (1 MPI × OMP=8).
     constexpr double kCp2kWall = 66.011; // s
     // Dual-gate floor [Ha] — OptB88+DRSLL vs PBE+DRSLL must activate exchange.
@@ -135,7 +136,8 @@ int main() {
                 static_cast<int>(r_opt.converged), r_opt.iters, wall_a,
                 wall_a / kCp2kWall, kCp2kWall);
 
-    bool ok = r_opt.converged && std::isfinite(e_opt) && std::isfinite(r_opt.e_disp);
+    bool ok =
+        r_opt.converged && std::isfinite(e_opt) && std::isfinite(r_opt.e_disp);
     ok = ok && conv_pbe && std::isfinite(e_pbe);
     ok = ok && std::fabs(e_opt - e_pbe) > kDeFloor;
     ok = ok && std::fabs(e_opt - kEtotCp2k) <= kTolEtot;
@@ -187,8 +189,8 @@ int main() {
 
     std::printf("B: E_RKS=%.12f  E_UKS=%.12f Ha  |dE|=%.3e eV (tol %.0e)\n",
                 e_rks, e_uks, de_ev, kTolIdentityEv);
-    std::printf("B: D_RKS=%.10e  D_UKS=%.10e Ha  |dD|=%.3e (tol %.0e)\n",
-                d_rks, d_uks, std::fabs(d_uks - d_rks), kTolIdentityDisp);
+    std::printf("B: D_RKS=%.10e  D_UKS=%.10e Ha  |dD|=%.3e (tol %.0e)\n", d_rks,
+                d_uks, std::fabs(d_uks - d_rks), kTolIdentityDisp);
     std::printf("B: conv RKS=%d UKS=%d  wall(B)=%.1f s\n",
                 static_cast<int>(eval_rks.last_result().converged),
                 static_cast<int>(eval_uks.last_result().converged),

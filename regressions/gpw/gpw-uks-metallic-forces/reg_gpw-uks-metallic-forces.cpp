@@ -30,7 +30,7 @@ constexpr double kNeTol = 1e-5;
 // Force magnitude floor: BCC Na is nearly force-free by symmetry at
 // equilibrium; the dual gate checks |sum F| and closed-shell identity.
 // A mild bond stretch is not used — the product pin is equilibrium Na.
-constexpr double kSumFTol = 1e-5; // Ha/Bohr
+constexpr double kSumFTol = 1e-5;             // Ha/Bohr
 constexpr double kClosedShellForceTol = 5e-4; // Ha/Bohr
 
 int g_fail = 0;
@@ -47,8 +47,7 @@ void check(bool ok, const char* what) {
 /// BCC conventional cubic: 2 Na at (0,0,0) and (½,½,½).
 std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
     using namespace ATV;
-    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na,
-                                      "DZVP-MOLOPT-SR-GTH");
+    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH");
     const cpu::gpw::GthPotential pNa(molrs::Element::Na, "GTH-PBE-q9");
     const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
     std::vector<cpu::gpw::GpwAtom> atoms;
@@ -77,11 +76,11 @@ std::vector<ATV::cpu::gpw::GpwAtom> h2_toy(double L_bohr) {
 
 int main() {
     using namespace ATV;
+    using cpu::gpw::gpw_forces_analytic;
+    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::GpwDft;
     using cpu::gpw::Smearing;
     using cpu::gpw::XcKind;
-    using cpu::gpw::gpw_forces_analytic;
-    using cpu::gpw::gpw_forces_from_scf;
 
     const auto t0 = std::chrono::steady_clock::now();
 
@@ -173,8 +172,7 @@ int main() {
               "A1 finite Fermi level");
         check(std::isfinite(er.e_entropy), "A1 finite entropy term");
         check(er.n_kpts >= 1, "A1 n_kpts >= 1");
-        check(static_cast<int>(er.f_k.size()) == er.n_kpts,
-              "A1 f_k payload");
+        check(static_cast<int>(er.f_k.size()) == er.n_kpts, "A1 f_k payload");
         check(static_cast<int>(er.f_k_beta.size()) == er.n_kpts,
               "A1 f_k_beta payload");
         check(static_cast<int>(er.C_occ_k.size()) == er.n_kpts, "A1 C_occ_k");

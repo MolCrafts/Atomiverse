@@ -17,15 +17,15 @@
 #include <vector>
 
 using ATV::cpu::gpw::GaussianBasis;
-using ATV::cpu::gpw::GthPotential;
 using ATV::cpu::gpw::GpwAtom;
 using ATV::cpu::gpw::GridBasisFunction;
+using ATV::cpu::gpw::GthPotential;
 using ATV::cpu::gpw::make_multigrid;
+using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
+using ATV::cpu::gpw::internal::collocate_density_k;
 using ATV::cpu::gpw::internal::CplxMatrix;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
-using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
-using ATV::cpu::gpw::internal::collocate_density_k;
 using ATV::cuda::gpw::internal::KpointCollocateDevice;
 using Cplx = std::complex<double>;
 

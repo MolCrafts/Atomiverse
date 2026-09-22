@@ -10,10 +10,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/xl_bomd_force.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/xl_bomd_force.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -172,12 +172,12 @@ int main() {
         }
     }
 
-    const double dxf = static_cast<double>(frame.span(kAtom_x)[1]
-                                           - frame.span(kAtom_x)[0]);
-    const double dyf = static_cast<double>(frame.span(kAtom_y)[1]
-                                           - frame.span(kAtom_y)[0]);
-    const double dzf = static_cast<double>(frame.span(kAtom_z)[1]
-                                           - frame.span(kAtom_z)[0]);
+    const double dxf =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dyf =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dzf =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     const double r_oo = std::sqrt(dxf * dxf + dyf * dyf + dzf * dzf);
     if (!(r_oo < oo_max) || !(r_oo > oo_min)) {
         std::printf("FAIL: O–O bond exploded/collapsed r=%.3f Å "
@@ -192,10 +192,10 @@ int main() {
     std::printf("XL-BOMD linearized O2 triplet NVE (K=5, UKS): steps=%d  "
                 "E0=%.6g eV  Ef=%.6g eV  worst |dE|/scale=%.3e  tol=%.2f  "
                 "warm_iters=%d  rOO=%.3f Å  S2=%.4f→%.4f\n",
-                n_prod, e0, pe_f + ke_f, worst_drift, drift_tol,
-                max_warm_iters, r_oo, s2_0, s2_f);
-    std::printf("  PE0=%.6g  KE0=%.6g  PEf=%.6g  KEf=%.6g eV\n", pe0, ke0,
-                pe_f, ke_f);
+                n_prod, e0, pe_f + ke_f, worst_drift, drift_tol, max_warm_iters,
+                r_oo, s2_0, s2_f);
+    std::printf("  PE0=%.6g  KE0=%.6g  PEf=%.6g  KEf=%.6g eV\n", pe0, ke0, pe_f,
+                ke_f);
 
     if (!(worst_drift <= drift_tol)) {
         std::printf("FAIL: energy drift %.3e exceeds tol %.2f\n", worst_drift,

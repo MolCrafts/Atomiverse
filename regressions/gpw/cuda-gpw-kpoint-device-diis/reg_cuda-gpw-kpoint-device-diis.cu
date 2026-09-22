@@ -142,14 +142,14 @@ int main(int argc, char** argv) {
         std::printf("|E_cuda-E_cpu|=%.3e Ha  tol=%.1e  nk=%d\n", de, kETolHa,
                     nk_cpu);
         if (!(de <= kETolHa)) {
-            std::fprintf(stderr, "FAIL: energy dual-gate |dE|=%.6e > tol\n", de);
+            std::fprintf(stderr, "FAIL: energy dual-gate |dE|=%.6e > tol\n",
+                         de);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-kpoint-device-diis  |dE|=%.3e  nk=%d  "
-            "(H2 k_mesh=2x1x1 TR-off RKS PADE; device KDiis+zheevd; "
-            "perf_exempt multi-k spine)\n",
-            de, nk_cpu);
+        std::printf("PASS: cuda-gpw-kpoint-device-diis  |dE|=%.3e  nk=%d  "
+                    "(H2 k_mesh=2x1x1 TR-off RKS PADE; device KDiis+zheevd; "
+                    "perf_exempt multi-k spine)\n",
+                    de, nk_cpu);
     } else {
         std::printf("PASS: cuda-gpw-kpoint-device-diis (--device=%s only)\n",
                     device.c_str());

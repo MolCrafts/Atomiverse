@@ -77,18 +77,18 @@ int main() {
 
     // Offline CP2K 2026.1 (cp2k.psmp), NGRIDS 4 / REL_CUTOFF 40 + NON_LOCAL
     // DRSLL — see REFERENCE.md. CP2K's own NGRIDS 4 ↔ 1 gap is 6.0e-7 Ha.
-    constexpr double kEDispCp2kMg = 1.5193559412669e-01;   // Ha
-    constexpr double kETotCp2kMg = -34.186333524093456;    // Ha
-    constexpr double kEDispTol = 1.0e-4;                   // Ha
+    constexpr double kEDispCp2kMg = 1.5193559412669e-01; // Ha
+    constexpr double kETotCp2kMg = -34.186333524093456;  // Ha
+    constexpr double kEDispTol = 1.0e-4;                 // Ha
     // ATV ↔ CP2K absolute E_tot on this Γ dimer twin family carries a known
     // ~7.9e-3 Ha systematic that is IDENTICAL on the single-grid and
     // multigrid paths (measured Δ_sg = 7.922e-3, Δ_mg = 7.926e-3, and
     // eps_default 1e-10 moves it by <1e-8): the gate pins that the multigrid
     // total stays inside that pre-existing single-grid envelope.
-    constexpr double kETotTol = 1.0e-2;                    // Ha
+    constexpr double kETotTol = 1.0e-2; // Ha
     // Internal single-grid ↔ multigrid consistency (measured 4.28e-6 Ha;
     // CP2K's own NGRIDS 4 ↔ 1 gap is 6.0e-7 Ha).
-    constexpr double kEConsistencyTol = 2.0e-5;            // Ha
+    constexpr double kEConsistencyTol = 2.0e-5; // Ha
 
     const auto atoms = make_atoms();
 
@@ -112,27 +112,24 @@ int main() {
         return 1;
     }
 
-    std::printf("E_tot  sg=%.12f mg=%.12f  |d|=%.3e Ha\n", e_tot_sg,
-                rm.e_total, std::abs(rm.e_total - e_tot_sg));
+    std::printf("E_tot  sg=%.12f mg=%.12f  |d|=%.3e Ha\n", e_tot_sg, rm.e_total,
+                std::abs(rm.e_total - e_tot_sg));
     std::printf("E_disp sg=%.12f mg=%.12f  (CP2K mg %.12f)\n", e_disp_sg,
                 rm.e_disp, kEDispCp2kMg);
 
     if (std::abs(rm.e_total - e_tot_sg) > kEConsistencyTol) {
-        std::fprintf(stderr,
-                     "FAIL: |E_tot(mg) - E_tot(sg)| = %.3e Ha > %.1e\n",
+        std::fprintf(stderr, "FAIL: |E_tot(mg) - E_tot(sg)| = %.3e Ha > %.1e\n",
                      std::abs(rm.e_total - e_tot_sg), kEConsistencyTol);
         return 1;
     }
     if (!std::isfinite(rm.e_disp)
         || std::abs(rm.e_disp - kEDispCp2kMg) > kEDispTol) {
-        std::fprintf(stderr,
-                     "FAIL: E_disp(mg) got=%.14e want=%.14e ±%.1e Ha\n",
+        std::fprintf(stderr, "FAIL: E_disp(mg) got=%.14e want=%.14e ±%.1e Ha\n",
                      rm.e_disp, kEDispCp2kMg, kEDispTol);
         return 1;
     }
     if (std::abs(rm.e_total - kETotCp2kMg) > kETotTol) {
-        std::fprintf(stderr,
-                     "FAIL: E_tot(mg) got=%.14f want=%.14f ±%.1e Ha\n",
+        std::fprintf(stderr, "FAIL: E_tot(mg) got=%.14f want=%.14f ±%.1e Ha\n",
                      rm.e_total, kETotCp2kMg, kETotTol);
         return 1;
     }

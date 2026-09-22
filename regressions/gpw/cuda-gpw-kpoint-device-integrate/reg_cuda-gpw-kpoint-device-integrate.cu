@@ -92,7 +92,8 @@ int main(int argc, char** argv) {
         m.build(atoms);
         const auto& r = m.run(atoms);
         if (!r.converged) {
-            std::fprintf(stderr, "FAIL: CPU multi-k SCF not converged (iters=%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: CPU multi-k SCF not converged (iters=%d)\n",
                          r.iters);
             return 1;
         }
@@ -141,7 +142,8 @@ int main(int argc, char** argv) {
         std::printf("|E_cuda-E_cpu|=%.3e Ha  tol=%.1e  nk=%d\n", de, kETolHa,
                     nk_cpu);
         if (!(de <= kETolHa)) {
-            std::fprintf(stderr, "FAIL: energy dual-gate |dE|=%.6e > tol\n", de);
+            std::fprintf(stderr, "FAIL: energy dual-gate |dE|=%.6e > tol\n",
+                         de);
             return 1;
         }
         std::printf(
@@ -149,8 +151,9 @@ int main(int argc, char** argv) {
             "(H2 k_mesh=2x1x1 TR-off RKS PADE; device V→H_k; perf_exempt)\n",
             de, nk_cpu);
     } else {
-        std::printf("PASS: cuda-gpw-kpoint-device-integrate (--device=%s only)\n",
-                    device.c_str());
+        std::printf(
+            "PASS: cuda-gpw-kpoint-device-integrate (--device=%s only)\n",
+            device.c_str());
     }
     return 0;
 }

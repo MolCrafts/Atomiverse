@@ -52,10 +52,10 @@ int main() {
     const double d_hh = 1.5139;
     const double half = 0.5 * d_hh;
     const double h = std::sqrt(d_oh * d_oh - half * half);
-    const double dt = 2.0;      // [fs] — only a RIGID water survives this
-    const double cutoff = 8.0;  // [Å]
+    const double dt = 2.0;     // [fs] — only a RIGID water survives this
+    const double cutoff = 8.0; // [Å]
     const double box_len = 24.0;
-    const int n_steps = 500;    // 1 ps
+    const int n_steps = 500; // 1 ps
 
     // Two waters, 3.5 Å apart: close enough that the oxygen-oxygen LJ is a
     // real force (and a real torque on each molecule), far enough that the
@@ -107,9 +107,8 @@ int main() {
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
     // TIP3P puts the Lennard-Jones site on OXYGEN only (ε = 0.1521 kcal/mol,
     // σ = 3.1507 Å); hydrogen has none, so every pair touching an H is zero.
-    sim.set_evaluator(
-        cpu::PairLJCut{{{8, 8, 0.1521 * 0.04336, 3.1507}}, cutoff}
-            .set_special_bonds(0.0, 0.0, 0.0));
+    sim.set_evaluator(cpu::PairLJCut{{{8, 8, 0.1521 * 0.04336, 3.1507}}, cutoff}
+                          .set_special_bonds(0.0, 0.0, 0.0));
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.5});
     cpu::md::FixSettle settle(dt, d_oh, d_hh);
     settle.add_water(1, 2, 3);
@@ -127,8 +126,8 @@ int main() {
         const int ii[3] = {o, o, a}, jj[3] = {a, b, b};
         const double want[3] = {d_oh, d_oh, d_hh};
         for (int c = 0; c < 3; ++c) {
-            const double e = std::fabs(dist(f, ii[c], jj[c]) - want[c])
-                             / want[c];
+            const double e =
+                std::fabs(dist(f, ii[c], jj[c]) - want[c]) / want[c];
             std::printf("  mol %d constraint %d: rel err %.3e\n", m, c, e);
             worst = std::fmax(worst, e);
         }

@@ -255,15 +255,16 @@ class DeviceBandSolver {
     // Dense-grid buffers
     cufftDoubleComplex* d_grid_ = nullptr; ///< nr c2c work grid (owned).
     // Borrowed from internal::DeviceDensity — never allocated or freed here.
-    double* rho_accum_ = nullptr;     ///< nr density accumulator (device).
-    const double* veff_r_ = nullptr;  ///< nr V_eff(r) [Hartree] (device).
+    double* rho_accum_ = nullptr;    ///< nr density accumulator (device).
+    const double* veff_r_ = nullptr; ///< nr V_eff(r) [Hartree] (device).
 
     // ── Views into the packed tables below, moved by bind_kpoint(). ──
     // NOT owned: never pass these to device_free().
-    const int* d_idx_ = nullptr;    ///< G → flat FFT-grid index (bound k).
-    const double* d_tg_ = nullptr;  ///< T(G) kinetic diagonal (bound k).
+    const int* d_idx_ = nullptr;      ///< G → flat FFT-grid index (bound k).
+    const double* d_tg_ = nullptr;    ///< T(G) kinetic diagonal (bound k).
     const double* d_betad_ = nullptr; ///< per-column KB strength D (bound k).
-    const cufftDoubleComplex* d_sub0_ = nullptr; ///< initial subspace (bound k).
+    const cufftDoubleComplex* d_sub0_ =
+        nullptr; ///< initial subspace (bound k).
 
     // Owned, sized to the largest k-sphere; contents rebuilt per bind_kpoint.
     cufftDoubleComplex* d_beta_ = nullptr;   ///< β matrix (ng × n_proj_).
@@ -282,11 +283,11 @@ class DeviceBandSolver {
     double* d_qx_all_ = nullptr; ///< q = k+G, x component [Bohr⁻¹].
     double* d_qy_all_ = nullptr;
     double* d_qz_all_ = nullptr;
-    int* d_cl_all_ = nullptr;  ///< β column: l.
-    int* d_cm_all_ = nullptr;  ///< β column: m.
-    int* d_co_all_ = nullptr;  ///< β column: offset into this k's f_G block.
-    int* d_cn_all_ = nullptr;  ///< β column: length of its f_G run.
-    int* d_cia_all_ = nullptr; ///< β column: atom index (force reduction).
+    int* d_cl_all_ = nullptr;    ///< β column: l.
+    int* d_cm_all_ = nullptr;    ///< β column: m.
+    int* d_co_all_ = nullptr;    ///< β column: offset into this k's f_G block.
+    int* d_cn_all_ = nullptr;    ///< β column: length of its f_G run.
+    int* d_cia_all_ = nullptr;   ///< β column: atom index (force reduction).
     double* d_cd_all_ = nullptr; ///< β column: KB strength D.
     double* d_cp_all_ = nullptr; ///< β column: atom position (3 per column).
     double* d_fg_all_ = nullptr; ///< concatenated radial f_G.
@@ -306,16 +307,16 @@ class DeviceBandSolver {
     /// in place with the eigenvectors, whose first n_bands columns ARE the
     /// Ritz rotation — so no separate rotation buffer exists.
     cufftDoubleComplex* d_hs_ = nullptr;
-    double* d_eig_ = nullptr;               ///< subspace eigenvalues (cap).
+    double* d_eig_ = nullptr;                  ///< subspace eigenvalues (cap).
     cufftDoubleComplex* d_evd_work_ = nullptr; ///< Zheevd workspace.
-    int* d_evd_info_ = nullptr;             ///< Zheevd convergence flag.
-    int evd_lwork_ = 0;                     ///< Allocated Zheevd workspace.
-    cufftDoubleComplex* d_work_ = nullptr;  ///< ng scratch (R / δ).
+    int* d_evd_info_ = nullptr;                ///< Zheevd convergence flag.
+    int evd_lwork_ = 0;                        ///< Allocated Zheevd workspace.
+    cufftDoubleComplex* d_work_ = nullptr;     ///< ng scratch (R / δ).
     // Residual-expansion scalars, device-resident for a whole band step.
-    double* d_nrm_ = nullptr;  ///< [3]: ‖R‖, ‖precond‖, ‖δ‖.
-    double* d_inv_ = nullptr;  ///< [2]: guarded 1/‖precond‖, 1/‖δ‖.
-    int* d_accept_ = nullptr;  ///< 1 = append this band's δ to the subspace.
-    cufftDoubleComplex* d_ovlp_ = nullptr;  ///< cap scratch (⟨V|δ⟩).
+    double* d_nrm_ = nullptr; ///< [3]: ‖R‖, ‖precond‖, ‖δ‖.
+    double* d_inv_ = nullptr; ///< [2]: guarded 1/‖precond‖, 1/‖δ‖.
+    int* d_accept_ = nullptr; ///< 1 = append this band's δ to the subspace.
+    cufftDoubleComplex* d_ovlp_ = nullptr; ///< cap scratch (⟨V|δ⟩).
 };
 
 } // namespace internal

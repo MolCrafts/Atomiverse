@@ -82,8 +82,8 @@ int main(int argc, char** argv) {
     maze.launch({ctx, f, 0, 0});
     pg.launch({ctx, f, 0, 0});
 
-    std::printf("# ATV twin  box %.4f %.4f %.4f A  cutoff %.4f A\n", Lx, Ly,
-                Lz, cut);
+    std::printf("# ATV twin  box %.4f %.4f %.4f A  cutoff %.4f A\n", Lx, Ly, Lz,
+                cut);
     double qbot = 0.0, qtop = 0.0;
     // Print in MetalWalls' electrode ordering: E1 (bottom) rows 0-3, then E2.
     for (int i = 0; i < 8; ++i) {

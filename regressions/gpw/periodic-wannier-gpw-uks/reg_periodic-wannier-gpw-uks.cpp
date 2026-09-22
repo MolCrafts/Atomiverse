@@ -53,9 +53,9 @@ double min_image_dist(const std::array<double, 3>& a,
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-double max_assigned_distance(
-    const std::vector<std::array<double, 3>>& centers,
-    const std::array<std::array<double, 3>, 8>& mids, const double L[3]) {
+double max_assigned_distance(const std::vector<std::array<double, 3>>& centers,
+                             const std::array<std::array<double, 3>, 8>& mids,
+                             const double L[3]) {
     const int n = 8;
     double cost[8][8];
     for (int i = 0; i < n; ++i)
@@ -95,7 +95,7 @@ int main() {
     constexpr double kCutoffRy = 100.0;
     constexpr int kMeshMlwf = 2;
     // Coarse 2×2×2 SMV midpoint tol (same as reg_periodic-wannier-gpw).
-    constexpr double kMidTol = 0.90; // bond-midpoint distance [Angstrom]
+    constexpr double kMidTol = 0.90;      // bond-midpoint distance [Angstrom]
     constexpr double kSpreadRatio = 0.50; // Ω_final / Ω_init upper bound
     // Offline CP2K 2026.1 twin (see REFERENCE.md): total energy [Ha].
     // ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]  -15.769956662772422
@@ -131,8 +131,7 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const auto r = mlwf.compute(method, atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
     if (!r.scf_converged) {
         std::printf("FAIL: SCF did not converge (E=%g Ha)\n", r.energy_ha);
@@ -141,8 +140,8 @@ int main() {
     std::printf("SCF E=%.8f Ha  n_up=%d n_dn=%d n_wann=%d  iters=%d  conv=%d\n",
                 r.energy_ha, r.n_wann_up, r.n_wann_dn, r.n_wann, r.iterations,
                 static_cast<int>(r.converged));
-    std::printf("Omega_init=%.6f  Omega=%.6f  [Ang^2]\n", r.total_spread_initial,
-                r.total_spread);
+    std::printf("Omega_init=%.6f  Omega=%.6f  [Ang^2]\n",
+                r.total_spread_initial, r.total_spread);
     std::printf("ATV wall (SCF+MLWF) = %.3f s\n", wall_s);
 
     if (r.n_wann_up != 8 || r.n_wann_dn != 8 || r.n_wann != 16) {

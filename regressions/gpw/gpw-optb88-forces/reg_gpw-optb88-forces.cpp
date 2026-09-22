@@ -23,14 +23,14 @@ using namespace ATV;
 namespace {
 
 // Offline CP2K 2026.1 ENERGY_FORCE pin (REFERENCE.md).
-constexpr double kEDispCp2k = 0.15206184251169;       // Ha
-constexpr double kETotCp2k = -34.487914413113714;     // Ha FORCE_EVAL QS
-constexpr double kCp2kWall = 17.509;                  // s, CP2K timer TOTAL
-constexpr double kEDispTol = 1.0e-4;                  // Ha
-constexpr double kETotTol = 2.5e-2;                   // Ha (OptB88 multigrid class)
-constexpr double kForceTol = 1.0e-2;                  // Ha/Bohr
-constexpr double kSumFTol = 2.0e-2;                   // Ha/Bohr (oracle residual)
-constexpr double kDualEFloor = 1.0e-4;                // Ha
+constexpr double kEDispCp2k = 0.15206184251169;   // Ha
+constexpr double kETotCp2k = -34.487914413113714; // Ha FORCE_EVAL QS
+constexpr double kCp2kWall = 17.509;              // s, CP2K timer TOTAL
+constexpr double kEDispTol = 1.0e-4;              // Ha
+constexpr double kETotTol = 2.5e-2;               // Ha (OptB88 multigrid class)
+constexpr double kForceTol = 1.0e-2;              // Ha/Bohr
+constexpr double kSumFTol = 2.0e-2;               // Ha/Bohr (oracle residual)
+constexpr double kDualEFloor = 1.0e-4;            // Ha
 constexpr double kForce[6][3] = {
     {-7.33537750e-02, 4.42763551e-08, -3.00361565e-08},
     {3.93194959e-02, -3.97828002e-09, 1.31800024e-01},

@@ -103,7 +103,8 @@ TEST(HueckelGuess, OffDiagonalWolfsbergHelmholzElementWise) {
 
 TEST(HueckelGuess, SphericalBasisWorkingDimension) {
     cpu::Frame frame = make_h2o();
-    internal::IntegralWorkspace ints{frame, BasisSet::Def2SVP}; // spherical convention
+    internal::IntegralWorkspace ints{frame,
+                                     BasisSet::Def2SVP}; // spherical convention
     ASSERT_TRUE(ints.spherical());
     HueckelGuess hg(ints.shells, ints.S, ints.atoms);
     ASSERT_EQ(static_cast<int>(hg.F.shape()[0]), ints.n_basis);

@@ -29,7 +29,8 @@ RealMatrix alda_kernel_matrix(const SlaterDeterminant& det,
             "(no fallback)");
     if (pack.shells.empty())
         throw std::invalid_argument(
-            "alda_kernel_matrix: internal::IntegralWorkspace has no shells (no fallback)");
+            "alda_kernel_matrix: internal::IntegralWorkspace has no shells (no "
+            "fallback)");
 
     using Spin = SlaterDeterminant::Spin;
     const RealMatrix& C = det.coefficients(Spin::alpha);

@@ -117,9 +117,8 @@ int main() {
     }
     if (!(std::isfinite(dr.n_elec_to_vbm)
           && std::abs(dr.n_elec_to_vbm - kNelec) <= kNelecTol)) {
-        std::printf(
-            "FAIL: n_elec_to_vbm got=%.4f want=%.1f ± %.1f\n",
-            dr.n_elec_to_vbm, kNelec, kNelecTol);
+        std::printf("FAIL: n_elec_to_vbm got=%.4f want=%.1f ± %.1f\n",
+                    dr.n_elec_to_vbm, kNelec, kNelecTol);
         return 1;
     }
     if (!(dr.gap_ry > 0.0)) {
@@ -131,29 +130,26 @@ int main() {
     // Total D ≈ Dα + Dβ on the shared energy grid (trap consistency).
     const double n_a =
         integrate_dos_to(dr.energy_ry, dr.dos_alpha, dr.e_vbm_ry);
-    const double n_b =
-        integrate_dos_to(dr.energy_ry, dr.dos_beta, dr.e_vbm_ry);
+    const double n_b = integrate_dos_to(dr.energy_ry, dr.dos_beta, dr.e_vbm_ry);
     if (!(std::abs((n_a + n_b) - dr.n_elec_to_vbm) <= 0.05)) {
-        std::printf(
-            "FAIL: n_alpha+n_beta=%.4f vs n_total=%.4f (tol 0.05)\n",
-            n_a + n_b, dr.n_elec_to_vbm);
+        std::printf("FAIL: n_alpha+n_beta=%.4f vs n_total=%.4f (tol 0.05)\n",
+                    n_a + n_b, dr.n_elec_to_vbm);
         return 1;
     }
     // M=0: each spin channel holds ~ half the electrons.
     if (!(std::abs(n_a - 0.5 * kNelec) <= kNelecTol
           && std::abs(n_b - 0.5 * kNelec) <= kNelecTol)) {
-        std::printf(
-            "FAIL: per-spin occupied integral n_a=%.4f n_b=%.4f want ~4 ± %.1f\n",
-            n_a, n_b, kNelecTol);
+        std::printf("FAIL: per-spin occupied integral n_a=%.4f n_b=%.4f want "
+                    "~4 ± %.1f\n",
+                    n_a, n_b, kNelecTol);
         return 1;
     }
 
-    std::printf(
-        "PASS: collinear spin DOS Si a=%.2f A ecut=%.0f Ry scf_k=%d  "
-        "nspin=%d mag=%.3e  gap=%.4f Ry  n_elec_to_vbm=%.3f "
-        "(ne=%.0f±%.0f; n_a=%.3f n_b=%.3f)  E_scf=%.6f Ry  bins=%zu\n",
-        kA, kEcutRy, kMeshScf, dr.nspin, dr.magnetization, dr.gap_ry,
-        dr.n_elec_to_vbm, kNelec, kNelecTol, n_a, n_b, dr.scf_energy_ry,
-        dr.dos.size());
+    std::printf("PASS: collinear spin DOS Si a=%.2f A ecut=%.0f Ry scf_k=%d  "
+                "nspin=%d mag=%.3e  gap=%.4f Ry  n_elec_to_vbm=%.3f "
+                "(ne=%.0f±%.0f; n_a=%.3f n_b=%.3f)  E_scf=%.6f Ry  bins=%zu\n",
+                kA, kEcutRy, kMeshScf, dr.nspin, dr.magnetization, dr.gap_ry,
+                dr.n_elec_to_vbm, kNelec, kNelecTol, n_a, n_b, dr.scf_energy_ry,
+                dr.dos.size());
     return 0;
 }

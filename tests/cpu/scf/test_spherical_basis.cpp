@@ -27,8 +27,8 @@
 using namespace ATV;
 using cpu::scf::angular_convention;
 using cpu::scf::BasisSet;
-using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::basis_data::AngularConvention;
+using cpu::scf::internal::IntegralWorkspace;
 
 namespace {
 

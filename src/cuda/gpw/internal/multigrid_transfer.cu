@@ -46,8 +46,7 @@ int grid_blocks(long nwork) {
 
 /// Pack real → complex (imag = 0).
 __global__ void pack_real_kernel(const double* __restrict__ in,
-                                 cufftDoubleComplex* __restrict__ out,
-                                 long n) {
+                                 cufftDoubleComplex* __restrict__ out, long n) {
     for (long i = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
          i < n; i += static_cast<long>(blockDim.x) * gridDim.x) {
         out[i].x = in[i];
@@ -74,7 +73,7 @@ __global__ void zero_cplx_kernel(cufftDoubleComplex* __restrict__ buf, long n) {
 
 /// Per-axis coarse→fine map (device). Returns count 1 or 2.
 __device__ __forceinline__ int axis_coarse_to_fine(int ic, int nc, int nf,
-                                                  int dst[2], double wt[2]) {
+                                                   int dst[2], double wt[2]) {
     const int m = (ic <= nc / 2) ? ic : ic - nc;
     const int am = (m < 0) ? -m : m;
     if (am == nc / 2) {
@@ -91,12 +90,12 @@ __device__ __forceinline__ int axis_coarse_to_fine(int ic, int nc, int nf,
 
 /// Embed coarse spectrum into fine (scaled by scale_prolong). One thread /
 /// coarse mode; atomics for Nyquist multi-dest.
-__global__ void
-embed_kernel(const cufftDoubleComplex* __restrict__ Fc,
-             cufftDoubleComplex* __restrict__ Ff, int nc0, int nc1, int nc2,
-             int nf0, int nf1, int nf2, double scale) {
-    const long ntot_c =
-        static_cast<long>(nc0) * static_cast<long>(nc1) * static_cast<long>(nc2);
+__global__ void embed_kernel(const cufftDoubleComplex* __restrict__ Fc,
+                             cufftDoubleComplex* __restrict__ Ff, int nc0,
+                             int nc1, int nc2, int nf0, int nf1, int nf2,
+                             double scale) {
+    const long ntot_c = static_cast<long>(nc0) * static_cast<long>(nc1)
+                        * static_cast<long>(nc2);
     for (long idx = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
          idx < ntot_c; idx += static_cast<long>(blockDim.x) * gridDim.x) {
         const int i2 = static_cast<int>(idx % nc2);
@@ -125,12 +124,11 @@ embed_kernel(const cufftDoubleComplex* __restrict__ Fc,
 }
 
 /// Gather fine spectrum into coarse (adjoint of embed without prolong scale).
-__global__ void
-gather_kernel(const cufftDoubleComplex* __restrict__ Ff,
-              cufftDoubleComplex* __restrict__ Fc, int nc0, int nc1, int nc2,
-              int nf0, int nf1, int nf2) {
-    const long ntot_c =
-        static_cast<long>(nc0) * static_cast<long>(nc1) * static_cast<long>(nc2);
+__global__ void gather_kernel(const cufftDoubleComplex* __restrict__ Ff,
+                              cufftDoubleComplex* __restrict__ Fc, int nc0,
+                              int nc1, int nc2, int nf0, int nf1, int nf2) {
+    const long ntot_c = static_cast<long>(nc0) * static_cast<long>(nc1)
+                        * static_cast<long>(nc2);
     for (long idx = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
          idx < ntot_c; idx += static_cast<long>(blockDim.x) * gridDim.x) {
         const int i2 = static_cast<int>(idx % nc2);
@@ -203,7 +201,8 @@ MultigridTransferDevice::MultigridTransferDevice(
                 "MultigridTransferDevice: coarse/fine L mismatch");
     }
 
-    scale_prolong_ = static_cast<double>(ntot_f_) / static_cast<double>(ntot_c_);
+    scale_prolong_ =
+        static_cast<double>(ntot_f_) / static_cast<double>(ntot_c_);
     inv_nf_ = 1.0 / static_cast<double>(ntot_f_);
 
     try {
@@ -216,18 +215,20 @@ MultigridTransferDevice::MultigridTransferDevice(
         check_cufft(cufftPlan3d(&bwd_f_, nf0_, nf1_, nf2_, CUFFT_Z2Z),
                     "cufftPlan3d fine Z2Z bwd");
         if (stream_) {
-            check_cufft(cufftSetStream(fwd_c_, stream_), "cufftSetStream fwd_c");
-            check_cufft(cufftSetStream(bwd_c_, stream_), "cufftSetStream bwd_c");
-            check_cufft(cufftSetStream(fwd_f_, stream_), "cufftSetStream fwd_f");
-            check_cufft(cufftSetStream(bwd_f_, stream_), "cufftSetStream bwd_f");
+            check_cufft(cufftSetStream(fwd_c_, stream_),
+                        "cufftSetStream fwd_c");
+            check_cufft(cufftSetStream(bwd_c_, stream_),
+                        "cufftSetStream bwd_c");
+            check_cufft(cufftSetStream(fwd_f_, stream_),
+                        "cufftSetStream fwd_f");
+            check_cufft(cufftSetStream(bwd_f_, stream_),
+                        "cufftSetStream bwd_f");
         }
-        check_cuda(cudaMalloc(&d_c_c_,
-                              static_cast<size_t>(ntot_c_)
-                                  * sizeof(cufftDoubleComplex)),
+        check_cuda(cudaMalloc(&d_c_c_, static_cast<size_t>(ntot_c_)
+                                           * sizeof(cufftDoubleComplex)),
                    "malloc coarse cplx");
-        check_cuda(cudaMalloc(&d_c_f_,
-                              static_cast<size_t>(ntot_f_)
-                                  * sizeof(cufftDoubleComplex)),
+        check_cuda(cudaMalloc(&d_c_f_, static_cast<size_t>(ntot_f_)
+                                           * sizeof(cufftDoubleComplex)),
                    "malloc fine cplx");
     } catch (...) {
         if (fwd_c_)
@@ -289,7 +290,7 @@ void MultigridTransferDevice::restrict(const double* d_fine, double* d_coarse) {
                 "fwd fine restrict");
 
     gather_kernel<<<bc, kBlock, 0, stream_>>>(d_c_f_, d_c_c_, nc0_, nc1_, nc2_,
-                                             nf0_, nf1_, nf2_);
+                                              nf0_, nf1_, nf2_);
     check_cuda(cudaGetLastError(), "gather_kernel");
 
     check_cufft(cufftExecZ2Z(bwd_c_, d_c_c_, d_c_c_, CUFFT_INVERSE),

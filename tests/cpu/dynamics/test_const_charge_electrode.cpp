@@ -67,9 +67,9 @@ void run_once(cpu::md::ConstPotBO& c, cpu::Frame& f) {
 } // namespace
 
 TEST(ConstChargeElectrode, RegistrationChainsAndPotentialFallback) {
-    cpu::md::ConstPotBO conq =
-        cpu::md::ConstPotBO(2.0).add_electrode_charge(1, -0.5).add_electrode_charge(
-            2, 0.5);
+    cpu::md::ConstPotBO conq = cpu::md::ConstPotBO(2.0)
+                                   .add_electrode_charge(1, -0.5)
+                                   .add_electrode_charge(2, 0.5);
     EXPECT_EQ(conq.name(), "const_pot_bo");
     // Before any solve, const-Q groups report a zero (unsolved) potential.
     EXPECT_DOUBLE_EQ(conq.electrode_potential(0), 0.0);
@@ -99,8 +99,7 @@ TEST(ConstChargeElectrode, SolvedPotentialMatchesAnalyticTwoSite) {
     constexpr double kQ = 0.25;
     const double ke = units::coulomb;
     const double a_self = ke * kEta * std::sqrt(2.0 / 3.14159265358979323846);
-    const double a01 =
-        ke * std::erf(kEta / std::sqrt(2.0) * kSep) / kSep;
+    const double a01 = ke * std::erf(kEta / std::sqrt(2.0) * kSep) / kSep;
     const double psi_bot = a_self * (-kQ) + a01 * kQ;
     const double psi_top = a01 * (-kQ) + a_self * kQ;
 

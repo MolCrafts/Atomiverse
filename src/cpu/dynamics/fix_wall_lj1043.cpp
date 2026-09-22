@@ -94,7 +94,7 @@ void FixWallLJ1043::launch(const cpu::LaunchContext& ctx) {
     // the reported atom independent of the thread count.
     int on_wall_i = n;
 
-#pragma omp parallel for reduction(+ : u) reduction(min : on_wall_i)            \
+#pragma omp parallel for reduction(+ : u) reduction(min : on_wall_i)           \
     schedule(static)
     for (int i = 0; i < n; ++i) {
         // delta = distance into the fluid half-space (LAMMPS wall_particle).

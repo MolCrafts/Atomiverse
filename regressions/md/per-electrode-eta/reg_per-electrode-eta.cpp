@@ -144,8 +144,8 @@ int main() {
     }
     // Monotone bracket: smaller η lowers the self elastance → more charge.
     if (!(q_hi < q_mixed && q_mixed < q_lo)) {
-        std::fprintf(stderr, "FAIL case2 bracket %g < %g < %g violated\n",
-                     q_hi, q_mixed, q_lo);
+        std::fprintf(stderr, "FAIL case2 bracket %g < %g < %g violated\n", q_hi,
+                     q_mixed, q_lo);
         ++nfail;
     }
     // 3-arg overload at equal η reproduces the 2-arg shared path exactly.

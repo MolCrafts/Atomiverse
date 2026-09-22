@@ -178,7 +178,8 @@ class Cpmd {
     /// @param Cdot_occ Electronic velocity [a.u. time\(^{-1}\)], same shape as
     ///        `C_occ`.
     /// @throws std::invalid_argument on empty / shape mismatch.
-    void seed(const linalg::RealMatrix& C_occ, const linalg::RealMatrix& Cdot_occ);
+    void seed(const linalg::RealMatrix& C_occ,
+              const linalg::RealMatrix& Cdot_occ);
 
     /// @brief Re-orthonormalize \(C\) under a new metric \(S\) (nuclei moved)
     ///        and project \(\dot C\) onto the velocity constraint manifold.
@@ -235,15 +236,15 @@ class Cpmd {
     /// Recompute \(T_e\) and \(E_{\mathrm{therm}}\) from state.
     void update_energies();
 
-    double mu_ = 400.0;          ///< fictitious mass [a.u.].
-    linalg::RealMatrix C_;       ///< occupied coefficients
-    linalg::RealMatrix Cdot_;    ///< electronic velocity
-    double ke_ha_ = 0.0;         ///< last T_e [Hartree]
-    double e_therm_ha_ = 0.0;    ///< last E_therm [Hartree]
-    double xi_ = 0.0;            ///< NH friction
-    double eta_ = 0.0;           ///< NH coordinate
-    int last_pos_iters_ = 0;     ///< last position-RATTLE iteration count
-    double last_sigma_inf_ = 0.0;///< last ‖σ‖_∞
+    double mu_ = 400.0;           ///< fictitious mass [a.u.].
+    linalg::RealMatrix C_;        ///< occupied coefficients
+    linalg::RealMatrix Cdot_;     ///< electronic velocity
+    double ke_ha_ = 0.0;          ///< last T_e [Hartree]
+    double e_therm_ha_ = 0.0;     ///< last E_therm [Hartree]
+    double xi_ = 0.0;             ///< NH friction
+    double eta_ = 0.0;            ///< NH coordinate
+    int last_pos_iters_ = 0;      ///< last position-RATTLE iteration count
+    double last_sigma_inf_ = 0.0; ///< last ‖σ‖_∞
     bool ready_ = false;
 };
 
@@ -345,7 +346,8 @@ class CpmdCplx {
     /// @param Cdot_occ Electronic velocity [a.u. time\(^{-1}\)], same shape as
     ///        `C_occ`.
     /// @throws std::invalid_argument on empty / shape mismatch.
-    void seed(const linalg::CplxMatrix& C_occ, const linalg::CplxMatrix& Cdot_occ);
+    void seed(const linalg::CplxMatrix& C_occ,
+              const linalg::CplxMatrix& Cdot_occ);
 
     /// @brief Löwdin-transport \(C\) under a new \(S_k\) and velocity-project
     ///        \(\dot C\) — the geometry-change (not time-step) update.

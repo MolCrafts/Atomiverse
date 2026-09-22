@@ -43,8 +43,8 @@ void xc_lda_grid(const double* d_rho_r, double* d_vxc_r, double* d_exc_r,
 /// @param nr      Number of real-space grid points.
 /// @param stream  CUDA stream (default stream if null).
 void xc_lda_grid_lsd(const double* d_rho_a, const double* d_rho_b,
-                     double* d_vxc_a, double* d_vxc_b, double* d_exc_r,
-                     int nr, cudaStream_t stream = nullptr);
+                     double* d_vxc_a, double* d_vxc_b, double* d_exc_r, int nr,
+                     cudaStream_t stream = nullptr);
 
 /// @brief Accumulate E_xc = w · Σ_i ρ_i ε_xc,i (spin-unpolarized).
 ///

@@ -65,14 +65,14 @@ class KsChainDevice {
     PoissonFftDevice poisson_;
     SpectralFftDevice spectral_;
 
-    double* d_rho_ = nullptr;    ///< electron density ρ (total; UKS: ρ_α+ρ_β)
-    double* d_n_tot_ = nullptr;  ///< n = ρ − n_ion (Poisson input)
-    double* d_v_es_ = nullptr;   ///< electrostatic potential
-    double* d_vxc_ = nullptr;    ///< XC potential (RKS; UKS: V_xc^α)
-    double* d_exc_ = nullptr;    ///< per-electron ε_xc
-    double* d_veff_ = nullptr;   ///< V_es + V_xc [+ V_loc] (RKS; UKS: V_eff^α)
-    double* d_e_xc_ = nullptr;   ///< scalar E_xc
-    double* d_e_loc_ = nullptr;  ///< scalar ∫ρ V_loc / then ×w
+    double* d_rho_ = nullptr;   ///< electron density ρ (total; UKS: ρ_α+ρ_β)
+    double* d_n_tot_ = nullptr; ///< n = ρ − n_ion (Poisson input)
+    double* d_v_es_ = nullptr;  ///< electrostatic potential
+    double* d_vxc_ = nullptr;   ///< XC potential (RKS; UKS: V_xc^α)
+    double* d_exc_ = nullptr;   ///< per-electron ε_xc
+    double* d_veff_ = nullptr;  ///< V_es + V_xc [+ V_loc] (RKS; UKS: V_eff^α)
+    double* d_e_xc_ = nullptr;  ///< scalar E_xc
+    double* d_e_loc_ = nullptr; ///< scalar ∫ρ V_loc / then ×w
     // GGA scratch: ∇ρ / flux components + divergence of flux.
     double* d_gx_ = nullptr;
     double* d_gy_ = nullptr;
@@ -120,8 +120,7 @@ class KsChainDevice {
     KsChainEnergies run(const DeviceProduct* d_prods, int nprod,
                         const double* d_n_ion = nullptr,
                         const double* d_v_loc = nullptr,
-                        double* d_acc = nullptr,
-                        KsXcKind xc = KsXcKind::PADE);
+                        double* d_acc = nullptr, KsXcKind xc = KsXcKind::PADE);
 
     /// @brief Run Poisson+XC+assemble from a pre-built fine-grid density.
     ///
@@ -246,12 +245,10 @@ class KsMultiGridChainDevice {
     ///        nlevels). Null array ⇒ skip all integrate. Per-level null ⇒ skip
     ///        that level. Each non-null buffer length = nprod_by_level[l].
     /// @param xc XC on the fine grid.
-    KsChainEnergies run(const DeviceProduct* const* d_prods_by_level,
-                        const int* nprod_by_level,
-                        const double* d_n_ion = nullptr,
-                        const double* d_v_loc = nullptr,
-                        double* const* d_acc_by_level = nullptr,
-                        KsXcKind xc = KsXcKind::PADE);
+    KsChainEnergies
+    run(const DeviceProduct* const* d_prods_by_level, const int* nprod_by_level,
+        const double* d_n_ion = nullptr, const double* d_v_loc = nullptr,
+        double* const* d_acc_by_level = nullptr, KsXcKind xc = KsXcKind::PADE);
 
     const KsChainDevice& fine_chain() const { return *fine_; }
     const MultigridDesc& multigrid() const { return mg_; }

@@ -136,7 +136,8 @@ double max_abs(const std::vector<double>& a) {
     return m;
 }
 
-double max_abs_diff(const std::vector<double>& a, const std::vector<double>& b) {
+double max_abs_diff(const std::vector<double>& a,
+                    const std::vector<double>& b) {
     double m = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i)
         m = std::max(m, std::abs(a[i] - b[i]));
@@ -215,9 +216,8 @@ struct Result {
 
 Result run_cpu(const Case& c) {
     const auto rho = collocate(c.grid, c.prods);
-    const auto ks =
-        ks_grid_build_rks(c.grid, rho, c.n_ion, c.v_loc, XcKind::PBE, false,
-                          false, false, false);
+    const auto ks = ks_grid_build_rks(c.grid, rho, c.n_ion, c.v_loc,
+                                      XcKind::PBE, false, false, false, false);
     Result r;
     r.e_hartree = ks.e_hartree;
     r.e_xc = ks.e_xc;
@@ -314,8 +314,8 @@ int compare(const Result& cpu, const Result& cuda) {
     const double max_da = max_abs_diff(cuda.acc, cpu.acc);
     const double tol_a = kARel * std::max(1.0, peak_a) + kAAbs;
     if (max_da > tol_a) {
-        std::fprintf(stderr, "FAIL: max|Δacc|=%.3e tol=%.3e peak=%.3e\n", max_da,
-                     tol_a, peak_a);
+        std::fprintf(stderr, "FAIL: max|Δacc|=%.3e tol=%.3e peak=%.3e\n",
+                     max_da, tol_a, peak_a);
         rc = 1;
     } else {
         std::printf("OK integrate max|Δ|=%.3e peak=%.3e tol=%.3e\n", max_da,

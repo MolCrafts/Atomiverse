@@ -99,11 +99,11 @@ std::vector<Vec3> lerp_segment(const Vec3& a, const Vec3& b, int n_seg,
 }
 
 /// Gap from collinear fixed-occupation spectrum (joint α/β VBM–CBM).
-double gap_from_spin_spectrum(
-    const std::vector<std::vector<double>>& evals_a,
-    const std::vector<std::vector<double>>& evals_b, int n_occ_a, int n_occ_b,
-    double& e_vbm, double& e_cbm, int& vbm_k, int& cbm_k, int& vbm_b,
-    int& cbm_b, int& vbm_spin, int& cbm_spin) {
+double gap_from_spin_spectrum(const std::vector<std::vector<double>>& evals_a,
+                              const std::vector<std::vector<double>>& evals_b,
+                              int n_occ_a, int n_occ_b, double& e_vbm,
+                              double& e_cbm, int& vbm_k, int& cbm_k, int& vbm_b,
+                              int& cbm_b, int& vbm_spin, int& cbm_spin) {
     if (evals_a.empty() || evals_b.empty())
         throw std::invalid_argument("gap_from_spin_spectrum: empty spectrum");
     if (evals_a.size() != evals_b.size())
@@ -165,9 +165,8 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
     using namespace internal;
     PWResult result{};
 
-    setup_pw_problem(frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, method.k_mesh,
-                     prob);
+    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
+                     method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -236,8 +235,7 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
                 if (!prob.kb_proj_k.empty())
                     ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
                 if (!prob.atom_wfc_k.empty())
-                    ws.atom_wfc =
-                        prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                    ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
                 davidson.step(ws);
                 const AccReal weight =
                     prob.kg.weights[static_cast<std::size_t>(ik)];
@@ -279,8 +277,9 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
 
         if (std::sqrt(static_cast<double>(dr)) < method.tol) {
             result.converged = true;
-            ATV_INFO("[pw] bands-collinear-scf converged iter={} energy_ry={:.8f}",
-                     iter + 1, result.energy);
+            ATV_INFO(
+                "[pw] bands-collinear-scf converged iter={} energy_ry={:.8f}",
+                iter + 1, result.energy);
             break;
         }
     }
@@ -357,8 +356,8 @@ void gaussian_dos(const std::vector<double>& evals,
     energy.resize(static_cast<std::size_t>(n_bins));
     dos.assign(static_cast<std::size_t>(n_bins), 0.0);
     const double de = (e_max - e_min) / static_cast<double>(n_bins - 1);
-    const double pref = spin_degeneracy
-                        / (std::sqrt(2.0 * 3.14159265358979323846) * sigma);
+    const double pref =
+        spin_degeneracy / (std::sqrt(2.0 * 3.14159265358979323846) * sigma);
     const double inv_2s2 = 1.0 / (2.0 * sigma * sigma);
 
     for (int i = 0; i < n_bins; ++i)
@@ -384,8 +383,9 @@ double integrate_dos_to(const std::vector<double>& energy,
     if (energy.size() < 2)
         throw std::invalid_argument("integrate_dos_to: need >= 2 bins");
 
-    const double de = (energy.back() - energy.front())
-                      / static_cast<double>(static_cast<int>(energy.size()) - 1);
+    const double de =
+        (energy.back() - energy.front())
+        / static_cast<double>(static_cast<int>(energy.size()) - 1);
     double integ = 0;
     for (std::size_t i = 0; i + 1 < energy.size(); ++i) {
         if (energy[i] > e_cut)
@@ -439,8 +439,8 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
 
     const bool use_smear = (method.smearing != Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
-        throw std::invalid_argument(
-            "Bands::compute: degauss must be > 0 [Ry] when smearing is enabled");
+        throw std::invalid_argument("Bands::compute: degauss must be > 0 [Ry] "
+                                    "when smearing is enabled");
 
     std::vector<std::array<double, 3>> path = kfrac;
     if (path.empty()) {
@@ -498,7 +498,7 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
         }
 
         rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, kvec);
+                         method.ecut_ry, kvec);
 
         out.nspin = 1;
         out.magnetization = 0;
@@ -507,10 +507,9 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
         out.eigenvalues_ry = nscf_evals_ry(prob, n_bands, method.tol * 0.1);
 
         if (n_bands > n_occ) {
-            out.gap_ry =
-                gap_from_spectrum(out.eigenvalues_ry, n_occ, out.e_vbm_ry,
-                                  out.e_cbm_ry, out.vbm_k, out.cbm_k,
-                                  out.vbm_band, out.cbm_band);
+            out.gap_ry = gap_from_spectrum(
+                out.eigenvalues_ry, n_occ, out.e_vbm_ry, out.e_cbm_ry,
+                out.vbm_k, out.cbm_k, out.vbm_band, out.cbm_band);
         }
         out.vbm_spin = 0;
         out.cbm_spin = 0;
@@ -654,7 +653,7 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
         internal::PWProblem prob;
         const int n_bands_scf = std::max(std::max(n_alpha, n_beta), 1);
         const PWResult scf = run_collinear_scf(frame, method, prob, n_alpha,
-                                              n_beta, n_bands_scf);
+                                               n_beta, n_bands_scf);
 
         DosResult out;
         out.scf_converged = scf.converged;
@@ -680,8 +679,7 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
 
         auto kg = generate_mp_mesh(k_mesh, k_mesh, k_mesh);
         rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry,
-                         kg.kpoints);
+                         method.ecut_ry, kg.kpoints);
 
         // NSCF α / β on frozen V_eff,σ
         ws.V_eff_r.resize({static_cast<std::size_t>(nr)});
@@ -695,9 +693,9 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
         // Integer gap from seed occupations (gapped Si twin stays open under
         // mild FD smear).
         int vk = 0, ck = 0, vb = 0, cb = 0, vs = 0, cs = 0;
-        out.gap_ry = gap_from_spin_spectrum(
-            evals_a, evals_b, n_alpha, n_beta, out.e_vbm_ry, out.e_cbm_ry, vk,
-            ck, vb, cb, vs, cs);
+        out.gap_ry = gap_from_spin_spectrum(evals_a, evals_b, n_alpha, n_beta,
+                                            out.e_vbm_ry, out.e_cbm_ry, vk, ck,
+                                            vb, cb, vs, cs);
 
         const int n_kpts = static_cast<int>(evals_a.size());
         std::vector<double> flat_a, flat_b, flat_w, flat_all, flat_w_all;
@@ -762,8 +760,7 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
             out.e_fermi_ry = 0;
         }
 
-        out.n_elec_to_vbm =
-            integrate_dos_to(out.energy_ry, out.dos, e_cut);
+        out.n_elec_to_vbm = integrate_dos_to(out.energy_ry, out.dos, e_cut);
         return out;
     }
 
@@ -785,12 +782,11 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
         internal::XCBuilder xc;
         internal::VeffBuilder veff;
         internal::DensityBuilder density;
-        internal::DavidsonSolver davidson(n_scf_bands,
-                                          AccReal(method.tol) * AccReal(0.1),
-                                          40);
-        scf = internal::run_scf_smear_restricted(
-            frame, method, prob, poisson, xc, veff, density, davidson,
-            n_scf_bands, "dos-smear");
+        internal::DavidsonSolver davidson(
+            n_scf_bands, AccReal(method.tol) * AccReal(0.1), 40);
+        scf = internal::run_scf_smear_restricted(frame, method, prob, poisson,
+                                                 xc, veff, density, davidson,
+                                                 n_scf_bands, "dos-smear");
         n_valence = std::max((prob.n_elec + 1) / 2, 1);
     } else {
         scf = internal::run_restricted_scf(frame, method, prob);

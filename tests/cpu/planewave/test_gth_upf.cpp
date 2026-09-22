@@ -52,7 +52,8 @@ double vloc_worst_error(molrs::Element el, const char* name, int n_r) {
     double worst = 0.0;
     for (int ig = 0; ig < gv.count(); ++ig) {
         const double g = std::sqrt(gv.g[ig].norm_squared());
-        worst = std::max(worst, std::abs(vg[ig] - gth_vloc_gspace(pot, g, omega)));
+        worst =
+            std::max(worst, std::abs(vg[ig] - gth_vloc_gspace(pot, g, omega)));
     }
     return worst;
 }

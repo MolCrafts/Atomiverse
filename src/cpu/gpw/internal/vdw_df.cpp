@@ -79,8 +79,7 @@ void palpha_and_deriv(double q, double* p_out, double* dp_out) {
     }
     const double dq = q - qm[alpha];
     for (int beta = 0; beta < kNAlpha; ++beta) {
-        const float* poly =
-            spl + (beta * kNRegions + alpha) * kNPCoef;
+        const float* poly = spl + (beta * kNRegions + alpha) * kNPCoef;
         const double c0 = static_cast<double>(poly[0]);
         const double c1 = static_cast<double>(poly[1]);
         const double c2 = static_cast<double>(poly[2]);
@@ -148,12 +147,10 @@ VdwDfResult vdw_df_rps(const UniformGrid& grid, const std::vector<double>& rho,
         const double rho_sqr = mrho * mrho;
         const double gradient_correction =
             -zab / (36.0 * kF * rho_sqr) * msigma;
-        const double LDA_1 =
-            8.0 * kPi / 3.0 * (kLdaA * (1.0 + kLdaA1 * rs));
-        const double LDA_2 =
-            2.0 * kLdaA
-            * (kLdaB1 * rs_root2 + kLdaB2 * rs + kLdaB3 * rs * rs_root2
-               + kLdaB4 * rs_sqr);
+        const double LDA_1 = 8.0 * kPi / 3.0 * (kLdaA * (1.0 + kLdaA1 * rs));
+        const double LDA_2 = 2.0 * kLdaA
+                             * (kLdaB1 * rs_root2 + kLdaB2 * rs
+                                + kLdaB3 * rs * rs_root2 + kLdaB4 * rs_sqr);
         const double q =
             kF + LDA_1 * std::log(1.0 + 1.0 / LDA_2) + gradient_correction;
         double q0g = 0.0, dq0_dq = 0.0;
@@ -189,8 +186,7 @@ VdwDfResult vdw_df_rps(const UniformGrid& grid, const std::vector<double>& rho,
     std::vector<double> ptmp(static_cast<std::size_t>(nalpha));
     for (long g = 0; g < ntot; ++g) {
         const double rg = rho[static_cast<std::size_t>(g)];
-        palpha_and_deriv(q0[static_cast<std::size_t>(g)], ptmp.data(),
-                         nullptr);
+        palpha_and_deriv(q0[static_cast<std::size_t>(g)], ptmp.data(), nullptr);
         for (int a = 0; a < nalpha; ++a)
             rbuf[a * ntot + g] = rg * ptmp[static_cast<std::size_t>(a)];
     }
@@ -231,8 +227,7 @@ VdwDfResult vdw_df_rps(const UniformGrid& grid, const std::vector<double>& rho,
                     static_cast<std::size_t>(nalpha));
                 for (int a = 0; a < nalpha; ++a) {
                     const fftw_complex& th = cbuf[a * ncplx + kindex];
-                    theta[static_cast<std::size_t>(a)] =
-                        {th[0], th[1]};
+                    theta[static_cast<std::size_t>(a)] = {th[0], th[1]};
                 }
                 for (int a1 = 0; a1 < nalpha; ++a1) {
                     std::complex<double> F(0.0, 0.0);
@@ -241,11 +236,11 @@ VdwDfResult vdw_df_rps(const UniformGrid& grid, const std::vector<double>& rho,
                             a1 * nalpha + a2)];
                         F += theta[static_cast<std::size_t>(a2)] * phi;
                     }
-                    energy += weight
-                              * (theta[static_cast<std::size_t>(a1)].real()
-                                     * F.real()
-                                 + theta[static_cast<std::size_t>(a1)].imag()
-                                       * F.imag());
+                    energy +=
+                        weight
+                        * (theta[static_cast<std::size_t>(a1)].real() * F.real()
+                           + theta[static_cast<std::size_t>(a1)].imag()
+                                 * F.imag());
                     if (want_potential) {
                         fftw_complex& u = cbuf[a1 * ncplx + kindex];
                         u[0] = F.real();
@@ -353,12 +348,10 @@ void vdw_df_q0(const std::vector<double>& rho, const std::vector<double>& sigma,
         const double rho_sqr = mrho * mrho;
         const double gradient_correction =
             -zab / (36.0 * kF * rho_sqr) * msigma;
-        const double LDA_1 =
-            8.0 * kPi / 3.0 * (kLdaA * (1.0 + kLdaA1 * rs));
-        const double LDA_2 =
-            2.0 * kLdaA
-            * (kLdaB1 * rs_root2 + kLdaB2 * rs + kLdaB3 * rs * rs_root2
-               + kLdaB4 * rs_sqr);
+        const double LDA_1 = 8.0 * kPi / 3.0 * (kLdaA * (1.0 + kLdaA1 * rs));
+        const double LDA_2 = 2.0 * kLdaA
+                             * (kLdaB1 * rs_root2 + kLdaB2 * rs
+                                + kLdaB3 * rs * rs_root2 + kLdaB4 * rs_sqr);
         const double q =
             kF + LDA_1 * std::log(1.0 + 1.0 / LDA_2) + gradient_correction;
         double q0g = 0.0, dq0_dq = 0.0;
@@ -369,12 +362,14 @@ void vdw_df_q0(const std::vector<double>& rho, const std::vector<double>& sigma,
     }
 }
 
-VdwDfResult vdw_df_drsll(const UniformGrid& grid, const std::vector<double>& rho,
+VdwDfResult vdw_df_drsll(const UniformGrid& grid,
+                         const std::vector<double>& rho,
                          const std::vector<double>& sigma, bool potential) {
     return vdw_df_rps(grid, rho, sigma, kVdwDf1Zab, potential);
 }
 
-VdwDfResult vdw_df_lmkll(const UniformGrid& grid, const std::vector<double>& rho,
+VdwDfResult vdw_df_lmkll(const UniformGrid& grid,
+                         const std::vector<double>& rho,
                          const std::vector<double>& sigma, bool potential) {
     return vdw_df_rps(grid, rho, sigma, kVdwDf2Zab, potential);
 }

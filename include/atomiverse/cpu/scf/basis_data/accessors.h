@@ -31,8 +31,7 @@ namespace basis_data {
     if (shells.empty())
         return false;
     for (const auto& sh : shells) {
-        if (sh.l != 0 || sh.alpha.empty()
-            || sh.alpha.size() != sh.coeff.size())
+        if (sh.l != 0 || sh.alpha.empty() || sh.alpha.size() != sh.coeff.size())
             return false;
     }
     return true;

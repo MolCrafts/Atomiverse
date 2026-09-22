@@ -28,8 +28,8 @@ int main() {
     // Unscaled SO/SS match plain RI-MP2 to ~1e-5 Ha; scaled E_corr band is
     // 1e-3 Ha (same grid/SCF twin tolerance as periodic-ri-mp2-si).
     constexpr double kEcorrRef = -0.29794120639418; // Ha (CP2K SCS-MP2)
-    constexpr double kEcorrTol = 1.0e-3;             // Ha
-    constexpr double kScaleIdTol = 1.0e-12;          // Ha  algebraic identity
+    constexpr double kEcorrTol = 1.0e-3;            // Ha
+    constexpr double kScaleIdTol = 1.0e-12;         // Ha  algebraic identity
     constexpr double kOsSsPlainTol = 1.0e-10; // Ha  unscaled channels vs plain
 
     const double pos0[3] = {0.0, 0.0, 0.0};
@@ -103,8 +103,7 @@ int main() {
                      r_scs.e_corr_ss);
         return 1;
     }
-    if (std::abs(r_plain.e_corr
-                 - (r_plain.e_corr_os + r_plain.e_corr_ss))
+    if (std::abs(r_plain.e_corr - (r_plain.e_corr_os + r_plain.e_corr_ss))
         > kScaleIdTol) {
         std::fprintf(stderr,
                      "FAIL: plain OS+SS != e_corr: os=%.12f ss=%.12f "

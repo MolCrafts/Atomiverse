@@ -28,9 +28,8 @@ PWResult run_restricted_scf(const cpu::Frame& frame, const PW& method,
                             PWProblem& prob) {
     PWResult result{};
 
-    setup_pw_problem(frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, method.k_mesh,
-                     prob);
+    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
+                     method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -119,9 +118,8 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
             "run_collinear_scf: multiplicity must be >= 1");
 
     PWResult result{};
-    setup_pw_problem(frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, method.k_mesh,
-                     prob);
+    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
+                     method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -270,9 +268,8 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         n_bands_min = 1;
 
     PWResult result{};
-    setup_pw_problem(frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, method.k_mesh,
-                     prob);
+    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
+                     method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -285,9 +282,9 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
     const int n_alpha0 = (n_elec + mag0) / 2;
     const int n_beta0 = (n_elec - mag0) / 2;
     const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
-    const int n_bs = std::max(
-        {n_bands_min, n_occ_ceil + std::max(method.extra_bands, 0),
-         std::max(n_alpha0, n_beta0), 1});
+    const int n_bs =
+        std::max({n_bands_min, n_occ_ceil + std::max(method.extra_bands, 0),
+                  std::max(n_alpha0, n_beta0), 1});
 
     SmearKind smear_kind = SmearKind::fermi_dirac;
     if (method.smearing == Smearing::fermi_dirac)
@@ -368,8 +365,7 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
                 if (!prob.kb_proj_k.empty())
                     ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
                 if (!prob.atom_wfc_k.empty())
-                    ws.atom_wfc =
-                        prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                    ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
                 davidson.step(ws);
                 const std::size_t sk =
                     static_cast<std::size_t>(s * n_kpts + ik);
@@ -390,8 +386,7 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         all_weights.reserve(static_cast<std::size_t>(2 * n_kpts * n_bs));
         for (int s = 0; s < 2; ++s) {
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev =
                     evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                 for (int b = 0; b < n_bs && b < static_cast<int>(ev.size());
@@ -413,14 +408,12 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
             static_cast<std::size_t>(2 * n_kpts));
         for (int s = 0; s < 2; ++s) {
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev =
                     evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                 std::vector<AccReal> w_one(ev.size(), w);
-                auto fill =
-                    fill_occupations(ev, w_one, mu_ha, degauss_ha, smear_kind,
-                                     mp_order, AccReal(1));
+                auto fill = fill_occupations(ev, w_one, mu_ha, degauss_ha,
+                                             smear_kind, mp_order, AccReal(1));
                 occ_sk[static_cast<std::size_t>(s * n_kpts + ik)] = fill.occ;
                 n_occ += fill.n_occ;
                 entropy_sum += fill.entropy;

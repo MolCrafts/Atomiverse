@@ -114,8 +114,10 @@ std::array<std::vector<double>, 3> gradient(const UniformGrid& grid,
 
     // Contiguous pack — avoid OMP-parallel element scatter on the hot path.
     if (static_cast<long>(f.size()) != g.ntot)
-        throw std::invalid_argument("gradient: f length must equal grid.npts()");
-    std::memcpy(rbuf, f.data(), static_cast<std::size_t>(g.ntot) * sizeof(double));
+        throw std::invalid_argument(
+            "gradient: f length must equal grid.npts()");
+    std::memcpy(rbuf, f.data(),
+                static_cast<std::size_t>(g.ntot) * sizeof(double));
     fft.execute_r2c(); // rbuf -> fhat
 
     // Fuse spectral multiply for all 3 Cartesian derivatives into c_many.
@@ -181,10 +183,10 @@ std::vector<double> divergence(const UniformGrid& grid,
         const long by = idx + g.ncplx;
         const long bz = idx + 2 * g.ncplx;
         // accumulate i*g * fhat = (-g*im, g*re)
-        const double re = -gx * c_many[bx][1] - gy * c_many[by][1]
-                          - gz * c_many[bz][1];
-        const double im = gx * c_many[bx][0] + gy * c_many[by][0]
-                          + gz * c_many[bz][0];
+        const double re =
+            -gx * c_many[bx][1] - gy * c_many[by][1] - gz * c_many[bz][1];
+        const double im =
+            gx * c_many[bx][0] + gy * c_many[by][0] + gz * c_many[bz][0];
         acc[idx][0] = re;
         acc[idx][1] = im;
     }

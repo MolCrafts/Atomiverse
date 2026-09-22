@@ -141,12 +141,11 @@ int main() {
     double min_local_ev = 1e300;
     for (std::size_t ik = 0; ik < br.eigenvalues_ry.size(); ++ik) {
         for (int spin = 0; spin < 2; ++spin) {
-            const auto& row =
-                (spin == 0) ? br.eigenvalues_ry[ik] : br.eigenvalues_beta_ry[ik];
-            const double lg =
-                (row[static_cast<std::size_t>(kNOcc)]
-                 - row[static_cast<std::size_t>(kNOcc - 1)])
-                * qe_units::rydberg_to_ev;
+            const auto& row = (spin == 0) ? br.eigenvalues_ry[ik]
+                                          : br.eigenvalues_beta_ry[ik];
+            const double lg = (row[static_cast<std::size_t>(kNOcc)]
+                               - row[static_cast<std::size_t>(kNOcc - 1)])
+                              * qe_units::rydberg_to_ev;
             if (lg < min_local_ev)
                 min_local_ev = lg;
         }
@@ -204,12 +203,12 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: Si collinear spin bands a=%.2f A ecut=%.0f Ry scf_k=%d  "
-        "nspin=%d mag=%.3e  Gamma->X(α)=%.4f eV (window [%.2f,%.2f])  "
-        "e_c^α(X)<e_c^α(G)  |α−β|_VBM=%.2e |α−β|_CBM=%.2e Ry  "
-        "min_local=%.3f eV  path_pts=%zu  E_scf=%.6f Ry\n",
-        kA, kEcutRy, kMeshScf, br.nspin, br.magnetization, gap_gx_ev, kGapLoEv,
-        kGapHiEv, d_vbm, d_cbm, min_local_ev, br.kfrac.size(), br.energy_ry);
+    std::printf("PASS: Si collinear spin bands a=%.2f A ecut=%.0f Ry scf_k=%d  "
+                "nspin=%d mag=%.3e  Gamma->X(α)=%.4f eV (window [%.2f,%.2f])  "
+                "e_c^α(X)<e_c^α(G)  |α−β|_VBM=%.2e |α−β|_CBM=%.2e Ry  "
+                "min_local=%.3f eV  path_pts=%zu  E_scf=%.6f Ry\n",
+                kA, kEcutRy, kMeshScf, br.nspin, br.magnetization, gap_gx_ev,
+                kGapLoEv, kGapHiEv, d_vbm, d_cbm, min_local_ev, br.kfrac.size(),
+                br.energy_ry);
     return 0;
 }

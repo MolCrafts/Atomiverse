@@ -23,7 +23,8 @@ namespace gpw {
 class GpwConverged : public cpu::Criterion {
   public:
     /// @param skip_update Flag set by KsBuildStage when the residual gate holds.
-    explicit GpwConverged(const bool& skip_update) : skip_update_(skip_update) {}
+    explicit GpwConverged(const bool& skip_update)
+        : skip_update_(skip_update) {}
 
     /// @brief Component identifier / stop reason.
     /// @return `"gpw_converged"`.

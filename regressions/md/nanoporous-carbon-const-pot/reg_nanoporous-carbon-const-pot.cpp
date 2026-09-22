@@ -82,7 +82,8 @@ cpu::Frame build_slit(bool with_ions) {
             const bool na = (i % 2 == 0);
             f.span(kAtom_x)[idx] = (0.2 + 0.2 * (i % 4)) * Lx;
             f.span(kAtom_y)[idx] = (0.25 + 0.25 * (i / 4)) * Ly;
-            f.span(kAtom_z)[idx] = 0.5 * (kZBot + kZTop) + ((i < 4) ? -2.0 : 2.0);
+            f.span(kAtom_z)[idx] =
+                0.5 * (kZBot + kZTop) + ((i < 4) ? -2.0 : 2.0);
             f.span(kAtom_type)[idx] = na ? 0 : 1;
             f.span(kAtom_charge)[idx] = na ? 1.0 : -1.0;
             f.span(kAtom_mass)[idx] = na ? 22.9898 : 35.453;
@@ -240,12 +241,12 @@ int main() {
     // Freeze + occupancy proxy after short NVT.
     double max_dz = 0.0;
     for (std::size_t k = 0; k < wall_idx.size(); ++k)
-        max_dz = std::fmax(max_dz,
-                           std::fabs(frame.span(kAtom_z)[wall_idx[k]] - wall_z0[k]));
+        max_dz = std::fmax(
+            max_dz, std::fabs(frame.span(kAtom_z)[wall_idx[k]] - wall_z0[k]));
     const int occ = occupancy_in_pore(frame);
-    std::printf("after 200 fs: E=%.6e K=%.6e QL=%+.6e QR=%+.6e occ=%d max|dz|=%.3e\n",
-                frame.meta.get(kEnergy), frame.meta.get(kKinetic), QL, QR, occ,
-                max_dz);
+    std::printf(
+        "after 200 fs: E=%.6e K=%.6e QL=%+.6e QR=%+.6e occ=%d max|dz|=%.3e\n",
+        frame.meta.get(kEnergy), frame.meta.get(kKinetic), QL, QR, occ, max_dz);
     if (!(max_dz <= 1e-10)) {
         std::printf("FAIL freeze\n");
         return 1;

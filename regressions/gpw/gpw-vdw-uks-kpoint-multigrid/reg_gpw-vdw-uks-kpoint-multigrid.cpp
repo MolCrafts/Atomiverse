@@ -85,13 +85,13 @@ int main() {
 
     // Offline CP2K 2026.1 (cp2k.psmp rev git:5e54ba2): water dimer LSD MULT 1
     // + NON_LOCAL DRSLL + MP 2×1×1 NGRIDS 4 / REL_CUTOFF 40 — REFERENCE.md.
-    constexpr double kEDispCp2k = 0.15193559105517;    // Ha
-    constexpr double kETotCp2k = -34.186333514352619;  // Ha
-    constexpr double kEDispTol = 1.0e-4;               // Ha
+    constexpr double kEDispCp2k = 0.15193559105517;   // Ha
+    constexpr double kETotCp2k = -34.186333514352619; // Ha
+    constexpr double kEDispTol = 1.0e-4;              // Ha
     // Same Γ-dimer twin-family systematic as gpw-vdw-kpoints / multigrid.
-    constexpr double kETotTol = 1.0e-2;                // Ha
+    constexpr double kETotTol = 1.0e-2; // Ha
     // Internal single-grid ↔ multigrid (gpw-vdw-multigrid uses 2e-5).
-    constexpr double kEConsistencyTol = 2.0e-5;        // Ha
+    constexpr double kEConsistencyTol = 2.0e-5; // Ha
     // CP2K timer TOTAL TIME on the same twin job (1 MPI × OMP=8).
     constexpr double kCp2kWall = 13.703; // s
 
@@ -156,8 +156,8 @@ int main() {
 
         std::printf("G2: E_tot  ATV=%.14f  CP2K=%.14f  |Δ|=%.3e Ha\n", e_tot_mg,
                     kETotCp2k, std::abs(e_tot_mg - kETotCp2k));
-        std::printf("G2: E_disp ATV=%.14f  CP2K=%.14f  |Δ|=%.3e Ha\n", e_disp_mg,
-                    kEDispCp2k, std::abs(e_disp_mg - kEDispCp2k));
+        std::printf("G2: E_disp ATV=%.14f  CP2K=%.14f  |Δ|=%.3e Ha\n",
+                    e_disp_mg, kEDispCp2k, std::abs(e_disp_mg - kEDispCp2k));
         std::printf("G2: wall %.1f s (CP2K twin wall %.1f s OMP=8)  "
                     "T_atv/T_cp2k=%.2f\n",
                     wall_g2, kCp2kWall, wall_g2 / kCp2kWall);

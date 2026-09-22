@@ -103,7 +103,6 @@ TEST(Remd, ReplicasAreThermostattedAtTheirSlotTemperature) {
 
     // sqrt(2/Ndof) = 10% instantaneous spread at 189 DOF; 25% is a couple of
     // those and nowhere near the factor 2.9 a constant-energy replica shows.
-    EXPECT_NEAR(t_meas, t0, 0.25 * t0)
-        << "collapsed slot 0 came back at " << t_meas
-        << " K for a 300 K setpoint";
+    EXPECT_NEAR(t_meas, t0, 0.25 * t0) << "collapsed slot 0 came back at "
+                                       << t_meas << " K for a 300 K setpoint";
 }

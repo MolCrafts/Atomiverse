@@ -99,8 +99,8 @@ int main(int argc, char** argv) {
         }
         e_cpu = r.e_total;
         F_cpu = ATV::cpu::gpw::gpw_forces_analytic(atoms, m);
-        std::printf("CPU:  E=%.12f Ha  iters=%d  converged=%d\n", e_cpu, r.iters,
-                    (int)r.converged);
+        std::printf("CPU:  E=%.12f Ha  iters=%d  converged=%d\n", e_cpu,
+                    r.iters, (int)r.converged);
     }
 
     if (run_cuda) {
@@ -144,10 +144,9 @@ int main(int argc, char** argv) {
                          maxd);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-full-product  |dE|=%.3e  max|dF|=%.3e  "
-            "(H2 Γ RKS PADE; perf_exempt small cell)\n",
-            de, maxd);
+        std::printf("PASS: cuda-gpw-full-product  |dE|=%.3e  max|dF|=%.3e  "
+                    "(H2 Γ RKS PADE; perf_exempt small cell)\n",
+                    de, maxd);
     } else {
         std::printf("PASS: cuda-gpw-full-product (--device=%s only)\n",
                     device.c_str());

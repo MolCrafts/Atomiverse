@@ -137,8 +137,8 @@ int main() {
         const double hof = r.heat_of_formation_kcal_mol;
         if (!std::isfinite(hof)
             || std::abs(hof - kMopacHofKcalMol) > kHofTolKcalMol) {
-            ok = fail("ΔHf(AM1 optimum)", hof, kMopacHofKcalMol,
-                      kHofTolKcalMol, "kcal/mol");
+            ok = fail("ΔHf(AM1 optimum)", hof, kMopacHofKcalMol, kHofTolKcalMol,
+                      "kcal/mol");
         } else {
             std::printf("ΔHf      = %.6f kcal/mol (MOPAC %.5f, Δ = %+.2e)\n",
                         hof, kMopacHofKcalMol, hof - kMopacHofKcalMol);
@@ -207,10 +207,11 @@ int main() {
             max_f = std::max(max_f, std::abs(v));
         }
         if (!(max_f > kOffOptimumFloorEvA)) {
-            std::fprintf(stderr,
-                         "FAIL: stationarity gate is vacuous — the un-optimized "
-                         "geometry gives max|F| = %.3e <= %.1e eV/Å\n",
-                         max_f, kOffOptimumFloorEvA);
+            std::fprintf(
+                stderr,
+                "FAIL: stationarity gate is vacuous — the un-optimized "
+                "geometry gives max|F| = %.3e <= %.1e eV/Å\n",
+                max_f, kOffOptimumFloorEvA);
             ok = false;
         } else {
             std::printf("max|F|   = %.3e eV/Å off the optimum (%.0fx the "

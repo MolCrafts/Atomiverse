@@ -26,11 +26,11 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/cpmd_conserved.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/rks.h"
 #include "atomiverse/cpu/scf/xc_functional.h"

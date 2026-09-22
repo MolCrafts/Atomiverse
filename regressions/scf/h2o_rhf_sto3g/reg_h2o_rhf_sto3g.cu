@@ -22,9 +22,7 @@ namespace {
 
 enum class Device { Cpu, Cuda };
 
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
@@ -34,8 +32,8 @@ std::string parse_device_arg(int argc, char** argv) {
             want = a + 9;
         } else if (std::strcmp(a, "--device") == 0 && i + 1 < argc) {
             want = argv[++i];
-        } else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0 ||
-                   std::strcmp(a, "both") == 0) {
+        } else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0
+                   || std::strcmp(a, "both") == 0) {
             want = a;
         }
     }

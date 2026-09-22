@@ -143,7 +143,7 @@ int main() {
     // Soft pin vs MetalWalls c8ad175d num_pbc=3 twin (total_charges.out step 0):
     // |Q| = 9.711155787094686e-2 e. ATV uses PME (3D); ~3 % is model residual.
     constexpr double kMwAbsQ = 9.711155787094686e-2; // [e]
-    constexpr double kMwQRelTol = 0.05;               // 5 %
+    constexpr double kMwQRelTol = 0.05;              // 5 %
     if (!(std::fabs(std::fabs(QL) - kMwAbsQ) <= kMwAbsQ * kMwQRelTol)) {
         std::printf("FAIL: |Q_L|=%.6e vs MW %.6e (rel tol %.0f%%)\n",
                     std::fabs(QL), kMwAbsQ, 100 * kMwQRelTol);

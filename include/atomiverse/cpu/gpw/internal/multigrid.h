@@ -186,11 +186,11 @@ struct PrimRef {
 ///        / integrate iterates tasks; monoms stay the expansion of one
 ///        geometry batch (shell-prim pair × angular products × image).
 struct CollintTask {
-    int beg = 0; ///< inclusive start index into `by_level[l]`.
-    int end = 0; ///< exclusive end index into `by_level[l]`.
-    int lpx = 0; ///< max monom (la_x + lb_x) in the task.
-    int lpy = 0; ///< max monom (la_y + lb_y).
-    int lpz = 0; ///< max monom (la_z + lb_z).
+    int beg = 0;  ///< inclusive start index into `by_level[l]`.
+    int end = 0;  ///< exclusive end index into `by_level[l]`.
+    int lpx = 0;  ///< max monom (la_x + lb_x) in the task.
+    int lpy = 0;  ///< max monom (la_y + lb_y).
+    int lpz = 0;  ///< max monom (la_z + lb_z).
     int Ltot = 0; ///< max |la|+|lb| over monoms (window / radius).
     /// max_i maxc(ua)·maxc(ub)·|k| — geometry magnitude for integrate screen.
     double geom_mag = 0.0;
@@ -313,9 +313,10 @@ std::vector<double> multigrid_collocate_rho(const MultiGrid& mg,
 /// @brief Fine-grid density from a Bloch D(t) stack (multi-k MAIN path).
 /// @param D One row-major nb×nb real matrix per `products.cells` entry.
 /// @return Total density on the finest level.
-std::vector<double> multigrid_collocate_rho_cells(
-    const MultiGrid& mg, const ProductSet& products, int nb,
-    const std::vector<std::vector<double>>& D, double eps);
+std::vector<double>
+multigrid_collocate_rho_cells(const MultiGrid& mg, const ProductSet& products,
+                              int nb, const std::vector<std::vector<double>>& D,
+                              double eps);
 
 /// @brief Integrate fine V_eff into the Γ KS matrix contribution — multi-level
 ///        spectral restrict + product integrate (exact adjoint of
@@ -330,9 +331,10 @@ std::vector<double> multigrid_integrate_veff(const MultiGrid& mg,
 /// @brief Integrate fine V_eff into the per-image-cell real KS stack (multi-k
 ///        MAIN path) — exact adjoint of `multigrid_collocate_rho_cells`.
 /// @return One row-major nb×nb real matrix per `products.cells` entry.
-std::vector<std::vector<double>> multigrid_integrate_veff_cells(
-    const MultiGrid& mg, const ProductSet& products, int nb,
-    const std::vector<double>& veff, double eps);
+std::vector<std::vector<double>>
+multigrid_integrate_veff_cells(const MultiGrid& mg, const ProductSet& products,
+                               int nb, const std::vector<double>& veff,
+                               double eps);
 
 } // namespace gpw
 } // namespace cpu

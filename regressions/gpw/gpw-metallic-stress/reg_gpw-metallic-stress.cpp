@@ -35,8 +35,7 @@ void check(bool ok, const char* what) {
 /// BCC conventional cubic: 2 Na at (0,0,0) and (½,½,½).
 std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
     using namespace ATV;
-    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na,
-                                      "DZVP-MOLOPT-SR-GTH");
+    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH");
     const cpu::gpw::GthPotential pNa(molrs::Element::Na, "GTH-PBE-q9");
     const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
     std::vector<cpu::gpw::GpwAtom> atoms;
@@ -52,16 +51,16 @@ std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
 
 int main() {
     using namespace ATV;
+    using cpu::gpw::gpw_stress;
+    using cpu::gpw::gpw_stress_fd;
     using cpu::gpw::GpwDft;
     using cpu::gpw::Smearing;
     using cpu::gpw::XcKind;
-    using cpu::gpw::gpw_stress;
-    using cpu::gpw::gpw_stress_fd;
 
     // Same system class as reg_gpw-metallic-smearing (BCC Na, FD 0.02 Ry).
     // Free-energy pin filled after first green; stress dual-gate is primary.
     const double f_pin_ha = -92.126330608378; // Ha free energy F (energy twin)
-    const double f_tol_ha = 1e-3;             // Ha (stress twin may differ grid)
+    const double f_tol_ha = 1e-3; // Ha (stress twin may differ grid)
     const double a_ang = 4.225;
     const double a = a_ang * kA2B;
     const double n_elec = 18.0; // 2 × GTH-PBE-q9
@@ -94,14 +93,12 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const auto& r = energy.run(atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_scf =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_scf = std::chrono::duration<double>(t1 - t0).count();
 
-    std::printf(
-        "F=%.10f Ha  e_fermi=%.6f Ha  n_elec=%.8f  e_entropy=%.6e Ha  "
-        "iters=%d  wall_scf=%.3f s  nk=%d  converged=%d\n",
-        r.e_total, r.e_fermi, r.n_elec_occ, r.e_entropy, r.iters, wall_scf,
-        r.n_kpts, r.converged ? 1 : 0);
+    std::printf("F=%.10f Ha  e_fermi=%.6f Ha  n_elec=%.8f  e_entropy=%.6e Ha  "
+                "iters=%d  wall_scf=%.3f s  nk=%d  converged=%d\n",
+                r.e_total, r.e_fermi, r.n_elec_occ, r.e_entropy, r.iters,
+                wall_scf, r.n_kpts, r.converged ? 1 : 0);
 
     check(r.converged, "R1 SCF converged");
     check(std::isfinite(r.e_total) && std::isfinite(r.e_fermi),
@@ -120,10 +117,8 @@ int main() {
     const auto t3 = std::chrono::steady_clock::now();
     const auto sfd = gpw_stress_fd(atoms, make_cfg(), h);
     const auto t4 = std::chrono::steady_clock::now();
-    const double wall_an =
-        std::chrono::duration<double>(t3 - t2).count();
-    const double wall_fd =
-        std::chrono::duration<double>(t4 - t3).count();
+    const double wall_an = std::chrono::duration<double>(t3 - t2).count();
+    const double wall_fd = std::chrono::duration<double>(t4 - t3).count();
 
     double max_diag_err = 0.0;
     const char* names[3] = {"xx", "yy", "zz"};
@@ -142,8 +137,9 @@ int main() {
 
     // Free-energy analytic vs multi-SCF FD of F; residual SCF + O(h²).
     constexpr double kAnFdTol = 2.0e-4; // Ha/Bohr³
-    std::printf("max|σ_an-σ_fd|=%.3e Ha/Bohr3  wall_an=%.3f s  wall_fd=%.3f s\n",
-                max_diag_err, wall_an, wall_fd);
+    std::printf(
+        "max|σ_an-σ_fd|=%.3e Ha/Bohr3  wall_an=%.3f s  wall_fd=%.3f s\n",
+        max_diag_err, wall_an, wall_fd);
     check(max_diag_err <= kAnFdTol, "A2 free-energy analytic vs FD max diag");
 
     // Absolute soft pins (first green 2026-08-01; REFERENCE.md).
@@ -178,9 +174,8 @@ int main() {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);
         return 1;
     }
-    std::printf(
-        "PASS: gpw-metallic-stress  F=%.10f  max|dσ|=%.3e  meanσ=%.3e  "
-        "T_scf=%.3f s\n",
-        r.e_total, max_diag_err, s_mean, wall_scf);
+    std::printf("PASS: gpw-metallic-stress  F=%.10f  max|dσ|=%.3e  meanσ=%.3e  "
+                "T_scf=%.3f s\n",
+                r.e_total, max_diag_err, s_mean, wall_scf);
     return 0;
 }

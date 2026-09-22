@@ -23,8 +23,8 @@
 using namespace ATV;
 
 int main() {
-    const double eps = 0.01;   // eV
-    const double sigma = 3.4;  // Å
+    const double eps = 0.01;  // eV
+    const double sigma = 3.4; // Å
     const double cutoff = 12.0;
     const double r_star = sigma * std::pow(2.0, 1.0 / 6.0); // ~3.81 Å
     const double r0 = 2.2; // Å — deep in repulsive wall of H–Ar LJ
@@ -46,9 +46,8 @@ int main() {
     f.span(kAtom_type)[2] = 18;
     f.box = cpu::Box::cubic(40.0);
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                                kDynamicFieldId});
     auto qm = f.span(cpu::kAtomQmZ);
     qm[0] = 1;
     qm[1] = 1;
@@ -69,18 +68,16 @@ int main() {
     opt.run(f, 80);
 
     const double x_ar = f.span(kAtom_x)[2];
-    const double r_h0 =
-        std::hypot(x_ar - f.span(kAtom_x)[0], f.span(kAtom_y)[2],
-                   f.span(kAtom_z)[2]);
-    const double r_h1 =
-        std::hypot(x_ar - f.span(kAtom_x)[1], f.span(kAtom_y)[2],
-                   f.span(kAtom_z)[2]);
+    const double r_h0 = std::hypot(x_ar - f.span(kAtom_x)[0],
+                                   f.span(kAtom_y)[2], f.span(kAtom_z)[2]);
+    const double r_h1 = std::hypot(x_ar - f.span(kAtom_x)[1],
+                                   f.span(kAtom_y)[2], f.span(kAtom_z)[2]);
     const double r_ar = std::min(r_h0, r_h1);
     double fmax = 0;
     for (int i = 0; i < 3; ++i) {
-        fmax = std::max(
-            fmax, std::hypot(f.span(kAtom_fx)[i], f.span(kAtom_fy)[i],
-                             f.span(kAtom_fz)[i]));
+        fmax =
+            std::max(fmax, std::hypot(f.span(kAtom_fx)[i], f.span(kAtom_fy)[i],
+                                      f.span(kAtom_fz)[i]));
     }
     const double E = f.meta.get(kEnergy);
 

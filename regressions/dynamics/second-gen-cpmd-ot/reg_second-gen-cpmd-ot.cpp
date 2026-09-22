@@ -9,10 +9,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/second_gen_cp.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/second_gen_cp.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -94,8 +94,8 @@ int main() {
             return 1;
         }
         if (!(ke_w > 1e-12)) {
-            std::printf(
-                "FAIL: expected non-trivial KE after seed, got %g eV\n", ke_w);
+            std::printf("FAIL: expected non-trivial KE after seed, got %g eV\n",
+                        ke_w);
             return 1;
         }
         if (!(pe_w < -100.0)) {
@@ -189,12 +189,11 @@ int main() {
 
     const double pe_f = frame.meta.get(kEnergy);
     const double ke_f = frame.meta.get(kKinetic);
-    std::printf(
-        "SGCP-OT H2O NVE (ASPC K=1, OT corrector=%d): seed=%d prod=%d  "
-        "E0=%.6g eV  Ef=%.6g eV  worst |dE|/scale=%.3e  tol=%.2f  "
-        "oh=%.3f/%.3f Å\n",
-        corrector_budget, n_seed, n_prod, e0, pe_f + ke_f, worst_drift,
-        drift_tol, oh1, oh2);
+    std::printf("SGCP-OT H2O NVE (ASPC K=1, OT corrector=%d): seed=%d prod=%d  "
+                "E0=%.6g eV  Ef=%.6g eV  worst |dE|/scale=%.3e  tol=%.2f  "
+                "oh=%.3f/%.3f Å\n",
+                corrector_budget, n_seed, n_prod, e0, pe_f + ke_f, worst_drift,
+                drift_tol, oh1, oh2);
     std::printf(
         "  PE0=%.6g  KE0=%.6g  PEf=%.6g  KEf=%.6g eV  max prod OT iters=%d "
         "(budget %d)\n",

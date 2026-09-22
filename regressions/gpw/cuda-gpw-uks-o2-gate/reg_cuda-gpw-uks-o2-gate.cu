@@ -146,10 +146,9 @@ int main(int argc, char** argv) {
                          s2_cuda);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-uks-o2-gate  |dE|=%.3e  "
-            "(O2 Γ UKS PADE; perf_exempt small cell)\n",
-            de);
+        std::printf("PASS: cuda-gpw-uks-o2-gate  |dE|=%.3e  "
+                    "(O2 Γ UKS PADE; perf_exempt small cell)\n",
+                    de);
     } else if (run_cuda) {
         std::printf("PASS: cuda-gpw-uks-o2-gate (cuda-only) E=%.12f Ha\n",
                     e_cuda);

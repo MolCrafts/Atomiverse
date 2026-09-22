@@ -25,8 +25,8 @@ int main() {
     // Offline CP2K 2026.1 MP2_GPW pin (REFERENCE.md). Identity RI≡canonical
     // is 1e-10 Ha (same Poisson kernel); CP2K band is 1e-3 Ha (grid/SCF twin).
     constexpr double kEcorrRef = -0.27608774065939; // Ha (CP2K MP2_GPW)
-    constexpr double kEcorrTol = 1.0e-3;             // Ha
-    constexpr double kRiCanonTol = 1.0e-10;          // Ha  RI vs Poisson path
+    constexpr double kEcorrTol = 1.0e-3;            // Ha
+    constexpr double kRiCanonTol = 1.0e-10;         // Ha  RI vs Poisson path
     constexpr double kIdTol = 1.0e-12;
 
     const double pos0[3] = {0.0, 0.0, 0.0};
@@ -80,11 +80,13 @@ int main() {
         return 1;
     }
     if (r_can.ri) {
-        std::fprintf(stderr, "FAIL: Mp2Result.ri set on Poisson foothold path\n");
+        std::fprintf(stderr,
+                     "FAIL: Mp2Result.ri set on Poisson foothold path\n");
         return 1;
     }
     if (!std::isfinite(r_ri.e_corr) || !(r_ri.e_corr < 0.0)) {
-        std::fprintf(stderr, "FAIL: E_corr(RI-MP2)=%.10f Ha not finite/negative\n",
+        std::fprintf(stderr,
+                     "FAIL: E_corr(RI-MP2)=%.10f Ha not finite/negative\n",
                      r_ri.e_corr);
         return 1;
     }
@@ -125,7 +127,7 @@ int main() {
         "  E_total = %.10f Ha   |RI−can|=%.3e Ha (can wall=%.1f s)\n"
         "  [RI≡Poisson + first-green/offline pin; see REFERENCE.md]\n",
         r_ri.e_scf, scf.iters, wall_scf, r_ri.e_corr, r_ri.e_corr_os,
-        r_ri.e_corr_ss, r_ri.n_occ, r_ri.n_virt, wall_ri, r_ri.e_total, d_ri_can,
-        wall_can);
+        r_ri.e_corr_ss, r_ri.n_occ, r_ri.n_virt, wall_ri, r_ri.e_total,
+        d_ri_can, wall_can);
     return 0;
 }

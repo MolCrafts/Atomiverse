@@ -40,7 +40,7 @@ using namespace ATV;
 namespace {
 
 // ── Geometry ───────────────────────────────────────────────────────────
-constexpr double kA0Exp = 5.6402;    // NaCl lattice constant at 298 K [Å]
+constexpr double kA0Exp = 5.6402;      // NaCl lattice constant at 298 K [Å]
 constexpr double kDExp = 0.5 * kA0Exp; // nearest-neighbour spacing [Å]
 constexpr int kNSide = 4;              // 4³ = 64 ions (even ⇒ neutral)
 constexpr int kN = kNSide * kNSide * kNSide;
@@ -56,7 +56,7 @@ constexpr double kEvPerA3InGPa = 160.21766208;
 // Real-space cutoff must stay below L/2 for the minimum-image convention;
 // L = 4·d ≈ 11.28 Å at the experimental spacing, so 5.0 Å leaves room for the
 // cell to contract ~10 % before the convention would bite.
-constexpr double kCut = 5.0;         // [Å]
+constexpr double kCut = 5.0;          // [Å]
 constexpr double kAlpha = 3.5 / kCut; // [1/Å] — erfc(3.5) ≈ 7e-7
 constexpr double kPmeSpacing = 0.5;   // [Å]
 constexpr int kPmeOrder = 6;
@@ -113,7 +113,7 @@ double electrostatic_energy(cpu::Frame& frame) {
 }
 
 struct Point {
-    double energy;  ///< total potential energy [eV]
+    double energy;   ///< total potential energy [eV]
     double pressure; ///< tr(kStress)/(3V) [eV/Å³]
     double volume;   ///< [Å³]
 };
@@ -223,8 +223,8 @@ int main() {
     cpu::Frame dyn = nacl(kDExp * 0.97);
     const double V0 = dyn.box.volume();
 
-    constexpr double dt = 0.5;    // [fs]
-    constexpr double T = 300.0;   // [K]
+    constexpr double dt = 0.5;      // [fs]
+    constexpr double T = 300.0;     // [K]
     constexpr double tau_T = 100.0; // [fs]
     constexpr double tau_P = 500.0; // [fs]
     constexpr int n_steps = 8000;   // 4 ps ≈ 8 barostat times
@@ -267,8 +267,8 @@ int main() {
         }
         v_min = std::min(v_min, V);
         v_max = std::max(v_max, V);
-        worst_rel = std::max(worst_rel, std::fabs(H - H0)
-                                            / std::max(1.0, std::fabs(H0)));
+        worst_rel = std::max(worst_rel,
+                             std::fabs(H - H0) / std::max(1.0, std::fabs(H0)));
         H_last = H;
         if (c >= n_chunks / 2) { // second half only: skip the relaxation
             v_sum += V;

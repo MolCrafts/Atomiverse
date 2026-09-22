@@ -165,8 +165,8 @@ RunResult run_case(bool symplectic, double foothold_cg_tol) {
         double dy = f.span(kAtom_y)[kIon0] - f.span(kAtom_y)[kIon0 + 1];
         double dz = f.span(kAtom_z)[kIon0] - f.span(kAtom_z)[kIon0 + 1];
         f.box.min_image(dx, dy, dz);
-        res.min_sep = std::min(res.min_sep,
-                               std::sqrt(dx * dx + dy * dy + dz * dz));
+        res.min_sep =
+            std::min(res.min_sep, std::sqrt(dx * dx + dy * dy + dz * dz));
     };
 
     const int settle = 5; // skip bootstrap / ASPC-fill transient
@@ -185,8 +185,7 @@ RunResult run_case(bool symplectic, double foothold_cg_tol) {
             if (sampled == settle)
                 e_ref = conserved();
             if (sampled > settle)
-                res.drift =
-                    std::max(res.drift, std::abs(conserved() - e_ref));
+                res.drift = std::max(res.drift, std::abs(conserved() - e_ref));
             ++sampled;
         }
     };
@@ -256,8 +255,7 @@ int main() {
     for (int i = 0; i < dil.nlocal(); ++i)
         if (dil.span(kAtom_type)[i] == 2)
             q_top_dilute += dil.span(kAtom_charge)[i];
-    const double q_rel =
-        std::abs(q_top_dilute - kMwQTopDilute) / kMwQTopDilute;
+    const double q_rel = std::abs(q_top_dilute - kMwQTopDilute) / kMwQTopDilute;
     std::printf("dilute-limit Q_top = %.13f e  (MetalWalls c8ad175d "
                 "%.13f e, rel %.3e)\n",
                 q_top_dilute, kMwQTopDilute, q_rel);

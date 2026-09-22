@@ -70,8 +70,7 @@ ATV::cpu::gpw::GpwDft base_method(double L, double u_ev, bool with_u) {
     m.degauss = 0.02; // Ry
     m.extra_bands = 2;
     if (with_u)
-        m.plus_u.push_back(
-            cpu::gpw::PlusU{molrs::Element::H, /*l=*/0, u_ev});
+        m.plus_u.push_back(cpu::gpw::PlusU{molrs::Element::H, /*l=*/0, u_ev});
     return m;
 }
 
@@ -136,8 +135,8 @@ int main() {
         std::printf(
             "A2: F_OT=%.12f  F_DIIS=%.12f  |Δ|=%.3e Ha  "
             "e_dftu_ot=%.8f  iters ot/diis=%d/%d  wall_ot=%.3f s  s2=%.6f\n",
-            ro.e_total, rd.e_total, d, ro.e_dftu, ro.iters, rd.iters,
-            wall_ot, ro.s2);
+            ro.e_total, rd.e_total, d, ro.e_dftu, ro.iters, rd.iters, wall_ot,
+            ro.s2);
         check(d <= 1e-4, "A2 |F_OT − F_DIIS| ≤ 1e-4 Ha");
     }
 
@@ -150,8 +149,8 @@ int main() {
         const GpwResult r0 = m0.run(atoms);
         check(r0.converged, "A5 OT+FD (U=0) converged");
         const double dU = std::fabs(f_ot - r0.e_total);
-        std::printf("A5: F(U=0)=%.12f  F(U=4)=%.12f  |Δ|=%.6e Ha\n",
-                    r0.e_total, f_ot, dU);
+        std::printf("A5: F(U=0)=%.12f  F(U=4)=%.12f  |Δ|=%.6e Ha\n", r0.e_total,
+                    f_ot, dU);
         check(dU >= 1e-4, "A5 |F(U)−F(0)| activation floor");
     }
 
@@ -172,8 +171,8 @@ int main() {
     std::printf("wall = %.3f s  wall_ot = %.3f s  fails=%d\n", wall, wall_ot,
                 g_fail);
     if (g_fail != 0) {
-        std::fprintf(stderr,
-                     "reg_ot-uks-dftu-smearing: %d check(s) failed\n", g_fail);
+        std::fprintf(stderr, "reg_ot-uks-dftu-smearing: %d check(s) failed\n",
+                     g_fail);
         return 1;
     }
     std::printf("reg_ot-uks-dftu-smearing: PASS\n");

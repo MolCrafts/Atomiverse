@@ -166,7 +166,7 @@ TEST(HessianZeroing, BothConstructorsBindZeroForcesAndZeroEnergyOnForcePhase) {
     }
 
     { // WithoutAccumulator ctor — a caller-supplied accumulator gets it past
-      // validate_components() so the compiled Plan is observable.
+        // validate_components() so the compiled Plan is observable.
         ATV::cpu::vib::HessianWorkspace ws;
         ATV::cpu::vib::Hessian hess{
             ATV::cpu::vib::Hessian::WithoutAccumulator{}};

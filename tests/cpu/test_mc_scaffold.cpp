@@ -193,8 +193,9 @@ TEST(MCScaffold, ValidateStillThrowsWithNonHfNestedNode) {
     StubBareNode not_a_method;
     cpu::mc::MC d{/*temperature_K=*/300.0, /*seed=*/1u};
     d.on(sampling::Phase::propose).add(StubMover{});
-    d.on(sampling::Phase::energy).add_ref(not_a_method, /*order=*/0,
-                                         /*budget=*/0);
+    d.on(sampling::Phase::energy)
+        .add_ref(not_a_method, /*order=*/0,
+                 /*budget=*/0);
     EXPECT_THROW(d.build(), std::runtime_error);
 }
 

@@ -35,14 +35,13 @@ constexpr double kFTolHa = 1e-4;
 constexpr double kEFermiCp2kHa = 0.05447820003643;
 constexpr double kEFermiTolHa = 0.02; // Ha — algorithm class, not sub-mHa pin
 
-constexpr double kNelec = 18.0; // 2 Na × GTH-PBE-q9
+constexpr double kNelec = 18.0;   // 2 Na × GTH-PBE-q9
 constexpr double kNelecTol = 2.0; // Gaussian DOS tails (class of gpw-dos-si)
 
 /// BCC conventional cubic: 2 Na at (0,0,0) and (½,½,½).
 std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
     using namespace ATV;
-    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na,
-                                      "DZVP-MOLOPT-SR-GTH");
+    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH");
     const cpu::gpw::GthPotential pNa(molrs::Element::Na, "GTH-PBE-q9");
     const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
     std::vector<cpu::gpw::GpwAtom> atoms;
@@ -92,8 +91,7 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const DosResult dr = dos.compute(method, atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
     if (!dr.scf_converged) {
         std::printf("FAIL: SCF did not converge F=%g Ha\n", dr.scf_energy_ha);

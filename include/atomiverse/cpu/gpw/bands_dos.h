@@ -34,13 +34,14 @@ struct BandsResult {
     std::vector<std::vector<double>> eigenvalues_beta_ha;
     /// 1 = restricted (RKS); 2 = collinear spin-polarized (UKS).
     int nspin = 1;
-    double e_vbm_ha = 0;   ///< Valence-band maximum [Hartree] (fixed-occ).
-    double e_cbm_ha = 0;   ///< Conduction-band minimum [Hartree] (fixed-occ).
-    double gap_ha = 0;     ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Hartree] (0 if metallic).
-    int vbm_k = 0;         ///< k-index of VBM on the path.
-    int cbm_k = 0;         ///< k-index of CBM on the path.
-    int vbm_band = 0;      ///< Band index of VBM (0-based).
-    int cbm_band = 0;      ///< Band index of CBM (0-based).
+    double e_vbm_ha = 0; ///< Valence-band maximum [Hartree] (fixed-occ).
+    double e_cbm_ha = 0; ///< Conduction-band minimum [Hartree] (fixed-occ).
+    double gap_ha =
+        0; ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Hartree] (0 if metallic).
+    int vbm_k = 0;    ///< k-index of VBM on the path.
+    int cbm_k = 0;    ///< k-index of CBM on the path.
+    int vbm_band = 0; ///< Band index of VBM (0-based).
+    int cbm_band = 0; ///< Band index of CBM (0-based).
     /// @brief SCF Fermi level [Hartree] when metallic smear is on (0 if fixed occ).
     double e_fermi_ha = 0;
     bool scf_converged = false; ///< Whether the preceding SCF converged.
@@ -87,7 +88,8 @@ class Bands {
     /// @throws std::logic_error when `method` was not `build()`'d.
     /// @throws std::invalid_argument on multigrid / nonperiodic / analytic local
     ///         PP / DFT+U / dispersion / empty path / insufficient n_bands.
-    BandsResult compute(GpwDft& method, const std::vector<GpwAtom>& atoms) const;
+    BandsResult compute(GpwDft& method,
+                        const std::vector<GpwAtom>& atoms) const;
 };
 
 /// @brief Result of a Gaussian-broadened multi-k density of states (GPW).
@@ -108,9 +110,10 @@ struct DosResult {
     /// (target \(\approx n_e\)). Fixed occupations: \(E_\ast=E_\mathrm{vbm}\);
     /// metallic smearing: \(E_\ast=E_F\) (`e_fermi_ha`).
     double n_elec_to_vbm = 0;
-    double e_vbm_ha = 0;   ///< Valence-band maximum [Ha] (fixed-occ / gapped).
-    double e_cbm_ha = 0;   ///< Conduction-band minimum [Ha].
-    double gap_ha = 0;     ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ha] (0 if no empty).
+    double e_vbm_ha = 0; ///< Valence-band maximum [Ha] (fixed-occ / gapped).
+    double e_cbm_ha = 0; ///< Conduction-band minimum [Ha].
+    double gap_ha =
+        0; ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ha] (0 if no empty).
     double e_fermi_ha = 0; ///< Fermi level [Ha] (0 if fixed occupations).
     bool scf_converged = false;
     /// @brief SCF free energy \(F\) (smear) or total energy [Ha].

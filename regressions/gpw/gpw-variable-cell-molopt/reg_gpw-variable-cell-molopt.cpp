@@ -30,8 +30,8 @@ namespace {
 
 // Offline CP2K 2026.1 CELL_OPT (DZVP-MOLOPT-SR-GTH / GTH-PBE / PBE, fixed
 // ions, CONSTRAINT YZ, ANALYTICAL stress, from a0 = 3.328 Å). See REFERENCE.
-constexpr double kA_cp2k = 3.200237;             // Å
-constexpr double kE_cp2k = -17.184075549824836;  // Ha
+constexpr double kA_cp2k = 3.200237;            // Å
+constexpr double kE_cp2k = -17.184075549824836; // Ha
 
 // Twin geometry: fixed fractional coordinates (CP2K SCALED); b = c = 8 Å.
 // Start slightly expanded so the Newton step is short (budget).
@@ -116,8 +116,7 @@ int main() {
     const double e_ha = eval.last_energy_hartree();
     // kStress is the extensive Voigt virial [eV]; this gate is written
     // against the intensive stress W_xx/V [eV/A^3].
-    const double sxx_ev_a3 =
-        frame.meta.get(kStress)[0] / frame.box.volume();
+    const double sxx_ev_a3 = frame.meta.get(kStress)[0] / frame.box.volume();
     const double sxx_ha_bohr3 = eval.last_stress_ha_bohr3()[0];
 
     std::printf(

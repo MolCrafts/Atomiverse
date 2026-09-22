@@ -29,9 +29,8 @@ void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
 ///        Hermite tables reused across monoms that share (α, center). Hot path
 ///        for multi-k STVnl setup (one call per lattice image of an AO pair).
 /// @param T Lattice translation applied to every ket primitive center [Bohr].
-void contracted_ST_shift(const GridBasisFunction& a,
-                         const GridBasisFunction& b, const double T[3],
-                         double& s_out, double& t_out);
+void contracted_ST_shift(const GridBasisFunction& a, const GridBasisFunction& b,
+                         const double T[3], double& s_out, double& t_out);
 
 /// @brief Overlap of two contracted basis functions (sum over primitive pairs).
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b);

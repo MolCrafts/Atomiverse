@@ -157,10 +157,9 @@ TEST(ConstPotPerEta, ElectrodeForceMatchesRhsKernelGradient) {
     const double k = units::coulomb;
     constexpr double kSqrtPi = 1.7724538509055160273;
     const double ar = eta_g * r;
-    const double dPhi_dr =
-        k * qj
-        * (2.0 * eta_g / kSqrtPi * std::exp(-ar * ar) / r
-           - std::erf(ar) / (r * r));
+    const double dPhi_dr = k * qj
+                           * (2.0 * eta_g / kSqrtPi * std::exp(-ar * ar) / r
+                              - std::erf(ar) / (r * r));
     // Electrode sits ABOVE the ion (dz = +3): r_hat = +z, E_z = −dΦ/dr.
     const double fz_expect = conp.total_charge(0) * (-dPhi_dr);
     EXPECT_NEAR(static_cast<double>(f.span(kAtom_fz)[0]), fz_expect, 1e-10);

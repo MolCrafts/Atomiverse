@@ -25,18 +25,18 @@
 namespace {
 
 enum class Device { Cpu, Cuda };
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
     for (int i = 1; i < argc; ++i) {
         const char* a = argv[i];
-        if (std::strncmp(a, "--device=", 9) == 0) want = a + 9;
-        else if (std::strcmp(a, "--device") == 0 && i + 1 < argc) want = argv[++i];
-        else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0 ||
-                 std::strcmp(a, "both") == 0)
+        if (std::strncmp(a, "--device=", 9) == 0)
+            want = a + 9;
+        else if (std::strcmp(a, "--device") == 0 && i + 1 < argc)
+            want = argv[++i];
+        else if (std::strcmp(a, "cpu") == 0 || std::strcmp(a, "cuda") == 0
+                 || std::strcmp(a, "both") == 0)
             want = a;
     }
     return want;
@@ -166,9 +166,9 @@ int run_on_device(Device dev) {
         double max_par = 0.0;
         for (int A = 0; A < 3; ++A)
             for (int d = 0; d < 3; ++d)
-                max_par = std::max(max_par,
-                                   std::fabs(grad_ha_bohr(res, A, d)
-                                             - grad_ha_bohr(res_cpu, A, d)));
+                max_par =
+                    std::max(max_par, std::fabs(grad_ha_bohr(res, A, d)
+                                                - grad_ha_bohr(res_cpu, A, d)));
         std::printf("[cuda] cpu_parity_max_err=%.3e tol=2e-06 Ha/Bohr\n",
                     max_par);
         if (!(max_par < 2e-6)) {
@@ -190,7 +190,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     int rc = 0;
-    if (want == "cpu" || want == "both") rc |= run_on_device(Device::Cpu);
-    if (want == "cuda" || want == "both") rc |= run_on_device(Device::Cuda);
+    if (want == "cpu" || want == "both")
+        rc |= run_on_device(Device::Cpu);
+    if (want == "cuda" || want == "both")
+        rc |= run_on_device(Device::Cuda);
     return rc;
 }

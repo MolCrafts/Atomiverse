@@ -116,12 +116,12 @@ int main() {
             std::vector<std::array<double, 3>> pos_s = pos_bohr;
             for (auto& p : pos_s)
                 p[static_cast<std::size_t>(a)] *= (1.0 + eps);
-            e_pm[sgn] = cpu::gpw::dftd3_pbe_bj(
-                            Zv, pos_s, cell_s, /*periodic=*/true,
-                            cpu::gpw::D3Params{},
-                            cpu::gpw::kD3Cp2kPairCutoffBohr, kS6, kS8, kA1,
-                            kA2, /*cp2k_cn=*/true, /*calculate_c9=*/false)
-                            .energy;
+            e_pm[sgn] =
+                cpu::gpw::dftd3_pbe_bj(
+                    Zv, pos_s, cell_s, /*periodic=*/true, cpu::gpw::D3Params{},
+                    cpu::gpw::kD3Cp2kPairCutoffBohr, kS6, kS8, kA1, kA2,
+                    /*cp2k_cn=*/true, /*calculate_c9=*/false)
+                    .energy;
         }
         sigma_disp[a] = -(e_pm[0] - e_pm[1]) / (2.0 * hd) / vol;
     }
@@ -134,8 +134,9 @@ int main() {
                     names[a], sigma_disp[a], kSigmaDispCp2k[a], err);
     }
     if (max_pin_err > kSigmaDispTol) {
-        std::printf("FAIL: dispersion stress vs CP2K multi-k diff %.3e > tol %g\n",
-                    max_pin_err, kSigmaDispTol);
+        std::printf(
+            "FAIL: dispersion stress vs CP2K multi-k diff %.3e > tol %g\n",
+            max_pin_err, kSigmaDispTol);
         return 1;
     }
 
@@ -232,7 +233,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;
@@ -278,8 +280,8 @@ int main() {
                              - s_plain[static_cast<std::size_t>(a)];
         const double d = std::abs(shift - kSigmaDispCp2k[a]);
         max_wire = std::max(max_wire, d);
-        std::printf("  σ_%s  shift=% .6e  cp2k_pin=% .6e  |d|=%.3e\n",
-                    names[a], shift, kSigmaDispCp2k[a], d);
+        std::printf("  σ_%s  shift=% .6e  cp2k_pin=% .6e  |d|=%.3e\n", names[a],
+                    shift, kSigmaDispCp2k[a], d);
     }
     // Wiring tol: product and plain analytic share SCF noise ~1e-6 tol;
     // dispersion pin is ~1e-7 — allow 2e-9 like the MBD multi-k twin.
@@ -296,16 +298,15 @@ int main() {
 
     const auto t2 = clock::now();
     const auto sfd = cpu::gpw::gpw_stress_fd(
-        atoms, method, /*h=*/2e-3, /*axes*/ {true, false, false},
-        nullptr);
+        atoms, method, /*h=*/2e-3, /*axes*/ {true, false, false}, nullptr);
     const auto t3 = clock::now();
     const double wall_fd_s = std::chrono::duration<double>(t3 - t2).count();
 
     const double an_xx = san[0];
     const double fd_xx = sfd[0];
     const double anfd_err = std::abs(an_xx - fd_xx);
-    std::printf("  σ_xx  analytic=% .8e  fd=% .8e  |d|=%.3e Ha/Bohr3\n",
-                an_xx, fd_xx, anfd_err);
+    std::printf("  σ_xx  analytic=% .8e  fd=% .8e  |d|=%.3e Ha/Bohr3\n", an_xx,
+                fd_xx, anfd_err);
     std::printf("  σ_yy  analytic=% .8e   σ_zz  analytic=% .8e\n", san[1],
                 san[2]);
     if (!std::isfinite(an_xx) || !std::isfinite(fd_xx)) {
@@ -318,9 +319,10 @@ int main() {
         return 1;
     }
 
-    std::printf("E_atv=%.12f Ha  E_disp=%.14e Ha (pin %.14e)  nk=%d  iters=%d\n",
-                eval.last_energy_hartree(), e_disp_prod, kEDispCp2k,
-                eval.last_result().n_kpts, eval.last_result().iters);
+    std::printf(
+        "E_atv=%.12f Ha  E_disp=%.14e Ha (pin %.14e)  nk=%d  iters=%d\n",
+        eval.last_energy_hartree(), e_disp_prod, kEDispCp2k,
+        eval.last_result().n_kpts, eval.last_result().iters);
     std::printf("wall_product=%.3f s  wall_fd_twin=%.3f s\n", wall_product_s,
                 wall_fd_s);
     // Fair wall oracle: CP2K D3BJ multi-k NUMERICAL stress, 1 MPI × 8 OMP,

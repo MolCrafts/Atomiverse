@@ -69,8 +69,7 @@ constexpr double kBoxL = 24.0;
 /// Ar mass [amu] (IUPAC 2021 standard atomic weight).
 constexpr double kArMass = 39.948;
 /// eV/Å per Hartree/Bohr.
-constexpr double kHaBohrInEvAng =
-    1.0 / units::kEvPerAngstromInHartreePerBohr;
+constexpr double kHaBohrInEvAng = 1.0 / units::kEvPerAngstromInHartreePerBohr;
 
 /// @brief Ar₂ at separation `r`, centred on the cell, at rest.
 /// @param r Ar–Ar separation [Å].
@@ -99,7 +98,7 @@ cpu::scf::RHF method() {
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::Def2SVP;
     rhf.d3bj = true;
-    rhf.tol = 1e-10;      // Ha — FD of the total energy needs a tight SCF
+    rhf.tol = 1e-10; // Ha — FD of the total energy needs a tight SCF
     rhf.max_iter = 200;
     return rhf;
 }
@@ -190,8 +189,8 @@ int main() {
     /// leg was worth 1.09e-2 eV/Å here, 250× this window.
     constexpr double fd_tol_ev_ang = 5e-5;
 
-    constexpr double dt_fs = 8.0;   // ~1/77 of the ~615 fs well period
-    constexpr int n_steps = 80;     // 640 fs ≈ one full oscillation
+    constexpr double dt_fs = 8.0; // ~1/77 of the ~615 fs well period
+    constexpr int n_steps = 80;   // 640 fs ≈ one full oscillation
     /// NVE envelope on |E_tot − E_tot(step 1)| [eV]; measured 1.56e-5, and it
     /// scales as dt² (3.9e-6 at 4 fs), i.e. it is Velocity-Verlet
     /// discretization, not force/energy inconsistency.

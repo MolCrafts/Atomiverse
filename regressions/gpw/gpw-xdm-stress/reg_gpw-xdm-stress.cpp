@@ -69,8 +69,8 @@ constexpr double kEDispKernelTol = 1.0e-12; // Ha
 // Gate A (product SCF via Frame): sibling gpw-xdm-ice / gpw-xdm-forces tier —
 // residual is the pin vs units::kAngstromInBohr conversion, not the kernel.
 constexpr double kEDispProductTol = 1.0e-8; // Ha
-constexpr double kAnFdTol = 2.0e-5;   // Ha/Bohr³ — Γ dispersion-stress tier
-constexpr double kShiftTol = 1.0e-8;  // Ha/Bohr³ — σ(xdm)−σ(plain) vs pin
+constexpr double kAnFdTol = 2.0e-5;     // Ha/Bohr³ — Γ dispersion-stress tier
+constexpr double kShiftTol = 1.0e-8;    // Ha/Bohr³ — σ(xdm)−σ(plain) vs pin
 constexpr double kOffDiagTol = 1.0e-12; // Ha/Bohr³ (must be exactly 0)
 constexpr double kDiagFloor = 1.0e-10;  // Ha/Bohr³ — stress must be nonzero
 constexpr double kWallBudget = 60.0;    // s
@@ -105,15 +105,14 @@ int main() {
                                   L * kPinAng2Bohr};
                 cell[a] *= scale;
                 for (int i = 0; i < 6; ++i) {
-                    pos[static_cast<std::size_t>(i)] = {
-                        xs[i] * kPinAng2Bohr, ys[i] * kPinAng2Bohr,
-                        zs[i] * kPinAng2Bohr};
-                    pos[static_cast<std::size_t>(i)][static_cast<std::size_t>(
-                        a)] *= scale;
+                    pos[static_cast<std::size_t>(i)] = {xs[i] * kPinAng2Bohr,
+                                                        ys[i] * kPinAng2Bohr,
+                                                        zs[i] * kPinAng2Bohr};
+                    pos[static_cast<std::size_t>(i)]
+                       [static_cast<std::size_t>(a)] *= scale;
                 }
                 const double e =
-                    cpu::gpw::xdm_pbe(Z, pos, cell, /*periodic=*/true,
-                                      kRcutXdm)
+                    cpu::gpw::xdm_pbe(Z, pos, cell, /*periodic=*/true, kRcutXdm)
                         .energy;
                 const double ref = kEDispStrainRef[a][s];
                 const double err = std::abs(e - ref);
@@ -299,7 +298,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d "
                         "(got %.8e want %.8e)\n",
                         k, st[static_cast<std::size_t>(k)], expect);

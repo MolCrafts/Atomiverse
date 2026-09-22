@@ -37,7 +37,8 @@ struct MtKernelCache {
     double L0 = 0, L1 = 0, L2 = 0;
     std::vector<double> f; ///< Hermitian length n0*n1*(n2/2+1)
     bool matches(int a, int b, int c, double l0, double l1, double l2) const {
-        return n0 == a && n1 == b && n2 == c && L0 == l0 && L1 == l1 && L2 == l2;
+        return n0 == a && n1 == b && n2 == c && L0 == l0 && L1 == l1
+               && L2 == l2;
     }
     void rebuild(int a, int b, int c, double l0, double l1, double l2) {
         n0 = a;
@@ -47,8 +48,8 @@ struct MtKernelCache {
         L1 = l1;
         L2 = l2;
         const int n2c = c / 2 + 1;
-        const long nc =
-            static_cast<long>(a) * static_cast<long>(b) * static_cast<long>(n2c);
+        const long nc = static_cast<long>(a) * static_cast<long>(b)
+                        * static_cast<long>(n2c);
         f.resize(static_cast<std::size_t>(nc));
         const double two_pi = 2.0 * M_PI;
         const double gx_unit = two_pi / l0;
@@ -65,9 +66,8 @@ struct MtKernelCache {
                 const double gx = m0 * gx_unit;
                 const double gy = m1 * gy_unit;
                 const double gxy2 = gx * gx + gy * gy;
-                double* row =
-                    &f[static_cast<std::size_t>(
-                           (static_cast<long>(i0) * b + i1) * n2c)];
+                double* row = &f[static_cast<std::size_t>(
+                    (static_cast<long>(i0) * b + i1) * n2c)];
                 for (int i2 = 0; i2 < n2c; ++i2) {
                     const double gz = i2 * gz_unit;
                     const double g2 = gxy2 + gz * gz;

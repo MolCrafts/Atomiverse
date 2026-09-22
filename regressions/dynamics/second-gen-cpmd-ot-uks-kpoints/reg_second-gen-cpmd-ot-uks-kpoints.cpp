@@ -85,8 +85,8 @@ int main() {
         const double dab = std::fabs(rd.e_total - ro.e_total);
         std::printf("A/B: E_diag=%.10f Ha  E_OT=%.10f Ha  |Δ|=%.3e Ha  "
                     "iters diag/ot=%d/%d  nk=%d  S2 diag/ot=%.6f/%.6f\n",
-                    rd.e_total, ro.e_total, dab, rd.iters, ro.iters,
-                    ro.n_kpts, rd.s2, ro.s2);
+                    rd.e_total, ro.e_total, dab, rd.iters, ro.iters, ro.n_kpts,
+                    rd.s2, ro.s2);
         if (!(dab <= 1e-4)) {
             std::printf("FAIL: |E_diag - E_OT| = %.3e Ha exceeds 1e-4 Ha\n",
                         dab);
@@ -178,8 +178,8 @@ int main() {
             return 1;
         }
         if (!(ke_w > 1e-12)) {
-            std::printf(
-                "FAIL: expected non-trivial KE after seed, got %g eV\n", ke_w);
+            std::printf("FAIL: expected non-trivial KE after seed, got %g eV\n",
+                        ke_w);
             return 1;
         }
         if (!(pe_w < -5.0)) {
@@ -263,12 +263,12 @@ int main() {
         }
     }
 
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     const double rhh = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (!(rhh > rmin) || !(rhh < rmax)) {
         std::printf("FAIL: H–H bond out of window r=%.3f Å (%.2f–%.2f)\n", rhh,

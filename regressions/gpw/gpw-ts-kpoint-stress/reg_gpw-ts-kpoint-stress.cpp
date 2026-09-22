@@ -112,8 +112,8 @@ int main() {
                     pos[static_cast<std::size_t>(i)] = {xs[i] * kAng2Bohr,
                                                         ys[i] * kAng2Bohr,
                                                         zs[i] * kAng2Bohr};
-                    pos[static_cast<std::size_t>(i)][static_cast<std::size_t>(
-                        a)] *= scale;
+                    pos[static_cast<std::size_t>(i)]
+                       [static_cast<std::size_t>(a)] *= scale;
                 }
                 const auto r = cpu::gpw::ts_pbe(Z, pos, cell,
                                                 /*periodic=*/true, kRcutTs);
@@ -269,7 +269,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3)
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3)
             conv_ok = false;
     }
     check(conv_ok, "E kStress unit conversion");

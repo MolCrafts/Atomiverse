@@ -48,9 +48,7 @@ constexpr int kMaxIter = 60;
 
 enum class Device { Cpu, Cuda };
 
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
@@ -129,8 +127,7 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
     }
 
     const double mean_diag =
-        (std::abs(stress[0]) + std::abs(stress[1]) + std::abs(stress[2]))
-        / 3.0;
+        (std::abs(stress[0]) + std::abs(stress[1]) + std::abs(stress[2])) / 3.0;
     std::printf("PASS [%s]: O2 triplet LSDA bond=%.3f A ecut=%.0f Ry Γ  "
                 "σ=%.6g %.6g %.6g | %.3g %.3g %.3g eV/A3  E=%.8f Ry  "
                 "mean|diag|=%.6g\n",

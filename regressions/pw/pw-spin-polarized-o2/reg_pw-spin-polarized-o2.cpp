@@ -16,9 +16,7 @@
 using namespace ATV;
 using namespace ATV::cpu::pw;
 
-namespace {
-
-} // namespace
+namespace {} // namespace
 
 int main() {
     // ── Offline pins (REFERENCE.md) ────────────────────────────────────

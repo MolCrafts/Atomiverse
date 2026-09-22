@@ -203,12 +203,10 @@ pbe_correlation_zeta0(double rho, double ec_lda, double vc_lda,
 /// Mirrors the `evaluate_xc(PBE, ρ/2, ρ/2, σ/4, σ/4, σ/4)` call plus the
 /// `vsig_eff = vσ_aa + ½ vσ_ab; flux_d = vsig_eff·∂_dρ` lines of
 /// XCBuilder::step's GGA grid loop. Overwrites the gradient with the flux.
-__global__ void xc_pbe_kernel(const double* __restrict__ rho_r,
-                              double* __restrict__ gx_r,
-                              double* __restrict__ gy_r,
-                              double* __restrict__ gz_r,
-                              double* __restrict__ vxc_r,
-                              double* __restrict__ exc_r, int nr) {
+__global__ void
+xc_pbe_kernel(const double* __restrict__ rho_r, double* __restrict__ gx_r,
+              double* __restrict__ gy_r, double* __restrict__ gz_r,
+              double* __restrict__ vxc_r, double* __restrict__ exc_r, int nr) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= nr)
         return;
@@ -329,15 +327,14 @@ __device__ __forceinline__ double spin_f_zeta(double zeta) {
 __device__ __forceinline__ double spin_df_zeta(double zeta) {
     const double denom = 2.0 * (pow(2.0, 1.0 / 3.0) - 1.0);
     return (4.0 / 3.0)
-           * (pow(1.0 + zeta, 1.0 / 3.0) - pow(1.0 - zeta, 1.0 / 3.0))
-           / denom;
+           * (pow(1.0 + zeta, 1.0 / 3.0) - pow(1.0 - zeta, 1.0 / 3.0)) / denom;
 }
 
 /// Full spin PW92 correlation — `pw92_correlation` on the CPU.
 __device__ __forceinline__ void pw92_correlation_spin(double rho_a,
-                                                       double rho_b,
-                                                       double& ec, double& vc_a,
-                                                       double& vc_b) {
+                                                      double rho_b, double& ec,
+                                                      double& vc_a,
+                                                      double& vc_b) {
     rho_a = fmax(rho_a, kSpinDensMin);
     rho_b = fmax(rho_b, kSpinDensMin);
     const double rho = rho_a + rho_b;
@@ -345,8 +342,8 @@ __device__ __forceinline__ void pw92_correlation_spin(double rho_a,
     const double zeta = (rho_a - rho_b) / rho;
 
     double ecP, ecF, ac, decP_drs, decF_drs, dac_drs;
-    pw92_G_row(rs, kPwA, kPwAlpha1, kPwBeta1, kPwBeta2, kPwBeta3, kPwBeta4,
-               ecP, decP_drs);
+    pw92_G_row(rs, kPwA, kPwAlpha1, kPwBeta1, kPwBeta2, kPwBeta3, kPwBeta4, ecP,
+               decP_drs);
     pw92_G_row(rs, kPwF_A, kPwF_Alpha1, kPwF_Beta1, kPwF_Beta2, kPwF_Beta3,
                kPwF_Beta4, ecF, decF_drs);
     pw92_G_row(rs, kPwA_A, kPwA_Alpha1, kPwA_Beta1, kPwA_Beta2, kPwA_Beta3,
@@ -378,8 +375,9 @@ __device__ __forceinline__ void pw92_correlation_spin(double rho_a,
 __device__ __forceinline__ void
 pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
                      double vc_lda_b, double sigma_aa, double sigma_ab,
-                     double sigma_bb, double& ec_pbe, double& vc_a, double& vc_b,
-                     double& vsigma_aa, double& vsigma_ab, double& vsigma_bb) {
+                     double sigma_bb, double& ec_pbe, double& vc_a,
+                     double& vc_b, double& vsigma_aa, double& vsigma_ab,
+                     double& vsigma_bb) {
     const double rho = rho_a + rho_b;
     double zeta = (rho_a - rho_b) / rho;
     zeta = fmax(-1.0 + 1e-14, fmin(1.0 - 1e-14, zeta));
@@ -432,21 +430,19 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
     double dphi_drho_a, dphi_drho_b;
     {
         const double term_a_da =
-            (za > kZetaThreshold)
-                ? (1.0 / 3.0) * pow(za, -1.0 / 3.0) * zb / rho
-                : 0.0;
-        const double term_b_da =
-            (zb > kZetaThreshold) ? -(1.0 / 3.0) * pow(zb, 2.0 / 3.0) / rho
+            (za > kZetaThreshold) ? (1.0 / 3.0) * pow(za, -1.0 / 3.0) * zb / rho
                                   : 0.0;
+        const double term_b_da = (zb > kZetaThreshold)
+                                     ? -(1.0 / 3.0) * pow(zb, 2.0 / 3.0) / rho
+                                     : 0.0;
         dphi_drho_a = term_a_da + term_b_da;
 
-        const double term_a_db =
-            (za > kZetaThreshold) ? -(1.0 / 3.0) * pow(za, 2.0 / 3.0) / rho
-                                  : 0.0;
+        const double term_a_db = (za > kZetaThreshold)
+                                     ? -(1.0 / 3.0) * pow(za, 2.0 / 3.0) / rho
+                                     : 0.0;
         const double term_b_db =
-            (zb > kZetaThreshold)
-                ? (1.0 / 3.0) * pow(zb, -1.0 / 3.0) * za / rho
-                : 0.0;
+            (zb > kZetaThreshold) ? (1.0 / 3.0) * pow(zb, -1.0 / 3.0) * za / rho
+                                  : 0.0;
         dphi_drho_b = term_a_db + term_b_db;
     }
 
@@ -455,8 +451,7 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
 
     const double dA_dfactor = A * A * exp_val / (kBeta / kGamma);
     const double dA_dec_lda = dA_dfactor / (kGamma * phi3);
-    const double dA_dphi =
-        dA_dfactor * (-3.0 * ec_lda / (kGamma * phi3 * phi));
+    const double dA_dphi = dA_dfactor * (-3.0 * ec_lda / (kGamma * phi3 * phi));
 
     const double dec_lda_drho_a = (vc_lda_a - ec_lda) / rho;
     const double dec_lda_drho_b = (vc_lda_b - ec_lda) / rho;
@@ -465,19 +460,18 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
     const double dratio_dA = (kBeta / kGamma) * t2 * d_frac_dA;
     const double dH_dA = kGamma * phi3 / (1.0 + ratio) * dratio_dA;
 
-    const double dH_dphi_explicit =
-        3.0 * kGamma * phi * phi * log(1.0 + ratio);
+    const double dH_dphi_explicit = 3.0 * kGamma * phi * phi * log(1.0 + ratio);
     const double dH_dphi_implicit = dH_dt2 * dt2_dphi;
     const double dH_dphi_A = dH_dA * dA_dphi;
     const double dH_dphi_total =
         dH_dphi_explicit + dH_dphi_implicit + dH_dphi_A;
 
-    const double dH_drho_a =
-        dH_dt2 * dt2_drho + dH_dA * (dA_dec_lda * dec_lda_drho_a)
-        + dH_dphi_total * dphi_drho_a;
-    const double dH_drho_b =
-        dH_dt2 * dt2_drho + dH_dA * (dA_dec_lda * dec_lda_drho_b)
-        + dH_dphi_total * dphi_drho_b;
+    const double dH_drho_a = dH_dt2 * dt2_drho
+                             + dH_dA * (dA_dec_lda * dec_lda_drho_a)
+                             + dH_dphi_total * dphi_drho_a;
+    const double dH_drho_b = dH_dt2 * dt2_drho
+                             + dH_dA * (dA_dec_lda * dec_lda_drho_b)
+                             + dH_dphi_total * dphi_drho_b;
 
     vc_a = vc_lda_a + H + rho * dH_drho_a;
     vc_b = vc_lda_b + H + rho * dH_drho_b;
@@ -565,8 +559,8 @@ xc_pbe_spin_kernel(const double* __restrict__ rho_a,
 void xc_pbe_spin_grid(const double* d_rho_a, const double* d_rho_b,
                       double* d_gax_r, double* d_gay_r, double* d_gaz_r,
                       double* d_gbx_r, double* d_gby_r, double* d_gbz_r,
-                      double* d_vxc_a, double* d_vxc_b, double* d_exc_r,
-                      int nr, cudaStream_t stream) {
+                      double* d_vxc_a, double* d_vxc_b, double* d_exc_r, int nr,
+                      cudaStream_t stream) {
     if (nr <= 0)
         return;
     xc_pbe_spin_kernel<<<::ATV::cuda::grid_size(nr, kBlock), kBlock, 0,

@@ -37,9 +37,7 @@ struct CollocateGridDesc {
     double eps_win = 1.0e-14;
 
     /// @brief Total real-space points.
-    long npts() const {
-        return static_cast<long>(n[0]) * n[1] * n[2];
-    }
+    long npts() const { return static_cast<long>(n[0]) * n[1] * n[2]; }
     /// @brief Integration weight w = V_cell / npts [Bohr³].
     double weight() const {
         return (L[0] * L[1] * L[2]) / static_cast<double>(npts());

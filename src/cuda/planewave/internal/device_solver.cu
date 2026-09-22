@@ -250,9 +250,8 @@ __global__ void k_nl_force_from_proj(const cufftDoubleComplex* __restrict__ c,
                                      const cufftDoubleComplex* __restrict__ sy,
                                      const cufftDoubleComplex* __restrict__ sz,
                                      const double* __restrict__ D,
-                                     const int* __restrict__ atom,
-                                     double pref, int ncol,
-                                     double* __restrict__ forces) {
+                                     const int* __restrict__ atom, double pref,
+                                     int ncol, double* __restrict__ forces) {
     int j = blockIdx.x * blockDim.x + threadIdx.x;
     if (j >= ncol)
         return;
@@ -266,12 +265,9 @@ __global__ void k_nl_force_from_proj(const cufftDoubleComplex* __restrict__ c,
     const cufftDoubleComplex cj = c[j];
     const double scale = 2.0 * Dj * pref;
     const cufftDoubleComplex sjx = sx[j], sjy = sy[j], sjz = sz[j];
-    atomicAdd(forces + 3 * ia + 0,
-              scale * (cj.x * sjx.y - cj.y * sjx.x));
-    atomicAdd(forces + 3 * ia + 1,
-              scale * (cj.x * sjy.y - cj.y * sjy.x));
-    atomicAdd(forces + 3 * ia + 2,
-              scale * (cj.x * sjz.y - cj.y * sjz.x));
+    atomicAdd(forces + 3 * ia + 0, scale * (cj.x * sjx.y - cj.y * sjx.x));
+    atomicAdd(forces + 3 * ia + 1, scale * (cj.x * sjy.y - cj.y * sjy.x));
+    atomicAdd(forces + 3 * ia + 2, scale * (cj.x * sjz.y - cj.y * sjz.x));
 }
 
 template <typename T>
@@ -288,7 +284,6 @@ T* device_alloc(size_t n) {
     ATV_CUDA_CHECK(cudaMalloc(&p, n * sizeof(T)));
     return p;
 }
-
 
 } // namespace
 
@@ -309,13 +304,13 @@ DeviceBandSolver::DeviceBandSolver(int fft_nx, int fft_ny, int fft_nz,
     check_cublas(cublasCreate(&blas_), "cublasCreate");
     check_cublas(cublasSetStream(blas_, stream_), "cublasSetStream");
     check_cublas(cublasCreate(&blas_dev_), "cublasCreate device-pointer");
-    check_cublas(
-        cublasSetPointerMode(blas_dev_, CUBLAS_POINTER_MODE_DEVICE),
-        "cublasSetPointerMode");
+    check_cublas(cublasSetPointerMode(blas_dev_, CUBLAS_POINTER_MODE_DEVICE),
+                 "cublasSetPointerMode");
     check_cublas(cublasSetStream(blas_dev_, stream_),
                  "cublasSetStream device-pointer");
     check_cusolver(cusolverDnCreate(&solver_), "cusolverDnCreate");
-    check_cusolver(cusolverDnSetStream(solver_, stream_), "cusolverDnSetStream");
+    check_cusolver(cusolverDnSetStream(solver_, stream_),
+                   "cusolverDnSetStream");
     d_grid_ = device_alloc<cufftDoubleComplex>(nr_);
     d_nrm_ = device_alloc<double>(3);
     d_inv_ = device_alloc<double>(2);
@@ -501,8 +496,7 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
         // the geometry: identical in every SCF iteration, so it is built and
         // uploaded once here instead of once per k per iteration.
         std::vector<std::complex<AccReal>> sub_host;
-        k_nsub_[ik] =
-            cpu::pw::internal::init_subspace(ws, n_bands_, sub_host);
+        k_nsub_[ik] = cpu::pw::internal::init_subspace(ws, n_bands_, sub_host);
         k_soff_[ik] = h_sub0.size();
         h_sub0.insert(h_sub0.end(), sub_host.begin(), sub_host.end());
     }
@@ -570,10 +564,10 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
                           == sizeof(cufftDoubleComplex),
                       "initial subspace upload assumes layout equivalence");
         d_sub0_all_ = device_alloc<cufftDoubleComplex>(h_sub0.size());
-        ATV_CUDA_CHECK(cudaMemcpyAsync(
-            d_sub0_all_, h_sub0.data(),
-            h_sub0.size() * sizeof(cufftDoubleComplex), cudaMemcpyHostToDevice,
-            stream_));
+        ATV_CUDA_CHECK(
+            cudaMemcpyAsync(d_sub0_all_, h_sub0.data(),
+                            h_sub0.size() * sizeof(cufftDoubleComplex),
+                            cudaMemcpyHostToDevice, stream_));
     }
     // Host vectors go out of scope after this call — fence before return.
     ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
@@ -591,9 +585,8 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
 void DeviceBandSolver::bind_kpoint(int ik) {
     if (ik < 0 || ik >= n_kpts_)
         throw std::runtime_error(
-            "DeviceBandSolver::bind_kpoint: k-point index "
-            + std::to_string(ik) + " out of range for "
-            + std::to_string(n_kpts_)
+            "DeviceBandSolver::bind_kpoint: k-point index " + std::to_string(ik)
+            + " out of range for " + std::to_string(n_kpts_)
             + " built k-points (build_kpoints() must run first)");
 
     ng_ = k_ng_[ik];
@@ -613,9 +606,8 @@ void DeviceBandSolver::bind_kpoint(int ik) {
         const dim3 grid(n_blocks(ng_), n_proj_);
         k_build_beta<<<grid, kBlock, 0, stream_>>>(
             d_qx_all_ + go, d_qy_all_ + go, d_qz_all_ + go, d_cl_all_ + co,
-            d_cm_all_ + co, d_cp_all_ + 3 * co, d_co_all_ + co,
-            d_cn_all_ + co, d_fg_all_ + k_fgoff_[ik], pref_, ng_, n_proj_,
-            d_beta_);
+            d_cm_all_ + co, d_cp_all_ + 3 * co, d_co_all_ + co, d_cn_all_ + co,
+            d_fg_all_ + k_fgoff_[ik], pref_, ng_, n_proj_, d_beta_);
         ATV_CUDA_CHECK(cudaGetLastError());
     }
 }
@@ -666,8 +658,8 @@ void DeviceBandSolver::ensure_subspace_capacity(int ng, int cap) {
 
 void DeviceBandSolver::apply_h(const cufftDoubleComplex* psi,
                                cufftDoubleComplex* hpsi) {
-    ATV_CUDA_CHECK(cudaMemsetAsync(d_grid_, 0,
-                                   nr_ * sizeof(cufftDoubleComplex), stream_));
+    ATV_CUDA_CHECK(
+        cudaMemsetAsync(d_grid_, 0, nr_ * sizeof(cufftDoubleComplex), stream_));
     k_scatter<<<n_blocks(ng_), kBlock, 0, stream_>>>(psi, d_idx_, ng_, d_grid_);
     check_cufft(cufftExecZ2Z(fft_plan_, d_grid_, d_grid_, CUFFT_INVERSE),
                 "Z2Z inverse (H·psi)");
@@ -720,10 +712,10 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
     int max_david = std::min(max_iter, 20);
     int cap = std::min(ng, n_sub + nb * max_david);
     ensure_subspace_capacity(ng, cap);
-    ATV_CUDA_CHECK(cudaMemcpyAsync(
-        d_sub_, d_sub0_,
-        static_cast<size_t>(n_sub) * ng * sizeof(cufftDoubleComplex),
-        cudaMemcpyDeviceToDevice, stream_));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(d_sub_, d_sub0_,
+                                   static_cast<size_t>(n_sub) * ng
+                                       * sizeof(cufftDoubleComplex),
+                                   cudaMemcpyDeviceToDevice, stream_));
     std::vector<bool> h_computed(n_sub, false);
 
     const cuDoubleComplex c_one{1.0, 0.0}, c_zero{0.0, 0.0}, c_mone{-1.0, 0.0};
@@ -779,12 +771,11 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
                 static_cast<size_t>(evd_lwork_));
         }
         check_cusolver(
-            cusolverDnZheevd(solver_, CUSOLVER_EIG_MODE_VECTOR,
-                             CUBLAS_FILL_MODE_UPPER, n_sub,
-                             reinterpret_cast<cuDoubleComplex*>(d_hs_), n_sub,
-                             d_eig_,
-                             reinterpret_cast<cuDoubleComplex*>(d_evd_work_),
-                             evd_lwork_, d_evd_info_),
+            cusolverDnZheevd(
+                solver_, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
+                n_sub, reinterpret_cast<cuDoubleComplex*>(d_hs_), n_sub, d_eig_,
+                reinterpret_cast<cuDoubleComplex*>(d_evd_work_), evd_lwork_,
+                d_evd_info_),
             "Zheevd");
 
         // One 4-byte + nb*8-byte readback per round. devInfo must be checked —
@@ -921,10 +912,10 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
                 if (!accept)
                     continue;
 
-                ATV_CUDA_CHECK(cudaMemcpyAsync(
-                    d_sub_ + static_cast<size_t>(n_sub) * ng, d_work_,
-                    ng * sizeof(cufftDoubleComplex), cudaMemcpyDeviceToDevice,
-                    stream_));
+                ATV_CUDA_CHECK(
+                    cudaMemcpyAsync(d_sub_ + static_cast<size_t>(n_sub) * ng,
+                                    d_work_, ng * sizeof(cufftDoubleComplex),
+                                    cudaMemcpyDeviceToDevice, stream_));
                 h_computed.push_back(false);
                 ++n_sub;
                 ++n_added;
@@ -967,7 +958,8 @@ void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
             "n_occ must be in [0, n_bands]");
     if (n_occ == 0)
         return;
-    double scale = static_cast<double>(weight) * occ / static_cast<double>(omega);
+    double scale =
+        static_cast<double>(weight) * occ / static_cast<double>(omega);
     for (int b = 0; b < n_occ; ++b) {
         ATV_CUDA_CHECK(cudaMemsetAsync(
             d_grid_, 0, nr_ * sizeof(cufftDoubleComplex), stream_));
@@ -975,8 +967,8 @@ void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
             d_ritz_ + static_cast<size_t>(b) * ng_, d_idx_, ng_, d_grid_);
         check_cufft(cufftExecZ2Z(fft_plan_, d_grid_, d_grid_, CUFFT_INVERSE),
                     "Z2Z inverse (density)");
-        k_accum_density<<<n_blocks(nr_), kBlock, 0, stream_>>>(
-            d_grid_, scale, nr_, rho_accum_);
+        k_accum_density<<<n_blocks(nr_), kBlock, 0, stream_>>>(d_grid_, scale,
+                                                               nr_, rho_accum_);
         ATV_CUDA_CHECK(cudaGetLastError());
     }
 }
@@ -1011,8 +1003,8 @@ void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
             d_ritz_ + static_cast<size_t>(b) * ng_, d_idx_, ng_, d_grid_);
         check_cufft(cufftExecZ2Z(fft_plan_, d_grid_, d_grid_, CUFFT_INVERSE),
                     "Z2Z inverse (density, fractional occ)");
-        k_accum_density<<<n_blocks(nr_), kBlock, 0, stream_>>>(
-            d_grid_, scale, nr_, rho_accum_);
+        k_accum_density<<<n_blocks(nr_), kBlock, 0, stream_>>>(d_grid_, scale,
+                                                               nr_, rho_accum_);
         ATV_CUDA_CHECK(cudaGetLastError());
     }
 }
@@ -1116,8 +1108,7 @@ void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
             continue;
         // pref = weight * f_b: restricted smear f∈[0,2]; fixed f=2; spin f=1.
         const double pref = weight * f_b;
-        const cufftDoubleComplex* psi =
-            d_ritz_ + static_cast<size_t>(b) * ng_;
+        const cufftDoubleComplex* psi = d_ritz_ + static_cast<size_t>(b) * ng_;
 
         // c = βᴴ ψ
         check_cublas(
@@ -1132,11 +1123,11 @@ void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
             k_mul_real_scale<<<n_blocks(ng_), kBlock>>>(psi, q, ng_, d_work_);
             ATV_CUDA_CHECK(cudaGetLastError());
             check_cublas(
-                cublasZgemv(
-                    blas_, CUBLAS_OP_C, ng_, n_proj_, &one,
-                    reinterpret_cast<const cuDoubleComplex*>(d_beta_), ng_,
-                    reinterpret_cast<const cuDoubleComplex*>(d_work_), 1,
-                    &zero, reinterpret_cast<cuDoubleComplex*>(s), 1),
+                cublasZgemv(blas_, CUBLAS_OP_C, ng_, n_proj_, &one,
+                            reinterpret_cast<const cuDoubleComplex*>(d_beta_),
+                            ng_,
+                            reinterpret_cast<const cuDoubleComplex*>(d_work_),
+                            1, &zero, reinterpret_cast<cuDoubleComplex*>(s), 1),
                 "Zgemv beta^H (q*psi) (nl force s)");
         };
         proj_q(qx, d_sx);

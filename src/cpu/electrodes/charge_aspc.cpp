@@ -68,8 +68,9 @@ void ChargeASPC::compute_coefficients_() {
     // MetalWalls' hard-coded constants exactly.
     const double denom = static_cast<double>(binomial(2 * K_, K_));
     for (int j = 1; j <= K_ + 1; ++j) {
-        const double num = static_cast<double>(j)
-                           * static_cast<double>(binomial(2 * K_ + 2, K_ + 1 - j));
+        const double num =
+            static_cast<double>(j)
+            * static_cast<double>(binomial(2 * K_ + 2, K_ + 1 - j));
         const double sign = (j % 2 == 1) ? 1.0 : -1.0;
         // omega_ index 0 = oldest of the K+1 window = B_{K+1}.
         omega_[static_cast<std::size_t>(K_ + 1 - j)] = sign * num / denom;

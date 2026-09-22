@@ -43,8 +43,9 @@ const DftbPairSkRow& pair_sk(int za, int zb) {
 }
 
 /// Non-SCC total energy at the current Frame geometry [eV].
-double energy_non_scc(const Frame& f, const StorageReal* x, const StorageReal* y,
-                      const StorageReal* z, const int* type, int n_at,
+double energy_non_scc(const Frame& f, const StorageReal* x,
+                      const StorageReal* y, const StorageReal* z,
+                      const int* type, int n_at,
                       const std::vector<const DftbElementRow*>& el,
                       const std::vector<int>& ao0, int n_ao, int n_occ) {
     linalg::RealMatrix H0 = xt::zeros<double>({n_ao, n_ao});
@@ -81,8 +82,8 @@ double energy_non_scc(const Frame& f, const StorageReal* x, const StorageReal* y
             const auto& sk_ba = pair_sk(type[b], type[a]);
             internal::MioSketchPair{ea, eb, sk_ab}.add_block(dx, dy, dz, r, H0,
                                                              S, ia, ib);
-            internal::MioSketchPair{eb, ea, sk_ba}.add_block(
-                -dx, -dy, -dz, r, H0, S, ib, ia);
+            internal::MioSketchPair{eb, ea, sk_ba}.add_block(-dx, -dy, -dz, r,
+                                                             H0, S, ib, ia);
         }
     }
 
@@ -98,8 +99,7 @@ double energy_non_scc(const Frame& f, const StorageReal* x, const StorageReal* y
         for (int b = a + 1; b < n_at; ++b) {
             double dx, dy, dz;
             const double r = dist_vec(a, b, dx, dy, dz);
-            e_repulsive +=
-                internal::MioSkTable{type[a], type[b]}.repulsive(r);
+            e_repulsive += internal::MioSkTable{type[a], type[b]}.repulsive(r);
         }
 
     return e_band + e_repulsive;
@@ -153,13 +153,11 @@ void DFTB0::launch(const LaunchContext& ctx) {
                 StorageReal* col = (k == 0) ? x : (k == 1) ? y : z;
                 const StorageReal saved = col[a];
                 col[a] = saved + static_cast<StorageReal>(h_fd);
-                const double ep =
-                    energy_non_scc(f, x, y, z, type, n_at, el, ao0, n_ao,
-                                   n_occ);
+                const double ep = energy_non_scc(f, x, y, z, type, n_at, el,
+                                                 ao0, n_ao, n_occ);
                 col[a] = saved - static_cast<StorageReal>(h_fd);
-                const double em =
-                    energy_non_scc(f, x, y, z, type, n_at, el, ao0, n_ao,
-                                   n_occ);
+                const double em = energy_non_scc(f, x, y, z, type, n_at, el,
+                                                 ao0, n_ao, n_occ);
                 col[a] = saved;
                 const double fi = -(ep - em) / (2.0 * h_fd);
                 if (k == 0)

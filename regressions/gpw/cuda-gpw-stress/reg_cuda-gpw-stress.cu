@@ -100,8 +100,7 @@ int main(int argc, char** argv) {
         s_cpu = ATV::cpu::gpw::gpw_stress(atoms, m, r, kH);
         std::printf("CPU:  E=%.12f Ha  iters=%d\n", e_cpu, r.iters);
         std::printf("CPU σ= %.8e %.8e %.8e  (off %.3e %.3e %.3e) Ha/Bohr3\n",
-                    s_cpu[0], s_cpu[1], s_cpu[2], s_cpu[3], s_cpu[4],
-                    s_cpu[5]);
+                    s_cpu[0], s_cpu[1], s_cpu[2], s_cpu[3], s_cpu[4], s_cpu[5]);
     }
 
     if (run_cuda) {
@@ -150,10 +149,9 @@ int main(int argc, char** argv) {
                          max_ds);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-stress  |dE|=%.3e  max|dσ|=%.3e  "
-            "(H2 Γ RKS PADE; perf_exempt small cell)\n",
-            de, max_ds);
+        std::printf("PASS: cuda-gpw-stress  |dE|=%.3e  max|dσ|=%.3e  "
+                    "(H2 Γ RKS PADE; perf_exempt small cell)\n",
+                    de, max_ds);
     } else if (run_cuda) {
         std::printf("PASS: cuda-gpw-stress (cuda-only)\n");
     } else {

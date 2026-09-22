@@ -61,20 +61,20 @@ double min_image_dist(const std::array<double, 3>& a,
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-double max_assigned_distance(
-    const std::vector<std::array<double, 3>>& centers,
-    const std::array<std::array<double, 3>, 4>& mids, const cpu::Box& box) {
+double max_assigned_distance(const std::vector<std::array<double, 3>>& centers,
+                             const std::array<std::array<double, 3>, 4>& mids,
+                             const cpu::Box& box) {
     const int n = 4;
     std::array<int, 4> perm{0, 1, 2, 3};
     double best_max = std::numeric_limits<double>::infinity();
     do {
         double this_max = 0.0;
         for (int i = 0; i < n; ++i) {
-            const double d = min_image_dist(
-                centers[static_cast<std::size_t>(i)],
-                mids[static_cast<std::size_t>(
-                    perm[static_cast<std::size_t>(i)])],
-                box);
+            const double d =
+                min_image_dist(centers[static_cast<std::size_t>(i)],
+                               mids[static_cast<std::size_t>(
+                                   perm[static_cast<std::size_t>(i)])],
+                               box);
             this_max = std::max(this_max, d);
         }
         best_max = std::min(best_max, this_max);
@@ -121,8 +121,8 @@ int main() {
     std::printf("SCF E≈%.6f Ry  n_up=%d n_dn=%d n_wann=%d  iters=%d  conv=%d\n",
                 r.energy_ry, r.n_wann_up, r.n_wann_dn, r.n_wann, r.iterations,
                 static_cast<int>(r.converged));
-    std::printf("Omega_init=%.6f  Omega=%.6f  [Ang^2]\n", r.total_spread_initial,
-                r.total_spread);
+    std::printf("Omega_init=%.6f  Omega=%.6f  [Ang^2]\n",
+                r.total_spread_initial, r.total_spread);
 
     if (r.n_wann_up != 4 || r.n_wann_dn != 4 || r.n_wann != 8) {
         std::printf("FAIL: expected n_up=n_dn=4 (total 8), got up=%d dn=%d "
@@ -162,8 +162,7 @@ int main() {
                         ch_cent[static_cast<std::size_t>(i)][1],
                         ch_cent[static_cast<std::size_t>(i)][2]);
 
-        const double dmax =
-            max_assigned_distance(ch_cent, mids, frame.box);
+        const double dmax = max_assigned_distance(ch_cent, mids, frame.box);
         std::printf("spin %d: max mid-image→midpoint = %.5f Ang (tol %.2f); "
                     "Omega_spin≈%.5f\n",
                     s, dmax, kMidTol, omega);

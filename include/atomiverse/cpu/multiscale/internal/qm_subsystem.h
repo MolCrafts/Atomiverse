@@ -20,9 +20,9 @@ namespace internal {
 
 /// @brief Resolved link bond (user-frame rows + private-frame H index).
 struct ResolvedLink {
-    int qm_row = -1;     ///< User-frame row of QM host.
-    int mm_row = -1;     ///< User-frame row of MM partner.
-    int fqm_h_row = -1;  ///< Private QM frame row of link H.
+    int qm_row = -1;    ///< User-frame row of QM host.
+    int mm_row = -1;    ///< User-frame row of MM partner.
+    int fqm_h_row = -1; ///< Private QM frame row of link H.
 };
 
 /// @brief Persistent QM subsystem owned by a multiscale coupling.
@@ -79,7 +79,9 @@ class QmSubsystem {
     /// @param[out] e_qm QM energy written this step [eV] (before scatter).
     void launch(Frame& frame, bool forces_requested, double& e_qm);
 
-    int last_n_links() const { return static_cast<int>(resolved_links_.size()); }
+    int last_n_links() const {
+        return static_cast<int>(resolved_links_.size());
+    }
     int n_qm() const { return n_qm_real_; }
     /// @brief User-frame rows of real QM atoms (valid after build/launch).
     const std::vector<int>& qm_rows() const { return qm_rows_; }
@@ -106,8 +108,8 @@ class QmSubsystem {
     double embed_cutoff_ = 12.0;
     bool reset_history_each_launch_ = false;
 
-    std::vector<int> qm_rows_;           ///< User-frame rows of real QM atoms.
-    std::vector<int> qm_z_;              ///< Atomic numbers from mask.
+    std::vector<int> qm_rows_; ///< User-frame rows of real QM atoms.
+    std::vector<int> qm_z_;    ///< Atomic numbers from mask.
     std::vector<ResolvedLink> resolved_links_;
     std::unordered_set<TagInt> link_mm_tags_;
 

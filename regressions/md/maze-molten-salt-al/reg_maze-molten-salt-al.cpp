@@ -25,11 +25,11 @@ using namespace ATV;
 
 namespace {
 
-constexpr double kLxy = 12.0;  // [Å]
-constexpr double kLz = 24.0;   // [Å]
-constexpr double kZBot = 3.0;  // Al wall
+constexpr double kLxy = 12.0; // [Å]
+constexpr double kLz = 24.0;  // [Å]
+constexpr double kZBot = 3.0; // Al wall
 constexpr double kZTop = 21.0;
-constexpr double kEta = 1.5;   // [1/Å] Al-like Gaussian width
+constexpr double kEta = 1.5; // [1/Å] Al-like Gaussian width
 constexpr double kPsiBot = 0.0;
 constexpr double kPsiTop = 1.0;
 constexpr double kCut = 6.0;
@@ -126,7 +126,8 @@ int main() {
 
     cpu::md::MD sim;
     sim.set_threads(4);
-    sim.set_observer(cpu::md::InitVelocity{/*T=*/800.0, /*seed=*/42u}); // molten
+    sim.set_observer(
+        cpu::md::InitVelocity{/*T=*/800.0, /*seed=*/42u}); // molten
     sim.set_integrator(cpu::md::VelocityVerlet{/*dt=*/0.5});
     sim.set_thermostat(cpu::md::NoseHoover{800.0, /*tau=*/50.0, 0.5});
     sim.set_evaluator(std::move(born));
@@ -189,7 +190,8 @@ int main() {
                     dz -= kLz;
                 if (dz < -0.5 * kLz)
                     dz += kLz;
-                min_rr = std::fmin(min_rr, std::sqrt(dx * dx + dy * dy + dz * dz));
+                min_rr =
+                    std::fmin(min_rr, std::sqrt(dx * dx + dy * dy + dz * dz));
             }
         }
         if (!(min_rr > 1.0)) {
@@ -207,9 +209,9 @@ int main() {
     }
     QL = electrode_Q(frame, 2);
     QR = electrode_Q(frame, 3);
-    std::printf("after 160 steps: E=%.6e K=%.6e QL=%+.6e QR=%+.6e freeze=%.3e\n",
-                frame.meta.get(kEnergy), frame.meta.get(kKinetic), QL, QR,
-                max_dx);
+    std::printf(
+        "after 160 steps: E=%.6e K=%.6e QL=%+.6e QR=%+.6e freeze=%.3e\n",
+        frame.meta.get(kEnergy), frame.meta.get(kKinetic), QL, QR, max_dx);
     if (!(max_dx <= 1e-10)) {
         std::printf("FAIL freeze\n");
         return 1;

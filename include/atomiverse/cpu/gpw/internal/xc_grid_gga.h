@@ -47,10 +47,12 @@ XcOnGrid xc_grid_revpbe(const UniformGrid& grid,
                         const std::vector<double>& rho_r);
 
 /// @brief RPBE GGA on the grid (`xc_grid_gga` with `XCType::RPBE`).
-XcOnGrid xc_grid_rpbe(const UniformGrid& grid, const std::vector<double>& rho_r);
+XcOnGrid xc_grid_rpbe(const UniformGrid& grid,
+                      const std::vector<double>& rho_r);
 
 /// @brief BLYP GGA on the grid (`xc_grid_gga` with `XCType::BLYP`).
-XcOnGrid xc_grid_blyp(const UniformGrid& grid, const std::vector<double>& rho_r);
+XcOnGrid xc_grid_blyp(const UniformGrid& grid,
+                      const std::vector<double>& rho_r);
 
 /// @brief optB88-vdW semi-local on the grid (`XCType::OptB88VdW`).
 XcOnGrid xc_grid_optb88_vdw(const UniformGrid& grid,

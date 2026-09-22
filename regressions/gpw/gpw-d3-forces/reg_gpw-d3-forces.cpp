@@ -109,9 +109,9 @@ int main() {
                           3.758602 + kShiftX, 3.758602 + kShiftX};
     const double ys[6] = {kShiftYZ, kShiftYZ, kShiftYZ,
                           kShiftYZ, kShiftYZ, kShiftYZ};
-    const double zs[6] = {0.000000 + kShiftYZ, 0.504284 + kShiftYZ,
+    const double zs[6] = {0.000000 + kShiftYZ,  0.504284 + kShiftYZ,
                           -0.504284 + kShiftYZ, 0.000000 + kShiftYZ,
-                          0.504284 + kShiftYZ, -0.504284 + kShiftYZ};
+                          0.504284 + kShiftYZ,  -0.504284 + kShiftYZ};
 
     // ── (1) Standalone D3: energy + gradient vs the CP2K pins ─────────────
     std::vector<int> Zv(6);
@@ -141,9 +141,8 @@ int main() {
     for (int i = 0; i < 6; ++i) {
         for (int k = 0; k < 3; ++k) {
             const double want = kForceD3Cp2k[i][k] - kForcePlainCp2k[i][k];
-            const double got =
-                d3.forces[static_cast<std::size_t>(i)]
-                         [static_cast<std::size_t>(k)];
+            const double got = d3.forces[static_cast<std::size_t>(i)]
+                                        [static_cast<std::size_t>(k)];
             max_fdisp_err = std::max(max_fdisp_err, std::abs(got - want));
             max_fdisp = std::max(max_fdisp, std::abs(want));
         }
@@ -257,8 +256,8 @@ int main() {
     double net[3] = {0.0, 0.0, 0.0};
     for (int i = 0; i < 6; ++i) {
         for (int k = 0; k < 3; ++k) {
-            const double on = F_on[static_cast<std::size_t>(i)]
-                                  [static_cast<std::size_t>(k)];
+            const double on =
+                F_on[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)];
             const double pl = F_plain[static_cast<std::size_t>(i)]
                                      [static_cast<std::size_t>(k)];
             if (!std::isfinite(on) || !std::isfinite(pl)) {

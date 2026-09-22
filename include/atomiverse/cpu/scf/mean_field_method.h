@@ -52,11 +52,11 @@
 #include "atomiverse/cpu/scf/fci.h"
 #include "atomiverse/cpu/scf/gradient_result.h"
 #include "atomiverse/cpu/scf/grid.h"
+#include "atomiverse/cpu/scf/internal/integral_view.h"
+#include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/mp2.h"
 #include "atomiverse/cpu/scf/mp3.h"
 #include "atomiverse/cpu/scf/mp4.h"
-#include "atomiverse/cpu/scf/internal/integral_view.h"
-#include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
 #include "atomiverse/cpu/scf/nevpt2.h"
 #include "atomiverse/cpu/scf/scf_enums.h"
@@ -398,7 +398,6 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     ///        if both set — prefer one). Public evaluator: `scf::D4`.
     bool d4 = false;
 
-
     /// @brief True when Car–Parrinello electronic dynamics is enabled (via wrapper).
     bool is_cpmd() const { return cpmd; }
     /// @brief True when XL-BOMD auxiliary-density dynamics is enabled.
@@ -406,7 +405,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// @brief XL-BOMD dissipation order K (meaningful when `is_xl_bomd()`).
     int xl_bomd_order() const { return xl_bomd_k; }
 
-protected:
+  protected:
     // ── Car–Parrinello molecular dynamics (esmm-cpmd-04) ──────────────
     /// @brief Propagate the occupied orbitals with a fictitious mass instead
     ///        of re-converging the SCF at every nuclear step (Car &
@@ -492,7 +491,7 @@ protected:
     /// Changing it between runs re-seats the propagators (history dropped).
     int xl_bomd_k = 5;
 
-public:
+  public:
     /// @brief XL-BOMD auxiliary-density propagation steps taken (one per
     ///        converged nested run). @return Count; 0 under BOMD.
     int xl_advances() const { return xl_advances_; }
@@ -748,10 +747,11 @@ public:
     /// @brief Observer handle (shared_ptrs survive driver ownership moves).
     /// @return Shared view of determinant / shells for cube writers.
     MeanFieldOutputs result_handle() const {
-        return {det_sp_,
-                std::shared_ptr<const std::vector<native::Shell>>(ints_shells_sp_),
-                has_result_sp_,
-                std::shared_ptr<const xt::xtensor<double, 2>>(ints_c2s_sp_)};
+        return {
+            det_sp_,
+            std::shared_ptr<const std::vector<native::Shell>>(ints_shells_sp_),
+            has_result_sp_,
+            std::shared_ptr<const xt::xtensor<double, 2>>(ints_c2s_sp_)};
     }
 
     Derived& with_gradient(bool enabled) & noexcept {
@@ -979,7 +979,8 @@ public:
     ///        `cpmd_step_`. Returns a view bound to those members.
     /// @param frame Geometry [Å]; already position-guarded by the caller.
     /// @param compute_pvp When true, assemble ⟨∇|V|∇⟩ (x2c).
-    internal::IntegralView rebuild_integrals_(const Frame& frame, bool compute_pvp);
+    internal::IntegralView rebuild_integrals_(const Frame& frame,
+                                              bool compute_pvp);
 
     /// @brief Lazily wire the five stages + `ScfConverged` and compile the Plan.
     ///        Deferred to first `drive_scf_` so member config (grid, level

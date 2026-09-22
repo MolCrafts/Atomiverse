@@ -8,7 +8,8 @@ namespace cuda {
 namespace scf {
 
 SCF::SCF(int n_occ, double alpha, double tol, int max_iter)
-    : cycle_(std::make_unique<internal::SyntheticScfCycle>(n_occ, alpha, tol, max_iter)) {}
+    : cycle_(std::make_unique<internal::SyntheticScfCycle>(n_occ, alpha, tol,
+                                                           max_iter)) {}
 
 void SCF::build(const BuildContext& ctx) {
     cycle_->build(ctx.runtime.stream, ctx.frame);

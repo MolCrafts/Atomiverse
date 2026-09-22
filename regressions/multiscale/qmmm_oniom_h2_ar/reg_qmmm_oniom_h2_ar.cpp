@@ -35,9 +35,8 @@ int main() {
     }
     f.box = cpu::Box::cubic(30);
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                                kDynamicFieldId});
     f.span(cpu::kAtomQmZ)[0] = 1;
     f.span(cpu::kAtomQmZ)[1] = 1;
     f.span(cpu::kAtomQmZ)[2] = 0;

@@ -149,10 +149,10 @@ double mv_pair_weight_cubic(double b_len);
 /// @param M_diag Diagonal \(M_{nn}^{(\mathbf b)}\) phases as complex values.
 /// @return Cartesian center [Å].
 /// @throws std::invalid_argument on size mismatch or empty input.
-std::array<double, 3> center_from_diagonal_phases(
-    const std::vector<std::array<double, 3>>& b_cart,
-    const std::vector<double>& w_b,
-    const std::vector<std::complex<double>>& M_diag);
+std::array<double, 3>
+center_from_diagonal_phases(const std::vector<std::array<double, 3>>& b_cart,
+                            const std::vector<double>& w_b,
+                            const std::vector<std::complex<double>>& M_diag);
 
 } // namespace pw
 } // namespace cpu

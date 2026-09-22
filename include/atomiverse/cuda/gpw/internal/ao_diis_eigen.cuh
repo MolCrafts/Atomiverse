@@ -139,9 +139,9 @@ class AoDiisEigenDevice {
 
   private:
     void ensure_built_() const;
-    void form_error_();                ///< d_err_ = Xᵀ(HPS−SPH)X using d_H_
-    void diis_extrapolate_();          ///< d_H_ ← extrapolated H (or unchanged)
-    void diagonalize_and_density_();   ///< d_H_ → d_C_, d_eig_, d_P_
+    void form_error_();              ///< d_err_ = Xᵀ(HPS−SPH)X using d_H_
+    void diis_extrapolate_();        ///< d_H_ ← extrapolated H (or unchanged)
+    void diagonalize_and_density_(); ///< d_H_ → d_C_, d_eig_, d_P_
     double err_norm_from_device_() const;
 
     cudaStream_t stream_ = nullptr;

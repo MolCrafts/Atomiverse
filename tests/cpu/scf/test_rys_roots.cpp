@@ -25,7 +25,6 @@
 
 #include "atomiverse/cpu/scf/rys_roots.h"
 
-
 namespace {
 
 // Sample x at enough branch boundaries to cover every piecewise polynomial
@@ -99,7 +98,6 @@ double boys_ref(int m, double x) {
 }
 
 } // namespace
-
 
 // ── Rys quadrature moment identity (libcint-independent) ─────────────
 //

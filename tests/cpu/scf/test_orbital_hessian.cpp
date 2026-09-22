@@ -26,11 +26,11 @@
 #include "atomiverse/cpu/scf/slater_determinant.h"
 
 using namespace ATV;
-using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::SlaterDeterminant;
 using cpu::scf::internal::Channel;
+using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::internal::OrbitalHessian;
 
 namespace {
@@ -57,8 +57,9 @@ struct H2Reference {
 
 H2Reference make_h2_reference(double r_angstrom) {
     auto frame = make_h2(r_angstrom);
-    cpu::scf::internal::IntegralWorkspace pack{frame, cpu::scf::BasisSet::STO3G, 0,
-                      /*compute_eri=*/true};
+    cpu::scf::internal::IntegralWorkspace pack{frame, cpu::scf::BasisSet::STO3G,
+                                               0,
+                                               /*compute_eri=*/true};
     const double s12 = pack.S(0, 1);
     const double cg = 1.0 / std::sqrt(2.0 * (1.0 + s12));
     const double cu = 1.0 / std::sqrt(2.0 * (1.0 - s12));

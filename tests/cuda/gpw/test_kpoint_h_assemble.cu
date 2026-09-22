@@ -21,14 +21,14 @@
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GridBasisFunction;
 using ATV::cpu::gpw::GthPotential;
+using ATV::cpu::gpw::make_multigrid;
 using ATV::cpu::gpw::MultiGrid;
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::make_multigrid;
+using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
 using ATV::cpu::gpw::internal::CplxMatrix;
+using ATV::cpu::gpw::internal::integrate_potential_k;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
-using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
-using ATV::cpu::gpw::internal::integrate_potential_k;
 using ATV::cuda::gpw::internal::KpointIntegrateDevice;
 
 namespace {
@@ -160,8 +160,7 @@ TEST(CudaGpwKpointHAssemble, MatchesHostH0PlusV) {
                 max_rel = std::max(max_rel, a / den);
             }
         }
-        EXPECT_LE(max_abs, kAbsTol)
-            << "ik=" << ik << " max|ΔH|=" << max_abs;
+        EXPECT_LE(max_abs, kAbsTol) << "ik=" << ik << " max|ΔH|=" << max_abs;
         EXPECT_LE(max_rel, kRelTol)
             << "ik=" << ik << " max relative=" << max_rel;
         for (int u = 0; u < nb; ++u) {

@@ -153,8 +153,7 @@ int main() {
     // (src/output.F90:1376) — the same identity PistonElectrode reports.
     constexpr double P_z_metalwalls = 8.27662809943017e-01; // [eV/Å³]
     constexpr double P_z_tol = 1e-6;                        // relative
-    const double pin_rel =
-        std::fabs(P_pin - P_z_metalwalls) / P_z_metalwalls;
+    const double pin_rel = std::fabs(P_pin - P_z_metalwalls) / P_z_metalwalls;
     std::printf("MW pin: P_z(ATV)=%.15e  P_z(MW)=%.15e  rel=%.3e\n", P_pin,
                 P_z_metalwalls, pin_rel);
     if (!(pin_rel <= P_z_tol)) {

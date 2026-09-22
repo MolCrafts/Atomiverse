@@ -50,7 +50,8 @@ struct SCFWorkspace {
 
     // -- RHF-specific --
     prec_t* Hcore = nullptr; ///< Core Hamiltonian T+V [device, n*n].
-    prec_t* S = nullptr; ///< Overlap matrix [device, n*n] (DIIS error e=Xᵀ[F,P]_S X).
+    prec_t* S =
+        nullptr; ///< Overlap matrix [device, n*n] (DIIS error e=Xᵀ[F,P]_S X).
     prec_t* X = nullptr; ///< Orthogonalization matrix S^{-1/2} [device, n*n].
     prec_t* F_prime = nullptr; ///< Transformed Fock X^T*F*X [device, n*n].
     prec_t* ERI = nullptr;     ///< Two-electron integrals [device, n^4].
@@ -61,8 +62,8 @@ struct SCFWorkspace {
     double* d_V_nuc = nullptr; ///< Nuclear repulsion [Hartree], device scalar.
 
     // -- Device SCF control (no scientific D2H during the SCF loop) --
-    prec_t* d_residual = nullptr;  ///< ||P−P_old||_F, device scalar.
-    int* d_converged = nullptr;    ///< Device view of mapped convergence flag.
+    prec_t* d_residual = nullptr; ///< ||P−P_old||_F, device scalar.
+    int* d_converged = nullptr;   ///< Device view of mapped convergence flag.
     /// Host-mapped write target for `d_converged` (cudaHostAllocMapped).
     /// Device kernels write; host reads after stream order — no
     /// cudaMemcpy DeviceToHost of residual matrices or energy mid-loop.
@@ -75,12 +76,13 @@ struct SCFWorkspace {
     prec_t* d_shell_coeff =
         nullptr; ///< Normalized coefficients [device, n_shells * n_prim].
     prec_t* d_shell_center =
-        nullptr;             ///< Shell centers [device, n_shells * 3] (Bohr).
+        nullptr; ///< Shell centers [device, n_shells * 3] (Bohr).
     int* d_shell_atom = nullptr; ///< Atom owning each shell [device, n_shells].
-    int* d_shell_L = nullptr;    ///< Angular momentum per shell [device, n_shells].
-    int* d_ao_shell = nullptr;   ///< Shell index of each AO [device, n_ao].
-    int* d_ao_cart = nullptr;    ///< Cart component within shell [device, n_ao].
-    int* d_atom_Z = nullptr; ///< Nuclear charges [device, natm].
+    int* d_shell_L =
+        nullptr; ///< Angular momentum per shell [device, n_shells].
+    int* d_ao_shell = nullptr; ///< Shell index of each AO [device, n_ao].
+    int* d_ao_cart = nullptr;  ///< Cart component within shell [device, n_ao].
+    int* d_atom_Z = nullptr;   ///< Nuclear charges [device, natm].
     prec_t* d_atom_pos = nullptr; ///< Atom positions [device, natm * 3] (Bohr).
     int n_prim = 0;               ///< Primitives per shell (host-cached).
     int n_shells = 0;             ///< Number of shells (host-cached).

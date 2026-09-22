@@ -55,8 +55,7 @@ constexpr double kCentre[2][3] = {{0.0, 0.0, 0.0}, {1.2, 0.0, 0.0}};
 ///
 /// Energy [eV] and force [eV/Å] of an anisotropic harmonic well:
 ///   E = ½ Σ_i Σ_d k_d (r_id − c_id)²,   f_id = −k_d (r_id − c_id).
-class HarmonicMethodNode : public cpu::Driver<ATV::scf::Phase>,
-                           public cpu::HF {
+class HarmonicMethodNode : public cpu::Driver<ATV::scf::Phase>, public cpu::HF {
   public:
     int calls = 0;
 
@@ -142,7 +141,8 @@ TEST(MinimizeNestedNode, StrongWolfeTrialsReenterNestedNode) {
                                 "reference is no longer the full budget";
     EXPECT_GT(method.calls, iterations)
         << "line-search trials never re-entered the nested force source "
-           "(calls=" << method.calls << ", iterations=" << iterations
+           "(calls="
+        << method.calls << ", iterations=" << iterations
         << ") — Runtime::run_slot_ skips nested driver nodes, so every "
            "StrongWolfe trial evaluated a zeroed frame";
 }

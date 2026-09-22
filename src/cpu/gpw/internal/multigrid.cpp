@@ -526,8 +526,9 @@ ProductSet build_products(const MultiGrid& mg,
         double mc = 0.0;
         for (int k = 0; k < pr.cn; ++k)
             mc = std::max(
-                mc, std::abs(ps.contribs[static_cast<std::size_t>(pr.cbeg + k)]
-                                 .coeff));
+                mc,
+                std::abs(
+                    ps.contribs[static_cast<std::size_t>(pr.cbeg + k)].coeff));
         pr.maxc = mc;
         const int Lsum = pr.l[0] + pr.l[1] + pr.l[2];
         prad[static_cast<std::size_t>(pi)] =
@@ -618,8 +619,7 @@ ProductSet build_products(const MultiGrid& mg,
     for (int ga = 0; ga < ngeom; ++ga) {
         auto& batches = per_bra_geom[static_cast<std::size_t>(ga)];
         const auto& mon_a = monoms[static_cast<std::size_t>(ga)];
-        const PrimRef& A0 =
-            ps.prims[static_cast<std::size_t>(mon_a.front())];
+        const PrimRef& A0 = ps.prims[static_cast<std::size_t>(mon_a.front())];
         const double pa = A0.alpha;
         const double ra0[3] = {A0.center[0], A0.center[1], A0.center[2]};
         const double prad_a = geom_max_prad[static_cast<std::size_t>(ga)];
@@ -640,15 +640,15 @@ ProductSet build_products(const MultiGrid& mg,
             int m[3] = {0, 0, 0};
             if (periodic)
                 for (int d = 0; d < 3; ++d)
-                    m[d] = (L[d] > 0.0) ? static_cast<int>(std::ceil(
-                                              reach / L[d] - 1e-12))
-                                        : 0;
+                    m[d] =
+                        (L[d] > 0.0)
+                            ? static_cast<int>(std::ceil(reach / L[d] - 1e-12))
+                            : 0;
             const int lev = level_for_exponent(mg, rel, p);
             for (int tx = -m[0]; tx <= m[0]; ++tx)
                 for (int ty = -m[1]; ty <= m[1]; ++ty)
                     for (int tz = -m[2]; tz <= m[2]; ++tz) {
-                        const double tL[3] = {tx * L[0], ty * L[1],
-                                              tz * L[2]};
+                        const double tL[3] = {tx * L[0], ty * L[1], tz * L[2]};
                         const double sx = ra0[0] - B0.center[0] - tL[0];
                         const double sy = ra0[1] - B0.center[1] - tL[1];
                         const double sz = ra0[2] - B0.center[2] - tL[2];
@@ -684,8 +684,7 @@ ProductSet build_products(const MultiGrid& mg,
                                 ps.prims[static_cast<std::size_t>(ua)].maxc;
                             for (int ub : mon_b) {
                                 const double mcb =
-                                    ps.prims[static_cast<std::size_t>(ub)]
-                                        .maxc;
+                                    ps.prims[static_cast<std::size_t>(ub)].maxc;
                                 if (mca * mcb * K < eps)
                                     continue;
                                 batch.monoms.emplace_back(ua, ub);
@@ -749,8 +748,8 @@ ProductSet build_products(const MultiGrid& mg,
         tasks.reserve(batches.size());
         std::size_t w = 0;
         for (const auto& b : batches) {
-            const int tcell = cell_of.at(
-                std::array<int, 3>{b.t[0], b.t[1], b.t[2]});
+            const int tcell =
+                cell_of.at(std::array<int, 3>{b.t[0], b.t[1], b.t[2]});
             // One CollintTask per geometry batch: contiguous monoms share
             // pol / monom table (CP2K shell-prim task grain).
             CollintTask task;
@@ -779,8 +778,8 @@ ProductSet build_products(const MultiGrid& mg,
                 task.lpx = std::max(task.lpx, A.l[0] + B.l[0]);
                 task.lpy = std::max(task.lpy, A.l[1] + B.l[1]);
                 task.lpz = std::max(task.lpz, A.l[2] + B.l[2]);
-                const int Lsum = A.l[0] + A.l[1] + A.l[2] + B.l[0] + B.l[1]
-                                 + B.l[2];
+                const int Lsum =
+                    A.l[0] + A.l[1] + A.l[2] + B.l[0] + B.l[1] + B.l[2];
                 task.Ltot = std::max(task.Ltot, Lsum);
                 task.geom_mag =
                     std::max(task.geom_mag, A.maxc * B.maxc * std::abs(b.k));
@@ -825,7 +824,8 @@ inline double axis_dot(const double* v, const double* f, long cnt) {
     batch_t acc_v(0.0);
     long t = 0;
     for (; t + W <= cnt; t += W)
-        acc_v += batch_t::load_unaligned(v + t) * batch_t::load_unaligned(f + t);
+        acc_v +=
+            batch_t::load_unaligned(v + t) * batch_t::load_unaligned(f + t);
     // Horizontal reduce (portable xsimd); scalar tail for remainder.
     double s = xsimd::reduce_add(acc_v);
     for (; t < cnt; ++t)
@@ -866,8 +866,7 @@ inline void fill_axis_poly_e2_w(double* F, double* E2, long* W, int len,
     const batch_t v_lane = batch_t::load_unaligned(lane_off);
     int t = 0;
     for (; t + Wd <= len; t += Wd) {
-        const batch_t v_idx =
-            batch_t(static_cast<double>(lo + t)) + v_lane;
+        const batch_t v_idx = batch_t(static_cast<double>(lo + t)) + v_lane;
         const batch_t r = v_origin + v_scale * v_idx;
         const batch_t e = r - v_pc;
         batch_t v = batch_t::load_unaligned(F + t);
@@ -1023,12 +1022,12 @@ inline void collocate_one(const UniformGrid& grid, const GridProduct& prod,
             const long base = (base_i + W[1][tj]) * n_z;
             // Sphere z-bounds; one sqrt per surviving (i,j) column.
             const double zr = std::sqrt(rc2 - r2xy);
-            long klo = static_cast<long>(
-                          std::ceil((pc_z - zr - origin_z) * invdz))
-                      - lo_z;
-            long khi = static_cast<long>(
-                           std::floor((pc_z + zr - origin_z) * invdz))
-                       - lo_z;
+            long klo =
+                static_cast<long>(std::ceil((pc_z - zr - origin_z) * invdz))
+                - lo_z;
+            long khi =
+                static_cast<long>(std::floor((pc_z + zr - origin_z) * invdz))
+                - lo_z;
             if (klo < 0)
                 klo = 0;
             if (khi > static_cast<long>(len_z) - 1)
@@ -1068,7 +1067,8 @@ constexpr long kMinScatterChunks = 8;
 /// @param block_bytes Size of one accumulator block [bytes].
 /// @return Chunk count (dimensionless), at least `kMinScatterChunks`.
 inline long scatter_chunks(std::size_t block_bytes) {
-    return std::max(kMinScatterChunks, device::block_reduce_chunks(block_bytes));
+    return std::max(kMinScatterChunks,
+                    device::block_reduce_chunks(block_bytes));
 }
 
 // Grow-only flat fixed-chunk scatter pools (levels sequential). Layout
@@ -1220,8 +1220,7 @@ std::vector<double> collocate_products(const UniformGrid& grid,
     // then a function of `nt` alone, so the result is bitwise identical at any
     // thread count. `schedule(dynamic, 1)` stays legal because which thread
     // runs a chunk no longer enters the arithmetic.
-    const device::ChunkedRange range(nt,
-                                     scatter_chunks(npts * sizeof(double)));
+    const device::ChunkedRange range(nt, scatter_chunks(npts * sizeof(double)));
     const long nc = range.chunks();
     g_rho_scatter.prepare_zeroed(nc, npts);
 #pragma omp parallel for schedule(dynamic, 1)
@@ -1258,12 +1257,12 @@ inline double v_at_product_center(const UniformGrid& grid,
                                   const GridProduct& prod) {
     const long n0 = grid.n[0], n1 = grid.n[1], n2 = grid.n[2];
     auto wrap = [](long i, long n) { return ((i % n) + n) % n; };
-    long ix = wrap(static_cast<long>(std::floor(prod.pc[0] / (grid.L[0] / n0))),
-                   n0);
-    long iy = wrap(static_cast<long>(std::floor(prod.pc[1] / (grid.L[1] / n1))),
-                   n1);
-    long iz = wrap(static_cast<long>(std::floor(prod.pc[2] / (grid.L[2] / n2))),
-                   n2);
+    long ix =
+        wrap(static_cast<long>(std::floor(prod.pc[0] / (grid.L[0] / n0))), n0);
+    long iy =
+        wrap(static_cast<long>(std::floor(prod.pc[1] / (grid.L[1] / n1))), n1);
+    long iz =
+        wrap(static_cast<long>(std::floor(prod.pc[2] / (grid.L[2] / n2))), n2);
     const std::size_t g = static_cast<std::size_t>((ix * n1 + iy) * n2 + iz);
     return std::abs(V_level[g]);
 }
@@ -1397,16 +1396,14 @@ std::vector<double> collocate_products_cells(
     for (long ip = 0; ip < np; ++ip) {
         const GridProduct& prod = prods[static_cast<std::size_t>(ip)];
         wts[static_cast<std::size_t>(ip)] = product_density_weight(
-            prod, prims, contribs, nb,
-            D[static_cast<std::size_t>(prod.tcell)]);
+            prod, prims, contribs, nb, D[static_cast<std::size_t>(prod.tcell)]);
     }
     // One accumulator per *chunk* of the task list, folded in ascending chunk
     // order: both the grouping and the order of summands at a grid point are
     // then a function of `nt` alone, so the result is bitwise identical at any
     // thread count. `schedule(dynamic, 1)` stays legal because which thread
     // runs a chunk no longer enters the arithmetic.
-    const device::ChunkedRange range(nt,
-                                     scatter_chunks(npts * sizeof(double)));
+    const device::ChunkedRange range(nt, scatter_chunks(npts * sizeof(double)));
     const long nc = range.chunks();
     g_rho_scatter.prepare_zeroed(nc, npts);
 #pragma omp parallel for schedule(dynamic, 1)
@@ -1440,8 +1437,7 @@ std::vector<std::vector<double>> integrate_products_cells(
     // KS scatter per image cell; shell-task monom integrate.
     const std::size_t nn = static_cast<std::size_t>(nb) * nb;
     const std::size_t nnall = nn * ncells;
-    std::vector<std::vector<double>> V(
-        ncells, std::vector<double>(nn, 0.0));
+    std::vector<std::vector<double>> V(ncells, std::vector<double>(nn, 0.0));
     const double w = grid.weight();
     const long nt = static_cast<long>(tasks.size());
     // One nb²·ncells accumulator per chunk of the task list, folded in
@@ -1532,9 +1528,10 @@ std::vector<double> multigrid_collocate_rho(const MultiGrid& mg,
     return rho;
 }
 
-std::vector<double> multigrid_collocate_rho_cells(
-    const MultiGrid& mg, const ProductSet& products, int nb,
-    const std::vector<std::vector<double>>& D, double eps) {
+std::vector<double>
+multigrid_collocate_rho_cells(const MultiGrid& mg, const ProductSet& products,
+                              int nb, const std::vector<std::vector<double>>& D,
+                              double eps) {
     if (mg.levels.empty())
         return {};
     std::vector<double> rho(static_cast<std::size_t>(mg.levels[0].npts()), 0.0);
@@ -1559,8 +1556,8 @@ std::vector<double> multigrid_integrate_veff(const MultiGrid& mg,
                                              const ProductSet& products, int nb,
                                              const std::vector<double>& veff,
                                              double eps) {
-    std::vector<double> V_ks(static_cast<std::size_t>(nb) * static_cast<std::size_t>(nb),
-                             0.0);
+    std::vector<double> V_ks(
+        static_cast<std::size_t>(nb) * static_cast<std::size_t>(nb), 0.0);
     if (mg.levels.empty())
         return V_ks;
     for (std::size_t l = 0; l < mg.levels.size(); ++l) {
@@ -1581,14 +1578,15 @@ std::vector<double> multigrid_integrate_veff(const MultiGrid& mg,
     return V_ks;
 }
 
-std::vector<std::vector<double>> multigrid_integrate_veff_cells(
-    const MultiGrid& mg, const ProductSet& products, int nb,
-    const std::vector<double>& veff, double eps) {
+std::vector<std::vector<double>>
+multigrid_integrate_veff_cells(const MultiGrid& mg, const ProductSet& products,
+                               int nb, const std::vector<double>& veff,
+                               double eps) {
     const std::size_t n_tcells = products.cells.size();
     std::vector<std::vector<double>> Vt(
         n_tcells,
-        std::vector<double>(static_cast<std::size_t>(nb) * static_cast<std::size_t>(nb),
-                            0.0));
+        std::vector<double>(
+            static_cast<std::size_t>(nb) * static_cast<std::size_t>(nb), 0.0));
     if (mg.levels.empty() || n_tcells == 0)
         return Vt;
     for (std::size_t l = 0; l < mg.levels.size(); ++l) {

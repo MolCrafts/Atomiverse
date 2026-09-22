@@ -71,12 +71,9 @@ constexpr double kGradPer2b[6][3] = {
 // FORCES| tables from ENERGY_FORCE + MP 1×1×2 + DFTD4, libdftd4 rebuild.
 // Atom order O H H O H H (same COORD as the .inp files).
 constexpr double kFAtmDeltaCp2k[6][3] = {
-    {-1.195e-07, 6.300e-15, -1.739e-15},
-    {-9.910e-08, 2.321e-16, -4.190e-07},
-    {-9.910e-08, -2.590e-16, 4.190e-07},
-    {2.160e-08, -2.265e-15, -6.594e-15},
-    {1.481e-07, 4.099e-16, -3.910e-07},
-    {1.481e-07, -3.080e-16, 3.910e-07},
+    {-1.195e-07, 6.300e-15, -1.739e-15}, {-9.910e-08, 2.321e-16, -4.190e-07},
+    {-9.910e-08, -2.590e-16, 4.190e-07}, {2.160e-08, -2.265e-15, -6.594e-15},
+    {1.481e-07, 4.099e-16, -3.910e-07},  {1.481e-07, -3.080e-16, 3.910e-07},
 };
 
 // Direct pin vs dftd4 printed gradient absorbs oracle non-conservativeness
@@ -158,10 +155,8 @@ int main() {
             const double want_cp2k = kFAtmDeltaCp2k[i][k];
             const double want_dftd4 = -(kGradPerAtm[i][k] - kGradPer2b[i][k]);
             max_inc = std::max(max_inc, std::abs(inc));
-            max_inc_cp2k =
-                std::max(max_inc_cp2k, std::abs(inc - want_cp2k));
-            max_inc_dftd4 =
-                std::max(max_inc_dftd4, std::abs(inc - want_dftd4));
+            max_inc_cp2k = std::max(max_inc_cp2k, std::abs(inc - want_cp2k));
+            max_inc_dftd4 = std::max(max_inc_dftd4, std::abs(inc - want_dftd4));
         }
     }
     std::printf("B ATM increment max|dF|=%.3e  max|dF-CP2K|=%.3e  "
@@ -262,11 +257,11 @@ int main() {
 
     cpu::gpw::GpwDft method_atm = make_cfg(true, true);
     method_atm.build(atoms);
-    const auto F_on = cpu::gpw::gpw_forces_from_scf(atoms, method_atm,
-                                                    eval.last_result());
+    const auto F_on =
+        cpu::gpw::gpw_forces_from_scf(atoms, method_atm, eval.last_result());
     cpu::gpw::GpwDft method_plain = make_cfg(false, false);
-    const auto F_plain = cpu::gpw::gpw_forces_from_scf(
-        atoms, method_plain, eval.last_result());
+    const auto F_plain =
+        cpu::gpw::gpw_forces_from_scf(atoms, method_plain, eval.last_result());
 
     double max_wire = 0.0;
     double max_f_on = 0.0;

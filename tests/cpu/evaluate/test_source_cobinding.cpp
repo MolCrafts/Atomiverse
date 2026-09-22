@@ -32,8 +32,7 @@ constexpr double kEnergyTol = 1e-12;
 /// @brief Minimal classical energy source: `kEnergy += ...` only.
 class AccumulatingStub final : public cpu::Potential {
   public:
-    AccumulatingStub(double e, std::string tag)
-        : e_(e), tag_(std::move(tag)) {}
+    AccumulatingStub(double e, std::string tag) : e_(e), tag_(std::move(tag)) {}
 
     std::string name() const override { return tag_; }
 
@@ -84,8 +83,8 @@ TEST(SourceCoBinding, TwoAccumulatingStubsSum) {
 
     ASSERT_EQ(a.launches, 1);
     ASSERT_EQ(b.launches, 1);
-    EXPECT_NEAR(static_cast<double>(frame.meta.get(kEnergy)),
-                3.0 * kStubEnergy, kEnergyTol)
+    EXPECT_NEAR(static_cast<double>(frame.meta.get(kEnergy)), 3.0 * kStubEnergy,
+                kEnergyTol)
         << "two classical `+=` sources in one Evaluate pass did not sum — the "
            "harness (ZeroEnergy @ -999 + one pass) is broken";
 }

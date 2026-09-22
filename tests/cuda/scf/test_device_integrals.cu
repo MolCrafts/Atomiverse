@@ -87,11 +87,14 @@ struct DeviceBasis {
         frame.span(kAtom_type)[1] = 1;
         frame.box = cpu::Box::cubic(100.0);
         // compute_eri=true: the ERI test reads ref.ERI directly.
-        ref = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0, true};
+        ref = cpu::scf::internal::IntegralWorkspace{
+            frame, cpu::scf::BasisSet::STO3G, 0, true};
 
         // Build host arrays with PHYSICAL normalization (for GPU kernels).
-        std::vector<double> h_alpha(static_cast<std::size_t>(n_shells * n_prim));
-        std::vector<double> h_coeff(static_cast<std::size_t>(n_shells * n_prim));
+        std::vector<double> h_alpha(
+            static_cast<std::size_t>(n_shells * n_prim));
+        std::vector<double> h_coeff(
+            static_cast<std::size_t>(n_shells * n_prim));
         double h_centers[6];
         int h_Z[2] = {1, 1};
         double h_pos[6];
@@ -104,7 +107,7 @@ struct DeviceBasis {
                 h_coeff[static_cast<std::size_t>(s * n_prim + p)] =
                     h1s.coeff[static_cast<std::size_t>(p)]
                     * cpu::scf::native::phys_norm(
-                          h1s.alpha[static_cast<std::size_t>(p)]);
+                        h1s.alpha[static_cast<std::size_t>(p)]);
             }
             h_centers[s * 3 + 0] = double(cx[s]);
             h_centers[s * 3 + 1] = double(0);
@@ -114,8 +117,8 @@ struct DeviceBasis {
             h_pos[s * 3 + 2] = double(0);
         }
 
-        const std::size_t n_ac =
-            static_cast<std::size_t>(n_shells) * static_cast<std::size_t>(n_prim);
+        const std::size_t n_ac = static_cast<std::size_t>(n_shells)
+                                 * static_cast<std::size_t>(n_prim);
         cudaMalloc(&d_alpha, n_ac * sizeof(double));
         cudaMalloc(&d_coeff, n_ac * sizeof(double));
         cudaMalloc(&d_centers, 6 * sizeof(double));

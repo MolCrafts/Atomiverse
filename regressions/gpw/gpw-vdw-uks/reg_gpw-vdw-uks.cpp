@@ -70,8 +70,8 @@ int main() {
     // 400 / REL_CUTOFF 60 / NGRIDS 4 — REFERENCE.md.
     constexpr double kEtotCp2k = -31.81565852221005;   // Ha
     constexpr double kEDispCp2k = 1.1311983030413e-01; // Ha (SC E_c^nl)
-    constexpr double kTolEtot = 1.0e-3;  // Ha (single-grid vs NGRIDS-4 twin)
-    constexpr double kTolDisp = 1.0e-4;  // Ha (vdW-family precedent)
+    constexpr double kTolEtot = 1.0e-3; // Ha (single-grid vs NGRIDS-4 twin)
+    constexpr double kTolDisp = 1.0e-4; // Ha (vdW-family precedent)
 
     const cpu::gpw::Kind O{
         molrs::Element::O,
@@ -108,8 +108,8 @@ int main() {
                 static_cast<int>(r_o2.converged), r_o2.iters,
                 std::chrono::duration<double>(t1 - t0).count());
 
-    bool ok = r_o2.converged && std::isfinite(e_o2)
-              && std::isfinite(r_o2.e_disp);
+    bool ok =
+        r_o2.converged && std::isfinite(e_o2) && std::isfinite(r_o2.e_disp);
     ok = ok && std::fabs(e_o2 - kEtotCp2k) <= kTolEtot;
     ok = ok && std::fabs(r_o2.e_disp - kEDispCp2k) <= kTolDisp;
     ok = ok && std::fabs(e_frame - e_o2) < 1e-9; // Frame carries eV energy
@@ -118,7 +118,7 @@ int main() {
     // 16 valence e⁻ (2×O-q6 + 4×H-q1). RKS n_occ = 8 (double-occupied);
     // UKS nα = nβ = 8 must reproduce it with vdW-DF: same total energy
     // (≤ 3e-4 eV) and same SC E_c^nl (≤ 1e-5 Ha).
-    constexpr double kTolIdentityEv = 3.0e-4; // eV
+    constexpr double kTolIdentityEv = 3.0e-4;   // eV
     constexpr double kTolIdentityDisp = 1.0e-5; // Ha
 
     const cpu::gpw::Kind Osr{
@@ -162,8 +162,8 @@ int main() {
 
     std::printf("B: E_RKS=%.12f  E_UKS=%.12f Ha  |dE|=%.3e eV (tol %.0e)\n",
                 e_rks, e_uks, de_ev, kTolIdentityEv);
-    std::printf("B: D_RKS=%.10e  D_UKS=%.10e Ha  |dD|=%.3e (tol %.0e)\n",
-                d_rks, d_uks, std::fabs(d_uks - d_rks), kTolIdentityDisp);
+    std::printf("B: D_RKS=%.10e  D_UKS=%.10e Ha  |dD|=%.3e (tol %.0e)\n", d_rks,
+                d_uks, std::fabs(d_uks - d_rks), kTolIdentityDisp);
     std::printf("B: conv RKS=%d UKS=%d  wall(B)=%.1f s\n",
                 static_cast<int>(eval_rks.last_result().converged),
                 static_cast<int>(eval_uks.last_result().converged),

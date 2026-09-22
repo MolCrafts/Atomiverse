@@ -28,8 +28,8 @@ using namespace ATV;
 namespace {
 
 // CODATA-2018, the same values MetalWalls' own output headers quote.
-constexpr double kHartree_eV = 27.211386245988;   // 1 Ha [eV]
-constexpr double kBohr_Ang = 0.529177210903;      // 1 a0 [Å]
+constexpr double kHartree_eV = 27.211386245988; // 1 Ha [eV]
+constexpr double kBohr_Ang = 0.529177210903;    // 1 a0 [Å]
 
 // Geometry: q=+1 α=1.0 Å³ at origin; q=-1 α=1.5 Å³ at (3,0,0); L=50 Å cubic.
 void build_frame(cpu::Frame& frame) {
@@ -67,10 +67,10 @@ int main() {
     // in 1/L³ to the isolated limit (MetalWalls is Ewald-periodic; the
     // Atomiverse component is min-image/cutoff, so the isolated limit is the
     // only common ground — see REFERENCE.md).
-    const double mw_mu0_au = 2.3523561717334e-01;  // [e·a0]
-    const double mw_mu1_au = 3.4109164490134e-01;  // [e·a0]
+    const double mw_mu0_au = 2.3523561717334e-01;   // [e·a0]
+    const double mw_mu1_au = 3.4109164490134e-01;   // [e·a0]
     const double mw_epol_ha = -8.9660039191731e-03; // [Ha]
-    const double mw_f0_au = 6.7922032485569e-03;   // [Ha/a0]
+    const double mw_f0_au = 6.7922032485569e-03;    // [Ha/a0]
 
     // Dipoles are pure Gaussian-unit geometry (the Coulomb constant never
     // enters μ = αE), so they gate at 1e-9 relative; measured 2.6e-14.
@@ -94,10 +94,8 @@ int main() {
     const double mu0_au = pim_mw.last_mu()[0] / kBohr_Ang;
     const double mu1_au = pim_mw.last_mu()[3] / kBohr_Ang;
     const double epol_ha = frame_mw.meta.get(kEnergy) / kHartree_eV;
-    const double f0_au =
-        frame_mw.span(kAtom_fx)[0] * kBohr_Ang / kHartree_eV;
-    const double f1_au =
-        frame_mw.span(kAtom_fx)[1] * kBohr_Ang / kHartree_eV;
+    const double f0_au = frame_mw.span(kAtom_fx)[0] * kBohr_Ang / kHartree_eV;
+    const double f1_au = frame_mw.span(kAtom_fx)[1] * kBohr_Ang / kHartree_eV;
 
     std::printf("[MW gate] thole_a=0, %d SCC iters\n", pim_mw.last_pol_iters());
     std::printf("  mu0  = %.16e e.a0   MW %.16e  rel %+.3e\n", mu0_au,

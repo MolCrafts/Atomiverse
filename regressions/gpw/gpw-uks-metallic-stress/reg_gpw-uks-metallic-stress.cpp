@@ -32,8 +32,7 @@ void check(bool ok, const char* what) {
 
 std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
     using namespace ATV;
-    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na,
-                                      "DZVP-MOLOPT-SR-GTH");
+    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH");
     const cpu::gpw::GthPotential pNa(molrs::Element::Na, "GTH-PBE-q9");
     const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
     std::vector<cpu::gpw::GpwAtom> atoms;
@@ -49,13 +48,14 @@ std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
 
 int main() {
     using namespace ATV;
+    using cpu::gpw::gpw_stress;
+    using cpu::gpw::gpw_stress_fd;
     using cpu::gpw::GpwDft;
     using cpu::gpw::Smearing;
     using cpu::gpw::XcKind;
-    using cpu::gpw::gpw_stress;
-    using cpu::gpw::gpw_stress_fd;
 
-    const double f_pin_ha = -92.126330608004; // same class as uks-metallic-forces
+    const double f_pin_ha =
+        -92.126330608004; // same class as uks-metallic-forces
     const double f_tol_ha = 1e-3;
     const double a_ang = 4.225;
     const double a = a_ang * kA2B;
@@ -98,14 +98,12 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const auto& r = energy.run(atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_scf =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_scf = std::chrono::duration<double>(t1 - t0).count();
 
-    std::printf(
-        "F=%.10f Ha  e_fermi=%.6f Ha  n_elec=%.8f  e_entropy=%.6e Ha  "
-        "iters=%d  wall_scf=%.3f s  nk=%d  conv=%d\n",
-        r.e_total, r.e_fermi, r.n_elec_occ, r.e_entropy, r.iters, wall_scf,
-        r.n_kpts, r.converged ? 1 : 0);
+    std::printf("F=%.10f Ha  e_fermi=%.6f Ha  n_elec=%.8f  e_entropy=%.6e Ha  "
+                "iters=%d  wall_scf=%.3f s  nk=%d  conv=%d\n",
+                r.e_total, r.e_fermi, r.n_elec_occ, r.e_entropy, r.iters,
+                wall_scf, r.n_kpts, r.converged ? 1 : 0);
 
     check(r.converged, "R1 SCF converged");
     check(std::isfinite(r.e_total) && std::isfinite(r.e_fermi),
@@ -121,10 +119,8 @@ int main() {
     const auto t3 = std::chrono::steady_clock::now();
     const auto sfd = gpw_stress_fd(atoms, make_uks(), h);
     const auto t4 = std::chrono::steady_clock::now();
-    const double wall_an =
-        std::chrono::duration<double>(t3 - t2).count();
-    const double wall_fd =
-        std::chrono::duration<double>(t4 - t3).count();
+    const double wall_an = std::chrono::duration<double>(t3 - t2).count();
+    const double wall_fd = std::chrono::duration<double>(t4 - t3).count();
 
     double max_diag_err = 0.0;
     const char* names[3] = {"xx", "yy", "zz"};
@@ -142,17 +138,18 @@ int main() {
               "off-diagonal ~ 0");
 
     constexpr double kAnFdTol = 2.0e-4; // Ha/Bohr³ (sibling metallic-stress)
-    std::printf("max|σ_an-σ_fd|=%.3e Ha/Bohr3  wall_an=%.3f s  wall_fd=%.3f s\n",
-                max_diag_err, wall_an, wall_fd);
+    std::printf(
+        "max|σ_an-σ_fd|=%.3e Ha/Bohr3  wall_an=%.3f s  wall_fd=%.3f s\n",
+        max_diag_err, wall_an, wall_fd);
     check(max_diag_err <= kAnFdTol, "A2 free-energy analytic vs FD max diag");
 
     // Closed-shell UKS+smear ≡ RKS+smear stress identity.
     const auto s_rks = gpw_stress(atoms, make_rks(), h);
     double max_cs = 0.0;
     for (int ax = 0; ax < 3; ++ax)
-        max_cs = std::max(
-            max_cs, std::abs(san[static_cast<std::size_t>(ax)]
-                             - s_rks[static_cast<std::size_t>(ax)]));
+        max_cs =
+            std::max(max_cs, std::abs(san[static_cast<std::size_t>(ax)]
+                                      - s_rks[static_cast<std::size_t>(ax)]));
     std::printf("max|σ_uks−σ_rks|=%.3e Ha/Bohr3\n", max_cs);
     check(max_cs <= 5e-5, "closed-shell UKS+smear ≡ RKS stress");
 

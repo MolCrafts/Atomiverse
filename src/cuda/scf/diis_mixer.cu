@@ -85,7 +85,8 @@ bool solve_pulay_host(const std::vector<double>& Bmm, int m,
     for (int i = dim - 1; i >= 0; --i) {
         double s = b[static_cast<size_t>(i)];
         for (int j = i + 1; j < dim; ++j)
-            s -= A[static_cast<size_t>(i * dim + j)] * x[static_cast<size_t>(j)];
+            s -=
+                A[static_cast<size_t>(i * dim + j)] * x[static_cast<size_t>(j)];
         const double aii = A[static_cast<size_t>(i * dim + i)];
         if (std::abs(aii) < 1e-14)
             return false;
@@ -121,8 +122,8 @@ __global__ void weighted_sum_hist_kernel(prec_t* __restrict__ y,
 } // namespace
 
 DIISMixer::DIISMixer(int max_vectors, int start_iter, double level_shift)
-    : max_vectors_(max_vectors > 0 ? max_vectors : 8),
-      start_iter_(start_iter), level_shift_(level_shift) {}
+    : max_vectors_(max_vectors > 0 ? max_vectors : 8), start_iter_(start_iter),
+      level_shift_(level_shift) {}
 
 void DIISMixer::build(const SolverContext& ctx, SCFWorkspace& ws) {
     auto stream = static_cast<cudaStream_t>(ctx.stream);
@@ -132,9 +133,9 @@ void DIISMixer::build(const SolverContext& ctx, SCFWorkspace& ws) {
         return;
     }
     const int nn = n_ * n_;
-    const size_t mat_bytes =
-        static_cast<size_t>(nn) * static_cast<size_t>(max_vectors_)
-        * sizeof(prec_t);
+    const size_t mat_bytes = static_cast<size_t>(nn)
+                             * static_cast<size_t>(max_vectors_)
+                             * sizeof(prec_t);
 
     cudaMalloc(&d_F_hist_, mat_bytes);
     cudaMalloc(&d_e_hist_, mat_bytes);
@@ -254,9 +255,9 @@ void DIISMixer::step(const SolverContext& ctx, SCFWorkspace& ws) {
                                 cudaMemcpyHostToDevice, stream);
                 const int blocks = cuda::grid_size(nn, cuda::kDefaultBlock);
                 weighted_sum_hist_kernel<<<blocks, cuda::kDefaultBlock, 0,
-                                           stream>>>(
-                    scf.work, d_F_hist_, d_c_, nn, m, hist_start_,
-                    max_vectors_);
+                                           stream>>>(scf.work, d_F_hist_, d_c_,
+                                                     nn, m, hist_start_,
+                                                     max_vectors_);
             }
             // On singular B: leave scf.work as the latest F (CPU catch path).
         }
@@ -267,7 +268,8 @@ void DIISMixer::step(const SolverContext& ctx, SCFWorkspace& ws) {
                  scf.X, n, &zero, d_temp1_, n);
     detail::gemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, n, n, n, &one, scf.X, n,
                  d_temp1_, n, &zero, scf.F_prime, n);
-    cudaMemcpyAsync(scf.H, scf.F_prime, static_cast<size_t>(nn) * sizeof(prec_t),
+    cudaMemcpyAsync(scf.H, scf.F_prime,
+                    static_cast<size_t>(nn) * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
 
     // ── Level shift on F′ only (energy keeps unshifted F in work) ────

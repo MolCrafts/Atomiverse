@@ -20,13 +20,13 @@ namespace gpw {
 namespace {
 
 // Cap virtual count and check HOMO–LUMO gap for one spin channel.
-int cap_virt_(int n_mo, int n_occ, int mp2_n_virt, const std::vector<double>& eps,
-              const char* channel) {
+int cap_virt_(int n_mo, int n_occ, int mp2_n_virt,
+              const std::vector<double>& eps, const char* channel) {
     if (n_mo <= n_occ)
         throw std::invalid_argument(
             std::string("GpwDft::mp2: no virtual orbitals in the ") + channel
-            + " channel (n_mo = " + std::to_string(n_mo) + ", n_occ = "
-            + std::to_string(n_occ) + ")");
+            + " channel (n_mo = " + std::to_string(n_mo)
+            + ", n_occ = " + std::to_string(n_occ) + ")");
     int n_virt = n_mo - n_occ;
     if (mp2_n_virt > 0)
         n_virt = std::min(n_virt, mp2_n_virt);
@@ -104,8 +104,7 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
             const int nb = static_cast<int>(result_.C_k[0].shape(0));
             if (nb_atoms != nb)
                 throw std::invalid_argument(
-                    "GpwDft::mp2: atom basis count ("
-                    + std::to_string(nb_atoms)
+                    "GpwDft::mp2: atom basis count (" + std::to_string(nb_atoms)
                     + ") does not match the converged orbitals ("
                     + std::to_string(nb)
                     + ") — same geometry/basis as the last run() required");
@@ -120,8 +119,8 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
                 n_mo_b_min = std::min(
                     n_mo_b_min,
                     static_cast<int>(
-                        result_.C_k_beta[static_cast<std::size_t>(ik)]
-                            .shape(1)));
+                        result_.C_k_beta[static_cast<std::size_t>(ik)].shape(
+                            1)));
                 if (static_cast<int>(
                         result_.eps_k[static_cast<std::size_t>(ik)].size())
                         < n_mo_a_min
@@ -141,20 +140,19 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
                 double g = 1e300;
                 for (int ik = 0; ik < nk; ++ik) {
                     const auto& e = ek[static_cast<std::size_t>(ik)];
-                    g = std::min(g, e[static_cast<std::size_t>(n_occ)]
-                                        - e[static_cast<std::size_t>(n_occ
-                                                                    - 1)]);
+                    g = std::min(g,
+                                 e[static_cast<std::size_t>(n_occ)]
+                                     - e[static_cast<std::size_t>(n_occ - 1)]);
                 }
                 return g;
             };
             // Build a synthetic full eps vector at the min-gap k for
             // cap_virt_ gap check — use first k and enforce min gap below.
-            std::vector<double> eps_a0(
-                result_.eps_k[0].begin(),
-                result_.eps_k[0].begin() + n_mo_a_min);
-            std::vector<double> eps_b0(
-                result_.eps_k_beta[0].begin(),
-                result_.eps_k_beta[0].begin() + n_mo_b_min);
+            std::vector<double> eps_a0(result_.eps_k[0].begin(),
+                                       result_.eps_k[0].begin() + n_mo_a_min);
+            std::vector<double> eps_b0(result_.eps_k_beta[0].begin(),
+                                       result_.eps_k_beta[0].begin()
+                                           + n_mo_b_min);
             const int n_va =
                 cap_virt_(n_mo_a_min, n_oa, mp2_n_virt, eps_a0, "α");
             const int n_vb =
@@ -176,8 +174,7 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
                 for (const auto& bf : a.basis)
                     basis.push_back(bf);
 
-            std::vector<internal::KPoint> kpts(
-                static_cast<std::size_t>(nk));
+            std::vector<internal::KPoint> kpts(static_cast<std::size_t>(nk));
             for (int ik = 0; ik < nk; ++ik) {
                 kpts[static_cast<std::size_t>(ik)].frac[0] =
                     result_.k_frac[static_cast<std::size_t>(ik)][0];
@@ -210,8 +207,7 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
                 static_cast<std::size_t>(nk));
             for (int ik = 0; ik < nk; ++ik) {
                 const auto& Ca = result_.C_k[static_cast<std::size_t>(ik)];
-                const auto& Cb =
-                    result_.C_k_beta[static_cast<std::size_t>(ik)];
+                const auto& Cb = result_.C_k_beta[static_cast<std::size_t>(ik)];
                 psi_oa_k[static_cast<std::size_t>(ik)] =
                     internal::mo_on_grid_k(kbg, ik, Ca, 0, n_oa);
                 psi_va_k[static_cast<std::size_t>(ik)] =
@@ -234,10 +230,10 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
             }
 
             double e_os = 0.0, e_ss = 0.0;
-            internal::mp2_uhf_energy_kpoints(
-                grid, psi_oa_k, psi_va_k, psi_ob_k, psi_vb_k, eps_oa_k,
-                eps_va_k, eps_ob_k, eps_vb_k, result_.k_frac,
-                result_.k_weights, e_os, e_ss);
+            internal::mp2_uhf_energy_kpoints(grid, psi_oa_k, psi_va_k, psi_ob_k,
+                                             psi_vb_k, eps_oa_k, eps_va_k,
+                                             eps_ob_k, eps_vb_k, result_.k_frac,
+                                             result_.k_weights, e_os, e_ss);
 
             mp2_result_ = Mp2Result{};
             mp2_result_.e_corr_os = e_os;
@@ -269,16 +265,15 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
                 + ") — same geometry/basis as the last run() required");
         if (static_cast<int>(result_.eps.size()) != n_mo_a
             || static_cast<int>(result_.eps_beta.size()) != n_mo_b)
-            throw std::logic_error(
-                "GpwDft::mp2: UKS eps/C shape mismatch in the converged result");
+            throw std::logic_error("GpwDft::mp2: UKS eps/C shape mismatch in "
+                                   "the converged result");
         if (static_cast<int>(result_.C_beta.shape(0)) != nb)
             throw std::logic_error(
                 "GpwDft::mp2: UKS α/β basis dimension mismatch");
 
         const int n_oa = n_alpha;
         const int n_ob = n_beta;
-        const int n_va =
-            cap_virt_(n_mo_a, n_oa, mp2_n_virt, result_.eps, "α");
+        const int n_va = cap_virt_(n_mo_a, n_oa, mp2_n_virt, result_.eps, "α");
         const int n_vb =
             cap_virt_(n_mo_b, n_ob, mp2_n_virt, result_.eps_beta, "β");
 
@@ -304,24 +299,22 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
         const bool use_ri = mp2_ri && periodic;
         std::vector<double> v_aa, v_bb, v_ab;
         if (n_oa > 0 && n_va > 0)
-            v_aa = use_ri ? internal::mo_eri_ovov_ri(grid, psi_oa, n_oa,
-                                                      psi_va, n_va)
+            v_aa = use_ri ? internal::mo_eri_ovov_ri(grid, psi_oa, n_oa, psi_va,
+                                                     n_va)
                           : internal::mo_eri_ovov(grid, psi_oa, n_oa, psi_va,
-                                                   n_va, nonperiodic);
+                                                  n_va, nonperiodic);
         if (n_ob > 0 && n_vb > 0)
-            v_bb = use_ri ? internal::mo_eri_ovov_ri(grid, psi_ob, n_ob,
-                                                      psi_vb, n_vb)
+            v_bb = use_ri ? internal::mo_eri_ovov_ri(grid, psi_ob, n_ob, psi_vb,
+                                                     n_vb)
                           : internal::mo_eri_ovov(grid, psi_ob, n_ob, psi_vb,
-                                                   n_vb, nonperiodic);
+                                                  n_vb, nonperiodic);
         if (n_oa > 0 && n_va > 0 && n_ob > 0 && n_vb > 0)
-            v_ab =
-                use_ri
-                    ? internal::mo_eri_ovov_ab_ri(grid, psi_oa, n_oa, psi_va,
-                                                   n_va, psi_ob, n_ob, psi_vb,
-                                                   n_vb)
-                    : internal::mo_eri_ovov_ab(grid, psi_oa, n_oa, psi_va,
-                                                n_va, psi_ob, n_ob, psi_vb,
-                                                n_vb, nonperiodic);
+            v_ab = use_ri ? internal::mo_eri_ovov_ab_ri(grid, psi_oa, n_oa,
+                                                        psi_va, n_va, psi_ob,
+                                                        n_ob, psi_vb, n_vb)
+                          : internal::mo_eri_ovov_ab(grid, psi_oa, n_oa, psi_va,
+                                                     n_va, psi_ob, n_ob, psi_vb,
+                                                     n_vb, nonperiodic);
 
         const std::vector<double> eps_oa(result_.eps.begin(),
                                          result_.eps.begin() + n_oa);
@@ -329,9 +322,9 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
                                          result_.eps.begin() + n_oa + n_va);
         const std::vector<double> eps_ob(result_.eps_beta.begin(),
                                          result_.eps_beta.begin() + n_ob);
-        const std::vector<double> eps_vb(
-            result_.eps_beta.begin() + n_ob,
-            result_.eps_beta.begin() + n_ob + n_vb);
+        const std::vector<double> eps_vb(result_.eps_beta.begin() + n_ob,
+                                         result_.eps_beta.begin() + n_ob
+                                             + n_vb);
 
         double e_os = 0.0, e_ss = 0.0;
         internal::mp2_uhf_energy(v_aa, v_bb, v_ab, eps_oa, eps_va, eps_ob,
@@ -376,9 +369,9 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
         int n_mo_min = static_cast<int>(result_.C_k[0].shape(1));
         for (int ik = 0; ik < nk; ++ik) {
             n_mo_min = std::min(
-                n_mo_min, static_cast<int>(result_.C_k[static_cast<std::size_t>(
-                                                     ik)]
-                                               .shape(1)));
+                n_mo_min,
+                static_cast<int>(
+                    result_.C_k[static_cast<std::size_t>(ik)].shape(1)));
             if (static_cast<int>(
                     result_.eps_k[static_cast<std::size_t>(ik)].size())
                 < n_mo_min)
@@ -389,8 +382,8 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
             throw std::invalid_argument(
                 "GpwDft::mp2: no virtual orbitals in the multi-k result "
                 "(n_mo_min = "
-                + std::to_string(n_mo_min) + ", n_occ = "
-                + std::to_string(n_occ) + ")");
+                + std::to_string(n_mo_min)
+                + ", n_occ = " + std::to_string(n_occ) + ")");
 
         int n_virt = n_mo_min - n_occ;
         if (mp2_n_virt > 0)
@@ -417,8 +410,7 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
             for (const auto& bf : a.basis)
                 basis.push_back(bf);
 
-        std::vector<internal::KPoint> kpts(
-            static_cast<std::size_t>(nk));
+        std::vector<internal::KPoint> kpts(static_cast<std::size_t>(nk));
         for (int ik = 0; ik < nk; ++ik) {
             kpts[static_cast<std::size_t>(ik)].frac[0] =
                 result_.k_frac[static_cast<std::size_t>(ik)][0];
@@ -443,13 +435,12 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
         for (int ik = 0; ik < nk; ++ik) {
             psi_occ_k[static_cast<std::size_t>(ik)] = internal::mo_on_grid_k(
                 kbg, ik, result_.C_k[static_cast<std::size_t>(ik)], 0, n_occ);
-            psi_virt_k[static_cast<std::size_t>(ik)] =
-                internal::mo_on_grid_k(
-                    kbg, ik, result_.C_k[static_cast<std::size_t>(ik)], n_occ,
-                    n_virt);
+            psi_virt_k[static_cast<std::size_t>(ik)] = internal::mo_on_grid_k(
+                kbg, ik, result_.C_k[static_cast<std::size_t>(ik)], n_occ,
+                n_virt);
             const auto& eps = result_.eps_k[static_cast<std::size_t>(ik)];
-            eps_occ_k[static_cast<std::size_t>(ik)].assign(
-                eps.begin(), eps.begin() + n_occ);
+            eps_occ_k[static_cast<std::size_t>(ik)].assign(eps.begin(),
+                                                           eps.begin() + n_occ);
             eps_virt_k[static_cast<std::size_t>(ik)].assign(
                 eps.begin() + n_occ, eps.begin() + n_occ + n_virt);
         }
@@ -523,9 +514,10 @@ const Mp2Result& GpwDft::mp2(const std::vector<GpwAtom>& atoms) {
     // (isolated MT, or explicit mp2_ri = false).
     const bool use_ri = mp2_ri && periodic;
     const std::vector<double> v_ovov =
-        use_ri ? internal::mo_eri_ovov_ri(grid, psi_occ, n_occ, psi_virt, n_virt)
-               : internal::mo_eri_ovov(grid, psi_occ, n_occ, psi_virt, n_virt,
-                                       nonperiodic);
+        use_ri
+            ? internal::mo_eri_ovov_ri(grid, psi_occ, n_occ, psi_virt, n_virt)
+            : internal::mo_eri_ovov(grid, psi_occ, n_occ, psi_virt, n_virt,
+                                    nonperiodic);
 
     const std::vector<double> eps_occ(result_.eps.begin(),
                                       result_.eps.begin() + n_occ);

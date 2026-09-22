@@ -63,8 +63,8 @@ void HRemd::ensure_built_(cpu::Frame& frame) {
     for (int i = 0; i < n; ++i) {
         auto md = std::make_unique<cpu::md::MD>();
         md->set_integrator(cpu::md::VelocityVerlet{dt});
-        md->set_observer(cpu::md::InitVelocity{temperature,
-                                      static_cast<unsigned>(seed ^ (i + 1u))});
+        md->set_observer(cpu::md::InitVelocity{
+            temperature, static_cast<unsigned>(seed ^ (i + 1u))});
         // The exchange test is the Metropolis rule for swapping between two
         // CANONICAL ensembles that differ only in their Hamiltonian. Without a
         // thermostat each replica is an NVE trajectory carrying whatever its

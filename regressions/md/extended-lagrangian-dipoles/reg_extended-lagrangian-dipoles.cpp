@@ -64,9 +64,12 @@ cpu::Frame bulk_box() {
         for (int j = 0; j < 2; ++j)
             for (int k = 0; k < 2; ++k, ++n) {
                 const bool plus = ((i + j + k) % 2 == 0);
-                f.span(kAtom_x)[n] = 8.0 + 4.0 * i + 0.15 * std::sin(1.0 + 3.0 * n);
-                f.span(kAtom_y)[n] = 8.0 + 4.0 * j + 0.15 * std::sin(2.0 + 3.0 * n);
-                f.span(kAtom_z)[n] = 8.0 + 4.0 * k + 0.15 * std::sin(3.0 + 3.0 * n);
+                f.span(kAtom_x)[n] =
+                    8.0 + 4.0 * i + 0.15 * std::sin(1.0 + 3.0 * n);
+                f.span(kAtom_y)[n] =
+                    8.0 + 4.0 * j + 0.15 * std::sin(2.0 + 3.0 * n);
+                f.span(kAtom_z)[n] =
+                    8.0 + 4.0 * k + 0.15 * std::sin(3.0 + 3.0 * n);
                 f.span(kAtom_charge)[n] = plus ? 1.0 : -1.0;
                 f.span(kAtom_type)[n] = plus ? 1 : 2;
                 f.span(kAtom_mass)[n] = plus ? 22.99 : 35.45;
@@ -133,7 +136,8 @@ int main() {
     // E_pol = ΔCoulomb(pol − α=0), F = ΔF. MW has no Thole damping.
     // XL fixed point at a stationary geometry must BE the SCF solution.
     const double E_pin = -2.4397739572766e-01; // [eV]  −8.9660039191731e-3 Ha
-    const double F_pin = 3.4926913376021e-01;  // [eV/Å] +6.7922032485569e-3 Ha/a0
+    const double F_pin =
+        3.4926913376021e-01; // [eV/Å] +6.7922032485569e-3 Ha/a0
     const double tol_e = 1e-7 * std::fabs(E_pin);
     const double tol_f = 1e-7 * std::fabs(F_pin);
 
@@ -152,10 +156,8 @@ int main() {
                 iters_cold);
     check(std::fabs(xl.last_pol_energy() - E_pin) <= tol_e,
           "cold E_pol vs pin");
-    check(std::fabs(f2.span(kAtom_fx)[0] - F_pin) <= tol_f,
-          "cold F_Ax vs pin");
-    check(std::fabs(f2.span(kAtom_fx)[1] + F_pin) <= tol_f,
-          "cold F_Bx vs pin");
+    check(std::fabs(f2.span(kAtom_fx)[0] - F_pin) <= tol_f, "cold F_Ax vs pin");
+    check(std::fabs(f2.span(kAtom_fx)[1] + F_pin) <= tol_f, "cold F_Bx vs pin");
     check(!xl.last_warm(), "first launch must be cold");
 
     for (int rep = 1; rep <= 2; ++rep) {

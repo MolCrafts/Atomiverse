@@ -43,10 +43,10 @@ constexpr double kAngToBohr = 1.0 / 0.52917720859;
 int main() {
     using namespace ATV;
     using cpu::gpw::GaussianBasis;
+    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::ts_pbe;
     using cpu::gpw::TsResult;
     using cpu::gpw::XcKind;
@@ -136,22 +136,20 @@ int main() {
     check(F_ts.size() == 2 && F_plain.size() == 2, "B two force vectors");
 
     std::vector<int> Zh = {1, 1};
-    std::vector<std::array<double, 3>> posh = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    std::vector<std::array<double, 3>> posh = {{rA[0], rA[1], rA[2]},
+                                               {rB[0], rB[1], rB[2]}};
     const double cell_h2[3] = {12.0, 12.0, 12.0};
     constexpr double kRcut = 50.0 * kAngToBohr;
     // Product k-forces use periodic pure-RS TS (same as Γ assemble when
     // nonperiodic=false); free-atom volumes (no Hirshfeld).
-    const TsResult geom =
-        ts_pbe(Zh, posh, cell_h2, /*periodic=*/true, kRcut);
+    const TsResult geom = ts_pbe(Zh, posh, cell_h2, /*periodic=*/true, kRcut);
 
     double max_wire = 0.0;
     for (int a = 0; a < 2; ++a) {
         for (int k = 0; k < 3; ++k) {
-            const double d =
-                (F_ts[static_cast<std::size_t>(a)][k]
-                 - F_plain[static_cast<std::size_t>(a)][k])
-                - geom.forces[static_cast<std::size_t>(a)][k];
+            const double d = (F_ts[static_cast<std::size_t>(a)][k]
+                              - F_plain[static_cast<std::size_t>(a)][k])
+                             - geom.forces[static_cast<std::size_t>(a)][k];
             max_wire = std::max(max_wire, std::abs(d));
             check(std::isfinite(F_ts[static_cast<std::size_t>(a)][k]),
                   "B finite force component");
@@ -160,11 +158,10 @@ int main() {
     check(max_wire <= kWireTol, "A5 multi-k wiring |F_ts-F_plain-F_geom|");
     check(std::abs(geom.forces[0][0]) > 1e-8, "B nontrivial TS F0x");
 
-    std::printf(
-        "PASS: gpw-ts-kpoint-forces  E_disp(water)=%.14e  "
-        "max|F-F_fd|=%.2e  |sumF|=%.2e  multi-k H2 e_disp=%.6e  "
-        "max|wire|=%.2e  n_kpts=%d\n",
-        ts.energy, max_err, sum_norm, scf.e_disp, max_wire, scf.n_kpts);
+    std::printf("PASS: gpw-ts-kpoint-forces  E_disp(water)=%.14e  "
+                "max|F-F_fd|=%.2e  |sumF|=%.2e  multi-k H2 e_disp=%.6e  "
+                "max|wire|=%.2e  n_kpts=%d\n",
+                ts.energy, max_err, sum_norm, scf.e_disp, max_wire, scf.n_kpts);
 
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);

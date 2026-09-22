@@ -30,7 +30,8 @@ using Cplx = std::complex<double>;
 
 constexpr double kBuildScreen = 1e-12;
 
-std::vector<GridBasisFunction> flatten_basis(const std::vector<GpwAtom>& atoms) {
+std::vector<GridBasisFunction>
+flatten_basis(const std::vector<GpwAtom>& atoms) {
     std::vector<GridBasisFunction> basis;
     for (const auto& a : atoms)
         for (const auto& bf : a.basis)
@@ -66,9 +67,9 @@ std::vector<double> ionic_density_grid(const UniformGrid& grid,
     return n;
 }
 
-std::vector<KPoint> kpoints_from_frac(
-    const std::vector<std::array<double, 3>>& kfrac,
-    const std::vector<double>& weights) {
+std::vector<KPoint>
+kpoints_from_frac(const std::vector<std::array<double, 3>>& kfrac,
+                  const std::vector<double>& weights) {
     std::vector<KPoint> kpts;
     kpts.reserve(kfrac.size());
     for (std::size_t i = 0; i < kfrac.size(); ++i) {
@@ -83,15 +84,16 @@ std::vector<KPoint> kpoints_from_frac(
     return kpts;
 }
 
-std::vector<std::array<double, 3>>
-lerp_segment(const std::array<double, 3>& a, const std::array<double, 3>& b,
-             int n_seg, bool include_start) {
+std::vector<std::array<double, 3>> lerp_segment(const std::array<double, 3>& a,
+                                                const std::array<double, 3>& b,
+                                                int n_seg, bool include_start) {
     std::vector<std::array<double, 3>> pts;
     if (n_seg < 2)
         n_seg = 2;
     const int start = include_start ? 0 : 1;
     for (int i = start; i < n_seg; ++i) {
-        const double t = static_cast<double>(i) / static_cast<double>(n_seg - 1);
+        const double t =
+            static_cast<double>(i) / static_cast<double>(n_seg - 1);
         pts.push_back({a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]),
                        a[2] + t * (b[2] - a[2])});
     }
@@ -173,7 +175,8 @@ double gap_from_spectrum(const std::vector<std::vector<double>>& evals,
     if (evals.empty())
         throw std::invalid_argument("gpw::gap_from_spectrum: empty spectrum");
     if (n_occ < 1)
-        throw std::invalid_argument("gpw::gap_from_spectrum: n_occ must be >= 1");
+        throw std::invalid_argument(
+            "gpw::gap_from_spectrum: n_occ must be >= 1");
 
     e_vbm = -1e300;
     e_cbm = 1e300;
@@ -239,7 +242,8 @@ void Bands::set_diamond_path(int n_seg) {
 BandsResult Bands::compute(GpwDft& method,
                            const std::vector<GpwAtom>& atoms) const {
     if (n_bands < 2)
-        throw std::invalid_argument("gpw::Bands::compute: n_bands must be >= 2");
+        throw std::invalid_argument(
+            "gpw::Bands::compute: n_bands must be >= 2");
     const bool uks = method.is_uks();
     const bool use_smear = (method.smearing != Smearing::none);
     if (!uks) {
@@ -313,9 +317,8 @@ BandsResult Bands::compute(GpwDft& method,
     std::vector<double> radii(static_cast<std::size_t>(nb), 0.0);
     double rmax = 0.0;
     for (int i = 0; i < nb; ++i) {
-        radii[static_cast<std::size_t>(i)] =
-            basis_function_radius(basis[static_cast<std::size_t>(i)],
-                                  method.eps_default);
+        radii[static_cast<std::size_t>(i)] = basis_function_radius(
+            basis[static_cast<std::size_t>(i)], method.eps_default);
         rmax = std::max(rmax, radii[static_cast<std::size_t>(i)]);
     }
     int mimg[3] = {0, 0, 0};
@@ -327,12 +330,10 @@ BandsResult Bands::compute(GpwDft& method,
     const std::vector<double> v_locsr =
         local_pp_grid(grid, atoms, /*periodic=*/true);
 
-    std::vector<KPoint> scf_kpts =
-        kpoints_from_frac(scf.k_frac, scf.k_weights);
+    std::vector<KPoint> scf_kpts = kpoints_from_frac(scf.k_frac, scf.k_weights);
     const int nk_scf = static_cast<int>(scf_kpts.size());
-    const internal::KpointBasisGrid kbg_scf =
-        internal::build_kpoint_basis_grid(grid, basis, scf_kpts,
-                                          method.eps_default);
+    const internal::KpointBasisGrid kbg_scf = internal::build_kpoint_basis_grid(
+        grid, basis, scf_kpts, method.eps_default);
 
     std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
     std::vector<double> rho_a, rho_b;
@@ -379,7 +380,8 @@ BandsResult Bands::compute(GpwDft& method,
     }
 
     // ── 3. NSCF diagonalization on the path ─────────────────────────────
-    std::vector<double> path_w(path.size(), 1.0 / static_cast<double>(path.size()));
+    std::vector<double> path_w(path.size(),
+                               1.0 / static_cast<double>(path.size()));
     std::vector<KPoint> path_kpts = kpoints_from_frac(path, path_w);
     const int nk = static_cast<int>(path_kpts.size());
 
@@ -405,8 +407,8 @@ BandsResult Bands::compute(GpwDft& method,
     if (uks)
         out.eigenvalues_beta_ha.resize(static_cast<std::size_t>(nk));
 
-    const int n_occ_min = uks ? std::max(method.n_alpha, method.n_beta)
-                              : method.n_occ;
+    const int n_occ_min =
+        uks ? std::max(method.n_alpha, method.n_beta) : method.n_occ;
 
     for (int ik = 0; ik < nk; ++ik) {
         internal::KOrth orth(S_k[static_cast<std::size_t>(ik)],
@@ -424,18 +426,19 @@ BandsResult Bands::compute(GpwDft& method,
             if (nrep < n_occ_min)
                 throw std::runtime_error(
                     "gpw::Bands::compute: only " + std::to_string(m)
-                    + " independent directions at path k #"
-                    + std::to_string(ik) + " but need >= "
-                    + std::to_string(n_occ_min));
+                    + " independent directions at path k #" + std::to_string(ik)
+                    + " but need >= " + std::to_string(n_occ_min));
             row.assign(eps.begin(), eps.begin() + nrep);
         };
 
         if (uks) {
-            diag_channel(veff_a, out.eigenvalues_ha[static_cast<std::size_t>(ik)]);
+            diag_channel(veff_a,
+                         out.eigenvalues_ha[static_cast<std::size_t>(ik)]);
             diag_channel(veff_b,
                          out.eigenvalues_beta_ha[static_cast<std::size_t>(ik)]);
         } else {
-            diag_channel(veff, out.eigenvalues_ha[static_cast<std::size_t>(ik)]);
+            diag_channel(veff,
+                         out.eigenvalues_ha[static_cast<std::size_t>(ik)]);
         }
     }
 
@@ -514,8 +517,8 @@ void gaussian_dos(const std::vector<double>& evals,
     energy.resize(static_cast<std::size_t>(n_bins));
     dos.assign(static_cast<std::size_t>(n_bins), 0.0);
     const double de = (e_max - e_min) / static_cast<double>(n_bins - 1);
-    const double pref = spin_degeneracy
-                        / (std::sqrt(2.0 * 3.14159265358979323846) * sigma);
+    const double pref =
+        spin_degeneracy / (std::sqrt(2.0 * 3.14159265358979323846) * sigma);
     const double inv_2s2 = 1.0 / (2.0 * sigma * sigma);
 
     for (int i = 0; i < n_bins; ++i)
@@ -541,8 +544,9 @@ double integrate_dos_to(const std::vector<double>& energy,
     if (energy.size() < 2)
         throw std::invalid_argument("integrate_dos_to: need >= 2 bins");
 
-    const double de = (energy.back() - energy.front())
-                      / static_cast<double>(static_cast<int>(energy.size()) - 1);
+    const double de =
+        (energy.back() - energy.front())
+        / static_cast<double>(static_cast<int>(energy.size()) - 1);
     double integ = 0;
     for (std::size_t i = 0; i + 1 < energy.size(); ++i) {
         if (energy[i] > e_cut)
@@ -581,7 +585,8 @@ cap_bands(const std::vector<std::vector<double>>& evals, int n_bands) {
 
 void flatten_spectrum(const std::vector<std::vector<double>>& evals,
                       const std::vector<double>& k_weights, int n_bands_use,
-                      std::vector<double>& flat_e, std::vector<double>& flat_w) {
+                      std::vector<double>& flat_e,
+                      std::vector<double>& flat_w) {
     const int nk = static_cast<int>(evals.size());
     flat_e.clear();
     flat_w.clear();
@@ -589,11 +594,12 @@ void flatten_spectrum(const std::vector<std::vector<double>>& evals,
     flat_w.reserve(flat_e.capacity());
     for (int ik = 0; ik < nk; ++ik) {
         const double w = k_weights[static_cast<std::size_t>(ik)];
-        const int m = static_cast<int>(evals[static_cast<std::size_t>(ik)].size());
+        const int m =
+            static_cast<int>(evals[static_cast<std::size_t>(ik)].size());
         const int take = (n_bands_use > 0) ? std::min(n_bands_use, m) : m;
         for (int b = 0; b < take; ++b) {
-            flat_e.push_back(
-                evals[static_cast<std::size_t>(ik)][static_cast<std::size_t>(b)]);
+            flat_e.push_back(evals[static_cast<std::size_t>(ik)]
+                                  [static_cast<std::size_t>(b)]);
             flat_w.push_back(w);
         }
     }
@@ -622,9 +628,8 @@ DosResult Dos::compute(GpwDft& method,
 
     // Multi-k path requires a non-Γ mesh or an explicit list.
     const bool has_explicit = !method.k_points.empty();
-    const bool multi =
-        has_explicit || method.k_mesh[0] != 1 || method.k_mesh[1] != 1
-        || method.k_mesh[2] != 1;
+    const bool multi = has_explicit || method.k_mesh[0] != 1
+                       || method.k_mesh[1] != 1 || method.k_mesh[2] != 1;
     if (!multi)
         throw std::invalid_argument(
             "Dos::compute: multi-k mesh required (set Dos::k_mesh >= 2, or "
@@ -667,14 +672,14 @@ DosResult Dos::compute(GpwDft& method,
             throw std::invalid_argument(
                 "Dos::compute: RKS requires method.n_occ >= 1");
         if (n_use < method.n_occ)
-            throw std::invalid_argument(
-                "Dos::compute: n_bands (" + std::to_string(n_use)
-                + ") < n_occ (" + std::to_string(method.n_occ) + ")");
+            throw std::invalid_argument("Dos::compute: n_bands ("
+                                        + std::to_string(n_use) + ") < n_occ ("
+                                        + std::to_string(method.n_occ) + ")");
 
         if (n_use > method.n_occ) {
             int vk = 0, ck = 0, vb = 0, cb = 0;
             out.gap_ha = gap_from_spectrum(evals, method.n_occ, out.e_vbm_ha,
-                                          out.e_cbm_ha, vk, ck, vb, cb);
+                                           out.e_cbm_ha, vk, ck, vb, cb);
         } else {
             // Only occupied spectrum: VBM = max of band n_occ-1; no CBM.
             out.e_vbm_ha = -1e300;
@@ -703,8 +708,7 @@ DosResult Dos::compute(GpwDft& method,
         gaussian_dos(flat_e, flat_w, emin, emax, n_bins, sigma_ha,
                      out.energy_ha, out.dos, /*spin_degeneracy=*/2.0);
 
-        const double e_cut =
-            use_smear ? out.e_fermi_ha : out.e_vbm_ha;
+        const double e_cut = use_smear ? out.e_fermi_ha : out.e_vbm_ha;
         out.n_elec_to_vbm = integrate_dos_to(out.energy_ha, out.dos, e_cut);
         return out;
     }
@@ -732,18 +736,15 @@ DosResult Dos::compute(GpwDft& method,
         const auto scan = [&](const std::vector<std::vector<double>>& ev,
                               int n_occ) {
             for (const auto& row : ev) {
-                if (n_occ > 0
-                    && static_cast<int>(row.size()) >= n_occ) {
-                    const double v =
-                        row[static_cast<std::size_t>(n_occ - 1)];
+                if (n_occ > 0 && static_cast<int>(row.size()) >= n_occ) {
+                    const double v = row[static_cast<std::size_t>(n_occ - 1)];
                     if (!have_vbm || v > e_vbm) {
                         e_vbm = v;
                         have_vbm = true;
                     }
                 }
                 if (static_cast<int>(row.size()) > n_occ) {
-                    const double c =
-                        row[static_cast<std::size_t>(n_occ)];
+                    const double c = row[static_cast<std::size_t>(n_occ)];
                     if (!have_cbm || c < e_cbm) {
                         e_cbm = c;
                         have_cbm = true;

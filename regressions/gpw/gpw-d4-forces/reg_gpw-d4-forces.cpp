@@ -78,9 +78,8 @@ int main() {
     for (int i = 0; i < 6; ++i) {
         for (int k = 0; k < 3; ++k) {
             const double want = -kGradPer[i][k];
-            const double got =
-                d4.forces[static_cast<std::size_t>(i)]
-                         [static_cast<std::size_t>(k)];
+            const double got = d4.forces[static_cast<std::size_t>(i)]
+                                        [static_cast<std::size_t>(k)];
             max_pin_err = std::max(max_pin_err, std::abs(got - want));
         }
     }
@@ -140,8 +139,7 @@ int main() {
         return 1;
     }
     const double e_disp = eval.last_result().e_disp;
-    if (!std::isfinite(e_disp)
-        || std::abs(e_disp - kEDispRef) > kEDispTol) {
+    if (!std::isfinite(e_disp) || std::abs(e_disp - kEDispRef) > kEDispTol) {
         std::printf("FAIL: product |E_disp-pin|=%.6e Ha  got=%.14e\n",
                     std::abs(e_disp - kEDispRef), e_disp);
         return 1;
@@ -157,8 +155,7 @@ int main() {
         atoms.push_back(cpu::gpw::GpwAtom(pos, k.basis, k.pot, z[i]));
     }
     cpu::gpw::GpwDft method_d4;
-    method_d4.cell[0] = method_d4.cell[1] = method_d4.cell[2] =
-        L * kAng2Bohr;
+    method_d4.cell[0] = method_d4.cell[1] = method_d4.cell[2] = L * kAng2Bohr;
     method_d4.cutoff_ry = 200.0;
     method_d4.n_occ = 8;
     method_d4.max_iter = 120;
@@ -239,9 +236,9 @@ int main() {
     std::printf("wall_product=%.3f s  wall_plain=%.3f s\n", wall_product_s,
                 wall_plain_s);
 
-    std::printf(
-        "PASS: gpw-d4-forces  max|wiring|=%.3e  |dE_disp|=%.3e  "
-        "max|F+g|=%.3e  wall_prod=%.3f s\n",
-        max_wire, std::abs(e_disp - kEDispRef), max_pin_err, wall_product_s);
+    std::printf("PASS: gpw-d4-forces  max|wiring|=%.3e  |dE_disp|=%.3e  "
+                "max|F+g|=%.3e  wall_prod=%.3f s\n",
+                max_wire, std::abs(e_disp - kEDispRef), max_pin_err,
+                wall_product_s);
     return 0;
 }

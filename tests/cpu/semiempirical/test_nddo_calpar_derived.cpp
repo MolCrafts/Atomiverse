@@ -51,8 +51,8 @@ CalparDerived calpar(const AM1Parameter& p) {
     const double hpp = std::max(0.1, 0.5 * (p.gpp - p.gp2));
 
     CalparDerived d{};
-    d.eisol = p.uss * p.ios + p.upp * p.iop + p.udd * p.iod + p.gss * gssc +
-              p.gpp * gppc + p.gsp * gspc + p.gp2 * gp2c + hsp * hspc;
+    d.eisol = p.uss * p.ios + p.upp * p.iop + p.udd * p.iod + p.gss * gssc
+              + p.gpp * gppc + p.gsp * gspc + p.gp2 * gp2c + hsp * hspc;
     d.am = p.gss / kMopacEv;
 
     if (p.zp < 1.0e-8) { // s-only valence shell (H): MOPAC's post-loop branch
@@ -66,8 +66,8 @@ CalparDerived calpar(const AM1Parameter& p) {
 
     // Principal quantum number of the valence shell (MOPAC `nspqn`).
     const double qn = (p.iop > 0) ? p.principal_p : p.principal_s;
-    d.dd = (2.0 * qn + 1.0) * std::pow(4.0 * p.zs * p.zp, qn + 0.5) /
-           std::pow(p.zs + p.zp, 2.0 * qn + 2.0) / std::sqrt(3.0);
+    d.dd = (2.0 * qn + 1.0) * std::pow(4.0 * p.zs * p.zp, qn + 0.5)
+           / std::pow(p.zs + p.zp, 2.0 * qn + 2.0) / std::sqrt(3.0);
     d.qq = std::sqrt((4.0 * qn * qn + 6.0 * qn + 2.0) / 20.0) / p.zp;
 
     // AD solves  hsp/ev = 0.5 x - 0.5 / sqrt(4 dd^2 + 1/x^2), 5 secant steps
@@ -158,9 +158,9 @@ TEST(NddoCalparDerived, Rm1OxygenEisolIsNotTheAm1Shift) {
     ASSERT_NE(o_am1, nullptr);
 
     // The fossil: AM1's eisol shifted by the one-electron change only.
-    const double am1_shift = o_am1->eisol +
-                             o_rm1->ios * (o_rm1->uss - o_am1->uss) +
-                             o_rm1->iop * (o_rm1->upp - o_am1->upp);
+    const double am1_shift = o_am1->eisol
+                             + o_rm1->ios * (o_rm1->uss - o_am1->uss)
+                             + o_rm1->iop * (o_rm1->upp - o_am1->upp);
     EXPECT_NEAR(am1_shift, -312.8526806, 1.0e-6) << "fossil reconstructed";
     EXPECT_GT(std::abs(o_rm1->eisol - am1_shift), 0.5)
         << "RM1 eisol must not be AM1's shifted by uss/upp alone";

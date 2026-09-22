@@ -67,7 +67,7 @@ constexpr double kDiagFloor = 1.0e-10;  // Ha/Bohr³ — stress must be nonzero
 // D: σ(mbd)−σ(plain) vs the pymbd FD dispersion term. E_disp is additive and
 // geometry-only, so the electronic Lagrangian cancels; residual is pin
 // mismatch (≤ 2·kEDispTol/(2hΩ) ≈ 4e-10) + SCF noise between the two runs.
-constexpr double kWireTol = 2.0e-9; // Ha/Bohr³
+constexpr double kWireTol = 2.0e-9;  // Ha/Bohr³
 constexpr double kWallBudget = 60.0; // s (product path)
 
 int g_fail = 0;
@@ -112,8 +112,8 @@ int main() {
                     pos[static_cast<std::size_t>(i)] = {xs[i] * kAng2Bohr,
                                                         ys[i] * kAng2Bohr,
                                                         zs[i] * kAng2Bohr};
-                    pos[static_cast<std::size_t>(i)][static_cast<std::size_t>(
-                        a)] *= scale;
+                    pos[static_cast<std::size_t>(i)]
+                       [static_cast<std::size_t>(a)] *= scale;
                 }
                 const auto r = cpu::gpw::mbd_rsscs_pbe(
                     Z, pos, cell, /*periodic=*/true, 0.83, 6.0, {}, mbd_mesh);
@@ -121,9 +121,8 @@ int main() {
                 const double derr = std::abs(r.energy - kEDispStrain[a][s]);
                 max_derr = std::max(max_derr, derr);
             }
-            sigma_mbd_pin[a] =
-                -(kEDispStrain[a][0] - kEDispStrain[a][1])
-                / (2.0 * kStrainH) / vol_bohr3;
+            sigma_mbd_pin[a] = -(kEDispStrain[a][0] - kEDispStrain[a][1])
+                               / (2.0 * kStrainH) / vol_bohr3;
             std::printf("  axis %d strained E_disp = {%.14e, %.14e} Ha  "
                         "sigma_MBD_pin=%.6e Ha/Bohr3\n",
                         a, e_pm[0], e_pm[1], sigma_mbd_pin[a]);
@@ -246,9 +245,8 @@ int main() {
     check(max_diag_err <= kAnFdTol, "C analytic vs multi-SCF FD diagonal");
 
     // ── D: MBD wiring — sigma(mbd) − sigma(plain) vs the pymbd FD term ────
-    const auto s_plain =
-        cpu::gpw::internal::gpw_stress_analytic_impl(atoms, make_cfg(false),
-                                                     kStrainH);
+    const auto s_plain = cpu::gpw::internal::gpw_stress_analytic_impl(
+        atoms, make_cfg(false), kStrainH);
     double max_wire = 0.0;
     for (int a = 0; a < 3; ++a) {
         const double shift = san[static_cast<std::size_t>(a)]
@@ -274,7 +272,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3)
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3)
             conv_ok = false;
     }
     check(conv_ok, "E kStress unit conversion");

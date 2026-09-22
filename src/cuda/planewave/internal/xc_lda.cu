@@ -62,7 +62,7 @@ __device__ constexpr double kFppZero = 1.7099209341613654;
 ///          − b x0/X(x0) [ ln((x−x0)²/X) + 2(b+2x0)/Q atan(Q/(2x+b)) ] }
 /// with X(x) = x² + bx + c, Q = √(4c − b²).
 __device__ __forceinline__ double vwn5_F(double x, double A, double x0,
-                                        double b, double c) {
+                                         double b, double c) {
     const double X = x * x + b * x + c;
     const double X0 = x0 * x0 + b * x0 + c;
     const double Q = sqrt(4.0 * c - b * b);
@@ -80,7 +80,7 @@ __device__ __forceinline__ double vwn5_F(double x, double A, double x0,
 /// dF/dx. The identity (2x+b)² + Q² = 4X collapses both arctan derivatives,
 /// so Q never appears — the same simplification the CPU function uses.
 __device__ __forceinline__ double vwn5_dFdx(double x, double A, double x0,
-                                           double b, double c) {
+                                            double b, double c) {
     const double X = x * x + b * x + c;
     const double X0 = x0 * x0 + b * x0 + c;
 
@@ -130,9 +130,10 @@ vwn5_correlation_zeta0(double rho_a, double rho_b, double& ec, double& vc_a) {
 }
 
 /// Full spin-polarized VWN5 correlation — `vwn5_correlation` twin.
-__device__ __forceinline__ void
-vwn5_correlation_spin(double rho_a, double rho_b, double& ec, double& vc_a,
-                      double& vc_b) {
+__device__ __forceinline__ void vwn5_correlation_spin(double rho_a,
+                                                      double rho_b, double& ec,
+                                                      double& vc_a,
+                                                      double& vc_b) {
     rho_a = fmax(rho_a, kSpinDensMin);
     rho_b = fmax(rho_b, kSpinDensMin);
 
@@ -149,10 +150,8 @@ vwn5_correlation_spin(double rho_a, double rho_b, double& ec, double& vc_a,
     const double z4 = zeta * zeta * zeta * zeta;
     ec = ecP + ac * fz / kFppZero * (1.0 - z4) + (ecF - ecP) * fz * z4;
 
-    const double decP_dx =
-        vwn5_dFdx(x, kVwnP_A, kVwnP_X0, kVwnP_B, kVwnP_C);
-    const double decF_dx =
-        vwn5_dFdx(x, kVwnF_A, kVwnF_X0, kVwnF_B, kVwnF_C);
+    const double decP_dx = vwn5_dFdx(x, kVwnP_A, kVwnP_X0, kVwnP_B, kVwnP_C);
+    const double decF_dx = vwn5_dFdx(x, kVwnF_A, kVwnF_X0, kVwnF_B, kVwnF_C);
     const double dac_dx = vwn5_dFdx(x, kVwnA_A, kVwnA_X0, kVwnA_B, kVwnA_C);
     const double dec_dx = decP_dx + dac_dx * fz / kFppZero * (1.0 - z4)
                           + (decF_dx - decP_dx) * fz * z4;

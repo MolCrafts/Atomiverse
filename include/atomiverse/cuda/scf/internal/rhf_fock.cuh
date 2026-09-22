@@ -86,10 +86,11 @@ class RHFFockDevice {
                   double level_shift = 0.0);
 
     /// @brief Legacy single-shell pure-s (one s shell / atom).
-    RHFFockDevice(int n_prim, const double* exponents, const double* coefficients,
-                  int n_occ, int natm, double level_shift = 0.0)
-        : RHFFockDevice(/*n_shells_per_atom=*/1, n_prim, exponents, coefficients,
-                        n_occ, natm, level_shift) {}
+    RHFFockDevice(int n_prim, const double* exponents,
+                  const double* coefficients, int n_occ, int natm,
+                  double level_shift = 0.0)
+        : RHFFockDevice(/*n_shells_per_atom=*/1, n_prim, exponents,
+                        coefficients, n_occ, natm, level_shift) {}
 
     /// @brief Legacy Wave-3 signature without natm — natm taken at build().
     RHFFockDevice(int n_shells_per_atom, int n_prim, const double* alpha_atom,

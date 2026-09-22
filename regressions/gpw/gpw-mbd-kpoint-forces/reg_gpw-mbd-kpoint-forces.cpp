@@ -41,10 +41,10 @@ constexpr double kWireTol = 1.0e-8;                   // Ha/Bohr
 int main() {
     using namespace ATV;
     using cpu::gpw::GaussianBasis;
+    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::mbd_rsscs_pbe;
     using cpu::gpw::MbdResult;
     using cpu::gpw::XcKind;
@@ -82,11 +82,9 @@ int main() {
         for (int d = 0; d < 3; ++d) {
             const double save = pos_fd[i][d];
             pos_fd[i][d] = save + h;
-            const double ep =
-                mbd_rsscs_pbe(Zw, pos_fd, cell0, false).energy;
+            const double ep = mbd_rsscs_pbe(Zw, pos_fd, cell0, false).energy;
             pos_fd[i][d] = save - h;
-            const double em =
-                mbd_rsscs_pbe(Zw, pos_fd, cell0, false).energy;
+            const double em = mbd_rsscs_pbe(Zw, pos_fd, cell0, false).energy;
             pos_fd[i][d] = save;
             const double fd = -(ep - em) / (2.0 * h);
             max_err = std::max(max_err, std::abs(fd - mbd.forces[i][d]));
@@ -139,17 +137,16 @@ int main() {
     check(F_mbd.size() == 2 && F_plain.size() == 2, "B two force vectors");
 
     std::vector<int> Zh = {1, 1};
-    std::vector<std::array<double, 3>> posh = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    std::vector<std::array<double, 3>> posh = {{rA[0], rA[1], rA[2]},
+                                               {rB[0], rB[1], rB[2]}};
     const MbdResult geom = mbd_rsscs_pbe(Zh, posh, cell0, /*periodic=*/false);
 
     double max_wire = 0.0;
     for (int a = 0; a < 2; ++a) {
         for (int k = 0; k < 3; ++k) {
-            const double d =
-                (F_mbd[static_cast<std::size_t>(a)][k]
-                 - F_plain[static_cast<std::size_t>(a)][k])
-                - geom.forces[static_cast<std::size_t>(a)][k];
+            const double d = (F_mbd[static_cast<std::size_t>(a)][k]
+                              - F_plain[static_cast<std::size_t>(a)][k])
+                             - geom.forces[static_cast<std::size_t>(a)][k];
             max_wire = std::max(max_wire, std::abs(d));
             check(std::isfinite(F_mbd[static_cast<std::size_t>(a)][k]),
                   "B finite force component");
@@ -158,11 +155,11 @@ int main() {
     check(max_wire <= kWireTol, "A5 multi-k wiring |F_mbd-F_plain-F_geom|");
     check(std::abs(geom.forces[0][0]) > 1e-8, "B nontrivial MBD F0x");
 
-    std::printf(
-        "PASS: gpw-mbd-kpoint-forces  E_disp(water)=%.14e  "
-        "max|F-F_fd|=%.2e  |sumF|=%.2e  multi-k H2 e_disp=%.6e  "
-        "max|wire|=%.2e  n_kpts=%d\n",
-        mbd.energy, max_err, sum_norm, scf.e_disp, max_wire, scf.n_kpts);
+    std::printf("PASS: gpw-mbd-kpoint-forces  E_disp(water)=%.14e  "
+                "max|F-F_fd|=%.2e  |sumF|=%.2e  multi-k H2 e_disp=%.6e  "
+                "max|wire|=%.2e  n_kpts=%d\n",
+                mbd.energy, max_err, sum_norm, scf.e_disp, max_wire,
+                scf.n_kpts);
 
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);

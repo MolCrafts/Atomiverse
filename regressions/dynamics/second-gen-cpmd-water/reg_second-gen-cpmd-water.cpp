@@ -9,10 +9,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/second_gen_cp.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/second_gen_cp.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -95,8 +95,8 @@ int main() {
             return 1;
         }
         if (!(ke_w > 1e-12)) {
-            std::printf(
-                "FAIL: expected non-trivial KE after seed, got %g eV\n", ke_w);
+            std::printf("FAIL: expected non-trivial KE after seed, got %g eV\n",
+                        ke_w);
             return 1;
         }
         if (!(pe_w < -100.0)) {

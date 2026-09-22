@@ -38,8 +38,8 @@ constexpr double kTolImageEv = 1e-6; // image-term tolerance
 cpu::Frame make_dimer() {
     cpu::Frame f(6);
     const double xyz[6][3] = {
-        {0.000, 0.000, 0.000},  {0.757, 0.000, 0.586},  {-0.757, 0.000, 0.586},
-        {0.000, 0.000, 2.900},  {0.757, 0.000, 3.486},  {-0.757, 0.000, 3.486},
+        {0.000, 0.000, 0.000}, {0.757, 0.000, 0.586}, {-0.757, 0.000, 0.586},
+        {0.000, 0.000, 2.900}, {0.757, 0.000, 3.486}, {-0.757, 0.000, 3.486},
     };
     const int Z[6] = {8, 1, 1, 8, 1, 1};
     for (int i = 0; i < 6; ++i) {
@@ -113,11 +113,13 @@ int main() {
         return 1;
     }
     if (std::fabs(disp_mol - pin_mol) > kTolEv) {
-        std::printf("FAIL cluster E_disp vs s-dftd3 pin (tol %.1e eV)\n", kTolEv);
+        std::printf("FAIL cluster E_disp vs s-dftd3 pin (tol %.1e eV)\n",
+                    kTolEv);
         return 1;
     }
     if (std::fabs(disp_pbc - pin_pbc) > kTolEv) {
-        std::printf("FAIL lattice E_disp vs s-dftd3 pin (tol %.1e eV)\n", kTolEv);
+        std::printf("FAIL lattice E_disp vs s-dftd3 pin (tol %.1e eV)\n",
+                    kTolEv);
         return 1;
     }
     // The discriminating gate: the *image* contribution alone, which a

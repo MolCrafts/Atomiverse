@@ -59,8 +59,8 @@ void Remd::ensure_built_(cpu::Frame& frame) {
         auto md = std::make_unique<cpu::md::MD>();
         md->set_integrator(cpu::md::VelocityVerlet{dt});
         // Independent InitVelocity stream per replica (seed ^ (i+1)).
-        md->set_observer(cpu::md::InitVelocity{
-            t_i, static_cast<unsigned>(seed ^ (i + 1u))});
+        md->set_observer(
+            cpu::md::InitVelocity{t_i, static_cast<unsigned>(seed ^ (i + 1u))});
         // The exchange test is the Metropolis rule for swapping between two
         // CANONICAL ensembles. Without a thermostat each replica is an NVE
         // trajectory carrying whatever its velocity draw gave it, β_i is a

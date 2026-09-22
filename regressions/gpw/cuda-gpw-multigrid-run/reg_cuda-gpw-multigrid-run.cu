@@ -119,10 +119,9 @@ int main(int argc, char** argv) {
                          de);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-multigrid-run  |dE|=%.3e  "
-            "(H2 Γ RKS PADE ngrids=4; perf_exempt small cell)\n",
-            de);
+        std::printf("PASS: cuda-gpw-multigrid-run  |dE|=%.3e  "
+                    "(H2 Γ RKS PADE ngrids=4; perf_exempt small cell)\n",
+                    de);
     } else {
         std::printf("PASS: cuda-gpw-multigrid-run (--device=%s only)\n",
                     device.c_str());

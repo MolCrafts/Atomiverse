@@ -56,7 +56,6 @@ inline int imax(int a, int b) { return a > b ? a : b; }
 inline int imin(int a, int b) { return a < b ? a : b; }
 inline int modulo(int a, int n) { return ((a % n) + n) % n; }
 
-
 // Safe size probe: make_sized_batch_t may be void on some arches.
 template <typename T, bool Ok = !std::is_void_v<T>>
 struct batch_width {
@@ -74,13 +73,11 @@ struct batch_width<T, true> {
 #if defined(__AVX512F__)
 using batch4_maybe_t = xsimd::make_sized_batch_t<double, 4>;
 constexpr bool kHasBatch4 = batch_width<batch4_maybe_t>::value == 4;
-constexpr int kNativeBatch =
-    static_cast<int>(xsimd::batch<double>::size);
+constexpr int kNativeBatch = static_cast<int>(xsimd::batch<double>::size);
 constexpr bool kUseBatch4Residual = kHasBatch4 && (kNativeBatch > 4);
 #else
 constexpr bool kUseBatch4Residual = false;
 #endif
-
 
 // Pascal triangle LUT for expand_axis (la,lb ≤ kMaxL).
 inline int binom(int n, int k) {
@@ -170,8 +167,7 @@ int single_sphere_bounds(double disr_radius, double di, double dj, double dk,
                          int* bounds) {
     const double di_inv = 1.0 / di, dj_inv = 1.0 / dj, dk_inv = 1.0 / dk;
     int ibound = 0;
-    const int kgmin =
-        static_cast<int>(std::ceil(-1e-8 - disr_radius * dk_inv));
+    const int kgmin = static_cast<int>(std::ceil(-1e-8 - disr_radius * dk_inv));
     if (bounds)
         bounds[ibound] = kgmin;
     ++ibound;
@@ -394,12 +390,12 @@ void add_group_to_cxyz(const GridProduct* prods, const double* weights, int n,
                         const int ls = lxa - k + lxb - l;
                         ad[(lxb * (mla + 1) + lxa) * stride_ls + ls] +=
                             binomial_k_lxa * binomial_l_lxb * a * b;
-                        binomial_l_lxb *=
-                            static_cast<double>(lxb - l) / static_cast<double>(l + 1);
+                        binomial_l_lxb *= static_cast<double>(lxb - l)
+                                          / static_cast<double>(l + 1);
                         b *= drpb;
                     }
-                    binomial_k_lxa *=
-                        static_cast<double>(lxa - k) / static_cast<double>(k + 1);
+                    binomial_k_lxa *= static_cast<double>(lxa - k)
+                                      / static_cast<double>(k + 1);
                     a *= drpa;
                 }
             }
@@ -513,12 +509,12 @@ void contract_group_from_I(const GridProduct* prods, int n, int lpx, int lpy,
                         const int ls = lxa - k + lxb - l;
                         ad[(lxb * (mla + 1) + lxa) * stride_ls + ls] +=
                             binomial_k_lxa * binomial_l_lxb * a * b;
-                        binomial_l_lxb *=
-                            static_cast<double>(lxb - l) / static_cast<double>(l + 1);
+                        binomial_l_lxb *= static_cast<double>(lxb - l)
+                                          / static_cast<double>(l + 1);
                         b *= drpb;
                     }
-                    binomial_k_lxa *=
-                        static_cast<double>(lxa - k) / static_cast<double>(k + 1);
+                    binomial_k_lxa *= static_cast<double>(lxa - k)
+                                      / static_cast<double>(k + 1);
                     a *= drpa;
                 }
             }
@@ -665,8 +661,8 @@ inline void collocate_cx_4wide_dyn_run(int& i, int istop, int lp_z, int cmax,
             const int ig = i + cube2grid;
             batch4_t r0(0.0), r1(0.0), r2(0.0), r3(0.0);
             for (int lz = 0; lz <= lp_z; ++lz) {
-                const batch4_t p = batch4_t::load_unaligned(
-                    pol_i + lz * pol_len + (i + cmax));
+                const batch4_t p =
+                    batch4_t::load_unaligned(pol_i + lz * pol_len + (i + cmax));
                 r0 = xsimd::fma(p, batch4_t(cx[lz * 4 + 0]), r0);
                 r1 = xsimd::fma(p, batch4_t(cx[lz * 4 + 1]), r1);
                 r2 = xsimd::fma(p, batch4_t(cx[lz * 4 + 2]), r2);
@@ -850,8 +846,8 @@ inline void integrate_cx_4wide_run(int& i, int istop, int cmax, int pol_len,
             b3[lz] = batch4_t(0.0);
         }
         integrate_cx_vec_pass<batch4_t, LpZ>(i, istop, cmax, pol_len, pol_i, b0,
-                                             b1, b2, b3, cube2grid, base0, base1,
-                                             base2, base3, grid_io);
+                                             b1, b2, b3, cube2grid, base0,
+                                             base1, base2, base3, grid_io);
 #pragma GCC unroll 10
         for (int lz = 0; lz <= LpZ; ++lz) {
             cx[lz * 4 + 0] += xsimd::reduce_add(b0[lz]);
@@ -1001,17 +997,13 @@ inline void integrate_cx_4wide_dyn_run(int& i, int istop, int lp_z, int cmax,
         }
         for (; i + 3 <= istop; i += 4) {
             const int ig = i + cube2grid;
-            const batch4_t v0 =
-                batch4_t::load_unaligned(grid_io + base0 + ig);
-            const batch4_t v1 =
-                batch4_t::load_unaligned(grid_io + base1 + ig);
-            const batch4_t v2 =
-                batch4_t::load_unaligned(grid_io + base2 + ig);
-            const batch4_t v3 =
-                batch4_t::load_unaligned(grid_io + base3 + ig);
+            const batch4_t v0 = batch4_t::load_unaligned(grid_io + base0 + ig);
+            const batch4_t v1 = batch4_t::load_unaligned(grid_io + base1 + ig);
+            const batch4_t v2 = batch4_t::load_unaligned(grid_io + base2 + ig);
+            const batch4_t v3 = batch4_t::load_unaligned(grid_io + base3 + ig);
             for (int lz = 0; lz <= lp_z; ++lz) {
-                const batch4_t p = batch4_t::load_unaligned(
-                    pol_i + lz * pol_len + (i + cmax));
+                const batch4_t p =
+                    batch4_t::load_unaligned(pol_i + lz * pol_len + (i + cmax));
                 b0[lz] = xsimd::fma(v0, p, b0[lz]);
                 b1[lz] = xsimd::fma(v1, p, b1[lz]);
                 b2[lz] = xsimd::fma(v2, p, b2[lz]);
@@ -1232,8 +1224,7 @@ void ortho_cxyz_to_grid(const UniformGrid& grid, const double pc[3],
     const double dr[3] = {di, dj, dk};
 
     double disr_radius = 0.0;
-    const int* sphere =
-        sphere_bounds_lookup(radius, di, dj, dk, &disr_radius);
+    const int* sphere = sphere_bounds_lookup(radius, di, dj, dk, &disr_radius);
 
     int lb_cube[3], ub_cube[3];
     lb_cube[0] = static_cast<int>(std::ceil(-1e-8 - disr_radius / di));
@@ -1571,12 +1562,9 @@ void collint_collocate_group_idx(const UniformGrid& grid,
                 const auto& p = prods_base[idx[i]];
                 const int lax = p.la[0], lay = p.la[1], laz = p.la[2];
                 const int lbx = p.lb[0], lby = p.lb[1], lbz = p.lb[2];
-                const double* ax_row =
-                    ax + (lbx * (mla + 1) + lax) * stride_ls;
-                const double* ay_row =
-                    ay + (lby * (mla + 1) + lay) * stride_ls;
-                const double* az_row =
-                    az + (lbz * (mla + 1) + laz) * stride_ls;
+                const double* ax_row = ax + (lbx * (mla + 1) + lax) * stride_ls;
+                const double* ay_row = ay + (lby * (mla + 1) + lay) * stride_ls;
+                const double* az_row = az + (lbz * (mla + 1) + laz) * stride_ls;
                 const int lpx_p = lax + lbx, lpy_p = lay + lby,
                           lpz_p = laz + lbz;
                 for (int lx = 0; lx <= lpx_p; ++lx) {

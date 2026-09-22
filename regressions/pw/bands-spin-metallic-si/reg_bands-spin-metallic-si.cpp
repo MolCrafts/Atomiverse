@@ -167,17 +167,17 @@ int main() {
                 return 1;
             }
             if (!sorted_asc(row)) {
-                std::printf(
-                    "FAIL: eigenvalues not sorted ascending at ik=%zu spin=%d\n",
-                    ik, spin);
+                std::printf("FAIL: eigenvalues not sorted ascending at ik=%zu "
+                            "spin=%d\n",
+                            ik, spin);
                 return 1;
             }
             if (!(row[static_cast<std::size_t>(kNOcc)]
                   > row[static_cast<std::size_t>(kNOcc - 1)])) {
-                std::printf(
-                    "FAIL: local gap closed at ik=%zu spin=%d e_v=%.6f e_c=%.6f\n",
-                    ik, spin, row[static_cast<std::size_t>(kNOcc - 1)],
-                    row[static_cast<std::size_t>(kNOcc)]);
+                std::printf("FAIL: local gap closed at ik=%zu spin=%d e_v=%.6f "
+                            "e_c=%.6f\n",
+                            ik, spin, row[static_cast<std::size_t>(kNOcc - 1)],
+                            row[static_cast<std::size_t>(kNOcc)]);
                 return 1;
             }
         }
@@ -236,7 +236,8 @@ int main() {
     }
 
     std::printf(
-        "PASS: Si collinear spin+metallic bands a=%.2f A ecut=%.0f Ry scf_k=%d  "
+        "PASS: Si collinear spin+metallic bands a=%.2f A ecut=%.0f Ry scf_k=%d "
+        " "
         "FD degauss=%.3f Ry extra_bands=%d  nspin=%d mag=%.3e  "
         "e_fermi=%.6f Ry  gap=%.4f Ry  e_vbm=%.6f e_cbm=%.6f  "
         "Gamma->X(α)=%.4f eV  e_c^α(X)<e_c^α(G)  "

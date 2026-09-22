@@ -77,7 +77,8 @@ class ScfGradient {
     /// @param e_scf_ha  Converged SCF total energy [Hartree] (reported on the
     ///                  returned GradientResult in eV).
     /// @return Forces on all atoms (eV/Angstrom) and total energy (eV).
-    GradientResult compute(const Frame& frame, const internal::IntegralView& integrals,
+    GradientResult compute(const Frame& frame,
+                           const internal::IntegralView& integrals,
                            const SlaterDeterminant& det, double e_scf_ha) const;
 
     /// @brief Analytic nuclear gradient at an arbitrary (non-stationary)
@@ -115,11 +116,13 @@ class ScfGradient {
     /// @throws std::invalid_argument for ROHF/ROKS/GHF spin treatments (their
     ///         weights are not this one), on a shape mismatch, or when a
     ///         restricted call supplies β matrices.
-    GradientResult
-    compute_at_density(const Frame& frame, const internal::IntegralView& integrals,
-                       const RealMatrix& C_occ_alpha, const RealMatrix& F_alpha,
-                       const RealMatrix& C_occ_beta, const RealMatrix& F_beta,
-                       double e_ha) const;
+    GradientResult compute_at_density(const Frame& frame,
+                                      const internal::IntegralView& integrals,
+                                      const RealMatrix& C_occ_alpha,
+                                      const RealMatrix& F_alpha,
+                                      const RealMatrix& C_occ_beta,
+                                      const RealMatrix& F_beta,
+                                      double e_ha) const;
 
   private:
     /// @brief The gradient assembly shared by both entry points.
@@ -138,22 +141,23 @@ class ScfGradient {
     ///        only by the `SpinType::Generalized` exchange contraction, which
     ///        needs all four spin blocks; null for every other spin treatment.
     /// @return Forces [eV/Å] + energy [eV].
-    GradientResult assemble_(const Frame& frame, const internal::IntegralView& integrals,
+    GradientResult assemble_(const Frame& frame,
+                             const internal::IntegralView& integrals,
                              const xt::xtensor<double, 2>& P_total,
                              const xt::xtensor<double, 2>& P_alpha,
                              const xt::xtensor<double, 2>& P_beta,
                              const xt::xtensor<double, 2>& W, double e_ha,
                              const SlaterDeterminant* generalized_det) const;
 
-    MeanFieldType method_;                 ///< HF or KS mean field.
-    SpinType spin_;                        ///< Restricted / unrestricted.
-    XCType xc_type_;                       ///< XC functional (KS only).
-    GridLevel grid_level_;                 ///< DFT grid quality (KS only).
-    int n_radial_;                         ///< Radial grid points (SG0 only).
-    int n_angular_;                        ///< Angular grid points (SG0 only).
-    bool xc_grad_project_translation_;     ///< Project net translational XC.
-    bool d3bj_;                            ///< Add the D3(BJ) dispersion leg.
-    bool d4_;                              ///< Add the D4 dispersion leg.
+    MeanFieldType method_;             ///< HF or KS mean field.
+    SpinType spin_;                    ///< Restricted / unrestricted.
+    XCType xc_type_;                   ///< XC functional (KS only).
+    GridLevel grid_level_;             ///< DFT grid quality (KS only).
+    int n_radial_;                     ///< Radial grid points (SG0 only).
+    int n_angular_;                    ///< Angular grid points (SG0 only).
+    bool xc_grad_project_translation_; ///< Project net translational XC.
+    bool d3bj_;                        ///< Add the D3(BJ) dispersion leg.
+    bool d4_;                          ///< Add the D4 dispersion leg.
 };
 
 } // namespace internal

@@ -65,7 +65,8 @@ void launch_eri(double* ERI, const double* shell_alpha,
 /// @param n_shells Shell count, n_ao AO count, n_prim primitives/shell, natm.
 /// @param stream CUDA stream.
 void launch_1e_integrals_sp(double* S, double* T, double* V,
-                            const double* shell_alpha, const double* shell_coeff,
+                            const double* shell_alpha,
+                            const double* shell_coeff,
                             const double* shell_centers, const int* shell_L,
                             const int* shell_ao_start, const int* ao_shell,
                             const int* ao_cart, const int* atom_Z,
@@ -110,13 +111,11 @@ void launch_boys_f0_test(const double* d_x, double* d_out, int n, void* stream);
 /// @param n_prim Primitives per shell.
 /// @param natm Atom count.
 /// @param stream CUDA stream.
-void launch_rhf_forces_pure_s(double* fx, double* fy, double* fz,
-                              const double* P, const double* W,
-                              const double* shell_alpha,
-                              const double* shell_coeff,
-                              const double* shell_centers, const int* shell_atom,
-                              const int* atom_Z, const double* atom_pos,
-                              int n_ao, int n_prim, int natm, void* stream);
+void launch_rhf_forces_pure_s(
+    double* fx, double* fy, double* fz, const double* P, const double* W,
+    const double* shell_alpha, const double* shell_coeff,
+    const double* shell_centers, const int* shell_atom, const int* atom_Z,
+    const double* atom_pos, int n_ao, int n_prim, int natm, void* stream);
 
 /// @brief s+p (l ≤ 1) RHF analytic nuclear forces on device (Wave 6).
 ///
@@ -129,15 +128,16 @@ void launch_rhf_forces_pure_s(double* fx, double* fy, double* fz,
 /// @param ao_cart Cartesian component within shell [n_ao].
 void launch_rhf_forces_sp(double* fx, double* fy, double* fz, const double* P,
                           const double* W, const double* shell_alpha,
-                          const double* shell_coeff, const double* shell_centers,
-                          const int* shell_atom, const int* shell_L,
-                          const int* ao_shell, const int* ao_cart,
-                          const int* atom_Z, const double* atom_pos, int n_ao,
-                          int n_prim, int natm, void* stream);
+                          const double* shell_coeff,
+                          const double* shell_centers, const int* shell_atom,
+                          const int* shell_L, const int* ao_shell,
+                          const int* ao_cart, const int* atom_Z,
+                          const double* atom_pos, int n_ao, int n_prim,
+                          int natm, void* stream);
 
 /// @brief Build W = 2 Σ_i ε_i C[:,i] C[:,i]ᵀ for i < n_occ (col-major).
-void launch_build_W_rhf(double* W, const double* C, const double* eig,
-                        int n_ao, int n_occ, void* stream);
+void launch_build_W_rhf(double* W, const double* C, const double* eig, int n_ao,
+                        int n_occ, void* stream);
 
 } // namespace scf
 } // namespace cuda

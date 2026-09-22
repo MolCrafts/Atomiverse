@@ -34,7 +34,7 @@
 
 #include <xtensor/containers/xtensor.hpp>
 
-#include "atomiverse/cpu/gpw/gpw_solver.h" // GpwAtom, GridBasisFunction
+#include "atomiverse/cpu/gpw/gpw_solver.h"    // GpwAtom, GridBasisFunction
 #include "atomiverse/cpu/linalg/eigensolve.h" // eigh_hermitian
 
 namespace ATV {

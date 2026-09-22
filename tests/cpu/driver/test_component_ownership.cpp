@@ -184,7 +184,8 @@ TEST(ComponentOwnership, PhaseBuilderUniquePointerTransfersOwnership) {
 TEST(ComponentOwnership, NullOwnedPointerFailsLoudly) {
     Evaluate eval;
     std::unique_ptr<LifetimeProbe> null_probe;
-    EXPECT_THROW(eval.set_evaluator(std::move(null_probe)), std::invalid_argument);
+    EXPECT_THROW(eval.set_evaluator(std::move(null_probe)),
+                 std::invalid_argument);
 }
 
 TEST(ComponentOwnership, PhaseBuilderNullOwnedPointerFailsLoudly) {

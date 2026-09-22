@@ -25,11 +25,11 @@
 #include "atomiverse/cuda/gpw/internal/multigrid_transfer.cuh"
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 
+using ATV::cpu::gpw::prolong_fft;
+using ATV::cpu::gpw::restrict_fft;
 using ATV::cpu::gpw::UniformGrid;
 using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::ks_grid_build_rks;
-using ATV::cpu::gpw::prolong_fft;
-using ATV::cpu::gpw::restrict_fft;
 using ATV::cuda::gpw::internal::CollocateGridDesc;
 using ATV::cuda::gpw::internal::DeviceProduct;
 using ATV::cuda::gpw::internal::KsMultiGridChainDevice;
@@ -127,7 +127,8 @@ double host_integrate(const UniformGrid& grid, const DeviceProduct& q,
     return acc;
 }
 
-double max_abs_diff(const std::vector<double>& a, const std::vector<double>& b) {
+double max_abs_diff(const std::vector<double>& a,
+                    const std::vector<double>& b) {
     double m = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i)
         m = std::max(m, std::abs(a[i] - b[i]));
@@ -179,9 +180,8 @@ int main(int argc, char** argv) {
         rho[i] += up[i];
     std::vector<double> n_ion(rho.size(), 0.0);
     std::vector<double> v_loc;
-    const auto cpu =
-        ks_grid_build_rks(fine, rho, n_ion, v_loc, XcKind::PADE, false, false,
-                          false, false);
+    const auto cpu = ks_grid_build_rks(fine, rho, n_ion, v_loc, XcKind::PADE,
+                                       false, false, false, false);
     const auto V1 = restrict_fft(fine, coarse, cpu.veff, true);
     const double acc0 = host_integrate(fine, q0, cpu.veff);
     const double acc1 = host_integrate(coarse, q1, V1);
@@ -209,12 +209,12 @@ int main(int argc, char** argv) {
     check_cuda(cudaMalloc(&d_p1, sizeof(DeviceProduct)), "malloc p1");
     check_cuda(cudaMalloc(&d_a0, sizeof(double)), "malloc a0");
     check_cuda(cudaMalloc(&d_a1, sizeof(double)), "malloc a1");
-    check_cuda(cudaMemcpy(d_p0, &q0, sizeof(DeviceProduct),
-                          cudaMemcpyHostToDevice),
-               "H2D p0");
-    check_cuda(cudaMemcpy(d_p1, &q1, sizeof(DeviceProduct),
-                          cudaMemcpyHostToDevice),
-               "H2D p1");
+    check_cuda(
+        cudaMemcpy(d_p0, &q0, sizeof(DeviceProduct), cudaMemcpyHostToDevice),
+        "H2D p0");
+    check_cuda(
+        cudaMemcpy(d_p1, &q1, sizeof(DeviceProduct), cudaMemcpyHostToDevice),
+        "H2D p1");
     const DeviceProduct* pp[2] = {d_p0, d_p1};
     const int np[2] = {1, 1};
     double* ap[2] = {d_a0, d_a1};
@@ -234,8 +234,8 @@ int main(int argc, char** argv) {
     cudaFree(d_a0);
     cudaFree(d_a1);
 
-    std::printf("CUDA e_H=%.12e e_xc=%.12e acc0=%.12e acc1=%.12e\n", e.e_hartree,
-                e.e_xc, a0, a1);
+    std::printf("CUDA e_H=%.12e e_xc=%.12e acc0=%.12e acc1=%.12e\n",
+                e.e_hartree, e.e_xc, a0, a1);
 
     if (!near(e.e_hartree, cpu.e_hartree, kERel))
         die("e_hartree mismatch");

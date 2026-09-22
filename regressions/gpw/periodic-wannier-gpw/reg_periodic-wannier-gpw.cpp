@@ -53,9 +53,9 @@ double min_image_dist(const std::array<double, 3>& a,
 
 /// Greedy bipartite max-of-min-image for 8 centers (8! too large → Hungarian-
 /// free successive nearest with used mask after random restarts).
-double max_assigned_distance(
-    const std::vector<std::array<double, 3>>& centers,
-    const std::array<std::array<double, 3>, 8>& mids, const double L[3]) {
+double max_assigned_distance(const std::vector<std::array<double, 3>>& centers,
+                             const std::array<std::array<double, 3>, 8>& mids,
+                             const double L[3]) {
     const int n = 8;
     // Cost matrix
     double cost[8][8];
@@ -93,11 +93,11 @@ double max_assigned_distance(
 } // namespace
 
 int main() {
-    constexpr double kA = 5.43;       // lattice constant [Angstrom]
+    constexpr double kA = 5.43; // lattice constant [Angstrom]
     constexpr double kCutoffRy = 100.0;
     constexpr int kMeshMlwf = 2;
     // Coarse 2×2×2 SMV discretization (same window as reg_periodic-wannier-si).
-    constexpr double kMidTol = 0.90; // bond-midpoint distance [Angstrom]
+    constexpr double kMidTol = 0.90;      // bond-midpoint distance [Angstrom]
     constexpr double kSpreadRatio = 0.50; // Ω_final / Ω_init upper bound
 
     const double a_bohr = kA * kA2B;
@@ -130,12 +130,13 @@ int main() {
     }
     std::printf("SCF E=%.6f Ha  n_wann=%d  iters=%d  conv=%d\n", r.energy_ha,
                 r.n_wann, r.iterations, static_cast<int>(r.converged));
-    std::printf("Omega_init=%.6f  Omega=%.6f  [Ang^2]\n", r.total_spread_initial,
-                r.total_spread);
+    std::printf("Omega_init=%.6f  Omega=%.6f  [Ang^2]\n",
+                r.total_spread_initial, r.total_spread);
 
     if (r.n_wann != 8 || static_cast<int>(r.centers.size()) != 8) {
-        std::printf("FAIL: expected 8 Wannier centers, got n_wann=%d size=%zu\n",
-                    r.n_wann, r.centers.size());
+        std::printf(
+            "FAIL: expected 8 Wannier centers, got n_wann=%d size=%zu\n",
+            r.n_wann, r.centers.size());
         return 1;
     }
 

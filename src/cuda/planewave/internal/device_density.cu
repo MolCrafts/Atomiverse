@@ -235,9 +235,9 @@ pw_reduce_terms_kernel(const cufftDoubleComplex* __restrict__ rho,
 
 /// Stage 2: one block per lane, each reducing exactly kReduceBlocks partials
 /// and applying that lane's scale (and √ for the residual norm).
-__global__ void
-pw_reduce_finalize_kernel(const double* __restrict__ partials, int n_parts,
-                          FinalizeSpec spec, double* __restrict__ out) {
+__global__ void pw_reduce_finalize_kernel(const double* __restrict__ partials,
+                                          int n_parts, FinalizeSpec spec,
+                                          double* __restrict__ out) {
     __shared__ double s[kReduceBlocks];
     const int lane = blockIdx.x;
     const int t = threadIdx.x;
@@ -256,14 +256,16 @@ pw_reduce_finalize_kernel(const double* __restrict__ partials, int n_parts,
 
 // ── Allocation helpers (same checked idiom as device_solver.cu) ──────────
 
-template <typename T> void device_free(T*& p) {
+template <typename T>
+void device_free(T*& p) {
     if (p) {
         cudaFree(p);
         p = nullptr;
     }
 }
 
-template <typename T> T* device_alloc(size_t n) {
+template <typename T>
+T* device_alloc(size_t n) {
     T* p = nullptr;
     ATV_CUDA_CHECK(cudaMalloc(&p, n * sizeof(T)));
     return p;
@@ -303,8 +305,7 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
             "cuda::pw::internal::DeviceDensity: only XCType::LSDA and "
             "XCType::PBE have device XC kernels");
     // Collinear: LSDA and true spin-GGA PBE are landed; other GGAs are not.
-    if (spin_ && xc_ != cpu::scf::XCType::LSDA
-        && xc_ != cpu::scf::XCType::PBE)
+    if (spin_ && xc_ != cpu::scf::XCType::LSDA && xc_ != cpu::scf::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: spin_polarized supports "
             "XCType::LSDA and XCType::PBE only on the device path");
@@ -346,8 +347,8 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         d_V_eff_G_ = device_alloc<cufftDoubleComplex>(ng);
         d_res_hist_ = device_alloc<cufftDoubleComplex>(ring);
         d_rho_hist_ = device_alloc<cufftDoubleComplex>(ring);
-        d_gram_ = device_alloc<cufftDoubleComplex>(
-            static_cast<size_t>(depth_) * depth_);
+        d_gram_ = device_alloc<cufftDoubleComplex>(static_cast<size_t>(depth_)
+                                                   * depth_);
         d_coeff_ = device_alloc<double>(static_cast<size_t>(depth_));
         d_half_ = device_alloc<cufftDoubleComplex>(nc);
         d_rho_r_in_ = device_alloc<double>(nr);
@@ -355,8 +356,8 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         d_V_xc_r_ = device_alloc<double>(nr);
         d_exc_r_ = device_alloc<double>(nr);
         d_V_eff_r_ = device_alloc<double>(nr);
-        d_partials_ = device_alloc<double>(
-            static_cast<size_t>(kLanes) * kReduceBlocks);
+        d_partials_ =
+            device_alloc<double>(static_cast<size_t>(kLanes) * kReduceBlocks);
         d_xc_partials_ =
             device_alloc<double>(static_cast<size_t>(kXcEnergyPartials));
         d_scalars_ = device_alloc<double>(5);
@@ -407,9 +408,8 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         const auto& gv = prob.gv0;
         std::vector<double> g2(ng);
         for (int i = 0; i < ng0_; ++i)
-            g2[static_cast<size_t>(i)] =
-                static_cast<double>(gv.g[static_cast<size_t>(i)]
-                                        .norm_squared());
+            g2[static_cast<size_t>(i)] = static_cast<double>(
+                gv.g[static_cast<size_t>(i)].norm_squared());
 
         ATV_CUDA_CHECK(cudaMemcpyAsync(d_h_, gv.h.data(), ng * sizeof(int),
                                        cudaMemcpyHostToDevice, stream_));
@@ -428,12 +428,12 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
 
         if (spin_) {
             // Seed ρ_↑ / ρ_↓ by splitting the atomic total density (CPU twin).
-            const double fa =
-                (n_elec > 0) ? static_cast<double>(n_alpha) / static_cast<double>(n_elec)
-                             : 0.5;
-            const double fb =
-                (n_elec > 0) ? static_cast<double>(n_beta) / static_cast<double>(n_elec)
-                             : 0.5;
+            const double fa = (n_elec > 0) ? static_cast<double>(n_alpha)
+                                                 / static_cast<double>(n_elec)
+                                           : 0.5;
+            const double fb = (n_elec > 0) ? static_cast<double>(n_beta)
+                                                 / static_cast<double>(n_elec)
+                                           : 0.5;
             std::vector<std::complex<double>> rho_tot(ng);
             ATV_CUDA_CHECK(cudaMemcpyAsync(rho_tot.data(), d_rho_G_,
                                            ng * sizeof(cufftDoubleComplex),
@@ -471,11 +471,11 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
             double* dst[3] = {d_gx_, d_gy_, d_gz_};
             for (int d = 0; d < 3; ++d) {
                 for (int i = 0; i < ng0_; ++i)
-                    gcart[static_cast<size_t>(i)] = static_cast<double>(
-                        gv.g[static_cast<size_t>(i)][d]);
-                ATV_CUDA_CHECK(cudaMemcpyAsync(dst[d], gcart.data(),
-                                               ng * sizeof(double),
-                                               cudaMemcpyHostToDevice, stream_));
+                    gcart[static_cast<size_t>(i)] =
+                        static_cast<double>(gv.g[static_cast<size_t>(i)][d]);
+                ATV_CUDA_CHECK(
+                    cudaMemcpyAsync(dst[d], gcart.data(), ng * sizeof(double),
+                                    cudaMemcpyHostToDevice, stream_));
             }
         }
         // Fence before the host returns: the atomic ρ seed and V_loc must be
@@ -587,9 +587,8 @@ void DeviceDensity::exchange_correlation() {
         // the divergence correction, and ε_xc is untouched by it.
         xc_pbe_grid(d_rho_r_in_, d_grad_x_r_, d_grad_y_r_, d_grad_z_r_,
                     d_V_xc_r_, d_exc_r_, nr_, stream_);
-        xc_energy(d_rho_r_in_, d_exc_r_, nr_,
-                  omega_ / static_cast<double>(nr_), d_scalars_ + 0,
-                  d_xc_partials_, stream_);
+        xc_energy(d_rho_r_in_, d_exc_r_, nr_, omega_ / static_cast<double>(nr_),
+                  d_scalars_ + 0, d_xc_partials_, stream_);
 
         // ── v_xc −= ∇·flux, via div(G) = Σ_d i G_d flux_d(G) ──
         // d_V_xc_G_ is the accumulation scratch here, exactly as the CPU
@@ -599,25 +598,24 @@ void DeviceDensity::exchange_correlation() {
             static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex), stream_));
         for (int d = 0; d < 3; ++d) {
             fft_.r2c(grad_r[d], d_half_); // grad_r now holds flux_d
-            gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_sph_,
-                                    nx, ny, nz,
-                                    1.0 / static_cast<double>(nr_), stream_);
+            gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_sph_, nx,
+                                    ny, nz, 1.0 / static_cast<double>(nr_),
+                                    stream_);
             pw_axpy_ig_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
                 d_sph_, gcart[d], ng0_, d_V_xc_G_);
             ATV_CUDA_CHECK(cudaGetLastError());
         }
-        scatter_g_to_halfcomplex(d_V_xc_G_, d_h_, d_k_, d_l_, ng0_, d_half_,
-                                 nx, ny, nz, stream_);
+        scatter_g_to_halfcomplex(d_V_xc_G_, d_h_, d_k_, d_l_, ng0_, d_half_, nx,
+                                 ny, nz, stream_);
         fft_.c2r(d_half_, d_div_r_);
         pw_sub_kernel<<<n_blocks(nr_), kBlock, 0, stream_>>>(d_V_xc_r_,
-                                                              d_div_r_, nr_);
+                                                             d_div_r_, nr_);
         ATV_CUDA_CHECK(cudaGetLastError());
     } else {
         // Pointwise LSDA + the E_xc quadrature (dV = Ω/nr, as on the CPU).
         xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr_, stream_);
-        xc_energy(d_rho_r_in_, d_exc_r_, nr_,
-                  omega_ / static_cast<double>(nr_), d_scalars_ + 0,
-                  d_xc_partials_, stream_);
+        xc_energy(d_rho_r_in_, d_exc_r_, nr_, omega_ / static_cast<double>(nr_),
+                  d_scalars_ + 0, d_xc_partials_, stream_);
     }
 
     // V_xc(r) → V_xc(G), scaled by 1/nr (r2c is unnormalized).
@@ -643,16 +641,15 @@ void DeviceDensity::assemble_veff() {
 }
 
 void DeviceDensity::zero_accumulator() {
-    ATV_CUDA_CHECK(cudaMemsetAsync(d_rho_r_acc_, 0,
-                                   static_cast<size_t>(nr_) * sizeof(double),
-                                   stream_));
+    ATV_CUDA_CHECK(cudaMemsetAsync(
+        d_rho_r_acc_, 0, static_cast<size_t>(nr_) * sizeof(double), stream_));
 }
 
 void DeviceDensity::collect() {
-    ATV_CUDA_CHECK(cudaMemcpyAsync(
-        d_rho_G_old_, d_rho_G_,
-        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
-        cudaMemcpyDeviceToDevice, stream_));
+    ATV_CUDA_CHECK(
+        cudaMemcpyAsync(d_rho_G_old_, d_rho_G_,
+                        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+                        cudaMemcpyDeviceToDevice, stream_));
     fft_.r2c(d_rho_r_acc_, d_half_);
     gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_rho_G_,
                             fft_.nx(), fft_.ny(), fft_.nz(),
@@ -689,17 +686,12 @@ void DeviceDensity::mix(int iter) {
     // ng ~ 1e4, so the waste is noise, and one GEMM beats m(m+1)/2 dots each
     // of which would be its own launch.
     const cuDoubleComplex one{1.0, 0.0}, zero{0.0, 0.0};
-    check_cublas(cublasZgemm(blas_, CUBLAS_OP_C, CUBLAS_OP_N, depth_, depth_,
-                             ng0_, &one,
-                             reinterpret_cast<const cuDoubleComplex*>(
-                                 d_res_hist_),
-                             ng0_,
-                             reinterpret_cast<const cuDoubleComplex*>(
-                                 d_res_hist_),
-                             ng0_, &zero,
-                             reinterpret_cast<cuDoubleComplex*>(d_gram_),
-                             depth_),
-                 "Zgemm pulay gram");
+    check_cublas(
+        cublasZgemm(blas_, CUBLAS_OP_C, CUBLAS_OP_N, depth_, depth_, ng0_, &one,
+                    reinterpret_cast<const cuDoubleComplex*>(d_res_hist_), ng0_,
+                    reinterpret_cast<const cuDoubleComplex*>(d_res_hist_), ng0_,
+                    &zero, reinterpret_cast<cuDoubleComplex*>(d_gram_), depth_),
+        "Zgemm pulay gram");
 
     // ── SYNC POINT 1 (per iteration) ──
     // Stream-scoped D2H of depth² complex doubles (≤ 8²·16 B = 1 KB).
@@ -707,8 +699,8 @@ void DeviceDensity::mix(int iter) {
     // bit-for-bit with cpu::pw::pulay_mix, and its coefficients feed the very
     // next kernel. Async copy + stream sync fences only this chain — not the
     // default stream / whole device.
-    std::vector<std::complex<double>> gram(
-        static_cast<size_t>(depth_) * depth_);
+    std::vector<std::complex<double>> gram(static_cast<size_t>(depth_)
+                                           * depth_);
     ATV_CUDA_CHECK(cudaMemcpyAsync(gram.data(), d_gram_,
                                    gram.size() * sizeof(cufftDoubleComplex),
                                    cudaMemcpyDeviceToHost, stream_));
@@ -809,10 +801,9 @@ void DeviceDensity::fetch_g(GField which, std::complex<double>* out) const {
     // Diagnostic path: fence the density stream so the readback sees the
     // last stage's writes, then blocking D2H (not on the SCF hot path).
     ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
-    ATV_CUDA_CHECK(cudaMemcpy(out, src,
-                              static_cast<size_t>(ng0_)
-                                  * sizeof(cufftDoubleComplex),
-                              cudaMemcpyDeviceToHost));
+    ATV_CUDA_CHECK(cudaMemcpy(
+        out, src, static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+        cudaMemcpyDeviceToHost));
 }
 
 void DeviceDensity::fetch_veff_r(double* out) const {
@@ -842,7 +833,8 @@ void DeviceDensity::load_rho_r_scaled(const double* rho_r0, int nr0,
     std::vector<double> rho_r(static_cast<size_t>(nr_), 0.0);
     if (nr0 == nr_ && rho_r0 != nullptr) {
         for (int i = 0; i < nr_; ++i)
-            rho_r[static_cast<size_t>(i)] = rho_r0[static_cast<size_t>(i)] * scale;
+            rho_r[static_cast<size_t>(i)] =
+                rho_r0[static_cast<size_t>(i)] * scale;
     } else {
         double mean = 0.0;
         if (rho_r0 != nullptr && nr0 > 0) {
@@ -864,10 +856,10 @@ void DeviceDensity::load_rho_r_scaled(const double* rho_r0, int nr0,
     ATV_CUDA_CHECK(cudaGetLastError());
     // Keep rho_old in sync so a stray reduce() residual is not huge noise
     // (NSCF stress never mixes; residual is unused).
-    ATV_CUDA_CHECK(cudaMemcpyAsync(
-        d_rho_G_old_, d_rho_G_,
-        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
-        cudaMemcpyDeviceToDevice, stream_));
+    ATV_CUDA_CHECK(
+        cudaMemcpyAsync(d_rho_G_old_, d_rho_G_,
+                        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+                        cudaMemcpyDeviceToDevice, stream_));
 }
 
 void DeviceDensity::fetch_rho_spin_r(int spin, double* out) {
@@ -916,9 +908,10 @@ void DeviceDensity::load_rho_spin_r_scaled(const double* rho_a0,
             for (int i = 0; i < nr_; ++i)
                 rho_r[static_cast<size_t>(i)] = v;
         }
-        ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_r_acc_, rho_r.data(),
-                                       static_cast<size_t>(nr_) * sizeof(double),
-                                       cudaMemcpyHostToDevice, stream_));
+        ATV_CUDA_CHECK(
+            cudaMemcpyAsync(d_rho_r_acc_, rho_r.data(),
+                            static_cast<size_t>(nr_) * sizeof(double),
+                            cudaMemcpyHostToDevice, stream_));
         fft_.r2c(d_rho_r_acc_, d_half_);
         gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_rho_G,
                                 fft_.nx(), fft_.ny(), fft_.nz(),
@@ -933,10 +926,10 @@ void DeviceDensity::load_rho_spin_r_scaled(const double* rho_a0,
     load_one(rho_a0, d_rho_spin_G_[0]);
     load_one(rho_b0, d_rho_spin_G_[1]);
     sync_total_rho();
-    ATV_CUDA_CHECK(cudaMemcpyAsync(
-        d_rho_G_old_, d_rho_G_,
-        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
-        cudaMemcpyDeviceToDevice, stream_));
+    ATV_CUDA_CHECK(
+        cudaMemcpyAsync(d_rho_G_old_, d_rho_G_,
+                        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+                        cudaMemcpyDeviceToDevice, stream_));
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
@@ -1010,11 +1003,10 @@ __global__ void pw_resid_total_stage2(const double* __restrict__ partials,
 }
 
 /// Hartree + local-PP energy partials only (spin uses real-space e_xc_int).
-__global__ void
-pw_reduce_hl_kernel(const cufftDoubleComplex* __restrict__ rho,
-                    const cufftDoubleComplex* __restrict__ vh,
-                    const cufftDoubleComplex* __restrict__ vloc, int n_g,
-                    double* __restrict__ partials) {
+__global__ void pw_reduce_hl_kernel(const cufftDoubleComplex* __restrict__ rho,
+                                    const cufftDoubleComplex* __restrict__ vh,
+                                    const cufftDoubleComplex* __restrict__ vloc,
+                                    int n_g, double* __restrict__ partials) {
     __shared__ double s[kBlock];
     double acc0 = 0.0, acc1 = 0.0;
     for (int i = blockIdx.x * kBlock + threadIdx.x; i < n_g;
@@ -1128,10 +1120,10 @@ void DeviceDensity::exchange_correlation_spin() {
         double* div_buf[2] = {d_div_r_, d_div_dn_r_};
         for (int s = 0; s < 2; ++s) {
             double** flux = (s == 0) ? flux_up : flux_dn;
-            ATV_CUDA_CHECK(cudaMemsetAsync(
-                d_V_xc_spin_G_[s], 0,
-                static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
-                stream_));
+            ATV_CUDA_CHECK(cudaMemsetAsync(d_V_xc_spin_G_[s], 0,
+                                           static_cast<size_t>(ng0_)
+                                               * sizeof(cufftDoubleComplex),
+                                           stream_));
             for (int d = 0; d < 3; ++d) {
                 fft_.r2c(flux[d], d_half_);
                 gather_halfcomplex_to_g(
@@ -1187,10 +1179,10 @@ void DeviceDensity::assemble_veff_spin(int spin) {
             "cuda::pw::internal::DeviceDensity::assemble_veff_spin: spin must "
             "be 0 (α) or 1 (β)");
     // Copy V_xc_σ into the restricted V_xc slot, then the usual assembly.
-    ATV_CUDA_CHECK(cudaMemcpyAsync(
-        d_V_xc_G_, d_V_xc_spin_G_[spin],
-        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
-        cudaMemcpyDeviceToDevice, stream_));
+    ATV_CUDA_CHECK(
+        cudaMemcpyAsync(d_V_xc_G_, d_V_xc_spin_G_[spin],
+                        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+                        cudaMemcpyDeviceToDevice, stream_));
     assemble_veff();
 }
 
@@ -1218,10 +1210,10 @@ void DeviceDensity::mix_spin_linear() {
     // Snapshot total ρ before the mix for residual (CPU uses pre-mix total as
     // rho_G_old after rewriting rho_G from mixed spins — equivalent: residual
     // on total density change).
-    ATV_CUDA_CHECK(cudaMemcpyAsync(
-        d_rho_G_old_, d_rho_G_,
-        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
-        cudaMemcpyDeviceToDevice, stream_));
+    ATV_CUDA_CHECK(
+        cudaMemcpyAsync(d_rho_G_old_, d_rho_G_,
+                        static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
+                        cudaMemcpyDeviceToDevice, stream_));
 
     for (int s = 0; s < 2; ++s) {
         pw_linear_mix_spin_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(

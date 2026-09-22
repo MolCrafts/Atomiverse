@@ -203,8 +203,7 @@ int main() {
     }
 
     const auto t1 = clock::now();
-    const double wall_total =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_total = std::chrono::duration<double>(t1 - t0).count();
     // Fair wall vs CP2K twin (same NiO ENERGY_FORCE job, OMP=8): 13.24 s.
     constexpr double kT_cp2k = 13.24;
     const double ratio = wall_nio_s / kT_cp2k;

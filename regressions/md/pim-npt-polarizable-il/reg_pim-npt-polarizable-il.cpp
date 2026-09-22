@@ -38,8 +38,8 @@ namespace {
 // at d = 2.35 A): (-1)^(ix+iy+iz) charges, cation type 0 (alpha 0), anion
 // type 1 (alpha 3.0 A^3), disp[a] = 0.15*sin(1.7*(i+1) + 2.3*a).
 constexpr int kNc = 4;
-constexpr double kDPin = 2.35; // pin-leg spacing (compressed; big PIM signal)
-constexpr double kDNpt = 2.9;  // NPT-leg spacing (stretched; P0 < 0, tension)
+constexpr double kDPin = 2.35;  // pin-leg spacing (compressed; big PIM signal)
+constexpr double kDNpt = 2.9;   // NPT-leg spacing (stretched; P0 < 0, tension)
 constexpr double kMass = 100.0; // amu (heavy CG ions)
 
 cpu::Frame make_start_frame(double d) {
@@ -98,9 +98,9 @@ int main() {
     //    E_pol = -1.682169167852 eV on this same geometry — the 5.17x gap is
     //    the real-space truncation, see REFERENCE.md. Units: eV, eV, eV/A^3.
     const double E_pol_pin = -8.695749870555906;
-    const double W_pin[6] = {-10.66184373345355,  -12.125914211727187,
-                             -9.657852793291474,  -0.2325271422922529,
-                             -2.2469237837238,    1.375774440282161};
+    const double W_pin[6] = {-10.66184373345355, -12.125914211727187,
+                             -9.657852793291474, -0.2325271422922529,
+                             -2.2469237837238,   1.375774440282161};
     const double P_pol_pin = -0.013021203851134545;
     const double tol_E = 1e-8;
     const double tol_W = 1e-7;
@@ -181,8 +181,8 @@ int main() {
         cpu::Evaluate eval;
         eval.set_evaluator(cpu::PairLJCut{0.01, 3.0, pim_cut});
         eval.set_evaluator(cpu::PairCoulCut{pim_cut});
-        eval.set_evaluator(cpu::PimInducedDipole{pim_cut, {0.0, alpha_anion},
-                                                 thole_a, 1e-13, 1000});
+        eval.set_evaluator(cpu::PimInducedDipole{
+            pim_cut, {0.0, alpha_anion}, thole_a, 1e-13, 1000});
         eval.set_neighbor(cpu::md::NeighborList<>{pim_cut, 0.3});
         eval.build();
         eval.run(f);

@@ -161,6 +161,6 @@ TEST(HRemd, ReplicasAreThermostattedAtTheFixedTemperature) {
     // sqrt(2/Ndof) = 10% instantaneous spread at 189 DOF; 25% is a couple of
     // those and nowhere near where an unthermostatted replica lands.
     EXPECT_NEAR(t_meas, t0, 0.25 * t0)
-        << "compressed slot came back at " << t_meas
-        << " K for a " << t0 << " K setpoint";
+        << "compressed slot came back at " << t_meas << " K for a " << t0
+        << " K setpoint";
 }

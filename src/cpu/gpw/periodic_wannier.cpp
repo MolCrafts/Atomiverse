@@ -29,9 +29,9 @@ constexpr double kTwoPi = 6.283185307179586476925286766559;
 /// Neighbor of a k-point along one reciprocal axis by ±1 mesh step.
 struct Neighbor {
     int ik_nb = 0;
-    double wb = 0.0;                 ///< SMV weight [Å²]
-    std::array<double, 3> b_cart{};  ///< b Cartesian [1/Å]
-    std::array<double, 3> b_bohr{};  ///< b Cartesian [1/Bohr] for phase ops
+    double wb = 0.0;                ///< SMV weight [Å²]
+    std::array<double, 3> b_cart{}; ///< b Cartesian [1/Å]
+    std::array<double, 3> b_bohr{}; ///< b Cartesian [1/Bohr] for phase ops
 };
 
 /// SMV axis weights so 2 Σ_i w_i (b_i ⊗ b_i) ≈ I (same as PW path).
@@ -179,10 +179,8 @@ Cdouble prim_overlap_phase(const GridPrimitive& a, const GridPrimitive& b,
     const double Rp[3] = {(a.alpha * a.center[0] + b.alpha * b.center[0]) / p,
                           (a.alpha * a.center[1] + b.alpha * b.center[1]) / p,
                           (a.alpha * a.center[2] + b.alpha * b.center[2]) / p};
-    const double b2 =
-        bvec[0] * bvec[0] + bvec[1] * bvec[1] + bvec[2] * bvec[2];
-    const double phase =
-        bvec[0] * Rp[0] + bvec[1] * Rp[1] + bvec[2] * Rp[2];
+    const double b2 = bvec[0] * bvec[0] + bvec[1] * bvec[1] + bvec[2] * bvec[2];
+    const double phase = bvec[0] * Rp[0] + bvec[1] * Rp[1] + bvec[2] * Rp[2];
     const double damp = std::exp(-b2 / (4.0 * p));
     return Cdouble{s, 0.0} * damp * std::exp(-I * phase);
 }
@@ -215,16 +213,15 @@ void build_S_cross(const std::vector<GridBasisFunction>& basis,
                             e -= L[d] * std::nearbyint(e / L[d]);
                         d2 += e * e;
                     }
-                    best = std::max(
-                        best, std::abs(p.coeff * q.coeff)
-                                  * std::exp(-p.alpha * q.alpha
-                                             / (p.alpha + q.alpha) * d2));
+                    best = std::max(best,
+                                    std::abs(p.coeff * q.coeff)
+                                        * std::exp(-p.alpha * q.alpha
+                                                   / (p.alpha + q.alpha) * d2));
                 }
             if (best < screen)
                 continue;
-            const double reach =
-                radii[static_cast<std::size_t>(i)]
-                + radii[static_cast<std::size_t>(j)];
+            const double reach = radii[static_cast<std::size_t>(i)]
+                                 + radii[static_cast<std::size_t>(j)];
             const double reach2 = reach * reach;
             const double* ac = a[0].center;
             const double* bc = b[0].center;
@@ -289,8 +286,7 @@ void mo_overlap(const std::vector<Cdouble>& Ck, const std::vector<Cdouble>& Ckb,
 }
 
 void rotate_M(const std::vector<Cdouble>& M0, const std::vector<Cdouble>& Uk,
-              const std::vector<Cdouble>& Ukb, int n,
-              std::vector<Cdouble>& M) {
+              const std::vector<Cdouble>& Ukb, int n, std::vector<Cdouble>& M) {
     std::vector<Cdouble> T(static_cast<std::size_t>(n * n), Cdouble{0, 0});
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j) {
@@ -317,9 +313,9 @@ double safe_arg(Cdouble z) {
     return std::arg(z);
 }
 
-double total_spread_from_M(
-    const std::vector<std::vector<std::vector<Cdouble>>>& M_kb,
-    const std::vector<std::vector<Neighbor>>& nb, int n_wann) {
+double
+total_spread_from_M(const std::vector<std::vector<std::vector<Cdouble>>>& M_kb,
+                    const std::vector<std::vector<Neighbor>>& nb, int n_wann) {
     const int nk = static_cast<int>(M_kb.size());
     if (nk == 0)
         return 0.0;
@@ -339,7 +335,8 @@ double total_spread_from_M(
                 r2[static_cast<std::size_t>(n)] +=
                     inv_nk * e.wb * (phi * phi + 1.0 - mag2);
                 for (int a = 0; a < 3; ++a)
-                    r[static_cast<std::size_t>(n)][static_cast<std::size_t>(a)] -=
+                    r[static_cast<std::size_t>(n)]
+                     [static_cast<std::size_t>(a)] -=
                         inv_nk * e.wb * e.b_cart[static_cast<std::size_t>(a)]
                         * phi;
             }
@@ -458,9 +455,9 @@ void mv_gradient(const std::vector<std::vector<std::vector<Cdouble>>>& M_kb,
                     const Cdouble Rmn =
                         M[static_cast<std::size_t>(m * n_wann + n)]
                         * std::exp(-I * q[static_cast<std::size_t>(n)]);
-                    const Cdouble Rnm_c =
-                        std::conj(M[static_cast<std::size_t>(n * n_wann + m)]
-                                  * std::exp(-I * q[static_cast<std::size_t>(m)]));
+                    const Cdouble Rnm_c = std::conj(
+                        M[static_cast<std::size_t>(n * n_wann + m)]
+                        * std::exp(-I * q[static_cast<std::size_t>(m)]));
                     const Cdouble A = (Rmn - Rnm_c) / (2.0 * I);
                     const Cdouble S = 0.5 * (Rmn + Rnm_c);
                     const Cdouble H = A + S * q[static_cast<std::size_t>(n)];
@@ -472,8 +469,10 @@ void mv_gradient(const std::vector<std::vector<std::vector<Cdouble>>>& M_kb,
         std::vector<Cdouble> Ga = G;
         for (int m = 0; m < n_wann; ++m)
             for (int n = 0; n < n_wann; ++n) {
-                const Cdouble gmn = Ga[static_cast<std::size_t>(m * n_wann + n)];
-                const Cdouble gnm = Ga[static_cast<std::size_t>(n * n_wann + m)];
+                const Cdouble gmn =
+                    Ga[static_cast<std::size_t>(m * n_wann + n)];
+                const Cdouble gnm =
+                    Ga[static_cast<std::size_t>(n * n_wann + m)];
                 G[static_cast<std::size_t>(m * n_wann + n)] =
                     0.5 * (gmn - std::conj(gnm));
             }
@@ -523,7 +522,8 @@ void projection_U(const std::vector<Cdouble>& A, int n,
                         ? 1.0
                         : ((thr > 0 ? 1.0 : -1.0)
                            / (std::abs(thr) / apq_r
-                              + std::sqrt(1.0 + (thr / apq_r) * (thr / apq_r))));
+                              + std::sqrt(1.0
+                                          + (thr / apq_r) * (thr / apq_r))));
                 const double c = 1.0 / std::sqrt(1.0 + t * t);
                 const double s = t * c;
                 const Cdouble sp = s * std::exp(-I * phi);
@@ -605,8 +605,7 @@ std::vector<Cdouble> flatten_C_occ(const GpwResult& res, int ik, int nbas,
     if (!occ_stack.empty() && static_cast<int>(occ_stack.size()) > ik
         && !occ_stack[static_cast<std::size_t>(ik)].empty()) {
         const auto& raw = occ_stack[static_cast<std::size_t>(ik)];
-        const int ncol =
-            static_cast<int>(raw.size()) / std::max(nbas, 1);
+        const int ncol = static_cast<int>(raw.size()) / std::max(nbas, 1);
         const int nuse = std::min(n_wann, ncol);
         for (int mu = 0; mu < nbas; ++mu)
             for (int o = 0; o < nuse; ++o)
@@ -642,15 +641,17 @@ struct ChannelLoc {
 };
 
 /// Marzari–Vanderbilt SD on one occupied manifold (shared geometry, own C).
-ChannelLoc localize_channel(
-    const std::vector<std::vector<Cdouble>>& C, int n_wann, int nk,
-    const std::vector<std::array<double, 3>>& k_frac,
-    const std::vector<std::vector<Neighbor>>& nb,
-    const std::vector<GridBasisFunction>& basis,
-    const std::vector<double>& radii, const double cell[3], const int mimg[3],
-    double screen, const std::vector<std::array<double, 3>>& trials,
-    bool use_projection, double proj_alpha_ang, double a0, int max_iter,
-    double tol, double step) {
+ChannelLoc localize_channel(const std::vector<std::vector<Cdouble>>& C,
+                            int n_wann, int nk,
+                            const std::vector<std::array<double, 3>>& k_frac,
+                            const std::vector<std::vector<Neighbor>>& nb,
+                            const std::vector<GridBasisFunction>& basis,
+                            const std::vector<double>& radii,
+                            const double cell[3], const int mimg[3],
+                            double screen,
+                            const std::vector<std::array<double, 3>>& trials,
+                            bool use_projection, double proj_alpha_ang,
+                            double a0, int max_iter, double tol, double step) {
     const int nbas = static_cast<int>(basis.size());
     ChannelLoc ch;
     if (n_wann < 1)
@@ -685,8 +686,8 @@ ChannelLoc localize_channel(
     }
 
     if (static_cast<int>(trials.size()) != n_wann)
-        throw std::invalid_argument(
-            "PeriodicWannier: trial_centers size must equal n_wann per channel");
+        throw std::invalid_argument("PeriodicWannier: trial_centers size must "
+                                    "equal n_wann per channel");
 
     if (use_projection) {
         const double alpha_B =
@@ -721,21 +722,20 @@ ChannelLoc localize_channel(
         }
     }
 
-    auto rebuild_M =
-        [&](std::vector<std::vector<std::vector<Cdouble>>>& M_kb) {
-            M_kb.assign(static_cast<std::size_t>(nk), {});
-            for (int ik = 0; ik < nk; ++ik) {
-                const auto& neigh = nb[static_cast<std::size_t>(ik)];
-                M_kb[static_cast<std::size_t>(ik)].resize(neigh.size());
-                for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
-                    const int ikb = neigh[ib].ik_nb;
-                    rotate_M(M0[static_cast<std::size_t>(ik)][ib],
-                             U[static_cast<std::size_t>(ik)],
-                             U[static_cast<std::size_t>(ikb)], n_wann,
-                             M_kb[static_cast<std::size_t>(ik)][ib]);
-                }
+    auto rebuild_M = [&](std::vector<std::vector<std::vector<Cdouble>>>& M_kb) {
+        M_kb.assign(static_cast<std::size_t>(nk), {});
+        for (int ik = 0; ik < nk; ++ik) {
+            const auto& neigh = nb[static_cast<std::size_t>(ik)];
+            M_kb[static_cast<std::size_t>(ik)].resize(neigh.size());
+            for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
+                const int ikb = neigh[ib].ik_nb;
+                rotate_M(M0[static_cast<std::size_t>(ik)][ib],
+                         U[static_cast<std::size_t>(ik)],
+                         U[static_cast<std::size_t>(ikb)], n_wann,
+                         M_kb[static_cast<std::size_t>(ik)][ib]);
             }
-        };
+        }
+    };
 
     std::vector<std::vector<std::vector<Cdouble>>> M_kb;
     {
@@ -832,8 +832,8 @@ default_trials(int n_wann, const std::vector<GpwAtom>& atoms,
         const auto mids = diamond_bct_bond_midpoints(a_ang);
         return std::vector<std::array<double, 3>>(mids.begin(), mids.end());
     }
-    return std::vector<std::array<double, 3>>(
-        static_cast<std::size_t>(n_wann), std::array<double, 3>{0, 0, 0});
+    return std::vector<std::array<double, 3>>(static_cast<std::size_t>(n_wann),
+                                              std::array<double, 3>{0, 0, 0});
 }
 
 /// Bloch-phased AO–Gaussian overlap
@@ -881,11 +881,10 @@ Cdouble gaussian_ao_overlap_k(const GridBasisFunction& bf,
                     local += prim_overlap(pa, g);
                 if (local == 0.0)
                     continue;
-                const double arg =
-                    kTwoPi
-                    * (k_frac[0] * static_cast<double>(tx)
-                       + k_frac[1] * static_cast<double>(ty)
-                       + k_frac[2] * static_cast<double>(tz));
+                const double arg = kTwoPi
+                                   * (k_frac[0] * static_cast<double>(tx)
+                                      + k_frac[1] * static_cast<double>(ty)
+                                      + k_frac[2] * static_cast<double>(tz));
                 s += Cdouble{std::cos(arg), std::sin(arg)} * local;
             }
     return s;
@@ -945,7 +944,8 @@ std::array<std::array<double, 3>, 8> diamond_bct_bond_midpoints(double a_ang) {
                         // Avoid double-counting: for i==j require ordered
                         // lattice index; for i<j allow all images.
                         if (i == j) {
-                            const int key = (tx + 1) * 9 + (ty + 1) * 3 + (tz + 1);
+                            const int key =
+                                (tx + 1) * 9 + (ty + 1) * 3 + (tz + 1);
                             if (key > 13) // only half of self-image shell
                                 continue;
                         }
@@ -1006,10 +1006,10 @@ double mv_pair_weight_cubic(double b_len) {
     return 1.0 / (2.0 * b_len * b_len);
 }
 
-std::array<double, 3> center_from_diagonal_phases(
-    const std::vector<std::array<double, 3>>& b_cart,
-    const std::vector<double>& w_b,
-    const std::vector<std::complex<double>>& M_diag) {
+std::array<double, 3>
+center_from_diagonal_phases(const std::vector<std::array<double, 3>>& b_cart,
+                            const std::vector<double>& w_b,
+                            const std::vector<std::complex<double>>& M_diag) {
     if (b_cart.empty() || b_cart.size() != w_b.size()
         || b_cart.size() != M_diag.size())
         throw std::invalid_argument(
@@ -1101,9 +1101,8 @@ PeriodicWannier::compute(GpwDft& method,
     std::vector<double> radii(static_cast<std::size_t>(nbas));
     double rmax = 0.0;
     for (int i = 0; i < nbas; ++i) {
-        radii[static_cast<std::size_t>(i)] =
-            basis_function_radius(basis[static_cast<std::size_t>(i)],
-                                  method.eps_default);
+        radii[static_cast<std::size_t>(i)] = basis_function_radius(
+            basis[static_cast<std::size_t>(i)], method.eps_default);
         rmax = std::max(rmax, radii[static_cast<std::size_t>(i)]);
     }
     int mimg[3];
@@ -1141,10 +1140,10 @@ PeriodicWannier::compute(GpwDft& method,
 
         const auto trials =
             default_trials(n_ch, atoms, method.cell, trial_centers);
-        ChannelLoc ch = localize_channel(
-            C, n_ch, nk, res.k_frac, nb, basis, radii, method.cell, mimg,
-            screen, trials, use_projection, proj_alpha_ang, a0, max_iter, tol,
-            step);
+        ChannelLoc ch =
+            localize_channel(C, n_ch, nk, res.k_frac, nb, basis, radii,
+                             method.cell, mimg, screen, trials, use_projection,
+                             proj_alpha_ang, a0, max_iter, tol, step);
 
         for (std::size_t i = 0; i < ch.centers.size(); ++i) {
             out.centers.push_back(ch.centers[i]);
@@ -1159,8 +1158,8 @@ PeriodicWannier::compute(GpwDft& method,
     }
 
     if (static_cast<int>(out.centers.size()) != n_total)
-        throw std::runtime_error(
-            "PeriodicWannier::compute: center count mismatch after localization");
+        throw std::runtime_error("PeriodicWannier::compute: center count "
+                                 "mismatch after localization");
     return out;
 }
 

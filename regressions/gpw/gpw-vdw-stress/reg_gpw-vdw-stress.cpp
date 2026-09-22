@@ -93,8 +93,7 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const auto& r = energy.run(atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_scf =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_scf = std::chrono::duration<double>(t1 - t0).count();
 
     std::printf("E=%.10f Ha  E_disp=%.10f Ha  iters=%d  wall_scf=%.3f s  "
                 "conv=%d\n",
@@ -111,10 +110,8 @@ int main() {
     const auto t3 = std::chrono::steady_clock::now();
     const auto sfd = gpw_stress_fd(atoms, make_cfg(), h);
     const auto t4 = std::chrono::steady_clock::now();
-    const double wall_an =
-        std::chrono::duration<double>(t3 - t2).count();
-    const double wall_fd =
-        std::chrono::duration<double>(t4 - t3).count();
+    const double wall_an = std::chrono::duration<double>(t3 - t2).count();
+    const double wall_fd = std::chrono::duration<double>(t4 - t3).count();
 
     double max_diag_err = 0.0;
     const char* names[3] = {"xx", "yy", "zz"};
@@ -133,8 +130,9 @@ int main() {
 
     // Fixed-P analytic vs multi-SCF FD; residual SCF + O(h²) + nonlocal.
     constexpr double kAnFdTol = 5.0e-4; // Ha/Bohr³
-    std::printf("max|σ_an-σ_fd|=%.3e Ha/Bohr3  wall_an=%.3f s  wall_fd=%.3f s\n",
-                max_diag_err, wall_an, wall_fd);
+    std::printf(
+        "max|σ_an-σ_fd|=%.3e Ha/Bohr3  wall_an=%.3f s  wall_fd=%.3f s\n",
+        max_diag_err, wall_an, wall_fd);
     check(max_diag_err <= kAnFdTol, "analytic vs FD max diag (vdW-DF)");
 
     // Wiring: stress without nonlocal must differ if E_disp is large enough.

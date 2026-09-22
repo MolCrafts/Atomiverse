@@ -153,8 +153,7 @@ int main() {
     check(dE <= kETol, "A6 absolute e_tot within 1e-3 Ha of soft pin");
 
     const auto t1 = clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
     std::printf("wall=%.1f s\n", wall_s);
 
     if (g_fail) {

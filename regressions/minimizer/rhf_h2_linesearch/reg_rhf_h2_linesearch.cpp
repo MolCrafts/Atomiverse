@@ -27,8 +27,8 @@ int main() {
     // HF/STO-3G, H2 (1-Sigma-g+): r_e = 0.712 A. The four-digit value
     // 0.7122 A is the same table at full precision; the tolerance below is
     // an order of magnitude coarser than the table's own resolution.
-    const double r_ref = 0.7122;   // [A]
-    const double r_tol = 5.0e-3;   // [A]
+    const double r_ref = 0.7122; // [A]
+    const double r_tol = 5.0e-3; // [A]
     // Frozen iteration bound — see REFERENCE.md "Iteration bound". Measured
     // 5 iterations with a working StrongWolfe search over the nested RHF;
     // frozen at 5 + 2 headroom. The same case with a step-scaled search
@@ -36,10 +36,10 @@ int main() {
     // with the pre-fix replay (zeroed trials) the search accepted alpha = 0
     // and the geometry never moved at all.
     const int max_iterations = 7;
-    const int budget = 30;         // generous; hitting it is a failure
+    const int budget = 30; // generous; hitting it is a failure
 
     // ── H2, stretched 0.19 A past equilibrium ────────────────────────────
-    const double r0 = 0.90;        // [A]
+    const double r0 = 0.90; // [A]
     cpu::Frame frame(2);
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
@@ -59,7 +59,7 @@ int main() {
     // are converged well below the Wolfe tests' own resolution.
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.tol = 1e-10;               // [Hartree]
+    rhf.tol = 1e-10; // [Hartree]
     rhf.max_iter = 100;
 
     // Borrowed so the accepted-step trace survives the run (diagnostics).
@@ -122,7 +122,8 @@ int main() {
                     iterations, max_iterations);
         ok = false;
     }
-    if (!opt.converged() || reason.find("force_converged") == std::string::npos) {
+    if (!opt.converged()
+        || reason.find("force_converged") == std::string::npos) {
         std::printf("FAIL: expected a force_converged stop, got converged=%d "
                     "reason=%s\n",
                     (int)opt.converged(), reason.c_str());

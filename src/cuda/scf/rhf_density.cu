@@ -30,8 +30,7 @@ __global__ void write_rhf_energy_ev_kernel(prec_t* __restrict__ energy_ev,
                                            const double* __restrict__ d_V_nuc,
                                            double V_nuc_host, prec_t ha2ev) {
     const double vn = d_V_nuc ? *d_V_nuc : V_nuc_host;
-    const prec_t e_ha =
-        prec_t(0.5) * (*dot_HFP) + static_cast<prec_t>(vn);
+    const prec_t e_ha = prec_t(0.5) * (*dot_HFP) + static_cast<prec_t>(vn);
     *energy_ev = e_ha * ha2ev;
 }
 

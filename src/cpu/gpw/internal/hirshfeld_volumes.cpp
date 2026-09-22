@@ -87,9 +87,9 @@ hirshfeld_volume_ratios(const UniformGrid& grid, const std::vector<double>& rho,
             throw std::runtime_error("GPW Hirshfeld: V_free must be positive");
         const double v = V_eff[a] / v_free[a];
         if (!(v > 0.0) || !std::isfinite(v))
-            throw std::runtime_error(
-                "GPW Hirshfeld: non-positive or non-finite volume ratio for atom "
-                + std::to_string(a));
+            throw std::runtime_error("GPW Hirshfeld: non-positive or "
+                                     "non-finite volume ratio for atom "
+                                     + std::to_string(a));
         ratios[a] = v;
     }
     return ratios;

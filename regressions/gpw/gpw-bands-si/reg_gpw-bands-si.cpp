@@ -90,8 +90,7 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const BandsResult br = bands.compute(method, atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
     std::printf("gpw-bands-si: E=%.10f Ha  gap=%.6f eV  wall=%.3f s  "
                 "nk_path=%zu  conv=%d\n",
@@ -104,8 +103,10 @@ int main() {
           "E_tot vs CP2K (1e-3 Ha)");
 
     check(!br.eigenvalues_ha.empty(), "path eigenvalues present");
-    check(br.kfrac.size() == br.eigenvalues_ha.size(), "kfrac/evals size match");
-    check(static_cast<int>(br.kfrac.size()) == 16, "diamond path n_seg=4 → 16 k");
+    check(br.kfrac.size() == br.eigenvalues_ha.size(),
+          "kfrac/evals size match");
+    check(static_cast<int>(br.kfrac.size()) == 16,
+          "diamond path n_seg=4 → 16 k");
 
     for (const auto& row : br.eigenvalues_ha) {
         if (static_cast<int>(row.size()) != bands.n_bands) {
@@ -136,17 +137,17 @@ int main() {
     constexpr int kNOcc = 8;
     double min_local_ev = 1e300;
     for (const auto& row : br.eigenvalues_ha) {
-        const double lg =
-            (row[static_cast<std::size_t>(kNOcc)]
-             - row[static_cast<std::size_t>(kNOcc - 1)])
-            * kHa2Ev;
+        const double lg = (row[static_cast<std::size_t>(kNOcc)]
+                           - row[static_cast<std::size_t>(kNOcc - 1)])
+                          * kHa2Ev;
         if (lg < min_local_ev)
             min_local_ev = lg;
     }
     check(min_local_ev > 0.0, "min local gap > 0");
 
     const double gap_ev = br.gap_ha * kHa2Ev;
-    check(std::abs(gap_ev - kCp2kGapEv) <= kGapTolEv, "path gap vs CP2K (50 meV)");
+    check(std::abs(gap_ev - kCp2kGapEv) <= kGapTolEv,
+          "path gap vs CP2K (50 meV)");
 
     if (ik_g >= 0 && ik_x >= 0) {
         const auto& eg = br.eigenvalues_ha[static_cast<std::size_t>(ik_g)];

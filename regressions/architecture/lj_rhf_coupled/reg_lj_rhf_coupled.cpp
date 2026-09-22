@@ -46,23 +46,24 @@ int main() {
     //     Phys. 51, 2657 (1969)). Quoted to five decimals, hence known to
     //     +-5e-6 Ha = +-1.4e-4 eV -- that quantization, not our SCF, sets the
     //     absolute-energy tolerance below.
-    const double kB_ev = 8.617333262e-5;   // [eV/K]
-    const double eps = 10.22 * kB_ev;      // [eV]   = 8.806914593764e-4
-    const double sigma = 2.556;            // [A]
-    const double r_he = 2.3;               // [A] He-He separation
-    const double cutoff = 2.5 * sigma;     // [A] = 6.39
-    const double r_h2 = 0.7122;            // [A] H-H bond
-    const double sep = 30.0;               // [A] MM pair <-> QM molecule
-    const double L = 120.0;                // [A] cubic box edge
+    const double kB_ev = 8.617333262e-5; // [eV/K]
+    const double eps = 10.22 * kB_ev;    // [eV]   = 8.806914593764e-4
+    const double sigma = 2.556;          // [A]
+    const double r_he = 2.3;             // [A] He-He separation
+    const double cutoff = 2.5 * sigma;   // [A] = 6.39
+    const double r_h2 = 0.7122;          // [A] H-H bond
+    const double sep = 30.0;             // [A] MM pair <-> QM molecule
+    const double L = 120.0;              // [A] cubic box edge
 
-    const double e_rhf_ha = -1.11751;      // [Hartree] literature, as quoted
+    const double e_rhf_ha = -1.11751; // [Hartree] literature, as quoted
     const double e_rhf_ev =
         units::convert(e_rhf_ha, units::Energy::Hartree, units::Energy::eV);
 
     // LAMMPS-style shifted 12-6: V(r) - V(r_c). Closed form, no fitting.
     const double s6 = std::pow(sigma / r_he, 6.0);
     const double sc6 = std::pow(sigma / cutoff, 6.0);
-    const double e_lj = 4.0 * eps * (s6 * s6 - s6) - 4.0 * eps * (sc6 * sc6 - sc6);
+    const double e_lj =
+        4.0 * eps * (s6 * s6 - s6) - 4.0 * eps * (sc6 * sc6 - sc6);
     // F(r) = (24 eps / r) [2 (sigma/r)^12 - (sigma/r)^6], repulsive at 2.3 A.
     const double f_lj = 24.0 * eps / r_he * (2.0 * s6 * s6 - s6);
 
@@ -90,7 +91,8 @@ int main() {
     cpu::Frame frame(4);
     frame.span(kAtom_type)[0] = 2; // He: LJ site, ghost in the QM Hamiltonian
     frame.span(kAtom_type)[1] = 2;
-    frame.span(kAtom_type)[2] = 1; // H: QM, no LJ site (no diagonal in the table)
+    frame.span(kAtom_type)[2] =
+        1; // H: QM, no LJ site (no diagonal in the table)
     frame.span(kAtom_type)[3] = 1;
     frame.span(kAtom_mass)[0] = 4.0026;
     frame.span(kAtom_mass)[1] = 4.0026;
@@ -160,7 +162,8 @@ int main() {
     cpu::Evaluate both_swapped;
     both_swapped.set_evaluator(cpu::PairLJCut{{{2, 2, eps, sigma}}, cutoff});
     both_swapped.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3});
-    both_swapped.on(evaluate::Phase::evaluate).add_ref(rhf_before, /*order=*/-10);
+    both_swapped.on(evaluate::Phase::evaluate)
+        .add_ref(rhf_before, /*order=*/-10);
     both_swapped.set_threads(1);
     both_swapped.build();
     both_swapped.run(frame);
@@ -195,8 +198,9 @@ int main() {
     // ── Report ───────────────────────────────────────────────────────────
     const double want = e_lj + e_rhf_ev;
     std::printf("\n== ES x MM co-binding: one Evaluate pass, two sources ==\n");
-    std::printf("MM  He-He LJ(12,6) eps=%.12e eV sigma=%.4f A r=%.3f A rc=%.3f A\n",
-                eps, sigma, r_he, cutoff);
+    std::printf(
+        "MM  He-He LJ(12,6) eps=%.12e eV sigma=%.4f A r=%.3f A rc=%.3f A\n",
+        eps, sigma, r_he, cutoff);
     std::printf("QM  RHF/STO-3G H2 r=%.4f A, He pair ghosted (basis-only)\n\n",
                 r_h2);
     std::printf("  %-34s %20s %20s %12s\n", "quantity", "got [eV]", "want [eV]",
@@ -207,18 +211,21 @@ int main() {
                 mm_pair, e_lj, mm_pair - e_lj);
     std::printf("  %-34s %20.12f %20.12f %12.2e\n", "QM alone, kEnergy",
                 qm_energy, e_rhf_ev, qm_energy - e_rhf_ev);
-    std::printf("  %-34s %20.12f %20.12f %12.2e\n", "QM alone, kEnergyElectronic",
-                qm_electronic, e_rhf_ev, qm_electronic - e_rhf_ev);
+    std::printf("  %-34s %20.12f %20.12f %12.2e\n",
+                "QM alone, kEnergyElectronic", qm_electronic, e_rhf_ev,
+                qm_electronic - e_rhf_ev);
     std::printf("  %-34s %20.12f %20.12f %12.2e\n", "QM control (no MM sites)",
                 bare_energy, e_rhf_ev, bare_energy - e_rhf_ev);
     std::printf("  %-34s %20.12f %20.12f %12.2e   <== THE PIN\n",
                 "co-bound, kEnergy", co_energy, want, co_energy - want);
     std::printf("  %-34s %20.12f %20.12f %12.2e\n", "co-bound, kEnergyPair",
                 co_pair, e_lj, co_pair - e_lj);
-    std::printf("  %-34s %20.12f %20.12f %12.2e\n", "co-bound, kEnergyElectronic",
-                co_electronic, e_rhf_ev, co_electronic - e_rhf_ev);
-    std::printf("  %-34s %20.12f %20.12f %12.2e\n", "co-bound, QM binding first",
-                swap_energy, want, swap_energy - want);
+    std::printf("  %-34s %20.12f %20.12f %12.2e\n",
+                "co-bound, kEnergyElectronic", co_electronic, e_rhf_ev,
+                co_electronic - e_rhf_ev);
+    std::printf("  %-34s %20.12f %20.12f %12.2e\n",
+                "co-bound, QM binding first", swap_energy, want,
+                swap_energy - want);
     std::printf("\n  the contract tier (no literature precision enters):\n");
     std::printf("  %-34s %20.12f %20.12f %12.2e\n",
                 "kEnergy vs sum of per-term keys", co_energy,
@@ -234,14 +241,15 @@ int main() {
                 co_f_h0, qm_f_h, co_f_h0 - qm_f_h);
     std::printf("  SCF: converged=%d iterations=%d  E=%.12f Ha (quoted %.5f, "
                 "known to +-5e-6)\n",
-                (int)rhf_after.converged(), rhf_after.iterations(), qm_energy_ha,
-                e_rhf_ha);
-    std::printf("  Under the pre-esmm-contract-05 overwrite the co-bound total\n"
-                "  would have been %.12f eV (the QM term alone): the MM term\n"
-                "  %.12e eV = %.1f x the %.1e eV literature tolerance and\n"
-                "  %.2e x the %.1e eV contract tolerance would be erased.\n\n",
-                qm_energy, e_lj, std::fabs(e_lj) / e_tol, e_tol,
-                std::fabs(e_lj) / exact_tol, exact_tol);
+                (int)rhf_after.converged(), rhf_after.iterations(),
+                qm_energy_ha, e_rhf_ha);
+    std::printf(
+        "  Under the pre-esmm-contract-05 overwrite the co-bound total\n"
+        "  would have been %.12f eV (the QM term alone): the MM term\n"
+        "  %.12e eV = %.1f x the %.1e eV literature tolerance and\n"
+        "  %.2e x the %.1e eV contract tolerance would be erased.\n\n",
+        qm_energy, e_lj, std::fabs(e_lj) / e_tol, e_tol,
+        std::fabs(e_lj) / exact_tol, exact_tol);
 
     bool ok = true;
     auto check = [&ok](bool cond, const char* what, double got, double wanted,

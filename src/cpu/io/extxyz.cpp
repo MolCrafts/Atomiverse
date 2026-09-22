@@ -20,9 +20,9 @@ Frame load_extxyz(const std::string& path) {
     // Since molrs 0.13 this is `Result<Box<FrameRef>>`, so a readable-but-
     // corrupt file raises `rust::Error` instead of aborting the process; the
     // wrapper attaches the path, which the bridge message omits.
-    auto fref = internal::with_molrs_context(
-        "cpu::load_extxyz", path,
-        [&] { return molrs::xyz_read_first_frame({path.data(), path.size()}); });
+    auto fref = internal::with_molrs_context("cpu::load_extxyz", path, [&] {
+        return molrs::xyz_read_first_frame({path.data(), path.size()});
+    });
 
     // The periodic box is required: a missing `Lattice=` header leaves no
     // box, and materialize treats the box as optional. Fail loud rather

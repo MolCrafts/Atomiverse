@@ -48,20 +48,20 @@ namespace {
 // eps/kB = 120 K, sigma = 3.4 A, number density 0.02071 A^-3, T = 94.4 K.
 const double kEps = 120.0 * units::kB_ev_per_k; // 0.010341 eV
 constexpr double kSigma = 3.4;                  // [A]
-const double kCutoff = 2.5 * kSigma;      // 8.5 A, the textbook LJ cutoff
-constexpr double kSkin = 0.5;             // [A]
-constexpr double kNumberDensity = 0.02071; // [A^-3]
-constexpr double kTemperature = 94.4;      // [K]
-constexpr double kDt = 5.0;                // [fs]  (Rahman used 10 fs)
-constexpr int kNSide = 6;                  // 6^3 = 216 atoms
-constexpr int kNSteps = 2000;              // 10 ps
-constexpr int kNChunks = 20;               // sample the drift 20x along the way
+const double kCutoff = 2.5 * kSigma;            // 8.5 A, the textbook LJ cutoff
+constexpr double kSkin = 0.5;                   // [A]
+constexpr double kNumberDensity = 0.02071;      // [A^-3]
+constexpr double kTemperature = 94.4;           // [K]
+constexpr double kDt = 5.0;                     // [fs]  (Rahman used 10 fs)
+constexpr int kNSide = 6;                       // 6^3 = 216 atoms
+constexpr int kNSteps = 2000;                   // 10 ps
+constexpr int kNChunks = 20; // sample the drift 20x along the way
 constexpr unsigned kSeed = 12345u;
 
 // Gate thresholds (REFERENCE.md): the symplectic envelope and the
 // non-secular ratio — analytic properties, not golden values.
-constexpr double kBound = 1.0e-2;      // [eps/atom]
-constexpr double kSecularRatio = 4.0;  // 2nd half may not exceed 1st by >4x
+constexpr double kBound = 1.0e-2;     // [eps/atom]
+constexpr double kSecularRatio = 4.0; // 2nd half may not exceed 1st by >4x
 
 // Gate 3: frozen-lattice pair-energy parity, per atom [eV]. The two legs sum
 // the SAME shifted LJ pair terms at bit-identical positions in double
@@ -73,9 +73,7 @@ constexpr double kParityTolEvPerAtom = 1.0e-9;
 
 enum class Device { Cpu, Cuda };
 
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
@@ -174,7 +172,8 @@ int check_conservation(Device dev) {
     for (int c = 1; c <= kNChunks; ++c) {
         advance(kNSteps / kNChunks);
         const double e = frame.meta.get(kEnergy) + frame.meta.get(kKinetic);
-        const double drift = std::fabs(e - e0) / (double(n) * kEps); // [eps/atom]
+        const double drift =
+            std::fabs(e - e0) / (double(n) * kEps); // [eps/atom]
         if (drift > worst_drift)
             worst_drift = drift;
         if (c <= kNChunks / 2)
@@ -192,8 +191,9 @@ int check_conservation(Device dev) {
                 "dt = %.1f fs\n",
                 device_name(dev), n, kNumberDensity, kTemperature, kDt);
     std::printf("[%s]   E_total(0)          = %.6f eV\n", device_name(dev), e0);
-    std::printf("[%s]   worst |dE|/(N*eps)  = %.3e   want <= %.1e   [bounded]\n",
-                device_name(dev), worst_drift, kBound);
+    std::printf(
+        "[%s]   worst |dE|/(N*eps)  = %.3e   want <= %.1e   [bounded]\n",
+        device_name(dev), worst_drift, kBound);
     std::printf("[%s]   drift 1st half      = %.3e\n", device_name(dev),
                 drift_first_half);
     std::printf("[%s]   drift 2nd half      = %.3e   want <= %.1fx the 1st "
@@ -202,8 +202,9 @@ int check_conservation(Device dev) {
 
     bool ok = true;
     if (!(worst_drift <= kBound)) {
-        std::printf("FAIL [%s]: energy drift %.3e eps/atom exceeds bound %.1e\n",
-                    device_name(dev), worst_drift, kBound);
+        std::printf(
+            "FAIL [%s]: energy drift %.3e eps/atom exceeds bound %.1e\n",
+            device_name(dev), worst_drift, kBound);
         ok = false;
     }
     if (drift_first_half > 0.0

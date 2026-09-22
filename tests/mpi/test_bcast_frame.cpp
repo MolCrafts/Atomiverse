@@ -100,7 +100,7 @@ cpu::Frame make_reference_frame() {
     f.build_special_list();
 
     f.box = ATV::cpu::Box::orthorhombic(12.0, 15.5,
-                                           19.25); // orthorhombic, non-cubic
+                                        19.25); // orthorhombic, non-cubic
 
     f.meta.get(ATV::kEnergy) = -123.5;
     f.meta.get(ATV::kEnergyPair) = -100.25;

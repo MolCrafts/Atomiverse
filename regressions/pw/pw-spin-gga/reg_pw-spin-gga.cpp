@@ -73,9 +73,10 @@ int main() {
     pbe.build(frame);
     const auto& r_pbe = pbe.run(frame);
 
-    std::printf("PBE spin-GGA: E=%.10f Ha (%.10f Ry)  mag=%.6f  conv=%d iters=%d\n",
-                r_pbe.energy_ha, r_pbe.energy, r_pbe.magnetization,
-                (int)r_pbe.converged, r_pbe.iterations);
+    std::printf(
+        "PBE spin-GGA: E=%.10f Ha (%.10f Ry)  mag=%.6f  conv=%d iters=%d\n",
+        r_pbe.energy_ha, r_pbe.energy, r_pbe.magnetization,
+        (int)r_pbe.converged, r_pbe.iterations);
 
     bool ok = true;
     if (!std::isfinite(r_pbe.energy_ha) || !std::isfinite(r_pbe.energy)) {
@@ -116,8 +117,7 @@ int main() {
         std::printf("FAIL: LSDA spin twin failed\n");
         ok = false;
     }
-    const double de =
-        std::fabs(r_pbe.energy_ha - r_lsda.energy_ha);
+    const double de = std::fabs(r_pbe.energy_ha - r_lsda.energy_ha);
     std::printf("|E_PBE - E_LSDA| = %.6e Ha (floor %.1e)\n", de, de_floor_ha);
     if (de <= de_floor_ha) {
         std::printf("FAIL: GGA activation |ΔE| too small — spin path stuck "

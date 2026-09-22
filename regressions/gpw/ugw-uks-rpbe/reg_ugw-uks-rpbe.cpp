@@ -20,8 +20,8 @@
 
 namespace {
 
-using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::G0W0Result;
+using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GpwAtom;
 using ATV::cpu::gpw::GpwDft;
 using ATV::cpu::gpw::GpwResult;
@@ -171,7 +171,8 @@ int main() {
     const double wall_scf_r = std::chrono::duration<double>(t4 - t3).count();
     const double wall_gw_r = std::chrono::duration<double>(t5 - t4).count();
 
-    if (!gw_r.converged || !(gw_r.gap_ev > 0.0) || !std::isfinite(gw_r.gap_ev)) {
+    if (!gw_r.converged || !(gw_r.gap_ev > 0.0)
+        || !std::isfinite(gw_r.gap_ev)) {
         std::fprintf(stderr,
                      "FAIL: RKS G0W0@RPBE not usable for dual-gate "
                      "(conv=%d gap=%.6f)\n",
@@ -188,8 +189,7 @@ int main() {
         return 1;
     }
 
-    const double wall_total =
-        wall_scf_u + wall_gw_u + wall_scf_r + wall_gw_r;
+    const double wall_total = wall_scf_u + wall_gw_u + wall_scf_r + wall_gw_r;
 
     std::printf(
         "PASS: Γ UGW@UKS-RPBE Si2 (DZVP-MOLOPT-GTH, GTH-PBE-q4, 30 Ry)\n"

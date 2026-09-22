@@ -34,8 +34,8 @@ constexpr double kQTopPerfect = 4.354124119406114e-03; // [e] l_tf=0
 // ATV truncated xy-image elastance vs MW 2D-Ewald: ~1e-5 residual at 1280.
 constexpr double kRelTol = 0.01; // 1% dual-gate vs real MW pins
 
-constexpr double kEta = 1.0 / 0.56; // [1/Å] MetalWalls w = 0.56 Å
-constexpr double kA0 = 4.07;        // [Å] Au lattice constant
+constexpr double kEta = 1.0 / 0.56;            // [1/Å] MetalWalls w = 0.56 Å
+constexpr double kA0 = 4.07;                   // [Å] Au lattice constant
 constexpr double kD = 4.0 / (kA0 * kA0 * kA0); // [1/Å³] fixed-density twin
 constexpr double kPlane = kA0 / 2.0;
 constexpr double kLGap = 20.0;
@@ -52,10 +52,8 @@ void check(bool ok, const char* what) {
 
 /// Bulk FCC gold, 2x2x2 conventional cells (32 sites), fully periodic.
 cpu::Frame bulk_gold() {
-    const double basis[4][3] = {{0.0, 0.0, 0.0},
-                                {0.0, 0.5, 0.5},
-                                {0.5, 0.0, 0.5},
-                                {0.5, 0.5, 0.0}};
+    const double basis[4][3] = {
+        {0.0, 0.0, 0.0}, {0.0, 0.5, 0.5}, {0.5, 0.0, 0.5}, {0.5, 0.5, 0.0}};
     cpu::Frame f(32);
     int i = 0;
     for (int cx = 0; cx < 2; ++cx)
@@ -82,8 +80,12 @@ cpu::Frame gold_capacitor() {
     const double z_surf_bot = 5.0 + 2.0 * kPlane;
     const double z_surf_top = z_surf_bot + kLGap;
     const double z[6] = {
-        z_surf_bot - 2.0 * kPlane, z_surf_bot - kPlane, z_surf_bot,
-        z_surf_top, z_surf_top + kPlane, z_surf_top + 2.0 * kPlane,
+        z_surf_bot - 2.0 * kPlane,
+        z_surf_bot - kPlane,
+        z_surf_bot,
+        z_surf_top,
+        z_surf_top + kPlane,
+        z_surf_top + 2.0 * kPlane,
     };
     const int typ[6] = {1, 1, 1, 2, 2, 2};
     for (int i = 0; i < 6; ++i) {

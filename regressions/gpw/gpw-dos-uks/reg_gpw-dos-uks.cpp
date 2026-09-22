@@ -57,8 +57,8 @@ int main() {
     using cpu::gpw::DosResult;
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
-    using cpu::gpw::XcKind;
     using cpu::gpw::integrate_dos_to;
+    using cpu::gpw::XcKind;
 
     const double a = 5.43 * kA2B; // 10.26120 Bohr
     auto atoms = si_bct(a);
@@ -87,8 +87,7 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const DosResult dr = dos.compute(method, atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
     if (!dr.scf_converged) {
         std::printf("FAIL: SCF did not converge E=%g Ha\n", dr.scf_energy_ha);
@@ -170,28 +169,25 @@ int main() {
     // Total D ≈ Dα + Dβ on the shared energy grid; M=0 channels ~ half each.
     const double n_a =
         integrate_dos_to(dr.energy_ha, dr.dos_alpha, dr.e_vbm_ha);
-    const double n_b =
-        integrate_dos_to(dr.energy_ha, dr.dos_beta, dr.e_vbm_ha);
+    const double n_b = integrate_dos_to(dr.energy_ha, dr.dos_beta, dr.e_vbm_ha);
     if (!(std::abs((n_a + n_b) - dr.n_elec_to_vbm) <= kSpinIntTol)) {
-        std::printf(
-            "FAIL: n_alpha+n_beta=%.4f vs n_total=%.4f (tol %.2f)\n",
-            n_a + n_b, dr.n_elec_to_vbm, kSpinIntTol);
+        std::printf("FAIL: n_alpha+n_beta=%.4f vs n_total=%.4f (tol %.2f)\n",
+                    n_a + n_b, dr.n_elec_to_vbm, kSpinIntTol);
         return 1;
     }
     if (!(std::abs(n_a - 0.5 * kNelec) <= kNelecTol
           && std::abs(n_b - 0.5 * kNelec) <= kNelecTol)) {
-        std::printf(
-            "FAIL: per-spin occupied integral n_a=%.4f n_b=%.4f want ~8 ± %.1f\n",
-            n_a, n_b, kNelecTol);
+        std::printf("FAIL: per-spin occupied integral n_a=%.4f n_b=%.4f want "
+                    "~8 ± %.1f\n",
+                    n_a, n_b, kNelecTol);
         return 1;
     }
 
-    std::printf(
-        "PASS: gpw-dos-uks Si BCT a=5.43 A cutoff=150 Ry MP2x2x2 UKS  "
-        "E=%.12f Ha |dE_cp2k|=%.3e  gap=%.4f eV  n_elec_to_vbm=%.3f  "
-        "n_a=%.3f n_b=%.3f  nspin=%d n_kpts=%d n_bands=%d dmax=%.4f  "
-        "wall_scf+dos=%.3f s\n",
-        dr.scf_energy_ha, de, gap_ev, dr.n_elec_to_vbm, n_a, n_b, dr.nspin,
-        dr.n_kpts, dr.n_bands, dmax, wall_s);
+    std::printf("PASS: gpw-dos-uks Si BCT a=5.43 A cutoff=150 Ry MP2x2x2 UKS  "
+                "E=%.12f Ha |dE_cp2k|=%.3e  gap=%.4f eV  n_elec_to_vbm=%.3f  "
+                "n_a=%.3f n_b=%.3f  nspin=%d n_kpts=%d n_bands=%d dmax=%.4f  "
+                "wall_scf+dos=%.3f s\n",
+                dr.scf_energy_ha, de, gap_ev, dr.n_elec_to_vbm, n_a, n_b,
+                dr.nspin, dr.n_kpts, dr.n_bands, dmax, wall_s);
     return 0;
 }

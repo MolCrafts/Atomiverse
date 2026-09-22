@@ -9,10 +9,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/xl_bomd_force.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/xl_bomd_force.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -58,7 +58,8 @@ int main() {
         /*kinds*/ {O, H}, /*cutoff_ry*/ 200.0, /*max_iter*/ 60, /*tol*/ 1e-5,
         /*mix*/ 0.3, /*xc*/ cpu::gpw::XcKind::PBE, /*nonperiodic*/ true,
         /*compute_forces*/ true);
-    cpu::electronic::XlBomdForce eval{std::move(gpw_base), 5, cpu::electronic::XlBomdLinearized{}};
+    cpu::electronic::XlBomdForce eval{std::move(gpw_base), 5,
+                                      cpu::electronic::XlBomdLinearized{}};
     constexpr double dt = 0.5; // fs
     constexpr int n_prod = 4;
     constexpr int n_chunks = 2;

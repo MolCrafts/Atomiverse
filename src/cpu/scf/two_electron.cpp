@@ -20,7 +20,8 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-xt::xtensor<double, 4> internal::IntegralWorkspace::eri_dense(const ShellList& shells) {
+xt::xtensor<double, 4>
+internal::IntegralWorkspace::eri_dense(const ShellList& shells) {
     const int n = shells.n_basis;
     xt::xtensor<double, 4> ERI = xt::zeros<double>({n, n, n, n});
 

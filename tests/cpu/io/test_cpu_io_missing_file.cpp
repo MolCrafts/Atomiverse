@@ -85,9 +85,8 @@ TEST(CpuIoMissingFile, ZarrReaderMissingStoreThrows) {
 // die here. Since 0.13 it returns `Result`, cxx raises `rust::Error`, and
 // `load_extxyz` rethrows it as a `std::runtime_error` naming the path.
 TEST(CpuIoCorruptFile, LoadExtxyzCorruptFileThrowsWithPath) {
-    const auto path =
-        std::filesystem::temp_directory_path()
-        / ("atv_corrupt_" + std::to_string(::getpid()) + ".xyz");
+    const auto path = std::filesystem::temp_directory_path()
+                      / ("atv_corrupt_" + std::to_string(::getpid()) + ".xyz");
     {
         std::ofstream f(path);
         f << "not-a-number\ngarbage garbage\n@@@\n";

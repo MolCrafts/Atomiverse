@@ -46,9 +46,7 @@ constexpr int kExtraBands = 4;
 
 enum class Device { Cpu, Cuda };
 
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
@@ -120,8 +118,8 @@ int run_on_device(Device dev, const char* upf,
     double max_abs = 0.0;
     for (int ia = 0; ia < 2; ++ia) {
         for (int k = 0; k < 3; ++k) {
-            const double v =
-                forces[static_cast<std::size_t>(ia)][static_cast<std::size_t>(k)];
+            const double v = forces[static_cast<std::size_t>(ia)]
+                                   [static_cast<std::size_t>(k)];
             if (!std::isfinite(v)) {
                 std::fprintf(stderr, "FAIL [%s]: non-finite F[%d][%d]=%g\n",
                              device_name(dev), ia, k, v);
@@ -171,12 +169,10 @@ int main(int argc, char** argv) {
         double max_cpu = 0.0;
         for (int ia = 0; ia < 2; ++ia) {
             for (int k = 0; k < 3; ++k) {
-                const double fc =
-                    F_cpu[static_cast<std::size_t>(ia)]
-                         [static_cast<std::size_t>(k)];
-                const double fg =
-                    F_cuda[static_cast<std::size_t>(ia)]
-                          [static_cast<std::size_t>(k)];
+                const double fc = F_cpu[static_cast<std::size_t>(ia)]
+                                       [static_cast<std::size_t>(k)];
+                const double fg = F_cuda[static_cast<std::size_t>(ia)]
+                                        [static_cast<std::size_t>(k)];
                 max_diff = std::max(max_diff, std::abs(fc - fg));
                 max_cpu = std::max(max_cpu, std::abs(fc));
             }
@@ -194,8 +190,9 @@ int main(int argc, char** argv) {
                          max_diff, kForceTolEvA);
             return 1;
         }
-        std::printf("PASS [both]: max|ΔF|=%.6e eV/A  (tol=%g)  max|F_cpu|=%.6f\n",
-                    max_diff, kForceTolEvA, max_cpu);
+        std::printf(
+            "PASS [both]: max|ΔF|=%.6e eV/A  (tol=%g)  max|F_cpu|=%.6f\n",
+            max_diff, kForceTolEvA, max_cpu);
     }
     return 0;
 }

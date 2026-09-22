@@ -127,12 +127,12 @@ int main() {
             std::vector<std::array<double, 3>> pos_s = pos_bohr;
             for (auto& p : pos_s)
                 p[static_cast<std::size_t>(a)] *= (1.0 + eps);
-            e_pm[sgn] = cpu::gpw::dftd3_pbe_bj(
-                            Zv, pos_s, cell_s, /*periodic=*/true,
-                            cpu::gpw::D3Params{},
-                            cpu::gpw::kD3Cp2kPairCutoffBohr, kS6, kS8, kA1,
-                            kA2, /*cp2k_cn=*/true, /*calculate_c9=*/false)
-                            .energy;
+            e_pm[sgn] =
+                cpu::gpw::dftd3_pbe_bj(
+                    Zv, pos_s, cell_s, /*periodic=*/true, cpu::gpw::D3Params{},
+                    cpu::gpw::kD3Cp2kPairCutoffBohr, kS6, kS8, kA1, kA2,
+                    /*cp2k_cn=*/true, /*calculate_c9=*/false)
+                    .energy;
         }
         sigma_disp[a] = -(e_pm[0] - e_pm[1]) / (2.0 * hd) / vol;
     }
@@ -234,7 +234,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;
@@ -273,8 +274,8 @@ int main() {
     const double an_xx = san[0];
     const double fd_xx = sfd[0];
     const double anfd_err = std::abs(an_xx - fd_xx);
-    std::printf("  σ_xx  analytic=% .8e  fd=% .8e  |d|=%.3e Ha/Bohr3\n",
-                an_xx, fd_xx, anfd_err);
+    std::printf("  σ_xx  analytic=% .8e  fd=% .8e  |d|=%.3e Ha/Bohr3\n", an_xx,
+                fd_xx, anfd_err);
     std::printf("  σ_yy  analytic=% .8e   σ_zz  analytic=% .8e\n", san[1],
                 san[2]);
     if (!std::isfinite(an_xx) || !std::isfinite(fd_xx)) {

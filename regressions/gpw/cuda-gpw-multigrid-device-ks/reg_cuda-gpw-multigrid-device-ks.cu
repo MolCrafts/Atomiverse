@@ -8,8 +8,8 @@
 /// Oracle: CPU twin. See REFERENCE.md.
 
 #include <cmath>
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -61,7 +61,7 @@ void set_si_mg(Method& m, double a_bohr) {
     m.cutoff_ry = 40.0;
     m.ngrids = 4;
     m.rel_cutoff = 20.0; // < cutoff → true multi-level (make_multigrid gate)
-    m.n_occ = 8; // 4 atoms × 4 valence e⁻
+    m.n_occ = 8;         // 4 atoms × 4 valence e⁻
     m.max_iter = 60;
     m.tol = 1e-8;
     m.diis_depth = 6;
@@ -109,9 +109,10 @@ int main(int argc, char** argv) {
         m.build(atoms);
         const auto& r = m.run(atoms);
         if (!r.converged) {
-            std::fprintf(stderr,
-                         "FAIL: CPU Si MG SCF not converged (iters=%d E=%.12f)\n",
-                         r.iters, r.e_total);
+            std::fprintf(
+                stderr,
+                "FAIL: CPU Si MG SCF not converged (iters=%d E=%.12f)\n",
+                r.iters, r.e_total);
             return 1;
         }
         e_cpu = r.e_total;
@@ -126,9 +127,10 @@ int main(int argc, char** argv) {
         m.build(atoms);
         const auto& r = m.run(atoms);
         if (!r.converged) {
-            std::fprintf(stderr,
-                         "FAIL: CUDA Si MG SCF not converged (iters=%d  E=%.12f)\n",
-                         r.iters, r.e_total);
+            std::fprintf(
+                stderr,
+                "FAIL: CUDA Si MG SCF not converged (iters=%d  E=%.12f)\n",
+                r.iters, r.e_total);
             return 1;
         }
         e_cuda = r.e_total;
@@ -145,14 +147,12 @@ int main(int argc, char** argv) {
                          de);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-multigrid-device-ks  |dE|=%.3e  "
-            "(Si diamond Γ RKS PADE ngrids=4 rel=20; perf_exempt)\n",
-            de);
+        std::printf("PASS: cuda-gpw-multigrid-device-ks  |dE|=%.3e  "
+                    "(Si diamond Γ RKS PADE ngrids=4 rel=20; perf_exempt)\n",
+                    de);
     } else {
-        std::printf(
-            "PASS: cuda-gpw-multigrid-device-ks (--device=%s only)\n",
-            device.c_str());
+        std::printf("PASS: cuda-gpw-multigrid-device-ks (--device=%s only)\n",
+                    device.c_str());
     }
     return 0;
 }

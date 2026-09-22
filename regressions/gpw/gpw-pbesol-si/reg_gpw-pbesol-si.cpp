@@ -83,7 +83,7 @@ int main() {
     // 2026-07-26, CP2K 2026.1) — so the gate proves functional activation and
     // grid-path wiring, not absolute Si energetics.
     constexpr double kEnergyRef = -7.1730989307; // Ha
-    constexpr double kTol = 1.0e-3;               // Ha
+    constexpr double kTol = 1.0e-3;              // Ha
 
     const auto atoms = make_si2_atoms();
     const auto t0 = std::chrono::steady_clock::now();

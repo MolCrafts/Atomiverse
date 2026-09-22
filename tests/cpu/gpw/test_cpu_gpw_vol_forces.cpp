@@ -47,8 +47,8 @@ TEST(GpwVolForces, VolumeScaledMbdForcesMatchFd) {
     auto pos = water_dimer_bohr();
     const double cell0[3] = {0.0, 0.0, 0.0};
     const std::vector<double> v = {0.74, 0.65, 0.65, 0.72, 0.58, 0.58};
-    const auto r = mbd_rsscs_pbe(kZ, pos, cell0, /*periodic=*/false, 0.83, 6.0,
-                                 v);
+    const auto r =
+        mbd_rsscs_pbe(kZ, pos, cell0, /*periodic=*/false, 0.83, 6.0, v);
     ASSERT_EQ(r.forces.size(), 6u);
     EXPECT_TRUE(std::isfinite(r.energy));
     EXPECT_LT(r.energy, 0.0);
@@ -88,8 +88,8 @@ TEST(GpwVolForces, VolumeScaledTsForcesMatchFd) {
     auto pos = water_dimer_bohr();
     const double cell0[3] = {0.0, 0.0, 0.0};
     const std::vector<double> v = {0.74, 0.65, 0.65, 0.72, 0.58, 0.58};
-    const auto r = ts_pbe(kZ, pos, cell0, /*periodic=*/false, 94.2, 0.94, 20.0,
-                          v);
+    const auto r =
+        ts_pbe(kZ, pos, cell0, /*periodic=*/false, 94.2, 0.94, 20.0, v);
     ASSERT_EQ(r.forces.size(), 6u);
     EXPECT_TRUE(std::isfinite(r.energy));
     EXPECT_LT(r.energy, 0.0);

@@ -212,8 +212,8 @@ int main() {
         constexpr double kEcp2k = -184.929424563910;
         constexpr double kDFzCp2k = -8.35837089e-3 - (-7.27092413e-3);
         const double dFz = Fnio[0][2] - Fnio[1][2];
-        std::printf("B: E=%.9f Ha (CP2K %.9f, |dE|=%.3e)\n", rr.e_total,
-                    kEcp2k, std::fabs(rr.e_total - kEcp2k));
+        std::printf("B: E=%.9f Ha (CP2K %.9f, |dE|=%.3e)\n", rr.e_total, kEcp2k,
+                    std::fabs(rr.e_total - kEcp2k));
         std::printf("B: F_z(Ni)=% .6e F_z(O)=% .6e  dFz=% .6e "
                     "(CP2K net-Mulliken dFz=% .6e — model diff, diagnostic)\n",
                     Fnio[0][2], Fnio[1][2], dFz, kDFzCp2k);

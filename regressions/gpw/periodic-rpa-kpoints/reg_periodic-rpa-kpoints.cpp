@@ -80,8 +80,8 @@ int main() {
         std::fprintf(stderr,
                      "FAIL: 2k SCF (conv=%d n_kpts=%d C_k=%zu iters=%d "
                      "E=%.8f)\n",
-                     static_cast<int>(scf.converged), scf.n_kpts, scf.C_k.size(),
-                     scf.iters, scf.e_total);
+                     static_cast<int>(scf.converged), scf.n_kpts,
+                     scf.C_k.size(), scf.iters, scf.e_total);
         return 1;
     }
 

@@ -14,6 +14,7 @@
 #include "atomiverse/core/driver_template.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/solve.h"
 #include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/evaluate/evaluate.cuh"
@@ -22,7 +23,6 @@
 #include "atomiverse/cuda/scf/internal/density_builder.cuh"
 #include "atomiverse/cuda/scf/internal/eigen_solver.cuh"
 #include "atomiverse/cuda/scf/internal/hamiltonian.cuh"
-#include "atomiverse/core/units.h"
 #include "atomiverse/cuda/scf/internal/synthetic_scf_cycle.cuh"
 #include "atomiverse/cuda/scf/scf_evaluator.cuh"
 
@@ -61,10 +61,9 @@ TEST(SCF, SyntheticCycleIsNotADriver) {
         !std::is_base_of_v<Driver<ATV::evaluate::Phase, cuda::device_tag>,
                            cuda::scf::internal::SyntheticScfCycle>,
         "SyntheticScfCycle must not be a Driver<> subclass");
-    static_assert(
-        !std::is_base_of_v<cuda::Driver<ATV::scf::Phase>,
-                           cuda::scf::internal::SyntheticScfCycle>,
-        "SyntheticScfCycle must not be a cuda::Driver<scf::Phase>");
+    static_assert(!std::is_base_of_v<cuda::Driver<ATV::scf::Phase>,
+                                     cuda::scf::internal::SyntheticScfCycle>,
+                  "SyntheticScfCycle must not be a cuda::Driver<scf::Phase>");
     SUCCEED();
 }
 

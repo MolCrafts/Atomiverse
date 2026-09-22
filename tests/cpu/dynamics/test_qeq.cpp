@@ -91,8 +91,8 @@ TEST(QEq, EnergyClosedForm) {
     qeq.set_type(1, chi1, eta1).set_type(2, chi2, eta2);
     run_once(qeq, f);
     const double q = (chi2 - chi1) / (eta1 + eta2 - 2.0 / r);
-    const double e_expect = chi1 * q - chi2 * q
-                            + 0.5 * (eta1 + eta2) * q * q - q * q / r;
+    const double e_expect =
+        chi1 * q - chi2 * q + 0.5 * (eta1 + eta2) * q * q - q * q / r;
     EXPECT_NEAR(qeq.qeq_energy(), e_expect, 1e-12);
 }
 

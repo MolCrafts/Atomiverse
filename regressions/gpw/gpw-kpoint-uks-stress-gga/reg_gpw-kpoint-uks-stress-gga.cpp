@@ -152,8 +152,7 @@ int main() {
     }
 
     const auto t1 = clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
     std::printf("\nwall=%.1f s  global_max|dσ|=%.3e\n", wall_s,
                 global_max_diag_err);
 

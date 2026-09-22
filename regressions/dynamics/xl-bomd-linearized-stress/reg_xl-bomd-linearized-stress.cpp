@@ -43,9 +43,9 @@ constexpr int kProd = 4;
 // tools/cp2k_oracle/inputs/xl-bomd-linearized-stress (2026-07-31).
 // Source: PROJECT-1.stress [bar] / 2.94210107994716e8.
 // Voigt order per step: xx, yy, zz.
-constexpr double kCp2kSxx[kProd + 1] = {
-    1.998440567215e-04, 1.701541305617e-04, 1.087027341964e-04,
-    4.492363435060e-05, -8.093268435310e-06};
+constexpr double kCp2kSxx[kProd + 1] = {1.998440567215e-04, 1.701541305617e-04,
+                                        1.087027341964e-04, 4.492363435060e-05,
+                                        -8.093268435310e-06};
 constexpr double kCp2kSyy[kProd + 1] = {
     -7.010935192196e-08, -7.810856540460e-08, -9.651444883875e-08,
     -1.194770631848e-07, -1.406572107551e-07};
@@ -145,15 +145,14 @@ bool run_leg(const char* name, bool multi_k, bool linearized, LegResult& out) {
     const auto& s0 = eval.method().last_stress_ha_bohr3();
     for (int k = 0; k < 6; ++k) {
         if (!std::isfinite(s0[static_cast<std::size_t>(k)])) {
-            std::printf("FAIL[%s]: non-finite seed stress component %d\n",
-                        name, k);
+            std::printf("FAIL[%s]: non-finite seed stress component %d\n", name,
+                        k);
             return false;
         }
     }
     if (std::fabs(s0[3]) > 1e-14 || std::fabs(s0[4]) > 1e-14
         || std::fabs(s0[5]) > 1e-14) {
-        std::printf("FAIL[%s]: seed off-diagonal stress not exactly 0\n",
-                    name);
+        std::printf("FAIL[%s]: seed off-diagonal stress not exactly 0\n", name);
         return false;
     }
     // Frame kStress written [eV/Å³].
@@ -192,15 +191,15 @@ bool run_leg(const char* name, bool multi_k, bool linearized, LegResult& out) {
         const auto& sh = eval.method().last_stress_ha_bohr3();
         for (int k = 0; k < 6; ++k) {
             if (!std::isfinite(sh[static_cast<std::size_t>(k)])) {
-                std::printf("FAIL[%s]: non-finite stress step %d c %d\n",
-                            name, s + 1, k);
+                std::printf("FAIL[%s]: non-finite stress step %d c %d\n", name,
+                            s + 1, k);
                 return false;
             }
         }
         if (std::fabs(sh[3]) > 1e-14 || std::fabs(sh[4]) > 1e-14
             || std::fabs(sh[5]) > 1e-14) {
-            std::printf("FAIL[%s]: off-diagonal stress nonzero step %d\n",
-                        name, s + 1);
+            std::printf("FAIL[%s]: off-diagonal stress nonzero step %d\n", name,
+                        s + 1);
             return false;
         }
         if (!std::isfinite(frame.meta.get(kStress)[0])) {
@@ -220,16 +219,16 @@ bool run_leg(const char* name, bool multi_k, bool linearized, LegResult& out) {
                 return false;
             }
     }
-    out.wall_s = std::chrono::duration<double>(
-                     std::chrono::steady_clock::now() - t0)
-                     .count();
+    out.wall_s =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0)
+            .count();
 
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     out.r_hh = std::sqrt(dx * dx + dy * dy + dz * dz);
     return true;
 }
@@ -291,9 +290,8 @@ bool dual_gate_seed(double& id_err, double& an_fd_err) {
                           std::fabs(s_state[static_cast<std::size_t>(a)]
                                     - s_classic[static_cast<std::size_t>(a)]));
         an_fd_err =
-            std::max(an_fd_err,
-                     std::fabs(s_state[static_cast<std::size_t>(a)]
-                               - s_fd[static_cast<std::size_t>(a)]));
+            std::max(an_fd_err, std::fabs(s_state[static_cast<std::size_t>(a)]
+                                          - s_fd[static_cast<std::size_t>(a)]));
         std::printf("  dual axis %d  state=%.6e classic=%.6e fd=%.6e\n", a,
                     s_state[static_cast<std::size_t>(a)],
                     s_classic[static_cast<std::size_t>(a)],
@@ -369,13 +367,13 @@ int main() {
             std::max(worst_cp2k, std::fabs(A.stress_ha[k][0] - kCp2kSxx[s]));
         for (int a = 0; a < 3; ++a) {
             worst_ab = std::max(
-                worst_ab, std::fabs(B.stress_ha[k][static_cast<std::size_t>(a)]
-                                    - A.stress_ha[k][static_cast<std::size_t>(
-                                          a)]));
+                worst_ab,
+                std::fabs(B.stress_ha[k][static_cast<std::size_t>(a)]
+                          - A.stress_ha[k][static_cast<std::size_t>(a)]));
             worst_cd = std::max(
-                worst_cd, std::fabs(D.stress_ha[k][static_cast<std::size_t>(a)]
-                                    - C.stress_ha[k][static_cast<std::size_t>(
-                                          a)]));
+                worst_cd,
+                std::fabs(D.stress_ha[k][static_cast<std::size_t>(a)]
+                          - C.stress_ha[k][static_cast<std::size_t>(a)]));
         }
     }
     const double drift_b = worst_rel_drift(B);

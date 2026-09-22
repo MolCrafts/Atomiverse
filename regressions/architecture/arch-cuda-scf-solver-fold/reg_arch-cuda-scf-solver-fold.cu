@@ -58,7 +58,8 @@ int main() {
         return 1;
     }
     if (!rhf.last_scf_on_device()) {
-        std::fprintf(stderr, "FAIL: expected device s/p SCF path for H2/STO-3G\n");
+        std::fprintf(stderr,
+                     "FAIL: expected device s/p SCF path for H2/STO-3G\n");
         return 1;
     }
     if (!(err <= kTolHa)) {

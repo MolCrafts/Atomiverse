@@ -26,7 +26,8 @@ constexpr double kHa2Ev = 27.211386245988;
 
 // Offline CP2K 2026.1 pin (see REFERENCE.md) — replace after re-pin.
 // Placeholder updated by the pin run in this wave.
-constexpr double kECp2kHa = -15.802416412655166; // same twin class as gpw-kpoints-si
+constexpr double kECp2kHa =
+    -15.802416412655166; // same twin class as gpw-kpoints-si
 constexpr double kETolHa = 1e-3;
 constexpr double kNelec = 16.0; // 4 Si × 4 valence e⁻
 constexpr double kNelecTol = 1.5;
@@ -84,8 +85,7 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const DosResult dr = dos.compute(method, atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
     if (!dr.scf_converged) {
         std::printf("FAIL: SCF did not converge E=%g Ha\n", dr.scf_energy_ha);
@@ -145,11 +145,10 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: gpw-dos-si Si BCT a=5.43 A cutoff=150 Ry MP2x2x2  "
-        "E=%.12f Ha |dE_cp2k|=%.3e  gap=%.4f eV  n_elec_to_vbm=%.3f  "
-        "n_kpts=%d n_bands=%d dmax=%.4f  wall_scf+dos=%.3f s\n",
-        dr.scf_energy_ha, de, gap_ev, dr.n_elec_to_vbm, dr.n_kpts, dr.n_bands,
-        dmax, wall_s);
+    std::printf("PASS: gpw-dos-si Si BCT a=5.43 A cutoff=150 Ry MP2x2x2  "
+                "E=%.12f Ha |dE_cp2k|=%.3e  gap=%.4f eV  n_elec_to_vbm=%.3f  "
+                "n_kpts=%d n_bands=%d dmax=%.4f  wall_scf+dos=%.3f s\n",
+                dr.scf_energy_ha, de, gap_ev, dr.n_elec_to_vbm, dr.n_kpts,
+                dr.n_bands, dmax, wall_s);
     return 0;
 }

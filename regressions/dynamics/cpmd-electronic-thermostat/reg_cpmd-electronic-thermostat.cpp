@@ -9,10 +9,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/car_parrinello.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/car_parrinello.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -59,7 +59,9 @@ int main() {
         /*kinds*/ {O, H}, /*cutoff_ry*/ 200.0, /*max_iter*/ 60, /*tol*/ 1e-5,
         /*mix*/ 0.3, /*xc*/ cpu::gpw::XcKind::PBE, /*nonperiodic*/ true,
         /*compute_forces*/ true);
-    cpu::electronic::CarParrinello eval{std::move(gpw_base), 2000.0, cpu::electronic::ElectronicThermostat{1e-5, 50.0}};
+    cpu::electronic::CarParrinello eval{
+        std::move(gpw_base), 2000.0,
+        cpu::electronic::ElectronicThermostat{1e-5, 50.0}};
     constexpr int n_prod = 4;
     constexpr int n_chunks = 2;
     constexpr double drift_tol = 0.10;
@@ -137,9 +139,9 @@ int main() {
         const double eth = eval.last_electronic_thermostat_ev();
         if (!std::isfinite(pe) || !std::isfinite(ke) || !std::isfinite(te)
             || !std::isfinite(eth) || !(ke >= 0.0) || !(te >= 0.0)) {
-            std::printf(
-                "FAIL: non-finite energy at chunk %d PE=%g KE=%g Te=%g Eth=%g\n",
-                c, pe, ke, te, eth);
+            std::printf("FAIL: non-finite energy at chunk %d PE=%g KE=%g Te=%g "
+                        "Eth=%g\n",
+                        c, pe, ke, te, eth);
             return 1;
         }
         last_iters = eval.last_result().iters;

@@ -134,14 +134,14 @@ int main(int argc, char** argv) {
         }
         // High-spin pure triplet: <S2> ~ 2.
         if (!(s2_cuda > 1.5)) {
-            std::fprintf(stderr, "FAIL: CUDA <S2>=%.6f too small for high-spin\n",
+            std::fprintf(stderr,
+                         "FAIL: CUDA <S2>=%.6f too small for high-spin\n",
                          s2_cuda);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-uks-gamma  |dE|=%.3e  "
-            "(H2 Γ UKS PADE high-spin; perf_exempt small cell)\n",
-            de);
+        std::printf("PASS: cuda-gpw-uks-gamma  |dE|=%.3e  "
+                    "(H2 Γ UKS PADE high-spin; perf_exempt small cell)\n",
+                    de);
     } else if (run_cuda) {
         std::printf("PASS: cuda-gpw-uks-gamma (cuda-only) E=%.12f Ha\n",
                     e_cuda);

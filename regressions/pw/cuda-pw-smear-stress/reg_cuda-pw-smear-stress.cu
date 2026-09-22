@@ -53,9 +53,7 @@ constexpr int kExtraBands = 4;
 
 enum class Device { Cpu, Cuda };
 
-const char* device_name(Device d) {
-    return d == Device::Cuda ? "cuda" : "cpu";
-}
+const char* device_name(Device d) { return d == Device::Cuda ? "cuda" : "cpu"; }
 
 std::string parse_device_arg(int argc, char** argv) {
     std::string want = "both";
@@ -114,8 +112,8 @@ void configure_smear(PwT& pw, const char* upf) {
 int check_cubic(const char* tag, const std::array<double, 6>& s) {
     for (int v = 0; v < 6; ++v) {
         if (!std::isfinite(s[static_cast<std::size_t>(v)])) {
-            std::fprintf(stderr, "FAIL [%s]: non-finite stress[%d]=%g\n", tag, v,
-                         s[static_cast<std::size_t>(v)]);
+            std::fprintf(stderr, "FAIL [%s]: non-finite stress[%d]=%g\n", tag,
+                         v, s[static_cast<std::size_t>(v)]);
             return 1;
         }
     }

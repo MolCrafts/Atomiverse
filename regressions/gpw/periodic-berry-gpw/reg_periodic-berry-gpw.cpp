@@ -56,10 +56,10 @@ std::vector<GpwAtom> si_bct(double a_bohr, double delta_frac_z) {
 } // namespace
 
 int main() {
-    constexpr double kA = 5.43;         // lattice constant [Angstrom]
-    constexpr double kCutoffRy = 80.0;  // density grid [Ry]
-    constexpr double kDelta = 0.02;     // sublattice displacement [frac of c]
-    constexpr double kZval = 4.0;       // Si valence (GTH-q4)
+    constexpr double kA = 5.43;        // lattice constant [Angstrom]
+    constexpr double kCutoffRy = 80.0; // density grid [Ry]
+    constexpr double kDelta = 0.02;    // sublattice displacement [frac of c]
+    constexpr double kZval = 4.0;      // Si valence (GTH-q4)
 
     // Pins / tolerances (REFERENCE.md).
     constexpr double kIonTol = 1e-9; // ionic bookkeeping is exact

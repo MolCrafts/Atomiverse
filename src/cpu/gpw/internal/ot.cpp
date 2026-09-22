@@ -37,9 +37,8 @@ double sinc(double u) {
 
 /// Dense symmetric linear solve via eigendecomposition (SPD / PSD pseudo-inv).
 RealMatrix sym_inverse(const RealMatrix& M) {
-    return linalg::sym_function(M, [](double t) {
-        return t > 1e-10 ? 1.0 / t : 0.0;
-    });
+    return linalg::sym_function(
+        M, [](double t) { return t > 1e-10 ? 1.0 / t : 0.0; });
 }
 
 } // namespace
@@ -112,8 +111,9 @@ OtPrecondSingleInverse::OtPrecondSingleInverse(const RealMatrix& H,
             min_ev = std::min(min_ev, t);
     } catch (...) {
         try {
-            const RealMatrix Sh = linalg::sym_function(
-                S, [](double t) { return t > 1e-12 ? 1.0 / std::sqrt(t) : 0.0; });
+            const RealMatrix Sh = linalg::sym_function(S, [](double t) {
+                return t > 1e-12 ? 1.0 / std::sqrt(t) : 0.0;
+            });
             const RealMatrix Morth = dot(Sh, dot(M, Sh));
             auto [evals, evecs] = xt::linalg::eigh(Morth);
             (void)evecs;
@@ -195,9 +195,9 @@ void fill_diis_B_ge(RealMatrix& B, const std::vector<RealMatrix>& hist_g,
     for (int j = 0; j < m; ++j) {
         for (int i = 0; i <= j; ++i) {
             // B_ij = −s ⟨g_j, e_i⟩  (CP2K ot_diis_step default branch)
-            const double bij =
-                -s * frob(hist_g[static_cast<std::size_t>(j)],
-                          hist_e[static_cast<std::size_t>(i)]);
+            const double bij = -s
+                               * frob(hist_g[static_cast<std::size_t>(j)],
+                                      hist_e[static_cast<std::size_t>(i)]);
             B(i, j) = bij;
             B(j, i) = bij;
         }
@@ -257,8 +257,10 @@ RealMatrix OtOrbitalDiis::step(const RealMatrix& x, const RealMatrix& g,
                 do_sd = true;
                 break;
             }
-            x_new = x_new + ci * (hist_x_[static_cast<std::size_t>(i)]
-                                  + hist_e_[static_cast<std::size_t>(i)]);
+            x_new = x_new
+                    + ci
+                          * (hist_x_[static_cast<std::size_t>(i)]
+                             + hist_e_[static_cast<std::size_t>(i)]);
         }
         if (!do_sd) {
             // SAFE_DIIS: step must be a descent direction: g · Δx < 0

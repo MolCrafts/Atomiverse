@@ -62,8 +62,8 @@ class DIISMixer {
     prec_t* d_err_ = nullptr;    ///< Current error matrix [n * n].
     prec_t* d_temp1_ = nullptr;  ///< Scratch [n * n].
     prec_t* d_temp2_ = nullptr;  ///< Scratch [n * n].
-    prec_t* d_B_ = nullptr;      ///< Device B block [max_vectors * max_vectors].
-    prec_t* d_c_ = nullptr;      ///< Extrapolation coefficients [max_vectors].
+    prec_t* d_B_ = nullptr; ///< Device B block [max_vectors * max_vectors].
+    prec_t* d_c_ = nullptr; ///< Extrapolation coefficients [max_vectors].
     int n_ = 0;
     bool built_ = false;
 };

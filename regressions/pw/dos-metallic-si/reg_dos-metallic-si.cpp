@@ -94,8 +94,9 @@ int main() {
     const DosResult dr = dos.compute(method, frame);
 
     if (!dr.scf_converged) {
-        std::printf("FAIL: metallic DOS SCF did not converge scf_energy_ry=%g\n",
-                    dr.scf_energy_ry);
+        std::printf(
+            "FAIL: metallic DOS SCF did not converge scf_energy_ry=%g\n",
+            dr.scf_energy_ry);
         return 1;
     }
     if (!(std::isfinite(dr.e_fermi_ry)
@@ -130,13 +131,12 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: metallic DOS Si a=%.2f A ecut=%.0f Ry scf_k=%d  "
-        "FD degauss=%.3f Ry extra_bands=%d  e_fermi=%.6f Ry  "
-        "gap=%.4f Ry  n_elec_to_E_F=%.3f (ne=%.0f±%.0f)  "
-        "E_scf=%.6f Ry  bins=%zu\n",
-        kA, kEcutRy, kMeshScf, kDegaussRy, kExtraBands, dr.e_fermi_ry,
-        dr.gap_ry, dr.n_elec_to_vbm, kNelec, kNelecTol, dr.scf_energy_ry,
-        dr.dos.size());
+    std::printf("PASS: metallic DOS Si a=%.2f A ecut=%.0f Ry scf_k=%d  "
+                "FD degauss=%.3f Ry extra_bands=%d  e_fermi=%.6f Ry  "
+                "gap=%.4f Ry  n_elec_to_E_F=%.3f (ne=%.0f±%.0f)  "
+                "E_scf=%.6f Ry  bins=%zu\n",
+                kA, kEcutRy, kMeshScf, kDegaussRy, kExtraBands, dr.e_fermi_ry,
+                dr.gap_ry, dr.n_elec_to_vbm, kNelec, kNelecTol,
+                dr.scf_energy_ry, dr.dos.size());
     return 0;
 }

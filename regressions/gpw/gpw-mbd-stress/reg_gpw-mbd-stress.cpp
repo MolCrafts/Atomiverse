@@ -51,7 +51,7 @@ constexpr double kEDispTol = 1.0e-8;                  // Ha
 // Analytic fixed-P vs multi-SCF strain-FD. Same tier as reg_gpw-d4-stress
 // (2e-5): both differentiate the same functional, so the residual is the
 // fixed-P (frozen density-matrix) approximation plus SCF noise.
-constexpr double kAnFdTol = 2.0e-5;    // Ha/Bohr³
+constexpr double kAnFdTol = 2.0e-5;     // Ha/Bohr³
 constexpr double kOffDiagTol = 1.0e-12; // Ha/Bohr³ (must be exactly 0)
 constexpr double kDiagFloor = 1.0e-10;  // Ha/Bohr³ — stress must be nonzero
 // MBD must move the diagonal. The MBD contribution is ~1e-7 Ha/Bohr³ on this
@@ -164,7 +164,8 @@ int main() {
     method.mbd_k_mesh[0] = method.mbd_k_mesh[1] = method.mbd_k_mesh[2] = 2;
 
     const auto t2 = clock::now();
-    const auto sfd = cpu::gpw::internal::gpw_stress_fd_impl(atoms, method, 2e-3);
+    const auto sfd =
+        cpu::gpw::internal::gpw_stress_fd_impl(atoms, method, 2e-3);
     const auto t3 = clock::now();
     const double wall_fd_s = std::chrono::duration<double>(t3 - t2).count();
 
@@ -232,7 +233,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d "
                         "(got %.8e want %.8e)\n",
                         k, st[static_cast<std::size_t>(k)], expect);

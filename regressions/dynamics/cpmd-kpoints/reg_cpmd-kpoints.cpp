@@ -9,10 +9,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/car_parrinello.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/car_parrinello.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -147,9 +147,8 @@ int main() {
             return 1;
         }
         if (eval.last_result().iters != 0) {
-            std::printf(
-                "FAIL: production chunk %d re-ran SCF (iters=%d)\n", c,
-                eval.last_result().iters);
+            std::printf("FAIL: production chunk %d re-ran SCF (iters=%d)\n", c,
+                        eval.last_result().iters);
             return 1;
         }
         const double pe = frame.meta.get(kEnergy);
@@ -157,8 +156,9 @@ int main() {
         const double te = eval.last_electronic_ke_ev();
         if (!std::isfinite(pe) || !std::isfinite(ke) || !std::isfinite(te)
             || !(ke >= 0.0) || !(te >= 0.0)) {
-            std::printf("FAIL: non-finite energy at chunk %d PE=%g KE=%g Te=%g\n",
-                        c, pe, ke, te);
+            std::printf(
+                "FAIL: non-finite energy at chunk %d PE=%g KE=%g Te=%g\n", c,
+                pe, ke, te);
             return 1;
         }
         const double drift = std::fabs((pe + ke + te) - e0) / e_scale;
@@ -177,12 +177,12 @@ int main() {
         }
     }
 
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     const double rhh = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (!(rhh > rmin) || !(rhh < rmax)) {
         std::printf("FAIL: H–H bond out of window r=%.3f Å (%.2f–%.2f)\n", rhh,
@@ -196,8 +196,8 @@ int main() {
     std::printf(
         "CPMD multi-k H2 NVE (mu=%.0f, nk=%d): steps=%d  E0=%.6g eV  "
         "Ef=%.6g eV  worst |dE_cons|/scale=%.3e  tol=%.2f  rHH=%.3f Å\n",
-        mu_au, eval.last_result().n_kpts, n_prod, e0,
-        pe_f + ke_f + te_f, worst_drift, drift_tol, rhh);
+        mu_au, eval.last_result().n_kpts, n_prod, e0, pe_f + ke_f + te_f,
+        worst_drift, drift_tol, rhh);
     std::printf("  PE0=%.6g  KE0=%.6g  Te0=%.6g  PEf=%.6g  KEf=%.6g  "
                 "Tef=%.6g eV\n",
                 pe0, ke0, te0, pe_f, ke_f, te_f);
@@ -208,6 +208,7 @@ int main() {
         return 1;
     }
 
-    std::printf("PASS: cpmd-kpoints (multi-k Bloch CPMD NVE E_cons envelope)\n");
+    std::printf(
+        "PASS: cpmd-kpoints (multi-k Bloch CPMD NVE E_cons envelope)\n");
     return 0;
 }

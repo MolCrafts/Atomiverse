@@ -23,11 +23,11 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/cpmd_conserved.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
 #include "atomiverse/cpu/scf/uhf.h"
@@ -236,8 +236,7 @@ int main() {
     std::printf("CPMD O2 UHF triplet/STO-3G NVE (mu=%.0f a.u., dt=%.3g fs, "
                 "N_alpha/N_beta=%d/%d): seed+1+%d steps  E0=%.9g eV  "
                 "Ef=%.9g eV\n",
-                mu_au, dt, n_a, n_b, n_prod, e0,
-                frame.meta.get(kConserved));
+                mu_au, dt, n_a, n_b, n_prod, e0, frame.meta.get(kConserved));
     std::printf("  worst |dE_cons|/scale=%.3e (tol %.1e)  "
                 "worst |Ec-(PE+KE+Te+Eth)|=%.3e eV (tol %.1e)\n",
                 worst_drift, drift_tol, worst_sum_residual, sum_tol);

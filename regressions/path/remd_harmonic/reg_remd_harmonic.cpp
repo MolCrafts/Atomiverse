@@ -140,8 +140,8 @@ int main() {
                 a01, a12, a23, a_pred);
     std::printf("  measured: attempts=%d accepts=%d ratio=%.4f  (diff %+.4f = "
                 "%.2f SE, tol %.4f)\n",
-                attempts, accepts, ratio, ratio - a_pred,
-                (ratio - a_pred) / se, tol);
+                attempts, accepts, ratio, ratio - a_pred, (ratio - a_pred) / se,
+                tol);
 
     // Structural: even/odd alternation must exercise every edge.
     const int expect_attempts = (n_ex / 2) * 2 + (n_ex / 2) * 1;
@@ -178,8 +178,7 @@ int main() {
     const double r_final = std::sqrt(dx * dx + dy * dy + dz * dz);
     std::printf("  collapsed slot 0: r = %.4f A  (r0 %.2f, sigma(T0) %.4f)\n",
                 r_final, kR0, sigma0);
-    if (!std::isfinite(r_final)
-        || std::fabs(r_final - kR0) > 9.0 * sigma0) {
+    if (!std::isfinite(r_final) || std::fabs(r_final - kR0) > 9.0 * sigma0) {
         std::printf("FAIL: collapsed configuration is not a thermal sample of "
                     "the lowest-temperature slot\n");
         return 1;

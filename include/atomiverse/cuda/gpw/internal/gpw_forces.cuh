@@ -37,11 +37,11 @@ struct DeviceForceAtom {
 /// contiguous (function index, value) list. `g2a` maps full-grid index →
 /// cbg active index (−1 if inactive).
 struct DeviceCbgView {
-    const long* gidx = nullptr;    ///< active grid indices, length n_active.
+    const long* gidx = nullptr;       ///< active grid indices, length n_active.
     const std::size_t* off = nullptr; ///< CSR offsets, length n_active+1.
-    const int* fu = nullptr;       ///< function indices, length nnz.
-    const double* fv = nullptr;    ///< φ values, length nnz.
-    const int* g2a = nullptr;      ///< full-grid → cbg active (−1), length npts.
+    const int* fu = nullptr;          ///< function indices, length nnz.
+    const double* fv = nullptr;       ///< φ values, length nnz.
+    const int* g2a = nullptr; ///< full-grid → cbg active (−1), length npts.
     int n_active = 0;
     long npts = 0;
 };
@@ -61,13 +61,10 @@ struct DeviceCbgView {
 /// @param d_owner Device map AO index → atom index, length nb.
 /// @param d_forces Device forces 3*n_atoms [Hartree/Bohr], accumulated.
 /// @param stream  CUDA stream (null ⇒ default).
-void accumulate_grid_veff_forces_device(const CollocateGridDesc& grid,
-                                        const DeviceCbgView& cbg,
-                                        const DeviceCbgView& cbgd,
-                                        const double* d_veff, const double* d_P,
-                                        int nb, const int* d_owner,
-                                        double* d_forces,
-                                        cudaStream_t stream = nullptr);
+void accumulate_grid_veff_forces_device(
+    const CollocateGridDesc& grid, const DeviceCbgView& cbg,
+    const DeviceCbgView& cbgd, const double* d_veff, const double* d_P, int nb,
+    const int* d_owner, double* d_forces, cudaStream_t stream = nullptr);
 
 /// @brief Ionic core Hellmann–Feynman: F_A += w Σ_g V_es ∂n_c^A/∂R_A.
 ///

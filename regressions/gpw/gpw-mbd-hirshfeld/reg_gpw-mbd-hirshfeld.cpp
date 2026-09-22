@@ -52,7 +52,7 @@ int main() {
     // dependent E_disp still basis/cutoff sensitive at mHa level — hard gate
     // is this fixed product setting).
     constexpr double kEDispRef = -1.1479852469005181e-03; // Ha
-    constexpr double kTol = 1.0e-8;                        // Ha
+    constexpr double kTol = 1.0e-8;                       // Ha
 
     GpwDft gpw;
     const double L = 12.0 * kA2B;
@@ -96,7 +96,8 @@ int main() {
         return 1;
     }
     if (!std::isfinite(res.e_total) || res.e_disp >= 0.0) {
-        std::fprintf(stderr, "FAIL: e_total non-finite or E_disp not attractive\n");
+        std::fprintf(stderr,
+                     "FAIL: e_total non-finite or E_disp not attractive\n");
         return 1;
     }
 

@@ -29,8 +29,8 @@
 #include "atomiverse/cpu/gpw/internal/gpw_stress.h"
 
 #include <array>
-#include <complex>
 #include <cmath>
+#include <complex>
 #include <stdexcept>
 #include <vector>
 
@@ -38,21 +38,21 @@
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/dft_plus_u.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
-#include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
-#include "atomiverse/cpu/gpw/internal/ts_dispersion.h"
-#include "atomiverse/cpu/gpw/internal/xdm_dispersion.h"
-#include "atomiverse/cpu/scf/dftd4.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/kpoints.h"
 #include "atomiverse/cpu/gpw/internal/local_pp.h"
+#include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/mt_poisson.h"
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 #include "atomiverse/cpu/gpw/internal/periodic.h"
 #include "atomiverse/cpu/gpw/internal/poisson_fft.h"
+#include "atomiverse/cpu/gpw/internal/ts_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/vdw_df.h"
 #include "atomiverse/cpu/gpw/internal/xc_grid.h"
 #include "atomiverse/cpu/gpw/internal/xc_grid_gga.h"
+#include "atomiverse/cpu/gpw/internal/xdm_dispersion.h"
 #include "atomiverse/cpu/linalg/matrix.h"
+#include "atomiverse/cpu/scf/dftd4.h"
 
 namespace ATV {
 namespace cpu {
@@ -232,9 +232,9 @@ using Cplx = std::complex<double>;
 using CplxMatrix = internal::CplxMatrix;
 using KPoint = internal::KPoint;
 using KpointBasisGrid = internal::KpointBasisGrid;
-using internal::build_overlap_kinetic_k;
 using internal::add_nonlocal_kb_k;
 using internal::build_kpoint_basis_grid;
+using internal::build_overlap_kinetic_k;
 using internal::collocate_density_k;
 using internal::monkhorst_pack;
 
@@ -255,13 +255,13 @@ CplxMatrix density_from_occ(const std::vector<Cplx>& C_occ, int nb, int n_occ,
         return P;
     for (int i = 0; i < nb; ++i)
         for (int o = 0; o < n_occ; ++o) {
-            const Cplx ci = occ * C_occ[static_cast<std::size_t>(i) * n_occ
-                                       + static_cast<std::size_t>(o)];
+            const Cplx ci = occ
+                            * C_occ[static_cast<std::size_t>(i) * n_occ
+                                    + static_cast<std::size_t>(o)];
             for (int j = 0; j < nb; ++j)
-                P(i, j) +=
-                    ci
-                    * std::conj(C_occ[static_cast<std::size_t>(j) * n_occ
-                                      + static_cast<std::size_t>(o)]);
+                P(i, j) += ci
+                           * std::conj(C_occ[static_cast<std::size_t>(j) * n_occ
+                                             + static_cast<std::size_t>(o)]);
         }
     return P;
 }
@@ -276,14 +276,13 @@ CplxMatrix energy_weighted_from_occ(const std::vector<Cplx>& C_occ,
     for (int o = 0; o < n_occ; ++o) {
         const double w = occ * eps[static_cast<std::size_t>(o)];
         for (int i = 0; i < nb; ++i) {
-            const Cplx ci =
-                w * C_occ[static_cast<std::size_t>(i) * n_occ
-                          + static_cast<std::size_t>(o)];
+            const Cplx ci = w
+                            * C_occ[static_cast<std::size_t>(i) * n_occ
+                                    + static_cast<std::size_t>(o)];
             for (int j = 0; j < nb; ++j)
-                W(i, j) +=
-                    ci
-                    * std::conj(C_occ[static_cast<std::size_t>(j) * n_occ
-                                      + static_cast<std::size_t>(o)]);
+                W(i, j) += ci
+                           * std::conj(C_occ[static_cast<std::size_t>(j) * n_occ
+                                             + static_cast<std::size_t>(o)]);
         }
     }
     return W;
@@ -406,7 +405,8 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const std::vector<GridBasisFunction> basis = global_basis(atoms);
     const int nb = static_cast<int>(basis.size());
     const int nk = static_cast<int>(kpts.size());
-    if (static_cast<int>(P_k.size()) != nk || static_cast<int>(W_k.size()) != nk)
+    if (static_cast<int>(P_k.size()) != nk
+        || static_cast<int>(W_k.size()) != nk)
         throw std::invalid_argument(
             "gpw_stress analytic k: P_k/W_k size mismatch vs kpts");
     if (uks
@@ -437,21 +437,21 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     double e_kin = 0.0, e_nl = 0.0, e_pulay = 0.0;
     for (int ik = 0; ik < nk; ++ik) {
         const double wk = kpts[static_cast<std::size_t>(ik)].weight;
-        e_kin +=
-            wk * ctrace_re(P_k[static_cast<std::size_t>(ik)],
-                           T_k[static_cast<std::size_t>(ik)], nb);
-        e_nl += wk * ctrace_re(P_k[static_cast<std::size_t>(ik)],
-                               Vnl_k[static_cast<std::size_t>(ik)], nb);
-        e_pulay +=
-            wk * ctrace_re(W_k[static_cast<std::size_t>(ik)],
-                           S_k[static_cast<std::size_t>(ik)], nb);
+        e_kin += wk
+                 * ctrace_re(P_k[static_cast<std::size_t>(ik)],
+                             T_k[static_cast<std::size_t>(ik)], nb);
+        e_nl += wk
+                * ctrace_re(P_k[static_cast<std::size_t>(ik)],
+                            Vnl_k[static_cast<std::size_t>(ik)], nb);
+        e_pulay += wk
+                   * ctrace_re(W_k[static_cast<std::size_t>(ik)],
+                               S_k[static_cast<std::size_t>(ik)], nb);
     }
 
     UniformGrid grid = make_uniform_grid(cfg.cell, cfg.cutoff_ry);
     const long ng = grid.npts();
     const double wgt = grid.weight();
-    const KpointBasisGrid kbg =
-        build_kpoint_basis_grid(grid, basis, kpts, eps);
+    const KpointBasisGrid kbg = build_kpoint_basis_grid(grid, basis, kpts, eps);
 
     std::vector<double> rho(static_cast<std::size_t>(ng), 0.0);
     std::vector<double> rho_a, rho_b;
@@ -534,8 +534,8 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                                      : (cfg.xc == XcKind::BLYP
                                             ? xc_grid_blyp(grid, rho)
                                             : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw(
-                                                         grid, rho)
+                                                   ? xc_grid_optb88_vdw(grid,
+                                                                        rho)
                                                    : xc_grid_pade(grid,
                                                                   rho))))));
         e_xc = xc.e_xc;
@@ -614,11 +614,10 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         } else {
             const D3Result d3 =
                 cfg.d3 ? dftd3_pbe(Z, pos, cfg.cell, true, D3Params{},
-                                   cfg.d3_rcut_bohr,
-                                   cfg.d3_atm)
+                                   cfg.d3_rcut_bohr, cfg.d3_atm)
                        : dftd3_pbe_bj(Z, pos, cfg.cell, true, D3Params{},
-                                      cfg.d3_rcut_bohr, 1.0, 0.7875,
-                                      0.4289, 4.4407,
+                                      cfg.d3_rcut_bohr, 1.0, 0.7875, 0.4289,
+                                      4.4407,
                                       /*cp2k_cn=*/true, cfg.d3_atm);
             e_disp = d3.energy;
         }
@@ -653,8 +652,8 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 for (int k = 0; k < nbf; ++k) {
                     AoShellTag t;
                     t.atom = ia;
-                    t.l = (k < nl) ? a.basis_l[static_cast<std::size_t>(k)]
-                                   : -1;
+                    t.l =
+                        (k < nl) ? a.basis_l[static_cast<std::size_t>(k)] : -1;
                     tags.push_back(t);
                 }
             }
@@ -683,9 +682,9 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                         0.5 * P_k[static_cast<std::size_t>(ik)];
                 e_dftu = 2.0
                          * build_dftu_potential_k(
-                               Pspin_k, S_k, weights, /*ik_begin=*/0,
-                               /*ik_stride=*/1, /*allreduce_occ=*/false, tags,
-                               z_of_atom, slots, z_keys, V_discard);
+                             Pspin_k, S_k, weights, /*ik_begin=*/0,
+                             /*ik_stride=*/1, /*allreduce_occ=*/false, tags,
+                             z_of_atom, slots, z_keys, V_discard);
             }
         }
     }
@@ -899,8 +898,8 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                                      : (cfg.xc == XcKind::BLYP
                                             ? xc_grid_blyp(grid, rho)
                                             : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw(
-                                                         grid, rho)
+                                                   ? xc_grid_optb88_vdw(grid,
+                                                                        rho)
                                                    : xc_grid_pade(grid,
                                                                   rho))))));
         e_xc = xc.e_xc;
@@ -948,7 +947,7 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 throw std::runtime_error(
                     "gpw_stress MBD: hirshfeld requires SCF volume_ratios");
             e_disp = mbd_rsscs_pbe(Z, pos, cfg.cell, mbd_per, 0.83, 6.0, vr,
-                                  mbd_per ? cfg.mbd_k_mesh : nullptr)
+                                   mbd_per ? cfg.mbd_k_mesh : nullptr)
                          .energy;
         } else if (cfg.xdm) {
             constexpr double kRcutXdm = 50.0 * kAng2Bohr;
@@ -961,9 +960,8 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             if (cfg.hirshfeld && vr.empty())
                 throw std::runtime_error(
                     "gpw_stress TS: hirshfeld requires SCF volume_ratios");
-            e_disp =
-                ts_pbe(Z, pos, cfg.cell, periodic, kRcutTs, 0.94, 20.0, vr)
-                    .energy;
+            e_disp = ts_pbe(Z, pos, cfg.cell, periodic, kRcutTs, 0.94, 20.0, vr)
+                         .energy;
         } else if (cfg.d4) {
             const double s9 = cfg.d4_atm ? 1.0 : 0.0;
             e_disp = cpu::scf::dftd4_energy(
@@ -974,11 +972,10 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         } else {
             const D3Result d3 =
                 cfg.d3 ? dftd3_pbe(Z, pos, cfg.cell, periodic, D3Params{},
-                                   cfg.d3_rcut_bohr,
-                                   cfg.d3_atm)
+                                   cfg.d3_rcut_bohr, cfg.d3_atm)
                        : dftd3_pbe_bj(Z, pos, cfg.cell, periodic, D3Params{},
-                                      cfg.d3_rcut_bohr, 1.0, 0.7875,
-                                      0.4289, 4.4407,
+                                      cfg.d3_rcut_bohr, 1.0, 0.7875, 0.4289,
+                                      4.4407,
                                       /*cp2k_cn=*/true, cfg.d3_atm);
             e_disp = d3.energy;
         }
@@ -1012,14 +1009,14 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 for (int k = 0; k < nbf; ++k) {
                     AoShellTag t;
                     t.atom = ia;
-                    t.l = (k < nl) ? a.basis_l[static_cast<std::size_t>(k)]
-                                   : -1;
+                    t.l =
+                        (k < nl) ? a.basis_l[static_cast<std::size_t>(k)] : -1;
                     tags.push_back(t);
                 }
             }
             if (uks) {
-                e_dftu += dft_plus_u_energy(P, Smat, tags, z_of_atom, slots,
-                                            z_keys);
+                e_dftu +=
+                    dft_plus_u_energy(P, Smat, tags, z_of_atom, slots, z_keys);
                 e_dftu += dft_plus_u_energy(*P_beta, Smat, tags, z_of_atom,
                                             slots, z_keys);
             } else {
@@ -1088,10 +1085,10 @@ std::array<double, 6> gpw_stress_analytic_impl(
     return gpw_stress_at_state_impl(atoms, method, scf, h, axes);
 }
 
-std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms,
-                                               const GpwDft& method,
-                                               const GpwResult& scf, double h,
-                                               const std::array<bool, 3>& axes) {
+std::array<double, 6>
+gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms,
+                         const GpwDft& method, const GpwResult& scf, double h,
+                         const std::array<bool, 3>& axes) {
     validate_stress_args(atoms, h, axes, "gpw_stress");
 
     const double vol = method.cell[0] * method.cell[1] * method.cell[2];
@@ -1128,7 +1125,8 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
             throw std::runtime_error(
                 "gpw_stress analytic k: missing C_occ_k / eps_k payload");
         kpts = resolve_kpts(method);
-        if (static_cast<int>(kpts.size()) != static_cast<int>(scf.C_occ_k.size()))
+        if (static_cast<int>(kpts.size())
+            != static_cast<int>(scf.C_occ_k.size()))
             throw std::runtime_error(
                 "gpw_stress analytic k: k-point count mismatch vs C_occ_k");
         const int nk = static_cast<int>(kpts.size());
@@ -1160,25 +1158,25 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
                     "gpw_stress analytic k: empty C_k under smear");
         } else if (n_occ_a > 0) {
             nb = static_cast<int>(scf.C_occ_k[0].size()) / n_occ_a;
-            if (nb * n_occ_a != static_cast<int>(scf.C_occ_k[0].size()) || nb < 1)
+            if (nb * n_occ_a != static_cast<int>(scf.C_occ_k[0].size())
+                || nb < 1)
                 throw std::runtime_error(
                     "gpw_stress analytic k: C_occ_k shape is not nb * n_occ");
         } else if (uks && n_occ_b > 0 && !scf.C_occ_k_beta.empty()) {
             nb = static_cast<int>(scf.C_occ_k_beta[0].size()) / n_occ_b;
-            if (nb * n_occ_b
-                    != static_cast<int>(scf.C_occ_k_beta[0].size())
+            if (nb * n_occ_b != static_cast<int>(scf.C_occ_k_beta[0].size())
                 || nb < 1)
-                throw std::runtime_error(
-                    "gpw_stress analytic k: C_occ_k_beta shape is not nb * n_beta");
+                throw std::runtime_error("gpw_stress analytic k: C_occ_k_beta "
+                                         "shape is not nb * n_beta");
         } else {
-            throw std::runtime_error(
-                "gpw_stress analytic k: cannot recover AO dimension from C_occ");
+            throw std::runtime_error("gpw_stress analytic k: cannot recover AO "
+                                     "dimension from C_occ");
         }
         if (uks
             && (static_cast<int>(scf.C_occ_k_beta.size()) != nk
                 || static_cast<int>(scf.eps_k_beta.size()) != nk))
-            throw std::runtime_error(
-                "gpw_stress analytic k: missing C_occ_k_beta / eps_k_beta for UKS");
+            throw std::runtime_error("gpw_stress analytic k: missing "
+                                     "C_occ_k_beta / eps_k_beta for UKS");
         P_k.resize(static_cast<std::size_t>(nk));
         W_k.resize(static_cast<std::size_t>(nk));
         if (uks) {
@@ -1216,8 +1214,8 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
                     if (static_cast<int>(
                             scf.eps_k[static_cast<std::size_t>(ik)].size())
                         < n_occ_a)
-                        throw std::runtime_error(
-                            "gpw_stress analytic k: eps_k shorter than n_alpha");
+                        throw std::runtime_error("gpw_stress analytic k: eps_k "
+                                                 "shorter than n_alpha");
                     if (n_occ_b > 0
                         && static_cast<int>(
                                scf.eps_k_beta[static_cast<std::size_t>(ik)]
@@ -1237,13 +1235,15 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
                     Pb_k[static_cast<std::size_t>(ik)] =
                         n_occ_b > 0
                             ? density_from_occ(
-                                  scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                                  scf.C_occ_k_beta[static_cast<std::size_t>(
+                                      ik)],
                                   nb, n_occ_b, /*occ=*/1.0)
                             : CplxMatrix(xt::zeros<Cplx>({nb, nb}));
                     CplxMatrix Wb =
                         n_occ_b > 0
                             ? energy_weighted_from_occ(
-                                  scf.C_occ_k_beta[static_cast<std::size_t>(ik)],
+                                  scf.C_occ_k_beta[static_cast<std::size_t>(
+                                      ik)],
                                   scf.eps_k_beta[static_cast<std::size_t>(ik)],
                                   nb, n_occ_b, /*occ=*/1.0)
                             : CplxMatrix(xt::zeros<Cplx>({nb, nb}));
@@ -1254,8 +1254,8 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
                 }
             } else if (frac) {
                 const auto& f = scf.f_k[static_cast<std::size_t>(ik)];
-                P_k[static_cast<std::size_t>(ik)] = density_from_frac(
-                    scf.C_k[static_cast<std::size_t>(ik)], f);
+                P_k[static_cast<std::size_t>(ik)] =
+                    density_from_frac(scf.C_k[static_cast<std::size_t>(ik)], f);
                 W_k[static_cast<std::size_t>(ik)] = energy_weighted_from_frac(
                     scf.C_k[static_cast<std::size_t>(ik)],
                     scf.eps_k[static_cast<std::size_t>(ik)], f);
@@ -1315,8 +1315,7 @@ std::array<double, 6> gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms
             || static_cast<int>(scf.C.shape(1)) < n_occ)
             throw std::runtime_error(
                 "gpw_stress analytic: converged C/eps missing for W build");
-        W_gamma =
-            energy_weighted_gamma(scf.C, scf.eps, n_occ, /*occ=*/2.0);
+        W_gamma = energy_weighted_gamma(scf.C, scf.eps, n_occ, /*occ=*/2.0);
     }
 
     std::array<double, 6> stress{};

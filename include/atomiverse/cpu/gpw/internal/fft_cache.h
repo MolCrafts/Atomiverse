@@ -16,8 +16,8 @@
 #pragma once
 
 #include <cstddef>
-#include <new>
 #include <fftw3.h>
+#include <new>
 
 namespace ATV {
 namespace cpu {

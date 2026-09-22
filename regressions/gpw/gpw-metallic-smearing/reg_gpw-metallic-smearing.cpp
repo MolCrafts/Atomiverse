@@ -32,8 +32,7 @@ void check(bool ok, const char* what) {
 /// BCC conventional cubic: 2 Na at (0,0,0) and (½,½,½).
 std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
     using namespace ATV;
-    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na,
-                                      "DZVP-MOLOPT-SR-GTH");
+    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH");
     const cpu::gpw::GthPotential pNa(molrs::Element::Na, "GTH-PBE-q9");
     const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
     std::vector<cpu::gpw::GpwAtom> atoms;
@@ -84,14 +83,12 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const auto& r = m.run(atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
-    std::printf(
-        "F=%.10f Ha  e_fermi=%.6f Ha  n_elec=%.8f  e_entropy=%.6e Ha  "
-        "iters=%d  wall=%.3f s  converged=%d\n",
-        r.e_total, r.e_fermi, r.n_elec_occ, r.e_entropy, r.iters, wall_s,
-        r.converged ? 1 : 0);
+    std::printf("F=%.10f Ha  e_fermi=%.6f Ha  n_elec=%.8f  e_entropy=%.6e Ha  "
+                "iters=%d  wall=%.3f s  converged=%d\n",
+                r.e_total, r.e_fermi, r.n_elec_occ, r.e_entropy, r.iters,
+                wall_s, r.converged ? 1 : 0);
 
     check(r.converged, "R1 SCF converged");
     check(std::isfinite(r.e_total) && std::isfinite(r.e_fermi),

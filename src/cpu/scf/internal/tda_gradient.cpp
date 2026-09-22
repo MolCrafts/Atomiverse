@@ -183,9 +183,11 @@ std::vector<double> tda_analytic_forces(const Frame& frame,
 
             const double x0 = coords[d][A];
             coords[d][A] = x0 + h;
-            internal::IntegralWorkspace pp{fwork, basis, charge, /*compute_eri=*/true};
+            internal::IntegralWorkspace pp{fwork, basis, charge,
+                                           /*compute_eri=*/true};
             coords[d][A] = x0 - h;
-            internal::IntegralWorkspace pm{fwork, basis, charge, /*compute_eri=*/true};
+            internal::IntegralWorkspace pm{fwork, basis, charge,
+                                           /*compute_eri=*/true};
             coords[d][A] = x0;
 
             // C(R±h) ≈ C0 ± dC * h_bohr

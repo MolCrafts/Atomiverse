@@ -138,9 +138,9 @@ int main() {
         std::printf("  ok: A2 E_disp pin within %.1e Ha\n", kTol);
     }
 
-    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        clock::now() - t0)
-                        .count();
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0)
+            .count();
     std::printf("WALL_MS=%ld  fails=%d\n", static_cast<long>(ms), g_fail);
     if (g_fail != 0) {
         std::fprintf(stderr, "FAILED %d gate(s)\n", g_fail);

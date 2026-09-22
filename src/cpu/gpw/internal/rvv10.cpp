@@ -42,8 +42,7 @@ void init_p_spline_d2(const double* x, int n, std::vector<double>& d2) {
             const double temp1 =
                 (x[index] - x[index - 1]) / (x[index + 1] - x[index - 1]);
             const double temp2 =
-                temp1 * d2[static_cast<std::size_t>(P_i * n + index - 1)]
-                + 2.0;
+                temp1 * d2[static_cast<std::size_t>(P_i * n + index - 1)] + 2.0;
             d2[static_cast<std::size_t>(P_i * n + index)] =
                 (temp1 - 1.0) / temp2;
             temp[static_cast<std::size_t>(index)] =
@@ -70,8 +69,8 @@ void init_p_spline_d2(const double* x, int n, std::vector<double>& d2) {
 }
 
 /// @brief Evaluate all p_α(q) and dp_α/dq via cubic spline on Kronecker basis.
-void palpha_and_deriv_at_q(const double* x, const std::vector<double>& d2, int n,
-                           double q, double* p_out, double* dp_out) {
+void palpha_and_deriv_at_q(const double* x, const std::vector<double>& d2,
+                           int n, double q, double* p_out, double* dp_out) {
     int lower = 0;
     int upper = n - 1;
     if (q <= x[0]) {
@@ -190,7 +189,8 @@ void rvv10_q0(const std::vector<double>& rho, const std::vector<double>& sigma,
     }
 }
 
-Rvv10Result rvv10_energy(const UniformGrid& grid, const std::vector<double>& rho,
+Rvv10Result rvv10_energy(const UniformGrid& grid,
+                         const std::vector<double>& rho,
                          const std::vector<double>& sigma, double b, double C,
                          bool want_potential) {
     using namespace rvv10_data;
@@ -324,11 +324,11 @@ Rvv10Result rvv10_energy(const UniformGrid& grid, const std::vector<double>& rho
                             a1 * nalpha + a2)];
                         F += theta[static_cast<std::size_t>(a2)] * phi;
                     }
-                    energy += weight
-                              * (theta[static_cast<std::size_t>(a1)].real()
-                                     * F.real()
-                                 + theta[static_cast<std::size_t>(a1)].imag()
-                                       * F.imag());
+                    energy +=
+                        weight
+                        * (theta[static_cast<std::size_t>(a1)].real() * F.real()
+                           + theta[static_cast<std::size_t>(a1)].imag()
+                                 * F.imag());
                     if (want_potential) {
                         fftw_complex& u = cbuf[a1 * ncplx + kindex];
                         u[0] = F.real();
@@ -381,7 +381,7 @@ Rvv10Result rvv10_energy(const UniformGrid& grid, const std::vector<double>& rho
         double hpref = 0.0;
         if (rg > kRhoCut) {
             const double tmp_1_2 = std::sqrt(rg);
-            const double tmp_1_4 = std::sqrt(tmp_1_2); // ρ^{1/4}
+            const double tmp_1_4 = std::sqrt(tmp_1_2);          // ρ^{1/4}
             const double tmp_3_4 = tmp_1_4 * tmp_1_4 * tmp_1_4; // ρ^{3/4}
             for (int a = 0; a < nalpha; ++a) {
                 const double u = rbuf[a * ntot + g];

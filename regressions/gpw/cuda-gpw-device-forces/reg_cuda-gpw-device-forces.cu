@@ -96,8 +96,8 @@ int main(int argc, char** argv) {
         }
         e_cpu = r.e_total;
         F_cpu = ATV::cpu::gpw::gpw_forces_analytic(atoms, m);
-        std::printf("CPU:  E=%.12f Ha  iters=%d  converged=%d\n", e_cpu, r.iters,
-                    r.converged ? 1 : 0);
+        std::printf("CPU:  E=%.12f Ha  iters=%d  converged=%d\n", e_cpu,
+                    r.iters, r.converged ? 1 : 0);
         for (std::size_t i = 0; i < F_cpu.size(); ++i)
             std::printf("CPU F[%zu]= %.8e %.8e %.8e Ha/Bohr\n", i, F_cpu[i][0],
                         F_cpu[i][1], F_cpu[i][2]);
@@ -134,20 +134,18 @@ int main(int argc, char** argv) {
         double max_dF = 0.0;
         for (std::size_t i = 0; i < F_cpu.size(); ++i)
             for (int k = 0; k < 3; ++k)
-                max_dF = std::max(max_dF,
-                                  std::abs(F_cuda[i][k] - F_cpu[i][k]));
+                max_dF = std::max(max_dF, std::abs(F_cuda[i][k] - F_cpu[i][k]));
         if (max_dF > kFTolHaBohr) {
             std::fprintf(stderr, "FAIL: max|dF|=%.3e > tol %.3e Ha/Bohr\n",
                          max_dF, kFTolHaBohr);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-device-forces  |dE|=%.3e  max|dF|=%.3e  "
-            "(tol E=%.1e F=%.1e Ha/Bohr)\n",
-            dE, max_dF, kETolHa, kFTolHaBohr);
+        std::printf("PASS: cuda-gpw-device-forces  |dE|=%.3e  max|dF|=%.3e  "
+                    "(tol E=%.1e F=%.1e Ha/Bohr)\n",
+                    dE, max_dF, kETolHa, kFTolHaBohr);
     } else if (run_cuda) {
-        std::printf(
-            "PASS: cuda-gpw-device-forces (cuda-only) E=%.12f Ha\n", e_cuda);
+        std::printf("PASS: cuda-gpw-device-forces (cuda-only) E=%.12f Ha\n",
+                    e_cuda);
     } else {
         std::printf("PASS: cuda-gpw-device-forces (cpu-only) E=%.12f Ha\n",
                     e_cpu);

@@ -35,8 +35,7 @@ void check(bool ok, const char* what) {
 /// BCC conventional cubic: 2 Na at (0,0,0) and (½,½,½).
 std::vector<ATV::cpu::gpw::GpwAtom> na_bcc(double a_bohr) {
     using namespace ATV;
-    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na,
-                                      "DZVP-MOLOPT-SR-GTH");
+    const cpu::gpw::GaussianBasis bNa(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH");
     const cpu::gpw::GthPotential pNa(molrs::Element::Na, "GTH-PBE-q9");
     const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
     std::vector<cpu::gpw::GpwAtom> atoms;
@@ -124,10 +123,9 @@ int main() {
         check(ro.n_kpts > 1, "A2 multi-k active");
 
         const double d = std::fabs(f_ot - f_diis);
-        std::printf(
-            "A3: F_OT=%.10f  F_DIIS=%.10f  |Δ|=%.3e Ha  "
-            "iters ot/diis=%d/%d  wall_ot=%.3f s\n",
-            f_ot, f_diis, d, ro.iters, rd.iters, wall_ot);
+        std::printf("A3: F_OT=%.10f  F_DIIS=%.10f  |Δ|=%.3e Ha  "
+                    "iters ot/diis=%d/%d  wall_ot=%.3f s\n",
+                    f_ot, f_diis, d, ro.iters, rd.iters, wall_ot);
         check(d <= 1e-4, "A3 |F_OT - F_DIIS| <= 1e-4 Ha");
     }
 

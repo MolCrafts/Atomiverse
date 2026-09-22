@@ -59,9 +59,8 @@ cpu::Frame make_system() {
     f.span(kAtom_vx)[4] = -0.001;
     f.box = cpu::Box::cubic(20.0);
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                                kDynamicFieldId});
     auto qm = f.span(cpu::kAtomQmZ);
     qm[0] = 8;
     qm[1] = 1;

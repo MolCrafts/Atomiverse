@@ -57,8 +57,8 @@ __device__ __forceinline__ void spin_function(double x, double& f, double& df) {
 
 /// @brief One grid point: Padé LSD matching cpu::xc::pade_lsd.
 __device__ __forceinline__ void pade_lsd_point(double rho_a, double rho_b,
-                                              double& exc, double& vrho_a,
-                                              double& vrho_b) {
+                                               double& exc, double& vrho_a,
+                                               double& vrho_b) {
     const double rhoab = rho_a + rho_b;
     if (rhoab < kRhoMin) {
         exc = 0.0;
@@ -152,8 +152,7 @@ __global__ void xc_energy_lsd_kernel(const double* __restrict__ rho_a,
                                      double* __restrict__ acc) {
     __shared__ double s[256];
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    s[threadIdx.x] =
-        (i < nr) ? (rho_a[i] + rho_b[i]) * exc_r[i] : 0.0;
+    s[threadIdx.x] = (i < nr) ? (rho_a[i] + rho_b[i]) * exc_r[i] : 0.0;
     __syncthreads();
     for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
         if (threadIdx.x < stride)
@@ -178,8 +177,8 @@ void xc_lda_grid(const double* d_rho_r, double* d_vxc_r, double* d_exc_r,
 }
 
 void xc_lda_grid_lsd(const double* d_rho_a, const double* d_rho_b,
-                     double* d_vxc_a, double* d_vxc_b, double* d_exc_r,
-                     int nr, cudaStream_t stream) {
+                     double* d_vxc_a, double* d_vxc_b, double* d_exc_r, int nr,
+                     cudaStream_t stream) {
     if (nr <= 0)
         return;
     constexpr int kBlock = 256;

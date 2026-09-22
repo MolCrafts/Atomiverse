@@ -52,7 +52,7 @@ cpu::Frame make_methanol_like() {
     f.box = cpu::Box::cubic(30.0);
     f.blocks.at("atoms").insert(
         "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                           kDynamicFieldId});
+                                kDynamicFieldId});
     auto qm = f.span(cpu::kAtomQmZ);
     qm[0] = 8; // O
     qm[1] = 1; // H
@@ -71,8 +71,8 @@ struct Energies {
 Energies energy_link(double scale) {
     auto f = make_methanol_like();
     // Soft LJ so the gate focuses on the QM energy response to g.
-    cpu::QmmmElectrostatic qmmm{{{1, 1, 0.01, 3.4}, {6, 6, 0.01, 3.4}}, 8.0,
-                                15.0};
+    cpu::QmmmElectrostatic qmmm{
+        {{1, 1, 0.01, 3.4}, {6, 6, 0.01, 3.4}}, 8.0, 15.0};
     qmmm.link_scale() = scale;
     cpu::scf::RHF rhf;
     rhf.basis = cpu::scf::BasisSet::STO3G;

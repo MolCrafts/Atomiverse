@@ -367,8 +367,8 @@ CMat c_inv(const CMat& A) {
     }
     for (int col = 0; col < n; ++col) {
         int piv = col;
-        double best = std::abs(m[static_cast<std::size_t>(piv)]
-                                 [static_cast<std::size_t>(col)]);
+        double best = std::abs(
+            m[static_cast<std::size_t>(piv)][static_cast<std::size_t>(col)]);
         for (int r = col + 1; r < n; ++r) {
             const double av = std::abs(
                 m[static_cast<std::size_t>(r)][static_cast<std::size_t>(col)]);
@@ -396,16 +396,17 @@ CMat c_inv(const CMat& A) {
                 continue;
             for (int j = col; j < 2 * n; ++j)
                 m[static_cast<std::size_t>(r)][static_cast<std::size_t>(j)] -=
-                    f * m[static_cast<std::size_t>(col)]
-                         [static_cast<std::size_t>(j)];
+                    f
+                    * m[static_cast<std::size_t>(col)]
+                       [static_cast<std::size_t>(j)];
         }
     }
     CMat inv = xt::zeros<Cplx>(
         {static_cast<std::size_t>(n), static_cast<std::size_t>(n)});
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
-            inv(i, j) = m[static_cast<std::size_t>(i)]
-                         [static_cast<std::size_t>(n + j)];
+            inv(i, j) =
+                m[static_cast<std::size_t>(i)][static_cast<std::size_t>(n + j)];
     return inv;
 }
 
@@ -492,8 +493,8 @@ CpmdCplx::CpmdCplx(double mu_au) : mu_(mu_au) {
 
 const linalg::CplxMatrix& CpmdCplx::C() const {
     if (!ready_)
-        throw std::logic_error(
-            "CpmdCplx::C: no coefficients yet — call seed() after the cold SCF");
+        throw std::logic_error("CpmdCplx::C: no coefficients yet — call seed() "
+                               "after the cold SCF");
     return C_;
 }
 

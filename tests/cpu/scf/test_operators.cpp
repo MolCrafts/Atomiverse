@@ -154,7 +154,8 @@ TEST(TestShellBlockPairList, FusedJkMatchesTwoPass_H2O_631Gs_DShell) {
 // must stay bit-for-bit identical for any thread count.
 TEST(TestIntegralWorkspace, CoulombExchangeFusedThreadInvariant) {
     auto frame = make_h2o();
-    auto pack = internal::IntegralWorkspace{frame, BasisSet::STO3G, 0, /*compute_eri=*/true};
+    auto pack = internal::IntegralWorkspace{frame, BasisSet::STO3G, 0,
+                                            /*compute_eri=*/true};
     const int n = pack.n_basis;
     RealMatrix P = make_density(n);
 

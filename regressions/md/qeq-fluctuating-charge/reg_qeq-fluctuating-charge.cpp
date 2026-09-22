@@ -28,8 +28,8 @@ int g_fail = 0;
 void check(const char* what, double got, double want, double tol) {
     const double err = std::abs(got - want);
     const bool ok = err <= tol;
-    std::printf("%-34s got=%+.12f want=%+.12f |err|=%.2e %s\n", what, got,
-                want, err, ok ? "OK" : "FAIL");
+    std::printf("%-34s got=%+.12f want=%+.12f |err|=%.2e %s\n", what, got, want,
+                err, ok ? "OK" : "FAIL");
     if (!ok)
         ++g_fail;
 }
@@ -62,9 +62,9 @@ int main() {
 
     // QEq parameters — identical to param.qeq (chi [eV], eta [eV/e²]).
     cpu::md::QEq qeq(/*cutoff [Å]=*/10.0);
-    qeq.set_type(1, 5.343, 10.126);   // C
-    qeq.set_type(2, 8.741, 13.364);   // O
-    qeq.set_type(3, 4.528, 13.8904);  // H
+    qeq.set_type(1, 5.343, 10.126);  // C
+    qeq.set_type(2, 8.741, 13.364);  // O
+    qeq.set_type(3, 4.528, 13.8904); // H
 
     // QEq at pre_force, then coul/cut on the equilibrated charges.
     {
@@ -103,8 +103,7 @@ int main() {
     for (int rep = 0; rep < n_rep; ++rep)
         perf.run(f, 1);
     const auto t1 = std::chrono::steady_clock::now();
-    const double t_atv =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double t_atv = std::chrono::duration<double>(t1 - t0).count();
     const double t_lmp = 0.000610294; // LAMMPS loop time, 1000 solves (pin)
     std::printf("perf: T_atv=%.6f s  T_lmp=%.6f s  ratio=%.2f (1000 solves)\n",
                 t_atv, t_lmp, t_atv / t_lmp);

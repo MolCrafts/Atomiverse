@@ -181,8 +181,7 @@ void accumulate_atm_c9(const std::vector<int>& Z,
     // periodic 6 A water-dimer twin the two molecules' ATM forces came out
     // exactly swapped relative to CP2K. Wrap first; forces stay attributed by
     // atom index.
-    std::vector<std::array<double, 3>> pos_bohr(pos_raw.begin(),
-                                                pos_raw.end());
+    std::vector<std::array<double, 3>> pos_bohr(pos_raw.begin(), pos_raw.end());
     if (periodic)
         for (auto& p : pos_bohr)
             for (int d = 0; d < 3; ++d)

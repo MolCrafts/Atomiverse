@@ -115,17 +115,17 @@ std::complex<double> overlap_det(const internal::GVectorList& bra,
 }
 
 /// String-averaged Berry phase for one spin channel on frozen V_eff.
-double string_phase_for_channel(
-    internal::PWProblem& prob, internal::PWWorkspace& ws,
-    const std::vector<std::array<double, 3>>& kf, int dir, int k_string,
-    int k_perp, int n_occ, double tol, double two_pi) {
+double string_phase_for_channel(internal::PWProblem& prob,
+                                internal::PWWorkspace& ws,
+                                const std::vector<std::array<double, 3>>& kf,
+                                int dir, int k_string, int k_perp, int n_occ,
+                                double tol, double two_pi) {
     using internal::DavidsonSolver;
 
     std::vector<Vec3> kvec;
     kvec.reserve(kf.size());
     for (const auto& f : kf)
-        kvec.push_back({static_cast<AccReal>(f[0]),
-                        static_cast<AccReal>(f[1]),
+        kvec.push_back({static_cast<AccReal>(f[0]), static_cast<AccReal>(f[1]),
                         static_cast<AccReal>(f[2])});
     // Note: rebuild_k_tables is called by the outer loop once per direction
     // before spin channels share the same k-mesh tables.
@@ -170,11 +170,11 @@ double string_phase_for_channel(
             const int ib = s * J + j;
             const int ik = s * J + (j + 1) % J;
             const int shift = (j == J - 1) ? dir : -1;
-            dets[static_cast<std::size_t>(j)] = overlap_det(
-                prob.gv_k[static_cast<std::size_t>(ib)],
-                coef[static_cast<std::size_t>(ib)],
-                prob.gv_k[static_cast<std::size_t>(ik)],
-                coef[static_cast<std::size_t>(ik)], n_occ, shift);
+            dets[static_cast<std::size_t>(j)] =
+                overlap_det(prob.gv_k[static_cast<std::size_t>(ib)],
+                            coef[static_cast<std::size_t>(ib)],
+                            prob.gv_k[static_cast<std::size_t>(ik)],
+                            coef[static_cast<std::size_t>(ik)], n_occ, shift);
         }
         phis.push_back(phase_from_link_dets(dets));
         ATV_DEBUG_CAT("pw", "berry dir={} n_occ={} string={} phi={:+.6f}", dir,
@@ -363,9 +363,8 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
             kvec.push_back({static_cast<AccReal>(f[0]),
                             static_cast<AccReal>(f[1]),
                             static_cast<AccReal>(f[2])});
-        internal::rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry,
-                                   kvec);
+        internal::rebuild_k_tables(prob, frame, method.upf_path,
+                                   method.gth_name, method.ecut_ry, kvec);
 
         double phase_sum = 0.0;
         for (int s = 0; s < 2; ++s) {

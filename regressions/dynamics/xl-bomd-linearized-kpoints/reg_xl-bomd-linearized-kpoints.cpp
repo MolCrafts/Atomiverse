@@ -86,7 +86,7 @@ cpu::gpw::GPWEvaluator make_gpw(int n_alpha, int n_beta) {
 }
 
 struct LegResult {
-    std::vector<double> pot_ha; // per-step E_pot [Ha], index 0 = after seed
+    std::vector<double> pot_ha;  // per-step E_pot [Ha], index 0 = after seed
     std::vector<double> etot_ev; // per-step E_pot + E_kin [eV]
     double r_hh = 0.0;           // final H–H distance [Å]
     int seed_iters = 0;
@@ -142,8 +142,7 @@ bool run_leg(const char* name, int n_alpha, int n_beta, bool linearized,
         return false;
     }
     if (static_cast<int>(eval.last_result().P_k.size()) != out.n_kpts) {
-        std::printf("FAIL[%s]: P_k payload missing after multi-k seed\n",
-                    name);
+        std::printf("FAIL[%s]: P_k payload missing after multi-k seed\n", name);
         return false;
     }
     const double pe0 = eval.last_result().e_total * units::kHartreeInEv;
@@ -190,16 +189,16 @@ bool run_leg(const char* name, int n_alpha, int n_beta, bool linearized,
                 return false;
             }
     }
-    out.wall_s = std::chrono::duration<double>(
-                     std::chrono::steady_clock::now() - t0)
-                     .count();
+    out.wall_s =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0)
+            .count();
 
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     out.r_hh = std::sqrt(dx * dx + dy * dy + dz * dz);
     return true;
 }
@@ -267,8 +266,7 @@ int main() {
     double worst_cp2k = 0.0, worst_ab = 0.0, worst_uks = 0.0;
     for (int s = 0; s <= kProd; ++s) {
         const std::size_t k = static_cast<std::size_t>(s);
-        worst_cp2k = std::max(worst_cp2k,
-                              std::fabs(B.pot_ha[k] - kCp2kPot[s]));
+        worst_cp2k = std::max(worst_cp2k, std::fabs(B.pot_ha[k] - kCp2kPot[s]));
         worst_ab = std::max(worst_ab, std::fabs(B.pot_ha[k] - A.pot_ha[k]));
         worst_uks = std::max(worst_uks, std::fabs(C.pot_ha[k] - B.pot_ha[k]));
     }

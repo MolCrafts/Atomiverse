@@ -92,7 +92,8 @@ bool solve_pulay_host(const std::vector<double>& Bmm, int m,
     for (int i = dim - 1; i >= 0; --i) {
         double s = b[static_cast<size_t>(i)];
         for (int j = i + 1; j < dim; ++j)
-            s -= A[static_cast<size_t>(i * dim + j)] * x[static_cast<size_t>(j)];
+            s -=
+                A[static_cast<size_t>(i * dim + j)] * x[static_cast<size_t>(j)];
         const double aii = A[static_cast<size_t>(i * dim + i)];
         if (std::abs(aii) < 1e-14)
             return false;
@@ -105,11 +106,11 @@ bool solve_pulay_host(const std::vector<double>& Bmm, int m,
 }
 
 /// y = Σ_i c_i hist[slot_i] for complex circular history (one thread / element).
-__global__ void weighted_sum_cplx_hist_kernel(cuDoubleComplex* __restrict__ y,
-                                              const cuDoubleComplex* __restrict__ hist,
-                                              const double* __restrict__ c,
-                                              int nn, int m, int hist_start,
-                                              int max_vectors, int nk, int ik) {
+__global__ void
+weighted_sum_cplx_hist_kernel(cuDoubleComplex* __restrict__ y,
+                              const cuDoubleComplex* __restrict__ hist,
+                              const double* __restrict__ c, int nn, int m,
+                              int hist_start, int max_vectors, int nk, int ik) {
     const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (idx >= nn)
         return;
@@ -117,10 +118,9 @@ __global__ void weighted_sum_cplx_hist_kernel(cuDoubleComplex* __restrict__ y,
     for (int i = 0; i < m; ++i) {
         const int slot = (hist_start + i) % max_vectors;
         // hist layout: [slot][ik][nn]
-        const size_t base =
-            (static_cast<size_t>(slot) * static_cast<size_t>(nk)
-             + static_cast<size_t>(ik))
-            * static_cast<size_t>(nn);
+        const size_t base = (static_cast<size_t>(slot) * static_cast<size_t>(nk)
+                             + static_cast<size_t>(ik))
+                            * static_cast<size_t>(nn);
         const cuDoubleComplex v = hist[base + static_cast<size_t>(idx)];
         const double ci = c[i];
         re += ci * cuCreal(v);
@@ -132,8 +132,8 @@ __global__ void weighted_sum_cplx_hist_kernel(cuDoubleComplex* __restrict__ y,
 /// Device row-major → column-major transpose for n×n (or rows×cols) complex.
 /// One thread per element: cm[i + j*rows] = rm[i*cols + j].
 __global__ void cplx_rm_to_cm_kernel(const cuDoubleComplex* __restrict__ rm,
-                                     cuDoubleComplex* __restrict__ cm,
-                                     int rows, int cols) {
+                                     cuDoubleComplex* __restrict__ cm, int rows,
+                                     int cols) {
     const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     const int nn = rows * cols;
     if (idx >= nn)
@@ -157,9 +157,7 @@ void cm_to_rm_host(const Cplx* cm, Cplx* rm, int rows, int cols) {
                 cm[static_cast<size_t>(i) + static_cast<size_t>(j) * rows];
 }
 
-cuDoubleComplex* as_z(void* p) {
-    return static_cast<cuDoubleComplex*>(p);
-}
+cuDoubleComplex* as_z(void* p) { return static_cast<cuDoubleComplex*>(p); }
 const cuDoubleComplex* as_z(const void* p) {
     return static_cast<const cuDoubleComplex*>(p);
 }
@@ -189,7 +187,7 @@ const void* KpointDiisEigenDevice::d_P(int ik) const {
 }
 
 void KpointDiisEigenDevice::host_rm_to_dev_cm_(const Cplx* rm, void* d_cm,
-                                              int rows, int cols) const {
+                                               int rows, int cols) const {
     const size_t n = static_cast<size_t>(rows) * static_cast<size_t>(cols);
     stage_.resize(n);
     rm_to_cm_host(rm, stage_.data(), rows, cols);
@@ -199,7 +197,7 @@ void KpointDiisEigenDevice::host_rm_to_dev_cm_(const Cplx* rm, void* d_cm,
 }
 
 void KpointDiisEigenDevice::dev_cm_to_host_rm_(const void* d_cm, Cplx* rm,
-                                              int rows, int cols) const {
+                                               int rows, int cols) const {
     const size_t n = static_cast<size_t>(rows) * static_cast<size_t>(cols);
     stage_.resize(n);
     check_cuda(cudaMemcpyAsync(stage_.data(), d_cm, n * sizeof(Cplx),
@@ -259,9 +257,9 @@ void KpointDiisEigenDevice::build(cudaStream_t stream, int nk, int n, int max_m,
         check_cuda(cudaMalloc(&d_C_[i], nm * sizeof(Cplx)), "malloc C");
         check_cuda(cudaMalloc(&d_Cp_[i], mm * sizeof(Cplx)), "malloc Cp");
         check_cuda(cudaMalloc(&d_err_[i], mm * sizeof(Cplx)), "malloc err");
-        check_cuda(cudaMalloc(&d_eig_[i],
-                              static_cast<size_t>(max_m) * sizeof(double)),
-                   "malloc eig");
+        check_cuda(
+            cudaMalloc(&d_eig_[i], static_cast<size_t>(max_m) * sizeof(double)),
+            "malloc eig");
         check_cuda(cudaMemsetAsync(d_X_[i], 0, nm * sizeof(Cplx), stream_),
                    "zero X");
         check_cuda(cudaMemsetAsync(d_err_[i], 0, mm * sizeof(Cplx), stream_),
@@ -280,9 +278,8 @@ void KpointDiisEigenDevice::build(cudaStream_t stream, int nk, int n, int max_m,
                                * static_cast<size_t>(nk) * mm * sizeof(Cplx);
         check_cuda(cudaMalloc(&d_H_hist_, h_bytes), "malloc H_hist");
         check_cuda(cudaMalloc(&d_e_hist_, e_bytes), "malloc e_hist");
-        check_cuda(cudaMalloc(&d_c_,
-                              static_cast<size_t>(max_vectors_)
-                                  * sizeof(double)),
+        check_cuda(cudaMalloc(&d_c_, static_cast<size_t>(max_vectors_)
+                                         * sizeof(double)),
                    "malloc c");
         check_cuda(cudaMemsetAsync(d_H_hist_, 0, h_bytes, stream_),
                    "zero H_hist");
@@ -304,15 +301,14 @@ void KpointDiisEigenDevice::build(cudaStream_t stream, int nk, int n, int max_m,
 
     // Workspace for largest possible m (max_m).
     int lwork = 0;
-    check_cusolver(
-        cusolverDnZheevd_bufferSize(
-            sol, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_LOWER, max_m,
-            as_z(d_Cp_[0]), max_m, d_eig_[0], &lwork),
-        "zheevd_bufferSize");
+    check_cusolver(cusolverDnZheevd_bufferSize(
+                       sol, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_LOWER,
+                       max_m, as_z(d_Cp_[0]), max_m, d_eig_[0], &lwork),
+                   "zheevd_bufferSize");
     sy_lwork_ = lwork;
-    check_cuda(cudaMalloc(&d_sy_work_,
-                          static_cast<size_t>(sy_lwork_) * sizeof(Cplx)),
-               "malloc zheevd work");
+    check_cuda(
+        cudaMalloc(&d_sy_work_, static_cast<size_t>(sy_lwork_) * sizeof(Cplx)),
+        "malloc zheevd work");
 
     built_ = true;
 }
@@ -472,8 +468,8 @@ double KpointDiisEigenDevice::err_norm_from_device_() const {
     return nrm;
 }
 
-double KpointDiisEigenDevice::residual(
-    const std::vector<const Cplx*>& H_hosts) {
+double
+KpointDiisEigenDevice::residual(const std::vector<const Cplx*>& H_hosts) {
     ensure_built_();
     if (static_cast<int>(H_hosts.size()) != nk_)
         throw std::invalid_argument(
@@ -627,9 +623,9 @@ void KpointDiisEigenDevice::diagonalize_and_density_k_(int ik) {
                              d_X, n, t1, n, &zero, d_Cp, m),
                  "zgemm X†HX");
 
-    check_cusolver(cusolverDnZheevd(
-                       sol, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_LOWER, m,
-                       d_Cp, m, d_eig, as_z(d_sy_work_), sy_lwork_, d_info_),
+    check_cusolver(cusolverDnZheevd(sol, CUSOLVER_EIG_MODE_VECTOR,
+                                    CUBLAS_FILL_MODE_LOWER, m, d_Cp, m, d_eig,
+                                    as_z(d_sy_work_), sy_lwork_, d_info_),
                    "zheevd");
     int info = 0;
     check_cuda(cudaMemcpyAsync(&info, d_info_, sizeof(int),
@@ -638,8 +634,8 @@ void KpointDiisEigenDevice::diagonalize_and_density_k_(int ik) {
     check_cuda(cudaStreamSynchronize(stream_), "sync zheevd info");
     if (info != 0)
         throw std::runtime_error("KpointDiisEigenDevice: zheevd info="
-                                 + std::to_string(info) + " at k="
-                                 + std::to_string(ik));
+                                 + std::to_string(info)
+                                 + " at k=" + std::to_string(ik));
 
     // C = X Cp  (n×m)
     check_cublas(cublasZgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, m, m, &one,

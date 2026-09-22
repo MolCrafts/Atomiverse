@@ -227,8 +227,7 @@ TEST(PimInducedDipole, VirialTraceMatchesFdScalingUndamped) {
             f.span(kAtom_type)[i] = t[i];
             f.span(kAtom_mass)[i] = 1.0;
             f.span(kAtom_tag)[i] = i + 1;
-            f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] =
-                0;
+            f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
         }
         f.box = cpu::Box::cubic(s * L0);
         f.meta.get(kEnergy) = 0;
@@ -248,10 +247,9 @@ TEST(PimInducedDipole, VirialTraceMatchesFdScalingUndamped) {
     energy_and_stress(1.0, w);
     const double trace = w[0] + w[1] + w[2];
     const double h = 1e-5;
-    const double dEds =
-        (energy_and_stress(1.0 + h, nullptr)
-         - energy_and_stress(1.0 - h, nullptr))
-        / (2.0 * h);
+    const double dEds = (energy_and_stress(1.0 + h, nullptr)
+                         - energy_and_stress(1.0 - h, nullptr))
+                        / (2.0 * h);
     ASSERT_NE(trace, 0.0);
     EXPECT_NEAR(trace, -dEds, std::max(1e-8, 1e-5 * std::fabs(trace)));
 }

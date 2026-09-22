@@ -110,11 +110,9 @@ int main() {
     // Conventional-cubic high-symmetry path Γ–X–L (fractional of cubic).
     cpu::vib::PhononDispersion path;
     path.qfrac = {
-        {0.0, 0.0, 0.0}, // Γ
-        {0.25, 0.0, 0.0},
-        {0.5, 0.0, 0.0}, // X
-        {0.5, 0.25, 0.25},
-        {0.5, 0.5, 0.5}, // L
+        {0.0, 0.0, 0.0},                    // Γ
+        {0.25, 0.0, 0.0},  {0.5, 0.0, 0.0}, // X
+        {0.5, 0.25, 0.25}, {0.5, 0.5, 0.5}, // L
     };
     const cpu::vib::PhononDispersionResult r =
         path.compute(pr.hessian, unit, kNa, kNb, kNc);
@@ -146,9 +144,8 @@ int main() {
                 return 1;
             }
             if (b > 0
-                && w[static_cast<std::size_t>(b)]
-                       + 1e-9
-                           < w[static_cast<std::size_t>(b - 1)]) {
+                && w[static_cast<std::size_t>(b)] + 1e-9
+                       < w[static_cast<std::size_t>(b - 1)]) {
                 std::printf("FAIL: unsorted branches at q[%zu]\n", iq);
                 return 1;
             }
@@ -158,8 +155,8 @@ int main() {
         if (near(r.qfrac[iq], 0, 0, 0)) {
             saw_G = true;
             for (int b = 0; b < 3; ++b)
-                max_ac_G =
-                    std::max(max_ac_G, std::abs(w[static_cast<std::size_t>(b)]));
+                max_ac_G = std::max(max_ac_G,
+                                    std::abs(w[static_cast<std::size_t>(b)]));
             wmax_G = wmax;
         }
         if (near(r.qfrac[iq], 0.5, 0, 0)) {

@@ -76,14 +76,14 @@ int main() {
     // Offline CP2K 2026.1 (cp2k.psmp rev git:5e54ba2, libxc 7.0.0): water
     // dimer, GGA_X_OPTB88_VDW + PW92 + NON_LOCAL DRSLL, CUTOFF 200 / NGRIDS 4 /
     // REL_CUTOFF 40, KPOINTS MONKHORST-PACK 2 1 1 — see REFERENCE.md.
-    constexpr double kEDispCp2k = 0.15206184081319;       // Ha
-    constexpr double kETotCp2k = -34.487914403936173;     // Ha
-    constexpr double kEDispTol = 1.0e-4;                  // Ha
+    constexpr double kEDispCp2k = 0.15206184081319;   // Ha
+    constexpr double kETotCp2k = -34.487914403936173; // Ha
+    constexpr double kEDispTol = 1.0e-4;              // Ha
     // Same Γ-dimer twin-family systematic as gpw-vdw-kpoints / multigrid
     // (~1e-2 Ha class).
-    constexpr double kETotTol = 1.0e-2;                   // Ha
+    constexpr double kETotTol = 1.0e-2; // Ha
     // Γ-limit identity (k-path at Γ vs shipped Γ runner).
-    constexpr double kGammaLimitTol = 1.0e-8;             // Ha
+    constexpr double kGammaLimitTol = 1.0e-8; // Ha
 
     const auto atoms = make_atoms();
     const auto t0 = Clock::now();
@@ -94,7 +94,8 @@ int main() {
         gamma.build(atoms);
         const GpwResult& rg = gamma.run(atoms);
         if (!rg.converged) {
-            std::fprintf(stderr, "FAIL: G1 Γ runner SCF did not converge (%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: G1 Γ runner SCF did not converge (%d)\n",
                          rg.iters);
             return 1;
         }
@@ -139,7 +140,8 @@ int main() {
         pbe.build(atoms);
         const GpwResult& rp = pbe.run(atoms);
         if (!rp.converged) {
-            std::fprintf(stderr, "FAIL: G1 PBE dual-gate SCF did not converge\n");
+            std::fprintf(stderr,
+                         "FAIL: G1 PBE dual-gate SCF did not converge\n");
             return 1;
         }
         const double d_semi = std::abs(rk.e_total - rp.e_total);
@@ -168,8 +170,9 @@ int main() {
         const double wall_mp =
             std::chrono::duration<double>(Clock::now() - t_mp0).count();
         if (!rm.converged) {
-            std::fprintf(stderr, "FAIL: G2 MP multigrid SCF did not converge "
-                                 "(%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: G2 MP multigrid SCF did not converge "
+                         "(%d)\n",
                          rm.iters);
             return 1;
         }

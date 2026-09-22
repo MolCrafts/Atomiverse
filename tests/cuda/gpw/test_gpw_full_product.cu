@@ -365,8 +365,8 @@ TEST(CudaGpwFullProduct, WaterGammaPadeEnergyDualGate) {
     set_h2o(gpu);
     gpu.build(atoms);
     const auto& rg = gpu.run(atoms);
-    ASSERT_TRUE(rg.converged) << "CUDA H2O SCF failed iters=" << rg.iters
-                              << " E=" << rg.e_total;
+    ASSERT_TRUE(rg.converged)
+        << "CUDA H2O SCF failed iters=" << rg.iters << " E=" << rg.e_total;
     ASSERT_TRUE(std::isfinite(rg.e_total));
 
     // Multi-center p-shell class (matches O₂ production energy tol).
@@ -478,4 +478,3 @@ TEST(CudaGpwFullProduct, O2UksPadeEnergyDualGate) {
     EXPECT_LT(de, kETolHa) << "E_cuda=" << rg.e_total << " E_cpu=" << rc.e_total
                            << " |dE|=" << de;
 }
-

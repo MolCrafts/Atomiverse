@@ -26,8 +26,8 @@ xt::xtensor<double, 2> fci_hamiltonian(const internal::IntegralView& ints,
 /// @param e_scf_ha Converged SCF total energy [Hartree] (the reference for
 ///                 `FCIResult::e_corr`).
 /// @return Full-CI correlation and total energies [Hartree].
-FCIResult fci_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                     double e_scf_ha);
+FCIResult fci_energy(const internal::IntegralView& ints,
+                     const SlaterDeterminant& det, double e_scf_ha);
 
 } // namespace scf
 } // namespace cpu

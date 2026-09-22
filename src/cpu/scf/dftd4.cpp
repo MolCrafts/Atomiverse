@@ -1006,8 +1006,7 @@ double disp3_atm(const std::vector<int>& Z,
                                 const double dang =
                                     0.375 * (dP_de - 2.5 * P / e) / r5
                                     - 1.5 / (e * r3);
-                                const double dfdmp =
-                                    fdmp * fdmp * u * alp / e;
+                                const double dfdmp = fdmp * fdmp * u * alp / e;
                                 return G * (dang * fdmp + ang * dfdmp);
                             };
                             const double dij = dE_dr2(dP_dx, x);
@@ -1411,9 +1410,9 @@ void dftd4_grad(const std::vector<int>& Z,
                     [static_cast<std::size_t>(ir)] = z0;
                 gw0[static_cast<std::size_t>(iat)]
                    [static_cast<std::size_t>(ir)] =
-                    gwk[static_cast<std::size_t>(iat)]
-                       [static_cast<std::size_t>(ir)]
-                    * z0;
+                       gwk[static_cast<std::size_t>(iat)]
+                          [static_cast<std::size_t>(ir)]
+                       * z0;
             }
         }
 

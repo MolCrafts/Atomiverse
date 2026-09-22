@@ -206,8 +206,8 @@ int main() {
     const double eth0 = eval.last_electronic_thermostat_ev();
     if (!std::isfinite(pe0) || !std::isfinite(ke0) || !std::isfinite(te0)
         || !std::isfinite(eth0) || !(ke0 >= 0.0) || !(te0 >= 0.0)) {
-        std::printf("FAIL: non-finite baseline PE=%g KE=%g Te=%g Eth=%g\n",
-                    pe0, ke0, te0, eth0);
+        std::printf("FAIL: non-finite baseline PE=%g KE=%g Te=%g Eth=%g\n", pe0,
+                    ke0, te0, eth0);
         return 1;
     }
     const double e0 = pe0 + ke0 + te0 + eth0;
@@ -224,9 +224,8 @@ int main() {
         }
         last_iters = eval.last_result().iters;
         if (last_iters != 0) {
-            std::printf(
-                "FAIL: production chunk %d re-ran SCF (iters=%d)\n", c,
-                last_iters);
+            std::printf("FAIL: production chunk %d re-ran SCF (iters=%d)\n", c,
+                        last_iters);
             return 1;
         }
         const double pe = frame.meta.get(kEnergy);
@@ -235,10 +234,9 @@ int main() {
         const double eth = eval.last_electronic_thermostat_ev();
         if (!std::isfinite(pe) || !std::isfinite(ke) || !std::isfinite(te)
             || !std::isfinite(eth) || !(ke >= 0.0) || !(te >= 0.0)) {
-            std::printf(
-                "FAIL: non-finite energy at chunk %d PE=%g KE=%g Te=%g "
-                "Eth=%g\n",
-                c, pe, ke, te, eth);
+            std::printf("FAIL: non-finite energy at chunk %d PE=%g KE=%g Te=%g "
+                        "Eth=%g\n",
+                        c, pe, ke, te, eth);
             return 1;
         }
         const double drift = std::fabs((pe + ke + te + eth) - e0) / e_scale;
@@ -259,12 +257,12 @@ int main() {
         }
     }
 
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     const double rhh = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (!(rhh > rmin) || !(rhh < rmax)) {
         std::printf("FAIL: H–H bond out of window r=%.3f Å (%.2f–%.2f)\n", rhh,

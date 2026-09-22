@@ -37,15 +37,11 @@ class SecondGenCp : public cpu::GPW {
     std::string name() const override { return "second_gen_cp"; }
 
     void build(const cpu::BuildContext& ctx) override { method_.build(ctx); }
-    void launch(const cpu::LaunchContext& ctx) override {
-        method_.launch(ctx);
-    }
+    void launch(const cpu::LaunchContext& ctx) override { method_.launch(ctx); }
 
     gpw::GPWEvaluator& method() { return method_; }
     const gpw::GPWEvaluator& method() const { return method_; }
-    double last_energy_hartree() const {
-        return method_.last_energy_hartree();
-    }
+    double last_energy_hartree() const { return method_.last_energy_hartree(); }
     const gpw::GpwResult& last_result() const { return method_.last_result(); }
 
   private:

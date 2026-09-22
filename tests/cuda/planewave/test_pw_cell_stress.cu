@@ -112,14 +112,14 @@ TEST(CudaPWCellStress, H2ClosedShellCpuTwin) {
     constexpr double kTol = 5.0e-2;
     double max_abs = 0.0;
     for (int k = 0; k < 6; ++k) {
-        max_abs = std::max(
-            max_abs, std::abs(s_cuda[static_cast<std::size_t>(k)]
-                              - s_cpu[static_cast<std::size_t>(k)]));
+        max_abs =
+            std::max(max_abs, std::abs(s_cuda[static_cast<std::size_t>(k)]
+                                       - s_cpu[static_cast<std::size_t>(k)]));
     }
-    EXPECT_LT(max_abs, kTol) << "max|σ_cuda-σ_cpu|=" << max_abs
-                             << " cpu=(" << s_cpu[0] << "," << s_cpu[1] << ","
-                             << s_cpu[2] << ") cuda=(" << s_cuda[0] << ","
-                             << s_cuda[1] << "," << s_cuda[2] << ")";
+    EXPECT_LT(max_abs, kTol)
+        << "max|σ_cuda-σ_cpu|=" << max_abs << " cpu=(" << s_cpu[0] << ","
+        << s_cpu[1] << "," << s_cpu[2] << ") cuda=(" << s_cuda[0] << ","
+        << s_cuda[1] << "," << s_cuda[2] << ")";
 }
 
 TEST(CudaPWCellStress, SmearZeroDegaussThrows) {
@@ -180,12 +180,12 @@ TEST(CudaPWCellStress, H2ClosedShellPbeCpuTwin) {
     constexpr double kTol = 5.0e-2;
     double max_abs = 0.0;
     for (int k = 0; k < 6; ++k) {
-        max_abs = std::max(
-            max_abs, std::abs(s_cuda[static_cast<std::size_t>(k)]
-                              - s_cpu[static_cast<std::size_t>(k)]));
+        max_abs =
+            std::max(max_abs, std::abs(s_cuda[static_cast<std::size_t>(k)]
+                                       - s_cpu[static_cast<std::size_t>(k)]));
     }
-    EXPECT_LT(max_abs, kTol) << "PBE max|σ_cuda-σ_cpu|=" << max_abs
-                             << " cpu=(" << s_cpu[0] << "," << s_cpu[1] << ","
-                             << s_cpu[2] << ") cuda=(" << s_cuda[0] << ","
-                             << s_cuda[1] << "," << s_cuda[2] << ")";
+    EXPECT_LT(max_abs, kTol)
+        << "PBE max|σ_cuda-σ_cpu|=" << max_abs << " cpu=(" << s_cpu[0] << ","
+        << s_cpu[1] << "," << s_cpu[2] << ") cuda=(" << s_cuda[0] << ","
+        << s_cuda[1] << "," << s_cuda[2] << ")";
 }

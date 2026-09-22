@@ -162,9 +162,7 @@ fftw_complex* R2cFft::c_many() {
     return c_many_.data();
 }
 
-void R2cFft::execute_c2r_alt() {
-    fftw_execute_dft_c2r(bwd_, c2(), r2());
-}
+void R2cFft::execute_c2r_alt() { fftw_execute_dft_c2r(bwd_, c2(), r2()); }
 
 void R2cFft::execute_many_r2c() {
     ensure_many_plans();
@@ -194,18 +192,17 @@ R2cFft& R2cFft::for_shape(int n0, int n1, int n2) {
 // ── C2cFft ──────────────────────────────────────────────────────────────────
 
 C2cFft::C2cFft(int n0, int n1, int n2)
-    : n0_(n0), n1_(n1), n2_(n2),
-      ntot_(static_cast<long>(n0) * n1 * n2) {
+    : n0_(n0), n1_(n1), n2_(n2), ntot_(static_cast<long>(n0) * n1 * n2) {
     if (n0 <= 0 || n1 <= 0 || n2 <= 0)
         throw std::invalid_argument("C2cFft: non-positive grid shape");
     in_.resize(static_cast<std::size_t>(ntot_));
     out_.resize(static_cast<std::size_t>(ntot_));
     std::lock_guard<std::mutex> lock(fftw_plan_mutex());
     ensure_fftw_threads();
-    fwd_ = fftw_plan_dft_3d(n0_, n1_, n2_, in(), out(), FFTW_FORWARD,
-                            kPlanFlags);
-    bwd_ = fftw_plan_dft_3d(n0_, n1_, n2_, in(), out(), FFTW_BACKWARD,
-                            kPlanFlags);
+    fwd_ =
+        fftw_plan_dft_3d(n0_, n1_, n2_, in(), out(), FFTW_FORWARD, kPlanFlags);
+    bwd_ =
+        fftw_plan_dft_3d(n0_, n1_, n2_, in(), out(), FFTW_BACKWARD, kPlanFlags);
     if (!fwd_ || !bwd_) {
         if (fwd_)
             fftw_destroy_plan(fwd_);

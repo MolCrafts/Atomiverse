@@ -103,12 +103,10 @@ void KpointIntegrateDevice::build(cudaStream_t stream, int nb, long npts,
     nk_ = nk;
     d_chi_.assign(static_cast<std::size_t>(nk), nullptr);
     d_H0_.assign(static_cast<std::size_t>(nk), nullptr);
-    const size_t chi_bytes =
-        static_cast<size_t>(npts) * static_cast<size_t>(nb)
-        * sizeof(cuDoubleComplex);
-    const size_t mat_bytes =
-        static_cast<size_t>(nb) * static_cast<size_t>(nb)
-        * sizeof(cuDoubleComplex);
+    const size_t chi_bytes = static_cast<size_t>(npts) * static_cast<size_t>(nb)
+                             * sizeof(cuDoubleComplex);
+    const size_t mat_bytes = static_cast<size_t>(nb) * static_cast<size_t>(nb)
+                             * sizeof(cuDoubleComplex);
     for (int ik = 0; ik < nk; ++ik) {
         void* p = nullptr;
         check_cuda(cudaMalloc(&p, chi_bytes), "malloc d_chi");
@@ -150,8 +148,7 @@ void KpointIntegrateDevice::destroy() {
 
 void KpointIntegrateDevice::ensure_built_() const {
     if (!built_)
-        throw std::logic_error(
-            "KpointIntegrateDevice: used before build()");
+        throw std::logic_error("KpointIntegrateDevice: used before build()");
 }
 
 void KpointIntegrateDevice::upload_chi(int ik,
@@ -165,16 +162,15 @@ void KpointIntegrateDevice::upload_chi(int ik,
             "KpointIntegrateDevice::upload_chi: null chi");
     static_assert(sizeof(std::complex<double>) == sizeof(cuDoubleComplex),
                   "std::complex<double> layout must match cuDoubleComplex");
-    const size_t chi_bytes =
-        static_cast<size_t>(npts_) * static_cast<size_t>(nb_)
-        * sizeof(cuDoubleComplex);
+    const size_t chi_bytes = static_cast<size_t>(npts_)
+                             * static_cast<size_t>(nb_)
+                             * sizeof(cuDoubleComplex);
     check_cuda(cudaMemcpyAsync(d_chi_[static_cast<std::size_t>(ik)], chi,
                                chi_bytes, cudaMemcpyHostToDevice, stream_),
                "H2D chi");
 }
 
-void KpointIntegrateDevice::upload_H0(int ik,
-                                      const std::complex<double>* H0) {
+void KpointIntegrateDevice::upload_H0(int ik, const std::complex<double>* H0) {
     ensure_built_();
     if (ik < 0 || ik >= nk_)
         throw std::invalid_argument(
@@ -184,9 +180,8 @@ void KpointIntegrateDevice::upload_H0(int ik,
             "KpointIntegrateDevice::upload_H0: null H0");
     static_assert(sizeof(std::complex<double>) == sizeof(cuDoubleComplex),
                   "std::complex<double> layout must match cuDoubleComplex");
-    const size_t mat_bytes =
-        static_cast<size_t>(nb_) * static_cast<size_t>(nb_)
-        * sizeof(cuDoubleComplex);
+    const size_t mat_bytes = static_cast<size_t>(nb_) * static_cast<size_t>(nb_)
+                             * sizeof(cuDoubleComplex);
     check_cuda(cudaMemcpyAsync(d_H0_[static_cast<std::size_t>(ik)], H0,
                                mat_bytes, cudaMemcpyHostToDevice, stream_),
                "H2D H0");
@@ -204,8 +199,8 @@ void KpointIntegrateDevice::integrate(const double* d_V, double w, int ik) {
     auto* d_chi = static_cast<const cuDoubleComplex*>(
         d_chi_[static_cast<std::size_t>(ik)]);
     auto* d_Vmat = static_cast<cuDoubleComplex*>(d_Vmat_);
-    integrate_potential_k_kernel<<<nn, kBlock, 0, stream_>>>(
-        d_V, d_chi, nb_, npts_, w, d_Vmat);
+    integrate_potential_k_kernel<<<nn, kBlock, 0, stream_>>>(d_V, d_chi, nb_,
+                                                             npts_, w, d_Vmat);
     check_cuda(cudaGetLastError(), "integrate_potential_k_kernel");
 }
 
@@ -224,17 +219,16 @@ void KpointIntegrateDevice::assemble_H(int ik) {
     check_cuda(cudaGetLastError(), "assemble_h_kernel");
 }
 
-void KpointIntegrateDevice::download_Vmat(
-    std::complex<double>* out) const {
+void KpointIntegrateDevice::download_Vmat(std::complex<double>* out) const {
     ensure_built_();
     if (out == nullptr)
         throw std::invalid_argument(
             "KpointIntegrateDevice::download_Vmat: null out");
     const size_t bytes =
         static_cast<size_t>(nb_) * nb_ * sizeof(cuDoubleComplex);
-    check_cuda(cudaMemcpyAsync(out, d_Vmat_, bytes, cudaMemcpyDeviceToHost,
-                               stream_),
-               "D2H Vmat");
+    check_cuda(
+        cudaMemcpyAsync(out, d_Vmat_, bytes, cudaMemcpyDeviceToHost, stream_),
+        "D2H Vmat");
     check_cuda(cudaStreamSynchronize(stream_), "sync Vmat D2H");
 }
 
@@ -245,9 +239,9 @@ void KpointIntegrateDevice::download_H(std::complex<double>* out) const {
             "KpointIntegrateDevice::download_H: null out");
     const size_t bytes =
         static_cast<size_t>(nb_) * nb_ * sizeof(cuDoubleComplex);
-    check_cuda(cudaMemcpyAsync(out, d_H_, bytes, cudaMemcpyDeviceToHost,
-                               stream_),
-               "D2H H");
+    check_cuda(
+        cudaMemcpyAsync(out, d_H_, bytes, cudaMemcpyDeviceToHost, stream_),
+        "D2H H");
     check_cuda(cudaStreamSynchronize(stream_), "sync H D2H");
 }
 

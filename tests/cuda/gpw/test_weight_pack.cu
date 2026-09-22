@@ -117,9 +117,9 @@ TEST(CudaGpwWeightPack, PackWeightsMatchHost) {
     check_cuda(cudaMalloc(&d_P, 4 * sizeof(double)), "P");
     check_cuda(cudaMemcpy(d_geom, &g, sizeof(g), cudaMemcpyHostToDevice),
                "H2D geom");
-    check_cuda(cudaMemcpy(d_P, P.data(), 4 * sizeof(double),
-                          cudaMemcpyHostToDevice),
-               "H2D P");
+    check_cuda(
+        cudaMemcpy(d_P, P.data(), 4 * sizeof(double), cudaMemcpyHostToDevice),
+        "H2D P");
 
     pack.pack_weights(d_P, d_geom, d_prods, 1, /*eps_drop=*/1e-20);
     DeviceProduct q;
@@ -164,9 +164,9 @@ TEST(CudaGpwWeightPack, ScatterMatchesHost) {
     check_cuda(cudaMalloc(&d_acc, sizeof(double)), "acc");
     check_cuda(cudaMemcpy(d_geom, &g, sizeof(g), cudaMemcpyHostToDevice),
                "H2D geom");
-    check_cuda(cudaMemcpy(d_acc, acc.data(), sizeof(double),
-                          cudaMemcpyHostToDevice),
-               "H2D acc");
+    check_cuda(
+        cudaMemcpy(d_acc, acc.data(), sizeof(double), cudaMemcpyHostToDevice),
+        "H2D acc");
 
     pack.scatter_acc(d_geom, d_acc, 1, w_grid);
     std::vector<double> V_dev(4);
@@ -200,12 +200,12 @@ TEST(CudaGpwWeightPack, FrobeniusMatchesHost) {
     double *d_P = nullptr, *d_M = nullptr;
     check_cuda(cudaMalloc(&d_P, 4 * sizeof(double)), "P");
     check_cuda(cudaMalloc(&d_M, 4 * sizeof(double)), "M");
-    check_cuda(cudaMemcpy(d_P, P.data(), 4 * sizeof(double),
-                          cudaMemcpyHostToDevice),
-               "H2D P");
-    check_cuda(cudaMemcpy(d_M, M.data(), 4 * sizeof(double),
-                          cudaMemcpyHostToDevice),
-               "H2D M");
+    check_cuda(
+        cudaMemcpy(d_P, P.data(), 4 * sizeof(double), cudaMemcpyHostToDevice),
+        "H2D P");
+    check_cuda(
+        cudaMemcpy(d_M, M.data(), 4 * sizeof(double), cudaMemcpyHostToDevice),
+        "H2D M");
 
     const double dev = pack.frobenius(d_P, d_M);
     EXPECT_NEAR(dev, host, 1e-12);

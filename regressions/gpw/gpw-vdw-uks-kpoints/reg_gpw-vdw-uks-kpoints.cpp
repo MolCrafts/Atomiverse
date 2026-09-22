@@ -102,9 +102,9 @@ int main() {
     constexpr double kETotCp2k = -34.186333514352576; // Ha
     constexpr double kEDispTol = 1.0e-4;              // Ha
     // Same Γ-dimer twin-family systematic as gpw-vdw-kpoints / multigrid.
-    constexpr double kETotTol = 1.0e-2;     // Ha
-    constexpr double kGammaLimitTol = 1.0e-8; // Ha
-    constexpr double kIdentityTolEv = 3.0e-4; // eV
+    constexpr double kETotTol = 1.0e-2;         // Ha
+    constexpr double kGammaLimitTol = 1.0e-8;   // Ha
+    constexpr double kIdentityTolEv = 3.0e-4;   // eV
     constexpr double kIdentityDispTol = 1.0e-5; // Ha
 
     const auto atoms = make_atoms();
@@ -233,9 +233,8 @@ int main() {
         std::printf("G3: D_RKS=%.14e  D_UKS=%.14e  |Δ|=%.3e Ha\n", rr.e_disp,
                     ru.e_disp, dd);
         if (de_ev > kIdentityTolEv || dd > kIdentityDispTol) {
-            std::fprintf(stderr,
-                         "FAIL: G3 UKS≡RKS |ΔE|=%.3e eV |ΔD|=%.3e Ha\n", de_ev,
-                         dd);
+            std::fprintf(stderr, "FAIL: G3 UKS≡RKS |ΔE|=%.3e eV |ΔD|=%.3e Ha\n",
+                         de_ev, dd);
             return 1;
         }
         if (!(std::isfinite(ru.e_disp) && std::abs(ru.e_disp) > 1e-6)) {

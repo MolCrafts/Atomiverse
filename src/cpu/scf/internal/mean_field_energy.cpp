@@ -32,8 +32,8 @@ MeanFieldEnergy mean_field_energy_at_density(
     double E_one = 0, E_J = 0;
 
     if (restricted && is_hf) {
-        E_total = double(0.5) * xt::sum((Hcore_cm + F_alpha) * P_alpha)() + v_nuc
-                  - e_pcm_fock_half + e_solvent;
+        E_total = double(0.5) * xt::sum((Hcore_cm + F_alpha) * P_alpha)()
+                  + v_nuc - e_pcm_fock_half + e_solvent;
         E_one = xt::sum(Hcore_cm * P_alpha)();
     } else if (restricted) {
         E_one = xt::sum(Hcore_cm * P_alpha_new)();
@@ -41,7 +41,8 @@ MeanFieldEnergy mean_field_energy_at_density(
         // e_exact_exchange = alpha_hf * E_K, nonzero only for a KS global
         // hybrid (B3LYP / PBE0); zero for pure KS.
         // KS energy does not use F, so add ΔG_el directly (no half-trace peel).
-        E_total = E_one + E_J + e_exact_exchange + e_xc_grid + v_nuc + e_solvent;
+        E_total =
+            E_one + E_J + e_exact_exchange + e_xc_grid + v_nuc + e_solvent;
     } else if (is_hf) {
         E_total = double(0.5)
                       * (xt::sum((Hcore_cm + F_alpha) * P_alpha)()
@@ -54,7 +55,8 @@ MeanFieldEnergy mean_field_energy_at_density(
                 + xt::sum(Hcore_cm * P_beta_new)();
         E_J = double(0.5) * xt::sum(J * P_total_new)();
         // e_exact_exchange nonzero only for a UKS global hybrid.
-        E_total = E_one + E_J + e_exact_exchange + e_xc_grid + v_nuc + e_solvent;
+        E_total =
+            E_one + E_J + e_exact_exchange + e_xc_grid + v_nuc + e_solvent;
     }
 
     return MeanFieldEnergy{E_total, E_one, E_J};

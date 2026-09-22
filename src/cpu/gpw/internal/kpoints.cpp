@@ -176,8 +176,8 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
         double T[3];
     };
     std::vector<Img> imgs(static_cast<std::size_t>(nimg));
-    std::vector<Cplx> phase_ik(static_cast<std::size_t>(nk) *
-                               static_cast<std::size_t>(nimg));
+    std::vector<Cplx> phase_ik(static_cast<std::size_t>(nk)
+                               * static_cast<std::size_t>(nimg));
     int ii = 0;
     for (int tx = -m[0]; tx <= m[0]; ++tx)
         for (int ty = -m[1]; ty <= m[1]; ++ty)
@@ -189,8 +189,8 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                 imgs[static_cast<std::size_t>(ii)].T[1] = ty * L[1];
                 imgs[static_cast<std::size_t>(ii)].T[2] = tz * L[2];
                 for (int ik = 0; ik < nk; ++ik) {
-                    phase_ik[static_cast<std::size_t>(ik) *
-                                 static_cast<std::size_t>(nimg)
+                    phase_ik[static_cast<std::size_t>(ik)
+                                 * static_cast<std::size_t>(nimg)
                              + static_cast<std::size_t>(ii)] =
                         ph.ax[0][static_cast<std::size_t>(ik)]
                              [static_cast<std::size_t>(tx + m[0])]
@@ -201,7 +201,7 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                 }
             }
 
-// Upper-triangle pair list for load-balanced OMP (row-parallel left the
+    // Upper-triangle pair list for load-balanced OMP (row-parallel left the
     // last rows starved; dynamic pair chunks match CP2K pair tasks better).
     const long npairs = static_cast<long>(nb) * (static_cast<long>(nb) + 1) / 2;
 #pragma omp parallel for schedule(dynamic, 8)
@@ -248,10 +248,9 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
             double s_im = 0.0, t_im = 0.0;
             contracted_ST_shift(a, b, img.T, s_im, t_im);
             for (int ik = 0; ik < nk; ++ik) {
-                const Cplx phase =
-                    phase_ik[static_cast<std::size_t>(ik) *
-                                 static_cast<std::size_t>(nimg)
-                             + static_cast<std::size_t>(im)];
+                const Cplx phase = phase_ik[static_cast<std::size_t>(ik)
+                                                * static_cast<std::size_t>(nimg)
+                                            + static_cast<std::size_t>(im)];
                 s_acc[static_cast<std::size_t>(ik)] += phase * s_im;
                 t_acc[static_cast<std::size_t>(ik)] += phase * t_im;
             }
@@ -673,7 +672,8 @@ std::pair<std::vector<double>, CplxMatrix> diagonalize_k(const CplxMatrix& H_k,
                                                          const KOrth& orth) {
     // Dense complex products go through BLAS zgemm (linalg::c_mul /
     // linalg::c_dagger_mul, same row-major CplxMatrix type).
-    const CplxMatrix Hp = linalg::c_dagger_mul(orth.X, linalg::c_mul(H_k, orth.X));
+    const CplxMatrix Hp =
+        linalg::c_dagger_mul(orth.X, linalg::c_mul(H_k, orth.X));
     std::vector<double> eps;
     CplxMatrix Cp;
     linalg::eigh_hermitian(Hp, eps, Cp);

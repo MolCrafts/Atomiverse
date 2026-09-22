@@ -23,10 +23,10 @@ int main() {
     using namespace ATV;
     using clock = std::chrono::steady_clock;
     using cpu::gpw::GaussianBasis;
+    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::mbd_rsscs_pbe;
     using cpu::gpw::MbdResult;
     using cpu::gpw::ts_pbe;
@@ -98,8 +98,7 @@ int main() {
                         .energy;
                 pos_fd[i][d] = save;
                 const double fd = -(ep - em) / (2.0 * h);
-                max_err =
-                    std::max(max_err, std::abs(fd - mbd.forces[i][d]));
+                max_err = std::max(max_err, std::abs(fd - mbd.forces[i][d]));
                 sum[d] += mbd.forces[i][d];
             }
         }
@@ -178,8 +177,8 @@ int main() {
     std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
                                   GpwAtom(rB, basis, pot, 1)};
     std::vector<int> Zh = {1, 1};
-    std::vector<std::array<double, 3>> posh = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    std::vector<std::array<double, 3>> posh = {{rA[0], rA[1], rA[2]},
+                                               {rB[0], rB[1], rB[2]}};
     const double cell_h2[3] = {12.0, 12.0, 12.0};
     constexpr double kRcutTs = 50.0 * kA2B;
 
@@ -235,14 +234,13 @@ int main() {
             double max_wire_free = 0.0;
             for (int a = 0; a < 2; ++a) {
                 for (int d = 0; d < 3; ++d) {
-                    const double dF =
-                        F_h[static_cast<std::size_t>(a)][d]
-                        - F_plain[static_cast<std::size_t>(a)][d];
+                    const double dF = F_h[static_cast<std::size_t>(a)][d]
+                                      - F_plain[static_cast<std::size_t>(a)][d];
                     max_wire = std::max(
                         max_wire,
-                        std::abs(dF
-                                 - geom_h.forces[static_cast<std::size_t>(a)]
-                                               [d]));
+                        std::abs(
+                            dF
+                            - geom_h.forces[static_cast<std::size_t>(a)][d]));
                     max_wire_free = std::max(
                         max_wire_free,
                         std::abs(dF
@@ -261,11 +259,10 @@ int main() {
                 fail("multi-k TS forces still match free-atom (hirsh not "
                      "applied)");
             }
-            std::printf(
-                "  multi-k TS+Hirsh H2: e_disp=%.14e  n_kpts=%d  "
-                "max|wire_h|=%.2e  max|wire_free|=%.2e  v0=%.4f\n",
-                scf.e_disp, scf.n_kpts, max_wire, max_wire_free,
-                scf.volume_ratios[0]);
+            std::printf("  multi-k TS+Hirsh H2: e_disp=%.14e  n_kpts=%d  "
+                        "max|wire_h|=%.2e  max|wire_free|=%.2e  v0=%.4f\n",
+                        scf.e_disp, scf.n_kpts, max_wire, max_wire_free,
+                        scf.volume_ratios[0]);
         }
     }
 
@@ -301,14 +298,13 @@ int main() {
             double max_wire_free = 0.0;
             for (int a = 0; a < 2; ++a) {
                 for (int d = 0; d < 3; ++d) {
-                    const double dF =
-                        F_h[static_cast<std::size_t>(a)][d]
-                        - F_plain[static_cast<std::size_t>(a)][d];
+                    const double dF = F_h[static_cast<std::size_t>(a)][d]
+                                      - F_plain[static_cast<std::size_t>(a)][d];
                     max_wire = std::max(
                         max_wire,
-                        std::abs(dF
-                                 - geom_h.forces[static_cast<std::size_t>(a)]
-                                               [d]));
+                        std::abs(
+                            dF
+                            - geom_h.forces[static_cast<std::size_t>(a)][d]));
                     max_wire_free = std::max(
                         max_wire_free,
                         std::abs(dF
@@ -327,11 +323,10 @@ int main() {
                 fail("multi-k MBD forces still match free-atom (hirsh not "
                      "applied)");
             }
-            std::printf(
-                "  multi-k MBD+Hirsh H2: e_disp=%.14e  n_kpts=%d  "
-                "max|wire_h|=%.2e  max|wire_free|=%.2e  v0=%.4f\n",
-                scf.e_disp, scf.n_kpts, max_wire, max_wire_free,
-                scf.volume_ratios[0]);
+            std::printf("  multi-k MBD+Hirsh H2: e_disp=%.14e  n_kpts=%d  "
+                        "max|wire_h|=%.2e  max|wire_free|=%.2e  v0=%.4f\n",
+                        scf.e_disp, scf.n_kpts, max_wire, max_wire_free,
+                        scf.volume_ratios[0]);
         }
     }
 

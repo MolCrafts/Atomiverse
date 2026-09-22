@@ -76,10 +76,12 @@ int main() {
     // Offline pins (REFERENCE.md) — first-green ATV freeze; replace with CP2K
     // twin digits when available offline.
     // Placeholders updated after first green run of this binary.
-    constexpr double kEDispRef = 1.5207282287995946e-01; // Ha, first-green freeze
-    constexpr double kETotRef = -3.4481701207152035e+01; // Ha, first-green freeze
-    constexpr double kTolDisp = 5.0e-5; // Ha
-    constexpr double kTolTot = 1.0e-3;  // Ha (setup integrity until CP2K)
+    constexpr double kEDispRef =
+        1.5207282287995946e-01; // Ha, first-green freeze
+    constexpr double kETotRef =
+        -3.4481701207152035e+01;          // Ha, first-green freeze
+    constexpr double kTolDisp = 5.0e-5;   // Ha
+    constexpr double kTolTot = 1.0e-3;    // Ha (setup integrity until CP2K)
     constexpr double kDualFloor = 1.0e-4; // Ha |E_opt - E_pbe|
 
     auto atoms = water_dimer_atoms();
@@ -88,8 +90,9 @@ int main() {
     const auto res_pbe = run_gpw(XcKind::PBE, /*vdw_df=*/false, atoms);
     const auto res_opt = run_gpw(XcKind::OptB88VdW, /*vdw_df=*/false, atoms);
     if (!std::isfinite(res_pbe.e_total) || !std::isfinite(res_opt.e_total)) {
-        std::fprintf(stderr, "FAIL: non-finite semi-local totals "
-                             "PBE=%.14e Opt=%.14e\n",
+        std::fprintf(stderr,
+                     "FAIL: non-finite semi-local totals "
+                     "PBE=%.14e Opt=%.14e\n",
                      res_pbe.e_total, res_opt.e_total);
         return 1;
     }
@@ -105,8 +108,9 @@ int main() {
     // Full optB88-vdW: OptB88VdW + DRSLL.
     const auto res = run_gpw(XcKind::OptB88VdW, /*vdw_df=*/true, atoms);
     if (!std::isfinite(res.e_disp) || !std::isfinite(res.e_total)) {
-        std::fprintf(stderr, "FAIL: non-finite optB88-vdW E_disp=%.14e "
-                             "e_total=%.14e\n",
+        std::fprintf(stderr,
+                     "FAIL: non-finite optB88-vdW E_disp=%.14e "
+                     "e_total=%.14e\n",
                      res.e_disp, res.e_total);
         return 1;
     }

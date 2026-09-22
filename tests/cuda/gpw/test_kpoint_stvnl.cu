@@ -19,14 +19,14 @@
 #include <vector>
 #include <xtensor/containers/xtensor.hpp>
 
+using ATV::cpu::gpw::basis_function_radius;
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GridBasisFunction;
 using ATV::cpu::gpw::GthPotential;
-using ATV::cpu::gpw::basis_function_radius;
 using ATV::cpu::gpw::pair_image_counts;
+using ATV::cpu::gpw::internal::build_overlap_kinetic_k;
 using ATV::cpu::gpw::internal::CplxMatrix;
 using ATV::cpu::gpw::internal::KPoint;
-using ATV::cpu::gpw::internal::build_overlap_kinetic_k;
 using ATV::cuda::gpw::internal::KpointStvnlDevice;
 
 namespace {
@@ -126,10 +126,9 @@ TEST(CudaGpwKpointStvnl, MatchesHostST) {
             for (int t = 0; t < nb; ++t) {
                 const Cplx hs = S_host[static_cast<std::size_t>(ik)](u, t);
                 const Cplx ht = T_host[static_cast<std::size_t>(ik)](u, t);
-                const std::size_t idx =
-                    static_cast<std::size_t>(ik) * nb * nb
-                    + static_cast<std::size_t>(u) * nb
-                    + static_cast<std::size_t>(t);
+                const std::size_t idx = static_cast<std::size_t>(ik) * nb * nb
+                                        + static_cast<std::size_t>(u) * nb
+                                        + static_cast<std::size_t>(t);
                 const Cplx ds = S_dev[idx];
                 const Cplx dt = T_dev[idx];
                 const double as = std::abs(ds - hs);
@@ -145,14 +144,12 @@ TEST(CudaGpwKpointStvnl, MatchesHostST) {
         // Hermiticity of device S
         for (int u = 0; u < nb; ++u) {
             for (int t = 0; t <= u; ++t) {
-                const std::size_t iut =
-                    static_cast<std::size_t>(ik) * nb * nb
-                    + static_cast<std::size_t>(u) * nb
-                    + static_cast<std::size_t>(t);
-                const std::size_t itu =
-                    static_cast<std::size_t>(ik) * nb * nb
-                    + static_cast<std::size_t>(t) * nb
-                    + static_cast<std::size_t>(u);
+                const std::size_t iut = static_cast<std::size_t>(ik) * nb * nb
+                                        + static_cast<std::size_t>(u) * nb
+                                        + static_cast<std::size_t>(t);
+                const std::size_t itu = static_cast<std::size_t>(ik) * nb * nb
+                                        + static_cast<std::size_t>(t) * nb
+                                        + static_cast<std::size_t>(u);
                 const Cplx a = S_dev[iut];
                 const Cplx b = std::conj(S_dev[itu]);
                 EXPECT_NEAR(a.real(), b.real(), 1e-12);

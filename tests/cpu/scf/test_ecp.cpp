@@ -58,12 +58,12 @@
 using namespace ATV;
 using cpu::scf::BasisSet;
 using cpu::scf::EcpPotential;
-using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::basis_data::AtomEcp;
 using cpu::scf::basis_data::EcpChannel;
 using cpu::scf::basis_data::EcpGaussianTerm;
 using cpu::scf::internal::EcpCenter;
 using cpu::scf::internal::EcpIntegrals;
+using cpu::scf::internal::IntegralWorkspace;
 
 namespace {
 
@@ -320,7 +320,8 @@ TEST(EcpIntegrals_, UMatrixPinnedVsPyscfSyntheticFChannel) {
 TEST(EcpIntegralWorkspace, I2ValenceWiring) {
     const auto frame = i2_frame();
     const cpu::scf::internal::IntegralWorkspace ae{frame, BasisSet::Def2SVP};
-    const cpu::scf::internal::IntegralWorkspace ve{frame, BasisSet::Def2SVP, 0, false, "def2-ECP"};
+    const cpu::scf::internal::IntegralWorkspace ve{frame, BasisSet::Def2SVP, 0,
+                                                   false, "def2-ECP"};
 
     // Electron and AO bookkeeping: 2 * (53 - 28) = 50 valence electrons.
     EXPECT_EQ(ae.n_electrons, 106);
@@ -373,7 +374,8 @@ TEST(EcpIntegralWorkspace, LightMoleculeUnchangedAndUnknownNameThrows) {
     h2o.box = cpu::Box::cubic(20.0);
 
     const cpu::scf::internal::IntegralWorkspace plain{h2o, BasisSet::Def2SVP};
-    const cpu::scf::internal::IntegralWorkspace named{h2o, BasisSet::Def2SVP, 0, false, "def2-ECP"};
+    const cpu::scf::internal::IntegralWorkspace named{h2o, BasisSet::Def2SVP, 0,
+                                                      false, "def2-ECP"};
     EXPECT_FALSE(named.has_ecp);
     EXPECT_EQ(named.n_electrons, plain.n_electrons);
     EXPECT_EQ(named.V_nuc, plain.V_nuc);
@@ -384,7 +386,8 @@ TEST(EcpIntegralWorkspace, LightMoleculeUnchangedAndUnknownNameThrows) {
                               std::abs(plain.Hcore(i, j) - named.Hcore(i, j)));
     EXPECT_EQ(max_dH, 0.0);
 
-    EXPECT_THROW(cpu::scf::internal::IntegralWorkspace(h2o, BasisSet::Def2SVP, 0, false, "no-such"),
+    EXPECT_THROW(cpu::scf::internal::IntegralWorkspace(h2o, BasisSet::Def2SVP,
+                                                       0, false, "no-such"),
                  std::runtime_error);
 }
 

@@ -27,8 +27,9 @@ namespace scf {
 /// @param e_scf_ha Converged SCF total energy [Hartree].
 /// @param n_frozen Lowest occupied spatial MOs frozen (0 = full correlation).
 /// @return MP4 correlation pieces and total energy [Hartree].
-MP4Result mp4_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                     double e_scf_ha, int n_frozen = 0);
+MP4Result mp4_energy(const internal::IntegralView& ints,
+                     const SlaterDeterminant& det, double e_scf_ha,
+                     int n_frozen = 0);
 
 } // namespace scf
 } // namespace cpu

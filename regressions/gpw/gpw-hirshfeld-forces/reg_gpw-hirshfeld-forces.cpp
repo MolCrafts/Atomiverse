@@ -34,11 +34,11 @@ int main() {
     using namespace ATV;
     using clock = std::chrono::steady_clock;
     using cpu::gpw::GaussianBasis;
+    using cpu::gpw::gpw_forces_from_scf;
+    using cpu::gpw::gpw_stress;
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::gpw_forces_from_scf;
-    using cpu::gpw::gpw_stress;
     using cpu::gpw::mbd_rsscs_pbe;
     using cpu::gpw::MbdResult;
     using cpu::gpw::ts_pbe;
@@ -113,8 +113,7 @@ int main() {
                         .energy;
                 pos_fd[i][d] = save;
                 const double fd = -(ep - em) / (2.0 * h);
-                max_err =
-                    std::max(max_err, std::abs(fd - mbd.forces[i][d]));
+                max_err = std::max(max_err, std::abs(fd - mbd.forces[i][d]));
                 sum[d] += mbd.forces[i][d];
             }
         }
@@ -235,14 +234,12 @@ int main() {
         // Energy must match volume-scaled TS at SCF ratios (periodic pure-RS).
         constexpr double kRcut = 50.0 * kA2B;
         const double cell[3] = {L, L, L};
-        const TsResult geom_h =
-            ts_pbe(Z, pos, cell, /*periodic=*/true, kRcut, 0.94, 20.0,
-                   res.volume_ratios);
+        const TsResult geom_h = ts_pbe(Z, pos, cell, /*periodic=*/true, kRcut,
+                                       0.94, 20.0, res.volume_ratios);
         const TsResult geom_free =
             ts_pbe(Z, pos, cell, /*periodic=*/true, kRcut);
         if (std::abs(res.e_disp - geom_h.energy) > kETol) {
-            std::fprintf(stderr,
-                         "FAIL: product e_disp=%.14e vs geom_h=%.14e\n",
+            std::fprintf(stderr, "FAIL: product e_disp=%.14e vs geom_h=%.14e\n",
                          res.e_disp, geom_h.energy);
             ++nfail;
         }
@@ -262,11 +259,10 @@ int main() {
             for (std::size_t a = 0; a < 6; ++a) {
                 for (int d = 0; d < 3; ++d) {
                     const double dF = F_h[a][d] - F_plain[a][d];
-                    max_wire = std::max(
-                        max_wire, std::abs(dF - geom_h.forces[a][d]));
+                    max_wire =
+                        std::max(max_wire, std::abs(dF - geom_h.forces[a][d]));
                     max_wire_free = std::max(
-                        max_wire_free,
-                        std::abs(dF - geom_free.forces[a][d]));
+                        max_wire_free, std::abs(dF - geom_free.forces[a][d]));
                 }
             }
             if (max_wire > kWiringTol) {
@@ -315,7 +311,8 @@ int main() {
                     dsig, sig_h[0]);
     }
 
-    const double wall = std::chrono::duration<double>(clock::now() - t0).count();
+    const double wall =
+        std::chrono::duration<double>(clock::now() - t0).count();
     if (wall > kWallBudget) {
         std::fprintf(stderr, "FAIL: wall %.2f s > budget %.1f s\n", wall,
                      kWallBudget);

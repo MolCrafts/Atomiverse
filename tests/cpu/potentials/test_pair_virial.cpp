@@ -53,9 +53,9 @@ using namespace ATV;
 
 namespace {
 
-constexpr int kN = 24;      ///< ≥ 8 neighbours for the low rows ⇒ the xsimd
-                            ///< ket loop runs (W = 8 on AVX-512) plus a tail.
-constexpr double kBox = 40.0;  ///< [Å] — cutoff stays < L/2.
+constexpr int kN = 24;        ///< ≥ 8 neighbours for the low rows ⇒ the xsimd
+                              ///< ket loop runs (W = 8 on AVX-512) plus a tail.
+constexpr double kBox = 40.0; ///< [Å] — cutoff stays < L/2.
 constexpr double kCutoff = 14.0; ///< [Å] — larger than the cluster diameter.
 
 /// @brief Deterministic pseudo-random cluster, all pairs inside the cutoff.
@@ -246,7 +246,8 @@ TEST(PairLJCut, SimdKetLoopVirialMatchesPairSum) {
     // The pair sum is exact arithmetic over the identical pair set; only
     // summation order differs, so the tolerance is rounding, not physics.
     for (int k = 0; k < 6; ++k)
-        EXPECT_NEAR(got.v[k], want.v[k], 1e-11 * std::max(1.0, std::fabs(want.v[k])))
+        EXPECT_NEAR(got.v[k], want.v[k],
+                    1e-11 * std::max(1.0, std::fabs(want.v[k])))
             << "Voigt component " << k;
     // Guard the guard: a virial of zero must not pass by accident.
     EXPECT_GT(std::fabs(want.trace()), 1.0);
@@ -315,9 +316,9 @@ TEST(PairBorn, MultiTypeTableWritesTheSameVirial) {
 // ── PairBuck ────────────────────────────────────────────────────────────
 
 namespace {
-constexpr double kBuckA = 100.0;  // [eV]
-constexpr double kBuckRho = 0.3;  // [Å]
-constexpr double kBuckC = 5.0;    // [eV Å⁶]
+constexpr double kBuckA = 100.0; // [eV]
+constexpr double kBuckRho = 0.3; // [Å]
+constexpr double kBuckC = 5.0;   // [eV Å⁶]
 } // namespace
 
 TEST(PairBuck, VirialMatchesPairSum) {
@@ -491,17 +492,17 @@ TEST(PairGaussianCoul, VirialMatchesPairSum) {
     run_style(gc, f, e, got);
 
     const double K = units::coulomb;
-    const Voigt want = reference_virial(f, kCutoff, [&](int i, int j,
-                                                        double r2) {
-        const double r = std::sqrt(r2);
-        const double qi = f.span(kAtom_charge)[i];
-        const double qj = f.span(kAtom_charge)[j];
-        const double ei = gauss_eta()[static_cast<std::size_t>(i % 2)];
-        const double ej = gauss_eta()[static_cast<std::size_t>(j % 2)];
-        const double dG = cpu::GaussianChargeKernel::dgreens_dr(r, ei, ej);
-        // U = K q_i q_j G(r) → −U'/r = −K q_i q_j G'(r)/r
-        return -K * qi * qj * dG / r;
-    });
+    const Voigt want =
+        reference_virial(f, kCutoff, [&](int i, int j, double r2) {
+            const double r = std::sqrt(r2);
+            const double qi = f.span(kAtom_charge)[i];
+            const double qj = f.span(kAtom_charge)[j];
+            const double ei = gauss_eta()[static_cast<std::size_t>(i % 2)];
+            const double ej = gauss_eta()[static_cast<std::size_t>(j % 2)];
+            const double dG = cpu::GaussianChargeKernel::dgreens_dr(r, ei, ej);
+            // U = K q_i q_j G(r) → −U'/r = −K q_i q_j G'(r)/r
+            return -K * qi * qj * dG / r;
+        });
 
     for (int k = 0; k < 6; ++k)
         EXPECT_NEAR(got.v[k], want.v[k],
@@ -592,8 +593,8 @@ TEST(PairDpd, VirialExcludesDissipativeAndRandomForces) {
     // The thermostat must actually be doing something, or this proves nothing.
     double max_df = 0.0;
     for (int i = 0; i < kN; ++i)
-        max_df = std::max(max_df, std::fabs(f_dr.span(kAtom_fx)[i]
-                                            - f_c.span(kAtom_fx)[i]));
+        max_df = std::max(
+            max_df, std::fabs(f_dr.span(kAtom_fx)[i] - f_c.span(kAtom_fx)[i]));
     EXPECT_GT(max_df, 1e-6);
     EXPECT_GT(std::fabs(s_c.trace()), 1.0);
 
@@ -615,14 +616,14 @@ TEST(PairDpd, VirialExcludesDissipativeAndRandomForces) {
 // knowing any of this.
 
 namespace {
-constexpr double kROH = 0.9572;            // [Å]
-constexpr double kThetaHOH = 1.82421813;   // [rad] = 104.52°
-constexpr double kQDist = 0.15;            // [Å]
-constexpr double kTipEps = 0.006721;       // [eV] ≈ 0.155 kcal/mol
-constexpr double kTipSigma = 3.15365;      // [Å]
-constexpr double kTipCut = 25.0;           // [Å] — beyond the cluster diameter
-constexpr double kTipBox = 100.0;          // [Å] — cutoff stays < L/2
-constexpr double kQO = -1.04, kQH = 0.52;  // [e]
+constexpr double kROH = 0.9572;           // [Å]
+constexpr double kThetaHOH = 1.82421813;  // [rad] = 104.52°
+constexpr double kQDist = 0.15;           // [Å]
+constexpr double kTipEps = 0.006721;      // [eV] ≈ 0.155 kcal/mol
+constexpr double kTipSigma = 3.15365;     // [Å]
+constexpr double kTipCut = 25.0;          // [Å] — beyond the cluster diameter
+constexpr double kTipBox = 100.0;         // [Å] — cutoff stays < L/2
+constexpr double kQO = -1.04, kQH = 0.52; // [e]
 constexpr int kNWater = 4;
 
 /// @brief Four rigid TIP4P waters, deterministic centres and orientations.
@@ -638,8 +639,10 @@ cpu::Frame water_cluster(double lambda) {
     for (int m = 0; m < kNWater; ++m) {
         const double a = 1.9 * m + 0.4;
         const double ox = 0.45 * (4.6 * std::sin(a) + 1.2 * std::cos(2.3 * a));
-        const double oy = 0.45 * (4.6 * std::cos(1.7 * a) + 0.8 * std::sin(3.1 * a));
-        const double oz = 0.45 * (4.6 * std::sin(2.3 * a + 0.7) + 1.1 * std::cos(a));
+        const double oy =
+            0.45 * (4.6 * std::cos(1.7 * a) + 0.8 * std::sin(3.1 * a));
+        const double oz =
+            0.45 * (4.6 * std::sin(2.3 * a + 0.7) + 1.1 * std::cos(a));
         const double phi = 0.83 * m + 0.21, psi = 0.57 * m + 1.13;
         auto rot = [&](double vx, double vy, double vz, double& rx, double& ry,
                        double& rz) {

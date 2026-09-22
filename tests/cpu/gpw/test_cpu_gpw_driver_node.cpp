@@ -10,14 +10,14 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
-#include "atomiverse/cpu/gpw/stages/diagonalize_stage.h"
 #include "atomiverse/cpu/gpw/stages/density_stage.h"
+#include "atomiverse/cpu/gpw/stages/diagonalize_stage.h"
 #include "atomiverse/cpu/gpw/stages/gpw_converged.h"
 #include "atomiverse/cpu/gpw/stages/ks_build_stage.h"
 #include "atomiverse/cpu/gpw/stages/mix_stage.h"
 
-using ATV::cpu::gpw::DiagonalizeStage;
 using ATV::cpu::gpw::DensityStage;
+using ATV::cpu::gpw::DiagonalizeStage;
 using ATV::cpu::gpw::GpwConverged;
 using ATV::cpu::gpw::GpwDft;
 using ATV::cpu::gpw::KsBuildStage;

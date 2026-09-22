@@ -112,8 +112,8 @@ int main() {
         check(rt.converged, "M2 TR-mesh multigrid SCF converged");
         mark("M2 TR-mesh done");
         e_mg_id = rt.e_total;
-        std::printf("M2: E(4k TR, 40 Ry mg) = %.9f Ha (iters=%d)\n",
-                    rt.e_total, rt.iters);
+        std::printf("M2: E(4k TR, 40 Ry mg) = %.9f Ha (iters=%d)\n", rt.e_total,
+                    rt.iters);
     }
 
     // ── M3: multigrid vs single-grid discretization (40 Ry) ────────────────

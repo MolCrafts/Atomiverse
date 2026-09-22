@@ -137,8 +137,7 @@ AccReal smear_entropy_band(AccReal eig, AccReal mu, AccReal degauss,
 AccReal smear_entropy_spinor(AccReal eig, AccReal mu, AccReal degauss,
                              SmearKind kind, int mp_order) {
     // Half the closed-shell band entropy (one spin channel).
-    return AccReal(0.5)
-           * smear_entropy_band(eig, mu, degauss, kind, mp_order);
+    return AccReal(0.5) * smear_entropy_band(eig, mu, degauss, kind, mp_order);
 }
 
 namespace {
@@ -224,7 +223,8 @@ SmearFill fill_occupations(const std::vector<AccReal>& evals,
     out.occ.resize(evals.size());
     for (std::size_t i = 0; i < evals.size(); ++i) {
         if (!(degauss > AccReal(0)))
-            throw std::invalid_argument("fill_occupations: degauss must be > 0");
+            throw std::invalid_argument(
+                "fill_occupations: degauss must be > 0");
         const AccReal x = (evals[i] - mu) / degauss;
         const AccReal f = smear_f_spinless(x, kind, mp_order);
         out.occ[i] = spin_degen * f;
@@ -244,9 +244,9 @@ SmearFill fill_occupations(const std::vector<AccReal>& evals,
         case SmearKind::gaussian:
         case SmearKind::methfessel_paxton:
             // Half of the closed-shell band entropy weight.
-            s_spinless = AccReal(0.5)
-                         * smear_entropy_band(evals[i], mu, degauss, kind,
-                                              mp_order);
+            s_spinless =
+                AccReal(0.5)
+                * smear_entropy_band(evals[i], mu, degauss, kind, mp_order);
             break;
         }
         if (std::isfinite(static_cast<double>(s_spinless)))

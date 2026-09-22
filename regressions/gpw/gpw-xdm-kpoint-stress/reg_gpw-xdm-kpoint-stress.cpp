@@ -116,15 +116,14 @@ int main() {
                                   L * kPinAng2Bohr};
                 cell[a] *= scale;
                 for (int i = 0; i < 6; ++i) {
-                    pos[static_cast<std::size_t>(i)] = {
-                        xs[i] * kPinAng2Bohr, ys[i] * kPinAng2Bohr,
-                        zs[i] * kPinAng2Bohr};
-                    pos[static_cast<std::size_t>(i)][static_cast<std::size_t>(
-                        a)] *= scale;
+                    pos[static_cast<std::size_t>(i)] = {xs[i] * kPinAng2Bohr,
+                                                        ys[i] * kPinAng2Bohr,
+                                                        zs[i] * kPinAng2Bohr};
+                    pos[static_cast<std::size_t>(i)]
+                       [static_cast<std::size_t>(a)] *= scale;
                 }
                 const double e =
-                    cpu::gpw::xdm_pbe(Z, pos, cell, /*periodic=*/true,
-                                      kRcutXdm)
+                    cpu::gpw::xdm_pbe(Z, pos, cell, /*periodic=*/true, kRcutXdm)
                         .energy;
                 const double ref = kEDispStrainRef[a][s];
                 const double err = std::abs(e - ref);
@@ -284,7 +283,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3)
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3)
             conv_ok = false;
     }
     check(conv_ok, "E kStress unit conversion");

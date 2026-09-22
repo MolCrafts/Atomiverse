@@ -68,8 +68,8 @@ constexpr double kFTwoCp2k[6][3] = {
 
 // ATM-only force pin: difference cancels electronic force to ~1e-15;
 // floor is FORCES| print resolution vs ATM signal ~6.9e-7 Ha/Bohr.
-constexpr double kFAtmTol = 1.0e-8;  // Ha/Bohr
-constexpr double kFAtmMin = 1.0e-7;  // Ha/Bohr engage floor
+constexpr double kFAtmTol = 1.0e-8; // Ha/Bohr
+constexpr double kFAtmMin = 1.0e-7; // Ha/Bohr engage floor
 // Product multi-k wiring (H2): force assembly (d3_atm on-off) vs standalone.
 constexpr double kWiringTol = 1.0e-7; // Ha/Bohr
 constexpr double kWallBudget = 60.0;  // s
@@ -88,10 +88,10 @@ void atm_diff_errors(const std::vector<std::array<double, 3>>& f_on,
     for (int i = 0; i < 6; ++i) {
         for (int k = 0; k < 3; ++k) {
             const double want = cp2k_on[i][k] - cp2k_off[i][k];
-            const double got = f_on[static_cast<std::size_t>(i)]
-                                   [static_cast<std::size_t>(k)]
-                               - f_off[static_cast<std::size_t>(i)]
-                                      [static_cast<std::size_t>(k)];
+            const double got =
+                f_on[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)]
+                - f_off[static_cast<std::size_t>(i)]
+                       [static_cast<std::size_t>(k)];
             max_err = std::max(max_err, std::abs(got - want));
             max_signal = std::max(max_signal, std::abs(want));
         }
@@ -147,9 +147,10 @@ int main() {
     atm_diff_errors(d3_on.forces, d3_off.forces, kFAtmCp2k, kFTwoCp2k, err_atm,
                     sig_atm);
     if (err_atm > kFAtmTol || sig_atm < kFAtmMin) {
-        std::printf("FAIL: multi-k ATM force pin  max|dF-cp2k|=%.3e (tol %.1e)  "
-                    "signal=%.3e (min %.1e) Ha/Bohr\n",
-                    err_atm, kFAtmTol, sig_atm, kFAtmMin);
+        std::printf(
+            "FAIL: multi-k ATM force pin  max|dF-cp2k|=%.3e (tol %.1e)  "
+            "signal=%.3e (min %.1e) Ha/Bohr\n",
+            err_atm, kFAtmTol, sig_atm, kFAtmMin);
         return 1;
     }
     std::printf("standalone ATM: E_disp=%.14e (|d|=%.2e)  max|dF-cp2k|=%.3e  "
@@ -161,7 +162,8 @@ int main() {
     // Cheap product twin (same mesh class as the CP2K ENERGY_FORCE twin)
     // so the e2e wall stays under 60 s. ATM pin above already exercised
     // lattice-image triples on the water dimer.
-    const auto basis = cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
+    const auto basis =
+        cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
     const auto pot = cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1");
     const double rA[3] = {5.5, 6.0, 6.0};
     const double rB[3] = {6.5, 6.0, 6.0};
@@ -199,8 +201,9 @@ int main() {
         return 1;
     }
     if (scf.n_kpts < 1 || scf.C_occ_k.empty()) {
-        std::printf("FAIL: multi-k payload missing (n_kpts=%d C_occ_k.empty=%d)\n",
-                    scf.n_kpts, scf.C_occ_k.empty() ? 1 : 0);
+        std::printf(
+            "FAIL: multi-k payload missing (n_kpts=%d C_occ_k.empty=%d)\n",
+            scf.n_kpts, scf.C_occ_k.empty() ? 1 : 0);
         return 1;
     }
     if (!std::isfinite(scf.e_disp)) {
@@ -216,8 +219,8 @@ int main() {
         std::chrono::duration<double>(clock::now() - t_prod0).count();
 
     std::vector<int> Zh = {1, 1};
-    std::vector<std::array<double, 3>> posh = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    std::vector<std::array<double, 3>> posh = {{rA[0], rA[1], rA[2]},
+                                               {rB[0], rB[1], rB[2]}};
     const double cell_h[3] = {12.0, 12.0, 12.0};
     const cpu::gpw::D3Result h_on = cpu::gpw::dftd3_pbe(
         Zh, posh, cell_h, /*periodic=*/true, cpu::gpw::D3Params{}, 20.0,
@@ -235,9 +238,8 @@ int main() {
                 std::printf("FAIL: non-finite force atom %d axis %d\n", a, k);
                 return 1;
             }
-            const double f_atm =
-                h_on.forces[static_cast<std::size_t>(a)][k]
-                - h_off.forces[static_cast<std::size_t>(a)][k];
+            const double f_atm = h_on.forces[static_cast<std::size_t>(a)][k]
+                                 - h_off.forces[static_cast<std::size_t>(a)][k];
             max_wire = std::max(max_wire, std::abs((on - off) - f_atm));
         }
     }

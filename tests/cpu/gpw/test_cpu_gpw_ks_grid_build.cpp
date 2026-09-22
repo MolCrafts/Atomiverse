@@ -53,9 +53,9 @@ TEST(KsGridBuild, UksDualVeffSameLength) {
     std::vector<double> rho_b(n, 0.008);
     std::vector<double> n_ion(n, 0.02);
     std::vector<double> v_loc(n, -0.1);
-    const auto out = ks_grid_build_uks(grid, rho_a, rho_b, n_ion, v_loc,
-                                       XcKind::PADE, /*nonperiodic=*/false,
-                                       false, false, false);
+    const auto out =
+        ks_grid_build_uks(grid, rho_a, rho_b, n_ion, v_loc, XcKind::PADE,
+                          /*nonperiodic=*/false, false, false, false);
     ASSERT_EQ(out.veff_a.size(), n);
     ASSERT_EQ(out.veff_b.size(), n);
     EXPECT_LT(out.e_locgrid, 0.0); // ρ·V_loc with negative V_loc

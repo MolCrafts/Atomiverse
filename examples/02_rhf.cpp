@@ -40,8 +40,9 @@ int main() {
     // Concrete method — parameters are constructor arguments; Frame is the
     // only I/O.
     cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0,
-                      /*tol=*/(sizeof(double) == sizeof(float)) ? double(1e-5)
-                                                                : double(1e-10),
+                      /*tol=*/
+                      (sizeof(double) == sizeof(float)) ? double(1e-5)
+                                                        : double(1e-10),
                       /*max_iter=*/100};
 
     rhf.run(frame); // eV energy on frame.meta[kEnergy]; Hartree on energy()

@@ -118,8 +118,7 @@ TEST(FixDfield, FeedbackForceIsMinusEnergyGradient) {
     auto fm = charge_pair();
     fp.span(kAtom_z)[0] = 6.0 + h;
     fm.span(kAtom_z)[0] = 6.0 - h;
-    cpu::md::FixDfield dp(0.0, 0.0, 0.5), dm(0.0, 0.0, 0.5),
-        d0(0.0, 0.0, 0.5);
+    cpu::md::FixDfield dp(0.0, 0.0, 0.5), dm(0.0, 0.0, 0.5), d0(0.0, 0.0, 0.5);
     dp.polarization_feedback = dm.polarization_feedback =
         d0.polarization_feedback = true;
     const double Up = launch_once(dp, fp);

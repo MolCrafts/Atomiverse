@@ -92,7 +92,8 @@ int main() {
         return 1;
     }
     if (!std::isfinite(res.e_total) || res.e_disp >= 0.0) {
-        std::fprintf(stderr, "FAIL: e_total non-finite or E_disp not attractive\n");
+        std::fprintf(stderr,
+                     "FAIL: e_total non-finite or E_disp not attractive\n");
         return 1;
     }
 

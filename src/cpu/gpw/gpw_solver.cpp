@@ -36,11 +36,11 @@
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
-#include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/hartree_grid.h"
 #include "atomiverse/cpu/gpw/internal/hirshfeld_volumes.h"
 #include "atomiverse/cpu/gpw/internal/kpoints.h"
+#include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 #include "atomiverse/cpu/gpw/internal/local_pp.h"
 #include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/mt_poisson.h"
@@ -985,9 +985,10 @@ GpwAtom::GpwAtom(const double pos[3], const GaussianBasis& basis,
 /// so every rank holds identical `e_total`. Setup matrices stay replicated
 /// (foothold; not full domain decomp). nprocs==1 is bit-identical to serial.
 // Multi-path DIIS stage drive: factory binds Ops to gate refs; Driver owns loop.
-using PathOpFactoryFn = std::function<std::tuple<
-    KsBuildStage::Op, MixStage::Op, DiagonalizeStage::Op, DensityStage::Op>(
-    bool& skip, double& e_total, double& err_norm, double& prev_energy)>;
+using PathOpFactoryFn =
+    std::function<std::tuple<KsBuildStage::Op, MixStage::Op,
+                             DiagonalizeStage::Op, DensityStage::Op>(
+        bool& skip, double& e_total, double& err_norm, double& prev_energy)>;
 using StageDrive =
     std::function<bool(PathOpFactoryFn factory, int max_iter, GpwResult& res)>;
 
@@ -1117,8 +1118,8 @@ static GpwResult run_gpw_scf_kpoints(
     ProductSet& products = ws.products;
     if (use_mg) {
         k_setup_clk_early = std::chrono::steady_clock::now();
-        mg = make_multigrid(cfg.cell, cfg.cutoff_ry, cfg.ngrids,
-                            cfg.rel_cutoff);
+        mg =
+            make_multigrid(cfg.cell, cfg.cutoff_ry, cfg.ngrids, cfg.rel_cutoff);
         if (mg.levels[0].n[0] != grid.n[0] || mg.levels[0].n[1] != grid.n[1]
             || mg.levels[0].n[2] != grid.n[2])
             throw std::logic_error(
@@ -1161,9 +1162,9 @@ static GpwResult run_gpw_scf_kpoints(
                 const Cplx* Pd = P.data();
                 const std::size_t nn = static_cast<std::size_t>(nb) * nb;
                 for (std::size_t e = 0; e < nn; ++e)
-                    Dc[e] += wk
-                             * (Pd[e].real() * ph.real()
-                                - Pd[e].imag() * ph.imag());
+                    Dc[e] +=
+                        wk
+                        * (Pd[e].real() * ph.real() - Pd[e].imag() * ph.imag());
             }
         }
 #ifdef ATV_HAS_MPI
@@ -1178,9 +1179,8 @@ static GpwResult run_gpw_scf_kpoints(
     // Fine-grid density from {P_k}: multi-level product collocation + spectral
     // prolongation (shared MAIN path). Every rank returns the GLOBAL density.
     auto mg_density = [&](const std::vector<CplxMatrix>& Pk) {
-        return multigrid_collocate_rho_cells(mg, products, nb,
-                                             mg_density_stack(Pk),
-                                             cfg.eps_default);
+        return multigrid_collocate_rho_cells(
+            mg, products, nb, mg_density_stack(Pk), cfg.eps_default);
     };
     // Real per-cell KS stack V_t from fine V_eff (shared MAIN restrict+integrate).
     auto mg_vt_stack = [&](const std::vector<double>& veff) {
@@ -1315,9 +1315,9 @@ static GpwResult run_gpw_scf_kpoints(
                 // Natural orbitals of the guess density: eigenvalues of
                 // X† P X ascend, so the largest occupations sit in the LAST
                 // columns (same convention as the Γ diagonalize_fock path).
-                auto [n_occ_vals, Cnat] = internal::diagonalize_k(
-                    P_k[static_cast<std::size_t>(ik)],
-                    orth[static_cast<std::size_t>(ik)]);
+                auto [n_occ_vals, Cnat] =
+                    internal::diagonalize_k(P_k[static_cast<std::size_t>(ik)],
+                                            orth[static_cast<std::size_t>(ik)]);
                 (void)n_occ_vals;
                 const int m = static_cast<int>(Cnat.shape(1));
                 if (m < cfg.n_occ)
@@ -1369,10 +1369,9 @@ static GpwResult run_gpw_scf_kpoints(
             return mg_density(Pk);
         std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs)
-            internal::collocate_density_k(kbg, ik,
-                                          Pk[static_cast<std::size_t>(ik)],
-                                          weights[static_cast<std::size_t>(ik)],
-                                          rho);
+            internal::collocate_density_k(
+                kbg, ik, Pk[static_cast<std::size_t>(ik)],
+                weights[static_cast<std::size_t>(ik)], rho);
 #ifdef ATV_HAS_MPI
         if (layout.active) {
             MPI_Allreduce(MPI_IN_PLACE, rho.data(),
@@ -1894,9 +1893,8 @@ static GpwResult run_gpw_scf_kpoints(
                     (void)build_k_energy(P_k);
                 refresh_occupations();
                 for (int ik = layout.rank; ik < nk; ik += layout.nprocs)
-                    P_k[static_cast<std::size_t>(ik)] =
-                        dens_from_cocc(Cocc_k[static_cast<std::size_t>(ik)],
-                                       ik);
+                    P_k[static_cast<std::size_t>(ik)] = dens_from_cocc(
+                        Cocc_k[static_cast<std::size_t>(ik)], ik);
                 e_total = build_k_energy(P_k);
             } else if (!h_matches_manifold) {
                 // Integer: one KS rebuild unless the previous Armijo accept
@@ -2112,9 +2110,9 @@ static GpwResult run_gpw_scf_kpoints(
                     break;
                 }
                 const double denom = et - e_total - slope_dot * alpha;
-                const double a_q =
-                    (denom > 1e-300) ? -slope_dot * alpha * alpha / (2.0 * denom)
-                                     : 0.5 * alpha;
+                const double a_q = (denom > 1e-300) ? -slope_dot * alpha * alpha
+                                                          / (2.0 * denom)
+                                                    : 0.5 * alpha;
                 alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
             }
             // Accept step: C/P from accepted alpha; H_k already from last trial.
@@ -2140,10 +2138,10 @@ static GpwResult run_gpw_scf_kpoints(
 
     // Multi-k RKS DIIS / linear-mix — Driver stages (gpw::Phase).
     // Shared err buffer for mix Op (filled in ks_build).
-    auto err_k = std::make_shared<std::vector<CplxMatrix>>(
-        static_cast<std::size_t>(nk));
-    auto C_k_local = std::make_shared<std::vector<CplxMatrix>>(
-        static_cast<std::size_t>(nk));
+    auto err_k =
+        std::make_shared<std::vector<CplxMatrix>>(static_cast<std::size_t>(nk));
+    auto C_k_local =
+        std::make_shared<std::vector<CplxMatrix>>(static_cast<std::size_t>(nk));
     auto evals_k = std::make_shared<std::vector<std::vector<double>>>(
         static_cast<std::size_t>(nk));
 
@@ -2168,8 +2166,8 @@ static GpwResult run_gpw_scf_kpoints(
 #ifdef ATV_HAS_MPI
                 if (layout.active) {
                     double global_err = err_norm;
-                    MPI_Allreduce(&err_norm, &global_err, 1, MPI_DOUBLE, MPI_MAX,
-                                  MPI_COMM_WORLD);
+                    MPI_Allreduce(&err_norm, &global_err, 1, MPI_DOUBLE,
+                                  MPI_MAX, MPI_COMM_WORLD);
                     err_norm = global_err;
                 }
 #endif
@@ -2185,19 +2183,20 @@ static GpwResult run_gpw_scf_kpoints(
                                 : std::abs(e_total - prev_energy),
                             err_norm, last_mu, last_n_elec, nk);
                     else
-                        std::fprintf(stderr,
-                                     "[gpw k] E=%.8f  dE=%.2e err=%.2e (nk=%d)\n",
-                                     e_total,
-                                     std::isnan(prev_energy)
-                                         ? 0.0
-                                         : std::abs(e_total - prev_energy),
-                                     err_norm, nk);
+                        std::fprintf(
+                            stderr,
+                            "[gpw k] E=%.8f  dE=%.2e err=%.2e (nk=%d)\n",
+                            e_total,
+                            std::isnan(prev_energy)
+                                ? 0.0
+                                : std::abs(e_total - prev_energy),
+                            err_norm, nk);
                 }
                 const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
                 const bool has_prev = !std::isnan(prev_energy);
-                const double dE =
-                    has_prev ? (e_total - prev_energy)
-                             : std::numeric_limits<double>::infinity();
+                const double dE = has_prev
+                                      ? (e_total - prev_energy)
+                                      : std::numeric_limits<double>::infinity();
                 const double err_gate = do_dftu ? 5e-3 : kDiisErrTolK;
                 skip = !no_stop && has_prev && std::abs(dE) < cfg.tol
                        && err_norm < err_gate;
@@ -2228,8 +2227,8 @@ static GpwResult run_gpw_scf_kpoints(
                         for (std::size_t b = 0; b < ev.size(); ++b)
                             pack[static_cast<std::size_t>(ik * nb) + b] = ev[b];
                     }
-                    MPI_Allreduce(MPI_IN_PLACE, pack.data(), nk * nb, MPI_DOUBLE,
-                                  MPI_SUM, MPI_COMM_WORLD);
+                    MPI_Allreduce(MPI_IN_PLACE, pack.data(), nk * nb,
+                                  MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
                     MPI_Allreduce(MPI_IN_PLACE, nband.data(), nk, MPI_INT,
                                   MPI_SUM, MPI_COMM_WORLD);
                     for (int ik = 0; ik < nk; ++ik) {
@@ -2237,10 +2236,9 @@ static GpwResult run_gpw_scf_kpoints(
                         (*evals_k)[static_cast<std::size_t>(ik)].resize(
                             static_cast<std::size_t>(m));
                         for (int b = 0; b < m; ++b)
-                            (*evals_k)[static_cast<std::size_t>(ik)]
-                                      [static_cast<std::size_t>(b)] =
-                                          pack[static_cast<std::size_t>(ik * nb
-                                                                       + b)];
+                            (*evals_k)[static_cast<std::size_t>(
+                                ik)][static_cast<std::size_t>(b)] =
+                                pack[static_cast<std::size_t>(ik * nb + b)];
                     }
                 }
 #endif
@@ -2255,7 +2253,8 @@ static GpwResult run_gpw_scf_kpoints(
                                 (1.0 - a) * P_k[static_cast<std::size_t>(ik)]
                                 + a * P_new;
                         } else {
-                            P_k[static_cast<std::size_t>(ik)] = std::move(P_new);
+                            P_k[static_cast<std::size_t>(ik)] =
+                                std::move(P_new);
                         }
                     } else {
                         P_k[static_cast<std::size_t>(ik)] =
@@ -2268,18 +2267,16 @@ static GpwResult run_gpw_scf_kpoints(
                                                last_entropy);
                     for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
                         mix_density(
-                            ik,
-                            density_from_occ(
-                                (*C_k_local)[static_cast<std::size_t>(ik)],
-                                occ_k[static_cast<std::size_t>(ik)]));
+                            ik, density_from_occ(
+                                    (*C_k_local)[static_cast<std::size_t>(ik)],
+                                    occ_k[static_cast<std::size_t>(ik)]));
                     }
                 } else {
                     for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
                         mix_density(
-                            ik,
-                            density_from_fixed(
-                                (*C_k_local)[static_cast<std::size_t>(ik)],
-                                cfg.n_occ));
+                            ik, density_from_fixed(
+                                    (*C_k_local)[static_cast<std::size_t>(ik)],
+                                    cfg.n_occ));
                     }
                 }
             };
@@ -2445,8 +2442,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
     MultiGrid& mg = ws.mg;
     ProductSet& products = ws.products;
     if (use_mg) {
-        mg = make_multigrid(cfg.cell, cfg.cutoff_ry, cfg.ngrids,
-                            cfg.rel_cutoff);
+        mg =
+            make_multigrid(cfg.cell, cfg.cutoff_ry, cfg.ngrids, cfg.rel_cutoff);
         if (mg.levels[0].n[0] != grid.n[0] || mg.levels[0].n[1] != grid.n[1]
             || mg.levels[0].n[2] != grid.n[2])
             throw std::logic_error(
@@ -2485,9 +2482,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
                 const Cplx* Pd = P.data();
                 const std::size_t nn = static_cast<std::size_t>(nb) * nb;
                 for (std::size_t e = 0; e < nn; ++e)
-                    Dc[e] += wk
-                             * (Pd[e].real() * ph.real()
-                                - Pd[e].imag() * ph.imag());
+                    Dc[e] +=
+                        wk
+                        * (Pd[e].real() * ph.real() - Pd[e].imag() * ph.imag());
             }
         }
 #ifdef ATV_HAS_MPI
@@ -2501,9 +2498,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
     };
     // Shared MAIN multi-level product path (same helpers as multi-k RKS).
     auto mg_density = [&](const std::vector<CplxMatrix>& Pk) {
-        return multigrid_collocate_rho_cells(mg, products, nb,
-                                             mg_density_stack(Pk),
-                                             cfg.eps_default);
+        return multigrid_collocate_rho_cells(
+            mg, products, nb, mg_density_stack(Pk), cfg.eps_default);
     };
     auto mg_vt_stack = [&](const std::vector<double>& veff) {
         return multigrid_integrate_veff_cells(mg, products, nb, veff,
@@ -2533,10 +2529,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
             return mg_density(Pk);
         std::vector<double> rho(static_cast<std::size_t>(grid.npts()), 0.0);
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs)
-            internal::collocate_density_k(kbg, ik,
-                                          Pk[static_cast<std::size_t>(ik)],
-                                          weights[static_cast<std::size_t>(ik)],
-                                          rho);
+            internal::collocate_density_k(
+                kbg, ik, Pk[static_cast<std::size_t>(ik)],
+                weights[static_cast<std::size_t>(ik)], rho);
 #ifdef ATV_HAS_MPI
         if (layout.active) {
             MPI_Allreduce(MPI_IN_PLACE, rho.data(),
@@ -2867,9 +2862,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
     // its historical inline copy (byte-identical assembly). Multigrid and
     // single-grid paths share this chokepoint via collocate_rho_spin_k /
     // mg_vt_stack + mg_phase_V.
-    auto build_uks_k_energy = [&](const std::vector<CplxMatrix>& Pak,
-                                  const std::vector<CplxMatrix>& Pbk)
-        -> double {
+    auto build_uks_k_energy =
+        [&](const std::vector<CplxMatrix>& Pak,
+            const std::vector<CplxMatrix>& Pbk) -> double {
         const std::vector<double> rho_a = collocate_rho_spin_k(Pak);
         const std::vector<double> rho_b = collocate_rho_spin_k(Pbk);
         const internal::KsGridUks ks = internal::ks_grid_build_uks(
@@ -3057,8 +3052,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
         auto warm_from_guess = [&](const CplxMatrix& Pg, int n_occ_s, int ik) {
             if (n_occ_s < 1)
                 return CplxMatrix(xt::zeros<Cplx>({nb, 0}));
-            auto [n_occ_vals, Cnat] = internal::diagonalize_k(
-                Pg, orth[static_cast<std::size_t>(ik)]);
+            auto [n_occ_vals, Cnat] =
+                internal::diagonalize_k(Pg, orth[static_cast<std::size_t>(ik)]);
             (void)n_occ_vals;
             const int m = static_cast<int>(Cnat.shape(1));
             if (m < n_occ_s)
@@ -3687,9 +3682,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
                     break;
                 }
                 const double denom = et - e_total - slope_dot * alpha;
-                const double a_q =
-                    (denom > 1e-300) ? -slope_dot * alpha * alpha / (2.0 * denom)
-                                     : 0.5 * alpha;
+                const double a_q = (denom > 1e-300) ? -slope_dot * alpha * alpha
+                                                          / (2.0 * denom)
+                                                    : 0.5 * alpha;
                 alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
             }
             for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
@@ -3732,18 +3727,18 @@ static GpwResult run_gpw_scf_kpoints_uks(
     }
 
     // Multi-k UKS DIIS / linear-mix — Driver stages (gpw::Phase).
-    auto err_a_k = std::make_shared<std::vector<CplxMatrix>>(
-        static_cast<std::size_t>(nk));
-    auto err_b_k = std::make_shared<std::vector<CplxMatrix>>(
-        static_cast<std::size_t>(nk));
+    auto err_a_k =
+        std::make_shared<std::vector<CplxMatrix>>(static_cast<std::size_t>(nk));
+    auto err_b_k =
+        std::make_shared<std::vector<CplxMatrix>>(static_cast<std::size_t>(nk));
     auto evals_a = std::make_shared<std::vector<std::vector<double>>>(
         static_cast<std::size_t>(nk));
     auto evals_b = std::make_shared<std::vector<std::vector<double>>>(
         static_cast<std::size_t>(nk));
-    auto Ca_local = std::make_shared<std::vector<CplxMatrix>>(
-        static_cast<std::size_t>(nk));
-    auto Cb_local = std::make_shared<std::vector<CplxMatrix>>(
-        static_cast<std::size_t>(nk));
+    auto Ca_local =
+        std::make_shared<std::vector<CplxMatrix>>(static_cast<std::size_t>(nk));
+    auto Cb_local =
+        std::make_shared<std::vector<CplxMatrix>>(static_cast<std::size_t>(nk));
 
     const bool conv = stage_drive(
         [&](bool& skip, double& e_total, double& err_norm,
@@ -3774,8 +3769,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
 #ifdef ATV_HAS_MPI
                 if (layout.active) {
                     double global_err = err_norm;
-                    MPI_Allreduce(&err_norm, &global_err, 1, MPI_DOUBLE, MPI_MAX,
-                                  MPI_COMM_WORLD);
+                    MPI_Allreduce(&err_norm, &global_err, 1, MPI_DOUBLE,
+                                  MPI_MAX, MPI_COMM_WORLD);
                     err_norm = global_err;
                 }
 #endif
@@ -3791,9 +3786,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
                 }
                 const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
                 const bool has_prev = !std::isnan(prev_energy);
-                const double dE =
-                    has_prev ? (e_total - prev_energy)
-                             : std::numeric_limits<double>::infinity();
+                const double dE = has_prev
+                                      ? (e_total - prev_energy)
+                                      : std::numeric_limits<double>::infinity();
                 const double err_gate = do_dftu ? 5e-3 : kDiisErrTolK;
                 skip = !no_stop && has_prev && std::abs(dE) < cfg.tol
                        && err_norm < err_gate;
@@ -3805,126 +3800,110 @@ static GpwResult run_gpw_scf_kpoints_uks(
                     Hb_k = diis_b.step(Hb_k, *err_b_k);
                 }
             };
-            DiagonalizeStage::Op diag_op =
-                [&, evals_a, evals_b, Ca_local, Cb_local]() {
-                    for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-                        auto [epsa, Ca] = internal::diagonalize_k(
-                            Ha_k[static_cast<std::size_t>(ik)],
-                            orth[static_cast<std::size_t>(ik)]);
-                        auto [epsb, Cb] = internal::diagonalize_k(
-                            Hb_k[static_cast<std::size_t>(ik)],
-                            orth[static_cast<std::size_t>(ik)]);
-                        (*evals_a)[static_cast<std::size_t>(ik)] =
-                            std::move(epsa);
-                        (*evals_b)[static_cast<std::size_t>(ik)] =
-                            std::move(epsb);
-                        (*Ca_local)[static_cast<std::size_t>(ik)] =
-                            std::move(Ca);
-                        (*Cb_local)[static_cast<std::size_t>(ik)] =
-                            std::move(Cb);
-                    }
+            DiagonalizeStage::Op diag_op = [&, evals_a, evals_b, Ca_local,
+                                            Cb_local]() {
+                for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                    auto [epsa, Ca] = internal::diagonalize_k(
+                        Ha_k[static_cast<std::size_t>(ik)],
+                        orth[static_cast<std::size_t>(ik)]);
+                    auto [epsb, Cb] = internal::diagonalize_k(
+                        Hb_k[static_cast<std::size_t>(ik)],
+                        orth[static_cast<std::size_t>(ik)]);
+                    (*evals_a)[static_cast<std::size_t>(ik)] = std::move(epsa);
+                    (*evals_b)[static_cast<std::size_t>(ik)] = std::move(epsb);
+                    (*Ca_local)[static_cast<std::size_t>(ik)] = std::move(Ca);
+                    (*Cb_local)[static_cast<std::size_t>(ik)] = std::move(Cb);
+                }
 #ifdef ATV_HAS_MPI
-                    if (layout.active && use_smear) {
-                        auto allreduce_evals =
-                            [&](std::vector<std::vector<double>>& evals) {
-                                std::vector<double> pack(
-                                    static_cast<std::size_t>(nk * nb), 0.0);
-                                std::vector<int> nband(
-                                    static_cast<std::size_t>(nk), 0);
-                                for (int ik = layout.rank; ik < nk;
-                                     ik += layout.nprocs) {
-                                    const auto& ev =
-                                        evals[static_cast<std::size_t>(ik)];
-                                    nband[static_cast<std::size_t>(ik)] =
-                                        static_cast<int>(ev.size());
-                                    for (std::size_t b = 0; b < ev.size(); ++b)
-                                        pack[static_cast<std::size_t>(ik * nb)
-                                             + b] = ev[b];
-                                }
-                                MPI_Allreduce(MPI_IN_PLACE, pack.data(),
-                                              nk * nb, MPI_DOUBLE, MPI_SUM,
-                                              MPI_COMM_WORLD);
-                                MPI_Allreduce(MPI_IN_PLACE, nband.data(), nk,
-                                              MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-                                for (int ik = 0; ik < nk; ++ik) {
-                                    const int m =
-                                        nband[static_cast<std::size_t>(ik)];
-                                    evals[static_cast<std::size_t>(ik)].resize(
-                                        static_cast<std::size_t>(m));
-                                    for (int b = 0; b < m; ++b)
-                                        evals[static_cast<std::size_t>(ik)]
-                                             [static_cast<std::size_t>(b)] =
-                                                 pack[static_cast<std::size_t>(
-                                                     ik * nb + b)];
-                                }
-                            };
-                        allreduce_evals(*evals_a);
-                        allreduce_evals(*evals_b);
-                    }
-#endif
-                };
-            DensityStage::Op dens_op =
-                [&, evals_a, evals_b, Ca_local, Cb_local]() {
-                    auto mix_density = [&](int ik, CplxMatrix Pa_new,
-                                           CplxMatrix Pb_new) {
-                        if (use_diis) {
-                            if (do_dftu) {
-                                const double a =
-                                    std::min(std::max(cfg.mix, 0.15), 0.6);
-                                Pa_k[static_cast<std::size_t>(ik)] =
-                                    (1.0 - a)
-                                        * Pa_k[static_cast<std::size_t>(ik)]
-                                    + a * Pa_new;
-                                Pb_k[static_cast<std::size_t>(ik)] =
-                                    (1.0 - a)
-                                        * Pb_k[static_cast<std::size_t>(ik)]
-                                    + a * Pb_new;
-                            } else {
-                                Pa_k[static_cast<std::size_t>(ik)] =
-                                    std::move(Pa_new);
-                                Pb_k[static_cast<std::size_t>(ik)] =
-                                    std::move(Pb_new);
-                            }
-                        } else {
-                            Pa_k[static_cast<std::size_t>(ik)] =
-                                (1.0 - cfg.mix)
-                                    * Pa_k[static_cast<std::size_t>(ik)]
-                                + cfg.mix * Pa_new;
-                            Pb_k[static_cast<std::size_t>(ik)] =
-                                (1.0 - cfg.mix)
-                                    * Pb_k[static_cast<std::size_t>(ik)]
-                                + cfg.mix * Pb_new;
+                if (layout.active && use_smear) {
+                    auto allreduce_evals = [&](std::vector<std::vector<double>>&
+                                                   evals) {
+                        std::vector<double> pack(
+                            static_cast<std::size_t>(nk * nb), 0.0);
+                        std::vector<int> nband(static_cast<std::size_t>(nk), 0);
+                        for (int ik = layout.rank; ik < nk;
+                             ik += layout.nprocs) {
+                            const auto& ev =
+                                evals[static_cast<std::size_t>(ik)];
+                            nband[static_cast<std::size_t>(ik)] =
+                                static_cast<int>(ev.size());
+                            for (std::size_t b = 0; b < ev.size(); ++b)
+                                pack[static_cast<std::size_t>(ik * nb) + b] =
+                                    ev[b];
+                        }
+                        MPI_Allreduce(MPI_IN_PLACE, pack.data(), nk * nb,
+                                      MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                        MPI_Allreduce(MPI_IN_PLACE, nband.data(), nk, MPI_INT,
+                                      MPI_SUM, MPI_COMM_WORLD);
+                        for (int ik = 0; ik < nk; ++ik) {
+                            const int m = nband[static_cast<std::size_t>(ik)];
+                            evals[static_cast<std::size_t>(ik)].resize(
+                                static_cast<std::size_t>(m));
+                            for (int b = 0; b < m; ++b)
+                                evals[static_cast<std::size_t>(
+                                    ik)][static_cast<std::size_t>(b)] =
+                                    pack[static_cast<std::size_t>(ik * nb + b)];
                         }
                     };
-                    if (use_smear) {
-                        auto [occ_a, occ_b] = fill_metallic_uks(
-                            *evals_a, *evals_b, last_mu, last_n_elec,
-                            last_entropy);
-                        for (int ik = layout.rank; ik < nk;
-                             ik += layout.nprocs) {
-                            mix_density(
-                                ik,
-                                density_from_occ(
-                                    (*Ca_local)[static_cast<std::size_t>(ik)],
-                                    occ_a[static_cast<std::size_t>(ik)]),
-                                density_from_occ(
-                                    (*Cb_local)[static_cast<std::size_t>(ik)],
-                                    occ_b[static_cast<std::size_t>(ik)]));
+                    allreduce_evals(*evals_a);
+                    allreduce_evals(*evals_b);
+                }
+#endif
+            };
+            DensityStage::Op dens_op = [&, evals_a, evals_b, Ca_local,
+                                        Cb_local]() {
+                auto mix_density = [&](int ik, CplxMatrix Pa_new,
+                                       CplxMatrix Pb_new) {
+                    if (use_diis) {
+                        if (do_dftu) {
+                            const double a =
+                                std::min(std::max(cfg.mix, 0.15), 0.6);
+                            Pa_k[static_cast<std::size_t>(ik)] =
+                                (1.0 - a) * Pa_k[static_cast<std::size_t>(ik)]
+                                + a * Pa_new;
+                            Pb_k[static_cast<std::size_t>(ik)] =
+                                (1.0 - a) * Pb_k[static_cast<std::size_t>(ik)]
+                                + a * Pb_new;
+                        } else {
+                            Pa_k[static_cast<std::size_t>(ik)] =
+                                std::move(Pa_new);
+                            Pb_k[static_cast<std::size_t>(ik)] =
+                                std::move(Pb_new);
                         }
                     } else {
-                        for (int ik = layout.rank; ik < nk;
-                             ik += layout.nprocs) {
-                            mix_density(
-                                ik,
-                                density_spin(
-                                    (*Ca_local)[static_cast<std::size_t>(ik)],
-                                    n_a),
-                                density_spin(
-                                    (*Cb_local)[static_cast<std::size_t>(ik)],
-                                    n_b));
-                        }
+                        Pa_k[static_cast<std::size_t>(ik)] =
+                            (1.0 - cfg.mix) * Pa_k[static_cast<std::size_t>(ik)]
+                            + cfg.mix * Pa_new;
+                        Pb_k[static_cast<std::size_t>(ik)] =
+                            (1.0 - cfg.mix) * Pb_k[static_cast<std::size_t>(ik)]
+                            + cfg.mix * Pb_new;
                     }
                 };
+                if (use_smear) {
+                    auto [occ_a, occ_b] = fill_metallic_uks(
+                        *evals_a, *evals_b, last_mu, last_n_elec, last_entropy);
+                    for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                        mix_density(
+                            ik,
+                            density_from_occ(
+                                (*Ca_local)[static_cast<std::size_t>(ik)],
+                                occ_a[static_cast<std::size_t>(ik)]),
+                            density_from_occ(
+                                (*Cb_local)[static_cast<std::size_t>(ik)],
+                                occ_b[static_cast<std::size_t>(ik)]));
+                    }
+                } else {
+                    for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
+                        mix_density(
+                            ik,
+                            density_spin(
+                                (*Ca_local)[static_cast<std::size_t>(ik)], n_a),
+                            density_spin(
+                                (*Cb_local)[static_cast<std::size_t>(ik)],
+                                n_b));
+                    }
+                }
+            };
             return std::make_tuple(std::move(ks), std::move(mix_op),
                                    std::move(diag_op), std::move(dens_op));
         },
@@ -3961,11 +3940,11 @@ static GpwResult run_gpw_scf_kpoints_uks(
 
 /// The full GPW SCF implementation, owned and reached through
 /// `GpwDft::run` → `run_impl_`.
-GpwResult GpwDft::run_impl_(
-    const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
-    const RealMatrix* guess_P, const RealMatrix* guess_P_beta,
-    const std::vector<linalg::CplxMatrix>* guess_P_k,
-    const std::vector<linalg::CplxMatrix>* guess_P_k_beta) {
+GpwResult
+GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
+                  const RealMatrix* guess_P, const RealMatrix* guess_P_beta,
+                  const std::vector<linalg::CplxMatrix>* guess_P_k,
+                  const std::vector<linalg::CplxMatrix>* guess_P_k_beta) {
     const GpwDft& cfg = *this;
 #ifdef ATV_GPW_FFTW_THREADS
     // One-time global FFTW threading init; fftw_plan_with_nthreads is a global
@@ -4176,20 +4155,19 @@ GpwResult GpwDft::run_impl_(
             // Dual-spin multi-k XL: both channels or neither (partial
             // validated inside run_gpw_scf_kpoints_uks).
             auto stage_drive = [this](PathOpFactoryFn factory, int max_iter,
-                                       GpwResult& r) {
+                                      GpwResult& r) {
                 return drive_path_diis_(std::move(factory), max_iter, r);
             };
-            return run_gpw_scf_kpoints_uks(atoms, cfg, basis, radii, mimg, grid,
-                                           n_ion, v_locsr, e_self, e_d3, kpts,
-                                           stage_drive, guess_P_k,
-                                           guess_P_k_beta);
+            return run_gpw_scf_kpoints_uks(
+                atoms, cfg, basis, radii, mimg, grid, n_ion, v_locsr, e_self,
+                e_d3, kpts, stage_drive, guess_P_k, guess_P_k_beta);
         }
         if (guess_P_k_beta != nullptr)
             throw std::invalid_argument(
                 "GpwDft::run: guess_P_k_beta is multi-k UKS-only "
                 "(closed-shell multi-k RKS takes total density on guess_P_k)");
         auto stage_drive = [this](PathOpFactoryFn factory, int max_iter,
-                                   GpwResult& r) {
+                                  GpwResult& r) {
             return drive_path_diis_(std::move(factory), max_iter, r);
         };
         return run_gpw_scf_kpoints(atoms, cfg, basis, radii, mimg, grid, n_ion,
@@ -4413,8 +4391,7 @@ GpwResult GpwDft::run_impl_(
     // cutoff (CUTOFF 320 → ~8M points × diffuse functions = >100 GB of triples), so
     // skip it entirely under multigrid.
     if (!use_prod)
-        ws.cbg =
-            build_compact_basis_grid(grid, basis, periodic, eps_default);
+        ws.cbg = build_compact_basis_grid(grid, basis, periodic, eps_default);
     const CompactBasisGrid& cbg = ws.cbg;
     smark("cbg_build");
 
@@ -4714,8 +4691,8 @@ GpwResult GpwDft::run_impl_(
                              "xc=%.0f integrate=%.0f ms "
                              "(ngrid=%ld build=%d)\n",
                              uks_pms(t0p, t1p), uks_pms(t1p, t2p),
-                             uks_pms(t2p, t3p), uks_pms(t3p, t4p),
-                             grid.npts(), uks_energy_builds);
+                             uks_pms(t2p, t3p), uks_pms(t3p, t4p), grid.npts(),
+                             uks_energy_builds);
 
             double e_dftu = 0.0;
             if (do_dftu) {
@@ -4825,10 +4802,9 @@ GpwResult GpwDft::run_impl_(
                     Pa = na > 0
                              ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
                              : RealMatrix(xt::zeros<double>({nb, nb}));
-                    Pb = nb_spin > 0
-                             ? linalg::build_density_matrix(Cocc_b, nb_spin, nb,
-                                                            1.0)
-                             : RealMatrix(xt::zeros<double>({nb, nb}));
+                    Pb = nb_spin > 0 ? linalg::build_density_matrix(
+                                           Cocc_b, nb_spin, nb, 1.0)
+                                     : RealMatrix(xt::zeros<double>({nb, nb}));
                     auto he0 = build_uks_H(Pa, Pb);
                     Ha = std::move(std::get<0>(he0));
                     Hb = std::move(std::get<1>(he0));
@@ -4851,12 +4827,12 @@ GpwResult GpwDft::run_impl_(
                 res.iters = iter + 1;
                 res.e_total = e_total;
 
-                RealMatrix g_a =
-                    na > 0 ? linalg::band_gradient(Ha, S, Cocc_a, 1.0)
-                           : RealMatrix(xt::zeros<double>({nb, 0}));
-                RealMatrix g_b =
-                    nb_spin > 0 ? linalg::band_gradient(Hb, S, Cocc_b, 1.0)
-                                : RealMatrix(xt::zeros<double>({nb, 0}));
+                RealMatrix g_a = na > 0
+                                     ? linalg::band_gradient(Ha, S, Cocc_a, 1.0)
+                                     : RealMatrix(xt::zeros<double>({nb, 0}));
+                RealMatrix g_b = nb_spin > 0
+                                     ? linalg::band_gradient(Hb, S, Cocc_b, 1.0)
+                                     : RealMatrix(xt::zeros<double>({nb, 0}));
                 double gnorm = 0.0;
                 for (double v : g_a)
                     gnorm = std::max(gnorm, std::abs(v));
@@ -4920,33 +4896,31 @@ GpwResult GpwDft::run_impl_(
                 // and pure eigen polish desynchronizes U vs DIIS twin.
                 if (!do_dftu && iter > 0 && gnorm < kPolishG) {
                     RealMatrix Pa_cur =
-                        na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb,
-                                                              1.0)
-                               : RealMatrix(xt::zeros<double>({nb, nb}));
-                    RealMatrix Pb_cur =
-                        nb_spin > 0
-                            ? linalg::build_density_matrix(Cocc_b, nb_spin, nb,
-                                                           1.0)
+                        na > 0
+                            ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
                             : RealMatrix(xt::zeros<double>({nb, nb}));
+                    RealMatrix Pb_cur =
+                        nb_spin > 0 ? linalg::build_density_matrix(
+                                          Cocc_b, nb_spin, nb, 1.0)
+                                    : RealMatrix(xt::zeros<double>({nb, nb}));
                     if (na > 0) {
-                        auto ot = internal::ot_minimize_fixed(
-                            Ha, S, T, Cocc_a, 1e-12, 1, 1.0);
+                        auto ot = internal::ot_minimize_fixed(Ha, S, T, Cocc_a,
+                                                              1e-12, 1, 1.0);
                         Cocc_a = std::move(ot.C);
                     }
                     if (nb_spin > 0) {
-                        auto ot = internal::ot_minimize_fixed(
-                            Hb, S, T, Cocc_b, 1e-12, 1, 1.0);
+                        auto ot = internal::ot_minimize_fixed(Hb, S, T, Cocc_b,
+                                                              1e-12, 1, 1.0);
                         Cocc_b = std::move(ot.C);
                     }
                     RealMatrix Pa_new =
-                        na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb,
-                                                              1.0)
-                               : Pa_cur;
-                    RealMatrix Pb_new =
-                        nb_spin > 0
-                            ? linalg::build_density_matrix(Cocc_b, nb_spin, nb,
-                                                           1.0)
-                            : Pb_cur;
+                        na > 0
+                            ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
+                            : Pa_cur;
+                    RealMatrix Pb_new = nb_spin > 0
+                                            ? linalg::build_density_matrix(
+                                                  Cocc_b, nb_spin, nb, 1.0)
+                                            : Pb_cur;
                     // Full dens update once the projected residual is already
                     // tiny (C ≈ eigen of H) — mixing only damps the handoff.
                     const double a =
@@ -4960,13 +4934,13 @@ GpwResult GpwDft::run_impl_(
                     // Refresh occupied coeffs from mixed-H eigen so the next
                     // residual is the true SCF commutator residual.
                     if (na > 0) {
-                        auto ot = internal::ot_minimize_fixed(
-                            Ha, S, T, Cocc_a, 1e-12, 1, 1.0);
+                        auto ot = internal::ot_minimize_fixed(Ha, S, T, Cocc_a,
+                                                              1e-12, 1, 1.0);
                         Cocc_a = std::move(ot.C);
                     }
                     if (nb_spin > 0) {
-                        auto ot = internal::ot_minimize_fixed(
-                            Hb, S, T, Cocc_b, 1e-12, 1, 1.0);
+                        auto ot = internal::ot_minimize_fixed(Hb, S, T, Cocc_b,
+                                                              1e-12, 1, 1.0);
                         Cocc_b = std::move(ot.C);
                     }
                     have_carried = true;
@@ -4993,11 +4967,11 @@ GpwResult GpwDft::run_impl_(
                 if (!use_cg) {
                     // DIIS direction
                     if (na > 0)
-                        d_a = linalg::s_tangent(
-                            Cocc_a, S, diis_a.direction(g_a, pz_a));
+                        d_a = linalg::s_tangent(Cocc_a, S,
+                                                diis_a.direction(g_a, pz_a));
                     if (nb_spin > 0)
-                        d_b = linalg::s_tangent(
-                            Cocc_b, S, diis_b.direction(g_b, pz_b));
+                        d_b = linalg::s_tangent(Cocc_b, S,
+                                                diis_b.direction(g_b, pz_b));
                 } else {
                     // PR+ CG fallback
                     if (!have_prev) {
@@ -5006,11 +4980,10 @@ GpwResult GpwDft::run_impl_(
                     } else {
                         const double num =
                             (na > 0 ? frob(g_a, pz_a - pz_a_prev) : 0.0)
-                            + (nb_spin > 0 ? frob(g_b, pz_b - pz_b_prev)
-                                           : 0.0);
+                            + (nb_spin > 0 ? frob(g_b, pz_b - pz_b_prev) : 0.0);
                         const double beta = std::max(0.0, num / denom_prev);
-                        d_a = na > 0 ? linalg::s_tangent(
-                                           Cocc_a, S, -pz_a + beta * d_a)
+                        d_a = na > 0 ? linalg::s_tangent(Cocc_a, S,
+                                                         -pz_a + beta * d_a)
                                      : d_a;
                         d_b = nb_spin > 0 ? linalg::s_tangent(
                                                 Cocc_b, S, -pz_b + beta * d_b)
@@ -5044,8 +5017,7 @@ GpwResult GpwDft::run_impl_(
                 };
                 const double Eb0 = band(Cocc_a, Cocc_b);
                 RealMatrix Ca_t =
-                    na > 0 ? internal::ot_parameterize(Cocc_a, d_a, S)
-                           : Cocc_a;
+                    na > 0 ? internal::ot_parameterize(Cocc_a, d_a, S) : Cocc_a;
                 RealMatrix Cb_t =
                     nb_spin > 0 ? internal::ot_parameterize(Cocc_b, d_b, S)
                                 : Cocc_b;
@@ -5062,11 +5034,11 @@ GpwResult GpwDft::run_impl_(
                 alpha = std::min(alpha, amax);
                 constexpr double c1 = 1e-4;
                 RealMatrix Ca_new =
-                    na > 0 ? linalg::lowdin_orthonormalize(
-                                 internal::ot_parameterize(Cocc_a, alpha * d_a,
-                                                            S),
-                                 S)
-                           : Cocc_a;
+                    na > 0
+                        ? linalg::lowdin_orthonormalize(
+                              internal::ot_parameterize(Cocc_a, alpha * d_a, S),
+                              S)
+                        : Cocc_a;
                 RealMatrix Cb_new =
                     nb_spin > 0
                         ? linalg::lowdin_orthonormalize(
@@ -5077,14 +5049,13 @@ GpwResult GpwDft::run_impl_(
                 for (int bt = 0; bt < 50; ++bt) {
                     bt_used = bt;
                     RealMatrix Pa_t =
-                        na > 0 ? linalg::build_density_matrix(Ca_new, na, nb,
-                                                              1.0)
-                               : RealMatrix(xt::zeros<double>({nb, nb}));
-                    RealMatrix Pb_t =
-                        nb_spin > 0
-                            ? linalg::build_density_matrix(Cb_new, nb_spin, nb,
-                                                           1.0)
+                        na > 0
+                            ? linalg::build_density_matrix(Ca_new, na, nb, 1.0)
                             : RealMatrix(xt::zeros<double>({nb, nb}));
+                    RealMatrix Pb_t =
+                        nb_spin > 0 ? linalg::build_density_matrix(
+                                          Cb_new, nb_spin, nb, 1.0)
+                                    : RealMatrix(xt::zeros<double>({nb, nb}));
                     auto trial = build_uks_H(Pa_t, Pb_t);
                     const double Et = std::get<2>(trial);
                     if (Et <= e_total + c1 * alpha * slope || bt == 49) {
@@ -5094,22 +5065,20 @@ GpwResult GpwDft::run_impl_(
                         break;
                     }
                     const double denom = Et - e_total - slope * alpha;
-                    const double a_q =
-                        (denom > 1e-300)
-                            ? -slope * alpha * alpha / (2.0 * denom)
-                            : 0.5 * alpha;
+                    const double a_q = (denom > 1e-300) ? -slope * alpha * alpha
+                                                              / (2.0 * denom)
+                                                        : 0.5 * alpha;
                     alpha = std::min(std::max(a_q, 0.1 * alpha), 0.5 * alpha);
                     Ca_new = na > 0 ? linalg::lowdin_orthonormalize(
                                           internal::ot_parameterize(
                                               Cocc_a, alpha * d_a, S),
                                           S)
                                     : Ca_new;
-                    Cb_new = nb_spin > 0
-                                 ? linalg::lowdin_orthonormalize(
-                                       internal::ot_parameterize(
-                                           Cocc_b, alpha * d_b, S),
-                                       S)
-                                 : Cb_new;
+                    Cb_new = nb_spin > 0 ? linalg::lowdin_orthonormalize(
+                                               internal::ot_parameterize(
+                                                   Cocc_b, alpha * d_b, S),
+                                               S)
+                                         : Cb_new;
                 }
                 Cocc_a = Ca_new;
                 Cocc_b = Cb_new;
@@ -5135,12 +5104,11 @@ GpwResult GpwDft::run_impl_(
                 }
             }
             {
-                Pa = na > 0
-                         ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
-                         : RealMatrix(xt::zeros<double>({nb, nb}));
-                Pb = nb_spin > 0
-                         ? linalg::build_density_matrix(Cocc_b, nb_spin, nb, 1.0)
-                         : RealMatrix(xt::zeros<double>({nb, nb}));
+                Pa = na > 0 ? linalg::build_density_matrix(Cocc_a, na, nb, 1.0)
+                            : RealMatrix(xt::zeros<double>({nb, nb}));
+                Pb = nb_spin > 0 ? linalg::build_density_matrix(Cocc_b, nb_spin,
+                                                                nb, 1.0)
+                                 : RealMatrix(xt::zeros<double>({nb, nb}));
                 res.e_total = e_total;
                 store_converged_state_uks(res, Ha, Hb, orth().X, S, na, nb_spin,
                                           nb);
@@ -5158,8 +5126,8 @@ GpwResult GpwDft::run_impl_(
                 nb, use_diis, cfg.mix, cfg.level_shift, cfg.max_iter, cfg.tol,
                 kDiisErrTol, cfg.diis_depth, do_dftu, build_uks_H, res);
             if (conv) {
-                store_converged_state_uks(res, loop_H_, loop_H_ext_, orth().X, S,
-                                          cfg.n_alpha, cfg.n_beta, nb);
+                store_converged_state_uks(res, loop_H_, loop_H_ext_, orth().X,
+                                          S, cfg.n_alpha, cfg.n_beta, nb);
                 res.mulliken_spin = internal::mulliken_spin_populations(
                     Pa, Pb, S, ao_tags, static_cast<int>(atoms.size()));
                 fold_dispersion(res, Pa + Pb);
@@ -5310,8 +5278,8 @@ GpwResult GpwDft::run_impl_(
                         P = linalg::build_density_matrix(Cocc, cfg.n_occ, nb,
                                                          2.0);
                     } else {
-                        auto ot = internal::ot_minimize_fixed(
-                            H, S, T, Cocc, 1e-12, 1, 2.0);
+                        auto ot = internal::ot_minimize_fixed(H, S, T, Cocc,
+                                                              1e-12, 1, 2.0);
                         Cocc = std::move(ot.C);
                         const RealMatrix P_new = linalg::build_density_matrix(
                             Cocc, cfg.n_occ, nb, 2.0);
@@ -5356,12 +5324,11 @@ GpwResult GpwDft::run_impl_(
             // `H=` covers the H build plus the precond rebuild, so the split
             // keeps its meaning now that the precond moved past the polish test.
             auto tB = Clk::now();
-            const RealMatrix pg =
-                linalg::s_tangent(Cocc, S, prec->apply(g));
+            const RealMatrix pg = linalg::s_tangent(Cocc, S, prec->apply(g));
             auto tC = Clk::now();
             if (!use_cg) {
-                d = linalg::s_tangent(
-                    Cocc, S, ot_diis.direction(g, step_scale * pg));
+                d = linalg::s_tangent(Cocc, S,
+                                      ot_diis.direction(g, step_scale * pg));
             } else {
                 if (!have_prev) {
                     d = -pg;
@@ -5389,8 +5356,7 @@ GpwResult GpwDft::run_impl_(
                     return 2.0 * frob(C, xt::linalg::dot(H, C));
                 };
                 const double Eb0 = band(Cocc);
-                const double Ebt =
-                    band(internal::ot_parameterize(Cocc, d, S));
+                const double Ebt = band(internal::ot_parameterize(Cocc, d, S));
                 const double curv = 2.0 * (Ebt - Eb0 - slope);
                 alpha = (curv > 1e-300) ? -slope / curv : kStepSize;
                 if (!(alpha > 0.0))
@@ -5469,7 +5435,6 @@ GpwResult GpwDft::run_impl_(
         return res;
     }
 
-
     // Γ RKS DIIS / linear-mix — Driver stages (gpw::Phase).
     {
         auto build_H = [&](const RealMatrix& Pin, RealMatrix& Hout,
@@ -5481,12 +5446,10 @@ GpwResult GpwDft::run_impl_(
             // build_H_and_energy writes them via the shared lambdas.
             res.e_total = eout;
         };
-        auto diag_fn =
-            [&](const RealMatrix& Hext,
-                const RealMatrix& Cprev)
+        auto diag_fn = [&](const RealMatrix& Hext, const RealMatrix& Cprev)
             -> std::pair<linalg::RealVector, RealMatrix> {
-            return diagonalize_fock_shifted(Hext, orth().X, S, Cprev,
-                                            cfg.n_occ, cfg.level_shift);
+            return diagonalize_fock_shifted(Hext, orth().X, S, Cprev, cfg.n_occ,
+                                            cfg.level_shift);
         };
         const bool conv = drive_gamma_rks_diis_(
             std::move(P), S, orth().X, std::move(C_prev), cfg.n_occ, nb,
@@ -5877,8 +5840,6 @@ gpw_forces_fd(const std::vector<GpwAtom>& atoms, const GpwDft& cfg, double h) {
     return forces;
 }
 
-
-
 // ── GpwDft Driver node: multi-path DIIS stages ──────────────────────────────
 
 void GpwDft::reset_built_driver_() {
@@ -5907,8 +5868,7 @@ void GpwDft::ensure_path_stages_(KsBuildStage::Op ks, MixStage::Op mix,
     }
 
     ks_build_stage_ = std::make_unique<KsBuildStage>(std::move(ks));
-    mix_stage_ =
-        std::make_unique<MixStage>(std::move(mix), loop_skip_update_);
+    mix_stage_ = std::make_unique<MixStage>(std::move(mix), loop_skip_update_);
     diag_stage_ =
         std::make_unique<DiagonalizeStage>(std::move(diag), loop_skip_update_);
     density_stage_ =
@@ -5942,10 +5902,9 @@ bool GpwDft::drive_stage_loop_(int max_iter, GpwResult& res) {
         res.iters = executed;
         res.e_total = loop_e_total_;
         if (std::getenv("ATV_GPW_TRACE"))
-            std::fprintf(stderr,
-                         "[gpw it %2d] E=%.8f  dE gate / err=%.2e  skip=%d\n",
-                         iter, loop_e_total_, loop_err_norm_,
-                         (int)loop_skip_update_);
+            std::fprintf(
+                stderr, "[gpw it %2d] E=%.8f  dE gate / err=%.2e  skip=%d\n",
+                iter, loop_e_total_, loop_err_norm_, (int)loop_skip_update_);
         if (poll_criteria_(iter) != ATV::Verdict::Continue)
             break;
     }
@@ -5965,8 +5924,8 @@ bool GpwDft::drive_path_diis_(PathOpFactory factory, int max_iter,
     loop_skip_update_ = false;
 
     reset_built_driver_();
-    auto [ks, mix, diag, dens] = factory(
-        loop_skip_update_, loop_e_total_, loop_err_norm_, loop_prev_energy_);
+    auto [ks, mix, diag, dens] = factory(loop_skip_update_, loop_e_total_,
+                                         loop_err_norm_, loop_prev_energy_);
     ensure_path_stages_(std::move(ks), std::move(mix), std::move(diag),
                         std::move(dens));
     return drive_stage_loop_(max_iter, res);
@@ -5997,9 +5956,9 @@ bool GpwDft::drive_gamma_rks_diis_(
 
     const bool conv = drive_path_diis_(
         [&, build_H = std::move(build_H), diag_fn = std::move(diag_fn), diis,
-         use_diis, mix, n_occ, nb, tol, diis_err_tol](
-            bool& skip, double& e_total, double& err_norm,
-            double& prev_energy) {
+         use_diis, mix, n_occ, nb, tol,
+         diis_err_tol](bool& skip, double& e_total, double& err_norm,
+                       double& prev_energy) {
             KsBuildStage::Op ks = [&, build_H]() {
                 build_H(loop_P_, loop_H_, e_total);
                 loop_err_ = internal::gpw_diis_error(loop_H_, loop_P_, loop_S_,
@@ -6009,9 +5968,9 @@ bool GpwDft::drive_gamma_rks_diis_(
                     err_norm = std::max(err_norm, std::abs(v));
                 const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
                 const bool has_prev = !std::isnan(prev_energy);
-                const double dE =
-                    has_prev ? (e_total - prev_energy)
-                             : std::numeric_limits<double>::infinity();
+                const double dE = has_prev
+                                      ? (e_total - prev_energy)
+                                      : std::numeric_limits<double>::infinity();
                 skip = !no_stop && has_prev && std::abs(dE) < tol
                        && err_norm < diis_err_tol;
                 prev_energy = e_total;
@@ -6067,9 +6026,9 @@ bool GpwDft::drive_gamma_uks_diis_(
     const bool conv = drive_path_diis_(
         [&, build_uks_H = std::move(build_uks_H), Ha_raw, Hb_raw, diis_a,
          diis_b, use_diis, mix, n_alpha, n_beta, nb, tol, diis_err_tol, do_dftu,
-         level_shift, &Pa, &Pb, &Ca_prev, &Cb_prev](
-            bool& skip, double& e_total, double& err_norm,
-            double& prev_energy) {
+         level_shift, &Pa, &Pb, &Ca_prev,
+         &Cb_prev](bool& skip, double& e_total, double& err_norm,
+                   double& prev_energy) {
             KsBuildStage::Op ks = [&, build_uks_H, Ha_raw, Hb_raw, tol,
                                    diis_err_tol, do_dftu]() {
                 auto [Ha, Hb, e] = build_uks_H(Pa, Pb);
@@ -6086,17 +6045,17 @@ bool GpwDft::drive_gamma_uks_diis_(
                 for (const double v : err_b)
                     err_norm = std::max(err_norm, std::abs(v));
                 if (std::getenv("ATV_GPW_TRACE"))
-                    std::fprintf(stderr,
-                                 "[gpw UKS] E=%.8f  dE=%.2e err=%.2e\n", e_total,
+                    std::fprintf(stderr, "[gpw UKS] E=%.8f  dE=%.2e err=%.2e\n",
+                                 e_total,
                                  std::isnan(prev_energy)
                                      ? 0.0
                                      : std::abs(e_total - prev_energy),
                                  err_norm);
                 const bool no_stop = std::getenv("ATV_GPW_NOSTOP") != nullptr;
                 const bool has_prev = !std::isnan(prev_energy);
-                const double dE =
-                    has_prev ? (e_total - prev_energy)
-                             : std::numeric_limits<double>::infinity();
+                const double dE = has_prev
+                                      ? (e_total - prev_energy)
+                                      : std::numeric_limits<double>::infinity();
                 const double err_gate = do_dftu ? 5e-3 : diis_err_tol;
                 skip = !no_stop && has_prev && std::abs(dE) < tol
                        && err_norm < err_gate;
@@ -6109,55 +6068,53 @@ bool GpwDft::drive_gamma_uks_diis_(
             // loop_H_ = Ha, loop_H_ext_ temporarily Hb then mixed Ha;
             // use loop_err_ for err_a and loop_C_ unused until dens.
             // Dedicated dual mix state:
-            MixStage::Op mix_op =
-                [&, diis_a, diis_b, use_diis, Ha_raw, Hb_raw]() {
-                    RealMatrix err_a = internal::gpw_diis_error(
-                        *Ha_raw, Pa, loop_S_, loop_X_);
-                    RealMatrix err_b = internal::gpw_diis_error(
-                        *Hb_raw, Pb, loop_S_, loop_X_);
-                    if (use_diis) {
-                        loop_H_ = diis_a->step(*Ha_raw, err_a);     // Ha_use
-                        loop_H_ext_ = diis_b->step(*Hb_raw, err_b); // Hb_use
+            MixStage::Op mix_op = [&, diis_a, diis_b, use_diis, Ha_raw,
+                                   Hb_raw]() {
+                RealMatrix err_a =
+                    internal::gpw_diis_error(*Ha_raw, Pa, loop_S_, loop_X_);
+                RealMatrix err_b =
+                    internal::gpw_diis_error(*Hb_raw, Pb, loop_S_, loop_X_);
+                if (use_diis) {
+                    loop_H_ = diis_a->step(*Ha_raw, err_a);     // Ha_use
+                    loop_H_ext_ = diis_b->step(*Hb_raw, err_b); // Hb_use
+                } else {
+                    loop_H_ = *Ha_raw;
+                    loop_H_ext_ = *Hb_raw;
+                }
+            };
+            DiagonalizeStage::Op diag_op = [&, n_alpha, n_beta, level_shift,
+                                            &Ca_prev, &Cb_prev]() {
+                auto [eiga, Ca] = diagonalize_fock_shifted(
+                    loop_H_, loop_X_, loop_S_, Ca_prev, n_alpha, level_shift);
+                auto [eigb, Cb] =
+                    diagonalize_fock_shifted(loop_H_ext_, loop_X_, loop_S_,
+                                             Cb_prev, n_beta, level_shift);
+                (void)eiga;
+                (void)eigb;
+                Ca_prev = std::move(Ca);
+                Cb_prev = std::move(Cb);
+            };
+            DensityStage::Op dens_op = [&, use_diis, mix, n_alpha, n_beta, nb,
+                                        do_dftu, &Pa, &Pb, &Ca_prev,
+                                        &Cb_prev]() {
+                RealMatrix Pa_new =
+                    linalg::build_density_matrix(Ca_prev, n_alpha, nb, 1.0);
+                RealMatrix Pb_new =
+                    linalg::build_density_matrix(Cb_prev, n_beta, nb, 1.0);
+                if (use_diis) {
+                    if (do_dftu) {
+                        const double a = std::min(std::max(mix, 0.15), 0.6);
+                        Pa = (1.0 - a) * Pa + a * Pa_new;
+                        Pb = (1.0 - a) * Pb + a * Pb_new;
                     } else {
-                        loop_H_ = *Ha_raw;
-                        loop_H_ext_ = *Hb_raw;
+                        Pa = std::move(Pa_new);
+                        Pb = std::move(Pb_new);
                     }
-                };
-            DiagonalizeStage::Op diag_op =
-                [&, n_alpha, n_beta, level_shift, &Ca_prev, &Cb_prev]() {
-                    auto [eiga, Ca] = diagonalize_fock_shifted(
-                        loop_H_, loop_X_, loop_S_, Ca_prev, n_alpha,
-                        level_shift);
-                    auto [eigb, Cb] = diagonalize_fock_shifted(
-                        loop_H_ext_, loop_X_, loop_S_, Cb_prev, n_beta,
-                        level_shift);
-                    (void)eiga;
-                    (void)eigb;
-                    Ca_prev = std::move(Ca);
-                    Cb_prev = std::move(Cb);
-                };
-            DensityStage::Op dens_op =
-                [&, use_diis, mix, n_alpha, n_beta, nb, do_dftu, &Pa, &Pb,
-                 &Ca_prev, &Cb_prev]() {
-                    RealMatrix Pa_new =
-                        linalg::build_density_matrix(Ca_prev, n_alpha, nb, 1.0);
-                    RealMatrix Pb_new =
-                        linalg::build_density_matrix(Cb_prev, n_beta, nb, 1.0);
-                    if (use_diis) {
-                        if (do_dftu) {
-                            const double a =
-                                std::min(std::max(mix, 0.15), 0.6);
-                            Pa = (1.0 - a) * Pa + a * Pa_new;
-                            Pb = (1.0 - a) * Pb + a * Pb_new;
-                        } else {
-                            Pa = std::move(Pa_new);
-                            Pb = std::move(Pb_new);
-                        }
-                    } else {
-                        Pa = (1.0 - mix) * Pa + mix * Pa_new;
-                        Pb = (1.0 - mix) * Pb + mix * Pb_new;
-                    }
-                };
+                } else {
+                    Pa = (1.0 - mix) * Pa + mix * Pa_new;
+                    Pb = (1.0 - mix) * Pb + mix * Pb_new;
+                }
+            };
             return std::make_tuple(std::move(ks), std::move(mix_op),
                                    std::move(diag_op), std::move(dens_op));
         },

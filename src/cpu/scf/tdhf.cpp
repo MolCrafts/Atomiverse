@@ -507,14 +507,15 @@ internal::Channel internal_channel(ExcitationChannel ch) {
 /// on the KS grid (closed-shell singlet). Same convention as hybrid TDA /
 /// full LR-TDDFT (PySCF get_ab hybrid path). Returns K such that A and B
 /// both receive K under the adiabatic approximation.
-RealMatrix fxc_kernel_fd(const SlaterDeterminant& det, const internal::IntegralView& pack,
-                         XCType xc, GridLevel grid_level, int n_radial,
-                         int n_angular) {
+RealMatrix fxc_kernel_fd(const SlaterDeterminant& det,
+                         const internal::IntegralView& pack, XCType xc,
+                         GridLevel grid_level, int n_radial, int n_angular) {
     if (!det.restricted())
         throw std::runtime_error(
             "fxc_kernel_fd: restricted closed-shell determinant required");
     if (pack.shells.empty())
-        throw std::runtime_error("fxc_kernel_fd: internal::IntegralWorkspace has no shells");
+        throw std::runtime_error(
+            "fxc_kernel_fd: internal::IntegralWorkspace has no shells");
 
     using Spin = SlaterDeterminant::Spin;
     const RealMatrix& C = det.coefficients(Spin::alpha);
@@ -685,7 +686,8 @@ internal::TDHFPack::Roots rpa_from_ab(const RealMatrix& A, const RealMatrix& B,
 /// and f = (2/3)·ω[Ha]·|μ|²; the triplet channel is spin-forbidden (μ = 0,
 /// f = 0). Two callers (tda / tdhf) — second-caller extraction rule.
 ExcitedStatesResult
-excited_states_result(const SlaterDeterminant& det, const internal::IntegralView& pack,
+excited_states_result(const SlaterDeterminant& det,
+                      const internal::IntegralView& pack,
                       const internal::TDHFPack::Roots& roots,
                       ExcitationChannel channel, bool tda_flag) {
     const std::size_t k = roots.omega.size();
@@ -1318,7 +1320,8 @@ UksLsdaCasidaWork build_uks_lsda_casida_A(const SlaterDeterminant& det,
 
     if (pack.shells.empty())
         throw std::runtime_error(
-            std::string(tag) + ": internal::IntegralWorkspace has no shells (no fallback)");
+            std::string(tag)
+            + ": internal::IntegralWorkspace has no shells (no fallback)");
     const MolecularGrid grid(pack.atoms.data(),
                              static_cast<int>(pack.atoms.size()), grid_level,
                              n_radial, n_angular);

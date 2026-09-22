@@ -22,9 +22,9 @@ int main() {
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
+    using cpu::gpw::XcKind;
     using cpu::gpw::xdm_pbe;
     using cpu::gpw::XdmResult;
-    using cpu::gpw::XcKind;
 
     constexpr double kA2B = 1.0 / 0.52917720859;
     const double ang[6][3] = {
@@ -48,7 +48,7 @@ int main() {
     constexpr double kETol = 1.0e-8;                     // Ha
     constexpr double kFTol = 1.0e-6;                     // Ha/Bohr
     constexpr double kSumFTol = 1.0e-8;                  // Ha/Bohr
-    constexpr double kPinFTol = 1.0e-10;                 // Ha/Bohr vs dual-Python
+    constexpr double kPinFTol = 1.0e-10; // Ha/Bohr vs dual-Python
     // Isolated free-atom force sample (dual pure-Python ≡ ATV tables).
     constexpr double kFIsoPin[6][3] = {
         {1.6875829936003448e-04, 0.0, 0.0},
@@ -63,22 +63,21 @@ int main() {
     const XdmResult xdm_iso = xdm_pbe(Z, pos, cell0, /*periodic=*/false);
     if (!std::isfinite(xdm_iso.energy)
         || std::abs(xdm_iso.energy - kEIsoRef) > kETol) {
-        std::fprintf(stderr,
-                     "FAIL: E_disp isolated XDM got=%.14e want=%.14e tol=%.1e\n",
-                     xdm_iso.energy, kEIsoRef, kETol);
+        std::fprintf(
+            stderr, "FAIL: E_disp isolated XDM got=%.14e want=%.14e tol=%.1e\n",
+            xdm_iso.energy, kEIsoRef, kETol);
         return 1;
     }
 
     constexpr double kRcut = 50.0 * kA2B;
     const double L = 12.0 * kA2B;
     const double cellp[3] = {L, L, L};
-    const XdmResult xdm_per =
-        xdm_pbe(Z, pos, cellp, /*periodic=*/true, kRcut);
+    const XdmResult xdm_per = xdm_pbe(Z, pos, cellp, /*periodic=*/true, kRcut);
     if (!std::isfinite(xdm_per.energy)
         || std::abs(xdm_per.energy - kEPerRef) > kETol) {
-        std::fprintf(stderr,
-                     "FAIL: E_disp periodic XDM got=%.14e want=%.14e tol=%.1e\n",
-                     xdm_per.energy, kEPerRef, kETol);
+        std::fprintf(
+            stderr, "FAIL: E_disp periodic XDM got=%.14e want=%.14e tol=%.1e\n",
+            xdm_per.energy, kEPerRef, kETol);
         return 1;
     }
 
@@ -92,13 +91,11 @@ int main() {
     double max_pin = 0.0;
     for (std::size_t i = 0; i < 6; ++i)
         for (int d = 0; d < 3; ++d)
-            max_pin = std::max(
-                max_pin,
-                std::abs(xdm_iso.forces[i][d] - kFIsoPin[i][d]));
+            max_pin = std::max(max_pin,
+                               std::abs(xdm_iso.forces[i][d] - kFIsoPin[i][d]));
     if (max_pin > kPinFTol) {
-        std::fprintf(stderr,
-                     "FAIL: max|F_iso-pin|=%.3e > tol=%.1e Ha/Bohr\n", max_pin,
-                     kPinFTol);
+        std::fprintf(stderr, "FAIL: max|F_iso-pin|=%.3e > tol=%.1e Ha/Bohr\n",
+                     max_pin, kPinFTol);
         return 1;
     }
 
@@ -120,8 +117,7 @@ int main() {
                     xdm_pbe(Z, pos_fd, cell, periodic, kRcut).energy;
                 pos_fd[i][d] = save;
                 const double fd = -(ep - em) / (2.0 * h);
-                max_err =
-                    std::max(max_err, std::abs(fd - xdm.forces[i][d]));
+                max_err = std::max(max_err, std::abs(fd - xdm.forces[i][d]));
                 sum[d] += xdm.forces[i][d];
             }
         }
@@ -179,11 +175,9 @@ int main() {
 
     gpw.build(atoms);
     const auto& res = gpw.run(atoms);
-    if (!std::isfinite(res.e_disp)
-        || std::abs(res.e_disp - kEPerRef) > kETol) {
-        std::fprintf(stderr,
-                     "FAIL: GpwDft e_disp got=%.14e want=%.14e\n", res.e_disp,
-                     kEPerRef);
+    if (!std::isfinite(res.e_disp) || std::abs(res.e_disp - kEPerRef) > kETol) {
+        std::fprintf(stderr, "FAIL: GpwDft e_disp got=%.14e want=%.14e\n",
+                     res.e_disp, kEPerRef);
         return 1;
     }
     if (!std::isfinite(res.e_total)) {
@@ -191,11 +185,11 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: free-atom XDM water dimer E_iso=%.14e E_per=%.14e Ha "
-        "(dual-Python pins); max|F_iso-pin|=%.2e; "
-        "F_O0=(%.6e, %.6e, %.6e) Ha/Bohr; e_total=%.8f Ha (iters=%d)\n",
-        xdm_iso.energy, xdm_per.energy, max_pin, xdm_iso.forces[0][0],
-        xdm_iso.forces[0][1], xdm_iso.forces[0][2], res.e_total, res.iters);
+    std::printf("PASS: free-atom XDM water dimer E_iso=%.14e E_per=%.14e Ha "
+                "(dual-Python pins); max|F_iso-pin|=%.2e; "
+                "F_O0=(%.6e, %.6e, %.6e) Ha/Bohr; e_total=%.8f Ha (iters=%d)\n",
+                xdm_iso.energy, xdm_per.energy, max_pin, xdm_iso.forces[0][0],
+                xdm_iso.forces[0][1], xdm_iso.forces[0][2], res.e_total,
+                res.iters);
     return 0;
 }

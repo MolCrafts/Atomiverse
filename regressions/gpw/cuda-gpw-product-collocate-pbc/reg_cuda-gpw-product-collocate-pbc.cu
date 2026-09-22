@@ -24,10 +24,10 @@ using ATV::cpu::gpw::GthPotential;
 using ATV::cpu::gpw::UniformGrid;
 using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::collint_collocate_product;
-using ATV::cuda::gpw::internal::CollocateGridDesc;
-using ATV::cuda::gpw::internal::DeviceProduct;
 using ATV::cuda::gpw::internal::collocate_integrate_rho;
 using ATV::cuda::gpw::internal::collocate_products;
+using ATV::cuda::gpw::internal::CollocateGridDesc;
+using ATV::cuda::gpw::internal::DeviceProduct;
 
 namespace {
 
@@ -75,9 +75,9 @@ int check_edge_collocate() {
     check_cuda(cudaMalloc(&d_rho, static_cast<size_t>(ng) * sizeof(double)),
                "malloc rho");
     check_cuda(cudaMalloc(&d_sum, sizeof(double)), "malloc sum");
-    check_cuda(cudaMemcpy(d_prods, &q, sizeof(DeviceProduct),
-                          cudaMemcpyHostToDevice),
-               "H2D prod");
+    check_cuda(
+        cudaMemcpy(d_prods, &q, sizeof(DeviceProduct), cudaMemcpyHostToDevice),
+        "H2D prod");
     check_cuda(cudaMemset(d_rho, 0, static_cast<size_t>(ng) * sizeof(double)),
                "zero rho");
 
@@ -92,8 +92,9 @@ int check_edge_collocate() {
     collocate_integrate_rho(d_rho, ng, grid.weight(), d_sum);
     check_cuda(cudaDeviceSynchronize(), "sync collocate");
     double q_dev = 0.0;
-    check_cuda(cudaMemcpy(&q_dev, d_sum, sizeof(double), cudaMemcpyDeviceToHost),
-               "D2H charge");
+    check_cuda(
+        cudaMemcpy(&q_dev, d_sum, sizeof(double), cudaMemcpyDeviceToHost),
+        "D2H charge");
     cudaFree(d_prods);
     cudaFree(d_rho);
     cudaFree(d_sum);

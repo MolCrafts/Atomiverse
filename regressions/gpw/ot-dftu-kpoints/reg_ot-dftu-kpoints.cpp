@@ -57,8 +57,7 @@ ATV::cpu::gpw::GpwDft base_plus_u(double L, double u_ev) {
     cfg.tol = 1e-7;
     cfg.mix = 0.35;
     cfg.xc = cpu::gpw::XcKind::PADE;
-    cfg.plus_u.push_back(
-        cpu::gpw::PlusU{molrs::Element::H, /*l=*/0, u_ev});
+    cfg.plus_u.push_back(cpu::gpw::PlusU{molrs::Element::H, /*l=*/0, u_ev});
     return cfg;
 }
 
@@ -177,8 +176,8 @@ int main() {
                     r0.iters);
         std::printf("  E(U=4, OT) = %.12f Ha  iters=%d  e_dftu=%.8f\n",
                     ru.e_total, ru.iters, ru.e_dftu);
-        std::printf("  |E(U)−E(0)| = %.6e Ha  pin=%.12f tol=%.1e\n", dU,
-                    kE_pin, kTolE);
+        std::printf("  |E(U)−E(0)| = %.6e Ha  pin=%.12f tol=%.1e\n", dU, kE_pin,
+                    kTolE);
     }
 
     const auto t1 = clock::now();

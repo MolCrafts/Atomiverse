@@ -62,9 +62,9 @@ double min_image_dist(const std::array<double, 3>& a,
 }
 
 /// Greedy bipartite assignment: max matching cost (min sum of distances).
-double max_assigned_distance(
-    const std::vector<std::array<double, 3>>& centers,
-    const std::array<std::array<double, 3>, 4>& mids, const cpu::Box& box) {
+double max_assigned_distance(const std::vector<std::array<double, 3>>& centers,
+                             const std::array<std::array<double, 3>, 4>& mids,
+                             const cpu::Box& box) {
     const int n = 4;
     // Exhaustive 4! assignment — n is fixed.
     std::array<int, 4> perm{0, 1, 2, 3};
@@ -74,7 +74,8 @@ double max_assigned_distance(
         for (int i = 0; i < n; ++i) {
             const double d =
                 min_image_dist(centers[static_cast<std::size_t>(i)],
-                               mids[static_cast<std::size_t>(perm[static_cast<std::size_t>(i)])],
+                               mids[static_cast<std::size_t>(
+                                   perm[static_cast<std::size_t>(i)])],
                                box);
             this_max = std::max(this_max, d);
         }
@@ -94,7 +95,7 @@ int main() {
     // bond-midpoint geometry to ≲ 0.9 Å (Si–Si bond is 2.35 Å). Sub-0.15 Å
     // absolute placement is a denser-mesh / higher-ecut productization follow-on;
     // this foothold pins localization (Ω drop) + tetrahedral bond association.
-    constexpr double kMidTol = 0.90; // bond-midpoint distance [Angstrom]
+    constexpr double kMidTol = 0.90;      // bond-midpoint distance [Angstrom]
     constexpr double kSpreadRatio = 0.25; // Ω_final / Ω_init upper bound
 
     PW method;
@@ -122,12 +123,13 @@ int main() {
     }
     std::printf("SCF E=%.6f Ry  n_wann=%d  iters=%d  conv=%d\n", r.energy_ry,
                 r.n_wann, r.iterations, static_cast<int>(r.converged));
-    std::printf("Omega_init=%.6f  Omega=%.6f  [Ang^2]\n", r.total_spread_initial,
-                r.total_spread);
+    std::printf("Omega_init=%.6f  Omega=%.6f  [Ang^2]\n",
+                r.total_spread_initial, r.total_spread);
 
     if (r.n_wann != 4 || static_cast<int>(r.centers.size()) != 4) {
-        std::printf("FAIL: expected 4 Wannier centers, got n_wann=%d size=%zu\n",
-                    r.n_wann, r.centers.size());
+        std::printf(
+            "FAIL: expected 4 Wannier centers, got n_wann=%d size=%zu\n",
+            r.n_wann, r.centers.size());
         return 1;
     }
 
@@ -144,12 +146,12 @@ int main() {
         }
     }
     for (int i = 0; i < 4; ++i)
-        std::printf("  midpoint[%d] = (%+.5f, %+.5f, %+.5f)\n", i, mids[static_cast<std::size_t>(i)][0],
+        std::printf("  midpoint[%d] = (%+.5f, %+.5f, %+.5f)\n", i,
+                    mids[static_cast<std::size_t>(i)][0],
                     mids[static_cast<std::size_t>(i)][1],
                     mids[static_cast<std::size_t>(i)][2]);
 
-    const double dmax =
-        max_assigned_distance(r.centers, mids, frame.box);
+    const double dmax = max_assigned_distance(r.centers, mids, frame.box);
     std::printf("max assigned min-image distance to bond midpoints: %.5f Ang "
                 "(tol %.2f)\n",
                 dmax, kMidTol);

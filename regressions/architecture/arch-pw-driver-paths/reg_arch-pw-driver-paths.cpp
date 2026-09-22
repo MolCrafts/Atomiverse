@@ -74,8 +74,7 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: arch-pw-driver-paths  PW : Driver<pw::Phase>  "
-        "multi-path stages (spin+smear members)  (harness shape)\n");
+    std::printf("PASS: arch-pw-driver-paths  PW : Driver<pw::Phase>  "
+                "multi-path stages (spin+smear members)  (harness shape)\n");
     return 0;
 }

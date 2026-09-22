@@ -116,11 +116,10 @@ TEST(GpwOneElectron, ContractedSsMatchesClosedForm) {
     GridBasisFunction a = {
         prim(0.30, 0, 0, 0, 0, 0, 0, 0.21), prim(0.80, 0, 0, 0, 0, 0, 0, 0.35),
         prim(1.50, 0, 0, 0, 0, 0, 0, 0.40), prim(3.20, 0, 0, 0, 0, 0, 0, 0.28)};
-    GridBasisFunction b = {
-        prim(0.40, 1.2, -0.3, 0.5, 0, 0, 0, 0.18),
-        prim(0.95, 1.2, -0.3, 0.5, 0, 0, 0, 0.33),
-        prim(1.90, 1.2, -0.3, 0.5, 0, 0, 0, 0.37),
-        prim(4.00, 1.2, -0.3, 0.5, 0, 0, 0, 0.25)};
+    GridBasisFunction b = {prim(0.40, 1.2, -0.3, 0.5, 0, 0, 0, 0.18),
+                           prim(0.95, 1.2, -0.3, 0.5, 0, 0, 0, 0.33),
+                           prim(1.90, 1.2, -0.3, 0.5, 0, 0, 0, 0.37),
+                           prim(4.00, 1.2, -0.3, 0.5, 0, 0, 0, 0.25)};
     double s_ref = 0.0, t_ref = 0.0;
     for (const auto& pa : a) {
         for (const auto& pb : b) {
@@ -143,8 +142,8 @@ TEST(GpwOneElectron, ContractedSsMatchesClosedForm) {
 // m large enough that live images ≥ native SIMD width on typical hosts.
 TEST(GpwOneElectron, ContractedSTPeriodicFusedMatchesImageSum) {
     using ATV::cpu::gpw::contracted_ST_periodic;
-    GridBasisFunction a = {
-        prim(0.50, 0, 0, 0, 0, 0, 0, 0.40), prim(1.20, 0, 0, 0, 0, 0, 0, 0.60)};
+    GridBasisFunction a = {prim(0.50, 0, 0, 0, 0, 0, 0, 0.40),
+                           prim(1.20, 0, 0, 0, 0, 0, 0, 0.60)};
     GridBasisFunction b = {prim(0.70, 0.4, 0.1, -0.2, 0, 0, 0, 0.55),
                            prim(1.80, 0.4, 0.1, -0.2, 0, 0, 0, 0.45)};
     // Slab-class: many images along z (m_z=4 → 9 live z slots × planar).
@@ -251,4 +250,3 @@ TEST(GpwOneElectron, ContractedAngularMatchesPrimSum) {
     EXPECT_NEAR(s, s_ref, 1e-13 * std::max(1.0, std::abs(s_ref)));
     EXPECT_NEAR(t, t_ref, 1e-13 * std::max(1.0, std::abs(t_ref)));
 }
-

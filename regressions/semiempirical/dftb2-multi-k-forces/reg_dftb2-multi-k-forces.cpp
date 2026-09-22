@@ -156,9 +156,9 @@ int main() {
     constexpr double h = 1.0e-4;      // Å
     constexpr double kFdTol = 1.0e-5; // eV/Å (central-FD floor on multi-k SCC)
     for (int atom = 0; atom < 2; ++atom) {
-        const double fd = -(energy_at(+h, atom, kMesh)
-                            - energy_at(-h, atom, kMesh))
-                          / (2.0 * h);
+        const double fd =
+            -(energy_at(+h, atom, kMesh) - energy_at(-h, atom, kMesh))
+            / (2.0 * h);
         std::printf("  F%dx analytic=%.10f  fd=%.10f  |d|=%.3e\n", atom,
                     fx[atom], fd, std::fabs(fx[atom] - fd));
         if (std::fabs(fx[atom] - fd) > kFdTol) {
@@ -188,14 +188,13 @@ int main() {
     std::printf("  sigma=(%.10e, %.10e, %.10e, %.3e, %.3e, %.3e) eV/A^3\n",
                 sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
     for (int v = 0; v < 2; ++v) { // xx (chain axis), yy (vacuum axis)
-        const double fd = -(energy_strained(v, +h_s, kMesh)
-                            - energy_strained(v, -h_s, kMesh))
-                          / (2.0 * h_s) / vol;
+        const double fd =
+            -(energy_strained(v, +h_s, kMesh) - energy_strained(v, -h_s, kMesh))
+            / (2.0 * h_s) / vol;
         std::printf("  sigma_%s analytic=%.10e  strain-fd=%.10e  |d|=%.3e\n",
                     v == 0 ? "xx" : "yy", sigma[v], fd,
                     std::fabs(sigma[v] - fd));
-        if (!std::isfinite(sigma[v])
-            || std::fabs(sigma[v] - fd) > kStressTol) {
+        if (!std::isfinite(sigma[v]) || std::fabs(sigma[v] - fd) > kStressTol) {
             std::printf("FAIL sigma[%d] vs strain-FD: |d|=%.3e > %.1e\n", v,
                         std::fabs(sigma[v] - fd), kStressTol);
             return 1;

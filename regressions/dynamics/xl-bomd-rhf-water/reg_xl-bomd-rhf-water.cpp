@@ -51,10 +51,10 @@
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/methods.h"
 
@@ -215,9 +215,10 @@ int main() {
             const double dz =
                 static_cast<double>(frame_b.span(kAtom_z)[i])
                 - geom[static_cast<std::size_t>(s * 9 + i * 3 + 2)];
-            traj_mismatch = std::max(
-                traj_mismatch,
-                std::max(std::fabs(dx), std::max(std::fabs(dy), std::fabs(dz))));
+            traj_mismatch =
+                std::max(traj_mismatch,
+                         std::max(std::fabs(dx),
+                                  std::max(std::fabs(dy), std::fabs(dz))));
         }
     }
     if (reuse.xl_advances() != 0) {
@@ -301,8 +302,7 @@ int main() {
 
     std::printf("XL-BOMD H2O RHF/STO-3G NVE (K=%d, dt=%.3g fs, tol=%.0e Ha): "
                 "%d steps  E0=%.8g eV  Ef=%.8g eV\n",
-                xl.xl_bomd_order(), dt, scf_tol, n_steps, e0,
-                xl_etot.back());
+                xl.xl_bomd_order(), dt, scf_tol, n_steps, e0, xl_etot.back());
     std::printf("  SCF iterations  XL:");
     for (int it : xl_iters)
         std::printf(" %d", it);
@@ -321,8 +321,8 @@ int main() {
                 min_gain_vs_reuse, xl.xl_advances());
     std::printf("  worst |dE|/scale=%.3e (tol %.1e)  leg max|dx|=%.3e Å  "
                 "PEf=%.8g eV  OH=%.4f/%.4f Å\n",
-                worst_drift, drift_tol, traj_mismatch,
-                frame.meta.get(kEnergy), oh1, oh2);
+                worst_drift, drift_tol, traj_mismatch, frame.meta.get(kEnergy),
+                oh1, oh2);
 
     // RHF/STO-3G water is ≈ −74.96 Ha ≈ −2039 eV: a bound molecule.
     const double pe_final = frame.meta.get(kEnergy);

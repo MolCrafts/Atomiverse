@@ -162,8 +162,9 @@ void expect_matches_pyscf(const cpu::scf::RealMatrix& atv, const double* ref,
 
 TEST(MinaoGuess, H2O_MatchesPyscfToMicroHartree) {
     auto frame = make_water();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
-                                            /*compute_eri=*/false};
+    auto integrals = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0,
+        /*compute_eri=*/false};
     auto P = cpu::scf::build_minao_density(integrals);
 
     ASSERT_EQ(P.shape(0), 7u);
@@ -176,8 +177,9 @@ TEST(MinaoGuess, H2O_MatchesPyscfToMicroHartree) {
 
 TEST(MinaoGuess, CH4_MatchesPyscfToMicroHartree) {
     auto frame = make_methane();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
-                                            /*compute_eri=*/false};
+    auto integrals = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0,
+        /*compute_eri=*/false};
     auto P = cpu::scf::build_minao_density(integrals);
 
     ASSERT_EQ(P.shape(0), 9u);
@@ -200,8 +202,8 @@ TEST(MinaoGuess, Symmetric) {
 TEST(MinaoGuess, SupportedElements) {
     // H, C, N, O, F are supported; Li (Z=3) currently is not.
     auto frame_h2o = make_water();
-    auto integrals_h2o =
-        cpu::scf::internal::IntegralWorkspace{frame_h2o, cpu::scf::BasisSet::STO3G, 0, false};
+    auto integrals_h2o = cpu::scf::internal::IntegralWorkspace{
+        frame_h2o, cpu::scf::BasisSet::STO3G, 0, false};
     EXPECT_TRUE(cpu::scf::minao_supported(integrals_h2o));
 }
 

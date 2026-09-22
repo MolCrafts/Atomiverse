@@ -92,7 +92,8 @@ int main(int argc, char** argv) {
         m.build(atoms);
         const auto& r = m.run(atoms);
         if (!r.converged) {
-            std::fprintf(stderr, "FAIL: CPU multi-k SCF not converged (iters=%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: CPU multi-k SCF not converged (iters=%d)\n",
                          r.iters);
             return 1;
         }

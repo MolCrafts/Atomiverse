@@ -26,9 +26,8 @@ namespace {
 
 void insert_qm_z(cpu::Frame& f) {
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                                kDynamicFieldId});
 }
 
 cpu::Frame make_h2o_ar() {
@@ -70,7 +69,8 @@ TEST(QmSubsystem, MissingMaskThrowsHowTo) {
             try {
                 sub.build(f, 1);
             } catch (const std::runtime_error& e) {
-                EXPECT_NE(std::string(e.what()).find("qm_z"), std::string::npos);
+                EXPECT_NE(std::string(e.what()).find("qm_z"),
+                          std::string::npos);
                 throw;
             }
         },

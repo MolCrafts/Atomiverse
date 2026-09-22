@@ -14,9 +14,9 @@
 #include <vector>
 
 using ATV::cpu::gpw::internal::CplxMatrix;
-using ATV::cpu::gpw::internal::KOrth;
 using ATV::cpu::gpw::internal::diagonalize_k;
 using ATV::cpu::gpw::internal::k_diis_error;
+using ATV::cpu::gpw::internal::KOrth;
 using ATV::cuda::gpw::internal::KpointDiisEigenDevice;
 using Cplx = std::complex<double>;
 
@@ -113,7 +113,8 @@ TEST(CudaGpwKpointDiisEigen, EigenAndDensityMatchHost) {
 
     double de = 0.0;
     for (int i = 0; i < m; ++i)
-        de = std::max(de, std::abs(eig_d[static_cast<size_t>(i)] - eig_h[static_cast<size_t>(i)]));
+        de = std::max(de, std::abs(eig_d[static_cast<size_t>(i)]
+                                   - eig_h[static_cast<size_t>(i)]));
     EXPECT_LE(de, 1e-9) << "max|eig_dev-eig_host|=" << de;
 
     // Density is U(1) phase-invariant — compare P, not C.

@@ -61,8 +61,7 @@ RealMatrix trial_P(std::size_t nb, double scale) {
     for (std::size_t i = 0; i < nb; ++i) {
         P(i, i) = scale;
         for (std::size_t j = i + 1; j < nb; ++j)
-            P(i, j) = P(j, i) =
-                scale * 0.1 / static_cast<double>(1 + i + j);
+            P(i, j) = P(j, i) = scale * 0.1 / static_cast<double>(1 + i + j);
     }
     return P;
 }

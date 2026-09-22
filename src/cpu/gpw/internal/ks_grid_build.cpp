@@ -16,8 +16,8 @@ namespace cpu {
 namespace gpw {
 namespace internal {
 
-XcOnGrid evaluate_xc_rks(const UniformGrid& grid, const std::vector<double>& rho,
-                         XcKind xc) {
+XcOnGrid evaluate_xc_rks(const UniformGrid& grid,
+                         const std::vector<double>& rho, XcKind xc) {
     switch (xc) {
     case XcKind::PBE:
         return xc_grid_pbe(grid, rho);
@@ -66,9 +66,8 @@ void check_density_sizes(const UniformGrid& grid, std::size_t n_rho,
     if (n_rho != static_cast<std::size_t>(grid.npts())
         || n_ion != static_cast<std::size_t>(grid.npts()))
         throw std::runtime_error(
-            std::string("GPW ") + tag
-            + ": density grid size mismatch (rho=" + std::to_string(n_rho)
-            + " n_ion=" + std::to_string(n_ion)
+            std::string("GPW ") + tag + ": density grid size mismatch (rho="
+            + std::to_string(n_rho) + " n_ion=" + std::to_string(n_ion)
             + " grid.npts=" + std::to_string(grid.npts()) + ")");
 }
 

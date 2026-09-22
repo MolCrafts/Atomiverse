@@ -122,7 +122,7 @@ int main() {
     constexpr double kSiteTol = 1e-8; // [e]
     // MetalWalls c8ad175d, isolated limit: 0.2717535549687 e (REFERENCE.md).
     constexpr double kQTopPrimary = 0.27175356;
-    constexpr int nx = 4, ny = 4;               // 32 electrode sites
+    constexpr int nx = 4, ny = 4; // 32 electrode sites
     int nfail = 0;
 
     std::printf("const-pot-cg-large-electrode\n");

@@ -72,7 +72,8 @@ cpu::Frame make_static_lj_lattice(int n_side, double density) {
 /// and the cuda::RDF observer; RDF::destroy at teardown writes the g(r) file.
 void run_static_rdf_md(cpu::Frame& frame, const std::string& filename) {
     cuda::md::MD sim;
-    sim.set_integrator(cuda::md::VelocityVerlet{double(0.0)}); // dt = 0 fs → static
+    sim.set_integrator(
+        cuda::md::VelocityVerlet{double(0.0)}); // dt = 0 fs → static
     sim.on(md::Phase::force)
         .add(cuda::NeighborList{kCutoff}, -10)
         .add(cuda::PairLJCut{double(1.0), double(1.0), kCutoff});

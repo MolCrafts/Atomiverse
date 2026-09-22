@@ -121,14 +121,11 @@ gpw_forces_at_density(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 /// @param C_b   β occupied coefficients, nb × n_beta (S-orthonormal; empty ok if n_beta=0).
 /// @param H_b   β KS matrix [Hartree], nb × nb.
 /// @return Forces [Hartree/Bohr], one xyz triple per atom.
-std::vector<std::array<double, 3>>
-gpw_forces_at_density(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
-                      const linalg::RealMatrix& P_a,
-                      const linalg::RealMatrix& C_a,
-                      const linalg::RealMatrix& H_a,
-                      const linalg::RealMatrix& P_b,
-                      const linalg::RealMatrix& C_b,
-                      const linalg::RealMatrix& H_b);
+std::vector<std::array<double, 3>> gpw_forces_at_density(
+    const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
+    const linalg::RealMatrix& P_a, const linalg::RealMatrix& C_a,
+    const linalg::RealMatrix& H_a, const linalg::RealMatrix& P_b,
+    const linalg::RealMatrix& C_b, const linalg::RealMatrix& H_b);
 
 } // namespace gpw
 } // namespace cpu

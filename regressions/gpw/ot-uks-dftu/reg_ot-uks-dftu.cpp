@@ -60,8 +60,7 @@ ATV::cpu::gpw::GpwDft base_uks_u(double L, double u_ev) {
     cfg.tol = 1e-7;
     cfg.mix = 0.35;
     cfg.xc = cpu::gpw::XcKind::PADE;
-    cfg.plus_u.push_back(
-        cpu::gpw::PlusU{molrs::Element::H, /*l=*/0, u_ev});
+    cfg.plus_u.push_back(cpu::gpw::PlusU{molrs::Element::H, /*l=*/0, u_ev});
     return cfg;
 }
 

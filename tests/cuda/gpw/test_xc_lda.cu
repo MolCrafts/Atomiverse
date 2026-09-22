@@ -39,9 +39,10 @@ void host_ref_closed(double rho, double& vxc, double& exc) {
 TEST(CudaGpwXcLda, MatchesCpuPadeClosedShell) {
     std::vector<double> rho;
     rho.push_back(0.0);
-    rho.push_back(1e-14);  // below cutoff → zero
-    rho.push_back(5e-13);  // below cutoff
-    rho.push_back(1e-12);  // at cutoff (rhoab < 1e-12 ⇒ zero; 0.5+0.5 = 1e-12 not <)
+    rho.push_back(1e-14); // below cutoff → zero
+    rho.push_back(5e-13); // below cutoff
+    rho.push_back(
+        1e-12); // at cutoff (rhoab < 1e-12 ⇒ zero; 0.5+0.5 = 1e-12 not <)
     for (int i = 0; i < 200; ++i) {
         const double t = static_cast<double>(i) / 199.0;
         rho.push_back(std::pow(10.0, -10.0 + 11.0 * t)); // 1e-10 … 10
@@ -95,14 +96,8 @@ TEST(CudaGpwXcLda, MatchesCpuPadeLsd) {
         double ra, rb;
     };
     std::vector<Pt> pts = {
-        {0.0, 0.0},
-        {1e-14, 1e-14},
-        {0.5, 0.5},
-        {0.8, 0.2},
-        {1.0, 0.05},
-        {1e-3, 5e-4},
-        {50.0, 30.0},
-        {10.0, 0.0}, // fully polarized edge
+        {0.0, 0.0},   {1e-14, 1e-14}, {0.5, 0.5},  {0.8, 0.2}, {1.0, 0.05},
+        {1e-3, 5e-4}, {50.0, 30.0},   {10.0, 0.0}, // fully polarized edge
     };
     // Random polarized samples in a realistic GPW density range.
     std::mt19937 rng(42);

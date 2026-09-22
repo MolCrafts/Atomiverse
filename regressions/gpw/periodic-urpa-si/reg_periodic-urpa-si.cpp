@@ -25,8 +25,9 @@ int main() {
     // Dual-gate vs closed-shell dRPA first-green on the same deck
     // (UKS nα=nβ → URPA ≡ RKS dRPA when orbitals match; setup-integrity band).
     // Offline CP2K re-pin when available — REFERENCE.md.
-    constexpr double kEcorrRef = -0.2658539776; // Ha (RKS dRPA first-green twin)
-    constexpr double kEcorrTol = 2.0e-3;        // Ha (UKS numerical drift)
+    constexpr double kEcorrRef =
+        -0.2658539776;                   // Ha (RKS dRPA first-green twin)
+    constexpr double kEcorrTol = 2.0e-3; // Ha (UKS numerical drift)
     constexpr double kRiCanonTol = 1.0e-8;
     constexpr double kIdTol = 1.0e-12;
 
@@ -86,7 +87,8 @@ int main() {
         return 1;
     }
     if (r_can.ri) {
-        std::fprintf(stderr, "FAIL: RpaResult.ri set on Poisson foothold path\n");
+        std::fprintf(stderr,
+                     "FAIL: RpaResult.ri set on Poisson foothold path\n");
         return 1;
     }
     if (!std::isfinite(r_ri.e_corr) || !(r_ri.e_corr < 0.0)) {
@@ -126,10 +128,11 @@ int main() {
         return 1;
     }
     if (std::abs(r_ri.e_corr - kEcorrRef) > kEcorrTol) {
-        std::fprintf(stderr,
-                     "FAIL: E_corr got=%.10f want=%.10f +/- %.1e Ha "
-                     "(RKS dRPA dual-gate / offline pin band; see REFERENCE.md)\n",
-                     r_ri.e_corr, kEcorrRef, kEcorrTol);
+        std::fprintf(
+            stderr,
+            "FAIL: E_corr got=%.10f want=%.10f +/- %.1e Ha "
+            "(RKS dRPA dual-gate / offline pin band; see REFERENCE.md)\n",
+            r_ri.e_corr, kEcorrRef, kEcorrTol);
         return 1;
     }
 
@@ -141,7 +144,8 @@ int main() {
         "RI wall=%.1f s)\n"
         "  E_total = %.10f Ha   |RI−can|=%.3e Ha (can wall=%.1f s)\n"
         "  Ω_min   = %.6f Ha    Ω_max=%.6f Ha  (n_Ω=%zu)\n"
-        "  [URPA@UKS dual-gate vs RKS dRPA first-green; re-pin per REFERENCE.md]\n",
+        "  [URPA@UKS dual-gate vs RKS dRPA first-green; re-pin per "
+        "REFERENCE.md]\n",
         r_ri.e_scf, scf.iters, scf.s2, wall_scf, r_ri.e_corr, r_ri.tr_A,
         r_ri.n_occ, r_ri.n_virt, wall_ri, r_ri.e_total, d_ri_can, wall_can,
         r_ri.omega_ha.front(), r_ri.omega_ha.back(), r_ri.omega_ha.size());

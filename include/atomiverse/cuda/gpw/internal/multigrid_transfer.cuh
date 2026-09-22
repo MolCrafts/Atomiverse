@@ -29,7 +29,9 @@ struct MultigridDesc {
 
     int nlevels() const { return static_cast<int>(levels.size()); }
     const CollocateGridDesc& fine() const { return levels.at(0); }
-    const CollocateGridDesc& level(int l) const { return levels.at(static_cast<std::size_t>(l)); }
+    const CollocateGridDesc& level(int l) const {
+        return levels.at(static_cast<std::size_t>(l));
+    }
 };
 
 /// @brief Device spectral transfer between one coarse and one fine grid.

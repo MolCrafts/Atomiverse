@@ -29,17 +29,19 @@ struct KsGridRks {
     /// Poisson electrostatic potential of \(n=\rho-n_{\mathrm{ion}}\) [Hartree]
     /// (ionic Hellmann–Feynman forces need this separately from V_eff).
     std::vector<double> v_es;
-    double e_xc = 0.0;        ///< XC energy [Hartree].
-    double e_hartree = 0.0;   ///< Poisson Hartree energy before −e_self [Hartree].
-    double e_locgrid = 0.0;   ///< ∫ ρ V_loc^SR [Hartree] (0 if no grid local PP).
-    double e_nl_vdw = 0.0;    ///< Nonlocal E_c^nl when vdw flags set [Hartree].
+    double e_xc = 0.0; ///< XC energy [Hartree].
+    double e_hartree =
+        0.0; ///< Poisson Hartree energy before −e_self [Hartree].
+    double e_locgrid = 0.0; ///< ∫ ρ V_loc^SR [Hartree] (0 if no grid local PP).
+    double e_nl_vdw = 0.0;  ///< Nonlocal E_c^nl when vdw flags set [Hartree].
 };
 
 /// @brief UKS fine-grid KS result (dual V_eff).
 struct KsGridUks {
     std::vector<double> veff_a; ///< α channel [Hartree].
     std::vector<double> veff_b; ///< β channel [Hartree].
-    std::vector<double> v_es;  ///< Poisson V of total \(n=\rho-n_{\mathrm{ion}}\).
+    std::vector<double>
+        v_es; ///< Poisson V of total \(n=\rho-n_{\mathrm{ion}}\).
     double e_xc = 0.0;
     double e_hartree = 0.0;
     double e_locgrid = 0.0;
@@ -48,8 +50,8 @@ struct KsGridUks {
 
 /// @brief Closed-shell XC on the fine grid (PADE / PBE family / OptB88-vdW).
 /// @param grid Density grid. @param rho Total density. @param xc Functional.
-XcOnGrid evaluate_xc_rks(const UniformGrid& grid, const std::vector<double>& rho,
-                         XcKind xc);
+XcOnGrid evaluate_xc_rks(const UniformGrid& grid,
+                         const std::vector<double>& rho, XcKind xc);
 
 /// @brief Collinear spin XC on the fine grid.
 XcOnGridSpin evaluate_xc_uks(const UniformGrid& grid,

@@ -30,9 +30,8 @@ int main() {
     f.span(kAtom_mass)[2] = 40;
     f.box = cpu::Box::cubic(30);
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                                kDynamicFieldId});
     auto qm = f.span(cpu::kAtomQmZ);
     qm[0] = 1;
     qm[1] = 1;

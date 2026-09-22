@@ -29,7 +29,7 @@ class SpectralFftDevice {
     cufftHandle r2c_ = 0;
     cufftHandle c2r_ = 0;
     cudaStream_t stream_ = nullptr;
-    cufftDoubleComplex* d_c_in_ = nullptr;  ///< r2c output / preserved fhat
+    cufftDoubleComplex* d_c_in_ = nullptr;   ///< r2c output / preserved fhat
     cufftDoubleComplex* d_c_work_ = nullptr; ///< iG-multiplied / c2r input
     cufftDoubleComplex* d_c_acc_ = nullptr;  ///< divergence G-space accum
 
@@ -49,8 +49,7 @@ class SpectralFftDevice {
     /// @param d_gx Output ∂f/∂x, length npts.
     /// @param d_gy Output ∂f/∂y, length npts.
     /// @param d_gz Output ∂f/∂z, length npts.
-    void gradient(const double* d_f, double* d_gx, double* d_gy,
-                  double* d_gz);
+    void gradient(const double* d_f, double* d_gx, double* d_gy, double* d_gz);
 
     /// @brief Spectral ∇·v for real periodic vector field components.
     /// @param d_vx, d_vy, d_vz Components, each length npts.

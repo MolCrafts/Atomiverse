@@ -145,8 +145,8 @@ int main() {
     for (int i = 0; i < 2; ++i) {
         const double pos[3] = {x[i] * kAng2Bohr, y[i] * kAng2Bohr,
                                zc[i] * kAng2Bohr};
-        atoms.push_back(cpu::gpw::GpwAtom(pos, kinds[i].basis, kinds[i].pot,
-                                          Z[i]));
+        atoms.push_back(
+            cpu::gpw::GpwAtom(pos, kinds[i].basis, kinds[i].pot, Z[i]));
     }
     cpu::gpw::GpwDft method;
     method.cell[0] = method.cell[1] = method.cell[2] = L * kAng2Bohr;
@@ -196,7 +196,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;
@@ -217,8 +218,8 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: gpw-dftu-stress  max|dσ_an-fd|=%.3e  |dE|=%.3e  wall_prod=%.3f s\n",
-        max_diag_err, de, wall_product_s);
+    std::printf("PASS: gpw-dftu-stress  max|dσ_an-fd|=%.3e  |dE|=%.3e  "
+                "wall_prod=%.3f s\n",
+                max_diag_err, de, wall_product_s);
     return 0;
 }

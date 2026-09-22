@@ -67,9 +67,9 @@ constexpr double kForcePinTol = 5.0e-8; // Ha/Bohr vs dftd4 --grad (hard)
 // displaced x ± 0.001 Å (pin_periodic_atm_dispO0x_{plus,minus}.json).
 constexpr double kEPerAtmDispO0xPlus = -9.9564614957741663e-04;  // Ha
 constexpr double kEPerAtmDispO0xMinus = -9.9544350841746518e-04; // Ha
-constexpr double kDispO0xH = 0.001;       // Å
-constexpr double kFdPinTol = 1.0e-9;      // Ha/Bohr (truncation ~3e-10)
-constexpr double kWiringTol = 1.0e-7;     // Ha/Bohr additive (SCF residual)
+constexpr double kDispO0xH = 0.001;                              // Å
+constexpr double kFdPinTol = 1.0e-9;  // Ha/Bohr (truncation ~3e-10)
+constexpr double kWiringTol = 1.0e-7; // Ha/Bohr additive (SCF residual)
 constexpr double kAng2Bohr = 1.8897259885789;
 
 } // namespace
@@ -210,8 +210,7 @@ int main() {
         return 1;
     }
     const double e_disp = eval.last_result().e_disp;
-    if (!std::isfinite(e_disp)
-        || std::abs(e_disp - kEDispAtmRef) > kEDispTol) {
+    if (!std::isfinite(e_disp) || std::abs(e_disp - kEDispAtmRef) > kEDispTol) {
         std::printf("FAIL: product |E_disp-pin|=%.6e Ha  got=%.14e\n",
                     std::abs(e_disp - kEDispAtmRef), e_disp);
         return 1;
@@ -290,8 +289,8 @@ int main() {
     }
 
     const double e_ha = eval.last_energy_hartree();
-    std::printf("E_atv=%.12f Ha  E_disp=%.14e Ha (pin %.14e)  iters=%d\n",
-                e_ha, e_disp, kEDispAtmRef, eval.last_result().iters);
+    std::printf("E_atv=%.12f Ha  E_disp=%.14e Ha (pin %.14e)  iters=%d\n", e_ha,
+                e_disp, kEDispAtmRef, eval.last_result().iters);
     std::printf("PASS: gpw-d4-atm-forces  max|F+g|=%.3e  max|dF_atm-pin|=%.3e"
                 "  max|wiring|=%.3e Ha/Bohr  wall_prod=%.3f s\n",
                 max_pin_err, max_inc_err, max_wire, wall_product_s);

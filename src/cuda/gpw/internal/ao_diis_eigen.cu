@@ -90,7 +90,8 @@ bool solve_pulay_host(const std::vector<double>& Bmm, int m,
     for (int i = dim - 1; i >= 0; --i) {
         double s = b[static_cast<size_t>(i)];
         for (int j = i + 1; j < dim; ++j)
-            s -= A[static_cast<size_t>(i * dim + j)] * x[static_cast<size_t>(j)];
+            s -=
+                A[static_cast<size_t>(i * dim + j)] * x[static_cast<size_t>(j)];
         const double aii = A[static_cast<size_t>(i * dim + i)];
         if (std::abs(aii) < 1e-14)
             return false;
@@ -128,8 +129,8 @@ __global__ void add_diagonal_kernel(double* __restrict__ M, double lambda,
 }
 
 /// Undo level shift on virtual eigenvalues: eig[i] -= λ for i ≥ n_occ.
-__global__ void unshift_virtual_eig_kernel(double* __restrict__ eig, double lambda,
-                                           int n_occ, int m) {
+__global__ void unshift_virtual_eig_kernel(double* __restrict__ eig,
+                                           double lambda, int n_occ, int m) {
     const int i = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (i >= n_occ && i < m)
         eig[i] -= lambda;
@@ -142,8 +143,8 @@ void AoDiisEigenDevice::ensure_built_() const {
         throw std::logic_error("AoDiisEigenDevice: build() required first");
 }
 
-void AoDiisEigenDevice::build(cudaStream_t stream, int n, int m, int max_vectors,
-                              int n_occ, double occ_factor,
+void AoDiisEigenDevice::build(cudaStream_t stream, int n, int m,
+                              int max_vectors, int n_occ, double occ_factor,
                               double level_shift) {
     destroy();
     if (n <= 0 || m <= 0 || m > n)
@@ -185,17 +186,14 @@ void AoDiisEigenDevice::build(cudaStream_t stream, int n, int m, int max_vectors
     check_cuda(cudaMalloc(&d_info_, sizeof(int)), "malloc info");
 
     if (use_diis_) {
-        check_cuda(cudaMalloc(&d_H_hist_,
-                              static_cast<size_t>(max_vectors_) * nn
-                                  * sizeof(double)),
+        check_cuda(cudaMalloc(&d_H_hist_, static_cast<size_t>(max_vectors_) * nn
+                                              * sizeof(double)),
                    "malloc H_hist");
-        check_cuda(cudaMalloc(&d_e_hist_,
-                              static_cast<size_t>(max_vectors_) * mm
-                                  * sizeof(double)),
+        check_cuda(cudaMalloc(&d_e_hist_, static_cast<size_t>(max_vectors_) * mm
+                                              * sizeof(double)),
                    "malloc e_hist");
-        check_cuda(cudaMalloc(&d_c_,
-                              static_cast<size_t>(max_vectors_)
-                                  * sizeof(double)),
+        check_cuda(cudaMalloc(&d_c_, static_cast<size_t>(max_vectors_)
+                                         * sizeof(double)),
                    "malloc c");
         check_cuda(cudaMemsetAsync(d_H_hist_, 0,
                                    static_cast<size_t>(max_vectors_) * nn
@@ -222,9 +220,9 @@ void AoDiisEigenDevice::build(cudaStream_t stream, int n, int m, int max_vectors
     cusolver_ = sol;
 
     int lwork = 0;
-    check_cusolver(cusolverDnDsyevd_bufferSize(
-                       sol, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_LOWER, m,
-                       d_Cp_, m, d_eig_, &lwork),
+    check_cusolver(cusolverDnDsyevd_bufferSize(sol, CUSOLVER_EIG_MODE_VECTOR,
+                                               CUBLAS_FILL_MODE_LOWER, m, d_Cp_,
+                                               m, d_eig_, &lwork),
                    "syevd_bufferSize");
     sy_lwork_ = lwork;
     check_cuda(cudaMalloc(&d_sy_work_,
@@ -567,7 +565,8 @@ double AoDiisEigenDevice::residual(const double* H_host) {
 double AoDiisEigenDevice::residual_device(const double* d_H) {
     ensure_built_();
     if (d_H == nullptr)
-        throw std::invalid_argument("AoDiisEigenDevice::residual_device: null d_H");
+        throw std::invalid_argument(
+            "AoDiisEigenDevice::residual_device: null d_H");
     const size_t bytes =
         static_cast<size_t>(n_) * static_cast<size_t>(n_) * sizeof(double);
     if (d_H != d_H_) {
@@ -591,8 +590,7 @@ double AoDiisEigenDevice::step(const double* H_host) {
     return err_norm;
 }
 
-void AoDiisEigenDevice::error_to_host(const double* H_host,
-                                      double* e_host_mm) {
+void AoDiisEigenDevice::error_to_host(const double* H_host, double* e_host_mm) {
     ensure_built_();
     check_cuda(cudaMemcpyAsync(d_H_, H_host,
                                static_cast<size_t>(n_) * n_ * sizeof(double),
@@ -663,10 +661,11 @@ void AoDiisEigenDevice::eigen_from_device(const double* d_H, double* eig_host,
                    "D2H eig payload");
     }
     if (C_host != nullptr) {
-        check_cuda(cudaMemcpyAsync(C_host, d_C_,
-                                   static_cast<size_t>(n_) * m_ * sizeof(double),
-                                   cudaMemcpyDeviceToHost, stream_),
-                   "D2H C payload");
+        check_cuda(
+            cudaMemcpyAsync(C_host, d_C_,
+                            static_cast<size_t>(n_) * m_ * sizeof(double),
+                            cudaMemcpyDeviceToHost, stream_),
+            "D2H C payload");
     }
     check_cuda(cudaStreamSynchronize(stream_), "sync eigen_from_device");
 }

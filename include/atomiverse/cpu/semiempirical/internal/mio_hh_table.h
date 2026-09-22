@@ -88,10 +88,9 @@ class MioHHTable {
         if (rr < 1e-12 || rr >= basis_data::kMioHH_repCutoff_Bohr)
             return 0.0;
         if (rr < basis_data::kMioHH_xStart_Bohr[0]) {
-            const double e_ha =
-                std::exp(-basis_data::kMioHH_expCoeffs[0] * rr
-                         + basis_data::kMioHH_expCoeffs[1])
-                + basis_data::kMioHH_expCoeffs[2];
+            const double e_ha = std::exp(-basis_data::kMioHH_expCoeffs[0] * rr
+                                         + basis_data::kMioHH_expCoeffs[1])
+                                + basis_data::kMioHH_expCoeffs[2];
             return e_ha * basis_data::kHaToEV;
         }
         std::size_t lo = 0;
@@ -180,7 +179,8 @@ class MioHHTable {
             C[static_cast<std::size_t>(i)] = yp[i - 1];
             D[static_cast<std::size_t>(i)] = yp[i - 1];
         }
-        int iCl = static_cast<int>(std::ceil((xx - X[1]) / std::abs(X[2] - X[1])));
+        int iCl =
+            static_cast<int>(std::ceil((xx - X[1]) / std::abs(X[2] - X[1])));
         if (iCl < 1)
             iCl = 1;
         if (iCl > nn)
@@ -246,8 +246,10 @@ class MioHHTable {
             xa[ii - 1] = static_cast<double>(iLast - nInterNew + ii) * incr;
             ya[ii - 1] = tab[iLast - nInterNew + ii - 1];
         }
-        const double y0 = poly_interp(xa, ya, nInterNew, xa[nInterNew - 1] - deltaR);
-        const double y2 = poly_interp(xa, ya, nInterNew, xa[nInterNew - 1] + deltaR);
+        const double y0 =
+            poly_interp(xa, ya, nInterNew, xa[nInterNew - 1] - deltaR);
+        const double y2 =
+            poly_interp(xa, ya, nInterNew, xa[nInterNew - 1] + deltaR);
         const double y1 = ya[nInterNew - 1];
         const double y1p = (y2 - y0) / (2.0 * deltaR);
         const double y1pp = (y2 + y0 - 2.0 * y1) / (deltaR * deltaR);

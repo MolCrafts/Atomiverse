@@ -13,9 +13,9 @@ using namespace ATV;
 // Real MetalWalls c8ad175d pin (mpirun -n 1 mw, 2026-07-29):
 // tools/metalwalls_oracle/inputs/metalwalls/global-electroneutrality-bo/
 // total_charges.out step 0 — sum_e Q_e = -q_ion exactly under charge_neutrality global.
-static constexpr double kMwQ0 = -5.189485789245821e-1;  // E1, Psi = 0 V [e]
-static constexpr double kMwQ1 = -4.810514210754179e-1;  // E2, Psi = 1 V [e]
-static constexpr double kMwSum = -1.0;                  // = -q_ion
+static constexpr double kMwQ0 = -5.189485789245821e-1; // E1, Psi = 0 V [e]
+static constexpr double kMwQ1 = -4.810514210754179e-1; // E2, Psi = 1 V [e]
+static constexpr double kMwSum = -1.0;                 // = -q_ion
 
 int main() {
     cpu::Frame f(3);
@@ -56,7 +56,8 @@ int main() {
     const double sumQ = q0 + q1;
     const double tgt = bo.neutrality_target();
 
-    std::printf("global-electroneutrality-bo Q0=%.15e Q1=%.15e sumQ=%.15e target=%.15e\n",
+    std::printf("global-electroneutrality-bo Q0=%.15e Q1=%.15e sumQ=%.15e "
+                "target=%.15e\n",
                 q0, q1, sumQ, tgt);
 
     int fail = 0;
@@ -73,13 +74,13 @@ int main() {
     // ATV truncated image sum vs MW 2D-Ewald: ~6e-6 residual at image_range=1280.
     constexpr double kPerElectrodeTol = 2e-5;
     if (std::abs(q0 - kMwQ0) > kPerElectrodeTol) {
-        std::fprintf(stderr, "Q0 vs MW: got %.15e want %.15e (tol %g)\n", q0, kMwQ0,
-                     kPerElectrodeTol);
+        std::fprintf(stderr, "Q0 vs MW: got %.15e want %.15e (tol %g)\n", q0,
+                     kMwQ0, kPerElectrodeTol);
         ++fail;
     }
     if (std::abs(q1 - kMwQ1) > kPerElectrodeTol) {
-        std::fprintf(stderr, "Q1 vs MW: got %.15e want %.15e (tol %g)\n", q1, kMwQ1,
-                     kPerElectrodeTol);
+        std::fprintf(stderr, "Q1 vs MW: got %.15e want %.15e (tol %g)\n", q1,
+                     kMwQ1, kPerElectrodeTol);
         ++fail;
     }
     return fail ? 1 : 0;

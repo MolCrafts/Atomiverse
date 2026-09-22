@@ -153,7 +153,7 @@ class ProductWeightPackDevice {
 
     DevicePrimRef* d_prims_ = nullptr;
     DevicePrimContrib* d_contribs_ = nullptr;
-    double* d_V_ = nullptr;     ///< nb×nb column-major.
+    double* d_V_ = nullptr;      ///< nb×nb column-major.
     double* d_reduce_ = nullptr; ///< single double for frobenius reduction.
 };
 

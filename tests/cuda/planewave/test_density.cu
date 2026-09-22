@@ -86,8 +86,9 @@ std::vector<double> synth_accumulation(int nr, int t) {
     for (int i = 0; i < nr; ++i)
         v[static_cast<size_t>(i)] =
             0.030 + 0.004 * t
-            + 0.020 * std::sin(0.011 * static_cast<double>(i)
-                               + 0.7 * static_cast<double>(t))
+            + 0.020
+                  * std::sin(0.011 * static_cast<double>(i)
+                             + 0.7 * static_cast<double>(t))
             + 0.006 * std::cos(0.003 * static_cast<double>(i * (t + 1)));
     return v;
 }
@@ -180,8 +181,8 @@ static void expect_stage_parity(XCType xc) {
     den.fetch_veff_r(veff_r.data());
     double veff_max = 0;
     for (int i = 0; i < nr; ++i)
-        veff_max = std::max(veff_max, std::abs(static_cast<double>(
-                                          ws.V_eff_r[i])));
+        veff_max =
+            std::max(veff_max, std::abs(static_cast<double>(ws.V_eff_r[i])));
     ASSERT_GT(veff_max, 0.0);
     for (int i = 0; i < nr; ++i)
         EXPECT_NEAR(veff_r[static_cast<size_t>(i)],
@@ -310,8 +311,8 @@ TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
     const auto s = den.reduce(vol);
 
     const AccReal e_band_synth = AccReal(-1.234); // arbitrary; host-only term
-    const auto ref = cpupw::iteration_energy(ws, e_band_synth, prob.ew_total,
-                                             prob.vol_bohr);
+    const auto ref =
+        cpupw::iteration_energy(ws, e_band_synth, prob.ew_total, prob.vol_bohr);
 
     auto rel = [](double ref_v) {
         return 1e-10 * std::max(1.0, std::abs(ref_v));

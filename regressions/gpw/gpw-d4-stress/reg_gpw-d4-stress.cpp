@@ -99,8 +99,7 @@ int main() {
     }
 
     const double e_disp = eval.last_result().e_disp;
-    if (!std::isfinite(e_disp)
-        || std::abs(e_disp - kEDispRef) > kEDispTol) {
+    if (!std::isfinite(e_disp) || std::abs(e_disp - kEDispRef) > kEDispTol) {
         std::printf("FAIL: |E_disp-pin|=%.6e Ha  got=%.14e  want=%.14e\n",
                     std::abs(e_disp - kEDispRef), e_disp, kEDispRef);
         return 1;
@@ -183,7 +182,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;
@@ -205,9 +205,8 @@ int main() {
         return 1;
     }
 
-    std::printf(
-        "PASS: gpw-d4-stress  max|dσ_an-fd|=%.3e  |dE_disp|=%.3e  "
-        "wall_prod=%.3f s\n",
-        max_diag_err, std::abs(e_disp - kEDispRef), wall_product_s);
+    std::printf("PASS: gpw-d4-stress  max|dσ_an-fd|=%.3e  |dE_disp|=%.3e  "
+                "wall_prod=%.3f s\n",
+                max_diag_err, std::abs(e_disp - kEDispRef), wall_product_s);
     return 0;
 }

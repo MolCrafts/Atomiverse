@@ -77,7 +77,8 @@ int main() {
     const double wall_mp2 = std::chrono::duration<double>(t2 - t1).count();
 
     if (!std::isfinite(r.e_corr) || !(r.e_corr < 0.0)) {
-        std::fprintf(stderr, "FAIL: E_corr(UMP2)=%.10f Ha not finite/negative\n",
+        std::fprintf(stderr,
+                     "FAIL: E_corr(UMP2)=%.10f Ha not finite/negative\n",
                      r.e_corr);
         return 1;
     }

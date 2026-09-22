@@ -122,7 +122,7 @@ int main() {
         for (int k = 0; k < 3; ++k) {
             const double want = -kGradPer[i][k];
             const double got = d4.forces[static_cast<std::size_t>(i)]
-                                          [static_cast<std::size_t>(k)];
+                                        [static_cast<std::size_t>(k)];
             max_pin_err = std::max(max_pin_err, std::abs(got - want));
         }
     }
@@ -141,8 +141,8 @@ int main() {
             max_inc_cp2k = std::max(max_inc_cp2k, std::abs(f - want_cp2k));
         }
     }
-    std::printf("B D4 force max|F|=%.3e  max|F-CP2K_Δ|=%.3e Ha/Bohr\n",
-                max_inc, max_inc_cp2k);
+    std::printf("B D4 force max|F|=%.3e  max|F-CP2K_Δ|=%.3e Ha/Bohr\n", max_inc,
+                max_inc_cp2k);
     check(max_inc > kDispIncFloor, "B D4 force non-vacuous");
     check(max_inc_cp2k <= kCp2kDeltaTol,
           "B standalone D4 vs CP2K multi-k FORCE Δ");
@@ -199,8 +199,8 @@ int main() {
     const double e_disp = eval.last_result().e_disp;
     std::printf("C E_disp(multi-k product)=%.14e  |d pin|=%.2e  n_kpts=%d  "
                 "iters=%d\n",
-                e_disp, std::abs(e_disp - kEDispRef),
-                eval.last_result().n_kpts, eval.last_result().iters);
+                e_disp, std::abs(e_disp - kEDispRef), eval.last_result().n_kpts,
+                eval.last_result().iters);
     check(std::isfinite(e_disp) && std::abs(e_disp - kEDispRef) <= kEDispTol,
           "C product E_disp equals dftd4 two-body pin (k-mesh independent)");
     check(wall_product_s <= kWallBudget, "C product wall <= 60 s");
@@ -236,11 +236,11 @@ int main() {
 
     cpu::gpw::GpwDft method_d4 = make_cfg(true);
     method_d4.build(atoms);
-    const auto F_on = cpu::gpw::gpw_forces_from_scf(atoms, method_d4,
-                                                    eval.last_result());
+    const auto F_on =
+        cpu::gpw::gpw_forces_from_scf(atoms, method_d4, eval.last_result());
     cpu::gpw::GpwDft method_plain = make_cfg(false);
-    const auto F_plain = cpu::gpw::gpw_forces_from_scf(
-        atoms, method_plain, eval.last_result());
+    const auto F_plain =
+        cpu::gpw::gpw_forces_from_scf(atoms, method_plain, eval.last_result());
 
     double max_wire = 0.0;
     double max_f_on = 0.0;
@@ -251,7 +251,7 @@ int main() {
             const double pl = F_plain[static_cast<std::size_t>(i)]
                                      [static_cast<std::size_t>(k)];
             const double want = d4.forces[static_cast<std::size_t>(i)]
-                                            [static_cast<std::size_t>(k)];
+                                         [static_cast<std::size_t>(k)];
             max_wire = std::max(max_wire, std::abs((on - pl) - want));
             max_f_on = std::max(max_f_on, std::abs(on));
             check(std::isfinite(on) && std::isfinite(pl),
@@ -266,12 +266,11 @@ int main() {
 
     // ── Fair wall report (not a hard fail above 10×; schema records ratio) ─
     const double ratio = wall_product_s / kOracleWallS;
-    std::printf(
-        "PASS: gpw-d4-kpoint-forces  max|F+g|=%.3e  max|F-cp2k_Δ|=%.3e"
-        "  max|wiring|=%.3e Ha/Bohr  wall_prod=%.3f s  T_cp2k=%.3f s  "
-        "ratio=%.3f  n_kpts=%d\n",
-        max_pin_err, max_inc_cp2k, max_wire, wall_product_s, kOracleWallS,
-        ratio, eval.last_result().n_kpts);
+    std::printf("PASS: gpw-d4-kpoint-forces  max|F+g|=%.3e  max|F-cp2k_Δ|=%.3e"
+                "  max|wiring|=%.3e Ha/Bohr  wall_prod=%.3f s  T_cp2k=%.3f s  "
+                "ratio=%.3f  n_kpts=%d\n",
+                max_pin_err, max_inc_cp2k, max_wire, wall_product_s,
+                kOracleWallS, ratio, eval.last_result().n_kpts);
 
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);

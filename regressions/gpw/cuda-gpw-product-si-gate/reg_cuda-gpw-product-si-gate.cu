@@ -103,14 +103,14 @@ int main(int argc, char** argv) {
         m.build(atoms);
         const auto& r = m.run(atoms);
         if (!r.converged) {
-            std::fprintf(stderr, "FAIL: CPU Si Γ SCF not converged (iters=%d)\n",
+            std::fprintf(stderr,
+                         "FAIL: CPU Si Γ SCF not converged (iters=%d)\n",
                          r.iters);
             return 1;
         }
         e_cpu = r.e_total;
-        std::printf(
-            "CPU:  E=%.12f Ha  iters=%d  ngrids=%d  cutoff=%.1f\n", e_cpu,
-            r.iters, m.ngrids, m.cutoff_ry);
+        std::printf("CPU:  E=%.12f Ha  iters=%d  ngrids=%d  cutoff=%.1f\n",
+                    e_cpu, r.iters, m.ngrids, m.cutoff_ry);
     }
 
     if (run_cuda) {
@@ -119,15 +119,15 @@ int main(int argc, char** argv) {
         m.build(atoms);
         const auto& r = m.run(atoms);
         if (!r.converged) {
-            std::fprintf(stderr,
-                         "FAIL: CUDA Si Γ SCF not converged (iters=%d  E=%.12f)\n",
-                         r.iters, r.e_total);
+            std::fprintf(
+                stderr,
+                "FAIL: CUDA Si Γ SCF not converged (iters=%d  E=%.12f)\n",
+                r.iters, r.e_total);
             return 1;
         }
         e_cuda = r.e_total;
-        std::printf(
-            "CUDA: E=%.12f Ha  iters=%d  ngrids=%d  cutoff=%.1f\n", e_cuda,
-            r.iters, m.ngrids, m.cutoff_ry);
+        std::printf("CUDA: E=%.12f Ha  iters=%d  ngrids=%d  cutoff=%.1f\n",
+                    e_cuda, r.iters, m.ngrids, m.cutoff_ry);
     }
 
     if (run_cpu && run_cuda) {

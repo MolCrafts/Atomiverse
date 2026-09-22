@@ -50,19 +50,19 @@ constexpr double kE2b[3][2] = {
 };
 
 // ── Tolerances (REFERENCE.md) ────────────────────────────────────────────
-constexpr double kEPinTol = 1.0e-9;     // Ha, strained-energy parity
-constexpr double kSigPinTol = 1.0e-12;  // Ha/Bohr³, disp/ATM stress parity
-constexpr double kAtmFloor = 5.0e-10;   // Ha/Bohr³, ATM non-vacuity (pin 7.5e-10)
-constexpr double kEDispTol = 1.0e-8;    // Ha, product e_disp vs base ATM pin
-constexpr double kAnFdTol = 2.0e-5;     // Ha/Bohr³, analytic vs FD dual gate
-constexpr double kOffDiagTol = 1.0e-8;  // Ha/Bohr³
-constexpr double kDiagFloor = 1.0e-10;  // Ha/Bohr³
+constexpr double kEPinTol = 1.0e-9;    // Ha, strained-energy parity
+constexpr double kSigPinTol = 1.0e-12; // Ha/Bohr³, disp/ATM stress parity
+constexpr double kAtmFloor = 5.0e-10; // Ha/Bohr³, ATM non-vacuity (pin 7.5e-10)
+constexpr double kEDispTol = 1.0e-8;  // Ha, product e_disp vs base ATM pin
+constexpr double kAnFdTol = 2.0e-5;   // Ha/Bohr³, analytic vs FD dual gate
+constexpr double kOffDiagTol = 1.0e-8; // Ha/Bohr³
+constexpr double kDiagFloor = 1.0e-10; // Ha/Bohr³
 // Product ATM fold wiring: σ_xx(ATM) − σ_xx(2b) vs the standalone σ^ATM_xx.
 // The two analytic runs converge their reference densities independently
 // (SCF tol 1e-6), which leaves ~7e-11 Ha/Bohr³ of fixed-P Lagrangian noise
 // in the difference; the ATM signal is 7.5e-10, so 3e-10 separates cleanly:
 // dropping the s9 fold inside the stress path leaves |d| = 7.5e-10 > tol.
-constexpr double kWiringTol = 3.0e-10;  // Ha/Bohr³
+constexpr double kWiringTol = 3.0e-10; // Ha/Bohr³
 
 constexpr double kAng2Bohr = 1.8897259885789;
 
@@ -240,7 +240,8 @@ int main() {
     for (int k = 0; k < 3; ++k) {
         const double expect =
             san[static_cast<std::size_t>(k)] * ha_bohr3_to_ev_a3 * kStressVolA3;
-        if (std::abs(st[static_cast<std::size_t>(k)] - expect) > 1e-9 * kStressVolA3) {
+        if (std::abs(st[static_cast<std::size_t>(k)] - expect)
+            > 1e-9 * kStressVolA3) {
             std::printf("FAIL: kStress unit conversion mismatch component %d\n",
                         k);
             return 1;
@@ -327,8 +328,9 @@ int main() {
 
     std::printf("E_atv=%.12f Ha  E_disp=%.14e Ha (ATM pin %.14e)\n",
                 eval.last_energy_hartree(), e_disp, kEAtmRef);
-    std::printf("wall_product=%.3f s  wall_fd_twin_x=%.3f s  wall_2b_x=%.3f s\n",
-                wall_product_s, wall_fd_s, wall_2b_s);
+    std::printf(
+        "wall_product=%.3f s  wall_fd_twin_x=%.3f s  wall_2b_x=%.3f s\n",
+        wall_product_s, wall_fd_s, wall_2b_s);
     std::printf("PASS: gpw-d4-atm-stress  max|dE_pin|=%.3e Ha  "
                 "max|dσ_ATM|=%.3e  |dσ_an-fd|=%.3e  wiring=%.3e Ha/Bohr3\n",
                 max_epin_err, max_atm_err, an_fd_err, std::abs(wiring));

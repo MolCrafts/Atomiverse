@@ -28,9 +28,8 @@ TEST(QmmmOniom, EnergyIdentityHighPlusLowRealMinusLowModel) {
         f.span(kAtom_charge)[i] = 0;
     f.box = cpu::Box::cubic(30);
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                                kDynamicFieldId});
     f.span(cpu::kAtomQmZ)[0] = 1;
     f.span(cpu::kAtomQmZ)[1] = 1;
     f.span(cpu::kAtomQmZ)[2] = 0;
@@ -58,9 +57,9 @@ TEST(QmmmOniom, EnergyIdentityHighPlusLowRealMinusLowModel) {
     EXPECT_NEAR(E, recon, 1e-9);
     EXPECT_NE(oniom.last_low_model_energy(), 0.0); // H–H low present
     // Real includes H–Ar (and Ar–Ar if any); must differ from model-only.
-    EXPECT_GT(std::fabs(oniom.last_low_real_energy()
-                         - oniom.last_low_model_energy()),
-              1e-6);
+    EXPECT_GT(
+        std::fabs(oniom.last_low_real_energy() - oniom.last_low_model_energy()),
+        1e-6);
 }
 
 TEST(QmmmOniom, ForcesFiniteWhenRequested) {
@@ -77,9 +76,8 @@ TEST(QmmmOniom, ForcesFiniteWhenRequested) {
     }
     f.box = cpu::Box::cubic(30);
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                                kDynamicFieldId});
     f.span(cpu::kAtomQmZ)[0] = 1;
     f.span(cpu::kAtomQmZ)[1] = 1;
     f.span(cpu::kAtomQmZ)[2] = 0;

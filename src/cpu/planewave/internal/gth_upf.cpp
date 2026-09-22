@@ -21,9 +21,8 @@ AccReal gth_vloc_r(const gpw::GthPotential& pot, AccReal r) {
 
     // r -> 0: erf(r/(sqrt2 rl))/r -> sqrt(2/pi)/rl, finite.
     const AccReal erf_over_r =
-        (r < AccReal(1e-10))
-            ? std::sqrt(AccReal(2) / AccReal(M_PI)) / rl
-            : std::erf(r / (std::sqrt(AccReal(2)) * rl)) / r;
+        (r < AccReal(1e-10)) ? std::sqrt(AccReal(2) / AccReal(M_PI)) / rl
+                             : std::erf(r / (std::sqrt(AccReal(2)) * rl)) / r;
 
     AccReal poly = 0, xp = 1;
     for (std::size_t i = 0; i < pot.cloc.size(); ++i) {
@@ -39,7 +38,8 @@ AccReal gth_vloc_r(const gpw::GthPotential& pot, AccReal r) {
 /// Normalized so that \int p_i^l(r)^2 r^2 dr = 1.
 /// @param i 1-based projector index within the channel.
 AccReal gth_proj_r(AccReal r, int l, int i, AccReal rl) {
-    const AccReal nu = static_cast<AccReal>(l) + AccReal(4 * i - 1) / AccReal(2);
+    const AccReal nu =
+        static_cast<AccReal>(l) + AccReal(4 * i - 1) / AccReal(2);
     const AccReal norm =
         std::sqrt(AccReal(2)) / (std::pow(rl, nu) * std::sqrt(std::tgamma(nu)));
     return norm * std::pow(r, l + 2 * (i - 1))
@@ -135,12 +135,11 @@ AccReal gth_vloc_gspace(const gpw::GthPotential& pot, AccReal g,
         return i < pot.cloc.size() ? static_cast<AccReal>(pot.cloc[i])
                                    : AccReal(0);
     };
-    const AccReal poly =
-        c(0) + c(1) * (AccReal(3) - gr2)
-        + c(2) * (AccReal(15) - AccReal(10) * gr2 + gr2 * gr2)
-        + c(3)
-              * (AccReal(105) - AccReal(105) * gr2 + AccReal(21) * gr2 * gr2
-                 - gr2 * gr2 * gr2);
+    const AccReal poly = c(0) + c(1) * (AccReal(3) - gr2)
+                         + c(2) * (AccReal(15) - AccReal(10) * gr2 + gr2 * gr2)
+                         + c(3)
+                               * (AccReal(105) - AccReal(105) * gr2
+                                  + AccReal(21) * gr2 * gr2 - gr2 * gr2 * gr2);
     const AccReal sqrt_8pi3 =
         std::sqrt(AccReal(8) * AccReal(M_PI) * AccReal(M_PI) * AccReal(M_PI));
     const AccReal gauss = sqrt_8pi3 * rl * rl * rl / omega * env * poly;

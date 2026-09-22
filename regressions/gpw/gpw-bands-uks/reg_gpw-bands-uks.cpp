@@ -90,13 +90,13 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
     const BandsResult br = bands.compute(method, atoms);
     const auto t1 = std::chrono::steady_clock::now();
-    const double wall_s =
-        std::chrono::duration<double>(t1 - t0).count();
+    const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 
-    std::printf("gpw-bands-uks: E=%.10f Ha  gap=%.6f eV  nspin=%d  wall=%.3f s  "
-                "nk=%zu  conv=%d\n",
-                br.energy_ha, br.gap_ha * kHa2Ev, br.nspin, wall_s,
-                br.kfrac.size(), br.scf_converged ? 1 : 0);
+    std::printf(
+        "gpw-bands-uks: E=%.10f Ha  gap=%.6f eV  nspin=%d  wall=%.3f s  "
+        "nk=%zu  conv=%d\n",
+        br.energy_ha, br.gap_ha * kHa2Ev, br.nspin, wall_s, br.kfrac.size(),
+        br.scf_converged ? 1 : 0);
 
     check(br.scf_converged, "SCF converged");
     check(br.nspin == 2, "nspin=2 (UKS)");
@@ -108,7 +108,8 @@ int main() {
     check(br.kfrac.size() == br.eigenvalues_ha.size()
               && br.kfrac.size() == br.eigenvalues_beta_ha.size(),
           "kfrac/evals size match");
-    check(static_cast<int>(br.kfrac.size()) == 16, "diamond path n_seg=4 → 16 k");
+    check(static_cast<int>(br.kfrac.size()) == 16,
+          "diamond path n_seg=4 → 16 k");
 
     for (const auto& row : br.eigenvalues_ha) {
         check(static_cast<int>(row.size()) == bands.n_bands, "n_bands α");

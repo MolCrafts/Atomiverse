@@ -34,9 +34,10 @@ constexpr double kWallBudget = 60.0;                   // s
 /// Geometry-only Voigt diagonal stress from central FD of E_disp under
 /// orthorhombic strain at fixed fractional coordinates and fixed volumes.
 template <typename EvalFn>
-std::array<double, 3> sigma_disp_fd(const EvalFn& eval_energy,
-                                    const std::vector<std::array<double, 3>>& pos0,
-                                    const double cell0[3], double h) {
+std::array<double, 3>
+sigma_disp_fd(const EvalFn& eval_energy,
+              const std::vector<std::array<double, 3>>& pos0,
+              const double cell0[3], double h) {
     const double vol = cell0[0] * cell0[1] * cell0[2];
     std::array<double, 3> sig{{0.0, 0.0, 0.0}};
     for (int a = 0; a < 3; ++a) {
@@ -65,10 +66,10 @@ int main() {
     using namespace ATV;
     using clock = std::chrono::steady_clock;
     using cpu::gpw::GaussianBasis;
+    using cpu::gpw::gpw_stress;
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::gpw_stress;
     using cpu::gpw::mbd_rsscs_pbe;
     using cpu::gpw::MbdResult;
     using cpu::gpw::ts_pbe;
@@ -143,9 +144,9 @@ int main() {
         const auto sig_mbd2 = sigma_disp_fd(mbd_e, pos, cell_per, kStrainH);
         double max_ts = 0.0, max_mbd = 0.0, max_ts_abs = 0.0, max_mbd_abs = 0.0;
         for (int a = 0; a < 3; ++a) {
-            max_ts = std::max(
-                max_ts, std::abs(sig_ts[static_cast<std::size_t>(a)]
-                                 - sig_ts2[static_cast<std::size_t>(a)]));
+            max_ts = std::max(max_ts,
+                              std::abs(sig_ts[static_cast<std::size_t>(a)]
+                                       - sig_ts2[static_cast<std::size_t>(a)]));
             max_mbd = std::max(
                 max_mbd, std::abs(sig_mbd[static_cast<std::size_t>(a)]
                                   - sig_mbd2[static_cast<std::size_t>(a)]));
@@ -181,8 +182,8 @@ int main() {
         std::printf(
             "  B geom dual: σ_TS={%.3e,%.3e,%.3e}  σ_MBD={%.3e,%.3e,%.3e}  "
             "max|σ_h-σ_free|=%.2e Ha/Bohr3\n",
-            sig_ts[0], sig_ts[1], sig_ts[2], sig_mbd[0], sig_mbd[1],
-            sig_mbd[2], max_df);
+            sig_ts[0], sig_ts[1], sig_ts[2], sig_mbd[0], sig_mbd[1], sig_mbd[2],
+            max_df);
     }
 
     // ── C/D: multi-k product wiring on H₂ (1×1×2) ─────────────────────────
@@ -193,8 +194,8 @@ int main() {
     std::vector<GpwAtom> atoms = {GpwAtom(rA, basis, pot, 1),
                                   GpwAtom(rB, basis, pot, 1)};
     std::vector<int> Zh = {1, 1};
-    std::vector<std::array<double, 3>> posh = {
-        {rA[0], rA[1], rA[2]}, {rB[0], rB[1], rB[2]}};
+    std::vector<std::array<double, 3>> posh = {{rA[0], rA[1], rA[2]},
+                                               {rB[0], rB[1], rB[2]}};
     const double cell_h2[3] = {12.0, 12.0, 12.0};
 
     auto make_cfg = [](bool with_ts, bool with_mbd, bool with_hirsh) {
@@ -245,8 +246,7 @@ int main() {
                                const double c[3]) {
                 return ts_pbe(Zh, p, c, /*periodic=*/true, kRcutTs).energy;
             };
-            const auto sig_geom =
-                sigma_disp_fd(ts_h, posh, cell_h2, kStrainH);
+            const auto sig_geom = sigma_disp_fd(ts_h, posh, cell_h2, kStrainH);
             const auto sig_geom_free =
                 sigma_disp_fd(ts_free, posh, cell_h2, kStrainH);
 
@@ -288,11 +288,10 @@ int main() {
                 fail("multi-k TS stress still matches free-atom (hirsh not "
                      "applied)");
             }
-            std::printf(
-                "  C multi-k TS+Hirsh H2: e_disp=%.14e  n_kpts=%d  "
-                "max|wire_h|=%.2e  max|wire_free|=%.2e  v0=%.4f\n",
-                scf.e_disp, scf.n_kpts, max_wire, max_wire_free,
-                scf.volume_ratios[0]);
+            std::printf("  C multi-k TS+Hirsh H2: e_disp=%.14e  n_kpts=%d  "
+                        "max|wire_h|=%.2e  max|wire_free|=%.2e  v0=%.4f\n",
+                        scf.e_disp, scf.n_kpts, max_wire, max_wire_free,
+                        scf.volume_ratios[0]);
         }
     }
 
@@ -327,8 +326,7 @@ int main() {
                 return mbd_rsscs_pbe(Zh, p, cell0_iso, /*periodic=*/false)
                     .energy;
             };
-            const auto sig_geom =
-                sigma_disp_fd(mbd_h, posh, cell_h2, kStrainH);
+            const auto sig_geom = sigma_disp_fd(mbd_h, posh, cell_h2, kStrainH);
             const auto sig_geom_free =
                 sigma_disp_fd(mbd_free, posh, cell_h2, kStrainH);
 
@@ -358,21 +356,21 @@ int main() {
                     fail("non-zero off-diagonal stress (MBD+hirsh)");
             }
             if (max_wire > kWireTol) {
-                std::fprintf(stderr,
-                             "FAIL: multi-k MBD+Hirsh stress wiring max|d|=%.3e "
-                             "> tol=%.1e\n",
-                             max_wire, kWireTol);
+                std::fprintf(
+                    stderr,
+                    "FAIL: multi-k MBD+Hirsh stress wiring max|d|=%.3e "
+                    "> tol=%.1e\n",
+                    max_wire, kWireTol);
                 ++nfail;
             }
             if (max_wire_free < 1e-12) {
                 fail("multi-k MBD stress still matches free-atom (hirsh not "
                      "applied)");
             }
-            std::printf(
-                "  D multi-k MBD+Hirsh H2: e_disp=%.14e  n_kpts=%d  "
-                "max|wire_h|=%.2e  max|wire_free|=%.2e  v0=%.4f\n",
-                scf.e_disp, scf.n_kpts, max_wire, max_wire_free,
-                scf.volume_ratios[0]);
+            std::printf("  D multi-k MBD+Hirsh H2: e_disp=%.14e  n_kpts=%d  "
+                        "max|wire_h|=%.2e  max|wire_free|=%.2e  v0=%.4f\n",
+                        scf.e_disp, scf.n_kpts, max_wire, max_wire_free,
+                        scf.volume_ratios[0]);
         }
     }
 

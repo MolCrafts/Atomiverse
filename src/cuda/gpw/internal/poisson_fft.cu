@@ -32,15 +32,15 @@ void check_cufft(cufftResult r, const char* what) {
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
         throw std::runtime_error(std::string("cuda::gpw PoissonFftDevice: ")
-                                 + what + " failed ("
-                                 + cudaGetErrorString(e) + ")");
+                                 + what + " failed (" + cudaGetErrorString(e)
+                                 + ")");
 }
 
 /// @brief One thread per half-complex G-mode: V(G) = 4π ρ(G)/|G|², V(0)=0.
 /// Layout: idx = (i0 * n1 + i1) * n2c + i2  (i2 = non-negative last-axis freqs).
-__global__ void
-apply_coulomb_kernel(cufftDoubleComplex* __restrict__ cbuf, int n0, int n1,
-                     int n2c, double gx_unit, double gy_unit, double gz_unit) {
+__global__ void apply_coulomb_kernel(cufftDoubleComplex* __restrict__ cbuf,
+                                     int n0, int n1, int n2c, double gx_unit,
+                                     double gy_unit, double gz_unit) {
     const long ncplx = static_cast<long>(n0) * n1 * n2c;
     for (long idx = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
          idx < ncplx; idx += static_cast<long>(blockDim.x) * gridDim.x) {
@@ -69,10 +69,10 @@ apply_coulomb_kernel(cufftDoubleComplex* __restrict__ cbuf, int n0, int n1,
 
 /// @brief Normalize c2r output by 1/N and accumulate e_H = 0.5 w Σ ρ V.
 /// Uses a per-block shared reduction then one atomicAdd into d_e.
-__global__ void
-normalize_and_energy_kernel(const double* __restrict__ rho,
-                            double* __restrict__ v, long ntot, double inv_n,
-                            double half_w, double* __restrict__ d_e) {
+__global__ void normalize_and_energy_kernel(const double* __restrict__ rho,
+                                            double* __restrict__ v, long ntot,
+                                            double inv_n, double half_w,
+                                            double* __restrict__ d_e) {
     __shared__ double smem[kBlock];
     const int tid = threadIdx.x;
     double local = 0.0;
@@ -109,9 +109,11 @@ PoissonFftDevice::PoissonFftDevice(const GpwGridDesc& grid, cudaStream_t stream)
     : n0_(grid.n[0]), n1_(grid.n[1]), n2_(grid.n[2]), n2c_(grid.n2c()),
       ntot_(grid.npts()), ncplx_(grid.ncplx()), stream_(stream) {
     if (n0_ <= 0 || n1_ <= 0 || n2_ <= 0)
-        throw std::invalid_argument("PoissonFftDevice: non-positive grid shape");
+        throw std::invalid_argument(
+            "PoissonFftDevice: non-positive grid shape");
     if (grid.L[0] <= 0.0 || grid.L[1] <= 0.0 || grid.L[2] <= 0.0)
-        throw std::invalid_argument("PoissonFftDevice: non-positive cell lengths");
+        throw std::invalid_argument(
+            "PoissonFftDevice: non-positive cell lengths");
 
     L_[0] = grid.L[0];
     L_[1] = grid.L[1];
@@ -131,13 +133,11 @@ PoissonFftDevice::PoissonFftDevice(const GpwGridDesc& grid, cudaStream_t stream)
                     "cufftPlan3d Z2D");
         check_cufft(cufftSetStream(r2c_, stream_), "cufftSetStream r2c");
         check_cufft(cufftSetStream(c2r_, stream_), "cufftSetStream c2r");
-        check_cuda(cudaMalloc(&d_cbuf_,
-                              static_cast<size_t>(ncplx_)
-                                  * sizeof(cufftDoubleComplex)),
+        check_cuda(cudaMalloc(&d_cbuf_, static_cast<size_t>(ncplx_)
+                                            * sizeof(cufftDoubleComplex)),
                    "cudaMalloc cbuf");
-        check_cuda(cudaMalloc(&d_c_scratch_,
-                              static_cast<size_t>(ncplx_)
-                                  * sizeof(cufftDoubleComplex)),
+        check_cuda(cudaMalloc(&d_c_scratch_, static_cast<size_t>(ncplx_)
+                                                 * sizeof(cufftDoubleComplex)),
                    "cudaMalloc c_scratch");
         check_cuda(cudaMalloc(&d_e_scratch_, sizeof(double)),
                    "cudaMalloc e_scratch");

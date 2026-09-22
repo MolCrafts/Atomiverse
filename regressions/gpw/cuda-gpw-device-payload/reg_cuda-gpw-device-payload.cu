@@ -130,8 +130,7 @@ int main(int argc, char** argv) {
                          de);
             return 1;
         }
-        const std::size_t ncmp =
-            std::min(eps_cpu.size(), eps_cuda.size());
+        const std::size_t ncmp = std::min(eps_cpu.size(), eps_cuda.size());
         double deps = 0.0;
         for (std::size_t i = 0; i < ncmp; ++i)
             deps = std::max(deps, std::abs(eps_cuda[i] - eps_cpu[i]));
@@ -141,10 +140,9 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "FAIL: eps payload |d|=%.6e > tol\n", deps);
             return 1;
         }
-        std::printf(
-            "PASS: cuda-gpw-device-payload  |dE|=%.3e  max|deps|=%.3e  "
-            "(H2 Γ RKS PADE device final eigen payload; perf_exempt)\n",
-            de, deps);
+        std::printf("PASS: cuda-gpw-device-payload  |dE|=%.3e  max|deps|=%.3e  "
+                    "(H2 Γ RKS PADE device final eigen payload; perf_exempt)\n",
+                    de, deps);
     } else {
         std::printf("PASS: cuda-gpw-device-payload single-device run\n");
     }

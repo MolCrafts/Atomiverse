@@ -86,16 +86,16 @@ int main() {
     // Method, provenance and the literature cross-check (implied ν̃ = 5481
     // cm⁻¹ for a minimal-basis HF H₂ stretch) are in REFERENCE.md.
     // Re-measured below as a drift guard.
-    const double k_rhf_pin = 55.684;  // [eV/Å²]
-    const double k_rhf_tol = 0.005;   // 0.5% drift guard on the pin
-    const double fd_h = 0.01;         // [Å] five-point stencil half-step
+    const double k_rhf_pin = 55.684; // [eV/Å²]
+    const double k_rhf_tol = 0.005;  // 0.5% drift guard on the pin
+    const double fd_h = 0.01;        // [Å] five-point stencil half-step
 
     // ── The chain ────────────────────────────────────────────────────────
-    const double temperature = 300.0;   // [K]
+    const double temperature = 300.0; // [K]
     const unsigned seed = 20260727u;
-    const double delta = 0.04;          // [Å] TranslateMove half-width
-    const int n_burn = 5000;            // sweeps discarded
-    const int n_sample = 120000;        // sweeps sampled (one r per sweep)
+    const double delta = 0.04;   // [Å] TranslateMove half-width
+    const int n_burn = 5000;     // sweeps discarded
+    const int n_sample = 120000; // sweeps sampled (one r per sweep)
     // Frozen tolerance: 5% relative. Statistical 1σ on Var is 0.8% (blocking)
     // and the seed-to-seed spread over five chains was ±0.6%; systematics are
     // ≤ 0.1%. So 5% is ≈ 6σ, while the "no QM at all" failure mode is +46%.
@@ -145,9 +145,9 @@ int main() {
         / (12.0 * fd_h * fd_h); // [eV/Å²]
 
     // ── The analytic pin ─────────────────────────────────────────────────
-    const double k_eff = k_bias + k_rhf_pin;   // [eV/Å²]
-    const double var_pred = kT / k_eff;        // [Å²]
-    const double var_no_qm = kT / k_bias;      // the "QM went missing" value
+    const double k_eff = k_bias + k_rhf_pin; // [eV/Å²]
+    const double var_pred = kT / k_eff;      // [Å²]
+    const double var_no_qm = kT / k_bias;    // the "QM went missing" value
 
     // ── Build the chain: nested RHF energy + umbrella, one mover ─────────
     cpu::Frame frame(2);
@@ -175,9 +175,10 @@ int main() {
     // order 10: the umbrella accumulates onto it.
     mc.on(sampling::Phase::energy).add_ref(rhf, /*order=*/0, /*budget=*/100);
     mc.on(sampling::Phase::energy)
-        .add(cpu::bias::HarmonicBias{
-                 std::make_unique<cpu::bias::DistanceCV>(1, 2), k_bias, r0},
-             /*order=*/10);
+        .add(
+            cpu::bias::HarmonicBias{
+                std::make_unique<cpu::bias::DistanceCV>(1, 2), k_bias, r0},
+            /*order=*/10);
     // Two atoms and two basis functions: at the node's default thread count
     // the OpenMP fork/join per sweep costs orders of magnitude more than the
     // physics (measured on this 48-core node: 6.8 s of CPU at 1 thread, 231 s
@@ -231,8 +232,8 @@ int main() {
     for (int b = 0; b < n_block; ++b) {
         double a = 0.0;
         for (int i = 0; i < block; ++i) {
-            const double d = r_samples[static_cast<std::size_t>(b * block + i)]
-                             - mean_r;
+            const double d =
+                r_samples[static_cast<std::size_t>(b * block + i)] - mean_r;
             a += d * d;
         }
         a /= block;

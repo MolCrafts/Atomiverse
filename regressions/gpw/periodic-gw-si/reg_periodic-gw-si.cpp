@@ -104,8 +104,10 @@ int main() {
                      e_l);
         return 1;
     }
-    const double d_h = std::abs(e_h - gw.mf_energy_ha[static_cast<std::size_t>(homo)]);
-    const double d_l = std::abs(e_l - gw.mf_energy_ha[static_cast<std::size_t>(lumo)]);
+    const double d_h =
+        std::abs(e_h - gw.mf_energy_ha[static_cast<std::size_t>(homo)]);
+    const double d_l =
+        std::abs(e_l - gw.mf_energy_ha[static_cast<std::size_t>(lumo)]);
     if (!std::isfinite(d_h) || !std::isfinite(d_l)) {
         std::fprintf(stderr, "FAIL: non-finite QP shifts\n");
         return 1;

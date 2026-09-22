@@ -46,9 +46,9 @@ void collint_collocate_group(const UniformGrid& grid, const GridProduct* prods,
 /// @brief Same as collint_collocate_group but products selected by index list
 ///        (avoids copying GridProduct into a temp buffer).
 void collint_collocate_group_idx(const UniformGrid& grid,
-                                const GridProduct* prods_base,
-                                const int* idx, const double* weights, int n,
-                                double mag, double eps, double* rho);
+                                 const GridProduct* prods_base, const int* idx,
+                                 const double* weights, int n, double mag,
+                                 double eps, double* rho);
 
 /// @brief Integrate a geometry-matched product group: one monom table.
 /// @param out_acc Per-product ∫ V·shape (length n); zero when screened.

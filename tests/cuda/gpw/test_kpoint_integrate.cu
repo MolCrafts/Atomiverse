@@ -21,14 +21,14 @@
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GridBasisFunction;
 using ATV::cpu::gpw::GthPotential;
+using ATV::cpu::gpw::make_multigrid;
 using ATV::cpu::gpw::MultiGrid;
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::make_multigrid;
+using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
 using ATV::cpu::gpw::internal::CplxMatrix;
+using ATV::cpu::gpw::internal::integrate_potential_k;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
-using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
-using ATV::cpu::gpw::internal::integrate_potential_k;
 using ATV::cuda::gpw::internal::KpointIntegrateDevice;
 
 namespace {
@@ -95,7 +95,8 @@ TEST(CudaGpwKpointIntegrate, MatchesHostIntegratePotentialK) {
     std::vector<double> V(static_cast<std::size_t>(npts));
     for (long g = 0; g < npts; ++g) {
         const double t = static_cast<double>(g) / static_cast<double>(npts);
-        V[static_cast<std::size_t>(g)] = 0.1 + 0.05 * std::sin(6.283185307179586 * t);
+        V[static_cast<std::size_t>(g)] =
+            0.1 + 0.05 * std::sin(6.283185307179586 * t);
     }
 
     double* d_V = nullptr;
@@ -134,8 +135,7 @@ TEST(CudaGpwKpointIntegrate, MatchesHostIntegratePotentialK) {
                 max_rel = std::max(max_rel, a / den);
             }
         }
-        EXPECT_LE(max_abs, kAbsTol)
-            << "ik=" << ik << " max|ΔV|=" << max_abs;
+        EXPECT_LE(max_abs, kAbsTol) << "ik=" << ik << " max|ΔV|=" << max_abs;
         EXPECT_LE(max_rel, kRelTol)
             << "ik=" << ik << " max relative=" << max_rel;
         // Hermitian residual (device should preserve Hermiticity to ~tol).

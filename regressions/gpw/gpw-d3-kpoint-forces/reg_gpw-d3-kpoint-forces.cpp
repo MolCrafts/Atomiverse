@@ -229,11 +229,11 @@ int main() {
 
     cpu::gpw::GpwDft method_d3 = make_cfg(true);
     method_d3.build(atoms);
-    const auto F_on = cpu::gpw::gpw_forces_from_scf(atoms, method_d3,
-                                                    eval.last_result());
+    const auto F_on =
+        cpu::gpw::gpw_forces_from_scf(atoms, method_d3, eval.last_result());
     cpu::gpw::GpwDft method_plain = make_cfg(false);
-    const auto F_plain = cpu::gpw::gpw_forces_from_scf(
-        atoms, method_plain, eval.last_result());
+    const auto F_plain =
+        cpu::gpw::gpw_forces_from_scf(atoms, method_plain, eval.last_result());
 
     double max_wire = 0.0;
     double max_f_on = 0.0;
@@ -262,8 +262,8 @@ int main() {
         "PASS: gpw-d3-kpoint-forces  |dE_disp|=%.2e  max|F_disp-cp2k|=%.3e  "
         "max|wiring|=%.3e Ha/Bohr  wall_prod=%.3f s  T_cp2k=%.3f s  "
         "ratio=%.3f  n_kpts=%d\n",
-        std::abs(e_disp - kEDispCp2k), max_fdisp_err, max_wire,
-        wall_product_s, kOracleWallS, ratio, eval.last_result().n_kpts);
+        std::abs(e_disp - kEDispCp2k), max_fdisp_err, max_wire, wall_product_s,
+        kOracleWallS, ratio, eval.last_result().n_kpts);
 
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);

@@ -75,7 +75,8 @@ std::string parse_device(int argc, char** argv) {
     return want;
 }
 
-double max_abs_diff(const std::vector<double>& a, const std::vector<double>& b) {
+double max_abs_diff(const std::vector<double>& a,
+                    const std::vector<double>& b) {
     const std::size_t n = std::min(a.size(), b.size());
     double m = 0.0;
     for (std::size_t i = 0; i < n; ++i)
@@ -130,7 +131,8 @@ int main(int argc, char** argv) {
             return 1;
         }
         if (r.C.size() == 0 || r.eps.empty()) {
-            std::fprintf(stderr, "FAIL: CUDA UKS payload missing C/eps alpha\n");
+            std::fprintf(stderr,
+                         "FAIL: CUDA UKS payload missing C/eps alpha\n");
             return 1;
         }
         if (r.C_beta.size() == 0 || r.eps_beta.empty()) {
@@ -183,8 +185,8 @@ int main(int argc, char** argv) {
             "PASS: cuda-gpw-uks-payload-device (cuda-only) E=%.12f Ha\n",
             e_cuda);
     } else {
-        std::printf(
-            "PASS: cuda-gpw-uks-payload-device (cpu-only) E=%.12f Ha\n", e_cpu);
+        std::printf("PASS: cuda-gpw-uks-payload-device (cpu-only) E=%.12f Ha\n",
+                    e_cpu);
     }
     return 0;
 }

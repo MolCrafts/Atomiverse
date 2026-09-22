@@ -42,9 +42,8 @@ cpu::Frame water_plus_site() {
     }
     f.box = cpu::Box::cubic(25);
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                                kDynamicFieldId});
     auto qm = f.span(cpu::kAtomQmZ);
     qm[0] = 8;
     qm[1] = 1;
@@ -68,8 +67,8 @@ int main() {
     {
         auto f = water_plus_site();
         cpu::Evaluate eval;
-        cpu::QmmmElectrostatic qmmm{{{8, 8, 0.01, 3.4}, {1, 1, 0.01, 3.4}}, 10.0,
-                                    12.0};
+        cpu::QmmmElectrostatic qmmm{
+            {{8, 8, 0.01, 3.4}, {1, 1, 0.01, 3.4}}, 10.0, 12.0};
         qmmm.set_engine(make_rhf());
         eval.on(evaluate::Phase::evaluate).add(std::move(qmmm));
         eval.build();
@@ -78,8 +77,8 @@ int main() {
     }
     {
         auto f = water_plus_site();
-        cpu::QmmmPolarizable pol{{{8, 8, 0.01, 3.4}, {1, 1, 0.01, 3.4}}, 10.0,
-                                12.0};
+        cpu::QmmmPolarizable pol{
+            {{8, 8, 0.01, 3.4}, {1, 1, 0.01, 3.4}}, 10.0, 12.0};
         pol.alpha = 2.0;
         pol.thole_a = 2.6;
         pol.set_engine(make_rhf());

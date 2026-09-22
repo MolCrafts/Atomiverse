@@ -19,10 +19,10 @@
 int main() {
     using namespace ATV;
     using cpu::gpw::GaussianBasis;
+    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::GpwAtom;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::gpw_forces_from_scf;
     using cpu::gpw::ts_pbe;
     using cpu::gpw::TsResult;
     using cpu::gpw::XcKind;
@@ -56,9 +56,10 @@ int main() {
     const TsResult ts_iso = ts_pbe(Z, pos, cell0, /*periodic=*/false);
     if (!std::isfinite(ts_iso.energy)
         || std::abs(ts_iso.energy - kEIsolated) > kETol) {
-        std::fprintf(stderr,
-                     "FAIL: E_disp TS isolated got=%.14e want=%.14e tol=%.1e Ha\n",
-                     ts_iso.energy, kEIsolated, kETol);
+        std::fprintf(
+            stderr,
+            "FAIL: E_disp TS isolated got=%.14e want=%.14e tol=%.1e Ha\n",
+            ts_iso.energy, kEIsolated, kETol);
         return 1;
     }
     if (ts_iso.forces.size() != 6) {
@@ -105,8 +106,7 @@ int main() {
     const TsResult ts_per = ts_pbe(Z, pos, cell, /*periodic=*/true, kRcut);
     if (!std::isfinite(ts_per.energy)
         || std::abs(ts_per.energy - kEPeriodic) > kETol) {
-        std::fprintf(stderr,
-                     "FAIL: E_disp TS periodic got=%.14e want=%.14e\n",
+        std::fprintf(stderr, "FAIL: E_disp TS periodic got=%.14e want=%.14e\n",
                      ts_per.energy, kEPeriodic);
         return 1;
     }
@@ -148,9 +148,8 @@ int main() {
     const auto& res = gpw.run(atoms);
     if (!std::isfinite(res.e_disp)
         || std::abs(res.e_disp - kEPeriodic) > kETol) {
-        std::fprintf(stderr,
-                     "FAIL: GpwDft e_disp got=%.14e want=%.14e\n", res.e_disp,
-                     kEPeriodic);
+        std::fprintf(stderr, "FAIL: GpwDft e_disp got=%.14e want=%.14e\n",
+                     res.e_disp, kEPeriodic);
         return 1;
     }
     if (!std::isfinite(res.e_total)) {

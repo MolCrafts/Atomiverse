@@ -12,10 +12,10 @@
 #include <cstdio>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/electronic/xl_bomd_force.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/xl_bomd_force.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
@@ -33,7 +33,8 @@ int main() {
     constexpr double bohr2ang = 0.52917720859;
     constexpr double L_bohr = 12.0;
     constexpr double L_ang = L_bohr * bohr2ang;
-    constexpr double r0_bohr = 1.0; // compressed bond (same as kpoint-uks-forces)
+    constexpr double r0_bohr =
+        1.0; // compressed bond (same as kpoint-uks-forces)
     const double x0[2] = {(L_bohr / 2.0 - 0.5 * r0_bohr) * bohr2ang,
                           (L_bohr / 2.0 + 0.5 * r0_bohr) * bohr2ang};
     const double y0[2] = {L_ang / 2.0, L_ang / 2.0};
@@ -118,7 +119,8 @@ int main() {
     }
     if (static_cast<int>(eval.last_result().P_k.size())
         != eval.last_result().n_kpts) {
-        std::printf("FAIL: P_k (alpha) payload missing after multi-k UKS SCF\n");
+        std::printf(
+            "FAIL: P_k (alpha) payload missing after multi-k UKS SCF\n");
         return 1;
     }
     if (static_cast<int>(eval.last_result().P_k_beta.size())
@@ -178,12 +180,12 @@ int main() {
         }
     }
 
-    const double dx = static_cast<double>(frame.span(kAtom_x)[1]
-                                          - frame.span(kAtom_x)[0]);
-    const double dy = static_cast<double>(frame.span(kAtom_y)[1]
-                                          - frame.span(kAtom_y)[0]);
-    const double dz = static_cast<double>(frame.span(kAtom_z)[1]
-                                          - frame.span(kAtom_z)[0]);
+    const double dx =
+        static_cast<double>(frame.span(kAtom_x)[1] - frame.span(kAtom_x)[0]);
+    const double dy =
+        static_cast<double>(frame.span(kAtom_y)[1] - frame.span(kAtom_y)[0]);
+    const double dz =
+        static_cast<double>(frame.span(kAtom_z)[1] - frame.span(kAtom_z)[0]);
     const double rhh = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (!(rhh > rmin) || !(rhh < rmax)) {
         std::printf("FAIL: H–H bond out of window r=%.3f Å (%.2f–%.2f)\n", rhh,

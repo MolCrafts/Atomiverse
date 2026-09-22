@@ -28,17 +28,16 @@ constexpr int kBlock = 256;
 
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
-        throw std::runtime_error(std::string("cuda::gpw KsChainDevice: ")
-                                 + what + " failed ("
-                                 + cudaGetErrorString(e) + ")");
+        throw std::runtime_error(std::string("cuda::gpw KsChainDevice: ") + what
+                                 + " failed (" + cudaGetErrorString(e) + ")");
 }
 
 /// @brief n[i] = rho[i] − n_ion[i]  (n_ion null ⇒ n = rho).
 __global__ void n_tot_kernel(const double* __restrict__ rho,
-                             const double* __restrict__ n_ion, double* __restrict__ n,
-                             long nr) {
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+                             const double* __restrict__ n_ion,
+                             double* __restrict__ n, long nr) {
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     if (i >= nr)
         return;
     const double ion = (n_ion != nullptr) ? n_ion[i] : 0.0;
@@ -46,15 +45,15 @@ __global__ void n_tot_kernel(const double* __restrict__ rho,
 }
 
 /// @brief veff = v_es + vxc [+ v_loc]; optional local e_loc = Σ ρ V_loc (unscaled).
-__global__ void
-assemble_veff_kernel(const double* __restrict__ v_es,
-                     const double* __restrict__ vxc,
-                     const double* __restrict__ v_loc,
-                     const double* __restrict__ rho, double* __restrict__ veff,
-                     double* __restrict__ e_loc_acc, long nr) {
+__global__ void assemble_veff_kernel(const double* __restrict__ v_es,
+                                     const double* __restrict__ vxc,
+                                     const double* __restrict__ v_loc,
+                                     const double* __restrict__ rho,
+                                     double* __restrict__ veff,
+                                     double* __restrict__ e_loc_acc, long nr) {
     __shared__ double s[kBlock];
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     double loc = 0.0;
     if (i < nr) {
         const double vloc = (v_loc != nullptr) ? v_loc[i] : 0.0;
@@ -83,8 +82,8 @@ __global__ void assemble_veff_uks_kernel(
     double* __restrict__ veff_a, double* __restrict__ veff_b,
     double* __restrict__ e_loc_acc, long nr) {
     __shared__ double s[kBlock];
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     double loc = 0.0;
     if (i < nr) {
         const double vloc = (v_loc != nullptr) ? v_loc[i] : 0.0;
@@ -111,8 +110,8 @@ __global__ void assemble_veff_uks_kernel(
 __global__ void add_fields_kernel(const double* __restrict__ a,
                                   const double* __restrict__ b,
                                   double* __restrict__ out, long nr) {
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     if (i < nr)
         out[i] = a[i] + b[i];
 }
@@ -120,8 +119,8 @@ __global__ void add_fields_kernel(const double* __restrict__ a,
 /// @brief vxc[i] -= div[i]  (GGA: local v_ρ minus spectral ∇·flux).
 __global__ void vxc_sub_div_kernel(double* __restrict__ vxc,
                                    const double* __restrict__ div, long nr) {
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     if (i < nr)
         vxc[i] -= div[i];
 }
@@ -140,13 +139,9 @@ GpwGridDesc to_poisson_grid(const CollocateGridDesc& c) {
 } // namespace
 
 KsChainDevice::KsChainDevice(const CollocateGridDesc& coll, cudaStream_t stream)
-    : coll_grid_(coll)
-    , poisson_grid_(to_poisson_grid(coll))
-    , ntot_(coll.npts())
-    , weight_(coll.weight())
-    , stream_(stream)
-    , poisson_(poisson_grid_, stream)
-    , spectral_(poisson_grid_, stream) {
+    : coll_grid_(coll), poisson_grid_(to_poisson_grid(coll)),
+      ntot_(coll.npts()), weight_(coll.weight()), stream_(stream),
+      poisson_(poisson_grid_, stream), spectral_(poisson_grid_, stream) {
     if (ntot_ <= 0)
         throw std::runtime_error("cuda::gpw KsChainDevice: empty grid");
     const size_t bytes = static_cast<size_t>(ntot_) * sizeof(double);
@@ -193,12 +188,10 @@ void KsChainDevice::ensure_uks_buffers_() {
     check_cuda(cudaMalloc(&d_veff_b_, bytes), "malloc veff_b");
 }
 
-KsChainEnergies KsChainDevice::run_from_rho(const double* d_rho_in,
-                                            const double* d_n_ion,
-                                            const double* d_v_loc,
-                                            const DeviceProduct* d_prods,
-                                            int nprod, double* d_acc,
-                                            KsXcKind xc) {
+KsChainEnergies
+KsChainDevice::run_from_rho(const double* d_rho_in, const double* d_n_ion,
+                            const double* d_v_loc, const DeviceProduct* d_prods,
+                            int nprod, double* d_acc, KsXcKind xc) {
     if (d_rho_in == nullptr)
         throw std::runtime_error(
             "cuda::gpw KsChainDevice::run_from_rho: null density");
@@ -411,9 +404,9 @@ KsMultiGridChainDevice::KsMultiGridChainDevice(const MultigridDesc& mg,
                 throw std::runtime_error(
                     "cuda::gpw KsMultiGridChainDevice: empty level grid");
             const size_t bytes = static_cast<size_t>(nl) * sizeof(double);
-            check_cuda(cudaMalloc(&d_rho_level_[static_cast<std::size_t>(l)],
-                                  bytes),
-                       "malloc rho_level");
+            check_cuda(
+                cudaMalloc(&d_rho_level_[static_cast<std::size_t>(l)], bytes),
+                "malloc rho_level");
             if (l > 0)
                 check_cuda(
                     cudaMalloc(&d_v_level_[static_cast<std::size_t>(l)], bytes),
@@ -428,8 +421,8 @@ KsMultiGridChainDevice::KsMultiGridChainDevice(const MultigridDesc& mg,
         xfer_.resize(static_cast<std::size_t>(std::max(0, nlev_ - 1)));
         for (int l = 1; l < nlev_; ++l) {
             xfer_[static_cast<std::size_t>(l - 1)] =
-                std::make_unique<MultigridTransferDevice>(mg.level(l), mg.fine(),
-                                                          stream);
+                std::make_unique<MultigridTransferDevice>(mg.level(l),
+                                                          mg.fine(), stream);
         }
     } catch (...) {
         for (double* p : d_rho_level_)
@@ -451,10 +444,11 @@ KsMultiGridChainDevice::~KsMultiGridChainDevice() {
     cudaFree(d_prolong_scratch_);
 }
 
-KsChainEnergies KsMultiGridChainDevice::run(
-    const DeviceProduct* const* d_prods_by_level, const int* nprod_by_level,
-    const double* d_n_ion, const double* d_v_loc, double* const* d_acc_by_level,
-    KsXcKind xc) {
+KsChainEnergies
+KsMultiGridChainDevice::run(const DeviceProduct* const* d_prods_by_level,
+                            const int* nprod_by_level, const double* d_n_ion,
+                            const double* d_v_loc,
+                            double* const* d_acc_by_level, KsXcKind xc) {
     if (d_prods_by_level == nullptr || nprod_by_level == nullptr)
         throw std::runtime_error(
             "cuda::gpw KsMultiGridChainDevice::run: null product tables");
@@ -500,9 +494,8 @@ KsChainEnergies KsMultiGridChainDevice::run(
     }
 
     // 3–5. Fine-grid KS (no fine integrate — done per-level below).
-    KsChainEnergies out =
-        fine_->run_from_rho(d_rho_fine_, d_n_ion, d_v_loc, nullptr, 0, nullptr,
-                            xc);
+    KsChainEnergies out = fine_->run_from_rho(d_rho_fine_, d_n_ion, d_v_loc,
+                                              nullptr, 0, nullptr, xc);
 
     // 6. Restrict V_eff + integrate per level.
     if (d_acc_by_level != nullptr) {
@@ -514,8 +507,8 @@ KsChainEnergies KsMultiGridChainDevice::run(
                 d_V = fine_->d_veff();
             } else {
                 double* d_vl = d_v_level_[static_cast<std::size_t>(l)];
-                xfer_[static_cast<std::size_t>(l - 1)]->restrict(fine_->d_veff(),
-                                                                 d_vl);
+                xfer_[static_cast<std::size_t>(l - 1)]->restrict(
+                    fine_->d_veff(), d_vl);
                 d_V = d_vl;
             }
             integrate_products(mg_.level(l), d_prods_by_level[l],

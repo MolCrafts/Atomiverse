@@ -10,8 +10,8 @@
 
 #include "atomiverse/cpu/gpw/internal/kpoints.h"
 
-#include <cuComplex.h>
 #include <cmath>
+#include <cuComplex.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -44,7 +44,7 @@ struct DevPrim {
 };
 
 struct DevBf {
-    int off;   ///< index into flat prim table
+    int off; ///< index into flat prim table
     int nprim;
     double radius;
     double c0, c1, c2; ///< shell center (prim[0])
@@ -58,10 +58,10 @@ struct DevImg {
 // ── Device ST helpers (scalar; one thread owns one pair) ─────────────────
 
 __device__ __forceinline__ void st_ss_dev(double a_alpha, double b_alpha,
-                                         double ax, double ay, double az,
-                                         double bx, double by, double bz,
-                                         double ca, double cb, double& s_out,
-                                         double& t_out) {
+                                          double ax, double ay, double az,
+                                          double bx, double by, double bz,
+                                          double ca, double cb, double& s_out,
+                                          double& t_out) {
     const double p = a_alpha + b_alpha;
     const double mu = a_alpha * b_alpha / p;
     const double dx = ax - bx;
@@ -69,8 +69,7 @@ __device__ __forceinline__ void st_ss_dev(double a_alpha, double b_alpha,
     const double dz = az - bz;
     const double r2 = dx * dx + dy * dy + dz * dz;
     const double pi_over_p = kPi / p;
-    const double S =
-        ca * cb * pi_over_p * sqrt(pi_over_p) * exp(-mu * r2);
+    const double S = ca * cb * pi_over_p * sqrt(pi_over_p) * exp(-mu * r2);
     s_out = S;
     t_out = mu * (3.0 - 2.0 * mu * r2) * S;
 }
@@ -127,8 +126,7 @@ struct HermiteAxis {
                     if (t <= i + j - 1)
                         v += xpb * memo[i][j - 1][t];
                     if (t + 1 <= i + j - 1)
-                        v += static_cast<double>(t + 1)
-                             * memo[i][j - 1][t + 1];
+                        v += static_cast<double>(t + 1) * memo[i][j - 1][t + 1];
                     memo[i][j][t] = v;
                 }
             }
@@ -153,9 +151,9 @@ struct HermiteAxis {
 // Confirm host kinetic_1d — we may need the full formula with j(j-1) term.
 // Reading host after writing: if mismatch unit test will catch.
 
-__device__ void prim_ST_dev(const DevPrim& a, double bcx, double bcy, double bcz,
-                           double b_alpha, double b_coeff, int blx, int bly,
-                           int blz, double& s_out, double& t_out) {
+__device__ void prim_ST_dev(const DevPrim& a, double bcx, double bcy,
+                            double bcz, double b_alpha, double b_coeff, int blx,
+                            int bly, int blz, double& s_out, double& t_out) {
     if (a.lx == 0 && a.ly == 0 && a.lz == 0 && blx == 0 && bly == 0
         && blz == 0) {
         st_ss_dev(a.alpha, b_alpha, a.c0, a.c1, a.c2, bcx, bcy, bcz, a.coeff,
@@ -166,10 +164,10 @@ __device__ void prim_ST_dev(const DevPrim& a, double bcx, double bcy, double bcz
     hx.init(a.alpha, b_alpha, a.c0, bcx);
     hy.init(a.alpha, b_alpha, a.c1, bcy);
     hz.init(a.alpha, b_alpha, a.c2, bcz);
-    const int imax = a.lx > a.ly ? (a.lx > a.lz ? a.lx : a.lz)
-                                 : (a.ly > a.lz ? a.ly : a.lz);
-    const int jmax_ang = blx > bly ? (blx > blz ? blx : blz)
-                                   : (bly > blz ? bly : blz);
+    const int imax =
+        a.lx > a.ly ? (a.lx > a.lz ? a.lx : a.lz) : (a.ly > a.lz ? a.ly : a.lz);
+    const int jmax_ang =
+        blx > bly ? (blx > blz ? blx : blz) : (bly > blz ? bly : blz);
     const int jfill = jmax_ang + 2; // kinetic needs j+2
     hx.fill_upto(imax, jfill);
     hy.fill_upto(imax, jfill);
@@ -186,9 +184,9 @@ __device__ void prim_ST_dev(const DevPrim& a, double bcx, double bcy, double bcz
 }
 
 __device__ void contracted_ST_shift_dev(const DevPrim* prims, const DevBf& a,
-                                       const DevBf& b, double T0, double T1,
-                                       double T2, double& s_out,
-                                       double& t_out) {
+                                        const DevBf& b, double T0, double T1,
+                                        double T2, double& s_out,
+                                        double& t_out) {
     double s = 0.0, t = 0.0;
     for (int ia = 0; ia < a.nprim; ++ia) {
         const DevPrim& pa = prims[a.off + ia];
@@ -236,11 +234,14 @@ __device__ double pair_bound_dev(const DevPrim* prims, const DevBf& a,
 }
 
 /// One thread per upper-tri pair p = 0..nb*(nb+1)/2-1.
-__global__ void build_ST_k_kernel(
-    const DevPrim* __restrict__ prims, const DevBf* __restrict__ bfs,
-    const DevImg* __restrict__ imgs, const cuDoubleComplex* __restrict__ phase_ik,
-    int nimg, int nb, int nk, double screen, double L0, double L1, double L2,
-    cuDoubleComplex* __restrict__ S_k, cuDoubleComplex* __restrict__ T_k) {
+__global__ void build_ST_k_kernel(const DevPrim* __restrict__ prims,
+                                  const DevBf* __restrict__ bfs,
+                                  const DevImg* __restrict__ imgs,
+                                  const cuDoubleComplex* __restrict__ phase_ik,
+                                  int nimg, int nb, int nk, double screen,
+                                  double L0, double L1, double L2,
+                                  cuDoubleComplex* __restrict__ S_k,
+                                  cuDoubleComplex* __restrict__ T_k) {
     const long npairs = static_cast<long>(nb) * (static_cast<long>(nb) + 1) / 2;
     const long p = static_cast<long>(blockIdx.x) * blockDim.x
                    + static_cast<long>(threadIdx.x);
@@ -372,14 +373,13 @@ void KpointStvnlDevice::compute(
     if (nk < 1)
         throw std::invalid_argument("KpointStvnlDevice::compute: nk < 1");
     if (nk > 32)
-        throw std::invalid_argument(
-            "KpointStvnlDevice::compute: nk > 32 not supported in this foothold");
+        throw std::invalid_argument("KpointStvnlDevice::compute: nk > 32 not "
+                                    "supported in this foothold");
     if (static_cast<int>(radii.size()) != nb)
         throw std::invalid_argument(
             "KpointStvnlDevice::compute: radii size mismatch");
     if (!k_frac)
-        throw std::invalid_argument(
-            "KpointStvnlDevice::compute: null k_frac");
+        throw std::invalid_argument("KpointStvnlDevice::compute: null k_frac");
 
     stream_ = stream;
     nb_ = nb;
@@ -414,8 +414,8 @@ void KpointStvnlDevice::compute(
                 dp.ly = p.l[1];
                 dp.lz = p.l[2];
                 if (dp.lx > 2 || dp.ly > 2 || dp.lz > 2)
-                    throw std::runtime_error(
-                        "KpointStvnlDevice: angular momentum > d not supported");
+                    throw std::runtime_error("KpointStvnlDevice: angular "
+                                             "momentum > d not supported");
                 h_prims.push_back(dp);
                 ++dbf.nprim;
             }
@@ -427,8 +427,8 @@ void KpointStvnlDevice::compute(
     const int nx = 2 * mimg[0] + 1, ny = 2 * mimg[1] + 1, nz = 2 * mimg[2] + 1;
     const int nimg = nx * ny * nz;
     std::vector<DevImg> h_imgs(static_cast<std::size_t>(nimg));
-    std::vector<cuDoubleComplex> h_phase(
-        static_cast<std::size_t>(nk) * static_cast<std::size_t>(nimg));
+    std::vector<cuDoubleComplex> h_phase(static_cast<std::size_t>(nk)
+                                         * static_cast<std::size_t>(nimg));
     int ii = 0;
     for (int tx = -mimg[0]; tx <= mimg[0]; ++tx)
         for (int ty = -mimg[1]; ty <= mimg[1]; ++ty)
@@ -443,8 +443,7 @@ void KpointStvnlDevice::compute(
                     const double k0 = k_frac[ik * 3 + 0];
                     const double k1 = k_frac[ik * 3 + 1];
                     const double k2 = k_frac[ik * 3 + 2];
-                    const double arg =
-                        kTwoPi * (k0 * tx + k1 * ty + k2 * tz);
+                    const double arg = kTwoPi * (k0 * tx + k1 * ty + k2 * tz);
                     h_phase[static_cast<std::size_t>(ik) * nimg
                             + static_cast<std::size_t>(ii)] =
                         make_cuDoubleComplex(std::cos(arg), std::sin(arg));
@@ -490,13 +489,11 @@ void KpointStvnlDevice::compute(
                                cudaMemcpyHostToDevice, stream),
                "H2D phase");
 
-    const long npairs =
-        static_cast<long>(nb) * (static_cast<long>(nb) + 1) / 2;
-    const int blocks =
-        static_cast<int>((npairs + kBlock - 1) / kBlock);
+    const long npairs = static_cast<long>(nb) * (static_cast<long>(nb) + 1) / 2;
+    const int blocks = static_cast<int>((npairs + kBlock - 1) / kBlock);
     build_ST_k_kernel<<<blocks, kBlock, 0, stream>>>(
-        d_prims, d_bfs, d_imgs, d_phase, nimg, nb, nk, screen, cell[0],
-        cell[1], cell[2], static_cast<cuDoubleComplex*>(d_S_),
+        d_prims, d_bfs, d_imgs, d_phase, nimg, nb, nk, screen, cell[0], cell[1],
+        cell[2], static_cast<cuDoubleComplex*>(d_S_),
         static_cast<cuDoubleComplex*>(d_T_));
     check_cuda(cudaGetLastError(), "build_ST_k_kernel launch");
 
@@ -523,14 +520,13 @@ void KpointStvnlDevice::compute(
                                     CplxMatrix(xt::zeros<Cplx>({nb, nb})));
         cpu::gpw::internal::add_nonlocal_kb_k(V_k, basis, atoms, radii, cell,
                                               mimg, screen, kpts);
-        std::vector<cuDoubleComplex> h_V(
-            static_cast<std::size_t>(nk) * static_cast<std::size_t>(nb)
-            * static_cast<std::size_t>(nb));
+        std::vector<cuDoubleComplex> h_V(static_cast<std::size_t>(nk)
+                                         * static_cast<std::size_t>(nb)
+                                         * static_cast<std::size_t>(nb));
         for (int ik = 0; ik < nk; ++ik)
             for (int u = 0; u < nb; ++u)
                 for (int t = 0; t < nb; ++t) {
-                    const Cplx v =
-                        V_k[static_cast<std::size_t>(ik)](u, t);
+                    const Cplx v = V_k[static_cast<std::size_t>(ik)](u, t);
                     h_V[static_cast<std::size_t>(ik) * nb * nb
                         + static_cast<std::size_t>(u) * nb
                         + static_cast<std::size_t>(t)] =
@@ -564,10 +560,8 @@ void KpointStvnlDevice::download_S(std::complex<double>* out) const {
     if (!out)
         throw std::invalid_argument("KpointStvnlDevice::download_S: null");
     const size_t bytes = static_cast<size_t>(nk_) * static_cast<size_t>(nb_)
-                         * static_cast<size_t>(nb_)
-                         * sizeof(cuDoubleComplex);
-    check_cuda(cudaMemcpy(out, d_S_, bytes, cudaMemcpyDeviceToHost),
-               "D2H S");
+                         * static_cast<size_t>(nb_) * sizeof(cuDoubleComplex);
+    check_cuda(cudaMemcpy(out, d_S_, bytes, cudaMemcpyDeviceToHost), "D2H S");
 }
 
 void KpointStvnlDevice::download_T(std::complex<double>* out) const {
@@ -575,10 +569,8 @@ void KpointStvnlDevice::download_T(std::complex<double>* out) const {
     if (!out)
         throw std::invalid_argument("KpointStvnlDevice::download_T: null");
     const size_t bytes = static_cast<size_t>(nk_) * static_cast<size_t>(nb_)
-                         * static_cast<size_t>(nb_)
-                         * sizeof(cuDoubleComplex);
-    check_cuda(cudaMemcpy(out, d_T_, bytes, cudaMemcpyDeviceToHost),
-               "D2H T");
+                         * static_cast<size_t>(nb_) * sizeof(cuDoubleComplex);
+    check_cuda(cudaMemcpy(out, d_T_, bytes, cudaMemcpyDeviceToHost), "D2H T");
 }
 
 void KpointStvnlDevice::download_Vnl(std::complex<double>* out) const {
@@ -586,8 +578,7 @@ void KpointStvnlDevice::download_Vnl(std::complex<double>* out) const {
     if (!out)
         throw std::invalid_argument("KpointStvnlDevice::download_Vnl: null");
     const size_t bytes = static_cast<size_t>(nk_) * static_cast<size_t>(nb_)
-                         * static_cast<size_t>(nb_)
-                         * sizeof(cuDoubleComplex);
+                         * static_cast<size_t>(nb_) * sizeof(cuDoubleComplex);
     check_cuda(cudaMemcpy(out, d_Vnl_, bytes, cudaMemcpyDeviceToHost),
                "D2H Vnl");
 }
@@ -597,10 +588,8 @@ void KpointStvnlDevice::download_H0(std::complex<double>* out) const {
     if (!out)
         throw std::invalid_argument("KpointStvnlDevice::download_H0: null");
     const size_t bytes = static_cast<size_t>(nk_) * static_cast<size_t>(nb_)
-                         * static_cast<size_t>(nb_)
-                         * sizeof(cuDoubleComplex);
-    check_cuda(cudaMemcpy(out, d_H0_, bytes, cudaMemcpyDeviceToHost),
-               "D2H H0");
+                         * static_cast<size_t>(nb_) * sizeof(cuDoubleComplex);
+    check_cuda(cudaMemcpy(out, d_H0_, bytes, cudaMemcpyDeviceToHost), "D2H H0");
 }
 
 } // namespace internal

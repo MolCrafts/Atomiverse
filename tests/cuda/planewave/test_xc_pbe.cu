@@ -155,12 +155,9 @@ TEST(CudaPWXcPbe, SigmaZeroIsPw92BaseNotVwn5) {
     auto* d_vxc = static_cast<double*>(dmalloc(nr * sizeof(double)));
     auto* d_exc = static_cast<double*>(dmalloc(nr * sizeof(double)));
     cudaMemcpy(d_rho, rho.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_gx, zeros.data(), nr * sizeof(double),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(d_gy, zeros.data(), nr * sizeof(double),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(d_gz, zeros.data(), nr * sizeof(double),
-               cudaMemcpyHostToDevice);
+    cudaMemcpy(d_gx, zeros.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_gy, zeros.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_gz, zeros.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
 
     xc_pbe_grid(d_rho, d_gx, d_gy, d_gz, d_vxc, d_exc, nr);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);

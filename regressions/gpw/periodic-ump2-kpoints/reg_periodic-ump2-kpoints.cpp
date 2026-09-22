@@ -77,8 +77,9 @@ int main() {
         std::fprintf(stderr,
                      "FAIL: 2k UKS SCF (conv=%d n_kpts=%d C_k=%zu C_k_beta=%zu "
                      "iters=%d E=%.8f)\n",
-                     static_cast<int>(scf.converged), scf.n_kpts, scf.C_k.size(),
-                     scf.C_k_beta.size(), scf.iters, scf.e_total);
+                     static_cast<int>(scf.converged), scf.n_kpts,
+                     scf.C_k.size(), scf.C_k_beta.size(), scf.iters,
+                     scf.e_total);
         return 1;
     }
     if (scf.eps_k_beta.size() != 2) {
